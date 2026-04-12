@@ -1093,7 +1093,13 @@ namespace moho
     char pad_04F4[4];                                    // 0x04F4
     SGuardedByRuntimeList GuardedByList;                 // 0x04F8
     void* OccupyGroundToken;                             // 0x0510
-    char pad_0514[16];                                   // 0x0514
+    char pad_0514[12];                                   // 0x0514
+    // Active formation slot used when other units guard this one. Read by
+    // `Unit::GetFormation` (0x006A9720) on the guarded-unit path:
+    // `guardedUnit->mGuardFormation` is returned when the guarding unit has
+    // no direct formation of its own. Writes come from formation-assignment
+    // code elsewhere in the guard lane (not yet recovered).
+    CAiFormationInstance* mGuardFormation;               // 0x0520
     bool mNeedsKillCleanup;            // 0x0524: tested in Sim::AdvanceBeat, cleared by Unit::KillCleanup (0x006A8790)
     char pad_0525[0x0B];               // 0x0525
     std::int32_t PriorityBoost;        // 0x0530
@@ -1142,6 +1148,8 @@ namespace moho
   };
 
   static_assert(offsetof(Unit, GuardedByList) == 0x04F8, "Unit::GuardedByList offset must be 0x04F8");
+  static_assert(offsetof(Unit, mGuardFormation) == 0x0520, "Unit::mGuardFormation offset must be 0x0520");
+  static_assert(offsetof(Unit, mNeedsKillCleanup) == 0x0524, "Unit::mNeedsKillCleanup offset must be 0x0524");
   static_assert(offsetof(Unit, PriorityBoost) == 0x0530, "Unit::PriorityBoost offset must be 0x0530");
   static_assert(offsetof(Unit, mConsumptionData) == 0x0534, "Unit::mConsumptionData offset must be 0x0534");
   static_assert(

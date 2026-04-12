@@ -15,6 +15,7 @@
 #include <typeinfo>
 
 #include "moho/ai/CAiAttackerImpl.h"
+#include "moho/ai/CAiFormationInstance.h"
 #include "moho/ai/CAiReconDBImpl.h"
 #include "moho/ai/CAiTarget.h"
 #include "moho/ai/IAiBuilder.h"
@@ -55,6 +56,7 @@
 #include "moho/sim/SimStartupRegistrations.h"
 #include "moho/sim/STIMap.h"
 #include "moho/unit/CUnitMotion.h"
+#include "moho/unit/CUnitCommand.h"
 #include "moho/unit/CUnitCommandQueue.h"
 #include "moho/unit/core/IUnit.h"
 #include "moho/unit/core/UnitLuaFunctionThunks.h"
@@ -11228,17 +11230,58 @@ bool Unit::IsHigherPriorityThan(const Unit* const other) const
  *
  * IDA signature:
  * Moho::CAiFormationInstance *__usercall Moho::Unit::GetFormation@<eax>(
- *   Moho::Unit *this@<ecx>, Moho::Unit *a2@<edi>)
+ *   Moho::Unit *this@<edi>)
  *
  * What it does:
- * Original implementation resolves the active formation either from the unit's
- * command queue (via WeakPtr chain) or from the guarded unit's guard-formation
- * slot when the unit is in a guard/guard-busy state. Conservative stub: returns
- * null until the weak-reference + guard-formation lanes are fully recovered.
+ * Resolves the active formation for this unit.
+ *
+ *   - If there is no (valid) guarded target, or this unit is an engineer,
+ *     walk the unit's own command queue: take the current (front) command,
+ *     read its `mFormationInstance`, and verify this unit is a member via
+ *     the formation's slot-16 membership check (`Func17(this, true)`).
+ *     Return the formation if membership holds, else null.
+ *
+ *   - Otherwise, if the unit is in UNITSTATE_GuardBusy, return null (the
+ *     guarding unit is mid-guard-ops and has no stable formation).
+ *
+ *   - Otherwise, return the guarded unit's `mGuardFormation` slot directly —
+ *     the unit this one is guarding owns the formation that the guarding
+ *     pack reuses.
  */
 CAiFormationInstance* Unit::GetFormation() const
 {
-  return nullptr;
+  Unit* const guardedUnit = GuardedUnitRef.ResolveObjectPtr<Unit>();
+
+  if (guardedUnit == nullptr || mIsEngineer) {
+    // Path 1: no guarded target OR is engineer → probe the command queue front
+    const CUnitCommandQueue* const queue = CommandQueue;
+    if (queue == nullptr || queue->mCommandVec.empty()) {
+      return nullptr;
+    }
+    CUnitCommand* const firstCmd = queue->mCommandVec.front().GetObjectPtr();
+    if (firstCmd == nullptr) {
+      return nullptr;
+    }
+    CAiFormationInstance* const fi = firstCmd->mFormationInstance;
+    if (fi == nullptr) {
+      return nullptr;
+    }
+    // Slot 16 is the formation membership check — matches IDA's
+    // `call [vftable+0x40]` in the disasm. We pass checkAll=true because
+    // the original passes push 1 on that call.
+    if (!fi->Func17(const_cast<Unit*>(this), true)) {
+      return nullptr;
+    }
+    return fi;
+  }
+
+  // Path 2: guarded target exists and not an engineer → GuardBusy gate
+  if (IsUnitState(UNITSTATE_GuardBusy)) {
+    return nullptr;
+  }
+
+  // Path 3: return the guarded unit's guard-formation slot at Unit+0x520
+  return guardedUnit->mGuardFormation;
 }
 
 /**
