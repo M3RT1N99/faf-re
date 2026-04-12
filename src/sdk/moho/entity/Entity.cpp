@@ -3025,6 +3025,22 @@ namespace moho
   }
 
   /**
+   * Address: 0x0067A9D0 (?Intersects@Entity@Moho@@QAE_NABV?$Box3@M@Wm3@@PAUCollisionResult@2@@Z)
+   */
+  bool Entity::Intersects(const Wm3::Box3f& box, CollisionPairResult* const outResult)
+  {
+    EntityCollisionUpdater* const shape = CollisionExtents;
+    if (shape == nullptr) {
+      return false;
+    }
+    if (!shape->CollideBox(&box, outResult)) {
+      return false;
+    }
+    outResult->mSource = this;
+    return true;
+  }
+
+  /**
    * Address: 0x0067AFF0 (FUN_0067AFF0, ?SetCurrentLayer@Entity@Moho@@QAEXW4ELayer@2@@Z)
    *
    * What it does:

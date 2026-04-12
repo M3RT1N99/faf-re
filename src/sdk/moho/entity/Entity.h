@@ -51,6 +51,7 @@ namespace moho
   class CIntel;
   class EntityMotor;
   class EntityCollisionUpdater;
+  struct CollisionPairResult;
   class CArmyImpl;
   class CSndParams;
   class STIMap;
@@ -908,6 +909,16 @@ namespace moho
      * Throws when blueprint pointer is missing.
      */
     [[nodiscard]] const SFootprint& GetFootprint() const;
+
+    /**
+     * Address: 0x0067A9D0 (?Intersects@Entity@Moho@@QAE_NABV?$Box3@M@Wm3@@PAUCollisionResult@2@@Z)
+     *
+     * What it does:
+     * Tests whether this entity's collision shape overlaps the oriented box.
+     * On hit, sets `outResult->mSource` to this entity and returns true.
+     * Returns false when no collision shape is assigned or no overlap.
+     */
+    bool Intersects(const Wm3::Box3f& box, CollisionPairResult* outResult);
 
     /**
      * Address: 0x0067AFF0 (FUN_0067AFF0, ?SetCurrentLayer@Entity@Moho@@QAEXW4ELayer@2@@Z)

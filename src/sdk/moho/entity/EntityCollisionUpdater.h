@@ -9,6 +9,7 @@
 
 namespace moho
 {
+  class Entity;
   struct EntityTransformPayload;
 
   struct EntityCollisionBoundsView
@@ -46,10 +47,10 @@ namespace moho
    */
   struct CollisionPairResult
   {
-    std::uint32_t reserved00; // +0x00
-    std::uint32_t reserved04; // +0x04
-    Wm3::Vec3f direction;     // +0x08
-    float penetrationDepth;   // +0x14
+    std::uint32_t reserved00;  // +0x00 (purpose unknown in current recovery)
+    Entity* mSource;           // +0x04 set by Entity::Intersects (0x67A9D0) to the intersecting entity
+    Wm3::Vec3f direction;      // +0x08
+    float penetrationDepth;    // +0x14
   };
   static_assert(sizeof(CollisionPairResult) == 0x18, "CollisionPairResult size must be 0x18");
   static_assert(offsetof(CollisionPairResult, direction) == 0x08, "CollisionPairResult::direction offset must be 0x08");
