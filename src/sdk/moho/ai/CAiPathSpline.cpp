@@ -3,18 +3,27 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <typeinfo>
 
 #include "gpg/core/containers/ReadArchive.h"
 #include "gpg/core/containers/String.h"
 #include "gpg/core/containers/WriteArchive.h"
+#include "moho/entity/Entity.h"
 #include "moho/misc/Stats.h"
+#include "moho/sim/CArmyImpl.h"
 #include "moho/misc/WeakPtr.h"
 #include "moho/render/camera/VTransform.h"
 #include "moho/resource/blueprints/RUnitBlueprint.h"
+#include "moho/sim/COGrid.h"
+#include "moho/sim/SFootprint.h"
+#include "moho/sim/SOCellPos.h"
+#include "moho/sim/STIMap.h"
+#include "moho/sim/Sim.h"
 #include "moho/unit/core/IUnit.h"
 #include "moho/unit/core/Unit.h"
+#include "moho/unit/core/UnitAttributes.h"
 
 using namespace moho;
 
@@ -109,7 +118,248 @@ namespace
     nodes.PushBack(point);
   }
 
+  /**
+   * Address: 0x005B1C90 (FUN_005B1C90, func_VecSetLengthS)
+   *
+   * What it does:
+   * Scales `v` so its magnitude equals `targetLen`. Returns false and leaves
+   * `v` unchanged when `v` is the zero vector.
+   */
+  bool SetVecLength(Wm3::Vector3f& v, const float targetLen) noexcept
+  {
+    const float x = v.x;
+    const float mag = x * x + v.y * v.y + v.z * v.z;
+    if (mag <= 0.0f) {
+      return false;
+    }
+    const float s = targetLen / std::sqrt(mag);
+    v.x = x * s;
+    v.y *= s;
+    v.z *= s;
+    return true;
+  }
+
+  /**
+   * Address: 0x006992C0 (FUN_006992C0, sub_6992C0)
+   *
+   * What it does:
+   * Rotates the 2D source direction `(srcX, srcY)` toward `(dstX, dstY)` by at
+   * most `maxTurnRad` radians. Returns result through `*out`. When the angle
+   * from src to dst is less than `maxTurnRad`, snaps `out` to the dst direction
+   * at the same magnitude as src. When either vector is zero, copies src to
+   * `out` unchanged. 2D convention: `y` axis = -3D z.
+   */
+  Wm3::Vector2f* SteerTurnVec(
+    Wm3::Vector2f* const out,
+    float maxTurnRad,
+    const float srcX,
+    const float srcY,
+    const float dstX,
+    const float dstY
+  ) noexcept
+  {
+    if (maxTurnRad >= 3.1415927f) {
+      maxTurnRad = 3.1415927f;
+    }
+
+    const float srcLen = std::sqrt(srcX * srcX + srcY * srcY);
+    const float dstLen = std::sqrt(dstX * dstX + dstY * dstY);
+    const float lenProd = dstLen * srcLen;
+
+    if (lenProd == 0.0f) {
+      out->x = srcX;
+      out->y = srcY;
+      return out;
+    }
+
+    const float cosMax = std::cos(maxTurnRad);
+    const float dot = dstY * srcY + dstX * srcX;
+
+    if (dot < cosMax * lenProd) {
+      const float a2sq = maxTurnRad * maxTurnRad;
+      const float sinApprox =
+        ((a2sq * 0.0076100002f - 0.16605f) * a2sq + 1.0f) * maxTurnRad;
+      const float cross = dstY * srcX - srcY * dstX;
+      const float sinV = (cross < 0.0f) ? -sinApprox : sinApprox;
+
+      Wm3::Vector2f rot{cosMax, sinV};
+      if (std::fabs(sinV * sinV + cosMax * cosMax - 1.0f) > 0.001f) {
+        Wm3::Vector2f::Normalize(rot);
+      }
+      out->x = rot.x * srcX - rot.y * srcY;
+      out->y = rot.x * srcY + rot.y * srcX;
+    } else {
+      const float scale = srcLen / dstLen;
+      out->x = dstX * scale;
+      out->y = dstY * scale;
+    }
+    return out;
+  }
+
+  /**
+   * Address: 0x00699760 (FUN_00699760, sub_699760)
+   *
+   * What it does:
+   * Computes the target wanted-speed given steering parameters and current
+   * normalized speed ratio (curSpeed / MaxSpeed * 10). Honors rotate-on-spot
+   * alignment gating and computes a turning-arc speed cap from 2D geometry.
+   */
+  [[nodiscard]] float WantedSpeed(const SSteeringParams& p, const float curSpeedRatio) noexcept
+  {
+    if (p.mRotateOnSpot != 0 && p.mRotateOnSpotThreshold > curSpeedRatio) {
+      const float destMagSq = p.mDX * p.mDX + p.mDZ * p.mDZ;
+      if (destMagSq > 0.0f) {
+        const float invMag = 1.0f / std::sqrt(destMagSq);
+        const float align = p.mVec1.y * (p.mDZ * invMag) + p.mVec1.x * (p.mDX * invMag);
+        if (align < 0.98000002f) {
+          return 0.0f;
+        }
+      }
+      return p.mMaxSpeed;
+    }
+
+    const float cross = p.mDZ * p.mVec1.x - p.mVec1.y * p.mDX;
+    const float turnR = (cross == 0.0f) ? 0.0f : (p.mDistSq * 0.5f / cross);
+    const float absR = std::fabs(turnR);
+
+    if (absR < p.mInvTurnRadius) {
+      if (absR == 0.0f) {
+        return p.mMaxSpeed;
+      }
+      return p.mTurnRate * absR * 0.5f;
+    }
+    if (p.mInvTurnRadius < 0.0f) {
+      return 0.0f;
+    }
+    return p.mInvTurnRadius;
+  }
+
+  /**
+   * Address: 0x0062AA90 (FUN_0062AA90, func_UnitWontFitAt)
+   *
+   * What it does:
+   * Returns true when the unit's footprint does NOT fit at the world position
+   * `pos` — either out of map bounds or the destination cell has blocked
+   * occupancy. Water-layer units mask off the water-restriction bit before
+   * testing the occupancy grid.
+   */
+  [[nodiscard]] bool UnitWontFitAt(const Wm3::Vector3f& pos, Unit* const unit) noexcept
+  {
+    const SFootprint& footprint = unit->GetFootprint();
+    Sim* const sim = unit->SimulationRef;
+    STIMap* const map = sim ? sim->mMapData : nullptr;
+    COGrid* const grid = sim ? sim->mOGrid : nullptr;
+    if (map == nullptr || grid == nullptr) {
+      return true;
+    }
+
+    const bool useWholeMap = (unit->ArmyRef != nullptr) && unit->ArmyRef->UseWholeMap();
+    if (!map->IsWithin(pos, 0.0f, useWholeMap)) {
+      return true;
+    }
+
+    const float cellZ = pos.z - static_cast<float>(footprint.mSizeZ) * 0.5f;
+    const float cellX = pos.x - static_cast<float>(footprint.mSizeX) * 0.5f;
+    SOCellPos cellPos{};
+    cellPos.x = static_cast<std::int16_t>(static_cast<std::int32_t>(cellX));
+    cellPos.z = static_cast<std::int16_t>(static_cast<std::int32_t>(cellZ));
+
+    EOccupancyCaps caps = OCCUPY_MobileCheck(footprint, *map, cellPos);
+    if (unit->mCurrentLayer == LAYER_Water) {
+      caps = static_cast<EOccupancyCaps>(static_cast<std::uint32_t>(caps) & ~static_cast<std::uint32_t>(4u));
+    }
+    return OCCUPY_FootprintFits(*grid, cellPos, footprint, caps) == static_cast<EOccupancyCaps>(0);
+  }
+
+  /**
+   * Address: 0x0062ABA0 (FUN_0062ABA0, sub_62ABA0)
+   *
+   * What it does:
+   * Returns true when `COGrid::UnitIsBlocked` reports the unit's footprint is
+   * blocked at cell position of `pos` under the given `flags`.
+   */
+  [[nodiscard]] bool IsUnitBlockedAt(const Wm3::Vector3f& pos, Unit* const unit, const int flags) noexcept
+  {
+    const SFootprint& footprint = unit->GetFootprint();
+    const float cellZ = pos.z - static_cast<float>(footprint.mSizeZ) * 0.5f;
+    const float cellX = pos.x - static_cast<float>(footprint.mSizeX) * 0.5f;
+    SOCellPos cellPos{};
+    cellPos.x = static_cast<std::int16_t>(static_cast<std::int32_t>(cellX));
+    cellPos.z = static_cast<std::int16_t>(static_cast<std::int32_t>(cellZ));
+    Sim* const sim = unit->SimulationRef;
+    COGrid* const grid = sim ? sim->mOGrid : nullptr;
+    return COGrid::UnitIsBlocked(&cellPos, grid, unit, flags);
+  }
+
 } // namespace
+
+// ── SSteeringParams ctor ───────────────────────────────────────────────────
+
+namespace moho
+{
+  /**
+   * Address: 0x006990E0 (FUN_006990E0, struct_SteeringParams::struct_SteeringParams)
+   *
+   * IDA signature:
+   * void __userpurge struct_SteeringParams::struct_SteeringParams(
+   *   Moho::Unit *unit@<ebx>, struct_SteeringParams *params@<esi>,
+   *   Wm3::Vector3f *curPos, Wm3::Vector3f *dest, Wm3::Vector3f *forward,
+   *   float speed, bool skipPhysics)
+   */
+  SSteeringParams::SSteeringParams(
+    Unit* const unit,
+    const Wm3::Vector3f& curPos,
+    const Wm3::Vector3f& dest,
+    const Wm3::Vector3f& forward,
+    const float speed,
+    const bool skipPhysics
+  )
+  {
+    const RUnitBlueprintPhysics& phys = unit->GetBlueprint()->Physics;
+    const UnitAttributes& attrs = unit->GetAttributes();
+    const float turnMult = attrs.turnMult;
+
+    mTurnRate = phys.TurnRate * turnMult * 0.0017453292f;
+    mTurnFacingRate = phys.TurnFacingRate * turnMult * 0.0017453292f;
+
+    const float dx = dest.x - curPos.x;
+    const float dz = dest.z - curPos.z;
+    mDX = dx;
+    mDZ = -dz;
+    mDistSq = dx * dx + (-dz) * (-dz);
+    mDist = std::sqrt(mDistSq);
+
+    mVec1.x = forward.x;
+    mVec1.y = -forward.z;
+    Wm3::Vector2f::Normalize(mVec1);
+
+    if (skipPhysics) {
+      return;
+    }
+
+    const float speedMult = attrs.moveSpeedMult;
+    const float accMult = attrs.accelerationMult;
+
+    const float cappedMaxSpeed = (speed <= phys.MaxSpeed) ? speed : phys.MaxSpeed;
+    const float cappedMaxRev = (speed <= phys.MaxSpeedReverse) ? speed : phys.MaxSpeedReverse;
+    mMaxSpeed = cappedMaxSpeed * speedMult * 0.1f;
+    mMaxReserveSpeed = cappedMaxRev * speedMult * 0.1f;
+
+    const float baseAcc = phys.MaxAcceleration * accMult * 0.0099999998f;
+    mMaxAcceleration = baseAcc;
+    mMaxBrake = (phys.MaxBrake != 0.0f) ? (phys.MaxBrake * accMult * 0.0099999998f) : baseAcc;
+    mMaxSteer = (phys.MaxSteerForce != 0.0f)
+              ? (phys.MaxSteerForce * accMult * 0.0099999998f)
+              : baseAcc;
+
+    mInvTurnRadius = (phys.TurnRadius == 0.0f)
+                   ? std::numeric_limits<float>::infinity()
+                   : (phys.TurnRadius / turnMult);
+
+    mRotateOnSpot = phys.RotateOnSpot;
+    mRotateOnSpotThreshold = phys.RotateOnSpotThreshold;
+  }
+} // namespace moho
 
 gpg::RType* CAiPathSpline::sType = nullptr;
 gpg::RType* SContinueInfo::sType = nullptr;
@@ -828,39 +1078,197 @@ const CPathPoint* CAiPathSpline::TryGetNode(const std::uint32_t index) const
 
 /**
  * Address: 0x005B26C0 (FUN_005B26C0, Moho::CAiPathSpline::Update)
+ *
+ * IDA signature:
+ * int __userpurge Moho::CAiPathSpline::Update@<eax>(
+ *   Moho::Unit *a1@<eax>, Moho::CAiPathSpline *a2@<edi>, int a3)
+ *
+ * What it does:
+ * Runs a deceleration-prediction simulation starting from the unit's current
+ * position and velocity, applying brake steering each step until the unit is
+ * stopped (or the stop condition for the requested mode is reached). Pushes
+ * CPathPoint nodes describing the predicted stopping trajectory and returns
+ * the final node count.
  */
 int CAiPathSpline::Update(Unit* const unit, const int updateMode)
 {
-  // TODO(binary-fidelity): current body is a provisional typed lift. Exact FA behavior
-  // depends on sub_6990E0/sub_6992C0/sub_699760 math and additional physics helpers.
   ResetNodesToInline();
   mCurrentNodeIndex = 0;
   mNodeCount = 0;
   mPathType = static_cast<EPathType>(updateMode);
 
-  if (!unit) {
-    return 0;
+  // ── Forward direction from unit quaternion ────────────────────────────────
+  const VTransform& xf = unit->GetTransform();
+  const float qx = xf.orient_.x;
+  const float qy = xf.orient_.y;
+  const float qz = xf.orient_.z;
+  const float qw = xf.orient_.w;
+  Wm3::Vector3f fwd3D{};
+  fwd3D.x = (qx * qz + qw * qy) * 2.0f;
+  fwd3D.y = (qw * qz - qx * qy) * 2.0f;
+  fwd3D.z = 1.0f - 2.0f * (qz * qz + qy * qy);
+
+  // ── Initial path point = current position, direction = forward ─────────────
+  const Wm3::Vec3f& posRef = unit->GetPosition();
+  CPathPoint curPoint{};
+  curPoint.mPosition = posRef;
+  curPoint.mDirection = fwd3D;
+  curPoint.mState = PPS_1;
+
+  const float topSpeed = unit->mInfoCache.mFormationTopSpeed;
+
+  // ── Velocity magnitude + fwd-scaled vel3D working vector ──────────────────
+  Wm3::Vec3f velSample = unit->GetVelocity();
+  float speed = std::sqrt(
+    velSample.x * velSample.x + velSample.y * velSample.y + velSample.z * velSample.z
+  );
+
+  Wm3::Vector3f vel3D = fwd3D;
+  SetVecLength(vel3D, speed);
+
+  // ── Normalized velocity direction (or FLT_MAX sentinel when stationary) ────
+  Wm3::Vec3f vel2 = unit->GetVelocity();
+  Wm3::Vector3f normVelDir{};
+  if (speed == 0.0f) {
+    normVelDir.x = std::numeric_limits<float>::max();
+    normVelDir.y = std::numeric_limits<float>::max();
+    normVelDir.z = std::numeric_limits<float>::max();
+  } else {
+    const float inv = 1.0f / speed;
+    normVelDir.x = vel2.x * inv;
+    normVelDir.y = vel2.y * inv;
+    normVelDir.z = vel2.z * inv;
   }
 
-  const Wm3::Vector3f start = unit->GetPosition();
-  const Wm3::Vector3f forward = UnitForwardXZ(unit);
+  const RUnitBlueprintPhysics& phys = unit->GetBlueprint()->Physics;
+  Sim* const sim = unit->SimulationRef;
+  STIMap* const mapData = sim ? sim->mMapData : nullptr;
 
-  const RUnitBlueprint* const blueprint = unit->GetBlueprint();
-  const float maxSpeed = blueprint ? blueprint->Physics.MaxSpeed : 0.0f;
-  const float stepLen = std::max(0.1f, maxSpeed * 0.1f);
-  const int nodeCount = (updateMode == 3 || updateMode == 4) ? 6 : 4;
+  // ── Pick initial state: forward vs backward motion ────────────────────────
+  const float velFwdDot =
+    normVelDir.y * fwd3D.y + normVelDir.z * fwd3D.z + normVelDir.x * fwd3D.x;
 
-  Wm3::Vector3f cursor = start;
-  for (int i = 0; i < nodeCount; ++i) {
-    cursor = cursor + forward * stepLen;
-    PushPathPoint(nodes, cursor, forward, i + 1 == nodeCount ? PPS_8 : PPS_1);
+  bool skipLoop = false;
+  if (velFwdDot >= 0.0f) {
+    if (curPoint.mState == PPS_8) {
+      skipLoop = true;
+    }
+  } else {
+    vel3D.x = -vel3D.x;
+    vel3D.y = -vel3D.y;
+    vel3D.z = -vel3D.z;
+    curPoint.mState = PPS_2;
   }
 
-  mContinuation.mOldPosition = start;
-  mContinuation.mOldDirection = forward;
-  mContinuation.mOldVelocity = forward * stepLen;
-  mContinuation.mState = PPS_0;
+  // ── Deceleration loop ──────────────────────────────────────────────────────
+  while (!skipLoop) {
+    // Save continuation snapshot each iteration
+    mContinuation.mOldDirection = fwd3D;
+    mContinuation.mOldPosition = curPoint.mPosition;
+    mContinuation.mOldVelocity = vel3D;
+    mContinuation.mState = PPS_0;
 
+    // Virtual destination used only to build SSteeringParams direction lanes
+    const Wm3::Vector3f virtualDest{
+      normVelDir.x + curPoint.mPosition.x,
+      normVelDir.y + curPoint.mPosition.y,
+      normVelDir.z + curPoint.mPosition.z
+    };
+
+    SSteeringParams sp(unit, curPoint.mPosition, virtualDest, normVelDir, topSpeed, false);
+
+    if (mPathType == PT_4) {
+      sp.mMaxAcceleration *= 2.0f;
+      sp.mMaxBrake *= 2.0f;
+    }
+
+    // 2D braking acceleration vector opposing velocity (y = -3D z convention)
+    const float oldVx = vel3D.x;
+    const float oldVz = vel3D.z;
+    const float oldNZ = -oldVz; // 2D-y lane = -3D-z
+    float accX = -oldVx;
+    float acc2DY = oldVz; // = -(-vel3D.z) in 2D-y convention → matches -oldNZ sign flip
+    float speedSq2D = oldNZ * oldNZ + oldVx * oldVx;
+
+    float newVx = oldVx;
+    float newVz = oldVz;
+
+    if (speedSq2D > 0.0f) {
+      // Original cond (dot(-acc, -vel)) is always ≤ 0 → always brake magnitude
+      const float maxBrake = sp.mMaxBrake;
+      const float accMagSq = acc2DY * acc2DY + accX * accX;
+      if (accMagSq > maxBrake * maxBrake) {
+        const float scale = maxBrake / std::sqrt(accMagSq);
+        accX *= scale;
+        acc2DY *= scale;
+      }
+
+      // New 2D velocity = old + accel (in 2D convention)
+      float cand2DX = accX + oldVx;
+      float cand2DY = acc2DY + oldNZ;
+
+      // Clamp to mMaxSpeed
+      const float candMagSq = cand2DY * cand2DY + cand2DX * cand2DX;
+      if (candMagSq > sp.mMaxSpeed * sp.mMaxSpeed) {
+        const float s = sp.mMaxSpeed / std::sqrt(candMagSq);
+        cand2DX *= s;
+        cand2DY *= s;
+      }
+
+      const float cand3DZ = -cand2DY;
+      const float finalMagSq = cand3DZ * cand3DZ + cand2DX * cand2DX;
+      if (finalMagSq <= 1.0e-6f) {
+        vel3D.x = 0.0f;
+        vel3D.y = 0.0f;
+        vel3D.z = 0.0f;
+        newVx = 0.0f;
+        newVz = 0.0f;
+      } else {
+        curPoint.mPosition.x += cand2DX;
+        curPoint.mPosition.z += cand3DZ;
+        vel3D.x = cand2DX;
+        vel3D.y = 0.0f;
+        vel3D.z = cand3DZ;
+        newVx = cand2DX;
+        newVz = cand3DZ;
+      }
+    }
+
+    const float curSpeedSq2D = newVz * newVz + newVx * newVx;
+
+    // Stopping condition for path-types 3/4
+    if (curSpeedSq2D <= 1.0e-6f) {
+      if (updateMode == 3 || (updateMode == 4 && nodes.size() > 5u)) {
+        curPoint.mState = PPS_8;
+      }
+    }
+
+    // Height field lookup for ground/water units
+    if (mapData != nullptr && mapData->mHeightField) {
+      const CHeightField& hf = *mapData->mHeightField;
+      const float groundElev = hf.GetElevation(curPoint.mPosition.x, curPoint.mPosition.z);
+      const ERuleBPUnitMovementType motionType = phys.MotionType;
+      if (motionType == RULEUMT_Water
+          || motionType == RULEUMT_AmphibiousFloating
+          || motionType == RULEUMT_Hover) {
+        float waterElev = groundElev;
+        if (mapData->mWaterEnabled != 0 && mapData->mWaterElevation > groundElev) {
+          waterElev = mapData->mWaterElevation;
+        }
+        curPoint.mPosition.y = waterElev;
+      } else {
+        curPoint.mPosition.y = groundElev;
+      }
+    }
+
+    nodes.PushBack(curPoint);
+
+    if (curPoint.mState == PPS_8) {
+      break;
+    }
+  }
+
+  (void)speed; // used by SetVecLength earlier
   mNodeCount = static_cast<std::uint32_t>(nodes.size());
   return static_cast<int>(mNodeCount);
 }

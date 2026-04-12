@@ -8,6 +8,8 @@
 namespace moho
 {
   class Sim;
+  class Unit;
+  struct SOCellPos;
 
   struct EntityOccupation
   {};
@@ -40,6 +42,20 @@ namespace moho
     gpg::BitArray2D terrainOccupation;
     gpg::BitArray2D waterOccupation;
     gpg::BitArray2D mOccupation;
+
+    /**
+     * Address: 0x0062A970 (FUN_0062A970, Moho::COGrid::UnitIsBlocked)
+     *
+     * What it does:
+     * Returns true if `unit`'s footprint at the cell position `cellPos` is
+     * blocked in the occupancy grid under the requested `flags` mask. `flags`
+     * bit 1 (0x2) requests the dynamic-entity layer in the original engine.
+     *
+     * NOTE: Current SDK representation of entity-grid contents is incomplete;
+     * implementation is a conservative stub pending full bit-array semantics.
+     */
+    [[nodiscard]]
+    static bool UnitIsBlocked(const SOCellPos* cellPos, COGrid* grid, Unit* unit, int flags);
   };
 
   /**

@@ -45,6 +45,7 @@ namespace moho
   class CUnitMotion;
   class CAniActor;
   class CFormationInstance;
+  class CAiFormationInstance;
   class IAiBuilder;
   class IAiNavigator;
   class IAiSteering;
@@ -976,6 +977,29 @@ namespace moho
      */
     [[nodiscard]]
     bool IsHigherPriorityThan(const Unit* other) const;
+
+    /**
+     * Address: 0x006A9720 (?GetFormation@Unit@Moho@@QBEPAVIFormationInstance@2@XZ)
+     *
+     * What it does:
+     * Returns the active `CAiFormationInstance` for this unit, resolved either
+     * through the unit's command queue or the guard-formation chain of the
+     * guarded unit. Returns null when the unit is not currently bound to a
+     * formation.
+     */
+    [[nodiscard]]
+    CAiFormationInstance* GetFormation() const;
+
+    /**
+     * Address: 0x0062CC40 (FUN_0062CC40, Moho::Unit::IsAtPosition)
+     *
+     * What it does:
+     * Returns true when the unit's current grid-cell (footprint top-left
+     * corner, truncated to 16-bit cell coordinates) matches the grid-cell of
+     * `pos`.
+     */
+    [[nodiscard]]
+    bool IsAtPosition(const Wm3::Vector3f& pos) const noexcept;
 
     /**
      * Address: 0x006AB6F0 (FUN_006AB6F0, ?ReserveOgridRect@Unit@Moho@@QAEXABV?$Rect2@H@gpg@@@Z)

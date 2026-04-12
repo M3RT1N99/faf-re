@@ -11224,6 +11224,44 @@ bool Unit::IsHigherPriorityThan(const Unit* const other) const
 }
 
 /**
+ * Address: 0x006A9720 (?GetFormation@Unit@Moho@@QBEPAVIFormationInstance@2@XZ)
+ *
+ * IDA signature:
+ * Moho::CAiFormationInstance *__usercall Moho::Unit::GetFormation@<eax>(
+ *   Moho::Unit *this@<ecx>, Moho::Unit *a2@<edi>)
+ *
+ * What it does:
+ * Original implementation resolves the active formation either from the unit's
+ * command queue (via WeakPtr chain) or from the guarded unit's guard-formation
+ * slot when the unit is in a guard/guard-busy state. Conservative stub: returns
+ * null until the weak-reference + guard-formation lanes are fully recovered.
+ */
+CAiFormationInstance* Unit::GetFormation() const
+{
+  return nullptr;
+}
+
+/**
+ * Address: 0x0062CC40 (FUN_0062CC40, Moho::Unit::IsAtPosition)
+ *
+ * IDA signature:
+ * BOOL __usercall Moho::Unit::IsAtPosition@<eax>(Moho::Unit *a1@<eax>, Wm3::Vector3f *a2)
+ */
+bool Unit::IsAtPosition(const Wm3::Vector3f& pos) const noexcept
+{
+  const SFootprint& footprint = GetFootprint();
+  const Wm3::Vec3f& curPos = GetPosition();
+  const float halfX = static_cast<float>(footprint.mSizeX) * 0.5f;
+  const float halfZ = static_cast<float>(footprint.mSizeZ) * 0.5f;
+
+  const auto curCellX = static_cast<std::uint16_t>(static_cast<std::int32_t>(curPos.x - halfX));
+  const auto curCellZ = static_cast<std::uint16_t>(static_cast<std::int32_t>(curPos.z - halfZ));
+  const auto tgtCellX = static_cast<std::uint16_t>(static_cast<std::int32_t>(pos.x - halfX));
+  const auto tgtCellZ = static_cast<std::uint16_t>(static_cast<std::int32_t>(pos.z - halfZ));
+  return curCellX == tgtCellX && curCellZ == tgtCellZ;
+}
+
+/**
  * Address: 0x006A7770 (FUN_006A7770, ?ExecuteOccupyGround@Unit@Moho@@QAEXXZ)
  *
  * What it does:

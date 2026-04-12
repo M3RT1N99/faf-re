@@ -6,6 +6,7 @@
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/core/reflection/Reflection.h"
 #include "moho/math/Vector3f.h"
+#include "wm3/Vector2.h"
 
 namespace gpg
 {
@@ -196,6 +197,72 @@ namespace moho
     offsetof(SContinueInfo, mState) == 0x24,
     "SContinueInfo::mState offset must be 0x24"
   );
+
+  /**
+   * Address: 0x006990E0 (FUN_006990E0, struct_SteeringParams::struct_SteeringParams)
+   *
+   * What it does:
+   * Physics parameters for steering path generation — speed limits, turn rates,
+   * destination vector components in 2D steering convention (y = -3D z), and
+   * rotate-on-spot threshold. Speed fields are in sim-units/tick (scaled by 0.1
+   * from blueprint); angle fields are in radians (scaled by 0.0017453292 from
+   * blueprint degrees). Acceleration fields are scaled by 0.01.
+   */
+  struct SSteeringParams
+  {
+    float mMaxSpeed;              // +0x00
+    float mMaxReserveSpeed;       // +0x04
+    float mMaxAcceleration;       // +0x08
+    float mMaxBrake;              // +0x0C
+    float mMaxSteer;              // +0x10
+    float mInvTurnRadius;         // +0x14  (+Infinity when physics.TurnRadius == 0)
+    float mTurnRate;              // +0x18  (radians per tick)
+    float mTurnFacingRate;        // +0x1C  (radians per tick)
+    float mDX;                    // +0x20  dest.x - cur.x
+    float mDZ;                    // +0x24  -(dest.z - cur.z)
+    Wm3::Vector2f mVec1;          // +0x28  normalized 2D forward {fx, -fz}
+    float mDist;                  // +0x30
+    float mDistSq;                // +0x34
+    std::uint8_t mRotateOnSpot;   // +0x38
+    std::uint8_t pad_39[3];       // +0x39
+    float mRotateOnSpotThreshold; // +0x3C
+
+    /**
+     * Address: 0x006990E0 (FUN_006990E0)
+     *
+     * What it does:
+     * Fills physics/geometry fields from unit blueprint, attributes, current
+     * position/destination, and current forward. When `skipPhysics` is true the
+     * physics fields (mMaxSpeed..mInvTurnRadius, mRotateOnSpot*) are left
+     * uninitialized and only the geometry fields (mTurnRate, mTurnFacingRate,
+     * mDX, mDZ, mVec1, mDist, mDistSq) are filled.
+     */
+    SSteeringParams(
+      Unit* unit,
+      const Wm3::Vector3f& curPos,
+      const Wm3::Vector3f& dest,
+      const Wm3::Vector3f& forward,
+      float speed,
+      bool skipPhysics
+    );
+  };
+
+  static_assert(sizeof(SSteeringParams) == 0x40, "SSteeringParams size must be 0x40");
+  static_assert(offsetof(SSteeringParams, mMaxSpeed) == 0x00, "SSteeringParams::mMaxSpeed offset must be 0x00");
+  static_assert(offsetof(SSteeringParams, mMaxReserveSpeed) == 0x04, "SSteeringParams::mMaxReserveSpeed offset must be 0x04");
+  static_assert(offsetof(SSteeringParams, mMaxAcceleration) == 0x08, "SSteeringParams::mMaxAcceleration offset must be 0x08");
+  static_assert(offsetof(SSteeringParams, mMaxBrake) == 0x0C, "SSteeringParams::mMaxBrake offset must be 0x0C");
+  static_assert(offsetof(SSteeringParams, mMaxSteer) == 0x10, "SSteeringParams::mMaxSteer offset must be 0x10");
+  static_assert(offsetof(SSteeringParams, mInvTurnRadius) == 0x14, "SSteeringParams::mInvTurnRadius offset must be 0x14");
+  static_assert(offsetof(SSteeringParams, mTurnRate) == 0x18, "SSteeringParams::mTurnRate offset must be 0x18");
+  static_assert(offsetof(SSteeringParams, mTurnFacingRate) == 0x1C, "SSteeringParams::mTurnFacingRate offset must be 0x1C");
+  static_assert(offsetof(SSteeringParams, mDX) == 0x20, "SSteeringParams::mDX offset must be 0x20");
+  static_assert(offsetof(SSteeringParams, mDZ) == 0x24, "SSteeringParams::mDZ offset must be 0x24");
+  static_assert(offsetof(SSteeringParams, mVec1) == 0x28, "SSteeringParams::mVec1 offset must be 0x28");
+  static_assert(offsetof(SSteeringParams, mDist) == 0x30, "SSteeringParams::mDist offset must be 0x30");
+  static_assert(offsetof(SSteeringParams, mDistSq) == 0x34, "SSteeringParams::mDistSq offset must be 0x34");
+  static_assert(offsetof(SSteeringParams, mRotateOnSpot) == 0x38, "SSteeringParams::mRotateOnSpot offset must be 0x38");
+  static_assert(offsetof(SSteeringParams, mRotateOnSpotThreshold) == 0x3C, "SSteeringParams::mRotateOnSpotThreshold offset must be 0x3C");
 
   class CAiPathSpline
   {

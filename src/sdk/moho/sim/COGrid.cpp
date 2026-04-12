@@ -78,6 +78,24 @@ namespace moho
     (void)GetCOGridTypeInfo();
     return std::atexit(&cleanup_COGridTypeInfo);
   }
+
+  /**
+   * Address: 0x0062A970 (FUN_0062A970, Moho::COGrid::UnitIsBlocked)
+   *
+   * What it does:
+   * Conservative placeholder: reports "not blocked" so calling steering code
+   * receives the permissive answer. Full reconstruction requires recovering the
+   * entity-grid bit-array traversal and dynamic-entity layer lookup (flags bit
+   * 0x2) from the original implementation.
+   */
+  bool COGrid::UnitIsBlocked(
+    const SOCellPos* /*cellPos*/,
+    COGrid* /*grid*/,
+    Unit* /*unit*/,
+    int /*flags*/)
+  {
+    return false;
+  }
 } // namespace moho
 
 namespace
