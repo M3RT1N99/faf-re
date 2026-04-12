@@ -11285,6 +11285,15 @@ CAiFormationInstance* Unit::GetFormation() const
 }
 
 /**
+ * Address: 0x006A75C0 (?GetMaxFootprintSize@Unit@Moho@@QBEHXZ)
+ */
+int Unit::GetMaxFootprintSize() const
+{
+  const SFootprint& fp = GetFootprint();
+  return (fp.mSizeX >= fp.mSizeZ) ? static_cast<int>(fp.mSizeX) : static_cast<int>(fp.mSizeZ);
+}
+
+/**
  * Address: 0x0062CC40 (FUN_0062CC40, Moho::Unit::IsAtPosition)
  *
  * IDA signature:

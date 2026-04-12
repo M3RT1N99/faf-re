@@ -1002,6 +1002,17 @@ namespace moho
     bool IsAtPosition(const Wm3::Vector3f& pos) const noexcept;
 
     /**
+     * Address: 0x006A75C0 (?GetMaxFootprintSize@Unit@Moho@@QBEHXZ)
+     *
+     * What it does:
+     * Returns the larger of the unit's footprint width (`mSizeX`) and depth
+     * (`mSizeZ`) as an integer. Used by steering collision probes to size the
+     * forward look-ahead box.
+     */
+    [[nodiscard]]
+    int GetMaxFootprintSize() const;
+
+    /**
      * Address: 0x006AB6F0 (FUN_006AB6F0, ?ReserveOgridRect@Unit@Moho@@QAEXABV?$Rect2@H@gpg@@@Z)
      *
      * What it does:
