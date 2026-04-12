@@ -10,7 +10,9 @@
 #include "gpg/core/containers/ReadArchive.h"
 #include "gpg/core/containers/String.h"
 #include "gpg/core/containers/WriteArchive.h"
+#include "moho/ai/CAiFormationInstance.h"
 #include "moho/entity/Entity.h"
+#include "moho/math/MathReflection.h"
 #include "moho/misc/Stats.h"
 #include "moho/sim/CArmyImpl.h"
 #include "moho/misc/WeakPtr.h"
@@ -117,6 +119,10 @@ namespace
     point.mState = state;
     nodes.PushBack(point);
   }
+
+  // Address 0x00F59978 in FA binary; runtime value = 5.
+  // Node-count cap applied when a formation unit is path-generating.
+  static constexpr std::uint32_t formation_path_value = 5u;
 
   /**
    * Address: 0x005B1C90 (FUN_005B1C90, func_VecSetLengthS)
@@ -1275,6 +1281,24 @@ int CAiPathSpline::Update(Unit* const unit, const int updateMode)
 
 /**
  * Address: 0x005B2FF0 (FUN_005B2FF0, Moho::CAiPathSpline::Generate)
+ *
+ * IDA signature:
+ * void __userpurge Moho::CAiPathSpline::Generate(
+ *   Moho::Unit *unit@<eax>, Moho::CAiPathSpline *this,
+ *   Wm3::Vector3f *destin, int pathType, char allowContinuation)
+ *
+ * What it does:
+ * Generates a full steering-path spline from the unit's current position toward
+ * `destination`. Runs a per-tick physics simulation with a 7-state state machine
+ * (PPS_1..PPS_7 + PPS_8 as terminator) that handles forward driving, reverse
+ * backup, deceleration, and forward-alignment gating. Each iteration pushes one
+ * CPathPoint into the node buffer. The loop terminates when the node cap is
+ * reached, the unit arrives at the destination cell, or PPS_8 is set.
+ *
+ * States: PPS_1 = forward approach, PPS_2 = backward moving, PPS_3 = braking
+ * to stop, PPS_4 = decelerating before reverse, PPS_5 = backing up,
+ * PPS_6 = decelerating after backup, PPS_7 = normal forward steering,
+ * PPS_8 = done.
  */
 void CAiPathSpline::Generate(
   Unit* const unit,
@@ -1283,52 +1307,457 @@ void CAiPathSpline::Generate(
   const bool allowContinuation
 )
 {
-  // TODO(binary-fidelity): current body is a provisional typed lift. Exact FA behavior
-  // depends on full PPS state-machine reconstruction from 0x005B2FF0.
+  // ── Phase 1: Init ──────────────────────────────────────────────────────────
+  if (unit->IsDead()) {
+    gpg::Logf("Attempting to generate path spline for a dead unit!!!");
+    return;
+  }
+
   ResetNodesToInline();
   mCurrentNodeIndex = 0;
   mNodeCount = 0;
   mPathType = static_cast<EPathType>(pathType);
 
-  if (!unit || unit->IsDead()) {
+  const RUnitBlueprintPhysics& phys = unit->GetBlueprint()->Physics;
+
+  // Node cap: 20 by default, 5 if in a forming formation, ×3 if has turn radius
+  std::uint32_t nodeCap = 20;
+  if (CAiFormationInstance* const fi = unit->GetFormation()) {
+    if (fi->CommandIsForm()) {
+      nodeCap = formation_path_value; // = 5
+    }
+  }
+  const bool hasTurnRadius = phys.TurnRadius > phys.TurnRate;
+  if (hasTurnRadius) {
+    nodeCap *= 3;
+  }
+
+  // ── Phase 2: Forward from quaternion + singularity guard ───────────────────
+  const VTransform& xf = unit->GetTransform();
+  const float qx = xf.orient_.x;
+  const float qy = xf.orient_.y;
+  const float qz = xf.orient_.z;
+  const float qw = xf.orient_.w;
+  const float half_fwd_x = qx * qz + qw * qy;
+  Wm3::Vector3f fwd3D{};
+  fwd3D.x = half_fwd_x * 2.0f;
+  fwd3D.y = (qw * qz - qx * qy) * 2.0f;
+  fwd3D.z = 1.0f - (qz * qz + qy * qy) * 2.0f;
+  if (std::fabs(fwd3D.y) > 0.99000001f) {
+    fwd3D = {0.0f, 0.0f, 1.0f};
+  }
+
+  // ── Phase 3: Position, destination, velocity ──────────────────────────────
+  const Wm3::Vec3f& posRef = unit->GetPosition();
+  float curX = posRef.x;
+  float curY = posRef.y;
+  float curZ = posRef.z;
+  Wm3::Vector3f curDir = fwd3D;
+  EPathPointState state = PPS_7;
+
+  const float topSpeed = unit->mInfoCache.mFormationTopSpeed;
+  Sim* const sim = unit->SimulationRef;
+  STIMap* const mapData = sim ? sim->mMapData : nullptr;
+
+  // Delta to destination
+  float dx = destination.x - curX;
+  float dz = destination.z - curZ;
+  float distToDest = std::sqrt(dx * dx + dz * dz);
+  if (distToDest < 0.001f) {
     return;
   }
 
-  Wm3::Vector3f start = unit->GetPosition();
-  if (!allowContinuation && mContinuation.mState != PPS_0 && mContinuation.mState != PPS_8) {
-    start = mContinuation.mOldPosition;
+  // Normalized direction to destination
+  Wm3::Vector3f toDestNorm{};
+  if (distToDest == 0.0f) {
+    toDestNorm = {std::numeric_limits<float>::max(),
+                  std::numeric_limits<float>::max(),
+                  std::numeric_limits<float>::max()};
+  } else {
+    const float inv = 1.0f / distToDest;
+    toDestNorm = {dx * inv, 0.0f, dz * inv};
   }
 
-  Wm3::Vector3f delta = destination - start;
-  const float distSq2D = delta.x * delta.x + delta.z * delta.z;
-  if (distSq2D < 1.0e-6f) {
-    return;
+  // Velocity and speed
+  Wm3::Vec3f vel3D = unit->GetVelocity();
+  float curSpeed = std::sqrt(vel3D.x * vel3D.x + vel3D.y * vel3D.y + vel3D.z * vel3D.z);
+  float speedRatio = curSpeed * 10.0f / phys.MaxSpeed;
+
+  // Forward-alignment: dot(toDestNorm, fwd3D)
+  float fwdDot = toDestNorm.z * fwd3D.z + toDestNorm.y * fwd3D.y
+               + toDestNorm.x * fwd3D.x;
+
+  bool doBackup = false;
+
+  // ── Phase 4: Continuation restore ─────────────────────────────────────────
+  if (!allowContinuation) {
+    const EPathPointState contState = mContinuation.mState;
+    curX = mContinuation.mOldPosition.x;
+    curY = mContinuation.mOldPosition.y;
+    curZ = mContinuation.mOldPosition.z;
+    fwd3D = mContinuation.mOldDirection;
+    vel3D = mContinuation.mOldVelocity;
+    if (contState != PPS_0) {
+      state = contState;
+    }
+    goto label_32;
   }
 
-  const float distance2D = std::sqrt(distSq2D);
-  const int steps = std::clamp(static_cast<int>(distance2D / 1.5f) + 1, 2, 20);
+  // ── Phase 5: Initial state selection for reverse-capable units ─────────────
+  if (phys.MaxSpeedReverse > 0.0f && phys.RotateOnSpot == 0) {
+    const Wm3::Vec3f velSample = unit->GetVelocity();
+    const bool movingBackward = (velSample.z * fwd3D.z + velSample.y * fwd3D.y
+                               + velSample.x * fwd3D.x) < 0.0f;
+    if (fwdDot < 0.0f && (speedRatio < 0.5f || hasTurnRadius)) {
+      if (speedRatio > 0.0099999998f && !movingBackward) {
+        state = PPS_4;
+        goto label_40;
+      }
+      goto label_29;
+    }
+    if (movingBackward) {
+      state = (fwdDot >= 0.0f) ? PPS_6 : PPS_5;
+      goto label_40;
+    }
+  }
 
-  for (int i = 1; i <= steps; ++i) {
-    const float t = static_cast<float>(i) / static_cast<float>(steps);
-    const Wm3::Vector3f pos = start + delta * t;
-    Wm3::Vector3f dir = destination - pos;
-    dir.y = 0.0f;
-    dir = Wm3::Vector3f::NormalizeOrZero(dir);
-    if (Wm3::Vector3f::LengthSq(dir) <= 1.0e-6f) {
-      dir = UnitForwardXZ(unit);
+label_32:
+  if (state == PPS_5) {
+label_29:
+    if (phys.BackUpDistance > distToDest && fwdDot < -0.5f) {
+      doBackup = true;
+    }
+  } else if (state == PPS_8) {
+    goto generate_done;
+  }
+
+  // ── Phase 6: Main generation loop ─────────────────────────────────────────
+  for (;;) {
+label_40:
+    // ── Save continuation ──
+    mContinuation.mOldDirection = fwd3D;
+    mContinuation.mOldPosition = {curX, curY, curZ};
+    mContinuation.mOldVelocity = vel3D;
+    mContinuation.mState = PPS_0;
+
+    // ── AmphibiousFloating speed scale for water/land transition ──
+    float speedScale = 1.0f;
+    if (phys.LayerChangeOffsetHeight < -0.5f
+        && phys.MotionType == RULEUMT_AmphibiousFloating
+        && mapData != nullptr && mapData->mHeightField) {
+      const float layerThreshold = phys.LayerChangeOffsetHeight * 3.0f;
+      const float groundElev = mapData->mHeightField->GetElevation(curX, curZ);
+      const float waterElev = mapData->GetWaterElevation();
+      const float depth = groundElev - waterElev;
+      if (depth > layerThreshold && depth < 0.0f) {
+        speedScale = (depth / layerThreshold > 0.5f) ? (depth / layerThreshold) : 0.5f;
+      }
     }
 
-    PushPathPoint(nodes, pos, dir, i == steps ? PPS_8 : PPS_1);
+    // ── Build SSteeringParams ──
+    const Wm3::Vector3f curPos3D{curX, curY, curZ};
+    SSteeringParams sp(unit, curPos3D, destination, fwd3D, speedScale * topSpeed, false);
+
+    // 2D velocity in steering convention (y = -3D z)
+    float xOldVel = vel3D.x;
+    float zOldVel = -vel3D.z;
+
+    // Speed magnitude
+    curSpeed = std::sqrt(zOldVel * zOldVel + xOldVel * xOldVel);
+
+    // Turn rate: max(curSpeed / turnRadius, turnRate)
+    float turnRate = curSpeed / sp.mInvTurnRadius;
+    if (sp.mTurnRate > turnRate) {
+      turnRate = sp.mTurnRate;
+    }
+
+    // PT_2 doubles accel and turn rate
+    if (mPathType == PT_2) {
+      sp.mMaxAcceleration *= 2.0f;
+      sp.mMaxBrake *= 2.0f;
+      turnRate *= 2.0f;
+    }
+
+    // ── SteerTurnVec: rotate heading toward destination ──
+    float newFwdX, newFwdY;
+    if (doBackup) {
+      Wm3::Vector2f tmp{};
+      SteerTurnVec(&tmp, turnRate, -sp.mVec1.x, -sp.mVec1.y, sp.mDX, sp.mDZ);
+      newFwdX = -tmp.x;
+      newFwdY = -tmp.y;
+    } else {
+      Wm3::Vector2f tmp{};
+      SteerTurnVec(&tmp, turnRate, sp.mVec1.x, sp.mVec1.y, sp.mDX, sp.mDZ);
+      newFwdX = tmp.x;
+      newFwdY = tmp.y;
+    }
+
+    // Store new forward in 3D (for curDir assignment later)
+    const float savedNewFwdX = newFwdX;
+    const float savedNewFwdZ = -newFwdY;
+    fwd3D = {newFwdX, 0.0f, -newFwdY};
+
+    // For backward states, negate steering direction
+    if (state == PPS_5 || state == PPS_6 || state == PPS_2) {
+      newFwdX = -newFwdX;
+      newFwdY = -newFwdY;
+    }
+
+    // ── Lateral velocity removal ──
+    const float fwdLenSq = newFwdX * newFwdX + newFwdY * newFwdY;
+    float projVelX = 0.0f, projVelY = 0.0f;
+    if (fwdLenSq > 0.0f) {
+      const float dot = (newFwdY * zOldVel + newFwdX * xOldVel) / fwdLenSq;
+      projVelX = dot * newFwdX;
+      projVelY = dot * newFwdY;
+    }
+    float lateralX = xOldVel - projVelX;
+    float lateralY = zOldVel - projVelY;
+    const float lateralMagSq = lateralX * lateralX + lateralY * lateralY;
+    if (lateralMagSq > sp.mMaxSteer * sp.mMaxSteer) {
+      const float s = sp.mMaxSteer / std::sqrt(lateralMagSq);
+      lateralX *= s;
+      lateralY *= s;
+    }
+    float velX = xOldVel - lateralX;
+    float velZ = zOldVel - lateralY;
+
+    // ── Wanted speed calculation (state-dependent) ──
+    float wantSpeed = 0.0f;
+    float maxSpeedLocal = 0.0f;
+    bool needSmoothing = false;
+
+    if (state == PPS_1 || state == PPS_3 || state == PPS_4 || state == PPS_6) {
+      needSmoothing = true;
+    } else if (state == PPS_5 || state == PPS_2) {
+      wantSpeed = WantedSpeed(sp, speedRatio);
+      if (wantSpeed > sp.mMaxReserveSpeed) {
+        wantSpeed = sp.mMaxReserveSpeed;
+      }
+      maxSpeedLocal = wantSpeed;
+    } else {
+      wantSpeed = WantedSpeed(sp, speedRatio);
+      if (wantSpeed > sp.mMaxSpeed) {
+        maxSpeedLocal = sp.mMaxSpeed;
+        wantSpeed = sp.mMaxSpeed;
+      } else {
+        maxSpeedLocal = wantSpeed;
+      }
+    }
+
+    // PT_0 braking cap
+    if (!needSmoothing && mPathType == PT_0) {
+      float brakeCap = sp.mDist;
+      if (sp.mMaxBrake < sp.mDist) {
+        brakeCap = static_cast<float>(std::sqrt(
+          static_cast<double>(sp.mDist) * static_cast<double>(sp.mMaxBrake) * 2.0));
+      }
+      if (brakeCap <= maxSpeedLocal) {
+        maxSpeedLocal = brakeCap;
+        wantSpeed = brakeCap;
+      }
+    }
+
+    // hasTurnRadius dot-product speed scale
+    if (!needSmoothing && hasTurnRadius) {
+      float dotVal = doBackup ? -fwdDot : fwdDot;
+      if (dotVal < -0.5f) {
+        dotVal = -0.5f;
+      }
+      maxSpeedLocal = (dotVal + 1.0f) * 0.5f * maxSpeedLocal;
+      wantSpeed = maxSpeedLocal;
+    }
+
+    // ── Velocity smoothing (80/20 blend with forward projection) ──
+    float smoothedX = velX;
+    float smoothedZ = velZ;
+
+    if (needSmoothing || maxSpeedLocal < 0.001f) {
+      // Blend 80% raw velocity + 20% forward-projected velocity
+      float blendX = newFwdX;
+      float blendY = newFwdY;
+      if (fwdLenSq != 0.0f) {
+        const float rawMag = std::sqrt(velX * velX + velZ * velZ);
+        const float projScale = rawMag / std::sqrt(fwdLenSq);
+        blendX = newFwdX * projScale;
+        blendY = newFwdY * projScale;
+      }
+      smoothedX = blendX * 0.2f + velX * 0.80000001f;
+      smoothedZ = blendY * 0.2f + velZ * 0.80000001f;
+      maxSpeedLocal = wantSpeed;
+    }
+
+    // ── Acceleration toward desired velocity ──
+    float accX = newFwdX * maxSpeedLocal - smoothedX;
+    float accY = newFwdY * maxSpeedLocal - smoothedZ;
+
+    // Pick brake or acceleration magnitude based on dot(acc, vel)
+    const float maxForce = (accX * smoothedX + accY * smoothedZ <= 0.0f)
+                         ? sp.mMaxBrake
+                         : sp.mMaxAcceleration;
+    const float accMagSq = accX * accX + accY * accY;
+    if (accMagSq > maxForce * maxForce) {
+      const float s = maxForce / std::sqrt(accMagSq);
+      accX *= s;
+      accY *= s;
+    }
+
+    float moveX = accX + smoothedX;
+    float moveZ = accY + smoothedZ;
+
+    // Speed clamp (MaxReserveSpeed for backward states, MaxSpeed for others)
+    if (state == PPS_5 || state == PPS_6 || state == PPS_2) {
+      const float moveMagSq = moveX * moveX + moveZ * moveZ;
+      if (moveMagSq > sp.mMaxReserveSpeed * sp.mMaxReserveSpeed) {
+        const float s = sp.mMaxReserveSpeed / std::sqrt(moveMagSq);
+        moveX *= s;
+        moveZ *= s;
+      }
+    } else {
+      const float moveMagSq = moveX * moveX + moveZ * moveZ;
+      if (moveMagSq > sp.mMaxSpeed * sp.mMaxSpeed) {
+        const float s = sp.mMaxSpeed / std::sqrt(moveMagSq);
+        moveX *= s;
+        moveZ *= s;
+      }
+    }
+
+    // ── Position update ──
+    curX += moveX;
+    curZ -= moveZ; // 2D-Y → 3D-Z (negated)
+
+    // Update curDir, vel3D, speed
+    curDir = {savedNewFwdX, 0.0f, savedNewFwdZ};
+    vel3D = {moveX, 0.0f, -moveZ};
+
+    curSpeed = std::sqrt(moveX * moveX + moveZ * moveZ);
+    speedRatio = curSpeed / sp.mMaxSpeed;
+
+    // ── Height field lookup ──
+    if (mapData != nullptr && mapData->mHeightField) {
+      const ERuleBPUnitMovementType motionType = phys.MotionType;
+      if (motionType == RULEUMT_Water
+          || motionType == RULEUMT_AmphibiousFloating
+          || motionType == RULEUMT_Hover) {
+        float elev = mapData->mHeightField->GetElevation(curX, curZ);
+        if (mapData->mWaterEnabled != 0 && mapData->mWaterElevation > elev) {
+          elev = mapData->mWaterElevation;
+        }
+        curY = elev;
+      } else {
+        curY = mapData->mHeightField->GetElevation(curX, curZ);
+      }
+    }
+
+    // ── Push path node ──
+    CPathPoint pt{};
+    pt.mPosition = {curX, curY, curZ};
+    pt.mDirection = curDir;
+    pt.mState = state;
+    nodes.PushBack(pt);
+
+    // ── Distance / node-cap check ──
+    dx = destination.x - curX;
+    dz = destination.z - curZ;
+    distToDest = std::sqrt(dx * dx + dz * dz);
+
+    if (nodes.size() >= nodeCap || distToDest < 0.001f) {
+      mContinuation.mState = state;
+      state = PPS_8;
+    }
+
+    // Update toDestNorm and fwdDot for the new position
+    if (distToDest == 0.0f) {
+      toDestNorm = {std::numeric_limits<float>::max(),
+                    std::numeric_limits<float>::max(),
+                    std::numeric_limits<float>::max()};
+    } else {
+      const float inv = 1.0f / distToDest;
+      toDestNorm = {dx * inv, 0.0f, dz * inv};
+    }
+    fwdDot = toDestNorm.z * fwd3D.z + toDestNorm.x * fwd3D.x;
+
+    // IsAtPosition check
+    if (unit->IsAtPosition(destination)) {
+      state = PPS_8;
+    }
+
+    // ── State machine transitions ────────────────────────────────────────────
+    switch (state) {
+    case PPS_3:
+      if (speedRatio <= 0.0099999998f) goto generate_done;
+      goto label_135;
+
+    case PPS_4:
+      if (speedRatio > 0.0099999998f) goto label_135;
+      if (phys.MaxSpeedReverse <= 0.0f || phys.RotateOnSpot != 0) goto label_159;
+      state = PPS_5;
+      continue;
+
+    case PPS_5: {
+      float maxAcc5 = phys.MaxAcceleration;
+      if (phys.MaxBrake > maxAcc5) maxAcc5 = phys.MaxBrake;
+      const float stopDist5 = (maxAcc5 <= 0.0f) ? 0.0f
+        : (curSpeed * 10.0f) * (curSpeed * 10.0f) / (maxAcc5 * 2.0f);
+      const SFootprint& fp5 = unit->GetFootprint();
+      const float fpSize5 = static_cast<float>(std::max(fp5.mSizeX, fp5.mSizeZ));
+      Wm3::Vector3f probe5{vel3D.x, vel3D.y, vel3D.z};
+      SetVecLength(probe5, fpSize5 + stopDist5);
+      probe5.x += curX;
+      probe5.y += curY;
+      probe5.z += curZ;
+      if (UnitWontFitAt(probe5, unit)) {
+        state = PPS_6;
+        continue;
+      }
+      if (doBackup ? (stopDist5 <= distToDest) : (fwdDot <= 0.15000001f)) {
+        goto label_135;
+      }
+      state = PPS_6;
+      continue;
+    }
+
+    case PPS_6:
+      if (speedRatio > 0.0099999998f) goto label_135;
+      if (doBackup) goto generate_done;
+label_159:
+      state = PPS_7;
+      break;
+
+    case PPS_7: {
+      float maxAcc7 = phys.MaxAcceleration;
+      if (phys.MaxBrake > maxAcc7) maxAcc7 = phys.MaxBrake;
+      const float stopDist7 = (maxAcc7 <= 0.0f) ? 0.0f
+        : (curSpeed * 10.0f) * (curSpeed * 10.0f) / (maxAcc7 * 2.0f);
+      if (mPathType == PT_0 && stopDist7 > distToDest) {
+        state = PPS_3;
+      }
+      if (fwdDot >= 0.86600000f) goto label_135;
+      const SFootprint& fp7 = unit->GetFootprint();
+      const float fpSize7 = static_cast<float>(std::max(fp7.mSizeX, fp7.mSizeZ));
+      Wm3::Vector3f probe7{vel3D.x, vel3D.y, vel3D.z};
+      SetVecLength(probe7, fpSize7 + stopDist7);
+      probe7.x += curX;
+      probe7.y += curY;
+      probe7.z += curZ;
+      if (UnitWontFitAt(probe7, unit)) {
+        state = PPS_4;
+      } else if (hasTurnRadius && IsUnitBlockedAt(probe7, unit, 2)) {
+        state = PPS_4;
+      } else {
+        goto label_135;
+      }
+      continue;
+    }
+
+    default:
+label_135:
+      if (state == PPS_8) goto generate_done;
+      break;
+    }
   }
 
-  if (!nodes.empty()) {
-    const CPathPoint& tail = nodes.back();
-    mContinuation.mOldPosition = tail.mPosition;
-    mContinuation.mOldDirection = tail.mDirection;
-    mContinuation.mOldVelocity = tail.mDirection;
-    mContinuation.mState = tail.mState;
-  }
-
+generate_done:
   mNodeCount = static_cast<std::uint32_t>(nodes.size());
 }
 
