@@ -5,6 +5,33 @@ Baseline after T1–T3: **3893 occurrences** = **1924 vendored** (`cri/`, `lua/`
 idiom; class (c) wholesale) + **1969 engine** (`moho/`, `gpg/`, `platform/`,
 `util/`, `legacy/`). The DoD target (<500) is therefore an engine-code target.
 
+## Engine cast census (pattern-classified, post batch 2)
+
+1916 engine casts classified by cast-target shape + line context:
+
+| class | count | notes |
+|---|---|---|
+| typed pun (b) | 696 | onto named structs — reflection `mObj` downcasts, container-node puns, `Stats<T>*`, session map views; each needs its T1 owner pass |
+| byte-buffer IO (c) | 349 | `char*`/`void*`/`uint8_t*` cursor + stream IO |
+| addr-integer (c) | 254 | `uintptr_t` key/order/compare lanes |
+| int-pun (b/c) | 169 | word-lane typed puns outside serialization |
+| blob IO (c) | 107 | serialize/archive buffers |
+| CRT model (c) | 77 | `CrtRuntimeHelpers` internals |
+| boost control-block model (b) | 43 | `SharedCountPair`/`SpCountedImplStorage` overlays |
+| intrusive-node pun (b) | 41 | stat/list node reinterpretation |
+| win32 handle (c) | 41 | `HANDLE`/`HWND` punning |
+| d3d/win API interop (c) | 38 | D3DX/D3D9 parameter marshalling |
+| reflection upcast (b/c) | 24 | `upcast.mObj` downcasts (CScriptEvent family) |
+| interlocked counter (c) | 19 | `volatile long*` atomics |
+| lua interop (c) | 12 | `LexState`/`GCObject` |
+| buffer-lock/word-lane/overlay (c/a) | 27 | locks, SIMD words, remaining `*Lane` overlays |
+
+Path to <500: the 915 clear-(c) casts survive classified; the target is met by
+converting the (b) mass — dominated by the 696 typed puns — which is T1
+owner work directory by directory (WinApp `Legacy*Lane` overlays, CWldSession
+session-map views, StatItem node puns, BoostWrappers control-block model,
+FastVector raw storage), plus the lane/view overlays (9) already queued.
+
 ## Batch 2 addendum (same day, commit 1d8d345f)
 
 Probe purge extended to 37 more files (all remaining `TEMPORARY PROBE`
