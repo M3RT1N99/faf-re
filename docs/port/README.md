@@ -42,26 +42,30 @@ two existing backends first), `Texture`, `RenderTarget`, `CubeRenderTarget`, `De
 4. Diligent backend on Windows, compared pixel by pixel against the D3D9 backend.
 5. SDL3 platform layer, then Linux.
 
-## Android bring-up
+## Android launcher and bring-up
 
-The first Android target is under `port/android`. It uses Android `NativeActivity`
-and DiligentCore's Vulkan backend, builds for `arm64-v8a`, creates a swap chain,
-and clears the screen. It packages a signed debug APK; this proves the NDK and
-graphics backend build and initialize together, but it is not yet the game engine.
+The installable Android app is a native Java launcher under `port/android`. It
+lets users link local FAF client/data and SCFA folders through Android's Storage
+Access Framework, store initial graphics settings, and view or clear launcher
+logs. Folder links persist on the device; game archives are not included in the
+APK. The “Start FAF” control stays disabled until the game runtime is ported.
+
+The earlier NDK/Vulkan bring-up remains in `port/android` and can be built
+separately while renderer work continues. The installable launcher build compiles
+the Java activity, converts it to DEX, and packages a signed debug APK.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/port/bootstrap_android.ps1
 powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1
 ```
 
-The build needs Android NDK 29, platform/build-tools 35, host CMake 3.22 or newer,
-Ninja, and a JDK. `ANDROID_SDK_ROOT` selects a non-default SDK location.
+The launcher build needs Android platform/build-tools 35 and a JDK.
+`ANDROID_SDK_ROOT` selects a non-default SDK location.
 
-The native library is written to `buildstage/android/`. The versioned APK and
-ZIP install bundle are written to `output/android/`; `port/android/version.properties`
-sets the package version. The APK uses a local debug key generated on first build;
-it is for development installs only. Extract the ZIP and run `install.ps1` with
-USB debugging enabled, or copy and open the APK on the device.
+The versioned APK and ZIP install bundle are written to `output/android/`;
+`port/android/version.properties` sets the package version. The APK uses a local
+debug key generated on first build; it is for development installs only. Extract
+the ZIP and run `install.ps1` with USB debugging enabled, or copy and open the
+APK on the device.
 The current Android target does not yet compile recovered simulation or gameplay
 code: the engine still depends on Win32, wxWidgets, 32-bit MSVC layouts, and x87
 simulation behavior. The next steps are asset access, portable simulation and

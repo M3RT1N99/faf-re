@@ -1,7 +1,12 @@
-FAF Android prototype 0.1.0
+FAF Android launcher 0.2.0
 
-This is an installable Vulkan bring-up prototype. It currently opens a blank
-render surface; the FAF game engine and game assets are not included.
+This installable launcher lets you link local FAF client/data and Supreme
+Commander: Forged Alliance folders, save initial graphics settings, and inspect
+or clear launcher logs. Folder links stay on this device. No game files are
+included or uploaded.
+
+The recovered FAF game runtime is not ported yet. “Start FAF” is disabled;
+saved rendering options do not affect gameplay until runtime support is added.
 
 Install on a device:
 1. Extract the bundle on a computer and connect an arm64 Android device with
@@ -13,4 +18,6 @@ To install by hand, copy the APK to the device, open it, and allow installation
 from that source when Android prompts.
 
 The APK is debug-signed with a local development key. Do not use it as a
-production release.
+production release. To update an existing prototype install, install this APK
+over it using the same local debug key/build environment, or uninstall the old
+prototype first.
