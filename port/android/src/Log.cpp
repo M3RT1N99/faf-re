@@ -89,10 +89,18 @@ namespace faf::android {
       return buffer;
     }
 
+    /// Empties the file, then keeps it open for appending. The crash handler
+    /// appends through its own descriptor while other threads may still log
+    /// for a moment; a stream with its own write position would overwrite the
+    /// crash report with those last lines.
     std::FILE* OpenTruncated(const std::string& path, std::string* error)
     {
       // 'e' = O_CLOEXEC (bionic); nothing this process spawns should inherit it.
       std::FILE* file = std::fopen(path.c_str(), "we");
+      if (file != nullptr) {
+        std::fclose(file);
+        file = std::fopen(path.c_str(), "ae");
+      }
       if (file == nullptr && error != nullptr) {
         *error = "cannot open " + path + ": " + std::strerror(errno);
       }

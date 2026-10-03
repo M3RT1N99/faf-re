@@ -1128,11 +1128,15 @@ try {
     }
 
     if ($deviceMode) {
-        # Files pushed by the shell user can end up without group write access,
-        # which keeps the app from replacing or deleting them later.
+        # Folders that adb creates belong to the shell user (drwxrws---, group
+        # ext_data_rw), which the app is neither nor a member of: it could not
+        # even list faf/ or scfa/ and reported every pushed file as missing.
+        # Seen on the API 36 emulator. Android/data/<package> is reachable only
+        # by the app and adb, so opening the tree to "other" exposes nothing,
+        # and the app also needs write access there (fa_path.lua, FAF updates).
         $topLevel = @($placed | ForEach-Object { ($_.Dest -split '/')[0] }) + @(".deploy", ($layout.faPathLua -split '/')[0]) | Select-Object -Unique
-        $chmod = Invoke-AdbShell ("chmod -R ug+rwX " + (($topLevel | ForEach-Object { ConvertTo-ShellArgument "$deployRoot/$_" }) -join " "))
-        if ($chmod.ExitCode -ne 0) { Write-Warning "chmod on the device failed (the app may not be able to replace these files):`n$($chmod.Text)" }
+        $chmod = Invoke-AdbShell ("chmod -R a+rwX " + (($topLevel | ForEach-Object { ConvertTo-ShellArgument "$deployRoot/$_" }) -join " "))
+        if ($chmod.ExitCode -ne 0) { Write-Warning "chmod on the device failed (the app may not be able to read these files):`n$($chmod.Text)" }
         if ($Launch) {
             $start = Invoke-AdbShell "am start -n $Package/$launcherActivity"
             if ($start.ExitCode -ne 0) { Write-Warning "Could not start the launcher:`n$($start.Text)" }

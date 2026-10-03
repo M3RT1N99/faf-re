@@ -136,14 +136,16 @@ struct PSInput
 
     // A triangle that covers the viewport; its interpolated "Logical"
     // coordinate is the NDC position in the orientation the user sees.
+    // The corners come from a vertex buffer, not from SV_VertexID: some OpenGL
+    // ES implementations drop a draw with no enabled vertex attribute without
+    // an error. On the SDK emulator's GLES translator nothing was rasterized
+    // until both this and the explicit viewport in Render() were in place
+    // (which of the two it needs was not isolated).
+    constexpr float kTriangleCorners[] = {-1.0f, -1.0f, -1.0f, 3.0f, 3.0f, -1.0f};
+
     constexpr char kVertexShaderHlsl[] = R"(
-void main(in uint VertId : SV_VertexID, out PSInput PSIn)
+void main(in float2 Ndc : ATTRIB0, out PSInput PSIn)
 {
-    float2 Corners[3];
-    Corners[0] = float2(-1.0, -1.0);
-    Corners[1] = float2(-1.0,  3.0);
-    Corners[2] = float2( 3.0, -1.0);
-    float2 Ndc = Corners[VertId];
     PSIn.Pos     = float4(Ndc, 0.0, 1.0);
     PSIn.Logical = float2(dot(Ndc, g_Rotation.xy), dot(Ndc, g_Rotation.zw));
 }
@@ -368,6 +370,7 @@ void main(in PSInput PSIn, out PSOutput PSOut)
     dg::TEXTURE_FORMAT pipelineFormat = dg::TEX_FORMAT_UNKNOWN;
     dg::RefCntAutoPtr<dg::IShaderResourceBinding> binding;
     dg::RefCntAutoPtr<dg::IBuffer> constants;
+    dg::RefCntAutoPtr<dg::IBuffer> vertices;
     dg::RefCntAutoPtr<dg::ITexture> placeholder;
     dg::RefCntAutoPtr<dg::ITexture> image;
     int imageWidth = 0;
@@ -382,6 +385,7 @@ void main(in PSInput PSIn, out PSOutput PSOut)
       pipeline.Release();
       pipelineFormat = dg::TEX_FORMAT_UNKNOWN;
       constants.Release();
+      vertices.Release();
       image.Release();
       placeholder.Release();
       imageWidth = 0;
@@ -451,29 +455,42 @@ void main(in PSInput PSIn, out PSOutput PSOut)
       return dg::RefCntAutoPtr<dg::IRenderDeviceGLES>{device, dg::IID_RenderDeviceGLES};
     }
 
-    dg::RefCntAutoPtr<dg::ITexture> CreateRgbaTexture(
-      const char* name,
-      const std::uint8_t* pixels,
-      const int width,
-      const int height
-    ) const
+    /// An RGBA8 texture with its whole mip chain, box-filtered on the CPU. The
+    /// sampler filters across mips, and OpenGL ES treats a texture without
+    /// them as incomplete: it samples black (seen on the SDK emulator), where
+    /// Vulkan showed the image. The chain also keeps the downscaled image
+    /// smooth on small screens.
+    dg::RefCntAutoPtr<dg::ITexture> CreateRgbaTexture(const char* name, const faf::port::Image& image) const
     {
+      std::vector<faf::port::Image> chain;
+      const faf::port::Image* level = &image;
+      while (level->width > 1 || level->height > 1) {
+        chain.push_back(Halve(*level));
+        level = &chain.back();
+      }
+
       dg::TextureDesc desc;
       desc.Name = name;
       desc.Type = dg::RESOURCE_DIM_TEX_2D;
-      desc.Width = static_cast<dg::Uint32>(width);
-      desc.Height = static_cast<dg::Uint32>(height);
+      desc.Width = static_cast<dg::Uint32>(image.width);
+      desc.Height = static_cast<dg::Uint32>(image.height);
       desc.Format = dg::TEX_FORMAT_RGBA8_UNORM;
-      desc.MipLevels = 1;
+      desc.MipLevels = static_cast<dg::Uint32>(chain.size() + 1);
       desc.Usage = dg::USAGE_IMMUTABLE;
       desc.BindFlags = dg::BIND_SHADER_RESOURCE;
 
-      dg::TextureSubResData level;
-      level.pData = pixels;
-      level.Stride = static_cast<dg::Uint64>(width) * 4;
+      std::vector<dg::TextureSubResData> levels;
+      levels.reserve(chain.size() + 1);
+      for (std::size_t i = 0; i <= chain.size(); ++i) {
+        const faf::port::Image& source = i == 0 ? image : chain[i - 1];
+        dg::TextureSubResData subresource;
+        subresource.pData = source.rgba.data();
+        subresource.Stride = static_cast<dg::Uint64>(source.width) * 4;
+        levels.push_back(subresource);
+      }
       dg::TextureData data;
-      data.pSubResources = &level;
-      data.NumSubresources = 1;
+      data.pSubResources = levels.data();
+      data.NumSubresources = static_cast<dg::Uint32>(levels.size());
 
       dg::RefCntAutoPtr<dg::ITexture> texture;
       device->CreateTexture(desc, &data, &texture);
@@ -554,6 +571,11 @@ void main(in PSInput PSIn, out PSOutput PSOut)
       // No winding to get right across backends and pre-rotation.
       createInfo.GraphicsPipeline.RasterizerDesc.CullMode = dg::CULL_MODE_NONE;
       createInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = dg::False;
+      const dg::LayoutElement layout[] = {
+        {0, 0, 2, dg::VT_FLOAT32, dg::False},
+      };
+      createInfo.GraphicsPipeline.InputLayout.LayoutElements = layout;
+      createInfo.GraphicsPipeline.InputLayout.NumElements = static_cast<dg::Uint32>(std::size(layout));
       createInfo.pVS = vs;
       createInfo.pPS = ps;
 
@@ -583,6 +605,19 @@ void main(in PSInput PSIn, out PSOutput PSOut)
         return false;
       }
 
+      if (!vertices) {
+        dg::BufferDesc vertexDesc;
+        vertexDesc.Name = "faf splash triangle";
+        vertexDesc.Size = sizeof(kTriangleCorners);
+        vertexDesc.Usage = dg::USAGE_IMMUTABLE;
+        vertexDesc.BindFlags = dg::BIND_VERTEX_BUFFER;
+        dg::BufferData vertexData{kTriangleCorners, sizeof(kTriangleCorners)};
+        device->CreateBuffer(vertexDesc, &vertexData, &vertices);
+        if (!vertices) {
+          error = "cannot create the vertex buffer" + DiligentErrorSuffix();
+          return false;
+        }
+      }
       if (!constants) {
         dg::BufferDesc bufferDesc;
         bufferDesc.Name = "faf splash constants";
@@ -596,15 +631,35 @@ void main(in PSInput PSIn, out PSOutput PSOut)
           return false;
         }
       }
+      // Both stages read the constants. A backend that names the block
+      // differently would leave them zero, which draws a black screen without
+      // any error, so a stage without the variable fails the pipeline.
       for (const dg::SHADER_TYPE stage : {dg::SHADER_TYPE_VERTEX, dg::SHADER_TYPE_PIXEL}) {
-        if (dg::IShaderResourceVariable* variable = nextPipeline->GetStaticVariableByName(stage, "Constants")) {
-          variable->Set(constants);
+        dg::IShaderResourceVariable* variable = nextPipeline->GetStaticVariableByName(stage, "Constants");
+        if (variable == nullptr) {
+          std::string names;
+          const dg::Uint32 count = nextPipeline->GetStaticVariableCount(stage);
+          for (dg::Uint32 i = 0; i < count; ++i) {
+            dg::ShaderResourceDesc desc{};
+            nextPipeline->GetStaticVariableByIndex(stage, i)->GetResourceDesc(desc);
+            names += (names.empty() ? "" : ", ") + std::string(desc.Name != nullptr ? desc.Name : "?");
+          }
+          error = std::format(
+            "the {} shader has no static variable 'Constants' (has: {})",
+            stage == dg::SHADER_TYPE_VERTEX ? "vertex" : "pixel",
+            names.empty() ? "none" : names
+          );
+          return false;
         }
+        variable->Set(constants);
       }
 
       if (!placeholder) {
-        const std::uint8_t black[4] = {0, 0, 0, 255};
-        placeholder = CreateRgbaTexture("faf placeholder", black, 1, 1);
+        faf::port::Image black;
+        black.width = 1;
+        black.height = 1;
+        black.rgba = {0, 0, 0, 255};
+        placeholder = CreateRgbaTexture("faf placeholder", black);
         if (!placeholder) {
           error = "cannot create a texture" + DiligentErrorSuffix();
           return false;
@@ -845,7 +900,7 @@ void main(in PSInput PSIn, out PSOutput PSOut)
         );
       }
       dg::RefCntAutoPtr<dg::ITexture> texture =
-        impl.CreateRgbaTexture("faf main menu background", upload->rgba.data(), upload->width, upload->height);
+        impl.CreateRgbaTexture("faf main menu background", *upload);
       if (!texture) {
         error = "cannot create the background texture" + DiligentErrorSuffix();
         return false;
@@ -888,6 +943,12 @@ void main(in PSInput PSIn, out PSOutput PSOut)
         ComputeConstants(params, desc, impl.image != nullptr, impl.imageWidth, impl.imageHeight);
 
       impl.context->SetRenderTargets(1, &target, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+      // Explicit rather than the one SetRenderTargets derives from the
+      // target; see the vertex buffer note at kTriangleCorners.
+      dg::Viewport viewport;
+      viewport.Width = static_cast<float>(desc.Width);
+      viewport.Height = static_cast<float>(desc.Height);
+      impl.context->SetViewports(1, &viewport, desc.Width, desc.Height);
       impl.context->ClearRenderTarget(target, constants.background, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
       void* mapped = nullptr;
@@ -900,6 +961,15 @@ void main(in PSInput PSIn, out PSOutput PSOut)
       impl.context->UnmapBuffer(impl.constants, dg::MAP_WRITE);
 
       impl.context->SetPipelineState(impl.pipeline);
+      dg::IBuffer* const vertexBuffers[] = {impl.vertices};
+      impl.context->SetVertexBuffers(
+        0,
+        1,
+        vertexBuffers,
+        nullptr,
+        dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+        dg::SET_VERTEX_BUFFERS_FLAG_RESET
+      );
       impl.context->CommitShaderResources(impl.binding, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
       dg::DrawAttribs draw;
       draw.NumVertices = 3;

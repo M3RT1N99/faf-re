@@ -133,42 +133,61 @@ namespace faf::android {
       line.Emit();
     }
 
-    /// pc, lr and then the frame-record chain. AArch64 Android code keeps
-    /// x29 as the frame pointer, and each record is {previous fp, return
-    /// address}. Records are 16-byte aligned and lie above the stack pointer in
-    /// increasing order; anything else ends the walk instead of faulting.
-    void ReportBacktrace(const ucontext_t* const context)
+    /// Walks the frame-record chain from `fp`. Each record is {previous fp,
+    /// return address}; records lie above the stack pointer in increasing
+    /// order, so anything else ends the walk instead of faulting.
+    /// `alignment` is the ABI's record alignment minus one.
+    void WalkFrames(
+      int index,
+      std::uintptr_t fp,
+      const std::uintptr_t sp,
+      const std::uintptr_t alignment,
+      const std::uintptr_t skipFirstIfEqual
+    )
     {
-#if defined(__aarch64__)
-      const std::uintptr_t pc = context->uc_mcontext.pc;
-      const std::uintptr_t lr = context->uc_mcontext.regs[30];
-      std::uintptr_t fp = context->uc_mcontext.regs[29];
-      const std::uintptr_t sp = context->uc_mcontext.sp;
       const std::uintptr_t stackLimit = sp + 8u * 1024u * 1024u;
-
-      Line line;
-      line.Text("  registers: pc ").Hex(pc).Text(" lr ").Hex(lr).Text(" sp ").Hex(sp).Text(" fp ").Hex(fp);
-      line.Emit();
-      Line().Text("  backtrace:").Emit();
-
-      int index = 0;
-      ReportFrame(index++, pc);
-      // The caller of a leaf function is only in lr; for others lr is also the
-      // first record's return address, which the walk below then skips.
-      ReportFrame(index++, lr);
       std::uintptr_t previous = 0;
-      while (index < kMaxFrames && fp != 0 && (fp & 0xF) == 0 && fp >= sp && fp < stackLimit && fp > previous) {
+      bool first = true;
+      while (index < kMaxFrames && fp != 0 && (fp & alignment) == 0 && fp >= sp && fp < stackLimit && fp > previous) {
         const auto* const record = reinterpret_cast<const std::uintptr_t*>(fp);
         const std::uintptr_t returnAddress = record[1];
         if (returnAddress == 0) {
           break;
         }
-        if (!(index == 2 && returnAddress == lr)) {
+        if (!(first && returnAddress == skipFirstIfEqual)) {
           ReportFrame(index++, returnAddress);
         }
+        first = false;
         previous = fp;
         fp = record[0];
       }
+    }
+
+    /// pc (and on AArch64 lr), then the frame-pointer chain: Android code
+    /// keeps x29 / rbp as the frame pointer.
+    void ReportBacktrace(const ucontext_t* const context)
+    {
+#if defined(__aarch64__)
+      const std::uintptr_t pc = context->uc_mcontext.pc;
+      const std::uintptr_t lr = context->uc_mcontext.regs[30];
+      const std::uintptr_t fp = context->uc_mcontext.regs[29];
+      const std::uintptr_t sp = context->uc_mcontext.sp;
+      Line().Text("  registers: pc ").Hex(pc).Text(" lr ").Hex(lr).Text(" sp ").Hex(sp).Text(" fp ").Hex(fp).Emit();
+      Line().Text("  backtrace:").Emit();
+      ReportFrame(0, pc);
+      // The caller of a leaf function is only in lr; for others lr is also the
+      // first record's return address, which the walk then skips.
+      ReportFrame(1, lr);
+      WalkFrames(2, fp, sp, 0xF, lr);
+#elif defined(__x86_64__)
+      // The SDK emulator's x86_64 images.
+      const auto pc = static_cast<std::uintptr_t>(context->uc_mcontext.gregs[REG_RIP]);
+      const auto fp = static_cast<std::uintptr_t>(context->uc_mcontext.gregs[REG_RBP]);
+      const auto sp = static_cast<std::uintptr_t>(context->uc_mcontext.gregs[REG_RSP]);
+      Line().Text("  registers: pc ").Hex(pc).Text(" sp ").Hex(sp).Text(" fp ").Hex(fp).Emit();
+      Line().Text("  backtrace:").Emit();
+      ReportFrame(0, pc);
+      WalkFrames(1, fp, sp, 0x7, 0);
 #else
       (void)context;
       Line().Text("  backtrace: not implemented for this ABI").Emit();
