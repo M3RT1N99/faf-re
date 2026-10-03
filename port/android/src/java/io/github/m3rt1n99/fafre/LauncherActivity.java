@@ -71,7 +71,12 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private static final String STATE_PENDING_URI = "pending_uri";
     private static final String STATE_LOG_DIALOG = "log_dialog";
 
-    private static final String RUNTIME_LOG = "faf_android.log";
+    /** The runtime logs per graphics backend; each keeps its previous run as .1.log. */
+    private static final String VULKAN_LOG = runtimeLog(LaunchArgs.RENDERER_VULKAN);
+    private static final String GLES_LOG = runtimeLog(LaunchArgs.RENDERER_GLES);
+    private static final String[] CLEARED_LOGS = {
+            VULKAN_LOG, previousLog(VULKAN_LOG), GLES_LOG, previousLog(GLES_LOG),
+            "faf_android.log" /* the single log of 0.3.0 and 0.3.1 */, LaunchArgs.GAME_LOG};
     private static final String DEPLOY_COMMAND =
             "powershell -ExecutionPolicy Bypass -File scripts/port/deploy_android.ps1";
     private static final int LOG_TAIL_BYTES = 96 * 1024;
@@ -425,17 +430,28 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         card.addView(mUi.heading("Logs"), mUi.matchWrap(0));
         card.addView(mUi.hint("Files in the logs folder. From a PC: adb pull /sdcard/Android/data/"
                 + getPackageName() + "/files/logs"), mUi.matchWrap(4));
-        Button runtime = mUi.button("Runtime log");
-        runtime.setOnClickListener(v -> showLog(RUNTIME_LOG));
+        Button vulkan = mUi.button("Vulkan log");
+        vulkan.setOnClickListener(v -> showLog(VULKAN_LOG));
+        Button gles = mUi.button("GLES log");
+        gles.setOnClickListener(v -> showLog(GLES_LOG));
+        card.addView(mUi.row(vulkan, gles), mUi.matchWrap(8));
         Button launcher = mUi.button("Launcher log");
         launcher.setOnClickListener(v -> showLog(LauncherLog.FILE_NAME));
-        card.addView(mUi.row(runtime, launcher), mUi.matchWrap(8));
         Button game = mUi.button("Game log");
         game.setOnClickListener(v -> showLog(LaunchArgs.GAME_LOG));
+        card.addView(mUi.row(launcher, game), mUi.matchWrap(4));
         Button clear = mUi.button("Clear logs");
         clear.setOnClickListener(v -> confirmClearLogs());
-        card.addView(mUi.row(game, clear), mUi.matchWrap(4));
+        card.addView(clear, mUi.matchWrap(4));
         return card;
+    }
+
+    private static String runtimeLog(String renderer) {
+        return "faf_android_" + renderer + ".log";
+    }
+
+    private static String previousLog(String name) {
+        return name.substring(0, name.length() - ".log".length()) + ".1.log";
     }
 
     private TextView subheading(String value) {
@@ -1053,8 +1069,8 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private void confirmClearLogs() {
         showDialog(new AlertDialog.Builder(this)
                 .setTitle("Clear logs?")
-                .setMessage("Deletes " + RUNTIME_LOG + ", " + LauncherLog.FILE_NAME + " and " + LaunchArgs.GAME_LOG
-                        + " from the logs folder.")
+                .setMessage("Deletes the Vulkan and GLES runtime logs (with their previous runs), "
+                        + LauncherLog.FILE_NAME + " and " + LaunchArgs.GAME_LOG + " from the logs folder.")
                 .setPositiveButton("Clear", (dialog, which) -> clearLogs())
                 .setNegativeButton("Keep", null)
                 .create(), null);
@@ -1066,7 +1082,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         Background.run(() -> {
             DataRoot root = AppInfo.dataRoot(app);
             boolean ok = true;
-            for (String name : new String[] {RUNTIME_LOG, LaunchArgs.GAME_LOG}) {
+            for (String name : CLEARED_LOGS) {
                 File file = root.find(LauncherLog.LOGS_DIR + "/" + name);
                 ok &= FileOps.deleteQuietly(file);
             }

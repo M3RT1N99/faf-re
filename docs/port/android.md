@@ -157,7 +157,7 @@ Everything lives below the app's external files directory,
 <root>/vault/maps, mods     the vault (custom_vault_path)
 <root>/localappdata/        LOCAL_APPDATA: preferences, shader cache
 <root>/documents/           Documents
-<root>/logs/                faf_android.log, launcher.log, game.sclog
+<root>/logs/                faf_android_vulkan.log, faf_android_gles.log (+ .1.log: previous run), launcher.log, game.sclog
 <root>/launch/status.json   result of the last run
 <root>/.deploy/deployed.json  files placed by the deploy script or the import
 ```
@@ -180,7 +180,7 @@ holding the game's command line, token by token, exactly as the desktop executab
 | --- | --- |
 | `/init <file>` | Absolute path of the data-path script. Default `<root>/faf/bin/init_faf.lua`. Its folder is both `LaunchDir` and `InitFileDir`. |
 | `/renderer vulkan\|gles` | Port-specific (FA ignores it). Default `vulkan`; when creating the Vulkan device or swapchain fails, the runtime falls back to OpenGL ES by itself. |
-| `/log <file>` | Game log. The runtime also writes its own `<root>/logs/faf_android.log` (truncated per run, mirrored to logcat tag `faf_android`). |
+| `/log <file>` | Game log. The runtime also writes its own `<root>/logs/faf_android_<vulkan|gles>.log`, one per graphics backend, keeping the previous run as `.1.log` (mirrored to logcat tag `faf_android`; a native crash appends its backtrace there). |
 | `/nomovie`, `/nosound` | Launcher settings; both on by default in M1. |
 | anything else | Kept and logged, so the arguments the FAF client builds (`/gpgnet host:port`, `/mean`, `/deviation`, `/savereplay`, `/replay`, `/map`, ...) can be passed through later. |
 

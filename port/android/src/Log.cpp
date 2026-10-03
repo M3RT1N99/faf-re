@@ -118,6 +118,14 @@ namespace faf::android {
 
   bool Log::OpenFile(const std::string& path, std::string* error)
   {
+    // Keep the previous run next to it ("x.log" -> "x.1.log"), so a crash
+    // report survives one more start. A failed rename only costs that copy.
+    const std::size_t dot = path.rfind(".log");
+    if (dot != std::string::npos && dot + 4 == path.size()) {
+      const std::string previous = path.substr(0, dot) + ".1.log";
+      std::remove(previous.c_str());
+      std::rename(path.c_str(), previous.c_str());
+    }
     std::FILE* file = OpenTruncated(path, error);
     if (file == nullptr) {
       return false;

@@ -1,9 +1,10 @@
 #pragma once
 
 // The runtime's log: every line goes to logcat (tag "faf_android") and, once
-// the data root is known, to <root>/logs/faf_android.log, which the launcher
-// shows and `adb pull` collects without a USB debugging session. Lines logged
-// before the file is open (argument parsing) are kept and written first.
+// the launch arguments are read, to <root>/logs/faf_android_<vulkan|gles>.log
+// (one per graphics backend; the previous run moves to .1.log), which the
+// launcher shows and `adb pull` collects. Lines logged before the file is open
+// (argument parsing) are kept and written first.
 //
 // The game's own log (the file named by /log, game.sclog) receives the LOG()
 // output of the scripts in the "info: ..." form the desktop game writes, so

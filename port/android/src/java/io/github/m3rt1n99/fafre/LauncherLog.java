@@ -14,7 +14,7 @@ import java.util.concurrent.Executors;
 
 /**
  * {@code <root>/logs/launcher.log}: what the launcher and the import service
- * did, next to the runtime's faf_android.log so one {@code adb pull} of the
+ * did, next to the runtime's faf_android_*.log so one {@code adb pull} of the
  * logs folder captures both. Lines are also mirrored to logcat (tag "fafre").
  *
  * <p>Writes happen on a dedicated thread so callers on the UI thread never

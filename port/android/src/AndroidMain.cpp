@@ -3,7 +3,7 @@
 // android_native_app_glue. What it does for milestone M1:
 //
 //  1. read the data root (externalDataPath) and the "argv" extra, open
-//     <root>/logs/faf_android.log and write status.json (stage args),
+//     <root>/logs/faf_android_<vulkan|gles>.log and write status.json (stage args),
 //  2. start GameRuntime: run init_faf.lua, mount the data, decode the
 //     main-menu background (worker thread, status per stage),
 //  3. create the renderer on the first window (Vulkan, else OpenGL ES) and
@@ -212,18 +212,28 @@ namespace faf::android {
         }
       }
       std::string error;
-      if (!Log::Get().OpenFile(mRoot + "/logs/faf_android.log", &error)) {
-        LogWarning("{}", error);
-      }
-      InstallCrashHandler(mRoot + "/logs/faf_android.log");
       mStatus = std::make_shared<RunStatus>(mRoot + "/launch/status.json", std::string(kVersionName));
       mStatus->Update([](RunStatusData& data) {
         data.stage = Stage::Args;
       });
       LogInfo("data root {}", mRoot);
 
+      // One log per graphics backend (faf_android_vulkan.log,
+      // faf_android_gles.log), each keeping its previous run as .1.log, so
+      // trying both backends in a row loses nothing. The backend is known only
+      // once the arguments are read; lines logged until then are buffered.
+      const auto openRuntimeLog = [this](const Backend backend) {
+        const std::string path = mRoot + "/logs/faf_android_" + ToString(backend) + ".log";
+        std::string openError;
+        if (!Log::Get().OpenFile(path, &openError)) {
+          LogWarning("{}", openError);
+        }
+        InstallCrashHandler(path);
+      };
+
       const IntentArgs intent = ReadIntentArgs(activity);
       if (!intent.ok) {
+        openRuntimeLog(Backend::Vulkan);
         Fail(Stage::Args, "Cannot read the launch arguments: " + intent.error);
         return;
       }
@@ -233,6 +243,7 @@ namespace faf::android {
       LogInfo("args ({}): {}", intent.argv.size(), DescribeArgs(intent.argv));
       const faf::port::CommandLine commandLine(intent.argv);
       mOptions = ResolveLaunchOptions(commandLine, mRoot);
+      openRuntimeLog(mOptions.backend);
       for (const std::string& warning : mOptions.warnings) {
         LogWarning("args: {}", warning);
       }

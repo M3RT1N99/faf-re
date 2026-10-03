@@ -81,7 +81,7 @@ Two details the port has to keep: `init_faf.lua` empties the shader cache below 
 <root>/vault/maps, vault/mods     custom_vault_path
 <root>/localappdata/              SHGetFolderPath('LOCAL_APPDATA'); preferences land in localappdata/Gas Powered Games/Supreme Commander Forged Alliance/
 <root>/documents/                 SHGetFolderPath('PERSONAL')
-<root>/logs/                      faf_android.log, launcher.log, game.sclog
+<root>/logs/                      faf_android_<vulkan|gles>.log, launcher.log, game.sclog
 <root>/launch/status.json         written by the native runtime, read by the launcher
 <root>/.deploy/deployed.json      what the deploy script or the importer placed: {"files":[{"dest","size"}...]}
 ```
