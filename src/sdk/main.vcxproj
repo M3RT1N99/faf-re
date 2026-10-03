@@ -81,11 +81,11 @@
   <PropertyGroup>
     <FafRepoRoot Condition="'$(SolutionPath)' != ''">$(SolutionDir)</FafRepoRoot>
     <FafRepoRoot Condition="'$(SolutionPath)' == ''">$(MSBuildProjectDirectory)\..\..\</FafRepoRoot>
-    <DirectXLibX86>C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Lib\x86</DirectXLibX86>
-    <DirectXLibX64>C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Lib\x64</DirectXLibX64>
+    <DirectXLibX86>$(FafRepoRoot)dependencies\DXSDK_D3DX\lib\x86</DirectXLibX86>
+    <DirectXLibX64>$(FafRepoRoot)dependencies\DXSDK_D3DX\lib\x64</DirectXLibX64>
     <!-- D3DX9 only ships in the DirectX SDK. Appended after $(IncludePath) so
          d3d9.h, dxgi.h and d3d10.h still resolve to the Windows SDK copies. -->
-    <DirectXInclude>C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include</DirectXInclude>
+    <DirectXInclude>$(FafRepoRoot)dependencies\DXSDK_D3DX\include</DirectXInclude>
     <!-- Where F5 runs the built engine. The engine resolves its data path
          from its own module path (DISK_GetLaunchDir -> argv[0]), so main.exe
          must sit beside SupComDataPath.lua. Override on the command line or
