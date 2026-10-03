@@ -57,8 +57,11 @@ powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1
 The build needs Android NDK 29, platform/build-tools 35, host CMake 3.22 or newer,
 Ninja, and a JDK. `ANDROID_SDK_ROOT` selects a non-default SDK location.
 
-The native library and APK are written to `buildstage/android/`. The APK uses a
-local debug key generated on first build; it is for development installs only.
+The native library is written to `buildstage/android/`. The versioned APK and
+ZIP install bundle are written to `output/android/`; `port/android/version.properties`
+sets the package version. The APK uses a local debug key generated on first build;
+it is for development installs only. Extract the ZIP and run `install.ps1` with
+USB debugging enabled, or copy and open the APK on the device.
 The current Android target does not yet compile recovered simulation or gameplay
 code: the engine still depends on Win32, wxWidgets, 32-bit MSVC layouts, and x87
 simulation behavior. The next steps are asset access, portable simulation and

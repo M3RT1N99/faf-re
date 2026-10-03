@@ -1,0 +1,16 @@
+FAF Android prototype 0.1.0
+
+This is an installable Vulkan bring-up prototype. It currently opens a blank
+render surface; the FAF game engine and game assets are not included.
+
+Install on a device:
+1. Extract the bundle on a computer and connect an arm64 Android device with
+   USB debugging enabled.
+2. Run install.ps1 from this folder. It uses adb from ANDROID_SDK_ROOT, or the
+   default C:\Android\sdk location.
+
+To install by hand, copy the APK to the device, open it, and allow installation
+from that source when Android prompts.
+
+The APK is debug-signed with a local development key. Do not use it as a
+production release.

@@ -14,6 +14,13 @@ $ninjaDirectory = Join-Path $AndroidSdk "cmake\3.10.2.4988404\bin"
 $buildToolsDirectory = Join-Path $AndroidSdk "build-tools\35.0.1"
 $platformDirectory = Join-Path $AndroidSdk "platforms\android-35"
 $buildPath = if ([IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory } else { Join-Path $repoRoot $BuildDirectory }
+$versionProperties = Get-Content -LiteralPath (Join-Path $repoRoot "port\android\version.properties")
+$versionCodeLine = $versionProperties | Where-Object { $_ -match '^versionCode=' } | Select-Object -First 1
+$versionNameLine = $versionProperties | Where-Object { $_ -match '^versionName=' } | Select-Object -First 1
+if (-not $versionCodeLine -or -not $versionNameLine) { throw "Android version.properties must define versionCode and versionName." }
+$versionCode = [int]($versionCodeLine -replace '^versionCode=', '')
+$versionName = $versionNameLine -replace '^versionName=', ''
+if ($versionCode -lt 1 -or $versionName -notmatch '^\d+\.\d+\.\d+[-A-Za-z0-9.]*$') { throw "Invalid Android version: $versionCode / $versionName" }
 
 if (-not (Test-Path (Join-Path $ndkPath "build\cmake\android.toolchain.cmake"))) {
     throw "Android NDK 29.0.14206865 not found under $AndroidSdk. Set ANDROID_SDK_ROOT or run bootstrap_android.ps1 for DiligentCore."
@@ -44,15 +51,23 @@ if ($LASTEXITCODE -ne 0) { throw "Android native build failed." }
 $unsignedApk = Join-Path $buildPath "faf-unsigned.apk"
 $alignedApk = Join-Path $buildPath "faf-aligned.apk"
 $debugApk = Join-Path $buildPath "faf-android-debug.apk"
+$compiledResources = Join-Path $buildPath "compiled-resources.zip"
 $keyStore = Join-Path $buildPath "debug.keystore"
 $packageRoot = Join-Path $buildPath "apk"
 $libraryDirectory = Join-Path $packageRoot "lib\$Abi"
 New-Item -ItemType Directory -Path $libraryDirectory -Force | Out-Null
 
-& (Join-Path $buildToolsDirectory "aapt2.exe") link `
+$aapt2 = Join-Path $buildToolsDirectory "aapt2.exe"
+& $aapt2 compile --dir (Join-Path $repoRoot "port\android\res") -o $compiledResources
+if ($LASTEXITCODE -ne 0) { throw "Android resources compilation failed." }
+
+& $aapt2 link `
     --manifest (Join-Path $repoRoot "port\android\AndroidManifest.xml") `
     -I (Join-Path $platformDirectory "android.jar") `
+    -R $compiledResources `
+    --auto-add-overlay `
     --min-sdk-version $ApiLevel --target-sdk-version 35 `
+    --version-code $versionCode --version-name $versionName `
     -o $unsignedApk
 if ($LASTEXITCODE -ne 0) { throw "Android manifest packaging failed." }
 
@@ -95,4 +110,21 @@ $env:PATH = "$(Join-Path $env:JAVA_HOME 'bin');$env:PATH"
 if ($LASTEXITCODE -ne 0) { throw "APK signing failed." }
 
 Write-Host "Built $Abi native library: $(Join-Path $buildPath 'libfaf_android.so')"
-Write-Host "Packaged debug APK: $debugApk"
+$releaseDirectory = Join-Path $repoRoot "output\android"
+$bundleDirectory = Join-Path $buildPath "distribution"
+$versionedApkName = "faf-android-$versionName-$Abi.apk"
+$versionedApk = Join-Path $releaseDirectory $versionedApkName
+$bundleZip = Join-Path $releaseDirectory "faf-android-$versionName-$Abi.zip"
+New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $bundleDirectory -Force | Out-Null
+Copy-Item -LiteralPath $debugApk -Destination $versionedApk -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot "port\android\INSTALL.txt") -Destination $bundleDirectory
+Copy-Item -LiteralPath (Join-Path $repoRoot "port\android\install.ps1") -Destination $bundleDirectory
+Copy-Item -LiteralPath $versionedApk -Destination $bundleDirectory
+@("versionCode=$versionCode", "versionName=$versionName", "abi=$Abi") |
+    Set-Content -LiteralPath (Join-Path $bundleDirectory "VERSION.txt") -Encoding Ascii
+if (Test-Path -LiteralPath $bundleZip) { Remove-Item -LiteralPath $bundleZip -Force }
+[System.IO.Compression.ZipFile]::CreateFromDirectory($bundleDirectory, $bundleZip)
+
+Write-Host "Packaged debug APK: $versionedApk"
+Write-Host "Install bundle: $bundleZip"
