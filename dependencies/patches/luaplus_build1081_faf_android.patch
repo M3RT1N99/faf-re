@@ -1,0 +1,120 @@
+diff -ruN a/Src/LuaPlus/src/lib/lauxlib.c b/Src/LuaPlus/src/lib/lauxlib.c
+--- a/Src/LuaPlus/src/lib/lauxlib.c
++++ b/Src/LuaPlus/src/lib/lauxlib.c
+@@ -479,8 +479,10 @@
+   if (feof(lf->f)) return NULL;
+   *size = fread(lf->buff, 1, LUAL_BUFFERSIZE, lf->f);
+   /* upconvert to lua_WChar */
++  /* FAF port: through unsigned char; a signed char turned bytes >= 0x80
++  ** into negative lua_WChar values the lexer's ctype calls cannot take. */
+   for (i = LUAL_BUFFERSIZE - 1; i >= 0; --i) {
+-    lf->buff[i] = (lua_WChar)((char*)lf->buff)[i];
++    lf->buff[i] = (lua_WChar)((unsigned char*)lf->buff)[i];
+   }
+   return (*size > 0) ? lf->buff : NULL;
+ }
+@@ -488,9 +490,16 @@
+ 
+ static const lua_WChar* getWF (lua_State *L, void *ud, size_t *size) {
+   LoadF *lf = (LoadF *)ud;
++  unsigned char *bytes = (unsigned char *)lf->buff;
++  size_t i;
+   (void)L;
+   if (feof(lf->f)) return NULL;
+-  *size = fread(lf->buff, 1, LUAL_BUFFERSIZE * sizeof(lua_WChar), lf->f) / sizeof(lua_WChar);
++  /* FAF port: the file holds UTF-16LE units, but lua_WChar is wchar_t, which
++  ** is 4 bytes on Android and Linux. Read 2-byte units and widen them in
++  ** place, back to front so no unread unit is overwritten. */
++  *size = fread(bytes, 2, LUAL_BUFFERSIZE, lf->f);
++  for (i = *size; i-- > 0; )
++    lf->buff[i] = (lua_WChar)(bytes[2 * i] | (bytes[2 * i + 1] << 8));
+   return (*size > 0) ? lf->buff : NULL;
+ }
+ 
+@@ -520,11 +529,13 @@
+   if (lf.f == NULL) return errfile(L, fnameindex);  /* unable to open file */
+   c = ungetc(getc(lf.f), lf.f);
+   if (!(isspace(c) || isprint(c)) && lf.f != stdin) {  /* binary file? */
+-    lua_WChar w;
++    unsigned char bom[2];  /* FAF port: was a lua_WChar, see below */
+     fclose(lf.f);
+     lf.f = fopen(filename, "rb");  /* reopen in binary mode */
+     if (lf.f == NULL) return errfile(L, fnameindex); /* unable to reopen file */
+-	if (fread(&w, 1, 2, lf.f) == 2 && w == 0xFEFF)
++    /* FAF port: compare bytes. Reading 2 bytes into a 4-byte wchar_t left
++    ** its upper half uninitialised. */
++	if (fread(bom, 1, 2, lf.f) == 2 && bom[0] == 0xFF && bom[1] == 0xFE)
+       chunkReader = getWF;
+ 	else
+       fseek(lf.f, 0, SEEK_SET);
+@@ -557,7 +568,7 @@
+   if (ls->size == 0) return NULL;
+   numChars = ls->size < NUM_CHARS ? ls->size : NUM_CHARS;
+   for (i = 0; i < numChars; ++i)
+-    ls->buf[i] = (lua_WChar)ls->s[i];
++    ls->buf[i] = (lua_WChar)(unsigned char)ls->s[i];  /* FAF port: no sign extension */
+   ls->s += numChars;
+   *size = numChars;
+   ls->size -= numChars;
+diff -ruN a/Src/LuaPlus/src/llex.c b/Src/LuaPlus/src/llex.c
+--- a/Src/LuaPlus/src/llex.c
++++ b/Src/LuaPlus/src/llex.c
+@@ -525,6 +525,12 @@
+         else if (LS->current != '=') return '>';
+         else { next(LS); return TK_GE; }
+       }
++      case '!': {  /* FAF port: the engine reads '!=' as '~=' */
++        next(LS);
++        if (LS->current != '=') luaX_error(LS, "invalid character", "!");
++        next(LS);
++        return TK_NE;
++      }
+       case '~': {
+         next(LS);
+         if (LS->current != '=') return '~';
+@@ -554,6 +560,24 @@
+         return TK_EOS;
+       }
+       default: {
++        /* FAF port: like the engine's lexer, a byte >= 0x80 outside a string
++        ** or comment is accepted only as part of a UTF-8 byte-order mark,
++        ** which is skipped wherever a token may start. Anything else is an
++        ** error here, before it reaches isspace/isalpha. */
++        if (LS->current >= 0x80) {
++          if (LS->current == 0xEF) {
++            next(LS);
++            if (LS->current == 0xBB) {
++              next(LS);
++              if (LS->current == 0xBF) {
++                next(LS);
++                continue;
++              }
++            }
++          }
++          luaX_error(LS, "invalid character",
++                         luaO_pushfstring(LS->L, "char(%d)", LS->current));
++        }
+         if (isspace(LS->current)) {
+           next(LS);
+           continue;
+@@ -565,16 +589,10 @@
+ 		  char saveCh = 0;
+ 		  size_t l;
+ 		  TString *ts;
+-		  if (LS->current == 'L')
+-		  {
+-			  next(LS);
+-			  if (LS->current == '"')
+-			  {
+-				  read_wstring(LS, LS->current, seminfo);
+-				  return TK_WSTRING;
+-			  }
+-			  saveCh = 'L';
+-		  }
++		  /* FAF port: no L"..." wide-string literals. The engine's lexer has
++		  ** none (L"x" is the name L followed by a string: a call), and
++		  ** read_wstring's wsave() assumes a 2-byte lua_WChar, which wchar_t
++		  ** is not on Android or Linux. */
+           /* identifier or reserved word */
+           l = readname(LS, saveCh);
+           ts = luaS_newlstr(LS->L, luaZ_buffer(LS->buff), l);

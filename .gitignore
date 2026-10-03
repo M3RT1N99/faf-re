@@ -15,6 +15,7 @@ tmp/
 bin/
 decomp/
 buildstage/
+logs/
 dumps/
 out/
 output/
@@ -24,6 +25,7 @@ dependencies/boost_1_34_1/**/*
 dependencies/wxWindows-2.4.2/**/*
 dependencies/WildMagic3p8/**/*
 dependencies/DiligentCore/
+dependencies/abseil-cpp/
 dependencies/*.7z
 dependencies/DXSDK_D3DX
 *.pdb

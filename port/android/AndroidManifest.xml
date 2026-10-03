@@ -1,19 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  One APK: the Java launcher (data import, launch options) and the native game
+  runtime (libfaf_android.so in GameActivity). See docs/port/android.md.
+  versionCode/versionName are set by scripts/port/build_android.ps1.
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.faforever.faf">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="io.github.m3rt1n99.fafre">
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="35" />
+
+    <!-- Vulkan 1.1 is preferred; the runtime falls back to OpenGL ES 3.0. -->
+    <uses-feature
+        android:name="android.hardware.vulkan.version"
+        android:required="false"
+        android:version="0x401000" />
+    <uses-feature
+        android:glEsVersion="0x00030000"
+        android:required="true" />
+
+    <!-- FAF file download (content.faforever.com). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ImportService: long downloads and folder imports as a dataSync foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!--
+      hasFragileUserData: the imported game data (several GB) lives in the app's
+      external files dir; Android 10+ asks whether to keep the app's data when it
+      is uninstalled. allowBackup is off: the data is the user's own copy of the
+      game and far too large for a backup.
+    -->
     <application
-        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:appCategory="game"
+        android:extractNativeLibs="false"
         android:hasCode="true"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:hasFragileUserData="true"
+        android:icon="@mipmap/ic_launcher"
+        android:isGame="true"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.FafRe"
+        tools:targetApi="29">
+
         <activity
             android:name=".LauncherActivity"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:exported="true"
-            android:screenOrientation="unspecified">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          The native runtime. Own process so a native crash never takes the
+          launcher or a running import down; the launcher starts a fresh process
+          for every run. Configuration changes are handled natively (swapchain
+          resize), never by recreating the activity.
+        -->
+        <activity
+            android:name=".GameActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:process=":game"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.FafRe.Game">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="faf_android" />
+        </activity>
+
+        <service
+            android:name=".ImportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

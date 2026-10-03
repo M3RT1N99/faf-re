@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Launcher: dark Material without an action bar. The window background is
+      the UI's background colour so no white frame flashes before the first
+      layout. On Android 15+ the bars are transparent (edge-to-edge) and the
+      launcher pads its content by the insets itself.
+    -->
+    <style name="Theme.FafRe" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">@color/card</item>
+        <item name="android:colorPrimaryDark">@color/background</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+    </style>
+
+    <!--
+      Game: fullscreen and black, so the starting window is a black screen
+      while the :game process and the runtime come up. GameActivity also hides
+      the system bars (immersive) and keeps the screen on.
+    -->
+    <style name="Theme.FafRe.Game" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
+</resources>

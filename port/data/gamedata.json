@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "comment": "Game data the engine reads when started the way the FAF client starts it (/init init_faf.lua). Derived from init_faf.lua (FAF 3839) and the engine's startup code; see docs/port/gamedata.md. Nothing listed here is shipped with the app: SCFA files come from the user's own copy, FAF files from FAF.",
+  "layout": {
+    "comment": "Directories relative to the data root (Android: Context.getExternalFilesDir(null)). Names are fixed; the launcher and the deploy script create them.",
+    "scfa": "scfa",
+    "fafBin": "faf/bin",
+    "fafGamedata": "faf/gamedata",
+    "faPathLua": "faf/fa_path.lua",
+    "fafVersion": "faf/version.json",
+    "vault": "vault",
+    "localAppData": "localappdata",
+    "documents": "documents",
+    "logs": "logs",
+    "launch": "launch",
+    "deployRecord": ".deploy/deployed.json"
+  },
+  "tiers": {
+    "required": "Needed to reach the main menu.",
+    "recommended": "Needed for normal skirmish play (units, terrain, sounds, the stock skirmish maps).",
+    "optional": "Extras: movies, music, campaign content, other voice languages."
+  },
+  "faf": {
+    "featuredMod": "faf",
+    "version": 3839,
+    "versionUrl": "https://raw.githubusercontent.com/FAForever/fa/deploy/faf/mod_info.lua",
+    "baseUrl": "https://content.faforever.com/faf/updaterNew/updates_faf_files",
+    "comment": "Pinned to FAF game version 3839. 'remote' is the file name on baseUrl ({v} = version). 'local' is the path inside a Windows FAF client install (C:/ProgramData/FAForever). The download path is public but undocumented; ask the FAF team before any public release that uses it.",
+    "files": [
+      { "name": "init_faf.lua", "dest": "faf/bin/init_faf.lua", "local": "bin/init_faf.lua", "remote": "init_faf_{v}.lua", "tier": "required", "size": 26887, "sha256": "fc23a76e99da5031efbfe6c15158d12d9f3b36ee5df17873199105a02dc7a3b0", "purpose": "Data-path script: builds the mount table (path/hook/protocols)." },
+      { "name": "SupComDataPath.lua", "dest": "faf/bin/SupComDataPath.lua", "local": "bin/SupComDataPath.lua", "remote": "SupComDataPath_{v}.lua", "tier": "optional", "size": 215, "sha256": "512abeaaf5c8d580c507c42b3138a2da6b7289e2ad57d12d1a50215b5db49208", "purpose": "Default script when no /init is given. Uses a backslash path; the Android launcher always passes /init." },
+      { "name": "lua.nx2", "dest": "faf/gamedata/lua.nx2", "local": "gamedata/lua.nx2", "remote": "lua.{v}.nx2", "tier": "required", "size": 3434139, "sha256": "ac520415c718a69c28ce7fc92e41dd9650602874c18460f8e9ad9f97a83028f8", "purpose": "All FAF Lua (/lua)." },
+      { "name": "loc.nx2", "dest": "faf/gamedata/loc.nx2", "local": "gamedata/loc.nx2", "remote": "loc.{v}.nx2", "tier": "required", "size": 1765808, "sha256": "13442d92a7eabf4a689709b0789082d55f43cdccc6c3bac6236822257282571f", "purpose": "Localisation strings (/loc)." },
+      { "name": "etc.nx2", "dest": "faf/gamedata/etc.nx2", "local": "gamedata/etc.nx2", "remote": "etc.{v}.nx2", "tier": "required", "size": 3837, "sha256": "684fa3fe40cdf2be2b0f5f479df9399ff789b5f8d03d8ae0de06f7da27633318", "purpose": "Mod blacklist (/etc)." },
+      { "name": "effects.nx2", "dest": "faf/gamedata/effects.nx2", "local": "gamedata/effects.nx2", "remote": "effects.{v}.nx2", "tier": "required", "size": 3162052, "sha256": "3c60bdee35859bc2b6b0c073d399bd5f12699529a9212b90777a0f93bf003a25", "purpose": "Shaders (/effects/*.fx); the engine dies without them." },
+      { "name": "textures.nx2", "dest": "faf/gamedata/textures.nx2", "local": "gamedata/textures.nx2", "remote": "textures.{v}.nx2", "tier": "required", "size": 91406892, "sha256": "a8fba786ddec20f966dbce2ac3a067f4332a4a242b08d3ea6b0ba2227ba0350b", "purpose": "FAF UI and texture overrides (/textures)." },
+      { "name": "env.nx2", "dest": "faf/gamedata/env.nx2", "local": "gamedata/env.nx2", "remote": "env.{v}.nx2", "tier": "recommended", "size": 501595718, "sha256": "7ad2ee48bab4e9ead485abbbebdb4cb3e09dbaccbef0d629d0a1c250dbd10962", "purpose": "Terrain, skies, decals, water (/env)." },
+      { "name": "units.nx2", "dest": "faf/gamedata/units.nx2", "local": "gamedata/units.nx2", "remote": "units.{v}.nx2", "tier": "recommended", "size": 109609228, "sha256": "edf30919b56870bbcb4302f43a4afca9863becb0ab5284eea51b3ed92e1c5418", "purpose": "Unit blueprints, scripts, textures (/units)." },
+      { "name": "meshes.nx2", "dest": "faf/gamedata/meshes.nx2", "local": "gamedata/meshes.nx2", "remote": "meshes.{v}.nx2", "tier": "recommended", "size": 3144266, "sha256": "cc0aa81e65151301552a4bb2bdfbc5daf113a15856a311d48cb82fdd8fb8672f", "purpose": "Mesh overrides (/meshes)." },
+      { "name": "projectiles.nx2", "dest": "faf/gamedata/projectiles.nx2", "local": "gamedata/projectiles.nx2", "remote": "projectiles.{v}.nx2", "tier": "recommended", "size": 923326, "sha256": "2c40084fc171b286e1d214fad4f00f2d6eebda680b76f21fffd719d7d8e2ded2", "purpose": "Projectile blueprints and scripts (/projectiles)." },
+      { "name": "schook.nx2", "dest": "faf/gamedata/schook.nx2", "local": "gamedata/schook.nx2", "remote": "schook.{v}.nx2", "tier": "optional", "size": 2954, "sha256": "2c7ba1073236b45d724393e7ca79292e14c74df7443fb76384dd2a7aaf77195a", "purpose": "Not mounted by init_faf.lua 3839 (commented out); kept for completeness." }
+    ]
+  },
+  "scfa": {
+    "comment": "Selections from the user's Supreme Commander: Forged Alliance install (Steam/GOG/retail). Each entry copies matching names directly inside 'src' to <root>/scfa/<src>/<name>. Patterns are case-insensitive with * and ?. kind=file matches regular files, kind=dir matches directories and copies them recursively. 'approxBytes' is from a Steam install (German) and only informational.",
+    "detect": {
+      "fafPathLua": "C:/ProgramData/FAForever/fa_path.lua",
+      "steamFolder": "steamapps/common/Supreme Commander Forged Alliance",
+      "marker": "gamedata/textures.scd"
+    },
+    "entries": [
+      { "id": "scfa-textures", "label": "Base textures", "src": "gamedata", "include": ["textures.scd"], "kind": "file", "tier": "required", "mount": "/", "approxBytes": 530031023, "purpose": "UI and world textures FAF does not override (main menu backgrounds live here)." },
+      { "id": "scfa-fonts", "label": "Fonts", "src": "fonts", "include": ["*.ttf"], "kind": "file", "tier": "required", "mount": "/fonts", "approxBytes": 2029556, "purpose": "All UI fonts." },
+      { "id": "scfa-gamedata-play", "label": "Units, terrain, effects", "src": "gamedata", "include": ["env.scd", "units.scd", "meshes.scd", "projectiles.scd", "effects.scd", "props.scd", "objects.scd"], "kind": "file", "tier": "recommended", "mount": "/", "approxBytes": 2548638317, "purpose": "Base assets underneath the FAF overrides." },
+      { "id": "scfa-sounds-core", "label": "Sound effects", "src": "sounds", "include": ["*.xgs", "*.xwb", "*.xsb"], "exclude": ["Music.*", "FMV_BG.*", "Op_Briefing.*"], "kind": "file", "tier": "recommended", "mount": "/sounds", "approxBytes": 318787504, "purpose": "XACT global settings and the core sound banks." },
+      { "id": "scfa-voice-us-xgg", "label": "In-game voice (English)", "src": "sounds/Voice/US", "include": ["XGG.*"], "kind": "file", "tier": "recommended", "mount": "/sounds", "approxBytes": 74972111, "purpose": "Computer/HQ voice lines." },
+      { "id": "scfa-maps-skirmish", "label": "Skirmish maps", "src": "maps", "include": ["SCMP_*", "X1MP_*"], "kind": "dir", "tier": "recommended", "mount": "/maps", "approxBytes": 1102965358, "purpose": "The 54 stock skirmish maps." },
+      { "id": "scfa-gamedata-extra", "label": "Sample mods, music archive", "src": "gamedata", "include": ["mods.scd", "skins.scd", "sc_music.scd"], "kind": "file", "tier": "optional", "mount": "/", "approxBytes": 1239976, "purpose": "Mounted when present; not needed for play." },
+      { "id": "scfa-music", "label": "Music", "src": "sounds", "include": ["Music.*"], "kind": "file", "tier": "optional", "mount": "/sounds", "approxBytes": 250796532, "purpose": "Streaming music bank." },
+      { "id": "scfa-sounds-fmv", "label": "Movie and briefing sound", "src": "sounds", "include": ["FMV_BG.*", "Op_Briefing.*"], "kind": "file", "tier": "optional", "mount": "/sounds", "approxBytes": 217785649, "purpose": "Background audio for movies and campaign briefings." },
+      { "id": "scfa-voice-us-campaign", "label": "Campaign voice (English)", "src": "sounds/Voice/US", "include": ["*"], "exclude": ["XGG.*"], "kind": "file", "tier": "optional", "mount": "/sounds", "approxBytes": 616818009, "purpose": "Campaign, tutorial and intro voice-over." },
+      { "id": "scfa-voice-other", "label": "Other voice languages", "src": "sounds/Voice", "include": ["*"], "exclude": ["US"], "kind": "dir", "tier": "optional", "mount": "/sounds", "approxBytes": 676774184, "purpose": "Voice sets for other languages (for example DE)." },
+      { "id": "scfa-maps-campaign", "label": "Campaign maps", "src": "maps", "include": ["X1CA_*"], "kind": "dir", "tier": "optional", "mount": "/maps", "approxBytes": 107872548, "purpose": "Forged Alliance campaign and tutorial." },
+      { "id": "scfa-movies", "label": "Movies", "src": "movies", "include": ["*.sfd"], "kind": "file", "tier": "optional", "mount": "/movies", "approxBytes": 2477953024, "purpose": "Menu, loading, intro, credits and campaign movies. Start with /nomovie without them." },
+      { "id": "scfa-splash", "label": "Startup splash", "src": "bin", "include": ["splash.png"], "kind": "file", "tier": "optional", "mount": "-", "approxBytes": 1532600, "purpose": "Startup splash image read from the launch directory." }
+    ],
+    "neverCopy": [
+      "gamedata/lua.scd, mohodata.scd, moholua.scd, schook.scd, editor.scd, ambience.scd: disabled by init_faf.lua (replaced by FAF's lua.nx2)",
+      "gamedata/loc_*.scd: mounted but fully shadowed by FAF's loc.nx2",
+      "bin/*.exe, *.dll and DirectX/: Windows binaries, not game data"
+    ]
+  },
+  "user": {
+    "comment": "Optional content from the user's FAF vault (custom_vault_path). Copied to <root>/vault/{maps,mods}/<name>.",
+    "entries": [
+      { "id": "vault-maps", "label": "Downloaded maps", "src": "maps", "include": ["*"], "kind": "dir", "tier": "optional", "mount": "/maps/<name>", "purpose": "Vault maps; each needs *_scenario.lua, *.scmap, *_save.lua and *_script.lua." },
+      { "id": "vault-mods", "label": "Downloaded mods", "src": "mods", "include": ["*"], "kind": "dir", "tier": "optional", "mount": "/mods/<name>", "purpose": "Vault mods; each needs mod_info.lua." }
+    ]
+  },
+  "faPathLua": {
+    "comment": "Written to <root>/faf/fa_path.lua by the launcher before every start and by the deploy script. init_faf.lua reads it with dofile(InitFileDir .. '/../fa_path.lua'). Paths use forward slashes and are absolute on the device.",
+    "template": "fa_path = \"{root}/scfa\"\ncustom_vault_path = \"{root}/vault\"\nGameType = \"faf\"\nGameVersion = \"{version}\"\nClientVersion = \"{client}\"\nForceAffinity = false\n"
+  }
+}

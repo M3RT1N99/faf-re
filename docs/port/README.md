@@ -20,8 +20,9 @@ PC players on ARM), and the Windows-only platform layer.
 ## Dependencies
 
 `dependencies\DiligentCore` is a pinned, gitignored upstream checkout. The Android bootstrap
-script fetches revision `1436d1fea00763178ae835fd36b065efb31d96e` and initializes the required
-shader/Vulkan submodules; googletest is not needed for the port target.
+script fetches revision `1436d1fea00763178ae835fd36b065efb31d96e5` and initializes the required
+shader/Vulkan submodules; googletest is not needed for the port target. It also pre-fetches the
+abseil-cpp commit Diligent pins into `dependencies\abseil-cpp`, so configuring works offline.
 
 ## Backend scope
 
@@ -42,35 +43,27 @@ two existing backends first), `Texture`, `RenderTarget`, `CubeRenderTarget`, `De
 4. Diligent backend on Windows, compared pixel by pixel against the D3D9 backend.
 5. SDL3 platform layer, then Linux.
 
-## Android launcher and bring-up
+## Android
 
-The installable Android app is a native Java launcher under `port/android`. It
-lets users link local FAF client/data and SCFA folders through Android's Storage
-Access Framework, store initial graphics settings, and view or clear launcher
-logs. Folder links persist on the device; game archives are not included in the
-APK. The “Start FAF” control stays disabled until the game runtime is ported.
-
-The earlier NDK/Vulkan bring-up remains in `port/android` and can be built
-separately while renderer work continues. The installable launcher build compiles
-the Java activity, converts it to DEX, and packages a signed debug APK.
+One APK (`io.github.m3rt1n99.fafre`, arm64-v8a, Android 8.0+): a Java launcher that imports and
+checks the game data and starts the game, and the native runtime `libfaf_android.so`, which runs
+FAF's unmodified `init_faf.lua`, mounts the user's SCFA and FAF archives the way the engine does
+and draws a main-menu background through Diligent (Vulkan, OpenGL ES fallback). The game itself
+is not ported yet: the recovered engine still depends on Win32, wxWidgets, 32-bit MSVC layouts and
+x87 simulation behavior.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1
+powershell -ExecutionPolicy Bypass -File scripts/port/bootstrap_android.ps1   # pinned DiligentCore + abseil-cpp
+powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1       # output/android/faf-re-android-<version>-arm64-v8a.apk
+powershell -ExecutionPolicy Bypass -File scripts/port/deploy_android.ps1      # install + copy game data over USB
 ```
 
-The launcher build needs Android platform/build-tools 35 and a JDK.
-`ANDROID_SDK_ROOT` selects a non-default SDK location.
-
-The versioned APK and ZIP install bundle are written to `output/android/`;
-`port/android/version.properties` sets the package version. The APK uses a local
-debug key generated on first build; it is for development installs only. Extract
-the ZIP and run `install.ps1` with USB debugging enabled, or copy and open the
-APK on the device.
-The current Android target does not yet compile recovered simulation or gameplay
-code: the engine still depends on Win32, wxWidgets, 32-bit MSVC layouts, and x87
-simulation behavior. The next steps are asset access, portable simulation and
-platform seams, and a GAL implementation that can consume the effect conversion
-pipeline.
+- [android.md](android.md): prerequisites, build, getting the game data onto the device (PC
+  script, in-app import, FAF download), data layout, launch arguments, `status.json`,
+  troubleshooting.
+- [gamedata.md](gamedata.md): which files the engine reads, where they come from, their mount
+  points, tiers and sizes; the source of truth is `port/data/gamedata.json`.
+- [android-roadmap.md](android-roadmap.md): the way from this bring-up to full FAF play on Android.
 
 ## Planned effect front end: `gpg::gal::fx`
 

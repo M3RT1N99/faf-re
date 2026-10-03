@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Keep in sync with the constants in Ui.java (the launcher UI is built in code). -->
+    <color name="background">#FF101820</color>
+    <color name="card">#FF1A2934</color>
+    <color name="accent">#FFF2A33A</color>
+    <color name="icon_background">#FF14212C</color>
+    <color name="icon_foreground">#FFF2A33A</color>
+</resources>
