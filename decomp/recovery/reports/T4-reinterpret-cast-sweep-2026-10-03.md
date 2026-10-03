@@ -5,6 +5,37 @@ Baseline after T1–T3: **3893 occurrences** = **1924 vendored** (`cri/`, `lua/`
 idiom; class (c) wholesale) + **1969 engine** (`moho/`, `gpg/`, `platform/`,
 `util/`, `legacy/`). The DoD target (<500) is therefore an engine-code target.
 
+## Batch 2 addendum (same day, commit 1d8d345f)
+
+Probe purge extended to 37 more files (all remaining `TEMPORARY PROBE`
+markers outside in-flight sets): ui/UiRuntimeTypes, render/camera/CameraImpl,
+entity/Entity (+ DMGDIAG budget blocks), mesh/HardwareMeshBatch, lua/
+{LuaObject,LuaParser}, unit/{CUnitMotion, Unit, UnitWeapon, UserUnit,
+tasks/*}, sim/{CWldMap, CIntelGrid, *LuaFunctionRegistrations}, render/
+{Shadow, Cartographic, MapImager, CWldTerrainDecal, tess/CTesselator},
+audio/{CSndParams, CUserSoundManager}, ai/{CAiSteeringImpl, CAiReconDBImpl,
+CAiNavigatorAir}, effects/CEfx{Beam,Emitter}, path/PathTables, terrain/
+{Medium,Low}FidelityTerrain, splat/CWldSplat, ui/SelectionDragger,
+gpg/{BitArray2D, Logging}. Every file: brace/paren-balanced, normalized
+semantic diff vs HEAD **pure-removal**. Marker count **196 → 49**.
+
+Remaining 49 markers:
+- `gpg/core/utils/Global.cpp` (18) — heap-corruption triage instrumentation
+  (cache registry, watch-lane stamping, `FAF_SYSHEAP` escape modes) interlocked
+  with the recovered allocator at ~12 gates and possibly still in active use by
+  the triage owner; left deliberately.
+- `sim/CWldSession.cpp` (15), `sim/Sim.cpp` (12),
+  `effects/CEffectManagerImpl.cpp` (3), `script/CScriptObject.cpp` (1) —
+  another agent's in-flight working set.
+
+Markerless rate-limited `[XPORTDIAG]`/`[BOMBDIAG]`/`[SKINDIAG]` budget blocks
+(`DiagnosticBudget s*Probe`) also survive in a few unit/script files — they
+compile cleanly and belong to the transport/bomber triage sessions; remove
+with their owners.
+
+After batches 1–2: **engine 1916**, total 3841.
+
+
 After batch 1: **engine 1923**, total 3847. Reduction is small because this
 batch was spent on (a)-class correctness fixes and the committed-probe purge;
 the count falls fast once the (b)-class per-directory passes run.
