@@ -33,6 +33,11 @@ Works in Windows PowerShell 5.1 and PowerShell 7.
 Release (default) or Debug. Debug builds the native code without optimization
 and marks the APK debuggable.
 
+.PARAMETER Abi
+arm64-v8a (default; phones and tablets) or x86_64 (the SDK emulator's x86_64
+system images run it without ARM translation). Each ABI builds in its own
+directories and gives its own APK.
+
 .PARAMETER SkipNative
 Java-only APK for launcher work, written as faf-re-android-<versionName>-nonative.apk.
 The game activity cannot start from it.
@@ -58,6 +63,8 @@ powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1 -SkipNat
 param(
     [ValidateSet("Release", "Debug")]
     [string]$Configuration = "Release",
+    [ValidateSet("arm64-v8a", "x86_64")]
+    [string]$Abi = "arm64-v8a",
     [switch]$SkipNative,
     [switch]$Clean,
     [string]$AndroidSdk,
@@ -78,7 +85,6 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
 # App identity and platform levels; see docs/port/android.md.
 $packageName = "io.github.m3rt1n99.fafre"
-$abi = "arm64-v8a"
 $minSdk = 26
 $targetSdk = 35
 $platformName = "android-35"
@@ -90,8 +96,10 @@ $minimumJdkMajor = 17
 $nativeTarget = "faf_android"
 $nativeLibraryName = "libfaf_android.so"
 $nativeSourceDirectory = Join-Path $repoRoot "port\android"
-$nativeBuildDirectory = Join-Path $repoRoot "buildstage\android-native"
-$apkBuildDirectory = Join-Path $repoRoot "buildstage\android-apk"
+# arm64-v8a keeps the original directory names so existing build trees stay valid.
+$abiSuffix = if ($abi -eq "arm64-v8a") { "" } else { "-$abi" }
+$nativeBuildDirectory = Join-Path $repoRoot "buildstage\android-native$abiSuffix"
+$apkBuildDirectory = Join-Path $repoRoot "buildstage\android-apk$abiSuffix"
 $outputDirectory = Join-Path $repoRoot "output\android"
 $manifestFile = Join-Path $repoRoot "port\android\AndroidManifest.xml"
 $resourceDirectory = Join-Path $repoRoot "port\android\res"

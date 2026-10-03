@@ -182,6 +182,13 @@ function(faf_port_add_luaplus)
     # 2004 code: '#endif _WIN32_WCE' trailers, K&R-era casts, an ignored
     # __stdcall on non-x86 targets. Its warnings are not actionable here.
     target_compile_options(faf_port_lua PRIVATE -include "${prefix}" -w)
+    # Lua keeps a string's characters right behind its header and reads them
+    # as (char *)(ts + 1). With _FORTIFY_SOURCE=2 (the NDK default) bionic
+    # takes that pointer as the end of a zero-sized object, so the first
+    # strchr on a weak table's __mode - luaopen_base creates one - aborts with
+    # "FORTIFY: strchr: prevented read past end of buffer". Only this vendored
+    # C core uses the pattern; our own code keeps FORTIFY.
+    target_compile_options(faf_port_lua PRIVATE -U_FORTIFY_SOURCE)
     if(WIN32)
       target_compile_definitions(faf_port_lua PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
     endif()
