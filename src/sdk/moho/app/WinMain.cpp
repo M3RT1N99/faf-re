@@ -29,6 +29,7 @@
 #include <dbghelp.h> // DIAGNOSTIC PROBE -- remove before committing
 
 #include "CScApp.h"
+#include "HeadlessReplay.h"
 #include "gpg/core/time/Timer.h"
 #include "gpg/core/utils/Global.h"
 #include "gpg/core/utils/Logging.h"
@@ -672,6 +673,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
   msvc8::vector<msvc8::string> allocLogArgs;
   if (moho::CFG_GetArgOption("/alloclog", 1, &allocLogArgs) && !allocLogArgs.empty()) {
     InitializeAllocationLog(allocLogArgs[0].c_str());
+  }
+
+  // Port addition: the headless replay runner (moho/app/HeadlessReplay.cpp) plays one replay with
+  // no window, device, sound or UI and exits. Everything from here on - the crash-dialog die
+  // handler, the accessibility tweaks, CScApp - is the GUI's, so it branches off first. The flag
+  // alone is enough to branch: without a file the runner prints its usage instead of a game window.
+  if (moho::CFG_GetArgOption("/headlessreplay", 0, nullptr)) {
+    return moho::HEADLESS_RunReplay();
   }
 
   gpg::SetDieHandler(&FatalErrorDieHandler);

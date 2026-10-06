@@ -41,6 +41,17 @@ L4 is the goal. L2 is the first point where the port is fun to use. L3 is the fi
   zip and DDS code. Confirmed on a Samsung Exynos 2200 (Xclipse 920, Android 16) with both Vulkan
   and OpenGL ES: 17 archives and 38,201 entries mounted, background on screen 100-150 ms after
   start. See [android.md](android.md) and [gamedata.md](gamedata.md).
+- **Headless replay runner (M3a done).** `main.exe /headlessreplay <file>` plays a replay with
+  no window, renderer, sound or UI and writes a JSON summary of the sim's checksums. Four FAF vault
+  replays play to the end (465 to 10,549 beats, 1v1 and 2v2), with identical digests on every
+  repeat, threaded or not. That is the first evidence that the recovered sim survives complete
+  games. It needed two fixes to recovered code, both checked against the binary: replay acks
+  (every replay stalled at beat 0) and the driver's initial focus army (every replay crashed on
+  beat 1).
+
+  Checksums cannot match the recordings yet, because the local data is FAF 3839 and the replays
+  are 3829/3831. Even so, one replay is bit-identical to the original game for its first 50 beats.
+  See [headless-replay.md](headless-replay.md).
 - **Not yet:** no engine translation unit runs on ARM.
 
 ## Workstreams
@@ -178,7 +189,8 @@ The plan is a portable "msvc8 FP layer", used by every build (x86, x64, arm64):
 7. **Harness:**
    - Exhaustive 2^32 sweeps against x87 on Intel and AMD.
    - Headless re-simulation of vault replays, each pinned to its featured-mod version. Pass = zero
-     "Checksum for beat ... mismatched".
+     "Checksum for beat ... mismatched". The runner exists since M3a
+     ([headless-replay.md](headless-replay.md)); version-pinned data does not yet.
    - mpemu retail vs x64 vs arm64 with `/synclog`.
    - "arm64 synclog == x64 synclog" for the same replay, to separate ABI bugs from recovery bugs.
 
@@ -316,6 +328,9 @@ Every Android player's FAF account also needs a Steam or GOG ownership link, as 
 M1  one APK, data deploy, native data bring-up (L0)              done
 M2  W1.1-2: arm64 compile sweep + compile fixes (896/1010)       done; x64 LargeAddressAware oracle open
 M3  W1.3-5: 64-bit clean; headless arm64 replay runner runs a replay to the end (adb shell)
+    M3a x86 runner (main.exe /headlessreplay), 4 vault replays to the end    done
+    M3b arm64 link of the runner     M3c run under WSL/emulator/phone
+    M3d truncation fixes + reflection codemod, run without the low-address arena
 M4  W5 + W6 on x86/x64: vault replays checksum-clean on the recovered engine (fixes upstream)
 M5  W5 on arm64: same replays checksum-clean on a phone (L3)
 M6  W2 + W3 on Windows: SDL3 + Diligent backend, pixel-compared against D3D9
@@ -334,7 +349,10 @@ calendar time. It also depends on FAF's decisions, which cannot be scheduled fro
 ## Risks
 
 - **The recovered sim is not yet proven 1:1 with retail on x86.** Every determinism and parity
-  estimate assumes it will be. This is the dominant schedule risk.
+  estimate assumes it will be. This is the dominant schedule risk. Since M3a it does play complete
+  FAF games deterministically; checksum parity needs version-matched replays (M4). One known
+  source of run-to-run variance is an uninitialised read in `Unit::UpdateBlipsInRange` (see
+  [headless-replay.md](headless-replay.md#known-issues)).
 - **FAF may decline** online play for a reimplemented engine or for mobile clients. In that case
   L3 is the ceiling: offline play and replays.
 - **ICE direction:** if FAF moves the Java adapter to webrtc-java or icebreaker signalling, the

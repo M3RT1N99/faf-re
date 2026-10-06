@@ -32,6 +32,7 @@
 #include "moho/misc/Stats.h"
 #include "moho/misc/TimeBar.h"
 #include "moho/misc/CDecoder.h"
+#include "moho/misc/LaunchInfoBase.h"
 #include "moho/net/CClientManagerImpl.h"
 #include "moho/render/CDecalTypes.h"
 #include "moho/sim/SSTIArmyConstantData.h"
@@ -747,8 +748,17 @@ CSimDriver::CSimDriver(
   , mSimSpeedSamples{}
   , mCurrentSimRate(10)
 {
-  mPendingSyncFilter.focusArmy = static_cast<int32_t>(commandSourceId);
-  mActiveSyncFilter.focusArmy = static_cast<int32_t>(commandSourceId);
+  // 0x0073B7CC..0x0073B7DC: the pending filter starts on the launch info's original command
+  // source (`mov eax,[edi+10h]; mov ecx,[eax+68h]` - SLaunchCommandSources::mOriginalSource: the
+  // local player's army slot, -1 for a replay or an observer, the saved focus army for a loaded
+  // save). The active filter keeps its constructed -1 (0x0073B6C2) until the first sync copies the
+  // pending one over. Sim::Sim (Sim.cpp mSyncFilter) and CWldSession start from the same value.
+  // Seeding both from `commandSourceId` - a command-source index, not an army index - put a
+  // replay's or an observer's focus army at 255, the "no source" id: the opening Sim::Sync reported
+  // "Invalid army 255" from NoteFocusArmyChanged and ReconBlip::SyncInterface indexed
+  // mReconDat[255], past the armies, and faulted on beat 1. In a lobby game whose slots and
+  // command sources are numbered differently it focused another player's army.
+  mPendingSyncFilter.focusArmy = mLaunchInfo->mCommandSources.mOriginalSource;
 
   mConnectionEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
   mSyncDataAvailableEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -2179,6 +2189,12 @@ DWORD CSimDriver::PerformNextEvent()
   {
     boost::mutex::scoped_lock lock(mLock);
     mClientManager->DoBeat();
+  }
+
+  // Port: the headless replay runner (moho/app/HeadlessReplay.cpp) never starts wx, so there is no
+  // application object to pump. The GUI always has one here, and takes the binary's path.
+  if (wxTheApp == nullptr) {
+    return SleepEx(100, TRUE);
   }
 
   bool keepIdle = true;

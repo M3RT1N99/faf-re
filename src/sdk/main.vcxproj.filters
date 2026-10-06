@@ -1902,6 +1902,9 @@
     <ClCompile Include="moho\app\CWaitHandleSet.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="moho\app\HeadlessReplay.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="moho\app\IWinApp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -4756,6 +4759,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="moho\app\CWaitHandleSet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="moho\app\HeadlessReplay.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="moho\app\IWinApp.h">

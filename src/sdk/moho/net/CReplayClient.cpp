@@ -154,7 +154,13 @@ void CReplayClient::Process(CMessage& msg)
     CMessage ackMessage(EClientMsg::CLIMSG_Ack);
     CMessageStream ackStream(ackMessage);
 
-    const auto localClientIndex = static_cast<std::uint8_t>(mIndex);
+    // 0x0053D9F0..0x0053D9FA: the ack is filed for the manager's *local* client -
+    // `mManager->GetLocalClient()` (IClientManager slot 9, `call [eax+24h]`) and its index at
+    // IClient+0x20 - not for this replay client. An Advance that reaches the replay client is the
+    // local marshaller's beat, so it is the local client's acknowledgement. Filing it under
+    // `mIndex` (0) credited the replay client with its own beats and left the local client's ack
+    // at 0, so `IsReadyForBeat` never passed and every replay stalled at beat 0.
+    const auto localClientIndex = static_cast<std::uint8_t>(mManager->GetLocalClient()->GetIndex());
     ackStream.Write(localClientIndex);
 
     std::int32_t ackBeat = beatDelta;

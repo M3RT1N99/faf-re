@@ -64,6 +64,8 @@ powershell -ExecutionPolicy Bypass -File scripts/port/deploy_android.ps1      # 
 - [gamedata.md](gamedata.md): which files the engine reads, where they come from, their mount
   points, tiers and sizes; the source of truth is `port/data/gamedata.json`.
 - [android-roadmap.md](android-roadmap.md): the way from this bring-up to full FAF play on Android.
+- [headless-replay.md](headless-replay.md): `main.exe /headlessreplay`, the x86 replay runner the
+  arm64 port is checked against, and its baseline numbers.
 
 ## Planned effect front end: `gpg::gal::fx`
 

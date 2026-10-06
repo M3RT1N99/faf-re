@@ -1412,6 +1412,7 @@ if exist "$(FafRunDir)" if exist "$(TargetDir)$(TargetName).pdb" xcopy /D /Y /Q 
     <ClCompile Include="moho\audio\SofdecMpaDecodeRuntime.cpp" />
     <ClCompile Include="moho\app\CScApp.cpp" />
     <ClCompile Include="moho\app\CWaitHandleSet.cpp" />
+    <ClCompile Include="moho\app\HeadlessReplay.cpp" />
     <ClCompile Include="moho\app\IWinApp.cpp" />
     <ClCompile Include="moho\app\WEmitterWx.cpp" />
     <ClCompile Include="moho\app\FrameDumpCommands.cpp" />
@@ -1714,6 +1715,7 @@ if exist "$(FafRunDir)" if exist "$(TargetDir)$(TargetName).pdb" xcopy /D /Y /Q 
     <ClInclude Include="moho\audio\SofdecRuntime.h" />
     <ClInclude Include="moho\app\CScApp.h" />
     <ClInclude Include="moho\app\CWaitHandleSet.h" />
+    <ClInclude Include="moho\app\HeadlessReplay.h" />
     <ClInclude Include="moho\app\IWinApp.h" />
     <ClInclude Include="moho\app\WEmitterWx.h" />
     <ClInclude Include="moho\app\FrameDumpCommands.h" />
