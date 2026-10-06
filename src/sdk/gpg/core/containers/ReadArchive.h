@@ -188,8 +188,13 @@ namespace gpg
      * Address: 0x00A82547
      * Slot: 4
      * Demangled: _purecall
+     *
+     * Takes `std::uint64_t*`, which is `unsigned __int64*` under MSVC. On LP64
+     * targets `std::uint64_t` is `unsigned long`, a distinct type, and the
+     * caller's fields (`SEconStoragePair::ENERGY/MASS`, CEconomy.cpp) are
+     * `std::uint64_t`, like `WriteArchive::WriteUInt64`'s parameter.
      */
-    virtual void ReadUInt64(unsigned __int64*) = 0;
+    virtual void ReadUInt64(std::uint64_t*) = 0;
 
     /**
      * Address: 0x00A82547

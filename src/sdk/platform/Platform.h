@@ -25,6 +25,13 @@
 #include <pthread.h>
 #include <errno.h>
 #include <time.h>
+// Engine headers take the Win32 names (FILETIME, LONGLONG, LOBYTE, HANDLE...)
+// from the <windows.h> above. The Android build puts port/engine/shim on the
+// include path, whose <windows.h> supplies the same names
+// (port/engine/README.md); without it there is nothing to include.
+#if __has_include(<windows.h>)
+#include <windows.h>
+#endif
 #endif
 
 #if defined(_MSC_VER)
@@ -32,7 +39,12 @@
 #define MOHO_FORCEINLINE __forceinline
 #define MOHO_RESTRICT __restrict
 #else
+// <immintrin.h> exists for x86 targets only; clang's copy #errors anywhere
+// else. On arm64 (docs/port/android-roadmap.md, W1.2) the SSE sites need a
+// port of their own, not this header.
+#if defined(__i386__) || defined(__x86_64__)
 #include <immintrin.h>
+#endif
 #define MOHO_FORCEINLINE inline __attribute__((always_inline))
 #define MOHO_RESTRICT __restrict__
 #endif

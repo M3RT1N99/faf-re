@@ -1,5 +1,9 @@
 ﻿#pragma once
+#if defined(_MSC_VER)
 #include <intrin.h>
+#else
+#include "platform/Atomic32.h"
+#endif
 #include <typeinfo>
 
 #include "legacy/containers/String.h"
@@ -48,8 +52,12 @@ namespace moho
      */
     InstanceCounter() noexcept
     {
+#if defined(_MSC_VER)
       (void)::_InterlockedExchangeAdd(
         reinterpret_cast<volatile long*>(&GetStatItem()->mPrimaryValueBits), 1L);
+#else
+      (void)platform::AtomicExchangeAdd32(&GetStatItem()->mPrimaryValueBits, 1);
+#endif
     }
 
     /**
@@ -72,8 +80,12 @@ namespace moho
      */
     ~InstanceCounter() noexcept
     {
+#if defined(_MSC_VER)
       (void)::_InterlockedExchangeAdd(
         reinterpret_cast<volatile long*>(&GetStatItem()->mPrimaryValueBits), -1L);
+#else
+      (void)platform::AtomicExchangeAdd32(&GetStatItem()->mPrimaryValueBits, -1);
+#endif
     }
 
     /**

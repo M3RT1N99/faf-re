@@ -18,6 +18,9 @@ namespace gpg::gal { long DebugSaveSurfaceToFileA(const char*, unsigned int, voi
 #include "moho/misc/ID3DDeviceResources.h"
 #include "moho/misc/Stats.h"
 #include "moho/misc/StatItem.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 #include "moho/render/ID3DTextureSheet.h"
 #include "moho/render/d3d/CD3DPrimBatcher.h"
 #include "moho/render/textures/CD3DBatchTexture.h"
@@ -921,8 +924,12 @@ namespace moho
                   sEngineStatRenderFlatDecals = engineStats->GetItem("Render_FlatDecals", true);
                   (void)sEngineStatRenderFlatDecals->Release(0);
                 }
+#if defined(_MSC_VER)
                 _InterlockedExchangeAdd(
                   reinterpret_cast<volatile long*>(&sEngineStatRenderFlatDecals->mPrimaryValueBits), 1);
+#else
+                platform::AtomicExchangeAdd32(&sEngineStatRenderFlatDecals->mPrimaryValueBits, 1);
+#endif
               }
             } else {
               std::int32_t baselineIndexCount = 0;
@@ -946,7 +953,11 @@ namespace moho
                   sEngineStatRenderDecals = engineStats->GetItem("Render_Decals", true);
                   (void)sEngineStatRenderDecals->Release(0);
                 }
+#if defined(_MSC_VER)
                 _InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&sEngineStatRenderDecals->mPrimaryValueBits), 1);
+#else
+                platform::AtomicExchangeAdd32(&sEngineStatRenderDecals->mPrimaryValueBits, 1);
+#endif
               }
             }
           }

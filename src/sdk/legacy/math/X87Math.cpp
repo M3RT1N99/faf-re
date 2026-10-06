@@ -9,6 +9,15 @@ extern "C" float __cdecl msvc8_x87_sinf(float x);
 extern "C" float __cdecl msvc8_x87_cosf(float x);
 extern "C" float __cdecl msvc8_x87_tanf(float x);
 extern "C" float __cdecl msvc8_x87_atan2f(float y, float x);
+#elif !defined(_M_IX86)
+// Targets without an x87 unit (arm64 Android), and compilers that build
+// neither the inline assembly nor X87Math64.asm, take a portable stand-in: the
+// double-precision libm routine, rounded once to float. It is NOT bit-exact
+// with fsin/fcos/fptan/fpatan - the double rounding can land one float away,
+// and x87's large-argument reduction is not reproduced - so a simulation built
+// this way can desync against x86/x64. Replacing it with the bit-exact msvc8
+// FP layer is docs/port/android-roadmap.md W5.
+#define MSVC8_X87_PORTABLE_FALLBACK 1
 #endif
 
 namespace msvc8
@@ -51,6 +60,8 @@ namespace msvc8
       fstp result
     }
     return result;
+#elif defined(MSVC8_X87_PORTABLE_FALLBACK)
+    return static_cast<float>(std::sin(static_cast<double>(x)));
 #else
     return msvc8_x87_sinf(x);
 #endif
@@ -69,6 +80,8 @@ namespace msvc8
       fstp result
     }
     return result;
+#elif defined(MSVC8_X87_PORTABLE_FALLBACK)
+    return static_cast<float>(std::cos(static_cast<double>(x)));
 #else
     return msvc8_x87_cosf(x);
 #endif
@@ -85,6 +98,8 @@ namespace msvc8
       fstp result
     }
     return result;
+#elif defined(MSVC8_X87_PORTABLE_FALLBACK)
+    return static_cast<float>(std::tan(static_cast<double>(x)));
 #else
     return msvc8_x87_tanf(x);
 #endif
@@ -104,6 +119,8 @@ namespace msvc8
       fstp result
     }
     return result;
+#elif defined(MSVC8_X87_PORTABLE_FALLBACK)
+    return static_cast<float>(std::atan2(static_cast<double>(y), static_cast<double>(x)));
 #else
     return msvc8_x87_atan2f(y, x);
 #endif

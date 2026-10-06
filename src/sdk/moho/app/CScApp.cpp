@@ -44,6 +44,9 @@
 #include "moho/sim/SimDriver.h"
 #include "moho/task/CTaskThread.h"
 #include "moho/ui/IUIManager.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace gpg
 {
@@ -165,11 +168,19 @@ namespace
       return;
     }
 
+#if defined(_MSC_VER)
     volatile long* const counter = reinterpret_cast<volatile long*>(&slot->mPrimaryValueBits);
     long observed = 0;
     do {
       observed = ::InterlockedCompareExchange(counter, 0, 0);
     } while (::InterlockedCompareExchange(counter, static_cast<long>(value), observed) != observed);
+#else
+    volatile std::int32_t* const counter = &slot->mPrimaryValueBits;
+    std::int32_t observed = 0;
+    do {
+      observed = platform::AtomicCompareExchange32(counter, 0, 0);
+    } while (platform::AtomicCompareExchange32(counter, value, observed) != observed);
+#endif
   }
 
   /**

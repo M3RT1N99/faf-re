@@ -58,6 +58,9 @@
 #include "gpg/core/reflection/StaticInitPhase.h"
 #include "moho/misc/DiagnosticBudget.h"
 #include "moho/sim/SimStartupRegistrations.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace
 {
@@ -1255,7 +1258,11 @@ namespace moho
       + (impactResolved ? "_Shots_Hit" : "_Shots_Missed");
     CArmyStatItem* const shotItem = armyStats->GetItem(statPath.c_str());
     shotItem->SynchronizeAsInt();
+#if defined(_MSC_VER)
     (void)_InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&shotItem->mPrimaryValueBits), 1);
+#else
+    (void)platform::AtomicExchangeAdd32(&shotItem->mPrimaryValueBits, 1);
+#endif
   }
 
   /**
@@ -3585,12 +3592,21 @@ namespace moho
       CArmyStatItem* const item = ResolveArmyStatItemCachedCreate(&armyStats, statPath);
       item->SynchronizeAsFloat();
 
+#if defined(_MSC_VER)
       volatile long* const counter = reinterpret_cast<volatile long*>(&item->mPrimaryValueBits);
+#else
+      volatile std::int32_t* const counter = &item->mPrimaryValueBits;
+#endif
       std::int32_t desiredBits = 0;
       std::memcpy(&desiredBits, &value, sizeof(desiredBits));
       for (;;) {
+#if defined(_MSC_VER)
         const std::int32_t observed = _InterlockedCompareExchange(counter, 0, 0);
         const std::int32_t result = _InterlockedCompareExchange(counter, desiredBits, observed);
+#else
+        const std::int32_t observed = platform::AtomicCompareExchange32(counter, 0, 0);
+        const std::int32_t result = platform::AtomicCompareExchange32(counter, desiredBits, observed);
+#endif
         if (result == observed) {
           return;
         }
@@ -3697,7 +3713,11 @@ namespace moho
       {
         CArmyStatItem* const shotsFired = armyStats->GetItem(shotsFiredPath.c_str());
         shotsFired->Synchronize();
+#if defined(_MSC_VER)
         (void)_InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&shotsFired->mPrimaryValueBits), 1);
+#else
+        (void)platform::AtomicExchangeAdd32(&shotsFired->mPrimaryValueBits, 1);
+#endif
       }
 
       // Number of shots fired so far, used to average the fire-range lanes.

@@ -10,14 +10,10 @@
 #if defined(_WIN32)
 #include <d3d9types.h>
 #else
-struct RECT
-{
-  long left;
-  long top;
-  long right;
-  long bottom;
-};
-
+// RECT comes from platform/Platform.h, as on Windows: the port shim's
+// <windows.h> (port/engine/shim) declares windef.h's `struct tagRECT` with
+// 32-bit LONG fields, which CD3DDevice.h forward-declares. A `struct RECT` of
+// its own here was a second, different type (and 32 bytes on LP64).
 struct D3DLOCKED_RECT
 {
   int Pitch;

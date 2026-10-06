@@ -431,12 +431,15 @@ namespace
         static const ProbeHeapMode sMode = [] {
             char value[8] = {};
             const DWORD written = ::GetEnvironmentVariableA("FAF_SYSHEAP", value, static_cast<DWORD>(sizeof(value)));
-#if defined(_M_X64)
+#if !defined(_M_IX86) && !defined(__i386__)
             // x64 always uses a system heap. The engine allocator is the x86
             // binary's: its smallest size classes (4..28 bytes, step 4) cannot
             // hold the 8-byte free-list link a freed block carries, nor give
             // the 16-byte alignment x64 code expects from `new`, and its
             // record, thread-cache and page-map sizes are x86 byte counts.
+            // The same holds for every other non-x86 target (arm64 Android,
+            // docs/port/android-roadmap.md W1.1), so only x86 can select the
+            // engine allocator.
             if (written != 0u && written < sizeof(value) && value[0] == '2') {
                 return ProbeHeapMode::DebugCrtHeap;
             }

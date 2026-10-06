@@ -37,6 +37,9 @@
 #include "moho/render/d3d/CD3DRenderTarget.h"
 #include "moho/render/d3d/CD3DPrimBatcher.h"
 #include "moho/render/Shadow.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace
 {
@@ -1614,8 +1617,12 @@ namespace moho
                   sEngineStatRenderFlatDecals = engineStats->GetItem("Render_FlatDecals", true);
                   (void)sEngineStatRenderFlatDecals->Release(0);
                 }
+#if defined(_MSC_VER)
                 _InterlockedExchangeAdd(
                   reinterpret_cast<volatile long*>(&sEngineStatRenderFlatDecals->mPrimaryValueBits), 1);
+#else
+                platform::AtomicExchangeAdd32(&sEngineStatRenderFlatDecals->mPrimaryValueBits, 1);
+#endif
               }
             } else {
               std::int32_t baselineIndexCount = 0;
@@ -1639,7 +1646,11 @@ namespace moho
                   sEngineStatRenderDecals = engineStats->GetItem("Render_Decals", true);
                   (void)sEngineStatRenderDecals->Release(0);
                 }
+#if defined(_MSC_VER)
                 _InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&sEngineStatRenderDecals->mPrimaryValueBits), 1);
+#else
+                platform::AtomicExchangeAdd32(&sEngineStatRenderDecals->mPrimaryValueBits, 1);
+#endif
               }
             }
           }

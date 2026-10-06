@@ -114,6 +114,9 @@
 #include "Wm3Box3.h"
 #include "Wm3IntrLine3Box3.h"
 #include "Wm3Line3.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace
 {
@@ -1602,12 +1605,21 @@ namespace
   )
   {
     moho::StatItem* const item = EnsureEngineFloatStat(slot, statPath);
+#if defined(_MSC_VER)
     volatile long* const counter = reinterpret_cast<volatile long*>(&item->mPrimaryValueBits);
     const long nextBits = std::bit_cast<long>(value);
     long observed = 0;
     do {
       observed = ::InterlockedCompareExchange(counter, 0, 0);
     } while (::InterlockedCompareExchange(counter, nextBits, observed) != observed);
+#else
+    volatile std::int32_t* const counter = &item->mPrimaryValueBits;
+    const std::int32_t nextBits = std::bit_cast<std::int32_t>(value);
+    std::int32_t observed = 0;
+    do {
+      observed = platform::AtomicCompareExchange32(counter, 0, 0);
+    } while (platform::AtomicCompareExchange32(counter, nextBits, observed) != observed);
+#endif
   }
 
   [[nodiscard]] float SampleCursorTerrainElevation(
@@ -15235,10 +15247,11 @@ bool moho::CMauiMovie::LoadFile(
   const char* const filename
 )
 {
-#if defined(_M_X64)
+#if !defined(_M_IX86) && !defined(__i386__)
   // The Sofdec movie middleware is not ported to x64 yet: it carries pointers
   // as 32-bit words through its own layout views, and opening a movie faults.
-  // Until it is, x64 takes the same path `/nomovie` does.
+  // Until it is, x64 takes the same path `/nomovie` does, and so does every
+  // other non-x86 target (arm64 Android, docs/port/android-roadmap.md W4).
   constexpr bool kMoviePlaybackSupported = false;
 #else
   constexpr bool kMoviePlaybackSupported = true;

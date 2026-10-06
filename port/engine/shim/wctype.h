@@ -1,0 +1,11 @@
+// <wctype.h>, followed by the MSVC CRT names that MSVC declares in it
+// (_towlower_l, _towupper_l).
+// faf_msvc_crt.h says which C headers are interposed like this, and why the
+// others are not.
+//
+// No include guard: every #include reaches the C library's header, which
+// guards itself, and faf_msvc_crt.h guards itself too.
+#include_next <wctype.h>
+#if defined(__cplusplus)
+#include "faf_msvc_crt.h"
+#endif

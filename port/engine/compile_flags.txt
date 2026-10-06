@@ -1,0 +1,64 @@
+# Compile flags for the engine (src/sdk) on Android arm64.
+#
+# Read by scripts/port/engine_sweep.py (see port/engine/README.md). The sweep
+# takes the TU list, defines, include directories and forced includes from
+# src/sdk/main.vcxproj (Release|x64) and appends the arguments below last, so a
+# -D or -U here overrides the project.
+#
+# Format: one clang argument per line, or several that belong together; '#'
+# starts a comment. Lines of the form "drop-define: NAME" and
+# "drop-include: TEXT" are directives for the sweep, not clang arguments: they
+# remove a project define, or every project include directory whose path
+# contains TEXT (case-insensitive, '/' separators).
+
+# Target: arm64 at the APK's minSdk (port/android/AndroidManifest.xml).
+--target=aarch64-linux-android26
+
+# The language level main.vcxproj builds with (LanguageStandard stdcpp20).
+-std=c++20
+# __declspec, __int64 and the other Microsoft keywords the recovered code uses.
+# Not -fms-compatibility: that would emulate MSVC's lookup bugs instead of
+# reporting them, and the code has to build with GCC-style front ends later.
+-fms-extensions
+-fexceptions
+-frtti
+-pthread
+
+# Semantics the engine was written against (docs/port/android-roadmap.md, W1.1
+# and W5). They do not change what compiles; they keep the objects honest for
+# when they are linked.
+# - MSVC's char is signed; AArch64's plain char is unsigned.
+-fsigned-char
+# - NDK clang fuses a*b+c into fmadd by default; x86 rounds the product first,
+#   and the lockstep sim must round like x86.
+-ffp-contract=off
+-fno-fast-math
+# - MSVC does no type-based alias analysis, and the recovered code type-puns
+#   through casts throughout.
+-fno-strict-aliasing
+
+# std::auto_ptr and std::unary_function/binary_function, removed in C++17.
+# main.vcxproj keeps them with _HAS_AUTO_PTR_ETC=1, the MSVC STL's opt-in, on
+# the vendored boost.thread sources (tss.cpp uses std::auto_ptr) and on
+# moho/net/CLobby.cpp (boost::algorithm::string); see its comment at CLobby.cpp's
+# ClCompile item. These are libc++'s opt-ins for the same two features. The
+# flags file has no per-item scope, so they apply to every TU; src/sdk itself
+# names std::auto_ptr only in comments (msvc8::auto_ptr is its own class).
+-D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
+-D_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION
+
+# Windows platform macros from main.vcxproj. On Android they would select the
+# Win32 branches of boost, zlib, LuaPlus and Wild Magic. The other project
+# defines stay (WIN32_LEAN_AND_MEAN, NOMINMAX, _CRT_SECURE_NO_WARNINGS, and
+# UNICODE/_UNICODE from CharacterSet): they only tune Windows headers, which
+# the shim (port/engine/shim) is free to honour.
+drop-define: WIN32
+drop-define: _WINDOWS
+
+# Include directories of components that do not exist on Android: wxWidgets
+# 2.4.2 (MSW build; replaced by the platform layer, W2) and the D3DX SDK
+# (replaced by the GAL backend, W3). Without them a TU that still needs them
+# stops at the engine's own #include with "file not found", instead of deep
+# inside an MSW header.
+drop-include: dependencies/wxWindows-2.4.2/
+drop-include: dependencies/DXSDK_D3DX/

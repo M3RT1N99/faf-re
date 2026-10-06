@@ -71,6 +71,9 @@
 #include "moho/unit/core/Unit.h"
 
 #include "gpg/core/reflection/StaticInitPhase.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 using namespace moho;
 
@@ -570,20 +573,34 @@ namespace
 
   [[nodiscard]] std::int32_t AtomicLoadStatValueBits(volatile std::int32_t* const valueBits) noexcept
   {
+#if defined(_MSC_VER)
     return static_cast<std::int32_t>(
       InterlockedCompareExchange(reinterpret_cast<volatile long*>(valueBits), 0L, 0L)
     );
+#else
+    return static_cast<std::int32_t>(
+      platform::AtomicCompareExchange32(valueBits, 0, 0)
+    );
+#endif
   }
 
   void AtomicStoreStatValueBits(volatile std::int32_t* const valueBits, const std::int32_t nextValueBits) noexcept
   {
     for (;;) {
       const std::int32_t observedValueBits = AtomicLoadStatValueBits(valueBits);
+#if defined(_MSC_VER)
       const std::int32_t exchangedValueBits = static_cast<std::int32_t>(InterlockedCompareExchange(
         reinterpret_cast<volatile long*>(valueBits),
         static_cast<long>(nextValueBits),
         static_cast<long>(observedValueBits)
       ));
+#else
+      const std::int32_t exchangedValueBits = static_cast<std::int32_t>(platform::AtomicCompareExchange32(
+        valueBits,
+        nextValueBits,
+        observedValueBits
+      ));
+#endif
       if (exchangedValueBits == observedValueBits) {
         return;
       }
@@ -602,11 +619,19 @@ namespace
       std::int32_t nextValueBits = 0;
       std::memcpy(&nextValueBits, &nextValue, sizeof(nextValueBits));
 
+#if defined(_MSC_VER)
       const std::int32_t exchangedValueBits = static_cast<std::int32_t>(InterlockedCompareExchange(
         reinterpret_cast<volatile long*>(valueBits),
         static_cast<long>(nextValueBits),
         static_cast<long>(observedValueBits)
       ));
+#else
+      const std::int32_t exchangedValueBits = static_cast<std::int32_t>(platform::AtomicCompareExchange32(
+        valueBits,
+        nextValueBits,
+        observedValueBits
+      ));
+#endif
       if (exchangedValueBits == observedValueBits) {
         return;
       }
@@ -692,11 +717,19 @@ namespace
           return;
         }
 
+#if defined(_MSC_VER)
         const std::int32_t exchanged = static_cast<std::int32_t>(InterlockedCompareExchange(
           reinterpret_cast<volatile long*>(&statItem->mPrimaryValueBits),
           static_cast<long>(candidate),
           static_cast<long>(observed)
         ));
+#else
+        const std::int32_t exchanged = static_cast<std::int32_t>(platform::AtomicCompareExchange32(
+          &statItem->mPrimaryValueBits,
+          candidate,
+          observed
+        ));
+#endif
         if (exchanged == observed) {
           return;
         }
@@ -720,11 +753,19 @@ namespace
           return;
         }
 
+#if defined(_MSC_VER)
         const std::int32_t exchangedBits = static_cast<std::int32_t>(InterlockedCompareExchange(
           reinterpret_cast<volatile long*>(&statItem->mPrimaryValueBits),
           static_cast<long>(candidateBits),
           static_cast<long>(observedBits)
         ));
+#else
+        const std::int32_t exchangedBits = static_cast<std::int32_t>(platform::AtomicCompareExchange32(
+          &statItem->mPrimaryValueBits,
+          candidateBits,
+          observedBits
+        ));
+#endif
         if (exchangedBits == observedBits) {
           return;
         }
@@ -3409,10 +3450,17 @@ int moho::cfunc_CAiBrainAddArmyStatL(LuaPlus::LuaState* const state)
     const std::int32_t intDelta = static_cast<std::int32_t>(lua_tonumber(rawState, 3));
     if (CArmyStatItem* const statItem = ResolveCachedArmyStatPath(armyStats, statName); statItem != nullptr) {
       statItem->SynchronizeAsInt();
+#if defined(_MSC_VER)
       (void)InterlockedExchangeAdd(
         reinterpret_cast<volatile long*>(&statItem->mPrimaryValueBits),
         static_cast<long>(intDelta)
       );
+#else
+      (void)platform::AtomicExchangeAdd32(
+        &statItem->mPrimaryValueBits,
+        intDelta
+      );
+#endif
     }
   } else if (lua_type(rawState, 3) == LUA_TNUMBER) {
     const float floatDelta = valueArg.GetNumber();

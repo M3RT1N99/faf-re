@@ -25,6 +25,9 @@
 #include "moho/sim/CWldSession.h"
 #include "moho/sim/UserArmy.h"
 #include "moho/entity/UserEntity.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace moho
 {
@@ -342,10 +345,17 @@ namespace
 
     EnsureSoundCounterStat(gEngineStatSoundActiveEntityLoops, "Sound_ActiveEntityLoops");
     if (gEngineStatSoundActiveEntityLoops != nullptr) {
+#if defined(_MSC_VER)
       (void)::InterlockedExchangeAdd(
         reinterpret_cast<volatile long*>(&gEngineStatSoundActiveEntityLoops->mPrimaryValueBits),
         1L
       );
+#else
+      (void)platform::AtomicExchangeAdd32(
+        &gEngineStatSoundActiveEntityLoops->mPrimaryValueBits,
+        1
+      );
+#endif
     }
   }
 
@@ -558,11 +568,19 @@ namespace
       return;
     }
 
+#if defined(_MSC_VER)
     volatile long* const counter = reinterpret_cast<volatile long*>(&slot->mPrimaryValueBits);
     long observed = 0;
     do {
       observed = ::InterlockedCompareExchange(counter, 0, 0);
     } while (::InterlockedCompareExchange(counter, static_cast<long>(value), observed) != observed);
+#else
+    volatile std::int32_t* const counter = &slot->mPrimaryValueBits;
+    std::int32_t observed = 0;
+    do {
+      observed = platform::AtomicCompareExchange32(counter, 0, 0);
+    } while (platform::AtomicCompareExchange32(counter, value, observed) != observed);
+#endif
   }
 
   [[nodiscard]] float ComputePitchRadians(const Wm3::Vec3f& value)
@@ -954,10 +972,17 @@ namespace moho
     }
 
     if (gEngineStatSoundActiveEntityLoops != nullptr) {
+#if defined(_MSC_VER)
       (void)::InterlockedExchangeAdd(
         reinterpret_cast<volatile long*>(&gEngineStatSoundActiveEntityLoops->mPrimaryValueBits),
         -1L
       );
+#else
+      (void)platform::AtomicExchangeAdd32(
+        &gEngineStatSoundActiveEntityLoops->mPrimaryValueBits,
+        -1
+      );
+#endif
     }
   }
 
@@ -1194,10 +1219,17 @@ namespace moho
 
         EnsureSoundCounterStat(gEngineStatSoundStopEntityLoop, "Sound_StopEntityLoop");
         if (gEngineStatSoundStopEntityLoop != nullptr) {
+#if defined(_MSC_VER)
           (void)::InterlockedExchangeAdd(
             reinterpret_cast<volatile long*>(&gEngineStatSoundStopEntityLoop->mPrimaryValueBits),
             1L
           );
+#else
+          (void)platform::AtomicExchangeAdd32(
+            &gEngineStatSoundStopEntityLoop->mPrimaryValueBits,
+            1
+          );
+#endif
         }
 
         if (filterResult == EFilterType::DistanceCulled) {
@@ -1356,20 +1388,34 @@ namespace moho
     if (AudioEngine::Play(ReadSndParamsBankId(*params), &cue, voiceEngine, ReadSndParamsCueId(*params), 0) < 0) {
       EnsureSoundCounterStat(gEngineStatSoundLimitedLoop, "Sound_LimitedLoop");
       if (gEngineStatSoundLimitedLoop != nullptr) {
+#if defined(_MSC_VER)
         (void)::InterlockedExchangeAdd(
           reinterpret_cast<volatile long*>(&gEngineStatSoundLimitedLoop->mPrimaryValueBits),
           1L
         );
+#else
+        (void)platform::AtomicExchangeAdd32(
+          &gEngineStatSoundLimitedLoop->mPrimaryValueBits,
+          1
+        );
+#endif
       }
       return;
     }
 
     EnsureSoundCounterStat(gEngineStatSoundStartEntityLoop, "Sound_StartEntityLoop");
     if (gEngineStatSoundStartEntityLoop != nullptr) {
+#if defined(_MSC_VER)
       (void)::InterlockedExchangeAdd(
         reinterpret_cast<volatile long*>(&gEngineStatSoundStartEntityLoop->mPrimaryValueBits),
         1L
       );
+#else
+      (void)platform::AtomicExchangeAdd32(
+        &gEngineStatSoundStartEntityLoop->mPrimaryValueBits,
+        1
+      );
+#endif
     }
 
     if (snd_SpewSound) {

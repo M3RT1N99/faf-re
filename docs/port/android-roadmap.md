@@ -27,19 +27,21 @@ L4 is the goal. L2 is the first point where the port is fun to use. L3 is the fi
 
 ## Where we stand
 
-- **Engine source.** The tree builds as Win32 `main.exe` and, since commit `b67e033d` (Draiget), as
-  x64 `main_x64.exe`. Compiling every x64 translation unit with the NDK for `aarch64-linux-android`
-  gives 274 of 1021 objects as-is. With two one-line fixes and a 90-line Win32 compatibility header,
-  815 of 1021 build. The ~200 that still fail are wxWidgets, D3D, Winsock, audio and app code.
-  No arm64 link has been attempted.
-- **Android app (M1).** One APK holds the Java launcher, a `NativeActivity` in its own `:game`
+- **Engine source (M2 done).** The tree builds as Win32 `main.exe` and, since commit `b67e033d`
+  (Draiget), as x64 `main_x64.exe`. `scripts/port/engine_sweep.py` compiles every engine
+  translation unit for `aarch64-linux-android`: 276 of 1010 compiled at the start of M2, **896 of
+  1010** after it, with the Windows build unchanged (same warnings; 1002 of 1010 MSVC objects
+  byte-identical, the other 8 differ only in `__LINE__`). The 114 that still fail are wxWidgets,
+  D3D, Win32/Winsock calls and four SIMD headers: platform layer and renderer work. No arm64 link
+  has been attempted. See [port/engine/README.md](../../port/engine/README.md).
+- **Android app (M1 done).** One APK holds the Java launcher, a `NativeActivity` in its own `:game`
   process, and the native bring-up. A portable core runs FAF's real `init_faf.lua` and mounts the
   `.nx2`/`.scd` archives with the engine's first-mount-wins rules. It then draws the main-menu
-  background from the user's SCFA data through Diligent (Vulkan, GLES fallback). The core is
-  LuaPlus 1081 plus the VFS, zip and DDS code. On the host the core reproduces the engine's mount
-  table: 785 mounts, 20 archives, 38,237 entries, and 1477/1477 FAF Lua files parse. See
-  [android.md](android.md) and [gamedata.md](gamedata.md).
-- **Not yet:** no engine translation unit runs on ARM, and nothing has run on a phone yet.
+  background from the user's SCFA data through Diligent. The core is LuaPlus 1081 plus the VFS,
+  zip and DDS code. Confirmed on a Samsung Exynos 2200 (Xclipse 920, Android 16) with both Vulkan
+  and OpenGL ES: 17 archives and 38,201 entries mounted, background on screen 100-150 ms after
+  start. See [android.md](android.md) and [gamedata.md](gamedata.md).
+- **Not yet:** no engine translation unit runs on ARM.
 
 ## Workstreams
 
@@ -311,8 +313,8 @@ Every Android player's FAF account also needs a Steam or GOG ownership link, as 
 ## Sequence
 
 ```
-M1  one APK, data deploy, native data bring-up (L0)              <- this branch
-M2  W1.1-2: engine CMake + arm64 compile fixes; x64 LargeAddressAware oracle
+M1  one APK, data deploy, native data bring-up (L0)              done
+M2  W1.1-2: arm64 compile sweep + compile fixes (896/1010)       done; x64 LargeAddressAware oracle open
 M3  W1.3-5: 64-bit clean; headless arm64 replay runner runs a replay to the end (adb shell)
 M4  W5 + W6 on x86/x64: vault replays checksum-clean on the recovered engine (fixes upstream)
 M5  W5 on arm64: same replays checksum-clean on a phone (L3)

@@ -39,7 +39,22 @@
  *
  *     void register_SFootprintTypeInfo() { ... }
  *     GPG_PREREGISTER_INIT(SFootprintTypeInfo, register_SFootprintTypeInfo)
+ *
+ * Other compilers (the Android arm64 build, docs/port/android-roadmap.md W1.4)
+ * have no `.CRT$X*` walk. On ELF, `__declspec(allocate(".CRT$XCL"))` only
+ * names an ordinary data section, so the table entry would be emitted and
+ * never called. The ELF counterpart is `.init_array`: the linker sorts the
+ * `.init_array.<priority>` sections in ascending order and puts the plain
+ * `.init_array`, where ordinary dynamic initializers go (priority 65535, the
+ * `.CRT$XCU` block), after all of them. So the thunk becomes a constructor
+ * with priority GPG_STATIC_INIT_PRIORITY_CRT_XCL, which runs every provider
+ * before any ordinary initializer, in link order among themselves, as the CRT
+ * runs `.CRT$XCL` before `.CRT$XCU`. Priorities up to 100 are reserved for the
+ * implementation (libc++ initialises the standard streams there), so they
+ * still come first.
  */
+
+#if defined(_MSC_VER)
 
 #define GPG_PREREGISTER_INIT(TAG, FN)                                              \
   static void __cdecl gGpgPreRegisterThunk_##TAG()                                 \
@@ -50,3 +65,18 @@
   extern "C" __declspec(allocate(".CRT$XCL")) void(__cdecl* const                  \
                                                    gGpgPreRegisterInit_##TAG)() =  \
     &gGpgPreRegisterThunk_##TAG;
+
+#else
+
+// `.CRT$XCL` as an `.init_array` priority: above the reserved 0..100, below
+// the 65535 of ordinary dynamic initializers (`.CRT$XCU`).
+#define GPG_STATIC_INIT_PRIORITY_CRT_XCL 1000
+
+#define GPG_PREREGISTER_INIT(TAG, FN)                                              \
+  __attribute__((constructor(GPG_STATIC_INIT_PRIORITY_CRT_XCL))) static void       \
+  gGpgPreRegisterThunk_##TAG()                                                     \
+  {                                                                                \
+    (void)FN();                                                                    \
+  }
+
+#endif

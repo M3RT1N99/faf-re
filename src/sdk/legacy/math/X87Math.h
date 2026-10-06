@@ -28,7 +28,9 @@ namespace msvc8
    * the same x87 instructions on both architectures - the x87 unit is
    * available in 64-bit mode - so x86, x64 and the shipped binary produce the
    * same bits. fsin/fcos/fptan/fpatan ignore the precision-control field, so a
-   * thread's `_PC_24` setting does not change them.
+   * thread's `_PC_24` setting does not change them. Targets without x87 (arm64
+   * Android) get a portable stand-in that is not bit-exact; see X87Math.cpp and
+   * docs/port/android-roadmap.md W5.
    */
   [[nodiscard]] float sinf(float x) noexcept;
   [[nodiscard]] float cosf(float x) noexcept;

@@ -32,6 +32,9 @@
 #include "platform/Platform.h"
 
 #include "gpg/core/reflection/StaticInitPhase.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace
 {
@@ -502,7 +505,7 @@ namespace
 #if defined(_WIN32)
     return static_cast<std::int32_t>(InterlockedCompareExchange(reinterpret_cast<volatile long*>(value), 0, 0));
 #else
-    return *value;
+    return platform::AtomicCompareExchange32(value, 0, 0);
 #endif
   }
 
@@ -519,7 +522,12 @@ namespace
       }
     }
 #else
-    *value = wanted;
+    for (;;) {
+      const std::int32_t observed = ReadAtomicI32(value);
+      if (platform::AtomicCompareExchange32(value, wanted, observed) == observed) {
+        return;
+      }
+    }
 #endif
   }
 
@@ -536,9 +544,13 @@ namespace
       }
     }
 #else
-    const std::int32_t previous = *value;
-    *value = wanted;
-    return previous;
+    for (;;) {
+      const std::int32_t observed = ReadAtomicI32(value);
+      const std::int32_t exchanged = platform::AtomicCompareExchange32(value, wanted, observed);
+      if (exchanged == observed) {
+        return exchanged;
+      }
+    }
 #endif
   }
 
@@ -556,9 +568,13 @@ namespace
       }
     }
 #else
-    const std::int32_t previous = *slot;
-    *slot = target;
-    return previous;
+    for (;;) {
+      const std::int32_t observed = ReadAtomicI32(slot);
+      const std::int32_t exchanged = platform::AtomicCompareExchange32(slot, target, observed);
+      if (exchanged == observed) {
+        return exchanged;
+      }
+    }
 #endif
   }
 
@@ -597,9 +613,15 @@ namespace
       }
     }
 #else
-    const std::int32_t previous = item->mRealtimeValueBits;
-    item->mRealtimeValueBits = item->mPrimaryValueBits;
-    return previous;
+    for (;;) {
+      const std::int32_t observedRealtime = ReadAtomicI32(&item->mRealtimeValueBits);
+      const std::int32_t observedPrimary = ReadAtomicI32(&item->mPrimaryValueBits);
+      const std::int32_t exchanged =
+        platform::AtomicCompareExchange32(&item->mRealtimeValueBits, observedPrimary, observedRealtime);
+      if (exchanged == observedRealtime) {
+        return exchanged;
+      }
+    }
 #endif
   }
 
@@ -1583,7 +1605,7 @@ namespace moho
 #if defined(_WIN32)
       (void)InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&sPrintStatsBoogersSquirt->mPrimaryValueBits), 1L);
 #else
-      ++sPrintStatsBoogersSquirt->mPrimaryValueBits;
+      (void)platform::AtomicExchangeAdd32(&sPrintStatsBoogersSquirt->mPrimaryValueBits, 1);
 #endif
     }
 
@@ -2245,14 +2267,14 @@ namespace moho
     } while (true);
 #else
     for (;;) {
-      const std::int32_t observedBits = *pCounter;
+      const std::int32_t observedBits = ReadAtomicI32(pCounter);
       const float currentValue = AsFloatBits(observedBits);
       const float nextValue = currentValue + *delta;
       std::int32_t nextBits = 0;
       std::memcpy(&nextBits, &nextValue, sizeof(nextBits));
-      if (*pCounter == observedBits) {
-        *pCounter = nextBits;
-        return observedBits;
+      const std::int32_t exchanged = platform::AtomicCompareExchange32(pCounter, nextBits, observedBits);
+      if (exchanged == observedBits) {
+        return exchanged;
       }
     }
 #endif

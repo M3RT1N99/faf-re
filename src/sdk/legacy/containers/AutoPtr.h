@@ -5,6 +5,8 @@
 // - Single pointer data member (4 bytes on x86).
 // - No array support; intended for single objects only.
 
+#include <cstddef> // std::nullptr_t, for the nullptr_t overloads below
+
 namespace msvc8
 {
     template<class T>

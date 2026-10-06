@@ -38,6 +38,9 @@
 #include "moho/sim/SSTIArmyVariableData.h"
 #include "moho/unit/core/Unit.h"
 #include "Sim.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 using namespace moho;
 
@@ -261,10 +264,17 @@ namespace
      */
     ~ScopedStatTimer()
     {
+#if defined(_MSC_VER)
       (void)::InterlockedExchangeAdd(
         reinterpret_cast<volatile long*>(&mStat->mPrimaryValueBits),
         static_cast<long>(gpg::time::CyclesToMicroseconds(mTimer.ElapsedCycles()))
       );
+#else
+      (void)platform::AtomicExchangeAdd32(
+        &mStat->mPrimaryValueBits,
+        static_cast<std::int32_t>(gpg::time::CyclesToMicroseconds(mTimer.ElapsedCycles()))
+      );
+#endif
     }
 
     ScopedStatTimer(const ScopedStatTimer&) = delete;

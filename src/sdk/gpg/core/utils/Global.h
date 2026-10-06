@@ -438,7 +438,16 @@ namespace gpg
 	 * Address: 0x00BEAAD0 (FUN_00BEAAD0, dynamic initializer of the copy at 0x00F8ED3C)
 	 * Address: 0x00BEAB30 (FUN_00BEAB30, dynamic initializer of the copy at 0x00F8ED48)
 	 */
+#if defined(_MSC_VER)
 	static const float pInf = std::numeric_limits<float>::infinity();
+#else
+	// `constexpr` on other compilers (the Android arm64 build): Sim.cpp:6707
+	// and :26342 and CCommandLuaFunctionRegistrations.cpp:3561 initialise
+	// `constexpr` locals from pInf/nInf/NaN, and a `const float` is not usable
+	// in a constant expression ([expr.const]); MSVC accepts it anyway. MSVC
+	// keeps the `static const` copies and dynamic initializers described above.
+	static constexpr float pInf = std::numeric_limits<float>::infinity();
+#endif
 
 	/**
 	 * `-pInf`; MSVC8 emits the negation as `-0.0f - pInf` (`subss` from 0x00E4F748).
@@ -771,7 +780,11 @@ namespace gpg
 	 * Address: 0x00BEAAF0 (FUN_00BEAAF0, dynamic initializer of the copy at 0x00F8ED40)
 	 * Address: 0x00BEAB50 (FUN_00BEAB50, dynamic initializer of the copy at 0x00F8ED4C)
 	 */
+#if defined(_MSC_VER)
 	static const float nInf = -pInf;
+#else
+	static constexpr float nInf = -pInf; // constexpr off MSVC: see pInf
+#endif
 
 	/**
 	 * Address: 0x00BC2CC0 (FUN_00BC2CC0, dynamic initializer of the copy at 0x010A651C)
@@ -1102,7 +1115,11 @@ namespace gpg
 	 * Address: 0x00BEAB10 (FUN_00BEAB10, dynamic initializer of the copy at 0x00F8ED44)
 	 * Address: 0x00BEAB70 (FUN_00BEAB70, dynamic initializer of the copy at 0x00F8ED50)
 	 */
+#if defined(_MSC_VER)
 	static const float NaN = std::numeric_limits<float>::quiet_NaN();
+#else
+	static constexpr float NaN = std::numeric_limits<float>::quiet_NaN(); // constexpr off MSVC: see pInf
+#endif
 }
 
 static gpg::die_handler_t dieHandler; // 0x00F8EBDC

@@ -10,12 +10,37 @@
 // past the lane width giving zero (logical) or a sign fill (arithmetic), and
 // rounding averages. Nothing here is compiled on x86, where the real
 // intrinsics are used.
+//
+// Targets that are not x86 at all (arm64 Android) have no <mmintrin.h>, so
+// they use the same versions and get `__m64` itself from here, with the
+// member layout of MSVC's union that these functions and the movie code read
+// (docs/port/android-roadmap.md W1.1, W4). GCC and Clang on x86-64 have the
+// real intrinsics and a vector `__m64`, so like x86 they compile nothing here.
 
-#if defined(_M_X64)
+#if defined(_M_X64) || !(defined(_M_IX86) || defined(__i386__) || defined(__x86_64__))
 
+#if defined(_MSC_VER)
 #include <mmintrin.h>
+#endif
 
 #include <cstdint>
+
+#if !defined(_MSC_VER)
+// MSVC's `__m64` (<mmintrin.h>): 8 bytes, 8-byte aligned, viewed through
+// these lanes.
+union alignas(8) __m64
+{
+  std::uint64_t m64_u64;
+  float m64_f32[2];
+  std::int8_t m64_i8[8];
+  std::int16_t m64_i16[4];
+  std::int32_t m64_i32[2];
+  std::int64_t m64_i64;
+  std::uint8_t m64_u8[8];
+  std::uint16_t m64_u16[4];
+  std::uint32_t m64_u32[2];
+};
+#endif
 
 namespace mmx_on_x64
 {
@@ -171,4 +196,4 @@ inline __m64 _mm_srai_pi16(const __m64 a, const int count) noexcept
   return _m_psrawi(a, count);
 }
 
-#endif // _M_X64
+#endif // _M_X64 || not x86

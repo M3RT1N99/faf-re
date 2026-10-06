@@ -29,6 +29,9 @@
 #include "moho/sim/Sim.h"
 #include "moho/unit/core/Unit.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace moho
 {
@@ -226,7 +229,7 @@ namespace
 #if defined(_WIN32)
     ::InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&statItem->mPrimaryValueBits), static_cast<long>(delta));
 #else
-    statItem->mPrimaryValueBits += static_cast<std::int32_t>(delta);
+    (void)platform::AtomicExchangeAdd32(&statItem->mPrimaryValueBits, static_cast<std::int32_t>(delta));
 #endif
   }
 

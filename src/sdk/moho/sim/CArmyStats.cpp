@@ -38,6 +38,9 @@
 #include "moho/sim/SConditionTriggerTypes.h"
 #include "moho/sim/Sim.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace
 {
@@ -103,9 +106,7 @@ namespace
       _InterlockedExchangeAdd(reinterpret_cast<volatile long*>(slot), static_cast<long>(value))
     );
 #else
-    const std::int32_t previous = *slot;
-    *slot = previous + value;
-    return previous;
+    return platform::AtomicExchangeAdd32(slot, value);
 #endif
   }
 
@@ -121,11 +122,7 @@ namespace
       )
     );
 #else
-    const std::int32_t observed = *slot;
-    if (observed == expected) {
-      *slot = desired;
-    }
-    return observed;
+    return platform::AtomicCompareExchange32(slot, desired, expected);
 #endif
   }
 

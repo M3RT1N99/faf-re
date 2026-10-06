@@ -36,6 +36,9 @@
 #include "moho/sim/CDebugCanvas.h"
 #include "moho/sim/STIMap.h"
 #include "moho/ui/SDebugLine.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace moho
 {
@@ -1164,8 +1167,12 @@ namespace moho
       sEngineStatRenderActiveEmitters = engineStats->GetItem("Render_ActiveEmitters", true);
       (void)sEngineStatRenderActiveEmitters->Release(0);
     }
+#if defined(_MSC_VER)
     _InterlockedExchangeAdd(
       reinterpret_cast<volatile long*>(&sEngineStatRenderActiveEmitters->mPrimaryValueBits), 1);
+#else
+    platform::AtomicExchangeAdd32(&sEngineStatRenderActiveEmitters->mPrimaryValueBits, 1);
+#endif
 
     if (!mValid) {
       UpdateCurve();

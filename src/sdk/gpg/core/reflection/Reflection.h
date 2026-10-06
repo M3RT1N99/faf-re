@@ -5538,6 +5538,20 @@ namespace gpg
     outValue->reset_from_owner(value);
     return this;
   }
+
+  // Declared ahead of `WriteArchive::WritePointer` below, which calls it: the
+  // unqualified name must be visible where that template is defined, because
+  // argument-dependent lookup at instantiation only searches the namespaces of
+  // `T` (`moho::`, ...), not `gpg`. MSVC resolves it late and binds the same
+  // function without this; with it, MSVC emits its COMDAT sections in another
+  // order (moho/console/CConCommand.cpp, Release|x64), so it stays off MSVC.
+  // The definition and its address list follow the `detail::RecentRuntimeTypes`
+  // cache further down.
+#if !defined(_MSC_VER)
+  template <class T>
+  [[nodiscard]] RRef MakeRRef(T* const value);
+#endif
+
   /**
    * Per-type emissions with no references in the PE (write state and source
    * -- a value, a slot or an owner field -- folded in per copy):

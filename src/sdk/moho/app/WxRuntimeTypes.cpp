@@ -56,6 +56,9 @@
 #include "moho/render/d3d/CD3DDepthStencil.h"
 #include "moho/render/d3d/CD3DRenderTarget.h"
 #include "moho/render/d3d/WD3DViewport.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 #include "gpg/gal/backends/d3d9/RenderTargetD3D9.hpp" // TEMPORARY PROBE (do not commit)
 extern "C" int FafProbeFrameSeq(); extern "C" int FafProbeFrameDiag(); // TEMPORARY PROBE (do not commit)
 namespace gpg::gal
@@ -3232,12 +3235,20 @@ namespace
       return;
     }
 
+#if defined(_MSC_VER)
     volatile long* const counter =
       reinterpret_cast<volatile long*>(&gEngineStatRenderUnitCount->mPrimaryValueBits);
     long observed = 0;
     do {
       observed = ::InterlockedCompareExchange(counter, 0, 0);
     } while (::InterlockedCompareExchange(counter, 0, observed) != observed);
+#else
+    volatile std::int32_t* const counter = &gEngineStatRenderUnitCount->mPrimaryValueBits;
+    std::int32_t observed = 0;
+    do {
+      observed = platform::AtomicCompareExchange32(counter, 0, 0);
+    } while (platform::AtomicCompareExchange32(counter, 0, observed) != observed);
+#endif
   }
 } // namespace
 

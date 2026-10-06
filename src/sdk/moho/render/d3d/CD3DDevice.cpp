@@ -46,6 +46,9 @@
 #include "moho/render/textures/CD3DDynamicTextureSheet.h"
 #include "moho/render/textures/DeviceExitListener.h"
 #include "Wm3Vector2.h"
+#if !defined(_MSC_VER)
+#include "platform/Atomic32.h"
+#endif
 
 namespace
 {
@@ -79,6 +82,7 @@ namespace
       return;
     }
 
+#if defined(_MSC_VER)
     volatile long* const counter = reinterpret_cast<volatile long*>(&item->mPrimaryValueBits);
     const long nextBits = static_cast<long>(FloatToBits(value));
 
@@ -86,6 +90,15 @@ namespace
     do {
       observed = ::InterlockedCompareExchange(counter, 0, 0);
     } while (::InterlockedCompareExchange(counter, nextBits, observed) != observed);
+#else
+    volatile std::int32_t* const counter = &item->mPrimaryValueBits;
+    const std::int32_t nextBits = FloatToBits(value);
+
+    std::int32_t observed = 0;
+    do {
+      observed = platform::AtomicCompareExchange32(counter, 0, 0);
+    } while (platform::AtomicCompareExchange32(counter, nextBits, observed) != observed);
+#endif
   }
 
   moho::StatItem* EnsureEngineIntStat(moho::StatItem*& slot, const char* const statName)
@@ -107,11 +120,19 @@ namespace
       return 0;
     }
 
+#if defined(_MSC_VER)
     volatile long* const counter = reinterpret_cast<volatile long*>(&item->mPrimaryValueBits);
     long observed = 0;
     do {
       observed = ::InterlockedCompareExchange(counter, 0, 0);
     } while (::InterlockedCompareExchange(counter, 0, observed) != observed);
+#else
+    volatile std::int32_t* const counter = &item->mPrimaryValueBits;
+    std::int32_t observed = 0;
+    do {
+      observed = platform::AtomicCompareExchange32(counter, 0, 0);
+    } while (platform::AtomicCompareExchange32(counter, 0, observed) != observed);
+#endif
     return static_cast<int>(observed);
   }
 
@@ -121,8 +142,13 @@ namespace
       return 0;
     }
 
+#if defined(_MSC_VER)
     volatile long* const counter = reinterpret_cast<volatile long*>(&item->mPrimaryValueBits);
     return static_cast<int>(::InterlockedExchangeAdd(counter, static_cast<long>(amount)));
+#else
+    volatile std::int32_t* const counter = &item->mPrimaryValueBits;
+    return static_cast<int>(platform::AtomicExchangeAdd32(counter, static_cast<std::int32_t>(amount)));
+#endif
   }
 
   template <class T>

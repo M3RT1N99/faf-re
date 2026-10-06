@@ -1,6 +1,10 @@
 #include "CountedObject.h"
 
+#if defined(_MSC_VER)
 #include <intrin.h>
+#else
+#include "platform/Atomic32.h"
+#endif
 
 namespace moho
 {
@@ -31,7 +35,11 @@ namespace moho
 
   void CountedObject::AddReferenceAtomic() noexcept
   {
+#if defined(_MSC_VER)
     (void)_InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&mRefCount), 1);
+#else
+    (void)platform::AtomicExchangeAdd32(&mRefCount, 1);
+#endif
   }
 
   [[nodiscard]] bool CountedObject::ReleaseReference() noexcept
@@ -47,7 +55,11 @@ namespace moho
 
   [[nodiscard]] bool CountedObject::ReleaseReferenceAtomic() noexcept
   {
+#if defined(_MSC_VER)
     const long previous = _InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&mRefCount), -1);
+#else
+    const std::int32_t previous = platform::AtomicExchangeAdd32(&mRefCount, -1);
+#endif
     if (previous != 1) {
       return false;
     }
