@@ -60,3 +60,18 @@ features).
 | 2026-10-07 | emulator x86_64 (first build) | SwiftShader (Vulkan 1.2.0 device, instance 1.4.0); GLES through the emulator's translator | yes / yes / yes, no / yes | exact | 3.0, no / yes / yes, no, yes | exact | 70 / 41 ms |
 | 2026-10-07 | emulator, arm64 under translation (first build) | the same | the same | exact | the same | exact | 461 / 185 ms |
 | 2026-10-08 | emulator x86_64 (second build: drivers closed after the report) | the same | the same | exact | the same | exact | 51 / 33 ms; every section's teardown ok |
+| 2026-10-08 | Galaxy S22 Ultra (0.4.1, 3452) | Samsung Xclipse 920 (AMD RDNA2), Vulkan 1.3.279, Samsung driver 24.0.545; GLES is ANGLE on that Vulkan driver (24.1.293) | yes / yes / yes, **no** / yes (also D32S8) | exact (device 2.2 ms, first pipeline 18.6 ms, cached 0.1 ms) | 3.2 (ANGLE), yes / yes / yes, yes, yes | exact | 123 / 93 ms (about 2.5x the x86_64 emulator); every section's teardown ok |
+
+What the S22 Ultra's probe means for the graphics plan ([renderer.md](renderer.md)):
+- **Textures.** Vulkan samples BC1-3 directly, so FA's DXT textures need no CPU decode or ETC2/ASTC
+  transcode on this GPU. Mali GPUs lack BC, so the transcode path is still needed for them.
+- **Depth.** D24S8 is not an attachment format here. A depth-stencil request has to map to
+  D32_FLOAT_S8_UINT (or D32 without stencil).
+- **GLES.** OpenGL ES is Google's ANGLE running on the same Vulkan driver. A GLES backend would add
+  a translation layer and no second driver, so Vulkan is the path on this phone.
+- **Process model.** `VK_ANDROID_external_memory_android_hardware_buffer` import works. An engine in
+  its own process can render into an AHardwareBuffer that the app shows, which makes the
+  out-of-process option of the plan's step 7 viable.
+- **Shader compilation.** glslang is about 2.5x slower than on the PC, and the first pipeline
+  creation costs 18.6 ms. With FA's 175 mesh entry points this needs a persistent SPIR-V and
+  pipeline cache.
