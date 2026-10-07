@@ -222,13 +222,28 @@ namespace faf_compat
   // A view of a file; the one place the shim takes address space for
   // MapViewOfFile (faf_win_file.h). The low arena maps it below 2 GB (or,
   // when it is off or full, wherever the kernel puts it).
-  inline void* MapFileView(const size_t length, const int protection, const int flags, const int fd, const off_t offset) noexcept
+  inline void* MapFileViewOnce(const size_t length, const int protection, const int flags, const int fd, const off_t offset) noexcept
   {
     if (lowarena_map_file != nullptr) {
       return lowarena_map_file(length, protection, flags, fd, offset);
     }
     void* const mapped = mmap(nullptr, length, protection, flags, fd, offset);
     return mapped != MAP_FAILED ? mapped : nullptr;
+  }
+
+  inline void* MapFileView(const size_t length, const int protection, const int flags, const int fd, const off_t offset) noexcept
+  {
+    void* const view = MapFileViewOnce(length, protection, flags, fd, offset);
+#if defined(__ANDROID__)
+    // Android's FUSE file systems (/storage/emulated, where the app's game data lives) refuse
+    // MAP_SHARED on a file opened in direct-I/O mode with ENODEV (Linux fuse_file_mmap); MediaProvider
+    // uses that mode for some files. A read-only view sees the same bytes through MAP_PRIVATE, which
+    // works there, so it is retried that way. Writable shared views keep the error.
+    if (view == nullptr && errno == ENODEV && (flags & MAP_SHARED) != 0 && (protection & PROT_WRITE) == 0) {
+      return MapFileViewOnce(length, protection, (flags & ~MAP_SHARED) | MAP_PRIVATE, fd, offset);
+    }
+#endif
+    return view;
   }
 
   // Releases what ReserveAnywhere, MapAnonymous or MapFileView returned: the

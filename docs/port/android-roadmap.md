@@ -60,18 +60,27 @@ L4 is the goal. L2 is the first point where the port is fun to use. L3 is the fi
   that Android creates no map textures (no D3D9 device). Windows gives the same checkpoint chains
   as before. See [port/engine/runner/README.md](../../port/engine/runner/README.md).
 - **The runner runs on Android (M3c, emulator).** With a low-address arena that keeps every
-  pointer below 2 GB (the runner's stand-in for x64's `/LARGEADDRESSAWARE:NO`, never used by the
-  APK), the four M3a replays play to the end on the API 36 emulator as x86_64, and T1 as arm64
+  pointer below 2 GB (the runner's stand-in for x64's `/LARGEADDRESSAWARE:NO`; the GUI's `:game`
+  process does not use it), the four M3a replays play to the end on the API 36 emulator as x86_64, and T1 as arm64
   under the emulator's ARM translation, with the same checkpoints on both ABIs. Beat 0 (rules and
   blueprints) equals Windows in every replay; the checkpoints diverge from beat 100 (T3: 150), the
   baseline for W5. The registry matches Windows except user-side entries (UI types, User Lua
   binders, a few console commands). Two engine bugs that only Itanium/LP64 builds hit were fixed
   on the way, and the sim was found to read uninitialised heap memory that changes later
   checkpoints. Without the arena the run stops at the first pointer truncation (the category
-  universe word), M3d's starting point. The phone run is prepared, not done. See
+  universe word), M3d's starting point. See
   [headless-replay.md](headless-replay.md#android-runner-m3c).
-- **Not yet:** nothing has run on a real ARM core (the phone run of M3c), and nothing runs without
-  the low-address arena (M3d).
+- **The replay test runs inside the app (release 0.4.0, emulator).** The APK carries the runner,
+  the engine library and the arena's probe; its launcher takes a `.fafreplay` from the browser or
+  the file picker (zstd and legacy, decoded by the runner) and runs the probe, an engine load and the
+  replay as a separate process from `nativeLibraryDir`, in a foreground service, then shows PASS/FAIL,
+  the checkpoint chain against an embedded reference and saves the run as a zip. On the emulator the
+  vault replay 26675870 gives the reference chain in the app (x86_64, and arm64 under translation),
+  repeatably; cancel, background and screen-off runs, crash capture and the GUI start were checked
+  too. See [android.md](android.md#replay-test) and
+  [headless-replay.md](headless-replay.md#in-app-replay-test-release-040).
+- **Not yet:** nothing has run on a real ARM core (0.4.0 is the release that lets the phone do it),
+  and nothing runs without the low-address arena (M3d).
 
 ## Workstreams
 

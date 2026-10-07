@@ -206,8 +206,64 @@ control block and then wrote into it (`Cluster.cpp`), and the io library's `Wrap
 the MSVC return convention, so every Lua state wrote 16 bytes through a stray register
 (`LuaObject.cpp`).
 
-The phone run waits for the phone: `run_runner_android.py --serial <phone>` (arm64-v8a), after
-the arena's probe (lowarena README); its `--dry-run` prints every command.
+The phone run does not need adb any more: release 0.4.0's app runs the probe and the replay itself
+(next section). With adb, `run_runner_android.py --serial <phone>` (arm64-v8a) still works; its
+`--dry-run` prints every command.
+
+## In-app replay test (release 0.4.0)
+
+The launcher's **Replay test** ([android.md](android.md#replay-test)) execs the runner from the APK
+(`nativeLibraryDir/libfafrunner.so`) in the app's own process tree: the linker's "system" namespace
+instead of "unrestricted", the app's seccomp filter and `untrusted_app` domain, a data root reached
+through the lower-case alias `/data/user/0/io.github.m3rt1n99.fafre/files/r`, no `Game.prefs`. Checked
+on the API 36 emulator on 2026-10-07 through the app's UI (taps, `uiautomator`, screenshots), with
+the data under `/sdcard/Android/data/io.github.m3rt1n99.fafre/files` and the 0.4.0 binaries:
+
+| Replay (input) | APK | Result | Checkpoint chain | Against the adb runs | Wall (load + sim) |
+|---|---|---|---|---|---|
+| T1 26675870 (vault download, picked in the file picker) | x86_64 | PASS, game over at 467 | `4971bbe58c5586a0` | the reference | 9.4-9.8 s (7.3 + 1.9) |
+| the same, run twice | x86_64 | PASS, second run identical | `4971bbe58c5586a0` | equal | 9.2 + 9.3 s |
+| the same without `loc_DE.scd`, `mods.scd`, `skins.scd` | x86_64 | PASS | `4971bbe58c5586a0` | equal | 9.2 s |
+| the same | arm64-v8a (translated) | PASS, self-test 41/41, capacity 1664 MB | `4971bbe58c5586a0` | equal | 37.2 s (25.6 + 11.1) |
+| T2 26119449 (local recording, "Open with" from Files) | x86_64 | PASS, game over at 4697, run twice, identical | `7eec974b19f98ebc` | equal | 18.0 s |
+| T3 26679175 (local recording) | x86_64 | PASS, game over at 7317, run twice, identical | `40e37f07c27ba2d5` | **differs** (`1b81ed7b47069327`) | 31.7 s |
+| T1 with `FAF_LOWARENA=0` | x86_64 | CRASHED (expected): SIGSEGV, exit 139 | - | the known C2 stop | 5 s |
+
+- **The mechanism works**: exec from `nativeLibraryDir`, the arena under the app's seccomp filter
+  (no SIGSYS), `dlopen` of `libfafengine.so` from `/data/app/...` in the "system" namespace, the
+  lower-case alias, the zstd decoder, `/replayinfo` and `/convertreplay` from the app.
+- **T3 lands in the other heap-content class.** `40e37f07c27ba2d5` is the chain the adb runs gave
+  only with `FAF_LOWARENA_FILL=0xff`; in the app it comes without a fill, and stays the same on a
+  second run. The engine gets the same bytes (the app's `26679175.3764.scfareplay` and the adb runs'
+  `T3-26679175.scfareplay` have the same sha256, as do T2's). The app's runner has a different allocation history (longer paths, another
+  environment), so a reused block holds other leftovers, and the uninitialised read in
+  `Unit::UpdateBlipsInRange` (known issues) sees them. T1 and T2 do not depend on it; they are the
+  parity checks, and the app's reference table holds only T1.
+- **`loc_DE.scd`, `mods.scd` and `skins.scd`** (mounted in the reference runs, not part of a phone
+  import's required and recommended tiers) do not change T1's chain.
+- **Crash capture**: the runner's `[runner] CRASH` report (`libfafengine.so+0xa86ad8`, which
+  symbolizes to `AddMappedBlueprintOrdinalBits`, `EntityCategoryReflection.cpp:169`) and, in the
+  saved `logcat`, crash_dump's full backtrace: the app may read its own uid's crash lines.
+- **Lifetime**: a 64000-beat local replay (SCMP_010) ran 7 minutes with the app in the background
+  and the screen off; the app stayed at process state 4 (foreground service), the partial wake lock
+  was held, and the runner kept running. Cancel ended it with SIGTERM within a second (exit 143, no
+  SIGKILL needed), and the service and the wake lock were released. That replay ran at 20-25
+  beats/s, bound by the engine log (the `[MOTDIAG]` diagnostics: 199 MB after 9050 beats), not by
+  Android; long replays need minutes and hundreds of MB.
+- **GUI Start** with Vulkan and with OpenGL ES (x86_64 APK) and with Vulkan (arm64-v8a APK) still
+  reaches the main menu with `extractNativeLibs="true"`.
+
+**After the review fixes** (same day, x86_64 APK with the final runner set `r040b-pkg`: only the
+executable changed, the engine and the probe are byte-identical; reference runs of the vault T1 with
+`run_runner_android.py --host-prefs none` gave `4971bbe58c5586a0` on x86_64 and arm64 under
+translation again, and the table now names the new runner build ids):
+
+| Check | Result |
+|---|---|
+| T1, self-test + replay, run twice | PASS, chain `4971bbe58c5586a0` matches the reference "measured with these binaries"; second run identical (wall 9.4 s for the first run) |
+| T3, killed during the replay step (`su 0 kill -9` of the app's main process at beat 5300; `am kill` does not touch a process with a foreground service) | the runner went with the app (no `libfafrunner.so` left); after reopening, the card showed `INTERRUPTED · the run stopped during step 4/5 (Replay)`, and Save run (zip) exported that run: 10 entries, its partial `4-replay.out` and engine log, no replay |
+| `my..game.scfareplay` (no uid) picked in the file picker | imported as `my.game` (`replays/my.game.scfareplay` + `my.game.json`), read by the runner |
+| Self-test with a `:game` process whose `status.json` said `running` (set by hand after a real start, to stand for a game left in the background) | not started ("Not started: the game is running ..."), the game process kept; with the real `exited` status the next self-test ended the cached process and passed |
 
 ## Known issues
 
@@ -224,8 +280,8 @@ the arena's probe (lowarena README); its `--dry-run` prints every command.
   between identical runs (radius 31.5 vs 23.1). No checkpoint changed in these replays on
   Windows, but it can change target acquisition, and the heap differs between x86 and arm64. On
   Android (M3c) it does change checkpoints: filling new heap blocks with `0xff` changes T3 from
-  beat 6150 and R4 from beat 3600. It has to be settled against the binary before x86 and arm64
-  digests are compared.
+  beat 6150 and R4 from beat 3600, and in the app (0.4.0) T3 gives that `0xff` chain without any
+  fill. It has to be settled against the binary before x86 and arm64 digests are compared.
 - **No GUI reference yet.** The runner is deterministic, but its digests have not been compared
   with a GUI `/replay` of the same file. Pointer-ordered containers in the recovered code would
   make the two diverge. The check: run `main.exe /replay <file> /init init_faf.lua /nosound`; the

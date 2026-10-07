@@ -21,6 +21,7 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -244,7 +245,8 @@ namespace
     if (file != nullptr) {
       fclose(file);
     }
-    DIR* const dir = opendir("/");
+    // /proc/self, not "/": an app's untrusted_app domain may not list the root directory.
+    DIR* const dir = opendir("/proc/self");
     Check("opendir DIR* (libc-internal)", dir);
     if (dir != nullptr) {
       closedir(dir);
@@ -309,8 +311,48 @@ namespace
     }
   }
 
+  // The file the view checks map: the runner executable, or, when its name ends in ".so" (in the APK
+  // it is libfafrunner.so, because Android only extracts lib*.so names), a copy of its first 64 KB in
+  // $TMPDIR (else the working directory), which the caller deletes. Empty on failure.
+  std::string ViewFile(const char* exe, bool* temporary)
+  {
+    *temporary = false;
+    const size_t length = strlen(exe);
+    if (length < 3 || strcmp(exe + length - 3, ".so") != 0) {
+      return exe;
+    }
+    const char* const tmp = getenv("TMPDIR");
+    const std::string path = std::string(tmp != nullptr && *tmp != '\0' ? tmp : ".") + "/lowarena-probe-view-" +
+                             std::to_string(static_cast<long>(getpid())) + ".bin";
+    const int in = open(exe, O_RDONLY | O_CLOEXEC);
+    const int out = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    bool ok = in >= 0 && out >= 0;
+    char buffer[4096];
+    for (size_t copied = 0; ok && copied < 65536;) {
+      const ssize_t n = read(in, buffer, sizeof(buffer));
+      if (n <= 0) {
+        ok = n == 0 && copied > 0;
+        break;
+      }
+      ok = write(out, buffer, static_cast<size_t>(n)) == n;
+      copied += static_cast<size_t>(n);
+    }
+    if (in >= 0) {
+      close(in);
+    }
+    if (out >= 0) {
+      close(out);
+    }
+    if (!ok) {
+      unlink(path.c_str());
+      return std::string();
+    }
+    *temporary = true;
+    return path;
+  }
+
   // `filePath`: a file that is not a shared library (the shim reports views of "*.so" files as
-  // MEM_IMAGE, as /proc/self/maps cannot tell them from loaded libraries); the runner executable.
+  // MEM_IMAGE, as /proc/self/maps cannot tell them from loaded libraries); see ViewFile.
   void ProbeWin32Memory(const char* filePath)
   {
     // VirtualAlloc reserve+commit, release, again: the arena hands the same range out again.
@@ -413,6 +455,11 @@ namespace
     }
     void* const foreign = libcMalloc(100);
     Check("libc.so's own malloc(100) (foreign)", foreign, false);
+    if (foreign == nullptr) {
+      Fail("libc.so's malloc(100)", "null");
+      return;
+    }
+    memset(foreign, 0x5a, 100);
     lowarena_stats before{};
     if (lowarena_get_stats != nullptr) {
       lowarena_get_stats(&before);
@@ -420,14 +467,32 @@ namespace
     if (malloc_usable_size(foreign) < 100) {
       Fail("malloc_usable_size(foreign)", "smaller than requested");
     }
-    void* const moved = realloc(foreign, 200);  // forwarded to bionic: stays bionic's
+    // realloc moves a foreign block into the arena (release 0.4.0): low, contents kept, libc's block
+    // freed through libc. With the arena off it is bionic's realloc and stays high.
+    unsigned char* const moved = static_cast<unsigned char*>(realloc(foreign, 200));
     Check("realloc(foreign, 200)", moved, false);
-    free(moved);
+    if (moved == nullptr) {
+      Fail("realloc(foreign, 200)", "null");
+      return;
+    }
+    for (int i = 0; i < 100; ++i) {
+      if (moved[i] != 0x5a) {
+        Fail("realloc(foreign, 200)", "the first 100 bytes were not kept");
+        break;
+      }
+    }
+    const uintptr_t at = reinterpret_cast<uintptr_t>(moved);
+    if (gArena && !(at >= LOWARENA_LOW && at < LOWARENA_HIGH)) {
+      Fail("realloc(foreign, 200)", "the block was not moved into the arena");
+    }
+    void* const other = libcMalloc(64);
+    free(other);  // a foreign free: forwarded to bionic
+    free(moved);  // the arena's block now (or bionic's with the arena off)
     if (lowarena_get_stats != nullptr && gArena) {
       lowarena_stats after{};
       lowarena_get_stats(&after);
       if (after.foreign_frees != before.foreign_frees + 1 || after.foreign_reallocs != before.foreign_reallocs + 1) {
-        Fail("foreign pointers", "free/realloc were not forwarded to bionic");
+        Fail("foreign pointers", "free/realloc of libc's blocks were not counted");
       }
     }
   }
@@ -675,7 +740,19 @@ extern "C" __attribute__((visibility("default"))) int faf_headless_main(int argc
   ProbeImage(argc, argv);
   ProbeHeap();
   ProbeThreads();
-  ProbeWin32Memory(exe);
+  bool viewTemporary = false;
+  const std::string viewFile = ViewFile(exe, &viewTemporary);
+  if (viewFile.empty()) {
+    Fail("ViewFile", "cannot copy the runner executable for the view checks");
+  } else {
+    if (viewTemporary) {
+      printf("probe view checks map %s (a copy of %s's first 64 KB)\n", viewFile.c_str(), exe);
+    }
+    ProbeWin32Memory(viewFile.c_str());
+    if (viewTemporary) {
+      unlink(viewFile.c_str());
+    }
+  }
   ProbeForeign();
   ProbeStress();
   ProbeThreadChurn();

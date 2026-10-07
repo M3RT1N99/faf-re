@@ -168,6 +168,8 @@ namespace
 
   int gMode = -1;  // -1 undecided, 0 off, 1 on (accessed with __atomic builtins)
 
+  void ResolveReal();  // libc's allocator (below), resolved once at the decision
+
   int Mode()
   {
     int mode = __atomic_load_n(&gMode, __ATOMIC_ACQUIRE);
@@ -182,6 +184,9 @@ namespace
     const char* const value = getenv("FAF_LOWARENA");
     mode = (value != nullptr && value[0] == '0' && value[1] == '\0') ? 0 : 1;
     __atomic_store_n(&gMode, mode, __ATOMIC_RELEASE);
+    // Still single-threaded here (libc start-up or main): resolve libc's functions now, so no two
+    // threads ever race to do it later.
+    ResolveReal();
     return mode;
   }
 
@@ -322,11 +327,15 @@ namespace
   }
 
   // Under translation the arena stays below 1.75 GB, leaving 256 MB of the MAP_32BIT window free for
-  // the translator's code cache; otherwise it may use everything up to 2 GB.
+  // the translator's code cache. Otherwise it stops at 0x7FFF0000, where a /LARGEADDRESSAWARE:NO
+  // process's user space ends on Windows (0x7FFEFFFF is its last byte): no range then ends exactly at
+  // 2 GB, whose one-past-the-end pointer would turn negative through an int. Segments are 16 MB
+  // aligned, so the last usable byte is 0x7EFFFFFF.
   constexpr uintptr_t kTranslatedHigh = 0x70000000u;
+  constexpr uintptr_t kNativeHigh = 0x7FFF0000u;
   uintptr_t ReserveLimit()
   {
-    return UnderTranslation() ? kTranslatedHigh : kHigh;
+    return UnderTranslation() ? kTranslatedHigh : kNativeHigh;
   }
 
   // Reserves [at, at + length) from the kernel (PROT_NONE, no commit). Caller holds gLock; every
@@ -610,24 +619,46 @@ namespace
   const char* const kRealNames[kRealCount] = {"malloc", "free", "calloc", "realloc", "memalign",
                                               "posix_memalign", "aligned_alloc", "malloc_usable_size"};
   void* gReal[kRealCount];
-  int gResolving = 0;
+  int gRealResolved = 0;     // __atomic: 1 once all of gReal is final
+  pid_t gRealResolver = 0;   // __atomic: the thread inside dlsym for them, 0 when none
+  pthread_mutex_t gRealLock = PTHREAD_MUTEX_INITIALIZER;
+
+  // Resolves all eight functions at once, under gRealLock. Mode() calls it at the decision, before
+  // any other thread exists; it is only here again if something asks before that. A thread that
+  // comes back into the allocator from inside dlsym (its own recursion) returns at once and gets
+  // null from Real(); any other thread waits for the lock and finds the functions resolved.
+  void ResolveReal()
+  {
+    if (__atomic_load_n(&gRealResolved, __ATOMIC_ACQUIRE) != 0) {
+      return;
+    }
+    const pid_t self = static_cast<pid_t>(syscall(SYS_gettid));
+    if (__atomic_load_n(&gRealResolver, __ATOMIC_ACQUIRE) == self) {
+      return;
+    }
+    pthread_mutex_lock(&gRealLock);
+    if (__atomic_load_n(&gRealResolved, __ATOMIC_ACQUIRE) == 0) {
+      __atomic_store_n(&gRealResolver, self, __ATOMIC_RELEASE);
+      for (int i = 0; i < kRealCount; ++i) {
+        __atomic_store_n(&gReal[i], dlsym(RTLD_NEXT, kRealNames[i]), __ATOMIC_RELEASE);
+      }
+      __atomic_store_n(&gRealResolver, 0, __ATOMIC_RELEASE);
+      __atomic_store_n(&gRealResolved, 1, __ATOMIC_RELEASE);
+    }
+    pthread_mutex_unlock(&gRealLock);
+  }
 
   // The next definition after this executable (libc's), or null: unknown (aligned_alloc before API
-  // 28), or asked recursively while dlsym runs, in which case the caller uses the arena (its blocks
-  // are recognised by address wherever they are freed).
+  // 28), or asked by the resolving thread from inside dlsym, in which case the caller uses the arena
+  // (its blocks are recognised by address wherever they are freed).
   void* Real(const RealFn which)
   {
-    void* fn = __atomic_load_n(&gReal[which], __ATOMIC_ACQUIRE);
-    if (fn != nullptr) {
+    void* const fn = __atomic_load_n(&gReal[which], __ATOMIC_ACQUIRE);
+    if (fn != nullptr || __atomic_load_n(&gRealResolved, __ATOMIC_ACQUIRE) != 0) {
       return fn;
     }
-    if (__atomic_exchange_n(&gResolving, 1, __ATOMIC_ACQ_REL) != 0) {
-      return nullptr;
-    }
-    fn = dlsym(RTLD_NEXT, kRealNames[which]);
-    __atomic_store_n(&gReal[which], fn, __ATOMIC_RELEASE);
-    __atomic_store_n(&gResolving, 0, __ATOMIC_RELEASE);
-    return fn;
+    ResolveReal();
+    return __atomic_load_n(&gReal[which], __ATOMIC_ACQUIRE);
   }
 
   template <typename F>
@@ -1271,6 +1302,25 @@ namespace
   {
     if (Mode() != 0) {
       __atomic_add_fetch(&gForeignReallocs, 1u, __ATOMIC_RELAXED);
+      // With the arena on, the block moves into it (copy, then libc's free), so realloc never hands
+      // the engine a pointer above 2 GB. Without libc's usable size the old length is unknown; the
+      // block then stays with libc's realloc as before.
+      const auto realFree = RealAs<void (*)(void*)>(kRealFree);
+      const auto realUsable = RealAs<size_t (*)(const void*)>(kRealUsableSize);
+      if (realFree != nullptr && realUsable != nullptr) {
+        if (size == 0) {
+          realFree(pointer);  // bionic's realloc(p, 0): free, null
+          return nullptr;
+        }
+        void* const moved = HeapMalloc(size);
+        if (moved == nullptr) {
+          return nullptr;  // the old block stays valid, as realloc promises
+        }
+        const size_t old = realUsable(pointer);
+        memcpy(moved, pointer, old < size ? old : size);
+        realFree(pointer);
+        return moved;
+      }
     }
     if (auto real = RealAs<void* (*)(void*, size_t)>(kRealRealloc)) {
       return real(pointer, size);

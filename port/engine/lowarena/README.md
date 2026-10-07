@@ -3,11 +3,13 @@
 The x64 Windows build links with `/LARGEADDRESSAWARE:NO` (`src/sdk/main.vcxproj`), so every pointer
 it makes fits in 31 bits, and the engine's many pointer-in-`int` words (the reflection callbacks, the
 hidden 32-bit pointer fields of [W1.3](../../../docs/port/android-roadmap.md)) keep working. Android
-has no such switch. LowArena is its stand-in for **the adb-shell replay runner only**
-(`faf_headless_runner`, milestone M3c): it keeps the heap, thread stacks, `thread_local` data, the
-engine library's image, `VirtualAlloc` reservations, file views, argv and the environment in
-**[16 MB, 2 GB)**. The APK never uses it (an app process cannot interpose malloc, and ART leaves at
-most a few hundred MB free below 2 GB); M3d removes the need for it with real truncation fixes.
+has no such switch. LowArena is its stand-in for **the headless replay runner executable only**
+(`faf_headless_runner`, milestone M3c; since release 0.4.0 also packaged in the APK as
+`lib/<abi>/libfafrunner.so`, which the in-app replay test execs as a process of its own): it keeps
+the heap, thread stacks, `thread_local` data, the engine library's image, `VirtualAlloc`
+reservations, file views, argv and the environment in **[16 MB, 0x7FFF0000)**. The app process
+itself never uses it (an app process cannot interpose malloc, and ART leaves at most a few hundred
+MB free below 2 GB); M3d removes the need for it with real truncation fixes.
 
 2 GB, not 4 GB: the engine stores pointers in `int`s, and `(char*)(int)0x90001000` is
 `0xffffffff90001000` on both 64-bit ABIs. Below 2 GB the round trip through `int` is exact.
@@ -49,16 +51,22 @@ with `--probe` the probe library.
   `posix_memalign`, `aligned_alloc`, `valloc`, `pvalloc`, `malloc_usable_size`) is defined in the
   executable and exported, so libc's own allocations (`strdup`, `fopen`, `opendir`), libc++, emulated
   TLS, exception objects and everything in `libfafengine.so` come from the arena. A pointer the arena
-  did not hand out (bionic's, recognised by its address) is freed, reallocated and sized by the next
-  definition (`dlsym(RTLD_NEXT)`, i.e. libc's); the report counts them. `realloc(p, 0)` frees and
-  returns null, as bionic and the MSVC CRT do.
+  did not hand out (bionic's, recognised by its address) is freed and sized by the next definition
+  (`dlsym(RTLD_NEXT)`, i.e. libc's); `realloc` of such a block moves it into the arena (a new arena
+  block, the old contents copied up to libc's usable size, libc's block freed), so realloc never
+  hands the engine a pointer above 2 GB. The report counts both (`foreign_frees`,
+  `foreign_reallocs`; 0 in every replay so far). libc's eight functions are resolved together, once,
+  under a lock, when the mode is decided (the first `malloc` after libc has set up the environment,
+  before `main` and before any other thread); a call that comes back into the allocator from inside
+  that `dlsym` gets the arena. `realloc(p, 0)` frees and returns null, as bionic and the MSVC CRT do.
 - **Thread stacks.** Every thread the engine library starts without its own stack (boost::thread,
   std::thread, the shim's thread functions) gets a 4 MB arena stack (`main.exe`'s StackReserveSize is
   4000000; a larger requested size wins) above a 64 KB `PROT_NONE` guard. A plain interposer named
   `pthread_create` is not enough: under the emulator's ARM translation the translator takes that call
-  first, so the library is linked with `--wrap`. Bionic keeps the thread's `pthread_internal_t` and
-  static TLS at the top of a caller-supplied stack and reads them in `pthread_join`/`pthread_detach`,
-  so a stack is released only after a successful `pthread_join`, or, for a detached thread, once the
+  first, so the library is linked with `--wrap`. Bionic keeps the thread's `pthread_internal_t` at
+  the top of a caller-supplied stack and reads it in `pthread_join`/`pthread_detach` (on API 36 its
+  static TLS and `bionic_tls` are not there but in a separate per-thread mapping above 2 GB, see
+  below), so a stack is released only after a successful `pthread_join`, or, for a detached thread, once the
   kernel no longer knows the thread (`tgkill(pid, tid, 0)` fails with `ESRCH`; checked at the next
   thread create/join/detach). Join and detach are bracketed (`*_begin`/`*_end`) so that a new thread
   reusing a `pthread_t` value cannot be mistaken for the old one.
@@ -73,28 +81,46 @@ with `--probe` the probe library.
   steps) and loads it into it with `android_dlopen_ext(ANDROID_DLEXT_RESERVED_ADDRESS)`, so the
   library's static initialisers already run on a low stack, then calls `faf_headless_main`, joins,
   prints the report and returns the exit code.
+- **The top.** Natively the arena stops at **0x7FFF0000**, where a `/LARGEADDRESSAWARE:NO` process's
+  user space ends on Windows (0x7FFEFFFF is its last byte), so no range ends exactly at 2 GB, whose
+  one-past-the-end pointer would turn negative through an `int` (release 0.4.0; before, the limit
+  was 0x80000000). Segments are 16 MB-aligned, so the last usable byte is 0x7EFFFFFF.
 - **Under the emulator's ARM translation** (detected from `libndk_translation`/`libberberis` in
   `/proc/self/maps`, arm64 builds only) the translator keeps its code cache in `MAP_32BIT` memory,
   [1 GB, 2 GB), and adds to it while guest code runs. The arena then stays below **1.75 GB**, leaving
   the top 256 MB of that window to the translator.
 
-What stays high in any case: the main thread's stack (the engine does not run on it), the original
-argv/environment block (copied), bionic's own data (`stdout`, its globals), the dynamic linker and the
-system libraries. `errno` and `pthread_self()` live in the thread's own (low) stack. With the NDK's
-minSdk 26 `thread_local` is emulated TLS, allocated through malloc and therefore low; raising the
-engine to minSdk 29 or later would put it in ELF TLS, which is high.
+What stays high in any case (measured from `/proc/<pid>/maps` during a T1 run on the API 36
+emulator, x86_64):
+
+- the main thread's stack (the engine does not run on it) and the original argv/environment block
+  (copied);
+- every thread's static TLS, TCB and `bionic_tls` (the buffers behind `strerror`, `strsignal`,
+  `basename`, `dirname`, ...): on API 36 a separate per-thread mapping
+  `[anon:stack_and_tls:<tid>]`, not part of the caller-supplied stack;
+- every thread's alternate signal stack (`[anon:thread signal stack]`);
+- the executable image, so `&malloc`, `&free` and the executable's other exported functions are
+  high function pointers;
+- bionic's own data (`stdout`, its globals), the dynamic linker and the system libraries, including
+  `/system/lib64/libc++.so` (pulled in by liblog), `bionic_alloc`/`linker_alloc`, Scudo's primary
+  reserve (no live blocks), the CFI shadow and an unnamed 24 MB `PROT_NONE` reservation.
+
+`errno` and `pthread_self()` are in that per-thread mapping too (the probe reports them HIGH under
+translation); the shim's `GetCurrentThreadId` uses `gettid`, so nothing the engine keeps in an `int`
+comes from them. With the NDK's minSdk 26 `thread_local` is emulated TLS, allocated through malloc and
+therefore low; raising the engine to minSdk 29 or later would put it in ELF TLS, which is high.
 
 ## Report
 
 The executable prints one line on stderr after the engine thread has returned:
 
 ```
-[lowarena] enabled=1 heap_max_mb=354.3 heap_mb=354.3 high_water_mb=412.2 in_use_mb=400.0 reserved_mb=448.0 top=0x1ac30000 limit=0x80000000 segments=1 [0x01000000-0x1d000000] image=0x02410000+0x02000000 threads_total=4 threads_peak=3 threads_live=0 thread_fallbacks=0 views_peak=1 view_fallbacks=0 virtual_peak=0 virtual_fallbacks=0 foreign_frees=0 foreign_reallocs=0
+[lowarena] enabled=1 heap_max_mb=354.3 heap_mb=354.3 high_water_mb=412.2 in_use_mb=400.0 reserved_mb=448.0 top=0x1ac30000 limit=0x7fff0000 segments=1 [0x01000000-0x1d000000] image=0x02410000+0x02000000 threads_total=4 threads_peak=3 threads_live=0 thread_fallbacks=0 views_peak=1 view_fallbacks=0 virtual_peak=0 virtual_fallbacks=0 foreign_frees=0 foreign_reallocs=0
 ```
 
 `heap_max_mb` is the heap's high-water mark, `high_water_mb` that of everything the arena handed out
 (heap, stacks, views, reservations, image), `top` the highest address it ever handed out, `limit`
-2 GB or 1.75 GB (`(translated)`). The `*_fallbacks` count what found no room and went to bionic
+0x7fff0000 (0x80000000 before release 0.4.0) or 1.75 GB (`(translated)`). The `*_fallbacks` count what found no room and went to bionic
 instead (high); they should be 0. Before the engine starts it prints where the library and the
 engine thread's stack are (`[lowarena] .../libfafengine.so at 0x2410000, engine thread stack near
 0x240fbc4`). When the arena runs out it prints `[lowarena] no room below <limit> ...` once; the
@@ -134,7 +160,9 @@ clean under `FAF_LOWARENA_CHECK=1` on x86_64 and T1 under `=2` as arm64.
 `FAF_LOWARENA_FILL=<byte>` (e.g. `0xff`) is the companion for uninitialised reads: without the
 check layer, so every address stays the same, it fills each block `malloc`/`memalign` hand out
 with that byte. A different checkpoint chain under a different fill means the sim reads memory
-nobody wrote (M3c: T3 and R4 do, see the runner README).
+nobody wrote (M3c: T3 and R4 do, see the runner README). Only those blocks are filled: not the tail
+`realloc` adds to a grown block, not `calloc` (zeroed anyway) and not the stack. So "0x00 and 0xcd
+change nothing" bounds only uninitialised reads of freshly malloc'd memory.
 
 ## Probe
 
@@ -152,14 +180,30 @@ thread, std::thread, pthreads with default, 8 MB and detached attributes, Virtua
 plus the round trip through `int`, a 4-thread allocator stress with cross-thread frees and
 `realloc`/`memalign`/`calloc` checks, 97 threads of churn (joined and detached stacks come back),
 VirtualAlloc/VirtualFree/VirtualQuery and MapViewOfFile/UnmapViewOfFile reuse, and pointers from
-libc's own malloc going back to libc. Exit code = failed checks.
+libc's own malloc: freed through libc, and moved into the arena by `realloc` with their contents
+(release 0.4.0). Exit code = failed checks. The APK (0.4.0) ships it as
+`lib/<abi>/libfafarenaprobe.so` for the replay test's self-test, run as
+`FAF_ENGINE_LIB=<nativeLibraryDir>/libfafarenaprobe.so libfafrunner.so [capacity]`.
+
+Two checks had to change for the app (the first in-app run failed them, not the arena): the
+`opendir` placement opens `/proc/self` instead of `/`, which an app's `untrusted_app` domain may not
+list; and the file-view checks map the runner executable only when its name does not end in `.so`.
+The shim reports a view of a `*.so` file as `MEM_IMAGE` (`/proc/self/maps` cannot tell it from a
+loaded library), and in the APK the executable is `libfafrunner.so`, so there the probe maps a copy of
+its first 64 KB in `$TMPDIR` (the app's cache directory) and deletes it afterwards.
 
 Measured 2026-10-07 on the API 36 emulator (`fafre_api36`, kernel 6.6, 4 KB pages):
 
 | | arena on | FAF_LOWARENA=0 | capacity |
 |---|---|---|---|
-| x86_64 (native) | PASS 41/41 | PASS 41/41, heap `[anon:scudo:primary]`, stacks `[anon:stack_and_tls:*]` | 1968 MB of heap in one segment [16 MB, 2 GB) |
+| x86_64 (native) | PASS 41/41 | PASS 41/41, heap `[anon:scudo:primary]`, stacks `[anon:stack_and_tls:*]` | 1968 MB of heap in one segment [16 MB, 2 GB); 0.4.0 (top 0x7FFF0000): 1952 MB, segment [0x01000000-0x7f000000] |
 | arm64-v8a (translated) | PASS 41/41 | PASS 41/41, heap `[anon:scudo:primary]` | 1648-1664 MB in two segments around the translator's code cache at 1 GB; limit 1.75 GB; translated code kept running afterwards |
+
+The 0.4.0 binaries (build ids in the [runner README](../runner/README.md#status-2026-10-07-m3c-release-040)) pass the same three runs on both ABIs (41/41, `realloc` of libc's block moved into the arena and its contents kept; with the arena off it stays bionic's).
+In the app (the replay test's self-test, the runner exec'd from `nativeLibraryDir` under the
+`untrusted_app` seccomp filter and the linker's "system" namespace), with the probe changed as above:
+41/41 and capacity 1952 MB with the x86_64 APK, 41/41 and 1664 MB (limit 0x70000000) with the
+arm64-v8a APK under translation.
 
 With the real engine (M3c, the results in
 [headless-replay.md](../../../docs/port/headless-replay.md#android-runner-m3c)), all four M3a replays
@@ -197,4 +241,5 @@ starts 64 KB-aligned (the 2.8.4 16-byte-alignment padding fix).
   userdata by address, so pointer-ordered iteration can differ between platforms.
 - **The phone is unmeasured:** a Samsung kernel, a 39-bit address space, 16 KB pages and Scudo's
   top-byte tags may lay the low 2 GB out differently. The arena only needs `MAP_FIXED_NOREPLACE`
-  (or hint semantics) and free space below 2 GB; the probe above is the first thing to run there.
+  (or hint semantics) and free space below 2 GB; the probe above is the first thing to run there
+  (release 0.4.0's in-app self-test does exactly that).

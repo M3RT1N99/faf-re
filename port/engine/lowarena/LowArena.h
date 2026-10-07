@@ -1,7 +1,9 @@
 /*
  * LowArena: keeps the headless runner's memory below 2 GB on Android (docs/port/android-roadmap.md,
  * W1.3, milestone M3c). It is the Android counterpart of the x64 build's /LARGEADDRESSAWARE:NO and
- * exists only for the adb-shell runner (faf_headless_runner); the APK never uses it.
+ * exists only for the headless runner executable (faf_headless_runner; in the APK it is
+ * lib/<abi>/libfafrunner.so, which the replay test execs as a process of its own). The app process
+ * itself never uses it.
  *
  * The runner executable defines every function below (LowArena.cpp) and exports it, together with
  * the malloc family it replaces. Code in libfafengine.so (the shim's VirtualAlloc/MapViewOfFile, the
@@ -81,9 +83,10 @@ LOWARENA_API void* lowarena_map_file(size_t length, int protection, int flags, i
  * pthread_join / pthread_detach pick the thread's record (so a new thread that reuses the pthread_t
  * value meanwhile cannot be mistaken for it), and the _end call with the pthread function's result
  * frees the stack after a join, marks it for release once the thread has gone after a detach, or
- * restores the record when the call failed. Bionic keeps the thread's pthread_internal_t (and its
- * TLS) at the top of a caller-supplied stack and reads it in pthread_join/pthread_detach, so the
- * stack must stay mapped until those calls return.
+ * restores the record when the call failed. Bionic keeps the thread's pthread_internal_t at the top
+ * of a caller-supplied stack and reads it in pthread_join/pthread_detach, so the stack must stay
+ * mapped until those calls return. (Its static TLS and bionic_tls are not there: on API 36 they are
+ * a separate per-thread mapping, [anon:stack_and_tls:<tid>], above 2 GB.)
  */
 typedef int (*lowarena_pthread_create_fn)(pthread_t*, const pthread_attr_t*, void* (*)(void*), void*);
 LOWARENA_API int lowarena_thread_create(lowarena_pthread_create_fn create, pthread_t* thread,
@@ -101,7 +104,7 @@ struct lowarena_stats {
   uint64_t in_use_bytes;        /* handed out now (all kinds) */
   uint64_t in_use_high_water;   /* most ever handed out at once */
   uint64_t top_address;         /* highest address ever handed out (exclusive) */
-  uint64_t limit_address;       /* the arena stays below this: 2 GB, or 1.75 GB under the ARM translator */
+  uint64_t limit_address;       /* the arena stays below this: 0x7FFF0000, or 1.75 GB under the ARM translator */
   uint64_t heap_footprint;      /* dlmalloc: memory obtained for the heap now */
   uint64_t heap_max_footprint;  /* dlmalloc: most ever */
   uint32_t threads_live, threads_peak, threads_total, thread_fallbacks;

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  One APK: the Java launcher (data import, launch options) and the native game
-  runtime (libfaf_android.so in GameActivity). See docs/port/android.md.
+  One APK: the Java launcher (data import, launch options, replay test), the
+  native game runtime (libfaf_android.so in GameActivity) and the headless
+  replay runner (libfafrunner.so + libfafengine.so, a separate process the
+  replay test starts). See docs/port/android.md.
   versionCode/versionName are set by scripts/port/build_android.ps1.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -34,11 +36,15 @@
       external files dir; Android 10+ asks whether to keep the app's data when it
       is uninstalled. allowBackup is off: the data is the user's own copy of the
       game and far too large for a backup.
+      extractNativeLibs: the replay test execs lib/<abi>/libfafrunner.so as its
+      own process, so the installer must extract the libraries into
+      nativeLibraryDir (apps may only exec files from there, and only lib*.so
+      names are extracted). build_android.ps1 packages them DEFLATED to match.
     -->
     <application
         android:allowBackup="false"
         android:appCategory="game"
-        android:extractNativeLibs="false"
+        android:extractNativeLibs="true"
         android:hasCode="true"
         android:hasFragileUserData="true"
         android:icon="@mipmap/ic_launcher"
@@ -75,6 +81,46 @@
                 android:value="faf_android" />
         </activity>
 
+        <!--
+          Receives a replay from "Open with" / "Share" (for example a
+          https://replay.faforever.com/<id> download in the browser): copies it
+          into <root>/replays and hands over to the launcher. No UI of its own.
+          Only content: URIs are accepted; the file is checked for the replay
+          format before anything else happens with it.
+        -->
+        <activity
+            android:name=".ReplayInboxActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="FAF replay test"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter android:label="FAF replay test">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zstd" />
+                <data android:mimeType="application/x-zstd" />
+                <data android:mimeType="application/x-fafreplay" />
+            </intent-filter>
+            <intent-filter android:label="FAF replay test">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/zstd" />
+                <data android:mimeType="application/x-zstd" />
+                <data android:mimeType="application/x-fafreplay" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Imports, downloads and the replay test (the headless runner as a child
+          process of this, the main, process: the foreground service keeps both
+          alive, see ReplayTest.java).
+        -->
         <service
             android:name=".ImportService"
             android:exported="false"

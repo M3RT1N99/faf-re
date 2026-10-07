@@ -1,0 +1,3 @@
+# Vendored upstream files stay byte-exact (no end-of-line conversion), so the sha256 list in
+# README.md holds in every checkout.
+* -text

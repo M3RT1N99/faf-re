@@ -88,7 +88,16 @@ final class FaPathWriter {
 
     /** Renders the template for this data root and replaces fa_path.lua atomically. Returns the file. */
     static File write(DataManifest manifest, DataRoot root, int fafVersion, String versionName) throws IOException {
-        String text = render(manifest.faPathTemplate, root.path(), Integer.toString(fafVersion),
+        return write(manifest, root, root.path(), fafVersion, versionName);
+    }
+
+    /**
+     * The same with another spelling of the root's path in the file: the replay test writes the
+     * lowercase alias the runner sees (Runner.ensureAlias), GUI Start the real root.
+     */
+    static File write(DataManifest manifest, DataRoot root, String rootPath, int fafVersion, String versionName)
+            throws IOException {
+        String text = render(manifest.faPathTemplate, rootPath, Integer.toString(fafVersion),
                 clientVersion(versionName));
         File target = root.prepare(manifest.layout.faPathLua);
         FileOps.writeAtomic(target, text);

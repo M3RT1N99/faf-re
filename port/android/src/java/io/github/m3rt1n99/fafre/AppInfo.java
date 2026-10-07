@@ -20,6 +20,7 @@ import java.util.List;
 final class AppInfo {
     /** android.app.lib_name of GameActivity in AndroidManifest.xml. */
     static final String NATIVE_LIBRARY = "faf_android";
+    static final String NATIVE_LIBRARY_FILE = "lib" + NATIVE_LIBRARY + ".so";
     static final String GAME_PROCESS_SUFFIX = ":game";
     static final String ABI = "arm64-v8a";
 

@@ -10,7 +10,10 @@ everything it reaches, linked for Android into
 - `faf_headless_runner`, a small executable with the low arena
   ([port/engine/lowarena](../lowarena/README.md)): it loads `libfafengine.so` from its own
   directory (or `$FAF_ENGINE_LIB`) into a range below 2 GB, calls `faf_headless_main(argc, argv)`
-  on a thread with a low stack and returns its exit code.
+  on a thread with a low stack and returns its exit code. Since release 0.4.0 it also reads
+  `.fafreplay` files itself, has `/replayinfo` and `/convertreplay` modes and reports crashes
+  ([below](#release-040-replay-input-and-crash-reports)); the APK ships it as
+  `lib/<abi>/libfafrunner.so` for the in-app replay test.
 
 The command line is main.exe's: `faf_headless_runner /headlessreplay <file> /init <init_faf.lua> ...`
 (the leading `/headlessreplay` may be left out). On a device or the emulator,
@@ -22,6 +25,8 @@ The command line is main.exe's: `faf_headless_runner /headlessreplay <file> /ini
 | `RunnerMain.cpp` | `faf_headless_main` (in the .so: sets `__argc`/`__argv`, calls `HEADLESS_RunReplay`) and, with `FAF_RUNNER_EXECUTABLE`, the executable's `main` (low arena, low load, engine thread) |
 | `MeshSpatialDb.cpp` | The engine's spatial database templates from `moho/mesh/Mesh.cpp` (compiled with `FAF_PORT_MESH_SPATIAL_DB_ONLY`, which leaves the D3D9 mesh renderer out): real engine code, which the .scmap load needs |
 | `HeadlessStubs*.cpp` | Runner-only stand-ins for user-side code (UI, render, audio, wx, live networking, the user session, the D3D texture resource without a device), never part of main.exe; plus a few traps (below) |
+| `ReplayFile.{h,cpp}` | Executable only (0.4.0): `.fafreplay` decoding (zstd from [port/third_party/zstd](../../third_party/zstd/README.md), legacy base64+zlib from the system libz), the version rewrite to 3764, the header scan, `/replayinfo`'s JSON, SHA-256 |
+| `RunnerCrash.{h,cpp}` | Executable only (0.4.0): the crash reporter for fatal signals |
 
 ## Building
 
@@ -34,8 +39,10 @@ python scripts/port/build_runner.py --abi x86_64
 `build_runner.py` compiles each TU with the arm64 sweep's command (`scripts/port/engine_sweep.py`:
 main.vcxproj's Release|x64 defines and include directories, `port/engine/shim`,
 `port/engine/compile_flags.txt`) plus `-fPIC -ffunction-sections -fdata-sections -g`, the
-runner's own sources (`port/engine/runner/*.cpp`), and the WildMagic Foundation TUs the closure
-lists, from the local, gitignored `dependencies/WildMagic3p8`. Wild Magic needs two stand-ins,
+runner's own sources (`port/engine/runner/*.cpp` except the executable-only `ReplayFile.cpp` and
+`RunnerCrash.cpp`, which are compiled with the low arena's plain flags, `RUNNER_EXE_SOURCES`, together
+with the vendored zstd decoder, `ZSTD_SOURCES`; the executable links `-lz`), and the WildMagic
+Foundation TUs the closure lists, from the local, gitignored `dependencies/WildMagic3p8`. Wild Magic needs two stand-ins,
 generated into `<out>/wm3-include`: `<sys/timeb.h>` (bionic has none) and copies of
 `Wm3Query{2,3}Filtered.{h,inl}` that call the dependent base's `Det2/3/4` through `this->`.
 Compiling is incremental (a TU is skipped while its command and every file it includes are
@@ -187,11 +194,139 @@ symbolizes a crash against the unstripped library, and with `--windows-ref` writ
 prefix `MSYS_NO_PATHCONV=1`. `--env FAF_LOWARENA_CHECK=1` turns on the heap check
 ([lowarena README](../lowarena/README.md#heap-check)).
 
-## Status (2026-10-07, M3c)
+Since 0.4.0 it also takes `.fafreplay` files (the runner decodes them; the map comes from the JSON
+line), has a reference mode for the app, `--host-prefs none` (no `Game.prefs` in the runner's home,
+a stale one is deleted, and `fa_path.lua` names `<data root>/vault-reference`, a vault without mods,
+as on a phone), and `--write-refs FILE` enters every run that reached its end in the app's reference
+table. Generated files are staged under short flat names, so a long `--out-dir` works; a host path
+adb.exe cannot open stops the script up front.
+
+## Release 0.4.0: replay input and crash reports
+
+The in-app replay test execs this executable from the APK (`lib/<abi>/libfafrunner.so`) and needs
+three things from it that `main.exe` gets from `scripts/perf/convert_replay.py` and the debugger. All
+three live in the executable only; `libfafengine.so` and `HeadlessReplay.cpp` are unchanged (the
+engine still only loads a `Supreme Commander v1.50.3764` file).
+
+**Replay input** (`ReplayFile.cpp`). A `.fafreplay` is one JSON line and a body: zstd
+(`"compression":"zstd"`, the vault, the browser download `https://replay.faforever.com/<id>`, the
+Python and Rust clients; frames without a content size, decoded as a stream) or legacy
+base64(4-byte big-endian length + zlib) (the Java client's own recordings). The decoder is
+[zstd 1.5.7](../../third_party/zstd/README.md) and the system libz; base64 follows Python's
+`binascii` (characters outside the alphabet skipped, padding ends the data), so the result is what
+the script produces. The body's version `Supreme Commander v1.50.NNNN` gets the digits `3764`, the
+same length, nothing else moves (`--as-version 3764`). Caps: 64 MB in, 256 MB out.
+
+| Command | What it does |
+|---|---|
+| `faf_headless_runner /replayinfo <file>` | prints one JSON object and exits 0 (1 when the file cannot be decoded, with `"ok":false` and `"error"`); no engine is loaded |
+| `faf_headless_runner /convertreplay <in> <out>` | writes the engine's `.scfareplay` (through `<out>.tmp` and a rename) and prints the same object plus `"output"` |
+| `faf_headless_runner /headlessreplay <file> ...` | a file that is not already a 3764 `.scfareplay` is converted first, in a child process (its allocations never touch the runner's heap), into `<directory of /headlesssummary, else of /log, else .>/<lower-case name>.scfareplay`, and the engine gets that path; the runner prints `[runner] input {...}` (the same object) on stdout |
+
+The object (no player names, titles or chat): `ok`, `error`, `file`, `output`, `format`
+(`scfareplay`, `fafreplay-zstd`, `fafreplay-legacy`), `size`, `sha256` (of the file, the key of
+the reference table), `id` (`uid`; a number out of range or a string over 18 digits gives `null`),
+`map` (`mapname`; when that is empty, as in coop replays, the body's map folder `map_dir`),
+`featured_mod`, `featured_mod_version` (the recorded game version, the digits of the body's version
+string), `players` (`num_players`, `null` outside 0..1000000), `game_time_seconds`
+(`game_end - launched_at`, both finite), `complete`, `header_version` (as recorded),
+`decoded_size`, `decoded_sha256` (as decoded), `converted_sha256` (after the rewrite: what
+`/convertreplay` writes), `version_rewritten`, `zstd_frames`, `truncated`, `trailing_bytes` (only
+when set), and from the body the same parse as the engine's pre-scan: `map_path`, `map_dir`,
+`armies`, `command_sources`, `beats`, `sim_seconds` (`beats / 10`), `has_end_game`,
+`recorded_checksums`, `checksum_beats`, `scan_error`. Example (the vault's 26675870):
+
+```json
+{"ok":true,"file":"26675870.fafreplay","format":"fafreplay-zstd","size":2399,"sha256":"fbb9c0aec784ba62b2050b15e793b7808527e0ac9d0eade1e15d33ce73cfdb19","id":26675870,"map":"scmp_026","featured_mod":"faf","featured_mod_version":3831,"players":2,"game_time_seconds":191,"complete":true,"header_version":"Supreme Commander v1.50.3831","decoded_size":11352,"decoded_sha256":"b7c7af15a059a990557d595fdba47aaa7682eea77ede8a8b0e08c16235c29b05","converted_sha256":"bc4320a2a5cf96e86ef346075c3858b4296f1d826eae7c62547e4885cf105df8","version_rewritten":true,"zstd_frames":1,"map_path":"/maps/SCMP_026/SCMP_026.scmap","map_dir":"SCMP_026","armies":4,"command_sources":2,"beats":465,"sim_seconds":46.500,"has_end_game":false,"recorded_checksums":20,"checksum_beats":10,"scan_error":null}
+```
+
+Parity, measured 2026-10-07 with the final 0.4.0 binaries on the API 36 emulator (x86_64 native and
+arm64-v8a under ARM translation): `/convertreplay` over all 419 `.fafreplay` files in
+`C:\ProgramData\FAForever\replays` (353 legacy, 66 zstd; 415 plus the 4 in `corrupt\`) and the vault
+download of 26675870 gives byte-identical output to `convert_replay.py --as-version 3764` for 420 of
+420 (sha256 of each output by toybox `sha256sum` on the device against the script's, with
+`zstandard`'s streaming decompressor replaced by Python 3.14's `compression.zstd.ZstdDecompressor`,
+the same first-frame semantics). 8 of them decode to a body whose header is cut short (`scan_error`),
+as with the script; the engine rejects those. The 3 raw `.SCFAReplay` files in `gw\` pass through
+(version rewritten). One difference from the script, not met in the corpus: concatenated zstd frames
+are all decoded (the script keeps only the first).
+
+**Crash reports** (`RunnerCrash.cpp`). The engine's crash-to-summary filter is Windows-only and an
+app cannot read the tombstone of its child, so the runner reports a fatal signal itself (SIGSEGV,
+SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP, SIGSYS; `SA_SIGINFO | SA_ONSTACK`), async-signal-safe, on
+stderr, then chains to the action installed before it (debuggerd: tombstone and logcat as before;
+the exit status stays 128 + signal):
+
+```
+[runner] CRASH sig=11 (SIGSEGV) code=1 (SEGV_MAPERR) addr=0xe29ce510 pc=0x7d35bb8c6770 (libfafengine.so+0xb1d770) lr=0x7d35bb8c6710 (libfafengine.so+0xb1d710) sp=0x7d35c00ff7f0 tid=18275 libfafengine.so base=0x7d35bada9000 build_id=cbb70516dc5aa4ac779517791fa59e2083fb885c runner build_id=0a0f773f03e8aa4d19bf4a396df6095950f6e2df
+[runner] CRASH #00 pc 0x7d35bb8c6770 (libfafengine.so+0xb1d770)
+[runner] CRASH #01 pc 0x7d35bb8c6710 (libfafengine.so+0xb1d710)
+...
+```
+
+Offsets are relative to the module's load bias, i.e. ELF addresses:
+`llvm-symbolizer --obj=<unstripped libfafengine.so of that build id> 0xb1d770`. Frames from #01 on
+are return addresses (subtract 1 on x86_64, 4 on arm64 for the call). `lr` is `-` on x86_64. The
+frame walk follows frame pointers and reads the stack through `process_vm_readv`, so a bad frame
+ends the walk instead of faulting; at most 32 frames. A signal while another thread is already
+reporting only chains. SIGSYS adds `syscall=<nr>` (a call the app seccomp filter blocks). A signal
+another process sent (`code` <= 0: `SI_USER`, `SI_TKILL`, `SI_QUEUE`, e.g. `kill -ABRT`) names the
+sender instead of a fault address: `[runner] CRASH sig=6 (SIGABRT) code=0 (SI_USER) sender_pid=31936
+sender_uid=2000 pc=...` (checked on the emulator, exit 134).
+
+Checked on the emulator with `FAF_LOWARENA=0` T1 (the known C2 truncation): x86_64 and arm64
+(translated) both print the report with frames that symbolize to `AddMappedBlueprintOrdinalBits`
+(`EntityCategoryReflection.cpp:169`) <- `EntityCategory::Add` <- `ParseEntityCategory` ..., and
+debuggerd still writes its tombstone; exit 139.
+
+**References for the app.** `port/android/assets/replay_refs.json`, keyed by the sha256 of the
+`.fafreplay` as downloaded, written by `run_runner_android.py --host-prefs none --write-refs` from
+the binaries in its `build_ids`:
+
+| Replay (vault) | sha256 of the download | Beats | Game over | Chain (x86_64 and arm64 translated) | First checkpoint differing from Windows |
+|---|---|---:|---:|---|---|
+| 26675870 (SCMP_026) | `fbb9c0aec784ba62b2050b15e793b7808527e0ac9d0eade1e15d33ce73cfdb19` | 465 | 467 | `4971bbe58c5586a0` | beat 100 (Windows `7e159db290f576f1` on the same converted bytes, Debug\|Win32 M3c build) |
+
+The vault copy decodes to 11352 bytes against 11350 for the local recording M3c used (two more
+bytes at the end); the chain is the same as M3c's (`4971bbe58c5586a0` on both ABIs, also without
+`Game.prefs` and vault mods), and so is the Windows chain.
+
+**In the app** (the launcher's Replay test, [docs/port/android.md](../../../docs/port/android.md#replay-test);
+emulator results in [headless-replay.md](../../../docs/port/headless-replay.md#in-app-replay-test-release-040)):
+the APK execs `nativeLibraryDir/libfafrunner.so`, which the linker puts in its "system" namespace
+(not "unrestricted" as under `/data/local/tmp`) and which inherits the app's seccomp filter and
+`untrusted_app` domain. On the emulator that changes nothing for the runner: the vault T1 gives
+`4971bbe58c5586a0` in the app with the x86_64 APK and, under translation, with the arm64-v8a APK;
+the crash report and debuggerd's backtrace both reach the run's files (the app may read its own
+uid's crash log lines).
+
+## Status (2026-10-07, M3c; release 0.4.0)
 
 `closure.txt`: 858 engine TUs + 31 WildMagic TUs (variant `init`, 700 roots), 304 symbols cut.
 `build_runner.py --abi arm64-v8a` and `--abi x86_64`: 903 of 903 compile units (with the low
-arena), **0 undefined and 0 duplicate symbols**.
+arena), **0 undefined and 0 duplicate symbols**; with 0.4.0's executable-only sources and the zstd
+decoder 916 of 916 (`--probe`).
+
+The 0.4.0 binaries (built 2026-10-07 with `--probe`; the reference table and the APK refer to them
+by build id). The APK packages `buildstage/runner/r040b-pkg/<abi>` (`build_android.ps1
+-RunnerDirectory`, with `SHA256SUMS` and `BUILD_IDS`; a Release build refuses a runner or engine whose
+build id the table does not name). After the reviews only the executable changed (`ReplayFile.cpp`:
+the range checks and the `map` fallback above; `RunnerCrash.cpp`: the sender of a sent signal), built
+in `buildstage/runner/r040b-<abi>` from the objects of the previous build; the engine and the probe
+relinked byte-identical (same sha256), so their build ids stay. The reference table was then
+measured again with these binaries (vault T1, `--host-prefs none`): `4971bbe58c5586a0`, game over at
+467, on x86_64 and arm64 under translation, as before. The probe was rebuilt once after the first
+in-app run (two of its checks assumed an adb shell, see the
+[lowarena README](../lowarena/README.md#probe)).
+
+| ABI | `faf_headless_runner` (packaged; before the review fixes) | `libfafengine.so` | `libfafarenaprobe.so` (packaged; measured first) |
+|---|---|---|---|
+| arm64-v8a | `235eb467afbaf640d920f2d2ee3d448807a1498a` (`0a0f773f03e8aa4d19bf4a396df6095950f6e2df`) | `cbb70516dc5aa4ac779517791fa59e2083fb885c` | `f08a556c64a7dc65192e860cb6209f384616830a` (`283176f3d801c1ebf1466a81536238986fe1097f`) |
+| x86_64 | `e094bda542d16c7d613927663de02c4b5679bef2` (`e26b071c56aec042992577d1cb58d85b135218b2`) | `9f688a0f7c6cd3a83dc4f75e2e5c33f046019f1f` | `f2dea73ae9a120e3c338fb3ac39323e5880acbd8` (`7a1cef4ac31d3b3c7d4cf150b3773e08f24fd823`) |
+
+Against M3c's binaries the engine library differs only by the shim's MapViewOfFile fallback
+(Android: a read-only `MAP_SHARED` view that FUSE refuses with `ENODEV` is retried `MAP_PRIVATE`) and
+debug line information; the T1 chain is unchanged.
 
 On the API 36 emulator the runner plays all four M3a replays (T1-T3, R4) to the end with the low
 arena as native x86_64, and T1 as arm64 under the ARM translation: exit 0, game over at the

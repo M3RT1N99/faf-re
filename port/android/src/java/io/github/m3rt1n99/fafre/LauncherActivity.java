@@ -4,6 +4,8 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -35,8 +37,15 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -45,8 +54,9 @@ import java.util.Set;
 /**
  * The app's entry point: shows what game data is on the device, gets the rest
  * (FAF download, folder imports through the import service, or the PC deploy
- * script), keeps the launch options, and starts GameActivity with the same
- * command line the desktop game takes.
+ * script), keeps the launch options, starts GameActivity with the same
+ * command line the desktop game takes, and runs the replay test (the headless
+ * runner on a picked or shared replay, {@link ReplayTest}).
  *
  * <p>All file work runs on {@link Background}; the activity holds no state that
  * is not also in {@link Settings}, the data root or the import service, so a
@@ -57,6 +67,8 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private static final int REQUEST_SCFA_TREE = 1;
     private static final int REQUEST_FAF_TREE = 2;
     private static final int REQUEST_VAULT_TREE = 3;
+    private static final int REQUEST_REPLAY_FILE = 4;
+    private static final int REQUEST_SAVE_ZIP = 5;
     private static final int REQUEST_NOTIFICATIONS = 10;
     /** Fixed id so the ScrollView restores its position after a rotation. */
     private static final int SCROLL_VIEW_ID = 0x0f0a0001;
@@ -66,17 +78,20 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private static final String ACTION_IMPORT_FAF = "import_faf";
     private static final String ACTION_IMPORT_VAULT = "import_vault";
     private static final String ACTION_VERIFY = "verify";
+    private static final String ACTION_REPLAY_TEST = "replay_test";
+    private static final String ACTION_SELF_TEST = "self_test";
 
     private static final String STATE_PENDING_ACTION = "pending_action";
     private static final String STATE_PENDING_URI = "pending_uri";
     private static final String STATE_LOG_DIALOG = "log_dialog";
+    private static final String STATE_ZIP_RUN = "zip_run";
 
     /** The runtime logs per graphics backend; each keeps its previous run as .1.log. */
     private static final String VULKAN_LOG = runtimeLog(LaunchArgs.RENDERER_VULKAN);
     private static final String GLES_LOG = runtimeLog(LaunchArgs.RENDERER_GLES);
     private static final String[] CLEARED_LOGS = {
             VULKAN_LOG, previousLog(VULKAN_LOG), GLES_LOG, previousLog(GLES_LOG),
-            "faf_android.log" /* the single log of 0.3.0 and 0.3.1 */, LaunchArgs.GAME_LOG};
+            "faf_android.log" /* the single log of 0.3.0 and 0.3.1 */, LaunchArgs.GAME_LOG, ReplayTest.LOG_NAME};
     private static final String DEPLOY_COMMAND =
             "powershell -ExecutionPolicy Bypass -File scripts/port/deploy_android.ps1";
     private static final int LOG_TAIL_BYTES = 96 * 1024;
@@ -91,6 +106,12 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         RunStatus run;
         String runError;
         boolean gameAlive;
+        String runnerProblem;
+        ReplayFiles.Info replay;
+        ReplayFiles.Check replayCheck;
+        String lastRunName;
+        JSONObject lastRun;
+        ReplayRefs refs;
     }
 
     private Settings mSettings;
@@ -108,6 +129,10 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private String mPendingAction;
     private String mPendingUri;
     private String mLogDialogFile;
+    private String mPendingZipRun;
+    private boolean mReplayBusy;
+    /** A replay test job is running (ImportService state); the shown result is then the previous run's. */
+    private boolean mReplayJobRunning;
     private AlertDialog mDialog;
 
     private TextView mRootView;
@@ -139,6 +164,24 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private CheckBox mNoMovieBox;
     private CheckBox mNoSoundBox;
     private EditText mExtraArgs;
+    private TextView mReplayRunnerHint;
+    private TextView mReplayInfo;
+    private TextView mReplayNotes;
+    private Button mPickReplayButton;
+    private Button mSelfTestButton;
+    private Button mRunTestButton;
+    private LinearLayout mReplayAdvanced;
+    private LinearLayout mReplayJobPanel;
+    private TextView mReplayJobTitle;
+    private ProgressBar mReplayJobProgress;
+    private TextView mReplayJobDetail;
+    private Button mReplayCancelButton;
+    private TextView mReplayVerdict;
+    private LinearLayout mReplayLines;
+    private TextView mReplayRunTime;
+    private Button mSaveZipButton;
+    private Button mCopySummaryButton;
+    private Button mRunOutputButton;
 
     // ------------------------------------------------------------- lifecycle
 
@@ -156,12 +199,31 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         if (savedInstanceState != null) {
             mPendingAction = savedInstanceState.getString(STATE_PENDING_ACTION);
             mPendingUri = savedInstanceState.getString(STATE_PENDING_URI);
+            mPendingZipRun = savedInstanceState.getString(STATE_ZIP_RUN);
             String log = savedInstanceState.getString(STATE_LOG_DIALOG);
             if (log != null) {
                 showLog(log);
             }
         } else {
             mLog.log("launcher " + mVersionName + " opened");
+            handleInboxResult(getIntent());
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleInboxResult(intent);
+        refresh();
+    }
+
+    /** ReplayInboxActivity hands over the outcome of an "Open with" / "Share". */
+    private void handleInboxResult(Intent intent) {
+        String message = intent != null ? intent.getStringExtra(ReplayInboxActivity.EXTRA_MESSAGE) : null;
+        if (message != null) {
+            toast(message);
+            intent.removeExtra(ReplayInboxActivity.EXTRA_MESSAGE);
         }
     }
 
@@ -191,6 +253,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         outState.putString(STATE_PENDING_ACTION, mPendingAction);
         outState.putString(STATE_PENDING_URI, mPendingUri);
         outState.putString(STATE_LOG_DIALOG, mLogDialogFile);
+        outState.putString(STATE_ZIP_RUN, mPendingZipRun);
     }
 
     @Override
@@ -224,6 +287,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         column.addView(buildHeader(), mUi.matchWrap(0));
         column.addView(buildStartCard(), mUi.matchWrap(16));
         column.addView(buildRunCard(), mUi.matchWrap(12));
+        column.addView(buildReplayCard(), mUi.matchWrap(12));
         column.addView(buildDataCard(), mUi.matchWrap(12));
         column.addView(buildImportCard(), mUi.matchWrap(12));
         column.addView(buildOptionsCard(), mUi.matchWrap(12));
@@ -271,6 +335,109 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         card.addView(mRunCounters, mUi.matchWrap(6));
         mRunTime = mUi.hint("");
         card.addView(mRunTime, mUi.matchWrap(4));
+        return card;
+    }
+
+    private View buildReplayCard() {
+        LinearLayout card = mUi.card();
+        card.addView(mUi.heading("Replay test"), mUi.matchWrap(0));
+        card.addView(mUi.hint("Plays a FAF replay to its end with the headless engine, in a process of its own, "
+                + "after a self-test of the low-address memory arena. Download a replay in the browser "
+                + "(https://replay.faforever.com/<id>) and open it with this app, or pick it here. It needs the "
+                + "required and recommended game data and the replay's map. Keep the app open or in the "
+                + "background; do not swipe it away while the test runs."), mUi.matchWrap(4));
+        mReplayRunnerHint = mUi.body("");
+        mReplayRunnerHint.setTextColor(Ui.BAD);
+        mReplayRunnerHint.setVisibility(View.GONE);
+        card.addView(mReplayRunnerHint, mUi.matchWrap(8));
+        mReplayInfo = mUi.mono("No replay selected.");
+        card.addView(mReplayInfo, mUi.matchWrap(10));
+        mReplayNotes = mUi.body("");
+        mReplayNotes.setTextIsSelectable(true);
+        mReplayNotes.setVisibility(View.GONE);
+        card.addView(mReplayNotes, mUi.matchWrap(6));
+
+        mPickReplayButton = mUi.button("Pick replay…");
+        mPickReplayButton.setOnClickListener(v -> pickReplay());
+        mSelfTestButton = mUi.button("Self-test only");
+        mSelfTestButton.setOnClickListener(v -> request(ACTION_SELF_TEST, null));
+        card.addView(mUi.row(mPickReplayButton, mSelfTestButton), mUi.matchWrap(10));
+        mRunTestButton = mUi.primaryButton("Run test");
+        mRunTestButton.setOnClickListener(v -> request(ACTION_REPLAY_TEST, null));
+        card.addView(mRunTestButton, mUi.matchWrap(8));
+
+        CheckBox advanced = mUi.checkBox("Advanced options", mSettings.replayAdvanced());
+        card.addView(advanced, mUi.matchWrap(6));
+        mReplayAdvanced = new LinearLayout(this);
+        mReplayAdvanced.setOrientation(LinearLayout.VERTICAL);
+        mReplayAdvanced.setVisibility(mSettings.replayAdvanced() ? View.VISIBLE : View.GONE);
+        advanced.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setReplayAdvanced(checked);
+            mReplayAdvanced.setVisibility(checked ? View.VISIBLE : View.GONE);
+        });
+        CheckBox repeat = mUi.checkBox("Run the replay twice (is the result deterministic?)", mSettings.replayRepeat());
+        repeat.setOnCheckedChangeListener((box, checked) -> mSettings.setReplayRepeat(checked));
+        mReplayAdvanced.addView(repeat, mUi.matchWrap(0));
+        CheckBox skip = mUi.checkBox("Skip the self-test", mSettings.replaySkipSelfTest());
+        skip.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setReplaySkipSelfTest(checked);
+            renderReplay(); // the run button's label names the steps
+        });
+        mReplayAdvanced.addView(skip, mUi.matchWrap(0));
+        CheckBox interlocked = mUi.checkBox("Interlocked sim (/headlessinterlocked)", mSettings.replayInterlocked());
+        interlocked.setOnCheckedChangeListener((box, checked) -> mSettings.setReplayInterlocked(checked));
+        mReplayAdvanced.addView(interlocked, mUi.matchWrap(0));
+        CheckBox noArena = mUi.checkBox("Without the low arena (FAF_LOWARENA=0): expected to crash",
+                mSettings.replayNoArena());
+        noArena.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setReplayNoArena(checked);
+            renderReplay();
+        });
+        mReplayAdvanced.addView(noArena, mUi.matchWrap(0));
+        mReplayAdvanced.addView(mUi.hint("Without the arena the engine's 32-bit pointer fields truncate heap "
+                + "addresses; the crash and where it happens are the measurement."), mUi.matchWrap(2));
+        card.addView(mReplayAdvanced, mUi.matchWrap(0));
+
+        mReplayJobPanel = new LinearLayout(this);
+        mReplayJobPanel.setOrientation(LinearLayout.VERTICAL);
+        mReplayJobPanel.setVisibility(View.GONE);
+        mReplayJobTitle = mUi.text("", 15, Ui.TITLE);
+        mReplayJobTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        mReplayJobPanel.addView(mReplayJobTitle, mUi.matchWrap(0));
+        mReplayJobProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        mReplayJobProgress.setMax(1000);
+        mReplayJobProgress.setProgressTintList(ColorStateList.valueOf(Ui.ACCENT));
+        mReplayJobProgress.setIndeterminateTintList(ColorStateList.valueOf(Ui.ACCENT));
+        mReplayJobPanel.addView(mReplayJobProgress, mUi.matchWrap(6));
+        mReplayJobDetail = mUi.hint("");
+        mReplayJobPanel.addView(mReplayJobDetail, mUi.matchWrap(4));
+        mReplayCancelButton = mUi.button("Cancel");
+        mReplayCancelButton.setOnClickListener(v -> ImportService.cancelRunning("Cancelled"));
+        mReplayJobPanel.addView(mReplayCancelButton, mUi.matchWrap(6));
+        card.addView(mReplayJobPanel, mUi.matchWrap(12));
+
+        mReplayVerdict = mUi.text("", 15, Ui.TEXT);
+        mReplayVerdict.setTypeface(Typeface.DEFAULT_BOLD);
+        mReplayVerdict.setTextIsSelectable(true);
+        mReplayVerdict.setVisibility(View.GONE);
+        card.addView(mReplayVerdict, mUi.matchWrap(12));
+        mReplayLines = new LinearLayout(this);
+        mReplayLines.setOrientation(LinearLayout.VERTICAL);
+        card.addView(mReplayLines, mUi.matchWrap(4));
+        mReplayRunTime = mUi.hint("");
+        mReplayRunTime.setVisibility(View.GONE);
+        card.addView(mReplayRunTime, mUi.matchWrap(4));
+        mSaveZipButton = mUi.button("Save run (zip)…");
+        mSaveZipButton.setOnClickListener(v -> saveRunZip());
+        mCopySummaryButton = mUi.button("Copy summary");
+        mCopySummaryButton.setOnClickListener(v -> copySummary());
+        card.addView(mUi.row(mSaveZipButton, mCopySummaryButton), mUi.matchWrap(10));
+        mRunOutputButton = mUi.button("Runner output");
+        mRunOutputButton.setOnClickListener(v -> showRunOutput());
+        card.addView(mRunOutputButton, mUi.matchWrap(4));
+        card.addView(mUi.hint("Send the saved zip (or the copied summary) to the developers. It contains the run's "
+                + "logs and device details, never the replay file; the engine log names the replay's players (their "
+                + "FAF nicknames, as on FAF's replay pages)."), mUi.matchWrap(4));
         return card;
     }
 
@@ -440,6 +607,11 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         Button game = mUi.button("Game log");
         game.setOnClickListener(v -> showLog(LaunchArgs.GAME_LOG));
         card.addView(mUi.row(launcher, game), mUi.matchWrap(4));
+        Button replays = mUi.button("Replay test log");
+        replays.setOnClickListener(v -> showLog(ReplayTest.LOG_NAME));
+        Button licenses = mUi.button("Licenses");
+        licenses.setOnClickListener(v -> showLicenses());
+        card.addView(mUi.row(replays, licenses), mUi.matchWrap(4));
         Button clear = mUi.button("Clear logs");
         clear.setOnClickListener(v -> confirmClearLogs());
         card.addView(clear, mUi.matchWrap(4));
@@ -535,6 +707,17 @@ public final class LauncherActivity extends Activity implements ImportService.Li
             snapshot.runError = e.getMessage();
         }
         snapshot.gameAlive = AppInfo.gameProcessPid(app) > 0;
+        snapshot.runnerProblem = Runner.problem(app);
+        Settings settings = new Settings(app);
+        String stem = settings.replayStem();
+        snapshot.replay = stem != null ? ReplayFiles.read(snapshot.root, stem) : null;
+        if (snapshot.replay != null) {
+            snapshot.replayCheck = ReplayFiles.check(snapshot.manifest, snapshot.root, snapshot.status,
+                    snapshot.replay);
+        }
+        snapshot.lastRunName = settings.lastReplayRun();
+        snapshot.lastRun = ReplayTest.readResult(snapshot.root, snapshot.lastRunName);
+        snapshot.refs = ReplayRefs.get(app);
         return snapshot;
     }
 
@@ -581,6 +764,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         }
         mRootView.setText("Data folder: " + snapshot.root.path());
         renderRun(snapshot);
+        renderReplay();
         renderData(snapshot);
         renderDownloadHint();
         renderStart();
@@ -602,7 +786,8 @@ public final class LauncherActivity extends Activity implements ImportService.Li
                     + ". Get it below.";
             color = Ui.WARN;
         } else if (ImportService.state().running) {
-            hint = "Wait for the running transfer to finish.";
+            hint = ImportService.KIND_REPLAY.equals(ImportService.state().kind)
+                    ? "Wait for the replay test to finish." : "Wait for the running transfer to finish.";
             color = Ui.WARN;
         } else {
             StringBuilder text = new StringBuilder("Ready · ");
@@ -753,12 +938,369 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         mImportScfaButton.setEnabled(ready && !busy);
         mImportVaultButton.setEnabled(ready && !busy);
         mVerifyButton.setEnabled(ready && !busy);
+        boolean runner = ready && mSnapshot.runnerProblem == null;
+        mPickReplayButton.setEnabled(ready && !busy && !mReplayBusy);
+        mSelfTestButton.setEnabled(runner && !busy && !mReplayBusy);
+        mRunTestButton.setEnabled(runner && !busy && !mReplayBusy && mSnapshot.replay != null
+                && mSnapshot.replayCheck != null && mSnapshot.replayCheck.ok());
+        boolean haveRun = ready && mSnapshot.lastRun != null && !isCurrentRun(mSnapshot.lastRun);
+        mSaveZipButton.setEnabled(haveRun && !mReplayBusy);
+        mCopySummaryButton.setEnabled(haveRun);
+        mRunOutputButton.setEnabled(haveRun);
+    }
+
+    // ----------------------------------------------------------- replay test
+
+    private void renderReplay() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || mReplayInfo == null) {
+            return;
+        }
+        mReplayRunnerHint.setText(snapshot.runnerProblem != null ? snapshot.runnerProblem : "");
+        mReplayRunnerHint.setVisibility(snapshot.runnerProblem != null ? View.VISIBLE : View.GONE);
+
+        ReplayFiles.Info replay = snapshot.replay;
+        StringBuilder notes = new StringBuilder();
+        int notesColor = Ui.MUTED;
+        if (replay == null) {
+            mReplayInfo.setText("No replay selected. Open a downloaded .fafreplay with this app, or pick one.");
+        } else {
+            StringBuilder info = new StringBuilder(replay.describe());
+            info.append("\nsha256 ").append(replay.sha256());
+            ReplayRefs.Ref ref = snapshot.refs.find(replay.sha256(), replay.engineFileSha256());
+            if (ref != null) {
+                info.append("\nreference: chain ").append(ref.chains.isEmpty() ? "none" : String.join(" / ", ref.chains))
+                        .append(ref.gameOverBeat >= 0 ? ", game over at beat " + ref.gameOverBeat : "");
+            } else {
+                info.append("\nreference: none for this file").append(snapshot.refs.error() != null ? " ("
+                        + snapshot.refs.error() + ")" : snapshot.refs.size() > 0 ? " (known: "
+                        + String.join(", ", snapshot.refs.ids()) + ")" : "");
+            }
+            if (!replay.runnerInfoError().isEmpty()) {
+                info.append("\nrunner: ").append(replay.runnerInfoError());
+            }
+            mReplayInfo.setText(info);
+            ReplayFiles.Check check = snapshot.replayCheck;
+            if (check != null) {
+                for (String problem : check.problems) {
+                    appendLine(notes, problem);
+                    notesColor = Ui.BAD;
+                }
+                for (String warning : check.warnings) {
+                    appendLine(notes, warning);
+                    if (notesColor != Ui.BAD) {
+                        notesColor = Ui.WARN;
+                    }
+                }
+            }
+        }
+        if (mSettings.replayNoArena()) {
+            appendLine(notes, "Advanced: the replay runs without the low arena (FAF_LOWARENA=0) and is expected to "
+                    + "crash.");
+            if (notesColor == Ui.MUTED) {
+                notesColor = Ui.WARN;
+            }
+        }
+        mReplayNotes.setText(notes);
+        mReplayNotes.setTextColor(notesColor);
+        mReplayNotes.setVisibility(notes.length() == 0 ? View.GONE : View.VISIBLE);
+        mRunTestButton.setText(mSettings.replaySkipSelfTest() ? "Run the replay" : "Run test (self-test + replay)");
+
+        JSONObject run = snapshot.lastRun;
+        String jobMessage = mSettings.lastReplayMessage();
+        mReplayLines.removeAllViews();
+        if (run == null && jobMessage == null) {
+            mReplayVerdict.setVisibility(View.GONE);
+            mReplayRunTime.setVisibility(View.GONE);
+            return;
+        }
+        boolean newerMessage = jobMessage != null && (run == null || !jobMessage.equals(run.optString("headline")))
+                && mSettings.lastReplayTime() > 0;
+        if (run != null && isCurrentRun(run)) {
+            // The run the job is doing right now: its provisional result only matters if the app is ended.
+            mReplayVerdict.setText("Run " + run.optString("run") + " is in progress…");
+            mReplayVerdict.setTextColor(Ui.MUTED);
+            mReplayVerdict.setVisibility(View.VISIBLE);
+            mReplayRunTime.setVisibility(View.GONE);
+        } else if (run != null) {
+            String verdict = run.optString("verdict");
+            // While a test runs, the result below is the previous run's; say so.
+            mReplayVerdict.setText(mReplayJobRunning ? "Previous run: " + run.optString("headline")
+                    : run.optString("headline"));
+            mReplayVerdict.setTextColor(mReplayJobRunning ? Ui.MUTED : ReplayTest.VERDICT_PASS.equals(verdict)
+                    || ReplayTest.VERDICT_EXPECTED_CRASH.equals(verdict) ? Ui.GOOD
+                    : ReplayTest.VERDICT_FAIL.equals(verdict) ? Ui.BAD : Ui.WARN);
+            mReplayVerdict.setVisibility(View.VISIBLE);
+            JSONArray lines = run.optJSONArray("lines");
+            for (int i = 0; lines != null && i < lines.length(); ++i) {
+                JSONObject line = lines.optJSONObject(i);
+                if (line == null) {
+                    continue;
+                }
+                TextView view = mUi.text(line.optString("text"), 13, toneColor(line.optString("tone")));
+                view.setTextIsSelectable(true);
+                mReplayLines.addView(view, mUi.matchWrap(3));
+            }
+            mReplayRunTime.setText("Run " + run.optString("run") + " · " + (run.optBoolean(ReplayTest.IN_PROGRESS)
+                    ? "started " + run.optString("started") + ", did not finish" : run.optString("ended"))
+                    + " · runs/" + run.optString("run"));
+            mReplayRunTime.setVisibility(View.VISIBLE);
+        } else {
+            mReplayVerdict.setVisibility(View.GONE);
+            mReplayRunTime.setVisibility(View.GONE);
+        }
+        if (newerMessage) {
+            TextView view = mUi.text("Last test (" + formatTime(mSettings.lastReplayTime()) + "): " + jobMessage, 13,
+                    mSettings.lastReplayOk() ? Ui.GOOD : Ui.BAD);
+            view.setTextIsSelectable(true);
+            mReplayLines.addView(view, 0, mUi.matchWrap(3));
+        }
+    }
+
+    /**
+     * Whether {@code run} is the provisional result of the test this process is running now (and not of a run
+     * that an earlier process of the app left unfinished: that one shows as INTERRUPTED).
+     */
+    private boolean isCurrentRun(JSONObject run) {
+        return mReplayJobRunning && run.optBoolean(ReplayTest.IN_PROGRESS)
+                && run.optInt(ReplayTest.APP_PID, -1) == Process.myPid();
+    }
+
+    private static int toneColor(String tone) {
+        switch (tone) {
+            case "good":
+                return Ui.GOOD;
+            case "bad":
+                return Ui.BAD;
+            case "warn":
+                return Ui.WARN;
+            default:
+                return Ui.BODY;
+        }
+    }
+
+    private void onReplayState(ImportService.State state) {
+        if (state.running != mReplayJobRunning) {
+            mReplayJobRunning = state.running;
+            renderReplay();
+        }
+        if (state.running) {
+            mReplayJobPanel.setVisibility(View.VISIBLE);
+            mReplayJobTitle.setText(state.cancelling ? state.title + " (cancelling…)" : state.title);
+            Progress.Snapshot progress = state.progress;
+            int permille = progress != null ? progress.permille() : -1;
+            mReplayJobProgress.setIndeterminate(permille < 0);
+            if (permille >= 0) {
+                mReplayJobProgress.setProgress(permille);
+            }
+            if (progress != null) {
+                mReplayJobDetail.setText(progress.phase + (progress.item.isEmpty() ? "" : "\n" + progress.item));
+            }
+            mReplayCancelButton.setEnabled(!state.cancelling);
+        } else {
+            mReplayJobPanel.setVisibility(View.GONE);
+        }
+    }
+
+    private void pickReplay() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+        try {
+            startActivityForResult(intent, REQUEST_REPLAY_FILE);
+        } catch (ActivityNotFoundException e) {
+            toast("This device has no file picker (Files app).");
+        }
+    }
+
+    private void importReplay(final Uri uri) {
+        mReplayBusy = true;
+        updateButtons();
+        toast("Reading the replay…");
+        final Context app = getApplicationContext();
+        // As in ReplayInboxActivity: no runner next to a running job; the test reads the replay when it starts.
+        final boolean jobRunning = ImportService.state().running;
+        Background.run(() -> {
+            ReplayFiles.Info info = ReplayFiles.importUri(app, uri);
+            mLog.log("replay: imported " + info.fileName() + " (" + info.format() + ", sha256 " + info.sha256() + ")"
+                    + (jobRunning ? "; not analyzed now, a job is running" : ""));
+            if (!jobRunning) {
+                info = ReplayFiles.analyze(app, info, new Cancellation());
+            }
+            new Settings(app).setReplayStem(info.stem());
+            return info;
+        }, (info, error) -> {
+            mReplayBusy = false;
+            if (isDestroyed()) {
+                return;
+            }
+            if (error != null) {
+                mLog.log("replay: import failed: " + describe(error));
+                toast("Cannot use this file: " + describe(error));
+            } else {
+                toast("Replay " + info.fileName() + " selected.");
+            }
+            refresh();
+        });
+    }
+
+    private ReplayTest.Options replayOptions(boolean replay) {
+        ReplayTest.Options options = new ReplayTest.Options();
+        options.replayStem = mSettings.replayStem();
+        options.replay = replay && options.replayStem != null;
+        options.selfTest = !replay || !mSettings.replaySkipSelfTest();
+        options.repeat = mSettings.replayRepeat();
+        options.interlocked = mSettings.replayInterlocked();
+        options.lowArena = !mSettings.replayNoArena();
+        return options;
+    }
+
+    private void saveRunZip() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || snapshot.lastRun == null) {
+            return;
+        }
+        mPendingZipRun = snapshot.lastRun.optString("run");
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/zip").putExtra(Intent.EXTRA_TITLE, "fafre-run-" + mPendingZipRun + ".zip");
+        try {
+            startActivityForResult(intent, REQUEST_SAVE_ZIP);
+        } catch (ActivityNotFoundException e) {
+            mPendingZipRun = null;
+            toast("This device has no file picker (Files app).");
+        }
+    }
+
+    private void writeRunZip(final Uri target, final String runName) {
+        mReplayBusy = true;
+        updateButtons();
+        final Context app = getApplicationContext();
+        Background.run(() -> {
+            DataRoot root = AppInfo.dataRoot(app);
+            File runDir = root.file(ReplayTest.RUNS_DIR + "/" + runName);
+            if (!runDir.isDirectory()) {
+                throw new IOException("the run directory " + runName + " is gone");
+            }
+            // "wt" truncates; some providers (cloud storage) refuse that mode. The document was just created
+            // by ACTION_CREATE_DOCUMENT, so plain "w" writes the same bytes there.
+            OutputStream out;
+            try {
+                out = app.getContentResolver().openOutputStream(target, "wt");
+            } catch (IOException | IllegalArgumentException | UnsupportedOperationException | SecurityException e) {
+                mLog.log("replay: the zip target refused mode wt (" + e + "); trying w");
+                out = null;
+            }
+            if (out == null) {
+                out = app.getContentResolver().openOutputStream(target, "w");
+            }
+            if (out == null) {
+                throw new IOException("cannot write to the chosen file");
+            }
+            try (OutputStream stream = out) {
+                return RunZip.write(runDir, root.find(LauncherLog.LOGS_DIR + "/" + LauncherLog.FILE_NAME), stream);
+            }
+        }, (count, error) -> {
+            mReplayBusy = false;
+            if (isDestroyed()) {
+                return;
+            }
+            if (error != null) {
+                mLog.log("replay: saving the zip failed: " + describe(error));
+                toast("Saving the zip failed: " + describe(error));
+            } else {
+                mLog.log("replay: saved run " + runName + " as a zip (" + count + " files)");
+                toast("Saved the run (" + count + " files). Send that zip to the developers.");
+            }
+            updateButtons();
+        });
+    }
+
+    private void copySummary() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || snapshot.lastRun == null) {
+            return;
+        }
+        String text = snapshot.lastRun.optString("summary_text", snapshot.lastRun.optString("headline"));
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newPlainText("faf-re replay test", text));
+            toast("Summary copied.");
+        }
+    }
+
+    /** The runner output of the last run's most telling step: the replay, else the last one that ran. */
+    private void showRunOutput() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || snapshot.lastRun == null) {
+            return;
+        }
+        JSONArray steps = snapshot.lastRun.optJSONArray("steps");
+        String out = null;
+        for (int i = 0; steps != null && i < steps.length(); ++i) {
+            JSONObject step = steps.optJSONObject(i);
+            if (step != null && !step.optString("out").isEmpty()) {
+                if (out == null || step.optString("name").equals("replay") || !out.contains("-replay")) {
+                    out = step.optString("out");
+                }
+            }
+        }
+        String run = snapshot.lastRun.optString("run");
+        showLog(ReplayTest.RUNS_DIR + "/" + run + "/" + (out != null ? out : ReplayTest.SUMMARY_TXT));
+    }
+
+    private void showLicenses() {
+        final Context app = getApplicationContext();
+        Background.run(() -> {
+            StringBuilder text = new StringBuilder("Third-party code in the replay runner:\n\n"
+                    + "dlmalloc (port/engine/lowarena): Doug Lea, public domain.\n");
+            String[] names = app.getAssets().list("licenses");
+            if (names == null || names.length == 0) {
+                text.append("\n(no license files in this APK)\n");
+            } else {
+                for (String name : names) {
+                    try (InputStream in = app.getAssets().open("licenses/" + name)) {
+                        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                        byte[] buffer = new byte[8192];
+                        int n;
+                        while ((n = in.read(buffer)) > 0) {
+                            bytes.write(buffer, 0, n);
+                        }
+                        text.append("\n--- ").append(name).append(" ---\n")
+                                .append(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+                    }
+                }
+            }
+            return text.toString();
+        }, (text, error) -> {
+            if (isDestroyed() || isFinishing()) {
+                return;
+            }
+            TextView view = mUi.mono(error != null ? "Cannot read the licenses: " + describe(error) : text);
+            view.setPadding(mUi.dp(20), mUi.dp(8), mUi.dp(20), mUi.dp(8));
+            ScrollView scroll = new ScrollView(this);
+            scroll.addView(view);
+            showDialog(new AlertDialog.Builder(this).setTitle("Licenses").setView(scroll)
+                    .setPositiveButton("Close", null).create(), null);
+        });
     }
 
     // ---------------------------------------------------------------- import
 
     @Override
     public void onImportState(ImportService.State state) {
+        if (ImportService.KIND_REPLAY.equals(state.kind)) {
+            onReplayState(state);
+            mJobPanel.setVisibility(View.GONE);
+            // The import card keeps showing the last transfer's outcome (from Settings).
+            renderJobResult(ImportService.State.IDLE);
+            if (!state.running && mJobWasRunning) {
+                // The test wrote its result (and fa_path.lua); read it.
+                refresh();
+            }
+            mJobWasRunning = state.running;
+            renderStart();
+            updateButtons();
+            return;
+        }
+        onReplayState(ImportService.State.IDLE);
         if (state.running) {
             mJobPanel.setVisibility(View.VISIBLE);
             mJobTitle.setText(state.cancelling ? state.title + " (cancelling…)" : state.title);
@@ -847,6 +1389,20 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_REPLAY_FILE) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                importReplay(data.getData());
+            }
+            return;
+        }
+        if (requestCode == REQUEST_SAVE_ZIP) {
+            String run = mPendingZipRun;
+            mPendingZipRun = null;
+            if (resultCode == RESULT_OK && data != null && data.getData() != null && run != null) {
+                writeRunZip(data.getData(), run);
+            }
+            return;
+        }
         String kind;
         String action;
         if (requestCode == REQUEST_SCFA_TREE) {
@@ -912,12 +1468,22 @@ public final class LauncherActivity extends Activity implements ImportService.Li
 
     private void perform(String action, String uri) {
         if (ImportService.state().running) {
-            toast("Another transfer is running.");
+            toast(ImportService.KIND_REPLAY.equals(ImportService.state().kind) ? "The replay test is running."
+                    : "Another transfer is running.");
             return;
         }
         boolean recommended = mSettings.importRecommended();
         Intent intent;
-        if (ACTION_DOWNLOAD.equals(action)) {
+        if (ACTION_REPLAY_TEST.equals(action) || ACTION_SELF_TEST.equals(action)) {
+            ReplayTest.Options options = replayOptions(ACTION_REPLAY_TEST.equals(action));
+            if (ACTION_REPLAY_TEST.equals(action) && !options.replay) {
+                toast("Pick a replay first.");
+                return;
+            }
+            mLog.log("replay test requested: " + (options.selfTest ? "self-test" : "")
+                    + (options.replay ? " replay " + options.replayStem : ""));
+            intent = ImportService.replayTest(this, options);
+        } else if (ACTION_DOWNLOAD.equals(action)) {
             intent = ImportService.downloadFaf(this, recommended);
         } else if (ACTION_VERIFY.equals(action)) {
             intent = ImportService.verifyFaf(this);
@@ -936,7 +1502,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
             startForegroundService(intent);
         } catch (RuntimeException e) {
             mLog.log("could not start the import service: " + e);
-            toast("Android did not allow the transfer to start: " + e.getMessage());
+            toast("Android did not allow the job to start: " + e.getMessage());
         }
     }
 
@@ -1041,12 +1607,14 @@ public final class LauncherActivity extends Activity implements ImportService.Li
 
     // ------------------------------------------------------------------- logs
 
-    private void showLog(final String name) {
+    /** Shows the tail of a file in the logs folder, or of a root-relative path that contains '/'. */
+    private void showLog(final String file) {
         // Recorded right away so a rotation before the read finishes reopens it.
-        mLogDialogFile = name;
+        mLogDialogFile = file;
+        final String relative = file.indexOf('/') >= 0 ? file : LauncherLog.LOGS_DIR + "/" + file;
+        final String name = relative.substring(relative.lastIndexOf('/') + 1);
         final Context app = getApplicationContext();
-        Background.run(() -> FileOps.tail(AppInfo.dataRoot(app).file(LauncherLog.LOGS_DIR + "/" + name),
-                LOG_TAIL_BYTES), (text, error) -> {
+        Background.run(() -> FileOps.tail(AppInfo.dataRoot(app).file(relative), LOG_TAIL_BYTES), (text, error) -> {
                     if (isDestroyed() || isFinishing()) {
                         return;
                     }
@@ -1061,7 +1629,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
                             .setView(scroll)
                             .setPositiveButton("Close", null)
                             .create(), () -> mLogDialogFile = null);
-                    mLogDialogFile = name;
+                    mLogDialogFile = file;
                     scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
                 });
     }
@@ -1070,7 +1638,8 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         showDialog(new AlertDialog.Builder(this)
                 .setTitle("Clear logs?")
                 .setMessage("Deletes the Vulkan and GLES runtime logs (with their previous runs), "
-                        + LauncherLog.FILE_NAME + " and " + LaunchArgs.GAME_LOG + " from the logs folder.")
+                        + LauncherLog.FILE_NAME + ", " + LaunchArgs.GAME_LOG + " and " + ReplayTest.LOG_NAME
+                        + " from the logs folder, and the replay test runs (runs/). Imported replays stay.")
                 .setPositiveButton("Clear", (dialog, which) -> clearLogs())
                 .setNegativeButton("Keep", null)
                 .create(), null);
@@ -1078,6 +1647,9 @@ public final class LauncherActivity extends Activity implements ImportService.Li
 
     private void clearLogs() {
         final Context app = getApplicationContext();
+        // A running test keeps writing into its run directory; its runs/ stay then.
+        final boolean testRunning = ImportService.state().running
+                && ImportService.KIND_REPLAY.equals(ImportService.state().kind);
         mLog.clear();
         Background.run(() -> {
             DataRoot root = AppInfo.dataRoot(app);
@@ -1086,10 +1658,21 @@ public final class LauncherActivity extends Activity implements ImportService.Li
                 File file = root.find(LauncherLog.LOGS_DIR + "/" + name);
                 ok &= FileOps.deleteQuietly(file);
             }
+            if (!testRunning) {
+                File runs = root.find(ReplayTest.RUNS_DIR);
+                if (runs != null) {
+                    try {
+                        ReplayTest.deleteTree(runs);
+                    } catch (IOException e) {
+                        ok = false;
+                    }
+                }
+            }
             return ok;
         }, (ok, error) -> {
             if (!isDestroyed()) {
                 toast(error == null && ok ? "Logs cleared" : "Some logs could not be deleted");
+                refresh();
             }
         });
     }

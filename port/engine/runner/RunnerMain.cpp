@@ -25,8 +25,23 @@
 //
 // The command line is the Windows runner's, unchanged (docs/port/headless-replay.md):
 //   faf_headless_runner /headlessreplay <file.scfareplay> /init <init_faf.lua> [/log <file>] ...
-// The leading /headlessreplay is optional here: the runner has no other mode, so it is added when
-// missing, and the engine sees the same argument list as main.exe.
+// The leading /headlessreplay is optional here: the engine side has no other mode, so it is added
+// when missing, and the engine sees the same argument list as main.exe.
+//
+// Release 0.4.0 (the in-app replay test) adds, in the executable only (the engine is unchanged):
+//  - the replay file may be a .fafreplay as FAF's vault or a browser download has it (or a
+//    .scfareplay of another version): it is decoded (zstd or the legacy base64+zlib body,
+//    ReplayFile.cpp) in a child process into
+//    <directory of /headlesssummary, else of /log, else .>/<lower-case name>.scfareplay with the
+//    version rewritten to 3764 (scripts/perf/convert_replay.py --as-version 3764), and the engine gets
+//    that path. One "[runner] input {...}" JSON line on stdout says what was read;
+//  - `faf_headless_runner /replayinfo <file>` prints one JSON object about a replay (id, map,
+//    featured mod and version, players, game time, sha256, decoded size, header version, beats, has
+//    EndGame, ...) and exits 0, or 1 when the file cannot be decoded; no engine is loaded;
+//  - `faf_headless_runner /convertreplay <in> <out>` writes the .scfareplay the engine reads and
+//    prints the same JSON object (plus "output");
+//  - a crash reporter for fatal signals (RunnerCrash.cpp): "[runner] CRASH ..." lines with offsets in
+//    libfafengine.so and its build id on stderr, then the platform's handler as before.
 
 #if defined(FAF_RUNNER_EXECUTABLE)
 
@@ -42,9 +57,15 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <errno.h>
+#include <strings.h>
+#include <sys/wait.h>
+
 #include <string>
 
 #include "../lowarena/LowArena.h"
+#include "ReplayFile.h"
+#include "RunnerCrash.h"
 
 namespace
 {
@@ -168,6 +189,7 @@ namespace
     if (dladdr(reinterpret_cast<void*>(entry), &where) != 0) {
       fprintf(stderr, "[lowarena] %s at %p, engine thread stack near %p%s\n", path, where.dli_fbase,
               static_cast<void*>(&stackProbe), run->arena ? "" : " (FAF_LOWARENA=0)");
+      faf_runner::CrashHandlerSetEngine(where.dli_fbase, path);
     }
     run->exitCode = entry(run->argc, run->argv);
     return nullptr;
@@ -183,10 +205,207 @@ namespace
       lowarena_report(2);
     }
   }
+
+  // ------------------------------------------------------------------------------------------------
+  // Replay input (release 0.4.0)
+  // ------------------------------------------------------------------------------------------------
+
+  void WriteAll(const int fd, const char* text, size_t length)
+  {
+    while (length > 0) {
+      const ssize_t n = write(fd, text, length);
+      if (n < 0 && errno == EINTR) {
+        continue;
+      }
+      if (n <= 0) {
+        return;
+      }
+      text += n;
+      length -= static_cast<size_t>(n);
+    }
+  }
+
+  // A line from up to three pieces with write(2): no stdio buffer and no malloc, so the engine's
+  // arena starts from the same state as without the message.
+  void Say(const int fd, const char* a, const char* b = "", const char* c = "")
+  {
+    WriteAll(fd, a, strlen(a));
+    WriteAll(fd, b, strlen(b));
+    WriteAll(fd, c, strlen(c));
+    WriteAll(fd, "\n", 1);
+  }
+
+  // The value after `option` (matched ignoring case, as the engine's CFG_GetArgOption), or null.
+  const char* OptionValue(const int argc, char** const argv, const char* const option)
+  {
+    for (int i = 1; i + 1 < argc; ++i) {
+      if (strcasecmp(argv[i], option) == 0) {
+        return argv[i + 1];
+      }
+    }
+    return nullptr;
+  }
+
+  int ReplayInfoMode(const int argc, char** const argv)
+  {
+    if (argc < 3) {
+      fprintf(stderr, "usage: %s /replayinfo <file.fafreplay|file.scfareplay>\n", argv[0]);
+      return 1;
+    }
+    faf_runner::ReplayInput input;
+    faf_runner::ReadReplay(argv[2], "3764", input);
+    const std::string json = faf_runner::ReplayInfoJson(input, nullptr);
+    printf("%s\n", json.c_str());
+    fflush(stdout);
+    return input.error.empty() ? 0 : 1;
+  }
+
+  int ConvertReplayMode(const int argc, char** const argv)
+  {
+    if (argc < 4) {
+      fprintf(stderr, "usage: %s /convertreplay <in.fafreplay> <out.scfareplay>\n", argv[0]);
+      return 1;
+    }
+    faf_runner::ReplayInput input;
+    std::string error;
+    if (faf_runner::ReadReplay(argv[2], "3764", input) && !faf_runner::WriteFileAtomic(argv[3], input.data, error)) {
+      input.error = error;
+    }
+    const std::string json = faf_runner::ReplayInfoJson(input, argv[3]);
+    printf("%s\n", json.c_str());
+    fflush(stdout);
+    return input.error.empty() ? 0 : 1;
+  }
+
+  char gConvertedReplay[PATH_MAX];
+
+  // `/headlessreplay <file>` with a file that is not a 3764 .scfareplay (a .fafreplay, or a
+  // .scfareplay recorded with another version): decode and convert it into
+  // <directory of /headlesssummary, else of /log, else .>/<lower-case name>.scfareplay (the engine
+  // lower-cases the paths it opens) and point the argument there. The decoding runs in a child
+  // process, so its allocations never touch this process's heap; this side allocates nothing.
+  // Returns 0 to go on, 1 when the file could not be converted.
+  int PrepareReplayArgument(const int argc, char** const argv)
+  {
+    int index = -1;
+    bool flagged = false;
+    for (int i = 1; i < argc; ++i) {
+      if (strcasecmp(argv[i], "/headlessreplay") == 0) {
+        flagged = true;
+        index = i + 1 < argc ? i + 1 : -1;
+        break;
+      }
+    }
+    if (!flagged && argc > 1) {
+      index = 1;  // faf_headless_main puts /headlessreplay in front of it
+    }
+    if (index < 0 || access(argv[index], R_OK) != 0 || faf_runner::IsEngineReadyReplay(argv[index])) {
+      return 0;  // a converted replay, or nothing the runner can read (the engine reports that)
+    }
+    const char* const source = argv[index];
+
+    // The directory: where the summary (or the log) goes, i.e. the run directory.
+    char dir[PATH_MAX] = ".";
+    const char* anchor = OptionValue(argc, argv, "/headlesssummary");
+    if (anchor == nullptr) {
+      anchor = OptionValue(argc, argv, "/log");
+    }
+    if (anchor != nullptr) {
+      const char* const slash = strrchr(anchor, '/');
+      if (slash == anchor) {
+        strlcpy(dir, "/", sizeof(dir));
+      } else if (slash != nullptr && static_cast<size_t>(slash - anchor) < sizeof(dir)) {
+        memcpy(dir, anchor, static_cast<size_t>(slash - anchor));
+        dir[slash - anchor] = '\0';
+      }
+    }
+    // The name: the source's, without its extension, lower case, [a-z0-9._-] only.
+    const char* base = strrchr(source, '/');
+    base = base != nullptr ? base + 1 : source;
+    char stem[256] = {};
+    size_t length = 0;
+    for (const char* p = base; *p != '\0' && length + 1 < sizeof(stem); ++p) {
+      char c = *p;
+      c = (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+      const bool keep = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
+      stem[length++] = keep ? c : '_';
+    }
+    stem[length] = '\0';
+    if (char* const dot = strrchr(stem, '.'); dot != nullptr && dot != stem) {
+      *dot = '\0';
+    }
+    if (stem[0] == '\0') {
+      strlcpy(stem, "replay", sizeof(stem));
+    }
+    gConvertedReplay[0] = '\0';
+    strlcat(gConvertedReplay, dir, sizeof(gConvertedReplay));
+    strlcat(gConvertedReplay, "/", sizeof(gConvertedReplay));
+    strlcat(gConvertedReplay, stem, sizeof(gConvertedReplay));
+    // Never the source itself (a .scfareplay-named file that is not decoded yet).
+    char sourceName[256] = {};
+    strlcpy(sourceName, base, sizeof(sourceName));
+    char candidate[256] = {};
+    strlcpy(candidate, stem, sizeof(candidate));
+    strlcat(candidate, ".scfareplay", sizeof(candidate));
+    if (strcmp(candidate, sourceName) == 0) {
+      strlcat(gConvertedReplay, ".v3764", sizeof(gConvertedReplay));
+    }
+    if (strlcat(gConvertedReplay, ".scfareplay", sizeof(gConvertedReplay)) >= sizeof(gConvertedReplay)) {
+      Say(2, "[runner] the converted replay's path is too long: ", source);
+      return 1;
+    }
+
+    fflush(stdout);
+    fflush(stderr);
+    const pid_t child = fork();
+    if (child < 0) {
+      Say(2, "[runner] cannot fork to convert the replay: ", strerror(errno));
+      return 1;
+    }
+    if (child == 0) {
+      faf_runner::ReplayInput input;
+      std::string error;
+      if (faf_runner::ReadReplay(source, "3764", input) &&
+          !faf_runner::WriteFileAtomic(gConvertedReplay, input.data, error)) {
+        input.error = error;
+      }
+      const std::string line = "[runner] input " + faf_runner::ReplayInfoJson(input, gConvertedReplay) + "\n";
+      WriteAll(1, line.data(), line.size());
+      if (!input.error.empty()) {
+        const std::string why = "[runner] cannot convert " + std::string(source) + ": " + input.error + "\n";
+        WriteAll(1, why.data(), why.size());
+      }
+      _exit(input.error.empty() ? 0 : 1);
+    }
+    int status = 0;
+    while (waitpid(child, &status, 0) < 0) {
+      if (errno != EINTR) {
+        Say(2, "[runner] lost the replay conversion process: ", strerror(errno));
+        return 1;
+      }
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+      Say(2, "[runner] the replay could not be converted: ", source);
+      return 1;
+    }
+    argv[index] = gConvertedReplay;
+    return 0;
+  }
 } // namespace
 
 int main(int argc, char** argv)
 {
+  faf_runner::CrashHandlerInstall(argc > 0 ? argv[0] : nullptr);
+  if (argc >= 2 && strcasecmp(argv[1], "/replayinfo") == 0) {
+    return ReplayInfoMode(argc, argv);
+  }
+  if (argc >= 2 && strcasecmp(argv[1], "/convertreplay") == 0) {
+    return ConvertReplayMode(argc, argv);
+  }
+  if (PrepareReplayArgument(argc, argv) != 0) {
+    return 1;
+  }
+
   EngineRun run;
   run.arena = lowarena_enabled() != 0;
   run.library = EngineLibraryPath(argc > 0 ? argv[0] : ".");

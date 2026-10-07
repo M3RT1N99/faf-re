@@ -30,6 +30,16 @@ final class Settings {
     private static final String LAST_JOB_OK = "last_job_ok";
     private static final String LAST_JOB_TIME = "last_job_time";
     private static final String LAST_LAUNCH = "last_launch";
+    private static final String REPLAY_STEM = "replay_stem";
+    private static final String REPLAY_REPEAT = "replay_repeat";
+    private static final String REPLAY_INTERLOCKED = "replay_interlocked";
+    private static final String REPLAY_NO_ARENA = "replay_no_arena";
+    private static final String REPLAY_SKIP_SELF_TEST = "replay_skip_self_test";
+    private static final String REPLAY_ADVANCED = "replay_advanced";
+    private static final String LAST_REPLAY_RUN = "last_replay_run";
+    private static final String LAST_REPLAY_MESSAGE = "last_replay_message";
+    private static final String LAST_REPLAY_OK = "last_replay_ok";
+    private static final String LAST_REPLAY_TIME = "last_replay_time";
 
     private final SharedPreferences mPrefs;
 
@@ -136,5 +146,98 @@ final class Settings {
 
     void setLastLaunch(long millis) {
         mPrefs.edit().putLong(LAST_LAUNCH, millis).apply();
+    }
+
+    // ------------------------------------------------------------ replay test
+
+    /** The replay picked for the test (its stem in replays/), or null. */
+    String replayStem() {
+        return mPrefs.getString(REPLAY_STEM, null);
+    }
+
+    void setReplayStem(String stem) {
+        mPrefs.edit().putString(REPLAY_STEM, stem).apply();
+    }
+
+    boolean replayRepeat() {
+        return mPrefs.getBoolean(REPLAY_REPEAT, false);
+    }
+
+    void setReplayRepeat(boolean value) {
+        mPrefs.edit().putBoolean(REPLAY_REPEAT, value).apply();
+    }
+
+    boolean replayInterlocked() {
+        return mPrefs.getBoolean(REPLAY_INTERLOCKED, false);
+    }
+
+    void setReplayInterlocked(boolean value) {
+        mPrefs.edit().putBoolean(REPLAY_INTERLOCKED, value).apply();
+    }
+
+    /** FAF_LOWARENA=0: the run is expected to crash (the M3d truncation oracle). */
+    boolean replayNoArena() {
+        return mPrefs.getBoolean(REPLAY_NO_ARENA, false);
+    }
+
+    void setReplayNoArena(boolean value) {
+        mPrefs.edit().putBoolean(REPLAY_NO_ARENA, value).apply();
+    }
+
+    boolean replaySkipSelfTest() {
+        return mPrefs.getBoolean(REPLAY_SKIP_SELF_TEST, false);
+    }
+
+    void setReplaySkipSelfTest(boolean value) {
+        mPrefs.edit().putBoolean(REPLAY_SKIP_SELF_TEST, value).apply();
+    }
+
+    boolean replayAdvanced() {
+        return mPrefs.getBoolean(REPLAY_ADVANCED, false);
+    }
+
+    void setReplayAdvanced(boolean value) {
+        mPrefs.edit().putBoolean(REPLAY_ADVANCED, value).apply();
+    }
+
+    /** Name of the last run directory under runs/ (its result.json may still be the provisional one), or null. */
+    String lastReplayRun() {
+        return mPrefs.getString(LAST_REPLAY_RUN, null);
+    }
+
+    /**
+     * Records a run as it starts, before its first step: if Android ends the app during the run, the
+     * launcher shows that run (its provisional result.json says INTERRUPTED) and "Save run (zip)" exports
+     * it. The previous job's message is cleared so it is not shown as this run's. Written synchronously
+     * (commit, on the job's thread), because a kill right after would lose an apply().
+     */
+    void startReplayRun(String run) {
+        mPrefs.edit()
+                .putString(LAST_REPLAY_RUN, run)
+                .remove(LAST_REPLAY_MESSAGE)
+                .remove(LAST_REPLAY_OK)
+                .remove(LAST_REPLAY_TIME)
+                .commit();
+    }
+
+    /** Outcome of the last replay job as the service saw it (also when it ended before writing a result). */
+    void setLastReplayJob(String message, boolean ok) {
+        mPrefs.edit()
+                .putString(LAST_REPLAY_MESSAGE, message)
+                .putBoolean(LAST_REPLAY_OK, ok)
+                .putLong(LAST_REPLAY_TIME, System.currentTimeMillis())
+                .apply();
+    }
+
+    String lastReplayMessage() {
+        return mPrefs.getString(LAST_REPLAY_MESSAGE, null);
+    }
+
+    boolean lastReplayOk() {
+        return mPrefs.getBoolean(LAST_REPLAY_OK, false);
+    }
+
+    long lastReplayTime() {
+        return mPrefs.getLong(LAST_REPLAY_TIME, 0);
     }
 }

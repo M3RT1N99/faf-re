@@ -35,10 +35,18 @@ import java.util.UUID;
  * the user switching apps, the screen going off), so the work lives here with
  * a progress notification, a cancel action and a partial wake lock.
  *
- * <p>One job at a time. The launcher runs in the same process and observes the
- * job through {@link #state()} and {@link Listener}; the last result is also
- * kept in {@link Settings} for after a restart. The job bodies are the pure
- * Java {@link FafInstaller} and {@link TreeImporter}.
+ * <p>It also runs the replay test ({@link ReplayTest}, ACTION_REPLAY_TEST:
+ * local file processing): the headless runner is a child process of this
+ * process, and the foreground service plus the wake lock are what keep both
+ * alive and running with the screen off. The runner never outlives the job:
+ * cancel, onTimeout and onDestroy cancel the job, which destroys the process
+ * ({@link RunnerProcess}).
+ *
+ * <p>One job at a time, so an import never rewrites data under a running test.
+ * The launcher runs in the same process and observes the job through
+ * {@link #state()} and {@link Listener}; the last result is also kept in
+ * {@link Settings} for after a restart. The job bodies are the pure Java
+ * {@link FafInstaller} and {@link TreeImporter}, and {@link ReplayTest}.
  */
 public final class ImportService extends Service {
     private static final String PREFIX = "io.github.m3rt1n99.fafre.";
@@ -47,12 +55,18 @@ public final class ImportService extends Service {
     static final String ACTION_IMPORT_FAF = PREFIX + "action.IMPORT_FAF";
     static final String ACTION_IMPORT_VAULT = PREFIX + "action.IMPORT_VAULT";
     static final String ACTION_VERIFY_FAF = PREFIX + "action.VERIFY_FAF";
+    static final String ACTION_REPLAY_TEST = PREFIX + "action.REPLAY_TEST";
     static final String ACTION_CANCEL = PREFIX + "action.CANCEL";
     static final String EXTRA_RECOMMENDED = PREFIX + "extra.RECOMMENDED";
     static final String EXTRA_OPTIONAL = PREFIX + "extra.OPTIONAL";
 
     private static final String CHANNEL_PROGRESS = "import_progress";
     private static final String CHANNEL_RESULT = "import_result";
+    private static final String CHANNEL_REPLAY = "replay_test";
+
+    /** What kind of job State describes: the launcher shows each kind in its own card. */
+    static final String KIND_IMPORT = "import";
+    static final String KIND_REPLAY = "replay";
     private static final int NOTIFICATION_PROGRESS = 1;
     private static final int NOTIFICATION_RESULT = 2;
     private static final long TICK_MS = 400;
@@ -64,8 +78,9 @@ public final class ImportService extends Service {
 
     /** What the launcher shows. Immutable; replaced on the main thread. */
     static final class State {
-        static final State IDLE = new State(false, null, null, false, null, false);
+        static final State IDLE = new State(KIND_IMPORT, false, null, null, false, null, false);
 
+        final String kind;
         final boolean running;
         final String title;
         final Progress.Snapshot progress;
@@ -74,8 +89,9 @@ public final class ImportService extends Service {
         final String result;
         final boolean resultOk;
 
-        State(boolean running, String title, Progress.Snapshot progress, boolean cancelling, String result,
-                boolean resultOk) {
+        State(String kind, boolean running, String title, Progress.Snapshot progress, boolean cancelling,
+                String result, boolean resultOk) {
+            this.kind = kind;
             this.running = running;
             this.title = title;
             this.progress = progress;
@@ -104,6 +120,7 @@ public final class ImportService extends Service {
     private LauncherLog mLog;
     private Thread mWorker;
     private String mTitle;
+    private String mKind = KIND_IMPORT;
     private Cancellation mCancel;
     private Progress mProgress;
     private long mLastNotification;
@@ -116,11 +133,11 @@ public final class ImportService extends Service {
                 return;
             }
             Progress.Snapshot snapshot = mProgress.snapshot();
-            publish(new State(true, mTitle, snapshot, mCancel.isCancelled(), null, false));
+            publish(new State(mKind, true, mTitle, snapshot, mCancel.isCancelled(), null, false));
             long now = SystemClock.elapsedRealtime();
             if (now - mLastNotification >= NOTIFICATION_INTERVAL_MS && !mDestroyed) {
                 mLastNotification = now;
-                mNotifications.notify(NOTIFICATION_PROGRESS, progressNotification(mTitle, snapshot));
+                mNotifications.notify(NOTIFICATION_PROGRESS, progressNotification(mKind, mTitle, snapshot));
             }
             mMain.postDelayed(this, TICK_MS);
         }
@@ -165,6 +182,12 @@ public final class ImportService extends Service {
         return new Intent(context, ImportService.class).setAction(ACTION_VERIFY_FAF);
     }
 
+    static Intent replayTest(Context context, ReplayTest.Options options) {
+        Intent intent = new Intent(context, ImportService.class).setAction(ACTION_REPLAY_TEST);
+        options.toIntent(intent);
+        return intent;
+    }
+
     /** Cancels the running job, if any. Main thread only. */
     static void cancelRunning(String reason) {
         if (sInstance != null) {
@@ -186,7 +209,10 @@ public final class ImportService extends Service {
         NotificationChannel result = new NotificationChannel(CHANNEL_RESULT, "Game data results",
                 NotificationManager.IMPORTANCE_DEFAULT);
         result.setDescription("Whether a download or import finished or failed");
-        mNotifications.createNotificationChannels(Arrays.asList(progress, result));
+        NotificationChannel replay = new NotificationChannel(CHANNEL_REPLAY, "Replay test",
+                NotificationManager.IMPORTANCE_LOW);
+        replay.setDescription("Progress of the replay test");
+        mNotifications.createNotificationChannels(Arrays.asList(progress, result, replay));
     }
 
     @Override
@@ -203,10 +229,11 @@ public final class ImportService extends Service {
 
         Job job = intent != null ? createJob(intent) : null;
         String title = titleFor(action);
+        String kind = kindFor(action);
         // Every startForegroundService() must be answered with startForeground(),
         // also the ones we turn down, or the system kills the process.
-        if (!goForeground(mWorker != null ? progressNotification(mTitle, mProgress.snapshot())
-                : progressNotification(title, null))) {
+        if (!goForeground(mWorker != null ? progressNotification(mKind, mTitle, mProgress.snapshot())
+                : progressNotification(kind, title, null), kind)) {
             if (mWorker == null) {
                 stopSelf(startId);
             }
@@ -214,6 +241,9 @@ public final class ImportService extends Service {
         }
         if (mWorker != null) {
             mLog.log("import: '" + title + "' ignored, '" + mTitle + "' is still running");
+            if (KIND_REPLAY.equals(kind)) {
+                new Settings(this).setLastReplayJob("Not started: '" + mTitle + "' is still running.", false);
+            }
             return START_NOT_STICKY;
         }
         if (job == null) {
@@ -222,7 +252,7 @@ public final class ImportService extends Service {
             stopSelf(startId);
             return START_NOT_STICKY;
         }
-        startJob(title, job);
+        startJob(kind, title, job);
         return START_NOT_STICKY;
     }
 
@@ -239,7 +269,9 @@ public final class ImportService extends Service {
     @Override
     public void onTimeout(int startId, int fgsType) {
         mLog.log("import: Android's time limit for data transfers was reached");
-        cancel("Stopped by Android's daily limit for background transfers; start it again later to continue");
+        cancel(KIND_REPLAY.equals(mKind)
+                ? "Stopped by Android's daily limit for background work; open the app and start it again"
+                : "Stopped by Android's daily limit for background transfers; start it again later to continue");
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
@@ -271,8 +303,14 @@ public final class ImportService extends Service {
             return "Importing vault maps and mods";
         } else if (ACTION_VERIFY_FAF.equals(action)) {
             return "Verifying FAF files";
+        } else if (ACTION_REPLAY_TEST.equals(action)) {
+            return "Replay test";
         }
         return "Game data";
+    }
+
+    private static String kindFor(String action) {
+        return ACTION_REPLAY_TEST.equals(action) ? KIND_REPLAY : KIND_IMPORT;
     }
 
     private Job createJob(Intent intent) {
@@ -281,6 +319,9 @@ public final class ImportService extends Service {
         final Uri tree = intent.getData();
         if (ACTION_DOWNLOAD_FAF.equals(action)) {
             return (cancel, progress) -> downloadFaf(recommended, cancel, progress);
+        } else if (ACTION_REPLAY_TEST.equals(action)) {
+            final ReplayTest.Options options = ReplayTest.Options.fromIntent(intent);
+            return (cancel, progress) -> new ReplayTest(this, mLog, options).run(cancel, progress);
         } else if (ACTION_VERIFY_FAF.equals(action)) {
             return this::verifyFaf;
         } else if (tree == null) {
@@ -473,7 +514,8 @@ public final class ImportService extends Service {
 
     // ---------------------------------------------------------------- worker
 
-    private void startJob(final String title, final Job job) {
+    private void startJob(final String kind, final String title, final Job job) {
+        mKind = kind;
         mTitle = title;
         final Cancellation cancel = new Cancellation();
         final Progress progress = new Progress();
@@ -483,7 +525,7 @@ public final class ImportService extends Service {
         mLog.log("job start: " + title);
         mWorker = new Thread(() -> runJob(title, job, cancel, progress), "fafre-import");
         mWorker.start();
-        publish(new State(true, title, progress.snapshot(), false, null, false));
+        publish(new State(kind, true, title, progress.snapshot(), false, null, false));
         mMain.postDelayed(mTicker, TICK_MS);
     }
 
@@ -511,9 +553,13 @@ public final class ImportService extends Service {
         mWorker = null;
         mMain.removeCallbacks(mTicker);
         releaseWakeLock();
-        new Settings(this).setLastJob(title, message, ok);
-        publish(new State(false, title, null, false, message, ok));
-        postResult(title, message, ok);
+        if (KIND_REPLAY.equals(mKind)) {
+            new Settings(this).setLastReplayJob(message, ok);
+        } else {
+            new Settings(this).setLastJob(title, message, ok);
+        }
+        publish(new State(mKind, false, title, null, false, message, ok));
+        postResult(mKind, title, message, ok);
         if (!mDestroyed) {
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
@@ -524,7 +570,7 @@ public final class ImportService extends Service {
         if (mCancel != null && mWorker != null) {
             mLog.log("job cancel: " + reason);
             mCancel.cancel(reason);
-            publish(new State(true, mTitle, mProgress.snapshot(), true, null, false));
+            publish(new State(mKind, true, mTitle, mProgress.snapshot(), true, null, false));
         }
     }
 
@@ -552,7 +598,7 @@ public final class ImportService extends Service {
 
     // --------------------------------------------------------- notifications
 
-    private boolean goForeground(Notification notification) {
+    private boolean goForeground(Notification notification, String kind) {
         try {
             if (Build.VERSION.SDK_INT >= 29) {
                 startForeground(NOTIFICATION_PROGRESS, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
@@ -564,15 +610,21 @@ public final class ImportService extends Service {
             // ForegroundServiceStartNotAllowedException (12+) and friends: the
             // launcher only starts jobs while visible, so this is unexpected.
             mLog.log("import: cannot run in the foreground: " + e);
-            new Settings(this).setLastJob("Game data", "Android did not allow the transfer to start: "
-                    + e.getMessage(), false);
+            if (KIND_REPLAY.equals(kind)) {
+                new Settings(this).setLastReplayJob("Android did not allow the test to start: " + e.getMessage(),
+                        false);
+            } else {
+                new Settings(this).setLastJob("Game data", "Android did not allow the transfer to start: "
+                        + e.getMessage(), false);
+            }
             return false;
         }
     }
 
-    private Notification progressNotification(String title, Progress.Snapshot snapshot) {
-        Notification.Builder builder = new Notification.Builder(this, CHANNEL_PROGRESS)
-                .setSmallIcon(android.R.drawable.stat_sys_download)
+    private Notification progressNotification(String kind, String title, Progress.Snapshot snapshot) {
+        boolean replay = KIND_REPLAY.equals(kind);
+        Notification.Builder builder = new Notification.Builder(this, replay ? CHANNEL_REPLAY : CHANNEL_PROGRESS)
+                .setSmallIcon(replay ? android.R.drawable.ic_media_play : android.R.drawable.stat_sys_download)
                 .setContentTitle(title)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
@@ -598,10 +650,12 @@ public final class ImportService extends Service {
         return builder.build();
     }
 
-    private void postResult(String title, String message, boolean ok) {
+    private void postResult(String kind, String title, String message, boolean ok) {
+        boolean replay = KIND_REPLAY.equals(kind);
         Notification notification = new Notification.Builder(this, CHANNEL_RESULT)
                 .setSmallIcon(ok ? android.R.drawable.stat_sys_download_done : android.R.drawable.stat_notify_error)
-                .setContentTitle(ok ? title + ": done" : title + ": stopped")
+                .setContentTitle(replay ? title + (ok ? ": passed" : message.startsWith("Not started")
+                        ? ": not started" : ": did not pass") : ok ? title + ": done" : title + ": stopped")
                 .setContentText(message)
                 .setStyle(new Notification.BigTextStyle().bigText(message))
                 .setAutoCancel(true)

@@ -8,6 +8,8 @@ everything back to the host:
   python scripts/port/run_runner_android.py --abi arm64-v8a --replay T1.scfareplay T2.scfareplay
   python scripts/port/run_runner_android.py --serial <phone> --replay T1.scfareplay --dry-run
   python scripts/port/run_runner_android.py --replay T1.scfareplay -- /headlessprogress 100
+  python scripts/port/run_runner_android.py --abi x86_64 --host-prefs none --replay 26675870.fafreplay \
+      --write-refs port/android/assets/replay_refs.json      # a reference run for the app (0.4.0)
 
 From Git Bash, prefix MSYS_NO_PATHCONV=1, or extra runner options such as `/headlessprogress` are
 rewritten into Windows paths before Python sees them (the script stops when it sees one).
@@ -37,7 +39,13 @@ What it does, in order:
         directories, which init_faf.lua mounts and the runner never reads.
     Everything else in the user's vault is left out (only mods a replay activates reach the sim;
     use --vault-mod NAME for those). Nothing on the device is deleted unless --prune is given.
- 4. Replays: pushed to <device dir>/replays/ (lower-case names).
+    Reference mode, --host-prefs none: what the app's in-app replay test (release 0.4.0) has on a
+    phone. No Game.prefs (a stale one in <device dir>/home is deleted), and fa_path.lua points the
+    vault at <data root>/vault-reference, whose mods/ is empty and whose maps/ holds copies of the
+    replays' vault maps only, so no vault mod is mounted.
+ 4. Replays: pushed to <device dir>/replays/ (lower-case names). A .fafreplay (the vault's or a
+    FAF client's) is pushed as it is: the runner decodes it itself (0.4.0) next to the summary;
+    its map comes from the JSON line's "mapname".
  5. Run: `faf_headless_runner /headlessreplay <replay> /init <data root>/faf/bin/init_faf.lua
     /log ... /headlesssummary ... [extra args]` in <device dir>/<abi>/ with FAF_LOWARENA=<0|1>,
     FAF_ENGINE_LIB=<the pushed .so> and FAF_KNOWN_FOLDERS=<device dir>/home (the Windows known
@@ -53,6 +61,11 @@ What it does, in order:
  8. Compare (--windows-ref FILE|DIR): exit, end, game-over beat, checkpoint chain, the first
     diverging checkpoint (beat 0 is the blueprint checksum), Lua error counts and the registry
     block against a Windows summary JSON (.compare.json).
+ 9. References (--write-refs FILE): each replay that played to its end is entered in FILE (the
+    app's port/android/assets/replay_refs.json) under the sha256 of the replay file as pushed:
+    id, map, beats, game-over beat, checkpoint chain, the first checkpoint that differs from
+    --windows-ref, where and with which binaries (build ids) it was measured. Runs of other ABIs
+    already in the entry are kept; "chain" is set only while every ABI's chain agrees.
 
 Device layout (--device-dir, default /data/local/tmp/fafre-runner):
   <abi>/          faf_headless_runner, libfafengine.so
@@ -98,6 +111,9 @@ DEFAULT_FAF_PATH = r"C:\ProgramData\FAForever"
 PREFS_DIR = "Gas Powered Games/Supreme Commander Forged Alliance"  # under LOCAL_APPDATA, as init_faf.lua
 FREE_SPACE_MARGIN = 512 * 1024 * 1024
 DATA_SCHEMA = 1
+REFERENCE_VAULT = "vault-reference"  # --host-prefs none: the vault fa_path.lua names, without mods
+# adb.exe (and Windows without long-path support) cannot open longer host paths.
+HOST_PATH_LIMIT = 250
 
 EXIT_MEANING = {
     0: "the replay played to its end",
@@ -140,6 +156,30 @@ def human(size):
 
 def safe_name(text):
     return re.sub(r"[^A-Za-z0-9._-]", "_", text)
+
+
+def check_host_path(path, what):
+    """adb.exe fails on host paths over MAX_PATH with a bare 'cannot stat'; say why up front."""
+    if os.name == "nt" and len(os.path.abspath(path)) > HOST_PATH_LIMIT:
+        raise Failure(f"{what}: host path is {len(os.path.abspath(path))} characters, adb.exe cannot open "
+                      f"more than {HOST_PATH_LIMIT}: {os.path.abspath(path)} (use a shorter --out-dir)")
+    return path
+
+
+def fafreplay_header(path):
+    """The JSON line of a .fafreplay, or None when the file is a decoded .scfareplay."""
+    with open(path, "rb") as f:
+        head = f.read(1 << 20)
+    if head.startswith(b"Supreme Commander v"):
+        return None
+    newline = head.find(b"\n")
+    if newline < 0:
+        return None
+    try:
+        header = json.loads(head[:newline])
+    except ValueError:
+        return None
+    return header if isinstance(header, dict) else None
 
 
 def now_utc():
@@ -397,7 +437,12 @@ def find_child(directory, name):
 
 
 def replay_map_dir(replay_path):
-    """The map directory name (/maps/<dir>/...) from the replay header, or the sidecar JSON."""
+    """The map directory name (/maps/<dir>/...) from the replay header, or the sidecar JSON; for a
+    .fafreplay the JSON line's "mapname" (the body is compressed)."""
+    header = fafreplay_header(replay_path)
+    if header is not None:
+        name = header.get("mapname")
+        return name if isinstance(name, str) and re.match(r"^[^/\\]+$", name) else None
     sidecar = replay_path + ".json"
     if os.path.isfile(sidecar):
         try:
@@ -433,6 +478,9 @@ class DataPlan:
         self.notes = []
         self.sources = {}
         self.pinned = {}         # port/data/gamedata.json's FAF entries by dest
+        self.remove = []         # absolute device paths to delete (a stale Game.prefs)
+        self.device_copies = []  # (device source dir, device destination parent): vault maps for the reference vault
+        self.reference = False   # --host-prefs none
 
     def add_file(self, src, rel):
         self.files.append(DataFile(src, rel))
@@ -519,7 +567,12 @@ def build_data_plan(args, replays, data_root, device_dir):
     prefs_dev = f"{device_dir}/home/AppData/Local/{PREFS_DIR}/Game.prefs"
     if prefs_text is not None:
         plan.generated[prefs_dev] = prefs_text.encode("utf-8")
+    elif prefs_path and prefs_path.lower() == "none":
+        # The reference mode: the app's runner home has no Game.prefs; neither may this one.
+        plan.reference = True
+        plan.remove.append(prefs_dev)
     plan.sources["prefs"] = prefs_path
+    vault_dev = f"{data_root}/{REFERENCE_VAULT if plan.reference else 'vault'}"
 
     # Maps: the replays' and the lobby's current map. init_faf.lua mounts the vault's maps before
     # the install's, and the first mount wins.
@@ -537,6 +590,9 @@ def build_data_plan(args, replays, data_root, device_dir):
             found = find_child(os.path.join(vault, "maps"), name)
             if found:
                 plan.add_dir(found, "vault/maps/" + os.path.basename(found))
+                if plan.reference:
+                    plan.device_copies.append((f"{data_root}/vault/maps/{os.path.basename(found)}",
+                                               f"{vault_dev}/maps"))
         if not found:
             found = find_child(os.path.join(scfa, "maps"), name)
             if found:
@@ -553,7 +609,7 @@ def build_data_plan(args, replays, data_root, device_dir):
     fa_path_lua = (
         "-- Written by scripts/port/run_runner_android.py for the headless runner's data root.\n"
         f"fa_path = \"{data_root}/scfa\"\n"
-        f"custom_vault_path = \"{data_root}/vault\"\n"
+        f"custom_vault_path = \"{vault_dev}\"\n"
         f"GameType = \"{fa_path_vars.get('GameType', 'faf')}\"\n"
         f"GameVersion = \"{fa_path_vars.get('GameVersion', '')}\"\n"
         f"ClientVersion = \"{fa_path_vars.get('ClientVersion', '')}\"\n"
@@ -561,11 +617,16 @@ def build_data_plan(args, replays, data_root, device_dir):
     )
     plan.generated[f"{data_root}/faf/fa_path.lua"] = fa_path_lua.encode("utf-8")
     plan.empty_dirs = ["scfa/maps", "scfa/movies", "scfa/sounds", "scfa/fonts", "vault/maps", "vault/mods"]
+    if plan.reference:
+        plan.empty_dirs += [f"{REFERENCE_VAULT}/maps", f"{REFERENCE_VAULT}/mods"]
+        plan.notes.append(f"reference mode (--host-prefs none): no Game.prefs, vault {vault_dev} without mods")
     return plan
 
 
 def device_files(adb, root):
-    rc, out = adb.sh_query(f"[ -d {q(root)} ] && find {q(root)} -type f -exec stat -c '%s %n' {{}} + 2>/dev/null; true")
+    # -L: a data file may be a symlink into another tree on the device (the emulator shares the big
+    # archives with the app's data root, /sdcard/Android/data/<package>/files, to save space).
+    rc, out = adb.sh_query(f"[ -d {q(root)} ] && find -L {q(root)} -type f -exec stat -L -c '%s %n' {{}} + 2>/dev/null; true")
     files = {}
     for line in out.splitlines():
         size, _, path = line.partition(" ")
@@ -599,6 +660,8 @@ def device_sha256(adb, paths=(), dirs=()):
 
 def sync_data(args, adb, plan, data_root, out_dir, hashes):
     say(f"== Game data -> {adb.serial}:{data_root}")
+    gen_dir = os.path.join(out_dir, "_data", safe_name(adb.serial))
+    check_host_path(os.path.join(gen_dir, DATA_MANIFEST), "staging of generated files")
     by_kind = {}
     for f in plan.files:
         kind = f.rel.split("/")[0] + "/" + (f.rel.split("/")[1] if "/" in f.rel else "")
@@ -612,7 +675,7 @@ def sync_data(args, adb, plan, data_root, out_dir, hashes):
         say(f"   note: {note}")
 
     if adb.attached or not adb.dry_run:
-        say("   hashing host files (cached in buildstage/runner-runs/_cache) ...")
+        say(f"   hashing host files (cached in {os.path.dirname(hashes.path)}) ...")
         for f in plan.files:
             f.sha256 = hashes.get(f.src)
             entry = plan.pinned.get(f.rel)
@@ -704,10 +767,21 @@ def sync_data(args, adb, plan, data_root, out_dir, hashes):
             raise Failure(f"sha256 differs on the device after the push: {', '.join(bad[:10])}")
         say(f"   verified {len(push)} pushed files by sha256")
 
-    # Generated files (fa_path.lua, Game.prefs): small, pushed every time.
-    gen_dir = os.path.join(out_dir, "_data", safe_name(adb.serial))
-    for dev_path, data in sorted(plan.generated.items()):
-        host = os.path.join(gen_dir, dev_path.lstrip("/").replace("/", os.sep))
+    # Reference mode: a Game.prefs an earlier run left in the runner's home goes; the replays'
+    # vault maps are copied (on the device) into the reference vault.
+    for dev_path in plan.remove:
+        say(f"   remove {dev_path} (if present)")
+        adb.sh(f"rm -f {q(dev_path)}")
+    for src, dest_parent in plan.device_copies:
+        dest = f"{dest_parent}/{src.rsplit('/', 1)[1]}"
+        say(f"   copy {src} -> {dest} (on the device, if missing)")
+        adb.sh(f"[ -d {q(dest)} ] || cp -r {q(src)} {q(dest_parent + '/')}")
+
+    # Generated files (fa_path.lua, Game.prefs): small, pushed every time. Staged under short flat
+    # names: the device path mirrored below a long --out-dir went past what adb.exe can open.
+    for index, (dev_path, data) in enumerate(sorted(plan.generated.items())):
+        host = check_host_path(os.path.join(gen_dir, f"{index}-{safe_name(dev_path.rsplit('/', 1)[1])[:40]}"),
+                               f"staging of {dev_path}")
         say(f"   write {dev_path} ({len(data)} bytes)")
         if adb.dry_run:
             for line in data.decode("utf-8", "replace").splitlines()[:12]:
@@ -958,6 +1032,8 @@ def run_one(args, adb, ctx, replay, index):
     host = {ext: os.path.join(host_dir, stem + ext) for ext in
             (".out", ".json", ".log", ".registry.txt", ".logcat.txt", ".crash.txt", ".crash.sym.txt",
              ".hang.txt", ".compare.json", ".meta.json", ".device.out")}
+    for path in host.values():
+        check_host_path(path, "run output")
 
     runner_args = ["/headlessreplay", dev_replay, "/init", f"{ctx['data_root']}/faf/bin/init_faf.lua",
                    "/log", dev[".log"], "/headlesssummary", dev[".json"]]
@@ -1117,6 +1193,15 @@ def run_one(args, adb, ctx, replay, index):
         except ValueError as e:
             summary = {"_unreadable": str(e)}
     result_line = next((l for l in reversed(lines) if "] RESULT " in l), None)
+    # A .fafreplay is decoded by the runner (0.4.0): its "[runner] input {...}" line says how.
+    replay_input = None
+    for line in lines:
+        if line.startswith("[runner] input {"):
+            try:
+                replay_input = json.loads(line[len("[runner] input "):])
+            except ValueError:
+                replay_input = {"_unreadable": line}
+    crash_lines = [l for l in lines if l.startswith("[runner] CRASH")]
     # LowArena's own report (high-water mark at exit, segments), whatever its exact format.
     arena_lines = [l for l in lines if re.search(r"low.?arena|high.?water", l, re.I)][-20:]
 
@@ -1141,6 +1226,10 @@ def run_one(args, adb, ctx, replay, index):
         "replay": os.path.abspath(replay),
         "replay_sha256": hashlib.sha256(open(replay, "rb").read()).hexdigest(),
         "device_replay": dev_replay,
+        "replay_input": replay_input,
+        "host_prefs": args.host_prefs,
+        "reference_mode": bool(args.host_prefs and args.host_prefs.lower() == "none"),
+        "runner_crash_lines": crash_lines,
         "command": runner_cmd,
         "cwd": ctx["bin_dir"],
         "pid": pid,
@@ -1189,7 +1278,111 @@ def run_one(args, adb, ctx, replay, index):
     reached = bool(summary and summary.get("reached_end")) and exit_status == 0
     return {"name": name, "exit": exit_status, "meaning": meta["exit_meaning"], "reached_end": reached,
             "wall": round(wall, 1), "summary": summary, "crash": crash or None, "comparison": comparison,
-            "result_line": result_line, "arena_lines": arena_lines}
+            "result_line": result_line, "arena_lines": arena_lines, "meta": meta, "replay": replay}
+
+
+# --------------------------------------------------------------------------------------------------
+# The app's reference table (--write-refs)
+
+
+def write_refs(path, results, ctx, args):
+    """Enters every run that played to its end in the reference table the app compares with
+    (port/android/assets/replay_refs.json): {sha256 of the replay file: {...}}. Hashes and numbers
+    only, no replay content or names."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            refs = json.load(f)
+    except (OSError, ValueError):
+        refs = {}
+    changed = 0
+    for r in results:
+        s = r.get("summary") or {}
+        meta = r.get("meta") or {}
+        if not r.get("reached_end") or not s.get("checkpoint_chain_fnv1a"):
+            say(f"   refs: {r['name']} not entered (exit {r.get('exit')}, reached_end {s.get('reached_end')})")
+            continue
+        sha = meta["replay_sha256"]
+        header = fafreplay_header(r["replay"]) or {}
+        replay_input = meta.get("replay_input") or {}
+        entry = refs.get(sha) or {}
+        abi = ctx["abi"]
+        binaries = ctx["binaries"]
+        comparison = r.get("comparison") or {}
+        windows = None
+        if comparison:
+            c = comparison.get("checkpoints", {})
+            windows = {"first_diverging_beat": c.get("first_diverging_beat"), "beat0_equal": c.get("beat0_equal"),
+                       "chain": comparison["fields"]["checkpoint_chain_fnv1a"]["windows"],
+                       "game_over_beat": comparison["fields"]["game_over_beat"]["windows"],
+                       "summary": os.path.basename(comparison.get("windows_summary", ""))}
+        device = ctx["device"]
+        run = {
+            "abi": abi,
+            "translated": ctx["translated"],
+            "device": f"{adb_serial_name(meta)} {device.get('ro.product.model', '?')}, API "
+                      f"{device.get('ro.build.version.sdk', '?')}, kernel {device.get('kernel', '?')}"
+                      + (f", ARM translation ({device.get('ro.dalvik.vm.native.bridge') or '?'})" if ctx["translated"] else ""),
+            "date": meta.get("started_utc"),
+            "lowarena": args.lowarena,
+            "host_prefs": args.host_prefs or "host",
+            "exit_code": s.get("exit_code"),
+            "end_reason": s.get("end_reason"),
+            "game_over_beat": s.get("game_over_beat"),
+            "last_beat": s.get("last_beat"),
+            "checkpoints": s.get("checkpoints_reached"),
+            "chain": s.get("checkpoint_chain_fnv1a"),
+            "lua_errors_load": s.get("lua_errors_load"),
+            "lua_errors_sim": s.get("lua_errors_sim"),
+            "inputs": s.get("inputs"),
+            "build_ids": {name: b.get("build_id") for name, b in binaries.items()},
+            "tag": ctx["tag"],
+            "windows": windows,
+        }
+        runs = entry.get("runs") or {}
+        runs[abi] = run
+        chains = {v.get("chain") for v in runs.values()}
+        overs = {v.get("game_over_beat") for v in runs.values()}
+        firsts = {(v.get("windows") or {}).get("first_diverging_beat") for v in runs.values() if v.get("windows")}
+        windows_runs = [v["windows"] for v in runs.values() if v.get("windows")]
+        windows_top = None
+        if windows_runs and all(w.get("chain") == windows_runs[0].get("chain") for w in windows_runs):
+            windows_top = {"chain": windows_runs[0].get("chain"), "game_over_beat": windows_runs[0].get("game_over_beat"),
+                           "summary": windows_runs[0].get("summary"),
+                           "note": "Windows main.exe /headlessreplay on the same converted bytes; the phone is not "
+                                   "expected to match it (W5: x87 vs SSE/NEON floating point from beat 100)"}
+        entry = {
+            "note": "Emulator reference (scripts/port/run_runner_android.py --host-prefs none): no Game.prefs, no "
+                    "vault mods, the runner binaries named in build_ids. Checksum mismatches against the recording "
+                    "are expected (recorded with another FAF version than the data); compare the chain.",
+            "windows": windows_top,
+            "id": header.get("uid") if header.get("uid") is not None else replay_input.get("id"),
+            "map": header.get("mapname") or replay_input.get("map_dir") or s.get("map"),
+            "beats": s.get("beats_in_replay"),
+            "game_over_beat": overs.pop() if len(overs) == 1 else None,
+            "chain": chains.pop() if len(chains) == 1 else None,
+            "first_diverging_vs_windows": firsts.pop() if len(firsts) == 1 else None,
+            "measured_on": [f"{v['device']}, {k}, FAF_LOWARENA={v['lowarena']}, Game.prefs {v['host_prefs']}"
+                            for k, v in sorted(runs.items())],
+            "build_ids": {k: v["build_ids"] for k, v in sorted(runs.items())},
+            "recorded_version": replay_input.get("header_version") or s.get("header_version"),
+            "converted_sha256": replay_input.get("converted_sha256"),
+            "has_end_game": s.get("replay_has_end_game"),
+            "checkpoints": len(s.get("checkpoints") or []),
+            "runs": dict(sorted(runs.items())),
+        }
+        refs[sha] = entry
+        changed += 1
+        say(f"   refs: {r['name']} -> {sha[:16]}... chain {entry['chain']} game over {entry['game_over_beat']}")
+    if changed:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(refs, f, indent=1, sort_keys=True)
+            f.write("\n")
+        say(f"   refs: wrote {path} ({len(refs)} replays)")
+
+
+def adb_serial_name(meta):
+    return meta.get("serial", "?")
 
 
 # --------------------------------------------------------------------------------------------------
@@ -1225,7 +1418,11 @@ def main():
     ap.add_argument("--scfa-path", help="SCFA install (default: fa_path from <faf path>/fa_path.lua)")
     ap.add_argument("--vault-path", help="FAF vault (default: custom_vault_path from fa_path.lua)")
     ap.add_argument("--host-prefs", help="Game.prefs whose PreGameData goes to the device (default: the host "
-                                         "profile's; 'none' for no Game.prefs)")
+                                         "profile's); 'none' is the reference mode: no Game.prefs and no "
+                                         "vault mods, as the app's in-app replay test on a phone")
+    ap.add_argument("--write-refs", metavar="FILE",
+                    help="enter the runs that played to their end in this reference table "
+                         "(e.g. port/android/assets/replay_refs.json)")
     ap.add_argument("--vault-mod", action="append", default=[], metavar="NAME", help="also copy this vault mod")
     ap.add_argument("--adb", help="adb executable")
     ap.add_argument("--ndk", help="Android NDK directory")
@@ -1294,6 +1491,11 @@ def main():
     if not args.skip_data:
         plan = build_data_plan(args, replays, data_root, device_dir)
         data = sync_data(args, adb, plan, data_root, args.out_dir, hashes)
+    elif args.host_prefs and args.host_prefs.lower() == "none":
+        prefs_dev = f"{device_dir}/home/AppData/Local/{PREFS_DIR}/Game.prefs"
+        say(f"== Reference mode without a data sync: remove {prefs_dev} (if present); fa_path.lua is "
+            f"left as the last sync wrote it")
+        adb.sh(f"rm -f {q(prefs_dev)}")
     if args.data_only:
         return 0
 
@@ -1327,6 +1529,10 @@ def main():
     results = [run_one(args, adb, ctx, replay, i + 1) for i, replay in enumerate(replays)]
     if args.dry_run:
         return 0
+
+    if args.write_refs:
+        say(f"== References -> {args.write_refs}")
+        write_refs(args.write_refs, results, ctx, args)
 
     say("== Summary")
     failed = 0

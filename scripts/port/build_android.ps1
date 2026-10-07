@@ -1,23 +1,39 @@
 <#
 .SYNOPSIS
-Builds the Android APK: native runtime, Java launcher, resources and the game
-data manifest in one signed file.
+Builds the Android APK: native runtime, headless replay runner, Java launcher,
+resources and the game data manifest in one signed file.
 
 .DESCRIPTION
-Produces output\android\faf-re-android-<versionName>-arm64-v8a.apk.
+Produces output\android\faf-re-android-<versionName>-<abi>.apk.
 
 Steps:
   1. native   CMake + Ninja + NDK build of port\android (target faf_android) in
               buildstage\android-native; the unstripped library is kept in
               buildstage\android-apk\symbols for symbolization, a stripped copy
               goes into the APK.
-  2. link     aapt2 compile + link (manifest, resources, version, R.java).
-  3. java     javac (Java 8 bytecode against android.jar) + d8.
-  4. package  classes.dex, lib\arm64-v8a\libfaf_android.so and
-              assets\gamedata.json added STORED (uncompressed: the manifest sets
-              extractNativeLibs=false, so the library is mapped straight out of
-              the APK), zipalign with 16 KB pages, apksigner with one stable key.
-  5. verify   apksigner verify, zipalign -c, aapt2 dump badging, ELF checks.
+  2. runner   the headless replay runner (port\engine\runner, milestone M3c):
+              scripts\port\build_runner.py --probe for the APK's ABI in
+              buildstage\android-apk\runner, or the prebuilt binaries of
+              -RunnerDirectory. Stripped copies go into the APK as
+              lib\<abi>\libfafengine.so, libfafrunner.so (the executable
+              faf_headless_runner; Android only extracts lib*.so names) and
+              libfafarenaprobe.so; ELF checks; the unstripped files are kept as
+              symbols.
+  3. link     aapt2 compile + link (manifest, resources, version, R.java).
+  4. java     javac (Java 8 bytecode against android.jar) + d8.
+  5. package  classes.dex and the assets (gamedata.json, build.json, the
+              replay reference table port\android\assets\replay_refs.json and
+              license notices when present) added STORED; the lib\<abi>\*.so
+              entries DEFLATED, because the manifest sets extractNativeLibs=true
+              (the launcher execs the runner from nativeLibraryDir, so it must be
+              a file on disk); zipalign with 16 KB pages, apksigner with one
+              stable key.
+  6. verify   apksigner verify, zipalign -c, aapt2 dump badging and xmltree
+              (extractNativeLibs), entry compression, ELF checks.
+
+A Release build also stages the APK (arm64-v8a), the unstripped libraries and
+build-<abi>.json (sha256 and build ids) in buildstage\releases\android-v<versionName>\
+for symbolizing crash reports from that release (-NoReleaseStage skips it).
 
 versionName comes from port\android\version.properties, versionCode is
 `git rev-list --count HEAD`.
@@ -40,7 +56,30 @@ directories and gives its own APK.
 
 .PARAMETER SkipNative
 Java-only APK for launcher work, written as faf-re-android-<versionName>-nonative.apk.
-The game activity cannot start from it.
+The game activity cannot start from it. Implies -SkipRunner.
+
+.PARAMETER SkipRunner
+Leaves the headless replay runner out of the APK (no build_runner.py run, no
+dependencies\WildMagic3p8 needed). The launcher's replay test then reports that
+the runner is missing.
+
+.PARAMETER RunnerDirectory
+Packages the prebuilt, unstripped faf_headless_runner, libfafengine.so and
+libfafarenaprobe.so of this directory (for example build_runner.py's output for
+the binaries the reference runs were measured with) instead of building them.
+They go through the same strip and checks.
+
+.PARAMETER NoReleaseStage
+Does not copy the APK, the unstripped libraries and build-<abi>.json into
+buildstage\releases\android-v<versionName>\ (Release builds do by default).
+
+.PARAMETER AllowUnreferencedRunner
+Lets a Release build package a runner whose libfafengine.so or
+faf_headless_runner build id is not in port\android\assets\replay_refs.json
+(a warning instead of an error). For development builds only: the app compares
+a replay's chain with the reference only for the binaries the reference was
+measured with, so a release must ship exactly those (regenerate the table with
+run_runner_android.py --host-prefs none --write-refs after a runner change).
 
 .PARAMETER Clean
 Deletes the build directories of the steps that run before building.
@@ -58,6 +97,9 @@ powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1 -SkipNative -Configuration Debug
+
+.EXAMPLE
+powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1 -Abi x86_64 -RunnerDirectory buildstage/runner/x86_64
 #>
 [CmdletBinding()]
 param(
@@ -66,6 +108,10 @@ param(
     [ValidateSet("arm64-v8a", "x86_64")]
     [string]$Abi = "arm64-v8a",
     [switch]$SkipNative,
+    [switch]$SkipRunner,
+    [string]$RunnerDirectory,
+    [switch]$NoReleaseStage,
+    [switch]$AllowUnreferencedRunner,
     [switch]$Clean,
     [string]$AndroidSdk,
     [string]$Ndk,
@@ -107,6 +153,31 @@ $javaSourceDirectory = Join-Path $repoRoot "port\android\src\java"
 $gameDataManifest = Join-Path $repoRoot "port\data\gamedata.json"
 $versionFile = Join-Path $repoRoot "port\android\version.properties"
 $bootstrapScript = Join-Path $PSScriptRoot "bootstrap_android.ps1"
+$buildRunnerScript = Join-Path $PSScriptRoot "build_runner.py"
+$wildMagicFoundation = Join-Path $repoRoot "dependencies\WildMagic3p8\Foundation"
+# Written by the reference runs (scripts/port/run_runner_android.py); optional.
+$replayRefsFile = Join-Path $repoRoot "port\android\assets\replay_refs.json"
+# License notices of third-party code linked into the runner, shipped as assets.
+$licenseNotices = [ordered]@{
+    "assets/licenses/zstd.txt" = (Join-Path $repoRoot "port\third_party\zstd\LICENSE")
+}
+
+# The headless replay runner (port/engine/runner): APK entry name -> build_runner.py output name.
+# The executable must be called lib*.so: the installer only extracts lib/<abi>/lib*.so entries.
+$runnerEngineName = "libfafengine.so"
+$runnerExecutableName = "libfafrunner.so"
+$runnerProbeName = "libfafarenaprobe.so"
+$runnerFiles = [ordered]@{
+    $runnerEngineName = "libfafengine.so"
+    $runnerExecutableName = "faf_headless_runner"
+    $runnerProbeName = "libfafarenaprobe.so"
+}
+# What the runner may need at run time: system libraries every API 26+ device has.
+$runnerAllowedNeeded = @("libz.so", "liblog.so", "libm.so", "libdl.so", "libc.so")
+# The executable's exports: its low arena replaces bionic's malloc for the whole process.
+$runnerRequiredExports = @("malloc", "free", "calloc", "realloc", "memalign", "posix_memalign",
+    "aligned_alloc", "malloc_usable_size", "lowarena_enabled")
+$elfMachines = @{ "arm64-v8a" = "AArch64"; "x86_64" = "Advanced Micro Devices X86-64" }
 
 # The debug key Android Studio uses; the build only ever signs debug builds.
 $keyAlias = "androiddebugkey"
@@ -395,6 +466,28 @@ function Read-VersionName {
     return $name
 }
 
+function Get-ExtractNativeLibs {
+    [xml]$xml = Get-Content -LiteralPath $manifestFile -Raw
+    $value = $xml.manifest.application.GetAttribute("extractNativeLibs", "http://schemas.android.com/apk/res/android")
+    if ($value -ne "true" -and $value -ne "false") {
+        throw "$manifestFile must set android:extractNativeLibs to true or false (found '$value')."
+    }
+    return ($value -eq "true")
+}
+
+# Output of a git command as text lines; empty when git fails.
+function Get-GitOutput([string[]]$Arguments) {
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { $output = @(& git -C $repoRoot @Arguments 2>$null | ForEach-Object { "$_" }); $exitCode = $LASTEXITCODE } finally { $ErrorActionPreference = $previousPreference }
+    if ($exitCode -ne 0) { return @() }
+    return $output
+}
+
+function Get-Sha256([string]$Path) {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
 function Get-VersionCode {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -449,14 +542,17 @@ function Get-CMakeTargetArtifact([string]$BuildDirectory, [string]$Target, [stri
 }
 
 # Small zipfile helper: Windows PowerShell's System.IO.Compression cannot
-# write STORED entries, and the library must be stored to be mapped in place.
+# write STORED entries (classes.dex, resources.arsc and the assets stay
+# uncompressed, and libraries must be stored when extractNativeLibs=false).
 $apkEntriesPy = @'
-"""Adds files to an APK as STORED entries, or checks that entries are STORED.
+"""Adds files to an APK as STORED or DEFLATED entries, or checks how entries are compressed.
 
 Written by scripts/port/build_android.ps1 on every build; edit it there.
 
-usage: apk_entries.py add <apk> <entry>=<file>...
+usage: apk_entries.py add <apk> <entry>=<file>...            (STORED)
+       apk_entries.py add-deflated <apk> <entry>=<file>...   (DEFLATED, level 9)
        apk_entries.py check-stored <apk> <entry>...
+       apk_entries.py check-deflated <apk> <entry>...
 """
 import sys
 import zipfile
@@ -465,7 +561,7 @@ import zipfile
 ENTRY_TIME = (1981, 1, 1, 1, 1, 2)
 
 
-def add(apk, pairs):
+def add(apk, pairs, method):
     with zipfile.ZipFile(apk, "a") as archive:
         existing = set(archive.namelist())
         for pair in pairs:
@@ -473,13 +569,16 @@ def add(apk, pairs):
             if name in existing:
                 sys.exit(f"{apk} already contains {name}")
             info = zipfile.ZipInfo(name, date_time=ENTRY_TIME)
-            info.compress_type = zipfile.ZIP_STORED
+            info.compress_type = method
             info.external_attr = 0o100644 << 16
             with open(path, "rb") as source:
-                archive.writestr(info, source.read())
+                if method == zipfile.ZIP_DEFLATED:
+                    archive.writestr(info, source.read(), compress_type=method, compresslevel=9)
+                else:
+                    archive.writestr(info, source.read())
 
 
-def check_stored(apk, names):
+def check(apk, names, method):
     failed = False
     with zipfile.ZipFile(apk) as archive:
         for name in names:
@@ -489,20 +588,87 @@ def check_stored(apk, names):
                 print(f"missing: {name}")
                 failed = True
                 continue
-            stored = info.compress_type == zipfile.ZIP_STORED
-            print(f"{'stored' if stored else 'COMPRESSED'}: {name} ({info.file_size} bytes)")
-            failed |= not stored
+            label = {zipfile.ZIP_STORED: "stored", zipfile.ZIP_DEFLATED: "deflated"}.get(info.compress_type,
+                                                                                         f"method {info.compress_type}")
+            ok = info.compress_type == method
+            print(f"{label if ok else label.upper() + ' (unexpected)'}: {name} ({info.file_size} bytes"
+                  f"{'' if info.compress_type == zipfile.ZIP_STORED else f', {info.compress_size} compressed'})")
+            failed |= not ok
     sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4 or sys.argv[1] not in ("add", "check-stored"):
+    modes = {"add": zipfile.ZIP_STORED, "add-deflated": zipfile.ZIP_DEFLATED,
+             "check-stored": zipfile.ZIP_STORED, "check-deflated": zipfile.ZIP_DEFLATED}
+    if len(sys.argv) < 4 or sys.argv[1] not in modes:
         sys.exit(__doc__)
-    if sys.argv[1] == "add":
-        add(sys.argv[2], sys.argv[3:])
+    if sys.argv[1].startswith("add"):
+        add(sys.argv[2], sys.argv[3:], modes[sys.argv[1]])
     else:
-        check_stored(sys.argv[2], sys.argv[3:])
+        check(sys.argv[2], sys.argv[3:], modes[sys.argv[1]])
 '@
+
+# Reads an ELF file with llvm-readelf and returns what the checks need.
+function Get-ElfFacts([string]$Path) {
+    $header = Invoke-Tool $llvmReadelf @("--file-header", $Path) -Capture -Quiet
+    $dynamic = Invoke-Tool $llvmReadelf @("--dynamic-table", $Path) -Capture -Quiet
+    $symbols = Invoke-Tool $llvmReadelf @("--dyn-symbols", "--wide", $Path) -Capture -Quiet
+    $segments = Invoke-Tool $llvmReadelf @("--program-headers", "--wide", $Path) -Capture -Quiet
+    $notes = Invoke-Tool $llvmReadelf @("--notes", $Path) -Capture -Quiet
+    $machine = @($header | ForEach-Object { if ($_ -match '^\s*Machine:\s*(.+?)\s*$') { $Matches[1] } }) | Select-Object -First 1
+    $type = @($header | ForEach-Object { if ($_ -match '^\s*Type:\s*(\S+)') { $Matches[1] } }) | Select-Object -First 1
+    $interpreter = @($segments | ForEach-Object { if ($_ -match 'Requesting program interpreter:\s*([^\]]+)\]') { $Matches[1] } }) | Select-Object -First 1
+    $exports = @($symbols | Where-Object { $_ -notmatch '\sUND\s' -and $_ -match '\s(GLOBAL|WEAK)\s' } |
+        ForEach-Object { (($_ -split '\s+') | Where-Object { $_ })[-1] -replace '@.*$', '' })
+    return [pscustomobject]@{
+        Machine = $machine
+        Type = $type
+        Interpreter = $interpreter
+        Needed = @($dynamic | ForEach-Object { if ($_ -match '\(NEEDED\)\s+Shared library: \[([^\]]+)\]') { $Matches[1] } })
+        Exports = $exports
+        LoadAlignments = @($segments | Where-Object { $_ -match '^\s*LOAD\s' } | ForEach-Object { [Convert]::ToInt64((($_ -split '\s+') | Where-Object { $_ })[-1], 16) })
+        BuildId = @($notes | ForEach-Object { if ($_ -match 'Build ID:\s*([0-9a-f]+)') { $Matches[1] } }) | Select-Object -First 1
+    }
+}
+
+# The checks for the runner's three files: right ABI, 16 KB segments, only system
+# libraries, the entry points the launcher and the executable rely on, and a
+# build id the strip kept. Returns the build id.
+function Test-RunnerElf([string]$Name, [string]$Stripped, [string]$Unstripped) {
+    $facts = Get-ElfFacts $Stripped
+    $problems = New-Object System.Collections.Generic.List[string]
+    if ($facts.Machine -ne $elfMachines[$abi]) { $problems.Add("machine is '$($facts.Machine)', expected '$($elfMachines[$abi])' for $abi") }
+    if ($facts.Type -ne "DYN") { $problems.Add("ELF type is $($facts.Type), expected DYN (PIE executable or shared library)") }
+    $foreign = @($facts.Needed | Where-Object { $runnerAllowedNeeded -notcontains $_ })
+    if ($foreign.Count -gt 0) { $problems.Add("needs $($foreign -join ', '); only $($runnerAllowedNeeded -join ', ') are allowed") }
+    $misaligned = @($facts.LoadAlignments | Where-Object { $_ -lt 0x4000 })
+    if ($facts.LoadAlignments.Count -eq 0 -or $misaligned.Count -gt 0) {
+        $problems.Add("LOAD segments aligned below 16 KB ($(($facts.LoadAlignments | ForEach-Object { '0x{0:x}' -f $_ }) -join ', '))")
+    }
+    if ($Name -eq $runnerExecutableName) {
+        if ($facts.Interpreter -ne "/system/bin/linker64") { $problems.Add("interpreter is '$($facts.Interpreter)', expected /system/bin/linker64") }
+        $missing = @($runnerRequiredExports | Where-Object { $facts.Exports -notcontains $_ })
+        if ($missing.Count -gt 0) { $problems.Add("does not export $($missing -join ', ') (the low arena's malloc family)") }
+    } else {
+        if ($facts.Interpreter) { $problems.Add("has an interpreter ($($facts.Interpreter)); expected a shared library") }
+        if ($facts.Exports -notcontains "faf_headless_main") { $problems.Add("does not export faf_headless_main") }
+    }
+    if (-not $facts.BuildId) { $problems.Add("has no build id after stripping") }
+    $unstrippedId = (Get-ElfFacts $Unstripped).BuildId
+    if ($facts.BuildId -and $unstrippedId -ne $facts.BuildId) { $problems.Add("build id $($facts.BuildId) differs from the unstripped file's $unstrippedId") }
+    if ($problems.Count -gt 0) { throw "$Name ($Stripped): $($problems -join '; ')." }
+    Write-Host ("  {0}: NEEDED {1}; LOAD align {2}; build id {3}" -f $Name, ($facts.Needed -join ', '),
+        (($facts.LoadAlignments | Sort-Object -Unique | ForEach-Object { '0x{0:x}' -f $_ }) -join '/'), $facts.BuildId)
+    return $facts.BuildId
+}
+
+# Every 40-digit hex string value in the reference table (build ids, whatever
+# the table's exact layout; a commit hash there never equals a build id).
+function Get-ReferenceBuildIds([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return @() }
+    $text = [IO.File]::ReadAllText($Path)
+    return @([regex]::Matches($text, '"([0-9a-fA-F]{40})"') | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() } | Sort-Object -Unique)
+}
 
 # --- resolve everything before touching the disk -------------------------------
 
@@ -543,6 +709,37 @@ foreach ($required in @($manifestFile, $gameDataManifest, $javaSourceDirectory))
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing $required." }
 }
 
+$extractNativeLibs = Get-ExtractNativeLibs
+$includeRunner = -not $SkipNative -and -not $SkipRunner
+if ($includeRunner -and -not $extractNativeLibs) {
+    throw "The replay runner is started as a process from nativeLibraryDir, which needs android:extractNativeLibs=`"true`" in $manifestFile (or build with -SkipRunner)."
+}
+if ($RunnerDirectory -and -not $includeRunner) {
+    throw "-RunnerDirectory cannot be combined with -SkipRunner or -SkipNative."
+}
+$runnerBuildDirectory = Join-Path $apkBuildDirectory "runner"
+if ($includeRunner) {
+    if ($RunnerDirectory) {
+        $RunnerDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RunnerDirectory)
+        foreach ($source in $runnerFiles.Values) {
+            if (-not (Test-Path -LiteralPath (Join-Path $RunnerDirectory $source))) {
+                throw "-RunnerDirectory $RunnerDirectory has no $source (build it with: python scripts/port/build_runner.py --abi $abi --probe)."
+            }
+        }
+        $runnerSourceDirectory = $RunnerDirectory
+    } else {
+        if (-not (Test-Path -LiteralPath $buildRunnerScript)) { throw "Missing $buildRunnerScript." }
+        if (-not (Test-Path -LiteralPath $wildMagicFoundation)) {
+            throw "dependencies\WildMagic3p8\Foundation is missing; build_runner.py compiles the engine's Wild Magic TUs from it (local, gitignored). " +
+                "Package prebuilt runner binaries with -RunnerDirectory, or leave the runner out with -SkipRunner."
+        }
+        $runnerSourceDirectory = $runnerBuildDirectory
+    }
+}
+
+$releaseDirectory = Join-Path $repoRoot "buildstage\releases\android-v$versionName"
+$stageRelease = -not $SkipNative -and -not $isDebug -and -not $NoReleaseStage
+
 if (-not $SkipNative) {
     $ndkPath = Resolve-Ndk $sdkPath
     $llvmBin = Join-Path $ndkPath "toolchains\llvm\prebuilt\windows-x86_64\bin"
@@ -553,7 +750,7 @@ if (-not $SkipNative) {
     }
     # The libraries an app may link against at minSdk: the NDK's stub
     # libraries for that API level. Everything else would have to ship in the
-    # APK, and the APK ships exactly one library.
+    # APK, and libfaf_android.so brings everything it needs with it.
     $systemLibraryDirectory = Join-Path $ndkPath "toolchains\llvm\prebuilt\windows-x86_64\sysroot\usr\lib\aarch64-linux-android\$minSdk"
     $systemLibraries = @(Get-ChildItem -LiteralPath $systemLibraryDirectory -Filter "*.so" -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -ne "libc++.so" } | ForEach-Object { $_.Name })
@@ -598,6 +795,15 @@ if ($SkipNative) {
     Write-Host "  DiligentCore $($dependencies.DiligentCore) @ $($dependencies.Revision)"
     Write-Host "  abseil-cpp   $(if ($dependencies.AbseilSource) { $dependencies.AbseilSource } else { 'not pre-fetched: configure downloads it' })"
 }
+if (-not $includeRunner) {
+    Write-Host "  runner       skipped"
+} elseif ($RunnerDirectory) {
+    Write-Host "  runner       prebuilt $RunnerDirectory"
+} else {
+    Write-Host "  runner       build_runner.py --abi $abi --probe into $runnerBuildDirectory"
+}
+Write-Host "  libraries    $(if ($extractNativeLibs) { 'deflated, extracted at install (extractNativeLibs=true)' } else { 'stored, mapped from the APK (extractNativeLibs=false)' })"
+Write-Host "  refs         $(if (Test-Path -LiteralPath $replayRefsFile) { $replayRefsFile } else { 'none (port\android\assets\replay_refs.json not written yet)' })"
 Write-Host "  keystore     $keystorePath$(if (-not (Test-Path -LiteralPath $keystorePath)) { ' (will be created)' })"
 if ($DryRun) { Write-Host "Dry run: commands are printed, nothing is executed or written." -ForegroundColor Yellow }
 
@@ -622,12 +828,12 @@ try {
 
     $stagedLibrary = Join-Path $stageDirectory "lib\$abi\$nativeLibraryName"
     if ($SkipNative) {
-        Write-Step "[1/5] Native library: skipped (-SkipNative)"
+        Write-Step "[1/6] Native library: skipped (-SkipNative)"
     } elseif ($NativeLibrary) {
-        Write-Step "[1/5] Native library: prebuilt"
+        Write-Step "[1/6] Native library: prebuilt"
         $builtLibrary = $NativeLibrary
     } else {
-        Write-Step "[1/5] Native library ($Configuration, $abi)"
+        Write-Step "[1/6] Native library ($Configuration, $abi)"
         $toolchainFile = Join-Path $ndkPath "build\cmake\android.toolchain.cmake"
         $configureArguments = @(
             "-S", $nativeSourceDirectory,
@@ -708,15 +914,79 @@ try {
             if ($loadAlignments.Count -eq 0 -or $misaligned.Count -gt 0) {
                 throw "$nativeLibraryName has LOAD segments aligned below 16 KB ($(($loadAlignments | ForEach-Object { '0x{0:x}' -f $_ }) -join ', ')); link with -Wl,-z,max-page-size=16384."
             }
-            $buildId = @($notes | ForEach-Object { if ($_ -match 'Build ID:\s*([0-9a-f]+)') { $Matches[1] } }) | Select-Object -First 1
+            $machine = (Get-ElfFacts $stagedLibrary).Machine
+            if ($machine -ne $elfMachines[$abi]) { throw "$nativeLibraryName is built for '$machine', not $abi." }
+            $nativeBuildId = @($notes | ForEach-Object { if ($_ -match 'Build ID:\s*([0-9a-f]+)') { $Matches[1] } }) | Select-Object -First 1
             Write-Host ("  {0}: {1:N1} MB unstripped, {2:N1} MB stripped, build id {3}" -f $nativeLibraryName,
-                ((Get-Item -LiteralPath $builtLibrary).Length / 1MB), ((Get-Item -LiteralPath $stagedLibrary).Length / 1MB), $buildId)
+                ((Get-Item -LiteralPath $builtLibrary).Length / 1MB), ((Get-Item -LiteralPath $stagedLibrary).Length / 1MB), $nativeBuildId)
         }
     }
 
-    # --- 2. resources and manifest -----------------------------------------------------
+    # --- 2. headless replay runner ---------------------------------------------------------
 
-    Write-Step "[2/5] Resources and manifest"
+    # APK entry name -> facts about the packaged (stripped) file, for build.json and the release stage.
+    $runnerPackaged = [ordered]@{}
+    if (-not $includeRunner) {
+        Write-Step "[2/6] Replay runner: skipped ($(if ($SkipNative) { '-SkipNative' } else { '-SkipRunner' }))"
+    } else {
+        if ($RunnerDirectory) {
+            Write-Step "[2/6] Replay runner: prebuilt ($RunnerDirectory)"
+        } else {
+            Write-Step "[2/6] Replay runner ($abi, build_runner.py --probe)"
+            # build_runner.py seeds a new --out directory from buildstage\runner\<abi>,
+            # so only what changed since the last runner build compiles here.
+            Invoke-Tool $pythonPath @($buildRunnerScript, "--abi", $abi, "--out", $runnerBuildDirectory, "--probe", "--ndk", $ndkPath) `
+                -FailureMessage "build_runner.py failed (report: $runnerBuildDirectory\report.md)" | Out-Null
+        }
+        foreach ($entryName in $runnerFiles.Keys) {
+            $built = Join-Path $runnerSourceDirectory $runnerFiles[$entryName]
+            $staged = Join-Path $stageDirectory "lib\$abi\$entryName"
+            if (-not $DryRun -and -not (Test-Path -LiteralPath $built)) { throw "The runner build did not produce $built." }
+            New-Directory (Split-Path -Parent $staged)
+            # The unstripped files are the symbols for a crash line from this APK
+            # ("[runner] CRASH ... build id ..."); kept under the APK's name.
+            if (-not $DryRun) { Copy-Item -LiteralPath $built -Destination (Join-Path $symbolsDirectory $entryName) -Force }
+            Invoke-Tool $llvmStrip @("--strip-unneeded", "-o", $staged, $built) -FailureMessage "Stripping $entryName failed" | Out-Null
+            if (-not $DryRun) {
+                $runnerBuildId = Test-RunnerElf $entryName $staged $built
+                $runnerPackaged[$entryName] = [ordered]@{
+                    source = $runnerFiles[$entryName]
+                    buildId = $runnerBuildId
+                    sha256 = (Get-Sha256 $staged)
+                    size = (Get-Item -LiteralPath $staged).Length
+                    unstrippedSha256 = (Get-Sha256 $built)
+                }
+            }
+        }
+        if (-not $DryRun) {
+            Write-Host ("  stripped: {0}" -f (($runnerPackaged.Keys | ForEach-Object { "{0} {1:N1} MB" -f $_, ($runnerPackaged[$_].size / 1MB) }) -join ', '))
+            # G10: a chain is only comparable between identical binaries, so a Release
+            # ships the engine and runner the reference table was measured with.
+            $referenceIds = @(Get-ReferenceBuildIds $replayRefsFile)
+            $unreferenced = New-Object System.Collections.Generic.List[string]
+            foreach ($entryName in @($runnerEngineName, $runnerExecutableName)) {
+                $known = $referenceIds -contains $runnerPackaged[$entryName].buildId
+                if (-not $known) { $unreferenced.Add("$entryName $($runnerPackaged[$entryName].buildId)") }
+                Write-Host ("  {0} build id {1} the reference table" -f $entryName, $(if ($known) { "is in" } else { "is NOT in" })) `
+                    -ForegroundColor $(if ($known) { "Gray" } else { "Yellow" })
+            }
+            if ($unreferenced.Count -gt 0 -and -not $isDebug) {
+                $refsState = if (Test-Path -LiteralPath $replayRefsFile) { $replayRefsFile } else { "$replayRefsFile (missing)" }
+                $why = "the build ids of $($unreferenced -join ', ') are not in $refsState"
+                if ($AllowUnreferencedRunner) {
+                    Write-Host "  -AllowUnreferencedRunner: packaging anyway; $why" -ForegroundColor Yellow
+                } else {
+                    throw ("Release build refused: $why. Package the runner set the references were measured with " +
+                        "(-RunnerDirectory), or regenerate the table (run_runner_android.py --host-prefs none --write-refs); " +
+                        "-AllowUnreferencedRunner overrides this for development builds.")
+                }
+            }
+        }
+    }
+
+    # --- 3. resources and manifest -----------------------------------------------------
+
+    Write-Step "[3/6] Resources and manifest"
     $compiledResources = Join-Path $apkBuildDirectory "resources.zip"
     $generatedSources = Join-Path $apkBuildDirectory "gen"
     $linkedApk = Join-Path $apkBuildDirectory "linked.apk"
@@ -744,9 +1014,9 @@ try {
     if ($isDebug) { $linkArguments += "--debug-mode" }
     Invoke-Tool $aapt2 $linkArguments -FailureMessage "aapt2 link failed" | Out-Null
 
-    # --- 3. Java ----------------------------------------------------------------------
+    # --- 4. Java ----------------------------------------------------------------------
 
-    Write-Step "[3/5] Java launcher"
+    Write-Step "[4/6] Java launcher"
     $classesDirectory = Join-Path $apkBuildDirectory "classes"
     $dexDirectory = Join-Path $apkBuildDirectory "dex"
     $classesJar = Join-Path $apkBuildDirectory "classes.jar"
@@ -786,9 +1056,9 @@ try {
         throw "d8 produced more than one dex file; the packaging step only adds classes.dex."
     }
 
-    # --- 4. package, align, sign ----------------------------------------------------------
+    # --- 5. package, align, sign ----------------------------------------------------------
 
-    Write-Step "[4/5] Package, align, sign"
+    Write-Step "[5/6] Package, align, sign"
     $helperScript = Join-Path $apkBuildDirectory "apk_entries.py"
     $unsignedApk = Join-Path $apkBuildDirectory "unsigned.apk"
     $alignedApk = Join-Path $apkBuildDirectory "aligned.apk"
@@ -799,13 +1069,64 @@ try {
         Copy-Item -LiteralPath $linkedApk -Destination $unsignedApk
     }
 
+    # build.json: what the launcher records in every replay test's meta.json
+    # (version, commit, the packaged binaries' sha256 and build ids).
+    $commit = @(Get-GitOutput @("rev-parse", "HEAD")) | Select-Object -First 1
+    $dirty = @(Get-GitOutput @("status", "--porcelain", "--untracked-files=no")).Count -gt 0
+    $buildInfo = [ordered]@{
+        schema = 1
+        package = $packageName
+        versionName = $versionName
+        versionCode = $versionCode
+        commit = $(if ($commit) { $commit.Trim() } else { "" })
+        dirty = $dirty
+        abi = $(if ($SkipNative) { "" } else { $abi })
+        configuration = $Configuration
+        extractNativeLibs = $extractNativeLibs
+        libraries = [ordered]@{}
+    }
+    if (-not $SkipNative -and -not $DryRun) {
+        $buildInfo.libraries[$nativeLibraryName] = [ordered]@{ buildId = $nativeBuildId; sha256 = (Get-Sha256 $stagedLibrary); size = (Get-Item -LiteralPath $stagedLibrary).Length }
+    }
+    foreach ($entryName in $runnerPackaged.Keys) {
+        $buildInfo.libraries[$entryName] = [ordered]@{ buildId = $runnerPackaged[$entryName].buildId; sha256 = $runnerPackaged[$entryName].sha256; size = $runnerPackaged[$entryName].size }
+    }
+    $buildInfoFile = Join-Path $apkBuildDirectory "build.json"
+    if (-not $DryRun) { Write-Utf8File $buildInfoFile (($buildInfo | ConvertTo-Json -Depth 6) + "`n") }
+
     $storedEntries = [ordered]@{ "classes.dex" = (Join-Path $dexDirectory "classes.dex") }
-    if (-not $SkipNative) { $storedEntries["lib/$abi/$nativeLibraryName"] = $stagedLibrary }
     $storedEntries["assets/gamedata.json"] = $gameDataManifest
+    $storedEntries["assets/build.json"] = $buildInfoFile
+    if (Test-Path -LiteralPath $replayRefsFile) {
+        $storedEntries["assets/replay_refs.json"] = $replayRefsFile
+    } elseif ($includeRunner) {
+        Write-Host "  no replay reference table yet ($replayRefsFile): the replay test shows no reference chain" -ForegroundColor Yellow
+    }
+    foreach ($notice in $licenseNotices.Keys) {
+        if (Test-Path -LiteralPath $licenseNotices[$notice]) {
+            $storedEntries[$notice] = $licenseNotices[$notice]
+        } elseif ($includeRunner) {
+            Write-Host "  license notice missing: $($licenseNotices[$notice]) (needed once the runner links that code)" -ForegroundColor Yellow
+        }
+    }
+    # Libraries: deflated when the installer extracts them (smaller download),
+    # stored and page-aligned when Android maps them straight out of the APK.
+    $libraryEntries = [ordered]@{}
+    if (-not $SkipNative) { $libraryEntries["lib/$abi/$nativeLibraryName"] = $stagedLibrary }
+    foreach ($entryName in $runnerFiles.Keys) {
+        if ($includeRunner) { $libraryEntries["lib/$abi/$entryName"] = Join-Path $stageDirectory "lib\$abi\$entryName" }
+    }
+    if (-not $extractNativeLibs) {
+        foreach ($entry in $libraryEntries.Keys) { $storedEntries[$entry] = $libraryEntries[$entry] }
+    }
     $addArguments = @($helperScript, "add", $unsignedApk) + @($storedEntries.Keys | ForEach-Object { "$_=$($storedEntries[$_])" })
     Invoke-Tool $pythonPath $addArguments -FailureMessage "Adding entries to the APK failed" | Out-Null
+    if ($extractNativeLibs -and $libraryEntries.Count -gt 0) {
+        $deflateArguments = @($helperScript, "add-deflated", $unsignedApk) + @($libraryEntries.Keys | ForEach-Object { "$_=$($libraryEntries[$_])" })
+        Invoke-Tool $pythonPath $deflateArguments -FailureMessage "Adding the libraries to the APK failed" | Out-Null
+    }
 
-    # -P 16: page-align the stored library for 16 KB page devices (Android 15+);
+    # -P 16: page-align stored libraries for 16 KB page devices (Android 15+);
     # 4: every other uncompressed entry on 32-bit boundaries.
     Invoke-Tool $zipalign @("-f", "-P", "16", "4", $unsignedApk, $alignedApk) -FailureMessage "zipalign failed" | Out-Null
 
@@ -827,13 +1148,18 @@ try {
         "--out", $signedApk, $alignedApk
     ) -FailureMessage "apksigner sign failed" | Out-Null
 
-    # --- 5. verify --------------------------------------------------------------------------
+    # --- 6. verify --------------------------------------------------------------------------
 
-    Write-Step "[5/5] Verify"
+    Write-Step "[6/6] Verify"
     $verifyOutput = Invoke-Tool $apksigner @("verify", "-v", "--print-certs", $signedApk) -Capture -FailureMessage "apksigner verify failed"
     $alignOutput = Invoke-Tool $zipalign @("-c", "-P", "16", "-v", "4", $signedApk) -Capture -FailureMessage "zipalign -c failed"
     $badging = Invoke-Tool $aapt2 @("dump", "badging", $signedApk) -Capture -FailureMessage "aapt2 dump badging failed"
     $storedCheck = Invoke-Tool $pythonPath (@($helperScript, "check-stored", $signedApk, "resources.arsc") + @($storedEntries.Keys)) -Capture -FailureMessage "Uncompressed entry check failed"
+    $deflatedCheck = @()
+    if ($extractNativeLibs -and $libraryEntries.Count -gt 0) {
+        $deflatedCheck = Invoke-Tool $pythonPath (@($helperScript, "check-deflated", $signedApk) + @($libraryEntries.Keys)) -Capture -FailureMessage "Compressed library check failed"
+    }
+    $manifestTree = Invoke-Tool $aapt2 @("dump", "xmltree", "--file", "AndroidManifest.xml", $signedApk) -Capture -FailureMessage "aapt2 dump xmltree failed"
 
     $certificateDigest = $null
     if (-not $DryRun) {
@@ -841,6 +1167,14 @@ try {
         $certificateDigest = @($verifyOutput | ForEach-Object { if ($_ -match 'certificate SHA-256 digest:\s*([0-9a-f]+)') { $Matches[1] } }) | Select-Object -First 1
         if (-not ($alignOutput -match 'Verification succes')) { throw "zipalign -c did not confirm the alignment:`n$($alignOutput -join "`n")" }
         $storedCheck | ForEach-Object { Write-Host "  $_" }
+        $deflatedCheck | ForEach-Object { Write-Host "  $_" }
+        # The packaging above follows the source manifest; the compiled one must agree.
+        $extractLine = @($manifestTree | Where-Object { $_ -match 'extractNativeLibs\(0x[0-9a-f]+\)=' }) | Select-Object -First 1
+        $compiledExtract = if ($extractLine -match '=(true|false|0xffffffff|0x0)\b') { $Matches[1] -eq "true" -or $Matches[1] -eq "0xffffffff" } else { $null }
+        if ($compiledExtract -ne $extractNativeLibs) {
+            throw "The APK's compiled manifest has extractNativeLibs '$extractLine', but the libraries were packaged for extractNativeLibs=$extractNativeLibs."
+        }
+        Write-Host "  extractNativeLibs=$($compiledExtract.ToString().ToLowerInvariant()) in the compiled manifest"
 
         $badgingProblems = New-Object System.Collections.Generic.List[string]
         $packageLine = @($badging | Where-Object { $_ -like "package:*" }) | Select-Object -First 1
@@ -870,6 +1204,38 @@ try {
     New-Directory $outputDirectory
     Remove-PathIfPresent $finalApk
     if (-not $DryRun) { Copy-Item -LiteralPath $signedApk -Destination $finalApk }
+
+    # --- release stage ------------------------------------------------------------------
+    # Crash lines and tombstones from a released APK are symbolized against the
+    # unstripped libraries of exactly that build; keep them with the version.
+    if ($stageRelease) {
+        Write-Step "Release stage: $releaseDirectory"
+        New-Directory $releaseDirectory
+        $staged = New-Object System.Collections.Generic.List[string]
+        if (-not $DryRun) {
+            if ($abi -eq "arm64-v8a") {
+                Copy-Item -LiteralPath $finalApk -Destination (Join-Path $releaseDirectory $apkName) -Force
+                $staged.Add($apkName)
+            }
+            foreach ($library in @($nativeLibraryName) + @($runnerPackaged.Keys)) {
+                $source = Join-Path $symbolsDirectory $library
+                $target = "{0}-{1}.so" -f [IO.Path]::GetFileNameWithoutExtension($library), $abi
+                Copy-Item -LiteralPath $source -Destination (Join-Path $releaseDirectory $target) -Force
+                $staged.Add($target)
+            }
+            $releaseInfo = [ordered]@{}
+            foreach ($key in $buildInfo.Keys) { $releaseInfo[$key] = $buildInfo[$key] }
+            $releaseInfo["apk"] = [ordered]@{ name = $apkName; sha256 = (Get-Sha256 $finalApk); size = (Get-Item -LiteralPath $finalApk).Length; certificateSha256 = $certificateDigest }
+            $releaseInfo["symbols"] = [ordered]@{}
+            foreach ($library in @($nativeLibraryName) + @($runnerPackaged.Keys)) {
+                $releaseInfo.symbols[$library] = "{0}-{1}.so" -f [IO.Path]::GetFileNameWithoutExtension($library), $abi
+            }
+            $releaseInfoName = "build-$abi.json"
+            Write-Utf8File (Join-Path $releaseDirectory $releaseInfoName) (($releaseInfo | ConvertTo-Json -Depth 6) + "`n")
+            $staged.Add($releaseInfoName)
+            Write-Host "  $($staged -join ', ')"
+        }
+    }
 } finally {
     $env:JAVA_HOME = $savedJavaHome
 }
@@ -885,6 +1251,11 @@ Write-Host "APK:      $finalApk" -ForegroundColor Green
 Write-Host ("Size:     {0:N1} MB ({1:N0} bytes)" -f ((Get-Item -LiteralPath $finalApk).Length / 1MB), (Get-Item -LiteralPath $finalApk).Length)
 Write-Host "Version:  $versionName ($versionCode), $Configuration"
 Write-Host "Cert:     SHA-256 $certificateDigest"
+Write-Host "APK hash: SHA-256 $(Get-Sha256 $finalApk)"
 Write-Host "Key:      $keystorePath"
-if (-not $SkipNative) { Write-Host "Symbols:  $symbolsLibrary" }
+if (-not $SkipNative) { Write-Host "Symbols:  $symbolsDirectory" }
+foreach ($library in $buildInfo.libraries.Keys) {
+    Write-Host ("Build id: {0,-22} {1}" -f $library, $buildInfo.libraries[$library].buildId)
+}
+if ($stageRelease) { Write-Host "Release:  $releaseDirectory" }
 Write-Host "Install and copy game data: powershell -ExecutionPolicy Bypass -File scripts/port/deploy_android.ps1"

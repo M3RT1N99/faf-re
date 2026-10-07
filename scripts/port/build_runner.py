@@ -14,7 +14,10 @@ Foundation TUs the closure lists, from the local, gitignored dependencies/WildMa
   faf_headless_runner   RunnerMain.cpp's `main` plus the low arena (port/engine/lowarena: LowArena.cpp,
                         dlmalloc), which exports the malloc family and the lowarena_* hooks, loads
                         libfafengine.so below 2 GB and calls `faf_headless_main` on an arena stack
-                        (M3c; FAF_LOWARENA=0 at run time turns the arena off)
+                        (M3c; FAF_LOWARENA=0 at run time turns the arena off); plus the replay input
+                        (ReplayFile.cpp: .fafreplay decoding with the vendored zstd decoder in
+                        port/third_party/zstd and the system libz, /replayinfo, /convertreplay) and
+                        the crash reporter (RunnerCrash.cpp), release 0.4.0
 
 With --probe it also links libfafarenaprobe.so (port/engine/lowarena/probe), a stand-in for the
 engine library that checks where the arena puts heap, stacks, TLS, image and file views.
@@ -83,6 +86,19 @@ LOWARENA_EXE_SOURCES = ["LowArena.cpp", "LowArenaHeap.c"]
 LOWARENA_LIB_SOURCES = ["LowArenaThreads.cpp"]
 LOWARENA_PROBE_SOURCE = "probe/LowArenaProbe.cpp"
 LOWARENA_FLAGS = ["-O2", "-g", "-fno-omit-frame-pointer", "-fPIC", "-Wall", "-Wextra", "-ffunction-sections", "-fdata-sections"]
+# Executable-only sources of port/engine/runner (release 0.4.0): plain port code like the low arena
+# (own flags, no engine defines, no shim), never compiled into libfafengine.so. Every other *.cpp in
+# port/engine/runner is a runner source of the engine library.
+RUNNER_EXE_SOURCES = ["ReplayFile.cpp", "RunnerCrash.cpp"]
+# The zstd decoder (port/third_party/zstd: zstd 1.5.7's lib/common and lib/decompress, BSD licence),
+# linked into the executable for .fafreplay bodies. C, no assembly (ZSTD_DISABLE_ASM: the x86-64
+# Huffman loop in huf_decompress_amd64.S stays out), no legacy formats, no tracing hooks.
+ZSTD_DIR = os.path.join(REPO_ROOT, "port", "third_party", "zstd", "lib")
+ZSTD_SOURCES = ["common/debug.c", "common/entropy_common.c", "common/error_private.c", "common/fse_decompress.c",
+                "common/xxhash.c", "common/zstd_common.c", "decompress/huf_decompress.c", "decompress/zstd_ddict.c",
+                "decompress/zstd_decompress.c", "decompress/zstd_decompress_block.c"]
+ZSTD_FLAGS = ["-O2", "-g", "-fPIC", "-ffunction-sections", "-fdata-sections", "-DZSTD_DISABLE_ASM=1",
+              "-DZSTD_LEGACY_SUPPORT=0", "-DZSTD_TRACE=0"]
 # What the executable exports so that libc, libc++ and libfafengine.so bind to it (lld leaves an
 # executable's symbols out of .dynsym unless asked). Not -rdynamic: that would also export the
 # executable's static libc++, which the engine library would then bind to instead of its own.
@@ -189,7 +205,8 @@ def build_units(args, project, closure, clang, triple, out_dir):
     if missing:
         raise SystemExit("build_runner: closure TUs that main.vcxproj does not build (re-run link_closure.py): "
                          + ", ".join(missing[:10]))
-    runner_srcs = sorted(glob.glob(os.path.join(RUNNER_DIR, "*.cpp")))
+    runner_srcs = sorted(p for p in glob.glob(os.path.join(RUNNER_DIR, "*.cpp"))
+                         if os.path.basename(p) not in RUNNER_EXE_SOURCES)
     runner_tus = ["../../" + fwd(os.path.relpath(p, REPO_ROOT)) for p in runner_srcs]
     probe_tus = (["../../" + fwd(os.path.relpath(os.path.join(LOWARENA_DIR, LOWARENA_PROBE_SOURCE), REPO_ROOT))]
                  if getattr(args, "probe", False) else [])
@@ -214,6 +231,22 @@ def build_units(args, project, closure, clang, triple, out_dir):
     for tu in probe_tus:
         cmd = set_target(commands[tu], triple)
         units.append(Unit(tu, "probe", cmd[cmd.index("-c") + 1], cmd[cmd.index("-o") + 1], cmd))
+    for name in RUNNER_EXE_SOURCES:
+        src = norm(os.path.join(RUNNER_DIR, name))
+        tu = "../../" + fwd(os.path.relpath(src, REPO_ROOT))
+        obj = norm(os.path.join(out_dir, "obj", "port", "engine", "runner", name + ".o"))
+        cmd = [fwd(clang), f"--target={triple}", "-std=c++20", "-c", src, "-o", obj,
+               f"-ferror-limit={args.error_limit}", "-fno-color-diagnostics", "-fdiagnostics-absolute-paths",
+               "-I" + norm(RUNNER_DIR), "-I" + norm(ZSTD_DIR)] + LOWARENA_FLAGS + list(args.extra)
+        units.append(Unit(tu, "runner-exe-src", src, obj, cmd))
+    for name in ZSTD_SOURCES:
+        src = norm(os.path.join(ZSTD_DIR, name))
+        tu = "../../" + fwd(os.path.relpath(src, REPO_ROOT))
+        obj = norm(os.path.join(out_dir, "obj", "port", "third_party", "zstd", name + ".o"))
+        cmd = [fwd(clang), f"--target={triple}", "-x", "c", "-std=c11", "-c", src, "-o", obj,
+               f"-ferror-limit={args.error_limit}", "-fno-color-diagnostics", "-fdiagnostics-absolute-paths",
+               "-I" + norm(ZSTD_DIR)] + ZSTD_FLAGS + list(args.extra)
+        units.append(Unit(tu, "zstd", src, obj, cmd))
     for kind, names in (("lowarena-exe", LOWARENA_EXE_SOURCES), ("lowarena-lib", LOWARENA_LIB_SOURCES)):
         for name in names:
             src = norm(os.path.join(LOWARENA_DIR, name))
@@ -474,11 +507,11 @@ def link(clang, triple, out_dir, objects, exe_objs, extra_ldflags, probe_objs=No
         except OSError:
             pass
     exe_cmd = ([fwd(clang), f"--target={triple}", "-o", fwd(exe)] + [fwd(o) for o in exe_objs or []]
-               + ["-static-libstdc++", "-ldl", "-Wl,--build-id"]
+               + ["-static-libstdc++", "-lz", "-ldl", "-Wl,--build-id"]
                + [f"-Wl,--export-dynamic-symbol={s}" for s in EXE_EXPORTS])
     q = subprocess.run(exe_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=out_dir) if exe_objs else None
     exe_out = (q.stdout.decode("utf-8", "replace").replace("\r\n", "\n") if q
-               else "(RunnerMain.cpp or a port/engine/lowarena source did not compile)\n")
+               else "(RunnerMain.cpp, ReplayFile.cpp, RunnerCrash.cpp, a zstd or a port/engine/lowarena source did not compile)\n")
     arena_cmd, arena_out, arena_rc = None, "", None
     if probe_objs:
         arena_cmd = ([fwd(clang), f"--target={triple}", "-shared", "-fPIC", "-o", fwd(probe),
@@ -653,7 +686,8 @@ def write_report(out_dir, meta, units, stamps, linkres, closure, graph):
             st = stamps[u.tu]
             fe = st.get("first_error") or {}
             owner = lc.owner_component(u.tu, closure_set, status) if u.kind == "engine" else (
-                "G" if u.kind == "wm3" else ("L" if u.kind in ("lowarena-exe", "lowarena-lib", "probe") else "S/G"))
+                "G" if u.kind in ("wm3", "zstd") else ("L" if u.kind in ("lowarena-exe", "lowarena-lib", "probe")
+                                                       else "N" if u.kind == "runner-exe-src" else "S/G"))
             L.append(f"| `{u.tu}` | {owner} | {md(st.get('class') or '')} | "
                      f"{code(str(fe.get('file', '?')) + ':' + str(fe.get('line', 0)))} "
                      f"{md((fe.get('message') or '')[:120])} |")
@@ -874,7 +908,7 @@ def main():
 
         objects = [u.obj for u in built(("engine", "wm3", "runner", "lowarena-lib")) if stamps[u.tu].get("ok")
                    and os.path.isfile(u.obj)]
-        exe_units = built(("runner-exe", "lowarena-exe"))
+        exe_units = built(("runner-exe", "lowarena-exe", "runner-exe-src", "zstd"))
         exe_objs = [u.obj for u in exe_units] if all_ok(exe_units) else None
         probe_units = built(("probe", "lowarena-lib"))
         probe_objs = [u.obj for u in probe_units] if args.probe and all_ok(probe_units) else None
