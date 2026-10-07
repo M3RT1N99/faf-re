@@ -40,9 +40,10 @@ two existing backends first), `Texture`, `RenderTarget`, `CubeRenderTarget`, `De
    (`CD3DDevice`, `Shadow`, `CRenFrame`, `Cartographic`, `HighFidelityTerrain`, `Mesh`,
    `MeshThumbnailRenderer`, `WxRuntimeTypes`).
 3. Implement the **effect front end** (`gpg::gal::fx`): D3DX effects to Shader Model 5 HLSL plus metadata.
-   The metadata half exists and matches D3DX on every shipped effect (`port/graphics/fx`, M6a).
-4. Diligent backend on Windows, compared pixel by pixel against the D3D9 backend. The D3D9
-   reference harness and the Diligent spike exist (M6a); the plan and status are in
+   The metadata matches D3DX on every shipped effect (M6a), and `FxHlslEmitter` generates the SM5
+   the Diligent backend runs (M6b); both are in `port/graphics/fx`.
+4. Diligent backend on Windows, compared pixel by pixel against the D3D9 backend. The main menu
+   through `/gal diligent:d3d11` is byte-identical to D3D9 (M6b); the plan and status are in
    [renderer.md](renderer.md).
 5. SDL3 platform layer, then Linux.
 
@@ -77,9 +78,13 @@ powershell -ExecutionPolicy Bypass -File scripts/port/deploy_android.ps1      # 
 
 ## Planned effect front end: `gpg::gal::fx`
 
-Status: the lexer, preprocessor, effect parser and metadata extractor exist in
-[`port/graphics/fx`](../../port/graphics/fx/README.md) (M6a, see [renderer.md](renderer.md)); the
-SM5 emitter below is still planned.
+Status: the lexer, preprocessor, effect parser and metadata extractor (M6a) and the SM5 emitter
+`FxHlslEmitter` (M6b) exist in [`port/graphics/fx`](../../port/graphics/fx/README.md), not in
+`src/sdk`; see [renderer.md](renderer.md). The section below is the original plan. Where the
+implementation differs (for example the fixed-function vertex shader, which reproduces D3D9's
+transformed-vertex path instead of the effects' own D3D10 `FixedFuncVS`), the fx README and
+`FxHlslEmitter.h` describe what was built and why. The planned tools became `fxhlsl` (generate,
+optionally compile with FXC), `scripts/port/fx_metadata_gate.py` and `scripts/port/fxdiff.py`.
 
 The planned `src/sdk/gpg/gal/fx/` module will read an effect the way `CD3DEffectTechnique` feeds D3DX (compat header
 `d3d9states.compat` prepended) and produces SM5 HLSL with one entry point per pass stage, plus JSON

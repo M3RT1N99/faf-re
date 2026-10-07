@@ -1,30 +1,38 @@
 #pragma once
 
-// gpg::gal::Device on Diligent (M6 step 1, the integration spike; docs/port/renderer.md).
+// gpg::gal::Device on Diligent (docs/port/renderer.md; M6a step 1 made the device, M6b step 3 the draw
+// path).
 //
-// All 50 Device slots (Device.hpp:115-588; vtable 0x00D42224) are overridden. In this step:
-//   - real: device and swap chain creation on the engine window (Setup), the head render target,
-//     ClearTarget/Clear on it, and Present, which draws the head into the swap chain;
-//   - oracle (D3D9Oracle.h): the DeviceContext capability lanes, adapter modes, effects
-//     (metadata from D3DX reflection), textures (D3DX scratch textures) and GetTexture2D;
-//   - placeholders (ResourcesDiligent.h): render, cube and depth targets, vertex and index buffers,
-//     vertex formats, the pipeline state;
-//   - real readback of the head: GetRenderTargetData copies head 0 through a staging texture
-//     into a system-memory texture, so the frame harness (port/graphics/capture) can read frames;
-//   - logged no-ops: every draw, state, other readback, save and cursor slot. The first call of each is
-//     logged as "[gal-diligent] slot N <name>: no-op in the spike" so the census of what the main
-//     menu uses is in the log, and every slot's call count is in the report.
+// All 50 Device slots (Device.hpp:115-588; vtable 0x00D42224) are overridden:
+//   - the device, swap chain, head target and Present-by-draw (DiligentHost);
+//   - resources with GPU objects behind D3D9's CPU contract (ResourcesDiligent.h): textures from the
+//     D3DX texel oracle with their full mip chains, render/cube/depth targets, vertex and index
+//     buffers mapped the way D3D9 locks them;
+//   - the D3D9 render-state shadow and the draw path (PipelineDiligent.h): ClearTarget binds the output,
+//     Clear honours the viewport, SetViewport, the stream/declaration/index slots, the technique-begin
+//     defaults and the fog/wireframe/colour-write slots write the shadow, and the draws build hashed PSOs
+//     from it and the effect layer's pass (PassBinding.h, PassSink);
+//   - readbacks: GetRenderTargetData of any render target in D3D9's byte order, StretchRect,
+//     UpdateSurface and the Save slots;
+//   - oracle values for capabilities, adapter modes, effects and GetTexture2D (D3D9Oracle.h), with a
+//     portable GetTexture2D (Texture2DPortable.h) selectable for the Android path;
+//   - the Win32 cursor built from the cursor texture, as the D3D10 backend's CursorD3D10 does.
 //
 // Port-only command line (read in Setup, CScApp parses /gal):
 //   /gal diligent:d3d11        select this backend (only d3d11 so far)
 //   /galreport <file.json>     write the report at exit or after /galexitframes
 //   /galexitframes <N>         after N presents, write the report and ask the app to exit
-//   /galreportframe <N>        write the report after N presents and keep running (for runs under
-//                              the frame harness, port/graphics/capture, which ends the process itself)
+//   /galreportframe <N>        write the report after N presents and keep running (for runs under the
+//                              frame harness, port/graphics/capture, which ends the process itself)
 //   /galdumpfx <dir>           write every effect source buffer and its macros to <dir>
+//   /galdumptex <dir>          write every GetTexture2D and CreateTexture source to <dir> (game data:
+//                              scratch only), for the GetTexture2D unit test
+//   /galtex2d oracle|portable  GetTexture2D through D3DX (default) or the portable decoder/encoder
+//   /galhalfpixel shader|viewport|none   how D3D9's pixel centres are reproduced (PipelineDiligent.h)
 //   /galnovalidation           no Diligent validation and no D3D11 debug layer
-//   /galdebuglayerselftest     at setup, provoke one D3D11 debug-layer error on purpose (not
-//                              counted) to show in the report that the layer is live
+//   /galdebuglayerselftest     at setup, provoke one D3D11 debug-layer error on purpose (not counted)
+//                              to show in the report that the layer is live
+//   /galselftest               at setup, run the known-answer checks of RunSelfTest (report "selfTest")
 
 #include <atomic>
 #include <cstdint>
@@ -32,6 +40,9 @@
 #include <string>
 #include <vector>
 
+#include "DiligentHost.h"
+#include "PassBinding.h"
+#include "PipelineDiligent.h"
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/DeviceContext.hpp"
 #include "gpg/gal/OutputContext.hpp"
@@ -41,8 +52,9 @@ namespace gpg::gal::diligent
 {
     class D3D9Oracle;
     class DiligentHost;
+    class GpuShared;
 
-    class DeviceDiligent final : public Device
+    class DeviceDiligent final : public Device, public PassSink
     {
     public:
         static constexpr int kSlotCount = 50;
@@ -126,30 +138,75 @@ namespace gpg::gal::diligent
         void BeginTechnique() override;                // 48
         void EndTechnique() override;                  // 49
 
+        // PassSink (PassBinding.h): the effect layer's BeginPass/EndPass.
+        void OnBeginPass(PassBinding& binding) override;
+        void OnEndPass(PassBinding& binding) override;
+
         /** Writes the JSON report (/galreport) now. */
         void WriteReport(const char* reason);
 
+        /**
+         * /galselftest: known-answer checks of the paths the main menu does not reach (partial-viewport
+         * Clear, StretchRect copy/scale/sub-rectangle, offscreen GetRenderTargetData, texture Lock/Unlock
+         * uploads with and without format conversion, dynamic-buffer DISCARD/NOOVERWRITE/plain locks and
+         * the first-map-of-a-frame rewrite, static-buffer updates, cube faces, shader-readable depth,
+         * resize). Runs once at the end of Setup, through the Device slots themselves; the results go to
+         * the log and the report. SelfTestDiligent.cpp.
+         */
+        void RunSelfTest();
+
     private:
+        struct StreamBinding
+        {
+            boost::shared_ptr<VertexBuffer> buffer;
+            std::uint32_t offset = 0;
+            std::uint32_t stride = 0;
+            std::uint32_t type = 0;      // VertexBufferContext::type_
+            std::uint32_t frequency = 1; // the stream-frequency token SetVertexBuffer got
+        };
+
         void Count(int slot, const char* name, bool noOp);
         void Shutdown();
         void ReadOptions();
         void CreateHeads();
+        void BindOutput();
+        void SubmitDraw(DrawCall& call);
+        void CopyRenderTargetToTexture(const boost::shared_ptr<RenderTarget>& source, const boost::shared_ptr<Texture>& destination,
+                                       const char* slot);
+        /** Writes <dir>\<kind>_<n>_<fnv>.bin and returns the path without ".bin". */
+        std::string DumpTextureSource(const char* kind, const void* data, std::uint32_t bytes);
 
         DeviceContext mDeviceContext;
         std::unique_ptr<D3D9Oracle> mOracle;
         std::unique_ptr<DiligentHost> mHost;
+        std::shared_ptr<GpuShared> mGpu;
+        std::unique_ptr<DrawPath> mDrawPath;
+        D3D9StateShadow mShadow;
         std::vector<OutputContext> mHeads;
         boost::shared_ptr<PipelineState> mPipelineState;
         msvc8::vector<msvc8::string> mLog;
         int mCurThreadId = 0;
         D3DVIEWPORT9 mViewport{};
-        bool mHeadBound = false;
         bool mCursorShown = true;
+        void* mCursorIcon = nullptr;     // HICON
+        void* mPreviousCursor = nullptr; // HCURSOR
         bool mInScene = false;
+
+        // What ClearTarget bound (kept alive while bound) and the input assembler state.
+        OutputContext mBound;
+        boost::shared_ptr<VertexFormat> mVertexFormat;
+        StreamBinding mStreams[kMaxVertexStreams];
+        boost::shared_ptr<IndexBuffer> mIndexBuffer;
+        PassBinding* mPassBinding = nullptr;
+
         std::atomic<std::uint64_t> mSlotCalls[kSlotCount]{};
         std::atomic<bool> mSlotLogged[kSlotCount]{};
         std::uint64_t mPresents = 0;
         std::uint64_t mHeadClears = 0;
+        std::atomic<std::uint64_t> mTexture2DCalls{0};
+        std::atomic<std::uint64_t> mTexture2DOffThread{0}; // calls from another thread than Setup's (the prefetch thread)
+        std::atomic<std::uint64_t> mCreateTextureOffThread{0};
+        std::uint64_t mTextureDumps = 0;
         std::vector<std::string> mDebugLayerMessages;
         bool mReportWritten = false;
         bool mExitRequested = false;
@@ -158,11 +215,23 @@ namespace gpg::gal::diligent
         std::string mApi = "d3d11";
         std::string mReportPath;
         std::string mDumpFxDir;
+        std::string mDumpTexDir;
+        bool mPortableTexture2D = false;
+        HalfPixelMode mHalfPixel = HalfPixelMode::Shader;
         std::uint64_t mExitFrames = 0;
         std::uint64_t mReportFrame = 0;
         bool mValidation = true;
         bool mDebugLayerSelfTest = false;
         std::uint32_t mSelfTestErrors = 0;
         std::string mSelfTestSample;
+        bool mRunSelfTest = false;
+        struct SelfTestResult
+        {
+            std::string name;
+            bool pass = false;
+            std::string detail;
+        };
+        std::vector<SelfTestResult> mSelfTestResults;
+        DebugLayerCounts mSelfTestDebugLayer{}; // what the self test itself made the debug layer report
     };
 } // namespace gpg::gal::diligent

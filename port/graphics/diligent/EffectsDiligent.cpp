@@ -1,12 +1,17 @@
 #include "EffectsDiligent.h"
 
+#include <d3d9.h>
+
 #include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <iterator>
+#include <mutex>
 
 #include "D3D9Oracle.h"
+#include "EffectsDiligentGpu.h"
+#include "PassBinding.h"
 #include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/Logging.h"
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/EffectMacro.hpp"
 #include "gpg/gal/Matrix.h"
@@ -18,21 +23,9 @@ namespace gpg::gal::diligent
         std::mutex gRecordLock;
         std::vector<EffectRecord> gRecords;
 
-        std::string ReadErrors(ID3DXBuffer* const errors)
+        void LogToEngine(const char* const message)
         {
-            if (errors == nullptr || errors->GetBufferPointer() == nullptr) {
-                return "unknown error";
-            }
-            return static_cast<const char*>(errors->GetBufferPointer());
-        }
-
-        template <class T>
-        void SafeRelease(T*& object)
-        {
-            if (object != nullptr) {
-                object->Release();
-                object = nullptr;
-            }
+            gpg::Warnf("%s", message);
         }
 
         [[noreturn]] void ThrowEffectError(const char* const prefix, const EffectContext& context, const std::string& reason, const int line)
@@ -40,16 +33,6 @@ namespace gpg::gal::diligent
             // The message of BuildEffectCreationMessage, D3D9Interfaces.cpp:842-853.
             const std::string message = std::string(prefix) + context.mSourcePath.c_str() + " reason: " + reason;
             ThrowGalError("DeviceDiligent.cpp", line, message.c_str());
-        }
-
-        bool DefinesMacro(const msvc8::vector<EffectMacro>& macros, const char* const name)
-        {
-            for (const EffectMacro& macro : macros) {
-                if (std::strcmp(macro.keyText_.c_str(), name) == 0) {
-                    return true;
-                }
-            }
-            return false;
         }
 
         std::string BaseName(const char* const path)
@@ -61,6 +44,13 @@ namespace gpg::gal::diligent
                 }
             }
             return name;
+        }
+
+        std::string StemOf(const char* const path)
+        {
+            std::string name = BaseName(path);
+            const std::size_t dot = name.rfind('.');
+            return dot == std::string::npos ? name : name.substr(0, dot);
         }
 
         std::string JsonEscape(const std::string& text)
@@ -106,34 +96,110 @@ namespace gpg::gal::diligent
             meta << "]}\n";
         }
 
-        boost::shared_ptr<EffectDiligent> LockEffect(const boost::weak_ptr<EffectDiligent>& effect, const int line)
+        boost::shared_ptr<EffectDiligent> LockEffect(const boost::weak_ptr<EffectDiligent>& effect, const char* const file, const int line)
         {
             boost::shared_ptr<EffectDiligent> locked = effect.lock();
             if (!locked) {
-                ThrowGalError("EffectDiligent.cpp", line, "invalid effect specified");
+                ThrowGalError(file, line, "invalid effect specified");
             }
             return locked;
         }
 
-        template <class Out, class Get>
-        bool ReadAnnotation(ID3DXEffect* const effect, const D3DXHANDLE owner, const msvc8::string& name, Out* const out, Get&& get, const int line)
+        // ID3DXEffect::GetAnnotationByName + GetBool/GetInt/GetFloat/GetString on the annotation.
+        // A missing annotation returns false (the D3D9 backend's null-handle path); a type D3DX cannot
+        // convert throws, as the D3D9 backend turns D3DX's failure into gal::Error.
+        const fx::AnnotationInfo* FindAnnotation(const std::vector<fx::AnnotationInfo>& annotations, const msvc8::string& name)
         {
-            const D3DXHANDLE annotation = effect->GetAnnotationByName(owner, name.c_str());
+            for (const fx::AnnotationInfo& annotation : annotations) {
+                if (annotation.desc.name == name.c_str()) {
+                    return &annotation;
+                }
+            }
+            return nullptr;
+        }
+
+        bool IsNumeric(const fx::AnnotationInfo& annotation)
+        {
+            return (annotation.desc.type == fx::ParameterType::Bool || annotation.desc.type == fx::ParameterType::Int ||
+                    annotation.desc.type == fx::ParameterType::Float) &&
+                   !annotation.value.empty();
+        }
+
+        float AnnotationFloat(const fx::AnnotationInfo& annotation)
+        {
+            const std::uint32_t word = annotation.value[0];
+            if (annotation.desc.type == fx::ParameterType::Float) {
+                float value = 0.0F;
+                std::memcpy(&value, &word, sizeof(value));
+                return value;
+            }
+            return static_cast<float>(static_cast<std::int32_t>(word));
+        }
+
+        int AnnotationInt(const fx::AnnotationInfo& annotation)
+        {
+            if (annotation.desc.type == fx::ParameterType::Float) {
+                return static_cast<int>(AnnotationFloat(annotation));
+            }
+            return static_cast<int>(annotation.value[0]);
+        }
+
+        template <class Out, class Read>
+        bool ReadAnnotation(const std::vector<fx::AnnotationInfo>& annotations, const msvc8::string& name, Out* const out,
+                            Read&& read, const char* const file, const int line)
+        {
+            const fx::AnnotationInfo* const annotation = FindAnnotation(annotations, name);
             if (annotation == nullptr) {
                 return false;
             }
-            const HRESULT result = get(annotation, out);
-            if (FAILED(result)) {
-                ThrowGalErrorFromHresult("EffectDiligent.cpp", line, result);
+            if (!read(*annotation, out)) {
+                ThrowGalErrorFromHresult(file, line, D3DERR_INVALIDCALL);
             }
             return true;
         }
 
-        void CheckSet(const HRESULT result, const int line)
+        bool ReadBool(const std::vector<fx::AnnotationInfo>& annotations, bool* const out, const msvc8::string& name, const char* file, int line)
         {
-            if (FAILED(result)) {
-                ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", line, result);
-            }
+            return ReadAnnotation(annotations, name, out, [](const fx::AnnotationInfo& a, bool* v) {
+                if (!IsNumeric(a)) {
+                    return false;
+                }
+                *v = AnnotationInt(a) == 1; // EffectVariableD3D9::GetAnnotationBool: `raw == 1`
+                return true;
+            }, file, line);
+        }
+
+        bool ReadInt(const std::vector<fx::AnnotationInfo>& annotations, int* const out, const msvc8::string& name, const char* file, int line)
+        {
+            return ReadAnnotation(annotations, name, out, [](const fx::AnnotationInfo& a, int* v) {
+                if (!IsNumeric(a)) {
+                    return false;
+                }
+                *v = AnnotationInt(a);
+                return true;
+            }, file, line);
+        }
+
+        bool ReadFloat(const std::vector<fx::AnnotationInfo>& annotations, float* const out, const msvc8::string& name, const char* file, int line)
+        {
+            return ReadAnnotation(annotations, name, out, [](const fx::AnnotationInfo& a, float* v) {
+                if (!IsNumeric(a)) {
+                    return false;
+                }
+                *v = AnnotationFloat(a);
+                return true;
+            }, file, line);
+        }
+
+        bool ReadString(const std::vector<fx::AnnotationInfo>& annotations, msvc8::string* const out, const msvc8::string& name, const char* file, int line)
+        {
+            return ReadAnnotation(annotations, name, out, [](const fx::AnnotationInfo& a, msvc8::string* v) {
+                if (a.desc.type != fx::ParameterType::String) {
+                    return false;
+                }
+                v->assign_owned(a.string.c_str());
+                return true;
+            }, file, line);
         }
     } // namespace
 
@@ -143,11 +209,28 @@ namespace gpg::gal::diligent
         return gRecords;
     }
 
+    EffectLayerCounts GetEffectLayerCounts()
+    {
+        const EffectGpuStats stats = GetEffectGpuStats();
+        EffectLayerCounts counts;
+        counts.effects = stats.effects;
+        counts.programsCompiled = stats.programsCompiled;
+        counts.shadersCompiled = stats.shadersCompiled;
+        counts.generationFailures = stats.generationFailures;
+        counts.constantUploads = stats.constantUploads;
+        counts.drawConstantUploads = stats.drawConstantUploads;
+        counts.commits = stats.commits;
+        counts.nullTextureBinds = stats.nullTextureBinds;
+        return counts;
+    }
+
     boost::shared_ptr<Effect> CreateEffectFromContext(const D3D9Oracle& oracle, const EffectContext& context, const std::string& dumpDir)
     {
+        // DeviceD3D9::CreateEffect accepts only the payload form (mSourceType 2, D3D9Interfaces.cpp:1696).
         if (context.mSourceType != 2U) {
             ThrowGalError("DeviceDiligent.cpp", __LINE__, "");
         }
+        SetEffectLog(&LogToEngine);
 
         std::size_t recordIndex = 0;
         {
@@ -160,88 +243,35 @@ namespace gpg::gal::diligent
         }
         DumpSource(dumpDir, context, recordIndex);
 
-        // BuildD3DXMacroDefines, D3D9Interfaces.cpp:861-882.
-        std::vector<D3DXMACRO> defines;
+        const char* const begin = context.mSourceBuffer.mBegin;
+        const char* const end = context.mSourceBuffer.mEnd;
+        if (begin == nullptr || end <= begin) {
+            ThrowEffectError("unable to compile effect: ", context, "empty source buffer", __LINE__);
+        }
+        // One part: the engine has already merged the compat header and the .fx (diagnostics count
+        // lines across both, as D3DX's do).
+        fx::EffectInput input;
+        input.parts.emplace_back(BaseName(context.mSourcePath.c_str()), std::string(begin, end));
         for (const EffectMacro& macro : context.mMacros) {
-            defines.push_back(D3DXMACRO{macro.keyText_.c_str(), macro.valueText_.c_str()});
+            input.macros.push_back({macro.keyText_.c_str(), macro.valueText_.c_str()});
         }
-        if (!defines.empty()) {
-            defines.push_back(D3DXMACRO{nullptr, nullptr});
+        std::string errors;
+        std::shared_ptr<EffectGpu> gpu = EffectGpu::Create(StemOf(context.mSourcePath.c_str()), input, &errors);
+        if (!gpu) {
+            ThrowEffectError("unable to compile effect: ", context, errors, __LINE__);
         }
-        const D3DXMACRO* const defineArray = defines.empty() ? nullptr : defines.data();
-
-        ID3DXEffectCompiler* compiler = nullptr;
-        ID3DXBuffer* compiled = nullptr;
-        ID3DXBuffer* errors = nullptr;
-        ID3DXEffect* effect = nullptr;
-        try {
-            if (context.mUseCache) {
-                // DeviceD3D9::CreateEffectFromCachedBinary, D3D9Interfaces.cpp:1628-1690.
-                std::ifstream cache(context.mCachePath.c_str(), std::ios::binary);
-                if (!cache.is_open()) {
-                    ThrowGalError("DeviceDiligent.cpp", __LINE__, "");
-                }
-                const std::vector<char> bytes{std::istreambuf_iterator<char>(cache), std::istreambuf_iterator<char>()};
-                const HRESULT result = D3DXCreateEffect(
-                    oracle.GetDevice(), bytes.data(), static_cast<UINT>(bytes.size()), nullptr, nullptr, 0U, nullptr, &effect, &errors
-                );
-                if (FAILED(result)) {
-                    ThrowEffectError("unable to create effect: ", context, ReadErrors(errors), __LINE__);
-                }
-                SafeRelease(errors);
-            } else {
-                // DeviceD3D9::CreateEffectFromSourceBuffer, D3D9Interfaces.cpp:1529-1626.
-                const DWORD flowControlFlags = DefinesMacro(context.mMacros, "FAF_BONE_TEXTURE") ? D3DXSHADER_AVOID_FLOW_CONTROL : 0U;
-                const char* const sourceData = context.mSourceBuffer.mBegin;
-                const unsigned int sourceBytes = static_cast<unsigned int>(context.mSourceBuffer.mEnd - context.mSourceBuffer.mBegin);
-                HRESULT result = D3DXCreateEffectCompiler(
-                    sourceData, sourceBytes, defineArray, nullptr,
-                    D3DXSHADER_DEBUG | D3DXSHADER_USE_LEGACY_D3DX9_31_DLL | flowControlFlags, &compiler, &errors
-                );
-                if (FAILED(result)) {
-                    ThrowEffectError("unable to compile effect: ", context, ReadErrors(errors), __LINE__);
-                }
-                SafeRelease(errors);
-                result = compiler->CompileEffect(D3DXSHADER_DEBUG | flowControlFlags, &compiled, &errors);
-                if (FAILED(result)) {
-                    ThrowEffectError("unable to compile effect: ", context, ReadErrors(errors), __LINE__);
-                }
-                SafeRelease(errors);
-                SafeRelease(compiler);
-                result = D3DXCreateEffect(
-                    oracle.GetDevice(), compiled->GetBufferPointer(), compiled->GetBufferSize(), defineArray, nullptr,
-                    D3DXSHADER_DEBUG, nullptr, &effect, &errors
-                );
-                if (FAILED(result)) {
-                    ThrowEffectError("unable to create effect: ", context, ReadErrors(errors), __LINE__);
-                }
-                SafeRelease(errors);
-                // The compiled effect goes to the cache path as on D3D9; CD3DEffect decides when to
-                // read it back (mUseCache).
-                std::ofstream cache(context.mCachePath.c_str(), std::ios::binary);
-                if (cache.is_open()) {
-                    cache.write(static_cast<const char*>(compiled->GetBufferPointer()), compiled->GetBufferSize());
-                }
-                SafeRelease(compiled);
-            }
-        } catch (...) {
-            SafeRelease(compiler);
-            SafeRelease(compiled);
-            SafeRelease(errors);
-            SafeRelease(effect);
-            throw;
-        }
-
-        D3DXEFFECT_DESC desc{};
-        if (SUCCEEDED(effect->GetDesc(&desc))) {
+        {
             std::lock_guard<std::mutex> lock(gRecordLock);
-            gRecords[recordIndex].techniqueCount = desc.Techniques;
-            gRecords[recordIndex].parameterCount = desc.Parameters;
+            gRecords[recordIndex].techniqueCount = static_cast<std::uint32_t>(gpu->GetMetadata().techniques.size());
+            gRecords[recordIndex].parameterCount = static_cast<std::uint32_t>(gpu->GetMetadata().parameters.size());
         }
+        // FindNextValidTechnique accepts a technique when the device creates every shader of its
+        // passes (port/graphics/fx/README.md "The oracle"); on a HAL device that is the shader
+        // version the caps report.
         const D3DCAPS9& caps = oracle.GetHalCaps();
-        return boost::shared_ptr<Effect>(
-            new EffectDiligent(context, effect, recordIndex, caps.VertexShaderVersion, caps.PixelShaderVersion)
-        );
+        return boost::shared_ptr<Effect>(new EffectDiligent(
+            context, std::move(gpu), recordIndex, caps.VertexShaderVersion & 0xFFFFU, caps.PixelShaderVersion & 0xFFFFU
+        ));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -249,90 +279,48 @@ namespace gpg::gal::diligent
 
     EffectDiligent::EffectDiligent(
         const EffectContext& context,
-        ID3DXEffect* const effect,
+        std::shared_ptr<EffectGpu> gpu,
         const std::size_t recordIndex,
-        const DWORD halVertexShaderVersion,
-        const DWORD halPixelShaderVersion
+        const std::uint32_t maxVertexShaderVersion,
+        const std::uint32_t maxPixelShaderVersion
     )
-        : dxEffect_(effect),
+        : gpu_(std::move(gpu)),
           recordIndex_(recordIndex),
-          halVertexShaderVersion_(halVertexShaderVersion),
-          halPixelShaderVersion_(halPixelShaderVersion)
+          maxVertexShaderVersion_(maxVertexShaderVersion),
+          maxPixelShaderVersion_(maxPixelShaderVersion)
     {
         // EffectD3D9::SetEffect (D3D9Interfaces.cpp:4182-4188) keeps the settings, not the bytes.
         context_ = context;
         context_.mSourceBuffer.Reset();
+        textureHolds_.resize(gpu_->GetMetadata().parameters.size());
     }
 
-    EffectDiligent::~EffectDiligent()
-    {
-        SafeRelease(dxEffect_);
-    }
+    EffectDiligent::~EffectDiligent() = default;
 
     EffectContext* EffectDiligent::GetContext()
     {
         return &context_;
     }
 
-    ID3DXEffect* EffectDiligent::GetDxEffect()
+    EffectGpu& EffectDiligent::Gpu()
     {
-        if (dxEffect_ == nullptr) {
-            ThrowGalError("EffectDiligent.cpp", __LINE__, "attempt to retrieve invalid effect");
-        }
-        return dxEffect_;
+        return *gpu_;
     }
 
-    /**
-     * What FindNextValidTechnique decides on the D3D9 device, for the part that depends on the
-     * hardware: every pass's vertex and pixel shader version (the first token of the bytecode,
-     * D3DXPASS_DESC) within the HAL's caps. A null shader (FIXED_FUNC_VS, PixelShader = null) needs
-     * nothing. ValidateTechnique also checks render and sampler states against the caps; the
-     * shipped effects use none a shader model 2.0 part lacks (m6u-FX.txt section 4), and gate 1
-     * compares the result with a HAL device's lists.
-     */
-    bool EffectDiligent::IsTechniqueValid(const D3DXHANDLE technique)
-    {
-        ID3DXEffect* const effect = GetDxEffect();
-        D3DXTECHNIQUE_DESC description{};
-        if (FAILED(effect->GetTechniqueDesc(technique, &description))) {
-            return false;
-        }
-        for (UINT pass = 0; pass < description.Passes; ++pass) {
-            D3DXPASS_DESC passDesc{};
-            if (FAILED(effect->GetPassDesc(effect->GetPass(technique, pass), &passDesc))) {
-                return false;
-            }
-            if (passDesc.pVertexShaderFunction != nullptr && *passDesc.pVertexShaderFunction > halVertexShaderVersion_) {
-                return false;
-            }
-            if (passDesc.pPixelShaderFunction != nullptr && *passDesc.pPixelShaderFunction > halPixelShaderVersion_) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // EffectD3D9::GetTechniques (D3D9Interfaces.cpp:4226-4250): the valid techniques in
-    // declaration order, which is the order FindNextValidTechnique walks them in.
+    // EffectD3D9::GetTechniques (D3D9Interfaces.cpp:4226-4250): the valid techniques in declaration
+    // order, which is the order FindNextValidTechnique walks them in.
     void EffectDiligent::GetTechniques(msvc8::vector<boost::shared_ptr<EffectTechnique>>& outTechniques)
     {
-        ID3DXEffect* const effect = GetDxEffect();
-        D3DXEFFECT_DESC effectDesc{};
-        const HRESULT result = effect->GetDesc(&effectDesc);
-        if (FAILED(result)) {
-            ThrowGalErrorFromHresult("EffectDiligent.cpp", __LINE__, result);
-        }
+        const std::vector<fx::TechniqueInfo>& techniques = gpu_->GetMetadata().techniques;
+        const fx::DeviceProfile profile{"hal", maxVertexShaderVersion_, maxPixelShaderVersion_};
         std::vector<std::string> names;
-        for (UINT index = 0; index < effectDesc.Techniques; ++index) {
-            const D3DXHANDLE technique = effect->GetTechnique(index);
-            if (technique == nullptr || !IsTechniqueValid(technique)) {
+        for (std::size_t index = 0; index < techniques.size(); ++index) {
+            if (!fx::IsTechniqueValid(techniques[index], profile)) {
                 continue;
             }
-            D3DXTECHNIQUE_DESC description{};
-            effect->GetTechniqueDesc(technique, &description);
-            names.emplace_back(description.Name);
+            names.push_back(techniques[index].name);
             outTechniques.push_back(boost::shared_ptr<EffectTechnique>(
-                new EffectTechniqueDiligent(description.Name, boost::SharedFromThis(*this), technique)
+                new EffectTechniqueDiligent(techniques[index].name.c_str(), boost::SharedFromThis(*this), static_cast<int>(index))
             ));
         }
         if (!recorded_) {
@@ -344,36 +332,31 @@ namespace gpg::gal::diligent
 
     boost::shared_ptr<EffectVariable> EffectDiligent::GetVariable(const char* const name)
     {
-        const D3DXHANDLE handle = GetDxEffect()->GetParameterByName(nullptr, name);
-        if (handle == nullptr) {
+        const int parameter = gpu_->FindParameter(name);
+        if (parameter < 0) {
             char message[512] = {};
             std::snprintf(message, sizeof(message), "invalid effect variable requested: %s", name != nullptr ? name : "");
             ThrowGalError("EffectDiligent.cpp", __LINE__, message);
         }
-        return boost::shared_ptr<EffectVariable>(new EffectVariableDiligent(name, boost::SharedFromThis(*this), handle));
+        return boost::shared_ptr<EffectVariable>(new EffectVariableDiligent(name, boost::SharedFromThis(*this), parameter));
     }
 
     boost::shared_ptr<EffectTechnique> EffectDiligent::GetTechnique(const char* const name)
     {
-        const D3DXHANDLE handle = GetDxEffect()->GetTechniqueByName(name);
-        if (handle == nullptr) {
+        const int technique = gpu_->FindTechnique(name);
+        if (technique < 0) {
             char message[512] = {};
             std::snprintf(message, sizeof(message), "invalid effect technique requested: %s", name != nullptr ? name : "");
             ThrowGalError("EffectDiligent.cpp", __LINE__, message);
         }
-        return boost::shared_ptr<EffectTechnique>(new EffectTechniqueDiligent(name, boost::SharedFromThis(*this), handle));
+        return boost::shared_ptr<EffectTechnique>(new EffectTechniqueDiligent(name, boost::SharedFromThis(*this), technique));
     }
 
-    // A NULLREF device is never lost; there is nothing to reset.
-    void EffectDiligent::OnReset()
-    {
-        static_cast<void>(GetDxEffect());
-    }
+    // Nothing device-dependent lives in the effect object: SetEffectRenderDevice releases and remakes
+    // the GPU side.
+    void EffectDiligent::OnReset() {}
 
-    void EffectDiligent::OnLost()
-    {
-        static_cast<void>(GetDxEffect());
-    }
+    void EffectDiligent::OnLost() {}
 
     // ---------------------------------------------------------------------------------------------
     // Technique
@@ -381,11 +364,11 @@ namespace gpg::gal::diligent
     EffectTechniqueDiligent::EffectTechniqueDiligent(
         const char* const name,
         const boost::shared_ptr<EffectDiligent>& effect,
-        const D3DXHANDLE handle
+        const int technique
     )
         : name_(name),
           effect_(effect),
-          handle_(handle)
+          technique_(technique)
     {
         if (effect_.expired()) {
             ThrowGalError("EffectTechniqueDiligent.cpp", __LINE__, "invalid effect specified");
@@ -399,23 +382,17 @@ namespace gpg::gal::diligent
         return &name_;
     }
 
-    // EffectTechniqueD3D9::BeginTechnique (D3D9Interfaces.cpp:4084-4110) minus the D3DX
-    // SetTechnique/Begin, which would apply states to the NULLREF device: Device slot 48 is still
-    // called, and the pass count comes from the technique's description.
+    // EffectTechniqueD3D9::BeginTechnique (D3D9Interfaces.cpp:4084-4110): Device slot 48, then
+    // ID3DXEffect::Begin(DONOTSAVESTATE), which returns the pass count.
     int EffectTechniqueDiligent::BeginTechnique()
     {
         if (beginEndActive_) {
             ThrowGalError("EffectTechniqueDiligent.cpp", __LINE__, "effect technique begin/end mismatch");
         }
-        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, __LINE__);
-        D3DXTECHNIQUE_DESC description{};
-        const HRESULT result = effect->GetDxEffect()->GetTechniqueDesc(handle_, &description);
-        if (FAILED(result)) {
-            ThrowGalErrorFromHresult("EffectTechniqueDiligent.cpp", __LINE__, result);
-        }
+        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, "EffectTechniqueDiligent.cpp", __LINE__);
         Device::GetInstance()->BeginTechnique();
         beginEndActive_ = true;
-        passCount_ = static_cast<int>(description.Passes);
+        passCount_ = static_cast<int>(effect->Gpu().GetMetadata().techniques[static_cast<std::size_t>(technique_)].passes.size());
         return passCount_;
     }
 
@@ -424,56 +401,95 @@ namespace gpg::gal::diligent
         if (!beginEndActive_) {
             ThrowGalError("EffectTechniqueDiligent.cpp", __LINE__, "effect technique begin/end mismatch");
         }
+        static_cast<void>(LockEffect(effect_, "EffectTechniqueDiligent.cpp", __LINE__));
+        if (activePass_ != nullptr) {
+            // ID3DXEffect::End without EndPass: the pass ends with the technique.
+            if (PassSink* const sink = GetPassSink()) {
+                sink->OnEndPass(*activePass_);
+            }
+            activePass_ = nullptr;
+            passHolds_.clear();
+        }
         Device::GetInstance()->EndTechnique();
         beginEndActive_ = false;
     }
 
     void EffectTechniqueDiligent::BeginPass(const int pass)
     {
-        if (!beginEndActive_ || pass < 0 || pass >= passCount_) {
-            ThrowGalError("EffectTechniqueDiligent.cpp", __LINE__, "invalid pass");
+        if (!beginEndActive_) {
+            ThrowGalError("EffectTechniqueDiligent.cpp", __LINE__, "effect technique begin/end mismatch");
+        }
+        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, "EffectTechniqueDiligent.cpp", __LINE__);
+        PassBinding* const binding = effect->Gpu().BeginPass(technique_, pass);
+        if (binding == nullptr) {
+            ThrowGalErrorFromHresult("EffectTechniqueDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
+        if (activePass_ != nullptr && activePass_ != binding) {
+            if (PassSink* const sink = GetPassSink()) {
+                sink->OnEndPass(*activePass_);
+            }
+        }
+        // The snapshot points at the textures bound now; keep them alive with the pass.
+        passHolds_ = effect->TextureHolds();
+        activePass_ = binding;
+        if (PassSink* const sink = GetPassSink()) {
+            sink->OnBeginPass(*binding);
         }
     }
 
     void EffectTechniqueDiligent::EndPass()
-    {}
+    {
+        if (!beginEndActive_) {
+            ThrowGalError("EffectTechniqueDiligent.cpp", __LINE__, "effect technique begin/end mismatch");
+        }
+        static_cast<void>(LockEffect(effect_, "EffectTechniqueDiligent.cpp", __LINE__));
+        if (activePass_ != nullptr) {
+            if (PassSink* const sink = GetPassSink()) {
+                sink->OnEndPass(*activePass_);
+            }
+            activePass_ = nullptr;
+        }
+        passHolds_.clear();
+    }
+
+    void EffectTechniqueDiligent::CommitChanges()
+    {
+        if (!beginEndActive_) {
+            ThrowGalError("EffectTechniqueDiligent.cpp", 0, "effect technique begin/end mismatch");
+        }
+        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, "EffectTechniqueDiligent.cpp", 0);
+        if (activePass_ != nullptr) {
+            passHolds_ = effect->TextureHolds();
+            effect->Gpu().CommitChanges(activePass_);
+        }
+    }
 
     bool EffectTechniqueDiligent::GetAnnotationBool(bool* const outValue, const msvc8::string& annotationName)
     {
-        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, __LINE__);
-        ID3DXEffect* const dx = effect->GetDxEffect();
-        BOOL raw = FALSE;
-        if (!ReadAnnotation(dx, handle_, annotationName, &raw, [dx](D3DXHANDLE h, BOOL* v) { return dx->GetBool(h, v); }, __LINE__)) {
-            return false;
-        }
-        *outValue = (raw == 1);
-        return true;
+        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, "EffectTechniqueDiligent.cpp", __LINE__);
+        return ReadBool(effect->Gpu().GetMetadata().techniques[static_cast<std::size_t>(technique_)].annotations, outValue, annotationName,
+                        "EffectTechniqueDiligent.cpp", __LINE__);
     }
 
     bool EffectTechniqueDiligent::GetAnnotationInt(int* const outValue, const msvc8::string& annotationName)
     {
-        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, __LINE__);
-        ID3DXEffect* const dx = effect->GetDxEffect();
-        return ReadAnnotation(dx, handle_, annotationName, outValue, [dx](D3DXHANDLE h, int* v) { return dx->GetInt(h, v); }, __LINE__);
+        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, "EffectTechniqueDiligent.cpp", __LINE__);
+        return ReadInt(effect->Gpu().GetMetadata().techniques[static_cast<std::size_t>(technique_)].annotations, outValue, annotationName,
+                       "EffectTechniqueDiligent.cpp", __LINE__);
     }
 
     bool EffectTechniqueDiligent::GetAnnotationFloat(float* const outValue, const msvc8::string& annotationName)
     {
-        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, __LINE__);
-        ID3DXEffect* const dx = effect->GetDxEffect();
-        return ReadAnnotation(dx, handle_, annotationName, outValue, [dx](D3DXHANDLE h, float* v) { return dx->GetFloat(h, v); }, __LINE__);
+        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, "EffectTechniqueDiligent.cpp", __LINE__);
+        return ReadFloat(effect->Gpu().GetMetadata().techniques[static_cast<std::size_t>(technique_)].annotations, outValue, annotationName,
+                         "EffectTechniqueDiligent.cpp", __LINE__);
     }
 
     bool EffectTechniqueDiligent::GetAnnotationString(msvc8::string* const outValue, const msvc8::string& annotationName)
     {
-        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, __LINE__);
-        ID3DXEffect* const dx = effect->GetDxEffect();
-        const char* text = nullptr;
-        if (!ReadAnnotation(dx, handle_, annotationName, &text, [dx](D3DXHANDLE h, const char** v) { return dx->GetString(h, v); }, __LINE__)) {
-            return false;
-        }
-        outValue->assign_owned(text != nullptr ? text : "");
-        return true;
+        const boost::shared_ptr<EffectDiligent> effect = LockEffect(effect_, "EffectTechniqueDiligent.cpp", __LINE__);
+        return ReadString(effect->Gpu().GetMetadata().techniques[static_cast<std::size_t>(technique_)].annotations, outValue, annotationName,
+                          "EffectTechniqueDiligent.cpp", __LINE__);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -482,11 +498,11 @@ namespace gpg::gal::diligent
     EffectVariableDiligent::EffectVariableDiligent(
         const char* const name,
         const boost::shared_ptr<EffectDiligent>& effect,
-        const D3DXHANDLE handle
+        const int parameter
     )
         : name_(name),
           effect_(effect),
-          handle_(handle)
+          parameter_(parameter)
     {
         if (effect_.expired()) {
             ThrowGalError("EffectVariableDiligent.cpp", __LINE__, "invalid effect specified");
@@ -495,9 +511,9 @@ namespace gpg::gal::diligent
 
     EffectVariableDiligent::~EffectVariableDiligent() = default;
 
-    ID3DXEffect* EffectVariableDiligent::Effect()
+    boost::shared_ptr<EffectDiligent> EffectVariableDiligent::Effect(const int line)
     {
-        return LockEffect(effect_, __LINE__)->GetDxEffect();
+        return LockEffect(effect_, "EffectVariableDiligent.cpp", line);
     }
 
     msvc8::string* EffectVariableDiligent::GetName()
@@ -505,64 +521,96 @@ namespace gpg::gal::diligent
         return &name_;
     }
 
-    // Nothing is drawn in this step, so there is nothing to bind a texture to.
+    // ID3DXEffect::SetTexture: a null object unbinds; otherwise the draw path's object exposes its
+    // shader resource view through ShaderResourceSource (PassBinding.h).
+    void EffectVariableDiligent::BindTexture(EffectDiligent::TextureHold hold, void* const source, const int line)
+    {
+        const boost::shared_ptr<EffectDiligent> effect = Effect(line);
+        auto* const resource = static_cast<ShaderResourceSource*>(source);
+        if (!effect->Gpu().SetTexture(parameter_, resource)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", line, D3DERR_INVALIDCALL);
+        }
+        effect->TextureHolds()[static_cast<std::size_t>(parameter_)] = std::move(hold);
+    }
+
     void EffectVariableDiligent::SetCubeRenderTarget(const boost::shared_ptr<CubeRenderTarget> cubeTarget)
     {
-        static_cast<void>(cubeTarget);
-        static_cast<void>(Effect());
+        EffectDiligent::TextureHold hold;
+        hold.cubeTarget = cubeTarget;
+        BindTexture(std::move(hold), dynamic_cast<ShaderResourceSource*>(cubeTarget.get()), __LINE__);
     }
 
     void EffectVariableDiligent::SetRenderTarget(const boost::shared_ptr<RenderTarget> renderTarget)
     {
-        static_cast<void>(renderTarget);
-        static_cast<void>(Effect());
+        EffectDiligent::TextureHold hold;
+        hold.renderTarget = renderTarget;
+        BindTexture(std::move(hold), dynamic_cast<ShaderResourceSource*>(renderTarget.get()), __LINE__);
     }
 
     void EffectVariableDiligent::SetTexture(const boost::shared_ptr<Texture> texture)
     {
-        static_cast<void>(texture);
-        static_cast<void>(Effect());
+        EffectDiligent::TextureHold hold;
+        hold.texture = texture;
+        BindTexture(std::move(hold), dynamic_cast<ShaderResourceSource*>(texture.get()), __LINE__);
     }
 
-    // The numeric setters forward to D3DX as EffectVariableD3D9 does (D3D9Interfaces.cpp:4403-4550).
+    // The numeric setters: ID3DXEffect's semantics (EffectsDiligentGpu.h), the D3D9 backend's errors
+    // (EffectVariableD3D9, D3D9Interfaces.cpp:4403-4550: a failed D3DX call throws gal::Error).
     void EffectVariableDiligent::SetMatrix4x4(const Matrix* const matrix)
     {
-        CheckSet(Effect()->SetMatrix(handle_, reinterpret_cast<const D3DXMATRIX*>(matrix)), __LINE__);
+        if (!Effect(__LINE__)->Gpu().SetMatrices(parameter_, reinterpret_cast<const float*>(matrix), 1U)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     void EffectVariableDiligent::SetFloatArray(const std::uint32_t count, const float* const values)
     {
-        CheckSet(Effect()->SetFloatArray(handle_, values, count), __LINE__);
+        if (!Effect(__LINE__)->Gpu().SetFloats(parameter_, values, count)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     void EffectVariableDiligent::SetVector(const float* const vector4)
     {
-        CheckSet(Effect()->SetVector(handle_, reinterpret_cast<const D3DXVECTOR4*>(vector4)), __LINE__);
+        if (!Effect(__LINE__)->Gpu().SetVectors(parameter_, vector4, 1U)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     void EffectVariableDiligent::SetValue(const void* const data, const std::uint32_t byteCount)
     {
-        CheckSet(Effect()->SetValue(handle_, data, byteCount), __LINE__);
+        if (!Effect(__LINE__)->Gpu().SetRaw(parameter_, data, byteCount)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     void EffectVariableDiligent::SetFloat(const float value)
     {
-        CheckSet(Effect()->SetFloat(handle_, value), __LINE__);
+        if (!Effect(__LINE__)->Gpu().SetFloats(parameter_, &value, 1U)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     void EffectVariableDiligent::SetInt(const int value)
     {
-        CheckSet(Effect()->SetInt(handle_, value), __LINE__);
+        if (!Effect(__LINE__)->Gpu().SetInts(parameter_, &value, 1U)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     void EffectVariableDiligent::SetBool(const bool value)
     {
-        CheckSet(Effect()->SetBool(handle_, value ? TRUE : FALSE), __LINE__);
+        const int raw = value ? 1 : 0;
+        if (!Effect(__LINE__)->Gpu().SetBools(parameter_, &raw, 1U)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     void EffectVariableDiligent::SetMatrixArray(const std::uint32_t count, const Matrix* const matrices)
     {
-        CheckSet(Effect()->SetMatrixArray(handle_, reinterpret_cast<const D3DXMATRIX*>(matrices), count), __LINE__);
+        if (!Effect(__LINE__)->Gpu().SetMatrices(parameter_, reinterpret_cast<const float*>(matrices), count)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     // The vectors themselves. EffectVariableD3D9::SetVectorArray (D3D9Interfaces.cpp:4445-4458)
@@ -570,40 +618,36 @@ namespace gpg::gal::diligent
     // nothing in the binary calls the slot, and a new backend has no reason to copy it.
     void EffectVariableDiligent::SetVectorArray(const std::uint32_t count, const float* const vectors4)
     {
-        CheckSet(Effect()->SetVectorArray(handle_, reinterpret_cast<const D3DXVECTOR4*>(vectors4), count), __LINE__);
+        if (!Effect(__LINE__)->Gpu().SetVectors(parameter_, vectors4, count)) {
+            ThrowGalErrorFromHresult("EffectVariableDiligent.cpp", __LINE__, D3DERR_INVALIDCALL);
+        }
     }
 
     bool EffectVariableDiligent::GetAnnotationBool(bool* const outValue, const msvc8::string& annotationName)
     {
-        ID3DXEffect* const dx = Effect();
-        BOOL raw = FALSE;
-        if (!ReadAnnotation(dx, handle_, annotationName, &raw, [dx](D3DXHANDLE h, BOOL* v) { return dx->GetBool(h, v); }, __LINE__)) {
-            return false;
-        }
-        *outValue = (raw == 1);
-        return true;
+        const boost::shared_ptr<EffectDiligent> effect = Effect(__LINE__);
+        return ReadBool(effect->Gpu().GetMetadata().parameters[static_cast<std::size_t>(parameter_)].annotations, outValue,
+                        annotationName, "EffectVariableDiligent.cpp", __LINE__);
     }
 
     bool EffectVariableDiligent::GetAnnotationInt(int* const outValue, const msvc8::string& annotationName)
     {
-        ID3DXEffect* const dx = Effect();
-        return ReadAnnotation(dx, handle_, annotationName, outValue, [dx](D3DXHANDLE h, int* v) { return dx->GetInt(h, v); }, __LINE__);
+        const boost::shared_ptr<EffectDiligent> effect = Effect(__LINE__);
+        return ReadInt(effect->Gpu().GetMetadata().parameters[static_cast<std::size_t>(parameter_)].annotations, outValue,
+                       annotationName, "EffectVariableDiligent.cpp", __LINE__);
     }
 
     bool EffectVariableDiligent::GetAnnotationFloat(float* const outValue, const msvc8::string& annotationName)
     {
-        ID3DXEffect* const dx = Effect();
-        return ReadAnnotation(dx, handle_, annotationName, outValue, [dx](D3DXHANDLE h, float* v) { return dx->GetFloat(h, v); }, __LINE__);
+        const boost::shared_ptr<EffectDiligent> effect = Effect(__LINE__);
+        return ReadFloat(effect->Gpu().GetMetadata().parameters[static_cast<std::size_t>(parameter_)].annotations, outValue,
+                         annotationName, "EffectVariableDiligent.cpp", __LINE__);
     }
 
     bool EffectVariableDiligent::GetAnnotationString(msvc8::string* const outValue, const msvc8::string& annotationName)
     {
-        ID3DXEffect* const dx = Effect();
-        const char* text = nullptr;
-        if (!ReadAnnotation(dx, handle_, annotationName, &text, [dx](D3DXHANDLE h, const char** v) { return dx->GetString(h, v); }, __LINE__)) {
-            return false;
-        }
-        outValue->assign_owned(text != nullptr ? text : "");
-        return true;
+        const boost::shared_ptr<EffectDiligent> effect = Effect(__LINE__);
+        return ReadString(effect->Gpu().GetMetadata().parameters[static_cast<std::size_t>(parameter_)].annotations, outValue,
+                          annotationName, "EffectVariableDiligent.cpp", __LINE__);
     }
 } // namespace gpg::gal::diligent

@@ -10,9 +10,12 @@
 #include <mutex>
 
 #include "Common/interface/RefCntAutoPtr.hpp"
+#include "Graphics/GraphicsEngine/interface/Buffer.h"
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
+#include "Graphics/GraphicsEngine/interface/Texture.h"
+#include "Graphics/GraphicsEngine/interface/TextureView.h"
 #include "Graphics/GraphicsEngineD3D11/interface/EngineFactoryD3D11.h"
 #include "Graphics/GraphicsEngineD3D11/interface/RenderDeviceD3D11.h"
 #include "Primitives/interface/DebugOutput.h"
@@ -69,33 +72,6 @@ namespace gpg::gal::diligent
             }
         }
 
-        /**
-         * The engine runs the main thread under 24-bit x87 precision (CScApp::Init; the headless
-         * runner does the same, m3a-result.txt). The shader compiler and the driver are not written
-         * for that, so device and shader creation run at the CRT default and the engine's control
-         * word is put back afterwards (m6u-PLAN.txt B, "save and restore the x87 control word").
-         */
-        class ScopedDefaultFpu
-        {
-        public:
-            ScopedDefaultFpu()
-            {
-                unsigned int unused = 0;
-                ::_controlfp_s(&mSaved, 0, 0);
-                ::_controlfp_s(&unused, _PC_53, _MCW_PC);
-            }
-            ~ScopedDefaultFpu()
-            {
-                unsigned int unused = 0;
-                ::_controlfp_s(&unused, mSaved & _MCW_PC, _MCW_PC);
-            }
-            ScopedDefaultFpu(const ScopedDefaultFpu&) = delete;
-            ScopedDefaultFpu& operator=(const ScopedDefaultFpu&) = delete;
-
-        private:
-            unsigned int mSaved = 0;
-        };
-
         // A triangle covering the target, generated from SV_VertexID: no vertex buffer.
         constexpr const char* kPresentVS = R"(
 struct VSOutput { float4 position : SV_POSITION; };
@@ -120,15 +96,62 @@ float4 main(VSOutput input) : SV_TARGET
 )";
     } // namespace
 
+    // ---------------------------------------------------------------------------------------------
+
+    ScopedDefaultFpu::ScopedDefaultFpu()
+    {
+        unsigned int unused = 0;
+        ::_controlfp_s(&mSaved, 0, 0);
+        ::_controlfp_s(&unused, _PC_53, _MCW_PC);
+    }
+
+    ScopedDefaultFpu::~ScopedDefaultFpu()
+    {
+        unsigned int unused = 0;
+        ::_controlfp_s(&unused, mSaved & _MCW_PC, _MCW_PC);
+    }
+
+    GpuShared::GpuShared(dg::IRenderDevice* const device, dg::IDeviceContext* const context, const std::uint32_t renderThreadId)
+        : device_(device),
+          context_(context),
+          renderThreadId_(renderThreadId)
+    {
+        if (device_ != nullptr) {
+            device_->AddRef();
+        }
+        if (context_ != nullptr) {
+            context_->AddRef();
+        }
+    }
+
+    GpuShared::~GpuShared()
+    {
+        if (context_ != nullptr) {
+            context_->Release();
+        }
+        if (device_ != nullptr) {
+            device_->Release();
+        }
+    }
+
+    bool GpuShared::OnRenderThread() const
+    {
+        return ::GetCurrentThreadId() == renderThreadId_;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+
     struct DiligentHost::Impl
     {
         dg::RefCntAutoPtr<dg::IRenderDevice> device;
         dg::RefCntAutoPtr<dg::IDeviceContext> context;
         dg::RefCntAutoPtr<dg::ISwapChain> swapChain;
         dg::RefCntAutoPtr<dg::ITexture> head;
-        dg::RefCntAutoPtr<dg::ITexture> headReadback; // staging copy of the head, made on first ReadHead
         dg::RefCntAutoPtr<dg::IPipelineState> presentPipeline;
         dg::RefCntAutoPtr<dg::IShaderResourceBinding> presentBinding;
+        // Staging textures for ReadTexture, one per (format, size).
+        std::vector<dg::RefCntAutoPtr<dg::ITexture>> readbacks;
+        std::shared_ptr<GpuShared> gpu;
         ID3D11InfoQueue* infoQueue = nullptr;
         DebugLayerCounts debugCounts;
         std::uint32_t width = 0;
@@ -137,7 +160,6 @@ float4 main(VSOutput input) : SV_TARGET
         bool CreateHead(std::string* error)
         {
             presentBinding.Release();
-            headReadback.Release();
             head.Release();
 
             dg::TextureDesc desc;
@@ -145,11 +167,13 @@ float4 main(VSOutput input) : SV_TARGET
             desc.Type = dg::RESOURCE_DIM_TEX_2D;
             desc.Width = width;
             desc.Height = height;
+            // The D3D9 back buffer is A8R8G8B8 (D3D9Interfaces.cpp:1918). RGBA8_UNORM holds the same
+            // values; GetRenderTargetData swaps to D3D9's byte order. UNORM, not SRGB: FA renders in
+            // gamma space (m6u-DIL.txt 9).
             desc.Format = dg::TEX_FORMAT_RGBA8_UNORM;
             desc.MipLevels = 1;
             desc.Usage = dg::USAGE_DEFAULT;
             desc.BindFlags = dg::BIND_RENDER_TARGET | dg::BIND_SHADER_RESOURCE;
-            // Black, as D3D9's CreateHeads leaves a fresh back buffer (Clear(true, ..., 0)).
             desc.ClearValue.Format = desc.Format;
             device->CreateTexture(desc, nullptr, &head);
             if (!head) {
@@ -301,6 +325,7 @@ float4 main(VSOutput input) : SV_TARGET
             Destroy();
             return false;
         }
+        mImpl->gpu = std::make_shared<GpuShared>(mImpl->device, mImpl->context, static_cast<std::uint32_t>(::GetCurrentThreadId()));
         return true;
     }
 
@@ -317,9 +342,10 @@ float4 main(VSOutput input) : SV_TARGET
             mImpl->infoQueue->Release();
             mImpl->infoQueue = nullptr;
         }
+        mImpl->gpu.reset();
+        mImpl->readbacks.clear();
         mImpl->presentBinding.Release();
         mImpl->presentPipeline.Release();
-        mImpl->headReadback.Release();
         mImpl->head.Release();
         mImpl->swapChain.Release();
         mImpl->context.Release();
@@ -329,6 +355,16 @@ float4 main(VSOutput input) : SV_TARGET
     bool DiligentHost::IsCreated() const
     {
         return mImpl->device && mImpl->swapChain;
+    }
+
+    const std::shared_ptr<GpuShared>& DiligentHost::GetGpu() const
+    {
+        return mImpl->gpu;
+    }
+
+    dg::ITexture* DiligentHost::GetHeadTexture() const
+    {
+        return mImpl->head;
     }
 
     bool DiligentHost::Resize(const std::uint32_t width, const std::uint32_t height, std::string* const error)
@@ -341,6 +377,7 @@ float4 main(VSOutput input) : SV_TARGET
             return true;
         }
         ScopedDefaultFpu fpu;
+        std::lock_guard<std::recursive_mutex> lock(mImpl->gpu->Lock());
         mImpl->context->SetRenderTargets(0, nullptr, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_NONE);
         mImpl->swapChain->Resize(width, height);
         mImpl->width = width;
@@ -348,21 +385,12 @@ float4 main(VSOutput input) : SV_TARGET
         return mImpl->CreateHead(error);
     }
 
-    void DiligentHost::ClearHead(const float rgba[4])
-    {
-        if (!IsCreated()) {
-            return;
-        }
-        dg::ITextureView* target = mImpl->head->GetDefaultView(dg::TEXTURE_VIEW_RENDER_TARGET);
-        mImpl->context->SetRenderTargets(1, &target, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        mImpl->context->ClearRenderTarget(target, rgba, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-    }
-
     void DiligentHost::Present(const std::uint32_t syncInterval)
     {
         if (!IsCreated()) {
             return;
         }
+        std::lock_guard<std::recursive_mutex> lock(mImpl->gpu->Lock());
         dg::ITextureView* backBuffer = mImpl->swapChain->GetCurrentBackBufferRTV();
         mImpl->context->SetRenderTargets(1, &backBuffer, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         const dg::SwapChainDesc& desc = mImpl->swapChain->GetDesc();
@@ -376,61 +404,129 @@ float4 main(VSOutput input) : SV_TARGET
         draw.NumVertices = 3;
         draw.Flags = dg::DRAW_FLAG_VERIFY_ALL;
         mImpl->context->Draw(draw);
-        // Unbind before presenting so the next frame's clear rebinds the head explicitly.
+        // Unbind before presenting; the device rebinds its own targets at the next clear or draw.
         mImpl->context->SetRenderTargets(0, nullptr, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_NONE);
         mImpl->swapChain->Present(syncInterval);
+        mImpl->gpu->AdvanceFrame();
     }
 
     // The staging-texture readback of Diligent's own screen capture (DiligentTools ScreenCapture:
     // CopyTexture with both transitions, then a map for reading). This waits for the GPU instead of
     // a fence: the frame harness reads a few chosen frames, and D3D9's GetRenderTargetData stalls
     // the same way.
-    bool DiligentHost::ReadHead(std::vector<std::uint8_t>* const out, std::uint32_t* const width, std::uint32_t* const height)
+    bool DiligentHost::ReadTextureBgra8(
+        dg::ITexture* const texture,
+        std::vector<std::uint8_t>* const out,
+        std::uint32_t* const width,
+        std::uint32_t* const height
+    )
     {
-        if (!IsCreated() || !mImpl->head) {
+        if (!IsCreated() || texture == nullptr) {
             return false;
         }
-        if (!mImpl->headReadback) {
+        std::lock_guard<std::recursive_mutex> lock(mImpl->gpu->Lock());
+        const dg::TextureDesc& sourceDesc = texture->GetDesc();
+        bool swapRedBlue = false;
+        switch (sourceDesc.Format) {
+        case dg::TEX_FORMAT_RGBA8_UNORM:
+        case dg::TEX_FORMAT_RGBA8_UNORM_SRGB:
+            swapRedBlue = true;
+            break;
+        case dg::TEX_FORMAT_BGRA8_UNORM:
+        case dg::TEX_FORMAT_BGRA8_UNORM_SRGB:
+            break;
+        default:
+            return false;
+        }
+
+        dg::ITexture* staging = nullptr;
+        for (const auto& candidate : mImpl->readbacks) {
+            const dg::TextureDesc& desc = candidate->GetDesc();
+            if (desc.Width == sourceDesc.Width && desc.Height == sourceDesc.Height && desc.Format == sourceDesc.Format) {
+                staging = candidate;
+                break;
+            }
+        }
+        if (staging == nullptr) {
             dg::TextureDesc desc;
-            desc.Name = "gal head 0 readback";
+            desc.Name = "gal readback";
             desc.Type = dg::RESOURCE_DIM_TEX_2D;
-            desc.Width = mImpl->width;
-            desc.Height = mImpl->height;
-            desc.Format = dg::TEX_FORMAT_RGBA8_UNORM;
+            desc.Width = sourceDesc.Width;
+            desc.Height = sourceDesc.Height;
+            desc.Format = sourceDesc.Format;
             desc.MipLevels = 1;
             desc.Usage = dg::USAGE_STAGING;
             desc.CPUAccessFlags = dg::CPU_ACCESS_READ;
-            mImpl->device->CreateTexture(desc, nullptr, &mImpl->headReadback);
-            if (!mImpl->headReadback) {
+            dg::RefCntAutoPtr<dg::ITexture> created;
+            mImpl->device->CreateTexture(desc, nullptr, &created);
+            if (!created) {
                 return false;
             }
+            staging = created;
+            mImpl->readbacks.push_back(std::move(created));
         }
 
-        // The head may still be bound as the render target (Clear binds it); a copy source must not be.
+        // The source may still be bound as the render target; a copy source must not be. The device
+        // rebinds its targets at the next clear or draw (DrawPath::InvalidateTargets).
         mImpl->context->SetRenderTargets(0, nullptr, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_NONE);
-        const dg::CopyTextureAttribs copy{
-            mImpl->head, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, mImpl->headReadback,
-            dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION};
+        dg::CopyTextureAttribs copy{texture, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, staging,
+                                    dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION};
         mImpl->context->CopyTexture(copy);
         mImpl->context->WaitForIdle();
 
         dg::MappedTextureSubresource mapped;
-        mImpl->context->MapTextureSubresource(mImpl->headReadback, 0, 0, dg::MAP_READ, dg::MAP_FLAG_NONE, nullptr, mapped);
+        mImpl->context->MapTextureSubresource(staging, 0, 0, dg::MAP_READ, dg::MAP_FLAG_NONE, nullptr, mapped);
         if (mapped.pData == nullptr) {
             return false;
         }
-        const std::size_t rowBytes = static_cast<std::size_t>(mImpl->width) * 4u;
-        out->resize(rowBytes * mImpl->height);
-        for (std::uint32_t row = 0; row < mImpl->height; ++row) {
-            std::memcpy(
-                out->data() + rowBytes * row,
-                static_cast<const std::uint8_t*>(mapped.pData) + static_cast<std::size_t>(mapped.Stride) * row,
-                rowBytes
-            );
+        const std::size_t rowBytes = static_cast<std::size_t>(sourceDesc.Width) * 4u;
+        out->resize(rowBytes * sourceDesc.Height);
+        for (std::uint32_t row = 0; row < sourceDesc.Height; ++row) {
+            const std::uint8_t* const from = static_cast<const std::uint8_t*>(mapped.pData) + static_cast<std::size_t>(mapped.Stride) * row;
+            std::uint8_t* const to = out->data() + rowBytes * row;
+            if (!swapRedBlue) {
+                std::memcpy(to, from, rowBytes);
+                continue;
+            }
+            for (std::uint32_t x = 0; x < sourceDesc.Width; ++x) {
+                to[x * 4u + 0u] = from[x * 4u + 2u]; // B
+                to[x * 4u + 1u] = from[x * 4u + 1u]; // G
+                to[x * 4u + 2u] = from[x * 4u + 0u]; // R
+                to[x * 4u + 3u] = from[x * 4u + 3u]; // A
+            }
         }
-        mImpl->context->UnmapTextureSubresource(mImpl->headReadback, 0, 0);
-        *width = mImpl->width;
-        *height = mImpl->height;
+        mImpl->context->UnmapTextureSubresource(staging, 0, 0);
+        *width = sourceDesc.Width;
+        *height = sourceDesc.Height;
+        return true;
+    }
+
+    bool DiligentHost::ReadBuffer(dg::IBuffer* const buffer, const std::uint32_t size, std::vector<std::uint8_t>* const out)
+    {
+        if (!IsCreated() || buffer == nullptr || size == 0U) {
+            return false;
+        }
+        std::lock_guard<std::recursive_mutex> lock(mImpl->gpu->Lock());
+        dg::BufferDesc desc;
+        desc.Name = "gal buffer readback";
+        desc.Size = size;
+        desc.Usage = dg::USAGE_STAGING;
+        desc.CPUAccessFlags = dg::CPU_ACCESS_READ;
+        dg::RefCntAutoPtr<dg::IBuffer> staging;
+        mImpl->device->CreateBuffer(desc, nullptr, &staging);
+        if (!staging) {
+            return false;
+        }
+        mImpl->context->CopyBuffer(buffer, 0, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, staging, 0, size,
+                                   dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        mImpl->context->WaitForIdle();
+        void* mapped = nullptr;
+        mImpl->context->MapBuffer(staging, dg::MAP_READ, dg::MAP_FLAG_NONE, mapped);
+        if (mapped == nullptr) {
+            return false;
+        }
+        out->assign(static_cast<const std::uint8_t*>(mapped), static_cast<const std::uint8_t*>(mapped) + size);
+        mImpl->context->UnmapBuffer(staging, dg::MAP_READ);
         return true;
     }
 
@@ -591,5 +687,449 @@ float4 main(VSOutput input) : SV_TARGET
     std::uint32_t DiligentHost::GetHeadHeight() const
     {
         return mImpl->height;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Formats
+
+    namespace
+    {
+        constexpr std::uint32_t FourCC(const char a, const char b, const char c, const char d)
+        {
+            return static_cast<std::uint32_t>(static_cast<std::uint8_t>(a)) | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(b)) << 8U) |
+                   (static_cast<std::uint32_t>(static_cast<std::uint8_t>(c)) << 16U) |
+                   (static_cast<std::uint32_t>(static_cast<std::uint8_t>(d)) << 24U);
+        }
+        // D3DFORMAT values (d3d9types.h).
+        constexpr std::uint32_t kD3DFmtR8G8B8 = 20, kD3DFmtA8R8G8B8 = 21, kD3DFmtX8R8G8B8 = 22, kD3DFmtR5G6B5 = 23,
+                                kD3DFmtX1R5G5B5 = 24, kD3DFmtA1R5G5B5 = 25, kD3DFmtA4R4G4B4 = 26, kD3DFmtA8 = 28,
+                                kD3DFmtA2B10G10R10 = 31, kD3DFmtA8B8G8R8 = 32, kD3DFmtG16R16 = 34, kD3DFmtA2R10G10B10 = 35,
+                                kD3DFmtA16B16G16R16 = 36, kD3DFmtL8 = 50, kD3DFmtA8L8 = 51, kD3DFmtR16F = 111, kD3DFmtG16R16F = 112,
+                                kD3DFmtA16B16G16R16F = 113, kD3DFmtR32F = 114, kD3DFmtG32R32F = 115, kD3DFmtA32B32G32R32F = 116;
+        constexpr std::uint32_t kD3DFmtDxt1 = FourCC('D', 'X', 'T', '1'), kD3DFmtDxt2 = FourCC('D', 'X', 'T', '2'),
+                                kD3DFmtDxt3 = FourCC('D', 'X', 'T', '3'), kD3DFmtDxt4 = FourCC('D', 'X', 'T', '4'),
+                                kD3DFmtDxt5 = FourCC('D', 'X', 'T', '5');
+    } // namespace
+
+    std::uint32_t TextureFormatForD3D9(const std::uint32_t d3dFormat, TexelConversion* const conversion)
+    {
+        *conversion = TexelConversion::None;
+        switch (d3dFormat) {
+        case kD3DFmtA8R8G8B8:
+            return dg::TEX_FORMAT_BGRA8_UNORM; // same bytes: B, G, R, A
+        case kD3DFmtX8R8G8B8:
+            return dg::TEX_FORMAT_BGRX8_UNORM; // samples alpha 1, as D3D9
+        case kD3DFmtA8B8G8R8:
+            return dg::TEX_FORMAT_RGBA8_UNORM;
+        case kD3DFmtR5G6B5:
+            return dg::TEX_FORMAT_B5G6R5_UNORM;
+        case kD3DFmtA1R5G5B5:
+            return dg::TEX_FORMAT_B5G5R5A1_UNORM; // same bit layout
+        case kD3DFmtX1R5G5B5:
+            *conversion = TexelConversion::X1R5G5B5ToBgra8;
+            return dg::TEX_FORMAT_BGRA8_UNORM;
+        case kD3DFmtA4R4G4B4:
+            *conversion = TexelConversion::A4R4G4B4ToBgra8;
+            return dg::TEX_FORMAT_BGRA8_UNORM;
+        case kD3DFmtR8G8B8:
+            *conversion = TexelConversion::R8G8B8ToBgra8;
+            return dg::TEX_FORMAT_BGRA8_UNORM;
+        case kD3DFmtA8:
+            return dg::TEX_FORMAT_A8_UNORM; // samples (0, 0, 0, A) on both
+        case kD3DFmtL8:
+            *conversion = TexelConversion::L8ToBgra8;
+            return dg::TEX_FORMAT_BGRA8_UNORM;
+        case kD3DFmtA8L8:
+            *conversion = TexelConversion::A8L8ToBgra8;
+            return dg::TEX_FORMAT_BGRA8_UNORM;
+        case kD3DFmtA2B10G10R10:
+            return dg::TEX_FORMAT_RGB10A2_UNORM;
+        case kD3DFmtA2R10G10B10:
+            *conversion = TexelConversion::A2R10G10B10ToRgb10A2;
+            return dg::TEX_FORMAT_RGB10A2_UNORM;
+        case kD3DFmtG16R16:
+            return dg::TEX_FORMAT_RG16_UNORM;
+        case kD3DFmtA16B16G16R16:
+            return dg::TEX_FORMAT_RGBA16_UNORM;
+        case kD3DFmtDxt1:
+            return dg::TEX_FORMAT_BC1_UNORM;
+        case kD3DFmtDxt2:
+        case kD3DFmtDxt3:
+            return dg::TEX_FORMAT_BC2_UNORM; // DXT2 is DXT3 with premultiplied colour: the same blocks
+        case kD3DFmtDxt4:
+        case kD3DFmtDxt5:
+            return dg::TEX_FORMAT_BC3_UNORM;
+        case kD3DFmtR16F:
+            return dg::TEX_FORMAT_R16_FLOAT;
+        case kD3DFmtG16R16F:
+            return dg::TEX_FORMAT_RG16_FLOAT;
+        case kD3DFmtA16B16G16R16F:
+            return dg::TEX_FORMAT_RGBA16_FLOAT;
+        case kD3DFmtR32F:
+            return dg::TEX_FORMAT_R32_FLOAT;
+        case kD3DFmtG32R32F:
+            return dg::TEX_FORMAT_RG32_FLOAT;
+        case kD3DFmtA32B32G32R32F:
+            return dg::TEX_FORMAT_RGBA32_FLOAT;
+        default:
+            return 0U;
+        }
+    }
+
+    std::uint32_t D3D9FormatBytes(const std::uint32_t d3dFormat, bool* const blockCompressed)
+    {
+        *blockCompressed = false;
+        switch (d3dFormat) {
+        case kD3DFmtDxt1:
+            *blockCompressed = true;
+            return 8U;
+        case kD3DFmtDxt2:
+        case kD3DFmtDxt3:
+        case kD3DFmtDxt4:
+        case kD3DFmtDxt5:
+            *blockCompressed = true;
+            return 16U;
+        case kD3DFmtA8:
+        case kD3DFmtL8:
+            return 1U;
+        case kD3DFmtR5G6B5:
+        case kD3DFmtX1R5G5B5:
+        case kD3DFmtA1R5G5B5:
+        case kD3DFmtA4R4G4B4:
+        case kD3DFmtA8L8:
+        case kD3DFmtR16F:
+            return 2U;
+        case kD3DFmtR8G8B8:
+            return 3U;
+        case kD3DFmtA16B16G16R16:
+        case kD3DFmtA16B16G16R16F:
+        case kD3DFmtG32R32F:
+            return 8U;
+        case kD3DFmtA32B32G32R32F:
+            return 16U;
+        default:
+            return 4U;
+        }
+    }
+
+    std::uint32_t RenderTargetFormatForToken(const std::uint32_t token)
+    {
+        switch (token) {
+        case 1U:
+            return dg::TEX_FORMAT_RGB10A2_UNORM;
+        case 4U:
+        case 5U:
+            return dg::TEX_FORMAT_B5G5R5A1_UNORM;
+        case 6U:
+            return dg::TEX_FORMAT_B5G6R5_UNORM;
+        case 7U:
+            return dg::TEX_FORMAT_RG16_UNORM;
+        default:
+            return dg::TEX_FORMAT_RGBA8_UNORM; // 2 A8R8G8B8, 3 X8R8G8B8
+        }
+    }
+
+    std::uint32_t DepthStencilFormatForToken(const std::uint32_t token)
+    {
+        switch (token) {
+        case 1U:
+            return dg::TEX_FORMAT_D32_FLOAT;
+        case 6U:
+            return dg::TEX_FORMAT_D16_UNORM;
+        default:
+            return dg::TEX_FORMAT_D24_UNORM_S8_UINT; // 2 D15S1, 3 D24S8, 4 D24X8, 5 D24X4S4
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // GpuTexture
+
+    struct GpuTexture::Impl
+    {
+        dg::RefCntAutoPtr<dg::ITexture> texture;
+        std::vector<dg::RefCntAutoPtr<dg::ITextureView>> faceViews; // cube render-target faces
+    };
+
+    GpuTexture::GpuTexture()
+        : impl_(std::make_unique<Impl>())
+    {}
+
+    GpuTexture::~GpuTexture() = default;
+
+    std::unique_ptr<GpuTexture> GpuTexture::Create(
+        GpuShared& gpu,
+        const GpuTextureDesc& desc,
+        const GpuSubresource* const initial,
+        const std::uint32_t initialCount,
+        std::string* const error
+    )
+    {
+        std::lock_guard<std::recursive_mutex> lock(gpu.Lock());
+        dg::TextureDesc textureDesc;
+        textureDesc.Name = desc.name;
+        switch (desc.kind) {
+        case GpuTextureDesc::Kind::TextureCube:
+            textureDesc.Type = dg::RESOURCE_DIM_TEX_CUBE;
+            textureDesc.ArraySize = 6;
+            break;
+        case GpuTextureDesc::Kind::Texture3D:
+            textureDesc.Type = dg::RESOURCE_DIM_TEX_3D;
+            textureDesc.Depth = desc.depth;
+            break;
+        default:
+            textureDesc.Type = dg::RESOURCE_DIM_TEX_2D;
+            break;
+        }
+        textureDesc.Width = desc.width;
+        textureDesc.Height = desc.height;
+        textureDesc.Format = static_cast<dg::TEXTURE_FORMAT>(desc.format);
+        textureDesc.MipLevels = desc.mipLevels;
+        textureDesc.Usage = dg::USAGE_DEFAULT;
+        textureDesc.BindFlags = dg::BIND_NONE;
+        if (desc.shaderResource) {
+            textureDesc.BindFlags |= dg::BIND_SHADER_RESOURCE;
+        }
+        if (desc.renderTarget || desc.generateMips) {
+            textureDesc.BindFlags |= dg::BIND_RENDER_TARGET;
+        }
+        if (desc.depthStencil) {
+            textureDesc.BindFlags |= dg::BIND_DEPTH_STENCIL;
+            textureDesc.ClearValue.Format = textureDesc.Format;
+            textureDesc.ClearValue.DepthStencil.Depth = 1.0F;
+        } else if (desc.renderTarget) {
+            textureDesc.ClearValue.Format = textureDesc.Format;
+        }
+        if (desc.generateMips) {
+            textureDesc.MiscFlags = dg::MISC_TEXTURE_FLAG_GENERATE_MIPS;
+        }
+
+        std::vector<dg::TextureSubResData> subresources;
+        dg::TextureData data;
+        if (initial != nullptr && initialCount != 0U) {
+            subresources.resize(initialCount);
+            for (std::uint32_t index = 0; index < initialCount; ++index) {
+                subresources[index].pData = initial[index].data;
+                subresources[index].Stride = initial[index].stride;
+                subresources[index].DepthStride = initial[index].depthStride;
+            }
+            data.pSubResources = subresources.data();
+            data.NumSubresources = initialCount;
+            data.pContext = gpu.Context();
+        }
+        if (!gpu.OnRenderThread()) {
+            ++gpu.Stats().createdOffRenderThread;
+        }
+        ScopedDefaultFpu fpu;
+        auto result = std::unique_ptr<GpuTexture>(new GpuTexture());
+        gpu.Device()->CreateTexture(textureDesc, data.pSubResources != nullptr ? &data : nullptr, &result->impl_->texture);
+        if (!result->impl_->texture) {
+            if (error != nullptr) {
+                *error = "CreateTexture failed for " + std::string(desc.name) + " (" + std::to_string(desc.width) + "x" +
+                         std::to_string(desc.height) + ", format " + std::to_string(desc.format) + ")";
+            }
+            return nullptr;
+        }
+        ++gpu.Stats().texturesCreated;
+        return result;
+    }
+
+    std::unique_ptr<GpuTexture> GpuTexture::Wrap(dg::ITexture* const texture)
+    {
+        auto result = std::unique_ptr<GpuTexture>(new GpuTexture());
+        result->impl_->texture = texture;
+        return result;
+    }
+
+    void GpuTexture::Update(
+        GpuShared& gpu,
+        const std::uint32_t level,
+        const std::uint32_t face,
+        const std::uint32_t x,
+        const std::uint32_t y,
+        const std::uint32_t width,
+        const std::uint32_t height,
+        const GpuSubresource& data
+    )
+    {
+        if (!impl_->texture || width == 0U || height == 0U) {
+            return;
+        }
+        std::lock_guard<std::recursive_mutex> lock(gpu.Lock());
+        const dg::TextureDesc& desc = impl_->texture->GetDesc();
+        const std::uint32_t depth = desc.Type == dg::RESOURCE_DIM_TEX_3D ? std::max<std::uint32_t>(desc.Depth >> level, 1U) : 1U;
+        const dg::Box box(x, x + width, y, y + height, 0, depth);
+        dg::TextureSubResData subresource;
+        subresource.pData = data.data;
+        subresource.Stride = data.stride;
+        subresource.DepthStride = data.depthStride;
+        gpu.Context()->UpdateTexture(impl_->texture, level, face, box, subresource, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+                                     dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        ++gpu.Stats().updateTexture;
+        // Rows of `stride` bytes: texel rows, or block rows for block-compressed formats.
+        const std::uint32_t blockHeight = std::max<std::uint32_t>(gpu.Device()->GetTextureFormatInfo(desc.Format).BlockHeight, 1U);
+        gpu.Stats().updateTextureBytes += static_cast<std::uint64_t>(data.stride) * ((height + blockHeight - 1U) / blockHeight);
+    }
+
+    void GpuTexture::GenerateMips(GpuShared& gpu)
+    {
+        if (!impl_->texture) {
+            return;
+        }
+        std::lock_guard<std::recursive_mutex> lock(gpu.Lock());
+        if (dg::ITextureView* const view = impl_->texture->GetDefaultView(dg::TEXTURE_VIEW_SHADER_RESOURCE)) {
+            gpu.Context()->GenerateMips(view);
+        }
+    }
+
+    dg::ITexture* GpuTexture::Texture() const
+    {
+        return impl_->texture;
+    }
+
+    dg::ITextureView* GpuTexture::ShaderResourceView() const
+    {
+        return impl_->texture ? impl_->texture->GetDefaultView(dg::TEXTURE_VIEW_SHADER_RESOURCE) : nullptr;
+    }
+
+    dg::ITextureView* GpuTexture::RenderTargetView(const std::uint32_t face)
+    {
+        if (!impl_->texture) {
+            return nullptr;
+        }
+        const dg::TextureDesc& desc = impl_->texture->GetDesc();
+        if (desc.Type != dg::RESOURCE_DIM_TEX_CUBE) {
+            return impl_->texture->GetDefaultView(dg::TEXTURE_VIEW_RENDER_TARGET);
+        }
+        // One 2D-array view per cube face (D3DCUBEMAP_FACES order +X, -X, +Y, -Y, +Z, -Z = D3D11's slices).
+        if (impl_->faceViews.empty()) {
+            impl_->faceViews.resize(6);
+        }
+        if (face >= 6U) {
+            return nullptr;
+        }
+        if (!impl_->faceViews[face]) {
+            dg::TextureViewDesc view;
+            view.Name = "gal cube face";
+            view.ViewType = dg::TEXTURE_VIEW_RENDER_TARGET;
+            view.TextureDim = dg::RESOURCE_DIM_TEX_2D_ARRAY;
+            view.MostDetailedMip = 0;
+            view.NumMipLevels = 1;
+            view.FirstArraySlice = face;
+            view.NumArraySlices = 1;
+            impl_->texture->CreateView(view, &impl_->faceViews[face]);
+        }
+        return impl_->faceViews[face];
+    }
+
+    dg::ITextureView* GpuTexture::DepthStencilView() const
+    {
+        return impl_->texture ? impl_->texture->GetDefaultView(dg::TEXTURE_VIEW_DEPTH_STENCIL) : nullptr;
+    }
+
+    std::uint32_t GpuTexture::Width() const
+    {
+        return impl_->texture ? impl_->texture->GetDesc().Width : 0U;
+    }
+
+    std::uint32_t GpuTexture::Height() const
+    {
+        return impl_->texture ? impl_->texture->GetDesc().Height : 0U;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // GpuBuffer
+
+    struct GpuBuffer::Impl
+    {
+        dg::RefCntAutoPtr<dg::IBuffer> buffer;
+        bool dynamic = false;
+    };
+
+    GpuBuffer::GpuBuffer()
+        : impl_(std::make_unique<Impl>())
+    {}
+
+    GpuBuffer::~GpuBuffer() = default;
+
+    std::unique_ptr<GpuBuffer> GpuBuffer::Create(
+        GpuShared& gpu,
+        const std::uint32_t size,
+        const bool indexBuffer,
+        const bool dynamic,
+        const void* const initial,
+        std::string* const error
+    )
+    {
+        std::lock_guard<std::recursive_mutex> lock(gpu.Lock());
+        dg::BufferDesc desc;
+        desc.Name = indexBuffer ? (dynamic ? "gal dynamic index buffer" : "gal index buffer")
+                                : (dynamic ? "gal dynamic vertex buffer" : "gal vertex buffer");
+        desc.Size = size;
+        desc.BindFlags = indexBuffer ? dg::BIND_INDEX_BUFFER : dg::BIND_VERTEX_BUFFER;
+        // D3D9's dynamic buffers (D3DUSAGE_DYNAMIC in the default pool, D3D9Interfaces.cpp:2811-2812,
+        // 2843-2845) are written through Map(DISCARD/NO_OVERWRITE) only; Vulkan and D3D12 keep such
+        // memory in a per-frame ring (DeviceContextVkImpl.cpp:2306-2329) and UpdateBuffer would end the
+        // render pass (VulkanUtilities/CommandBuffer.hpp:526-547, m6u-CRIT.txt R2).
+        desc.Usage = dynamic ? dg::USAGE_DYNAMIC : dg::USAGE_DEFAULT;
+        desc.CPUAccessFlags = dynamic ? dg::CPU_ACCESS_WRITE : dg::CPU_ACCESS_NONE;
+        dg::BufferData data;
+        if (!dynamic && initial != nullptr) {
+            data.pData = initial;
+            data.DataSize = size;
+            data.pContext = gpu.Context();
+        }
+        if (!gpu.OnRenderThread()) {
+            ++gpu.Stats().createdOffRenderThread;
+        }
+        auto result = std::unique_ptr<GpuBuffer>(new GpuBuffer());
+        result->impl_->dynamic = dynamic;
+        gpu.Device()->CreateBuffer(desc, data.pData != nullptr ? &data : nullptr, &result->impl_->buffer);
+        if (!result->impl_->buffer) {
+            if (error != nullptr) {
+                *error = std::string("CreateBuffer failed for ") + desc.Name + " of " + std::to_string(size) + " bytes";
+            }
+            return nullptr;
+        }
+        ++gpu.Stats().buffersCreated;
+        return result;
+    }
+
+    void GpuBuffer::WriteDiscard(GpuShared& gpu, const std::uint32_t offset, const void* const data, const std::uint32_t size)
+    {
+        std::lock_guard<std::recursive_mutex> lock(gpu.Lock());
+        void* mapped = nullptr;
+        gpu.Context()->MapBuffer(impl_->buffer, dg::MAP_WRITE, dg::MAP_FLAG_DISCARD, mapped);
+        if (mapped != nullptr) {
+            std::memcpy(static_cast<std::uint8_t*>(mapped) + offset, data, size);
+            gpu.Context()->UnmapBuffer(impl_->buffer, dg::MAP_WRITE);
+        }
+        gpu.Stats().mapBytes += size;
+    }
+
+    void GpuBuffer::WriteNoOverwrite(GpuShared& gpu, const std::uint32_t offset, const void* const data, const std::uint32_t size)
+    {
+        std::lock_guard<std::recursive_mutex> lock(gpu.Lock());
+        void* mapped = nullptr;
+        gpu.Context()->MapBuffer(impl_->buffer, dg::MAP_WRITE, dg::MAP_FLAG_NO_OVERWRITE, mapped);
+        if (mapped != nullptr) {
+            std::memcpy(static_cast<std::uint8_t*>(mapped) + offset, data, size);
+            gpu.Context()->UnmapBuffer(impl_->buffer, dg::MAP_WRITE);
+        }
+        gpu.Stats().mapBytes += size;
+    }
+
+    void GpuBuffer::Update(GpuShared& gpu, const std::uint32_t offset, const void* const data, const std::uint32_t size)
+    {
+        std::lock_guard<std::recursive_mutex> lock(gpu.Lock());
+        gpu.Context()->UpdateBuffer(impl_->buffer, offset, size, data, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        ++gpu.Stats().updateBuffer;
+        if (gpu.InFrame()) {
+            ++gpu.Stats().updateBufferInFrame;
+        }
+    }
+
+    dg::IBuffer* GpuBuffer::Buffer() const
+    {
+        return impl_->buffer;
     }
 } // namespace gpg::gal::diligent

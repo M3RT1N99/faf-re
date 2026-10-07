@@ -27,6 +27,12 @@ usage:
   python scripts/port/gfx_capture.py --exe buildstage/m6a-H/out/Win32/Debug/main.exe --pace 0 --runs 1
   python scripts/port/gfx_capture.py --gal diligent:d3d11 --frames none --exit-frame 900
   python scripts/port/gfx_capture.py compare <capturesA> <capturesB>     # e.g. D3D9 vs Diligent
+  python scripts/port/gfx_capture.py parity <D3D9 run dir> <backend run dir> --out <dir>   # M6b gate
+
+`parity` is the pixel-parity gate of M6b step 3 (docs/port/renderer.md): per frame the backend's RGB
+must equal the reference's, or differ by at most 1 per channel on at most 0.1 % of the pixels. It
+writes a heat map for every frame (identical frames included, so the gate always has one attached),
+a reference | backend | heat map strip, and parity.json.
 
 Output (default buildstage/gfx-capture/<timestamp>):
   run1..runN/   frame_000060.bmp ..., harness.json, harness.log, engine.log, run.json, Game.prefs,
@@ -508,9 +514,122 @@ def cmd_compare(argv):
     return 0 if all_equal else 1
 
 
+# Pixel-parity tolerance of M6b step 3 (docs/port/renderer.md "The plan", m6u-CRIT step 3): RGB
+# identical, or max |delta| <= 1 per channel on <= 0.1 % of the pixels.
+PARITY_MAX_DELTA = 1
+PARITY_MAX_FRACTION = 0.001
+
+
+def parity_frame(path_ref, path_test, heat_path, strip_path):
+    """One frame of the parity gate: the deltas, the verdict, and always a heat map and a strip."""
+    from PIL import Image, ImageChops, ImageDraw
+    wa, ha, a = read_bmp(path_ref)
+    wb, hb, b = read_bmp(path_test)
+    if (wa, ha) != (wb, hb):
+        return {"verdict": "FAIL", "size_mismatch": [[wa, ha], [wb, hb]]}
+    ra, rb = rgb_of(a), rgb_of(b)
+    ia = Image.frombytes("RGB", (wa, ha), ra)
+    ib = Image.frombytes("RGB", (wa, ha), rb)
+    diff = ImageChops.difference(ia, ib)
+    r, g, bb = diff.split()
+    peak = ImageChops.lighter(ImageChops.lighter(r, g), bb)
+    hist = peak.histogram()
+    result = {
+        "identical": ra == rb,
+        "alpha_identical": a[3::4] == b[3::4],
+        "rgb_fnv1a64": [fnv1a64(ra), fnv1a64(rb)],
+        "max_abs_delta_rgb": [hi for _, hi in diff.getextrema()],
+        "pixels_differing": wa * ha - hist[0],
+        "pixels_delta_gt1": sum(hist[2:]),
+        "pixels_total": wa * ha,
+        "bbox": list(peak.getbbox() or []),
+    }
+    fraction = result["pixels_differing"] / result["pixels_total"]
+    result["fraction_differing"] = fraction
+    if result["identical"]:
+        result["verdict"] = "identical"
+    elif max(result["max_abs_delta_rgb"]) <= PARITY_MAX_DELTA and fraction <= PARITY_MAX_FRACTION:
+        result["verdict"] = "within tolerance"
+    else:
+        result["verdict"] = "FAIL"
+    # Heat map as `compare` draws it (red = largest channel delta, scaled to the frame's maximum),
+    # over the reference at a quarter brightness; an identical frame gives no red at all.
+    top = max(1, max(result["max_abs_delta_rgb"]))
+    scaled = peak.point(lambda v: 0 if v == 0 else 64 + int(191 * v / top))
+    heat = Image.merge("RGB", (scaled, Image.new("L", scaled.size, 0), Image.new("L", scaled.size, 0)))
+    heat_image = Image.blend(ia, heat, 0.75)
+    heat_image.save(heat_path)
+    result["heatmap"] = heat_path
+    if strip_path:
+        half = (wa // 2, ha // 2)
+        strip = Image.new("RGB", (half[0] * 3, half[1] + 28), (0, 0, 0))
+        for index, image in enumerate((ia, ib, heat_image)):
+            strip.paste(image.resize(half, Image.LANCZOS), (index * half[0], 28))
+        draw = ImageDraw.Draw(strip)
+        labels = ("reference", "backend", f"heat map: {result['pixels_differing']} px differ, "
+                                          f"max |delta| {max(result['max_abs_delta_rgb'])}")
+        for index, label in enumerate(labels):
+            draw.text((index * half[0] + 8, 8), label, fill=(230, 230, 230))
+        strip.save(strip_path)
+        result["strip"] = strip_path
+    return result
+
+
+def cmd_parity(argv):
+    parser = argparse.ArgumentParser(prog="gfx_capture.py parity",
+                                     description="The M6b pixel-parity gate: every frame_*.bmp of the reference run "
+                                                 "against the backend run, with a heat map per frame.")
+    parser.add_argument("reference", help="run directory of the D3D9 reference (frame_*.bmp)")
+    parser.add_argument("test", help="run directory of the backend under test")
+    parser.add_argument("--out", required=True, help="heat maps, strips and parity.json go here")
+    parser.add_argument("--frames", default=None, help="only these frames (comma list); default: every frame of the reference")
+    args = parser.parse_args(argv)
+    os.makedirs(args.out, exist_ok=True)
+    names = sorted(n for n in os.listdir(args.reference) if re.fullmatch(r"frame_\d+\.bmp", n))
+    if args.frames:
+        wanted = {int(f) for f in args.frames.split(",")}
+        names = [n for n in names if int(n[6:-4]) in wanted]
+        missing = wanted - {int(n[6:-4]) for n in names}
+        if missing:
+            print(f"reference has no capture of frame(s) {sorted(missing)}", file=sys.stderr)
+            return 2
+    if not names:
+        print(f"no frame_*.bmp in {args.reference}", file=sys.stderr)
+        return 2
+    report = {"reference": os.path.abspath(args.reference), "test": os.path.abspath(args.test),
+              "tolerance": {"max_abs_delta": PARITY_MAX_DELTA, "max_fraction_of_pixels": PARITY_MAX_FRACTION},
+              "frames": {}}
+    passed = True
+    for name in names:
+        frame = int(name[6:-4])
+        path_test = os.path.join(args.test, name)
+        if not os.path.exists(path_test):
+            res = {"verdict": "FAIL", "missing_in_test": True}
+        else:
+            res = parity_frame(os.path.join(args.reference, name), path_test,
+                               os.path.join(args.out, f"heat_{frame:06d}.png"),
+                               os.path.join(args.out, f"strip_{frame:06d}.png"))
+        report["frames"][str(frame)] = res
+        passed = passed and res["verdict"] != "FAIL"
+        if "pixels_differing" in res:
+            print(f"frame {frame}: {res['verdict']}, rgb {res['rgb_fnv1a64'][0]} / {res['rgb_fnv1a64'][1]}, "
+                  f"{res['pixels_differing']} of {res['pixels_total']} pixels differ, max |delta| rgb "
+                  f"{res['max_abs_delta_rgb']}, alpha {'identical' if res['alpha_identical'] else 'different'}")
+        else:
+            print(f"frame {frame}: {res['verdict']} {json.dumps(res)}")
+    report["passed"] = passed
+    with open(os.path.join(args.out, "parity.json"), "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2)
+    print("PARITY: " + ("PASS" if passed else "FAIL") + f" ({len(names)} frames; tolerance max |delta| <= "
+          f"{PARITY_MAX_DELTA} on <= {PARITY_MAX_FRACTION * 100:g} % of the pixels)")
+    return 0 if passed else 1
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "compare":
         return cmd_compare(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "parity":
+        return cmd_parity(sys.argv[2:])
 
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--exe", default=DEFAULT_EXE, help="FAF_PORT_GRAPHICS main.exe (default: %(default)s)")

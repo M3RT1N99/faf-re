@@ -1,49 +1,57 @@
 #pragma once
 
-// Metadata-only effects for the Diligent spike (M6 step 1, Windows oracle mode).
+// gal Effect, EffectTechnique and EffectVariable on Diligent (M6b): the engine side of the effect
+// layer. The Diligent side is EffectsDiligentGpu.*; the contract with the draw path is PassBinding.h.
 //
 // CD3DDeviceResources::DevResInitResources compiles every /effects/*.fx at device init and calls
-// gpg::Die on any failure (CD3DDeviceResources.cpp:805-842), and CD3DEffect reads each effect's
-// technique list and the abstractTechnique/fidelity annotations (CD3DEffectTechnique.cpp:517-568).
-// Until the portable front end (port/graphics/fx, step 2) provides the metadata, it comes from D3DX
-// reflection: the effect is compiled exactly as DeviceD3D9::CreateEffectFromSourceBuffer does
-// (D3D9Interfaces.cpp:1529-1626: D3DXCreateEffectCompiler with D3DXSHADER_DEBUG |
-// D3DXSHADER_USE_LEGACY_D3DX9_31_DLL, CompileEffect, D3DXCreateEffect) and created on the oracle's
-// NULLREF device. GetTechniques returns the techniques in declaration order, as
-// EffectD3D9::GetTechniques walks them with FindNextValidTechnique, keeping those whose passes'
-// shader versions the HAL supports (FindNextValidTechnique itself crashes on a NULLREF device,
-// D3D9Oracle.h).
+// gpg::Die on any failure (CD3DDeviceResources.cpp:805-842); CD3DEffect then reads each effect's
+// valid techniques and their abstractTechnique/fidelity annotations (CD3DEffectTechnique.cpp:517-568).
+// Everything ID3DXEffect reported for that comes from the portable front end (port/graphics/fx,
+// FxMetadata, equal to D3DX reflection for every effect variant, gate 2 of M6a), and the shaders are
+// SM5 HLSL that FxHlslEmitter generates from the same source when a pass is first drawn. D3DX is no
+// longer involved; only the HAL caps that decide which techniques are valid come from the D3D9
+// oracle (D3D9Oracle.h), as in step 1.
 //
-// Draws are no-ops in this step, so nothing is bound: BeginPass/EndPass only count, and texture
-// variables are ignored. Numeric variable values are forwarded to the D3DX effect, which keeps them
-// with D3DX's own semantics for step 3 to read.
-
-#include <d3dx9effect.h>
+// D3D9 behaviour kept (EffectTechniqueD3D9 / EffectVariableD3D9, D3D9Interfaces.cpp:4041-4996):
+//   - GetTechniques lists the valid techniques in declaration order (FindNextValidTechnique's
+//     order, D3D9Interfaces.cpp:4226-4250); a technique is valid when every pass's shaders are
+//     within the adapter's shader versions;
+//   - GetVariable/GetTechnique throw gal::Error for a missing name;
+//   - BeginTechnique calls Device slot 48 (the technique-begin state defaults) and returns the pass
+//     count; BeginPass hands the draw path the pass binding (PassSink::OnBeginPass) with the
+//     parameter snapshot D3DX would apply at that point; the begin/end mismatch errors are the same;
+//   - variable setters follow ID3DXEffect's semantics (EffectsDiligentGpu.h); textures stay referenced
+//     by the effect until replaced, as ID3DXEffect::SetTexture AddRefs them.
 
 #include <cstdint>
-#include <mutex>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "boost/enable_shared_from_this.h"
 #include "boost/shared_ptr.h"
 #include "boost/weak_ptr.h"
+#include "gpg/gal/CubeRenderTarget.hpp"
 #include "gpg/gal/Effect.hpp"
 #include "gpg/gal/EffectContext.hpp"
 #include "gpg/gal/EffectTechnique.hpp"
 #include "gpg/gal/EffectVariable.hpp"
+#include "gpg/gal/RenderTarget.hpp"
+#include "gpg/gal/Texture.hpp"
 
 namespace gpg::gal::diligent
 {
     class D3D9Oracle;
+    class EffectGpu;
+    class PassBinding;
 
     /** What the report lists per effect: its source path and the techniques GetTechniques returned. */
     struct EffectRecord
     {
         std::string sourcePath;
         bool fromCache = false;
-        std::uint32_t techniqueCount = 0;   // D3DXEFFECT_DESC::Techniques
-        std::uint32_t parameterCount = 0;   // D3DXEFFECT_DESC::Parameters
+        std::uint32_t techniqueCount = 0;   // as D3DXEFFECT_DESC::Techniques
+        std::uint32_t parameterCount = 0;   // as D3DXEFFECT_DESC::Parameters
         std::vector<std::string> validTechniques; // FindNextValidTechnique order
     };
 
@@ -51,10 +59,29 @@ namespace gpg::gal::diligent
     std::vector<EffectRecord> GetEffectRecords();
 
     /**
-     * DeviceD3D9::CreateEffect's two paths (cache or source) on the NULLREF device. When `dumpDir`
-     * is not empty, the source buffer the engine passed (compat header + .fx, as
-     * CD3DEffect::InitEffectFromFile concatenates them) is written there with its macros, for
-     * tools/fxtechlist.cpp to compile on a HAL device.
+     * The effect layer's counters (EffectsDiligentGpu.h EffectGpuStats) for the report, so a menu run
+     * shows that its shaders came from FxHlslEmitter at run time and that every constant upload was
+     * a Map(DISCARD). Copied here so DeviceDiligent.cpp needs no fx header.
+     */
+    struct EffectLayerCounts
+    {
+        std::uint64_t effects = 0;
+        std::uint64_t programsCompiled = 0;
+        std::uint64_t shadersCompiled = 0;
+        std::uint64_t generationFailures = 0;
+        std::uint64_t constantUploads = 0;
+        std::uint64_t drawConstantUploads = 0;
+        std::uint64_t commits = 0;
+        std::uint64_t nullTextureBinds = 0;
+    };
+    EffectLayerCounts GetEffectLayerCounts();
+
+    /**
+     * DeviceD3D9::CreateEffect (D3D9Interfaces.cpp:1522-1690) on the portable front end. The source
+     * buffer the engine passes (compat header + .fx, as CD3DEffect::InitEffectFromFile concatenates
+     * them) is read in both of D3D9's paths: CD3DEffect hands it over with the cache flag too, and
+     * this backend writes no compiled cache. When `dumpDir` is not empty the buffer is written there
+     * with its macros, for tools/fxtechlist.cpp to compile on a HAL device (gate 1).
      */
     boost::shared_ptr<Effect> CreateEffectFromContext(
         const D3D9Oracle& oracle,
@@ -67,10 +94,10 @@ namespace gpg::gal::diligent
     public:
         EffectDiligent(
             const EffectContext& context,
-            ID3DXEffect* effect,
+            std::shared_ptr<EffectGpu> gpu,
             std::size_t recordIndex,
-            DWORD halVertexShaderVersion,
-            DWORD halPixelShaderVersion
+            std::uint32_t maxVertexShaderVersion,
+            std::uint32_t maxPixelShaderVersion
         );
         ~EffectDiligent() override;
 
@@ -81,23 +108,31 @@ namespace gpg::gal::diligent
         void OnReset() override;
         void OnLost() override;
 
-        [[nodiscard]] ID3DXEffect* GetDxEffect();
+        [[nodiscard]] EffectGpu& Gpu();
+
+        /** The objects bound to texture parameters, kept alive as ID3DXEffect::SetTexture does. */
+        struct TextureHold
+        {
+            boost::shared_ptr<Texture> texture;
+            boost::shared_ptr<RenderTarget> renderTarget;
+            boost::shared_ptr<CubeRenderTarget> cubeTarget;
+        };
+        [[nodiscard]] std::vector<TextureHold>& TextureHolds() { return textureHolds_; }
 
     private:
         EffectContext context_;
-        ID3DXEffect* dxEffect_ = nullptr;
-        [[nodiscard]] bool IsTechniqueValid(D3DXHANDLE technique);
-
+        std::shared_ptr<EffectGpu> gpu_;
         std::size_t recordIndex_ = 0;
         bool recorded_ = false;
-        DWORD halVertexShaderVersion_ = 0;
-        DWORD halPixelShaderVersion_ = 0;
+        std::uint32_t maxVertexShaderVersion_ = 0; // the HAL caps' VertexShaderVersion, low word (0x0300)
+        std::uint32_t maxPixelShaderVersion_ = 0;
+        std::vector<TextureHold> textureHolds_; // per parameter
     };
 
     class EffectTechniqueDiligent final : public EffectTechnique
     {
     public:
-        EffectTechniqueDiligent(const char* name, const boost::shared_ptr<EffectDiligent>& effect, D3DXHANDLE handle);
+        EffectTechniqueDiligent(const char* name, const boost::shared_ptr<EffectDiligent>& effect, int technique);
         ~EffectTechniqueDiligent() override;
 
         msvc8::string* GetName() override;
@@ -110,18 +145,23 @@ namespace gpg::gal::diligent
         bool GetAnnotationFloat(float* outValue, const msvc8::string& annotationName) override;
         bool GetAnnotationString(msvc8::string* outValue, const msvc8::string& annotationName) override;
 
+        /** EffectTechniqueD3D9::CommitChanges (FAF): parameters set inside the pass reach the draws. */
+        void CommitChanges();
+
     private:
         msvc8::string name_;
         boost::weak_ptr<EffectDiligent> effect_;
-        D3DXHANDLE handle_ = nullptr;
+        int technique_ = 0;
         bool beginEndActive_ = false;
         int passCount_ = 0;
+        PassBinding* activePass_ = nullptr;
+        std::vector<EffectDiligent::TextureHold> passHolds_; // what the active pass's snapshot binds
     };
 
     class EffectVariableDiligent final : public EffectVariable
     {
     public:
-        EffectVariableDiligent(const char* name, const boost::shared_ptr<EffectDiligent>& effect, D3DXHANDLE handle);
+        EffectVariableDiligent(const char* name, const boost::shared_ptr<EffectDiligent>& effect, int parameter);
         ~EffectVariableDiligent() override;
 
         msvc8::string* GetName() override;
@@ -143,10 +183,11 @@ namespace gpg::gal::diligent
         bool GetAnnotationString(msvc8::string* outValue, const msvc8::string& annotationName) override;
 
     private:
-        [[nodiscard]] ID3DXEffect* Effect();
+        [[nodiscard]] boost::shared_ptr<EffectDiligent> Effect(int line);
+        void BindTexture(EffectDiligent::TextureHold hold, void* source, int line);
 
         msvc8::string name_;
         boost::weak_ptr<EffectDiligent> effect_;
-        D3DXHANDLE handle_ = nullptr;
+        int parameter_ = -1;
     };
 } // namespace gpg::gal::diligent

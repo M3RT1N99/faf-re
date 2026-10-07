@@ -21,9 +21,10 @@
     - switches the post-build staging copy into $(FafRunDir) off. That copy
       (main.vcxproj PostBuildEvent, all four configurations) would overwrite
       the main.exe in C:\ProgramData\FAForever\bin, which the user plays with;
-    - adds the new sources under port\graphics (Diligent backend, capture
-      harness), each with its own object directory so no object name can
-      collide with the engine's flat $(IntDir);
+    - adds the new sources under port\graphics (Diligent backend, the effect
+      front end's library port\graphics\fx\src, capture harness), each with its
+      own object directory so no object name can collide with the engine's flat
+      $(IntDir);
     - links the Diligent build that scripts\port\build_diligent_win32.ps1
       installs to buildstage\diligent\install\<Platform> (override with
       /p:FafDiligentInstall=<prefix>\). Its Debug libraries are /MDd with
@@ -95,10 +96,23 @@
          programs with their own build, not part of main.exe. -->
     <ClCompile Include="$(FafPortGraphicsDir)diligent\**\*.cpp" Exclude="$(FafPortGraphicsDir)diligent\tools\**">
       <ObjectFileName>$(IntDir)port_graphics\diligent\%(RecursiveDir)</ObjectFileName>
-      <AdditionalIncludeDirectories>$(FafDiligentInstall)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- fx\include: the effect layer (EffectsDiligentGpu.*) builds its shaders with the
+           portable front end's FxMetadata and FxHlslEmitter (M6b). -->
+      <AdditionalIncludeDirectories>$(FafDiligentInstall)include;$(FafPortGraphicsDir)fx\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <!-- What Diligent's BuildSettings target hands its consumers: the platform, the backend,
            and in Debug the development checks its Debug libraries are built with. -->
       <PreprocessorDefinitions>PLATFORM_WIN32=1;D3D11_SUPPORTED=1;$(FafDiligentConfigDefines)%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <!-- The portable effect front end gpg::gal::fx (port\graphics\fx, its own CMake project for the
+         host tools and tests). main.exe compiles its library sources directly, with the define and
+         the /utf-8 option its CMake target sets (faf_fx_warnings in fx\CMakeLists.txt; warning level
+         and language standard stay main.vcxproj's), so the backend and the host tools run the same
+         parser and SM5 emitter. Only the Diligent backend uses it. -->
+    <ClCompile Include="$(FafPortGraphicsDir)fx\src\*.cpp">
+      <ObjectFileName>$(IntDir)port_graphics\fx\</ObjectFileName>
+      <AdditionalIncludeDirectories>$(FafPortGraphicsDir)fx\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

@@ -35,6 +35,7 @@ endfunction()
 add_library(faf_gal_fx STATIC
   include/gpg/gal/fx/FxAst.h
   include/gpg/gal/fx/FxEffectParser.h
+  include/gpg/gal/fx/FxHlslEmitter.h
   include/gpg/gal/fx/FxJson.h
   include/gpg/gal/fx/FxLexer.h
   include/gpg/gal/fx/FxMetadata.h
@@ -42,6 +43,7 @@ add_library(faf_gal_fx STATIC
   include/gpg/gal/fx/FxSource.h
   include/gpg/gal/fx/FxStates.h
   src/FxEffectParser.cpp
+  src/FxHlslEmitter.cpp
   src/FxJson.cpp
   src/FxLexer.cpp
   src/FxMetadata.cpp
@@ -59,6 +61,11 @@ if(FAF_FX_BUILD_TOOLS)
   add_executable(fxmeta tools/fxmeta.cpp)
   target_link_libraries(fxmeta PRIVATE faf_gal_fx)
   faf_fx_warnings(fxmeta)
+
+  # SM5 HLSL for every pass stage (FxHlslEmitter), optionally compiled with FXC (Windows).
+  add_executable(fxhlsl tools/fxhlsl.cpp)
+  target_link_libraries(fxhlsl PRIVATE faf_gal_fx)
+  faf_fx_warnings(fxhlsl)
 
   # The D3DX reflection dumper needs the June 2010 DirectX SDK's x86
   # d3dx9.lib, the one main.exe links (main.vcxproj AdditionalDependencies).
@@ -79,4 +86,9 @@ if(FAF_FX_BUILD_TESTS)
   target_link_libraries(fx_tests PRIVATE faf_gal_fx)
   faf_fx_warnings(fx_tests)
   add_test(NAME fx_tests COMMAND fx_tests)
+
+  add_executable(fx_hlsl_tests tests/fx_hlsl_tests.cpp)
+  target_link_libraries(fx_hlsl_tests PRIVATE faf_gal_fx)
+  faf_fx_warnings(fx_hlsl_tests)
+  add_test(NAME fx_hlsl_tests COMMAND fx_hlsl_tests)
 endif()

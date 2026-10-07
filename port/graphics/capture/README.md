@@ -27,11 +27,20 @@ lock, priority, the outside monitor, the comparison):
 ```bash
 msbuild src\sdk\main.vcxproj /p:Configuration=Debug /p:Platform=Win32 /p:FafPortGraphics=true
 python scripts/port/gfx_capture.py --runs 3 --lock <shared lock file>     # gate 0
-python scripts/port/gfx_capture.py --gal diligent:d3d11 --frames none --exit-frame 900
+python scripts/port/gfx_capture.py --gal diligent:d3d11 --frames 60,300,900 --runs 3 --lock <shared lock file>
 python scripts/port/gfx_capture.py compare <run dir A> <run dir B>        # e.g. D3D9 against Diligent
+python scripts/port/gfx_capture.py parity <D3D9 run dir> <Diligent run dir> --out <dir>   # M6b gate
 ```
 
-From Git Bash prefix `MSYS_NO_PATHCONV=1`. The script refuses to start when a `FAF_*` variable is set
+`parity` is the pixel gate of step 3: per frame of the reference run, the other run's RGB must be
+identical, or differ by at most 1 per channel on at most 0.1 % of the pixels. It always writes a heat
+map (`heat_<N>.png`, red where any channel differs, over the reference at a quarter brightness) and a
+reference | backend | heat-map strip (`strip_<N>.png`), plus `parity.json`; exit code 0 on PASS. The
+Diligent backend is captured through the same three gal calls as D3D9 (below); since M6b its frames are
+the D3D9 frames byte for byte.
+
+Every GUI run on the machine has to use the same lock file (`--lock` or `GFX_GUI_LOCK`); without
+either the script falls back to `buildstage/gfx-capture/gui.lock`. From Git Bash prefix `MSYS_NO_PATHCONV=1`. The script refuses to start when a `FAF_*` variable is set
 (the committed render-path probes arm themselves from `FAF_TOGGLE_DIR`, `FAF_DUMP_FRAMES`, ...), or
 when the exe does not contain the harness (the options would be ignored and the game window would
 open). The engine command line it builds:
