@@ -12,8 +12,10 @@ Debug|Win32, whose objects reference exactly what each TU needs:
   1. Read every object main.vcxproj builds for Debug|Win32 (ObjectFileName overrides resolved),
      plus WildMagic's Foundation objects (dependencies/WildMagic3p8/Foundation/Debug, the
      gitignored third-party build), and the symbol tables of the libraries the link uses.
-  2. Roots: the TU that defines HEADLESS_RunReplay, and every TU outside the user side whose static
-     initialisers register Lua binders, reflected types (RTypes) or console commands/variables.
+  2. Roots: the TU that defines HEADLESS_RunReplay, and every linkable TU whose static initialisers
+     register something (REG_KINDS: Lua binders, reflected types, console commands/variables,
+     serializer helpers, prefetch kinds, resource factories), plus, in the default variant, every
+     other non-user-side TU with a static initialiser.
   3. The user side (UI, render, audio, movie, wx, live networking, the user session; see
      `stub_policy`) may be replaced by runner-only stubs, the sim side never. A minimum cut over
      symbols finds the fewest user-side symbols whose stubs keep every user-side TU that cannot be
@@ -37,9 +39,10 @@ usage:
   python scripts/port/link_closure.py --variant init  # another root variant (lua, reg, init)
 
 It needs the Debug|Win32 objects (build main.vcxproj Debug|Win32 first) and an arm64 sweep for
-the compile status (default buildstage/engine-sweep/final, the M2 result). Parsed objects and
-demangled names are cached under buildstage/runner/cache. build_runner.py imports this module to
-map the arm64 link's undefined symbols back to the TU that defines them on Windows.
+the compile status (default buildstage/engine-sweep/m3b, the sweep after the M3b ports; M2's was
+buildstage/engine-sweep/final). Parsed objects and demangled names are cached under
+buildstage/runner/cache. build_runner.py imports this module to map the arm64 link's undefined
+symbols back to the TU that defines them on Windows.
 """
 
 import argparse
@@ -65,7 +68,7 @@ SDK_DIR = es.DEFAULT_SDK
 VCXPROJ = os.path.join(SDK_DIR, "main.vcxproj")
 CONFIG = "Debug|Win32"
 DEFAULT_OBJDIR = os.path.join(REPO_ROOT, "buildstage", "main", "Win32", "Debug")
-DEFAULT_SWEEP = os.path.join(REPO_ROOT, "buildstage", "engine-sweep", "final")
+DEFAULT_SWEEP = os.path.join(REPO_ROOT, "buildstage", "engine-sweep", "m3b")
 DEFAULT_CLOSURE = os.path.join(REPO_ROOT, "port", "engine", "runner", "closure.txt")
 DEFAULT_REPORT_DIR = os.path.join(REPO_ROOT, "buildstage", "runner", "closure")
 CACHE_DIR = os.path.join(REPO_ROOT, "buildstage", "runner", "cache")
@@ -459,6 +462,15 @@ SIM_SIDE = {
 }
 SIM_SIDE_PREFIXES = ("moho/effects/rendering/",)
 
+# Classes whose key function (and with it the Itanium vtable and typeinfo) the runner's stand-ins
+# define, because the class's own TU cannot be linked. A TU that needs the vtable or typeinfo of one
+# of these does not depend on that TU; the arm64 link checks that the stand-in provides them.
+#   RD3DTextureResource: RD3DTextureResource.cpp includes the D3D9 backend. The stand-ins
+#   (port/engine/runner/HeadlessStubsTexture.cpp) give what the class does without a gal device,
+#   so its RType (RD3DTextureResourceTypeInfo.cpp), the "d3d_textures" prefetch kind and the texture
+#   factory (CD3DTextureResourceFactory.cpp) are registered as on Windows.
+RUNNER_KEY_CLASSES = {"moho::RD3DTextureResource": "port/engine/runner/HeadlessStubsTexture.cpp"}
+
 NET_LIVE = {"CGpgNetInterface", "CHostManager", "CLobby", "CLobbyTypeInfo", "CNetDatagramSocketImpl", "CNetTCPBuf",
             "CNetTCPConnection", "CNetTCPConnector", "CNetTCPServerImpl", "CNetUDPConnection", "CNetUDPConnector",
             "CDiscoveryService", "CDiscoveryServiceTypeInfo", "INetNATTraversalProvider",
@@ -562,9 +574,28 @@ def owner_component(tu, closure, arm_status):
 # The symbol graph
 # ------------------------------------------------------------------------------------------------
 
-REG_LUA = re.compile(r"^\?\?0CScrLua(Binder|ClassBinder|BaseClassSpec|InitForm|InitFormSet)@moho@@")
-REG_RTYPE = re.compile(r"^\?PreRegisterRType@gpg@@")
-REG_CON = re.compile(r"^(\?\?0CConCommand@moho@@|\?RegisterConCommand@moho@@)")
+# What a static initialiser can register, by the symbol its TU references (Win32 mangling). Every
+# kind fills a process-wide registry that nothing else fills, so a TU missing from the ELF link loses
+# its entries without any other symptom:
+#   lua         Lua binders, class binders and init forms (CScrLuaInitFormSet)
+#   rtype       reflected types (PreRegisterRType, or a .CRT$XCL pre-registration section)
+#   convar      console commands and variables: CConCommand's constructor (TConVar<T> inlines it),
+#               RegisterConCommand, and CConFunc, whose constructor lives in CConCommand.cpp
+#   serializer  serializer/construct helpers (gpg::SerHelperBase's constructor queues the helper;
+#               SerHelperBase::InitNewHelpers binds its load/save/construct callbacks onto the RType
+#               when the first archive is created)
+#   prefetch    prefetch kinds (RES_RegisterPrefetchType: the names CPrefetchSet:Update accepts)
+#   factory     resource factories (ResourceFactoryBase's constructor attaches the factory to the
+#               resource manager, which loads and prefetches that resource type only through it)
+REG_KINDS = (
+    ("lua", re.compile(r"^\?\?0CScrLua(Binder|ClassBinder|BaseClassSpec|InitForm|InitFormSet)@moho@@")),
+    ("rtype", re.compile(r"^\?PreRegisterRType@gpg@@")),
+    ("convar", re.compile(r"^(\?\?0CConCommand@moho@@|\?RegisterConCommand@moho@@|\?\?0CConFunc@moho@@)")),
+    ("serializer", re.compile(r"^\?\?0SerHelperBase@gpg@@")),
+    ("prefetch", re.compile(r"^\?RES_RegisterPrefetchType@moho@@")),
+    ("factory", re.compile(r"^\?\?0ResourceFactoryBase@moho@@")),
+)
+REG_ALL = frozenset(k for k, _ in REG_KINDS)
 
 
 class Graph:
@@ -654,6 +685,8 @@ class Graph:
             else:
                 cls = text.split(" `RTTI Type Descriptor'")[0].replace("const", "").rstrip(" *&")
             cls = norm_qual(cls)
+            if cls in RUNNER_KEY_CLASSES:
+                continue
             key = self.key_tu.get(cls)
             if key is not None and key != tu:
                 needs[f"<vtable/typeinfo of {cls}>"] = key
@@ -674,18 +707,33 @@ class Graph:
         """A TU the runner must not link: user side, and it cannot be linked on Android."""
         return tu in self._bad
 
+    def why_bad(self, tu):
+        """Why `tu` cannot be linked, for the report ('' when it can)."""
+        if tu not in self._bad:
+            return "" if stubbable(tu) or tu.startswith("../") else "(not user side)"
+        reasons = []
+        if not self.arm_ok(tu):
+            st = self.arm.get(tu) or {}
+            reasons.append("does not compile for arm64" + (f" ({st['class']})" if st.get("class") else ""))
+        if self.platform(tu):
+            reasons.append("calls " + ", ".join(sorted(self.ext_by_tu[tu] & PLATFORM_LIBS)))
+        rtti = sorted((p[len("<vtable/typeinfo of "):-1], k) for p, k in self.rtti[tu].items() if k in self._bad)
+        if rtti:
+            reasons.append("needs the vtable/typeinfo of " +
+                           ", ".join(f"{c} (key function in {k})" for c, k in rtti))
+        return "; ".join(reasons)
+
     def _registrations(self, tu):
         info = self.objs[tu]
         kinds = set()
         if not info["init"]:
             return kinds
         names = list(info["undef"]) + list(info["defs"])
-        if any(REG_LUA.match(n) for n in names):
-            kinds.add("lua")
-        if any(REG_RTYPE.match(n) for n in names) or any(n.startswith(".CRT$XCL") for n, _c in info["init"]):
+        for kind, pattern in REG_KINDS:
+            if any(pattern.match(n) for n in names):
+                kinds.add(kind)
+        if any(n.startswith(".CRT$XCL") for n, _c in info["init"]):
             kinds.add("rtype")
-        if any(REG_CON.match(n) for n in names):
-            kinds.add("convar")
         return kinds
 
     def prefer(self, tu):
@@ -733,12 +781,13 @@ class Graph:
     def roots(self, variant):
         """{root TU: why}. Every variant starts at HEADLESS_RunReplay and adds the static-initialiser
         TUs that can be linked: `lua` those that construct Lua binders, `reg` also those that
-        pre-register RTypes or construct console commands/variables, `init` also every other
-        non-user-side TU with a static initialiser of any kind."""
+        register anything else (REG_KINDS: RTypes, console commands/variables, serializer helpers,
+        prefetch kinds, resource factories), `init` also every other non-user-side TU with a static
+        initialiser of any kind."""
         root_tu = self.defs.get(ROOT_SYMBOL)
         if not root_tu:
             raise SystemExit(f"link_closure: no object defines {ROOT_SYMBOL} (is HeadlessReplay.cpp built?)")
-        kinds = {"lua"} if variant == "lua" else {"lua", "rtype", "convar"}
+        kinds = {"lua"} if variant == "lua" else set(REG_ALL)
         out = {root_tu[0][0]: "entry"}
         for tu in self.order:
             # Third-party code (boost.thread, WildMagic) joins only where the engine needs it:
@@ -1249,13 +1298,23 @@ def write_outputs(g, results, chosen, args, arm_meta, closure_path, report_dir):
     L.append("")
 
     L.append("## Registration TUs outside the closure\n")
-    L.append("TUs with static initialisers that register something, left out because they are user side "
-             "(their registrations are the user-side ones the runner does without):\n")
-    L.append("| TU | registers | category | arm64 |\n|---|---|---|---|")
+    L.append("Every TU whose static initialisers register something (kinds: "
+             + ", ".join(f"`{k}`" for k, _ in REG_KINDS) + "; see `REG_KINDS`) and that is not "
+             "linked. They are all user side and cannot be linked on Android; their entries are "
+             "missing from the Android runner's registry (`/headlessregistry`) and nowhere else.\n")
+    L.append("| TU | registers | category | arm64 | why it cannot be linked |\n|---|---|---|---|---|")
     for t, reg in reg_left_out:
         L.append(f"| `{t}` | {', '.join(sorted(reg))} | {category(t) or 'core'} | "
-                 f"{'ok' if g.arm_ok(t) else 'fails'}{', platform' if g.platform(t) else ''} |")
+                 f"{'ok' if g.arm_ok(t) else 'fails'}{', platform' if g.platform(t) else ''} | "
+                 f"{md(g.why_bad(t))} |")
     L.append("")
+    quiet_init = [t for t in g.order if g.objs[t]["init"] and t not in closure and not t.startswith("../")
+                  and not g.registers[t] and not g.bad(t)]
+    L.append("## Linkable TUs with static initialisers that register nothing\n")
+    L.append("Outside the closure, linkable, with static initialisers that fill none of the registries "
+             "above (header statics such as `VMatrix4::sIdentity`, render-only globals). Leaving them "
+             "out changes no registry; nothing in the closure needs them.\n")
+    L.append(", ".join(f"`{t}`" for t in quiet_init) + "\n" if quiet_init else "None.\n")
 
     with open(os.path.join(report_dir, "report.md"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(L))

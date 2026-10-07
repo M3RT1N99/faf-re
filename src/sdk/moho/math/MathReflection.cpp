@@ -1901,10 +1901,10 @@ namespace moho
   }
 
 #if defined(_WIN32)
-  // gpg::gal::Math forwards to D3DX (gpg/gal/Matrix.cpp), which exists only on Windows, so the
-  // matrix helpers built on it are Windows-only too. Nothing in the engine calls them yet; a
-  // caller added later fails the Android link instead of computing something else. A portable,
-  // D3DX-exact replacement belongs to W3/W5.
+  // gpg::gal::Math forwards to D3DX (gpg/gal/Matrix.cpp). Off Windows Matrix.cpp builds only Math::mul
+  // (portable, not proven D3DX-exact, W5); invert/translation do not exist there, so these helpers
+  // stay Windows-only. Nothing in the engine calls them yet; a caller added later fails the Android
+  // link instead of computing something else. D3DX-exact replacements belong to W3/W5.
   /**
    * Address: 0x004EE6E0 (FUN_004EE6E0, ?VEC_Mul@Moho@@YA?AUVMatrix4@1@ABU21@0@Z)
    *

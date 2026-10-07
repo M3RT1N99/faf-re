@@ -277,6 +277,58 @@ namespace moho
   }
 
   // ---------------------------------------------------------------------------------------------
+  // UiRuntimeTypes.cpp's factory build-queue display (the UI mirror of the selected factory's queue).
+  // Its users are the User-set binders of UserUnit.cpp (linked since M3c), which rebuild it for the
+  // construction panel from a selected factory UserUnit; the runner has no session, so no UserUnit
+  // and no selection, and its User Lua state never calls them.
+
+  // UiRuntimeTypes.cpp:26498-26499, the same definitions (empty at start; only those binders write).
+  FactoryQueueDisplaySnapshot sCurrentBuildQueue{};
+  WeakPtr<UserUnit> sCurrentBuildFactory{};
+
+  // UiRuntimeTypes.cpp:26527, :26548, :26565, :26586, the same bodies: the value type of a queue row.
+  FactoryQueueDisplayItem::FactoryQueueDisplayItem(const msvc8::string& sourceBlueprintId, const std::int32_t sourceCount)
+    : blueprintId(sourceBlueprintId)
+    , count(sourceCount)
+    , commands()
+  {
+    FAF_RUNNER_STUB("FactoryQueueDisplayItem::FactoryQueueDisplayItem");
+  }
+
+  FactoryQueueDisplayItem::FactoryQueueDisplayItem(const FactoryQueueDisplayItem& other)
+    : blueprintId(other.blueprintId)
+    , count(other.count)
+    , commands(other.commands)
+  {
+    FAF_RUNNER_STUB("FactoryQueueDisplayItem::FactoryQueueDisplayItem(copy)");
+  }
+
+  FactoryQueueDisplayItem& FactoryQueueDisplayItem::operator=(const FactoryQueueDisplayItem& other)
+  {
+    FAF_RUNNER_STUB("FactoryQueueDisplayItem::operator=");
+    blueprintId.assign(other.blueprintId, 0u, msvc8::string::npos);
+    count = other.count;
+    commands = other.commands;
+    return *this;
+  }
+
+  FactoryQueueDisplayItem::~FactoryQueueDisplayItem() noexcept = default;
+
+  // UiRuntimeTypes.cpp:26972: compacts sCurrentBuildQueue in place. Its caller is the queue-display
+  // binder in UserUnit.cpp (UserUnit.cpp:5903), which the runner never runs (see above); the real body
+  // works on the queue's raw storage lanes, so this is a trap rather than a copy.
+  FactoryQueueDisplayItem** RebaseFactoryQueueRangeAndTrimTail(
+    FactoryQueueDisplayItem** const outBegin, FactoryQueueDisplayItem* const destinationBegin,
+    FactoryQueueDisplayItem* const sourceBegin
+  )
+  {
+    (void)outBegin;
+    (void)destinationBegin;
+    (void)sourceBegin;
+    FAF_RUNNER_TRAP("RebaseFactoryQueueRangeAndTrimTail");
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // WxRuntimeTypes.cpp and WxUrl.cpp: wx windows and the browser hand-off.
 
   // WxRuntimeTypes.cpp:2344, a frame-dump console variable; only the renderer's frame dump reads it.

@@ -69,7 +69,10 @@ Compare runs by `checkpoint_chain_fnv1a` (a hash over every checkpoint digest in
 `language` comes from `/prefs` (default: none, so Localization.lua picks `us`). It did not change
 any digest in the runs below. Wall times are not comparable between Debug and Release builds.
 
-## Baseline (2026-10-06, Debug|Win32, FAF 3839 data + Steam SCFA)
+## Baseline (Debug|Win32, FAF 3839 data + Steam SCFA)
+
+Measured 2026-10-06 (M3a); measured again 2026-10-07 after the M3c `SetAutoMode` fix (below), with
+the same chains. These chains are the baseline from M3c on.
 
 | Replay (vault id) | Map, players | Recorded on | Beats | Sim speed | Peak working set | Checkpoint chain |
 |---|---|---|---|---|---|---|
@@ -82,6 +85,13 @@ any digest in the runs below. Wall times are not comparable between Debug and Re
 - Every chain is identical across repeated runs, threaded and interlocked mode, `/simworkers 0`,
   and three separate builds.
 - Loading takes 11-12 s per replay.
+- **M3c: `Unit:SetAutoMode` is registered.** Until M3c, `Sim.cpp` gave the user-Lua global
+  `SetAutoMode` binder (0x008BAD80) the name of the sim method's binder
+  (`func_UnitSetAutoMode_LuaFuncDef`, 0x006C8000), and the `/FORCE` link kept `Sim.cpp`'s copy, so
+  the sim's `Unit:SetAutoMode` (FAF calls it for silos and AI platoons) was missing from the Sim
+  set. Now both are registered, as in the binary: the Sim set has 731 binders instead of 730, the
+  User set keeps `<global> SetAutoMode` (499). None of the four replays calls `Unit:SetAutoMode`
+  (their logs have no Lua error naming it), so all four chains are unchanged.
 
 **Checksums do not match the recordings yet, and that is expected.** The data is FAF 3839 and the
 replays were recorded on 3829/3831. The beat-0 digest covers the blueprints, so it differs from
@@ -122,9 +132,82 @@ How the link set is chosen, what stands in for the user side and how to rebuild 
 - **Event wait:** the sync loop waits on the driver's "sync data available" event on Android too
   (port/engine/shim's Win32 events), as on Windows.
 
-Status 2026-10-07: arm64 and x86_64 link with zero undefined and zero duplicate symbols; Windows
-gives the same checkpoint chains as before. The Android runner has not been run yet: that is M3c
-(WSL, emulator, then the phone, with the low-address arena of the roadmap's W1.3).
+Status at the end of M3b: arm64 and x86_64 link with zero undefined and zero duplicate symbols;
+Windows gives the same checkpoint chains as before.
+
+## Android runner (M3c)
+
+The runner runs on Android with the low-address arena
+([port/engine/lowarena](../../port/engine/lowarena/README.md)), the counterpart of x64's
+`/LARGEADDRESSAWARE:NO` for this adb-shell runner only. One command builds nothing, pushes the
+binaries, the game data and the replays, runs, and pulls the results:
+
+```sh
+MSYS_NO_PATHCONV=1 python scripts/port/run_runner_android.py --abi x86_64 --registry-dump \
+    --windows-ref buildstage/replays-m3/runs-m3c-F-s2 --replay buildstage/replays-m3/T1-26675870.scfareplay
+MSYS_NO_PATHCONV=1 python scripts/port/run_runner_android.py --serial <phone> --replay ... --dry-run
+```
+
+Results on the API 36 emulator (`fafre_api36`, x86_64 native and arm64 under the emulator's ARM
+translation), 2026-10-07, the final M3c build, with the Windows baseline above (Debug|Win32,
+after the `SetAutoMode` fix) in parentheses:
+
+| Replay | ABI | End | Checkpoint chain | First diverging checkpoint | Lua errors load/sim | Wall (load + sim), sim speed | Heap / arena high-water |
+|---|---|---|---|---|---|---|---|
+| T1 26675870 | x86_64 | exit 0, game over at 467 | `4971bbe58c5586a0` (`7e159db290f576f1`) | beat 100 of 450 | 2/11 (2/11) | 8.1 s (5.7 + 2.2), 212 beats/s | 344 / 396 MB |
+| T2 26119449 | x86_64 | exit 0, game over at 4697 | `7eec974b19f98ebc` (`cac943d2cc0593a9`) | beat 100 of 4650 | 2/36 (2/36) | 17.3 s (5.2 + 11.9), 396 beats/s | 310 / 364 MB |
+| T3 26679175 | x86_64 | exit 0, game over at 7317 | `1b81ed7b47069327` (`411acb68b7c57709`) | beat 150 of 7300 | 2/546 (2/515) | 32.1 s (4.9 + 27.0), 271 beats/s | 323 / 380 MB |
+| R4 26693269 | x86_64 | exit 0, game over at 10551 | `5ea7204b71239f97` (`7ec6527e3f1efcb8`) | beat 100 of 10500 | 2/485 (2/556) | 48.9 s (5.4 + 43.3), 244 beats/s | 334 / 380 MB |
+| T1 26675870 | arm64 (translated) | exit 0, game over at 467 | `4971bbe58c5586a0` | beat 100 | 2/11 (2/11) | 32.1 s (20.3 + 11.5), 41 beats/s | 346 / 396 MB |
+
+- **All four replays reach the end** on x86_64, and T1 as arm64: exit 0, the sim's game-over flag
+  at the same beat as on Windows, no trap, teardown done, no arena fallbacks. On the final build
+  T1 ran three times (once from a fresh device directory) with the same chain; T2-R4 ran once
+  each, T3 and R4 again with fills `0x00` and `0xcd`, with the same chains; an earlier build
+  gave R4's chain three more times.
+- **Beat 0 is equal in every replay**, so rules and blueprints load as on Windows. The checkpoints
+  then stay equal up to beat 50 (T3: 100), and T3's beat 50 also matches both players' recorded
+  digests, as on Windows. From beat 100 (T3: 150) on they differ. That is the W5 baseline: off x86
+  the x87 layer is a non-bit-exact fallback, and that is the expected cause; it is not proven
+  beat by beat.
+- **x86_64 and arm64 give the same chain** for T1: the fallback math and everything else agree
+  between the two Android ABIs (arm64 runs translated here, so this says nothing yet about a
+  real ARM core's floating point).
+- **Lua errors:** the same kinds as on Windows in every replay (the `GetSource` intel error, the
+  destroyed UEF build-effect projectile, `AttackMove`, and the two load errors); equal counts for
+  T1 and T2, different counts in T3 and R4 after their sims have diverged.
+- **Warnings:** T1 has 1968 against 1962: 8 `[stub]` first-call lines on Android, 2 `CDiskWatch`
+  privilege warnings on Windows only. The other replays add the differences of their diverged
+  games (the engine's `[MOTDIAG]`/`[STEERDIAG]` probes).
+- **Registry:** Core (71), Sim (731) and Unsafe (1) Lua sets equal name for name, the four
+  prefetch kinds and four resource factories equal. Missing on Android, all from user-side TUs
+  that cannot be linked: 242 User binders, 18 RTypes (17 UI classes of the wx-dependent
+  `UiRuntimeTypes.cpp`, and `multimap<int,std::string>` of `CWldSession.cpp`), 8 console commands
+  (`SC_*` of `WinMain.cpp`/`ResolutionCommands.cpp`, `dump_Frame*`), the
+  `SSessionSaveDataSerializer` helper. Nothing exists on Android that Windows lacks. Details in
+  [port/engine/runner/README.md](../../port/engine/runner/README.md#registry-check).
+- **Speed:** wall times are not comparable with the Windows table (Debug `/Od` there, `-O0` and an
+  emulator here); on the emulator x86_64 runs at 210-400 beats/s, arm64 under translation at about
+  a fifth of that.
+- **Heap contents change the sim.** With every new block filled with `0xff`
+  (`FAF_LOWARENA_FILL=0xff`) T3's chain changes from beat 6150 (`40e37f07c27ba2d5`) and R4's from
+  beat 3600 (`9f46db69f387eafe`); `0x00` and `0xcd` change nothing. Most likely that is the
+  uninitialised read in `Unit::UpdateBlipsInRange` below: its gate tests bits `0x30`, which `0xff`
+  (and the heap check's `0xdd`) set and `0x00`/`0xcd` do not, and the `[BLIPSUPPLY]` probe's scan
+  radii change with the fill. The first divergence from Windows does not move.
+- **Without the arena** (`FAF_LOWARENA=0`, bionic's allocator, high pointers) T1 stops while the
+  rules load: a pointer cut to 32 bits in `AddMappedBlueprintOrdinalBits`
+  (`EntityCategoryReflection.cpp:169`, the category universe word). That is M3d's first item.
+
+Two engine bugs were found and fixed on the way (both guarded, the Windows objects unchanged; see
+[the runner README](../../port/engine/runner/README.md#status-2026-10-07-m3c)): the HaStar
+cluster cache's shared-count release used MSVC vtable slots, so at every teardown it deleted its
+control block and then wrote into it (`Cluster.cpp`), and the io library's `WrapFile` reflection callbacks used
+the MSVC return convention, so every Lua state wrote 16 bytes through a stray register
+(`LuaObject.cpp`).
+
+The phone run waits for the phone: `run_runner_android.py --serial <phone>` (arm64-v8a), after
+the arena's probe (lowarena README); its `--dry-run` prints every command.
 
 ## Known issues
 
@@ -138,9 +221,11 @@ gives the same checkpoint chains as before. The Android runner has not been run 
 - **Uninitialised read in `Unit::UpdateBlipsInRange`.** The guard-scan gate (`Unit.cpp`, the
   `mEntIds.InlineStorage()[1] & 0x30` test) reads a slot that no constructor writes, so the scan
   radius depends on leftover heap contents. Pointer-normalised engine logs show it differing
-  between identical runs (radius 31.5 vs 23.1). No checkpoint changed in these replays, but it
-  can change target acquisition, and the heap differs between x86 and arm64. It has to be settled
-  against the binary before x86 and arm64 digests are compared.
+  between identical runs (radius 31.5 vs 23.1). No checkpoint changed in these replays on
+  Windows, but it can change target acquisition, and the heap differs between x86 and arm64. On
+  Android (M3c) it does change checkpoints: filling new heap blocks with `0xff` changes T3 from
+  beat 6150 and R4 from beat 3600. It has to be settled against the binary before x86 and arm64
+  digests are compared.
 - **No GUI reference yet.** The runner is deterministic, but its digests have not been compared
   with a GUI `/replay` of the same file. Pointer-ordered containers in the recovered code would
   make the two diverge. The check: run `main.exe /replay <file> /init init_faf.lua /nosound`; the

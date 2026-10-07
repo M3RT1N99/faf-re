@@ -2,8 +2,9 @@
 // CGpgNetInterface.cpp) for the Android headless runner; see HeadlessStubs.h.
 //
 // The runner state: a replay plays from a file through CReplayClient and CLocalClient; nothing opens
-// a socket. The closure's callers are the GPGNet connection of SessionStartup.cpp (only with
-// /gpgnet), LAN game discovery (CDiscoveryService.cpp, started only by the lobby's Lua) and
+// a socket. The closure's callers are the GPGNet streams of SessionStartup.cpp (`gpgnet://` paths),
+// LAN game discovery (CDiscoveryService.cpp, started only by the lobby's Lua), the lobby itself
+// (CLobby.cpp, linked since M3c for its registrations, started only by the front end's Lua) and
 // CWldUiInterface (IClientMgrUIInterface.cpp), which the runner never installs.
 //
 // moho/net/Common.cpp is not stubbed here: CSimDriver measures its own speed with Common.cpp's
@@ -51,16 +52,19 @@ namespace moho
     return nullptr;
   }
 
-  // INetTCPSocket.cpp:35: connects a TCP socket (caller: SessionStartup.cpp's /gpgnet connection).
+  // INetTCPSocket.cpp:35 and CHostManager.cpp:119: connect a TCP socket and resolve a host name. The
+  // closure's caller is OpenGPGNetSocket (SessionStartup.cpp:269), which opens a `gpgnet://host/...`
+  // replay or save stream over the GPGNet connection. On Windows that connects; a stand-in returning
+  // failure would make the same input fail quietly here, so both are traps. (The runner itself never
+  // gets that far with such a path: HeadlessReplay.cpp's replay scan opens the file directly and stops
+  // the run first, on both platforms.)
   INetTCPSocket* NET_TCPConnect(const u_long address, const u_short port)
   {
     (void)address;
     (void)port;
-    FAF_RUNNER_STUB("NET_TCPConnect");
-    return nullptr;
+    FAF_RUNNER_TRAP("NET_TCPConnect");
   }
 
-  // CHostManager.cpp:119: resolves a host name (caller: SessionStartup.cpp's /gpgnet connection).
   bool NET_GetAddrInfo(const char* const str, const u_short defaultPort, const bool isTcp, u_long& address, u_short& port)
   {
     (void)str;
@@ -68,8 +72,7 @@ namespace moho
     (void)isTcp;
     (void)address;
     (void)port;
-    FAF_RUNNER_STUB("NET_GetAddrInfo");
-    return false;
+    FAF_RUNNER_TRAP("NET_GetAddrInfo");
   }
 
   // CGpgNetInterface.cpp:380 and :445: both return at once without a GPGNet connection, which only

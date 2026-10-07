@@ -50,6 +50,10 @@
 #include "moho/terrain/splat/CWldSplat.h"
 #include "moho/terrain/water/CWaterShaderProperties.h"
 #include "moho/terrain/water/WaveSystem.h"
+#if !defined(_WIN32)
+#include "moho/resource/ResourceManager.h"
+#include "moho/resource/ResourceReflectionHelpers.h"
+#endif
 
 namespace
 {
@@ -1461,27 +1465,39 @@ namespace moho
         static_cast<void*>(payloadBytes.data()),
         payloadBytes.size()
       );
+#else
+      // Port seam (docs/port/headless-replay.md, "Android runner"): Android has no D3D9 device (the
+      // renderer is W3). CD3DDeviceResources::GetTextureSheet (CD3DDeviceResources.cpp:531) needs none:
+      // it wraps a copy of the payload in a texture resource, which creates no GPU texture until
+      // something draws it. The same here.
+      previewTexture.reset(new RD3DTextureResource(kPreviewSheetLocation, payloadBytes.data(), payloadBytes.size()));
 #endif
     } else {
 #if defined(_WIN32)
       CD3DDevice* const device = D3D_GetDevice();
       ID3DDeviceResources* const resources = device->GetResources();
       resources->GetTexture(previewTexture, kFallbackPreviewTexture, 0, true);
+#else
+      // CD3DDeviceResources::GetTexture (CD3DDeviceResources.cpp:470) without the device: the texture
+      // resource comes from the resource manager and the texture factory, which only map the file, and
+      // a failed lookup is retried once with the fallback texture (the same path here). Left out:
+      // TrackTextureResource, the device's texture list, which only the renderer walks. So a map
+      // without a stored preview loads exactly when the fallback texture is found, as on Windows.
+      gpg::RType* const textureType = resource_reflection::ResolveRD3DTextureResourceType();
+      boost::weak_ptr<RD3DTextureResource> weakTexture{};
+      (void)RES_GetResource(&weakTexture, kFallbackPreviewTexture, nullptr, textureType);
+      previewTexture = weakTexture.lock();
+      if (!previewTexture) {
+        gpg::Logf("Can't find texture \"%s\" -- trying fallback.", kFallbackPreviewTexture);
+        boost::weak_ptr<RD3DTextureResource> weakFallback{};
+        (void)RES_GetResource(&weakFallback, kFallbackPreviewTexture, nullptr, textureType);
+        previewTexture = weakFallback.lock();
+      }
 #endif
     }
 
     mPreviewTexture = boost::static_pointer_cast<ID3DTextureSheet>(previewTexture);
-#if defined(_WIN32)
     return mPreviewTexture.get() != nullptr;
-#else
-    // Port seam (M3b, docs/port/headless-replay.md, "Android runner"): Android has no D3D9 device
-    // (the renderer is W3), so the map's texture sheets are not created there; only the renderer
-    // reads them, and every byte of the .scmap is still read as on Windows. With a device a stored
-    // preview always succeeds (GetTextureSheet wraps the payload in a new RD3DTextureResource,
-    // CD3DDeviceResources.cpp:538); only a map without one depends on the fallback texture
-    // (kFallbackPreviewTexture), which Android does not load and treats as found.
-    return true;
-#endif
   }
 
   /**

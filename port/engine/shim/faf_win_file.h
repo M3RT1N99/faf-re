@@ -1386,7 +1386,7 @@ inline LPVOID MapViewOfFile(
     return nullptr;
   }
   if (!faf_compat::AddRegion(reinterpret_cast<uintptr_t>(view), length, protect, faf_compat::RegionKind::FileView)) {
-    munmap(view, length);
+    faf_compat::UnmapRegion(view, length);
     SetLastError(ERROR_NOT_ENOUGH_MEMORY);
     return nullptr;
   }
@@ -1400,7 +1400,7 @@ inline BOOL UnmapViewOfFile(LPCVOID baseAddress) noexcept
     SetLastError(ERROR_INVALID_ADDRESS);
     return FALSE;
   }
-  munmap(reinterpret_cast<void*>(region.base), region.length);
+  faf_compat::UnmapRegion(reinterpret_cast<void*>(region.base), region.length);  // the low arena's views go back to it
   return TRUE;
 }
 

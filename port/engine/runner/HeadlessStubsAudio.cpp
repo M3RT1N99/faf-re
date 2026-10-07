@@ -1,16 +1,20 @@
-// Sound (moho/audio/AudioEngine.cpp, CUserSoundManager.cpp, XAudioError.cpp) for the Android headless
-// runner; see HeadlessStubs.h.
+// Sound (moho/audio/AudioEngine.cpp, XAudioError.cpp) for the Android headless runner; see
+// HeadlessStubs.h. (The user sound manager, moho/audio/CUserSoundManager.cpp, is linked for real since
+// M3c; it compiles with the shim, and its User-set binders register as on Windows.)
 //
 // The runner state these follow is the Windows runner on a machine without XACT, the state of the
 // M3a reference runs (T1-T3): the M3a T1 log has "Error in file /lua/SessionInit.lua : SND: Error
 // retrieving XACT COM interface. Unknown XACT Error". The loader's SessionInit.lua reaches
 // AudioSetLanguage (FAF lua/system/Localization.lua), whose binder (Sim.cpp, cfunc_AudioSetLanguageUserL) calls
-// USER_GetSound(); that constructs a CUserSoundManager, whose member initialiser calls
+// USER_GetSound() (CUserSoundManager.cpp:843); that constructs a CUserSoundManager, whose member initialiser calls
 // AudioEngine::Create("/sounds") (CUserSoundManager.cpp:806); Create runs func_InitSound
 // (AudioEngine.cpp:1888) and the AudioEngine constructor, which throws XAudioError when XACT's COM
 // object cannot be created (AudioEngine.cpp:1424). The exception leaves USER_GetSound, so
 // `gUserSoundManager` stays null and every later call throws the same way; the error ends the script
-// right after `__language` is set. Android has no XACT, so the same holds there.
+// right after `__language` is set. Android has no XACT, so the same holds there: AudioEngine::Create
+// below throws the same error. So no CUserSoundManager and no AudioEngine ever exists, and the
+// AudioEngine members CUserSoundManager.cpp calls (all from CUserSoundManager's own members) are
+// traps.
 //
 // What func_InitSound leaves behind on Windows is a SoundConfiguration with no engines (the throwing
 // AudioEngine was never registered). Every reader in the closure tests for a non-empty engine list
@@ -19,9 +23,9 @@
 
 #include "HeadlessStubs.h"
 
+#include "gpg/core/utils/Global.h"
 #include "moho/audio/AudioEngine.h"
-#include "moho/audio/CUserSoundManager.h"
-#include "moho/audio/IUserSoundManager.h"
+#include "moho/render/camera/VTransform.h"
 #include "moho/audio/SofdecRuntime.h"
 #include "moho/audio/XAudioError.h"
 
@@ -48,24 +52,10 @@ namespace moho
     FAF_RUNNER_STUB("SoundConfiguration::~SoundConfiguration");
   }
 
-  // CUserSoundManager.cpp:842 in the no-XACT state: the CUserSoundManager constructor throws (see the
-  // top of this file). Reached in every run, from the loader's SessionInit.lua.
-  IUserSoundManager* USER_GetSound()
-  {
-    FAF_RUNNER_STUB("USER_GetSound");
-    throw XAudioError(kNoXactError);
-  }
-
-  // CUserSoundManager.cpp:2330: a console command that calls USER_GetSound() first.
-  void Con_DumpActiveLoops()
-  {
-    FAF_RUNNER_STUB("Con_DumpActiveLoops");
-    (void)USER_GetSound();
-  }
-
-  // AudioEngine.cpp:2271 in the no-XACT state: the AudioEngine constructor throws. Its callers in the
-  // closure (the AudioSetLanguage binder in Sim.cpp) run only after USER_GetSound()
-  // returned a manager, which never happens here.
+  // AudioEngine.cpp:2271 in the no-XACT state: the AudioEngine constructor throws. Reached in every
+  // run, from CUserSoundManager's constructor (USER_GetSound, from the loader's SessionInit.lua); its
+  // other caller in the closure (the AudioSetLanguage binder in Sim.cpp) runs only after
+  // USER_GetSound() returned a manager, which never happens here.
   boost::shared_ptr<AudioEngine> AudioEngine::Create(const gpg::StrArg voicePath)
   {
     (void)voicePath;
@@ -120,6 +110,85 @@ namespace moho
   void AudioEngine::Shutdown()
   {
     FAF_RUNNER_STUB("AudioEngine::Shutdown");
+  }
+
+  // AudioEngine.cpp:2098 and :2126 without registered engines: NaN, and nothing set. Their callers
+  // are CUserSoundManager's members (the camera, duck and loop variables), so nothing reaches them.
+  float SND_GetGlobalFloat(const std::uint16_t varIndex)
+  {
+    (void)varIndex;
+    FAF_RUNNER_STUB("SND_GetGlobalFloat");
+    return gpg::NaN;
+  }
+
+  void SND_SetGlobalFloat(const std::uint16_t varIndex, const float value)
+  {
+    (void)varIndex;
+    (void)value;
+    FAF_RUNNER_STUB("SND_SetGlobalFloat");
+  }
+
+  // AudioEngine.cpp:1509: the text of an XACT error code. Its callers in CUserSoundManager.cpp report
+  // failed XACT calls on an engine or cue, which cannot exist here. A trap.
+  const char* func_SoundErrorCodeToMsg(const int errorCode)
+  {
+    (void)errorCode;
+    FAF_RUNNER_TRAP("func_SoundErrorCodeToMsg");
+  }
+
+  // AudioEngine.cpp:2339, :2463, :2569, :2642, :2673, :2696, :2738: members of an AudioEngine (Play
+  // and Calculate3D take one as an argument). No engine object exists in this state, and their only
+  // callers are CUserSoundManager's members, so these are traps.
+  VTransform AudioEngine::GetListenerTransform()
+  {
+    FAF_RUNNER_TRAP("AudioEngine::GetListenerTransform");
+  }
+
+  int AudioEngine::Play(
+    const std::uint16_t bankId, IXACTCue** const outCue, AudioEngine* const engine, const std::uint16_t cueId,
+    const std::int32_t preloadOnly
+  )
+  {
+    (void)bankId;
+    (void)outCue;
+    (void)engine;
+    (void)cueId;
+    (void)preloadOnly;
+    FAF_RUNNER_TRAP("AudioEngine::Play");
+  }
+
+  void AudioEngine::SetPaused(const gpg::StrArg category, const bool paused)
+  {
+    (void)category;
+    (void)paused;
+    FAF_RUNNER_TRAP("AudioEngine::SetPaused");
+  }
+
+  void AudioEngine::SetVolume(const gpg::StrArg category, const float value)
+  {
+    (void)category;
+    (void)value;
+    FAF_RUNNER_TRAP("AudioEngine::SetVolume");
+  }
+
+  float AudioEngine::GetVolume(const gpg::StrArg category)
+  {
+    (void)category;
+    FAF_RUNNER_TRAP("AudioEngine::GetVolume");
+  }
+
+  void AudioEngine::SetListenerTransform(const VTransform& transform)
+  {
+    (void)transform;
+    FAF_RUNNER_TRAP("AudioEngine::SetListenerTransform");
+  }
+
+  void AudioEngine::Calculate3D(const Wm3::Vec3f* const worldPos, AudioEngine* const engine, IXACTCue* const cue)
+  {
+    (void)worldPos;
+    (void)engine;
+    (void)cue;
+    FAF_RUNNER_TRAP("AudioEngine::Calculate3D");
   }
 } // namespace moho
 

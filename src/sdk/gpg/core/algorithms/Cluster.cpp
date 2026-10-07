@@ -27,6 +27,7 @@
 
 namespace
 {
+#if defined(_MSC_VER)
     struct SharedCountControl
     {
         void** vtable;
@@ -65,6 +66,41 @@ namespace
 
         return false;
     }
+#else
+    // Port: the two functions above assume the MSVC ABI - vtable slot 1 is dispose() and slot 2
+    // destroy(), and `long` is 32 bits. Under the Itanium C++ ABI slots 0/1 are the destructors, so
+    // slot 1 deleted the control block (leaking the ClusterCacheImpl), and on LP64 `weakCount` lies
+    // 8 bytes further on, so the weak release then decremented a word of the freed block: heap
+    // corruption at every PathTables teardown (port/engine/lowarena/README.md, heap check). The
+    // control block is the SpCountedImplStorage<void> InitializeClusterCache builds, whose dispose()
+    // is SpCountedImplPDisposeClusterCacheImpl and whose destroy() frees the storage; the same
+    // counts and calls, without the raw slots.
+    using ClusterCacheCount = boost::SpCountedImplStorage<void>;
+
+    void RetainSharedCount(void* const sharedCount)
+    {
+        if (sharedCount != nullptr) {
+            __atomic_fetch_add(&static_cast<ClusterCacheCount*>(sharedCount)->useCount, 1, __ATOMIC_ACQ_REL);
+        }
+    }
+
+    [[nodiscard]] bool ReleaseSharedCount(void* const sharedCount)
+    {
+        if (sharedCount == nullptr) {
+            return true;
+        }
+
+        auto* const control = static_cast<ClusterCacheCount*>(sharedCount);
+        if (__atomic_fetch_sub(&control->useCount, 1, __ATOMIC_ACQ_REL) != 1) {
+            return false;
+        }
+        boost::SpCountedImplPDisposeClusterCacheImpl(control);
+        if (__atomic_fetch_sub(&control->weakCount, 1, __ATOMIC_ACQ_REL) == 1) {
+            ::operator delete(control);
+        }
+        return true;
+    }
+#endif
 
 
 

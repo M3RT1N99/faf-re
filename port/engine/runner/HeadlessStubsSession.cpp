@@ -1,5 +1,5 @@
-// The user session (moho/sim/CWldSession.cpp) and the user-side unit (moho/unit/core/UserUnit.cpp)
-// for the Android headless runner; see HeadlessStubs.h for the rules.
+// The user session (moho/sim/CWldSession.cpp) for the Android headless runner; see HeadlessStubs.h
+// for the rules. (The user-side unit, moho/unit/core/UserUnit.cpp, is linked for real since M3c.)
 //
 // The runner state these follow (moho/app/HeadlessReplay.cpp, Run): WLD_DoLoading and
 // WLD_CreateSession never run, so no CWldSession exists; `gActiveWldSession` (CWldSession.cpp:2910)
@@ -215,18 +215,17 @@ namespace moho
 
   // CWldSession.cpp:9238/9247. SSessionSaveDataTypeInfo.cpp registers them as the reflection
   // constructor/destructor; an SSessionSaveData exists only for a save game (CWldSession::GetSaveData,
-  // loading a save), which a replay run never makes. The stand-in still leaves an empty map.
+  // loading a save), which a replay run never makes. The real constructor builds the session's node
+  // map (a sentinel head node), which a stand-in cannot reproduce without the session code, so both
+  // are traps: the destructor only runs on an object the constructor made.
   SSessionSaveData::SSessionSaveData()
   {
-    FAF_RUNNER_STUB("SSessionSaveData::SSessionSaveData");
-    mNodeMap.mAllocProxy = nullptr;
-    mNodeMap.mHead = nullptr;
-    mNodeMap.mSize = 0u;
+    FAF_RUNNER_TRAP("SSessionSaveData::SSessionSaveData");
   }
 
   SSessionSaveData::~SSessionSaveData()
   {
-    FAF_RUNNER_STUB("SSessionSaveData::~SSessionSaveData");
+    FAF_RUNNER_TRAP("SSessionSaveData::~SSessionSaveData");
   }
 
   // CWldSession.cpp:13263, :9682, :12966, :10448, :10554, :13021, :11230, :10150, :10170, :10202,
@@ -427,448 +426,30 @@ namespace moho
   }
 
   // ---------------------------------------------------------------------------------------------
-  // UserUnit.cpp. Both take a UserUnit, and the runner has none; the callers are CFormation's
-  // user-side drag preview (CFormation.cpp:180, :257, :294 also read WLD_GetActiveSession()->mState).
+  // UserUnit.cpp is linked for real since M3c (the closure takes its arm64 compile status from the
+  // post-M3b sweep, where it compiles), so its User-set binders register as on Windows and its
+  // vtable and type_info come from its own key function. It still cannot construct a UserUnit: only
+  // CWldSession creates them, and the runner has no session.
 
-  // UserUnit.cpp: GetLastQueuedUserCommandAnchor (declared UserUnit.h:1198).
-  const QueuedUserCommandRecord* GetLastQueuedUserCommandAnchor(const UserUnit* const unit) noexcept
+  // CWldSession.cpp:9708: the world position of a queued command's anchor. Its callers in UserUnit.cpp
+  // (the build-drag lookup at UserUnit.cpp:1793) and CWldSession.cpp work on the user command queues
+  // of UserUnits, which need a session; the Windows runner never reaches it, and the real body reads
+  // the session's command graph, so this is a trap.
+  Wm3::Vector3f ResolveCommandGraphAnchorWorldPosition(UserCommandIssueHelper& helper) noexcept
   {
-    (void)unit;
-    FAF_RUNNER_STUB("GetLastQueuedUserCommandAnchor");
-    return nullptr;
+    (void)helper;
+    FAF_RUNNER_TRAP("ResolveCommandGraphAnchorWorldPosition");
   }
 
-  // UserUnit.cpp: GetIUnitBridge (declared UserUnit.h:1170).
-  IUnit* GetIUnitBridge(UserUnit* const self) noexcept
+  // CWldSession.cpp:16298: loads a scenario's info table into a Lua state. Its closure caller is
+  // CLobby::LaunchGame (CLobby.cpp:3193), started only from the lobby's Lua, which the runner never
+  // runs (the runner loads the scenario through CWldSessionLoaderImpl). A trap.
+  LuaPlus::LuaObject WLD_LoadScenarioInfo(const msvc8::string& scenarioFile, LuaPlus::LuaState* const state)
   {
-    (void)self;
-    FAF_RUNNER_STUB("GetIUnitBridge");
-    return nullptr;
-  }
-
-  // UserUnit.cpp: the user side of command issuing (UserCommandIssueHelper and the per-unit command
-  // queues) and UserUnit queries. They act on UserUnits or on helpers made for them; the callers are
-  // ISSUE_Command, ISSUE_SetCommandTarget and the factory-queue binders in Sim.cpp and the user
-  // binders of CCommandLuaFunctionRegistrations.cpp, all reached only through a session's selection.
-  UserUnit* GetUserUnitOptional(const LuaPlus::LuaObject& object, LuaPlus::LuaState* const state)
-  {
-    (void)object;
+    (void)scenarioFile;
     (void)state;
-    FAF_RUNNER_STUB("GetUserUnitOptional");
-    return nullptr;
+    FAF_RUNNER_TRAP("WLD_LoadScenarioInfo");
   }
-
-  void CollectUpgradeCommandTargetBlueprints(UserUnit* const unit, msvc8::list<const RUnitBlueprint*>& out)
-  {
-    (void)unit;
-    (void)out;
-    FAF_RUNNER_STUB("CollectUpgradeCommandTargetBlueprints");
-  }
-
-  bool USERUNIT_IsDockTargetIdle(const UserUnit* const unit) noexcept
-  {
-    (void)unit;
-    FAF_RUNNER_STUB("USERUNIT_IsDockTargetIdle");
-    return false;
-  }
-
-  std::int32_t GetUserUnitManagerQueueSize(UserCommandQueue* const managerPtr) noexcept
-  {
-    (void)managerPtr;
-    FAF_RUNNER_STUB("GetUserUnitManagerQueueSize");
-    return 0;
-  }
-
-  void ResetUserUnitManagerState(UserCommandQueue* const manager, const std::int32_t commandType)
-  {
-    (void)manager;
-    (void)commandType;
-    FAF_RUNNER_STUB("ResetUserUnitManagerState");
-  }
-
-  void UserUnitManagerAdd(UserCommandQueue* const manager, UserCommandIssueHelper* const helper, const CmdId cmdId, const CmdId index)
-  {
-    (void)manager;
-    (void)helper;
-    (void)cmdId;
-    (void)index;
-    FAF_RUNNER_STUB("UserUnitManagerAdd");
-  }
-
-  Wm3::Vector3<float> ResolvePositionFromTarget(const UserTarget& target) noexcept
-  {
-    (void)target;
-    FAF_RUNNER_STUB("ResolvePositionFromTarget");
-    return Wm3::Vector3<float>{};
-  }
-
-  UserEntity* DecodeEntityFromCommandTargetIfEntity(const UserTarget* const target) noexcept
-  {
-    (void)target;
-    FAF_RUNNER_STUB("DecodeEntityFromCommandTargetIfEntity");
-    return nullptr;
-  }
-
-  EUnitCommandType ResolveCommandIssueHelperCommandType(const UserCommandIssueHelper& helper) noexcept
-  {
-    (void)helper;
-    FAF_RUNNER_STUB("ResolveCommandIssueHelperCommandType");
-    return EUnitCommandType{};
-  }
-
-  std::int32_t QueuedBuildCommandCount(const UserCommandIssueHelper& helper) noexcept
-  {
-    (void)helper;
-    FAF_RUNNER_STUB("QueuedBuildCommandCount");
-    return 0;
-  }
-
-  // UserUnit.cpp:1593, the same body (a value type).
-  UserCommandIssueLocalEvent::UserCommandIssueLocalEvent(const CmdId cmdId, const ECommandIssueEvent type)
-    : mCmdId(cmdId)
-    , mType(type)
-    , mUnits()
-    , mCount(0)
-    , mTarget()
-    , mCells()
-  {
-    FAF_RUNNER_STUB("UserCommandIssueLocalEvent::UserCommandIssueLocalEvent");
-  }
-
-  // UserUnit.cpp:1609 without its log probe. The destructor below leaves out the real one's removal
-  // of the helper from the session's command map (DiscardActiveSessionCommandIssueHelper), since
-  // there is no session; the members tear themselves down as there.
-  UserCommandIssueHelper::UserCommandIssueHelper(
-    const SSTICommandConstantData& constantData, const std::uint8_t deleteWhenDue, const std::int32_t dueSeqNo
-  )
-    : WeakObject()
-    , mConstantData(constantData)
-    , mVariableData()
-    , mReservedB0(0u)
-    , mDeleteWhenDue(deleteWhenDue)
-    , mVariableDataDirty(1u)
-    , mReservedB3(0u)
-    , mDueSeqNo(dueSeqNo)
-    , mLocalQueue{}
-    , mCursorEntitySet()
-  {
-    FAF_RUNNER_STUB("UserCommandIssueHelper::UserCommandIssueHelper");
-  }
-
-  UserCommandIssueHelper::~UserCommandIssueHelper() noexcept
-  {
-    FAF_RUNNER_STUB("UserCommandIssueHelper::~UserCommandIssueHelper");
-  }
-
-  void UserCommandIssueHelper::AdvanceLocalEventsToBeat(const std::int32_t beat) noexcept
-  {
-    (void)beat;
-    FAF_RUNNER_STUB("UserCommandIssueHelper::AdvanceLocalEventsToBeat");
-  }
-
-  // ---------------------------------------------------------------------------------------------
-  // UserUnit's virtual functions (UserUnit.h; bodies in UserUnit.cpp). CScriptEvent.cpp and Sim.cpp
-  // look the class up as gpg::LookupRType(typeid(UserUnit)) (for Lua objects that wrap a UserUnit), and
-  // under the Itanium ABI UserUnit's type_info and vtable are emitted only with its key function,
-  // ~UserUnit. Defining all of its virtual functions here emits them. No UserUnit can exist in the
-  // runner: its only constructor, UserUnit(CWldSession*, const SCreateUnitParams&), is not linked, so
-  // a closure TU that ever constructed one would fail the link instead of reaching these. The
-  // accessors that only read a member keep the real bodies; the rest log and return a neutral value.
-  // (On Android UserUnit's RType is never registered, UserUnitTypeInfo.cpp being outside the closure,
-  // so the lookups themselves could only fail; they are reached only for UserUnit Lua objects.)
-
-  // UserUnit.cpp:2016.
-  UserUnit::~UserUnit()
-  {
-    FAF_RUNNER_STUB("UserUnit::~UserUnit");
-  }
-
-  void UserUnit::Tick(const std::int32_t seqNo)
-  {
-    (void)seqNo;
-    FAF_RUNNER_STUB("UserUnit::Tick");
-  }
-
-  // UserUnit.cpp:2555 and :2566, the same bodies.
-  const UserUnit* UserUnit::IsUserUnit() const
-  {
-    FAF_RUNNER_STUB("UserUnit::IsUserUnit const");
-    return this;
-  }
-
-  UserUnit* UserUnit::IsUserUnit()
-  {
-    FAF_RUNNER_STUB("UserUnit::IsUserUnit");
-    return this;
-  }
-
-  float UserUnit::GetUniformScale() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetUniformScale");
-    return 1.0f;
-  }
-
-  // UserUnit.cpp:2591, :2602 and the factory-queue pair after them, the same bodies.
-  const UserCommandQueue* UserUnit::GetCommandQueue() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetCommandQueue const");
-    return mManager;
-  }
-
-  UserCommandQueue* UserUnit::GetCommandQueue()
-  {
-    FAF_RUNNER_STUB("UserUnit::GetCommandQueue");
-    return mManager;
-  }
-
-  const UserCommandQueue* UserUnit::GetFactoryCommandQueue() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetFactoryCommandQueue const");
-    return mFactoryManager;
-  }
-
-  UserCommandQueue* UserUnit::GetFactoryCommandQueue()
-  {
-    FAF_RUNNER_STUB("UserUnit::GetFactoryCommandQueue");
-    return mFactoryManager;
-  }
-
-  void UserUnit::UpdateEntityData(const SSTIEntityVariableData& variableData)
-  {
-    (void)variableData;
-    FAF_RUNNER_STUB("UserUnit::UpdateEntityData");
-  }
-
-  void UserUnit::UpdateVisibility()
-  {
-    FAF_RUNNER_STUB("UserUnit::UpdateVisibility");
-  }
-
-  bool UserUnit::RequiresUIRefresh() const
-  {
-    FAF_RUNNER_STUB("UserUnit::RequiresUIRefresh");
-    return false;
-  }
-
-  bool UserUnit::IsSelectable() const
-  {
-    FAF_RUNNER_STUB("UserUnit::IsSelectable");
-    return false;
-  }
-
-  bool UserUnit::IsBeingBuilt() const
-  {
-    FAF_RUNNER_STUB("UserUnit::IsBeingBuilt");
-    return false;
-  }
-
-  void UserUnit::NotifyFocusArmyUnitDamaged()
-  {
-    FAF_RUNNER_STUB("UserUnit::NotifyFocusArmyUnitDamaged");
-  }
-
-  void UserUnit::CreateMeshInstance(const bool forUnitPose)
-  {
-    (void)forUnitPose;
-    FAF_RUNNER_STUB("UserUnit::CreateMeshInstance");
-  }
-
-  void UserUnit::DestroyMeshInstance()
-  {
-    FAF_RUNNER_STUB("UserUnit::DestroyMeshInstance");
-  }
-
-  EntId UserUnit::GetEntityId() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetEntityId");
-    return EntId{};
-  }
-
-  // UserUnit.cpp:2240 and :2249, the same bodies.
-  const Wm3::Vec3f& UserUnit::GetPosition() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetPosition");
-    return mVariableData.mCurTransform.pos_;
-  }
-
-  const VTransform& UserUnit::GetTransform() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetTransform");
-    return mVariableData.mCurTransform;
-  }
-
-  const RUnitBlueprint* UserUnit::GetBlueprint() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetBlueprint");
-    return nullptr;
-  }
-
-  LuaPlus::LuaObject UserUnit::GetLuaObject()
-  {
-    FAF_RUNNER_STUB("UserUnit::GetLuaObject");
-    return LuaPlus::LuaObject{};
-  }
-
-  float UserUnit::CalcTransportLoadFactor() const
-  {
-    FAF_RUNNER_STUB("UserUnit::CalcTransportLoadFactor");
-    return 0.0f;
-  }
-
-  bool UserUnit::IsDead() const
-  {
-    FAF_RUNNER_STUB("UserUnit::IsDead");
-    return false;
-  }
-
-  bool UserUnit::DestroyQueued() const
-  {
-    FAF_RUNNER_STUB("UserUnit::DestroyQueued");
-    return false;
-  }
-
-  bool UserUnit::IsMobile() const
-  {
-    FAF_RUNNER_STUB("UserUnit::IsMobile");
-    return false;
-  }
-
-  bool UserUnit::IsNavigatorIdle() const
-  {
-    FAF_RUNNER_STUB("UserUnit::IsNavigatorIdle");
-    return false;
-  }
-
-  bool UserUnit::IsUnitState(const EUnitState state) const
-  {
-    (void)state;
-    FAF_RUNNER_STUB("UserUnit::IsUnitState");
-    return false;
-  }
-
-  // UserUnit.cpp:2348 and :2357, the same bodies.
-  UnitAttributes& UserUnit::GetAttributes()
-  {
-    FAF_RUNNER_STUB("UserUnit::GetAttributes");
-    return mUnitVarDat.mAttributes;
-  }
-
-  const UnitAttributes& UserUnit::GetAttributes() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetAttributes const");
-    return mUnitVarDat.mAttributes;
-  }
-
-  StatItem* UserUnit::GetStat(const gpg::StrArg statPath, const std::string& defaultValue)
-  {
-    (void)statPath;
-    (void)defaultValue;
-    FAF_RUNNER_STUB("UserUnit::GetStat(string)");
-    return nullptr;
-  }
-
-  StatItem* UserUnit::GetStat(const gpg::StrArg statPath, const float& defaultValue)
-  {
-    (void)statPath;
-    (void)defaultValue;
-    FAF_RUNNER_STUB("UserUnit::GetStat(float)");
-    return nullptr;
-  }
-
-  StatItem* UserUnit::GetStat(const gpg::StrArg statPath, const int& defaultValue)
-  {
-    (void)statPath;
-    (void)defaultValue;
-    FAF_RUNNER_STUB("UserUnit::GetStat(int)");
-    return nullptr;
-  }
-
-  StatItem* UserUnit::GetStat(const gpg::StrArg statPath)
-  {
-    (void)statPath;
-    FAF_RUNNER_STUB("UserUnit::GetStat");
-    return nullptr;
-  }
-
-  gpg::RType* UserUnit::GetClass() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetClass");
-    return nullptr;
-  }
-
-  gpg::RRef UserUnit::GetDerivedObjectRef()
-  {
-    FAF_RUNNER_STUB("UserUnit::GetDerivedObjectRef");
-    return gpg::RRef{};
-  }
-
-  bool UserUnit::FindWeaponBy(const std::int32_t rangeCategoryFilter, float* const outMinRange, float* const outMaxRange) const
-  {
-    (void)rangeCategoryFilter;
-    (void)outMinRange;
-    (void)outMaxRange;
-    FAF_RUNNER_STUB("UserUnit::FindWeaponBy");
-    return false;
-  }
-
-  bool UserUnit::GetIntelRanges(float* const outOmniRange, float* const outRadarRange, float* const outSonarRange) const
-  {
-    (void)outOmniRange;
-    (void)outRadarRange;
-    (void)outSonarRange;
-    FAF_RUNNER_STUB("UserUnit::GetIntelRanges");
-    return false;
-  }
-
-  bool UserUnit::GetMaxCounterIntel(float* const outMaxCounterIntelRange) const
-  {
-    (void)outMaxCounterIntelRange;
-    FAF_RUNNER_STUB("UserUnit::GetMaxCounterIntel");
-    return false;
-  }
-
-  bool UserUnit::GetAutoMode() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetAutoMode");
-    return false;
-  }
-
-  bool UserUnit::IsAutoSurfaceMode() const
-  {
-    FAF_RUNNER_STUB("UserUnit::IsAutoSurfaceMode");
-    return false;
-  }
-
-  bool UserUnit::Func1() const
-  {
-    FAF_RUNNER_STUB("UserUnit::Func1");
-    return false;
-  }
-
-  bool UserUnit::IsOverchargePaused() const
-  {
-    FAF_RUNNER_STUB("UserUnit::IsOverchargePaused");
-    return false;
-  }
-
-  char* UserUnit::GetCustomName()
-  {
-    FAF_RUNNER_STUB("UserUnit::GetCustomName");
-    return nullptr;
-  }
-
-  float UserUnit::GetFuel() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetFuel");
-    return 0.0f;
-  }
-
-  float UserUnit::GetShield() const
-  {
-    FAF_RUNNER_STUB("UserUnit::GetShield");
-    return 0.0f;
-  }
-
   // ---------------------------------------------------------------------------------------------
   // CWldSession.cpp's user-side console variables (CWldSession.cpp:1100-1206), with the values they
   // are defined with there. CConCommand.cpp registers them as console variables; only the session's

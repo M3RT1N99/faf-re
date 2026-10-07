@@ -8,8 +8,8 @@
 // What the runner does use of the renderer is not stood in for here (M3b integration): the spatial
 // database is the engine's own code (MeshSpatialDb.cpp); the decal manager, decals and decal groups
 // (CWldSplat.cpp, CWldTerrainDecal.cpp, CDecalGroup.cpp), which read the .scmap decal section, are
-// linked for real; gpg::gal::Math::mul (Matrix.cpp, sim-side effects) is ported; the
-// RD3DTextureResource reflection lookup is Windows-only (ResourceReflectionHelpers.cpp).
+// linked for real; gpg::gal::Math::mul (Matrix.cpp, sim-side effects) is ported. The texture
+// resource class RD3DTextureResource has its own file (HeadlessStubsTexture.cpp, M3c).
 //
 // D3D_GetDevice (CD3DDevice.cpp:1935) returns the device singleton, so it cannot be stood in for.
 // The Windows runner reaches it only to create texture resources while it loads the map
@@ -30,7 +30,6 @@
 #include "moho/mesh/Mesh.h"
 #include "moho/mesh/SpatialDb.h"
 #include "moho/render/MapImager.h"
-#include "moho/render/SelectionBracketParams.h"
 #include "moho/render/SelectionBracketRenderer.h"
 #include "moho/render/d3d/CD3DFont.h"
 #include "moho/render/d3d/CD3DPrimBatcher.h"
@@ -56,6 +55,15 @@ namespace gpg::gal
   {
     FAF_RUNNER_STUB("gpg::gal::Device::GetInstance");
     return nullptr;
+  }
+
+  // Device.cpp:138: `sDeviceD3D.get() != nullptr`, false without CreateDevice. Callers: the batch
+  // texture factory (SBatchTextureDataFactory.cpp, which then loads nothing) and RD3DTextureResource's
+  // lazy texture creation (through CD3DDevice::GetGalDevice on Windows).
+  bool Device::IsReady()
+  {
+    FAF_RUNNER_STUB("gpg::gal::Device::IsReady");
+    return false;
   }
 
   // Device.cpp:198: false when Device::GetInstance() is null.
@@ -128,11 +136,13 @@ namespace moho
   // UserEntity, Clutter, CUIWorldMesh, CameraImpl and IdleUnitSelector (all user side, none of which
   // the runner creates) and console commands.
 
-  // Mesh.cpp:3497 (creates the renderer on first use).
+  // Mesh.cpp:3515: creates the renderer (a function-local static) on first use and returns it, which
+  // no stand-in can reproduce, so this is a trap. Its callers draw or create mesh instances for
+  // UserEntity/UserUnit, Clutter, CUIWorldMesh, CameraImpl and IdleUnitSelector, or are console
+  // commands; the Windows runner reaches none of them.
   MeshRenderer* MeshRenderer::GetInstance()
   {
-    FAF_RUNNER_STUB("MeshRenderer::GetInstance");
-    return nullptr;
+    FAF_RUNNER_TRAP("MeshRenderer::GetInstance");
   }
 
   // Mesh.cpp: MeshRenderer::Reset; its caller is a console command (CON_mesh_Rebatch, CConCommand.cpp).
@@ -241,6 +251,15 @@ namespace moho
   void MeshInstance::UpdateInterpolatedFields()
   {
     FAF_RUNNER_STUB("MeshInstance::UpdateInterpolatedFields");
+  }
+
+  // Mesh.cpp:3121: freezes or releases an instance's pose. Its caller is UserUnit's visibility update
+  // (UserUnit.cpp:2135), which needs a UserUnit with a mesh instance; neither exists in the runner (no
+  // session, and the stand-ins above create no instance). A trap.
+  void MeshInstance::LockPose(const bool lockPose)
+  {
+    (void)lockPose;
+    FAF_RUNNER_TRAP("MeshInstance::LockPose");
   }
 
   Wm3::AxisAlignedBox3f MeshInstance::GetSweptAlignedBox() const
@@ -435,13 +454,8 @@ namespace moho
     FAF_RUNNER_STUB("REN_MapBorderClear");
   }
 
-  // SelectionBracketParams.cpp:60-65 (set only from /lua/renderselectparams.lua when brackets draw).
-  float ren_SelectionSizeFudge = 0.0f;
-  float ren_SelectionHeightFudge = 0.0f;
-  float ren_UnitSelectionScale = 0.0f;
-  std::uint32_t ren_SelectColor = 0u;
-  float ren_SelectBracketMinPixelSize = 0.0f;
-  float ren_SelectBracketSize = 0.0f;
+  // (SelectionBracketParams.cpp, which defines the ren_Select* bracket variables, is linked for real
+  // since M3c.)
 
   // SelectionBracketRenderer.cpp:40.
   bool ren_SelectBoxes = true;

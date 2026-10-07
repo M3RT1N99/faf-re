@@ -59,7 +59,19 @@ L4 is the goal. L2 is the first point where the port is fun to use. L3 is the fi
   the Windows runner sees, or by traps where it never calls them; the one deliberate difference is
   that Android creates no map textures (no D3D9 device). Windows gives the same checkpoint chains
   as before. See [port/engine/runner/README.md](../../port/engine/runner/README.md).
-- **Not yet:** no engine translation unit runs on ARM (M3c).
+- **The runner runs on Android (M3c, emulator).** With a low-address arena that keeps every
+  pointer below 2 GB (the runner's stand-in for x64's `/LARGEADDRESSAWARE:NO`, never used by the
+  APK), the four M3a replays play to the end on the API 36 emulator as x86_64, and T1 as arm64
+  under the emulator's ARM translation, with the same checkpoints on both ABIs. Beat 0 (rules and
+  blueprints) equals Windows in every replay; the checkpoints diverge from beat 100 (T3: 150), the
+  baseline for W5. The registry matches Windows except user-side entries (UI types, User Lua
+  binders, a few console commands). Two engine bugs that only Itanium/LP64 builds hit were fixed
+  on the way, and the sim was found to read uninitialised heap memory that changes later
+  checkpoints. Without the arena the run stops at the first pointer truncation (the category
+  universe word), M3d's starting point. The phone run is prepared, not done. See
+  [headless-replay.md](headless-replay.md#android-runner-m3c).
+- **Not yet:** nothing has run on a real ARM core (the phone run of M3c), and nothing runs without
+  the low-address arena (M3d).
 
 ## Workstreams
 
@@ -104,7 +116,11 @@ What the compiler does not catch matters more than what it does.
      `.init_array` entry, so no pre-registration would ever run. Move it to
      `__attribute__((constructor(prio)))`.
    - Raw vtable calls to MSVC's flagged deleting destructor (`CArmyImpl.cpp:54`,
-     `BoostWrappers.cpp:837`, `ISimResources.cpp:6`, ...) are wrong under the Itanium ABI.
+     `BoostWrappers.cpp:837`, `ISimResources.cpp:6`, ...) are wrong under the Itanium ABI. M3c
+     fixed one that corrupted the heap (`Cluster.cpp`'s shared-count release, slots 1/2).
+   - Recovered functions written in MSVC's return convention (`RRef* f(RRef* out, ...)` for a
+     by-value `RRef`) and cast into by-value function pointers: x86-64 and AArch64 return a small
+     trivially copyable struct in registers. M3c fixed the `WrapFile` callbacks in `LuaObject.cpp`.
    - `#pragma pack(4)` puts atomics on misaligned fields, which raises SIGBUS on AArch64.
    - `long` in binary formats (`ReadArchive.cpp:551-565`) and in hashing (`HashMap.h:104`).
    - `wchar_t` in the save-game header (`SaveGameFileHeader.h:34`) and the map preview name
@@ -337,7 +353,7 @@ M2  W1.1-2: arm64 compile sweep + compile fixes (896/1010)       done; x64 Large
 M3  W1.3-5: 64-bit clean; headless arm64 replay runner runs a replay to the end (adb shell)
     M3a x86 runner (main.exe /headlessreplay), 4 vault replays to the end    done
     M3b arm64 (and x86_64) link of the runner, 0 undefined / 0 duplicate      done
-    M3c run under WSL/emulator/phone
+    M3c run on the emulator (x86_64 T1-T3+R4, arm64 T1) with the low arena   done; phone run open
     M3d truncation fixes + reflection codemod, run without the low-address arena
 M4  W5 + W6 on x86/x64: vault replays checksum-clean on the recovered engine (fixes upstream)
 M5  W5 on arm64: same replays checksum-clean on a phone (L3)

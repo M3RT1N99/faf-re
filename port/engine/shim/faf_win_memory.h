@@ -35,9 +35,12 @@
 //   (gpg/core/utils/Global.cpp realloc_0) copies a few slack bytes more and may
 //   keep a block in place where Windows moves it. Nothing but addresses can
 //   differ.
-// - M3c's low arena (docs/port/android-roadmap.md W1.3) replaces
-//   MapAnonymous() and MapFileView() below to keep reservations and file views
-//   under 2 GB.
+// - M3c's low arena (port/engine/lowarena, docs/port/android-roadmap.md W1.3):
+//   in faf_headless_runner, VirtualAlloc reservations without an address
+//   (ReserveAnywhere) and file views (MapFileView) take their address space
+//   from the arena below 2 GB, and UnmapRegion gives it back there. The
+//   lowarena_* hooks are weak: without the runner executable, or with
+//   FAF_LOWARENA=0, they are absent or decline and the plain mmap paths run.
 
 #if defined(_WIN32) || defined(_MSC_VER)
 #error "port/engine/shim is for non-Windows targets; it must not be on a Windows include path"
@@ -53,6 +56,8 @@
 #include <sys/sysinfo.h>
 #include <unistd.h>
 #include <unwind.h>
+
+#include "../lowarena/LowArena.h"  // weak lowarena_* hooks
 
 extern "C++" {
 
@@ -186,12 +191,54 @@ namespace faf_compat
     return mapped;
   }
 
+  // Anonymous private memory anywhere, aligned to the 64 KB allocation
+  // granularity Windows guarantees; the one place VirtualAlloc takes address
+  // space when it is given no address. The low arena first, then mmap.
+  inline void* ReserveAnywhere(const size_t length, const int protection) noexcept
+  {
+    if (lowarena_reserve != nullptr) {
+      if (void* const low = lowarena_reserve(length, protection, LOWARENA_KIND_VIRTUAL)) {
+        return low;  // granule-aligned already
+      }
+    }
+    // Over-reserve, then trim to the granularity.
+    const size_t padded = length + kAllocationGranularity;
+    void* const raw = MapAnonymous(nullptr, padded, protection);
+    if (raw == nullptr) {
+      return nullptr;
+    }
+    const uintptr_t rawBase = reinterpret_cast<uintptr_t>(raw);
+    const uintptr_t aligned = (rawBase + kAllocationGranularity - 1u) & ~(kAllocationGranularity - 1u);
+    if (aligned > rawBase) {
+      munmap(raw, aligned - rawBase);
+    }
+    const uintptr_t tail = aligned + length;
+    if (rawBase + padded > tail) {
+      munmap(reinterpret_cast<void*>(tail), rawBase + padded - tail);
+    }
+    return reinterpret_cast<void*>(aligned);
+  }
+
   // A view of a file; the one place the shim takes address space for
-  // MapViewOfFile (faf_win_file.h).
+  // MapViewOfFile (faf_win_file.h). The low arena maps it below 2 GB (or,
+  // when it is off or full, wherever the kernel puts it).
   inline void* MapFileView(const size_t length, const int protection, const int flags, const int fd, const off_t offset) noexcept
   {
+    if (lowarena_map_file != nullptr) {
+      return lowarena_map_file(length, protection, flags, fd, offset);
+    }
     void* const mapped = mmap(nullptr, length, protection, flags, fd, offset);
     return mapped != MAP_FAILED ? mapped : nullptr;
+  }
+
+  // Releases what ReserveAnywhere, MapAnonymous or MapFileView returned: the
+  // arena takes its own ranges back, anything else is unmapped.
+  inline void UnmapRegion(void* const base, const size_t length) noexcept
+  {
+    if (lowarena_release != nullptr && lowarena_release(base, length) != 0) {
+      return;
+    }
+    munmap(base, length);
   }
 
   // A VirtualAlloc reservation or a MapViewOfFile view.
@@ -460,29 +507,14 @@ inline LPVOID VirtualAlloc(LPVOID address, SIZE_T size, DWORD allocationType, DW
     if (address != nullptr) {
       mapped = faf_compat::MapAnonymous(reinterpret_cast<void*>(base), length, initial);
     } else {
-      // Over-reserve, then trim to the 64 KB granularity Windows guarantees.
-      const size_t padded = length + faf_compat::kAllocationGranularity;
-      void* const raw = faf_compat::MapAnonymous(nullptr, padded, initial);
-      if (raw != nullptr) {
-        const uintptr_t rawBase = reinterpret_cast<uintptr_t>(raw);
-        const uintptr_t aligned =
-          (rawBase + faf_compat::kAllocationGranularity - 1u) & ~(faf_compat::kAllocationGranularity - 1u);
-        if (aligned > rawBase) {
-          munmap(raw, aligned - rawBase);
-        }
-        const uintptr_t tail = aligned + length;
-        if (rawBase + padded > tail) {
-          munmap(reinterpret_cast<void*>(tail), rawBase + padded - tail);
-        }
-        mapped = reinterpret_cast<void*>(aligned);
-      }
+      mapped = faf_compat::ReserveAnywhere(length, initial);
     }
     if (mapped == nullptr) {
       SetLastError(address != nullptr ? ERROR_INVALID_ADDRESS : ERROR_NOT_ENOUGH_MEMORY);
       return nullptr;
     }
     if (!faf_compat::AddRegion(reinterpret_cast<uintptr_t>(mapped), length, protect, faf_compat::RegionKind::Reservation)) {
-      munmap(mapped, length);
+      faf_compat::UnmapRegion(mapped, length);
       SetLastError(ERROR_NOT_ENOUGH_MEMORY);
       return nullptr;
     }
@@ -514,7 +546,7 @@ inline BOOL VirtualFree(LPVOID address, SIZE_T size, DWORD freeType) noexcept
       SetLastError(ERROR_INVALID_PARAMETER);
       return FALSE;
     }
-    munmap(reinterpret_cast<void*>(region.base), region.length);
+    faf_compat::UnmapRegion(reinterpret_cast<void*>(region.base), region.length);
     return TRUE;
   }
   if (freeType == MEM_DECOMMIT) {

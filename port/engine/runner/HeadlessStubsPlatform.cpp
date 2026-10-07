@@ -1,6 +1,7 @@
 // The Windows app layer (moho/app/WinApp.cpp, CWaitHandleSet.cpp), the Lua debugger window
-// (moho/misc/ScrDebugHooks.cpp), the directory watcher (moho/misc/CDiskWatch.cpp) and the save-game
-// writer (moho/misc/CSaveGameRequestImpl.cpp) for the Android headless runner; see HeadlessStubs.h.
+// (moho/misc/ScrDebugHooks.cpp) and the directory watcher (moho/misc/CDiskWatch.cpp) for the Android
+// headless runner; see HeadlessStubs.h. (The save-game writer, moho/misc/CSaveGameRequestImpl.cpp, is
+// linked for real since M3c: it compiles with the shim's MoveFileExW.)
 //
 // The runner state these follow (moho/app/HeadlessReplay.cpp, Run; WinMain.cpp:682 branches to it
 // before anything else): WIN_AppExecute never runs, so neither does PLAT_Init (WinApp.cpp:2760, the
@@ -9,7 +10,10 @@
 
 #include "HeadlessStubs.h"
 
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <utility>
 
@@ -20,8 +24,8 @@
 #include "moho/app/CWaitHandleSet.h"
 #include "moho/app/WinApp.h"
 #include "moho/misc/CDiskWatch.h"
-#include "moho/misc/CSaveGameRequestImpl.h"
 #include "moho/misc/ScrDebugHooks.h"
+#include "moho/misc/XFileError.h"
 
 namespace moho
 {
@@ -138,9 +142,12 @@ namespace moho
     return false;
   }
 
-  // WinApp.cpp:3562: a modal message box. Callers are the /perftest result (StatItem.cpp) and
-  // StartCommandLineSession (StartupHelpers.cpp), neither of which the runner reaches; the text goes
-  // to the log instead, since nobody could click a box here.
+  // WinApp.cpp:3562: a modal message box. Callers are the /perftest result (StatItem.cpp),
+  // StartCommandLineSession (StartupHelpers.cpp) and the Core-set Lua binder EndLoggingStats
+  // (StatItem.cpp:1855, which shows the stats it collected), so sim Lua could reach it. On Windows the
+  // box blocks the calling thread until someone clicks it; it changes no sim state either way. Here
+  // the text goes to the log, since nobody could click a box: a run that reaches it does not block,
+  // where the Windows runner would sit until its timeout.
   void WIN_OkBox(const gpg::StrArg caption, const gpg::StrArg text)
   {
     FAF_RUNNER_STUB("WIN_OkBox");
@@ -247,10 +254,105 @@ namespace moho
     }
   }
 
+  namespace
+  {
+    // CDiskWatch.cpp:69 and :86, the same bodies (FILE_Wild's helpers).
+    [[noreturn]] void ThrowFileWildError(const char* const message)
+    {
+      std::uint32_t callstack[32]{};
+      const std::uint32_t frameCount = PLAT_GetCallStack(nullptr, 32u, callstack);
+      const msvc8::string fullMessage = gpg::STR_Printf(
+        "%s: %s", "Moho::FILE_Wild", message != nullptr ? message : "File error."
+      );
+      throw XFileError(fullMessage.to_std(), callstack, frameCount);
+    }
+
+    [[nodiscard]] bool FileWildMatch(const char* const path, const char* const pattern)
+    {
+      const char* currentPattern = pattern;
+      const char token = *currentPattern;
+      if (token == '\0') {
+        return *path == '\0';
+      }
+
+      if (token == '*') {
+        if (FileWildMatch(path, currentPattern + 1)) {
+          return true;
+        }
+        if (*path == '\0') {
+          return false;
+        }
+      } else if (token == '?') {
+        return *path != '\0' && FileWildMatch(path + 1, currentPattern + 1);
+      } else {
+        const int pathFolded = std::tolower(static_cast<unsigned char>(*path));
+        const int patternFolded = std::tolower(static_cast<unsigned char>(token));
+        if (pathFolded != patternFolded) {
+          return false;
+        }
+        currentPattern += 1;
+      }
+
+      return FileWildMatch(path + 1, currentPattern);
+    }
+  } // namespace
+
+  // CDiskWatch.cpp:248, the same body: wildcard match of a path against a ';'-separated pattern
+  // list. Plain string code; CDiskWatch.cpp cannot be linked (Win32 directory notifications), and
+  // FilterEvent below is its only caller in the runner.
+  bool FILE_Wild(const gpg::StrArg path, const gpg::StrArg pattern, const bool caseSensitive, const char /*pathSeparator*/)
+  {
+    (void)caseSensitive;
+    FAF_RUNNER_STUB("FILE_Wild");
+
+    if (path == nullptr || path[0] == '\0') {
+      ThrowFileWildError("Null argument.");
+    }
+    if (pattern == nullptr || pattern[0] == '\0') {
+      ThrowFileWildError("Null argument.");
+    }
+
+    std::string normalizedPath(path);
+    if (normalizedPath.find('.') == std::string::npos) {
+      normalizedPath.push_back('.');
+    }
+
+    std::string patternList(pattern);
+    char* currentPattern = patternList.data();
+    while (currentPattern != nullptr) {
+      char* separator = std::strchr(currentPattern, ';');
+      if (separator != nullptr) {
+        *separator = '\0';
+      }
+
+      if (FileWildMatch(normalizedPath.c_str(), currentPattern)) {
+        return true;
+      }
+
+      if (separator == nullptr) {
+        return false;
+      }
+      currentPattern = separator + 1;
+    }
+
+    return false;
+  }
+
+  // CDiskWatch.cpp:491, the same body: an event passes when the listener has no patterns or one of
+  // them matches the path.
   bool CDiskWatchListener::FilterEvent(const SDiskWatchEvent& event)
   {
-    (void)event;
     FAF_RUNNER_STUB("CDiskWatchListener::FilterEvent");
+    if (mPatterns.empty()) {
+      return true;
+    }
+
+    const char* const path = event.mPath.c_str();
+    for (const auto& pattern : mPatterns) {
+      if (FILE_Wild(path, pattern.c_str())) {
+        return true;
+      }
+    }
     return false;
   }
 
@@ -291,49 +393,5 @@ namespace moho
     (void)directoryPath;
     FAF_RUNNER_STUB("DISK_AddWatchDirectory");
     return false;
-  }
-
-  // ---------------------------------------------------------------------------------------------
-  // CSaveGameRequestImpl.cpp: the save-game writer. A request exists only after the user Lua's save
-  // binder (SessionStartup.cpp) asked for a save; a replay run never does, so SimDriver.cpp never
-  // has a request to call these on.
-
-  // CSaveGameRequestImpl.cpp:290, the same body (the deleter of the request's FILE).
-  void SFileStarCloser::operator()(std::FILE* const file) const noexcept
-  {
-    FAF_RUNNER_STUB("SFileStarCloser::operator()");
-    if (file) {
-      std::fclose(file);
-    }
-  }
-
-  // CSaveGameRequestImpl.cpp:34, the same (defaulted) base constructor.
-  ISaveRequest::ISaveRequest() = default;
-
-  // CSaveGameRequestImpl.cpp:306 (which also opens the temporary save file).
-  CSaveGameRequestImpl::CSaveGameRequestImpl(
-    const gpg::StrArg savePath, const gpg::StrArg sessionName, const LuaPlus::LuaObject& completionCallback
-  )
-    : mSavePath(savePath != nullptr ? savePath : "")
-    , mSessionName(sessionName != nullptr ? sessionName : "")
-    , mCompletionCallback(completionCallback)
-    , mFile()
-    , mArchive(nullptr)
-  {
-    FAF_RUNNER_STUB("CSaveGameRequestImpl::CSaveGameRequestImpl");
-  }
-
-  // CSaveGameRequestImpl.cpp:360, the same body.
-  gpg::WriteArchive* CSaveGameRequestImpl::GetArchive()
-  {
-    FAF_RUNNER_STUB("CSaveGameRequestImpl::GetArchive");
-    return mArchive;
-  }
-
-  // CSaveGameRequestImpl.cpp:372 (writes and renames the save file).
-  void CSaveGameRequestImpl::Save(const SSaveGameDispatchData& data)
-  {
-    (void)data;
-    FAF_RUNNER_STUB("CSaveGameRequestImpl::Save");
   }
 } // namespace moho

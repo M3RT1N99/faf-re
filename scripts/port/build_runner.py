@@ -8,9 +8,16 @@ directories, port/engine/shim, port/engine/compile_flags.txt), plus `-fPIC -ffun
 Foundation TUs the closure lists, from the local, gitignored dependencies/WildMagic3p8. Then links
 
   libfafengine.so       every closure object whole (no archive, no --gc-sections, so every static
-                        initialiser is in), -shared -Wl,--no-undefined, libc++ static, -lz -llog
-  faf_headless_runner   RunnerMain.cpp's `main`, which dlopens libfafengine.so next to itself and
-                        calls `faf_headless_main`
+                        initialiser is in), -shared -Wl,--no-undefined, libc++ static, -lz -llog,
+                        plus port/engine/lowarena/LowArenaThreads.cpp and
+                        -Wl,--wrap=pthread_create,pthread_join,pthread_detach (arena thread stacks)
+  faf_headless_runner   RunnerMain.cpp's `main` plus the low arena (port/engine/lowarena: LowArena.cpp,
+                        dlmalloc), which exports the malloc family and the lowarena_* hooks, loads
+                        libfafengine.so below 2 GB and calls `faf_headless_main` on an arena stack
+                        (M3c; FAF_LOWARENA=0 at run time turns the arena off)
+
+With --probe it also links libfafarenaprobe.so (port/engine/lowarena/probe), a stand-in for the
+engine library that checks where the arena puts heap, stacks, TLS, image and file views.
 
 and reports what stops the link: compile failures, undefined symbols grouped by the TU that defines
 them on Windows (their owner, from the Win32 objects through link_closure.py) and by the TUs that
@@ -65,6 +72,23 @@ BUILD_FLAGS = ["-fPIC", "-ffunction-sections", "-fdata-sections", "-g"]
 STAMP_VERSION = 1
 LIB_NAME = "libfafengine.so"
 EXE_NAME = "faf_headless_runner"
+PROBE_NAME = "libfafarenaprobe.so"
+
+# The low arena (port/engine/lowarena/README.md). Its own sources are plain port code, compiled with
+# their own flags (no engine defines, no shim): LowArena.cpp and the vendored dlmalloc go into the
+# executable, LowArenaThreads.cpp (the pthread wrappers) into the engine library. The probe is engine-
+# side code (it uses the shim's VirtualAlloc/MapViewOfFile), compiled like the runner's sources.
+LOWARENA_DIR = os.path.join(REPO_ROOT, "port", "engine", "lowarena")
+LOWARENA_EXE_SOURCES = ["LowArena.cpp", "LowArenaHeap.c"]
+LOWARENA_LIB_SOURCES = ["LowArenaThreads.cpp"]
+LOWARENA_PROBE_SOURCE = "probe/LowArenaProbe.cpp"
+LOWARENA_FLAGS = ["-O2", "-g", "-fno-omit-frame-pointer", "-fPIC", "-Wall", "-Wextra", "-ffunction-sections", "-fdata-sections"]
+# What the executable exports so that libc, libc++ and libfafengine.so bind to it (lld leaves an
+# executable's symbols out of .dynsym unless asked). Not -rdynamic: that would also export the
+# executable's static libc++, which the engine library would then bind to instead of its own.
+EXE_EXPORTS = ["malloc", "free", "calloc", "realloc", "reallocarray", "memalign", "posix_memalign",
+               "aligned_alloc", "valloc", "pvalloc", "malloc_usable_size", "lowarena_*"]
+LIB_WRAPS = ["pthread_create", "pthread_join", "pthread_detach"]
 
 # Wild Magic 3.8's Wm3System.cpp includes <sys/timeb.h> for ftime() on every platform but Apple.
 # Bionic has neither; this stand-in is generated into the build directory and searched first for
@@ -167,9 +191,11 @@ def build_units(args, project, closure, clang, triple, out_dir):
                          + ", ".join(missing[:10]))
     runner_srcs = sorted(glob.glob(os.path.join(RUNNER_DIR, "*.cpp")))
     runner_tus = ["../../" + fwd(os.path.relpath(p, REPO_ROOT)) for p in runner_srcs]
-    view = ProjectView(project, runner_tus)
-    commands = es.build_commands(view, engine + runner_tus, clang, flag_args, drop_defines, drop_includes,
-                                 shim, out_dir, args.error_limit, BUILD_FLAGS + list(args.extra))
+    probe_tus = (["../../" + fwd(os.path.relpath(os.path.join(LOWARENA_DIR, LOWARENA_PROBE_SOURCE), REPO_ROOT))]
+                 if getattr(args, "probe", False) else [])
+    view = ProjectView(project, runner_tus + probe_tus)
+    commands = es.build_commands(view, engine + runner_tus + probe_tus, clang, flag_args, drop_defines,
+                                 drop_includes, shim, out_dir, args.error_limit, BUILD_FLAGS + list(args.extra))
     units = []
     for tu in engine:
         cmd = set_target(commands[tu], triple)
@@ -185,6 +211,19 @@ def build_units(args, project, closure, clang, triple, out_dir):
             cmd[cmd.index("-o") + 1] = exe_obj
             cmd.append("-DFAF_RUNNER_EXECUTABLE")
             units.append(Unit(tu + "#exe", "runner-exe", src, exe_obj, cmd))
+    for tu in probe_tus:
+        cmd = set_target(commands[tu], triple)
+        units.append(Unit(tu, "probe", cmd[cmd.index("-c") + 1], cmd[cmd.index("-o") + 1], cmd))
+    for kind, names in (("lowarena-exe", LOWARENA_EXE_SOURCES), ("lowarena-lib", LOWARENA_LIB_SOURCES)):
+        for name in names:
+            src = norm(os.path.join(LOWARENA_DIR, name))
+            tu = "../../" + fwd(os.path.relpath(src, REPO_ROOT))
+            obj = norm(os.path.join(out_dir, "obj", "port", "engine", "lowarena", name + ".o"))
+            lang = ["-x", "c", "-std=c11"] if name.endswith(".c") else ["-std=c++20"]
+            cmd = [fwd(clang), f"--target={triple}"] + lang + ["-c", src, "-o", obj,
+                   f"-ferror-limit={args.error_limit}", "-fno-color-diagnostics", "-fdiagnostics-absolute-paths",
+                   "-I" + norm(LOWARENA_DIR)] + LOWARENA_FLAGS + list(args.extra)
+            units.append(Unit(tu, kind, src, obj, cmd))
     wm3_inc = os.path.join(out_dir, "wm3-include")
     wm3_dirs = wm3_include_dirs(project)
     for tu in wm3:
@@ -399,10 +438,17 @@ def write_rsp(path, items):
             f.write('"' + fwd(it) + '"\n')
 
 
-def link(clang, triple, out_dir, objects, exe_obj, extra_ldflags):
+def lib_link_flags():
+    """Link flags every engine-side shared library of the runner shares (libfafengine.so, the probe)."""
+    return ["-Wl,--no-undefined", "-Wl,--error-limit=0", "-Wl,--no-demangle", "-Wl,--build-id",
+            "-static-libstdc++", "-lz", "-llog", "-lm", "-ldl"] + [f"-Wl,--wrap={s}" for s in LIB_WRAPS]
+
+
+def link(clang, triple, out_dir, objects, exe_objs, extra_ldflags, probe_objs=None):
     lib = os.path.join(out_dir, LIB_NAME)
     exe = os.path.join(out_dir, EXE_NAME)
-    for p in (lib, exe):
+    probe = os.path.join(out_dir, PROBE_NAME)
+    for p in (lib, exe, probe):
         try:
             os.remove(p)
         except OSError:
@@ -410,8 +456,7 @@ def link(clang, triple, out_dir, objects, exe_obj, extra_ldflags):
     rsp = os.path.join(out_dir, "link-objects.rsp")
     write_rsp(rsp, objects)
     lib_cmd = [fwd(clang), f"--target={triple}", "-shared", "-fPIC", "-o", fwd(lib), f"-Wl,-soname,{LIB_NAME}",
-               "@" + fwd(rsp), "-Wl,--no-undefined", "-Wl,--error-limit=0", "-Wl,--no-demangle",
-               "-Wl,--build-id", "-static-libstdc++", "-lz", "-llog", "-lm", "-ldl"] + list(extra_ldflags)
+               "@" + fwd(rsp)] + lib_link_flags() + list(extra_ldflags)
     t0 = time.monotonic()
     p = subprocess.run(lib_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=out_dir)
     lib_out = p.stdout.decode("utf-8", "replace").replace("\r\n", "\n")
@@ -428,17 +473,29 @@ def link(clang, triple, out_dir, objects, exe_obj, extra_ldflags):
             os.remove(probe)
         except OSError:
             pass
-    exe_cmd = [fwd(clang), f"--target={triple}", "-o", fwd(exe), fwd(exe_obj), "-static-libstdc++", "-ldl"]
-    q = subprocess.run(exe_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=out_dir) if exe_obj else None
-    exe_out = q.stdout.decode("utf-8", "replace").replace("\r\n", "\n") if q else "(RunnerMain.cpp did not compile)\n"
+    exe_cmd = ([fwd(clang), f"--target={triple}", "-o", fwd(exe)] + [fwd(o) for o in exe_objs or []]
+               + ["-static-libstdc++", "-ldl", "-Wl,--build-id"]
+               + [f"-Wl,--export-dynamic-symbol={s}" for s in EXE_EXPORTS])
+    q = subprocess.run(exe_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=out_dir) if exe_objs else None
+    exe_out = (q.stdout.decode("utf-8", "replace").replace("\r\n", "\n") if q
+               else "(RunnerMain.cpp or a port/engine/lowarena source did not compile)\n")
+    arena_cmd, arena_out, arena_rc = None, "", None
+    if probe_objs:
+        arena_cmd = ([fwd(clang), f"--target={triple}", "-shared", "-fPIC", "-o", fwd(probe),
+                      f"-Wl,-soname,{PROBE_NAME}"] + [fwd(o) for o in probe_objs] + lib_link_flags())
+        r = subprocess.run(arena_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=out_dir)
+        arena_out, arena_rc = r.stdout.decode("utf-8", "replace").replace("\r\n", "\n"), r.returncode
     with open(os.path.join(out_dir, "link.log"), "w", encoding="utf-8", newline="\n") as f:
         f.write(f"# {shlex.join(lib_cmd)}\n# exit {p.returncode}, {lib_secs:.1f}s\n{lib_out}\n")
         if probe_cmd:
             f.write(f"# probe for undefined symbols past the duplicates:\n# {shlex.join(probe_cmd)}\n{probe_out}\n")
         f.write(f"# {shlex.join(exe_cmd)}\n# exit {q.returncode if q else '-'}\n{exe_out}\n")
+        if arena_cmd:
+            f.write(f"# {shlex.join(arena_cmd)}\n# exit {arena_rc}\n{arena_out}\n")
     return {"lib_ok": p.returncode == 0 and os.path.isfile(lib), "exe_ok": bool(q) and q.returncode == 0,
             "lib_output": lib_out, "probe_output": probe_out, "exe_output": exe_out, "lib_cmd": lib_cmd,
-            "exe_cmd": exe_cmd, "lib_seconds": round(lib_secs, 1)}
+            "exe_cmd": exe_cmd, "lib_seconds": round(lib_secs, 1),
+            "arena_probe_ok": (arena_rc == 0) if arena_cmd else None, "arena_probe_output": arena_out}
 
 
 LLD_ERR = re.compile(r"^(?:\S*ld\.lld\S*|\S*ld): error: (.*)$")
@@ -596,7 +653,7 @@ def write_report(out_dir, meta, units, stamps, linkres, closure, graph):
             st = stamps[u.tu]
             fe = st.get("first_error") or {}
             owner = lc.owner_component(u.tu, closure_set, status) if u.kind == "engine" else (
-                "G" if u.kind == "wm3" else "S/G")
+                "G" if u.kind == "wm3" else ("L" if u.kind in ("lowarena-exe", "lowarena-lib", "probe") else "S/G"))
             L.append(f"| `{u.tu}` | {owner} | {md(st.get('class') or '')} | "
                      f"{code(str(fe.get('file', '?')) + ':' + str(fe.get('line', 0)))} "
                      f"{md((fe.get('message') or '')[:120])} |")
@@ -659,6 +716,7 @@ def write_report(out_dir, meta, units, stamps, linkres, closure, graph):
                               "first_error": stamps[u.tu].get("first_error")} for u in failed],
         "lib_linked": lib_ok,
         "exe_linked": exe_ok,
+        "arena_probe_linked": linkres.get("arena_probe_ok") if linkres else None,
         "undefined": len(undefined),
         "duplicates": len(duplicates),
         "other_link_errors": other,
@@ -715,6 +773,8 @@ def main():
     ap.add_argument("--no-owners", action="store_true", help="do not map undefined symbols to their Windows owner")
     ap.add_argument("--extra", action="append", default=[], metavar="ARG", help="extra compile argument")
     ap.add_argument("--ldflag", action="append", default=[], metavar="ARG", help="extra link argument for the .so")
+    ap.add_argument("--probe", action="store_true",
+                    help=f"also build {PROBE_NAME}, the low arena's placement probe (port/engine/lowarena/probe)")
     ap.add_argument("--error-limit", type=int, default=50, help="clang -ferror-limit per TU (default 50)")
     ap.add_argument("--timeout", type=int, default=900, help="seconds per TU")
     ap.add_argument("--ndk", help="Android NDK directory")
@@ -806,11 +866,19 @@ def main():
 
     linkres = None
     if not args.no_link:
-        objects = [u.obj for u in units if u.kind in ("engine", "wm3", "runner") and stamps[u.tu].get("ok")
+        def built(kinds):
+            return [u for u in units if u.kind in kinds]
+
+        def all_ok(us):
+            return bool(us) and all(stamps[u.tu].get("ok") and os.path.isfile(u.obj) for u in us)
+
+        objects = [u.obj for u in built(("engine", "wm3", "runner", "lowarena-lib")) if stamps[u.tu].get("ok")
                    and os.path.isfile(u.obj)]
-        exe_unit = next((u for u in units if u.kind == "runner-exe"), None)
-        exe_obj = exe_unit.obj if exe_unit and stamps[exe_unit.tu].get("ok") else None
-        linkres = link(clang, triple, out_dir, objects, exe_obj, args.ldflag)
+        exe_units = built(("runner-exe", "lowarena-exe"))
+        exe_objs = [u.obj for u in exe_units] if all_ok(exe_units) else None
+        probe_units = built(("probe", "lowarena-lib"))
+        probe_objs = [u.obj for u in probe_units] if args.probe and all_ok(probe_units) else None
+        linkres = link(clang, triple, out_dir, objects, exe_objs, args.ldflag, probe_objs)
 
     graph = None
     if linkres and not args.no_owners:
@@ -834,13 +902,17 @@ def main():
           + (f", {len(res['not_built'])} not built" if res["not_built"] else "") + f", {compile_secs:.0f}s); "
           + (f"{LIB_NAME} {'linked' if res['lib_linked'] else 'NOT linked'}: {res['undefined']} undefined, "
              f"{res['duplicates']} duplicate, {len(res['other_link_errors'])} other errors; "
-             f"{EXE_NAME} {'linked' if res['exe_linked'] else 'NOT linked'}" if linkres else "not linked"),
+             f"{EXE_NAME} {'linked' if res['exe_linked'] else 'NOT linked'}"
+             + ("" if res.get("arena_probe_linked") is None
+                else f"; {PROBE_NAME} {'linked' if res['arena_probe_linked'] else 'NOT linked'}")
+             if linkres else "not linked"),
           file=sys.stderr)
     if res["undefined_by_component"]:
         print("  undefined by component: " + ", ".join(f"{k} {v}" for k, v in sorted(res["undefined_by_component"].items())),
               file=sys.stderr)
     print(f"  report: {norm(os.path.join(out_dir, 'report.md'))}", file=sys.stderr)
-    return 0 if (failed == 0 and res["lib_linked"] and res["exe_linked"]) else 1
+    probe_ok = not args.probe or args.no_link or bool(res.get("arena_probe_linked"))
+    return 0 if (failed == 0 and res["lib_linked"] and res["exe_linked"] and probe_ok) else 1
 
 
 if __name__ == "__main__":

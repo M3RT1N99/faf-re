@@ -6567,6 +6567,32 @@ namespace
 		return BuildWrapFileRef(out, wrapFile);
 	}
 
+#if !defined(_MSC_VER)
+	// Port: the registration sites below cast the two out-pointer functions above into RType's
+	// by-value `RRef (*)()` / `RRef (*)(void*)` slots. That is the MSVC x86 ABI (RRef has
+	// constructors, so it comes back through a hidden pointer passed first). On x86-64 SysV and
+	// AArch64 a trivially copyable 16-byte RRef comes back in registers and there is no hidden
+	// pointer: `ctorRefFunc_(payload)` ran with `out` = the payload and `wrapFile` = whatever the
+	// second argument register held, wrote 16 bytes through that, and left the garbage pointer in
+	// the payload - for each io file LuaOpenIo makes, in every Lua state. Off MSVC the slots get
+	// these by-value forms instead (same work, real signatures).
+	gpg::RRef NewWrapFileStorageRefByValue()
+	{
+		gpg::RRef out;
+		(void)NewWrapFileStorageRef(&out);
+		return out;
+	}
+
+	gpg::RRef ConstructWrapFileStorageRefByValue(void* const storage)
+	{
+		gpg::RRef out;
+		(void)ConstructWrapFileStorageRef(&out, static_cast<WrapFile*>(storage));
+		return out;
+	}
+#define NewWrapFileStorageRef NewWrapFileStorageRefByValue
+#define ConstructWrapFileStorageRef ConstructWrapFileStorageRefByValue
+#endif
+
 	/**
 	 * Address: 0x00917F80 (FUN_00917F80, WrapFileTypeInfo::WrapFileTypeInfo)
 	 *

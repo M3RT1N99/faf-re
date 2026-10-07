@@ -14,7 +14,11 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <typeinfo>
 #include <vector>
+#if !defined(_MSC_VER)
+#include <cxxabi.h>
+#endif
 
 #include "gpg/core/algorithms/MD5.h"
 #include "gpg/core/reflection/Reflection.h"
@@ -30,6 +34,7 @@
 #include "moho/net/CClientManagerImpl.h"
 #include "moho/net/IClientMgrUIInterface.h"
 #include "moho/resource/ResourceManager.h"
+#include "moho/serialization/PrefetchHandleBase.h"
 #include "moho/sim/CWldMap.h"
 #include "moho/sim/CWldSessionLoaderImpl.h"
 #include "moho/sim/ISTIDriver.h"
@@ -385,6 +390,13 @@ namespace moho
      * link drops its entries without any other symptom. The hashes are FNV-1a over the sorted
      * names; `/headlessregistry <file>` writes the names themselves, so two runs can be diffed
      * entry by entry.
+     *
+     * M3c added the registries the first version could not see (link_closure.py's REG_KINDS):
+     * prefetch kinds, resource factories, and the serializer/construct helpers. A helper binds its
+     * callbacks onto its RType only when the first archive is created
+     * (gpg::SerHelperBase::InitNewHelpers); a replay creates none, so at this point the helpers are
+     * still queued and are counted by class, and the RType counts cover only callbacks a TypeInfo
+     * set itself. Reading them changes nothing.
      */
     struct RegistrySnapshot
     {
@@ -396,6 +408,14 @@ namespace moho
       std::uint64_t mRTypeHash = 0;
       std::uint64_t mLuaHash = 0;
       std::uint64_t mConsoleHash = 0;
+      std::vector<std::pair<std::string, std::string>> mPrefetchKinds; // kind -> RType name ("" = none)
+      int mResourceFactories = 0;    // RTypes with an active factory in the resource manager
+      int mSerializerHelpers = 0;    // gpg::SerHelperBase::sNewHelpers, still queued
+      int mRTypesWithSerializer = 0; // serLoadFunc_ or serSaveFunc_ already set
+      int mRTypesWithConstruct = 0;  // serConstructFunc_ or serSaveConstructArgsFunc_ already set
+      std::uint64_t mFactoryHash = 0;
+      std::uint64_t mSerializerHash = 0;
+      std::uint64_t mCallbackHash = 0;
     };
 
     struct RunState
@@ -606,10 +626,30 @@ namespace moho
           add("\": {\"sets\": %d, \"binders\": %d}", counts.first, counts.second);
           first = false;
         }
+        json += "}, \"prefetch_kinds\": {";
+        first = true;
+        for (const auto& [kind, typeName] : registry.mPrefetchKinds) {
+          json += first ? "\"" : ", \"";
+          json += JsonEscape(kind);
+          json += typeName.empty() ? "\": null" : "\": \"" + JsonEscape(typeName) + "\"";
+          first = false;
+        }
         add(
-          "}, \"fnv1a\": {\"rtypes\": \"%016llx\", \"lua\": \"%016llx\", \"console\": \"%016llx\"}},\n",
+          "}, \"resource_factories\": %d, \"serializer_helpers_pending\": %d, \"rtypes_with_serializer\": %d, "
+          "\"rtypes_with_construct\": %d",
+          registry.mResourceFactories, registry.mSerializerHelpers, registry.mRTypesWithSerializer,
+          registry.mRTypesWithConstruct
+        );
+        add(
+          ", \"fnv1a\": {\"rtypes\": \"%016llx\", \"lua\": \"%016llx\", \"console\": \"%016llx\", ",
           static_cast<unsigned long long>(registry.mRTypeHash), static_cast<unsigned long long>(registry.mLuaHash),
           static_cast<unsigned long long>(registry.mConsoleHash)
+        );
+        add(
+          "\"factories\": \"%016llx\", \"serializer_helpers\": \"%016llx\", \"rtype_callbacks\": \"%016llx\"}},\n",
+          static_cast<unsigned long long>(registry.mFactoryHash),
+          static_cast<unsigned long long>(registry.mSerializerHash),
+          static_cast<unsigned long long>(registry.mCallbackHash)
         );
       } else {
         json += "  \"registry\": null,\n";
@@ -946,9 +986,56 @@ namespace moho
     }
 
     /**
-     * Reads the three registries the engine fills from static initialisers: reflected types, Lua
-     * binders by init set ("Core", "Sim", "User") and console commands/variables. Read-only; runs
-     * after REF_RegisterAllTypes, when every pre-registered type is registered.
+     * A class name both compilers spell the same: MSVC's type_info::name() ("class moho::Foo",
+     * "struct gpg::Bar<class moho::Foo>", "class `anonymous namespace'::Baz") and the demangled
+     * Itanium name ("moho::Foo", "gpg::Bar<moho::Foo>", "(anonymous namespace)::Baz") both become
+     * "moho::Foo", "gpg::Bar<moho::Foo>", "{anon}::Baz".
+     */
+    [[nodiscard]] std::string PortableTypeName(const std::type_info& type)
+    {
+#if defined(_MSC_VER)
+      std::string name = type.name();
+#else
+      int status = 0;
+      char* const demangled = abi::__cxa_demangle(type.name(), nullptr, nullptr, &status);
+      std::string name = (status == 0 && demangled != nullptr) ? demangled : type.name();
+      std::free(demangled);
+#endif
+      for (const char* const anonymous : {"`anonymous namespace'", "(anonymous namespace)"}) {
+        for (std::size_t at = name.find(anonymous); at != std::string::npos; at = name.find(anonymous)) {
+          name.replace(at, std::strlen(anonymous), "{anon}");
+        }
+      }
+      std::string out;
+      for (std::size_t i = 0; i < name.size();) {
+        const bool wordStart = (i == 0) || name[i - 1] == ' ' || name[i - 1] == '<' || name[i - 1] == ',' ||
+                               name[i - 1] == '(';
+        bool skipped = false;
+        if (wordStart) {
+          for (const char* const keyword : {"class ", "struct ", "enum ", "union "}) {
+            if (name.compare(i, std::strlen(keyword), keyword) == 0) {
+              i += std::strlen(keyword);
+              skipped = true;
+              break;
+            }
+          }
+        }
+        if (skipped) {
+          continue;
+        }
+        if (name[i] != ' ') {
+          out += name[i];
+        }
+        ++i;
+      }
+      return out;
+    }
+
+    /**
+     * Reads the registries the engine fills from static initialisers: reflected types, Lua binders
+     * by init set ("Core", "Sim", "User"), console commands/variables, prefetch kinds, resource
+     * factories and serializer helpers. Read-only; runs after REF_RegisterAllTypes, when every
+     * pre-registered type is registered, and after RES_ActivatePendingFactories.
      */
     void TakeRegistrySnapshot(RunState& run)
     {
@@ -988,9 +1075,62 @@ namespace moho
       }
       registry.mConsoleCommands = static_cast<int>(commands.size());
 
+      // Prefetch kinds. Their map is private to PrefetchHandleBase.cpp, so the kinds are looked up by
+      // name: these four are every name a static initialiser registers (RES_RegisterPrefetchType in
+      // RScaResource.cpp, RScmResource.cpp, SBatchTextureDataFactory.cpp and
+      // CD3DTextureResourceFactory.cpp/CD3DDeviceResources.cpp), the kinds CPrefetchSet:Update takes.
+      for (const char* const kind : {"anims", "batch_textures", "d3d_textures", "models"}) {
+        const gpg::RType* const type = RES_FindPrefetchType(kind);
+        const char* const typeName = (type != nullptr) ? type->GetName() : nullptr;
+        registry.mPrefetchKinds.emplace_back(kind, typeName != nullptr ? typeName : "");
+      }
+
+      // Resource factories: the manager keys its active factories by their resource RType
+      // (ResourceManager::ActivatePendingFactories). FindFactoryByRegistrationKey answers with the
+      // first factory at or above a key, so an exact match is one the next key does not also find.
+      std::vector<std::string> factories;
+      std::vector<std::string> callbacks;
+      ResourceManager* const resourceManager = RES_GetResourceManager();
+      for (const auto& [typeName, type] : gpg::GetRTypeMap()) {
+        if (type == nullptr) {
+          continue;
+        }
+        const std::string name = (typeName != nullptr) ? typeName : "";
+        if (resourceManager != nullptr) {
+          const unsigned int key = static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(type));
+          ResourceFactoryBase* const factory = resourceManager->FindFactoryByRegistrationKey(key);
+          if (factory != nullptr && factory != resourceManager->FindFactoryByRegistrationKey(key + 1u)) {
+            factories.push_back(name);
+          }
+        }
+        const bool serializer = type->serLoadFunc_ != nullptr || type->serSaveFunc_ != nullptr;
+        const bool construct = type->serConstructFunc_ != nullptr || type->serSaveConstructArgsFunc_ != nullptr;
+        registry.mRTypesWithSerializer += serializer ? 1 : 0;
+        registry.mRTypesWithConstruct += construct ? 1 : 0;
+        if (serializer || construct) {
+          callbacks.push_back(
+            name + " " + (type->serLoadFunc_ != nullptr ? "L" : "-") + (type->serSaveFunc_ != nullptr ? "S" : "-") +
+            (type->serConstructFunc_ != nullptr ? "C" : "-") + (type->serSaveConstructArgsFunc_ != nullptr ? "A" : "-")
+          );
+        }
+      }
+      registry.mResourceFactories = static_cast<int>(factories.size());
+
+      // Serializer and construct helpers still waiting for SerHelperBase::InitNewHelpers, by class.
+      std::vector<std::string> helpers;
+      if (gpg::SerHelperBase::sNewHelpers != nullptr) {
+        for (gpg::SerHelperBase* const helper : *gpg::SerHelperBase::sNewHelpers) {
+          helpers.push_back(PortableTypeName(typeid(*helper)));
+        }
+      }
+      registry.mSerializerHelpers = static_cast<int>(helpers.size());
+
       registry.mRTypeHash = HashSortedNames(rtypes);
       registry.mLuaHash = HashSortedNames(binders);
       registry.mConsoleHash = HashSortedNames(commands);
+      registry.mFactoryHash = HashSortedNames(factories);
+      registry.mSerializerHash = HashSortedNames(helpers);
+      registry.mCallbackHash = HashSortedNames(callbacks);
       registry.mTaken = true;
 
       if (!run.mOptions.mRegistryPath.empty()) {
@@ -1007,6 +1147,18 @@ namespace moho
         }
         for (const std::string& name : commands) {
           std::fprintf(file, "console %s\n", name.c_str());
+        }
+        for (const auto& [kind, typeName] : registry.mPrefetchKinds) {
+          std::fprintf(file, "prefetch %s %s\n", kind.c_str(), typeName.empty() ? "-" : typeName.c_str());
+        }
+        for (const std::string& name : factories) {
+          std::fprintf(file, "factory %s\n", name.c_str());
+        }
+        for (const std::string& name : helpers) {
+          std::fprintf(file, "serhelper %s\n", name.c_str());
+        }
+        for (const std::string& entry : callbacks) {
+          std::fprintf(file, "rtypecb %s\n", entry.c_str());
         }
         std::fclose(file);
       }
@@ -1044,6 +1196,18 @@ namespace moho
         run.mRegistry.mRTypes, run.mRegistry.mRTypesPreregistered, run.mRegistry.mConsoleCommands,
         static_cast<int>(run.mRegistry.mLuaSets.size())
       );
+      {
+        int prefetchKinds = 0;
+        for (const auto& kind : run.mRegistry.mPrefetchKinds) {
+          prefetchKinds += kind.second.empty() ? 0 : 1;
+        }
+        Out(
+          "[headless] registry: %d/%d prefetch kinds, %d resource factories, %d serializer helpers queued, "
+          "%d/%d rtypes with serializer/construct callbacks\n",
+          prefetchKinds, static_cast<int>(run.mRegistry.mPrefetchKinds.size()), run.mRegistry.mResourceFactories,
+          run.mRegistry.mSerializerHelpers, run.mRegistry.mRTypesWithSerializer, run.mRegistry.mRTypesWithConstruct
+        );
+      }
       if (!DISK_SetupDataAndSearchPaths(msvc8::string("SupComDataPath.lua"), DISK_GetLaunchDir())) {
         run.mEndReason = "failed to set up the data search path (check /init)";
         return 1;
