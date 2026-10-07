@@ -1,0 +1,65 @@
+Software License Agreement for the Wild Magic (Version 3) Library
+Version 1.0c, April 29, 2005
+
+(Plain-text transcription of dependencies/WildMagic3p8/License/WildMagic3License.pdf, the license
+that ships with the Wild Magic 3.8 sources the engine links. faf-re uses Wild Magic's Foundation
+library, unmodified apart from build fixes, inside a free, noncommercial program - clause 1(b).)
+
+This Software License Agreement is a legal agreement between Geometric Tools, Inc., a North
+Carolina corporation, and any person or legal entity using or accepting any Software governed by
+this Agreement. The Software includes computer source code, the associated media, any printed
+materials, and any online or electronic documentation. The Software and any updates are available
+online from the Web site www.geometrictools.com.
+
+By installing, copying, or otherwise using The Software, you agree to be bound by the terms of
+this Agreement. If you do not agree to the terms of this Agreement, you may not use The Software,
+and you should remove the Software from your computer. The Software is protected by copyright laws
+and international copyright treaties, as well as other intellectual property laws and treaties.
+The Software is licensed, not sold.
+
+This Agreement shall be effective on the first day you use or accept The Software governed by this
+Agreement, whichever is earlier.
+
+The parties agree as follows:
+
+1. Grant of License. We grant you a nonexclusive license to use The Software subject to the terms
+   and conditions of the Agreement:
+   (a) There is no charge to you for this license.
+   (b) The Software may be used, edited, modified, copied, and distributed by you for
+       noncommercial products.
+   (c) The Software may be used, edited, modified, copied, and distributed by you for commercial
+       products provided that such products are not intended to wrap The Software solely for the
+       purposes of selling it as if it were your own product. The intent of this clause is that
+       you use The Software, in part or in whole, to assist you in building your own original
+       products. An example of acceptable use is to incorporate the graphics portion of The
+       Software in a game or game engine to be sold to an end user. An example that violates this
+       clause is to compile a library from only The Software, bundle it with the headers files as
+       a Software Development Kit (SDK), then sell that SDK to others. If there is any doubt about
+       whether you can use The Software for a commercial product, contact us and explain what
+       portions you intend to use. We will consider creating a separate legal document that
+       grants you permission to use those portions of The Software in your commercial product.
+
+2. Disclaimer of Warranty. We make no warranties at all. The Software is transferred to you on an
+   "as is" basis. You use The Software at your own peril. You assume all risk of loss for all
+   claims or controversies, now existing or hereafter, arising out of use of The Software. We
+   shall have no liability based on a claim that your use or combination of The Software with
+   products or data not supplied by us infringes any patent, copyright, or proprietary right. All
+   other warranties, expressed or implied, including, without limitation, any warranty of
+   merchantability or fitness for a particular purpose are hereby excluded.
+
+3. Limitation of Liability. We will have no liability for special, incidental or consequential
+   damages even if advised of the possibility of such damages. We will not be liable for any other
+   damages or loss in any way connected with The Software.
+
+4. Entire Agreement, Amendments. This Agreement represents the complete and exclusive statement of
+   the Agreements between the parties relating to the licensing of The Software and maintenance of
+   The Software and supersedes all prior Agreements and representations between them relating to
+   such licensing. Modifications to this Agreement shall not be effective unless in writing and
+   signed by the party against whom enforcement is sought. The terms of this Agreement shall not be
+   amended or changed by any purchase order or acknowledgment even if we have signed such
+   documents.
+
+5. North Carolina Law, Severability. This Agreement will be governed by North Carolina law. If any
+   provision of this Agreement shall be unlawful, void, or for any reason unenforceable, it shall
+   be deemed severable from and shall in no way affect the validity or enforceability of the
+   remaining provisions of this Agreement.

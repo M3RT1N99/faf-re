@@ -58,6 +58,49 @@ final class RunZip {
         return count;
     }
 
+    /**
+     * "Save all runs (zip)": every run directory under {@code runsDir} as {@code fafre-runs/<run>/...}, with the
+     * same rules as {@link #write} (no replay files, large files cut to head and tail), and the tail of
+     * launcher.log once. Returns the number of files.
+     */
+    static int writeAll(File runsDir, File launcherLog, OutputStream target) throws IOException {
+        int count = 0;
+        try (ZipOutputStream zip = new ZipOutputStream(target)) {
+            zip.setLevel(9);
+            File[] runs = runsDir.listFiles();
+            if (runs != null) {
+                Arrays.sort(runs);
+                for (File run : runs) {
+                    if (!Files.isDirectory(run.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                        continue;
+                    }
+                    File[] files = run.listFiles();
+                    if (files == null) {
+                        continue;
+                    }
+                    Arrays.sort(files);
+                    for (File file : files) {
+                        if (!Files.isRegularFile(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                                || excluded(file.getName())) {
+                            continue;
+                        }
+                        zip.putNextEntry(entry("fafre-runs/" + run.getName() + "/" + file.getName(), file.lastModified()));
+                        copy(file, zip, MAX_FILE_BYTES);
+                        zip.closeEntry();
+                        ++count;
+                    }
+                }
+            }
+            if (launcherLog != null && launcherLog.isFile()) {
+                zip.putNextEntry(entry("fafre-runs/launcher.log", launcherLog.lastModified()));
+                zip.write(FileOps.tail(launcherLog, LAUNCHER_LOG_TAIL).getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+                ++count;
+            }
+        }
+        return count;
+    }
+
     static boolean excluded(String name) {
         String lower = name.toLowerCase(Locale.ROOT);
         return lower.endsWith(ReplayFiles.FAF_EXTENSION) || lower.endsWith(ReplayFiles.SCFA_EXTENSION)

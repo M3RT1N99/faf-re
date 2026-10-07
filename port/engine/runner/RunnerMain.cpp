@@ -18,8 +18,8 @@
 //    everything else there, because the main thread's stack is always high: it reserves a range
 //    for libfafengine.so and loads it there (android_dlopen_ext, ANDROID_DLEXT_RESERVED_ADDRESS), so
 //    the library's static initialisers already run on the low stack, then calls `faf_headless_main`;
-//  - joins that thread, prints the arena's report ("[lowarena] ..." on stderr) and returns the exit
-//    code.
+//  - joins that thread, prints the arena's report ("[lowarena] ..." on stderr) and ends the process
+//    with that exit code: _exit after flushing, no static destructors (RunnerExit.cpp, 0.4.1).
 // With FAF_LOWARENA=0 the same steps run on bionic's allocator, a bionic 4 MB thread stack and a plain
 // dlopen (the M3d truncation oracle). See port/engine/lowarena/README.md.
 //
@@ -48,24 +48,24 @@
 #include <android/dlext.h>
 #include <dlfcn.h>
 #include <elf.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <unistd.h>
-
-#include <errno.h>
 #include <strings.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include <string>
 
 #include "../lowarena/LowArena.h"
 #include "ReplayFile.h"
 #include "RunnerCrash.h"
+#include "RunnerExit.h"
 
 namespace
 {
@@ -441,7 +441,7 @@ int main(int argc, char** argv)
   const int joined = pthread_join(thread, nullptr);
   lowarena_thread_join_end(token, joined);
   ReportOnce();
-  return run.exitCode;
+  return faf_runner::EndProcess(run.exitCode);  // returns only with FAF_RUNNER_EXIT=full
 }
 
 #else // the engine side, linked into libfafengine.so

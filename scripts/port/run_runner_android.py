@@ -67,8 +67,15 @@ What it does, in order:
     --windows-ref, where and with which binaries (build ids) it was measured. Runs of other ABIs
     already in the entry are kept; "chain" is set only while every ABI's chain agrees.
 
+10. Build variants (release 0.4.1): --variant O0|O2 (default: the build directory's results.json
+    meta.opt, or a packaged set's build-info.json opt). An O2 set runs from <device dir>/<abi>-O2,
+    its default tag is la<n>-O2, and --write-refs enters it as runs["<abi>-O2"] (with "opt" and its
+    build ids) beside the O0 set's runs["<abi>"]. --env FAF_RUNNER_TIMERSLACK_NS=1 --env
+    FAF_RUNNER_AFFINITY=fast runs the speed experiment (RunnerSched.cpp).
+
 Device layout (--device-dir, default /data/local/tmp/fafre-runner):
-  <abi>/          faf_headless_runner, libfafengine.so
+  <abi>/          faf_headless_runner, libfafengine.so (the O0 set)
+  <abi>-O2/       the same for the O2 set
   data/           the game data root (--data-root)
   home/           FAF_KNOWN_FOLDERS
   replays/        the pushed replays
@@ -819,9 +826,11 @@ def sync_data(args, adb, plan, data_root, out_dir, hashes):
 # Binaries
 
 
-def prepare_binaries(abi, build_dir, tools, out_dir, dry_run):
-    """Stripped copies of the runner binaries for the device; the unstripped ones stay the symbols."""
-    cache = os.path.join(out_dir, "_push", abi)
+def prepare_binaries(abi, build_dir, tools, out_dir, dry_run, cache_key=None):
+    """Stripped copies of the runner binaries for the device; the unstripped ones stay the symbols.
+    `cache_key` (default the ABI) names the copy directory, so the O0 and O2 sets of one ABI do not
+    overwrite each other's copies."""
+    cache = os.path.join(out_dir, "_push", cache_key or abi)
     result = {}
     for name in (EXE_NAME, LIB_NAME):
         src = os.path.join(build_dir, name)
@@ -1335,11 +1344,14 @@ def write_refs(path, results, ctx, args):
             "lua_errors_sim": s.get("lua_errors_sim"),
             "inputs": s.get("inputs"),
             "build_ids": {name: b.get("build_id") for name, b in binaries.items()},
+            "opt": ctx["variant"],
             "tag": ctx["tag"],
             "windows": windows,
         }
+        if args.env:
+            run["env"] = list(args.env)
         runs = entry.get("runs") or {}
-        runs[abi] = run
+        runs[ctx["run_key"]] = run
         chains = {v.get("chain") for v in runs.values()}
         overs = {v.get("game_over_beat") for v in runs.values()}
         firsts = {(v.get("windows") or {}).get("first_diverging_beat") for v in runs.values() if v.get("windows")}
@@ -1402,6 +1414,10 @@ def main():
     ap.add_argument("--tag", help="name prefix of the output files (default la1 or la0)")
     ap.add_argument("--build", action="store_true", help="run build_runner.py --abi <abi> --out <build dir> first")
     ap.add_argument("--build-dir", help="where the binaries are (default buildstage/runner/<abi>)")
+    ap.add_argument("--variant", choices=("O0", "O2"),
+                    help="the build's optimisation (build_runner.py --opt); default: what the build "
+                         "directory's results.json or build-info.json records, else O0. An O2 set runs from <device dir>/<abi>-O2 "
+                         "and is entered in --write-refs as runs[\"<abi>-O2\"], beside the O0 set's runs[\"<abi>\"]")
     ap.add_argument("--build-jobs", type=int, help="--jobs for build_runner.py (default: its own)")
     ap.add_argument("--out-dir", default=DEFAULT_OUT, help="host output root (default buildstage/runner-runs)")
     ap.add_argument("--dry-run", action="store_true", help="print what would be pushed and run; change nothing")
@@ -1473,7 +1489,22 @@ def main():
     translated = bool(abilist) and abi != abilist[0]
     device_dir = args.device_dir.rstrip("/")
     data_root = (args.data_root or f"{device_dir}/data").rstrip("/")
-    tag = args.tag or f"la{args.lowarena}"
+    build_dir = os.path.abspath(args.build_dir or os.path.join(REPO_ROOT, "buildstage", "runner", abi))
+    variant = args.variant
+    if variant is None:
+        # build_runner.py's results.json (meta.opt), or a packaged set's build-info.json (opt).
+        for name, pick in (("results.json", lambda d: (d.get("meta") or {}).get("opt")),
+                           ("build-info.json", lambda d: d.get("opt"))):
+            try:
+                with open(os.path.join(build_dir, name), encoding="utf-8") as f:
+                    variant = pick(json.load(f))
+            except (OSError, ValueError, AttributeError):
+                variant = None
+            if variant in ("O0", "O2"):
+                break
+        variant = variant if variant in ("O0", "O2") else "O0"
+    run_key = abi if variant == "O0" else f"{abi}-{variant}"
+    tag = args.tag or (f"la{args.lowarena}" + ("" if variant == "O0" else f"-{variant}"))
     host_dir = os.path.join(args.out_dir, safe_name(serial), abi)
 
     say(f"run_runner_android: {serial} "
@@ -1482,7 +1513,7 @@ def main():
            f"abilist {','.join(abilist)}, kernel {info.get('kernel', '?')}, page {info.get('pagesize', '?')}, "
            f"RAM {human(int(info.get('memtotal_kb') or 0) * 1024)})" if attached else "(not attached: assuming an empty device)"))
     say(f"   abi {abi}{' under ARM translation (' + (info.get('ro.dalvik.vm.native.bridge') or '?') + ')' if translated else ''}"
-        f", device dir {device_dir}, data root {data_root}, output {host_dir}")
+        f", build {variant} ({build_dir}), device dir {device_dir}, data root {data_root}, output {host_dir}")
     if args.dry_run:
         say("   DRY RUN: adb commands that would change the device are printed, not run")
 
@@ -1499,9 +1530,8 @@ def main():
     if args.data_only:
         return 0
 
-    build_dir = os.path.abspath(args.build_dir or os.path.join(REPO_ROOT, "buildstage", "runner", abi))
     if args.build:
-        cmd = [sys.executable, BUILD_RUNNER, "--abi", abi, "--out", build_dir]
+        cmd = [sys.executable, BUILD_RUNNER, "--abi", abi, "--opt", variant, "--out", build_dir]
         if args.build_jobs:
             cmd += ["--jobs", str(args.build_jobs)]
         say(f"== Build (below-normal priority): {fmt_cmd(cmd)}")
@@ -1513,8 +1543,8 @@ def main():
             if subprocess.run(cmd, creationflags=flags).returncode != 0:
                 raise Failure("build_runner.py failed")
     tools = find_ndk_tools(args.ndk)
-    binaries = prepare_binaries(abi, build_dir, tools, args.out_dir, args.dry_run)
-    bin_dir = f"{device_dir}/{abi}"
+    binaries = prepare_binaries(abi, build_dir, tools, args.out_dir, args.dry_run, cache_key=run_key)
+    bin_dir = f"{device_dir}/{run_key}"
     push_binaries(adb, binaries, bin_dir)
 
     say(f"== Replays -> {serial}:{device_dir}/replays")
@@ -1523,7 +1553,8 @@ def main():
         adb.push([replay], f"{device_dir}/replays/{os.path.basename(replay).lower()}")
     hashes.save()
 
-    ctx = {"abi": abi, "translated": translated, "tag": tag, "host_dir": host_dir, "device_dir": device_dir,
+    ctx = {"abi": abi, "variant": variant, "run_key": run_key, "translated": translated, "tag": tag,
+           "host_dir": host_dir, "device_dir": device_dir,
            "data_root": data_root, "bin_dir": bin_dir, "dev_runs": f"{device_dir}/runs/{abi}", "extra": extra,
            "binaries": binaries, "tools": tools, "device": info, "data": data, "git": git_head()}
     results = [run_one(args, adb, ctx, replay, i + 1) for i, replay in enumerate(replays)]

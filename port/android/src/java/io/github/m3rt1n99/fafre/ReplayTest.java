@@ -41,8 +41,21 @@ import java.util.Map;
  * limit), and the engine load (the runner without a replay: it loads libfafengine.so below 2 GB, runs
  * its static initialisers and stops with the usage line, exit 1).</li>
  * <li>The replay: {@code /headlessreplay <replay> /init <init_faf.lua> /log ... /headlesssummary ...},
- * optionally twice to check that the result is deterministic.</li>
+ * optionally twice to check that the result is deterministic. Each replay run is watched by
+ * {@link RunTelemetry} (release 0.4.1): where its threads ran and whether they ran, queued or slept,
+ * summed up in one "Speed:" line.</li>
  * </ol>
+ *
+ * <p>Or, on its own, the device probe (release 0.4.1): libfafdeviceprobe.so exec'd like the runner,
+ * which reports what the GPU drivers offer for the graphics port and renders a test pattern into a PNG
+ * in the run directory. It needs no game data: the data root is not prepared for it. When the probe
+ * exits non-zero, or a section crashed, hung or crashed in its driver teardown, the app's logcat is saved
+ * next to its output.
+ *
+ * <p>Two experiments (release 0.4.1, Advanced options): the -O2 build of the runner and engine
+ * (libfafrunner_o2.so with FAF_ENGINE_LIB=libfafengine_o2.so), and FAF_RUNNER_TIMERSLACK_NS=1 plus
+ * FAF_RUNNER_AFFINITY=fast|big, which the runner applies to itself before main (RunnerSched.cpp).
+ * Both must give the reference chain of their own build.
  *
  * <p>Every path the runner sees is on the lowercase alias of the data root ({@link Runner#ensureAlias}),
  * and fa_path.lua is rewritten with that root before the run (GUI Start writes it back with the real
@@ -78,6 +91,11 @@ final class ReplayTest {
 
     private static final long PROBE_WATCHDOG_MS = 180_000;
     private static final long REPLAY_WATCHDOG_MS = 600_000;
+    /** FAF_RUNNER_AFFINITY values the app offers (RunnerSched.cpp): no little cores, or the biggest only. */
+    static final String AFFINITY_FAST = "fast";
+    static final String AFFINITY_BIG = "big";
+    static final String BUILD_O0 = "O0";
+    static final String BUILD_O2 = "O2";
     private static final long GAME_EXIT_WAIT_MS = 2000;
     private static final String PREFIX = "io.github.m3rt1n99.fafre.extra.replay.";
 
@@ -89,6 +107,13 @@ final class ReplayTest {
         boolean repeat;
         boolean interlocked;
         boolean lowArena = true;
+        /** The -O2 runner and engine instead of the -O0 pair. */
+        boolean optimized;
+        /** Experiment (a): FAF_RUNNER_TIMERSLACK_NS=1 and FAF_RUNNER_AFFINITY={@link #affinity}. */
+        boolean speedExperiment;
+        String affinity = AFFINITY_FAST;
+        /** Only the device probe; no self-test, no replay. */
+        boolean deviceProbe;
 
         void toIntent(Intent intent) {
             intent.putExtra(PREFIX + "stem", replayStem)
@@ -96,7 +121,15 @@ final class ReplayTest {
                     .putExtra(PREFIX + "replay", replay)
                     .putExtra(PREFIX + "repeat", repeat)
                     .putExtra(PREFIX + "interlocked", interlocked)
-                    .putExtra(PREFIX + "lowarena", lowArena);
+                    .putExtra(PREFIX + "lowarena", lowArena)
+                    .putExtra(PREFIX + "optimized", optimized)
+                    .putExtra(PREFIX + "speed", speedExperiment)
+                    .putExtra(PREFIX + "affinity", affinity)
+                    .putExtra(PREFIX + "deviceprobe", deviceProbe);
+        }
+
+        String build() {
+            return optimized ? BUILD_O2 : BUILD_O0;
         }
 
         static Options fromIntent(Intent intent) {
@@ -107,12 +140,23 @@ final class ReplayTest {
             options.repeat = intent.getBooleanExtra(PREFIX + "repeat", false);
             options.interlocked = intent.getBooleanExtra(PREFIX + "interlocked", false);
             options.lowArena = intent.getBooleanExtra(PREFIX + "lowarena", true);
+            options.optimized = intent.getBooleanExtra(PREFIX + "optimized", false);
+            options.speedExperiment = intent.getBooleanExtra(PREFIX + "speed", false);
+            String affinity = intent.getStringExtra(PREFIX + "affinity");
+            options.affinity = AFFINITY_BIG.equals(affinity) ? AFFINITY_BIG : AFFINITY_FAST;
+            options.deviceProbe = intent.getBooleanExtra(PREFIX + "deviceprobe", false);
+            if (options.deviceProbe) {
+                options.selfTest = false;
+                options.replay = false;
+            }
             return options;
         }
 
         JSONObject toJson() throws JSONException {
             return new JSONObject().put("replay", replay ? replayStem : JSONObject.NULL).put("self_test", selfTest)
-                    .put("repeat", repeat).put("interlocked", interlocked).put("lowarena", lowArena);
+                    .put("repeat", repeat).put("interlocked", interlocked).put("lowarena", lowArena)
+                    .put("build", build()).put("speed_experiment", speedExperiment)
+                    .put("affinity", speedExperiment ? affinity : JSONObject.NULL).put("device_probe", deviceProbe);
         }
     }
 
@@ -130,6 +174,22 @@ final class ReplayTest {
         String startedAt = "";
         List<String> argv = new ArrayList<>();
         Map<String, String> env = new java.util.TreeMap<>();
+        /** "O0" or "O2" for the runner steps; "" for the device probe. */
+        String build = "";
+        /** RunTelemetry's summary (replay steps). */
+        JSONObject telemetry;
+        /** The launching thread's scheduling state, which the runner inherits (replay steps). */
+        JSONObject launcher;
+        /** The runner's "[runner] sched" report, parsed. */
+        JSONObject runnerSched;
+        /** The runner's "[runner] affinity" lines (the engine's affinity requests and what held), parsed. */
+        final List<JSONObject> runnerAffinity = new ArrayList<>();
+        /** The runner's "[runner] exit ..." line (RunnerExit.cpp), without the prefix; "" if none. */
+        String runnerExit = "";
+        /** When the step's process was started (System.currentTimeMillis), for the logcat after a failure. */
+        long startedMillis;
+        /** The device probe's report and the files it wrote (device-probe step). */
+        DeviceProbe.Result probe;
 
         Step(String name, String title) {
             this.name = name;
@@ -158,6 +218,27 @@ final class ReplayTest {
             JSONObject json = new JSONObject().put("name", name).put("title", title).put("verdict", verdict)
                     .put("detail", detail).put("out", outFile).put("started", startedAt)
                     .put("argv", new JSONArray(argv)).put("env", new JSONObject(env));
+            if (!build.isEmpty()) {
+                json.put("build", build);
+            }
+            if (runnerSched != null) {
+                json.put("runner_sched", runnerSched);
+            }
+            if (!runnerAffinity.isEmpty()) {
+                json.put("runner_affinity", new JSONArray(runnerAffinity));
+            }
+            if (!runnerExit.isEmpty()) {
+                json.put("runner_exit", runnerExit);
+            }
+            if (launcher != null) {
+                json.put("launcher_thread", launcher);
+            }
+            if (telemetry != null) {
+                json.put("telemetry", telemetry);
+            }
+            if (probe != null) {
+                json.put("device_probe", probe.toJson());
+            }
             if (!logcatFile.isEmpty()) {
                 json.put("logcat", logcatFile);
             }
@@ -212,6 +293,10 @@ final class ReplayTest {
     private final Context mContext;
     private final LauncherLog mLog;
     private final Options mOptions;
+    /** The device's core classes, read once per run (telemetry and meta.json). */
+    private CpuTopology mTopology;
+    /** RunTelemetry's recorded samples per step ("4-replay"), for meta.json. */
+    private final JSONObject mTelemetryDetails = new JSONObject();
 
     ReplayTest(Context context, LauncherLog log, Options options) {
         mContext = context.getApplicationContext();
@@ -225,7 +310,9 @@ final class ReplayTest {
     String run(Cancellation cancel, Progress progress) throws IOException {
         DataManifest manifest = AppInfo.manifest(mContext);
         DataRoot root = AppInfo.dataRoot(mContext);
-        String problem = Runner.problem(mContext);
+        // The device probe needs only its own executable (and no game data, below).
+        String problem = mOptions.deviceProbe ? (Runner.hasDeviceProbe(mContext) ? null
+                : "This APK has no device probe (" + Runner.DEVICE_PROBE + ").") : Runner.problem(mContext);
         if (problem != null) {
             throw new IOException(problem);
         }
@@ -239,15 +326,19 @@ final class ReplayTest {
         mLog.log("replay test " + runName + ": " + describeOptions());
 
         List<Step> steps = new ArrayList<>();
+        if (mOptions.deviceProbe) {
+            steps.add(new Step("device-probe", "Device probe"));
+        }
         if (mOptions.selfTest) {
             steps.add(new Step("probe", "Arena probe"));
             steps.add(new Step("capacity", "Arena capacity"));
             steps.add(new Step("engine-load", "Engine load"));
         }
         if (mOptions.replay) {
-            steps.add(new Step("replay", mOptions.lowArena ? "Replay" : "Replay without the arena"));
+            String build = mOptions.optimized ? " (-O2 build)" : "";
+            steps.add(new Step("replay", (mOptions.lowArena ? "Replay" : "Replay without the arena") + build));
             if (mOptions.repeat) {
-                steps.add(new Step("replay-2", "Replay, second run"));
+                steps.add(new Step("replay-2", "Replay, second run" + build));
             }
         }
         JSONObject meta = new JSONObject();
@@ -256,7 +347,7 @@ final class ReplayTest {
         // writeResults below. Record it now, with a result.json that says so, so the card shows this run after
         // the app is reopened and "Save run (zip)" exports what it wrote; the end of the run replaces it.
         writeProvisional(runDir, runName, started, steps, 0, null);
-        new Settings(mContext).startReplayRun(runName);
+        new Settings(mContext).startReplayRun(runName, mOptions.deviceProbe);
         ReplayFiles.Info info = null;
         ReplayFiles.Check check = null;
         String engineFile = "";
@@ -273,31 +364,46 @@ final class ReplayTest {
                 binaries.put(entry.getKey(), entry.getValue());
             }
             meta.put("binaries", binaries);
+            mTopology = CpuTopology.read(new File("/sys/devices/system/cpu"), new File("/proc/cpuinfo"),
+                    Runtime.getRuntime().availableProcessors());
+            meta.put("cpu_topology", mTopology.toJson());
+            meta.put("app_process", new AppState(mContext).describeProcess());
+            if (mOptions.optimized && !Runner.hasOptimized(mContext)) {
+                throw new IOException("This APK has no -O2 build of the runner (" + Runner.EXECUTABLE_O2 + ", "
+                        + Runner.ENGINE_O2 + "); turn off \"Optimised engine (-O2)\".");
+            }
+            if (mOptions.deviceProbe && !Runner.hasDeviceProbe(mContext)) {
+                throw new IOException("This APK has no device probe (" + Runner.DEVICE_PROBE + ").");
+            }
             meta.put("paths", new JSONObject().put("data_root", root.path()).put("alias", alias)
                     .put("alias_lowercase", Runner.isLowerCase(alias))
                     .put("native_library_dir", Runner.nativeDir(mContext).getAbsolutePath())
                     .put("cache_dir", mContext.getCacheDir().getAbsolutePath()).put("run_dir", aliasRun)
                     .put("ld_preload_removed", System.getenv("LD_PRELOAD") != null ? System.getenv("LD_PRELOAD") : ""));
 
-            // The data root as the runner expects it (run_runner_android.py creates the same).
-            progress.phase("Preparing the data root", 0, -1);
-            for (String dir : new String[] {ReplayFiles.DIR, RUNS_DIR, manifest.layout.vault + "/maps",
-                manifest.layout.vault + "/mods", manifest.layout.scfa + "/movies", manifest.layout.scfa + "/sounds",
-                manifest.layout.scfa + "/fonts", manifest.layout.logs, "runner"}) {
-                mkdirs(root, dir);
-            }
+            // The data root as the runner expects it (run_runner_android.py creates the same). Not for the device
+            // probe, which reads no game data: it runs on a phone without the FAF files too.
             File home = root.file(RUNNER_HOME);
-            deleteTree(home);
-            mkdirs(root, RUNNER_HOME);
-            File init = root.find(manifest.initScript());
-            if (init == null || !init.isFile()) {
-                throw new IOException(manifest.initScript() + " is missing; get the FAF files first.");
+            String initArg = "";
+            if (mOptions.selfTest || mOptions.replay) {
+                progress.phase("Preparing the data root", 0, -1);
+                for (String dir : new String[] {ReplayFiles.DIR, RUNS_DIR, manifest.layout.vault + "/maps",
+                    manifest.layout.vault + "/mods", manifest.layout.scfa + "/movies", manifest.layout.scfa + "/sounds",
+                    manifest.layout.scfa + "/fonts", manifest.layout.logs, "runner"}) {
+                    mkdirs(root, dir);
+                }
+                deleteTree(home);
+                mkdirs(root, RUNNER_HOME);
+                File init = root.find(manifest.initScript());
+                if (init == null || !init.isFile()) {
+                    throw new IOException(manifest.initScript() + " is missing; get the FAF files first.");
+                }
+                initArg = alias + "/" + relative(root, init);
+                FafVersion installed = FafVersion.read(root.file(manifest.layout.fafVersion));
+                int fafVersion = installed != null ? installed.version : manifest.fafVersion;
+                File faPath = FaPathWriter.write(manifest, root, alias, fafVersion, AppInfo.versionName(mContext));
+                meta.put("fa_path_lua", FileOps.readText(faPath, 64 * 1024));
             }
-            String initArg = alias + "/" + relative(root, init);
-            FafVersion installed = FafVersion.read(root.file(manifest.layout.fafVersion));
-            int fafVersion = installed != null ? installed.version : manifest.fafVersion;
-            File faPath = FaPathWriter.write(manifest, root, alias, fafVersion, AppInfo.versionName(mContext));
-            meta.put("fa_path_lua", FileOps.readText(faPath, 64 * 1024));
 
             if (mOptions.replay) {
                 progress.phase("Checking the replay and the data", 0, -1);
@@ -343,6 +449,8 @@ final class ReplayTest {
                         mkdirs(root, RUNNER_HOME);
                     }
                     runReplay(step, label, index, runDir, aliasRun, alias, initArg, engineFile, cancel, progress);
+                } else if (step.name.equals("device-probe")) {
+                    runDeviceProbe(step, label, index, runDir, aliasRun, alias, cancel, progress);
                 } else {
                     runSelfTest(step, label, index, runDir, alias, cancel, progress);
                 }
@@ -393,10 +501,14 @@ final class ReplayTest {
     }
 
     private String describeOptions() {
+        if (mOptions.deviceProbe) {
+            return "device probe";
+        }
         return (mOptions.selfTest ? "self-test" : "no self-test")
                 + (mOptions.replay ? ", replay " + mOptions.replayStem : "")
                 + (mOptions.replay && mOptions.repeat ? ", twice" : "") + (mOptions.interlocked ? ", interlocked" : "")
-                + (mOptions.lowArena ? "" : ", FAF_LOWARENA=0");
+                + (mOptions.lowArena ? "" : ", FAF_LOWARENA=0") + (mOptions.optimized ? ", -O2 build" : "")
+                + (mOptions.speedExperiment ? ", timer slack 1 ns + affinity " + mOptions.affinity : "");
     }
 
     /**
@@ -469,7 +581,9 @@ final class ReplayTest {
             Progress progress) throws IOException {
         progress.phase(label, 0, -1);
         Map<String, String> env = ReplayFiles.baseEnvironment(mContext, alias);
-        step.argv.add(Runner.file(mContext, Runner.EXECUTABLE).getAbsolutePath());
+        step.build = mOptions.build();
+        step.argv.add(Runner.executable(mContext, mOptions.optimized).getAbsolutePath());
+        env.put("FAF_ENGINE_LIB", Runner.engine(mContext, mOptions.optimized).getAbsolutePath());
         if (!step.name.equals("engine-load")) {
             env.put("FAF_ENGINE_LIB", Runner.file(mContext, Runner.PROBE).getAbsolutePath());
             if (step.name.equals("capacity")) {
@@ -488,11 +602,16 @@ final class ReplayTest {
             step.detail = "cancelled";
             return;
         }
+        step.runnerExit = output.runnerExit() != null ? output.runnerExit() : "";
         if (step.name.equals("engine-load")) {
             boolean loaded = output.engineAt() != null;
             if (outcome.exitCode == 1 && output.usage() && loaded) {
+                // The library the runner reports it loaded: libfafengine_o2.so for the -O2 build.
+                String library = output.engineLibrary();
+                String name = library != null ? new File(library).getName()
+                        : Runner.engine(mContext, mOptions.optimized).getName();
                 step.verdict = VERDICT_PASS;
-                step.detail = "libfafengine.so loaded" + addressOf(output.engineAt()) + ", static initialisers ran";
+                step.detail = name + " loaded" + addressOf(output.engineAt()) + ", static initialisers ran";
             } else {
                 step.verdict = VERDICT_FAIL;
                 step.detail = outcome.describeExit() + (loaded ? "" : ", the engine library did not load")
@@ -515,7 +634,9 @@ final class ReplayTest {
             String initArg, String engineFile, Cancellation cancel, Progress progress) throws IOException {
         progress.phase(label + " · starting", 0, -1);
         String prefix = index + "-" + step.name;
-        step.argv.addAll(Arrays.asList(Runner.file(mContext, Runner.EXECUTABLE).getAbsolutePath(),
+        step.build = mOptions.build();
+        String executable = Runner.executable(mContext, mOptions.optimized).getAbsolutePath();
+        step.argv.addAll(Arrays.asList(executable,
                 "/headlessreplay", alias + "/" + ReplayFiles.DIR + "/" + engineFile,
                 "/init", initArg,
                 "/log", aliasRun + "/" + prefix + ".log",
@@ -526,20 +647,71 @@ final class ReplayTest {
         }
         Map<String, String> env = ReplayFiles.baseEnvironment(mContext, alias);
         env.put("FAF_LOWARENA", mOptions.lowArena ? "1" : "0");
-        ReplayOutput output = new ReplayOutput();
+        env.put("FAF_ENGINE_LIB", Runner.engine(mContext, mOptions.optimized).getAbsolutePath());
+        if (mOptions.speedExperiment) {
+            env.put("FAF_RUNNER_TIMERSLACK_NS", "1");
+            env.put("FAF_RUNNER_AFFINITY", mOptions.affinity);
+        }
+        final ReplayOutput output = new ReplayOutput();
         final ReplayOutput.Phase[] shown = {null};
-        execute(step, index, runDir, env, REPLAY_WATCHDOG_MS, output, cancel, line -> {
-            if (!output.accept(line)) {
-                return;
+        // The runner is forked by this thread: what it inherits (timer slack, nice, cpuset) is read here.
+        step.launcher = AppState.callingThread();
+        RunTelemetry telemetry = new RunTelemetry(new File("/"), mTopology, Process.myPid(), executable,
+                new RunTelemetry.Source() {
+                    @Override
+                    public boolean simulating() {
+                        return output.phase() == ReplayOutput.Phase.PLAYING;
+                    }
+
+                    @Override
+                    public int beat() {
+                        return output.beat();
+                    }
+
+                    @Override
+                    public String phase() {
+                        return output.phase().name().toLowerCase(Locale.ROOT);
+                    }
+                }, new AppState(mContext), Os.sysconf(OsConstants._SC_CLK_TCK));
+        telemetry.setPageSize(Os.sysconf(OsConstants._SC_PAGESIZE));
+        telemetry.start();
+        try {
+            execute(step, index, runDir, env, REPLAY_WATCHDOG_MS, output, cancel, line -> {
+                if (!output.accept(line)) {
+                    return;
+                }
+                ReplayOutput.Phase phase = output.phase();
+                if (phase != shown[0]) {
+                    shown[0] = phase;
+                    progress.phase(label + " · " + phase.label.toLowerCase(Locale.ROOT),
+                            phase == ReplayOutput.Phase.PLAYING ? Math.max(0, output.totalBeats()) : 0, -1);
+                }
+                progress.item(output.describeProgress(), Math.max(0, output.beat()));
+            });
+        } finally {
+            telemetry.stop();
+            step.telemetry = telemetry.summary();
+            try {
+                mTelemetryDetails.put(prefix, telemetry.details());
+            } catch (JSONException e) {
+                mLog.log("replay test: telemetry details: " + e.getMessage());
             }
-            ReplayOutput.Phase phase = output.phase();
-            if (phase != shown[0]) {
-                shown[0] = phase;
-                progress.phase(label + " · " + phase.label.toLowerCase(Locale.ROOT),
-                        phase == ReplayOutput.Phase.PLAYING ? Math.max(0, output.totalBeats()) : 0, -1);
+        }
+        if (output.runnerSched() != null) {
+            try {
+                step.runnerSched = new JSONObject(output.runnerSched());
+            } catch (JSONException e) {
+                step.runnerSched = null;
             }
-            progress.item(output.describeProgress(), Math.max(0, output.beat()));
-        });
+        }
+        for (String text : output.runnerAffinity()) {
+            try {
+                step.runnerAffinity.add(new JSONObject(text));
+            } catch (JSONException e) {
+                mLog.log("replay test: unreadable affinity line: " + e.getMessage());
+            }
+        }
+        step.runnerExit = output.runnerExit() != null ? output.runnerExit() : "";
         File summaryFile = new File(runDir, prefix + ".summary.json");
         try {
             String text = FileOps.readText(summaryFile, 16 * 1024 * 1024);
@@ -574,6 +746,68 @@ final class ReplayTest {
         }
     }
 
+    /**
+     * The device probe: {@code libfafdeviceprobe.so --out <run dir>}. It writes deviceprobe.json and the
+     * render sections' PNGs into the run directory; the step passes when it ran every section to its end
+     * (exit 0) and wrote the report, whatever the sections found.
+     */
+    private void runDeviceProbe(Step step, String label, int index, File runDir, String aliasRun, String alias,
+            Cancellation cancel, Progress progress) throws IOException {
+        progress.phase(label, 0, -1);
+        String probe = Runner.file(mContext, Runner.DEVICE_PROBE).getAbsolutePath();
+        step.argv.addAll(Arrays.asList(probe, "--out", aliasRun));
+        Map<String, String> env = new java.util.HashMap<>();
+        env.put("TMPDIR", mContext.getCacheDir().getAbsolutePath());
+        final List<String> lines = java.util.Collections.synchronizedList(new ArrayList<String>());
+        ReplayOutput output = new ReplayOutput();
+        try {
+            execute(step, index, runDir, env, DeviceProbe.WATCHDOG_MS, output, cancel, line -> {
+                if (lines.size() < 4000) {
+                    lines.add(line);
+                }
+                if (line.startsWith("[probe] ") && line.endsWith(" ...")) {
+                    String section = line.substring("[probe] ".length(), line.length() - " ...".length());
+                    progress.item(DeviceProbe.titleOf(section) + " …", 0);
+                }
+            });
+        } finally {
+            // Each section runs in a child of the probe; one the probe could not end (it was killed itself,
+            // or the section hangs in a driver) must not outlive the step.
+            int killed = RunnerProcess.killStragglers(new File("/proc"), probe);
+            if (killed > 0) {
+                mLog.log("device probe: ended " + killed + " leftover section process(es)");
+            }
+        }
+        List<String> copy;
+        synchronized (lines) {
+            copy = new ArrayList<>(lines);
+        }
+        step.probe = DeviceProbe.read(runDir, copy);
+        RunnerProcess.Outcome outcome = step.outcome;
+        // A section that crashed or hung in a driver (before or after its result) leaves its backtrace in
+        // logcat, not in the probe's output; the parent itself exits 1 then, without a signal.
+        boolean troubled = outcome.started && !outcome.cancelled && (outcome.exitCode != 0
+                || step.probe.failedSections() || !step.probe.teardownProblems.isEmpty());
+        if (troubled && step.logcatFile.isEmpty()) {
+            step.logcatFile = index + "-" + step.name + ".logcat.txt";
+            captureLogcat(new File(runDir, step.logcatFile), step.startedMillis);
+        }
+        if (outcome.cancelled) {
+            step.verdict = VERDICT_CANCELLED;
+            step.detail = "cancelled";
+        } else if (outcome.started && outcome.exitCode == 0 && step.probe.reportFound) {
+            step.verdict = VERDICT_PASS;
+            step.detail = step.probe.headline;
+        } else {
+            step.verdict = VERDICT_FAIL;
+            String meaning = outcome.exitCode == 1 ? " (a section crashed, hung or wrote nothing)"
+                    : outcome.exitCode == 2 ? " (bad arguments, or the run directory is not writable)" : "";
+            step.detail = (outcome.watchdog ? "no output for " + DeviceProbe.WATCHDOG_MS / 1000 + " s, stopped; " : "")
+                    + outcome.describeExit() + (outcome.signalled() ? "" : meaning)
+                    + (step.probe.reportError.isEmpty() ? "" : "; " + step.probe.reportError);
+        }
+    }
+
     /** Starts the step's process with its output in {@code <index>-<name>.out}; logcat after a signal. */
     private void execute(Step step, int index, File runDir, Map<String, String> env, long watchdogMs,
             ReplayOutput output, Cancellation cancel, RunnerProcess.LineListener listener) throws IOException {
@@ -582,6 +816,7 @@ final class ReplayTest {
         step.outFile = index + "-" + step.name + ".out";
         File outFile = new File(runDir, step.outFile);
         long since = System.currentTimeMillis();
+        step.startedMillis = since;
         step.startedAt = Instant.now().toString();
         try (FileOutputStream header = new FileOutputStream(outFile)) {
             StringBuilder text = new StringBuilder("[app] ").append(step.startedAt).append(" cwd ")
@@ -672,6 +907,8 @@ final class ReplayTest {
         String referenceText = "";
         String determinism = "not_run";
         final List<String[]> lines = new ArrayList<>();
+        /** The first replay run's speed verdict (RunTelemetry), or null. */
+        JSONObject speed;
     }
 
     private Verdict evaluate(List<Step> steps, ReplayFiles.Info info, boolean cancelled, String notRunReason) {
@@ -680,11 +917,14 @@ final class ReplayTest {
         Step second = null;
         List<String> selfTestFailures = new ArrayList<>();
         int selfTests = 0;
+        Step deviceProbe = null;
         for (Step step : steps) {
             if (step.name.equals("replay")) {
                 replay = step;
             } else if (step.name.equals("replay-2")) {
                 second = step;
+            } else if (step.name.equals("device-probe")) {
+                deviceProbe = step;
             } else {
                 ++selfTests;
                 if (!step.passed() && !VERDICT_NOT_RUN.equals(step.verdict) && !VERDICT_CANCELLED.equals(step.verdict)) {
@@ -697,7 +937,7 @@ final class ReplayTest {
             StringBuilder line = new StringBuilder("Self-test:");
             boolean all = true;
             for (Step step : steps) {
-                if (!step.name.startsWith("replay")) {
+                if (isSelfTest(step)) {
                     line.append(' ').append(step.title.toLowerCase(Locale.ROOT)).append(' ')
                             .append(step.verdict.equals(VERDICT_PASS) ? "PASS" : step.verdict).append(';');
                     all &= step.passed();
@@ -706,7 +946,7 @@ final class ReplayTest {
             line.setLength(line.length() - 1);
             v.lines.add(new String[] {all ? "good" : "bad", line.toString()});
             for (Step step : steps) {
-                if (!step.name.startsWith("replay") && !step.detail.isEmpty()) {
+                if (isSelfTest(step) && !step.detail.isEmpty()) {
                     v.lines.add(new String[] {step.passed() ? "muted" : "bad", "  " + step.title + ": " + step.detail});
                 }
             }
@@ -739,6 +979,7 @@ final class ReplayTest {
                             s.optInt("engine_desync_reports", 0), s.optInt("assertions", 0))});
                 }
             }
+            speedLine(v, replay, second);
             if (second != null) {
                 // Identical: the same verdict, game-over beat and chain. Two crashes without the arena have no
                 // chain; they count as identical when everything else matches.
@@ -773,6 +1014,16 @@ final class ReplayTest {
             v.verdict = VERDICT_FAIL;
             v.headline = "FAIL · self-test: " + String.join(", ", selfTestFailures) + " failed"
                     + (replay != null ? " · replay " + label(replay.verdict).toLowerCase(Locale.ROOT) : "");
+        } else if (deviceProbe != null && replay == null) {
+            DeviceProbe.Result probe = deviceProbe.probe;
+            if (probe != null) {
+                v.lines.addAll(probe.lines);
+            } else if (!deviceProbe.detail.isEmpty()) {
+                v.lines.add(new String[] {"bad", "Device probe: " + deviceProbe.detail});
+            }
+            v.verdict = deviceProbe.verdict;
+            v.headline = label(deviceProbe.verdict) + " · device probe" + (probe != null && !probe.headline.isEmpty()
+                    ? ": " + probe.headline : deviceProbe.detail.isEmpty() ? "" : ": " + deviceProbe.detail);
         } else if (replay == null) {
             v.verdict = VERDICT_PASS;
             v.headline = "PASS · self-test (no replay selected)";
@@ -806,6 +1057,182 @@ final class ReplayTest {
         return v;
     }
 
+    private static boolean isSelfTest(Step step) {
+        return !step.name.startsWith("replay") && !step.name.equals("device-probe");
+    }
+
+    /**
+     * The one-line speed verdict of the replay run (RunTelemetry), with the busiest thread's effective clock
+     * and migrations, and the two settings the 0.4.1 experiments change: the runner's timer slack (from its
+     * "[runner] sched" line) and its allowed CPUs as observed during the judged window (Cpus_allowed_list of
+     * the busiest thread), with who set them: the speed experiment, FAF's init_faf.lua (every CPU but 0 and 1
+     * on a device with six or more), or nobody (what the app passed on).
+     */
+    private void speedLine(Verdict v, Step replay, Step second) {
+        if (replay.telemetry == null) {
+            return;
+        }
+        String verdict = replay.telemetry.optString("verdict", "");
+        String code = replay.telemetry.optString("verdict_code", "unknown");
+        if (verdict.isEmpty()) {
+            return;
+        }
+        StringBuilder line = new StringBuilder("Speed: ").append(verdict);
+        String clock = clockText(replay.telemetry);
+        if (!clock.isEmpty()) {
+            line.append(" · ").append(clock);
+        }
+        double migrations = replay.telemetry.optDouble("hot_migrations_per_s", -1);
+        if (migrations >= 0) {
+            line.append(" · ").append(String.format(Locale.ROOT, "%.1f migrations/s", migrations))
+                    .append("approximate".equals(replay.telemetry.optString("class_split")) ? " (core split approximate)"
+                    : "");
+        }
+        JSONObject sched = replay.runnerSched;
+        String slack = "";
+        if (sched != null) {
+            JSONObject timer = sched.optJSONObject("timerslack_ns");
+            if (timer != null && timer.has("after")) {
+                slack = formatNs(timer.optLong("after", -1));
+            }
+            String cpuset = sched.optString("cpuset", "");
+            line.append(" · timer slack ").append(slack.isEmpty() ? "?" : slack)
+                    .append(cpuset.isEmpty() || "null".equals(cpuset) ? "" : " · cpuset " + cpuset);
+        } else if (replay.launcher != null && replay.launcher.has("timerslack_ns")) {
+            Object inherited = replay.launcher.opt("timerslack_ns");
+            if (inherited instanceof Number) {
+                slack = formatNs(((Number) inherited).longValue());
+                line.append(" · timer slack ").append(slack).append(" (inherited)");
+            }
+        }
+        String allowed = observedCpus(replay);
+        String setBy = cpusSetBy(replay);
+        if (!allowed.isEmpty()) {
+            line.append(" · cpus ").append(allowed).append(setBy.isEmpty() ? "" : " (" + setBy + ")");
+        }
+        if (second != null && second.telemetry != null
+                && !code.equals(second.telemetry.optString("verdict_code", code))) {
+            line.append(" · second run: ").append(second.telemetry.optString("verdict"));
+        }
+        boolean concern = "little".equals(code) || "waiting".equals(code) || "starved".equals(code)
+                || "mixed".equals(code);
+        v.lines.add(new String[] {concern ? "warn" : "muted", line.toString()});
+        try {
+            v.speed = new JSONObject().put("verdict", verdict).put("verdict_code", code).put("line", line.toString())
+                    .put("build", replay.build).put("speed_experiment", mOptions.speedExperiment)
+                    .put("timer_slack", slack).put("cpus_allowed", allowed).put("cpus_set_by", setBy);
+            JSONObject hotClock = replay.telemetry.optJSONObject("hot_clock");
+            if (hotClock != null) {
+                v.speed.put("clock", hotClock);
+            }
+            if (migrations >= 0) {
+                v.speed.put("migrations_per_s", migrations)
+                        .put("class_split", replay.telemetry.optString("class_split"));
+            }
+            JSONObject summary = replay.summary;
+            if (summary != null) {
+                v.speed.put("beats_per_second", summary.optDouble("beats_per_second", 0))
+                        .put("sim_seconds", summary.optDouble("sim_seconds", 0))
+                        .put("load_seconds", summary.optDouble("load_seconds", 0));
+            }
+        } catch (JSONException e) {
+            v.speed = null;
+        }
+    }
+
+    /**
+     * The allowed CPUs the runner's busiest thread had during the judged window ("2-7", or "0-7 → 2-7" when
+     * they changed); else what the runner reported last (its "[runner] affinity" or "[runner] sched" line),
+     * else what the sampler read when it found the runner. "" when nothing is known.
+     */
+    static String observedCpus(Step replay) {
+        JSONArray window = replay.telemetry != null ? replay.telemetry.optJSONArray("cpus_allowed_window") : null;
+        if (window != null && window.length() > 0) {
+            List<String> lists = new ArrayList<>();
+            for (int i = 0; i < window.length(); ++i) {
+                lists.add(window.optString(i, ""));
+            }
+            return String.join(" → ", lists);
+        }
+        if (!replay.runnerAffinity.isEmpty()) {
+            String held = replay.runnerAffinity.get(replay.runnerAffinity.size() - 1).optString("in_force", "");
+            if (!held.isEmpty() && !"null".equals(held)) {
+                return held;
+            }
+        }
+        if (replay.runnerSched != null) {
+            JSONObject affinity = replay.runnerSched.optJSONObject("affinity");
+            String held = affinity != null ? affinity.optString("in_force", "") : "";
+            if (held.isEmpty() || "null".equals(held)) {
+                JSONObject cpus = replay.runnerSched.optJSONObject("cpus_allowed");
+                held = cpus != null ? cpus.optString("after", "") : "";
+            }
+            if (!held.isEmpty() && !"null".equals(held)) {
+                return held;
+            }
+        }
+        JSONObject process = replay.telemetry != null ? replay.telemetry.optJSONObject("process") : null;
+        String read = process != null ? process.optString("cpus_allowed_list", "") : "";
+        return read.isEmpty() || read.startsWith("unreadable") || "null".equals(read) ? "" : read;
+    }
+
+    /**
+     * Who set the runner's allowed CPUs: "speed experiment" (FAF_RUNNER_AFFINITY, which the runner holds
+     * against the engine), "speed experiment; FAF asked for 2-7" (it held against FAF's request), "FAF's
+     * init_faf.lua" (the engine's request applied: every CPU but 0 and 1 on six or more), or "" (nobody: the
+     * app's own). From the runner's "[runner] affinity" and "[runner] sched" lines.
+     */
+    static String cpusSetBy(Step replay) {
+        if (!replay.runnerAffinity.isEmpty()) {
+            JSONObject last = replay.runnerAffinity.get(replay.runnerAffinity.size() - 1);
+            if ("runner".equals(last.optString("set_by"))) {
+                String request = last.optString("request", "");
+                return request.isEmpty() || request.equals(last.optString("in_force")) ? "speed experiment"
+                        : "speed experiment; FAF asked for " + request;
+            }
+            return "FAF's init_faf.lua";
+        }
+        JSONObject affinity = replay.runnerSched != null ? replay.runnerSched.optJSONObject("affinity") : null;
+        if (affinity != null && (affinity.optBoolean("applied", false) || "runner".equals(affinity.optString("owner")))) {
+            return "speed experiment";
+        }
+        return "";
+    }
+
+    /** "2.40 GHz effective (86% of max)" from the telemetry's hot_clock, or "". */
+    static String clockText(JSONObject telemetry) {
+        JSONObject clock = telemetry != null ? telemetry.optJSONObject("hot_clock") : null;
+        if (clock == null) {
+            return "";
+        }
+        long effective = clock.optLong("effective_mhz", 0);
+        long max = clock.optLong("max_mhz", 0);
+        if (effective <= 0) {
+            return "";
+        }
+        String text = (effective >= 1000 ? String.format(Locale.ROOT, "%.2f GHz", effective / 1000.0)
+                : effective + " MHz") + " effective";
+        // cpuinfo_max_freq that makes sense (the emulator reports 2 kHz).
+        if (max >= 100 && effective <= max * 3 / 2) {
+            text += " (" + Math.round(100.0 * effective / max) + "% of max)";
+        }
+        return text;
+    }
+
+    /** "50 µs", "40 ms", "1 ns". */
+    static String formatNs(long ns) {
+        if (ns < 0) {
+            return "?";
+        }
+        if (ns >= 1_000_000 && ns % 1_000_000 == 0) {
+            return ns / 1_000_000 + " ms";
+        }
+        if (ns >= 1_000 && ns % 1_000 == 0) {
+            return ns / 1_000 + " µs";
+        }
+        return ns + " ns";
+    }
+
     private void compareReference(Verdict v, ReplayFiles.Info info, String chain, Step replay) {
         ReplayRefs refs = ReplayRefs.get(mContext);
         ReplayRefs.Ref ref = info != null ? refs.find(info.sha256(), info.engineFileSha256()) : null;
@@ -823,10 +1250,14 @@ final class ReplayTest {
                     + String.join(", ", refs.ids()) + ")" : "") + "."});
             return;
         }
-        String status = ref.compare(chain);
+        // G10: a chain is only comparable between identical binaries; the table has one measurement per build.
+        String engine = Runner.buildId(Runner.engine(mContext, BUILD_O2.equals(replay.build)));
+        String runner = Runner.buildId(Runner.executable(mContext, BUILD_O2.equals(replay.build)));
+        ReplayRefs.Comparison comparison = ref.compareFor(chain, engine, runner);
+        String status = comparison.status;
         v.referenceStatus = status;
-        String expected = ref.chains.isEmpty() ? "none" : String.join(" / ", ref.chains);
-        String where = ref.measuredOn.isEmpty() ? "" : " (measured on " + ref.measuredOn + ")";
+        String expected = comparison.expected.isEmpty() ? "none" : String.join(" / ", comparison.expected);
+        String where = comparison.measuredOn.isEmpty() ? "" : " (measured on " + comparison.measuredOn + ")";
         if ("match".equals(status)) {
             v.referenceText = "matches the reference";
             v.lines.add(new String[] {"good", "Checkpoint chain " + chain + " matches the reference" + where + "."});
@@ -838,23 +1269,21 @@ final class ReplayTest {
             v.lines.add(new String[] {"warn", "Checkpoint chain " + chain + " differs from the reference " + expected
                     + where + ". Not necessarily a port bug: send the run zip."});
         }
+        String build = BUILD_O2.equals(replay.build) ? "-O2 " : "";
         if (!ref.buildIds.isEmpty()) {
-            // G10: a chain is only comparable between identical binaries.
-            String engine = Runner.buildId(Runner.file(mContext, Runner.ENGINE));
-            String runner = Runner.buildId(Runner.file(mContext, Runner.EXECUTABLE));
-            if (ref.measuredWith(engine) && ref.measuredWith(runner)) {
-                v.lines.add(new String[] {"muted", "The reference was measured with these binaries (engine "
+            if (comparison.sameBinaries) {
+                v.lines.add(new String[] {"muted", "The reference was measured with these " + build + "binaries (engine "
                         + shortId(engine) + ", runner " + shortId(runner) + ")."});
             } else {
-                v.lines.add(new String[] {"warn", "These binaries are not the ones the reference was measured with "
-                        + "(engine " + shortId(engine) + ", runner " + shortId(runner) + "); a different chain may come "
-                        + "from that."});
+                v.lines.add(new String[] {"warn", "These " + build + "binaries are not the ones the reference was "
+                        + "measured with (engine " + shortId(engine) + ", runner " + shortId(runner) + "); a different "
+                        + "chain may come from that."});
             }
         }
         int gameOver = replay.gameOverBeat();
-        if (ref.gameOverBeat >= 0 && gameOver >= 0 && ref.gameOverBeat != gameOver) {
+        if (comparison.gameOverBeat >= 0 && gameOver >= 0 && comparison.gameOverBeat != gameOver) {
             v.lines.add(new String[] {"warn", "Game over at beat " + gameOver + ", the reference ended at beat "
-                    + ref.gameOverBeat + "."});
+                    + comparison.gameOverBeat + "."});
         }
         if (!ref.windowsChain.isEmpty() || !ref.firstDivergingVsWindows.isEmpty()) {
             v.lines.add(new String[] {"muted", "Windows: " + (ref.windowsChain.isEmpty() ? "" : "chain "
@@ -886,12 +1315,18 @@ final class ReplayTest {
             stepJson.put(step.toJson());
         }
         meta.put("ended", ended).put("steps", stepJson);
+        if (mTelemetryDetails.length() > 0) {
+            meta.put("telemetry", mTelemetryDetails);
+        }
 
         JSONObject result = new JSONObject();
         result.put("schema", 1).put("run", runName).put("started", started).put("ended", ended)
                 .put("verdict", verdict.verdict).put("ok", verdict.ok).put("headline", verdict.headline)
                 .put("reference", verdict.referenceStatus).put("determinism", verdict.determinism)
                 .put("options", mOptions.toJson()).put("steps", stepJson);
+        if (verdict.speed != null) {
+            result.put("speed", verdict.speed);
+        }
         if (info != null) {
             result.put("replay", new JSONObject().put("stem", info.stem()).put("uid", info.uid())
                     .put("sha256", info.sha256()).put("map", info.mapFolder()).put("beats", info.beats()));
@@ -1008,11 +1443,24 @@ final class ReplayTest {
             }
         }
         JSONObject binaries = meta.optJSONObject("binaries");
-        if (binaries != null) {
-            JSONObject engine = binaries.optJSONObject(Runner.ENGINE);
-            JSONObject runner = binaries.optJSONObject(Runner.EXECUTABLE);
-            out.append("Build ids: engine ").append(engine != null ? engine.optString("build_id") : "?")
+        if (binaries != null && !mOptions.deviceProbe) {
+            JSONObject engine = binaries.optJSONObject(mOptions.optimized ? Runner.ENGINE_O2 : Runner.ENGINE);
+            JSONObject runner = binaries.optJSONObject(mOptions.optimized ? Runner.EXECUTABLE_O2 : Runner.EXECUTABLE);
+            out.append("Build ids").append(mOptions.optimized ? " (-O2)" : "").append(": engine ")
+                    .append(engine != null ? engine.optString("build_id") : "?")
                     .append(", runner ").append(runner != null ? runner.optString("build_id") : "?").append('\n');
+        } else if (binaries != null) {
+            JSONObject probe = binaries.optJSONObject(Runner.DEVICE_PROBE);
+            out.append("Device probe build id: ").append(probe != null ? probe.optString("build_id") : "?").append('\n');
+        }
+        if (mOptions.speedExperiment || mOptions.optimized) {
+            out.append("Options:").append(mOptions.optimized ? " -O2 build" : "")
+                    .append(mOptions.speedExperiment ? (mOptions.optimized ? "," : "") + " timer slack 1 ns, affinity "
+                    + mOptions.affinity : "").append('\n');
+        }
+        JSONObject topology = meta.optJSONObject("cpu_topology");
+        if (topology != null && mTopology != null && !mOptions.deviceProbe) {
+            out.append("CPUs: ").append(mTopology.describe()).append('\n');
         }
         JSONObject replay = meta.optJSONObject("replay");
         if (replay != null) {

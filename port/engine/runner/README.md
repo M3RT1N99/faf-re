@@ -13,7 +13,11 @@ everything it reaches, linked for Android into
   on a thread with a low stack and returns its exit code. Since release 0.4.0 it also reads
   `.fafreplay` files itself, has `/replayinfo` and `/convertreplay` modes and reports crashes
   ([below](#release-040-replay-input-and-crash-reports)); the APK ships it as
-  `lib/<abi>/libfafrunner.so` for the in-app replay test.
+  `lib/<abi>/libfafrunner.so` for the in-app replay test. Since release 0.4.1 it reports where it
+  runs (cpuset, affinity, timer slack, scheduling policy, CPU capacities) and can set the timer
+  slack and a high-capacity affinity for the speed experiment, and `build_runner.py --opt O2` builds
+  an optimised runner/engine pair beside the `-O0` one
+  ([below](#release-041-where-the-runner-runs-the--o2-build-and-the-device-probe)).
 
 The command line is main.exe's: `faf_headless_runner /headlessreplay <file> /init <init_faf.lua> ...`
 (the leading `/headlessreplay` may be left out). On a device or the emulator,
@@ -27,6 +31,8 @@ The command line is main.exe's: `faf_headless_runner /headlessreplay <file> /ini
 | `HeadlessStubs*.cpp` | Runner-only stand-ins for user-side code (UI, render, audio, wx, live networking, the user session, the D3D texture resource without a device), never part of main.exe; plus a few traps (below) |
 | `ReplayFile.{h,cpp}` | Executable only (0.4.0): `.fafreplay` decoding (zstd from [port/third_party/zstd](../../third_party/zstd/README.md), legacy base64+zlib from the system libz), the version rewrite to 3764, the header scan, `/replayinfo`'s JSON, SHA-256 |
 | `RunnerCrash.{h,cpp}` | Executable only (0.4.0): the crash reporter for fatal signals |
+| `RunnerSched.cpp` | Executable only (0.4.1): a constructor that prints `[runner] sched {...}` and applies `FAF_RUNNER_TIMERSLACK_NS` / `FAF_RUNNER_AFFINITY`, and the exported `sched_setaffinity` that keeps the runner's mask against the engine's requests; the engine is unchanged by it |
+| `RunnerExit.{h,cpp}` | Executable only (0.4.1, second build): `main` ends with `_exit` after flushing, so the engine's static destructors (seconds of VFS teardown) never run; `FAF_RUNNER_EXIT=full` keeps `exit()` |
 
 ## Building
 
@@ -39,8 +45,8 @@ python scripts/port/build_runner.py --abi x86_64
 `build_runner.py` compiles each TU with the arm64 sweep's command (`scripts/port/engine_sweep.py`:
 main.vcxproj's Release|x64 defines and include directories, `port/engine/shim`,
 `port/engine/compile_flags.txt`) plus `-fPIC -ffunction-sections -fdata-sections -g`, the
-runner's own sources (`port/engine/runner/*.cpp` except the executable-only `ReplayFile.cpp` and
-`RunnerCrash.cpp`, which are compiled with the low arena's plain flags, `RUNNER_EXE_SOURCES`, together
+runner's own sources (`port/engine/runner/*.cpp` except the executable-only `ReplayFile.cpp`,
+`RunnerCrash.cpp`, `RunnerSched.cpp` and `RunnerExit.cpp`, which are compiled with the low arena's plain flags, `RUNNER_EXE_SOURCES`, together
 with the vendored zstd decoder, `ZSTD_SOURCES`; the executable links `-lz`), and the WildMagic
 Foundation TUs the closure lists, from the local, gitignored `dependencies/WildMagic3p8`. Wild Magic needs two stand-ins,
 generated into `<out>/wm3-include`: `<sys/timeb.h>` (bionic has none) and copies of
@@ -53,11 +59,14 @@ and the report.
 | Option | |
 |---|---|
 | `--abi arm64-v8a\|x86_64` | target, default arm64-v8a (`aarch64-linux-android26`) |
+| `--opt O0\|O2` | optimisation of the engine-side units (closure TUs, runner sources, Wild Magic, the arena probe, `RunnerMain.cpp`'s executable object). `O0` (default) adds nothing, clang's `-O0`, the commands of every earlier build. `O2` adds `-O2 -fno-omit-frame-pointer` and keeps every other flag, so `compile_flags.txt`'s `-ffp-contract=off`, `-fno-fast-math`, `-fno-strict-aliasing` still apply; its default `--out` is `buildstage/runner/<abi>-O2`. The executable-only sources are `-O2` in both. |
 | `--out DIR` | build directory, default `buildstage/runner/<abi>`. Several builds can run side by side, each in its own directory; when several people or agents iterate at once, each uses its own `--out` and leaves the default directory as the shared seed |
 | `--seed DIR` | copy every up-to-date object from DIR first (default: the ABI's default directory when `--out` is another one), so a new directory does not start from zero |
 | `--files GLOB...` | recompile only these TUs (closure TUs, runner sources, WildMagic TUs; paths or globs relative to `src/sdk`) and relink with the objects already there |
 | `--force`, `--link-only`, `--no-link` | recompile everything; only link; only compile |
 | `--jobs N`, `--extra ARG`, `--ldflag ARG` | parallel compilers; one more compile or link argument (repeatable) |
+| `--probe` | also link `libfafarenaprobe.so`, the low arena's placement probe |
+| `--deviceprobe`, `--only-deviceprobe`, `--glslang-build DIR` | also (or only) build `libfafdeviceprobe.so`, the device probe for the graphics plan ([port/deviceprobe](../../deviceprobe/README.md)); `--only-deviceprobe` leaves `report.md`/`results.json` alone and writes `deviceprobe-build.json`. Its glslang section links the glslang/SPIRV-Tools libraries of libfaf_android.so's build (`buildstage/android-native[-x86_64]`, or DIR) |
 
 Output in the build directory: `libfafengine.so`, `faf_headless_runner`, `report.md`,
 `results.json`, `link.log`, and per TU `obj/<tu>.o` (with its dependency file and a stamp) and
@@ -201,6 +210,14 @@ as on a phone), and `--write-refs FILE` enters every run that reached its end in
 table. Generated files are staged under short flat names, so a long `--out-dir` works; a host path
 adb.exe cannot open stops the script up front.
 
+Since 0.4.1 it knows a build's optimisation (`--variant O0|O2`, by default what the build
+directory's `results.json` or a packaged set's `build-info.json` says): an `-O2` set is pushed to
+`<device dir>/<abi>-O2`, its default tag is `la1-O2`, and `--write-refs` enters it as
+`runs["<abi>-O2"]` beside the `-O0` set's `runs["<abi>"]`, each with `opt` and its `build_ids`. The
+entry's `chain` is set only while every run's chain agrees. `--env NAME=VALUE` passes the
+experiment's variables (`FAF_RUNNER_TIMERSLACK_NS`, `FAF_RUNNER_AFFINITY`); a run with `--env` records
+them in its refs entry.
+
 ## Release 0.4.0: replay input and crash reports
 
 The in-app replay test execs this executable from the APK (`lib/<abi>/libfafrunner.so`) and needs
@@ -300,14 +317,199 @@ the APK execs `nativeLibraryDir/libfafrunner.so`, which the linker puts in its "
 the crash report and debuggerd's backtrace both reach the run's files (the app may read its own
 uid's crash log lines).
 
-## Status (2026-10-07, M3c; release 0.4.0)
+## Release 0.4.1: where the runner runs, the -O2 build and the device probe
+
+The S22 Ultra loaded the reference replay in 15.8 s but simulated it in 19.8 s (about 24 beats/s),
+slower than arm64 under the emulator's translation on the PC (11.5 s), so something other than raw
+CPU speed holds the sim back ([headless-replay.md](../../../docs/port/headless-replay.md#first-run-on-a-real-arm-core)).
+A child that the app exec's inherits the cgroups, cpuset, CPU affinity, timer slack and utilisation
+clamps of the app thread that forked it, and keeps them when the app's own state changes later.
+0.4.1 measures that and offers two experiments: a scheduling one in the runner, and an optimised
+build.
+
+### `[runner] sched`: where it runs
+
+`RunnerSched.cpp` is a constructor of the executable. It runs on the main thread before `main`, so
+before any other thread exists, and `libfafengine.so` does not change for it: the `-O0` engine of
+0.4.1 is byte-identical to 0.4.0's (same build ids). It prints one line on stderr, except for
+`/replayinfo` and `/convertreplay`, whose stdout is a single JSON object:
+
+```
+[runner] sched {"pid":..,"requested":{"timerslack_ns":null,"affinity":null},
+  "timerslack_ns":{"before":50000,"after":50000,"applied":false},"policy":"SCHED_OTHER","nice":0,
+  "uclamp":{"min":0,"max":1024},"uclamp_cgroup":{"min":"0.00","max":"max","path":"/dev/cpuctl/top-app"},
+  "cpuset":"/top-app","cpuset_cpus":"0-7","cpuset_cpus_from":"/dev/cpuset",
+  "cgroup":"...","cpus_allowed":{"before":"0-7","after":"0-7","status":"0-7"},
+  "affinity":{"mode":"unchanged","applied":false,"in_force":"0-7","set_by":"inherited","owner":"engine"},
+  "capacity_source":"cpu_capacity",
+  "cpus":[{"cpu":0,"capacity":..,"max_khz":..,"part":"0xd46","class":"little","online":true},...],
+  "classes":{"little":"0-3","mid":"4-6","big":"7"}}
+```
+
+(one line in the output). The app cannot read these itself: another task's
+`/proc/<pid>/timerslack_ns` needs `CAP_SYS_NICE`, and Java has no `sched_getattr` for the clamps.
+`uclamp` is the task's own utilisation clamp request (`sched_getattr`); `uclamp_cgroup` is the clamp
+its cpu cgroup applies (`/dev/cpuctl/<group>/cpu.uclamp.min` and `.max`, as the files say them;
+`null` where the app may not read them). `affinity.in_force` is the mask when `main` starts,
+`set_by` says whether the runner set it (`runner`) or it came from the app (`inherited`), and `owner`
+who decides later: `runner` when `FAF_RUNNER_AFFINITY` holds against the engine (below), else
+`engine`.
+`cpuset` is `/proc/self/cpuset`, `cpuset_cpus` that cpuset's own CPU list where an app may read it,
+`cpus_allowed` the affinity mask before and after the experiment (plus `/proc/self/status`'s
+`Cpus_allowed_list`). The CPU classes come from `cpu_capacity` (1024 = the biggest core), else from
+`cpufreq/cpuinfo_max_freq`, else from `/proc/cpuinfo`'s `CPU part` with a table of Arm's cores
+(A5x/A510/A520 little, A7x mid, X big): lowest value `little`, highest `big`, the rest `mid`, all
+equal `uniform`. It allocates nothing (stack buffers, `open`/`read`/`write`), so the low arena starts
+from the same state as without it.
+
+### Experiment (a): timer slack and a high-capacity affinity
+
+| Environment | Effect |
+|---|---|
+| `FAF_RUNNER_TIMERSLACK_NS=1` | `prctl(PR_SET_TIMERSLACK, 1)`: timed waits and sleeps are no longer deferred (the kernel default is 50 µs; Android gives background work tens of milliseconds) |
+| `FAF_RUNNER_AFFINITY=fast` | the allowed CPUs without the device's lowest capacity class (on the Exynos 2200, when the cpuset allows them: the X2 and the three A710s) |
+| `FAF_RUNNER_AFFINITY=big` | only the highest capacity class among the allowed CPUs |
+| `FAF_RUNNER_AFFINITY=<list>` | a CPU list such as `4-7`, intersected with the allowed set |
+| `FAF_RUNNER_AFFINITY=all` | every allowed CPU: the mask stays, but the runner holds it (below) |
+| `FAF_RUNNER_AFFINITY` unset or empty | nothing: the engine decides (FAF's `init_faf.lua`, below) |
+| `FAF_RUNNER_SYSFS_CPU=<dir>` | test hook: read `possible`, `online`, `cpu<n>/cpu_capacity`, `cpu<n>/cpufreq/cpuinfo_max_freq` and `cpuinfo` from `<dir>` |
+
+Both are set on the main thread before the engine thread exists; every engine thread inherits them
+(the affinity mask and the timer slack are copied from the creating thread at clone time). Nothing
+is widened: the mask is always within `sched_getaffinity`, i.e. the cpuset. When nothing can be
+applied the line says why (`"note":"the allowed CPUs are all in the lowest capacity class: not
+changed"`, `"no CPU capacities"`, `"all CPUs have the same capacity"`). The app's experiment uses
+`FAF_RUNNER_TIMERSLACK_NS=1` with `FAF_RUNNER_AFFINITY=fast`.
+
+**FAF's own mask, and the hold (second 0.4.1 build).** FAF's `init_faf.lua`, which the engine runs
+with `/init`, calls `SetProcessAffinityMask(systemMask - 3)` on a device with six or more CPUs
+("every CPU but 0 and 1": 2-7 on an 8-core phone; the 0.4.0 phone log says "affinity set to: 252"),
+and with the process mask itself when it differs from the system mask. The shim applies that request
+to every thread (`port/engine/shim/faf_win_kernel.h`, `sched_setaffinity` per `/proc/self/task`
+entry). It runs while the engine loads, after the constructor, so in the first 0.4.1 build it undid
+the experiment on a phone. The executable now exports its own `sched_setaffinity` (`EXE_EXPORTS`),
+which `libfafengine.so` binds to ahead of libc's:
+
+- `FAF_RUNNER_AFFINITY` set and usable (`fast`, `big`, `all`, or a list with an allowed CPU; `fast` and
+  `big` on uniform CPUs keep the whole allowed set): the runner owns the mask. An engine request
+  returns success, but the thread gets the runner's mask.
+- otherwise (unset, or nothing this device can apply, e.g. no CPU capacities): the request goes to
+  the kernel unchanged. FAF's mask applies, as in the reference runs.
+
+Each distinct engine request prints one more line (the shim's per-thread loop prints once):
+
+```
+[runner] affinity {"tid":..,"request":"2-7","in_force":"4-7","set_by":"runner","result":"ok",
+  "note":"FAF_RUNNER_AFFINITY holds: the engine's request is not applied"}
+```
+
+(`"set_by":"engine"` and no note when the engine's mask was applied; "the engine asked for the same
+CPUs" when the request equals the runner's mask.) The interposer allocates nothing either; its own
+call goes to the kernel with `syscall(SYS_sched_setaffinity)`.
+
+Checked over adb with a copy of `init_faf.lua` whose threshold is lowered from 63 to 15, so it asks
+for CPUs 2-3 on the emulator's four, and every thread's `Cpus_allowed_list` sampled from
+`/proc/<pid>/task/*/status` every 0.2 s (T1, `-O2`): unset, every thread ends on 2-3 (`set_by`
+engine); `0-1`, every thread stays on 0-1 in every sample (`set_by` runner); `all` and `fast`, 0-3;
+FAF's own script with `0,2`, the request equals the mask. The same with the arm64 `-O2` runner under
+translation. The chain is `4971bbe58c5586a0` in every case
+([headless-replay.md](../../../docs/port/headless-replay.md#second-041-build-runner-_exit-affinity-hold-probe-teardown)).
+
+### Fast exit (second 0.4.1 build)
+
+The engine's static destructors took 7-15 s on the emulator and about 10 s on the S22 Ultra after the
+replay's RESULT line, inside the app: `exit` → `__cxa_finalize` → `FWaitHandleSet::~FWaitHandleSet`
+→ `CVFSImpl::~CVFSImpl` → `SVFSMountPoint::~SVFSMountPoint` → `FWaitHandleSet::RemoveEntry`, which
+restarts a linear scan of the 38,237-entry archive index after each erase
+(`src/sdk/moho/misc/FileWaitHandleSet.cpp`). `RunnerExit.cpp`: once the engine thread has returned
+and the arena's report is out, `main` calls `fflush(nullptr)` and `_exit(code)`. The summary JSON is
+written and closed, and the log flushed, by `HEADLESS_RunReplay` before it returns. The last line is
+`[runner] exit <code>: _exit after flushing, without the engine's static destructors`;
+`FAF_RUNNER_EXIT=full` returns from `main` as before (`[runner] exit <code>: through exit(), ...`).
+
+With and without `FAF_RUNNER_EXIT=full` the exit codes are the same (replay 0; no replay 1; a missing
+replay or init script 1; arena probe and capacity 0), and so are the engine log (byte count and
+lines), the summary and stdout up to the exit line. In the app, a replay step now ends within
+0.1 s of the engine's wall time (0.2-0.3 s under translation). Over adb the destructors never took
+long (0.1-0.3 s, also with a copy of the app's data root), so the saving shows only in the app.
+
+On the emulator (four identical CPUs, so `fast` and `big` leave the mask alone) the timer slack goes
+from 50000 to 1, an explicit list `0-1` narrows the mask, and a fake big.LITTLE tree
+(`FAF_RUNNER_SYSFS_CPU`, little 0-1, mid 2, big 3) gives `fast` = 2-3 and `big` = 3, and with the
+allowed set restricted to 0-1 (`taskset 3`) `fast` leaves the mask alone with the note above; new threads inherit the
+mask. The reference chain is the same in every case.
+
+### Experiment (b): the -O2 build
+
+`build_runner.py --opt O2` compiles every engine-side unit with `-O2 -fno-omit-frame-pointer` and
+otherwise the same flags (`compile_flags.txt`: `-ffp-contract=off`, `-fno-fast-math`,
+`-fno-strict-aliasing`, `-fsigned-char`). The frame pointers keep `RunnerCrash.cpp`'s frame walk
+working on x86_64, where clang drops them at `-O2`. Compiling all 916 units takes about 3.5 minutes
+on 10 jobs. The APK carries this pair beside the `-O0` one under other file names; the runner finds
+its engine through `FAF_ENGINE_LIB`, so the names do not matter (checked with
+`libfafengine_o2.so`).
+
+The vault T1 (26675870, `--host-prefs none`) on the API 36 emulator, packaged binaries:
+
+| Build | x86_64: load / sim, beats/s | arm64-v8a under translation: load / sim, beats/s | Chain | Game over | First checkpoint differing from Windows |
+|---|---|---|---|---|---|
+| `-O0` | 6.6 / 1.9 s, 244 | 21.9 / 11.7 s, 40 | `4971bbe58c5586a0` | 467 | beat 100 |
+| `-O2` | 3.4 / 1.4 s, 339 | 10.4 / 2.2 s, 209 | `4971bbe58c5586a0` | 467 | beat 100 |
+
+The second build's runners (fast exit, affinity hold; the engines are the same files) gave, with
+`r041b-pkg` and `r041b-pkg-O2`: x86_64 `-O0` 7.9 / 2.2 s, 211; `-O2` 3.5 / 1.1 s, 439; arm64 under
+translation `-O0` 24.6 / 13.0 s, 36; `-O2` 10.9 / 2.5 s, 187; the same chain and game-over beat, and
+T2 (26119449) `7eec974b19f98ebc` with both x86_64 sets.
+
+The `-O2` chain equals the `-O0` chain on both ABIs, and so do the registry (Core 71, Sim 731, Unsafe
+1, User 257) and the Lua error counts (2 load, 11 sim). Repeated runs, the timer-slack/affinity runs
+and the runs with the renamed engine give the same chain. With `FAF_LOWARENA=0` the `-O2` engine crashes where
+the `-O0` one does (the C2 truncation in `AddMappedBlueprintOrdinalBits`,
+`EntityCategoryReflection.cpp:169`, here inlined into `EntityCategory::Add`), and `[runner] CRASH`
+walks 11 frames on x86_64 and 8 on arm64 under translation, which symbolize against the unstripped
+`-O2` library. Run times on the emulator vary by about
+±30 % between runs (it shares the PC); the ratio is what counts: under translation `-O2` simulates
+about 5× faster. Under translation an `-O0` binary pays twice, once for the unoptimised code and once
+for translating it, so a phone's gain will be smaller.
+
+### The device probe
+
+`libfafdeviceprobe.so` ([port/deviceprobe](../../deviceprobe/README.md)) is built by the same script
+(`--deviceprobe`, or `--only-deviceprobe`) into the same directory and packaged with the runner
+set. It is not an engine: it has no build id in the reference table.
+
+### Packaged sets
+
+`buildstage/runner/r041b-pkg/<abi>` (`-O0`: `faf_headless_runner`, `libfafengine.so`,
+`libfafarenaprobe.so`, `libfafdeviceprobe.so`) and `buildstage/runner/r041b-pkg-O2/<abi>` (`-O2`:
+`faf_headless_runner`, `libfafengine.so`), each with `SHA256SUMS`, `BUILD_IDS` and `build-info.json`
+(`opt`, the source directory, sha256 and build id per file). Built from `buildstage/runner/r041b-<abi>`
+and `r041b-O2-<abi>` (the second 0.4.1 build: fast exit, affinity hold, the probe's teardown after
+its result); a rebuild with nothing changed links the same build ids. The reference table names
+these runner and engine build ids:
+
+| ABI | Build | `faf_headless_runner` | `libfafengine.so` |
+|---|---|---|---|
+| arm64-v8a | `-O0` | `d9922c82a7d31a5ac68b2a99596936602e84d0e4` | `cbb70516dc5aa4ac779517791fa59e2083fb885c` (0.4.0's) |
+| arm64-v8a | `-O2` | `b102c84b16582f218e1e7ec9627220810e075bd8` | `45d6cdd0434a69c3e877fb278b3a051419060f13` |
+| x86_64 | `-O0` | `858ee967d32623a207fdc2c579a1c1b9a48b3094` | `9f688a0f7c6cd3a83dc4f75e2e5c33f046019f1f` (0.4.0's) |
+| x86_64 | `-O2` | `f051e4534494dc71ac3eae2de48d43c58049ca9b` | `485f666a914bc4028a22adc175740f6d191b93d2` |
+
+`libfafarenaprobe.so` is 0.4.0's (`f08a556c…` arm64-v8a, `f2dea73a…` x86_64);
+`libfafdeviceprobe.so` is `f856507e4b21a762f5d217df5643bced24017fc8` (arm64-v8a) and
+`ae26925362a85743d63e55fbba5c7d170719a9d8` (x86_64). The engines are the same files as in the first
+0.4.1 build (`r041-pkg`, `r041-pkg-O2`), whose runners (`fbda64ef…`, `dde539ff…`, `331b8c4e…`,
+`5b038549…`) the table no longer names, so a Release build refuses them.
+
+## Status (2026-10-07, M3c; releases 0.4.0 and 0.4.1)
 
 `closure.txt`: 858 engine TUs + 31 WildMagic TUs (variant `init`, 700 roots), 304 symbols cut.
 `build_runner.py --abi arm64-v8a` and `--abi x86_64`: 903 of 903 compile units (with the low
 arena), **0 undefined and 0 duplicate symbols**; with 0.4.0's executable-only sources and the zstd
 decoder 916 of 916 (`--probe`).
 
-The 0.4.0 binaries (built 2026-10-07 with `--probe`; the reference table and the APK refer to them
+0.4.1's packaged sets and build ids are in the [0.4.1 section](#packaged-sets) above. The 0.4.0
+binaries (built 2026-10-07 with `--probe`; the 0.4.0 reference table and APK referred to them
 by build id). The APK packages `buildstage/runner/r040b-pkg/<abi>` (`build_android.ps1
 -RunnerDirectory`, with `SHA256SUMS` and `BUILD_IDS`; a Release build refuses a runner or engine whose
 build id the table does not name). After the reviews only the executable changed (`ReplayFile.cpp`:

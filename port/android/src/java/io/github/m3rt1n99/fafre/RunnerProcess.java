@@ -212,6 +212,28 @@ final class RunnerProcess {
         }
     }
 
+    /**
+     * Sends SIGKILL to every process of this app's uid (the only ones /proc shows an app) that runs
+     * {@code executable} (argv[0], or argv[1] under the emulator's ARM translation: {@link
+     * ProcFiles#programOf}): the leftovers of a process tree whose root has ended, such as the device
+     * probe's per-section children after the probe itself was killed. Returns how many it signalled.
+     */
+    static int killStragglers(File proc, String executable) {
+        int killed = 0;
+        int self = android.os.Process.myPid();
+        for (int pid : ProcFiles.numericEntries(proc)) {
+            if (pid == self) {
+                continue;
+            }
+            String program = ProcFiles.programOf(new File(proc, pid + "/cmdline"));
+            if (executable.equals(program)) {
+                android.os.Process.sendSignal(pid, android.os.Process.SIGNAL_KILL);
+                ++killed;
+            }
+        }
+        return killed;
+    }
+
     static String signalName(int signal) {
         switch (signal) {
             case 1:

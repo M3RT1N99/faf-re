@@ -36,6 +36,10 @@ final class Settings {
     private static final String REPLAY_NO_ARENA = "replay_no_arena";
     private static final String REPLAY_SKIP_SELF_TEST = "replay_skip_self_test";
     private static final String REPLAY_ADVANCED = "replay_advanced";
+    private static final String REPLAY_OPTIMIZED = "replay_optimized";
+    private static final String REPLAY_SPEED = "replay_speed_experiment";
+    private static final String REPLAY_AFFINITY_BIG = "replay_affinity_big";
+    private static final String LAST_PROBE_RUN = "last_probe_run";
     private static final String LAST_REPLAY_RUN = "last_replay_run";
     private static final String LAST_REPLAY_MESSAGE = "last_replay_message";
     private static final String LAST_REPLAY_OK = "last_replay_ok";
@@ -200,6 +204,38 @@ final class Settings {
         mPrefs.edit().putBoolean(REPLAY_ADVANCED, value).apply();
     }
 
+    /** The -O2 runner and engine (release 0.4.1 experiment). */
+    boolean replayOptimized() {
+        return mPrefs.getBoolean(REPLAY_OPTIMIZED, false);
+    }
+
+    void setReplayOptimized(boolean value) {
+        mPrefs.edit().putBoolean(REPLAY_OPTIMIZED, value).apply();
+    }
+
+    /** FAF_RUNNER_TIMERSLACK_NS=1 plus an affinity for the replay runs (release 0.4.1 experiment). */
+    boolean replaySpeedExperiment() {
+        return mPrefs.getBoolean(REPLAY_SPEED, false);
+    }
+
+    void setReplaySpeedExperiment(boolean value) {
+        mPrefs.edit().putBoolean(REPLAY_SPEED, value).apply();
+    }
+
+    /** The experiment's affinity: only the biggest cores, instead of every core but the little ones. */
+    boolean replayAffinityBig() {
+        return mPrefs.getBoolean(REPLAY_AFFINITY_BIG, false);
+    }
+
+    void setReplayAffinityBig(boolean value) {
+        mPrefs.edit().putBoolean(REPLAY_AFFINITY_BIG, value).apply();
+    }
+
+    /** The run directory of the last device probe, or null. */
+    String lastProbeRun() {
+        return mPrefs.getString(LAST_PROBE_RUN, null);
+    }
+
     /** Name of the last run directory under runs/ (its result.json may still be the provisional one), or null. */
     String lastReplayRun() {
         return mPrefs.getString(LAST_REPLAY_RUN, null);
@@ -211,8 +247,13 @@ final class Settings {
      * it. The previous job's message is cleared so it is not shown as this run's. Written synchronously
      * (commit, on the job's thread), because a kill right after would lose an apply().
      */
-    void startReplayRun(String run) {
-        mPrefs.edit()
+    void startReplayRun(String run, boolean deviceProbe) {
+        SharedPreferences.Editor editor = mPrefs.edit();
+        if (deviceProbe) {
+            // The probe's result block shows this run; the replay card shows it too as the last run.
+            editor.putString(LAST_PROBE_RUN, run);
+        }
+        editor
                 .putString(LAST_REPLAY_RUN, run)
                 .remove(LAST_REPLAY_MESSAGE)
                 .remove(LAST_REPLAY_OK)

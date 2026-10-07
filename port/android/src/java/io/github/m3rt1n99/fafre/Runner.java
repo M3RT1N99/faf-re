@@ -31,6 +31,11 @@ import java.util.Map;
  * <li>{@code libfafengine.so}: the engine, loaded by the executable, never by this process.</li>
  * <li>{@code libfafarenaprobe.so}: a stand-in engine that checks where the arena puts everything
  * (port/engine/lowarena/probe), the first step of the self-test.</li>
+ * <li>{@code libfafrunner_o2.so} and {@code libfafengine_o2.so} (release 0.4.1, optional): the same pair
+ * built with -O2 (build_runner.py --opt O2, otherwise the same flags), the replay test's "optimised
+ * engine" experiment. The -O2 executable is told its engine through FAF_ENGINE_LIB.</li>
+ * <li>{@code libfafdeviceprobe.so} (release 0.4.1, optional): the device probe for the graphics plan
+ * (port/deviceprobe), an executable like the runner.</li>
  * </ul>
  *
  * <p>Also the lowercase alias of the data root. The engine lower-cases every directory it mounts and
@@ -43,6 +48,9 @@ final class Runner {
     static final String EXECUTABLE = "libfafrunner.so";
     static final String ENGINE = "libfafengine.so";
     static final String PROBE = "libfafarenaprobe.so";
+    static final String EXECUTABLE_O2 = "libfafrunner_o2.so";
+    static final String ENGINE_O2 = "libfafengine_o2.so";
+    static final String DEVICE_PROBE = "libfafdeviceprobe.so";
     static final String[] FILES = {EXECUTABLE, ENGINE, PROBE};
     /** Name of the alias symlink in getFilesDir(). */
     static final String ALIAS_NAME = "r";
@@ -82,6 +90,28 @@ final class Runner {
                     + "extractNativeLibs=true.";
         }
         return null;
+    }
+
+    /** Whether this APK carries the -O2 runner and engine (both, the executable runnable). */
+    static boolean hasOptimized(Context context) {
+        File executable = file(context, EXECUTABLE_O2);
+        return executable.isFile() && executable.canExecute() && file(context, ENGINE_O2).isFile();
+    }
+
+    /** Whether this APK carries the device probe executable. */
+    static boolean hasDeviceProbe(Context context) {
+        File probe = file(context, DEVICE_PROBE);
+        return probe.isFile() && probe.canExecute();
+    }
+
+    /** The runner executable of the chosen build (-O0 or -O2). */
+    static File executable(Context context, boolean optimized) {
+        return file(context, optimized ? EXECUTABLE_O2 : EXECUTABLE);
+    }
+
+    /** The engine library of the chosen build (-O0 or -O2). */
+    static File engine(Context context, boolean optimized) {
+        return file(context, optimized ? ENGINE_O2 : ENGINE);
     }
 
     /** assets/build.json written by build_android.ps1 (version, commit, packaged binaries); empty if absent. */
@@ -218,8 +248,12 @@ final class Runner {
     static Map<String, JSONObject> describeBinaries(Context context, Cancellation cancel) throws IOException {
         Map<String, JSONObject> out = new LinkedHashMap<>();
         JSONObject packaged = buildInfo(context).optJSONObject("libraries");
-        for (String name : new String[] {AppInfo.NATIVE_LIBRARY_FILE, EXECUTABLE, ENGINE, PROBE}) {
+        for (String name : new String[] {AppInfo.NATIVE_LIBRARY_FILE, EXECUTABLE, ENGINE, PROBE, EXECUTABLE_O2,
+            ENGINE_O2, DEVICE_PROBE}) {
             File file = file(context, name);
+            if (!file.isFile() && (name.equals(EXECUTABLE_O2) || name.equals(ENGINE_O2) || name.equals(DEVICE_PROBE))) {
+                continue; // optional (0.4.1); an APK without them says so by leaving them out
+            }
             JSONObject entry = new JSONObject();
             try {
                 entry.put("path", file.getAbsolutePath());

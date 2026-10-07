@@ -32,6 +32,12 @@ import java.util.regex.Pattern;
  * with a "sha256" field. Per entry: id, map, beats, game_over_beat, chain (a string, or an object or
  * array of per-ABI chains; also "chains"), measured_on, first_diverging_vs_windows and build ids
  * anywhere under keys containing "build".
+ *
+ * <p>Since 0.4.1 an APK carries two runner builds (-O0 and -O2), and the table one measurement per
+ * build and ABI ("runs": {"arm64-v8a": {chain, build_ids, ...}, ...}). Any object in an entry that
+ * has both a chain and build ids is such a measurement; a run's chain is compared with the measurements
+ * made with exactly its binaries ({@link Ref#compareFor}), so an -O2 chain is never matched against
+ * the -O0 one or the other way round.
  */
 final class ReplayRefs {
     static final String ASSET_NAME = "replay_refs.json";
@@ -52,6 +58,8 @@ final class ReplayRefs {
         final String firstDivergingVsWindows;
         final String windowsChain;
         final Set<String> buildIds;
+        /** Every object with a chain and build ids: one measurement of one build. */
+        final List<Measurement> measurements;
 
         Ref(String sha256, JSONObject json) {
             this.sha256 = sha256;
@@ -79,6 +87,61 @@ final class ReplayRefs {
             Set<String> ids = new LinkedHashSet<>();
             collectBuildIds(json, false, ids);
             buildIds = Collections.unmodifiableSet(ids);
+            List<Measurement> runs = new ArrayList<>();
+            collectMeasurements("", json, runs);
+            measurements = Collections.unmodifiableList(runs);
+        }
+
+        /**
+         * Compares a run's chain with the measurements made with all of {@code ids} (the run's engine and
+         * runner build ids); the most specific ones (fewest build ids) win, so a per-build measurement beats
+         * an entry that lists every build. Without such a measurement, every chain of the entry counts and
+         * {@link Comparison#sameBinaries} is false.
+         */
+        Comparison compareFor(String chain, String... ids) {
+            List<Measurement> matching = new ArrayList<>();
+            int fewest = Integer.MAX_VALUE;
+            for (Measurement m : measurements) {
+                boolean all = ids.length > 0;
+                for (String id : ids) {
+                    all &= id != null && !id.isEmpty() && m.buildIds.contains(id.toLowerCase(Locale.ROOT));
+                }
+                if (!all) {
+                    continue;
+                }
+                if (m.buildIds.size() < fewest) {
+                    matching.clear();
+                    fewest = m.buildIds.size();
+                }
+                if (m.buildIds.size() == fewest) {
+                    matching.add(m);
+                }
+            }
+            Comparison c = new Comparison();
+            if (matching.isEmpty()) {
+                c.expected.addAll(chains);
+                c.measuredOn = measuredOn;
+            } else {
+                c.sameBinaries = true;
+                StringBuilder where = new StringBuilder();
+                for (Measurement m : matching) {
+                    c.expected.add(m.chain);
+                    String text = m.describe();
+                    if (!text.isEmpty() && where.indexOf(text) < 0) {
+                        where.append(where.length() > 0 ? "; " : "").append(text);
+                    }
+                    if (m.gameOverBeat >= 0) {
+                        c.gameOverBeat = m.gameOverBeat;
+                    }
+                }
+                c.measuredOn = where.toString();
+            }
+            if (c.gameOverBeat < 0) {
+                c.gameOverBeat = gameOverBeat;
+            }
+            c.status = c.expected.isEmpty() ? "no-chain"
+                    : chain != null && c.expected.contains(chain.toLowerCase(Locale.ROOT)) ? "match" : "differs";
+            return c;
         }
 
         /** "match", "differs" or "no-chain" for a run's chain. */
@@ -92,6 +155,97 @@ final class ReplayRefs {
         /** Whether the reference was measured with a binary of this build id (false when it names none). */
         boolean measuredWith(String buildId) {
             return buildId != null && !buildId.isEmpty() && buildIds.contains(buildId.toLowerCase(Locale.ROOT));
+        }
+    }
+
+    /** The outcome of {@link Ref#compareFor}. */
+    static final class Comparison {
+        /** "match", "differs" or "no-chain". */
+        String status = "no-chain";
+        /** Whether the chains compared with were measured with the run's own binaries. */
+        boolean sameBinaries;
+        final Set<String> expected = new LinkedHashSet<>();
+        String measuredOn = "";
+        int gameOverBeat = -1;
+    }
+
+    /** One reference run: a chain and the build ids of the binaries that produced it. */
+    static final class Measurement {
+        private static final Pattern LEVEL = Pattern.compile("(?i)(?:^|[^a-z0-9])(O[0-3s])(?:$|[^a-z0-9])");
+
+        final String path;
+        final String chain;
+        final Set<String> buildIds;
+        final String abi;
+        final boolean translated;
+        final String opt;
+        final String device;
+        final int gameOverBeat;
+
+        Measurement(String path, JSONObject json, String chain, Set<String> buildIds) {
+            this.path = path;
+            this.chain = chain;
+            this.buildIds = Collections.unmodifiableSet(buildIds);
+            abi = json.optString("abi", "");
+            translated = json.optBoolean("translated", false);
+            String level = json.optString("opt", json.optString("optimization", ""));
+            if (level.isEmpty()) {
+                // "runs": {"arm64-v8a-O2": ...}: the level from the key.
+                java.util.regex.Matcher m = LEVEL.matcher(path);
+                level = m.find() ? m.group(1).toUpperCase(Locale.ROOT) : "";
+            }
+            opt = level;
+            String text = json.optString("device", "");
+            device = text.contains(" ") ? text.substring(0, text.indexOf(' ')) : text;
+            gameOverBeat = json.optInt("game_over_beat", -1);
+        }
+
+        /** "emulator-5554 arm64-v8a (translated) O2". */
+        String describe() {
+            StringBuilder out = new StringBuilder(device);
+            if (!abi.isEmpty()) {
+                out.append(out.length() > 0 ? " " : "").append(abi);
+            }
+            if (translated) {
+                out.append(" (translated)");
+            }
+            if (!opt.isEmpty()) {
+                out.append(out.length() > 0 ? " " : "").append(opt);
+            }
+            return out.toString();
+        }
+    }
+
+    /** Every object below {@code value} that has a chain and build ids; Windows entries left out. */
+    private static void collectMeasurements(String path, Object value, List<Measurement> out) {
+        if (value instanceof JSONObject) {
+            JSONObject object = (JSONObject) value;
+            String chain = "";
+            for (String key : new String[] {"chain", "checkpoint_chain_fnv1a"}) {
+                String text = object.optString(key, "").toLowerCase(Locale.ROOT).trim();
+                if (chain.isEmpty() && CHAIN.matcher(text).matches()) {
+                    chain = text;
+                }
+            }
+            if (!chain.isEmpty()) {
+                Set<String> ids = new LinkedHashSet<>();
+                collectBuildIds(object, false, ids);
+                if (!ids.isEmpty()) {
+                    out.add(new Measurement(path, object, chain, ids));
+                }
+            }
+            for (Iterator<String> keys = object.keys(); keys.hasNext();) {
+                String key = keys.next();
+                String lower = key.toLowerCase(Locale.ROOT);
+                if (!lower.contains("windows") && !lower.contains("build")) {
+                    collectMeasurements(path + "/" + key, object.opt(key), out);
+                }
+            }
+        } else if (value instanceof JSONArray) {
+            JSONArray array = (JSONArray) value;
+            for (int i = 0; i < array.length(); ++i) {
+                collectMeasurements(path + "[" + i + "]", array.opt(i), out);
+            }
         }
     }
 

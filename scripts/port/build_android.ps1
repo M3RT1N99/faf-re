@@ -12,12 +12,15 @@ Steps:
               buildstage\android-apk\symbols for symbolization, a stripped copy
               goes into the APK.
   2. runner   the headless replay runner (port\engine\runner, milestone M3c):
-              scripts\port\build_runner.py --probe for the APK's ABI in
-              buildstage\android-apk\runner, or the prebuilt binaries of
-              -RunnerDirectory. Stripped copies go into the APK as
-              lib\<abi>\libfafengine.so, libfafrunner.so (the executable
-              faf_headless_runner; Android only extracts lib*.so names) and
-              libfafarenaprobe.so; ELF checks; the unstripped files are kept as
+              scripts\port\build_runner.py --probe --deviceprobe for the APK's
+              ABI in buildstage\android-apk\runner, and --opt O2 in
+              buildstage\android-apk\runner-O2, or the prebuilt binaries of
+              -RunnerDirectory and -RunnerO2Directory. Stripped copies go into
+              the APK as lib\<abi>\libfafengine.so, libfafrunner.so (the
+              executable faf_headless_runner; Android only extracts lib*.so
+              names), libfafarenaprobe.so, the -O2 pair libfafengine_o2.so and
+              libfafrunner_o2.so, and the device probe libfafdeviceprobe.so
+              (release 0.4.1); ELF checks; the unstripped files are kept as
               symbols.
   3. link     aapt2 compile + link (manifest, resources, version, R.java).
   4. java     javac (Java 8 bytecode against android.jar) + d8.
@@ -67,7 +70,28 @@ the runner is missing.
 Packages the prebuilt, unstripped faf_headless_runner, libfafengine.so and
 libfafarenaprobe.so of this directory (for example build_runner.py's output for
 the binaries the reference runs were measured with) instead of building them.
-They go through the same strip and checks.
+They go through the same strip and checks. Its libfafdeviceprobe.so, when
+present, is the device probe (see -DeviceProbe).
+
+.PARAMETER RunnerO2Directory
+Packages the prebuilt, unstripped -O2 faf_headless_runner and libfafengine.so of
+this directory (build_runner.py --opt O2) as libfafrunner_o2.so and
+libfafengine_o2.so, the replay test's "optimised engine" experiment. Without it,
+a build that builds its own runner builds this pair too; one that packages
+-RunnerDirectory leaves it out, which a Release build refuses unless
+-SkipOptimizedRunner is given.
+
+.PARAMETER SkipOptimizedRunner
+Leaves the -O2 runner and engine out of the APK (the launcher then disables
+the option).
+
+.PARAMETER DeviceProbe
+Packages this unstripped libfafdeviceprobe.so (build_runner.py --deviceprobe)
+as the device probe instead of the one in -RunnerDirectory or the runner build.
+
+.PARAMETER SkipDeviceProbe
+Leaves the device probe out of the APK (the launcher then disables its button).
+A Release build refuses to go without it otherwise.
 
 .PARAMETER NoReleaseStage
 Does not copy the APK, the unstripped libraries and build-<abi>.json into
@@ -75,8 +99,8 @@ buildstage\releases\android-v<versionName>\ (Release builds do by default).
 
 .PARAMETER AllowUnreferencedRunner
 Lets a Release build package a runner whose libfafengine.so or
-faf_headless_runner build id is not in port\android\assets\replay_refs.json
-(a warning instead of an error). For development builds only: the app compares
+faf_headless_runner build id (of the -O0 or the -O2 pair) is not in
+port\android\assets\replay_refs.json (a warning instead of an error). For development builds only: the app compares
 a replay's chain with the reference only for the binaries the reference was
 measured with, so a release must ship exactly those (regenerate the table with
 run_runner_android.py --host-prefs none --write-refs after a runner change).
@@ -99,7 +123,10 @@ powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1
 powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1 -SkipNative -Configuration Debug
 
 .EXAMPLE
-powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1 -Abi x86_64 -RunnerDirectory buildstage/runner/x86_64
+powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1 -Abi x86_64 -RunnerDirectory buildstage/runner/x86_64 -SkipOptimizedRunner -Configuration Debug
+
+.EXAMPLE
+powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1 -RunnerDirectory buildstage/runner/r041-pkg/arm64-v8a -RunnerO2Directory buildstage/runner/r041-pkg-O2/arm64-v8a
 #>
 [CmdletBinding()]
 param(
@@ -110,6 +137,10 @@ param(
     [switch]$SkipNative,
     [switch]$SkipRunner,
     [string]$RunnerDirectory,
+    [string]$RunnerO2Directory,
+    [switch]$SkipOptimizedRunner,
+    [string]$DeviceProbe,
+    [switch]$SkipDeviceProbe,
     [switch]$NoReleaseStage,
     [switch]$AllowUnreferencedRunner,
     [switch]$Clean,
@@ -157,13 +188,32 @@ $buildRunnerScript = Join-Path $PSScriptRoot "build_runner.py"
 $wildMagicFoundation = Join-Path $repoRoot "dependencies\WildMagic3p8\Foundation"
 # Written by the reference runs (scripts/port/run_runner_android.py); optional.
 $replayRefsFile = Join-Path $repoRoot "port\android\assets\replay_refs.json"
-# License notices of third-party code linked into the runner, shipped as assets.
+# License notices of third-party code in the APK's libraries, shipped as assets (the app's Licenses
+# screen shows every assets/licenses/* file). The texts are the projects' own license files:
+#   zstd                 libfafrunner.so, libfafrunner_o2.so (port/third_party/zstd)
+#   DiligentCore         libfaf_android.so (Apache-2.0; dependencies/DiligentCore, local)
+#   glslang, SPIRV-Tools libfaf_android.so and libfafdeviceprobe.so (DiligentCore's ThirdParty)
+#   SPIRV-Headers        its grammar tables are compiled into SPIRV-Tools and glslang
+#   SPIRV-Cross, volk    libfaf_android.so
+# A Release build that packages one of those libraries refuses to go without its notices.
+$diligentThirdParty = Join-Path $repoRoot "dependencies\DiligentCore\ThirdParty"
 $licenseNotices = [ordered]@{
     "assets/licenses/zstd.txt" = (Join-Path $repoRoot "port\third_party\zstd\LICENSE")
+    "assets/licenses/DiligentCore.txt" = (Join-Path $repoRoot "dependencies\DiligentCore\License.txt")
+    "assets/licenses/glslang.txt" = (Join-Path $diligentThirdParty "glslang\LICENSE.txt")
+    "assets/licenses/SPIRV-Tools.txt" = (Join-Path $diligentThirdParty "SPIRV-Tools\LICENSE")
+    "assets/licenses/SPIRV-Headers.txt" = (Join-Path $diligentThirdParty "SPIRV-Headers\LICENSE")
+    "assets/licenses/SPIRV-Cross.txt" = (Join-Path $diligentThirdParty "SPIRV-Cross\LICENSE")
+    "assets/licenses/volk.txt" = (Join-Path $diligentThirdParty "volk\LICENSE.md")
+    # Lua 5.0.1 (MIT, its notice must travel with copies): the LuaPlus core in libfaf_android.so
+    # and the engine's Lua in libfafengine.so / libfafengine_o2.so.
+    "assets/licenses/Lua.txt" = (Join-Path $repoRoot "dependencies\LuaPlus_Build1081\Docs\LuaCopyright")
+    # Wild Magic 3.8 Foundation, linked into libfafengine.so; its license is a PDF, this is its text.
+    "assets/licenses/WildMagic3.txt" = (Join-Path $repoRoot "port\third_party\licenses\WildMagic3-License.txt")
 }
 
 # The headless replay runner (port/engine/runner): APK entry name -> build_runner.py output name.
-# The executable must be called lib*.so: the installer only extracts lib/<abi>/lib*.so entries.
+# The executables must be called lib*.so: the installer only extracts lib/<abi>/lib*.so entries.
 $runnerEngineName = "libfafengine.so"
 $runnerExecutableName = "libfafrunner.so"
 $runnerProbeName = "libfafarenaprobe.so"
@@ -172,6 +222,23 @@ $runnerFiles = [ordered]@{
     $runnerExecutableName = "faf_headless_runner"
     $runnerProbeName = "libfafarenaprobe.so"
 }
+# Release 0.4.1: the -O2 pair (build_runner.py --opt O2; the launcher's "Optimised engine" option)
+# and the device probe (build_runner.py --deviceprobe, port/deviceprobe), an executable like the runner.
+$runnerEngineO2Name = "libfafengine_o2.so"
+$runnerExecutableO2Name = "libfafrunner_o2.so"
+$deviceProbeName = "libfafdeviceprobe.so"
+$runnerO2Files = [ordered]@{
+    $runnerEngineO2Name = "libfafengine.so"
+    $runnerExecutableO2Name = "faf_headless_runner"
+}
+# What each packaged file is, for the ELF checks: runner (the executable with the low arena),
+# engine (a library exporting faf_headless_main, also the arena probe), deviceprobe (an executable).
+$runnerKinds = @{
+    $runnerEngineName = "engine"; $runnerExecutableName = "runner"; $runnerProbeName = "engine"
+    $runnerEngineO2Name = "engine"; $runnerExecutableO2Name = "runner"; $deviceProbeName = "deviceprobe"
+}
+# The engine/runner pairs whose build ids the reference table must name (G10).
+$runnerPairs = @(@($runnerEngineName, $runnerExecutableName), @($runnerEngineO2Name, $runnerExecutableO2Name))
 # What the runner may need at run time: system libraries every API 26+ device has.
 $runnerAllowedNeeded = @("libz.so", "liblog.so", "libm.so", "libdl.so", "libc.so")
 # The executable's exports: its low arena replaces bionic's malloc for the whole process.
@@ -645,10 +712,14 @@ function Test-RunnerElf([string]$Name, [string]$Stripped, [string]$Unstripped) {
     if ($facts.LoadAlignments.Count -eq 0 -or $misaligned.Count -gt 0) {
         $problems.Add("LOAD segments aligned below 16 KB ($(($facts.LoadAlignments | ForEach-Object { '0x{0:x}' -f $_ }) -join ', '))")
     }
-    if ($Name -eq $runnerExecutableName) {
+    $kind = $runnerKinds[$Name]
+    if ($kind -eq "runner") {
         if ($facts.Interpreter -ne "/system/bin/linker64") { $problems.Add("interpreter is '$($facts.Interpreter)', expected /system/bin/linker64") }
         $missing = @($runnerRequiredExports | Where-Object { $facts.Exports -notcontains $_ })
         if ($missing.Count -gt 0) { $problems.Add("does not export $($missing -join ', ') (the low arena's malloc family)") }
+    } elseif ($kind -eq "deviceprobe") {
+        # An executable; Vulkan, EGL and GLES are opened with dlopen, so NEEDED is checked like the runner's.
+        if ($facts.Interpreter -ne "/system/bin/linker64") { $problems.Add("interpreter is '$($facts.Interpreter)', expected /system/bin/linker64") }
     } else {
         if ($facts.Interpreter) { $problems.Add("has an interpreter ($($facts.Interpreter)); expected a shared library") }
         if ($facts.Exports -notcontains "faf_headless_main") { $problems.Add("does not export faf_headless_main") }
@@ -714,10 +785,20 @@ $includeRunner = -not $SkipNative -and -not $SkipRunner
 if ($includeRunner -and -not $extractNativeLibs) {
     throw "The replay runner is started as a process from nativeLibraryDir, which needs android:extractNativeLibs=`"true`" in $manifestFile (or build with -SkipRunner)."
 }
-if ($RunnerDirectory -and -not $includeRunner) {
-    throw "-RunnerDirectory cannot be combined with -SkipRunner or -SkipNative."
+if (($RunnerDirectory -or $RunnerO2Directory -or $DeviceProbe) -and -not $includeRunner) {
+    throw "-RunnerDirectory, -RunnerO2Directory and -DeviceProbe cannot be combined with -SkipRunner or -SkipNative."
 }
+if ($RunnerO2Directory -and $SkipOptimizedRunner) { throw "-RunnerO2Directory and -SkipOptimizedRunner contradict each other." }
+if ($DeviceProbe -and $SkipDeviceProbe) { throw "-DeviceProbe and -SkipDeviceProbe contradict each other." }
 $runnerBuildDirectory = Join-Path $apkBuildDirectory "runner"
+$runnerO2BuildDirectory = Join-Path $apkBuildDirectory "runner-O2"
+# What this build packages: APK entry name -> unstripped source file.
+$runnerSources = [ordered]@{}
+$buildRunnerO0 = $false
+$buildRunnerO2 = $false
+$buildDeviceProbe = $false
+$includeOptimized = $includeRunner -and -not $SkipOptimizedRunner
+$includeDeviceProbe = $includeRunner -and -not $SkipDeviceProbe
 if ($includeRunner) {
     if ($RunnerDirectory) {
         $RunnerDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RunnerDirectory)
@@ -734,6 +815,48 @@ if ($includeRunner) {
                 "Package prebuilt runner binaries with -RunnerDirectory, or leave the runner out with -SkipRunner."
         }
         $runnerSourceDirectory = $runnerBuildDirectory
+        $buildRunnerO0 = $true
+    }
+    foreach ($entryName in $runnerFiles.Keys) { $runnerSources[$entryName] = Join-Path $runnerSourceDirectory $runnerFiles[$entryName] }
+
+    if ($includeOptimized) {
+        if ($RunnerO2Directory) {
+            $RunnerO2Directory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RunnerO2Directory)
+            foreach ($source in $runnerO2Files.Values) {
+                if (-not (Test-Path -LiteralPath (Join-Path $RunnerO2Directory $source))) {
+                    throw "-RunnerO2Directory $RunnerO2Directory has no $source (build it with: python scripts/port/build_runner.py --abi $abi --opt O2)."
+                }
+            }
+            foreach ($entryName in $runnerO2Files.Keys) { $runnerSources[$entryName] = Join-Path $RunnerO2Directory $runnerO2Files[$entryName] }
+        } elseif ($RunnerDirectory) {
+            if (-not $isDebug) {
+                throw "A Release build packages the -O2 runner and engine as well: pass -RunnerO2Directory (build_runner.py --abi $abi --opt O2), or -SkipOptimizedRunner."
+            }
+            Write-Host "  no -RunnerO2Directory: the -O2 runner and engine are left out" -ForegroundColor Yellow
+            $includeOptimized = $false
+        } else {
+            $buildRunnerO2 = $true
+            foreach ($entryName in $runnerO2Files.Keys) { $runnerSources[$entryName] = Join-Path $runnerO2BuildDirectory $runnerO2Files[$entryName] }
+        }
+    }
+
+    if ($includeDeviceProbe) {
+        if ($DeviceProbe) {
+            $DeviceProbe = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DeviceProbe)
+            if (-not (Test-Path -LiteralPath $DeviceProbe -PathType Leaf)) { throw "-DeviceProbe $DeviceProbe does not exist." }
+            $runnerSources[$deviceProbeName] = $DeviceProbe
+        } elseif ($RunnerDirectory -and (Test-Path -LiteralPath (Join-Path $RunnerDirectory $deviceProbeName))) {
+            $runnerSources[$deviceProbeName] = Join-Path $RunnerDirectory $deviceProbeName
+        } elseif ($RunnerDirectory) {
+            if (-not $isDebug) {
+                throw "A Release build packages the device probe as well: -RunnerDirectory has no $deviceProbeName; pass -DeviceProbe <file> (build_runner.py --abi $abi --deviceprobe), or -SkipDeviceProbe."
+            }
+            Write-Host "  -RunnerDirectory has no $($deviceProbeName): the device probe is left out" -ForegroundColor Yellow
+            $includeDeviceProbe = $false
+        } else {
+            $buildDeviceProbe = $true
+            $runnerSources[$deviceProbeName] = Join-Path $runnerBuildDirectory $deviceProbeName
+        }
     }
 }
 
@@ -800,7 +923,11 @@ if (-not $includeRunner) {
 } elseif ($RunnerDirectory) {
     Write-Host "  runner       prebuilt $RunnerDirectory"
 } else {
-    Write-Host "  runner       build_runner.py --abi $abi --probe into $runnerBuildDirectory"
+    Write-Host "  runner       build_runner.py --abi $abi --probe$(if ($buildDeviceProbe) { ' --deviceprobe' }) into $runnerBuildDirectory"
+}
+if ($includeRunner) {
+    Write-Host "  runner -O2   $(if (-not $includeOptimized) { 'left out' } elseif ($RunnerO2Directory) { "prebuilt $RunnerO2Directory" } else { "build_runner.py --abi $abi --opt O2 into $runnerO2BuildDirectory" })"
+    Write-Host "  deviceprobe  $(if (-not $includeDeviceProbe) { 'left out' } elseif ($buildDeviceProbe) { 'built with the runner (--deviceprobe)' } else { "prebuilt $($runnerSources[$deviceProbeName])" })"
 }
 Write-Host "  libraries    $(if ($extractNativeLibs) { 'deflated, extracted at install (extractNativeLibs=true)' } else { 'stored, mapped from the APK (extractNativeLibs=false)' })"
 Write-Host "  refs         $(if (Test-Path -LiteralPath $replayRefsFile) { $replayRefsFile } else { 'none (port\android\assets\replay_refs.json not written yet)' })"
@@ -933,13 +1060,24 @@ try {
             Write-Step "[2/6] Replay runner: prebuilt ($RunnerDirectory)"
         } else {
             Write-Step "[2/6] Replay runner ($abi, build_runner.py --probe)"
+        }
+        if ($buildRunnerO0) {
             # build_runner.py seeds a new --out directory from buildstage\runner\<abi>,
             # so only what changed since the last runner build compiles here.
-            Invoke-Tool $pythonPath @($buildRunnerScript, "--abi", $abi, "--out", $runnerBuildDirectory, "--probe", "--ndk", $ndkPath) `
-                -FailureMessage "build_runner.py failed (report: $runnerBuildDirectory\report.md)" | Out-Null
+            $runnerArguments = @($buildRunnerScript, "--abi", $abi, "--out", $runnerBuildDirectory, "--probe", "--ndk", $ndkPath)
+            if ($buildDeviceProbe) { $runnerArguments += "--deviceprobe" }
+            Invoke-Tool $pythonPath $runnerArguments -FailureMessage "build_runner.py failed (report: $runnerBuildDirectory\report.md)" | Out-Null
+        } elseif ($buildDeviceProbe) {
+            Invoke-Tool $pythonPath @($buildRunnerScript, "--abi", $abi, "--out", $runnerBuildDirectory, "--only-deviceprobe", "--ndk", $ndkPath) `
+                -FailureMessage "build_runner.py --only-deviceprobe failed" | Out-Null
         }
-        foreach ($entryName in $runnerFiles.Keys) {
-            $built = Join-Path $runnerSourceDirectory $runnerFiles[$entryName]
+        if ($buildRunnerO2) {
+            # Seeds from buildstage\runner\<abi>-O2 when that exists; every engine unit differs from -O0 by its flags.
+            Invoke-Tool $pythonPath @($buildRunnerScript, "--abi", $abi, "--opt", "O2", "--out", $runnerO2BuildDirectory, "--ndk", $ndkPath) `
+                -FailureMessage "build_runner.py --opt O2 failed (report: $runnerO2BuildDirectory\report.md)" | Out-Null
+        }
+        foreach ($entryName in $runnerSources.Keys) {
+            $built = $runnerSources[$entryName]
             $staged = Join-Path $stageDirectory "lib\$abi\$entryName"
             if (-not $DryRun -and -not (Test-Path -LiteralPath $built)) { throw "The runner build did not produce $built." }
             New-Directory (Split-Path -Parent $staged)
@@ -950,7 +1088,7 @@ try {
             if (-not $DryRun) {
                 $runnerBuildId = Test-RunnerElf $entryName $staged $built
                 $runnerPackaged[$entryName] = [ordered]@{
-                    source = $runnerFiles[$entryName]
+                    source = [IO.Path]::GetFileName($built)
                     buildId = $runnerBuildId
                     sha256 = (Get-Sha256 $staged)
                     size = (Get-Item -LiteralPath $staged).Length
@@ -964,11 +1102,14 @@ try {
             # ships the engine and runner the reference table was measured with.
             $referenceIds = @(Get-ReferenceBuildIds $replayRefsFile)
             $unreferenced = New-Object System.Collections.Generic.List[string]
-            foreach ($entryName in @($runnerEngineName, $runnerExecutableName)) {
-                $known = $referenceIds -contains $runnerPackaged[$entryName].buildId
-                if (-not $known) { $unreferenced.Add("$entryName $($runnerPackaged[$entryName].buildId)") }
-                Write-Host ("  {0} build id {1} the reference table" -f $entryName, $(if ($known) { "is in" } else { "is NOT in" })) `
-                    -ForegroundColor $(if ($known) { "Gray" } else { "Yellow" })
+            foreach ($pair in $runnerPairs) {
+                foreach ($entryName in $pair) {
+                    if (-not $runnerPackaged.Contains($entryName)) { continue }
+                    $known = $referenceIds -contains $runnerPackaged[$entryName].buildId
+                    if (-not $known) { $unreferenced.Add("$entryName $($runnerPackaged[$entryName].buildId)") }
+                    Write-Host ("  {0} build id {1} the reference table" -f $entryName, $(if ($known) { "is in" } else { "is NOT in" })) `
+                        -ForegroundColor $(if ($known) { "Gray" } else { "Yellow" })
+                }
             }
             if ($unreferenced.Count -gt 0 -and -not $isDebug) {
                 $refsState = if (Test-Path -LiteralPath $replayRefsFile) { $replayRefsFile } else { "$replayRefsFile (missing)" }
@@ -1102,19 +1243,24 @@ try {
     } elseif ($includeRunner) {
         Write-Host "  no replay reference table yet ($replayRefsFile): the replay test shows no reference chain" -ForegroundColor Yellow
     }
+    $missingNotices = @()
     foreach ($notice in $licenseNotices.Keys) {
         if (Test-Path -LiteralPath $licenseNotices[$notice]) {
             $storedEntries[$notice] = $licenseNotices[$notice]
-        } elseif ($includeRunner) {
-            Write-Host "  license notice missing: $($licenseNotices[$notice]) (needed once the runner links that code)" -ForegroundColor Yellow
+        } elseif (-not $SkipNative) {
+            $missingNotices += $licenseNotices[$notice]
+            Write-Host "  license notice missing: $($licenseNotices[$notice])" -ForegroundColor Yellow
         }
+    }
+    if ($missingNotices.Count -gt 0 -and -not $isDebug -and -not $DryRun) {
+        throw "A Release build ships the license texts of the third-party code in its libraries; missing: $($missingNotices -join ', ')."
     }
     # Libraries: deflated when the installer extracts them (smaller download),
     # stored and page-aligned when Android maps them straight out of the APK.
     $libraryEntries = [ordered]@{}
     if (-not $SkipNative) { $libraryEntries["lib/$abi/$nativeLibraryName"] = $stagedLibrary }
-    foreach ($entryName in $runnerFiles.Keys) {
-        if ($includeRunner) { $libraryEntries["lib/$abi/$entryName"] = Join-Path $stageDirectory "lib\$abi\$entryName" }
+    foreach ($entryName in $runnerSources.Keys) {
+        $libraryEntries["lib/$abi/$entryName"] = Join-Path $stageDirectory "lib\$abi\$entryName"
     }
     if (-not $extractNativeLibs) {
         foreach ($entry in $libraryEntries.Keys) { $storedEntries[$entry] = $libraryEntries[$entry] }

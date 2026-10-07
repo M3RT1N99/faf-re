@@ -22,6 +22,23 @@ Foundation TUs the closure lists, from the local, gitignored dependencies/WildMa
 With --probe it also links libfafarenaprobe.so (port/engine/lowarena/probe), a stand-in for the
 engine library that checks where the arena puts heap, stacks, TLS, image and file views.
 
+Release 0.4.1:
+  --opt O2              the optimised variant: -O2 -fno-omit-frame-pointer on every engine-side unit,
+                        every other flag as for O0 (compile_flags.txt keeps -ffp-contract=off and
+                        -fno-fast-math); default --out buildstage/runner/<abi>-O2. O0 (the default)
+                        adds nothing, so its commands and binaries are those of earlier builds.
+  RunnerSched.cpp       executable-only: the "[runner] sched" report and the FAF_RUNNER_TIMERSLACK_NS /
+                        FAF_RUNNER_AFFINITY experiment (a constructor; the engine library is unchanged),
+                        plus an exported sched_setaffinity that keeps FAF_RUNNER_AFFINITY's mask against
+                        the engine's requests (FAF's init_faf.lua sets "all but CPUs 0-1" on 6+ CPUs)
+  RunnerExit.cpp        executable-only: `main` ends with _exit after flushing, skipping the engine's
+                        static destructors (seconds of VFS teardown); FAF_RUNNER_EXIT=full keeps exit()
+  --deviceprobe         also links libfafdeviceprobe.so (port/deviceprobe/README.md), the device probe
+                        for the graphics plan: a PIE executable, its Vulkan shaders compiled by the NDK's
+                        glslc, its glslang section linked with libfaf_android.so's own glslang and
+                        SPIRV-Tools libraries (buildstage/android-native[-x86_64], or --glslang-build)
+  --only-deviceprobe    builds only that (no engine, no report.md/results.json; deviceprobe-build.json)
+
 and reports what stops the link: compile failures, undefined symbols grouped by the TU that defines
 them on Windows (their owner, from the Win32 objects through link_closure.py) and by the TUs that
 reference them, and duplicate symbols with both definitions.
@@ -72,6 +89,14 @@ SDK_DIR = es.DEFAULT_SDK
 RUNNER_DIR = os.path.join(REPO_ROOT, "port", "engine", "runner")
 ABIS = {"arm64-v8a": "aarch64-linux-android26", "x86_64": "x86_64-linux-android26"}
 BUILD_FLAGS = ["-fPIC", "-ffunction-sections", "-fdata-sections", "-g"]
+# Optimisation of the engine-side units (closure TUs, runner sources, Wild Magic, the arena probe and
+# RunnerMain.cpp's executable object), release 0.4.1. O0 adds nothing: clang's default -O0, the
+# commands (and so the binaries) of every earlier build. O2 is the optimised variant the app offers
+# as an experiment: the same flags otherwise, so port/engine/compile_flags.txt's -ffp-contract=off,
+# -fno-fast-math, -fno-strict-aliasing and -fsigned-char still apply (the sim must round as before),
+# plus frame pointers, which clang drops at -O2 on x86_64 and which RunnerCrash.cpp's frame walk
+# needs. The executable-only sources (low arena, zstd, ReplayFile.cpp, ...) are -O2 in both.
+OPT_FLAGS = {"O0": [], "O2": ["-O2", "-fno-omit-frame-pointer"]}
 STAMP_VERSION = 1
 LIB_NAME = "libfafengine.so"
 EXE_NAME = "faf_headless_runner"
@@ -89,7 +114,11 @@ LOWARENA_FLAGS = ["-O2", "-g", "-fno-omit-frame-pointer", "-fPIC", "-Wall", "-We
 # Executable-only sources of port/engine/runner (release 0.4.0): plain port code like the low arena
 # (own flags, no engine defines, no shim), never compiled into libfafengine.so. Every other *.cpp in
 # port/engine/runner is a runner source of the engine library.
-RUNNER_EXE_SOURCES = ["ReplayFile.cpp", "RunnerCrash.cpp"]
+# RunnerSched.cpp (release 0.4.1): the "[runner] sched" report and the FAF_RUNNER_TIMERSLACK_NS /
+# FAF_RUNNER_AFFINITY experiment, a constructor of the executable, so libfafengine.so stays unchanged;
+# it also defines the exported sched_setaffinity (EXE_EXPORTS). RunnerExit.cpp (0.4.1): the _exit at the
+# end of `main` (RunnerMain.cpp's executable object calls it; its engine-side object is unchanged).
+RUNNER_EXE_SOURCES = ["ReplayFile.cpp", "RunnerCrash.cpp", "RunnerSched.cpp", "RunnerExit.cpp"]
 # The zstd decoder (port/third_party/zstd: zstd 1.5.7's lib/common and lib/decompress, BSD licence),
 # linked into the executable for .fafreplay bodies. C, no assembly (ZSTD_DISABLE_ASM: the x86-64
 # Huffman loop in huf_decompress_amd64.S stays out), no legacy formats, no tracing hooks.
@@ -102,8 +131,10 @@ ZSTD_FLAGS = ["-O2", "-g", "-fPIC", "-ffunction-sections", "-fdata-sections", "-
 # What the executable exports so that libc, libc++ and libfafengine.so bind to it (lld leaves an
 # executable's symbols out of .dynsym unless asked). Not -rdynamic: that would also export the
 # executable's static libc++, which the engine library would then bind to instead of its own.
+# sched_setaffinity (0.4.1, RunnerSched.cpp): the engine's affinity requests (the shim's
+# SetProcessAffinityMask / SetThreadAffinityMask) pass the runner first, so FAF_RUNNER_AFFINITY holds.
 EXE_EXPORTS = ["malloc", "free", "calloc", "realloc", "reallocarray", "memalign", "posix_memalign",
-               "aligned_alloc", "valloc", "pvalloc", "malloc_usable_size", "lowarena_*"]
+               "aligned_alloc", "valloc", "pvalloc", "malloc_usable_size", "lowarena_*", "sched_setaffinity"]
 LIB_WRAPS = ["pthread_create", "pthread_join", "pthread_detach"]
 
 # Wild Magic 3.8's Wm3System.cpp includes <sys/timeb.h> for ftime() on every platform but Apple.
@@ -211,8 +242,9 @@ def build_units(args, project, closure, clang, triple, out_dir):
     probe_tus = (["../../" + fwd(os.path.relpath(os.path.join(LOWARENA_DIR, LOWARENA_PROBE_SOURCE), REPO_ROOT))]
                  if getattr(args, "probe", False) else [])
     view = ProjectView(project, runner_tus + probe_tus)
+    opt = OPT_FLAGS[args.opt]
     commands = es.build_commands(view, engine + runner_tus + probe_tus, clang, flag_args, drop_defines,
-                                 drop_includes, shim, out_dir, args.error_limit, BUILD_FLAGS + list(args.extra))
+                                 drop_includes, shim, out_dir, args.error_limit, BUILD_FLAGS + opt + list(args.extra))
     units = []
     for tu in engine:
         cmd = set_target(commands[tu], triple)
@@ -265,13 +297,133 @@ def build_units(args, project, closure, clang, triple, out_dir):
         cmd = [fwd(clang), f"--target={triple}", "-c", src, "-o", obj, f"-ferror-limit={args.error_limit}",
                "-fno-color-diagnostics", "-fdiagnostics-absolute-paths", "-I" + norm(wm3_inc)]
         cmd += ["-I" + d for d in wm3_dirs]
-        cmd += flag_args + BUILD_FLAGS + ["-w"] + list(args.extra)  # -w: Wild Magic's own warnings
+        cmd += flag_args + BUILD_FLAGS + opt + ["-w"] + list(args.extra)  # -w: Wild Magic's own warnings
         units.append(Unit(tu, "wm3", src, obj, cmd))
     for u in units:
         u.cmd = with_deps(u.cmd, u.obj)
         u.log = os.path.join(out_dir, "logs", es.artifact_rel(u.tu.split("#")[0]) +
                              (".exe" if u.kind == "runner-exe" else "") + ".log")
     return units, wm3_inc
+
+
+# ------------------------------------------------------------------------------------------------
+# The device probe (release 0.4.1): libfafdeviceprobe.so, port/deviceprobe/README.md
+# ------------------------------------------------------------------------------------------------
+
+DEVICEPROBE_DIR = os.path.join(REPO_ROOT, "port", "deviceprobe")
+DEVICEPROBE_NAME = "libfafdeviceprobe.so"
+DEVICEPROBE_SOURCES = ["DeviceProbe.cpp", "ProbeCommon.cpp", "ProbeVulkan.cpp", "ProbeGles.cpp"]
+DEVICEPROBE_SHADERS = ["pattern.vert", "pattern.frag"]
+DEVICEPROBE_FLAGS = ["-std=c++20", "-O2", "-g", "-fno-omit-frame-pointer", "-fPIC", "-Wall", "-Wextra",
+                     "-ffunction-sections", "-fdata-sections"]
+# ProbeGlslang.cpp (and glslang's own ResourceLimits.cpp) are compiled like the glslang libraries
+# libfaf_android.so's CMake build made (Diligent's ThirdParty: -fno-rtti -fno-exceptions, these
+# defines), and linked with them, so the probe times the compiler the app runs.
+GLSLANG_SRC = os.path.join(REPO_ROOT, "dependencies", "DiligentCore", "ThirdParty", "glslang")
+SPIRV_TOOLS_INCLUDE = os.path.join(REPO_ROOT, "dependencies", "DiligentCore", "ThirdParty", "SPIRV-Tools", "include")
+GLSLANG_FLAGS = ["-std=c++17", "-O2", "-g", "-fPIC", "-fno-rtti", "-fno-exceptions", "-ffunction-sections",
+                 "-fdata-sections", "-DENABLE_HLSL", "-DENABLE_OPT=1", "-DENABLE_SPIRV", "-DGLSLANG_OSINCLUDE_UNIX"]
+GLSLANG_BUILDS = {"arm64-v8a": os.path.join(REPO_ROOT, "buildstage", "android-native"),
+                  "x86_64": os.path.join(REPO_ROOT, "buildstage", "android-native-x86_64")}
+GLSLANG_LIBS = ["DiligentCore/ThirdParty/glslang/glslang/libglslang.a",
+                "DiligentCore/ThirdParty/glslang/SPIRV/libSPIRV.a",
+                "DiligentCore/ThirdParty/SPIRV-Tools/source/opt/libSPIRV-Tools-opt.a",
+                "DiligentCore/ThirdParty/SPIRV-Tools/source/libSPIRV-Tools.a"]
+
+
+def glslc_path(clang):
+    """The NDK's glslc (shader-tools), from the clang path <ndk>/toolchains/llvm/prebuilt/<host>/bin."""
+    ndk = os.path.normpath(os.path.join(os.path.dirname(clang), "..", "..", "..", "..", ".."))
+    host = os.path.basename(os.path.normpath(os.path.join(os.path.dirname(clang), "..")))
+    exe = "glslc.exe" if os.name == "nt" else "glslc"
+    return os.path.join(ndk, "shader-tools", host, exe)
+
+
+def generate_deviceprobe_shaders(clang, gen_dir):
+    """SPIR-V words (glslc -mfmt=num) of the Vulkan pattern shaders, rewritten only when they change
+    (the incremental check sees the .inc files through clang's dependency file)."""
+    glslc = glslc_path(clang)
+    if not os.path.isfile(glslc):
+        raise SystemExit(f"build_runner: glslc not found at {glslc} (the NDK's shader-tools)")
+    os.makedirs(gen_dir, exist_ok=True)
+    for name in DEVICEPROBE_SHADERS:
+        src = os.path.join(DEVICEPROBE_DIR, "shaders", name)
+        tmp = os.path.join(gen_dir, name + ".inc.tmp")
+        p = subprocess.run([glslc, "--target-env=vulkan1.0", "-O", "-mfmt=num", "-o", tmp, src],
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if p.returncode != 0:
+            raise SystemExit(f"build_runner: glslc {name}: {p.stdout.decode('utf-8', 'replace')}")
+        with open(tmp, encoding="utf-8") as f:
+            text = f.read()
+        os.remove(tmp)
+        write_if_changed(os.path.join(gen_dir, name + ".inc"), text)
+
+
+def glslang_libraries(args):
+    """(build directory, [static libraries]) of glslang + SPIRV-Tools for the ABI, or (dir, None)."""
+    build = os.path.abspath(args.glslang_build or GLSLANG_BUILDS[args.abi])
+    libs = [os.path.join(build, rel) for rel in GLSLANG_LIBS]
+    return build, (libs if all(os.path.isfile(p) for p in libs) else None)
+
+
+def deviceprobe_units(args, clang, triple, out_dir):
+    gen_dir = norm(os.path.join(out_dir, "deviceprobe-gen"))
+    generate_deviceprobe_shaders(clang, gen_dir)
+    glslang_build, glslang_libs = glslang_libraries(args)
+    units = []
+    for name in DEVICEPROBE_SOURCES:
+        src = norm(os.path.join(DEVICEPROBE_DIR, name))
+        tu = "../../" + fwd(os.path.relpath(src, REPO_ROOT))
+        obj = norm(os.path.join(out_dir, "obj", "port", "deviceprobe", name + ".o"))
+        cmd = [fwd(clang), f"--target={triple}", "-c", src, "-o", obj, f"-ferror-limit={args.error_limit}",
+               "-fno-color-diagnostics", "-fdiagnostics-absolute-paths", "-I" + norm(DEVICEPROBE_DIR),
+               "-I" + gen_dir] + DEVICEPROBE_FLAGS + list(args.extra)
+        units.append(Unit(tu, "deviceprobe", src, obj, cmd))
+    glslang_sources = [os.path.join(DEVICEPROBE_DIR, "ProbeGlslang.cpp")]
+    if glslang_libs:
+        glslang_sources.append(os.path.join(GLSLANG_SRC, "glslang", "ResourceLimits", "ResourceLimits.cpp"))
+    for path in glslang_sources:
+        src = norm(path)
+        tu = "../../" + fwd(os.path.relpath(src, REPO_ROOT))
+        obj = norm(os.path.join(out_dir, "obj", "port", "deviceprobe", os.path.basename(src) + ".o"))
+        cmd = [fwd(clang), f"--target={triple}", "-c", src, "-o", obj, f"-ferror-limit={args.error_limit}",
+               "-fno-color-diagnostics", "-fdiagnostics-absolute-paths", "-I" + norm(DEVICEPROBE_DIR)]
+        if glslang_libs:
+            cmd += ["-I" + norm(GLSLANG_SRC), "-I" + norm(SPIRV_TOOLS_INCLUDE),
+                    "-I" + norm(os.path.join(glslang_build, "include"))] + GLSLANG_FLAGS
+        else:
+            cmd += GLSLANG_FLAGS + ["-DFAF_PROBE_NO_GLSLANG"]
+        units.append(Unit(tu, "deviceprobe-glslang", src, obj, cmd + list(args.extra)))
+    for u in units:
+        u.cmd = with_deps(u.cmd, u.obj)
+        u.log = os.path.join(out_dir, "logs", es.artifact_rel(u.tu) + ".log")
+    info = {"glslang_build": norm(glslang_build), "glslang_libs": [norm(p) for p in glslang_libs] if glslang_libs else None,
+            "gen_dir": gen_dir}
+    return units, info
+
+
+def link_deviceprobe(clang, triple, out_dir, objects, info):
+    """libfafdeviceprobe.so: a PIE executable (like faf_headless_runner); Vulkan, EGL and GLES are
+    opened with dlopen at run time, so NEEDED stays libz/libdl/libm/libc."""
+    exe = os.path.join(out_dir, DEVICEPROBE_NAME)
+    try:
+        os.remove(exe)
+    except OSError:
+        pass
+    libs = info.get("glslang_libs") or []
+    cmd = ([fwd(clang), f"--target={triple}", "-o", fwd(exe)] + [fwd(o) for o in objects]
+           + (["-Wl,--start-group"] + [fwd(p) for p in libs] + ["-Wl,--end-group"] if libs else [])
+           + ["-static-libstdc++", "-lz", "-ldl", "-lm", "-Wl,--build-id", "-Wl,--gc-sections"])
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=out_dir)
+    output = p.stdout.decode("utf-8", "replace").replace("\r\n", "\n")
+    with open(os.path.join(out_dir, "deviceprobe-link.log"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(f"# {shlex.join(cmd)}\n# exit {p.returncode}\n{output}\n")
+    libs_sha = {}
+    for path in libs:
+        with open(path, "rb") as f:
+            libs_sha[norm(path)] = hashlib.sha256(f.read()).hexdigest()
+    return {"ok": p.returncode == 0 and os.path.isfile(exe), "output": output, "cmd": cmd,
+            "glslang": bool(libs), "glslang_libs_sha256": libs_sha}
 
 
 def write_if_changed(path, text, encoding="utf-8"):
@@ -511,7 +663,7 @@ def link(clang, triple, out_dir, objects, exe_objs, extra_ldflags, probe_objs=No
                + [f"-Wl,--export-dynamic-symbol={s}" for s in EXE_EXPORTS])
     q = subprocess.run(exe_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=out_dir) if exe_objs else None
     exe_out = (q.stdout.decode("utf-8", "replace").replace("\r\n", "\n") if q
-               else "(RunnerMain.cpp, ReplayFile.cpp, RunnerCrash.cpp, a zstd or a port/engine/lowarena source did not compile)\n")
+               else "(RunnerMain.cpp, an executable-only runner source, a zstd or a port/engine/lowarena source did not compile)\n")
     arena_cmd, arena_out, arena_rc = None, "", None
     if probe_objs:
         arena_cmd = ([fwd(clang), f"--target={triple}", "-shared", "-fPIC", "-o", fwd(probe),
@@ -669,7 +821,7 @@ def write_report(out_dir, meta, units, stamps, linkres, closure, graph):
              f"{len(duplicates)} duplicate symbols, {len(other)} other link errors); "
              f"{EXE_NAME} {'linked' if exe_ok else 'not linked'}.**\n")
     L.append("| | |\n|---|---|")
-    for k in ("date", "git", "abi", "triple", "closure", "closure_tus", "clang", "jobs", "compiled", "reused",
+    for k in ("date", "git", "abi", "opt", "opt_flags", "triple", "closure", "closure_tus", "clang", "jobs", "compiled", "reused",
               "seeded", "compile_seconds", "link_seconds", "command_line"):
         if meta.get(k) not in (None, ""):
             L.append(f"| {k} | {code(meta[k]) if k in ('command_line', 'closure') else md(meta[k])} |")
@@ -793,8 +945,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--abi", choices=sorted(ABIS), default="arm64-v8a")
+    ap.add_argument("--opt", choices=sorted(OPT_FLAGS), default="O0",
+                    help="optimisation of the engine-side units: O0 (default, clang's default and every "
+                         "earlier build) or O2 (the optimised variant, release 0.4.1; same flags otherwise)")
     ap.add_argument("--jobs", "-j", type=int, default=max(1, (os.cpu_count() or 4) - 2))
-    ap.add_argument("--out", help="build directory (default buildstage/runner/<abi>)")
+    ap.add_argument("--out", help="build directory (default buildstage/runner/<abi>, or <abi>-O2 for --opt O2)")
     ap.add_argument("--seed", help="reuse up-to-date objects from this build directory (default: the default "
                                    "--out of the ABI, when --out is another directory)")
     ap.add_argument("--closure", default=lc.DEFAULT_CLOSURE, help="closure file (default port/engine/runner/closure.txt)")
@@ -809,6 +964,15 @@ def main():
     ap.add_argument("--ldflag", action="append", default=[], metavar="ARG", help="extra link argument for the .so")
     ap.add_argument("--probe", action="store_true",
                     help=f"also build {PROBE_NAME}, the low arena's placement probe (port/engine/lowarena/probe)")
+    ap.add_argument("--deviceprobe", action="store_true",
+                    help=f"also build {DEVICEPROBE_NAME}, the device probe for the graphics plan (port/deviceprobe)")
+    ap.add_argument("--only-deviceprobe", action="store_true",
+                    help=f"build only {DEVICEPROBE_NAME} (no engine, runner or report.md/results.json; its own "
+                         "deviceprobe-build.json)")
+    ap.add_argument("--glslang-build", metavar="DIR",
+                    help="CMake build directory whose DiligentCore/ThirdParty glslang and SPIRV-Tools libraries the "
+                         "probe links (default: libfaf_android.so's, buildstage/android-native for arm64-v8a, "
+                         "buildstage/android-native-x86_64 for x86_64); without them the probe has no glslang section")
     ap.add_argument("--error-limit", type=int, default=50, help="clang -ferror-limit per TU (default 50)")
     ap.add_argument("--timeout", type=int, default=900, help="seconds per TU")
     ap.add_argument("--ndk", help="Android NDK directory")
@@ -816,8 +980,10 @@ def main():
 
     triple = ABIS[args.abi]
     default_out = os.path.join(REPO_ROOT, "buildstage", "runner", args.abi)
-    out_dir = os.path.abspath(args.out or default_out)
+    out_dir = os.path.abspath(args.out or (default_out if args.opt == "O0" else f"{default_out}-{args.opt}"))
     seed = args.seed
+    # The default seed is the ABI's O0 directory; for an O2 build only the executable-only sources
+    # (own flags) match there, every engine-side command differs by its -O2.
     if seed is None and norm(out_dir).lower() != norm(default_out).lower() and os.path.isdir(default_out):
         seed = default_out
     seed = os.path.abspath(seed) if seed else None
@@ -826,8 +992,15 @@ def main():
 
     closure = lc.read_closure_file(args.closure)
     project = es.Project(lc.VCXPROJ, "Release|x64")
-    units, wm3_inc = build_units(args, project, closure, clang, triple, out_dir)
-    write_wm3_overlay(wm3_inc)
+    if args.only_deviceprobe:
+        units = []
+    else:
+        units, wm3_inc = build_units(args, project, closure, clang, triple, out_dir)
+        write_wm3_overlay(wm3_inc)
+    deviceprobe_info = None
+    if args.deviceprobe or args.only_deviceprobe:
+        probe_units_, deviceprobe_info = deviceprobe_units(args, clang, triple, out_dir)
+        units += probe_units_
 
     selected = None
     if args.files:
@@ -912,7 +1085,42 @@ def main():
         exe_objs = [u.obj for u in exe_units] if all_ok(exe_units) else None
         probe_units = built(("probe", "lowarena-lib"))
         probe_objs = [u.obj for u in probe_units] if args.probe and all_ok(probe_units) else None
-        linkres = link(clang, triple, out_dir, objects, exe_objs, args.ldflag, probe_objs)
+        if not args.only_deviceprobe:
+            linkres = link(clang, triple, out_dir, objects, exe_objs, args.ldflag, probe_objs)
+        if deviceprobe_info is not None:
+            dp_units = built(("deviceprobe", "deviceprobe-glslang"))
+            if all_ok(dp_units):
+                deviceprobe_info["link"] = link_deviceprobe(clang, triple, out_dir, [u.obj for u in dp_units],
+                                                            deviceprobe_info)
+            else:
+                deviceprobe_info["link"] = {"ok": False, "output": "a device probe source did not compile: " + ", ".join(
+                    u.tu for u in dp_units if not stamps[u.tu].get("ok"))}
+
+    if args.only_deviceprobe:
+        dp_link = (deviceprobe_info or {}).get("link") or {}
+        dp_units = [u for u in units if u.kind in ("deviceprobe", "deviceprobe-glslang")]
+        summary = {
+            "date": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+            "abi": args.abi, "clang": es.clang_version(clang),
+            "command_line": shlex.join(["python", "scripts/port/build_runner.py"] + sys.argv[1:]),
+            "units": {u.tu: {k: stamps[u.tu].get(k) for k in ("ok", "errors", "warnings", "seconds")} for u in dp_units},
+            "linked": bool(dp_link.get("ok")), "glslang": dp_link.get("glslang"),
+            "glslang_libs_sha256": dp_link.get("glslang_libs_sha256"), "glslang_build": deviceprobe_info["glslang_build"],
+        }
+        with open(os.path.join(out_dir, "deviceprobe-build.json"), "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=1)
+        bad = [u.tu for u in dp_units if not stamps[u.tu].get("ok")]
+        for u in dp_units:
+            st = stamps[u.tu]
+            if not st.get("ok") or st.get("warnings"):
+                print(f"  {u.tu}: {'FAILED' if not st.get('ok') else str(st.get('warnings')) + ' warnings'}  log: {norm(u.log)}",
+                      file=sys.stderr)
+        print(f"build_runner: {DEVICEPROBE_NAME} {'linked' if dp_link.get('ok') else 'NOT linked'}"
+              f"{' with glslang' if dp_link.get('glslang') else ' WITHOUT glslang'}; {len(dp_units) - len(bad)}/{len(dp_units)} "
+              f"units OK; link log {norm(os.path.join(out_dir, 'deviceprobe-link.log'))}", file=sys.stderr)
+        if not dp_link.get("ok") and dp_link.get("output"):
+            print(dp_link["output"][-3000:], file=sys.stderr)
+        return 0 if dp_link.get("ok") and not bad else 1
 
     graph = None
     if linkres and not args.no_owners:
@@ -924,12 +1132,17 @@ def main():
     meta = {
         "date": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "git": (es.git("rev-parse", "--short", "HEAD") or "?") + (f" + {len(dirty.splitlines())} changed files" if dirty else ""),
-        "abi": args.abi, "triple": triple, "closure": norm(os.path.relpath(args.closure, REPO_ROOT)),
+        "abi": args.abi, "opt": args.opt, "opt_flags": " ".join(OPT_FLAGS[args.opt]) or "(none: clang's -O0)",
+        "triple": triple, "closure": norm(os.path.relpath(args.closure, REPO_ROOT)),
         "closure_tus": len(closure), "clang": es.clang_version(clang), "clang_path": fwd(clang), "jobs": args.jobs,
         "compiled": len(todo), "reused": reused, "seeded": seeded, "compile_seconds": round(compile_secs, 1),
         "link_seconds": linkres["lib_seconds"] if linkres else None,
         "command_line": shlex.join(["python", "scripts/port/build_runner.py"] + sys.argv[1:]),
     }
+    if deviceprobe_info is not None:
+        dp_link = deviceprobe_info.get("link") or {}
+        meta["deviceprobe"] = {"linked": bool(dp_link.get("ok")), "glslang": dp_link.get("glslang"),
+                               "glslang_libs_sha256": dp_link.get("glslang_libs_sha256")}
     res = write_report(out_dir, meta, units, stamps, linkres, closure, graph)
     failed = len(res["compile_failures"]) + len(res["not_built"])
     print(f"build_runner: {res['compile_ok']}/{len(units)} compile units OK ({len(res['compile_failures'])} failed"
@@ -946,7 +1159,12 @@ def main():
               file=sys.stderr)
     print(f"  report: {norm(os.path.join(out_dir, 'report.md'))}", file=sys.stderr)
     probe_ok = not args.probe or args.no_link or bool(res.get("arena_probe_linked"))
-    return 0 if (failed == 0 and res["lib_linked"] and res["exe_linked"] and probe_ok) else 1
+    deviceprobe_ok = deviceprobe_info is None or args.no_link or bool((deviceprobe_info.get("link") or {}).get("ok"))
+    if deviceprobe_info is not None and not args.no_link:
+        dp_link = deviceprobe_info.get("link") or {}
+        print(f"  {DEVICEPROBE_NAME} {'linked' if dp_link.get('ok') else 'NOT linked'}"
+              f"{' with glslang' if dp_link.get('glslang') else ' without glslang'}", file=sys.stderr)
+    return 0 if (failed == 0 and res["lib_linked"] and res["exe_linked"] and probe_ok and deviceprobe_ok) else 1
 
 
 if __name__ == "__main__":

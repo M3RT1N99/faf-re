@@ -10,7 +10,8 @@ import java.util.regex.Pattern;
 /**
  * Reads the runner's stdout+stderr line by line (src/sdk/moho/app/HeadlessReplay.cpp's "[headless]"
  * lines, RunnerMain's and the low arena's "[lowarena]" lines, the crash handler's "[runner] CRASH"
- * line, the arena probe's "probe" lines) and keeps what the replay test shows and records.
+ * line, RunnerSched's "[runner] sched" and "[runner] affinity" lines, RunnerExit's "[runner] exit" line,
+ * the arena probe's "probe" lines) and keeps what the replay test shows and records.
  *
  * <p>The listener runs on the reader thread while the UI samples the fields, so every access is
  * synchronized. Pure Java (no Android APIs) so it can be exercised on a host JVM.
@@ -33,9 +34,23 @@ final class ReplayOutput {
     private static final Pattern ARENA_REPORT = Pattern.compile("^\\[lowarena\\] enabled=.*");
     private static final Pattern ARENA_FULL = Pattern.compile("^\\[lowarena\\] no room below.*");
     private static final Pattern RUNNER_CRASH = Pattern.compile("^\\[runner\\] CRASH\\b.*");
+    /**
+     * RunnerSched.cpp's report (release 0.4.1): "[runner] sched {json}", printed before main with the
+     * runner's timer slack, policy, nice, cpuset, allowed CPUs and what FAF_RUNNER_TIMERSLACK_NS /
+     * FAF_RUNNER_AFFINITY changed.
+     */
+    private static final Pattern RUNNER_SCHED = Pattern.compile("^\\[runner\\] sched (\\{.*\\})\\s*$");
+    /**
+     * RunnerSched.cpp's line for each distinct affinity request of the engine (release 0.4.1, second build):
+     * "[runner] affinity {"tid":..,"request":"2-7","in_force":"4-7","set_by":"runner"|"engine",...}". FAF's
+     * init_faf.lua asks for every CPU but 0 and 1 on a device with six or more.
+     */
+    private static final Pattern RUNNER_AFFINITY = Pattern.compile("^\\[runner\\] affinity (\\{.*\\})\\s*$");
+    /** RunnerExit.cpp's last line: "[runner] exit 0: _exit after flushing, ...". */
+    private static final Pattern RUNNER_EXIT = Pattern.compile("^\\[runner\\] exit (\\d+)(.*)$");
     /** RunnerMain's own error lines ("faf_headless_runner: cannot load ...", "[runner] cannot convert ..."). */
     private static final Pattern RUNNER_ERROR = Pattern.compile(
-            "^(?:faf_headless_runner: |\\[runner\\] (?!CRASH|input ))(.*)$");
+            "^(?:faf_headless_runner: |\\[runner\\] (?!CRASH|input |sched |affinity |exit \\d))(.*)$");
     private static final Pattern CRASH_SIGNAL = Pattern.compile("sig=\\d+ \\((\\w+)\\)");
     private static final Pattern CRASH_PC = Pattern.compile("pc=(0x[0-9a-fA-F]+)(?: \\(([^)]+)\\))?");
     private static final Pattern PROBE_RESULT = Pattern.compile("^probe RESULT (PASS|FAIL): (\\d+) of (\\d+)(.*)$");
@@ -81,6 +96,9 @@ final class ReplayOutput {
     private String mCrash;
     private final List<String> mCrashLines = new ArrayList<>();
     private final List<String> mRunnerErrors = new ArrayList<>();
+    private String mRunnerSched;
+    private final List<String> mRunnerAffinity = new ArrayList<>();
+    private String mRunnerExit;
     private String mProbeHeader;
     private String mProbeResult;
     private boolean mProbePass;
@@ -170,6 +188,22 @@ final class ReplayOutput {
                 mCrashLines.add(line);
             }
             return true;
+        }
+        if ((m = RUNNER_SCHED.matcher(line)).find()) {
+            if (mRunnerSched == null) {
+                mRunnerSched = m.group(1);
+            }
+            return false;
+        }
+        if ((m = RUNNER_AFFINITY.matcher(line)).find()) {
+            if (mRunnerAffinity.size() < 10) {
+                mRunnerAffinity.add(m.group(1));
+            }
+            return false;
+        }
+        if (RUNNER_EXIT.matcher(line).find()) {
+            mRunnerExit = line.substring("[runner] ".length());
+            return false;
         }
         if ((m = RUNNER_ERROR.matcher(line)).find()) {
             if (mRunnerErrors.size() < 10) {
@@ -311,6 +345,30 @@ final class ReplayOutput {
 
     synchronized List<String> runnerErrors() {
         return new ArrayList<>(mRunnerErrors);
+    }
+
+    /** The JSON text of the runner's "[runner] sched" line, or null (runners before 0.4.1 print none). */
+    synchronized String runnerSched() {
+        return mRunnerSched;
+    }
+
+    /** The JSON texts of the runner's "[runner] affinity" lines (the engine's affinity requests), in order. */
+    synchronized List<String> runnerAffinity() {
+        return new ArrayList<>(mRunnerAffinity);
+    }
+
+    /** "exit 0: _exit after flushing, ..." (RunnerExit.cpp), or null (runners built before it). */
+    synchronized String runnerExit() {
+        return mRunnerExit;
+    }
+
+    /** The engine library the runner loaded (from its "[lowarena] <path> at ..." line), or null. */
+    synchronized String engineLibrary() {
+        if (mEngineAt == null) {
+            return null;
+        }
+        Matcher m = ENGINE_AT.matcher(mEngineAt);
+        return m.find() ? m.group(1) : null;
     }
 
     synchronized String probeHeader() {

@@ -228,7 +228,8 @@ public final class ImportService extends Service {
         }
 
         Job job = intent != null ? createJob(intent) : null;
-        String title = titleFor(action);
+        String title = ACTION_REPLAY_TEST.equals(action) && ReplayTest.Options.fromIntent(intent).deviceProbe
+                ? "Device probe" : titleFor(action);
         String kind = kindFor(action);
         // Every startForegroundService() must be answered with startForeground(),
         // also the ones we turn down, or the system kills the process.

@@ -10,6 +10,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.net.Uri;
@@ -29,6 +31,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.RadioButton;
@@ -47,7 +50,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -69,6 +75,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private static final int REQUEST_VAULT_TREE = 3;
     private static final int REQUEST_REPLAY_FILE = 4;
     private static final int REQUEST_SAVE_ZIP = 5;
+    private static final int REQUEST_SAVE_ALL_ZIP = 6;
     private static final int REQUEST_NOTIFICATIONS = 10;
     /** Fixed id so the ScrollView restores its position after a rotation. */
     private static final int SCROLL_VIEW_ID = 0x0f0a0001;
@@ -80,11 +87,14 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private static final String ACTION_VERIFY = "verify";
     private static final String ACTION_REPLAY_TEST = "replay_test";
     private static final String ACTION_SELF_TEST = "self_test";
+    private static final String ACTION_DEVICE_PROBE = "device_probe";
 
     private static final String STATE_PENDING_ACTION = "pending_action";
     private static final String STATE_PENDING_URI = "pending_uri";
     private static final String STATE_LOG_DIALOG = "log_dialog";
     private static final String STATE_ZIP_RUN = "zip_run";
+    /** Marks a pending "Save all runs (zip)" in mPendingZipRun. */
+    private static final String ALL_RUNS = "*";
 
     /** The runtime logs per graphics backend; each keeps its previous run as .1.log. */
     private static final String VULKAN_LOG = runtimeLog(LaunchArgs.RENDERER_VULKAN);
@@ -112,6 +122,11 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         String lastRunName;
         JSONObject lastRun;
         ReplayRefs refs;
+        boolean hasOptimized;
+        boolean hasDeviceProbe;
+        String lastProbeName;
+        JSONObject lastProbe;
+        int runCount;
     }
 
     private Settings mSettings;
@@ -182,6 +197,14 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private Button mSaveZipButton;
     private Button mCopySummaryButton;
     private Button mRunOutputButton;
+    private Button mSaveAllZipButton;
+    private CheckBox mOptimizedBox;
+    private CheckBox mSpeedBox;
+    private CheckBox mAffinityBigBox;
+    private Button mDeviceProbeButton;
+    private Button mProbeImageButton;
+    private TextView mProbeVerdict;
+    private LinearLayout mProbeLines;
 
     // ------------------------------------------------------------- lifecycle
 
@@ -365,6 +388,11 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         mRunTestButton = mUi.primaryButton("Run test");
         mRunTestButton.setOnClickListener(v -> request(ACTION_REPLAY_TEST, null));
         card.addView(mRunTestButton, mUi.matchWrap(8));
+        mDeviceProbeButton = mUi.button("Device probe");
+        mDeviceProbeButton.setOnClickListener(v -> request(ACTION_DEVICE_PROBE, null));
+        mProbeImageButton = mUi.button("Probe images");
+        mProbeImageButton.setOnClickListener(v -> showProbeImages());
+        card.addView(mUi.row(mDeviceProbeButton, mProbeImageButton), mUi.matchWrap(8));
 
         CheckBox advanced = mUi.checkBox("Advanced options", mSettings.replayAdvanced());
         card.addView(advanced, mUi.matchWrap(6));
@@ -396,6 +424,30 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         mReplayAdvanced.addView(noArena, mUi.matchWrap(0));
         mReplayAdvanced.addView(mUi.hint("Without the arena the engine's 32-bit pointer fields truncate heap "
                 + "addresses; the crash and where it happens are the measurement."), mUi.matchWrap(2));
+        mOptimizedBox = mUi.checkBox("Optimised engine (-O2 build)", mSettings.replayOptimized());
+        mOptimizedBox.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setReplayOptimized(checked);
+            renderReplay();
+        });
+        mReplayAdvanced.addView(mOptimizedBox, mUi.matchWrap(6));
+        mSpeedBox = mUi.checkBox("Speed experiment: timer slack 1 ns, no little cores", mSettings.replaySpeedExperiment());
+        mSpeedBox.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setReplaySpeedExperiment(checked);
+            mAffinityBigBox.setEnabled(checked);
+            renderReplay();
+        });
+        mReplayAdvanced.addView(mSpeedBox, mUi.matchWrap(0));
+        mAffinityBigBox = mUi.checkBox("…only the biggest cores", mSettings.replayAffinityBig());
+        mAffinityBigBox.setEnabled(mSettings.replaySpeedExperiment());
+        mAffinityBigBox.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setReplayAffinityBig(checked);
+            renderReplay();
+        });
+        mReplayAdvanced.addView(mAffinityBigBox, mUi.matchWrap(0));
+        mReplayAdvanced.addView(mUi.hint("Both experiments must give the reference chain of their own build. The -O2 "
+                + "build is the same code compiled with optimisation; the speed experiment makes the runner set "
+                + "its timer slack to 1 ns and keep its threads off the little cores (FAF_RUNNER_TIMERSLACK_NS, "
+                + "FAF_RUNNER_AFFINITY)."), mUi.matchWrap(2));
         card.addView(mReplayAdvanced, mUi.matchWrap(0));
 
         mReplayJobPanel = new LinearLayout(this);
@@ -434,10 +486,26 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         card.addView(mUi.row(mSaveZipButton, mCopySummaryButton), mUi.matchWrap(10));
         mRunOutputButton = mUi.button("Runner output");
         mRunOutputButton.setOnClickListener(v -> showRunOutput());
-        card.addView(mRunOutputButton, mUi.matchWrap(4));
+        mSaveAllZipButton = mUi.button("Save all runs (zip)…");
+        mSaveAllZipButton.setOnClickListener(v -> saveAllRunsZip());
+        card.addView(mUi.row(mRunOutputButton, mSaveAllZipButton), mUi.matchWrap(4));
         card.addView(mUi.hint("Send the saved zip (or the copied summary) to the developers. It contains the run's "
                 + "logs and device details, never the replay file; the engine log names the replay's players (their "
-                + "FAF nicknames, as on FAF's replay pages)."), mUi.matchWrap(4));
+                + "FAF nicknames, as on FAF's replay pages). \"Save all runs\" puts every run in runs/ into one zip "
+                + "(Clear logs empties runs/)."), mUi.matchWrap(4));
+
+        TextView probeHeading = mUi.text("Device probe", 15, Ui.TITLE);
+        probeHeading.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(probeHeading, mUi.matchWrap(16));
+        card.addView(mUi.hint("What the GPU drivers offer the graphics port: Vulkan and OpenGL ES features, texture "
+                + "formats, an offscreen test pattern read back into a PNG, and shader compile times (placeholder "
+                + "shaders, not FA's). Runs in a process of its own, like the replay test."), mUi.matchWrap(2));
+        mProbeVerdict = mUi.text("Not run yet.", 14, Ui.MUTED);
+        mProbeVerdict.setTextIsSelectable(true);
+        card.addView(mProbeVerdict, mUi.matchWrap(6));
+        mProbeLines = new LinearLayout(this);
+        mProbeLines.setOrientation(LinearLayout.VERTICAL);
+        card.addView(mProbeLines, mUi.matchWrap(2));
         return card;
     }
 
@@ -718,6 +786,13 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         snapshot.lastRunName = settings.lastReplayRun();
         snapshot.lastRun = ReplayTest.readResult(snapshot.root, snapshot.lastRunName);
         snapshot.refs = ReplayRefs.get(app);
+        snapshot.hasOptimized = Runner.hasOptimized(app);
+        snapshot.hasDeviceProbe = Runner.hasDeviceProbe(app);
+        snapshot.lastProbeName = settings.lastProbeRun();
+        snapshot.lastProbe = ReplayTest.readResult(snapshot.root, snapshot.lastProbeName);
+        File runs = snapshot.root.find(ReplayTest.RUNS_DIR);
+        String[] names = runs != null ? runs.list() : null;
+        snapshot.runCount = names != null ? names.length : 0;
         return snapshot;
     }
 
@@ -947,6 +1022,10 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         mSaveZipButton.setEnabled(haveRun && !mReplayBusy);
         mCopySummaryButton.setEnabled(haveRun);
         mRunOutputButton.setEnabled(haveRun);
+        mSaveAllZipButton.setEnabled(ready && mSnapshot.runCount > 0 && !mReplayBusy && !mReplayJobRunning);
+        mDeviceProbeButton.setEnabled(ready && mSnapshot.hasDeviceProbe && !busy && !mReplayBusy);
+        mProbeImageButton.setEnabled(ready && !probeImages(mSnapshot.lastProbe).isEmpty());
+        mOptimizedBox.setEnabled(ready && mSnapshot.hasOptimized);
     }
 
     // ----------------------------------------------------------- replay test
@@ -1001,10 +1080,25 @@ public final class LauncherActivity extends Activity implements ImportService.Li
                 notesColor = Ui.WARN;
             }
         }
+        boolean optimized = mSettings.replayOptimized() && snapshot.hasOptimized;
+        if (mSettings.replayOptimized() && !snapshot.hasOptimized) {
+            appendLine(notes, "Advanced: this APK has no -O2 build; the test uses the -O0 engine.");
+        } else if (optimized) {
+            appendLine(notes, "Advanced: the optimised engine (-O2 build) runs.");
+        }
+        if (mSettings.replaySpeedExperiment()) {
+            appendLine(notes, "Advanced: speed experiment on (timer slack 1 ns, " + (mSettings.replayAffinityBig()
+                    ? "only the biggest cores" : "no little cores") + ").");
+        }
         mReplayNotes.setText(notes);
         mReplayNotes.setTextColor(notesColor);
         mReplayNotes.setVisibility(notes.length() == 0 ? View.GONE : View.VISIBLE);
-        mRunTestButton.setText(mSettings.replaySkipSelfTest() ? "Run the replay" : "Run test (self-test + replay)");
+        String variant = (optimized ? "-O2" : "") + (mSettings.replaySpeedExperiment() ? (optimized ? ", " : "")
+                + "speed experiment" : "");
+        mRunTestButton.setText((mSettings.replaySkipSelfTest() ? "Run the replay" : "Run test (self-test + replay)")
+                + (variant.isEmpty() ? "" : " · " + variant));
+        mDeviceProbeButton.setText(snapshot.hasDeviceProbe ? "Device probe" : "Device probe (not in this APK)");
+        renderProbe(snapshot);
 
         JSONObject run = snapshot.lastRun;
         String jobMessage = mSettings.lastReplayMessage();
@@ -1150,7 +1244,127 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         options.repeat = mSettings.replayRepeat();
         options.interlocked = mSettings.replayInterlocked();
         options.lowArena = !mSettings.replayNoArena();
+        options.optimized = mSettings.replayOptimized() && mSnapshot != null && mSnapshot.hasOptimized;
+        options.speedExperiment = mSettings.replaySpeedExperiment();
+        options.affinity = mSettings.replayAffinityBig() ? ReplayTest.AFFINITY_BIG : ReplayTest.AFFINITY_FAST;
         return options;
+    }
+
+    /** The device probe's own block: the last probe run's headline and lines, unless the block above shows it. */
+    private void renderProbe(Snapshot snapshot) {
+        mProbeLines.removeAllViews();
+        JSONObject probe = snapshot.lastProbe;
+        if (probe == null) {
+            mProbeVerdict.setText(snapshot.hasDeviceProbe ? "Not run yet." : "This APK has no device probe.");
+            mProbeVerdict.setTextColor(Ui.MUTED);
+            return;
+        }
+        boolean shownAbove = snapshot.lastRunName != null && snapshot.lastRunName.equals(snapshot.lastProbeName);
+        if (shownAbove || isCurrentRun(probe)) {
+            mProbeVerdict.setText(isCurrentRun(probe) ? "Running…" : "The last run above is the device probe ("
+                    + probe.optString("run") + ").");
+            mProbeVerdict.setTextColor(Ui.MUTED);
+            return;
+        }
+        String verdict = probe.optString("verdict");
+        mProbeVerdict.setText(probe.optString("headline"));
+        mProbeVerdict.setTextColor(ReplayTest.VERDICT_PASS.equals(verdict) ? Ui.GOOD
+                : ReplayTest.VERDICT_FAIL.equals(verdict) ? Ui.BAD : Ui.WARN);
+        JSONArray lines = probe.optJSONArray("lines");
+        for (int i = 0; lines != null && i < lines.length(); ++i) {
+            JSONObject line = lines.optJSONObject(i);
+            if (line != null) {
+                TextView view = mUi.text(line.optString("text"), 13, toneColor(line.optString("tone")));
+                view.setTextIsSelectable(true);
+                mProbeLines.addView(view, mUi.matchWrap(3));
+            }
+        }
+        TextView when = mUi.hint("Run " + probe.optString("run") + " · runs/" + probe.optString("run"));
+        mProbeLines.addView(when, mUi.matchWrap(4));
+    }
+
+    /** The PNG files a probe run's result.json names (run-relative), checked to be plain names. */
+    private static List<String> probeImages(JSONObject run) {
+        List<String> out = new ArrayList<>();
+        JSONArray steps = run != null ? run.optJSONArray("steps") : null;
+        for (int i = 0; steps != null && i < steps.length(); ++i) {
+            JSONObject step = steps.optJSONObject(i);
+            JSONObject probe = step != null ? step.optJSONObject("device_probe") : null;
+            JSONArray images = probe != null ? probe.optJSONArray("images") : null;
+            for (int j = 0; images != null && j < images.length(); ++j) {
+                String name = images.optString(j, "");
+                if (name.matches("[A-Za-z0-9._-]+\\.png") && !out.contains(name)) {
+                    out.add(name);
+                }
+            }
+        }
+        return out;
+    }
+
+    private void showProbeImages() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || snapshot.lastProbe == null) {
+            return;
+        }
+        final String run = snapshot.lastProbe.optString("run");
+        final List<String> names = probeImages(snapshot.lastProbe);
+        final Context app = getApplicationContext();
+        Background.run(() -> {
+            DataRoot root = AppInfo.dataRoot(app);
+            List<Object[]> images = new ArrayList<>();
+            for (String name : names) {
+                File file = root.file(ReplayTest.RUNS_DIR + "/" + run + "/" + name);
+                Bitmap bitmap = file.isFile() && file.length() < 16L * 1024 * 1024
+                        ? BitmapFactory.decodeFile(file.getAbsolutePath()) : null;
+                images.add(new Object[] {name, bitmap});
+            }
+            return images;
+        }, (images, error) -> {
+            if (isDestroyed() || isFinishing()) {
+                return;
+            }
+            LinearLayout column = new LinearLayout(this);
+            column.setOrientation(LinearLayout.VERTICAL);
+            column.setPadding(mUi.dp(20), mUi.dp(8), mUi.dp(20), mUi.dp(8));
+            if (error != null) {
+                column.addView(mUi.body("Cannot read the images: " + describe(error)));
+            } else {
+                for (Object[] image : images) {
+                    column.addView(mUi.hint((String) image[0]), mUi.matchWrap(8));
+                    if (image[1] == null) {
+                        column.addView(mUi.body("(not readable)"), mUi.matchWrap(2));
+                        continue;
+                    }
+                    ImageView view = new ImageView(this);
+                    view.setImageBitmap((Bitmap) image[1]);
+                    view.setAdjustViewBounds(true);
+                    view.setScaleType(ImageView.ScaleType.FIT_START);
+                    // Nearest-neighbour: the pattern's pixels are the measurement.
+                    view.getDrawable().setFilterBitmap(false);
+                    column.addView(view, new LinearLayout.LayoutParams(mUi.dp(256), ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+                column.addView(mUi.hint("Both images should look the same: red rises from left to right, green from "
+                        + "top to bottom (each API's own row order), with a blue checkerboard of 32-pixel squares. "
+                        + "deviceprobe.json says whether each one matched the pattern exactly."), mUi.matchWrap(8));
+            }
+            ScrollView scroll = new ScrollView(this);
+            scroll.addView(column);
+            showDialog(new AlertDialog.Builder(this).setTitle("Device probe " + run).setView(scroll)
+                    .setPositiveButton("Close", null).create(), null);
+        });
+    }
+
+    private void saveAllRunsZip() {
+        mPendingZipRun = ALL_RUNS;
+        String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/zip").putExtra(Intent.EXTRA_TITLE, "fafre-runs-" + stamp + ".zip");
+        try {
+            startActivityForResult(intent, REQUEST_SAVE_ALL_ZIP);
+        } catch (ActivityNotFoundException e) {
+            mPendingZipRun = null;
+            toast("This device has no file picker (Files app).");
+        }
     }
 
     private void saveRunZip() {
@@ -1175,9 +1389,10 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         final Context app = getApplicationContext();
         Background.run(() -> {
             DataRoot root = AppInfo.dataRoot(app);
-            File runDir = root.file(ReplayTest.RUNS_DIR + "/" + runName);
+            boolean all = ALL_RUNS.equals(runName);
+            File runDir = all ? root.file(ReplayTest.RUNS_DIR) : root.file(ReplayTest.RUNS_DIR + "/" + runName);
             if (!runDir.isDirectory()) {
-                throw new IOException("the run directory " + runName + " is gone");
+                throw new IOException(all ? "there are no runs" : "the run directory " + runName + " is gone");
             }
             // "wt" truncates; some providers (cloud storage) refuse that mode. The document was just created
             // by ACTION_CREATE_DOCUMENT, so plain "w" writes the same bytes there.
@@ -1194,8 +1409,9 @@ public final class LauncherActivity extends Activity implements ImportService.Li
             if (out == null) {
                 throw new IOException("cannot write to the chosen file");
             }
+            File launcherLog = root.find(LauncherLog.LOGS_DIR + "/" + LauncherLog.FILE_NAME);
             try (OutputStream stream = out) {
-                return RunZip.write(runDir, root.find(LauncherLog.LOGS_DIR + "/" + LauncherLog.FILE_NAME), stream);
+                return all ? RunZip.writeAll(runDir, launcherLog, stream) : RunZip.write(runDir, launcherLog, stream);
             }
         }, (count, error) -> {
             mReplayBusy = false;
@@ -1206,8 +1422,10 @@ public final class LauncherActivity extends Activity implements ImportService.Li
                 mLog.log("replay: saving the zip failed: " + describe(error));
                 toast("Saving the zip failed: " + describe(error));
             } else {
-                mLog.log("replay: saved run " + runName + " as a zip (" + count + " files)");
-                toast("Saved the run (" + count + " files). Send that zip to the developers.");
+                boolean all = ALL_RUNS.equals(runName);
+                mLog.log("replay: saved " + (all ? "all runs" : "run " + runName) + " as a zip (" + count + " files)");
+                toast("Saved " + (all ? "all runs" : "the run") + " (" + count + " files). Send that zip to the "
+                        + "developers.");
             }
             updateButtons();
         });
@@ -1249,8 +1467,17 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private void showLicenses() {
         final Context app = getApplicationContext();
         Background.run(() -> {
-            StringBuilder text = new StringBuilder("Third-party code in the replay runner:\n\n"
-                    + "dlmalloc (port/engine/lowarena): Doug Lea, public domain.\n");
+            StringBuilder text = new StringBuilder("Third-party code in this APK, and the license texts below:\n\n"
+                    + "libfafrunner.so, libfafrunner_o2.so (the replay runner):\n"
+                    + "  dlmalloc (port/engine/lowarena): Doug Lea, public domain.\n"
+                    + "  Zstandard decoder: zstd.txt.\n"
+                    + "libfaf_android.so (the game's native code):\n"
+                    + "  Diligent Engine core: DiligentCore.txt (Apache License 2.0).\n"
+                    + "  glslang: glslang.txt. SPIRV-Tools: SPIRV-Tools.txt (Apache License 2.0).\n"
+                    + "  SPIR-V grammar tables from SPIRV-Headers: SPIRV-Headers.txt.\n"
+                    + "  SPIRV-Cross: SPIRV-Cross.txt (Apache License 2.0). volk: volk.txt.\n"
+                    + "libfafdeviceprobe.so (the device probe):\n"
+                    + "  glslang, SPIRV-Tools and the SPIRV-Headers tables, as above.\n");
             String[] names = app.getAssets().list("licenses");
             if (names == null || names.length == 0) {
                 text.append("\n(no license files in this APK)\n");
@@ -1395,7 +1622,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
             }
             return;
         }
-        if (requestCode == REQUEST_SAVE_ZIP) {
+        if (requestCode == REQUEST_SAVE_ZIP || requestCode == REQUEST_SAVE_ALL_ZIP) {
             String run = mPendingZipRun;
             mPendingZipRun = null;
             if (resultCode == RESULT_OK && data != null && data.getData() != null && run != null) {
@@ -1474,14 +1701,22 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         }
         boolean recommended = mSettings.importRecommended();
         Intent intent;
-        if (ACTION_REPLAY_TEST.equals(action) || ACTION_SELF_TEST.equals(action)) {
+        if (ACTION_DEVICE_PROBE.equals(action)) {
+            ReplayTest.Options options = new ReplayTest.Options();
+            options.deviceProbe = true;
+            options.selfTest = false;
+            options.replay = false;
+            mLog.log("device probe requested");
+            intent = ImportService.replayTest(this, options);
+        } else if (ACTION_REPLAY_TEST.equals(action) || ACTION_SELF_TEST.equals(action)) {
             ReplayTest.Options options = replayOptions(ACTION_REPLAY_TEST.equals(action));
             if (ACTION_REPLAY_TEST.equals(action) && !options.replay) {
                 toast("Pick a replay first.");
                 return;
             }
             mLog.log("replay test requested: " + (options.selfTest ? "self-test" : "")
-                    + (options.replay ? " replay " + options.replayStem : ""));
+                    + (options.replay ? " replay " + options.replayStem : "") + (options.optimized ? " -O2" : "")
+                    + (options.speedExperiment ? " speed experiment (" + options.affinity + ")" : ""));
             intent = ImportService.replayTest(this, options);
         } else if (ACTION_DOWNLOAD.equals(action)) {
             intent = ImportService.downloadFaf(this, recommended);

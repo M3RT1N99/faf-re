@@ -288,9 +288,184 @@ binaries the reference table names. Its input was the vault download of 26675870
 - **Speed: load 15.8 s, sim 19.8 s, about 24 beats/s.** The rate falls from 75 to 25 beats/s as the
   game grows. The sim is slower than arm64 under translation on the PC (11.5 s), while loading is
   not (25.6 s there). So scheduling probably holds it back more than the CPU does: the app's process
-  group, its cpuset, or timer slack inherited by the child. That is not measured yet.
+  group, its cpuset, or timer slack inherited by the child. Release 0.4.1 measures it
+  ([below](#speed-telemetry-and-device-probe-release-041)).
 - **Build flags.** The binaries are built at `-O0` and write every diagnostic probe line to the
   engine log.
+
+## Speed telemetry and device probe (release 0.4.1)
+
+Release 0.4.1 adds three things to the in-app test ([android.md](android.md#speed-telemetry-and-the-experiments-041)):
+
+- **Speed telemetry.** While a replay step runs, the app samples the runner's threads in `/proc`
+  (`RunTelemetry.java`) and shows one **Speed:** line.
+- **Two experiments**, both Advanced options:
+  - an `-O2` build of the runner and engine (`build_runner.py --opt O2`, the other flags unchanged);
+  - timer slack 1 ns plus an affinity without the little cores. The runner applies them itself
+    (`port/engine/runner/RunnerSched.cpp`, `FAF_RUNNER_TIMERSLACK_NS`, `FAF_RUNNER_AFFINITY`) and
+    reports them in its `[runner] sched {...}` line.
+- **A device probe** for the graphics plan (`port/deviceprobe`, `libfafdeviceprobe.so`).
+
+The reference table names all four engine/runner pairs (`-O0` and `-O2`, arm64-v8a and x86_64). It
+holds the same chain for each of them, `4971bbe58c5586a0`; the adb reference runs are described in
+the [runner README](../../port/engine/runner/README.md).
+
+**Checked through the app's UI** on the API 36 emulator on 2026-10-07, with the first release
+candidate APKs (versionCode 3449, packaged sets `r041-pkg` and `r041-pkg-O2`; the second build is
+[below](#second-041-build-runner-_exit-affinity-hold-probe-teardown)). The PC was compiling another
+build at the same time, so the load times are higher than 0.4.0's; compare times only within this
+table.
+
+| Replay, build, options | APK | Result | Chain | Load / sim, beats/s | Speed line |
+|---|---|---|---|---|---|
+| T1, `-O0`, run twice | x86_64 | PASS, second run identical | `4971bbe58c5586a0`, "measured with these binaries" | 9.0 / 2.8 s, 169 | `waiting` (see below) |
+| T1, `-O2`, run twice | x86_64 | PASS, identical | `4971bbe58c5586a0`, "measured with these -O2 binaries" | 4.2 / 1.4 s, 332 | `waiting` |
+| T1, `-O2` + speed experiment, run twice | x86_64 | PASS, identical | `4971bbe58c5586a0` | 3.7 / 1.4 s, 337 | timer slack 1 ns; affinity `fast` "not changed" (all CPUs the same class) |
+| T1, `-O0` + speed experiment, *only the biggest cores* | x86_64 | PASS | `4971bbe58c5586a0` | 8.6 / 2.7 s, 173 | timer slack 1 ns; affinity `big` not changed |
+| T2 26119449 (local), `-O0` | x86_64 | PASS, game over at 4697 | `7eec974b19f98ebc` (0.4.0's) | 5.8 / 13.7 s, 342 | `cpu-bound`: "sim thread CPU-bound on equal cores (ran 98% of the sim time)" |
+| T1, `-O0`, run twice | arm64-v8a (translated) | PASS, identical; self-test 41/41, 1664 MB | `4971bbe58c5586a0` | 27.5 / 14.7 s, 32 | no telemetry (see below) |
+| T1, `-O2`, run twice | arm64-v8a (translated) | PASS, identical | `4971bbe58c5586a0` | 10.8 / 2.6 s, 181 | no telemetry |
+| T1, `-O2` + speed experiment | arm64-v8a (translated) | PASS | `4971bbe58c5586a0` | 11.4 / 2.5 s, 184 | no telemetry; timer slack 1 ns |
+| Device probe | x86_64 | PASS: all five sections `ok`, both patterns exact (0 of 65536 pixels off) | - | 0.6 s | glslang 70 ms first / 41 ms warm |
+| Device probe | arm64-v8a (translated) | PASS, the same | - | 2.2 s | glslang 461 / 185 ms |
+
+The emulator's GPU is SwiftShader: Vulkan device 1.2.0 (instance 1.4.0) with BC1-3, ETC2 and ASTC
+sampled images, D32 but no D24S8, fillModeNonSolid, anisotropy, depth clamp, independent blend, 16384
+max 2D, timestamps; GLES 3.0 through the emulator's translator with ETC2 and ASTC, no S3TC, no
+clip_control, color_buffer_float. *Save all runs (zip)* wrote all 24 runs of the emulator in one
+zip (214 entries, both probe PNGs, no replay file, the 192 MB engine log of an old run cut to 64 MB).
+
+What the runs show:
+
+- **`-O2` keeps the chain.** On both ABIs, with and without the speed experiment, the `-O2` build
+  gives the same chain and game-over beat as `-O0`, and its second runs are identical. It roughly
+  halves the load time and, under ARM translation, cuts the sim from 14.7 s to 2.6 s.
+- **The verdict judges the sim thread when the sim phase lasts 3 s or more.** On T2 (13.7 s of sim)
+  the busiest thread in the sim phase was not the runner's main thread but the engine's sim thread,
+  which ran 98 % of the time. T1 on x86_64 simulates in under 3 s. The verdict then falls back to the
+  whole run, and the busiest thread is the main thread during the engine's shutdown (next point). The
+  resulting "mostly waiting" says nothing. On a phone, T1's sim phase lasts about 20 s at `-O0`.
+  The second build leaves the shutdown out of the window.
+- **The engine takes seconds to shut down.** The runner process outlives its final `RESULT` line:
+
+  | Where | Build | Process lifetime | Engine wall time | Difference |
+  |---|---|---|---|---|
+  | emulator x86_64 | `-O0` | 19.3 s | 12.0 s | 7.3 s |
+  | emulator x86_64 | `-O2` | 9.3 s | 5.8 s | 3.5 s |
+  | emulator, arm64 translated | `-O0` | 57.4 s | 42.7 s | 14.7 s |
+  | emulator, arm64 translated | `-O2` | 17.1 s | 13.8 s | 3.3 s |
+  | S22 Ultra, 0.4.0 | `-O0` | 46.6 s | 36.2 s | 10.4 s |
+
+  Two `debuggerd -b` stacks taken in that phase are the same:
+  `exit` → `__cxa_finalize` → `FWaitHandleSet::~FWaitHandleSet` → `CVFSImpl::~CVFSImpl` →
+  `SVFSMountPoint::~SVFSMountPoint` → `FWaitHandleSet::RemoveEntry`. `RemoveEntry` restarts a
+  linear `FindZipEntryByHandle` scan of the archive index (38,237 entries) after every erase, so the
+  teardown is quadratic. It runs only at exit and changes neither the load and sim times nor the
+  chain, but the tester waits for it. The second build's runner ends with `_exit` once its summary
+  is written and skips it.
+- **No Speed line under ARM translation.** The emulator starts an arm64 executable through
+  binfmt_misc, so the runner's `cmdline` begins with
+  `/system/bin/ndk_translation_program_runner_binfmt_misc_arm64`. The sampler looks for a child
+  whose first argument is the runner and does not find it. On an arm64 phone the first argument is
+  the runner. The runner's own `[runner] sched` line is there either way. The second build's
+  sampler takes argv[1] in that case.
+- **The speed experiment cannot show anything on the emulator.** All CPUs report the same
+  `cpuinfo_max_freq`, so `fast` and `big` leave the allowed CPUs unchanged. The timer slack does
+  change, from 50 µs to 1 ns, and the chain stays the same.
+- **On a phone, FAF would have undone the experiment's affinity** (found in review, not on the
+  emulator). FAF's `init_faf.lua` calls `SetProcessAffinityMask(systemMask - 3)` on a device with six
+  or more CPUs ("every CPU but 0 and 1"), and the shim applies it to every thread
+  (`port/engine/shim/faf_win_kernel.h`). The 0.4.0 phone log shows it: affinity set to 252, CPUs 2-7.
+  It runs while the engine loads, after the runner's constructor set 4-7, so the first build's
+  experiment would have run on 2-7 like every other run, and its Speed line would have named the
+  constructor's 4-7.
+
+### Second 0.4.1 build (runner `_exit`, affinity hold, probe teardown)
+
+Four native changes and the app's follow-ups, after the review of the first build. The engines did
+not change (the `-O0` engine is still 0.4.0's); the runners and the device probe did:
+
+- **The runner's affinity holds.** `RunnerSched.cpp` exports its own `sched_setaffinity`
+  (`build_runner.py`'s `EXE_EXPORTS`), which `libfafengine.so` binds to ahead of libc's, as it does
+  for `malloc`. When `FAF_RUNNER_AFFINITY` asked for something the device can do, the runner owns the
+  mask: an engine request still returns success, but the thread gets the runner's mask. Otherwise the
+  request goes to the kernel unchanged, as in the reference runs. The `[runner] sched` line gains
+  `affinity.in_force`, `set_by` (`runner` or `inherited`) and `owner` (`runner` or `engine`), and each
+  distinct engine request prints `[runner] affinity {"tid":..,"request":"2-7","in_force":"4-7","set_by":"runner",..}`.
+- **Fast exit.** `RunnerExit.cpp`: after `faf_headless_main` returns and the arena's report is out,
+  `main` flushes every stdio stream and calls `_exit(code)`, so the engine's static destructors (the
+  quadratic VFS teardown above) never run. `FAF_RUNNER_EXIT=full` keeps the old way. The last line is
+  `[runner] exit <code>: _exit after flushing, ...`.
+- **The probe reports before it tears down.** A section's child sends its result to the parent and
+  only then destroys its Vulkan device and instance or terminates EGL
+  (`port/deviceprobe/README.md`). A crash or hang in that teardown is reported
+  (`process.teardown`, `,teardown=crashed` in the RESULT line) and costs nothing the section found.
+- **The app:** the Speed line takes `cpus` from the allowed CPUs the busiest thread had during the
+  judged window, with who set them; the run window ends at the RESULT line; the busiest thread's
+  effective clock and migrations per second are in the line; the sampler finds a translated runner;
+  the device probe runs without game data and saves logcat when a section failed; the engine-load
+  line names `libfafengine_o2.so` for `-O2`; the Licenses screen carries DiligentCore's and its
+  third-party libraries' license texts ([android.md](android.md)).
+
+**References re-measured** with the packaged sets `buildstage/runner/r041b-pkg/<abi>` and
+`r041b-pkg-O2/<abi>` (vault T1, `--host-prefs none`, over adb on 2026-10-08). Every run gives chain
+`4971bbe58c5586a0`, game over at beat 467, the first difference from Windows at beat 100, and the
+same registry counts:
+
+| ABI | Build | Runner build id | Engine build id | Load / sim |
+|---|---|---|---|---|
+| x86_64 | `-O0` | `858ee967d326…` | `9f688a0f7c6c…` (0.4.0's) | 7.9 / 2.2 s |
+| x86_64 | `-O2` | `f051e4534494…` | `485f666a914b…` | 3.5 / 1.1 s |
+| arm64-v8a (translated) | `-O0` | `d9922c82a7d3…` | `cbb70516dc5a…` (0.4.0's) | 24.6 / 13.0 s |
+| arm64-v8a (translated) | `-O2` | `b102c84b1658…` | `45d6cdd0434a…` | 10.9 / 2.5 s |
+
+T2 (26119449, 4697 beats) gives `7eec974b19f98ebc` with both x86_64 sets (`-O0` 6.3 / 13.3 s, `-O2`
+2.9 / 6.8 s), as in 0.4.0.
+
+**Fast exit, checked.**
+- Exit codes are the same with and without `FAF_RUNNER_EXIT=full`: replay 0, no replay (the
+  engine-load step) 1, a missing replay file 1, a missing init script 1, arena probe 0, arena
+  capacity 0.
+- Output is complete: the engine log (6,984 lines, 763,807 bytes), the summary JSON and stdout up to
+  `[runner] exit` are the same in both modes. Only heap addresses in two Lua error messages differ,
+  as between any two runs. The full mode adds the destructors' `[stub]` lines after it.
+- In the app, each replay step now ends 0.0-0.1 s after the engine's wall time on x86_64 (0.2-0.3 s
+  under translation), where the first build's steps lived 7.3 s (x86_64) and 14.7 s (translated)
+  longer. Over adb the destructors stayed short (0.1-0.3 s), even with a copy of the app's data root
+  (symlinks to the same archives and SCFA folder, home and output on shared storage), so the saving
+  was measured in the app only. Why the app's runner pays 7 s in `RemoveEntry` and the shell's does
+  not was not found.
+
+**Affinity hold, checked over adb** (`-O2` runner, T1, every thread's `Cpus_allowed_list` sampled
+from `/proc/<pid>/task/*/status` every 0.2 s). The emulator has four CPUs, so FAF's branch for six
+or more never runs; a copy of `init_faf.lua` with the threshold lowered from 63 to 15 asks for CPUs
+2-3 (mask 12) instead:
+
+| `FAF_RUNNER_AFFINITY` | init script | Threads seen | `[runner] affinity` | Chain |
+|---|---|---|---|---|
+| unset | copy (asks 2-3) | main thread 0-3, then every thread 2-3 | request 2-3, in force 2-3, `set_by` engine | `4971bbe58c5586a0` |
+| `0-1` | copy | every thread 0-1 in every sample | request 2-3, in force 0-1, `set_by` runner | `4971bbe58c5586a0` |
+| `all` | copy | every thread 0-3 | request 2-3, in force 0-3, `set_by` runner | `4971bbe58c5586a0` |
+| `fast` + timer slack 1 | copy | every thread 0-3 (one CPU class: the runner owns all four) | request 2-3, in force 0-3, `set_by` runner | `4971bbe58c5586a0` |
+| `0,2` | FAF's own | every thread 0,2 | request 0,2 (the process mask), "asked for the same CPUs" | `4971bbe58c5586a0` |
+| `0-1`, arm64 `-O2` translated | copy | every thread 0-1 | request 2-3, in force 0-1, `set_by` runner | `4971bbe58c5586a0` |
+
+**Checked through the app's UI** on 2026-10-08 with the second release candidates (versionCode
+3450, pre-commit):
+
+| Run | APK | Result | Chain | Load / sim, beats/s | Speed line |
+|---|---|---|---|---|---|
+| Self-test only | x86_64 | PASS, 41/41, 1952 MB | - | - | - |
+| Device probe | x86_64 | PASS, all five sections `ok`, both patterns exact, every section's teardown `ok` after its report; no data root prepared | - | 0.7 s | glslang 51 / 33 ms |
+| T1, `-O0`, run twice | x86_64 | PASS, identical, "measured with these binaries" | `4971bbe58c5586a0` | 6.5 / 2.2 s, 212 | `waiting` (53 % of the run, window up to the RESULT line), `cpus 0-3` |
+| T1, `-O2`, run twice | x86_64 | PASS, identical, "measured with these -O2 binaries"; "libfafengine_o2.so loaded at 0x2410000" | `4971bbe58c5586a0` | 2.7 / 1.0 s, 452 | `waiting`, `cpus 0-3` |
+| T1, `-O2` + speed experiment, run twice (two such runs) | x86_64 | PASS, identical | `4971bbe58c5586a0` | 2.6 / 1.0 s, 488 | timer slack 1 ns, `cpus 0-3 (speed experiment)`; the app's runner threads read over adb: all 0-3 |
+| T1, self-test + `-O2`, run twice | arm64-v8a (translated) | PASS, identical; self-test 41/41, 1648 MB | `4971bbe58c5586a0` | 9.8 / 2.5 s, 186 | present under translation: `waiting`, `cpus 0-3` |
+
+*Save all runs (zip)* wrote 46 runs, 443 entries, both probe PNGs, no replay or data file. The probe's
+failure paths over adb: `FAF_PROBE_TEST_FAULT=teardown-crash:vulkan_render` keeps the section's
+"pattern exact" and reports `teardown=crashed` (exit 0); `teardown-hang:gles` is killed after 20 s
+(`teardown=timeout`, exit 0); `crash:vulkan_render` (before the result) gives `crashed`, exit 1.
 
 ## Known issues
 

@@ -3,12 +3,20 @@
   "beats": 465,
   "build_ids": {
    "arm64-v8a": {
-    "faf_headless_runner": "235eb467afbaf640d920f2d2ee3d448807a1498a",
+    "faf_headless_runner": "d9922c82a7d31a5ac68b2a99596936602e84d0e4",
     "libfafengine.so": "cbb70516dc5aa4ac779517791fa59e2083fb885c"
    },
+   "arm64-v8a-O2": {
+    "faf_headless_runner": "b102c84b16582f218e1e7ec9627220810e075bd8",
+    "libfafengine.so": "45d6cdd0434a69c3e877fb278b3a051419060f13"
+   },
    "x86_64": {
-    "faf_headless_runner": "e094bda542d16c7d613927663de02c4b5679bef2",
+    "faf_headless_runner": "858ee967d32623a207fdc2c579a1c1b9a48b3094",
     "libfafengine.so": "9f688a0f7c6cd3a83dc4f75e2e5c33f046019f1f"
+   },
+   "x86_64-O2": {
+    "faf_headless_runner": "f051e4534494dc71ac3eae2de48d43c58049ca9b",
+    "libfafengine.so": "485f666a914bc4028a22adc175740f6d191b93d2"
    }
   },
   "chain": "4971bbe58c5586a0",
@@ -21,7 +29,9 @@
   "map": "scmp_026",
   "measured_on": [
    "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146, ARM translation (libndk_translation.so), arm64-v8a, FAF_LOWARENA=1, Game.prefs none",
-   "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146, x86_64, FAF_LOWARENA=1, Game.prefs none"
+   "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146, ARM translation (libndk_translation.so), arm64-v8a-O2, FAF_LOWARENA=1, Game.prefs none",
+   "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146, x86_64, FAF_LOWARENA=1, Game.prefs none",
+   "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146, x86_64-O2, FAF_LOWARENA=1, Game.prefs none"
   ],
   "note": "Emulator reference (scripts/port/run_runner_android.py --host-prefs none): no Game.prefs, no vault mods, the runner binaries named in build_ids. Checksum mismatches against the recording are expected (recorded with another FAF version than the data); compare the chain.",
   "recorded_version": "Supreme Commander v1.50.3831",
@@ -29,12 +39,12 @@
    "arm64-v8a": {
     "abi": "arm64-v8a",
     "build_ids": {
-     "faf_headless_runner": "235eb467afbaf640d920f2d2ee3d448807a1498a",
+     "faf_headless_runner": "d9922c82a7d31a5ac68b2a99596936602e84d0e4",
      "libfafengine.so": "cbb70516dc5aa4ac779517791fa59e2083fb885c"
     },
     "chain": "4971bbe58c5586a0",
     "checkpoints": 10,
-    "date": "2026-10-07T08:26:26+00:00",
+    "date": "2026-10-07T21:54:17+00:00",
     "device": "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146, ARM translation (libndk_translation.so)",
     "end_reason": "replay_end",
     "exit_code": 0,
@@ -53,7 +63,46 @@
     "lowarena": 1,
     "lua_errors_load": 2,
     "lua_errors_sim": 11,
-    "tag": "r040bref",
+    "opt": "O0",
+    "tag": "r041gref",
+    "translated": true,
+    "windows": {
+     "beat0_equal": true,
+     "chain": "7e159db290f576f1",
+     "first_diverging_beat": 100,
+     "game_over_beat": 467,
+     "summary": "V1-a.json"
+    }
+   },
+   "arm64-v8a-O2": {
+    "abi": "arm64-v8a",
+    "build_ids": {
+     "faf_headless_runner": "b102c84b16582f218e1e7ec9627220810e075bd8",
+     "libfafengine.so": "45d6cdd0434a69c3e877fb278b3a051419060f13"
+    },
+    "chain": "4971bbe58c5586a0",
+    "checkpoints": 10,
+    "date": "2026-10-07T21:54:57+00:00",
+    "device": "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146, ARM translation (libndk_translation.so)",
+    "end_reason": "replay_end",
+    "exit_code": 0,
+    "game_over_beat": 467,
+    "host_prefs": "none",
+    "inputs": {
+     "armies": 4,
+     "command_sources": 2,
+     "language": "us",
+     "prefs": "",
+     "seed": 126390721,
+     "sim_workers": "default",
+     "sse2": false
+    },
+    "last_beat": 467,
+    "lowarena": 1,
+    "lua_errors_load": 2,
+    "lua_errors_sim": 11,
+    "opt": "O2",
+    "tag": "r041gref-O2",
     "translated": true,
     "windows": {
      "beat0_equal": true,
@@ -66,12 +115,12 @@
    "x86_64": {
     "abi": "x86_64",
     "build_ids": {
-     "faf_headless_runner": "e094bda542d16c7d613927663de02c4b5679bef2",
+     "faf_headless_runner": "858ee967d32623a207fdc2c579a1c1b9a48b3094",
      "libfafengine.so": "9f688a0f7c6cd3a83dc4f75e2e5c33f046019f1f"
     },
     "chain": "4971bbe58c5586a0",
     "checkpoints": 10,
-    "date": "2026-10-07T08:26:06+00:00",
+    "date": "2026-10-07T21:53:59+00:00",
     "device": "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146",
     "end_reason": "replay_end",
     "exit_code": 0,
@@ -90,7 +139,46 @@
     "lowarena": 1,
     "lua_errors_load": 2,
     "lua_errors_sim": 11,
-    "tag": "r040bref",
+    "opt": "O0",
+    "tag": "r041gref",
+    "translated": false,
+    "windows": {
+     "beat0_equal": true,
+     "chain": "7e159db290f576f1",
+     "first_diverging_beat": 100,
+     "game_over_beat": 467,
+     "summary": "V1-a.json"
+    }
+   },
+   "x86_64-O2": {
+    "abi": "x86_64",
+    "build_ids": {
+     "faf_headless_runner": "f051e4534494dc71ac3eae2de48d43c58049ca9b",
+     "libfafengine.so": "485f666a914bc4028a22adc175740f6d191b93d2"
+    },
+    "chain": "4971bbe58c5586a0",
+    "checkpoints": 10,
+    "date": "2026-10-07T21:54:11+00:00",
+    "device": "emulator-5554 sdk_gphone64_x86_64, API 36, kernel 6.6.66-android15-8-gd0c43a640eab-ab13812146",
+    "end_reason": "replay_end",
+    "exit_code": 0,
+    "game_over_beat": 467,
+    "host_prefs": "none",
+    "inputs": {
+     "armies": 4,
+     "command_sources": 2,
+     "language": "us",
+     "prefs": "",
+     "seed": 126390721,
+     "sim_workers": "default",
+     "sse2": false
+    },
+    "last_beat": 467,
+    "lowarena": 1,
+    "lua_errors_load": 2,
+    "lua_errors_sim": 11,
+    "opt": "O2",
+    "tag": "r041gref-O2",
     "translated": false,
     "windows": {
      "beat0_equal": true,
