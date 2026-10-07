@@ -4,6 +4,9 @@
 #include "gpg/gal/backends/d3d10/DeviceD3D10.hpp"
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
 #include "legacy/containers/AutoPtr.h"
+#if defined(FAF_PORT_GRAPHICS_DILIGENT)
+#include "port/graphics/diligent/GalDiligent.h"
+#endif
 
 #include <Windows.h>
 #include <new>
@@ -182,6 +185,17 @@ namespace gpg::gal
             device->Setup(context);
             break;
         }
+#if defined(FAF_PORT_GRAPHICS_DILIGENT)
+        // Port graphics track: the Diligent backend (port/graphics/diligent, `/gal diligent:<api>`),
+        // installed before its setup like the two shipped ones.
+        case DeviceApiDiligent:
+        {
+            Device* const device = diligent::CreateDevice();
+            sDeviceD3D.reset(device);
+            diligent::SetupDevice(device, context);
+            break;
+        }
+#endif
         default:
             ThrowDeviceContextError(135, "unknown API requested");
         }

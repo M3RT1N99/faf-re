@@ -168,7 +168,9 @@ What the compiler does not catch matters more than what it does.
 
 - A `gpg::gal` backend on Diligent (Vulkan, GLES fallback), as planned in [README.md](README.md),
   with the `gpg::gal::fx` effect front end (D3DX effects to SM5 HLSL). Bring it up on Windows and
-  compare pixel by pixel against D3D9.
+  compare pixel by pixel against D3D9. The step-by-step plan (steps 0-11) and its status are in
+  [renderer.md](renderer.md); steps 0-2 (M6a: the deterministic D3D9 reference harness, the
+  Diligent D3D11 spike, effect metadata equal to D3DX) are done.
 - Route the ~18 files that call D3D9/D3DX directly through GAL. `RenderTarget.hpp:69` exposes
   `HDC`.
 - **Texture formats:** Mali, Immortalis, Xclipse (Exynos) and PowerVR do not expose BC/DXT. All
@@ -373,6 +375,7 @@ M3  W1.3-5: 64-bit clean; headless arm64 replay runner runs a replay to the end 
 M4  W5 + W6 on x86/x64: vault replays checksum-clean on the recovered engine (fixes upstream)
 M5  W5 on arm64: same replays checksum-clean on a phone (L3)
 M6  W2 + W3 on Windows: SDL3 + Diligent backend, pixel-compared against D3D9
+    M6a D3D9 reference harness, Diligent D3D11 spike, effect metadata = D3DX  done (renderer.md)
 M7  W2 + W3 + W4 on Android: main menu on the device (L1), then offline skirmish (L2)
 M8  W7 + W8 against a local FAF stack: login, lobby, ICE, Android vs Android
 M9  W9 approvals in place: online vs PC (L4), beta

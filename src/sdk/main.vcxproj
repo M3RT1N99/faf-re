@@ -2755,6 +2755,10 @@ if exist "$(FafRunDir)" if exist "$(TargetDir)$(TargetName).pdb" xcopy /D /Y /Q 
       <Project>{2F53B448-AB89-12C5-0021-FF4EE1211868}</Project>
     </ProjectReference>
   </ItemGroup>
+  <!-- Opt-in graphics-track build (M6, port\graphics\port_graphics.props): only
+       with /p:FafPortGraphics=true. Without it this import is skipped and the
+       project evaluates exactly as before. -->
+  <Import Project="$(FafRepoRoot)port\graphics\port_graphics.props" Condition="'$(FafPortGraphics)' == 'true'" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />

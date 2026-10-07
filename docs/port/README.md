@@ -40,7 +40,10 @@ two existing backends first), `Texture`, `RenderTarget`, `CubeRenderTarget`, `De
    (`CD3DDevice`, `Shadow`, `CRenFrame`, `Cartographic`, `HighFidelityTerrain`, `Mesh`,
    `MeshThumbnailRenderer`, `WxRuntimeTypes`).
 3. Implement the **effect front end** (`gpg::gal::fx`): D3DX effects to Shader Model 5 HLSL plus metadata.
-4. Diligent backend on Windows, compared pixel by pixel against the D3D9 backend.
+   The metadata half exists and matches D3DX on every shipped effect (`port/graphics/fx`, M6a).
+4. Diligent backend on Windows, compared pixel by pixel against the D3D9 backend. The D3D9
+   reference harness and the Diligent spike exist (M6a); the plan and status are in
+   [renderer.md](renderer.md).
 5. SDL3 platform layer, then Linux.
 
 ## Android
@@ -66,8 +69,17 @@ powershell -ExecutionPolicy Bypass -File scripts/port/deploy_android.ps1      # 
 - [android-roadmap.md](android-roadmap.md): the way from this bring-up to full FAF play on Android.
 - [headless-replay.md](headless-replay.md): `main.exe /headlessreplay`, the x86 replay runner the
   arm64 port is checked against, and its baseline numbers.
+- [phone-testing.md](phone-testing.md): how to help by running the app's replay test on your own
+  phone; [device-matrix.md](device-matrix.md): the devices that have run it.
+- [renderer.md](renderer.md): the renderer track (M6/M7): the Diligent `gpg::gal` backend plan,
+  the status of its first steps, and how to build the graphics option of `main.exe` and run the
+  D3D9 reference harness.
 
 ## Planned effect front end: `gpg::gal::fx`
+
+Status: the lexer, preprocessor, effect parser and metadata extractor exist in
+[`port/graphics/fx`](../../port/graphics/fx/README.md) (M6a, see [renderer.md](renderer.md)); the
+SM5 emitter below is still planned.
 
 The planned `src/sdk/gpg/gal/fx/` module will read an effect the way `CD3DEffectTechnique` feeds D3DX (compat header
 `d3d9states.compat` prepended) and produces SM5 HLSL with one entry point per pass stage, plus JSON

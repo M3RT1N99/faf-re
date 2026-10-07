@@ -88,6 +88,9 @@ namespace gpg::gal
 #include "moho/terrain/LowFidelityTerrain.h"
 #include "moho/terrain/MediumFidelityTerrain.h"
 #include "moho/ui/IUIManager.h"
+#if defined(FAF_PORT_GRAPHICS)
+#include "port/graphics/capture/GalCapture.h"
+#endif
 
 /**
  * The managed-window registries (elements at 0x010A9B94 / 0x010A9BD8).
@@ -4264,6 +4267,12 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
   // that CD3DDevice::Paint issues at the head of the next paint fails with
   // D3DERR_INVALIDCALL - Present is illegal between BeginScene and EndScene.
   device->EndScene();
+
+#if defined(FAF_PORT_GRAPHICS)
+  // Port frame harness capture point (port/graphics/capture, `/galharness` only): the frame is
+  // complete and not yet presented, and nothing below draws into the back buffer.
+  port::graphics::capture::HarnessSceneEnded(mHead);
+#endif
 
   // Conditionally dump the just-rendered frame to a numbered screenshot file.
   // In the binary this is the tail call of WRenViewport::Render @0x007F90D0

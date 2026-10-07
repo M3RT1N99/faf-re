@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The opt-in graphics-track build of main.exe (M6, docs/port/renderer.md).
+
+  src/sdk/main.vcxproj imports this file only when the MSBuild property
+  FafPortGraphics is 'true', right before Microsoft.Cpp.targets, so that it sees
+  every property and item definition the project sets and can override them:
+
+    msbuild src\sdk\main.vcxproj /p:Configuration=Debug /p:Platform=Win32 /p:FafPortGraphics=true
+
+  Without the property the import is skipped and the project evaluates exactly
+  as it did before; the default main.exe does not change (the M6a rule).
+
+  What it does, and why:
+    - defines FAF_PORT_GRAPHICS for every TU. Engine hooks in src/sdk stay
+      inside `#if defined(FAF_PORT_GRAPHICS)`, so they exist only here;
+    - builds into output\main-gfx and buildstage\main-gfx instead of
+      output\main and buildstage\main, so the default objects and image are
+      never overwritten by a graphics build (both still yield to /p:OutDir and
+      /p:IntDir on the command line, which win over project properties);
+    - switches the post-build staging copy into $(FafRunDir) off. That copy
+      (main.vcxproj PostBuildEvent, all four configurations) would overwrite
+      the main.exe in C:\ProgramData\FAForever\bin, which the user plays with;
+    - adds the new sources under port\graphics (Diligent backend, capture
+      harness), each with its own object directory so no object name can
+      collide with the engine's flat $(IntDir);
+    - links the Diligent build that scripts\port\build_diligent_win32.ps1
+      installs to buildstage\diligent\install\<Platform> (override with
+      /p:FafDiligentInstall=<prefix>\). Its Debug libraries are /MDd with
+      _ITERATOR_DEBUG_LEVEL=0, matching the Debug|Win32 ClCompile settings in
+      main.vcxproj (the IDL comment there explains why a mismatch fails the
+      link with LNK2038). It is not the older dependencies\DiligentCore\install
+      build: that one was compiled against NVAPI (a download), its
+      DiligentCore.lib references NvAPI_* but nvapi.lib was never installed,
+      and this project links with /FORCE, which would turn those unresolved
+      symbols into a warning (the script's header has the details).
+
+  New sources are appended after the engine's ClCompile list, so their static
+  initialisers run after every engine one (main.vcxproj: "ClCompile order is
+  load-bearing").
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FafPortGraphicsDir>$(FafRepoRoot)port\graphics\</FafPortGraphicsDir>
+    <FafDiligentInstall Condition="'$(FafDiligentInstall)' == ''">$(FafRepoRoot)buildstage\diligent\install\$(Platform)\</FafDiligentInstall>
+    <FafDiligentLibDir>$(FafDiligentInstall)lib\$(Configuration)\</FafDiligentLibDir>
+    <FafDiligentConfigDefines Condition="'$(Configuration)' == 'Debug'">DILIGENT_DEVELOPMENT;DILIGENT_DEBUG;</FafDiligentConfigDefines>
+    <!-- The Diligent backend is built in when its libraries exist ('auto'), so the
+         D3D9 capture harness builds before scripts\port\build_diligent_win32.ps1
+         has run. /p:FafPortGraphicsDiligent=true makes a missing build an error,
+         =false leaves the backend out. -->
+    <!-- Debug only for now: Diligent's Release libraries are /GL (whole-program) objects, and the
+         Release link of main.vcxproj runs with /FORCE and without LTCG (see its Release|Win32
+         configuration comment), so 'auto' leaves the backend out of Release builds. -->
+    <FafPortGraphicsDiligent Condition="('$(FafPortGraphicsDiligent)' == '' or '$(FafPortGraphicsDiligent)' == 'auto') and '$(Configuration)' != 'Debug'">false</FafPortGraphicsDiligent>
+    <FafPortGraphicsDiligent Condition="'$(FafPortGraphicsDiligent)' == '' or '$(FafPortGraphicsDiligent)' == 'auto'">$([System.IO.File]::Exists('$(FafDiligentLibDir)DiligentCore.lib'))</FafPortGraphicsDiligent>
+    <FafPortGraphicsDiligent>$(FafPortGraphicsDiligent.ToLowerInvariant())</FafPortGraphicsDiligent>
+    <OutDir>$(FafRepoRoot)output\main-gfx\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(FafRepoRoot)buildstage\main-gfx\$(Platform)\$(Configuration)\</IntDir>
+    <!-- Microsoft.CppCommon.targets runs the PostBuildEvent target only when this
+         is not 'false'. The item definition below empties the command as well. -->
+    <PostBuildEventUseInBuild>false</PostBuildEventUseInBuild>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PreprocessorDefinitions>FAF_PORT_GRAPHICS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- Appended last: quoted includes in src\sdk still resolve there first, and
+           "port/graphics/..." resolves from the repo root. -->
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(FafRepoRoot)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <PostBuildEvent>
+      <Message>FafPortGraphics: no staging copy into the FAF bin folder</Message>
+      <Command></Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(FafPortGraphicsDiligent)' == 'true'">
+    <ClCompile>
+      <!-- Engine hooks for the Diligent backend (gal Device creation, /gal) test this. -->
+      <PreprocessorDefinitions>FAF_PORT_GRAPHICS_DILIGENT=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(FafDiligentLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <!-- DiligentCore.lib is the install's combined static library (Common,
+           Primitives, Platforms, GraphicsEngine, the D3D11/D3D12/GL/Vk static
+           engines, ShaderTools, GraphicsTools). The linker only pulls the objects
+           the backend references, so the D3D11 path needs no glslang/SPIR-V libs. -->
+      <AdditionalDependencies>DiligentCore.lib;d3d11.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup Condition="'$(FafPortGraphicsDiligent)' == 'true'">
+    <!-- Diligent gal backend (step 1). Tools under diligent\tools are host
+         programs with their own build, not part of main.exe. -->
+    <ClCompile Include="$(FafPortGraphicsDir)diligent\**\*.cpp" Exclude="$(FafPortGraphicsDir)diligent\tools\**">
+      <ObjectFileName>$(IntDir)port_graphics\diligent\%(RecursiveDir)</ObjectFileName>
+      <AdditionalIncludeDirectories>$(FafDiligentInstall)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- What Diligent's BuildSettings target hands its consumers: the platform, the backend,
+           and in Debug the development checks its Debug libraries are built with. -->
+      <PreprocessorDefinitions>PLATFORM_WIN32=1;D3D11_SUPPORTED=1;$(FafDiligentConfigDefines)%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- D3D9 reference capture harness (step 0). -->
+    <ClCompile Include="$(FafPortGraphicsDir)capture\**\*.cpp" Exclude="$(FafPortGraphicsDir)capture\tools\**">
+      <ObjectFileName>$(IntDir)port_graphics\capture\%(RecursiveDir)</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+
+  <Target Name="FafPortGraphicsCheck" BeforeTargets="ClCompile">
+    <Error Condition="'$(FafPortGraphicsDiligent)' == 'true' and !Exists('$(FafDiligentLibDir)DiligentCore.lib')"
+           Text="FafPortGraphics: $(FafDiligentLibDir)DiligentCore.lib not found. Build it with scripts\port\build_diligent_win32.ps1 (Win32 only for now)." />
+    <Message Importance="high" Text="FafPortGraphics: FAF_PORT_GRAPHICS build into $(OutDir), no post-build staging; Diligent backend: $(FafPortGraphicsDiligent) ($(FafDiligentInstall))" />
+  </Target>
+</Project>

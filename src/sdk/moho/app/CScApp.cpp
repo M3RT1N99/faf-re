@@ -47,6 +47,12 @@
 #if !defined(_MSC_VER)
 #include "platform/Atomic32.h"
 #endif
+#if defined(FAF_PORT_GRAPHICS_DILIGENT)
+#include "port/graphics/diligent/GalDiligent.h"
+#endif
+#if defined(FAF_PORT_GRAPHICS)
+#include "port/graphics/capture/GalCapture.h"
+#endif
 
 namespace gpg
 {
@@ -1090,6 +1096,12 @@ void CScApp::Main()
       }
     }
   } else if (moho::CD3DDevice* const device = moho::D3D_GetDevice(); device != nullptr) {
+#if defined(FAF_PORT_GRAPHICS)
+    // Port frame harness (port/graphics/capture, `/galharness` only): its window is never
+    // shown, so Refresh below queues no WM_PAINT; the harness posts the paint for this frame
+    // itself and advances its Lua clock by this frame's delta. Without the option: no-op.
+    port::graphics::capture::HarnessFrame(frameSeconds);
+#endif
     device->Refresh();
   }
 
@@ -1183,6 +1195,15 @@ bool CScApp::CreateDevice()
   moho::d3d_WindowsCursor = useD3D10;
 
   gpg::gal::DeviceContext context(useD3D10 ? gpg::gal::DeviceApi::Direct3D10 : gpg::gal::DeviceApi::Direct3D9);
+#if defined(FAF_PORT_GRAPHICS_DILIGENT)
+  // Port graphics track (port/graphics/diligent): `/gal diligent:<api>` selects the Diligent gal
+  // backend. It has no D3D9 hardware cursor, so the cursor is the Win32 one, as with /D3D10 above.
+  const bool useDiligent = gpg::gal::diligent::IsRequestedOnCommandLine();
+  if (useDiligent) {
+    context.mDeviceType = gpg::gal::DeviceApiDiligent;
+    moho::d3d_WindowsCursor = true;
+  }
+#endif
   context.mVSync = moho::OPTIONS_GetInt("vsync") == 1;
   context.AddHead(gpg::gal::Head{});
 
@@ -1311,6 +1332,11 @@ bool CScApp::CreateDevice()
 
   if (!CreateAppFrame(title, maximized, position, context)) {
     gpg::gal::DeviceContext fallbackContext(useD3D10 ? gpg::gal::DeviceApi::Direct3D10 : gpg::gal::DeviceApi::Direct3D9);
+#if defined(FAF_PORT_GRAPHICS_DILIGENT)
+    if (useDiligent) {
+      fallbackContext.mDeviceType = gpg::gal::DeviceApiDiligent;
+    }
+#endif
     context = fallbackContext;
 
     gpg::gal::Head fallbackHead{};

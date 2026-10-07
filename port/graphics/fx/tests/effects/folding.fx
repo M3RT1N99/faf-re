@@ -1,0 +1,94 @@
+// Constant folding in parameter initializers, checked against D3DX by
+// scripts/port/fx_metadata_gate.py. The legacy compiler folds in double
+// precision and stores floats rounded once; integers are 32-bit and wrap.
+
+static const float SA = 16777217.0;
+static const int SI = 7;
+
+float DoubleNotFloat = 16777216.0 + 1.0 - 16777216.0;
+float NotEqual = 0.1 + 0.2 == 0.3;
+float StaticRef = SA - 16777216.0;
+float StaticRefInt = SI / 2;
+float Cast = (float)0.1 * 3;
+float Ctor = float(0.1) * 3;
+float BigLiteral = 100000001.0;
+int Wrap = 2147483647 + 2;
+int BigInt = 3000000000;
+int MinInt = -2147483648;
+int Truncate = 7.9 + 0.2;
+int Mixed = 5 / 2 * 2.0;
+bool FromFloat = 0.5;
+bool FromInt = 2;
+float Underflow = 1e-46;
+float Overflow = 3.4028235e38 * 1.0000001;
+float NegativeZero = -0.0;
+float IntMod = 10 % 3;
+float NegMod = -7 % 3;
+float FloatMod = 7.5 % -2;
+int HexMin = 0x80000000;
+int HexAll = 0xFFFFFFFF;
+float HexDiv = 0x10 / 3;
+float BoolSum = true + 1;
+float4 VecScale = float4(1, 2, 3, 4) * 0.1;
+float3 VecTruncate = float4(1, 2, 3, 4).xyz;
+float2 Swizzle = float4(1, 2, 3, 4).wy;
+float4 Broadcast = 0.25;
+float4 CastBroadcast = (float4)0.5;
+float2 VecAdd = float2(0.1, 0.2) + float2(0.2, 0.1);
+float Wide = (1e30 * 1e30) / 1e30;
+float Inf = 1.5e300 * 1e10;
+float Ternary = 2 > 1 ? 0.1 * 3 : 2;
+float Not = !0.5;
+float Compare = 3 == 3.0;
+int NegDiv = -7 / 2;
+int DivNeg = 7 / -2;
+half HalfValue = 0.1;
+double DoubleValue = 0.1;
+float1 OneVector = 0.2 * 3;
+float2x2 Matrix = { 1.1, 2.2, 3.3, 4.4 };
+float2x3 MatrixCtor = float2x3(0.1, 0.2, 0.3, 0.4, 0.5, 0.6);
+int3 IntVector = { 1.9, -1.9, 2 };
+bool2 BoolVector = { 0.0, -3 };
+float List[] = { 1, 2.5, -3, 4e-3, };
+float3 Nested[2] = { { 1, 2, 3 }, { 4, 5, 6 } };
+
+float Abs[3] = { abs(0.7), abs(-2.3), abs(-1.6) };
+float Floor[3] = { floor(0.7), floor(2.3), floor(-1.6) };
+float Ceil[3] = { ceil(0.7), ceil(2.3), ceil(-1.6) };
+float Frac[3] = { frac(0.7), frac(2.3), frac(-1.6) };
+float Saturate[3] = { saturate(0.7), saturate(2.3), saturate(-1.6) };
+float Sqrt[3] = { sqrt(0.7), sqrt(2.3), sqrt(1.6) };
+float Rsqrt[3] = { rsqrt(0.7), rsqrt(2.3), rsqrt(1.6) };
+float Exp[3] = { exp(0.7), exp(2.3), exp(-1.6) };
+float Exp2[3] = { exp2(0.7), exp2(2.3), exp2(-1.6) };
+float Log[3] = { log(0.7), log(2.3), log(1.6) };
+float Log2[3] = { log2(0.7), log2(2.3), log2(1.6) };
+float Log10[3] = { log10(0.7), log10(2.3), log10(1.6) };
+float Sin[3] = { sin(0.7), sin(2.3), sin(-1.6) };
+float Cos[3] = { cos(0.7), cos(2.3), cos(-1.6) };
+float Tan[3] = { tan(0.7), tan(2.3), tan(-1.6) };
+float Asin[3] = { asin(0.7), asin(-0.3), asin(0.16) };
+float Acos[3] = { acos(0.7), acos(-0.3), acos(0.16) };
+float Atan[3] = { atan(0.7), atan(2.3), atan(-1.6) };
+float Radians[6] = { radians(0.7), radians(2.3), radians(-1.6), radians(90), radians(-33.3), radians(1e-3) };
+float Degrees[6] = { degrees(0.7), degrees(2.3), degrees(-1.6), degrees(3.14159265), degrees(-0.333), degrees(1e-3) };
+float Sign[3] = { sign(0.7), sign(0.0), sign(-1.6) };
+float Round[6] = { round(0.7), round(2.5), round(-1.6), round(0.5), round(-2.5), round(1.5) };
+float Min[2] = { min(0.7, 2.3), min(-1.6, 3) };
+float Max[2] = { max(0.7, 2.3), max(-1.6, 3) };
+float Pow[3] = { pow(0.7, 2.3), pow(2.3, 0.5), pow(1.6, -1.6) };
+float Atan2[3] = { atan2(0.7, 2.3), atan2(-1.6, 0.5), atan2(1, -1) };
+float Fmod[3] = { fmod(7.5, 2), fmod(-7.5, 2), fmod(2.3, 0.7) };
+float Step[3] = { step(0.5, 0.7), step(0.7, 0.5), step(1, 1) };
+float Dot = dot(float3(0.1, 0.2, 0.3), float3(0.4, 0.5, 0.6));
+float Length = length(float3(1.2, 0.7, 0.5));
+float Distance = distance(float2(0.1, 0.2), float2(1.4, 2.5));
+float3 Normalize = normalize(float3(1.2, 0.7, 0.5));
+float3 Normalize2 = normalize(float3(0.1, -0.967, 0.253));
+float4 Normalize3 = normalize(float4(-0.306995, 2.9, 0.07, 1.54));
+float2 Normalize4 = normalize(float2(-2.4557, -2.645337));
+float3 Lerp = lerp(float3(0.1, 0.2, 0.3), float3(1.1, 1.2, 1.3), 0.35);
+float3 Clamp = clamp(float3(-0.1, 0.5, 1.7), 0.2, 0.9);
+float3 Cross = cross(float3(0.1, 0.2, 0.3), float3(0.4, 0.5, 0.6));
+
+technique T0 { pass P0 { } }
