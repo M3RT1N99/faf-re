@@ -8286,13 +8286,9 @@ int moho::cfunc_UnitSetAutoMode(lua_State* const luaContext)
  * What it does:
  * Publishes the `Unit:SetAutoMode(enabled)` Lua binder definition.
  */
-// Sim.cpp:15290 defines the same name for the user-Lua global `SetAutoMode` (0x008BAD80,
-// func_SetAutoMode_LuaFuncDef in the binary). MSVC links with /FORCE and keeps the first in link
-// order, Sim.cpp's (main.pdb resolves the symbol to Sim.cpp:15291), so this file's bootstrap
-// registers `<global> SetAutoMode` in the User set and `Unit:SetAutoMode` is absent from the Sim set
-// (the Windows registry dump agrees). An ELF link rejects the duplicate; elsewhere only Unit.h's
-// declaration remains, so Android registers the same binders as Windows.
-#if defined(_MSC_VER)
+// Not to be confused with the user-Lua global `SetAutoMode` (0x008BAD80, Sim.cpp's
+// func_SetAutoMode_LuaFuncDef): the binary registers both, this one through 0x00BD7C10. With a
+// shared name, /FORCE would keep only one of them and the other would silently go missing.
 CScrLuaInitForm* moho::func_UnitSetAutoMode_LuaFuncDef()
 {
   static CScrLuaBinder binder(
@@ -8305,7 +8301,6 @@ CScrLuaInitForm* moho::func_UnitSetAutoMode_LuaFuncDef()
   );
   return &binder;
 }
-#endif
 
 /**
  * Address: 0x006C8060 (FUN_006C8060, cfunc_UnitSetAutoModeL)
