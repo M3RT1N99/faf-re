@@ -777,6 +777,10 @@ namespace moho
    * What it does:
    * Publishes `MotorFallDown:Whack()` into the sim Lua init set.
    */
+  // Also defined in Entity.cpp:7583. MSVC links with /FORCE and keeps the first in link order,
+  // Entity.cpp's (main.pdb resolves the symbol to Entity.cpp:7584), so the bootstrap below runs that
+  // copy. An ELF link rejects the duplicate; elsewhere only MotorFallDown.h's declaration remains.
+#if defined(_MSC_VER)
   CScrLuaInitForm* func_MotorFallDownWhack_LuaFuncDef()
   {
     static CScrLuaBinder binder(
@@ -789,6 +793,7 @@ namespace moho
     );
     return &binder;
   }
+#endif
 } // namespace moho
 
 namespace

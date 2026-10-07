@@ -22,7 +22,12 @@
 #include "gpg/core/utils/Global.h"
 #include "lua/LuaObject.h"
 #include "moho/app/WinApp.h"
+// wx only for wxTheApp in cfunc_EndLoggingStatsL; Android has no wxWidgets (see there).
+#if defined(_WIN32)
 #include "moho/app/WxRuntimeTypes.h"
+#else
+#include "gpg/core/utils/Logging.h" // gpg::Logf, which Windows reads through WxRuntimeTypes.h
+#endif
 #include "moho/console/CConCommand.h"
 #include "moho/lua/CScrLuaObjectFactory.h"
 #include "moho/lua/CScrLuaBinder.h"
@@ -1849,9 +1854,12 @@ namespace moho
       );
       WIN_OkBox("Complete!", message.c_str());
 
+#if defined(_WIN32)
       if (wxTheApp != nullptr) {
         wxTheApp->ExitMainLoop();
       }
+#endif
+      // Without wx (Android) there is no application object, as in the Windows headless runner.
     }
 
     return 0;

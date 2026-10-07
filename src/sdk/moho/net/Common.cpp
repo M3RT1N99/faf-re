@@ -858,7 +858,7 @@ INetConnector* moho::NET_MakeUDPConnector(const u_short port, boost::weak_ptr<IN
   sockaddr_in name;
   name.sin_family = AF_INET;
   name.sin_port = ::htons(port);
-  name.sin_addr.S_un.S_addr = ::htonl(0);
+  name.sin_addr.s_addr = ::htonl(0); // winsock2.h: `#define s_addr S_un.S_addr`; BSD in_addr has no S_un
   if (::bind(sock, (SOCKADDR*)&name, sizeof(name)) == SOCKET_ERROR) {
     if (net_DebugLevel != 0) {
       gpg::Logf("NET_MakeUDPConnector: bind(%d) failed: %s", port, NET_GetWinsockErrorString());
@@ -866,7 +866,15 @@ INetConnector* moho::NET_MakeUDPConnector(const u_short port, boost::weak_ptr<IN
     ::closesocket(sock);
     return nullptr;
   }
+#if defined(_WIN32)
   return new CNetUDPConnector{sock, prov};
+#else
+  // Not reached: NET_Init() is false off Windows, where the connectors (Winsock's event model,
+  // CNetUDPConnector.cpp/CNetTCPConnector.cpp) are not ported yet (W2); left out so the Android
+  // link does not need their TUs.
+  ::closesocket(sock);
+  return nullptr;
+#endif
 }
 
 /**
@@ -910,12 +918,18 @@ INetConnector* moho::NET_MakeTCPConnector(const u_short port)
     return nullptr;
   }
 
+#if defined(_WIN32)
   const auto connector = new (std::nothrow) CNetTCPConnector(sock);
   if (!connector) {
     // FA/Moho behavior: allocation failure returns null without closing opened socket.
     return nullptr;
   }
   return connector;
+#else
+  // Not reached, as in NET_MakeUDPConnector above.
+  ::closesocket(sock);
+  return nullptr;
+#endif
 }
 
 /**

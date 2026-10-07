@@ -3,10 +3,15 @@
 // really does pull in the wx dialog family. wx has to be included first: it
 // needs to own the `windows.h` inclusion so that `wx/msw/winundef.h` can drop
 // the `CreateDialog`/`GetClassInfo` macros before the wx class declarations are
-// parsed.
+// parsed. Android has no wxWidgets: there DumpStats keeps the default
+// directory, as if the dialog had been cancelled.
+#if defined(_WIN32)
 #include "platform/WxWidgets.h"
 #include "platform/X87Precision.h"
 #include <wx/dirdlg.h>
+#else
+#include "platform/X87Precision.h"
+#endif
 
 #include "CArmyStats.h"
 
@@ -1014,6 +1019,7 @@ namespace moho
         gpg::STR_Printf("%s/Desktop", std::getenv("USERPROFILE")), 0, msvc8::string::npos
       );
 
+#if defined(_WIN32)
       wxDirDialog directoryDialog(
         nullptr,
         wxT("Dump snap shot data to"),
@@ -1025,6 +1031,7 @@ namespace moho
           gpg::STR_WideToUtf8(directoryDialog.GetPath().c_str()), 0, msvc8::string::npos
         );
       }
+#endif
 
       platform::SetX87PrecisionControl(_PC_24);
     }

@@ -21,6 +21,8 @@
 #include "gpg/core/utils/Global.h"
 #include "gpg/core/utils/Logging.h"
 #include "lua/LuaObject.h"
+#include "moho/console/CConCommand.h"
+#include "moho/lua/CScrLuaInitForm.h"
 #include "moho/math/MathReflection.h"
 #include "moho/misc/LaunchInfoBase.h"
 #include "moho/misc/SessionStartup.h"
@@ -39,11 +41,10 @@
 #include "moho/sim/WldSessionInfo.h"
 #include "platform/X87Precision.h"
 
-#if defined(_WIN32)
+// On Android this is port/engine/shim's <windows.h>: the sync loop's event wait (faf_win_kernel.h).
 #include <windows.h>
 #if defined(_MSC_VER)
 #include <crtdbg.h>
-#endif
 #endif
 
 // Port addition (no binary counterpart): the M3a headless replay runner. See HeadlessReplay.h for
@@ -70,6 +71,7 @@ namespace moho
     {
       std::string mReplayPath;
       std::string mSummaryPath;
+      std::string mRegistryPath;
       int mProgressEvery = 500;
       int mTimeoutSeconds = 120;
       int mGameSpeed = 50;
@@ -375,6 +377,27 @@ namespace moho
       Teardown = 3,
     };
 
+    /**
+     * What the engine's static initialisers registered, counted once the host services are up.
+     * Every entry of these registries comes from a static initialiser in some linked TU, so the
+     * Android runner (M3b), which links a computed subset of the engine
+     * (port/engine/runner/closure.txt), is compared against these numbers: a TU missing from an ELF
+     * link drops its entries without any other symptom. The hashes are FNV-1a over the sorted
+     * names; `/headlessregistry <file>` writes the names themselves, so two runs can be diffed
+     * entry by entry.
+     */
+    struct RegistrySnapshot
+    {
+      bool mTaken = false;
+      int mRTypes = 0;              // gpg::GetRTypeMap() after REF_RegisterAllTypes
+      int mRTypesPreregistered = 0; // gpg::GetRTypePreregisteredMap()
+      int mConsoleCommands = 0;     // CON_GetCommandList: console commands and variables
+      std::map<std::string, std::pair<int, int>> mLuaSets; // init-set name -> {sets, binders}
+      std::uint64_t mRTypeHash = 0;
+      std::uint64_t mLuaHash = 0;
+      std::uint64_t mConsoleHash = 0;
+    };
+
     struct RunState
     {
       std::mutex mLock; // guards the message lists and the log file
@@ -422,6 +445,8 @@ namespace moho
       std::string mPrefsFile;
       std::string mSimWorkers = "default";
       bool mSse2 = false;
+
+      RegistrySnapshot mRegistry;
     };
 
     RunState* sRun = nullptr;
@@ -568,6 +593,27 @@ namespace moho
         "\"sse2\": %s, \"seed\": %u, \"armies\": %d, \"command_sources\": %d},\n", run->mSse2 ? "true" : "false",
         run->mScan.mSeed, run->mScan.mArmies, static_cast<int>(run->mScan.mSourceNames.size())
       );
+      if (const RegistrySnapshot& registry = run->mRegistry; registry.mTaken) {
+        add(
+          "  \"registry\": {\"rtypes\": %d, \"rtypes_preregistered\": %d, \"console_commands\": %d, "
+          "\"lua_sets\": {",
+          registry.mRTypes, registry.mRTypesPreregistered, registry.mConsoleCommands
+        );
+        bool first = true;
+        for (const auto& [setName, counts] : registry.mLuaSets) {
+          json += first ? "\"" : ", \"";
+          json += JsonEscape(setName);
+          add("\": {\"sets\": %d, \"binders\": %d}", counts.first, counts.second);
+          first = false;
+        }
+        add(
+          "}, \"fnv1a\": {\"rtypes\": \"%016llx\", \"lua\": \"%016llx\", \"console\": \"%016llx\"}},\n",
+          static_cast<unsigned long long>(registry.mRTypeHash), static_cast<unsigned long long>(registry.mLuaHash),
+          static_cast<unsigned long long>(registry.mConsoleHash)
+        );
+      } else {
+        json += "  \"registry\": null,\n";
+      }
       addString("end_reason", run->mEndReason);
       add("  \"exit_code\": %d,\n", run->mExitCode);
       add("  \"reached_end\": %s,\n", run->mExitCode == 0 ? "true" : "false");
@@ -884,6 +930,89 @@ namespace moho
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Registry snapshot
+
+    [[nodiscard]] std::uint64_t HashSortedNames(std::vector<std::string>& names)
+    {
+      std::sort(names.begin(), names.end());
+      std::uint64_t hash = 1469598103934665603ull;
+      for (const std::string& name : names) {
+        for (const char c : name) {
+          hash = (hash ^ static_cast<unsigned char>(c)) * 1099511628211ull;
+        }
+        hash = (hash ^ static_cast<unsigned char>('\n')) * 1099511628211ull;
+      }
+      return hash;
+    }
+
+    /**
+     * Reads the three registries the engine fills from static initialisers: reflected types, Lua
+     * binders by init set ("Core", "Sim", "User") and console commands/variables. Read-only; runs
+     * after REF_RegisterAllTypes, when every pre-registered type is registered.
+     */
+    void TakeRegistrySnapshot(RunState& run)
+    {
+      RegistrySnapshot& registry = run.mRegistry;
+
+      std::vector<std::string> rtypes;
+      for (const auto& entry : gpg::GetRTypeMap()) {
+        rtypes.emplace_back(entry.first != nullptr ? entry.first : "");
+      }
+      registry.mRTypes = static_cast<int>(rtypes.size());
+      registry.mRTypesPreregistered = static_cast<int>(gpg::GetRTypePreregisteredMap().size());
+
+      std::vector<std::string> binders;
+      for (CScrLuaInitFormSet* set = CScrLuaInitFormSet::GetFirst(); set != nullptr; set = set->GetNext()) {
+        const std::string setName = (set->mSetName != nullptr) ? set->mSetName : "";
+        std::pair<int, int>& counts = registry.mLuaSets[setName];
+        ++counts.first;
+        for (const CScrLuaInitForm* form = set->mForms; form != nullptr; form = form->mNextInSet) {
+          ++counts.second;
+          binders.push_back(
+            setName + " " + ((form->mGroupName != nullptr) ? form->mGroupName : "") + " " +
+            ((form->mName != nullptr) ? form->mName : "")
+          );
+        }
+      }
+
+      msvc8::string commandList;
+      CON_GetCommandList(commandList, false);
+      std::vector<std::string> commands;
+      for (const char* cursor = commandList.c_str(); *cursor != '\0';) {
+        const char* const end = std::strchr(cursor, '\n');
+        const std::size_t length = (end != nullptr) ? static_cast<std::size_t>(end - cursor) : std::strlen(cursor);
+        if (length > 0) {
+          commands.emplace_back(cursor, length);
+        }
+        cursor += length + ((end != nullptr) ? 1 : 0);
+      }
+      registry.mConsoleCommands = static_cast<int>(commands.size());
+
+      registry.mRTypeHash = HashSortedNames(rtypes);
+      registry.mLuaHash = HashSortedNames(binders);
+      registry.mConsoleHash = HashSortedNames(commands);
+      registry.mTaken = true;
+
+      if (!run.mOptions.mRegistryPath.empty()) {
+        std::FILE* const file = std::fopen(run.mOptions.mRegistryPath.c_str(), "wb");
+        if (file == nullptr) {
+          Out("[headless] cannot write registry dump %s\n", run.mOptions.mRegistryPath.c_str());
+          return;
+        }
+        for (const std::string& name : rtypes) {
+          std::fprintf(file, "rtype %s\n", name.c_str());
+        }
+        for (const std::string& name : binders) {
+          std::fprintf(file, "lua %s\n", name.c_str());
+        }
+        for (const std::string& name : commands) {
+          std::fprintf(file, "console %s\n", name.c_str());
+        }
+        std::fclose(file);
+      }
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // The run
 
     [[nodiscard]] int Run(RunState& run)
@@ -909,6 +1038,12 @@ namespace moho
       gpg::REF_RegisterAllTypes();
       RES_EnsureResourceManager();
       RES_ActivatePendingFactories();
+      TakeRegistrySnapshot(run);
+      Out(
+        "[headless] registry: %d rtypes (%d pre-registered), %d console commands, %d Lua init sets\n",
+        run.mRegistry.mRTypes, run.mRegistry.mRTypesPreregistered, run.mRegistry.mConsoleCommands,
+        static_cast<int>(run.mRegistry.mLuaSets.size())
+      );
       if (!DISK_SetupDataAndSearchPaths(msvc8::string("SupComDataPath.lua"), DISK_GetLaunchDir())) {
         run.mEndReason = "failed to set up the data search path (check /init)";
         return 1;
@@ -1131,14 +1266,9 @@ namespace moho
             // Nothing issued yet; the issue thread is ahead again within a millisecond or two.
             SleepMs(1);
           } else {
-#if defined(_WIN32)
-            // The driver's manual-reset "sync data available" event, as CScApp::Main waits on it.
+            // The driver's manual-reset "sync data available" event, as CScApp::Main waits on it
+            // (on Android through port/engine/shim/faf_win_kernel.h, with the same semantics).
             (void)::WaitForSingleObject(driver->GetSyncDataAvailableEvent(), 100u);
-#else
-            // The Android shim has no Win32 event waits yet (the sim path needs them too; M3b adds
-            // them), so poll. Only the pacing of this loop differs, never what the sim computes.
-            SleepMs(1);
-#endif
           }
         }
       }
@@ -1190,6 +1320,7 @@ namespace moho
       return 1;
     }
     (void)ReadArg("/headlesssummary", run.mOptions.mSummaryPath);
+    (void)ReadArg("/headlessregistry", run.mOptions.mRegistryPath);
     (void)ReadIntArg("/headlessprogress", run.mOptions.mProgressEvery);
     (void)ReadIntArg("/headlesstimeout", run.mOptions.mTimeoutSeconds);
     (void)ReadIntArg("/headlessspeed", run.mOptions.mGameSpeed);

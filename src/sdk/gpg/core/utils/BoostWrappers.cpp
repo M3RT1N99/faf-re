@@ -14,12 +14,16 @@
 #include <boost/thread/tss.hpp>
 
 #include "moho/terrain/TerrainFactory.h"
+#if defined(_WIN32)
+// The D3D9/D3D10 backends exist only on Windows; so do the control-block helpers below that
+// delete their objects.
 #include "gpg/gal/backends/d3d9/EffectTechniqueD3D9.hpp"
 #include "gpg/gal/backends/d3d9/EffectVariableD3D9.hpp"
 #include "gpg/gal/backends/d3d10/EffectD3D10.hpp"
 #include "gpg/gal/backends/d3d10/EffectTechniqueD3D10.hpp"
 #include "gpg/gal/backends/d3d10/EffectVariableD3D10.hpp"
 #include "gpg/gal/backends/d3d10/PipelineStateD3D10.hpp"
+#endif
 #include "moho/animation/CAniPose.h"
 #include "moho/misc/CSaveGameRequestImpl.h"
 #include "moho/misc/LaunchInfoBase.h"
@@ -1742,6 +1746,9 @@ namespace boost
   }
 
 
+#if defined(_WIN32)
+  // IRenTerrain is the renderer's terrain (moho/terrain/TerrainFactory.cpp), which only the
+  // Windows build links; nothing outside it calls this dispose lane.
   /**
    * Address: 0x007FBE60 (FUN_007FBE60, boost::detail::sp_counted_impl_p<Moho::IRenTerrain>::dispose)
    *
@@ -1769,6 +1776,7 @@ namespace boost
     (void)moho::IRenTerrain::DeleteWithFlag(countedImpl->px, 1u);
     countedImpl->px = nullptr;
   }
+#endif
 
   /**
    * Address: 0x00765720 (FUN_00765720, boost::detail::sp_counted_impl_p<Moho::PathPreviewFinder>::dispose)
@@ -1922,6 +1930,8 @@ namespace boost
     countedImpl->px = nullptr;
   }
 
+#if defined(_WIN32)
+  // These delete D3D9/D3D10 backend objects, whose classes exist only on Windows.
   /**
    * Address: 0x009418D0 (FUN_009418D0, boost::detail::sp_counted_impl_p<gpg::gal::EffectTechniqueD3D9>::dispose)
    *
@@ -1977,6 +1987,7 @@ namespace boost
   {
     DisposeSpCountedImplPointee(countedImpl);
   }
+#endif
 
   /**
    * Address: 0x0094E0A0 (FUN_0094E0A0, boost::detail::sp_counted_impl_pd<char*, void (__cdecl*)(void*)>::dispose)

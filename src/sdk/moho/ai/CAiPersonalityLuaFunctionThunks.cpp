@@ -77,6 +77,11 @@ namespace moho
 {
   class CAiPersonality;
 
+  // Also defined in CAiBrainLuaFunctionThunks.cpp:835 and ManipulatorStartupRegistrations.cpp. MSVC
+  // links with /FORCE and keeps the first in link order, CAiBrainLuaFunctionThunks.cpp's (main.pdb
+  // resolves the symbol to CAiBrainLuaFunctionThunks.cpp:836), so every caller here uses that copy and
+  // its fallback set. An ELF link rejects the duplicate; elsewhere this is only the declaration.
+#if defined(_MSC_VER)
   [[nodiscard]] CScrLuaInitFormSet& ClassBinderSimLuaInitSet()
   {
     if (CScrLuaInitFormSet* const set = SCR_FindLuaInitFormSet("Sim"); set != nullptr) {
@@ -86,6 +91,9 @@ namespace moho
     static CScrLuaInitFormSet fallbackSet("Sim");
     return fallbackSet;
   }
+#else
+  [[nodiscard]] CScrLuaInitFormSet& ClassBinderSimLuaInitSet();
+#endif
 
   /**
    * Address: 0x00BCD730 (FUN_00BCD730)

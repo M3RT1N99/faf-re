@@ -9,7 +9,9 @@
 #include <limits>
 #include <typeinfo>
 
+#if defined(_WIN32)
 #include <xmmintrin.h>
+#endif
 
 #include <Windows.h>
 
@@ -1898,6 +1900,11 @@ namespace moho
     return &sNaNCache;
   }
 
+#if defined(_WIN32)
+  // gpg::gal::Math forwards to D3DX (gpg/gal/Matrix.cpp), which exists only on Windows, so the
+  // matrix helpers built on it are Windows-only too. Nothing in the engine calls them yet; a
+  // caller added later fails the Android link instead of computing something else. A portable,
+  // D3DX-exact replacement belongs to W3/W5.
   /**
    * Address: 0x004EE6E0 (FUN_004EE6E0, ?VEC_Mul@Moho@@YA?AUVMatrix4@1@ABU21@0@Z)
    *
@@ -1910,6 +1917,7 @@ namespace moho
     (void)gpg::gal::Math::mul(&result, &rhs, &lhs);
     return result;
   }
+#endif
 
   /**
    * Address: 0x004EE710 (FUN_004EE710, ?VEC_Mul4x3@Moho@@YAXAAUVMatrix4@1@ABU21@1@Z)
@@ -1950,6 +1958,8 @@ namespace moho
     out.r[3].z = ((rhs.r[3].z * lhs22) + (rhs.r[3].y * lhs12) + (rhs.r[3].x * lhs02)) + lhs32;
   }
 
+#if defined(_WIN32)
+  // As VEC_Mul above: D3DX-backed, Windows-only.
   /**
    * Address: 0x004EEC10 (FUN_004EEC10, ?LoadInverse@VMatrix4@Moho@@QAEXXZ)
    *
@@ -2040,6 +2050,7 @@ namespace moho
     d3dRotation.z = rotation.w;
     (void)gpg::gal::Math::rotationQuaternion(this, &d3dRotation);
   }
+#endif
 
   /**
    * Address: 0x00BC6C40 (FUN_00BC6C40, register_AxisAlignedBox3fTypeInfo)
@@ -2191,6 +2202,7 @@ namespace
 {
   [[nodiscard]] bool IsDefaultFloatingPointEnvironment() noexcept
   {
+#if defined(_WIN32)
     const unsigned int mxcsr = _mm_getcsr() & 0x1F80u;
     if (mxcsr != 0x1F80u) {
       return false;
@@ -2198,6 +2210,11 @@ namespace
 
     unsigned int controlWord = 0;
     return _controlfp_s(&controlWord, 0, 0) == 0 && (controlWord & 0x7Fu) == 0x7Fu;
+#else
+    // The MSVC CRT's SSE2 dispatch gate: there is no MXCSR off x86 and no `_controlfp_s` off the
+    // MSVC CRT. Its only caller, `ceil` below, computes the same value on both lanes.
+    return true;
+#endif
   }
 
   [[nodiscard]] double CeilScalarCore(const double value) noexcept
@@ -2232,6 +2249,7 @@ namespace
 #pragma function(acos)
 extern "C" double __cdecl acos(double value)
 {
+#if defined(_WIN32)
   if (global_mode_sse2 != 0) {
     const unsigned int mxcsr = _mm_getcsr() & 0x1F80u;
     if (mxcsr == 0x1F80u) {
@@ -2241,6 +2259,9 @@ extern "C" double __cdecl acos(double value)
       }
     }
   }
+#endif
+  // Off Windows the CRT dispatch gate above does not exist (see IsDefaultFloatingPointEnvironment);
+  // both of its lanes return this same value.
 
   return msvc8::atan2(std::sqrt(1.0 - (value * value)), value);
 }

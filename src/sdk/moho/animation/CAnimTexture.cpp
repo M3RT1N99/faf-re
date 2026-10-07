@@ -190,7 +190,13 @@ namespace moho
     // next numbered file is not on the virtual file system.
     while (true) {
       ID3DDeviceResources::TextureResourceHandle textureResource{};
+#if defined(_WIN32)
       D3D_GetDevice()->GetResources()->GetTexture(textureResource, frameName.c_str(), nullptr, true);
+#endif
+      // Port seam (M3b, docs/port/headless-replay.md, "Android runner"): Android has no D3D9 device
+      // (the renderer is W3), so the frame's texture stays empty there. The frame is still appended
+      // and the loop still stops where the files end, so the frame count is Windows'; only the
+      // renderer reads the textures (the .scmap decals reach this through CWldTerrainDecal::SetName).
       FrameRef loadedFrame{};
       loadedFrame.reset_from_owner(boost::static_pointer_cast<ID3DTextureSheet>(textureResource));
       AppendFrameRef(loadedFrame);

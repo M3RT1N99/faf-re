@@ -26,23 +26,34 @@
 
 #include <Windows.h>
 #include <mmsystem.h>
+#if defined(_WIN32)
 #include <mmreg.h>
 #include <dsound.h>
+#else
+// dsound.h's attenuation floor (-100 dB). CMovieManager keeps its volume in DirectSound units on
+// every platform (MOV_GetVolume reports them), so the constant is needed without the header.
+#define DSBVOLUME_MIN -10000
+#endif
 #include <shellapi.h>
 #include <ShlObj.h>
 #include <Shlwapi.h>
 
 #include "gpg/core/utils/Global.h"
 #include "gpg/core/utils/Logging.h"
+#if defined(_WIN32)
 #include "gpg/gal/backends/d3d10/DeviceD3D10.hpp"
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
+#endif
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/DeviceContext.hpp"
 #include "gpg/gal/Error.hpp"
 #include "gpg/core/reflection/Reflection.h"
 #include "lua/LuaTableIterator.h"
 #include "moho/app/WinApp.h"
+#if defined(_WIN32)
+// wx (W2) and the D3D viewport (W3) exist only on Windows; their uses below are guarded too.
 #include "moho/app/WxRuntimeTypes.h"
+#endif
 #include "moho/client/Localization.h"
 #include "moho/console/CConCommand.h"
 #include "moho/lua/CScrLuaBinder.h"
@@ -54,7 +65,9 @@
 #include "moho/render/d3d/CD3DDevice.h"
 #include "moho/render/RangeRenderer.h"
 #include "moho/render/VisionRenderer.h"
+#if defined(_WIN32)
 #include "moho/render/WRenViewport.h"
+#endif
 #include "moho/misc/LaunchInfoBase.h"
 #include "moho/sim/Sim.h"
 #include "moho/sim/STIMap.h"
@@ -1942,6 +1955,7 @@ moho::Sim* moho::Sim_Create_exxt(const boost::SharedPtrRaw<moho::LaunchInfoBase>
   moho::patch_maxMapHeight = (static_cast<float>(minSample) * 0.0078125f) - 5.0f;
   moho::patch_minMapHeight = static_cast<float>(maxSample) * 0.0078125f;
 
+#if defined(_WIN32)
   // Initialize the active viewport's range/vision renderers.
   if (moho::CD3DDevice* const device = moho::D3D_GetDevice(); device != nullptr) {
     if (moho::WRenViewport* const viewport = device->GetViewport(); viewport != nullptr) {
@@ -1949,6 +1963,12 @@ moho::Sim* moho::Sim_Create_exxt(const boost::SharedPtrRaw<moho::LaunchInfoBase>
       viewport->mVisionRenderer.Init();
     }
   }
+#else
+  // No D3D device or viewport off Windows (W3). The headless runner on Windows takes the same
+  // path: D3D_GetDevice() is the device singleton, but its viewport is null (CD3DDevice.cpp:414)
+  // until CD3DDevice::SetRenViewport (CD3DDevice.cpp:726) binds a window's, so neither ring
+  // renderer is initialised there either.
+#endif
 
   return sim;
 }
@@ -5882,6 +5902,7 @@ void moho::CMovieManager::CreateDirectSound()
     return;
   }
 
+#if defined(_WIN32)
   if (FAILED(::DirectSoundCreate(nullptr, &mDirectSound, nullptr))) {
     gpg::Logf("Failed to create DirectSound.");
     return;
@@ -5913,6 +5934,10 @@ void moho::CMovieManager::CreateDirectSound()
     mDirectSound->Release();
     mDirectSound = nullptr;
   }
+#else
+  // DirectSound exists only on Windows (audio is W4): the middleware runs without sound, as it
+  // does with /nosound.
+#endif
 }
 
 /**
@@ -5942,6 +5967,7 @@ moho::CMovieManager::~CMovieManager()
  */
 void moho::CMovieManager::ReleaseDirectSound()
 {
+#if defined(_WIN32)
   if (mPrimaryBuffer != nullptr) {
     mPrimaryBuffer->Release();
     mPrimaryBuffer = nullptr;
@@ -5950,6 +5976,8 @@ void moho::CMovieManager::ReleaseDirectSound()
     mDirectSound->Release();
     mDirectSound = nullptr;
   }
+#endif
+  // Off Windows CreateDirectSound never sets either pointer, so there is nothing to release.
 }
 
 /**
@@ -6095,7 +6123,12 @@ void moho::USER_SavePreferences()
   const std::wstring preferencesPathWide = gpg::STR_Utf8ToWide(preferencesPathText != nullptr ? preferencesPathText : "");
   const std::wstring temporaryPathWide = preferencesPathWide + L".new";
 
+#if defined(_WIN32)
   std::ofstream outputStream(temporaryPathWide.c_str());
+#else
+  // The wchar_t* constructor is an MSVC extension; libc++ opens the same file by its UTF-8 name.
+  std::ofstream outputStream(gpg::STR_WideToUtf8(temporaryPathWide.c_str()).c_str());
+#endif
   if (!outputStream.is_open()) {
     const std::wstring warningWide = std::wstring(L"Unable to open preference file: ") + temporaryPathWide;
     const msvc8::string warningUtf8 = gpg::STR_WideToUtf8(warningWide.c_str());

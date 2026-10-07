@@ -4,11 +4,13 @@ The engine is `src/sdk`, built on Windows by `src/sdk/main.vcxproj`. This
 directory holds what it takes to compile the same sources with the Android
 NDK for arm64. It is milestone M2 of [the roadmap](../../docs/port/android-roadmap.md)
 (W1.1–W1.2): every translation unit compiles for `aarch64-linux-android`, the
-Windows Win32 and x64 builds stay exactly as they are. Nothing is linked yet.
+Windows Win32 and x64 builds stay exactly as they are. Since M3b the headless
+replay runner also links for Android (`runner/`, [below](#the-headless-replay-runner-m3b)).
 
 | Path | What it is |
 |---|---|
 | `compile_flags.txt` | The arm64 compile flags, plus which Windows-only project defines and include directories to drop |
+| `runner/` | The Android headless replay runner: link closure, entry point, runner-only stand-ins ([runner/README.md](runner/README.md)) |
 | `shim/` | Android-only include directory, never on the Windows include path. `windows.h`, `winsock2.h`, `ws2tcpip.h`, `mmsystem.h`, `intrin.h`, `io.h`, `direct.h`, `sys/timeb.h`, `crtdbg.h` forward to `faf_win_compat.h` (Win32 types, macros, structs, CRT names, 32-bit Interlocked over `__atomic`). `string.h`, `wchar.h`, `ctype.h`, `wctype.h` and `stdlib.h` are interposed (`#include_next` the real header, then `faf_msvc_crt.h` adds the MSVC CRT names), so TUs that never reach `Platform.h` get them too. `boost/thread/xtime.hpp` applies the repo's `TIME_UTC` push/undef/pop patch for clang |
 | `../../scripts/port/engine_sweep.py` | The sweep: compiles every engine TU with these flags and reports what stops each one |
 
@@ -104,6 +106,35 @@ The classes come from a heuristic over the first error's message and location
 everything it needs: a TU often stops on the next problem once the first is
 gone. The sites and the identifier list are exact.
 
+## The headless replay runner (M3b)
+
+`main.exe /headlessreplay` ([docs/port/headless-replay.md](../../docs/port/headless-replay.md))
+links for Android as `libfafengine.so` plus a small `faf_headless_runner` executable:
+
+```sh
+python scripts/port/link_closure.py --check            # closure.txt still matches the Debug|Win32 objects?
+python scripts/port/build_runner.py                    # arm64-v8a -> buildstage/runner/arm64-v8a
+python scripts/port/build_runner.py --abi x86_64       # -> buildstage/runner/x86_64
+python scripts/port/build_runner.py --files moho/sim/Sim.cpp    # recompile one TU, relink
+```
+
+- `scripts/port/link_closure.py` computes which TUs the runner needs from the Debug|Win32 objects
+  (`buildstage/main/Win32/Debug`, so MSBuild Debug|Win32 first): everything `HEADLESS_RunReplay`
+  reaches plus every non-user-side TU with a static initialiser, minus the user side (UI, renderer,
+  sound, wx, live networking, the user session) that cannot be built for Android. It writes
+  `runner/closure.txt` and `buildstage/runner/closure/report.md`.
+- `scripts/port/build_runner.py` compiles those TUs with this sweep's per-TU command plus `-fPIC
+  -ffunction-sections -fdata-sections -g`, the runner's own sources and the WildMagic Foundation
+  subset (from the local `dependencies/WildMagic3p8`), incrementally, and links every object whole
+  with `-Wl,--no-undefined`. `report.md` in the build directory lists compile failures, undefined
+  symbols by the TU that defines them on Windows, and duplicate symbols. About 2 minutes from
+  scratch, seconds when little changed.
+
+Status 2026-10-07: 836 engine + 31 WildMagic TUs, 877 compile units, **0 undefined and 0 duplicate
+symbols** for arm64-v8a and x86_64. The rules below hold for the runner's engine changes too; the
+runner-only stand-ins and the port seams it needs are described in
+[runner/README.md](runner/README.md).
+
 ## Changing the engine for arm64
 
 These rules hold for every change that M2 and later make to `src/sdk` for
@@ -167,3 +198,15 @@ Known ARM hazards found on the way, not fixed yet (M3): `Cluster.cpp:30-60` mirr
 `unsigned long` (8 bytes on LP64; unused today); `Global.cpp`'s TLS callback in `.CRT$XLB` is the
 same ELF trap `GPG_PREREGISTER_INIT` had; `CConCommand.cpp:1505` throws `std::exception(const char*)`,
 which only MSVC's library has.
+
+## Status after M3b
+
+`buildstage/engine-sweep/m3b`: **954 of 1011** TUs compile (main.vcxproj gained
+`moho/app/HeadlessReplay.cpp` in M3a). Over the 1010 TUs both sweeps cover: 896 -> 953, none lost.
+The shim now has the Win32 kernel, file, memory and path primitives the runner needs
+(`faf_win_kernel.h`, `faf_win_file.h`, `faf_win_memory.h`, `faf_win_path.h`, `faf_win_shell.h`),
+and the wx includes of `moho/ui/UiRuntimeTypes.h` are Windows-only, which also unblocks most UI type
+registrations. What stops the other 57 first: wxWidgets 19, D3D/DirectX/XACT 16, engine code 9,
+Win32 APIs without a stand-in 7 (Winsock's event model among them), x86-only headers 3, Windows SDK
+headers 3. Of the M2 hazards above, the TLS callback is now MSVC-only (`Global.cpp`) and
+`CConCommand.cpp` throws `std::runtime_error` off MSVC.

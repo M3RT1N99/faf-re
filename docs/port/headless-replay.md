@@ -89,6 +89,43 @@ the first checkpoint on. The one exception confirms the method: in 26679175 the 
 equals both players' recorded digests, so its first 50 beats are bit-identical to the original
 game. Checksum-clean runs need version-matched data; that is M4.
 
+## Android runner (M3b)
+
+The same code links for Android: `libfafengine.so` (every translation unit the runner reaches,
+including every static initialiser that registers something) plus `faf_headless_runner`, a small
+executable that loads it and calls `faf_headless_main`, the counterpart of WinMain's
+`/headlessreplay` branch. The command line is main.exe's.
+
+```sh
+python scripts/port/build_runner.py                # arm64-v8a -> buildstage/runner/arm64-v8a
+python scripts/port/build_runner.py --abi x86_64   # for WSL and the x86_64 emulator
+```
+
+How the link set is chosen, what stands in for the user side and how to rebuild it is in
+[port/engine/runner/README.md](../../port/engine/runner/README.md). In short:
+
+- **Same code, same order.** The closure is computed from the Windows objects, linked as whole
+  objects in main.vcxproj's order, and every TU that registers Lua binders, reflected types or
+  console variables is in it, except 29 user-side ones that M2's sweep could not build for Android
+  (UI types, `CWldSession`, `UserUnit`, the lobby; 7 of them build since M3b, and linking them is
+  open). None of the 29 registers into the Core or Sim Lua sets. The runner prints the registry
+  sizes at startup and writes them to the summary (`registry`), so an Android run can be checked
+  against the Windows values: `/headlessregistry <file>` dumps every entry for a diff.
+- **The user side** that the code references but the runner never uses is replaced by stand-ins
+  that return what the Windows runner sees (null session, null wx application, no sound engine),
+  or by traps that end the run if they are ever reached.
+- **One deliberate difference:** Android has no D3D9 device, so the map's textures (preview,
+  stratum masks, water map, background, sky cube, environment maps, decal frames) are not created
+  while the map loads, nor the texture `UnitWeapon:DoInstaHit` holds. The Windows runner creates
+  them only because the map loader always does; nothing in the sim reads them, and the .scmap is
+  read byte for byte as on Windows.
+- **Event wait:** the sync loop waits on the driver's "sync data available" event on Android too
+  (port/engine/shim's Win32 events), as on Windows.
+
+Status 2026-10-07: arm64 and x86_64 link with zero undefined and zero duplicate symbols; Windows
+gives the same checkpoint chains as before. The Android runner has not been run yet: that is M3c
+(WSL, emulator, then the phone, with the low-address arena of the roadmap's W1.3).
+
 ## Known issues
 
 - **Sim Lua errors that do not stop the sim:**

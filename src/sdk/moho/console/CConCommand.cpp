@@ -25,9 +25,15 @@
 #include "lua/LuaObject.h"
 #include "lua/LuaRuntimeTypes.h"
 #include "moho/animation/CAniSkel.h"
+// The two wx headers serve only the wx windows the console opens (the log window, the emitter
+// editor) and wxTheApp; Android has no wxWidgets, and there those commands do nothing (see each).
+#if defined(_WIN32)
 #include "moho/app/WEmitterWx.h"
+#endif
 #include "moho/app/WinApp.h"
+#if defined(_WIN32)
 #include "moho/app/WxRuntimeTypes.h"
+#endif
 #include "moho/audio/CUserSoundManager.h"
 #include "moho/audio/IUserSoundManager.h"
 #include "moho/client/Localization.h"
@@ -80,7 +86,9 @@ namespace moho
 {
   void CON_WxInputBox(const msvc8::vector<msvc8::string>& args);
   extern bool sPathDebuggerEnabled;
+#if defined(_WIN32)
   extern CWinLogTarget sLogWindowTarget;
+#endif
 }
 
 namespace moho
@@ -1502,7 +1510,12 @@ void moho::CON_Debug_Crash(const msvc8::vector<msvc8::string>& args)
 void moho::CON_Debug_Throw(const msvc8::vector<msvc8::string>& args)
 {
   (void)args;
+#if defined(_MSC_VER)
   throw std::exception("Hope you really wanted to do this...");
+#else
+  // std::exception(const char*) exists only in MSVC's library; runtime_error carries the same text.
+  throw std::runtime_error("Hope you really wanted to do this...");
+#endif
 }
 
 /**
@@ -2034,7 +2047,12 @@ void moho::UI_DumpControlsUnderCursor(const msvc8::vector<msvc8::string>& args)
  */
 void moho::WIN_AppRequestExit()
 {
+#if defined(_WIN32)
   wxTheApp->ExitMainLoop();
+#else
+  // No wx application, so no main loop to leave (Android has no wxWidgets).
+  gpg::Warnf("WIN_AppRequestExit: no wx application on this platform");
+#endif
 }
 
 /**
@@ -2045,6 +2063,7 @@ void moho::WIN_AppRequestExit()
  */
 void moho::WIN_ToggleLogDialog()
 {
+#if defined(_WIN32)
   WWinLogWindow* dialog = sLogWindowTarget.dialog;
   if (dialog == nullptr) {
     WINX_PrecreateLogWindow();
@@ -2056,6 +2075,10 @@ void moho::WIN_ToggleLogDialog()
   // the state bitfield, which wx 2.4.2 packs as `m_autoLayout:1, m_isShown:1,
   // m_isEnabled:1, ...`. `Show` is the virtual at `[vptr+0x7C]`.
   dialog->Show(!dialog->IsShown());
+#else
+  // The log window is a wx dialog (WxRuntimeTypes.h); Android has no wxWidgets.
+  gpg::Warnf("WIN_ToggleLogDialog: no log window on this platform");
+#endif
 }
 
 /**
@@ -2078,6 +2101,7 @@ void moho::WIN_ShowLogDialog(const msvc8::vector<msvc8::string>& args)
 
   const bool showDialog = std::strcmp(showToken->c_str(), "true") == 0;
 
+#if defined(_WIN32)
   WWinLogWindow* dialog = sLogWindowTarget.dialog;
   if (dialog == nullptr) {
     WINX_PrecreateLogWindow();
@@ -2085,7 +2109,25 @@ void moho::WIN_ShowLogDialog(const msvc8::vector<msvc8::string>& args)
   }
 
   dialog->Show(showDialog);
+#else
+  // The log window is a wx dialog (WxRuntimeTypes.h); Android has no wxWidgets.
+  (void)showDialog;
+  gpg::Warnf("WIN_ShowLogDialog: no log window on this platform");
+#endif
 }
+
+#if !defined(_WIN32)
+/**
+ * The `WxInputBox` console command (gCConFunc_WxInputBox below) without wx.
+ * On Windows it is WxRuntimeTypes.cpp's (0x004FC900), which asks through a wx
+ * dialog; Android has no wxWidgets, so the command stays registered and says so.
+ */
+void moho::CON_WxInputBox(const msvc8::vector<msvc8::string>& args)
+{
+  (void)args;
+  gpg::Warnf("CON_WxInputBox: no wx input box on this platform");
+}
+#endif
 
 /**
  * Address: 0x007B5920 (FUN_007B5920, Moho::CON_ExecutePasteBuffer)
@@ -3402,6 +3444,7 @@ namespace
  */
 void moho::EFX_CreateEmitterWindow(const msvc8::vector<msvc8::string>& args)
 {
+#if defined(_WIN32)
   // The editor is held through a weak pointer for the Show call; the
   // WeakPtr<WWinManagedFrame> Set emission is 0x0066A2A0.
   WeakPtr<WWinManagedFrame> editor;
@@ -3419,6 +3462,11 @@ void moho::EFX_CreateEmitterWindow(const msvc8::vector<msvc8::string>& args)
       : new WEmitterWx(nullptr, spawnPosition, nullptr)
   );
   editor.GetObjectPtr()->Show(true);
+#else
+  // The emitter editor is a wx frame (WEmitterWx.h); Android has no wxWidgets.
+  (void)args;
+  gpg::Warnf("EFX_CreateEmitterWindow: no emitter editor on this platform");
+#endif
 }
 
 namespace

@@ -21,13 +21,23 @@
 //   uint32_t and LONG int32_t, so a structure built from them has the Win32
 //   layout. `long` itself is 8 bytes on LP64 and is not touched; see the
 //   Interlocked section for the one place where that shows.
-// - Functions are implemented only where the meaning is exact and small: time
+// - Functions are implemented where the meaning can be kept: time
 //   (QueryPerformanceCounter, GetTickCount, Sleep), thread ids, the interlocked
-//   family, critical sections, debug output, the environment, Winsock
-//   spellings of BSD socket calls. File, thread, event, window, GDI, Direct3D
-//   and DirectSound APIs are not here. They are the platform layer (W2) and the
-//   renderer (W3); a TU that needs them still fails to compile, and the sweep
-//   lists it under the missing name.
+//   family, critical sections, debug output, the environment and Winsock
+//   spellings of BSD socket calls here; kernel objects, waits, APCs and thread
+//   services in faf_win_kernel.h; virtual memory and heaps in
+//   faf_win_memory.h; files, directories and file mappings in faf_win_file.h
+//   (with Win32 path semantics from faf_win_path.h). Each says what it does not
+//   cover. Window, GDI, input, Direct3D and DirectSound APIs are not here: they
+//   are the platform layer (W2) and the renderer (W3), and a TU that needs them
+//   still fails to compile, with the sweep listing it under the missing name.
+// - The generic (unsuffixed) names that windows.h maps to the A or W form
+//   (CreateFile, CreateEvent, CopyFile, ...) are not defined. The engine calls
+//   the suffixed functions explicitly, and it has members of its own called
+//   CopyFile, RemoveDirectory and CreateEvent (moho/misc/CZipFile.h:149,
+//   moho/misc/CDiskWatch.cpp, moho/net/INetDatagramSocket.h:60) that keep their
+//   names this way; platform/Platform.h undefines CreateEvent on Windows for
+//   the same reason.
 // - API functions have C linkage, as windows.h declares them. Overloads that
 //   Windows does not have (the `volatile long*` Interlocked forms, Winsock's
 //   `int*` lengths beside POSIX's `socklen_t*`) are C++.
@@ -1029,5 +1039,9 @@ typedef struct _D3DVIEWPORT9 {
 FAF_COMPAT_CHECK(sizeof(D3DVIEWPORT9) == 24, "d3d9types.h D3DVIEWPORT9 layout");
 
 } // extern "C++"
+
+#include "faf_win_kernel.h"
+#include "faf_win_memory.h"
+#include "faf_win_file.h"
 
 #undef FAF_COMPAT_CHECK

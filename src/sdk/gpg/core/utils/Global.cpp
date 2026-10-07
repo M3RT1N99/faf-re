@@ -1648,7 +1648,13 @@ namespace
  *
  * Registering the real callback fixes both: the reason code is whatever Windows
  * passes, and every thread exit runs it.
+ *
+ * Port: only the PE loader walks `.CRT$XLB`; on ELF the entry would be plain
+ * data that nothing calls (the trap `GPG_PREREGISTER_INIT` had, StaticInitPhase.h).
+ * Nothing needs it there: off Windows the engine allocator never runs (see
+ * `ProbeHeapModeSelected`), so there is no thread cache to flush.
  */
+#if defined(_MSC_VER)
 #if defined(_M_IX86)
 #pragma comment(linker, "/INCLUDE:__tls_used")
 #pragma comment(linker, "/INCLUDE:_gAllocatorTlsCallbackEntry")
@@ -1659,6 +1665,7 @@ namespace
 #pragma const_seg(".CRT$XLB")
 extern "C" const PIMAGE_TLS_CALLBACK gAllocatorTlsCallbackEntry = &TlsCallback_1;
 #pragma const_seg()
+#endif
 
 // 0x0093EDE0
 void gpg::HandleAssertFailure(const char* msg, int line, const char* file)
@@ -1727,6 +1734,19 @@ gpg::mem_hook_t gpg::GetMemHook()
 
 extern "C" void* __cdecl malloc_0(std::uint32_t size);
 
+/*
+ * Port: off Windows this file does not define `malloc`, `free`, `_msize` or the
+ * global `operator new`/`operator delete` family (each `#if defined(_WIN32)`
+ * below). Those replace the C runtime's allocator for the whole process; on
+ * Android the C library's allocator stays in place (the M3c low arena
+ * interposes it from the runner executable, docs/port/android-roadmap.md W1.3).
+ * The engine's own entry points stay: `malloc_0`, `msize`, `realloc_0`,
+ * `_expand` and `free_crt` run the system-heap path every non-x86 target takes
+ * (`ProbeHeapModeSelected`: `HeapAlloc` on the process heap, which the shim
+ * maps to the C library), exactly as x64 does, and where they call `free` they
+ * reach the C library's.
+ */
+#if defined(_WIN32)
 /**
  * Address: 0x00957A70 (FUN_00957A70, malloc)
  *
@@ -1737,6 +1757,7 @@ extern "C" void* __cdecl malloc(size_t size)
 {
     return malloc_0(static_cast<std::uint32_t>(size));
 }
+#endif
 
 /**
  * Address: 0x00958B20 (FUN_00958B20, malloc_0)
@@ -1887,6 +1908,7 @@ extern "C" void* __cdecl malloc_0(const std::uint32_t size)
     return allocation;
 }
 
+#if defined(_WIN32)
 /**
  * Address: 0x00958C40 (FUN_00958C40, free)
  *
@@ -2040,6 +2062,7 @@ extern "C" void __cdecl free(void* ptr)
         ::LeaveCriticalSection(&gAllocatorSentinel);
     }
 }
+#endif
 
 /**
  * Address: 0x00957EA0 (FUN_00957EA0, msize)
@@ -2089,6 +2112,7 @@ extern "C" size_t __cdecl msize(void* memblock)
     return 0;
 }
 
+#if defined(_WIN32)
 /**
  * Address: 0x00957AE0 (FUN_00957AE0, _msize)
  *
@@ -2099,6 +2123,7 @@ extern "C" size_t __cdecl _msize(void* memblock)
 {
     return msize(memblock);
 }
+#endif
 
 /**
  * Address: 0x00957B00 (FUN_00957B00, realloc)
@@ -2188,6 +2213,7 @@ extern "C" void __cdecl free_crt(void* const ptr)
     free(ptr);
 }
 
+#if defined(_WIN32)
 /**
  * Address: 0x00A825B9 (FUN_00A825B9, ??2@YAPAXI@Z)
  * Mangled: ??2@YAPAXI@Z
@@ -2296,6 +2322,7 @@ void* __cdecl operator new[](const std::size_t size)
 {
     return ::operator new(size);
 }
+#endif
 
 /**
  * Address: 0x00958D60 (FUN_00958D60, func_GetHeapInfo)
@@ -2408,6 +2435,7 @@ void gpg::SetThreadName(const unsigned int id, const char* const name)
     payload.threadId = id;
     payload.flags = 0u;
 
+#if defined(_MSC_VER)
     __try {
         ::RaiseException(
           0x406D1388u,
@@ -2417,4 +2445,10 @@ void gpg::SetThreadName(const unsigned int id, const char* const name)
         );
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
+#else
+    // Port: 0x406D1388 only names the thread for an attached Windows debugger
+    // and is swallowed otherwise; there is no SEH and no such debugger
+    // protocol off Windows.
+    (void)payload;
+#endif
 }

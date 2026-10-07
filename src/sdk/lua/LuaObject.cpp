@@ -71,8 +71,13 @@ extern "C" void __cdecl _free_crt(void* const ptr)
  * `__imp___iob`. Provide a private backing array so the link resolves; the
  * streams are not functional — callers that actually use them will route
  * through `__iob_func()` above which dispatches to UCRT at runtime.
+ *
+ * Windows only, like `__iob_func` below: both exist for the MSVC link, and bionic's `FILE` is
+ * opaque, so no array of it can be defined there.
  */
+#if defined(_WIN32)
 extern "C" __declspec(selectany) std::FILE _iob[20]{};
+#endif
 
 /**
  * Legacy CRT errno-mapping thunk.
@@ -94,6 +99,7 @@ extern "C" void __cdecl _dosmaperr(unsigned long) {}
  * falls back to a static placeholder array if the symbol is unavailable.
  * Provided here because UCRT does not export `__iob_func` directly.
  */
+#if defined(_WIN32)
 extern "C" std::FILE* __cdecl __iob_func(void)
 {
 	using AcrtIobFunc = std::FILE* (__cdecl*)(unsigned int);
@@ -114,6 +120,7 @@ extern "C" std::FILE* __cdecl __iob_func(void)
 	static std::FILE sLegacyIobFallback[20]{};
 	return sLegacyIobFallback;
 }
+#endif
 
 // FUN_00923F20 / FUN_00923F40 are recovered once, further down this file, as
 // the `extern "C"` pair that `luaHelper_Realloc` / `luaHelper_Free` point at.
@@ -9026,6 +9033,7 @@ namespace
 	{
 		char inputBuffer[kLuaDebugInputBufferSize]{};
 
+#if defined(_WIN32)
 		std::FILE* ioBase = __iob_func();
 		std::fputs(kLuaDebugPrompt, &ioBase[2]);
 
@@ -9033,6 +9041,14 @@ namespace
 		if (std::fgets(inputBuffer, kLuaDebugReadLineLimit, &ioBase[0]) == nullptr) {
 			return 0;
 		}
+#else
+		// bionic's FILE is opaque, so the `_iob[]` lanes cannot be indexed: `_iob[0]` is stdin,
+		// `_iob[2]` stderr.
+		std::fputs(kLuaDebugPrompt, stderr);
+		if (std::fgets(inputBuffer, kLuaDebugReadLineLimit, stdin) == nullptr) {
+			return 0;
+		}
+#endif
 
 		do {
 			if (std::strcmp(inputBuffer, kLuaDebugContinueToken) == 0) {
@@ -9042,10 +9058,15 @@ namespace
 			lua_dostring(state, inputBuffer);
 			lua_settop(state, 0);
 
+#if defined(_WIN32)
 			ioBase = __iob_func();
 			std::fputs(kLuaDebugPrompt, &ioBase[2]);
 			ioBase = __iob_func();
 		} while (std::fgets(inputBuffer, kLuaDebugReadLineLimit, &ioBase[0]) != nullptr);
+#else
+			std::fputs(kLuaDebugPrompt, stderr);
+		} while (std::fgets(inputBuffer, kLuaDebugReadLineLimit, stdin) != nullptr);
+#endif
 
 		return 0;
 	}

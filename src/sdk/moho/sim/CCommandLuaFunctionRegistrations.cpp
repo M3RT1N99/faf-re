@@ -22,7 +22,9 @@
 #include "moho/ai/CAiTarget.h"
 #include "moho/ai/IAiTransport.h"
 #include "moho/ai/IAiBuilder.h"
+#if defined(_WIN32)
 #include "moho/app/WxRuntimeTypes.h"
+#endif
 #include "moho/app/WxUrl.h"
 #include "moho/client/Localization.h"
 #include "moho/command/SSTICommandIssueData.h"
@@ -41,7 +43,9 @@
 #include "moho/resource/blueprints/RUnitBlueprint.h"
 #include "moho/render/RCamManager.h"
 #include "moho/render/RangeRenderer.h"
+#if defined(_WIN32)
 #include "moho/render/WRenViewport.h"
+#endif
 #include "moho/render/camera/CameraImpl.h"
 #include "moho/script/CScriptEvent.h"
 #include "moho/script/CScriptObject.h"
@@ -3640,6 +3644,7 @@ namespace moho
       LuaPlus::LuaState::Error(state, kLuaExpectedArgsWarning, kSetOverlayFilterHelpText, 9, argumentCount);
     }
 
+#if defined(_WIN32)
     if (moho::WLD_GetActiveSession() == nullptr || moho::ren_Viewport == nullptr) {
       return 0;
     }
@@ -3692,6 +3697,11 @@ namespace moho
       innerRingParams,
       outerRingParams
     );
+#else
+    // There is no render viewport off Windows (WRenViewport.h: wx and D3D, W2/W3). This returns
+    // where the branch above returns for a null `ren_Viewport`, before reading any argument; in
+    // the Windows headless runner `ren_Viewport` is always null, since no viewport is created.
+#endif
 
     return 0;
   }

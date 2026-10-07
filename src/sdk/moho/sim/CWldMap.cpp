@@ -1452,6 +1452,7 @@ namespace moho
 
       TickLoadingProgress(loadControl);
 
+#if defined(_WIN32)
       CD3DDevice* const device = D3D_GetDevice();
       ID3DDeviceResources* const resources = device->GetResources();
       resources->GetTextureSheet(
@@ -1460,14 +1461,27 @@ namespace moho
         static_cast<void*>(payloadBytes.data()),
         payloadBytes.size()
       );
+#endif
     } else {
+#if defined(_WIN32)
       CD3DDevice* const device = D3D_GetDevice();
       ID3DDeviceResources* const resources = device->GetResources();
       resources->GetTexture(previewTexture, kFallbackPreviewTexture, 0, true);
+#endif
     }
 
     mPreviewTexture = boost::static_pointer_cast<ID3DTextureSheet>(previewTexture);
+#if defined(_WIN32)
     return mPreviewTexture.get() != nullptr;
+#else
+    // Port seam (M3b, docs/port/headless-replay.md, "Android runner"): Android has no D3D9 device
+    // (the renderer is W3), so the map's texture sheets are not created there; only the renderer
+    // reads them, and every byte of the .scmap is still read as on Windows. With a device a stored
+    // preview always succeeds (GetTextureSheet wraps the payload in a new RD3DTextureResource,
+    // CD3DDeviceResources.cpp:538); only a map without one depends on the fallback texture
+    // (kFallbackPreviewTexture), which Android does not load and treats as found.
+    return true;
+#endif
   }
 
   /**
@@ -1607,11 +1621,13 @@ namespace moho
     view->mBackgroundFile = texturePath;
 
     ID3DDeviceResources::TextureResourceHandle texture{};
+#if defined(_WIN32) // port seam: no D3D9 device off Windows, see RWldMapPreviewChunk::Load
     if (CD3DDevice* const device = D3D_GetDevice(); device != nullptr) {
       if (ID3DDeviceResources* const resources = device->GetResources(); resources != nullptr) {
         resources->GetTexture(texture, texturePath.c_str(), 0, true);
       }
     }
+#endif
 
     view->mBackgroundTexture = texture;
   }
@@ -1629,11 +1645,13 @@ namespace moho
     view->mSkycubeFile = texturePath;
 
     ID3DDeviceResources::TextureResourceHandle texture{};
+#if defined(_WIN32) // port seam: no D3D9 device off Windows, see RWldMapPreviewChunk::Load
     if (CD3DDevice* const device = D3D_GetDevice(); device != nullptr) {
       if (ID3DDeviceResources* const resources = device->GetResources(); resources != nullptr) {
         resources->GetTexture(texture, texturePath.c_str(), 0, true);
       }
     }
+#endif
 
     view->mSkycubeTexture = texture;
   }
@@ -1706,11 +1724,13 @@ namespace moho
   void CWldTerrainRes::AddEnvLookup(const msvc8::string& environmentKey, const msvc8::string& texturePath)
   {
     ID3DDeviceResources::TextureResourceHandle texture;
+#if defined(_WIN32) // port seam: no D3D9 device off Windows, see RWldMapPreviewChunk::Load
     if (CD3DDevice* const device = D3D_GetDevice(); device != nullptr) {
       if (ID3DDeviceResources* const resources = device->GetResources(); resources != nullptr) {
         resources->GetTexture(texture, texturePath.c_str(), 0, true);
       }
     }
+#endif
 
     moho::TerrainEnvironmentLookupMap& map = mEnvLookup;
     map[environmentKey] = moho::TerrainEnvironmentLookupEntry(texturePath, texture);
@@ -3740,7 +3760,13 @@ namespace moho
     // object captured at entry (mirrors the SetBackground/SetSkycube idiom), not
     // the water-map block's D3D_GetDevice() static singleton (asm 0x8A222A reads
     // the entry-bound resources lane, distinct from the 0x8A282C static guard).
+#if defined(_WIN32)
     CD3DDevice* const entryDevice = D3D_GetDevice();
+#else
+    // Port seam: no D3D9 device off Windows (see RWldMapPreviewChunk::Load), so the mask and
+    // water-map sheets below stay empty; their payloads are still read from the stream.
+    CD3DDevice* const entryDevice = nullptr;
+#endif
     ID3DDeviceResources* const maskResources =
       entryDevice != nullptr ? entryDevice->GetResources() : nullptr;
 
@@ -4012,7 +4038,11 @@ namespace moho
 
         const msvc8::string sheetLocation = gpg::STR_Printf("_utilityc%d.dds", waterMapIndex);
         if (waterMapIndex == 0) {
+#if defined(_WIN32)
           CD3DDevice* const device = D3D_GetDevice();
+#else
+          CD3DDevice* const device = nullptr; // port seam, as `entryDevice` above
+#endif
           ID3DDeviceResources* const resources = device != nullptr ? device->GetResources() : nullptr;
           ID3DDeviceResources::TextureResourceHandle sheet{};
           if (resources != nullptr) {

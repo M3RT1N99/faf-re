@@ -58,12 +58,16 @@
 #include "moho/audio/CSimSoundManager.h"
 #include "moho/audio/CSndParams.h"
 #include "moho/audio/HSound.h"
+// wx only for the reflection editor dialog (REF_CreateEditDialog) and cfunc_ExitApplication's
+// wxTheApp. Android has no wxWidgets; there both do nothing (see each).
+#if defined(_WIN32)
 #include "platform/WxWidgets.h"
 #include <wx/app.h>
 #include <wx/dialog.h>
 #include <wx/sizer.h>
 #include <wx/treectrl.h>
 #include <wx/treelistctrl.h>
+#endif
 #include "moho/command/CCommandDb.h"
 #include "moho/command/CommandIssueHelper.h"
 #include "moho/sim/BuildQueueCommandDecrement.h"
@@ -180,6 +184,7 @@ bool moho::sim_ShowDamage = false;
 
 namespace moho
 {
+#if defined(_WIN32)
   /**
    * Address: 0x004A47C0 (FUN_004A47C0, ?REF_CreateEditDialog@Moho@@YAXPAVwxWindow@@ABVRRef@gpg@@PBD_N@Z)
    *
@@ -326,6 +331,7 @@ namespace moho
   static_assert(offsetof(WRefEditDialog, mTree) == 0x170, "WRefEditDialog::mTree offset must be 0x170");
   static_assert(offsetof(WRefEditDialog, mActiveItem) == 0x174, "WRefEditDialog::mActiveItem offset must be 0x174");
   static_assert(sizeof(WRefEditDialog) == 0x178, "WRefEditDialog size must be 0x178");
+#endif
 
   struct CPrfTimeLogItem
   {
@@ -359,6 +365,7 @@ moho::CPrfTimeLogItem::~CPrfTimeLogItem()
   gpg::Logf(messageFormat, gpg::time::CyclesToSeconds(timer.ElapsedCycles()) * scale);
 }
 
+#if defined(_WIN32)
 namespace
 {
   // wxTR_ROW_LINES | wxTR_EDIT_LABELS on top of the watch panes' style: a
@@ -532,6 +539,7 @@ void moho::REF_CreateEditDialog(
   WRefEditDialog* const dialog = new WRefEditDialog(ref, name);
   dialog->Show(true);
 }
+#endif // the wx reflection editor
 
 namespace
 {
@@ -11028,9 +11036,15 @@ void moho::func_SC_CreateEntityDialog_chunk()
   }
 
   gpg::RRef blueprintRef(const_cast<RUnitBlueprint*>(blueprint), gpg::LookupRType(typeid(RUnitBlueprint)));
+#if defined(_WIN32)
   // The binary passes only the reference and the name (0x008D40FC): the
   // parent and the flag are dropped, so their values are not recorded.
   REF_CreateEditDialog(nullptr, blueprintRef, blueprint->mBlueprintId.c_str(), false);
+#else
+  // The editor is a wx dialog (see REF_CreateEditDialog); Android has no wxWidgets.
+  (void)blueprintRef;
+  gpg::Warnf("SC_CreateEntityDialog: no reflection editor on this platform");
+#endif
 }
 
 namespace
@@ -16500,7 +16514,12 @@ int moho::cfunc_ExitApplication(lua_State* const luaContext)
     LuaPlus::LuaState::Error(state, kLuaExpectedArgsWarning, kExitApplicationHelpText, 0, argumentCount);
   }
 
+#if defined(_WIN32)
   wxTheApp->ExitMainLoop();
+#else
+  // A User-set binder: no wx application, so no main loop to leave (Android has no wxWidgets).
+  gpg::Warnf("ExitApplication: no wx application on this platform");
+#endif
   return 0;
 }
 

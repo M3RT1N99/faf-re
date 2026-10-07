@@ -2118,9 +2118,16 @@ namespace
 
     using LockOps_004AEF30 = boost::detail::thread::lock_ops<boost::recursive_mutex>;
     LockOps_004AEF30::lock_state state{};
+#if defined(BOOST_HAS_PTHREADS)
+    // boost 1.34's pthread condition_impl has no enter_wait(): do_wait() takes the mutex the
+    // unlock handed back in the cv_state, as boost::condition::do_wait does (condition.hpp:147-157).
+    LockOps_004AEF30::unlock(*scopedLock->mutex, state);
+    conditionImpl->do_wait(state.pmutex);
+#else
     conditionImpl->enter_wait();
     LockOps_004AEF30::unlock(*scopedLock->mutex, state);
     conditionImpl->do_wait();
+#endif
     LockOps_004AEF30::lock(*scopedLock->mutex, state);
   }
 

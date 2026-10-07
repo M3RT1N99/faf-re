@@ -55,6 +55,10 @@ namespace moho::resource_reflection
     return ResolveCachedType(moho::IResources::sType, typeid(moho::IResources));
   }
 
+#if defined(_WIN32)
+  // RD3DTextureResource is the D3D9 texture resource (moho/render/d3d, W3); its type_info and sType
+  // live there. Its only callers are the D3D9 device resources and texture factory
+  // (CD3DDeviceResources.cpp, CD3DTextureResourceFactory.cpp), which only Windows builds.
   /**
    * Address: 0x004441C0 (FUN_004441C0)
    *
@@ -65,6 +69,7 @@ namespace moho::resource_reflection
   {
     return ResolveCachedType(moho::RD3DTextureResource::sType, typeid(moho::RD3DTextureResource));
   }
+#endif
 
   /**
    * Address: 0x00444200 (FUN_00444200)

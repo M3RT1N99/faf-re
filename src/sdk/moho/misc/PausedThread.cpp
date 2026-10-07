@@ -8,7 +8,10 @@
 #endif
 #include <Windows.h>
 
+// wx only for wxTheApp in WaitUntilResumedAndDelete; Android has no wxWidgets (see there).
+#if defined(_WIN32)
 #include "moho/app/WxRuntimeTypes.h"
+#endif
 
 namespace moho
 {
@@ -78,6 +81,7 @@ int moho::PausedMainThread::GetPauseContextB() const
  */
 std::uintptr_t moho::PausedMainThread::WaitUntilResumedAndDelete()
 {
+#if defined(_WIN32)
   bool processIdle = true;
   while (::WaitForSingleObject(static_cast<HANDLE>(mResumeEvent), 0) != WAIT_OBJECT_0) {
     if (wxTheApp != nullptr && wxTheApp->Pending()) {
@@ -90,6 +94,11 @@ std::uintptr_t moho::PausedMainThread::WaitUntilResumedAndDelete()
       processIdle = wxTheApp->ProcessIdle();
     }
   }
+#else
+  // Without wx (Android) there is no application object to pump: the loop above with wxTheApp null.
+  while (::WaitForSingleObject(static_cast<HANDLE>(mResumeEvent), 0) != WAIT_OBJECT_0) {
+  }
+#endif
 
   const std::uintptr_t deletedAddress = reinterpret_cast<std::uintptr_t>(this);
   delete this;

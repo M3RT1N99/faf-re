@@ -1150,7 +1150,13 @@ msvc8::string gpg::STR_Printf(
  */
 msvc8::string gpg::STR_Va(
   const char*& fmt,
+#if defined(_MSC_VER)
   const va_list va
+#else
+  // x86_64 SysV: va_list is an array type, so `const` would reach the decayed pointer's target and
+  // the definition would no longer match String.h's declaration.
+  va_list va
+#endif
 )
 {
   // Build through msvc8::string's concatenation path, not append().
@@ -1181,14 +1187,32 @@ msvc8::string gpg::STR_Va(
   };
 
   char stackBuffer[256]{};
+#if defined(_MSC_VER)
   int formattedLength = std::vsnprintf(stackBuffer, sizeof(stackBuffer), fmt, va);
+#else
+  // MSVC's va_list is a plain pointer passed by value, so every attempt starts again at the first
+  // argument. Elsewhere C requires a va_copy for every read (on x86_64 vsnprintf consumes the
+  // caller's va_list through a pointer, and the retry would format garbage).
+  const auto formatCopy = [&](char* const buffer, const std::size_t capacity) {
+    va_list args;
+    va_copy(args, va);
+    const int written = std::vsnprintf(buffer, capacity, fmt, args);
+    va_end(args);
+    return written;
+  };
+  int formattedLength = formatCopy(stackBuffer, sizeof(stackBuffer));
+#endif
   if (didNotFit(formattedLength, sizeof(stackBuffer))) {
     msvc8::vector<char> dynamicBuffer{};
     std::size_t capacity = sizeof(stackBuffer);
     do {
       capacity *= 2;
       dynamicBuffer.resize(capacity, 0);
+#if defined(_MSC_VER)
       formattedLength = std::vsnprintf(dynamicBuffer.data(), capacity, fmt, va);
+#else
+      formattedLength = formatCopy(dynamicBuffer.data(), capacity);
+#endif
       if (formattedLength < 0) {
         // `_vsnprintf` only ever returned -1 for truncation, so the binary's
         // loop always terminated. The C99 function also returns negative for a

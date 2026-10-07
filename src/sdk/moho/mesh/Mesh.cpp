@@ -13,6 +13,12 @@
 #include <set>
 #include <stdexcept>
 
+// FAF_PORT_MESH_SPATIAL_DB_ONLY: only the Android headless runner defines it
+// (port/engine/runner/MeshSpatialDb.cpp), to compile this file's SpatialDB
+// templates and their explicit instantiations without the D3D9 renderer: the
+// .scmap load builds SpatialDB<WaveGenerator> (WaveSystem::Load) and
+// SpatialDB<CWldTerrainDecal> (CDecalManager::Load). main.exe never defines it.
+#if !defined(FAF_PORT_MESH_SPATIAL_DB_ONLY)
 #include "boost/shared_ptr.h"
 #include "boost/weak_ptr.h"
 #include "gpg/gal/backends/d3d9/TextureD3D9.hpp"
@@ -48,7 +54,15 @@
 #include "gpg/gal/MeshFormatter.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/render/d3d/CD3DRenderTarget.h"
+#else
+#include "moho/collision/CGeomSolid3.h"
+#include "moho/math/MathReflection.h"
+#include "moho/math/Vector4f.h"
+#include "moho/mesh/SpatialDb.h"
+#include "moho/render/camera/GeomCamera3.h"
+#endif
 
+#if !defined(FAF_PORT_MESH_SPATIAL_DB_ONLY)
 extern "C" int FafProbeFrameSeq(); extern "C" int FafProbeFrameDiag(); // TEMPORARY PROBE (do not commit)
 namespace { // TEMPORARY PROBE (do not commit)
   // TEMPORARY PROBE (do not commit): describe a native IDirect3DTexture9 (level 0).
@@ -234,6 +248,7 @@ namespace moho
   // moho/mesh/SpatialDb.h, so the owners that embed a SpatialDB<T> by value
   // can see its layout. Their bodies stay in this file.
 } // namespace moho
+#endif
 
 namespace
 {
@@ -863,6 +878,7 @@ namespace
     return ResolveSpatialLeafDataForPoint(storage.mShards[topIndex], point.z, point.x);
   }
 
+#if !defined(FAF_PORT_MESH_SPATIAL_DB_ONLY)
   [[nodiscard]] moho::VTransform IdentityTransform() noexcept
   {
     moho::VTransform transform{};
@@ -983,6 +999,7 @@ namespace
       }
     }
   }
+#endif
 } // namespace
 
 namespace moho
@@ -2100,6 +2117,7 @@ namespace moho
     return static_cast<std::int32_t>(destination.size());
   }
 
+#if !defined(FAF_PORT_MESH_SPATIAL_DB_ONLY)
 
   /**
    * Address: 0x007DBEE0 (FUN_007DBEE0, ??0MeshMaterial@Moho@@QAE@XZ)
@@ -5362,6 +5380,7 @@ namespace moho
   {
     out.reset(raw, MeshCacheEvictingDeleter{&tree, key});
   }
+#endif
 
   // MSVC emits one out-of-line body per (template, element type), and this
   // binary carries exactly two of each: the renderer's SpatialDB<MeshInstance>

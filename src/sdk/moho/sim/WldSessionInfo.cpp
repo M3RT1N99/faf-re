@@ -233,7 +233,13 @@ namespace moho
     , mDisposeAfterWorkerExit(false)
     , pad_6D{}
   {
+#if defined(_WIN32)
     mMutex.init_critical_section();
+#else
+    // Sync.h has no CRITICAL_SECTION off Windows; its recursive pthread mutex has the same
+    // re-entrant lock semantics.
+    mMutex.init_portable();
+#endif
     mCallback.Bind(entryPoint, owner);
   }
 

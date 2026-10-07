@@ -1,3 +1,7 @@
+// A wx event for the Lua debugger window (ScrDebugWindow), posted only by ScrDebugHooks while that
+// window is open. Android has no wxWidgets, so there the TU is empty: its one static initialiser is
+// wxNewEventType(), not a Lua, RType or console registration.
+#if defined(_WIN32)
 #include "moho/misc/ScrPauseEvent.h"
 
 /**
@@ -22,3 +26,4 @@ wxEvent* moho::ScrPauseEvent::Clone() const
 {
   return new ScrPauseEvent(*this);
 }
+#endif

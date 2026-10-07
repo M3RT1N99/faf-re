@@ -2,6 +2,10 @@
 
 #include "platform/Platform.h"
 
+// D3DX exists only on Windows. On other targets only `mul` is built, with a portable body: the sim
+// reaches it (CEfxEmitter::InterpolatePosition, CEfxEmitter.cpp:443, for effects attached to a bone,
+// from CEffectImpl::SetBone and CEffectManagerImpl::Tick); the other wrappers have no caller there.
+#if defined(_WIN32)
 extern "C"
 {
   moho::VMatrix4* WINAPI D3DXMatrixMultiply(
@@ -31,6 +35,7 @@ extern "C"
     const Wm3::Quaternionf* rotation
   );
 }
+#endif
 
 namespace gpg::gal::Math
 {
@@ -43,10 +48,28 @@ namespace gpg::gal::Math
    */
   Matrix* mul(Matrix* const outMatrix, const Matrix* const lhs, const Matrix* const rhs)
   {
+#if defined(_WIN32)
     D3DXMatrixMultiply(outMatrix, lhs, rhs);
+#else
+    // D3DXMatrixMultiply's contract: out = lhs * rhs over row vectors, out[i][j] = sum over k of
+    // lhs[i][k] * rhs[k][j], and `outMatrix` may alias either input (hence the copies). Single
+    // precision, summed k = 0..3 left to right, no fused multiply-add (-ffp-contract=off). Not
+    // proven bit-exact against d3dx9's CPU-dispatched implementation (W5).
+    const Matrix a = *lhs;
+    const Matrix b = *rhs;
+    for (int row = 0; row < 4; ++row) {
+      const moho::Vector4f& l = a.r[row];
+      moho::Vector4f& o = outMatrix->r[row];
+      o.x = l.x * b.r[0].x + l.y * b.r[1].x + l.z * b.r[2].x + l.w * b.r[3].x;
+      o.y = l.x * b.r[0].y + l.y * b.r[1].y + l.z * b.r[2].y + l.w * b.r[3].y;
+      o.z = l.x * b.r[0].z + l.y * b.r[1].z + l.z * b.r[2].z + l.w * b.r[3].z;
+      o.w = l.x * b.r[0].w + l.y * b.r[1].w + l.z * b.r[2].w + l.w * b.r[3].w;
+    }
+#endif
     return outMatrix;
   }
 
+#if defined(_WIN32)
   /**
    * Address: 0x009406B0 (FUN_009406B0, ?invert@Math@gal@gpg@@YAPBUMatrix@23@PAU423@PBU423@@Z)
    *
@@ -187,4 +210,5 @@ namespace gpg::gal::Math
     D3DXMatrixRotationQuaternion(outMatrix, rotation);
     return outMatrix;
   }
+#endif
 } // namespace gpg::gal::Math

@@ -878,7 +878,17 @@ RType* CachedRBlueprintType()
 
     const std::type_info* runtimeTypeInfo = nullptr;
     try {
+#if defined(_MSC_VER)
       runtimeTypeInfo = static_cast<const std::type_info*>(__RTtypeid(static_cast<void*>(object)));
+#else
+      // __RTtypeid is the MSVC runtime's typeid(*p) for a vfptr at offset 0: vfptr[-1] is the
+      // complete object locator, and it returns that locator's type descriptor. TObject is only
+      // declared in this TU (CRotateManipulator, CEfxEmitter, ...), which rules out typeid(*object).
+      // The Itanium C++ ABI keeps the complete object's type_info at vptr[-1], and a dynamic class
+      // always has its vptr at offset 0, so this reads the same record the same way.
+      runtimeTypeInfo =
+        static_cast<const std::type_info*>((*reinterpret_cast<void* const* const*>(object))[-1]);
+#endif
     } catch (...) {
       runtimeTypeInfo = nullptr;
     }

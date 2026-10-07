@@ -32,8 +32,8 @@ L4 is the goal. L2 is the first point where the port is fun to use. L3 is the fi
   translation unit for `aarch64-linux-android`: 276 of 1010 compiled at the start of M2, **896 of
   1010** after it, with the Windows build unchanged (same warnings; 1002 of 1010 MSVC objects
   byte-identical, the other 8 differ only in `__LINE__`). The 114 that still fail are wxWidgets,
-  D3D, Win32/Winsock calls and four SIMD headers: platform layer and renderer work. No arm64 link
-  has been attempted. See [port/engine/README.md](../../port/engine/README.md).
+  D3D, Win32/Winsock calls and four SIMD headers: platform layer and renderer work. M2 linked
+  nothing; M3b links the headless runner (below). See [port/engine/README.md](../../port/engine/README.md).
 - **Android app (M1 done).** One APK holds the Java launcher, a `NativeActivity` in its own `:game`
   process, and the native bring-up. A portable core runs FAF's real `init_faf.lua` and mounts the
   `.nx2`/`.scd` archives with the engine's first-mount-wins rules. It then draws the main-menu
@@ -52,7 +52,14 @@ L4 is the goal. L2 is the first point where the port is fun to use. L3 is the fi
   Checksums cannot match the recordings yet, because the local data is FAF 3839 and the replays
   are 3829/3831. Even so, one replay is bit-identical to the original game for its first 50 beats.
   See [headless-replay.md](headless-replay.md).
-- **Not yet:** no engine translation unit runs on ARM.
+- **The runner links for Android (M3b done).** Everything `/headlessreplay` reaches links for
+  arm64 and x86_64 as `libfafengine.so` (836 engine and 31 Wild Magic translation units, every
+  static initialiser that registers something) plus a small `faf_headless_runner`, with zero
+  undefined and zero duplicate symbols. The user side is replaced by stand-ins that return what
+  the Windows runner sees, or by traps where it never calls them; the one deliberate difference is
+  that Android creates no map textures (no D3D9 device). Windows gives the same checkpoint chains
+  as before. See [port/engine/runner/README.md](../../port/engine/runner/README.md).
+- **Not yet:** no engine translation unit runs on ARM (M3c).
 
 ## Workstreams
 
@@ -329,7 +336,8 @@ M1  one APK, data deploy, native data bring-up (L0)              done
 M2  W1.1-2: arm64 compile sweep + compile fixes (896/1010)       done; x64 LargeAddressAware oracle open
 M3  W1.3-5: 64-bit clean; headless arm64 replay runner runs a replay to the end (adb shell)
     M3a x86 runner (main.exe /headlessreplay), 4 vault replays to the end    done
-    M3b arm64 link of the runner     M3c run under WSL/emulator/phone
+    M3b arm64 (and x86_64) link of the runner, 0 undefined / 0 duplicate      done
+    M3c run under WSL/emulator/phone
     M3d truncation fixes + reflection codemod, run without the low-address arena
 M4  W5 + W6 on x86/x64: vault replays checksum-clean on the recovered engine (fixes upstream)
 M5  W5 on arm64: same replays checksum-clean on a phone (L3)

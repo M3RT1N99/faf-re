@@ -1171,6 +1171,11 @@ void moho::CRotateManipulatorTypeInfo::AddBase_IAniManipulator(gpg::RType* const
  * Builds one typed reflection reference for `moho::CRotateManipulator*`,
  * preserving dynamic-derived ownership and base-offset adjustment.
  */
+// Also defined in Reflection.cpp:4229. MSVC links with /FORCE and keeps the first in link order,
+// Reflection.cpp's (main.pdb resolves the symbol to Reflection.cpp:4230), so this file's callers use
+// that copy. An ELF link rejects the duplicate; elsewhere only CRotateManipulator.h's declaration
+// remains.
+#if defined(_MSC_VER)
 gpg::RRef* gpg::RRef_CRotateManipulator(gpg::RRef* const outRef, moho::CRotateManipulator* const value)
 {
   const gpg::RRef typed = MakeDerivedRef(value, CachedCRotateManipulatorType());
@@ -1178,6 +1183,7 @@ gpg::RRef* gpg::RRef_CRotateManipulator(gpg::RRef* const outRef, moho::CRotateMa
   outRef->mType = typed.mType;
   return outRef;
 }
+#endif
 
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of

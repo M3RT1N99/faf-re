@@ -25,9 +25,14 @@
 #include "moho/script/CScriptObject.h"
 #include "Wm3Quaternion.h"
 
+// Only the two wx event handlers below (CUIKeyHandler, CMauiWxEventMapper) need wx. Android has no
+// wxWidgets (port/engine/README.md), and sim-side TUs read this header for its other declarations
+// (Reflection.cpp: sUIState; IClientMgrUIInterface.cpp: the UI_* callbacks), so wx stays Windows-only.
+#if defined(_WIN32)
 #include "platform/WxWidgets.h"
 #include <wx/event.h>
 #include <wx/window.h>
+#endif
 
 struct lua_State;
 
@@ -1232,6 +1237,7 @@ namespace moho
 
   class CMauiFrame;
 
+#if defined(_WIN32)
   /**
    * The keyboard-shortcut handler CUIManager::AddFrame pushes onto every input
    * window: `inputWindow->PushEventHandler(new CUIKeyHandler)` (operator
@@ -1360,6 +1366,11 @@ namespace moho
   static_assert(offsetof(CMauiWxEventMapper, mWindow) == 0x28, "moho::CMauiWxEventMapper::mWindow offset must be 0x28");
   static_assert(offsetof(CMauiWxEventMapper, mFrame) == 0x2C, "moho::CMauiWxEventMapper::mFrame offset must be 0x2C");
   static_assert(sizeof(CMauiWxEventMapper) == 0x30, "moho::CMauiWxEventMapper size must be 0x30");
+#else
+  // No wx on this platform (see the includes above): declared only, for CMauiFrame::mEventHandler.
+  class CUIKeyHandler;
+  class CMauiWxEventMapper;
+#endif
 
   /**
    * Address: 0x010C1B48 (data segment global, 256 * 28 bytes = 0x1C00)

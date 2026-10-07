@@ -10,7 +10,9 @@
 #include <new>
 #include <stdexcept>
 
+#if defined(_WIN32)
 #include <d3d9.h>
+#endif
 
 #include "legacy/containers/Vector.h"
 #include "platform/BinaryObjectBytes.h"
@@ -25,10 +27,14 @@
 #include "gpg/gal/EffectTechnique.hpp"
 #include "gpg/gal/EffectVariable.hpp"
 #include "gpg/gal/IndexBuffer.hpp"
+#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/TextureD3D9.hpp"
+#endif
 #include "gpg/gal/VertexBuffer.hpp"
 #include "gpg/gal/VertexFormat.hpp"
+#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
+#endif
 #include "gpg/gal/DeviceContext.hpp"
 #include "gpg/gal/Head.hpp"
 #include "gpg/gal/OutputContext.hpp"
@@ -125,6 +131,12 @@ namespace
     return CopyConstructCartographicDecalBatchIfPresent(destination, source);
   }
 
+#if defined(_WIN32)
+  // The render half of this TU (the quad constants and effect lookup here, the texture/frame
+  // helpers and the render members further down) drives D3D9 through gal and exists only on
+  // Windows. Off Windows the TU keeps what the sim side needs: CWldTerrainRes::Load reads the
+  // decal batches of a .scmap through ReadDecals (CWldMap.cpp), so construction, destruction and
+  // decal (de)serialization stay.
   constexpr std::array<float, 8> kCartographicQuadVertices{
     -1.0f, 1.0f,
     -1.0f, -1.0f,
@@ -158,6 +170,7 @@ namespace
     moho::CD3DEffect* const effect = resources->FindEffect("cartographic");
     return effect->GetBaseEffect();
   }
+#endif
 
   /**
    * Address: 0x007D4380 (FUN_007D4380)
@@ -465,6 +478,7 @@ namespace
     }
   }
 
+#if defined(_WIN32)
   // --- Cartographic terrain / frame initialization constants ---------------
   //
   // Every float below was byte-verified against the shipped image
@@ -789,6 +803,7 @@ namespace
     viewport.MaxZ = kCartographicViewportMaxDepth;
     return viewport;
   }
+#endif
 } // namespace
 
 namespace moho
@@ -1301,6 +1316,7 @@ namespace moho
     }
   }
 
+#if defined(_WIN32)
   /**
    * Address: 0x007D56C0 (FUN_007D56C0, sub_7D56C0)
    *
@@ -2303,4 +2319,5 @@ namespace moho
 
     ui_AlwaysRenderStrategicIcons = previousAlwaysRenderStrategicIcons;
   }
+#endif
 } // namespace moho

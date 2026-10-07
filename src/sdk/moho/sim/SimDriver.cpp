@@ -16,8 +16,11 @@
 #include <boost/ptr_container/exception.hpp>
 #include "gpg/core/utils/BoostWrappers.h"
 #include "moho/render/camera/CameraImpl.h"
+// wx only for wxTheApp in PerformNextEvent; Android has no wxWidgets (see there).
+#if defined(_WIN32)
 #include "platform/WxWidgets.h"
 #include <wx/app.h>
+#endif
 #include "moho/net/CClientBase.h"
 #include "moho/net/IClient.h"
 #include "moho/render/d3d/CD3DFont.h"
@@ -2193,6 +2196,7 @@ DWORD CSimDriver::PerformNextEvent()
 
   // Port: the headless replay runner (moho/app/HeadlessReplay.cpp) never starts wx, so there is no
   // application object to pump. The GUI always has one here, and takes the binary's path.
+#if defined(_WIN32)
   if (wxTheApp == nullptr) {
     return SleepEx(100, TRUE);
   }
@@ -2211,6 +2215,8 @@ DWORD CSimDriver::PerformNextEvent()
 
     keepIdle = wxTheApp->ProcessIdle();
   }
+#endif
+  // Without wx (Android) there is never an application object: the runner's path above.
 
   return SleepEx(100, TRUE);
 }

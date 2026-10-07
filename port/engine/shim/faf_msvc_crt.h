@@ -38,6 +38,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <locale.h>
+#include <malloc.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -51,6 +52,8 @@
 #include <unistd.h>
 #include <wchar.h>
 #include <wctype.h>
+
+#include "faf_win_path.h"
 
 // Third-party C headers may include <string.h> inside `extern "C" { }`; the
 // templates below need C++ linkage wherever this header is entered.
@@ -490,10 +493,45 @@ inline int* _errno() noexcept
   return &errno;
 }
 
-// <malloc.h>. Declared only: the engine replaces the CRT's _msize with its own
-// (gpg/core/utils/Global.cpp, `_msize`, 0x00957AE0), and crtdbg.h's Release
-// `_msize_dbg` expands to it.
-size_t _msize(void* memblock);
+// <malloc.h>. On Windows the engine replaces the CRT's _msize with its own
+// (gpg/core/utils/Global.cpp, `_msize`, 0x00957AE0); off Windows Global.cpp
+// leaves the C library's allocator alone (no malloc/free/_msize of its own),
+// so this is the C library's block size, which crtdbg.h's Release
+// `_msize_dbg` expands to as well. It can exceed the size that was requested,
+// as HeapSize does not (faf_win_memory.h).
+inline size_t _msize(void* memblock) noexcept
+{
+  return memblock != nullptr ? malloc_usable_size(memblock) : 0u;
+}
+
+// MSVC's sscanf_s takes a buffer size after each %s, %c and %[ argument;
+// plain sscanf would read that size as the next pointer. Only formats without
+// those conversions are accepted here (moho/sim/Sim.cpp:10164 reads "%f"), and
+// they mean the same in both; any other format fails with EINVAL and -1 (EOF).
+inline int sscanf_s(const char* buffer, const char* format, ...) noexcept
+{
+  for (const char* p = format; *p != '\0'; ++p) {
+    if (*p != '%') {
+      continue;
+    }
+    ++p;
+    if (*p == '%') {
+      continue;
+    }
+    while (*p != '\0' && strchr("scCS[", *p) == nullptr && strchr("diouxXaAeEfFgGpn", *p) == nullptr) {
+      ++p;
+    }
+    if (*p == '\0' || strchr("scCS[", *p) != nullptr) {
+      errno = EINVAL;
+      return EOF;
+    }
+  }
+  va_list args;
+  va_start(args, format);
+  const int result = vsscanf(buffer, format, args);
+  va_end(args);
+  return result;
+}
 
 inline FILE* _popen(const char* command, const char* mode) noexcept
 {
@@ -548,6 +586,13 @@ inline struct tm* _gmtime64(const __time64_t* when) noexcept
 inline __time64_t _mktime64(struct tm* when) noexcept
 {
   return mktime(when);
+}
+
+// MSVC's ctime and POSIX's share the format ("Wed Jan 02 02:03:55 1980\n") and the static result
+// buffer (moho/misc/StatItem.cpp:1014).
+inline char* _ctime64(const __time64_t* when) noexcept
+{
+  return ctime(when);
 }
 
 inline errno_t localtime_s(struct tm* result, const time_t* when) noexcept
@@ -618,6 +663,99 @@ inline int _rmdir(const char* path) noexcept
   return rmdir(path);
 }
 
+// _getdcwd / _getdrive (moho/misc/StartupHelpers.cpp FILE_Dir): a POSIX process has one working
+// directory and no drives (faf_win_path.h: "Drive letters mean nothing here"). _getdcwd answers
+// every drive with that directory; _getdrive reports 0, "no drive", which MSVC never returns, so a
+// caller that formats it as a letter (FILE_Dir: 'a' - 1 + drive) produces a path that names
+// nothing rather than a plausible one.
+inline char* _getdcwd(int /*drive*/, char* buffer, int maxlen) noexcept
+{
+  return getcwd(buffer, static_cast<size_t>(maxlen));
+}
+
+inline int _getdrive(void) noexcept
+{
+  return 0;
+}
+
+// _fullpath (moho/misc/StartupHelpers.cpp DISK_GetLaunchDir): MSVC's contract over POSIX paths.
+// The result is absolute (relPath joined to the working directory unless it starts with a
+// separator), '/' and '\' both separate components (as in faf_win_path.h), "." and empty
+// components drop, ".." removes the previous one and stops at the root. Nothing is resolved
+// against the file system: the path need not exist and symbolic links stay, as on Windows. A null
+// or empty relPath gives the working directory. A null absPath returns a malloc'd buffer of at
+// least _MAX_PATH bytes; otherwise maxLength bounds the result. Too long: null with errno ERANGE.
+inline char* _fullpath(char* absPath, const char* relPath, size_t maxLength) noexcept
+{
+  char joined[faf_compat::kMaxNativePath];
+  size_t length = 0;
+  const bool absolute = relPath != nullptr && (relPath[0] == '/' || relPath[0] == '\\');
+  if (!absolute) {
+    if (getcwd(joined, sizeof(joined)) == nullptr) {
+      return nullptr;
+    }
+    length = strlen(joined);
+  }
+  if (relPath != nullptr) {
+    const size_t relLength = strlen(relPath);
+    if (length + 1 + relLength + 1 > sizeof(joined)) {
+      errno = ERANGE;
+      return nullptr;
+    }
+    joined[length++] = '/';
+    memcpy(joined + length, relPath, relLength + 1);
+    length += relLength;
+  }
+
+  // Collapse into `normalized`; every component it keeps is written after a '/'.
+  char normalized[faf_compat::kMaxNativePath];
+  size_t out = 0;
+  size_t in = 0;
+  while (in < length) {
+    while (in < length && (joined[in] == '/' || joined[in] == '\\')) {
+      ++in;
+    }
+    size_t end = in;
+    while (end < length && joined[end] != '/' && joined[end] != '\\') {
+      ++end;
+    }
+    const size_t componentLength = end - in;
+    if (componentLength == 0 || (componentLength == 1 && joined[in] == '.')) {
+      // nothing
+    } else if (componentLength == 2 && joined[in] == '.' && joined[in + 1] == '.') {
+      while (out > 0 && normalized[out - 1] != '/') {
+        --out;
+      }
+      if (out > 0) {
+        --out;
+      }
+    } else {
+      normalized[out++] = '/';
+      memcpy(normalized + out, joined + in, componentLength);
+      out += componentLength;
+    }
+    in = end;
+  }
+  if (out == 0) {
+    normalized[out++] = '/';
+  }
+  normalized[out] = '\0';
+
+  if (absPath == nullptr) {
+    const size_t size = (out + 1 > _MAX_PATH) ? out + 1 : _MAX_PATH;
+    absPath = static_cast<char*>(malloc(size));
+    if (absPath == nullptr) {
+      errno = ENOMEM;
+      return nullptr;
+    }
+  } else if (out + 1 > maxLength) {
+    errno = ERANGE;
+    return nullptr;
+  }
+  memcpy(absPath, normalized, out + 1);
+  return absPath;
+}
+
 // ---------------------------------------------------------------------------
 // <io.h>
 // ---------------------------------------------------------------------------
@@ -633,21 +771,20 @@ inline int _unlink(const char* path) noexcept
 
 } // extern "C"
 
-// _findfirst64 / _findnext64 / _findclose over opendir/readdir, as
-// moho/sim/CVFSImpl.cpp:119 and lua/LuaObject.cpp:6224 enumerate directories.
-// What carries over from the CRT, which wraps FindFirstFile:
-// - '/' and '\' both separate directories; the wildcards apply to the last
-//   component only. `*` matches any run of characters, `?` one character, and
-//   names compare ASCII case-insensitively, as on NTFS. `*.*` matches every
-//   name, and a trailing `.*` also matches a name without a dot.
-// - "." and ".." come back like any other entry (callers skip them).
+// _findfirst64 / _findnext64 / _findclose, as moho/sim/CVFSImpl.cpp:119 and
+// lua/LuaObject.cpp:6224 enumerate directories. The CRT wraps FindFirstFile,
+// and so does this, through the same listing (faf_win_path.h):
+// - '/' and '\' both separate directories, and the directory part is resolved
+//   ignoring case as NTFS does; the wildcards apply to the last component
+//   only. `*` matches any run of characters, `?` one character, and names
+//   compare ASCII case-insensitively. `*.*` matches every name, and a trailing
+//   `.*` also matches a name without a dot.
+// - Entries come back in NTFS order: "." and ".." first (callers skip them),
+//   then by upper-cased name. FAF's init_faf.lua mounts archives in this order.
 // - attrib has _A_SUBDIR for directories and _A_RDONLY when the owner cannot
 //   write; the archive, hidden and system bits have no POSIX counterpart and
 //   stay clear. time_create is -1, the CRT's value where the file system keeps
 //   no creation time (FAT), since stat has none either.
-// What does not: the directory part is resolved as written, so on a
-// case-sensitive file system a directory spelled in another case is not found.
-// Case-insensitive path resolution belongs to the platform layer (W2).
 #define _A_NORMAL 0x00
 #define _A_RDONLY 0x01
 #define _A_HIDDEN 0x02
@@ -666,81 +803,31 @@ struct __finddata64_t {
 
 namespace faf_compat
 {
-  struct FindState {
-    DIR* directory;
-    char* pattern;
-  };
-
-  inline int AsciiLower(const unsigned char character) noexcept
+  // Fills `fileInfo` from the next listed name; false at the end.
+  inline bool NextFindEntry(DirectoryListing& listing, __finddata64_t* fileInfo) noexcept
   {
-    return (character >= 'A' && character <= 'Z') ? character + ('a' - 'A') : character;
-  }
-
-  // FindFirstFile's matching of one name against the last component of a
-  // pattern (see above).
-  inline bool MatchFindPattern(const char* pattern, const char* name) noexcept
-  {
-    for (;;) {
-      if (pattern[0] == '.' && pattern[1] == '*' && pattern[2] == '\0' && name[0] == '\0') {
-        return true;
-      }
-      if (*pattern == '\0') {
-        return *name == '\0';
-      }
-      if (*pattern == '*') {
-        while (*pattern == '*') {
-          ++pattern;
-        }
-        if (*pattern == '\0') {
-          return true;
-        }
-        for (; *name != '\0'; ++name) {
-          if (MatchFindPattern(pattern, name)) {
-            return true;
-          }
-        }
-        return MatchFindPattern(pattern, name);
-      }
-      if (*name == '\0') {
-        return false;
-      }
-      if (*pattern != '?' &&
-          AsciiLower(static_cast<unsigned char>(*pattern)) != AsciiLower(static_cast<unsigned char>(*name))) {
-        return false;
-      }
-      ++pattern;
-      ++name;
+    if (listing.next >= listing.count) {
+      return false;
     }
-  }
-
-  // Advances to the next entry that matches and fills `fileInfo`; false at the
-  // end of the directory.
-  inline bool NextFindEntry(FindState& state, __finddata64_t* fileInfo) noexcept
-  {
-    while (const dirent* entry = readdir(state.directory)) {
-      if (!MatchFindPattern(state.pattern, entry->d_name)) {
-        continue;
-      }
-      struct stat status;
-      const bool haveStatus = fstatat(dirfd(state.directory), entry->d_name, &status, 0) == 0;
-      unsigned attributes = _A_NORMAL;
-      if (haveStatus && S_ISDIR(status.st_mode)) {
-        attributes |= _A_SUBDIR;
-      }
-      if (haveStatus && (status.st_mode & S_IWUSR) == 0) {
-        attributes |= _A_RDONLY;
-      }
-      fileInfo->attrib = attributes;
-      fileInfo->time_create = -1;
-      fileInfo->time_access = haveStatus ? static_cast<__time64_t>(status.st_atime) : -1;
-      fileInfo->time_write = haveStatus ? static_cast<__time64_t>(status.st_mtime) : -1;
-      fileInfo->size = haveStatus && !S_ISDIR(status.st_mode) ? static_cast<__int64>(status.st_size) : 0;
-      const size_t length = strnlen(entry->d_name, sizeof(fileInfo->name) - 1u);
-      memcpy(fileInfo->name, entry->d_name, length);
-      fileInfo->name[length] = '\0';
-      return true;
+    const char* const name = listing.names[listing.next++];
+    struct stat status;
+    const bool haveStatus = StatListedName(listing, name, &status);
+    unsigned attributes = _A_NORMAL;
+    if (haveStatus && S_ISDIR(status.st_mode)) {
+      attributes |= _A_SUBDIR;
     }
-    return false;
+    if (haveStatus && (status.st_mode & S_IWUSR) == 0) {
+      attributes |= _A_RDONLY;
+    }
+    fileInfo->attrib = attributes;
+    fileInfo->time_create = -1;
+    fileInfo->time_access = haveStatus ? static_cast<__time64_t>(status.st_atime) : -1;
+    fileInfo->time_write = haveStatus ? static_cast<__time64_t>(status.st_mtime) : -1;
+    fileInfo->size = haveStatus && !S_ISDIR(status.st_mode) ? static_cast<__int64>(status.st_size) : 0;
+    const size_t length = strnlen(name, sizeof(fileInfo->name) - 1u);
+    memcpy(fileInfo->name, name, length);
+    fileInfo->name[length] = '\0';
+    return true;
   }
 } // namespace faf_compat
 
@@ -752,59 +839,18 @@ inline intptr_t _findfirst64(const char* fileSpec, struct __finddata64_t* fileIn
     errno = EINVAL;
     return -1;
   }
-  const char* lastSeparator = nullptr;
-  for (const char* p = fileSpec; *p != '\0'; ++p) {
-    if (*p == '/' || *p == '\\') {
-      lastSeparator = p;
-    }
+  faf_compat::ListingStatus status = faf_compat::ListingStatus::Ok;
+  faf_compat::DirectoryListing* const listing = faf_compat::OpenDirectoryListing(fileSpec, &status);
+  if (listing == nullptr) {
+    errno = status == faf_compat::ListingStatus::OutOfMemory ? ENOMEM : ENOENT;
+    return -1;
   }
-  const char* const pattern = lastSeparator != nullptr ? lastSeparator + 1 : fileSpec;
-  if (*pattern == '\0') {
+  if (!faf_compat::NextFindEntry(*listing, fileInfo)) {
+    faf_compat::CloseDirectoryListing(listing);
     errno = ENOENT;
     return -1;
   }
-  char* directoryPath = nullptr;
-  if (lastSeparator == nullptr) {
-    directoryPath = strdup(".");
-  } else if (lastSeparator == fileSpec) {
-    directoryPath = strdup("/");
-  } else {
-    directoryPath = strndup(fileSpec, static_cast<size_t>(lastSeparator - fileSpec));
-  }
-  if (directoryPath == nullptr) {
-    errno = ENOMEM;
-    return -1;
-  }
-  for (char* p = directoryPath; *p != '\0'; ++p) {
-    if (*p == '\\') {
-      *p = '/';
-    }
-  }
-  DIR* const directory = opendir(directoryPath);
-  free(directoryPath);
-  if (directory == nullptr) {
-    errno = ENOENT;
-    return -1;
-  }
-  faf_compat::FindState* const state = static_cast<faf_compat::FindState*>(malloc(sizeof(faf_compat::FindState)));
-  char* const patternCopy = strdup(strcmp(pattern, "*.*") == 0 ? "*" : pattern);
-  if (state == nullptr || patternCopy == nullptr) {
-    free(state);
-    free(patternCopy);
-    closedir(directory);
-    errno = ENOMEM;
-    return -1;
-  }
-  state->directory = directory;
-  state->pattern = patternCopy;
-  if (!faf_compat::NextFindEntry(*state, fileInfo)) {
-    closedir(directory);
-    free(patternCopy);
-    free(state);
-    errno = ENOENT;
-    return -1;
-  }
-  return reinterpret_cast<intptr_t>(state);
+  return reinterpret_cast<intptr_t>(listing);
 }
 
 inline int _findnext64(intptr_t handle, struct __finddata64_t* fileInfo) noexcept
@@ -813,7 +859,7 @@ inline int _findnext64(intptr_t handle, struct __finddata64_t* fileInfo) noexcep
     errno = EINVAL;
     return -1;
   }
-  if (!faf_compat::NextFindEntry(*reinterpret_cast<faf_compat::FindState*>(handle), fileInfo)) {
+  if (!faf_compat::NextFindEntry(*reinterpret_cast<faf_compat::DirectoryListing*>(handle), fileInfo)) {
     errno = ENOENT;
     return -1;
   }
@@ -826,10 +872,7 @@ inline int _findclose(intptr_t handle) noexcept
     errno = EINVAL;
     return -1;
   }
-  faf_compat::FindState* const state = reinterpret_cast<faf_compat::FindState*>(handle);
-  closedir(state->directory);
-  free(state->pattern);
-  free(state);
+  faf_compat::CloseDirectoryListing(reinterpret_cast<faf_compat::DirectoryListing*>(handle));
   return 0;
 }
 

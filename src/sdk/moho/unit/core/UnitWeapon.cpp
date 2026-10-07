@@ -1183,7 +1183,11 @@ namespace moho
     // handle across the DoInstaHit call. DoInstaHit hardcodes the beam texture and
     // never dereferences the handle -- it just keeps it alive, then releases it.
     ID3DDeviceResources::TextureResourceHandle textureSheet{};
+#if defined(_WIN32)
     D3D_GetDevice()->GetResources()->GetTexture(textureSheet, textureName, 0, true);
+#endif
+    // Port seam (M3b, docs/port/headless-replay.md, "Android runner"): Android has no D3D9 device
+    // (the renderer is W3), so the handle stays empty there; as said above, nothing reads it.
 
     LuaPlus::LuaStackObject lifetimeArg(state, 9);
     if (lua_type(rawState, 9) != LUA_TNUMBER) {
