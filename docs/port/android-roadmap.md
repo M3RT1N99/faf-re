@@ -79,8 +79,13 @@ L4 is the goal. L2 is the first point where the port is fun to use. L3 is the fi
   repeatably; cancel, background and screen-off runs, crash capture and the GUI start were checked
   too. See [android.md](android.md#replay-test) and
   [headless-replay.md](headless-replay.md#in-app-replay-test-release-040).
-- **Not yet:** nothing has run on a real ARM core (0.4.0 is the release that lets the phone do it),
-  and nothing runs without the low-address arena (M3d).
+- **First run on a real ARM core (0.4.0, Exynos 2200, Android 16).** The in-app test on the
+  user's Galaxy S22 Ultra passed. The arena probe was 41/41. Replay 26675870 played to the end
+  with checkpoint chain `4971bbe58c5586a0`, the same as x86_64 and translated arm64 on the
+  emulator, and a second run on the phone matched. The debug (`-O0`) build manages about 24
+  beats/s in the sim; why the phone is slower than the emulator's translation is not measured yet.
+  See [headless-replay.md](headless-replay.md#first-run-on-a-real-arm-core).
+- **Not yet:** nothing runs without the low-address arena (M3d).
 
 ## Workstreams
 
@@ -362,7 +367,8 @@ M2  W1.1-2: arm64 compile sweep + compile fixes (896/1010)       done; x64 Large
 M3  W1.3-5: 64-bit clean; headless arm64 replay runner runs a replay to the end (adb shell)
     M3a x86 runner (main.exe /headlessreplay), 4 vault replays to the end    done
     M3b arm64 (and x86_64) link of the runner, 0 undefined / 0 duplicate      done
-    M3c run on the emulator (x86_64 T1-T3+R4, arm64 T1) with the low arena   done; phone run open
+    M3c run on the emulator (x86_64 T1-T3+R4, arm64 T1) with the low arena   done
+        phone (Exynos 2200, in-app, 0.4.0): T1 to the end, same chain           done
     M3d truncation fixes + reflection codemod, run without the low-address arena
 M4  W5 + W6 on x86/x64: vault replays checksum-clean on the recovered engine (fixes upstream)
 M5  W5 on arm64: same replays checksum-clean on a phone (L3)

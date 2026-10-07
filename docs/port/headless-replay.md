@@ -265,6 +265,33 @@ translation again, and the table now names the new runner build ids):
 | `my..game.scfareplay` (no uid) picked in the file picker | imported as `my.game` (`replays/my.game.scfareplay` + `my.game.json`), read by the runner |
 | Self-test with a `:game` process whose `status.json` said `running` (set by hand after a real start, to stand for a game left in the background) | not started ("Not started: the game is running ..."), the game process kept; with the real `exited` status the next self-test ended the cached process and passed |
 
+### First run on a real ARM core
+
+On 2026-10-07 the user ran the in-app test on a Samsung Galaxy S22 Ultra (SM-S908B, Exynos 2200,
+Android 16, 4 KB pages). It was the 0.4.0 build with engine `cbb70516…` and runner `235eb467…`, the
+binaries the reference table names. Its input was the vault download of 26675870.
+
+| Step | Result |
+|---|---|
+| Arena probe | PASS, 41 of 41 placement checks |
+| Arena capacity | 122 blocks of 16 MB (1952 MB) up to the 0x7FFF0000 limit |
+| Engine load | `libfafengine.so` at 0x2410000 |
+| Replay | PASS: game over at beat 467, exit 0, chain **`4971bbe58c5586a0`**, equal to the reference |
+| Second run | identical |
+| Registry | the same counts as on the emulator (Core 71, Sim 731, Unsafe 1, User 257; 536 RTypes) |
+| Lua errors | 2 load, 11 sim, the same as on Windows |
+| Arena use | heap peak 353 MB, high-water 412 MB, no fallbacks |
+
+- **Same chain everywhere.** The first native execution on ARM gives the same checkpoint chain as
+  x86_64 and as arm64 under the emulator's translation. A second run on the phone matches too, so
+  the result does not depend on the core's weak memory ordering.
+- **Speed: load 15.8 s, sim 19.8 s, about 24 beats/s.** The rate falls from 75 to 25 beats/s as the
+  game grows. The sim is slower than arm64 under translation on the PC (11.5 s), while loading is
+  not (25.6 s there). So scheduling probably holds it back more than the CPU does: the app's process
+  group, its cpuset, or timer slack inherited by the child. That is not measured yet.
+- **Build flags.** The binaries are built at `-O0` and write every diagnostic probe line to the
+  engine log.
+
 ## Known issues
 
 - **Sim Lua errors that do not stop the sim:**
