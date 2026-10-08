@@ -63,11 +63,10 @@ features).
 | 2026-10-08 | Galaxy S22 Ultra (0.4.1, 3452) | Samsung Xclipse 920 (AMD RDNA2), Vulkan 1.3.279, Samsung driver 24.0.545; GLES is ANGLE on that Vulkan driver (24.1.293) | yes / yes / yes, **no** / yes (also D32S8) | exact (device 2.2 ms, first pipeline 18.6 ms, cached 0.1 ms) | 3.2 (ANGLE), yes / yes / yes, yes, yes | exact | 123 / 93 ms (about 2.5x the x86_64 emulator); every section's teardown ok |
 
 What the S22 Ultra's probe means for the graphics plan ([renderer.md](renderer.md)):
-- **Textures (corrected by the 0.5.0 menu replay).** The format properties list BC1-3 as sampleable, but the driver
-  does not offer the `textureCompressionBC` feature, so Vulkan may not use them: FA's DXT textures are
-  decoded on the CPU (or should be transcoded to ETC2/ASTC, which the GPU has, to save memory). The rest of
-  this bullet, as first written, assumed otherwise: Vulkan samples BC1-3 directly, so FA's DXT textures need no CPU decode or ETC2/ASTC
-  transcode on this GPU. Mali GPUs lack BC, so the transcode path is still needed for them.
+- **Textures.** The format properties list BC1-3 as sampleable, but the driver does not offer the
+  `textureCompressionBC` feature, so Vulkan may not use BC formats (found by the 0.5.0 menu replay; the probe
+  first read only the format properties). FA's DXT textures are therefore decoded on the CPU; transcoding
+  them to ETC2 or ASTC, which the GPU has, would save memory. Mali GPUs need the same path.
 - **Depth.** D24S8 is not an attachment format here. A depth-stencil request has to map to
   D32_FLOAT_S8_UINT (or D32 without stencil).
 - **GLES.** OpenGL ES is Google's ANGLE running on the same Vulkan driver. A GLES backend would add
