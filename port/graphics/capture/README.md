@@ -18,6 +18,7 @@ command line a graphics build behaves exactly like the default one.
 | `HarnessSandbox.cpp` | Static-initialiser bootstrap, options, the log, the import-table redirects, the thread hooks, the visibility monitor, the stall reporter |
 | `HarnessPins.cpp` | The virtual Lua clock and the fixed random seed |
 | `HarnessInternal.h` | Shared declarations, exit codes |
+| `scripts/skirmish_lobby.lua` | The navigation script of M6c: main menu -> skirmish lobby (`/galscript`, below) |
 
 ## Running it
 
@@ -60,12 +61,13 @@ main.exe /galharness <run> /galframes 60,300,900 /galpace 30 /galseed 0x6D366100
 | `/galpace <fps>` | Real-time cap, default 30; `0` runs as fast as the engine can. It does not change the frames (below) |
 | `/galseed <n>` | Seed of the global random stream (default 0x6D366100) |
 | `/galnopins` | Wall-clock Lua time and the engine's time-based seed: only to show what the pins fix |
+| `/galscript <file.lua>` | UI actions by frame number from the Lua side (below); `gfx_capture.py --script` passes it |
 | `/framerate <n>` | Required: the engine's fixed frame delta (CScApp.cpp:297-315) |
 
 Exit codes: 0 every frame captured; 10 refused (bad options, a `FAF_*` variable, a pin could not be
 installed); 11 a window of the process became visible or foreground; 12 the engine tried to open a
 message box or modal dialog (an engine error: the text is in the summary); 13 a capture frame was not
-rendered or the readback failed. The launcher kills the process on its own findings too (visible
+rendered or the readback failed; 14 the `/galscript` file did not load or one of its steps raised an error. The launcher kills the process on its own findings too (visible
 window, foreground, priority change, timeout).
 
 ## Output
@@ -78,6 +80,26 @@ window, foreground, priority change, timeout).
   (binders swapped, clock reads, seed) and the sandbox report (every intercepted call, counted, with
   samples; blocked activations; dropped input messages; top-level windows created; violations).
 - `harness.log`: the same as it happens, plus the teardown's intercepted calls.
+
+## Scripted navigation (`/galscript`, M6c)
+
+The harness can drive the UI past the main menu without real input. `/galscript <file.lua>` names a Lua
+file that the harness runs once in the user Lua state on the first frame; it must define
+`GalHarnessStep(frame)`. The harness calls that function once per `CScApp::Main`, right after it advances
+the virtual clock and before it posts that frame's paint (`HarnessFrame`, GalCapture.cpp), so an action taken
+at frame N is seen by the UI update of frame N+1, at the same frame in every run and on every backend. A
+string the step returns is logged and recorded as an action (`harness.json` `script`: path, FNV-1a of the
+file, calls, actions); a Lua error ends the run with exit 14. Input messages stay dropped and the window stays
+hidden as in every harness run; `gfx_capture.py --script` copies the file into the run directory and passes
+the copy.
+
+`scripts/skirmish_lobby.lua` calls the main menu's own `ButtonSkirmish` at frame 90 (the action the Skirmish
+button runs, `lua/ui/menus/main.lua` CreateUI). The menu slides out and FAF's lobby opens on frame 110 with
+`CreateLobby('None', ...)` and `HostGame(..., singlePlayer)` on the default scenario, Seton's Clutch, whose
+preview the lobby's map panel draws (`ResourceMapPreview`, the scenario's preview DDS through
+`RD3DTextureResource`). The harness profile answers the lobby's "changelog" dialog in advance
+(`LobbyChangelog`, gfx_capture.py's pinned prefs); the main menu never reads that preference, and its hashes are
+unchanged. Two D3D9 runs give byte-identical frames at 60-600.
 
 ## Frames and the capture point
 

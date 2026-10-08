@@ -11,6 +11,7 @@
 
 #include "Common/interface/RefCntAutoPtr.hpp"
 #include "DiligentHost.h"
+#include "ShaderCompileDiligent.h"
 #include "Graphics/GraphicsEngine/interface/Buffer.h"
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/PipelineState.h"
@@ -220,10 +221,15 @@ namespace gpg::gal::diligent
             std::uint8_t frontFail = 0, frontDepthFail = 0, frontPass = 0, frontFunc = 0;
             std::uint8_t backFail = 0, backDepthFail = 0, backPass = 0, backFunc = 0;
             std::uint8_t fillMode = 0, cullMode = 0, scissor = 0, antialiasedLine = 0;
+            // The int32 below starts at offset 28: these two bytes would otherwise be padding, which an
+            // aggregate's `{}` leaves undetermined and the struct copy carries into the key, so equal
+            // states hashed and compared unequal (M6c: the lobby made one PSO 6-8 times per run).
+            std::uint8_t reserved[2] = {0, 0};
             std::int32_t depthBias = 0;
             std::uint32_t slopeScaledDepthBias = 0; // float bits
         };
         static_assert(sizeof(FixedState) == 36, "FixedState must have no padding");
+        static_assert(offsetof(FixedState, depthBias) == 28, "FixedState: no padding before depthBias");
 
         FixedState PackFixedState(const D3D9StateShadow& shadow, const dg::TEXTURE_FORMAT depthFormat)
         {
@@ -414,6 +420,38 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
             float depthUv[4];
             float uvRect[4];
         };
+
+        /**
+         * A D3D viewport for Diligent. On GL the target is drawn mirrored (DiligentHost.h
+         * FlipsRenderTargets) and Diligent's GL backend turns the top-left origin into GL's bottom-left
+         * itself (DeviceContextGLImpl.cpp:251), so the rectangle goes in mirrored: then GL's bottom
+         * edge is D3D's top row and memory rows stay D3D rows.
+         */
+        dg::Viewport TargetViewport(const float x, const float y, const float width, const float height, const float minZ, const float maxZ,
+                                    const std::uint32_t targetHeight, const bool flipY)
+        {
+            return dg::Viewport(x, flipY ? static_cast<float>(targetHeight) - (y + height) : y, width, height, minZ, maxZ);
+        }
+
+        /** The backend's own shaders (quad, clear, blit), compiled for the device's API. */
+        dg::RefCntAutoPtr<dg::IShader> CompileInternal(dg::IRenderDevice* const device, const GraphicsApi api, const dg::SHADER_TYPE type,
+                                                       const char* const name, const char* const source, const bool combinedSamplers,
+                                                       std::string* const messages)
+        {
+            HlslShaderSource request;
+            request.source = source;
+            request.name = name;
+            request.shaderType = static_cast<std::uint32_t>(type);
+            request.entryPoint = "main";
+            request.combinedTextureSamplers = combinedSamplers;
+            request.naming = CombinedSamplerNaming::Texture;
+            dg::RefCntAutoPtr<dg::IShader> shader;
+            CompiledShaderInfo info;
+            if (!CompileHlslShader(device, api, request, &shader, &info) && messages != nullptr) {
+                *messages += std::string(name) + ": " + info.messages + " ";
+            }
+            return shader;
+        }
     } // namespace
 
     // ---------------------------------------------------------------------------------------------
@@ -704,17 +742,12 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
         }
         ScopedDefaultFpu fpu;
         if (!impl_->quadVS) {
-            dg::ShaderCreateInfo info;
-            info.SourceLanguage = dg::SHADER_SOURCE_LANGUAGE_HLSL;
-            info.EntryPoint = "main";
-            info.Desc.ShaderType = dg::SHADER_TYPE_VERTEX;
-            info.Desc.Name = "gal quad VS";
-            info.Source = kQuadVS;
-            device->CreateShader(info, &impl_->quadVS);
-            info.Desc.ShaderType = dg::SHADER_TYPE_PIXEL;
-            info.Desc.Name = "gal clear PS";
-            info.Source = kClearPS;
-            device->CreateShader(info, &impl_->clearPS);
+            std::string messages;
+            impl_->quadVS = CompileInternal(device, gpu_->Api(), dg::SHADER_TYPE_VERTEX, "gal quad VS", kQuadVS, false, &messages);
+            impl_->clearPS = CompileInternal(device, gpu_->Api(), dg::SHADER_TYPE_PIXEL, "gal clear PS", kClearPS, false, &messages);
+            if (!messages.empty()) {
+                Note(messages);
+            }
         }
         auto found = impl_->clearPipelines.find(key);
         if (found == impl_->clearPipelines.end()) {
@@ -777,7 +810,8 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
         impl_->currentPipeline = nullptr;
         context->SetStencilRef(stencilValue & 0xFFU);
         context->CommitShaderResources(impl_->clearBindings[key], dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        dg::Viewport viewport(viewport_.x, viewport_.y, viewport_.width, viewport_.height, 0.0F, 1.0F);
+        const dg::Viewport viewport =
+            TargetViewport(viewport_.x, viewport_.y, viewport_.width, viewport_.height, 0.0F, 1.0F, targets_.height, gpu_->FlipY());
         context->SetViewports(1, &viewport, targets_.width, targets_.height);
         dg::DrawAttribs draw;
         draw.NumVertices = 3;
@@ -792,7 +826,12 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
             ++stats_.skippedNoBinding;
             return false;
         }
-        if (!BindTargets()) {
+        bool bound = false;
+        {
+            ScopedRenderPhase phase(ScopedRenderPhase::Kind::Targets);
+            bound = BindTargets();
+        }
+        if (!bound) {
             ++stats_.skippedNoTarget;
             return false;
         }
@@ -887,7 +926,8 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
             dg::RasterizerStateDesc& raster = graphics.RasterizerDesc;
             raster.FillMode = static_cast<dg::FILL_MODE>(fixed.fillMode);
             raster.CullMode = static_cast<dg::CULL_MODE>(fixed.cullMode);
-            raster.FrontCounterClockwise = dg::False;
+            // D3D9's winding; on GL the mirrored image turns it around (DiligentHost.h FlipsRenderTargets).
+            raster.FrontCounterClockwise = gpu_->FlipY() ? dg::True : dg::False;
             raster.DepthClipEnable = dg::True; // D3D9 clips against the near and far planes
             raster.ScissorEnable = fixed.scissor != 0;
             raster.AntialiasedLineEnable = fixed.antialiasedLine != 0;
@@ -937,6 +977,17 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
             }
             if (created) {
                 ++stats_.psoCreated;
+                if (pipelineLog_.size() < 64) {
+                    char summary[320];
+                    std::snprintf(summary, sizeof(summary),
+                                  "%s: rt %u ds %u topology %u strides %u/%u/%u/%u instanced %u blend %u %u>%u op %u mask %x depth %u/%u/%u "
+                                  "stencil %u cull %u fill %u scissor %u bias %d",
+                                  name, key.renderTargetFormat, key.depthStencilFormat, key.topology, key.streamStride[0], key.streamStride[1],
+                                  key.streamStride[2], key.streamStride[3], key.streamInstanced, fixed.blendEnable, fixed.srcBlend, fixed.destBlend,
+                                  fixed.blendOp, fixed.writeMask, fixed.depthEnable, fixed.depthWrite, fixed.depthFunc, fixed.stencilEnable,
+                                  fixed.cullMode, fixed.fillMode, fixed.scissor, fixed.depthBias);
+                    pipelineLog_.push_back(summary);
+                }
             } else {
                 ++stats_.psoFailed;
                 Note(std::string("cannot create the pipeline ") + name);
@@ -965,7 +1016,8 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
 
         // The viewport: D3D9's, or with the origin half a pixel further (HalfPixelMode::Viewport).
         const float shift = halfPixel_ == HalfPixelMode::Viewport ? 0.5F : 0.0F;
-        dg::Viewport viewport(viewport_.x + shift, viewport_.y + shift, viewport_.width, viewport_.height, viewport_.minZ, viewport_.maxZ);
+        const dg::Viewport viewport = TargetViewport(viewport_.x + shift, viewport_.y + shift, viewport_.width, viewport_.height, viewport_.minZ,
+                                                     viewport_.maxZ, targets_.height, gpu_->FlipY());
         context->SetViewports(1, &viewport, targets_.width, targets_.height);
         if (key.fixed.scissor != 0U) {
             // D3D9 resets the scissor rectangle to the whole target at SetRenderTarget, and gal has no
@@ -1019,7 +1071,12 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
         drawState.alphaFunc = shadow.GetRenderState(rs::AlphaFunc);
         drawState.alphaRef = shadow.GetRenderState(rs::AlphaRef);
         drawState.frameIndex = gpu_->Frame();
-        if (!call.binding->Commit(context, drawState)) {
+        bool committed = false;
+        {
+            ScopedRenderPhase phase(ScopedRenderPhase::Kind::Commit);
+            committed = call.binding->Commit(context, drawState);
+        }
+        if (!committed) {
             ++stats_.skippedCommit;
             return false;
         }
@@ -1096,27 +1153,19 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
         dg::IRenderDevice* const device = gpu_->Device();
         ScopedDefaultFpu fpu;
         if (!impl_->quadVS) {
-            dg::ShaderCreateInfo info;
-            info.SourceLanguage = dg::SHADER_SOURCE_LANGUAGE_HLSL;
-            info.EntryPoint = "main";
-            info.Desc.ShaderType = dg::SHADER_TYPE_VERTEX;
-            info.Desc.Name = "gal quad VS";
-            info.Source = kQuadVS;
-            device->CreateShader(info, &impl_->quadVS);
-            info.Desc.ShaderType = dg::SHADER_TYPE_PIXEL;
-            info.Desc.Name = "gal clear PS";
-            info.Source = kClearPS;
-            device->CreateShader(info, &impl_->clearPS);
+            std::string messages;
+            impl_->quadVS = CompileInternal(device, gpu_->Api(), dg::SHADER_TYPE_VERTEX, "gal quad VS", kQuadVS, false, &messages);
+            impl_->clearPS = CompileInternal(device, gpu_->Api(), dg::SHADER_TYPE_PIXEL, "gal clear PS", kClearPS, false, &messages);
+            if (!messages.empty()) {
+                Note(messages);
+            }
         }
         if (!impl_->blitPS) {
-            dg::ShaderCreateInfo info;
-            info.SourceLanguage = dg::SHADER_SOURCE_LANGUAGE_HLSL;
-            info.EntryPoint = "main";
-            info.Desc.ShaderType = dg::SHADER_TYPE_PIXEL;
-            info.Desc.Name = "gal blit PS";
-            info.Desc.UseCombinedTextureSamplers = dg::True;
-            info.Source = kBlitPS;
-            device->CreateShader(info, &impl_->blitPS);
+            std::string messages;
+            impl_->blitPS = CompileInternal(device, gpu_->Api(), dg::SHADER_TYPE_PIXEL, "gal blit PS", kBlitPS, true, &messages);
+            if (!messages.empty()) {
+                Note(messages);
+            }
         }
         if (!impl_->quadConstants) {
             dg::BufferDesc desc;
@@ -1197,8 +1246,8 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
         context->SetRenderTargets(1, &destinationView, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         context->SetPipelineState(found->second);
         context->CommitShaderResources(binding, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-        dg::Viewport viewport(static_cast<float>(to[0]), static_cast<float>(to[1]), static_cast<float>(toWidth), static_cast<float>(toHeight),
-                              0.0F, 1.0F);
+        const dg::Viewport viewport = TargetViewport(static_cast<float>(to[0]), static_cast<float>(to[1]), static_cast<float>(toWidth),
+                                                     static_cast<float>(toHeight), 0.0F, 1.0F, destinationDesc.Height, gpu_->FlipY());
         context->SetViewports(1, &viewport, destinationDesc.Width, destinationDesc.Height);
         dg::DrawAttribs draw;
         draw.NumVertices = 3;

@@ -11,10 +11,12 @@
 #include <mutex>
 
 #include "D3D9Oracle.h"
+#include "DeviceFactory.h"
 #include "DiligentHost.h"
 #include "EffectsDiligent.h"
 #include "GalDiligent.h"
 #include "ResourcesDiligent.h"
+#include "ShaderCompileDiligent.h"
 #include "Texture2DPortable.h"
 #include "gpg/core/utils/Logging.h"
 #include "gpg/gal/CubeRenderTargetContext.hpp"
@@ -130,10 +132,39 @@ namespace gpg::gal::diligent
             return hash;
         }
 
+        // Which backend device stands behind each device the factory handed out (the same pointer
+        // unless a DeviceDecorator wrapped it, DeviceFactory.h). Render thread only.
+        struct FactoryEntry
+        {
+            Device* installed = nullptr;
+            DeviceDiligent* backend = nullptr;
+        };
+        std::vector<FactoryEntry> gFactoryEntries;
+
+        Device* MakeDevice(const char* const apiOverride)
+        {
+            auto* const backend = new DeviceDiligent();
+            if (apiOverride != nullptr) {
+                backend->SetApiOverride(apiOverride);
+            }
+            Device* const installed = DecorateCreatedDevice(backend);
+            gFactoryEntries.push_back(FactoryEntry{installed, backend});
+            return installed;
+        }
+
+        DeviceDiligent* FindBackend(Device* const installed)
+        {
+            for (const FactoryEntry& entry : gFactoryEntries) {
+                if (entry.installed == installed) {
+                    return entry.backend;
+                }
+            }
+            return static_cast<DeviceDiligent*>(installed);
+        }
     } // namespace
 
     // ---------------------------------------------------------------------------------------------
-    // GalDiligent.h
+    // GalDiligent.h, DeviceFactory.h
 
     bool IsRequestedOnCommandLine()
     {
@@ -146,12 +177,30 @@ namespace gpg::gal::diligent
 
     Device* CreateDevice()
     {
-        return new DeviceDiligent();
+        return MakeDevice(nullptr);
     }
 
     void SetupDevice(Device* const device, const DeviceContext* const context)
     {
-        static_cast<DeviceDiligent*>(device)->Setup(context);
+        DeviceDiligent* const backend = FindBackend(device);
+        backend->Setup(context);
+        NotifyDeviceSetup(device, backend, *context);
+    }
+
+    bool IsDiligentApiSupported(const char* const api)
+    {
+        GraphicsApi parsed = GraphicsApi::D3D11;
+        return ParseGraphicsApi(api, &parsed);
+    }
+
+    Device* CreateDeviceForApi(const char* const api)
+    {
+        return IsDiligentApiSupported(api) ? MakeDevice(api) : nullptr;
+    }
+
+    Device* GetBackendDevice(Device* const installed)
+    {
+        return FindBackend(installed);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -167,6 +216,14 @@ namespace gpg::gal::diligent
             WriteReport("shutdown");
         }
         Shutdown();
+        gFactoryEntries.erase(std::remove_if(gFactoryEntries.begin(), gFactoryEntries.end(),
+                                             [this](const FactoryEntry& entry) { return entry.backend == this; }),
+                              gFactoryEntries.end());
+    }
+
+    void DeviceDiligent::SetApiOverride(const char* const api)
+    {
+        mApiOverride = api != nullptr ? api : "";
     }
 
     void DeviceDiligent::Count(const int slot, const char* const name, const bool noOp)
@@ -180,7 +237,9 @@ namespace gpg::gal::diligent
     void DeviceDiligent::ReadOptions()
     {
         msvc8::vector<msvc8::string> options;
-        if (GetOption("/gal", 1, &options) && !options.empty()) {
+        if (!mApiOverride.empty()) {
+            mApi = mApiOverride;
+        } else if (GetOption("/gal", 1, &options) && !options.empty()) {
             const char* const value = options[0].c_str();
             const char* const colon = std::strchr(value, ':');
             mApi = (colon != nullptr) ? colon + 1 : "d3d11";
@@ -217,6 +276,8 @@ namespace gpg::gal::diligent
                                                             : HalfPixelMode::Shader;
         }
         mValidation = !GetOption("/galnovalidation", 0, nullptr);
+        SetGlMirrorDisabled(GetOption("/galglnomirror", 0, nullptr));
+        SetSwapChainBgraRequested(GetOption("/galswapchainbgra", 0, nullptr));
         mDebugLayerSelfTest = GetOption("/galdebuglayerselftest", 0, nullptr);
         mRunSelfTest = GetOption("/galselftest", 0, nullptr);
     }
@@ -266,10 +327,11 @@ namespace gpg::gal::diligent
         if (headCount == 0) {
             ThrowGalError("DeviceDiligent.cpp", __LINE__, "invalid device context specified");
         }
-        if (mApi != "d3d11") {
-            const std::string message = "/gal diligent:" + mApi + " is not implemented (only diligent:d3d11)";
+        if (!ParseGraphicsApi(mApi.c_str(), &mGraphicsApi)) {
+            const std::string message = "/gal diligent:" + mApi + " is not implemented (diligent:d3d11, diligent:vk, diligent:gl)";
             ThrowGalError("DeviceDiligent.cpp", __LINE__, message.c_str());
         }
+        mApi = GraphicsApiName(mGraphicsApi);
 
         std::string error;
         mOracle = std::make_unique<D3D9Oracle>();
@@ -283,7 +345,7 @@ namespace gpg::gal::diligent
         const Head& head = mDeviceContext.GetHead(0U);
         void* const window = head.mWindowed ? head.mHandle : head.mWindow;
         mHost = std::make_unique<DiligentHost>();
-        if (!mHost->Create(window, head.mWidth, head.mHeight, mValidation, &error)) {
+        if (!mHost->Create(window, head.mWidth, head.mHeight, mGraphicsApi, mValidation, &error)) {
             ThrowGalError("DeviceDiligent.cpp", __LINE__, error.c_str());
         }
         mGpu = mHost->GetGpu();
@@ -291,14 +353,30 @@ namespace gpg::gal::diligent
         mDrawPath->SetHalfPixelMode(mHalfPixel);
 
         if (mDebugLayerSelfTest) {
-            mSelfTestErrors = mHost->SelfTestDebugLayer(&mSelfTestSample);
+            mSelfTestErrors = mGraphicsApi == GraphicsApi::OpenGL ? mHost->SelfTestGlDebugOutput(&mSelfTestSample)
+                                                                  : mHost->SelfTestDebugLayer(&mSelfTestSample);
             gpg::Logf("[gal-diligent] debug layer self test: %u error(s) provoked on purpose, not counted: %s", mSelfTestErrors,
                       mSelfTestSample.c_str());
         }
         mPipelineState.reset(new PipelineStateDiligent());
         mShadow.ResetToSetupState();
         // The effect layer creates its shaders, buffers and signatures on this device, and calls back
-        // into OnBeginPass/OnEndPass (PassBinding.h).
+        // into OnBeginPass/OnEndPass (PassBinding.h). Its shaders go through the API's route
+        // (ShaderCompileDiligent.h).
+        SetEffectShaderCompiler(&CompileHlslShader);
+        {
+            msvc8::vector<msvc8::string> trilinear;
+            int mode = 0;
+            if (GetOption("/galtrilinear", 1, &trilinear) && !trilinear.empty()) {
+                mode = std::strcmp(trilinear[0].c_str(), "aniso1") == 0 ? 1 : std::strcmp(trilinear[0].c_str(), "mippoint") == 0 ? 2
+                       : std::strcmp(trilinear[0].c_str(), "level1") == 0   ? 3
+                       : std::strcmp(trilinear[0].c_str(), "aniso2") == 0   ? 4
+                       : std::strcmp(trilinear[0].c_str(), "aniso16") == 0  ? 5
+                       : std::strcmp(trilinear[0].c_str(), "bias64") == 0   ? 6
+                                                                            : 0;
+            }
+            SetEffectTrilinearMode(mode);
+        }
         SetEffectRenderDevice(mGpu->Device());
         SetPassSink(this);
         CreateHeads();
@@ -307,10 +385,11 @@ namespace gpg::gal::diligent
         }
 
         gpg::Logf(
-            "[gal-diligent] D3D11 device on \"%s\", head %ux%u (%s), swap chain %s, validation %s, D3D11 debug layer %s, "
-            "oracle %s, half pixel %s, GetTexture2D %s",
-            mHost->GetAdapterDescription().c_str(), head.mWidth, head.mHeight, head.mWindowed ? "full screen" : "windowed",
+            "[gal-diligent] %s device on \"%s\", head %ux%u (%s), swap chain %s, validation %s, D3D11 debug layer %s, GL debug output %s, "
+            "Vulkan layers %s, oracle %s, half pixel %s, GetTexture2D %s",
+            mApi.c_str(), mHost->GetAdapterDescription().c_str(), head.mWidth, head.mHeight, head.mWindowed ? "full screen" : "windowed",
             mHost->GetSwapChainFormat().c_str(), mValidation ? "on" : "off", mHost->IsDebugLayerActive() ? "active" : "absent",
+            mHost->GetGlDebugCounts().active ? "active" : "absent", mHost->GetVulkanLayerReport().c_str(),
             mOracle->GetDeviceDescription().c_str(),
             mHalfPixel == HalfPixelMode::Shader ? "shader" : mHalfPixel == HalfPixelMode::Viewport ? "viewport" : "none",
             mPortableTexture2D ? "portable" : "oracle"
@@ -1076,6 +1155,10 @@ namespace gpg::gal::diligent
 
     void DeviceDiligent::SubmitDraw(DrawCall& call)
     {
+        // The draw slot: the stream buffers' maps (GetBuffer), the effect's constants and textures
+        // (Commit) and the draw. On Vulkan none of it may end the render pass but a texture upload
+        // (DiligentHost.h RenderPassCounts).
+        ScopedRenderPhase phase(ScopedRenderPhase::Kind::Draw);
         call.binding = mPassBinding;
         call.vertexFormatCode = mVertexFormat.get() != nullptr ? mVertexFormat->formatCode_ : 0x17U;
         std::uint32_t instances = 1U;
@@ -1086,7 +1169,10 @@ namespace gpg::gal::diligent
             if (buffer == nullptr) {
                 continue;
             }
-            out.buffer = buffer->GetBuffer();
+            {
+                ScopedRenderPhase map(ScopedRenderPhase::Kind::Map);
+                out.buffer = buffer->GetBuffer();
+            }
             out.offset = stream.offset;
             out.stride = stream.stride;
             out.perInstance = stream.type == 3U;
@@ -1100,6 +1186,7 @@ namespace gpg::gal::diligent
         call.instanceCount = instances;
         if (call.indexed) {
             if (auto* const indices = dynamic_cast<IndexBufferDiligent*>(mIndexBuffer.get())) {
+                ScopedRenderPhase map(ScopedRenderPhase::Kind::Map);
                 call.indexBuffer = indices->GetBuffer();
                 call.index32 = indices->Is32Bit();
             }
@@ -1190,6 +1277,7 @@ namespace gpg::gal::diligent
 
         std::string json = "{\n";
         json += "  \"backend\": \"diligent:" + JsonEscape(mApi) + "\",\n";
+        json += "  \"api\": \"" + std::string(GraphicsApiName(mGraphicsApi)) + "\",\n";
         json += "  \"reason\": \"" + std::string(reason) + "\",\n";
         json += "  \"adapter\": \"" + JsonEscape(mHost ? mHost->GetAdapterDescription() : std::string()) + "\",\n";
         json += "  \"swapChainFormat\": \"" + JsonEscape(mHost ? mHost->GetSwapChainFormat() : std::string()) + "\",\n";
@@ -1210,6 +1298,32 @@ namespace gpg::gal::diligent
         json += "  \"diligentMessages\": {\"info\": " + std::to_string(messages.info) + ", \"warning\": " + std::to_string(messages.warning) +
                 ", \"error\": " + std::to_string(messages.error) + ", \"fatal\": " + std::to_string(messages.fatal) +
                 ", \"first\": " + JsonStringList(DiligentHost::GetDiligentMessages()) + "},\n";
+        if (mHost) {
+            // OpenGL: the debug output (a debug context's GL_KHR_debug messages, counted by type).
+            std::vector<std::string> glMessages;
+            const GlDebugCounts gl = mHost->GetGlDebugCounts(&glMessages);
+            json += "  \"glDebugOutput\": {\"active\": " + std::string(gl.active ? "true" : "false") + ", \"error\": " + std::to_string(gl.error) +
+                    ", \"undefinedBehavior\": " + std::to_string(gl.undefinedBehavior) + ", \"deprecated\": " + std::to_string(gl.deprecated) +
+                    ", \"portability\": " + std::to_string(gl.portability) + ", \"performance\": " + std::to_string(gl.performance) +
+                    ", \"other\": " + std::to_string(gl.other) + ", \"notification\": " + std::to_string(gl.notification) +
+                    ", \"first\": " + JsonStringList(glMessages) + "},\n";
+            const GlShaderRouteCounts route = GetGlShaderRouteCounts();
+            json += "  \"glShaderRoute\": {\"compiled\": " + std::to_string(route.compiled) + ", \"failed\": " + std::to_string(route.failed) +
+                    "},\n";
+            // Vulkan: the layers the loader offers, and the render-pass scopes by phase.
+            json += "  \"vulkanLayers\": " + mHost->GetVulkanLayerReport() + ",\n";
+            const RenderPassCounts passes = GetRenderPassCounts();
+            const std::uint64_t draws = mDrawPath ? mDrawPath->GetStats().draws : 0;
+            json += "  \"renderPass\": {\"hooked\": " + std::string(passes.hooked ? "true" : "false") + ", \"begins\": " +
+                    std::to_string(passes.begins) + ", \"ends\": " + std::to_string(passes.ends) + ", \"endsInDraw\": " +
+                    std::to_string(passes.endsInDraw) + ", \"endsInDrawByUpload\": " + std::to_string(passes.endsInDrawByUpload) +
+                    ", \"endsInDrawByTargets\": " + std::to_string(passes.endsInDrawByTargets) + ", \"endsInDrawByMap\": " +
+                    std::to_string(passes.endsInDrawByMap) + ", \"endsInDrawByCommit\": " + std::to_string(passes.endsInDrawByCommit) +
+                    ", \"endsInDrawOther\": " + std::to_string(passes.endsInDrawOther) +
+                    ", \"endsByUploadOutsideDraw\": " + std::to_string(passes.endsByUploadOutsideDraw) + ", \"draws\": " +
+                    std::to_string(draws) + "},\n";
+            json += "  \"contextStats\": " + mHost->GetContextStatsJson() + ",\n";
+        }
 
         if (mRunSelfTest) {
             std::size_t passed = 0;
@@ -1232,7 +1346,8 @@ namespace gpg::gal::diligent
                     ", \"clearsQuad\": " + std::to_string(stats.clearsQuad) + ", \"blits\": " + std::to_string(stats.blits) +
                     ", \"copies\": " + std::to_string(stats.copies) + ", \"psoLookups\": " + std::to_string(stats.psoLookups) +
                     ", \"psoCreated\": " + std::to_string(stats.psoCreated) + ", \"psoFailed\": " + std::to_string(stats.psoFailed) +
-                    ", \"messages\": " + JsonStringList(mDrawPath->GetMessages()) + "},\n";
+                    ", \"messages\": " + JsonStringList(mDrawPath->GetMessages()) + ", \"pipelines\": " +
+                    JsonStringList(mDrawPath->GetPipelineLog()) + "},\n";
         }
         if (mGpu) {
             GpuUploadStats& uploads = mGpu->Stats();
@@ -1243,7 +1358,8 @@ namespace gpg::gal::diligent
                     std::to_string(uploads.updateTexture.load()) + ", \"updateTextureBytes\": " + std::to_string(uploads.updateTextureBytes.load()) +
                     ", \"texturesCreated\": " + std::to_string(uploads.texturesCreated.load()) + ", \"buffersCreated\": " +
                     std::to_string(uploads.buffersCreated.load()) + ", \"createdOffRenderThread\": " +
-                    std::to_string(uploads.createdOffRenderThread.load()) + "},\n";
+                    std::to_string(uploads.createdOffRenderThread.load()) + ", \"releasedOffRenderThread\": " +
+                    std::to_string(uploads.releasedOffRenderThread.load()) + "},\n";
         }
         {
             // The shaders are SM5 HLSL from the portable front end (FxHlslEmitter), compiled in this

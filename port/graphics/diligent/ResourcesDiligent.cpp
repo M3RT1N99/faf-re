@@ -220,8 +220,7 @@ namespace gpg::gal::diligent
             scratch_ = nullptr;
         }
         if (texture_ && gpu_) {
-            std::lock_guard<std::recursive_mutex> lock(gpu_->Lock());
-            texture_.reset();
+            gpu_->Retire(std::move(texture_)); // deferred to the render thread on GL
         }
     }
 
@@ -734,8 +733,7 @@ namespace gpg::gal::diligent
     RenderTargetDiligent::~RenderTargetDiligent()
     {
         if (texture_ && gpu_) {
-            std::lock_guard<std::recursive_mutex> lock(gpu_->Lock());
-            texture_.reset();
+            gpu_->Retire(std::move(texture_)); // deferred to the render thread on GL
         }
     }
 
@@ -790,8 +788,7 @@ namespace gpg::gal::diligent
     CubeRenderTargetDiligent::~CubeRenderTargetDiligent()
     {
         if (texture_ && gpu_) {
-            std::lock_guard<std::recursive_mutex> lock(gpu_->Lock());
-            texture_.reset();
+            gpu_->Retire(std::move(texture_)); // deferred to the render thread on GL
         }
     }
 
@@ -840,8 +837,7 @@ namespace gpg::gal::diligent
     DepthStencilTargetDiligent::~DepthStencilTargetDiligent()
     {
         if (texture_ && gpu_) {
-            std::lock_guard<std::recursive_mutex> lock(gpu_->Lock());
-            texture_.reset();
+            gpu_->Retire(std::move(texture_)); // deferred to the render thread on GL
         }
     }
 
@@ -886,8 +882,7 @@ namespace gpg::gal::diligent
     BufferShadow::~BufferShadow()
     {
         if (buffer_ && gpu_) {
-            std::lock_guard<std::recursive_mutex> lock(gpu_->Lock());
-            buffer_.reset();
+            gpu_->Retire(std::move(buffer_)); // deferred to the render thread on GL
         }
     }
 

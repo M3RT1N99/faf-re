@@ -24,6 +24,71 @@ namespace Diligent
 
 namespace gpg::gal::diligent
 {
+    class GpuBuffer;
+    class GpuTexture;
+
+    /**
+     * The Diligent device type behind `/gal diligent:<api>` (M6c step 6 adds Vulkan and OpenGL on
+     * Windows; the Android GLES path inherits the OpenGL conventions below).
+     */
+    enum class GraphicsApi : std::uint8_t
+    {
+        D3D11 = 0,
+        Vulkan = 1,
+        OpenGL = 2
+    };
+
+    /** "d3d11", "vk", "gl": the `/gal diligent:<api>` names. */
+    [[nodiscard]] const char* GraphicsApiName(GraphicsApi api);
+    /** Parses a `/gal diligent:<api>` name ("vulkan" and "opengl" are accepted too). */
+    [[nodiscard]] bool ParseGraphicsApi(const char* name, GraphicsApi* api);
+
+    /**
+     * The OpenGL conventions (m6u-CRIT.txt R4), decided once here so the Android GLES path inherits
+     * them. GL leaves the NDC z range (-1..1 without clip control) and the render-target row order
+     * (window y up) to the application. The backend renders every target mirrored in GL terms, so
+     * that texture memory keeps D3D's row order - row 0 at the top, as textures loaded from files have
+     * it and as the harness reads frames back:
+     *   - every vertex shader ends with y = -y and z = 2z - w (ShaderCompileDiligent.cpp);
+     *   - viewports and scissor rectangles are handed to Diligent mirrored (top = height - bottom),
+     *     because Diligent's GL backend converts D3D's top-left origin to GL's bottom-left itself;
+     *   - the mirror turns the winding around, so front faces are counter-clockwise;
+     *   - Present, which draws the head into the window (GL's own y-up framebuffer), reads the head's
+     *     rows bottom-up.
+     * Sampling, uploads, copies and readbacks then need no change: memory rows are D3D rows everywhere.
+     */
+    [[nodiscard]] inline bool& GlMirrorDisabledFlag()
+    {
+        static bool disabled = false;
+        return disabled;
+    }
+
+    /** `/galglnomirror`: GL without the mirror convention (a diagnostic: GL's frames come back upside down). */
+    inline void SetGlMirrorDisabled(const bool disabled)
+    {
+        GlMirrorDisabledFlag() = disabled;
+    }
+
+    [[nodiscard]] inline bool& SwapChainBgraFlag()
+    {
+        static bool bgra = false;
+        return bgra;
+    }
+
+    /**
+     * `/galswapchainbgra`: ask for a BGRA8 swap chain (a diagnostic for the BGRA path, m6u-CRIT.txt R11:
+     * some Vulkan drivers, the phone's among them, offer only BGRA; this machine gives RGBA when asked).
+     */
+    inline void SetSwapChainBgraRequested(const bool bgra)
+    {
+        SwapChainBgraFlag() = bgra;
+    }
+
+    [[nodiscard]] inline bool FlipsRenderTargets(const GraphicsApi api)
+    {
+        return api == GraphicsApi::OpenGL && !GlMirrorDisabledFlag();
+    }
+
     /** D3D11_MESSAGE_SEVERITY buckets, as the D3D11 debug layer stored them. */
     struct DebugLayerCounts
     {
@@ -61,6 +126,68 @@ namespace gpg::gal::diligent
         std::atomic<std::uint64_t> texturesCreated{0};
         std::atomic<std::uint64_t> buffersCreated{0};
         std::atomic<std::uint64_t> createdOffRenderThread{0}; // GPU objects made on another thread (must stay 0 for GLES)
+        std::atomic<std::uint64_t> releasedOffRenderThread{0};// ... dropped on another thread (deferred to the render thread on GL)
+    };
+
+    /**
+     * The OpenGL debug output (GL_KHR_debug), counted per message type, when validation is on and the
+     * context is a debug context. Filled by the backend's own glDebugMessageCallback (synchronous).
+     */
+    struct GlDebugCounts
+    {
+        bool active = false;
+        std::uint64_t error = 0;              // GL_DEBUG_TYPE_ERROR
+        std::uint64_t undefinedBehavior = 0;  // GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR
+        std::uint64_t deprecated = 0;
+        std::uint64_t portability = 0;
+        std::uint64_t performance = 0;
+        std::uint64_t other = 0;              // GL_DEBUG_TYPE_OTHER, MARKER, PUSH/POP_GROUP
+        std::uint64_t notification = 0;       // of all the above, severity NOTIFICATION
+    };
+
+    /**
+     * Vulkan render-pass scopes, counted at vkCmdBegin/EndRenderPass and vkCmdBegin/EndRendering (the
+     * command-buffer calls Diligent makes through volk), with the backend's phase at each end: inside a
+     * draw slot (a primbatcher flush: its buffer maps, the constant maps, the draw), and of those the
+     * ones a texture upload caused (a dirty texture written at bind time; Vulkan copies outside render
+     * passes). m6u-CRIT.txt R2: dynamic buffers must not end the render pass.
+     */
+    struct RenderPassCounts
+    {
+        bool hooked = false;
+        std::uint64_t begins = 0;
+        std::uint64_t ends = 0;
+        std::uint64_t endsInDraw = 0;             // inside a draw slot (DeviceDiligent::SubmitDraw), by the innermost phase:
+        std::uint64_t endsInDrawByUpload = 0;     //   a texture created or written (and transitioned) at bind time
+        std::uint64_t endsInDrawByTargets = 0;    //   the slot binding another render target (a new render pass)
+        std::uint64_t endsInDrawByMap = 0;        //   the vertex/index buffer maps (the primbatcher's DISCARD locks)
+        std::uint64_t endsInDrawByCommit = 0;     //   the effect's constants and resource bindings
+        std::uint64_t endsInDrawOther = 0;        //   anything else in the slot (the draw call itself)
+        std::uint64_t endsByUploadOutsideDraw = 0;
+    };
+
+    /** The Vulkan render-pass counters (process-wide: the hooks are plain function pointers). */
+    [[nodiscard]] RenderPassCounts GetRenderPassCounts();
+
+    /** Marks a phase of the render thread for the render-pass counters (Vulkan only; cheap elsewhere). */
+    class ScopedRenderPhase
+    {
+    public:
+        enum class Kind : std::uint8_t
+        {
+            Draw,
+            Upload,
+            Targets,
+            Map,
+            Commit
+        };
+        explicit ScopedRenderPhase(Kind kind);
+        ~ScopedRenderPhase();
+        ScopedRenderPhase(const ScopedRenderPhase&) = delete;
+        ScopedRenderPhase& operator=(const ScopedRenderPhase&) = delete;
+
+    private:
+        Kind kind_;
     };
 
     /**
@@ -74,7 +201,8 @@ namespace gpg::gal::diligent
     class GpuShared
     {
     public:
-        GpuShared(Diligent::IRenderDevice* device, Diligent::IDeviceContext* context, std::uint32_t renderThreadId);
+        GpuShared(Diligent::IRenderDevice* device, Diligent::IDeviceContext* context, std::uint32_t renderThreadId,
+                  GraphicsApi api = GraphicsApi::D3D11);
         ~GpuShared();
         GpuShared(const GpuShared&) = delete;
         GpuShared& operator=(const GpuShared&) = delete;
@@ -89,6 +217,20 @@ namespace gpg::gal::diligent
         [[nodiscard]] bool InFrame() const { return inFrame_; }
         [[nodiscard]] bool OnRenderThread() const;
         [[nodiscard]] GpuUploadStats& Stats() { return stats_; }
+        [[nodiscard]] GraphicsApi Api() const { return api_; }
+        /** GL: render targets are drawn mirrored so memory keeps D3D's row order (FlipsRenderTargets). */
+        [[nodiscard]] bool FlipY() const { return FlipsRenderTargets(api_); }
+
+        /**
+         * Drops a GPU object. On GL a context exists only on the render thread (Diligent's GL device has
+         * no multithreaded resource creation, RenderDeviceGLImpl.cpp:877, m6u-CRIT.txt R3), so an object
+         * dropped elsewhere - the resource manager's prefetch thread releases textures - waits for
+         * DrainRetired on the render thread. Counted on every API.
+         */
+        void Retire(std::unique_ptr<GpuTexture> texture);
+        void Retire(std::unique_ptr<GpuBuffer> buffer);
+        /** Render thread: releases what Retire deferred (Present, and the device's destruction). */
+        void DrainRetired();
 
     private:
         Diligent::IRenderDevice* device_ = nullptr;
@@ -97,7 +239,11 @@ namespace gpg::gal::diligent
         std::atomic<std::uint64_t> frame_{1};
         bool inFrame_ = false;
         std::uint32_t renderThreadId_ = 0;
+        GraphicsApi api_ = GraphicsApi::D3D11;
         GpuUploadStats stats_;
+        std::mutex retiredLock_;
+        std::vector<std::unique_ptr<GpuTexture>> retiredTextures_;
+        std::vector<std::unique_ptr<GpuBuffer>> retiredBuffers_;
     };
 
     class DiligentHost
@@ -109,12 +255,15 @@ namespace gpg::gal::diligent
         DiligentHost& operator=(const DiligentHost&) = delete;
 
         /**
-         * Creates the D3D11 device and immediate context, a swap chain on `window` (an HWND) and a
-         * head render target of `width` x `height`. `validation` turns on Diligent's validation and,
-         * in a Debug build of Diligent, the D3D11 debug layer (EngineFactoryD3D11.cpp:243-249).
-         * Returns false with `error` set on failure.
+         * Creates the device of `api` and its immediate context, a swap chain on `window` (an HWND) and
+         * a head render target of `width` x `height`. `validation` turns on Diligent's validation and
+         * the API's own: the D3D11 debug layer in a Debug build of Diligent (EngineFactoryD3D11.cpp:
+         * 243-249), the Khronos validation layer for Vulkan when the machine has it, a debug context
+         * and the GL debug output for OpenGL. Returns false with `error` set on failure.
          */
-        bool Create(void* window, std::uint32_t width, std::uint32_t height, bool validation, std::string* error);
+        bool Create(void* window, std::uint32_t width, std::uint32_t height, GraphicsApi api, bool validation, std::string* error);
+
+        [[nodiscard]] GraphicsApi GetApi() const;
 
         /** Releases everything Create made; safe to call twice. */
         void Destroy();
@@ -168,6 +317,25 @@ namespace gpg::gal::diligent
          * not counted.
          */
         std::uint32_t SelfTestDebugLayer(std::string* sample);
+
+        /**
+         * The GL counterpart of SelfTestDebugLayer: one invalid call (glBindTexture with an invalid
+         * target: GL_INVALID_ENUM, no state change) must reach the debug output as an error. Returns
+         * how many error messages it produced; they are not counted.
+         */
+        std::uint32_t SelfTestGlDebugOutput(std::string* sample);
+
+        /** The GL debug output's counts; the first warnings and errors go to `out` when it is given. */
+        [[nodiscard]] GlDebugCounts GetGlDebugCounts(std::vector<std::string>* out = nullptr) const;
+
+        /**
+         * Vulkan only: the instance layers the loader offers this process (its bitness), and whether
+         * the Khronos validation layer was among them, as JSON object text.
+         */
+        [[nodiscard]] std::string GetVulkanLayerReport() const;
+
+        /** Diligent's command counters of the immediate context (DeviceContextStats), as JSON object text. */
+        [[nodiscard]] std::string GetContextStatsJson() const;
 
         [[nodiscard]] bool IsDebugLayerActive() const;
         [[nodiscard]] DebugLayerCounts GetDebugLayerCounts() const;

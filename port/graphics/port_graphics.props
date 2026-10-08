@@ -22,9 +22,9 @@
       (main.vcxproj PostBuildEvent, all four configurations) would overwrite
       the main.exe in C:\ProgramData\FAForever\bin, which the user plays with;
     - adds the new sources under port\graphics (Diligent backend, the effect
-      front end's library port\graphics\fx\src, capture harness), each with its
-      own object directory so no object name can collide with the engine's flat
-      $(IntDir);
+      front end's library port\graphics\fx\src, capture harness, galtrace and
+      galplay), each with its own object directory so no object name can
+      collide with the engine's flat $(IntDir);
     - links the Diligent build that scripts\port\build_diligent_win32.ps1
       installs to buildstage\diligent\install\<Platform> (override with
       /p:FafDiligentInstall=<prefix>\). Its Debug libraries are /MDd with
@@ -119,6 +119,14 @@
     <!-- D3D9 reference capture harness (step 0). -->
     <ClCompile Include="$(FafPortGraphicsDir)capture\**\*.cpp" Exclude="$(FafPortGraphicsDir)capture\tools\**">
       <ObjectFileName>$(IntDir)port_graphics\capture\%(RecursiveDir)</ObjectFileName>
+    </ClCompile>
+    <!-- galtrace and galplay (step 5, port\graphics\trace): the trace format, the recorder (a
+         decorator Device installed through diligent\DeviceFactory.h, idle without /galtrace) and
+         galplay (main.exe /galplay, idle without it). They work with the D3D9 backend alone, so
+         they are built whether or not the Diligent backend is. trace\tools, trace\tests and
+         trace\android are host programs with their own build (trace\CMakeLists.txt). -->
+    <ClCompile Include="$(FafPortGraphicsDir)trace\format\*.cpp;$(FafPortGraphicsDir)trace\record\*.cpp;$(FafPortGraphicsDir)trace\play\*.cpp">
+      <ObjectFileName>$(IntDir)port_graphics\trace\</ObjectFileName>
     </ClCompile>
   </ItemGroup>
 

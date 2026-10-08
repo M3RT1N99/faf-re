@@ -15,7 +15,8 @@ namespace port::graphics::capture::detail
     kExitRefused = 10,      // bad options, a FAF_* variable set, or a pin could not be applied
     kExitVisibility = 11,   // a window of this process became visible or foreground
     kExitModalUi = 12,      // the engine tried to open a message box or a modal dialog
-    kExitCaptureFailed = 13 // a capture frame was not rendered, or the readback failed
+    kExitCaptureFailed = 13, // a capture frame was not rendered, or the readback failed
+    kExitScriptFailed = 14   // the `/galscript` navigation script did not load, or one of its steps raised an error
   };
 
   struct HarnessConfig
@@ -28,6 +29,7 @@ namespace port::graphics::capture::detail
     float fixedFrameSeconds = 0;   // 1 / `/framerate <n>`; the harness refuses to run without it
     std::uint32_t seed = 0;        // `/galseed <n>`: the global random stream's seed
     bool noPins = false;           // `/galnopins`: wall clock and time seed, to show what the pins fix
+    std::wstring scriptPath;       // `/galscript <file.lua>`: UI actions by frame number (GalCapture.cpp)
     std::string commandLine;       // UTF-8, for the summary
   };
 

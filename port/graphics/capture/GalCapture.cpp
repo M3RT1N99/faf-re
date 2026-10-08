@@ -87,6 +87,21 @@ namespace port::graphics::capture
     std::string gDeviceDescription; // JSON object, filled on the first frame
     bool gMainMenuLoaded = false;
 
+    // The navigation script (`/galscript`, M6c): UI actions injected from the Lua side, by frame
+    // number, never as real input. The file runs once in the user Lua state on the first frame and
+    // must define GalHarnessStep(frame); the harness calls it once per CScApp::Main, before that
+    // frame's paint, and a string it returns is logged as the action taken. An error ends the run
+    // (exit 14). The frame numbers make it as deterministic as the rest of the run.
+    struct ScriptAction
+    {
+      unsigned frame = 0;
+      std::string note;
+    };
+    bool gScriptLoaded = false;
+    unsigned gScriptCalls = 0;
+    std::string gScriptFnv;
+    std::vector<ScriptAction> gScriptActions;
+
     std::string Hex64(const std::uint64_t value)
     {
       char text[24];
@@ -255,6 +270,90 @@ namespace port::graphics::capture
       return modules.IsTable() && modules.GetByName("/lua/ui/menus/main.lua").IsTable();
     }
 
+    std::string LuaErrorText(lua_State* const state)
+    {
+      const char* const text = lua_isstring(state, -1) ? lua_tostring(state, -1) : nullptr;
+      return text != nullptr ? text : "(error object is not a string)";
+    }
+
+    void LoadScript()
+    {
+      const std::wstring& path = Config().scriptPath;
+      if (path.empty()) {
+        return;
+      }
+      std::string text;
+      if (std::FILE* const file = _wfopen(path.c_str(), L"rb"); file != nullptr) {
+        char buffer[4096];
+        for (std::size_t read = 0; (read = std::fread(buffer, 1, sizeof(buffer), file)) != 0;) {
+          text.append(buffer, read);
+        }
+        (void)std::fclose(file);
+      }
+      if (text.empty()) {
+        detail::Abort(detail::kExitScriptFailed, "/galscript %s is empty or unreadable", detail::Utf8(path).c_str());
+      }
+      std::uint64_t hash = 0xcbf29ce484222325ull;
+      for (const char c : text) {
+        hash = (hash ^ static_cast<std::uint8_t>(c)) * 0x100000001b3ull;
+      }
+      gScriptFnv = Hex64(hash);
+
+      LuaPlus::LuaState* const user = moho::USER_GetLuaState();
+      if (user == nullptr || user->m_state == nullptr) {
+        detail::Abort(detail::kExitScriptFailed, "/galscript: no user Lua state");
+      }
+      lua_State* const state = user->m_state;
+      const int top = lua_gettop(state);
+      const std::string chunkName = "@" + detail::Utf8(path);
+      int status = luaL_loadbuffer(state, text.data(), text.size(), chunkName.c_str());
+      if (status == 0) {
+        status = LuaCallProtected(state, 0, 0);
+      }
+      if (status != 0) {
+        const std::string message = LuaErrorText(state);
+        lua_settop(state, top);
+        detail::Abort(detail::kExitScriptFailed, "/galscript did not load: %s", message.c_str());
+      }
+      lua_pushstring(state, "GalHarnessStep");
+      lua_gettable(state, LUA_GLOBALSINDEX);
+      const bool defined = lua_isfunction(state, -1);
+      lua_settop(state, top);
+      if (!defined) {
+        detail::Abort(detail::kExitScriptFailed, "/galscript %s defines no function GalHarnessStep(frame)", detail::Utf8(path).c_str());
+      }
+      gScriptLoaded = true;
+      Log("navigation script loaded: %s (%u bytes, fnv1a64 %s)", detail::Utf8(path).c_str(), static_cast<unsigned>(text.size()),
+          gScriptFnv.c_str());
+    }
+
+    void RunScriptStep(const unsigned frame)
+    {
+      if (!gScriptLoaded) {
+        return;
+      }
+      lua_State* const state = moho::USER_GetLuaState()->m_state;
+      const int top = lua_gettop(state);
+      lua_pushstring(state, "GalHarnessStep");
+      lua_gettable(state, LUA_GLOBALSINDEX);
+      lua_pushnumber(state, static_cast<float>(frame));
+      const int status = LuaCallProtected(state, 1, 1);
+      ++gScriptCalls;
+      if (status != 0) {
+        const std::string message = LuaErrorText(state);
+        lua_settop(state, top);
+        detail::Abort(detail::kExitScriptFailed, "/galscript step at frame %u failed: %s", frame, message.c_str());
+      }
+      if (lua_isstring(state, -1)) {
+        ScriptAction action;
+        action.frame = frame;
+        action.note = lua_tostring(state, -1);
+        Log("script frame %u: %s", frame, action.note.c_str());
+        gScriptActions.push_back(std::move(action));
+      }
+      lua_settop(state, top);
+    }
+
     void Pace()
     {
       const double fps = Config().paceFps;
@@ -390,6 +489,7 @@ namespace port::graphics::capture
       if (!Config().noPins) {
         detail::ReseedRandomStream();
       }
+      LoadScript();
       gDeviceDescription = DescribeDevice();
       Log("first frame: device %s", gDeviceDescription.c_str());
       if (gpg::gal::Device::IsReady() && gpg::gal::Device::GetInstance()->GetDeviceContext()->GetHeadCount() > 0) {
@@ -422,6 +522,7 @@ namespace port::graphics::capture
       OnFirstFrame();
     }
     detail::AdvanceClock(frameSeconds);
+    RunScriptStep(gAppFrames);
     (void)::PostMessageW(gPaintWindow, kPaintMessage, static_cast<WPARAM>(gAppFrames), 0);
     // The loop must not sleep after this Main: on the first frame the paint message is already
     // dispatched inside Main - InitializeSessionFromCommandLine (CScApp.cpp:1108-1111) starts the
@@ -494,6 +595,13 @@ namespace port::graphics::capture::detail
               ", \"alpha_fnv1a64\": " + JsonString(record.alphaHash) + ", \"clock_seconds\": " + clock + "}";
     }
     json += std::string(gCaptures.empty() ? "" : "\n  ") + "],\n";
+    json += "  \"script\": {\"path\": " + JsonString(Utf8(config.scriptPath)) + ", \"fnv1a64\": " + JsonString(gScriptFnv) +
+            ", \"loaded\": " + (gScriptLoaded ? "true" : "false") + ", \"calls\": " + std::to_string(gScriptCalls) + ", \"actions\": [";
+    for (std::size_t index = 0; index < gScriptActions.size(); ++index) {
+      json += std::string(index != 0 ? ", " : "") + "{\"frame\": " + std::to_string(gScriptActions[index].frame) +
+              ", \"note\": " + JsonString(gScriptActions[index].note) + "}";
+    }
+    json += "]},\n";
     json += "  \"pins\": " + PinsReportJson() + ",\n";
     json += "  \"sandbox\": " + SandboxReportJson() + "\n";
     json += "}\n";

@@ -7,6 +7,11 @@
 #if defined(FAF_PORT_GRAPHICS_DILIGENT)
 #include "port/graphics/diligent/GalDiligent.h"
 #endif
+#if defined(FAF_PORT_GRAPHICS)
+// Port graphics track: a decorator Device (galtrace) wraps the backend at creation
+// (port/graphics/diligent/DeviceFactory.h).
+#include "port/graphics/diligent/DeviceFactory.h"
+#endif
 
 #include <Windows.h>
 #include <new>
@@ -129,7 +134,13 @@ namespace gpg::gal
      */
     Device* Device::GetInstance()
     {
+#if defined(FAF_PORT_GRAPHICS)
+        // The decorator for the engine, the backend for the backend's own calls while it runs one
+        // the decorator forwarded (DeviceDecorator::ResolveInstance).
+        return diligent::ResolveActiveInstance(sDeviceD3D.get());
+#else
         return sDeviceD3D.get();
+#endif
     }
 
     /**
@@ -174,8 +185,17 @@ namespace gpg::gal
         case DeviceApi::Direct3D9:
         {
             DeviceD3D9* const device = new DeviceD3D9();
+#if defined(FAF_PORT_GRAPHICS)
+            // Port graphics track: a DeviceDecorator (galtrace) may wrap the backend; the engine
+            // installs what it returns, the backend is set up itself (DeviceFactory.h).
+            Device* const installed = diligent::DecorateCreatedDevice(device);
+            sDeviceD3D.reset(installed);
+            device->Setup(context);
+            diligent::NotifyDeviceSetup(installed, device, *context);
+#else
             sDeviceD3D.reset(device);
             device->Setup(context);
+#endif
             break;
         }
         case DeviceApi::Direct3D10:
@@ -211,7 +231,12 @@ namespace gpg::gal
      */
     bool SupportsVertexTextureFormat(const std::uint32_t textureFormat)
     {
+#if defined(FAF_PORT_GRAPHICS)
+        // Port graphics track: the backend behind a decorator, which is what the casts below need.
+        Device* const device = diligent::BackendOfInstalled(Device::GetInstance());
+#else
         Device* const device = Device::GetInstance();
+#endif
         if (device == nullptr)
         {
             return false;

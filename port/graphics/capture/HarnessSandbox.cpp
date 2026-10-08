@@ -727,6 +727,11 @@ namespace port::graphics::capture::detail
           gConfig.noPins = true;
         } else if (OptionIs(option, L"galseed") && value != nullptr) {
           gConfig.seed = static_cast<std::uint32_t>(std::wcstoul(value, nullptr, 0));
+        } else if (OptionIs(option, L"galscript") && value != nullptr) {
+          gConfig.scriptPath = value;
+          if (::GetFileAttributesW(value) == INVALID_FILE_ATTRIBUTES) {
+            problem = "no /galscript file at " + Utf8(value);
+          }
         } else if (OptionIs(option, L"framerate") && value != nullptr) {
           // CScApp.cpp:297-315 (TryReadFixedFrameDeltaSeconds) computes the same value.
           const float rate = std::wcstof(value, nullptr);

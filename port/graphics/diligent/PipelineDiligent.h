@@ -284,6 +284,8 @@ namespace gpg::gal::diligent
         [[nodiscard]] const DrawPathStats& GetStats() const { return stats_; }
         /** First failures, for the report. */
         [[nodiscard]] const std::vector<std::string>& GetMessages() const { return messages_; }
+        /** The pipelines created, in order (name and key summary; the first 64), for the report. */
+        [[nodiscard]] const std::vector<std::string>& GetPipelineLog() const { return pipelineLog_; }
 
     private:
         struct Impl;
@@ -291,6 +293,7 @@ namespace gpg::gal::diligent
         std::shared_ptr<GpuShared> gpu_;
         DrawPathStats stats_;
         std::vector<std::string> messages_;
+        std::vector<std::string> pipelineLog_;
         HalfPixelMode halfPixel_ = HalfPixelMode::Shader;
         ViewportDesc viewport_{};
         OutputTargets targets_{};

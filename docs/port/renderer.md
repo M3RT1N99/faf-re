@@ -13,7 +13,7 @@ The D3D9 backend stays the 1:1 reference and is never edited. All new code is in
 graphics build of `main.exe`, and the default `main.exe` does not change (checked per object
 file, see [The default main.exe](#the-default-mainexe-does-not-change)).
 
-## Status (2026-10-07)
+## Status (2026-10-08)
 
 | Step | What | Gate | State |
 |---|---|---|---|
@@ -22,11 +22,46 @@ file, see [The default main.exe](#the-default-mainexe-does-not-change)).
 | 2 | Effect front end, metadata (`port/graphics/fx`) | the metadata JSON equals D3DX reflection for every effect variant the game and FAF load | **passed** |
 | 3 | The menu's draw path on Diligent-D3D11 (`port/graphics/diligent`) | frames 10-45, 60, 300 and 900 RGB-identical to step 0, or max \|delta\| <= 1 on <= 0.1 % of the pixels, with heat maps; `GetTexture2D` gives D3DX's DXT5 blocks for every menu UI file, oracle and portable; debug layer 0 errors over 900 frames; no `UpdateBuffer` per draw | **passed** (identical) |
 | 4 (D3D11) | The front end's SM5 (`FxHlslEmitter`) in the backend; `fxdiff` | step 3's images unchanged; every primbatcher, ui and frame stage compiles with FXC and through glslang to SPIR-V (spirv-val clean); `fxdiff` renders each pass in D3D9 and Diligent-D3D11 within tolerance | **passed**; rendering on Vulkan and GL is step 6 |
-| 5-11 | galtrace, Vulkan/GL, phone, in-game | see [The plan](#the-plan) | open |
+| 5 | galtrace and galplay (`port/graphics/trace`) | a 900-frame menu trace replays into D3D9 and Diligent-D3D11 byte for byte, and into Diligent-Vulkan and -GL within the parity rule; it decodes in an x86_64 build of the reader | **passed** (all four replays byte-identical to the live captures) |
+| 6 | Vulkan and GL on Windows (`/gal diligent:vk`, `diligent:gl`) | step 3's tolerances on both; 0 render-pass ends per primbatcher flush on Vulkan; validation clean; a scripted navigation into the skirmish lobby on D3D11, Vulkan and GL against D3D9 | **passed on Vulkan and GL** (menu identical, lobby within the rule). The lobby **fails on D3D11** (this driver's trilinear blend, [below](#d3d11-and-the-lobby-the-drivers-trilinear-blend)); the Vulkan validation layer is missing on this machine |
+| 7-11 | phone, in-game | see [The plan](#the-plan) | open |
 
-Steps 0-2 are milestone M6a, steps 3 and 4 (D3D11) are M6b ([below](#steps-3-and-4-the-menu-drawn-by-diligent-m6b)).
-Measured on the dev PC (AMD Radeon RX 9070 XT, Windows 11, Debug|Win32 graphics build, FAF 3839
-data). M6b first:
+Steps 0-2 are milestone M6a, steps 3 and 4 (D3D11) are M6b ([below](#steps-3-and-4-the-menu-drawn-by-diligent-m6b)),
+steps 5 and 6 are M6c ([below](#steps-5-and-6-vulkan-gl-and-galtrace-m6c)). Measured on the dev PC (AMD
+Radeon RX 9070 XT, Windows 11, Debug|Win32 graphics build, FAF 3839 data). M6c first:
+
+- **Vulkan and GL parity (step 6).** `/gal diligent:vk` and `/gal diligent:gl`, in the same Win32 graphics
+  main.exe, give the D3D9 hashes at frames 10, 15, 20, 25, 30, 45, 60, 300 and 900 in three runs each; 0
+  of 921,600 pixels differ, and D3D11 still does the same. The comparison is not vacuous: GL without its
+  row-order convention (`/galglnomirror`) fails with 204,402 to 326,026 pixels per frame.
+- **Render passes on Vulkan.** Over the 900-frame menu: 1,813 render passes for 7,192 draws. 10 passes
+  end inside a draw slot, all of them texture uploads (the batcher's DXT5 atlas and first-use textures);
+  0 end because of the primbatcher's buffer maps, 0 because of a commit, 0 for anything else. Diligent's own
+  counters agree: `UpdateBuffer` 0, `CopyBuffer` 0, `MapBuffer` 16,182. The lobby (600 frames): 1,244
+  passes, 41 ends inside draws, all uploads.
+- **Validation.** Diligent reports 0 errors on all three APIs. The D3D11 debug layer reports 0 (its self
+  test provokes 2). GL runs on a debug context, and its debug output has 0 messages of any type over 900
+  frames; the self test's provoked `GL_INVALID_ENUM` arrives. **The Vulkan validation layer is missing:**
+  this machine has no Vulkan SDK, and the 32-bit loader offers only vendor and overlay layers (AMD,
+  Galaxy, EOS, Steam, Medal, Rockstar). Diligent logs that as its one warning. Nothing was downloaded.
+- **The skirmish lobby, scripted.** `/galscript port/graphics/capture/scripts/skirmish_lobby.lua` calls
+  the main menu's own `ButtonSkirmish` at frame 90; the lobby, with Seton's Clutch's map preview, is up
+  from frame 110. Two D3D9 runs are byte-identical at frames 60-600. Captured at every frame from 1 to
+  300, Vulkan and GL are identical to D3D9 up to frame 109; from frame 110 on, 28 pixels differ by 1
+  (within the rule), and Vulkan's and GL's frames are identical to each other. The gate frames up to 600
+  agree. D3D11 fails: 7,655 pixels of the map preview differ by up to 3.
+- **galtrace (step 5).** A 900-frame menu trace recorded on D3D9 (152 MB, 136,900 records) replays
+  through `main.exe /galplay` into D3D9 (4.8 s), Diligent-D3D11 (1.9 s), -Vulkan (2.8 s) and -GL (1.9 s).
+  Every replay's 9 readbacks are byte-identical to the recording, to the live D3D9 capture and to that
+  backend's own live capture. Two recordings have the same content digest (`fc02e894c9b56083`), and so
+  does a recording by the Release|Win32 graphics build (harness and galtrace, no backend). The trace
+  decodes with that digest in x86 and x64 Windows builds of the reader and in an Android x86_64 (NDK)
+  build. Leaving out the `VarSetTexture` or `VbUnlock` records makes 0 of 9 readbacks equal.
+- **Still passing:** gate 1, the `fxdiff` effect gate (78/78 renders, glslang and spirv-val 39/39), the
+  backend's 12 known-answer checks on all three APIs, and BGRA swap chains (`/galswapchainbgra`) on all
+  three, with frames 60, 300 and 900 identical to D3D9.
+
+M6b:
 
 - **Pixel parity (step 3).** `/gal diligent:d3d11` draws FAF's main menu, and the frames are the
   D3D9 frames. In three runs, frames 10, 15, 20, 25, 30, 45, 60, 300 and 900 have the D3D9 hashes
@@ -78,6 +113,10 @@ The videos are in `buildstage/media/`, which is gitignored like every game-deriv
 `m6a/` holds the M6a progress video (36 s, from the M6a captures); `m6b/faf-re-m6b-menu-diligent.mp4`
 (18 s) shows frames 1-540 of both backends side by side in real time, with the per-frame hashes and
 the heat map of their difference, next to stills and the parity strips of frames 30, 60, 300 and 900.
+`m6c/faf-re-m6c-lobby-vulkan-gl.mp4` (10 s, 1920x1080, 30 fps) shows the scripted navigation from the
+main menu into the skirmish lobby, frames 1-300 in real time: D3D9 and Diligent-Vulkan side by side, the
+Vulkan-vs-D3D9 heat map and Diligent-GL below, with each frame's hashes and differing pixels
+(`video.json` and stills next to it).
 
 ## Building the graphics option
 
@@ -98,11 +137,14 @@ skipped. The props:
 - build into `output\main-gfx` and `buildstage\main-gfx`, never the default directories;
 - turn the post-build step off. That step (main.vcxproj:196-200 and the three other configurations)
   copies `main.exe` and `main.pdb` into `C:\ProgramData\FAForever\bin`, the folder FAF plays from;
-- compile `port/graphics/capture/**` and, when the Diligent libraries exist, `port/graphics/diligent/**`
-  (without its `tools/`) and the effect front end's library `port/graphics/fx/src/*.cpp`, each into
-  its own object subdirectory. Debug|Win32 then compiles 1043 TUs, the default 1023;
-- link `buildstage\diligent\install\Win32` (`DiligentCore.lib`, `d3d11.lib`, `d3dcompiler.lib`)
-  and define `FAF_PORT_GRAPHICS_DILIGENT`.
+- compile `port/graphics/capture/**`, galtrace's `port/graphics/trace/{format,record,play}` and, when the
+  Diligent libraries exist, `port/graphics/diligent/**` (without its `tools/`) and the effect front end's
+  library `port/graphics/fx/src/*.cpp`, each into its own object subdirectory, after every engine TU.
+  Debug|Win32 then compiles 1049 TUs (10 diligent, 8 fx, 3 capture, 5 trace), the default 1023; the
+  other configurations 1031 (capture and trace);
+- link `buildstage\diligent\install\Win32` (`DiligentCore.lib`, `d3d11.lib`, `d3dcompiler.lib`; the
+  Vulkan and GL paths add `volk`, `glew-static`, `opengl32`, glslang, SPIRV-Tools and SPIRV-Cross from the
+  same install through `#pragma comment(lib)` in their sources) and define `FAF_PORT_GRAPHICS_DILIGENT`.
 
 The Diligent backend is built only in **Debug**. Diligent's Release libraries are `/GL` objects,
 and main.vcxproj links Release with `/FORCE` and without LTCG, so a Release graphics build contains
@@ -167,6 +209,28 @@ so does the M6b graphics build. (HEAD's temporary probe at `CScriptEvent.cpp:191
 `C:\ProgramData\FAForever\bin\navlay.txt` whenever a sim runs; for these chain runs the file was made
 read-only, so the probe's `fopen` failed and the FAF folder stayed unchanged, sha256 and mtime.)
 
+Checked again for M6c. The one engine file M6c touches is `src/sdk/gpg/gal/Device.cpp`: three hunks and an
+include of `port/graphics/diligent/DeviceFactory.h`, all inside `#if defined(FAF_PORT_GRAPHICS)`
+(galtrace's D3D9 hook, [above](#galtrace-and-galplay-step-5)). `main.vcxproj`, `CScApp.cpp` and
+`WxRuntimeTypes.cpp` are unchanged, and so is `GalCapture.h`; `GalDiligent.h` changed in comments only and
+is included only under `FAF_PORT_GRAPHICS_DILIGENT`. The checks, with the M6a review's method (MSBuild's own
+`ClCompile` target and CL task on `main.vcxproj`, in a scratch tree made from `git archive HEAD src/sdk`, with
+HEAD's and the working tree's `Device.cpp` in turn):
+- **Objects.** In Debug|Win32, Release|Win32, Debug|x64 and Release|x64, with no debug info and `/Brepro`,
+  the two objects are byte-identical (4 of 4; Debug|Win32 `1f5bfe1ae07bcf71`). With the projects' exact
+  flags they are code-identical: every non-debug section, relocation and symbol is equal, and only the
+  line tables and source checksums differ (the hunks shift the lines).
+- **Tokens.** The preprocessed sources (`/P /EP`) are token-identical in all four configurations; the
+  files differ by 50 bytes, the 25 added lines.
+- **Command lines.** The CL command lines are identical in every mode and configuration.
+- **Positive control.** With `FAF_PORT_GRAPHICS` defined, the objects differ in all four configurations,
+  so the comparison detects the hunks.
+- **Evaluation.** The default evaluation still has 1023 `ClCompile` items in every configuration, none
+  under `port/graphics`, and the post-build copy on. The graphics evaluation has 1049 items in
+  Debug|Win32, 1031 elsewhere.
+- **Behaviour.** A fresh default Debug|Win32 build of the working tree plays T1/T2/T3 to the three chains
+  above, and so does the M6c graphics build, with `navlay.txt` read-only as before.
+
 ## Step 0: the D3D9 reference harness
 
 `port/graphics/capture` ([README](../../port/graphics/capture/README.md)) turns the graphics
@@ -224,7 +288,7 @@ fall outside the capture. That is the engine's own behaviour.
 
 `port/graphics/diligent` ([README](../../port/graphics/diligent/README.md)) is a `gpg::gal::Device`
 on Diligent. It overrides all 50 slots, and is selected with `/gal diligent:d3d11`. The engine hooks
-are the `DeviceApiDiligent` case in `Device::Create` (Device.cpp:188-198) and the `/gal` parse plus
+are the `DeviceApiDiligent` case in `Device::Create` (Device.cpp:208-218) and the `/gal` parse plus
 the Win32 cursor in `CScApp::CreateDevice` (CScApp.cpp:1198-1206, 1335-1339).
 
 `DeviceApiDiligent` is `static_cast<DeviceApi>(3)` in `GalDiligent.h`, not a new enumerator. That
@@ -312,7 +376,7 @@ Measured D3DX behaviour that the front end reproduces:
 ## Steps 3 and 4: the menu drawn by Diligent (M6b)
 
 `/gal diligent:d3d11` now draws FAF's main menu with real GPU resources, and every captured frame
-equals D3D9's (status [above](#status-2026-10-07)). The backend's parts, all in `port/graphics`
+equals D3D9's (status [above](#status-2026-10-08)). The backend's parts, all in `port/graphics`
 ([diligent README](../../port/graphics/diligent/README.md), [fx README](../../port/graphics/fx/README.md)):
 
 | Part | Files | What it does |
@@ -332,9 +396,11 @@ EXE=output/main-gfx/Win32/Debug/main.exe; F=10,15,20,25,30,45,60,300,900
 # pixel parity: the D3D9 reference, three Diligent runs, then per run the parity gate with heat maps
 MSYS_NO_PATHCONV=1 python scripts/port/gfx_capture.py --exe $EXE --frames $F --runs 1 --pace 0 --lock <lock> --out <dir>/d3d9
 MSYS_NO_PATHCONV=1 python scripts/port/gfx_capture.py --exe $EXE --gal diligent:d3d11 --frames $F --runs 3 --pace 0 --lock <lock> \
-    --out <dir>/dil -- /galreport <dir>/dil/report.json /galreportframe 900 /galdebuglayerselftest
+    --out <dir>/dil -- /galreport <dir>/report-dil.json /galreportframe 900 /galdebuglayerselftest   # report outside --out: gfx_capture.py writes its own report.json there
 python scripts/port/gfx_capture.py parity <dir>/d3d9/run1 <dir>/dil/run1 --out <dir>/parity1     # run2, run3 alike
 # GetTexture2D, per mode (oracle, portable): dump what the menu decodes, compare with D3DX on a HAL device
+# (create the dump directory first: the backend does not)
+mkdir -p <dir>/tex-portable
 MSYS_NO_PATHCONV=1 python scripts/port/gfx_capture.py --exe $EXE --gal diligent:d3d11 --frames 60,300,900 --runs 1 --pace 0 --lock <lock> \
     --out <dir>/cap-portable -- /galdumptex <dir>/tex-portable /galtex2d portable
 python port/graphics/diligent/tools/tex2d_test.py --dump <dir>/tex-portable --out <dir>/tex2d-portable
@@ -370,7 +436,8 @@ Found by measurement in M6b, and reproduced by the backend:
 
 Not covered yet, and where it belongs:
 
-- Rendering on Vulkan and GL (step 6). Every menu stage already compiles to valid SPIR-V.
+- Rendering on Vulkan and GL: done in M6c ([below](#steps-5-and-6-vulkan-gl-and-galtrace-m6c)). `fxdiff`
+  itself still renders D3D9 against Diligent-D3D11 only.
 - The in-game effects, informational from the same tools: FXC compiles all 341 generated stages of
   the 11 FAF effects; glslang compiles 291 of 315, and the 24 failures are FAF terrain's overloaded
   `PBR`/`splatLerp` calls (the typed emitter of step 11); `fxdiff` agrees on 595 of 862 pass renders,
@@ -378,6 +445,218 @@ Not covered yet, and where it belongs:
 - With `fxdiff --seed 2` and `--seed 3`, one pixel of one point-sampled pass takes the next coarser
   mip level than D3D9 (within the gate's 0.1 % outlier rule).
 - Release|Win32 and x64 builds of the backend (see above).
+
+## Steps 5 and 6: Vulkan, GL and galtrace (M6c)
+
+M6c adds two Diligent APIs to the backend and a recorder and player for the gal call stream. The status
+numbers are [above](#status-2026-10-08). Details are in the [diligent README](../../port/graphics/diligent/README.md)
+("Vulkan and OpenGL"), the [capture README](../../port/graphics/capture/README.md) ("Scripted navigation")
+and the [trace README](../../port/graphics/trace/README.md).
+
+### Vulkan and OpenGL on Windows (step 6)
+
+`/gal diligent:vk` and `/gal diligent:gl` run the same backend in the same Win32 graphics main.exe. Vulkan
+goes through `SysWOW64\vulkan-1.dll` and the driver's 32-bit ICD, GL through `opengl32` on a debug context.
+Only these parts differ per API; resources, the D3D9 state shadow, the PSO cache, the effect layer and the
+readbacks are shared:
+
+| Part | D3D11 | Vulkan | GL |
+|---|---|---|---|
+| Device and swap chain (`DiligentHost.cpp`) | as in M6b | Diligent's Vulkan engine | Diligent's GL engine, debug context |
+| Shaders (`ShaderCompileDiligent.*`) | FXC, unchanged | Diligent's glslang (HLSL to SPIR-V) | HLSL to SPIR-V with the same glslang front end, then SPIRV-Cross to GLSL: `ATTRIBn` inputs become locations, bindings are removed, each (texture, sampler) pair becomes one combined sampler, separable programs |
+| Conventions | - | - | NDC z and row order, below |
+| Validation | debug layer | Khronos layer if the loader has one | `glDebugMessageCallback`, counted by type |
+
+**The GL conventions** (m6u-CRIT.txt R4) are decided once, in `DiligentHost.h` `FlipsRenderTargets`, so the
+Android GLES path inherits them. GL's NDC z runs from -1 to 1 and its framebuffer rows count from the
+bottom. Rather than flip every sampled render target, the backend renders every target mirrored:
+- every vertex shader ends with `y = -y` and `z = 2z - w`;
+- viewports and scissor rectangles are mirrored, and front faces are counter-clockwise;
+- Present reads the head bottom-up into the window.
+
+Texture memory therefore keeps D3D's row order, and uploads, copies, sampling and readbacks need no
+change. With `/galglnomirror` the frames come back exactly upside down.
+
+**Render passes on Vulkan** (m6u-CRIT.txt R2). Diligent's statistics have no render-pass counter, so the
+backend counts `vkCmdBegin/EndRenderPass` (and the dynamic-rendering calls) through volk's function
+pointers and attributes each end inside a draw slot to its phase: a texture created or written at bind
+time, a target switch, the stream buffers' maps, the commit, or anything else. The report's `renderPass`
+block has the counts, and `contextStats` Diligent's own command counters next to them. Textures are moved
+to the sampled state inside their upload, so a first commit does not end the pass.
+
+**Also in M6c:**
+- BGRA swap chains (m6u-CRIT.txt R11): `/galswapchainbgra` asks for one; Present draws into whatever
+  format the swap chain has.
+- GL creates resources on its context's thread only (m6u-CRIT.txt R3). Textures and buffers were already
+  created lazily on the render thread; GPU objects dropped on another thread now wait for the render
+  thread (`GpuShared::Retire`, drained at Present). The report counts both (`createdOffRenderThread`,
+  `releasedOffRenderThread`): 0 and 0 in the menu and the lobby.
+- A PSO cache bug from M6b: the key's `FixedState` struct had 2 padding bytes with undetermined contents,
+  so equal states could miss the cache (the lobby built the same pipeline 6-8 times). They are named
+  members now, and every run builds 1 PSO.
+
+### The skirmish lobby, scripted
+
+`/galscript <file.lua>` (`port/graphics/capture`, no engine hook) runs a Lua file once in the user Lua
+state and then calls its `GalHarnessStep(frame)` once per `CScApp::Main`, right after the virtual clock
+advances. An action taken at frame N is therefore seen by the UI update of frame N+1, in every run and on
+every backend. A Lua error ends the run with exit code 14. `gfx_capture.py --script` copies the file into the
+run directory and passes the copy.
+
+`port/graphics/capture/scripts/skirmish_lobby.lua` calls the main menu's own `ButtonSkirmish` at frame 90,
+which is what the Skirmish button does. The menu slides out, and FAF's lobby is up from frame 110 with
+Seton's Clutch, whose preview DDS is drawn through `RD3DTextureResource`. The harness profile now pins
+`LobbyChangelog`, so the lobby's changelog dialog stays closed; the main menu never reads that preference,
+and its hashes are unchanged.
+
+Every frame from 1 to 300 of the navigation, captured on all three backends (231 distinct images):
+Vulkan and GL are identical to D3D9 in frames 1-109, and from frame 110 on 28 pixels differ by 1, within
+the rule. Vulkan and GL give the same frames as each other.
+
+### D3D11 and the lobby: the driver's trilinear blend
+
+On D3D11, 7,655 pixels of the lobby's map preview differ from D3D9 by up to 3, so D3D11 fails the lobby
+gate. The 256x256 preview is drawn at 200x198 pixels with primbatcher's trilinear sampler, a level of
+detail of log2(256/198) = 0.37. With the mip filter set to point (`/galtrilinear mippoint`) or with level 1
+alone (`level1`), D3D11 and Vulkan give identical frames: the texture data and the sampling of each level
+agree, and only the blend between the two levels differs. Fitting the blend weight over the preview gives
+about 97/256 for D3D9 and Vulkan and 88/256 = 11/32 for D3D11, so this driver's D3D11 path rounds the LOD
+fraction more coarsely. No sampler setting reproduces D3D9: anisotropy 1, 2 or 16 does not, and a MipLODBias
+of +1/64 leaves max |delta| 1 on 3,282 pixels (0.36 %, over the 0.1 % limit). Matching it would take an
+explicit two-level blend in the generated pixel shader for D3D11. The menu has no minified textures and is
+unaffected; Vulkan and GL, the phone's APIs, pass.
+
+### galtrace and galplay (step 5)
+
+`port/graphics/trace` records the gal call stream of a run and replays it below the engine:
+
+- **The format (version 1)** is independent of pointer width: little-endian, fixed-width fields, floats as
+  their bits. A file is a `GALTRACE` header with string metadata, then records of a `u16` op, `u16` flags,
+  a `u32` length and the payload, and an `End` record with totals. One schema table in
+  `GalTraceFormat.cpp` lists every op's fields, and the recorder, the player's schema-checked `Cursor` and
+  the generic decoder all use it.
+- **Every gal context is written field by field**: `DeviceContext` with its heads, sample options, adapter
+  modes and formats, `TextureContext`, `EffectContext` with its macros, `OutputContext`, the viewport,
+  the draw contexts and `CursorContext`.
+- **Objects are `u32` ids**, numbered when the engine first gets them and never reused. A field either
+  refers to a live object of a given type or defines the one a call returned; `Release` ends an id. Window
+  handles are kept only as set or unset, and the effect cache path as its file name.
+- **Payloads are content-addressed blobs**, each with two 64-bit hashes (FNV-1a and a SplitMix word hash)
+  that the reader verifies: texture file images, locked texture rows, locked buffer ranges, effect
+  sources, the effect cache file, and `GetTexture2D` inputs and outputs. A blob is written once and named
+  by id after that.
+- **`FpuState` records** hold the x87 and SSE control words whenever they change, because D3DX's DXT
+  encoder depends on the x87 precision.
+- A `Validator` checks the schema, the blobs, every id's liveness and type, and the `End` totals.
+
+**The recorder** (`record/`) is a decorator `Device`, plus a decorator for every gal object, installed at
+static initialisation when `/galtrace <file>` is given (`/galtraceframes N` ends it early). It forwards
+every engine call in order under one lock, unwraps the objects passed in and wraps the objects handed out.
+Calls the backend makes back into the device while it runs a forwarded call are forwarded unrecorded,
+because a replay makes the backend repeat them itself. `<file>.json` holds its counters and timings.
+
+It attaches through `port/graphics/diligent/DeviceFactory.h`. The Diligent backend calls the decorator
+in `diligent::CreateDevice`. For D3D9, `src/sdk/gpg/gal/Device.cpp` has three hunks inside
+`#if defined(FAF_PORT_GRAPHICS)`:
+- the D3D9 case of `Device::Create` installs `DecorateCreatedDevice(device)`;
+- `Device::GetInstance` returns `ResolveActiveInstance(...)`: the backend while a forwarded call runs,
+  because the D3D9 backend static_casts `GetInstance()` to `DeviceD3D9`;
+- `SupportsVertexTextureFormat` casts the backend, not the decorator.
+
+Without `/galtrace` no decorator is installed, and all three behave as before.
+
+**galplay** is a mode of the graphics main.exe:
+`main.exe /galplay <trace> /galplayout <dir> [/gal diligent:<api>]`. It runs from the CRT's initialiser
+table after every static initialiser and exits before `WinMain`, so there is no `CScApp`, no Lua and no
+simulation. It creates two hidden windows and the device through `Device::Create`, replays every record,
+and writes each readback as the harness's BMP, plus `galplay.json` and `galplay.log`. The JSON holds the
+readbacks, and every backend answer that differs from the recorded one, by category. Exit codes: 0 every
+readback equal, 4 some readback differs, 2 stopped early, 3 bad options. `/galplayskip <Op>` drops one
+op's records, as a mutation.
+
+**What the replays show.** The engine's call stream is the same on D3D9 and Diligent: a Diligent-recorded
+trace and the D3D9 one differ only in the API, and in what the backend answers in four places:
+- the head `OutputContext.face`: D3D9 6, Diligent an uninitialised value;
+- the head target's `RenderTargetContext::format_`: D3D9 0, Diligent 2;
+- `ShowCursor`'s result;
+- two extra `GetDeviceContext` calls.
+
+Replaying the D3D9 trace into Diligent therefore lists 10 "head output" and 9 "target context" mismatches
+in `galplay.json`; none of them changes a pixel.
+
+Recording a D3D9 run first cost 21 s for 23 MB over 60 frames: D3D9's dynamic buffers are write-combined
+memory, and hashing them in place is slow. The recorder now copies them out with one `memcpy` first, and
+a traced 900-frame run takes 18 s.
+
+**Tools:**
+- `galtrace-dump` validates, decodes and prints the content digest, and extracts blobs;
+- the format unit test runs 45 checks;
+- both build with CMake (`/W4 /WX`), and `port/graphics/trace/android/build_reader.py` builds them with
+  the NDK for x86_64 and arm64 (`-Werror`) and runs them under WSL or over adb;
+- `scripts/port/galtrace.py` runs `record`, `play`, `compare`, `dump`, `tools` and the step-5 `gate`.
+
+### Running the M6c gates
+
+```bash
+EXE=output/main-gfx/Win32/Debug/main.exe; F=10,15,20,25,30,45,60,300,900; L=<the machine's GUI lock>
+# step 6, menu: the D3D9 reference, three runs per API, the parity gate per run
+MSYS_NO_PATHCONV=1 python scripts/port/gfx_capture.py --exe $EXE --frames $F --runs 3 --pace 0 --lock $L --out <dir>/d3d9
+for api in d3d11 vk gl; do   # the report outside --out: gfx_capture.py writes its own report.json there
+  MSYS_NO_PATHCONV=1 python scripts/port/gfx_capture.py --exe $EXE --gal diligent:$api --frames $F --runs 3 --pace 0 --lock $L \
+      --out <dir>/$api -- /galreport <dir>/report-$api.json /galreportframe 900 /galdebuglayerselftest
+  python scripts/port/gfx_capture.py parity <dir>/d3d9/run1 <dir>/$api/run1 --out <dir>/parity-$api   # run2, run3 alike
+done
+# step 6, the lobby
+SC=port/graphics/capture/scripts/skirmish_lobby.lua; LF=60,90,95,100,105,110,115,120,135,150,180,240,300,450,600
+MSYS_NO_PATHCONV=1 python scripts/port/gfx_capture.py --exe $EXE --script $SC --frames $LF --runs 2 --pace 0 --lock $L --out <dir>/lobby-d3d9
+MSYS_NO_PATHCONV=1 python scripts/port/gfx_capture.py --exe $EXE --gal diligent:vk --script $SC --frames $LF --runs 1 --pace 0 --lock $L \
+    --out <dir>/lobby-vk -- /galreport <dir>/report-lobby-vk.json /galreportframe 600       # gl, d3d11 alike
+python scripts/port/gfx_capture.py parity <dir>/lobby-d3d9/run1 <dir>/lobby-vk/run1 --out <dir>/parity-lobby-vk
+# step 5: galtrace-dump, record on D3D9, a second recording, replay into every backend, compare
+python scripts/port/galtrace.py tools
+MSYS_NO_PATHCONV=1 python scripts/port/galtrace.py gate --exe $EXE --out <dir>/galtrace --determinism --lock $L \
+    --backends d3d9,diligent:d3d11,diligent:vk,diligent:gl \
+    --live d3d9=<dir>/d3d9/run1 --live diligent:d3d11=<dir>/d3d11/run1 --live diligent:vk=<dir>/vk/run1 --live diligent:gl=<dir>/gl/run1
+python port/graphics/trace/android/build_reader.py --run-wsl <dir>/galtrace/record/trace.galtrace
+```
+
+What the reports must show besides the pixels:
+- `diligentMessages.error` 0;
+- GL `glDebugOutput` errors and undefined behaviour 0, and the self test's provoked error in
+  `debugLayer.selfTest`;
+- Vulkan `renderPass.endsInDrawByMap`, `endsInDrawByCommit` and `endsInDrawOther` 0;
+- `uploads.updateBuffer` 0, and `createdOffRenderThread` and `releasedOffRenderThread` 0;
+- `drawPath.psoFailed` 0.
+
+`/galselftest` passes 12/12 on all three APIs. The galtrace gate requires byte-identical BMPs for D3D9 and
+D3D11 and the parity rule for Vulkan and GL.
+
+### Not covered yet (M6c)
+
+- **A Vulkan validation-layer run.** It needs a 32-bit `VK_LAYER_KHRONOS_validation`, which comes with a
+  Vulkan SDK install.
+- **D3D11's trilinear blend in the lobby** (above).
+- **The in-game downcasts.** `HardwareMeshBatch.cpp:844,1125` and `Mesh.cpp:85,92` downcast gal objects
+  to D3D9 types and would get decorators while a trace records. The menu and lobby traces do not reach
+  them, so they are not guarded yet; they need guards before in-game tracing. `MeshVertex.cpp`
+  `GetHardwareVertexFormatter` and `HardwareMeshBatch.cpp:1135` also need `DeviceApiDiligent` cases
+  before mesh draws.
+- **The backend's two answers that differ from D3D9's**: the head `OutputContext.face` and the head
+  target's `format_` (above).
+- **GLES specifics that Windows GL does not exercise.** Nothing tests yet:
+  - GLSL ES;
+  - a GLES 3.0 device without separate shader objects;
+  - `layout(offset)` in uniform blocks;
+  - the cube-face 2D-array view, which needs `glTextureView`.
+
+  No depth-tested draw in the menu or the lobby checks the z remap.
+- **`fxdiff` on Vulkan and GL.**
+- **The rest of the trace.** `Device::Reset`, lost devices, cube and depth targets, `StretchRect` and the
+  saves are recorded and replayed by the code, but no menu trace exercises them. A second device in one
+  run is not recorded.
+- **galplay on the phone** (step 8). Only the reader and decoder are built for Android so far.
+- **Release and x64 builds of the backend** (above). The Release|Win32 graphics build contains the
+  capture harness and galtrace, not the backend.
 
 ## The plan
 
@@ -390,8 +669,8 @@ From the M6 review (2026-10-07). Durations are for one engineer.
 | 2 | Front-end metadata | done (above) |
 | 3 (3-4 wk) | Menu draw path on Diligent-D3D11: D3D9 state shadow and PSO cache; dynamic vertex and index buffers through `Map(DISCARD/NO_OVERWRITE)`, re-uploaded on the first map of a frame; the dynamic DXT5 atlas; `GetTexture2D` (D3DX oracle and portable); viewport as scissor; the Win32 cursor; primbatcher, ui and frame as SM5 generated into buildstage; the `TextureContext` pointer rebuilt from `dataArray_` | done (M6b, above): RGB identical to step 0 at frames 60/300/900, or max \|delta\| <= 1 on <= 0.1% of pixels with the heat map; `GetTexture2D` gives D3DX's DXT5 blocks for every menu UI file |
 | 4 (2-3 wk) | Swap in the front end's SM5 and metadata; `fxdiff` | done for D3D11 (M6b, above; Vulkan and GL rendering moves to step 6): step 3's images unchanged; `fxdiff` of every primbatcher, ui and frame entry point agrees with the legacy bytecode on Diligent D3D11, Vulkan and GL |
-| 5 (2 wk) | galtrace and galplay, after first pixels | a 900-frame menu trace replays into D3D9 and Diligent byte for byte, and decodes in an x86_64 build |
-| 6 (1-2 wk) | Vulkan and GL on Windows | step 3's tolerances on `diligent:vk` and `:gl`; 0 render-pass ends per primbatcher flush on Vulkan; scripted navigation into the skirmish lobby |
+| 5 (2 wk) | galtrace and galplay, after first pixels | done (M6c, above): a 900-frame menu trace replays into D3D9 and Diligent byte for byte, and decodes in an x86_64 build |
+| 6 (1-2 wk) | Vulkan and GL on Windows | done (M6c, above) on Vulkan and GL: step 3's tolerances on `diligent:vk` and `:gl`; 0 render-pass ends per primbatcher flush on Vulkan; scripted navigation into the skirmish lobby (D3D11 fails the lobby, a driver difference) |
 | 7 (3-4 days, any time) | Phone probe: BC, ETC2, ASTC, D24S8, fillModeNonSolid, border clamp, clip control; glslang timings; Vulkan from an exec'd child process | numbers in the docs; decide in-process or out-of-process engine for M7 |
 | 8 (2 wk) | galplay on the phone: GL thread marshalling, GL z remap and v-flip, CPU BC decode, BGRA swizzle, pre-rotated Present, persistent SPIR-V/GLSL caches | the menu trace on Vulkan and GLES matches Windows `diligent:vk`; a second launch compiles 0 shaders |
 | 9 (6-8 wk) | GUI closure on Android: wx-lite shim over an AppHost, the 19 menu TUs, a trap set for in-game renderers, FreeType fonts | 0 undefined and 0 duplicate symbols; the emulator boots to the menu in-app; registry counts equal Windows |
@@ -436,18 +715,20 @@ Risks:
 
 Open questions: which commit freezes the in-game D3D9 reference, and may the committed render-path
 probes be retired? In-process or out-of-process engine on the phone (step 7)? Does `main_x64.exe`
-reach the menu (M6d)? Vulkan and GL on Windows before the phone work, or after?
+reach the menu (M6d)? (Vulkan and GL on Windows came before the phone work: M6c.)
 
 ## Files
 
 | Path | What |
 |---|---|
 | `port/graphics/port_graphics.props` | The opt-in build (`/p:FafPortGraphics=true`) |
-| `port/graphics/capture/` | Step 0: the frame harness inside `main.exe` |
+| `port/graphics/capture/` | Step 0: the frame harness inside `main.exe`; `/galscript` and `scripts/skirmish_lobby.lua` (step 6) |
 | `scripts/port/gfx_capture.py` | Runs the harness: prefs, lock, priority, monitor, comparison and heat maps; `parity`, the step-3 pixel gate |
-| `port/graphics/diligent/` | Steps 1 and 3: the Diligent backend (resources, state shadow and PSO cache, draw path, effect layer, `PassBinding.h`, portable `GetTexture2D`, self test); `tools/gate1.py`, `tools/fxtechlist.cpp`, `tools/check_vertex_table.py`, `tools/tex2d_test.{cpp,py}` (the `GetTexture2D` unit test) |
+| `port/graphics/diligent/` | Steps 1, 3 and 6: the Diligent backend on D3D11, Vulkan and GL (resources, state shadow and PSO cache, draw path, effect layer, `PassBinding.h`, `ShaderCompileDiligent.*`, `DeviceFactory.h`, portable `GetTexture2D`, self test); `tools/gate1.py`, `tools/fxtechlist.cpp`, `tools/check_vertex_table.py`, `tools/tex2d_test.{cpp,py}` (the `GetTexture2D` unit test) |
 | `scripts/port/build_diligent_win32.ps1` | The Diligent Win32 build, offline |
 | `port/graphics/fx/` | Steps 2 and 4: `gpg::gal::fx` with `FxHlslEmitter`, `fxmeta`, `fxhlsl`, `fxd3dx_dump`, `tools/fxdiff/`, unit tests, test effects |
 | `scripts/port/fx_metadata_gate.py` | Gate 2 |
 | `scripts/port/fxdiff.py` | The step-4 effect gate: FXC, glslang SPIR-V and spirv-val, D3D9 against Diligent-D3D11 renders |
+| `port/graphics/trace/` | Step 5: galtrace (format, recorder) and galplay; `galtrace-dump`, the format test, `android/build_reader.py` |
+| `scripts/port/galtrace.py` | Step 5: record, play, compare, dump, tools and the gate |
 | `src/sdk/gpg/gal/Device.cpp`, `src/sdk/moho/app/CScApp.cpp`, `src/sdk/moho/app/WxRuntimeTypes.cpp`, `src/sdk/main.vcxproj` | The only engine-side edits, all guarded or conditional |

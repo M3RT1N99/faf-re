@@ -26,6 +26,7 @@ usage:
   python scripts/port/gfx_capture.py --runs 3 --lock <scratch>/m6a/gui.lock
   python scripts/port/gfx_capture.py --exe buildstage/m6a-H/out/Win32/Debug/main.exe --pace 0 --runs 1
   python scripts/port/gfx_capture.py --gal diligent:d3d11 --frames none --exit-frame 900
+  python scripts/port/gfx_capture.py --gal diligent:vk --script port/graphics/capture/scripts/skirmish_lobby.lua --frames 60,240,600
   python scripts/port/gfx_capture.py compare <capturesA> <capturesB>     # e.g. D3D9 vs Diligent
   python scripts/port/gfx_capture.py parity <D3D9 run dir> <backend run dir> --out <dir>   # M6b gate
 
@@ -68,6 +69,7 @@ EXIT_NAMES = {
     11: "visibility or focus violation (detected in the process)",
     12: "modal UI intercepted (message box or dialog: engine error)",
     13: "capture failed (frame not rendered or readback error)",
+    14: "navigation script failed (/galscript did not load, or a step raised an error)",
 }
 
 BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
@@ -200,6 +202,9 @@ profile = {{
             Name = 'harness',
             -- the first-start tutorial question (lua/ui/menus/main.lua TutorialPrompt)
             MenuTutorialPrompt = true,
+            -- the lobby's "what changed" dialog (lua/ui/lobby/changelog/ChangelogDialog.lua
+            -- ShouldOpenChangelog: opens while this is below the game version); the menu never reads it
+            LobbyChangelog = 99999,
             options = {{
                 -- CreateDevice reads these when no /windowed is given; options.lua applies them at start
                 primary_adapter = 'windowed',
@@ -318,6 +323,12 @@ def run_once(args, index, out_dir):
         command += ["/gal", args.gal]
     if args.no_pins:
         command += ["/galnopins"]
+    if args.script:
+        # A copy beside the captures, so the run records exactly what drove it.
+        script_copy = os.path.join(run_dir, "navigation_" + os.path.basename(args.script))
+        with open(args.script, "rb") as src, open(script_copy, "wb") as dst:
+            dst.write(src.read())
+        command += ["/galscript", script_copy]
     command += args.extra
 
     info = subprocess.STARTUPINFO()
@@ -644,6 +655,9 @@ def main():
     parser.add_argument("--pace", type=float, default=30.0, help="real-time cap in frames/s, 0 = none")
     parser.add_argument("--seed", type=lambda s: int(s, 0), default=0x6D366100)
     parser.add_argument("--gal", default=None, help="passed as /gal <api> (the Diligent backend, step 1)")
+    parser.add_argument("--script", default=None,
+                        help="/galscript <file.lua>: UI actions by frame number from the Lua side (M6c), e.g. "
+                             "port/graphics/capture/scripts/skirmish_lobby.lua")
     parser.add_argument("--no-pins", action="store_true",
                         help="/galnopins: wall-clock Lua time and time-seeded random, to show what the pins fix")
     parser.add_argument("--timeout", type=float, default=600.0, help="seconds per run before the process is killed")
@@ -669,6 +683,11 @@ def main():
         print(f"refusing to run: {args.exe} has no frame harness (build it with /p:FafPortGraphics=true); without "
               "it the window would be shown", file=sys.stderr)
         return 2
+    if args.script:
+        args.script = os.path.abspath(args.script)
+        if not os.path.isfile(args.script):
+            print(f"no script at {args.script}", file=sys.stderr)
+            return 2
     if not os.path.isfile(os.path.join(args.faf_dir, "bin", "init_faf.lua")):
         print(f"no init_faf.lua under {args.faf_dir}", file=sys.stderr)
         return 2

@@ -15,6 +15,8 @@
 
 #include "gpg/gal/fx/FxHlslEmitter.h"
 
+#include "ShaderCompileDiligent.h"
+
 #include "Common/interface/RefCntAutoPtr.hpp"
 #include "Graphics/GraphicsEngine/interface/Buffer.h"
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
@@ -49,6 +51,8 @@ namespace gpg::gal::diligent
 
         std::mutex gLock;
         EffectLogFn gLog = nullptr;
+        ShaderCompilerFn gCompiler = nullptr; // SetEffectShaderCompiler (ShaderCompileDiligent.h)
+        int gTrilinearMode = 0; // SetEffectTrilinearMode: 0 as D3D9, 1 anisotropic x1, 2 mip POINT (experiments)
         PassSink* gSink = nullptr;
         std::set<std::string> gLogged;
         std::atomic<std::uint64_t> gNextProgramId{1};
@@ -80,6 +84,7 @@ namespace gpg::gal::diligent
         struct SharedGpu
         {
             dg::RefCntAutoPtr<dg::IRenderDevice> device;
+            GraphicsApi api = GraphicsApi::D3D11; // from the device's type (SetEffectRenderDevice)
             dg::RefCntAutoPtr<dg::IBuffer> drawBuffer; // FxGenDraw, every pass binds it
             float lastDraw[fx::kDrawConstantRegisters * 4] = {};
             std::uint64_t lastDrawFrame = 0;
@@ -112,12 +117,12 @@ namespace gpg::gal::diligent
         /**
          * The engine's main thread runs at 24-bit x87 precision (CScApp::Init); the shader compiler
          * is not written for that, so compilation runs at the CRT default and the engine's control
-         * word is put back afterwards (DiligentHost.cpp ScopedDefaultFpu, m6u-PLAN.txt B).
+         * word is put back afterwards (as DiligentHost.cpp ScopedDefaultFpu, m6u-PLAN.txt B; its own, as fxdiff links this TU without DiligentHost.cpp).
          */
-        class ScopedDefaultFpu
+        class EffectScopedFpu
         {
         public:
-            ScopedDefaultFpu()
+            EffectScopedFpu()
             {
 #if defined(_M_IX86)
                 unsigned int unused = 0;
@@ -125,15 +130,15 @@ namespace gpg::gal::diligent
                 ::_controlfp_s(&unused, _PC_53, _MCW_PC);
 #endif
             }
-            ~ScopedDefaultFpu()
+            ~EffectScopedFpu()
             {
 #if defined(_M_IX86)
                 unsigned int unused = 0;
                 ::_controlfp_s(&unused, mSaved & _MCW_PC, _MCW_PC);
 #endif
             }
-            ScopedDefaultFpu(const ScopedDefaultFpu&) = delete;
-            ScopedDefaultFpu& operator=(const ScopedDefaultFpu&) = delete;
+            EffectScopedFpu(const EffectScopedFpu&) = delete;
+            EffectScopedFpu& operator=(const EffectScopedFpu&) = delete;
 
         private:
             unsigned int mSaved = 0;
@@ -326,6 +331,19 @@ namespace gpg::gal::diligent
                 desc.MinFilter = desc.MagFilter = dg::FILTER_TYPE_ANISOTROPIC;
             }
             desc.MipFilter = mip == 2 ? dg::FILTER_TYPE_LINEAR : dg::FILTER_TYPE_POINT;
+            float minMipLevelOverride = 0.0F;
+            if (gTrilinearMode != 0 && desc.MinFilter == dg::FILTER_TYPE_LINEAR && desc.MagFilter == dg::FILTER_TYPE_LINEAR &&
+                desc.MipFilter == dg::FILTER_TYPE_LINEAR) {
+                if (gTrilinearMode == 1 || gTrilinearMode == 4 || gTrilinearMode == 5) {
+                    desc.MinFilter = desc.MagFilter = dg::FILTER_TYPE_ANISOTROPIC;
+                    maxAnisotropy = gTrilinearMode == 1 ? 1 : gTrilinearMode == 4 ? 2 : 16;
+                } else if (gTrilinearMode == 2 || gTrilinearMode == 3) {
+                    desc.MipFilter = dg::FILTER_TYPE_POINT;
+                    if (gTrilinearMode == 3) { // level 1 only
+                        minMipLevelOverride = 1.0F;
+                    }
+                }
+            }
             if (desc.MinFilter == dg::FILTER_TYPE_ANISOTROPIC) {
                 desc.MipFilter = dg::FILTER_TYPE_ANISOTROPIC;
             }
@@ -337,6 +355,12 @@ namespace gpg::gal::diligent
             // MAXMIPLEVEL is the most detailed level D3D9 samples; MIPFILTER NONE samples only it.
             desc.MinLOD = static_cast<float>(maxMipLevel);
             desc.MaxLOD = mip == 0 ? static_cast<float>(maxMipLevel) : 3.402823466e+38F;
+            if (minMipLevelOverride > 0.0F) {
+                desc.MinLOD = desc.MaxLOD = minMipLevelOverride;
+            }
+            if (gTrilinearMode == 6 && desc.MipFilter == dg::FILTER_TYPE_LINEAR) {
+                desc.MipLODBias += 1.0F / 64.0F;
+            }
             // D3DCOLOR is 0xAARRGGBB.
             desc.BorderColor[0] = static_cast<float>((border >> 16) & 0xFFU) / 255.0F;
             desc.BorderColor[1] = static_cast<float>((border >> 8) & 0xFFU) / 255.0F;
@@ -460,12 +484,15 @@ namespace gpg::gal::diligent
         {
             fx::EmittedStage stage;
             dg::RefCntAutoPtr<dg::IShader> shader;
+            std::vector<GlCombinedSampler> combined; // GL
             bool failed = false;
         };
 
         struct TextureBinding
         {
             fx::TextureResource resource;
+            std::string variableName; // the texture's name; on GL the combined sampler's (ShaderCompileDiligent.h)
+            bool pixelStage = true;
             dg::IShaderResourceVariable* variable = nullptr;
             dg::ITextureView* bound = nullptr;
         };
@@ -480,36 +507,59 @@ namespace gpg::gal::diligent
             return mEffect.name + "/" + mEffect.metadata.techniques[static_cast<std::size_t>(mTechnique)].name + "/P" + std::to_string(mPass);
         }
 
-        dg::RefCntAutoPtr<dg::IShader> Compile(const dg::SHADER_TYPE type, const fx::EmittedStage& stage, const char* suffix)
+        // D3D11 and Vulkan compile the SM5 as Diligent does (FXC, glslang); GL goes through glslang and
+        // SPIRV-Cross with combined samplers named "<texture>_s_<sampler>" (ShaderCompileDiligent.h).
+        dg::RefCntAutoPtr<dg::IShader> Compile(const dg::SHADER_TYPE type, const fx::EmittedStage& stage, const char* suffix,
+                                               std::vector<GlCombinedSampler>* combined = nullptr)
         {
             dg::RefCntAutoPtr<dg::IShader> shader;
             if (!gShared.device) {
                 return shader;
             }
             const std::string name = Where() + suffix;
-            dg::ShaderCreateInfo info;
-            info.Source = stage.source.c_str();
-            info.SourceLength = stage.source.size();
-            info.EntryPoint = "main";
-            info.SourceLanguage = dg::SHADER_SOURCE_LANGUAGE_HLSL;
-            info.HLSLVersion = dg::ShaderVersion{5, 0};
-            info.Desc.ShaderType = type;
-            info.Desc.Name = name.c_str();
-            info.Desc.UseCombinedTextureSamplers = false;
-            dg::RefCntAutoPtr<dg::IDataBlob> output;
+            HlslShaderSource request;
+            request.source = stage.source.c_str();
+            request.length = stage.source.size();
+            request.name = name.c_str();
+            request.shaderType = static_cast<std::uint32_t>(type);
+            request.entryPoint = "main";
+            request.shaderModel5 = true;
+            request.combinedTextureSamplers = false;
+            request.naming = CombinedSamplerNaming::TextureAndSampler;
+            CompiledShaderInfo info;
             {
-                ScopedDefaultFpu fpu;
-                gShared.device->CreateShader(info, &shader, &output);
+                EffectScopedFpu fpu;
+                if (gCompiler != nullptr) {
+                    gCompiler(gShared.device, gShared.api, request, &shader, &info);
+                } else if (gShared.api != GraphicsApi::OpenGL) {
+                    // Diligent's own HLSL path (FXC on D3D11, glslang on Vulkan): what the device's
+                    // compiler does for these APIs, for a host that installs none (fxdiff).
+                    dg::ShaderCreateInfo create;
+                    create.Source = request.source;
+                    create.SourceLength = request.length;
+                    create.EntryPoint = request.entryPoint;
+                    create.SourceLanguage = dg::SHADER_SOURCE_LANGUAGE_HLSL;
+                    create.HLSLVersion = dg::ShaderVersion{5, 0};
+                    create.Desc.ShaderType = type;
+                    create.Desc.Name = request.name;
+                    create.Desc.UseCombinedTextureSamplers = false;
+                    dg::RefCntAutoPtr<dg::IDataBlob> output;
+                    gShared.device->CreateShader(create, &shader, &output);
+                    if (!shader && output && output->GetSize() != 0) {
+                        info.messages.assign(static_cast<const char*>(output->GetConstDataPtr()), output->GetSize());
+                    }
+                } else {
+                    info.messages = "no shader compiler installed for GL (SetEffectShaderCompiler)";
+                }
             }
             if (!shader) {
                 ++gCounters.generationFailures;
-                std::string messages;
-                if (output && output->GetSize() != 0) {
-                    messages.assign(static_cast<const char*>(output->GetConstDataPtr()), output->GetSize());
-                }
-                Log(name + ": shader compilation failed: " + messages);
+                Log(name + ": shader compilation failed: " + info.messages);
             } else {
                 ++gCounters.shadersCompiled;
+                if (combined != nullptr) {
+                    *combined = std::move(info.combined);
+                }
             }
             return shader;
         }
@@ -548,7 +598,7 @@ namespace gpg::gal::diligent
                 mPixel->failed = true;
                 return false;
             }
-            mPixel->shader = Compile(dg::SHADER_TYPE_PIXEL, mPixel->stage, "/ps");
+            mPixel->shader = Compile(dg::SHADER_TYPE_PIXEL, mPixel->stage, "/ps", &mPixel->combined);
             mPixel->failed = !mPixel->shader;
             return !mPixel->failed;
         }
@@ -601,6 +651,10 @@ namespace gpg::gal::diligent
                 resources.emplace_back(StagesOf(vertexProbe.usesParams, pixel.usesParams), "FxGenParams", 1U,
                                        dg::SHADER_RESOURCE_TYPE_CONSTANT_BUFFER, dg::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
             }
+            if (gShared.api == GraphicsApi::OpenGL) {
+                return EnsureSignatureCombined(vertexEntry, vertexProbe, pixel, resources, samplers, names, params);
+            }
+
             std::map<std::string, std::pair<fx::TextureResource, std::pair<bool, bool>>> textures;
             for (const fx::TextureResource& texture : vertexProbe.textures) {
                 textures[texture.name] = {texture, {true, false}};
@@ -619,6 +673,8 @@ namespace gpg::gal::diligent
                                        dg::SHADER_RESOURCE_TYPE_TEXTURE_SRV, dg::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC);
                 TextureBinding binding;
                 binding.resource = entry.first;
+                binding.variableName = name;
+                binding.pixelStage = entry.second.second;
                 mTextureVariables.push_back(binding);
             }
             struct SamplerUse
@@ -648,6 +704,13 @@ namespace gpg::gal::diligent
                 samplers.emplace_back(StagesOf(use.vertex, use.pixel), names.back().c_str(), sampler);
             }
 
+            return CreateSignature(resources, samplers, pixel, params, false);
+        }
+
+        // The signature and its binding, from the resources the stages use; then the variables.
+        bool CreateSignature(const std::vector<dg::PipelineResourceDesc>& resources, const std::vector<dg::ImmutableSamplerDesc>& samplers,
+                             const fx::EmittedStage& pixel, const bool params, const bool combinedSamplers)
+        {
             const std::string signatureName = Where();
             dg::PipelineResourceSignatureDesc desc;
             desc.Name = signatureName.c_str();
@@ -656,7 +719,7 @@ namespace gpg::gal::diligent
             desc.ImmutableSamplers = samplers.empty() ? nullptr : samplers.data();
             desc.NumImmutableSamplers = static_cast<dg::Uint32>(samplers.size());
             desc.BindingIndex = 0;
-            desc.UseCombinedTextureSamplers = false;
+            desc.UseCombinedTextureSamplers = combinedSamplers ? dg::True : dg::False;
             gShared.device->CreatePipelineResourceSignature(desc, &mSignature);
             if (!mSignature) {
                 ++gCounters.generationFailures;
@@ -679,12 +742,91 @@ namespace gpg::gal::diligent
                 }
             }
             for (TextureBinding& binding : mTextureVariables) {
-                const auto& stages = textures[binding.resource.name].second;
-                binding.variable = mBinding->GetVariableByName(stages.second ? dg::SHADER_TYPE_PIXEL : dg::SHADER_TYPE_VERTEX,
-                                                               binding.resource.name.c_str());
+                binding.variable = mBinding->GetVariableByName(binding.pixelStage ? dg::SHADER_TYPE_PIXEL : dg::SHADER_TYPE_VERTEX,
+                                                               binding.variableName.c_str());
             }
             mSignatureFailed = false;
             return true;
+        }
+
+        // GL (ShaderCompileDiligent.h): GL has no separate samplers, so the signature lists one texture
+        // per (texture, sampler) pair the compiled stages combined, named as the GLSL names it, with the
+        // pair's sampler_state as its immutable sampler. Each pair is bound to its texture parameter.
+        bool EnsureSignatureCombined(const fx::ShaderEntry& vertexEntry, const fx::EmittedStage& vertexProbe, const fx::EmittedStage& pixel,
+                                     std::vector<dg::PipelineResourceDesc>& resources, std::vector<dg::ImmutableSamplerDesc>& samplers,
+                                     std::deque<std::string>& names, const bool params)
+        {
+            std::vector<GlCombinedSampler> vertexCombined;
+            if (vertexEntry.kind == fx::ShaderEntry::Kind::Compile) {
+                // The probe (every input a float, COLOR0 a D3DCOLOR) reads the same resources as the
+                // shader of any input layout, so its combined samplers are the program's.
+                dg::RefCntAutoPtr<dg::IShader> probe = Compile(dg::SHADER_TYPE_VERTEX, vertexProbe, "/vs-probe", &vertexCombined);
+                if (!probe) {
+                    return false;
+                }
+            }
+            struct Use
+            {
+                GlCombinedSampler combined;
+                bool vertex = false;
+                bool pixel = false;
+            };
+            std::map<std::string, Use> uses;
+            for (const GlCombinedSampler& combined : vertexCombined) {
+                uses[combined.name].combined = combined;
+                uses[combined.name].vertex = true;
+            }
+            for (const GlCombinedSampler& combined : mPixel->combined) {
+                uses[combined.name].combined = combined;
+                uses[combined.name].pixel = true;
+            }
+            auto findTexture = [&](const std::string& name) -> const fx::TextureResource* {
+                for (const std::vector<fx::TextureResource>* list : {&pixel.textures, &vertexProbe.textures}) {
+                    for (const fx::TextureResource& texture : *list) {
+                        if (texture.name == name) {
+                            return &texture;
+                        }
+                    }
+                }
+                return nullptr;
+            };
+            auto findSampler = [&](const std::string& name) -> const fx::SamplerResource* {
+                for (const std::vector<fx::SamplerResource>* list : {&pixel.samplers, &vertexProbe.samplers}) {
+                    for (const fx::SamplerResource& sampler : *list) {
+                        if (sampler.name == name) {
+                            return &sampler;
+                        }
+                    }
+                }
+                return nullptr;
+            };
+            for (const auto& [name, use] : uses) {
+                const fx::TextureResource* const texture = findTexture(use.combined.texture);
+                if (texture == nullptr) {
+                    ++gCounters.generationFailures;
+                    Log(Where() + ": GL combined sampler " + name + " names texture " + use.combined.texture + ", which the stages do not list");
+                    return false;
+                }
+                names.push_back(name);
+                resources.emplace_back(StagesOf(use.vertex, use.pixel), names.back().c_str(), 1U, dg::SHADER_RESOURCE_TYPE_TEXTURE_SRV,
+                                       dg::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC, dg::PIPELINE_RESOURCE_FLAG_COMBINED_SAMPLER);
+                TextureBinding binding;
+                binding.resource = *texture;
+                binding.variableName = name;
+                binding.pixelStage = use.pixel;
+                mTextureVariables.push_back(binding);
+                if (!use.combined.sampler.empty()) {
+                    const fx::SamplerResource* const sampler = findSampler(use.combined.sampler);
+                    const int index = sampler != nullptr ? sampler->samplerParameter : -1;
+                    const fx::ParameterInfo* const parameter = index >= 0 ? &mEffect.metadata.parameters[static_cast<std::size_t>(index)] : nullptr;
+                    dg::SamplerDesc desc = SamplerOf(parameter, mEffect.name);
+                    if (sampler != nullptr && sampler->clampAddress) {
+                        desc.AddressU = desc.AddressV = desc.AddressW = dg::TEXTURE_ADDRESS_CLAMP;
+                    }
+                    samplers.emplace_back(StagesOf(use.vertex, use.pixel), names.back().c_str(), desc);
+                }
+            }
+            return CreateSignature(resources, samplers, pixel, params, true);
         }
 
         EffectGpu::Impl& mEffect;
@@ -935,6 +1077,18 @@ namespace gpg::gal::diligent
         gLog = log;
     }
 
+    void SetEffectTrilinearMode(const int mode)
+    {
+        std::lock_guard<std::mutex> lock(gLock);
+        gTrilinearMode = mode;
+    }
+
+    void SetEffectShaderCompiler(const ShaderCompilerFn compiler)
+    {
+        std::lock_guard<std::mutex> lock(gLock);
+        gCompiler = compiler;
+    }
+
     void SetPassSink(PassSink* const sink)
     {
         std::lock_guard<std::mutex> lock(gLock);
@@ -964,6 +1118,20 @@ namespace gpg::gal::diligent
         gShared.nullFaces.Release();
         gShared.cubeFaceViews.clear();
         gShared.device = device;
+        gShared.api = GraphicsApi::D3D11;
+        if (device != nullptr) {
+            switch (device->GetDeviceInfo().Type) {
+            case dg::RENDER_DEVICE_TYPE_VULKAN:
+                gShared.api = GraphicsApi::Vulkan;
+                break;
+            case dg::RENDER_DEVICE_TYPE_GL:
+            case dg::RENDER_DEVICE_TYPE_GLES:
+                gShared.api = GraphicsApi::OpenGL;
+                break;
+            default:
+                break;
+            }
+        }
     }
 
     EffectGpuStats GetEffectGpuStats()

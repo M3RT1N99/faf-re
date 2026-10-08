@@ -19,7 +19,7 @@
 //   - the Win32 cursor built from the cursor texture, as the D3D10 backend's CursorD3D10 does.
 //
 // Port-only command line (read in Setup, CScApp parses /gal):
-//   /gal diligent:d3d11        select this backend (only d3d11 so far)
+//   /gal diligent:<api>        select this backend on d3d11, vk (Vulkan) or gl (OpenGL; M6c step 6)
 //   /galreport <file.json>     write the report at exit or after /galexitframes
 //   /galexitframes <N>         after N presents, write the report and ask the app to exit
 //   /galreportframe <N>        write the report after N presents and keep running (for runs under the
@@ -29,9 +29,10 @@
 //                              scratch only), for the GetTexture2D unit test
 //   /galtex2d oracle|portable  GetTexture2D through D3DX (default) or the portable decoder/encoder
 //   /galhalfpixel shader|viewport|none   how D3D9's pixel centres are reproduced (PipelineDiligent.h)
-//   /galnovalidation           no Diligent validation and no D3D11 debug layer
-//   /galdebuglayerselftest     at setup, provoke one D3D11 debug-layer error on purpose (not counted)
-//                              to show in the report that the layer is live
+//   /galnovalidation           no Diligent validation, no D3D11 debug layer, no Vulkan validation layer,
+//                              no GL debug context
+//   /galdebuglayerselftest     at setup, provoke one D3D11 debug-layer error (GL: one GL debug-output
+//                              error) on purpose (not counted) to show in the report that it is live
 //   /galselftest               at setup, run the known-answer checks of RunSelfTest (report "selfTest")
 
 #include <atomic>
@@ -63,6 +64,9 @@ namespace gpg::gal::diligent
         ~DeviceDiligent() override; // slot 0
 
         void Setup(const DeviceContext* context);
+
+        /** The API to use whatever `/gal` says (DeviceFactory.h CreateDeviceForApi); before Setup. */
+        void SetApiOverride(const char* api);
 
         void* GetLog() override;                                                     // 1
         DeviceContext* GetDeviceContext() override;                                  // 2
@@ -213,6 +217,8 @@ namespace gpg::gal::diligent
 
         // options
         std::string mApi = "d3d11";
+        std::string mApiOverride;
+        GraphicsApi mGraphicsApi = GraphicsApi::D3D11;
         std::string mReportPath;
         std::string mDumpFxDir;
         std::string mDumpTexDir;

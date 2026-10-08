@@ -43,8 +43,9 @@ two existing backends first), `Texture`, `RenderTarget`, `CubeRenderTarget`, `De
    The metadata matches D3DX on every shipped effect (M6a), and `FxHlslEmitter` generates the SM5
    the Diligent backend runs (M6b); both are in `port/graphics/fx`.
 4. Diligent backend on Windows, compared pixel by pixel against the D3D9 backend. The main menu
-   through `/gal diligent:d3d11` is byte-identical to D3D9 (M6b); the plan and status are in
-   [renderer.md](renderer.md).
+   through `/gal diligent:d3d11` is byte-identical to D3D9 (M6b), and so is it on `diligent:vk` and
+   `diligent:gl` (M6c), with galtrace recording and replaying the gal call stream below the engine; the
+   plan and status are in [renderer.md](renderer.md).
 5. SDL3 platform layer, then Linux.
 
 ## Android

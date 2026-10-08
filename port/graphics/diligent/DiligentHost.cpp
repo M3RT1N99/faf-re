@@ -3,6 +3,8 @@
 #include <d3d11.h>
 #include <d3d11sdklayers.h>
 
+#include <GL/gl.h> // the GL 1.1 entry points of opengl32.dll (the debug-output setup and self test)
+
 #include <float.h>
 
 #include <algorithm>
@@ -18,9 +20,32 @@
 #include "Graphics/GraphicsEngine/interface/TextureView.h"
 #include "Graphics/GraphicsEngineD3D11/interface/EngineFactoryD3D11.h"
 #include "Graphics/GraphicsEngineD3D11/interface/RenderDeviceD3D11.h"
+#include "Graphics/GraphicsEngineOpenGL/interface/EngineFactoryOpenGL.h"
+#include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
 #include "Primitives/interface/DebugOutput.h"
+#include "ShaderCompileDiligent.h"
+
+// What the Vulkan and GL engines in DiligentCore.lib need besides it (the install's lib directory is
+// on the library path, port_graphics.props). The linker takes only what is referenced.
+#pragma comment(lib, "volk.lib")
+#pragma comment(lib, "xxhash.lib")
+#pragma comment(lib, "glew-static.lib")
+#pragma comment(lib, "opengl32.lib")
 
 namespace dg = Diligent;
+
+// volk's command-buffer entry points (C globals in volk.lib; Diligent's Vulkan backend calls through
+// them, VulkanUtilities/CommandBuffer.hpp:331-385). VKAPI_PTR is __stdcall on Win32.
+extern "C"
+{
+    extern void(__stdcall* vkCmdBeginRenderPass)(void*, const void*, std::uint32_t);
+    extern void(__stdcall* vkCmdEndRenderPass)(void*);
+    extern void(__stdcall* vkCmdBeginRenderingKHR)(void*, const void*);
+    extern void(__stdcall* vkCmdEndRenderingKHR)(void*);
+    extern void(__stdcall* vkCmdBeginRendering)(void*, const void*);
+    extern void(__stdcall* vkCmdEndRendering)(void*);
+    extern std::int32_t(__stdcall* vkEnumerateInstanceLayerProperties)(std::uint32_t*, void*);
+}
 
 namespace gpg::gal::diligent
 {
@@ -85,18 +110,308 @@ VSOutput main(uint vertexId : SV_VertexID)
 )";
 
         // Texel for pixel: the head target and the back buffer have the same size, so Load at the
-        // pixel position copies exactly, with no sampler and no filtering.
+        // pixel position copies exactly, with no sampler and no filtering. GL's window framebuffer
+        // counts rows from the bottom while the head holds D3D's rows (DiligentHost.h
+        // FlipsRenderTargets), so there the row is mirrored.
         constexpr const char* kPresentPS = R"(
 Texture2D g_Head;
 struct VSOutput { float4 position : SV_POSITION; };
 float4 main(VSOutput input) : SV_TARGET
 {
+#if defined(GAL_FLIP_Y)
+    uint width;
+    uint height;
+    g_Head.GetDimensions(width, height);
+    int2 texel = int2(input.position.xy);
+    texel.y = int(height) - 1 - texel.y;
+    return g_Head.Load(int3(texel, 0));
+#else
     return g_Head.Load(int3(int2(input.position.xy), 0));
+#endif
 }
 )";
+
+        // ---- Vulkan render-pass counters ----------------------------------------------------
+
+        std::mutex gRenderPassLock;
+        RenderPassCounts gRenderPass;
+        int gPhaseDepth[5] = {}; // per ScopedRenderPhase::Kind; render thread only
+
+        void(__stdcall* gRealBeginRenderPass)(void*, const void*, std::uint32_t) = nullptr;
+        void(__stdcall* gRealEndRenderPass)(void*) = nullptr;
+        void(__stdcall* gRealBeginRenderingKHR)(void*, const void*) = nullptr;
+        void(__stdcall* gRealEndRenderingKHR)(void*) = nullptr;
+        void(__stdcall* gRealBeginRendering)(void*, const void*) = nullptr;
+        void(__stdcall* gRealEndRendering)(void*) = nullptr;
+
+        void CountBegin()
+        {
+            std::lock_guard<std::mutex> lock(gRenderPassLock);
+            ++gRenderPass.begins;
+        }
+
+        int PhaseDepth(const ScopedRenderPhase::Kind kind)
+        {
+            return gPhaseDepth[static_cast<int>(kind)];
+        }
+
+        // Attributed to the innermost reason: an upload inside a commit is an upload.
+        void CountEnd()
+        {
+            using Kind = ScopedRenderPhase::Kind;
+            std::lock_guard<std::mutex> lock(gRenderPassLock);
+            ++gRenderPass.ends;
+            if (PhaseDepth(Kind::Draw) > 0) {
+                ++gRenderPass.endsInDraw;
+                if (PhaseDepth(Kind::Upload) > 0) {
+                    ++gRenderPass.endsInDrawByUpload;
+                } else if (PhaseDepth(Kind::Targets) > 0) {
+                    ++gRenderPass.endsInDrawByTargets;
+                } else if (PhaseDepth(Kind::Map) > 0) {
+                    ++gRenderPass.endsInDrawByMap;
+                } else if (PhaseDepth(Kind::Commit) > 0) {
+                    ++gRenderPass.endsInDrawByCommit;
+                } else {
+                    ++gRenderPass.endsInDrawOther;
+                }
+            } else if (PhaseDepth(Kind::Upload) > 0) {
+                ++gRenderPass.endsByUploadOutsideDraw;
+            }
+        }
+
+        void __stdcall HookBeginRenderPass(void* const commandBuffer, const void* const info, const std::uint32_t contents)
+        {
+            CountBegin();
+            gRealBeginRenderPass(commandBuffer, info, contents);
+        }
+        void __stdcall HookEndRenderPass(void* const commandBuffer)
+        {
+            CountEnd();
+            gRealEndRenderPass(commandBuffer);
+        }
+        void __stdcall HookBeginRenderingKHR(void* const commandBuffer, const void* const info)
+        {
+            CountBegin();
+            gRealBeginRenderingKHR(commandBuffer, info);
+        }
+        void __stdcall HookEndRenderingKHR(void* const commandBuffer)
+        {
+            CountEnd();
+            gRealEndRenderingKHR(commandBuffer);
+        }
+        void __stdcall HookBeginRendering(void* const commandBuffer, const void* const info)
+        {
+            CountBegin();
+            gRealBeginRendering(commandBuffer, info);
+        }
+        void __stdcall HookEndRendering(void* const commandBuffer)
+        {
+            CountEnd();
+            gRealEndRendering(commandBuffer);
+        }
+
+        // After CreateDeviceAndContextsVk, which loaded the device-level entry points (volkLoadDevice).
+        void InstallRenderPassHooks()
+        {
+            std::lock_guard<std::mutex> lock(gRenderPassLock);
+            if (gRenderPass.hooked) {
+                return;
+            }
+            if (vkCmdBeginRenderPass != nullptr) {
+                gRealBeginRenderPass = vkCmdBeginRenderPass;
+                vkCmdBeginRenderPass = &HookBeginRenderPass;
+            }
+            if (vkCmdEndRenderPass != nullptr) {
+                gRealEndRenderPass = vkCmdEndRenderPass;
+                vkCmdEndRenderPass = &HookEndRenderPass;
+            }
+            if (vkCmdBeginRenderingKHR != nullptr) {
+                gRealBeginRenderingKHR = vkCmdBeginRenderingKHR;
+                vkCmdBeginRenderingKHR = &HookBeginRenderingKHR;
+            }
+            if (vkCmdEndRenderingKHR != nullptr) {
+                gRealEndRenderingKHR = vkCmdEndRenderingKHR;
+                vkCmdEndRenderingKHR = &HookEndRenderingKHR;
+            }
+            if (vkCmdBeginRendering != nullptr) {
+                gRealBeginRendering = vkCmdBeginRendering;
+                vkCmdBeginRendering = &HookBeginRendering;
+            }
+            if (vkCmdEndRendering != nullptr) {
+                gRealEndRendering = vkCmdEndRendering;
+                vkCmdEndRendering = &HookEndRendering;
+            }
+            gRenderPass.hooked = gRealEndRenderPass != nullptr;
+        }
+
+        void RemoveRenderPassHooks()
+        {
+            std::lock_guard<std::mutex> lock(gRenderPassLock);
+            if (!gRenderPass.hooked) {
+                return;
+            }
+            if (gRealBeginRenderPass != nullptr) {
+                vkCmdBeginRenderPass = gRealBeginRenderPass;
+            }
+            if (gRealEndRenderPass != nullptr) {
+                vkCmdEndRenderPass = gRealEndRenderPass;
+            }
+            if (gRealBeginRenderingKHR != nullptr) {
+                vkCmdBeginRenderingKHR = gRealBeginRenderingKHR;
+            }
+            if (gRealEndRenderingKHR != nullptr) {
+                vkCmdEndRenderingKHR = gRealEndRenderingKHR;
+            }
+            if (gRealBeginRendering != nullptr) {
+                vkCmdBeginRendering = gRealBeginRendering;
+            }
+            if (gRealEndRendering != nullptr) {
+                vkCmdEndRendering = gRealEndRendering;
+            }
+            gRenderPass.hooked = false; // the counts stay for the report
+        }
+
+        // ---- the GL debug output ---------------------------------------------------------------
+
+        constexpr unsigned kGlDebugOutput = 0x92E0;
+        constexpr unsigned kGlDebugOutputSynchronous = 0x8242;
+        constexpr unsigned kGlContextFlags = 0x821E;
+        constexpr unsigned kGlContextFlagDebugBit = 0x2;
+        constexpr unsigned kGlDebugTypeError = 0x824C;
+        constexpr unsigned kGlDebugTypeDeprecated = 0x824D;
+        constexpr unsigned kGlDebugTypeUndefined = 0x824E;
+        constexpr unsigned kGlDebugTypePortability = 0x824F;
+        constexpr unsigned kGlDebugTypePerformance = 0x8250;
+        constexpr unsigned kGlDebugSeverityNotification = 0x826B;
+        constexpr unsigned kGlNoError = 0;
+
+        using GlDebugProc = void(__stdcall*)(unsigned, unsigned, unsigned, unsigned, int, const char*, const void*);
+        using GlDebugMessageCallbackFn = void(__stdcall*)(GlDebugProc, const void*);
+
+        std::mutex gGlDebugLock;
+        GlDebugCounts gGlDebug;
+        std::vector<std::string> gGlDebugMessages;
+        bool gGlDebugCapture = false; // the self test: count into gGlSelfTest* instead
+        std::uint32_t gGlSelfTestErrors = 0;
+        std::string gGlSelfTestSample;
+
+        void __stdcall OnGlDebugMessage(const unsigned source, const unsigned type, const unsigned id, const unsigned severity,
+                                        const int length, const char* const message, const void* const user)
+        {
+            static_cast<void>(source);
+            static_cast<void>(user);
+            const std::string text = message != nullptr ? std::string(message, length > 0 ? static_cast<std::size_t>(length) : std::strlen(message))
+                                                        : std::string();
+            std::lock_guard<std::mutex> lock(gGlDebugLock);
+            if (gGlDebugCapture) {
+                if (type == kGlDebugTypeError) {
+                    if (gGlSelfTestErrors++ == 0) {
+                        gGlSelfTestSample = text;
+                    }
+                }
+                return;
+            }
+            const char* tag = "OTHER";
+            switch (type) {
+            case kGlDebugTypeError:
+                ++gGlDebug.error;
+                tag = "ERROR";
+                break;
+            case kGlDebugTypeUndefined:
+                ++gGlDebug.undefinedBehavior;
+                tag = "UNDEFINED BEHAVIOR";
+                break;
+            case kGlDebugTypeDeprecated:
+                ++gGlDebug.deprecated;
+                tag = "DEPRECATED";
+                break;
+            case kGlDebugTypePortability:
+                ++gGlDebug.portability;
+                tag = "PORTABILITY";
+                break;
+            case kGlDebugTypePerformance:
+                ++gGlDebug.performance;
+                tag = "PERFORMANCE";
+                break;
+            default:
+                ++gGlDebug.other;
+                break;
+            }
+            if (severity == kGlDebugSeverityNotification) {
+                ++gGlDebug.notification;
+            }
+            if (gGlDebugMessages.size() < kKeptDiligentMessages && severity != kGlDebugSeverityNotification) {
+                gGlDebugMessages.push_back(std::string(tag) + " #" + std::to_string(id) + ": " + text);
+            }
+        }
+
+        /** Replaces Diligent's GL debug callback (which only logs) with the counting one; GL context current. */
+        bool InstallGlDebugOutput()
+        {
+            int flags = 0;
+            ::glGetIntegerv(kGlContextFlags, &flags);
+            const auto callback = reinterpret_cast<GlDebugMessageCallbackFn>(::wglGetProcAddress("glDebugMessageCallback"));
+            if ((static_cast<unsigned>(flags) & kGlContextFlagDebugBit) == 0 || callback == nullptr) {
+                return false;
+            }
+            ::glEnable(kGlDebugOutput);
+            ::glEnable(kGlDebugOutputSynchronous); // messages arrive inside the call that caused them
+            callback(&OnGlDebugMessage, nullptr);
+            while (::glGetError() != kGlNoError) {
+            }
+            std::lock_guard<std::mutex> lock(gGlDebugLock);
+            gGlDebug.active = true;
+            return true;
+        }
     } // namespace
 
     // ---------------------------------------------------------------------------------------------
+
+    const char* GraphicsApiName(const GraphicsApi api)
+    {
+        switch (api) {
+        case GraphicsApi::Vulkan:
+            return "vk";
+        case GraphicsApi::OpenGL:
+            return "gl";
+        default:
+            return "d3d11";
+        }
+    }
+
+    bool ParseGraphicsApi(const char* const name, GraphicsApi* const api)
+    {
+        if (name == nullptr) {
+            return false;
+        }
+        if (std::strcmp(name, "d3d11") == 0) {
+            *api = GraphicsApi::D3D11;
+        } else if (std::strcmp(name, "vk") == 0 || std::strcmp(name, "vulkan") == 0) {
+            *api = GraphicsApi::Vulkan;
+        } else if (std::strcmp(name, "gl") == 0 || std::strcmp(name, "opengl") == 0) {
+            *api = GraphicsApi::OpenGL;
+        } else {
+            return false;
+        }
+        return true;
+    }
+
+    RenderPassCounts GetRenderPassCounts()
+    {
+        std::lock_guard<std::mutex> lock(gRenderPassLock);
+        return gRenderPass;
+    }
+
+    ScopedRenderPhase::ScopedRenderPhase(const Kind kind)
+        : kind_(kind)
+    {
+        ++gPhaseDepth[static_cast<int>(kind_)];
+    }
+
+    ScopedRenderPhase::~ScopedRenderPhase()
+    {
+        --gPhaseDepth[static_cast<int>(kind_)];
+    }
 
     ScopedDefaultFpu::ScopedDefaultFpu()
     {
@@ -111,10 +426,12 @@ float4 main(VSOutput input) : SV_TARGET
         ::_controlfp_s(&unused, mSaved & _MCW_PC, _MCW_PC);
     }
 
-    GpuShared::GpuShared(dg::IRenderDevice* const device, dg::IDeviceContext* const context, const std::uint32_t renderThreadId)
+    GpuShared::GpuShared(dg::IRenderDevice* const device, dg::IDeviceContext* const context, const std::uint32_t renderThreadId,
+                         const GraphicsApi api)
         : device_(device),
           context_(context),
-          renderThreadId_(renderThreadId)
+          renderThreadId_(renderThreadId),
+          api_(api)
     {
         if (device_ != nullptr) {
             device_->AddRef();
@@ -126,6 +443,9 @@ float4 main(VSOutput input) : SV_TARGET
 
     GpuShared::~GpuShared()
     {
+        // Whatever is still waiting goes now, before the device.
+        retiredTextures_.clear();
+        retiredBuffers_.clear();
         if (context_ != nullptr) {
             context_->Release();
         }
@@ -139,10 +459,65 @@ float4 main(VSOutput input) : SV_TARGET
         return ::GetCurrentThreadId() == renderThreadId_;
     }
 
+    void GpuShared::Retire(std::unique_ptr<GpuTexture> texture)
+    {
+        if (!texture) {
+            return;
+        }
+        if (OnRenderThread()) {
+            std::lock_guard<std::recursive_mutex> lock(lock_);
+            texture.reset();
+            return;
+        }
+        ++stats_.releasedOffRenderThread;
+        if (api_ == GraphicsApi::OpenGL) { // GL (and GLES): only the render thread has the context
+            std::lock_guard<std::mutex> lock(retiredLock_);
+            retiredTextures_.push_back(std::move(texture));
+            return;
+        }
+        std::lock_guard<std::recursive_mutex> lock(lock_);
+        texture.reset();
+    }
+
+    void GpuShared::Retire(std::unique_ptr<GpuBuffer> buffer)
+    {
+        if (!buffer) {
+            return;
+        }
+        if (OnRenderThread()) {
+            std::lock_guard<std::recursive_mutex> lock(lock_);
+            buffer.reset();
+            return;
+        }
+        ++stats_.releasedOffRenderThread;
+        if (api_ == GraphicsApi::OpenGL) {
+            std::lock_guard<std::mutex> lock(retiredLock_);
+            retiredBuffers_.push_back(std::move(buffer));
+            return;
+        }
+        std::lock_guard<std::recursive_mutex> lock(lock_);
+        buffer.reset();
+    }
+
+    void GpuShared::DrainRetired()
+    {
+        std::vector<std::unique_ptr<GpuTexture>> textures;
+        std::vector<std::unique_ptr<GpuBuffer>> buffers;
+        {
+            std::lock_guard<std::mutex> lock(retiredLock_);
+            textures.swap(retiredTextures_);
+            buffers.swap(retiredBuffers_);
+        }
+        std::lock_guard<std::recursive_mutex> lock(lock_);
+        textures.clear();
+        buffers.clear();
+    }
+
     // ---------------------------------------------------------------------------------------------
 
     struct DiligentHost::Impl
     {
+        GraphicsApi api = GraphicsApi::D3D11;
         dg::RefCntAutoPtr<dg::IRenderDevice> device;
         dg::RefCntAutoPtr<dg::IDeviceContext> context;
         dg::RefCntAutoPtr<dg::ISwapChain> swapChain;
@@ -156,6 +531,8 @@ float4 main(VSOutput input) : SV_TARGET
         DebugLayerCounts debugCounts;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
+        bool validation = false;
+        std::string vulkanLayers; // JSON object text, Vulkan only
 
         bool CreateHead(std::string* error)
         {
@@ -194,23 +571,26 @@ float4 main(VSOutput input) : SV_TARGET
 
         bool CreatePresentPipeline(std::string* error)
         {
-            dg::ShaderCreateInfo shaderInfo;
-            shaderInfo.SourceLanguage = dg::SHADER_SOURCE_LANGUAGE_HLSL;
-            shaderInfo.EntryPoint = "main";
-
+            HlslShaderSource source;
+            source.entryPoint = "main";
+            if (FlipsRenderTargets(api)) {
+                source.macros.emplace_back("GAL_FLIP_Y", "1");
+            }
+            CompiledShaderInfo vsInfo;
             dg::RefCntAutoPtr<dg::IShader> vs;
-            shaderInfo.Desc.ShaderType = dg::SHADER_TYPE_VERTEX;
-            shaderInfo.Desc.Name = "gal present VS";
-            shaderInfo.Source = kPresentVS;
-            device->CreateShader(shaderInfo, &vs);
+            source.shaderType = dg::SHADER_TYPE_VERTEX;
+            source.name = "gal present VS";
+            source.source = kPresentVS;
+            CompileHlslShader(device, api, source, &vs, &vsInfo);
 
+            CompiledShaderInfo psInfo;
             dg::RefCntAutoPtr<dg::IShader> ps;
-            shaderInfo.Desc.ShaderType = dg::SHADER_TYPE_PIXEL;
-            shaderInfo.Desc.Name = "gal present PS";
-            shaderInfo.Source = kPresentPS;
-            device->CreateShader(shaderInfo, &ps);
+            source.shaderType = dg::SHADER_TYPE_PIXEL;
+            source.name = "gal present PS";
+            source.source = kPresentPS;
+            CompileHlslShader(device, api, source, &ps, &psInfo);
             if (!vs || !ps) {
-                *error = "cannot compile the present shaders";
+                *error = "cannot compile the present shaders: " + vsInfo.messages + " " + psInfo.messages;
                 return false;
             }
 
@@ -233,6 +613,193 @@ float4 main(VSOutput input) : SV_TARGET
             }
             return true;
         }
+
+        bool CreateD3D11(void* window, std::string* error)
+        {
+            dg::IEngineFactoryD3D11* const factory = dg::GetEngineFactoryD3D11();
+            if (factory == nullptr) {
+                *error = "no Diligent D3D11 engine factory";
+                return false;
+            }
+            // No MessageBoxA(MB_SETFOREGROUND) on a failed assertion (Win32Debug.cpp:84-89): the
+            // message goes to the callback and the log, and the run continues.
+            factory->SetBreakOnError(false);
+            factory->SetMessageCallback(OnDiligentMessage);
+
+            dg::EngineD3D11CreateInfo engineInfo;
+            engineInfo.SetValidationLevel(validation ? dg::VALIDATION_LEVEL_1 : dg::VALIDATION_LEVEL_DISABLED);
+            // Feature level 11.0: what every adapter the engine supports has; Diligent defaults to the
+            // highest available otherwise.
+            engineInfo.GraphicsAPIVersion = dg::Version{11, 0};
+
+            dg::IRenderDevice* createdDevice = nullptr;
+            dg::IDeviceContext* createdContext = nullptr;
+            factory->CreateDeviceAndContextsD3D11(engineInfo, &createdDevice, &createdContext);
+            device.Attach(createdDevice);
+            context.Attach(createdContext);
+            if (!device || !context) {
+                *error = "cannot create the D3D11 device";
+                return false;
+            }
+
+            // The debug layer exists only when the device was created with D3D11_CREATE_DEVICE_DEBUG.
+            dg::RefCntAutoPtr<dg::IRenderDeviceD3D11> deviceD3D11(device, dg::IID_RenderDeviceD3D11);
+            if (deviceD3D11) {
+                ID3D11Device* const d3dDevice = deviceD3D11->GetD3D11Device();
+                if (d3dDevice != nullptr &&
+                    SUCCEEDED(d3dDevice->QueryInterface(__uuidof(ID3D11InfoQueue), reinterpret_cast<void**>(&infoQueue)))) {
+                    // Keep every message for DrainDebugLayer, and never break into a debugger.
+                    infoQueue->SetMessageCountLimit(static_cast<UINT64>(-1));
+                    infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, FALSE);
+                    infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, FALSE);
+                    infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, FALSE);
+                }
+            }
+
+            dg::SwapChainDesc swapChainDesc;
+            swapChainDesc.Width = width;
+            swapChainDesc.Height = height;
+            // UNORM, not the SRGB default: FA renders in gamma space (m6u-DIL.txt 9).
+            swapChainDesc.ColorBufferFormat = SwapChainBgraFlag() ? dg::TEX_FORMAT_BGRA8_UNORM : dg::TEX_FORMAT_RGBA8_UNORM;
+            // The engine owns its depth targets (gal CreateDepthStencilTarget, the head's D24S8).
+            swapChainDesc.DepthBufferFormat = dg::TEX_FORMAT_UNKNOWN;
+            swapChainDesc.Usage = dg::SWAP_CHAIN_USAGE_RENDER_TARGET | dg::SWAP_CHAIN_USAGE_COPY_SOURCE;
+            swapChainDesc.BufferCount = 2;
+            dg::FullScreenModeDesc fullScreenDesc;
+            dg::Win32NativeWindow nativeWindow{window};
+            factory->CreateSwapChainD3D11(device, context, swapChainDesc, fullScreenDesc, nativeWindow, &swapChain);
+            if (!swapChain) {
+                *error = "cannot create the swap chain";
+                return false;
+            }
+            return true;
+        }
+
+        // Vulkan: Diligent's Vulkan backend through volk (the system's vulkan-1.dll and the driver's
+        // 32-bit ICD). With validation, Diligent asks for VK_LAYER_KHRONOS_validation and goes on
+        // without it when the loader has none (it logs that); the report lists what the loader offers.
+        bool CreateVulkan(void* window, std::string* error)
+        {
+            dg::IEngineFactoryVk* const factory = dg::GetEngineFactoryVk();
+            if (factory == nullptr) {
+                *error = "no Diligent Vulkan engine factory";
+                return false;
+            }
+            factory->SetBreakOnError(false);
+            factory->SetMessageCallback(OnDiligentMessage);
+
+            dg::EngineVkCreateInfo engineInfo;
+            engineInfo.EnableValidation = validation ? dg::True : dg::False;
+            // D3D9 DISCARD locks become Map(DISCARD), which takes a whole buffer's size from the
+            // per-frame dynamic heap (DeviceContextVkImpl.cpp:2296-2345); the menu's sheets fit the
+            // default, the lobby and later screens get headroom. The memory reserves are kept below
+            // the defaults for a 32-bit address space.
+            engineInfo.DynamicHeapSize = 64u << 20;
+            engineInfo.DeviceLocalMemoryReserveSize = 64u << 20;
+            engineInfo.HostVisibleMemoryReserveSize = 64u << 20;
+
+            dg::IRenderDevice* createdDevice = nullptr;
+            dg::IDeviceContext* createdContext = nullptr;
+            factory->CreateDeviceAndContextsVk(engineInfo, &createdDevice, &createdContext);
+            device.Attach(createdDevice);
+            context.Attach(createdContext);
+            if (!device || !context) {
+                *error = "cannot create the Vulkan device";
+                return false;
+            }
+            InstallRenderPassHooks();
+            vulkanLayers = DescribeVulkanLayers();
+
+            dg::SwapChainDesc swapChainDesc;
+            swapChainDesc.Width = width;
+            swapChainDesc.Height = height;
+            // RGBA8 UNORM when the surface offers it; Diligent falls back to BGRA8 otherwise, which the
+            // present pass draws into (m6u-CRIT.txt R11).
+            swapChainDesc.ColorBufferFormat = SwapChainBgraFlag() ? dg::TEX_FORMAT_BGRA8_UNORM : dg::TEX_FORMAT_RGBA8_UNORM;
+            swapChainDesc.DepthBufferFormat = dg::TEX_FORMAT_UNKNOWN;
+            swapChainDesc.Usage = dg::SWAP_CHAIN_USAGE_RENDER_TARGET;
+            swapChainDesc.BufferCount = 2;
+            dg::Win32NativeWindow nativeWindow{window};
+            factory->CreateSwapChainVk(device, context, swapChainDesc, nativeWindow, &swapChain);
+            if (!swapChain) {
+                *error = "cannot create the Vulkan swap chain";
+                return false;
+            }
+            return true;
+        }
+
+        // OpenGL: a (debug) context on the window, made current on this thread - the render thread
+        // from here on. Clip control stays off (ZeroToOneNDZ false): the z range is remapped in the
+        // vertex shaders, as on GLES devices without GL_EXT_clip_control (DiligentHost.h).
+        bool CreateOpenGL(void* window, std::string* error)
+        {
+            dg::IEngineFactoryOpenGL* const factory = dg::GetEngineFactoryOpenGL();
+            if (factory == nullptr) {
+                *error = "no Diligent OpenGL engine factory";
+                return false;
+            }
+            factory->SetBreakOnError(false);
+            factory->SetMessageCallback(OnDiligentMessage);
+
+            dg::EngineGLCreateInfo engineInfo;
+            engineInfo.EnableValidation = validation ? dg::True : dg::False;
+            engineInfo.Window = dg::Win32NativeWindow{window};
+            engineInfo.ZeroToOneNDZ = dg::False;
+            // One program per stage (GL_ARB_separate_shader_objects; core in GLES 3.1). The generated
+            // stages declare only the FxGenParams members they read (FxHlslEmitter), so one block name
+            // has different members in the vertex and the pixel shader; a single linked program would
+            // reject that ("member names and types must match"), separate programs do not. Vulkan and
+            // D3D bind such views at offsets anyway.
+            engineInfo.Features.SeparablePrograms = dg::DEVICE_FEATURE_STATE_ENABLED;
+
+            dg::SwapChainDesc swapChainDesc;
+            swapChainDesc.Width = width;
+            swapChainDesc.Height = height;
+            swapChainDesc.ColorBufferFormat = SwapChainBgraFlag() ? dg::TEX_FORMAT_BGRA8_UNORM : dg::TEX_FORMAT_RGBA8_UNORM;
+            swapChainDesc.DepthBufferFormat = dg::TEX_FORMAT_UNKNOWN;
+            swapChainDesc.Usage = dg::SWAP_CHAIN_USAGE_RENDER_TARGET;
+            swapChainDesc.BufferCount = 2;
+
+            dg::IRenderDevice* createdDevice = nullptr;
+            dg::IDeviceContext* createdContext = nullptr;
+            factory->CreateDeviceAndSwapChainGL(engineInfo, &createdDevice, &createdContext, swapChainDesc, &swapChain);
+            device.Attach(createdDevice);
+            context.Attach(createdContext);
+            if (!device || !context || !swapChain) {
+                *error = "cannot create the OpenGL device";
+                return false;
+            }
+            if (validation) {
+                InstallGlDebugOutput();
+            }
+            return true;
+        }
+
+        std::string DescribeVulkanLayers() const
+        {
+            struct LayerProperties // VkLayerProperties
+            {
+                char layerName[256];
+                std::uint32_t specVersion;
+                std::uint32_t implementationVersion;
+                char description[256];
+            };
+            std::string names;
+            bool khronos = false;
+            std::uint32_t count = 0;
+            if (vkEnumerateInstanceLayerProperties != nullptr && vkEnumerateInstanceLayerProperties(&count, nullptr) == 0 && count != 0) {
+                std::vector<LayerProperties> layers(count);
+                if (vkEnumerateInstanceLayerProperties(&count, layers.data()) == 0) {
+                    for (std::uint32_t index = 0; index < count; ++index) {
+                        const std::string name(layers[index].layerName, strnlen(layers[index].layerName, sizeof(layers[index].layerName)));
+                        khronos = khronos || name == "VK_LAYER_KHRONOS_validation";
+                        names += std::string(names.empty() ? "\"" : ", \"") + name + "\"";
+                    }
+                }
+            }
+            return "{\"instanceLayers\": [" + names + "], \"khronosValidationAvailable\": " + (khronos ? "true" : "false") +
+                   ", \"validationRequested\": " + (validation ? "true" : "false") + "}";
+        }
     };
 
     DiligentHost::DiligentHost()
@@ -248,68 +815,31 @@ float4 main(VSOutput input) : SV_TARGET
         void* const window,
         const std::uint32_t width,
         const std::uint32_t height,
+        const GraphicsApi api,
         const bool validation,
         std::string* const error
     )
     {
         Destroy();
         ScopedDefaultFpu fpu;
+        mImpl->api = api;
+        mImpl->validation = validation;
+        mImpl->width = width;
+        mImpl->height = height;
 
-        dg::IEngineFactoryD3D11* const factory = dg::GetEngineFactoryD3D11();
-        if (factory == nullptr) {
-            *error = "no Diligent D3D11 engine factory";
-            return false;
+        bool created = false;
+        switch (api) {
+        case GraphicsApi::Vulkan:
+            created = mImpl->CreateVulkan(window, error);
+            break;
+        case GraphicsApi::OpenGL:
+            created = mImpl->CreateOpenGL(window, error);
+            break;
+        default:
+            created = mImpl->CreateD3D11(window, error);
+            break;
         }
-        // No MessageBoxA(MB_SETFOREGROUND) on a failed assertion (Win32Debug.cpp:84-89): the
-        // message goes to the callback and the log, and the run continues.
-        factory->SetBreakOnError(false);
-        factory->SetMessageCallback(OnDiligentMessage);
-
-        dg::EngineD3D11CreateInfo engineInfo;
-        engineInfo.SetValidationLevel(validation ? dg::VALIDATION_LEVEL_1 : dg::VALIDATION_LEVEL_DISABLED);
-        // Feature level 11.0: what every adapter the engine supports has; Diligent defaults to the
-        // highest available otherwise.
-        engineInfo.GraphicsAPIVersion = dg::Version{11, 0};
-
-        dg::IRenderDevice* device = nullptr;
-        dg::IDeviceContext* context = nullptr;
-        factory->CreateDeviceAndContextsD3D11(engineInfo, &device, &context);
-        mImpl->device.Attach(device);
-        mImpl->context.Attach(context);
-        if (!mImpl->device || !mImpl->context) {
-            *error = "cannot create the D3D11 device";
-            Destroy();
-            return false;
-        }
-
-        // The debug layer exists only when the device was created with D3D11_CREATE_DEVICE_DEBUG.
-        dg::RefCntAutoPtr<dg::IRenderDeviceD3D11> deviceD3D11(mImpl->device, dg::IID_RenderDeviceD3D11);
-        if (deviceD3D11) {
-            ID3D11Device* const d3dDevice = deviceD3D11->GetD3D11Device();
-            if (d3dDevice != nullptr &&
-                SUCCEEDED(d3dDevice->QueryInterface(__uuidof(ID3D11InfoQueue), reinterpret_cast<void**>(&mImpl->infoQueue)))) {
-                // Keep every message for DrainDebugLayer, and never break into a debugger.
-                mImpl->infoQueue->SetMessageCountLimit(static_cast<UINT64>(-1));
-                mImpl->infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, FALSE);
-                mImpl->infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, FALSE);
-                mImpl->infoQueue->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, FALSE);
-            }
-        }
-
-        dg::SwapChainDesc swapChainDesc;
-        swapChainDesc.Width = width;
-        swapChainDesc.Height = height;
-        // UNORM, not the SRGB default: FA renders in gamma space (m6u-DIL.txt 9).
-        swapChainDesc.ColorBufferFormat = dg::TEX_FORMAT_RGBA8_UNORM;
-        // The engine owns its depth targets (gal CreateDepthStencilTarget, the head's D24S8).
-        swapChainDesc.DepthBufferFormat = dg::TEX_FORMAT_UNKNOWN;
-        swapChainDesc.Usage = dg::SWAP_CHAIN_USAGE_RENDER_TARGET | dg::SWAP_CHAIN_USAGE_COPY_SOURCE;
-        swapChainDesc.BufferCount = 2;
-        dg::FullScreenModeDesc fullScreenDesc;
-        dg::Win32NativeWindow nativeWindow{window};
-        factory->CreateSwapChainD3D11(mImpl->device, mImpl->context, swapChainDesc, fullScreenDesc, nativeWindow, &mImpl->swapChain);
-        if (!mImpl->swapChain) {
-            *error = "cannot create the swap chain";
+        if (!created) {
             Destroy();
             return false;
         }
@@ -319,20 +849,26 @@ float4 main(VSOutput input) : SV_TARGET
             return false;
         }
 
-        mImpl->width = width;
-        mImpl->height = height;
         if (!mImpl->CreateHead(error)) {
             Destroy();
             return false;
         }
-        mImpl->gpu = std::make_shared<GpuShared>(mImpl->device, mImpl->context, static_cast<std::uint32_t>(::GetCurrentThreadId()));
+        mImpl->gpu = std::make_shared<GpuShared>(mImpl->device, mImpl->context, static_cast<std::uint32_t>(::GetCurrentThreadId()), api);
         return true;
+    }
+
+    GraphicsApi DiligentHost::GetApi() const
+    {
+        return mImpl->api;
     }
 
     void DiligentHost::Destroy()
     {
         if (!mImpl) {
             return;
+        }
+        if (mImpl->gpu) {
+            mImpl->gpu->DrainRetired();
         }
         if (mImpl->context) {
             mImpl->context->Flush();
@@ -350,6 +886,9 @@ float4 main(VSOutput input) : SV_TARGET
         mImpl->swapChain.Release();
         mImpl->context.Release();
         mImpl->device.Release();
+        if (mImpl->api == GraphicsApi::Vulkan) {
+            RemoveRenderPassHooks();
+        }
     }
 
     bool DiligentHost::IsCreated() const
@@ -408,12 +947,13 @@ float4 main(VSOutput input) : SV_TARGET
         mImpl->context->SetRenderTargets(0, nullptr, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_NONE);
         mImpl->swapChain->Present(syncInterval);
         mImpl->gpu->AdvanceFrame();
+        mImpl->gpu->DrainRetired();
     }
 
     // The staging-texture readback of Diligent's own screen capture (DiligentTools ScreenCapture:
     // CopyTexture with both transitions, then a map for reading). This waits for the GPU instead of
     // a fence: the frame harness reads a few chosen frames, and D3D9's GetRenderTargetData stalls
-    // the same way.
+    // the same way. On GL the rows come back in memory order, which is D3D's (FlipsRenderTargets).
     bool DiligentHost::ReadTextureBgra8(
         dg::ITexture* const texture,
         std::vector<std::uint8_t>* const out,
@@ -475,14 +1015,18 @@ float4 main(VSOutput input) : SV_TARGET
         mImpl->context->WaitForIdle();
 
         dg::MappedTextureSubresource mapped;
-        mImpl->context->MapTextureSubresource(staging, 0, 0, dg::MAP_READ, dg::MAP_FLAG_NONE, nullptr, mapped);
+        // Vulkan never waits when it maps a staging texture and asks for DO_NOT_WAIT to say the caller
+        // synchronised; WaitForIdle above did.
+        mImpl->context->MapTextureSubresource(staging, 0, 0, dg::MAP_READ,
+                                              mImpl->api == GraphicsApi::Vulkan ? dg::MAP_FLAG_DO_NOT_WAIT : dg::MAP_FLAG_NONE, nullptr, mapped);
         if (mapped.pData == nullptr) {
             return false;
         }
         const std::size_t rowBytes = static_cast<std::size_t>(sourceDesc.Width) * 4u;
+        const std::size_t stride = mapped.Stride != 0 ? static_cast<std::size_t>(mapped.Stride) : rowBytes;
         out->resize(rowBytes * sourceDesc.Height);
         for (std::uint32_t row = 0; row < sourceDesc.Height; ++row) {
-            const std::uint8_t* const from = static_cast<const std::uint8_t*>(mapped.pData) + static_cast<std::size_t>(mapped.Stride) * row;
+            const std::uint8_t* const from = static_cast<const std::uint8_t*>(mapped.pData) + stride * row;
             std::uint8_t* const to = out->data() + rowBytes * row;
             if (!swapRedBlue) {
                 std::memcpy(to, from, rowBytes);
@@ -521,7 +1065,7 @@ float4 main(VSOutput input) : SV_TARGET
                                    dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         mImpl->context->WaitForIdle();
         void* mapped = nullptr;
-        mImpl->context->MapBuffer(staging, dg::MAP_READ, dg::MAP_FLAG_NONE, mapped);
+        mImpl->context->MapBuffer(staging, dg::MAP_READ, mImpl->api == GraphicsApi::Vulkan ? dg::MAP_FLAG_DO_NOT_WAIT : dg::MAP_FLAG_NONE, mapped);
         if (mapped == nullptr) {
             return false;
         }
@@ -626,6 +1170,67 @@ float4 main(VSOutput input) : SV_TARGET
             *sample += " (CreateBuffer unexpectedly succeeded)";
         }
         return errors;
+    }
+
+    std::uint32_t DiligentHost::SelfTestGlDebugOutput(std::string* const sample)
+    {
+        if (mImpl->api != GraphicsApi::OpenGL || !mImpl->device) {
+            return 0;
+        }
+        {
+            std::lock_guard<std::mutex> lock(gGlDebugLock);
+            if (!gGlDebug.active) {
+                return 0;
+            }
+            gGlDebugCapture = true;
+            gGlSelfTestErrors = 0;
+            gGlSelfTestSample.clear();
+        }
+        // An invalid texture target: GL_INVALID_ENUM, and the call changes nothing.
+        ::glBindTexture(0x1234u, 0u);
+        std::uint32_t errors = 0;
+        while (::glGetError() != kGlNoError) {
+        }
+        {
+            std::lock_guard<std::mutex> lock(gGlDebugLock);
+            gGlDebugCapture = false;
+            errors = gGlSelfTestErrors;
+            if (sample != nullptr) {
+                *sample = gGlSelfTestSample;
+            }
+        }
+        return errors;
+    }
+
+    GlDebugCounts DiligentHost::GetGlDebugCounts(std::vector<std::string>* const out) const
+    {
+        std::lock_guard<std::mutex> lock(gGlDebugLock);
+        if (out != nullptr) {
+            *out = gGlDebugMessages;
+        }
+        return gGlDebug;
+    }
+
+    std::string DiligentHost::GetVulkanLayerReport() const
+    {
+        return mImpl->vulkanLayers.empty() ? std::string("{}") : mImpl->vulkanLayers;
+    }
+
+    std::string DiligentHost::GetContextStatsJson() const
+    {
+        if (!mImpl->context) {
+            return "{}";
+        }
+        const dg::DeviceContextCommandCounters& c = mImpl->context->GetStats().CommandCounters;
+        return "{\"SetPipelineState\": " + std::to_string(c.SetPipelineState) + ", \"CommitShaderResources\": " +
+               std::to_string(c.CommitShaderResources) + ", \"SetRenderTargets\": " + std::to_string(c.SetRenderTargets) +
+               ", \"SetViewports\": " + std::to_string(c.SetViewports) + ", \"ClearRenderTarget\": " + std::to_string(c.ClearRenderTarget) +
+               ", \"ClearDepthStencil\": " + std::to_string(c.ClearDepthStencil) + ", \"Draw\": " + std::to_string(c.Draw) +
+               ", \"DrawIndexed\": " + std::to_string(c.DrawIndexed) + ", \"MapBuffer\": " + std::to_string(c.MapBuffer) +
+               ", \"UpdateBuffer\": " + std::to_string(c.UpdateBuffer) + ", \"CopyBuffer\": " + std::to_string(c.CopyBuffer) +
+               ", \"UpdateTexture\": " + std::to_string(c.UpdateTexture) + ", \"CopyTexture\": " + std::to_string(c.CopyTexture) +
+               ", \"MapTextureSubresource\": " + std::to_string(c.MapTextureSubresource) + ", \"GenerateMips\": " +
+               std::to_string(c.GenerateMips) + "}";
     }
 
     bool DiligentHost::IsDebugLayerActive() const
@@ -920,6 +1525,7 @@ float4 main(VSOutput input) : SV_TARGET
             ++gpu.Stats().createdOffRenderThread;
         }
         ScopedDefaultFpu fpu;
+        ScopedRenderPhase upload(ScopedRenderPhase::Kind::Upload); // initial data is a copy on Vulkan
         auto result = std::unique_ptr<GpuTexture>(new GpuTexture());
         gpu.Device()->CreateTexture(textureDesc, data.pSubResources != nullptr ? &data : nullptr, &result->impl_->texture);
         if (!result->impl_->texture) {
@@ -930,6 +1536,13 @@ float4 main(VSOutput input) : SV_TARGET
             return nullptr;
         }
         ++gpu.Stats().texturesCreated;
+        if (gpu.Api() == GraphicsApi::Vulkan && desc.shaderResource && !desc.renderTarget && !desc.depthStencil) {
+            // Into the sampled state now, inside the upload, rather than at the first commit (a barrier,
+            // which on Vulkan ends the render pass where it happens).
+            dg::StateTransitionDesc barrier(result->impl_->texture, dg::RESOURCE_STATE_UNKNOWN, dg::RESOURCE_STATE_SHADER_RESOURCE,
+                                            dg::STATE_TRANSITION_FLAG_UPDATE_STATE);
+            gpu.Context()->TransitionResourceStates(1, &barrier);
+        }
         return result;
     }
 
@@ -962,9 +1575,16 @@ float4 main(VSOutput input) : SV_TARGET
         subresource.pData = data.data;
         subresource.Stride = data.stride;
         subresource.DepthStride = data.depthStride;
+        ScopedRenderPhase upload(ScopedRenderPhase::Kind::Upload);
         gpu.Context()->UpdateTexture(impl_->texture, level, face, box, subresource, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
                                      dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         ++gpu.Stats().updateTexture;
+        if (gpu.Api() == GraphicsApi::Vulkan && (desc.BindFlags & dg::BIND_SHADER_RESOURCE) != 0) {
+            // Back to the sampled state inside the upload (see Create).
+            dg::StateTransitionDesc barrier(impl_->texture, dg::RESOURCE_STATE_UNKNOWN, dg::RESOURCE_STATE_SHADER_RESOURCE,
+                                            dg::STATE_TRANSITION_FLAG_UPDATE_STATE);
+            gpu.Context()->TransitionResourceStates(1, &barrier);
+        }
         // Rows of `stride` bytes: texel rows, or block rows for block-compressed formats.
         const std::uint32_t blockHeight = std::max<std::uint32_t>(gpu.Device()->GetTextureFormatInfo(desc.Format).BlockHeight, 1U);
         gpu.Stats().updateTextureBytes += static_cast<std::uint64_t>(data.stride) * ((height + blockHeight - 1U) / blockHeight);
@@ -977,6 +1597,7 @@ float4 main(VSOutput input) : SV_TARGET
         }
         std::lock_guard<std::recursive_mutex> lock(gpu.Lock());
         if (dg::ITextureView* const view = impl_->texture->GetDefaultView(dg::TEXTURE_VIEW_SHADER_RESOURCE)) {
+            ScopedRenderPhase upload(ScopedRenderPhase::Kind::Upload);
             gpu.Context()->GenerateMips(view);
         }
     }

@@ -30,17 +30,20 @@ namespace gpg::gal
     namespace diligent
     {
         /**
-         * True when the command line asks for this backend: `/gal diligent:<api>`. Only `d3d11` is
-         * implemented; any other api makes the device setup throw gal::Error, which CScApp's
+         * True when the command line asks for this backend: `/gal diligent:<api>`, with api `d3d11`,
+         * `vk` or `gl` (M6c). Any other api makes the device setup throw gal::Error, which CScApp's
          * CreateAppFrame reports as "GAL Exception" and the engine then gives up as it does when
          * D3D9 cannot start. `/gal d3d9` (or no `/gal`) keeps the default.
          */
         [[nodiscard]] bool IsRequestedOnCommandLine();
 
-        /** `new DeviceDiligent`, not yet set up (Device::Create installs it first, then sets it up). */
+        /**
+         * `new DeviceDiligent`, not yet set up (Device::Create installs it first, then sets it up).
+         * A DeviceDecorator (DeviceFactory.h, galtrace) may wrap it; the result is what to install.
+         */
         [[nodiscard]] Device* CreateDevice();
 
-        /** DeviceDiligent::Setup(context) on a device CreateDevice made. */
+        /** DeviceDiligent::Setup(context) on the device behind what CreateDevice returned. */
         void SetupDevice(Device* device, const DeviceContext* context);
     } // namespace diligent
 } // namespace gpg::gal
