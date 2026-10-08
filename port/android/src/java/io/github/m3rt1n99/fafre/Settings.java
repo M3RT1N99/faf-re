@@ -44,6 +44,15 @@ final class Settings {
     private static final String LAST_REPLAY_MESSAGE = "last_replay_message";
     private static final String LAST_REPLAY_OK = "last_replay_ok";
     private static final String LAST_REPLAY_TIME = "last_replay_time";
+    private static final String LAST_LAUNCH_MODE = "last_launch_mode";
+    private static final String MENU_FAST = "menu_replay_fast";
+    private static final String MENU_ADVANCED = "menu_replay_advanced";
+    private static final String MENU_CPU_DECODE = "menu_replay_cpu_decode";
+    private static final String MENU_NO_SHADER_CACHE = "menu_replay_no_shader_cache";
+    private static final String LAST_MENU_RUN = "last_menu_run";
+    /** {@link #lastLaunchMode()} of a menu replay; a game start records {@link #LAUNCH_GAME}. */
+    static final String LAUNCH_MENU_REPLAY = "menu-replay";
+    static final String LAUNCH_GAME = "game";
 
     private final SharedPreferences mPrefs;
 
@@ -149,7 +158,70 @@ final class Settings {
     }
 
     void setLastLaunch(long millis) {
-        mPrefs.edit().putLong(LAST_LAUNCH, millis).apply();
+        mPrefs.edit().putLong(LAST_LAUNCH, millis).putString(LAST_LAUNCH_MODE, LAUNCH_GAME).apply();
+    }
+
+    /**
+     * What the last start of the :game process was: {@link #LAUNCH_GAME} or {@link #LAUNCH_MENU_REPLAY}. Both write
+     * launch/status.json; this tells the launcher whose status it shows.
+     */
+    String lastLaunchMode() {
+        return mPrefs.getString(LAST_LAUNCH_MODE, LAUNCH_GAME);
+    }
+
+    // ----------------------------------------------------------- menu replay
+
+    /**
+     * Records a menu replay start, before GameActivity is started: the run (its provisional result.json says
+     * INTERRUPTED until GameActivity replaces it) and the launch mode. Written synchronously (commit), because
+     * the :game process may be ended right after.
+     */
+    void startMenuReplay(String run, long millis) {
+        mPrefs.edit()
+                .putString(LAST_MENU_RUN, run)
+                .putLong(LAST_LAUNCH, millis)
+                .putString(LAST_LAUNCH_MODE, LAUNCH_MENU_REPLAY)
+                .commit();
+    }
+
+    /** The run directory name of the last menu replay, or null. */
+    String lastMenuRun() {
+        return mPrefs.getString(LAST_MENU_RUN, null);
+    }
+
+    /** "As fast as possible" instead of the recorded 30 fps. */
+    boolean menuFast() {
+        return mPrefs.getBoolean(MENU_FAST, false);
+    }
+
+    void setMenuFast(boolean value) {
+        mPrefs.edit().putBoolean(MENU_FAST, value).apply();
+    }
+
+    boolean menuAdvanced() {
+        return mPrefs.getBoolean(MENU_ADVANCED, false);
+    }
+
+    void setMenuAdvanced(boolean value) {
+        mPrefs.edit().putBoolean(MENU_ADVANCED, value).apply();
+    }
+
+    /** Advanced: BC textures decoded on the CPU even when the GPU samples them (the path for GPUs without BC). */
+    boolean menuCpuDecode() {
+        return mPrefs.getBoolean(MENU_CPU_DECODE, false);
+    }
+
+    void setMenuCpuDecode(boolean value) {
+        mPrefs.edit().putBoolean(MENU_CPU_DECODE, value).apply();
+    }
+
+    /** Advanced: neither read nor write the shader and pipeline caches (a cold first launch). */
+    boolean menuNoShaderCache() {
+        return mPrefs.getBoolean(MENU_NO_SHADER_CACHE, false);
+    }
+
+    void setMenuNoShaderCache(boolean value) {
+        mPrefs.edit().putBoolean(MENU_NO_SHADER_CACHE, value).apply();
     }
 
     // ------------------------------------------------------------ replay test

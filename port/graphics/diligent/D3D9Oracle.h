@@ -18,9 +18,18 @@
 //     (port/graphics/diligent/tools/fxtechlist.cpp).
 // The device sits on a hidden 1x1 popup window of its own that is never shown, with
 // D3DCREATE_NOWINDOWCHANGES, so it can neither take focus nor change the engine's window.
+//
+// Without the DirectX SDK (Android, M7a1) the same class answers from constants instead: the capability
+// lanes an SM3 D3D9 HAL reports (the values the PC recordings of galtrace hold), shader model 3.0 caps
+// for technique validity, and GetTexture2D through the portable decoder (Texture2DPortable.h). There
+// is no D3D9 object behind it, and textures are made by ResourcesDiligent's portable path.
 
+#if defined(_WIN32)
 #include <d3d9.h>
 #include <d3dx9.h>
+#else
+#include "D3D9Portable.h"
+#endif
 
 #include <cstdint>
 #include <string>
@@ -40,14 +49,18 @@ namespace gpg::gal::diligent
         D3D9Oracle(const D3D9Oracle&) = delete;
         D3D9Oracle& operator=(const D3D9Oracle&) = delete;
 
-        /** Direct3DCreate9, the hidden window and the NULLREF device. */
+        /** Direct3DCreate9, the hidden window and the NULLREF device (portable: the constant caps). */
         bool Init(std::string* error);
         void Shutdown();
 
+#if defined(_WIN32)
         [[nodiscard]] IDirect3D9* GetDirect3D() const { return mDirect3D; }
+#endif
         /** The HAL's caps for the default adapter (IDirect3D9::GetDeviceCaps, no device). */
         [[nodiscard]] const D3DCAPS9& GetHalCaps() const { return mHalCaps; }
+#if defined(_WIN32)
         [[nodiscard]] IDirect3DDevice9* GetDevice() const { return mDevice; }
+#endif
         /** "HAL+SWVP" style description of the NULLREF device's creation flags, for the report. */
         [[nodiscard]] const std::string& GetDeviceDescription() const { return mDeviceDescription; }
 
@@ -86,10 +99,14 @@ namespace gpg::gal::diligent
         [[nodiscard]] static std::uint32_t DepthStencilFormatToD3D(std::uint32_t formatToken);
 
     private:
+#if defined(_WIN32)
         IDirect3D9* mDirect3D = nullptr;
+#endif
         D3DCAPS9 mHalCaps{};
+#if defined(_WIN32)
         IDirect3DDevice9* mDevice = nullptr;
         void* mWindow = nullptr; // HWND
+#endif
         std::string mDeviceDescription;
     };
 

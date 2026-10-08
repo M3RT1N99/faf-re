@@ -24,11 +24,32 @@ file, see [The default main.exe](#the-default-mainexe-does-not-change)).
 | 4 (D3D11) | The front end's SM5 (`FxHlslEmitter`) in the backend; `fxdiff` | step 3's images unchanged; every primbatcher, ui and frame stage compiles with FXC and through glslang to SPIR-V (spirv-val clean); `fxdiff` renders each pass in D3D9 and Diligent-D3D11 within tolerance | **passed**; rendering on Vulkan and GL is step 6 |
 | 5 | galtrace and galplay (`port/graphics/trace`) | a 900-frame menu trace replays into D3D9 and Diligent-D3D11 byte for byte, and into Diligent-Vulkan and -GL within the parity rule; it decodes in an x86_64 build of the reader | **passed** (all four replays byte-identical to the live captures) |
 | 6 | Vulkan and GL on Windows (`/gal diligent:vk`, `diligent:gl`) | step 3's tolerances on both; 0 render-pass ends per primbatcher flush on Vulkan; validation clean; a scripted navigation into the skirmish lobby on D3D11, Vulkan and GL against D3D9 | **passed on Vulkan and GL** (menu identical, lobby within the rule). The lobby **fails on D3D11** (this driver's trilinear blend, [below](#d3d11-and-the-lobby-the-drivers-trilinear-blend)); the Vulkan validation layer is missing on this machine |
-| 7-11 | phone, in-game | see [The plan](#the-plan) | open |
+| 7 | Phone probe | the GPU's formats and features, glslang timings | **done** (the 0.4.1 device probe; the S22 Ultra in [device-matrix.md](device-matrix.md#device-probe-041-and-later)) |
+| 8 | galplay on the phone (M7a1, release 0.5.0) | the menu trace on the device's Vulkan matches Windows `diligent:vk`; a second launch compiles 0 shaders | **built, the phone run is pending.** On the emulator the trace replays in the app over Vulkan with 0 errors and a second launch compiles 0 shaders, but SwiftShader's frames **fail** the parity rule (max \|delta\| 10, [below](#the-emulators-frames-swiftshader)). GLES is deferred (decision 3 below) |
+| 9-11 | GUI closure, live menu, in-game | see [The plan](#the-plan) | open |
 
 Steps 0-2 are milestone M6a, steps 3 and 4 (D3D11) are M6b ([below](#steps-3-and-4-the-menu-drawn-by-diligent-m6b)),
-steps 5 and 6 are M6c ([below](#steps-5-and-6-vulkan-gl-and-galtrace-m6c)). Measured on the dev PC (AMD
-Radeon RX 9070 XT, Windows 11, Debug|Win32 graphics build, FAF 3839 data). M6c first:
+steps 5 and 6 are M6c ([below](#steps-5-and-6-vulkan-gl-and-galtrace-m6c)), step 8 is M7a1
+([below](#step-8-the-menu-trace-on-android-m7a1)). Measured on the dev PC (AMD Radeon RX 9070 XT, Windows 11,
+Debug|Win32 graphics build, FAF 3839 data) and the API 36 emulator. M7a1 first:
+
+- **The menu on Android (step 8).** The app's new **Menu replay** replays a 900-frame recording of FAF's main
+  menu (the engine's gal call stream from the PC) through this backend over Vulkan, in GameActivity, on the
+  emulator's screen, with textures and effects from the emulator's own imported game data: 900 frames in
+  30.5 s at the recorded 30 fps, 7,200 draws, 0 skipped, 0 Diligent errors, identical frames on x86_64 and on
+  arm64 under translation, with CPU BC decoding forced too. The first launch compiles 4 shaders (58 ms
+  x86_64, 619 ms translated); the second takes all 4 from the cache (0.4 ms / 20 ms).
+- **No game data in the trace.** Format version 2 stores references (VFS path, size, two hashes) for the 33
+  game files the menu reads, and digests for the readbacks and `GetTexture2D` outputs. The trace is 111.0 MB,
+  18.2 MB deflated in the arm64 APK (35.3 MB in all; 0.4.1: 15.9 MB).
+- **The emulator does not meet the parity rule:** 34,050 to 135,384 of 921,600 pixels differ from the PC's
+  Vulkan frames, by up to 10. SwiftShader reports Vulkan's minimum filtering precision (4 sub-texel bits).
+  A phone decides step 8: release 0.5.0 asks testers for exactly this run.
+- **Windows unchanged:** the M6c gates pass again on the integrated build (menu identical on D3D11, Vulkan
+  and GL, lobby within the rule on Vulkan, galtrace byte-identical with the same digest), the version 2
+  trace replays byte-identically to the version 1 recording on all four backends, and no `src/` file changed.
+
+M6c:
 
 - **Vulkan and GL parity (step 6).** `/gal diligent:vk` and `/gal diligent:gl`, in the same Win32 graphics
   main.exe, give the D3D9 hashes at frames 10, 15, 20, 25, 30, 45, 60, 300 and 900 in three runs each; 0
@@ -654,9 +675,143 @@ D3D11 and the parity rule for Vulkan and GL.
 - **The rest of the trace.** `Device::Reset`, lost devices, cube and depth targets, `StretchRect` and the
   saves are recorded and replayed by the code, but no menu trace exercises them. A second device in one
   run is not recorded.
-- **galplay on the phone** (step 8). Only the reader and decoder are built for Android so far.
+- **galplay on the phone** (step 8): done in M7a1 ([below](#step-8-the-menu-trace-on-android-m7a1)).
 - **Release and x64 builds of the backend** (above). The Release|Win32 graphics build contains the
   capture harness and galtrace, not the backend.
+
+## Step 8: the menu trace on Android (M7a1)
+
+Release 0.5.0. The launcher's **Menu replay** ([android.md](android.md#menu-replay)) plays the 900-frame menu
+trace in GameActivity through this backend over Vulkan, with the user's own game data, and compares each
+read-back frame with the PC's Diligent-Vulkan hash stored in the trace. It is the real engine's renderer
+below gal, not the live engine: no Lua, no UI logic, no simulation (that is step 9).
+
+### Decisions
+
+1. **The trace holds no game data** (format version 2, [trace README](../../port/graphics/trace/README.md#version-2-payloads-without-the-games-data-m7a1)).
+   What the engine read from game files is a `PayloadRef` (VFS path, size, FNV-1a and SplitMix hashes; an
+   effect source is two files, `/effects/d3d9states.compat` followed by the `.fx`); readbacks and
+   `GetTexture2D` outputs are digests the replay produces itself; the UI atlases are compositions of
+   `GetTexture2D` outputs plus the engine's own glyph blocks. Only engine-generated payloads stay embedded.
+   `galtrace-refs` converts a version 1 recording (the recorder still writes version 1), `galtrace.py
+   release` makes the app's trace. On the device the references resolve through port/native's VFS as
+   `init_faf.lua` mounts it; a missing or different file stops the replay with the file and archive named.
+2. **In the `:game` process**, on a thread of GameActivity's native side (`port/android/src/GalPlay.h`,
+   `galplay_run`). galplay replays pointer-free traces, so it needs no low arena.
+3. **Vulkan only.** GLES on the S22 Ultra is ANGLE on the same driver, and the GL route cannot emit GLSL ES
+   yet. The plan's GLES parts of step 8 (thread marshalling, z remap, v-flip, GLSL cache) remain open.
+4. **D24S8 maps to D32S8** when the device has no D24S8 attachment (asked at creation, not hard-coded):
+   the emulator's SwiftShader and the S22 Ultra's Xclipse 920 both need it.
+5. **BC textures** are sampled directly when the device can; otherwise, or when forced (*Advanced
+   options*), they are decoded on the CPU into BGRA8 at upload.
+6. **Shader and pipeline caches** in the app's internal storage: SPIR-V keyed by the source, entry point,
+   stage, macros and compiler build, and a Vulkan pipeline cache file.
+
+The Android parts of the backend (two compile sets in `port/android/CMakeLists.txt`, the D3D9/D3DX
+stand-ins in `diligent/android/`, the window, pre-rotated Present, D32S8, BC and the caches) are in the
+[diligent README](../../port/graphics/diligent/README.md#android-m7a1-release-050).
+
+### The release trace
+
+`buildstage/traces/menu.galtrace` (gitignored, packaged by `build_android.ps1` as a deflated APK asset):
+version 2, 111,039,865 bytes, 18,224,603 bytes deflated in the APK, content digest `2dfe22a133934955`,
+made from a fresh D3D9 recording with the M6c digest `fc02e894c9b56083`.
+
+| Payloads | Count | Bytes |
+|---|---|---|
+| Embedded: vertex and index data the engine generated | 1,044 | 107,748,156 |
+| References to game files: 11 effect sources, each `/effects/d3d9states.compat` + the `.fx` (effects.nx2), 20 UI textures and the cursor (textures.scd); 33 distinct files | 32 | 1,297,663 |
+| Digests: 20 `GetTexture2D` outputs, 9 readbacks | 29 | 33,669,712 |
+| Compositions: the UI atlases, 55 placed `GetTexture2D` outputs plus 42,607 literal bytes | 10 | 5,898,240 |
+
+- `galtrace-refs check` resolves all 32 references and finds no embedded byte equal to a game file (82,385
+  files, archives and directory mounts) and no 64-byte window of the referenced files or of the recording's
+  digested payloads in the embedded bytes or the literals (rerun in the M7a1 integration: `CHECK: PASS`).
+- **The 42,607 literal bytes are text:** DXT5 blocks of the menu's labels and "© 2007 Gas Powered Games",
+  which the engine rasterised through GDI on the PC from the TrueType fonts it registers from SCFA's
+  `fonts` folder. They are renderings, not copies of any file. Whether they may ship is the main
+  session's decision (open).
+- Header metadata: `harness_frames`, `frame_rate` 30, `presents` 900, `payload_refs`, `ref_archives`
+  (`effects.nx2,textures.scd`), `game_version` 3839, `reference_frames.d3d9` and
+  `reference_frames.diligent:vk` (the PC's Vulkan frame hashes; equal to D3D9's for all 9 frames); the
+  recorder's `command_line` has every path replaced by `<path>`.
+
+### Measured on the emulator (2026-10-08)
+
+API 36 `sdk_gphone64_x86_64`, SwiftShader Vulkan (LLVM 10), headless, 1080x2400 portrait with GameActivity
+in landscape. The release candidate APKs (0.5.0, versionCode 3455, pre-commit), through the app's UI:
+
+| Run | APK | Result | Time | Shaders |
+|---|---|---|---|---|
+| Recorded pace, cache cold | x86_64 | 900 frames, 0 draws skipped, 0 Diligent errors; 9/9 frames differ from the PC | 30.5 s, avg 33.6 ms/frame (replay work 8.6 ms), first frame after 510 ms (data 127 ms, device 304 ms) | 4 compiled in 58 ms, 4 stored |
+| Recorded pace, second launch | x86_64 | the same 9 frames byte for byte | 30.5 s, work 8.2 ms | **0 compiled**, 4 from the cache in 0.4 ms |
+| BC decoded on the CPU (forced) | x86_64 | frames closer to the PC (below) | 30.5 s, first frame 600 ms | from the cache |
+| Recorded pace | arm64, translated | the same 9 frames as x86_64, byte for byte | 30.9 s, work 10.3 ms, first frame 1,028 ms | 4 from the cache in 20 ms |
+| Without the shader cache | arm64, translated | the same frames | 31.2 s | 4 compiled in 619 ms |
+| As fast as possible | arm64, translated | the same frames | 9.0 s for 900 frames | from the cache |
+| HOME and back during the replay | arm64, translated | `window released`, `window attached`, completed, the same frames | 31.1 s | from the cache |
+| Back during the replay | arm64, translated | stopped after 194 frames (`INCOMPLETE`, exit 2), 7 frames read back | - | - |
+
+The swap chain is RGBA8 on the 1080x2400 surface with pre-transform rotate 90, the head letterboxed; depth
+D32S8 (no D24S8); BC sampled by the GPU. Over the 900 frames the backend report shows `UpdateBuffer` 0,
+14,400 `Map(DISCARD)`, 1 PSO, 0 objects created or released off the render thread, and render passes ending
+in draw slots only for the 9 uploads and once per frame at the first draw's target binding
+(`endsInDrawByTargets` 900; Windows: 0, see the diligent README). The SwiftShader pipeline cache is a
+32-byte header.
+
+#### The emulator's frames (SwiftShader)
+
+`gfx_capture.py parity` of the emulator's BMPs against the PC's Diligent-Vulkan replay of the same trace:
+
+| Frame | 10 | 15 | 20 | 25 | 30 | 45 | 60 | 300 | 900 |
+|---|---|---|---|---|---|---|---|---|---|
+| Pixels differing (GPU BC) | 34,050 | 39,333 | 44,554 | 48,924 | 54,983 | 133,456 | 133,527 | 134,417 | 135,384 |
+| Max \|delta\| | 7 | 7 | 7 | 7 | 8 | 10 | 10 | 10 | 10 |
+| Pixels differing (CPU BC) | 25,924 | 29,655 | 32,808 | 34,572 | 44,068 | 106,202 | 106,273 | 107,157 | 108,123 |
+
+So the emulator **fails** the rule (max \|delta\| <= 1 on <= 0.1 %). The heat maps put the differences over
+the bilinearly filtered UI textures, not over flat areas; SwiftShader reports `subTexelPrecisionBits`,
+`subPixelPrecisionBits` and `mipmapPrecisionBits` 4, Vulkan's minimum, so its filter weights are quantised to
+1/16 where the PC's are finer. The half-pixel convention (`/galhalfpixel viewport` gives the same bytes) and the
+LOD do not explain it. The BC decoding explains only the flat-area part, about 20 % of the differing pixels
+(2,842 px over flat areas with SwiftShader's BC decode, 15 with the CPU decoder). The rest lie on edges: for
+99.95-100 % of them |delta| <= (local 5x5 contrast)/16 + 1, the signature of filter or raster weights rounded
+to 1/16. All inputs are equal on both sides (the 20 GetTexture2D outputs match the PC's digests, and the
+shader source is the same text). The explanation is measured but not proven; a real GPU decides: the S22 Ultra's Xclipse 920 is the first data point that
+counts, and its `galplay.json` records the device's precision bits.
+
+### Windows after M7a1
+
+On the integrated Debug|Win32 graphics build (sha256 `7961813f2a459bf2`; 1050 TUs: 10 diligent, 8 fx, 3
+capture, 6 trace):
+- D3D9 twice, D3D11, Vulkan and GL twice each: every frame of 10-900 has the D3D9 hashes, 0 of 921,600
+  pixels differ; self tests 12/12 on all three APIs; Diligent 0 errors; Vulkan render passes as in M6c
+  (1,813, 10 ending in draws, all uploads); `UpdateBuffer` 0; 1 PSO.
+- The lobby on Vulkan: within the rule as in M6c (28 pixels by 1 from frame 110).
+- The galtrace gate: two recordings with digest `fc02e894c9b56083`, replays into D3D9, D3D11, Vulkan and GL
+  9/9 byte-identical to the recording and to each backend's live capture. The Release|Win32 graphics
+  build (harness and galtrace, no backend) records the same digest and replays it into D3D9 9/9.
+- The version 2 release trace, its 33 game files extracted to scratch: replays into the same four backends
+  are byte-identical to the version 1 replays, read 32 references and provide 20 backend outputs; D3D9's
+  and Vulkan's readbacks all "pass" against the trace's own reference hashes.
+- **The default main.exe does not change:** M7a1 changes no file under `src/`. The default evaluation of
+  `main.vcxproj` still has 1023 `ClCompile` items in all four configurations, none under `port/graphics`, and
+  the post-build copy on; `port_graphics.props` (imported only with `FafPortGraphics=true`) leaves
+  `diligent/android/` out. The graphics evaluation has 1050 items in Debug|Win32 and 1032 in Release|Win32
+  (`GalTraceResolver.cpp` is new).
+
+### Not covered yet (M7a1)
+
+- **The phone's frames.** No real GPU has replayed the trace yet; release 0.5.0 asks testers for it.
+- **Parity on the emulator** (above), and an explanation proven by measurement.
+- **GLES** (decision 3), and devices without BC: the CPU decode path ran on the emulator only.
+- **The glyph blocks** in the trace (above), decided: they ship. They are 42.6 KB of the menu's own text
+  as the engine rasterised it from the fonts SCFA installs (single glyph cells in two sizes, no font file
+  and no byte of a game file), the same content as a screenshot or video of the menu, which the releases
+  already show. Rasterising them on the phone instead (FreeType) would not reproduce GDI's pixels.
+- **The extra render-pass end per frame** on SwiftShader (`endsInDrawByTargets`).
+- **Vulkan validation on Android:** the emulator's driver crashes in `vk_common_SetDebugUtilsObjectNameEXT`
+  with Diligent's validation on (diligent README).
 
 ## The plan
 
@@ -672,7 +827,7 @@ From the M6 review (2026-10-07). Durations are for one engineer.
 | 5 (2 wk) | galtrace and galplay, after first pixels | done (M6c, above): a 900-frame menu trace replays into D3D9 and Diligent byte for byte, and decodes in an x86_64 build |
 | 6 (1-2 wk) | Vulkan and GL on Windows | done (M6c, above) on Vulkan and GL: step 3's tolerances on `diligent:vk` and `:gl`; 0 render-pass ends per primbatcher flush on Vulkan; scripted navigation into the skirmish lobby (D3D11 fails the lobby, a driver difference) |
 | 7 (3-4 days, any time) | Phone probe: BC, ETC2, ASTC, D24S8, fillModeNonSolid, border clamp, clip control; glslang timings; Vulkan from an exec'd child process | numbers in the docs; decide in-process or out-of-process engine for M7 |
-| 8 (2 wk) | galplay on the phone: GL thread marshalling, GL z remap and v-flip, CPU BC decode, BGRA swizzle, pre-rotated Present, persistent SPIR-V/GLSL caches | the menu trace on Vulkan and GLES matches Windows `diligent:vk`; a second launch compiles 0 shaders |
+| 8 (2 wk) | galplay on the phone: GL thread marshalling, GL z remap and v-flip, CPU BC decode, BGRA swizzle, pre-rotated Present, persistent SPIR-V/GLSL caches | the menu trace on Vulkan and GLES matches Windows `diligent:vk`; a second launch compiles 0 shaders. M7a1 ([above](#step-8-the-menu-trace-on-android-m7a1)): Vulkan in the app with CPU BC decode, pre-rotated Present, D32S8 and the SPIR-V and pipeline caches; a second launch compiles 0 shaders; the emulator fails the frame parity, the phone run is pending; GLES open |
 | 9 (6-8 wk) | GUI closure on Android: wx-lite shim over an AppHost, the 19 menu TUs, a trap set for in-game renderers, FreeType fonts | 0 undefined and 0 duplicate symbols; the emulator boots to the menu in-app; registry counts equal Windows |
 | 10 (2-3 wk) | Live main menu on the phone | phone frames match the Windows Diligent reference outside a font mask; 30 minutes of navigation without a crash |
 | 11 | Before any in-game parity: freeze and validate the in-game D3D9 reference against retail; typed emitter (glslang 776/776); ETC2/ASTC cache; PSO pre-warm; DepthBias conversion; fog; M3d | a skirmish replay view matches retail and D3D9 within tolerance; first-minute frame spikes under 50 ms on the phone |
@@ -729,6 +884,8 @@ reach the menu (M6d)? (Vulkan and GL on Windows came before the phone work: M6c.
 | `port/graphics/fx/` | Steps 2 and 4: `gpg::gal::fx` with `FxHlslEmitter`, `fxmeta`, `fxhlsl`, `fxd3dx_dump`, `tools/fxdiff/`, unit tests, test effects |
 | `scripts/port/fx_metadata_gate.py` | Gate 2 |
 | `scripts/port/fxdiff.py` | The step-4 effect gate: FXC, glslang SPIR-V and spirv-val, D3D9 against Diligent-D3D11 renders |
-| `port/graphics/trace/` | Step 5: galtrace (format, recorder) and galplay; `galtrace-dump`, the format test, `android/build_reader.py` |
-| `scripts/port/galtrace.py` | Step 5: record, play, compare, dump, tools and the gate |
+| `port/graphics/trace/` | Step 5: galtrace (format, recorder) and galplay; `galtrace-dump`, the format test, `android/build_reader.py`. Step 8: format version 2 (references, digests, compositions), the resolver API (`GalTraceResolver.*`, `GalTraceVfsResolver.h`), `galtrace-refs` |
+| `scripts/port/galtrace.py` | Step 5: record, play, compare, dump, tools and the gate; step 8: `refs` and `release` (the app's trace in `buildstage/traces/`) |
+| `port/graphics/diligent/android/`, `D3D9Portable.h`, `ResourcesDiligentPortable.inl` | Step 8: the backend without D3D9 or D3DX, for Android |
+| `port/android/src/GalPlay.*`, `GalPlayEngine.*`, `MenuReplayMode.*`, `GalPlayCli.cpp`; `port/android/src/java/.../MenuReplay*.java` | Step 8: `galplay_run` in GameActivity's `menu-replay` mode, the headless test program, and the launcher's Menu replay |
 | `src/sdk/gpg/gal/Device.cpp`, `src/sdk/moho/app/CScApp.cpp`, `src/sdk/moho/app/WxRuntimeTypes.cpp`, `src/sdk/main.vcxproj` | The only engine-side edits, all guarded or conditional |

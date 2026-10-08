@@ -1,11 +1,22 @@
 #include "DiligentHost.h"
 
+#if defined(_WIN32)
 #include <d3d11.h>
 #include <d3d11sdklayers.h>
 
 #include <GL/gl.h> // the GL 1.1 entry points of opengl32.dll (the debug-output setup and self test)
 
 #include <float.h>
+#else
+// M7a1 (Android): Vulkan on the GameActivity's ANativeWindow; no D3D11, no desktop GL.
+#include <android/log.h>
+#include <android/native_window.h>
+#include <unistd.h>
+
+#include <cmath>
+#include <cstdio>
+#include <fstream>
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -18,33 +29,60 @@
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"
 #include "Graphics/GraphicsEngine/interface/Texture.h"
 #include "Graphics/GraphicsEngine/interface/TextureView.h"
+#if defined(_WIN32)
 #include "Graphics/GraphicsEngineD3D11/interface/EngineFactoryD3D11.h"
 #include "Graphics/GraphicsEngineD3D11/interface/RenderDeviceD3D11.h"
 #include "Graphics/GraphicsEngineOpenGL/interface/EngineFactoryOpenGL.h"
+#else
+#include "Graphics/GraphicsEngine/interface/PipelineState.h"
+#include "Graphics/GraphicsEngine/interface/PipelineStateCache.h"
+#include "Graphics/GraphicsEngine/interface/ShaderResourceBinding.h"
+#include "Primitives/interface/DataBlob.h"
+// The Vulkan types IRenderDeviceVk needs (the device's limits for the report); no prototypes: the entry
+// points are volk's globals.
+#ifndef VK_NO_PROTOTYPES
+#    define VK_NO_PROTOTYPES
+#endif
+#include <vulkan/vulkan_core.h> // Diligent's ThirdParty/Vulkan-Headers (port/android/CMakeLists.txt)
+#include "Graphics/GraphicsEngineVulkan/interface/RenderDeviceVk.h"
+#endif
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
 #include "Primitives/interface/DebugOutput.h"
 #include "ShaderCompileDiligent.h"
 
+#if defined(_WIN32)
 // What the Vulkan and GL engines in DiligentCore.lib need besides it (the install's lib directory is
 // on the library path, port_graphics.props). The linker takes only what is referenced.
 #pragma comment(lib, "volk.lib")
 #pragma comment(lib, "xxhash.lib")
 #pragma comment(lib, "glew-static.lib")
 #pragma comment(lib, "opengl32.lib")
+#endif
 
 namespace dg = Diligent;
 
+// The calling convention of Vulkan entry points: VKAPI_PTR is __stdcall on Win32, nothing on Android's
+// arm64 and x86_64 ABIs.
+#if defined(_WIN32)
+#define FAF_VKAPI __stdcall
+#else
+#define FAF_VKAPI
+#endif
+
 // volk's command-buffer entry points (C globals in volk.lib; Diligent's Vulkan backend calls through
-// them, VulkanUtilities/CommandBuffer.hpp:331-385). VKAPI_PTR is __stdcall on Win32.
+// them, VulkanUtilities/CommandBuffer.hpp:331-385).
 extern "C"
 {
-    extern void(__stdcall* vkCmdBeginRenderPass)(void*, const void*, std::uint32_t);
-    extern void(__stdcall* vkCmdEndRenderPass)(void*);
-    extern void(__stdcall* vkCmdBeginRenderingKHR)(void*, const void*);
-    extern void(__stdcall* vkCmdEndRenderingKHR)(void*);
-    extern void(__stdcall* vkCmdBeginRendering)(void*, const void*);
-    extern void(__stdcall* vkCmdEndRendering)(void*);
-    extern std::int32_t(__stdcall* vkEnumerateInstanceLayerProperties)(std::uint32_t*, void*);
+    extern void(FAF_VKAPI* vkCmdBeginRenderPass)(void*, const void*, std::uint32_t);
+    extern void(FAF_VKAPI* vkCmdEndRenderPass)(void*);
+    extern void(FAF_VKAPI* vkCmdBeginRenderingKHR)(void*, const void*);
+    extern void(FAF_VKAPI* vkCmdEndRenderingKHR)(void*);
+    extern void(FAF_VKAPI* vkCmdBeginRendering)(void*, const void*);
+    extern void(FAF_VKAPI* vkCmdEndRendering)(void*);
+    extern std::int32_t(FAF_VKAPI* vkEnumerateInstanceLayerProperties)(std::uint32_t*, void*);
+#if !defined(_WIN32)
+    extern PFN_vkGetPhysicalDeviceProperties vkGetPhysicalDeviceProperties;
+#endif
 }
 
 namespace gpg::gal::diligent
@@ -57,6 +95,17 @@ namespace gpg::gal::diligent
         DiligentMessageCounts gMessageCounts;
         std::vector<std::string> gMessages;
         constexpr std::size_t kKeptDiligentMessages = 32;
+        DiligentMessageSink gMessageSink = nullptr;
+
+        /** The calling thread's id, as GpuShared compares it (the render thread). */
+        std::uint32_t CurrentThreadId()
+        {
+#if defined(_WIN32)
+            return static_cast<std::uint32_t>(::GetCurrentThreadId());
+#else
+            return static_cast<std::uint32_t>(::gettid());
+#endif
+        }
 
         void DILIGENT_CALL_TYPE OnDiligentMessage(
             const dg::DEBUG_MESSAGE_SEVERITY severity,
@@ -86,8 +135,18 @@ namespace gpg::gal::diligent
                 tag = "fatal";
                 break;
             }
+#if defined(_WIN32)
             ::OutputDebugStringA(message != nullptr ? message : "");
             ::OutputDebugStringA("\n");
+#else
+            __android_log_write(severity == dg::DEBUG_MESSAGE_SEVERITY_INFO      ? ANDROID_LOG_INFO
+                                : severity == dg::DEBUG_MESSAGE_SEVERITY_WARNING ? ANDROID_LOG_WARN
+                                                                                : ANDROID_LOG_ERROR,
+                                "faf_gal", message != nullptr ? message : "");
+#endif
+            if (gMessageSink != nullptr) {
+                gMessageSink(static_cast<int>(severity), message != nullptr ? message : "");
+            }
             if (severity != dg::DEBUG_MESSAGE_SEVERITY_INFO && gMessages.size() < kKeptDiligentMessages) {
                 std::string text = std::string(tag) + ": " + (message != nullptr ? message : "");
                 if (file != nullptr) {
@@ -131,18 +190,144 @@ float4 main(VSOutput input) : SV_TARGET
 }
 )";
 
+#if !defined(_WIN32)
+        // Android (M7a1): the head drawn into the window's swap chain, pre-rotated and letterboxed. The
+        // swap chain is created with the surface's current transform (no extra composition pass), so the
+        // shader maps each physical position back to the orientation the user sees (port/android's M1
+        // Renderer.cpp does the same) and samples the head there, keeping its aspect ratio. A draw, not a
+        // copy (m6u-CRIT.txt R11): it also converts into a BGRA swap chain. The head itself, which the
+        // readbacks read, is untouched by this pass.
+        constexpr const char* kAndroidPresentVS = R"(
+cbuffer PresentConstants
+{
+    float4 g_Rotation;  // physical NDC -> logical NDC: x' = dot(p, xy), y' = dot(p, zw)
+    float4 g_ImageRect; // xy: half extent of the head in logical NDC
+};
+struct VSOutput { float4 position : SV_POSITION; float2 logical : TEX_COORD; };
+VSOutput main(uint vertexId : SV_VertexID)
+{
+    VSOutput output;
+    float2 uv = float2((vertexId << 1) & 2, vertexId & 2);
+    float2 ndc = uv * float2(2.0, -2.0) + float2(-1.0, 1.0);
+    output.position = float4(ndc, 0.0, 1.0);
+    output.logical = float2(dot(ndc, g_Rotation.xy), dot(ndc, g_Rotation.zw));
+    return output;
+}
+)";
+
+        constexpr const char* kAndroidPresentPS = R"(
+cbuffer PresentConstants
+{
+    float4 g_Rotation;
+    float4 g_ImageRect;
+};
+Texture2D    g_Head;
+SamplerState g_Head_sampler;
+struct VSOutput { float4 position : SV_POSITION; float2 logical : TEX_COORD; };
+float4 main(VSOutput input) : SV_TARGET
+{
+    float2 rel = input.logical / g_ImageRect.xy;
+    if (abs(rel.x) > 1.0 || abs(rel.y) > 1.0)
+        return float4(0.0, 0.0, 0.0, 1.0);
+    float2 uv = float2(rel.x * 0.5 + 0.5, 0.5 - rel.y * 0.5);
+    return float4(g_Head.SampleLevel(g_Head_sampler, uv, 0.0).rgb, 1.0);
+}
+)";
+
+        struct PresentConstants
+        {
+            float rotation[4];
+            float imageRect[4];
+        };
+
+        /**
+         * The inverse of the swap chain's pre-transform: physical NDC to the orientation the user sees
+         * (NDC +y up; port/android/src/Renderer.cpp InversePreTransform, the M1 renderer's).
+         */
+        void InversePreTransform(const dg::SURFACE_TRANSFORM transform, float rotation[4], bool* const swapsAxes)
+        {
+            static const float identity[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+            static const float r90[4] = {0.0f, -1.0f, 1.0f, 0.0f};
+            static const float r180[4] = {-1.0f, 0.0f, 0.0f, -1.0f};
+            static const float r270[4] = {0.0f, 1.0f, -1.0f, 0.0f};
+            static const float m0[4] = {-1.0f, 0.0f, 0.0f, 1.0f};
+            static const float m90[4] = {0.0f, 1.0f, 1.0f, 0.0f};
+            static const float m180[4] = {1.0f, 0.0f, 0.0f, -1.0f};
+            static const float m270[4] = {0.0f, -1.0f, -1.0f, 0.0f};
+            const float* values = identity;
+            *swapsAxes = false;
+            switch (transform) {
+            case dg::SURFACE_TRANSFORM_ROTATE_90:
+                values = r90;
+                *swapsAxes = true;
+                break;
+            case dg::SURFACE_TRANSFORM_ROTATE_180:
+                values = r180;
+                break;
+            case dg::SURFACE_TRANSFORM_ROTATE_270:
+                values = r270;
+                *swapsAxes = true;
+                break;
+            case dg::SURFACE_TRANSFORM_HORIZONTAL_MIRROR:
+                values = m0;
+                break;
+            case dg::SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_90:
+                values = m90;
+                *swapsAxes = true;
+                break;
+            case dg::SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_180:
+                values = m180;
+                break;
+            case dg::SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_270:
+                values = m270;
+                *swapsAxes = true;
+                break;
+            default:
+                break;
+            }
+            std::memcpy(rotation, values, sizeof(float) * 4U);
+        }
+
+        const char* TransformName(const dg::SURFACE_TRANSFORM transform)
+        {
+            switch (transform) {
+            case dg::SURFACE_TRANSFORM_IDENTITY:
+                return "identity";
+            case dg::SURFACE_TRANSFORM_ROTATE_90:
+                return "rotate 90";
+            case dg::SURFACE_TRANSFORM_ROTATE_180:
+                return "rotate 180";
+            case dg::SURFACE_TRANSFORM_ROTATE_270:
+                return "rotate 270";
+            case dg::SURFACE_TRANSFORM_HORIZONTAL_MIRROR:
+                return "mirror";
+            case dg::SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_90:
+                return "mirror + rotate 90";
+            case dg::SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_180:
+                return "mirror + rotate 180";
+            case dg::SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_270:
+                return "mirror + rotate 270";
+            default:
+                return "optimal";
+            }
+        }
+
+        std::mutex gAndroidOptionsLock;
+        AndroidHostOptions gAndroidOptions;
+#endif
+
         // ---- Vulkan render-pass counters ----------------------------------------------------
 
         std::mutex gRenderPassLock;
         RenderPassCounts gRenderPass;
         int gPhaseDepth[5] = {}; // per ScopedRenderPhase::Kind; render thread only
 
-        void(__stdcall* gRealBeginRenderPass)(void*, const void*, std::uint32_t) = nullptr;
-        void(__stdcall* gRealEndRenderPass)(void*) = nullptr;
-        void(__stdcall* gRealBeginRenderingKHR)(void*, const void*) = nullptr;
-        void(__stdcall* gRealEndRenderingKHR)(void*) = nullptr;
-        void(__stdcall* gRealBeginRendering)(void*, const void*) = nullptr;
-        void(__stdcall* gRealEndRendering)(void*) = nullptr;
+        void(FAF_VKAPI* gRealBeginRenderPass)(void*, const void*, std::uint32_t) = nullptr;
+        void(FAF_VKAPI* gRealEndRenderPass)(void*) = nullptr;
+        void(FAF_VKAPI* gRealBeginRenderingKHR)(void*, const void*) = nullptr;
+        void(FAF_VKAPI* gRealEndRenderingKHR)(void*) = nullptr;
+        void(FAF_VKAPI* gRealBeginRendering)(void*, const void*) = nullptr;
+        void(FAF_VKAPI* gRealEndRendering)(void*) = nullptr;
 
         void CountBegin()
         {
@@ -179,32 +364,32 @@ float4 main(VSOutput input) : SV_TARGET
             }
         }
 
-        void __stdcall HookBeginRenderPass(void* const commandBuffer, const void* const info, const std::uint32_t contents)
+        void FAF_VKAPI HookBeginRenderPass(void* const commandBuffer, const void* const info, const std::uint32_t contents)
         {
             CountBegin();
             gRealBeginRenderPass(commandBuffer, info, contents);
         }
-        void __stdcall HookEndRenderPass(void* const commandBuffer)
+        void FAF_VKAPI HookEndRenderPass(void* const commandBuffer)
         {
             CountEnd();
             gRealEndRenderPass(commandBuffer);
         }
-        void __stdcall HookBeginRenderingKHR(void* const commandBuffer, const void* const info)
+        void FAF_VKAPI HookBeginRenderingKHR(void* const commandBuffer, const void* const info)
         {
             CountBegin();
             gRealBeginRenderingKHR(commandBuffer, info);
         }
-        void __stdcall HookEndRenderingKHR(void* const commandBuffer)
+        void FAF_VKAPI HookEndRenderingKHR(void* const commandBuffer)
         {
             CountEnd();
             gRealEndRenderingKHR(commandBuffer);
         }
-        void __stdcall HookBeginRendering(void* const commandBuffer, const void* const info)
+        void FAF_VKAPI HookBeginRendering(void* const commandBuffer, const void* const info)
         {
             CountBegin();
             gRealBeginRendering(commandBuffer, info);
         }
-        void __stdcall HookEndRendering(void* const commandBuffer)
+        void FAF_VKAPI HookEndRendering(void* const commandBuffer)
         {
             CountEnd();
             gRealEndRendering(commandBuffer);
@@ -271,6 +456,7 @@ float4 main(VSOutput input) : SV_TARGET
             gRenderPass.hooked = false; // the counts stay for the report
         }
 
+#if defined(_WIN32)
         // ---- the GL debug output ---------------------------------------------------------------
 
         constexpr unsigned kGlDebugOutput = 0x92E0;
@@ -363,6 +549,7 @@ float4 main(VSOutput input) : SV_TARGET
             gGlDebug.active = true;
             return true;
         }
+#endif
     } // namespace
 
     // ---------------------------------------------------------------------------------------------
@@ -413,6 +600,7 @@ float4 main(VSOutput input) : SV_TARGET
         --gPhaseDepth[static_cast<int>(kind_)];
     }
 
+#if defined(_WIN32)
     ScopedDefaultFpu::ScopedDefaultFpu()
     {
         unsigned int unused = 0;
@@ -424,6 +612,33 @@ float4 main(VSOutput input) : SV_TARGET
     {
         unsigned int unused = 0;
         ::_controlfp_s(&unused, mSaved & _MCW_PC, _MCW_PC);
+    }
+#else
+    // No x87 on Android's ABIs: SSE/NEON floats have no precision control.
+    ScopedDefaultFpu::ScopedDefaultFpu()
+    {
+        static_cast<void>(mSaved);
+    }
+
+    ScopedDefaultFpu::~ScopedDefaultFpu() = default;
+
+    void SetAndroidHostOptions(const AndroidHostOptions& options)
+    {
+        std::lock_guard<std::mutex> lock(gAndroidOptionsLock);
+        gAndroidOptions = options;
+    }
+
+    AndroidHostOptions GetAndroidHostOptions()
+    {
+        std::lock_guard<std::mutex> lock(gAndroidOptionsLock);
+        return gAndroidOptions;
+    }
+#endif
+
+    void SetDiligentMessageSink(const DiligentMessageSink sink)
+    {
+        std::lock_guard<std::mutex> lock(gMessageLock);
+        gMessageSink = sink;
     }
 
     GpuShared::GpuShared(dg::IRenderDevice* const device, dg::IDeviceContext* const context, const std::uint32_t renderThreadId,
@@ -456,7 +671,7 @@ float4 main(VSOutput input) : SV_TARGET
 
     bool GpuShared::OnRenderThread() const
     {
-        return ::GetCurrentThreadId() == renderThreadId_;
+        return CurrentThreadId() == renderThreadId_;
     }
 
     void GpuShared::Retire(std::unique_ptr<GpuTexture> texture)
@@ -527,12 +742,24 @@ float4 main(VSOutput input) : SV_TARGET
         // Staging textures for ReadTexture, one per (format, size).
         std::vector<dg::RefCntAutoPtr<dg::ITexture>> readbacks;
         std::shared_ptr<GpuShared> gpu;
+#if defined(_WIN32)
         ID3D11InfoQueue* infoQueue = nullptr;
+#endif
         DebugLayerCounts debugCounts;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
         bool validation = false;
         std::string vulkanLayers; // JSON object text, Vulkan only
+#if !defined(_WIN32)
+        // Android (M7a1)
+        dg::IEngineFactoryVk* factoryVk = nullptr;
+        ANativeWindow* window = nullptr; // referenced (ANativeWindow_acquire) while the swap chain uses it
+        dg::RefCntAutoPtr<dg::IBuffer> presentConstants;
+        dg::TEXTURE_FORMAT presentFormat = dg::TEX_FORMAT_UNKNOWN;
+        dg::RefCntAutoPtr<dg::IPipelineStateCache> pipelineCache;
+        AndroidHostOptions options;
+        AndroidDeviceSupport support;
+#endif
 
         bool CreateHead(std::string* error)
         {
@@ -558,6 +785,18 @@ float4 main(VSOutput input) : SV_TARGET
                 return false;
             }
 
+#if !defined(_WIN32)
+            // Android: the present pipeline comes with the first swap chain (SetWindow).
+            if (!presentPipeline) {
+                return true;
+            }
+#endif
+            return BindPresentHead(error);
+        }
+
+        bool BindPresentHead(std::string* error)
+        {
+            presentBinding.Release();
             presentPipeline->CreateShaderResourceBinding(&presentBinding, true);
             dg::IShaderResourceVariable* const variable =
                 presentBinding->GetVariableByName(dg::SHADER_TYPE_PIXEL, "g_Head");
@@ -569,6 +808,7 @@ float4 main(VSOutput input) : SV_TARGET
             return true;
         }
 
+#if defined(_WIN32)
         bool CreatePresentPipeline(std::string* error)
         {
             HlslShaderSource source;
@@ -613,7 +853,150 @@ float4 main(VSOutput input) : SV_TARGET
             }
             return true;
         }
+#else
+        // Android: the pre-rotating, letterboxing present pass for the current swap chain's format.
+        bool CreatePresentPipeline(std::string* error)
+        {
+            const dg::TEXTURE_FORMAT format = swapChain->GetDesc().ColorBufferFormat;
+            if (presentPipeline && presentFormat == format) {
+                return true;
+            }
+            presentBinding.Release();
+            presentPipeline.Release();
+            HlslShaderSource source;
+            source.entryPoint = "main";
+            source.combinedTextureSamplers = true;
+            CompiledShaderInfo vsInfo;
+            dg::RefCntAutoPtr<dg::IShader> vs;
+            source.shaderType = dg::SHADER_TYPE_VERTEX;
+            source.name = "gal present VS (Android)";
+            source.source = kAndroidPresentVS;
+            CompileHlslShader(device, api, source, &vs, &vsInfo);
+            CompiledShaderInfo psInfo;
+            dg::RefCntAutoPtr<dg::IShader> ps;
+            source.shaderType = dg::SHADER_TYPE_PIXEL;
+            source.name = "gal present PS (Android)";
+            source.source = kAndroidPresentPS;
+            CompileHlslShader(device, api, source, &ps, &psInfo);
+            if (!vs || !ps) {
+                *error = "cannot compile the present shaders: " + vsInfo.messages + " " + psInfo.messages;
+                return false;
+            }
 
+            dg::GraphicsPipelineStateCreateInfo info;
+            info.PSODesc.Name = "gal present (Android)";
+            info.PSODesc.PipelineType = dg::PIPELINE_TYPE_GRAPHICS;
+            info.GraphicsPipeline.NumRenderTargets = 1;
+            info.GraphicsPipeline.RTVFormats[0] = format;
+            info.GraphicsPipeline.DSVFormat = dg::TEX_FORMAT_UNKNOWN;
+            info.GraphicsPipeline.PrimitiveTopology = dg::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+            info.GraphicsPipeline.RasterizerDesc.CullMode = dg::CULL_MODE_NONE;
+            info.GraphicsPipeline.DepthStencilDesc.DepthEnable = dg::False;
+            info.pVS = vs;
+            info.pPS = ps;
+            const dg::ShaderResourceVariableDesc variables[] = {
+                {dg::SHADER_TYPE_PIXEL, "g_Head", dg::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+            };
+            dg::SamplerDesc linearClamp;
+            linearClamp.MinFilter = dg::FILTER_TYPE_LINEAR;
+            linearClamp.MagFilter = dg::FILTER_TYPE_LINEAR;
+            linearClamp.MipFilter = dg::FILTER_TYPE_POINT;
+            linearClamp.AddressU = dg::TEXTURE_ADDRESS_CLAMP;
+            linearClamp.AddressV = dg::TEXTURE_ADDRESS_CLAMP;
+            linearClamp.AddressW = dg::TEXTURE_ADDRESS_CLAMP;
+            const dg::ImmutableSamplerDesc samplers[] = {
+                {dg::SHADER_TYPE_PIXEL, "g_Head", linearClamp},
+            };
+            info.PSODesc.ResourceLayout.DefaultVariableType = dg::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+            info.PSODesc.ResourceLayout.Variables = variables;
+            info.PSODesc.ResourceLayout.NumVariables = 1;
+            info.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
+            info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+            info.pPSOCache = pipelineCache;
+            device->CreateGraphicsPipelineState(info, &presentPipeline);
+            if (!presentPipeline) {
+                *error = "cannot create the present pipeline";
+                return false;
+            }
+            if (!presentConstants) {
+                dg::BufferDesc bufferDesc;
+                bufferDesc.Name = "gal present constants";
+                bufferDesc.Size = sizeof(PresentConstants);
+                bufferDesc.Usage = dg::USAGE_DYNAMIC;
+                bufferDesc.BindFlags = dg::BIND_UNIFORM_BUFFER;
+                bufferDesc.CPUAccessFlags = dg::CPU_ACCESS_WRITE;
+                device->CreateBuffer(bufferDesc, nullptr, &presentConstants);
+                if (!presentConstants) {
+                    *error = "cannot create the present constants";
+                    return false;
+                }
+            }
+            for (const dg::SHADER_TYPE stage : {dg::SHADER_TYPE_VERTEX, dg::SHADER_TYPE_PIXEL}) {
+                if (dg::IShaderResourceVariable* const variable = presentPipeline->GetStaticVariableByName(stage, "PresentConstants")) {
+                    variable->Set(presentConstants);
+                }
+            }
+            presentFormat = format;
+            return head ? BindPresentHead(error) : true;
+        }
+
+        /** The present pass's constants for the current swap chain: inverse pre-transform, head rectangle. */
+        PresentConstants ComputePresentConstants() const
+        {
+            PresentConstants constants{};
+            const dg::SwapChainDesc& desc = swapChain->GetDesc();
+            bool swapsAxes = false;
+            InversePreTransform(desc.PreTransform, constants.rotation, &swapsAxes);
+            const float screenWidth = static_cast<float>(swapsAxes ? desc.Height : desc.Width);
+            const float screenHeight = static_cast<float>(swapsAxes ? desc.Width : desc.Height);
+            constants.imageRect[0] = 1.0f;
+            constants.imageRect[1] = 1.0f;
+            if (options.letterbox && screenWidth > 0.0f && screenHeight > 0.0f && width != 0U && height != 0U) {
+                const float screenAspect = screenWidth / screenHeight;
+                const float imageAspect = static_cast<float>(width) / static_cast<float>(height);
+                constants.imageRect[0] = screenAspect > imageAspect ? imageAspect / screenAspect : 1.0f;
+                constants.imageRect[1] = screenAspect > imageAspect ? 1.0f : screenAspect / imageAspect;
+            }
+            return constants;
+        }
+
+        bool CreateSwapChainAndroid(ANativeWindow* const nativeWindow, std::string* error)
+        {
+            dg::SwapChainDesc swapChainDesc;
+            // UNORM, not the SRGB default: FA renders in gamma space (m6u-DIL.txt 9). Diligent takes BGRA8
+            // where the surface offers no RGBA8 (m6u-CRIT.txt R11), and the present pass draws into either.
+            swapChainDesc.ColorBufferFormat = dg::TEX_FORMAT_RGBA8_UNORM;
+            swapChainDesc.DepthBufferFormat = dg::TEX_FORMAT_UNKNOWN;
+            swapChainDesc.Usage = dg::SWAP_CHAIN_USAGE_RENDER_TARGET;
+            // The surface's current transform: the present pass rotates, the compositor does not.
+            swapChainDesc.PreTransform = dg::SURFACE_TRANSFORM_OPTIMAL;
+            dg::AndroidNativeWindow handle;
+            handle.pAWindow = nativeWindow;
+            factoryVk->CreateSwapChainVk(device, context, swapChainDesc, handle, &swapChain);
+            if (!swapChain) {
+                *error = "cannot create the Vulkan swap chain on the window";
+                return false;
+            }
+            return CreatePresentPipeline(error);
+        }
+
+        /** Drops the swap chain (and with it the VkSurfaceKHR) and the window reference. */
+        void ReleaseSwapChainAndroid()
+        {
+            if (context) {
+                context->SetRenderTargets(0, nullptr, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_NONE);
+                context->Flush();
+                context->WaitForIdle();
+            }
+            swapChain.Release();
+            if (window != nullptr) {
+                ANativeWindow_release(window);
+                window = nullptr;
+            }
+        }
+#endif
+
+#if defined(_WIN32)
         bool CreateD3D11(void* window, std::string* error)
         {
             dg::IEngineFactoryD3D11* const factory = dg::GetEngineFactoryD3D11();
@@ -675,6 +1058,9 @@ float4 main(VSOutput input) : SV_TARGET
             return true;
         }
 
+#endif
+
+#if defined(_WIN32)
         // Vulkan: Diligent's Vulkan backend through volk (the system's vulkan-1.dll and the driver's
         // 32-bit ICD). With validation, Diligent asks for VK_LAYER_KHRONOS_validation and goes on
         // without it when the loader has none (it logs that); the report lists what the loader offers.
@@ -727,7 +1113,101 @@ float4 main(VSOutput input) : SV_TARGET
             }
             return true;
         }
+#else
+        // Android (M7a1): Diligent's Vulkan backend through volk (the system's libvulkan.so, loaded with
+        // dlopen). The swap chain comes with the window, which may arrive later (SetWindow). Asked for
+        // besides the defaults: BC texture sampling where the GPU has it (the menu's DXT5 atlases; without
+        // it the texture path decodes BC on the CPU), anisotropy and wireframe where available. Checked
+        // after creation: whether D24S8 is a depth-stencil attachment format (the S22 Ultra's Xclipse 920
+        // has none; depth targets then use D32S8), and the pipeline cache file is loaded.
+        bool CreateVulkan(void* nativeWindow, std::string* error)
+        {
+            options = GetAndroidHostOptions();
+            factoryVk = dg::GetEngineFactoryVk();
+            if (factoryVk == nullptr) {
+                *error = "no Diligent Vulkan engine factory";
+                return false;
+            }
+            factoryVk->SetBreakOnError(false);
+            factoryVk->SetMessageCallback(OnDiligentMessage);
 
+            dg::EngineVkCreateInfo engineInfo;
+            engineInfo.EnableValidation = validation ? dg::True : dg::False;
+            engineInfo.DynamicHeapSize = 64u << 20;
+            engineInfo.Features.TextureCompressionBC = dg::DEVICE_FEATURE_STATE_OPTIONAL;
+            engineInfo.Features.WireframeFill = dg::DEVICE_FEATURE_STATE_OPTIONAL;
+
+            dg::IRenderDevice* createdDevice = nullptr;
+            dg::IDeviceContext* createdContext = nullptr;
+            factoryVk->CreateDeviceAndContextsVk(engineInfo, &createdDevice, &createdContext);
+            device.Attach(createdDevice);
+            context.Attach(createdContext);
+            if (!device || !context) {
+                *error = "no usable Vulkan device (Vulkan driver missing or too old)";
+                return false;
+            }
+            InstallRenderPassHooks();
+            vulkanLayers = DescribeVulkanLayers();
+
+            support = AndroidDeviceSupport{};
+            support.bcFeature = device->GetDeviceInfo().Features.TextureCompressionBC == dg::DEVICE_FEATURE_STATE_ENABLED;
+            support.bcSampled = (device->GetTextureFormatInfoExt(dg::TEX_FORMAT_BC3_UNORM).BindFlags & dg::BIND_SHADER_RESOURCE) != 0;
+            support.d24s8Attachment = (device->GetTextureFormatInfoExt(dg::TEX_FORMAT_D24_UNORM_S8_UINT).BindFlags & dg::BIND_DEPTH_STENCIL) != 0;
+            support.d32s8Attachment = (device->GetTextureFormatInfoExt(dg::TEX_FORMAT_D32_FLOAT_S8X24_UINT).BindFlags & dg::BIND_DEPTH_STENCIL) != 0;
+            support.cpuBcDecode = options.forceCpuBcDecode || !support.bcFeature || !support.bcSampled;
+            support.d32s8ForD24s8 = !support.d24s8Attachment && support.d32s8Attachment;
+            support.pipelineCachePath = options.pipelineCachePath;
+            dg::RefCntAutoPtr<dg::IRenderDeviceVk> deviceVk(device, dg::IID_RenderDeviceVk);
+            if (deviceVk && vkGetPhysicalDeviceProperties != nullptr) {
+                VkPhysicalDeviceProperties properties{};
+                vkGetPhysicalDeviceProperties(deviceVk->GetVkPhysicalDevice(), &properties);
+                support.subPixelPrecisionBits = properties.limits.subPixelPrecisionBits;
+                support.subTexelPrecisionBits = properties.limits.subTexelPrecisionBits;
+                support.mipmapPrecisionBits = properties.limits.mipmapPrecisionBits;
+            }
+            LoadPipelineCache();
+
+            if (nativeWindow != nullptr) {
+                window = static_cast<ANativeWindow*>(nativeWindow);
+                ANativeWindow_acquire(window);
+                if (!CreateSwapChainAndroid(window, error)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void LoadPipelineCache()
+        {
+            std::vector<char> bytes;
+            if (!options.pipelineCachePath.empty()) {
+                std::ifstream file(options.pipelineCachePath, std::ios::binary);
+                if (file) {
+                    bytes.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+                }
+            }
+            if (options.pipelineCachePath.empty()) {
+                return;
+            }
+            dg::PipelineStateCacheCreateInfo cacheInfo;
+            cacheInfo.Desc.Name = "galplay pipeline cache";
+            cacheInfo.Desc.Mode = dg::PSO_CACHE_MODE_LOAD_STORE;
+            cacheInfo.pCacheData = bytes.empty() ? nullptr : bytes.data();
+            cacheInfo.CacheDataSize = static_cast<dg::Uint32>(bytes.size());
+            device->CreatePipelineStateCache(cacheInfo, &pipelineCache);
+            if (!pipelineCache && !bytes.empty()) {
+                // A cache of another driver or Diligent version: start an empty one.
+                cacheInfo.pCacheData = nullptr;
+                cacheInfo.CacheDataSize = 0;
+                device->CreatePipelineStateCache(cacheInfo, &pipelineCache);
+                bytes.clear();
+            }
+            support.pipelineCacheCreated = pipelineCache != nullptr;
+            support.pipelineCacheBytesLoaded = bytes.size();
+        }
+#endif
+
+#if defined(_WIN32)
         // OpenGL: a (debug) context on the window, made current on this thread - the render thread
         // from here on. Clip control stays off (ZeroToOneNDZ false): the z range is remapped in the
         // vertex shaders, as on GLES devices without GL_EXT_clip_control (DiligentHost.h).
@@ -774,6 +1254,7 @@ float4 main(VSOutput input) : SV_TARGET
             }
             return true;
         }
+#endif
 
         std::string DescribeVulkanLayers() const
         {
@@ -828,6 +1309,7 @@ float4 main(VSOutput input) : SV_TARGET
         mImpl->height = height;
 
         bool created = false;
+#if defined(_WIN32)
         switch (api) {
         case GraphicsApi::Vulkan:
             created = mImpl->CreateVulkan(window, error);
@@ -848,12 +1330,30 @@ float4 main(VSOutput input) : SV_TARGET
             Destroy();
             return false;
         }
+#else
+        // Android (M7a1): Vulkan only. GLES on the target phones is ANGLE on the same Vulkan driver, and
+        // the GL route cannot emit GLSL ES for the menu's shaders yet (M6c V2).
+        if (api != GraphicsApi::Vulkan) {
+            *error = std::string("the Android backend implements Vulkan only, not ") + GraphicsApiName(api);
+            return false;
+        }
+        created = mImpl->CreateVulkan(window, error);
+        if (!created) {
+            Destroy();
+            return false;
+        }
+#endif
 
         if (!mImpl->CreateHead(error)) {
             Destroy();
             return false;
         }
-        mImpl->gpu = std::make_shared<GpuShared>(mImpl->device, mImpl->context, static_cast<std::uint32_t>(::GetCurrentThreadId()), api);
+        mImpl->gpu = std::make_shared<GpuShared>(mImpl->device, mImpl->context, CurrentThreadId(), api);
+#if !defined(_WIN32)
+        mImpl->gpu->SetCpuBcDecode(mImpl->support.cpuBcDecode);
+        mImpl->gpu->SetD32S8ForD24S8(mImpl->support.d32s8ForD24s8);
+        mImpl->gpu->SetPipelineCache(mImpl->pipelineCache);
+#endif
         return true;
     }
 
@@ -873,17 +1373,26 @@ float4 main(VSOutput input) : SV_TARGET
         if (mImpl->context) {
             mImpl->context->Flush();
         }
+#if defined(_WIN32)
         if (mImpl->infoQueue != nullptr) {
             DrainDebugLayer(nullptr, 0);
             mImpl->infoQueue->Release();
             mImpl->infoQueue = nullptr;
         }
+#endif
         mImpl->gpu.reset();
         mImpl->readbacks.clear();
         mImpl->presentBinding.Release();
         mImpl->presentPipeline.Release();
         mImpl->head.Release();
+#if defined(_WIN32)
         mImpl->swapChain.Release();
+#else
+        mImpl->ReleaseSwapChainAndroid();
+        mImpl->presentConstants.Release();
+        mImpl->presentFormat = dg::TEX_FORMAT_UNKNOWN;
+        mImpl->pipelineCache.Release();
+#endif
         mImpl->context.Release();
         mImpl->device.Release();
         if (mImpl->api == GraphicsApi::Vulkan) {
@@ -893,7 +1402,11 @@ float4 main(VSOutput input) : SV_TARGET
 
     bool DiligentHost::IsCreated() const
     {
+#if defined(_WIN32)
         return mImpl->device && mImpl->swapChain;
+#else
+        return mImpl->device && mImpl->context; // Android: the swap chain comes and goes with the window
+#endif
     }
 
     const std::shared_ptr<GpuShared>& DiligentHost::GetGpu() const
@@ -918,7 +1431,9 @@ float4 main(VSOutput input) : SV_TARGET
         ScopedDefaultFpu fpu;
         std::lock_guard<std::recursive_mutex> lock(mImpl->gpu->Lock());
         mImpl->context->SetRenderTargets(0, nullptr, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_NONE);
+#if defined(_WIN32)
         mImpl->swapChain->Resize(width, height);
+#endif
         mImpl->width = width;
         mImpl->height = height;
         return mImpl->CreateHead(error);
@@ -930,7 +1445,39 @@ float4 main(VSOutput input) : SV_TARGET
             return;
         }
         std::lock_guard<std::recursive_mutex> lock(mImpl->gpu->Lock());
+#if !defined(_WIN32)
+        // Android: without a window (the activity is stopped, or galplay_cli's headless replay) the frame
+        // still ends, so dynamic buffers and deferred releases keep their per-frame rules; nothing is
+        // shown. FinishFrame is what ISwapChain::Present does at its end: it hands the frame's dynamic
+        // memory back to the context (Vulkan's dynamic heap would run out after a few frames without it).
+        const auto finishFrameWithoutPresent = [this] {
+            mImpl->context->SetRenderTargets(0, nullptr, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_NONE);
+            mImpl->context->Flush();
+            mImpl->context->FinishFrame();
+            mImpl->gpu->AdvanceFrame();
+            mImpl->gpu->DrainRetired();
+        };
+        if (!mImpl->swapChain || !mImpl->presentPipeline || !mImpl->presentBinding) {
+            finishFrameWithoutPresent();
+            return;
+        }
+        {
+            const PresentConstants constants = mImpl->ComputePresentConstants();
+            void* mapped = nullptr;
+            mImpl->context->MapBuffer(mImpl->presentConstants, dg::MAP_WRITE, dg::MAP_FLAG_DISCARD, mapped);
+            if (mapped != nullptr) {
+                std::memcpy(mapped, &constants, sizeof(constants));
+                mImpl->context->UnmapBuffer(mImpl->presentConstants, dg::MAP_WRITE);
+            }
+        }
+#endif
         dg::ITextureView* backBuffer = mImpl->swapChain->GetCurrentBackBufferRTV();
+#if !defined(_WIN32)
+        if (backBuffer == nullptr) { // no image acquired (the window is changing)
+            finishFrameWithoutPresent();
+            return;
+        }
+#endif
         mImpl->context->SetRenderTargets(1, &backBuffer, nullptr, dg::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         const dg::SwapChainDesc& desc = mImpl->swapChain->GetDesc();
         dg::Viewport viewport;
@@ -1074,6 +1621,38 @@ float4 main(VSOutput input) : SV_TARGET
         return true;
     }
 
+#if !defined(_WIN32)
+    void DiligentHost::DrainDebugLayer(std::vector<std::string>* const out, const std::size_t keep)
+    {
+        static_cast<void>(out);
+        static_cast<void>(keep);
+    }
+
+    std::uint32_t DiligentHost::SelfTestDebugLayer(std::string* const sample)
+    {
+        static_cast<void>(sample);
+        return 0;
+    }
+
+    std::uint32_t DiligentHost::SelfTestGlDebugOutput(std::string* const sample)
+    {
+        static_cast<void>(sample);
+        return 0;
+    }
+
+    GlDebugCounts DiligentHost::GetGlDebugCounts(std::vector<std::string>* const out) const
+    {
+        if (out != nullptr) {
+            out->clear();
+        }
+        return GlDebugCounts{};
+    }
+
+    bool DiligentHost::IsDebugLayerActive() const
+    {
+        return false;
+    }
+#else
     void DiligentHost::DrainDebugLayer(std::vector<std::string>* const out, const std::size_t keep)
     {
         ID3D11InfoQueue* const queue = mImpl->infoQueue;
@@ -1210,6 +1789,7 @@ float4 main(VSOutput input) : SV_TARGET
         }
         return gGlDebug;
     }
+#endif
 
     std::string DiligentHost::GetVulkanLayerReport() const
     {
@@ -1233,10 +1813,12 @@ float4 main(VSOutput input) : SV_TARGET
                std::to_string(c.GenerateMips) + "}";
     }
 
+#if defined(_WIN32)
     bool DiligentHost::IsDebugLayerActive() const
     {
         return mImpl->infoQueue != nullptr;
     }
+#endif
 
     DebugLayerCounts DiligentHost::GetDebugLayerCounts() const
     {
@@ -1293,6 +1875,91 @@ float4 main(VSOutput input) : SV_TARGET
     {
         return mImpl->height;
     }
+
+#if !defined(_WIN32)
+    bool DiligentHost::SetWindow(void* const nativeWindow, std::string* const error)
+    {
+        if (!mImpl->device) {
+            *error = "no device";
+            return false;
+        }
+        std::lock_guard<std::recursive_mutex> lock(mImpl->gpu->Lock());
+        mImpl->ReleaseSwapChainAndroid();
+        if (nativeWindow == nullptr) {
+            return true;
+        }
+        mImpl->window = static_cast<ANativeWindow*>(nativeWindow);
+        ANativeWindow_acquire(mImpl->window);
+        if (!mImpl->CreateSwapChainAndroid(mImpl->window, error)) {
+            mImpl->ReleaseSwapChainAndroid();
+            return false;
+        }
+        return true;
+    }
+
+    // A new swap chain rather than ISwapChain::Resize: Diligent keeps the surface extent it saw first
+    // on Android, which is stale after a real resize; creation also picks up the current transform
+    // (port/android/src/Renderer.cpp UpdateSurface, M1).
+    bool DiligentHost::UpdateSurface(std::string* const error)
+    {
+        if (mImpl->window == nullptr) {
+            return true;
+        }
+        ANativeWindow* const window = mImpl->window;
+        ANativeWindow_acquire(window);
+        const bool ok = SetWindow(window, error);
+        ANativeWindow_release(window);
+        return ok;
+    }
+
+    bool DiligentHost::HasSurface() const
+    {
+        return mImpl->swapChain != nullptr;
+    }
+
+    std::string DiligentHost::GetSurfaceDescription() const
+    {
+        if (!mImpl->swapChain) {
+            return {};
+        }
+        const dg::SwapChainDesc& desc = mImpl->swapChain->GetDesc();
+        char text[160];
+        std::snprintf(text, sizeof(text), "%ux%u %s, pre-transform %s, %u buffers", desc.Width, desc.Height, GetSwapChainFormat().c_str(),
+                      TransformName(desc.PreTransform), desc.BufferCount);
+        return text;
+    }
+
+    std::uint64_t DiligentHost::SavePipelineCache(std::string* const error)
+    {
+        if (!mImpl->pipelineCache || mImpl->options.pipelineCachePath.empty()) {
+            return 0;
+        }
+        dg::RefCntAutoPtr<dg::IDataBlob> blob;
+        mImpl->pipelineCache->GetData(&blob);
+        if (!blob || blob->GetSize() == 0) {
+            return 0;
+        }
+        const std::string temporary = mImpl->options.pipelineCachePath + ".tmp";
+        {
+            std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+            file.write(static_cast<const char*>(blob->GetConstDataPtr()), static_cast<std::streamsize>(blob->GetSize()));
+            if (!file) {
+                *error = "cannot write " + temporary;
+                return 0;
+            }
+        }
+        if (std::rename(temporary.c_str(), mImpl->options.pipelineCachePath.c_str()) != 0) {
+            *error = "cannot replace " + mImpl->options.pipelineCachePath;
+            return 0;
+        }
+        return blob->GetSize();
+    }
+
+    AndroidDeviceSupport DiligentHost::GetDeviceSupport() const
+    {
+        return mImpl->support;
+    }
+#endif
 
     // ---------------------------------------------------------------------------------------------
     // Formats
@@ -1499,6 +2166,11 @@ float4 main(VSOutput input) : SV_TARGET
         }
         if (desc.depthStencil) {
             textureDesc.BindFlags |= dg::BIND_DEPTH_STENCIL;
+            if (gpu.UseD32S8ForD24S8() && textureDesc.Format == dg::TEX_FORMAT_D24_UNORM_S8_UINT) {
+                // M7a1: no D24S8 attachments on this device (GpuShared::UseD32S8ForD24S8).
+                textureDesc.Format = dg::TEX_FORMAT_D32_FLOAT_S8X24_UINT;
+                ++gpu.Stats().depthStencilD32S8;
+            }
             textureDesc.ClearValue.Format = textureDesc.Format;
             textureDesc.ClearValue.DepthStencil.Depth = 1.0F;
         } else if (desc.renderTarget) {

@@ -15,6 +15,10 @@ One APK, `io.github.m3rt1n99.fafre` ("FAF (faf-re)"), arm64-v8a, Android 8.0 (AP
   (`libfafrunner_o2.so` + `libfafengine_o2.so`) for the speed experiment.
 - **Device probe** (`libfafdeviceprobe.so`, [port/deviceprobe](../../port/deviceprobe)): reports what
   the GPU drivers offer the graphics port (release 0.4.1, [Device probe](#device-probe)).
+- **Menu replay** (release 0.5.0, [Menu replay](#menu-replay)): FAF's main menu with its opening
+  animation, drawn by the port's own Diligent `gpg::gal` backend over Vulkan in GameActivity, from a gal
+  call stream recorded on the PC (`assets/galplay/menu.galtrace`, which holds references to game files,
+  not their contents) and the user's own game data.
 
 No game data is in the APK or the repository. The user's own *Supreme Commander: Forged Alliance*
 files and FAF's files are put on the device separately; [gamedata.md](gamedata.md) lists exactly
@@ -69,6 +73,8 @@ path, size, the signing certificate's and the APK's SHA-256 and the build ids of
 | `-SkipOptimizedRunner` | Leave the `-O2` pair out; the launcher then greys out *Optimised engine (-O2 build)*. |
 | `-DeviceProbe <file>` | Package this unstripped `libfafdeviceprobe.so` (`build_runner.py --deviceprobe`) instead of the one in `-RunnerDirectory` or the runner build. |
 | `-SkipDeviceProbe` | Leave the device probe out; the launcher then greys out **Device probe**. A Release build without a probe stops unless this is given. |
+| `-MenuTrace <file>` | The galtrace the [menu replay](#menu-replay) plays (release 0.5.0). Default: the one `*.galtrace` in `buildstage\traces` (the `menu*` one when there are several). It must be a complete format version 2 trace with game-file references; a version 1 trace (every payload embedded, game files included) is refused, and so is one with an embedded payload that looks like a game file. A Release build also needs the PC's Diligent-Vulkan hash of every readback frame in it, no home directory in its header, and a `libfaf_android.so` that has the menu replay mode ([The trace](#the-trace)). |
+| `-SkipMenuTrace` | Leave the menu trace out; the launcher then greys out **Menu replay**. A Release build with native code stops without a trace unless this is given. |
 | `-AllowUnreferencedRunner` | Package engine/runner pairs whose build ids are not in the reference table (a warning instead of an error); development builds only. |
 | `-SkipRunner` | Leave the replay runner, the `-O2` pair and the probe out (no `dependencies\WildMagic3p8` needed); the replay test then says the runner is missing. `-SkipNative` implies it. |
 | `-NoReleaseStage` | Do not copy the APK and the unstripped libraries into `buildstage\releases\android-v<versionName>\` (Release builds do by default). |
@@ -116,7 +122,15 @@ What it does:
    `glslang.txt`, `SPIRV-Tools.txt`, `SPIRV-Headers.txt` (the SPIR-V grammar tables inside SPIRV-Tools
    and glslang), `SPIRV-Cross.txt` and `volk.txt` (libfaf_android.so; glslang, SPIRV-Tools and the
    grammar tables also in libfafdeviceprobe.so). A Release build refuses to go without them; the
-   app's **Licenses** screen shows every file. The `lib/<abi>/*.so` entries are added *deflated*: the
+   app's **Licenses** screen shows every file. Since 0.5.0 also the menu trace: an embedded helper
+   (`galtrace_info.py`) reads the whole trace (header, every record up to the End record, the version 2
+   payload definitions) and refuses it unless it is a complete version 2 trace with `PayloadRef` records
+   whose embedded payloads do not look like game files (see [The trace](#the-trace) for the Release
+   checks); it writes `assets/galplay/menu.json` (stored: size, sha256, the header metadata without the
+   recorder's command line, the number and bytes of embedded, referenced, digest and composed payloads,
+   the archives the references name, the readback frames, warnings), and `assets/galplay/menu.galtrace`
+   is added *deflated*; build.json gets `menuTrace` (name, size, sha256, version, archives, readback
+   frames). The summary's `Trace:` line gives the trace's size and its compressed size in the APK. The `lib/<abi>/*.so` entries are added *deflated*: the
    manifest sets `extractNativeLibs="true"`, because the replay test execs the runner from
    `nativeLibraryDir` (an app may only exec files the installer extracted there). The script reads
    that attribute and packages accordingly (`false` would need stored, page-aligned libraries and
@@ -134,7 +148,9 @@ line from the phone is symbolized against these files.
 For 0.4.1 the packaged sets are `buildstage\runner\r041b-pkg\<abi>` (runner, engine, arena probe,
 device probe) and `buildstage\runner\r041b-pkg-O2\<abi>` (the second build: the runner's fast exit
 and affinity hold, the probe's teardown after its result; the engines are byte-identical to the first
-0.4.1 build, and the -O0 engine to 0.4.0's):
+0.4.1 build, and the -O0 engine to 0.4.0's). 0.5.0 packages the same sets unchanged (the same build ids,
+so the reference table still applies) and the menu trace from `buildstage\traces\menu.galtrace`, which
+the build finds by itself:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/port/build_android.ps1 -RunnerDirectory buildstage/runner/r041b-pkg/arm64-v8a -RunnerO2Directory buildstage/runner/r041b-pkg-O2/arm64-v8a
@@ -221,13 +237,17 @@ Everything lives below the app's external files directory,
 <root>/vault/maps, mods     the vault (custom_vault_path)
 <root>/localappdata/        LOCAL_APPDATA: preferences, shader cache
 <root>/documents/           Documents
-<root>/logs/                faf_android_vulkan.log, faf_android_gles.log (+ .1.log: previous run), launcher.log, game.sclog, replaytest.log
+<root>/logs/                faf_android_vulkan.log, faf_android_gles.log (+ .1.log: previous run), launcher.log, game.sclog, replaytest.log, menureplay.log
 <root>/launch/status.json   result of the last run
 <root>/replays/             replay test input: <id>.fafreplay as received, <id>.3764.scfareplay (converted), <id>.json (what is known about it)
-<root>/runs/<run>/          one replay test or device probe run (<run> = yyyyMMdd-HHmmss): result.json, meta.json, summary.txt, <n>-<step>.out (+ .log, .summary.json, .logcat.txt); a probe run also deviceprobe.json, deviceprobe-vulkan.png, deviceprobe-gles.png
+<root>/runs/<run>/          one replay test, device probe or menu replay run (<run> = yyyyMMdd-HHmmss): result.json, meta.json, summary.txt, <n>-<step>.out (+ .log, .summary.json, .logcat.txt); a probe run also deviceprobe.json, deviceprobe-vulkan.png, deviceprobe-gles.png; a menu replay frame_<N>.png and .bmp, galplay.json, galplay.log, galreport.json, game.sclog (see Menu replay)
+<root>/localappdata/galplay-cache/  the menu replay's SPIR-V and Vulkan pipeline caches (native side)
 <root>/runner/home/         the runner's FAF_KNOWN_FOLDERS (emptied before every run; no Game.prefs)
 <root>/.deploy/deployed.json  files placed by the deploy script or the import
 ```
+
+The unpacked menu trace lives in the app's internal storage, not in the data root:
+`/data/user/0/io.github.m3rt1n99.fafre/no_backup/galplay/menu-<sha256 prefix>.galtrace`.
 
 [gamedata.md](gamedata.md#android-data-root) has the details, including the generated
 `fa_path.lua`. The folder belongs to the app: Android deletes it when the app is uninstalled, and
@@ -254,6 +274,9 @@ holding the game's command line, token by token, exactly as the desktop executab
 Options compare case-insensitively and the first occurrence wins, as in the engine. Arguments typed
 into the launcher's "extra arguments" replace the launcher's own value of the same option. In M1
 `GameActivity` is not exported, so only the launcher can start it.
+
+A second mode (release 0.5.0): with the String extra `"mode"` = `"menu-replay"` GameActivity replays
+the menu trace instead of starting the game; its extras are in [Menu replay](#menu-replay).
 
 ## `status.json`
 
@@ -567,6 +590,158 @@ the probe's own summary. **Probe images** shows the PNGs. `result.json` has the 
 `device_probe` (`headline`, `sections` with each status, `images`, `result_line`); the full report is
 `deviceprobe.json` in the run directory and in the zip.
 
+## Menu replay
+
+Release 0.5.0 (milestone M7a1, step 8 of the [renderer plan](renderer.md#the-plan)). **Menu replay** in
+the launcher shows FAF's main menu with its opening animation on the device: the real `gpg::gal` call
+stream of the engine, recorded on the PC during a 900-frame menu run of the frame harness (a galtrace,
+[port/graphics/trace](../../port/graphics/trace/README.md)), replayed by the port's own Diligent backend
+over Vulkan on the device's GPU, with the textures and effects of the user's own game data. Then the app
+says whether the frames it read back equal the PC's Diligent-Vulkan frames of the same trace. It is not
+the live engine: no Lua, no UI logic, no sim (that is the GUI closure, step 9).
+
+### The trace
+
+- **In the APK**: `assets/galplay/menu.galtrace` (deflated) and its description `assets/galplay/menu.json`
+  (build step 5). The trace is format version 2: what the engine read from game files (texture file
+  images, effect sources, `GetTexture2D` inputs) is a *reference* (VFS path, content hashes, the archive
+  the PC found it in); only what the engine generated itself is embedded (dynamic vertex and index data,
+  the glyph atlas updates, render-target contents). The build refuses a version 1 trace, a cut-off one,
+  and one with an embedded payload that looks like a game file (a DDS, PNG or JPEG image, or effect
+  source text: the 900-frame version 1 menu trace has 21 DDS images and 11 effect sources, 1.3 MB, which
+  a version 2 trace must hold as references). A **Release** build also refuses a trace without
+  `reference_frames.diligent:vk` for every readback frame (the app could only say NO REFERENCE), with a
+  home directory in its header metadata (the version 1 recorder's `command_line` names
+  `C:\Users\<name>\...`), and a `libfaf_android.so` without the menu replay mode (it must contain the
+  contract's names `menu-replay`, `menuReplay.trace` and `onMenuReplayFinished`; without them GameActivity
+  would start the game instead). A Debug build only warns about those three.
+- **Size**: 0.5.0's trace (`buildstage/traces/menu.galtrace`, made by `scripts/port/galtrace.py release`)
+  is 111,039,865 bytes and 18,224,603 bytes deflated in the APK: the arm64 APK is 35.3 MB (0.4.1: 15.9 MB).
+  Unpacked on the device it takes 111 MB. Of its payloads, 107.7 MB are the dynamic vertex and index data
+  the engine generated (embedded); the 33 game files (1.3 MB), the nine readbacks and the 20
+  `GetTexture2D` outputs are references or digests. (The version 1 recording, every payload embedded, is
+  151.9 MB, 20.4 MB deflated.) Small enough for an APK asset; no separate download.
+- **On the device**: the first Menu replay unpacks it into the app's internal storage
+  (`no_backup/galplay/menu-<sha256 prefix>.galtrace`, checked against menu.json's size and sha256; once
+  per APK, older copies are deleted). The card shows the trace's version, size, frame count, the frames
+  it reads back, how many PC reference hashes it carries and the archives it uses.
+- **Header keys** the app reads (`GalTraceFormat.h`): `harness_frames` (the readback frames, in order),
+  `frame_rate`, `presents`, `payload_refs`, `ref_archives` (else menu.json's scan of the references) and
+  `reference_frames.diligent:vk` (`"10:d92c3a2233b80c55,15:..."`, the PC's Vulkan frame hashes).
+
+### Before the start
+
+Everything runs on a thread of the launcher's (a progress panel with Cancel; it survives a rotation):
+
+1. The APK must have the native runtime and a usable trace.
+2. **Data check**: the required tier (the main menu's data; `init_faf.lua` mounts it) and every archive the
+   trace refers to: a FAF file of the manifest (`effects.nx2`, `textures.nx2`, ...) or a file of an SCFA
+   selection (`textures.scd`, ...). The card names what is missing before anything starts. A trace that
+   names the FAF version it was recorded with (`faf_version`) gives a note when the device has another one.
+   The native side checks every referenced file's hash when it reads it and stops with the file's path and
+   archive if one differs.
+3. **One user of the :game process at a time.** The game and the menu replay both run in GameActivity and
+   both write `launch/status.json`; `Settings` records which one started last. A :game process whose status
+   is not terminal (`loading`, `running`) is busy:
+
+   | Asked for | while the game runs | while a menu replay runs |
+   |---|---|---|
+   | Menu replay | refused ("the game is running") | refused (button inactive) |
+   | Start (the game) | as before (ends it and starts again) | refused ("the menu replay is running") |
+   | Replay test, self-test, device probe | refused ("the game is running") | refused ("the menu replay is running") |
+
+   A menu replay never starts while an import service job (a transfer or the replay test) runs. A finished
+   run's cached :game process is ended first, as Start does.
+4. `faf/fa_path.lua` is written with the real data root (as for Start), `launch/status.json` is removed, the
+   trace is unpacked, and `runs/<run>/` gets a provisional `result.json` (verdict `INTERRUPTED`,
+   `in_progress`, `"kind": "menu-replay"`) and `meta.json` (app, device, trace, data check, paths, the
+   system's Vulkan feature level).
+5. GameActivity is started (explicit Intent, its `:game` process) with:
+
+   | Extra | Type | Meaning |
+   |---|---|---|
+   | `mode` | String | `menu-replay` |
+   | `argv` | String[] | as for Start: `/init <root>/faf/bin/init_faf.lua /nobugreport /log <root>/runs/<run>/game.sclog /renderer vulkan /nomovie /nosound` (the native side takes `/init` and `/log` from it) |
+   | `menuReplay.trace` | String | the unpacked trace |
+   | `menuReplay.runDir` | String | `<root>/runs/<run>` |
+   | `menuReplay.fast` | boolean | *As fast as possible* (default: the recorded 30 fps) |
+   | `menuReplay.forceCpuDecode` | boolean | Advanced: BC textures decoded on the CPU even when the GPU samples them (the path for GPUs without BC, such as Mali) |
+   | `menuReplay.noShaderCache` | boolean | Advanced: neither read nor write the shader and pipeline caches (a cold first launch) |
+
+### While it runs
+
+The native side (`port/android/src/GalPlay.h`, `galplay_run`) loads the data through the VFS, creates the
+Vulkan device and swap chain on GameActivity's window, and replays the trace at its recorded pace. It calls
+back into GameActivity (`onMenuReplayProgress`, `onMenuReplayReadback`, `onMenuReplayFinished`, on its
+replay thread); `MenuReplaySession` copies what it needs and writes the files on a worker thread:
+
+- **The overlay** (`MenuReplayOverlay`, a `PopupWindow` above the replay, because NativeActivity hands its
+  own window's surface to the native renderer): the stage before the first frame (data, device, shaders),
+  then frame number, frame time, the replay work of the frame and the average, and each readback frame's
+  PASS/FAIL as it comes; at the end the result line, the timings and "Tap or press Back to return to the
+  launcher". It takes no input: Back during the replay stops it (INCOMPLETE), a tap or Back after the end
+  closes the activity (native side).
+- **Each readback frame** (R G B A, top row first): the app hashes it itself (FNV-1a 64 over R, G, B, as the
+  PC frame harness and `gfx_capture.py` hash frames) and compares the hash with the trace's PC
+  Diligent-Vulkan hash; it writes `frame_<N>.png` (RGB, to look at) and `frame_<N>.bmp` (the harness's
+  32-bit BMP, alpha included; unless the native side wrote it already). Android's `Bitmap` is not used:
+  its premultiplied alpha would change pixels whose alpha is below 255, and the menu's head target has
+  such pixels.
+- **At the end** `result.json` (verdict, headline, per frame the app's and the native side's hash, the
+  reference, the files; counts; frame-time statistics from the progress reports: mean, median, p95, max,
+  and the replay work; galplay.json's `timings`, `caches` and `device`), `summary.txt`, `meta.json` (plus the
+  :game process and galplay.json's summary), and a line in `logs/menureplay.log`. The native side writes
+  `galplay.json` (`result`, `exitCode`, `message`, per readback frame `frameHashes` with the native side's
+  hash, reference and verdict, `timings`, `caches`, `device`, `replay`, the player's report),
+  `galplay.log`, `galreport.json` (the Diligent backend's report) and `launch/status.json`. The app's own
+  hash of a frame and the native side's must agree; a disagreement is a warning line in the result.
+
+### Reading the result
+
+- **PASS**: every readback frame has the PC's Vulkan hash: the device drew the frame byte for byte as the
+  PC did.
+- **FAIL**: a frame's hash differs from the PC's, or the native side stopped with an error (the headline
+  names it: missing data, a file whose hash differs, no Vulkan device, ...). A differing frame is *not
+  byte-identical*; whether it is within the parity rule of the Windows gates (max |delta| <= 1 on <= 0.1 % of
+  the pixels) needs the PC's pixels, so it is decided on the PC from the zip:
+  `python scripts/port/gfx_capture.py parity <PC frames dir> <the unzipped run dir> --out <dir>`, where
+  the PC frames are the same trace replayed into Diligent-Vulkan on the PC
+  (`main.exe /galplay <trace> /galplayout <PC frames dir> /gal diligent:vk`, [port/graphics/trace](../../port/graphics/trace/README.md)),
+  whose `frame_<N>.bmp` the phone's BMPs match in format byte for byte.
+- **INCOMPLETE**: stopped (Back) or closed before every readback frame was read; the frames read so far are
+  judged. **NO REFERENCE**: the trace carries no PC hashes. **NOT STARTED**: prepared, but cancelled at the
+  last moment or the launcher was left before GameActivity could start (Android does not let an app start an
+  activity from the background).
+- **INTERRUPTED** / **CRASHED**: the :game process ended without a result. When the launcher sees that run
+  again it adds the tail of `logs/faf_android_vulkan.log` and the app's logcat since the start
+  (`logcat.txt`, with a native crash's backtrace) to the run directory and says CRASHED when they show a
+  native crash.
+
+The card also shows the shader line (shaders compiled and their time, SPIR-V cache hits, the Vulkan pipeline
+cache warm or cold with the bytes loaded and saved: a first launch, or one with *Without the shader cache*,
+against a later one) and the device line (adapter, swap-chain format and surface, the depth format, whether
+BC textures are sampled by the GPU or decoded on the CPU). **Frames** shows the PNGs, **Copy summary** copies the summary, **Save
+run (zip)…** writes the run directory as for the replay test (`fafre-run-<run>.zip` with
+`fafre-run-<run>/...`; its `result.json` says `"kind": "menu-replay"`); **Save all runs** has menu replay
+runs too. The PNGs and BMPs are pictures of the user's own game data, rendered on their device:
+they belong in the tester's zip, never in a release.
+
+A run stopped with Back whose frames read so far differ is **FAIL**, not INCOMPLETE (a differing frame
+decides); its headline counts the frames not reached as well ("FAIL · 7 of 9 frames differ …" after 7 read
+back), and the lines say "Frame 300: not reached". `galreport.json` is written when the activity closes (the
+tap or Back after the result), so a zip saved after that has it.
+
+### On the emulator (release check, 2026-10-08)
+
+The API 36 emulator (SwiftShader Vulkan) runs the menu replay through the app's UI: 900 frames in 30.5 s at
+the recorded pace (x86_64; 30.9 s for arm64 under translation, 9.0 s as fast as possible), 0 draws skipped,
+0 Diligent errors, depth D32S8, a second launch with 0 shaders compiled (4 from the cache, against 58 ms of
+compiling on the first). HOME during the replay pauses it and it continues with the same frames. Its frames
+are identical on x86_64 and arm64 and between runs, but **not** the PC's: every frame is FAIL, and on the PC
+34,050 to 135,384 pixels differ by up to 10, beyond the parity rule. The card therefore shows FAIL on the
+emulator; [renderer.md](renderer.md#the-emulators-frames-swiftshader) has the numbers and the likely cause
+(SwiftShader's 4-bit filtering precision). A phone's GPU decides.
+
 ## Checking data on the PC
 
 `deploy_android.ps1 -StageDir <dir> -Tier required -Hardlink` builds the device layout on the PC
@@ -646,6 +821,20 @@ option off, or install a release APK.
 others still ran. `deviceprobe.json` names it (`status`: `crashed`, `timeout`, `no_output`) and the
 step's `.logcat.txt` has the driver's backtrace. A warning "the driver's teardown crashed" means the
 section's result is complete and only its cleanup failed (also with a `.logcat.txt`).
+
+**Menu replay does nothing** - the card says why: no native runtime or no trace in this APK (built with
+`-SkipMenuTrace`), missing game data (the required tier or an archive the trace refers to), the game still
+running, or a transfer or the replay test running.
+
+**Menu replay: FAIL with "... sha256 differs" or a missing file** - the trace refers to game files by their
+content; the files on the device are another version (FAF updates) or damaged. Get FAF's files again
+(**Download FAF files**, which fetches exactly the manifest's version) or check the SCFA import.
+
+**Menu replay: FAIL, frames differ** - send the zip: the BMPs in it are compared with the PC's frames under
+the parity rule there.
+
+**Menu replay: CRASHED or INTERRUPTED** - the run directory has the runtime log's tail and logcat.txt;
+symbolize a native backtrace against the release's `libfaf_android-<abi>.so`.
 
 **Speed line says "no telemetry"** - the app did not find the runner among its child processes in
 `/proc` (it ended within milliseconds), or sampled it for under a second. The run's verdict is not

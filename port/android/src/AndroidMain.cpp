@@ -13,6 +13,12 @@
 //     (state exited). Any failure writes state=error with the reason and
 //     finishes the activity too; the launcher shows the reason.
 //
+// With the Intent extra mode=menu-replay (release 0.5.0, GalPlay.h) steps 2-4
+// are the menu replay instead (MenuReplayMode): galplay replays the menu trace
+// through the port's gal backend on Vulkan on this activity's window and calls
+// back into GameActivity; back stops it and closes the activity, and after its
+// result (also an error) a tap or back closes the activity.
+//
 // Lifecycle rules of the glue that shape the loop below: the UI thread blocks
 // in onNativeWindowDestroyed until APP_CMD_TERM_WINDOW is processed, and in
 // onDestroy until android_main has returned, so commands are handled
@@ -43,6 +49,7 @@
 #include "faf/port/FileSystem.h"
 #include "GameRuntime.h"
 #include "Log.h"
+#include "MenuReplayMode.h"
 #include "Renderer.h"
 #include "RunStatus.h"
 
@@ -123,6 +130,7 @@ namespace faf::android {
 
     private:
       void Start();
+      void StartMenuReplay(const MenuReplayExtras& extras);
       /// Waits for and dispatches every pending looper event. False when the
       /// looper itself failed (nothing sensible is left to do then).
       bool PumpEvents();
@@ -143,6 +151,8 @@ namespace faf::android {
       LaunchOptions mOptions;
       std::shared_ptr<RunStatus> mStatus;
       std::unique_ptr<GameRuntime> mRuntime;
+      /// Mode "menu-replay": the replay instead of mRuntime and mRenderer.
+      std::unique_ptr<MenuReplayMode> mMenuReplay;
       Renderer mRenderer;
       std::optional<SplashImage> mSplash; ///< Decoded, waiting for a device to upload to.
 
@@ -243,7 +253,12 @@ namespace faf::android {
       LogInfo("args ({}): {}", intent.argv.size(), DescribeArgs(intent.argv));
       const faf::port::CommandLine commandLine(intent.argv);
       mOptions = ResolveLaunchOptions(commandLine, mRoot);
-      openRuntimeLog(mOptions.backend);
+      const bool menuReplay = intent.mode == kModeMenuReplay;
+      // The menu replay draws with Vulkan only (GalPlay.h), so it logs into the Vulkan runtime log.
+      openRuntimeLog(menuReplay ? Backend::Vulkan : mOptions.backend);
+      if (!intent.mode.empty() && !menuReplay) {
+        LogWarning("args: unknown mode \"{}\"; starting the game", intent.mode);
+      }
       for (const std::string& warning : mOptions.warnings) {
         LogWarning("args: {}", warning);
       }
@@ -272,6 +287,11 @@ namespace faf::android {
         }
       }
 
+      if (menuReplay) {
+        StartMenuReplay(intent.menuReplay);
+        return;
+      }
+
       GameRuntimeConfig config;
       config.root = mRoot;
       config.initScript = mOptions.initScript;
@@ -282,6 +302,29 @@ namespace faf::android {
         ALooper_wake(looper);
       });
       mRuntime->Start();
+    }
+
+    void App::StartMenuReplay(const MenuReplayExtras& extras)
+    {
+      LogInfo("mode menu-replay");
+      MenuReplayConfig config;
+      config.root = mRoot;
+      config.initScript = mOptions.initScript;
+      // The shader and pipeline caches live in the app's internal storage (not the shared data root):
+      // private, fast, and removed with the app.
+      const ANativeActivity* activity = mApp->activity;
+      if (activity->internalDataPath != nullptr && activity->internalDataPath[0] != '\0') {
+        config.cacheDir = faf::port::fs::NormalizePath(activity->internalDataPath) + "/galplay-cache";
+      }
+      config.extras = extras;
+      mStatus->Update([](RunStatusData& data) {
+        data.stage = Stage::DataPath;
+      });
+      ALooper* looper = mApp->looper;
+      mMenuReplay = std::make_unique<MenuReplayMode>(mApp->activity, std::move(config), mStatus, [looper] {
+        ALooper_wake(looper);
+      });
+      mMenuReplay->Start(mApp->window);
     }
 
     bool App::PumpEvents()
@@ -476,6 +519,41 @@ namespace faf::android {
         LogDebug("lifecycle: {}", CommandName(command));
       }
       try {
+        if (mMenuReplay) {
+          // Mode menu-replay: the replay owns the window (GalPlay.h galplay_set_window).
+          switch (command) {
+          case APP_CMD_INIT_WINDOW:
+            if (mApp->window != nullptr) {
+              LogInfo("window {}x{}", ANativeWindow_getWidth(mApp->window), ANativeWindow_getHeight(mApp->window));
+            }
+            mMenuReplay->SetWindow(mApp->window);
+            return;
+          case APP_CMD_TERM_WINDOW:
+            // The window is destroyed as soon as this handler returns.
+            mMenuReplay->ReleaseWindow();
+            return;
+          case APP_CMD_WINDOW_RESIZED:
+          case APP_CMD_CONFIG_CHANGED:
+            // The same window again: the replay rebuilds its swap chain for the new size and transform.
+            if (command == APP_CMD_CONFIG_CHANGED) {
+              LogInfo("configuration changed (orientation {})", AConfiguration_getOrientation(mApp->config));
+            }
+            if (mApp->window != nullptr && !mFinishing) {
+              mMenuReplay->SetWindow(mApp->window);
+            }
+            return;
+          case APP_CMD_DESTROY:
+            mMenuReplay->RequestStop();
+            if (mStatus && !mStatus->IsTerminal()) {
+              const RunStatusData data = mStatus->Snapshot();
+              mStatus->Finish(RunState::Exited, std::nullopt,
+                              mMenuReplay->ResultReported() ? data.message : std::string("Closed before the menu replay finished."));
+            }
+            return;
+          default:
+            break;
+          }
+        }
         switch (command) {
         case APP_CMD_INIT_WINDOW:
           OnWindowCreated();
@@ -555,7 +633,8 @@ namespace faf::android {
         // during loading does not count.
         switch (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) {
         case AMOTION_EVENT_ACTION_DOWN:
-          mTouchArmed = mSplashShown;
+          // Menu replay: a tap closes the activity once the replay reported its result.
+          mTouchArmed = mMenuReplay ? mMenuReplay->ResultReported() : mSplashShown;
           break;
         case AMOTION_EVENT_ACTION_UP:
           if (mTouchArmed) {
@@ -591,8 +670,13 @@ namespace faf::android {
         return;
       }
       LogInfo("exit requested ({})", reason);
+      if (mMenuReplay) {
+        // Back during the replay stops it (galplay.json "INCOMPLETE"); its result stays the message.
+        mMenuReplay->RequestStop();
+      }
       if (mStatus) {
-        mStatus->Finish(RunState::Exited, std::nullopt, std::string());
+        mStatus->Finish(RunState::Exited, std::nullopt,
+                        mMenuReplay && mMenuReplay->ResultReported() ? mStatus->Snapshot().message : std::string());
       }
       FinishActivity();
     }
@@ -613,6 +697,11 @@ namespace faf::android {
       LogInfo("shutting down");
       if (mRuntime) {
         mRuntime->Shutdown(kWorkerShutdownWait);
+      }
+      if (mMenuReplay) {
+        // Stops a running replay (it reports its finish) and joins its thread; the activity's
+        // onDestroy waits for this.
+        mMenuReplay->Shutdown();
       }
       mRenderer.Destroy();
       if (mStatus && !mStatus->IsTerminal()) {

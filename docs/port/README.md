@@ -44,8 +44,10 @@ two existing backends first), `Texture`, `RenderTarget`, `CubeRenderTarget`, `De
    the Diligent backend runs (M6b); both are in `port/graphics/fx`.
 4. Diligent backend on Windows, compared pixel by pixel against the D3D9 backend. The main menu
    through `/gal diligent:d3d11` is byte-identical to D3D9 (M6b), and so is it on `diligent:vk` and
-   `diligent:gl` (M6c), with galtrace recording and replaying the gal call stream below the engine; the
-   plan and status are in [renderer.md](renderer.md).
+   `diligent:gl` (M6c), with galtrace recording and replaying the gal call stream below the engine. On
+   Android the app's *Menu replay* (M7a1, release 0.5.0) replays that call stream through the same
+   backend over Vulkan with the user's own game data; the plan and status are in
+   [renderer.md](renderer.md).
 5. SDL3 platform layer, then Linux.
 
 ## Android

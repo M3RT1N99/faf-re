@@ -17,6 +17,8 @@ import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Process;
 import android.provider.DocumentsContract;
 import android.text.Editable;
@@ -61,8 +63,10 @@ import java.util.Set;
  * The app's entry point: shows what game data is on the device, gets the rest
  * (FAF download, folder imports through the import service, or the PC deploy
  * script), keeps the launch options, starts GameActivity with the same
- * command line the desktop game takes, and runs the replay test (the headless
- * runner on a picked or shared replay, {@link ReplayTest}).
+ * command line the desktop game takes, runs the replay test (the headless
+ * runner on a picked or shared replay, {@link ReplayTest}) and the menu replay
+ * (FAF's main menu replayed from a recorded gal trace by the port's own Vulkan
+ * renderer in GameActivity, {@link MenuReplay}).
  *
  * <p>All file work runs on {@link Background}; the activity holds no state that
  * is not also in {@link Settings}, the data root or the import service, so a
@@ -101,7 +105,8 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private static final String GLES_LOG = runtimeLog(LaunchArgs.RENDERER_GLES);
     private static final String[] CLEARED_LOGS = {
             VULKAN_LOG, previousLog(VULKAN_LOG), GLES_LOG, previousLog(GLES_LOG),
-            "faf_android.log" /* the single log of 0.3.0 and 0.3.1 */, LaunchArgs.GAME_LOG, ReplayTest.LOG_NAME};
+            "faf_android.log" /* the single log of 0.3.0 and 0.3.1 */, LaunchArgs.GAME_LOG, ReplayTest.LOG_NAME,
+            MenuReplay.LOG_NAME};
     private static final String DEPLOY_COMMAND =
             "powershell -ExecutionPolicy Bypass -File scripts/port/deploy_android.ps1";
     private static final int LOG_TAIL_BYTES = 96 * 1024;
@@ -127,6 +132,12 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         String lastProbeName;
         JSONObject lastProbe;
         int runCount;
+        MenuReplay.TraceAsset menuTrace;
+        MenuReplay.DataCheck menuCheck;
+        String lastMenuName;
+        JSONObject lastMenu;
+        MenuReplay.GameProcess gameProcess;
+        boolean lastLaunchWasMenu;
     }
 
     private Settings mSettings;
@@ -205,6 +216,37 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private Button mProbeImageButton;
     private TextView mProbeVerdict;
     private LinearLayout mProbeLines;
+    private TextView mMenuTraceInfo;
+    private TextView mMenuNotes;
+    private Button mMenuButton;
+    private CheckBox mMenuFastBox;
+    private LinearLayout mMenuAdvanced;
+    private LinearLayout mMenuPreparePanel;
+    private TextView mMenuPrepareTitle;
+    private ProgressBar mMenuPrepareProgress;
+    private TextView mMenuPrepareDetail;
+    private Button mMenuCancelButton;
+    private TextView mMenuVerdict;
+    private LinearLayout mMenuLines;
+    private TextView mMenuRunTime;
+    private Button mMenuFramesButton;
+    private Button mMenuSaveZipButton;
+    private Button mMenuCopyButton;
+    private final Handler mMain = new Handler(Looper.getMainLooper());
+    private final Runnable mMenuTicker = this::renderMenuPrepare;
+
+    /**
+     * The menu replay's preparation (the checks, unpacking the trace) on a thread of its own. Static so that it
+     * outlives a rotation of the launcher; main thread only.
+     */
+    private static final class MenuJob {
+        final Cancellation cancel = new Cancellation();
+        final Progress progress = new Progress();
+    }
+
+    private static MenuJob sMenuJob;
+    /** The launcher on screen (between onResume and onPause), for starting GameActivity from a finished job. */
+    private static LauncherActivity sResumed;
 
     // ------------------------------------------------------------- lifecycle
 
@@ -260,8 +302,19 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     @Override
     protected void onResume() {
         super.onResume();
+        sResumed = this;
         // The game, the PC deploy script or an import may have changed the data root.
         refresh();
+        renderMenuPrepare();
+    }
+
+    @Override
+    protected void onPause() {
+        if (sResumed == this) {
+            sResumed = null;
+        }
+        mMain.removeCallbacks(mMenuTicker);
+        super.onPause();
     }
 
     @Override
@@ -310,6 +363,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         column.addView(buildHeader(), mUi.matchWrap(0));
         column.addView(buildStartCard(), mUi.matchWrap(16));
         column.addView(buildRunCard(), mUi.matchWrap(12));
+        column.addView(buildMenuReplayCard(), mUi.matchWrap(12));
         column.addView(buildReplayCard(), mUi.matchWrap(12));
         column.addView(buildDataCard(), mUi.matchWrap(12));
         column.addView(buildImportCard(), mUi.matchWrap(12));
@@ -358,6 +412,107 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         card.addView(mRunCounters, mUi.matchWrap(6));
         mRunTime = mUi.hint("");
         card.addView(mRunTime, mUi.matchWrap(4));
+        return card;
+    }
+
+    private View buildMenuReplayCard() {
+        LinearLayout card = mUi.card();
+        card.addView(mUi.heading("Menu replay"), mUi.matchWrap(0));
+        card.addView(mUi.hint("FAF's main menu with its opening animation, drawn by this port's own Vulkan renderer: "
+                + "the engine's graphics calls, recorded on a PC, replayed on this device with the textures and "
+                + "effects of your game data (the trace in the app holds no game data). It then compares the frames "
+                + "it read back with the PC's Vulkan frames. Needs the required game data (main menu)."),
+                mUi.matchWrap(4));
+        mMenuTraceInfo = mUi.mono("Checking the trace…");
+        card.addView(mMenuTraceInfo, mUi.matchWrap(10));
+        mMenuNotes = mUi.body("");
+        mMenuNotes.setTextIsSelectable(true);
+        mMenuNotes.setVisibility(View.GONE);
+        card.addView(mMenuNotes, mUi.matchWrap(6));
+        mMenuButton = mUi.primaryButton("Menu replay");
+        mMenuButton.setEnabled(false);
+        mMenuButton.setOnClickListener(v -> startMenuReplay());
+        card.addView(mMenuButton, mUi.matchWrap(10));
+        mMenuFastBox = mUi.checkBox("As fast as possible (instead of the recorded 30 fps)", mSettings.menuFast());
+        mMenuFastBox.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setMenuFast(checked);
+            renderMenuReplay();
+        });
+        card.addView(mMenuFastBox, mUi.matchWrap(6));
+
+        CheckBox advanced = mUi.checkBox("Advanced options", mSettings.menuAdvanced());
+        card.addView(advanced, mUi.matchWrap(0));
+        mMenuAdvanced = new LinearLayout(this);
+        mMenuAdvanced.setOrientation(LinearLayout.VERTICAL);
+        mMenuAdvanced.setVisibility(mSettings.menuAdvanced() ? View.VISIBLE : View.GONE);
+        advanced.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setMenuAdvanced(checked);
+            mMenuAdvanced.setVisibility(checked ? View.VISIBLE : View.GONE);
+        });
+        CheckBox cpuDecode = mUi.checkBox("Decode BC textures on the CPU (the path for GPUs without BC, e.g. Mali)",
+                mSettings.menuCpuDecode());
+        cpuDecode.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setMenuCpuDecode(checked);
+            renderMenuReplay();
+        });
+        mMenuAdvanced.addView(cpuDecode, mUi.matchWrap(0));
+        CheckBox noCache = mUi.checkBox("Without the shader cache (measures a first launch)",
+                mSettings.menuNoShaderCache());
+        noCache.setOnCheckedChangeListener((box, checked) -> {
+            mSettings.setMenuNoShaderCache(checked);
+            renderMenuReplay();
+        });
+        mMenuAdvanced.addView(noCache, mUi.matchWrap(0));
+        mMenuAdvanced.addView(mUi.hint("The first launch compiles the shaders and keeps them; later launches take "
+                + "them from the cache. Both options change only how, not what, is drawn: the frames must still "
+                + "equal the PC's."), mUi.matchWrap(2));
+        card.addView(mMenuAdvanced, mUi.matchWrap(0));
+
+        mMenuPreparePanel = new LinearLayout(this);
+        mMenuPreparePanel.setOrientation(LinearLayout.VERTICAL);
+        mMenuPreparePanel.setVisibility(View.GONE);
+        mMenuPrepareTitle = mUi.text("Preparing the menu replay", 15, Ui.TITLE);
+        mMenuPrepareTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        mMenuPreparePanel.addView(mMenuPrepareTitle, mUi.matchWrap(0));
+        mMenuPrepareProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        mMenuPrepareProgress.setMax(1000);
+        mMenuPrepareProgress.setProgressTintList(ColorStateList.valueOf(Ui.ACCENT));
+        mMenuPrepareProgress.setIndeterminateTintList(ColorStateList.valueOf(Ui.ACCENT));
+        mMenuPreparePanel.addView(mMenuPrepareProgress, mUi.matchWrap(6));
+        mMenuPrepareDetail = mUi.hint("");
+        mMenuPreparePanel.addView(mMenuPrepareDetail, mUi.matchWrap(4));
+        mMenuCancelButton = mUi.button("Cancel");
+        mMenuCancelButton.setOnClickListener(v -> {
+            if (sMenuJob != null) {
+                sMenuJob.cancel.cancel("Cancelled");
+                renderMenuPrepare();
+            }
+        });
+        mMenuPreparePanel.addView(mMenuCancelButton, mUi.matchWrap(6));
+        card.addView(mMenuPreparePanel, mUi.matchWrap(12));
+
+        mMenuVerdict = mUi.text("", 15, Ui.TEXT);
+        mMenuVerdict.setTypeface(Typeface.DEFAULT_BOLD);
+        mMenuVerdict.setTextIsSelectable(true);
+        mMenuVerdict.setVisibility(View.GONE);
+        card.addView(mMenuVerdict, mUi.matchWrap(12));
+        mMenuLines = new LinearLayout(this);
+        mMenuLines.setOrientation(LinearLayout.VERTICAL);
+        card.addView(mMenuLines, mUi.matchWrap(4));
+        mMenuRunTime = mUi.hint("");
+        mMenuRunTime.setVisibility(View.GONE);
+        card.addView(mMenuRunTime, mUi.matchWrap(4));
+        mMenuFramesButton = mUi.button("Frames");
+        mMenuFramesButton.setOnClickListener(v -> showMenuFrames());
+        mMenuCopyButton = mUi.button("Copy summary");
+        mMenuCopyButton.setOnClickListener(v -> copyMenuSummary());
+        card.addView(mUi.row(mMenuFramesButton, mMenuCopyButton), mUi.matchWrap(10));
+        mMenuSaveZipButton = mUi.button("Save run (zip)…");
+        mMenuSaveZipButton.setOnClickListener(v -> saveMenuZip());
+        card.addView(mMenuSaveZipButton, mUi.matchWrap(4));
+        card.addView(mUi.hint("The zip has the run's result, the read-back frames as PNG and BMP (pictures of your "
+                + "own game data, rendered on this device), the native replay's logs and the device details. Send it "
+                + "to the developers."), mUi.matchWrap(4));
         return card;
     }
 
@@ -790,6 +945,14 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         snapshot.hasDeviceProbe = Runner.hasDeviceProbe(app);
         snapshot.lastProbeName = settings.lastProbeRun();
         snapshot.lastProbe = ReplayTest.readResult(snapshot.root, snapshot.lastProbeName);
+        snapshot.menuTrace = MenuReplay.traceAsset(app);
+        snapshot.menuCheck = MenuReplay.checkData(snapshot.manifest, snapshot.root, snapshot.status, snapshot.menuTrace);
+        snapshot.lastMenuName = settings.lastMenuRun();
+        // A menu replay whose process died before it wrote its result: add the logs and close it.
+        MenuReplay.closeInterrupted(app, snapshot.root, snapshot.lastMenuName);
+        snapshot.lastMenu = ReplayTest.readResult(snapshot.root, snapshot.lastMenuName);
+        snapshot.gameProcess = MenuReplay.gameProcess(app, snapshot.root, snapshot.manifest);
+        snapshot.lastLaunchWasMenu = Settings.LAUNCH_MENU_REPLAY.equals(settings.lastLaunchMode());
         File runs = snapshot.root.find(ReplayTest.RUNS_DIR);
         String[] names = runs != null ? runs.list() : null;
         snapshot.runCount = names != null ? names.length : 0;
@@ -839,6 +1002,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         }
         mRootView.setText("Data folder: " + snapshot.root.path());
         renderRun(snapshot);
+        renderMenuReplay();
         renderReplay();
         renderData(snapshot);
         renderDownloadHint();
@@ -863,6 +1027,9 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         } else if (ImportService.state().running) {
             hint = ImportService.KIND_REPLAY.equals(ImportService.state().kind)
                     ? "Wait for the replay test to finish." : "Wait for the running transfer to finish.";
+            color = Ui.WARN;
+        } else if (sMenuJob != null || snapshot.gameProcess == MenuReplay.GameProcess.MENU_REPLAY_RUNNING) {
+            hint = "The menu replay is running; close it first (Back).";
             color = Ui.WARN;
         } else {
             StringBuilder text = new StringBuilder("Ready · ");
@@ -904,7 +1071,8 @@ public final class LauncherActivity extends Activity implements ImportService.Li
             }
         } else {
             String name = run.state.isEmpty() ? "unknown" : run.state;
-            state = name.substring(0, 1).toUpperCase(Locale.ROOT) + name.substring(1)
+            state = (snapshot.lastLaunchWasMenu ? "Menu replay · " : "")
+                    + name.substring(0, 1).toUpperCase(Locale.ROOT) + name.substring(1)
                     + (run.stage.isEmpty() ? "" : " · stage " + run.stage)
                     + (run.renderer.isEmpty() ? "" : " · " + run.renderer);
             if (RunStatus.STATE_ERROR.equals(run.state)) {
@@ -917,8 +1085,8 @@ public final class LauncherActivity extends Activity implements ImportService.Li
             message.append(run.message);
             if (!run.isTerminal() && !snapshot.gameAlive) {
                 color = Ui.BAD;
-                appendLine(message, "The game process ended without a final status; it probably crashed during "
-                        + "this stage. Check the runtime log.");
+                appendLine(message, (snapshot.lastLaunchWasMenu ? "The menu replay's" : "The game's") + " process "
+                        + "ended without a final status; it probably crashed during this stage. Check the runtime log.");
             }
             if (lastLaunch > 0 && run.fileTime > 0 && run.fileTime + 2000 < lastLaunch) {
                 appendLine(message, "(This status is from an earlier start.)");
@@ -1004,10 +1172,19 @@ public final class LauncherActivity extends Activity implements ImportService.Li
 
     private void updateButtons() {
         ImportService.State job = ImportService.state();
-        boolean busy = job.running || mStarting;
+        boolean busy = job.running || mStarting || sMenuJob != null;
         boolean ready = mSnapshot != null;
-        mStartButton.setEnabled(ready && !busy && mSnapshot.nativeProblem == null
+        boolean menuRunning = ready && mSnapshot.gameProcess == MenuReplay.GameProcess.MENU_REPLAY_RUNNING;
+        boolean gameRunning = ready && mSnapshot.gameProcess == MenuReplay.GameProcess.GAME_RUNNING;
+        mStartButton.setEnabled(ready && !busy && !menuRunning && mSnapshot.nativeProblem == null
                 && mSnapshot.status.requiredComplete());
+        mMenuButton.setEnabled(ready && !busy && !menuRunning && !gameRunning && mSnapshot.nativeProblem == null
+                && mSnapshot.menuTrace != null && mSnapshot.menuTrace.usable() && mSnapshot.menuCheck != null
+                && mSnapshot.menuCheck.ok());
+        boolean haveMenuRun = ready && mSnapshot.lastMenu != null && !menuRunning;
+        mMenuFramesButton.setEnabled(haveMenuRun && !MenuReplay.frameImages(mSnapshot.lastMenu).isEmpty());
+        mMenuCopyButton.setEnabled(haveMenuRun);
+        mMenuSaveZipButton.setEnabled(haveMenuRun && !mReplayBusy);
         mDownloadButton.setEnabled(ready && !busy);
         mImportFafButton.setEnabled(ready && !busy);
         mImportScfaButton.setEnabled(ready && !busy);
@@ -1015,17 +1192,317 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         mVerifyButton.setEnabled(ready && !busy);
         boolean runner = ready && mSnapshot.runnerProblem == null;
         mPickReplayButton.setEnabled(ready && !busy && !mReplayBusy);
-        mSelfTestButton.setEnabled(runner && !busy && !mReplayBusy);
-        mRunTestButton.setEnabled(runner && !busy && !mReplayBusy && mSnapshot.replay != null
+        mSelfTestButton.setEnabled(runner && !busy && !mReplayBusy && !menuRunning);
+        mRunTestButton.setEnabled(runner && !busy && !mReplayBusy && !menuRunning && mSnapshot.replay != null
                 && mSnapshot.replayCheck != null && mSnapshot.replayCheck.ok());
         boolean haveRun = ready && mSnapshot.lastRun != null && !isCurrentRun(mSnapshot.lastRun);
         mSaveZipButton.setEnabled(haveRun && !mReplayBusy);
         mCopySummaryButton.setEnabled(haveRun);
         mRunOutputButton.setEnabled(haveRun);
         mSaveAllZipButton.setEnabled(ready && mSnapshot.runCount > 0 && !mReplayBusy && !mReplayJobRunning);
-        mDeviceProbeButton.setEnabled(ready && mSnapshot.hasDeviceProbe && !busy && !mReplayBusy);
+        mDeviceProbeButton.setEnabled(ready && mSnapshot.hasDeviceProbe && !busy && !mReplayBusy && !menuRunning);
         mProbeImageButton.setEnabled(ready && !probeImages(mSnapshot.lastProbe).isEmpty());
         mOptimizedBox.setEnabled(ready && mSnapshot.hasOptimized);
+    }
+
+    // ----------------------------------------------------------- menu replay
+
+    private MenuReplay.Options menuOptions() {
+        MenuReplay.Options options = new MenuReplay.Options();
+        options.fast = mSettings.menuFast();
+        options.forceCpuDecode = mSettings.menuCpuDecode();
+        options.noShaderCache = mSettings.menuNoShaderCache();
+        return options;
+    }
+
+    private void renderMenuReplay() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || mMenuTraceInfo == null) {
+            return;
+        }
+        MenuReplay.TraceAsset trace = snapshot.menuTrace;
+        mMenuTraceInfo.setText(trace != null ? trace.describe() : "");
+        StringBuilder notes = new StringBuilder();
+        int notesColor = Ui.MUTED;
+        if (snapshot.nativeProblem != null) {
+            appendLine(notes, snapshot.nativeProblem);
+            notesColor = Ui.BAD;
+        }
+        if (trace != null && trace.present && !trace.usable()) {
+            notesColor = Ui.BAD;
+        }
+        if (snapshot.menuCheck != null) {
+            for (String problem : snapshot.menuCheck.problems) {
+                appendLine(notes, problem);
+                notesColor = Ui.BAD;
+            }
+            for (String note : snapshot.menuCheck.notes) {
+                appendLine(notes, note);
+                if (notesColor != Ui.BAD) {
+                    notesColor = Ui.WARN;
+                }
+            }
+        }
+        if (snapshot.gameProcess == MenuReplay.GameProcess.MENU_REPLAY_RUNNING) {
+            appendLine(notes, "The menu replay is still open (maybe in the background); close it with Back, then run "
+                    + "it again.");
+            if (notesColor != Ui.BAD) {
+                notesColor = Ui.WARN;
+            }
+        } else if (snapshot.gameProcess == MenuReplay.GameProcess.GAME_RUNNING) {
+            appendLine(notes, "The game is running; close it first (Back in the game).");
+            if (notesColor != Ui.BAD) {
+                notesColor = Ui.WARN;
+            }
+        } else if (ImportService.state().running) {
+            appendLine(notes, ImportService.KIND_REPLAY.equals(ImportService.state().kind)
+                    ? "Wait for the replay test to finish." : "Wait for the running transfer to finish.");
+            if (notesColor != Ui.BAD) {
+                notesColor = Ui.WARN;
+            }
+        }
+        MenuReplay.Options options = menuOptions();
+        if (options.forceCpuDecode || options.noShaderCache) {
+            appendLine(notes, "Advanced: " + options.describe() + ".");
+            if (notesColor == Ui.MUTED) {
+                notesColor = Ui.WARN;
+            }
+        }
+        mMenuNotes.setText(notes);
+        mMenuNotes.setTextColor(notesColor);
+        mMenuNotes.setVisibility(notes.length() == 0 ? View.GONE : View.VISIBLE);
+        mMenuButton.setText(snapshot.gameProcess == MenuReplay.GameProcess.MENU_REPLAY_RUNNING ? "Menu replay (running)"
+                : "Menu replay" + (options.fast ? " · as fast as possible" : ""));
+
+        JSONObject run = snapshot.lastMenu;
+        mMenuLines.removeAllViews();
+        if (run == null) {
+            mMenuVerdict.setVisibility(View.GONE);
+            mMenuRunTime.setVisibility(View.GONE);
+            return;
+        }
+        boolean running = snapshot.gameProcess == MenuReplay.GameProcess.MENU_REPLAY_RUNNING
+                && run.optBoolean(ReplayTest.IN_PROGRESS);
+        String verdict = run.optString("verdict");
+        mMenuVerdict.setText(running ? "Run " + run.optString("run") + " is running…" : run.optString("headline"));
+        mMenuVerdict.setTextColor(running ? Ui.MUTED : MenuReplay.VERDICT_PASS.equals(verdict) ? Ui.GOOD
+                : MenuReplay.VERDICT_FAIL.equals(verdict) || MenuReplay.VERDICT_CRASHED.equals(verdict) ? Ui.BAD
+                : Ui.WARN);
+        mMenuVerdict.setVisibility(View.VISIBLE);
+        JSONArray lines = running ? null : run.optJSONArray("lines");
+        for (int i = 0; lines != null && i < lines.length(); ++i) {
+            JSONObject line = lines.optJSONObject(i);
+            if (line == null) {
+                continue;
+            }
+            TextView view = mUi.text(line.optString("text"), 13, toneColor(line.optString("tone")));
+            view.setTextIsSelectable(true);
+            mMenuLines.addView(view, mUi.matchWrap(3));
+        }
+        String ended = run.optString("ended");
+        mMenuRunTime.setText("Run " + run.optString("run") + " · " + (ended.isEmpty() ? "started "
+                + run.optString("started") : ended) + " · runs/" + run.optString("run"));
+        mMenuRunTime.setVisibility(View.VISIBLE);
+    }
+
+    /** The preparation's progress panel, refreshed while a job runs. */
+    private void renderMenuPrepare() {
+        mMain.removeCallbacks(mMenuTicker);
+        MenuJob job = sMenuJob;
+        if (mMenuPreparePanel == null) {
+            return;
+        }
+        if (job == null) {
+            mMenuPreparePanel.setVisibility(View.GONE);
+            return;
+        }
+        mMenuPreparePanel.setVisibility(View.VISIBLE);
+        Progress.Snapshot progress = job.progress.snapshot();
+        int permille = progress.permille();
+        mMenuPrepareProgress.setIndeterminate(permille < 0);
+        if (permille >= 0) {
+            mMenuPrepareProgress.setProgress(permille);
+        }
+        String counts = progress.describe();
+        mMenuPrepareDetail.setText(progress.phase + (counts.isEmpty() ? "" : " · " + counts));
+        mMenuCancelButton.setEnabled(!job.cancel.isCancelled());
+        mMain.postDelayed(mMenuTicker, 250);
+    }
+
+    private void startMenuReplay() {
+        Snapshot snapshot = mSnapshot;
+        if (sMenuJob != null || mStarting || snapshot == null || ImportService.state().running) {
+            if (ImportService.state().running) {
+                toast(ImportService.KIND_REPLAY.equals(ImportService.state().kind) ? "The replay test is running."
+                        : "Another transfer is running.");
+            }
+            return;
+        }
+        final MenuJob job = new MenuJob();
+        sMenuJob = job;
+        final MenuReplay.Options options = menuOptions();
+        final Context app = getApplicationContext();
+        mLog.log("menu replay requested: " + options.describe());
+        updateButtons();
+        renderStart();
+        renderMenuPrepare();
+        Thread worker = new Thread(() -> {
+            MenuReplay.Launch launch = null;
+            Exception failure = null;
+            try {
+                launch = MenuReplay.prepare(app, options, job.cancel, job.progress);
+            } catch (Exception e) {
+                failure = e;
+            }
+            final MenuReplay.Launch result = launch;
+            final Exception error = failure;
+            Background.main(() -> menuPrepared(app, job, result, error, false));
+        }, "fafre-menureplay-prepare");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /**
+     * Main thread: the preparation ended; start GameActivity, or say why not. Only from the launcher on screen
+     * (Android does not let an app start activities from the background); a rotation is waited out once.
+     */
+    private static void menuPrepared(Context app, MenuJob job, MenuReplay.Launch launch, Exception error,
+            boolean retried) {
+        LauncherActivity launcher = sResumed;
+        if (launcher == null && launch != null && !retried && !job.cancel.isCancelled()) {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> menuPrepared(app, job, launch, null, true), 750);
+            return;
+        }
+        if (sMenuJob == job) {
+            sMenuJob = null;
+        }
+        LauncherLog log = LauncherLog.get(app);
+        if (launch != null && (launcher == null || launcher.isFinishing() || job.cancel.isCancelled())) {
+            final String reason = job.cancel.isCancelled() ? "cancelled before GameActivity started"
+                    : "the launcher was left before the menu replay could start; start it again";
+            log.log("menu replay " + launch.run + ": not started: " + reason);
+            Background.run(() -> {
+                MenuReplay.markNotStarted(app, launch, reason);
+                return null;
+            }, (value, failure) -> {
+                if (sResumed != null) {
+                    sResumed.refresh();
+                }
+            });
+            if (launcher != null) {
+                launcher.renderMenuPrepare();
+                launcher.updateButtons();
+            }
+            return;
+        }
+        if (error != null || launch == null) {
+            String message = error instanceof Cancellation.CancelledException ? "Cancelled."
+                    : "Cannot start the menu replay: " + (error != null ? describe(error) : "no result");
+            log.log("menu replay: " + message);
+            if (launcher != null) {
+                launcher.toast(message);
+                launcher.refresh();
+                launcher.renderMenuPrepare();
+            }
+            return;
+        }
+        launcher.startActivity(launch.intent(app));
+        launcher.renderMenuPrepare();
+        launcher.updateButtons();
+    }
+
+    private void showMenuFrames() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || snapshot.lastMenu == null) {
+            return;
+        }
+        final String run = snapshot.lastMenu.optString("run");
+        final List<String> names = MenuReplay.frameImages(snapshot.lastMenu);
+        final JSONArray frames = snapshot.lastMenu.optJSONArray("frames");
+        final Context app = getApplicationContext();
+        Background.run(() -> {
+            DataRoot root = AppInfo.dataRoot(app);
+            List<Object[]> images = new ArrayList<>();
+            for (String name : names) {
+                File file = root.file(ReplayTest.RUNS_DIR + "/" + run + "/" + name);
+                BitmapFactory.Options decode = new BitmapFactory.Options();
+                decode.inSampleSize = 2; // 1280x720 frames shown at about half size
+                Bitmap bitmap = file.isFile() && file.length() < 32L * 1024 * 1024
+                        ? BitmapFactory.decodeFile(file.getAbsolutePath(), decode) : null;
+                images.add(new Object[] {name, bitmap});
+            }
+            return images;
+        }, (images, error) -> {
+            if (isDestroyed() || isFinishing()) {
+                return;
+            }
+            LinearLayout column = new LinearLayout(this);
+            column.setOrientation(LinearLayout.VERTICAL);
+            column.setPadding(mUi.dp(20), mUi.dp(8), mUi.dp(20), mUi.dp(8));
+            if (error != null) {
+                column.addView(mUi.body("Cannot read the frames: " + describe(error)));
+            } else {
+                for (Object[] image : images) {
+                    String name = (String) image[0];
+                    column.addView(mUi.hint(name + "  " + frameVerdict(frames, name)), mUi.matchWrap(8));
+                    if (image[1] == null) {
+                        column.addView(mUi.body("(not readable)"), mUi.matchWrap(2));
+                        continue;
+                    }
+                    ImageView view = new ImageView(this);
+                    view.setImageBitmap((Bitmap) image[1]);
+                    view.setAdjustViewBounds(true);
+                    view.setScaleType(ImageView.ScaleType.FIT_START);
+                    column.addView(view, mUi.matchWrap(2));
+                }
+                column.addView(mUi.hint("The frames as this device rendered them from your game data. PASS: identical "
+                        + "to the PC's Vulkan frame (the same hash)."), mUi.matchWrap(8));
+            }
+            ScrollView scroll = new ScrollView(this);
+            scroll.addView(column);
+            showDialog(new AlertDialog.Builder(this).setTitle("Menu replay " + run).setView(scroll)
+                    .setPositiveButton("Close", null).create(), null);
+        });
+    }
+
+    private static String frameVerdict(JSONArray frames, String png) {
+        for (int i = 0; frames != null && i < frames.length(); ++i) {
+            JSONObject frame = frames.optJSONObject(i);
+            if (frame != null && png.equals(frame.optString("png"))) {
+                String verdict = frame.optString("verdict");
+                return "pass".equals(verdict) ? "PASS" : "differs".equals(verdict) ? "FAIL" : verdict;
+            }
+        }
+        return "";
+    }
+
+    private void copyMenuSummary() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || snapshot.lastMenu == null) {
+            return;
+        }
+        String text = snapshot.lastMenu.optString("summary_text", snapshot.lastMenu.optString("headline"));
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newPlainText("faf-re menu replay", text));
+            toast("Summary copied.");
+        }
+    }
+
+    private void saveMenuZip() {
+        Snapshot snapshot = mSnapshot;
+        if (snapshot == null || snapshot.lastMenu == null) {
+            return;
+        }
+        mPendingZipRun = snapshot.lastMenu.optString("run");
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/zip").putExtra(Intent.EXTRA_TITLE, "fafre-run-" + mPendingZipRun + ".zip");
+        try {
+            startActivityForResult(intent, REQUEST_SAVE_ZIP);
+        } catch (ActivityNotFoundException e) {
+            mPendingZipRun = null;
+            toast("This device has no file picker (Files app).");
+        }
     }
 
     // ----------------------------------------------------------- replay test
@@ -1524,6 +2001,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
             }
             mJobWasRunning = state.running;
             renderStart();
+            renderMenuReplay();
             updateButtons();
             return;
         }
@@ -1554,6 +2032,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         }
         mJobWasRunning = state.running;
         renderStart();
+        renderMenuReplay();
         updateButtons();
     }
 
@@ -1746,7 +2225,7 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private void startGame() {
         final Snapshot snapshot = mSnapshot;
         if (mStarting || snapshot == null || snapshot.nativeProblem != null || !snapshot.status.requiredComplete()
-                || ImportService.state().running) {
+                || ImportService.state().running || sMenuJob != null) {
             return;
         }
         mStarting = true;
@@ -1791,6 +2270,10 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         DataManifest manifest = AppInfo.manifest(app);
         DataRoot root = AppInfo.dataRoot(app);
 
+        // The menu replay runs in the :game process too; a running one is not ended for the game.
+        if (MenuReplay.gameProcess(app, root, manifest) == MenuReplay.GameProcess.MENU_REPLAY_RUNNING) {
+            throw new IOException("the menu replay is running; close it first (Back)");
+        }
         // A finished run leaves its process cached with the old native globals;
         // every start gets a fresh one.
         int pid = AppInfo.gameProcessPid(app);
@@ -1873,8 +2356,10 @@ public final class LauncherActivity extends Activity implements ImportService.Li
         showDialog(new AlertDialog.Builder(this)
                 .setTitle("Clear logs?")
                 .setMessage("Deletes the Vulkan and GLES runtime logs (with their previous runs), "
-                        + LauncherLog.FILE_NAME + ", " + LaunchArgs.GAME_LOG + " and " + ReplayTest.LOG_NAME
-                        + " from the logs folder, and the replay test runs (runs/). Imported replays stay.")
+                        + LauncherLog.FILE_NAME + ", " + LaunchArgs.GAME_LOG + ", " + ReplayTest.LOG_NAME + " and "
+                        + MenuReplay.LOG_NAME
+                        + " from the logs folder, and the replay test and menu replay runs (runs/). Imported replays "
+                        + "stay.")
                 .setPositiveButton("Clear", (dialog, which) -> clearLogs())
                 .setNegativeButton("Keep", null)
                 .create(), null);
@@ -1883,8 +2368,9 @@ public final class LauncherActivity extends Activity implements ImportService.Li
     private void clearLogs() {
         final Context app = getApplicationContext();
         // A running test keeps writing into its run directory; its runs/ stay then.
-        final boolean testRunning = ImportService.state().running
-                && ImportService.KIND_REPLAY.equals(ImportService.state().kind);
+        final boolean testRunning = (ImportService.state().running
+                && ImportService.KIND_REPLAY.equals(ImportService.state().kind)) || sMenuJob != null
+                || (mSnapshot != null && mSnapshot.gameProcess == MenuReplay.GameProcess.MENU_REPLAY_RUNNING);
         mLog.clear();
         Background.run(() -> {
             DataRoot root = AppInfo.dataRoot(app);

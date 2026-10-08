@@ -14,13 +14,18 @@
 //   /galplaynofpu            do not apply the recorded x87/SSE control words
 //   /galplayskip <Op>        read but do not play the records of one op (a mutation for the gates,
 //                            e.g. VarSetFloat or DevDrawIndexedPrimitive; op names as galtrace-dump prints them)
+//   /galplaydata <dir>       the game files a version 2 trace refers to, as a tree that mirrors the VFS
+//                            (<dir>/effects/ui.fx; `galtrace-refs extract` writes it from the game data)
+//   /galplayref <backend>    compare the readbacks with the trace's reference_frames.<backend> hashes
+//                            (default: the backend replayed into, e.g. diligent:vk)
 //   /gal diligent:<api>      replay into the Diligent backend (d3d11, vk, gl), as the engine selects it
 // Every other option the backends read (/galreport, /galnovalidation, /galtex2d, ...) works as in
 // an engine run.
 //
 // Exit codes: 0 the whole trace replayed and every readback equals the recorded bytes; 4 the whole
 // trace replayed, some readback differs (scripts/port/galtrace.py applies the parity rule); 2 the
-// replay stopped early or the device could not be created; 3 bad options.
+// replay stopped early or the device could not be created; 3 bad options; 5 a game file a version 2
+// trace refers to is missing from /galplaydata or differs (galplay.json "data_problems").
 //
 // Only the graphics build compiles this (port/graphics/port_graphics.props). Without /galplay on the
 // command line the initialiser returns at once and main.exe behaves as before.
@@ -29,6 +34,7 @@
 
 #include "port/graphics/diligent/GalDiligent.h"
 #include "port/graphics/trace/format/GalTraceIO.h"
+#include "port/graphics/trace/format/GalTraceResolver.h"
 
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/DeviceContext.hpp"
@@ -241,6 +247,15 @@ namespace port::graphics::trace
             options.outDir = outDir;
             options.applyFpuState = !HasArg("/galplaynofpu");
             (void)ArgValue("/galplayskip", &options.skipOp);
+            options.referenceBackend = api;
+            (void)ArgValue("/galplayref", &options.referenceBackend);
+            std::string dataDir;
+            (void)ArgValue("/galplaydata", &dataDir);
+            galtrace::DirectoryResolver resolver(dataDir);
+            if (!dataDir.empty()) {
+                options.resolver = &resolver;
+                Log("galplay: game files from %s", dataDir.c_str());
+            }
             std::string frames;
             if (!ArgValue("/galplayframes", &frames)) {
                 galtrace::Reader reader;
@@ -288,8 +303,10 @@ namespace port::graphics::trace
             unsigned identical = 0;
             for (const ReadbackResult& readback : report.readbacks) {
                 identical += readback.identical ? 1u : 0u;
-                Log("galplay: readback %u (frame %u, after %u presents): %s, replay rgb %s recorded %s", readback.index, readback.name,
-                    readback.presents, readback.identical ? "identical" : "DIFFERENT", readback.replayedRgb.c_str(), readback.recordedRgb.c_str());
+                Log("galplay: readback %u (frame %u, after %u presents): %s, replay rgb %s recorded %s, reference_frames.%s %s: %s", readback.index,
+                    readback.name, readback.presents, readback.identical ? "identical" : "DIFFERENT", readback.replayedRgb.c_str(),
+                    readback.recordedRgb.c_str(), options.referenceBackend.c_str(), readback.referenceRgb.empty() ? "-" : readback.referenceRgb.c_str(),
+                    readback.verdict.c_str());
             }
             for (const std::string& example : report.mismatchExamples) {
                 Log("galplay: mismatch: %s", example.c_str());
@@ -304,14 +321,15 @@ namespace port::graphics::trace
 
             const std::string extra = "  \"backend\": " + JsonString(api) + ",\n  \"apply_fpu_state\": " +
                                       std::string(options.applyFpuState ? "true" : "false") + ",\n  \"window_violations\": " +
-                                      JsonString(violations) + ",\n  \"pointer_bits\": " + std::to_string(sizeof(void*) * 8) + ",\n";
+                                      JsonString(violations) + ",\n  \"pointer_bits\": " + std::to_string(sizeof(void*) * 8) +
+                                      ",\n  \"data_dir\": " + JsonString(dataDir) + ",\n";
             const std::string json = PlayReportJson(options, report, extra);
             if (std::FILE* const file = std::fopen((outDir + "\\galplay.json").c_str(), "wb")) {
                 std::fwrite(json.data(), 1, json.size(), file);
                 std::fclose(file);
             }
             if (!completed) {
-                return 2;
+                return report.missingData ? 5 : 2;
             }
             return (identical == report.readbacks.size() && report.galErrors == 0 && violations.empty()) ? 0 : 4;
         }

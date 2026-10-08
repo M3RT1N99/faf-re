@@ -1,6 +1,10 @@
 #include "ResourcesDiligent.h"
 
+#if defined(_WIN32)
 #include <d3dx9.h>
+#else
+#include "android/ImageDecodePortable.h"
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -57,11 +61,13 @@ namespace gpg::gal::diligent
 
     namespace
     {
+#if defined(_WIN32)
         /** ToTextureLockFlags (D3D9Interfaces.cpp:661-676) minus DISCARD, which scratch textures reject. */
         unsigned int ToScratchLockFlags(const int flags) noexcept
         {
             return (static_cast<unsigned int>(flags) & static_cast<unsigned int>(MohoD3DLockFlags::ReadOnly)) != 0U ? D3DLOCK_READONLY : 0U;
         }
+#endif
 
         void Union(RECT& into, const RECT& rect)
         {
@@ -134,6 +140,7 @@ namespace gpg::gal::diligent
             return conversion == TexelConversion::None ? d3dTexelBytes : 4U;
         }
 
+#if defined(_WIN32)
         /** The level desc of a scratch texture's subresource (2D level, or cube level). */
         bool GetLevelInfo(IDirect3DBaseTexture9* const texture, const std::uint32_t level, D3DSURFACE_DESC* const desc)
         {
@@ -146,6 +153,7 @@ namespace gpg::gal::diligent
                 return false;
             }
         }
+#endif
 
         std::vector<VertexInputElement> BuildVertexInputElements(const std::uint32_t formatCode)
         {
@@ -196,6 +204,7 @@ namespace gpg::gal::diligent
     // ---------------------------------------------------------------------------------------------
     // Texture
 
+#if defined(_WIN32)
     TextureDiligent::TextureDiligent(
         const TextureContext& context,
         IDirect3DBaseTexture9* const scratch,
@@ -706,6 +715,9 @@ namespace gpg::gal::diligent
 
         return boost::shared_ptr<Texture>(new TextureDiligent(textureContext, scratch, gpu, autoGenerateMips));
     }
+#else
+#include "ResourcesDiligentPortable.inl"
+#endif
 
     // ---------------------------------------------------------------------------------------------
     // Targets

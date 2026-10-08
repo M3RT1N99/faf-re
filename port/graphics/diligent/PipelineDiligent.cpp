@@ -774,6 +774,7 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
             // (the D3D11 debug layer warns about that, #3146081).
             info.pPS = targets_.renderTarget != nullptr ? impl_->clearPS.RawPtr() : nullptr;
             info.PSODesc.ResourceLayout.DefaultVariableType = dg::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+            info.pPSOCache = gpu_->PipelineCache(); // M7a1: the Android pipeline cache (null on Windows)
             dg::RefCntAutoPtr<dg::IPipelineState> pipeline;
             device->CreateGraphicsPipelineState(info, &pipeline);
             if (!pipeline) {
@@ -970,6 +971,7 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
             info.ppResourceSignatures = program.signature != nullptr ? signatures : nullptr;
             info.ResourceSignaturesCount = program.signature != nullptr ? 1U : 0U;
 
+            info.pPSOCache = gpu_->PipelineCache(); // M7a1: the Android pipeline cache (null on Windows)
             dg::RefCntAutoPtr<dg::IPipelineState> created;
             {
                 ScopedDefaultFpu fpu;
@@ -1204,6 +1206,7 @@ float4 main(VSOutput input) : SV_TARGET { return g_Source.SampleLevel(g_Source_s
             dg::ImmutableSamplerDesc samplers[] = {{dg::SHADER_TYPE_PIXEL, "g_Source", linear}};
             info.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
             info.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+            info.pPSOCache = gpu_->PipelineCache(); // M7a1: the Android pipeline cache (null on Windows)
             dg::RefCntAutoPtr<dg::IPipelineState> pipeline;
             device->CreateGraphicsPipelineState(info, &pipeline);
             if (!pipeline) {

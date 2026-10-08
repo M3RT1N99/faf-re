@@ -101,6 +101,41 @@ namespace gpg::gal::diligent
      */
     void SetEffectTrilinearMode(int mode);
 
+    /**
+     * M7a1 (Android): a persistent store of compiled shaders, so that a second launch compiles nothing
+     * (m6u-CRIT.txt Q1; the S22 Ultra's glslang is about 2.5x slower than the PC's). The Vulkan route
+     * looks a shader up by a key over everything that decides its SPIR-V - the source text, the entry
+     * point, the stage, the HLSL version, the sampler mode, the macros, and the compiler build (Diligent's
+     * API version and its pinned glslang) - and creates it from the stored SPIR-V when it is there;
+     * otherwise it compiles the HLSL and stores what Diligent made of it (IShader::GetBytecode: the SPIR-V
+     * after Diligent's own vertex-input mapping, which it applies again, unchanged, when it loads it).
+     * Without a cache (Windows) nothing changes.
+     */
+    class ShaderBytecodeCache
+    {
+    public:
+        virtual ~ShaderBytecodeCache() = default;
+        /** The stored bytecode for `key` (a hex string), or false. */
+        virtual bool Load(const std::string& key, std::vector<std::uint8_t>* bytecode) = 0;
+        virtual void Store(const std::string& key, const void* bytecode, std::size_t size) = 0;
+    };
+
+    /** Installs the cache the Vulkan route reads and fills (null removes it). Not owned. */
+    void SetShaderBytecodeCache(ShaderBytecodeCache* cache);
+
+    /** Every shader the backend compiled or loaded, and the time it took (for the report and galplay.json). */
+    struct ShaderCompileCounts
+    {
+        std::uint64_t compiled = 0;        // compiled from HLSL (D3D11 and Vulkan routes)
+        std::uint64_t failed = 0;
+        std::uint64_t cacheHits = 0;       // created from cached SPIR-V
+        std::uint64_t cacheMisses = 0;     // looked up, not there (then compiled and stored)
+        std::uint64_t cacheStores = 0;
+        double compileMilliseconds = 0.0;  // wall time in CreateShader from HLSL
+        double cacheMilliseconds = 0.0;    // wall time to look up, load and create from cached SPIR-V
+    };
+    [[nodiscard]] ShaderCompileCounts GetShaderCompileCounts();
+
     /** How many shaders went through the GL route, and how many of them failed (for the report). */
     struct GlShaderRouteCounts
     {

@@ -144,6 +144,31 @@ namespace galtrace
     constexpr FieldDesc kDeviceDestroy[] = {Ref("device", O::Device)};
     constexpr FieldDesc kRelease[] = {Ref("object", O::Any)};
 
+    // ---- version 2 payload definitions --------------------------------------------------------------
+    // Each defines the next payload number, like Blob. `path` is a VFS path, `archive` the file name of
+    // the archive (or directory) the recording machine found it in. With `parts`, the payload is those
+    // game files one after the other (an effect source is d3d9states.compat followed by the .fx file);
+    // `path` is then the part the record names.
+    constexpr FieldDesc kPayloadRefPart[] = {
+      F("path", T::Str), F("archive", T::Str), F("hashA", T::U64), F("hashB", T::U64), F("size", T::U32),
+    };
+    constexpr FieldDesc kPayloadRef[] = {
+      F("payload", T::U32), F("hashA", T::U64), F("hashB", T::U64), F("size", T::U32), F("path", T::Str), F("archive", T::Str),
+      L("parts", kPayloadRefPart),
+    };
+    constexpr FieldDesc kPayloadDigest[] = {
+      F("payload", T::U32), F("hashA", T::U64), F("hashB", T::U64), F("size", T::U32), F("origin", T::U8),
+    };
+    constexpr FieldDesc kComposeCopy[] = {
+      F("source", T::Blob), F("sourceOffset", T::U32), F("sourcePitch", T::U32), F("offset", T::U32), F("pitch", T::U32),
+      F("rowBytes", T::U32), F("rows", T::U32),
+    };
+    constexpr FieldDesc kComposeLiteral[] = {F("offset", T::U32), F("data", T::Bytes)};
+    constexpr FieldDesc kPayloadCompose[] = {
+      F("payload", T::U32), F("hashA", T::U64), F("hashB", T::U64), F("size", T::U32), F("base", T::Blob),
+      L("copies", kComposeCopy), L("literals", kComposeLiteral),
+    };
+
     // ---- Device ---------------------------------------------------------------------------------
 
     constexpr FieldDesc kDev[] = {Ref("device", O::Device)};
@@ -333,6 +358,9 @@ namespace galtrace
       GALTRACE_OP(DeviceCreate, kDeviceCreate),
       GALTRACE_OP(DeviceDestroy, kDeviceDestroy),
       GALTRACE_OP(Release, kRelease),
+      GALTRACE_OP(PayloadRef, kPayloadRef),
+      GALTRACE_OP(PayloadDigest, kPayloadDigest),
+      GALTRACE_OP(PayloadCompose, kPayloadCompose),
 
       GALTRACE_OP(DevGetLog, kDev),
       GALTRACE_OP(DevGetDeviceContext, kDev),
@@ -490,6 +518,42 @@ namespace galtrace
     return FindOp(static_cast<std::uint16_t>(op));
   }
 
+  bool IsPayloadDefinition(const std::uint16_t op)
+  {
+    return op == static_cast<std::uint16_t>(Op::Blob) || op == static_cast<std::uint16_t>(Op::PayloadRef) ||
+           op == static_cast<std::uint16_t>(Op::PayloadDigest) || op == static_cast<std::uint16_t>(Op::PayloadCompose);
+  }
+
+  std::uint32_t OpMinVersion(const std::uint16_t op)
+  {
+    return (op == static_cast<std::uint16_t>(Op::PayloadRef) || op == static_cast<std::uint16_t>(Op::PayloadDigest) ||
+            op == static_cast<std::uint16_t>(Op::PayloadCompose))
+             ? kFormatVersion2
+             : kFormatVersion1;
+  }
+
+  const char* PayloadKindName(const PayloadKind kind)
+  {
+    switch (kind) {
+      case PayloadKind::Embedded: return "embedded";
+      case PayloadKind::Reference: return "reference";
+      case PayloadKind::Digest: return "digest";
+      case PayloadKind::Composed: return "composed";
+    }
+    return "?";
+  }
+
+  const char* DigestOriginName(const std::uint8_t origin)
+  {
+    switch (static_cast<DigestOrigin>(origin)) {
+      case DigestOrigin::BackendOutput: return "backend output";
+      case DigestOrigin::Readback: return "readback";
+      case DigestOrigin::SavedOutput: return "saved output";
+      case DigestOrigin::Other: return "other";
+    }
+    return "?";
+  }
+
   bool GalTextureFormatLayout(const std::uint32_t galFormat, TexelLayout* const out)
   {
     TexelLayout layout{};
@@ -594,6 +658,60 @@ namespace galtrace
   {
     char text[17];
     std::snprintf(text, sizeof(text), "%016llx", static_cast<unsigned long long>(value));
+    return text;
+  }
+
+  std::uint64_t FrameRgbHash(const std::uint8_t* const bgra, const std::size_t bytes)
+  {
+    std::uint64_t hash = 0xCBF29CE484222325ULL;
+    for (std::size_t index = 0; index + 3 < bytes; index += 4) {
+      hash = (hash ^ bgra[index + 2]) * 0x100000001B3ULL;
+      hash = (hash ^ bgra[index + 1]) * 0x100000001B3ULL;
+      hash = (hash ^ bgra[index + 0]) * 0x100000001B3ULL;
+    }
+    return hash;
+  }
+
+  std::vector<std::pair<std::uint32_t, std::string>> ParseFrameHashes(const std::string& text)
+  {
+    std::vector<std::pair<std::uint32_t, std::string>> hashes;
+    std::size_t at = 0;
+    while (at < text.size()) {
+      std::size_t end = text.find(',', at);
+      if (end == std::string::npos) {
+        end = text.size();
+      }
+      const std::string item = text.substr(at, end - at);
+      const std::size_t colon = item.find(':');
+      if (colon != std::string::npos && colon > 0) {
+        std::uint32_t frame = 0;
+        bool digits = true;
+        for (std::size_t index = 0; index < colon; ++index) {
+          const char c = item[index];
+          if (c < '0' || c > '9') {
+            digits = false;
+            break;
+          }
+          frame = frame * 10u + static_cast<std::uint32_t>(c - '0');
+        }
+        if (digits) {
+          hashes.emplace_back(frame, item.substr(colon + 1));
+        }
+      }
+      at = end + 1;
+    }
+    return hashes;
+  }
+
+  std::string FormatFrameHashes(const std::vector<std::pair<std::uint32_t, std::string>>& hashes)
+  {
+    std::string text;
+    for (const auto& [frame, hash] : hashes) {
+      if (!text.empty()) {
+        text += ',';
+      }
+      text += std::to_string(frame) + ":" + hash;
+    }
     return text;
   }
 } // namespace galtrace

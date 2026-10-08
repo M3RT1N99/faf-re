@@ -1,7 +1,9 @@
 #include "DeviceDiligent.h"
 
+#if defined(_WIN32)
 #include <d3d9.h>
 #include <d3dx9.h>
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -31,8 +33,12 @@
 #include "gpg/gal/RenderTargetContext.hpp"
 #include "gpg/gal/TextureContext.hpp"
 #include "gpg/gal/VertexBufferContext.hpp"
+#if defined(_WIN32)
 #include "moho/app/WinApp.h"
 #include "moho/misc/StartupHelpers.h"
+#else
+#include <cctype>
+#endif
 
 namespace gpg::gal::diligent
 {
@@ -52,10 +58,12 @@ namespace gpg::gal::diligent
             "EndTechnique",
         };
 
+#if defined(_WIN32)
         // kD3DXImageFileFormats, D3D9Interfaces.cpp:301-309 (binary 0x00D421E4).
         constexpr D3DXIMAGE_FILEFORMAT kD3DXImageFileFormats[5] = {
             D3DXIFF_BMP, D3DXIFF_JPG, D3DXIFF_TGA, D3DXIFF_PNG, D3DXIFF_DDS,
         };
+#endif
 
         constexpr std::size_t kKeptDebugLayerMessages = 32;
 
@@ -98,10 +106,44 @@ namespace gpg::gal::diligent
             return out + "]";
         }
 
+#if defined(_WIN32)
         bool GetOption(const char* const name, const std::uint32_t count, msvc8::vector<msvc8::string>* const out)
         {
             return moho::CFG_GetArgOption(name, count, out);
         }
+#else
+        // Android (M7a1): the options galplay hands over (SetPortableCommandLine), matched like
+        // CFG_GetArgOption matches the command line: case-insensitively, with `count` values after it.
+        std::mutex gPortableArgumentsLock;
+        std::vector<std::string> gPortableArguments;
+
+        bool GetOption(const char* const name, const std::uint32_t count, msvc8::vector<msvc8::string>* const out)
+        {
+            std::lock_guard<std::mutex> lock(gPortableArgumentsLock);
+            for (std::size_t index = 0; index < gPortableArguments.size(); ++index) {
+                const std::string& argument = gPortableArguments[index];
+                const std::size_t length = std::strlen(name);
+                bool same = argument.size() == length;
+                for (std::size_t at = 0; same && at < length; ++at) {
+                    same = std::tolower(static_cast<unsigned char>(argument[at])) == std::tolower(static_cast<unsigned char>(name[at]));
+                }
+                if (!same) {
+                    continue;
+                }
+                if (index + count >= gPortableArguments.size()) { // fewer values than asked for
+                    return false;
+                }
+                if (out != nullptr) {
+                    for (std::uint32_t value = 1; value <= count; ++value) {
+                        const std::string& text = gPortableArguments[index + value];
+                        out->push_back(msvc8::string(text.c_str(), static_cast<unsigned int>(text.size())));
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+#endif
 
         /** D3D9 converts a draw's primitive count to vertices/indices the same way for every API. */
         std::uint32_t ElementsForPrimitives(const DrawContext::TOPOLOGY topology, const std::uint32_t primitives)
@@ -203,6 +245,14 @@ namespace gpg::gal::diligent
         return FindBackend(installed);
     }
 
+#if !defined(_WIN32)
+    void SetPortableCommandLine(const std::vector<std::string>& arguments)
+    {
+        std::lock_guard<std::mutex> lock(gPortableArgumentsLock);
+        gPortableArguments = arguments;
+    }
+#endif
+
     // ---------------------------------------------------------------------------------------------
 
     DeviceDiligent::DeviceDiligent()
@@ -276,9 +326,16 @@ namespace gpg::gal::diligent
                                                             : HalfPixelMode::Shader;
         }
         mValidation = !GetOption("/galnovalidation", 0, nullptr);
+#if !defined(_WIN32)
+        // Android (M7a1): there is no D3DX; GetTexture2D takes the portable decoder and encoder.
+        mPortableTexture2D = true;
+#endif
         SetGlMirrorDisabled(GetOption("/galglnomirror", 0, nullptr));
         SetSwapChainBgraRequested(GetOption("/galswapchainbgra", 0, nullptr));
         mDebugLayerSelfTest = GetOption("/galdebuglayerselftest", 0, nullptr);
+        // Diagnostic (M7a1): the Android mapping of D24S8 depth-stencil targets to D32_FLOAT_S8X24, which the
+        // backend makes on GPUs without D24S8 attachments (DiligentHost.h UseD32S8ForD24S8), on any device.
+        mForceD32S8 = GetOption("/galdepthd32s8", 0, nullptr);
         mRunSelfTest = GetOption("/galselftest", 0, nullptr);
     }
 
@@ -299,12 +356,14 @@ namespace gpg::gal::diligent
         mHeads.clear();
         mPipelineState.reset();
         mDrawPath.reset();
+#if defined(_WIN32)
         if (mCursorIcon != nullptr) {
             ::SetCursor(static_cast<HCURSOR>(mPreviousCursor));
             ::DestroyIcon(static_cast<HICON>(mCursorIcon));
             mCursorIcon = nullptr;
             mPreviousCursor = nullptr;
         }
+#endif
         mGpu.reset();
         if (mHost) {
             mHost->DrainDebugLayer(&mDebugLayerMessages, kKeptDebugLayerMessages - std::min(mDebugLayerMessages.size(), kKeptDebugLayerMessages));
@@ -349,6 +408,10 @@ namespace gpg::gal::diligent
             ThrowGalError("DeviceDiligent.cpp", __LINE__, error.c_str());
         }
         mGpu = mHost->GetGpu();
+        if (mForceD32S8 && mGpu) {
+            mGpu->SetD32S8ForD24S8(true);
+            gpg::Logf("[gal-diligent] /galdepthd32s8: D24S8 depth-stencil targets are made as D32_FLOAT_S8X24");
+        }
         mDrawPath = std::make_unique<DrawPath>(mGpu);
         mDrawPath->SetHalfPixelMode(mHalfPixel);
 
@@ -648,6 +711,36 @@ namespace gpg::gal::diligent
         if (to == nullptr) {
             ThrowGalError("DeviceDiligent.cpp", __LINE__, "Missing dest   texture");
         }
+#if !defined(_WIN32)
+        // Without D3DX (Android): a texel copy between two textures of one format, no filtering - what
+        // D3DXLoadSurfaceFromSurface does when the rectangles have the same size. The menu never calls it.
+        {
+            const RECT whole{};
+            const TextureContext* const fromContext = from->GetContext();
+            const TextureContext* const toContext = to->GetContext();
+            if (fromContext->format_ != toContext->format_ || fromContext->type_ != 1U || toContext->type_ != 1U) {
+                ThrowGalError("DeviceDiligent.cpp", __LINE__, "UpdateSurface: 2D textures of one format only (no D3DX on this platform)");
+            }
+            const RECT source = sourceRect != nullptr ? *sourceRect : RECT{0, 0, static_cast<LONG>(fromContext->width_), static_cast<LONG>(fromContext->height_)};
+            const RECT target = destinationRect != nullptr ? *destinationRect : RECT{0, 0, static_cast<LONG>(toContext->width_), static_cast<LONG>(toContext->height_)};
+            if (source.right - source.left != target.right - target.left || source.bottom - source.top != target.bottom - target.top) {
+                ThrowGalError("DeviceDiligent.cpp", __LINE__, "UpdateSurface: scaling needs D3DX (not on this platform)");
+            }
+            bool blockCompressed = false;
+            const std::uint32_t unit = D3D9FormatBytes(D3D9Oracle::FormatGalToD3D(fromContext->format_), &blockCompressed);
+            const TextureLockRect read = from->Lock(0, sourceRect != nullptr ? *sourceRect : whole, static_cast<int>(MohoD3DLockFlags::ReadOnly));
+            const TextureLockRect write = to->Lock(0, destinationRect != nullptr ? *destinationRect : whole, 0);
+            const std::uint32_t rows = static_cast<std::uint32_t>(source.bottom - source.top) / (blockCompressed ? 4U : 1U);
+            const std::uint32_t rowBytes = static_cast<std::uint32_t>(source.right - source.left) / (blockCompressed ? 4U : 1U) * unit;
+            for (std::uint32_t row = 0; row < rows; ++row) {
+                std::memcpy(static_cast<std::uint8_t*>(write.bits) + static_cast<std::size_t>(row) * static_cast<std::size_t>(write.pitch),
+                            static_cast<const std::uint8_t*>(read.bits) + static_cast<std::size_t>(row) * static_cast<std::size_t>(read.pitch), rowBytes);
+            }
+            from->Unlock(read);
+            to->Unlock(write);
+            return;
+        }
+#else
         if (from->GetScratch() == nullptr || from->GetScratch()->GetType() != D3DRTYPE_TEXTURE || to->GetScratch() == nullptr ||
             to->GetScratch()->GetType() != D3DRTYPE_TEXTURE) {
             ThrowGalError("DeviceDiligent.cpp", __LINE__, "UpdateSurface: 2D textures only");
@@ -671,6 +764,7 @@ namespace gpg::gal::diligent
         const RECT whole{};
         const TextureLockRect lock = to->Lock(0, destinationRect != nullptr ? *destinationRect : whole, 0);
         to->Unlock(lock);
+#endif
     }
 
     void DeviceDiligent::SaveCubeRenderTarget(const boost::shared_ptr<CubeRenderTarget>& cubeTarget, const msvc8::string& filePath)
@@ -698,6 +792,10 @@ namespace gpg::gal::diligent
             ThrowGalError("DeviceDiligent.cpp", __LINE__, "Unable to get back buffer surface");
         }
         mDrawPath->InvalidateTargets();
+#if !defined(_WIN32)
+        static_cast<void>(fileFormat);
+        ThrowGalError("DeviceDiligent.cpp", __LINE__, "SaveRenderTarget: no D3DX image writer on this platform");
+#else
         IDirect3DSurface9* surface = nullptr;
         HRESULT result = mOracle->GetDevice()->CreateOffscreenPlainSurface(width, height, D3DFMT_A8R8G8B8, D3DPOOL_SCRATCH, &surface, nullptr);
         if (FAILED(result)) {
@@ -715,6 +813,7 @@ namespace gpg::gal::diligent
         if (FAILED(result)) {
             ThrowGalErrorFromHresult("DeviceDiligent.cpp", __LINE__, result);
         }
+#endif
     }
 
     // DeviceD3D9::SaveTexture (D3D9Interfaces.cpp:3073-3123) on the D3DX image.
@@ -726,6 +825,22 @@ namespace gpg::gal::diligent
     )
     {
         Count(22, kSlotNames[22], false);
+#if !defined(_WIN32)
+        // Without D3DX (Android): level 0 as a DDS file (TextureDiligent::SaveToBuffer); other formats
+        // need D3DX's writers. The menu never calls it.
+        auto* const portableTexture = dynamic_cast<TextureDiligent*>(texture.get());
+        if (portableTexture == nullptr || fileFormat != 4) {
+            ThrowGalError("DeviceDiligent.cpp", __LINE__, "SaveTexture: only DDS without D3DX on this platform");
+        }
+        gpg::MemBuffer<char> dds;
+        portableTexture->SaveToBuffer(&dds);
+        if (outBuffer != nullptr) {
+            *outBuffer = dds;
+        } else {
+            std::ofstream out(filePath.c_str(), std::ios::binary | std::ios::trunc);
+            out.write(dds.GetPtr(0U, 0U), static_cast<std::streamsize>(dds.Size()));
+        }
+#else
         auto* const textureDiligent = dynamic_cast<TextureDiligent*>(texture.get());
         IDirect3DBaseTexture9* const scratch = textureDiligent != nullptr ? textureDiligent->GetScratch() : nullptr;
         if (scratch == nullptr || scratch->GetType() != D3DRTYPE_TEXTURE || fileFormat < 0 || fileFormat > 4) {
@@ -754,6 +869,7 @@ namespace gpg::gal::diligent
         if (FAILED(result)) {
             ThrowGalErrorFromHresult("DeviceDiligent.cpp", __LINE__, result);
         }
+#endif
     }
 
     std::string DeviceDiligent::DumpTextureSource(const char* const kind, const void* const data, const std::uint32_t bytes)
@@ -907,7 +1023,9 @@ namespace gpg::gal::diligent
             mExitRequested = true;
             WriteReport("exitframes");
             gpg::Logf("[gal-diligent] %llu frames presented; requesting exit (/galexitframes)", static_cast<unsigned long long>(mPresents));
+#if defined(_WIN32)
             moho::WIN_AppRequestExit();
+#endif
         }
     }
 
@@ -918,6 +1036,12 @@ namespace gpg::gal::diligent
     void DeviceDiligent::SetCursor(const CursorContext* const context)
     {
         Count(31, kSlotNames[31], false);
+#if !defined(_WIN32)
+        // Android: no system cursor to set (a touch screen); the slot is counted and the texture kept
+        // untouched, as the engine expects.
+        static_cast<void>(context);
+        return;
+#else
         if (mCursorIcon != nullptr) {
             ::SetCursor(static_cast<HCURSOR>(mPreviousCursor));
             ::DestroyIcon(static_cast<HICON>(mCursorIcon));
@@ -964,15 +1088,18 @@ namespace gpg::gal::diligent
         ::DeleteObject(colorBitmap);
         ::DeleteObject(maskBitmap);
         mPreviousCursor = ::SetCursor(static_cast<HCURSOR>(mCursorIcon));
+#endif
     }
 
     // CursorD3D10::InitCursor (0x008F8430): make the icon current again.
     void DeviceDiligent::InitCursor()
     {
         Count(32, kSlotNames[32], false);
+#if defined(_WIN32)
         if (mCursorIcon != nullptr) {
             ::SetCursor(static_cast<HCURSOR>(mCursorIcon));
         }
+#endif
     }
 
     // CursorD3D10::ShowCursor (0x008F84F0): drive the Win32 display count to shown or hidden. Returns
@@ -982,6 +1109,7 @@ namespace gpg::gal::diligent
         Count(33, kSlotNames[33], false);
         const bool previous = mCursorShown;
         mCursorShown = show;
+#if defined(_WIN32)
         if (mCursorIcon != nullptr) {
             if (show) {
                 while (::ShowCursor(TRUE) < 0) {
@@ -991,6 +1119,7 @@ namespace gpg::gal::diligent
                 }
             }
         }
+#endif
         return previous ? 1 : 0;
     }
 
@@ -1361,6 +1490,28 @@ namespace gpg::gal::diligent
                     std::to_string(uploads.createdOffRenderThread.load()) + ", \"releasedOffRenderThread\": " +
                     std::to_string(uploads.releasedOffRenderThread.load()) + "},\n";
         }
+        {
+            const ShaderCompileCounts compile = GetShaderCompileCounts();
+            char milliseconds[64];
+            std::snprintf(milliseconds, sizeof(milliseconds), "%.1f, \"cacheMilliseconds\": %.1f", compile.compileMilliseconds,
+                          compile.cacheMilliseconds);
+            json += "  \"shaderCompile\": {\"compiled\": " + std::to_string(compile.compiled) + ", \"failed\": " + std::to_string(compile.failed) +
+                    ", \"cacheHits\": " + std::to_string(compile.cacheHits) + ", \"cacheMisses\": " + std::to_string(compile.cacheMisses) +
+                    ", \"cacheStores\": " + std::to_string(compile.cacheStores) + ", \"compileMilliseconds\": " + milliseconds + "},\n";
+        }
+#if !defined(_WIN32)
+        if (mHost) {
+            const AndroidDeviceSupport support = mHost->GetDeviceSupport();
+            json += "  \"android\": {\"surface\": \"" + JsonEscape(mHost->GetSurfaceDescription()) + "\", \"bcFeature\": " +
+                    (support.bcFeature ? "true" : "false") + ", \"bcSampled\": " + (support.bcSampled ? "true" : "false") +
+                    ", \"cpuBcDecode\": " + (support.cpuBcDecode ? "true" : "false") + ", \"d24s8Attachment\": " +
+                    (support.d24s8Attachment ? "true" : "false") + ", \"d32s8Attachment\": " + (support.d32s8Attachment ? "true" : "false") +
+                    ", \"d32s8ForD24s8\": " + (support.d32s8ForD24s8 ? "true" : "false") + ", \"pipelineCache\": \"" +
+                    JsonEscape(support.pipelineCachePath) + "\", \"pipelineCacheBytesLoaded\": " + std::to_string(support.pipelineCacheBytesLoaded) +
+                    ", \"bcDecodedOnCpu\": " + std::to_string(mGpu ? mGpu->Stats().bcDecodedOnCpu.load() : 0U) + ", \"depthStencilD32S8\": " +
+                    std::to_string(mGpu ? mGpu->Stats().depthStencilD32S8.load() : 0U) + "},\n";
+        }
+#endif
         {
             // The shaders are SM5 HLSL from the portable front end (FxHlslEmitter), compiled in this
             // process when a pass is first drawn; constants go up with Map(DISCARD) only (PassBinding.h).

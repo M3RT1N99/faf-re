@@ -93,8 +93,10 @@
 
   <ItemGroup Condition="'$(FafPortGraphicsDiligent)' == 'true'">
     <!-- Diligent gal backend (step 1). Tools under diligent\tools are host
-         programs with their own build, not part of main.exe. -->
-    <ClCompile Include="$(FafPortGraphicsDir)diligent\**\*.cpp" Exclude="$(FafPortGraphicsDir)diligent\tools\**">
+         programs with their own build, not part of main.exe. diligent\android holds the
+         Android-only stand-ins for engine TUs and D3DX (M7a1, port\android\CMakeLists.txt);
+         main.exe has the real ones. -->
+    <ClCompile Include="$(FafPortGraphicsDir)diligent\**\*.cpp" Exclude="$(FafPortGraphicsDir)diligent\tools\**;$(FafPortGraphicsDir)diligent\android\**">
       <ObjectFileName>$(IntDir)port_graphics\diligent\%(RecursiveDir)</ObjectFileName>
       <!-- fx\include: the effect layer (EffectsDiligentGpu.*) builds its shaders with the
            portable front end's FxMetadata and FxHlslEmitter (M6b). -->

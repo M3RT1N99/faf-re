@@ -174,6 +174,9 @@ What the compiler does not catch matters more than what it does.
   (M6b: the main menu drawn by Diligent, byte-identical to D3D9, on SM5 from the portable front end)
   and steps 5 and 6 (M6c: Vulkan and GL on Windows with the same menu pixels and a scripted
   navigation into the skirmish lobby, and galtrace/galplay, whose trace already decodes on Android ABIs).
+  Step 8 (M7a1, release 0.5.0): the app's *Menu replay* plays the menu's gal call stream through the
+  backend over Vulkan in GameActivity, from a trace that references the user's game files instead of
+  holding them; on the emulator it runs, but SwiftShader's frames miss the parity rule, so the phone decides.
 - Route the ~18 files that call D3D9/D3DX directly through GAL. `RenderTarget.hpp:69` exposes
   `HDC`.
 - **Texture formats:** Mali, Immortalis, Xclipse (Exynos) and PowerVR do not expose BC/DXT. All
@@ -382,6 +385,7 @@ M6  W2 + W3 on Windows: SDL3 + Diligent backend, pixel-compared against D3D9
     M6b menu drawn by Diligent-D3D11 = D3D9 pixels, SM5 from the front end    done (renderer.md)
     M6c Vulkan + GL on Windows = D3D9 pixels, lobby navigation, galtrace      done (renderer.md)
 M7  W2 + W3 + W4 on Android: main menu on the device (L1), then offline skirmish (L2)
+    M7a1 menu trace replayed in the app over Vulkan (release 0.5.0)           emulator done, phone pending
 M8  W7 + W8 against a local FAF stack: login, lobby, ICE, Android vs Android
 M9  W9 approvals in place: online vs PC (L4), beta
 M10 W10: touch layer, phone HUD, performance tiers (L5)

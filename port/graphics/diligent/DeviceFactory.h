@@ -25,6 +25,11 @@
 // any graphics-build TU (capture, trace, engine hooks) can include it. The decorator slot is an
 // inline function's static, one per process.
 
+#if !defined(_WIN32)
+#include <string>
+#include <vector>
+#endif
+
 namespace gpg::gal
 {
     class Device;
@@ -141,4 +146,12 @@ namespace gpg::gal::diligent
 
     /** The backend device behind a device CreateDevice/CreateDeviceForApi returned (itself when undecorated). */
     [[nodiscard]] Device* GetBackendDevice(Device* installed);
+
+#if !defined(_WIN32)
+    /**
+     * Android (M7a1): the backend's options (`/galreport <file>`, `/galnovalidation`, ...), which on
+     * Windows come from main.exe's command line. galplay sets them before it creates the device.
+     */
+    void SetPortableCommandLine(const std::vector<std::string>& arguments);
+#endif
 } // namespace gpg::gal::diligent

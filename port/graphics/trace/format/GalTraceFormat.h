@@ -1,8 +1,8 @@
 #pragma once
 
-// galtrace, format version 1: the gpg::gal call stream of one process, written by the recorder
-// (port/graphics/trace/record) and read by galplay (port/graphics/trace/play) and galtrace-dump
-// (port/graphics/trace/tools). README.md in port/graphics/trace has the format in prose.
+// galtrace, format versions 1 and 2: the gpg::gal call stream of one process, written by the
+// recorder (port/graphics/trace/record) and read by galplay (port/graphics/trace/play) and
+// galtrace-dump (port/graphics/trace/tools). README.md in port/graphics/trace has the format in prose.
 //
 // Portable C++17, no engine, Windows or Diligent types: the same sources build into the Win32
 // graphics main.exe, the host tools (MSVC Win32 and x64) and the Android NDK tools (x86_64, arm64).
@@ -12,23 +12,56 @@
 //     single's bit pattern as a u32;
 //   - every gal context struct is written field by field (no memcpy of engine structs);
 //   - gal objects are numbered (u32 ids, 1..n, never reused); 0 is "no object";
-//   - payloads (file data, locked texture and buffer contents, effect sources) are blobs: written
-//     once, numbered, named by two 64-bit content hashes, and referenced by their number.
+//   - payloads (file data, locked texture and buffer contents, effect sources) are numbered once and
+//     named by two 64-bit content hashes; a record names a payload by its number (FieldType::Blob).
 //
 // File: "GALTRACE", u32 version, u32 metadata count, metadata pairs (str key, str value), then
 // records until the End record. A record is u16 op, u16 flags, u32 payload bytes, payload. The
 // payload of every op is the field list of its OpDesc, in order; the generic decoder
-// (GalTraceReader.h, DecodeFields) needs nothing else.
+// (GalTraceIO.h, DecodeRecord) needs nothing else.
+//
+// Version 2 (M7a1) adds three ways to define a payload besides the embedded Blob, so that a trace can
+// be shipped without the game's data in it. Payload numbers are shared by all four (1..n, in file
+// order); every op of version 1 is unchanged, and a reader of version 2 reads version 1 files.
+//   PayloadRef      the bytes of a game file, by VFS path ("/effects/ui.fx") and content hashes: the
+//                   reader asks its PayloadResolver (the VFS on the phone) and checks size and hashes;
+//                   or of several game files one after the other (`parts`, each with its own path,
+//                   size and hashes: the engine hands an effect source to gal as d3d9states.compat
+//                   followed by the .fx file);
+//   PayloadDigest   bytes the trace does not hold, only their hashes: what the backend answers
+//                   (GetTexture2D's output: the replay supplies its own bytes, Reader::ProvidePayload)
+//                   or what a readback is compared with;
+//   PayloadCompose  bytes built from earlier payloads (rows copied into place over zeros or a base
+//                   payload) plus literal runs: a texture atlas written by the engine is the
+//                   GetTexture2D outputs placed in it plus the engine's own glyph blocks.
+// The recorder writes version 1 (every payload embedded); galtrace-refs (tools/) turns a recording into
+// version 2 against the game data, checking every reference.
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace galtrace
 {
   inline constexpr char kMagic[8] = {'G', 'A', 'L', 'T', 'R', 'A', 'C', 'E'};
-  inline constexpr std::uint32_t kFormatVersion = 1;
+  inline constexpr std::uint32_t kFormatVersion1 = 1; // every payload embedded (Blob records only)
+  inline constexpr std::uint32_t kFormatVersion2 = 2; // adds PayloadRef, PayloadDigest, PayloadCompose
+  inline constexpr std::uint32_t kFormatVersion = kFormatVersion2; // the newest version this code reads and writes
+
+  // Metadata keys (header pairs). Values are text.
+  inline constexpr const char* kMetaHarnessFrames = "harness_frames";   // "10,15,...": the readbacks' frame numbers, in order
+  inline constexpr const char* kMetaGal = "gal";                        // the backend the recording ran on ("d3d9", "diligent:vk")
+  inline constexpr const char* kMetaFrameRate = "frame_rate";           // presents per second of the recording's pace ("30")
+  inline constexpr const char* kMetaPresents = "presents";              // presents in the trace (the End record's count, up front)
+  inline constexpr const char* kMetaReadbacks = "readbacks";            // read-only texture locks (readbacks) in the trace
+  inline constexpr const char* kMetaPayloadRefs = "payload_refs";       // number of PayloadRef records (version 2)
+  inline constexpr const char* kMetaRefArchives = "ref_archives";       // "effects.nx2,textures.scd": where the referenced files were found
+  inline constexpr const char* kMetaGameVersion = "game_version";       // "3839": the FAF game version of the data the references were made against
+  // "reference_frames.<backend>" = "10:d92c3a2233b80c55,15:...": the frame hash (FNV-1a 64 over R,G,B,
+  // as the frame harness hashes frames) of each readback as that backend renders it on the PC.
+  inline constexpr const char* kMetaReferenceFramesPrefix = "reference_frames.";
 
   /** Record flags (u16 after the op). */
   inline constexpr std::uint16_t kFlagOffThread = 0x0001; // made on a thread other than the device's creation thread
@@ -103,6 +136,9 @@ namespace galtrace
     DeviceCreate = 0x0005,
     DeviceDestroy = 0x0006,
     Release = 0x0007,
+    PayloadRef = 0x0008,     // version 2: a payload that is a game file (VFS path + hashes)
+    PayloadDigest = 0x0009,  // version 2: a payload known by its hashes only
+    PayloadCompose = 0x000A, // version 2: a payload built from earlier payloads and literal runs
 
     // gpg::gal::Device (the slot numbers of Device.hpp in the comments)
     DevGetLog = 0x0101,              // 1
@@ -235,6 +271,32 @@ namespace galtrace
   /** Every op of this format version, in op order. */
   [[nodiscard]] const std::vector<const OpDesc*>& AllOps();
 
+  /** True for the four ops that define a payload number (Blob, PayloadRef, PayloadDigest, PayloadCompose). */
+  [[nodiscard]] bool IsPayloadDefinition(std::uint16_t op);
+
+  /** The lowest format version that may contain `op` (1, or 2 for the payload ops of version 2). */
+  [[nodiscard]] std::uint32_t OpMinVersion(std::uint16_t op);
+
+  /** How a payload number is defined (version 2). */
+  enum class PayloadKind : std::uint8_t
+  {
+    Embedded = 1, // Blob: the bytes are in the trace
+    Reference = 2, // PayloadRef: a game file, read through the PayloadResolver
+    Digest = 3,    // PayloadDigest: hashes only; the replay may supply the bytes
+    Composed = 4,  // PayloadCompose: built from earlier payloads and literal runs
+  };
+  [[nodiscard]] const char* PayloadKindName(PayloadKind kind);
+
+  /** PayloadDigest's `origin`: what the bytes were in the recording. */
+  enum class DigestOrigin : std::uint8_t
+  {
+    BackendOutput = 1, // a backend's answer the replay produces again (GetTexture2D's output)
+    Readback = 2,      // a read-only texture lock (the harness's frame readback): compared only
+    SavedOutput = 3,   // SaveTexture / SaveToBuffer output: compared only
+    Other = 4,
+  };
+  [[nodiscard]] const char* DigestOriginName(std::uint8_t origin);
+
   /** Texture lock content mode (TexUnlock*): what the blob holds. */
   enum class LockContent : std::uint8_t
   {
@@ -288,4 +350,14 @@ namespace galtrace
   [[nodiscard]] std::uint64_t Fnv1a64(const void* data, std::size_t size, std::uint64_t seed = 0xCBF29CE484222325ULL);
 
   [[nodiscard]] std::string Hex64(std::uint64_t value);
+
+  /**
+   * The frame harness's frame hash of a B,G,R,A image (gal format 2/3 as a lock gives it, rows packed):
+   * FNV-1a 64 over R, G, B of every pixel in memory order (GalCapture.cpp; gfx_capture.py's hashes).
+   */
+  [[nodiscard]] std::uint64_t FrameRgbHash(const std::uint8_t* bgra, std::size_t bytes);
+
+  /** "10:d92c3a2233b80c55,15:..." (kMetaReferenceFramesPrefix values) as (frame, hex hash) pairs, in order. */
+  [[nodiscard]] std::vector<std::pair<std::uint32_t, std::string>> ParseFrameHashes(const std::string& text);
+  [[nodiscard]] std::string FormatFrameHashes(const std::vector<std::pair<std::uint32_t, std::string>>& hashes);
 } // namespace galtrace

@@ -149,6 +149,10 @@ namespace gpg::gal::diligent
         /** Writes the JSON report (/galreport) now. */
         void WriteReport(const char* reason);
 
+        /** The Diligent side (galplay on Android: window changes, device support, the pipeline cache). */
+        [[nodiscard]] DiligentHost* GetHost() const { return mHost.get(); }
+        [[nodiscard]] std::uint64_t GetPresentCount() const { return mPresents; }
+
         /**
          * /galselftest: known-answer checks of the paths the main menu does not reach (partial-viewport
          * Clear, StretchRect copy/scale/sub-rectangle, offscreen GetRenderTargetData, texture Lock/Unlock
@@ -228,6 +232,7 @@ namespace gpg::gal::diligent
         std::uint64_t mReportFrame = 0;
         bool mValidation = true;
         bool mDebugLayerSelfTest = false;
+        bool mForceD32S8 = false; // /galdepthd32s8 (M7a1)
         std::uint32_t mSelfTestErrors = 0;
         std::string mSelfTestSample;
         bool mRunSelfTest = false;

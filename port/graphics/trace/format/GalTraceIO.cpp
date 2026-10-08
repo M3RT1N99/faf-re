@@ -1,5 +1,7 @@
 #include "GalTraceIO.h"
 
+#include "GalTraceResolver.h"
+
 #include <chrono>
 #include <cinttypes>
 #include <cstring>
@@ -15,6 +17,27 @@ namespace galtrace
 #else
       return fseeko(file, static_cast<off_t>(offset), SEEK_SET) == 0;
 #endif
+    }
+
+    /** The file's size (its position is restored); 0 when it cannot be told. */
+    std::uint64_t FileSize64(std::FILE* const file)
+    {
+#if defined(_WIN32)
+      const __int64 at = _ftelli64(file);
+      if (at < 0 || _fseeki64(file, 0, SEEK_END) != 0) {
+        return 0;
+      }
+      const __int64 size = _ftelli64(file);
+      (void)_fseeki64(file, at, SEEK_SET);
+#else
+      const off_t at = ftello(file);
+      if (at < 0 || fseeko(file, 0, SEEK_END) != 0) {
+        return 0;
+      }
+      const off_t size = ftello(file);
+      (void)fseeko(file, at, SEEK_SET);
+#endif
+      return size > 0 ? static_cast<std::uint64_t>(size) : 0;
     }
 
     std::uint32_t LoadU32(const std::uint8_t* const p)
@@ -188,8 +211,14 @@ namespace galtrace
     }
   }
 
-  bool Writer::Open(const std::string& path, const Metadata& metadata, std::string* const error)
+  bool Writer::Open(const std::string& path, const Metadata& metadata, std::string* const error, const std::uint32_t version)
   {
+    if (version < kFormatVersion1 || version > kFormatVersion) {
+      if (error != nullptr) {
+        *error = "cannot write galtrace version " + std::to_string(version);
+      }
+      return false;
+    }
     file_ = std::fopen(path.c_str(), "wb");
     if (file_ == nullptr) {
       if (error != nullptr) {
@@ -197,9 +226,10 @@ namespace galtrace
       }
       return false;
     }
+    version_ = version;
     (void)std::setvbuf(file_, nullptr, _IOFBF, 4u << 20);
     std::vector<std::uint8_t> header(kMagic, kMagic + sizeof(kMagic));
-    AppendU32(header, kFormatVersion);
+    AppendU32(header, version_);
     AppendU32(header, static_cast<std::uint32_t>(metadata.size()));
     for (const auto& [key, value] : metadata) {
       AppendU32(header, static_cast<std::uint32_t>(key.size()));
@@ -255,8 +285,114 @@ namespace galtrace
     if (found != blobs_.end()) {
       return found->second;
     }
-    const std::uint32_t id = static_cast<std::uint32_t>(blobs_.size()) + 1;
+    const std::uint32_t id = WriteBlobRecord(key, data, size);
     blobs_.emplace(key, id);
+    return id;
+  }
+
+  std::uint32_t Writer::DefineEmbedded(const void* const data, const std::size_t size)
+  {
+    if (file_ == nullptr || version_ < kFormatVersion2) {
+      return 0;
+    }
+    const auto hashStart = std::chrono::steady_clock::now();
+    const BlobKey key = HashBlob(data, size);
+    stats_.hashNanoseconds += static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - hashStart).count());
+    return WriteBlobRecord(key, data, size);
+  }
+
+  std::uint32_t Writer::DefineReference(const BlobKey& key, const std::string& vfsPath, const std::string& archive)
+  {
+    return DefineReference(key, vfsPath, archive, {});
+  }
+
+  std::uint32_t Writer::DefineReference(
+    const BlobKey& key, const std::string& vfsPath, const std::string& archive, const std::vector<PayloadRefPart>& parts
+  )
+  {
+    if (file_ == nullptr || version_ < kFormatVersion2) {
+      return 0;
+    }
+    const std::uint32_t id = ++stats_.payloads;
+    RecordBuilder record(Op::PayloadRef);
+    record.U32(id);
+    record.U64(key.a);
+    record.U64(key.b);
+    record.U32(key.size);
+    record.Str(vfsPath);
+    record.Str(archive);
+    record.Count(static_cast<std::uint32_t>(parts.size()));
+    for (const PayloadRefPart& part : parts) {
+      record.Str(part.path);
+      record.Str(part.archive);
+      record.U64(part.key.a);
+      record.U64(part.key.b);
+      record.U32(part.key.size);
+    }
+    Commit(record);
+    ++stats_.references;
+    stats_.referenceBytes += key.size;
+    return id;
+  }
+
+  std::uint32_t Writer::DefineDigest(const BlobKey& key, const DigestOrigin origin)
+  {
+    if (file_ == nullptr || version_ < kFormatVersion2) {
+      return 0;
+    }
+    const std::uint32_t id = ++stats_.payloads;
+    RecordBuilder record(Op::PayloadDigest);
+    record.U32(id);
+    record.U64(key.a);
+    record.U64(key.b);
+    record.U32(key.size);
+    record.U8(static_cast<std::uint8_t>(origin));
+    Commit(record);
+    ++stats_.digests;
+    stats_.digestBytes += key.size;
+    return id;
+  }
+
+  std::uint32_t Writer::DefineComposition(
+    const BlobKey& key, const std::uint32_t base, const std::vector<PayloadCopy>& copies, const std::vector<PayloadLiteral>& literals
+  )
+  {
+    if (file_ == nullptr || version_ < kFormatVersion2) {
+      return 0;
+    }
+    const std::uint32_t id = ++stats_.payloads;
+    RecordBuilder record(Op::PayloadCompose);
+    record.U32(id);
+    record.U64(key.a);
+    record.U64(key.b);
+    record.U32(key.size);
+    record.Blob(base);
+    record.Count(static_cast<std::uint32_t>(copies.size()));
+    for (const PayloadCopy& copy : copies) {
+      record.Blob(copy.source);
+      record.U32(copy.sourceOffset);
+      record.U32(copy.sourcePitch);
+      record.U32(copy.offset);
+      record.U32(copy.pitch);
+      record.U32(copy.rowBytes);
+      record.U32(copy.rows);
+    }
+    record.Count(static_cast<std::uint32_t>(literals.size()));
+    for (const PayloadLiteral& literal : literals) {
+      record.U32(literal.offset);
+      record.Bytes(literal.bytes.data(), literal.bytes.size());
+      stats_.literalBytes += literal.bytes.size();
+    }
+    Commit(record);
+    ++stats_.compositions;
+    stats_.compositionBytes += key.size;
+    return id;
+  }
+
+  std::uint32_t Writer::WriteBlobRecord(const BlobKey& key, const void* const data, const std::size_t size)
+  {
+    const std::uint32_t id = ++stats_.payloads;
     ++stats_.blobs;
     stats_.blobBytes += size;
 
@@ -296,6 +432,14 @@ namespace galtrace
       return;
     }
     WriteRecord(record.GetOp(), record.Flags(), record.Payload().data(), record.Payload().size());
+  }
+
+  void Writer::CommitRaw(const std::uint16_t op, const std::uint16_t flags, const std::uint8_t* const payload, const std::size_t size)
+  {
+    if (file_ == nullptr || IsPayloadDefinition(op) || op == static_cast<std::uint16_t>(Op::End)) {
+      return; // payload numbers and the End totals are the writer's own
+    }
+    WriteRecord(static_cast<Op>(op), flags, payload, size);
   }
 
   void Writer::Flush()
@@ -370,6 +514,7 @@ namespace galtrace
       return false;
     }
     (void)std::setvbuf(file_, nullptr, _IOFBF, 1u << 20);
+    fileSize_ = FileSize64(blobFile_);
     char magic[8];
     std::uint8_t word[4];
     bool ok = ReadExact(magic, sizeof(magic), nullptr) && std::memcmp(magic, kMagic, sizeof(kMagic)) == 0;
@@ -378,8 +523,9 @@ namespace galtrace
     }
     if (ok && (ok = ReadExact(word, 4, nullptr))) {
       version_ = LoadU32(word);
-      if (version_ != kFormatVersion) {
-        ok = Fail("unsupported galtrace version " + std::to_string(version_));
+      if (version_ < kFormatVersion1 || version_ > kFormatVersion) {
+        ok = Fail("unsupported galtrace version " + std::to_string(version_) + " (this reader reads versions 1 to " +
+                  std::to_string(kFormatVersion) + ")");
       }
     }
     std::uint32_t count = 0;
@@ -450,6 +596,29 @@ namespace galtrace
       if (record->desc == nullptr) {
         return Fail("unknown op " + std::to_string(record->op) + " at offset " + std::to_string(offset));
       }
+      if (fileSize_ != 0 && (position_ > fileSize_ || length > fileSize_ - position_)) {
+        // Before any allocation of `length` bytes: a cut or damaged file must not ask for gigabytes.
+        return Fail("truncated record " + OpName(record->op) + " at offset " + std::to_string(offset) + " (" + std::to_string(length) +
+                    " bytes, the file ends " + std::to_string(fileSize_ > position_ ? fileSize_ - position_ : 0) + " bytes later)");
+      }
+      if (OpMinVersion(record->op) > version_) {
+        return Fail(std::string(record->desc->name) + " at offset " + std::to_string(offset) + " in a version " +
+                    std::to_string(version_) + " file");
+      }
+      if (IsPayloadDefinition(record->op) && record->op != static_cast<std::uint16_t>(Op::Blob)) {
+        // A version 2 payload definition: small, read and indexed; returned only with returnBlobs.
+        record->payload.resize(length);
+        if (!ReadExact(record->payload.data(), length, nullptr)) {
+          return Fail("truncated record " + OpName(record->op) + " at offset " + std::to_string(offset));
+        }
+        if (!IndexPayload(record->op, record->payload.data(), record->payload.size(), offset)) {
+          return false;
+        }
+        if (!returnBlobs) {
+          continue;
+        }
+        return true;
+      }
       if (record->op == static_cast<std::uint16_t>(Op::Blob) && !returnBlobs) {
         // Index the blob and skip its bytes: id, hashA, hashB, size, data.
         std::uint8_t head[24];
@@ -457,22 +626,25 @@ namespace galtrace
           return Fail("truncated blob record at offset " + std::to_string(offset));
         }
         const std::uint32_t id = LoadU32(head);
-        BlobEntry entry{};
+        PayloadEntry entry{};
+        entry.kind = PayloadKind::Embedded;
         entry.key.a = LoadU64(head + 4);
         entry.key.b = LoadU64(head + 12);
         entry.key.size = LoadU32(head + 20);
         entry.dataOffset = position_;
-        if (id != blobs_.size() + 1) {
+        entry.recordOffset = offset;
+        if (id != payloads_.size() + 1) {
           return Fail("blob " + std::to_string(id) + " out of order at offset " + std::to_string(offset));
         }
         if (entry.key.size != length - sizeof(head)) {
           return Fail("blob " + std::to_string(id) + " size does not match its record");
         }
-        blobs_.push_back(entry);
-        if (!Seek64(file_, position_ + entry.key.size)) {
+        const std::uint32_t skip = entry.key.size;
+        payloads_.push_back(std::move(entry));
+        if (!Seek64(file_, position_ + skip)) {
           return Fail("cannot skip blob " + std::to_string(id));
         }
-        position_ += entry.key.size;
+        position_ += skip;
         // The file may end inside the blob; the read of the next header notices.
         continue;
       }
@@ -484,15 +656,17 @@ namespace galtrace
         // Returned to the caller: index it as well.
         if (length >= 24) {
           const std::uint32_t id = LoadU32(record->payload.data());
-          BlobEntry entry{};
+          PayloadEntry entry{};
+          entry.kind = PayloadKind::Embedded;
           entry.key.a = LoadU64(record->payload.data() + 4);
           entry.key.b = LoadU64(record->payload.data() + 12);
           entry.key.size = LoadU32(record->payload.data() + 20);
           entry.dataOffset = offset + 8 + 24;
-          if (id != blobs_.size() + 1 || entry.key.size != length - 24) {
+          entry.recordOffset = offset;
+          if (id != payloads_.size() + 1 || entry.key.size != length - 24) {
             return Fail("bad blob record at offset " + std::to_string(offset));
           }
-          blobs_.push_back(entry);
+          payloads_.push_back(std::move(entry));
         } else {
           return Fail("short blob record at offset " + std::to_string(offset));
         }
@@ -504,29 +678,365 @@ namespace galtrace
     }
   }
 
+  bool Reader::IndexPayload(const std::uint16_t op, const std::uint8_t* const payload, const std::size_t size, const std::uint64_t recordOffset)
+  {
+    // Parsed by hand (the Validator checks the same records against the schema).
+    std::size_t at = 0;
+    bool ok = true;
+    auto u8 = [&]() -> std::uint8_t {
+      if (!ok || size - at < 1) {
+        ok = false;
+        return 0;
+      }
+      return payload[at++];
+    };
+    auto u32 = [&]() -> std::uint32_t {
+      if (!ok || size - at < 4) {
+        ok = false;
+        return 0;
+      }
+      const std::uint32_t value = LoadU32(payload + at);
+      at += 4;
+      return value;
+    };
+    auto u64 = [&]() -> std::uint64_t {
+      if (!ok || size - at < 8) {
+        ok = false;
+        return 0;
+      }
+      const std::uint64_t value = LoadU64(payload + at);
+      at += 8;
+      return value;
+    };
+    auto bytes = [&](std::vector<std::uint8_t>* const out) {
+      const std::uint32_t length = u32();
+      if (!ok || size - at < length) {
+        ok = false;
+        return;
+      }
+      out->assign(payload + at, payload + at + length);
+      at += length;
+    };
+    auto text = [&](std::string* const out) {
+      const std::uint32_t length = u32();
+      if (!ok || size - at < length) {
+        ok = false;
+        return;
+      }
+      out->assign(reinterpret_cast<const char*>(payload + at), length);
+      at += length;
+    };
+
+    PayloadEntry entry{};
+    entry.recordOffset = recordOffset;
+    const std::uint32_t id = u32();
+    entry.key.a = u64();
+    entry.key.b = u64();
+    entry.key.size = u32();
+    switch (static_cast<Op>(op)) {
+      case Op::PayloadRef: {
+        entry.kind = PayloadKind::Reference;
+        text(&entry.path);
+        text(&entry.archive);
+        const std::uint32_t parts = u32();
+        for (std::uint32_t index = 0; ok && index < parts; ++index) {
+          PayloadRefPart part;
+          text(&part.path);
+          text(&part.archive);
+          part.key.a = u64();
+          part.key.b = u64();
+          part.key.size = u32();
+          entry.parts.push_back(std::move(part));
+        }
+        break;
+      }
+      case Op::PayloadDigest:
+        entry.kind = PayloadKind::Digest;
+        entry.origin = u8();
+        break;
+      case Op::PayloadCompose: {
+        entry.kind = PayloadKind::Composed;
+        entry.base = u32();
+        const std::uint32_t copies = u32();
+        for (std::uint32_t index = 0; ok && index < copies; ++index) {
+          PayloadCopy copy{};
+          copy.source = u32();
+          copy.sourceOffset = u32();
+          copy.sourcePitch = u32();
+          copy.offset = u32();
+          copy.pitch = u32();
+          copy.rowBytes = u32();
+          copy.rows = u32();
+          entry.copies.push_back(copy);
+        }
+        const std::uint32_t literals = u32();
+        for (std::uint32_t index = 0; ok && index < literals; ++index) {
+          PayloadLiteral literal{};
+          literal.offset = u32();
+          bytes(&literal.bytes);
+          entry.literals.push_back(std::move(literal));
+        }
+        break;
+      }
+      default:
+        ok = false;
+        break;
+    }
+    if (!ok || at != size) {
+      return Fail("malformed " + OpName(op) + " record at offset " + std::to_string(recordOffset));
+    }
+    if (id != payloads_.size() + 1) {
+      return Fail("payload " + std::to_string(id) + " out of order at offset " + std::to_string(recordOffset));
+    }
+    payloads_.push_back(std::move(entry));
+    return true;
+  }
+
   bool Reader::ReadBlob(const std::uint32_t id, std::vector<std::uint8_t>* const out)
   {
-    out->clear();
-    if (id == 0) {
-      return true;
-    }
-    if (!HasBlob(id)) {
+    PayloadStatus status;
+    if (!ReadPayload(id, out, &status)) {
       return false;
     }
-    BlobEntry& entry = blobs_[id - 1];
-    out->resize(entry.key.size);
-    if (!Seek64(blobFile_, entry.dataOffset) ||
-        (entry.key.size != 0 && std::fread(out->data(), 1, entry.key.size, blobFile_) != entry.key.size)) {
+    if (!status.exact) {
       out->clear();
       return false;
     }
-    if (!entry.verified) {
-      const BlobKey key = HashBlob(out->data(), out->size());
-      if (!(key == entry.key)) {
-        out->clear();
-        return false;
+    return true;
+  }
+
+  bool Reader::ProvidePayload(const std::uint32_t id, const void* const data, const std::size_t size)
+  {
+    if (!HasBlob(id) || payloads_[id - 1].kind != PayloadKind::Digest) {
+      return false;
+    }
+    const auto* const bytes = static_cast<const std::uint8_t*>(data);
+    provided_[id].assign(bytes, bytes + size);
+    return HashBlob(data, size) == payloads_[id - 1].key;
+  }
+
+  bool Reader::ReadPayload(const std::uint32_t id, std::vector<std::uint8_t>* const out, PayloadStatus* const status)
+  {
+    PayloadStatus local;
+    PayloadStatus* const result = status != nullptr ? status : &local;
+    *result = PayloadStatus{};
+    return ReadPayloadDepth(id, out, result, 0);
+  }
+
+  bool Reader::ReadPayloadDepth(const std::uint32_t id, std::vector<std::uint8_t>* const out, PayloadStatus* const status, const int depth)
+  {
+    out->clear();
+    if (id == 0) {
+      status->available = true;
+      status->exact = true;
+      return true;
+    }
+    if (!HasBlob(id)) {
+      status->error = "payload #" + std::to_string(id) + " is not defined";
+      return false;
+    }
+    if (depth > 16) {
+      status->error = "payload #" + std::to_string(id) + " is composed too deeply";
+      return false;
+    }
+    PayloadEntry& entry = payloads_[id - 1];
+    status->kind = entry.kind;
+    switch (entry.kind) {
+      case PayloadKind::Embedded: {
+        out->resize(entry.key.size);
+        if (!Seek64(blobFile_, entry.dataOffset) ||
+            (entry.key.size != 0 && std::fread(out->data(), 1, entry.key.size, blobFile_) != entry.key.size)) {
+          out->clear();
+          status->error = "blob #" + std::to_string(id) + " cannot be read from the trace";
+          return false;
+        }
+        if (!entry.verified) {
+          const BlobKey key = HashBlob(out->data(), out->size());
+          if (!(key == entry.key)) {
+            out->clear();
+            status->error = "blob #" + std::to_string(id) + " does not match its hashes (the trace is damaged)";
+            return false;
+          }
+          entry.verified = true;
+        }
+        status->available = true;
+        status->exact = true;
+        return true;
       }
-      entry.verified = true;
+      case PayloadKind::Reference: {
+        const std::string where = entry.path + (entry.archive.empty() ? std::string() : " (from " + entry.archive + ")");
+        if (resolver_ == nullptr) {
+          status->error = where + ": no game data to read it from";
+          return false;
+        }
+        // One file, or the parts one after the other: each is read and checked on its own, so a
+        // message names the file that is missing or different.
+        std::vector<PayloadRefPart> whole;
+        if (entry.parts.empty()) {
+          whole.push_back(PayloadRefPart{entry.path, entry.archive, entry.key});
+        }
+        const std::vector<PayloadRefPart>& files = entry.parts.empty() ? whole : entry.parts;
+        out->clear();
+        out->reserve(entry.key.size);
+        std::vector<std::uint8_t> bytes;
+        for (const PayloadRefPart& file : files) {
+          const std::string name = file.path + (file.archive.empty() ? std::string() : " (from " + file.archive + ")");
+          std::string error;
+          if (!resolver_->ReadGameFile(file.path, &bytes, &error)) {
+            out->clear();
+            status->error = name + ": missing from the game data" + (error.empty() ? std::string() : " (" + error + ")");
+            return false;
+          }
+          if (bytes.size() != file.key.size) {
+            status->error = name + ": the game data's file has " + std::to_string(bytes.size()) + " bytes, the trace was recorded with " +
+                            std::to_string(file.key.size);
+            out->clear();
+            return false;
+          }
+          if (!entry.verified && !(HashBlob(bytes.data(), bytes.size()) == file.key)) {
+            status->error = name + ": the game data's file differs from the one the trace was recorded with";
+            out->clear();
+            return false;
+          }
+          out->insert(out->end(), bytes.begin(), bytes.end());
+        }
+        if (out->size() != entry.key.size) {
+          status->error = where + ": its parts have " + std::to_string(out->size()) + " bytes, the trace was recorded with " +
+                          std::to_string(entry.key.size);
+          out->clear();
+          return false;
+        }
+        if (!entry.verified) {
+          if (!(HashBlob(out->data(), out->size()) == entry.key)) {
+            status->error = where + ": the game data's file differs from the one the trace was recorded with";
+            out->clear();
+            return false;
+          }
+          entry.verified = true;
+        }
+        status->available = true;
+        status->exact = true;
+        return true;
+      }
+      case PayloadKind::Digest: {
+        const auto found = provided_.find(id);
+        if (found == provided_.end()) {
+          status->error = "payload #" + std::to_string(id) + " (" + DigestOriginName(entry.origin) +
+                          ") is not in the trace and the replay has not produced it";
+          return false;
+        }
+        *out = found->second;
+        status->available = true;
+        status->exact = HashBlob(out->data(), out->size()) == entry.key;
+        if (!status->exact) {
+          status->error = "payload #" + std::to_string(id) + " (" + DigestOriginName(entry.origin) + ") as this replay produced it differs from the recording";
+        }
+        return true;
+      }
+      case PayloadKind::Composed: {
+        std::vector<std::uint8_t> base;
+        bool exactParts = true;
+        std::string partError;
+        if (entry.base != 0) {
+          PayloadStatus part;
+          if (!ReadPayloadDepth(entry.base, &base, &part, depth + 1)) {
+            status->error = "payload #" + std::to_string(id) + ": its base: " + part.error;
+            return false;
+          }
+          exactParts = exactParts && part.exact;
+          if (!part.exact && partError.empty()) {
+            partError = part.error;
+          }
+        }
+        // The copy sources, each read once.
+        std::map<std::uint32_t, std::vector<std::uint8_t>> sources;
+        std::vector<const std::vector<std::uint8_t>*> copySources;
+        for (const PayloadCopy& copy : entry.copies) {
+          auto found = sources.find(copy.source);
+          if (found == sources.end()) {
+            std::vector<std::uint8_t> bytes;
+            PayloadStatus part;
+            if (!ReadPayloadDepth(copy.source, &bytes, &part, depth + 1)) {
+              status->error = "payload #" + std::to_string(id) + ": a part: " + part.error;
+              return false;
+            }
+            exactParts = exactParts && part.exact;
+            if (!part.exact && partError.empty()) {
+              partError = part.error;
+            }
+            found = sources.emplace(copy.source, std::move(bytes)).first;
+          }
+          copySources.push_back(&found->second);
+        }
+        std::string error;
+        if (!BuildComposition(entry.key.size, entry.base != 0 ? &base : nullptr, entry.copies, copySources, entry.literals, out, &error)) {
+          out->clear();
+          status->error = "payload #" + std::to_string(id) + ": " + error;
+          return false;
+        }
+        status->available = true;
+        status->exact = HashBlob(out->data(), out->size()) == entry.key;
+        if (!status->exact) {
+          status->error = "payload #" + std::to_string(id) + " built on this device differs from the recording" +
+                          (partError.empty() ? std::string() : ": " + partError);
+        }
+        (void)exactParts;
+        return true;
+      }
+    }
+    status->error = "payload #" + std::to_string(id) + " has an unknown kind";
+    return false;
+  }
+
+  bool BuildComposition(
+    const std::uint32_t size, const std::vector<std::uint8_t>* const base, const std::vector<PayloadCopy>& copies,
+    const std::vector<const std::vector<std::uint8_t>*>& copySources, const std::vector<PayloadLiteral>& literals,
+    std::vector<std::uint8_t>* const out, std::string* const error
+  )
+  {
+    auto fail = [&](const std::string& message) {
+      if (error != nullptr) {
+        *error = message;
+      }
+      return false;
+    };
+    if (base != nullptr) {
+      if (base->size() != size) {
+        return fail("the base has " + std::to_string(base->size()) + " bytes, not " + std::to_string(size));
+      }
+      *out = *base;
+    } else {
+      out->assign(size, 0);
+    }
+    if (copySources.size() != copies.size()) {
+      return fail("copy sources missing");
+    }
+    for (std::size_t index = 0; index < copies.size(); ++index) {
+      const PayloadCopy& copy = copies[index];
+      const std::vector<std::uint8_t>& source = *copySources[index];
+      if (copy.rows == 0 || copy.rowBytes == 0) {
+        continue;
+      }
+      const std::uint64_t lastSource = static_cast<std::uint64_t>(copy.sourceOffset) +
+                                       static_cast<std::uint64_t>(copy.rows - 1) * copy.sourcePitch + copy.rowBytes;
+      const std::uint64_t lastTarget = static_cast<std::uint64_t>(copy.offset) + static_cast<std::uint64_t>(copy.rows - 1) * copy.pitch +
+                                       copy.rowBytes;
+      if (lastSource > source.size() || lastTarget > size) {
+        return fail("copy " + std::to_string(index) + " reaches past its source or the payload");
+      }
+      for (std::uint32_t row = 0; row < copy.rows; ++row) {
+        std::memcpy(out->data() + copy.offset + static_cast<std::size_t>(row) * copy.pitch,
+                    source.data() + copy.sourceOffset + static_cast<std::size_t>(row) * copy.sourcePitch, copy.rowBytes);
+      }
+    }
+    for (std::size_t index = 0; index < literals.size(); ++index) {
+      const PayloadLiteral& literal = literals[index];
+      if (static_cast<std::uint64_t>(literal.offset) + literal.bytes.size() > size) {
+        return fail("literal " + std::to_string(index) + " reaches past the payload");
+      }
+      if (!literal.bytes.empty()) {
+        std::memcpy(out->data() + literal.offset, literal.bytes.data(), literal.bytes.size());
+      }
     }
     return true;
   }
@@ -910,7 +1420,9 @@ namespace galtrace
               break;
             case FieldType::U64:
               if (Need(8)) {
-                out += std::to_string(LoadU64(payload.data() + at));
+                // Content hashes in hex, as Blob records print theirs; counts in decimal.
+                const bool hash = std::strncmp(field.name, "hash", 4) == 0;
+                out += hash ? Hex64(LoadU64(payload.data() + at)) : std::to_string(LoadU64(payload.data() + at));
                 at += 8;
               }
               break;
@@ -1260,11 +1772,12 @@ namespace galtrace
         return Fail(record, "short blob record");
       }
       const std::uint32_t id = LoadU32(record.payload.data());
-      if (id != blobsSeen_ + 1) {
+      if (id != payloadsSeen_ + 1) {
         return Fail(record, "blob #" + std::to_string(id) + " out of order");
       }
+      ++payloadsSeen_;
       ++blobsSeen_;
-      const BlobEntry* const entry = reader.GetBlobEntry(id);
+      const PayloadEntry* const entry = reader.GetBlobEntry(id);
       if (entry == nullptr) {
         return Fail(record, "blob #" + std::to_string(id) + " not indexed");
       }
@@ -1274,6 +1787,9 @@ namespace galtrace
         return Fail(record, "blob #" + std::to_string(id) + " does not match its hashes");
       }
       return true;
+    }
+    if (IsPayloadDefinition(record.op)) {
+      return CheckPayloadDefinition(record, reader);
     }
 
     std::size_t at = 0;
@@ -1304,6 +1820,117 @@ namespace galtrace
         endPresents_ = LoadU32(record.payload.data() + 20);
         break;
       default:
+        break;
+    }
+    return true;
+  }
+
+  bool Validator::CheckPayloadDefinition(const Record& record, Reader& reader)
+  {
+    std::size_t at = 0;
+    if (!Walk(record.desc->fields, record.desc->fieldCount, record, &at, reader)) {
+      return false;
+    }
+    if (at != record.payload.size()) {
+      return Fail(record, std::to_string(record.payload.size() - at) + " bytes after the last field");
+    }
+    const std::uint32_t id = LoadU32(record.payload.data());
+    if (id != payloadsSeen_ + 1) {
+      return Fail(record, "payload #" + std::to_string(id) + " out of order");
+    }
+    ++payloadsSeen_;
+    const PayloadEntry* const entry = reader.GetPayload(id);
+    if (entry == nullptr) {
+      return Fail(record, "payload #" + std::to_string(id) + " not indexed");
+    }
+    switch (entry->kind) {
+      case PayloadKind::Reference: {
+        ++references_;
+        referenceBytes_ += entry->key.size;
+        auto badPath = [](const std::string& path) {
+          return path.empty() || path[0] != '/' || path.find('\\') != std::string::npos || path.find("/../") != std::string::npos ||
+                 path.find("//") != std::string::npos || (path.size() >= 3 && path.compare(path.size() - 3, 3, "/..") == 0);
+        };
+        if (badPath(entry->path)) {
+          return Fail(record, "payload #" + std::to_string(id) + " has the VFS path \"" + entry->path + "\" (absolute, '/', no '..')");
+        }
+        if (!entry->parts.empty()) {
+          std::uint64_t total = 0;
+          bool named = false;
+          for (const PayloadRefPart& part : entry->parts) {
+            if (badPath(part.path)) {
+              return Fail(record, "payload #" + std::to_string(id) + " has a part with the VFS path \"" + part.path + "\"");
+            }
+            total += part.key.size;
+            named = named || part.path == entry->path;
+          }
+          if (total != entry->key.size) {
+            return Fail(record, "payload #" + std::to_string(id) + ": its parts have " + std::to_string(total) + " bytes, not " +
+                                  std::to_string(entry->key.size));
+          }
+          if (!named) {
+            return Fail(record, "payload #" + std::to_string(id) + ": " + entry->path + " is not one of its parts");
+          }
+        }
+        if (resolveReferences_ && reader.Resolver() != nullptr) {
+          std::vector<std::uint8_t> bytes;
+          PayloadStatus status;
+          if (!reader.ReadPayload(id, &bytes, &status) || !status.exact) {
+            return Fail(record, status.error);
+          }
+          ++referencesResolved_;
+        }
+        break;
+      }
+      case PayloadKind::Digest:
+        ++digests_;
+        digestBytes_ += entry->key.size;
+        if (entry->origin < 1 || entry->origin > 4) {
+          return Fail(record, "payload #" + std::to_string(id) + " has the digest origin " + std::to_string(entry->origin));
+        }
+        break;
+      case PayloadKind::Composed: {
+        ++compositions_;
+        compositionBytes_ += entry->key.size;
+        if (entry->base != 0) {
+          const PayloadEntry* const base = reader.GetPayload(entry->base);
+          if (base == nullptr || base->key.size != entry->key.size) {
+            return Fail(record, "payload #" + std::to_string(id) + ": the base #" + std::to_string(entry->base) + " is not of its size");
+          }
+        }
+        for (std::size_t index = 0; index < entry->copies.size(); ++index) {
+          const PayloadCopy& copy = entry->copies[index];
+          const PayloadEntry* const source = reader.GetPayload(copy.source);
+          if (source == nullptr) {
+            return Fail(record, "copy " + std::to_string(index) + " names an undefined payload");
+          }
+          if (copy.rows == 0 || copy.rowBytes == 0) {
+            continue;
+          }
+          const std::uint64_t lastSource =
+            static_cast<std::uint64_t>(copy.sourceOffset) + static_cast<std::uint64_t>(copy.rows - 1) * copy.sourcePitch + copy.rowBytes;
+          const std::uint64_t lastTarget =
+            static_cast<std::uint64_t>(copy.offset) + static_cast<std::uint64_t>(copy.rows - 1) * copy.pitch + copy.rowBytes;
+          if (lastSource > source->key.size || lastTarget > entry->key.size) {
+            return Fail(record, "copy " + std::to_string(index) + " reaches past its source or the payload");
+          }
+        }
+        for (std::size_t index = 0; index < entry->literals.size(); ++index) {
+          const PayloadLiteral& literal = entry->literals[index];
+          literalBytes_ += literal.bytes.size();
+          if (static_cast<std::uint64_t>(literal.offset) + literal.bytes.size() > entry->key.size) {
+            return Fail(record, "literal " + std::to_string(index) + " reaches past the payload");
+          }
+        }
+        // When every part is in the trace (or resolvable), the built bytes must equal the hashes.
+        std::vector<std::uint8_t> bytes;
+        PayloadStatus status;
+        if (reader.ReadPayload(id, &bytes, &status) && !status.exact) {
+          return Fail(record, status.error);
+        }
+        break;
+      }
+      case PayloadKind::Embedded:
         break;
     }
     return true;

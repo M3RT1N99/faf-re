@@ -25,9 +25,12 @@ Steps:
   3. link     aapt2 compile + link (manifest, resources, version, R.java).
   4. java     javac (Java 8 bytecode against android.jar) + d8.
   5. package  classes.dex and the assets (gamedata.json, build.json, the
-              replay reference table port\android\assets\replay_refs.json and
-              license notices when present) added STORED; the lib\<abi>\*.so
-              entries DEFLATED, because the manifest sets extractNativeLibs=true
+              replay reference table port\android\assets\replay_refs.json,
+              license notices when present, and the menu trace's description
+              galplay\menu.json) added STORED; the menu trace
+              assets\galplay\menu.galtrace (release 0.5.0, -MenuTrace) and the
+              lib\<abi>\*.so entries DEFLATED, because the manifest sets
+              extractNativeLibs=true
               (the launcher execs the runner from nativeLibraryDir, so it must be
               a file on disk); zipalign with 16 KB pages, apksigner with one
               stable key.
@@ -93,6 +96,25 @@ as the device probe instead of the one in -RunnerDirectory or the runner build.
 Leaves the device probe out of the APK (the launcher then disables its button).
 A Release build refuses to go without it otherwise.
 
+.PARAMETER MenuTrace
+The galtrace of FAF's main menu the launcher's "Menu replay" plays (release
+0.5.0, port/graphics/trace). It must be a format version 2 trace whose game-file
+payloads are references (galtrace-refs): the APK carries no game data. Default:
+the one *.galtrace in buildstage\traces (the one whose name starts with "menu"
+when there are several). Checked and described by an embedded helper
+(galtrace_info.py: header, record scan, sha256) into assets/galplay/menu.json:
+refused when it is cut off, version 1, without PayloadRef records, or when an
+embedded payload looks like a game file (a DDS/PNG/JPEG image or an effect
+source). A Release build also refuses a trace without the PC's Diligent-Vulkan
+hash of every readback frame (reference_frames.diligent:vk), with a home
+directory in its header metadata, or a libfaf_android.so without the menu
+replay mode (the Intent extra names of port/android/src/GalPlay.h); a Debug
+build only warns about those.
+
+.PARAMETER SkipMenuTrace
+Leaves the menu trace out (the launcher then disables "Menu replay"). A Release
+build with native code refuses to go without a trace otherwise.
+
 .PARAMETER NoReleaseStage
 Does not copy the APK, the unstripped libraries and build-<abi>.json into
 buildstage\releases\android-v<versionName>\ (Release builds do by default).
@@ -141,6 +163,8 @@ param(
     [switch]$SkipOptimizedRunner,
     [string]$DeviceProbe,
     [switch]$SkipDeviceProbe,
+    [string]$MenuTrace,
+    [switch]$SkipMenuTrace,
     [switch]$NoReleaseStage,
     [switch]$AllowUnreferencedRunner,
     [switch]$Clean,
@@ -211,6 +235,11 @@ $licenseNotices = [ordered]@{
     # Wild Magic 3.8 Foundation, linked into libfafengine.so; its license is a PDF, this is its text.
     "assets/licenses/WildMagic3.txt" = (Join-Path $repoRoot "port\third_party\licenses\WildMagic3-License.txt")
 }
+
+# Release 0.5.0: the menu trace (port/graphics/trace, format version 2 with references) and its description.
+$menuTraceEntry = "assets/galplay/menu.galtrace"
+$menuTraceInfoEntry = "assets/galplay/menu.json"
+$menuTraceDirectory = Join-Path $repoRoot "buildstage\traces"
 
 # The headless replay runner (port/engine/runner): APK entry name -> build_runner.py output name.
 # The executables must be called lib*.so: the installer only extracts lib/<abi>/lib*.so entries.
@@ -675,6 +704,225 @@ if __name__ == "__main__":
         check(sys.argv[2], sys.argv[3:], modes[sys.argv[1]])
 '@
 
+# Reads a galtrace (port/graphics/trace/format, GalTraceFormat.h) without the C++ tools: the header, every
+# record's op and size, the version 2 payload definitions; writes the description the launcher reads.
+$galtraceInfoPy = @'
+"""Checks a galtrace for the APK and writes its description (assets/galplay/menu.json).
+
+Written by scripts/port/build_android.ps1 on every build; edit it there.
+
+usage: galtrace_info.py <trace> <menu.json> [--release] [--native <libfaf_android.so>]...
+
+Exit 0: a complete trace (header, records up to the End record) of format version 2 whose game-file
+payloads are references (PayloadRef records) and whose embedded payloads do not look like game files
+(DDS/PNG/JPEG images, effect sources); 1 otherwise, with the reason. With --release also: the trace
+carries the PC's Diligent-Vulkan reference hash of every readback frame, its header names no user's
+home directory, and every --native library has the menu replay mode (the Intent extra names of
+port/android/src/GalPlay.h), so a tap on Menu replay cannot start the game instead. Without --release
+those are warnings.
+
+The description holds the size, sha256, header metadata (without the recorder's command line), and per
+payload kind the number and bytes of the definitions, with the archives the references name.
+"""
+import hashlib
+import json
+import os
+import re
+import struct
+import sys
+
+OP_BLOB, OP_END, OP_REF, OP_DIGEST, OP_COMPOSE = 0x0001, 0x0002, 0x0008, 0x0009, 0x000A
+REFERENCE_KEY = "reference_frames.diligent:vk"
+# The native side's contract (GalPlay.h): a libfaf_android.so without these strings ignores the mode.
+NATIVE_MARKERS = (b"menu-replay", b"menuReplay.trace", b"onMenuReplayFinished")
+HOME = re.compile(r"[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s\"']+|/home/[^/\s\"']+|/Users/[^/\s\"']+")
+
+
+def read_str(data, at):
+    (length,) = struct.unpack_from("<I", data, at)
+    return data[at + 4:at + 4 + length].decode("utf-8", "replace"), at + 4 + length
+
+
+def looks_like_game_file(payload):
+    """'dds', 'png', 'jpeg' or 'effect source' when an embedded payload looks like a file of the game."""
+    head = bytes(payload[:4])
+    if head == b"DDS ":
+        return "dds"
+    if head == b"\x89PNG":
+        return "png"
+    if head[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if len(payload) >= 64:
+        sample = bytes(payload[:4096])
+        text = sum(1 for b in sample if b in (9, 10, 13) or 32 <= b < 127)
+        if text >= len(sample) * 0.97:
+            whole = bytes(payload)  # a memoryview's "in" looks for one element, not a subsequence
+            if b"technique" in whole or b"sampler" in whole:
+                return "effect source"
+    return None
+
+
+def main():
+    args = sys.argv[1:]
+    release = "--release" in args
+    args = [a for a in args if a != "--release"]
+    natives = []
+    while "--native" in args:
+        i = args.index("--native")
+        if i + 1 >= len(args):
+            sys.exit(__doc__)
+        natives.append(args[i + 1])
+        del args[i:i + 2]
+    if len(args) != 2:
+        sys.exit(__doc__)
+    path, out = args
+    data = open(path, "rb").read()
+    view = memoryview(data)
+    problems = []
+    warnings = []
+    if data[:8] != b"GALTRACE":
+        sys.exit(f"{path}: not a galtrace file")
+    version, count = struct.unpack_from("<II", data, 8)
+    at = 16
+    metadata = {}
+    for _ in range(count):
+        key, at = read_str(data, at)
+        value, at = read_str(data, at)
+        metadata[key] = value
+    records = 0
+    ended = False
+    blobs = blob_bytes = refs = ref_bytes = digests = digest_bytes = composes = compose_bytes = 0
+    largest_blob = 0
+    archives = {}
+    suspects = []
+    while at + 8 <= len(data):
+        op, _flags, length = struct.unpack_from("<HHI", data, at)
+        body = at + 8
+        if body + length > len(data):
+            problems.append(f"record {records} (op 0x{op:04x}) runs past the end of the file")
+            break
+        records += 1
+        if op == OP_BLOB:
+            blobs += 1
+            payload_id = struct.unpack_from("<I", data, body)[0]
+            size = max(0, length - 24)
+            blob_bytes += size
+            largest_blob = max(largest_blob, size)
+            kind = looks_like_game_file(view[body + 24:body + 24 + size])
+            if kind:
+                suspects.append({"payload": payload_id, "kind": kind, "bytes": size})
+        elif op == OP_REF:
+            refs += 1
+            _payload, _a, _b, size = struct.unpack_from("<IQQI", data, body)
+            vfs, pos = read_str(data, body + 24)
+            archive, pos = read_str(data, pos)
+            ref_bytes += size
+            name = os.path.basename(archive.replace("\\", "/").rstrip("/")).lower() or "(none)"
+            entry = archives.setdefault(name, {"files": 0, "bytes": 0})
+            entry["files"] += 1
+            entry["bytes"] += size
+        elif op == OP_DIGEST:
+            digests += 1
+            digest_bytes += struct.unpack_from("<IQQI", data, body)[3]
+        elif op == OP_COMPOSE:
+            composes += 1
+            compose_bytes += struct.unpack_from("<IQQI", data, body)[3]
+        elif op == OP_END:
+            ended = True
+            at = body + length
+            break
+        at = body + length
+    if not ended:
+        problems.append("no End record: the trace is cut off")
+    elif at != len(data):
+        problems.append(f"{len(data) - at} bytes after the End record")
+    if version < 2:
+        problems.append(f"format version {version}: every payload is embedded, game files included "
+                        "(make a version 2 trace with galtrace-refs)")
+    elif refs == 0:
+        problems.append("version 2 but no PayloadRef record: the game files would be embedded")
+    if suspects:
+        kinds = {}
+        for s in suspects:
+            kinds[s["kind"]] = kinds.get(s["kind"], 0) + 1
+        problems.append(f"{len(suspects)} embedded payloads look like game files ("
+                        + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
+                        + "; first: payload " + ", ".join(str(s["payload"]) for s in suspects[:8])
+                        + "): they must be references (galtrace-refs)")
+
+    # The PC's Diligent-Vulkan frame hashes the phone compares with, one per readback frame.
+    references = {k: v for k, v in metadata.items() if k.startswith("reference_frames.")}
+    frames = [int(f) for f in re.findall(r"\d+", metadata.get("harness_frames", ""))]
+    vk = dict((int(f), h.lower()) for f, h in re.findall(r"(\d+)\s*[:=]\s*([0-9a-fA-F]{16})", metadata.get(REFERENCE_KEY, "")))
+    without = [f for f in frames if f not in vk]
+    if not frames:
+        (problems if release else warnings).append("the header has no harness_frames (the readback frames)")
+    if not vk:
+        (problems if release else warnings).append(f"the header has no {REFERENCE_KEY}: the app can only say NO REFERENCE")
+    elif without:
+        (problems if release else warnings).append(f"{REFERENCE_KEY} has no hash for frames {without}")
+    homes = sorted({m for v in metadata.values() for m in HOME.findall(v)})
+    if homes:
+        (problems if release else warnings).append(
+            "the header metadata names a home directory (" + ", ".join(homes) + "; keys "
+            + ", ".join(k for k, v in metadata.items() if HOME.search(v)) + "): drop or rewrite it before a release")
+
+    native = {}
+    for lib in natives:
+        blob = open(lib, "rb").read()
+        missing = [m.decode() for m in NATIVE_MARKERS if m not in blob]
+        native[os.path.basename(lib)] = {"menu_replay_mode": not missing, "missing": missing}
+        if missing:
+            (problems if release else warnings).append(
+                f"{lib} has no menu replay mode (no {', '.join(missing)}): GameActivity would start the game instead")
+
+    info = {
+        "schema": 1,
+        "asset": "galplay/menu.galtrace",
+        "name": os.path.basename(path),
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "version": version,
+        "metadata": {k: v for k, v in metadata.items() if k != "command_line"},
+        "records": records,
+        "payloads": {
+            "embedded": {"count": blobs, "bytes": blob_bytes, "largest": largest_blob},
+            "references": {"count": refs, "bytes": ref_bytes, "archives": archives},
+            "digests": {"count": digests, "bytes": digest_bytes},
+            "compositions": {"count": composes, "bytes": compose_bytes},
+        },
+        "suspect_game_files": suspects[:64],
+        "archives": sorted(k for k in archives if k != "(none)"),
+        "readback_frames": frames,
+        "reference_frames": references,
+        "native": native,
+        "warnings": warnings,
+        "problems": problems,
+    }
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(info, f, indent=1)
+        f.write("\n")
+    print(f"trace {os.path.basename(path)}: v{version}, {len(data):,} bytes, sha256 {info['sha256']}, {records:,} records")
+    print(f"  embedded {blobs} payloads ({blob_bytes:,} bytes, largest {largest_blob:,}), references {refs} ({ref_bytes:,} bytes "
+          f"of game files), digests {digests}, compositions {composes} ({compose_bytes:,} bytes built)")
+    print("  archives " + (", ".join(f"{k} ({v['files']} files)" for k, v in sorted(archives.items())) or "none"))
+    print("  reference frames " + (", ".join(f"{k}: {len(re.findall(r'[0-9a-fA-F]{16}', v))}" for k, v in references.items()) or "NONE"))
+    print("  harness_frames " + metadata.get("harness_frames", "(none)") + ", frame_rate " + metadata.get("frame_rate", "(none)")
+          + ", presents " + metadata.get("presents", "(none)"))
+    for lib, state in native.items():
+        print(f"  native {lib}: " + ("menu replay mode present" if state["menu_replay_mode"] else "NO menu replay mode"))
+    for warning in warnings:
+        print("WARNING: " + warning)
+    if problems:
+        for problem in problems:
+            print("PROBLEM: " + problem)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+'@
+
 # Reads an ELF file with llvm-readelf and returns what the checks need.
 function Get-ElfFacts([string]$Path) {
     $header = Invoke-Tool $llvmReadelf @("--file-header", $Path) -Capture -Quiet
@@ -860,6 +1108,30 @@ if ($includeRunner) {
     }
 }
 
+# The menu trace (release 0.5.0): -MenuTrace, else the one in buildstage\traces (menu*.galtrace when there
+# are several). Debug builds go without one when there is none; a Release build refuses.
+if ($MenuTrace -and $SkipMenuTrace) { throw "-MenuTrace and -SkipMenuTrace contradict each other." }
+$menuTraceFile = $null
+if (-not $SkipMenuTrace) {
+    if ($MenuTrace) {
+        $menuTraceFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($MenuTrace)
+        if (-not (Test-Path -LiteralPath $menuTraceFile -PathType Leaf)) { throw "-MenuTrace $menuTraceFile does not exist." }
+    } else {
+        $traceCandidates = @(Get-ChildItem -LiteralPath $menuTraceDirectory -Filter "*.galtrace" -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -eq ".galtrace" })
+        if ($traceCandidates.Count -gt 1) { $traceCandidates = @($traceCandidates | Where-Object { $_.Name -like "menu*" }) }
+        if ($traceCandidates.Count -eq 1) {
+            $menuTraceFile = $traceCandidates[0].FullName
+        } elseif ($traceCandidates.Count -gt 1) {
+            throw "$menuTraceDirectory has several menu*.galtrace files ($(($traceCandidates | ForEach-Object { $_.Name }) -join ', ')); choose one with -MenuTrace."
+        } elseif (-not $isDebug -and -not $SkipNative) {
+            throw "A Release build packages the menu trace (the launcher's Menu replay): there is none in $menuTraceDirectory. Pass -MenuTrace <file> (a format version 2 trace with game-file references, port/graphics/trace), or -SkipMenuTrace."
+        } else {
+            Write-Host "  no menu trace in $($menuTraceDirectory): the menu replay is left out" -ForegroundColor Yellow
+        }
+    }
+}
+
 $releaseDirectory = Join-Path $repoRoot "buildstage\releases\android-v$versionName"
 $stageRelease = -not $SkipNative -and -not $isDebug -and -not $NoReleaseStage
 
@@ -931,6 +1203,7 @@ if ($includeRunner) {
 }
 Write-Host "  libraries    $(if ($extractNativeLibs) { 'deflated, extracted at install (extractNativeLibs=true)' } else { 'stored, mapped from the APK (extractNativeLibs=false)' })"
 Write-Host "  refs         $(if (Test-Path -LiteralPath $replayRefsFile) { $replayRefsFile } else { 'none (port\android\assets\replay_refs.json not written yet)' })"
+Write-Host "  menu trace   $(if ($menuTraceFile) { "$menuTraceFile ($('{0:N1}' -f ((Get-Item -LiteralPath $menuTraceFile).Length / 1MB)) MB)" } else { 'left out' })"
 Write-Host "  keystore     $keystorePath$(if (-not (Test-Path -LiteralPath $keystorePath)) { ' (will be created)' })"
 if ($DryRun) { Write-Host "Dry run: commands are printed, nothing is executed or written." -ForegroundColor Yellow }
 
@@ -1243,6 +1516,37 @@ try {
     } elseif ($includeRunner) {
         Write-Host "  no replay reference table yet ($replayRefsFile): the replay test shows no reference chain" -ForegroundColor Yellow
     }
+    # The menu trace: checked (a complete version 2 trace with game-file references, so no game data goes into
+    # the APK) and described in menu.json (stored); the trace itself deflated.
+    $deflatedAssets = [ordered]@{}
+    $menuTraceInfo = $null
+    $menuTraceCompressed = $null
+    if ($menuTraceFile) {
+        $galtraceInfoScript = Join-Path $apkBuildDirectory "galtrace_info.py"
+        $menuTraceInfoFile = Join-Path $apkBuildDirectory "menu.json"
+        if (-not $DryRun) {
+            Write-Utf8File $galtraceInfoScript $galtraceInfoPy
+            Remove-PathIfPresent $menuTraceInfoFile
+        }
+        # A Release build also needs the PC's Vulkan reference hashes, a header without home directories, and a
+        # native library that has the menu replay mode (else GameActivity would start the game instead).
+        $galtraceInfoArguments = @($galtraceInfoScript, $menuTraceFile, $menuTraceInfoFile)
+        if (-not $isDebug) { $galtraceInfoArguments += "--release" }
+        if (-not $SkipNative) { $galtraceInfoArguments += @("--native", $stagedLibrary) }
+        Invoke-Tool $pythonPath $galtraceInfoArguments `
+            -FailureMessage "The menu trace $menuTraceFile cannot go into the APK" | Out-Null
+        $storedEntries[$menuTraceInfoEntry] = $menuTraceInfoFile
+        $deflatedAssets[$menuTraceEntry] = $menuTraceFile
+        if (-not $DryRun) {
+            $menuTraceInfo = Get-Content -LiteralPath $menuTraceInfoFile -Raw | ConvertFrom-Json
+            $buildInfo["menuTrace"] = [ordered]@{
+                name = $menuTraceInfo.name; size = $menuTraceInfo.size; sha256 = $menuTraceInfo.sha256
+                version = $menuTraceInfo.version; archives = @($menuTraceInfo.archives)
+                readbackFrames = @($menuTraceInfo.readback_frames)
+            }
+            Write-Utf8File $buildInfoFile (($buildInfo | ConvertTo-Json -Depth 6) + "`n")
+        }
+    }
     $missingNotices = @()
     foreach ($notice in $licenseNotices.Keys) {
         if (Test-Path -LiteralPath $licenseNotices[$notice]) {
@@ -1270,6 +1574,10 @@ try {
     if ($extractNativeLibs -and $libraryEntries.Count -gt 0) {
         $deflateArguments = @($helperScript, "add-deflated", $unsignedApk) + @($libraryEntries.Keys | ForEach-Object { "$_=$($libraryEntries[$_])" })
         Invoke-Tool $pythonPath $deflateArguments -FailureMessage "Adding the libraries to the APK failed" | Out-Null
+    }
+    if ($deflatedAssets.Count -gt 0) {
+        $deflateArguments = @($helperScript, "add-deflated", $unsignedApk) + @($deflatedAssets.Keys | ForEach-Object { "$_=$($deflatedAssets[$_])" })
+        Invoke-Tool $pythonPath $deflateArguments -FailureMessage "Adding the menu trace to the APK failed" | Out-Null
     }
 
     # -P 16: page-align stored libraries for 16 KB page devices (Android 15+);
@@ -1302,8 +1610,10 @@ try {
     $badging = Invoke-Tool $aapt2 @("dump", "badging", $signedApk) -Capture -FailureMessage "aapt2 dump badging failed"
     $storedCheck = Invoke-Tool $pythonPath (@($helperScript, "check-stored", $signedApk, "resources.arsc") + @($storedEntries.Keys)) -Capture -FailureMessage "Uncompressed entry check failed"
     $deflatedCheck = @()
-    if ($extractNativeLibs -and $libraryEntries.Count -gt 0) {
-        $deflatedCheck = Invoke-Tool $pythonPath (@($helperScript, "check-deflated", $signedApk) + @($libraryEntries.Keys)) -Capture -FailureMessage "Compressed library check failed"
+    $deflatedNames = @($deflatedAssets.Keys)
+    if ($extractNativeLibs) { $deflatedNames += @($libraryEntries.Keys) }
+    if ($deflatedNames.Count -gt 0) {
+        $deflatedCheck = Invoke-Tool $pythonPath (@($helperScript, "check-deflated", $signedApk) + $deflatedNames) -Capture -FailureMessage "Compressed entry check failed"
     }
     $manifestTree = Invoke-Tool $aapt2 @("dump", "xmltree", "--file", "AndroidManifest.xml", $signedApk) -Capture -FailureMessage "aapt2 dump xmltree failed"
 
@@ -1314,6 +1624,9 @@ try {
         if (-not ($alignOutput -match 'Verification succes')) { throw "zipalign -c did not confirm the alignment:`n$($alignOutput -join "`n")" }
         $storedCheck | ForEach-Object { Write-Host "  $_" }
         $deflatedCheck | ForEach-Object { Write-Host "  $_" }
+        $menuTraceCompressed = @($deflatedCheck | ForEach-Object {
+            if ($_ -match "^deflated: $([regex]::Escape($menuTraceEntry)) \(\d+ bytes, (\d+) compressed\)") { [int64]$Matches[1] } }) |
+            Select-Object -First 1
         # The packaging above follows the source manifest; the compiled one must agree.
         $extractLine = @($manifestTree | Where-Object { $_ -match 'extractNativeLibs\(0x[0-9a-f]+\)=' }) | Select-Object -First 1
         $compiledExtract = if ($extractLine -match '=(true|false|0xffffffff|0x0)\b') { $Matches[1] -eq "true" -or $Matches[1] -eq "0xffffffff" } else { $null }
@@ -1400,6 +1713,14 @@ Write-Host "Cert:     SHA-256 $certificateDigest"
 Write-Host "APK hash: SHA-256 $(Get-Sha256 $finalApk)"
 Write-Host "Key:      $keystorePath"
 if (-not $SkipNative) { Write-Host "Symbols:  $symbolsDirectory" }
+if ($menuTraceInfo) {
+    Write-Host ("Trace:    {0} v{1}, {2:N1} MB ({3} in the APK), sha256 {4}; references into {5}" -f $menuTraceInfo.name, $menuTraceInfo.version,
+        ($menuTraceInfo.size / 1MB), $(if ($menuTraceCompressed) { "{0:N1} MB" -f ($menuTraceCompressed / 1MB) } else { "?" }),
+        $menuTraceInfo.sha256, $(if (@($menuTraceInfo.archives).Count -gt 0) { @($menuTraceInfo.archives) -join ', ' } else { 'no archive' }))
+    foreach ($warning in @($menuTraceInfo.warnings)) { if ($warning) { Write-Host "          warning: $warning" -ForegroundColor Yellow } }
+} else {
+    Write-Host "Trace:    none (Menu replay disabled)"
+}
 foreach ($library in $buildInfo.libraries.Keys) {
     Write-Host ("Build id: {0,-22} {1}" -f $library, $buildInfo.libraries[$library].buildId)
 }

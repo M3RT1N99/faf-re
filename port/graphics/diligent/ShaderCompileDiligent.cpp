@@ -3,12 +3,15 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <mutex>
 
 #include "Common/interface/RefCntAutoPtr.hpp"
+#include "Graphics/GraphicsEngine/interface/APIInfo.h"
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
 #include "Graphics/GraphicsEngine/interface/Shader.h"
 #include "Primitives/interface/DataBlob.h"
@@ -44,7 +47,9 @@ namespace Diligent
 } // namespace Diligent
 
 // The libraries the Vulkan and GL engines and this route pull in (Debug names: the backend is Debug
-// only, port_graphics.props). The props put the install's lib directory on the library path.
+// only, port_graphics.props). The props put the install's lib directory on the library path. (Windows
+// only: clang turns these into ELF dependent-library entries; the Android build links its own.)
+#if defined(_WIN32)
 #if defined(_DEBUG)
 #    pragma comment(lib, "glslangd.lib")
 #    pragma comment(lib, "spirv-cross-cored.lib")
@@ -56,6 +61,7 @@ namespace Diligent
 #endif
 #pragma comment(lib, "SPIRV-Tools-opt.lib")
 #pragma comment(lib, "SPIRV-Tools.lib")
+#endif
 
 namespace dg = Diligent;
 namespace sc = diligent_spirv_cross;
@@ -67,6 +73,53 @@ namespace gpg::gal::diligent
         std::atomic<std::uint64_t> gGlCompiled{0};
         std::atomic<std::uint64_t> gGlFailed{0};
         std::once_flag gGlslangOnce;
+
+        // M7a1: the shader cache (ShaderBytecodeCache) and the compile counters.
+        std::mutex gCompileLock;
+        ShaderBytecodeCache* gBytecodeCache = nullptr;
+        ShaderCompileCounts gCompileCounts;
+
+        double MillisecondsSince(const std::chrono::steady_clock::time_point start)
+        {
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        }
+
+        /**
+         * The cache key of a Vulkan shader: two 64-bit hashes (FNV-1a and a multiply-xorshift mix) over
+         * every input that decides the SPIR-V, the compiler build first.
+         */
+        std::string BytecodeKey(const HlslShaderSource& source, const std::size_t length)
+        {
+            std::uint64_t a = 0xCBF29CE484222325ULL;
+            std::uint64_t b = 0x9E3779B97F4A7C15ULL;
+            const auto add = [&](const void* const data, const std::size_t size) {
+                const auto* bytes = static_cast<const std::uint8_t*>(data);
+                for (std::size_t index = 0; index < size; ++index) {
+                    a = (a ^ bytes[index]) * 0x100000001B3ULL;
+                    b = (b ^ bytes[index]) * 0xFF51AFD7ED558CCDULL;
+                    b ^= b >> 29U;
+                }
+                const std::uint64_t separator = size;
+                a = (a ^ separator) * 0x100000001B3ULL;
+                b = (b + separator) * 0xC4CEB9FE1A85EC53ULL;
+            };
+            const auto text = [&](const char* const value) { add(value != nullptr ? value : "", value != nullptr ? std::strlen(value) : 0U); };
+            // The compiler build: Diligent's API version at the pin (1436d1fe, which pins glslang), and
+            // this route's own revision.
+            static const std::string kCompiler = "galplay-vk-spirv-1 diligent " + std::to_string(DILIGENT_API_VERSION) + " 1436d1fe";
+            add(kCompiler.data(), kCompiler.size());
+            const std::uint32_t flags[3] = {source.shaderType, source.shaderModel5 ? 1U : 0U, source.combinedTextureSamplers ? 1U : 0U};
+            add(flags, sizeof(flags));
+            text(source.entryPoint);
+            for (const auto& [name, definition] : source.macros) {
+                add(name.data(), name.size());
+                add(definition.data(), definition.size());
+            }
+            add(source.source, length);
+            char key[40];
+            std::snprintf(key, sizeof(key), "%016llx%016llx", static_cast<unsigned long long>(a), static_cast<unsigned long long>(b));
+            return key;
+        }
 
         std::string BlobText(dg::IDataBlob* const blob)
         {
@@ -252,6 +305,37 @@ namespace gpg::gal::diligent
             return ok;
         }
 
+        // M7a1: the Vulkan route takes the SPIR-V from the cache when it has it.
+        ShaderBytecodeCache* cache = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(gCompileLock);
+            cache = api == GraphicsApi::Vulkan ? gBytecodeCache : nullptr;
+        }
+        std::string cacheKey;
+        if (cache != nullptr) {
+            const auto start = std::chrono::steady_clock::now();
+            cacheKey = BytecodeKey(source, source.length != 0U ? source.length : std::strlen(source.source));
+            std::vector<std::uint8_t> bytecode;
+            if (cache->Load(cacheKey, &bytecode) && !bytecode.empty() && bytecode.size() % 4U == 0U) {
+                dg::ShaderCreateInfo cached;
+                cached.ByteCode = bytecode.data();
+                cached.ByteCodeSize = bytecode.size();
+                cached.EntryPoint = source.entryPoint;
+                cached.Desc.ShaderType = static_cast<dg::SHADER_TYPE>(source.shaderType);
+                cached.Desc.Name = source.name;
+                cached.Desc.UseCombinedTextureSamplers = source.combinedTextureSamplers ? dg::True : dg::False;
+                device->CreateShader(cached, shader, nullptr);
+                if (*shader != nullptr) {
+                    std::lock_guard<std::mutex> lock(gCompileLock);
+                    ++gCompileCounts.cacheHits;
+                    gCompileCounts.cacheMilliseconds += MillisecondsSince(start);
+                    return true;
+                }
+            }
+            std::lock_guard<std::mutex> lock(gCompileLock);
+            ++gCompileCounts.cacheMisses;
+        }
+
         // D3D11 (FXC) and Vulkan (glslang inside Diligent): the HLSL as it is.
         dg::ShaderCreateInfo create;
         create.Source = source.source;
@@ -267,12 +351,43 @@ namespace gpg::gal::diligent
         std::vector<dg::ShaderMacro> macros;
         FillMacros(source, &macros, &create);
         dg::RefCntAutoPtr<dg::IDataBlob> output;
+        const auto start = std::chrono::steady_clock::now();
         device->CreateShader(create, shader, &output);
+        const double milliseconds = MillisecondsSince(start);
         if (*shader == nullptr) {
             info->messages = BlobText(output);
+            std::lock_guard<std::mutex> lock(gCompileLock);
+            ++gCompileCounts.failed;
             return false;
         }
+        {
+            std::lock_guard<std::mutex> lock(gCompileLock);
+            ++gCompileCounts.compiled;
+            gCompileCounts.compileMilliseconds += milliseconds;
+        }
+        if (cache != nullptr) {
+            const void* bytecode = nullptr;
+            dg::Uint64 size = 0;
+            (*shader)->GetBytecode(&bytecode, size);
+            if (bytecode != nullptr && size != 0U) {
+                cache->Store(cacheKey, bytecode, static_cast<std::size_t>(size));
+                std::lock_guard<std::mutex> lock(gCompileLock);
+                ++gCompileCounts.cacheStores;
+            }
+        }
         return true;
+    }
+
+    void SetShaderBytecodeCache(ShaderBytecodeCache* const cache)
+    {
+        std::lock_guard<std::mutex> lock(gCompileLock);
+        gBytecodeCache = cache;
+    }
+
+    ShaderCompileCounts GetShaderCompileCounts()
+    {
+        std::lock_guard<std::mutex> lock(gCompileLock);
+        return gCompileCounts;
     }
 
     GlShaderRouteCounts GetGlShaderRouteCounts()

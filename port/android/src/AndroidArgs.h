@@ -19,15 +19,32 @@ namespace faf::android {
   /// provide one (shared storage unavailable).
   [[nodiscard]] std::string DataRoot(const ANativeActivity* activity);
 
+  /// The extras of the launcher's "Menu replay" (release 0.5.0, GalPlay.h's Java contract).
+  struct MenuReplayExtras
+  {
+    std::string trace;          ///< "menuReplay.trace": the .galtrace file
+    std::string runDir;         ///< "menuReplay.runDir": the run directory (exists)
+    bool fast = false;          ///< "menuReplay.fast": as fast as possible instead of the recorded pace
+    bool forceCpuDecode = false; ///< "menuReplay.forceCpuDecode": BC textures decoded on the CPU
+    bool noShaderCache = false; ///< "menuReplay.noShaderCache": no shader or pipeline cache
+  };
+
   struct IntentArgs
   {
     bool ok = false;      ///< false: JNI failed, see `error`.
     bool present = false; ///< The extra exists (a launcher started us with arguments).
     std::vector<std::string> argv;
+    /// The String extra "mode": "menu-replay" for the menu replay (GalPlay.h); empty for the game.
+    std::string mode;
+    MenuReplayExtras menuReplay; ///< read when `mode` is "menu-replay"
     std::string error;
   };
 
-  /// Reads getIntent().getStringArrayExtra("argv") through JNI on the calling
+  /// The value of the "mode" extra that selects the menu replay (GalPlay.h).
+  inline constexpr const char* kModeMenuReplay = "menu-replay";
+
+  /// Reads getIntent().getStringArrayExtra("argv"), the String extra "mode" and,
+  /// in mode "menu-replay", the "menuReplay.*" extras through JNI on the calling
   /// thread (attached to the VM for the duration of the call if needed).
   /// Strings are converted from UTF-16 to UTF-8; null elements are dropped.
   [[nodiscard]] IntentArgs ReadIntentArgs(ANativeActivity* activity);

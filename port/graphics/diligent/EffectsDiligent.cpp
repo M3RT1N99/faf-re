@@ -1,6 +1,10 @@
 #include "EffectsDiligent.h"
 
+#if defined(_WIN32)
 #include <d3d9.h>
+#else
+#include "D3D9Portable.h"
+#endif
 
 #include <cstdio>
 #include <cstring>

@@ -14,6 +14,7 @@ import android.view.WindowManager;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
  * Hosts the native runtime (libfaf_android.so via android.app.lib_name) in
@@ -25,9 +26,20 @@ import java.io.IOException;
  * launcher (and a running import) down with it, and so every start gets fresh
  * native globals: the launcher kills a leftover ":game" process before it
  * starts the next run.
+ *
+ * <p>Mode "menu-replay" (Intent extra {@code mode}, release 0.5.0): the native
+ * side replays the menu trace instead of starting the game
+ * (port/android/src/GalPlay.h) and calls back into this activity
+ * ({@link #onMenuReplayProgress}, {@link #onMenuReplayReadback},
+ * {@link #onMenuReplayFinished}); {@link MenuReplaySession} writes the run's
+ * files and {@link MenuReplayOverlay} shows the progress over the replay.
  */
 public final class GameActivity extends NativeActivity {
     private static final String TAG = "fafre-game";
+
+    /** The menu replay of this activity, or null in the game's mode. */
+    private MenuReplaySession mMenuReplay;
+    private MenuReplayOverlay mOverlay;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,13 +53,79 @@ public final class GameActivity extends NativeActivity {
             window.setAttributes(attributes);
         }
         drawEdgeToEdge(window);
+        // Before super.onCreate: the native side may call back as soon as it runs.
+        if (MenuReplay.MODE.equals(getIntent().getStringExtra(MenuReplay.EXTRA_MODE))) {
+            mMenuReplay = new MenuReplaySession(this, getIntent());
+            mOverlay = new MenuReplayOverlay(this, mMenuReplay);
+            Log.i(TAG, "menu replay " + mMenuReplay.run());
+        }
         // NativeActivity does the same lookup (on this thread) right after this.
         String problem = AppInfo.nativeRuntimeProblem(this);
         if (problem != null) {
+            if (mMenuReplay != null) {
+                mMenuReplay.failWithoutRuntime(problem);
+            }
             failWithoutRuntime(problem);
         }
         super.onCreate(savedInstanceState);
         enterImmersive();
+    }
+
+    @Override
+    public void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (mOverlay != null) {
+            mOverlay.show();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        // The overlay is a window of this activity's: gone before the activity's window is.
+        if (mOverlay != null) {
+            mOverlay.dismiss();
+        }
+        // Returns once the native side has ended (it stops a running replay, which reports its finish).
+        super.onDestroy();
+        if (mMenuReplay != null) {
+            mMenuReplay.onActivityDestroyed();
+        }
+    }
+
+    // ------------------------------------------------- menu replay callbacks (native side, GalPlay.h)
+    // Called on the native replay thread. Nothing may be thrown back into native code.
+
+    /** A stage change or a replayed frame: {"stage","message","frame","frames","frameMs",...}. */
+    public void onMenuReplayProgress(String json) {
+        try {
+            if (mMenuReplay != null) {
+                mMenuReplay.onProgress(json);
+            }
+        } catch (Throwable e) {
+            Log.e(TAG, "onMenuReplayProgress", e);
+        }
+    }
+
+    /** A read-back frame: R G B A, top row first, valid only during this call. */
+    public void onMenuReplayReadback(int frame, int width, int height, ByteBuffer rgba, String json) {
+        try {
+            if (mMenuReplay != null) {
+                mMenuReplay.onReadback(frame, width, height, rgba, json);
+            }
+        } catch (Throwable e) {
+            Log.e(TAG, "onMenuReplayReadback", e);
+        }
+    }
+
+    /** The end (also after an error or a stop): galplay.json's content. */
+    public void onMenuReplayFinished(String json) {
+        try {
+            if (mMenuReplay != null) {
+                mMenuReplay.onFinished(json);
+            }
+        } catch (Throwable e) {
+            Log.e(TAG, "onMenuReplayFinished", e);
+        }
     }
 
     @Override
@@ -118,7 +196,7 @@ public final class GameActivity extends NativeActivity {
      */
     private void failWithoutRuntime(String problem) {
         Log.e(TAG, problem);
-        LauncherLog.get(this).log("GameActivity: " + problem);
+        LauncherLog.get(this).log("GameActivity" + (mMenuReplay != null ? " (menu replay)" : "") + ": " + problem);
         File root = getExternalFilesDir(null);
         if (root != null) {
             try {

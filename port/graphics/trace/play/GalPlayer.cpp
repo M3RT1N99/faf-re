@@ -6,6 +6,7 @@
 #include "port/graphics/trace/play/GalPlayer.h"
 
 #include "port/graphics/trace/format/GalTraceIO.h"
+#include "port/graphics/trace/format/GalTraceResolver.h"
 
 #include "gpg/gal/CubeRenderTarget.hpp"
 #include "gpg/gal/CubeRenderTargetContext.hpp"
@@ -101,13 +102,30 @@ namespace port::graphics::trace
 
         std::uint64_t RgbHash(const std::vector<std::uint8_t>& bgra)
         {
-            std::uint64_t hash = 0xCBF29CE484222325ULL;
-            for (std::size_t index = 0; index + 3 < bgra.size(); index += 4) {
-                hash = (hash ^ bgra[index + 2]) * 0x100000001B3ULL;
-                hash = (hash ^ bgra[index + 1]) * 0x100000001B3ULL;
-                hash = (hash ^ bgra[index + 0]) * 0x100000001B3ULL;
+            return galtrace::FrameRgbHash(bgra.data(), bgra.size());
+        }
+
+        std::vector<unsigned> ParseFrameList(const std::string& text)
+        {
+            std::vector<unsigned> frames;
+            unsigned value = 0;
+            bool any = false;
+            for (const char c : text) {
+                if (c >= '0' && c <= '9') {
+                    value = value * 10u + static_cast<unsigned>(c - '0');
+                    any = true;
+                } else {
+                    if (any) {
+                        frames.push_back(value);
+                    }
+                    value = 0;
+                    any = false;
+                }
             }
-            return hash;
+            if (any) {
+                frames.push_back(value);
+            }
+            return frames;
         }
 
         void PutLe16(std::vector<std::uint8_t>& out, const std::uint32_t value)
@@ -193,8 +211,34 @@ namespace port::graphics::trace
                     report_.fatal = error;
                     return false;
                 }
+                report_.formatVersion = reader_.Version();
+                reader_.SetResolver(options_.resolver);
+                readbackNames_ = options_.readbackNames;
+                if (readbackNames_.empty()) {
+                    readbackNames_ = ParseFrameList(reader_.Meta(galtrace::kMetaHarnessFrames));
+                }
+                if (!options_.referenceBackend.empty()) {
+                    for (const auto& [frame, hash] :
+                         galtrace::ParseFrameHashes(reader_.Meta(galtrace::kMetaReferenceFramesPrefix + options_.referenceBackend))) {
+                        referenceFrames_[frame] = hash;
+                    }
+                }
+                // The recording backend's own frame hashes, when the trace keeps only digests of its readbacks.
+                for (const auto& [frame, hash] :
+                     galtrace::ParseFrameHashes(reader_.Meta(galtrace::kMetaReferenceFramesPrefix + reader_.Meta(galtrace::kMetaGal)))) {
+                    recordedFrames_[frame] = hash;
+                }
+                if (reader_.Version() >= galtrace::kFormatVersion2 && options_.verifyReferencesFirst && !CheckReferences()) {
+                    TearDown();
+                    return false;
+                }
                 galtrace::Record record;
                 while (reader_.Next(&record)) {
+                    if (hooks_.shouldStop && hooks_.shouldStop()) {
+                        report_.stopped = true;
+                        report_.fatal = "stopped on request after " + std::to_string(report_.presents) + " presents";
+                        break;
+                    }
                     ++report_.records;
                     ++report_.opCounts[record.desc->name];
                     if (record.op == static_cast<std::uint16_t>(Op::End)) {
@@ -230,6 +274,61 @@ namespace port::graphics::trace
 
         private:
             // ---- bookkeeping ------------------------------------------------------------------
+
+            /** Version 2: every game file the trace refers to, read and checked before the first call. */
+            bool CheckReferences()
+            {
+                const auto start = std::chrono::steady_clock::now();
+                std::vector<galtrace::PayloadRefInfo> refs;
+                std::string error;
+                if (!galtrace::ScanPayloadRefs(options_.tracePath, &refs, &error)) {
+                    report_.fatal = "reader: " + error;
+                    return false;
+                }
+                bool ok = true;
+                if (!refs.empty() && options_.resolver == nullptr) {
+                    report_.missingData = true;
+                    report_.fatal = "the trace takes " + std::to_string(refs.size()) + " files from the game data, and no game data was given";
+                    ok = false;
+                } else if (!refs.empty()) {
+                    std::vector<galtrace::PayloadRefProblem> problems;
+                    if (!galtrace::VerifyPayloadRefs(refs, *options_.resolver, &problems)) {
+                        report_.missingData = true;
+                        for (const galtrace::PayloadRefProblem& problem : problems) {
+                            report_.dataProblems.push_back(problem.ref.path + " (" + problem.ref.archive + "): " +
+                                                           (problem.missing ? "missing" : problem.detail));
+                        }
+                        report_.fatal = galtrace::DescribeRefProblems(problems);
+                        while (!report_.fatal.empty() && report_.fatal.back() == '\n') {
+                            report_.fatal.pop_back();
+                        }
+                        ok = false;
+                    }
+                }
+                report_.referenceCheckSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+                return ok;
+            }
+
+            /** A payload the call needs: its bytes, or a fatal error that names what is missing. */
+            bool NeedPayload(const galtrace::Record& record, const std::uint32_t id, std::vector<std::uint8_t>* const out, const char* const what)
+            {
+                galtrace::PayloadStatus status;
+                if (!reader_.ReadPayload(id, out, &status)) {
+                    if (status.kind == galtrace::PayloadKind::Reference) {
+                        report_.missingData = true;
+                        report_.dataProblems.push_back(status.error);
+                    }
+                    Fatal(record, std::string(what) + ": " + status.error);
+                    return false;
+                }
+                if (status.kind == galtrace::PayloadKind::Reference) {
+                    ++report_.references;
+                }
+                if (!status.exact) {
+                    Mismatch(record, "derived payload", std::string(what) + ": " + status.error);
+                }
+                return true;
+            }
 
             void Mismatch(const galtrace::Record& record, const std::string& category, const std::string& text)
             {
@@ -389,16 +488,13 @@ namespace port::graphics::trace
                 }
             }
 
-            void ReadTextureContext(Cursor& c, gal::TextureContext& context, std::vector<std::uint8_t>* data)
+            void ReadTextureContext(Cursor& c, gal::TextureContext& context, std::uint32_t* const dataBlob)
             {
                 context.source_ = c.U32();
                 context.location_ = ToString(c.Str());
                 const std::uint32_t blob = c.Blob();
-                if (data != nullptr) {
-                    if (!reader_.ReadBlob(blob, data)) {
-                        data->clear();
-                        blobErrors_ = true;
-                    }
+                if (dataBlob != nullptr) {
+                    *dataBlob = blob;
                 }
                 context.type_ = c.U32();
                 context.usage_ = c.U32();
@@ -445,13 +541,15 @@ namespace port::graphics::trace
                 return options_.outDir + "/" + sub + "/" + BaseName(path);
             }
 
-            void Readback(const galtrace::Record& record, TextureLockState& state, const std::vector<std::uint8_t>& recorded)
+            /** A read-only lock: the replayed bytes against the recording (bytes or hashes) and the reference frame hash. */
+            bool Readback(const galtrace::Record& record, TextureLockState& state, const std::uint32_t recordedBlob)
             {
                 ReadbackResult result{};
                 result.index = static_cast<unsigned>(report_.readbacks.size());
-                result.name = result.index < options_.readbackNames.size() ? options_.readbackNames[result.index] : result.index + 1;
+                result.name = result.index < readbackNames_.size() ? readbackNames_[result.index] : result.index + 1;
                 result.presents = report_.presents;
                 result.endScenes = report_.endScenes;
+                result.format = state.format;
                 std::vector<std::uint8_t> replayed(static_cast<std::size_t>(state.rowBytes) * state.rows);
                 const auto* const bits = static_cast<const std::uint8_t*>(state.lock.bits);
                 if (bits != nullptr && state.lock.pitch >= static_cast<int>(state.rowBytes)) {
@@ -462,20 +560,35 @@ namespace port::graphics::trace
                 } else {
                     Mismatch(record, "readback", "the replay lock has no bits or a short pitch");
                 }
-                result.identical = replayed == recorded;
-                if (!result.identical) {
-                    const std::size_t common = std::min(replayed.size(), recorded.size());
-                    for (std::size_t index = 0; index < common; ++index) {
-                        result.differingBytes += replayed[index] != recorded[index] ? 1 : 0;
+                // The recording: its bytes (version 1, or an embedded version 2 payload) or its hashes.
+                const galtrace::PayloadEntry* const entry = reader_.GetPayload(recordedBlob);
+                std::vector<std::uint8_t> recorded;
+                if (entry != nullptr && entry->kind == galtrace::PayloadKind::Digest) {
+                    result.identical = galtrace::HashBlob(replayed.data(), replayed.size()) == entry->key;
+                } else {
+                    if (!NeedPayload(record, recordedBlob, &recorded, "the recorded readback")) {
+                        return false;
                     }
-                    result.differingBytes += std::max(replayed.size(), recorded.size()) - common;
+                    result.recordedBytesKnown = true;
+                    result.identical = replayed == recorded;
+                    if (!result.identical) {
+                        const std::size_t common = std::min(replayed.size(), recorded.size());
+                        for (std::size_t index = 0; index < common; ++index) {
+                            result.differingBytes += replayed[index] != recorded[index] ? 1 : 0;
+                        }
+                        result.differingBytes += std::max(replayed.size(), recorded.size()) - common;
+                    }
                 }
                 const bool bgra = (state.format == 2 || state.format == 3) && state.rowBytes == state.width * 4u;
                 if (bgra) {
                     result.width = state.width;
                     result.height = state.rows;
-                    result.recordedRgb = galtrace::Hex64(RgbHash(recorded));
                     result.replayedRgb = galtrace::Hex64(RgbHash(replayed));
+                    if (result.recordedBytesKnown) {
+                        result.recordedRgb = galtrace::Hex64(RgbHash(recorded));
+                    } else if (const auto found = recordedFrames_.find(result.name); found != recordedFrames_.end()) {
+                        result.recordedRgb = found->second;
+                    }
                     if (options_.writeBmps && !options_.outDir.empty()) {
                         char name[48];
                         std::snprintf(name, sizeof(name), "frame_%06u.bmp", result.name);
@@ -485,7 +598,17 @@ namespace port::graphics::trace
                         }
                     }
                 }
+                if (const auto found = referenceFrames_.find(result.name); found != referenceFrames_.end()) {
+                    result.referenceRgb = found->second;
+                    result.verdict = result.replayedRgb == result.referenceRgb ? "pass" : "differs";
+                } else {
+                    result.verdict = "no-reference";
+                }
                 report_.readbacks.push_back(result);
+                if (hooks_.onReadback) {
+                    hooks_.onReadback(report_.readbacks.back(), replayed.data(), state.rowBytes, state.rows);
+                }
+                return true;
             }
 
             void ReleaseAll()
@@ -673,23 +796,25 @@ namespace port::graphics::trace
                         context.mUseCache = c.Bool();
                         context.mSourcePath = ToString(c.Str());
                         const std::string cachePath = c.Str();
-                        std::vector<std::uint8_t> source;
-                        if (!reader_.ReadBlob(c.Blob(), &source)) {
-                            return Fatal(record, "unreadable effect source blob");
-                        }
-                        context.mSourceBuffer = OwnedBuffer(source);
+                        const std::uint32_t sourceBlob = c.Blob();
                         const std::uint32_t macros = c.Count();
                         for (std::uint32_t index = 0; index < macros; ++index) {
                             const std::string name = c.Str();
                             const std::string value = c.Str();
                             context.mMacros.push_back(gal::EffectMacro(name.c_str(), value.c_str()));
                         }
-                        std::vector<std::uint8_t> cacheFile;
-                        if (!reader_.ReadBlob(c.Blob(), &cacheFile)) {
-                            return Fatal(record, "unreadable effect cache blob");
-                        }
+                        const std::uint32_t cacheBlob = c.Blob();
                         const std::uint32_t id = c.Id();
                         if (!Finish(record, c)) return false;
+                        std::vector<std::uint8_t> source;
+                        if (!NeedPayload(record, sourceBlob, &source, "the effect source")) {
+                            return false;
+                        }
+                        context.mSourceBuffer = OwnedBuffer(source);
+                        std::vector<std::uint8_t> cacheFile;
+                        if (!NeedPayload(record, cacheBlob, &cacheFile, "the compiled effect cache file")) {
+                            return false;
+                        }
                         // The recording's cache path is another run's directory: the replay reads
                         // and writes its own copy under <out>/cache.
                         if (!cachePath.empty()) {
@@ -710,16 +835,16 @@ namespace port::graphics::trace
                     case Op::DevCreateTexture: {
                         gal::Device* const d = DeviceFor(record, c.Id());
                         gal::TextureContext context;
-                        std::vector<std::uint8_t> data;
-                        blobErrors_ = false;
-                        ReadTextureContext(c, context, &data);
-                        if (blobErrors_) {
-                            return Fatal(record, "unreadable texture data blob");
-                        }
+                        std::uint32_t dataBlob = 0;
+                        ReadTextureContext(c, context, &dataBlob);
                         const std::uint32_t id = c.Id();
                         gal::TextureContext created;
                         ReadTextureContext(c, created, nullptr);
                         if (!Finish(record, c)) return false;
+                        std::vector<std::uint8_t> data;
+                        if (!NeedPayload(record, dataBlob, &data, "the texture's file image")) {
+                            return false;
+                        }
                         if (!data.empty()) {
                             const gpg::MemBuffer<char> owned = OwnedBuffer(data);
                             context.SetDataBuffer(gpg::MemBuffer<const char>(owned));
@@ -875,15 +1000,22 @@ namespace port::graphics::trace
                     }
                     case Op::DevGetTexture2D: {
                         gal::Device* const d = DeviceFor(record, c.Id());
-                        std::vector<std::uint8_t> source;
-                        std::vector<std::uint8_t> expected;
-                        const bool sourceOk = reader_.ReadBlob(c.Blob(), &source);
-                        const bool expectedOk = reader_.ReadBlob(c.Blob(), &expected);
+                        const std::uint32_t sourceBlob = c.Blob();
+                        const std::uint32_t expectedBlob = c.Blob();
                         const std::uint32_t width = c.U32();
                         const std::int32_t height = c.I32();
                         if (!Finish(record, c)) return false;
-                        if (!sourceOk || !expectedOk) {
-                            return Fatal(record, "unreadable GetTexture2D blob");
+                        std::vector<std::uint8_t> source;
+                        if (!NeedPayload(record, sourceBlob, &source, "the GetTexture2D input")) {
+                            return false;
+                        }
+                        // The recorded output: its bytes (version 1), or only its hashes (a version 2
+                        // digest, which this replay's own output then stands in for).
+                        const galtrace::PayloadEntry* const expectedEntry = reader_.GetPayload(expectedBlob);
+                        const bool expectedIsDigest = expectedEntry != nullptr && expectedEntry->kind == galtrace::PayloadKind::Digest;
+                        std::vector<std::uint8_t> expected;
+                        if (!expectedIsDigest && !NeedPayload(record, expectedBlob, &expected, "the recorded GetTexture2D output")) {
+                            return false;
                         }
                         if (d) {
                             gpg::MemBuffer<char> out;
@@ -892,13 +1024,22 @@ namespace port::graphics::trace
                             d->GetTexture2D(source.empty() ? nullptr : source.data(), static_cast<std::uint32_t>(source.size()), &out, &outWidth,
                                             &outHeight);
                             const std::size_t outSize = (out.mBegin != nullptr && out.mEnd > out.mBegin) ? out.Size() : 0;
-                            const bool same = outWidth == width && outHeight == height && outSize == expected.size() &&
-                                              (outSize == 0 || std::memcmp(out.mBegin, expected.data(), outSize) == 0);
+                            bool sameBytes = false;
+                            std::size_t expectedSize = expected.size();
+                            if (expectedIsDigest) {
+                                expectedSize = expectedEntry->key.size;
+                                sameBytes = reader_.ProvidePayload(expectedBlob, outSize != 0 ? out.mBegin : nullptr, outSize);
+                                ++report_.providedPayloads;
+                            } else {
+                                sameBytes = outSize == expected.size() && (outSize == 0 || std::memcmp(out.mBegin, expected.data(), outSize) == 0);
+                            }
+                            const bool same = outWidth == width && outHeight == height && sameBytes;
                             if (!same) {
                                 Mismatch(record, "GetTexture2D output", "recorded " + std::to_string(width) + "x" + std::to_string(height) + " " +
-                                                                           std::to_string(expected.size()) + " bytes, replay " +
+                                                                           std::to_string(expectedSize) + " bytes, replay " +
                                                                            std::to_string(outWidth) + "x" + std::to_string(outHeight) + " " +
-                                                                           std::to_string(outSize) + " bytes");
+                                                                           std::to_string(outSize) + " bytes" +
+                                                                           (outSize == expectedSize ? std::string(", content differs") : std::string()));
                             }
                         }
                         return true;
@@ -950,6 +1091,11 @@ namespace port::graphics::trace
                         if (!Finish(record, c)) return false;
                         if (d) d->Present();
                         ++report_.presents;
+                        if (hooks_.afterPresent && !hooks_.afterPresent(report_.presents)) {
+                            report_.stopped = true;
+                            report_.fatal = "stopped on request after " + std::to_string(report_.presents) + " presents";
+                            return false;
+                        }
                         return true;
                     }
                     case Op::DevSetCursor: {
@@ -1196,11 +1342,14 @@ namespace port::graphics::trace
                         }
                         const int level = c.I32();
                         const auto content = static_cast<galtrace::LockContent>(c.U8());
-                        std::vector<std::uint8_t> bytes;
-                        if (!reader_.ReadBlob(c.Blob(), &bytes)) {
-                            return Fatal(record, "unreadable lock content blob");
-                        }
+                        const std::uint32_t contentBlob = c.Blob();
                         if (!Finish(record, c)) return false;
+                        // What was written is needed to replay the unlock; what was read back is only
+                        // compared (a version 2 trace may hold just its hashes).
+                        std::vector<std::uint8_t> bytes;
+                        if (content != galtrace::LockContent::ReadBack && !NeedPayload(record, contentBlob, &bytes, "the texture lock's content")) {
+                            return false;
+                        }
                         if (!texture) return true;
                         TextureLockState& state = textureLocks_[id];
                         if (!state.locked) {
@@ -1216,7 +1365,9 @@ namespace port::graphics::trace
                                 }
                             }
                         } else if (content == galtrace::LockContent::ReadBack) {
-                            Readback(record, state, bytes);
+                            if (!Readback(record, state, contentBlob)) {
+                                return false;
+                            }
                         } else {
                             Mismatch(record, "lock content", "the recording could not size this lock");
                         }
@@ -1299,11 +1450,12 @@ namespace port::graphics::trace
                     case Op::IbUnlock: {
                         const bool vertex = static_cast<Op>(record.op) == Op::VbUnlock;
                         const std::uint32_t id = c.Id();
-                        std::vector<std::uint8_t> bytes;
-                        if (!reader_.ReadBlob(c.Blob(), &bytes)) {
-                            return Fatal(record, "unreadable buffer content blob");
-                        }
+                        const std::uint32_t contentBlob = c.Blob();
                         if (!Finish(record, c)) return false;
+                        std::vector<std::uint8_t> bytes;
+                        if (!NeedPayload(record, contentBlob, &bytes, "the buffer lock's content")) {
+                            return false;
+                        }
                         BufferLockState& state = bufferLocks_[id];
                         if (bytes.size() != state.bytes) {
                             Mismatch(record, "lock content", "buffer content size differs from the locked size");
@@ -1599,6 +1751,9 @@ namespace port::graphics::trace
                     }
 
                     case Op::Blob:
+                    case Op::PayloadRef:
+                    case Op::PayloadDigest:
+                    case Op::PayloadCompose:
                     case Op::End:
                         return true;
                 }
@@ -1680,10 +1835,12 @@ namespace port::graphics::trace
             const PlayHooks& hooks_;
             PlayReport& report_;
             galtrace::Reader reader_;
+            std::vector<unsigned> readbackNames_;
+            std::map<unsigned, std::string> referenceFrames_; // reference_frames.<options_.referenceBackend>
+            std::map<unsigned, std::string> recordedFrames_;  // reference_frames.<the recording's backend>
             gal::Device* device_ = nullptr;
             std::uint32_t deviceId_ = 0;
             bool ended_ = false;
-            bool blobErrors_ = false;
             std::unordered_map<std::uint32_t, Slot> objects_;
             std::unordered_map<std::uint32_t, TextureLockState> textureLocks_;
             std::unordered_map<std::uint32_t, BufferLockState> bufferLocks_;
@@ -1723,10 +1880,23 @@ namespace port::graphics::trace
         json += "  \"trace\": \"" + JsonEscape(options.tracePath) + "\",\n";
         json += extraJsonFields;
         json += "  \"completed\": " + std::string(report.completed ? "true" : "false") + ",\n";
+        json += "  \"stopped\": " + std::string(report.stopped ? "true" : "false") + ",\n";
         json += "  \"fatal\": \"" + JsonEscape(report.fatal) + "\",\n";
+        json += "  \"missing_data\": " + std::string(report.missingData ? "true" : "false") + ",\n";
+        json += "  \"data_problems\": [";
+        for (std::size_t index = 0; index < report.dataProblems.size(); ++index) {
+            json += std::string(index == 0 ? "" : ", ") + "\"" + JsonEscape(report.dataProblems[index]) + "\"";
+        }
+        json += "],\n";
+        json += "  \"format_version\": " + std::to_string(report.formatVersion) + ",\n";
+        json += "  \"reference_backend\": \"" + JsonEscape(options.referenceBackend) + "\",\n";
+        json += "  \"references_read\": " + std::to_string(report.references) + ",\n";
+        json += "  \"provided_payloads\": " + std::to_string(report.providedPayloads) + ",\n";
         char seconds[32];
         std::snprintf(seconds, sizeof(seconds), "%.3f", report.seconds);
         json += "  \"seconds\": " + std::string(seconds) + ",\n";
+        std::snprintf(seconds, sizeof(seconds), "%.3f", report.referenceCheckSeconds);
+        json += "  \"reference_check_seconds\": " + std::string(seconds) + ",\n";
         json += "  \"records\": " + std::to_string(report.records) + ",\n";
         json += "  \"calls\": " + std::to_string(report.calls) + ",\n";
         json += "  \"presents\": " + std::to_string(report.presents) + ",\n";
@@ -1738,19 +1908,26 @@ namespace port::graphics::trace
         json += "  \"readbacks\": [";
         bool first = true;
         unsigned identical = 0;
+        unsigned passed = 0;
+        unsigned withReference = 0;
         for (const ReadbackResult& readback : report.readbacks) {
             identical += readback.identical ? 1u : 0u;
+            passed += readback.verdict == "pass" ? 1u : 0u;
+            withReference += readback.referenceRgb.empty() ? 0u : 1u;
             json += std::string(first ? "\n" : ",\n") + "    {\"index\": " + std::to_string(readback.index) + ", \"frame\": " +
                     std::to_string(readback.name) + ", \"presents\": " + std::to_string(readback.presents) + ", \"end_scenes\": " +
                     std::to_string(readback.endScenes) + ", \"width\": " + std::to_string(readback.width) + ", \"height\": " +
                     std::to_string(readback.height) + ", \"identical_to_recording\": " + (readback.identical ? "true" : "false") +
+                    ", \"recorded_bytes_known\": " + (readback.recordedBytesKnown ? "true" : "false") +
                     ", \"differing_bytes\": " + std::to_string(readback.differingBytes) + ", \"recorded_rgb_fnv1a64\": \"" +
-                    readback.recordedRgb + "\", \"replayed_rgb_fnv1a64\": \"" + readback.replayedRgb + "\", \"file\": \"" +
-                    JsonEscape(readback.file) + "\"}";
+                    readback.recordedRgb + "\", \"replayed_rgb_fnv1a64\": \"" + readback.replayedRgb + "\", \"reference_rgb_fnv1a64\": \"" +
+                    readback.referenceRgb + "\", \"verdict\": \"" + readback.verdict + "\", \"file\": \"" + JsonEscape(readback.file) + "\"}";
             first = false;
         }
         json += std::string(first ? "" : "\n  ") + "],\n";
         json += "  \"readbacks_identical\": " + std::to_string(identical) + ",\n";
+        json += "  \"readbacks_with_reference\": " + std::to_string(withReference) + ",\n";
+        json += "  \"readbacks_pass\": " + std::to_string(passed) + ",\n";
         json += "  \"mismatches\": {";
         first = true;
         for (const auto& [category, count] : report.mismatchCounts) {

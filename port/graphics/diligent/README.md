@@ -107,6 +107,7 @@ main.exe does not change").
 | `/galglnomirror` | diagnostic: GL without the mirror convention (below); its frames come back upside down |
 | `/galswapchainbgra` | diagnostic: ask for a BGRA8 swap chain (the R11 path; this machine gives RGBA8 unless asked) |
 | `/galtrilinear d3d9\|aniso1\|aniso2\|aniso16\|mippoint\|level1\|bias64` | diagnostic: how the effect layer's trilinear samplers (min/mag/mip LINEAR) are made; `d3d9` (the default) as D3D9 has them. The other modes isolate the D3D11 trilinear finding below |
+| `/galdepthd32s8` | diagnostic (M7a1): make D24S8 depth-stencil targets as `D32_FLOAT_S8X24_UINT`, the mapping Android uses on GPUs without D24S8 attachments, on any device (Windows Vulkan menu with it: identical to D3D9) |
 
 The report: adapter, swap-chain format, presents, the half-pixel mode, `texture2D` (mode, calls, calls off
 the render thread), `debugLayer` and `diligentMessages` (counts, first messages, the self test),
@@ -230,6 +231,46 @@ debug context with the backend's own synchronous `glDebugMessageCallback`, count
 `VK_LAYER_KHRONOS_validation`, but this machine has no 32-bit Khronos validation layer (no Vulkan SDK; the
 loader offers AMD, Steam, Galaxy, EOS, Medal and Rockstar layers, `report.vulkanLayers`); Diligent logs that
 as its one warning and continues. Nothing was downloaded.
+
+## Android (M7a1, release 0.5.0)
+
+The same backend runs on Android in galplay, the menu replay of the app's GameActivity
+(`port/android/src/GalPlay.h`): Vulkan only, built for arm64 and x86_64 into `libfaf_android.so` by
+`port/android/CMakeLists.txt`. The Windows build is unchanged: every Android path is `#if !defined(_WIN32)`,
+and `port_graphics.props` leaves `diligent/android/` out.
+
+| Part | Where | What |
+| --- | --- | --- |
+| Two compile sets | `port/android/CMakeLists.txt` | `faf_galplay_diligent`: the TUs that include Diligent and never a gal header (`DiligentHost`, `ShaderCompileDiligent`, `EffectsDiligentGpu`, `PipelineDiligent`, the image decoders), plain NDK flags. `faf_galplay_engine`: the gal-side TUs, the player and the engine's gal TUs, with the engine sweep's flags and shim (`port/engine/shim`; its `strcpy_s` would clash with Diligent's) |
+| No D3D9, no D3DX | `D3D9Portable.h`, `D3D9Oracle.cpp`, `ResourcesDiligentPortable.inl`, `android/` | `d3d9types.h`'s values as data; the capability lanes of an SM3 D3D9 HAL as constants; textures as a CPU image in D3D9's layout (`ScratchImage`: DDS with its levels and the DDS mip skip, missing levels box-filtered; TGA/PNG/BMP/JPG through stb_image; empty textures); `GetTexture2D` through the portable decoder (`Texture2DPortable`); `UpdateSurface` as a same-size texel copy; `SaveTexture` as DDS; no cursor. `android/GalDevicePortable.cpp` has the gal base-class members of `Device.cpp`/`D3D9Interfaces.cpp` and `gpg::Logf`/`AllocMemBuffer` stand-ins |
+| Device and window | `DiligentHost.cpp` | Diligent's Vulkan on the activity's `ANativeWindow`, which comes and goes (`SetWindow`, null releases the swap chain and surface); BC sampling and wireframe asked for when present. The swap chain takes the surface's current transform and Present draws the head pre-rotated and letterboxed (the inverse transform of M1's `Renderer.cpp`) into an RGBA8 or BGRA8 back buffer. Without a window the frame still ends (`FinishFrame`, so Vulkan's dynamic heap is recycled) |
+| D24S8 | `DiligentHost.cpp` | Asked at creation (`GetTextureFormatInfoExt`): with no D24S8 depth-stencil attachment but D32S8, D24S8 targets are made as `D32_FLOAT_S8X24_UINT`; PSOs take the view's format. The emulator's SwiftShader and the S22 Ultra's Xclipse 920 both need it |
+| BC | `ResourcesDiligentPortable.inl` | BC1-3 uploaded as they are when the device samples `BC3_UNORM` and has the BC feature, else (or when forced) decoded on the CPU into BGRA8 at upload, whole levels and dirty rectangles alike (D3D10 rounding of the interpolated colours) |
+| Shader cache | `ShaderCompileDiligent.*` | `ShaderBytecodeCache`: the Vulkan route stores what Diligent made of the HLSL (`IShader::GetBytecode`) under a key over the source, entry point, stage, model, sampler mode, macros and the compiler build, and creates the shader from it next time. galplay keeps it as files in the app's internal storage |
+| Pipeline cache | `DiligentHost.cpp`, `PipelineDiligent.cpp` | A Diligent `IPipelineStateCache` (`LOAD_STORE`) from a file, used by every PSO, written back after the replay; a cache of another driver is replaced |
+| Options | `DeviceDiligent.cpp` | `SetPortableCommandLine`: galplay hands over the options main.exe takes from its command line (`/galreport`, `/galnovalidation`, ...) |
+| Report | `DeviceDiligent.cpp` | `shaderCompile` (compiled, cache hits and misses, times) on every platform; on Android also `android` (surface, BC, D24S8/D32S8, pipeline cache, BC textures decoded on the CPU, D32S8 targets) |
+
+Measured on the emulator (x86_64, SwiftShader; arm64 under translation gives the same frames), with a
+version 2 menu trace whose references resolve through the emulator's own game data:
+
+- **Frames.** All 900 frames replay, in the app on screen and headless (`galplay_cli`), with 0 draws skipped
+  and 0 Diligent errors. The frames are not the PC's: 3.7-14.7 % of the pixels differ, by at most 10, and
+  only at edges (pixels whose reference neighbourhood is flat differ by at most 2). SwiftShader has
+  `subPixelPrecisionBits`, `subTexelPrecisionBits` and `mipmapPrecisionBits` 4, Vulkan's minimum (the PC's
+  AMD GPU 8): its filtering weights land up to 1/32 off. The device's bits are in galplay.json.
+- **BC on the CPU** (forced): the same frames on x86_64 and arm64, and closer to the PC than SwiftShader's
+  own BC decoding (frame 60: 306 against 5,615 differing pixels where the PC frame is flat; the mean
+  signed difference over all differing pixels is 0.0 against -0.3).
+- **The self test** (`/galselftest`) passes 12/12 on SwiftShader, with D24S8 mapped to D32S8.
+- **Caches.** First launch 4 shaders compiled in 170 ms (the menu's two and the present pass's two);
+  second launch 0 compiled, 4 from the cache in 1.8 ms. SwiftShader's pipeline cache is a 32-byte header.
+- **Not yet understood:** on SwiftShader each frame ends one more Vulkan render pass inside a draw slot,
+  in the target binding of the frame's first draw (`renderPass.endsInDrawByTargets` 900), which neither
+  the Windows Vulkan replay nor the Windows menu with `/galdepthd32s8` shows (0). The phone's
+  `galreport.json` will tell whether a real driver does it too.
+- **Validation** (`galplay_cli --validation`) crashes inside the emulator's Vulkan driver
+  (`vk_common_SetDebugUtilsObjectNameEXT`, when Diligent names device memory); galplay runs without it.
 
 ## Decisions and measurements
 

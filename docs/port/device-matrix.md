@@ -75,3 +75,19 @@ What the S22 Ultra's probe means for the graphics plan ([renderer.md](renderer.m
 - **Shader compilation.** glslang is about 2.5x slower than on the PC, and the first pipeline
   creation costs 18.6 ms. With FA's 175 mesh entry points this needs a persistent SPIR-V and
   pipeline cache.
+
+## Menu replay (0.5.0 and later)
+
+From each menu replay run's `galplay.json` (`device`, `timings`, `caches`, `frameHashes`) and, for frames
+that differ, `gfx_capture.py parity` of the zip's BMPs against the PC's Diligent-Vulkan replay of the same
+trace ([android.md](android.md#menu-replay)). The trace is 0.5.0's `menu.galtrace` (900 frames, nine
+read-back frames, PC references `reference_frames.diligent:vk`).
+
+| Date | Device | GPU, precision bits (sub-pixel / sub-texel / mipmap) | Depth, BC | Run | Frames vs the PC | Parity rule | 900 frames in, avg frame | Shaders: first / second launch |
+|---|---|---|---|---|---|---|---|---|
+| 2026-10-08 | emulator x86_64 (0.5.0 x86_64 APK, 3455, pre-commit) | SwiftShader (LLVM 10), 4 / 4 / 4 | D32S8 (no D24S8), BC sampled | recorded pace | 0 of 9 equal | **fail**: 34,050-135,384 px differ, max \|delta\| 10 | 30.5 s, 33.6 ms (work 8.6 ms) | 4 compiled in 58 ms / 0 compiled, 4 cached (0.4 ms) |
+| 2026-10-08 | the same | the same | BC decoded on the CPU (forced) | recorded pace | 0 of 9 equal | **fail**: 25,924-108,123 px, max \|delta\| 10 | 30.5 s | cached |
+| 2026-10-08 | the same emulator, arm64 under ARM translation (0.5.0 arm64 APK, 3455, pre-commit) | the same | D32S8, BC sampled | recorded pace; as fast as possible | the x86_64 frames byte for byte | fail (as x86_64) | 30.9 s, 34.0 ms (work 10.3 ms); fast 9.0 s | 4 compiled in 619 ms (without the cache) / 4 cached (20 ms) |
+
+The emulator's frames are deterministic (identical between runs, ABIs and with HOME in between) but not the
+PC's; [renderer.md](renderer.md#the-emulators-frames-swiftshader) explains what is known.

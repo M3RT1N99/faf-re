@@ -96,7 +96,6 @@ final class ReplayTest {
     static final String AFFINITY_BIG = "big";
     static final String BUILD_O0 = "O0";
     static final String BUILD_O2 = "O2";
-    private static final long GAME_EXIT_WAIT_MS = 2000;
     private static final String PREFIX = "io.github.m3rt1n99.fafre.extra.replay.";
 
     /** What the user asked for; travels in the service intent. */
@@ -512,45 +511,17 @@ final class ReplayTest {
     }
 
     /**
-     * The test never runs next to the game. A :game process whose run has ended (launch/status.json says
-     * exited or error; Android keeps the process cached) is ended first, as GUI Start does. A game that is
-     * still loading or running is not ended: the test refuses to start and says how to close it.
+     * The test never runs next to the game or the menu replay (both run in the :game process). A :game process
+     * whose run has ended (launch/status.json says exited or error; Android keeps the process cached) is ended
+     * first, as GUI Start does. A game or menu replay that is still loading or running is not ended: the test
+     * refuses to start and says how to close it ({@link MenuReplay#endFinishedGameProcess}).
      */
     private void endFinishedGameProcess(DataManifest manifest, DataRoot root) throws IOException {
-        int pid = AppInfo.gameProcessPid(mContext);
-        if (pid <= 0) {
-            return;
-        }
-        RunStatus status;
-        try {
-            status = RunStatus.read(root.file(manifest.layout.launch + "/status.json"));
-        } catch (IOException e) {
-            status = null;
-        }
-        if (status == null || !status.isTerminal()) {
-            mLog.log("replay test: not started, the game process " + pid + " is running (status "
-                    + (status == null ? "none" : status.state) + ")");
-            throw new IOException("Not started: the game is running. Close it first (Back in the game), then start "
-                    + "the test again. If the game is not on screen, end the app in Android's settings (App info › "
-                    + "Force stop) and open it again.");
-        }
-        mLog.log("replay test: ending the finished game's process " + pid + " (status " + status.state + ")");
-        Process.killProcess(pid);
-        long deadline = System.currentTimeMillis() + GAME_EXIT_WAIT_MS;
-        while (AppInfo.gameProcessPid(mContext) > 0 && System.currentTimeMillis() < deadline) {
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-        if (AppInfo.gameProcessPid(mContext) > 0) {
-            throw new IOException("The game is still running; close it and start the test again.");
-        }
+        MenuReplay.endFinishedGameProcess(mContext, root, manifest, mLog, "the test");
     }
 
-    private static File newRunDirectory(DataRoot root) throws IOException {
+    /** A new {@code runs/<yyyyMMdd-HHmmss>[-n]} directory (also the menu replay's). */
+    static File newRunDirectory(DataRoot root) throws IOException {
         String base = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
         mkdirs(root, RUNS_DIR);
         for (int i = 0; i < 100; ++i) {
@@ -1482,10 +1453,19 @@ final class ReplayTest {
     }
 
     private void describeApp(JSONObject meta) throws JSONException {
-        JSONObject build = Runner.buildInfo(mContext);
+        describeApp(mContext, meta);
+    }
+
+    private void describeDevice(JSONObject meta) throws JSONException {
+        describeDevice(mContext, meta);
+    }
+
+    /** meta.json's "app": version, versionCode, commit, ABI (from assets/build.json). */
+    static void describeApp(Context context, JSONObject meta) throws JSONException {
+        JSONObject build = Runner.buildInfo(context);
         JSONObject app = new JSONObject();
-        app.put("package", mContext.getPackageName());
-        app.put("version_name", AppInfo.versionName(mContext));
+        app.put("package", context.getPackageName());
+        app.put("version_name", AppInfo.versionName(context));
         app.put("version_code", build.optInt("versionCode", -1));
         app.put("commit", build.optString("commit", ""));
         app.put("dirty", build.optBoolean("dirty", false));
@@ -1495,7 +1475,8 @@ final class ReplayTest {
         meta.put("app", app);
     }
 
-    private void describeDevice(JSONObject meta) throws JSONException {
+    /** meta.json's "device": model, SoC, Android version, ABIs, page size, memory, kernel. */
+    static void describeDevice(Context context, JSONObject meta) throws JSONException {
         JSONObject device = new JSONObject();
         device.put("manufacturer", Build.MANUFACTURER).put("brand", Build.BRAND).put("model", Build.MODEL)
                 .put("device", Build.DEVICE).put("hardware", Build.HARDWARE).put("board", Build.BOARD)
@@ -1509,7 +1490,7 @@ final class ReplayTest {
         }
         device.put("page_size", Os.sysconf(OsConstants._SC_PAGESIZE));
         device.put("cpus", Runtime.getRuntime().availableProcessors());
-        ActivityManager activities = mContext.getSystemService(ActivityManager.class);
+        ActivityManager activities = context.getSystemService(ActivityManager.class);
         if (activities != null) {
             ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
             activities.getMemoryInfo(memory);

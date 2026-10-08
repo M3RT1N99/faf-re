@@ -133,6 +133,115 @@ set(CMAKE_POLICY_DEFAULT_CMP0177 NEW)
 
 add_subdirectory("${DILIGENT_CORE_DIR}" "${CMAKE_BINARY_DIR}/DiligentCore" EXCLUDE_FROM_ALL ${_faf_system_subdir})
 
+# --- galplay (M7a1, release 0.5.0): the menu trace through the port's gal backend ----------
+#
+# GameActivity's mode "menu-replay" (src/GalPlay.h) replays a galtrace of FAF's main menu
+# (port/graphics/trace) through the port's own Diligent gal backend (port/graphics/diligent) on
+# Vulkan. Four parts, all linked statically into libfaf_android.so:
+# - faf::gal_fx: the effect front end (port/graphics/fx), portable C++17;
+# - galtrace_format: the trace reader (port/graphics/trace's own target), portable C++17;
+# - faf_galplay_diligent: the backend's TUs that include Diligent and never a gal header
+#   (DiligentHost, ShaderCompileDiligent, EffectsDiligentGpu, PipelineDiligent; the backend keeps the
+#   two header sets apart, PipelineDiligent.h), and the image decoders; plain NDK flags;
+# - faf_galplay_engine: everything that sees gpg::gal types: the rest of the backend, galplay's player
+#   (trace/play/GalPlayer.cpp), the engine's gal TUs it needs (src/sdk) and the Android stand-ins
+#   for the engine TUs that cannot build here (diligent/android/GalDevicePortable.cpp). These compile
+#   like the engine sweep compiles src/sdk for Android (port/engine/compile_flags.txt,
+#   scripts/port/engine_sweep.py: the shim port/engine/shim, the project's defines and include
+#   directories, the MSVC semantics flags), plus FAF_PORT_GRAPHICS(_DILIGENT).
+# GalPlay.cpp (the app side: data, window, pacing, files) has no engine types and builds with the
+# runtime's own flags. galplay_cli is the same replay as a command-line program for the emulator
+# and devices over adb (no window: the frames are read back offscreen); it is not in the APK.
+
+add_subdirectory("${FAF_REPO_ROOT}/port/graphics/fx" "${CMAKE_BINARY_DIR}/port-graphics-fx" EXCLUDE_FROM_ALL)
+add_subdirectory("${FAF_REPO_ROOT}/port/graphics/trace" "${CMAKE_BINARY_DIR}/port-graphics-trace" EXCLUDE_FROM_ALL)
+
+set(FAF_SDK_DIR "${FAF_REPO_ROOT}/src/sdk")
+set(FAF_GRAPHICS_DIR "${FAF_REPO_ROOT}/port/graphics")
+
+add_library(faf_galplay_diligent STATIC
+  "${FAF_GRAPHICS_DIR}/diligent/DiligentHost.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/EffectsDiligentGpu.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/PipelineDiligent.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/ShaderCompileDiligent.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/Texture2DPortable.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/android/ImageDecodePortable.cpp"
+)
+set_target_properties(faf_galplay_diligent PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+target_include_directories(faf_galplay_diligent PRIVATE "${FAF_REPO_ROOT}" "${DILIGENT_CORE_DIR}"
+  "${DILIGENT_CORE_DIR}/ThirdParty/Vulkan-Headers/include")
+target_compile_definitions(faf_galplay_diligent PRIVATE PLATFORM_ANDROID=1 VULKAN_SUPPORTED=1 GLES_SUPPORTED=1)
+target_compile_options(faf_galplay_diligent PRIVATE -pthread)
+target_link_libraries(faf_galplay_diligent PUBLIC
+  faf::gal_fx
+  Diligent-GraphicsEngineVk-static
+  Diligent-Common
+  Diligent-PlatformInterface
+  android
+  log
+)
+foreach(_faf_spirv_cross spirv-cross-glsl spirv-cross-core)
+  # The GL route's SPIRV-Cross step (ShaderCompileDiligent.cpp) is compiled in, not used on Android.
+  if(TARGET ${_faf_spirv_cross})
+    target_link_libraries(faf_galplay_diligent PUBLIC ${_faf_spirv_cross})
+  endif()
+endforeach()
+
+add_library(faf_galplay_engine STATIC
+  # the Diligent gal backend's engine-side TUs
+  "${FAF_GRAPHICS_DIR}/diligent/D3D9Oracle.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/DeviceDiligent.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/EffectsDiligent.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/ResourcesDiligent.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/SelfTestDiligent.cpp"
+  "${FAF_GRAPHICS_DIR}/diligent/android/GalDevicePortable.cpp"
+  # galplay's player
+  "${FAF_GRAPHICS_DIR}/trace/play/GalPlayer.cpp"
+  # the engine's gal contexts and what they use
+  "${FAF_SDK_DIR}/gpg/gal/ContextInterfaces.cpp"
+  "${FAF_SDK_DIR}/gpg/gal/Effect.cpp"
+  "${FAF_SDK_DIR}/gpg/gal/GalInterfaces.cpp"
+  "${FAF_SDK_DIR}/gpg/gal/StringUtils.cpp"
+  "${FAF_SDK_DIR}/gpg/core/containers/String.cpp"
+  "${FAF_SDK_DIR}/legacy/containers/String.cpp"
+  "${FAF_SDK_DIR}/legacy/math/X87Math.cpp"
+  "${FAF_SDK_DIR}/moho/math/Vector4f.cpp"
+  # the engine-side half of galplay
+  src/GalPlayEngine.cpp
+  src/GalPlayEngine.h
+)
+set_target_properties(faf_galplay_engine PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+# The shim first: it stands in for <windows.h> and the MSVC CRT headers the engine includes.
+target_include_directories(faf_galplay_engine BEFORE PRIVATE "${FAF_REPO_ROOT}/port/engine/shim")
+target_include_directories(faf_galplay_engine PRIVATE
+  "${FAF_SDK_DIR}"
+  "${FAF_REPO_ROOT}/dependencies/LuaPlus_Build1081/Src/LuaPlus/include"
+  "${FAF_REPO_ROOT}/dependencies/boost_1_34_1"
+  "${FAF_REPO_ROOT}/dependencies/zlib-1.2.3/include"
+  "${FAF_REPO_ROOT}/dependencies/WildMagic3p8/Foundation"
+  "${FAF_REPO_ROOT}/dependencies/WildMagic3p8/Foundation/Math"
+  "${FAF_REPO_ROOT}/dependencies/WildMagic3p8/Foundation/System"
+  "${FAF_REPO_ROOT}"
+  src
+)
+target_compile_definitions(faf_galplay_engine PRIVATE
+  # main.vcxproj's defines as the engine sweep keeps them (WIN32/_WINDOWS dropped)
+  WIN32_LEAN_AND_MEAN NOMINMAX LUAPLUS_LIB BOOST_ALL_NO_LIB BOOST_NO_AUTO_PTR _CRT_SECURE_NO_WARNINGS
+  _UNICODE UNICODE
+  _LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION
+  # the graphics build's switches (port/graphics/port_graphics.props)
+  FAF_PORT_GRAPHICS=1 FAF_PORT_GRAPHICS_DILIGENT=1
+)
+target_compile_options(faf_galplay_engine PRIVATE
+  -fms-extensions -fsigned-char -ffp-contract=off -fno-fast-math -fno-strict-aliasing -pthread
+  "SHELL:-include ${FAF_SDK_DIR}/platform/X64LayoutAsserts.h"
+  # the recovered engine code's MSVC idioms, not this build's business
+  -Wno-microsoft-cast -Wno-ignored-attributes -Wno-unused-value -Wno-switch -Wno-nonportable-include-path
+)
+# LINK_ONLY: Diligent's usage requirements (its interface include directories, whose header names
+# would shadow the engine's) stay on the Diligent side.
+target_link_libraries(faf_galplay_engine PRIVATE faf::gal_fx PUBLIC galtrace_format "$<LINK_ONLY:faf_galplay_diligent>")
+
 # --- libfaf_android.so ---------------------------------------------------------------
 
 set(NATIVE_APP_GLUE_DIR "${CMAKE_ANDROID_NDK}/sources/android/native_app_glue")
@@ -146,10 +255,14 @@ add_library(faf_android SHARED
   src/AndroidMain.cpp
   src/CrashHandler.cpp
   src/CrashHandler.h
+  src/GalPlay.cpp
+  src/GalPlay.h
   src/GameRuntime.cpp
   src/GameRuntime.h
   src/Log.cpp
   src/Log.h
+  src/MenuReplayMode.cpp
+  src/MenuReplayMode.h
   src/Renderer.cpp
   src/Renderer.h
   src/RunStatus.cpp
@@ -159,6 +272,9 @@ add_library(faf_android SHARED
 target_compile_features(faf_android PRIVATE cxx_std_20)
 set_target_properties(faf_android PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(faf_android PRIVATE src)
+# GalPlay.cpp includes the engine-free headers of port/graphics (DiligentHost.h, ShaderCompileDiligent.h,
+# the trace format) by their repository paths.
+target_include_directories(faf_android PRIVATE "${FAF_REPO_ROOT}")
 target_include_directories(faf_android SYSTEM PRIVATE "${NATIVE_APP_GLUE_DIR}")
 target_compile_definitions(faf_android PRIVATE FAF_ANDROID_VERSION_NAME="${FAF_ANDROID_VERSION_NAME}")
 
@@ -169,6 +285,8 @@ target_compile_options(faf_android PRIVATE
 
 target_link_libraries(faf_android PRIVATE
   faf::port_core
+  faf_galplay_engine
+  galtrace_format
   Diligent-GraphicsEngineVk-static
   Diligent-GraphicsEngineOpenGL-static
   Diligent-Common
@@ -204,3 +322,32 @@ target_link_options(faf_android PRIVATE
   "LINKER:-z,max-page-size=16384"
 )
 set_property(TARGET faf_android APPEND PROPERTY LINK_DEPENDS "${FAF_ANDROID_VERSION_SCRIPT}")
+
+# --- galplay_cli (M7a1): the menu replay without a window, for adb ---------------------------
+# Not built by default and never packaged: `cmake --build <dir> --target galplay_cli`. Runs what the
+# activity's mode "menu-replay" runs (GalPlay.cpp, galplay_run with GalPlayOptions::headless), and
+# writes the readback frames as the frame harness's BMPs.
+add_executable(galplay_cli EXCLUDE_FROM_ALL
+  src/GalPlayCli.cpp
+  src/GalPlay.cpp
+  src/GalPlay.h
+  src/Log.cpp
+  src/Log.h
+)
+target_compile_features(galplay_cli PRIVATE cxx_std_20)
+set_target_properties(galplay_cli PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(galplay_cli PRIVATE src "${FAF_REPO_ROOT}")
+target_compile_options(galplay_cli PRIVATE
+  "$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wno-sign-conversion>"
+)
+target_link_libraries(galplay_cli PRIVATE
+  faf::port_core
+  faf_galplay_engine
+  galtrace_format
+  Diligent-GraphicsEngineVk-static
+  Diligent-Common
+  Diligent-PlatformInterface
+  android
+  log
+)
+target_link_options(galplay_cli PRIVATE "LINKER:--gc-sections" "LINKER:-z,max-page-size=16384")

@@ -22,10 +22,20 @@
 //   - Vertex formats: the D3D9 declaration table (VertexFormatTableD3D9.inl) on PassBinding.h's fixed
 //     ATTRIB slots.
 //
+// Without the DirectX SDK (Android, M7a1) the texture's CPU image is a ScratchImage instead of a D3DX
+// scratch texture: the same D3D9 layout (levels, faces, D3DFORMAT texels, pitches) filled by the
+// portable loaders in ResourcesDiligent.cpp (DDS and the image formats D3DX reads, the empty textures
+// D3DXCreateTexture makes). Block-compressed images are decoded on the CPU at upload when the GPU
+// cannot sample BC formats (GpuShared::UseCpuBcDecode), as on Mali.
+//
 // This file includes engine and D3D9 headers, never Diligent's (the GPU side is DiligentHost.h's
 // GpuTexture/GpuBuffer).
 
+#if defined(_WIN32)
 #include <d3d9.h>
+#else
+#include "D3D9Portable.h"
+#endif
 
 #include <cstdint>
 #include <memory>
@@ -52,6 +62,15 @@ namespace gpg::gal::diligent
 {
     class D3D9Oracle;
 
+#if defined(_WIN32)
+    /** The texture's CPU image: a D3DX texture in the oracle's scratch pool. */
+    using ScratchTexture = IDirect3DBaseTexture9;
+#else
+    /** The texture's CPU image in D3D9's layout (ResourcesDiligent.cpp). */
+    class ScratchImage;
+    using ScratchTexture = ScratchImage;
+#endif
+
     /**
      * The source bytes of a TextureContext. dataBegin_/dataEnd_ are 32-bit copies of pointers
      * (TextureContext::SetDataBuffer, TextureContext.hpp:85-91; ContextInterfaces.cpp:375-376), which
@@ -65,7 +84,7 @@ namespace gpg::gal::diligent
     {
     public:
         /** Takes ownership of `scratch` (the D3DX image; may be null for a texture D3DX could not make). */
-        TextureDiligent(const TextureContext& context, IDirect3DBaseTexture9* scratch, std::shared_ptr<GpuShared> gpu, bool autoGenerateMips);
+        TextureDiligent(const TextureContext& context, ScratchTexture* scratch, std::shared_ptr<GpuShared> gpu, bool autoGenerateMips);
         ~TextureDiligent() override;
 
         TextureContext* GetContext() override;
@@ -78,7 +97,7 @@ namespace gpg::gal::diligent
         Diligent::ITextureView* GetShaderResourceView() override;
         [[nodiscard]] ShaderResourceDimension GetShaderResourceDimension() const override;
 
-        [[nodiscard]] IDirect3DBaseTexture9* GetScratch() const { return scratch_; }
+        [[nodiscard]] ScratchTexture* GetScratch() const { return scratch_; }
 
         /** The GPU texture, made or brought up to date first; null for system-memory textures. */
         GpuTexture* GetGpu();
@@ -89,7 +108,7 @@ namespace gpg::gal::diligent
         void UploadRect(std::uint32_t level, const RECT& rect);
 
         TextureContext context_;
-        IDirect3DBaseTexture9* scratch_ = nullptr;
+        ScratchTexture* scratch_ = nullptr;
         std::shared_ptr<GpuShared> gpu_;
         std::unique_ptr<GpuTexture> texture_;
         bool gpuFailed_ = false;

@@ -3,7 +3,11 @@
 // the slots and resource paths it never calls, against values computed here from D3D9's documented
 // behaviour. Everything goes through the Device slots, as the engine would call them.
 
+#if defined(_WIN32)
 #include <d3d9.h>
+#else
+#include "D3D9Portable.h"
+#endif
 
 #include <algorithm>
 #include <cstdio>

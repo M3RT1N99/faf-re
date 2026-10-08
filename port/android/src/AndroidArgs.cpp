@@ -233,6 +233,54 @@ namespace faf::android {
         }
       }
     }
+
+    // The mode, and the menu replay's extras (GalPlay.h).
+    jmethodID getStringExtra = env->GetMethodID(intentClass, "getStringExtra", "(Ljava/lang/String;)Ljava/lang/String;");
+    jmethodID getBooleanExtra = env->GetMethodID(intentClass, "getBooleanExtra", "(Ljava/lang/String;Z)Z");
+    if (getStringExtra == nullptr || getBooleanExtra == nullptr) {
+      fail("Intent.getStringExtra/getBooleanExtra not available");
+      env->PopLocalFrame(nullptr);
+      return result;
+    }
+    bool extrasOk = true;
+    const auto stringExtra = [&](const char* const name) -> std::string {
+      jstring nameString = env->NewStringUTF(name);
+      auto value = nameString != nullptr ? static_cast<jstring>(env->CallObjectMethod(intent, getStringExtra, nameString)) : nullptr;
+      if (nameString == nullptr || env->ExceptionCheck()) {
+        extrasOk = false;
+        fail(std::string("reading the \"") + name + "\" extra failed");
+        return {};
+      }
+      std::string text = value != nullptr ? ToUtf8(env, value) : std::string();
+      env->DeleteLocalRef(nameString);
+      if (value != nullptr) {
+        env->DeleteLocalRef(value);
+      }
+      return text;
+    };
+    const auto booleanExtra = [&](const char* const name) -> bool {
+      jstring nameString = env->NewStringUTF(name);
+      const jboolean value = nameString != nullptr ? env->CallBooleanMethod(intent, getBooleanExtra, nameString, JNI_FALSE) : JNI_FALSE;
+      if (nameString == nullptr || env->ExceptionCheck()) {
+        extrasOk = false;
+        fail(std::string("reading the \"") + name + "\" extra failed");
+        return false;
+      }
+      env->DeleteLocalRef(nameString);
+      return value == JNI_TRUE;
+    };
+    result.mode = stringExtra("mode");
+    if (extrasOk && result.mode == kModeMenuReplay) {
+      result.menuReplay.trace = stringExtra("menuReplay.trace");
+      result.menuReplay.runDir = stringExtra("menuReplay.runDir");
+      result.menuReplay.fast = booleanExtra("menuReplay.fast");
+      result.menuReplay.forceCpuDecode = booleanExtra("menuReplay.forceCpuDecode");
+      result.menuReplay.noShaderCache = booleanExtra("menuReplay.noShaderCache");
+    }
+    if (!extrasOk) {
+      env->PopLocalFrame(nullptr);
+      return result;
+    }
     result.ok = true;
     env->PopLocalFrame(nullptr);
     return result;

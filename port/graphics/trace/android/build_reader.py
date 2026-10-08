@@ -40,7 +40,7 @@ import engine_sweep  # noqa: E402  (find_clang: the NDK the Android builds use)
 
 API = 26  # minSdk (port/android/AndroidManifest.xml)
 TRIPLES = {"x86_64": f"x86_64-linux-android{API}", "arm64-v8a": f"aarch64-linux-android{API}"}
-LIBRARY = ["format/GalTraceFormat.cpp", "format/GalTraceIO.cpp"]
+LIBRARY = ["format/GalTraceFormat.cpp", "format/GalTraceIO.cpp", "format/GalTraceResolver.cpp"]
 TOOLS = {"galtrace-dump": "tools/galtrace_dump.cpp", "galtrace_format_test": "tests/galtrace_format_test.cpp"}
 FLAGS = ["-std=c++17", "-O2", "-g", "-Wall", "-Wextra", "-Wshadow", "-Werror", "-fno-exceptions"]
 

@@ -4,11 +4,15 @@
 #include <cstring>
 
 #include "gpg/gal/Error.hpp"
+#if !defined(_WIN32)
+#include "Texture2DPortable.h"
+#endif
 
 namespace gpg::gal::diligent
 {
     namespace
     {
+#if defined(_WIN32)
         // D3D9Interfaces.cpp:166-172.
         constexpr std::uint32_t kVertexShaderModel20 = 0xFFFE0200U;
         constexpr std::uint32_t kVertexShaderModel30 = 0xFFFE0300U;
@@ -22,6 +26,7 @@ namespace gpg::gal::diligent
         constexpr std::uint32_t kAtiDeviceRadeonX850 = 10658U;
         constexpr std::uint32_t kAtiDeviceRadeonX1650 = 10754U;
         constexpr D3DFORMAT kInstancingFourCC = static_cast<D3DFORMAT>(MAKEFOURCC('I', 'N', 'S', 'T'));
+#endif
 
         struct D3D9FormatToMohoPair final
         {
@@ -65,6 +70,7 @@ namespace gpg::gal::diligent
             0x0000004DU, 0x0000004FU, 0x00000050U, 0x00000000U,
         };
 
+#if defined(_WIN32)
         unsigned int AlignToDword(const unsigned int value) noexcept
         {
             return (value + 3U) & ~3U;
@@ -117,6 +123,7 @@ namespace gpg::gal::diligent
         {
             return ::DefWindowProcW(window, message, wParam, lParam);
         }
+#endif
     } // namespace
 
     [[noreturn]] void ThrowGalError(const char* const file, const int line, const char* const message)
@@ -134,6 +141,7 @@ namespace gpg::gal::diligent
         Shutdown();
     }
 
+#if defined(_WIN32)
     bool D3D9Oracle::Init(std::string* const error)
     {
         Shutdown();
@@ -470,6 +478,97 @@ namespace gpg::gal::diligent
             decodeTexture->Release();
         }
     }
+#else
+    // ---- Without D3D9 (Android, M7a1) --------------------------------------------------------------
+    //
+    // The capability lanes DeviceD3D9::BuildDeviceCapabilities computes on a shader model 3.0 PC GPU,
+    // as constants: the values the PC's galtrace recordings hold for the menu (RX 9070 XT, D3D9 HAL):
+    // instancing, float16 vertex data, vs_3_0/ps_3_0 profile tokens 4/8, the HAL's primitive and index
+    // limits, render-target tokens 1-7, texture tokens 2-18 (DXT among them, which DeviceD3D9::Setup
+    // requires), and the non-NVIDIA antialiasing list 2/4/8. The adapter modes are the head's own size:
+    // a phone has one display mode. galplay lists any difference from the recorded context as a
+    // "device context" mismatch; none of these values reaches a pixel of the menu.
+
+    bool D3D9Oracle::Init(std::string* const error)
+    {
+        static_cast<void>(error);
+        mHalCaps.VertexShaderVersion = D3DVS_VERSION(3, 0);
+        mHalCaps.PixelShaderVersion = D3DPS_VERSION(3, 0);
+        mDeviceDescription = "portable (no D3D9: shader model 3.0 HAL constants)";
+        return true;
+    }
+
+    void D3D9Oracle::Shutdown()
+    {}
+
+    void D3D9Oracle::FillCapabilities(const DeviceContext& requested, DeviceContext& out) const
+    {
+        out = requested;
+        for (int headIndex = 0; headIndex < out.GetHeadCount(); ++headIndex) {
+            Head& head = out.mHeads[static_cast<std::size_t>(headIndex)];
+            head.adapterModes.clear();
+            head.adapterModes.push_back(HeadAdapterMode{head.mWidth, head.mHeight, 60U});
+            head.validFormats1.clear();
+            for (int formatToken = 1; formatToken < 8; ++formatToken) {
+                head.validFormats1.push_back(formatToken);
+            }
+            head.validFormats2.clear();
+            for (int formatToken = 2; formatToken < 19; ++formatToken) {
+                head.validFormats2.push_back(formatToken);
+            }
+            head.mStrs.clear();
+            for (const unsigned int sampleType : {2U, 4U, 8U}) {
+                HeadSampleOption option{};
+                option.sampleType = sampleType;
+                option.sampleQuality = 0U;
+                char label[16] = {};
+                std::snprintf(label, sizeof(label), "%u", sampleType);
+                option.label.assign_owned(label);
+                head.mStrs.push_back(option);
+            }
+        }
+        out.mHWBasedInstancing = true;
+        out.mSupportsFloat16 = true;
+        out.mMaxPrimitiveCount = 5592405U;
+        out.mMaxVertexCount = 16777215U;
+        out.mVertexShaderProfile = 4; // vs_3_0
+        out.mPixelShaderProfile = 8;  // ps_3_0
+    }
+
+    void D3D9Oracle::GetModesForAdapter(msvc8::vector<HeadAdapterMode>& outModes, const int adapterIndex) const
+    {
+        outModes.clear();
+        if (adapterIndex == 0) {
+            outModes.push_back(HeadAdapterMode{1280U, 720U, 60U});
+        }
+    }
+
+    void D3D9Oracle::GetTexture2D(
+        const void* const sourceData,
+        const std::uint32_t sourceBytes,
+        gpg::MemBuffer<char>* const outTextureData,
+        std::uint32_t* const outWidth,
+        int* const outHeight
+    ) const
+    {
+        if (sourceData == nullptr) {
+            return;
+        }
+        Texture2DBlocks blocks;
+        std::string error;
+        if (!DecodeTexture2DPortable(sourceData, sourceBytes, &blocks, &error)) {
+            ThrowGalError("DeviceDiligent.cpp", __LINE__, ("GetTexture2D (portable): " + error).c_str());
+        }
+        *outWidth = blocks.width;
+        *outHeight = static_cast<int>(blocks.height);
+        if (outTextureData->Size() != blocks.data.size()) {
+            *outTextureData = gpg::AllocMemBuffer(blocks.data.size());
+        }
+        if (!blocks.data.empty()) {
+            std::memcpy(outTextureData->GetPtr(0U, 0U), blocks.data.data(), blocks.data.size());
+        }
+    }
+#endif
 
     std::uint32_t D3D9Oracle::FormatGalToD3D(const std::uint32_t mohoFormat)
     {

@@ -16,6 +16,7 @@
 namespace Diligent
 {
     struct IBuffer;
+    struct IPipelineStateCache;
     struct IRenderDevice;
     struct IDeviceContext;
     struct ITexture;
@@ -127,6 +128,8 @@ namespace gpg::gal::diligent
         std::atomic<std::uint64_t> buffersCreated{0};
         std::atomic<std::uint64_t> createdOffRenderThread{0}; // GPU objects made on another thread (must stay 0 for GLES)
         std::atomic<std::uint64_t> releasedOffRenderThread{0};// ... dropped on another thread (deferred to the render thread on GL)
+        std::atomic<std::uint64_t> bcDecodedOnCpu{0};         // M7a1 (Android): BC textures decoded to BGRA8 on the CPU
+        std::atomic<std::uint64_t> depthStencilD32S8{0};      // M7a1 (Android): D24S8 targets made as D32_FLOAT_S8X24
     };
 
     /**
@@ -232,6 +235,23 @@ namespace gpg::gal::diligent
         /** Render thread: releases what Retire deferred (Present, and the device's destruction). */
         void DrainRetired();
 
+        /**
+         * M7a1 (Android): BC1-3 textures are decoded into BGRA8 on the CPU at upload, because the GPU
+         * cannot sample BC formats (Mali) or because a test forces the fallback. Off on Windows.
+         */
+        [[nodiscard]] bool UseCpuBcDecode() const { return cpuBcDecode_; }
+        void SetCpuBcDecode(const bool decode) { cpuBcDecode_ = decode; }
+        /**
+         * M7a1 (Android): the device has no D24_UNORM_S8_UINT depth-stencil attachment (the S22 Ultra's
+         * Xclipse 920), so depth-stencil targets asking for it are made as D32_FLOAT_S8X24_UINT. Decided
+         * from the device's format support at creation; off on Windows.
+         */
+        [[nodiscard]] bool UseD32S8ForD24S8() const { return d32s8ForD24s8_; }
+        void SetD32S8ForD24S8(const bool substitute) { d32s8ForD24s8_ = substitute; }
+        /** M7a1 (Android): the Vulkan pipeline cache new pipelines go through, or null. Owned by the host. */
+        [[nodiscard]] Diligent::IPipelineStateCache* PipelineCache() const { return pipelineCache_; }
+        void SetPipelineCache(Diligent::IPipelineStateCache* const cache) { pipelineCache_ = cache; }
+
     private:
         Diligent::IRenderDevice* device_ = nullptr;
         Diligent::IDeviceContext* context_ = nullptr;
@@ -244,7 +264,52 @@ namespace gpg::gal::diligent
         std::mutex retiredLock_;
         std::vector<std::unique_ptr<GpuTexture>> retiredTextures_;
         std::vector<std::unique_ptr<GpuBuffer>> retiredBuffers_;
+        bool cpuBcDecode_ = false;
+        bool d32s8ForD24s8_ = false;
+        Diligent::IPipelineStateCache* pipelineCache_ = nullptr;
     };
+
+#if !defined(_WIN32)
+    /**
+     * M7a1 (Android): what the host does besides making the device. Process-wide, read by
+     * DiligentHost::Create, so set it before the device is created (galplay does).
+     */
+    struct AndroidHostOptions
+    {
+        bool forceCpuBcDecode = false;     ///< decode BC on the CPU even when the GPU samples it (tests the fallback)
+        std::string pipelineCachePath;     ///< the Vulkan pipeline cache file: loaded at Create, written by SavePipelineCache; empty: none
+        bool letterbox = true;             ///< Present keeps the head's aspect ratio (black bars); false stretches it
+    };
+    void SetAndroidHostOptions(const AndroidHostOptions& options);
+    [[nodiscard]] AndroidHostOptions GetAndroidHostOptions();
+
+    /** What the Android device answered at creation (for galplay.json). */
+    struct AndroidDeviceSupport
+    {
+        bool bcFeature = false;            ///< DeviceFeatures::TextureCompressionBC enabled
+        bool bcSampled = false;            ///< BC3_UNORM is a shader-resource format
+        bool d24s8Attachment = false;      ///< D24_UNORM_S8_UINT is a depth-stencil attachment format
+        bool d32s8Attachment = false;      ///< D32_FLOAT_S8X24_UINT is
+        bool cpuBcDecode = false;          ///< the texture path decodes BC on the CPU
+        bool d32s8ForD24s8 = false;        ///< depth-stencil targets use D32S8
+        std::string pipelineCachePath;
+        std::uint64_t pipelineCacheBytesLoaded = 0;
+        bool pipelineCacheCreated = false;
+        // VkPhysicalDeviceLimits: the rasteriser's and the sampler's fixed-point precision. The PC's AMD
+        // GPU has 8 bits each; Vulkan's minimum, which SwiftShader (the emulator) has, is 4. With 4 bits the
+        // UI's linear filtering lands up to about 1/32 of a texel off, so frames differ at edges.
+        std::uint32_t subPixelPrecisionBits = 0;
+        std::uint32_t subTexelPrecisionBits = 0;
+        std::uint32_t mipmapPrecisionBits = 0;
+    };
+#endif
+
+    /**
+     * Where Diligent's messages go besides the counters (the platform's debug output): galplay on Android
+     * passes them to its log. `severity` is Diligent's DEBUG_MESSAGE_SEVERITY (0 info .. 3 fatal). Null: none.
+     */
+    using DiligentMessageSink = void (*)(int severity, const char* message);
+    void SetDiligentMessageSink(DiligentMessageSink sink);
 
     class DiligentHost
     {
@@ -255,8 +320,8 @@ namespace gpg::gal::diligent
         DiligentHost& operator=(const DiligentHost&) = delete;
 
         /**
-         * Creates the device of `api` and its immediate context, a swap chain on `window` (an HWND) and
-         * a head render target of `width` x `height`. `validation` turns on Diligent's validation and
+         * Creates the device of `api` and its immediate context, a swap chain on `window` (an HWND; on
+         * Android an ANativeWindow*, or null for none yet, which SetWindow adds later) and a head render target of `width` x `height`. `validation` turns on Diligent's validation and
          * the API's own: the D3D11 debug layer in a Debug build of Diligent (EngineFactoryD3D11.cpp:
          * 243-249), the Khronos validation layer for Vulkan when the machine has it, a debug context
          * and the GL debug output for OpenGL. Returns false with `error` set on failure.
@@ -346,6 +411,25 @@ namespace gpg::gal::diligent
         [[nodiscard]] std::string GetSwapChainFormat() const;
         [[nodiscard]] std::uint32_t GetHeadWidth() const;
         [[nodiscard]] std::uint32_t GetHeadHeight() const;
+
+#if !defined(_WIN32)
+        // ---- M7a1 (Android): the window is the GameActivity's ANativeWindow, which comes and goes ----
+
+        /**
+         * Replaces the window (an ANativeWindow*; null releases the swap chain and its surface, as
+         * APP_CMD_TERM_WINDOW requires). The device and every resource stay. Holds a reference to the
+         * window while it uses it. Render thread.
+         */
+        bool SetWindow(void* nativeWindow, std::string* error);
+        /** Rebuilds the swap chain for the window's current size and transform (resize, rotation). */
+        bool UpdateSurface(std::string* error);
+        [[nodiscard]] bool HasSurface() const;
+        /** "2400x1080 RGBA8_UNORM, pre-transform rotate 90, 3 buffers" (empty without a swap chain). */
+        [[nodiscard]] std::string GetSurfaceDescription() const;
+        /** Writes the pipeline cache file; returns the bytes written (0 without a cache). */
+        std::uint64_t SavePipelineCache(std::string* error);
+        [[nodiscard]] AndroidDeviceSupport GetDeviceSupport() const;
+#endif
 
     private:
         struct Impl;

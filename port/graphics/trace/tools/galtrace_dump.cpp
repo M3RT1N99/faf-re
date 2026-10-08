@@ -3,16 +3,19 @@
 // Android x86_64 and arm64 by android/build_reader.py, so the same trace is shown to decode on the
 // pointer width and ABI the phone will play it on.
 //
-//   galtrace-dump <trace> [--records [N]] [--json <file>] [--quiet] [--blob <id> <file>]
+//   galtrace-dump <trace> [--records [N]] [--json <file>] [--quiet] [--blob <id> <file>] [--data <dir>]
 //
 // It reads every record, checks the stream rules (GalTraceIO.h Validator: schema, blob hashes, live
 // ids of the right type, End totals) and prints the metadata, the op counts and a content digest:
 // FNV-1a 64 over every record's header and payload, the header's metadata excluded, so two traces
 // of the same run have the same digest when their call streams are identical byte for byte.
-// --blob writes one payload (blob #id as --records prints it) to a file, hash-verified.
+// --blob writes one payload (#id as --records prints it) to a file, hash-verified; for a version 2
+// reference it needs --data. --data <dir>: the game files a version 2 trace refers to, as a tree that
+// mirrors the VFS (galtrace-refs extract); every reference is then read and checked against its hashes.
 // Exit code 0 when the trace is valid, 1 when it is not, 2 for usage errors.
 
 #include "../format/GalTraceIO.h"
+#include "../format/GalTraceResolver.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -76,7 +79,7 @@ namespace
 int main(int argc, char** argv)
 {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: galtrace-dump <trace> [--records [N]] [--json <file>] [--quiet] [--blob <id> <file>]\n");
+    std::fprintf(stderr, "usage: galtrace-dump <trace> [--records [N]] [--json <file>] [--quiet] [--blob <id> <file>] [--data <dir>]\n");
     return 2;
   }
   const std::string path = argv[1];
@@ -85,6 +88,7 @@ int main(int argc, char** argv)
   bool quiet = false;
   std::uint32_t blobId = 0;
   std::string blobPath;
+  std::string dataDir;
   for (int index = 2; index < argc; ++index) {
     if (std::strcmp(argv[index], "--records") == 0) {
       recordsToPrint = -1;
@@ -97,6 +101,8 @@ int main(int argc, char** argv)
       blobId = static_cast<std::uint32_t>(std::strtoul(argv[index + 1], nullptr, 10));
       blobPath = argv[index + 2];
       index += 2;
+    } else if (std::strcmp(argv[index], "--data") == 0 && index + 1 < argc) {
+      dataDir = argv[++index];
     } else if (std::strcmp(argv[index], "--quiet") == 0) {
       quiet = true;
     } else {
@@ -112,7 +118,12 @@ int main(int argc, char** argv)
     return 1;
   }
 
+  galtrace::DirectoryResolver resolver(dataDir);
   galtrace::Validator validator;
+  if (!dataDir.empty()) {
+    reader.SetResolver(&resolver);
+    validator.SetResolveReferences(true);
+  }
   galtrace::Record record;
   std::uint64_t digest = 0xCBF29CE484222325ULL;
   std::uint64_t payloadBytes = 0;
@@ -146,9 +157,11 @@ int main(int argc, char** argv)
   const std::string verdict = valid ? "VALID" : "INVALID: " + validator.Error();
   if (!blobPath.empty()) {
     std::vector<std::uint8_t> bytes;
-    std::FILE* const out = reader.ReadBlob(blobId, &bytes) ? std::fopen(blobPath.c_str(), "wb") : nullptr;
+    galtrace::PayloadStatus status;
+    const bool read = reader.ReadPayload(blobId, &bytes, &status) && status.exact;
+    std::FILE* const out = read ? std::fopen(blobPath.c_str(), "wb") : nullptr;
     if (out == nullptr) {
-      std::fprintf(stderr, "galtrace-dump: blob #%u not written\n", blobId);
+      std::fprintf(stderr, "galtrace-dump: payload #%u not written%s%s\n", blobId, status.error.empty() ? "" : ": ", status.error.c_str());
       return 1;
     }
     std::fwrite(bytes.data(), 1, bytes.size(), out);
@@ -174,6 +187,13 @@ int main(int argc, char** argv)
       static_cast<unsigned long long>(validator.Records()), reader.BlobCount(), validator.Presents(), validator.ObjectsDefined(),
       validator.LiveObjects(), static_cast<unsigned long long>(offThread), static_cast<unsigned long long>(threw)
     );
+    const std::string resolved = dataDir.empty() ? std::string() : ", " + std::to_string(validator.ReferencesResolved()) + " read from --data and equal";
+    std::printf("payloads %u: embedded %u (%llu bytes), references %u (%llu bytes%s), digests %u (%llu bytes), compositions %u (%llu bytes, "
+                "%llu literal bytes)\n",
+                reader.PayloadCount(), validator.Embedded(), static_cast<unsigned long long>(validator.EmbeddedBytes()), validator.References(),
+                static_cast<unsigned long long>(validator.ReferenceBytes()), resolved.c_str(), validator.Digests(),
+                static_cast<unsigned long long>(validator.DigestBytes()), validator.Compositions(),
+                static_cast<unsigned long long>(validator.CompositionBytes()), static_cast<unsigned long long>(validator.LiteralBytes()));
     std::printf("content digest %s\n", galtrace::Hex64(digest).c_str());
     std::printf("%s\n", verdict.c_str());
   } else {
@@ -204,11 +224,19 @@ int main(int argc, char** argv)
       std::fprintf(json,
                    "},\n  \"records\": %llu,\n  \"blobs\": %u,\n  \"payload_bytes\": %llu,\n  \"presents\": %u,\n"
                    "  \"objects_defined\": %u,\n  \"live_at_end\": %u,\n  \"off_thread_records\": %llu,\n  \"threw\": %llu,\n"
-                   "  \"content_digest\": \"%s\"\n}\n",
+                   "  \"content_digest\": \"%s\",\n",
                    static_cast<unsigned long long>(validator.Records()), reader.BlobCount(),
                    static_cast<unsigned long long>(payloadBytes), validator.Presents(), validator.ObjectsDefined(),
                    validator.LiveObjects(), static_cast<unsigned long long>(offThread), static_cast<unsigned long long>(threw),
                    galtrace::Hex64(digest).c_str());
+      std::fprintf(json,
+                   "  \"payloads\": {\"embedded\": %u, \"embedded_bytes\": %llu, \"references\": %u, \"reference_bytes\": %llu, "
+                   "\"references_resolved\": %u, \"digests\": %u, \"digest_bytes\": %llu, \"compositions\": %u, \"composition_bytes\": %llu, "
+                   "\"literal_bytes\": %llu}\n}\n",
+                   validator.Embedded(), static_cast<unsigned long long>(validator.EmbeddedBytes()), validator.References(),
+                   static_cast<unsigned long long>(validator.ReferenceBytes()), validator.ReferencesResolved(), validator.Digests(),
+                   static_cast<unsigned long long>(validator.DigestBytes()), validator.Compositions(),
+                   static_cast<unsigned long long>(validator.CompositionBytes()), static_cast<unsigned long long>(validator.LiteralBytes()));
       std::fclose(json);
     }
   }
