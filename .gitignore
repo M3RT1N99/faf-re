@@ -26,6 +26,9 @@ dependencies/wxWindows-2.4.2/**/*
 dependencies/WildMagic3p8/**/*
 dependencies/DiligentCore/
 dependencies/abseil-cpp/
+# FreeType 2.14.3 (FTL), fetched for the Android font rasteriser (tag VER-2-14-3, tarball sha256
+# dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261).
+dependencies/freetype/
 dependencies/*.7z
 dependencies/DXSDK_D3DX
 *.pdb
