@@ -63,7 +63,10 @@ features).
 | 2026-10-08 | Galaxy S22 Ultra (0.4.1, 3452) | Samsung Xclipse 920 (AMD RDNA2), Vulkan 1.3.279, Samsung driver 24.0.545; GLES is ANGLE on that Vulkan driver (24.1.293) | yes / yes / yes, **no** / yes (also D32S8) | exact (device 2.2 ms, first pipeline 18.6 ms, cached 0.1 ms) | 3.2 (ANGLE), yes / yes / yes, yes, yes | exact | 123 / 93 ms (about 2.5x the x86_64 emulator); every section's teardown ok |
 
 What the S22 Ultra's probe means for the graphics plan ([renderer.md](renderer.md)):
-- **Textures.** Vulkan samples BC1-3 directly, so FA's DXT textures need no CPU decode or ETC2/ASTC
+- **Textures (corrected by the 0.5.0 menu replay).** The format properties list BC1-3 as sampleable, but the driver
+  does not offer the `textureCompressionBC` feature, so Vulkan may not use them: FA's DXT textures are
+  decoded on the CPU (or should be transcoded to ETC2/ASTC, which the GPU has, to save memory). The rest of
+  this bullet, as first written, assumed otherwise: Vulkan samples BC1-3 directly, so FA's DXT textures need no CPU decode or ETC2/ASTC
   transcode on this GPU. Mali GPUs lack BC, so the transcode path is still needed for them.
 - **Depth.** D24S8 is not an attachment format here. A depth-stencil request has to map to
   D32_FLOAT_S8_UINT (or D32 without stencil).
@@ -88,6 +91,15 @@ read-back frames, PC references `reference_frames.diligent:vk`).
 | 2026-10-08 | emulator x86_64 (0.5.0 x86_64 APK, 3455, pre-commit) | SwiftShader (LLVM 10), 4 / 4 / 4 | D32S8 (no D24S8), BC sampled | recorded pace | 0 of 9 equal | **fail**: 34,050-135,384 px differ, max \|delta\| 10 | 30.5 s, 33.6 ms (work 8.6 ms) | 4 compiled in 58 ms / 0 compiled, 4 cached (0.4 ms) |
 | 2026-10-08 | the same | the same | BC decoded on the CPU (forced) | recorded pace | 0 of 9 equal | **fail**: 25,924-108,123 px, max \|delta\| 10 | 30.5 s | cached |
 | 2026-10-08 | the same emulator, arm64 under ARM translation (0.5.0 arm64 APK, 3455, pre-commit) | the same | D32S8, BC sampled | recorded pace; as fast as possible | the x86_64 frames byte for byte | fail (as x86_64) | 30.9 s, 34.0 ms (work 10.3 ms); fast 9.0 s | 4 compiled in 619 ms (without the cache) / 4 cached (20 ms) |
+| 2026-10-08 | **Galaxy S22 Ultra** SM-S908B, Android 16 (0.5.0, 3456, the published release) | Samsung Xclipse 920, 8 / 8 / 8 | D32S8 (no D24S8); BC decoded on the CPU: the driver lists BC1-3 as sampleable formats but does not offer the `textureCompressionBC` feature, so the backend may not use them | recorded pace, swap chain 720x1544 RGBA8, pre-rotated 90° | 0 of 9 equal | **fail by the rule, but close**: 12,072-49,757 px differ (1.3-5.4 %), max \|delta\| **2** (98-99 % of them by 1), alpha identical | 30.2 s, 33.1 ms; replay work 5.8 ms (p95 7.8 ms); first frame after 256 ms | 0 compiled, 4 cached (1 ms; a second launch), pipeline cache warm |
+
+The S22 Ultra's differences are filtering rounding, not a backend error. 99.9 % of the differing pixels
+lie inside the PC's own 3x3 neighbourhood (+-1). All of them are within 1/16 of the local contrast + 1, and
+only 3-15 per frame fall on flat areas (by 1). So the CPU BC decoder matches the PC's GPU decode, and the
+rest is how two GPU generations round bilinear weights (the same kind of difference the PC's own D3D11
+driver shows against D3D9 in the lobby). Exact frames across different GPUs would need filtering done in
+the shader. Like the emulator, the phone ends one render pass per frame for the present
+(`endsInDrawByTargets` 900; Windows 0).
 
 The emulator's frames are deterministic (identical between runs, ABIs and with HOME in between) but not the
 PC's; [renderer.md](renderer.md#the-emulators-frames-swiftshader) explains what is known.
