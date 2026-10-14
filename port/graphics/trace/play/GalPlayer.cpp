@@ -255,7 +255,7 @@ namespace port::graphics::trace
                         }
                     } catch (const gal::Error& galError) {
                         ++report_.galErrors;
-                        Error(record, std::string("gal::Error ") + galError.what() + " (" + galError.GetRuntimeMessage() + ")");
+                        Error(record, std::string("gal::Error ") + galError.what() + " (" + galError.GetFile() + ")");
                     } catch (const std::exception& exception) {
                         ++report_.galErrors;
                         Error(record, std::string("exception ") + exception.what());

@@ -281,7 +281,7 @@ namespace port::graphics::trace
                     Log("galplay: device created (api %d, %d head(s))", static_cast<int>(requested.mDeviceType), requested.GetHeadCount());
                     return device;
                 } catch (const gal::Error& error) {
-                    Log("galplay: device creation failed: %s (%s)", error.what(), error.GetRuntimeMessage());
+                    Log("galplay: device creation failed: %s (%s)", error.what(), error.GetFile());
                 } catch (const std::exception& error) {
                     Log("galplay: device creation failed: %s", error.what());
                 }

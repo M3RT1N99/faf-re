@@ -194,7 +194,7 @@ namespace port::graphics::capture
       } catch (const gpg::gal::Error& error) {
         detail::Abort(
           detail::kExitCaptureFailed, "frame %u: gal readback failed: %s (%s:%d)", frame, error.what(),
-          error.GetRuntimeMessage(), error.GetRuntimeLine()
+          error.GetFile(), error.GetLine()
         );
       } catch (const std::exception& error) {
         detail::Abort(detail::kExitCaptureFailed, "frame %u: readback failed: %s", frame, error.what());
