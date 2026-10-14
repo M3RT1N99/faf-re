@@ -52,7 +52,8 @@ runs themselves take about 5 minutes. You need no PC tools and no USB debugging.
    - in the app, open **Replay test** > **Pick replay…** > *Downloads* > `26675870.fafreplay`.
 
    The card then shows `26675870.fafreplay · scmp_026 · faf · 465 beats` and
-   `reference: chain 4971bbe58c5586a0, game over at beat 467`.
+   `reference: chain 4971bbe58c5586a0, game over at beat 467` (releases up to 0.5.0; builds after
+   the 2026-10 master merge show `82c6158cedf49bda`).
 6. **Run the tests.** In the **Replay test** card, open **Advanced options** and tick **Run the replay
    twice (is the result deterministic?)**. Then run these one after the other, each once the previous
    result is shown:

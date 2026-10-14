@@ -470,6 +470,61 @@ failure paths over adb: `FAF_PROBE_TEST_FAULT=teardown-crash:vulkan_render` keep
 "pattern exact" and reports `teardown=crashed` (exit 0); `teardown-hang:gles` is killed after 20 s
 (`teardown=timeout`, exit 0); `crash:vulkan_render` (before the result) gives `crashed`, exit 1.
 
+## Android runner after the 2026-10 master merge
+
+The merge of origin/master (93cebd91, 108 commits: Draiget's serializer refactor, the probe purge,
+the x64 large-address option) into android-port (7dbd3226) changes the engine, so the Android
+baselines were measured again on 2026-10-14. The runner sets are listed in
+[the runner README](../../port/engine/runner/README.md#status-after-the-2026-10-master-merge); the
+closure was regenerated and all four sets link with 0 undefined and 0 duplicate symbols.
+
+API 36 emulator (`fafre_api36`), x86_64 native and arm64-v8a under the ARM translation, both
+replays with `--host-prefs none` (no `Game.prefs`, no vault mods: the app's reference mode).
+Windows is the merged Debug|Win32 `main.exe` (vault T1 on the same converted bytes; T2 the local
+recording, as in the Windows baseline):
+
+| Replay | Android chain (x86_64 and arm64, `-O0` and `-O2`) | Windows chain | First diverging checkpoint | Game over | Lua errors load/sim (Windows) |
+|---|---|---|---|---:|---|
+| T1 26675870 (vault download) | `82c6158cedf49bda` | `c24f3952a5be0747` | beat 100 of 450, beat 0 equal | 467 | 2/0 (2/0) |
+| T2 26119449 | `d168c04aefe9f9e8` | `a14dbd59edd77452` | beat 100 of 4650, beat 0 equal | 4697 | 2/1 (2/1) |
+
+| Set | T1 load / sim, beats/s | T2 load / sim, beats/s |
+|---|---|---|
+| x86_64 `-O0` | 11.9 / 4.8 s, 98; repeat 7.8 / 3.8 s, 122 | 9.1 / 27.0 s, 174; repeat 6.9 / 20.3 s, 231 |
+| x86_64 `-O2` | 3.6 / 2.1 s, 222; repeat 3.3 / 1.8 s, 253 | 3.3 / 10.6 s, 445; repeat 2.9 / 8.2 s, 573 |
+| arm64 `-O0` (translated) | 34.9 / 17.3 s, 27; repeat 29.8 / 14.8 s, 32 | 24.3 / 88.9 s, 53; repeat 22.5 / 86.8 s, 54 |
+| arm64 `-O2` (translated) | 12.1 / 4.2 s, 111; repeat 11.2 / 3.3 s, 141 | 10.7 / 23.7 s, 198; repeat 9.5 / 15.3 s, 307 |
+
+- **Equal across ABIs, builds and repeats.** All 16 runs (two replays, four sets, twice each) exit
+  0 with the game over at the replay's end and the chains above. The divergence from Windows still
+  starts at beat 100 (W5), as before the merge.
+- **Both platforms changed at the same beat.** Against the pre-merge chains (Android T1
+  `4971bbe58c5586a0`, T2 `7eec974b19f98ebc`; Windows T1 `7e159db290f576f1`) the first checkpoint that
+  differs is beat 400 in T1 on Android and on Windows alike, and in T2 on Android. Master's sim
+  changes, not the port, moved them. The sim Lua errors dropped from 11 to 0 (T1) and from 36 to 1
+  (T2) on both platforms: the `blip:GetSource` error of the known issues no longer occurs. Which
+  master commit is responsible is the Windows analysis (gate 2 of the merge).
+- **Registry:** Sim 735 binders on both (master added four), the other Android counts and the
+  missing user-side entries as in [the runner README](../../port/engine/runner/README.md#registry-check).
+- **Warnings:** T1 108 on Android against 99 on Windows: the 7 `[stub]` first-call lines and the
+  2 "Preferences file is not found" lines of the reference mode. Master's probe purge took the
+  per-unit `[MOTDIAG]`/`[STEERDIAG]` lines out: Android's T1 had about 1970 warnings before, its T2
+  51,264 (now 519).
+- **Speed:** the PC was building and running the Windows gates at the same time, so these times
+  are higher and noisier than the 0.4.1 ones. The sim phase of `-O2` is 2-2.5x faster than `-O0`
+  on x86_64 and about 4x under translation; translation costs 3-3.5x at `-O0` and about 2x at
+  `-O2`.
+- **T2 needs the reference mode now.** With the host's `Game.prefs` the script stops: its
+  `PreGameData.CurrentMapDir` names a generated map that is no longer on the PC. The reference mode
+  does not read it; T1 gave the same chain with and without `Game.prefs` before the merge.
+
+**In the app** (the merged APKs, versionCode 3571 from 6a1a8c6d, Release, not published): the
+replay test with self-test and the `-O2` build, run twice, passes on both APKs: x86_64 41/41,
+1952 MB, load 4.7 s / sim 2.5 s; arm64-v8a under translation 41/41, 1664 MB, 14.1 / 6.0 s. Both
+give `82c6158cedf49bda`, "matches the reference", and an identical second run. The menu replay
+runs to frame 900 on both, with the nine read-back frames byte-identical to 0.5.0's emulator frames
+(same hashes, same BMPs): the merge did not change what the app's renderer draws.
+
 ## Known issues
 
 - **Sim Lua errors that do not stop the sim:**

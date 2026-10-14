@@ -139,6 +139,14 @@ These are the Windows values (Debug|Win32 after the M3c `SetAutoMode` fix, ident
 T3 and R4). `/headlessregistry <file>` writes every entry (`rtype`, `lua <set> <group> <name>`,
 `console`, `prefetch`, `factory`, `serhelper`, `rtypecb`) so two runs can be diffed.
 
+**Since the 2026-10 master merge** (7dbd3226) Windows registers 735 Sim binders (master added
+`GetDepositsAroundPoint`, `GetTimeForProfile`, `SetCommandSource` and `SetFocusArmy`), 437 console
+commands (`ui_AttackGroundIgnoresFireState` is gone), 397 pending serializer helpers and 91 RTypes
+with serializer callbacks (master's serializer refactor renamed and added helpers); RTypes (554),
+the Core, Unsafe and User sets, the prefetch kinds and the factories are unchanged. The Android
+runner (all four merged sets, every replay) gives 735 / 437 - 8 / 396 / 90 and misses exactly the
+same entries as before, listed below; nothing exists on Android that Windows lacks.
+
 The Android runner (M3c, x86_64 and arm64, every replay) registers a strict subset; nothing is
 registered on Android that Windows does not have. Equal: the Core (71), Sim (731) and Unsafe (1)
 Lua sets name for name, the four prefetch kinds with their resource types, the four resource
@@ -302,7 +310,7 @@ the binaries in its `build_ids`:
 
 | Replay (vault) | sha256 of the download | Beats | Game over | Chain (x86_64 and arm64 translated) | First checkpoint differing from Windows |
 |---|---|---:|---:|---|---|
-| 26675870 (SCMP_026) | `fbb9c0aec784ba62b2050b15e793b7808527e0ac9d0eade1e15d33ce73cfdb19` | 465 | 467 | `4971bbe58c5586a0` | beat 100 (Windows `7e159db290f576f1` on the same converted bytes, Debug\|Win32 M3c build) |
+| 26675870 (SCMP_026) | `fbb9c0aec784ba62b2050b15e793b7808527e0ac9d0eade1e15d33ce73cfdb19` | 465 | 467 | `82c6158cedf49bda` since the 2026-10 master merge (0.4.x/0.5.0: `4971bbe58c5586a0`) | beat 100 (Windows `c24f3952a5be0747` on the same converted bytes, merged Debug\|Win32 build; before the merge `7e159db290f576f1`) |
 
 The vault copy decodes to 11352 bytes against 11350 for the local recording M3c used (two more
 bytes at the end); the chain is the same as M3c's (`4971bbe58c5586a0` on both ABIs, also without
@@ -500,6 +508,40 @@ these runner and engine build ids:
 `ae26925362a85743d63e55fbba5c7d170719a9d8` (x86_64). The engines are the same files as in the first
 0.4.1 build (`r041-pkg`, `r041-pkg-O2`), whose runners (`fbda64ef…`, `dde539ff…`, `331b8c4e…`,
 `5b038549…`) the table no longer names, so a Release build refuses them.
+
+## Status after the 2026-10 master merge (2026-10-14)
+
+`closure.txt` was regenerated from the merged tree's Debug|Win32 objects (7dbd3226) and the
+post-merge sweep (`--sweep buildstage/engine-sweep/merge`): **751 engine TUs + 31 WildMagic TUs**
+(variant `init`, 607 roots), 303 symbols cut. 108 TUs left the closure: the serializer, construct
+and type-info TUs that master's serializer refactor folded into their types and dropped from
+main.vcxproj, and `InfluenceGridSerializer.cpp`, which has no static initialiser any more.
+`CResourceWatcher.cpp` (master's resource manager, 962ceaa3) joined. The three duplicate
+definitions MSVC's `/FORCE` hides are the same as before. `link_closure.py` reads WildMagic's
+objects from `Foundation/Debug`, which the current `Foundation.vcxproj` no longer writes (its
+objects go to `Foundation/Foundation/Debug`; those in `Foundation/Debug` date from 2026-10-03). A
+run against the fresh objects gives the same closure.
+
+`build_runner.py --probe --deviceprobe`, arm64-v8a and x86_64, `-O0` and `-O2`: **817 of 817
+compile units, 0 undefined and 0 duplicate symbols**. Neither the runner's sources nor the stubs
+had to change. A relink with nothing changed gives the same build ids.
+
+| ABI | Build | Directory (`buildstage/runner/`) | `faf_headless_runner` | `libfafengine.so` |
+|---|---|---|---|---|
+| arm64-v8a | `-O0` | `merge-A-arm64-v8a` | `d9922c82a7d31a5ac68b2a99596936602e84d0e4` (0.4.1's) | `df3ff0f8c979868f5955531eaf29c1c455719213` |
+| arm64-v8a | `-O2` | `merge-A-O2-arm64-v8a` | `b102c84b16582f218e1e7ec9627220810e075bd8` (0.4.1's) | `a4d5db0f0ace5409b55926bee785d71dec5970e7` |
+| x86_64 | `-O0` | `merge-A-x86_64` | `858ee967d32623a207fdc2c579a1c1b9a48b3094` (0.4.1's) | `e5c0a8e3b7167c4f1f0aebab2d0621a5361a5054` |
+| x86_64 | `-O2` | `merge-A-O2-x86_64` | `f051e4534494dc71ac3eae2de48d43c58049ca9b` (0.4.1's) | `8ba4a40d8d2386e250554552cede52c6ee62765f` |
+
+The executables, the `-O0` arena probes and the device probes are the 0.4.1 files (same build
+ids); only the engines are new. `port/android/assets/replay_refs.json` names these engines, with
+the chain `82c6158cedf49bda` on all four. The emulator runs are in
+[headless-replay.md](../../../docs/port/headless-replay.md#android-runner-after-the-2026-10-master-merge).
+
+Master still has TEMPORARY PROBEs on the sim path: `[BEATPIPE]` in `SimDriver.cpp` and
+`CReplayClient.cpp` appends to `faf_diag.log` in the current directory (the runner's directory
+over adb, the run's folder in the app), about 60 KB per T1 run and 0.5 MB per T2 run. They do not
+change the chains.
 
 ## Status (2026-10-07, M3c; releases 0.4.0 and 0.4.1)
 

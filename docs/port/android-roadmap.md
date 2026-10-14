@@ -85,6 +85,16 @@ L4 is the goal. L2 is the first point where the port is fun to use. L3 is the fi
   emulator, and a second run on the phone matched. The debug (`-O0`) build manages about 24
   beats/s in the sim; why the phone is slower than the emulator's translation is not measured yet.
   See [headless-replay.md](headless-replay.md#first-run-on-a-real-arm-core).
+- **Master merged (2026-10-14, 7dbd3226).** origin/master (93cebd91: Draiget's serializer
+  refactor, the TEMPORARY PROBE purge, the x64 large-address option) is merged into android-port;
+  master owns the recovered code and the port's guards are re-applied onto it. The runner's
+  closure shrank to 751 + 31 TUs (the folded serializer TUs), all four Android runner sets link
+  with 0 undefined / 0 duplicate symbols, and the emulator gives new, again ABI- and
+  build-independent chains (T1 `82c6158cedf49bda`, T2 `d168c04aefe9f9e8`), still first differing
+  from Windows at beat 100. The chains moved on both platforms at the same beat (400), from
+  master's sim changes; the `GetSource` Lua errors are gone. The app's reference table and the
+  in-app test follow the new engines; the menu replay's frames did not change. See
+  [headless-replay.md](headless-replay.md#android-runner-after-the-2026-10-master-merge).
 - **Not yet:** nothing runs without the low-address arena (M3d).
 
 ## Workstreams
@@ -124,7 +134,14 @@ What the compiler does not catch matters more than what it does.
      `CWldSession`, the movie decoder and others. The Global allocator's page-owner map covers
      exactly 4 GB.
    - **Test oracle on Windows first:** build x64 with `LargeAddressAware=true`, `/HIGHENTROPYVA`
-     and top-down allocation, then fix what breaks there before any device is involved.
+     and top-down allocation, then fix what breaks there before any device is involved. Master
+     provides it since 93cebd91 (merged 2026-10-14): `main.vcxproj`'s `FafX64LargeAddress`
+     (`heap`: `main_x64_la.exe`, large-address-aware, no high-entropy ASLR; `full`: with it), and
+     `FAF_HIGHMEM=1`, which reserves every free region below 4 GB before the CRT starts, so a
+     pointer squeezed through a 32-bit word faults on first use. This is M3d's Windows oracle; its
+     first fault is in wx 2.4.2 (`WXLPARAM` is `long`) while the log window is created. A
+     headless run (`/headlessreplay`, no wx window) may get past it to the sim's truncations; not
+     tried yet.
 4. **ABI traps that compile but misbehave.**
    - `GPG_PREREGISTER_INIT` (593 uses) places pointers in `.CRT$XCL`. On ELF that emits no
      `.init_array` entry, so no pre-registration would ever run. Move it to
@@ -373,7 +390,7 @@ Every Android player's FAF account also needs a Steam or GOG ownership link, as 
 
 ```
 M1  one APK, data deploy, native data bring-up (L0)              done
-M2  W1.1-2: arm64 compile sweep + compile fixes (896/1010)       done; x64 LargeAddressAware oracle open
+M2  W1.1-2: arm64 compile sweep + compile fixes (896/1010)       done; x64 LargeAddressAware oracle: master's FAF_HIGHMEM (merged 2026-10-14)
 M3  W1.3-5: 64-bit clean; headless arm64 replay runner runs a replay to the end (adb shell)
     M3a x86 runner (main.exe /headlessreplay), 4 vault replays to the end    done
     M3b arm64 (and x86_64) link of the runner, 0 undefined / 0 duplicate      done
