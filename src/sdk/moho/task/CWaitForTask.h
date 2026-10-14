@@ -52,6 +52,17 @@ namespace moho
     int Execute() override;
 
     /**
+     * Address: 0x004CA750 (FUN_004CA750)
+     *
+     * What it does:
+     * Builds a new `CWaitForTask` for an archive load and hands it back unowned; its
+     * members are loaded over it afterwards.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
+
+    /**
      * Address: 0x004CC3B0 (FUN_004CC3B0, Moho::CWaitForTask::MemberSerialize in export label)
      *
      * What it does:
@@ -65,7 +76,7 @@ namespace moho
      * What it does:
      * Saves base `CTask`, wait-link weak pointer, and Lua payload object to archive.
      */
-    void MemberSerialize(gpg::WriteArchive* archive);
+    void MemberSerialize(gpg::WriteArchive* archive) const;
 
   public:
     // 0x18: reserved/unknown dword (constructors 0x004CA470/0x004CA520 do not initialize it).
@@ -73,120 +84,6 @@ namespace moho
     WeakPtr<STaskEventLinkage> mEventLinkRef; // 0x1C
     LuaPlus::LuaObject mEventObject;          // 0x24
   };
-
-  class CWaitForTaskConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC62A0 (FUN_00BC62A0, dynamic initializer for the global
-     * `CWaitForTaskConstruct` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * construct/delete callback fields.
-     */
-    CWaitForTaskConstruct();
-
-    /**
-     * Address: 0x00BF0C10 (FUN_00BF0C10, Moho::CWaitForTaskConstruct::~CWaitForTaskConstruct)
-     */
-    ~CWaitForTaskConstruct();
-
-    /**
-     * Address: 0x004CA740 (FUN_004CA740, Moho::CWaitForTaskConstruct::Construct)
-     *
-     * What it does:
-     * Thin reflection-dispatcher thunk: ignores the archive/objectStorage/
-     * version parameters and forwards only `result` to the allocate +
-     * default-construct + `SetUnowned` body (FUN_004CA750). The callback
-     * allocates its own `CWaitForTask` storage rather than using any
-     * caller-provided storage.
-     */
-    static void Construct(
-      gpg::ReadArchive* archive, int version, gpg::RRef* ownerRef, gpg::SerConstructResult* result
-    );
-
-    /**
-     * Address: 0x004CB9E0 (FUN_004CB9E0, CWaitForTask construct delete callback)
-     *
-     * What it does:
-     * Deletes one construct-path CWaitForTask object through its virtual
-     * deleting destructor.
-     */
-    static void Deconstruct(void* object);
-
-    /**
-     * Address: 0x004CB1B0 (FUN_004CB1B0, sub_4CB1B0)
-     *
-     * What it does:
-     * Binds construct/delete callbacks into CWaitForTask RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::construct_func_t mSerConstructFunc; // +0x0C
-    gpg::RType::delete_func_t mDeleteFunc;           // +0x10
-  };
-
-  static_assert(
-    offsetof(CWaitForTaskConstruct, mSerConstructFunc) == 0x0C,
-    "CWaitForTaskConstruct::mSerConstructFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CWaitForTaskConstruct, mDeleteFunc) == 0x10, "CWaitForTaskConstruct::mDeleteFunc offset must be 0x10"
-  );
-  static_assert(sizeof(CWaitForTaskConstruct) == 0x14, "CWaitForTaskConstruct size must be 0x14");
-
-  class CWaitForTaskSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC62E0 (FUN_00BC62E0, dynamic initializer for the global
-     * `CWaitForTaskSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    CWaitForTaskSerializer();
-
-    /**
-     * Address: 0x00BF0C40 (FUN_00BF0C40, Moho::CWaitForTaskSerializer::~CWaitForTaskSerializer)
-     */
-    ~CWaitForTaskSerializer();
-
-    /**
-     * Address: 0x004CA7E0 (FUN_004CA7E0, CWaitForTaskSerializer::Deserialize callback)
-     * Chain:   0x004CC3B0 (FUN_004CC3B0)
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x004CA7F0 (FUN_004CA7F0, CWaitForTaskSerializer::Serialize callback)
-     * Chain:   0x004CC460 (FUN_004CC460)
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x004CB230 (FUN_004CB230, sub_4CB230)
-     *
-     * What it does:
-     * Binds load/save serializer callbacks into CWaitForTask RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mSerLoadFunc; // +0x0C
-    gpg::RType::save_func_t mSerSaveFunc; // +0x10
-  };
-
-  static_assert(
-    offsetof(CWaitForTaskSerializer, mSerLoadFunc) == 0x0C, "CWaitForTaskSerializer::mSerLoadFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CWaitForTaskSerializer, mSerSaveFunc) == 0x10, "CWaitForTaskSerializer::mSerSaveFunc offset must be 0x10"
-  );
-  static_assert(sizeof(CWaitForTaskSerializer) == 0x14, "CWaitForTaskSerializer size must be 0x14");
 
   class CWaitForTaskTypeInfo : public gpg::RType
   {

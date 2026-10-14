@@ -91,7 +91,7 @@
     }
 
     ADXCRS_Lock();
-    std::memset(channelExpandHandle, 0, sizeof(AdxampRuntimeState));
+    std::memset(channelExpandHandle, 0, sizeof(AdxampState));
     ADXCRS_Unlock();
   }
 
@@ -103,7 +103,7 @@
    */
   [[maybe_unused]] std::int32_t ADXAMP_GetStat(const void* const channelExpandHandle)
   {
-    return static_cast<std::int32_t>(static_cast<std::int8_t>(AsAdxampRuntimeStateConst(channelExpandHandle)->executionState));
+    return static_cast<std::int32_t>(static_cast<std::int8_t>(AsAdxampStateConst(channelExpandHandle)->executionState));
   }
 
   /**
@@ -115,7 +115,7 @@
    */
   std::int32_t ADXAMP_Start(void* const channelExpandHandle)
   {
-    auto* const runtime = AsAdxampRuntimeState(channelExpandHandle);
+    auto* const runtime = AsAdxampState(channelExpandHandle);
     const std::int32_t outputChannelCount = static_cast<std::int32_t>(runtime->outputChannelCount);
 
     for (std::int32_t lane = 0; lane < outputChannelCount; ++lane) {
@@ -144,7 +144,7 @@
    */
   void ADXAMP_Stop(void* const channelExpandHandle)
   {
-    AsAdxampRuntimeState(channelExpandHandle)->executionState = 0;
+    AsAdxampState(channelExpandHandle)->executionState = 0;
   }
 
   /**
@@ -154,7 +154,7 @@
    * Builds per-frame peak envelopes from source lanes and commits metadata
    * blocks to output lanes.
    */
-  std::int32_t __cdecl adxamp_extract(AdxampRuntimeState* const runtime)
+  std::int32_t __cdecl adxamp_extract(AdxampState* const runtime)
   {
     const auto frameSampleCount =
       static_cast<std::int32_t>(static_cast<double>(runtime->sampleRate) * static_cast<double>(runtime->framePeriod));
@@ -230,13 +230,13 @@
    * What it does:
    * Executes one ADXAMP lane when active.
    */
-  std::int32_t ADXAMP_ExecHndl(void* const channelExpandHandle)
+  SofdecAddressWord ADXAMP_ExecHndl(void* const channelExpandHandle)
   {
-    auto* const runtime = AsAdxampRuntimeState(channelExpandHandle);
+    auto* const runtime = AsAdxampState(channelExpandHandle);
     if (runtime->executionState == 2) {
       return adxamp_extract(runtime);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(channelExpandHandle));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(channelExpandHandle));
   }
 
   /**
@@ -247,7 +247,7 @@
    */
   std::int32_t ADXAMP_ExecServer()
   {
-    std::int32_t result = 0;
+    SofdecAddressWord result = 0;
     for (auto& runtime : adxamp_obj) {
       if (runtime.used == 1u) {
         result = ADXAMP_ExecHndl(&runtime);
@@ -264,7 +264,7 @@
    */
   std::int32_t ADXAMP_GetExtractNumSmpl(const void* const channelExpandHandle)
   {
-    return AsAdxampRuntimeStateConst(channelExpandHandle)->extractedSamplesByLane[0];
+    return AsAdxampStateConst(channelExpandHandle)->extractedSamplesByLane[0];
   }
 
   /**
@@ -275,7 +275,7 @@
    */
   std::int32_t ADXAMP_SetSfreq(void* const channelExpandHandle, const std::int32_t sampleRate)
   {
-    AsAdxampRuntimeState(channelExpandHandle)->sampleRate = sampleRate;
+    AsAdxampState(channelExpandHandle)->sampleRate = sampleRate;
     return sampleRate;
   }
 
@@ -287,7 +287,7 @@
    */
   std::int32_t ADXAMP_GetSfreq(const void* const channelExpandHandle)
   {
-    return AsAdxampRuntimeStateConst(channelExpandHandle)->sampleRate;
+    return AsAdxampStateConst(channelExpandHandle)->sampleRate;
   }
 
   /**
@@ -298,7 +298,7 @@
    */
   void* ADXAMP_SetFrmLen(void* const channelExpandHandle, const float frameLength)
   {
-    AsAdxampRuntimeState(channelExpandHandle)->frameLength = frameLength;
+    AsAdxampState(channelExpandHandle)->frameLength = frameLength;
     return channelExpandHandle;
   }
 
@@ -310,7 +310,7 @@
    */
   double ADXAMP_GetFrmLen(const void* const channelExpandHandle)
   {
-    return static_cast<double>(AsAdxampRuntimeStateConst(channelExpandHandle)->frameLength);
+    return static_cast<double>(AsAdxampStateConst(channelExpandHandle)->frameLength);
   }
 
   /**
@@ -321,7 +321,7 @@
    */
   void* ADXAMP_SetFrmPrd(void* const channelExpandHandle, const float framePeriod)
   {
-    AsAdxampRuntimeState(channelExpandHandle)->framePeriod = framePeriod;
+    AsAdxampState(channelExpandHandle)->framePeriod = framePeriod;
     return channelExpandHandle;
   }
 
@@ -333,7 +333,7 @@
    */
   double ADXAMP_GetFrmPrd(const void* const channelExpandHandle)
   {
-    return static_cast<double>(AsAdxampRuntimeStateConst(channelExpandHandle)->framePeriod);
+    return static_cast<double>(AsAdxampStateConst(channelExpandHandle)->framePeriod);
   }
 
   /**
@@ -692,6 +692,7 @@
     *outAinfLength = static_cast<std::int32_t>(ReadAdxBigEndianU32(sourceBytes + offset));
     offset += 4;
 
+    // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
     std::memcpy(outDataIdBytes, sourceBytes + offset, 16);
     offset += 16;
 
@@ -809,7 +810,7 @@
     constexpr const char* kDecodeHeaderAdxPrefix = "E1060101 ADXB_DecodeHeaderAdx: ";
     constexpr const char* kCantPlayAhxByHandle = "can't play AHX data by this handle";
 
-    std::int32_t headerIdentity = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(decoder));
+    std::int32_t headerIdentity = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(decoder));
     decoder->initState = 1;
 
     if (ADX_DecodeInfo(
@@ -1515,7 +1516,7 @@
    * What it does:
    * Restores ADX packet-decoder delay/ext-key lanes from ADXB snapshot fields.
    */
-  std::int32_t ADXB_RestoreSnapshot(moho::AdxBitstreamDecoderState* decoder)
+  SofdecAddressWord ADXB_RestoreSnapshot(moho::AdxBitstreamDecoderState* decoder)
   {
     ADXPD_SetDly(decoder->adxPacketDecoder, decoder->snapshotDelay0, decoder->snapshotDelay1);
     const void* const result = ADXPD_SetExtPrm(
@@ -1524,7 +1525,7 @@
       decoder->snapshotExtKeyMultiplier,
       decoder->snapshotExtKeyAdder
     );
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(result));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(result));
   }
 
   /**
@@ -1628,7 +1629,7 @@
     SjChunkRange writableChunk{};
     outputSjHandle->dispatchTable->getChunk(outputSjHandle, 0, 0x7FFFFFFF, &writableChunk);
     const std::int32_t writableBytes = writableChunk.byteCount;
-    outputSjHandle->dispatchTable->putChunk(outputSjHandle, 0, &writableChunk);
+    outputSjHandle->dispatchTable->ungetChunk(outputSjHandle, 0, &writableChunk);
     if (writableBytes < encoder->headerInfoSizeBytes + 4) {
       return 0;
     }
@@ -1781,7 +1782,7 @@
 
       if (encoder->commonInfoDataBytes != 0 && encoder->commonInfoDataOffset != 0) {
         const void* const commonInfoData = reinterpret_cast<const void*>(
-          static_cast<std::uintptr_t>(static_cast<std::uint32_t>(encoder->commonInfoDataOffset))
+          static_cast<std::uintptr_t>(encoder->commonInfoDataOffset)
         );
         if (adxsje_write68(commonInfoData, 1, encoder->commonInfoDataBytes, outputSjHandle) != encoder->commonInfoDataBytes) {
           return 0;
@@ -1836,10 +1837,10 @@
    * What it does:
    * Clears one ADXSJE IIR filter lane and returns the original handle.
    */
-  std::int32_t __cdecl iirflt_destroy(const std::int32_t iirFilterHandle)
+  std::int32_t __cdecl iirflt_destroy(const SofdecAddressWord iirFilterHandle)
   {
     auto* const filterState = reinterpret_cast<AdxsjeIirFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(iirFilterHandle))
+      static_cast<std::uintptr_t>(iirFilterHandle)
     );
     if (filterState != nullptr) {
       std::memset(filterState, 0, sizeof(AdxsjeIirFilterState));
@@ -1854,10 +1855,10 @@
    * Updates one ADXSJE IIR predictor coefficient pair.
    */
   std::int32_t __cdecl
-  iirflt_set_coef(const std::int32_t iirFilterHandle, const std::int16_t coefficient0, const std::int16_t coefficient1)
+  iirflt_set_coef(const SofdecAddressWord iirFilterHandle, const std::int16_t coefficient0, const std::int16_t coefficient1)
   {
     auto* const filterState = reinterpret_cast<AdxsjeIirFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(iirFilterHandle))
+      static_cast<std::uintptr_t>(iirFilterHandle)
     );
     filterState->coefficient0 = coefficient0;
     filterState->coefficient1 = coefficient1;
@@ -1871,10 +1872,10 @@
    * Stores one ADXSJE IIR delay pair.
    */
   std::int32_t __cdecl
-  iirflt_set_delay(const std::int32_t iirFilterHandle, const std::int16_t delay0, const std::int16_t delay1)
+  iirflt_set_delay(const SofdecAddressWord iirFilterHandle, const std::int16_t delay0, const std::int16_t delay1)
   {
     auto* const filterState = reinterpret_cast<AdxsjeIirFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(iirFilterHandle))
+      static_cast<std::uintptr_t>(iirFilterHandle)
     );
     filterState->delay0 = delay0;
     filterState->delay1 = delay1;
@@ -1888,10 +1889,10 @@
    * Reads one ADXSJE IIR delay pair.
    */
   std::int16_t __cdecl
-  iirflt_get_delay(const std::int32_t iirFilterHandle, std::int16_t* const outDelay0, std::int16_t* const outDelay1)
+  iirflt_get_delay(const SofdecAddressWord iirFilterHandle, std::int16_t* const outDelay0, std::int16_t* const outDelay1)
   {
     const auto* const filterState = reinterpret_cast<AdxsjeIirFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(iirFilterHandle))
+      static_cast<std::uintptr_t>(iirFilterHandle)
     );
     *outDelay0 = filterState->delay0;
     *outDelay1 = filterState->delay1;
@@ -1904,14 +1905,14 @@
    * What it does:
    * Applies one biquad-like ADXSJE predictor step and updates delay history.
    */
-  std::int16_t __cdecl iirflt_put_sig(const std::int32_t iirFilterHandle, const std::int16_t sample)
+  std::int16_t __cdecl iirflt_put_sig(const SofdecAddressWord iirFilterHandle, const std::int16_t sample)
   {
     if (iirFilterHandle == 0) {
       return sample;
     }
 
     auto* const filterState = reinterpret_cast<AdxsjeIirFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(iirFilterHandle))
+      static_cast<std::uintptr_t>(iirFilterHandle)
     );
 
     const std::int16_t previousDelay0 = filterState->delay0;
@@ -1958,14 +1959,14 @@
 
     selectedState->blockSampleCount = blockSampleCount;
     selectedState->iirFilterHandle =
-      static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(iirFilterState));
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(iirFilterState));
 
     if (slotIndex >= kAdxsjePredictorFilterSlotCount) {
       return 0;
     }
 
     selectedState->used = 1;
-    return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(selectedState));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(selectedState));
   }
 
   /**
@@ -1974,10 +1975,10 @@
    * What it does:
    * Clears one predictor-filter lane.
    */
-  void __cdecl pflt_destroy(const std::int32_t filterHandle)
+  void __cdecl pflt_destroy(const SofdecAddressWord filterHandle)
   {
     auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
     if (filterState != nullptr) {
       std::memset(filterState, 0, sizeof(AdxsjePredictorFilterState));
@@ -1991,10 +1992,10 @@
    * Stores one predictor coefficient pair for one ADXSJE predictor-filter lane.
    */
   std::int32_t __cdecl
-  pflt_set_coef(const std::int32_t filterHandle, const std::int16_t coefficient0, const std::int16_t coefficient1)
+  pflt_set_coef(const SofdecAddressWord filterHandle, const std::int16_t coefficient0, const std::int16_t coefficient1)
   {
     auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
     filterState->coefficient0 = coefficient0;
     filterState->coefficient1 = coefficient1;
@@ -2009,7 +2010,7 @@
    * predictor and IIR lanes.
    */
   std::int32_t __cdecl
-  pflt_calc_coef(const std::int32_t filterHandle, const std::int32_t preset, const std::int32_t sampleRate)
+  pflt_calc_coef(const SofdecAddressWord filterHandle, const std::int32_t preset, const std::int32_t sampleRate)
   {
     std::int16_t coefficient0 = static_cast<std::int16_t>(preset);
     std::int16_t coefficient1 = static_cast<std::int16_t>(sampleRate);
@@ -2017,7 +2018,7 @@
 
     pflt_set_coef(filterHandle, coefficient0, coefficient1);
     const auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
     return iirflt_set_coef(filterState->iirFilterHandle, coefficient0, coefficient1);
   }
@@ -2028,10 +2029,10 @@
    * What it does:
    * Stores one predictor delay pair for one ADXSJE predictor-filter lane.
    */
-  std::int32_t __cdecl pflt_set_delay(const std::int32_t filterHandle, const std::int16_t delay0, const std::int16_t delay1)
+  std::int32_t __cdecl pflt_set_delay(const SofdecAddressWord filterHandle, const std::int16_t delay0, const std::int16_t delay1)
   {
     auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
     filterState->delay0 = delay0;
     filterState->delay1 = delay1;
@@ -2044,7 +2045,7 @@
    * What it does:
    * Updates one predictor residual lane and tracks absolute-peak residual.
    */
-  std::int32_t __cdecl pflt_put_sig(const std::int32_t filterHandle, const std::int32_t sampleIndex, const std::int16_t sample)
+  std::int32_t __cdecl pflt_put_sig(const SofdecAddressWord filterHandle, const std::int32_t sampleIndex, const std::int16_t sample)
   {
     const auto clampPcm16 = [](const std::int32_t value) -> std::int16_t {
       if (value < -32768) {
@@ -2057,7 +2058,7 @@
     };
 
     auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
 
     if (sampleIndex == 0) {
@@ -2094,12 +2095,12 @@
    * What it does:
    * Derives ADX gain-step and reciprocal residual scale for one predictor lane.
    */
-  std::int32_t __cdecl pflt_calc_gain(const std::int32_t filterHandle)
+  std::int32_t __cdecl pflt_calc_gain(const SofdecAddressWord filterHandle)
   {
     constexpr double kAdxPcm16MaxMagnitude = 32767.0;
 
     auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
 
     const std::int32_t peakAbsResidual = filterState->peakAbsResidual;
@@ -2132,14 +2133,14 @@
    * What it does:
    * Reads one residual sample from one predictor-filter lane.
    */
-  std::int16_t __cdecl pflt_get_rsig(const std::int32_t filterHandle, const std::int32_t sampleIndex)
+  std::int16_t __cdecl pflt_get_rsig(const SofdecAddressWord filterHandle, const std::int32_t sampleIndex)
   {
     if (filterHandle == 0) {
       return 0;
     }
 
     const auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
     return filterState->residualSignals[sampleIndex];
   }
@@ -2150,14 +2151,14 @@
    * What it does:
    * Reads one quantized residual nibble lane.
    */
-  std::int8_t __cdecl pflt_get_rsig_q(const std::int32_t filterHandle, const std::int32_t sampleIndex)
+  std::int8_t __cdecl pflt_get_rsig_q(const SofdecAddressWord filterHandle, const std::int32_t sampleIndex)
   {
     if (filterHandle == 0) {
       return 0;
     }
 
     const auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
     return filterState->quantizedResidualSignals[sampleIndex];
   }
@@ -2168,10 +2169,10 @@
    * What it does:
    * Stores one quantized residual nibble lane.
    */
-  std::int8_t __cdecl pflt_set_rsig_q(const std::int32_t filterHandle, const std::int32_t sampleIndex, const std::int8_t value)
+  std::int8_t __cdecl pflt_set_rsig_q(const SofdecAddressWord filterHandle, const std::int32_t sampleIndex, const std::int8_t value)
   {
     auto* const filterState = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(filterHandle))
+      static_cast<std::uintptr_t>(filterHandle)
     );
     filterState->quantizedResidualSignals[sampleIndex] = value;
     return value;
@@ -2211,12 +2212,13 @@
           inputHandle->dispatchTable->getChunk(inputHandle, 1, requestedSampleCount * 2, &sourceChunk);
 
           const void* const sourceBytes = reinterpret_cast<const void*>(
-            static_cast<std::uintptr_t>(static_cast<std::uint32_t>(sourceChunk.bufferAddress))
+            static_cast<std::uintptr_t>(sourceChunk.bufferAddress)
           );
+          // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
           std::memcpy(channelSamplePlanes[channelIndex] + samplesRead, sourceBytes, sourceChunk.byteCount);
 
           samplesRead += static_cast<std::int16_t>(sourceChunk.byteCount >> 1);
-          inputHandle->dispatchTable->putChunk(inputHandle, 0, &sourceChunk);
+          inputHandle->dispatchTable->ungetChunk(inputHandle, 0, &sourceChunk);
         }
       }
     }
@@ -2249,9 +2251,9 @@
       return (value - 2340) / 4681;
     };
 
-    const std::int32_t predictorFilterHandle = encoder->predictorFilterHandles[channelIndex];
+    const SofdecAddressWord predictorFilterHandle = encoder->predictorFilterHandles[channelIndex];
     auto* const predictorFilter = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(predictorFilterHandle))
+      static_cast<std::uintptr_t>(predictorFilterHandle)
     );
 
     auto* const predictorDelay0ByChannel = reinterpret_cast<std::int16_t*>(
@@ -2262,7 +2264,7 @@
     );
     const std::int16_t delay0 = predictorDelay0ByChannel[channelIndex];
     const std::int16_t delay1 = predictorDelay1ByChannel[channelIndex];
-    const std::int32_t iirFilterHandle = predictorFilter->iirFilterHandle;
+    const SofdecAddressWord iirFilterHandle = predictorFilter->iirFilterHandle;
 
     pflt_set_delay(predictorFilterHandle, delay0, delay1);
 
@@ -2328,9 +2330,9 @@
       return (value - 2340) / 4681;
     };
 
-    const std::int32_t predictorFilterHandle = encoder->predictorFilterHandles[channelIndex];
+    const SofdecAddressWord predictorFilterHandle = encoder->predictorFilterHandles[channelIndex];
     const auto* const predictorFilter = reinterpret_cast<AdxsjePredictorFilterState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(predictorFilterHandle))
+      static_cast<std::uintptr_t>(predictorFilterHandle)
     );
 
     auto* const rawResidualSignals = reinterpret_cast<std::int16_t*>(
@@ -2447,9 +2449,9 @@
     for (std::int32_t channelIndex = 0; channelIndex < encoder->channelCount; ++channelIndex) {
       adxsje_calc_rsig(encoder, channelIndex);
 
-      const std::int32_t predictorFilterHandle = encoder->predictorFilterHandles[channelIndex];
+      const SofdecAddressWord predictorFilterHandle = encoder->predictorFilterHandles[channelIndex];
       const auto* const predictorFilter = reinterpret_cast<AdxsjePredictorFilterState*>(
-        static_cast<std::uintptr_t>(static_cast<std::uint32_t>(predictorFilterHandle))
+        static_cast<std::uintptr_t>(predictorFilterHandle)
       );
 
       gainByChannel[channelIndex] = predictorFilter->gainStep;
@@ -2690,18 +2692,18 @@
           SjChunkRange chunkRange{};
           inputSjHandle->dispatchTable->getChunk(inputSjHandle, 0, primingBytes, &chunkRange);
           if (chunkRange.byteCount != primingBytes) {
-            inputSjHandle->dispatchTable->putChunk(inputSjHandle, 0, &chunkRange);
+            inputSjHandle->dispatchTable->ungetChunk(inputSjHandle, 0, &chunkRange);
             while (true) {
               Sleep(0);
             }
           }
 
           std::memset(
-            reinterpret_cast<void*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(chunkRange.bufferAddress))),
+            reinterpret_cast<void*>(static_cast<std::uintptr_t>(chunkRange.bufferAddress)),
             0,
             static_cast<std::size_t>(chunkRange.byteCount)
           );
-          inputSjHandle->dispatchTable->submitChunk(inputSjHandle, 1, &chunkRange);
+          inputSjHandle->dispatchTable->putChunk(inputSjHandle, 1, &chunkRange);
         }
 
         ++laneIndex;
@@ -2802,7 +2804,7 @@
     if (encoder->predictorFilterHandles[1] != 0) {
       pflt_destroy(encoder->predictorFilterHandles[1]);
     }
-    const std::int32_t secondFilterHandle = pflt_create(encoder->blockSampleCount);
+    const SofdecAddressWord secondFilterHandle = pflt_create(encoder->blockSampleCount);
     encoder->predictorFilterHandles[1] = secondFilterHandle;
     return secondFilterHandle;
   }
@@ -3003,6 +3005,7 @@
     }
 
     std::memset(encoder->ainfDataIdBytes, 0, sizeof(encoder->ainfDataIdBytes));
+    // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
     std::memcpy(encoder->ainfDataIdBytes, *sourceDataIdBytes, sizeof(encoder->ainfDataIdBytes));
     return encoder->ainfDataIdBytes;
   }
@@ -3231,11 +3234,11 @@
         }
 
         const auto* const sourceSample = reinterpret_cast<const std::int16_t*>(
-          static_cast<std::uintptr_t>(static_cast<std::uint32_t>(sourceChunk.bufferAddress))
+          static_cast<std::uintptr_t>(sourceChunk.bufferAddress)
         );
         stagedPredictorStates[preparedLaneCount] = *sourceSample;
         stagedPredictorStates[preparedLaneCount + 2] = *sourceSample;
-        inputSjHandle->dispatchTable->putChunk(inputSjHandle, 1, &sourceChunk);
+        inputSjHandle->dispatchTable->ungetChunk(inputSjHandle, 1, &sourceChunk);
       }
     }
 
@@ -3565,7 +3568,7 @@
    * What it does:
    * Runs optional post-process detach and stops one ADX packet decoder.
    */
-  std::int32_t ADXB_Stop(moho::AdxBitstreamDecoderState* decoder)
+  SofdecAddressWord ADXB_Stop(moho::AdxBitstreamDecoderState* decoder)
   {
     if (decoder->channelExpandHandle != 0) {
       ADXB_OnStopPostProcess(decoder);
@@ -3573,7 +3576,7 @@
 
     const void* const result = ADXPD_Stop(decoder->adxPacketDecoder);
     decoder->status = 0;
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(result));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(result));
   }
 
   /**
@@ -3651,7 +3654,7 @@
    * Queues `blockCount` mono ADX blocks from the input span into the write
    * window and starts the packet decoder.
    */
-  std::int32_t ADXB_EvokeExpandMono(moho::AdxBitstreamDecoderState* decoder, const std::int32_t blockCount)
+  SofdecAddressWord ADXB_EvokeExpandMono(moho::AdxBitstreamDecoderState* decoder, const std::int32_t blockCount)
   {
     std::int16_t* const left = decoder->outputBuffer + decoder->writeSampleIndex;
 
@@ -3664,7 +3667,7 @@
     );
 
     const auto result = ADXPD_Start(decoder->adxPacketDecoder);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(result));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(result));
   }
 
   /**
@@ -3674,7 +3677,7 @@
    * Queues `blockCount` stereo ADX block pairs (Pro Logic II interleave) into
    * both channel planes of the write window and starts the packet decoder.
    */
-  std::int32_t ADXB_EvokeExpandPl2(moho::AdxBitstreamDecoderState* decoder, const std::int32_t blockCount)
+  SofdecAddressWord ADXB_EvokeExpandPl2(moho::AdxBitstreamDecoderState* decoder, const std::int32_t blockCount)
   {
     std::int16_t* const left = decoder->outputBuffer + decoder->writeSampleIndex;
     std::int16_t* const right = left + decoder->outputChannelStride;
@@ -3688,7 +3691,7 @@
     );
 
     const auto result = ADXPD_Start(decoder->adxPacketDecoder);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(result));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(result));
   }
 
   /**
@@ -3698,7 +3701,7 @@
    * Queues `blockCount` ADX blocks decoded into both channel planes (the
    * channel-expand path) and starts the packet decoder.
    */
-  std::int32_t ADXB_EvokeExpandSte(moho::AdxBitstreamDecoderState* decoder, const std::int32_t blockCount)
+  SofdecAddressWord ADXB_EvokeExpandSte(moho::AdxBitstreamDecoderState* decoder, const std::int32_t blockCount)
   {
     std::int16_t* const left = decoder->outputBuffer + decoder->writeSampleIndex;
     std::int16_t* const right = left + decoder->outputChannelStride;
@@ -3712,7 +3715,7 @@
     );
 
     const auto result = ADXPD_Start(decoder->adxPacketDecoder);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(result));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(result));
   }
 
   /**
@@ -3724,7 +3727,7 @@
    * partial block needs when the trap cuts it), and by the room left in the
    * PCM ring; then queues it on the mono, stereo or PL2 path.
    */
-  std::int32_t ADXB_EvokeDecode(moho::AdxBitstreamDecoderState* decoder)
+  SofdecAddressWord ADXB_EvokeDecode(moho::AdxBitstreamDecoderState* decoder)
   {
     const std::int32_t blockSamples = decoder->outputBlockSamples;
     const std::int32_t channels = decoder->outputChannels;
@@ -4031,13 +4034,13 @@
    * Forwards stream-join input setup into MPEG audio runtime handle when
    * decoder lane is attached.
    */
-  std::int32_t ADXB_SetMpaInSj(moho::AdxBitstreamDecoderState* const decoder)
+  SofdecAddressWord ADXB_SetMpaInSj(moho::AdxBitstreamDecoderState* const decoder)
   {
     void* const mpegAudioDecoder = decoder->mpegAudioDecoder;
     if (mpegAudioDecoder != nullptr) {
       return mpasetsjifunc(mpegAudioDecoder);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(mpegAudioDecoder));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(mpegAudioDecoder));
   }
 
   /**
@@ -4079,13 +4082,13 @@
    * What it does:
    * Forwards terminate-supply to MPEG audio runtime when decoder handle exists.
    */
-  std::int32_t ADXB_MpaTermSupply(moho::AdxBitstreamDecoderState* decoder)
+  SofdecAddressWord ADXB_MpaTermSupply(moho::AdxBitstreamDecoderState* decoder)
   {
     void* const mpegAudioDecoder = decoder->mpegAudioDecoder;
     if (mpegAudioDecoder != nullptr) {
       return mpatermsupplyfunc(mpegAudioDecoder);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(mpegAudioDecoder));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(mpegAudioDecoder));
   }
 
   /**
@@ -4109,13 +4112,13 @@
    * What it does:
    * Forwards terminate-supply to MPEG-2 AAC runtime when decoder handle exists.
    */
-  std::int32_t ADXB_M2aTermSupply(moho::AdxBitstreamDecoderState* decoder)
+  SofdecAddressWord ADXB_M2aTermSupply(moho::AdxBitstreamDecoderState* decoder)
   {
     void* const m2aDecoderHandle = decoder->mpeg2AacDecoder;
     if (m2aDecoderHandle != nullptr) {
       return m2atermsupplyfunc(m2aDecoderHandle);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(m2aDecoderHandle));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(m2aDecoderHandle));
   }
 
   /**
@@ -4280,13 +4283,13 @@
    * What it does:
    * Dispatches ADXT MPEG-audio detach through installed detach callback lane.
    */
-  std::int32_t ADXT_DetachMpa()
+  SofdecAddressWord ADXT_DetachMpa()
   {
     const auto detachThunk = reinterpret_cast<AdxtCodecDetachThunkCallback>(mpadetachfunc);
     if (detachThunk != nullptr) {
       return detachThunk();
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(detachThunk));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(detachThunk));
   }
 
   /**
@@ -4360,7 +4363,7 @@
    */
   std::int32_t adxt_SetOutPan(void* const adxtRuntime, const std::int32_t laneIndex, const std::int32_t panLevel)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtSetOutPanNullRuntimeMessage);
     }
@@ -4404,7 +4407,7 @@
    */
   std::int32_t adxt_GetOutPan(void* const adxtRuntime, const std::int32_t laneIndex)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtGetOutPanParameterErrorMessage);
       return 0;
@@ -4419,7 +4422,7 @@
    * What it does:
    * Returns ADXT output-pan lane under ADXCRS enter/leave guards.
    */
-  std::int32_t ADXT_GetOutPan(void* const adxtRuntime, const std::int32_t laneIndex)
+  SofdecAddressWord ADXT_GetOutPan(void* const adxtRuntime, const std::int32_t laneIndex)
   {
     ADXCRS_Enter();
     const std::int32_t outputPan = adxt_GetOutPan(adxtRuntime, laneIndex);
@@ -4436,7 +4439,7 @@
    */
   void adxt_SetOutBalance(void* const adxtRuntime, const std::int32_t balanceLevel)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtSetOutBalanceParameterErrorMessage);
       return;
@@ -4483,7 +4486,7 @@
     if (m2adetachfunc != nullptr) {
       return m2adetachfunc(adxtRuntime);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(m2adetachfunc));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(m2adetachfunc));
   }
 
   /**
@@ -4499,7 +4502,7 @@
       gAdxtDestroyCallback(adxtRuntime);
       return 0;
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(gAdxtDestroyCallback));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(gAdxtDestroyCallback));
   }
 
   void ADXT_ReleaseLaneHandle(AdxtDestroyableHandle*& laneHandle)
@@ -4521,7 +4524,7 @@
    * sub-lanes, destroying owned handles, clearing the runtime block, and
    * reporting null-parameter usage through ADXERR callback lane.
    */
-  void adxt_Destroy(AdxtRuntimeState* const runtime)
+  void adxt_Destroy(AdxtState* const runtime)
   {
     if (runtime == nullptr) {
       ADXERR_CallErrFunc1_(kAdxtDestroyParameterErrorMessage);
@@ -4553,7 +4556,7 @@
       auto* const streamHandle = runtime->streamHandle;
       runtime->streamHandle = nullptr;
       ADXSTM_EntryEosFunc(
-        static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(streamHandle)),
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(streamHandle)),
         0,
         0
       );
@@ -4583,7 +4586,7 @@
       ADXAMP_Destroy(channelExpandHandle);
     }
 
-    std::memset(runtime, 0, sizeof(AdxtRuntimeState));
+    std::memset(runtime, 0, sizeof(AdxtState));
     runtime->used = 0;
 
     ADXCRS_Unlock();
@@ -4598,7 +4601,7 @@
   void ADXT_Destroy(void* const adxtRuntime)
   {
     ADXCRS_Enter();
-    adxt_Destroy(static_cast<AdxtRuntimeState*>(adxtRuntime));
+    adxt_Destroy(static_cast<AdxtState*>(adxtRuntime));
     ADXCRS_Leave();
   }
 
@@ -4654,8 +4657,8 @@
     ADXCRS_Leave();
   }
 
-  std::int32_t ADXT_ReportMessage(const char* message);
-  std::int32_t ADXT_ResetHistoryState(AdxtDolbyRuntimeState* state);
+  SofdecAddressWord ADXT_ReportMessage(const char* message);
+  std::int32_t ADXT_ResetHistoryState(AdxtDolbyState* state);
 
   /**
    * Address: 0x00B21F50 (sub_B21F50)
@@ -4664,7 +4667,7 @@
    * Initializes one Dolby runtime work-state object inside caller-provided work
    * memory with alignment and bounds checks.
    */
-  AdxtDolbyRuntimeState* ADXT_AttachDolbyState(AdxtDolbyRuntimeState* workMemory, const std::int32_t workBytes)
+  AdxtDolbyState* ADXT_AttachDolbyState(AdxtDolbyState* workMemory, const std::int32_t workBytes)
   {
     if (workMemory == nullptr) {
       ADXT_ReportMessage(kAdxtNullWorkPointerMessage);
@@ -4677,13 +4680,13 @@
     }
 
     auto* const alignedState =
-      reinterpret_cast<AdxtDolbyRuntimeState*>(AlignPointerTo4Bytes(reinterpret_cast<std::uint8_t*>(workMemory)));
-    std::memset(alignedState, 0, sizeof(AdxtDolbyRuntimeState));
+      reinterpret_cast<AdxtDolbyState*>(AlignPointerTo4Bytes(reinterpret_cast<std::uint8_t*>(workMemory)));
+    std::memset(alignedState, 0, sizeof(AdxtDolbyState));
 
     alignedState->workBufferBase = workMemory;
     alignedState->workBufferBytes = workBytes;
 
-    auto* historyBase = AlignPointerTo4Bytes(reinterpret_cast<std::uint8_t*>(alignedState) + sizeof(AdxtDolbyRuntimeState));
+    auto* historyBase = AlignPointerTo4Bytes(reinterpret_cast<std::uint8_t*>(alignedState) + sizeof(AdxtDolbyState));
     alignedState->historyLaneA = reinterpret_cast<std::int32_t*>(historyBase);
     alignedState->historyLaneB = alignedState->historyLaneA + 96;
 
@@ -4704,7 +4707,7 @@
    * What it does:
    * Lock-guarded wrapper for Dolby work-state attachment/initialization.
    */
-  AdxtDolbyRuntimeState* ADXT_AttachDolbyStateLocked(AdxtDolbyRuntimeState* workMemory, const std::int32_t workBytes)
+  AdxtDolbyState* ADXT_AttachDolbyStateLocked(AdxtDolbyState* workMemory, const std::int32_t workBytes)
   {
     sofdec_EnterLock_7();
     auto* const result = ADXT_AttachDolbyState(workMemory, workBytes);
@@ -4718,12 +4721,12 @@
    * What it does:
    * Dispatches one report message through registered callback lanes.
    */
-  std::int32_t ADXT_ReportMessage(const char* message)
+  SofdecAddressWord ADXT_ReportMessage(const char* message)
   {
     if (gSofdecReportCallback != nullptr) {
       return gSofdecReportCallback(gSofdecReportCallbackContext, message);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(gSofdecReportCallback));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(gSofdecReportCallback));
   }
 
   /**
@@ -4732,9 +4735,9 @@
    * What it does:
    * Clears one Dolby work-state control block.
    */
-  std::int32_t ADXT_ClearControlState(AdxtDolbyRuntimeState* state)
+  std::int32_t ADXT_ClearControlState(AdxtDolbyState* state)
   {
-    std::memset(state, 0, sizeof(AdxtDolbyRuntimeState));
+    std::memset(state, 0, sizeof(AdxtDolbyState));
     return 0;
   }
 
@@ -4744,7 +4747,7 @@
    * What it does:
    * Lock-guarded wrapper for clearing one Dolby control state block.
    */
-  void ADXT_ClearControlStateLocked(AdxtDolbyRuntimeState* state)
+  void ADXT_ClearControlStateLocked(AdxtDolbyState* state)
   {
     sofdec_EnterLock_7();
     ADXT_ClearControlState(state);
@@ -4757,7 +4760,7 @@
    * What it does:
    * Resets fixed history lanes and ring-buffer cursor for Dolby runtime state.
    */
-  std::int32_t ADXT_ResetHistoryState(AdxtDolbyRuntimeState* state)
+  std::int32_t ADXT_ResetHistoryState(AdxtDolbyState* state)
   {
     for (std::int32_t lane = 0; lane < 96; ++lane) {
       state->historyLaneA[lane] = 0;
@@ -4774,7 +4777,7 @@
    * What it does:
    * Lock-guarded wrapper for history-lane reset.
    */
-  void ADXT_ResetHistoryStateLocked(AdxtDolbyRuntimeState* state)
+  void ADXT_ResetHistoryStateLocked(AdxtDolbyState* state)
   {
     sofdec_EnterLock_7();
     ADXT_ResetHistoryState(state);
@@ -4788,8 +4791,8 @@
    * Processes one Dolby matrix sample through Q12 coefficient lanes and updates
    * circular history buffers.
    */
-  AdxtDolbyRuntimeState* ADXT_ProcessSample(
-    AdxtDolbyRuntimeState* state,
+  AdxtDolbyState* ADXT_ProcessSample(
+    AdxtDolbyState* state,
     const std::int16_t inputSample,
     std::int16_t* const outSampleA,
     std::int16_t* const outSampleB
@@ -4845,7 +4848,7 @@
    * Lock-guarded wrapper for single-sample Dolby matrix processing.
    */
   void ADXT_ProcessSampleLocked(
-    AdxtDolbyRuntimeState* state,
+    AdxtDolbyState* state,
     const std::int16_t inputSample,
     std::int16_t* outSampleA,
     std::int16_t* outSampleB
@@ -4864,7 +4867,7 @@
    * first history window segment.
    */
   std::int32_t ADXT_ProcessSampleBlock(
-    AdxtDolbyRuntimeState* state,
+    AdxtDolbyState* state,
     const std::int16_t* inputSamples,
     std::int16_t* outputSamplesA,
     std::int16_t* outputSamplesB
@@ -4919,7 +4922,7 @@
    * Lock-guarded wrapper for 32-sample Dolby block processing.
    */
   void ADXT_ProcessSampleBlockLocked(
-    AdxtDolbyRuntimeState* state,
+    AdxtDolbyState* state,
     const std::int16_t* inputSamples,
     std::int16_t* outputSamplesA,
     std::int16_t* outputSamplesB
@@ -4936,8 +4939,8 @@
    * What it does:
    * Updates Dolby matrix lookup-table index lanes from signed user parameters.
    */
-  std::int32_t ADXT_SetMixTableIndices(
-    AdxtDolbyRuntimeState* state,
+  SofdecAddressWord ADXT_SetMixTableIndices(
+    AdxtDolbyState* state,
     const std::int32_t matrixParamA,
     const std::int32_t matrixParamB
   )
@@ -4976,7 +4979,7 @@
    * Lock-guarded wrapper for Dolby mix-table index updates.
    */
   void ADXT_SetMixTableIndicesLocked(
-    AdxtDolbyRuntimeState* state,
+    AdxtDolbyState* state,
     const std::int32_t matrixParamA,
     const std::int32_t matrixParamB
   )
@@ -4992,7 +4995,7 @@
    * What it does:
    * Sets Dolby sample-rate lane and derives clamped history window length.
    */
-  std::uint32_t ADXT_SetSampleRate(AdxtDolbyRuntimeState* state, const std::int32_t sampleRate)
+  std::uint32_t ADXT_SetSampleRate(AdxtDolbyState* state, const std::int32_t sampleRate)
   {
     if (state == nullptr) {
       return static_cast<std::uint32_t>(ADXT_ReportMessage(kAdxtNullRateStateMessage));
@@ -5027,17 +5030,17 @@
    * What it does:
    * Lock-guarded wrapper for Dolby sample-rate configuration.
    */
-  void ADXT_SetSampleRateLocked(AdxtDolbyRuntimeState* state, const std::int32_t sampleRate)
+  void ADXT_SetSampleRateLocked(AdxtDolbyState* state, const std::int32_t sampleRate)
   {
     sofdec_EnterLock_7();
     ADXT_SetSampleRate(state, sampleRate);
     sofdec_LeaveLock_7();
   }
 
-  [[nodiscard]] static AdxtDolbyRuntimeState* ADXB_GetDolbyState(moho::AdxBitstreamDecoderState* const decoder)
+  [[nodiscard]] static AdxtDolbyState* ADXB_GetDolbyState(moho::AdxBitstreamDecoderState* const decoder)
   {
-    return reinterpret_cast<AdxtDolbyRuntimeState*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(decoder->channelExpandHandle))
+    return reinterpret_cast<AdxtDolbyState*>(
+      static_cast<std::uintptr_t>(decoder->channelExpandHandle)
     );
   }
 
@@ -5048,7 +5051,7 @@
    * Applies Dolby matrix parameters to one ADXT-owned ADXB decode lane and
    * latches the caller-provided matrix parameters in decoder runtime state.
    */
-  [[maybe_unused]] void ADXT_UpdateDolbyMatrixFromRuntime(
+  [[maybe_unused]] void ADXT_UpdateDolbyMatrix(
     void* const adxtRuntime,
     const std::int32_t matrixParamA,
     const std::int32_t matrixParamB
@@ -5059,8 +5062,8 @@
       return;
     }
 
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    auto* const decoder = AsAdxsjdRuntimeView(runtime->sjdHandle)->Decoder();
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    auto* const decoder = AdxsjdStateOf(runtime->sjdHandle)->Decoder();
     auto* const dolbyState = ADXB_GetDolbyState(decoder);
     if (runtime->maxChannelCount >= 2 && dolbyState != nullptr) {
       ADXT_SetMixTableIndicesLocked(dolbyState, matrixParamA, matrixParamB);
@@ -5081,8 +5084,8 @@
    */
   [[maybe_unused]] void ADXT_DetachDolbyState(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    auto* const decoder = AsAdxsjdRuntimeView(runtime->sjdHandle)->Decoder();
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    auto* const decoder = AdxsjdStateOf(runtime->sjdHandle)->Decoder();
     auto* const dolbyState = ADXB_GetDolbyState(decoder);
     if (dolbyState == nullptr) {
       return;

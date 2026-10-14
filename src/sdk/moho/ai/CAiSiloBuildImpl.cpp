@@ -19,6 +19,7 @@
 #include "moho/sim/CSimArmyEconomyInfo.h"
 #include "moho/unit/core/Unit.h"
 #include "moho/unit/core/UnitWeapon.h"
+#include "gpg/core/reflection/Reflection.h"
 
 using namespace moho;
 
@@ -235,13 +236,24 @@ namespace
     return static_cast<float>(result.GetNumber());
   }
 
+  /**
+   * What it does:
+   * Runs one script callback on the unit, passing the weapon as its bound
+   * Lua object. The binary helper (0x005D06B0) pushes the weapon's LuaObject
+   * payload (0x14 bytes at weapon+0x20) onto the stack - a full userdata with
+   * the UnitWeapon metatable, so Lua methods like GetProjectileBlueprint
+   * resolve. Passing a raw pointer instead made the argument a light
+   * userdata with no metatable: OnSiloBuildStart's weapon:GetProjectileBlueprint()
+   * raised "attempt to call method (a nil value)", aborting the silo
+   * progress chain every missile build.
+   */
   void DispatchWeaponCallback(Unit* const unit, const char* const callbackName, UnitWeapon* const weapon)
   {
     if (!unit || !weapon || !callbackName || !*callbackName) {
       return;
     }
 
-    (void)unit->RunScript(callbackName, static_cast<void*>(weapon));
+    (void)unit->RunScript(callbackName, weapon->mLuaObj);
   }
 } // namespace
 
@@ -251,31 +263,31 @@ gpg::RType* CAiSiloBuildImpl::sType = nullptr;
 /**
  * Address: 0x005D04A0 (FUN_005D04A0, Moho::SSiloBuildInfo::MemberDeserialize)
  */
-void SSiloBuildInfo::MemberDeserialize(gpg::ReadArchive* const archive, SSiloBuildInfo* const info)
+void SSiloBuildInfo::MemberDeserialize(gpg::ReadArchive* const archive)
 {
-  if (!archive || !info) {
+  if (!archive) {
     return;
   }
 
   const gpg::RRef owner{};
-  info->mWeapon = ReadPointerWithType<UnitWeapon>(archive, owner, ResolveUnitWeaponType());
-  archive->ReadInt(&info->mAmmo);
-  archive->ReadInt(&info->mMaxStorageCount);
+  mWeapon = ReadPointerWithType<UnitWeapon>(archive, owner, ResolveUnitWeaponType());
+  archive->ReadInt(&mAmmo);
+  archive->ReadInt(&mMaxStorageCount);
 }
 
 /**
  * Address: 0x005D04F0 (FUN_005D04F0, Moho::SSiloBuildInfo::MemberSerialize)
  */
-void SSiloBuildInfo::MemberSerialize(const SSiloBuildInfo* const info, gpg::WriteArchive* const archive)
+void SSiloBuildInfo::MemberSerialize(gpg::WriteArchive* const archive) const
 {
-  if (!archive || !info) {
+  if (!archive) {
     return;
   }
 
   const gpg::RRef owner{};
-  WritePointerWithType(archive, info->mWeapon, ResolveUnitWeaponType(), gpg::TrackedPointerState::Unowned, owner);
-  archive->WriteInt(info->mAmmo);
-  archive->WriteInt(info->mMaxStorageCount);
+  WritePointerWithType(archive, mWeapon, ResolveUnitWeaponType(), gpg::TrackedPointerState::Unowned, owner);
+  archive->WriteInt(mAmmo);
+  archive->WriteInt(mMaxStorageCount);
 }
 
 /**
@@ -323,18 +335,9 @@ CAiSiloBuildImpl::~CAiSiloBuildImpl()
 /**
  * Address: 0x005CF850 (FUN_005CF850, Moho::CAiSiloBuildImpl::MemberConstruct)
  */
-void CAiSiloBuildImpl::MemberConstruct(gpg::SerConstructResult* const result)
+void CAiSiloBuildImpl::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
 {
-  CAiSiloBuildImpl* const object = new (std::nothrow) CAiSiloBuildImpl();
-  if (!result) {
-    delete object;
-    return;
-  }
-
-  gpg::RRef objectRef{};
-  objectRef.mObj = object;
-  objectRef.mType = ResolveCAiSiloBuildImplType();
-  result->SetUnowned(objectRef, 0u);
+  result.SetUnowned(gpg::MakeRRef(new CAiSiloBuildImpl()), 0u);
 }
 
 /**
@@ -718,3 +721,66 @@ void CAiSiloBuildImpl::SiloTick()
     return;
   }
 }
+
+namespace moho
+{
+  /**
+   * `gpg::SerConstructHelper<CAiSiloBuildImpl>`, vtable 0x00E1DE38.
+   *
+   * Address: 0x00BCE110 (FUN_00BCE110 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF7F30 (FUN_00BF7F30 -- the global's destructor.)
+   * Address: 0x005CFEB0 (FUN_005CFEB0 -- `Init`.)
+   * Address: 0x005CF840 (FUN_005CF840 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x005D0870 (FUN_005D0870 -- `Delete`.)
+   */
+  struct CAiSiloBuildImplConstruct : gpg::SerConstructHelper<CAiSiloBuildImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AFC34 -- process-global `CAiSiloBuildImplConstruct` singleton.
+  moho::CAiSiloBuildImplConstruct gCAiSiloBuildImplConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CAiSiloBuildImpl>`, vtable 0x00E1DE48.
+   *
+   * Address: 0x00BCE150 (FUN_00BCE150 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF7F60 (FUN_00BF7F60 -- the global's destructor.)
+   * Address: 0x005CFF30 (FUN_005CFF30 -- `Init`.)
+   * Address: 0x005CF8D0 (FUN_005CF8D0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005CF8E0 (FUN_005CF8E0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CAiSiloBuildImplSerializer : gpg::SerSaveLoadHelper<CAiSiloBuildImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AFDA0 -- process-global `CAiSiloBuildImplSerializer` singleton.
+  moho::CAiSiloBuildImplSerializer gCAiSiloBuildImplSerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<SSiloBuildInfo>`, vtable 0x00E1DD94.
+   *
+   * Address: 0x00BCE0B0 (FUN_00BCE0B0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF7EA0 (FUN_00BF7EA0 -- the global's destructor.)
+   * Address: 0x005CFB60 (FUN_005CFB60 -- `Init`.)
+   * Address: 0x005CEC70 (FUN_005CEC70 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005CEC80 (FUN_005CEC80 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct SSiloBuildInfoSerializer : gpg::SerSaveLoadHelper<SSiloBuildInfo>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AFD8C -- process-global `SSiloBuildInfoSerializer` singleton.
+  moho::SSiloBuildInfoSerializer gSSiloBuildInfoSerializer;
+} // namespace

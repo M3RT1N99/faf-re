@@ -24,7 +24,7 @@
 //     SFTIM_InitTcode/Ttu, UTY_MemsetDword, mpvcmc_InitMcOiTa,
 //     sfmpvf_IsChkFirst/SetPicUsrBuf — bodies exist in
 //     cri/sofdec/SofdecMpvRuntime.cpp but that TU has ~25 failing
-//     static_asserts on SfmpvHandleRuntimeView + missing helpers
+//     static_asserts on moho::SofdecSfdWorkctrlSubobj + missing helpers
 //     (sfmpv_SkipFrm, sfmpv_ConcatSub). See tmp/sofdec_binary_state.tsv
 //     for the full prioritized list.
 //
@@ -56,6 +56,8 @@
 // 71 are referenced some other way and are unclassified.
 
 #include <cstdint>
+
+#include "cri/sofdec/SofdecAddressWord.h"
 
 // === Function stubs (cdecl no-arg, return 0/null) ===
 extern "C" {
@@ -114,7 +116,7 @@ extern "C" {
   // TODO(recovery): MPVCMC_InitMcOiRt, MPVCMC_SetCcnt, MPVUMC_EndOfFrame,
   // MPVUMC_Finish, MPVUMC_InitOutRfb have recovered bodies in
   // cri/sofdec/SofdecMpvRuntime.cpp, but that file has ~25 struct-layout
-  // assertion failures (SfmpvHandleRuntimeView and siblings) and missing
+  // assertion failures (moho::SofdecSfdWorkctrlSubobj and siblings) and missing
   // helpers (sfmpv_SkipFrm, sfmpv_ConcatSub). Keep these as no-op stubs
   // until the Mpv runtime struct layouts are reconciled.
   // REAL BODIES now live in cri/sofdec/SofdecMpvRuntime.cpp (ClCompile):
@@ -298,7 +300,7 @@ extern "C" {
   // mwPlyFinishSfdFx (0x00AC93D0): real body in
   // cri/sofdec/SofdecAdxPlatformRuntime.cpp, next to mwPlySfdFinish. The
   // reference-counted teardown mirror of mwPlyInitSfdFx; while it was a
-  // wrong-signature no-arg void* stub, CMovieManager::ShutdownMovieRuntimeNoDelete's
+  // wrong-signature no-arg void* stub, CMovieManager::deleted overlay's
   // call to it did nothing - none of the up-to-32 open playback handles, the
   // MWSFSVM callback registrations, or any other Sofdec subsystem ADXT_Init
   // brought up ever got torn down when a movie manager shut down.
@@ -428,7 +430,7 @@ extern "C" {
 extern "C" {
   void(*ahxsetdecsmplfunc)(void*, std::int32_t) = nullptr;
   void(*ahxsetextfunc)(void*, const std::int16_t*) = nullptr;
-  std::int32_t(*SFPLY_SetPtsInfo)(std::int32_t, std::int32_t*) = nullptr;
+  std::int32_t(*SFPLY_SetPtsInfo)(SofdecAddressWord, SofdecAddressWord*) = nullptr;
   // SFPLY_ResetPtsm (0x011F9150) is the library's optional "handle was rebuilt,
   // re-seed your PTS map" hook. `sfply_ResetHn` is its only reader and nothing
   // in this binary ever installs one, so it stays null - the guard there is kept
@@ -558,12 +560,12 @@ extern "C" {
   std::uint8_t mpvvlt_p_mbtype[4096] = {};
   std::uint8_t mpvvlt_y_dcsiz[4096] = {};
   std::uint8_t mwsfd_init_flag[4096] = {};
-  std::uint8_t sSofDec_tabs[4096] = {};
+  SofdecAddressWord sSofDec_tabs[16] = {};
   std::uint8_t sfcre_fhd[4096] = {};
   std::uint8_t sfcre_mpv_picrate[4096] = {};
   std::uint8_t sfh_workinfo[4096] = {};
   std::uint8_t sfmpv_para[4096] = {};
-  std::uint8_t sfmpv_rfb_adr_tbl[4096] = {};
+  SofdecAddressWord sfmpv_rfb_adr_tbl[2] = {};
   // sftim_tc2time (0x00D7FA50) is an 18-entry converter dispatch table, not a
   // buffer. Zeroed here, SFTIM_Tc2Time found a null slot for every frame rate
   // and raised FF000221 forever. Defined from the binary bytes next to the

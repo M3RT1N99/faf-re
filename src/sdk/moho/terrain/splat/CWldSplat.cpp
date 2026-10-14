@@ -1,5 +1,4 @@
 #include "moho/terrain/splat/CWldSplat.h"
-#include "gpg/core/utils/Logging.h"   // TEMPORARY PROBE (do not commit)
 
 #include <algorithm>
 #include <cstdio>
@@ -485,7 +484,7 @@ namespace moho
         }
       }
 
-      decal->mRuntimeHandle = static_cast<std::int32_t>(record->mObj);
+      decal->mDecalHandle = static_cast<std::int32_t>(record->mObj);
       decal->mRemoveTick = static_cast<std::int32_t>(record->mStartTick);
       decal->mArmy = static_cast<std::int32_t>(record->mArmy);
       decal->mFidelity = static_cast<std::int32_t>(record->mFidelity);
@@ -509,7 +508,7 @@ namespace moho
   {
     for (const std::uint32_t handle : decalHandles) {
       for (CWldTerrainDecal* const decal : mDecals) {
-        if (static_cast<std::uint32_t>(decal->mRuntimeHandle) == handle) {
+        if (static_cast<std::uint32_t>(decal->mDecalHandle) == handle) {
           decal->mRemoveTick = 1;
           break;
         }
@@ -605,100 +604,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x0087A830 (FUN_0087A830, msvc8::vector<Moho::CWldTerrainDecal*>::_Insert_n)
-   *
-   * IDA signature:
-   * char *__userpurge sub_87A830@<eax>(int *value@<eax>, int vec, char *pos);
-   *
-   * What it does:
-   * Engine-instantiated body of `msvc8::vector<Moho::CWldTerrainDecal*>::_Insert_n`.
-   * Inserts `insertCount` copies of `fillValue` at `insertPosition`; on sufficient
-   * capacity shifts the live tail right by `insertCount` and fills the gap, else
-   * 1.5x-grows the buffer (head-move / gap-fill / tail-move / free-old). Backs the
-   * `push_back(decal)` slow-path append used by CDecalManager::LoadDecal / NewSplat
-   * for the mDecals vector; the body lives in `msvc8::vector<T>::insert`
-   * (legacy/containers/Vector.h) and this per-T free helper is the source-level
-   * by-name invocation that keeps the emitted symbol.
-   */
-  void InsertNCopiesCWldTerrainDecalPtrVector(
-    msvc8::vector<CWldTerrainDecal*>& storage,
-    CWldTerrainDecal** const insertPosition,
-    const unsigned int insertCount,
-    CWldTerrainDecal* const fillValue)
-  {
-    if (insertCount == 0u) {
-      return;
-    }
-
-    const auto offset = static_cast<std::size_t>(insertPosition - storage.begin());
-    storage.insert(storage.begin() + offset, static_cast<std::size_t>(insertCount), fillValue);
-  }
-
-  /**
-   * Address: 0x008780A0 (Moho::CDecalManager decal-append lane, inlined push_back in LoadDecal/NewSplat)
-   * Address: 0x00879070 (FUN_00879070, std::vector<Moho::CWldTerrainDecal*>::push_back
-   * — identical check-capacity/grow-or-append shape, a separate per-call-site
-   * emission of the same operation; reached from CDecalManager::AddSplat's
-   * `AppendDecal(mDecals, decal)` call in this file)
-   *
-   * What it does:
-   * Appends one `CWldTerrainDecal*` into the manager's `mDecals` vector, mirroring
-   * the MSVC8 inlined `push_back` shape used by the binary: when the reserved
-   * capacity is exhausted the append reaches the canonical
-   * `vector<CWldTerrainDecal*>::_Insert_n` slow-path
-   * (`InsertNCopiesCWldTerrainDecalPtrVector`, FUN_0087A830); otherwise a fast-path
-   * in-place store.
-   */
-  void AppendDecal(msvc8::vector<CWldTerrainDecal*>& storage, CWldTerrainDecal* const value)
-  {
-    if (storage.size() == storage.capacity()) {
-      InsertNCopiesCWldTerrainDecalPtrVector(storage, storage.end(), 1u, value);
-    } else {
-      storage.push_back(value);
-    }
-  }
-
-  /**
-   * Address: 0x0087B1C0 (FUN_0087B1C0, msvc8::vector<Moho::CDecalGroup*>::_Insert_n)
-   *
-   * What it does:
-   * Canonical `_Insert_n` slow-path for the mDecalGroups vector; the body lives
-   * in `msvc8::vector<T>::insert` (legacy/containers/Vector.h) and this per-T
-   * free helper is the source-level by-name invocation that keeps the emitted
-   * symbol.
-   */
-  void InsertNCopiesCDecalGroupPtrVector(
-    msvc8::vector<CDecalGroup*>& storage,
-    CDecalGroup** const insertPosition,
-    const unsigned int insertCount,
-    CDecalGroup* const fillValue)
-  {
-    if (insertCount == 0u) {
-      return;
-    }
-
-    const auto offset = static_cast<std::size_t>(insertPosition - storage.begin());
-    storage.insert(storage.begin() + offset, static_cast<std::size_t>(insertCount), fillValue);
-  }
-
-  /**
-   * What it does:
-   * Appends one `CDecalGroup*` into the manager's `mDecalGroups` vector,
-   * mirroring the MSVC8 inlined `push_back` shape used by the binary: when the
-   * reserved capacity is exhausted the append reaches the canonical
-   * `vector<CDecalGroup*>::_Insert_n` slow-path
-   * (`InsertNCopiesCDecalGroupPtrVector`); otherwise a fast-path in-place store.
-   */
-  void AppendDecalGroup(msvc8::vector<CDecalGroup*>& storage, CDecalGroup* const value)
-  {
-    if (storage.size() == storage.capacity()) {
-      InsertNCopiesCDecalGroupPtrVector(storage, storage.end(), 1u, value);
-    } else {
-      storage.push_back(value);
-    }
-  }
-
-  /**
    * Address: 0x008780A0 (FUN_008780A0, Moho::CDecalManager::LoadDecal)
    *
    * What it does:
@@ -716,7 +621,7 @@ namespace moho
 
     loaded->mVecIndex = static_cast<std::uint32_t>(mDecals.size());
 
-    AppendDecal(mDecals, loaded);
+    mDecals.push_back(loaded);
 
     mDecalGroupLookupByDecalIndex[static_cast<std::uint32_t>(loaded->mIndex)] = loaded;
 
@@ -765,7 +670,7 @@ namespace moho
     }
 
     (void)mDecals.erase(found);
-    AppendDecal(mDecals, decal);
+    mDecals.push_back(decal);
     Reindex();
   }
 
@@ -979,10 +884,8 @@ namespace moho
    */
   void CWldSplat::UpdateBatchTexture(CD3DTextureBatcher* const batcher)
   {
-    { static int sUb = 0; if (sUb < 6) { ++sUb; gpg::Warnf("[SPLATTEX] name=%s mTex=%p", mNames[0].c_str(), static_cast<void*>(mTex.get())); } } // TEMPORARY PROBE (do not commit)
     if (mTex) {
       const gpg::Rect2f* const uvRect = batcher->AddTexture(mTex);
-      { static int sUv = 0; if (sUv < 6) { ++sUv; gpg::Warnf("[SPLATTEX] uvRect=%p uv=(%.4f,%.4f)-(%.4f,%.4f)", static_cast<const void*>(uvRect), uvRect ? uvRect->x0 : -1.0f, uvRect ? uvRect->z0 : -1.0f, uvRect ? uvRect->x1 : -1.0f, uvRect ? uvRect->z1 : -1.0f); } } // TEMPORARY PROBE (do not commit)
       if (uvRect != nullptr) {
         mSplatVertices[0].mTexCoord.x = uvRect->x0;
         mSplatVertices[0].mTexCoord.y = uvRect->z0;
@@ -1008,57 +911,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x0087BB40 (FUN_0087BB40, msvc8::vector<Moho::CWldSplat*>::_Insert_n)
-   *
-   * IDA signature:
-   * char *__userpurge sub_87BB40@<eax>(int *value@<eax>, int vec, char *pos);
-   *
-   * What it does:
-   * Engine-instantiated body of `msvc8::vector<Moho::CWldSplat*>::_Insert_n`.
-   * Inserts `insertCount` copies of `fillValue` at `insertPosition`; on sufficient
-   * capacity shifts the live tail right by `insertCount` and fills the gap, else
-   * 1.5x-grows the buffer (head-move / gap-fill / tail-move / free-old). Backs the
-   * `push_back(splat)` slow-path append used by CDecalManager::NewSplat for the
-   * mSplats vector; the body lives in `msvc8::vector<T>::insert`
-   * (legacy/containers/Vector.h) and this per-T free helper is the source-level
-   * by-name invocation that keeps the emitted symbol. Byte-identical to the
-   * mDecals sibling FUN_0087A830 (both 4-byte pointer instantiations).
-   */
-  void InsertNCopiesCWldSplatPtrVector(
-    msvc8::vector<CWldSplat*>& storage,
-    CWldSplat** const insertPosition,
-    const unsigned int insertCount,
-    CWldSplat* const fillValue)
-  {
-    if (insertCount == 0u) {
-      return;
-    }
-
-    const auto offset = static_cast<std::size_t>(insertPosition - storage.begin());
-    storage.insert(storage.begin() + offset, static_cast<std::size_t>(insertCount), fillValue);
-  }
-
-  /**
-   * Address: 0x00878190 (Moho::CDecalManager splat-append lane, inlined push_back in NewSplat)
-   *
-   * What it does:
-   * Appends one `CWldSplat*` into the manager's `mSplats` vector, mirroring the
-   * MSVC8 inlined `push_back` shape used by the binary: when the reserved capacity
-   * is exhausted the append reaches the canonical
-   * `vector<CWldSplat*>::_Insert_n` slow-path
-   * (`InsertNCopiesCWldSplatPtrVector`, FUN_0087BB40); otherwise a fast-path
-   * in-place store.
-   */
-  void AppendSplat(msvc8::vector<CWldSplat*>& storage, CWldSplat* const value)
-  {
-    if (storage.size() == storage.capacity()) {
-      InsertNCopiesCWldSplatPtrVector(storage, storage.end(), 1u, value);
-    } else {
-      storage.push_back(value);
-    }
-  }
-
-  /**
    * Address: 0x00878190 (FUN_00878190, Moho::CDecalManager::NewSplat)
    *
    * What it does:
@@ -1069,7 +921,7 @@ namespace moho
   {
     auto* const spatialDbOwner = &mSpatialDb;
     CWldSplat* const splat = new CWldSplat(spatialDbOwner, mWldTerrain);
-    AppendSplat(mSplats, splat);
+    mSplats.push_back(splat);
     return splat;
   }
 
@@ -1155,7 +1007,7 @@ namespace moho
       *group->GetName() = nameBuffer;
     }
 
-    AppendDecalGroup(mDecalGroups, group);
+    mDecalGroups.push_back(group);
 
     mDecalGroupLookupBySplatIndex[static_cast<std::uint32_t>(*group->GetIndex())] = group;
 

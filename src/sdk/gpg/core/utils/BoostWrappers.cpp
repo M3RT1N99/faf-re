@@ -55,18 +55,18 @@ void tss_cleanup_implemented()
 
 namespace
 {
-  struct WinMutexHandleRuntime
+  struct WinMutexHandle
   {
     HANDLE handle = nullptr;
   };
 
-  struct WinMutexHandlePairRuntime
+  struct WinMutexHandlePair
   {
     HANDLE handle = nullptr;
     std::uint32_t lane04 = 0;
   };
 
-  [[noreturn]] void ThrowThreadResourceErrorRuntime()
+  [[noreturn]] void ThrowThreadResourceError()
   {
     throw boost::thread_resource_error();
   }
@@ -87,7 +87,7 @@ namespace boost
   {
     const HANDLE mutexHandle = ::CreateMutexA(nullptr, FALSE, mutexName);
     if (mutexHandle == nullptr || mutexHandle == INVALID_HANDLE_VALUE) {
-      ThrowThreadResourceErrorRuntime();
+      ThrowThreadResourceError();
     }
   }
 
@@ -112,8 +112,8 @@ namespace boost
    * Initializes one single-lane Win32 mutex owner and throws
    * `boost::thread_resource_error` when mutex creation fails.
    */
-  WinMutexHandleRuntime* InitializeUnnamedMutexHandleOrThrow(
-    WinMutexHandleRuntime* const outHandle
+  WinMutexHandle* InitializeUnnamedMutexHandleOrThrow(
+    WinMutexHandle* const outHandle
   )
   {
     if (outHandle == nullptr) {
@@ -123,7 +123,7 @@ namespace boost
     outHandle->handle = nullptr;
     const HANDLE mutexHandle = ::CreateMutexA(nullptr, FALSE, nullptr);
     if (mutexHandle == nullptr || mutexHandle == INVALID_HANDLE_VALUE) {
-      ThrowThreadResourceErrorRuntime();
+      ThrowThreadResourceError();
     }
 
     outHandle->handle = mutexHandle;
@@ -137,8 +137,8 @@ namespace boost
    * Initializes one two-lane Win32 mutex owner (`handle`, `lane04`) and throws
    * `boost::thread_resource_error` when mutex creation fails.
    */
-  WinMutexHandlePairRuntime* InitializeUnnamedMutexHandlePairOrThrow(
-    WinMutexHandlePairRuntime* const outHandlePair
+  WinMutexHandlePair* InitializeUnnamedMutexHandlePairOrThrow(
+    WinMutexHandlePair* const outHandlePair
   )
   {
     if (outHandlePair == nullptr) {
@@ -150,7 +150,7 @@ namespace boost
 
     const HANDLE mutexHandle = ::CreateMutexA(nullptr, FALSE, nullptr);
     if (mutexHandle == nullptr || mutexHandle == INVALID_HANDLE_VALUE) {
-      ThrowThreadResourceErrorRuntime();
+      ThrowThreadResourceError();
     }
 
     outHandlePair->handle = mutexHandle;
@@ -692,71 +692,6 @@ namespace boost
     return leftLane;
   }
 
-  struct RuntimeSharedCountTailRecord20
-  {
-    std::uint32_t lane00;        // +0x00
-    std::uint32_t lane04;        // +0x04
-    std::uint32_t lane08;        // +0x08
-    detail::shared_count lane0C; // +0x0C
-    std::uint32_t lane10;        // +0x10
-  };
-  static_assert(sizeof(RuntimeSharedCountTailRecord20) == 0x14, "RuntimeSharedCountTailRecord20 size must be 0x14");
-  static_assert(offsetof(RuntimeSharedCountTailRecord20, lane0C) == 0x0C, "RuntimeSharedCountTailRecord20::lane0C offset must be 0x0C");
-
-  /**
-   * Address: 0x00950280 (FUN_00950280)
-   *
-   * What it does:
-   * Copy-assigns one five-lane runtime record where lane `+0x0C` is a
-   * `boost::detail::shared_count` payload requiring retained assignment.
-   */
-  RuntimeSharedCountTailRecord20* AssignRuntimeSharedCountTailRecord20(
-    RuntimeSharedCountTailRecord20* const destination,
-    const RuntimeSharedCountTailRecord20* const source
-  )
-  {
-    destination->lane00 = source->lane00;
-    destination->lane04 = source->lane04;
-    destination->lane08 = source->lane08;
-    destination->lane0C = source->lane0C;
-    destination->lane10 = source->lane10;
-    return destination;
-  }
-
-  struct RuntimeSharedCountTripleBlock
-  {
-    std::uint32_t lane00;             // +0x00
-    std::uint32_t lane04;             // +0x04
-    detail::shared_count lane08;      // +0x08
-    std::uint32_t lane0C;             // +0x0C
-    std::uint32_t lane10;             // +0x10
-    detail::shared_count lane14;      // +0x14
-    std::uint32_t lane18;             // +0x18
-    detail::shared_count lane1C;      // +0x1C
-  };
-
-  /**
-   * Address: 0x008E67C0 (FUN_008E67C0)
-   *
-   * What it does:
-   * Copy-assigns one mixed runtime block with three `shared_count` lanes and
-   * five scalar lanes.
-   */
-  RuntimeSharedCountTripleBlock* AssignRuntimeSharedCountTripleBlock(
-    RuntimeSharedCountTripleBlock* const destination,
-    const RuntimeSharedCountTripleBlock* const source
-  )
-  {
-    destination->lane04 = source->lane04;
-    destination->lane08 = source->lane08;
-    destination->lane0C = source->lane0C;
-    destination->lane10 = source->lane10;
-    destination->lane14 = source->lane14;
-    destination->lane18 = source->lane18;
-    destination->lane1C = source->lane1C;
-    return destination;
-  }
-
   /**
    * Address: 0x0053B090 (FUN_0053B090)
    *
@@ -823,8 +758,6 @@ namespace boost
     }
   }
 
-  using SpCountedDeletingDtorFn = int (__thiscall*)(detail::sp_counted_base*, int);
-
   /**
    * Address: 0x00545490 (FUN_00545490)
    *
@@ -838,9 +771,11 @@ namespace boost
       return 0;
     }
 
-    auto** const vtable = *reinterpret_cast<void***>(control);
-    auto* const deletingDtor = reinterpret_cast<SpCountedDeletingDtorFn>(vtable[0]);
-    return deletingDtor(control, 1);
+    // Binary dispatches the slot-0 scalar deleting destructor with delete
+    // flag 1 -- exactly what `delete` emits through sp_counted_base's
+    // virtual destructor.
+    delete control;
+    return 0;
   }
 
   /**
@@ -1421,7 +1356,7 @@ namespace boost
 
   namespace
   {
-    [[noreturn]] void ThrowBadPointerForNullPushBackRuntime()
+    [[noreturn]] void ThrowBadPointerForNullPushBack()
     {
       throw bad_pointer();
     }
@@ -1439,7 +1374,7 @@ namespace boost
   )
   {
     if (inputPointer == nullptr) {
-      ThrowBadPointerForNullPushBackRuntime();
+      ThrowBadPointerForNullPushBack();
     }
   }
 
@@ -1455,7 +1390,7 @@ namespace boost
   )
   {
     if (inputPointer == nullptr) {
-      ThrowBadPointerForNullPushBackRuntime();
+      ThrowBadPointerForNullPushBack();
     }
   }
 
@@ -1582,7 +1517,7 @@ namespace boost
     }
 
     template <class TPointee>
-    struct SpCountedImplPdRuntimeView
+    struct SpCountedImplPd
     {
       void* vftable;
       std::int32_t useCount;
@@ -1592,8 +1527,8 @@ namespace boost
     };
 
     static_assert(
-      offsetof(SpCountedImplPdRuntimeView<void>, deleterStorage) == 0x10,
-      "SpCountedImplPdRuntimeView::deleterStorage offset must be 0x10"
+      offsetof(SpCountedImplPd<void>, deleterStorage) == 0x10,
+      "SpCountedImplPd::deleterStorage offset must be 0x10"
     );
 
     [[nodiscard]] bool SpTypeInfoMatchesRawName(
@@ -1621,7 +1556,7 @@ namespace boost
         return nullptr;
       }
 
-      auto* const runtime = reinterpret_cast<SpCountedImplPdRuntimeView<TPointee>*>(countedImpl);
+      auto* const runtime = reinterpret_cast<SpCountedImplPd<TPointee>*>(countedImpl);
       return static_cast<void*>(runtime->deleterStorage);
     }
 
@@ -1820,7 +1755,7 @@ namespace boost
     }
   }
 
-  struct SpCountedImplPdFunctionDeleterRuntimeView
+  struct SpCountedImplPdFunctionDeleter
   {
     void* vftable;
     std::int32_t useCount;
@@ -1829,8 +1764,8 @@ namespace boost
     void(__cdecl* deleter)(void*);
   };
   static_assert(
-    offsetof(SpCountedImplPdFunctionDeleterRuntimeView, deleter) == 0x10,
-    "SpCountedImplPdFunctionDeleterRuntimeView::deleter offset must be 0x10"
+    offsetof(SpCountedImplPdFunctionDeleter, deleter) == 0x10,
+    "SpCountedImplPdFunctionDeleter::deleter offset must be 0x10"
   );
 
   /**
@@ -1848,7 +1783,7 @@ namespace boost
       return;
     }
 
-    auto* const runtime = reinterpret_cast<SpCountedImplPdFunctionDeleterRuntimeView*>(countedImpl);
+    auto* const runtime = reinterpret_cast<SpCountedImplPdFunctionDeleter*>(countedImpl);
     runtime->deleter(runtime->px);
   }
 
@@ -2213,8 +2148,6 @@ namespace boost
 
   namespace
   {
-    using deleting_dtor_fn = int(__thiscall*)(void*, int);
-
     template <class TObject>
     [[nodiscard]] int DeletePolymorphicSharedCountCtorPointeeOnUnwind(
       TObject* const pointer
@@ -2224,9 +2157,10 @@ namespace boost
         return 0;
       }
 
-      auto** const vtable = *reinterpret_cast<void***>(pointer);
-      auto* const deletingDtor = reinterpret_cast<deleting_dtor_fn>(vtable[0]);
-      return deletingDtor(pointer, 1);
+      // `TObject` is polymorphic (virtual dtor at slot 0), so `delete`
+      // reproduces the binary's slot-0 deleting-destructor dispatch.
+      delete pointer;
+      return 0;
     }
   } // namespace
 

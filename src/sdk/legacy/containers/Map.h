@@ -91,7 +91,7 @@ namespace msvc8
         [[nodiscard]] size_type size() const noexcept { return tree_.size(); }
         /**
          * Address: 0x006E15A0 (FUN_006E15A0, `msvc8::map<Moho::CmdId,
-         * Moho::CUnitCommand*>::empty` -- `Moho::CCommandDb::commands` in
+         * Moho::CUnitCommand*>::empty` -- `Moho::CCommandDB::commands` in
          * `CCommandDb.h`. `return map->size == 0u;`, matching `tree_.empty()`
          * exactly. Re-homed here from a bespoke free function in
          * `CCommandDb.cpp` (`IsCommandMapEmptyBySize`) during the
@@ -131,7 +131,7 @@ namespace msvc8
          */
         /**
          * Address: 0x006E1580 (FUN_006E1580, `msvc8::map<Moho::CmdId,
-         * Moho::CUnitCommand*>::begin` -- `Moho::CCommandDb::commands` in
+         * Moho::CUnitCommand*>::begin` -- `Moho::CCommandDB::commands` in
          * `CCommandDb.h`. `*outNode = map->head->left; return outNode;` --
          * the store-into-hidden-return-pointer form MSVC8 uses for a
          * non-trivial-return-type accessor, matching `iterator(tree_.
@@ -143,8 +143,8 @@ namespace msvc8
          * every range-for loop over `commands` in `CCommandDb.cpp` now
          * uses.)
          * Address: 0x00495AC0 (FUN_00495AC0 -- `begin()` -- the header's left link for `msvc8::map<SBeamBucketKey, msvc8::vector<SWorldBeam>>` (`CWorldParticles::mBeams.mBuckets`; pair 0x24, node 0x34, colour@+0x30, isNil@+0x31); zero callers, unreachable; formerly `GetBeamBucketMapBeginIterator` in moho/particles/BeamRenderHelpers.cpp (RULE ONE), removed 2026-09-10.)
-         * Address: 0x004AD1F0 (FUN_004AD1F0 -- `begin()` written through a caller-supplied iterator slot for `msvc8::map<std::uint32_t, moho::ResourceFactoryBase*>` (`CResourceManager::mActiveFactoryRegistrationsByKey`; pair 0x08, node 0x18, colour@+0x14, isNil@+0x15); zero callers, unreachable; formerly `CopyTreeHeadLeftmostNodeVariant1` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
-         * Address: 0x004AD5D0 (FUN_004AD5D0 -- the second emission of that same `begin()` export for `msvc8::map<std::uint32_t, moho::ResourceFactoryBase*>` (`CResourceManager::mActiveFactoryRegistrationsByKey`; pair 0x08, node 0x18, colour@+0x14, isNil@+0x15); zero callers, unreachable; formerly `CopyTreeHeadLeftmostNodeVariant2` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
+         * Address: 0x004AD1F0 (FUN_004AD1F0 -- `begin()` written through a caller-supplied iterator slot for `msvc8::map<const gpg::RType*, moho::ResourceFactoryBase*>` (`ResourceManager::mFactories`; pair 0x08, node 0x18, colour@+0x14, isNil@+0x15); zero callers, unreachable; formerly `CopyTreeHeadLeftmostNodeVariant1` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
+         * Address: 0x004AD5D0 (FUN_004AD5D0 -- the second emission of that same `begin()` export for `msvc8::map<const gpg::RType*, moho::ResourceFactoryBase*>` (`ResourceManager::mFactories`; pair 0x08, node 0x18, colour@+0x14, isNil@+0x15); zero callers, unreachable; formerly `CopyTreeHeadLeftmostNodeVariant2` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
          * Address: 0x00432430 (FUN_00432430 -- `begin()` -- the header's left link for the technique-implementation annotation maps -- `msvc8::map<msvc8::string, std::int32_t>` (`mIntegerAnnotations` at +0x20, node 0x30, value at node+0x28, colour/nil at +0x2C/+0x2D) and `msvc8::map<msvc8::string, msvc8::string>` (`mStringAnnotations` at +0x2C, node 0x48, colour/nil at +0x44/+0x45); zero callers, unreachable; formerly `GetIntAnnotationTreeBegin` in moho/render/d3d/CD3DEffectTechnique.cpp (RULE ONE), removed 2026-09-10.)
          * Address: 0x005A00E0 (FUN_005A00E0 -- `begin()` -- the header's left link, written through a caller slot for `msvc8::map<std::uint32_t, const moho::RUnitBlueprint*>` (`CAiBuilderImpl::mRebuildStructures` at +0x18; pair 0x08, node 0x18, key at node+0x0C, blueprint at node+0x10, colour/nil at +0x14/+0x15); zero callers, unreachable; formerly `CopyDereferencedBuilderLane04ToOutAdapterA` in moho/ai/CAiBuilderImpl.cpp (RULE ONE), removed 2026-09-11.)
          * Address: 0x005A0E80 (FUN_005A0E80 -- a second emission of that `begin()` store for `msvc8::map<std::uint32_t, const moho::RUnitBlueprint*>` (`CAiBuilderImpl::mRebuildStructures` at +0x18; pair 0x08, node 0x18, key at node+0x0C, blueprint at node+0x10, colour/nil at +0x14/+0x15); zero callers, unreachable; formerly `CopyDereferencedBuilderLane04ToOutAdapterB` in moho/ai/CAiBuilderImpl.cpp (RULE ONE), removed 2026-09-11.)
@@ -212,6 +212,7 @@ namespace msvc8
          * Address: 0x007F01D0 (FUN_007F01D0 -- `find` -- that lower bound plus the `key < candidate` check, returning the header on a miss for `msvc8::map<msvc8::string, moho::RangeExtractor*>` (`Moho::sBlueprintExtractors`, node 0x30: the key's `_Bx` at node+0x10 and `_Myres` at node+0x24, the extractor pointer at node+0x28, colour/nil at +0x2C/+0x2D); callers 0x007EDA40, 0x007EEE50, 0x007EF0B0; formerly `FindBlueprintExtractorRegistryEntry` in moho/misc/RangeExtractor.cpp (RULE ONE), removed 2026-09-10.)
          * Address: 0x00432680 (FUN_00432680 -- `find` -- that lower bound plus the `key < candidate` check, returning the header on a miss -- for `msvc8::map<msvc8::string, std::int32_t>` (`CD3DEffect::Technique::Implementation::mIntegerAnnotations` at +0x20, node 0x30, value at node+0x28, colour/nil at +0x2C/+0x2D); zero callers, unreachable; formerly `FindIntAnnotationNodeBridge` in moho/render/d3d/CD3DEffectTechnique.cpp (RULE ONE), removed 2026-09-10.)
          * Address: 0x004237C0 (FUN_004237C0 -- `find` -- lower bound, then reject a non-equivalent key for `msvc8::map<msvc8::string, moho::CAnimTexture*>` (`Moho::sAnimTextureMap` at 0x010A77F8; node 0x30, key at node+0x0C, texture pointer at node+0x28, colour/nil at +0x2C/+0x2D); callers 0x00422D90, 0x00422E50; formerly `FindAnimTextureCacheEntry` in moho/animation/CAnimTexture.cpp (RULE ONE), removed 2026-09-11.)
+         * Address: 0x004AC7D0 (FUN_004AC7D0 -- `find` -- lower bound on the unsigned key, then the `key < candidate` check, returning the header on a miss -- for `msvc8::map<const gpg::RType*, moho::ResourceFactoryBase*>` (`ResourceManager::mFactories` at +0x4C; node 0x18, key at node+0x0C, factory at node+0x10, colour/nil at +0x14/+0x15); callers `DetachFactory` 0x004A9FC0, `FindFactory` 0x004AB600 and its inlined copy in `LoadRecord` 0x004AA690.)
          */
         [[nodiscard]] iterator find(const key_type& k) { return iterator(tree_.find_node(k)); }
         [[nodiscard]] const_iterator find(const key_type& k) const { return const_iterator(tree_.find_node(k)); }
@@ -328,6 +329,7 @@ namespace msvc8
          * Address: 0x0049E1F0 (FUN_0049E1F0 -- its release-source emission; zero
          * callers, unreachable. Formerly
          * `CopyConstructTrailBucketKeyValueAndReleaseSource`, removed 2026-09-22.)
+         * Address: 0x004AC460 (FUN_004AC460 -- `insert(value)` -- lower_bound, then insert-at-hint only when the key is not already there, so a second factory for one type is ignored, for `msvc8::map<const gpg::RType*, moho::ResourceFactoryBase*>` (`ResourceManager::mFactories`, node 0x18); callers `AttachFactory` 0x004A9F30, `ActivatePendingFactories` 0x004AA090; formerly cited on `operator[]` and `FindOrInsertFactoryRegistrationKey` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
          */
         std::pair<iterator, bool> insert(const value_type& v)
         {
@@ -364,7 +366,7 @@ namespace msvc8
          * AddUiKeyMapEntries, UiRuntimeTypes.cpp)
          * Address: 0x00685750 (FUN_00685750, `std::map_uint_IdPool::find2` --
          * `msvc8::map<std::uint32_t, moho::IdPool>::operator[]`,
-         * `CEntityDb::mIdPoolTree` in `EntityDb.h`. Matches this member
+         * `EntityDB::mIdPoolTree` in `EntityDb.h`. Matches this member
          * exactly: calls `find` (this instantiation's `lower_bound_node`
          * emission), and on a miss (`result == head || key < result->key`)
          * default-constructs a fresh `IdPool` and inserts it via
@@ -373,7 +375,7 @@ namespace msvc8
          * insert shape this member performs. Reached from `Moho::EntityDB::
          * DoReserveId`/`ReleaseId` (`FUN_00684480`/`FUN_00684690`) in the
          * binary; the current recovery reaches the same instantiation from
-         * `CEntityDb::MemberSerialize`'s `mIdPoolTree[familySourceBits]`
+         * `EntityDB::MemberSerialize`'s `mIdPoolTree[familySourceBits]`
          * -- `DoReserveId`/`ReleaseId` themselves still route id allocation
          * through a separate `gRuntimePools` runtime cache rather than this
          * member directly, a known follow-up documented in the EntityDb.cpp
@@ -448,8 +450,8 @@ namespace msvc8
          *
          * Address: 0x008A7C80 (FUN_008A7C80, sub_8A7C80) -- `msvc8::map<
          * msvc8::string, moho::TerrainEnvironmentLookupEntry>::operator[]`
-         * -- `Moho::CWldTerrainRes::mEnvLookup` (`TerrainRuntimeView`/
-         * `TerrainVisualResourceRuntimeView` in `moho/sim/CWldMap.cpp`),
+         * -- `Moho::CWldTerrainRes::mEnvLookup` (`Terrain`/
+         * a deleted overlay in `moho/sim/CWldMap.cpp`),
          * isNil@+0x4D (0x50-byte node: 12-byte link triplet + 28-byte
          * `msvc8::string` key + 0x24-byte `TerrainEnvironmentLookupEntry`
          * value + color/isNil). IDA's own inferred listing name for this
@@ -533,10 +535,9 @@ namespace msvc8
          * Address: 0x0056B6C0 (FUN_0056B6C0, sub_56B6C0 -- `operator[]` for `msvc8::map<moho::EntId, moho::SCoordsVec2>` (`CFormationInstance::mFormationPosCache`/`mOffsetPosCache`, node 0x1C, isNil@+0x19): the cache stores in `CFormationInstance::GetFormationPosition`/`GetOffsetPosition`.)
          * Address: 0x0056AAF0 (FUN_0056AAF0, sub_56AAF0 -- `operator[]` for `msvc8::map<moho::EntId, moho::SUnitOffsetInfo>` (`SOffsetInfo::mUnitOffsets`, node 0x44, isNil@+0x41): `group.mUnitOffsets[entityId] = info` in `CFormationInstance::RunScript` (0x00567E06 / 0x00567F9A).)
          * Address: 0x00495AE0 (FUN_00495AE0 -- `operator[]` -- lower_bound, then insert-at-hint when the key is not equivalent for `msvc8::map<SBeamBucketKey, msvc8::vector<SWorldBeam>>` (`CWorldParticles::mBeams.mBuckets`; pair 0x24, node 0x34, colour@+0x30, isNil@+0x31); callers 0x00491540; formerly `FindOrInsertBeamBucketEntryByKey` in moho/particles/BeamRenderHelpers.cpp (RULE ONE), removed 2026-09-10.)
-         * Address: 0x004AC460 (FUN_004AC460 -- `operator[]` -- lower_bound, then insert-at-hint when the key is not equivalent for `msvc8::map<std::uint32_t, moho::ResourceFactoryBase*>` (`CResourceManager::mActiveFactoryRegistrationsByKey`, node 0x18); callers 0x004A9F30, 0x004AA090; formerly `FindOrInsertFactoryRegistrationKey` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
          * Address: 0x007F00A0 (FUN_007F00A0 -- `operator[]` -- the find half for `msvc8::map<msvc8::string, moho::RangeExtractor*>` (`Moho::sBlueprintExtractors`, node 0x30: the key's `_Bx` at node+0x10 and `_Myres` at node+0x24, the extractor pointer at node+0x28, colour/nil at +0x2C/+0x2D); callers 0x007ED4B0; the source line is `registry[name] = extractor` in `RegisterExtractor` (moho/misc/RangeExtractor.cpp), called twelve times from `InitializeBlueprintExtractors`.)
          * Address: 0x007F0960 (FUN_007F0960 -- `operator[]`'s insert-on-miss half for `msvc8::map<msvc8::string, moho::RangeExtractor*>` (`Moho::sBlueprintExtractors`, node 0x30: the key's `_Bx` at node+0x10 and `_Myres` at node+0x24, the extractor pointer at node+0x28, colour/nil at +0x2C/+0x2D); callers 0x007F00A0; the source line is `registry[name] = extractor` in `RegisterExtractor` (moho/misc/RangeExtractor.cpp), called twelve times from `InitializeBlueprintExtractors`.)
-         * Address: 0x00684510 (FUN_00684510 -- the mapped-value store `operator[]` performs -- `Entity::StandardInit` writing the entity into the reserved id's slot for `msvc8::map<std::uint32_t, moho::Entity*>` (`CEntityDb::mAllUnits` at +0x00); zero callers, unreachable; formerly `AssignEntityPayloadAtIdNode` in moho/entity/EntityDb.cpp (RULE ONE), removed 2026-09-10.)
+         * Address: 0x00684510 (FUN_00684510 -- the mapped-value store `operator[]` performs -- `Entity::StandardInit` writing the entity into the reserved id's slot for `msvc8::map<std::uint32_t, moho::Entity*>` (`EntityDB::mAllUnits` at +0x00); zero callers, unreachable; formerly `AssignEntityPayloadAtIdNode` in moho/entity/EntityDb.cpp (RULE ONE), removed 2026-09-10.)
          * Address: 0x0045AFE0 (FUN_0045AFE0 -- `operator[]` -- lower bound, then insert a default-constructed record on a miss for `msvc8::map<msvc8::string, moho::SDiskFileInfo>` (`FWaitHandleSet::mFileInfo` at +0x40; pair 0x30 because the 8-aligned record leaves a hole after the key, node 0x48, key at node+0x10, record at node+0x30, colour/nil at +0x40/+0x41); callers 0x00458D30; formerly `FileInfoMapGetOrCreate` in moho/misc/FileWaitHandleSet.cpp (RULE ONE), removed 2026-09-11.)
          * Address: 0x007EFD00 (FUN_007EFD00 -- `operator[]` -- lower bound, then insert a default-constructed profile on a miss for `msvc8::map<msvc8::string, moho::SRangeRenderProfile>` (`RangeRenderer::mRangeProfiles` at +0x04; pair 0xA8 -- the 0x1C key, a four-byte alignment hole, then the 8-aligned 0x88 profile -- node 0xC0, key at node+0x10, profile at node+0x30, colour/nil at +0xB8/+0xB9); callers 0x007EE5A0; formerly `FindOrInsertRangeProfileByExtractorName` in moho/render/RangeRenderer.cpp (RULE ONE), removed 2026-09-11.)
          * Address: 0x00431910 (FUN_00431910 -- `operator[]` -- lower bound, then insert a default-constructed mapped string on a miss; `AssignRemap` assigns into what it returns for `msvc8::map<msvc8::string, msvc8::string>` (`ShaderDictionary::mRemaps` at +0x10; pair 0x38, node 0x48, key at node+0x0C, mapped name at node+0x28, colour/nil at +0x44/+0x45); callers 0x0042BDA4, 0x0042D840, 0x007DBE90; formerly `ShaderDictionary::AssignRemap`'s hand-written body in moho/mesh/ShaderDictionary.cpp (RULE ONE), rewritten 2026-09-11.)
@@ -569,8 +570,8 @@ namespace msvc8
          * `_SECURE_SCL` checked-iterator guard is on a REACHED code path;
          * it just never trips, since `position` is always a live, valid
          * cursor from the enclosing walk.
-         * Address: 0x004AC520 (FUN_004AC520 -- `erase(const_iterator)` with the invalid-iterator throw for `msvc8::map<std::uint32_t, moho::ResourceFactoryBase*>` (`CResourceManager::mActiveFactoryRegistrationsByKey`, node 0x18); callers 0x004A9FC0, 0x004AE0D0; formerly `EraseFactoryRegistrationAtIterator` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
-         * Address: 0x00685410 (FUN_00685410 -- `erase(const_iterator)` for `msvc8::map<std::uint32_t, moho::Entity*>` (`CEntityDb::mAllUnits` at +0x00); callers 0x00684690, 0x00686EF0; formerly `EraseAllUnitsTreeNode` in moho/entity/EntityDb.cpp (RULE ONE), removed 2026-09-10.)
+         * Address: 0x004AC520 (FUN_004AC520 -- `erase(const_iterator)` with the invalid-iterator throw for `msvc8::map<const gpg::RType*, moho::ResourceFactoryBase*>` (`ResourceManager::mFactories`, node 0x18); callers 0x004A9FC0, 0x004AE0D0; formerly `EraseFactoryRegistrationAtIterator` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
+         * Address: 0x00685410 (FUN_00685410 -- `erase(const_iterator)` for `msvc8::map<std::uint32_t, moho::Entity*>` (`EntityDB::mAllUnits` at +0x00); callers 0x00684690, 0x00686EF0; formerly `EraseAllUnitsTreeNode` in moho/entity/EntityDb.cpp (RULE ONE), removed 2026-09-10.)
          */
         iterator erase(const_iterator pos) { return iterator(tree_.erase_node(pos.node())); }
 

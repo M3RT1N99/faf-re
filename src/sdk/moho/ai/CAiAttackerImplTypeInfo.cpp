@@ -1,3 +1,5 @@
+#include <cstddef>
+#include "gpg/core/reflection/Reflection.h"
 #include "moho/ai/CAiAttackerImplTypeInfo.h"
 
 #include <cstdlib>
@@ -5,9 +7,6 @@
 #include <typeinfo>
 
 #include "moho/ai/CAiAttackerImpl.h"
-#include "moho/ai/CAiAttackerImplConstruct.h"
-#include "moho/ai/CAiAttackerImplSerializer.h"
-#include "moho/ai/LAiAttackerImplSerializer.h"
 #include "moho/ai/LAiAttackerImplTypeInfo.h"
 #include "moho/ai/IAiAttacker.h"
 #include "moho/script/CScriptObject.h"
@@ -52,9 +51,6 @@ namespace
     {
       (void)moho::register_CAiAttackerImplTypeInfo();
       (void)moho::register_LAiAttackerImplTypeInfo();
-      (void)moho::register_CAiAttackerImplSerializer();
-      (void)moho::register_LAiAttackerImplSerializer();
-      (void)moho::register_CAiAttackerImplConstruct();
     }
   };
 

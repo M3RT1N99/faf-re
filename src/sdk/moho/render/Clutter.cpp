@@ -26,11 +26,6 @@ namespace
 {
 
 
-  struct RegionRuntimeVtableResetTag
-  {
-    virtual ~RegionRuntimeVtableResetTag() = default;
-  };
-
   struct DestroyInstanceVtableTag
   {
     virtual ~DestroyInstanceVtableTag() = default;
@@ -51,13 +46,13 @@ namespace
     virtual ~SeedVtableResetTag() = default;
   };
 
-  struct DestroyInstanceRuntimeLane
+  struct DestroyInstanceLane
   {
     void* vtable;
     moho::MeshRenderer* instance;
   };
 
-  struct UpdateInstanceRuntimeLane
+  struct UpdateInstanceLane
   {
     void* vtable;
     std::int32_t ownerToken;
@@ -66,16 +61,16 @@ namespace
 
 
 
-  RegionRuntimeVtableResetTag gRegionRuntimeVtableResetTag{};
   DestroyInstanceVtableTag gDestroyInstanceVtableTag{};
   UpdateInstanceVtableTag gUpdateInstanceVtableTag{};
   SurfaceVtableResetTag gSurfaceVtableResetTag{};
   SeedVtableResetTag gSeedVtableResetTag{};
 
-  [[nodiscard]] void* RegionRuntimeVtableResetToken()
-  {
-    return *reinterpret_cast<void**>(&gRegionRuntimeVtableResetTag);
-  }
+  // FUN_007D5EE0 (Region ctor, store at 0x7D5EE6) and FUN_007D5F20 (dtor,
+  // store at 0x7D5F3D) write this fixed .data address into the region's
+  // vtable slot; no code in the binary ever reads through it - it is a
+  // reset/poison sentinel, so it is recovered as the plain constant it is.
+  void* const kRegionVtableResetSentinel = reinterpret_cast<void*>(0x00E3F04C);
 
   [[nodiscard]] void* DestroyInstanceVtableToken()
   {
@@ -93,8 +88,8 @@ namespace
    * What it does:
    * Initializes one update-instance helper lane with owner token payload.
    */
-  [[maybe_unused]] UpdateInstanceRuntimeLane* InitializeUpdateInstanceLane(
-    UpdateInstanceRuntimeLane* const outLane,
+  [[maybe_unused]] UpdateInstanceLane* InitializeUpdateInstanceLane(
+    UpdateInstanceLane* const outLane,
     const std::int32_t ownerToken
   ) noexcept
   {
@@ -113,7 +108,7 @@ namespace
    * What it does:
    * Resets one update-instance helper lane to the `UpdateInstance` vtable.
    */
-  [[maybe_unused]] void ResetUpdateInstanceLaneVtable(UpdateInstanceRuntimeLane* const lane) noexcept
+  [[maybe_unused]] void ResetUpdateInstanceLaneVtable(UpdateInstanceLane* const lane) noexcept
   {
     if (lane == nullptr) {
       return;
@@ -129,9 +124,9 @@ namespace
    * Initializes one destroy-instance lane from another lane's payload while
    * restoring the destroy-instance vtable token.
    */
-  [[maybe_unused]] DestroyInstanceRuntimeLane* InitializeDestroyInstanceLaneFromSource(
-    DestroyInstanceRuntimeLane* const outLane,
-    const DestroyInstanceRuntimeLane* const sourceLane
+  [[maybe_unused]] DestroyInstanceLane* InitializeDestroyInstanceLaneFromSource(
+    DestroyInstanceLane* const outLane,
+    const DestroyInstanceLane* const sourceLane
   ) noexcept
   {
     if (outLane == nullptr) {
@@ -150,9 +145,9 @@ namespace
    * Initializes one update-instance lane from another lane's owner-token
    * payload while restoring the update-instance vtable token.
    */
-  [[maybe_unused]] UpdateInstanceRuntimeLane* InitializeUpdateInstanceLaneFromSource(
-    UpdateInstanceRuntimeLane* const outLane,
-    const UpdateInstanceRuntimeLane* const sourceLane
+  [[maybe_unused]] UpdateInstanceLane* InitializeUpdateInstanceLaneFromSource(
+    UpdateInstanceLane* const outLane,
+    const UpdateInstanceLane* const sourceLane
   ) noexcept
   {
     if (outLane == nullptr) {
@@ -170,7 +165,7 @@ namespace
    * What it does:
    * Resets one destroy-instance helper lane to the `DestroyInstance` vtable.
    */
-  void ResetDestroyInstanceLaneVtable(DestroyInstanceRuntimeLane* const lane) noexcept
+  void ResetDestroyInstanceLaneVtable(DestroyInstanceLane* const lane) noexcept
   {
     if (lane == nullptr) {
       return;
@@ -302,7 +297,7 @@ namespace
    */
   void ApplyDestroyInstanceToRegionPayloads(
     moho::ClutterPayloadList& payloads,
-    DestroyInstanceRuntimeLane& destroyLane,
+    DestroyInstanceLane& destroyLane,
     moho::MeshRenderer* const instance
   )
   {
@@ -322,8 +317,8 @@ namespace
    * Rebinds each region-map mesh instance to the provided clutter owner and
    * refreshes one update-instance helper lane to the update vtable token.
    */
-  UpdateInstanceRuntimeLane* BindRegionMeshInstancesToOwner(
-    UpdateInstanceRuntimeLane* const lane,
+  UpdateInstanceLane* BindRegionMeshInstancesToOwner(
+    UpdateInstanceLane* const lane,
     moho::ClutterPayloadList& payloads,
     const std::int32_t ownerToken
   ) noexcept
@@ -519,7 +514,7 @@ namespace moho
    */
   ClutterRegion::ClutterRegion()
   {
-    vtable = RegionRuntimeVtableResetToken();
+    vtable = kRegionVtableResetSentinel;
     mNext = nullptr;
     mPrev = nullptr;
     mX = -1;
@@ -535,8 +530,8 @@ namespace moho
    */
   ClutterRegion::~ClutterRegion()
   {
-    vtable = RegionRuntimeVtableResetToken();
-    (void)ResetRegionRuntimeState(this);
+    vtable = kRegionVtableResetSentinel;
+    (void)ResetState();
   }
 
   /**
@@ -789,7 +784,7 @@ namespace moho
   {
     (void)camera;
 
-    UpdateInstanceRuntimeLane updateLane{};
+    UpdateInstanceLane updateLane{};
     const auto ownerToken = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(this));
     (void)BindRegionMeshInstancesToOwner(&updateLane, region->mMap, ownerToken);
   }
@@ -833,21 +828,21 @@ namespace moho
   /**
    * Address: 0x007D5F80 (FUN_007D5F80)
    */
-  ClutterPayloadList* ResetRegionRuntimeState(ClutterRegion* const region)
+  ClutterPayloadList* ClutterRegion::ResetState()
   {
-    region->mPrev = nullptr;
-    region->mNext = nullptr;
-    region->mZ = -1;
-    region->mX = -1;
+    mPrev = nullptr;
+    mNext = nullptr;
+    mZ = -1;
+    mX = -1;
 
-    DestroyInstanceRuntimeLane destroyLane{};
+    DestroyInstanceLane destroyLane{};
     ResetDestroyInstanceLaneVtable(&destroyLane);
     destroyLane.instance = nullptr;
 
     MeshRenderer* const meshRenderer = MeshRenderer::GetInstance();
-    ApplyDestroyInstanceToRegionPayloads(region->mMap, destroyLane, meshRenderer);
-    region->mMap.clear();
-    return &region->mMap;
+    ApplyDestroyInstanceToRegionPayloads(mMap, destroyLane, meshRenderer);
+    mMap.clear();
+    return &mMap;
   }
 
   /**
@@ -1046,7 +1041,7 @@ namespace moho
 
     UnlinkRegion(region);
 
-    (void)ResetRegionRuntimeState(region);
+    (void)region->ResetState();
 
     mList2.push_back(region);
   }

@@ -30,6 +30,8 @@ namespace gpg::core
 namespace gpg
 {
   class ReadArchive;
+  class RRef;
+  class SerConstructResult;
   class WriteArchive;
 }
 
@@ -379,7 +381,7 @@ namespace moho
      * Loads the serialized attacker state lanes and repopulates owned pointer
      * vectors.
      */
-    static void MemberDeserialize(CAiAttackerImpl* object, gpg::ReadArchive* archive);
+    void MemberDeserialize(gpg::ReadArchive* archive);
 
     /**
      * Address: 0x005E1520 (FUN_005E1520, Moho::CAiAttackerImpl::MemberSerialize)
@@ -388,7 +390,7 @@ namespace moho
      * Saves attacker base, pointer-vector, stage/thread, desired-target, and
      * reporting-state lanes.
      */
-    static void MemberSerialize(const CAiAttackerImpl* object, gpg::WriteArchive* archive);
+    void MemberSerialize(gpg::WriteArchive* archive) const;
 
     /**
      * Address: 0x005D85B0 (FUN_005D85B0, Moho::CAiAttackerImpl::DeserializePointerVectors)
@@ -405,6 +407,17 @@ namespace moho
      * Saves owned `UnitWeapon*` and `CAcquireTargetTask*` pointer vectors.
      */
     static void SerializePointerVectors(gpg::WriteArchive* archive, const CAiAttackerImpl* object);
+
+    /**
+     * Address: 0x005D83A0 (FUN_005D83A0)
+     *
+     * What it does:
+     * Builds a default attacker for an archive load and hands it back
+     * unowned; its members are loaded over it afterwards.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
 
     // `WeaponExtraData` / `TryGetWeaponExtraData` / `ReadExtraDataValue` used to
     // sit here, reading a weapon through a `WeaponEmitterEntryView` reach-in

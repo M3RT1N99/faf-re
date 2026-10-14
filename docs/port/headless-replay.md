@@ -178,7 +178,8 @@ after the `SetAutoMode` fix) in parentheses:
   T1 and T2, different counts in T3 and R4 after their sims have diverged.
 - **Warnings:** T1 has 1968 against 1962: 8 `[stub]` first-call lines on Android, 2 `CDiskWatch`
   privilege warnings on Windows only. The other replays add the differences of their diverged
-  games (the engine's `[MOTDIAG]`/`[STEERDIAG]` probes).
+  games (the engine's `[MOTDIAG]`/`[STEERDIAG]` probes, which master's probe purge a9472e8f
+  removed; these counts predate the 2026-10 master merge).
 - **Registry:** Core (71), Sim (731) and Unsafe (1) Lua sets equal name for name, the four
   prefetch kinds and four resource factories equal. Missing on Android, all from user-side TUs
   that cannot be linked: 242 User binders, 18 RTypes (17 UI classes of the wx-dependent
@@ -193,8 +194,9 @@ after the `SetAutoMode` fix) in parentheses:
   (`FAF_LOWARENA_FILL=0xff`) T3's chain changes from beat 6150 (`40e37f07c27ba2d5`) and R4's from
   beat 3600 (`9f46db69f387eafe`); `0x00` and `0xcd` change nothing. Most likely that is the
   uninitialised read in `Unit::UpdateBlipsInRange` below: its gate tests bits `0x30`, which `0xff`
-  (and the heap check's `0xdd`) set and `0x00`/`0xcd` do not, and the `[BLIPSUPPLY]` probe's scan
-  radii change with the fill. The first divergence from Windows does not move.
+  (and the heap check's `0xdd`) set and `0x00`/`0xcd` do not, and the scan radii that the
+  `[BLIPSUPPLY]` probe logged (removed since by master's probe purge) changed with the fill. The
+  first divergence from Windows does not move.
 - **Without the arena** (`FAF_LOWARENA=0`, bionic's allocator, high pointers) T1 stops while the
   rules load: a pointer cut to 32 bits in `AddMappedBlueprintOrdinalBits`
   (`EntityCategoryReflection.cpp:169`, the category universe word). That is M3d's first item.
@@ -248,8 +250,9 @@ the data under `/sdcard/Android/data/io.github.m3rt1n99.fafre/files` and the 0.4
   and the screen off; the app stayed at process state 4 (foreground service), the partial wake lock
   was held, and the runner kept running. Cancel ended it with SIGTERM within a second (exit 143, no
   SIGKILL needed), and the service and the wake lock were released. That replay ran at 20-25
-  beats/s, bound by the engine log (the `[MOTDIAG]` diagnostics: 199 MB after 9050 beats), not by
-  Android; long replays need minutes and hundreds of MB.
+  beats/s, bound by the engine log (the `[MOTDIAG]` diagnostics: 199 MB after 9050 beats; master's
+  probe purge, merged 2026-10, removed them), not by Android; long replays need minutes and
+  hundreds of MB.
 - **GUI Start** with Vulkan and with OpenGL ES (x86_64 APK) and with Vulkan (arm64-v8a APK) still
   reaches the main menu with `extractNativeLibs="true"`.
 

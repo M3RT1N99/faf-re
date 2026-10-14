@@ -1,5 +1,5 @@
 #include "moho/render/d3d/CD3DTextureBatcher.h"
-
+#include <algorithm>
 #include <cstring>
 
 #include "gpg/core/utils/BoostWrappers.h"
@@ -35,18 +35,6 @@ namespace moho
       return destination;
     }
 
-    /**
-     * Address: 0x00448B30 (FUN_00448B30)
-     *
-     * What it does:
-     * Clears one atlas tree storage lane before destructor teardown.
-     */
-    void DestroyTextureAtlasStorage(CD3DTextureBatcher::TextureAtlasSet* const atlasStorage)
-    {
-      if (atlasStorage != nullptr) {
-        atlasStorage->clear();
-      }
-    }
 
     /**
      * Address: 0x00448E10 (FUN_00448E10)
@@ -151,7 +139,8 @@ namespace moho
    */
   CD3DTextureBatcher::~CD3DTextureBatcher()
   {
-    DestroyTextureAtlasStorage(&mMap);
+    // FUN_00448B30: the explicit atlas-tree clear ahead of member teardown.
+    mMap.clear();
   }
 
   /**
@@ -242,19 +231,26 @@ namespace moho
       void* lockedBits = nullptr;
 
       if (mDynTexSheet && mDynTexSheet->Lock(&pitch, &lockedBits)) {
+        // Binary 0x00448EF0 memcpy's raw BYTES (FUN_00A89190): the atlas
+        // buffer holds one byte per texel (width*height bytes total, sized
+        // 0x100000 by the ctor). Fast path copies the whole width*height-byte
+        // blob in one call (single imul of width*height, bytes not pixels);
+        // otherwise height/4 blocks of 4*width bytes each, destination
+        // strided by pitch. Both paths move exactly width*height bytes.
         if (pitch == static_cast<std::uint32_t>(4 * mWidth)) {
-          std::memcpy(
-            lockedBits,
+          std::copy_n(
             mPixels.begin(),
-            static_cast<std::size_t>(mWidth) * static_cast<std::size_t>(mHeight)
+            static_cast<std::size_t>(mWidth) * static_cast<std::size_t>(mHeight),
+            static_cast<std::uint8_t*>(lockedBits)
           );
         } else {
-          const std::uint32_t rowCount = static_cast<std::uint32_t>(mHeight) >> 2;
-          for (std::uint32_t row = 0; row < rowCount; ++row) {
-            std::memcpy(
-              static_cast<std::uint8_t*>(lockedBits) + (static_cast<std::size_t>(pitch) * row),
-              mPixels.begin() + (static_cast<std::size_t>(row) * static_cast<std::size_t>(mWidth)),
-              static_cast<std::size_t>(4 * mWidth)
+          const std::uint32_t blockCount = static_cast<std::uint32_t>(mHeight) / 4u;
+          const std::size_t blockBytes = static_cast<std::size_t>(mWidth) * 4u;
+          for (std::uint32_t block = 0; block < blockCount; ++block) {
+            std::copy_n(
+              mPixels.begin() + (blockBytes * block),
+              blockBytes,
+              static_cast<std::uint8_t*>(lockedBits) + (static_cast<std::size_t>(pitch) * block)
             );
           }
         }

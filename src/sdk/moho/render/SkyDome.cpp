@@ -1,5 +1,5 @@
 #include "moho/render/SkyDome.h"
-
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -57,64 +57,8 @@ namespace
     2, 1, 3,
   };
 
-  /**
-   * Address: 0x008153C0 (FUN_008153C0)
-   *
-   * What it does:
-   * Clears the retained dome vertex-buffer handle, writes the incoming dome
-   * origin/shape lanes, and restores default tessellation lanes (`16x6`) plus
-   * the default start-angle lane (`1.2566371f`).
-   */
-  void InitializeSkyDomeShapeRuntime(
-    moho::SkyDome* const skyDome,
-    const Wm3::Vector3f& domeOrigin,
-    const float domeHeight,
-    const float domeRadius
-  ) noexcept
-  {
-    if (skyDome == nullptr) {
-      return;
-    }
-
-    skyDome->mDomeVertBuf.reset();
-    skyDome->mDomeOrigin = domeOrigin;
-    skyDome->mDomeShapeParams.x = domeHeight;
-    skyDome->mDomeShapeParams.y = domeRadius;
-    skyDome->mDomeShapeParams.z = 1.2566371f;
-    skyDome->mWidth = 16;
-    skyDome->mHeight = 6;
-  }
-
-  /**
-   * Address: 0x008154A0 (FUN_008154A0)
-   *
-   * IDA signature:
-   * int __userpurge sub_8154A0(float *skyColor@<ebx>, SkyDome *this@<esi>,
-   *     float horizonSize, float *horizonColor);
-   *
-   * What it does:
-   * Clears the retained horizon-lookup texture handle, writes the incoming
-   * horizon size lane, and stores the horizon and sky colour vectors. The
-   * horizon-lookup path string is built/destroyed around this call by
-   * SetupHorizonAndCirrus but is not consumed here (threaded through as an
-   * ignored parameter so the caller keeps the original temporary lifetime).
-   */
-  void InitializeSkyDomeHorizonRuntime(
-    moho::SkyDome* const skyDome,
-    const Wm3::Vector3f& skyColor,
-    const float horizonSize,
-    const Wm3::Vector3f& horizonColor,
-    const msvc8::string& horizonLookupPath
-  ) noexcept
-  {
-    (void)horizonLookupPath;
-
-    skyDome->mHorizonLookupTex.reset();
-    skyDome->mHorizonSize = horizonSize;
-    skyDome->mHorizonColor = horizonColor;
-    skyDome->mSkyColor = skyColor;
-  }
-
+  
+  
   // ---------------------------------------------------------------------------
   // Static cirrus runtime table (byte_F5AE00, 0x50 bytes / 20 float lanes)
   // copied verbatim into SkyDome::mCirrusData by SetupHorizonAndCirrus.
@@ -141,27 +85,13 @@ namespace moho
    * What it does:
    * Initializes all sky dome rendering state to defaults — horizon/sky colors,
    * texture paths, zero-initialized shared_ptr resource handles, and copies
-   * static cirrus data. Also inlines `CResourceWatcher::CResourceWatcher`
-   * (0x007DD660) to set up the watched-resource small-vector in inline mode
-   * (`mWatchedBegin`/`mWatchedEnd` pointing at `mWatchedInline`, empty range) -
-   * previously left uninitialized here, which made `CreateTextures`'s
-   * `mWatchedBegin != mWatchedEnd` guard read garbage stack/heap bytes and
-   * crash inside `ManageWatchedResources` the first time a sky dome rendered.
+   * static cirrus data. The `CResourceWatcher` base constructor (0x007DD660)
+   * is inlined first.
    */
   SkyDome::SkyDome()
-    : mWatcherFlags(0)
-    , mWatchedBegin(mWatchedInline)
-    , mWatchedEnd(mWatchedInline)
-    , mWatchedStorageEnd(std::end(mWatchedInline))
-    , mWatchedStorageOrigin(mWatchedInline)
-    , mWatchedInline{}
-    , mHorizonLookupPath("/textures/environment/horizonLookup.dds")
+    : mHorizonLookupPath("/textures/environment/horizonLookup.dds")
     , mCirrusTexPath("/textures/environment/cirrus000.dds")
-  {
-    // Legacy small-vector reset path reads `*(origin)` as fallback storage
-    // end - see CResourceWatcher::CResourceWatcher for the same idiom.
-    mWatchedInline[0] = mWatchedStorageEnd;
-  }
+  {}
 
   /**
    * Address: 0x008158D0 (FUN_008158D0, ?SetCirrusContext@SkyDome@Moho@@QAEXMABV?$Vector3@M@Wm3@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
@@ -184,6 +114,58 @@ namespace moho
     mCirrusColor_B = direction.z;
     mCirrusTex.reset();
     mCirrusTexPath.reset_and_assign(texturePath);
+  }
+
+/**
+   * Address: 0x008153C0 (FUN_008153C0)
+   *
+   * What it does:
+   * Clears the retained dome vertex-buffer handle, writes the incoming dome
+   * origin/shape lanes, and restores default tessellation lanes (`16x6`) plus
+   * the default start-angle lane (`1.2566371f`).
+   */
+  void SkyDome::ResetDomeShape(
+    const Wm3::Vector3f& domeOrigin,
+    const float domeHeight,
+    const float domeRadius
+  ) noexcept
+  {
+    mDomeVertBuf.reset();
+    mDomeOrigin = domeOrigin;
+    mDomeShapeParams.x = domeHeight;
+    mDomeShapeParams.y = domeRadius;
+    mDomeShapeParams.z = 1.2566371f;
+    mWidth = 16;
+    mHeight = 6;
+  }
+
+/**
+   * Address: 0x008154A0 (FUN_008154A0)
+   *
+   * IDA signature:
+   * int __userpurge sub_8154A0(float *skyColor@<ebx>, SkyDome *this@<esi>,
+   *     float horizonSize, float *horizonColor);
+   *
+   * What it does:
+   * Clears the retained horizon-lookup texture handle, writes the incoming
+   * horizon size lane, and stores the horizon and sky colour vectors. The
+   * horizon-lookup path string is built/destroyed around this call by
+   * SetupHorizonAndCirrus but is not consumed here (threaded through as an
+   * ignored parameter so the caller keeps the original temporary lifetime).
+   */
+  void SkyDome::ResetHorizonContext(
+    const Wm3::Vector3f& skyColor,
+    const float horizonSize,
+    const Wm3::Vector3f& horizonColor,
+    const msvc8::string& horizonLookupPath
+  ) noexcept
+  {
+    (void)horizonLookupPath;
+
+    mHorizonLookupTex.reset();
+    mHorizonSize = horizonSize;
+    mHorizonColor = horizonColor;
+    mSkyColor = skyColor;
   }
 
   /**
@@ -209,15 +191,14 @@ namespace moho
   {
     // sub_8153C0: dome origin / elevation / radius + default 16x6 tessellation,
     // drops the retained dome vertex buffer.
-    InitializeSkyDomeShapeRuntime(this, domeOrigin, waterElevation, domeRadius);
+    ResetDomeShape(domeOrigin, waterElevation, domeRadius);
 
     // Horizon + sky colour context. The horizon-lookup path is built here (heap
     // side effect preserved) and released after the horizon lane is written; it
     // is not consumed by the horizon setup itself.
     {
       const msvc8::string horizonLookupPath("/textures/environment/horizonLookup.dds");
-      InitializeSkyDomeHorizonRuntime(
-        this,
+      ResetHorizonContext(
         Wm3::Vector3f{0.25999999f, 0.46000001f, 0.58999997f},   // sky colour
         domeRadius * 0.15360001f,                               // horizon size
         Wm3::Vector3f{0.81000000f, 0.74000001f, 0.63999999f},   // horizon colour
@@ -265,13 +246,9 @@ namespace moho
    *
    * What it does:
    * Tears the dome down: releases the sky resources through `Reset`, empties
-   * the decal upload list and frees its sentinel, then inlines
-   * `CResourceWatcher::~CResourceWatcher` (0x007DA8D0) - flush any pending
-   * watched-resource nodes through the resource manager, then free
-   * non-inline watched storage - since `SkyDome` doesn't C++-inherit
-   * `CResourceWatcher` (see the field comment above) so there is no real
-   * base dtor to do this automatically. Every other member (the shared_ptr
-   * lanes) unwinds on its own in reverse declaration order.
+   * the decal upload list and frees its sentinel; the members then unwind in
+   * reverse declaration order and the `CResourceWatcher` base destructor
+   * (0x007DA8D0) runs inlined last.
    *
    * The emission runs to 601 instructions, but roughly 190 of those are the
    * compiler's own `boost::shared_ptr` member releases, which C++ performs
@@ -280,18 +257,6 @@ namespace moho
   SkyDome::~SkyDome()
   {
     Reset();
-
-    if (mWatchedBegin != mWatchedEnd) {
-      if (ResourceManager* const manager = RES_GetResourceManager(); manager != nullptr) {
-        manager->ManageWatchedResources(reinterpret_cast<CResourceWatcher*>(this));
-      }
-    }
-
-    if (mWatchedBegin != mWatchedStorageOrigin) {
-      ::operator delete[](mWatchedBegin);
-      mWatchedBegin = mWatchedStorageOrigin;
-      mWatchedStorageEnd = *reinterpret_cast<void**>(mWatchedStorageOrigin);
-    }
   }
 
   /**
@@ -464,12 +429,12 @@ namespace moho
   }
 
   /**
-   * Address: 0x008175D0 (FUN_008175D0, Moho::SkyDome::Destroy)
+   * Address: 0x008175D0 (FUN_008175D0, Moho::SkyDome::Func1)
    *
    * What it does:
    * Releases sky texture resource handles used by runtime sky layers.
    */
-void SkyDome::Destroy()
+void SkyDome::OnResourceChanged(const gpg::StrArg)
 {
     mDecalUploads.clear();
     mHorizonLookupTex = {};
@@ -516,12 +481,8 @@ void SkyDome::Destroy()
    * tracks resources, it first flushes/re-registers them with the resource
    * manager so the loaded textures participate in hot-reload.
    *
-   * SkyDome derives its runtime layout from CResourceWatcher (its constructor
-   * inlines the watcher init at 0x008149E0 and the +0x04/+0x08 fields are the
-   * watcher flag / watched-resource small-vector). The binary passes `this`
-   * (viewed as CResourceWatcher*) as the resource-lookup owner argument; the
-   * recovered CD3DDeviceResources::GetTexture ignores that slot, but it is
-   * preserved here for 1:1 fidelity with the original call.
+   * The dome passes itself as the watcher for every texture it loads, so a
+   * changed texture comes back to `OnResourceChanged`.
    */
   void SkyDome::CreateTextures()
   {
@@ -530,17 +491,10 @@ void SkyDome::Destroy()
       return;
     }
 
-    // SkyDome shares CResourceWatcher's layout (watcher init is inlined into
-    // the SkyDome constructor); use the typed watcher view for the tracked-
-    // resource flush and for the resource-lookup owner argument.
-    auto* const watcher = reinterpret_cast<CResourceWatcher*>(this);
-
-    // When this watcher already tracks resources, flush/re-register them with
-    // the resource manager (mirrors ~CResourceWatcher's watched-vector guard).
-    if (watcher->mWatchedBegin != watcher->mWatchedEnd) {
-      if (ResourceManager* const manager = RES_GetResourceManager(); manager != nullptr) {
-        manager->ManageWatchedResources(watcher);
-      }
+    // Drop the watches from the previous load before registering new ones.
+    CResourceWatcher* const watcher = this;
+    if (!mWatches.empty()) {
+      RES_GetResourceManager()->DetachWatcher(watcher);
     }
 
     CD3DDevice* const device = D3D_GetDevice();
@@ -737,7 +691,8 @@ void SkyDome::Destroy()
     mDecalVertBuf1 = device->CreateVertexBuffer(&quadContext);
 
     void* const quadVertices = mDecalVertBuf1->Lock(0u, 0u, static_cast<gpg::gal::MohoD3DLockFlags>(0));
-    std::memcpy(quadVertices, kDecalBillboardQuadVertices.data(), sizeof(kDecalBillboardQuadVertices));
+    // Raw GPU upload: static billboard quad vertex blob into the locked buffer.
+    std::copy(kDecalBillboardQuadVertices.begin(), kDecalBillboardQuadVertices.end(), static_cast<float*>(quadVertices));
     mDecalVertBuf1->Unlock();
 
     gpg::gal::VertexBufferContext cumulusContext{};
@@ -776,7 +731,8 @@ void SkyDome::Destroy()
     mDecalIndexBuf = device->CreateIndexBuffer(&context);
 
     std::int16_t* const indices = mDecalIndexBuf->Lock(0u, 0u, static_cast<gpg::gal::MohoD3DLockFlags>(0));
-    std::memcpy(indices, kDecalQuadIndices.data(), sizeof(kDecalQuadIndices));
+    // Raw GPU upload: static quad index blob into the locked buffer.
+    std::copy(kDecalQuadIndices.begin(), kDecalQuadIndices.end(), indices);
     mDecalIndexBuf->Unlock();
   }
 
@@ -797,7 +753,8 @@ void SkyDome::Destroy()
       static_cast<std::uint8_t*>(mDecalVertBuf2->Lock(0u, 0u, static_cast<gpg::gal::MohoD3DLockFlags>(0)));
 
     for (const SkyDomeDecalVertices& vertices : mDecalUploads) {
-      std::memcpy(writeCursor, vertices.mBytes, sizeof(vertices.mBytes));
+      // Raw GPU upload: per-decal vertex blob into the locked dynamic buffer.
+      std::copy(std::begin(vertices.mBytes), std::end(vertices.mBytes), writeCursor);
       writeCursor += sizeof(vertices.mBytes);
     }
 
@@ -964,7 +921,8 @@ void SkyDome::Destroy()
 
     // Upload the per-cloud instance records into the instanced cumulus stream.
     void* const instanceData = mDecalVertBuf3->Lock(0u, 0u, static_cast<gpg::gal::MohoD3DLockFlags>(0));
-    std::memcpy(instanceData, cumulusVertices.data(), cloudCount * sizeof(CumulusVertex));
+    // Raw GPU upload: instance vertex blob into the locked stream.
+    std::copy_n(cumulusVertices.data(), cloudCount, static_cast<CumulusVertex*>(instanceData));
     mDecalVertBuf3->Unlock();
 
     device->SetVertexDeclaration(mDecalFormat2->mFormat);

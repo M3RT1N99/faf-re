@@ -38,7 +38,7 @@ namespace moho
      * What it does:
      * Loads one silo slot payload from archive lanes.
      */
-    static void MemberDeserialize(gpg::ReadArchive* archive, SSiloBuildInfo* info);
+    void MemberDeserialize(gpg::ReadArchive* archive);
 
     /**
      * Address: 0x005D04F0 (FUN_005D04F0, Moho::SSiloBuildInfo::MemberSerialize)
@@ -46,7 +46,7 @@ namespace moho
      * What it does:
      * Saves one silo slot payload into archive lanes.
      */
-    static void MemberSerialize(const SSiloBuildInfo* info, gpg::WriteArchive* archive);
+    void MemberSerialize(gpg::WriteArchive* archive) const;
 
     UnitWeapon* mWeapon;           // +0x00
     std::int32_t mAmmo;            // +0x04
@@ -184,7 +184,9 @@ namespace moho
      * Allocates one silo-build implementation object for serializer construct
      * callbacks and publishes it to the construct result.
      */
-    static void MemberConstruct(gpg::SerConstructResult* result);
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
 
     /**
      * Address: 0x005D1080 (FUN_005D1080, Moho::CAiSiloBuildImpl::MemberDeserialize)

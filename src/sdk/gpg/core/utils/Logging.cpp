@@ -1,7 +1,5 @@
 #include "Logging.h"
 
-// TEMPORARY PROBE (do not commit) -- for the OutputDebugStringA mirror in
-// LogContext::Dispatch below.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -445,7 +443,7 @@ void gpg::InitLogContextSingleton()
  * Initializes the global log-context singleton on first use and returns the
  * process-global context pointer lane.
  */
-[[maybe_unused]] gpg::LogContext* gpg::GetLogContextSingletonRuntime()
+[[maybe_unused]] gpg::LogContext* gpg::GetLogContextSingleton()
 {
     std::call_once(g_LogOnce, &InitLogContextSingleton);
     return g_LogCtx;
@@ -934,7 +932,8 @@ std::streamsize PipeBuf::xsputn(const char* const src, const std::streamsize cou
         const std::streamsize writable = static_cast<std::streamsize>(epptr() - pptr());
         if (writable > 0) {
             const std::streamsize chunk = (remaining < writable) ? remaining : writable;
-            std::memcpy(pptr(), cursor, static_cast<std::size_t>(chunk));
+            // Raw streambuf blob copy into the put area.
+            std::copy_n(cursor, static_cast<std::size_t>(chunk), pptr());
             pbump(static_cast<int>(chunk));
             cursor += chunk;
             remaining -= chunk;
@@ -1072,7 +1071,8 @@ std::streamsize PipeBuf::xsgetn(char* const dst, const std::streamsize count)
         const std::streamsize available = static_cast<std::streamsize>(readEnd - readNext);
         if (available > 0) {
             const std::streamsize chunk = ((count - copied) < available) ? (count - copied) : available;
-            std::memcpy(dst + copied, readNext, static_cast<std::size_t>(chunk));
+            // Raw streambuf blob copy from the get area.
+            std::copy_n(readNext, static_cast<std::size_t>(chunk), dst + copied);
             gbump(static_cast<int>(chunk));
             copied += chunk;
             if (copied >= count) {
@@ -1202,14 +1202,6 @@ int DebugOutputStreambuf::sync()
  */
 void LogContext::Dispatch(const LogSeverity level, const msvc8::string& msg)
 {
-    // TEMPORARY PROBE (do not commit). `InitLogSingleton` creates the context
-    // but registers no target, so without `/log <name>` this loop runs over an
-    // empty list and every message -- including every `gpg::Warnf` probe in the
-    // tree ([SKINDIAG], [PROPFUNNEL], [EFXDIAG], [XPORTDIAG] ...) -- is
-    // formatted and then dropped. Mirror warnings and errors to the debugger so
-    // those probes are readable in the VS Output window with no extra setup.
-    // Info/Debug are deliberately excluded: they are high-volume and would
-    // flood the window.
     if (level >= LogSeverity::Warn && head.next == &head) {
         ::OutputDebugStringA(msg.c_str());
         ::OutputDebugStringA("\n");

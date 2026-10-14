@@ -27,6 +27,7 @@
 #include "moho/resource/RResId.h"
 #include "moho/sim/RRuleGameRules.h"
 #include "moho/sim/Sim.h"
+#include "gpg/core/containers/ArchiveSerialization.h"
 
 
 namespace
@@ -130,28 +131,32 @@ namespace moho
       return sim->mRules->GetTrailBlueprint(trailId);
     }
 
-    void SetEffectWorldPosition(IEffect& effect, const Wm3::Vector3f& position)
-    {
-      const float positionValues[3] = {position.x, position.y, position.z};
-      effect.SetNParam(0, positionValues, 3);
-    }
-
-    // (The former ApplyEmitterBlueprintParams helper is gone: the emitter blueprint
-    // param seeding now lives in the recovered CEfxEmitter create-params ctor
-    // (0x0065BA80), which the 5 CreateEmitter* factories construct through.)
-
     /**
      * Address: 0x00659390 (FUN_00659390)
      *
      * What it does:
-     * Fetches one entity bone world transform, copies its position into the
-     * effect payload, rebuilds the effect matrix from the same transform, and
+     * Fetches one entity bone world transform (local pose bone composed with
+     * the entity's current transform) into the effect's world matrix and
      * advances interpolation once.
+     *
+     * Binary fidelity note: this lane writes ONLY `mMatrix` - the
+     * quaternion-to-matrix helper (0x004EE980) builds the rotation from the
+     * composed transform and stores its translation lane into `effect+0x150` -
+     * and then tail-jumps `Interpolate` (vtable +0x50). There is no
+     * `SetNParam(0, pos, 3)` here: that is the *entity* variant's shape
+     * (0x00659300), which writes the position into param slot 0 and leaves the
+     * matrix identity. `CEfxEmitter::Interpolate` computes
+     * `mPos = mMatrix * params[0..2]`, and the blueprint ctor leaves slots 0..2
+     * as the emitter's local (zero) offset, so the bone-position ring lands at
+     * the bone's own world position. Writing the world position into the slot
+     * *as well* made Interpolate transform the bone position by the bone
+     * matrix - doubling the map coordinates and putting every
+     * `CreateEmitterAtBone` emitter (mass-storage blinking lights most
+     * visibly) high in the air, far from its unit.
      */
     void ApplyBoneTransformToEffect(CEffectImpl& effect, Entity* const entity, const int boneIndex)
     {
       const VTransform boneTransform = entity->GetBoneWorldTransform(boneIndex);
-      SetEffectWorldPosition(effect, boneTransform.pos_);
       effect.mMatrix.Set(boneTransform.orient_, boneTransform.pos_);
       effect.Interpolate();
     }
@@ -273,6 +278,24 @@ namespace moho
     }
 
     effect->SetBone(entity, boneIndex);
+
+    // TEMPORARY PROBE -- attach-creation triage: what the weak link resolves
+    // to immediately after SetBone on the CreateAttachedEmitter lane. Delete
+    // when resolved.
+    {
+      static int sProbeCreateAttached = 0;
+      if (sProbeCreateAttached < 20) {
+        ++sProbeCreateAttached;
+        DiagLine(
+          "[FXATTACH] createA n=%d eff=%p ent=%p bone=%d resolved=%p",
+          sProbeCreateAttached,
+          static_cast<void*>(effect),
+          static_cast<void*>(entity),
+          boneIndex,
+          static_cast<void*>(effect->mEntityInfo.GetAttachTargetEntity())
+        );
+      }
+    }
 
     if (blueprint != nullptr && !IsBlueprintEnabledForCurrentFidelity(blueprint)) {
       DestroyEffect(effect);
@@ -406,6 +429,24 @@ namespace moho
     LinkActiveEffect(mActiveEffects, effect);
 
     effect->SetBone(entity, boneIndex);
+
+    // TEMPORARY PROBE -- attach-creation triage: proves the Lua lane reaches
+    // SetBone, and what the weak link resolves to one call later. Delete when
+    // resolved.
+    {
+      static int sProbeCreate = 0;
+      if (sProbeCreate < 20) {
+        ++sProbeCreate;
+        DiagLine(
+          "[FXATTACH] create n=%d eff=%p ent=%p bone=%d resolved=%p",
+          sProbeCreate,
+          static_cast<void*>(effect),
+          static_cast<void*>(entity),
+          boneIndex,
+          static_cast<void*>(effect->mEntityInfo.GetAttachTargetEntity())
+        );
+      }
+    }
 
     if (blueprint != nullptr && !IsBlueprintEnabledForCurrentFidelity(blueprint)) {
       DestroyEffect(effect);
@@ -610,17 +651,6 @@ namespace moho
     const int armyIndex
   )
   {
-    // TEMPORARY PROBE -- enemy build-beam triage, delete when resolved.
-    // If an enemy ACU/engineer build produces no line at all, this says which
-    // of the two it is: no line here means the sim never asked for the beam;
-    // a line here plus a culled [EFXDIAG] CanSeeCam means it was created and
-    // then hidden by the recon probe.
-    DiagLine(
-      "[EFXDIAG] AttachBeam: army=%d src=%p srcBone=%d dst=%p dstBone=%d",
-      armyIndex, static_cast<void*>(sourceEntity), sourceBoneIndex,
-      static_cast<void*>(targetEntity), targetBoneIndex
-    );
-
     CEfxBeam* const effect = new (std::nothrow) CEfxBeam(this, beamBlueprint, armyIndex);
     if (effect == nullptr) {
       return nullptr;
@@ -638,3 +668,57 @@ namespace moho
     return effect;
   }
 } // namespace moho
+
+namespace moho
+{
+  void CEffectManagerImpl::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    Sim* sim = nullptr;
+    const gpg::RRef owner{};
+    archive.ReadPointer(&sim, &owner);
+    result.SetUnowned(gpg::MakeRRef(new CEffectManagerImpl(sim)), 0u);
+  }
+
+  /**
+   * Address: 0x0066BA60 (FUN_0066BA60)
+   */
+  void CEffectManagerImpl::MemberSaveConstructArgs(
+    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+  )
+  {
+    archive.WritePointer(GetSim(), gpg::TrackedPointerState::Unowned, gpg::RRef{});
+    result.SetUnowned(0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CEffectManagerImpl>`, vtable 0x00E25E70.
+   *
+   * Address: 0x00BD45C0 (FUN_00BD45C0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFC030 (FUN_00BFC030 -- the global's destructor.)
+   * Address: 0x0066C0E0 (FUN_0066C0E0 -- `Init`.)
+   * Address: 0x0066BB40 (FUN_0066BB40 -- `Construct`, `MemberConstruct` inlined.)
+   * Address: 0x0066C280 (FUN_0066C280 -- `Delete`.)
+   */
+  struct CEffectManagerImplConstruct : gpg::SerConstructHelper<CEffectManagerImpl>
+  {};
+
+  /**
+   * `gpg::SerSaveConstructHelper<CEffectManagerImpl>`, vtable 0x00E25E60.
+   *
+   * Address: 0x00BD4590 (FUN_00BD4590 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFC000 (FUN_00BFC000 -- the global's destructor.)
+   * Address: 0x0066C060 (FUN_0066C060 -- `Init`.)
+   * Address: 0x0066B9E0 (FUN_0066B9E0 -- `SaveConstructArgs`, a forward to `MemberSaveConstructArgs`.)
+   */
+  struct CEffectManagerImplSaveConstruct : gpg::SerSaveConstructHelper<CEffectManagerImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B3CB4 -- process-global `CEffectManagerImplConstruct` singleton.
+  moho::CEffectManagerImplConstruct gCEffectManagerImplConstruct;
+
+  // Address: 0x010B3CA4 -- process-global `CEffectManagerImplSaveConstruct` singleton.
+  moho::CEffectManagerImplSaveConstruct gCEffectManagerImplSaveConstruct;
+} // namespace

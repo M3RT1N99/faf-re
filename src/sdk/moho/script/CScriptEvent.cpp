@@ -38,13 +38,12 @@
 #include "moho/unit/core/UnitWeapon.h"
 #include "moho/unit/core/UserUnit.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/reflection/Reflection.h"
 
 using namespace moho;
 
 namespace
 {
-  // Address: 0x010A8D04 -- process-global `CScriptEventSerializer` singleton.
-  moho::CScriptEventSerializer gCScriptEventSerializer;
 
   /**
    * Address: 0x004CA110 (FUN_004CA110, CScriptEvent startup type-info pre-registration)
@@ -857,19 +856,19 @@ void CScriptEvent::MemberDeserialize(gpg::ReadArchive* const archive)
 /**
  * Address: 0x004CB8A0 (FUN_004CB8A0, Moho::CScriptEvent::MemberSerialize)
  */
-void CScriptEvent::MemberSerialize(gpg::WriteArchive* const archive)
+void CScriptEvent::MemberSerialize(gpg::WriteArchive* const archive) const
 {
   gpg::RRef ownerRef{};
 
   gpg::RType* const taskEventType = CachedCTaskEventType();
-  archive->Write(taskEventType, static_cast<CTaskEvent*>(this), ownerRef);
+  archive->Write(taskEventType, static_cast<const CTaskEvent*>(this), ownerRef);
 
   gpg::RType* scriptObjectType = CScriptObject::sType;
   if (!scriptObjectType) {
     scriptObjectType = gpg::LookupRType(typeid(CScriptObject));
     CScriptObject::sType = scriptObjectType;
   }
-  archive->Write(scriptObjectType, static_cast<CScriptObject*>(this), ownerRef);
+  archive->Write(scriptObjectType, static_cast<const CScriptObject*>(this), ownerRef);
 }
 
 /**
@@ -1897,26 +1896,6 @@ CAiNavigatorImpl* moho::SCR_FromLua_CAiNavigatorImpl(const LuaPlus::LuaObject& o
 
   const gpg::RRef sourceRef = SCR_MakeScriptObjectRef(scriptObject);
   const gpg::RRef upcast = gpg::REF_UpcastPtr(sourceRef, CachedCAiNavigatorImplType());
-  { // TEMPORARY PROBE (do not commit)
-    static int navProbe = 0;
-    if (navProbe++ < 12) {
-      std::int32_t derivedOffset = -1;
-      if (sourceRef.mType != nullptr) {
-        (void)sourceRef.mType->IsDerivedFrom(CachedCAiNavigatorImplType(), &derivedOffset);
-      }
-      const char* const srcTypeName = sourceRef.mType != nullptr ? sourceRef.mType->GetName() : "<null>";
-      const char* const tgtTypeName =
-        CachedCAiNavigatorImplType() != nullptr ? CachedCAiNavigatorImplType()->GetName() : "<null>";
-      if (std::FILE* const probeFile = std::fopen("C:/ProgramData/FAForever/bin/navlay.txt", "a")) {
-        std::fprintf(probeFile,
-                     "slot=%p scriptObj=%p srcObj=%p srcType=%s upcast=%p tgt=%s derivedOff=%d rtti=%s vptr=%p\n",
-                     static_cast<void*>(scriptObjectSlot), static_cast<void*>(scriptObject), sourceRef.mObj,
-                     srcTypeName, upcast.mObj, tgtTypeName, derivedOffset, typeid(*scriptObject).name(),
-                     upcast.mObj != nullptr ? *reinterpret_cast<void**>(upcast.mObj) : nullptr);
-        std::fclose(probeFile);
-      }
-    }
-  }
   if (!upcast.mObj) {
     luaL_error(state ? state->GetActiveCState() : nullptr, kIncorrectGameObjectTypeError);
     return nullptr;
@@ -2931,57 +2910,6 @@ CScriptEvent* moho::SCR_GetScriptEventFromLuaObject(const LuaPlus::LuaObject& ob
 }
 
 /**
- * Address: 0x004CA280 (FUN_004CA280, Moho::CScriptEventSerializer::Deserialize)
- */
-void CScriptEventSerializer::Deserialize(
-  gpg::ReadArchive* const archive, const int objectPtr, const int /*version*/, gpg::RRef* const /*ownerRef*/
-)
-{
-  auto* const object = reinterpret_cast<CScriptEvent*>(objectPtr);
-  object->MemberDeserialize(archive);
-}
-
-/**
- * Address: 0x004CA290 (FUN_004CA290, Moho::CScriptEventSerializer::Serialize)
- */
-void CScriptEventSerializer::Serialize(
-  gpg::WriteArchive* const archive, const int objectPtr, const int /*version*/, gpg::RRef* const /*ownerRef*/
-)
-{
-  auto* const object = reinterpret_cast<CScriptEvent*>(objectPtr);
-  object->MemberSerialize(archive);
-}
-
-/**
- * Address: 0x00BC6240 (FUN_00BC6240, register_CScriptEventSerializer, dynamic
- * initializer for the global `CScriptEventSerializer` singleton)
- */
-CScriptEventSerializer::CScriptEventSerializer()
-  : mSerLoadFunc(reinterpret_cast<gpg::RType::load_func_t>(&CScriptEventSerializer::Deserialize))
-  , mSerSaveFunc(reinterpret_cast<gpg::RType::save_func_t>(&CScriptEventSerializer::Serialize))
-{}
-
-/**
- * Address: 0x00BF0B80 (FUN_00BF0B80, ??1CScriptEventSerializer@Moho@@QAE@@Z)
- */
-CScriptEventSerializer::~CScriptEventSerializer() = default;
-
-/**
- * Address: 0x004CB0A0 (FUN_004CB0A0, Moho::CScriptEventSerializer::Init)
- *
- * What it does:
- * Binds CScriptEvent serializer callbacks into RTTI.
- */
-void CScriptEventSerializer::Init()
-{
-  gpg::RType* const type = CachedCScriptEventType();
-  GPG_ASSERT(type->serLoadFunc_ == nullptr);
-  type->serLoadFunc_ = mSerLoadFunc;
-  GPG_ASSERT(type->serSaveFunc_ == nullptr);
-  type->serSaveFunc_ = mSerSaveFunc;
-}
-
-/**
  * Address: 0x00BC6220 (FUN_00BC6220, CScriptEvent startup type-info registration)
  *
  * What it does:
@@ -3054,3 +2982,24 @@ void CScriptEventTypeInfo::Init()
 GPG_PREREGISTER_INIT(register_CScriptEventTypeInfo_4715db, moho::register_CScriptEventTypeInfo)
 
 GPG_PREREGISTER_INIT(PreRegisterCScriptEventTypeInfo_4715db, PreRegisterCScriptEventTypeInfo)
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CScriptEvent>`, vtable 0x00E099C8.
+   *
+   * Address: 0x00BC6240 (FUN_00BC6240 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF0B80 (FUN_00BF0B80 -- the global's destructor.)
+   * Address: 0x004CB0A0 (FUN_004CB0A0 -- `Init`.)
+   * Address: 0x004CA280 (FUN_004CA280 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x004CA290 (FUN_004CA290 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CScriptEventSerializer : gpg::SerSaveLoadHelper<CScriptEvent>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010A8D04 -- process-global `CScriptEventSerializer` singleton.
+  moho::CScriptEventSerializer gCScriptEventSerializer;
+} // namespace

@@ -123,23 +123,23 @@ namespace
     return cached;
   }
 
-  struct NavigatorGlueTailWordView
+  struct NavigatorGlueTailWord
   {
     std::uint8_t pad00[0xA8];
     std::uint32_t tailWord0;
     std::uint32_t tailWord1;
     std::uint32_t tailWord2;
   };
-  static_assert(offsetof(NavigatorGlueTailWordView, tailWord0) == 0xA8, "tailWord0 offset must be 0xA8");
-  static_assert(offsetof(NavigatorGlueTailWordView, tailWord1) == 0xAC, "tailWord1 offset must be 0xAC");
-  static_assert(offsetof(NavigatorGlueTailWordView, tailWord2) == 0xB0, "tailWord2 offset must be 0xB0");
+  static_assert(offsetof(NavigatorGlueTailWord, tailWord0) == 0xA8, "tailWord0 offset must be 0xA8");
+  static_assert(offsetof(NavigatorGlueTailWord, tailWord1) == 0xAC, "tailWord1 offset must be 0xAC");
+  static_assert(offsetof(NavigatorGlueTailWord, tailWord2) == 0xB0, "tailWord2 offset must be 0xB0");
 
-  struct NavigatorGlueLateWordView
+  struct NavigatorGlueLateWord
   {
     std::uint8_t pad00[0x118];
     std::uint32_t lateWord;
   };
-  static_assert(offsetof(NavigatorGlueLateWordView, lateWord) == 0x118, "lateWord offset must be 0x118");
+  static_assert(offsetof(NavigatorGlueLateWord, lateWord) == 0x118, "lateWord offset must be 0x118");
 
   /**
    * Address: 0x005A2BF0 (FUN_005A2BF0)
@@ -149,7 +149,7 @@ namespace
    * glue view object.
    */
   [[maybe_unused]] [[nodiscard]] std::uint32_t ReadNavigatorGlueTailWord0(
-    const NavigatorGlueTailWordView* const view
+    const NavigatorGlueTailWord* const view
   ) noexcept
   {
     return view->tailWord0;
@@ -163,7 +163,7 @@ namespace
    * glue view object.
    */
   [[maybe_unused]] [[nodiscard]] std::uint32_t ReadNavigatorGlueTailWord1(
-    const NavigatorGlueTailWordView* const view
+    const NavigatorGlueTailWord* const view
   ) noexcept
   {
     return view->tailWord1;
@@ -177,7 +177,7 @@ namespace
    * glue view object.
    */
   [[maybe_unused]] [[nodiscard]] std::uint32_t ReadNavigatorGlueTailWord2(
-    const NavigatorGlueTailWordView* const view
+    const NavigatorGlueTailWord* const view
   ) noexcept
   {
     return view->tailWord2;
@@ -191,7 +191,7 @@ namespace
    * object.
    */
   [[maybe_unused]] [[nodiscard]] std::uint32_t ReadNavigatorGlueLateWord(
-    const NavigatorGlueLateWordView* const view
+    const NavigatorGlueLateWord* const view
   ) noexcept
   {
     return view->lateWord;
@@ -259,7 +259,7 @@ namespace
   // `gpg::RType::~RType()` (Reflection.h/.cpp), which already cites the
   // sibling `RListenerRType_EAiNavigatorEvent` clone (FUN_005A84D0) from this
   // same file. Cited FUN_005A8470 there too instead of keeping a second,
-  // `NavigatorTypeDestructorRuntimeView`-shaped raw-offset reach-in copy of
+  // a deleted overlay-shaped raw-offset reach-in copy of
   // the same logic around (RULE ONE / no-orphan-helper rule): no
   // registration or dispatch site anywhere in `src/sdk/**` needs a dedicated
   // named function here, since `RBroadcasterRType_EAiNavigatorEvent`'s
@@ -1290,7 +1290,7 @@ IAiNavigator::~IAiNavigator() = default;
  * Loads IAiNavigator broadcaster listener payload through reflected
  * `Broadcaster<EAiNavigatorEvent>` metadata.
  */
-void IAiNavigator::MemberDeserialize(IAiNavigator* const object, gpg::ReadArchive* const archive)
+void IAiNavigator::MemberDeserialize(gpg::ReadArchive* const archive)
 {
   if (!archive) {
     return;
@@ -1299,7 +1299,7 @@ void IAiNavigator::MemberDeserialize(IAiNavigator* const object, gpg::ReadArchiv
   const gpg::RRef ownerRef{};
   archive->Read(
     CachedBroadcasterEAiNavigatorEventType(),
-    object ? static_cast<void*>(static_cast<Broadcaster<EAiNavigatorEvent>*>(object)) : nullptr,
+    this ? static_cast<void*>(static_cast<Broadcaster<EAiNavigatorEvent>*>(this)) : nullptr,
     ownerRef
   );
 }
@@ -1311,7 +1311,7 @@ void IAiNavigator::MemberDeserialize(IAiNavigator* const object, gpg::ReadArchiv
  * Saves IAiNavigator broadcaster listener payload through reflected
  * `Broadcaster<EAiNavigatorEvent>` metadata.
  */
-void IAiNavigator::MemberSerialize(const IAiNavigator* const object, gpg::WriteArchive* const archive)
+void IAiNavigator::MemberSerialize(gpg::WriteArchive* const archive) const
 {
   if (!archive) {
     return;
@@ -1320,7 +1320,7 @@ void IAiNavigator::MemberSerialize(const IAiNavigator* const object, gpg::WriteA
   const gpg::RRef ownerRef{};
   archive->Write(
     CachedBroadcasterEAiNavigatorEventType(),
-    object ? static_cast<const void*>(static_cast<const Broadcaster<EAiNavigatorEvent>*>(object)) : nullptr,
+    this ? static_cast<const void*>(static_cast<const Broadcaster<EAiNavigatorEvent>*>(this)) : nullptr,
     ownerRef
   );
 }
@@ -1367,3 +1367,24 @@ namespace
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
 GPG_PREREGISTER_INIT(RegisterBroadcasterEAiNavigatorEventType_2f6ef0, RegisterBroadcasterEAiNavigatorEventType)
 GPG_PREREGISTER_INIT(RegisterListenerEAiNavigatorEventType_2f6ef0, RegisterListenerEAiNavigatorEventType)
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<IAiNavigator>`, vtable 0x00E1C068.
+   *
+   * Address: 0x00BCC6C0 (FUN_00BCC6C0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF6D60 (FUN_00BF6D60 -- the global's destructor.)
+   * Address: 0x005A71A0 (FUN_005A71A0 -- `Init`.)
+   * Address: 0x005A32D0 (FUN_005A32D0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005A32E0 (FUN_005A32E0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct IAiNavigatorSerializer : gpg::SerSaveLoadHelper<IAiNavigator>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AE788 -- process-global `IAiNavigatorSerializer` singleton.
+  moho::IAiNavigatorSerializer gIAiNavigatorSerializer;
+} // namespace

@@ -73,12 +73,12 @@ namespace moho
   class StatItem;
   class CEconomy;
   class CEconomyEvent;
-  class CCommandDb;
+  class CCommandDB;
   class CUnitCommand;
   class CDecalBuffer;
   class CDecalHandle;
   class CParticleTexture;
-  class CEntityDb;
+  class EntityDB;
   class Entity;
   class COGrid;
   class CInfluenceMap;

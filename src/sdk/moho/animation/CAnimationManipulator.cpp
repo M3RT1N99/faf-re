@@ -1,4 +1,4 @@
-﻿#include "CAnimationManipulator.h"
+#include "CAnimationManipulator.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,6 +28,7 @@
 #include "moho/resource/blueprints/RUnitBlueprint.h"
 
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/reflection/Reflection.h"
 
 namespace
 {
@@ -83,7 +84,7 @@ namespace
   // `moho::SScaHeader` (RScaResource.h) describes the same record, but its
   // +0x08/+0x10 names (boneCount/keysPerBone) are really the frame count and
   // the bone-track count, as the frame stride at 0x0063FDD0 shows.
-  struct AnimationClipHeaderView
+  struct AnimationClipHeader
   {
     std::uint8_t mReserved00[0x08];
     std::uint32_t mFrameCount;          // +0x08
@@ -96,9 +97,9 @@ namespace
   // `RScaResource::mEnd` (+0x30) the animation section (a 28-byte root
   // transform, then the frames). Both point into the resource's own file
   // buffer, so the header record is read straight out of those bytes.
-  [[nodiscard]] const AnimationClipHeaderView* ScaClipHeader(const moho::RScaResource& resource) noexcept
+  [[nodiscard]] const AnimationClipHeader* ScaClipHeader(const moho::RScaResource& resource) noexcept
   {
-    return reinterpret_cast<const AnimationClipHeaderView*>(resource.mStart);
+    return reinterpret_cast<const AnimationClipHeader*>(resource.mStart);
   }
 
   // Frame `index` of a clip: the animation section starts with a 28-byte root
@@ -128,14 +129,14 @@ namespace
     return skeleton->GetBone(static_cast<std::uint32_t>(bone.mIdx));
   }
 
-  [[nodiscard]] const AnimationClipHeaderView*
-  GetAnimationClipHeader(const boost::SharedPtrRaw<moho::RScaResource>& ref)
+  [[nodiscard]] const AnimationClipHeader*
+  GetAnimationClipHeader(const boost::shared_ptr<moho::RScaResource>& ref)
   {
-    if (!ref.px) {
+    if (!ref) {
       return nullptr;
     }
 
-    return ScaClipHeader(*ref.px);
+    return ScaClipHeader(*ref);
   }
 
   /**
@@ -339,11 +340,6 @@ namespace
 
   using TypeInfo = moho::CAnimationManipulatorTypeInfo;
 
-  // Address: 0x010B2930 -- process-global `CAnimationManipulatorConstruct` singleton.
-  moho::CAnimationManipulatorConstruct gCAnimationManipulatorConstruct;
-
-  // Address: 0x010B291C -- process-global `CAnimationManipulatorSerializer` singleton.
-  moho::CAnimationManipulatorSerializer gCAnimationManipulatorSerializer;
   gpg::RType* gWeakPtrUnitType = nullptr;
   gpg::RType* gVectorBoolType = nullptr;
 
@@ -380,121 +376,6 @@ namespace
     return gVectorBoolType;
   }
 
-  /**
-   * Address: 0x00642A50 (FUN_00642A50, DeserializeCAnimationManipulatorState)
-   *
-   * What it does:
-   * Loads CAnimationManipulator-specific serialization fields after
-   * IAniManipulator base payload.
-   */
-  void DeserializeCAnimationManipulatorState(moho::CAnimationManipulator* const object, gpg::ReadArchive* const archive)
-  {
-    if (!archive || !object) {
-      return;
-    }
-
-    const gpg::RRef nullOwner{};
-    archive->Read(CachedIAniManipulatorTypeForSerializer(), static_cast<moho::IAniManipulator*>(object), nullOwner);
-    archive->Read(CachedWeakPtrUnitType(), &object->mGoal, nullOwner);
-    archive->Read(CachedVectorBoolType(), &object->mBoneMask, nullOwner);
-    archive->ReadPointerShared(&object->mAnimationRef, &nullOwner);
-    archive->ReadFloat(&object->mRate);
-    archive->ReadFloat(&object->mAnimationTime);
-    archive->ReadFloat(&object->mLastFramePosition);
-    archive->ReadBool(&object->mLooping);
-    archive->ReadBool(&object->mFrameChanged);
-    archive->ReadBool(&object->mIgnoreMotionScaling);
-    archive->ReadBool(&object->mOverwriteMode);
-    archive->ReadBool(&object->mDisableOnSignal);
-    archive->ReadBool(&object->mDirectionalAnim);
-  }
-
-  /**
-   * Address: 0x006423A0 (FUN_006423A0, serializer load thunk alias)
-   *
-   * What it does:
-   * Tail-forwards one CAnimationManipulator deserialize thunk alias into the
-   * shared deserialize helper body.
-   */
-  void DeserializeCAnimationManipulatorThunkVariantA(
-    moho::CAnimationManipulator* const object, gpg::ReadArchive* const archive
-  )
-  {
-    DeserializeCAnimationManipulatorState(object, archive);
-  }
-
-  /**
-   * Address: 0x00642800 (FUN_00642800, serializer load thunk alias)
-   *
-   * What it does:
-   * Tail-forwards a second CAnimationManipulator deserialize thunk alias into
-   * the shared deserialize helper body.
-   */
-  void DeserializeCAnimationManipulatorThunkVariantB(
-    moho::CAnimationManipulator* const object, gpg::ReadArchive* const archive
-  )
-  {
-    DeserializeCAnimationManipulatorState(object, archive);
-  }
-
-  /**
-   * Address: 0x00642BB0 (FUN_00642BB0, SerializeCAnimationManipulatorState)
-   *
-   * What it does:
-   * Saves CAnimationManipulator-specific serialization fields after
-   * IAniManipulator base payload.
-   */
-  void SerializeCAnimationManipulatorState(
-    const moho::CAnimationManipulator* const object, gpg::WriteArchive* const archive
-  )
-  {
-    if (!archive || !object) {
-      return;
-    }
-
-    const gpg::RRef nullOwner{};
-    archive->Write(CachedIAniManipulatorTypeForSerializer(), const_cast<moho::IAniManipulator*>(static_cast<const moho::IAniManipulator*>(object)), nullOwner);
-    archive->Write(CachedWeakPtrUnitType(), &const_cast<moho::CAnimationManipulator*>(object)->mGoal, nullOwner);
-    archive->Write(CachedVectorBoolType(), const_cast<moho::SAniManipBitStorage*>(&object->mBoneMask), nullOwner);
-    archive->WritePointer(object->mAnimationRef.px, gpg::TrackedPointerState::Shared, nullOwner);
-    archive->WriteFloat(object->mRate);
-    archive->WriteFloat(object->mAnimationTime);
-    archive->WriteFloat(object->mLastFramePosition);
-    archive->WriteBool(object->mLooping);
-    archive->WriteBool(object->mFrameChanged);
-    archive->WriteBool(object->mIgnoreMotionScaling);
-    archive->WriteBool(object->mOverwriteMode);
-    archive->WriteBool(object->mDisableOnSignal);
-    archive->WriteBool(object->mDirectionalAnim);
-  }
-
-  /**
-   * Address: 0x006423B0 (FUN_006423B0, serializer save thunk alias)
-   *
-   * What it does:
-   * Tail-forwards one CAnimationManipulator serialize thunk alias into the
-   * shared serialize helper body.
-   */
-  void SerializeCAnimationManipulatorThunkVariantA(
-    const moho::CAnimationManipulator* const object, gpg::WriteArchive* const archive
-  )
-  {
-    SerializeCAnimationManipulatorState(object, archive);
-  }
-
-  /**
-   * Address: 0x00642810 (FUN_00642810, serializer save thunk alias)
-   *
-   * What it does:
-   * Tail-forwards a second CAnimationManipulator serialize thunk alias into
-   * the shared serialize helper body.
-   */
-  void SerializeCAnimationManipulatorThunkVariantB(
-    const moho::CAnimationManipulator* const object, gpg::WriteArchive* const archive
-  )
-  {
-    SerializeCAnimationManipulatorState(object, archive);
-  }
 } // namespace
 
 namespace moho
@@ -652,14 +533,7 @@ namespace moho
       looping = loopingArg.GetBoolean();
     }
 
-    gpg::RRef resourceRef{};
-    (void)moho::GetScaResource(&resourceRef, filename);
-
-    boost::SharedPtrRaw<RScaResource> animationResource{};
-    animationResource.px = static_cast<RScaResource*>(resourceRef.mObj);
-    animationResource.pi = nullptr;
-
-    manipulator->SetAnimationResource(animationResource, looping);
+    manipulator->SetAnimationResource(looping, moho::GetScaResource(filename));
     lua_settop(rawState, 1);
     return 1;
   }
@@ -1396,7 +1270,7 @@ namespace moho
    */
   CAnimationManipulator::~CAnimationManipulator()
   {
-    mAnimationRef.release();
+    mAnimationRef.reset();
     mBoneMask.Reset();
     mGoal.UnlinkFromOwnerChain();
   }
@@ -1422,11 +1296,11 @@ namespace moho
    */
   bool CAnimationManipulator::ManipulatorUpdate()
   {
-    const RScaResource* const resource = mAnimationRef.px;
+    const RScaResource* const resource = mAnimationRef.get();
     if (resource == nullptr) {
       return false;
     }
-    const AnimationClipHeaderView* const clip = ScaClipHeader(*resource);
+    const AnimationClipHeader* const clip = ScaClipHeader(*resource);
     if (clip->mFrameCount == 0u) {
       return false;
     }
@@ -1504,7 +1378,7 @@ namespace moho
     const SScaAnimKey* const keys0 = AnimationFrameKeys(*resource, boneTrackCount, frameIndex);
     const SScaAnimKey* const keys1 = AnimationFrameKeys(*resource, boneTrackCount, nextFrameIndex);
 
-    CAniPose* const pose = mOwnerActor->mPose.px;
+    CAniPose* const pose = mOwnerActor->mPose.get();
     const float poseScale = pose->mScale;
     CAniPoseBone* const poseBones = pose->mBones.begin();
     const std::uint32_t poseBoneCount = static_cast<std::uint32_t>(pose->mBones.end() - poseBones);
@@ -1536,11 +1410,15 @@ namespace moho
           );
           keyTransform.orient_ = blended;
         } else {
+          // Raw SCA key floats (on-disk float arrays) loaded into the math types.
           std::memcpy(&keyTransform.pos_, key1.position, sizeof(keyTransform.pos_));
+          // Raw SCA key floats (on-disk float arrays) loaded into the math types.
           std::memcpy(&keyTransform.orient_, key1.rotation, sizeof(keyTransform.orient_));
         }
       } else {
+        // Raw SCA key floats (on-disk float arrays) loaded into the math types.
         std::memcpy(&keyTransform.pos_, key0.position, sizeof(keyTransform.pos_));
+        // Raw SCA key floats (on-disk float arrays) loaded into the math types.
         std::memcpy(&keyTransform.orient_, key0.rotation, sizeof(keyTransform.orient_));
       }
 
@@ -1575,7 +1453,7 @@ namespace moho
    */
   void CAnimationManipulator::SetAnimationFraction(const float fraction)
   {
-    const AnimationClipHeaderView* const clip = GetAnimationClipHeader(mAnimationRef);
+    const AnimationClipHeader* const clip = GetAnimationClipHeader(mAnimationRef);
     if (!clip) {
       return;
     }
@@ -1596,7 +1474,7 @@ namespace moho
    */
   void CAnimationManipulator::SetAnimationTime(const float timeSeconds)
   {
-    const AnimationClipHeaderView* const clip = GetAnimationClipHeader(mAnimationRef);
+    const AnimationClipHeader* const clip = GetAnimationClipHeader(mAnimationRef);
     if (!clip) {
       return;
     }
@@ -1617,7 +1495,7 @@ namespace moho
   bool CAnimationManipulator::UpdateTriggeredState()
   {
     const float duration = GetAnimationDuration();
-    const bool missingAnimation = (mAnimationRef.px == nullptr);
+    const bool missingAnimation = !mAnimationRef;
     const bool zeroRate = (mRate == 0.0f);
     const bool reachedStart = (mRate < 0.0f) && (mAnimationTime == 0.0f);
     const bool reachedEnd = (mRate > 0.0f) && (mAnimationTime == duration);
@@ -1637,13 +1515,13 @@ namespace moho
   /**
    * Address: 0x0063FBA0 (FUN_0063FBA0)
    */
-  void CAnimationManipulator::SetAnimationResource(const boost::SharedPtrRaw<RScaResource>& resource, const bool looping)
+  void CAnimationManipulator::SetAnimationResource(const bool looping, boost::shared_ptr<RScaResource> resource)
   {
-    if (resource.px != nullptr) {
+    if (resource) {
       // 0x0063FBC1..0x0063FC5A: rebuild the watch-bone bindings from the clip's
       // bone-name table, resolving each name against the owner's skeleton.
       const boost::shared_ptr<const CAniSkel> skeleton = mOwnerActor->GetSkeleton();
-      const AnimationClipHeaderView* const clip = ScaClipHeader(*resource.px);
+      const AnimationClipHeader* const clip = ScaClipHeader(*resource);
       const std::uint32_t boneTrackCount = clip->mBoneTrackCount;
       const char* boneName = reinterpret_cast<const char*>(clip) + clip->mBoneNameTableOffset;
       ResetWatchBoneStorage();
@@ -1654,9 +1532,9 @@ namespace moho
       }
     } else {
       ResetWatchBoneStorage();
-      mAnimationRef.release();
+      resource.reset();
     }
-    mAnimationRef.assign_retain(resource);
+    mAnimationRef = resource;
     mAnimationTime = 0.0f;
     mLastFramePosition = -1.0f;
     mLooping = looping;
@@ -1729,7 +1607,7 @@ namespace moho
 
   float CAnimationManipulator::GetAnimationDuration() const
   {
-    const AnimationClipHeaderView* const clip = GetAnimationClipHeader(mAnimationRef);
+    const AnimationClipHeader* const clip = GetAnimationClipHeader(mAnimationRef);
     if (!clip) {
       return 0.0f;
     }
@@ -1772,118 +1650,6 @@ namespace moho
   void CAnimationManipulator::InitializeBoneMask(const std::uint32_t boneCount)
   {
     mBoneMask.Resize(boneCount, true);
-  }
-
-  /**
-   * Address: 0x0063F230 (FUN_0063F230, Moho::CAnimationManipulator::MemberConstruct)
-   *
-   * What it does:
-   * Allocates one `CAnimationManipulator`, builds one typed `RRef` for that
-   * object, and stores it as unowned in the construct-result lane.
-   */
-  void CAnimationManipulatorMemberConstruct(gpg::SerConstructResult* const result)
-  {
-    auto* const object = new CAnimationManipulator();
-    const gpg::RRef objectRef = MakeTypedRef(object, CachedCAnimationManipulatorType());
-    result->SetUnowned(objectRef, 0u);
-  }
-
-  /**
-   * Address: 0x0063F220 (FUN_0063F220, Moho::CAnimationManipulatorConstruct::Construct)
-   */
-  void CAnimationManipulatorConstruct::Construct(
-    gpg::ReadArchive* const, const int, gpg::RRef* const, gpg::SerConstructResult* const result
-  )
-  {
-    if (result == nullptr) {
-      return;
-    }
-
-    CAnimationManipulatorMemberConstruct(result);
-  }
-
-  /**
-   * Address: 0x00642340 (FUN_00642340, Moho::CAnimationManipulatorConstruct::Deconstruct)
-   */
-  void CAnimationManipulatorConstruct::Deconstruct(void* const objectPtr)
-  {
-    auto* const object = static_cast<CAnimationManipulator*>(objectPtr);
-    if (object != nullptr) {
-      delete object;
-    }
-  }
-
-  /**
-   * Address: 0x00BD2DB0 (FUN_00BD2DB0, register_CAnimationManipulatorConstruct,
-   * dynamic initializer for the global `CAnimationManipulatorConstruct`
-   * singleton)
-   */
-  CAnimationManipulatorConstruct::CAnimationManipulatorConstruct()
-    : mSerConstructFunc(reinterpret_cast<gpg::RType::construct_func_t>(&CAnimationManipulatorConstruct::Construct))
-    , mDeleteFunc(&CAnimationManipulatorConstruct::Deconstruct)
-  {}
-
-  /**
-   * Address: 0x00BFAFF0 (FUN_00BFAFF0, Moho::CAnimationManipulatorConstruct::~CAnimationManipulatorConstruct)
-   */
-  CAnimationManipulatorConstruct::~CAnimationManipulatorConstruct() = default;
-
-  /**
-   * Address: 0x00641E70 (FUN_00641E70, Moho::CAnimationManipulatorConstruct::Init)
-   */
-  void CAnimationManipulatorConstruct::Init()
-  {
-    gpg::RType* const type = CachedCAnimationManipulatorType();
-    GPG_ASSERT(type->serConstructFunc_ == nullptr);
-    type->serConstructFunc_ = mSerConstructFunc;
-    type->deleteFunc_ = mDeleteFunc;
-  }
-
-  /**
-   * Address: 0x0063F2C0 (FUN_0063F2C0, Moho::CAnimationManipulatorSerializer::Deserialize)
-   */
-  void CAnimationManipulatorSerializer::Deserialize(
-    gpg::ReadArchive* const archive, const int objectPtr, const int, gpg::RRef* const
-  )
-  {
-    DeserializeCAnimationManipulatorState(reinterpret_cast<CAnimationManipulator*>(objectPtr), archive);
-  }
-
-  /**
-   * Address: 0x0063F2D0 (FUN_0063F2D0, Moho::CAnimationManipulatorSerializer::Serialize)
-   */
-  void CAnimationManipulatorSerializer::Serialize(
-    gpg::WriteArchive* const archive, const int objectPtr, const int, gpg::RRef* const
-  )
-  {
-    SerializeCAnimationManipulatorState(reinterpret_cast<const CAnimationManipulator*>(objectPtr), archive);
-  }
-
-  /**
-   * Address: 0x00BD2DF0 (FUN_00BD2DF0, register_CAnimationManipulatorSerializer,
-   * dynamic initializer for the global `CAnimationManipulatorSerializer`
-   * singleton)
-   */
-  CAnimationManipulatorSerializer::CAnimationManipulatorSerializer()
-    : mSerLoadFunc(&CAnimationManipulatorSerializer::Deserialize)
-    , mSerSaveFunc(&CAnimationManipulatorSerializer::Serialize)
-  {}
-
-  /**
-   * Address: 0x00BFB020 (FUN_00BFB020, Moho::CAnimationManipulatorSerializer::~CAnimationManipulatorSerializer)
-   */
-  CAnimationManipulatorSerializer::~CAnimationManipulatorSerializer() = default;
-
-  /**
-   * Address: 0x00641EF0 (FUN_00641EF0, Moho::CAnimationManipulatorSerializer::Init)
-   */
-  void CAnimationManipulatorSerializer::Init()
-  {
-    gpg::RType* const type = CachedCAnimationManipulatorType();
-    GPG_ASSERT(type->serLoadFunc_ == nullptr || type->serLoadFunc_ == mSerLoadFunc);
-    type->serLoadFunc_ = mSerLoadFunc;
-    GPG_ASSERT(type->serSaveFunc_ == nullptr || type->serSaveFunc_ == mSerSaveFunc);
-    type->serSaveFunc_ = mSerSaveFunc;
   }
 
   /**
@@ -1988,4 +1754,119 @@ namespace
   };
 
   const CAnimationManipulatorLuaFuncDefBootstrap gCAnimationManipulatorLuaFuncDefBootstrap{};
+} // namespace
+
+namespace moho
+{
+  /**
+   * Address: 0x0063F230 (FUN_0063F230)
+   */
+  void CAnimationManipulator::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CAnimationManipulator()), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CAnimationManipulator>`, vtable 0x00E2255C.
+   *
+   * Address: 0x00BD2DB0 (FUN_00BD2DB0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFAFF0 (FUN_00BFAFF0 -- the global's destructor.)
+   * Address: 0x00641E70 (FUN_00641E70 -- `Init`.)
+   * Address: 0x0063F220 (FUN_0063F220 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x00642340 (FUN_00642340 -- `Delete`.)
+   */
+  struct CAnimationManipulatorConstruct : gpg::SerConstructHelper<CAnimationManipulator>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B2930 -- process-global `CAnimationManipulatorConstruct` singleton.
+  moho::CAnimationManipulatorConstruct gCAnimationManipulatorConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * Address: 0x00642A50 (FUN_00642A50, DeserializeCAnimationManipulatorState)
+   *
+   * What it does:
+   * Loads CAnimationManipulator-specific serialization fields after
+   * IAniManipulator base payload.
+   */
+  void CAnimationManipulator::MemberDeserialize(gpg::ReadArchive* const archive)
+  {
+    if (!archive) {
+      return;
+    }
+
+    const gpg::RRef nullOwner{};
+    archive->Read(CachedIAniManipulatorTypeForSerializer(), static_cast<moho::IAniManipulator*>(this), nullOwner);
+    archive->Read(CachedWeakPtrUnitType(), &mGoal, nullOwner);
+    archive->Read(CachedVectorBoolType(), &mBoneMask, nullOwner);
+    archive->ReadPointerShared(&mAnimationRef, &nullOwner);
+    archive->ReadFloat(&mRate);
+    archive->ReadFloat(&mAnimationTime);
+    archive->ReadFloat(&mLastFramePosition);
+    archive->ReadBool(&mLooping);
+    archive->ReadBool(&mFrameChanged);
+    archive->ReadBool(&mIgnoreMotionScaling);
+    archive->ReadBool(&mOverwriteMode);
+    archive->ReadBool(&mDisableOnSignal);
+    archive->ReadBool(&mDirectionalAnim);
+  }
+
+  /**
+   * Address: 0x00642BB0 (FUN_00642BB0, SerializeCAnimationManipulatorState)
+   *
+   * What it does:
+   * Saves CAnimationManipulator-specific serialization fields after
+   * IAniManipulator base payload.
+   */
+  void CAnimationManipulator::MemberSerialize(gpg::WriteArchive* const archive) const
+  {
+    if (!archive) {
+      return;
+    }
+
+    const gpg::RRef nullOwner{};
+    archive->Write(CachedIAniManipulatorTypeForSerializer(), const_cast<moho::IAniManipulator*>(static_cast<const moho::IAniManipulator*>(this)), nullOwner);
+    archive->Write(CachedWeakPtrUnitType(), &const_cast<moho::CAnimationManipulator*>(this)->mGoal, nullOwner);
+    archive->Write(CachedVectorBoolType(), const_cast<moho::SAniManipBitStorage*>(&mBoneMask), nullOwner);
+    archive->WritePointer(mAnimationRef.get(), gpg::TrackedPointerState::Shared, nullOwner);
+    archive->WriteFloat(mRate);
+    archive->WriteFloat(mAnimationTime);
+    archive->WriteFloat(mLastFramePosition);
+    archive->WriteBool(mLooping);
+    archive->WriteBool(mFrameChanged);
+    archive->WriteBool(mIgnoreMotionScaling);
+    archive->WriteBool(mOverwriteMode);
+    archive->WriteBool(mDisableOnSignal);
+    archive->WriteBool(mDirectionalAnim);
+  }
+} // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CAnimationManipulator>`, vtable 0x00E2256C.
+   *
+   * Address: 0x00BD2DF0 (FUN_00BD2DF0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFB020 (FUN_00BFB020 -- the global's destructor.)
+   * Address: 0x006423A0 (FUN_006423A0 -- an unreferenced copy of `Deserialize`.)
+   * Address: 0x00642800 (FUN_00642800 -- an unreferenced copy of `Deserialize`.)
+   * Address: 0x006423B0 (FUN_006423B0 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x00642810 (FUN_00642810 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x00641EF0 (FUN_00641EF0 -- `Init`.)
+   * Address: 0x0063F2C0 (FUN_0063F2C0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0063F2D0 (FUN_0063F2D0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CAnimationManipulatorSerializer : gpg::SerSaveLoadHelper<CAnimationManipulator>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B291C -- process-global `CAnimationManipulatorSerializer` singleton.
+  moho::CAnimationManipulatorSerializer gCAnimationManipulatorSerializer;
 } // namespace

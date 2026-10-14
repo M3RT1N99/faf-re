@@ -32,6 +32,7 @@
 #include "moho/sim/SOCellPos.h"
 #include "moho/sim/SFootprint.h"
 #include "moho/sim/Sim.h"
+#include "gpg/core/reflection/Reflection.h"
 
 using namespace moho;
 
@@ -64,14 +65,14 @@ STransportPickUpInfo::STransportPickUpInfo()
  * What it does:
  * Linear-scans the pickup set's contiguous storage, converting each entry to
  * its owning unit, and reports whether `unit` is among them. This is a plain
- * pointer scan, not `SEntitySetTemplateUnit::ContainsUnit`'s id-keyed binary
+ * pointer scan, not `EntitySetTemplate<Unit>::ContainsUnit`'s id-keyed binary
  * search — the binary emits a separate body here and calls it from both
  * `TransportIsUnitAssignedForPickup` and `TransportIsReadyForUnit`.
  */
 bool STransportPickUpInfo::HasUnit(const Unit* const unit) const noexcept
 {
-  for (const Entity* const entry : mUnits.mVec) {
-    if (SEntitySetTemplateUnit::UnitFromEntry(entry) == unit) {
+  for (const Unit* const entry : mUnits) {
+    if (entry == unit) {
       return true;
     }
   }
@@ -91,7 +92,7 @@ void STransportPickUpInfo::RemoveUnit(Unit* const unit) noexcept
   Entity** const begin = mUnits.mVec.begin();
   Entity** const end = mUnits.mVec.end();
   for (Entity** it = begin; it != end; ++it) {
-    if (SEntitySetTemplateUnit::UnitFromEntry(*it) == unit) {
+    if (static_cast<Unit*>(*it) == unit) {
       (void)mUnits.mVec.erase(it);
       break;
     }
@@ -300,69 +301,6 @@ namespace
     return (dx * dx) + (dy * dy) + (dz * dz);
   }
 
-  [[nodiscard]] SAttachPoint*
-  CopyAttachPointRangeNullable(SAttachPoint* destination, const SAttachPoint* sourceBegin, const SAttachPoint* sourceEnd) noexcept;
-
-  /**
-   * Address: 0x005EE110 (FUN_005EE110, func_CopyAttachDataVector)
-   *
-   * What it does:
-   * Copies one contiguous `SAttachPoint` range into destination storage and
-   * returns the advanced destination cursor.
-   */
-  [[nodiscard]] SAttachPoint*
-  CopyAttachPointRange(SAttachPoint* destination, const SAttachPoint* sourceBegin, const SAttachPoint* sourceEnd) noexcept
-  {
-    return CopyAttachPointRangeNullable(destination, sourceBegin, sourceEnd);
-  }
-
-  /**
-   * Address: 0x005EC510 (FUN_005EC510, func_SAttachPointPtr_memcpy)
-   *
-   * What it does:
-   * Adapts the VC8 vector-copy calling lane `(end, start, dest)` into the
-   * typed contiguous attach-point range copy helper call shape.
-   */
-  [[nodiscard]] SAttachPoint* CopyAttachPointRangeAdapter(
-    const SAttachPoint* sourceEnd,
-    const SAttachPoint* sourceBegin,
-    SAttachPoint* destination
-  ) noexcept
-  {
-    return CopyAttachPointRange(destination, sourceBegin, sourceEnd);
-  }
-
-  /**
-   * Address: 0x005EF610 (FUN_005EF610, std::vector_SAttachPoint::copy_helper)
-   * Address: 0x005EF660 (FUN_005EF660, func_SAttachPointPtr::memcpy)
-   *
-   * What it does:
-   * Copies one contiguous `SAttachPoint` range into destination storage when
-   * destination is non-null; still advances and returns the destination cursor.
-   */
-  [[nodiscard]] SAttachPoint* CopyAttachPointRangeNullable(
-    SAttachPoint* destination,
-    const SAttachPoint* sourceBegin,
-    const SAttachPoint* sourceEnd
-  ) noexcept
-  {
-    const SAttachPoint* source = sourceBegin;
-    while (source != sourceEnd) {
-      if (destination != nullptr) {
-        destination->index = source->index;
-        destination->localPos.x = source->localPos.x;
-        destination->localPos.y = source->localPos.y;
-        destination->localPos.z = source->localPos.z;
-        destination->distSq = source->distSq;
-      }
-
-      ++source;
-      ++destination;
-    }
-
-    return destination;
-  }
-
   /**
    * Address: 0x00405050 (FUN_00405050, func_max)
    *
@@ -567,7 +505,7 @@ CAiTransportImpl::~CAiTransportImpl()
   Entity* const* it = mStoredUnits.mVec.begin();
   Entity* const* const end = mStoredUnits.mVec.end();
   for (; it != end; ++it) {
-    Unit* const storedUnit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+    Unit* const storedUnit = static_cast<Unit*>(*it);
     if (!storedUnit || storedUnit->IsDead()) {
       continue;
     }
@@ -583,17 +521,9 @@ CAiTransportImpl::~CAiTransportImpl()
  * Allocates one `CAiTransportImpl` object and publishes it via
  * `SerConstructResult::SetUnowned`.
  */
-void CAiTransportImpl::MemberConstruct(gpg::SerConstructResult* const result)
+void CAiTransportImpl::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
 {
-  CAiTransportImpl* const object = new (std::nothrow) CAiTransportImpl{};
-  if (!result) {
-    return;
-  }
-
-  gpg::RRef objectRef{};
-  objectRef.mObj = object;
-  objectRef.mType = ResolveCAiTransportImplType();
-  result->SetUnowned(objectRef, 0u);
+  result.SetUnowned(gpg::MakeRRef(new CAiTransportImpl()), 0u);
 }
 
 /**
@@ -751,7 +681,8 @@ EntitySetTemplate<Unit> CAiTransportImpl::TransportGetLoadedUnits(const bool inc
 
   const msvc8::vector<Entity*>& attached = mUnit->GetAttachedEntities();
   for (Entity* const* it = attached.begin(); it != attached.end(); ++it) {
-    Unit* const attachedUnit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+    // 0x005E6180: non-unit attachments are filtered through IsUnit().
+    Unit* const attachedUnit = (*it)->IsUnit();
     if (!attachedUnit) {
       continue;
     }
@@ -777,8 +708,7 @@ EntitySetTemplate<Unit> CAiTransportImpl::TransportGetLoadedUnits(const bool inc
  */
 void CAiTransportImpl::TransportAddPickupUnits(const EntitySetTemplate<Unit>& units, const SCoordsVec2 fallbackPos)
 {
-  for (Unit* const* it = units.begin(); it != units.end(); ++it) {
-    Unit* const unit = *it;
+  for (Unit* const unit : units) {
     if (unit) {
       TransportRemovePickupUnit(unit, false);
     }
@@ -790,7 +720,7 @@ void CAiTransportImpl::TransportAddPickupUnits(const EntitySetTemplate<Unit>& un
 
   Wm3::Vec3f pickupFacing{};
   if (mAttachpoints == 1 && units.Size() == 1u) {
-    Unit* const onlyUnit = SEntitySetTemplateUnit::UnitFromEntry(*units.begin());
+    Unit* const onlyUnit = *units.begin();
     if (onlyUnit) {
       pickupFacing = ForwardFromOrientation(onlyUnit->GetTransform().orient_);
     }
@@ -803,7 +733,7 @@ void CAiTransportImpl::TransportAddPickupUnits(const EntitySetTemplate<Unit>& un
   mPickupInfo.mFallbackPos = fallbackPos;
   mPickupInfo.mPos = Wm3::Vec3f(fallbackPos.x, mUnit->GetPosition().y, fallbackPos.z);
   mPickupInfo.mOri = OrientationFromForward(pickupFacing);
-  mPickupInfo.mUnits.AddUnits(units);
+  mPickupInfo.mUnits = units;
   mPickupInfo.mHasSpace = 0;
 }
 
@@ -878,7 +808,13 @@ void CAiTransportImpl::TransportUnreserveUnattachedSpots()
  */
 unsigned int CAiTransportImpl::TransportGetPickupUnitCount() const
 {
-  return mPickupInfo.mUnits.CountLiveUnits();
+  unsigned int count = 0;
+  for (Unit* const unit : mPickupInfo.mUnits) {
+    if (unit && !unit->IsDead()) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 /**
@@ -886,13 +822,14 @@ unsigned int CAiTransportImpl::TransportGetPickupUnitCount() const
  */
 EntitySetTemplate<Unit> CAiTransportImpl::TransportGetPickupUnits()
 {
-  EntitySetTemplate<Unit> out{};
-  mPickupInfo.mUnits.CopyTo(out);
-
+  EntitySetTemplate<Unit> out(mPickupInfo.mUnits);
   if (mWaitingFormation) {
-    mUnitSet30.CopyLiveUnitsTo(out);
+    for (Unit* const unit : mUnitSet30) {
+      if (unit && !unit->IsDead()) {
+        (void)out.Add(unit);
+      }
+    }
   }
-
   return out;
 }
 
@@ -990,7 +927,7 @@ bool CAiTransportImpl::TransportCanCarryUnit(Unit* const unit) const
  */
 void CAiTransportImpl::TransportRemoveFromWaitingList(Unit* const unit)
 {
-  (void)mUnitSet30.RemoveUnit(unit);
+  (void)mUnitSet30.Remove(unit);
 }
 
 /**
@@ -998,9 +935,7 @@ void CAiTransportImpl::TransportRemoveFromWaitingList(Unit* const unit)
  */
 EntitySetTemplate<Unit> CAiTransportImpl::TransportGetUnitsWaitingForPickup() const
 {
-  EntitySetTemplate<Unit> out{};
-  mUnitSet30.CopyTo(out);
-  return out;
+  return mUnitSet30;
 }
 
 /**
@@ -1018,8 +953,7 @@ void CAiTransportImpl::TransportGenerateWaitingFormationForUnits(const EntitySet
 {
   // 0x005E5F57: the set's vector takes `units`' contents (`AddAll`, a
   // replace, not a merge).
-  mUnitSet30.Clear();
-  mUnitSet30.AddUnits(units);
+  mUnitSet30 = units;
   if (!mUnit || !mUnit->SimulationRef || !mUnit->SimulationRef->mFormationDB) {
     return;
   }
@@ -1231,26 +1165,23 @@ bool CAiTransportImpl::TransportValidateType(const RUnitBlueprint* const unitBlu
 /**
  * Address: 0x005E9700 (FUN_005E9700, ??0vector_SAttachPoint@std@@QAE@@Z)
  * Mangled: ??0vector_SAttachPoint@std@@QAE@@Z
+ * Address: 0x005EC510 (FUN_005EC510) / 0x005EE110 (FUN_005EE110) /
+ *   0x005EF610 (FUN_005EF610) / 0x005EF660 (FUN_005EF660) — the VC8
+ *   clear+resize+contiguous-copy emission family for the trivially copyable
+ *   `SAttachPoint` element, all cited on the `msvc8::vector<T>` members in
+ *   legacy/containers/Vector.h; the per-T lane helpers that stood in for
+ *   them are removed.
  *
  * What it does:
- * Rebuilds one destination attach-point vector from source lanes using the
- * same zero-init + resize + copy sequence as the VC8 helper constructor.
+ * Rebuilds one destination attach-point vector from the source vector —
+ * the VC8 helper-constructor shape expressed as `operator=`.
  */
 msvc8::vector<SAttachPoint>* CAiTransportImpl::CopyAttachPointVector(
   const msvc8::vector<SAttachPoint>& source,
   msvc8::vector<SAttachPoint>& destination
 )
 {
-  destination.clear();
-  if (source.empty()) {
-    return &destination;
-  }
-
-  destination.resize(source.size());
-  SAttachPoint* const destinationBegin = destination.begin();
-  const SAttachPoint* const sourceBegin = source.begin();
-  const SAttachPoint* const sourceEnd = source.end();
-  (void)CopyAttachPointRangeAdapter(sourceEnd, sourceBegin, destinationBegin);
+  destination = source;
   return &destination;
 }
 
@@ -1630,7 +1561,9 @@ EntitySetTemplate<Unit> CAiTransportImpl::TransportDetachAllUnits(const bool cle
 
   const msvc8::vector<Entity*>& attachedCopy = mUnit->GetAttachedEntities();
   for (Entity* const* it = attachedCopy.begin(); it != attachedCopy.end(); ++it) {
-    Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+    // 0x005E7483: attachments include non-unit entities (Lua Entity helpers,
+    // shields, effect dummies), so the binary filters through IsUnit().
+    Unit* const unit = (*it)->IsUnit();
     if (!unit || unit->IsDead()) {
       continue;
     }
@@ -1656,8 +1589,7 @@ EntitySetTemplate<Unit> CAiTransportImpl::TransportDetachAllUnits(const bool cle
   }
 
   CRandomStream* const random = sim ? sim->mRngState : nullptr;
-  for (Unit* const* it = detached.mVec.begin(); it != detached.mVec.end(); ++it) {
-    Unit* const unit = *it;
+  for (Unit* const unit : detached) {
     if (!unit) {
       continue;
     }
@@ -1680,8 +1612,7 @@ EntitySetTemplate<Unit> CAiTransportImpl::TransportDetachAllUnits(const bool cle
     (void)TransportDetachUnit(unit);
   }
 
-  for (Unit* const* it = storedToDestroy.mVec.begin(); it != storedToDestroy.mVec.end(); ++it) {
-    Unit* const unit = *it;
+  for (Unit* const unit : storedToDestroy) {
     if (!unit) {
       continue;
     }
@@ -1829,7 +1760,7 @@ void CAiTransportImpl::TransportAddToStorage(Unit* const unit)
   SEntAttachInfo attachInfo(static_cast<Entity*>(mUnit), -1, -1, VTransform());
   (void)unit->AttachTo(attachInfo);
   unit->TransportedByRef.ResetFromObject(mUnit);
-  (void)mStoredUnits.AddUnit(unit);
+  (void)mStoredUnits.Add(unit);
 }
 
 /**
@@ -1850,7 +1781,7 @@ void CAiTransportImpl::TransportRemoveFromStorage(Unit* const unit, VTransform& 
   unit->RunScript("OnRemoveFromStorage", mUnit);
   unit->TransportedByRef.ResetFromObject(nullptr);
   (void)unit->DetachFrom(static_cast<Entity*>(mUnit), false);
-  (void)mStoredUnits.RemoveUnit(unit);
+  (void)mStoredUnits.Remove(unit);
 
   const msvc8::vector<SAttachPoint>* launchPoints = &mLaunchAttachPoints;
   if (launchPoints->empty()) {
@@ -1875,9 +1806,7 @@ void CAiTransportImpl::TransportRemoveFromStorage(Unit* const unit, VTransform& 
  */
 EntitySetTemplate<Unit> CAiTransportImpl::TransportGetStoredUnits() const
 {
-  EntitySetTemplate<Unit> out{};
-  mStoredUnits.CopyTo(out);
-  return out;
+  return mStoredUnits;
 }
 
 /**
@@ -1885,7 +1814,7 @@ EntitySetTemplate<Unit> CAiTransportImpl::TransportGetStoredUnits() const
  */
 bool CAiTransportImpl::TransportIsStoredUnit(Unit* const unit) const
 {
-  return mStoredUnits.ContainsUnit(unit);
+  return mStoredUnits.Contains(unit);
 }
 
 /**
@@ -1920,7 +1849,7 @@ int CAiTransportImpl::TransportReserveStorage(
     return previousOverflow;
   }
 
-  (void)mUnitSet80.AddUnit(unit);
+  (void)mUnitSet80.Add(unit);
   const std::size_t index = static_cast<std::size_t>(mNextGeneric) % mGenericAttachPoints.size();
   const SAttachPoint& point = mGenericAttachPoints[index];
   const VTransform world = mUnit->GetBoneWorldTransform(static_cast<int>(point.index));
@@ -1944,7 +1873,7 @@ int CAiTransportImpl::TransportReserveStorage(
  */
 void CAiTransportImpl::TransportClearReservation(Unit* const unit)
 {
-  (void)mUnitSet80.RemoveUnit(unit);
+  (void)mUnitSet80.Remove(unit);
 }
 
 /**
@@ -2008,3 +1937,69 @@ bool CAiTransportImpl::TransportIsTeleportBeaconReady() const
   }
   return beacon->IsNavigatorIdle();
 }
+
+namespace moho
+{
+  /**
+   * `gpg::SerConstructHelper<CAiTransportImpl>`, vtable 0x00E1F4AC.
+   *
+   * Address: 0x00BCEF10 (FUN_00BCEF10 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF8C40 (FUN_00BF8C40 -- the global's destructor.)
+   * Address: 0x005E9BB0 (FUN_005E9BB0 -- `Init`.)
+   * Address: 0x005E84F0 (FUN_005E84F0 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x005EC380 (FUN_005EC380 -- `Delete`.)
+   */
+  struct CAiTransportImplConstruct : gpg::SerConstructHelper<CAiTransportImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B087C -- process-global `CAiTransportImplConstruct` singleton.
+  moho::CAiTransportImplConstruct gCAiTransportImplConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CAiTransportImpl>`, vtable 0x00E1F4BC.
+   *
+   * Address: 0x00BCEF50 (FUN_00BCEF50 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF8C70 (FUN_00BF8C70 -- the global's destructor.)
+   * Address: 0x005E85B0 (FUN_005E85B0 -- an unreferenced out-of-line copy of the constructor.)
+   * Address: 0x005EC3F0 (FUN_005EC3F0 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005EDCC0 (FUN_005EDCC0 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005E9C30 (FUN_005E9C30 -- `Init`.)
+   * Address: 0x005E8590 (FUN_005E8590 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005E85A0 (FUN_005E85A0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CAiTransportImplSerializer : gpg::SerSaveLoadHelper<CAiTransportImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B07D8 -- process-global `CAiTransportImplSerializer` singleton.
+  moho::CAiTransportImplSerializer gCAiTransportImplSerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<STransportPickUpInfo>`, vtable 0x00E1F378.
+   *
+   * Address: 0x00BCEE50 (FUN_00BCEE50 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF8B20 (FUN_00BF8B20 -- the global's destructor.)
+   * Address: 0x005E9490 (FUN_005E9490 -- `Init`.)
+   * Address: 0x005E4660 (FUN_005E4660 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005E4670 (FUN_005E4670 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct STransportPickUpInfoSerializer : gpg::SerSaveLoadHelper<STransportPickUpInfo>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B07EC -- process-global `STransportPickUpInfoSerializer` singleton.
+  moho::STransportPickUpInfoSerializer gSTransportPickUpInfoSerializer;
+} // namespace

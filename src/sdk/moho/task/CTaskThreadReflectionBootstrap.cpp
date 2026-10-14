@@ -45,21 +45,6 @@ namespace
   }
 
   /**
-   * Address: 0x004094F0 (FUN_004094F0, sub_4094F0)
-   *
-   * What it does:
-   * Allocates a task-thread instance, initializes serializer construct state,
-   * and stores an unowned reflected object handle in construct result.
-   */
-  void ConstructTaskThreadForSerializer(gpg::SerConstructResult* const result)
-  {
-    moho::CTaskThread* const thread = new moho::CTaskThread();
-
-    const gpg::RRef threadRef = MakeTaskThreadRef(thread);
-    result->SetUnowned(threadRef, 0u);
-  }
-
-  /**
    * Address: 0x00BEE340 (FUN_00BEE340, atexit destructor of the CTaskThreadTypeInfo object)
    */
   [[nodiscard]] gpg::RType* InitializeCTaskThreadTypeInfoStorage()
@@ -81,15 +66,6 @@ namespace
     static moho::CTaskStageTypeInfo sInstance;
     return &sInstance;
   }
-
-  // Address: 0x010A67BC -- process-global `CTaskThreadConstruct` singleton.
-  moho::CTaskThreadConstruct gCTaskThreadConstructHelper;
-
-  // Address: 0x010A672C -- process-global `CTaskThreadSerializer` singleton.
-  moho::CTaskThreadSerializer gCTaskThreadSerializerHelper;
-
-  // Address: 0x010A6834 -- process-global `CTaskStageSerializer` singleton.
-  moho::CTaskStageSerializer gCTaskStageSerializerHelper;
 
   struct CTaskThreadSerializerRegistration
   {
@@ -127,79 +103,7 @@ namespace moho
     (void)InitializeCTaskStageTypeInfoStorage();
   }
 
-  /**
-   * Address: 0x00BC3040 (FUN_00BC3040, dynamic initializer for the global
-   * `CTaskThreadConstruct` singleton)
-   */
-  CTaskThreadConstruct::CTaskThreadConstruct()
-    : mSerConstructFunc(reinterpret_cast<gpg::RType::construct_func_t>(&CTaskThreadConstruct::Construct))
-    , mDeleteFunc(&CTaskThreadConstruct::Deconstruct)
-  {}
-
-  /**
-   * Address: 0x00BEE3A0 (FUN_00BEE3A0, Moho::CTaskThreadConstruct::~CTaskThreadConstruct)
-   */
-  CTaskThreadConstruct::~CTaskThreadConstruct() = default;
-
-  /**
-   * Address: 0x00BC3080 (FUN_00BC3080, dynamic initializer for the global
-   * `CTaskThreadSerializer` singleton)
-   */
-  CTaskThreadSerializer::CTaskThreadSerializer()
-    : mSerLoadFunc(&CTaskThreadSerializer::Deserialize)
-    , mSerSaveFunc(&CTaskThreadSerializer::Serialize)
-  {}
-
-  /**
-   * Address: 0x00BEE3D0 (FUN_00BEE3D0, Moho::CTaskThreadSerializer::~CTaskThreadSerializer)
-   */
-  CTaskThreadSerializer::~CTaskThreadSerializer() = default;
-
-  /**
-   * Address: 0x00BC30E0 (FUN_00BC30E0, dynamic initializer for the global
-   * `CTaskStageSerializer` singleton)
-   */
-  CTaskStageSerializer::CTaskStageSerializer()
-    : mSerLoadFunc(&CTaskStageSerializer::Deserialize)
-    , mSerSaveFunc(&CTaskStageSerializer::Serialize)
-  {}
-
-  /**
-   * Address: 0x00BEE460 (FUN_00BEE460, Moho::CTaskStageSerializer::~CTaskStageSerializer)
-   */
-  CTaskStageSerializer::~CTaskStageSerializer() = default;
 } // namespace moho
-
-/**
- * Address: 0x004094E0 (FUN_004094E0, Moho::CTaskThreadConstruct::Construct)
- * Address: 0x0061AD00 (FUN_0061AD00)
- *
- * What it does:
- * Wraps serializer construct callback and forwards to CTaskThread allocator path.
- */
-void moho::CTaskThreadConstruct::Construct(
-  gpg::ReadArchive* const, const int, gpg::RRef* const, gpg::SerConstructResult* const result
-)
-{
-  ConstructTaskThreadForSerializer(result);
-}
-
-/**
- * Address: 0x0040B420 (FUN_0040B420, Moho::CTaskThreadConstruct::Deconstruct)
- *
- * What it does:
- * Destroys constructed CTaskThread object and frees owned storage.
- */
-void moho::CTaskThreadConstruct::Deconstruct(void* const object)
-{
-  auto* const thread = static_cast<moho::CTaskThread*>(object);
-  if (!thread) {
-    return;
-  }
-
-  thread->~CTaskThread();
-  ::operator delete(thread);
-}
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.

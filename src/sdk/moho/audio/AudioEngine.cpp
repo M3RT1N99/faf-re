@@ -715,6 +715,7 @@ namespace
       AllocateAudioEngineRefArrayChecked(static_cast<std::uint32_t>(targetCapacity))
     );
     if (currentCount != 0u) {
+      // Trivially relocatable element array copy in the owning array's growth path.
       std::memcpy(newStorage, engines.mStart, currentCount * sizeof(moho::AudioEngineRef));
     }
 
@@ -724,10 +725,10 @@ namespace
     engines.mCapacity = newStorage + targetCapacity;
   }
 
-  [[nodiscard]] const boost::SharedPtrLayoutView<moho::AudioEngine>&
+  [[nodiscard]] const boost::SharedPtrLayout<moho::AudioEngine>&
   AsSharedLayout(const boost::shared_ptr<moho::AudioEngine>& value)
   {
-    return *reinterpret_cast<const boost::SharedPtrLayoutView<moho::AudioEngine>*>(&value);
+    return *reinterpret_cast<const boost::SharedPtrLayout<moho::AudioEngine>*>(&value);
   }
 
   static_assert(sizeof(moho::AudioEngineRef) == sizeof(boost::SharedCountPair), "AudioEngineRef size must match SharedCountPair");
@@ -752,7 +753,7 @@ namespace
   [[nodiscard]] boost::shared_ptr<moho::AudioEngine> CopyEngineRefShared(const moho::AudioEngineRef& ref)
   {
     boost::shared_ptr<moho::AudioEngine> result;
-    auto& view = *reinterpret_cast<boost::SharedPtrLayoutView<moho::AudioEngine>*>(&result);
+    auto& view = *reinterpret_cast<boost::SharedPtrLayout<moho::AudioEngine>*>(&result);
     view.px = ref.mEngine;
     view.pi = ref.mControl;
     if (view.pi != nullptr) {
@@ -1021,7 +1022,7 @@ namespace
     loader->mName.mySize = 0u;
     loader->mName.bx.buf[0] = '\0';
 
-    auto& bufferOwner = reinterpret_cast<boost::SharedPtrLayoutView<char>&>(loader->mBuffer.mData);
+    auto& bufferOwner = reinterpret_cast<boost::SharedPtrLayout<char>&>(loader->mBuffer.mData);
     if (bufferOwner.pi != nullptr) {
       bufferOwner.pi->release();
     }
@@ -1656,6 +1657,7 @@ namespace moho
       [[nodiscard]] std::uint16_t VariableId() const noexcept
       {
         std::uint16_t value = 0;
+        // Unaligned scalar load from the packed notification byte fields.
         std::memcpy(&value, mVariableId.data(), sizeof(value));
         return value;
       }
@@ -1663,6 +1665,7 @@ namespace moho
       [[nodiscard]] float VariableValue() const noexcept
       {
         float value = 0.0f;
+        // Unaligned scalar load from the packed notification byte fields.
         std::memcpy(&value, mVariableValue.data(), sizeof(value));
         return value;
       }
@@ -1670,6 +1673,7 @@ namespace moho
       [[nodiscard]] std::uint32_t WaveBankId() const noexcept
       {
         std::uint32_t value = 0;
+        // Unaligned scalar load from the packed notification byte fields.
         std::memcpy(&value, mWaveBankToken.data(), sizeof(value));
         return value;
       }
@@ -1735,7 +1739,7 @@ namespace moho
     , mNoSound(0u)
     , mReserved29{}
     , mSpeakerConfiguration(3u)
-    , mAudioRuntimeModule(nullptr)
+    , mAudioModule(nullptr)
     , mLookAheadTimeMs(0u)
     , mGlobalSettingsStart(nullptr)
     , mGlobalSettingsLength(0u)
@@ -1774,9 +1778,9 @@ namespace moho
       }
     }
 
-    if (mAudioRuntimeModule != nullptr) {
-      (void)::FreeLibrary(static_cast<HMODULE>(mAudioRuntimeModule));
-      mAudioRuntimeModule = nullptr;
+    if (mAudioModule != nullptr) {
+      (void)::FreeLibrary(static_cast<HMODULE>(mAudioModule));
+      mAudioModule = nullptr;
     }
 
     if (mEngines.mStart != nullptr) {
@@ -2223,7 +2227,7 @@ namespace moho
     // pointer and length, [+0x40] the flags, [+0x50] func_HandleSoundEvent.
     //
     // This passed &mSpeakerConfiguration (+0x2C) instead, i.e. the block eight
-    // bytes early, so XACT read lookAheadTime = 3 and took mAudioRuntimeModule
+    // bytes early, so XACT read lookAheadTime = 3 and took mAudioModule
     // as the global-settings pointer and rejected the lot with "Invalid arg".
     const int initializeResult = mImpl->mInstance->Initialize(&configuration->mLookAheadTimeMs);
     if (initializeResult < 0) {

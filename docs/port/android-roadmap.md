@@ -192,8 +192,10 @@ What the compiler does not catch matters more than what it does.
 
 - XACT banks are content version 43 (0x2B). Check whether FAudio/FACT reads them; otherwise write
   a small loader. Move DirectSound streaming to AAudio through SDL3.
-- Sofdec `.sfd` movies (MPEG-1 + ADX): the recovered decoder is SSE-bound and already off on x64.
-  Use `/nomovie` until it is ported with NEON or replaced.
+- Sofdec `.sfd` movies (MPEG-1 + ADX): the recovered decoder uses MMX/SSE intrinsics. Master's
+  x64 fold-up (e33614da, merged 2026-10) made it play on Windows x64; on Android (arm64 through
+  `platform/MmxOnX64.h`, and x86_64) `CMauiMovie::LoadFile` still takes the `/nomovie` path until
+  the decoder is verified there, ported with NEON or replaced.
 
 ### W5 - Bit-exact simulation (3-4 months, the highest risk)
 

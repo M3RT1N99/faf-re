@@ -5,8 +5,11 @@
 #include "moho/ai/CAiNavigatorImpl.h"
 
 #include <algorithm>
+#include <bit>
+#include <iterator>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <cstdint>
 #include <cstdlib>
@@ -65,7 +68,7 @@
 #include "moho/task/ETaskStatus.h"
 #include "moho/command/SSTICommandIssueData.h"
 #include "moho/path/PathTables.h"
-#include "moho/sim/ArmyUnitSet.h"
+#include "moho/entity/Entity.h"
 #include "moho/sim/CArmyImpl.h"
 #include "moho/sim/CWldSession.h"
 #include "moho/sim/CArmyStats.h"
@@ -1373,11 +1376,11 @@ namespace
 
   [[nodiscard]] CAniPoseBone* ResolveUnitPoseBone(Unit& unit, const int boneIndex) noexcept
   {
-    if (unit.AniActor == nullptr || unit.AniActor->mPose.px == nullptr || boneIndex < 0) {
+    if (unit.AniActor == nullptr || unit.AniActor->mPose.get() == nullptr || boneIndex < 0) {
       return nullptr;
     }
 
-    CAniPose* const pose = unit.AniActor->mPose.px;
+    CAniPose* const pose = unit.AniActor->mPose.get();
     CAniPoseBone* const bonesBegin = pose->mBones.begin();
     CAniPoseBone* const bonesEnd = pose->mBones.end();
     if (bonesBegin == nullptr || bonesEnd == nullptr || bonesBegin > bonesEnd) {
@@ -1791,22 +1794,6 @@ namespace
     return invalidTarget;
   }
 
-  using NavigatorCanPathToRectVFunc =
-    bool(__thiscall*)(moho::IAiNavigator* navigator, const moho::SAiNavigatorGoal* goal, Wm3::Vector3f* outTargetPos);
-
-  [[nodiscard]] bool InvokeNavigatorCanPathToRect(
-    moho::IAiNavigator* const navigator,
-    const moho::SAiNavigatorGoal& goal,
-    Wm3::Vector3f* const outTargetPos
-  )
-  {
-    // FUN_006CBD70 dispatches slot 15 with an additional out-target vector lane.
-    // Keep this localized ABI shim until IAiNavigator slot typing is fully lifted.
-    auto** const vtable = *reinterpret_cast<void***>(navigator);
-    const auto method = reinterpret_cast<NavigatorCanPathToRectVFunc>(vtable[15]);
-    return method(navigator, &goal, outTargetPos);
-  }
-
   [[nodiscard]] moho::CScrLuaInitFormSet& SimLuaInitSet()
   {
     if (moho::CScrLuaInitFormSet* const set = moho::SCR_FindLuaInitFormSet("Sim"); set != nullptr) {
@@ -1918,11 +1905,6 @@ namespace
   [[nodiscard]] BVIntSet& AsCategoryWordBitset(EntityCategorySet& range) noexcept
   {
     return range.mBits;
-  }
-
-  void ResetCategoryWordRange(EntityCategorySet& range) noexcept
-  {
-    range.mBits = BVIntSet{};
   }
 
   [[nodiscard]] std::int32_t PickUniformIndexFromU32(const std::uint32_t randomValue, const std::uint32_t count) noexcept
@@ -2247,27 +2229,6 @@ namespace
     line.depth1 = -16711936;
     canvas.DebugDrawLine(line);
   }
-
-  struct RaisedPlatformVertexRuntimeLane
-  {
-    float x;
-    float z;
-    float y;
-  };
-  static_assert(sizeof(RaisedPlatformVertexRuntimeLane) == 0x0C, "RaisedPlatformVertexRuntimeLane size must be 0x0C");
-
-  struct RaisedPlatformRuntimeView
-  {
-    RaisedPlatformVertexRuntimeLane vertex0;
-    RaisedPlatformVertexRuntimeLane vertex1;
-    RaisedPlatformVertexRuntimeLane vertex2;
-    RaisedPlatformVertexRuntimeLane vertex3;
-  };
-  static_assert(sizeof(RaisedPlatformRuntimeView) == 0x30, "RaisedPlatformRuntimeView size must be 0x30");
-  static_assert(
-    sizeof(RaisedPlatformRuntimeView) == sizeof(RUnitBlueprintRaisedPlatform),
-    "RaisedPlatformRuntimeView must mirror RUnitBlueprintRaisedPlatform storage"
-  );
 
   /**
    * Address: 0x0062EAC0 (FUN_0062EAC0, func_UnitMoreInLineToOther)
@@ -2653,10 +2614,10 @@ int moho::cfunc_UnitGetCargoL(LuaPlus::LuaState* const state)
   resultTable.AssignNewTable(state, 0, 0);
 
   int resultIndex = 1;
-  for (Unit* const* it = loadedUnits.begin(); it != loadedUnits.end(); ++it, ++resultIndex) {
-    Unit* const cargoUnit = *it;
+  for (Unit* const cargoUnit : loadedUnits) {
     LuaPlus::LuaObject cargoObject = cargoUnit->GetLuaObject();
     resultTable.Insert(resultIndex, cargoObject);
+    ++resultIndex;
   }
 
   resultTable.PushStack(state);
@@ -6956,8 +6917,7 @@ int moho::cfunc_UnitSetStatL(LuaPlus::LuaState* const state)
   if (lua_type(rawState, 3) == LUA_TNUMBER) {
     const LuaPlus::LuaStackObject valueArg(state, 3);
     const float value = static_cast<float>(valueArg.ToNumber());
-    std::int32_t valueBits = 0;
-    std::memcpy(&valueBits, &value, sizeof(valueBits));
+    std::int32_t valueBits = std::bit_cast<std::int32_t>(value);
     (void)StorePrimaryStatBitsAtomic(statItem, &valueBits);
     return 0;
   }
@@ -7338,8 +7298,6 @@ int moho::cfunc_UnitSetUnSelectableL(LuaPlus::LuaState* const state)
   const bool shouldSetUnSelectable = flagArg.GetBoolean();
 
   constexpr std::uint64_t kUnSelectableMask = 0x0000000200000000ull;
-  // TEMPORARY PROBE -- warp-in triage, delete when resolved.
-  gpg::Warnf("[WARPDIAG] SetUnSelectable unit=%p flag=%d", static_cast<void*>(unit), shouldSetUnSelectable ? 1 : 0);
   if (shouldSetUnSelectable) {
     unit->mUnitVarDat.mUnitStates |= kUnSelectableMask;
   } else {
@@ -8488,7 +8446,7 @@ int moho::cfunc_UnitRestoreBuildRestrictionsL(LuaPlus::LuaState* const state)
   Unit* const unit = SCR_FromLua_Unit(unitObject);
 
   EntityCategorySet& restrictionWords = unit->GetAttributes().restrictionCategory;
-  ResetCategoryWordRange(restrictionWords);
+  restrictionWords.mBits = BVIntSet{};
   unit->mVarDat.mRequestRefreshUI = 1;
   return 0;
 }
@@ -10025,22 +9983,6 @@ int moho::cfunc_UnitShowBoneL(LuaPlus::LuaState* const state)
     }
   }
 
-  // TEMPORARY PROBE -- warp-in triage, delete when resolved.
-  {
-    int visibleCount = 0;
-    int totalCount = 0;
-    const void* posePtr = nullptr;
-    if (unit != nullptr && unit->AniActor != nullptr && unit->AniActor->mPose.px != nullptr) {
-      CAniPose* const pose = unit->AniActor->mPose.px;
-      posePtr = pose;
-      for (const CAniPoseBone& bone : pose->mBones) {
-        ++totalCount;
-        visibleCount += bone.mVisible != 0u ? 1 : 0;
-      }
-    }
-    gpg::Warnf("[WARPDIAG] ShowBone unit=%p bone=%d recur=%d pose=%p visible=%d/%d",
-               static_cast<void*>(unit), boneIndex, affectChildren ? 1 : 0, posePtr, visibleCount, totalCount);
-  }
 
   return 0;
 }
@@ -10099,19 +10041,6 @@ int moho::cfunc_UnitHideBoneL(LuaPlus::LuaState* const state)
   LuaPlus::LuaStackObject affectChildrenArg(state, 3);
   const bool affectChildren = affectChildrenArg.GetBoolean();
 
-  // TEMPORARY PROBE -- warp-in triage, delete when resolved.
-  {
-    const char* requested = lua_isstring(rawState, 2) != 0 ? lua_tostring(rawState, 2) : "<index>";
-    const char* resolved = "<none>";
-    if (unit != nullptr && unit->AniActor != nullptr && unit->AniActor->mPose.px != nullptr && boneIndex >= 0) {
-      const boost::shared_ptr<const CAniSkel> skeleton = unit->AniActor->mPose.px->GetSkeleton();
-      if (const SAniSkelBone* const bone = skeleton ? skeleton->GetBone(static_cast<std::uint32_t>(boneIndex)) : nullptr) {
-        resolved = bone->mBoneName != nullptr ? bone->mBoneName : "<null>";
-      }
-    }
-    gpg::Warnf("[WARPDIAG] HideBone unit=%p bone=%d recur=%d requested=%s resolved=%s",
-               static_cast<void*>(unit), boneIndex, affectChildren ? 1 : 0, requested, resolved);
-  }
 
   if (unit != nullptr && boneIndex >= 0) {
     if (CAniPoseBone* const poseBone = ResolveUnitPoseBone(*unit, boneIndex); poseBone != nullptr) {
@@ -10341,7 +10270,7 @@ int moho::cfunc_UnitCanPathToL(LuaPlus::LuaState* const state)
   goal.maxZ = static_cast<std::int32_t>(footprintMinZ) + static_cast<std::int32_t>(footprint.mSizeZ);
 
   Wm3::Vector3f targetPosition = InvalidNavigatorTargetLane();
-  const bool canPath = InvokeNavigatorCanPathToRect(unit->AiNavigator, goal, &targetPosition);
+  const bool canPath = unit->AiNavigator->CanPathTo(&targetPosition, goal);
   lua_pushboolean(rawState, canPath ? 1 : 0);
   (void)lua_gettop(rawState);
 
@@ -10381,7 +10310,7 @@ int moho::cfunc_UnitCanPathToRectL(LuaPlus::LuaState* const state)
   goal.maxZ = RoundGridCoordUp(maxCorner.z);
 
   Wm3::Vector3f targetPos = InvalidNavigatorTargetLane();
-  const bool canPath = InvokeNavigatorCanPathToRect(unit->AiNavigator, goal, &targetPos);
+  const bool canPath = unit->AiNavigator->CanPathTo(&targetPos, goal);
 
   lua_pushboolean(rawState, canPath ? 1 : 0);
   (void)lua_gettop(rawState);
@@ -11097,75 +11026,6 @@ namespace
     return cached;
   }
 
-  /**
-   * VFTABLE: 0x00E1879C (`??_7UnitWeaponInfoSerializer@Moho@@6B@`)
-   *
-   * Demangled: gpg::SerSaveLoadHelper<class moho::UnitWeaponInfo> (IDA
-   * infers `Moho::UnitWeaponInfoSerializer`). The binary global is 0x14
-   * bytes (vtable + inherited link pair + load/save callback lanes),
-   * matching every other `SerHelperBase`-derived serializer in this
-   * codebase.
-   */
-  struct UnitWeaponInfoSerializer : public gpg::SerHelperBase
-  {
-    /**
-     * Address: 0x00BCA580 (FUN_00BCA580, dynamic initializer for `gUnitWeaponInfoSerializer`)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base (self-links `this` and
-     * splices it into the pending `sNewHelpers` list), binds the load/save
-     * callbacks and installs this helper's vtable (0x00E1879C); the compiler
-     * registers the destructor with `atexit`.
-     */
-    UnitWeaponInfoSerializer();
-
-    /**
-     * Address: 0x00BF5300 (FUN_00BF5300, dynamic atexit destructor for `gUnitWeaponInfoSerializer`)
-     *
-     * What it does:
-     * Unlinks this helper node from the serializer-helper list (the
-     * `TDatListItem` base destructor). `FUN_0055C1B0` and `FUN_0055C1E0` are
-     * unreferenced out-of-line copies of the same body.
-     */
-    ~UnitWeaponInfoSerializer() = default;
-
-    /**
-     * Address: 0x0055CA40 (FUN_0055CA40, Moho::UnitWeaponInfoSerializer::Init,
-     * vtable slot 0)
-     *
-     * What it does:
-     * Lazily resolves `UnitWeaponInfo` RTTI and installs this helper's
-     * load/save callback pair onto the reflected type descriptor.
-     */
-    void Init() override;
-
-    gpg::RType::load_func_t mSerLoadFunc;
-    gpg::RType::save_func_t mSerSaveFunc;
-  };
-  static_assert(
-    offsetof(UnitWeaponInfoSerializer, mSerLoadFunc) == 0x0C,
-    "UnitWeaponInfoSerializer::mSerLoadFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(UnitWeaponInfoSerializer, mSerSaveFunc) == 0x10,
-    "UnitWeaponInfoSerializer::mSerSaveFunc offset must be 0x10"
-  );
-  static_assert(
-    sizeof(UnitWeaponInfoSerializer) == 0x14,
-    "UnitWeaponInfoSerializer size must be 0x14"
-  );
-
-  void UnitWeaponInfoSerializer::Init()
-  {
-    gpg::RType* const type = CachedUnitWeaponInfoType();
-    GPG_ASSERT(type->serLoadFunc_ == nullptr);
-    type->serLoadFunc_ = mSerLoadFunc;
-    GPG_ASSERT(type->serSaveFunc_ == nullptr);
-    type->serSaveFunc_ = mSerSaveFunc;
-  }
-
-  UnitWeaponInfoSerializer gUnitWeaponInfoSerializer;
-
   [[nodiscard]] gpg::RType* CachedSSTIUnitVariableDataType()
   {
     static gpg::RType* cached = nullptr;
@@ -11174,77 +11034,6 @@ namespace
     }
     return cached;
   }
-
-  /**
-   * VFTABLE: 0x00E188E4 (`??_7SSTIUnitVariableDataSerializer@Moho@@6B@`)
-   *
-   * Demangled: gpg::SerSaveLoadHelper<class moho::SSTIUnitVariableData>
-   * (IDA infers `Moho::SSTIUnitVariableDataSerializer`). The binary global
-   * is 0x14 bytes (vtable + inherited link pair + load/save callback
-   * lanes), matching every other `SerHelperBase`-derived serializer in this
-   * codebase. The engine install path copies mSerLoadFunc / mSerSaveFunc
-   * into the reflection descriptor's serLoadFunc_ / serSaveFunc_ slots via
-   * `Init()`.
-   */
-  struct SSTIUnitVariableDataSerializer : public gpg::SerHelperBase
-  {
-    /**
-     * Address: 0x00BCA6A0 (FUN_00BCA6A0, dynamic initializer for `gSSTIUnitVariableDataSerializer`)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base (self-links `this` and
-     * splices it into the pending `sNewHelpers` list), binds the load/save
-     * callbacks and installs this helper's vtable (0x00E188E4); the compiler
-     * registers the destructor with `atexit`.
-     */
-    SSTIUnitVariableDataSerializer();
-
-    /**
-     * Address: 0x00BF54B0 (FUN_00BF54B0, dynamic atexit destructor for `gSSTIUnitVariableDataSerializer`)
-     *
-     * What it does:
-     * Unlinks this helper node from the serializer-helper list (the
-     * `TDatListItem` base destructor). `FUN_0055C7C0` and `FUN_0055C7F0` are
-     * unreferenced out-of-line copies of the same body.
-     */
-    ~SSTIUnitVariableDataSerializer() = default;
-
-    /**
-     * Address: 0x0055D100 (FUN_0055D100, Moho::SSTIUnitVariableDataSerializer::Init,
-     * vtable slot 0)
-     *
-     * What it does:
-     * Lazily resolves `SSTIUnitVariableData` RTTI and installs this
-     * helper's load/save callback pair onto the reflected type descriptor.
-     */
-    void Init() override;
-
-    gpg::RType::load_func_t mSerLoadFunc;
-    gpg::RType::save_func_t mSerSaveFunc;
-  };
-  static_assert(
-    offsetof(SSTIUnitVariableDataSerializer, mSerLoadFunc) == 0x0C,
-    "SSTIUnitVariableDataSerializer::mSerLoadFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(SSTIUnitVariableDataSerializer, mSerSaveFunc) == 0x10,
-    "SSTIUnitVariableDataSerializer::mSerSaveFunc offset must be 0x10"
-  );
-  static_assert(
-    sizeof(SSTIUnitVariableDataSerializer) == 0x14,
-    "SSTIUnitVariableDataSerializer size must be 0x14"
-  );
-
-  void SSTIUnitVariableDataSerializer::Init()
-  {
-    gpg::RType* const type = CachedSSTIUnitVariableDataType();
-    GPG_ASSERT(type->serLoadFunc_ == nullptr);
-    type->serLoadFunc_ = mSerLoadFunc;
-    GPG_ASSERT(type->serSaveFunc_ == nullptr);
-    type->serSaveFunc_ = mSerSaveFunc;
-  }
-
-  SSTIUnitVariableDataSerializer gSSTIUnitVariableDataSerializer;
 
   /**
    * Address: 0x0055C160 (FUN_0055C160, Moho::UnitWeaponInfoSerializer::Deserialize)
@@ -11291,17 +11080,6 @@ namespace
     }
     info->MemberSerialize(archive);
   }
-
-  /**
-   * Address: 0x00BCA580 (FUN_00BCA580, dynamic initializer for `gUnitWeaponInfoSerializer`)
-   *
-   * What it does:
-   * Binds this helper's load/save callbacks.
-   */
-  UnitWeaponInfoSerializer::UnitWeaponInfoSerializer()
-    : mSerLoadFunc(&DeserializeUnitWeaponInfoSerializerCallback)
-    , mSerSaveFunc(&SerializeUnitWeaponInfoSerializerCallback)
-  {}
 
   /**
    * Address: 0x0055C760 (FUN_0055C760, Moho::SSTIUnitVariableDataSerializer::Deserialize)
@@ -11355,16 +11133,6 @@ namespace
     data->MemberSerialize(archive);
   }
 
-  /**
-   * Address: 0x00BCA6A0 (FUN_00BCA6A0, dynamic initializer for `gSSTIUnitVariableDataSerializer`)
-   *
-   * What it does:
-   * Binds this helper's load/save callbacks.
-   */
-  SSTIUnitVariableDataSerializer::SSTIUnitVariableDataSerializer()
-    : mSerLoadFunc(&SSTIUnitVariableDataSerializerDeserialize)
-    , mSerSaveFunc(&SSTIUnitVariableDataSerializerSerialize)
-  {}
 } // namespace
 
 // Wrapped in `namespace moho` so the linker mangles these as
@@ -11935,6 +11703,26 @@ int moho::cfunc_CreateUnitHPRL(LuaPlus::LuaState* const state)
   if (!unit) {
     LuaPlus::LuaState::Error(state, "CreateUnitHPR(%s) failed", blueprintName.c_str());
   }
+
+  // TEMPORARY PROBE -- replay beat-pipeline triage: map blueprint -> real
+  // wire EntId so injected replay orders can target these units. Delete when
+  // resolved.
+  {
+    static int sProbeSpawn = 0;
+    if ((++sProbeSpawn % 1) == 0) {
+      if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+        std::fprintf(
+          sink,
+          "[SCENSPAWN] n=%d bp=%s entId=0x%08x\n",
+          sProbeSpawn,
+          blueprintName.c_str(),
+          static_cast<unsigned>(unit->id_)
+        );
+        std::fclose(sink);
+      }
+    }
+  }
+
   unit->mLuaObj.PushStack(state);
   return 1;
 }
@@ -11972,7 +11760,7 @@ CScrLuaInitForm* moho::func_CreateUnitHPR_LuaFuncDef()
 
 } // namespace moho
 
-[[noreturn]] void RuntimeThrowContainerTooLong(const char* message);
+[[noreturn]] void EngineThrowContainerTooLong(const char* message);
 
 namespace
 {
@@ -12509,7 +12297,8 @@ SSTIUnitVariableData& SSTIUnitVariableData::AssignFrom(const SSTIUnitVariableDat
   mTargetBlip = other.mTargetBlip;
   mPriorSharedPose = other.mPriorSharedPose;
   mSharedPose = other.mSharedPose;
-  std::memcpy(mPad094_097, other.mPad094_097, sizeof(mPad094_097));
+  // Opaque layout pad bytes: preserved bit-for-bit, no typed meaning to copy.
+  std::copy_n(other.mPad094_097, std::size(other.mPad094_097), mPad094_097);
   CopyUnitCommandSnapshotVector(mCommands, other.mCommands);
   CopyUnitCommandSnapshotVector(mBuildQueue, other.mBuildQueue);
   CopyFastVectorN(mWeaponInfo, other.mWeaponInfo);
@@ -12518,7 +12307,8 @@ SSTIUnitVariableData& SSTIUnitVariableData::AssignFrom(const SSTIUnitVariableDat
   mUnitStates = other.mUnitStates;
   mDidRefresh = other.mDidRefresh;
   mOverchargePaused = other.mOverchargePaused;
-  std::memcpy(mPad222_227, other.mPad222_227, sizeof(mPad222_227));
+  // Opaque layout pad bytes: preserved bit-for-bit, no typed meaning to copy.
+  std::copy_n(other.mPad222_227, std::size(other.mPad222_227), mPad222_227);
   return *this;
 }
 
@@ -12913,16 +12703,6 @@ void Unit::UpdateGuardFormation()
 int Unit::MotionTick()
 {
   SimulationRef->Logf("0x%08x's motion tick.\n", id_);
-  // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-  {
-    static DiagnosticBudget sMotionTickCount;
-    if (const int motionTick = sMotionTickCount.Next() + 1; (motionTick - 1) % 100 == 0) {
-      const Wm3::Vec3f& p = GetPosition();
-      gpg::Warnf("[MOTDIAG] Unit::MotionTick id=0x%08X pos=(%.1f,%.1f,%.1f) motion=%p nav=%p queue=%d n=%d",
-                 static_cast<unsigned>(id_), p.x, p.y, p.z, static_cast<void*>(UnitMotion), static_cast<void*>(AiNavigator),
-                 CommandQueue != nullptr ? static_cast<int>(CommandQueue->mCommandVec.size()) : -1, motionTick);
-    }
-  }
 
   if (AiSiloBuild != nullptr) {
     AiSiloBuild->SiloTick();
@@ -12966,8 +12746,8 @@ int Unit::MotionTick()
   HandleResourceManagement();
 
   if (mIsNotPod && (CommandQueue == nullptr || CommandQueue->mCommandVec.empty())) {
-    SEntitySetTemplateUnit selectedUnits{};
-    (void)selectedUnits.AddUnit(this);
+    EntitySetTemplate<Unit> selectedUnits{};
+    (void)selectedUnits.Add(this);
     SSTICommandIssueData commandData(EUnitCommandType::UNITCOMMAND_AssistCommander);
     (void)IssueCommandToSelectedUnits(SimulationRef, selectedUnits, commandData, false);
   }
@@ -13361,8 +13141,8 @@ Unit::Unit(const SUnitConstructionParams& params)
 
   // --- publish into the army pool ----------------------------------------
   {
-    SEntitySetTemplateUnit spawnedSet{};
-    (void)spawnedSet.AddUnit(this);
+    EntitySetTemplate<Unit> spawnedSet{};
+    (void)spawnedSet.Add(this);
     ArmyRef->AssignUnitsToPlatoon(&spawnedSet, "ArmyPool");
   }
 
@@ -13388,10 +13168,10 @@ Unit::Unit(const SUnitConstructionParams& params)
     RunScript("OnStartBeingBuilt", creatorObject, layerName);
   } else {
     if (UnitMotion == nullptr) {
-      SEntitySetTemplateUnit overlapping{};
+      EntitySetTemplate<Unit> overlapping{};
       (void)CollectAllOverlapping(&overlapping, this);
       for (Entity* const entry : overlapping.mVec) {
-        Unit* const neighbour = SEntitySetTemplateUnit::UnitFromEntry(entry);
+        Unit* const neighbour = static_cast<Unit*>(entry);
         if (neighbour == nullptr) {
           continue;
         }
@@ -13430,8 +13210,8 @@ Unit::Unit(const SUnitConstructionParams& params)
  *
  * What it does:
  * Reflection construct-callback. Reads the owning `Sim*` from the archive,
- * allocates and constructs a fresh `Unit` on it, then publishes the constructed
- * object (paired with its owning Sim) to the `SerConstructResult` as unowned.
+ * allocates and constructs a fresh `Unit` on it, then publishes it to the
+ * `SerConstructResult` as unowned.
  */
 void Unit::MemberConstruct(
   gpg::ReadArchive& archive,
@@ -13441,25 +13221,9 @@ void Unit::MemberConstruct(
 )
 {
   Sim* sim = nullptr;
-  gpg::RRef nullOwner{};
-  archive.ReadPointer(&sim, &nullOwner);
-
-  Unit* unit = nullptr;
-  void* const storage = ::operator new(sizeof(Unit));
-  if (storage != nullptr) {
-    unit = new (storage) Unit(sim);
-  }
-
-  gpg::RRef unitRef{};
-  unitRef = gpg::MakeRRef<moho::Unit>(unit);
-
-  // SetUnowned records the constructed object paired with its owning Sim: the
-  // binary keeps RRef_Unit's base-adjusted object pointer but stores the Sim in
-  // the ref's second slot rather than the Unit RType.
-  gpg::RRef constructed{};
-  constructed.mObj = unitRef.mObj;
-  constructed.mType = reinterpret_cast<gpg::RType*>(sim);
-  result.SetUnowned(constructed, 0u);
+  const gpg::RRef owner{};
+  archive.ReadPointer(&sim, &owner);
+  result.SetUnowned(gpg::MakeRRef(new Unit(sim)), 0u);
 }
 
 /**
@@ -13795,8 +13559,8 @@ Wm3::Vec3f Unit::GetTargetPoint(std::int32_t targetPoint) const
  */
 VTransform Unit::GetBoneWorldTransform(const int boneIndex) const
 {
-  if (AniActor != nullptr && AniActor->mPose.px != nullptr && boneIndex >= 0) {
-    const CAniPose* const pose = AniActor->mPose.px;
+  if (AniActor != nullptr && AniActor->mPose.get() != nullptr && boneIndex >= 0) {
+    const CAniPose* const pose = AniActor->mPose.get();
     const CAniPoseBone* const bonesBegin = pose->mBones.begin();
     const CAniPoseBone* const bonesEnd = pose->mBones.end();
     if (bonesBegin != nullptr && bonesEnd != nullptr && bonesEnd >= bonesBegin) {
@@ -13843,8 +13607,8 @@ VTransform Unit::GetBoneLocalTransform(const int boneIndex) const
   localTransform.pos_.y = 0.0f;
   localTransform.pos_.z = 0.0f;
 
-  if (AniActor != nullptr && AniActor->mPose.px != nullptr) {
-    const CAniPose* const pose = AniActor->mPose.px;
+  if (AniActor != nullptr && AniActor->mPose.get() != nullptr) {
+    const CAniPose* const pose = AniActor->mPose.get();
     const CAniPoseBone* const bonesBegin = pose->mBones.begin();
     const CAniPoseBone* const bonesEnd = pose->mBones.end();
     if (bonesBegin != nullptr && bonesEnd != nullptr && bonesEnd >= bonesBegin) {
@@ -13901,12 +13665,7 @@ void Unit::SetMesh(const RResId& meshResId, RMeshBlueprint* const meshBlueprint,
   varDat.mSharedPose->SetWorldTransform(GetTransformWm3());
   varDat.mPriorSharedPose = varDat.mSharedPose;
 
-  CAniActor* newActor = nullptr;
-  if (void* const actorStorage = ::operator new(sizeof(CAniActor)); actorStorage != nullptr) {
-    const boost::SharedPtrRaw<CAniPose> priorRaw = boost::SharedPtrRawFromSharedBorrow(varDat.mPriorSharedPose);
-    const boost::SharedPtrRaw<CAniPose> currentRaw = boost::SharedPtrRawFromSharedBorrow(varDat.mSharedPose);
-    newActor = ::new (actorStorage) CAniActor(priorRaw, currentRaw);
-  }
+  CAniActor* const newActor = new CAniActor(varDat.mSharedPose, varDat.mPriorSharedPose);
 
   CAniActor* const oldActor = AniActor;
   AniActor = newActor;
@@ -13932,11 +13691,7 @@ void Unit::SetPoses(
   varDat.mSharedPose = sharedPose;
   varDat.mPriorSharedPose = priorSharedPose;
 
-  const boost::SharedPtrRaw<CAniPose> sharedPoseRaw = boost::SharedPtrRawFromSharedBorrow(sharedPose);
-  const boost::SharedPtrRaw<CAniPose> priorSharedPoseRaw = boost::SharedPtrRawFromSharedBorrow(priorSharedPose);
-  // Routes through the out-of-line pair-assign helper emitted at 0x0063AA20
-  // so the linker preserves that body's symbol against this caller.
-  AniActor->AssignPoses(sharedPoseRaw, priorSharedPoseRaw);
+  AniActor->AssignPoses(sharedPose, priorSharedPose);
 }
 
 /**
@@ -14641,10 +14396,10 @@ float Unit::Materialize(const float delta)
 
   // Adjacency is a structure concept; mobile units never bond to neighbours.
   if (!IsMobile()) {
-    SEntitySetTemplateUnit overlapping{};
+    EntitySetTemplate<Unit> overlapping{};
     (void)CollectAllOverlapping(&overlapping, this);
     for (Entity* const entry : overlapping.mVec) {
-      Unit* const neighbour = SEntitySetTemplateUnit::UnitFromEntry(entry);
+      Unit* const neighbour = static_cast<Unit*>(entry);
       if (neighbour == nullptr) {
         continue;
       }
@@ -15112,55 +14867,6 @@ void Unit::UpdateBlipsInRange()
     }
   }
 
-  // TEMPORARY PROBE -- "nothing auto-attacks / attack-ground does nothing"
-  // triage. Delete once resolved.
-  //
-  // Everything downstream of this list is now verified against the binary
-  // (CanWeaponAttackEntityTarget's two category tests byte-for-byte at
-  // 0x006D5690..0x006D5703, FindBestEnemy's filter, IArmy::IsEnemy), so if
-  // weapons still never acquire, this list is empty. This separates the three
-  // ways that happens: the grid returned no units, every unit was filtered out
-  // before the recon lookup, or the recon DB had no blip for them. ReconGetBlip
-  // now returns null where it used to return a neighbour's blip, so a broken
-  // blip supply became newly fatal rather than merely wrong.
-  {
-    // Periodic and only when something is actually in range -- an early
-    // "enemy=0" just means the armies have not met yet.
-    static DiagnosticBudget sProbe;
-    if ((unitsInRange.end() - unitsInRange.begin()) > 1 && (sProbe.Next() % 40) == 0) {
-      std::size_t candidates = 0;
-      std::size_t enemies = 0;
-      std::size_t withBlip = 0;
-      for (const CollisionResult& hit : unitsInRange) {
-        Entity* const probeEntity = hit.sourceEntity;
-        if (probeEntity == nullptr) {
-          continue;
-        }
-        ++candidates;
-        CArmyImpl* const probeArmy = probeEntity->ArmyRef;
-        const std::uint32_t probeArmyIndex =
-          (probeArmy != nullptr) ? static_cast<std::uint32_t>(probeArmy->mConstDat.mArmyIndex) : 0xFFFFFFFFu;
-        if (army->mVarDat.mAllies.Contains(probeArmyIndex)) {
-          continue;
-        }
-        ++enemies;
-        Unit* const probeUnit = probeEntity->IsUnit();
-        CAiReconDBImpl* const probeDb = army->GetReconDB();
-        if (probeUnit != nullptr && probeDb != nullptr && probeDb->ReconGetBlip(probeUnit) != nullptr) {
-          ++withBlip;
-        }
-      }
-      gpg::Warnf(
-        "[BLIPSUPPLY] unit=%p radius=%.1f cand=%u enemy=%u withBlip=%u listed=%u",
-        static_cast<void*>(this),
-        scanRadius,
-        static_cast<unsigned>(candidates),
-        static_cast<unsigned>(enemies),
-        static_cast<unsigned>(withBlip),
-        static_cast<unsigned>(mBlipsInRange.end() - mBlipsInRange.begin())
-      );
-    }
-  }
 
   mBlipLastUpdateTick = static_cast<std::int32_t>(SimulationRef->mCurTick);
 }
@@ -15177,7 +14883,7 @@ void Unit::SetGuardedUnit(Unit* const guarded)
 {
   Unit* const oldGuardedUnit = GuardedUnitRef.GetObjectPtr();
   if (oldGuardedUnit != nullptr) {
-    (void)oldGuardedUnit->GuardedByList.RemoveUnit(this); // 0x005E8960
+    (void)oldGuardedUnit->GuardedByList.Remove(this); // 0x005E8960
     ClearGuardFormation(oldGuardedUnit);
   }
 
@@ -15185,7 +14891,7 @@ void Unit::SetGuardedUnit(Unit* const guarded)
 
   Unit* const newGuardedUnit = GuardedUnitRef.GetObjectPtr();
   if (newGuardedUnit != nullptr) {
-    (void)newGuardedUnit->GuardedByList.AddUnit(this); // 0x0057DDD0
+    (void)newGuardedUnit->GuardedByList.Add(this); // 0x0057DDD0
     ClearGuardFormation(newGuardedUnit);
   }
 
@@ -15203,7 +14909,7 @@ void Unit::SetGuardedUnit(Unit* const guarded)
 void Unit::RemoveGuardedByUnit(Unit* const guardedByUnit)
 {
   if (guardedByUnit != nullptr) {
-    (void)GuardedByList.AddUnit(guardedByUnit); // 0x0057DDD0
+    (void)GuardedByList.Add(guardedByUnit); // 0x0057DDD0
   }
 
   ClearGuardFormation(this);
@@ -16030,17 +15736,6 @@ void Unit::ExecuteOccupyGround()
   }
   const EOccupancyCaps occupancyCaps = footprint.mOccupancyCaps;
 
-  // TEMPORARY PROBE -- navigation triage. Separate tag from [OCCDIAG] because
-  // the map's props exhaust that probe's budget before any structure lands.
-  {
-    static DiagnosticBudget sCount;
-    if (sCount.Take(60)) {
-      gpg::Warnf("[NAVGATE] UnitOccupy caps=0x%X fp=%dx%d rects=%d motion=%d bp=%s",
-                 static_cast<unsigned>(occupancyCaps), static_cast<int>(footprint.mSizeX),
-                 static_cast<int>(footprint.mSizeZ), static_cast<int>(blueprint->Physics.OccupyRects.size()),
-                 static_cast<int>(blueprint->Physics.MotionType), blueprint->mBlueprintId.c_str());
-    }
-  }
 
   const auto& occupyRects = blueprint->Physics.OccupyRects;
   if (occupyRects.empty()) {
@@ -16255,7 +15950,7 @@ std::string Unit::GetCustomName() const
  * Gathers nearby non-mobile same-army same-layer structures and appends
  * those whose skirt rectangles overlap `unit`.
  */
-SEntitySetTemplateUnit* Unit::CollectAllOverlapping(SEntitySetTemplateUnit* const outSet, Unit* const unit)
+EntitySetTemplate<Unit>* Unit::CollectAllOverlapping(EntitySetTemplate<Unit>* const outSet, Unit* const unit)
 {
   if (outSet == nullptr) {
     return nullptr;
@@ -16314,7 +16009,7 @@ SEntitySetTemplateUnit* Unit::CollectAllOverlapping(SEntitySetTemplateUnit* cons
       continue;
     }
 
-    (void)outSet->AddUnit(other);
+    (void)outSet->Add(other);
   }
 
   return outSet;
@@ -16344,11 +16039,11 @@ void Unit::LookForStructureRebuilder()
     return;
   }
 
-  SEntitySetTemplateUnit rebuilderUnits{};
+  EntitySetTemplate<Unit> rebuilderUnits{};
   (void)ArmyRef->GetUnits(&rebuilderUnits, const_cast<EntityCategorySet*>(rebuilderCategory));
 
   for (Entity* const entry : rebuilderUnits.mVec) {
-    Unit* const rebuilder = SEntitySetTemplateUnit::UnitFromEntry(entry);
+    Unit* const rebuilder = static_cast<Unit*>(entry);
     if (rebuilder == nullptr) {
       continue;
     }
@@ -16410,7 +16105,7 @@ void Unit::Kill(Entity* const instigator, const gpg::StrArg reason, float excess
   // UNITSTATE_TransportUnloading, which every corpse then carried.
   mUnitVarDat.mUnitStates |= (1ull << static_cast<std::uint32_t>(UNITSTATE_NoCost));
 
-  SEntitySetTemplateUnit overlappingStructures{};
+  EntitySetTemplate<Unit> overlappingStructures{};
   if (!IsMobile()) {
     CollectAllOverlapping(&overlappingStructures, this);
     LookForStructureRebuilder();
@@ -16434,7 +16129,7 @@ void Unit::Kill(Entity* const instigator, const gpg::StrArg reason, float excess
 
   if (!IsMobile() && !IsBeingBuilt()) {
     for (Entity* const entry : overlappingStructures.mVec) {
-      Unit* const adjacent = SEntitySetTemplateUnit::UnitFromEntry(entry);
+      Unit* const adjacent = static_cast<Unit*>(entry);
       if (adjacent == nullptr) {
         continue;
       }
@@ -16477,7 +16172,7 @@ void Unit::Kill(Entity* const instigator, const gpg::StrArg reason, float excess
     if (CPlatoon* const platoon =
           ArmyRef->GetPlatoonFor(this, &squadClass);
         platoon != nullptr) {
-      ++platoon->mLifetimeStat2;
+      ++platoon->mLosses;
     }
   }
 
@@ -16494,7 +16189,7 @@ void Unit::Kill(Entity* const instigator, const gpg::StrArg reason, float excess
           &instigatorSquadClass
         );
         instigatorPlatoon != nullptr) {
-      ++instigatorPlatoon->mLifetimeStat1;
+      ++instigatorPlatoon->mKills;
     }
   }
 
@@ -16536,10 +16231,10 @@ void Unit::OnDestroy()
 
   if (!IsDead()) {
     if (!IsMobile() && !IsBeingBuilt()) {
-      SEntitySetTemplateUnit adjacentUnits{};
+      EntitySetTemplate<Unit> adjacentUnits{};
       CollectAllOverlapping(&adjacentUnits, this);
       for (Entity* const entry : adjacentUnits.mVec) {
-        Unit* const adjacent = SEntitySetTemplateUnit::UnitFromEntry(entry);
+        Unit* const adjacent = static_cast<Unit*>(entry);
         RunScriptUnit("OnNotAdjacentTo", adjacent);
         adjacent->RunScriptUnit("OnNotAdjacentTo", this);
         adjacent->ReserveOgridRect(GetReservedOgridRect(*adjacent));
@@ -17027,7 +16722,6 @@ void Unit::Sync(SSyncData* const syncData)
 
   VarDat().mSharedPose = AniActor->GetPoseShared();
   VarDat().mPriorSharedPose = AniActor->GetPriorPoseShared();
-  // TEMPORARY PROBE -- invisible-commander triage, delete when resolved.
   if (GetBlueprint() != nullptr && std::strstr(GetBlueprint()->mBlueprintId.c_str(), "uel0001") != nullptr) {
     static DiagnosticBudget sSyncCount;
     if (const int syncCount = sSyncCount.Next() + 1; (syncCount - 1) % 20 == 0) {
@@ -17176,20 +16870,19 @@ float Unit::DistanceToOccupiedRect(const Wm3::Vector3f* const samplePoint)
   const float sampleX = samplePoint->x;
   const float sampleZ = samplePoint->z;
 
-  for (const RUnitBlueprintRaisedPlatform& raisedPlatform : blueprint->Physics.RaisedPlatforms) {
-    const auto& platform = reinterpret_cast<const RaisedPlatformRuntimeView&>(raisedPlatform);
-    const float x0 = platform.vertex0.x + unitPosition.x;
-    const float x1 = platform.vertex1.x + unitPosition.x;
-    const float x3 = platform.vertex3.x + unitPosition.x;
+  for (const RUnitBlueprintRaisedPlatform& platform : blueprint->Physics.RaisedPlatforms) {
+    const float x0 = platform.Vertex0X + unitPosition.x;
+    const float x1 = platform.Vertex1X + unitPosition.x;
+    const float x3 = platform.Vertex3X + unitPosition.x;
 
-    const float z0 = platform.vertex0.z + unitPosition.z;
-    const float z2 = platform.vertex2.z + unitPosition.z;
-    const float z3 = platform.vertex3.z + unitPosition.z;
+    const float z0 = platform.Vertex0Z + unitPosition.z;
+    const float z2 = platform.Vertex2Z + unitPosition.z;
+    const float z3 = platform.Vertex3Z + unitPosition.z;
 
     if (sampleX <= x3 && x0 <= sampleX && sampleZ <= z3 && z0 <= sampleZ) {
       const float zBlend = (sampleZ - z0) / (z2 - z0);
-      const float yOnLeftEdge = ((platform.vertex2.y - platform.vertex0.y) * zBlend) + platform.vertex0.y;
-      const float yOnRightEdge = ((platform.vertex3.y - platform.vertex1.y) * zBlend) + platform.vertex1.y;
+      const float yOnLeftEdge = ((platform.Vertex2Y - platform.Vertex0Y) * zBlend) + platform.Vertex0Y;
+      const float yOnRightEdge = ((platform.Vertex3Y - platform.Vertex1Y) * zBlend) + platform.Vertex1Y;
       const float xBlend = (sampleX - x0) / (x1 - x0);
       return ((yOnRightEdge - yOnLeftEdge) * xBlend) + yOnLeftEdge;
     }
@@ -17342,11 +17035,11 @@ namespace
 } // namespace
 
 /**
- * Address: 0x006B33A0 (FUN_006B33A0, ?MemberSerialize@Unit@Moho@@SAXPAVWriteArchive@gpg@@PAV12@H@Z)
+ * Address: 0x006B33A0 (FUN_006B33A0)
  * Mangled: Moho::Unit::MemberSerialize
  *
  * IDA signature:
- * void __userpurge Moho::Unit::MemberSerialize(BinaryWriteArchive *archive@<eax>, Moho::Unit *unit@<ecx>, int vers);
+ * void __userpurge Moho::Unit::MemberSerialize(BinaryWriteArchive *archive@<eax>, Moho::Unit *this@<ecx>, int version);
  *
  * What it does:
  * Serializes every runtime `Unit` state lane, in declaration order, into the
@@ -17356,9 +17049,9 @@ namespace
  * cached recon/blip state. Throws `gpg::SerializationError` for archive
  * versions below 1.
  */
-void Unit::MemberSerialize(gpg::WriteArchive* const archive, Unit* const unit, const int vers)
+void Unit::MemberSerialize(gpg::WriteArchive* const archive, const int version)
 {
-  if (vers < 1) {
+  if (version < 1) {
     throw gpg::SerializationError("unsupported version.");
   }
 
@@ -17366,122 +17059,122 @@ void Unit::MemberSerialize(gpg::WriteArchive* const archive, Unit* const unit, c
   const gpg::RRef unowned{};
 
   // Entity base sub-object (adjusted `this + 0x08`).
-  archive->Write(ResolveUnitSerializerType<Entity>(), static_cast<const Entity*>(unit), ownerRef);
+  archive->Write(ResolveUnitSerializerType<Entity>(), static_cast<const Entity*>(this), ownerRef);
 
   // Constant / variable unit-data payloads.
-  archive->Write(ResolveUnitSerializerType<SSTIUnitConstantData>(), &unit->mConstDat, ownerRef);
-  archive->Write(ResolveUnitSerializerType<SSTIUnitVariableData>(), &unit->VarDat(), ownerRef);
+  archive->Write(ResolveUnitSerializerType<SSTIUnitConstantData>(), &mConstDat, ownerRef);
+  archive->Write(ResolveUnitSerializerType<SSTIUnitVariableData>(), &VarDat(), ownerRef);
 
   // Owned AI / motion / command sidecar pointers (tracked OWNED lanes).
   {
-    archive->WritePointer<moho::IAiSteering>(unit->AiSteering, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::IAiSteering>(AiSteering, gpg::TrackedPointerState::Owned, unowned);
   }
   {
-    archive->WritePointer<moho::CUnitMotion>(unit->UnitMotion, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::CUnitMotion>(UnitMotion, gpg::TrackedPointerState::Owned, unowned);
   }
   {
-    archive->WritePointer<moho::CUnitCommandQueue>(unit->CommandQueue, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::CUnitCommandQueue>(CommandQueue, gpg::TrackedPointerState::Owned, unowned);
   }
 
   // Weak-reference lanes.
-  archive->Write(ResolveUnitSerializerType<WeakPtr<Unit>>(), &unit->CreatorRef, ownerRef);
-  archive->Write(ResolveUnitSerializerType<WeakPtr<Unit>>(), &unit->TransportedByRef, ownerRef);
-  archive->Write(ResolveUnitSerializerType<WeakPtr<Unit>>(), &unit->AssignedTransportRef, ownerRef);
-  archive->Write(ResolveUnitSerializerType<WeakPtr<Entity>>(), &unit->FocusEntityRef, ownerRef);
-  archive->Write(ResolveUnitSerializerType<WeakPtr<Entity>>(), &unit->TargetBlipEntityRef, ownerRef);
-  archive->Write(ResolveUnitSerializerType<WeakPtr<Unit>>(), &unit->GuardedUnitRef, ownerRef);
+  archive->Write(ResolveUnitSerializerType<WeakPtr<Unit>>(), &CreatorRef, ownerRef);
+  archive->Write(ResolveUnitSerializerType<WeakPtr<Unit>>(), &TransportedByRef, ownerRef);
+  archive->Write(ResolveUnitSerializerType<WeakPtr<Unit>>(), &AssignedTransportRef, ownerRef);
+  archive->Write(ResolveUnitSerializerType<WeakPtr<Entity>>(), &FocusEntityRef, ownerRef);
+  archive->Write(ResolveUnitSerializerType<WeakPtr<Entity>>(), &TargetBlipEntityRef, ownerRef);
+  archive->Write(ResolveUnitSerializerType<WeakPtr<Unit>>(), &GuardedUnitRef, ownerRef);
 
   // Guarded-position vector and guarded-by unit set.
-  archive->Write(ResolveUnitSerializerType<Wm3::Vector3f>(), &unit->GuardedPos, ownerRef);
-  archive->Write(ResolveUnitSerializerType<EntitySetTemplate<Unit>>(), &unit->GuardedByList, ownerRef);
+  archive->Write(ResolveUnitSerializerType<Wm3::Vector3f>(), &GuardedPos, ownerRef);
+  archive->Write(ResolveUnitSerializerType<EntitySetTemplate<Unit>>(), &GuardedByList, ownerRef);
 
   // Owned formation instance.
   {
     gpg::RRef ref{};
-    gpg::RRef_IFormationInstance(&ref, unit->GuardFormation);
+    gpg::RRef_IFormationInstance(&ref, GuardFormation);
     gpg::WriteRawPointer(archive, ref, gpg::TrackedPointerState::Owned, unowned);
   }
 
-  archive->WriteBool(unit->mNeedsKillCleanup);
-  archive->WriteInt(unit->mCreationTick);
+  archive->WriteBool(mNeedsKillCleanup);
+  archive->WriteInt(mCreationTick);
 
   // Owned extra economy storage.
   {
-    archive->WritePointer<moho::CEconStorage>(unit->mExtraStorage, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::CEconStorage>(mExtraStorage, gpg::TrackedPointerState::Owned, unowned);
   }
 
-  archive->WriteInt(unit->PriorityBoost);
+  archive->WriteInt(PriorityBoost);
 
   // Owned consumption (upkeep) request.
   {
-    archive->WritePointer<moho::CEconRequest>(unit->mConsumptionData, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::CEconRequest>(mConsumptionData, gpg::TrackedPointerState::Owned, unowned);
   }
 
-  archive->WriteBool(unit->ConsumptionActive);
-  archive->WriteBool(unit->ProductionActive);
-  archive->WriteFloat(unit->ResourceConsumed);
+  archive->WriteBool(ConsumptionActive);
+  archive->WriteBool(ProductionActive);
+  archive->WriteFloat(ResourceConsumed);
 
   // Owned animation actor.
   {
-    archive->WritePointer<moho::CAniActor>(unit->AniActor, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::CAniActor>(AniActor, gpg::TrackedPointerState::Owned, unowned);
   }
 
   // Owned AI implementation lanes.
   {
-    archive->WritePointer<moho::IAiAttacker>(unit->AiAttacker, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::IAiAttacker>(AiAttacker, gpg::TrackedPointerState::Owned, unowned);
   }
   {
-    archive->WritePointer<moho::IAiCommandDispatch>(unit->AiCommandDispatch, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::IAiCommandDispatch>(AiCommandDispatch, gpg::TrackedPointerState::Owned, unowned);
   }
   {
-    archive->WritePointer<moho::IAiNavigator>(unit->AiNavigator, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::IAiNavigator>(AiNavigator, gpg::TrackedPointerState::Owned, unowned);
   }
   {
-    archive->WritePointer<moho::IAiBuilder>(unit->AiBuilder, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::IAiBuilder>(AiBuilder, gpg::TrackedPointerState::Owned, unowned);
   }
   {
-    archive->WritePointer<moho::IAiSiloBuild>(unit->AiSiloBuild, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::IAiSiloBuild>(AiSiloBuild, gpg::TrackedPointerState::Owned, unowned);
   }
   {
-    archive->WritePointer<moho::IAiTransport>(unit->AiTransport, gpg::TrackedPointerState::Owned, unowned);
+    archive->WritePointer<moho::IAiTransport>(AiTransport, gpg::TrackedPointerState::Owned, unowned);
   }
 
-  archive->WriteBool(unit->FootprintDown);
-  archive->WriteFloat(unit->TransportLoadFactor);
+  archive->WriteBool(FootprintDown);
+  archive->WriteFloat(TransportLoadFactor);
 
   // Armor-multiplier map (`std::map<std::string,float>` reflection lane).
   archive->Write(
     ResolveUnitSerializerType<std::map<std::string, float>>(),
-    &unit->ArmorMultipliers,
+    &ArmorMultipliers,
     ownerRef
   );
 
   // Owned economy-event pointer list terminated by a null lane.
-  unit->SerEconomyEvents(*archive, vers);
+  SerEconomyEvents(*archive, version);
 
-  archive->WriteUByte(unit->CurrentTerrainType);
-  archive->WriteBool(unit->mDebugAIStates);
+  archive->WriteUByte(CurrentTerrainType);
+  archive->WriteBool(mDebugAIStates);
 
-  archive->Write(ResolveUnitSerializerType<SInfoCache>(), &unit->mInfoCache, ownerRef);
-  archive->Write(ResolveUnitSerializerType<gpg::Rect2i>(), &UnitOccupationRect(*unit), ownerRef);
+  archive->Write(ResolveUnitSerializerType<SInfoCache>(), &mInfoCache, ownerRef);
+  archive->Write(ResolveUnitSerializerType<gpg::Rect2i>(), &UnitOccupationRect(*this), ownerRef);
   archive->Write(
     ResolveUnitSerializerType<gpg::fastvector<WeakPtr<Entity>>>(),
-    &unit->mBlipsInRange,
+    &mBlipsInRange,
     ownerRef
   );
 
-  archive->WriteUInt(static_cast<unsigned int>(unit->mBlipLastUpdateTick));
-  archive->WriteBool(unit->mIsNotPod);
-  archive->WriteBool(unit->mIsEngineer);
-  archive->WriteBool(unit->mIsNaval);
-  archive->WriteBool(unit->mIsAir);
-  archive->WriteBool(unit->mIsMelee);
-  archive->WriteBool(unit->mUsesGridBasedMotion);
-  archive->WriteInt(unit->CaptorCount);
+  archive->WriteUInt(static_cast<unsigned int>(mBlipLastUpdateTick));
+  archive->WriteBool(mIsNotPod);
+  archive->WriteBool(mIsEngineer);
+  archive->WriteBool(mIsNaval);
+  archive->WriteBool(mIsAir);
+  archive->WriteBool(mIsMelee);
+  archive->WriteBool(mUsesGridBasedMotion);
+  archive->WriteInt(CaptorCount);
 
   archive->Write(
     ResolveUnitSerializerType<gpg::fastvector<ReconBlip*>>(),
-    &unit->mReconBlips,
+    &mReconBlips,
     ownerRef
   );
 }
@@ -17491,7 +17184,7 @@ void Unit::MemberSerialize(gpg::WriteArchive* const archive, Unit* const unit, c
  * Mangled: Moho::Unit::MemberDeserialize
  *
  * IDA signature:
- * void __userpurge Moho::Unit::MemberDeserialize(gpg::ReadArchive *archive@<eax>, Moho::Unit *unit@<esi>, int vers);
+ * void __userpurge Moho::Unit::MemberDeserialize(gpg::ReadArchive *archive@<eax>, Moho::Unit *this@<esi>, int version);
  *
  * What it does:
  * Mirror of `MemberSerialize`: reads every runtime `Unit` state lane back in
@@ -17501,27 +17194,27 @@ void Unit::MemberSerialize(gpg::WriteArchive* const archive, Unit* const unit, c
  * refresh collision when a collision shape is present). Throws
  * `gpg::SerializationError` for archive versions below 1.
  */
-void Unit::MemberDeserialize(gpg::ReadArchive* const archive, Unit* const unit, const int vers)
+void Unit::MemberDeserialize(gpg::ReadArchive* const archive, const int version)
 {
-  if (vers < 1) {
+  if (version < 1) {
     throw gpg::SerializationError("unsupported version.");
   }
 
   const gpg::RRef ownerRef{};
 
   // Entity base sub-object (adjusted `this + 0x08`).
-  archive->Read(ResolveUnitSerializerType<Entity>(), static_cast<Entity*>(unit), ownerRef);
+  archive->Read(ResolveUnitSerializerType<Entity>(), static_cast<Entity*>(this), ownerRef);
 
   // Constant / variable unit-data payloads.
-  archive->Read(ResolveUnitSerializerType<SSTIUnitConstantData>(), &unit->mConstDat, ownerRef);
-  archive->Read(ResolveUnitSerializerType<SSTIUnitVariableData>(), &unit->VarDat(), ownerRef);
+  archive->Read(ResolveUnitSerializerType<SSTIUnitConstantData>(), &mConstDat, ownerRef);
+  archive->Read(ResolveUnitSerializerType<SSTIUnitVariableData>(), &VarDat(), ownerRef);
 
   // Steering: read new owned pointer, swap in, release prior instance.
   {
     IAiSteering* steering = nullptr;
     archive->ReadPointerOwned(&steering, &ownerRef);
-    IAiSteering* const prior = unit->AiSteering;
-    unit->AiSteering = steering;
+    IAiSteering* const prior = AiSteering;
+    AiSteering = steering;
     delete prior;
   }
 
@@ -17529,8 +17222,8 @@ void Unit::MemberDeserialize(gpg::ReadArchive* const archive, Unit* const unit, 
   {
     CUnitMotion* motion = nullptr;
     archive->ReadPointerOwned(&motion, &ownerRef);
-    CUnitMotion* const prior = unit->UnitMotion;
-    unit->UnitMotion = motion;
+    CUnitMotion* const prior = UnitMotion;
+    UnitMotion = motion;
     delete prior;
   }
 
@@ -17538,41 +17231,41 @@ void Unit::MemberDeserialize(gpg::ReadArchive* const archive, Unit* const unit, 
   {
     CUnitCommandQueue* queue = nullptr;
     archive->ReadPointerOwned(&queue, &ownerRef);
-    CUnitCommandQueue* const prior = unit->CommandQueue;
-    unit->CommandQueue = queue;
+    CUnitCommandQueue* const prior = CommandQueue;
+    CommandQueue = queue;
     delete prior;
   }
 
   // Weak-reference lanes.
-  archive->Read(ResolveUnitSerializerType<WeakPtr<Unit>>(), &unit->CreatorRef, ownerRef);
-  archive->Read(ResolveUnitSerializerType<WeakPtr<Unit>>(), &unit->TransportedByRef, ownerRef);
-  archive->Read(ResolveUnitSerializerType<WeakPtr<Unit>>(), &unit->AssignedTransportRef, ownerRef);
-  archive->Read(ResolveUnitSerializerType<WeakPtr<Entity>>(), &unit->FocusEntityRef, ownerRef);
-  archive->Read(ResolveUnitSerializerType<WeakPtr<Entity>>(), &unit->TargetBlipEntityRef, ownerRef);
-  archive->Read(ResolveUnitSerializerType<WeakPtr<Unit>>(), &unit->GuardedUnitRef, ownerRef);
+  archive->Read(ResolveUnitSerializerType<WeakPtr<Unit>>(), &CreatorRef, ownerRef);
+  archive->Read(ResolveUnitSerializerType<WeakPtr<Unit>>(), &TransportedByRef, ownerRef);
+  archive->Read(ResolveUnitSerializerType<WeakPtr<Unit>>(), &AssignedTransportRef, ownerRef);
+  archive->Read(ResolveUnitSerializerType<WeakPtr<Entity>>(), &FocusEntityRef, ownerRef);
+  archive->Read(ResolveUnitSerializerType<WeakPtr<Entity>>(), &TargetBlipEntityRef, ownerRef);
+  archive->Read(ResolveUnitSerializerType<WeakPtr<Unit>>(), &GuardedUnitRef, ownerRef);
 
   // Guarded-position vector and guarded-by unit set.
-  archive->Read(ResolveUnitSerializerType<Wm3::Vector3f>(), &unit->GuardedPos, ownerRef);
-  archive->Read(ResolveUnitSerializerType<EntitySetTemplate<Unit>>(), &unit->GuardedByList, ownerRef);
+  archive->Read(ResolveUnitSerializerType<Wm3::Vector3f>(), &GuardedPos, ownerRef);
+  archive->Read(ResolveUnitSerializerType<EntitySetTemplate<Unit>>(), &GuardedByList, ownerRef);
 
   // Formation instance (deleted through the reflection deleting-destructor slot).
   {
     IFormationInstance* formation = nullptr;
     archive->ReadPointerOwned(&formation, &ownerRef);
-    IFormationInstance* const prior = unit->GuardFormation;
-    unit->GuardFormation = static_cast<CAiFormationInstance*>(formation);
+    IFormationInstance* const prior = GuardFormation;
+    GuardFormation = static_cast<CAiFormationInstance*>(formation);
     delete prior;
   }
 
-  archive->ReadBool(&unit->mNeedsKillCleanup);
-  archive->ReadInt(&unit->mCreationTick);
+  archive->ReadBool(&mNeedsKillCleanup);
+  archive->ReadInt(&mCreationTick);
 
   // Extra economy storage: detach from its economy then free raw storage.
   {
     CEconStorage* storage = nullptr;
     archive->ReadPointerOwned(&storage, &ownerRef);
-    CEconStorage* const prior = unit->mExtraStorage;
-    unit->mExtraStorage = storage;
+    CEconStorage* const prior = mExtraStorage;
+    mExtraStorage = storage;
     if (prior) {
       if (prior->mEconomy) {
         prior->Chng(-1);
@@ -17581,30 +17274,30 @@ void Unit::MemberDeserialize(gpg::ReadArchive* const archive, Unit* const unit, 
     }
   }
 
-  archive->ReadInt(&unit->PriorityBoost);
+  archive->ReadInt(&PriorityBoost);
 
   // Consumption (upkeep) request: unlink its intrusive node then free storage.
   {
     CEconRequest* request = nullptr;
     archive->ReadPointerOwned(&request, &ownerRef);
-    CEconRequest* const prior = unit->mConsumptionData;
-    unit->mConsumptionData = request;
+    CEconRequest* const prior = mConsumptionData;
+    mConsumptionData = request;
     if (prior) {
       prior->mNode.ListUnlink();
       ::operator delete(prior);
     }
   }
 
-  archive->ReadBool(&unit->ConsumptionActive);
-  archive->ReadBool(&unit->ProductionActive);
-  archive->ReadFloat(&unit->ResourceConsumed);
+  archive->ReadBool(&ConsumptionActive);
+  archive->ReadBool(&ProductionActive);
+  archive->ReadFloat(&ResourceConsumed);
 
   // Animation actor.
   {
     CAniActor* actor = nullptr;
     archive->ReadPointerOwned(&actor, &ownerRef);
-    CAniActor* const prior = unit->AniActor;
-    unit->AniActor = actor;
+    CAniActor* const prior = AniActor;
+    AniActor = actor;
     delete prior;
   }
 
@@ -17612,101 +17305,101 @@ void Unit::MemberDeserialize(gpg::ReadArchive* const archive, Unit* const unit, 
   {
     IAiAttacker* attacker = nullptr;
     archive->ReadPointerOwned(&attacker, &ownerRef);
-    CAiAttackerImpl* const prior = unit->AiAttacker;
-    unit->AiAttacker = static_cast<CAiAttackerImpl*>(attacker);
+    CAiAttackerImpl* const prior = AiAttacker;
+    AiAttacker = static_cast<CAiAttackerImpl*>(attacker);
     delete prior;
   }
   {
     IAiCommandDispatch* dispatch = nullptr;
     archive->ReadPointerOwned(&dispatch, &ownerRef);
-    IAiCommandDispatchImpl* const prior = unit->AiCommandDispatch;
-    unit->AiCommandDispatch = static_cast<IAiCommandDispatchImpl*>(dispatch);
+    IAiCommandDispatchImpl* const prior = AiCommandDispatch;
+    AiCommandDispatch = static_cast<IAiCommandDispatchImpl*>(dispatch);
     delete prior;
   }
   {
     IAiNavigator* navigator = nullptr;
     archive->ReadPointerOwned(&navigator, &ownerRef);
-    IAiNavigator* const prior = unit->AiNavigator;
-    unit->AiNavigator = navigator;
+    IAiNavigator* const prior = AiNavigator;
+    AiNavigator = navigator;
     delete prior;
   }
   {
     IAiBuilder* builder = nullptr;
     archive->ReadPointerOwned(&builder, &ownerRef);
-    IAiBuilder* const prior = unit->AiBuilder;
-    unit->AiBuilder = builder;
+    IAiBuilder* const prior = AiBuilder;
+    AiBuilder = builder;
     delete prior;
   }
   {
     IAiSiloBuild* siloBuild = nullptr;
     archive->ReadPointerOwned(&siloBuild, &ownerRef);
-    CAiSiloBuildImpl* const prior = unit->AiSiloBuild;
-    unit->AiSiloBuild = static_cast<CAiSiloBuildImpl*>(siloBuild);
+    CAiSiloBuildImpl* const prior = AiSiloBuild;
+    AiSiloBuild = static_cast<CAiSiloBuildImpl*>(siloBuild);
     delete prior;
   }
   {
     IAiTransport* transport = nullptr;
     archive->ReadPointerOwned(&transport, &ownerRef);
-    IAiTransport* const prior = unit->AiTransport;
-    unit->AiTransport = transport;
+    IAiTransport* const prior = AiTransport;
+    AiTransport = transport;
     delete prior;
   }
 
-  archive->ReadBool(&unit->FootprintDown);
-  archive->ReadFloat(&unit->TransportLoadFactor);
+  archive->ReadBool(&FootprintDown);
+  archive->ReadFloat(&TransportLoadFactor);
 
   // Armor-multiplier map (`std::map<std::string,float>` reflection lane).
   archive->Read(
     ResolveUnitSerializerType<std::map<std::string, float>>(),
-    &unit->ArmorMultipliers,
+    &ArmorMultipliers,
     ownerRef
   );
 
   // Owned economy-event pointer list terminated by a null lane.
-  unit->SerEconomyEvents(*archive, vers);
+  SerEconomyEvents(*archive, version);
 
-  archive->ReadUByte(&unit->CurrentTerrainType);
-  archive->ReadBool(&unit->mDebugAIStates);
+  archive->ReadUByte(&CurrentTerrainType);
+  archive->ReadBool(&mDebugAIStates);
 
-  archive->Read(ResolveUnitSerializerType<SInfoCache>(), &unit->mInfoCache, ownerRef);
-  archive->Read(ResolveUnitSerializerType<gpg::Rect2i>(), &UnitOccupationRect(*unit), ownerRef);
+  archive->Read(ResolveUnitSerializerType<SInfoCache>(), &mInfoCache, ownerRef);
+  archive->Read(ResolveUnitSerializerType<gpg::Rect2i>(), &UnitOccupationRect(*this), ownerRef);
   archive->Read(
     ResolveUnitSerializerType<gpg::fastvector<WeakPtr<Entity>>>(),
-    &unit->mBlipsInRange,
+    &mBlipsInRange,
     ownerRef
   );
 
-  archive->ReadUInt(reinterpret_cast<unsigned int*>(&unit->mBlipLastUpdateTick));
-  archive->ReadBool(&unit->mIsNotPod);
-  archive->ReadBool(&unit->mIsEngineer);
-  archive->ReadBool(&unit->mIsNaval);
-  archive->ReadBool(&unit->mIsAir);
-  archive->ReadBool(&unit->mIsMelee);
-  archive->ReadBool(&unit->mUsesGridBasedMotion);
-  archive->ReadInt(&unit->CaptorCount);
+  archive->ReadUInt(reinterpret_cast<unsigned int*>(&mBlipLastUpdateTick));
+  archive->ReadBool(&mIsNotPod);
+  archive->ReadBool(&mIsEngineer);
+  archive->ReadBool(&mIsNaval);
+  archive->ReadBool(&mIsAir);
+  archive->ReadBool(&mIsMelee);
+  archive->ReadBool(&mUsesGridBasedMotion);
+  archive->ReadInt(&CaptorCount);
 
   archive->Read(
     ResolveUnitSerializerType<gpg::fastvector<ReconBlip*>>(),
-    &unit->mReconBlips,
+    &mReconBlips,
     ownerRef
   );
 
   // Post-load fixups: re-occupy ground, re-mark the occupation rect on the
   // O-grid when it is non-degenerate, then refresh collision when present.
-  if (unit->FootprintDown) {
-    unit->ExecuteOccupyGround();
+  if (FootprintDown) {
+    ExecuteOccupyGround();
   }
 
-  if (!IsCollisionRectEquivalentToZero(GetReservedOgridRect(*unit))) {
-    if (unit->SimulationRef && unit->SimulationRef->mOGrid) {
-      unit->SimulationRef->mOGrid->OccupyRect(UnitOccupationRect(*unit));
+  if (!IsCollisionRectEquivalentToZero(GetReservedOgridRect(*this))) {
+    if (SimulationRef && SimulationRef->mOGrid) {
+      SimulationRef->mOGrid->OccupyRect(UnitOccupationRect(*this));
     }
   }
 
-  unit->NeedSyncGameData = true;
+  NeedSyncGameData = true;
 
-  if (unit->CollisionExtents) {
-    unit->UpdateCollision();
+  if (CollisionExtents) {
+    UpdateCollision();
   }
 }
 
@@ -17878,4 +17571,96 @@ namespace
   };
 
   const UnitLuaFuncDefBootstrap gUnitLuaFuncDefBootstrap{};
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerConstructHelper<Unit>`, vtable 0x00E2A810.
+   *
+   * Address: 0x00BD6B20 (FUN_00BD6B20 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFDA00 (FUN_00BFDA00 -- the global's destructor.)
+   * Address: 0x006AE9A0 (FUN_006AE9A0 -- `Init`.)
+   * Address: 0x006AD3A0 (FUN_006AD3A0 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x006B1010 (FUN_006B1010 -- `Delete`.)
+   */
+  struct UnitConstruct : gpg::SerConstructHelper<Unit>
+  {};
+
+  /**
+   * `gpg::SerSaveConstructHelper<Unit>`, vtable 0x00E2A800.
+   *
+   * Address: 0x00BD6AF0 (FUN_00BD6AF0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFD9D0 (FUN_00BFD9D0 -- the global's destructor.)
+   * Address: 0x006AE920 (FUN_006AE920 -- `Init`.)
+   * Address: 0x006AD210 (FUN_006AD210 -- `SaveConstructArgs`, `MemberSaveConstructArgs` inlined.)
+   */
+  struct UnitSaveConstruct : gpg::SerSaveConstructHelper<Unit>
+  {};
+
+  /**
+   * `gpg::SerSaveLoadHelper<Unit>`, vtable 0x00E2A820.
+   *
+   * Address: 0x00BD6B60 (FUN_00BD6B60 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFDA30 (FUN_00BFDA30 -- the global's destructor.)
+   * Address: 0x006AEA20 (FUN_006AEA20 -- `Init`.)
+   * Address: 0x006AD470 (FUN_006AD470 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x006AD490 (FUN_006AD490 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct UnitSerializer : gpg::SerSaveLoadHelper<Unit>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B5BB4 -- process-global `UnitConstruct` singleton.
+  moho::UnitConstruct gUnitConstruct;
+
+  // Address: 0x010B5AE8 -- process-global `UnitSaveConstruct` singleton.
+  moho::UnitSaveConstruct gUnitSaveConstruct;
+
+  // Address: 0x010B5B80 -- process-global `UnitSerializer` singleton.
+  moho::UnitSerializer gUnitSerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<SSTIUnitVariableData>`, vtable 0x00E188E4.
+   *
+   * Address: 0x00BCA6A0 (FUN_00BCA6A0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF54B0 (FUN_00BF54B0 -- the global's destructor.)
+   * Address: 0x0055D100 (FUN_0055D100 -- `Init`.)
+   * Address: 0x0055C760 (FUN_0055C760 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0055C770 (FUN_0055C770 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct SSTIUnitVariableDataSerializer : gpg::SerSaveLoadHelper<SSTIUnitVariableData>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010ACB54 -- process-global `SSTIUnitVariableDataSerializer` singleton.
+  moho::SSTIUnitVariableDataSerializer gSSTIUnitVariableDataSerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<UnitWeaponInfo>`, vtable 0x00E1879C.
+   *
+   * Address: 0x00BCA580 (FUN_00BCA580 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF5300 (FUN_00BF5300 -- the global's destructor.)
+   * Address: 0x0055CA40 (FUN_0055CA40 -- `Init`.)
+   * Address: 0x0055C160 (FUN_0055C160 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0055C170 (FUN_0055C170 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct UnitWeaponInfoSerializer : gpg::SerSaveLoadHelper<UnitWeaponInfo>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010ACD0C -- process-global `UnitWeaponInfoSerializer` singleton.
+  moho::UnitWeaponInfoSerializer gUnitWeaponInfoSerializer;
 } // namespace

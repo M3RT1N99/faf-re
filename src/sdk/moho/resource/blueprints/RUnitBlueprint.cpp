@@ -20,6 +20,9 @@
 #include "moho/sim/RRuleGameRules.h"
 #include "gpg/core/containers/String.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/containers/ArchiveSerialization.h"
+#include "gpg/core/containers/ReadArchive.h"
+#include "gpg/core/containers/WriteArchive.h"
 
 namespace moho
 {
@@ -65,39 +68,6 @@ namespace moho
     }
 
     /**
-     * Address: 0x00524DD0 (FUN_00524DD0)
-     *
-     * What it does:
-     * Adapts one register-lane caller shape into the canonical counted
-     * `RUnitBlueprintWeapon` copy-with-rollback helper.
-     */
-    [[maybe_unused]] RUnitBlueprintWeapon* CopyRUnitBlueprintWeaponCountedRangeRegisterAdapter(
-      RUnitBlueprintWeapon* const destination,
-      const int count,
-      const RUnitBlueprintWeapon* const source
-    )
-    {
-      return CopyRUnitBlueprintWeaponCountedRangeWithRollback(count, destination, source);
-    }
-
-    /**
-     * Address: 0x00526220 (FUN_00526220)
-     *
-     * What it does:
-     * Alternate register-shape adapter lane that forwards one counted
-     * `RUnitBlueprintWeapon` copy-with-rollback request into the canonical
-     * helper.
-     */
-    [[maybe_unused]] RUnitBlueprintWeapon* CopyRUnitBlueprintWeaponCountedRangeRegisterAdapterAlt(
-      RUnitBlueprintWeapon* const destination,
-      const int count,
-      const RUnitBlueprintWeapon* const source
-    )
-    {
-      return CopyRUnitBlueprintWeaponCountedRangeWithRollback(count, destination, source);
-    }
-
-    /**
      * Address: 0x00527D30 (FUN_00527D30, copy_RUnitBlueprintWeapon_range_with_rollback)
      *
      * What it does:
@@ -127,39 +97,6 @@ namespace moho
         }
         throw;
       }
-    }
-
-    /**
-     * Address: 0x00527620 (FUN_00527620)
-     *
-     * What it does:
-     * Register-shape adapter lane that forwards one range-copy request into
-     * `CopyRUnitBlueprintWeaponRangeWithRollback`.
-     */
-    [[maybe_unused]] RUnitBlueprintWeapon* CopyRUnitBlueprintWeaponRangeWithRollbackRegisterAdapter(
-      const std::uintptr_t /*unusedLane*/,
-      const RUnitBlueprintWeapon* const sourceBegin,
-      RUnitBlueprintWeapon* const destinationBegin,
-      RUnitBlueprintWeapon* const destinationEnd
-    )
-    {
-      return CopyRUnitBlueprintWeaponRangeWithRollback(destinationBegin, destinationEnd, sourceBegin);
-    }
-
-    /**
-     * Address: 0x00527B70 (FUN_00527B70)
-     *
-     * What it does:
-     * Alternate register-shape adapter lane that forwards one range-copy
-     * request into `CopyRUnitBlueprintWeaponRangeWithRollback`.
-     */
-    [[maybe_unused]] RUnitBlueprintWeapon* CopyRUnitBlueprintWeaponRangeWithRollbackRegisterAdapterAlt(
-      const RUnitBlueprintWeapon* const sourceBegin,
-      RUnitBlueprintWeapon* const destinationBegin,
-      RUnitBlueprintWeapon* const destinationEnd
-    )
-    {
-      return CopyRUnitBlueprintWeaponRangeWithRollback(destinationBegin, destinationEnd, sourceBegin);
     }
 
     [[nodiscard]] RUnitBlueprintWeapon* CopyConstructRUnitBlueprintWeaponIfPresent(
@@ -202,22 +139,6 @@ namespace moho
     )
     {
       return CopyConstructRUnitBlueprintWeaponIfPresent(destination, source);
-    }
-
-    /**
-     * Address: 0x0051E330 (FUN_0051E330)
-     *
-     * What it does:
-     * Reinitializes one destination string lane and copies the full source
-     * payload into it.
-     */
-    [[maybe_unused]] msvc8::string* CopyStringLane(
-      msvc8::string* const destination,
-      const msvc8::string* const source
-    )
-    {
-      destination->assign_owned(source->view());
-      return destination;
     }
 
     /**
@@ -1140,3 +1061,121 @@ namespace moho
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
 GPG_PREREGISTER_INIT(PreregisterRUnitBlueprintPointerType_5e07bb, moho::PreregisterRUnitBlueprintPointerType)
+
+namespace moho
+{
+  void RUnitBlueprint::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    RRuleGameRules* rules = nullptr;
+    const gpg::RRef owner{};
+    archive.ReadPointer(&rules, &owner);
+    msvc8::string id;
+    archive.ReadString(&id);
+    RResId resId{};
+    gpg::STR_CopyFilename(&resId.name, &id);
+    result.SetOwned(gpg::MakeRRef(rules->GetUnitBlueprint(resId)), 1u);
+  }
+
+  /**
+   * Address: 0x00522BE0 (FUN_00522BE0)
+   */
+  void RUnitBlueprint::MemberSaveConstructArgs(
+    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+  )
+  {
+    archive.WritePointer(mOwner, gpg::TrackedPointerState::Unowned, gpg::RRef{});
+    archive.WriteString(&mBlueprintId);
+    result.SetOwned(1u);
+  }
+
+  /**
+   * `gpg::SerSaveConstructHelper<RUnitBlueprint>`, vtable 0x00E15A9C.
+   *
+   * Address: 0x00BC8C30 (FUN_00BC8C30 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF3750 (FUN_00BF3750 -- the global's destructor.)
+   * Address: 0x005236C0 (FUN_005236C0 -- `Init`.)
+   * Address: 0x00522B60 (FUN_00522B60 -- `SaveConstructArgs`, a forward to `MemberSaveConstructArgs`.)
+   */
+  struct RUnitBlueprintSaveConstruct : gpg::SerSaveConstructHelper<RUnitBlueprint>
+  {};
+
+  /**
+   * `gpg::SerConstructHelper<RUnitBlueprint>`, vtable 0x00E15AAC.
+   *
+   * Address: 0x00BC8C60 (FUN_00BC8C60 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF3780 (FUN_00BF3780 -- the global's destructor.)
+   * Address: 0x00523740 (FUN_00523740 -- `Init`.)
+   * Address: 0x00522CC0 (FUN_00522CC0 -- `Construct`, `MemberConstruct` inlined.)
+   * Address: 0x00525D80 (FUN_00525D80 -- `Delete`.)
+   */
+  struct RUnitBlueprintConstruct : gpg::SerConstructHelper<RUnitBlueprint>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AB3A8 -- process-global `RUnitBlueprintSaveConstruct` singleton.
+  moho::RUnitBlueprintSaveConstruct gRUnitBlueprintSaveConstruct;
+
+  // Address: 0x010AAFE4 -- process-global `RUnitBlueprintConstruct` singleton.
+  moho::RUnitBlueprintConstruct gRUnitBlueprintConstruct;
+} // namespace
+
+namespace moho
+{
+  void RUnitBlueprintWeapon::MemberConstruct(
+    gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result
+  )
+  {
+    RUnitBlueprint* owner = nullptr;
+    const gpg::RRef ownerRef{};
+    archive.ReadPointer(&owner, &ownerRef);
+    std::uint32_t index = 0;
+    archive.ReadUInt(&index);
+    result.SetOwned(gpg::MakeRRef(&owner->Weapons.WeaponBlueprints[index]), 1u);
+  }
+
+  /**
+   * Address: 0x00522E60 (FUN_00522E60)
+   */
+  void RUnitBlueprintWeapon::MemberSaveConstructArgs(
+    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+  )
+  {
+    archive.WritePointer(OwnerBlueprint, gpg::TrackedPointerState::Unowned, gpg::RRef{});
+    archive.WriteUInt(WeaponIndex);
+    result.SetOwned(1u);
+  }
+
+  /**
+   * `gpg::SerSaveConstructHelper<RUnitBlueprintWeapon>`, vtable 0x00E15ABC.
+   *
+   * Address: 0x00BC8CA0 (FUN_00BC8CA0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF37B0 (FUN_00BF37B0 -- the global's destructor.)
+   * Address: 0x005237C0 (FUN_005237C0 -- `Init`.)
+   * Address: 0x00522DE0 (FUN_00522DE0 -- `SaveConstructArgs`, a forward to `MemberSaveConstructArgs`.)
+   */
+  struct RUnitBlueprintWeaponSaveConstruct : gpg::SerSaveConstructHelper<RUnitBlueprintWeapon>
+  {};
+
+  /**
+   * `gpg::SerConstructHelper<RUnitBlueprintWeapon>`, vtable 0x00E15ACC.
+   *
+   * Address: 0x00BC8CD0 (FUN_00BC8CD0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF37E0 (FUN_00BF37E0 -- the global's destructor.)
+   * Address: 0x00523840 (FUN_00523840 -- `Init`.)
+   * Address: 0x00522F40 (FUN_00522F40 -- `Construct`, `MemberConstruct` inlined.)
+   * Address: 0x00525E00 (FUN_00525E00 -- `Delete`.)
+   */
+  struct RUnitBlueprintWeaponConstruct : gpg::SerConstructHelper<RUnitBlueprintWeapon>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AB4A8 -- process-global `RUnitBlueprintWeaponSaveConstruct` singleton.
+  moho::RUnitBlueprintWeaponSaveConstruct gRUnitBlueprintWeaponSaveConstruct;
+
+  // Address: 0x010AB0D4 -- process-global `RUnitBlueprintWeaponConstruct` singleton.
+  moho::RUnitBlueprintWeaponConstruct gRUnitBlueprintWeaponConstruct;
+} // namespace

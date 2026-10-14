@@ -401,28 +401,6 @@ namespace
     return {outputBegin, outputCursor};
   }
 
-  /**
-   * Address: 0x00835AF0 (FUN_00835AF0)
-   *
-   * What it does:
-   * Writes one lowercased copy result into caller-provided result storage and
-   * returns that same storage slot.
-   */
-  [[maybe_unused]]
-  [[nodiscard]]
-  LowercasedCopyResult* CopyLowercasedRangeIntoOutSlot(
-    LowercasedCopyResult* const outResult,
-    char* const outputBegin,
-    const char* const inputBegin,
-    const char* const inputEnd
-  ) noexcept
-  {
-    if (outResult != nullptr) {
-      *outResult = CopyLowercasedRange(outputBegin, inputBegin, inputEnd);
-    }
-    return outResult;
-  }
-
   [[nodiscard]]
   msvc8::string JoinConCommandTokens(const msvc8::vector<msvc8::string>& args, const std::size_t firstTokenIndex)
   {
@@ -941,23 +919,6 @@ namespace
     gpg::Warnf("Duplicate definition of console command \"%s\"", command.mName ? command.mName : "");
   }
 
-  /**
-   * Address: 0x0041F190 (FUN_0041F190, sub_41F190)
-   *
-   * What it does:
-   * Copies one `vector<string>` lane into another.
-   */
-  msvc8::vector<msvc8::string>& CopyStringVector(
-    msvc8::vector<msvc8::string>& dst, const msvc8::vector<msvc8::string>& src
-  )
-  {
-    dst.clear();
-    for (const msvc8::string& token : src) {
-      dst.push_back(token);
-    }
-    return dst;
-  }
-
   [[nodiscard]]
   CConCommand* FindRegisteredConCommand(const std::string_view commandName)
   {
@@ -1152,7 +1113,10 @@ msvc8::vector<msvc8::string> moho::CON_GetFindTextMatches(const char* const pref
   }
 
   msvc8::vector<msvc8::string> out;
-  return CopyStringVector(out, matches);
+  // FUN_0041F190: the clear+copy loop is `vector<string>::operator=`'s
+  // assign-from-source shape (cited on `operator=` in legacy/containers/Vector.h).
+  out = matches;
+  return out;
 }
 
 /**
@@ -5255,8 +5219,6 @@ namespace
   constexpr const char* kConsoleStartupUiDebugAltClickDescription = "Enable ALT+Click debug command to switch armies";
   constexpr const char* kConsoleStartupUiDisableCursorFixingDescription = "Allows you to toggle the cursor fixing functionality that is used for the mouse-controlled camera spinning/scrolling";
   constexpr const char* kConsoleStartupUiDragSelect2DDescription = "Use a 2D (screen-space) drag-selection box";
-  constexpr const char* kConsoleStartupUiAttackGroundIgnoresFireStateDescription =
-    "Attack orders on bare ground make every selected unit attack the position (0 = retail: Return Fire units attack-move)";
   constexpr const char* kConsoleStartupUiDrawPathPreviewDescription = "Turns on/off the arrow line";
   constexpr const char* kConsoleStartupUiExtractSnapToleranceDescription = "Sets the extraction unit 'snap-to' tolerance (in meters) for building.  Increase this to make it easier to auto-snap to extraction sites.";
   constexpr const char* kConsoleStartupUiFootprintMinThicknessDescription = "Mimimum render size for the footprint outline.";
@@ -5335,7 +5297,6 @@ namespace moho
   extern bool ui_DebugAltClick;
   extern bool ui_DisableCursorFixing;
   extern bool ui_DragSelect2D;
-  extern bool ui_AttackGroundIgnoresFireState;
   extern bool ui_DrawPathPreview;
   extern float ui_ExtractSnapTolerance;
   extern float ui_FootprintMinThickness;
@@ -5659,14 +5620,6 @@ namespace moho
     "ui_DragSelect2D",
     kConsoleStartupUiDragSelect2DDescription,
     &moho::ui_DragSelect2D
-  );
-
-  // Not in the binary: the switch for the attack-ground deviation (see
-  // `ui_AttackGroundIgnoresFireState` in UiRuntimeTypes.h).
-  TConVar<bool> gTConVar_ui_AttackGroundIgnoresFireState(
-    "ui_AttackGroundIgnoresFireState",
-    kConsoleStartupUiAttackGroundIgnoresFireStateDescription,
-    &moho::ui_AttackGroundIgnoresFireState
   );
 
   /**
@@ -6189,6 +6142,7 @@ bool moho::ren_NewPipeline = true;
 bool moho::ren_Refraction = true;
 bool moho::ren_RegenShore = false;
 bool moho::ren_ShowBoneNames = false;
+bool moho::ren_ShowSkeletons = false;
 bool moho::ren_TTerrainGlow = false;
 int moho::ren_TeamColorLookupCount = 32;
 bool moho::ren_Trees = false;

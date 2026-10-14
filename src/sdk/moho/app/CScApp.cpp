@@ -912,7 +912,7 @@ bool CScApp::Init()
   // First statement in the binary. Note the sense: the argument is the
   // *presence* of "/sse2", so a default launch passes false and the SSE2 lane
   // starts disabled.
-  (void)RuntimeSetSse2Mode(moho::CFG_GetArgOption("/sse2", 0, nullptr) ? 1 : 0);
+  (void)SetSse2Mode(moho::CFG_GetArgOption("/sse2", 0, nullptr) ? 1 : 0);
 
   if (moho::CFG_GetArgOption("/splash", 0, nullptr)) {
     const msvc8::string splashImagePath = BuildSplashImagePath();
@@ -1496,7 +1496,7 @@ bool CScApp::CreateAppFrame(
     return true;
   } catch (const gpg::gal::Error& error) {
     std::ostringstream formatted;
-    formatted << "file : " << error.GetRuntimeMessage() << "(" << error.GetRuntimeLine() << ")\n";
+    formatted << "file : " << error.GetFile() << "(" << error.GetLine() << ")\n";
     formatted << "error: " << error.what();
     const std::string text = formatted.str();
     return handleFailure(text.c_str());

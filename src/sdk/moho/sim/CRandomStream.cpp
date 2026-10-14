@@ -321,3 +321,47 @@ namespace moho
     archive->WriteBool(hasMarsagliaPair);
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CRandomStream>`, vtable 0x00E005C4.
+   *
+   * Address: 0x00BC3380 (FUN_00BC3380 -- constructs the global and registers its destructor.)
+   * Address: 0x00BEE780 (FUN_00BEE780 -- the global's destructor.)
+   * Address: 0x0040F200 (FUN_0040F200 -- an unreferenced out-of-line copy of the constructor.)
+   * Address: 0x0040F380 (FUN_0040F380 -- `Init`.)
+   * Address: 0x0040F1D0 (FUN_0040F1D0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0040F1E0 (FUN_0040F1E0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CRandomStreamSerializer : gpg::SerSaveLoadHelper<CRandomStream>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010A6A14 -- process-global `CRandomStreamSerializer` singleton.
+  moho::CRandomStreamSerializer gCRandomStreamSerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CMersenneTwister>`, vtable 0x00E00584.
+   *
+   * Address: 0x00BC3320 (FUN_00BC3320 -- constructs the global and registers its destructor.)
+   * Address: 0x00BEE6F0 (FUN_00BEE6F0 -- the global's destructor.)
+   * Address: 0x0040EDF0 (FUN_0040EDF0 -- an unreferenced out-of-line copy of the constructor.)
+   * Address: 0x0040F2C0 (FUN_0040F2C0 -- `Init`.)
+   * Address: 0x0040EDB0 (FUN_0040EDB0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0040EDD0 (FUN_0040EDD0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CMersenneTwisterSerializer : gpg::SerSaveLoadHelper<CMersenneTwister>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010A699C -- process-global `CMersenneTwisterSerializer` singleton.
+  moho::CMersenneTwisterSerializer gCMersenneTwisterSerializer;
+} // namespace

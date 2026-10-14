@@ -122,7 +122,7 @@ namespace LuaPlus
 		 * What it does:
 		 * Serializes LuaObject state binding and tagged payload into archive.
 		 */
-		static void MemberSerialize(gpg::WriteArchive* archive, LuaObject* object);
+		void MemberSerialize(gpg::WriteArchive* archive);
 
 		/**
 		 * Address: 0x0090BDD0 (FUN_0090BDD0, LuaPlus::LuaObject::MemberDeserialize)
@@ -130,7 +130,7 @@ namespace LuaPlus
 		 * What it does:
 		 * Deserializes LuaObject state binding and tagged payload from archive.
 		 */
-		static void MemberDeserialize(gpg::ReadArchive* archive, LuaObject* object, int version, const gpg::RRef& ownerRef);
+		void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
 
 		/**
 		 * Address: 0x009072C0 (FUN_009072C0, LuaPlus::LuaObject::GetActiveCState)
@@ -1078,6 +1078,44 @@ namespace LuaPlus
 		 */
 		explicit LuaState(LuaState* parentState);
 
+		/// Selects the constructor that leaves the wrapper unbound.
+		enum Unbound
+		{
+			UNBOUND
+		};
+
+		/**
+		 * Address: 0x0090A5D0 (FUN_0090A5D0)
+		 *
+		 * What it does:
+		 * Builds a wrapper bound to nothing: no thread, no root, no tracked
+		 * objects. An archive load makes one (`MemberConstruct`) and
+		 * `LuaStateSerializer` binds it to its restored thread.
+		 */
+		explicit LuaState(Unbound);
+
+		/**
+		 * What it does:
+		 * Builds an unbound wrapper for an archive load, handed back unowned.
+		 * Inlined into `SerConstructHelper<LuaState>::Construct` 0x0090B860.
+		 */
+		static void MemberConstruct(
+			gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+		);
+
+		/**
+		 * Address: 0x0090BA20 (FUN_0090BA20 -- an unreferenced out-of-line copy;
+		 * `SerSaveConstructHelper<LuaState>::SaveConstructArgs` 0x0090BC50
+		 * inlines it.)
+		 *
+		 * What it does:
+		 * Refuses to save the root state itself; a thread wrapper is saved
+		 * unowned with no arguments.
+		 */
+		void MemberSaveConstructArgs(
+			gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+		);
+
 		/**
 		 * Address: 0x0090A600 (FUN_0090A600, LuaPlus::LuaState::~LuaState)
 		 *
@@ -1097,12 +1135,22 @@ namespace LuaPlus
 		void SetState(lua_State* state);
 
 		/**
+		 * Address: 0x0090BC90 (FUN_0090BC90)
+		 *
+		 * What it does:
+		 * Reads the root wrapper, then the thread against the root's own
+		 * `lua_State`, and binds this wrapper to that thread.
+		 */
+		void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
+		/**
 		 * Address: 0x0090B8F0 (FUN_0090B8F0, LuaPlus::LuaState::MemberSerialize)
 		 *
 		 * What it does:
-		 * Serializes root/current Lua state pointer bindings into archive.
+		 * Saves the root wrapper against the owner, and the thread against the
+		 * root's own `lua_State`.
 		 */
-		static void MemberSerialize(gpg::WriteArchive* archive, LuaState* state);
+		void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef);
 
 		lua_State* GetCState() const;
 

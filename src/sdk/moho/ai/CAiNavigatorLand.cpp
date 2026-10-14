@@ -9,12 +9,13 @@
 #include "moho/ai/IAiSteering.h"
 #include "moho/sim/SFootprint.h"
 #include "moho/unit/core/Unit.h"
+#include "gpg/core/reflection/Reflection.h"
 
 using namespace moho;
 
 namespace
 {
-  struct SRect2iView
+  struct SRect2i
   {
     std::int32_t x0;
     std::int32_t z0;
@@ -22,12 +23,12 @@ namespace
     std::int32_t z1;
   };
 
-  [[nodiscard]] bool IsRegularRect(const SRect2iView& rect) noexcept
+  [[nodiscard]] bool IsRegularRect(const SRect2i& rect) noexcept
   {
     return rect.x0 >= rect.x1 || rect.z0 >= rect.z1;
   }
 
-  [[nodiscard]] bool RectsOverlapStrict(const SRect2iView& lhs, const SRect2iView& rhs) noexcept
+  [[nodiscard]] bool RectsOverlapStrict(const SRect2i& lhs, const SRect2i& rhs) noexcept
   {
     return lhs.x0 < rhs.x1 && rhs.x0 < lhs.x1 && lhs.z0 < rhs.z1 && rhs.z0 < lhs.z1;
   }
@@ -237,21 +238,21 @@ CAiNavigatorLand::~CAiNavigatorLand()
  * Loads base navigator state, owned path-navigator pointer, destination-unit
  * weak link, and goal rectangle payload.
  */
-void CAiNavigatorLand::MemberDeserialize(CAiNavigatorLand* const object, gpg::ReadArchive* const archive)
+void CAiNavigatorLand::MemberDeserialize(gpg::ReadArchive* const archive)
 {
   if (!archive) {
     return;
   }
 
   const gpg::RRef ownerRef{};
-  archive->Read(CachedCAiNavigatorImplType(), object, ownerRef);
+  archive->Read(CachedCAiNavigatorImplType(), this, ownerRef);
 
   CAiPathNavigator* const loadedPathNavigator =
     ReadPointerWithType<CAiPathNavigator>(archive, ownerRef, CachedCAiPathNavigatorType());
 
-  if (object) {
-    CAiPathNavigator* const oldPathNavigator = object->mPathNavigator;
-    object->mPathNavigator = loadedPathNavigator;
+  if (this) {
+    CAiPathNavigator* const oldPathNavigator = mPathNavigator;
+    mPathNavigator = loadedPathNavigator;
     if (oldPathNavigator) {
       delete oldPathNavigator;
     }
@@ -262,14 +263,14 @@ void CAiNavigatorLand::MemberDeserialize(CAiNavigatorLand* const object, gpg::Re
   WeakPtr<Entity> destinationEntity{};
   archive->Read(
     CachedWeakEntityType(),
-    object ? static_cast<void*>(&object->mDestinationEntity) : static_cast<void*>(&destinationEntity),
+    this ? static_cast<void*>(&mDestinationEntity) : static_cast<void*>(&destinationEntity),
     ownerRef
   );
 
   SAiNavigatorGoal goal{};
   archive->Read(
     CachedSAiNavigatorGoalType(),
-    object ? static_cast<void*>(&object->mGoal) : static_cast<void*>(&goal),
+    this ? static_cast<void*>(&mGoal) : static_cast<void*>(&goal),
     ownerRef
   );
 }
@@ -281,18 +282,18 @@ void CAiNavigatorLand::MemberDeserialize(CAiNavigatorLand* const object, gpg::Re
  * Saves base navigator state, owned path-navigator pointer,
  * destination-unit weak link, and goal rectangle payload.
  */
-void CAiNavigatorLand::MemberSerialize(const CAiNavigatorLand* const object, gpg::WriteArchive* const archive)
+void CAiNavigatorLand::MemberSerialize(gpg::WriteArchive* const archive) const
 {
   if (!archive) {
     return;
   }
 
   const gpg::RRef ownerRef{};
-  archive->Write(CachedCAiNavigatorImplType(), object, ownerRef);
+  archive->Write(CachedCAiNavigatorImplType(), this, ownerRef);
 
   WritePointerWithType(
     archive,
-    object ? object->mPathNavigator : nullptr,
+    this ? mPathNavigator : nullptr,
     CachedCAiPathNavigatorType(),
     gpg::TrackedPointerState::Owned,
     ownerRef
@@ -301,14 +302,14 @@ void CAiNavigatorLand::MemberSerialize(const CAiNavigatorLand* const object, gpg
   const WeakPtr<Entity> destinationEntity{};
   archive->Write(
     CachedWeakEntityType(),
-    object ? static_cast<const void*>(&object->mDestinationEntity) : static_cast<const void*>(&destinationEntity),
+    this ? static_cast<const void*>(&mDestinationEntity) : static_cast<const void*>(&destinationEntity),
     ownerRef
   );
 
   const SAiNavigatorGoal goal{};
   archive->Write(
     CachedSAiNavigatorGoalType(),
-    object ? static_cast<const void*>(&object->mGoal) : static_cast<const void*>(&goal),
+    this ? static_cast<const void*>(&mGoal) : static_cast<const void*>(&goal),
     ownerRef
   );
 }
@@ -439,14 +440,14 @@ bool CAiNavigatorLand::AtGoal() const
   const std::int32_t spanX = static_cast<std::int32_t>(footprint.mSizeX);
   const std::int32_t spanZ = static_cast<std::int32_t>(footprint.mSizeZ);
 
-  const SRect2iView unitRect{
+  const SRect2i unitRect{
     baseX - spanX,
     baseZ - spanZ,
     baseX + spanX,
     baseZ + spanZ,
   };
 
-  const SRect2iView goalRect{
+  const SRect2i goalRect{
     mGoal.minX,
     mGoal.minZ,
     mGoal.maxX,
@@ -463,7 +464,7 @@ bool CAiNavigatorLand::AtGoal() const
 /**
  * Address: 0x005A3CD0 (FUN_005A3CD0)
  */
-bool CAiNavigatorLand::CanPathTo(const SAiNavigatorGoal& goal) const
+bool CAiNavigatorLand::CanPathTo(Wm3::Vector3f* outTargetPos, const SAiNavigatorGoal& goal) const
 {
   if (!mUnit) {
     return false;
@@ -471,8 +472,7 @@ bool CAiNavigatorLand::CanPathTo(const SAiNavigatorGoal& goal) const
 
   CAiPathNavigator tempPathNavigator{mUnit};
   tempPathNavigator.SetCurrentPosition(mUnit->GetPosition());
-  Wm3::Vector3f scratchTarget{};
-  return tempPathNavigator.CanPathTo(goal, &scratchTarget);
+  return tempPathNavigator.CanPathTo(goal, outTargetPos);
 }
 
 /**
@@ -585,3 +585,57 @@ void CAiNavigatorLand::ApplyGoalAndStartPathing(const SAiNavigatorGoal& goal)
     mPathNavigator->BeginThinking();
   }
 }
+
+namespace moho
+{
+  /**
+   * Address: 0x005A4740 (FUN_005A4740)
+   */
+  void CAiNavigatorLand::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CAiNavigatorLand()), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CAiNavigatorLand>`, vtable 0x00E1C0F0.
+   *
+   * Address: 0x00BCC7A0 (FUN_00BCC7A0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF6E80 (FUN_00BF6E80 -- the global's destructor.)
+   * Address: 0x005A73B0 (FUN_005A73B0 -- `Init`.)
+   * Address: 0x005A4730 (FUN_005A4730 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x005A7DF0 (FUN_005A7DF0 -- `Delete`.)
+   */
+  struct CAiNavigatorLandConstruct : gpg::SerConstructHelper<CAiNavigatorLand>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AE85C -- process-global `CAiNavigatorLandConstruct` singleton.
+  moho::CAiNavigatorLandConstruct gCAiNavigatorLandConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CAiNavigatorLand>`, vtable 0x00E1C100.
+   *
+   * Address: 0x00BCC7E0 (FUN_00BCC7E0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF6EB0 (FUN_00BF6EB0 -- the global's destructor.)
+   * Address: 0x005A7E60 (FUN_005A7E60 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005A8790 (FUN_005A8790 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005A4820 (FUN_005A4820 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x005A4850 (FUN_005A4850 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x005A7430 (FUN_005A7430 -- `Init`.)
+   * Address: 0x005A47D0 (FUN_005A47D0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005A47E0 (FUN_005A47E0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CAiNavigatorLandSerializer : gpg::SerSaveLoadHelper<CAiNavigatorLand>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AEC14 -- process-global `CAiNavigatorLandSerializer` singleton.
+  moho::CAiNavigatorLandSerializer gCAiNavigatorLandSerializer;
+} // namespace

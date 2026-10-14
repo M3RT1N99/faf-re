@@ -185,7 +185,7 @@ namespace moho
      * What it does:
      * Loads serialized `CAimManipulator` member lanes from archive state.
      */
-    static void MemberDeserialize(CAimManipulator* object, gpg::ReadArchive* archive);
+    void MemberDeserialize(gpg::ReadArchive* archive);
 
     /**
      * Address: 0x006339D0 (FUN_006339D0, Moho::CAimManipulator::MemberSerialize)
@@ -193,7 +193,7 @@ namespace moho
      * What it does:
      * Saves serialized `CAimManipulator` member lanes into archive state.
      */
-    static void MemberSerialize(const CAimManipulator* object, gpg::WriteArchive* archive);
+    void MemberSerialize(gpg::WriteArchive* archive) const;
 
     /**
      * Address: 0x00630CB0 (FUN_00630CB0, Moho::CAimManipulator::SetFiringArc)
@@ -389,7 +389,7 @@ namespace moho
     // `CAimManipulator::CAimManipulator()` at 0x00632ED7, but this class
     // declared no data members at all, so it inherited only
     // `IAniManipulator`'s 0x80 -- and the constructor, the destructor and
-    // every accessor reach these fields through `CAimManipulatorRuntimeView`,
+    // every accessor reach these fields through `CAimManipulator`,
     // which describes exactly this run. Every one of those writes landed past
     // the end of the heap block, 0x90 bytes of it, once per manipulator: one
     // is created for every turreted unit in the session.

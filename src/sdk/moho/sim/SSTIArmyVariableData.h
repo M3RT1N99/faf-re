@@ -94,7 +94,7 @@ namespace moho
     std::int32_t mFaction;          // 0x0EC
     std::uint8_t mUseWholeMap;      // 0x0F0
     std::uint8_t mPad_00F1_00F4[0x03]{};
-    SArmyVectorWithMeta mRuntimeWordVectorWithMeta; // 0x0F4
+    SArmyVectorWithMeta mWordVectorWithMeta; // 0x0F4
     std::uint8_t mShowScore;                        // 0x108
     std::uint8_t mRuntimePad_0109_0110[0x07]{};
     EntityCategorySet mCategoryFilterSet; // 0x110
@@ -135,20 +135,20 @@ namespace moho
     ~SSTIArmyVariableData();
 
     /**
-     * Address: 0x00551270 (FUN_00551270, Moho::SSTIArmyVariableDataSerializer::Deserialize)
+     * Address: 0x00551270 (FUN_00551270, Moho::SSTIArmyVariableData::MemberDeserialize)
      *
      * What it does:
      * Reads the serialized army-variable payload from `archive`.
      */
-    void SerializeLoadBody(gpg::ReadArchive* archive, gpg::RRef* ownerRef);
+    void MemberDeserialize(gpg::ReadArchive* archive);
 
     /**
-     * Address: 0x00551500 (FUN_00551500, Moho::SSTIArmyVariableDataSerializer::Serialize)
+     * Address: 0x00551500 (FUN_00551500, Moho::SSTIArmyVariableData::MemberSerialize)
      *
      * What it does:
      * Writes the serialized army-variable payload to `archive`.
      */
-    void SerializeSaveBody(gpg::WriteArchive* archive, gpg::RRef* ownerRef) const;
+    void MemberSerialize(gpg::WriteArchive* archive) const;
   };
 
   static_assert(
@@ -172,8 +172,8 @@ namespace moho
     offsetof(SSTIArmyVariableData, mUseWholeMap) == 0x0F0, "SSTIArmyVariableData::mUseWholeMap offset must be 0x0F0"
   );
   static_assert(
-    offsetof(SSTIArmyVariableData, mRuntimeWordVectorWithMeta) == 0x0F4,
-    "SSTIArmyVariableData::mRuntimeWordVectorWithMeta offset must be 0x0F4"
+    offsetof(SSTIArmyVariableData, mWordVectorWithMeta) == 0x0F4,
+    "SSTIArmyVariableData::mWordVectorWithMeta offset must be 0x0F4"
   );
   static_assert(
     offsetof(SSTIArmyVariableData, mShowScore) == 0x108, "SSTIArmyVariableData::mShowScore offset must be 0x108"
@@ -204,63 +204,6 @@ namespace moho
     offsetof(SSTIArmyVariableData, mHandicapExtra) == 0x158, "SSTIArmyVariableData::mHandicapExtra offset must be 0x158"
   );
   static_assert(sizeof(SSTIArmyVariableData) == 0x160, "SSTIArmyVariableData size must be 0x160");
-
-  /**
-   * VFTABLE: 0x00E17574
-   * COL:  0x00E6C0A0
-   */
-  class SSTIArmyVariableDataSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC9B10 (FUN_00BC9B10, dynamic initializer for the global
-     * `SSTIArmyVariableDataSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    SSTIArmyVariableDataSerializer();
-
-    /**
-     * Address: 0x00BF4870 (FUN_00BF4870, ??1SSTIArmyVariableDataSerializer@Moho@@QAE@@Z)
-     *
-     * What it does:
-     * Unlinks this helper node from whatever intrusive list it currently
-     * sits in and restores a self-linked sentinel state.
-     */
-    ~SSTIArmyVariableDataSerializer();
-
-    /**
-     * Address: 0x00550A00 (FUN_00550A00, Moho::SSTIArmyVariableDataSerializer::Deserialize callback)
-     *
-     * What it does:
-     * Archive callback thunk forwarding into `SSTIArmyVariableData::SerializeLoadBody`.
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00550A10 (FUN_00550A10, Moho::SSTIArmyVariableDataSerializer::Serialize callback)
-     *
-     * What it does:
-     * Archive callback thunk forwarding into `SSTIArmyVariableData::SerializeSaveBody`.
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00550D90 (FUN_00550D90, shared Init() body -- also serves
-     * the dead SerSaveLoadHelper<SSTIArmyVariableData> duplicate's vtable
-     * slot 0)
-     *
-     * What it does:
-     * Binds load/save serializer callbacks into SSTIArmyVariableData RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mSerLoadFunc; // +0x0C
-    gpg::RType::save_func_t mSerSaveFunc; // +0x10
-  };
 
   /**
    * VFTABLE: 0x00E17544
@@ -318,15 +261,6 @@ namespace moho
    */
   void register_SSTIArmyVariableDataTypeInfo();
 
-  static_assert(
-    offsetof(SSTIArmyVariableDataSerializer, mSerLoadFunc) == 0x0C,
-    "SSTIArmyVariableDataSerializer::mSerLoadFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(SSTIArmyVariableDataSerializer, mSerSaveFunc) == 0x10,
-    "SSTIArmyVariableDataSerializer::mSerSaveFunc offset must be 0x10"
-  );
-  static_assert(sizeof(SSTIArmyVariableDataSerializer) == 0x14, "SSTIArmyVariableDataSerializer size must be 0x14");
   static_assert(sizeof(SSTIArmyVariableDataTypeInfo) == 0x64, "SSTIArmyVariableDataTypeInfo size must be 0x64");
 
   /**

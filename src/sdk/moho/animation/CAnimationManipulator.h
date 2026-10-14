@@ -32,6 +32,22 @@ namespace moho
   {
   public:
     /**
+     * Address: 0x00642BB0 (FUN_00642BB0)
+     *
+     * What it does:
+     * Saves this object's members.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive) const;
+
+    /**
+     * Address: 0x00642A50 (FUN_00642A50)
+     *
+     * What it does:
+     * Loads this object's members.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive);
+
+    /**
      * Address: 0x0063F380 (FUN_0063F380, ??0CAnimationManipulator@Moho@@QAE@XZ)
      *
      * What it does:
@@ -56,6 +72,17 @@ namespace moho
      * Lua userdata for script binding.
      */
     CAnimationManipulator(Sim* sim, CAniActor* ownerActor, Unit* goalMotionScaleUnit);
+
+    /**
+     * Address: 0x0063F230 (FUN_0063F230)
+     *
+     * What it does:
+     * Builds a new `CAnimationManipulator` for an archive load and hands it back unowned; its
+     * members are loaded over it afterwards.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
 
     /**
      * Address: 0x0063F440 (FUN_0063F440, scalar deleting destructor thunk)
@@ -104,8 +131,13 @@ namespace moho
 
     /**
      * Address: 0x0063FBA0 (FUN_0063FBA0)
+     *
+     * What it does:
+     * Starts `resource` from its first frame: rebinds the watched bones to the
+     * clip's bone names (or clears them when there is no clip), adopts the
+     * clip, and resets the playback time.
      */
-    void SetAnimationResource(const boost::SharedPtrRaw<RScaResource>& resource, bool looping);
+    void SetAnimationResource(bool looping, boost::shared_ptr<RScaResource> resource);
 
     /**
      * Address: 0x006412C0 (FUN_006412C0)
@@ -149,7 +181,7 @@ namespace moho
 
     WeakPtr<Unit> mGoal;                // +0x80 (intrusive weak link into goalMotionScaleUnit chain)
     SAniManipBitStorage mBoneMask;      // +0x88
-    boost::SharedPtrRaw<RScaResource> mAnimationRef; // +0x9C
+    boost::shared_ptr<RScaResource> mAnimationRef; // +0x9C
     float mRate;                        // +0xA4
     float mAnimationTime;               // +0xA8
     float mLastFramePosition;           // +0xAC
@@ -526,129 +558,6 @@ namespace moho
    */
   int cfunc_CAnimationManipulatorSetDirectionalAnimL(LuaPlus::LuaState* state);
 
-  class CAnimationManipulatorConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BD2DB0 (FUN_00BD2DB0, register_CAnimationManipulatorConstruct,
-     * dynamic initializer for the global `CAnimationManipulatorConstruct`
-     * singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * construct/delete callback fields.
-     */
-    CAnimationManipulatorConstruct();
-
-    /**
-     * Address: 0x00BFAFF0 (FUN_00BFAFF0, Moho::CAnimationManipulatorConstruct::~CAnimationManipulatorConstruct)
-     */
-    ~CAnimationManipulatorConstruct();
-
-    /**
-     * Address: 0x0063F220 (FUN_0063F220, Moho::CAnimationManipulatorConstruct::Construct)
-     *
-     * What it does:
-     * Allocates one `CAnimationManipulator`, runs constructor setup, and
-     * returns an unowned reflected reference through `SerConstructResult`.
-     */
-    static void Construct(
-      gpg::ReadArchive* archive, int version, gpg::RRef* ownerRef, gpg::SerConstructResult* result
-    );
-
-    /**
-     * Address: 0x00642340 (FUN_00642340, Moho::CAnimationManipulatorConstruct::Deconstruct)
-     *
-     * What it does:
-     * Runs deleting-dtor teardown for one constructed `CAnimationManipulator`.
-     */
-    static void Deconstruct(void* objectPtr);
-
-    /**
-     * Address: 0x00641E70 (FUN_00641E70, Moho::CAnimationManipulatorConstruct::Init)
-     *
-     * This body is ICF-folded/shared with vtable slot 0 of the
-     * never-constructed `gpg::SerConstructHelper<CAnimationManipulator>`
-     * template instantiation
-     * (`??_7?$SerConstructHelper@VCAnimationManipulator@Moho@@@gpg@@6B@`,
-     * confirmed to have zero vtable-writer ctors anywhere in the binary).
-     *
-     * What it does:
-     * Installs serialization-construct and delete callbacks into
-     * CAnimationManipulator RTTI descriptor.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::construct_func_t mSerConstructFunc; // +0x0C
-    gpg::RType::delete_func_t mDeleteFunc;           // +0x10
-  };
-
-  class CAnimationManipulatorSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BD2DF0 (FUN_00BD2DF0, register_CAnimationManipulatorSerializer,
-     * dynamic initializer for the global `CAnimationManipulatorSerializer`
-     * singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     *
-     * A dead, zero-xref duplicate ctor with the identical body exists at
-     * 0x0063F2F0 (no `atexit`-registered dtor push, unreachable) -- skip.
-     */
-    CAnimationManipulatorSerializer();
-
-    /**
-     * Address: 0x00BFB020 (FUN_00BFB020, Moho::CAnimationManipulatorSerializer::~CAnimationManipulatorSerializer)
-     */
-    ~CAnimationManipulatorSerializer();
-
-    /**
-     * Address: 0x0063F2C0 (FUN_0063F2C0, Moho::CAnimationManipulatorSerializer::Deserialize)
-     *
-     * What it does:
-     * Loads `CAnimationManipulator` serialization payload (base IAniManipulator
-     * lane, goal-link lane, bit-mask lane, shared animation resource, and
-     * playback/flag scalars) into an existing object.
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x0063F2D0 (FUN_0063F2D0, Moho::CAnimationManipulatorSerializer::Serialize)
-     *
-     * What it does:
-     * Saves `CAnimationManipulator` serialization payload (base IAniManipulator
-     * lane, goal-link lane, bit-mask lane, shared animation resource, and
-     * playback/flag scalars) from an existing object.
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00641EF0 (FUN_00641EF0, Moho::CAnimationManipulatorSerializer::Init)
-     *
-     * This body is ICF-folded/shared with vtable slot 0 of the
-     * never-constructed `gpg::SerSaveLoadHelper<CAnimationManipulator>`
-     * template instantiation
-     * (`??_7?$SerSaveLoadHelper@VCAnimationManipulator@Moho@@@gpg@@6B@`,
-     * confirmed to have zero vtable-writer ctors anywhere in the binary).
-     * `CAnimationManipulatorSerializer` is not derived through that template:
-     * Deserialize/Serialize forward into free functions
-     * (`DeserializeCAnimationManipulatorState`/`SerializeCAnimationManipulatorState`),
-     * not a `CAnimationManipulator::MemberDeserialize`/`MemberSerialize` pair.
-     *
-     * What it does:
-     * Installs CAnimationManipulator load/save callbacks into RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mSerLoadFunc; // +0x0C
-    gpg::RType::save_func_t mSerSaveFunc; // +0x10
-  };
-
   class CAnimationManipulatorTypeInfo : public gpg::RType
   {
   public:
@@ -716,23 +625,5 @@ namespace moho
     "CAnimationManipulator::mDirectionalAnim offset must be 0xB5"
   );
   static_assert(sizeof(CAnimationManipulator) == 0xB8, "CAnimationManipulator size must be 0xB8");
-  static_assert(
-    offsetof(CAnimationManipulatorConstruct, mSerConstructFunc) == 0x0C,
-    "CAnimationManipulatorConstruct::mSerConstructFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CAnimationManipulatorConstruct, mDeleteFunc) == 0x10,
-    "CAnimationManipulatorConstruct::mDeleteFunc offset must be 0x10"
-  );
-  static_assert(sizeof(CAnimationManipulatorConstruct) == 0x14, "CAnimationManipulatorConstruct size must be 0x14");
-  static_assert(
-    offsetof(CAnimationManipulatorSerializer, mSerLoadFunc) == 0x0C,
-    "CAnimationManipulatorSerializer::mSerLoadFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CAnimationManipulatorSerializer, mSerSaveFunc) == 0x10,
-    "CAnimationManipulatorSerializer::mSerSaveFunc offset must be 0x10"
-  );
-  static_assert(sizeof(CAnimationManipulatorSerializer) == 0x14, "CAnimationManipulatorSerializer size must be 0x14");
   static_assert(sizeof(CAnimationManipulatorTypeInfo) == 0x64, "CAnimationManipulatorTypeInfo size must be 0x64");
 } // namespace moho

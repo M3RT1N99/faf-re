@@ -155,7 +155,7 @@ namespace moho
      *   another's and handing back the source.)
      *
      * Both are zero-caller and unreachable, and both were transcribed as free
-     * functions over a `BVIntSetEmbeddedOwnerRuntimeView` reach-in in
+     * functions over a deleted overlay reach-in in
      * moho/containers/BVIntSet.cpp (RULE ONE), removed 2026-09-22.
      *
      * The `{4-byte lane, 4-byte gap, BVIntSet at +0x08}` shape they operate on
@@ -227,6 +227,8 @@ namespace moho
     void ResetToEmpty(const std::uint32_t universeBits) noexcept
     {
       static_assert(std::is_trivially_copyable_v<U>, "BVSet<T,U>::U must be trivially copyable.");
+      // Raw universe-word reinterpret: U may be narrower than 4 bytes, so the
+      // low bytes of the caller's word are loaded into the typed lane.
       std::memcpy(&mUniverse, &universeBits, sizeof(U));
       mReserved04 = 0u;
       mBits = BVIntSet{};

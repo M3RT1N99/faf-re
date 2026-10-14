@@ -141,7 +141,7 @@
    */
   std::int32_t SofdecMirrorPrimaryCursorToSecondaryBuffer(moho::SofdecSoundPort* const soundPort)
   {
-    const std::int32_t defaultResult = static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(soundPort->primaryBuffer));
+    const std::int32_t defaultResult = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(soundPort->primaryBuffer));
     if (soundPort->primaryBuffer == nullptr || soundPort->secondaryBuffer == nullptr) {
       return defaultResult;
     }
@@ -158,7 +158,7 @@
    * What it does:
    * Captures DirectSound runtime lane and clears sound-port slot activity.
    */
-  IDirectSoundBuffer** SofdecInitSoundPortRuntime(IDirectSound* const directSound)
+  IDirectSoundBuffer** SofdecVirtInitSoundPort(IDirectSound* const directSound)
   {
     IDirectSound8* directSound8 = nullptr;
     if (directSound->lpVtbl->QueryInterface(directSound, IID_IDirectSound8, reinterpret_cast<void**>(&directSound8)) >= 0
@@ -187,7 +187,7 @@
    * What it does:
    * Stops sound-port runtime and clears global mode/slot lanes.
    */
-  std::uint32_t* SofdecShutdownSoundPortRuntime()
+  std::uint32_t* SofdecVirtShutdownSoundPort()
   {
     SofdecShutdownRestoreProbeBuffer();
     gSofdecOpenPortCount = 0;
@@ -478,128 +478,85 @@
     constexpr char kSofdecTagIntime[] = "INTIME";
     constexpr char kSofdecTagDurtime[] = "DURTIME";
 
-    struct MwsfdTagInfoRuntimeView
-    {
-      std::uint8_t mUnknown00_A7[0xA8]{};
-      void* sfxHandle = nullptr; // +0xA8
-      std::uint8_t mUnknownAC_17B[0xD0]{};
-      moho::SofdecSjRingBufferHandle* sjTagRingHandle = nullptr; // +0x17C
-      std::int8_t* ainfSearchBuffer = nullptr; // +0x180
-      std::uint8_t mUnknown184_187[0x04]{};
-      std::int8_t* ainfUserBuffer = nullptr; // +0x188
-      std::uint8_t mUnknown18C_18F[0x04]{};
-      std::int32_t ainfTagInfoSlot0 = 0; // +0x190
-      std::int32_t ainfTagInfoReady = 0; // +0x194
-      std::int32_t ainfTagInfoDataAddress = 0; // +0x198
-      std::int32_t ainfTagInfoLength = 0; // +0x19C
-    };
 
-    static_assert(
-      offsetof(MwsfdTagInfoRuntimeView, sfxHandle) == 0xA8, "MwsfdTagInfoRuntimeView::sfxHandle offset must be 0xA8"
-    );
-    static_assert(
-      offsetof(MwsfdTagInfoRuntimeView, sjTagRingHandle) == 0x17C,
-      "MwsfdTagInfoRuntimeView::sjTagRingHandle offset must be 0x17C"
-    );
-    static_assert(
-      offsetof(MwsfdTagInfoRuntimeView, ainfSearchBuffer) == 0x180,
-      "MwsfdTagInfoRuntimeView::ainfSearchBuffer offset must be 0x180"
-    );
-    static_assert(
-      offsetof(MwsfdTagInfoRuntimeView, ainfUserBuffer) == 0x188,
-      "MwsfdTagInfoRuntimeView::ainfUserBuffer offset must be 0x188"
-    );
-    static_assert(
-      offsetof(MwsfdTagInfoRuntimeView, ainfTagInfoReady) == 0x194,
-      "MwsfdTagInfoRuntimeView::ainfTagInfoReady offset must be 0x194"
-    );
-    static_assert(
-      offsetof(MwsfdTagInfoRuntimeView, ainfTagInfoDataAddress) == 0x198,
-      "MwsfdTagInfoRuntimeView::ainfTagInfoDataAddress offset must be 0x198"
-    );
-    static_assert(
-      offsetof(MwsfdTagInfoRuntimeView, ainfTagInfoLength) == 0x19C,
-      "MwsfdTagInfoRuntimeView::ainfTagInfoLength offset must be 0x19C"
-    );
-
-    struct SfxzTagGroupRuntimeView
+    struct SfxzTagGroup
     {
       std::uint8_t mUnknown00_07[0x8]{};
       std::int32_t hasTagPayload = 0; // +0x08
-      std::int32_t tagPayloadAddress = 0; // +0x0C
+      SofdecAddressWord tagPayloadAddress = 0; // +0x0C
       std::int32_t tagPayloadLength = 0; // +0x10
       std::uint8_t mUnknown14_17[0x4]{};
       std::int32_t zmhdrReady = 0; // +0x18
-      std::int32_t zmhdrPayloadAddress = 0; // +0x1C
+      SofdecAddressWord zmhdrPayloadAddress = 0; // +0x1C
       std::int32_t zmhdrPayloadLength = 0; // +0x20
       std::uint8_t mUnknown24_27[0x4]{};
       std::int32_t zmvfrmReady = 0; // +0x28
-      std::int32_t zmvfrmPayloadAddress = 0; // +0x2C
+      SofdecAddressWord zmvfrmPayloadAddress = 0; // +0x2C
       std::int32_t zmvfrmPayloadLength = 0; // +0x30
     };
 
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, hasTagPayload) == 0x08,
-      "SfxzTagGroupRuntimeView::hasTagPayload offset must be 0x08"
+      offsetof(SfxzTagGroup, hasTagPayload) == 0x08,
+      "SfxzTagGroup::hasTagPayload offset must be 0x08"
     );
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, tagPayloadAddress) == 0x0C,
-      "SfxzTagGroupRuntimeView::tagPayloadAddress offset must be 0x0C"
+      offsetof(SfxzTagGroup, tagPayloadAddress) == 0x0C,
+      "SfxzTagGroup::tagPayloadAddress offset must be 0x0C"
     );
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, tagPayloadLength) == 0x10,
-      "SfxzTagGroupRuntimeView::tagPayloadLength offset must be 0x10"
+      offsetof(SfxzTagGroup, tagPayloadLength) == 0x10,
+      "SfxzTagGroup::tagPayloadLength offset must be 0x10"
     );
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, zmhdrReady) == 0x18,
-      "SfxzTagGroupRuntimeView::zmhdrReady offset must be 0x18"
+      offsetof(SfxzTagGroup, zmhdrReady) == 0x18,
+      "SfxzTagGroup::zmhdrReady offset must be 0x18"
     );
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, zmhdrPayloadAddress) == 0x1C,
-      "SfxzTagGroupRuntimeView::zmhdrPayloadAddress offset must be 0x1C"
+      offsetof(SfxzTagGroup, zmhdrPayloadAddress) == 0x1C,
+      "SfxzTagGroup::zmhdrPayloadAddress offset must be 0x1C"
     );
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, zmhdrPayloadLength) == 0x20,
-      "SfxzTagGroupRuntimeView::zmhdrPayloadLength offset must be 0x20"
+      offsetof(SfxzTagGroup, zmhdrPayloadLength) == 0x20,
+      "SfxzTagGroup::zmhdrPayloadLength offset must be 0x20"
     );
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, zmvfrmReady) == 0x28,
-      "SfxzTagGroupRuntimeView::zmvfrmReady offset must be 0x28"
+      offsetof(SfxzTagGroup, zmvfrmReady) == 0x28,
+      "SfxzTagGroup::zmvfrmReady offset must be 0x28"
     );
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, zmvfrmPayloadAddress) == 0x2C,
-      "SfxzTagGroupRuntimeView::zmvfrmPayloadAddress offset must be 0x2C"
+      offsetof(SfxzTagGroup, zmvfrmPayloadAddress) == 0x2C,
+      "SfxzTagGroup::zmvfrmPayloadAddress offset must be 0x2C"
     );
     static_assert(
-      offsetof(SfxzTagGroupRuntimeView, zmvfrmPayloadLength) == 0x30,
-      "SfxzTagGroupRuntimeView::zmvfrmPayloadLength offset must be 0x30"
+      offsetof(SfxzTagGroup, zmvfrmPayloadLength) == 0x30,
+      "SfxzTagGroup::zmvfrmPayloadLength offset must be 0x30"
     );
 
-    struct SfxTagInfoRuntimeView
+    struct SfxTagInfo
     {
       std::uint8_t mUnknown00_13[0x14]{};
       std::int32_t tagInfoReady = 0; // +0x14
-      std::int32_t tagDataAddress = 0; // +0x18
+      SofdecAddressWord tagDataAddress = 0; // +0x18
       std::int32_t tagDataLength = 0; // +0x1C
       std::uint8_t mUnknown20_23[0x4]{};
-      SfxzTagGroupRuntimeView* sfxzTagGroup = nullptr; // +0x24
+      SfxzTagGroup* sfxzTagGroup = nullptr; // +0x24
     };
 
     static_assert(
-      offsetof(SfxTagInfoRuntimeView, tagInfoReady) == 0x14,
-      "SfxTagInfoRuntimeView::tagInfoReady offset must be 0x14"
+      offsetof(SfxTagInfo, tagInfoReady) == 0x14,
+      "SfxTagInfo::tagInfoReady offset must be 0x14"
     );
     static_assert(
-      offsetof(SfxTagInfoRuntimeView, tagDataAddress) == 0x18,
-      "SfxTagInfoRuntimeView::tagDataAddress offset must be 0x18"
+      offsetof(SfxTagInfo, tagDataAddress) == 0x18,
+      "SfxTagInfo::tagDataAddress offset must be 0x18"
     );
     static_assert(
-      offsetof(SfxTagInfoRuntimeView, tagDataLength) == 0x1C,
-      "SfxTagInfoRuntimeView::tagDataLength offset must be 0x1C"
+      offsetof(SfxTagInfo, tagDataLength) == 0x1C,
+      "SfxTagInfo::tagDataLength offset must be 0x1C"
     );
     static_assert(
-      offsetof(SfxTagInfoRuntimeView, sfxzTagGroup) == 0x24,
-      "SfxTagInfoRuntimeView::sfxzTagGroup offset must be 0x24"
+      offsetof(SfxTagInfo, sfxzTagGroup) == 0x24,
+      "SfxTagInfo::sfxzTagGroup offset must be 0x24"
     );
 
     [[nodiscard]] constexpr std::int32_t SofdecDecodeHexNibble(const char digit) noexcept
@@ -880,27 +837,26 @@
       return nullptr;
     }
 
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    moho::SofdecSjRingBufferHandle* const sjRingHandle = runtimeView->sjTagRingHandle;
+    auto* const tagInfo = ply;
+    moho::SofdecSjRingBufferHandle* const sjRingHandle = static_cast<moho::SofdecSjRingBufferHandle*>(tagInfo->ainfSjHandle);
     const std::int32_t availableAinfBytes = (sjRingHandle != nullptr) ? SJRBF_GetNumData(sjRingHandle, 1) : 0;
     const char* result = reinterpret_cast<const char*>(static_cast<std::intptr_t>(availableAinfBytes));
 
     moho::MwsfTagWindow inputWindow{};
     moho::MwsfTagWindow outputWindow{};
     if (availableAinfBytes != 0) {
-      inputWindow.data = runtimeView->ainfSearchBuffer;
+      inputWindow.data = static_cast<std::int8_t*>(tagInfo->ainfBuffer);
       inputWindow.size = availableAinfBytes;
       result = SJ_SearchTag(&inputWindow, kSofdecTagCritags, kSofdecTagCritage, &outputWindow);
     }
 
     if (result != nullptr) {
-      if (runtimeView->ainfUserBuffer != nullptr) {
-        std::memcpy(runtimeView->ainfUserBuffer, outputWindow.data, static_cast<std::size_t>(outputWindow.size));
-        runtimeView->ainfTagInfoDataAddress = static_cast<std::int32_t>(
-          reinterpret_cast<std::intptr_t>(runtimeView->ainfUserBuffer)
-        );
-        runtimeView->ainfTagInfoLength = outputWindow.size;
-        runtimeView->ainfTagInfoReady = 1;
+      if (tagInfo->ainfUserBuffer != nullptr) {
+        // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
+        std::memcpy(tagInfo->ainfUserBuffer, outputWindow.data, static_cast<std::size_t>(outputWindow.size));
+        tagInfo->ainfTagInfoDataAddress = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(tagInfo->ainfUserBuffer));
+        tagInfo->ainfTagInfoLength = outputWindow.size;
+        tagInfo->ainfTagInfoReady = 1;
 
         moho::SjChunkRange lane1Chunk{};
         SJRBF_GetChunk(sjRingHandle, 1, 0x7FFFFFFF, &lane1Chunk);
@@ -908,19 +864,17 @@
         return reinterpret_cast<const char*>(sjrbf_Reset(sjRingHandle));
       }
 
-      runtimeView->ainfTagInfoDataAddress = static_cast<std::int32_t>(
-        reinterpret_cast<std::intptr_t>(outputWindow.data)
-      );
-      runtimeView->ainfTagInfoLength = outputWindow.size;
-      runtimeView->ainfTagInfoReady = 1;
+      tagInfo->ainfTagInfoDataAddress = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(outputWindow.data));
+      tagInfo->ainfTagInfoLength = outputWindow.size;
+      tagInfo->ainfTagInfoReady = 1;
       return reinterpret_cast<const char*>(
         static_cast<std::intptr_t>(MWSFTAG_ClearUsrSj(ply))
       );
     }
 
-    runtimeView->ainfTagInfoReady = 1;
-    runtimeView->ainfTagInfoDataAddress = 0;
-    runtimeView->ainfTagInfoLength = 0;
+    tagInfo->ainfTagInfoReady = 1;
+    tagInfo->ainfTagInfoDataAddress = 0;
+    tagInfo->ainfTagInfoLength = 0;
     return result;
   }
 
@@ -931,7 +885,7 @@
    * Parses one SFXZ payload block and caches ZMHDR/ZMVFRM child-tag windows in
    * the SFXZ tag-group runtime lane.
    */
-  const char* sfxzmv_SetTagGrp(SfxzTagGroupRuntimeView* const tagGroup)
+  const char* sfxzmv_SetTagGrp(SfxzTagGroup* const tagGroup)
   {
     if (tagGroup == nullptr) {
       return nullptr;
@@ -946,12 +900,12 @@
       moho::MwsfTagWindow tagWindow{};
       (void)SJ_SearchTag(&sourceWindow, kSofdecTagZmhdr, kSofdecTagSfxinfe, &tagWindow);
       tagGroup->zmhdrReady = 1;
-      tagGroup->zmhdrPayloadAddress = static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(tagWindow.data));
+      tagGroup->zmhdrPayloadAddress = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(tagWindow.data));
       tagGroup->zmhdrPayloadLength = tagWindow.size;
 
       result = SJ_SearchTag(&sourceWindow, kSofdecTagZmvfrm, kSofdecTagSfxinfe, &tagWindow);
       tagGroup->zmvfrmReady = 1;
-      tagGroup->zmvfrmPayloadAddress = static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(tagWindow.data));
+      tagGroup->zmvfrmPayloadAddress = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(tagWindow.data));
       tagGroup->zmvfrmPayloadLength = tagWindow.size;
       return result;
     }
@@ -973,8 +927,8 @@
    * refreshes derived ZMHDR/ZMVFRM child-tag windows.
    */
   const char* SFXZ_SetTagInf(
-    SfxzTagGroupRuntimeView* const tagGroup,
-    const std::int32_t tagPayloadAddress,
+    SfxzTagGroup* const tagGroup,
+    const SofdecAddressWord tagPayloadAddress,
     const std::int32_t tagPayloadLength
   )
   {
@@ -995,11 +949,11 @@
    * Stores the latest SFXINFS payload lane on one SFX runtime object, extracts
    * nested SFXZ content when present, and marks tag-info readiness.
    */
-  std::int32_t SFX_SetTagInf(void* const sfxHandle, const std::int32_t tagDataAddress, const std::int32_t tagDataLength)
+  SofdecAddressWord SFX_SetTagInf(void* const sfxHandle, const SofdecAddressWord tagDataAddress, const std::int32_t tagDataLength)
   {
-    auto* const runtimeView = reinterpret_cast<SfxTagInfoRuntimeView*>(sfxHandle);
-    runtimeView->tagDataAddress = tagDataAddress;
-    runtimeView->tagDataLength = tagDataLength;
+    auto* const tagInfo = reinterpret_cast<SfxTagInfo*>(sfxHandle);
+    tagInfo->tagDataAddress = tagDataAddress;
+    tagInfo->tagDataLength = tagDataLength;
 
     moho::MwsfTagWindow sourceWindow{};
     sourceWindow.data = reinterpret_cast<std::int8_t*>(static_cast<std::intptr_t>(tagDataAddress));
@@ -1011,16 +965,16 @@
     const char* result = nullptr;
     if (searchResult != nullptr) {
       result = SFXZ_SetTagInf(
-        runtimeView->sfxzTagGroup,
-        static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(sfxzWindow.data)),
+        tagInfo->sfxzTagGroup,
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(sfxzWindow.data)),
         sfxzWindow.size
       );
     } else {
-      result = SFXZ_SetTagInf(runtimeView->sfxzTagGroup, 0, 0);
+      result = SFXZ_SetTagInf(tagInfo->sfxzTagGroup, 0, 0);
     }
 
-    runtimeView->tagInfoReady = 1;
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(result));
+    tagInfo->tagInfoReady = 1;
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(result));
   }
 
   /**
@@ -1030,26 +984,26 @@
    * Extracts `SFXINFS` tag payload from cached AINF lanes and applies it to
    * the current SFX handle.
    */
-  std::int32_t mwsftag_GetSFXinfFromAinf(moho::MwsfdPlaybackStateSubobj* const ply)
+  SofdecAddressWord mwsftag_GetSFXinfFromAinf(moho::MwsfdPlaybackStateSubobj* const ply)
   {
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    if (runtimeView->ainfTagInfoDataAddress == 0) {
-      return SFX_SetTagInf(runtimeView->sfxHandle, 0, 0);
+    auto* const tagInfo = ply;
+    if (tagInfo->ainfTagInfoDataAddress == 0) {
+      return SFX_SetTagInf(tagInfo->sfxHandle, 0, 0);
     }
 
     moho::MwsfTagWindow inputWindow{};
-    inputWindow.data = reinterpret_cast<std::int8_t*>(static_cast<std::intptr_t>(runtimeView->ainfTagInfoDataAddress));
-    inputWindow.size = runtimeView->ainfTagInfoLength;
+    inputWindow.data = reinterpret_cast<std::int8_t*>(static_cast<std::intptr_t>(tagInfo->ainfTagInfoDataAddress));
+    inputWindow.size = tagInfo->ainfTagInfoLength;
 
     moho::MwsfTagWindow outputWindow{};
     if (SJ_SearchTag(&inputWindow, kSofdecTagSfxinfs, kSofdecTagSfxinfe, &outputWindow) != nullptr) {
       return SFX_SetTagInf(
-        runtimeView->sfxHandle,
-        static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(outputWindow.data)),
+        tagInfo->sfxHandle,
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(outputWindow.data)),
         outputWindow.size
       );
     }
-    return SFX_SetTagInf(runtimeView->sfxHandle, 0, 0);
+    return SFX_SetTagInf(tagInfo->sfxHandle, 0, 0);
   }
 
   /**
@@ -1059,15 +1013,15 @@
    * Populates playback AINF/SFX tag lanes once when SJ ring input exists and
    * cached tag state is not yet marked ready.
    */
-  std::int32_t MWSFTAG_SetTagInf(moho::MwsfdPlaybackStateSubobj* const ply)
+  SofdecAddressWord MWSFTAG_SetTagInf(moho::MwsfdPlaybackStateSubobj* const ply)
   {
     if (ply == nullptr) {
       return 0;
     }
 
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    const std::int32_t result = static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtimeView->sjTagRingHandle));
-    if (result != 0 && runtimeView->ainfTagInfoReady != 1) {
+    auto* const tagInfo = ply;
+    const SofdecAddressWord result = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(tagInfo->ainfSjHandle));
+    if (result != 0 && tagInfo->ainfTagInfoReady != 1) {
       (void)mwsftag_GetAinfFromSj(ply);
       return mwsftag_GetSFXinfFromAinf(ply);
     }
@@ -1086,8 +1040,8 @@
       return 0;
     }
 
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    const std::int32_t result = static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtimeView->sjTagRingHandle));
+    auto* const tagInfo = ply;
+    const SofdecAddressWord result = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(tagInfo->ainfSjHandle));
     if (result != 0) {
       (void)mwsftag_GetAinfFromSj(ply);
       return mwsftag_GetSFXinfFromAinf(ply);
@@ -1108,9 +1062,9 @@
       return 0;
     }
 
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    if (runtimeView->sjTagRingHandle != nullptr) {
-      return -(SFD_SetUsrSj(static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(ply->handle)), 2, 0, 0) != 0);
+    auto* const tagInfo = ply;
+    if (tagInfo->ainfSjHandle != nullptr) {
+      return -(SFD_SetUsrSj(static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(ply->handle)), 2, 0, 0) != 0);
     }
     return 0;
   }
@@ -1133,7 +1087,7 @@
   std::int32_t SFX_SetCnvTable(void* sfxHandle, std::int32_t tableId, std::int32_t tableValue);
   std::int32_t SFX_GetCnvTable(void* sfxHandle, std::int32_t tableId);
   std::int32_t SFX_SetCompoMode(void* sfxHandle, std::int32_t compositionMode);
-  void SFX_GetTagInf(void* sfxHandle, std::int32_t* outTagId, std::int32_t* outTagContent);
+  void SFX_GetTagInf(void* sfxHandle, SofdecAddressWord* outTagId, std::int32_t* outTagContent);
   std::int32_t SFX_SetSplitField(void* sfxHandle, std::int32_t enableSplitField);
   std::int32_t SFX_GetSplitField(void* sfxHandle);
   std::int32_t SFX_SetProgOut(void* sfxHandle, std::int32_t enableProgressiveOut);
@@ -1143,11 +1097,10 @@
   // to MWSFSFX_CnvFrmInfToSfx, whose recovered body lives in the lower half
   // of this translation unit. Forward-declared here so any caller in the
   // upper half can reference it.
-  struct MwsfdSfdFrmObj;
   struct MwsfdSfxFrameInfo;
   std::int32_t MWSFSFX_CnvFrmInfToSfx(
     moho::MwsfdPlaybackStateSubobj* ply,
-    MwsfdSfdFrmObj* frm,
+    moho::MwsfdFrameInfo* frm,
     MwsfdSfxFrameInfo* outSfx
   );
 
@@ -1204,15 +1157,15 @@
   // Typed view of one MWSFCRE malloc-table entry as referenced by
   // mwsfcre_MallocCompoWork / MWSFTAG_CreateAinfSj. Only the buffer-format
   // lane (+0x20) is named here; everything else is opaque pending evidence.
-  struct MwsfcreMallocTabBufFmtView
+  struct MwsfcreMallocTabBufFmt
   {
     std::uint8_t mUnknown00_1F[0x20]{};
     std::int32_t buffmt = 0; // +0x20
   };
 
   static_assert(
-    offsetof(MwsfcreMallocTabBufFmtView, buffmt) == 0x20,
-    "MwsfcreMallocTabBufFmtView::buffmt offset must be 0x20"
+    offsetof(MwsfcreMallocTabBufFmt, buffmt) == 0x20,
+    "MwsfcreMallocTabBufFmt::buffmt offset must be 0x20"
   );
 
   // MWSFD buffer-format enum values sampled by MWSFTAG_IsUseAinfSj.
@@ -1263,7 +1216,7 @@
    */
   BOOL MWSFTAG_IsUseAinfSj(const void* const mallocTableEntry)
   {
-    const auto* const view = static_cast<const MwsfcreMallocTabBufFmtView*>(mallocTableEntry);
+    const auto* const view = static_cast<const MwsfcreMallocTabBufFmt*>(mallocTableEntry);
     const std::int32_t buffmt = view->buffmt;
     return (buffmt == kMwsfdBufFmtDefault) || (buffmt == kMwsfdBufFmtAinfSjOverride);
   }
@@ -1280,8 +1233,8 @@
    */
   void MWSFTAG_DestroyAinfSj(moho::MwsfdPlaybackStateSubobj* const ply)
   {
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    moho::SofdecSjRingBufferHandle* const sjRingHandle = runtimeView->sjTagRingHandle;
+    auto* const tagInfo = ply;
+    moho::SofdecSjRingBufferHandle* const sjRingHandle = static_cast<moho::SofdecSjRingBufferHandle*>(tagInfo->ainfSjHandle);
     if (sjRingHandle != nullptr) {
       sjrbf_Destroy(sjRingHandle);
     }
@@ -1304,16 +1257,16 @@
       return 0;
     }
 
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    moho::SofdecSjRingBufferHandle* const sjRingHandle = runtimeView->sjTagRingHandle;
+    auto* const tagInfo = ply;
+    moho::SofdecSjRingBufferHandle* const sjRingHandle = static_cast<moho::SofdecSjRingBufferHandle*>(tagInfo->ainfSjHandle);
     if (sjRingHandle == nullptr) {
       return 0;
     }
 
     const std::int32_t bindResult = SFD_SetUsrSj(
-      static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(ply->handle)),
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(ply->handle)),
       2,
-      static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(sjRingHandle)),
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(sjRingHandle)),
       0
     );
     return -(bindResult != 0);
@@ -1331,10 +1284,10 @@
    */
   void MWSFTAG_InitTagInf(moho::MwsfdPlaybackStateSubobj* const ply)
   {
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    runtimeView->ainfTagInfoReady = 0;
-    runtimeView->ainfTagInfoDataAddress = 0;
-    runtimeView->ainfTagInfoLength = 0;
+    auto* const tagInfo = ply;
+    tagInfo->ainfTagInfoReady = 0;
+    tagInfo->ainfTagInfoDataAddress = 0;
+    tagInfo->ainfTagInfoLength = 0;
     ply->additionalInfoStamp = -1;
   }
 
@@ -1348,14 +1301,14 @@
    * Resets the playback object's AINF SJ ring-buffer cursors via the typed
    * `sjrbf_Reset` lane; no-op when no handle is bound.
    */
-  std::int32_t MWSFTAG_ResetAinfSj(moho::MwsfdPlaybackStateSubobj* const ply)
+  SofdecAddressWord MWSFTAG_ResetAinfSj(moho::MwsfdPlaybackStateSubobj* const ply)
   {
-    auto* const runtimeView = reinterpret_cast<MwsfdTagInfoRuntimeView*>(ply);
-    moho::SofdecSjRingBufferHandle* const sjRingHandle = runtimeView->sjTagRingHandle;
+    auto* const tagInfo = ply;
+    moho::SofdecSjRingBufferHandle* const sjRingHandle = static_cast<moho::SofdecSjRingBufferHandle*>(tagInfo->ainfSjHandle);
     if (sjRingHandle == nullptr) {
       return 0;
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(sjrbf_Reset(sjRingHandle)));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(sjrbf_Reset(sjRingHandle)));
   }
 
   /**
@@ -1374,10 +1327,10 @@
     std::int32_t* const outTagDataLength
   )
   {
-    const auto* const runtimeView = reinterpret_cast<const MwsfdTagInfoRuntimeView*>(ply);
-    *outTagDataAddress = runtimeView->ainfTagInfoDataAddress;
-    *outTagDataLength = runtimeView->ainfTagInfoLength;
-    return runtimeView->ainfTagInfoLength;
+    const auto* const tagInfo = ply;
+    *outTagDataAddress = tagInfo->ainfTagInfoDataAddress;
+    *outTagDataLength = tagInfo->ainfTagInfoLength;
+    return tagInfo->ainfTagInfoLength;
   }
 
   /**
@@ -1397,7 +1350,7 @@
     std::int32_t* const outTagDataLength
   )
   {
-    std::int32_t resolvedAddress = 0;
+    SofdecAddressWord resolvedAddress = 0;
     std::int32_t resolvedLength = 0;
     SFX_GetTagInf(ply->sfxHandle, &resolvedAddress, &resolvedLength);
     *outTagDataAddress = resolvedAddress;
@@ -1407,7 +1360,7 @@
 
   // FUN_00AC7380 (MWSFD_GetZfrmRange), FUN_00AC74B0 (MWSFD_MakeTblZ16) and
   // FUN_00AC7530 (MWSFD_MakeTblZ32) are implemented later in this translation
-  // unit (after MwsfdSfdFrmObj / MwsfdSfxFrameInfo / MWSFSFX_CnvFrmInfToSfx are
+  // unit (after moho::MwsfdFrameInfo / MwsfdSfxFrameInfo / MWSFSFX_CnvFrmInfToSfx are
   // in scope).
 
   /**
@@ -1538,7 +1491,7 @@
    * What it does:
    * Advances from one current child tag to the remaining source window span.
    */
-  std::int32_t mwsftag_MoveNextTag(
+  SofdecAddressWord mwsftag_MoveNextTag(
     const moho::MwsfTagWindow* const sourceWindow,
     const moho::MwsfTagWindow* const currentTagWindow,
     moho::MwsfTagWindow* const outRemainingWindow
@@ -1551,7 +1504,7 @@
     outRemainingWindow->data = currentTagWindow->data + currentTagWindow->size;
     outRemainingWindow->size =
       static_cast<std::int32_t>((sourceWindow->data + sourceWindow->size) - currentTagWindow->data - currentTagWindow->size);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(sourceWindow->data));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(sourceWindow->data));
   }
 
   /**
@@ -2124,23 +2077,23 @@
 
   // Defined later in this aggregate translation unit.
   moho::SofdecSfdWorkctrlSubobj* sfply_Create(moho::SfplyCreateParams* createParams, std::int32_t createContext);
-  std::int32_t SFD_SetErrFn(std::int32_t errorObjectAddress, std::int32_t callbackAddress, std::int32_t callbackObject);
-  std::int32_t SFD_SetSupplySj(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj, const std::int32_t* supplyDescriptorWords);
+  std::int32_t SFD_SetErrFn(SofdecAddressWord errorObjectAddress, SofdecAddressWord callbackAddress, std::int32_t callbackObject);
+  std::int32_t SFD_SetSupplySj(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj, const SofdecAddressWord* supplyDescriptorWords);
   std::int32_t SFD_SetAdxtPara(const moho::SofdecAdxtParams* params);
   std::int32_t SFD_SetCond(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj, std::int32_t conditionId, std::int32_t value);
-  std::int32_t SFD_GetTrHn(
+  SofdecAddressWord SFD_GetTrHn(
     moho::SofdecSfdWorkctrlSubobj* workctrlSubobj,
     std::int32_t transferLaneIndex,
-    std::int32_t* outTransferHandle
+    SofdecAddressWord* outTransferHandle
   );
   std::int32_t MWSFLSC_SetFlowLimit(moho::MwsfdPlaybackStateSubobj* ply, std::int32_t flowLimit);
   std::int32_t MWSFSFX_SetCompoMode(moho::MwsfdPlaybackStateSubobj* ply, std::int32_t compositionMode);
   std::int32_t MWSFTAG_SetAinfSj(moho::MwsfdPlaybackStateSubobj* ply);
   void MWSFTAG_InitTagInf(moho::MwsfdPlaybackStateSubobj* ply);
-  void* MWSFSFX_Create(std::int32_t workBufferAddress, std::int32_t workBufferSize, std::int32_t configTag);
+  void* MWSFSFX_Create(SofdecAddressWord workBufferAddress, std::int32_t workBufferSize, std::int32_t configTag);
   void mwsffrm_CallbackAnalyzeSofdecHeader(
     moho::MwsfdPlaybackStateSubobj* ply,
-    std::int32_t bufferAddress,
+    SofdecAddressWord bufferAddress,
     std::int32_t bufferSize
   );
 
@@ -2149,7 +2102,7 @@
   // entry points mwsffrm_CallbackAnalyzeSofdecHeader reaches through are
   // announced here.
   struct SofdecHeaderAnalyzer;
-  extern "C" SofdecHeaderAnalyzer* SFH_Create(std::int32_t bufferAddress, std::int32_t remainingBytes);
+  extern "C" SofdecHeaderAnalyzer* SFH_Create(SofdecAddressWord bufferAddress, std::int32_t remainingBytes);
   extern "C" std::int32_t SFH_Destroy(SofdecHeaderAnalyzer* handle);
   extern "C" std::int32_t SFH_IsSfdHeader(SofdecHeaderAnalyzer* handle, std::uint32_t* outIsSfdHeader);
   extern "C" std::int32_t SFH_IsExistStmId(
@@ -2184,13 +2137,12 @@
   // shared parameter types so the C-linkage symbols still match.
   extern "C" std::int32_t SFD_SetMpvParaTbl(
     const moho::MwsfdMpvPara* parameterTable,
-    const std::int32_t* ringFrameBufferAddressTable,
+    void* const* ringFrameBufferAddressTable,
     void* const* sofDecTabAddressTable
   );
   // `SFD_SetM2tsPara` is declared against the SFD runtime's own view of this
   // static, which is defined later in the aggregate; the call site casts.
-  struct Sfm2tsParameterSnapshot;
-  extern "C" void SFD_SetM2tsPara(const Sfm2tsParameterSnapshot* parameterSnapshot);
+  extern "C" void SFD_SetM2tsPara(const moho::Sfm2tsParameterSnapshot* parameterSnapshot);
 
   void mwsfcre_AttachPicUsrBuf(moho::MwsfdPlaybackStateSubobj* ply);
   void* LSC_Create(void* sourceJoinObject);
@@ -2321,18 +2273,18 @@
    * "awaiting supply" state with no SJ attached; the ring the demuxer reads is
    * bound here and nowhere else.
    */
-  std::int32_t MWSFCRE_SetSupplySj(moho::MwsfdPlaybackStateSubobj* const ply)
+  SofdecAddressWord MWSFCRE_SetSupplySj(moho::MwsfdPlaybackStateSubobj* const ply)
   {
     moho::SofdecSjSupplyHandle* const supplyHandle = ply->sjSupplyHandle;
     auto* const workctrl = static_cast<moho::SofdecSfdWorkctrlSubobj*>(ply->handle);
     if (supplyHandle == nullptr) {
       // The binary returns its argument untouched on this path.
-      return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply));
+      return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply));
     }
 
     // Same six-word shape `sfbuf_CreateSj` builds for the lanes it owns:
     // {kind, sj, buffer address, buffer bytes, extra bytes, 0}.
-    SfbufSjCreateStateView supplyDescriptor{};
+    SfbufSjCreateState supplyDescriptor{};
     supplyDescriptor.sjHandle = reinterpret_cast<moho::SofdecSjRingBufferHandle*>(supplyHandle);
     if (supplyHandle == reinterpret_cast<moho::SofdecSjSupplyHandle*>(ply->sjMemoryHandle)) {
       supplyDescriptor.ownerTag = 1;
@@ -2353,7 +2305,7 @@
     supplyDescriptor.mUnknown14 = 0;
 
     const std::int32_t status =
-      SFD_SetSupplySj(workctrl, reinterpret_cast<const std::int32_t*>(&supplyDescriptor));
+      SFD_SetSupplySj(workctrl, reinterpret_cast<const SofdecAddressWord*>(&supplyDescriptor));
     if (status != 0) {
       (void)MWSFLIB_SetErrCode(kMwsfcreErrCodeSetSupplySj);
       return MWSFSVM_Error(kMwsfcreErrSetSupplySjFailed);
@@ -2461,17 +2413,17 @@
    * Fills the in-handle seek-key-group descriptor and publishes a pointer to
    * it. The descriptor lives inside the handle, so there is nothing to free.
    */
-  std::int32_t* MWSKG_Create(
+  moho::MwsfdPicUserBufferDescriptor* MWSKG_Create(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    const std::int32_t recordBufferAddress,
+    const SofdecAddressWord recordBufferAddress,
     const std::int32_t recordBlockBytes,
     const std::int32_t recordEntryBytes
   )
   {
-    ply->seekKeyGroup[0] = recordBufferAddress;
-    ply->seekKeyGroup[1] = recordBlockBytes;
-    ply->seekKeyGroup[2] = recordEntryBytes;
-    ply->seekKeyGroupPtr = ply->seekKeyGroup.data();
+    ply->seekKeyGroup.bufferAddress = recordBufferAddress;
+    ply->seekKeyGroup.bufferBytes = recordBlockBytes;
+    ply->seekKeyGroup.bytesPerFrame = recordEntryBytes;
+    ply->seekKeyGroupPtr = &ply->seekKeyGroup;
     return ply->seekKeyGroupPtr;
   }
 
@@ -2603,7 +2555,7 @@
     }
 
     void* const ainfSj = SJRBF_Create(
-      reinterpret_cast<std::int32_t>(ply->ainfBuffer), ply->ainfBufferBytes, 0);
+      reinterpret_cast<SofdecAddressWord>(ply->ainfBuffer), ply->ainfBufferBytes, 0);
     if (ainfSj != nullptr) {
       return ainfSj;
     }
@@ -2626,8 +2578,8 @@
     (void)SFD_SetCond(
       workctrl,
       kSfdCondSofdecHeaderCallback,
-      reinterpret_cast<std::int32_t>(&mwsffrm_CallbackAnalyzeSofdecHeader));
-    (void)SFD_SetCond(workctrl, kSfdCondSofdecHeaderContext, reinterpret_cast<std::int32_t>(ply));
+      reinterpret_cast<SofdecAddressWord>(&mwsffrm_CallbackAnalyzeSofdecHeader));
+    (void)SFD_SetCond(workctrl, kSfdCondSofdecHeaderContext, reinterpret_cast<SofdecAddressWord>(ply));
   }
 
   /**
@@ -2705,7 +2657,7 @@
     ply->sfhInfoWriteIndex = 0;
     for (moho::SofdecSfhInfoEntry& entry : ply->sfhInfoTable) {
       entry = moho::SofdecSfhInfoEntry{};
-      entry.state = moho::kSofdecSfhInfoSlotUnused;
+      entry.fxType = moho::kSofdecSfhInfoSlotUnused;
     }
   }
 
@@ -2820,7 +2772,7 @@
     for (std::int32_t packIndex = 2; packIndex <= 3;
          ++packIndex, pack += kSofdecHeaderMinimumBytes, remaining -= kSofdecHeaderMinimumBytes) {
       SofdecHeaderAnalyzer* const header =
-        SFH_Create(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(pack)), remaining);
+        SFH_Create(static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(pack)), remaining);
       if (header == nullptr) {
         continue;
       }
@@ -2861,7 +2813,7 @@
    */
   void mwsffrm_CallbackAnalyzeSofdecHeader(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    const std::int32_t bufferAddress,
+    const SofdecAddressWord bufferAddress,
     const std::int32_t bufferSize
   )
   {
@@ -2884,11 +2836,11 @@
 
       const std::int32_t slot = ply->sfhInfoWriteIndex;
       moho::SofdecSfhInfoEntry& entry = ply->sfhInfoTable[static_cast<std::size_t>(slot)];
-      entry.streamPosition = 1;
+      entry.valid = 1;
       entry.frameIndex = ply->retrievedFrameCount - 1;
-      entry.headerWord0 = colourIsHsyuv;
-      entry.headerWord1 = totalFrames;
-      entry.state = effectType;
+      entry.colourIsHsyuv = colourIsHsyuv;
+      entry.totalFrames = totalFrames;
+      entry.fxType = effectType;
 
       ply->sfhInfoWriteIndex = (slot + 1) % kSofdecSfhInfoRingSize;
     }
@@ -3226,8 +3178,8 @@
     mwsfd_mpvpara.reserved10 = 0;
     mwsfd_mpvpara.reserved20 = 0;
     mwsfd_mpvpara.framePoolWork = framePoolWork;
-    mwsfd_adxtpara.value4 = reinterpret_cast<std::int32_t>(adxInput);
-    mwsfd_adxtpara.value0 = reinterpret_cast<std::int32_t>(adxWork);
+    mwsfd_adxtpara.value4 = reinterpret_cast<SofdecAddressWord>(adxInput);
+    mwsfd_adxtpara.value0 = reinterpret_cast<SofdecAddressWord>(adxWork);
 
     moho::SfplyCreateParams createParams{};
     switch (ftype) {
@@ -3279,7 +3231,7 @@
 
     SFD_SetMpvParaTbl(
       &mwsfd_mpvpara,
-      reinterpret_cast<const std::int32_t*>(referenceFrames.data()),
+      referenceFrames.data(),
       framePool.data());
     if (ftype == moho::kMwsfcreStreamMps) {
       SFD_SetAdxtPara(&mwsfd_adxtpara);
@@ -3291,7 +3243,7 @@
       mwsfd_m2tspara.bufferBytes = m2tsBufferBytes;
       mwsfd_m2tspara.input = m2tsInput;
       mwsfd_m2tspara.inputBytes = m2tsInputBytes;
-      SFD_SetM2tsPara(reinterpret_cast<const Sfm2tsParameterSnapshot*>(&mwsfd_m2tspara));
+      SFD_SetM2tsPara(reinterpret_cast<const moho::Sfm2tsParameterSnapshot*>(&mwsfd_m2tspara));
       SFD_SetAdxtPara(&mwsfd_adxtpara);
     }
 
@@ -3303,9 +3255,9 @@
     }
 
     if (SFD_SetErrFn(
-          reinterpret_cast<std::int32_t>(workctrl),
-          reinterpret_cast<std::int32_t>(&MWSFLIB_SfdErrFunc),
-          reinterpret_cast<std::int32_t>(ply))
+          reinterpret_cast<SofdecAddressWord>(workctrl),
+          reinterpret_cast<SofdecAddressWord>(&MWSFLIB_SfdErrFunc),
+          reinterpret_cast<SofdecAddressWord>(ply))
         != 0) {
       (void)MWSFLIB_SetErrCode(kMwsfcreErrCodeSetErrCb);
       (void)MWSFSVM_Error(kMwsfcreErrSfdSetErrCbFailed);
@@ -3314,7 +3266,7 @@
 
     ply->fname = static_cast<char*>(recordBuffer);
     ply->fnameCapacity = recordBytes;
-    (void)MWSKG_Create(ply, reinterpret_cast<std::int32_t>(seekRecord), kMwsfcreSofdecPackBytes, 64);
+    (void)MWSKG_Create(ply, SjPointerToAddress(seekRecord), kMwsfcreSofdecPackBytes, 64);
     ply->apiType = 0;
     return workctrl;
   }
@@ -3344,7 +3296,7 @@
     }
 
     moho::MwsfdLibWork* const libWork = MWSFLIB_GetLibWorkPtr();
-    auto* const slots = reinterpret_cast<moho::MwsfdPlaybackStateSubobj*>(libWork->playbackSlotsRaw);
+    auto* const slots = libWork->playbackSlots;
 
     moho::MwsfdPlaybackStateSubobj* ply = nullptr;
     std::int32_t slotIndex = 0;
@@ -3444,7 +3396,7 @@
     }
 
     void* const sfxHandle = MWSFSFX_Create(
-      reinterpret_cast<std::int32_t>(ply->sfxWork), ply->sfxWorkBytes, createParams->maxWidth);
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply->sfxWork)), ply->sfxWorkBytes, createParams->maxWidth);
     if (sfxHandle == nullptr) {
       (void)MWSFSVM_Error(kMwsfcreErrCreateSfxFailed);
       mwPlyDestroy(ply);
@@ -3839,7 +3791,7 @@
       return MWSFLIB_SetErrCode(kMwsfdErrInitFailed);
     }
 
-    const auto callbackAddress = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&MWSFLIB_SfdErrFunc));
+    const auto callbackAddress = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&MWSFLIB_SfdErrFunc));
     if (SFD_SetErrFn(0, callbackAddress, 0) != 0) {
       return MWSFLIB_SetErrCode(kMwsfdErrSetErrFnFailed);
     }
@@ -3896,7 +3848,7 @@
       return;
     }
 
-    auto* const slots = reinterpret_cast<moho::MwsfdPlaybackStateSubobj*>(libWork->playbackSlotsRaw);
+    auto* const slots = libWork->playbackSlots;
     std::int32_t destroyedSlotCount = 0;
     for (std::int32_t slotIndex = 0; slotIndex < moho::kMwsfdDecodeServerSlotCount; ++slotIndex) {
       if (slots[slotIndex].used == 1) {
@@ -3928,7 +3880,7 @@
   /**
    * Address: 0x00AC9540 (FUN_00AC9540, _MWSFLIB_SfdErrFunc)
    */
-  std::int32_t MWSFLIB_SfdErrFunc(const std::int32_t mwsfdHandle, const std::int32_t errorCode)
+  std::int32_t MWSFLIB_SfdErrFunc(const SofdecAddressWord mwsfdHandle, const std::int32_t errorCode)
   {
     if (mwsfdHandle != 0) {
       auto* const playbackHandle = reinterpret_cast<moho::MwsfdPlaybackStateSubobj*>(
@@ -4092,7 +4044,7 @@
     }
 
     mwsffrm_SetFrmApi(ply, 1);
-    const std::int32_t sfdHandleAddress = mwPlyGetSfdHn(ply);
+    const SofdecAddressWord sfdHandleAddress = mwPlyGetSfdHn(ply);
     if (sfdHandleAddress == 0) {
       std::memset(outFrameInfo, 0, sizeof(*outFrameInfo));
       outFrameInfo->bufferAddress = 0;
@@ -4125,13 +4077,13 @@
       ply->lastSfdFrame = sfdFrame;
 
       mwsffrm_SaveFrmDetail(
-        static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply)),
-        static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(sfdFrame))
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply)),
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(sfdFrame))
       );
       mwl_convFrmInfFromSFD(
-        static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply)),
-        static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(sfdFrame)),
-        static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(outFrameInfo))
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply)),
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(sfdFrame)),
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(outFrameInfo))
       );
 
       outFrameInfo->frameId = outFrameInfo->frameNumber;
@@ -4159,7 +4111,7 @@
       const std::int32_t retrievedFrameCursor = ply->retrievedFrameCount;
 
       mwsffrm_SetFrmApi(ply, 1);
-      const std::int32_t sfdHandleAddress = mwPlyGetSfdHn(ply);
+      const SofdecAddressWord sfdHandleAddress = mwPlyGetSfdHn(ply);
       if (retrievedFrameCursor > releasedFrameCursor) {
         SFD_RelFrm(sfdHandleAddress, currentFrame);
         const std::int32_t nextFrameCursor = ply->mUnknown80 + 1;
@@ -4192,7 +4144,7 @@
       return 0;
     }
 
-    const std::int32_t sfdHandleAddress = mwPlyGetSfdHn(ply);
+    const SofdecAddressWord sfdHandleAddress = mwPlyGetSfdHn(ply);
     if (sfdHandleAddress == 0) {
       return 0;
     }
@@ -4221,10 +4173,10 @@
    * What it does:
    * Returns active SFD handle-address lane when playback handle is valid.
    */
-  std::int32_t mwPlyGetSfdHn(moho::MwsfdPlaybackStateSubobj* const ply)
+  SofdecAddressWord mwPlyGetSfdHn(moho::MwsfdPlaybackStateSubobj* const ply)
   {
     if (MWSFD_IsEnableHndl(ply) == 1) {
-      return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply->handle));
+      return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply->handle));
     }
 
     (void)MWSFSVM_Error(kMwsfdErrGetSfdHandleInvalidHandle);
@@ -4237,7 +4189,7 @@
    * What it does:
    * Returns aggregate dropped-frame count (decode-skip + display-skip).
    */
-  std::int32_t mwPlyGetNumDropFrm(moho::MwsfdPlaybackStateSubobj* const ply)
+  SofdecAddressWord mwPlyGetNumDropFrm(moho::MwsfdPlaybackStateSubobj* const ply)
   {
     if (MWSFD_IsEnableHndl(ply) == 1) {
       return mwPlyGetNumSkipDec(ply) + mwPlyGetNumSkipDisp(ply);
@@ -4253,14 +4205,14 @@
    * What it does:
    * Returns decode-skip count as the delta of two SFD playback-info lanes.
    */
-  std::int32_t mwPlyGetNumSkipDec(moho::MwsfdPlaybackStateSubobj* const ply)
+  SofdecAddressWord mwPlyGetNumSkipDec(moho::MwsfdPlaybackStateSubobj* const ply)
   {
     if (MWSFD_IsEnableHndl(ply) != 1) {
       (void)MWSFSVM_Error(kMwsfdErrGetNumSkipDecInvalidHandle);
       return 0;
     }
 
-    const std::int32_t sfdHandleAddress = mwPlyGetSfdHn(ply);
+    const SofdecAddressWord sfdHandleAddress = mwPlyGetSfdHn(ply);
     if (sfdHandleAddress == 0) {
       return sfdHandleAddress;
     }
@@ -4304,9 +4256,9 @@
    * What it does:
    * Copies one SFD playback-info snapshot into caller output memory.
    */
-  std::int32_t MWSFD_GetPlyInf(moho::MwsfdPlaybackStateSubobj* const ply, void* const outPlyInfo)
+  SofdecAddressWord MWSFD_GetPlyInf(moho::MwsfdPlaybackStateSubobj* const ply, void* const outPlyInfo)
   {
-    const std::int32_t sfdHandleAddress = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply->handle));
+    const SofdecAddressWord sfdHandleAddress = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply->handle));
     if (sfdHandleAddress != 0) {
       return SFD_GetPlyInf(sfdHandleAddress, outPlyInfo);
     }
@@ -4324,7 +4276,7 @@
    * MWSFD_GetCond below, down to the same two tail jumps into SFD_SetCond
    * (0x00ACB93F, 0x00ACB94A).
    */
-  std::int32_t MWSFD_SetCond(
+  SofdecAddressWord MWSFD_SetCond(
     moho::MwsfdPlaybackStateSubobj* const ply,
     const std::int32_t conditionId,
     const std::int32_t conditionValue
@@ -4348,7 +4300,7 @@
    * Reads one condition lane from playback SFD handle when present, otherwise
    * from process-global default condition storage.
    */
-  std::int32_t MWSFD_GetCond(
+  SofdecAddressWord MWSFD_GetCond(
     moho::MwsfdPlaybackStateSubobj* const ply,
     const std::int32_t conditionId,
     std::int32_t* const outConditionValue
@@ -4379,7 +4331,7 @@
     if (ply != nullptr) {
       return SFD_SetCond(reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(ply->handle), 36, conditionValue);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply));
   }
 
   /**
@@ -4396,7 +4348,7 @@
     if (ply != nullptr) {
       return SFD_SetCond(reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(ply->handle), 37, conditionValue);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply));
   }
 
   /**
@@ -4596,7 +4548,7 @@
     }
 
     // Binary writes condition output into stack slot that originally held `ply`.
-    std::int32_t syncMode = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply));
+    std::int32_t syncMode = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply));
     (void)SFD_GetCond(workctrlSubobj, kMwsfdConditionSyncMode, &syncMode);
 
     if (syncMode == 0) {
@@ -4637,11 +4589,11 @@
    * What it does:
    * Builds six playback-debug counters for movie debug output.
    */
-  std::int32_t mwPlyGetPlyInf(moho::MwsfdPlaybackStateSubobj* const ply, std::int32_t* const outInfoWords)
+  SofdecAddressWord mwPlyGetPlyInf(moho::MwsfdPlaybackStateSubobj* const ply, std::int32_t* const outInfoWords)
   {
     auto* const playbackSummary = reinterpret_cast<MwsfdPlaybackInfoSummary*>(outInfoWords);
     if (MWSFD_IsEnableHndl(ply) == 1) {
-      std::int32_t sfdHandleAddress = mwPlyGetSfdHn(ply);
+      SofdecAddressWord sfdHandleAddress = mwPlyGetSfdHn(ply);
       if (sfdHandleAddress != 0) {
         MwsfdRawPlaybackInfo playbackInfo{};
         MwsfdRawTimerInfo timerInfo{};
@@ -4676,9 +4628,9 @@
   void* mwPlyGetTimerCh(void* const timerChannelFallback)
   {
     constexpr std::int32_t kMwsfdConditionTimerChannel = 61;
-    std::int32_t timerChannel = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(timerChannelFallback));
+    std::int32_t timerChannel = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(timerChannelFallback));
     (void)SFD_GetCond(nullptr, kMwsfdConditionTimerChannel, &timerChannel);
-    return reinterpret_cast<void*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(timerChannel)));
+    return reinterpret_cast<void*>(static_cast<std::uintptr_t>(timerChannel));
   }
 
   /**
@@ -4687,7 +4639,7 @@
   void SFX_CnvFrmByCbFunc(
     moho::SfxCallbackFrameContext* const conversionState,
     moho::SfxStreamState* const streamState,
-    const std::int32_t callbackArg
+    const SofdecAddressWord callbackArg
   )
   {
     const std::int32_t compositionCode = conversionState->compositionCode;
@@ -4751,10 +4703,7 @@
   [[nodiscard]] moho::MwsfdPlaybackStateSubobj*
   GetMwsfdDecodeServerPlaybackSlot(moho::MwsfdLibWork* const libWork, const std::int32_t slotIndex)
   {
-    auto* const slotBase = reinterpret_cast<std::uint8_t*>(libWork->playbackSlotsRaw);
-    return reinterpret_cast<moho::MwsfdPlaybackStateSubobj*>(
-      slotBase + (static_cast<std::size_t>(slotIndex) * sizeof(moho::MwsfdPlaybackStateSubobj))
-    );
+    return &libWork->playbackSlots[slotIndex];
   }
 
   /**
@@ -4885,7 +4834,7 @@
     }
 
     (void)MWSFSVR_SetHnMwplySvrFlg(ply, 0);
-    return (SFD_IsHnSvrWait(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(workctrlSubobj))) == 0) ? 1 : 0;
+    return (SFD_IsHnSvrWait(static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(workctrlSubobj))) == 0) ? 1 : 0;
   }
 
   /**
@@ -4945,7 +4894,7 @@
     auto* const workctrlSubobj = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(ply->handle);
 
     if (ply->isPrepared == 1 && LSC_GetNumStm(ply->lscHandle) == 0) {
-      if (sfply_TermSupply(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(workctrlSubobj))) != 0) {
+      if (sfply_TermSupply(static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(workctrlSubobj))) != 0) {
         (void)MWSFSVM_Error(kMwsfdErrExecSvrPlayingTermFailed);
       }
       ply->isPrepared = 0;
@@ -4971,7 +4920,7 @@
    */
   std::int32_t mwsfd_CheckFsErr(moho::MwsfdPlaybackStateSubobj* const ply)
   {
-    if (ply->adxStreamHandle != nullptr && MWSTM_IsFsStatErr(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply->adxStreamHandle)))) {
+    if (ply->adxStreamHandle != nullptr && MWSTM_IsFsStatErr(static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply->adxStreamHandle)))) {
       ply->compoMode = 4;
     }
 
@@ -5062,7 +5011,7 @@
    * Runs the drain above only for a handle that is actually parked; a handle
    * that is not returns immediately (0x00AD91C8).
    */
-  std::int32_t MWSFSVR_CheckForceSvrBdr(const std::int32_t plyAddress)
+  std::int32_t MWSFSVR_CheckForceSvrBdr(const SofdecAddressWord plyAddress)
   {
     auto* const ply =
       reinterpret_cast<moho::MwsfdPlaybackStateSubobj*>(SjAddressToPointer(plyAddress));
@@ -5115,7 +5064,7 @@
     if (ply->adxStreamHandle != nullptr) {
       const std::int32_t status = MWSTM_GetStat(ply->adxStreamHandle);
       if (status == 3) {
-        return sfply_TermSupply(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(workctrlSubobj)));
+        return sfply_TermSupply(static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(workctrlSubobj)));
       }
       return status;
     }
@@ -5129,36 +5078,19 @@
    * Marks one SFD SFBUF transfer lane as terminated and latches term-request
    * flag in work-control runtime state.
    */
-  std::int32_t sfply_TermSupply(const std::int32_t sfdHandleAddress)
+  std::int32_t sfply_TermSupply(const SofdecAddressWord sfdHandleAddress)
   {
     auto* const workctrlSubobj = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(sfdHandleAddress))
+      static_cast<std::uintptr_t>(sfdHandleAddress)
     );
     if (SFLIB_CheckHn(workctrlSubobj) != 0) {
       return SFLIB_SetErr(0, kSflibErrInvalidHandleTermSupply);
     }
 
-    struct SfplyTermSupplyRuntimeView
-    {
-      std::uint8_t mUnknown00[0x44]{};
-      std::int32_t termRequestedFlag = 0; // +0x44
-      std::uint8_t mUnknown48[0x1EFC]{};
-      std::int32_t sfbufLaneIndex = 0; // +0x1F44
-    };
-    static_assert(
-      offsetof(SfplyTermSupplyRuntimeView, termRequestedFlag) == 0x44,
-      "SfplyTermSupplyRuntimeView::termRequestedFlag offset must be 0x44"
-    );
-    static_assert(
-      offsetof(SfplyTermSupplyRuntimeView, sfbufLaneIndex) == 0x1F44,
-      "SfplyTermSupplyRuntimeView::sfbufLaneIndex offset must be 0x1F44"
-    );
-
-    auto* const runtime = reinterpret_cast<SfplyTermSupplyRuntimeView*>(workctrlSubobj);
-    const std::int32_t laneIndex = runtime->sfbufLaneIndex;
+    const std::int32_t laneIndex = workctrlSubobj->transferState.lanes[moho::kSftrnMemoryLane].targetLaneIndex[0];
     if (SFBUF_GetTermFlg(sfdHandleAddress, laneIndex) != 1) {
       (void)SFBUF_SetTermFlg(sfdHandleAddress, laneIndex, 1);
-      runtime->termRequestedFlag = 1;
+      workctrlSubobj->serverWorkPending = 1;
     }
     return 0;
   }
@@ -5300,8 +5232,8 @@
   std::int32_t SFD_SetElementOutSj(
     moho::SofdecSfdWorkctrlSubobj* workctrlSubobj,
     std::int32_t elementType,
-    std::int32_t elementOutputJoinAddress,
-    std::int32_t copyCompleteCallbackAddress,
+    SofdecAddressWord elementOutputJoinAddress,
+    SofdecAddressWord copyCompleteCallbackAddress,
     std::int32_t copyCompleteCallbackContext
   );
 
@@ -5511,8 +5443,8 @@
     auto* const sfhInfo = static_cast<std::uint8_t*>(streamOwner) + kMwsstOwnerSfhInfoOffset;
     return SFD_SetElementOutSj(
       static_cast<moho::SofdecSfdWorkctrlSubobj*>(handle),
-      static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(sfhInfo)),
-      static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(pauseGate)),
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(sfhInfo)),
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(pauseGate)),
       0,
       0
     );
@@ -5558,9 +5490,9 @@
 
     ply->handle = handle;
     if (SFD_SetErrFn(
-          static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(handle)),
-          static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&MWSFLIB_SfdErrFunc)),
-          static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply))
+          static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(handle)),
+          static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&MWSFLIB_SfdErrFunc)),
+          static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(ply))
         ) != 0) {
       (void)MWSFLIB_SetErrCode(kMwsfcreErrResetSetErrFnCode);
       (void)MWSFSVM_Error(kMwsfcreErrResetSetErrFnFailed);
@@ -5811,9 +5743,9 @@
   /**
    * Address: 0x00ACB020 (FUN_00ACB020, _mwPlyStartMem)
    */
-  std::int32_t mwPlyStartMem(
+  SofdecAddressWord mwPlyStartMem(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    const std::int32_t bufferAddress,
+    const SofdecAddressWord bufferAddress,
     const std::int32_t bufferSize
   )
   {
@@ -5845,7 +5777,7 @@
    */
   std::int32_t mwPlyStartMemThunk(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    const std::int32_t bufferAddress,
+    const SofdecAddressWord bufferAddress,
     const std::int32_t bufferSize
   )
   {
@@ -5855,7 +5787,7 @@
   /**
    * Address: 0x00ACB0C0 (FUN_00ACB0C0, _mwPlyStartSj)
    */
-  std::int32_t mwPlyStartSj(moho::MwsfdPlaybackStateSubobj* const ply, moho::SofdecSjSupplyHandle* const supplyHandle)
+  SofdecAddressWord mwPlyStartSj(moho::MwsfdPlaybackStateSubobj* const ply, moho::SofdecSjSupplyHandle* const supplyHandle)
   {
     if (MWSFD_IsEnableHndl(ply) != 1) {
       return MWSFSVM_Error(kMwsfdErrStartSjInvalidHandle);
@@ -6039,7 +5971,7 @@
   // (0x00ADCF00) tests it with `cmp dword ptr [edi+0Ch], 6Eh`. The lane at
   // +0x08 is the remaining byte count, so the version check here was reading
   // a length and comparing it against 107/110.
-  struct SofdecFeatureHeaderRuntimeView
+  struct SofdecFeatureHeader
   {
     std::int32_t state = 0; // +0x00
     std::uint8_t* elementInfoBuffer = nullptr; // +0x04
@@ -6048,16 +5980,16 @@
   };
 
   static_assert(
-    offsetof(SofdecFeatureHeaderRuntimeView, state) == 0x00,
-    "SofdecFeatureHeaderRuntimeView::state offset must be 0x00"
+    offsetof(SofdecFeatureHeader, state) == 0x00,
+    "SofdecFeatureHeader::state offset must be 0x00"
   );
   static_assert(
-    offsetof(SofdecFeatureHeaderRuntimeView, elementInfoBuffer) == 0x04,
-    "SofdecFeatureHeaderRuntimeView::elementInfoBuffer offset must be 0x04"
+    offsetof(SofdecFeatureHeader, elementInfoBuffer) == 0x04,
+    "SofdecFeatureHeader::elementInfoBuffer offset must be 0x04"
   );
   static_assert(
-    offsetof(SofdecFeatureHeaderRuntimeView, version) == 0x0C,
-    "SofdecFeatureHeaderRuntimeView::version offset must be 0x0C"
+    offsetof(SofdecFeatureHeader, version) == 0x0C,
+    "SofdecFeatureHeader::version offset must be 0x0C"
   );
 
   constexpr std::int32_t kSfhElementTableOffset = 0x180;
@@ -6071,7 +6003,7 @@
    * What it does:
    * Validates the feature-header state lane against the accepted range.
    */
-  [[nodiscard]] bool SfhIsObjectStateEffective(const SofdecFeatureHeaderRuntimeView* const featureHeader) noexcept
+  [[nodiscard]] bool SfhIsObjectStateEffective(const SofdecFeatureHeader* const featureHeader) noexcept
   {
     return featureHeader->state < -1 || featureHeader->state > 1;
   }
@@ -6083,7 +6015,7 @@
    * Applies object-state validation and accepts parser versions `107` and
    * `>=110`.
    */
-  [[nodiscard]] bool SfhIsVersionEffective(const SofdecFeatureHeaderRuntimeView* const featureHeader) noexcept
+  [[nodiscard]] bool SfhIsVersionEffective(const SofdecFeatureHeader* const featureHeader) noexcept
   {
     if (!SfhIsObjectStateEffective(featureHeader)) {
       return false;
@@ -6120,7 +6052,7 @@
    * accepted; otherwise returns null.
    */
   [[nodiscard]]
-  std::uint8_t* SfhGetElementInfoPtr(SofdecFeatureHeaderRuntimeView* const featureHeader, const std::int32_t streamId)
+  std::uint8_t* SfhGetElementInfoPtr(SofdecFeatureHeader* const featureHeader, const std::int32_t streamId)
   {
     if (!SfhIsVersionEffective(featureHeader)) {
       return nullptr;
@@ -6129,7 +6061,7 @@
     return SfhSearchStreamId(featureHeader->elementInfoBuffer, streamId);
   }
 
-  struct LscStreamEntryRuntimeView
+  struct LscStreamEntry
   {
     std::int32_t streamId = 0; // +0x00
     const char* fileName = nullptr; // +0x04
@@ -6142,34 +6074,34 @@
   };
 
   static_assert(
-    offsetof(LscStreamEntryRuntimeView, streamId) == 0x00, "LscStreamEntryRuntimeView::streamId offset must be 0x00"
+    offsetof(LscStreamEntry, streamId) == 0x00, "LscStreamEntry::streamId offset must be 0x00"
   );
   static_assert(
-    offsetof(LscStreamEntryRuntimeView, fileName) == 0x04, "LscStreamEntryRuntimeView::fileName offset must be 0x04"
+    offsetof(LscStreamEntry, fileName) == 0x04, "LscStreamEntry::fileName offset must be 0x04"
   );
   static_assert(
-    offsetof(LscStreamEntryRuntimeView, fileNameChecksum) == 0x08,
-    "LscStreamEntryRuntimeView::fileNameChecksum offset must be 0x08"
+    offsetof(LscStreamEntry, fileNameChecksum) == 0x08,
+    "LscStreamEntry::fileNameChecksum offset must be 0x08"
   );
   static_assert(
-    offsetof(LscStreamEntryRuntimeView, startOffset) == 0x0C, "LscStreamEntryRuntimeView::startOffset offset must be 0x0C"
+    offsetof(LscStreamEntry, startOffset) == 0x0C, "LscStreamEntry::startOffset offset must be 0x0C"
   );
   static_assert(
-    offsetof(LscStreamEntryRuntimeView, rangeStart) == 0x10, "LscStreamEntryRuntimeView::rangeStart offset must be 0x10"
+    offsetof(LscStreamEntry, rangeStart) == 0x10, "LscStreamEntry::rangeStart offset must be 0x10"
   );
   static_assert(
-    offsetof(LscStreamEntryRuntimeView, rangeEnd) == 0x14, "LscStreamEntryRuntimeView::rangeEnd offset must be 0x14"
+    offsetof(LscStreamEntry, rangeEnd) == 0x14, "LscStreamEntry::rangeEnd offset must be 0x14"
   );
   static_assert(
-    offsetof(LscStreamEntryRuntimeView, streamStatus) == 0x18,
-    "LscStreamEntryRuntimeView::streamStatus offset must be 0x18"
+    offsetof(LscStreamEntry, streamStatus) == 0x18,
+    "LscStreamEntry::streamStatus offset must be 0x18"
   );
   static_assert(
-    offsetof(LscStreamEntryRuntimeView, readSector) == 0x1C, "LscStreamEntryRuntimeView::readSector offset must be 0x1C"
+    offsetof(LscStreamEntry, readSector) == 0x1C, "LscStreamEntry::readSector offset must be 0x1C"
   );
-  static_assert(sizeof(LscStreamEntryRuntimeView) == 0x20, "LscStreamEntryRuntimeView size must be 0x20");
+  static_assert(sizeof(LscStreamEntry) == 0x20, "LscStreamEntry size must be 0x20");
 
-  struct LscRuntimeView
+  struct LscInstance
   {
     std::uint8_t used = 0; // +0x00
     std::int8_t status = 0; // +0x01
@@ -6188,39 +6120,39 @@
     std::int32_t activeStreamId = 0; // +0x2C
     std::int32_t mUnknown30 = 0; // +0x30
     std::int32_t activeReadSector = 0; // +0x34
-    LscStreamEntryRuntimeView streamEntries[16]{}; // +0x38
+    LscStreamEntry streamEntries[16]{}; // +0x38
   };
 
-  static_assert(offsetof(LscRuntimeView, used) == 0x00, "LscRuntimeView::used offset must be 0x00");
-  static_assert(offsetof(LscRuntimeView, status) == 0x01, "LscRuntimeView::status offset must be 0x01");
+  static_assert(offsetof(LscInstance, used) == 0x00, "LscInstance::used offset must be 0x00");
+  static_assert(offsetof(LscInstance, status) == 0x01, "LscInstance::status offset must be 0x01");
   static_assert(
-    offsetof(LscRuntimeView, streamHandleActive) == 0x02, "LscRuntimeView::streamHandleActive offset must be 0x02"
+    offsetof(LscInstance, streamHandleActive) == 0x02, "LscInstance::streamHandleActive offset must be 0x02"
   );
-  static_assert(offsetof(LscRuntimeView, loopEnabled) == 0x03, "LscRuntimeView::loopEnabled offset must be 0x03");
-  static_assert(offsetof(LscRuntimeView, paused) == 0x04, "LscRuntimeView::paused offset must be 0x04");
-  static_assert(offsetof(LscRuntimeView, sjHandle) == 0x08, "LscRuntimeView::sjHandle offset must be 0x08");
-  static_assert(offsetof(LscRuntimeView, flowLimit) == 0x14, "LscRuntimeView::flowLimit offset must be 0x14");
-  static_assert(offsetof(LscRuntimeView, flowLimitMax) == 0x18, "LscRuntimeView::flowLimitMax offset must be 0x18");
+  static_assert(offsetof(LscInstance, loopEnabled) == 0x03, "LscInstance::loopEnabled offset must be 0x03");
+  static_assert(offsetof(LscInstance, paused) == 0x04, "LscInstance::paused offset must be 0x04");
+  static_assert(offsetof(LscInstance, sjHandle) == 0x08, "LscInstance::sjHandle offset must be 0x08");
+  static_assert(offsetof(LscInstance, flowLimit) == 0x14, "LscInstance::flowLimit offset must be 0x14");
+  static_assert(offsetof(LscInstance, flowLimitMax) == 0x18, "LscInstance::flowLimitMax offset must be 0x18");
   static_assert(
-    offsetof(LscRuntimeView, streamWriteCursor) == 0x1C, "LscRuntimeView::streamWriteCursor offset must be 0x1C"
-  );
-  static_assert(
-    offsetof(LscRuntimeView, streamReadCursor) == 0x20, "LscRuntimeView::streamReadCursor offset must be 0x20"
-  );
-  static_assert(offsetof(LscRuntimeView, streamCount) == 0x24, "LscRuntimeView::streamCount offset must be 0x24");
-  static_assert(
-    offsetof(LscRuntimeView, streamHandle) == 0x28, "LscRuntimeView::streamHandle offset must be 0x28"
+    offsetof(LscInstance, streamWriteCursor) == 0x1C, "LscInstance::streamWriteCursor offset must be 0x1C"
   );
   static_assert(
-    offsetof(LscRuntimeView, activeStreamId) == 0x2C, "LscRuntimeView::activeStreamId offset must be 0x2C"
+    offsetof(LscInstance, streamReadCursor) == 0x20, "LscInstance::streamReadCursor offset must be 0x20"
+  );
+  static_assert(offsetof(LscInstance, streamCount) == 0x24, "LscInstance::streamCount offset must be 0x24");
+  static_assert(
+    offsetof(LscInstance, streamHandle) == 0x28, "LscInstance::streamHandle offset must be 0x28"
   );
   static_assert(
-    offsetof(LscRuntimeView, activeReadSector) == 0x34, "LscRuntimeView::activeReadSector offset must be 0x34"
+    offsetof(LscInstance, activeStreamId) == 0x2C, "LscInstance::activeStreamId offset must be 0x2C"
   );
   static_assert(
-    offsetof(LscRuntimeView, streamEntries) == 0x38, "LscRuntimeView::streamEntries offset must be 0x38"
+    offsetof(LscInstance, activeReadSector) == 0x34, "LscInstance::activeReadSector offset must be 0x34"
   );
-  static_assert(sizeof(LscRuntimeView) == 0x238, "LscRuntimeView size must be 0x238");
+  static_assert(
+    offsetof(LscInstance, streamEntries) == 0x38, "LscInstance::streamEntries offset must be 0x38"
+  );
+  static_assert(sizeof(LscInstance) == 0x238, "LscInstance size must be 0x238");
 
   constexpr std::int32_t kLscRingCapacity = 16;
   constexpr std::int32_t kLscObjectPoolCapacity = 64;
@@ -6263,38 +6195,22 @@
   constexpr char kAdxtErrResetEntryParameter[] = "E02080849 adxt_ResetEntry: parameter error";
 
   using LscErrorCallback = std::int32_t(__cdecl*)(std::int32_t callbackObject, const char* message);
-  std::array<LscRuntimeView, kLscObjectPoolCapacity> gLscObjectPool{};
+  std::array<LscInstance, kLscObjectPoolCapacity> gLscObjectPool{};
   std::array<char, kLscErrorMessageCapacity> gLscErrorMessage{};
   LscErrorCallback gLscErrorCallback = nullptr;
   std::int32_t gLscErrorObject = 0;
   std::int32_t gLscInitCount = 0;
 
-  struct LscSjRuntimeInterfaceVtable
-  {
-    std::uint8_t mUnknown00_23[0x24]{};
-    std::int32_t(__cdecl* getNumData)(void* sjHandle, std::int32_t lane) = nullptr; // +0x24
-  };
-
-  struct LscSjRuntimeHandleView
-  {
-    std::int32_t runtimeSlot = 0; // +0x00
-  };
-
   static_assert(sizeof(gLscObjectPool) == 0x8E00, "LSC object pool size must be 0x8E00");
-  static_assert(
-    offsetof(LscSjRuntimeInterfaceVtable, getNumData) == 0x24,
-    "LscSjRuntimeInterfaceVtable::getNumData offset must be 0x24"
-  );
-  static_assert(sizeof(LscSjRuntimeHandleView) == 0x04, "LscSjRuntimeHandleView size must be 0x04");
 
   using LscStatusChangeCallback = std::int32_t(__cdecl*)(std::int32_t callbackObjectPrimary, std::int32_t callbackObjectSecondary);
   LscStatusChangeCallback gLscStatusChangeCallback = nullptr;
   std::int32_t gLscStatusChangeObjectPrimary = 0;
   std::int32_t gLscStatusChangeObjectSecondary = 0;
 
-  [[nodiscard]] LscRuntimeView* AsLscRuntimeView(void* const lscHandle) noexcept
+  [[nodiscard]] LscInstance* LscInstanceOf(void* const lscHandle) noexcept
   {
-    return reinterpret_cast<LscRuntimeView*>(lscHandle);
+    return reinterpret_cast<LscInstance*>(lscHandle);
   }
 
   [[nodiscard]] constexpr std::int32_t LscWrapRingIndex(std::int32_t value) noexcept
@@ -6306,7 +6222,7 @@
     return value;
   }
 
-  [[nodiscard]] std::int32_t LscFindStreamEntryIndex(const LscRuntimeView* const lsc, const std::int32_t streamId) noexcept
+  [[nodiscard]] std::int32_t LscFindStreamEntryIndex(const LscInstance* const lsc, const std::int32_t streamId) noexcept
   {
     for (std::int32_t i = 0; i < kLscRingCapacity; ++i) {
       if (lsc->streamEntries[i].streamId == streamId) {
@@ -6327,13 +6243,11 @@
 
   [[nodiscard]] std::int32_t LscGetSjNumData(void* const sjHandle, const std::int32_t lane)
   {
-    const auto* const sjRuntime = reinterpret_cast<const LscSjRuntimeHandleView*>(sjHandle);
-    const auto* const runtimeInterface =
-      reinterpret_cast<const LscSjRuntimeInterfaceVtable*>(SjAddressToPointer(sjRuntime->runtimeSlot));
-    return runtimeInterface->getNumData(sjHandle, lane);
+    auto* const sj = static_cast<moho::SofdecSjSupplyHandle*>(sjHandle);
+    return sj->dispatchTable->queryAvailableBytes(sj, lane);
   }
 
-  [[nodiscard]] LscStreamEntryRuntimeView& LscCurrentStreamEntry(LscRuntimeView* const lsc) noexcept
+  [[nodiscard]] LscStreamEntry& LscCurrentStreamEntry(LscInstance* const lsc) noexcept
   {
     return lsc->streamEntries[LscWrapRingIndex(lsc->streamReadCursor)];
   }
@@ -6344,9 +6258,9 @@
    * What it does:
    * Returns first free LSC object lane from the global fixed pool.
    */
-  [[nodiscard]] LscRuntimeView* lsc_Alloc() noexcept
+  [[nodiscard]] LscInstance* lsc_Alloc() noexcept
   {
-    for (LscRuntimeView& lscObject : gLscObjectPool) {
+    for (LscInstance& lscObject : gLscObjectPool) {
       if (lscObject.used == 0) {
         return &lscObject;
       }
@@ -6373,7 +6287,7 @@
     }
 
     LSC_LockCrs();
-    LscRuntimeView* const lsc = lsc_Alloc();
+    LscInstance* const lsc = lsc_Alloc();
     if (lsc == nullptr) {
       (void)LSC_CallErrFunc_(kLscErrNoFreeLscInstance);
       LSC_UnlockCrs();
@@ -6385,7 +6299,7 @@
     lsc->flowLimitMax = LscGetSjNumData(sjHandle, 1) + LscGetSjNumData(sjHandle, 0);
     lsc->flowLimit = (lsc->flowLimitMax * 8) / 10;
 
-    for (LscStreamEntryRuntimeView& entry : lsc->streamEntries) {
+    for (LscStreamEntry& entry : lsc->streamEntries) {
       entry.streamStatus = 0;
     }
 
@@ -6486,7 +6400,7 @@
       return result;
     }
 
-    for (LscRuntimeView& lscObject : gLscObjectPool) {
+    for (LscInstance& lscObject : gLscObjectPool) {
       if (lscObject.used == 1) {
         LSC_Destroy(&lscObject);
       }
@@ -6504,7 +6418,7 @@
    */
   void* LSC_SetStmHndl(void* const lscHandle, void* const streamHandle)
   {
-    AsLscRuntimeView(lscHandle)->streamHandle = streamHandle;
+    LscInstanceOf(lscHandle)->streamHandle = streamHandle;
     return streamHandle;
   }
 
@@ -6538,7 +6452,7 @@
       return -1;
     }
 
-    LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    LscInstance* const lsc = LscInstanceOf(lscHandle);
     if (lsc->streamCount >= kLscRingCapacity) {
       return -1;
     }
@@ -6552,7 +6466,7 @@
     const std::int32_t previousStreamId = lsc->streamEntries[previousSlot].streamId;
     const std::int32_t streamId = (previousStreamId == kLscMaxStreamId) ? 0 : previousStreamId + 1;
 
-    LscStreamEntryRuntimeView& entry = lsc->streamEntries[LscWrapRingIndex(lsc->streamWriteCursor)];
+    LscStreamEntry& entry = lsc->streamEntries[LscWrapRingIndex(lsc->streamWriteCursor)];
     entry.streamId = streamId;
     entry.fileName = fileName;
     entry.fileNameChecksum = LscComputeFileNameChecksum(fileName);
@@ -6583,7 +6497,7 @@
       return;
     }
 
-    LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    LscInstance* const lsc = LscInstanceOf(lscHandle);
     if (lsc->status == 0) {
       lsc->streamWriteCursor = 0;
       lsc->streamReadCursor = 0;
@@ -6604,7 +6518,7 @@
       return;
     }
 
-    LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    LscInstance* const lsc = LscInstanceOf(lscHandle);
     if (lsc->status != 0) {
       lsc_Stop(lscHandle);
     }
@@ -6626,7 +6540,7 @@
       return;
     }
 
-    LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    LscInstance* const lsc = LscInstanceOf(lscHandle);
     if (lsc->status == 0) {
       return;
     }
@@ -6649,14 +6563,14 @@
    * What it does:
    * Updates one pause-byte lane in the LSC runtime.
    */
-  std::int32_t lsc_Pause(void* const lscHandle, const std::int32_t paused)
+  SofdecAddressWord lsc_Pause(void* const lscHandle, const std::int32_t paused)
   {
     if (lscHandle == nullptr) {
       return LSC_CallErrFunc_(kLscErrLscNullPause);
     }
 
-    AsLscRuntimeView(lscHandle)->paused = static_cast<std::uint8_t>(paused == 1);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(lscHandle));
+    LscInstanceOf(lscHandle)->paused = static_cast<std::uint8_t>(paused == 1);
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(lscHandle));
   }
 
   /**
@@ -6672,7 +6586,7 @@
     }
 
     lsc_Stop(lscHandle);
-    std::memset(lscHandle, 0, sizeof(LscRuntimeView));
+    std::memset(lscHandle, 0, sizeof(LscInstance));
   }
 
   /**
@@ -6688,7 +6602,7 @@
       return -1;
     }
 
-    return static_cast<std::int32_t>(AsLscRuntimeView(lscHandle)->status);
+    return static_cast<std::int32_t>(LscInstanceOf(lscHandle)->status);
   }
 
   /**
@@ -6704,7 +6618,7 @@
       return -1;
     }
 
-    return AsLscRuntimeView(lscHandle)->streamCount;
+    return LscInstanceOf(lscHandle)->streamCount;
   }
 
   /**
@@ -6720,7 +6634,7 @@
       return -1;
     }
 
-    const LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    const LscInstance* const lsc = LscInstanceOf(lscHandle);
     if (streamIndex < 0 || streamIndex >= lsc->streamCount) {
       (void)LSC_CallErrFunc_(kLscErrInvalidStmIndexFmt, streamIndex);
       return -1;
@@ -6743,7 +6657,7 @@
       return nullptr;
     }
 
-    const LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    const LscInstance* const lsc = LscInstanceOf(lscHandle);
     const std::int32_t index = LscFindStreamEntryIndex(lsc, streamId);
     if (index < 0) {
       (void)LSC_CallErrFunc_(kLscErrStreamNotFoundFnameFmt, streamId);
@@ -6766,7 +6680,7 @@
       return -1;
     }
 
-    const LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    const LscInstance* const lsc = LscInstanceOf(lscHandle);
     const std::int32_t index = LscFindStreamEntryIndex(lsc, streamId);
     if (index < 0) {
       (void)LSC_CallErrFunc_(kLscErrStreamNotFoundStatFmt, streamId);
@@ -6789,7 +6703,7 @@
       return 0;
     }
 
-    const LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    const LscInstance* const lsc = LscInstanceOf(lscHandle);
     const std::int32_t index = LscFindStreamEntryIndex(lsc, streamId);
     if (index < 0) {
       (void)LSC_CallErrFunc_(kLscErrStreamNotFoundRdSctFmt, streamId);
@@ -6811,7 +6725,7 @@
       return LSC_CallErrFunc_(kLscErrLscNullSetFlowLimit);
     }
 
-    LscRuntimeView* const lsc = AsLscRuntimeView(lscHandle);
+    LscInstance* const lsc = LscInstanceOf(lscHandle);
     if (flowLimit < 0 || flowLimit > lsc->flowLimitMax) {
       return LSC_CallErrFunc_(kLscErrInvalidFlowLimitFmt, flowLimit);
     }
@@ -6833,7 +6747,7 @@
       return -1;
     }
 
-    return AsLscRuntimeView(lscHandle)->flowLimit;
+    return LscInstanceOf(lscHandle)->flowLimit;
   }
 
   /**
@@ -6849,7 +6763,7 @@
       return;
     }
 
-    AsLscRuntimeView(lscHandle)->loopEnabled = static_cast<std::uint8_t>(enabled);
+    LscInstanceOf(lscHandle)->loopEnabled = static_cast<std::uint8_t>(enabled);
   }
 
   /**
@@ -6923,8 +6837,8 @@
    */
   std::int32_t lsc_StatWait(void* const lscHandle)
   {
-    auto* const lsc = AsLscRuntimeView(lscHandle);
-    LscStreamEntryRuntimeView& entry = LscCurrentStreamEntry(lsc);
+    auto* const lsc = LscInstanceOf(lscHandle);
+    LscStreamEntry& entry = LscCurrentStreamEntry(lsc);
 
     if (lsc->streamCount <= 0) {
       return lsc->streamCount;
@@ -6962,12 +6876,12 @@
    */
   std::int32_t lsc_StatRead(void* const lscHandle)
   {
-    auto* const lsc = AsLscRuntimeView(lscHandle);
+    auto* const lsc = LscInstanceOf(lscHandle);
     if (lsc->streamHandle == nullptr) {
       return LSC_CallErrFunc_(kLscErrLscFilePointerNull);
     }
 
-    LscStreamEntryRuntimeView& entry = LscCurrentStreamEntry(lsc);
+    LscStreamEntry& entry = LscCurrentStreamEntry(lsc);
     const std::int32_t statClass = ADXSTM_GetStat(lsc->streamHandle) - 2;
     if (statClass == 0) {
       entry.readSector = ADXSTM_Tell(lsc->streamHandle);
@@ -6997,13 +6911,13 @@
    */
   std::int32_t lsc_StatEnd(void* const lscHandle)
   {
-    auto* const lsc = AsLscRuntimeView(lscHandle);
+    auto* const lsc = LscInstanceOf(lscHandle);
     if (lsc->streamHandle == nullptr) {
       return 0;
     }
 
     const bool loopEnabled = (lsc->loopEnabled == 1);
-    const LscStreamEntryRuntimeView entrySnapshot = loopEnabled ? LscCurrentStreamEntry(lsc) : LscStreamEntryRuntimeView{};
+    const LscStreamEntry entrySnapshot = loopEnabled ? LscCurrentStreamEntry(lsc) : LscStreamEntry{};
 
     --lsc->streamCount;
     std::int32_t result = lsc->streamCount;
@@ -7035,14 +6949,14 @@
    */
   std::int32_t lsc_ExecHndl(void* const lscHandle)
   {
-    auto* const lsc = AsLscRuntimeView(lscHandle);
+    auto* const lsc = LscInstanceOf(lscHandle);
     std::int32_t result = 1;
 
     if (lsc->paused == 1 || lsc->status != 2 || lsc->streamCount <= 0) {
       return result;
     }
 
-    LscStreamEntryRuntimeView& entry = LscCurrentStreamEntry(lsc);
+    LscStreamEntry& entry = LscCurrentStreamEntry(lsc);
     if (entry.streamStatus == 1) {
       (void)lsc_StatRead(lscHandle);
     }
@@ -7068,7 +6982,7 @@
   std::int32_t lsc_ExecServer()
   {
     std::int32_t result = 0;
-    for (LscRuntimeView& lsc : gLscObjectPool) {
+    for (LscInstance& lsc : gLscObjectPool) {
       if (lsc.used == 1) {
         result = lsc_ExecHndl(&lsc);
       }
@@ -7110,241 +7024,6 @@
       return m2sapi_m2p_GetVersionStr();
     }
     return nullptr;
-  }
-
-  /**
-   * Runtime view for M2V concealment paths (`_concealOn*` lane family).
-   */
-  struct M2vConcealRuntimeView
-  {
-    std::uint8_t mUnknown0000_01B7[0x1B8]{};
-    std::int32_t concealDisableFlag = 0; // +0x1B8
-    std::uint8_t mUnknown01BC_01D7[0x1C]{};
-    std::int32_t macroblocksPerRow = 0; // +0x1D8
-    std::uint8_t mUnknown01DC_01E7[0x0C]{};
-    std::int32_t decodeStage = 0; // +0x1E8
-    std::uint8_t mUnknown01EC_0293[0xA8]{};
-    std::uint8_t* chromaPlaneUBase = nullptr; // +0x294
-    std::uint8_t* chromaPlaneVBase = nullptr; // +0x298
-    std::uint8_t* lumaPlaneBase = nullptr; // +0x29C
-    std::int16_t chromaRowStride = 0; // +0x2A0
-    std::int16_t lumaRowStride = 0; // +0x2A2
-    std::uint8_t mUnknown02A4_02C3[0x20]{};
-    void(__cdecl* concealDispatchFn)(std::int32_t decoderAddress, std::int32_t macroblockCount) = nullptr; // +0x2C4
-    std::uint8_t mUnknown02C8_0307[0x40]{};
-    std::int32_t concealStateWord308 = 0; // +0x308
-    std::int32_t concealStateWord30C = 0; // +0x30C
-    std::uint8_t mUnknown0310_032B[0x1C]{};
-    std::int32_t concealStateWord32C = 0; // +0x32C
-    std::int32_t concealStateWord330 = 0; // +0x330
-    std::uint8_t mUnknown0334_0337[0x4]{};
-    std::int32_t macroblockCount = 0; // +0x338
-    std::uint8_t mUnknown033C_0347[0x0C]{};
-    std::int32_t concealFlags = 0; // +0x348
-    std::uint8_t mUnknown034C_139B[0x1050]{};
-    std::int32_t concealStartMacroblock = 0; // +0x139C
-    std::int32_t concealDeferredFlag = 0; // +0x13A0
-  };
-  static_assert(offsetof(M2vConcealRuntimeView, concealDisableFlag) == 0x1B8);
-  static_assert(offsetof(M2vConcealRuntimeView, macroblocksPerRow) == 0x1D8);
-  static_assert(offsetof(M2vConcealRuntimeView, decodeStage) == 0x1E8);
-  static_assert(offsetof(M2vConcealRuntimeView, chromaPlaneUBase) == 0x294);
-  static_assert(offsetof(M2vConcealRuntimeView, chromaPlaneVBase) == 0x298);
-  static_assert(offsetof(M2vConcealRuntimeView, lumaPlaneBase) == 0x29C);
-  static_assert(offsetof(M2vConcealRuntimeView, chromaRowStride) == 0x2A0);
-  static_assert(offsetof(M2vConcealRuntimeView, lumaRowStride) == 0x2A2);
-  static_assert(offsetof(M2vConcealRuntimeView, concealDispatchFn) == 0x2C4);
-  static_assert(offsetof(M2vConcealRuntimeView, concealStateWord308) == 0x308);
-  static_assert(offsetof(M2vConcealRuntimeView, concealStateWord30C) == 0x30C);
-  static_assert(offsetof(M2vConcealRuntimeView, concealStateWord32C) == 0x32C);
-  static_assert(offsetof(M2vConcealRuntimeView, concealStateWord330) == 0x330);
-  static_assert(offsetof(M2vConcealRuntimeView, macroblockCount) == 0x338);
-  static_assert(offsetof(M2vConcealRuntimeView, concealFlags) == 0x348);
-  static_assert(offsetof(M2vConcealRuntimeView, concealStartMacroblock) == 0x139C);
-  static_assert(offsetof(M2vConcealRuntimeView, concealDeferredFlag) == 0x13A0);
-
-  [[nodiscard]] inline M2vConcealRuntimeView* AsM2vConcealRuntime(const std::int32_t decoderAddress) noexcept
-  {
-    return reinterpret_cast<M2vConcealRuntimeView*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(decoderAddress)));
-  }
-
-  /**
-   * Address: 0x00B00EB0 (FUN_00B00EB0, _concealOnExec)
-   *
-   * What it does:
-   * Fills macroblock lanes from the conceal start index to frame end by
-   * cloning previous-row pixels (or left-edge/constant fallback for first row).
-   */
-  extern "C" unsigned int __cdecl concealOnExec(const std::int32_t decoderAddress, const unsigned int startMacroblock)
-  {
-    auto* const runtime = AsM2vConcealRuntime(decoderAddress);
-    unsigned int result = static_cast<unsigned int>(runtime->concealDisableFlag);
-    if (result != 0u) {
-      return result;
-    }
-
-    const std::int32_t lumaStride = static_cast<std::int32_t>(runtime->lumaRowStride);
-    const std::int32_t chromaStride = static_cast<std::int32_t>(runtime->chromaRowStride);
-    const unsigned int macroblockLimit = static_cast<unsigned int>(runtime->macroblockCount);
-    unsigned int macroblockIndex = startMacroblock;
-    if (macroblockIndex < macroblockLimit) {
-      const std::int32_t lumaRowAdvance = static_cast<std::int32_t>((static_cast<std::uint32_t>(lumaStride) >> 2u) << 2u);
-      const std::int32_t chromaRowAdvance = static_cast<std::int32_t>((static_cast<std::uint32_t>(chromaStride) >> 2u) << 2u);
-      do {
-        const unsigned int macroblocksPerRow = static_cast<unsigned int>(runtime->macroblocksPerRow);
-        const std::int32_t macroblockColumn = static_cast<std::int32_t>(macroblockIndex % macroblocksPerRow);
-        const std::int32_t lumaRowBase = static_cast<std::int32_t>((macroblockIndex / macroblocksPerRow) << 4u);
-        const std::int32_t chromaRowBase = lumaRowBase >> 1;
-
-        std::uint8_t* const lumaCurrent =
-          runtime->lumaPlaneBase + static_cast<std::ptrdiff_t>((macroblockColumn << 4) + (lumaStride * lumaRowBase));
-        const std::uint8_t* const lumaPrevious =
-          runtime->lumaPlaneBase + static_cast<std::ptrdiff_t>((macroblockColumn << 4) + (lumaStride * (lumaRowBase - 1)));
-
-        const std::int32_t chromaColumn = (macroblockColumn << 4) >> 1;
-        std::uint8_t* const chromaUCurrent =
-          runtime->chromaPlaneUBase + static_cast<std::ptrdiff_t>(chromaColumn + (chromaStride * chromaRowBase));
-        const std::uint8_t* const chromaUPrevious =
-          runtime->chromaPlaneUBase + static_cast<std::ptrdiff_t>(chromaColumn + (chromaStride * (chromaRowBase - 1)));
-        std::uint8_t* const chromaVCurrent =
-          runtime->chromaPlaneVBase + static_cast<std::ptrdiff_t>(chromaColumn + (chromaStride * chromaRowBase));
-        const std::uint8_t* const chromaVPrevious =
-          runtime->chromaPlaneVBase + static_cast<std::ptrdiff_t>(chromaColumn + (chromaStride * (chromaRowBase - 1)));
-
-        if (chromaRowBase != 0) {
-          std::uint8_t* lumaWrite = lumaCurrent;
-          const std::uint8_t* lumaRead = lumaPrevious;
-          for (std::int32_t row = 0; row < 16; ++row) {
-            std::memcpy(lumaWrite, lumaRead, 16u);
-            lumaWrite += lumaRowAdvance;
-            lumaRead += lumaRowAdvance;
-          }
-
-          std::uint8_t* chromaUWrite = chromaUCurrent;
-          const std::uint8_t* chromaURead = chromaUPrevious;
-          for (std::int32_t row = 0; row < 8; ++row) {
-            std::memcpy(chromaUWrite, chromaURead, 8u);
-            chromaUWrite += chromaRowAdvance;
-            chromaURead += chromaRowAdvance;
-          }
-
-          std::uint8_t* chromaVWrite = chromaVCurrent;
-          const std::uint8_t* chromaVRead = chromaVPrevious;
-          for (std::int32_t row = 0; row < 8; ++row) {
-            std::memcpy(chromaVWrite, chromaVRead, 8u);
-            chromaVWrite += chromaRowAdvance;
-            chromaVRead += chromaRowAdvance;
-          }
-        } else if (chromaColumn != 0) {
-          std::uint8_t* lumaWrite = lumaCurrent;
-          for (std::int32_t row = 0; row < 16; ++row) {
-            std::memset(lumaWrite, static_cast<int>(lumaWrite[-1]), 16u);
-            lumaWrite += lumaRowAdvance;
-          }
-
-          std::uint8_t* chromaUWrite = chromaUCurrent;
-          for (std::int32_t row = 0; row < 8; ++row) {
-            std::memset(chromaUWrite, static_cast<int>(chromaUWrite[-1]), 8u);
-            chromaUWrite += chromaRowAdvance;
-          }
-
-          std::uint8_t* chromaVWrite = chromaVCurrent;
-          for (std::int32_t row = 0; row < 8; ++row) {
-            std::memset(chromaVWrite, static_cast<int>(chromaVWrite[-1]), 8u);
-            chromaVWrite += chromaRowAdvance;
-          }
-        } else {
-          std::uint8_t* lumaWrite = lumaCurrent;
-          for (std::int32_t row = 0; row < 16; ++row) {
-            std::memset(lumaWrite, 0x10, 16u);
-            lumaWrite += lumaRowAdvance;
-          }
-
-          std::uint8_t* chromaUWrite = chromaUCurrent;
-          for (std::int32_t row = 0; row < 8; ++row) {
-            std::memset(chromaUWrite, 0x80, 8u);
-            chromaUWrite += chromaRowAdvance;
-          }
-
-          std::uint8_t* chromaVWrite = chromaVCurrent;
-          for (std::int32_t row = 0; row < 8; ++row) {
-            std::memset(chromaVWrite, 0x80, 8u);
-            chromaVWrite += chromaRowAdvance;
-          }
-        }
-
-        result = ++macroblockIndex;
-      } while (macroblockIndex < macroblockLimit);
-    }
-
-    return result;
-  }
-
-  /**
-   * Address: 0x00B00D80 (FUN_00B00D80, _concealOff)
-   *
-   * What it does:
-   * Preserves the conceal-off callback lane as a deliberate no-op.
-   */
-  extern "C" std::int32_t __cdecl concealOff(const std::int32_t decoderAddress)
-  {
-    static_cast<void>(decoderAddress);
-    return 0;
-  }
-
-  /**
-   * Address: 0x00B00D90 (FUN_00B00D90, _concealOn)
-   *
-   * What it does:
-   * Applies conceal-mode state transitions, runs the conceal dispatch lane,
-   * then restores decoder state words captured before conceal execution.
-   */
-  extern "C" std::int32_t __cdecl concealOn(const std::int32_t decoderAddress)
-  {
-    auto* const runtime = AsM2vConcealRuntime(decoderAddress);
-    const std::int32_t concealStartMacroblock = (runtime->concealStartMacroblock < 0) ? 0 : runtime->concealStartMacroblock;
-
-    const std::int32_t decodeStage = runtime->decodeStage;
-    if (decodeStage == 1 && runtime->concealDeferredFlag == 0) {
-      return static_cast<std::int32_t>(concealOnExec(decoderAddress, static_cast<unsigned int>(concealStartMacroblock)));
-    }
-
-    const std::int32_t savedState330 = runtime->concealStateWord330;
-    const std::int32_t savedState308 = runtime->concealStateWord308;
-    const std::int32_t savedState30C = runtime->concealStateWord30C;
-    const std::int32_t savedState32C = runtime->concealStateWord32C;
-    const std::int32_t savedConcealFlags = runtime->concealFlags;
-    const std::int32_t savedDecodeStage = decodeStage;
-
-    if (decodeStage == 1) {
-      runtime->decodeStage = 2;
-      runtime->concealFlags = 8;
-    }
-
-    if (runtime->decodeStage == 2) {
-      runtime->concealFlags |= 8;
-    }
-    if (runtime->decodeStage == 3) {
-      const std::int32_t flags = runtime->concealFlags;
-      if ((flags & 0x0C) == 0) {
-        runtime->concealFlags = flags | 4;
-      }
-    }
-
-    const std::int32_t remainingMacroblocks = runtime->macroblockCount - concealStartMacroblock;
-    runtime->concealStateWord308 = 0;
-    runtime->concealStateWord30C = 0;
-    runtime->concealStateWord32C = 0;
-    runtime->concealStateWord330 = 0;
-    runtime->concealDispatchFn(decoderAddress, remainingMacroblocks + 1);
-
-    runtime->concealStateWord32C = savedState32C;
-    runtime->concealStateWord30C = savedState30C;
-    runtime->concealStateWord308 = savedState308;
-    runtime->concealStateWord330 = savedState330;
-    runtime->decodeStage = savedDecodeStage;
-    runtime->concealFlags = savedConcealFlags;
-    return savedConcealFlags;
   }
 
   /**
@@ -7395,11 +7074,11 @@
    * What it does:
    * Creates one M2P parser runtime through linked backend callback lane.
    */
-  std::int32_t M2P_Create(const std::int32_t workAddress, const std::int32_t workSizeBytes)
+  std::int32_t M2P_Create(const SofdecAddressWord workAddress, const std::int32_t workSizeBytes)
   {
     // The backend slots are one generic pointer type because arity differs per
     // entry point; `mpslib_InitHn`'s caller passes a work block and its size.
-    using M2pCreateCallback = std::int32_t(__cdecl*)(std::int32_t workAddress, std::int32_t workSizeBytes);
+    using M2pCreateCallback = std::int32_t(__cdecl*)(SofdecAddressWord workAddress, std::int32_t workSizeBytes);
     if (m2sapi_m2p_Create != nullptr) {
       return reinterpret_cast<M2pCreateCallback>(m2sapi_m2p_Create)(workAddress, workSizeBytes);
     }
@@ -7412,11 +7091,11 @@
    * What it does:
    * Destroys one M2P parser runtime through linked backend callback lane.
    */
-  std::int32_t M2P_Destroy(const std::int32_t m2pHandleAddress)
+  std::int32_t M2P_Destroy(const SofdecAddressWord m2pHandleAddress)
   {
     // The binary tail-jumps into the backend, so the caller-pushed handle is
     // forwarded untouched; spelled out here as an explicit forwarding call.
-    using M2pDestroyCallback = std::int32_t(__cdecl*)(std::int32_t m2pHandleAddress);
+    using M2pDestroyCallback = std::int32_t(__cdecl*)(SofdecAddressWord m2pHandleAddress);
     if (m2sapi_m2p_Destroy != nullptr) {
       return reinterpret_cast<M2pDestroyCallback>(m2sapi_m2p_Destroy)(m2pHandleAddress);
     }
@@ -7430,13 +7109,13 @@
    * Applies error-callback lane configuration on linked M2P backend.
    */
   std::int32_t M2P_SetErrFn(
-    const std::int32_t handleAddress,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord handleAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject
   )
   {
     using M2pSetErrFnCallback =
-      std::int32_t(__cdecl*)(std::int32_t handleAddress, std::int32_t callbackAddress, std::int32_t callbackObject);
+      std::int32_t(__cdecl*)(SofdecAddressWord handleAddress, SofdecAddressWord callbackAddress, std::int32_t callbackObject);
     if (m2sapi_m2p_SetErrFn != nullptr) {
       return reinterpret_cast<M2pSetErrFnCallback>(m2sapi_m2p_SetErrFn)(
         handleAddress, callbackAddress, callbackObject);
@@ -7615,7 +7294,7 @@
    * What it does:
    * Destroys one M2V backend decoder handle when destroy callback is linked.
    */
-  std::int32_t M2V_Destroy(const std::int32_t decoderHandle)
+  std::int32_t M2V_Destroy(const SofdecAddressWord decoderHandle)
   {
     if (m2vapi_Destroy != nullptr) {
       return m2vapi_Destroy(decoderHandle);
@@ -7687,7 +7366,7 @@
    * Dispatches one frame decode request to the linked M2V backend.
    */
   std::int32_t M2V_DecodeFrm(
-    const std::int32_t decoderHandle,
+    const SofdecAddressWord decoderHandle,
     const std::int32_t decodeMode,
     const std::int32_t decodeFlags
   )
@@ -7704,7 +7383,7 @@
    * What it does:
    * Forwards frame-skip requests to the linked M2V backend.
    */
-  std::int32_t M2V_SkipFrm(const std::int32_t decoderHandle)
+  std::int32_t M2V_SkipFrm(const SofdecAddressWord decoderHandle)
   {
     if (m2vapi_SkipFrm != nullptr) {
       return m2vapi_SkipFrm(decoderHandle);
@@ -7719,7 +7398,7 @@
    * Configures one user side-data slot lane on the linked M2V backend.
    */
   std::int32_t M2V_SetUsrSj(
-    const std::int32_t decoderHandle,
+    const SofdecAddressWord decoderHandle,
     const std::int32_t userSlotIndex,
     const std::int32_t lane0,
     const std::int32_t lane1,
@@ -7739,7 +7418,7 @@
    * Publishes caller-owned picture-user buffer lanes to the M2V backend.
    */
   std::int32_t M2V_SetPicUsrBuf(
-    const std::int32_t decoderHandle,
+    const SofdecAddressWord decoderHandle,
     const std::uintptr_t userBufferAddress,
     const std::int32_t userBufferSizeBytes
   )
@@ -7757,7 +7436,7 @@
    * Reads decoded picture-user metadata into caller-provided output storage.
    */
   std::int32_t M2V_GetPicUsr(
-    const std::int32_t decoderHandle,
+    const SofdecAddressWord decoderHandle,
     const std::int32_t userSlotIndex,
     void* const outUserBuffer
   )
@@ -7774,7 +7453,7 @@
    * What it does:
    * Decodes picture-attribute payload lanes through the linked M2V backend.
    */
-  std::int32_t M2V_DecodePicAtr(const std::int32_t decoderHandle, const std::int32_t decodeMode)
+  std::int32_t M2V_DecodePicAtr(const SofdecAddressWord decoderHandle, const std::int32_t decodeMode)
   {
     if (m2vapi_DecodePicAtr != nullptr) {
       return m2vapi_DecodePicAtr(decoderHandle, decodeMode);
@@ -7788,7 +7467,7 @@
    * What it does:
    * Copies current picture-attribute lanes from the M2V backend.
    */
-  std::int32_t M2V_GetPicAtr(const std::int32_t decoderHandle, void* const outPictureAttributes)
+  std::int32_t M2V_GetPicAtr(const SofdecAddressWord decoderHandle, void* const outPictureAttributes)
   {
     if (m2vapi_GetPicAtr != nullptr) {
       return m2vapi_GetPicAtr(decoderHandle, outPictureAttributes);
@@ -7802,7 +7481,7 @@
    * What it does:
    * Reads the current stream bitrate lane from the linked M2V backend.
    */
-  std::int32_t M2V_GetBitRate(const std::int32_t decoderHandle, std::int32_t* const outBitRate)
+  std::int32_t M2V_GetBitRate(const SofdecAddressWord decoderHandle, std::int32_t* const outBitRate)
   {
     if (m2vapi_GetBitRate != nullptr) {
       return m2vapi_GetBitRate(decoderHandle, outBitRate);
@@ -7817,7 +7496,7 @@
    * Reads VBV buffer-size and related picture-buffer lanes from the M2V backend.
    */
   std::int32_t M2V_GetVbvBufSiz(
-    const std::int32_t decoderHandle,
+    const SofdecAddressWord decoderHandle,
     std::int32_t* const outVbvBufferSize,
     std::int32_t* const outVbvPayloadSize,
     void* const outVbvFlags
@@ -7836,7 +7515,7 @@
    * Reads decoder link-flag lanes from the linked M2V backend.
    */
   std::int32_t M2V_GetLinkFlg(
-    const std::int32_t decoderHandle,
+    const SofdecAddressWord decoderHandle,
     std::int32_t* const outLinkFlag,
     std::int32_t* const outLinkState
   )
@@ -8119,14 +7798,14 @@
   std::int32_t ADXF_Init();
   std::int32_t SVM_SetCbSvrWithString(
     std::int32_t svtype,
-    std::int32_t callbackAddress,
+    SofdecAddressWord callbackAddress,
     std::int32_t callbackObject,
     const char* callbackName
   );
   void SVM_SetCbSvrIdWithString(
     std::int32_t svtype,
     std::int32_t laneId,
-    std::int32_t callbackAddress,
+    SofdecAddressWord callbackAddress,
     std::int32_t callbackObject,
     const char* callbackName
   );
@@ -8196,11 +7875,11 @@
       gAdxtRuntimePool = {};
 
       SVM_SetCbSvrIdWithString(
-        2, 1, reinterpret_cast<std::int32_t>(&adxt_exec_tsvr), 0, kAdxtExecTsvrName);
+        2, 1, reinterpret_cast<SofdecAddressWord>(&adxt_exec_tsvr), 0, kAdxtExecTsvrName);
       gAdxtServerFsSlotId = SVM_SetCbSvrWithString(
-        4, reinterpret_cast<std::int32_t>(&adxt_exec_fssvr), 0, kAdxtExecFssvrName);
+        4, reinterpret_cast<SofdecAddressWord>(&adxt_exec_fssvr), 0, kAdxtExecFssvrName);
       gAdxtServerMainSlotId = SVM_SetCbSvrWithString(
-        5, reinterpret_cast<std::int32_t>(&adxt_exec_main_thrd), 0, kAdxtExecMainThreadName);
+        5, reinterpret_cast<SofdecAddressWord>(&adxt_exec_main_thrd), 0, kAdxtExecMainThreadName);
 
       gAdxtVsyncCount = 0;
       adxt_output_mono_flag = 0;
@@ -8280,7 +7959,7 @@
     const std::int32_t rangeEnd
   )
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     const std::int32_t result = lsc_EntryFileRange(runtime->SeamlessLscHandle(), fileName, 0, rangeStart, rangeEnd);
     if (result < 0) {
       return ADXERR_CallErrFunc2_(kAdxtErrCannotEntryFilePrefix, fileName);
@@ -8308,11 +7987,11 @@
    */
   std::int32_t adxt_EntryAfs(
     void* const adxtRuntime,
-    const std::int32_t afsHandle,
+    const SofdecAddressWord afsHandle,
     const std::int32_t fileIndex
   )
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     std::int32_t startOffset = 0;
     std::int32_t rangeStart = 0;
     std::int32_t rangeEnd = 0;
@@ -8342,7 +8021,7 @@
    */
   std::int32_t adxt_StartSeamless(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     void* const lscHandle = runtime->SeamlessLscHandle();
 
     ADXT_StopWithoutLsc(runtime);
@@ -8367,10 +8046,10 @@
    * What it does:
    * Returns ADXT stream handle lane under ADXCRS enter/leave guards.
    */
-  std::int32_t ADXT_GetStm(void* const adxtRuntime)
+  SofdecAddressWord ADXT_GetStm(void* const adxtRuntime)
   {
     ADXCRS_Enter();
-    const std::int32_t streamHandle = adxt_GetStm(adxtRuntime);
+    const SofdecAddressWord streamHandle = adxt_GetStm(adxtRuntime);
     ADXCRS_Leave();
     return streamHandle;
   }
@@ -8381,9 +8060,9 @@
    * What it does:
    * Returns ADXT runtime stream handle lane.
    */
-  std::int32_t adxt_GetStm(void* const adxtRuntime)
+  SofdecAddressWord adxt_GetStm(void* const adxtRuntime)
   {
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(static_cast<AdxtRuntimeState*>(adxtRuntime)->streamHandle));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(static_cast<AdxtState*>(adxtRuntime)->streamHandle));
   }
 
   /**
@@ -8407,7 +8086,7 @@
    */
   std::int32_t adxt_TermSupply(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     return ADXSJD_TermSupply(runtime->sjdHandle);
   }
 
@@ -8479,9 +8158,9 @@
    * Internal ADXT link-switch lane: stores requested switch byte in runtime
    * state and forwards it to SJD lane when available.
    */
-  std::int32_t adxt_SetLnkSwInternal(void* const adxtRuntime, const std::int32_t enabled)
+  SofdecAddressWord adxt_SetLnkSwInternal(void* const adxtRuntime, const std::int32_t enabled)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     runtime->linkSwitchRequested = static_cast<std::uint8_t>(enabled);
     if (runtime->sjdHandle != 0) {
       return ADXSJD_SetLnkSw(runtime->sjdHandle, enabled);
@@ -8535,7 +8214,7 @@
    */
   std::int32_t adxt_start_sj(void* const adxtRuntime, void* const sourceJoinHandle)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     const std::int32_t maxChannels = static_cast<std::int32_t>(runtime->maxChannelCount);
     for (std::int32_t lane = 0; lane < maxChannels; ++lane) {
       runtime->SourceChannelRingLane(lane)->Destroy();
@@ -8577,7 +8256,7 @@
     const std::int32_t rangeEnd
   )
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     ADXSTM_SetBufSize(
       runtime->streamHandle,
       static_cast<std::int32_t>(runtime->SeamlessFlowSectorHint()) << 11,
@@ -8585,7 +8264,7 @@
     );
     ADXSTM_SetEos(runtime->streamHandle, gAdxtStreamEosSector);
     ADXSTM_EntryEosFunc(
-      static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(runtime->streamHandle)),
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(runtime->streamHandle)),
       0,
       0
     );
@@ -8619,7 +8298,7 @@
    */
   void adxt_StartSj(void* const adxtRuntime, void* const sourceJoinHandle)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr || sourceJoinHandle == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtErrStartSjParameter);
       return;
@@ -8655,7 +8334,7 @@
    */
   void adxt_StopWithoutLsc(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     ADXCRS_Lock();
     j__ADXRNA_Stop(runtime->rnaHandle);
     j__ADXRNA_SetTransSw(runtime->rnaHandle, 0);
@@ -8700,7 +8379,7 @@
    */
   void adxt_Stop(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtStopParameterErrorMessage);
       return;
@@ -8738,14 +8417,14 @@
    * Returns ADXRNA state byte. Internal core reached through the
    * `ADXRNA_GetStateByte` thunk at 0x00B17CA0 (FUN_00B17CA0).
    */
-  std::int32_t adxrna_GetStateByteCore(const std::int32_t rnaHandle)
+  std::int32_t adxrna_GetStateByteCore(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return -1;
     }
 
-    return static_cast<std::int32_t>(AsAdxrnaStateControlRuntimeView(rnaHandle)->stateByte);
+    return static_cast<std::int32_t>(AdxrnaStateControlOf(rnaHandle)->stateByte);
   }
 
   /**
@@ -8755,14 +8434,14 @@
    * Stores one ADXRNA control word at lane `0x44`. Internal core reached
    * through the `ADXRNA_SetControlWord44` thunk at 0x00B17CC0 (FUN_00B17CC0).
    */
-  std::int32_t adxrna_SetControlWord44Core(const std::int32_t rnaHandle, const std::int32_t controlWord)
+  SofdecAddressWord adxrna_SetControlWord44Core(const SofdecAddressWord rnaHandle, const std::int32_t controlWord)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return 0;
     }
 
-    AsAdxrnaStateControlRuntimeView(rnaHandle)->flowLimitWord = controlWord;
+    AdxrnaStateControlOf(rnaHandle)->flowLimitWord = controlWord;
     return rnaHandle;
   }
 
@@ -8773,14 +8452,14 @@
    * Computes effective ADXRNA sample frequency from transpose lanes and base
    * sample-rate lane.
    */
-  std::int32_t mwRnaCalcSfreq(const std::int32_t rnaHandle)
+  std::int32_t mwRnaCalcSfreq(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return 0;
     }
 
-    const auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+    const auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
     const double semitoneCents = static_cast<double>(runtime->transposeCents + (100 * runtime->transposeOctaves));
     const double ratio = std::pow(2.0, semitoneCents / 1200.0);
     const double scaledSfreq = ratio * static_cast<double>(runtime->timeScaleBase);
@@ -8800,19 +8479,19 @@
    * Internal core reached through the `ADXRNA_SetBitPerSmpl` thunk at
    * 0x00B17D20 (FUN_00B17D20, _ADXRNA_SetBitPerSmpl).
    */
-  std::int32_t adxrna_SetBitPerSmplCore(const std::int32_t rnaHandle, const std::int32_t bitsPerSample)
+  std::int32_t adxrna_SetBitPerSmplCore(const SofdecAddressWord rnaHandle, const std::int32_t bitsPerSample)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return 0;
     }
 
-    auto* const runtime = reinterpret_cast<MwlRnaRuntimeView*>(AsAdxrnaRuntimeView(rnaHandle));
+    auto* const runtime = reinterpret_cast<MwlRna*>(AdxrnaStateOf(rnaHandle));
     const std::int32_t scaledBits = runtime->transferCapacityBytes * runtime->bitsPerSample;
     const std::int32_t alignedBits = ((scaledBits >> 31) & 7) + scaledBits;
     runtime->transferCapacityBytes = ((alignedBits >> 3) / bitsPerSample) << 3;
 
-    auto* const outputRuntime = AsAdxrnaRuntimeView(rnaHandle)->outputRuntime;
+    auto* const outputRuntime = AdxrnaStateOf(rnaHandle)->outputRuntime;
     const std::int32_t dispatchResult = outputRuntime->dispatchTable->setBitsPerSample(outputRuntime, bitsPerSample);
     runtime->bitsPerSample = bitsPerSample;
     return dispatchResult;
@@ -8826,14 +8505,14 @@
    * frequency lane. Internal core reached through the `ADXRNA_SetSfreq`
    * thunk at 0x00B17CE0 (FUN_00B17CE0, _ADXRNA_SetSfreq).
    */
-  std::int32_t adxrna_SetSfreqCore(const std::int32_t rnaHandle, const std::int32_t sampleRate)
+  std::int32_t adxrna_SetSfreqCore(const SofdecAddressWord rnaHandle, const std::int32_t sampleRate)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return 0;
     }
 
-    auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
     runtime->timeScaleBase = sampleRate;
     runtime->calculatedSampleRate = mwRnaCalcSfreq(rnaHandle);
     return runtime->calculatedSampleRate;
@@ -8847,7 +8526,7 @@
    * dispatch slot `0x4C`.
    */
   [[maybe_unused]] std::int32_t ADXRNA_SetLane6WordPair(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     const std::int32_t word0,
     const std::int32_t word1
   )
@@ -8857,7 +8536,7 @@
       return 0;
     }
 
-    auto* const outputRuntime = AsAdxrnaTransportRuntimeView(rnaHandle)->outputRuntime;
+    auto* const outputRuntime = AdxrnaTransportOf(rnaHandle)->outputRuntime;
     return outputRuntime->dispatchTable->setLaneWordPair(outputRuntime, 6, word0, word1);
   }
 
@@ -8869,14 +8548,14 @@
    * lane at `0x60`. Internal core reached through the `ADXRNA_SetOutVol`
    * thunk at 0x00B17CF0 (FUN_00B17CF0, _ADXRNA_SetOutVol).
    */
-  std::int32_t adxrna_SetOutVolCore(const std::int32_t rnaHandle, const std::int32_t volumeLevel)
+  std::int32_t adxrna_SetOutVolCore(const SofdecAddressWord rnaHandle, const std::int32_t volumeLevel)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return 0;
     }
 
-    auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
     if (volumeLevel < 0) {
       const std::int32_t clampedVolume = (volumeLevel <= -999) ? -999 : volumeLevel;
       runtime->streamInfoWordA0 = clampedVolume;
@@ -8904,7 +8583,7 @@
    * folded away - `adxt_SetOutPan` now calls this function directly).
    */
   std::int32_t adxrna_SetOutPanCore(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     const std::int32_t channelIndex,
     const std::int32_t panLevel
   )
@@ -8914,7 +8593,7 @@
       return 0;
     }
 
-    auto* const runtime = AsAdxrnaRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaStateOf(rnaHandle);
     if (channelIndex < 0) {
       return 0;
     }
@@ -8943,15 +8622,15 @@
    * through the `ADXRNA_SetOutBalance` thunk at 0x00B17D10 (FUN_00B17D10,
    * _ADXRNA_SetOutBalance).
    */
-  std::int32_t adxrna_SetOutBalanceCore(const std::int32_t rnaHandle, const std::int32_t balanceLevel)
+  std::int32_t adxrna_SetOutBalanceCore(const SofdecAddressWord rnaHandle, const std::int32_t balanceLevel)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return 0;
     }
 
-    auto* const runtime = AsAdxrnaRuntimeView(rnaHandle);
-    auto* const metrics = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaStateOf(rnaHandle);
+    auto* const metrics = AdxrnaLegacyMetricsOf(rnaHandle);
     const std::int32_t clampedBalance = ClampAdxrnaPanLevel(balanceLevel);
     const std::int32_t dispatchResult = runtime->outputRuntime->dispatchTable->setOutputBalance(runtime->outputRuntime, clampedBalance);
     metrics->streamInfoWord6C = clampedBalance;
@@ -8966,7 +8645,7 @@
    * `[-45, 0]`, and mirrors both words into stream-info lanes `0x70/0x74`.
    */
   [[maybe_unused]] std::int32_t mwRnaSetFx(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     const std::int32_t fxLane,
     const std::int32_t fxLevel
   )
@@ -8981,7 +8660,7 @@
     }
 
     const std::int32_t clampedFxLevel = ClampAdxrnaFxLevel(fxLevel);
-    auto* const outputRuntime = AsAdxrnaTransportRuntimeView(rnaHandle)->outputRuntime;
+    auto* const outputRuntime = AdxrnaTransportOf(rnaHandle)->outputRuntime;
     const std::int32_t dispatchResult = outputRuntime->dispatchTable->setLaneWordPair(
       outputRuntime,
       0,
@@ -8989,7 +8668,7 @@
       clampedFxLevel
     );
 
-    auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
     runtime->streamInfoWord70 = fxLane;
     runtime->streamInfoWord74 = clampedFxLevel;
     return dispatchResult;
@@ -9003,7 +8682,7 @@
    * frequency.
    */
   std::int32_t ADXRNA_SetTransposeWords(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     const std::int32_t transposeOctaves,
     const std::int32_t transposeCents
   )
@@ -9013,7 +8692,7 @@
       return 0;
     }
 
-    auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
     runtime->transposeOctaves = transposeOctaves;
     runtime->transposeCents = transposeCents;
     const std::int32_t calculatedSampleRate = mwRnaCalcSfreq(rnaHandle);
@@ -9029,7 +8708,7 @@
    * stream-info lane `0x88`.
    */
   [[maybe_unused]] std::int32_t ADXRNA_SetStreamInfoWord88(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     const std::int32_t streamInfoWord88
   )
   {
@@ -9039,9 +8718,9 @@
     }
 
     const std::int32_t clampedWord = ClampAdxrnaFxLevel(streamInfoWord88);
-    auto* const outputRuntime = AsAdxrnaTransportRuntimeView(rnaHandle)->outputRuntime;
+    auto* const outputRuntime = AdxrnaTransportOf(rnaHandle)->outputRuntime;
     const std::int32_t dispatchResult = outputRuntime->dispatchTable->setLaneWordPair(outputRuntime, 2, clampedWord, 0);
-    AsAdxrnaLegacyMetricsRuntimeView(rnaHandle)->streamInfoWord88 = clampedWord;
+    AdxrnaLegacyMetricsOf(rnaHandle)->streamInfoWord88 = clampedWord;
     return dispatchResult;
   }
 
@@ -9053,13 +8732,13 @@
    * `0x70/0x74`.
    */
   [[maybe_unused]] std::int32_t* mwRnaGetFx(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     std::int32_t* const outFxLane,
     std::int32_t* const outFxLevel
   )
   {
     if (rnaHandle != 0) {
-      const auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+      const auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
       *outFxLane = runtime->streamInfoWord70;
       *outFxLevel = runtime->streamInfoWord74;
       return outFxLevel;
@@ -9078,13 +8757,13 @@
    * Returns ADXRNA transpose lanes (`octave`, `cent`) into two output words.
    */
   std::int32_t* ADXRNA_GetTransposeWords(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     std::int32_t* const outOctaveWord,
     std::int32_t* const outCentWord
   )
   {
     if (rnaHandle != 0) {
-      const auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+      const auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
       *outOctaveWord = runtime->transposeOctaves;
       *outCentWord = runtime->transposeCents;
       return outCentWord;
@@ -9102,10 +8781,10 @@
    * What it does:
    * Returns ADXRNA stream-info word at lane `0x88`.
    */
-  [[maybe_unused]] std::int32_t ADXRNA_GetStreamInfoWord88(const std::int32_t rnaHandle)
+  [[maybe_unused]] std::int32_t ADXRNA_GetStreamInfoWord88(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle != 0) {
-      return AsAdxrnaLegacyMetricsRuntimeView(rnaHandle)->streamInfoWord88;
+      return AdxrnaLegacyMetricsOf(rnaHandle)->streamInfoWord88;
     }
 
     CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
@@ -9118,9 +8797,9 @@
    * What it does:
    * Returns ADXRNA transport reset-state byte at lane `+0x04`.
    */
-  [[maybe_unused]] std::int32_t ADXRNA_GetTransportResetState(const std::int32_t rnaHandle)
+  [[maybe_unused]] std::int32_t ADXRNA_GetTransportResetState(const SofdecAddressWord rnaHandle)
   {
-    return static_cast<std::int32_t>(AsAdxrnaTransportRuntimeView(rnaHandle)->transportResetState);
+    return static_cast<std::int32_t>(AdxrnaTransportOf(rnaHandle)->transportResetState);
   }
 
   /**
@@ -9129,9 +8808,9 @@
    * What it does:
    * Clears ADXRNA transport reset-state byte and returns handle.
    */
-  [[maybe_unused]] std::int32_t ADXRNA_ClearTransportResetState(const std::int32_t rnaHandle)
+  [[maybe_unused]] std::int32_t ADXRNA_ClearTransportResetState(const SofdecAddressWord rnaHandle)
   {
-    AsAdxrnaTransportRuntimeView(rnaHandle)->transportResetState = 0;
+    AdxrnaTransportOf(rnaHandle)->transportResetState = 0;
     return rnaHandle;
   }
 
@@ -9142,7 +8821,7 @@
    * Stores lane-`3` stream-header word pair and forwards it to output dispatch.
    */
   [[maybe_unused]] std::int32_t ADXRNA_SetStreamHeaderLane3(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     const std::int32_t word0,
     const std::int32_t word1
   )
@@ -9152,11 +8831,11 @@
       return 0;
     }
 
-    auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
     runtime->streamHeaderLane3Word0 = word0;
     runtime->streamHeaderLane3Word1 = word1;
 
-    auto* const outputRuntime = AsAdxrnaTransportRuntimeView(rnaHandle)->outputRuntime;
+    auto* const outputRuntime = AdxrnaTransportOf(rnaHandle)->outputRuntime;
     return outputRuntime->dispatchTable->setLaneWordPair(outputRuntime, 3, word0, word1);
   }
 
@@ -9167,7 +8846,7 @@
    * Returns stored lane-`3` stream-header word pair.
    */
   [[maybe_unused]] std::int32_t ADXRNA_GetStreamHeaderLane3(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     std::int32_t* const outWord0,
     std::int32_t* const outWord1
   )
@@ -9177,7 +8856,7 @@
       return 0;
     }
 
-    const auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+    const auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
     *outWord0 = runtime->streamHeaderLane3Word0;
     *outWord1 = runtime->streamHeaderLane3Word1;
     return runtime->streamHeaderLane3Word1;
@@ -9191,7 +8870,7 @@
    * lanes, and refreshes ADXRNA bit-depth/sample-rate mirrors.
    */
   std::int32_t ADXRNA_SetStreamHeaderLane4(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     const std::int32_t lane4Word,
     std::int32_t* const inOutLane4Word
   )
@@ -9201,7 +8880,7 @@
       return 0;
     }
 
-    auto* const outputRuntime = AsAdxrnaTransportRuntimeView(rnaHandle)->outputRuntime;
+    auto* const outputRuntime = AdxrnaTransportOf(rnaHandle)->outputRuntime;
     auto* const dispatch = outputRuntime->dispatchTable;
     dispatch->setLaneWordPair(outputRuntime, 4, lane4Word, 0);
     std::int32_t lane4AuxWord = 0;
@@ -9226,7 +8905,7 @@
       (void)adxrna_SetBitPerSmplCore(rnaHandle, bitsPerSample);
       (void)adxrna_SetSfreqCore(rnaHandle, sampleRate);
 
-      auto* const runtime = AsAdxrnaLegacyMetricsRuntimeView(rnaHandle);
+      auto* const runtime = AdxrnaLegacyMetricsOf(rnaHandle);
       runtime->streamInfoWords64[0] = streamInfoWord64;
       runtime->streamInfoWords64[1] = streamInfoWord68;
       runtime->streamInfoWord60 = streamInfoWord60;
@@ -9247,7 +8926,7 @@
    * thunk for this build: the RNA handle argument is pushed by every caller
    * (cdecl ABI) but never read by the real `retn`-only body.
    */
-  std::int32_t ADXRNA_GetNumRoom([[maybe_unused]] const std::int32_t rnaHandle)
+  std::int32_t ADXRNA_GetNumRoom([[maybe_unused]] const SofdecAddressWord rnaHandle)
   {
     return 0x7FFFFFFF;
   }
@@ -9258,7 +8937,7 @@
    * What it does:
    * Public ADXRNA state-byte getter thunk; tail-calls the internal core.
    */
-  std::int32_t ADXRNA_GetStateByte(const std::int32_t rnaHandle)
+  std::int32_t ADXRNA_GetStateByte(const SofdecAddressWord rnaHandle)
   {
     return adxrna_GetStateByteCore(rnaHandle);
   }
@@ -9270,7 +8949,7 @@
    * Public ADXRNA control-word-`0x44` setter thunk; tail-calls the internal
    * core.
    */
-  std::int32_t ADXRNA_SetControlWord44(const std::int32_t rnaHandle, const std::int32_t controlWord)
+  SofdecAddressWord ADXRNA_SetControlWord44(const SofdecAddressWord rnaHandle, const std::int32_t controlWord)
   {
     return adxrna_SetControlWord44Core(rnaHandle, controlWord);
   }
@@ -9281,9 +8960,9 @@
    * What it does:
    * Legacy thunk to ADXRNA channel-count setter.
    */
-  void ADXRNA_SetNumChan(const std::int32_t rnaHandle, const std::int32_t channelCount)
+  void ADXRNA_SetNumChan(const SofdecAddressWord rnaHandle, const std::int32_t channelCount)
   {
-    mwRnaSetNumChan(AsAdxrnaRuntimeView(rnaHandle), channelCount);
+    mwRnaSetNumChan(AdxrnaStateOf(rnaHandle), channelCount);
   }
 
   /**
@@ -9292,14 +8971,14 @@
    * What it does:
    * Returns legacy ADXRNA queue metric lane at offset `0x08`.
    */
-  std::int32_t ADXRNA_GetLegacyQueueMetricWord08(const std::int32_t rnaHandle)
+  std::int32_t ADXRNA_GetLegacyQueueMetricWord08(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return -1;
     }
 
-    return AsAdxrnaLegacyMetricsRuntimeView(rnaHandle)->queuedDataCount;
+    return AdxrnaLegacyMetricsOf(rnaHandle)->queuedDataCount;
   }
 
   /**
@@ -9308,14 +8987,14 @@
    * What it does:
    * Returns ADXRNA time-scale base word for one RNA handle.
    */
-  std::int32_t ADXRNA_GetTimeScaleBase(const std::int32_t rnaHandle)
+  std::int32_t ADXRNA_GetTimeScaleBase(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return -1;
     }
 
-    return AsAdxrnaLegacyMetricsRuntimeView(rnaHandle)->timeScaleBase;
+    return AdxrnaLegacyMetricsOf(rnaHandle)->timeScaleBase;
   }
 
   /**
@@ -9324,14 +9003,14 @@
    * What it does:
    * Returns ADXRNA stream-info word at lane `0x60`.
    */
-  std::int32_t ADXRNA_GetStreamInfoWord60(const std::int32_t rnaHandle)
+  std::int32_t ADXRNA_GetStreamInfoWord60(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return -1;
     }
 
-    return AsAdxrnaLegacyMetricsRuntimeView(rnaHandle)->streamInfoWord60;
+    return AdxrnaLegacyMetricsOf(rnaHandle)->streamInfoWord60;
   }
 
   /**
@@ -9340,14 +9019,14 @@
    * What it does:
    * Returns ADXRNA stream-info word from lane array at `0x64 + 4*index`.
    */
-  std::int32_t ADXRNA_GetStreamInfoWord64(const std::int32_t rnaHandle, const std::int32_t wordIndex)
+  std::int32_t ADXRNA_GetStreamInfoWord64(const SofdecAddressWord rnaHandle, const std::int32_t wordIndex)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return -1;
     }
 
-    return AsAdxrnaLegacyMetricsRuntimeView(rnaHandle)->streamInfoWords64[wordIndex];
+    return AdxrnaLegacyMetricsOf(rnaHandle)->streamInfoWords64[wordIndex];
   }
 
   /**
@@ -9356,14 +9035,14 @@
    * What it does:
    * Returns ADXRNA stream-info word at lane `0x6C`.
    */
-  std::int32_t ADXRNA_GetStreamInfoWord6C(const std::int32_t rnaHandle)
+  std::int32_t ADXRNA_GetStreamInfoWord6C(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return -1;
     }
 
-    return AsAdxrnaLegacyMetricsRuntimeView(rnaHandle)->streamInfoWord6C;
+    return AdxrnaLegacyMetricsOf(rnaHandle)->streamInfoWord6C;
   }
 
   /**
@@ -9372,7 +9051,7 @@
    * What it does:
    * Public ADXRNA sample-rate setter thunk; tail-calls the internal core.
    */
-  std::int32_t ADXRNA_SetSfreq(const std::int32_t rnaHandle, const std::int32_t sampleRate)
+  std::int32_t ADXRNA_SetSfreq(const SofdecAddressWord rnaHandle, const std::int32_t sampleRate)
   {
     return adxrna_SetSfreqCore(rnaHandle, sampleRate);
   }
@@ -9383,7 +9062,7 @@
    * What it does:
    * Public ADXRNA output-volume setter thunk; tail-calls the internal core.
    */
-  std::int32_t ADXRNA_SetOutVol(const std::int32_t rnaHandle, const std::int32_t volumeLevel)
+  std::int32_t ADXRNA_SetOutVol(const SofdecAddressWord rnaHandle, const std::int32_t volumeLevel)
   {
     return adxrna_SetOutVolCore(rnaHandle, volumeLevel);
   }
@@ -9395,7 +9074,7 @@
    * Public ADXRNA output-pan setter thunk; tail-calls the internal core.
    */
   std::int32_t ADXRNA_SetOutPan(
-    const std::int32_t rnaHandle,
+    const SofdecAddressWord rnaHandle,
     const std::int32_t channelIndex,
     const std::int32_t panLevel
   )
@@ -9409,7 +9088,7 @@
    * What it does:
    * Public ADXRNA output-balance setter thunk; tail-calls the internal core.
    */
-  std::int32_t ADXRNA_SetOutBalance(const std::int32_t rnaHandle, const std::int32_t balanceLevel)
+  std::int32_t ADXRNA_SetOutBalance(const SofdecAddressWord rnaHandle, const std::int32_t balanceLevel)
   {
     return adxrna_SetOutBalanceCore(rnaHandle, balanceLevel);
   }
@@ -9420,7 +9099,7 @@
    * What it does:
    * Public ADXRNA bits-per-sample setter thunk; tail-calls the internal core.
    */
-  std::int32_t ADXRNA_SetBitPerSmpl(const std::int32_t rnaHandle, const std::int32_t bitsPerSample)
+  std::int32_t ADXRNA_SetBitPerSmpl(const SofdecAddressWord rnaHandle, const std::int32_t bitsPerSample)
   {
     return adxrna_SetBitPerSmplCore(rnaHandle, bitsPerSample);
   }
@@ -9431,7 +9110,7 @@
    * What it does:
    * Legacy thunk that returns ADXRNA time-scale base word.
    */
-  [[maybe_unused]] std::int32_t ADXRNA_GetTimeScaleBaseThunk(const std::int32_t rnaHandle)
+  [[maybe_unused]] std::int32_t ADXRNA_GetTimeScaleBaseThunk(const SofdecAddressWord rnaHandle)
   {
     return ADXRNA_GetTimeScaleBase(rnaHandle);
   }
@@ -9442,7 +9121,7 @@
    * What it does:
    * Legacy thunk that returns ADXRNA stream-info word `0x60`.
    */
-  [[maybe_unused]] std::int32_t ADXRNA_GetStreamInfoWord60Thunk(const std::int32_t rnaHandle)
+  [[maybe_unused]] std::int32_t ADXRNA_GetStreamInfoWord60Thunk(const SofdecAddressWord rnaHandle)
   {
     return ADXRNA_GetStreamInfoWord60(rnaHandle);
   }
@@ -9453,7 +9132,7 @@
    * What it does:
    * Legacy thunk that returns ADXRNA stream-info word `0x64 + 4*index`.
    */
-  [[maybe_unused]] std::int32_t ADXRNA_GetStreamInfoWord64Thunk(const std::int32_t rnaHandle, const std::int32_t wordIndex)
+  [[maybe_unused]] std::int32_t ADXRNA_GetStreamInfoWord64Thunk(const SofdecAddressWord rnaHandle, const std::int32_t wordIndex)
   {
     return ADXRNA_GetStreamInfoWord64(rnaHandle, wordIndex);
   }
@@ -9464,7 +9143,7 @@
    * What it does:
    * Legacy thunk that returns ADXRNA stream-info word `0x6C`.
    */
-  [[maybe_unused]] std::int32_t ADXRNA_GetStreamInfoWord6CThunk(const std::int32_t rnaHandle)
+  [[maybe_unused]] std::int32_t ADXRNA_GetStreamInfoWord6CThunk(const SofdecAddressWord rnaHandle)
   {
     return ADXRNA_GetStreamInfoWord6C(rnaHandle);
   }
@@ -9475,7 +9154,7 @@
    * What it does:
    * Legacy thunk that returns ADXRNA queue metric lane `0x08`.
    */
-  [[maybe_unused]] std::int32_t ADXRNA_GetLegacyQueueMetricWord08Thunk(const std::int32_t rnaHandle)
+  [[maybe_unused]] std::int32_t ADXRNA_GetLegacyQueueMetricWord08Thunk(const SofdecAddressWord rnaHandle)
   {
     return ADXRNA_GetLegacyQueueMetricWord08(rnaHandle);
   }
@@ -9486,7 +9165,7 @@
    * What it does:
    * Returns ADXRNA discard-sample result code for this build.
    */
-  std::int32_t ADXRNA_DiscardSamples(const std::int32_t rnaHandle, const std::int32_t sampleCount)
+  std::int32_t ADXRNA_DiscardSamples(const SofdecAddressWord rnaHandle, const std::int32_t sampleCount)
   {
     (void)rnaHandle;
     (void)sampleCount;
@@ -9613,7 +9292,7 @@
    */
   std::int32_t adxt_GetOutBalance(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     if (runtime != nullptr) {
       return static_cast<std::int32_t>(runtime->OutputBalanceLevel());
     }
@@ -9643,7 +9322,7 @@
    */
   void adxt_SetOutVol(void* const adxtRuntime, const std::int16_t volumeLevel)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtSetOutVolParameterErrorMessage);
       return;
@@ -9680,7 +9359,7 @@
    */
   std::int32_t adxt_GetOutVol(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     if (runtime != nullptr) {
       return static_cast<std::int32_t>(runtime->OutputVolumeLevel());
     }
@@ -9710,7 +9389,7 @@
    */
   std::int32_t adxt_GetDefOutVol(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     return static_cast<std::int32_t>(ADXSJD_GetDefOutVol(runtime->sjdHandle));
   }
 
@@ -9736,7 +9415,7 @@
    */
   std::int32_t adxt_GetDefOutPan(void* const adxtRuntime, const std::int32_t laneIndex)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     return static_cast<std::int32_t>(ADXSJD_GetDefPan(runtime->sjdHandle, laneIndex));
   }
 
@@ -9762,7 +9441,7 @@
    */
   std::uint8_t* adxt_GetDataId(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     return ADXSJD_GetDataId(runtime->sjdHandle);
   }
 
@@ -9839,7 +9518,7 @@
    */
   std::int8_t adxt_SetAinfSw(void* const adxtRuntime, const std::int8_t enabled)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     runtime->AinfSwitchFlag() = static_cast<std::uint8_t>(enabled);
     return enabled;
   }
@@ -9852,7 +9531,7 @@
    */
   std::int32_t adxt_GetAinfSw(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     return static_cast<std::int32_t>(static_cast<std::int8_t>(runtime->AinfSwitchFlag()));
   }
 
@@ -9903,7 +9582,7 @@
    */
   void adxt_SetSvrFreq(void* const adxtRuntime, const std::int32_t serverFrequency)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtSetSvrFreqParameterErrorMessage);
       return;
@@ -9944,7 +9623,7 @@
     const std::int32_t sampleRate
   )
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtSetReloadTimeParameterErrorMessage);
       return;
@@ -9990,7 +9669,7 @@
    */
   void adxt_ResetReloadTime(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtResetReloadTimeParameterErrorMessage);
       return;
@@ -10034,7 +9713,7 @@
    */
   void adxt_SetReloadSct(void* const adxtRuntime, const std::int16_t reloadSectorCount)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtSetReloadSctParameterErrorMessage);
       return;
@@ -10057,7 +9736,7 @@
    */
   std::int32_t ADXT_GetReloadSct(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     return static_cast<std::int32_t>(runtime->SeamlessFlowSectorHint());
   }
 
@@ -10084,7 +9763,7 @@
    */
   std::int32_t adxt_GetNumSctIbuf(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtGetNumSctIbufParameterErrorMessage);
       return -1;
@@ -10120,7 +9799,7 @@
    */
   std::int32_t adxt_GetNumSmplObuf(void* const adxtRuntime, const std::int32_t lane)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr || lane < 0) {
       (void)ADXERR_CallErrFunc1_(kAdxtGetNumSmplObufParameterErrorMessage);
       return -1;
@@ -10156,7 +9835,7 @@
    */
   double adxt_GetIbufRemainTime(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtGetIbufRemainTimeParameterErrorMessage);
       return -1.0;
@@ -10195,7 +9874,7 @@
    */
   std::int32_t adxt_IsIbufSafety(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtIsIbufSafetyParameterErrorMessage);
       return -1;
@@ -10223,7 +9902,7 @@
    */
   std::int32_t adxt_GetErrCode(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtGetErrCodeParameterErrorMessage);
     }
@@ -10239,7 +9918,7 @@
    */
   void adxt_ClearErrCode(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtClearErrCodeParameterErrorMessage);
       return;
@@ -10273,7 +9952,7 @@
    */
   std::int32_t adxt_GetLpCnt(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtGetLpCntParameterErrorMessage);
       return -1;
@@ -10303,7 +9982,7 @@
    */
   void adxt_SetLpFlg(void* const adxtRuntime, const std::int32_t enabled)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtSetLpFlgParameterErrorMessage);
       return;
@@ -10425,7 +10104,7 @@
    */
   std::int32_t adxt_SetAutoRcvr(void* const adxtRuntime, const std::int32_t autoRecoverEnabled)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     runtime->ErrorRecoveryMode() = static_cast<std::uint8_t>(autoRecoverEnabled);
     return static_cast<std::int32_t>(runtime->ErrorRecoveryMode());
   }
@@ -10453,7 +10132,7 @@
    */
   std::int32_t adxt_IsCompleted(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtIsCompletedParameterErrorMessage);
       return -1;
@@ -10468,10 +10147,10 @@
    * What it does:
    * Returns ADXT input-SJ handle lane under ADXCRS enter/leave guards.
    */
-  std::int32_t ADXT_GetInputSj(void* const adxtRuntime)
+  SofdecAddressWord ADXT_GetInputSj(void* const adxtRuntime)
   {
     ADXCRS_Enter();
-    const std::int32_t inputHandle = adxt_GetInputSj(adxtRuntime);
+    const SofdecAddressWord inputHandle = adxt_GetInputSj(adxtRuntime);
     ADXCRS_Leave();
     return inputHandle;
   }
@@ -10483,13 +10162,13 @@
    * Returns ADXT runtime input-SJ handle lane or reports null-runtime parameter
    * error.
    */
-  std::int32_t adxt_GetInputSj(void* const adxtRuntime)
+  SofdecAddressWord adxt_GetInputSj(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtGetInputSjParameterErrorMessage);
     }
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime->streamJoinInputHandle));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime->streamJoinInputHandle));
   }
 
   /**
@@ -10514,7 +10193,7 @@
    */
   void adxt_SetWaitPlayStart(void* const adxtRuntime, const std::int32_t waitEnabled)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtSetWaitPlayStartParameterErrorMessage);
       return;
@@ -10544,7 +10223,7 @@
    */
   std::int32_t adxt_IsReadyPlayStart(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtIsReadyPlayStartParameterErrorMessage);
       return -1;
@@ -10588,7 +10267,7 @@
    */
   std::int32_t adxt_GetStatPause(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtGetStatPauseParameterErrorMessage);
       return 0;
@@ -10618,8 +10297,8 @@
    */
   std::int32_t adxt_SetTranspose(void* const adxtRuntime, const std::int32_t transposeOctaves, const std::int32_t transposeCents)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    const std::int32_t sjdHandle = runtime->sjdHandle;
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    const SofdecAddressWord sjdHandle = runtime->sjdHandle;
     (void)ADXRNA_SetTransposeWords(runtime->rnaHandle, transposeOctaves, transposeCents);
     const std::int32_t calculatedSampleRate = mwRnaCalcSfreq(runtime->rnaHandle);
 
@@ -10666,14 +10345,14 @@
    * What it does:
    * Returns ADXT transpose lanes from RNA transpose words.
    */
-  std::int32_t adxt_GetTranspose(
+  SofdecAddressWord adxt_GetTranspose(
     void* const adxtRuntime,
     std::int32_t* const outTransposeOctaves,
     std::int32_t* const outTransposeCents
   )
   {
-    const auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(
+    const auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(
       ADXRNA_GetTransposeWords(runtime->rnaHandle, outTransposeOctaves, outTransposeCents)
     ));
   }
@@ -10687,7 +10366,7 @@
    * real `retn`-only body.
    */
   void ADXRNA_SetTotalNumSmpl(
-    [[maybe_unused]] const std::int32_t rnaHandle,
+    [[maybe_unused]] const SofdecAddressWord rnaHandle,
     [[maybe_unused]] const std::int32_t totalNumSmpl
   )
   {
@@ -10710,7 +10389,7 @@
    * Applies lane-`4` stream-header word through `ADXRNA_SetStreamHeaderLane4`
    * and returns the lane's refreshed status word.
    */
-  std::int32_t ADXRNA_SetStmHdInfo(const std::int32_t rnaHandle, const std::int32_t lane4Word)
+  std::int32_t ADXRNA_SetStmHdInfo(const SofdecAddressWord rnaHandle, const std::int32_t lane4Word)
   {
     std::int32_t lane4StatusWord = lane4Word;
     return ADXRNA_SetStreamHeaderLane4(rnaHandle, lane4Word, &lane4StatusWord);
@@ -10883,7 +10562,7 @@
    * What it does:
    * Clears one ADXSJD decode-lane runtime state back to default trap/decode values.
    */
-  AdxsjdRuntimeView* adxsjd_clear(AdxsjdRuntimeView* const sjdRuntime)
+  AdxsjdState* adxsjd_clear(AdxsjdState* const sjdRuntime)
   {
     sjdRuntime->linkSwitchEnabled = 0;
     sjdRuntime->decodedSampleCount = 0;
@@ -10906,8 +10585,8 @@
    * Allocates one ADXSJD runtime slot, binds ADXB decode backend and write callback,
    * then stores source/output SJ handles for the new decode lane.
    */
-  std::int32_t ADXSJD_Create(
-    const std::int32_t inputSourceHandleAddress,
+  SofdecAddressWord ADXSJD_Create(
+    const SofdecAddressWord inputSourceHandleAddress,
     const std::int32_t outputHandleCount,
     std::int32_t* const outputHandleAddresses
   )
@@ -10922,12 +10601,12 @@
     }
 
     auto* const runtime = &gAdxsjdObjectPool[slotIndex];
-    const std::int32_t sourceHandleAddress = outputHandleAddresses[0];
+    const SofdecAddressWord sourceHandleAddress = outputHandleAddresses[0];
     auto* const sourceHandle = reinterpret_cast<moho::SofdecSjRingBufferHandle*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(sourceHandleAddress))
+      static_cast<std::uintptr_t>(sourceHandleAddress)
     );
 
-    const std::int32_t sourceBufferAddress = SJRBF_GetBufPtr(sourceHandle);
+    const SofdecAddressWord sourceBufferAddress = SJRBF_GetBufPtr(sourceHandle);
     const std::int32_t sourceHalfBufferBytes = SJRBF_GetBufSize(sourceHandle) / 2;
     const std::int32_t sourceHalfExtraBytes = SJRBF_GetXtrSize(sourceHandle) / 2;
 
@@ -10947,14 +10626,14 @@
     ADXB_EntryGetWrFunc(runtime->adxbHandle, adxsjd_get_wr, runtime);
 
     runtime->inputSourceHandle = reinterpret_cast<void*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(inputSourceHandleAddress))
+      static_cast<std::uintptr_t>(inputSourceHandleAddress)
     );
     runtime->outputHandleCount = static_cast<std::uint8_t>(outputHandleCount);
 
     if (outputHandleCount > 0) {
       for (std::int32_t lane = 0; lane < outputHandleCount; ++lane) {
         runtime->OutputHandle(lane) = reinterpret_cast<AdxsjdOutputHandle*>(
-          static_cast<std::uintptr_t>(static_cast<std::uint32_t>(outputHandleAddresses[lane]))
+          static_cast<std::uintptr_t>(outputHandleAddresses[lane])
         );
       }
     }
@@ -10966,7 +10645,7 @@
     runtime->filterCallback = nullptr;
     runtime->filterCallbackContext = 0;
     runtime->used = 1;
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime));
   }
 
   /**
@@ -10975,9 +10654,9 @@
    * What it does:
    * Releases one ADXSJD decoder backend and zeroes the runtime slot under lock.
    */
-  void ADXSJD_Destroy(const std::int32_t sjdHandle)
+  void ADXSJD_Destroy(const SofdecAddressWord sjdHandle)
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     if (sjdRuntime == nullptr) {
       return;
     }
@@ -10989,7 +10668,7 @@
     }
 
     ADXCRS_Lock();
-    std::memset(sjdRuntime, 0, sizeof(AdxsjdRuntimeView));
+    std::memset(sjdRuntime, 0, sizeof(AdxsjdState));
     ADXCRS_Unlock();
   }
 
@@ -10999,9 +10678,9 @@
    * What it does:
    * Returns ADXSJD state byte.
    */
-  std::int32_t ADXSJD_GetStat(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetStat(const SofdecAddressWord sjdHandle)
   {
-    return static_cast<std::int32_t>(AsAdxsjdRuntimeView(sjdHandle)->streamFormatClass);
+    return static_cast<std::int32_t>(AdxsjdStateOf(sjdHandle)->streamFormatClass);
   }
 
   /**
@@ -11010,9 +10689,9 @@
    * What it does:
    * Stores ADXSJD input source handle and forwards setup into attached codec lanes.
    */
-  std::int32_t ADXSJD_SetInSj(const std::int32_t sjdHandle, void* const sourceJoinHandle)
+  std::int32_t ADXSJD_SetInSj(const SofdecAddressWord sjdHandle, void* const sourceJoinHandle)
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     sjdRuntime->inputSourceHandle = sourceJoinHandle;
 
     ADXB_SetAhxInSj(sjdRuntime->Decoder());
@@ -11026,11 +10705,11 @@
    * What it does:
    * Stores one ADXSJD output handle lane.
    */
-  std::int32_t ADXSJD_SetOutSj(const std::int32_t sjdHandle, const std::int32_t outputLane, void* const outputHandle)
+  SofdecAddressWord ADXSJD_SetOutSj(const SofdecAddressWord sjdHandle, const std::int32_t outputLane, void* const outputHandle)
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     sjdRuntime->OutputHandle(outputLane) = reinterpret_cast<AdxsjdOutputHandle*>(outputHandle);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(outputHandle));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(outputHandle));
   }
 
   /**
@@ -11039,9 +10718,9 @@
    * What it does:
    * Updates ADXSJD max decode-sample limit and forwards limit setup to attached codecs.
    */
-  std::uint32_t ADXSJD_SetMaxDecSmpl(const std::int32_t sjdHandle, const std::int32_t maxDecodeSamples)
+  std::uint32_t ADXSJD_SetMaxDecSmpl(const SofdecAddressWord sjdHandle, const std::int32_t maxDecodeSamples)
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     sjdRuntime->maxDecodeSamples = maxDecodeSamples;
     ADXB_SetAhxDecSmpl(sjdRuntime->Decoder(), maxDecodeSamples);
     return ADXB_SetMpaDecSmpl(sjdRuntime->Decoder(), maxDecodeSamples);
@@ -11053,9 +10732,9 @@
    * What it does:
    * Runs one terminate-supply tick across AHX/MPA/M2A codec lanes.
    */
-  std::int32_t ADXSJD_TermSupply(const std::int32_t sjdHandle)
+  SofdecAddressWord ADXSJD_TermSupply(const SofdecAddressWord sjdHandle)
   {
-    auto* const decoder = AsAdxsjdRuntimeView(sjdHandle)->Decoder();
+    auto* const decoder = AdxsjdStateOf(sjdHandle)->Decoder();
     ADXB_AhxTermSupply(decoder);
     ADXB_MpaTermSupply(decoder);
     return ADXB_M2aTermSupply(decoder);
@@ -11067,12 +10746,12 @@
    * What it does:
    * Clears one ADXSJD runtime state and switches it into active state `1`.
    */
-  std::int32_t ADXSJD_Start(const std::int32_t sjdHandle)
+  SofdecAddressWord ADXSJD_Start(const SofdecAddressWord sjdHandle)
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     auto* const result = adxsjd_clear(sjdRuntime);
     sjdRuntime->streamFormatClass = 1;
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(result));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(result));
   }
 
   /**
@@ -11081,9 +10760,9 @@
    * What it does:
    * Stops ADXSJD codec execution and switches runtime state to idle `0`.
    */
-  std::int32_t ADXSJD_Stop(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_Stop(const SofdecAddressWord sjdHandle)
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     const std::int32_t stopResult = ADXB_Stop(sjdRuntime->Decoder());
     sjdRuntime->streamFormatClass = 0;
     return stopResult;
@@ -11103,7 +10782,7 @@
     std::int32_t* const outUntilTrapSamples
   )
   {
-    auto* const runtime = static_cast<AdxsjdRuntimeView*>(callbackContext);
+    auto* const runtime = static_cast<AdxsjdState*>(callbackContext);
 
     const std::int32_t channelCount = ADXB_GetNumChan(runtime->Decoder());
     for (std::int32_t lane = 0; lane < channelCount; ++lane) {
@@ -11154,7 +10833,7 @@
     SjChunkRange* const chunk
   )
   {
-    handle->dispatchTable->putChunk(handle, lane, chunk);
+    handle->dispatchTable->ungetChunk(handle, lane, chunk);
   }
 
   static void ADXSJD_SubmitSupplyChunk(
@@ -11163,7 +10842,7 @@
     SjChunkRange* const chunk
   )
   {
-    handle->dispatchTable->submitChunk(handle, lane, chunk);
+    handle->dispatchTable->putChunk(handle, lane, chunk);
   }
 
   [[nodiscard]] static std::int32_t ADXSJD_QuerySupplyAvailableBytes(
@@ -11176,7 +10855,7 @@
 
   using AdxsjdTrapCallback = void(__cdecl*)(std::int32_t callbackContext);
   using AdxsjdFilterCallback =
-    void(__cdecl*)(std::int32_t callbackContext, std::int32_t channelIndex, std::int32_t chunkAddress, std::int32_t chunkBytes);
+    void(__cdecl*)(std::int32_t callbackContext, std::int32_t channelIndex, SofdecAddressWord chunkAddress, std::int32_t chunkBytes);
 
   /**
    * Address: 0x00B18200 (FUN_00B18200, _adxsjd_decode_prep)
@@ -11185,7 +10864,7 @@
    * Prepares one ADXSJD decode step by aligning source stream data, decoding
    * codec headers, and transitioning runtime state into decode phase.
    */
-  void adxsjd_decode_prep(AdxsjdRuntimeView* const runtime)
+  void adxsjd_decode_prep(AdxsjdState* const runtime)
   {
     auto* const decoder = runtime->Decoder();
     auto* const sourceHandle = AsSofdecSjSupplyHandle(runtime->inputSourceHandle);
@@ -11251,6 +10930,7 @@
         if (copyBytes > 64) {
           copyBytes = 64;
         }
+        // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
         std::memcpy(
           runtime->spsdInfoState,
           SjAddressToPointer(runtime->outputWriteChunks[0].bufferAddress),
@@ -11287,7 +10967,7 @@
    * ADX footer/endcode paths, and dispatching ADXB input entry for active
    * decode formats.
    */
-  std::int32_t adxsjd_decexec_start(AdxsjdRuntimeView* const runtime)
+  std::int32_t adxsjd_decexec_start(AdxsjdState* const runtime)
   {
     auto* const decoder = runtime->Decoder();
     auto* const sourceHandle = AsSofdecSjSupplyHandle(runtime->inputSourceHandle);
@@ -11371,13 +11051,13 @@
       return 0;
     }
 
-    if (runtime->decodePositionSamples >= ADXSJD_GetTotalNumSmpl(static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime)))) {
+    if (runtime->decodePositionSamples >= ADXSJD_GetTotalNumSmpl(static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime)))) {
       runtime->streamFormatClass = 3;
       ADXSJD_PutSupplyChunk(sourceHandle, 1, &runtime->outputWriteChunks[0]);
       return 0;
     }
 
-    const std::int32_t blockSamples = ADXSJD_GetBlkSmpl(static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime)));
+    const std::int32_t blockSamples = ADXSJD_GetBlkSmpl(static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime)));
     auto* const outputHandle0 = AsSofdecOutputSupplyHandle(runtime->OutputHandle(0));
     if (ADXSJD_QuerySupplyAvailableBytes(outputHandle0, 0) / 2 < blockSamples) {
       ADXSJD_PutSupplyChunk(sourceHandle, 1, &runtime->outputWriteChunks[0]);
@@ -11393,7 +11073,7 @@
       reinterpret_cast<char*>(SjAddressToPointer(runtime->outputWriteChunks[0].bufferAddress)),
       runtime->outputWriteChunks[0].byteCount
     );
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(ADXB_Start(decoder)));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(ADXB_Start(decoder)));
   }
 
   /**
@@ -11404,7 +11084,7 @@
    * running optional per-channel filter callback lanes, updating counters, and
    * resetting ADXB state.
    */
-  std::int32_t adxsjd_decexec_end(AdxsjdRuntimeView* const runtime)
+  std::int32_t adxsjd_decexec_end(AdxsjdState* const runtime)
   {
     auto* const decoder = runtime->Decoder();
     auto* const sourceHandle = AsSofdecSjSupplyHandle(runtime->inputSourceHandle);
@@ -11466,7 +11146,7 @@
    * Updates ADXSJD decode counters for codec lanes that bypass regular output
    * chunk split/submit completion handling.
    */
-  std::int32_t adxsjd_decexec_extra(AdxsjdRuntimeView* const runtime)
+  std::int32_t adxsjd_decexec_extra(AdxsjdState* const runtime)
   {
     auto* const decoder = runtime->Decoder();
     const std::int32_t totalSamples = ADXB_GetTotalNumSmpl(decoder);
@@ -11491,7 +11171,7 @@
    * Runs one ADXSJD decode step (`start/exec/end`) and dispatches codec-specific
    * extra accounting for streamed compressed formats.
    */
-  std::int32_t adxsjd_decode_exec(AdxsjdRuntimeView* const runtime)
+  std::int32_t adxsjd_decode_exec(AdxsjdState* const runtime)
   {
     auto* const decoder = runtime->Decoder();
     if (ADXB_GetStat(decoder) == 0) {
@@ -11517,7 +11197,7 @@
    * Inserts silence samples into every ADXSJD output lane by zero-filling
    * writable lane-0 chunks and submitting them to lane 1.
    */
-  std::int32_t adxsjd_insert_proc(AdxsjdRuntimeView* const runtime)
+  std::int32_t adxsjd_insert_proc(AdxsjdState* const runtime)
   {
     std::int32_t insertBytes = 2 * runtime->positiveSampleAdjust;
     const std::int32_t outputHandleCount = runtime->OutputChannelCount();
@@ -11555,7 +11235,7 @@
    * Discards queued ADXSJD lane-1 samples across all output lanes by consuming
    * chunks and returning them into lane 0.
    */
-  std::int32_t adxsjd_discard_proc(AdxsjdRuntimeView* const runtime)
+  std::int32_t adxsjd_discard_proc(AdxsjdState* const runtime)
   {
     std::int32_t discardBytes = 2 * runtime->negativeSampleAdjust;
     const std::int32_t outputHandleCount = runtime->OutputChannelCount();
@@ -11592,7 +11272,7 @@
    * Runs one ADXSJD runtime tick: applies pending sample insert/discard lanes
    * under lock, then executes decode-prep/decode phases by state byte.
    */
-  void ADXSJD_ExecHndl(AdxsjdRuntimeView* const runtime)
+  void ADXSJD_ExecHndl(AdxsjdState* const runtime)
   {
     if (runtime->positiveSampleAdjust > 0) {
       ADXCRS_Lock();
@@ -11634,9 +11314,9 @@
    * What it does:
    * Returns decoded output-data length lane.
    */
-  std::int32_t ADXSJD_GetDecDtLen(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetDecDtLen(const SofdecAddressWord sjdHandle)
   {
-    return AsAdxsjdRuntimeView(sjdHandle)->decodedDataLengthBytes;
+    return AdxsjdStateOf(sjdHandle)->decodedDataLengthBytes;
   }
 
   /**
@@ -11645,9 +11325,9 @@
    * What it does:
    * Returns decoded output-sample count lane.
    */
-  std::int32_t ADXSJD_GetDecNumSmpl(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetDecNumSmpl(const SofdecAddressWord sjdHandle)
   {
-    return AsAdxsjdRuntimeView(sjdHandle)->decodedSampleCount;
+    return AdxsjdStateOf(sjdHandle)->decodedSampleCount;
   }
 
   /**
@@ -11656,22 +11336,20 @@
    * What it does:
    * Forwards decode callback registration into underlying ADXB decoder.
    */
-  std::int32_t ADXSJD_SetCbDec(
-    const std::int32_t sjdHandle,
+  SofdecAddressWord ADXSJD_SetCbDec(
+    const SofdecAddressWord sjdHandle,
     void* const callbackAddress,
     const std::int32_t callbackContext
   )
   {
-    auto* const decoder = AsAdxsjdRuntimeView(sjdHandle)->Decoder();
-    return static_cast<std::int32_t>(
-      reinterpret_cast<std::intptr_t>(
+    auto* const decoder = AdxsjdStateOf(sjdHandle)->Decoder();
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(
         ADXB_SetCbDec(
           decoder,
           reinterpret_cast<std::int32_t(__cdecl*)(std::int32_t, std::int32_t, std::int32_t)>(callbackAddress),
           callbackContext
         )
-      )
-    );
+      ));
   }
 
   /**
@@ -11680,9 +11358,9 @@
    * What it does:
    * Stores decode-position lane.
    */
-  std::int32_t ADXSJD_SetDecPos(const std::int32_t sjdHandle, const std::int32_t decodePosition)
+  std::int32_t ADXSJD_SetDecPos(const SofdecAddressWord sjdHandle, const std::int32_t decodePosition)
   {
-    AsAdxsjdRuntimeView(sjdHandle)->decodePositionSamples = decodePosition;
+    AdxsjdStateOf(sjdHandle)->decodePositionSamples = decodePosition;
     return decodePosition;
   }
 
@@ -11692,9 +11370,9 @@
    * What it does:
    * Returns decode-position lane.
    */
-  std::int32_t ADXSJD_GetDecPos(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetDecPos(const SofdecAddressWord sjdHandle)
   {
-    return AsAdxsjdRuntimeView(sjdHandle)->decodePositionSamples;
+    return AdxsjdStateOf(sjdHandle)->decodePositionSamples;
   }
 
   /**
@@ -11703,9 +11381,9 @@
    * What it does:
    * Stores ADXSJD link-switch enable lane.
    */
-  std::int32_t ADXSJD_SetLnkSw(const std::int32_t sjdHandle, const std::int32_t enabled)
+  std::int32_t ADXSJD_SetLnkSw(const SofdecAddressWord sjdHandle, const std::int32_t enabled)
   {
-    AsAdxsjdRuntimeView(sjdHandle)->linkSwitchEnabled = enabled;
+    AdxsjdStateOf(sjdHandle)->linkSwitchEnabled = enabled;
     return enabled;
   }
 
@@ -11715,9 +11393,9 @@
    * What it does:
    * Returns ADXSJD link-switch enable lane.
    */
-  std::int32_t ADXSJD_GetLnkSw(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetLnkSw(const SofdecAddressWord sjdHandle)
   {
-    return AsAdxsjdRuntimeView(sjdHandle)->linkSwitchEnabled;
+    return AdxsjdStateOf(sjdHandle)->linkSwitchEnabled;
   }
 
   /**
@@ -11726,9 +11404,9 @@
    * What it does:
    * Forwards ADXSJD ext-string setup into ADXB/ADXSJE lane.
    */
-  moho::AdxBitstreamDecoderState* ADXSJD_SetExtString(const std::int32_t sjdHandle, const char* const extString)
+  moho::AdxBitstreamDecoderState* ADXSJD_SetExtString(const SofdecAddressWord sjdHandle, const char* const extString)
   {
-    return ADXSJE_SetExtString(AsAdxsjdRuntimeView(sjdHandle)->Decoder(), extString);
+    return ADXSJE_SetExtString(AdxsjdStateOf(sjdHandle)->Decoder(), extString);
   }
 
   /**
@@ -11749,13 +11427,13 @@
    * Returns ADXSJD ext parameter triplet from underlying ADXB decoder.
    */
   std::int16_t ADXSJD_GetExtParams(
-    const std::int32_t sjdHandle,
+    const SofdecAddressWord sjdHandle,
     std::int16_t* const outK0,
     std::int16_t* const outKMultiplier,
     std::int16_t* const outKAdder
   )
   {
-    return ADXB_GetExtParams(AsAdxsjdRuntimeView(sjdHandle)->Decoder(), outK0, outKMultiplier, outKAdder);
+    return ADXB_GetExtParams(AdxsjdStateOf(sjdHandle)->Decoder(), outK0, outKMultiplier, outKAdder);
   }
 
   /**
@@ -11765,13 +11443,13 @@
    * Stores ADXSJD ext parameter triplet into underlying ADXB decoder.
    */
   moho::AdxBitstreamDecoderState* ADXSJD_SetExtParams(
-    const std::int32_t sjdHandle,
+    const SofdecAddressWord sjdHandle,
     const std::int16_t k0,
     const std::int16_t kMultiplier,
     const std::int16_t kAdder
   )
   {
-    return ADXB_SetExtParams(AsAdxsjdRuntimeView(sjdHandle)->Decoder(), k0, kMultiplier, kAdder);
+    return ADXB_SetExtParams(AdxsjdStateOf(sjdHandle)->Decoder(), k0, kMultiplier, kAdder);
   }
 
   /**
@@ -11780,11 +11458,11 @@
    * What it does:
    * Forwards ADXSJD default-format selection into ADXB decoder lane.
    */
-  std::int32_t ADXSJD_SetDefFmt(const std::int32_t sjdHandle, const std::int32_t requestedFormat)
+  SofdecAddressWord ADXSJD_SetDefFmt(const SofdecAddressWord sjdHandle, const std::int32_t requestedFormat)
   {
-    auto* const decoder = AsAdxsjdRuntimeView(sjdHandle)->Decoder();
+    auto* const decoder = AdxsjdStateOf(sjdHandle)->Decoder();
     ADXB_SetDefFmt(decoder, requestedFormat);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(decoder));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(decoder));
   }
 
   /**
@@ -11793,9 +11471,9 @@
    * What it does:
    * Adjusts ADXSJD positive/negative sample correction counters under lock.
    */
-  std::int32_t ADXSJD_AdjustSmpl(const std::int32_t sjdHandle, const std::int32_t sampleDelta)
+  std::int32_t ADXSJD_AdjustSmpl(const SofdecAddressWord sjdHandle, const std::int32_t sampleDelta)
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     ADXCRS_Lock();
     if (sampleDelta <= 0) {
       sjdRuntime->negativeSampleAdjust -= sampleDelta;
@@ -11812,13 +11490,13 @@
    * What it does:
    * Registers ADXSJD filter callback and callback context.
    */
-  std::int32_t ADXSJD_EntryFltFunc(
-    const std::int32_t sjdHandle,
+  SofdecAddressWord ADXSJD_EntryFltFunc(
+    const SofdecAddressWord sjdHandle,
     void* const callbackAddress,
     const std::int32_t callbackContext
   )
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     sjdRuntime->filterCallback = callbackAddress;
     sjdRuntime->filterCallbackContext = callbackContext;
     return sjdHandle;
@@ -11830,13 +11508,13 @@
    * What it does:
    * Registers ADXSJD trap callback and callback context.
    */
-  std::int32_t ADXSJD_EntryTrapFunc(
-    const std::int32_t sjdHandle,
+  SofdecAddressWord ADXSJD_EntryTrapFunc(
+    const SofdecAddressWord sjdHandle,
     void* const callbackAddress,
     const std::int32_t callbackContext
   )
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     sjdRuntime->trapCallback = callbackAddress;
     sjdRuntime->trapCallbackContext = callbackContext;
     return sjdHandle;
@@ -11848,9 +11526,9 @@
    * What it does:
    * Stores ADXSJD trap target sample-count lane.
    */
-  std::int32_t ADXSJD_SetTrapNumSmpl(const std::int32_t sjdHandle, const std::int32_t trapSampleCount)
+  std::int32_t ADXSJD_SetTrapNumSmpl(const SofdecAddressWord sjdHandle, const std::int32_t trapSampleCount)
   {
-    AsAdxsjdRuntimeView(sjdHandle)->trapSampleCount = trapSampleCount;
+    AdxsjdStateOf(sjdHandle)->trapSampleCount = trapSampleCount;
     return trapSampleCount;
   }
 
@@ -11860,9 +11538,9 @@
    * What it does:
    * Returns ADXSJD trap target sample-count lane.
    */
-  std::int32_t ADXSJD_GetTrapNumSmpl(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetTrapNumSmpl(const SofdecAddressWord sjdHandle)
   {
-    return AsAdxsjdRuntimeView(sjdHandle)->trapSampleCount;
+    return AdxsjdStateOf(sjdHandle)->trapSampleCount;
   }
 
   /**
@@ -11871,9 +11549,9 @@
    * What it does:
    * Stores ADXSJD trap-hit counter lane.
    */
-  std::int32_t ADXSJD_SetTrapCnt(const std::int32_t sjdHandle, const std::int32_t trapCount)
+  std::int32_t ADXSJD_SetTrapCnt(const SofdecAddressWord sjdHandle, const std::int32_t trapCount)
   {
-    AsAdxsjdRuntimeView(sjdHandle)->trapCount = trapCount;
+    AdxsjdStateOf(sjdHandle)->trapCount = trapCount;
     return trapCount;
   }
 
@@ -11883,9 +11561,9 @@
    * What it does:
    * Returns ADXSJD trap-hit counter lane.
    */
-  std::int32_t ADXSJD_GetTrapCnt(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetTrapCnt(const SofdecAddressWord sjdHandle)
   {
-    return AsAdxsjdRuntimeView(sjdHandle)->trapCount;
+    return AdxsjdStateOf(sjdHandle)->trapCount;
   }
 
   /**
@@ -11894,9 +11572,9 @@
    * What it does:
    * Stores ADXSJD trap target decoded-data length lane.
    */
-  std::int32_t ADXSJD_SetTrapDtLen(const std::int32_t sjdHandle, const std::int32_t trapDataLengthBytes)
+  std::int32_t ADXSJD_SetTrapDtLen(const SofdecAddressWord sjdHandle, const std::int32_t trapDataLengthBytes)
   {
-    AsAdxsjdRuntimeView(sjdHandle)->trapDataLengthBytes = trapDataLengthBytes;
+    AdxsjdStateOf(sjdHandle)->trapDataLengthBytes = trapDataLengthBytes;
     return trapDataLengthBytes;
   }
 
@@ -11906,9 +11584,9 @@
    * What it does:
    * Returns ADXSJD trap target decoded-data length lane.
    */
-  std::int32_t ADXSJD_GetTrapDtLen(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetTrapDtLen(const SofdecAddressWord sjdHandle)
   {
-    return AsAdxsjdRuntimeView(sjdHandle)->trapDataLengthBytes;
+    return AdxsjdStateOf(sjdHandle)->trapDataLengthBytes;
   }
 
   /**
@@ -11917,9 +11595,9 @@
    * What it does:
    * Returns active ADXSJD decode format class from ADXB decoder lane.
    */
-  std::int32_t ADXSJD_GetFormat(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetFormat(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetFormat(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetFormat(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
@@ -11928,15 +11606,15 @@
    * What it does:
    * Returns active ADXSJD sample-rate lane from ADXB decoder.
    */
-  std::int32_t ADXSJD_GetSfreq(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetSfreq(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetSfreq(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetSfreq(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18D70 (FUN_00B18D70, _ADXSJD_GetNumChan)
    */
-  std::int32_t ADXSJD_GetNumChan(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetNumChan(const SofdecAddressWord sjdHandle)
   {
     return ResolveAdxsjdChannelCount(sjdHandle);
   }
@@ -11944,74 +11622,74 @@
   /**
    * Address: 0x00B18D80 (FUN_00B18D80, _ADXSJD_GetOutBps)
    */
-  std::int32_t ADXSJD_GetOutBps(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetOutBps(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetOutBps(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetOutBps(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18D90 (FUN_00B18D90, _ADXSJD_GetBlkSmpl)
    */
-  std::int32_t ADXSJD_GetBlkSmpl(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetBlkSmpl(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetBlkSmpl(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetBlkSmpl(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18DA0 (FUN_00B18DA0, _ADXSJD_GetBlkLen)
    */
-  std::int32_t ADXSJD_GetBlkLen(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetBlkLen(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetBlkLen(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetBlkLen(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18DB0 (FUN_00B18DB0, _ADXSJD_GetTotalNumSmpl)
    */
-  std::int32_t ADXSJD_GetTotalNumSmpl(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetTotalNumSmpl(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetTotalNumSmpl(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetTotalNumSmpl(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18DC0 (FUN_00B18DC0, _ADXSJD_GetCof)
    */
-  std::int32_t ADXSJD_GetCof(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetCof(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetCof(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetCof(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18DD0 (FUN_00B18DD0, _ADXSJD_GetNumLoop)
    */
-  std::int32_t ADXSJD_GetNumLoop(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetNumLoop(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetNumLoop(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetNumLoop(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18DE0 (FUN_00B18DE0, _ADXSJD_GetLpInsNsmpl)
    */
-  std::int32_t ADXSJD_GetLpInsNsmpl(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetLpInsNsmpl(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetLpInsNsmpl(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetLpInsNsmpl(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18DF0 (FUN_00B18DF0, _ADXSJD_GetLpStartPos)
    */
-  std::int32_t ADXSJD_GetLpStartPos(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetLpStartPos(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetLpStartPos(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetLpStartPos(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18E00 (FUN_00B18E00, _ADXSJD_GetLpStartOfst)
    */
-  std::int32_t ADXSJD_GetLpStartOfst(const std::int32_t sjdHandle)
+  SofdecAddressWord ADXSJD_GetLpStartOfst(const SofdecAddressWord sjdHandle)
   {
     if (sjdHandle != 0) {
-      return ADXB_GetLpStartOfst(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+      return ADXB_GetLpStartOfst(AdxsjdStateOf(sjdHandle)->Decoder());
     }
     return sjdHandle;
   }
@@ -12019,33 +11697,33 @@
   /**
    * Address: 0x00B18E20 (FUN_00B18E20, _ADXSJD_GetLpEndPos)
    */
-  std::int32_t ADXSJD_GetLpEndPos(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetLpEndPos(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetLpEndPos(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetLpEndPos(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18E30 (FUN_00B18E30, _ADXSJD_GetLpEndOfst)
    */
-  std::int32_t ADXSJD_GetLpEndOfst(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetLpEndOfst(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetLpEndOfst(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetLpEndOfst(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18E40 (FUN_00B18E40, _ADXSJD_GetAinfLen)
    */
-  std::int32_t ADXSJD_GetAinfLen(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetAinfLen(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetAinfLen(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetAinfLen(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18E50 (FUN_00B18E50, _ADXSJD_GetDefOutVol)
    */
-  std::int16_t ADXSJD_GetDefOutVol(const std::int32_t sjdHandle)
+  std::int16_t ADXSJD_GetDefOutVol(const SofdecAddressWord sjdHandle)
   {
-    auto* const runtime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const runtime = AdxsjdStateOf(sjdHandle);
     if (
       ADXB_GetAinfLen(runtime->Decoder()) > 0
       && (runtime->streamFormatClass == 2 || runtime->streamFormatClass == 3)
@@ -12058,7 +11736,7 @@
   /**
    * Address: 0x00B18E90 (FUN_00B18E90, _ADXSJD_GetDefPan)
    */
-  std::int16_t ADXSJD_GetDefPan(const std::int32_t sjdHandle, const std::int32_t laneIndex)
+  std::int16_t ADXSJD_GetDefPan(const SofdecAddressWord sjdHandle, const std::int32_t laneIndex)
   {
     return ResolveAdxsjdDefaultPanLane(sjdHandle, laneIndex);
   }
@@ -12066,9 +11744,9 @@
   /**
    * Address: 0x00B18ED0 (FUN_00B18ED0, _ADXSJD_GetDataId)
    */
-  std::uint8_t* ADXSJD_GetDataId(const std::int32_t sjdHandle)
+  std::uint8_t* ADXSJD_GetDataId(const SofdecAddressWord sjdHandle)
   {
-    auto* const runtime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const runtime = AdxsjdStateOf(sjdHandle);
     if (
       ADXB_GetAinfLen(runtime->Decoder()) > 0
       && (runtime->streamFormatClass == 2 || runtime->streamFormatClass == 3)
@@ -12081,42 +11759,42 @@
   /**
    * Address: 0x00B18F10 (FUN_00B18F10, _ADXSJD_GetHdrLen)
    */
-  std::int32_t ADXSJD_GetHdrLen(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetHdrLen(const SofdecAddressWord sjdHandle)
   {
-    return AsAdxsjdRuntimeView(sjdHandle)->headerLengthBytes;
+    return AdxsjdStateOf(sjdHandle)->headerLengthBytes;
   }
 
   /**
    * Address: 0x00B18F20 (FUN_00B18F20, _ADXSJD_GetFmtBps)
    */
-  std::int32_t ADXSJD_GetFmtBps(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_GetFmtBps(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetFmtBps(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_GetFmtBps(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18F30 (FUN_00B18F30, _ADXSJD_GetSpsdInfo)
    */
-  std::int32_t ADXSJD_GetSpsdInfo(const std::int32_t sjdHandle)
+  SofdecAddressWord ADXSJD_GetSpsdInfo(const SofdecAddressWord sjdHandle)
   {
-    auto* const runtime = AsAdxsjdRuntimeView(sjdHandle);
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(&runtime->spsdInfoState[0]));
+    auto* const runtime = AdxsjdStateOf(sjdHandle);
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(&runtime->spsdInfoState[0]));
   }
 
   /**
    * Address: 0x00B18F40 (FUN_00B18F40, _ADXSJD_TakeSnapshot)
    */
-  std::int32_t ADXSJD_TakeSnapshot(const std::int32_t sjdHandle)
+  std::int32_t ADXSJD_TakeSnapshot(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_TakeSnapshot(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_TakeSnapshot(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
    * Address: 0x00B18F50 (FUN_00B18F50, _ADXSJD_RestoreSnapshot)
    */
-  std::int32_t ADXSJD_RestoreSnapshot(const std::int32_t sjdHandle)
+  SofdecAddressWord ADXSJD_RestoreSnapshot(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_RestoreSnapshot(AsAdxsjdRuntimeView(sjdHandle)->Decoder());
+    return ADXB_RestoreSnapshot(AdxsjdStateOf(sjdHandle)->Decoder());
   }
 
   /**
@@ -12141,7 +11819,7 @@
    */
   std::int32_t adxt_GetStat(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtGetStatParameterErrorMessage);
     }
@@ -12207,13 +11885,13 @@
    * Returns ADXT playback time units/frequency pair from RNA/SJD lanes and
    * applies runtime time offset lane.
    */
-  std::int32_t adxt_GetTimeSfreq(
+  SofdecAddressWord adxt_GetTimeSfreq(
     void* const adxtRuntime,
     std::int32_t* const outTimeUnits,
     std::int32_t* const outTimeScale
   )
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     const auto status = static_cast<std::uint8_t>(runtime->mUnknown01);
     if (status == 3u || status == 4u) {
       ADXRNA_GetTime(runtime->rnaHandle, outTimeUnits, outTimeScale);
@@ -12232,7 +11910,7 @@
     *outTimeUnits = 0;
     *outTimeScale = 1;
     *outTimeUnits += runtime->linkReadCursor;
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(outTimeUnits));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(outTimeUnits));
   }
 
   /**
@@ -12266,7 +11944,7 @@
     std::int32_t* const outTimeScale
   )
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     const auto status = static_cast<std::uint8_t>(runtime->mUnknown01);
     if (status == 3u || status == 4u) {
       *outTimeScale = ADXSJD_GetSfreq(runtime->sjdHandle);
@@ -12335,7 +12013,7 @@
    */
   std::int32_t adxt_GetNumChan(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtGetNumChanParameterErrorMessage);
     }
@@ -12395,7 +12073,7 @@
    */
   std::int32_t adxt_GetNumSmpl(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtGetNumSmplParameterErrorMessage);
     }
@@ -12427,7 +12105,7 @@
    */
   std::int32_t adxt_GetSfreq(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtGetSfreqParameterErrorMessage);
     }
@@ -12459,7 +12137,7 @@
    */
   std::int32_t adxt_GetHdrLen(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtGetHdrLenParameterErrorMessage);
     }
@@ -12491,7 +12169,7 @@
    */
   std::int32_t adxt_GetFmtBps(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtGetFmtBpsParameterErrorMessage);
     }
@@ -12534,7 +12212,7 @@
    */
   std::int32_t adxt_DiscardSmpl(void* const adxtRuntime, const std::int32_t sampleCount)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime->ErrorCheckSuppressedFlag() == 0u) {
       return 0;
     }
@@ -12580,7 +12258,7 @@
    */
   std::int32_t adxt_GetTimeOfst(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     return runtime->linkReadCursor;
   }
 
@@ -12605,7 +12283,7 @@
    */
   std::int32_t adxt_SetTimeOfst(void* const adxtRuntime, const std::int32_t timeOffset)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     runtime->linkReadCursor = timeOffset;
     return timeOffset;
   }
@@ -12632,7 +12310,7 @@
    */
   std::int32_t adxt_AdjustSmpl(void* const adxtRuntime, const std::int32_t sampleDelta)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     return ADXSJD_AdjustSmpl(runtime->sjdHandle, sampleDelta);
   }
 
@@ -12662,7 +12340,7 @@
    */
   std::int32_t adxt_EntryFltFunc(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     return static_cast<std::int32_t>(static_cast<std::int8_t>(runtime->linkSwitchRequested));
   }
 
@@ -12689,13 +12367,13 @@
    * What it does:
    * Forwards one ADXT header-filter callback lane into ADXSJD filter registration.
    */
-  std::int32_t adxt_SetCbHdrDec(
+  SofdecAddressWord adxt_SetCbHdrDec(
     void* const adxtRuntime,
     void* const filterCallbackAddress,
     const std::int32_t filterCallbackContext
   )
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     return ADXSJD_EntryFltFunc(runtime->sjdHandle, filterCallbackAddress, filterCallbackContext);
   }
 
@@ -12721,7 +12399,7 @@
    */
   std::int32_t adxt_GetDecNumSmpl(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtGetDecNumSmplParameterErrorMessage);
       return -1;
@@ -12751,7 +12429,7 @@
    */
   std::int32_t adxt_GetDecDtLen(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtGetDecDtLenParameterErrorMessage);
       return -1;
@@ -12782,13 +12460,13 @@
    * What it does:
    * Forwards one ADXT decode callback lane into ADXSJD decode callback registration.
    */
-  std::int32_t adxt_SetCbDec(
+  SofdecAddressWord adxt_SetCbDec(
     void* const adxtRuntime,
     void* const decodeCallbackAddress,
     const std::int32_t decodeCallbackContext
   )
   {
-    const auto* const runtime = static_cast<const AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<const AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return ADXERR_CallErrFunc1_(kAdxtSetCbDecParameterErrorMessage);
     }
@@ -12872,7 +12550,7 @@
    */
   void adxt_SetKeyString(void* const adxtRuntime, const char* const extString)
   {
-    const auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtSetKeyStringParameterErrorMessage);
       return;
@@ -12911,10 +12589,10 @@
    * What it does:
    * Returns ADXT RNA handle lane under ADXCRS enter/leave guards.
    */
-  std::int32_t ADXT_GetRna(void* const adxtRuntime)
+  SofdecAddressWord ADXT_GetRna(void* const adxtRuntime)
   {
     ADXCRS_Enter();
-    const std::int32_t rnaHandle = adxt_GetRna(adxtRuntime);
+    const SofdecAddressWord rnaHandle = adxt_GetRna(adxtRuntime);
     ADXCRS_Leave();
     return rnaHandle;
   }
@@ -12925,9 +12603,9 @@
    * What it does:
    * Returns ADXT RNA handle lane.
    */
-  std::int32_t adxt_GetRna(void* const adxtRuntime)
+  SofdecAddressWord adxt_GetRna(void* const adxtRuntime)
   {
-    return static_cast<AdxtRuntimeState*>(adxtRuntime)->rnaHandle;
+    return static_cast<AdxtState*>(adxtRuntime)->rnaHandle;
   }
 
   /**
@@ -12949,9 +12627,9 @@
    * What it does:
    * Forwards one ADXT default-format update to ADXSJD using runtime SJD lane.
    */
-  std::int32_t adxt_SetDefFmt(void* const adxtRuntime, const std::int32_t requestedFormat)
+  SofdecAddressWord adxt_SetDefFmt(void* const adxtRuntime, const std::int32_t requestedFormat)
   {
-    const auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    const auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     return ADXSJD_SetDefFmt(runtime->sjdHandle, requestedFormat);
   }
 
@@ -13002,7 +12680,7 @@
    */
   std::int32_t adxt_InsertSilence(void* const adxtRuntime, const std::int32_t channelCount, const std::int32_t sampleCount)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     auto* const streamJoinHandle = runtime->streamJoinInputHandle;
     if (streamJoinHandle == nullptr) {
       return 0;
@@ -13084,13 +12762,13 @@
    * general loop-boundary trap callback (`adxt_trap_entry`) at the loop
    * point itself.
    */
-  std::int32_t adxt_trap_entry_lps(void* const adxtRuntime)
+  SofdecAddressWord adxt_trap_entry_lps(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    const std::int32_t sjdHandle = runtime->sjdHandle;
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    const SofdecAddressWord sjdHandle = runtime->sjdHandle;
 
     const std::int32_t loopStartPos = ADXSJD_GetLpStartPos(sjdHandle);
-    const std::int32_t loopStartOffset = ADXSJD_GetLpStartOfst(sjdHandle);
+    const SofdecAddressWord loopStartOffset = ADXSJD_GetLpStartOfst(sjdHandle);
     const std::int32_t loopEndPos = ADXSJD_GetLpEndPos(sjdHandle);
     ADXSJD_TakeSnapshot(sjdHandle);
     ADXSJD_SetTrapCnt(sjdHandle, 0);
@@ -13101,7 +12779,7 @@
     return ADXSJD_EntryTrapFunc(
       sjdHandle,
       reinterpret_cast<void*>(adxt_trap_entry),
-      static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime))
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime))
     );
   }
 
@@ -13117,8 +12795,8 @@
    */
   std::int32_t adxt_trap_entry(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    const std::int32_t sjdHandle = runtime->sjdHandle;
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    const SofdecAddressWord sjdHandle = runtime->sjdHandle;
     AdxtStreamJoinHandle* const streamJoinHandle = runtime->streamJoinInputHandle;
 
     const std::int32_t loopStartPos = ADXSJD_GetLpStartPos(sjdHandle);
@@ -13161,10 +12839,10 @@
    * Handles ADXT stream EOS by either seeking to loop-start sector or arming
    * terminal trap/sample-window state before forcing open-ended EOS.
    */
-  std::int32_t adxt_eos_entry(void* const adxtRuntime)
+  SofdecAddressWord adxt_eos_entry(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    const std::int32_t sjdHandle = runtime->sjdHandle;
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    const SofdecAddressWord sjdHandle = runtime->sjdHandle;
 
     if (runtime->streamHandle != nullptr && sjdHandle != 0) {
       const std::int32_t loopStartOffsetBytes = ADXSJD_GetLpStartOfst(sjdHandle);
@@ -13189,7 +12867,7 @@
    */
   std::int32_t adxt_set_outpan(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     const std::int32_t lane0Pan = static_cast<std::int32_t>(runtime->RequestedPanLane(0));
     if (ADXSJD_GetNumChan(runtime->sjdHandle) == 1) {
       ADXT_SetOutPan(runtime, 0, lane0Pan);
@@ -13215,12 +12893,12 @@
    */
   std::int32_t adxt_nlp_trap_entry(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime->linkSwitchRequested == 0u) {
       return 0;
     }
 
-    const std::int32_t sjdHandle = runtime->sjdHandle;
+    const SofdecAddressWord sjdHandle = runtime->sjdHandle;
     AdxtStreamJoinHandle* const streamJoinHandle = runtime->streamJoinInputHandle;
 
     SjChunkRange chunkA{};
@@ -13283,7 +12961,7 @@
     runtime->PlaybackTimeDeltaFrames() += ADXSJD_GetDecNumSmpl(sjdHandle);
     ADXSJD_Stop(sjdHandle);
     ADXSJD_Start(sjdHandle);
-    ADXSJD_ExecHndl(AsAdxsjdRuntimeView(sjdHandle));
+    ADXSJD_ExecHndl(AdxsjdStateOf(sjdHandle));
 
     if (ADXSJD_GetStat(sjdHandle) != 2) {
       return ADXT_SetLnkSw(runtime, 0);
@@ -13323,8 +13001,8 @@
    */
   std::int32_t adxt_stat_decinfo(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    const std::int32_t sjdHandle = runtime->sjdHandle;
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    const SofdecAddressWord sjdHandle = runtime->sjdHandle;
 
     if (static_cast<std::uint8_t>(runtime->mUnknown02) <= 1u && runtime->linkSwitchActive == 1u) {
       const std::int32_t streamStat = ADXSTM_GetStat(runtime->streamHandle);
@@ -13375,7 +13053,7 @@
           ADXSJD_SetTrapNumSmpl(sjdHandle, totalNumSmpl);
           ADXSJD_SetTrapDtLen(sjdHandle, 0);
           ADXSJD_SetTrapCnt(sjdHandle, 0);
-          ADXSJD_EntryTrapFunc(sjdHandle, reinterpret_cast<void*>(adxt_nlp_trap_entry), static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime)));
+          ADXSJD_EntryTrapFunc(sjdHandle, reinterpret_cast<void*>(adxt_nlp_trap_entry), static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime)));
         } else {
           if (runtime->mUnknown02 == 2u) {
             runtime->LoopLeadInPadSamples() = 0;
@@ -13386,9 +13064,9 @@
             runtime->StreamEndSector() = loopEndSector;
             ADXSTM_SetEos(runtime->streamHandle, loopEndSector);
             ADXSTM_EntryEosFunc(
-              static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime->streamHandle)),
-              reinterpret_cast<std::int32_t>(adxt_eos_entry),
-              static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime))
+              static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime->streamHandle)),
+              reinterpret_cast<SofdecAddressWord>(adxt_eos_entry),
+              static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime))
             );
           }
 
@@ -13398,7 +13076,7 @@
           ADXSJD_SetTrapNumSmpl(sjdHandle, loopStartPos);
           ADXSJD_SetTrapDtLen(sjdHandle, 0);
           ADXSJD_SetTrapCnt(sjdHandle, 0);
-          ADXSJD_EntryTrapFunc(sjdHandle, reinterpret_cast<void*>(adxt_trap_entry_lps), static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime)));
+          ADXSJD_EntryTrapFunc(sjdHandle, reinterpret_cast<void*>(adxt_trap_entry_lps), static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime)));
         }
 
         const std::int32_t sfreq = ADXSJD_GetSfreq(sjdHandle);
@@ -13432,7 +13110,7 @@
         result = 0;
         if (adxt_enddecinfo_cbfn != nullptr) {
           result = adxt_enddecinfo_cbfn(
-            static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime)),
+            static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime)),
             sfreq,
             numChan,
             totalNumSmpl
@@ -13465,9 +13143,9 @@
    */
   std::int32_t adxt_stat_prep(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    const std::int32_t rnaHandle = runtime->rnaHandle;
-    const std::int32_t sjdHandle = runtime->sjdHandle;
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    const SofdecAddressWord rnaHandle = runtime->rnaHandle;
+    const SofdecAddressWord sjdHandle = runtime->sjdHandle;
 
     const std::int32_t numData = ADXRNA_GetNumData(rnaHandle);
     const std::int32_t numRoom = ADXRNA_GetNumRoom(rnaHandle);
@@ -13518,7 +13196,7 @@
    */
   std::int32_t adxt_stat_playing(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime->StreamLoopSeekOnEosFlag() == 0u && ADXSJD_GetDecDtLen(runtime->sjdHandle) >= runtime->StreamDecodeWindowState()) {
       ADXSJD_SetTrapNumSmpl(runtime->sjdHandle, -1);
     }
@@ -13556,7 +13234,7 @@
    */
   std::int32_t adxt_stat_decend(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     adxt_dbg_rna_ndata = ADXRNA_GetNumData(runtime->rnaHandle);
 
     const std::int32_t remainingData = ADXRNA_GetNumData(runtime->rnaHandle);
@@ -13587,7 +13265,7 @@
    */
   void adxt_RcvrReplay(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
 
     ADXCRS_Lock();
     j__ADXRNA_SetTransSw(runtime->rnaHandle, 0);
@@ -13626,7 +13304,7 @@
    */
   void ADXT_ExecErrChk(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     const auto playbackState = static_cast<std::int32_t>(runtime->mUnknown01);
 
     const auto dispatchRecoveryAction = [&]() {
@@ -13715,7 +13393,7 @@
    */
   void ADXT_ExecRdErrChk(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime->streamHandle != nullptr && ADXSTM_GetStat(runtime->streamHandle) == kAdxstmStatusFilesystemError) {
       runtime->ErrorStateCode() = -1;
       runtime->mUnknown01 = 6;
@@ -13737,8 +13415,8 @@
    */
   std::int32_t ADXT_ExecRdCompChk(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    std::int32_t status = static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(runtime->streamHandle));
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    std::int32_t status = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(runtime->streamHandle));
     if (status == 0) {
       return status;
     }
@@ -13794,7 +13472,7 @@
    */
   void adxt_ExecHndl(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxtExecHndlParameterErrorMessage);
       return;
@@ -13837,7 +13515,7 @@
    */
   std::int32_t adxt_GetStatRead(void* const adxtRuntime)
   {
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime == nullptr) {
       return 0;
     }
@@ -13851,7 +13529,7 @@
       return 0;
     }
 
-    void* const seamlessStreamHandle = AsLscRuntimeView(lscHandle)->streamHandle;
+    void* const seamlessStreamHandle = LscInstanceOf(lscHandle)->streamHandle;
     if (seamlessStreamHandle == nullptr) {
       return 0;
     }
@@ -13868,7 +13546,7 @@
   void adxt_SetSeamlessLp(void* const adxtRuntime, const std::int32_t enabled)
   {
     if (adxtRuntime != nullptr) {
-      auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+      auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
       LSC_SetLpFlg(runtime->SeamlessLscHandle(), enabled);
       return;
     }
@@ -13909,7 +13587,7 @@
   )
   {
     if (adxtRuntime != nullptr && fileName != nullptr) {
-      auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+      auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
       void* const lscHandle = runtime->SeamlessLscHandle();
       lsc_Stop(lscHandle);
       (void)adxt_EntryFnameRange(runtime, fileName, rangeStart, rangeEnd);
@@ -13929,12 +13607,12 @@
    */
   std::int32_t adxt_StartAfsLp(
     void* const adxtRuntime,
-    const std::int32_t afsHandle,
+    const SofdecAddressWord afsHandle,
     const std::int32_t fileIndex
   )
   {
     if (adxtRuntime != nullptr && afsHandle <= 0 && afsHandle < 0x100 && fileIndex >= 0 && fileIndex <= 0x10000) {
-      auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+      auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
       void* const lscHandle = runtime->SeamlessLscHandle();
       lsc_Stop(lscHandle);
       (void)adxt_EntryAfs(runtime, afsHandle, fileIndex);
@@ -13958,7 +13636,7 @@
       return -1;
     }
 
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     return LSC_GetNumStm(runtime->SeamlessLscHandle());
   }
 
@@ -13999,7 +13677,7 @@
    * What it does:
    * Lock-guarded wrapper for one ADXT seamless AFS enqueue.
    */
-  void ADXT_EntryAfs(void* const adxtRuntime, const std::int32_t afsHandle, const std::int32_t fileIndex)
+  void ADXT_EntryAfs(void* const adxtRuntime, const SofdecAddressWord afsHandle, const std::int32_t fileIndex)
   {
     ADXCRS_Enter();
     (void)adxt_EntryAfs(adxtRuntime, afsHandle, fileIndex);
@@ -14069,7 +13747,7 @@
    * What it does:
    * Lock-guarded wrapper for ADXT seamless loop start using one AFS entry.
    */
-  void ADXT_StartAfsLp(void* const adxtRuntime, const std::int32_t afsHandle, const std::int32_t fileIndex)
+  void ADXT_StartAfsLp(void* const adxtRuntime, const SofdecAddressWord afsHandle, const std::int32_t fileIndex)
   {
     ADXCRS_Enter();
     (void)adxt_StartAfsLp(adxtRuntime, afsHandle, fileIndex);
@@ -14125,7 +13803,7 @@
       return;
     }
 
-    auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
+    auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
     if (runtime->mUnknown01 == 0) {
       LSC_ResetEntry(runtime->SeamlessLscHandle());
     }
@@ -14150,7 +13828,7 @@
    * What it does:
    * Legacy no-op ADXF callback lane.
    */
-  void ADXF_Ocbi([[maybe_unused]] const std::int32_t callbackArg0, [[maybe_unused]] const std::int32_t callbackArg1)
+  void ADXF_Ocbi([[maybe_unused]] const SofdecAddressWord callbackArg0, [[maybe_unused]] const SofdecAddressWord callbackArg1)
   {}
 
   /**
@@ -14226,8 +13904,7 @@
    */
   void mwsfcre_AttachPicUsrBuf(moho::MwsfdPlaybackStateSubobj* const ply)
   {
-    const auto* const playbackView = reinterpret_cast<const MwsfdPlaybackPicUserView*>(ply);
-    const MwsfdPicUserBufferDescriptor* const userBuffer = playbackView->picUserBuffer;
+    const moho::MwsfdPicUserBufferDescriptor* const userBuffer = ply->seekKeyGroupPtr;
     if (userBuffer == nullptr) {
       (void)MWSFSVM_Error(kMwsfcreErrAttachPicUsrBufInternal);
       return;
@@ -14810,7 +14487,7 @@
    * What it does:
    * Appends one ADXF command history entry and updates per-command call count.
    */
-  std::int32_t adxf_SetCmdHstry(
+  SofdecAddressWord adxf_SetCmdHstry(
     const std::int32_t commandId,
     const std::int32_t commandStage,
     void* const handleArg0,
@@ -14829,12 +14506,12 @@
     entry.commandId = static_cast<std::uint8_t>(commandId);
     entry.commandStage = static_cast<std::uint8_t>(commandStage);
     entry.callCount = gAdxfCommandCallCountById[commandIndex];
-    entry.argument0 = static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(handleArg0));
+    entry.argument0 = static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(handleArg0));
     entry.argument1 = arg1;
     entry.argument2 = arg2;
 
     gAdxfHistoryWriteIndex = slot + 1;
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(&entry));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(&entry));
   }
 
   /**
@@ -14887,9 +14564,9 @@
    * Stops and closes the process-global loaded-point network stream when one
    * is active.
    */
-  std::int32_t adxf_StopPtLd()
+  SofdecAddressWord adxf_StopPtLd()
   {
-    const std::int32_t loadedHandleAddress = gAdxfLoadedPointNetworkHandle;
+    const SofdecAddressWord loadedHandleAddress = gAdxfLoadedPointNetworkHandle;
     if (loadedHandleAddress != 0 && gAdxfLoadedPointId >= 0) {
       void* const loadedHandle = SjAddressToPointer(loadedHandleAddress);
       if (adxf_GetStat(loadedHandle) != 1) {
@@ -15019,7 +14696,7 @@
       return -1;
     }
 
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     adxfHandle->boundFileName = fileName;
     adxfHandle->fileStartOffset = startOffset;
     adxfHandle->readStartSector = 0;
@@ -15088,8 +14765,8 @@
     const std::int32_t fileIndex
   )
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
-    const std::int32_t afsHandle = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(afsPointHandle));
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
+    const SofdecAddressWord afsHandle = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(afsPointHandle));
 
     std::int32_t rangeSectorCount = 0;
     std::int32_t rangeStartSector = 0;
@@ -15147,7 +14824,7 @@
     const std::int32_t rangeEnd
   )
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     adxfHandle->fileStartSector = rangeStart;
     adxfHandle->boundRangeStartSector = rangeStart;
     adxfHandle->fileStartOffset = startOffset;
@@ -15260,7 +14937,7 @@
    */
   void adxf_CloseSjStm(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     if (adxfHandle->sourceJoinObject != nullptr && adxfHandle->sjFlag == 0u) {
       if (gAdxfOcbiEnabled == 1) {
         ADXF_Ocbi(adxfHandle->ocbiCallbackArg0, adxfHandle->ocbiCallbackArg1);
@@ -15294,7 +14971,7 @@
    */
   void adxf_Close(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     (void)adxf_SetCmdHstry(3, 0, adxfHandleAddress, -1, -1);
     if (adxfHandle == nullptr) {
       return;
@@ -15385,7 +15062,7 @@
 
   // Defined in SofdecSvmTransferRuntime.cpp, which this translation unit
   // assembles after SofdecAdxRuntime.cpp.
-  std::int32_t adxf_read_sj32(AdxfRuntimeHandleView* adxfHandle, std::int32_t requestedSectors, void* sourceJoinObject);
+  std::int32_t adxf_read_sj32(AdxfHandle* adxfHandle, std::int32_t requestedSectors, void* sourceJoinObject);
 
   /**
    * Address: 0x00B0B770 (FUN_00B0B770, _adxf_ReadSj32)
@@ -15405,7 +15082,7 @@
   std::int32_t
   adxf_ReadSj32(void* const adxfHandleAddress, const std::int32_t requestedSectors, void* const sourceJoinObject)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
 
     if (adxfHandle == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxfErrReadSj32NullHandle);
@@ -15455,9 +15132,9 @@
    * belongs to ADXF.
    */
   std::int32_t
-  adxf_ReadNw32(void* const adxfHandleAddress, const std::int32_t requestedSectors, const std::int32_t bufferAddress)
+  adxf_ReadNw32(void* const adxfHandleAddress, const std::int32_t requestedSectors, const SofdecAddressWord bufferAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     (void)adxf_SetCmdHstry(4, 0, adxfHandleAddress, requestedSectors, bufferAddress);
 
     if (adxfHandle == nullptr) {
@@ -15518,7 +15195,7 @@
    * What it does:
    * Thin thunk that forwards ADXF network reads into the 32-bit implementation.
    */
-  std::int32_t adxf_ReadNw(void* const adxfHandle, const std::int32_t requestedSectors, const std::int32_t bufferAddress)
+  std::int32_t adxf_ReadNw(void* const adxfHandle, const std::int32_t requestedSectors, const SofdecAddressWord bufferAddress)
   {
     return adxf_ReadNw32(adxfHandle, requestedSectors, bufferAddress);
   }
@@ -15587,7 +15264,7 @@
    */
   std::int32_t adxf_Stop(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     (void)adxf_SetCmdHstry(5, 0, adxfHandleAddress, -1, -1);
 
     if (adxfHandle == nullptr) {
@@ -15629,7 +15306,7 @@
    */
   void adxf_ExecOne(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     if (adxfHandle->status == 2u) {
       const auto streamStatus = static_cast<std::uint8_t>(ADXSTM_GetStat(adxfHandle->streamHandle));
       const std::int32_t readStartSector = adxfHandle->readStartSector;
@@ -15714,7 +15391,7 @@
    */
   std::int32_t adxf_Seek(void* const adxfHandleAddress, const std::int32_t seekOffset, const std::int32_t seekOrigin)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     (void)adxf_SetCmdHstry(6, 0, adxfHandleAddress, seekOffset, seekOrigin);
 
     if (adxfHandle == nullptr) {
@@ -15759,7 +15436,7 @@
    */
   std::int32_t adxf_Tell(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     if (adxfHandle == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxfTellNullHandleMessage);
       return -3;
@@ -15789,7 +15466,7 @@
    */
   std::int32_t adxf_RefreshFsizeSct(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     const std::int32_t sizeSectors = (adxf_GetFsizeSct(adxfHandleAddress) + 0x7FF) / 0x800;
     adxfHandle->fileSizeSectors = sizeSectors;
     return sizeSectors;
@@ -15817,7 +15494,7 @@
    */
   std::int32_t adxf_GetFsizeSct(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     if (adxfHandle == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxfGetFsizeSctNullHandleMessage);
       return -3;
@@ -15857,7 +15534,7 @@
    */
   std::int32_t adxf_GetNumReqSct(void* const adxfHandleAddress, std::int32_t* const outRequestedSectorStart)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     if (adxfHandle == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxfGetNumReqSctNullHandleMessage);
       *outRequestedSectorStart = 0;
@@ -15890,7 +15567,7 @@
    */
   std::int32_t adxf_GetNumReadSct(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     if (adxfHandle == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxfGetNumReadSctNullHandleMessage);
       return -3;
@@ -15920,7 +15597,7 @@
    */
   std::int32_t adxf_GetStat(void* const adxfHandleAddress)
   {
-    auto* const adxfHandle = static_cast<AdxfRuntimeHandleView*>(adxfHandleAddress);
+    auto* const adxfHandle = static_cast<AdxfHandle*>(adxfHandleAddress);
     if (adxfHandle == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxfGetStatNullHandleMessage);
       return -3;
@@ -15948,7 +15625,7 @@
    * What it does:
    * Validates ADXF point/file indices for filename-range queries.
    */
-  std::int32_t adxf_ChkPrmGfr(const std::int32_t afsHandle, const std::int32_t fileIndex)
+  std::int32_t adxf_ChkPrmGfr(const SofdecAddressWord afsHandle, const std::int32_t fileIndex)
   {
     if (afsHandle < 0 || afsHandle >= static_cast<std::int32_t>(kAdxfPointInfoCount)) {
       (void)ADXERR_CallErrFunc1_(kAdxfChkPrmGfrPtidOutOfRangeMessage);
@@ -15977,7 +15654,7 @@
    * offset, and sector-range lane values.
    */
   std::int32_t adxf_GetFnameRangeEx(
-    const std::int32_t afsHandle,
+    const SofdecAddressWord afsHandle,
     const std::int32_t fileIndex,
     char* const outFileName,
     std::int32_t* const outStartOffset,
@@ -16027,7 +15704,7 @@
    * Runs ADXF point-file range resolve under ADXF enter/leave guards.
    */
   std::int32_t ADXF_GetFnameRangeEx(
-    const std::int32_t afsHandle,
+    const SofdecAddressWord afsHandle,
     const std::int32_t fileIndex,
     char* const outFileName,
     std::int32_t* const outStartOffset,
@@ -16049,7 +15726,7 @@
    * Resolves ADXF point/file range and returns only range-start/end lanes.
    */
   std::int32_t adxf_GetFileSizeFromPt(
-    const std::int32_t afsHandle,
+    const SofdecAddressWord afsHandle,
     const std::int32_t fileIndex,
     char* const outFileName,
     std::int32_t* const outRangeStart,
@@ -16074,7 +15751,7 @@
    * Runs ADXF point-file size resolve under ADXF enter/leave guards.
    */
   std::int32_t ADXF_GetFileSizeFromPt(
-    const std::int32_t afsHandle,
+    const SofdecAddressWord afsHandle,
     const std::int32_t fileIndex,
     char* const outFileName,
     std::int32_t* const outRangeStart,
@@ -16093,7 +15770,7 @@
    * What it does:
    * Returns archive filename lane for one ADXF point id.
    */
-  const char* adxf_GetFnameFromPt(const std::int32_t afsHandle)
+  const char* adxf_GetFnameFromPt(const SofdecAddressWord afsHandle)
   {
     return gAdxfPointInfoById[static_cast<std::size_t>(afsHandle)]->archiveFileName.data();
   }
@@ -16104,7 +15781,7 @@
    * What it does:
    * Returns archive filename lane for one ADXF point id under ADXF enter/leave guards.
    */
-  const char* ADXF_GetFnameFromPt(const std::int32_t afsHandle)
+  const char* ADXF_GetFnameFromPt(const SofdecAddressWord afsHandle)
   {
     adxf_enter();
     const char* const fileName = adxf_GetFnameFromPt(afsHandle);
@@ -16130,7 +15807,7 @@
    * What it does:
    * Updates one ADXF handle requested-read-sector lane unless the handle is in reading state.
    */
-  void adxf_SetReqRdSct(AdxfRuntimeHandleView* const adxfHandle, const std::int32_t requestedSectors)
+  void adxf_SetReqRdSct(AdxfHandle* const adxfHandle, const std::int32_t requestedSectors)
   {
     if (adxfHandle->status == 2u) {
       (void)ADXERR_CallErrFunc1_(kAdxfSetReqRdSctStateReadingMessage);
@@ -16148,7 +15825,7 @@
   void ADXF_SetReqRdSct(void* const adxfHandle, const std::int32_t requestedSectors)
   {
     adxf_enter();
-    adxf_SetReqRdSct(static_cast<AdxfRuntimeHandleView*>(adxfHandle), requestedSectors);
+    adxf_SetReqRdSct(static_cast<AdxfHandle*>(adxfHandle), requestedSectors);
     adxf_leave();
   }
 
@@ -16158,7 +15835,7 @@
    * What it does:
    * Returns ADXF handle read-flag lane, or zero when handle/stream is null.
    */
-  std::int32_t adxf_GetStatRead(AdxfRuntimeHandleView* const adxfHandle)
+  std::int32_t adxf_GetStatRead(AdxfHandle* const adxfHandle)
   {
     if (adxfHandle != nullptr && adxfHandle->streamHandle != nullptr) {
       return ADXSTM_GetReadFlg(adxfHandle->streamHandle);
@@ -16175,7 +15852,7 @@
   std::int32_t ADXF_GetStatRead(void* const adxfHandle)
   {
     adxf_enter();
-    const std::int32_t readFlag = adxf_GetStatRead(static_cast<AdxfRuntimeHandleView*>(adxfHandle));
+    const std::int32_t readFlag = adxf_GetStatRead(static_cast<AdxfHandle*>(adxfHandle));
     adxf_leave();
     return readFlag;
   }
@@ -16333,14 +16010,14 @@
 
   using AdxstmEndOfStreamCallback = void(__cdecl*)(std::int32_t callbackContext);
 
-  struct AdxstmServerSlotView
+  struct AdxstmServerSlot
   {
     std::uint8_t slotState = 0; // +0x00
     std::int8_t streamStatus = 0; // +0x01
     std::int8_t readFlag = 0; // +0x02
     std::uint8_t mUnknown03 = 0; // +0x03
     moho::SofdecSjSupplyHandle* sourceJoinHandle = nullptr; // +0x04
-    CvFsHandleView* cvfsHandle = nullptr; // +0x08
+    CvFsHandle* cvfsHandle = nullptr; // +0x08
     std::int32_t baseOffset = 0; // +0x0C
     std::int32_t fileLengthBytes = 0; // +0x10
     std::int32_t fileLengthSectors = 0; // +0x14
@@ -16368,89 +16045,89 @@
     std::int32_t streamSectorLimit = 0; // +0x5C
   };
 
-  static_assert(sizeof(AdxstmServerSlotView) == 0x60, "AdxstmServerSlotView size must be 0x60");
-  static_assert(offsetof(AdxstmServerSlotView, streamStatus) == 0x01, "AdxstmServerSlotView::streamStatus offset must be 0x01");
-  static_assert(offsetof(AdxstmServerSlotView, readFlag) == 0x02, "AdxstmServerSlotView::readFlag offset must be 0x02");
+  static_assert(sizeof(AdxstmServerSlot) == 0x60, "AdxstmServerSlot size must be 0x60");
+  static_assert(offsetof(AdxstmServerSlot, streamStatus) == 0x01, "AdxstmServerSlot::streamStatus offset must be 0x01");
+  static_assert(offsetof(AdxstmServerSlot, readFlag) == 0x02, "AdxstmServerSlot::readFlag offset must be 0x02");
   static_assert(
-    offsetof(AdxstmServerSlotView, sourceJoinHandle) == 0x04,
-    "AdxstmServerSlotView::sourceJoinHandle offset must be 0x04"
+    offsetof(AdxstmServerSlot, sourceJoinHandle) == 0x04,
+    "AdxstmServerSlot::sourceJoinHandle offset must be 0x04"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, cvfsHandle) == 0x08,
-    "AdxstmServerSlotView::cvfsHandle offset must be 0x08"
+    offsetof(AdxstmServerSlot, cvfsHandle) == 0x08,
+    "AdxstmServerSlot::cvfsHandle offset must be 0x08"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, baseOffset) == 0x0C,
-    "AdxstmServerSlotView::baseOffset offset must be 0x0C"
+    offsetof(AdxstmServerSlot, baseOffset) == 0x0C,
+    "AdxstmServerSlot::baseOffset offset must be 0x0C"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, fileLengthSectors) == 0x14,
-    "AdxstmServerSlotView::fileLengthSectors offset must be 0x14"
+    offsetof(AdxstmServerSlot, fileLengthSectors) == 0x14,
+    "AdxstmServerSlot::fileLengthSectors offset must be 0x14"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, sourceReadableBytes) == 0x18,
-    "AdxstmServerSlotView::sourceReadableBytes offset must be 0x18"
+    offsetof(AdxstmServerSlot, sourceReadableBytes) == 0x18,
+    "AdxstmServerSlot::sourceReadableBytes offset must be 0x18"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, sourceWritableBytes) == 0x1C,
-    "AdxstmServerSlotView::sourceWritableBytes offset must be 0x1C"
+    offsetof(AdxstmServerSlot, sourceWritableBytes) == 0x1C,
+    "AdxstmServerSlot::sourceWritableBytes offset must be 0x1C"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, pendingReadSectors) == 0x20,
-    "AdxstmServerSlotView::pendingReadSectors offset must be 0x20"
+    offsetof(AdxstmServerSlot, pendingReadSectors) == 0x20,
+    "AdxstmServerSlot::pendingReadSectors offset must be 0x20"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, pendingChunk) == 0x24,
-    "AdxstmServerSlotView::pendingChunk offset must be 0x24"
+    offsetof(AdxstmServerSlot, pendingChunk) == 0x24,
+    "AdxstmServerSlot::pendingChunk offset must be 0x24"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, requestedReadSectors) == 0x2C,
-    "AdxstmServerSlotView::requestedReadSectors offset must be 0x2C"
+    offsetof(AdxstmServerSlot, requestedReadSectors) == 0x2C,
+    "AdxstmServerSlot::requestedReadSectors offset must be 0x2C"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, eosSector) == 0x30,
-    "AdxstmServerSlotView::eosSector offset must be 0x30"
+    offsetof(AdxstmServerSlot, eosSector) == 0x30,
+    "AdxstmServerSlot::eosSector offset must be 0x30"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, sourceStreamedBytes) == 0x34,
-    "AdxstmServerSlotView::sourceStreamedBytes offset must be 0x34"
+    offsetof(AdxstmServerSlot, sourceStreamedBytes) == 0x34,
+    "AdxstmServerSlot::sourceStreamedBytes offset must be 0x34"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, sourceTotalBytes) == 0x40,
-    "AdxstmServerSlotView::sourceTotalBytes offset must be 0x40"
+    offsetof(AdxstmServerSlot, sourceTotalBytes) == 0x40,
+    "AdxstmServerSlot::sourceTotalBytes offset must be 0x40"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, pauseState) == 0x44,
-    "AdxstmServerSlotView::pauseState offset must be 0x44"
+    offsetof(AdxstmServerSlot, pauseState) == 0x44,
+    "AdxstmServerSlot::pauseState offset must be 0x44"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, waitForFileOpen) == 0x45,
-    "AdxstmServerSlotView::waitForFileOpen offset must be 0x45"
+    offsetof(AdxstmServerSlot, waitForFileOpen) == 0x45,
+    "AdxstmServerSlot::waitForFileOpen offset must be 0x45"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, streamErrorCount) == 0x4C,
-    "AdxstmServerSlotView::streamErrorCount offset must be 0x4C"
+    offsetof(AdxstmServerSlot, streamErrorCount) == 0x4C,
+    "AdxstmServerSlot::streamErrorCount offset must be 0x4C"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, fileName) == 0x50,
-    "AdxstmServerSlotView::fileName offset must be 0x50"
+    offsetof(AdxstmServerSlot, fileName) == 0x50,
+    "AdxstmServerSlot::fileName offset must be 0x50"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, fileOpenMode) == 0x54,
-    "AdxstmServerSlotView::fileOpenMode offset must be 0x54"
+    offsetof(AdxstmServerSlot, fileOpenMode) == 0x54,
+    "AdxstmServerSlot::fileOpenMode offset must be 0x54"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, currentSectorOffset) == 0x58,
-    "AdxstmServerSlotView::currentSectorOffset offset must be 0x58"
+    offsetof(AdxstmServerSlot, currentSectorOffset) == 0x58,
+    "AdxstmServerSlot::currentSectorOffset offset must be 0x58"
   );
   static_assert(
-    offsetof(AdxstmServerSlotView, streamSectorLimit) == 0x5C,
-    "AdxstmServerSlotView::streamSectorLimit offset must be 0x5C"
+    offsetof(AdxstmServerSlot, streamSectorLimit) == 0x5C,
+    "AdxstmServerSlot::streamSectorLimit offset must be 0x5C"
   );
 
   constexpr std::size_t kAdxstmServerSlotCount = 0x50;
   static_assert(
-    (sizeof(AdxstmServerSlotView) * kAdxstmServerSlotCount) == 0x1E00,
+    (sizeof(AdxstmServerSlot) * kAdxstmServerSlotCount) == 0x1E00,
     "ADXSTM server slot pool size must be 0x1E00 bytes"
   );
   std::int32_t gSfadxtAttachCount = 0;
@@ -16477,7 +16154,7 @@
     kAdxstmServerSlotCount == 48 + 32,
     "ADXSTM realtime and normal partitions must tile the whole slot pool"
   );
-  std::array<AdxstmServerSlotView, kAdxstmServerSlotCount> gAdxstmObjectPool{};
+  std::array<AdxstmServerSlot, kAdxstmServerSlotCount> gAdxstmObjectPool{};
 
   /**
    * Address: 0x00B0F4A0 (FUN_00B0F4A0)
@@ -16617,14 +16294,14 @@
     return ((byteCount + signMask) >> 11) + roundCarry;
   }
 
-  [[nodiscard]] static AdxstmServerSlotView*
+  [[nodiscard]] static AdxstmServerSlot*
   ADXSTMF_FindFreeSlotInPartition(const std::int32_t slotOffset, const std::int32_t slotCount)
   {
-    AdxstmServerSlotView* selectedSlot = nullptr;
+    AdxstmServerSlot* selectedSlot = nullptr;
     std::int32_t slotIndex = 0;
 
     if (slotCount > 0) {
-      AdxstmServerSlotView* scanSlot = gAdxstmObjectPool.data() + slotOffset;
+      AdxstmServerSlot* scanSlot = gAdxstmObjectPool.data() + slotOffset;
       do {
         selectedSlot = scanSlot;
         if (scanSlot->slotState == 0) {
@@ -16663,13 +16340,13 @@
    * Allocates one free ADXSTM slot from realtime partition and initializes it.
    */
   void* ADXSTMF_CreateCvfsRt(
-    CvFsHandleView* const cvfsHandle,
+    CvFsHandle* const cvfsHandle,
     const std::int32_t baseOffset,
     const std::int32_t fileLengthBytes,
     moho::SofdecSjSupplyHandle* const sourceJoinObject
   )
   {
-    AdxstmServerSlotView* const streamHandle = ADXSTMF_FindFreeSlotInPartition(adxstmf_rtim_ofst, adxstmf_rtim_num);
+    AdxstmServerSlot* const streamHandle = ADXSTMF_FindFreeSlotInPartition(adxstmf_rtim_ofst, adxstmf_rtim_num);
     if (streamHandle == nullptr) {
       return nullptr;
     }
@@ -16687,8 +16364,8 @@
    * default stream state under ADXCRS lock.
    */
   void ADXSTMF_SetupHandleMember(
-    AdxstmServerSlotView* const streamHandle,
-    CvFsHandleView* const cvfsHandle,
+    AdxstmServerSlot* const streamHandle,
+    CvFsHandle* const cvfsHandle,
     const std::int32_t baseOffset,
     const std::int32_t fileLengthBytes,
     moho::SofdecSjSupplyHandle* const sourceJoinObject
@@ -16730,13 +16407,13 @@
    * Allocates one free ADXSTM slot from normal partition and initializes it.
    */
   void* ADXSTMF_CreateCvfs(
-    CvFsHandleView* const cvfsHandle,
+    CvFsHandle* const cvfsHandle,
     const std::int32_t baseOffset,
     const std::int32_t fileLengthBytes,
     moho::SofdecSjSupplyHandle* const sourceJoinObject
   )
   {
-    AdxstmServerSlotView* const streamHandle = ADXSTMF_FindFreeSlotInPartition(adxstmf_nrml_ofst, adxstmf_nrml_num);
+    AdxstmServerSlot* const streamHandle = ADXSTMF_FindFreeSlotInPartition(adxstmf_nrml_ofst, adxstmf_nrml_num);
     if (streamHandle == nullptr) {
       return nullptr;
     }
@@ -16768,9 +16445,9 @@
     SVM_Unlock();
   }
 
-  [[nodiscard]] AdxstmServerSlotView* AsAdxstmRuntimeView(void* const streamHandle)
+  [[nodiscard]] AdxstmServerSlot* AdxstmServerSlotOf(void* const streamHandle)
   {
-    return reinterpret_cast<AdxstmServerSlotView*>(streamHandle);
+    return reinterpret_cast<AdxstmServerSlot*>(streamHandle);
   }
 
   /**
@@ -16808,7 +16485,7 @@
     std::int32_t* const outReadableBytes
   )
   {
-    const AdxstmServerSlotView* const runtime = AsAdxstmRuntimeView(streamHandle);
+    const AdxstmServerSlot* const runtime = AdxstmServerSlotOf(streamHandle);
     *outWritableBytes = runtime->sourceWritableBytes;
     *outReadableBytes = runtime->sourceReadableBytes;
     return 1;
@@ -16838,7 +16515,7 @@
   std::int8_t adxstm_SetPause(void* const streamHandle, const std::int32_t paused)
   {
     const std::int8_t pauseByte = static_cast<std::int8_t>(paused);
-    AsAdxstmRuntimeView(streamHandle)->pauseState = pauseByte;
+    AdxstmServerSlotOf(streamHandle)->pauseState = pauseByte;
     return pauseByte;
   }
 
@@ -16861,7 +16538,7 @@
    */
   std::int32_t adxstm_GetPause(void* const streamHandle)
   {
-    return static_cast<std::int32_t>(AsAdxstmRuntimeView(streamHandle)->pauseState);
+    return static_cast<std::int32_t>(AdxstmServerSlotOf(streamHandle)->pauseState);
   }
 
   /**
@@ -16883,7 +16560,7 @@
    */
   std::int32_t ADXSTM_GetCvdfsStat(void* const streamHandle, std::int32_t* const outStatus)
   {
-    const std::int32_t status = cvFsGetStat(AsAdxstmRuntimeView(streamHandle)->cvfsHandle);
+    const std::int32_t status = cvFsGetStat(AdxstmServerSlotOf(streamHandle)->cvfsHandle);
     *outStatus = status;
     return status;
   }
@@ -16963,7 +16640,7 @@
    */
   std::int32_t adxstm_SetSj(void* const streamHandle, moho::SofdecSjSupplyHandle* const sourceJoinObject)
   {
-    AdxstmServerSlotView* const runtime = AsAdxstmRuntimeView(streamHandle);
+    AdxstmServerSlot* const runtime = AdxstmServerSlotOf(streamHandle);
     runtime->sourceJoinHandle = sourceJoinObject;
 
     ADXCRS_Lock();
@@ -16996,7 +16673,7 @@
    */
   std::int32_t adxstm_SetRdSct(void* const streamHandle, const std::int32_t readSectors)
   {
-    AdxstmServerSlotView* const runtime = AsAdxstmRuntimeView(streamHandle);
+    AdxstmServerSlot* const runtime = AdxstmServerSlotOf(streamHandle);
     runtime->fileLengthBytes = (readSectors << 11);
     runtime->fileLengthSectors = readSectors;
     return readSectors;
@@ -17021,7 +16698,7 @@
    */
   std::int32_t adxstm_SetOfst(void* const streamHandle, const std::int32_t baseOffset)
   {
-    AsAdxstmRuntimeView(streamHandle)->baseOffset = baseOffset;
+    AdxstmServerSlotOf(streamHandle)->baseOffset = baseOffset;
     return ADXSTM_Seek(streamHandle, 0);
   }
 
@@ -17045,7 +16722,7 @@
    */
   void adxf_wait_until_file_open_internal(void* const streamHandle)
   {
-    AdxstmServerSlotView* const runtime = AsAdxstmRuntimeView(streamHandle);
+    AdxstmServerSlot* const runtime = AdxstmServerSlotOf(streamHandle);
     if (runtime->fileName == nullptr || runtime->cvfsHandle != nullptr) {
       return;
     }
@@ -17078,7 +16755,7 @@
    */
   std::int32_t adxstm_GetReadFlg(void* const streamHandle)
   {
-    return static_cast<std::int32_t>(AsAdxstmRuntimeView(streamHandle)->readFlag);
+    return static_cast<std::int32_t>(AdxstmServerSlotOf(streamHandle)->readFlag);
   }
 
   /**
@@ -17100,8 +16777,8 @@
    */
   std::int32_t adxt_GetNumErr(void* const adxtRuntime)
   {
-    const auto* const runtime = static_cast<AdxtRuntimeState*>(adxtRuntime);
-    return AsAdxstmRuntimeView(runtime->streamHandle)->streamErrorCount;
+    const auto* const runtime = static_cast<AdxtState*>(adxtRuntime);
+    return AdxstmServerSlotOf(runtime->streamHandle)->streamErrorCount;
   }
 
   /**
@@ -17176,7 +16853,7 @@
    */
   std::int32_t adxstm_GetSj(void* const streamHandle)
   {
-    return SjPointerToAddress(AsAdxstmRuntimeView(streamHandle)->sourceJoinHandle);
+    return SjPointerToAddress(AdxstmServerSlotOf(streamHandle)->sourceJoinHandle);
   }
 
   /**
@@ -17202,7 +16879,7 @@
     const std::int32_t maxBufferSectors
   )
   {
-    AdxstmServerSlotView* const runtime = AsAdxstmRuntimeView(streamHandle);
+    AdxstmServerSlot* const runtime = AdxstmServerSlotOf(streamHandle);
     runtime->sourceWritableBytes = minBufferSectors;
     runtime->sourceReadableBytes = maxBufferSectors;
     return 1;
@@ -17231,7 +16908,7 @@
    */
   std::int32_t adxstm_SetReqRdSize(void* const streamHandle, const std::int32_t requestedSectors)
   {
-    AsAdxstmRuntimeView(streamHandle)->requestedReadSectors = requestedSectors;
+    AdxstmServerSlotOf(streamHandle)->requestedReadSectors = requestedSectors;
     return 1;
   }
 
@@ -17255,7 +16932,7 @@
    */
   std::int32_t adxstm_GetFileLen(void* const streamHandle)
   {
-    return AsAdxstmRuntimeView(streamHandle)->fileLengthBytes;
+    return AdxstmServerSlotOf(streamHandle)->fileLengthBytes;
   }
 
   /**
@@ -17277,7 +16954,7 @@
    */
   std::int32_t adxstm_GetFileLen64(void* const streamHandle)
   {
-    return AsAdxstmRuntimeView(streamHandle)->fileLengthSectors;
+    return AdxstmServerSlotOf(streamHandle)->fileLengthSectors;
   }
 
   /**
@@ -17322,7 +16999,7 @@
    */
   [[maybe_unused]] std::int32_t adxstm_GetFilesystemServiceActive(void* const streamHandle)
   {
-    return static_cast<std::int32_t>(AsAdxstmRuntimeView(streamHandle)->filesystemServiceActive);
+    return static_cast<std::int32_t>(AdxstmServerSlotOf(streamHandle)->filesystemServiceActive);
   }
 
   /**
@@ -17333,7 +17010,7 @@
    */
   std::int32_t adxstm_GetStat(void* const streamHandle)
   {
-    return static_cast<std::int32_t>(AsAdxstmRuntimeView(streamHandle)->streamStatus);
+    return static_cast<std::int32_t>(AdxstmServerSlotOf(streamHandle)->streamStatus);
   }
 
   /**
@@ -17355,7 +17032,7 @@
    */
   std::int32_t adxstm_Seek(void* const streamHandle, const std::int32_t sectorOffset)
   {
-    auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    auto* const runtime = AdxstmServerSlotOf(streamHandle);
     runtime->currentSectorOffset = sectorOffset;
     if (sectorOffset > runtime->fileLengthSectors) {
       runtime->currentSectorOffset = runtime->fileLengthSectors;
@@ -17382,7 +17059,7 @@
    */
   std::int32_t adxstm_Tell(void* const streamHandle)
   {
-    const auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    const auto* const runtime = AdxstmServerSlotOf(streamHandle);
     return (runtime->cvfsHandle != nullptr) ? runtime->currentSectorOffset : 0;
   }
 
@@ -17403,9 +17080,9 @@
    * What it does:
    * Resets read-transfer lanes and transitions ADXSTM state for stream start.
    */
-  AdxstmServerSlotView* adxstm_start_sub(void* const streamHandle)
+  AdxstmServerSlot* adxstm_start_sub(void* const streamHandle)
   {
-    auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    auto* const runtime = AdxstmServerSlotOf(streamHandle);
     runtime->sourceStreamedBytes = 0;
     runtime->streamErrorCount = 0;
     // `cmp [eax+14h], 0` at 0x00B0FA7C - the bound file length, not the pending
@@ -17432,7 +17109,7 @@
   {
     ADXCRS_Lock();
     adxstm_start_sub(streamHandle);
-    AsAdxstmRuntimeView(streamHandle)->streamSectorLimit = 0x000FFFFF;
+    AdxstmServerSlotOf(streamHandle)->streamSectorLimit = 0x000FFFFF;
     ADXCRS_Unlock();
     return 1;
   }
@@ -17458,7 +17135,7 @@
   {
     ADXCRS_Lock();
     adxstm_start_sub(streamHandle);
-    AsAdxstmRuntimeView(streamHandle)->streamSectorLimit = sectorCount;
+    AdxstmServerSlotOf(streamHandle)->streamSectorLimit = sectorCount;
     ADXCRS_Unlock();
     return 1;
   }
@@ -17482,7 +17159,7 @@
    */
   void adxstm_StopNw(void* const streamHandle)
   {
-    auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    auto* const runtime = AdxstmServerSlotOf(streamHandle);
     adxstm_lock();
     if (runtime->streamStatus == 2 && runtime->readFlag == 1) {
       const std::uint8_t clearStopRequested = runtime->clearStopRequested;
@@ -17515,7 +17192,7 @@
    */
   void adxstm_Stop(void* const streamHandle)
   {
-    auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    auto* const runtime = AdxstmServerSlotOf(streamHandle);
     ADXSTM_StopNw(streamHandle);
     do {
       do {
@@ -17541,17 +17218,17 @@
    * What it does:
    * Writes ADXSTM EOS callback lanes and returns stream handle value.
    */
-  std::int32_t adxstm_EntryEosFunc(
+  SofdecAddressWord adxstm_EntryEosFunc(
     void* const streamHandle,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackContext
   )
   {
-    auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    auto* const runtime = AdxstmServerSlotOf(streamHandle);
     runtime->endOfStreamCallback =
       reinterpret_cast<AdxstmEndOfStreamCallback>(static_cast<std::uintptr_t>(callbackAddress));
     runtime->endOfStreamCallbackContext = callbackContext;
-    return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(streamHandle));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(streamHandle));
   }
 
   /**
@@ -17561,7 +17238,7 @@
    * Export thunk that forwards EOS callback registration.
    */
   std::int32_t
-  ADXSTM_EntryEosFunc(const std::int32_t streamHandleAddress, const std::int32_t callbackAddress, const std::int32_t callbackContext)
+  ADXSTM_EntryEosFunc(const SofdecAddressWord streamHandleAddress, const SofdecAddressWord callbackAddress, const std::int32_t callbackContext)
   {
     return adxstm_EntryEosFunc(SjAddressToPointer(streamHandleAddress), callbackAddress, callbackContext);
   }
@@ -17572,12 +17249,12 @@
    * What it does:
    * Writes ADXSTM completion-sector lane; negative input maps to stream tail.
    */
-  std::int32_t adxstm_SetEos(void* const streamHandle, const std::int32_t eosSector)
+  SofdecAddressWord adxstm_SetEos(void* const streamHandle, const std::int32_t eosSector)
   {
-    auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    auto* const runtime = AdxstmServerSlotOf(streamHandle);
     if (eosSector < 0) {
       runtime->eosSector = runtime->pendingReadSectors;
-      return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(streamHandle));
+      return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(streamHandle));
     }
 
     runtime->eosSector = eosSector;
@@ -17590,7 +17267,7 @@
    * What it does:
    * Export thunk that forwards completion-sector update into `adxstm_SetEos`.
    */
-  std::int32_t ADXSTM_SetEos(void* const streamHandle, const std::int32_t eosSector)
+  SofdecAddressWord ADXSTM_SetEos(void* const streamHandle, const std::int32_t eosSector)
   {
     return adxstm_SetEos(streamHandle, eosSector);
   }
@@ -17599,12 +17276,12 @@
   constexpr std::int32_t kAdxstmStreamSectorLimitUnbounded = 0x000FFFFF;
   constexpr char kAdxstmStatExecOpenErrorPrefix[] = "E02110501 adxstmf_stat_exec: can't open ";
 
-  [[nodiscard]] AdxstmServerSlotView* AsAdxstmServerSlot(void* const streamHandle)
+  [[nodiscard]] AdxstmServerSlot* AsAdxstmServerSlot(void* const streamHandle)
   {
-    return static_cast<AdxstmServerSlotView*>(streamHandle);
+    return static_cast<AdxstmServerSlot*>(streamHandle);
   }
 
-  void adxstmf_stat_exec(AdxstmServerSlotView* runtime)
+  void adxstmf_stat_exec(AdxstmServerSlot* runtime)
   {
     moho::SofdecSjSupplyHandle* const sourceHandle = runtime->sourceJoinHandle;
     const std::int32_t cvfsStatus = cvFsGetStat(runtime->cvfsHandle);
@@ -17619,8 +17296,8 @@
         SjChunkRange submittedChunk{};
         SjChunkRange trailingChunk{};
         SJ_SplitChunk(&runtime->pendingChunk, readByteCount, &submittedChunk, &trailingChunk);
-        sourceHandle->dispatchTable->submitChunk(sourceHandle, 1, &submittedChunk);
-        sourceHandle->dispatchTable->putChunk(sourceHandle, 0, &trailingChunk);
+        sourceHandle->dispatchTable->putChunk(sourceHandle, 1, &submittedChunk);
+        sourceHandle->dispatchTable->ungetChunk(sourceHandle, 0, &trailingChunk);
 
         runtime->currentSectorOffset += runtime->pendingReadSectors;
         runtime->sourceStreamedBytes += readByteCount;
@@ -17654,7 +17331,7 @@
 
       runtime->readFlag = 0;
       adxstm_unlock();
-      sourceHandle->dispatchTable->putChunk(sourceHandle, 0, &runtime->pendingChunk);
+      sourceHandle->dispatchTable->ungetChunk(sourceHandle, 0, &runtime->pendingChunk);
       runtime->pendingChunk.bufferAddress = 0;
       runtime->pendingChunk.byteCount = 0;
 
@@ -17702,7 +17379,7 @@
     sourceHandle->dispatchTable->getChunk(sourceHandle, 0, runtime->sourceReadableBytes, &sourceChunk);
 
     const std::int32_t consumedSectors = runtime->currentSectorOffset;
-    std::int32_t requestedSectors = sourceChunk.byteCount / 2048;
+    SofdecAddressWord requestedSectors = sourceChunk.byteCount / 2048;
     const std::int32_t sectorsUntilCompletion = runtime->eosSector - consumedSectors;
     if (requestedSectors >= sectorsUntilCompletion) {
       requestedSectors = sectorsUntilCompletion;
@@ -17731,7 +17408,7 @@
       return;
     }
 
-    sourceHandle->dispatchTable->putChunk(sourceHandle, 0, &runtime->pendingChunk);
+    sourceHandle->dispatchTable->ungetChunk(sourceHandle, 0, &runtime->pendingChunk);
     runtime->pendingChunk.bufferAddress = 0;
     runtime->pendingChunk.byteCount = 0;
     runtime->readFlag = 0;
@@ -17756,7 +17433,7 @@
    */
   std::int32_t ADXSTMF_ExecHndl(void* const streamHandle)
   {
-    AdxstmServerSlotView* const runtime = AsAdxstmServerSlot(streamHandle);
+    AdxstmServerSlot* const runtime = AsAdxstmServerSlot(streamHandle);
 
     if (runtime->readFlag == 0) {
       if (runtime->stopAfterRead == 1) {
@@ -17769,7 +17446,7 @@
 
       if (runtime->releaseFilePending == 1) {
         if (runtime->cvfsHandle != nullptr) {
-          CvFsHandleView* const closingHandle = runtime->cvfsHandle;
+          CvFsHandle* const closingHandle = runtime->cvfsHandle;
           runtime->cvfsHandle = nullptr;
           cvFsClose(closingHandle);
         }
@@ -17847,7 +17524,7 @@
     const std::int32_t rangeEnd
   )
   {
-    auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    auto* const runtime = AdxstmServerSlotOf(streamHandle);
     adxstm_lock();
     runtime->baseOffset = rangeStart;
     runtime->fileLengthSectors = rangeEnd;
@@ -17883,7 +17560,7 @@
    */
   std::int32_t adxstm_Destroy(void* const streamHandle)
   {
-    auto* const runtime = AsAdxstmRuntimeView(streamHandle);
+    auto* const runtime = AdxstmServerSlotOf(streamHandle);
     if (runtime == nullptr) {
       return 0;
     }
@@ -17891,7 +17568,7 @@
     ADXSTM_Stop(streamHandle);
     ADXSTM_ReleaseFile(streamHandle);
     runtime->slotState = 0;
-    std::memset(runtime, 0, sizeof(AdxstmServerSlotView));
+    std::memset(runtime, 0, sizeof(AdxstmServerSlot));
     return 0;
   }
 
@@ -17923,7 +17600,7 @@
   {
     ADXSTM_BindFileNw(streamHandle, fileName, startOffset, rangeStart, rangeEnd);
 
-    AdxstmServerSlotView* const runtime = AsAdxstmServerSlot(streamHandle);
+    AdxstmServerSlot* const runtime = AsAdxstmServerSlot(streamHandle);
     do {
       ADXT_ExecFsSvr();
     } while (runtime->waitForFileOpen != 0);
@@ -17959,7 +17636,7 @@
   {
     ADXSTM_StopNw(streamHandle);
 
-    AdxstmServerSlotView* const runtime = AsAdxstmServerSlot(streamHandle);
+    AdxstmServerSlot* const runtime = AsAdxstmServerSlot(streamHandle);
     adxstm_lock();
     if (runtime->filesystemServiceActive == 1) {
       runtime->releaseFilePending = 1;
@@ -18027,7 +17704,7 @@
   std::int32_t adxstm_ExecServer()
   {
     std::int32_t result = static_cast<std::int32_t>(adxstm_test_and_set(&adxstmf_execsvr_flg));
-    for (AdxstmServerSlotView& slot : gAdxstmObjectPool) {
+    for (AdxstmServerSlot& slot : gAdxstmObjectPool) {
       if (slot.slotState == 1) {
         result = ADXSTMF_ExecHndl(&slot);
       }
@@ -18322,7 +17999,7 @@
    */
   std::int32_t SVM_SetCbSvr(
     const std::int32_t svtype,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -18362,7 +18039,7 @@
    */
   std::int32_t SVM_SetCbSvrWithString(
     const std::int32_t svtype,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -18381,7 +18058,7 @@
    */
   std::int32_t SVM_SetCbSvrNoName(
     const std::int32_t svtype,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject
   )
   {
@@ -18397,7 +18074,7 @@
   void SVM_SetCbSvrId(
     const std::int32_t svtype,
     const std::int32_t id,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -18431,7 +18108,7 @@
   void SVM_SetCbSvrIdWithString(
     const std::int32_t svtype,
     const std::int32_t id,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -18450,7 +18127,7 @@
   void SVM_SetCbSvrIdNoName(
     const std::int32_t svtype,
     const std::int32_t id,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject
   )
   {
@@ -18463,7 +18140,7 @@
    * What it does:
    * Registers one server-border callback lane under SVM lock.
    */
-  void SVM_SetCbBdr(const std::int32_t borderLane, const std::int32_t callbackAddress, const std::int32_t callbackObject)
+  void SVM_SetCbBdr(const std::int32_t borderLane, const SofdecAddressWord callbackAddress, const std::int32_t callbackObject)
   {
     SVM_Lock();
     SvmCallbackBinding& callback = gSvmServerBorderCallbacks[static_cast<std::size_t>(borderLane)];
@@ -19476,7 +19153,7 @@
 
       SVM_SetCbBdr(
         kAdxmMwIdleBorderId,
-        static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&adxm_goto_mwidle_border)),
+        static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&adxm_goto_mwidle_border)),
         0
       );
     }
@@ -19687,7 +19364,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   //
   // The block below recovers the cluster of small CRI helpers in the
   // 0x00AC66D0 .. 0x00AC6AB0 range. They convert one MWSFD-side decoded frame
-  // descriptor (`MwsfdSfdFrmObj`) into the SFX-side `MwsfdSfxFrameInfo` block
+  // descriptor (`moho::MwsfdFrameInfo`) into the SFX-side `MwsfdSfxFrameInfo` block
   // that the Sofdec SFX runtime consumes when laying out a single composed
   // frame. They also expose the public MWSFSFX_/MWSFD_ facade entries used by
   // the rest of the movie player to bind/destroy SFX handles, query per-stream
@@ -19721,7 +19398,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   /// SFXA (audio) handle teardown. Released by `SFX_Destroy`. The argument is
   /// the integer handle address that the deeper SFXA layout uses; this matches
   /// the existing `SFXA_Destroy` definition in SofdecSvmTransferRuntime.cpp.
-  void SFXA_Destroy(std::int32_t sfxaHandleAddress);
+  void SFXA_Destroy(SofdecAddressWord sfxaHandleAddress);
 
   /**
    * Address: 0x00AD1870 (FUN_00AD1870, _SFD_CalcYccPlane)
@@ -19731,10 +19408,10 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * per-plane pitch lanes in one packed 16-byte scratch block.
    */
   std::int32_t SFD_CalcYccPlane(
-    std::int32_t baseAddress,
+    SofdecAddressWord baseAddress,
     std::int32_t planeWidth,
     std::int32_t planeHeight,
-    std::int32_t outYccGeometryAddress
+    SofdecAddressWord outYccGeometryAddress
   );
 
   struct MwsfdSfxYccPlaneGeometry;
@@ -19747,7 +19424,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * six-dword plane geometry tuple used by `mwsfsfx_SetYcc420plnInfToSfx`.
    */
   std::int32_t mwl_convYccPlaneFromSFD(
-    std::int32_t sfdGeometryAddress,
+    SofdecAddressWord sfdGeometryAddress,
     MwsfdSfxYccPlaneGeometry* outSfxGeometry
   );
 
@@ -19755,67 +19432,13 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   /// `(sudRecordAddress, sudFieldIndex)` pair as a
   /// colour-adjust frame. Returns `1` for colour-adjust frames, `0` otherwise.
   std::int32_t SUD_AnalyTypeCcs(
-    std::int32_t sudRecordAddress,
+    SofdecAddressWord sudRecordAddress,
     std::int32_t sudFieldIndex
   );
 
   // ---------------------------------------------------------------------------
   // Typed views over the MWSFSFX frame-info structs
   // ---------------------------------------------------------------------------
-
-  /**
-   * Recovered subset of one MWSFD-side decoded frame descriptor.
-   *
-   * The full layout is the SDK's `_MwsfdFrmObj` (a.k.a. `MwsfdFrameInfo` in
-   * other recovered files), but several lanes touched by the MWSFSFX
-   * conversion helpers live past the conservative 0x90-byte size that the
-   * existing `moho::MwsfdFrameInfo` view captures. Until the full struct is
-   * pinned by additional evidence we expose only the lanes proven by the
-   * 0x00AC66D0..0x00AC6AB0 disassembly here, and assert each offset against
-   * the binary so that any future re-typing of the canonical struct stays
-   * compatible.
-   *
-   * Field names mirror the original CRI ones (`buffmt`, `concat_cnt`, ...).
-   */
-  struct MwsfdSfdFrmObj
-  {
-    std::int32_t bufferAddress;                    ///< +0x00 base of decoded frame
-    std::int32_t mUnknown04;                       ///< +0x04
-    std::int32_t buffmt;                           ///< +0x08 buffer-format type
-    std::int32_t planeWidth;                       ///< +0x0C width  (Y plane)
-    std::int32_t planeHeight;                      ///< +0x10 height (Y plane)
-    std::uint8_t mUnknown14[0x1C];                 ///< +0x14
-    std::int32_t concat_cnt;                       ///< +0x30 stream-table index
-    std::int32_t nfrm;                             ///< +0x34 frame count in pool
-    std::uint8_t mUnknown38[0x50];                 ///< +0x38
-    std::int32_t sudRecordAddress;      ///< +0x88
-    std::int32_t sudFieldIndex;             ///< +0x8C
-    std::int32_t picture_structure_src;            ///< +0x90
-    std::int32_t chroma_format_src;                ///< +0x94
-    std::int32_t picture_detail_unknown_98;        ///< +0x98
-    std::int32_t chroma_pos_lo_src;                ///< +0x9C
-    std::int32_t chroma_pos_hi_src;                ///< +0xA0
-  };
-  static_assert(offsetof(MwsfdSfdFrmObj, buffmt) == 0x08, "MwsfdSfdFrmObj::buffmt offset must be 0x08");
-  static_assert(offsetof(MwsfdSfdFrmObj, planeWidth) == 0x0C, "MwsfdSfdFrmObj::planeWidth offset must be 0x0C");
-  static_assert(offsetof(MwsfdSfdFrmObj, planeHeight) == 0x10, "MwsfdSfdFrmObj::planeHeight offset must be 0x10");
-  static_assert(offsetof(MwsfdSfdFrmObj, concat_cnt) == 0x30, "MwsfdSfdFrmObj::concat_cnt offset must be 0x30");
-  static_assert(offsetof(MwsfdSfdFrmObj, nfrm) == 0x34, "MwsfdSfdFrmObj::nfrm offset must be 0x34");
-  static_assert(
-    offsetof(MwsfdSfdFrmObj, sudRecordAddress) == 0x88,
-    "MwsfdSfdFrmObj::sudRecordAddress offset must be 0x88"
-  );
-  static_assert(
-    offsetof(MwsfdSfdFrmObj, sudFieldIndex) == 0x8C,
-    "MwsfdSfdFrmObj::sudFieldIndex offset must be 0x8C"
-  );
-  static_assert(
-    offsetof(MwsfdSfdFrmObj, picture_structure_src) == 0x90,
-    "MwsfdSfdFrmObj::picture_structure_src offset must be 0x90"
-  );
-  static_assert(offsetof(MwsfdSfdFrmObj, chroma_format_src) == 0x94, "MwsfdSfdFrmObj::chroma_format_src offset must be 0x94");
-  static_assert(offsetof(MwsfdSfdFrmObj, chroma_pos_lo_src) == 0x9C, "MwsfdSfdFrmObj::chroma_pos_lo_src offset must be 0x9C");
-  static_assert(offsetof(MwsfdSfdFrmObj, chroma_pos_hi_src) == 0xA0, "MwsfdSfdFrmObj::chroma_pos_hi_src offset must be 0xA0");
 
   /**
    * One <address, pitch, height> SFX buffer descriptor written by
@@ -19848,9 +19471,9 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   struct MwsfdSfdYccPlaneScratch
   {
-    std::int32_t cbPlaneAddress;   ///< +0x00
-    std::int32_t crPlaneAddress;   ///< +0x04
-    std::int32_t yPlaneAddress;    ///< +0x08
+    SofdecAddressWord cbPlaneAddress;   ///< +0x00
+    SofdecAddressWord crPlaneAddress;   ///< +0x04
+    SofdecAddressWord yPlaneAddress;    ///< +0x08
     std::int16_t chromaPitch;      ///< +0x0C (sign-extended by the binary)
     std::int16_t lumaPitch;        ///< +0x0E (sign-extended by the binary)
   };
@@ -19871,9 +19494,9 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   /// SFX-side expanded Y/Cb/Cr geometry used by `mwsfsfx_SetYcc420plnInfToSfx`.
   struct MwsfdSfxYccPlaneGeometry
   {
-    std::int32_t yPlaneAddress;    ///< +0x00
-    std::int32_t cbPlaneAddress;   ///< +0x04
-    std::int32_t crPlaneAddress;   ///< +0x08
+    SofdecAddressWord yPlaneAddress;    ///< +0x00
+    SofdecAddressWord cbPlaneAddress;   ///< +0x04
+    SofdecAddressWord crPlaneAddress;   ///< +0x08
     std::int32_t yPitch;           ///< +0x0C
     std::int32_t cbPitch;          ///< +0x10
     std::int32_t crPitch;          ///< +0x14
@@ -19927,7 +19550,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     std::int32_t chromaPosLo;                      ///< +0x74
     std::int32_t chromaPosHi;                      ///< +0x78
     std::uint8_t mUnknown7C[0x0C];                 ///< +0x7C
-    std::int32_t sudRecordAddress;        ///< +0x88 (copied from frmcodec)
+    SofdecAddressWord sudRecordAddress;        ///< +0x88 (copied from frmcodec)
     std::int32_t sudFieldIndex;              ///< +0x8C (copied from frmcodec)
     std::int32_t isColAdjFrame;                    ///< +0x90
     std::int32_t fxType;                           ///< +0x94
@@ -19951,25 +19574,6 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   static_assert(offsetof(MwsfdSfxFrameInfo, isColAdjFrame) == 0x90, "MwsfdSfxFrameInfo::isColAdjFrame offset");
   static_assert(offsetof(MwsfdSfxFrameInfo, fxType) == 0x94, "MwsfdSfxFrameInfo::fxType offset");
 
-  /**
-   * One per-stream entry in the MWSFD library work-area concat-stream table.
-   *
-   * The MWSFD work-area starts at base+0xC0 and contains 8 records of 20
-   * bytes each (`a1 + 20*(concat_cnt % 8) + 192` in the decompiler). Only the
-   * `validFlag` and `fxType` lanes are touched by the helpers in this block.
-   */
-  struct MwsfdSfdConcatStreamRecord
-  {
-    std::int32_t validFlag;     ///< +0x00 (== 1 when the per-stream lane is populated)
-    std::int32_t mUnknown04;    ///< +0x04
-    std::int32_t mUnknown08;    ///< +0x08
-    std::int32_t mUnknown0C;    ///< +0x0C
-    std::int32_t fxType;        ///< +0x10 SFX composition-mode override for this stream
-  };
-  static_assert(sizeof(MwsfdSfdConcatStreamRecord) == 20, "MwsfdSfdConcatStreamRecord must be 20 bytes");
-  static_assert(offsetof(MwsfdSfdConcatStreamRecord, validFlag) == 0x00, "MwsfdSfdConcatStreamRecord::validFlag offset");
-  static_assert(offsetof(MwsfdSfdConcatStreamRecord, fxType) == 0x10, "MwsfdSfdConcatStreamRecord::fxType offset");
-
   // ---------------------------------------------------------------------------
   // Internal SFX handle work-area view used by `SFX_Destroy`
   // ---------------------------------------------------------------------------
@@ -19986,7 +19590,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * `mov esi, [eax+30h]` for the SFXA child, `mov dword ptr [eax], 0` for the
    * lifecycle flag and `mov eax, [eax+24h]` for the SFXZ child.
    */
-  struct SfxHandleTeardownView
+  struct SfxHandleTeardown
   {
     std::int32_t used;                          ///< +0x00 lifecycle flag (cleared on Destroy)
     std::int32_t compositionMode;               ///< +0x04 written by SFX_SetCompoMode
@@ -19995,13 +19599,13 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     std::array<std::uint8_t, 0x08> mUnknown28;  ///< +0x28
     std::int32_t sfxa;                          ///< +0x30 SFXA child handle (integer address ABI)
   };
-  static_assert(offsetof(SfxHandleTeardownView, used) == 0x00, "SfxHandleTeardownView::used offset");
+  static_assert(offsetof(SfxHandleTeardown, used) == 0x00, "SfxHandleTeardown::used offset");
   static_assert(
-    offsetof(SfxHandleTeardownView, compositionMode) == 0x04,
-    "SfxHandleTeardownView::compositionMode offset"
+    offsetof(SfxHandleTeardown, compositionMode) == 0x04,
+    "SfxHandleTeardown::compositionMode offset"
   );
-  static_assert(offsetof(SfxHandleTeardownView, sfxz) == 0x24, "SfxHandleTeardownView::sfxz offset");
-  static_assert(offsetof(SfxHandleTeardownView, sfxa) == 0x30, "SfxHandleTeardownView::sfxa offset");
+  static_assert(offsetof(SfxHandleTeardown, sfxz) == 0x24, "SfxHandleTeardown::sfxz offset");
+  static_assert(offsetof(SfxHandleTeardown, sfxa) == 0x30, "SfxHandleTeardown::sfxa offset");
 
   // ---------------------------------------------------------------------------
   // Constants & error strings
@@ -20029,15 +19633,15 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
 
   // Forward decls for the helpers below (definition order matches the
   // address-sorted CRI source).
-  std::int32_t MWSFD_GetFxType(std::int32_t mwsfdLibBase, std::int32_t concatCount);
-  std::int32_t MWSFD_IsColAdjFile(std::int32_t mwsfdLibBase, std::int32_t concatCount);
-  std::int32_t MWSFD_IsColAdjFrame(std::int32_t mwsfdLibBase, MwsfdSfdFrmObj* frm);
-  std::int32_t mwsfsfx_DecideCompoMode(moho::MwsfdPlaybackStateSubobj* ply, MwsfdSfdFrmObj* frm);
+  std::int32_t MWSFD_GetFxType(const moho::MwsfdPlaybackStateSubobj* ply, std::int32_t concatCount);
+  std::int32_t MWSFD_IsColAdjFile(const moho::MwsfdPlaybackStateSubobj* ply, std::int32_t concatCount);
+  std::int32_t MWSFD_IsColAdjFrame(const moho::MwsfdPlaybackStateSubobj* ply, moho::MwsfdFrameInfo* frm);
+  std::int32_t mwsfsfx_DecideCompoMode(moho::MwsfdPlaybackStateSubobj* ply, moho::MwsfdFrameInfo* frm);
   std::int32_t mwsfsfx_CnvFrmFmtTypeToSfx(std::int32_t buffmt);
   void mwsfsfx_SetSfxBufInf(MwsfdSfxBufInf* outBufInf, std::int32_t address, std::int32_t pitch, std::int32_t height);
-  MwsfdSfxBufInf* mwsfsfx_SetYcc420plnInfToSfx(MwsfdSfdFrmObj* frm, MwsfdSfxFrameInfo* outSfx);
-  void mwsfsfx_SetNfrm(const MwsfdSfdFrmObj* frm, MwsfdSfxFrameInfo* outSfx);
-  void mwsfsfx_SetSfxInfTag(moho::MwsfdPlaybackStateSubobj* ply, MwsfdSfdFrmObj* frm, MwsfdSfxFrameInfo* outSfx);
+  MwsfdSfxBufInf* mwsfsfx_SetYcc420plnInfToSfx(moho::MwsfdFrameInfo* frm, MwsfdSfxFrameInfo* outSfx);
+  void mwsfsfx_SetNfrm(const moho::MwsfdFrameInfo* frm, MwsfdSfxFrameInfo* outSfx);
+  void mwsfsfx_SetSfxInfTag(moho::MwsfdPlaybackStateSubobj* ply, moho::MwsfdFrameInfo* frm, MwsfdSfxFrameInfo* outSfx);
   void mwsfsfx_SetFrmDetail(const moho::MwsfdPlaybackStateSubobj* ply, MwsfdSfxFrameInfo* outSfx);
   std::int32_t mwsfsfx_CnvPictureStructure(const moho::MwsfdPlaybackStateSubobj* ply);
   std::int32_t mwsfsfx_CnvSfxChromaFormat(const moho::MwsfdPlaybackStateSubobj* ply);
@@ -20045,10 +19649,10 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
 
   // SFX core lanes used by the helpers below.
   std::int32_t SFX_SetCompoMode(void* sfxHandle, std::int32_t compositionMode);
-  void SFX_GetTagInf(void* sfxHandle, std::int32_t* outTagId, std::int32_t* outTagContent);
+  void SFX_GetTagInf(void* sfxHandle, SofdecAddressWord* outTagId, std::int32_t* outTagContent);
   void SFX_Destroy(void* sfxHandle);
   std::int32_t mwPlyCalcYccPlane(
-    std::int32_t baseAddress,
+    SofdecAddressWord baseAddress,
     std::int32_t planeWidth,
     std::int32_t planeHeight,
     MwsfdSfxYccPlaneGeometry* outSfxGeometry
@@ -20076,7 +19680,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     if (sfxHandle == nullptr) {
       return;
     }
-    auto* const view = static_cast<SfxHandleTeardownView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleTeardown*>(sfxHandle);
     void* const sfxzChild = view->sfxz;
     const std::int32_t sfxaChild = view->sfxa;
     view->used = 0;
@@ -20141,7 +19745,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t MWSFD_CnvFrmInfToSfx(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    MwsfdSfdFrmObj* const frm,
+    moho::MwsfdFrameInfo* const frm,
     MwsfdSfxFrameInfo* const outSfx
   )
   {
@@ -20168,11 +19772,11 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t MWSFSFX_CnvFrmInfToSfx(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    MwsfdSfdFrmObj* const frm,
+    moho::MwsfdFrameInfo* const frm,
     MwsfdSfxFrameInfo* const outSfx
   )
   {
-    outSfx->compositionMode = mwsfsfx_CnvFrmFmtTypeToSfx(frm->buffmt);
+    outSfx->compositionMode = mwsfsfx_CnvFrmFmtTypeToSfx(frm->bufferFormat);
     (void)mwsfsfx_SetYcc420plnInfToSfx(frm, outSfx);
     mwsfsfx_SetNfrm(frm, outSfx);
     mwsfsfx_SetSfxInfTag(ply, frm, outSfx);
@@ -20183,12 +19787,11 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     // sudFieldIndex}` pair as a single QWORD load/store, matching the
     // `mov ecx,[esi+0x88] / mov [edi+0x88], ecx / mov edx,[esi+0x8C] /
     // mov [edi+0x8C], edx` sequence in the binary.
-    outSfx->sudRecordAddress = frm->sudRecordAddress;
-    outSfx->sudFieldIndex = frm->sudFieldIndex;
+    outSfx->sudRecordAddress = frm->subtitleDataAddress;
+    outSfx->sudFieldIndex = frm->subtitleDataBytes;
 
-    const std::int32_t plyAddress = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply));
-    outSfx->isColAdjFrame = MWSFD_IsColAdjFrame(plyAddress, frm);
-    outSfx->fxType = MWSFD_GetFxType(plyAddress, frm->concat_cnt);
+    outSfx->isColAdjFrame = MWSFD_IsColAdjFrame(ply, frm);
+    outSfx->fxType = MWSFD_GetFxType(ply, frm->concatCount);
     return mwsfsfx_DecideCompoMode(ply, frm);
   }
 
@@ -20210,12 +19813,11 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t mwsfsfx_DecideCompoMode(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    MwsfdSfdFrmObj* const frm
+    moho::MwsfdFrameInfo* const frm
   )
   {
     if (ply->sfxCompoModeLocked == 0) {
-      const std::int32_t plyAddress = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(ply));
-      const std::int32_t fxType = MWSFD_GetFxType(plyAddress, frm->concat_cnt);
+      const std::int32_t fxType = MWSFD_GetFxType(ply, frm->concatCount);
       if (fxType == -1) {
         ply->sfxCompoModeOverride = kSfxCompoModeOverrideDefault;
       } else {
@@ -20232,34 +19834,23 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   // ---------------------------------------------------------------------------
 
   /**
-   * Helper: locate one MWSFD per-stream record in the lib work area.
-   *
-   * The MWSFD library state stores 8 per-stream records starting at
-   * `base + 0xC0`, each 20 bytes wide. Stream selection wraps via
-   * `concatCount % 8`, matching the original `lea / imul / add` form in the
-   * binary (`a1 + 20*(a2 % 8) + 192`).
+   * The header-analysis ring record `mwsffrm_CallbackAnalyzeSofdecHeader`
+   * filed for the concatenated stream `concatCount`. The ring is indexed by
+   * `concatCount % 8`, matching the binary's `ply + 20*(concatCount % 8) + 0xC0`.
    */
-  [[nodiscard]] inline MwsfdSfdConcatStreamRecord* MwsfdLocateConcatRecord(
-    const std::int32_t mwsfdLibBase,
+  [[nodiscard]] const moho::SofdecSfhInfoEntry& MwsfdSfhInfoForConcat(
+    const moho::MwsfdPlaybackStateSubobj* const ply,
     const std::int32_t concatCount
   )
   {
-    constexpr std::int32_t kConcatTableBaseOffset = 0xC0;
-    constexpr std::int32_t kConcatTableSize = 8;
-    auto* const tableBase = reinterpret_cast<std::uint8_t*>(
-      static_cast<std::uintptr_t>(mwsfdLibBase) + kConcatTableBaseOffset
-    );
-    const std::int32_t streamSlot = concatCount % kConcatTableSize;
-    return reinterpret_cast<MwsfdSfdConcatStreamRecord*>(
-      tableBase + (streamSlot * sizeof(MwsfdSfdConcatStreamRecord))
-    );
+    return ply->sfhInfoTable[static_cast<std::size_t>(concatCount % kSofdecSfhInfoRingSize)];
   }
 
   /**
    * Address: 0x00AC67E0 (FUN_00AC67E0, _MWSFD_IsColAdjFrame)
    *
    * IDA signature:
-   * BOOL __cdecl MWSFD_IsColAdjFrame(int mwsfdLibBase, MwsfdFrmObj* frm);
+   * BOOL __cdecl MWSFD_IsColAdjFrame(MWPLY ply, MwsfdFrmObj* frm);
    *
    * What it does:
    * Returns 1 when the supplied frame is a colour-adjust frame.
@@ -20269,13 +19860,13 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * (`SUD_AnalyTypeCcs`) is consulted with the constrained-parameters lane
    * and the progressive-sequence lane.
    */
-  std::int32_t MWSFD_IsColAdjFrame(const std::int32_t mwsfdLibBase, MwsfdSfdFrmObj* const frm)
+  std::int32_t MWSFD_IsColAdjFrame(const moho::MwsfdPlaybackStateSubobj* const ply, moho::MwsfdFrameInfo* const frm)
   {
-    const std::int32_t isColAdjFile = MWSFD_IsColAdjFile(mwsfdLibBase, frm->concat_cnt);
-    const std::int32_t sudRecordAddress = frm->sudRecordAddress;
+    const std::int32_t isColAdjFile = MWSFD_IsColAdjFile(ply, frm->concatCount);
+    const SofdecAddressWord sudRecordAddress = frm->subtitleDataAddress;
     const std::int32_t fileResult = (isColAdjFile == 1) ? 1 : 0;
     if (sudRecordAddress != 0) {
-      return SUD_AnalyTypeCcs(sudRecordAddress, frm->sudFieldIndex);
+      return SUD_AnalyTypeCcs(sudRecordAddress, frm->subtitleDataBytes);
     }
     return fileResult;
   }
@@ -20284,52 +19875,38 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * Address: 0x00AC6820 (FUN_00AC6820, _MWSFD_IsColAdjFile)
    *
    * IDA signature:
-   * int __cdecl MWSFD_IsColAdjFile(int mwsfdLibBase, int concatCount);
+   * int __cdecl MWSFD_IsColAdjFile(MWPLY ply, int concatCount);
    *
    * What it does:
-   * Looks up the per-stream MWSFD concat record for `concatCount` and, when
-   * the record is populated (`validFlag == 1`), returns the colour-adjust
-   * file lane stored 50 dwords into the per-stream sub-block. Otherwise
-   * returns 0. The dword index `4 * (5 * (concatCount % 8) + 50)` in the
-   * decompiler resolves to the same byte the original CRI source labelled
-   * `g_mwsfdInf.streams[idx].colorAdjFileFlag`.
+   * Returns the HSYUV colour flag recorded for the stream's header when its
+   * ring record is valid, otherwise 0.
    */
-  std::int32_t MWSFD_IsColAdjFile(const std::int32_t mwsfdLibBase, const std::int32_t concatCount)
+  std::int32_t MWSFD_IsColAdjFile(const moho::MwsfdPlaybackStateSubobj* const ply, const std::int32_t concatCount)
   {
-    const MwsfdSfdConcatStreamRecord* const record = MwsfdLocateConcatRecord(mwsfdLibBase, concatCount);
-    if (record->validFlag != 1) {
+    const moho::SofdecSfhInfoEntry& entry = MwsfdSfhInfoForConcat(ply, concatCount);
+    if (entry.valid != 1) {
       return 0;
     }
-    constexpr std::int32_t kColorAdjFileFlagDwordIndex = 50;
-    constexpr std::int32_t kColorAdjFileFlagOffset = 4 * kColorAdjFileFlagDwordIndex;
-    const auto* const colorAdjFileFlag = reinterpret_cast<const std::int32_t*>(
-      reinterpret_cast<const std::uint8_t*>(mwsfdLibBase) + kColorAdjFileFlagOffset
-    );
-    // The original asm walks `mwsfdLibBase + (5 * (concatCount % 8) + 50) * 4`
-    // which combines a per-stream stride of 5 dwords with the +50-dword base.
-    const std::int32_t streamSlot = concatCount % 8;
-    return colorAdjFileFlag[5 * streamSlot];
+    return entry.colourIsHsyuv;
   }
 
   /**
    * Address: 0x00AC6850 (FUN_00AC6850, _MWSFD_GetFxType)
    *
    * IDA signature:
-   * int __cdecl MWSFD_GetFxType(int mwsfdLibBase, int concatCount);
+   * int __cdecl MWSFD_GetFxType(MWPLY ply, int concatCount);
    *
    * What it does:
-   * Returns the per-stream SFX composition-mode override for `concatCount`,
-   * or the default (`0x11`) sentinel when the per-stream record is not
-   * populated (`validFlag != 1`). The override lives at offset 0x10 of the
-   * 20-byte per-stream record at `base + 0xC0 + 20 * (concatCount % 8)`.
+   * Returns the effect type recorded for the stream's header when its ring
+   * record is valid, otherwise the default (`0x11`) composition sentinel.
    */
-  std::int32_t MWSFD_GetFxType(const std::int32_t mwsfdLibBase, const std::int32_t concatCount)
+  std::int32_t MWSFD_GetFxType(const moho::MwsfdPlaybackStateSubobj* const ply, const std::int32_t concatCount)
   {
-    const MwsfdSfdConcatStreamRecord* const record = MwsfdLocateConcatRecord(mwsfdLibBase, concatCount);
-    if (record->validFlag != 1) {
+    const moho::SofdecSfhInfoEntry& entry = MwsfdSfhInfoForConcat(ply, concatCount);
+    if (entry.valid != 1) {
       return kSfxCompoModeOverrideDefault;
     }
-    return record->fxType;
+    return entry.fxType;
   }
 
   /**
@@ -20408,115 +19985,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   // and SUD_AnalyTypeDivField in SofdecSfxRuntime.cpp - so the frame-info
   // conversion below, which is compiled first, needs them declared here.
   std::int32_t SFD_GetFps(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj, std::int32_t* outFramesPerSecond);
-  std::int32_t SUD_AnalyTypeDivField(std::int32_t sudRecordAddress, std::int32_t sudFieldIndex);
-
-  /**
-   * The SFD-side frame descriptor `SFD_GetFrm` hands back, as the
-   * frame-info conversion lane reads it. Offsets are the `a2[n]` indices in
-   * `mwl_convFrmInfFromSFD` (0x00ACA210) and `mwsffrm_SaveFrmDetail`
-   * (0x00ACA4E0).
-   */
-  struct SofdecSfdFrameRuntimeView
-  {
-    std::int32_t widthPixels = 0;          // +0x00
-    std::int32_t heightPixels = 0;         // +0x04
-    std::int32_t lumaStrideBytes = 0;      // +0x08
-    std::int32_t chromaStrideBytes = 0;    // +0x0C
-    std::int32_t sfdPictureType = 0;       // +0x10
-    std::int32_t reserved14 = 0;           // +0x14
-    std::int32_t frameRateDivisor = 0;     // +0x18
-    std::int32_t sfdBufferFormat = 0;      // +0x1C
-    std::int32_t frameBufferAddress = 0;   // +0x20
-    std::int32_t cropOffsetX = 0;          // +0x24
-    std::int32_t cropOffsetY = 0;          // +0x28
-    std::int32_t frameNumber = 0;          // +0x2C
-    std::int32_t decodeTimeUnits = 0;      // +0x30
-    std::int32_t presentTimeUnits = 0;     // +0x34
-    /** `{ address, byteCount }` of this frame's picture-user payload. */
-    const std::int32_t* pictureUserPayload = nullptr; // +0x38
-    /// Picture-detail lanes `mwsffrm_SaveFrmDetail` (0x00ACA4E0) lifts into the
-    /// playback handle. `sfmpvf_SearchFrmInf` (0x00AD50C0) is what fills them:
-    /// +0x3C/+0x40 from the frame object's +0x9C/+0xA0 chroma-position pair,
-    /// +0x58/+0x5C from its +0x94/+0x98 pair, and +0x6C..+0x6E from the three
-    /// bytes at +0xB1..+0xB3.
-    std::int32_t chromaPositionLow = 0;      // +0x3C
-    std::int32_t chromaPositionHigh = 0;     // +0x40
-    std::uint8_t reserved44_57[0x14]{};      // +0x44
-    std::int32_t pictureStructure = 0;       // +0x58
-    std::int32_t chromaFormat = 0;           // +0x5C
-    std::uint8_t reserved60_6B[0x0C]{};      // +0x60
-    std::int8_t pictureDetail[3]{};          // +0x6C
-    std::uint8_t reserved6F_7F[0x11]{};      // +0x6F
-
-    /// The 0x38-byte run starting at +0x48 that `mwl_convFrmInfFromSFD`
-    /// block-copies wholesale into the outward-facing frame info.
-    [[nodiscard]] const std::uint8_t* TrailingDetail() const noexcept
-    {
-      return reinterpret_cast<const std::uint8_t*>(this) + 0x48;
-    }
-  };
-  static_assert(
-    offsetof(SofdecSfdFrameRuntimeView, frameBufferAddress) == 0x20,
-    "SofdecSfdFrameRuntimeView::frameBufferAddress offset must be 0x20"
-  );
-  static_assert(
-    offsetof(SofdecSfdFrameRuntimeView, pictureUserPayload) == 0x38,
-    "SofdecSfdFrameRuntimeView::pictureUserPayload offset must be 0x38"
-  );
-  static_assert(
-    offsetof(SofdecSfdFrameRuntimeView, chromaPositionLow) == 0x3C,
-    "SofdecSfdFrameRuntimeView::chromaPositionLow offset must be 0x3C"
-  );
-  static_assert(
-    offsetof(SofdecSfdFrameRuntimeView, pictureStructure) == 0x58,
-    "SofdecSfdFrameRuntimeView::pictureStructure offset must be 0x58"
-  );
-  static_assert(
-    offsetof(SofdecSfdFrameRuntimeView, chromaFormat) == 0x5C,
-    "SofdecSfdFrameRuntimeView::chromaFormat offset must be 0x5C"
-  );
-  static_assert(
-    offsetof(SofdecSfdFrameRuntimeView, pictureDetail) == 0x6C,
-    "SofdecSfdFrameRuntimeView::pictureDetail offset must be 0x6C"
-  );
-  static_assert(sizeof(SofdecSfdFrameRuntimeView) == 0x80, "SofdecSfdFrameRuntimeView size must be 0x80");
-
-  /** Lanes of `MwsfdFrameInfo` the conversion fills that the struct leaves unnamed. */
-  struct MwsfdFrameInfoFillRuntimeView
-  {
-    std::int32_t frameBufferAddress = 0;  // +0x00
-    std::int32_t frameId = 0;             // +0x04
-    std::int32_t bufferFormat = 0;        // +0x08
-    std::int32_t widthPixels = 0;         // +0x0C
-    std::int32_t heightPixels = 0;        // +0x10
-    std::int32_t lumaStrideBytes = 0;     // +0x14
-    std::int32_t chromaStrideBytes = 0;   // +0x18
-    std::int32_t pictureType = 0;         // +0x1C
-    std::int32_t frameRateTimes1000 = 0;  // +0x20
-    std::int32_t presentFrameCount = 0;   // +0x24
-    std::int32_t presentTimeUnits = 0;    // +0x28
-    std::int32_t frameRateDivisor = 0;    // +0x2C
-    std::int32_t frameNumber = 0;         // +0x30
-    std::int32_t decodeFrameCount = 0;    // +0x34
-    std::int32_t decodeTimeUnits = 0;     // +0x38
-    std::int32_t cropOffsetX = 0;         // +0x3C
-    std::int32_t cropOffsetY = 0;         // +0x40
-    std::int32_t reserved44 = 0;          // +0x44
-    std::int32_t pictureUserAddress = 0;  // +0x48
-    std::int32_t frameFieldType = 0;      // +0x4C
-    std::uint8_t trailingDetail[0x38]{};  // +0x50
-    std::int32_t subtitleDataAddress = 0; // +0x88
-    std::int32_t subtitleDataBytes = 0;   // +0x8C
-  };
-  static_assert(
-    offsetof(MwsfdFrameInfoFillRuntimeView, frameFieldType) == 0x4C,
-    "MwsfdFrameInfoFillRuntimeView::frameFieldType offset must be 0x4C"
-  );
-  static_assert(
-    offsetof(MwsfdFrameInfoFillRuntimeView, subtitleDataAddress) == 0x88,
-    "MwsfdFrameInfoFillRuntimeView::subtitleDataAddress offset must be 0x88"
-  );
-  static_assert(sizeof(MwsfdFrameInfoFillRuntimeView) == 0x90, "MwsfdFrameInfoFillRuntimeView size must be 0x90");
+  std::int32_t SUD_AnalyTypeDivField(SofdecAddressWord sudRecordAddress, std::int32_t sudFieldIndex);
 
   /**
    * Address: 0x00ACD590 (FUN_00ACD590, _SUD_GetSudDatSize)
@@ -20525,7 +19994,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * Reports the fixed size of one subtitle-data record, or zero for a null
    * record pointer.
    */
-  std::int32_t SUD_GetSudDatSize(const std::int32_t recordAddress)
+  std::int32_t SUD_GetSudDatSize(const SofdecAddressWord recordAddress)
   {
     constexpr std::int32_t kSudRecordBytes = 0x23;
     return (recordAddress != 0) ? kSudRecordBytes : 0;
@@ -20543,7 +20012,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   std::int32_t SUD_SearchSudDat(
     const char* const buffer,
     const std::int32_t bufferBytes,
-    std::int32_t* const outRecordAddress,
+    SofdecAddressWord* const outRecordAddress,
     std::int32_t* const outRecordBytes
   )
   {
@@ -20560,7 +20029,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     std::int32_t remaining = bufferBytes;
     do {
       if (*cursor == kSudRecordMarker[0] && std::memcmp(cursor, kSudRecordMarker, kSudRecordMarkerBytes) == 0) {
-        const auto recordAddress = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(cursor));
+        const auto recordAddress = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(cursor));
         *outRecordAddress = recordAddress;
         *outRecordBytes = SUD_GetSudDatSize(recordAddress);
       }
@@ -20608,16 +20077,17 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t mwsffrm_SetPicUsrInf(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    const SofdecSfdFrameRuntimeView* const sfdFrame,
-    MwsfdFrameInfoFillRuntimeView* const outFrameInfo
+    const moho::SfmpvfFrameInfo* const sfdFrame,
+    moho::MwsfdFrameInfo* const outFrameInfo
   )
   {
     constexpr std::int32_t kPictureUserHeaderBytes = 4;
 
-    const std::int32_t payloadAddress = sfdFrame->pictureUserPayload[0];
-    const std::int32_t payloadBytes = sfdFrame->pictureUserPayload[1];
+    const auto* const payload = reinterpret_cast<const moho::SjChunkRange*>(SjAddressToPointer(sfdFrame->pictureUserInfoAddress));
+    const SofdecAddressWord payloadAddress = payload->bufferAddress;
+    const std::int32_t payloadBytes = payload->byteCount;
 
-    if (MWSFD_GetUsePicUsr() != 1 || ply->seekKeyGroupPtr == ply->seekKeyGroup.data()) {
+    if (MWSFD_GetUsePicUsr() != 1 || ply->seekKeyGroupPtr == &ply->seekKeyGroup) {
       outFrameInfo->pictureUserAddress = 0;
       outFrameInfo->frameFieldType = 0;
       return SjPointerToAddress(outFrameInfo);
@@ -20642,16 +20112,17 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * Publishes the subtitle record carried in this frame's picture-user
    * payload, if any, on the outgoing frame info.
    */
-  std::int32_t mwsffrm_SetSudDatInf(
+  SofdecAddressWord mwsffrm_SetSudDatInf(
     moho::MwsfdPlaybackStateSubobj* const /*ply*/,
-    const SofdecSfdFrameRuntimeView* const sfdFrame,
-    MwsfdFrameInfoFillRuntimeView* const outFrameInfo
+    const moho::SfmpvfFrameInfo* const sfdFrame,
+    moho::MwsfdFrameInfo* const outFrameInfo
   )
   {
     constexpr std::int32_t kPictureUserHeaderBytes = 4;
 
-    const std::int32_t payloadAddress = sfdFrame->pictureUserPayload[0];
-    std::int32_t result = sfdFrame->pictureUserPayload[1];
+    const auto* const payload = reinterpret_cast<const moho::SjChunkRange*>(SjAddressToPointer(sfdFrame->pictureUserInfoAddress));
+    const SofdecAddressWord payloadAddress = payload->bufferAddress;
+    SofdecAddressWord result = payload->byteCount;
 
     outFrameInfo->subtitleDataAddress = 0;
     outFrameInfo->subtitleDataBytes = 0;
@@ -20659,7 +20130,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
       return result;
     }
 
-    std::int32_t recordAddress = 0;
+    SofdecAddressWord recordAddress = 0;
     std::int32_t recordBytes = 0;
     (void)SUD_SearchSudDat(
       reinterpret_cast<const char*>(static_cast<std::uintptr_t>(payloadAddress + kPictureUserHeaderBytes)),
@@ -20687,19 +20158,19 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t mwsffrm_DecideFrmType(
     moho::MwsfdPlaybackStateSubobj* const /*ply*/,
-    const SofdecSfdFrameRuntimeView* const sfdFrame,
-    const std::int32_t subtitleRecordAddress,
+    const moho::SfmpvfFrameInfo* const sfdFrame,
+    const SofdecAddressWord subtitleRecordAddress,
     const std::int32_t subtitleRecordBytes
   )
   {
     constexpr std::int32_t kFrameTypeFieldPaired = 2;
 
-    const std::int32_t declaredStructure = sfdFrame->pictureStructure;
+    const std::int32_t declaredStructure = sfdFrame->referenceUpdateMode;
 
     std::int32_t frameType = 0;
     if (declaredStructure <= 0 || declaredStructure > 3) {
       (void)MWSFSVM_Error(kMwsfdErrInvalidFrameStructure);
-    } else if (declaredStructure <= 2 || sfdFrame->pictureDetail[0] == 0) {
+    } else if (declaredStructure <= 2 || static_cast<std::int8_t>(sfdFrame->pictureDecodeFlagA) == 0) {
       frameType = kFrameTypeFieldPaired;
     }
 
@@ -20721,17 +20192,17 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * (0x00AC69C0) reads them back when it builds the SFX frame-info block. The
    * three narrow lanes are loaded as *signed* bytes (`movsx`) and widened.
    */
-  void mwsffrm_SaveFrmDetail(const std::int32_t plyAddress, const std::int32_t sfdFrameAddress)
+  void mwsffrm_SaveFrmDetail(const SofdecAddressWord plyAddress, const SofdecAddressWord sfdFrameAddress)
   {
     auto* const ply = reinterpret_cast<moho::MwsfdPlaybackStateSubobj*>(SjAddressToPointer(plyAddress));
     const auto* const sfdFrame =
-      reinterpret_cast<const SofdecSfdFrameRuntimeView*>(SjAddressToPointer(sfdFrameAddress));
+      reinterpret_cast<const moho::SfmpvfFrameInfo*>(SjAddressToPointer(sfdFrameAddress));
 
-    ply->framePictureStructure = sfdFrame->pictureStructure;
+    ply->framePictureStructure = sfdFrame->referenceUpdateMode;
     ply->frameChromaFormat = sfdFrame->chromaFormat;
-    ply->framePictureDetail0 = sfdFrame->pictureDetail[0];
-    ply->framePictureDetail1 = sfdFrame->pictureDetail[1];
-    ply->framePictureDetail2 = sfdFrame->pictureDetail[2];
+    ply->framePictureDetail0 = static_cast<std::int8_t>(sfdFrame->pictureDecodeFlagA);
+    ply->framePictureDetail1 = static_cast<std::int8_t>(sfdFrame->pictureDecodeFlagB);
+    ply->framePictureDetail2 = static_cast<std::int8_t>(sfdFrame->pictureDecodeFlagC);
     ply->frameChromaPositionLow = sfdFrame->chromaPositionLow;
     ply->frameChromaPositionHigh = sfdFrame->chromaPositionHigh;
     ply->frameDetailReserved = 0;
@@ -20752,40 +20223,40 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * and subtitle lanes are filled from the frame's own payload.
    */
   void mwl_convFrmInfFromSFD(
-    const std::int32_t plyAddress,
-    const std::int32_t sfdFrameAddress,
-    const std::int32_t outFrameInfoAddress
+    const SofdecAddressWord plyAddress,
+    const SofdecAddressWord sfdFrameAddress,
+    const SofdecAddressWord outFrameInfoAddress
   )
   {
     auto* const ply = reinterpret_cast<moho::MwsfdPlaybackStateSubobj*>(SjAddressToPointer(plyAddress));
     const auto* const sfdFrame =
-      reinterpret_cast<const SofdecSfdFrameRuntimeView*>(SjAddressToPointer(sfdFrameAddress));
+      reinterpret_cast<const moho::SfmpvfFrameInfo*>(SjAddressToPointer(sfdFrameAddress));
     auto* const outFrameInfo =
-      reinterpret_cast<MwsfdFrameInfoFillRuntimeView*>(SjAddressToPointer(outFrameInfoAddress));
+      reinterpret_cast<moho::MwsfdFrameInfo*>(SjAddressToPointer(outFrameInfoAddress));
 
     std::int32_t frameRateTimes1000 = 0;
     if (SFD_GetFps(static_cast<moho::SofdecSfdWorkctrlSubobj*>(ply->handle), &frameRateTimes1000) != 0) {
       (void)MWSFSVM_Error(kMwsfdErrGetFpsFailed);
     }
 
-    outFrameInfo->frameBufferAddress = sfdFrame->frameBufferAddress;
-    outFrameInfo->bufferFormat = mwl_convBufFmtFromSFD(sfdFrame->sfdBufferFormat);
-    outFrameInfo->widthPixels = sfdFrame->widthPixels;
-    outFrameInfo->heightPixels = sfdFrame->heightPixels;
+    outFrameInfo->bufferAddress = sfdFrame->frameSurfaceBaseAddress;
+    outFrameInfo->bufferFormat = mwl_convBufFmtFromSFD(sfdFrame->bufferFormat);
+    outFrameInfo->widthPixels = sfdFrame->pictureWidthPixels;
+    outFrameInfo->heightPixels = sfdFrame->pictureHeightPixels;
     outFrameInfo->lumaStrideBytes = sfdFrame->lumaStrideBytes;
     outFrameInfo->chromaStrideBytes = sfdFrame->chromaStrideBytes;
-    outFrameInfo->pictureType = mwl_convPtypeFromSFD(sfdFrame->sfdPictureType);
+    outFrameInfo->pictureType = mwl_convPtypeFromSFD(sfdFrame->pictureType);
     outFrameInfo->frameRateTimes1000 = frameRateTimes1000;
-    outFrameInfo->presentFrameCount =
-      mwsffrm_CalcFrmCnt(sfdFrame->presentTimeUnits, frameRateTimes1000, sfdFrame->frameRateDivisor);
-    outFrameInfo->presentTimeUnits = sfdFrame->presentTimeUnits;
-    outFrameInfo->frameRateDivisor = sfdFrame->frameRateDivisor;
-    outFrameInfo->frameNumber = sfdFrame->frameNumber;
+    outFrameInfo->frameNumber =
+      mwsffrm_CalcFrmCnt(sfdFrame->frameEndTimeMajor, frameRateTimes1000, sfdFrame->presentationTimeMinor);
+    outFrameInfo->presentTimeUnits = sfdFrame->frameEndTimeMajor;
+    outFrameInfo->frameRateDivisor = sfdFrame->presentationTimeMinor;
+    outFrameInfo->concatCount = sfdFrame->decodeConcatOrdinal;
     outFrameInfo->decodeFrameCount =
-      mwsffrm_CalcFrmCnt(sfdFrame->decodeTimeUnits, frameRateTimes1000, sfdFrame->frameRateDivisor);
-    outFrameInfo->decodeTimeUnits = sfdFrame->decodeTimeUnits;
-    outFrameInfo->cropOffsetX = sfdFrame->cropOffsetX;
-    outFrameInfo->cropOffsetY = sfdFrame->cropOffsetY;
+      mwsffrm_CalcFrmCnt(sfdFrame->frameStartTimeMajor, frameRateTimes1000, sfdFrame->presentationTimeMinor);
+    outFrameInfo->decodeTimeUnits = sfdFrame->frameStartTimeMajor;
+    outFrameInfo->cropOffsetX = sfdFrame->referenceErrorMajor;
+    outFrameInfo->cropOffsetY = sfdFrame->referenceErrorMinor;
 
     (void)mwsffrm_SetPicUsrInf(ply, sfdFrame, outFrameInfo);
     (void)mwsffrm_SetSudDatInf(ply, sfdFrame, outFrameInfo);
@@ -20793,7 +20264,8 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     const std::int32_t frameType =
       mwsffrm_DecideFrmType(ply, sfdFrame, outFrameInfo->subtitleDataAddress, outFrameInfo->subtitleDataBytes);
     outFrameInfo->frameFieldType = frameType;
-    std::memcpy(outFrameInfo->trailingDetail, sfdFrame->TrailingDetail(), sizeof(outFrameInfo->trailingDetail));
+    // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
+    std::memcpy(outFrameInfo->trailingDetail, &sfdFrame->chromaLayoutClass, sizeof(outFrameInfo->trailingDetail));
   }
 
   /**
@@ -20814,7 +20286,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     return 3;
   }
 
-  struct MwsfdFrameInfoToSfdInputView
+  struct MwsfdFrameInfoToSfdInput
   {
     std::int32_t lane00;        // +0x00
     std::int32_t lane04;        // +0x04
@@ -20835,7 +20307,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     std::int32_t lane40;        // +0x40
   };
 
-  struct MwsfdFrameInfoToSfdOutputView
+  struct MwsfdFrameInfoToSfdOutput
   {
     std::int32_t lane00;  // +0x00
     std::int32_t lane04;  // +0x04
@@ -20851,9 +20323,9 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     std::int32_t lane2C;  // +0x2C
   };
 
-  static_assert(sizeof(MwsfdFrameInfoToSfdInputView) == 0x44, "MwsfdFrameInfoToSfdInputView size must be 0x44");
-  static_assert(offsetof(MwsfdFrameInfoToSfdInputView, pictureType) == 0x1C, "MwsfdFrameInfoToSfdInputView::pictureType offset must be 0x1C");
-  static_assert(sizeof(MwsfdFrameInfoToSfdOutputView) == 0x30, "MwsfdFrameInfoToSfdOutputView size must be 0x30");
+  static_assert(sizeof(MwsfdFrameInfoToSfdInput) == 0x44, "MwsfdFrameInfoToSfdInput size must be 0x44");
+  static_assert(offsetof(MwsfdFrameInfoToSfdInput, pictureType) == 0x1C, "MwsfdFrameInfoToSfdInput::pictureType offset must be 0x1C");
+  static_assert(sizeof(MwsfdFrameInfoToSfdOutput) == 0x30, "MwsfdFrameInfoToSfdOutput size must be 0x30");
 
   /**
    * Address: 0x00ACA5E0 (FUN_00ACA5E0, _mwl_convFrmInfToSFD)
@@ -20864,8 +20336,8 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * `mwl_conv*ToSFD` helpers.
    */
   std::int32_t mwl_convFrmInfToSFD(
-    const MwsfdFrameInfoToSfdInputView* const source,
-    MwsfdFrameInfoToSfdOutputView* const destination
+    const MwsfdFrameInfoToSfdInput* const source,
+    MwsfdFrameInfoToSfdOutput* const destination
   )
   {
     const std::int32_t sfdBufferFormat = mwl_convBufFmtToSFD(source->bufferFormat);
@@ -20931,15 +20403,15 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * original CRI return convention used by the chained `mwsfsfx_SetSfxBufInf`
    * calls in the binary.
    */
-  MwsfdSfxBufInf* mwsfsfx_SetYcc420plnInfToSfx(MwsfdSfdFrmObj* const frm, MwsfdSfxFrameInfo* const outSfx)
+  MwsfdSfxBufInf* mwsfsfx_SetYcc420plnInfToSfx(moho::MwsfdFrameInfo* const frm, MwsfdSfxFrameInfo* const outSfx)
   {
-    const std::int32_t planeWidth = frm->planeWidth;
-    const std::int32_t planeHeight = frm->planeHeight;
+    const SofdecAddressWord planeWidth = frm->widthPixels;
+    const SofdecAddressWord planeHeight = frm->heightPixels;
     outSfx->cachedWidth = planeWidth;
     outSfx->cachedHeight = planeHeight;
 
-    const std::int32_t bufferAddress = frm->bufferAddress;
-    if (frm->buffmt != 3) {
+    const SofdecAddressWord bufferAddress = frm->bufferAddress;
+    if (frm->bufferFormat != 3) {
       mwsfsfx_SetSfxBufInf(&outSfx->yPlane, bufferAddress, planeWidth, planeHeight);
       return &outSfx->yPlane;
     }
@@ -20950,7 +20422,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     (void)mwPlyCalcYccPlane(bufferAddress, planeWidth, planeHeight, &yccGeometry);
 
     mwsfsfx_SetSfxBufInf(&outSfx->yPlane, yccGeometry.yPlaneAddress, yccGeometry.yPitch, planeHeight);
-    const std::int32_t chromaHeight = planeHeight / 2;
+    const SofdecAddressWord chromaHeight = planeHeight / 2;
     mwsfsfx_SetSfxBufInf(&outSfx->cbPlane, yccGeometry.cbPlaneAddress, yccGeometry.cbPitch, chromaHeight);
     mwsfsfx_SetSfxBufInf(&outSfx->crPlane, yccGeometry.crPlaneAddress, yccGeometry.crPitch, chromaHeight);
     return &outSfx->crPlane;
@@ -20968,9 +20440,9 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * returned the input pointer (compiler artefact); the recovered version
    * keeps the side effect and drops the discard return.
    */
-  void mwsfsfx_SetNfrm(const MwsfdSfdFrmObj* const frm, MwsfdSfxFrameInfo* const outSfx)
+  void mwsfsfx_SetNfrm(const moho::MwsfdFrameInfo* const frm, MwsfdSfxFrameInfo* const outSfx)
   {
-    outSfx->nfrm = frm->nfrm;
+    outSfx->nfrm = frm->decodeFrameCount;
   }
 
   /**
@@ -21015,11 +20487,11 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   void mwsfsfx_SetSfxInfTag(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    MwsfdSfdFrmObj* const /*frm*/,
+    moho::MwsfdFrameInfo* const /*frm*/,
     MwsfdSfxFrameInfo* const outSfx
   )
   {
-    std::int32_t tagId = 0;
+    SofdecAddressWord tagId = 0;
     std::int32_t tagContent = 0;
     SFX_GetTagInf(ply->sfxHandle, &tagId, &tagContent);
     outSfx->tagId = tagId;
@@ -21140,14 +20612,14 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * - luma/chroma pitches (16-bit lanes)
    */
   std::int32_t SFD_CalcYccPlane(
-    const std::int32_t baseAddress,
+    const SofdecAddressWord baseAddress,
     const std::int32_t planeWidth,
     const std::int32_t planeHeight,
-    const std::int32_t outYccGeometryAddress
+    const SofdecAddressWord outYccGeometryAddress
   )
   {
     auto* const outGeometry = reinterpret_cast<MwsfdSfdYccPlaneScratch*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(outYccGeometryAddress))
+      static_cast<std::uintptr_t>(outYccGeometryAddress)
     );
 
     const std::int32_t alignedLumaWidth = 16 * ((planeWidth + 15) / 16);
@@ -21160,10 +20632,10 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     outGeometry->chromaPitch = static_cast<std::int16_t>(32 * chromaPitchBlocks);
 
     const std::int32_t tileRows = (planeHeight + 31) / 32;
-    const std::int32_t cbPlaneAddress = ((lumaPitchBlocks * tileRows) << 10) + baseAddress;
+    const SofdecAddressWord cbPlaneAddress = ((lumaPitchBlocks * tileRows) << 10) + baseAddress;
     outGeometry->cbPlaneAddress = cbPlaneAddress;
 
-    const std::int32_t crPlaneAddress =
+    const SofdecAddressWord crPlaneAddress =
       cbPlaneAddress + 32 * chromaPitchBlocks * ((32 * tileRows) / 2);
     outGeometry->crPlaneAddress = crPlaneAddress;
     return crPlaneAddress;
@@ -21185,7 +20657,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * `crPitch`, and returned in EAX.
    */
   std::int32_t mwl_convYccPlaneFromSFD(
-    const std::int32_t sfdGeometryAddress,
+    const SofdecAddressWord sfdGeometryAddress,
     MwsfdSfxYccPlaneGeometry* const outSfxGeometry
   )
   {
@@ -21218,7 +20690,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_SetCompoMode(void* const sfxHandle, const std::int32_t compositionMode)
   {
-    auto* const view = static_cast<SfxHandleTeardownView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleTeardown*>(sfxHandle);
     view->compositionMode = compositionMode;
     return compositionMode;
   }
@@ -21240,7 +20712,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_GetCompoMode(void* const sfxHandle)
   {
-    return static_cast<const SfxHandleTeardownView*>(sfxHandle)->compositionMode;
+    return static_cast<const SfxHandleTeardown*>(sfxHandle)->compositionMode;
   }
 
   /**
@@ -21257,7 +20729,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * cleared. The binary returns one of the two output pointers as a compiler
    * artefact; the C++ recovery drops the unused return value.
    */
-  void SFX_GetTagInf(void* const sfxHandle, std::int32_t* const outTagId, std::int32_t* const outTagContent)
+  void SFX_GetTagInf(void* const sfxHandle, SofdecAddressWord* const outTagId, std::int32_t* const outTagContent)
   {
     // Layout: tagValid lives at +0x14, tagId at +0x18, tagContent at +0x1C.
     // The lanes are pinned by the asm at 0x00ACCE60..0x00ACCE7C; we keep the
@@ -21291,7 +20763,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * returns (the chroma pitch lane).
    */
   std::int32_t mwPlyCalcYccPlane(
-    const std::int32_t baseAddress,
+    const SofdecAddressWord baseAddress,
     const std::int32_t planeWidth,
     const std::int32_t planeHeight,
     MwsfdSfxYccPlaneGeometry* const outSfxGeometry
@@ -21302,10 +20774,10 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
       baseAddress,
       planeWidth,
       planeHeight,
-      static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&sfdGeometry))
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&sfdGeometry))
     );
     return mwl_convYccPlaneFromSFD(
-      static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&sfdGeometry)),
+      static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&sfdGeometry)),
       outSfxGeometry
     );
   }
@@ -21335,13 +20807,13 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   /// the SFX leaf accessors below are named; the rest is opaque pending
   /// further evidence. Field comments cite the offsets observed in the
   /// FUN_00ACCD60..FUN_00ACE8F0 disassembly.
-  struct SfxHandleSettingsView
+  struct SfxHandleSettings
   {
     std::uint8_t mUnknown00_03[0x04]{};       ///< +0x00..+0x03 (used flag etc.)
     std::int32_t compositionMode = 0;          ///< +0x04 SFX_SetCompoMode lane
     std::uint8_t mUnknown08_1F[0x18]{};        ///< +0x08..+0x1F
-    std::int32_t sfxzChildAddress = 0;         ///< +0x20 SFXZ child handle ptr
-    std::int32_t sfxzHandleSlot = 0;           ///< +0x24 alternate SFXZ slot
+    SofdecAddressWord sfxzChildAddress = 0;         ///< +0x20 SFXZ child handle ptr
+    SofdecAddressWord sfxzHandleSlot = 0;           ///< +0x24 alternate SFXZ slot
     std::uint8_t mUnknown28_33[0x0C]{};        ///< +0x28..+0x33
     std::int32_t tblPattern = 0;               ///< +0x34 SFXSET_SetTblPtn lane
     std::int32_t cnvTable[6]{};                ///< +0x38..+0x4F (cnv table slots)
@@ -21350,28 +20822,28 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
     std::int32_t progOut = 0;                  ///< +0x5C SFX_SetProgOut lane
   };
   static_assert(
-    offsetof(SfxHandleSettingsView, compositionMode) == 0x04,
-    "SfxHandleSettingsView::compositionMode offset must be 0x04"
+    offsetof(SfxHandleSettings, compositionMode) == 0x04,
+    "SfxHandleSettings::compositionMode offset must be 0x04"
   );
   static_assert(
-    offsetof(SfxHandleSettingsView, sfxzHandleSlot) == 0x24,
-    "SfxHandleSettingsView::sfxzHandleSlot offset must be 0x24"
+    offsetof(SfxHandleSettings, sfxzHandleSlot) == 0x24,
+    "SfxHandleSettings::sfxzHandleSlot offset must be 0x24"
   );
   static_assert(
-    offsetof(SfxHandleSettingsView, tblPattern) == 0x34,
-    "SfxHandleSettingsView::tblPattern offset must be 0x34"
+    offsetof(SfxHandleSettings, tblPattern) == 0x34,
+    "SfxHandleSettings::tblPattern offset must be 0x34"
   );
   static_assert(
-    offsetof(SfxHandleSettingsView, cnvTable) == 0x38,
-    "SfxHandleSettingsView::cnvTable offset must be 0x38"
+    offsetof(SfxHandleSettings, cnvTable) == 0x38,
+    "SfxHandleSettings::cnvTable offset must be 0x38"
   );
   static_assert(
-    offsetof(SfxHandleSettingsView, splitField) == 0x58,
-    "SfxHandleSettingsView::splitField offset must be 0x58"
+    offsetof(SfxHandleSettings, splitField) == 0x58,
+    "SfxHandleSettings::splitField offset must be 0x58"
   );
   static_assert(
-    offsetof(SfxHandleSettingsView, progOut) == 0x5C,
-    "SfxHandleSettingsView::progOut offset must be 0x5C"
+    offsetof(SfxHandleSettings, progOut) == 0x5C,
+    "SfxHandleSettings::progOut offset must be 0x5C"
   );
 
   // Forward declarations for deeper SFX library helpers (recovered in their
@@ -21391,18 +20863,18 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   /// 0x00E4F6E0). This TU cannot reach `moho_cri_sfx_internal::SfxzHandle`
   /// (defined in the separate SofdecRuntime.cpp fragment chain), so this is a
   /// thin cross-TU view over the same binary layout, matching
-  /// `SfxHandleSettingsView`'s established convention in this file.
-  struct SfxzHandleZclipView
+  /// `SfxHandleSettings`'s established convention in this file.
+  struct SfxzHandleZclip
   {
     std::uint8_t mUnknown00_3B[0x3C]{}; ///< +0x00..+0x3B
     float zClipNear = 0.0f;             ///< +0x3C
     float zClipFar = 0.0f;              ///< +0x40
   };
   static_assert(
-    offsetof(SfxzHandleZclipView, zClipNear) == 0x3C, "SfxzHandleZclipView::zClipNear offset must be 0x3C"
+    offsetof(SfxzHandleZclip, zClipNear) == 0x3C, "SfxzHandleZclip::zClipNear offset must be 0x3C"
   );
   static_assert(
-    offsetof(SfxzHandleZclipView, zClipFar) == 0x40, "SfxzHandleZclipView::zClipFar offset must be 0x40"
+    offsetof(SfxzHandleZclip, zClipFar) == 0x40, "SfxzHandleZclip::zClipFar offset must be 0x40"
   );
 
   /**
@@ -21415,22 +20887,22 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * "Zclip is not set" gate) silently read `false` regardless of the
    * handle's real state.
    */
-  std::int32_t SFXZ_IsSetZclip(const std::int32_t sfxzHandleAddress)
+  std::int32_t SFXZ_IsSetZclip(const SofdecAddressWord sfxzHandleAddress)
   {
-    const auto* const view = reinterpret_cast<const SfxzHandleZclipView*>(sfxzHandleAddress);
+    const auto* const view = reinterpret_cast<const SfxzHandleZclip*>(sfxzHandleAddress);
     return (view->zClipNear != 0.0f || view->zClipFar != 0.0f) ? 1 : 0;
   }
 
   /// Local view over the SFXZ handle's Z-bit-depth lane, as read/written by
   /// `SFX_SetZbit` (0x00ACDFF0). Same cross-TU rationale as
-  /// `SfxzHandleZclipView` above.
-  struct SfxzHandleZbitView
+  /// `SfxzHandleZclip` above.
+  struct SfxzHandleZbit
   {
     std::int32_t used = 0;      ///< +0x00
     std::int32_t zBitDepth = 0; ///< +0x04
   };
   static_assert(
-    offsetof(SfxzHandleZbitView, zBitDepth) == 0x04, "SfxzHandleZbitView::zBitDepth offset must be 0x04"
+    offsetof(SfxzHandleZbit, zBitDepth) == 0x04, "SfxzHandleZbit::zBitDepth offset must be 0x04"
   );
 
   /**
@@ -21444,9 +20916,9 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_SetZbit(void* const sfxHandle, const std::int32_t zBitDepth)
   {
-    auto* const view = static_cast<SfxHandleSettingsView*>(sfxHandle);
-    reinterpret_cast<SfxzHandleZbitView*>(view->sfxzHandleSlot)->zBitDepth = zBitDepth;
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(sfxHandle));
+    auto* const view = static_cast<SfxHandleSettings*>(sfxHandle);
+    reinterpret_cast<SfxzHandleZbit*>(view->sfxzHandleSlot)->zBitDepth = zBitDepth;
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(sfxHandle));
   }
 
   /**
@@ -21490,7 +20962,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFXSET_SetTblPtn(void* const sfxHandle, const std::int32_t tablePattern)
   {
-    auto* const view = static_cast<SfxHandleSettingsView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleSettings*>(sfxHandle);
     view->tblPattern = tablePattern;
     return tablePattern;
   }
@@ -21508,7 +20980,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   std::int32_t SFX_SetCnvTable(void* const sfxHandle, const std::int32_t tableId, const std::int32_t tableValue)
   {
     (void)SFXSET_SetTblPtn(sfxHandle, 100);
-    auto* const view = static_cast<SfxHandleSettingsView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleSettings*>(sfxHandle);
     view->cnvTable[tableId] = tableValue;
     return tableValue;
   }
@@ -21525,7 +20997,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_GetCnvTable(void* const sfxHandle, const std::int32_t tableId)
   {
-    const auto* const view = static_cast<const SfxHandleSettingsView*>(sfxHandle);
+    const auto* const view = static_cast<const SfxHandleSettings*>(sfxHandle);
     return view->cnvTable[tableId];
   }
 
@@ -21541,7 +21013,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_SetSplitField(void* const sfxHandle, const std::int32_t enableSplitField)
   {
-    auto* const view = static_cast<SfxHandleSettingsView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleSettings*>(sfxHandle);
     view->splitField = enableSplitField;
     return enableSplitField;
   }
@@ -21557,7 +21029,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_GetSplitField(void* const sfxHandle)
   {
-    const auto* const view = static_cast<const SfxHandleSettingsView*>(sfxHandle);
+    const auto* const view = static_cast<const SfxHandleSettings*>(sfxHandle);
     return view->splitField;
   }
 
@@ -21573,7 +21045,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_SetProgOut(void* const sfxHandle, const std::int32_t enableProgressiveOutput)
   {
-    auto* const view = static_cast<SfxHandleSettingsView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleSettings*>(sfxHandle);
     view->progOut = enableProgressiveOutput;
     return enableProgressiveOutput;
   }
@@ -21590,7 +21062,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_GetProgOut(void* const sfxHandle)
   {
-    const auto* const view = static_cast<const SfxHandleSettingsView*>(sfxHandle);
+    const auto* const view = static_cast<const SfxHandleSettings*>(sfxHandle);
     return view->progOut;
   }
 
@@ -21606,7 +21078,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   std::int32_t SFX_GetZfrmRange(void* const sfxHandle, MwsfdSfxFrameInfo* const sfxFrameInfo)
   {
-    auto* const view = static_cast<SfxHandleSettingsView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleSettings*>(sfxHandle);
     char* startBuffer = nullptr;
     std::int32_t endValue = 0;
     (void)SFXZ_GetZfrmRange(
@@ -21615,7 +21087,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
       &startBuffer,
       &endValue
     );
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(startBuffer));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(startBuffer));
   }
 
   /**
@@ -21632,7 +21104,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   void SFX_MakeTblZ16(void* const sfxHandle, MwsfdSfxFrameInfo* const sfxFrameInfo)
   {
-    auto* const view = static_cast<SfxHandleSettingsView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleSettings*>(sfxHandle);
     if (SFXZ_IsSetZclip(view->sfxzHandleSlot) == 1) {
       (void)SFX_SetZbit(sfxHandle, 16);
       (void)sfxcnv_MakeZTbl(sfxHandle, sfxFrameInfo);
@@ -21655,7 +21127,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    */
   void SFX_MakeTblZ32(void* const sfxHandle, MwsfdSfxFrameInfo* const sfxFrameInfo)
   {
-    auto* const view = static_cast<SfxHandleSettingsView*>(sfxHandle);
+    auto* const view = static_cast<SfxHandleSettings*>(sfxHandle);
     if (SFXZ_IsSetZclip(view->sfxzHandleSlot) == 1) {
       (void)SFX_SetZbit(sfxHandle, 32);
       (void)sfxcnv_MakeZTbl(sfxHandle, sfxFrameInfo);
@@ -21665,7 +21137,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
   }
 
   // ---------------------------------------------------------------------------
-  // MWSFD frame-info -> SFX scratch wrappers (use MwsfdSfdFrmObj which is in
+  // MWSFD frame-info -> SFX scratch wrappers (use moho::MwsfdFrameInfo which is in
   // scope here at the end of the SFX-cluster block).
   // ---------------------------------------------------------------------------
 
@@ -21680,7 +21152,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * `MwsfdSfxFrameInfo` block via `MWSFSFX_CnvFrmInfToSfx`, then queries the
    * bound SFX runtime handle for the zoom-frame range covering it.
    */
-  std::int32_t MWSFD_GetZfrmRange(moho::MwsfdPlaybackStateSubobj* const ply, MwsfdSfdFrmObj* const frm)
+  std::int32_t MWSFD_GetZfrmRange(moho::MwsfdPlaybackStateSubobj* const ply, moho::MwsfdFrameInfo* const frm)
   {
     void* const sfxHandle = MWSFSFX_GetSfxHn(ply);
     MwsfdSfxFrameInfo sfxFrameInfo{};
@@ -21699,7 +21171,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * after converting the MWSFD frame descriptor into the SFX-side scratch
    * layout; reports `E202283`/`E202284` for invalid handle / null get-frame.
    */
-  void MWSFD_MakeTblZ16(moho::MwsfdPlaybackStateSubobj* const ply, MwsfdSfdFrmObj* const frm)
+  void MWSFD_MakeTblZ16(moho::MwsfdPlaybackStateSubobj* const ply, moho::MwsfdFrameInfo* const frm)
   {
     if (MWSFD_IsEnableHndl(ply) != 1) {
       (void)MWSFSVM_Error(kMwsfdErrMakeTblZ16InvalidHandle);
@@ -21727,7 +21199,7 @@ void ADXM_SetupThrd(const moho::AdxmThreadStartupParams* const startupParams)
    * after converting the MWSFD frame descriptor into the SFX-side scratch
    * layout; reports `E202285`/`E202286` for invalid handle / null get-frame.
    */
-  void MWSFD_MakeTblZ32(moho::MwsfdPlaybackStateSubobj* const ply, MwsfdSfdFrmObj* const frm)
+  void MWSFD_MakeTblZ32(moho::MwsfdPlaybackStateSubobj* const ply, moho::MwsfdFrameInfo* const frm)
   {
     if (MWSFD_IsEnableHndl(ply) != 1) {
       (void)MWSFSVM_Error(kMwsfdErrMakeTblZ32InvalidHandle);

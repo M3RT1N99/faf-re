@@ -30,7 +30,6 @@
 #include "moho/math/MathReflection.h"
 #include "moho/math/Vector3f.h"
 #include "gpg/core/time/Timer.h"
-#include "gpg/core/utils/Logging.h"   // TEMPORARY PROBE (do not commit)
 #include "moho/math/QuaternionMath.h"
 #include "moho/mesh/Mesh.h"
 #include "moho/render/RCamManager.h"
@@ -169,9 +168,9 @@ namespace
   constexpr const char* kCameraAccTypeFastInSlowOutName = "FastInSlowOut";
   constexpr const char* kCameraAccTypeSlowInOutName = "SlowInOut";
 
-  using moho::CameraTimeSourceRuntime;
+  using moho::CameraTimeSource;
 
-  class GameTimeSource final : public CameraTimeSourceRuntime
+  class GameTimeSource final : public CameraTimeSource
   {
   public:
     /**
@@ -189,14 +188,14 @@ namespace
      * What it does:
      * `GameTimeSource` adds no data members of its own, so the vtable-slot-2
      * scalar deleting destructor just restores this object's own
-     * `ITimeSource`/`CameraTimeSourceRuntime` vftable then conditionally
+     * `ITimeSource`/`CameraTimeSource` vftable then conditionally
      * frees the object -- exactly what a defaulted destructor produces for
      * a derived class with no extra state.
      */
     ~GameTimeSource() override = default;
   };
 
-  class SystemTimeSource final : public CameraTimeSourceRuntime
+  class SystemTimeSource final : public CameraTimeSource
   {
   public:
     /**
@@ -213,7 +212,7 @@ namespace
      * What it does:
      * `SystemTimeSource` adds no data members of its own, so the
      * vtable-slot-2 scalar deleting destructor just restores this object's
-     * own `ITimeSource`/`CameraTimeSourceRuntime` vftable then conditionally
+     * own `ITimeSource`/`CameraTimeSource` vftable then conditionally
      * frees the object -- exactly what a defaulted destructor produces for
      * a derived class with no extra state.
      */
@@ -248,123 +247,20 @@ namespace
     return gpg::time::GetSystemTimer().ElapsedSeconds();
   }
 
-  class RecoveredITimeSourceVtableProbe final : public CameraTimeSourceRuntime
-  {
-  public:
-    float Time() override
-    {
-      return 0.0f;
-    }
-  };
 
-  [[nodiscard]] void* RecoveredITimeSourceVtable() noexcept
-  {
-    static RecoveredITimeSourceVtableProbe probe;
-    return *reinterpret_cast<void**>(&probe);
-  }
-
-  [[nodiscard]] void* RecoveredSystemTimeSourceVtable() noexcept
-  {
-    static SystemTimeSource probe;
-    return *reinterpret_cast<void**>(&probe);
-  }
-
-  [[nodiscard]] void* RecoveredGameTimeSourceVtable() noexcept
-  {
-    static GameTimeSource probe;
-    return *reinterpret_cast<void**>(&probe);
-  }
-
-  /**
-   * Address: 0x007A6500 (FUN_007A6500)
-   *
-   * What it does:
-   * Restores one base `ITimeSource` vtable lane in place.
-   */
-  [[nodiscard]] CameraTimeSourceRuntime* InitializeCameraTimeSourceVtable(
-    CameraTimeSourceRuntime* const timeSource
-  ) noexcept
-  {
-    *reinterpret_cast<void**>(timeSource) = RecoveredITimeSourceVtable();
-    return timeSource;
-  }
-
-  /**
-   * Address: 0x007A7E00 (FUN_007A7E00)
-   *
-   * What it does:
-   * Restores one `SystemTimeSource` vtable lane in place.
-   */
-  [[nodiscard]] SystemTimeSource* InitializeSystemTimeSourceVtable(SystemTimeSource* const timeSource) noexcept
-  {
-    *reinterpret_cast<void**>(timeSource) = RecoveredSystemTimeSourceVtable();
-    return timeSource;
-  }
-
-  /**
-   * Address: 0x007A7E10 (FUN_007A7E10)
-   *
-   * What it does:
-   * Restores one `GameTimeSource` vtable lane in place.
-   */
-  [[nodiscard]] GameTimeSource* InitializeGameTimeSourceVtable(GameTimeSource* const timeSource) noexcept
-  {
-    *reinterpret_cast<void**>(timeSource) = RecoveredGameTimeSourceVtable();
-    return timeSource;
-  }
-
-  /**
-   * Address: 0x007A7E90 (FUN_007A7E90)
-   *
-   * What it does:
-   * Alias entry that restores the same base `ITimeSource` vtable lane.
-   */
-  [[nodiscard]] CameraTimeSourceRuntime* InitializeCameraTimeSourceVtableAlias0(
-    CameraTimeSourceRuntime* const timeSource
-  ) noexcept
-  {
-    return InitializeCameraTimeSourceVtable(timeSource);
-  }
-
-  /**
-   * Address: 0x007A7EE0 (FUN_007A7EE0)
-   *
-   * What it does:
-   * Alias entry that restores the same base `ITimeSource` vtable lane.
-   */
-  [[nodiscard]] CameraTimeSourceRuntime* InitializeCameraTimeSourceVtableAlias1(
-    CameraTimeSourceRuntime* const timeSource
-  ) noexcept
-  {
-    return InitializeCameraTimeSourceVtable(timeSource);
-  }
-
-  /**
-   * Address: 0x007A7EF0 (FUN_007A7EF0)
-   *
-   * What it does:
-   * Alias entry that restores the same base `ITimeSource` vtable lane.
-   */
-  [[nodiscard]] CameraTimeSourceRuntime* InitializeCameraTimeSourceVtableAlias2(
-    CameraTimeSourceRuntime* const timeSource
-  ) noexcept
-  {
-    return InitializeCameraTimeSourceVtable(timeSource);
-  }
-
-  struct CameraTransitionFlagView
+  struct CameraTransitionFlag
   {
     std::uint8_t mUnknown000To00F[0x10]{};
     std::uint8_t mTransitionPending = 0; // +0x10
   };
   static_assert(
-    offsetof(CameraTransitionFlagView, mTransitionPending) == 0x10,
-    "CameraTransitionFlagView::mTransitionPending offset must be 0x10"
+    offsetof(CameraTransitionFlag, mTransitionPending) == 0x10,
+    "CameraTransitionFlag::mTransitionPending offset must be 0x10"
   );
 
-  [[nodiscard]] CameraTransitionFlagView* AsTransitionFlagView(moho::CameraImpl* const camera) noexcept
+  [[nodiscard]] CameraTransitionFlag* AsTransitionFlagView(moho::CameraImpl* const camera) noexcept
   {
-    return reinterpret_cast<CameraTransitionFlagView*>(camera);
+    return reinterpret_cast<CameraTransitionFlag*>(camera);
   }
 
   /**
@@ -374,17 +270,6 @@ namespace
    * Stops entity tracking notifications when needed and resets camera target
    * mode/timing lanes back to untargeted location mode.
    */
-  void TargetNothingRuntime(moho::CameraImpl* const camera)
-  {
-    if (camera->mTargetType == kCameraTargetTypeEntity) {
-      camera->BroadcastEvent(moho::SCameraTracking{camera->mName, 0});
-    }
-
-    camera->mTargetType = kCameraTargetTypeLocation;
-    camera->mTargetTime = 0u;
-    camera->mTargetTimeLeft = 0.0f;
-  }
-
   [[nodiscard]] moho::UserEntity* FindSessionEntityById(moho::CWldSession* const session, const std::int32_t entityId)
   {
     return session != nullptr ? session->LookupEntityId(static_cast<moho::EntId>(entityId)) : nullptr;
@@ -722,9 +607,6 @@ moho::CameraImpl::CameraImpl(const gpg::StrArg name, const STIMap& map, LuaPlus:
   const Wm3::Vector2f viewportSize{1.0f, 1.0f};
   CameraSetViewport(viewportOrigin, viewportSize);
   CameraReset();
-  // TEMPORARY PROBE (do not commit)
-  gpg::Warnf("[CAMDIAG] ctor name=%s this=%08X", mName.c_str(),
-             static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(this)));
 }
 
 /**
@@ -739,7 +621,7 @@ moho::CameraImpl::CameraImpl(const gpg::StrArg name, const STIMap& map, LuaPlus:
  * inline frustum/spotter weak-vector lanes from their tracked entity owners
  * and releases any heap-grown storage. `mTargetEntities` goes as a member
  * (`clear` 0x007AE580, then the head). Releases the two
- * heap-allocated `CameraTimeSourceRuntime` slots (`SystemTimeSource` at index
+ * heap-allocated `CameraTimeSource` slots (`SystemTimeSource` at index
  * 0 and `GameTimeSource` at index 1) through their scalar-deleting vtable
  * slot (mirroring the binary's `eh vector destructor iterator`). Destroys
  * the embedded `GeomCamera3` and `msvc8::string` name lanes, runs
@@ -769,7 +651,7 @@ moho::CameraImpl::CameraImpl(const gpg::StrArg name, const STIMap& map, LuaPlus:
  * elementSize=4`) at instruction 0x007A800D. `sub_7AE630` reads one owned
  * pointer from the slot and dispatches its own vtable slot 1 with delete
  * flag 1 -- exactly what `delete source` below compiles to for a
- * `CameraTimeSourceRuntime*` slot.
+ * `CameraTimeSource*` slot.
  */
 moho::CameraImpl::~CameraImpl()
 {
@@ -783,7 +665,7 @@ moho::CameraImpl::~CameraImpl()
   mFrustumLaneB.ResetStorageToInline();
   mFrustumLaneA.ResetStorageToInline();
 
-  // Release both heap-owned `CameraTimeSourceRuntime` slots via their virtual
+  // Release both heap-owned `CameraTimeSource` slots via their virtual
   // scalar-deleting destructor (vtable slot 1). Only indices 0 and 1 are
   // populated (`SystemTimeSource` and `GameTimeSource`); index 2 is unused.
   // The binary uses an `eh vector destructor iterator` over the two slots,
@@ -983,16 +865,6 @@ void moho::CameraImpl::CameraSetPivot(const Wm3::Vector2f& pivot)
  */
 void moho::CameraImpl::CameraReset()
 {
-  // TEMPORARY PROBE (do not commit)
-  {
-    static int sBudget = 0;
-    if (sBudget < 20) {
-      ++sBudget;
-      gpg::Warnf("[CAMDIAG] Reset name=%s this=%08X type=%d targetZoom=%.1f near=%.1f dur=%.2f",
-                 mName.c_str(), static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(this)),
-                 mTargetType, mTargetZoom, mNearZoom, mTimedMoveDuration);
-    }
-  }
 
   mFarFov = cam_FarFOV * kDegreesToRadians;
   mHeading = kPi;
@@ -1519,7 +1391,7 @@ void moho::CameraImpl::TimedMoveInit(const float seconds, const float transition
   mTimedMoveTransitionParam = transitionParam;
 
   if (seconds > 0.0f) {
-    CameraTimeSourceRuntime* const timeSource = mTimeSources[mTimeSource];
+    CameraTimeSource* const timeSource = mTimeSources[mTimeSource];
     mTimedMoveStartTime = timeSource != nullptr ? timeSource->Time() : 0.0f;
     mTimedMoveOffset = mOffset;
     mTimedMoveZoom = mTargetZoom;
@@ -1766,20 +1638,6 @@ namespace
 void moho::CameraImpl::UpdateBasis(const float interpolationAlpha, const float frameSeconds)
 {
   const float startTargetZoom = mTargetZoom;
-  // TEMPORARY PROBE (do not commit)
-  {
-    static int sCalls = 0;
-    static int sBudget = 0;
-    if ((sCalls++ % 150) == 0 && sBudget < 40) {
-      ++sBudget;
-      gpg::Warnf("[CAMDIAG] UpdateBasis name=%s call=%d type=%d targetZoom=%.1f near=%.1f zoom=%.1f rotated=%u "
-                 "target=(%.1f,%.1f,%.1f) offset=(%.1f,%.1f,%.1f) maxZoom=%.1f dt=%.4f",
-                 mName.c_str(), sCalls, mTargetType, mTargetZoom, mNearZoom,
-                 mZoom, static_cast<unsigned>(mIsRotated), mTargetLocation.x,
-                 mTargetLocation.y, mTargetLocation.z, mOffset.x, mOffset.y,
-                 mOffset.z, GetMaxZoom(), frameSeconds);
-    }
-  }
 
   // Move target-zoom in log2 space toward mNearZoom at a slew rate proportional
   // to the absolute log-distance plus a constant floor, both scaled by frame
@@ -2046,7 +1904,7 @@ void moho::CameraImpl::UpdateTargets(const float interpolationAlpha, const float
  */
 void moho::CameraImpl::Frame(const float interpolationAlpha, float frameSeconds)
 {
-  CameraTimeSourceRuntime* const gameTimeSource = mTimeSources[kCameraTimeSourceGame];
+  CameraTimeSource* const gameTimeSource = mTimeSources[kCameraTimeSourceGame];
 
   // Game-clock cameras derive the per-frame delta from the game-time source
   // rather than the passed-in frame seconds.
@@ -2146,23 +2004,8 @@ void moho::CameraImpl::InterpolateBasis(const float interpolationAlpha, const fl
 {
   // Linear transition progress = (now - startTime) / duration along the active
   // time source.
-  CameraTimeSourceRuntime* const timeSource = mTimeSources[mTimeSource];
+  CameraTimeSource* const timeSource = mTimeSources[mTimeSource];
   float progress = (timeSource->Time() - mTimedMoveStartTime) / mTimedMoveDuration;
-  // TEMPORARY PROBE (do not commit)
-  {
-    static int sBudget = 0;
-    if (sBudget < 80) {
-      ++sBudget;
-      gpg::Warnf("[CAMDIAG] Interp name=%s progress=%.3f now=%.3f start=%.3f dur=%.2f type=%d targetZoom=%.1f near=%.1f "
-                 "moveZoom=%.1f offset=(%.1f,%.1f,%.1f) target=(%.1f,%.1f,%.1f) moveOff=(%.1f,%.1f,%.1f) acc=%d",
-                 mName.c_str(), progress, timeSource->Time(), mTimedMoveStartTime,
-                 mTimedMoveDuration, mTargetType, mTargetZoom, mNearZoom,
-                 mTimedMoveZoom, mOffset.x, mOffset.y, mOffset.z,
-                 mTargetLocation.x, mTargetLocation.y, mTargetLocation.z,
-                 mTimedMoveOffset.x, mTimedMoveOffset.y, mTimedMoveOffset.z,
-                 mAccType);
-    }
-  }
 
   // Entity-follow transitions keep the target location pinned to the live
   // entity each frame.
@@ -2194,7 +2037,7 @@ void moho::CameraImpl::InterpolateBasis(const float interpolationAlpha, const fl
     if (mTargetType == kCameraTargetTypeNoseCam) {
       float noseProgress = 1.0f;
       if (mTimedMoveTransitionParam > 0.0f) {
-        CameraTimeSourceRuntime* const noseSource = mTimeSources[mTimeSource];
+        CameraTimeSource* const noseSource = mTimeSources[mTimeSource];
         noseProgress =
           (noseSource->Time() - mTimedMoveStartTime) / mTimedMoveTransitionParam;
         if (noseProgress > 1.0f) {
@@ -2612,7 +2455,7 @@ void moho::CameraImpl::UpdateCoords(const float /*interpolationAlpha*/, const fl
 }
 
 /**
-  * Alias of FUN_007A6BF0 (non-canonical helper lane).
+ * Address: 0x007A6BF0 (FUN_007A6BF0, Moho::CameraImpl::TargetNothing)
  * Mangled: ?TargetNothing@CameraImpl@Moho@@UAEXXZ
  *
  * What it does:
@@ -2621,7 +2464,13 @@ void moho::CameraImpl::UpdateCoords(const float /*interpolationAlpha*/, const fl
  */
 void moho::CameraImpl::TargetNothing()
 {
-  TargetNothingRuntime(this);
+  if (mTargetType == kCameraTargetTypeEntity) {
+    BroadcastEvent(moho::SCameraTracking{mName, 0});
+  }
+
+  mTargetType = kCameraTargetTypeLocation;
+  mTargetTime = 0u;
+  mTargetTimeLeft = 0.0f;
 }
 
 /**
@@ -2634,15 +2483,6 @@ void moho::CameraImpl::TargetNothing()
  */
 void moho::CameraImpl::TargetLocation(const Wm3::Vec3f& position, const float seconds)
 {
-  // TEMPORARY PROBE (do not commit)
-  {
-    static int sBudget = 0;
-    if (sBudget < 20) {
-      ++sBudget;
-      gpg::Warnf("[CAMDIAG] TargetLocation name=%s pos=(%.1f,%.1f,%.1f) seconds=%.2f", mName.c_str(),
-                 position.x, position.y, position.z, seconds);
-    }
-  }
   if (mTargetType == kCameraTargetTypeEntity) {
     BroadcastEvent(SCameraTracking{mName, 0});
   }
@@ -2673,21 +2513,6 @@ void moho::CameraImpl::TargetLocation(const Wm3::Vec3f& position, const float se
  */
 void moho::CameraImpl::TargetBox(const Wm3::AxisAlignedBox3f& targetBox, const float seconds)
 {
-  // TEMPORARY PROBE (do not commit)
-  {
-    static int sBudget = 0;
-    if (sBudget < 20) {
-      ++sBudget;
-      CameraTimeSourceRuntime* const probeSource = mTimeSources[mTimeSource];
-      gpg::Warnf("[CAMDIAG] TargetBox name=%s box=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) seconds=%.2f | before type=%d "
-                 "targetZoom=%.1f near=%.1f ease=%u timeSrc=%d now=%.3f maxZoom=%.1f offset=(%.1f,%.1f,%.1f)",
-                 mName.c_str(), targetBox.Min.x, targetBox.Min.y, targetBox.Min.z, targetBox.Max.x,
-                 targetBox.Max.y, targetBox.Max.z, seconds, mTargetType, mTargetZoom,
-                 mNearZoom, static_cast<unsigned>(mEnableEaseInOut), mTimeSource,
-                 probeSource != nullptr ? probeSource->Time() : -1.0f, GetMaxZoom(), mOffset.x,
-                 mOffset.y, mOffset.z);
-    }
-  }
   if (mTargetType == kCameraTargetTypeEntity) {
     BroadcastEvent(SCameraTracking{mName, 0});
   }
@@ -2773,15 +2598,6 @@ void moho::CameraImpl::TargetEntities(
   const float seconds
 )
 {
-  // TEMPORARY PROBE (do not commit)
-  {
-    static int sBudget = 0;
-    if (sBudget < 20) {
-      ++sBudget;
-      gpg::Warnf("[CAMDIAG] TargetEntities name=%s track=%d zoom=%.1f seconds=%.2f", mName.c_str(),
-                 trackEntities ? 1 : 0, zoom, seconds);
-    }
-  }
 
   mTargetTimeLeft = 0.0f;
   mTargetTime = 0u;
@@ -2934,15 +2750,6 @@ void moho::CameraImpl::TargetManual(
   const Wm3::Vec3f& position, const float heading, const float pitch, const float zoom, const float seconds
 )
 {
-  // TEMPORARY PROBE (do not commit)
-  {
-    static int sBudget = 0;
-    if (sBudget < 20) {
-      ++sBudget;
-      gpg::Warnf("[CAMDIAG] TargetManual name=%s pos=(%.1f,%.1f,%.1f) heading=%.3f pitch=%.3f zoom=%.1f seconds=%.2f",
-                 mName.c_str(), position.x, position.y, position.z, heading, pitch, zoom, seconds);
-    }
-  }
   if (mTargetType == kCameraTargetTypeEntity) {
     BroadcastEvent(SCameraTracking{mName, 0});
   }
@@ -4240,7 +4047,7 @@ int moho::cfunc_CameraImplRestoreSettingsL(LuaPlus::LuaState* const state)
 
   const Wm3::Vec3f focus = SCR_FromLuaCopy<Wm3::Vec3f>(focusObject);
   camera->TargetManual(focus, heading, pitch, zoom, 0.0f);
-  TargetNothingRuntime(camera);
+  camera->TargetNothing();
   camera->CameraRevertRotation();
   return 0;
 }

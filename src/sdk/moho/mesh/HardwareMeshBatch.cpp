@@ -3,6 +3,7 @@
 #include "MeshBatch.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -46,7 +47,7 @@ namespace
 {
   // TEMPORARY -- runtime toggle files for the exploded-mesh triage. A toggle is
   // on while "<FAF_TOGGLE_DIR>/<name>" exists; delete when resolved.
-  bool RuntimeToggleFileExists(const char* const name)
+  bool ToggleFileExists(const char* const name)
   {
     static char sDir[512] = {};
     static bool sDirResolved = false;
@@ -140,34 +141,10 @@ namespace moho
         static int sIgnoreHiddenBones = 0;
         static unsigned sToggleCalls = 0;
         if ((sToggleCalls++ % 500u) == 0u) {
-          sIgnoreHiddenBones = RuntimeToggleFileExists("nohide.on") ? 1 : 0;
+          sIgnoreHiddenBones = ToggleFileExists("nohide.on") ? 1 : 0;
         }
 
         if (poseBone == nullptr || (poseBone->mVisible == 0 && sIgnoreHiddenBones == 0)) {
-          // TEMPORARY PROBE -- invisible-commander triage, delete when resolved.
-          {
-            static int sHiddenBudget = 0;
-            static unsigned sHiddenCalls = 0;
-            ++sHiddenCalls;
-            if (sHiddenBudget < 40 || (sHiddenCalls % 4000u) == 0u) {
-              ++sHiddenBudget;
-              int visibleCount = 0;
-              for (const CAniPoseBone& bone : pose.mBones) {
-                visibleCount += bone.mVisible != 0u ? 1 : 0;
-              }
-              const SAniSkelBone* const hiddenSkelBone = skeleton.GetBone(remapIndex);
-              const char* const hiddenName =
-                hiddenSkelBone != nullptr && hiddenSkelBone->mBoneName != nullptr ? hiddenSkelBone->mBoneName : "?";
-              char probe[300];
-              (void)std::snprintf(probe, sizeof(probe),
-                                  "[BONEHIDE] call=%u inst=%p pose=%p bone=%d/%d remap=%u name=%s poseBones=%u poseVisible=%d poseBone=%p visible=%d\n",
-                                  sHiddenCalls, static_cast<const void*>(&meshInstance), static_cast<const void*>(&pose),
-                                  boneIndex, boneCount, remapIndex, hiddenName, poseBoneCount, visibleCount,
-                                  static_cast<const void*>(poseBone),
-                                  poseBone != nullptr ? static_cast<int>(poseBone->mVisible) : -1);
-              ::OutputDebugStringA(probe);
-            }
-          }
           transPalette[slot] = SkinPaletteEntry{0.0f, kHiddenBoneDepth, 0.0f, 0.0f};
           rotPalette[slot] = SkinPaletteEntry{0.0f, 0.0f, 0.0f, 1.0f};
           continue;
@@ -227,28 +204,6 @@ namespace moho
         // The palette hands the shader xyzw; the engine stores wxyz.
         rotPalette[slot] = SkinPaletteEntry{composed.x, composed.y, composed.z, composed.w};
 
-        // TEMPORARY PROBE -- invisible-commander triage, delete when resolved.
-        {
-          static int sBoneBudget = 0;
-          if (sBoneBudget < 12 && boneCount > 4) {
-            ++sBoneBudget;
-            char probe[320];
-            (void)std::snprintf(
-              probe, sizeof(probe),
-              "[BONEDIAG] inst=%p bone=%d/%d remap=%u pos=(%.2f,%.2f,%.2f) s=%.3f "
-              "comp.pos=(%.2f,%.2f,%.2f) comp.q=(%.3f,%.3f,%.3f,%.3f) rest.pos=(%.2f,%.2f,%.2f) "
-              "rest.q=(%.3f,%.3f,%.3f,%.3f) out.q=(%.3f,%.3f,%.3f,%.3f)\n",
-              static_cast<const void*>(&meshInstance), boneIndex, boneCount, remapIndex,
-              meshInstance.interpolatedPosition.x, meshInstance.interpolatedPosition.y, meshInstance.interpolatedPosition.z,
-              instanceScale,
-              composite.pos_.x, composite.pos_.y, composite.pos_.z,
-              c.w, c.x, c.y, c.z,
-              restOffset.x, restOffset.y, restOffset.z,
-              b.w, b.x, b.y, b.z,
-              composed.w, composed.x, composed.y, composed.z);
-            ::OutputDebugStringA(probe);
-          }
-        }
       }
     }
 
@@ -415,10 +370,11 @@ namespace moho
         for (std::uint32_t row = 0; row < rows; ++row) {
           const std::size_t firstTexel = static_cast<std::size_t>(row) * kWidth;
           const std::size_t texels = std::min<std::size_t>(kWidth, mTexels.size() - firstTexel);
-          std::memcpy(
-            destination + static_cast<std::size_t>(row) * static_cast<std::size_t>(lock.pitch),
+          // Raw GPU upload: texel row blob into the locked, pitched texture.
+          std::copy_n(
             &mTexels[firstTexel],
-            texels * sizeof(SkinPaletteEntry)
+            texels,
+            reinterpret_cast<SkinPaletteEntry*>(destination + static_cast<std::size_t>(row) * static_cast<std::size_t>(lock.pitch))
           );
         }
         (void)mTexture->Unlock(lock);
@@ -460,6 +416,13 @@ namespace moho
         mTexture = gpg::gal::Device::GetInstance()->CreateTexture(&context);
         mRows = rows;
         gpg::Logf("Mesh bone palette texture: %ux%u, room for %u bones", kWidth, rows, rows * kBonesPerRow);
+        // Mirror into faf_diag.log (gpg::Logf only reaches an active /log
+        // target): this line is the one-shot proof the FAF_BONE_TEXTURE mesh
+        // effect engaged, which the base-view FPS triage depends on knowing.
+        if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+          std::fprintf(sink, "[BONETEX] engaged: %ux%u, room for %u bones\n", kWidth, rows, rows * kBonesPerRow);
+          std::fclose(sink);
+        }
       }
 
       void Bind()
@@ -533,7 +496,8 @@ namespace moho
         }
 
         void* const destination = mBuffer->Lock(mCursor * stride, count * stride, flags);
-        std::memcpy(destination, records, static_cast<std::size_t>(count) * stride);
+        // Raw GPU upload: instance record blob into the locked buffer.
+        std::copy_n(static_cast<const std::uint8_t*>(records), static_cast<std::size_t>(count) * stride, static_cast<std::uint8_t*>(destination));
         mBuffer->Unlock();
 
         const std::uint32_t first = mCursor;
@@ -698,7 +662,8 @@ namespace moho
 
       const std::size_t indexBytes = static_cast<std::size_t>(mIndexCount) * sizeof(std::uint16_t);
       std::int16_t* const mappedIndices = mIndexBuffer->Lock(0U, 0U, gpg::gal::MohoD3DLockFlags::None);
-      std::memcpy(mappedIndices, scm_file::GetIndices(*mesh), indexBytes);
+      // Raw GPU upload: index blob into the locked index buffer.
+      std::copy_n(scm_file::GetIndices(*mesh), indexBytes / sizeof(std::int16_t), mappedIndices);
       mIndexBuffer->Unlock();
     }
 
@@ -752,9 +717,6 @@ namespace moho
 
     mStaticVertexBuffer->Unlock();
 
-    // TEMPORARY PROBE -- exploded-mesh triage, delete when resolved. Which
-    // bones do this mesh's vertices reference, by name, and does any index
-    // fall outside the skinned bone range?
     if (mBoneCount > 4) {
       static int sHistBudget = 0;
       const boost::shared_ptr<const CAniSkel> gateSkeleton = currentResource->GetSkeleton();
@@ -830,9 +792,7 @@ namespace moho
             } else {
               bits = sign | ((exponent + 127u - 15u) << 23) | (mantissa << 13);
             }
-            float out;
-            std::memcpy(&out, &bits, sizeof(out));
-            return out;
+            return std::bit_cast<float>(bits);
           };
           const std::uint32_t stride = formatter->GetVertexStride(0, 0);
           const auto* const packed = static_cast<const std::uint8_t*>(
@@ -845,6 +805,7 @@ namespace moho
           for (int v = 0; v < 3 && packed != nullptr; ++v) {
             const std::uint8_t* const rec = packed + static_cast<std::size_t>(v) * stride;
             std::uint16_t h[4];
+            // Unaligned half-word load from the packed vertex record.
             std::memcpy(h, rec, sizeof(h));
             const SScmVertex& src = sourceVertices[v];
             w += std::snprintf(rb + w, sizeof(rb) - static_cast<std::size_t>(w),
@@ -864,6 +825,7 @@ namespace moho
             for (std::int32_t v = 0; v < mVertexCount; ++v) {
               const std::uint8_t* const rec = packed + static_cast<std::size_t>(v) * stride;
               std::uint16_t h[3];
+              // Unaligned half-word load from the packed vertex record.
               std::memcpy(h, rec, sizeof(h));
               const SScmVertex& src = sourceVertices[v];
               const float srcPos[3] = {src.mLocalPositionX, src.mLocalPositionY, src.mLocalPositionZ};
@@ -1007,80 +969,7 @@ namespace moho
     if (packedCount == 0) {
       return;
     }
-    // TEMPORARY PROBE (do not commit): "nostatic.on" skips every non-bone-remap batch.
-    {
-      static int sSkipStatic = 0;
-      static unsigned sStaticToggleCalls = 0;
-      if ((sStaticToggleCalls++ % 100u) == 0u) {
-        sSkipStatic = RuntimeToggleFileExists("nostatic.on") ? 1 : 0;
-      }
-      if (sSkipStatic != 0 && mUseBoneRemap == 0) {
-        return;
-      }
-    }
 
-    // TEMPORARY PROBE / SWITCH -- exploded-mesh triage, delete when resolved.
-    // FAF_NO_SKINNED=1 skips every skinned (bone-remapped) draw so the black
-    // wedges can be attributed; the probe dumps the first few skinned draws.
-    {
-      static int sSkinnedDrawMode = 0;
-      static unsigned sDrawToggleCalls = 0;
-      if ((sDrawToggleCalls++ % 100u) == 0u) {
-        sSkinnedDrawMode = RuntimeToggleFileExists("noskin.on") ? 1 : 0;
-      }
-      if (mUseBoneRemap != 0) {
-        static int sDrawBudget = 0;
-        if (sDrawBudget < 6 && mBoneCount > 4) {
-          ++sDrawBudget;
-          const SkinPaletteEntry* const trans = meshShaderVarTransPalette.mPalette.begin();
-          const SkinPaletteEntry* const rot = meshShaderVarRotPalette.mPalette.begin();
-          const auto* const record = static_cast<const std::uint8_t*>(mScratchVertexData);
-          const float* const rows = reinterpret_cast<const float*>(record);
-          char probe[512];
-          (void)std::snprintf(
-            probe, sizeof(probe),
-            "[DRAWDIAG] batch=%p packed=%d verts=%d idx=%d bones=%d maxInst=%d budget=%d paletteSize=%u "
-            "trans0=(%.2f,%.2f,%.2f,%.3f) rot0=(%.3f,%.3f,%.3f,%.3f) trans1=(%.2f,%.2f,%.2f,%.3f) "
-            "anim=(%u,%u,%u,%u) row0=(%.2f,%.2f,%.2f) row3=(%.2f,%.2f,%.2f) skip=%d\n",
-            static_cast<const void*>(this), packedCount, mVertexCount, mIndexCount, mBoneCount,
-            mMaxInstancesPerDraw, mActiveInstanceBudget,
-            static_cast<unsigned>(meshShaderVarTransPalette.mPalette.size()),
-            trans[0].x, trans[0].y, trans[0].z, trans[0].w, rot[0].x, rot[0].y, rot[0].z, rot[0].w,
-            trans[1].x, trans[1].y, trans[1].z, trans[1].w,
-            record[0x30], record[0x31], record[0x32], record[0x33],
-            rows[0], rows[1], rows[2], rows[9], rows[10], rows[11], sSkinnedDrawMode);
-          ::OutputDebugStringA(probe);
-        }
-        if (sSkinnedDrawMode == 1) {
-          return;
-        }
-        // Per-family toggles: skip ACUs, the Salem destroyers, or everything
-        // that is not a unit (tree clusters and other props).
-        static unsigned sFamilyToggleCalls = 0;
-        static int sSkipAcu = 0;
-        static int sSkipDest = 0;
-        static int sSkipNonUnit = 0;
-        if ((sFamilyToggleCalls++ % 100u) == 0u) {
-          sSkipAcu = RuntimeToggleFileExists("noacu.on") ? 1 : 0;
-          sSkipDest = RuntimeToggleFileExists("nodest.on") ? 1 : 0;
-          sSkipNonUnit = RuntimeToggleFileExists("notrees.on") ? 1 : 0;
-        }
-        if (sSkipAcu != 0 || sSkipDest != 0 || sSkipNonUnit != 0) {
-          boost::shared_ptr<const CAniSkel> skeleton;
-          if (mCurrentResource) {
-            skeleton = mCurrentResource->GetSkeleton();
-          }
-          const SAniSkelBone* const root = skeleton ? skeleton->GetBone(0u) : nullptr;
-          const char* const rootName = root != nullptr && root->mBoneName != nullptr ? root->mBoneName : "";
-          const bool isUnit = std::strlen(rootName) == 7 && (rootName[0] == 'U' || rootName[0] == 'X');
-          const bool isAcu = isUnit && std::strcmp(rootName + 2, "L0001") == 0;
-          const bool isDest = std::strcmp(rootName, "URS0201") == 0;
-          if ((sSkipAcu != 0 && isAcu) || (sSkipDest != 0 && isDest) || (sSkipNonUnit != 0 && !isUnit)) {
-            return;
-          }
-        }
-      }
-    }
 
     CD3DDevice* const d3dDevice = D3D_GetDevice();
     auto* const device = gpg::gal::Device::GetInstance();
@@ -1126,7 +1015,7 @@ namespace moho
       try {
         device->DrawIndexedPrimitive(&drawContext);
       } catch (const gpg::gal::Error& error) {
-        gpg::Die("%s(%d) %s", error.GetRuntimeMessage(), error.GetRuntimeLine(), error.what());
+        gpg::Die("%s(%d) %s", error.GetFile(), error.GetLine(), error.what());
       }
       return;
     }
@@ -1137,7 +1026,7 @@ namespace moho
       try {
         device->DrawIndexedPrimitive(&drawContext);
       } catch (const gpg::gal::Error& error) {
-        gpg::Die("%s(%d) %s", error.GetRuntimeMessage(), error.GetRuntimeLine(), error.what());
+        gpg::Die("%s(%d) %s", error.GetFile(), error.GetLine(), error.what());
       }
       sOpenPassTechnique = technique;
       return;
@@ -1151,7 +1040,7 @@ namespace moho
       try {
         device->DrawIndexedPrimitive(&drawContext);
       } catch (const gpg::gal::Error& error) {
-        gpg::Die("%s(%d) %s", error.GetRuntimeMessage(), error.GetRuntimeLine(), error.what());
+        gpg::Die("%s(%d) %s", error.GetFile(), error.GetLine(), error.what());
       }
       technique->EndPass();
     }
@@ -1242,7 +1131,6 @@ namespace moho
     // batch that packs fewer instances than the palette holds leaves no stale
     // bones behind. (The bone palette texture keeps its own identity block.)
     if (!boneTexture) {
-      { static int sSeed = 0; if (sSeed < 12) { ++sSeed; gpg::Warnf("[SEEDDIAG] batch=%p boneCount=%d remap=%d paletteSize=%u", static_cast<const void*>(this), mBoneCount, static_cast<int>(mUseBoneRemap), static_cast<unsigned>(transPaletteVar.mPalette.size())); } } // TEMPORARY PROBE (do not commit)
       for (std::int32_t boneIndex = 0; boneIndex < mBoneCount; ++boneIndex) {
         transPalette[boneIndex] = SkinPaletteEntry{0.0f, 0.0f, 0.0f, 1.0f};
         rotPalette[boneIndex] = SkinPaletteEntry{0.0f, 0.0f, 0.0f, 1.0f};
@@ -1286,7 +1174,6 @@ namespace moho
         const boost::shared_ptr<const CAniSkel> skeleton =
           pose.get() != nullptr ? pose->GetSkeleton() : boost::shared_ptr<const CAniSkel>{};
 
-        // TEMPORARY PROBE -- invisible-props triage, delete when resolved.
         if (pose.get() == nullptr || skeleton.get() == nullptr) {
           static unsigned sSkipCalls = 0;
           if ((sSkipCalls++ % 300u) == 0u) {
@@ -1368,7 +1255,6 @@ namespace moho
             ScaleTransformRows(instanceTransform, meshInstance->scale);
 
             CopyTransform4x4(&staging.transform, instanceTransform);
-            { static int sI = 0; if (sI < 10) { ++sI; gpg::Warnf("[INSTDIAG] inst=%p pos=(%.2f,%.2f,%.2f) q=(%.3f,%.3f,%.3f,%.3f) scale=(%.3f,%.3f,%.3f) r0=(%.3f,%.3f,%.3f) r3=(%.2f,%.2f,%.2f)", static_cast<const void*>(meshInstance), meshInstance->interpolatedPosition.x, meshInstance->interpolatedPosition.y, meshInstance->interpolatedPosition.z, meshInstance->curOrientation.w, meshInstance->curOrientation.x, meshInstance->curOrientation.y, meshInstance->curOrientation.z, meshInstance->scale.x, meshInstance->scale.y, meshInstance->scale.z, instanceTransform.r[0].x, instanceTransform.r[0].y, instanceTransform.r[0].z, instanceTransform.r[3].x, instanceTransform.r[3].y, instanceTransform.r[3].z); } } // TEMPORARY PROBE (do not commit)
           }
 
           if (packInstance) {

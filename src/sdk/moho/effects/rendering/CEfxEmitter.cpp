@@ -1,10 +1,10 @@
 #include "moho/effects/rendering/CEfxEmitter.h"
 
 #include <cmath>
-#include <cstdio>   // TEMPORARY PROBE (do not commit)
-#include <windows.h> // TEMPORARY PROBE (do not commit)
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdarg>
 #include <limits>
 #include <typeinfo>
 
@@ -53,6 +53,23 @@ namespace
   // Engine-stat handle for "Render_ActiveEmitters", resolved once on first tick.
   moho::StatItem* sEngineStatRenderActiveEmitters = nullptr;
 
+  // TEMPORARY PROBE SINK -- attached-emitter triage, delete when resolved.
+  // gpg::Warnf only reaches an active /log target, so the probes below append
+  // here instead. The file lands beside the executable.
+  void FxAttachDiagLine(const char* const fmt, ...)
+  {
+    std::FILE* const sink = std::fopen("faf_diag.log", "a");
+    if (sink == nullptr) {
+      return;
+    }
+    std::va_list args;
+    va_start(args, fmt);
+    (void)std::vfprintf(sink, fmt, args);
+    va_end(args);
+    (void)std::fputc(0x0A, sink);
+    (void)std::fclose(sink);
+  }
+
   /**
    * Reproduces the binary's ceil-of-peak idiom (frndint + underflow correction):
    * `(int)nearbyint(x) + (x > nearbyint(x) ? 1 : 0)`.
@@ -78,7 +95,7 @@ namespace
   // `gpg::fastvector_n<Wm3::Vector3f, 2>`, and the 0x18 it adds for the
   // capacity is two 12-byte keys, not six dwords. It is cited on the container
   // (gpg/core/containers/FastVector.h) and on the curve (SEfxCurve.h); the
-  // `EmbeddedDwordVectorHeaderOffset10RuntimeView` that used to stand in for
+  // a deleted overlay that used to stand in for
   // `SEfxCurve` here, and the `[[maybe_unused]]` initializer written over it,
   // are gone.
 
@@ -112,7 +129,7 @@ namespace
     return moho::CEffectImpl::sType;
   }
 
-  [[nodiscard]] gpg::RType* ResolveEmitterTypeRuntimeType()
+  [[nodiscard]] gpg::RType* ResolveEmitterRType()
   {
     static gpg::RType* sEmitterType = nullptr;
     if (!sEmitterType) {
@@ -359,36 +376,34 @@ namespace moho
   {
     Entity* const attachedEntity = effect->mEntityInfo.GetAttachTargetEntity();
 
-    // TEMPORARY PROBE (do not commit). Engine effects on a flying transport sit
-    // still beside the hull instead of riding it, and the beam probe already
-    // showed a live-looking source whose Position reads NaN. Both are this
-    // resolve: report when the weak attach target is gone (the effect then
-    // falls back to its creation-time matrix and never moves again) and when it
-    // resolves to something whose transform is not a number. The vftable word
-    // separates "freed and reused" from "live entity that really has no
-    // position yet".
+    // TEMPORARY PROBE -- attached-emitter triage ("engine flames point up /
+    // trail the transport"). The earlier probe sat below the null early-return
+    // and a full session logged nothing, so this one runs first and reports
+    // the raw link state whether or not the attach resolves. Only counts while
+    // the attached entity is MOVING (pending != cur) so the flight case owns
+    // the sample budget instead of at-rest creation calls. Delete when
+    // resolved.
     {
-      static int sAttachProbeBudget = 0;
-      const bool lostParent = (attachedEntity == nullptr) && effect->mEntityInfo.mParentBoneIndex != -1;
-      const bool badTransform = (attachedEntity != nullptr) &&
-        !(std::isfinite(attachedEntity->mVarDat.mCurTransform.pos_.x) && std::isfinite(attachedEntity->mVarDat.mCurTransform.pos_.y) &&
-          std::isfinite(attachedEntity->mVarDat.mCurTransform.pos_.z));
-      if ((lostParent || badTransform) && sAttachProbeBudget < 24) {
-        ++sAttachProbeBudget;
-        char probe[320];
-        sprintf_s(probe, sizeof(probe),
-                  "[EFXATTACH] %s effect=%08X ent=%08X cls=%.50s bone=%d dead=%d destroyQ=%d pos=(%.1f,%.1f,%.1f)\n",
-                  lostParent ? "lost-parent" : "nan-transform",
-                  static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(effect)),
-                  static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(attachedEntity)),
-                  (attachedEntity != nullptr) ? typeid(*attachedEntity).name() : "<null>",
-                  effect->mEntityInfo.mParentBoneIndex,
-                  (attachedEntity != nullptr) ? static_cast<int>(attachedEntity->mVarDat.mIsDead) : -1,
-                  (attachedEntity != nullptr) ? static_cast<int>(attachedEntity->DestroyQueuedFlag) : -1,
-                  (attachedEntity != nullptr) ? attachedEntity->mVarDat.mCurTransform.pos_.x : 0.0f,
-                  (attachedEntity != nullptr) ? attachedEntity->mVarDat.mCurTransform.pos_.y : 0.0f,
-                  (attachedEntity != nullptr) ? attachedEntity->mVarDat.mCurTransform.pos_.z : 0.0f);
-        ::OutputDebugStringA(probe);
+      static int sProbeTop = 0;
+      static int sProbeTopSeen = 0;
+      const bool moving =
+        attachedEntity != nullptr &&
+        (std::fabs(attachedEntity->mPendingTransform.pos_.x - attachedEntity->mVarDat.mCurTransform.pos_.x) > 0.01f ||
+         std::fabs(attachedEntity->mPendingTransform.pos_.y - attachedEntity->mVarDat.mCurTransform.pos_.y) > 0.01f ||
+         std::fabs(attachedEntity->mPendingTransform.pos_.z - attachedEntity->mVarDat.mCurTransform.pos_.z) > 0.01f);
+      ++sProbeTopSeen;
+      if (sProbeTop < 30 && (sProbeTopSeen % 200) == 0 && effect->mEntityInfo.mParentBoneIndex >= 0 && moving) {
+        ++sProbeTop;
+        FxAttachDiagLine(
+          "[FXATTACH] top n=%d eff=%p ent=%p has=%d bone=%d newAtt=%d tick=%d",
+          sProbeTop,
+          static_cast<const void*>(effect),
+          static_cast<void*>(attachedEntity),
+          effect->mEntityInfo.HasAttachTarget() ? 1 : 0,
+          effect->mEntityInfo.mParentBoneIndex,
+          effect->mNewAttachment,
+          tick
+        );
       }
     }
 
@@ -442,6 +457,44 @@ namespace moho
       VMatrix4 composed{};
       (void)gpg::gal::Math::mul(&composed, &boneLocalMatrix, outMatrix);
       *outMatrix = composed;
+    }
+
+    // TEMPORARY PROBE -- the composed matrix the engine actually hands the
+    // particle lane: entity frame + bone local. axis2 = emitter forward row
+    // ("pointing up" shows as ~(0,1,0)). Delete when resolved.
+    {
+      static int sProbeOut = 0;
+      static int sProbeOutSeen = 0;
+      const bool outMoving =
+        std::fabs(attachedEntity->mPendingTransform.pos_.x - attachedEntity->mVarDat.mCurTransform.pos_.x) > 0.01f ||
+        std::fabs(attachedEntity->mPendingTransform.pos_.y - attachedEntity->mVarDat.mCurTransform.pos_.y) > 0.01f ||
+        std::fabs(attachedEntity->mPendingTransform.pos_.z - attachedEntity->mVarDat.mCurTransform.pos_.z) > 0.01f;
+      ++sProbeOutSeen;
+      if (sProbeOut < 30 && (sProbeOutSeen % 200) == 0 && effect->mEntityInfo.mParentBoneIndex >= 0 && outMoving) {
+        ++sProbeOut;
+        FxAttachDiagLine(
+          "[FXATTACH] out n=%d ent=%p bone=%d axis2=(%.2f,%.2f,%.2f) axis1=(%.2f,%.2f,%.2f) pos=(%.1f,%.1f,%.1f) "
+          "cur=(%.1f,%.1f,%.1f) pend=(%.1f,%.1f,%.1f) curQ=(%.2f,%.2f,%.2f,%.2f) velScale=%.3f lv=%.0f ab=%.0f flat=%.0f",
+          sProbeOut,
+          static_cast<void*>(attachedEntity),
+          effect->mEntityInfo.mParentBoneIndex,
+          outMatrix->r[2].x, outMatrix->r[2].y, outMatrix->r[2].z,
+          outMatrix->r[1].x, outMatrix->r[1].y, outMatrix->r[1].z,
+          outMatrix->r[3].x, outMatrix->r[3].y, outMatrix->r[3].z,
+          attachedEntity->mVarDat.mCurTransform.pos_.x, attachedEntity->mVarDat.mCurTransform.pos_.y,
+          attachedEntity->mVarDat.mCurTransform.pos_.z,
+          attachedEntity->mPendingTransform.pos_.x, attachedEntity->mPendingTransform.pos_.y,
+          attachedEntity->mPendingTransform.pos_.z,
+          attachedEntity->mVarDat.mCurTransform.orient_.w,
+          attachedEntity->mVarDat.mCurTransform.orient_.x,
+          attachedEntity->mVarDat.mCurTransform.orient_.y,
+          attachedEntity->mVarDat.mCurTransform.orient_.z,
+          attachedEntity->mPendingVelocityScale,
+          effect->mParams.start_[EFFECT_USE_LOCAL_VELOCITY],
+          effect->mParams.start_[EFFECT_ALIGN_TO_BONE],
+          effect->mParams.start_[EFFECT_FLAT]
+        );
+      }
     }
 
     return true;
@@ -734,7 +787,7 @@ namespace moho
     const gpg::RRef nullOwner{};
 
     archive->Read(ResolveCEffectImplType(), static_cast<CEffectImpl*>(this), nullOwner);
-    archive->Read(ResolveEmitterTypeRuntimeType(), &mEmitterType, nullOwner);
+    archive->Read(ResolveEmitterRType(), &mEmitterType, nullOwner);
     archive->Read(ResolveFastVectorSEfxCurveType(), &mCurves, nullOwner);
 
     const gpg::RRef blueprintOwner{};
@@ -763,7 +816,7 @@ namespace moho
     gpg::RRef nullOwner{};
 
     archive->Write(ResolveCEffectImplType(), static_cast<const CEffectImpl*>(this), nullOwner);
-    archive->Write(ResolveEmitterTypeRuntimeType(), &mEmitterType, nullOwner);
+    archive->Write(ResolveEmitterRType(), &mEmitterType, nullOwner);
     archive->Write(ResolveFastVectorSEfxCurveType(), &mCurves, nullOwner);
 
     archive->WritePointer<moho::REmitterBlueprint>(mBlueprint, gpg::TrackedPointerState::Unowned, nullOwner);
@@ -1071,6 +1124,31 @@ namespace moho
         particle.mDir.y *= velocity;
         particle.mDir.z *= velocity;
 
+        // TEMPORARY PROBE -- exhaust direction triage: the final velocity
+        // vector handed to the particle, with the attach rows it was (or was
+        // not) rotated through. Only counts when local velocity is enabled,
+        // which is the exhaust blueprint's configuration. Delete when
+        // resolved.
+        if (mParams.start_[EFFECT_USE_LOCAL_VELOCITY] > 0.0f) {
+          static int sProbeDir = 0;
+          static int sProbeDirSeen = 0;
+          ++sProbeDirSeen;
+          if (sProbeDir < 30 && (sProbeDirSeen % 400) == 0) {
+            ++sProbeDir;
+            FxAttachDiagLine(
+              "[FXDIR] n=%d dir=(%.2f,%.2f,%.2f) axis0=(%.2f,%.2f,%.2f) axis1=(%.2f,%.2f,%.2f) "
+              "axis2=(%.2f,%.2f,%.2f) pos=(%.1f,%.1f,%.1f) tick=%d",
+              sProbeDir,
+              particle.mDir.x, particle.mDir.y, particle.mDir.z,
+              attachMatrix.r[0].x, attachMatrix.r[0].y, attachMatrix.r[0].z,
+              attachMatrix.r[1].x, attachMatrix.r[1].y, attachMatrix.r[1].z,
+              attachMatrix.r[2].x, attachMatrix.r[2].y, attachMatrix.r[2].z,
+              particle.mPos.x, particle.mPos.y, particle.mPos.z,
+              tick
+            );
+          }
+        }
+
         particle.mResistance = mCurves[EMITTER_RESISTANCE_CURVE].GetValue(curvePhase);
         particle.mInterop = emissionCursor - tickFloat;
 
@@ -1217,3 +1295,24 @@ namespace moho
     }
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CEfxEmitter>`, vtable 0x00E241C0.
+   *
+   * Address: 0x00BD4310 (FUN_00BD4310 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFBDB0 (FUN_00BFBDB0 -- the global's destructor.)
+   * Address: 0x0065F150 (FUN_0065F150 -- `Init`.)
+   * Address: 0x0065E140 (FUN_0065E140 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0065E150 (FUN_0065E150 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CEfxEmitterSerializer : gpg::SerSaveLoadHelper<CEfxEmitter>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B3C64 -- process-global `CEfxEmitterSerializer` singleton.
+  moho::CEfxEmitterSerializer gCEfxEmitterSerializer;
+} // namespace

@@ -27,6 +27,8 @@
 #include "moho/sim/STIMap.h"
 #include "moho/sim/Sim.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/containers/ArchiveSerialization.h"
+#include "gpg/core/reflection/Reflection.h"
 
 namespace gpg
 {
@@ -234,12 +236,15 @@ namespace
   using InfluenceEntryIterator = InfluenceEntrySet::iterator;
   using InfluenceMapCellIterator = InfluenceMapCellSet::iterator;
 
-  struct LegacyMapRuntimeView
+  template <class TMap>
+  [[nodiscard]] std::size_t CountLegacyMapElements(const void* const object) noexcept
   {
-    void* allocProxy;
-    void* head;
-    std::uint32_t size;
-  };
+    if (object == nullptr) {
+      return 0u;
+    }
+
+    return static_cast<const TMap*>(object)->size();
+  }
 
   template <class TValue>
   [[nodiscard]] std::size_t CountLegacyVectorElements(const void* const object) noexcept
@@ -250,16 +255,6 @@ namespace
 
     const auto* const vector = static_cast<const msvc8::vector<TValue>*>(object);
     return vector->size();
-  }
-
-  [[nodiscard]] std::size_t CountLegacyMapElements(const void* const object) noexcept
-  {
-    if (object == nullptr) {
-      return 0u;
-    }
-
-    const auto* const mapView = static_cast<const LegacyMapRuntimeView*>(object);
-    return mapView->size;
   }
 
   template <class TObject>
@@ -754,336 +749,6 @@ namespace
     }
   }
 
-  /**
-   * Address: 0x0071CF30 (FUN_0071CF30, deserialize_InfluenceGrid_record)
-   *
-   * What it does:
-   * Deserializes one `InfluenceGrid` payload in archive field order:
-   * `entries`, `threats`, aggregate threat, and decay lanes.
-   */
-  void DeserializeInfluenceGridRecord(
-    gpg::ReadArchive* const archive,
-    moho::InfluenceGrid* const grid,
-    gpg::RRef* const ownerRef
-  )
-  {
-    if (archive == nullptr || grid == nullptr) {
-      return;
-    }
-
-    const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-
-    gpg::RType* const entryMapType = CachedInfluenceMapEntryMapType();
-    GPG_ASSERT(entryMapType != nullptr);
-    if (!entryMapType) {
-      return;
-    }
-    archive->Read(entryMapType, &grid->entries, owner);
-
-    gpg::RType* const threatVectorType = CachedSThreatVectorType();
-    GPG_ASSERT(threatVectorType != nullptr);
-    if (!threatVectorType) {
-      return;
-    }
-    archive->Read(threatVectorType, &grid->threats, owner);
-
-    gpg::RType* const threatType = CachedSThreatType();
-    GPG_ASSERT(threatType != nullptr);
-    if (!threatType) {
-      return;
-    }
-    archive->Read(threatType, &grid->threat, owner);
-    archive->Read(threatType, &grid->decay, owner);
-  }
-
-  /**
-   * Address: 0x0071D010 (FUN_0071D010, serialize_InfluenceGrid_record)
-   *
-   * What it does:
-   * Serializes one `InfluenceGrid` payload in archive field order:
-   * `entries`, `threats`, aggregate threat, and decay lanes.
-   */
-  void SerializeInfluenceGridRecord(
-    gpg::WriteArchive* const archive,
-    const moho::InfluenceGrid* const grid,
-    gpg::RRef* const ownerRef
-  )
-  {
-    if (archive == nullptr || grid == nullptr) {
-      return;
-    }
-
-    const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-
-    gpg::RType* const entryMapType = CachedInfluenceMapEntryMapType();
-    GPG_ASSERT(entryMapType != nullptr);
-    if (!entryMapType) {
-      return;
-    }
-    archive->Write(entryMapType, grid, owner);
-
-    gpg::RType* const threatVectorType = CachedSThreatVectorType();
-    GPG_ASSERT(threatVectorType != nullptr);
-    if (!threatVectorType) {
-      return;
-    }
-    archive->Write(threatVectorType, &grid->threats, owner);
-
-    gpg::RType* const threatType = CachedSThreatType();
-    GPG_ASSERT(threatType != nullptr);
-    if (!threatType) {
-      return;
-    }
-    archive->Write(threatType, &grid->threat, owner);
-    archive->Write(threatType, &grid->decay, owner);
-  }
-
-  /**
-   * Address: 0x00717CF0 (FUN_00717CF0)
-   *
-   * What it does:
-   * Read-callback thunk for `InfluenceGrid` archive lanes that forwards to
-   * `DeserializeInfluenceGridRecord` (`FUN_0071CF30`).
-   */
-  void DeserializeInfluenceGridRecordCallbackThunk(
-    gpg::ReadArchive* const archive,
-    const int objectPtr,
-    const int,
-    gpg::RRef* const ownerRef
-  )
-  {
-    DeserializeInfluenceGridRecord(
-      archive,
-      PointerFromArchiveInt<moho::InfluenceGrid>(objectPtr),
-      ownerRef
-    );
-  }
-
-  /**
-   * Address: 0x00717D00 (FUN_00717D00)
-   *
-   * What it does:
-   * Write-callback thunk for `InfluenceGrid` archive lanes that forwards to
-   * `SerializeInfluenceGridRecord` (`FUN_0071D010`).
-   */
-  void SerializeInfluenceGridRecordCallbackThunk(
-    gpg::WriteArchive* const archive,
-    const int objectPtr,
-    const int,
-    gpg::RRef* const ownerRef
-  )
-  {
-    SerializeInfluenceGridRecord(
-      archive,
-      ConstPointerFromArchiveInt<moho::InfluenceGrid>(objectPtr),
-      ownerRef
-    );
-  }
-
-  /**
-   * Address: 0x0071CB20 (FUN_0071CB20, deserialize_InfluenceMapEntry_record)
-   *
-   * What it does:
-   * Deserializes one `InfluenceMapEntry` payload in archive field order:
-   * `EntId`, `SimArmy*`, `Vector3f` position, `RUnitBlueprint*`, `ELayer`,
-   * detail flag, threat magnitude/decay, and decay tick count.
-   */
-  void DeserializeInfluenceMapEntryRecord(
-    gpg::ReadArchive* const archive,
-    const int objectPtr,
-    const int,
-    gpg::RRef* const ownerRef
-  )
-  {
-    auto* const entry = PointerFromArchiveInt<moho::InfluenceMapEntry>(objectPtr);
-    if (archive == nullptr || entry == nullptr) {
-      return;
-    }
-
-    const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-
-    static gpg::RType* entIdType = nullptr;
-    if (entIdType == nullptr) {
-      entIdType = gpg::LookupRType(typeid(moho::EntId));
-    }
-    archive->Read(entIdType, &entry->entityId, owner);
-
-    moho::SimArmy* sourceArmy = nullptr;
-    archive->ReadPointer(&sourceArmy, &owner);
-    entry->sourceArmy = reinterpret_cast<moho::CArmyImpl*>(sourceArmy);
-
-    static gpg::RType* vector3fType = nullptr;
-    if (vector3fType == nullptr) {
-      vector3fType = gpg::LookupRType(typeid(Wm3::Vector3f));
-    }
-    archive->Read(vector3fType, &entry->lastPosition, owner);
-
-    moho::RUnitBlueprint* sourceBlueprint = nullptr;
-    archive->ReadPointer(&sourceBlueprint, &owner);
-    entry->sourceBlueprint = sourceBlueprint;
-
-    static gpg::RType* layerType = nullptr;
-    if (layerType == nullptr) {
-      layerType = gpg::LookupRType(typeid(moho::ELayer));
-    }
-    archive->Read(layerType, &entry->sourceLayer, owner);
-
-    bool isDetailed = false;
-    archive->ReadBool(&isDetailed);
-    entry->isDetailed = isDetailed ? 1u : 0u;
-
-    archive->ReadFloat(&entry->threatStrength);
-    archive->ReadFloat(&entry->threatDecay);
-    archive->ReadInt(&entry->decayTicks);
-  }
-
-  /**
-   * Address: 0x0071CC30 (FUN_0071CC30, serialize_InfluenceMapEntry_record)
-   *
-   * What it does:
-   * Serializes one `InfluenceMapEntry` payload in archive field order using
-   * unowned pointer lanes for `SimArmy*` and `RUnitBlueprint*`.
-   */
-  void SerializeInfluenceMapEntryRecord(
-    gpg::WriteArchive* const archive,
-    const int objectPtr,
-    const int,
-    gpg::RRef* const ownerRef
-  )
-  {
-    const auto* const entry = ConstPointerFromArchiveInt<moho::InfluenceMapEntry>(objectPtr);
-    if (archive == nullptr || entry == nullptr) {
-      return;
-    }
-
-    const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-
-    static gpg::RType* entIdType = nullptr;
-    if (entIdType == nullptr) {
-      entIdType = gpg::LookupRType(typeid(moho::EntId));
-    }
-    archive->Write(entIdType, &entry->entityId, owner);
-
-    archive->WritePointer<moho::SimArmy>(reinterpret_cast<moho::SimArmy*>(entry->sourceArmy), gpg::TrackedPointerState::Unowned, owner);
-
-    static gpg::RType* vector3fType = nullptr;
-    if (vector3fType == nullptr) {
-      vector3fType = gpg::LookupRType(typeid(Wm3::Vector3f));
-    }
-    archive->Write(vector3fType, &entry->lastPosition, owner);
-
-    archive->WritePointer<moho::RUnitBlueprint>(const_cast<moho::RUnitBlueprint*>(entry->sourceBlueprint), gpg::TrackedPointerState::Unowned, owner);
-
-    static gpg::RType* layerType = nullptr;
-    if (layerType == nullptr) {
-      layerType = gpg::LookupRType(typeid(moho::ELayer));
-    }
-    archive->Write(layerType, &entry->sourceLayer, owner);
-
-    archive->WriteBool(entry->isDetailed != 0u);
-    archive->WriteFloat(entry->threatStrength);
-    archive->WriteFloat(entry->threatDecay);
-    archive->WriteInt(entry->decayTicks);
-  }
-
-  struct RRefPairRuntime
-  {
-    void* object;      // +0x00
-    gpg::RType* type;  // +0x04
-  };
-  static_assert(sizeof(RRefPairRuntime) == 0x08, "RRefPairRuntime size must be 0x08");
-
-  /**
-   * Address: 0x0071CAD0 (FUN_0071CAD0)
-   *
-   * What it does:
-   * Builds one reflected `RRef` pair for `CInfluenceMap` and writes
-   * `{mObj,mType}` lanes into caller-owned output storage.
-   */
-  RRefPairRuntime* BuildCInfluenceMapRRefPair(
-    moho::CInfluenceMap* const object,
-    RRefPairRuntime* const outRefPair
-  )
-  {
-    gpg::RRef ref{};
-    ref = gpg::MakeRRef<moho::CInfluenceMap>(object);
-    outRefPair->object = ref.mObj;
-    outRefPair->type = ref.mType;
-    return outRefPair;
-  }
-
-  /**
-   * Address: 0x0071D100 (FUN_0071D100)
-   *
-   * What it does:
-   * Builds one reflected `RRef` pair for `InfluenceGrid` and writes
-   * `{mObj,mType}` lanes into caller-owned output storage.
-   */
-  RRefPairRuntime* BuildInfluenceGridRRefPair(
-    moho::InfluenceGrid* const object,
-    RRefPairRuntime* const outRefPair
-  )
-  {
-    gpg::RRef ref{};
-    ref = gpg::MakeRRef<moho::InfluenceGrid>(object);
-    outRefPair->object = ref.mObj;
-    outRefPair->type = ref.mType;
-    return outRefPair;
-  }
-
-  /**
-   * Address: 0x0071D140 (FUN_0071D140)
-   *
-   * What it does:
-   * Builds one reflected `RRef` pair for `SThreat` and writes
-   * `{mObj,mType}` lanes into caller-owned output storage.
-   */
-  RRefPairRuntime* BuildSThreatRRefPair(
-    moho::SThreat* const object,
-    RRefPairRuntime* const outRefPair
-  )
-  {
-    gpg::RRef ref{};
-    ref = gpg::MakeRRef<moho::SThreat>(object);
-    outRefPair->object = ref.mObj;
-    outRefPair->type = ref.mType;
-    return outRefPair;
-  }
-
-  /**
-   * Address: 0x007178F0 (FUN_007178F0)
-   *
-   * What it does:
-   * Read-callback thunk for `InfluenceMapEntry` archive lanes that forwards to
-   * `DeserializeInfluenceMapEntryRecord` (`FUN_0071CB20`).
-   */
-  void DeserializeInfluenceMapEntryRecordCallbackThunk(
-    gpg::ReadArchive* const archive,
-    const int objectPtr,
-    const int version,
-    gpg::RRef* const ownerRef
-  )
-  {
-    DeserializeInfluenceMapEntryRecord(archive, objectPtr, version, ownerRef);
-  }
-
-  /**
-   * Address: 0x00717900 (FUN_00717900)
-   *
-   * What it does:
-   * Write-callback thunk for `InfluenceMapEntry` archive lanes that forwards
-   * to `SerializeInfluenceMapEntryRecord` (`FUN_0071CC30`).
-   */
-  void SerializeInfluenceMapEntryRecordCallbackThunk(
-    gpg::WriteArchive* const archive,
-    const int objectPtr,
-    const int version,
-    gpg::RRef* const ownerRef
-  )
-  {
-    SerializeInfluenceMapEntryRecord(archive, objectPtr, version, ownerRef);
-  }
-
   // Addresses 0x007189D0/0x0071A0C0 (the "ThunkA"/"ThunkB" iterator-advance
   // duplicates formerly modeled here) are dead: zero data_refs/call_edges
   // for both, and no source-level caller anywhere in src/sdk/**.
@@ -1096,14 +761,6 @@ namespace
   // caller anywhere in src/sdk/**. AdvanceBlipCellIterator above is the
   // real body, used directly by EraseBlipCellRange below (confirmed real
   // via multiple binary callers).
-
-  /**
-   * Address: 0x0071C750 (FUN_0071C750)
-   *
-   * What it does:
-   * Allocates one fixed `0x40`-byte runtime node lane.
-   */
-  void* AllocateSingle64ByteNode() { return ::operator new(0x40u); }
 
   // The tree walks formerly transcribed here over two private node overlays
   // (an isNil@+0x3D node for `InfluenceGrid::entries`, an isNil@+0x15 node for
@@ -1289,36 +946,6 @@ namespace
     }
   }
 
-  /**
-   * Address: 0x0071C6C0 (FUN_0071C6C0, sub_71C6C0)
-   * Address: 0x0071C9A0 (FUN_0071C9A0, msvc8::_Tree<InfluenceMapEntry>::_Copy)
-   *
-   * What it does:
-   * Clones one `InfluenceGrid::entries` ordered-set tree into destination
-   * storage, preserving ordered contents and node count.
-   *
-   * The binary used the MSVC8 `_Tree::_Copy` recursive clone helper
-   * (FUN_0071C9A0) to walk the source tree depth-first and rebuild
-   * matching links in the destination. The recovered version expresses
-   * the same role via the legacy set's iterator + per-entry
-   * `destination.insert(*it)` path, which the modern compiler emits
-   * as its own per-entry insert chain. The recursive `_Tree::_Copy`
-   * template emission is therefore absorbed by the iterator-based
-   * clone — observable behavior is identical (destination ends up with
-   * the same ordered contents and node count), and the per-T template
-   * emission symbol shape is preserved through the named outer helper.
-   */
-  void CopyInfluenceEntryTreeStorage(InfluenceEntrySet& destination, const InfluenceEntrySet& source)
-  {
-    if (&destination == &source) {
-      return;
-    }
-
-    destination.clear();
-    for (InfluenceEntrySet::const_iterator it = source.begin(); it != source.end(); ++it) {
-      destination.insert(*it);
-    }
-  }
 
   /**
    * Address: 0x007181A0 (FUN_007181A0, sub_7181A0)
@@ -1378,28 +1005,6 @@ namespace
     return influenceMap->GetThreatRect(x, z, radius, onMap, threatType, armyIndex);
   }
 
-  /**
-   * Address: 0x007197D0 (FUN_007197D0)
-   *
-   * What it does:
-   * Releases one influence-map runtime storage lane through global
-   * `operator delete`.
-   */
-  void DeleteInfluenceMapRuntimeStoragePrimary(void* const storage) noexcept
-  {
-    ::operator delete(storage);
-  }
-
-  /**
-   * Address: 0x00719D90 (FUN_00719D90)
-   *
-   * What it does:
-   * Secondary delete-thunk lane for influence-map runtime storage.
-   */
-  void DeleteInfluenceMapRuntimeStorageSecondary(void* const storage) noexcept
-  {
-    ::operator delete(storage);
-  }
 } // namespace
 
 /**
@@ -1425,7 +1030,7 @@ const char* gpg::RMapType_uint_int::GetName() const
 msvc8::string gpg::RMapType_uint_int::GetLexical(const gpg::RRef& ref) const
 {
   const msvc8::string base = gpg::RType::GetLexical(ref);
-  return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(CountLegacyMapElements(ref.mObj)));
+  return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(CountLegacyMapElements<msvc8::map<unsigned int, int>>(ref.mObj)));
 }
 
 /**
@@ -1466,7 +1071,7 @@ const char* gpg::RMapType_uint_InfluenceMapEntry::GetName() const
 msvc8::string gpg::RMapType_uint_InfluenceMapEntry::GetLexical(const gpg::RRef& ref) const
 {
   const msvc8::string base = gpg::RType::GetLexical(ref);
-  return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(CountLegacyMapElements(ref.mObj)));
+  return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(CountLegacyMapElements<msvc8::map<unsigned int, moho::InfluenceMapEntry>>(ref.mObj)));
 }
 
 /**
@@ -1981,14 +1586,6 @@ namespace moho
     }
   }
 
-  struct SThreatMoveOwnerRuntime
-  {
-    SThreat* activeEnd;            // +0x00
-    SThreat* moveDestinationBegin; // +0x04
-    SThreat* moveSourceBegin;      // +0x08
-  };
-  static_assert(sizeof(SThreatMoveOwnerRuntime) == 0x0C, "SThreatMoveOwnerRuntime size must be 0x0C");
-
   /**
    * Address: 0x0071CD70 (FUN_0071CD70)
    *
@@ -2086,14 +1683,17 @@ namespace moho
    * Address: 0x0071F770 (FUN_0071F770 -- `InfluenceGrid::InfluenceGrid(const InfluenceGrid&)` (second copy); zero callers, unreachable; formerly `CopyConstructInfluenceGridIfPresentSecondary` in moho/sim/CInfluenceMap.cpp (RULE ONE), removed 2026-09-10.)
    * Address: 0x0071AA60 (FUN_0071AA60 -- the entry-set half of `InfluenceGrid`'s copy constructor; callers 0x00715440, 0x00716140, 0x00716350; formerly `CopyInfluenceGridEntries` in moho/sim/CInfluenceMap.cpp (RULE ONE), removed 2026-09-10.)
    * Address: 0x0071C1F0 (FUN_0071C1F0 -- the entry-set half of `InfluenceGrid`'s copy constructor (the placement-new form); callers 0x0071C150, 0x0071C1E0; formerly `CopyConstructInfluenceGridEntries` in moho/sim/CInfluenceMap.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x0071C6C0/0x0071C9A0 (FUN_0071C6C0, FUN_0071C9A0 -- the outer clone and
+   * `msvc8::_Tree<InfluenceMapEntry>::_Copy` it wraps, now absorbed by the
+   * `entries(other.entries)` member-init and `entries = source.entries` in
+   * AssignInfluenceGridValue; formerly `CopyInfluenceEntryTreeStorage` (RULE ONE), removed 2026-10-03.)
    */
   InfluenceGrid::InfluenceGrid(const InfluenceGrid& other)
-    : entries()
+    : entries(other.entries)
     , threats(other.threats)
     , threat(other.threat)
     , decay(other.decay)
   {
-    CopyInfluenceEntryTreeStorage(entries, other.entries);
   }
 
   /**
@@ -2120,12 +1720,8 @@ namespace moho
   InfluenceGrid& AssignInfluenceGridValue(InfluenceGrid& destination, const InfluenceGrid& source)
   {
     if (&destination != &source) {
-      CopyInfluenceEntryTreeStorage(destination.entries, source.entries);
-
-      destination.threats.clear();
-      for (const SThreat* it = source.threats.begin(); it != source.threats.end(); ++it) {
-        destination.threats.push_back(*it);
-      }
+      destination.entries = source.entries;
+      destination.threats = source.threats;
     }
 
     destination.threat = source.threat;
@@ -3072,3 +2668,245 @@ GPG_PREREGISTER_INIT(preregister_RMapType_uint_int_9e247f, preregister_RMapType_
 GPG_PREREGISTER_INIT(preregister_RMapType_uint_InfluenceMapEntry_9e247f, preregister_RMapType_uint_InfluenceMapEntry)
 GPG_PREREGISTER_INIT(preregister_RVectorType_InfluenceGrid_9e247f, preregister_RVectorType_InfluenceGrid)
 GPG_PREREGISTER_INIT(preregister_RVectorType_SThreat_9e247f, preregister_RVectorType_SThreat)
+
+namespace moho
+{
+  /**
+   * Address: 0x00717670 (FUN_00717670)
+   */
+  void CInfluenceMap::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CInfluenceMap()), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CInfluenceMap>`, vtable 0x00E3175C.
+   *
+   * Address: 0x00BDA680 (FUN_00BDA680 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFFF10 (FUN_00BFFF10 -- the global's destructor.)
+   * Address: 0x00718AE0 (FUN_00718AE0 -- `Init`.)
+   * Address: 0x00717660 (FUN_00717660 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x0071CAA0 (FUN_0071CAA0 -- `Delete`.)
+   */
+  struct CInfluenceMapConstruct : gpg::SerConstructHelper<CInfluenceMap>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B92CC -- process-global `CInfluenceMapConstruct` singleton.
+  moho::CInfluenceMapConstruct gCInfluenceMapConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * Address: 0x0071CF30 (FUN_0071CF30, deserialize_InfluenceGrid_record)
+   *
+   * What it does:
+   * Deserializes one `InfluenceGrid` payload in archive field order:
+   * `entries`, `threats`, aggregate threat, and decay lanes.
+   */
+  void InfluenceGrid::MemberDeserialize(gpg::ReadArchive* const archive, const int, const gpg::RRef& ownerRef)
+  {
+    if (archive == nullptr || this == nullptr) {
+      return;
+    }
+
+    const gpg::RRef owner = ownerRef;
+
+    gpg::RType* const entryMapType = CachedInfluenceMapEntryMapType();
+    GPG_ASSERT(entryMapType != nullptr);
+    if (!entryMapType) {
+      return;
+    }
+    archive->Read(entryMapType, &entries, owner);
+
+    gpg::RType* const threatVectorType = CachedSThreatVectorType();
+    GPG_ASSERT(threatVectorType != nullptr);
+    if (!threatVectorType) {
+      return;
+    }
+    archive->Read(threatVectorType, &threats, owner);
+
+    gpg::RType* const threatType = CachedSThreatType();
+    GPG_ASSERT(threatType != nullptr);
+    if (!threatType) {
+      return;
+    }
+    archive->Read(threatType, &threat, owner);
+    archive->Read(threatType, &decay, owner);
+  }
+
+  /**
+   * Address: 0x0071D010 (FUN_0071D010, serialize_InfluenceGrid_record)
+   *
+   * What it does:
+   * Serializes one `InfluenceGrid` payload in archive field order:
+   * `entries`, `threats`, aggregate threat, and decay lanes.
+   */
+  void InfluenceGrid::MemberSerialize(gpg::WriteArchive* const archive, const int, const gpg::RRef& ownerRef) const
+  {
+    if (archive == nullptr || this == nullptr) {
+      return;
+    }
+
+    const gpg::RRef owner = ownerRef;
+
+    gpg::RType* const entryMapType = CachedInfluenceMapEntryMapType();
+    GPG_ASSERT(entryMapType != nullptr);
+    if (!entryMapType) {
+      return;
+    }
+    archive->Write(entryMapType, this, owner);
+
+    gpg::RType* const threatVectorType = CachedSThreatVectorType();
+    GPG_ASSERT(threatVectorType != nullptr);
+    if (!threatVectorType) {
+      return;
+    }
+    archive->Write(threatVectorType, &threats, owner);
+
+    gpg::RType* const threatType = CachedSThreatType();
+    GPG_ASSERT(threatType != nullptr);
+    if (!threatType) {
+      return;
+    }
+    archive->Write(threatType, &threat, owner);
+    archive->Write(threatType, &decay, owner);
+  }
+
+  /**
+   * Address: 0x0071CB20 (FUN_0071CB20, deserialize_InfluenceMapEntry_record)
+   *
+   * What it does:
+   * Deserializes one `InfluenceMapEntry` payload in archive field order:
+   * `EntId`, `SimArmy*`, `Vector3f` position, `RUnitBlueprint*`, `ELayer`,
+   * detail flag, threat magnitude/decay, and decay tick count.
+   */
+  void InfluenceMapEntry::MemberDeserialize(gpg::ReadArchive* const archive, const int, const gpg::RRef& ownerRef)
+  {
+    if (archive == nullptr) {
+      return;
+    }
+
+
+    static gpg::RType* entIdType = nullptr;
+    if (entIdType == nullptr) {
+      entIdType = gpg::LookupRType(typeid(moho::EntId));
+    }
+    archive->Read(entIdType, &entityId, ownerRef);
+
+    moho::SimArmy* loadedArmy = nullptr;
+    archive->ReadPointer(&loadedArmy, &ownerRef);
+    sourceArmy = reinterpret_cast<moho::CArmyImpl*>(loadedArmy);
+
+    static gpg::RType* vector3fType = nullptr;
+    if (vector3fType == nullptr) {
+      vector3fType = gpg::LookupRType(typeid(Wm3::Vector3f));
+    }
+    archive->Read(vector3fType, &lastPosition, ownerRef);
+
+    moho::RUnitBlueprint* loadedBlueprint = nullptr;
+    archive->ReadPointer(&loadedBlueprint, &ownerRef);
+    sourceBlueprint = loadedBlueprint;
+
+    static gpg::RType* layerType = nullptr;
+    if (layerType == nullptr) {
+      layerType = gpg::LookupRType(typeid(moho::ELayer));
+    }
+    archive->Read(layerType, &sourceLayer, ownerRef);
+
+    bool loadedDetailed = false;
+    archive->ReadBool(&loadedDetailed);
+    isDetailed = loadedDetailed ? 1u : 0u;
+
+    archive->ReadFloat(&threatStrength);
+    archive->ReadFloat(&threatDecay);
+    archive->ReadInt(&decayTicks);
+  }
+
+  /**
+   * Address: 0x0071CC30 (FUN_0071CC30, serialize_InfluenceMapEntry_record)
+   *
+   * What it does:
+   * Serializes one `InfluenceMapEntry` payload in archive field order using
+   * unowned pointer lanes for `SimArmy*` and `RUnitBlueprint*`.
+   */
+  void InfluenceMapEntry::MemberSerialize(gpg::WriteArchive* const archive, const int, const gpg::RRef& ownerRef) const
+  {
+    if (archive == nullptr) {
+      return;
+    }
+
+
+    static gpg::RType* entIdType = nullptr;
+    if (entIdType == nullptr) {
+      entIdType = gpg::LookupRType(typeid(moho::EntId));
+    }
+    archive->Write(entIdType, &entityId, ownerRef);
+
+    archive->WritePointer<moho::SimArmy>(reinterpret_cast<moho::SimArmy*>(sourceArmy), gpg::TrackedPointerState::Unowned, ownerRef);
+
+    static gpg::RType* vector3fType = nullptr;
+    if (vector3fType == nullptr) {
+      vector3fType = gpg::LookupRType(typeid(Wm3::Vector3f));
+    }
+    archive->Write(vector3fType, &lastPosition, ownerRef);
+
+    archive->WritePointer<moho::RUnitBlueprint>(const_cast<moho::RUnitBlueprint*>(sourceBlueprint), gpg::TrackedPointerState::Unowned, ownerRef);
+
+    static gpg::RType* layerType = nullptr;
+    if (layerType == nullptr) {
+      layerType = gpg::LookupRType(typeid(moho::ELayer));
+    }
+    archive->Write(layerType, &sourceLayer, ownerRef);
+
+    archive->WriteBool(isDetailed != 0u);
+    archive->WriteFloat(threatStrength);
+    archive->WriteFloat(threatDecay);
+    archive->WriteInt(decayTicks);
+  }
+} // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<InfluenceGrid>`, vtable 0x00E31914.
+   *
+   * Address: 0x00BDA7E0 (FUN_00BDA7E0 -- constructs the global and registers its destructor.)
+   * Address: 0x00C000F0 (FUN_00C000F0 -- the global's destructor.)
+   * Address: 0x00719410 (FUN_00719410 -- `Init`.)
+   * Address: 0x00717CF0 (FUN_00717CF0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00717D00 (FUN_00717D00 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct InfluenceGridSerializer : gpg::SerSaveLoadHelper<InfluenceGrid>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B9204 -- process-global `InfluenceGridSerializer` singleton.
+  moho::InfluenceGridSerializer gInfluenceGridSerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<InfluenceMapEntry>`, vtable 0x00E317AC.
+   *
+   * Address: 0x00BDA720 (FUN_00BDA720 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFFFD0 (FUN_00BFFFD0 -- the global's destructor.)
+   * Address: 0x00718C00 (FUN_00718C00 -- `Init`.)
+   * Address: 0x007178F0 (FUN_007178F0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00717900 (FUN_00717900 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct InfluenceMapEntrySerializer : gpg::SerSaveLoadHelper<InfluenceMapEntry>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B9470 -- process-global `InfluenceMapEntrySerializer` singleton.
+  moho::InfluenceMapEntrySerializer gInfluenceMapEntrySerializer;
+} // namespace

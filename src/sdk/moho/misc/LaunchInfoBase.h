@@ -41,6 +41,14 @@ namespace moho
 
   struct ArmyLaunchInfo
   {
+  /**
+   * What it does:
+   * Nothing: the army's launch info is rebuilt at load, not archived. `gpg::SerSaveLoadHelper<ArmyLaunchInfo>::Deserialize`
+   * 0x005421C0 and `Serialize` 0x005421D0 are a bare `ret`.
+   */
+  void MemberDeserialize(gpg::ReadArchive*) {}
+  void MemberSerialize(gpg::WriteArchive*) const {}
+
     static gpg::RType* sType;
 
     /**
@@ -66,6 +74,22 @@ namespace moho
   class LaunchInfoBase
   {
   public:
+    /**
+     * Address: 0x00544220 (FUN_00544220)
+     *
+     * What it does:
+     * Saves this object's members.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive);
+
+    /**
+     * Address: 0x00544180 (FUN_00544180)
+     *
+     * What it does:
+     * Loads this object's members.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive);
+
     static gpg::RType* sType;
 
     /**
@@ -313,63 +337,6 @@ namespace moho
 
   static_assert(sizeof(LaunchInfoNewTypeInfo) == 0x64, "LaunchInfoNewTypeInfo size must be 0x64");
 
-  class ArmyLaunchInfoSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC9460 (FUN_00BC9460, dynamic initializer for the global
-     * `ArmyLaunchInfoSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    ArmyLaunchInfoSerializer();
-
-    /**
-     * Address: 0x00BF3F90 (FUN_00BF3F90, Moho::ArmyLaunchInfoSerializer::~ArmyLaunchInfoSerializer)
-     */
-    ~ArmyLaunchInfoSerializer();
-
-    /**
-     * Address: 0x005421C0 (FUN_005421C0, Moho::ArmyLaunchInfoSerializer::Deserialize)
-     *
-     * What it does:
-     * Archive callback lane reserved for `ArmyLaunchInfo` load behavior.
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x005421D0 (FUN_005421D0, Moho::ArmyLaunchInfoSerializer::Serialize)
-     *
-     * What it does:
-     * Archive callback lane reserved for `ArmyLaunchInfo` save behavior.
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00542EF0 (FUN_00542EF0, Moho::ArmyLaunchInfoSerializer::Init)
-     *
-     * What it does:
-     * Binds ArmyLaunchInfo load/save serializer callbacks into its reflected
-     * runtime type with one-time assertions.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mDeserialize; // +0x0C
-    gpg::RType::save_func_t mSerialize;   // +0x10
-  };
-  static_assert(
-    offsetof(ArmyLaunchInfoSerializer, mDeserialize) == 0x0C,
-    "ArmyLaunchInfoSerializer::mDeserialize offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(ArmyLaunchInfoSerializer, mSerialize) == 0x10,
-    "ArmyLaunchInfoSerializer::mSerialize offset must be 0x10"
-  );
-  static_assert(sizeof(ArmyLaunchInfoSerializer) == 0x14, "ArmyLaunchInfoSerializer size must be 0x14");
-
   /**
    * Demangled: gpg::SerSaveLoadHelper<class Moho::LaunchInfoNew>
    *
@@ -423,63 +390,6 @@ namespace moho
   };
 
   static_assert(sizeof(LaunchInfoBaseTypeInfo) == 0x64, "LaunchInfoBaseTypeInfo size must be 0x64");
-
-  class LaunchInfoBaseSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC94C0 (FUN_00BC94C0, dynamic initializer for the global
-     * `LaunchInfoBaseSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    LaunchInfoBaseSerializer();
-
-    /**
-     * Address: 0x00BF4020 (FUN_00BF4020, Moho::LaunchInfoBaseSerializer::~LaunchInfoBaseSerializer)
-     */
-    ~LaunchInfoBaseSerializer();
-
-    /**
-     * Address: 0x00542550 (FUN_00542550, Moho::LaunchInfoBaseSerializer::Deserialize)
-     *
-     * What it does:
-     * Archive callback thunk forwarding into LaunchInfoBase load body.
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00542560 (FUN_00542560, Moho::LaunchInfoBaseSerializer::Serialize)
-     *
-     * What it does:
-     * Archive callback thunk forwarding into LaunchInfoBase save body.
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00543190 (FUN_00543190, Moho::LaunchInfoBaseSerializer::Init)
-     *
-     * What it does:
-     * Registers load/save callbacks into LaunchInfoBase RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mSerLoadFunc; // +0x0C
-    gpg::RType::save_func_t mSerSaveFunc; // +0x10
-  };
-
-  static_assert(
-    offsetof(LaunchInfoBaseSerializer, mSerLoadFunc) == 0x0C,
-    "LaunchInfoBaseSerializer::mSerLoadFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(LaunchInfoBaseSerializer, mSerSaveFunc) == 0x10,
-    "LaunchInfoBaseSerializer::mSerSaveFunc offset must be 0x10"
-  );
-  static_assert(sizeof(LaunchInfoBaseSerializer) == 0x14, "LaunchInfoBaseSerializer size must be 0x14");
 
   /**
    * Address: 0x005439E0 (FUN_005439E0)

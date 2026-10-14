@@ -7,7 +7,7 @@
 #include "legacy/containers/String.h"
 #include "legacy/containers/Vector.h"
 #include "moho/entity/EntityCategoryReflection.h"
-#include "moho/sim/ArmyUnitSet.h"
+#include "moho/entity/Entity.h"
 #include "moho/sim/ESquadClass.h"
 #include "Wm3Vector3.h"
 
@@ -23,6 +23,13 @@ namespace gpg
   class ReadArchive;
   class WriteArchive;
 }
+
+namespace gpg
+{
+  class ReadArchive;
+  class RRef;
+  class SerConstructResult;
+} // namespace gpg
 
 namespace moho
 {
@@ -41,7 +48,7 @@ namespace moho
    * - 0x00723F70 (FUN_00723F70, Moho::CSquad::~CSquad) — releases dynamic
    *   unit storage, destroys category list, unlinks from the entity-DB list.
    *
-   * Each squad owns one `SEntitySetTemplateUnit` (0x28 bytes including its
+   * Each squad owns one `EntitySetTemplate<Unit>` (0x28 bytes including its
    * intrusive ring-list head and the inline 4-entity buffer) and a category
    * vector. Squads belong to a `CPlatoon` and are stored in the platoon's
    * `mSquadList` fastvector.
@@ -93,6 +100,59 @@ namespace moho
     [[nodiscard]] static CSquad* AllocateOnPlatoon(CPlatoon* parentPlatoon, ESquadClass squadClass, const char* name);
 
     /**
+     * Address: 0x00723A50 (FUN_00723A50, copy_CSquadUnits_into_EntitySet)
+     *
+     * IDA signature:
+     * Moho::EntitySetTemplate<Unit> *__usercall sub_723A50@<eax>(
+     *   Moho::EntitySetTemplate<Unit> *result@<esi>, Moho::CSquad *this@<edx>);
+     *
+     * What it does:
+     * Returns a copy of `mUnits` (copy constructor 0x00579500) in the
+     * caller's return slot. The platoon's order functions take one before
+     * commanding a squad; `CPlatoon::GetPlatoonUnits` takes one per squad.
+     * Emitted first in the translation unit, ahead of `CPlatoon::GetClass`,
+     * as an inline from this header is.
+     */
+    [[nodiscard]] EntitySetTemplate<Unit> GetUnitSet() const
+    {
+      return mUnits;
+    }
+
+    /**
+     * What it does:
+     * Returns whether `unit` is one of this squad's units, by a linear scan
+     * (`p ? p - 8 : 0` per entry). Never emitted out of line: inlined into
+     * `CPlatoon::IsInPlatoon` (0x007251D0), `CPlatoon::GetSquadClass`
+     * (0x00725220) and `CPlatoon::RemoveUnit` (0x007253B0). Not
+     * `mUnits.ContainsUnit`, which is the binary search.
+     */
+    [[nodiscard]] bool HasUnit(const Unit* unit) const;
+
+    /**
+     * Address: 0x00724150 (FUN_00724150, Moho::CSquad::RemoveUnit)
+     *
+     * IDA signature:
+     * void __usercall Moho::CSquad::RemoveUnit(Moho::CSquad *this@<ebx>, Moho::Unit *unit@<eax>);
+     *
+     * What it does:
+     * Erases the first entry that is `unit`, closing the gap with `memmove`.
+     */
+    void RemoveUnit(Unit* unit);
+
+    /**
+     * Address: 0x007241C0 (FUN_007241C0)
+     *
+     * IDA signature:
+     * void __usercall sub_7241C0(Moho::CSquad *this@<eax>, Moho::EntitySetTemplate<Unit> *units@<edi>);
+     *
+     * What it does:
+     * `RemoveUnit` for every unit in `units`. The out-of-line copy has no
+     * caller; it is inlined into `CPlatoon::ReturnUnitsTo` (0x00725410) and
+     * `CPlatoon::DestroySquads` (0x00726210).
+     */
+    void RemoveUnits(const EntitySetTemplate<Unit>& units);
+
+    /**
      * Address: 0x00724220 (FUN_00724220, Moho::CSquad::CountUnitsWithBP)
      *
      * What it does:
@@ -124,10 +184,27 @@ namespace moho
      * Address: 0x00724750 (FUN_00724750, Moho::CSquad::HasUnitWithState)
      *
      * What it does:
-     * Returns true when any live unit in this squad reports the requested
-     * unit-state lane.
+     * Returns true when any live unit in this squad is in `state`.
      */
     [[nodiscard]] bool HasUnitWithState(EUnitState state) const;
+
+    /**
+     * Address: 0x007247A0 (FUN_007247A0, Moho::CSquad::UnitHasOrder)
+     *
+     * What it does:
+     * Returns true unless some live unit has a command at the head of its
+     * queue. The IDB name reads the result backwards.
+     */
+    [[nodiscard]] bool IsIdle() const;
+
+    /**
+     * Address: 0x00724820 (FUN_00724820, Moho::CSquad::Stop)
+     *
+     * What it does:
+     * Clears every live unit's command queue (no null test on the queue) and
+     * stops its attacker, when it has one.
+     */
+    void Stop();
 
     /**
      * Address: 0x0072B700 (FUN_0072B700, Moho::CSquad::GetUnits)
@@ -147,7 +224,7 @@ namespace moho
      * `blueprintId` (case-insensitive) into `outUnits`, stopping after
      * `maxCount` matches have been added.
      */
-    void AppendUnitsWithBP(const char* blueprintId, int maxCount, SEntitySetTemplateUnit& outUnits);
+    void AppendUnitsWithBP(const char* blueprintId, int maxCount, EntitySetTemplate<Unit>& outUnits);
 
     /**
      * Address: 0x00724400 (FUN_00724400, Moho::CSquad::AppendUnitsInCategory)
@@ -157,7 +234,7 @@ namespace moho
      * destroying, not under-construction) unit whose blueprint category bit is
      * present in `categorySet`, stopping once `maxCount` matches are added.
      */
-    void AppendUnitsInCategory(const EntityCategorySet* categorySet, int maxCount, SEntitySetTemplateUnit& outUnits);
+    void AppendUnitsInCategory(const EntityCategorySet* categorySet, int maxCount, EntitySetTemplate<Unit>& outUnits);
 
     /**
      * Address: 0x00724550 (FUN_00724550, Moho::CSquad::FitsAt)
@@ -179,16 +256,29 @@ namespace moho
     [[nodiscard]] Wm3::Vector3f* GetCenter(Wm3::Vector3f* outPos) const;
 
     /**
-     * Address: 0x006DE1C0 (FUN_006DE1C0, Moho::CSquad::SetPrioritizedTargetList)
+     * Address: 0x00724810 (FUN_00724810)
+     *
+     * IDA signature:
+     * int __userpurge sub_724810@<eax>(std::vector_EntityCategory *categories@<eax>, Moho::CSquad *this);
      *
      * What it does:
-     * Replaces this squad's prioritized target-category vector (`mCats`) with
-     * the contents of `categorySource`. The fast-path (capacity already large
-     * enough) does an in-place vector assignment; otherwise the existing
-     * storage is destroyed and a fresh buffer is allocated to fit the new
-     * size. Self-assignment is a no-op.
+     * `mCats = categories`: moves `this` to `&mCats` in EAX and calls
+     * `msvc8::vector<EntityCategorySet>::operator=` (0x006DE1C0). The
+     * out-of-line copy has no caller; `CPlatoon::SetPrioritizedTargetList`
+     * (0x00725990, itself inlined into the Lua binding 0x0072E940) inlines it.
      */
-    void SetPrioritizedTargetList(const msvc8::vector<EntityCategorySet>& categorySource);
+    void SetPrioritizedTargetList(const msvc8::vector<EntityCategorySet>& categories);
+
+    /**
+     * Address: 0x00724920 (FUN_00724920)
+     *
+     * What it does:
+     * Builds a new `CSquad` for an archive load and hands it back unowned; its
+     * members are loaded over it afterwards.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
 
     /**
      * Address: 0x0072B200 (FUN_0072B200, Moho::CSquad::MemberDeserialize)
@@ -211,7 +301,7 @@ namespace moho
   public:
     Sim* mSim;                                                // +0x00
     std::uint32_t mPad_0x04;                                  // +0x04 (binary leaves this uninitialised; reserved/unused slot)
-    SEntitySetTemplateUnit mUnits;                            // +0x08 (size 0x28)
+    EntitySetTemplate<Unit> mUnits;                            // +0x08 (size 0x28)
     ESquadClass mSquadClass;                                  // +0x30
     msvc8::string mName;                                      // +0x34 (size 0x1C)
     msvc8::vector<EntityCategorySet> mCats;                   // +0x50 (size 0x10)
@@ -224,139 +314,4 @@ namespace moho
   static_assert(offsetof(CSquad, mCats) == 0x50, "CSquad::mCats offset must be 0x50");
   static_assert(sizeof(CSquad) == 0x60, "CSquad size must be 0x60");
 
-  /**
-   * VFTABLE: 0x00E31B78 (`??_7CSquadSerializer@Moho@@6B@`)
-   *
-   * `Init()`/`Deserialize()`/`Serialize()` are each ICF-shared with
-   * `gpg::SerSaveLoadHelper<Moho::CSquad>`'s own bodies (two vftable-slot
-   * data xrefs land on each address, and IDA independently resolves
-   * Deserialize/Serialize's qualified name as `Moho::CSquadSerializer::`,
-   * not the template's). But the confirmed `__xc_a`-reachable ctor
-   * (0x00BDAC20) installs `CSquadSerializer`'s OWN vtable
-   * (`??_7CSquadSerializer@Moho@@6B@`), not the template's -- and a
-   * distinct `CSquadSerializer@Moho` vtable/RTTI symbol could not exist at
-   * all if this were a pure `using X = SerSaveLoadHelper<T>` alias
-   * (aliases never introduce a new type, let alone a new vtable).
-   * `CSquadSerializer` is therefore a real concrete class, same precedent
-   * as `Rect2iSerializer`/`Box3fSerializer`/`Moho::SPhysBodySerializer` --
-   * not a template instantiation in disguise. (The previous `using`
-   * modeling only checked that the callback bodies matched the template;
-   * it never checked which vtable the live ctor actually installs, which
-   * is what this class-level comment previously got backwards.) Two dead
-   * zero-xref COMDAT duplicate ctors: 0x007249D0 (installs this class's
-   * own vtable, never called) and 0x0072A5C0 (installs the template's
-   * vtable onto this same global, never called either).
-   */
-  class CSquadSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BDAC20 (FUN_00BDAC20, dynamic initializer for the global
-     * `CSquadSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    CSquadSerializer();
-
-    /**
-     * Address: 0x00C00500 (`??1CSquadSerializer@Moho@@QAE@@Z`,
-     * Moho::CSquadSerializer::~CSquadSerializer)
-     *
-     * What it does:
-     * Unlinks this helper node from whatever intrusive list it currently
-     * sits in and restores a self-linked sentinel state.
-     */
-    ~CSquadSerializer();
-
-    /**
-     * Address: 0x007249B0 (FUN_007249B0, Moho::CSquadSerializer::Deserialize)
-     *
-     * What it does:
-     * Forwards archive load flow into `CSquad::MemberDeserialize`.
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x007249C0 (FUN_007249C0, Moho::CSquadSerializer::Serialize)
-     *
-     * What it does:
-     * Forwards archive save flow into `CSquad::MemberSerialize`.
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x0072A5F0 (FUN_0072A5F0, Moho::CSquadSerializer::Init)
-     *
-     * What it does:
-     * Binds load/save callbacks into `CSquad`'s reflected RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mLoadCallback; // +0x0C
-    gpg::RType::save_func_t mSaveCallback; // +0x10
-  };
-
-  static_assert(offsetof(CSquadSerializer, mLoadCallback) == 0x0C, "CSquadSerializer::mLoadCallback offset must be 0x0C");
-  static_assert(offsetof(CSquadSerializer, mSaveCallback) == 0x10, "CSquadSerializer::mSaveCallback offset must be 0x10");
-  static_assert(sizeof(CSquadSerializer) == 0x14, "CSquadSerializer size must be 0x14");
-
-  /**
-   * VFTABLE: 0x00E31B68 (`??_7CSquadConstruct@Moho@@6B@`)
-   *
-   * Same ICF-shared-`Init()`-with-a-dead-template-twin shape as
-   * `CSquadSerializer` above: `Init()` (FUN_0072A570) is shared with
-   * `gpg::SerConstructHelper<Moho::CSquad>::Init()` (confirmed via two
-   * vftable-slot data xrefs into that one address). That template's own
-   * separately-emitted ctor (FUN_0072A540) plus a second dead out-of-line
-   * copy of this class's own ctor (FUN_00724880) both have zero incoming
-   * xrefs and are `skip`; the confirmed `__xc_a`-reachable ctor is
-   * 0x00BDABE0, which installs this class's own vtable.
-   */
-  class CSquadConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BDABE0 (FUN_00BDABE0, dynamic initializer for the global
-     * `CSquadConstruct` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * construct/delete callback fields.
-     */
-    CSquadConstruct();
-
-    /**
-     * Address: 0x00C004D0 (FUN_00C004D0, Moho::CSquadConstruct::~CSquadConstruct)
-     *
-     * What it does:
-     * Unlinks this helper node from whatever intrusive list it currently
-     * sits in and restores a self-linked sentinel state.
-     */
-    ~CSquadConstruct();
-
-    /**
-     * Address: 0x0072A570 (FUN_0072A570, Moho::CSquadConstruct::Init)
-     *
-     * What it does:
-     * Binds the construct/delete callbacks into `CSquad`'s reflected RTTI.
-     * Mirrors the binary's single `!type->mSerConstructFunc` assert (no
-     * separate delete-slot assert), confirmed from raw disassembly.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::construct_func_t mConstructCallback; // +0x0C
-    gpg::RType::delete_func_t mDeleteCallback;         // +0x10
-  };
-
-  static_assert(
-    offsetof(CSquadConstruct, mConstructCallback) == 0x0C, "CSquadConstruct::mConstructCallback offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CSquadConstruct, mDeleteCallback) == 0x10, "CSquadConstruct::mDeleteCallback offset must be 0x10"
-  );
-  static_assert(sizeof(CSquadConstruct) == 0x14, "CSquadConstruct size must be 0x14");
 } // namespace moho

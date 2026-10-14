@@ -110,10 +110,9 @@ namespace moho
     )
     {
       gpg::RType* const resourceType = resource_reflection::ResolveRD3DTextureResourceType();
-
-      boost::weak_ptr<RD3DTextureResource> weakResource{};
-      (void)RES_GetResource(&weakResource, path != nullptr ? path : "", resourceWatcher, resourceType);
-      outTexture = weakResource.lock();
+      outTexture = boost::static_pointer_cast<RD3DTextureResource>(
+        RES_GetResource(path != nullptr ? path : "", resourceWatcher, resourceType)
+      );
       return outTexture;
     }
 
@@ -131,7 +130,7 @@ namespace moho
     {
       outTexture.reset();
       if (textureFactory != nullptr) {
-        textureFactory->LoadImpl(outTexture, path);
+        outTexture = textureFactory->LoadImpl(path);
       }
       return outTexture;
     }
@@ -150,10 +149,8 @@ namespace moho
     {
       EnsureTextureTypeRegistered();
 
-      outPrefetchData.reset();
-      RES_PrefetchResource(&outPrefetchData, path, RD3DTextureResource::sType);
-
-      if (!outPrefetchData) {
+      const PrefetchHandleBase handle = RES_PrefetchResource(path, RD3DTextureResource::sType);
+      if (!handle.mPtr) {
         const msvc8::string errorText = gpg::STR_Printf(
           "Prefetch couldn't find file %s",
           path != nullptr ? path : ""
@@ -161,6 +158,7 @@ namespace moho
         throw std::runtime_error(errorText.c_str());
       }
 
+      outPrefetchData = handle.mPtr;
       return outPrefetchData;
     }
 
@@ -251,18 +249,8 @@ namespace moho
   {
     mMipSkipLevels = mipSkipLevels;
 
-    using TextureResourceList = TDatList<RD3DTextureResource, void>;
-    auto* node = mTextureList.mNext;
-    while (node != &mTextureList) {
-      auto* const next = node->mNext;
-      auto* const textureResource = TextureResourceList::template owner_from_member<
-        RD3DTextureResource,
-        TDatListItem<RD3DTextureResource, void>,
-        &RD3DTextureResource::mResources>(node);
-      if (textureResource != nullptr) {
-        textureResource->ReloadTexture();
-      }
-      node = next;
+    for (auto* textureResource : mTextureList.owners_member<RD3DTextureResource, &RD3DTextureResource::mResources>()) {
+      textureResource->ReloadTexture();
     }
   }
 
@@ -746,16 +734,7 @@ namespace moho
       return;
     }
 
-    using TextureResourceList = TDatList<RD3DTextureResource, void>;
-    for (auto* node = mTextureList.mNext; node != &mTextureList; node = node->mNext) {
-      auto* const textureResource = TextureResourceList::template owner_from_member<
-        RD3DTextureResource,
-        TDatListItem<RD3DTextureResource, void>,
-        &RD3DTextureResource::mResources>(node);
-      if (textureResource == nullptr) {
-        continue;
-      }
-
+    for (auto* textureResource : mTextureList.owners_member<RD3DTextureResource, &RD3DTextureResource::mResources>()) {
       if (_stricmp(eventPath, textureResource->mContext.location_.c_str()) == 0) {
         gpg::Logf("Reloading texture: %s", eventPath);
         textureResource->ReloadTexture();
@@ -856,17 +835,8 @@ namespace moho
     }
 
     int totalBytes = 0;
-    using TextureResourceList = TDatList<RD3DTextureResource, void>;
 
-    for (auto* node = mTextureList.mNext; node != &mTextureList; node = node->mNext) {
-      auto* const textureResource = TextureResourceList::template owner_from_member<
-        RD3DTextureResource,
-        TDatListItem<RD3DTextureResource, void>,
-        &RD3DTextureResource::mResources>(node);
-      if (textureResource == nullptr) {
-        continue;
-      }
-
+    for (auto* textureResource : mTextureList.owners_member<RD3DTextureResource, &RD3DTextureResource::mResources>()) {
       const int byteCount =
         static_cast<int>(textureResource->mContext.dataEnd_ - textureResource->mContext.dataBegin_);
       if (byteCount == 0) {
@@ -911,36 +881,25 @@ namespace moho
    */
   void CD3DDeviceResources::InitResources(const bool devInit)
   {
-    using VertexSheetList = TDatList<CD3DVertexSheet, void>;
-    using IndexSheetList = TDatList<CD3DIndexSheet, void>;
-    using RenderTargetList = TDatList<CD3DRenderTarget, void>;
-    using DepthStencilList = TDatList<CD3DDepthStencil, void>;
-    using DynamicTextureSheetList = TDatList<CD3DDynamicTextureSheet, void>;
-
-    for (auto* node = mVertexSheet2.mLink.mNext; node != &mVertexSheet2.mLink; node = node->mNext) {
-      VertexSheetList::template owner_from_member_node<CD3DVertexSheet, &CD3DVertexSheet::mLink>(node)
-        ->CreateOwnedStreamBuffers();
+    for (auto* vertexSheet : mVertexSheet2.mLink.owners_member<CD3DVertexSheet, &CD3DVertexSheet::mLink>()) {
+      vertexSheet->CreateOwnedStreamBuffers();
     }
 
-    for (auto* node = mIndexSheet2.mLink.mNext; node != &mIndexSheet2.mLink; node = node->mNext) {
-      IndexSheetList::template owner_from_member_node<CD3DIndexSheet, &CD3DIndexSheet::mLink>(node)->CreateBuffer();
+    for (auto* indexSheet : mIndexSheet2.mLink.owners_member<CD3DIndexSheet, &CD3DIndexSheet::mLink>()) {
+      indexSheet->CreateBuffer();
     }
 
-    for (auto* node = mRenderTarget.mLink.mNext; node != &mRenderTarget.mLink; node = node->mNext) {
-      RenderTargetList::template owner_from_member_node<CD3DRenderTarget, &CD3DRenderTarget::mLink>(node)
-        ->RecreateFromContext();
+    for (auto* renderTarget : mRenderTarget.mLink.owners_member<CD3DRenderTarget, &CD3DRenderTarget::mLink>()) {
+      renderTarget->RecreateFromContext();
     }
 
-    for (auto* node = mDepthStencil.mLink.mNext; node != &mDepthStencil.mLink; node = node->mNext) {
-      DepthStencilList::template owner_from_member_node<CD3DDepthStencil, &CD3DDepthStencil::mLink>(node)
-        ->RecreateFromContext();
+    for (auto* depthStencil : mDepthStencil.mLink.owners_member<CD3DDepthStencil, &CD3DDepthStencil::mLink>()) {
+      depthStencil->RecreateFromContext();
     }
 
-    for (auto* node = mTextureSheet.mLink.mNext; node != &mTextureSheet.mLink; node = node->mNext) {
-      DynamicTextureSheetList::template owner_from_member_node<
-        CD3DDynamicTextureSheet,
-        &CD3DDynamicTextureSheet::mLink>(node)
-        ->CreateTexture();
+    for (auto* dynamicSheet :
+         mTextureSheet.mLink.owners_member<CD3DDynamicTextureSheet, &CD3DDynamicTextureSheet::mLink>()) {
+      dynamicSheet->CreateTexture();
     }
 
     if (devInit) {

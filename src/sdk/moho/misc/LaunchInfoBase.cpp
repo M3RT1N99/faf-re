@@ -14,6 +14,7 @@
 #include "gpg/core/utils/Global.h"
 #include "moho/sim/STIMap.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/reflection/Reflection.h"
 
 namespace
 {
@@ -98,12 +99,6 @@ namespace
   moho::ArmyLaunchInfoTypeInfo gArmyLaunchInfoTypeInfo;
   ArmyLaunchInfoVectorTypeInfo gArmyLaunchInfoVectorTypeInfo;
   moho::LaunchInfoBaseTypeInfo gLaunchInfoBaseTypeInfo;
-
-  // Address: 0x010ABED0 -- process-global `LaunchInfoBaseSerializer` singleton.
-  moho::LaunchInfoBaseSerializer gLaunchInfoBaseSerializer;
-
-  // Address: 0x010ABD74 -- process-global `ArmyLaunchInfoSerializer` singleton.
-  moho::ArmyLaunchInfoSerializer gArmyLaunchInfoSerializer;
 
   // Address: 0x010ABE54 -- process-global `LaunchInfoNewSerializer` singleton.
   moho::LaunchInfoNewSerializer gLaunchInfoNewSerializer;
@@ -660,62 +655,6 @@ namespace
     throw gpg::SerializationError(message ? message : "");
   }
 
-  /**
-   * Address: 0x00544180 (FUN_00544180)
-   *
-   * What it does:
-   * Loads LaunchInfoBase fields in archive order:
-   * game-mods text, scenario-info text, army launch info, command-source
-   * control lanes, language, and cheat flag.
-   */
-  void LoadLaunchInfoBase(gpg::ReadArchive* archive, int objectPtr, int, gpg::RRef*)
-  {
-    auto* const info = reinterpret_cast<moho::LaunchInfoBase*>(objectPtr);
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(info != nullptr);
-    if (!archive || !info) {
-      return;
-    }
-
-    archive->ReadString(&info->mGameMods);
-    archive->ReadString(&info->mScenarioInfo);
-
-    gpg::RType* const vectorType = ResolveArmyLaunchInfoVectorType();
-    archive->Read(vectorType, &info->mArmyLaunchInfo, NullOwnerRef());
-
-    archive->ReadInt(&info->mCommandSources.v4);
-    archive->ReadInt(&info->mCommandSources.mOriginalSource);
-    archive->ReadString(&info->mLanguage);
-    archive->ReadBool(&info->mCheatsEnabled);
-  }
-
-  /**
-   * Address: 0x00544220 (FUN_00544220)
-   *
-   * What it does:
-   * Saves LaunchInfoBase fields in the same order as the load callback.
-   */
-  void SaveLaunchInfoBase(gpg::WriteArchive* archive, int objectPtr, int, gpg::RRef*)
-  {
-    auto* const info = reinterpret_cast<moho::LaunchInfoBase*>(objectPtr);
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(info != nullptr);
-    if (!archive || !info) {
-      return;
-    }
-
-    archive->WriteString(&info->mGameMods);
-    archive->WriteString(&info->mScenarioInfo);
-
-    gpg::RType* const vectorType = ResolveArmyLaunchInfoVectorType();
-    archive->Write(vectorType, &info->mArmyLaunchInfo, NullOwnerRef());
-
-    archive->WriteInt(info->mCommandSources.v4);
-    archive->WriteInt(info->mCommandSources.mOriginalSource);
-    archive->WriteString(&info->mLanguage);
-    archive->WriteBool(info->mCheatsEnabled);
-  }
-
   bool gLaunchInfoBaseTypeRegistered = false;
 
   template <typename TShared>
@@ -749,154 +688,6 @@ namespace
     ReleaseSharedOwnerControlBlockOnly(shared);
   }
 
-  /**
-   * Address: 0x00542EA0 (FUN_00542EA0)
-   */
-  [[maybe_unused]] std::int32_t* ClearIntPairLanesPrimary(std::int32_t* const lanes)
-  {
-    lanes[0] = 0;
-    lanes[1] = 0;
-    return lanes;
-  }
-
-  /**
-   * Address: 0x00542EB0 (FUN_00542EB0)
-   */
-  [[maybe_unused]] std::int32_t* ClearIntPairLanesSecondary(std::int32_t* const lanes)
-  {
-    lanes[0] = 0;
-    lanes[1] = 0;
-    return lanes;
-  }
-
-  /**
-   * Address: 0x00545230 (FUN_00545230)
-   * Address: 0x00545250 (FUN_00545250)
-   *
-   * What it does:
-   * Copies one `ArmyLaunchInfo::mUnitSources` payload lane from `source` into
-   * `destination`, preserving the destination reserved meta-word lane.
-   */
-  [[nodiscard]] moho::ArmyLaunchInfo* CopyArmyLaunchInfoUnitSourcesLane(
-    const moho::ArmyLaunchInfo* const source,
-    moho::ArmyLaunchInfo* const destination
-  )
-  {
-    destination->mUnitSources.mFirstWordIndex = source->mUnitSources.mFirstWordIndex;
-    (void)gpg::core::legacy::CopyFrom(
-      destination->mUnitSources.mWords,
-      source->mUnitSources.mWords,
-      destination->mUnitSources.mWords.originalVec_
-    );
-    return destination;
-  }
-
-  /**
-   * Address: 0x005450C0 (FUN_005450C0)
-   *
-   * What it does:
-   * Copies one `ArmyLaunchInfo::mUnitSources` payload lane from `source` into
-   * every destination object in `[destinationBegin, destinationEnd)`.
-   */
-  [[maybe_unused]] void CopyArmyLaunchInfoUnitSourcesRangeAssign(
-    moho::ArmyLaunchInfo* const destinationBegin,
-    moho::ArmyLaunchInfo* const destinationEnd,
-    const moho::ArmyLaunchInfo* const source
-  )
-  {
-    for (moho::ArmyLaunchInfo* cursor = destinationBegin; cursor != destinationEnd; ++cursor) {
-      (void)CopyArmyLaunchInfoUnitSourcesLane(source, cursor);
-    }
-  }
-
-  /**
-   * Address: 0x00544730 (FUN_00544730)
-   *
-   * What it does:
-   * Alternate register/stack adapter lane for one
-   * `ArmyLaunchInfo::mUnitSources` range-assignment call.
-   */
-  [[maybe_unused]] void CopyArmyLaunchInfoUnitSourcesRangeAssignAdapter(
-    moho::ArmyLaunchInfo* const destinationBegin,
-    moho::ArmyLaunchInfo* const destinationEnd,
-    const moho::ArmyLaunchInfo* const source
-  )
-  {
-    CopyArmyLaunchInfoUnitSourcesRangeAssign(destinationBegin, destinationEnd, source);
-  }
-
-  /**
-   * Address: 0x00544C20 (FUN_00544C20)
-   *
-   * IDA signature:
-   * int __usercall sub_544C20@<eax>(int result@<eax>, int a2@<ecx>, int a3);
-   *
-   * What it does:
-   * Copy-assigns the half-open range `[sourceBegin, sourceEnd)` onto the
-   * already-constructed destination elements starting at `destinationBegin`,
-   * one `mUnitSources` lane per step, returning the destination cursor one past
-   * the last element written.
-   *
-   * This is the `T = moho::ArmyLaunchInfo` emission of the MSVC8 `std::copy`
-   * element loop. Assignment, not construction: the destination `mWords` lanes
-   * stay bound to the storage they already own.
-   */
-  [[nodiscard]] moho::ArmyLaunchInfo* CopyAssignArmyLaunchInfoRange(
-    const moho::ArmyLaunchInfo* const sourceBegin,
-    const moho::ArmyLaunchInfo* const sourceEnd,
-    moho::ArmyLaunchInfo* const destinationBegin
-  )
-  {
-    moho::ArmyLaunchInfo* destinationCursor = destinationBegin;
-    for (const moho::ArmyLaunchInfo* sourceCursor = sourceBegin; sourceCursor != sourceEnd; ++sourceCursor) {
-      (void)CopyArmyLaunchInfoUnitSourcesLane(sourceCursor, destinationCursor);
-      ++destinationCursor;
-    }
-    return destinationCursor;
-  }
-
-  // Defined below, next to the other per-type ArmyLaunchInfo range lanes.
-  /**
-   * Address: 0x00542CD0 (FUN_00542CD0)
-   *
-   * What it does:
-   * Performs copy-style assignment of ArmyLaunchInfo vectors while preserving
-   * destination self-assignment behavior.
-   */
-  [[nodiscard]] ArmyLaunchInfoVector& CopyAssignArmyLaunchInfoVector(
-    ArmyLaunchInfoVector& destination, const ArmyLaunchInfoVector& source
-  )
-  {
-    if (&destination == &source) {
-      return destination;
-    }
-
-    const std::size_t sourceSize = source.size();
-    if (sourceSize == 0u) {
-      // 0x00542CF3: an empty source clears the destination outright.
-      (void)destination.erase(destination.begin(), destination.end());
-      return destination;
-    }
-
-    if (sourceSize <= destination.size()) {
-      // 0x00542D25: assign onto the live elements, then drop the surplus tail.
-      moho::ArmyLaunchInfo* const assignedEnd =
-        CopyAssignArmyLaunchInfoRange(source.begin(), source.end(), destination.begin());
-      (void)destination.erase(assignedEnd, destination.end());
-      return destination;
-    }
-
-    // 0x00542D75 / 0x00542DC9: both grow lanes finish through the per-type
-    // uninitialized-copy emission (FUN_005444B0 and its calling-convention
-    // siblings) -- now cited on `msvc8::vector<moho::ArmyLaunchInfo>::
-    // uninit_copy_n` (legacy/containers/Vector.h). This assignment is that
-    // citation's real source-level instantiation site: growing `destination`
-    // to `source`'s size placement-constructs the new tail via
-    // `ArmyLaunchInfo`'s compiler-synthesized copy constructor, matching the
-    // binary's per-element `BVIntSet` rebuild exactly.
-    destination = source;
-    return destination;
-  }
 
   /**
    * Address: 0x005439E0 (FUN_005439E0)
@@ -950,96 +741,9 @@ namespace
   // `msvc8::vector<moho::ArmyLaunchInfo>::uninit_copy_n` /
   // `copy_or_move_assign` (legacy/containers/Vector.h) per RULE ONE; see the
   // Address: citations on those members for the full evidence chain. The
-  // real source-level instantiation site is this file's own
-  // `CopyAssignArmyLaunchInfoVector` grow lane (`destination = source;`,
-  // below).
+  // real source-level instantiation site is `LaunchInfoNew`'s clone path
+  // (`createdInfo->mArmyLaunchInfo = mArmyLaunchInfo;`).
 
-  [[nodiscard]] moho::ArmyLaunchInfo* CopyArmyLaunchInfoRangeBackwardCore(
-    moho::ArmyLaunchInfo* destinationEnd,
-    const moho::ArmyLaunchInfo* sourceEnd,
-    const moho::ArmyLaunchInfo* const sourceBegin
-  )
-  {
-    const moho::ArmyLaunchInfo* read = sourceEnd;
-    moho::ArmyLaunchInfo* write = destinationEnd;
-    while (read != sourceBegin) {
-      --read;
-      --write;
-      write->mUnitSources.mFirstWordIndex = read->mUnitSources.mFirstWordIndex;
-      (void)gpg::core::legacy::CopyFrom(
-        write->mUnitSources.mWords,
-        read->mUnitSources.mWords,
-        write->mUnitSources.mWords.originalVec_
-      );
-    }
-    return write;
-  }
-
-  /**
-   * Address: 0x00544740 (FUN_00544740)
-   *
-   * What it does:
-   * Backward-copy adapter lane for one contiguous ArmyLaunchInfo range.
-   */
-  [[nodiscard]] moho::ArmyLaunchInfo* CopyArmyLaunchInfoRangeBackwardAdapterA(
-    moho::ArmyLaunchInfo* const destinationEnd,
-    const moho::ArmyLaunchInfo* const sourceEnd,
-    const moho::ArmyLaunchInfo* const sourceBegin
-  )
-  {
-    return CopyArmyLaunchInfoRangeBackwardCore(destinationEnd, sourceEnd, sourceBegin);
-  }
-
-  /**
-   * Address: 0x00545100 (FUN_00545100, ArmyLaunchInfo backward-copy adapter lane B)
-   *
-   * IDA signature:
-   * int __usercall sub_5455B0@<eax>(int result@<eax>, int a2@<ecx>, int a3);
-   *
-   * What it does:
-   * Alternate backward-copy adapter lane for one contiguous ArmyLaunchInfo
-   * range. Both adapter lanes A/B share the same core; keeping one named
-   * lane per binary address preserves the 2-caller xref shape.
-   */
-  [[nodiscard]] moho::ArmyLaunchInfo* CopyArmyLaunchInfoRangeBackwardAdapterB(
-    moho::ArmyLaunchInfo* const destinationEnd,
-    const moho::ArmyLaunchInfo* const sourceEnd,
-    const moho::ArmyLaunchInfo* const sourceBegin
-  )
-  {
-    return CopyArmyLaunchInfoRangeBackwardCore(destinationEnd, sourceEnd, sourceBegin);
-  }
-
-  using ArmyLaunchInfoBackwardCopyAdapter = moho::ArmyLaunchInfo* (*)(
-    moho::ArmyLaunchInfo*, const moho::ArmyLaunchInfo*, const moho::ArmyLaunchInfo*
-  );
-
-  // Publishes both recovered backward-copy adapter lanes so neither tokenized
-  // entry at 0x00544740 / 0x00545100 becomes dead code. The table mirrors the
-  // original binary's two-lane shape: one lane per caller site.
-  constexpr std::array<ArmyLaunchInfoBackwardCopyAdapter, 2> kArmyLaunchInfoBackwardCopyAdapters = {
-    &CopyArmyLaunchInfoRangeBackwardAdapterA,
-    &CopyArmyLaunchInfoRangeBackwardAdapterB,
-  };
-
-  /**
-   * What it does:
-   * Dispatch wrapper that selects one of the two binary-visible backward-copy
-   * adapter lanes by index (0 = 0x00544740, 1 = 0x00545100) and forwards the
-   * range arguments.
-   */
-  [[nodiscard]] moho::ArmyLaunchInfo* CopyArmyLaunchInfoRangeBackward(
-    const std::size_t adapterIndex,
-    moho::ArmyLaunchInfo* const destinationEnd,
-    const moho::ArmyLaunchInfo* const sourceEnd,
-    const moho::ArmyLaunchInfo* const sourceBegin
-  )
-  {
-    const std::size_t boundedIndex = (adapterIndex < kArmyLaunchInfoBackwardCopyAdapters.size())
-      ? adapterIndex
-      : 0u;
-    return kArmyLaunchInfoBackwardCopyAdapters[boundedIndex](destinationEnd, sourceEnd, sourceBegin);
-  }
 
   /**
    * Address: 0x00542270 (FUN_00542270)
@@ -1125,56 +829,6 @@ namespace moho
     size_ = sizeof(ArmyLaunchInfo);
     gpg::RType::Init();
     Finish();
-  }
-
-  /**
-   * Address: 0x00BC9460 (FUN_00BC9460, dynamic initializer for the global
-   * `ArmyLaunchInfoSerializer` singleton)
-   */
-  ArmyLaunchInfoSerializer::ArmyLaunchInfoSerializer()
-    : mDeserialize(&ArmyLaunchInfoSerializer::Deserialize)
-    , mSerialize(&ArmyLaunchInfoSerializer::Serialize)
-  {}
-
-  /**
-   * Address: 0x00BF3F90 (FUN_00BF3F90, Moho::ArmyLaunchInfoSerializer::~ArmyLaunchInfoSerializer)
-   */
-  ArmyLaunchInfoSerializer::~ArmyLaunchInfoSerializer() = default;
-
-  /**
-   * Address: 0x005421C0 (FUN_005421C0, Moho::ArmyLaunchInfoSerializer::Deserialize)
-   */
-  void ArmyLaunchInfoSerializer::Deserialize(gpg::ReadArchive* const, const int, const int, gpg::RRef* const)
-  {
-  }
-
-  /**
-   * Address: 0x005421D0 (FUN_005421D0, Moho::ArmyLaunchInfoSerializer::Serialize)
-   */
-  void ArmyLaunchInfoSerializer::Serialize(gpg::WriteArchive* const, const int, const int, gpg::RRef* const)
-  {
-  }
-
-  /**
-   * Address: 0x00542EF0 (FUN_00542EF0, Moho::ArmyLaunchInfoSerializer::Init)
-   */
-  void ArmyLaunchInfoSerializer::Init()
-  {
-    gpg::RType* type = ArmyLaunchInfo::sType;
-    if (!type) {
-      type = gpg::LookupRType(typeid(ArmyLaunchInfo));
-      ArmyLaunchInfo::sType = type;
-    }
-
-    GPG_ASSERT(type != nullptr);
-    if (!type) {
-      return;
-    }
-
-    GPG_ASSERT(type->serLoadFunc_ == nullptr);
-    type->serLoadFunc_ = mDeserialize;
-    GPG_ASSERT(type->serSaveFunc_ == nullptr);
-    type->serSaveFunc_ = mSerialize;
   }
 
   /**
@@ -1392,7 +1046,8 @@ namespace moho
     LaunchInfoNew* const createdInfo = new LaunchInfoNew();
     createdInfo->mGameMods = mGameMods;
     createdInfo->mScenarioInfo = mScenarioInfo;
-    (void)CopyAssignArmyLaunchInfoVector(createdInfo->mArmyLaunchInfo, mArmyLaunchInfo);
+    // FUN_00542CD0 is the operator= emission this assignment instantiates.
+    createdInfo->mArmyLaunchInfo = mArmyLaunchInfo;
     createdInfo->mCommandSources.v4 = mCommandSources.v4;
     createdInfo->mCommandSources.mOriginalSource = mCommandSources.mOriginalSource;
     createdInfo->mLanguage = mLanguage;
@@ -1503,67 +1158,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00542550 (FUN_00542550, Moho::LaunchInfoBaseSerializer::Deserialize)
-   *
-   * What it does:
-   * Archive callback thunk forwarding into LaunchInfoBase load body.
-   */
-  void LaunchInfoBaseSerializer::Deserialize(
-    gpg::ReadArchive* const archive,
-    const int objectPtr,
-    const int version,
-    gpg::RRef* const ownerRef
-  )
-  {
-    LoadLaunchInfoBase(archive, objectPtr, version, ownerRef);
-  }
-
-  /**
-   * Address: 0x00542560 (FUN_00542560, Moho::LaunchInfoBaseSerializer::Serialize)
-   *
-   * What it does:
-   * Archive callback thunk forwarding into LaunchInfoBase save body.
-   */
-  void LaunchInfoBaseSerializer::Serialize(
-    gpg::WriteArchive* const archive,
-    const int objectPtr,
-    const int version,
-    gpg::RRef* const ownerRef
-  )
-  {
-    SaveLaunchInfoBase(archive, objectPtr, version, ownerRef);
-  }
-
-  /**
-   * Address: 0x00543190 (FUN_00543190, sub_543190)
-   *
-   * What it does:
-   * Registers load/save callbacks into LaunchInfoBase RTTI.
-   */
-  void LaunchInfoBaseSerializer::Init()
-  {
-    gpg::RType* const type = LaunchInfoBase::StaticGetClass();
-    GPG_ASSERT(type->serLoadFunc_ == nullptr);
-    type->serLoadFunc_ = mSerLoadFunc;
-    GPG_ASSERT(type->serSaveFunc_ == nullptr);
-    type->serSaveFunc_ = mSerSaveFunc;
-  }
-
-  /**
-   * Address: 0x00BC94C0 (FUN_00BC94C0, dynamic initializer for the global
-   * `LaunchInfoBaseSerializer` singleton)
-   */
-  LaunchInfoBaseSerializer::LaunchInfoBaseSerializer()
-    : mSerLoadFunc(&LaunchInfoBaseSerializer::Deserialize)
-    , mSerSaveFunc(&LaunchInfoBaseSerializer::Serialize)
-  {}
-
-  /**
-   * Address: 0x00BF4020 (FUN_00BF4020, Moho::LaunchInfoBaseSerializer::~LaunchInfoBaseSerializer)
-   */
-  LaunchInfoBaseSerializer::~LaunchInfoBaseSerializer() = default;
-
-  /**
    * Address: 0x00BC9500 (FUN_00BC9500, register_LaunchInfoNewTypeInfo)
    */
   void register_LaunchInfoNewTypeInfo()
@@ -1650,3 +1244,100 @@ GPG_PREREGISTER_INIT(preregister_ArmyLaunchInfoVectorTypeStartup_05cb74, moho::p
 
 GPG_PREREGISTER_INIT(RegisterArmyLaunchInfoTypeInfoStartup_05cb74, RegisterArmyLaunchInfoTypeInfoStartup)
 GPG_PREREGISTER_INIT(EnsureLaunchInfoBaseTypeRegistered_05cb74, EnsureLaunchInfoBaseTypeRegistered)
+
+namespace moho
+{
+  /**
+   * Address: 0x00544180 (FUN_00544180)
+   *
+   * What it does:
+   * Loads LaunchInfoBase fields in archive order:
+   * game-mods text, scenario-info text, army launch info, command-source
+   * control lanes, language, and cheat flag.
+   */
+  void LaunchInfoBase::MemberDeserialize(gpg::ReadArchive* const archive)
+  {
+    GPG_ASSERT(archive != nullptr);
+    if (!archive) {
+      return;
+    }
+
+    archive->ReadString(&mGameMods);
+    archive->ReadString(&mScenarioInfo);
+
+    gpg::RType* const vectorType = ResolveArmyLaunchInfoVectorType();
+    archive->Read(vectorType, &mArmyLaunchInfo, NullOwnerRef());
+
+    archive->ReadInt(&mCommandSources.v4);
+    archive->ReadInt(&mCommandSources.mOriginalSource);
+    archive->ReadString(&mLanguage);
+    archive->ReadBool(&mCheatsEnabled);
+  }
+
+  /**
+   * Address: 0x00544220 (FUN_00544220)
+   *
+   * What it does:
+   * Saves LaunchInfoBase fields in the same order as the load callback.
+   */
+  void LaunchInfoBase::MemberSerialize(gpg::WriteArchive* const archive)
+  {
+    GPG_ASSERT(archive != nullptr);
+    if (!archive) {
+      return;
+    }
+
+    archive->WriteString(&mGameMods);
+    archive->WriteString(&mScenarioInfo);
+
+    gpg::RType* const vectorType = ResolveArmyLaunchInfoVectorType();
+    archive->Write(vectorType, &mArmyLaunchInfo, NullOwnerRef());
+
+    archive->WriteInt(mCommandSources.v4);
+    archive->WriteInt(mCommandSources.mOriginalSource);
+    archive->WriteString(&mLanguage);
+    archive->WriteBool(mCheatsEnabled);
+  }
+} // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<LaunchInfoBase>`, vtable 0x00E16EE0.
+   *
+   * Address: 0x00BC94C0 (FUN_00BC94C0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF4020 (FUN_00BF4020 -- the global's destructor.)
+   * Address: 0x00543190 (FUN_00543190 -- `Init`.)
+   * Address: 0x00542550 (FUN_00542550 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00542560 (FUN_00542560 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct LaunchInfoBaseSerializer : gpg::SerSaveLoadHelper<LaunchInfoBase>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010ABED0 -- process-global `LaunchInfoBaseSerializer` singleton.
+  moho::LaunchInfoBaseSerializer gLaunchInfoBaseSerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<ArmyLaunchInfo>`, vtable 0x00E16E5C.
+   *
+   * Address: 0x00BC9460 (FUN_00BC9460 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF3F90 (FUN_00BF3F90 -- the global's destructor.)
+   * Address: 0x00542EF0 (FUN_00542EF0 -- `Init`.)
+   * Address: 0x005421C0 (FUN_005421C0 -- `Deserialize`, `MemberDeserialize` inlined.)
+   * Address: 0x005421D0 (FUN_005421D0 -- `Serialize`, `MemberSerialize` inlined.)
+   */
+  struct ArmyLaunchInfoSerializer : gpg::SerSaveLoadHelper<ArmyLaunchInfo>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010ABD74 -- process-global `ArmyLaunchInfoSerializer` singleton.
+  moho::ArmyLaunchInfoSerializer gArmyLaunchInfoSerializer;
+} // namespace

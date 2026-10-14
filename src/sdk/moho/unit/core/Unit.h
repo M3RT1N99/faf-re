@@ -25,7 +25,6 @@
 #include "moho/ai/IAiFormationDB.h"
 #include "moho/containers/TDatList.h"
 #include "moho/entity/Entity.h"
-#include "moho/sim/ArmyUnitSet.h"
 #include "moho/entity/EntityCategoryReflection.h"
 #include "moho/misc/WeakPtr.h"
 #include "Wm3Vector3.h"
@@ -57,7 +56,8 @@ namespace moho
   class CFormationInstance;
   class IFormationInstance;
   class Unit;
-  struct SEntitySetTemplateUnit;
+  template <class T>
+  class EntitySetTemplate;
   class IAiBuilder;
   class IAiNavigator;
   class IAiSteering;
@@ -234,6 +234,22 @@ namespace moho
    */
   struct SInfoCache
   {
+    /**
+     * Address: 0x006B0580 (FUN_006B0580)
+     *
+     * What it does:
+     * Saves this object's members.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef) const;
+
+    /**
+     * Address: 0x006B04B0 (FUN_006B04B0)
+     *
+     * What it does:
+     * Loads this object's members.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
     // Address: cached RTTI lane read/written by
     // `SInfoCacheSerializer::Init` (0x006AE810); see
     // `moho/unit/core/SInfoCacheReflection.cpp`.
@@ -718,7 +734,7 @@ namespace moho
      * What it does:
      * Deserializes runtime `Unit` state lanes for the given archive version.
      */
-    static void MemberDeserialize(gpg::ReadArchive* archive, Unit* unit, int version);
+    void MemberDeserialize(gpg::ReadArchive* archive, int version);
 
     /**
      * Address: 0x006B33A0 (FUN_006B33A0, Moho::Unit::MemberSerialize)
@@ -726,7 +742,7 @@ namespace moho
      * What it does:
      * Serializes runtime `Unit` state lanes for the given archive version.
      */
-    static void MemberSerialize(gpg::WriteArchive* archive, Unit* unit, int version);
+    void MemberSerialize(gpg::WriteArchive* archive, int version);
 
     /**
      * Address: 0x006AD5D0 (FUN_006AD5D0, ?SerEconomyEvents@Unit@Moho@@AAEXAAVReadArchive@gpg@@H@Z)
@@ -1018,7 +1034,7 @@ namespace moho
      * Gathers nearby non-mobile same-army same-layer structures and appends
      * those whose skirt rectangles overlap `unit`.
      */
-    static SEntitySetTemplateUnit* CollectAllOverlapping(SEntitySetTemplateUnit* outSet, Unit* unit);
+    static EntitySetTemplate<Unit>* CollectAllOverlapping(EntitySetTemplate<Unit>* outSet, Unit* unit);
 
     /**
      * Address: 0x006A7E00 (FUN_006A7E00, ?LookForStructureRebuilder@Unit@Moho@@QAEXXZ)
@@ -2018,7 +2034,7 @@ namespace moho
     char pad_04F4[4];                                    // 0x04F4
     /// The units guarding this one: an `EntitySetTemplate<Unit>` (the serializer's type), kept in
     /// entity-id order by the set's `Add` 0x0057DDD0 / `Remove` 0x005E8960.
-    SEntitySetTemplateUnit GuardedByList; // 0x04F8
+    EntitySetTemplate<Unit> GuardedByList; // 0x04F8
     IFormationInstance* GuardFormation;                  // 0x0520
     bool mNeedsKillCleanup;            // 0x0524: tested in Sim::AdvanceBeat, cleared by Unit::KillCleanup (0x006A8790)
     char pad_0525[0x03];               // 0x0525
@@ -2064,7 +2080,7 @@ namespace moho
      *   and container layout (12-byte `{proxy,_Myhead,_Mysize}` triplet)
      *   match `msvc8::map<msvc8::string,float>` exactly -- see
      *   `legacy/containers/Map.h`'s class doc comment for the shared layout
-     *   derivation (confirmed independently via `Moho::CCommandDb::commands`).
+     *   derivation (confirmed independently via `Moho::CCommandDB::commands`).
      */
     msvc8::map<msvc8::string, float> ArmorMultipliers; // 0x0568
     gpg::DList<CEconomyEvent> mEconomyEventListHead; // 0x0574

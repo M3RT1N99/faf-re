@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <new>
@@ -452,6 +453,47 @@ namespace moho
       instance->inverseResistanceSq = instance->inverseResistance * instance->inverseResistance;
     }
 
+    // TEMPORARY PROBE -- attached-emitter triage: the exact instances handed
+    // to the GPU. Gated to particles with a real velocity vector so idle
+    // at-rest smoke does not consume the budget; the in-flight exhaust dir is
+    // the value that decides whether the sim rotated the local velocity
+    // through the attach matrix. Delete when resolved.
+    {
+      static int sProbeUpload = 0;
+      static int sProbeUploadSeen = 0;
+      if (sProbeUpload < 30) {
+        ++sProbeUploadSeen;
+        for (std::size_t probeIdx = 0U; probeIdx < maxUploadCount; ++probeIdx) {
+          const SWorldParticle& candidate = pendingParticles[probeIdx];
+          const float dirLenSq =
+            (candidate.mDir.x * candidate.mDir.x) + (candidate.mDir.y * candidate.mDir.y) +
+            (candidate.mDir.z * candidate.mDir.z);
+          if (dirLenSq <= 0.001f) {
+            continue;
+          }
+          if ((sProbeUploadSeen % 100) != 0) {
+            break;
+          }
+          std::FILE* const sink = std::fopen("faf_diag.log", "a");
+          if (sink != nullptr) {
+            ++sProbeUpload;
+            std::fprintf(
+              sink,
+              "[FXATTACH] upload n=%d tag=%s pos=(%.1f,%.1f,%.1f) dir=(%.2f,%.2f,%.2f) "
+              "interop=%.3f life=%.1f frameDelta=%.3f\n",
+              sProbeUpload,
+              candidate.mTypeTag.c_str(),
+              candidate.mPos.x, candidate.mPos.y, candidate.mPos.z,
+              candidate.mDir.x, candidate.mDir.y, candidate.mDir.z,
+              candidate.mInterop, candidate.mLifetime, frameDelta
+            );
+            std::fclose(sink);
+          }
+          break;
+        }
+      }
+    }
+
     workItem.mRenderStartIndex += static_cast<std::uint32_t>(maxUploadCount);
     // `erase(first, last)` (0x004956B0, cited on Vector.h): the uploaded prefix goes.
     (void)pendingParticles.erase(pendingParticles.begin(), pendingParticles.begin() + maxUploadCount);
@@ -718,10 +760,12 @@ namespace moho
     SWorldTrail* const trailEnd = pendingTrails.begin() + maxUploadCount;
 
     for (SWorldTrail* trail = pendingTrails.begin(); trail != trailEnd; ++trail) {
-      // The work-item interval opens at the older of the two ends and runs for
-      // one frame past the segment's lifetime.
+      // The work-item interval opens at the older of the two ends and runs
+      // one frame past the segment's lifetime. The binary's constant at
+      // 0x00DFEB0C is 2.0f: the interval is `mLifetime + 2`, not `+ 1`
+      // (0x00493EA2: `movss xmm0, [trail+0x38]; addss xmm0, [0xDFEB0C]`).
       const float beginFrame = std::max(trail->mStartAge, trail->mEndAge) + frameDelta;
-      const float lifeFrames = trail->mLifetime + 1.0f;
+      const float lifeFrames = trail->mLifetime + 2.0f;
       (void)AppendInterval(workItem, beginFrame, lifeFrames);
 
       // Age the segment by this frame before it is packed: both ribbon ends and

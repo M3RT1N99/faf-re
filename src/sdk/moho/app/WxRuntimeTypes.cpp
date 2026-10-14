@@ -59,13 +59,6 @@
 #if !defined(_MSC_VER)
 #include "platform/Atomic32.h"
 #endif
-#include "gpg/gal/backends/d3d9/RenderTargetD3D9.hpp" // TEMPORARY PROBE (do not commit)
-extern "C" int FafProbeFrameSeq(); extern "C" int FafProbeFrameDiag(); // TEMPORARY PROBE (do not commit)
-namespace gpg::gal
-{
-  // TEMPORARY PROBE (do not commit): defined in D3D9Interfaces.cpp.
-  long DebugSaveSurfaceToFileA(const char* filePath, unsigned int fileFormat, void* sourceSurface);
-}
 #include "moho/render/d3d/ShaderVar.h"
 #include "moho/render/textures/CD3DDynamicTextureSheet.h"
 #include "moho/misc/ID3DDeviceResources.h"
@@ -2538,7 +2531,7 @@ namespace
     using moho::CD3DBatchTexture;
     using moho::CD3DPrimBatcher;
     using moho::SBandwidthUsageSeries;
-    using moho::SSendStampView;
+    using moho::SSendStampWindow;
     using moho::CClientManagerImpl;
     using moho::INetConnector;
     using moho::Vector3f;
@@ -2598,12 +2591,12 @@ namespace
     const int kernelMs = RenFloorTowardZero(moho::ren_BandwidthDisplayKernel * 1000.0f);        // v28-derived
 
     // 0x007F443E..0x007F4451: local send-stamp window (vtable GetBetween, slot 23).
-    SSendStampView localStamps = clientMgr->GetBetween(rangeSpanMs + kernelMs);
+    SSendStampWindow localStamps = clientMgr->GetBetween(rangeSpanMs + kernelMs);
 
     // 0x007F4453..0x007F44A1: connector send-stamp window (SnapshotSendStamps, slot 12).
     INetConnector* const connector = clientMgr->GetConnector();
     const int connectorSinceMs = rangeSpanMs + RenFloorTowardZero(moho::ren_BandwidthDisplayKernel * 1000.0f);
-    SSendStampView connectorStamps = connector->SnapshotSendStamps(connectorSinceMs);
+    SSendStampWindow connectorStamps = connector->SnapshotSendStamps(connectorSinceMs);
 
     // ---- Build the two smoothed byte-rate series, asm 0x007F44A3..0x007F4547.
     const int sampleCount = rangeSpanMs;                                     // v63
@@ -3824,7 +3817,6 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
   if (moho::IWldTerrainRes* const terrainRes = moho::REN_GetTerrainRes();
       terrainRes != nullptr && !RenderAdditionsDisabled()) {
     if (!terrainRes->GetBool()) {
-      // TEMPORARY PROBE -- terrain overexposure triage, delete with the others.
       ::OutputDebugStringA("[TERRDIAG] Finalize: entering\n");
       const bool finalized = terrainRes->Finalize();
       char probe[64];
@@ -3865,7 +3857,7 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
     // CameraImpl's own CameraGetView()/UpdateCoords() computed a perfectly
     // sane transform. CameraGetView() is the real, correctly-offset
     // accessor for the embedded GeomCamera3 (CameraImpl.cpp:2007-2010:
-    // `return AsRuntimeView(this)->mCam;`).
+    // `return As(this)->mCam;`).
     moho::CameraImpl* const cameraImpl = worldView->mView->GetCamera();
     mCam = cameraImpl != nullptr
       ? const_cast<moho::GeomCamera3*>(&cameraImpl->CameraGetView())
@@ -3907,18 +3899,6 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
     // this view's own CameraSetViewport-pushed one.
     UpdateRenderViewportCoordinates();
 
-    static const bool sNoFogState = [] { char d[512] = {}; std::size_t l = 0; if (::getenv_s(&l, d, sizeof(d), "FAF_TOGGLE_DIR") != 0 || l == 0u) return false; char pth[600]; (void)std::snprintf(pth, sizeof(pth), "%s/nofogstate.on", d); return ::GetFileAttributesA(pth) != INVALID_FILE_ATTRIBUTES; }(); // TEMPORARY PROBE (do not commit)
-    static const bool sNoEffects = [] { char d[512] = {}; std::size_t l = 0; if (::getenv_s(&l, d, sizeof(d), "FAF_TOGGLE_DIR") != 0 || l == 0u) return false; char pth[600]; (void)std::snprintf(pth, sizeof(pth), "%s/noeffects.on", d); return ::GetFileAttributesA(pth) != INVALID_FILE_ATTRIBUTES; }(); // TEMPORARY PROBE (do not commit)
-    { // TEMPORARY PROBE (do not commit): nominimap.on skips minimap views entirely
-      static const bool sNoMiniMap = [] { char d[512] = {}; std::size_t l = 0; if (::getenv_s(&l, d, sizeof(d), "FAF_TOGGLE_DIR") != 0 || l == 0u) return false; char pth[600]; (void)std::snprintf(pth, sizeof(pth), "%s/nominimap.on", d); return ::GetFileAttributesA(pth) != INVALID_FILE_ATTRIBUTES; }();
-      if (sNoMiniMap && worldView->mView->IsMiniMap()) { continue; }
-    }
-    if (FafProbeFrameDiag() > 0) { // TEMPORARY PROBE (do not commit)
-      gpg::Warnf("[FD] f=%d view=%p mini=%d screen=(%d,%d %dx%d) cam=(%.1f,%.1f,%.1f) head=%d",
-        FafProbeFrameSeq(), static_cast<const void*>(worldView->mView), static_cast<int>(worldView->mView->IsMiniMap()),
-        mScreenPos.x, mScreenPos.y, mScreenSize.x, mScreenSize.y,
-        mCam->inverseView.r[3].x, mCam->inverseView.r[3].y, mCam->inverseView.r[3].z, static_cast<int>(head));
-    }
 
     // Render the atmosphere/cloud sky dome for this world view before the
     // terrain composite pass (binary order: WRenViewport::Render @0x007F90D0
@@ -3930,25 +3910,6 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
 
     moho::TerrainCommon* const terrain = worldView->mTerrain.get();
 
-    // TEMPORARY PROBE (do not commit). The HUD renders but the 3D viewport is
-    // flat, so establish whether the world pass has a terrain bound at all.
-    {
-      static int sWorldDiagBudget = 0;
-      if (sWorldDiagBudget < 6) {
-        ++sWorldDiagBudget;
-        gpg::Warnf("[WORLDDIAG] terrain=%08X ren_Terrain=%d view=%08X | camPos=(%.1f,%.1f,%.1f) viewFwd=(%.2f,%.2f,%.2f) zoom=%.1f",
-                  static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(terrain)),
-                  moho::ren_Terrain ? 1 : 0,
-                  static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(worldView->mView)),
-                  mCam->inverseView.r[3].x,
-                  mCam->inverseView.r[3].y,
-                  mCam->inverseView.r[3].z,
-                  mCam->inverseView.r[2].x,
-                  mCam->inverseView.r[2].y,
-                  mCam->inverseView.r[2].z,
-                  worldView->mView->CameraGetZoom());
-      }
-    }
 
     if (moho::ren_Terrain && terrain != nullptr) {
       // Per-frame render-context update (TerrainCommon slot 5), dispatched
@@ -3975,7 +3936,7 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
       mShadowRenderer.RenderFrameShadows(
         terrain, *mCam, worldView->mView->CameraGetTargetZoom());
 
-      if (sNoFogState) { FogOff(); } else { FogOn(worldView->mView->CameraGetZoom()); } // TEMPORARY PROBE (do not commit)
+      FogOn(worldView->mView->CameraGetZoom());
       RenderCompositeTerrain(terrain);
     }
 
@@ -4026,7 +3987,7 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
 
     RenderReflections();
     RenderMeshes(0x14, false);
-    if (!sNoEffects) { RenderEffects(true); } // TEMPORARY PROBE (do not commit)
+    RenderEffects(true);
     RenderMeshes(0x18, false);
     FogOff();
 
@@ -4036,7 +3997,7 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
       // Fog density tracks the camera zoom - the binary dispatches
       // IRenderWorldView slot 8 (CameraGetZoom) straight into FogOn at
       // 0x007F94B8..0x007F94C8, it is not a constant.
-      if (sNoFogState) { FogOff(); } else { FogOn(worldView->mView->CameraGetZoom()); } // TEMPORARY PROBE (do not commit)
+      FogOn(worldView->mView->CameraGetZoom());
       RenderWater(terrain);
     }
 
@@ -4089,7 +4050,7 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
     }
 
     RenderMeshes(0x24, false);
-    if (!sNoEffects) { RenderEffects(false); } // TEMPORARY PROBE (do not commit)
+    RenderEffects(false);
     RenderMeshes(0x28, false);
 
     // Fog is dropped *before* the refracting-effects pass, not after it. The
@@ -4280,7 +4241,6 @@ void moho::WRenViewport::Render(const int head, msvc8::vector<SWorldViewInfo>& w
   // where mLocks1[0] is the primary render-target writer-lock slot at +0x2164.
   // It is a no-op unless frame dumping has been armed via `dump_frameRate`.
 
-  // TEMPORARY PROBE (do not commit). Arm the engine's own frame dumper for a
   // few frames so we get a BMP of exactly what the renderer produced. The whole
   // terrain path measures healthy (rectCacheCount=122..128, DrawNormals=1,
   // colour writes 0x07, camera over the map, cartographic drew=0) yet the
@@ -4341,28 +4301,16 @@ void moho::WRenViewport::RenderSkyDome()
   const float simDeltaSeconds = moho::REN_GetSimDeltaSeconds();
   const int gameTick = moho::REN_GetGameTick();
 
-  // TEMPORARY PROBE (do not commit). MMDIAG (a few lines earlier in the caller's
   // loop) fires 787x per run while a probe placed immediately AFTER this call
   // fires 0x, so RenderSkyDome throws every frame and aborts the whole world
   // pass before terrain/mesh/water ever draw -- which is why the HUD renders
   // but the 3D viewport is empty. Step markers to find which call throws.
-  static int sSkyBudget = 0;
-  const bool probeSky = (sSkyBudget < 3);
-  if (probeSky) {
-    ++sSkyBudget;
-    ::OutputDebugStringA("[SKYDIAG] 1 enter\n");
-  }
 
   skyDome.CreateRenderAbility();
-  if (probeSky) { ::OutputDebugStringA("[SKYDIAG] 2 CreateRenderAbility ok\n"); }
   skyDome.RenderAtmosphere(cam);
-  if (probeSky) { ::OutputDebugStringA("[SKYDIAG] 3 RenderAtmosphere ok\n"); }
   skyDome.RenderDecals(cam);
-  if (probeSky) { ::OutputDebugStringA("[SKYDIAG] 4 RenderDecals ok\n"); }
   skyDome.RenderCirrus(gameTick, simDeltaSeconds, cam);
-  if (probeSky) { ::OutputDebugStringA("[SKYDIAG] 5 RenderCirrus ok\n"); }
   skyDome.RenderCumulus(mHead, simDeltaSeconds, cam, cumulusVertices);
-  if (probeSky) { ::OutputDebugStringA("[SKYDIAG] 6 RenderCumulus ok\n"); }
 }
 
 /**
@@ -4399,41 +4347,7 @@ void moho::WRenViewport::RenderCompositeTerrain(TerrainCommon* const terrain)
     shadowContext
   );
   terrain->DrawTerrainSkirt();
-  // TEMPORARY PROBE (do not commit): "<FAF_TOGGLE_DIR>\dumpnormals.on" saves both
-  // primary composite targets once (head = normals target this frame).
-  {
-    static bool sNormalsDumped = false;
-    static unsigned sNormalsDumpCalls = 0;
-    if (!sNormalsDumped && (sNormalsDumpCalls++ % 120u) == 90u) {
-      char dir[512] = {};
-      std::size_t length = 0;
-      if (::getenv_s(&length, dir, sizeof(dir), "FAF_TOGGLE_DIR") == 0 && length != 0u) {
-        char path[600];
-        (void)std::snprintf(path, sizeof(path), "%s\\dumpnormals.on", dir);
-        if (::GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) {
-          sNormalsDumped = true;
-          for (int lock = 0; lock < 2; ++lock) {
-            const auto& target = mPrimaryTargetLocks[lock];
-            if (!target) {
-              continue;
-            }
-            moho::ID3DRenderTarget::SurfaceHandle surface{};
-            (void)target->GetSurface(surface);
-            if (!surface) {
-              continue;
-            }
-            (void)std::snprintf(path, sizeof(path), "%s\\composite_lock%d_head%d.bmp", dir, lock, mHead);
-            const long hr = gpg::gal::DebugSaveSurfaceToFileA(
-              path, 0U, static_cast<gpg::gal::RenderTargetD3D9*>(surface.get())->GetSurface()
-            );
-            gpg::Warnf("[NORMALSDUMP] lock=%d head=%d -> %s hr=0x%08lX", lock, mHead, path, hr);
-          }
-        }
-      }
-    }
-  }
 
-  // TEMPORARY PROBE (do not commit). The tessellator produces real geometry
   // (rectCacheCount=122..128) and the vertex upload runs, yet the viewport is
   // flat -- so the failure is at or after this composite dispatch. Report
   // whether this is even reached, what DrawNormals returned, and whether the

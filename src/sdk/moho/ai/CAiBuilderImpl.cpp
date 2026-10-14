@@ -23,7 +23,6 @@
 #include "moho/math/QuaternionMath.h"
 #include "moho/render/camera/VTransform.h"
 #include "moho/resource/blueprints/RUnitBlueprint.h"
-#include "moho/sim/ArmyUnitSet.h"
 #include "moho/sim/SFootprint.h"
 #include "moho/sim/Sim.h"
 #include "moho/sim/STIMap.h"
@@ -381,8 +380,8 @@ void CAiBuilderImpl::BuilderSetUpInitialRally()
   // point was rejected every time with "ignoring issue of cmd id 0xffffffff
   // ... the id's source (255) is wrong (should be 0)", so a new factory came
   // up with no rally point at all.
-  SEntitySetTemplateUnit factorySet{};
-  (void)factorySet.AddUnit(mOwnerUnit);
+  EntitySetTemplate<Unit> factorySet{};
+  (void)factorySet.Add(mOwnerUnit);
 
   SSTICommandIssueData issueData(EUnitCommandType::UNITCOMMAND_Move);
   issueData.mTarget.mType = EAiTargetType::AITARGET_Ground;
@@ -700,3 +699,57 @@ const RUnitBlueprint* CAiBuilderImpl::BuilderGetNextRebuildStructure(SOCellPos& 
   outCellPos = bestCell;
   return bestBlueprint;
 }
+
+namespace moho
+{
+  /**
+   * Address: 0x0059FD90 (FUN_0059FD90)
+   */
+  void CAiBuilderImpl::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CAiBuilderImpl()), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CAiBuilderImpl>`, vtable 0x00E1B7FC.
+   *
+   * Address: 0x00BCC2E0 (FUN_00BCC2E0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF6AC0 (FUN_00BF6AC0 -- the global's destructor.)
+   * Address: 0x005A0650 (FUN_005A0650 -- `Init`.)
+   * Address: 0x0059FD80 (FUN_0059FD80 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x005A1C80 (FUN_005A1C80 -- `Delete`.)
+   */
+  struct CAiBuilderImplConstruct : gpg::SerConstructHelper<CAiBuilderImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AE644 -- process-global `CAiBuilderImplConstruct` singleton.
+  moho::CAiBuilderImplConstruct gCAiBuilderImplConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CAiBuilderImpl>`, vtable 0x00E1B80C.
+   *
+   * Address: 0x00BCC320 (FUN_00BCC320 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF6AF0 (FUN_00BF6AF0 -- the global's destructor.)
+   * Address: 0x0059FE70 (FUN_0059FE70 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x0059FEA0 (FUN_0059FEA0 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x005A1CF0 (FUN_005A1CF0 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005A21F0 (FUN_005A21F0 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005A06D0 (FUN_005A06D0 -- `Init`.)
+   * Address: 0x0059FE20 (FUN_0059FE20 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0059FE30 (FUN_0059FE30 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CAiBuilderImplSerializer : gpg::SerSaveLoadHelper<CAiBuilderImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AE5CC -- process-global `CAiBuilderImplSerializer` singleton.
+  moho::CAiBuilderImplSerializer gCAiBuilderImplSerializer;
+} // namespace

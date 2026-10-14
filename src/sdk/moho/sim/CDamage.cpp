@@ -129,15 +129,15 @@ namespace
     shields.clear();
   }
 
-  struct DamageShieldListSentinelRuntimeNode
+  struct DamageShieldListSentinelNode
   {
-    DamageShieldListSentinelRuntimeNode* next;
-    DamageShieldListSentinelRuntimeNode* prev;
+    DamageShieldListSentinelNode* next;
+    DamageShieldListSentinelNode* prev;
     std::uint32_t valueLane;
   };
   static_assert(
-    sizeof(DamageShieldListSentinelRuntimeNode) == 0x0C,
-    "DamageShieldListSentinelRuntimeNode size must be 0x0C"
+    sizeof(DamageShieldListSentinelNode) == 0x0C,
+    "DamageShieldListSentinelNode size must be 0x0C"
   );
 
   /**
@@ -147,10 +147,10 @@ namespace
    * Allocates one 12-byte shield-list sentinel lane and self-links its
    * `{next,prev}` pointers.
    */
-  [[maybe_unused]] [[nodiscard]] DamageShieldListSentinelRuntimeNode* AllocateSelfLinkedDamageShieldSentinel()
+  [[maybe_unused]] [[nodiscard]] DamageShieldListSentinelNode* AllocateSelfLinkedDamageShieldSentinel()
   {
     auto* const node =
-      msvc8::detail::allocate_checked<DamageShieldListSentinelRuntimeNode>(1u);
+      msvc8::detail::allocate_checked<DamageShieldListSentinelNode>(1u);
     node->next = node;
     node->prev = node;
     return node;
@@ -163,14 +163,14 @@ namespace
   };
   static_assert(sizeof(DamagePairSeed) == 0x08, "DamagePairSeed size must be 0x08");
 
-  struct DamageLinkedPairNodeRuntime
+  struct DamageLinkedPairNode
   {
-    DamageLinkedPairNodeRuntime* next;
-    DamageLinkedPairNodeRuntime* prev;
+    DamageLinkedPairNode* next;
+    DamageLinkedPairNode* prev;
     std::uint32_t payload0;
     std::uint32_t payload1;
   };
-  static_assert(sizeof(DamageLinkedPairNodeRuntime) == 0x10, "DamageLinkedPairNodeRuntime size must be 0x10");
+  static_assert(sizeof(DamageLinkedPairNode) == 0x10, "DamageLinkedPairNode size must be 0x10");
 
   /**
    * Address: 0x0073A120 (FUN_0073A120, SIM damage linked-pair node allocator)
@@ -179,13 +179,13 @@ namespace
    * Allocates one 16-byte linked node, seeds `{next,prev}` from caller lanes,
    * and copies one 8-byte payload pair into the node tail.
    */
-  [[maybe_unused]] [[nodiscard]] DamageLinkedPairNodeRuntime* AllocateLinkedDamagePairNode(
+  [[maybe_unused]] [[nodiscard]] DamageLinkedPairNode* AllocateLinkedDamagePairNode(
     const DamagePairSeed& seed,
-    DamageLinkedPairNodeRuntime* const next,
-    DamageLinkedPairNodeRuntime* const prev
+    DamageLinkedPairNode* const next,
+    DamageLinkedPairNode* const prev
   )
   {
-    auto* const node = msvc8::detail::allocate_checked<DamageLinkedPairNodeRuntime>(1u);
+    auto* const node = msvc8::detail::allocate_checked<DamageLinkedPairNode>(1u);
     node->next = next;
     node->prev = prev;
     node->payload0 = seed.first;
@@ -387,11 +387,11 @@ namespace moho
    *   - When the instigator has an army, accumulates
    *     `DamageStats_TotalDamageDealt` and the per-blueprint
    *     `Units_TotalDamageDealt` lane and adds `amount` to that army's
-   *     platoon-for-instigator `mLifetimeStat3` accumulator.
+   *     platoon-for-instigator `mDamageDealt` accumulator.
    *   - When the target has an army, mirrors the same accumulation into
    *     `DamageStats_TotalDamageReceived` /
    *     `Units_TotalDamageReceive` and the target platoon's
-   *     `mLifetimeStat4` lane.
+   *     `mDamageReceived`.
    *   - When the post-armor amount is positive, logs
    *     `"DealDamage(target=0x%08x, amt=%.1f)"`, packs `mVector` into a
    *     Lua vec3, and invokes the target's `OnDamage` script callback.
@@ -510,7 +510,7 @@ namespace moho
               &squadClass
             );
             if (platoon != nullptr) {
-              platoon->mLifetimeStat3 += postArmorAmount;
+              platoon->mDamageDealt += postArmorAmount;
             }
           }
         }
@@ -549,7 +549,7 @@ namespace moho
               &squadClass
             );
             if (platoon != nullptr) {
-              platoon->mLifetimeStat4 += postArmorAmount;
+              platoon->mDamageReceived += postArmorAmount;
             }
           }
         }
@@ -561,16 +561,6 @@ namespace moho
     if (postArmorAmount > 0.0f) {
       Entity* const finalTarget = damage.mTarget.GetObjectPtr();
       const EntId targetId = (finalTarget != nullptr) ? finalTarget->id_ : EntId{0};
-      {
-        const char* bpid = "<none>";
-        if (finalTarget != nullptr && finalTarget->BluePrint != nullptr) {
-          bpid = finalTarget->BluePrint->mBlueprintId.c_str();
-        }
-        gpg::Warnf("[DMGDIAG] Point target=%p isUnit=%d amt=%.1f post=%.1f bp='%s'",
-                   static_cast<void*>(finalTarget),
-                   (finalTarget != nullptr && finalTarget->IsUnit() != nullptr) ? 1 : 0,
-                   damage.mAmount, postArmorAmount, bpid);
-      }
       sim->Logf("DealDamage(target=0x%08x, amt=%.1f)\n", targetId, postArmorAmount);
 
       const LuaPlus::LuaObject damagePayload = SCR_ToLua<Wm3::Vector3<float>>(sim->mLuaState, damage.mVector);
@@ -867,9 +857,6 @@ namespace moho
 
     const CollisionResult* const resultsBegin = areaResults.start_;
     const CollisionResult* const resultsEnd = areaResults.end_;
-    gpg::Warnf("[DMGDIAG] Area origin=(%.1f,%.1f,%.1f) radius=%.1f amount=%.1f collected=%d",
-               damage.mOrigin.x, damage.mOrigin.y, damage.mOrigin.z, damage.mRadius, damage.mAmount,
-               static_cast<int>(resultsEnd - resultsBegin));
     for (const CollisionResult* result = resultsBegin; result != resultsEnd; ++result) {
       Entity* const target = result->sourceEntity;
 

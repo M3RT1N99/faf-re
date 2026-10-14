@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <cstring>
 
 extern "C" {
@@ -218,14 +219,16 @@ void png_text_compress_store_block(png_structp png_ptr, PngCompressionState* com
     comp->output_ptr = static_cast<std::uint8_t**>(
       png_malloc(png_ptr, 4u * static_cast<std::uint32_t>(comp->max_output_ptr)));
     if (old_array != nullptr) {
-      std::memcpy(comp->output_ptr, old_array, 4u * static_cast<std::uint32_t>(old_max));
+      // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
+      std::copy_n(old_array, old_max, comp->output_ptr);
       png_free(png_ptr, old_array);
     }
   }
 
   comp->output_ptr[comp->num_output_ptr] =
     static_cast<std::uint8_t*>(png_malloc(png_ptr, zbuf_size));
-  std::memcpy(comp->output_ptr[comp->num_output_ptr], Field<std::uint8_t*>(png_ptr, kOffZbuf), zbuf_size);
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
+  std::copy_n(Field<std::uint8_t*>(png_ptr, kOffZbuf), zbuf_size, comp->output_ptr[comp->num_output_ptr]);
   ++comp->num_output_ptr;
 
   Field<std::uint32_t>(png_ptr, kOffZstreamAvailOut) = zbuf_size;
@@ -497,7 +500,8 @@ extern "C" void png_write_destroy(png_structp const png_ptr)
   png_free(png_ptr, fieldp(131));
 
   std::uint8_t preservedJmpState[0x40]{};
-  std::memcpy(preservedJmpState, png_ptr, sizeof(preservedJmpState));
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
+  std::copy_n(reinterpret_cast<const std::uint8_t*>(png_ptr), sizeof(preservedJmpState), preservedJmpState);
 
   const std::uint32_t savedErrorPtr = field32(16);
   void* const savedErrorFn = fieldp(17);
@@ -511,7 +515,8 @@ extern "C" void png_write_destroy(png_structp const png_ptr)
   field32(147) = savedFreeFn;
   field32(16) = savedErrorPtr;
 
-  std::memcpy(png_ptr, preservedJmpState, sizeof(preservedJmpState));
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
+  std::copy_n(preservedJmpState, sizeof(preservedJmpState), reinterpret_cast<std::uint8_t*>(png_ptr));
 }
 
 /**
@@ -680,7 +685,7 @@ extern "C" void png_set_filter_heuristics(
 
   // Reinterpret the png_struct as a typed view of the weighted-filter fields.
   // Evidence: heuristic_method stored at offset 0x1F8, other fields follow.
-  auto* const pngFilter = reinterpret_cast<PngStructWeightedFilterView*>(
+  auto* const pngFilter = reinterpret_cast<PngStructWeightedFilter*>(
     reinterpret_cast<std::uint8_t*>(png_ptr) + kPngStructWeightedFilterOffset
   );
 
@@ -1708,7 +1713,8 @@ extern "C" void png_write_tIME(png_structp png_ptr, const std::uint8_t* mod_time
   }
 
   std::uint16_t year;
-  std::memcpy(&year, mod_time, sizeof(year));
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
+  std::copy_n(mod_time, sizeof(year), reinterpret_cast<std::uint8_t*>(&year));
 
   std::uint8_t buf[7];
   png_save_uint_16(buf, year);
@@ -2238,7 +2244,7 @@ namespace {
 // into this candidate's early-exit threshold) -- matching upstream's two
 // call shapes exactly.
 [[nodiscard]] std::uint32_t ApplyWeightedFilterHeuristic(
-  const PngStructWeightedFilterView& filter, std::uint32_t sum,
+  const PngStructWeightedFilter& filter, std::uint32_t sum,
   std::uint8_t filterValue, bool useInverse) noexcept
 {
   constexpr std::uint32_t kHiShift = 10;           // PNG_HISHIFT
@@ -2317,7 +2323,7 @@ extern "C" void png_write_find_filter(png_structp png_ptr, png_row_infop row_inf
   const std::uint8_t filterToDo = DoFilter(png_ptr);
   std::uint32_t mins = 0x7FFFFFFFu;  // PNG_MAXSUM
 
-  auto* const filter = reinterpret_cast<PngStructWeightedFilterView*>(
+  auto* const filter = reinterpret_cast<PngStructWeightedFilter*>(
     RawBase(png_ptr) + kPngStructWeightedFilterOffset);
   const bool weighted = filter->heuristic_method == kPngFilterHeuristicWeighted;
 

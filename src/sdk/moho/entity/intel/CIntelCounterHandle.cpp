@@ -376,3 +376,53 @@ CIntelCounterHandle::CIntelCounterHandle(
     }
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * Address: 0x0076F910 (FUN_0076F910)
+   */
+  void CIntelCounterHandle::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CIntelCounterHandle(0u, nullptr, INTELCOUNTER_None, nullptr)), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CIntelCounterHandle>`, vtable 0x00E3635C.
+   *
+   * Address: 0x00BDCD50 (FUN_00BDCD50 -- constructs the global and registers its destructor.)
+   * Address: 0x00C01F60 (FUN_00C01F60 -- the global's destructor.)
+   * Address: 0x0076FBA0 (FUN_0076FBA0 -- `Init`.)
+   * Address: 0x0076F900 (FUN_0076F900 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x0076FD90 (FUN_0076FD90 -- `Delete`.)
+   */
+  struct CIntelCounterHandleConstruct : gpg::SerConstructHelper<CIntelCounterHandle>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010BB400 -- process-global `CIntelCounterHandleConstruct` singleton.
+  moho::CIntelCounterHandleConstruct gCIntelCounterHandleConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CIntelCounterHandle>`, vtable 0x00E3636C.
+   *
+   * Address: 0x00BDCD90 (FUN_00BDCD90 -- constructs the global and registers its destructor.)
+   * Address: 0x00C01F90 (FUN_00C01F90 -- the global's destructor.)
+   * Address: 0x0076FC20 (FUN_0076FC20 -- `Init`.)
+   * Address: 0x0076F990 (FUN_0076F990 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0076F9A0 (FUN_0076F9A0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CIntelCounterHandleSerializer : gpg::SerSaveLoadHelper<CIntelCounterHandle>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010BB48C -- process-global `CIntelCounterHandleSerializer` singleton.
+  moho::CIntelCounterHandleSerializer gCIntelCounterHandleSerializer;
+} // namespace

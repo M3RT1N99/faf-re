@@ -13,7 +13,7 @@
 #include "moho/command/SSTICommandVariableData.h"
 #include "moho/misc/WeakPtr.h"
 #include "moho/script/CScriptObject.h"
-#include "moho/sim/ArmyUnitSet.h"
+#include "moho/entity/Entity.h"
 
 namespace gpg
 {
@@ -28,7 +28,7 @@ namespace moho
 {
   class Entity;
   class Unit;
-  class CCommandDb;
+  class CCommandDB;
   class CAiFormationInstance;
   class Sim;
   struct SOCellPos;
@@ -106,7 +106,9 @@ namespace moho
      * Allocates one `CUnitCommand`, default-constructs it, and returns it as an
      * unowned construct result.
      */
-    static void MemberConstruct(gpg::SerConstructResult* result);
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
 
     /**
      * Address: 0x006ECB80 (FUN_006ECB80, Moho::CUnitCommand::MemberDeserialize)
@@ -115,7 +117,7 @@ namespace moho
      * What it does:
      * Loads the serialized command payload lanes into this command instance.
      */
-    static void MemberDeserialize(gpg::ReadArchive* archive, CUnitCommand* command, int version);
+    void MemberDeserialize(gpg::ReadArchive* archive, int version);
 
     /**
      * Address: 0x006ECE20 (FUN_006ECE20, Moho::CUnitCommand::MemberSerialize)
@@ -125,7 +127,7 @@ namespace moho
      * What it does:
      * Saves the serialized command payload lanes from this command instance.
      */
-    static void MemberSerialize(CUnitCommand* command, gpg::WriteArchive* archive, int version);
+    void MemberSerialize(gpg::WriteArchive* archive, int version);
 
     /**
      * Address: 0x006E8B40 (FUN_006E8B40)
@@ -305,8 +307,7 @@ namespace moho
      */
     CUnitCommand();
 
-    friend class CUnitCommandConstruct;
-    friend class CCommandDb;
+    friend class CCommandDB;
 
     /**
      * Address: 0x006E8500 (FUN_006E8500)
@@ -335,7 +336,7 @@ namespace moho
     SSTICommandVariableData mVarDat; // +0x80 (+0xEC is its tail padding)
     /// The units the command applies to: an `EntitySetTemplate<Unit>` (entries are each unit's `Entity`),
     /// kept in entity-id order by the set's `Add` 0x0057DDD0 / `Remove` 0x005E8960.
-    SEntitySetTemplateUnit mUnitSet;
+    EntitySetTemplate<Unit> mUnitSet;
     CAiFormationInstance* mFormationInstance;
     CAiTarget mTarget;
     // Monotonic per-command serial assigned from Sim counter (not mConstDat.cmd).

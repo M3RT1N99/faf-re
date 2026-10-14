@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "cri/sofdec/SofdecAddressWord.h"
+
 extern "C"
 {
   extern int __cdecl mpabsr_ReadBitStm(
@@ -106,7 +108,7 @@ extern "C"
         &rawBitValue
       );
 
-      *outValue = static_cast<int>(reinterpret_cast<std::uintptr_t>(rawBitValue));
+      *outValue = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(rawBitValue));
       return status;
     }
 

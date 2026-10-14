@@ -28,7 +28,6 @@
 #include "moho/math/MathReflection.h"
 #include "moho/misc/WeakPtr.h"
 #include "moho/resource/blueprints/RUnitBlueprint.h"
-#include "moho/sim/ArmyUnitSet.h"
 #include "moho/sim/CArmyImpl.h"
 #include "moho/sim/COGrid.h"
 #include "moho/sim/CSimConVarBase.h"
@@ -215,6 +214,8 @@ namespace
 
 namespace moho
 {
+  gpg::RType* CUnitMobileBuildTask::sType = nullptr;
+
   /**
    * Address: 0x005F6400 (FUN_005F6400, ??0CUnitMobileBuildTask@Moho@@QAE@@Z)
    *
@@ -674,16 +675,16 @@ namespace moho
         Unit* const builtUnit = mBuildUnit.GetObjectPtr();
         const Wm3::Vector3f zeroDir{0.0f, 0.0f, 0.0f};
         if (builtUnit != nullptr && !mBlueprint->General.SeedUnit.name.empty()) {
-          SEntitySetTemplateUnit dispatchSet{};
-          (void)dispatchSet.AddUnit(builtUnit);
+          EntitySetTemplate<Unit> dispatchSet{};
+          (void)dispatchSet.Add(builtUnit);
           SSTICommandIssueData issueData(EUnitCommandType::UNITCOMMAND_Upgrade);
           issueData.mBlueprint = const_cast<RUnitBlueprint*>(mBlueprint);
           (void)IssueCommandToSelectedUnits(mSim, dispatchSet, issueData, true);
         } else if (builtUnit != nullptr && builtUnit->AiBuilder != nullptr &&
                    builtUnit->AiBuilder->BuilderIsFactory() &&
                    mBuildDirection != zeroDir) {
-          SEntitySetTemplateUnit dispatchSet{};
-          (void)dispatchSet.AddUnit(builtUnit);
+          EntitySetTemplate<Unit> dispatchSet{};
+          (void)dispatchSet.Add(builtUnit);
           const Wm3::Vec3f& unitPos = builtUnit->GetPosition();
           const Wm3::Vector3f rallyPos{unitPos.x + mBuildDirection.x, unitPos.y + mBuildDirection.y,
                                        unitPos.z + mBuildDirection.z};
@@ -943,7 +944,7 @@ namespace moho
    * unowned raw pointer; the placement-retry counter is written through the
    * virtual `WriteInt` slot.
    */
-  void CUnitMobileBuildTask::MemberSerialize(gpg::WriteArchive* const archive)
+  void CUnitMobileBuildTask::MemberSerialize(gpg::WriteArchive* const archive) const
   {
     if (archive == nullptr) {
       return;
@@ -952,7 +953,7 @@ namespace moho
     const gpg::RRef ownerRef{};
 
     // 1. base CCommandTask sub-object (offset 0x00).
-    archive->Write(CachedCCommandTaskType(), static_cast<CCommandTask*>(this), ownerRef);
+    archive->Write(CachedCCommandTaskType(), static_cast<const CCommandTask*>(this), ownerRef);
 
     // 2. embedded build helper (offset 0x40).
     archive->Write(CachedCBuildTaskHelperType(), &mBuildHelper, ownerRef);
@@ -983,3 +984,24 @@ namespace moho
     archive->Write(CachedRect2fType(), &mBuildSkirt, ownerRef);
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CUnitMobileBuildTask>`, vtable 0x00E1FA2C.
+   *
+   * Address: 0x00BCF890 (FUN_00BCF890 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF9330 (FUN_00BF9330 -- the global's destructor.)
+   * Address: 0x005FBBA0 (FUN_005FBBA0 -- `Init`.)
+   * Address: 0x005F6A10 (FUN_005F6A10 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005F6A20 (FUN_005F6A20 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CUnitMobileBuildTaskSerializer : gpg::SerSaveLoadHelper<CUnitMobileBuildTask>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B0D04 -- process-global `CUnitMobileBuildTaskSerializer` singleton.
+  moho::CUnitMobileBuildTaskSerializer gCUnitMobileBuildTaskSerializer;
+} // namespace

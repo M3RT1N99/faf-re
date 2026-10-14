@@ -334,32 +334,6 @@ namespace moho
    */
   void CIntelPosHandle::AddViz()
   {
-    // TEMPORARY PROBE -- delete once resolved. CIntelGrid::AddCircle is called
-    // exactly ONCE in a 200s ten-army game, so vision is never stamped and every
-    // recon probe reads an empty grid. This reports which of the three gates
-    // below drops the call.
-    {
-      static unsigned sCalls = 0, sDisabled = 0, sNoRadius = 0, sNoGrid = 0, sPassed = 0;
-      ++sCalls;
-      if (mEnabled == 0u) {
-        ++sDisabled;
-      } else if (mRadius == 0u) {
-        ++sNoRadius;
-      } else if (mGrid.px == nullptr) {
-        ++sNoGrid;
-      } else {
-        ++sPassed;
-      }
-      if ((sCalls % 100u) == 0u) {
-        gpg::Warnf(
-          "[VIZGATE] AddViz calls=%u disabled=%u noRadius=%u noGrid=%u passed=%u "
-          "(this: enabled=%u radius=%u grid=%p pos=(%.1f,%.1f))",
-          sCalls, sDisabled, sNoRadius, sNoGrid, sPassed,
-          static_cast<unsigned>(mEnabled), static_cast<unsigned>(mRadius),
-          static_cast<void*>(mGrid.px), mLastPos.x, mLastPos.z
-        );
-      }
-    }
 
     if (mEnabled == 0u || mRadius == 0u || mGrid.px == nullptr) {
       return;
@@ -399,3 +373,53 @@ namespace moho
     }
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * Address: 0x0076F350 (FUN_0076F350)
+   */
+  void CIntelPosHandle::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CIntelPosHandle(0u, boost::SharedPtrRaw<CIntelGrid>{})), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CIntelPosHandle>`, vtable 0x00E3630C.
+   *
+   * Address: 0x00BDCCB0 (FUN_00BDCCB0 -- constructs the global and registers its destructor.)
+   * Address: 0x00C01EA0 (FUN_00C01EA0 -- the global's destructor.)
+   * Address: 0x0076FA80 (FUN_0076FA80 -- `Init`.)
+   * Address: 0x0076F340 (FUN_0076F340 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x0076FCB0 (FUN_0076FCB0 -- `Delete`.)
+   */
+  struct CIntelPosHandleConstruct : gpg::SerConstructHelper<CIntelPosHandle>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010BB3EC -- process-global `CIntelPosHandleConstruct` singleton.
+  moho::CIntelPosHandleConstruct gCIntelPosHandleConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CIntelPosHandle>`, vtable 0x00E3631C.
+   *
+   * Address: 0x00BDCCF0 (FUN_00BDCCF0 -- constructs the global and registers its destructor.)
+   * Address: 0x00C01ED0 (FUN_00C01ED0 -- the global's destructor.)
+   * Address: 0x0076FB00 (FUN_0076FB00 -- `Init`.)
+   * Address: 0x0076F3D0 (FUN_0076F3D0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0076F3E0 (FUN_0076F3E0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CIntelPosHandleSerializer : gpg::SerSaveLoadHelper<CIntelPosHandle>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010BB414 -- process-global `CIntelPosHandleSerializer` singleton.
+  moho::CIntelPosHandleSerializer gCIntelPosHandleSerializer;
+} // namespace

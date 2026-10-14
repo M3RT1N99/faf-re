@@ -59,8 +59,6 @@ namespace
     }
   };
 
-  moho::SSTIEntityVariableDataSerializer gSSTIEntityVariableDataSerializer;
-
   constexpr const char* kSerializationHeaderPath =
     "c:\\work\\rts\\main\\code\\src\\libs\\gpgcore\\reflection\\serialization.h";
 
@@ -525,9 +523,52 @@ namespace moho
     }
 
     if (srcCount != 0u) {
+      // Trivially copyable u32 element array copy inside the owning inline vector.
       std::memcpy(mBegin, rhs.mBegin, srcCount * sizeof(std::uint32_t));
     }
     mEnd = mBegin + srcCount;
+  }
+
+  /**
+   * Address: 0x00558EC0 (FUN_00558EC0) + 0x00559190 grow lane
+   *
+   * What it does:
+   * Resizes to exactly `count` slots, filling any newly created tail slots
+   * with `fillValue`. Shrinks in place by moving `mEnd` (matches the
+   * `v6 != a3->end` early-out at 0x00558EC0); grows in place when spare
+   * capacity is sufficient, otherwise reallocates a fresh block via the
+   * grow lane (`sub_559190`) and installs it, preserving the binary
+   * small-buffer quirk on `mInlineStorage0`.
+   */
+  void SSTIInlineUIntVector::Resize(const std::size_t count, const std::uint32_t fillValue)
+  {
+    const std::size_t current = Size();
+    if (count <= current) {
+      mEnd = mBegin + count;
+      return;
+    }
+
+    if (count > Capacity()) {
+      std::uint32_t* const newStorage = new std::uint32_t[count];
+      if (mBegin == mInlineBegin) {
+        mInlineStorage0 =
+          static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(mCapacityEnd));
+      } else {
+        delete[] mBegin;
+      }
+      if (current != 0u) {
+        // Trivially copyable u32 element array copy inside the owning inline vector.
+        std::memcpy(newStorage, mBegin, current * sizeof(std::uint32_t));
+      }
+      mBegin = newStorage;
+      mCapacityEnd = newStorage + count;
+    }
+
+    std::uint32_t* const newEnd = mBegin + count;
+    for (std::uint32_t* slot = mBegin + current; slot != newEnd; ++slot) {
+      *slot = fillValue;
+    }
+    mEnd = newEnd;
   }
 
   std::size_t SSTIInlineUIntVector::Size() const noexcept
@@ -876,52 +917,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BCA100 (FUN_00BCA100, dynamic initializer for `gSSTIEntityVariableDataSerializer`)
-   * Address: 0x005588D0 (FUN_005588D0, out-of-line copy of this constructor, unreferenced)
-   *
-   * What it does:
-   * Binds this helper's load/save callbacks.
-   */
-  SSTIEntityVariableDataSerializer::SSTIEntityVariableDataSerializer()
-    : mSerLoadFunc(&DeserializeSSTIEntityVariableDataSerializerCallback)
-    , mSerSaveFunc(&SerializeSSTIEntityVariableDataSerializerCallback)
-  {}
-
-  /**
-   * Address: 0x00BF4FF0 (FUN_00BF4FF0, dynamic atexit destructor for `gSSTIEntityVariableDataSerializer`)
-   *
-   * What it does:
-   * Unlinks this helper node from the serializer-helper list (the
-   * `TDatListItem` base destructor). `FUN_00558900` and `FUN_00558930` are
-   * unreferenced out-of-line copies of the same body.
-   */
-  SSTIEntityVariableDataSerializer::~SSTIEntityVariableDataSerializer() = default;
-
-  /**
-   * Address: 0x00558E40 (FUN_00558E40, sub_558E40)
-   *
-   * What it does:
-   * Binds this helper's already-cited load/save callbacks onto
-   * `SSTIEntityVariableData`'s reflected type descriptor. Dispatched by
-   * `gpg::SerHelperBase::InitNewHelpers` when this helper is drained from
-   * the pending list (vtable slot 0).
-   */
-  void SSTIEntityVariableDataSerializer::Init()
-  {
-    gpg::RType* type = SSTIEntityVariableData::sType;
-    if (type == nullptr) {
-      type = gpg::LookupRType(typeid(SSTIEntityVariableData));
-      SSTIEntityVariableData::sType = type;
-    }
-
-    GPG_ASSERT(type != nullptr);
-    GPG_ASSERT(type->serLoadFunc_ == nullptr);
-    type->serLoadFunc_ = mSerLoadFunc;
-    GPG_ASSERT(type->serSaveFunc_ == nullptr);
-    type->serSaveFunc_ = mSerSaveFunc;
-  }
-
-  /**
    * Address: 0x005581D0 (FUN_005581D0, preregister_SSTIEntityAttachInfoTypeInfo)
    *
    * What it does:
@@ -994,3 +989,25 @@ namespace moho
 GPG_PREREGISTER_INIT(preregister_SSTIEntityAttachInfoTypeInfo_a1a5ff, moho::preregister_SSTIEntityAttachInfoTypeInfo)
 GPG_PREREGISTER_INIT(preregister_EntityAttributesTypeInfo_a1a5ff, moho::preregister_EntityAttributesTypeInfo)
 GPG_PREREGISTER_INIT(preregister_SSTIEntityVariableDataTypeInfo_a1a5ff, moho::preregister_SSTIEntityVariableDataTypeInfo)
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<SSTIEntityVariableData>`, vtable 0x00E17FA0.
+   *
+   * Address: 0x00BCA100 (FUN_00BCA100 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF4FF0 (FUN_00BF4FF0 -- the global's destructor.)
+   * Address: 0x005588D0 (FUN_005588D0 -- an unreferenced out-of-line copy of the constructor.)
+   * Address: 0x00558E40 (FUN_00558E40 -- `Init`.)
+   * Address: 0x00558890 (FUN_00558890 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005588B0 (FUN_005588B0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct SSTIEntityVariableDataSerializer : gpg::SerSaveLoadHelper<SSTIEntityVariableData>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AC804 -- process-global `SSTIEntityVariableDataSerializer` singleton.
+  moho::SSTIEntityVariableDataSerializer gSSTIEntityVariableDataSerializer;
+} // namespace

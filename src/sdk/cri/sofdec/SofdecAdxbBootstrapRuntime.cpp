@@ -99,12 +99,12 @@
    * Default add-write callback: advances the buffered and decoded sample
    * counts by the samples of the committed span.
    */
-  std::int32_t adxb_DefAddWr(void* const context, std::int32_t /*decodedBytes*/, const std::int32_t decodedSamples)
+  SofdecAddressWord adxb_DefAddWr(void* const context, std::int32_t /*decodedBytes*/, const std::int32_t decodedSamples)
   {
     auto* const decoder = static_cast<moho::AdxBitstreamDecoderState*>(context);
     decoder->bufferedSampleCount += decodedSamples;
     decoder->decodedSampleTotal += decodedSamples;
-    return static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(decoder));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(decoder));
   }
 
   /**
@@ -224,14 +224,14 @@
       | (static_cast<std::uint32_t>(sourceBytes[2]) << 8) | static_cast<std::uint32_t>(sourceBytes[3]);
   }
 
-  [[nodiscard]] static AdxampRuntimeState* AsAdxampRuntimeState(void* const channelExpandHandle)
+  [[nodiscard]] static AdxampState* AsAdxampState(void* const channelExpandHandle)
   {
-    return reinterpret_cast<AdxampRuntimeState*>(channelExpandHandle);
+    return reinterpret_cast<AdxampState*>(channelExpandHandle);
   }
 
-  [[nodiscard]] static const AdxampRuntimeState* AsAdxampRuntimeStateConst(const void* const channelExpandHandle)
+  [[nodiscard]] static const AdxampState* AsAdxampStateConst(const void* const channelExpandHandle)
   {
-    return reinterpret_cast<const AdxampRuntimeState*>(channelExpandHandle);
+    return reinterpret_cast<const AdxampState*>(channelExpandHandle);
   }
 
   static void AdxampClearLaneStream(M2asjdIoStream* const stream)

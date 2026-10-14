@@ -1,5 +1,5 @@
 ﻿#include "moho/render/d3d/CD3DEffectTechnique.h"
-
+#include <algorithm>
 #include <cstring>
 #include <cstdlib>
 #include <exception>
@@ -80,6 +80,45 @@ namespace moho
       }
 
       return gpg::gal::SupportsVertexTextureFormat(gpg::gal::kTextureFormatFloat4);
+    }
+
+    // TEMPORARY PROBE -- why the FAF bone-texture variant does/doesn't engage
+    // for one effect source. `reason` is null when every gate passes. Delete
+    // when resolved.
+    [[nodiscard]] bool WantsBoneTextureVariantProbe(
+      const gpg::gal::DeviceContext* const deviceContext, const gpg::MemBuffer<const char>& source
+    )
+    {
+      constexpr std::string_view kMacroName = "FAF_BONE_TEXTURE";
+
+      const char* reason = nullptr;
+      if (deviceContext == nullptr) {
+        reason = "null device";
+      } else if (deviceContext->mDeviceType == gpg::gal::DeviceApi::Direct3D10) {
+        reason = "D3D10";
+      } else {
+        const char* const text = source.GetPtr(0U, 0U);
+        if (text == nullptr || std::string_view(text, source.Size()).find(kMacroName) == std::string_view::npos) {
+          reason = "macro not in source";
+        } else if (CFG_GetArgOption("/nobonetexture", 0U, nullptr)) {
+          reason = "/nobonetexture";
+        } else if (!gpg::gal::SupportsVertexTextureFormat(gpg::gal::kTextureFormatFloat4)) {
+          reason = "no vtf support";
+        }
+      }
+
+      static int sProbeCount = 0;
+      if (sProbeCount < 8) {
+        ++sProbeCount;
+        const char* const text = source.GetPtr(0U, 0U);
+        gpg::Warnf(
+          "[BONETEX] want n=%d size=%u reason=%s",
+          sProbeCount,
+          static_cast<unsigned>(source.Size()),
+          reason ? reason : "engaged"
+        );
+      }
+      return reason == nullptr;
     }
 
     /**
@@ -461,18 +500,12 @@ namespace moho
       const std::size_t effectByteCount = effectSourceBuffer.Size();
       gpg::MemBuffer<char> mergedBuffer = gpg::AllocMemBuffer(compatByteCount + effectByteCount);
       if (compatByteCount > 0U) {
-        std::memcpy(
-          mergedBuffer.GetPtr(0U, 0U),
-          compatStateBuffer.GetPtr(0U, 0U),
-          compatByteCount
-        );
+        // Raw effect-code blob copy into the merged buffer.
+        std::copy_n(compatStateBuffer.GetPtr(0U, 0U), compatByteCount, mergedBuffer.GetPtr(0U, 0U));
       }
       if (effectByteCount > 0U) {
-        std::memcpy(
-          mergedBuffer.GetPtr(compatByteCount, 0U),
-          effectSourceBuffer.GetPtr(0U, 0U),
-          effectByteCount
-        );
+        // Raw effect-code blob copy into the merged buffer.
+        std::copy_n(effectSourceBuffer.GetPtr(0U, 0U), effectByteCount, mergedBuffer.GetPtr(compatByteCount, 0U));
       }
 
       // Builds the effect, from its compiled copy in the cache when that is at
@@ -500,7 +533,7 @@ namespace moho
 
       // A bone texture variant that fails to build falls back to the plain
       // effect, which keeps the skinning palette in shader constants.
-      if (WantsBoneTextureVariant(deviceContext, effectSourceBuffer)) {
+      if (WantsBoneTextureVariantProbe(deviceContext, effectSourceBuffer)) {
         try {
           createEffect(true);
         } catch (const std::exception& exception) {

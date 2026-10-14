@@ -81,7 +81,7 @@ namespace moho
    * `IdPool` is 8-byte aligned in the shipped binary, through `mReleasedLows`'
    * words (an 8-aligned `gpg::fastvector_n`). Evidence, converging from four
    * independent sites:
-   *   - `CEntityDb::mIdPoolTree`'s node (`msvc8::map<std::uint32_t, IdPool>`,
+   *   - `EntityDB::mIdPoolTree`'s node (`msvc8::map<std::uint32_t, IdPool>`,
    *     `EntityDb.h`) places `IdPool` at node+0x18, one 4-byte word after the
    *     node's `key`+0x10..0x14 -- i.e. a forced pad word between key and
    *     payload that only 8-byte alignment on the payload explains
@@ -97,7 +97,7 @@ namespace moho
    *     evidence of the same requirement, worked around instead of modelled.
    *   - `sizeof(IdPool) == 0xCB0` is already a multiple of 8, and every existing
    *     embedding (`CommandManager::mIdPool`@0x00, `CDecalBuffer::mPool`@0x08,
-   *     `CCommandDbRuntimeView::pool`@0x10) sits at an offset that is *also* a
+   *     `CCommandDb::pool`@0x10) sits at an offset that is *also* a
    *     multiple of 8, so this alignment is free everywhere `IdPool` is already
    *     embedded -- it changes no existing `offsetof`/`sizeof` assertion.
    */

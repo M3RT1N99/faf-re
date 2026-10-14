@@ -44,28 +44,13 @@
 
 namespace
 {
-  template <std::size_t SlotIndex>
-  void CallDeletingDestructorSlot(void* object)
-  {
-    if (object == nullptr) {
-      return;
-    }
-
-    auto** const vtable = *reinterpret_cast<void***>(object);
-    if (vtable == nullptr) {
-      return;
-    }
-
-    using DeletingDtor = void(__thiscall*)(void*, int);
-    auto* const dtor = reinterpret_cast<DeletingDtor>(vtable[SlotIndex]);
-    dtor(object, 1);
-  }
-
   void DestroyPlatoonPool(moho::ArmyPool& pool)
   {
     // Address: 0x006FF9A0 (FUN_006FF9A0), platoon-pool destruction prefix.
+    // Binary dispatches the slot-2 scalar deleting destructor per platoon,
+    // which is exactly what `delete` emits through CScriptObject's virtual dtor.
     for (moho::CPlatoon** it = pool.platoons.begin(); it != pool.platoons.end(); ++it) {
-      CallDeletingDestructorSlot<2>(*it);
+      delete *it;
     }
 
     pool.platoons.ResetStorageToInline();
@@ -83,24 +68,6 @@ namespace
     node.ListResetLinks();
   }
 
-  struct PointerTriplet
-  {
-    void* start;
-    void* finish;
-    void* capacity;
-  };
-
-  static_assert(sizeof(PointerTriplet) == 0x0C, "PointerTriplet size must be 0x0C");
-
-  void ResetPointerTripletStorage(PointerTriplet& triplet)
-  {
-    if (triplet.start != nullptr) {
-      operator delete(triplet.start);
-    }
-    triplet.start = nullptr;
-    triplet.finish = nullptr;
-    triplet.capacity = nullptr;
-  }
 
 
   /**
@@ -156,9 +123,9 @@ namespace
    * loop. Its sole caller, `~CArmyImpl`'s complete-object body
    * (FUN_006FF9A0 at 0x006FFA46), passes `UnitCategorySetsBegin`/`End`.
    */
-  void TeardownEntitySetRange(moho::SEntitySetTemplateUnit* const first, moho::SEntitySetTemplateUnit* const last)
+  void TeardownEntitySetRange(moho::EntitySetTemplate<moho::Unit>* const first, moho::EntitySetTemplate<moho::Unit>* const last)
   {
-    for (moho::SEntitySetTemplateUnit* it = first; it != last; ++it) {
+    for (moho::EntitySetTemplate<moho::Unit>* it = first; it != last; ++it) {
       it->mVec.ResetStorageToInline();
 
       if (it->mNext != nullptr && it->mPrev != nullptr) {
@@ -171,10 +138,10 @@ namespace
     }
   }
 
-  [[nodiscard]] moho::SArmyVectorWithMeta* GetRuntimeWordVectorWithMeta(moho::CArmyImpl* army)
+  [[nodiscard]] moho::SArmyVectorWithMeta* GetWordVectorWithMeta(moho::CArmyImpl* army)
   {
-    // Evidence: FUN_006FDE70 targets (this + 0x17C), modeled as CArmyImpl::RuntimeWordVectorWithMeta.
-    return &army->mVarDat.mRuntimeWordVectorWithMeta;
+    // Evidence: FUN_006FDE70 targets (this + 0x17C): CArmyImpl::mVarDat.mWordVectorWithMeta.
+    return &army->mVarDat.mWordVectorWithMeta;
   }
 
   constexpr const char* kCAiBrainTypeNames[] = {"Moho::CAiBrain", "CAiBrain"};
@@ -444,18 +411,6 @@ namespace
     gpg::WriteRawPointer(archive, objectRef, trackedState, owner);
   }
 
-  template <std::size_t SlotIndex, class TObject>
-  void ReplaceDeletingDtorOwnedPointer(TObject*& field, TObject* const value)
-  {
-    TObject* const prior = field;
-    if (prior == value) {
-      return;
-    }
-
-    field = value;
-    CallDeletingDestructorSlot<SlotIndex>(prior);
-  }
-
   template <class TObject>
   void ReplaceDeleteOwnedPointer(TObject*& field, TObject* const value)
   {
@@ -494,13 +449,13 @@ namespace
     moho::CEntityDbAllUnitsNode* node = army.Simulation->mEntityDB->AllUnitsEnd(armyIndex);
     const moho::CEntityDbAllUnitsNode* const endNode = army.Simulation->mEntityDB->AllUnitsEnd(armyIndex + 1u);
     while (node != endNode) {
-      moho::Unit* const unit = moho::CEntityDb::UnitFromAllUnitsNode(node);
+      moho::Unit* const unit = moho::EntityDB::UnitFromAllUnitsNode(node);
       if (unit == nullptr) {
         break;
       }
 
       unit->MarkNeedsSyncGameData();
-      node = moho::CEntityDb::NextAllUnitsNode(node);
+      node = moho::EntityDB::NextAllUnitsNode(node);
     }
   }
 
@@ -613,7 +568,7 @@ namespace
     return msvc8::string(numeric);
   }
 
-  [[nodiscard]] moho::SEntitySetTemplateUnit* ResolveCategorySetForUnit(moho::CArmyImpl* army, moho::Unit* unit)
+  [[nodiscard]] moho::EntitySetTemplate<moho::Unit>* ResolveCategorySetForUnit(moho::CArmyImpl* army, moho::Unit* unit)
   {
     if (army == nullptr || unit == nullptr) {
       return nullptr;
@@ -629,14 +584,14 @@ namespace
       return nullptr;
     }
 
-    moho::SEntitySetTemplateUnit* const setsBegin = army->UnitCategorySets.begin();
+    moho::EntitySetTemplate<moho::Unit>* const setsBegin = army->UnitCategorySets.begin();
     if (setsBegin == nullptr) {
       return nullptr;
     }
 
     const std::size_t relativeIndex = static_cast<std::size_t>(categoryBitIndex - army->UnitCategoryBaseIndex);
-    moho::SEntitySetTemplateUnit* const target = setsBegin + relativeIndex;
-    if (moho::SEntitySetTemplateUnit* const setsEnd = army->UnitCategorySets.end(); setsEnd != nullptr && target >= setsEnd) {
+    moho::EntitySetTemplate<moho::Unit>* const target = setsBegin + relativeIndex;
+    if (moho::EntitySetTemplate<moho::Unit>* const setsEnd = army->UnitCategorySets.end(); setsEnd != nullptr && target >= setsEnd) {
       return nullptr;
     }
 
@@ -977,7 +932,7 @@ namespace
 
     // Evidence: CArmyImpl::CArmyImpl (0x006FE690) computes `edx = maxBit -
     // minBit`, `ecx = edx + 1` (the count), builds a default
-    // `SEntitySetTemplateUnit` value on the stack, and calls `sub_702450`
+    // `EntitySetTemplate<Unit>` value on the stack, and calls `sub_702450`
     // with `ecx` = count and `edx = lea [ebp+258h]` = &UnitCategorySets --
     // exactly `UnitCategorySets.resize(categorySetCount)` (the one-arg VC8
     // `resize(_Newsize, _Ty())` shape; `sub_702450` is the two-arg body,
@@ -1015,7 +970,7 @@ namespace
 
   [[nodiscard]] bool PlatoonDisbandsOnIdle(const moho::CPlatoon* const platoon)
   {
-    return platoon != nullptr && platoon->mDisbandOnIdle != 0u;
+    return platoon != nullptr && platoon->mDisbandOnIdle;
   }
 
   [[nodiscard]] bool IsPlatoonUniqueNameEmpty(const moho::CPlatoon* const platoon)
@@ -1176,7 +1131,7 @@ namespace moho
 
     const int mapMaxExtent = ResolveMapMaxExtent(sim);
     ReplaceDeleteOwnedPointer(InfluenceMap, new CInfluenceMap(ResolveInfluenceMapGridSize(mapMaxExtent), sim, this));
-    ReplaceDeletingDtorOwnedPointer<2>(AiBrain, new CAiBrain(this));
+    ReplaceDeleteOwnedPointer(AiBrain, new CAiBrain(this));
 
     // 0x006FEC7C reads the option and hands `GetString()` straight to an inline
     // strlen -- there is no default, and the `compare(0, size, "none", 4)` at
@@ -1189,7 +1144,7 @@ namespace moho
     // whole map -- enemy meshes, blips and build effects alike -- was visible
     // with no intel at all.
     const char* const fogOfWar = GetLuaStringField(scenarioInfoOptions, "FogOfWar");
-    ReplaceDeletingDtorOwnedPointer<0>(AiReconDb, CAiReconDBImpl::Create(this, std::strcmp(fogOfWar, "none") != 0));
+    ReplaceDeleteOwnedPointer(AiReconDb, CAiReconDBImpl::Create(this, std::strcmp(fogOfWar, "none") != 0));
     CopyReconGridsFromDatabase(*this);
 
     if (CPlatoon* const pool = MakePlatoon("Pool", "PoolAI"); pool != nullptr) {
@@ -1248,7 +1203,7 @@ namespace moho
 
     // Evidence: FUN_006FF9A0 at 0x006FFA46 calls FUN_007056D0(begin, end)
     // once over the whole range, then frees the raw array block.
-    if (moho::SEntitySetTemplateUnit* const categorySetsBegin = UnitCategorySets.begin();
+    if (moho::EntitySetTemplate<moho::Unit>* const categorySetsBegin = UnitCategorySets.begin();
         categorySetsBegin != nullptr) {
       TeardownEntitySetRange(categorySetsBegin, UnitCategorySets.end());
       operator delete(categorySetsBegin);
@@ -1269,12 +1224,14 @@ namespace moho
 
     DestroyArmyEconomyInfo(EconomyInfo);
 
-    // Evidence: 0x006FF9A0 calls vtable slot 0 with delete-flag for mReconDB (+0x1F0).
-    CallDeletingDestructorSlot<0>(AiReconDb);
+    // Evidence: 0x006FF9A0 calls the slot-0 scalar deleting destructor for
+    // mReconDB (+0x1F0) — IAiReconDB declares its dtor at slot 0.
+    delete AiReconDb;
     AiReconDb = nullptr;
 
-    // Evidence: 0x006FF9A0 calls vtable slot 2 with delete-flag for mBrain (+0x1EC).
-    CallDeletingDestructorSlot<2>(AiBrain);
+    // Evidence: 0x006FF9A0 calls the slot-2 scalar deleting destructor for
+    // mBrain (+0x1EC) — CScriptObject declares its dtor at slot 2.
+    delete AiBrain;
     AiBrain = nullptr;
   }
 
@@ -1417,8 +1374,8 @@ namespace moho
     archive->Read(SimArmy::StaticGetClass(), static_cast<SimArmy*>(this), owner);
 
     Simulation = ReadPointerTyped<Sim>(archive, owner, ResolveSimType(), false);
-    ReplaceDeletingDtorOwnedPointer<2>(AiBrain, ReadPointerTyped<CAiBrain>(archive, owner, ResolveCAiBrainType(), true));
-    ReplaceDeletingDtorOwnedPointer<0>(
+    ReplaceDeleteOwnedPointer(AiBrain, ReadPointerTyped<CAiBrain>(archive, owner, ResolveCAiBrainType(), true));
+    ReplaceDeleteOwnedPointer(
       AiReconDb, ReadPointerTyped<CAiReconDBImpl>(archive, owner, ResolveCAiReconDBImplType(), true)
     );
     ReplaceEconomyOwnedPointer(EconomyInfo, ReadPointerTyped<CSimArmyEconomyInfo>(archive, owner, ResolveCEconomyType(), true));
@@ -1441,8 +1398,8 @@ namespace moho
     gpg::RType* const categoryVectorType = ResolveEntitySetTemplateUnitVectorType();
     GPG_ASSERT(categoryVectorType != nullptr);
     if (categoryVectorType != nullptr) {
-      // `RVectorType<SEntitySetTemplateUnit>::Init()` sets `size_ =
-      // sizeof(msvc8::vector<SEntitySetTemplateUnit>)` (0x10) and its
+      // `RVectorType<EntitySetTemplate<Unit>>::Init()` sets `size_ =
+      // sizeof(msvc8::vector<EntitySetTemplate<Unit>>)` (0x10) and its
       // SubscriptIndex/GetCount/SetCount cast `obj` straight to the real
       // vector type -- the reflected object is `UnitCategorySets` itself,
       // not a 3-word begin/end/capacityEnd view starting 4 bytes into it.
@@ -1622,19 +1579,19 @@ namespace moho
     // The alliance change can flip what every unit of this army is visible to,
     // so re-queue each owned unit into the Sim coord-dirty list to have its
     // visibility recomputed next tick. The binary (0x006FDF6C-0x006FDFF0) walks
-    // CEntityDb::mAllUnits and relinks every unit whose ArmyRef == this at the
+    // EntityDB::mAllUnits and relinks every unit whose ArmyRef == this at the
     // front of Sim::mCoordEntities; the army-keyed range yields exactly those
     // units in the same order.
     const std::uint32_t armyIndex = static_cast<std::uint32_t>(mConstDat.mArmyIndex);
     CEntityDbAllUnitsNode* node = Simulation->mEntityDB->AllUnitsEnd(armyIndex);
     const CEntityDbAllUnitsNode* const endNode = Simulation->mEntityDB->AllUnitsEnd(armyIndex + 1u);
     while (node != endNode) {
-      Unit* const unit = CEntityDb::UnitFromAllUnitsNode(node);
+      Unit* const unit = EntityDB::UnitFromAllUnitsNode(node);
       if (unit == nullptr) {
         break;
       }
       unit->ListLinkBefore(&Simulation->mCoordEntities);
-      node = CEntityDb::NextAllUnitsNode(node);
+      node = EntityDB::NextAllUnitsNode(node);
     }
   }
 
@@ -1716,7 +1673,7 @@ namespace moho
 
       if (PlatoonDisbandsOnIdle(platoon) && platoon != nullptr && platoon->AssignedSquadsAreIdle()) {
         if (armyPool != nullptr && platoon != armyPool) {
-          platoon->PullUnassignedUnitsFrom(armyPool);
+          platoon->ReturnUnitsTo(armyPool);
         }
         shouldDisband = true;
       }
@@ -1855,7 +1812,7 @@ namespace moho
       }
 
       if (armyPool != nullptr) {
-        current->PullUnassignedUnitsFrom(armyPool);
+        current->ReturnUnitsTo(armyPool);
       }
       platoons.erase(platoonIt);
       RunPlatoonOnDestroyAndDelete(current);
@@ -1885,7 +1842,7 @@ namespace moho
       }
 
       if (armyPool != nullptr && platoon != armyPool) {
-        platoon->PullUnassignedUnitsFrom(armyPool);
+        platoon->ReturnUnitsTo(armyPool);
       }
 
       platoons.erase(platoonIt);
@@ -1901,7 +1858,7 @@ namespace moho
    * Removes all input units from their existing platoons, resolves one named
    * platoon, and appends those units into its unassigned squad lane.
    */
-  void CArmyImpl::AssignUnitsToPlatoon(const SEntitySetTemplateUnit* const units, const char* const platoonName)
+  void CArmyImpl::AssignUnitsToPlatoon(const EntitySetTemplate<Unit>* const units, const char* const platoonName)
   {
     RemoveUnitsFromPlatoons(units);
     CPlatoon* const platoon = GetPlatoonByName(platoonName);
@@ -1936,7 +1893,7 @@ namespace moho
    * Iterates one unit-set entity storage and detaches each decoded unit from
    * its owning platoon.
    */
-  void CArmyImpl::RemoveUnitsFromPlatoons(const SEntitySetTemplateUnit* const units)
+  void CArmyImpl::RemoveUnitsFromPlatoons(const EntitySetTemplate<Unit>* const units)
   {
     // Each entry is the unit's `Entity` subobject; 0x00700743..0x0070074C is the
     // null-preserving derived cast back to `Unit*`.
@@ -2054,7 +2011,7 @@ namespace moho
     CEntityDbAllUnitsNode* node = Simulation->mEntityDB->AllUnitsEnd(armyIndex);
     CEntityDbAllUnitsNode* const endNode = Simulation->mEntityDB->AllUnitsEnd(armyIndex + 1u);
     while (node != endNode) {
-      Unit* const unit = CEntityDb::UnitFromAllUnitsNode(node);
+      Unit* const unit = EntityDB::UnitFromAllUnitsNode(node);
       if (unit == nullptr) {
         break;
       }
@@ -2063,7 +2020,7 @@ namespace moho
         currentCap += GetUnitCapCost(unit);
       }
 
-      node = CEntityDb::NextAllUnitsNode(node);
+      node = EntityDB::NextAllUnitsNode(node);
     }
 
     return currentCap;
@@ -2114,7 +2071,7 @@ namespace moho
       return 0;
     }
 
-    SArmyVectorWithMeta* const target = GetRuntimeWordVectorWithMeta(this);
+    SArmyVectorWithMeta* const target = GetWordVectorWithMeta(this);
     target->CopyWordPayloadFrom(*value);
     target->mMetaWord = value->mMetaWord;
     return target->mMetaWord;
@@ -2192,12 +2149,12 @@ namespace moho
    * Address: 0x00700A00 (FUN_00700A00, Moho::CArmyImpl::CountUnitsInBoundsXZ)
    */
   int CArmyImpl::CountUnitsInBoundsXZ(
-    const Wm3::Vector3f& minBounds, const Wm3::Vector3f& maxBounds, const SEntitySetTemplateUnit& unitSet
+    const Wm3::Vector3f& minBounds, const Wm3::Vector3f& maxBounds, const EntitySetTemplate<Unit>& unitSet
   )
   {
     int count = 0;
     for (Entity* const* it = unitSet.mVec.start_; it != unitSet.mVec.end_; ++it) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+      Unit* const unit = static_cast<Unit*>(*it);
       if (unit == nullptr) {
         continue;
       }
@@ -2251,12 +2208,12 @@ namespace moho
    */
   void CArmyImpl::AddUnitToCategorySet(Unit* unit)
   {
-    SEntitySetTemplateUnit* const set = ResolveCategorySetForUnit(this, unit);
+    EntitySetTemplate<Unit>* const set = ResolveCategorySetForUnit(this, unit);
     if (set == nullptr) {
       return;
     }
 
-    (void)set->AddUnit(unit);
+    (void)set->Add(unit);
   }
 
   /**
@@ -2264,12 +2221,12 @@ namespace moho
    */
   bool CArmyImpl::ConsumeUnitFromCategorySet(Unit* unit)
   {
-    SEntitySetTemplateUnit* const set = ResolveCategorySetForUnit(this, unit);
+    EntitySetTemplate<Unit>* const set = ResolveCategorySetForUnit(this, unit);
     if (set == nullptr) {
       return false;
     }
 
-    return set->RemoveUnit(unit);
+    return set->Remove(unit);
   }
 
   /**
@@ -2281,7 +2238,7 @@ namespace moho
    */
   void* CArmyImpl::GetUnits(void* const outUnits, void* const filterBuckets)
   {
-    auto* const resultSet = static_cast<SEntitySetTemplateUnit*>(outUnits);
+    auto* const resultSet = static_cast<EntitySetTemplate<Unit>*>(outUnits);
     if (resultSet == nullptr) {
       return nullptr;
     }
@@ -2312,14 +2269,14 @@ namespace moho
         continue;
       }
 
-      SEntitySetTemplateUnit* const setsBegin = UnitCategorySets.begin();
+      EntitySetTemplate<Unit>* const setsBegin = UnitCategorySets.begin();
       if (setsBegin == nullptr) {
         continue;
       }
 
       const std::size_t relativeIndex = static_cast<std::size_t>(categoryBitIndex - UnitCategoryBaseIndex);
-      SEntitySetTemplateUnit* const set = setsBegin + relativeIndex;
-      if (SEntitySetTemplateUnit* const setsEnd = UnitCategorySets.end(); setsEnd != nullptr && set >= setsEnd) {
+      EntitySetTemplate<Unit>* const set = setsBegin + relativeIndex;
+      if (EntitySetTemplate<Unit>* const setsEnd = UnitCategorySets.end(); setsEnd != nullptr && set >= setsEnd) {
         continue;
       }
 
@@ -2530,3 +2487,24 @@ namespace moho
     return PathCapacityBoth;
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CArmyImpl>`, vtable 0x00E2FC2C.
+   *
+   * Address: 0x00BD9C20 (FUN_00BD9C20 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFF410 (FUN_00BFF410 -- the global's destructor.)
+   * Address: 0x00701DD0 (FUN_00701DD0 -- `Init`.)
+   * Address: 0x00701000 (FUN_00701000 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00701010 (FUN_00701010 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CArmyImplSerializer : gpg::SerSaveLoadHelper<CArmyImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B8964 -- process-global `CArmyImplSerializer` singleton.
+  moho::CArmyImplSerializer gCArmyImplSerializer;
+} // namespace

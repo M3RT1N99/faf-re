@@ -27,6 +27,7 @@
 #include "moho/sim/RRuleGameRules.h"
 #include "moho/math/QuaternionMath.h"
 #include "gpg/core/containers/String.h"
+#include "gpg/core/containers/ArchiveSerialization.h"
 
 namespace moho
 {
@@ -605,9 +606,8 @@ namespace moho
   {
     constexpr float kQ = 0.70710677f; // sqrt(2)/2; fixed 90-degree rotation lane.
 
-    boost::SharedPtrRaw<RScmResource> meshResource = original->GetMesh();
-    if (meshResource.px == nullptr) {
-      meshResource.release();
+    const boost::shared_ptr<RScmResource> meshResource = original->GetMesh();
+    if (!meshResource) {
       return;
     }
 
@@ -615,11 +615,10 @@ namespace moho
     {
       // Binary grabs the raw skeleton pointer then drops the shared owner; the
       // mesh resource keeps the skeleton alive for the loop.
-      const boost::shared_ptr<const CAniSkel> handle = meshResource.px->GetSkeleton();
+      const boost::shared_ptr<const CAniSkel> handle = meshResource->GetSkeleton();
       sourceSkeleton = handle.get();
     }
     if (sourceSkeleton == nullptr) {
-      meshResource.release();
       return;
     }
 
@@ -661,9 +660,8 @@ namespace moho
       const VTransform composed = VTransform::Compose(invTransform, original->GetTransformWm3());
       Prop* const child = Prop::CreateFromBlueprintResolved(original->SimulationRef, childBlueprint, composed);
 
-      boost::SharedPtrRaw<RScmResource> childMeshResource = child->GetMesh();
-      if (childMeshResource.px != nullptr) {
-        const RScmResource* const childMesh = childMeshResource.px;
+      if (const boost::shared_ptr<RScmResource> childMeshResource = child->GetMesh()) {
+        const RScmResource* const childMesh = childMeshResource.get();
 
         // Per-axis child scale = source-bone-bounds extent / child-mesh-box extent.
         Wm3::Vector3f childScale{};
@@ -675,7 +673,7 @@ namespace moho
           (childMesh->mBounds.Max.z - childMesh->mBounds.Min.z);
 
         {
-          const boost::shared_ptr<const CAniSkel> childHandle = childMeshResource.px->GetSkeleton();
+          const boost::shared_ptr<const CAniSkel> childHandle = childMeshResource->GetSkeleton();
           const CAniSkel* const childSkeleton = childHandle.get();
           if (childSkeleton != nullptr && childSkeleton->mBones.begin() != childSkeleton->mBones.end()) {
             const SAniSkelBone* const rootBone = childSkeleton->GetBone(0);
@@ -705,13 +703,11 @@ namespace moho
         child->mVarDat.mScale.z = childScale.z;
         child->ListLinkBefore(&child->SimulationRef->mCoordEntities);
       }
-      childMeshResource.release();
 
       out->push_back(child);
     }
 
     original->Destroy();
-    meshResource.release();
   }
 
   /**
@@ -976,4 +972,71 @@ namespace
   };
 
   const PropLuaFuncDefBootstrap gPropLuaFuncDefBootstrap{};
+} // namespace
+
+namespace moho
+{
+  /**
+   * Address: 0x006FA6B0 (FUN_006FA6B0)
+   */
+  void Prop::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    Sim* sim = nullptr;
+    const gpg::RRef owner{};
+    archive.ReadPointer(&sim, &owner);
+    result.SetUnowned(gpg::MakeRRef(new Prop(sim)), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<Prop>`, vtable 0x00E2F4E4.
+   *
+   * Address: 0x00BD98D0 (FUN_00BD98D0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFF200 (FUN_00BFF200 -- the global's destructor.)
+   * Address: 0x006FA9E0 (FUN_006FA9E0 -- `Init`.)
+   * Address: 0x006FA690 (FUN_006FA690 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x006FADD0 (FUN_006FADD0 -- `Delete`.)
+   */
+  struct PropConstruct : gpg::SerConstructHelper<Prop>
+  {};
+
+  /**
+   * `gpg::SerSaveConstructHelper<Prop>`, vtable 0x00E2F4D4.
+   *
+   * Address: 0x00BD98A0 (FUN_00BD98A0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFF1D0 (FUN_00BFF1D0 -- the global's destructor.)
+   * Address: 0x006FA960 (FUN_006FA960 -- `Init`.)
+   * Address: 0x006FA500 (FUN_006FA500 -- `SaveConstructArgs`, `MemberSaveConstructArgs` inlined.)
+   */
+  struct PropSaveConstruct : gpg::SerSaveConstructHelper<Prop>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B8754 -- process-global `PropConstruct` singleton.
+  moho::PropConstruct gPropConstruct;
+
+  // Address: 0x010B86DC -- process-global `PropSaveConstruct` singleton.
+  moho::PropSaveConstruct gPropSaveConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<Prop>`, vtable 0x00E2F4F4.
+   *
+   * Address: 0x00BD9910 (FUN_00BD9910 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFF230 (FUN_00BFF230 -- the global's destructor.)
+   * Address: 0x006FAA60 (FUN_006FAA60 -- `Init`.)
+   * Address: 0x006FA760 (FUN_006FA760 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x006FA780 (FUN_006FA780 -- `Serialize`, `MemberSerialize` inlined.)
+   */
+  struct PropSerializer : gpg::SerSaveLoadHelper<Prop>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B86FC -- process-global `PropSerializer` singleton.
+  moho::PropSerializer gPropSerializer;
 } // namespace

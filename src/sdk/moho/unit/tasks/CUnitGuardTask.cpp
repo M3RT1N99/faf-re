@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <new>
@@ -22,7 +22,6 @@
 #include "moho/containers/SCoordsVec2.h"
 #include "moho/entity/Entity.h"
 #include "moho/resource/blueprints/RUnitBlueprint.h"
-#include "moho/sim/ArmyUnitSet.h"
 #include "moho/sim/CArmyImpl.h"
 #include "moho/sim/COGrid.h"
 #include "moho/sim/EAllianceTypeInfo.h"
@@ -804,7 +803,7 @@ namespace moho
    */
   Unit* CUnitGuardTask::ResolveGuardCommandSourceUnit(
     Unit* guardedUnit,
-    SEntitySetTemplateUnit& visitedUnits
+    EntitySetTemplate<Unit>& visitedUnits
   ) const
   {
     Unit* candidate = guardedUnit;
@@ -813,7 +812,7 @@ namespace moho
     }
 
     while (true) {
-      if (visitedUnits.ContainsUnit(candidate)) {
+      if (visitedUnits.Contains(candidate)) {
         return mUnit;
       }
 
@@ -836,7 +835,7 @@ namespace moho
         return candidate;
       }
 
-      (void)visitedUnits.AddUnit(candidate);
+      (void)visitedUnits.Add(candidate);
       candidate = candidate->GetGuardedUnit();
       if (candidate == nullptr) {
         return mUnit;
@@ -1314,16 +1313,16 @@ namespace moho
       return blueprint;
     }
 
-    SEntitySetTemplateUnit visitedUnits{};
+    EntitySetTemplate<Unit> visitedUnits{};
     Unit* guardedUnit = mSecondaryUnit.GetObjectPtr();
     while (guardedUnit != nullptr) {
-      if (visitedUnits.ContainsUnit(guardedUnit)) {
+      if (visitedUnits.Contains(guardedUnit)) {
         break;
       }
 
       Unit* const nextGuardedUnit = guardedUnit->GetGuardedUnit();
       if (nextGuardedUnit != nullptr) {
-        (void)visitedUnits.AddUnit(guardedUnit);
+        (void)visitedUnits.Add(guardedUnit);
         guardedUnit = nextGuardedUnit;
         continue;
       }
@@ -1595,8 +1594,34 @@ namespace moho
 
       if (shouldIssueRepairTask) {
         (void)moho::CUnitRepairTask::Allocate(dispatchTask, targetUnit, false);
-      } else if (targetUnit->AiBuilder != nullptr && targetUnit->IsUnitState(UNITSTATE_SiloBuildingAmmo)) {
+      } else if (targetUnit->AiSiloBuild != nullptr && targetUnit->IsUnitState(UNITSTATE_SiloBuildingAmmo)) {
+        // Binary 0x00613C03 tests [target+0x558] (AiSiloBuild), not AiBuilder
+        // (+0x554): a strategic launcher owns a silo-build impl but no builder
+        // impl, so testing AiBuilder made hive silo-assist never dispatch.
         (void)moho::CUnitRepairTask::Allocate(dispatchTask, targetUnit, true);
+      }
+
+      // TEMPORARY PROBE -- silo-assist triage: whether dispatch actually
+      // allocates the silo-assist repair task and what the owner's request
+      // lane looks like. Delete when resolved.
+      {
+        static int sProbeDispatch = 0;
+        if ((++sProbeDispatch % 10) == 1) {
+          if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+            std::fprintf(
+              sink,
+              "[SILODISPATCH] n=%d owner=%p target=%p siloBuild=%d state=%d repair=%d req=%p\n",
+              sProbeDispatch,
+              static_cast<void*>(mUnit),
+              static_cast<void*>(targetUnit),
+              static_cast<int>(targetUnit->AiSiloBuild != nullptr),
+              static_cast<int>(targetUnit->IsUnitState(UNITSTATE_SiloBuildingAmmo)),
+              static_cast<int>(shouldIssueRepairTask),
+              static_cast<void*>(mUnit->mConsumptionData)
+            );
+            std::fclose(sink);
+          }
+        }
       }
       return;
     }
@@ -1779,7 +1804,7 @@ namespace moho
     }
 
     if (mRefreshGuardedUnitFromNearby) {
-      SEntitySetTemplateUnit visitedUnits{};
+      EntitySetTemplate<Unit> visitedUnits{};
       mSecondaryUnit.Set(ResolveGuardCommandSourceUnit(mSecondaryUnit.GetObjectPtr(), visitedUnits));
     }
 

@@ -439,57 +439,6 @@ namespace
     }
   }
 
-  /**
-   * Address: 0x004095F0 (FUN_004095F0, CTaskThread serializer callback body)
-   */
-  void DeserializeCTaskThreadCallback(gpg::ReadArchive* archive, int objectPtr, int /*version*/, gpg::RRef* ownerRef)
-  {
-    auto* const thread = reinterpret_cast<CTaskThread*>(objectPtr);
-    GPG_ASSERT(thread != nullptr);
-    if (!thread) {
-      return;
-    }
-
-    thread->MemberDeserialize(archive, ownerRef);
-  }
-
-  /**
-   * Address: 0x00409610 (FUN_00409610, CTaskThread serializer callback body)
-   */
-  void SerializeCTaskThreadCallback(gpg::WriteArchive* archive, int objectPtr, int /*version*/, gpg::RRef* ownerRef)
-  {
-    auto* const thread = reinterpret_cast<CTaskThread*>(objectPtr);
-    GPG_ASSERT(thread != nullptr);
-    if (!thread) {
-      return;
-    }
-
-    thread->MemberSerialize(archive, ownerRef);
-  }
-
-  /**
-   * Address: 0x00409BF0 (FUN_00409BF0, Moho::CTaskStageSerializer::Deserialize)
-   */
-  void DeserializeCTaskStage(gpg::ReadArchive* archive, int objectPtr, int /*version*/, gpg::RRef* /*ownerRef*/)
-  {
-    auto* const stage = reinterpret_cast<CTaskStage*>(objectPtr);
-    GPG_ASSERT(stage != nullptr);
-
-    archive->ReadBool(&stage->mActive);
-    stage->DeserializeThreads(archive);
-  }
-
-  /**
-   * Address: 0x00409C20 (FUN_00409C20, Moho::CTaskStageSerializer::Serialize)
-   */
-  void SerializeCTaskStage(gpg::WriteArchive* archive, int objectPtr, int /*version*/, gpg::RRef* /*ownerRef*/)
-  {
-    auto* const stage = reinterpret_cast<CTaskStage*>(objectPtr);
-    GPG_ASSERT(stage != nullptr);
-
-    archive->WriteBool(stage->mActive);
-    stage->SerializeThreads(archive);
-  }
 } // namespace
 
 /**
@@ -498,13 +447,12 @@ namespace
  * What it does:
  * Loads stage pointer, pending-frame counter, staged flag, and task stack.
  */
-void CTaskThread::MemberDeserialize(gpg::ReadArchive* const archive, gpg::RRef* const ownerRef)
+void CTaskThread::MemberDeserialize(gpg::ReadArchive* const archive, const int, const gpg::RRef& ownerRef)
 {
-  const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-  mStage = DeserializeTaskStagePointer(archive, owner);
+  mStage = DeserializeTaskStagePointer(archive, ownerRef);
   archive->ReadInt(&mPendingFrames);
   archive->ReadBool(&mStaged);
-  DeserializeTaskStack(archive, this, owner);
+  DeserializeTaskStack(archive, this, ownerRef);
 }
 
 /**
@@ -513,31 +461,12 @@ void CTaskThread::MemberDeserialize(gpg::ReadArchive* const archive, gpg::RRef* 
  * What it does:
  * Saves stage pointer, pending-frame counter, staged flag, and task stack.
  */
-void CTaskThread::MemberSerialize(gpg::WriteArchive* const archive, gpg::RRef* const ownerRef)
+void CTaskThread::MemberSerialize(gpg::WriteArchive* const archive, const int, const gpg::RRef& ownerRef)
 {
-  const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-  archive->WritePointer<moho::CTaskStage>(mStage, gpg::TrackedPointerState::Unowned, owner);
+  archive->WritePointer<moho::CTaskStage>(mStage, gpg::TrackedPointerState::Unowned, ownerRef);
   archive->WriteInt(mPendingFrames);
   archive->WriteBool(mStaged);
-  SerializeTaskStack(archive, this, owner);
-}
-
-/**
-  * Alias of FUN_004095F0 (non-canonical helper lane).
- */
-void CTaskThreadSerializer::Deserialize(gpg::ReadArchive* const archive, const int objectPtr, const int version, gpg::RRef* const ownerRef)
-{
-  DeserializeCTaskThreadCallback(archive, objectPtr, version, ownerRef);
-}
-
-/**
-  * Alias of FUN_00409610 (non-canonical helper lane).
- */
-void CTaskThreadSerializer::Serialize(
-  gpg::WriteArchive* const archive, const int objectPtr, const int version, gpg::RRef* const ownerRef
-)
-{
-  SerializeCTaskThreadCallback(archive, objectPtr, version, ownerRef);
+  SerializeTaskStack(archive, this, ownerRef);
 }
 
 /**
@@ -795,29 +724,6 @@ void CTaskStage::DeserializeThreads(gpg::ReadArchive* const archive)
 }
 
 /**
- * Address: 0x0040A630 (FUN_0040A630, Moho::CTaskThreadConstruct::Init)
- */
-void CTaskThreadConstruct::Init()
-{
-  gpg::RType* const type = CachedCTaskThreadType();
-  GPG_ASSERT(type->serConstructFunc_ == nullptr);
-  type->serConstructFunc_ = mSerConstructFunc;
-  type->deleteFunc_ = mDeleteFunc;
-}
-
-/**
- * Address: 0x0040A6B0 (FUN_0040A6B0, Moho::CTaskThreadSerializer::Init)
- */
-void CTaskThreadSerializer::Init()
-{
-  gpg::RType* const type = CachedCTaskThreadType();
-  GPG_ASSERT(type->serLoadFunc_ == nullptr);
-  type->serLoadFunc_ = mSerLoadFunc;
-  GPG_ASSERT(type->serSaveFunc_ == nullptr);
-  type->serSaveFunc_ = mSerSaveFunc;
-}
-
-/**
  * Address: 0x00408FA0 (FUN_00408FA0, scalar deleting destructor thunk)
  */
 CTaskThreadTypeInfo::~CTaskThreadTypeInfo() = default;
@@ -838,38 +744,6 @@ void CTaskThreadTypeInfo::Init()
   size_ = sizeof(CTaskThread);
   gpg::RType::Init();
   Finish();
-}
-
-/**
- * Address: 0x00409BF0 (FUN_00409BF0, Moho::CTaskStageSerializer::Deserialize)
- */
-void CTaskStageSerializer::Deserialize(
-  gpg::ReadArchive* const archive, const int objectPtr, const int version, gpg::RRef* const ownerRef
-)
-{
-  DeserializeCTaskStage(archive, objectPtr, version, ownerRef);
-}
-
-/**
- * Address: 0x00409C20 (FUN_00409C20, Moho::CTaskStageSerializer::Serialize)
- */
-void CTaskStageSerializer::Serialize(
-  gpg::WriteArchive* const archive, const int objectPtr, const int version, gpg::RRef* const ownerRef
-)
-{
-  SerializeCTaskStage(archive, objectPtr, version, ownerRef);
-}
-
-/**
- * Address: 0x0040A7F0 (FUN_0040A7F0, Moho::CTaskStageSerializer::Init)
- */
-void CTaskStageSerializer::Init()
-{
-  gpg::RType* const type = CachedCTaskStageType();
-  GPG_ASSERT(type->serLoadFunc_ == nullptr);
-  type->serLoadFunc_ = mSerLoadFunc;
-  GPG_ASSERT(type->serSaveFunc_ == nullptr);
-  type->serSaveFunc_ = mSerSaveFunc;
 }
 
 /**
@@ -910,3 +784,98 @@ void CTaskStageTypeInfo::Init()
   gpg::RType::Init();
   Finish();
 }
+
+namespace moho
+{
+  /**
+   * Address: 0x004094F0 (FUN_004094F0)
+   */
+  void CTaskThread::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CTaskThread()), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CTaskThread>`, vtable 0x00E003DC.
+   *
+   * Address: 0x00BC3040 (FUN_00BC3040 -- constructs the global and registers its destructor.)
+   * Address: 0x00BEE3A0 (FUN_00BEE3A0 -- the global's destructor.)
+   * Address: 0x0040A630 (FUN_0040A630 -- `Init`.)
+   * Address: 0x004094E0 (FUN_004094E0 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x0040B420 (FUN_0040B420 -- `Delete`.)
+   */
+  struct CTaskThreadConstruct : gpg::SerConstructHelper<CTaskThread>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010A67BC -- process-global `CTaskThreadConstruct` singleton.
+  moho::CTaskThreadConstruct gCTaskThreadConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CTaskThread>`, vtable 0x00E003EC.
+   *
+   * Address: 0x00BC3080 (FUN_00BC3080 -- constructs the global and registers its destructor.)
+   * Address: 0x00BEE3D0 (FUN_00BEE3D0 -- the global's destructor.)
+   * Address: 0x00409630 (FUN_00409630 -- an unreferenced out-of-line copy of the constructor.)
+   * Address: 0x0040A6B0 (FUN_0040A6B0 -- `Init`.)
+   * Address: 0x004095F0 (FUN_004095F0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00409610 (FUN_00409610 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CTaskThreadSerializer : gpg::SerSaveLoadHelper<CTaskThread>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010A672C -- process-global `CTaskThreadSerializer` singleton.
+  moho::CTaskThreadSerializer gCTaskThreadSerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * Inlined into `gpg::SerSaveLoadHelper<CTaskStage>::Deserialize` 0x00409BF0.
+   */
+  void CTaskStage::MemberDeserialize(gpg::ReadArchive* const archive)
+  {
+
+    archive->ReadBool(&mActive);
+    DeserializeThreads(archive);
+  }
+
+  /**
+   * Inlined into `gpg::SerSaveLoadHelper<CTaskStage>::Serialize` 0x00409C20.
+   */
+  void CTaskStage::MemberSerialize(gpg::WriteArchive* const archive)
+  {
+
+    archive->WriteBool(mActive);
+    SerializeThreads(archive);
+  }
+} // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CTaskStage>`, vtable 0x00E0042C.
+   *
+   * Address: 0x00BC30E0 (FUN_00BC30E0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BEE460 (FUN_00BEE460 -- the global's destructor.)
+   * Address: 0x0040A7F0 (FUN_0040A7F0 -- `Init`.)
+   * Address: 0x00409BF0 (FUN_00409BF0 -- `Deserialize`, `MemberDeserialize` inlined.)
+   * Address: 0x00409C20 (FUN_00409C20 -- `Serialize`, `MemberSerialize` inlined.)
+   */
+  struct CTaskStageSerializer : gpg::SerSaveLoadHelper<CTaskStage>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010A6834 -- process-global `CTaskStageSerializer` singleton.
+  moho::CTaskStageSerializer gCTaskStageSerializer;
+} // namespace

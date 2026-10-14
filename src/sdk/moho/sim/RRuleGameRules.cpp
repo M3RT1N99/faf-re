@@ -115,8 +115,8 @@ namespace moho
   } // namespace
 
   // EntityCategoryLookupTable used to own a hand-rolled RB-tree
-  // reimplementation here (CategoryLookupNodeRuntimeView/
-  // CategoryLookupMapRuntimeView, a per-TU duplicate of the exact same
+  // reimplementation here (a deleted overlay/
+  // CategoryLookupMap, a per-TU duplicate of the exact same
   // hand-rolled-tree anti-pattern Sim.cpp's CategoryLookupMapView/
   // CategoryLookupNodeView had -- see commit 5bf090ef for that sibling fix).
   // Migrated to a real `msvc8::map<msvc8::string, CategoryLookupValue>`; the
@@ -400,7 +400,7 @@ namespace moho
      * What it does:
      * Releases one raw runtime storage lane through global `operator delete`.
      */
-    void DeleteRuntimeStorageLane(void* const storage)
+    void DeleteStorageLane(void* const storage)
     {
       ::operator delete(storage);
     }

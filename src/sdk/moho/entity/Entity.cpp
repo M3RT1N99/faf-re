@@ -5,10 +5,9 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <cstdio>   // TEMPORARY PROBE (do not commit)
-#include <windows.h> // TEMPORARY PROBE (do not commit)
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -77,7 +76,7 @@
 #include "moho/unit/core/Unit.h"
 
 #include "gpg/core/reflection/StaticInitPhase.h"
-#include "moho/misc/DiagnosticBudget.h"
+#include "gpg/core/reflection/Reflection.h"
 #if !defined(_MSC_VER)
 #include "platform/Atomic32.h"
 #endif
@@ -257,51 +256,6 @@ namespace
   {
     syncData->mNewEntities.push_back(params);
     return &syncData->mNewEntities.back();
-  }
-
-  /**
-   * Address: 0x00558EC0 (FUN_00558EC0, sub_558EC0) + 0x00559190 grow lane
-   *
-   * What it does:
-   * Resizes `vector` to exactly `count` `std::uint32_t` slots, filling any newly
-   * created tail slots with `fillValue`. Shrinks in place by moving `mEnd`
-   * (matches the `v6 != a3->end` early-out at 0x00558EC0); grows in place when
-   * spare capacity is sufficient, otherwise reallocates a fresh block via the
-   * grow lane (`sub_559190`) and installs it. The vector is the engine's
-   * `SSTIInlineUIntVector` small-buffer container, so this is typed field access
-   * on its named `mBegin`/`mEnd`/`mCapacityEnd` lanes, not raw offset math.
-   */
-  void ResizeAndFillAuxValueVector(
-    moho::SSTIInlineUIntVector& vector,
-    const std::size_t count,
-    const std::uint32_t fillValue)
-  {
-    const std::size_t current = vector.Size();
-    if (count <= current) {
-      vector.mEnd = vector.mBegin + count;
-      return;
-    }
-
-    if (count > vector.Capacity()) {
-      auto* const newStorage = new std::uint32_t[count];
-      if (vector.mBegin == vector.mInlineBegin) {
-        vector.mInlineStorage0 =
-          static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(vector.mCapacityEnd));
-      } else {
-        delete[] vector.mBegin;
-      }
-      if (current != 0u) {
-        std::memcpy(newStorage, vector.mBegin, current * sizeof(std::uint32_t));
-      }
-      vector.mBegin = newStorage;
-      vector.mCapacityEnd = newStorage + count;
-    }
-
-    std::uint32_t* const newEnd = vector.mBegin + count;
-    for (std::uint32_t* slot = vector.mBegin + current; slot != newEnd; ++slot) {
-      *slot = fillValue;
-    }
-    vector.mEnd = newEnd;
   }
 
   [[nodiscard]] float ReadLuaNumberArgument(LuaPlus::LuaState* const state, const int stackIndex)
@@ -1964,16 +1918,7 @@ namespace moho
     gpg::SerSaveConstructArgsResult& result
   )
   {
-    static gpg::RType* sSimType = nullptr;
-    if (!sSimType) {
-      sSimType = gpg::LookupRType(typeid(Sim));
-    }
-
-    gpg::RRef simRef{};
-    simRef.mObj = SimulationRef;
-    simRef.mType = SimulationRef ? sSimType : nullptr;
-
-    gpg::WriteRawPointer(&archive, simRef, gpg::TrackedPointerState::Unowned, gpg::RRef{});
+    archive.WritePointer(SimulationRef, gpg::TrackedPointerState::Unowned, gpg::RRef{});
     result.SetUnowned(0u);
   }
 
@@ -1987,31 +1932,10 @@ namespace moho
    */
   void Entity::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
   {
-    static gpg::RType* sSimType = nullptr;
-    static gpg::RType* sEntityType = nullptr;
-    if (!sSimType) {
-      sSimType = gpg::LookupRType(typeid(Sim));
-    }
-    if (!sEntityType) {
-      sEntityType = gpg::LookupRType(typeid(Entity));
-    }
-
-    Sim* ownerSim = nullptr;
-    const gpg::TrackedPointerInfo trackedOwner = gpg::ReadRawPointer(&archive, gpg::RRef{});
-    if (trackedOwner.object != nullptr) {
-      gpg::RRef sourceRef{};
-      sourceRef.mObj = trackedOwner.object;
-      sourceRef.mType = trackedOwner.type;
-      const gpg::RRef upcastOwner = gpg::REF_UpcastPtr(sourceRef, sSimType);
-      ownerSim = static_cast<Sim*>(upcastOwner.mObj);
-    }
-
-    (void)ownerSim;
-    Entity* const object = nullptr;
-    gpg::RRef objectRef{};
-    objectRef.mObj = object;
-    objectRef.mType = object ? object->GetClass() : sEntityType;
-    result.SetUnowned(objectRef, 0u);
+    Sim* sim = nullptr;
+    const gpg::RRef owner{};
+    archive.ReadPointer(&sim, &owner);
+    result.SetUnowned(gpg::MakeRRef(new Entity(sim, 0x800u)), 0u);
   }
 
   /**
@@ -2552,19 +2476,11 @@ namespace moho
    * Address: 0x005BDB90 (FUN_005BDB90, Moho::Entity::GetMesh)
    *
    * What it does:
-   * Copies this entity's mesh shared-handle lanes and retains one shared
-   * owner on the control block when present.
+   * Returns this entity's mesh resource.
    */
-  boost::SharedPtrRaw<RScmResource> Entity::GetMesh() const
+  boost::shared_ptr<RScmResource> Entity::GetMesh() const
   {
-    const auto* const source = reinterpret_cast<const boost::SharedPtrRaw<RScmResource>*>(&mVarDat.mScmResource);
-    boost::SharedPtrRaw<RScmResource> result{};
-    result.px = source->px;
-    result.pi = source->pi;
-    if (result.pi != nullptr) {
-      result.pi->add_ref_copy();
-    }
-    return result;
+    return mVarDat.mScmResource;
   }
 
   /**
@@ -3320,12 +3236,11 @@ namespace moho
     Entity* const parent = mAttachInfo.GetAttachTargetEntity();
     mVarDat.mAttachmentParentRef = parent ? parent->id_ : kInvalidEntityId;
 
-    ResizeAndFillAuxValueVector(mVarDat.mAuxValueVector, mAttachedEntities.size(), kInvalidEntityId);
+    mVarDat.mAuxValueVector.Resize(mAttachedEntities.size(), kInvalidEntityId);
     for (std::size_t i = 0; i < mAttachedEntities.size(); ++i) {
       Entity* const child = mAttachedEntities[i];
       mVarDat.mAuxValueVector.mBegin[i] = child ? child->id_ : kInvalidEntityId;
     }
-
     // The whole block goes to the client verbatim. It is a plain member now, so
     // this is an ordinary argument rather than the `(char*)this + 0x78` cast the
     // flattened spelling forced.
@@ -3591,14 +3506,6 @@ namespace moho
     }
     if (next < 0.0f) {
       next = 0.0f;
-    }
-    {
-      static DiagnosticBudget sAdjProbe;
-      if (delta < 0.0f && sAdjProbe.Take(40)) {
-        gpg::Warnf("[DMGDIAG] AdjustHealth this=%p isUnit=%d health=%.2f maxHealth=%.2f delta=%.2f next=%.2f willSet=%d",
-                   static_cast<void*>(this), (IsUnit() != nullptr) ? 1 : 0,
-                   mVarDat.mHealth, mVarDat.mMaxHealth, delta, next, (next != mVarDat.mHealth) ? 1 : 0);
-      }
     }
     if (next != mVarDat.mHealth) {
       SetHealth(next);
@@ -4166,44 +4073,6 @@ namespace moho
    */
   void Entity::AdvanceCoords()
   {
-    // TEMPORARY PROBE (do not commit). A flying transport's Entity::Position
-    // reads NaN -- its four engine emitters all report
-    // `[EFXATTACH] nan-transform ent=... bone=28..31 dead=0`. This is the commit
-    // that publishes it, so report the first ticks on which a non-finite
-    // pending transform arrives, and say whether the orientation went bad with
-    // the position (orientation math) or the position alone (the integrator).
-    {
-      const VTransform& previous = mVarDat.mCurTransform;
-      const VTransform& current = mPendingTransform;
-      const bool posBad =
-        !(std::isfinite(current.pos_.x) && std::isfinite(current.pos_.y) && std::isfinite(current.pos_.z));
-      const bool orientBad =
-        !(std::isfinite(current.orient_.w) && std::isfinite(current.orient_.x) &&
-          std::isfinite(current.orient_.y) && std::isfinite(current.orient_.z));
-      if (posBad || orientBad) {
-        static DiagnosticBudget sAdvanceProbeBudget;
-        if (sAdvanceProbeBudget.Take(16)) {
-          char probe[352];
-          const char* className = "?";
-          try {
-            className = typeid(*this).name();
-          } catch (...) {
-            className = "<rtti-failed>";
-          }
-          sprintf_s(probe, sizeof(probe),
-                    "[COORDNAN] ent=%08X cls=%.60s pos=%d orient=%d prevpos=(%.2f,%.2f,%.2f) "
-                    "newpos=(%.2f,%.2f,%.2f) newquat=(%.3f,%.3f,%.3f,%.3f) velScale=%.3f\n",
-                    static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(this)),
-                    className,
-                    posBad ? 1 : 0, orientBad ? 1 : 0,
-                    previous.pos_.x, previous.pos_.y, previous.pos_.z,
-                    current.pos_.x, current.pos_.y, current.pos_.z,
-                    current.orient_.w, current.orient_.x, current.orient_.y, current.orient_.z,
-                    mPendingVelocityScale);
-          ::OutputDebugStringA(probe);
-        }
-      }
-    }
 
     mVarDat.mLastTransform = mVarDat.mCurTransform;
     mVarDat.mCurTransform = mPendingTransform;
@@ -5843,13 +5712,6 @@ namespace moho
     }
     const float delta = static_cast<float>(lua_tonumber(rawState, 3));
 
-    {
-      static DiagnosticBudget sBindProbe;
-      if (delta < 0.0f && sBindProbe.Take(30)) {
-        gpg::Warnf("[DMGDIAG] Lua AdjustHealth binding entity=%p isUnit=%d delta=%.1f",
-                   static_cast<void*>(entity), (entity->IsUnit() != nullptr) ? 1 : 0, delta);
-      }
-    }
     entity->SimulationRef->Logf("Entity[0x%08x]:AdjustHealth(%.5f)\n", static_cast<std::uint32_t>(entity->id_), delta);
     entity->AdjustHealth(instigator, delta);
     return 0;
@@ -8382,4 +8244,27 @@ namespace
   };
 
   const EntityLuaFuncDefBootstrap gEntityLuaFuncDefBootstrap{};
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<Entity>`, vtable 0x00E276F4.
+   *
+   * Address: 0x00BD5050 (FUN_00BD5050 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFC870 (FUN_00BFC870 -- the global's destructor.)
+   * Address: 0x0067F640 (FUN_0067F640 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x006807A0 (FUN_006807A0 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x0067C600 (FUN_0067C600 -- `Init`.)
+   * Address: 0x0067B630 (FUN_0067B630 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0067B640 (FUN_0067B640 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct EntitySerializer : gpg::SerSaveLoadHelper<Entity>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B43E4 -- process-global `EntitySerializer` singleton.
+  moho::EntitySerializer gEntitySerializer;
 } // namespace

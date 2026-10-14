@@ -177,6 +177,10 @@ namespace gpg::core
      * Address: 0x00954250 (FUN_00954250 -- `ConstructRangeForward` for the `char` reachability flags of `gpg::fastvector_n<char, 12>` (`EraseUnconnectedNodes` 0x00954650, grown by `resize(n, 0)` 0x009545D0); the same null-guarded byte copy as 0x0092BE50 for a second instantiation, also a `this`-taking member (`ret 0xC`); callers 0x009543F0 (the reallocating insert: prefix / inserted run / suffix); formerly `CopyByteRangeAndAdvanceRuntimeB` in moho/sim/SimRecoveryRuntime.cpp (RULE ONE), removed 2026-09-30.)
      * Address: 0x0061CA20 (FUN_0061CA20 -- `ConstructRangeForward` for `gpg::fastvector_n<moho::WeakPtr<moho::Entity>, 20>` (`Unit::mBlipsInRange`) and the `, 10>` raised-platform candidates of `CUnitMotion`: each non-null slot `WeakPtr`'s copy constructor, pushed onto its target's chain; the `_Ucopy` of the reallocating insert 0x0061C940. Formerly `CopyIntrusiveWeakRefRangeRelink`, removed 2026-09-30.)
      * Address: 0x008AFB90 (FUN_008AFB90 -- `ConstructRangeForward` for `gpg::fastvector_n<moho::SoundHandleRecord, 256>` (`CUserSoundManager::mSoundHandles`, element 0x28): `if (dest) new (dest) SoundHandleRecord(*src)` per slot, the copy constructor 0x008AECF0 that pushes the new slot onto its loop handle's chain and copies the tracked-entity set; the three slices of the reallocating insert 0x008AF760. It was cited on the assignment lane, with the chain relink and the set copy modelled as passes after the grow (`RebuildSoundHandleOwnerChains`, `RefreshTrackedEntitySetAfterRelocation`, removed 2026-09-30); the second one emptied every relocated slot's set instead of copying it.)
+     * Address: 0x004ADDB0 (FUN_004ADDB0 -- `ConstructRangeForward` for `gpg::fastvector_n<moho::ResourceWatch*, N>` (`CResourceWatcher::mWatches`, N = 2, and `ResourceManager::OnDiskWatchEvent`'s local, N = 8), the
+     * null-guarded pointer copy of the inserting and reallocating paths
+     * (0x004ACD80, 0x004ADCE0); formerly `CopyDwordRangeForward_004ADDB0` in
+     * moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
      */
     template <class T>
     inline T* ConstructRangeForward(T* dest, const T* first, const T* const last)
@@ -469,7 +473,7 @@ namespace gpg::core
       // Trivially copyable path
       if constexpr (std::is_trivially_copyable_v<T>) {
         if (oldSize)
-          std::memcpy(newBuf, start_, oldSize * elem_);
+          std::copy_n(start_, oldSize, newBuf);
       } else {
         for (size_t i = 0; i < oldSize; ++i)
           ::new (static_cast<void*>(newBuf + i)) T(std::move(start_[i]));
@@ -560,7 +564,7 @@ namespace gpg::core
     }
 
     /**
-     * Address: 0x005E8900 (FUN_005E8900 -- `erase(pos)` -- shift the tail down one slot and rewind `end_`, handing back a cursor on the same index. Reached from `SEntitySetTemplateUnit::RemoveUnit`'s `mVec.erase(it)` for `gpg::core::FastVectorN<moho::Entity*, 4>` (`SEntitySetTemplateUnit::mVec` at +0x08; the 0x10 head sits in front of its own four-slot inline block); callers 0x00608EF0; formerly `EraseEntityVectorSlotAndReturnCursor` in moho/sim/ArmyUnitSet.cpp (RULE ONE), removed 2026-09-11.)
+     * Address: 0x005E8900 (FUN_005E8900 -- `erase(pos)` -- shift the tail down one slot and rewind `end_`, handing back a cursor on the same index. Reached from `EntitySetTemplate<Unit>::RemoveUnit`'s `mVec.erase(it)` for `gpg::core::FastVectorN<moho::Entity*, 4>` (`EntitySetTemplate<Unit>::mVec` at +0x08; the 0x10 head sits in front of its own four-slot inline block); callers 0x00608EF0; formerly `EraseEntityVectorSlotAndReturnCursor` in moho/sim/ArmyUnitSet.cpp (RULE ONE), removed 2026-09-11.)
      * Address: 0x008B7540 (FUN_008B7540 -- `erase(pos)` for `gpg::fastvector_n<moho::WeakPtr<moho::UserCommandIssueHelper>, 2>` (`UserCommandQueue::primaryLinks`/`resolvedLinks`): the Remove edit's `resolvedLinks.erase(found)` in the rebuild 0x008B6F60, shifting through 0x008B8140; formerly `EraseQueueLinkEntryAndShrinkRange` in moho/unit/core/UserUnit.cpp, removed 2026-09-30.)
      */
     iterator erase(iterator pos)
@@ -771,11 +775,13 @@ namespace gpg::core
      * Address: 0x004026F0 (FUN_004026F0, the generic emission: binds all four lanes to a
      * caller-owned buffer)
      * Address: 0x0047F500 (FUN_0047F500, the n64<char> fixed-span alias lane)
-     * Address: 0x00553430 (FUN_00553430 -- `BindInlineStorage` for `unsigned int`: `lea edx,[ecx+edx*4]` -- base in ECX and the slot count in EDX, the by-count form. Zero callers, unreachable; formerly `BindUIntRuntimeViewToExternalStorageLaneA` in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
-     * Address: 0x00553500 (FUN_00553500 -- `BindInlineStorage` for `unsigned int`: an ICF-identical second emission of that by-count form. Zero callers, unreachable; formerly `BindUIntRuntimeViewToExternalStorageLaneB` in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
+     * Address: 0x00553430 (FUN_00553430 -- `BindInlineStorage` for `unsigned int`: `lea edx,[ecx+edx*4]` -- base in ECX and the slot count in EDX, the by-count form. Zero callers, unreachable; formerly a deleted overlay in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
+     * Address: 0x00553500 (FUN_00553500 -- `BindInlineStorage` for `unsigned int`: an ICF-identical second emission of that by-count form. Zero callers, unreachable; formerly a deleted overlay in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
      * Address: 0x0065A340 (FUN_0065A340 -- `BindInlineStorage` for `unsigned int`: the same body with the count folded to 26 (`lea edx,[ecx+0x68]`). Zero callers, unreachable; formerly `BindDwordVectorHeaderCapacity26` in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
      * Address: 0x0065F380 (FUN_0065F380 -- `BindInlineStorage` for `unsigned int` with the count folded to 294. Zero callers, unreachable; formerly `BindDwordVectorHeaderCapacity294` in moho/render/EmitterTypeTypeInfo.cpp (RULE THREE), removed 2026-09-23.)
      * Address: 0x0065A350 (FUN_0065A350 -- `BindInlineStorage` for `unsigned int`: the same body with the count folded to 2 (`lea edx,[ecx+8]`). Zero callers, unreachable; formerly `BindDwordVectorHeaderCapacity2` in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
+     * Address: 0x004ACE90 (FUN_004ACE90 -- the by-count `BindInlineStorage` for `gpg::fastvector_n<moho::ResourceWatch*, N>` (`CResourceWatcher::mWatches`, N = 2, and `ResourceManager::OnDiskWatchEvent`'s local, N = 8). Zero callers, unreachable; formerly `InitializeDwordPointerWindow4` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
+     * Address: 0x004ACC70 (FUN_004ACC70 -- the N = 8 form with the count folded (`lea ecx,[eax+0x10]; lea edx,[ecx+0x20]`), `OnDiskWatchEvent`'s local. Zero callers, unreachable; formerly `InitializeLegacyPointerHeader4` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
      */
     void BindInlineStorage(T* const storage, const size_type count) noexcept
     {
@@ -833,6 +839,11 @@ namespace gpg::core
      * insert_range` -- the ordered insert `Unit::GuardedByList` and the
      * formation weak-ref sets perform; its reallocating branch is
      * 0x00710E90, cited on `ReallocateInsert_`.)
+     * Address: 0x004ACD80 (FUN_004ACD80 -- `InsertRange` for `gpg::fastvector_n<moho::ResourceWatch*, N>` (`CResourceWatcher::mWatches`, N = 2, and `ResourceManager::OnDiskWatchEvent`'s local, N = 8): the
+     * `push_back`s of `ResourceManager::GetResource` (0x004AA220) and
+     * `OnDiskWatchEvent` (0x004AB780) and 0x004AC050; growth doubles. It was
+     * cited on `msvc8::vector::insert`; formerly `InsertDwordRangeIntoVectorRuntime`
+     * in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
      *
      * What it does:
      * Inserts `[first, last)` at `pos`, growing storage when the run no longer
@@ -937,6 +948,9 @@ namespace gpg::core
      * range to the new block and rebases `end_`)
      * Address: 0x00553A80 (FUN_00553A80, the `Moho::SOCellPos` instantiation
      * reached from the reflected `SetCount`/`SerLoad` resize at 0x005532F0.)
+     * Address: 0x004ADCE0 (FUN_004ADCE0 -- the same step for `gpg::fastvector_n<moho::ResourceWatch*, N>` (`CResourceWatcher::mWatches`, N = 2, and `ResourceManager::OnDiskWatchEvent`'s local, N = 8);
+     * callers 0x004ACD80. It was cited on `msvc8::vector::insert`; formerly
+     * `ReallocateAndSpliceDwordRange_004ADCE0` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-10.)
      *
      * Buy a `newCapacity` block, uninitialized-copy the prefix, the inserted
      * run and the suffix into it, then retire the old storage: when it was the
@@ -1268,7 +1282,7 @@ namespace gpg::core
      * Address: 0x0080F030 (FUN_0080F030 -- inline-storage constructor for a ? element; Initializes one fastvector runtime view from caller-provided inline origin storage and sets capacity to `inlineOrigin+0x7EF40`.)
      * Address: 0x0080F1B0 (FUN_0080F1B0 -- inline-storage constructor for a ? element; Initializes one fastvector runtime view from caller-provided inline origin storage and sets capacity to `inlineOrigin+0x4E200`.)
      * Address: 0x0059C890 (FUN_0059C890 -- `fastvector_n<CAiFormationInstance*, 10>` default constructor. Zero callers, no xrefs, unreachable: the live instantiation is inlined into `CAiFormationDBImpl`'s constructor (visible in `CAiFormationDBImplTypeInfo::NewRef` 0x0059D390). Formerly `InitializeFormationInstanceInlineStorage` in moho/ai/CAiFormationDBImplTypeInfo.cpp (RULE ONE), removed 2026-09-10.)
-     * Address: 0x0059CEB0 (FUN_0059CEB0 -- the inline-arming step of that constructor (`start_ = end_ = originalVec_ = inline; capacity_ = inline + 10`). Zero callers, no xrefs, unreachable. Formerly `BindFormationInstanceInlineRuntimeView`, removed 2026-09-10.)
+     * Address: 0x0059CEB0 (FUN_0059CEB0 -- the inline-arming step of that constructor (`start_ = end_ = originalVec_ = inline; capacity_ = inline + 10`). Zero callers, no xrefs, unreachable. Formerly a deleted overlay, removed 2026-09-10.)
      * Address: 0x00552C40 (FUN_00552C40 -- `FastVectorN<unsigned int, 2>()`: `lea ecx,[eax+0x10]; lea edx,[ecx+8]` -- inline block at this+0x10, capacity 2 words, so `start_ = end_ = originalVec_ = inline` and `capacity_ = inline + N`. Zero callers, unreachable; formerly `InitializeInlineUIntScratchViewLaneA` in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
      * Address: 0x00552CE0 (FUN_00552CE0 -- `FastVectorN<unsigned int, 2>()`: an ICF-identical second emission of the same 2-word constructor, so `start_ = end_ = originalVec_ = inline` and `capacity_ = inline + N`. Zero callers, unreachable; formerly `InitializeInlineUIntScratchViewLaneB` in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
      * Address: 0x00659980 (FUN_00659980 -- `FastVectorN<unsigned int, 26>()`: `lea ecx,[eax+0x10]; lea edx,[ecx+0x68]` -- 0x68 is 26 words, so `start_ = end_ = originalVec_ = inline` and `capacity_ = inline + N`. Zero callers, unreachable; formerly `InitializeInlineDwordVectorHeaderCapacity26` in gpg/core/containers/FastVectorUIntReflection.cpp (RULE ONE), removed 2026-09-18.)
@@ -1284,7 +1298,7 @@ namespace gpg::core
      * it -- `CEfxEmitter`'s two constructors inline it for the stack-built fill
      * value at 0x0065BAE6, and `resize(21, value)` copy-constructs the rest.
      * Formerly `InitializeEmbeddedDwordVectorHeaderOffset10Capacity6` over an
-     * `EmbeddedDwordVectorHeaderOffset10RuntimeView` in
+     * a deleted overlay in
      * moho/effects/rendering/CEfxEmitter.cpp (RULE ONE), removed 2026-09-22.)
      *
      * The inline-capacity sentinel is NOT written here. Every emission of this
@@ -1376,7 +1390,7 @@ namespace gpg::core
      * -- identical end state, without constructing over a live object.)
      * Address: 0x0056B200 (FUN_0056B200, sub_56B200 -- the copy constructor of `gpg::fastvector_n<moho::WeakPtr<moho::IUnit>, 4>` (`CFormationInstance::mUnits` and the formation scratch sets, element 0x08): `mUnits(units)` in `CFormationInstance::CFormationInstance` (0x005694B0); each copied `WeakPtr<IUnit>` relinks into its unit's weak chain.)
      * Address: 0x0082E5E0 (FUN_0082E5E0 -- copy constructor for a 4-byte element; Initializes one stack-style inline dword-vector scratch lane and assigns source content into that lane via `AssignDwordVectorRange`.)
-     * Address: 0x0057D3F0 (FUN_0057D3F0 -- the copy constructor -- seat the three lanes plus `originalVec_` on the inline block at `this+0x10`, then `AddAll` the source; ten callers, `SEntitySetTemplateUnit`'s own copy constructor 0x00579500 among them for `gpg::core::FastVectorN<moho::Entity*, 4>` (`SEntitySetTemplateUnit::mVec` at +0x08; the 0x10 head sits in front of its own four-slot inline block); callers 0x00579500, 0x005ADC70, 0x005FA790; formerly `CopyEntityInlineVector` in moho/sim/ArmyUnitSet.cpp (RULE ONE), removed 2026-09-11.)
+     * Address: 0x0057D3F0 (FUN_0057D3F0 -- the copy constructor -- seat the three lanes plus `originalVec_` on the inline block at `this+0x10`, then `AddAll` the source; ten callers, `EntitySetTemplate<Unit>`'s own copy constructor 0x00579500 among them for `gpg::core::FastVectorN<moho::Entity*, 4>` (`EntitySetTemplate<Unit>::mVec` at +0x08; the 0x10 head sits in front of its own four-slot inline block); callers 0x00579500, 0x005ADC70, 0x005FA790; formerly `CopyEntityInlineVector` in moho/sim/ArmyUnitSet.cpp (RULE ONE), removed 2026-09-11.)
      */
     FastVectorN(const FastVectorN& other)
       : FastVectorN()
@@ -2593,7 +2607,7 @@ namespace gpg::core
       // empty and every slot written below is raw storage to construct into.
       if (count <= N) {
         if constexpr (std::is_trivially_copyable_v<T>) {
-          std::memcpy(this->start_, src, count * ElemSize);
+          std::copy_n(src, count, this->start_);
         } else {
           (void)detail::ConstructRangeForward(this->start_, src, src + count);
         }
@@ -2604,7 +2618,7 @@ namespace gpg::core
       // Need heap buffer of exact count (matches engine's "capacity_ = start_ + count")
       T* p = detail::AllocateElements<T>(count);
       if constexpr (std::is_trivially_copyable_v<T>) {
-        std::memcpy(p, src, count * ElemSize);
+        std::copy_n(src, count, p);
       } else {
         try {
           (void)detail::ConstructRangeForward(p, src, src + count);
@@ -2634,7 +2648,7 @@ namespace gpg::core
 
       if constexpr (std::is_trivially_copyable_v<T>) {
         if (sz)
-          std::memcpy(newBuf, this->start_, sz * ElemSize);
+          std::copy_n(this->start_, sz, newBuf);
       } else {
         for (size_t i = 0; i < sz; ++i)
           ::new (static_cast<void*>(newBuf + i)) T(std::move(this->start_[i]));
@@ -2722,7 +2736,7 @@ namespace gpg::core
      * `ResetInlineQwordVectorStorage` in
      * `gpg/core/containers/FastVectorInsertLanes.cpp` -- a RULE ONE
      * hand-rolled duplicate of this exact free function under a raw-offset
-     * `InlineQwordVectorWithTagRuntimeView` struct name; see
+     * `InlineQwordVectorWithTag` struct name; see
      * `Vector.h`'s `push_back` citation for the full evidence chain.
      *
      * The cited binary match is byte-identical only because

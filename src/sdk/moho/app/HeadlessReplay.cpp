@@ -1086,8 +1086,7 @@ namespace moho
       }
 
       // Resource factories: the manager keys its active factories by their resource RType
-      // (ResourceManager::ActivatePendingFactories). FindFactoryByRegistrationKey answers with the
-      // first factory at or above a key, so an exact match is one the next key does not also find.
+      // (ResourceManager::ActivatePendingFactories); HasFactory is that map's exact-key lookup.
       std::vector<std::string> factories;
       std::vector<std::string> callbacks;
       ResourceManager* const resourceManager = RES_GetResourceManager();
@@ -1096,12 +1095,8 @@ namespace moho
           continue;
         }
         const std::string name = (typeName != nullptr) ? typeName : "";
-        if (resourceManager != nullptr) {
-          const unsigned int key = static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(type));
-          ResourceFactoryBase* const factory = resourceManager->FindFactoryByRegistrationKey(key);
-          if (factory != nullptr && factory != resourceManager->FindFactoryByRegistrationKey(key + 1u)) {
-            factories.push_back(name);
-          }
+        if (resourceManager != nullptr && resourceManager->HasFactory(type)) {
+          factories.push_back(name);
         }
         const bool serializer = type->serLoadFunc_ != nullptr || type->serSaveFunc_ != nullptr;
         const bool construct = type->serConstructFunc_ != nullptr || type->serSaveConstructArgsFunc_ != nullptr;
@@ -1178,7 +1173,7 @@ namespace moho
       // CScApp::Init's first statement. The SSE2 lane of the engine's CRT math (acos, ceil, ...)
       // is off unless `/sse2` is given; the sim calls those, so this must match the GUI.
       run.mSse2 = CFG_GetArgOption("/sse2", 0, nullptr);
-      (void)RuntimeSetSse2Mode(run.mSse2 ? 1 : 0);
+      (void)SetSse2Mode(run.mSse2 ? 1 : 0);
       (void)ReadArg("/simworkers", run.mSimWorkers);
 
       // WIN_AppExecute puts the main thread at 24-bit x87 precision before its frame loop. The sim

@@ -38,6 +38,7 @@ BitArray2D::BitArray2D(const BitArray2D& other)
 {
   Reset(static_cast<unsigned int>(other.width), static_cast<unsigned int>(other.height));
   if (size > 0 && ptr != nullptr && other.ptr != nullptr) {
+    // Owning-type storage copy: trivially copyable i32 word array.
     std::memcpy(ptr, other.ptr, static_cast<std::size_t>(size) * sizeof(std::int32_t));
   }
 }
@@ -69,7 +70,6 @@ BitArray2D* DestroyAndDeleteBitArray2D(BitArray2D* const bitArray)
  */
 void BitArray2D::Reset(const unsigned int newWidth, const unsigned int newHeight)
 {
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
     if (newWidth == 1024u) {
         static int sCount = 0;
         if (sCount++ < 12) {
@@ -104,7 +104,6 @@ void BitArray2D::FillRect(const Rect2i& rect, const bool fill)
  */
 void BitArray2D::FillRect(int x0, int z0, const int rectWidth, const int rectHeight, const bool fill)
 {
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
     if (fill && width == 1024) {
         static int sCount = 0;
         if (sCount++ < 4) {

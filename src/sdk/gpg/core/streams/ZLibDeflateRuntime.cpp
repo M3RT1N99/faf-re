@@ -77,7 +77,7 @@ namespace
   constexpr std::array<std::uint8_t, 512> kDistanceCode = BuildDistanceCodeTable();
 
   void SendBits(
-    DeflateStateRuntime* const state,
+    DeflateState* const state,
     const unsigned int value,
     const int bitCount
   )
@@ -96,16 +96,16 @@ namespace
   }
 
   void SendCode(
-    DeflateStateRuntime* const state,
+    DeflateState* const state,
     const int symbol,
-    const DeflateCtDataRuntime* const tree
+    const DeflateCtData* const tree
   )
   {
     SendBits(state, static_cast<unsigned int>(tree[symbol].fc.freq), static_cast<int>(tree[symbol].dl.dad));
   }
 
   [[nodiscard]] bool IsNodeSmaller(
-    const DeflateCtDataRuntime* const tree,
+    const DeflateCtData* const tree,
     const int leftNode,
     const int rightNode,
     const std::uint8_t* const depth
@@ -258,6 +258,7 @@ extern "C" int __cdecl deflateSetDictionary(
       dictionaryTail = dictionary + (dictionaryLength - maxDictionaryBytes);
     }
 
+    // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
     std::memcpy(state->window, dictionaryTail, copyLength);
     state->strstart = copyLength;
     state->block_start = static_cast<std::int32_t>(copyLength);
@@ -297,6 +298,7 @@ extern "C" int __cdecl deflateCopy(
     return Z_STREAM_ERROR;
   }
 
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
   std::memcpy(destination, source, sizeof(z_stream));
   auto* const copiedState = static_cast<zlib::DeflateState*>(
     destination->zalloc(destination->opaque, 1u, static_cast<uInt>(sizeof(zlib::DeflateState)))
@@ -306,6 +308,7 @@ extern "C" int __cdecl deflateCopy(
   }
 
   destination->state = reinterpret_cast<internal_state*>(copiedState);
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
   std::memcpy(copiedState, sourceState, sizeof(zlib::DeflateState));
   copiedState->strm = destination;
 
@@ -324,9 +327,13 @@ extern "C" int __cdecl deflateCopy(
     return Z_MEM_ERROR;
   }
 
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
   std::memcpy(copiedState->window, sourceState->window, 2u * static_cast<std::size_t>(sourceState->w_size));
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
   std::memcpy(copiedState->prev, sourceState->prev, 2u * static_cast<std::size_t>(sourceState->w_size));
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
   std::memcpy(copiedState->head, sourceState->head, 2u * static_cast<std::size_t>(sourceState->hash_size));
+  // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
   std::memcpy(copiedState->pending_buf, sourceState->pending_buf, sourceState->pending_buf_size);
 
   copiedState->pending_out = copiedState->pending_buf + (sourceState->pending_out - sourceState->pending_buf);
@@ -350,60 +357,6 @@ extern "C" int __cdecl deflateCopy(
 extern "C" const char* __cdecl zlibVersion()
 {
   return "1.2.3";
-}
-
-/**
- * Address: 0x0095D630 (FUN_0095D630)
- *
- * What it does:
- * Combines two packed Adler lanes using the runtime modulo path
- * (`base = 65521`) and returns the merged packed state.
- */
-[[maybe_unused]] std::uint32_t Adler32CombinePackedLaneRuntime(
-  const std::uint32_t adlerA,
-  const std::uint32_t adlerB,
-  const std::uint32_t lengthLane
-) noexcept
-{
-  constexpr std::uint32_t kAdlerBase = 65521u;
-
-  const std::uint32_t s1A = static_cast<std::uint16_t>(adlerA);
-  const std::uint32_t s2A = adlerA >> 16u;
-  const std::uint32_t s1B = static_cast<std::uint16_t>(adlerB);
-  const std::uint32_t s2B = adlerB >> 16u;
-  const std::uint32_t lengthModBase = lengthLane % kAdlerBase;
-
-  const std::uint32_t productLane = lengthModBase * s1A;
-  std::uint32_t sumS1 = s1A + s1B + 65520u;
-  const std::uint32_t laneS2 = s2B + s2A - kAdlerBase * (productLane / kAdlerBase) - lengthModBase;
-  std::uint32_t sumS2 = productLane + laneS2 + kAdlerBase;
-
-  if (sumS1 > kAdlerBase) {
-    sumS1 = s1A + s1B - 1u;
-    if (sumS1 > kAdlerBase) {
-      sumS1 = s1A + s1B - 65522u;
-    }
-  }
-
-  if (sumS2 > 0x1FFE2u) {
-    sumS2 = productLane + laneS2 - kAdlerBase;
-  }
-  if (sumS2 > kAdlerBase) {
-    sumS2 -= kAdlerBase;
-  }
-
-  return sumS1 | (sumS2 << 16u);
-}
-
-/**
- * Address: 0x0095D6D0 (FUN_0095D6D0)
- *
- * What it does:
- * Returns the zlib CRC lookup-table base lane.
- */
-[[maybe_unused]] const uLongf* RuntimeGetZlibCrcTable() noexcept
-{
-  return get_crc_table();
 }
 
 /**
@@ -522,8 +475,8 @@ namespace
  * Flushes any pending bit-accumulator bytes into `pending_buf`, then clears
  * the bit-buffer validity lanes.
  */
-extern "C" DeflateStateRuntime* __cdecl bi_windup(
-  DeflateStateRuntime* const state
+extern "C" DeflateState* __cdecl bi_windup(
+  DeflateState* const state
 )
 {
   if (state->bi_valid <= 8) {
@@ -551,7 +504,7 @@ extern "C" DeflateStateRuntime* __cdecl bi_windup(
  * header, then appends `len` payload bytes into the pending output buffer.
  */
 extern "C" void __cdecl copy_block(
-  DeflateStateRuntime* state,
+  DeflateState* state,
   int len,
   const std::uint8_t* buffer,
   const int header
@@ -582,8 +535,8 @@ extern "C" void __cdecl copy_block(
  * What it does:
  * Emits one 16-bit short to the pending output lane in big-endian order.
  */
-extern "C" DeflateStateRuntime* __cdecl putShortMSB(
-  DeflateStateRuntime* const state,
+extern "C" DeflateState* __cdecl putShortMSB(
+  DeflateState* const state,
   const std::int16_t value
 )
 {
@@ -612,6 +565,7 @@ extern "C" DeflateStateRuntime* __cdecl putShortMSB(
   }
 
   if (pendingBytes != 0u) {
+    // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
     std::memcpy(stream->next_out, state->pending_out, pendingBytes);
     stream->next_out += pendingBytes;
     state->pending_out += pendingBytes;
@@ -667,7 +621,7 @@ extern "C" DeflateStateRuntime* __cdecl putShortMSB(
  */
 extern "C" unsigned int __cdecl longest_match(
   unsigned int cur_match,
-  DeflateStateRuntime* const state
+  DeflateState* const state
 )
 {
   std::uint32_t maxChainLength = state->max_chain_length;
@@ -763,7 +717,7 @@ extern "C" unsigned int __cdecl longest_match(
  * match length or `2` when no usable 3+ byte match is present.
  */
 extern "C" int __cdecl longest_match_fast(
-  DeflateStateRuntime* const state,
+  DeflateState* const state,
   const int cur_match
 )
 {
@@ -824,16 +778,17 @@ extern "C" int __cdecl longest_match_fast(
  * Compresses one in-memory source span into a caller-provided destination
  * span using one temporary z_stream lane and returns zlib-style status codes.
  */
-[[maybe_unused]] int DeflateCompressBufferWithRuntimeLevel(
-  std::uint8_t* const destinationBuffer,
-  unsigned int* const inOutDestinationLength,
-  std::uint8_t* const sourceBuffer,
-  const unsigned int sourceLength,
-  const int compressionLevel
+extern "C" [[maybe_unused]] int compress2(
+  unsigned char* destinationBuffer,
+  unsigned long* inOutDestinationLength,
+  const unsigned char* sourceBuffer,
+  unsigned long sourceLength,
+  int compressionLevel
 )
 {
   z_stream stream;
-  stream.next_in = sourceBuffer;
+  // zlib 1.2.3's own compress2 casts the const source exactly like this.
+  stream.next_in = const_cast<unsigned char*>(sourceBuffer);
   stream.avail_in = sourceLength;
   stream.next_out = destinationBuffer;
   stream.avail_out = *inOutDestinationLength;
@@ -877,7 +832,7 @@ extern "C" int __cdecl longest_match_fast(
  * at 0x0095AC72 when the stream is running the library's default window/hash
  * geometry (w_bits == 15 && hash_bits == 15).
  */
-unsigned int compressBoundRuntime(const unsigned int sourceLength)
+extern "C" unsigned long compressBound(unsigned long sourceLength)
 {
   return sourceLength + (sourceLength >> 12u) + (sourceLength >> 14u) + 11u;
 }
@@ -891,12 +846,12 @@ unsigned int compressBoundRuntime(const unsigned int sourceLength)
  */
 extern "C" void __cdecl init_block(
   const int dead,
-  DeflateStateRuntime* const state
+  DeflateState* const state
 )
 {
   (void)dead;
 
-  DeflateCtDataRuntime* dynLiteralTree = state->dyn_ltree;
+  DeflateCtData* dynLiteralTree = state->dyn_ltree;
   int literalCount = 286;
   do {
     dynLiteralTree->fc.freq = 0;
@@ -904,7 +859,7 @@ extern "C" void __cdecl init_block(
     --literalCount;
   } while (literalCount != 0);
 
-  DeflateCtDataRuntime* dynDistanceTree = state->dyn_dtree;
+  DeflateCtData* dynDistanceTree = state->dyn_dtree;
   int distanceCount = 30;
   do {
     dynDistanceTree->fc.freq = 0;
@@ -912,7 +867,7 @@ extern "C" void __cdecl init_block(
     --distanceCount;
   } while (distanceCount != 0);
 
-  DeflateCtDataRuntime* bitLengthTree = state->bl_tree;
+  DeflateCtData* bitLengthTree = state->bl_tree;
   int bitLengthCount = 19;
   do {
     bitLengthTree->fc.freq = 0;
@@ -934,15 +889,15 @@ extern "C" void __cdecl init_block(
  * Builds code lengths for one dynamic Huffman tree from parent-depth lanes,
  * updates bit-length histograms, and accumulates opt/static encoded lengths.
  */
-extern "C" DeflateStateRuntime* __cdecl gen_bitlen(
-  DeflateStateRuntime* const state,
-  DeflateTreeDescriptorRuntime* const descriptor
+extern "C" DeflateState* __cdecl gen_bitlen(
+  DeflateState* const state,
+  DeflateTreeDescriptor* const descriptor
 )
 {
-  DeflateCtDataRuntime* const tree = descriptor->dynTree;
+  DeflateCtData* const tree = descriptor->dynTree;
   const int maxCode = descriptor->maxCode;
-  const DeflateStaticTreeDescriptorRuntime* const staticDescriptor = descriptor->statDesc;
-  const DeflateCtDataRuntime* const staticTree = staticDescriptor->staticTree;
+  const DeflateStaticTreeDescriptor* const staticDescriptor = descriptor->statDesc;
+  const DeflateCtData* const staticTree = staticDescriptor->staticTree;
   const std::int32_t* const extraBits = staticDescriptor->extraBits;
   const int extraBase = staticDescriptor->extraBase;
   const int maxLength = staticDescriptor->maxLength;
@@ -1022,13 +977,13 @@ extern "C" DeflateStateRuntime* __cdecl gen_bitlen(
  * Restores the Huffman min-heap ordering from `heapIndex` using the dynamic
  * tree frequency lane and `depth` tie-break ordering.
  */
-extern "C" DeflateStateRuntime* __cdecl pqdownheap(
-  DeflateStateRuntime* const state,
-  DeflateTreeDescriptorRuntime* const descriptor,
+extern "C" DeflateState* __cdecl pqdownheap(
+  DeflateState* const state,
+  DeflateTreeDescriptor* const descriptor,
   int heapIndex
 )
 {
-  const DeflateCtDataRuntime* const dynamicTree = descriptor->dynTree;
+  const DeflateCtData* const dynamicTree = descriptor->dynTree;
   const int heapLength = state->heap_len;
   const int node = state->heap[heapIndex];
   int childIndex = heapIndex << 1;
@@ -1062,9 +1017,9 @@ extern "C" DeflateStateRuntime* __cdecl pqdownheap(
  * `bl_tree` (`REP_3_6`, `REPZ_3_10`, `REPZ_11_138`).
  */
 extern "C" void __cdecl scan_tree(
-  DeflateCtDataRuntime* const tree,
+  DeflateCtData* const tree,
   const int maxCode,
-  DeflateStateRuntime* const state
+  DeflateState* const state
 )
 {
   int nextLength = static_cast<int>(tree->dl.len);
@@ -1134,8 +1089,8 @@ extern "C" void __cdecl scan_tree(
  * writes the resulting bits into the pending deflate bitstream.
  */
 extern "C" void __cdecl send_tree(
-  DeflateStateRuntime* const state,
-  DeflateCtDataRuntime* const tree,
+  DeflateState* const state,
+  DeflateCtData* const tree,
   const int maxCode
 )
 {
@@ -1203,7 +1158,7 @@ extern "C" void __cdecl send_tree(
  * its last writable slot.
  */
 extern "C" int __cdecl _tr_tally(
-  DeflateStateRuntime* const state,
+  DeflateState* const state,
   const int distance,
   const int literalOrLengthCode
 )
@@ -1239,13 +1194,13 @@ extern "C" int __cdecl _tr_tally(
  */
 extern "C" void __cdecl set_data_type(
   const int dead,
-  DeflateStateRuntime* const state
+  DeflateState* const state
 )
 {
   (void)dead;
 
   int n = 0;
-  DeflateCtDataRuntime* dynLiteralTree = state->dyn_ltree;
+  DeflateCtData* dynLiteralTree = state->dyn_ltree;
   do {
     if (dynLiteralTree->fc.freq != 0u) {
       break;
@@ -1256,7 +1211,7 @@ extern "C" void __cdecl set_data_type(
 
   if (n == 9) {
     n = 14;
-    for (DeflateCtDataRuntime* literalCursor = &state->dyn_ltree[15]; literalCursor[-1].fc.freq == 0u;
+    for (DeflateCtData* literalCursor = &state->dyn_ltree[15]; literalCursor[-1].fc.freq == 0u;
          literalCursor += 6) {
       if (literalCursor[0].fc.freq != 0u) {
         state->strm->data_type = (n == 31) ? 1 : 0;

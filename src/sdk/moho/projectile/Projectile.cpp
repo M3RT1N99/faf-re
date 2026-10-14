@@ -146,7 +146,7 @@ namespace
   // the test inverted the projectile deleted itself inside its constructor while
   // Destroy() had already queued it, the allocator handed the same block to the
   // next projectile, and the deletion queue then held one address twice -
-  // OnDestroy ran twice on it and CEntityDb::Purge deleted it twice.
+  // OnDestroy ran twice on it and EntityDB::Purge deleted it twice.
   void PopOwnedTaskThreadTop(moho::Entity* const entity) noexcept
   {
     moho::CTaskThread* const thread = static_cast<moho::CTask*>(entity)->mOwnerThread;
@@ -1107,14 +1107,6 @@ namespace moho
       impactObject = LuaPlus::LuaObject(scriptState);
     }
 
-    {
-      static DiagnosticBudget sImpactProbe;
-      if (sImpactProbe.Take(20)) {
-        gpg::Warnf("[IMPACTDIAG] Projectile::Impact this=%p type='%s' collided=%p",
-                   static_cast<void*>(this), impactTypeString != nullptr ? impactTypeString : "<null>",
-                   static_cast<void*>(collidedEntity));
-      }
-    }
     this->LuaPCall("OnImpact", impactArgs, &impactObject);
 
     // Target/army accounting: only when the projectile had a real target entity.
@@ -1446,7 +1438,16 @@ namespace moho
     }
 
     // --- Branch B: terrain-surface intersection ---
-    {
+    // Gated by mCollideSurface in the binary: the branch lives inside the same
+    // `cmp byte [this+0x2A8], 0; je 0x0069D627` block as the water branches
+    // (asm 0x0069D281-0x0069D28D jumps past it to the mDoCollision test at
+    // 0x0069D627). A projectile with CollideSurface=false never tests terrain,
+    // which is what keeps the scripted build/nuke-effect dummy projectiles
+    // (UEFBuild01, UEFNukeFlavorPlume01, ...) alive while they skim or lift
+    // off the ground. Running it ungated made those projectiles detonate on
+    // their first tick near terrain, killing the ACU/engineer build beams and
+    // the nuke plume effect scripts.
+    if (mCollideSurface) {
       const GeomLine3 terrainLine{
         Wm3::Vec3f(curPos.x, curPos.y, curPos.z),
         Wm3::Vec3f(segment.Direction.x, segment.Direction.y, segment.Direction.z),
@@ -1723,20 +1724,12 @@ namespace moho
    * object through the archive ctor lane, and publishes it as unowned
    * construct output.
    */
-  void Projectile::MemberConstruct(gpg::ReadArchive* const archive, gpg::SerConstructResult* const result)
+  void Projectile::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
   {
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(result != nullptr);
-    if (!archive || !result) {
-      return;
-    }
-
-    Sim* ownerSim = nullptr;
-    gpg::RRef ownerRef{};
-    (void)archive->ReadPointer(&ownerSim, &ownerRef);
-
-    Projectile* const object = new (std::nothrow) Projectile(ownerSim);
-    result->SetUnowned(MakeProjectileRef(object), 0u);
+    Sim* sim = nullptr;
+    const gpg::RRef owner{};
+    archive.ReadPointer(&sim, &owner);
+    result.SetUnowned(gpg::MakeRRef(new Projectile(sim)), 0u);
   }
 
   /**
@@ -1881,3 +1874,54 @@ namespace moho
   }
 
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerConstructHelper<Projectile>`, vtable 0x00E297C4.
+   *
+   * Address: 0x00BD6440 (FUN_00BD6440 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFD6A0 (FUN_00BFD6A0 -- the global's destructor.)
+   * Address: 0x0069EC00 (FUN_0069EC00 -- `Init`.)
+   * Address: 0x0069E500 (FUN_0069E500 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x0069F880 (FUN_0069F880 -- `Delete`.)
+   */
+  struct ProjectileConstruct : gpg::SerConstructHelper<Projectile>
+  {};
+
+  /**
+   * `gpg::SerSaveConstructHelper<Projectile>`, vtable 0x00E297B4.
+   *
+   * Address: 0x00BD6410 (FUN_00BD6410 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFD670 (FUN_00BFD670 -- the global's destructor.)
+   * Address: 0x0069E340 (FUN_0069E340 -- an unreferenced out-of-line copy of the constructor.)
+   * Address: 0x0069EB80 (FUN_0069EB80 -- `Init`.)
+   * Address: 0x0069E370 (FUN_0069E370 -- `SaveConstructArgs`, `MemberSaveConstructArgs` inlined.)
+   */
+  struct ProjectileSaveConstruct : gpg::SerSaveConstructHelper<Projectile>
+  {};
+
+  /**
+   * `gpg::SerSaveLoadHelper<Projectile>`, vtable 0x00E297D4.
+   *
+   * Address: 0x00BD6480 (FUN_00BD6480 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFD6D0 (FUN_00BFD6D0 -- the global's destructor.)
+   * Address: 0x0069EC80 (FUN_0069EC80 -- `Init`.)
+   * Address: 0x0069E5D0 (FUN_0069E5D0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x0069E5E0 (FUN_0069E5E0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct ProjectileSerializer : gpg::SerSaveLoadHelper<Projectile>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B548C -- process-global `ProjectileConstruct` singleton.
+  moho::ProjectileConstruct gProjectileConstruct;
+
+  // Address: 0x010B55D0 -- process-global `ProjectileSaveConstruct` singleton.
+  moho::ProjectileSaveConstruct gProjectileSaveConstruct;
+
+  // Address: 0x010B5524 -- process-global `ProjectileSerializer` singleton.
+  moho::ProjectileSerializer gProjectileSerializer;
+} // namespace

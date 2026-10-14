@@ -51,10 +51,6 @@ namespace
     return gCachedQuaternionfType;
   }
 
-  // Address: 0x010A9B40 -- process-global `VTransformSerializer` singleton
-  // (constructed by FUN_00BC7170, self-registering via `__xc_a`; see
-  // VTransform.h for the real-ctor/atexit-target/dead-duplicate evidence).
-  moho::VTransformSerializer gVTransformSerializer;
 } // namespace
 
 namespace moho
@@ -281,16 +277,24 @@ namespace moho
    *   0x00549D30..0x00549D5C  [edi+0C] = a2*b1 + a0*b3 + a3*b0 - a1*b2
    *
    * The scalar term is positive in lane 0, so this is an ordinary scalar-first
-   * product - the identical emission to `CAniPoseBone::Rotate` (0x0054BC00) -
-   * and its cross-term signs make it `rhs.orient_ * lhs.orient_`, with the
-   * right-hand transform as the left operand.
+   * product - the identical emission to `CAniPoseBone::Rotate` (0x0054BC00).
    *
-   * A prior revision took the correct textbook formula and cyclically
-   * relabelled every lane (`.x -> .y -> .z -> .w -> .x`) on the theory that
-   * `.x` was the scalar, citing `VMatrix4::Set`/`QuatToMatrix` as the anchors.
-   * Both of those have since been read off their own disassembly and are
-   * scalar-first as well - neither computes a `ww` term at all - so the
-   * relabel is undone here.
+   * Operand order, re-established 2026-10-05 by decoding ALL FOUR output lanes
+   * of 0x00549C20 register-by-register (the scalar lane alone is symmetric
+   * under operand swap and cannot decide the order - a premature read of only
+   * that lane produced an incorrect 'lhs*rhs' fix that visibly broke wing
+   * attachments, drone tethers and bomber effects, and was reverted):
+   *
+   *   prologue: eax = lhs, ebp = rhs;
+   *   xmm6=[eax+0]  xmm0=[eax+8]  xmm3=[eax+0xC]  (lhs lanes)
+   *   xmm5=[ebp+0]  xmm7=[ebp+4]  xmm1=[ebp+8]  xmm2=[ebp+0xC]  (rhs lanes)
+   *
+   *   [edi+4] = lhs3*rhs2 + lhs0*rhs1 + lhs1*rhs0 - lhs2*rhs3
+   *   [edi+8] = rhs2*lhs0 + rhs0*lhs2 + rhs3*lhs1 - rhs1*lhs3
+   *   [edi+C] = lhs2*rhs1 + lhs3*rhs0 + lhs0*rhs3 - rhs2*lhs1
+   *
+   * which is the Hamilton product `rhs.orient_ * lhs.orient_`, with the
+   * right-hand transform as the left operand.
    *
    * The position half was already right and is unchanged: ground truth rotates
    * `lhs.pos_` by `rhs.orient_` through `Moho::MultQuadVec` (0x00549D73..
@@ -428,57 +432,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x004F0740 (FUN_004F0740, Moho::VTransformSerializer::Deserialize)
-   */
-  void VTransformSerializer::Deserialize(gpg::ReadArchive* const archive, const int objectPtr, const int, gpg::RRef*)
-  {
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(objectPtr != 0);
-    reinterpret_cast<VTransform*>(static_cast<std::uintptr_t>(objectPtr))->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x004F0760 (FUN_004F0760, Moho::VTransformSerializer::Serialize)
-   */
-  void VTransformSerializer::Serialize(gpg::WriteArchive* const archive, const int objectPtr, const int, gpg::RRef*)
-  {
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(objectPtr != 0);
-    reinterpret_cast<const VTransform*>(static_cast<std::uintptr_t>(objectPtr))->MemberSerialize(archive);
-  }
-
-  /**
-   * Address: 0x004F0840 (FUN_004F0840, gpg::SerSaveLoadHelper_VTransform::Init)
-   */
-  void VTransformSerializer::Init()
-  {
-    if (VTransform::sType == nullptr) {
-      VTransform::sType = gpg::LookupRType(typeid(VTransform));
-    }
-
-    gpg::RType* const type = VTransform::sType;
-    if (type->serLoadFunc_ != nullptr) {
-      gpg::HandleAssertFailure("!type->mSerLoadFunc", kSerializationLoadLine, kSerializationSourcePath);
-    }
-    if (type->serSaveFunc_ != nullptr) {
-      gpg::HandleAssertFailure("!type->mSerSaveFunc", kSerializationSaveLine, kSerializationSourcePath);
-    }
-    type->serLoadFunc_ = mDeserialize;
-    type->serSaveFunc_ = mSerialize;
-  }
-
-  /**
-   * Address: 0x00BC7170 (FUN_00BC7170, dynamic initializer for the global
-   * `VTransformSerializer` singleton)
-   */
-  VTransformSerializer::VTransformSerializer()
-    : mDeserialize(&VTransformSerializer::Deserialize)
-    , mSerialize(&VTransformSerializer::Serialize)
-  {}
-
-  VTransformSerializer::~VTransformSerializer() = default;
-
-  /**
    * Address: 0x00BC7150 (FUN_00BC7150, register_VTransformTypeInfo)
    */
   void register_VTransformTypeInfo()
@@ -506,3 +459,24 @@ namespace
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
 GPG_PREREGISTER_INIT(register_VTransformTypeInfo_2fd396, moho::register_VTransformTypeInfo)
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<VTransform>`, vtable 0x00E0BF9C.
+   *
+   * Address: 0x00BC7170 (FUN_00BC7170 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF17D0 (FUN_00BF17D0 -- the global's destructor.)
+   * Address: 0x004F0840 (FUN_004F0840 -- `Init`.)
+   * Address: 0x004F0740 (FUN_004F0740 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x004F0760 (FUN_004F0760 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct VTransformSerializer : gpg::SerSaveLoadHelper<VTransform>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010A9B40 -- process-global `VTransformSerializer` singleton.
+  moho::VTransformSerializer gVTransformSerializer;
+} // namespace

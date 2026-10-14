@@ -2,6 +2,7 @@
 #include "moho/ai/CAiPathNavigator.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,7 @@
 #include "moho/unit/CUnitCommandQueue.h"
 #include "moho/unit/core/IUnit.h"
 #include "moho/unit/core/Unit.h"
+#include "gpg/core/reflection/Reflection.h"
 
 using namespace moho;
 
@@ -262,9 +264,7 @@ namespace
 
   [[nodiscard]] std::uint32_t PackCell(const SOCellPos& cell) noexcept
   {
-    std::uint32_t packed = 0;
-    std::memcpy(&packed, &cell, sizeof(packed));
-    return packed;
+    return std::bit_cast<std::uint32_t>(cell);
   }
 
   /**
@@ -360,7 +360,7 @@ namespace
    * Address: 0x006E30C0 (FUN_006E30C0, ICF twin -- identical function_sha256.
    *          Formerly duplicated in moho/containers/LegacyContainerFillLanes.cpp
    *          as `AlignLane08ToLane04IfDifferent` over an anonymous
-   *          `DwordTripleRuntimeView` offset struct; that duplicate has been
+   *          a deleted overlay offset struct; that duplicate has been
    *          deleted.)
    *
    * What it does:
@@ -1696,7 +1696,8 @@ void CAiPathNavigator::MemberDeserialize(gpg::ReadArchive* const archive, const 
 
   HPathCell blockedCell{};
   archive->Read(CachedHPathCellType(), &blockedCell, owner);
-  std::memcpy(&mLastBlockedCell, &blockedCell, sizeof(blockedCell));
+  // Raw cell-word pun: the 4-byte HPathCell image is stored in the u32 lane.
+  std::memcpy(&mLastBlockedCell, &blockedCell, sizeof(mLastBlockedCell));
 
   archive->Read(CachedNavGoalType(), &mGoal, owner);
   archive->Read(CachedLayerType(), &mLastPathLayerToken, owner);
@@ -1763,6 +1764,7 @@ void CAiPathNavigator::MemberSerialize(gpg::WriteArchive* const archive, const i
   archive->Write(CachedHPathCellType(), &mTargetPos, owner);
 
   HPathCell blockedCell{};
+  // Raw cell-word pun: rebuild the 4-byte HPathCell image from the u32 lane.
   std::memcpy(&blockedCell, &mLastBlockedCell, sizeof(blockedCell));
   archive->Write(CachedHPathCellType(), &blockedCell, owner);
 
@@ -1793,3 +1795,25 @@ void CAiPathNavigator::MemberSerialize(gpg::WriteArchive* const archive, const i
   archive->WriteInt(mTickBucket13);
 }
 
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CAiPathNavigator>`, vtable 0x00E1C6E4.
+   *
+   * Address: 0x00BCD040 (FUN_00BCD040 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF73C0 (FUN_00BF73C0 -- the global's destructor.)
+   * Address: 0x005AFC50 (FUN_005AFC50 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x005AFC80 (FUN_005AFC80 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x005B0130 (FUN_005B0130 -- `Init`.)
+   * Address: 0x005AFBE0 (FUN_005AFBE0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005AFC00 (FUN_005AFC00 -- `Serialize`, `MemberSerialize` inlined.)
+   */
+  struct CAiPathNavigatorSerializer : gpg::SerSaveLoadHelper<CAiPathNavigator>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AEF44 -- process-global `CAiPathNavigatorSerializer` singleton.
+  moho::CAiPathNavigatorSerializer gCAiPathNavigatorSerializer;
+} // namespace

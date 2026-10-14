@@ -63,8 +63,8 @@ namespace moho
      * A node is not a value: neighbours point at it by address, so a copy that
      * took over `mPrev`/`mNext` would claim a place in a ring that never
      * linked it. The only two link holders the binary copies both rebuild
-     * their own links instead: `PrefetchRequestRuntime`'s copy (0x004A9AA0)
-     * self-links its waiter head, and `SEntitySetTemplateUnit`'s assignment
+     * their own links instead: `ResourceRecord`'s copy (0x004A9AA0)
+     * self-links its waiter head, and `EntitySetTemplate<Unit>`'s assignment
      * (inlined in 0x007056A0) leaves its links alone. Owners that are copied
      * spell out what they copy.
      */
@@ -153,7 +153,7 @@ namespace moho
      *   0x00409930, 0x0040A860, 0x0040A990, 0x0040AC20, 0x00431E90 ...) that is
      *   what identifies it as one template body rather than twenty hand-written
      *   unlinks; zero callers, unreachable; formerly
-     *   `UnlinkNodeAndRestoreSelfLinks` over an `IntrusiveNodeRuntimeView` in
+     *   `UnlinkNodeAndRestoreSelfLinks` over an `IntrusiveNode` in
      *   moho/animation/IAniManipulator.cpp (RULE ONE), removed 2026-09-22.)
      * Address: 0x007C0CA0 (FUN_007C0CA0 -- the `TDatListItem<SPeer, void>`
      *   emission, reached by `jmp` from the funclets that destroy
@@ -166,8 +166,8 @@ namespace moho
      *   removed 2026-09-28.)
      * Address: 0x00484B00 (FUN_00484B00 -- `CNetTCPConnector::mPartials`';
      *   formerly `ResetPartialListHead`, called from the destructor body.)
-     * Address: 0x004A9B30 (FUN_004A9B30 -- `PrefetchRequestRuntime::
-     *   mWaiterListHead`'s; formerly `UnlinkIntrusiveListNode`.)
+     * Address: 0x004A9B30 (FUN_004A9B30 -- `ResourceRecord::
+     *   mWatches`'s; formerly `UnlinkIntrusiveListNode`.)
      * Address: 0x004ACF00 (FUN_004ACF00 -- a second ResourceManager emission;
      *   zero callers; formerly `UnlinkIntrusivePairLinkNode`.)
      * Address: 0x004E1F70 (FUN_004E1F70 -- a CSndParams emission; zero
@@ -221,7 +221,7 @@ namespace moho
      * Address: 0x0063BFF0 (FUN_0063BFF0 -- the `moho::TDatListItem<IAniManipulator, void>`
      *   emission; ICF twin of 0x00442DA0/0x00443020/0x00443230 above, which is
      *   what identifies it. Zero callers, unreachable; formerly
-     *   `InitializeNodeSelfLinks` over an `IntrusiveNodeRuntimeView` in
+     *   `InitializeNodeSelfLinks` over an `IntrusiveNode` in
      *   moho/animation/IAniManipulator.cpp (RULE ONE), removed 2026-09-22.)
      * Address: 0x00659950 (FUN_00659950 -- the `moho::TDatListItem<IEffect, void>`
      *   emission, `this` in EAX; ICF twin of 0x00442DA0 above. Zero references in
@@ -484,6 +484,109 @@ namespace moho
     void ListMoveToBack(item_t* head) noexcept
     {
       ListLinkBefore(head);
+    }
+
+    template <class Owner, item_t Owner::* Member>
+    static Owner* owner_from_member_node(item_t* node) noexcept
+    {
+      const auto* const memberPtr = &(reinterpret_cast<Owner const volatile*>(0)->*Member);
+      const auto memberOffset = static_cast<std::ptrdiff_t>(reinterpret_cast<std::uintptr_t>(memberPtr));
+      return reinterpret_cast<Owner*>(reinterpret_cast<char*>(node) - memberOffset);
+    }
+
+    template <class Owner, item_t Owner::* Member>
+    static const Owner* owner_from_member_node(const item_t* node) noexcept
+    {
+      return owner_from_member_node<Owner, Member>(const_cast<item_t*>(node));
+    }
+
+    /**
+     * Iterator over a ring anchored at any node (list head or embedded
+     * sentinel member), yielding the owning objects behind each node.
+     */
+    template <class Owner, item_t Owner::* Member, bool IsConst>
+    struct member_owner_iterator
+    {
+      using node_type = std::conditional_t<IsConst, const item_t, item_t>;
+      using owner_type = std::conditional_t<IsConst, const Owner, Owner>;
+      using difference_type = std::ptrdiff_t;
+      using iterator_category = std::bidirectional_iterator_tag;
+
+      node_type* pos{nullptr};
+
+      member_owner_iterator& operator++() noexcept
+      {
+        pos = pos->mNext;
+        return *this;
+      }
+      member_owner_iterator& operator--() noexcept
+      {
+        pos = pos->mPrev;
+        return *this;
+      }
+
+      owner_type* operator*() const noexcept
+      {
+        if constexpr (IsConst) {
+          return owner_from_member_node<Owner, Member>(pos);
+        }
+        return owner_from_member_node<Owner, Member>(const_cast<item_t*>(pos));
+      }
+
+      owner_type* operator->() const noexcept
+      {
+        return **this;
+      }
+
+      bool operator==(const member_owner_iterator& r) const noexcept
+      {
+        return pos == r.pos;
+      }
+      bool operator!=(const member_owner_iterator& r) const noexcept
+      {
+        return pos != r.pos;
+      }
+    };
+
+    template <class Owner, item_t Owner::* Member, bool IsConst>
+    struct member_owner_range
+    {
+      using iterator = member_owner_iterator<Owner, Member, IsConst>;
+
+      iterator b;
+      iterator e;
+
+      iterator begin() const noexcept
+      {
+        return b;
+      }
+      iterator end() const noexcept
+      {
+        return e;
+      }
+    };
+
+    /**
+     * The owners linked through `Owner::Member` starting after this node,
+     * as a range-for-compatible range. Works on any ring anchor: a real
+     * `TDatList` head or a plain sentinel member node.
+     */
+    template <class Owner, item_t Owner::* Member>
+    member_owner_range<Owner, Member, false> owners_member() noexcept
+    {
+      return {
+        member_owner_iterator<Owner, Member, false>{this->mNext},
+        member_owner_iterator<Owner, Member, false>{static_cast<item_t*>(this)}
+      };
+    }
+
+    template <class Owner, item_t Owner::* Member>
+    member_owner_range<Owner, Member, true> owners_member() const noexcept
+    {
+      return {
+        member_owner_iterator<Owner, Member, true>{this->mNext},
+        member_owner_iterator<Owner, Member, true>{static_cast<const item_t*>(this)}
+      };
     }
   };
 
@@ -819,20 +922,6 @@ namespace moho
       };
     }
 
-    template <class Owner, item_t Owner::* Member>
-    static Owner* owner_from_member_node(item_t* node) noexcept
-    {
-      const auto* const memberPtr = &(reinterpret_cast<Owner const volatile*>(0)->*Member);
-      const auto memberOffset = static_cast<std::ptrdiff_t>(reinterpret_cast<std::uintptr_t>(memberPtr));
-      return reinterpret_cast<Owner*>(reinterpret_cast<char*>(node) - memberOffset);
-    }
-
-    template <class Owner, item_t Owner::* Member>
-    static const Owner* owner_from_member_node(const item_t* node) noexcept
-    {
-      return owner_from_member_node<Owner, Member>(const_cast<item_t*>(node));
-    }
-
     template <class Owner, class MemberNode, MemberNode Owner::* Member>
     /**
      * Address: 0x00442D90 (FUN_00442D90)
@@ -868,86 +957,6 @@ namespace moho
         return nullptr;
       }
       return owner_from_member<Owner, MemberNode, Member>(const_cast<MemberNode*>(node));
-    }
-
-    template <class Owner, item_t Owner::* Member, bool IsConst>
-    struct member_owner_iterator
-    {
-      using node_type = std::conditional_t<IsConst, const item_t, item_t>;
-      using owner_type = std::conditional_t<IsConst, const Owner, Owner>;
-      using difference_type = std::ptrdiff_t;
-      using iterator_category = std::bidirectional_iterator_tag;
-
-      node_type* pos{nullptr};
-
-      member_owner_iterator& operator++() noexcept
-      {
-        pos = pos->mNext;
-        return *this;
-      }
-      member_owner_iterator& operator--() noexcept
-      {
-        pos = pos->mPrev;
-        return *this;
-      }
-
-      owner_type* operator*() const noexcept
-      {
-        if constexpr (IsConst) {
-          return owner_from_member_node<Owner, Member>(pos);
-        }
-        return owner_from_member_node<Owner, Member>(const_cast<item_t*>(pos));
-      }
-
-      owner_type* operator->() const noexcept
-      {
-        return **this;
-      }
-
-      bool operator==(const member_owner_iterator& r) const noexcept
-      {
-        return pos == r.pos;
-      }
-      bool operator!=(const member_owner_iterator& r) const noexcept
-      {
-        return pos != r.pos;
-      }
-    };
-
-    template <class Owner, item_t Owner::* Member, bool IsConst>
-    struct member_owner_range
-    {
-      using iterator = member_owner_iterator<Owner, Member, IsConst>;
-
-      iterator b;
-      iterator e;
-
-      iterator begin() const noexcept
-      {
-        return b;
-      }
-      iterator end() const noexcept
-      {
-        return e;
-      }
-    };
-
-    template <class Owner, item_t Owner::* Member>
-    member_owner_range<Owner, Member, false> owners_member() noexcept
-    {
-      return {
-        member_owner_iterator<Owner, Member, false>{this->mNext},
-        member_owner_iterator<Owner, Member, false>{static_cast<item_t*>(this)}
-      };
-    }
-
-    template <class Owner, item_t Owner::* Member>
-    member_owner_range<Owner, Member, true> owners_member() const noexcept
-    {
-      return {
-        member_owner_iterator<Owner, Member, true>{this->mNext},
-        member_owner_iterator<Owner, Member, true>{static_cast<const item_t*>(this)}
-      };
     }
   };
 } // namespace moho

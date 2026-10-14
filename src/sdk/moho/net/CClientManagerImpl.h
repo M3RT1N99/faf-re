@@ -9,6 +9,8 @@
 #include "lua/LuaObject.h"
 #include "moho/command/ICommandSink.h"
 
+#include <cstdio>
+
 namespace moho
 {
   class INetConnector;
@@ -342,6 +344,9 @@ namespace moho
      */
     virtual ~CClientManagerImpl();
 
+    // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+    void DumpClientLanesForProbe(std::FILE* sink);
+
     /**
      * Address: 0x0053E180
      * Slot: 1
@@ -489,7 +494,7 @@ namespace moho
      * Slot: 23
      * Demangled: Moho::CClientManagerImpl::Func3
      */
-    virtual SSendStampView GetBetween(int since);
+    virtual SSendStampWindow GetBetween(int since);
 
     /**
      * Address: 0x0053F5A0

@@ -7,6 +7,13 @@
 #include "moho/ai/CAiPathNavigator.h"
 #include "moho/misc/WeakPtr.h"
 
+namespace gpg
+{
+  class ReadArchive;
+  class RRef;
+  class SerConstructResult;
+} // namespace gpg
+
 namespace moho
 {
   /**
@@ -35,13 +42,24 @@ namespace moho
     ~CAiNavigatorLand() override;
 
     /**
+     * Address: 0x005A4740 (FUN_005A4740)
+     *
+     * What it does:
+     * Builds a new `CAiNavigatorLand` for an archive load and hands it back unowned; its
+     * members are loaded over it afterwards.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
+
+    /**
      * Address: 0x005A8F40 (FUN_005A8F40, Moho::CAiNavigatorLand::MemberDeserialize)
      *
      * What it does:
      * Loads base navigator state, owned path-navigator pointer, destination-unit
      * weak link, and goal rectangle payload.
      */
-    static void MemberDeserialize(CAiNavigatorLand* object, gpg::ReadArchive* archive);
+    void MemberDeserialize(gpg::ReadArchive* archive);
 
     /**
      * Address: 0x005A9030 (FUN_005A9030, Moho::CAiNavigatorLand::MemberSerialize)
@@ -50,7 +68,7 @@ namespace moho
      * Saves base navigator state, owned path-navigator pointer,
      * destination-unit weak link, and goal rectangle payload.
      */
-    static void MemberSerialize(const CAiNavigatorLand* object, gpg::WriteArchive* archive);
+    void MemberSerialize(gpg::WriteArchive* archive) const;
 
     /**
      * Address: 0x005A3ED0 (FUN_005A3ED0)
@@ -134,7 +152,7 @@ namespace moho
      * VFTable SLOT: 15
      */
     [[nodiscard]]
-    bool CanPathTo(const SAiNavigatorGoal& goal) const override;
+    bool CanPathTo(Wm3::Vector3f* outTargetPos, const SAiNavigatorGoal& goal) const override;
 
     /**
      * Address: 0x005A3E80 (FUN_005A3E80)

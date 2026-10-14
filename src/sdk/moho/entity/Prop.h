@@ -13,6 +13,13 @@ namespace gpg
   class RType;
 } // namespace gpg
 
+namespace gpg
+{
+  class ReadArchive;
+  class RRef;
+  class SerConstructResult;
+} // namespace gpg
+
 namespace moho
 {
   struct RPropBlueprint;
@@ -21,6 +28,18 @@ namespace moho
 
   struct SPropPriorityInfo
   {
+    /**
+     * What it does:
+     * Saves this object's members. Inlined into `gpg::SerSaveLoadHelper<SPropPriorityInfo>::Serialize` 0x006F9C10.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive) const;
+
+    /**
+     * What it does:
+     * Loads this object's members. Inlined into `gpg::SerSaveLoadHelper<SPropPriorityInfo>::Deserialize` 0x006F9BE0.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive);
+
     std::int32_t mPriority;    // +0x00
     std::int32_t mBoundedTick; // +0x04
 
@@ -146,6 +165,17 @@ namespace moho
      * Address: 0x006FA150 (FUN_006FA150)
      */
     void Kill(Entity*, gpg::StrArg, float) override;
+
+    /**
+     * Address: 0x006FA6B0 (FUN_006FA6B0)
+     *
+     * What it does:
+     * Builds a new `Prop` for an archive load and hands it back unowned; its
+     * members are loaded over it afterwards.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
 
     /**
      * Address: 0x006FB0F0 (FUN_006FB0F0, Moho::Prop::MemberDeserialize)

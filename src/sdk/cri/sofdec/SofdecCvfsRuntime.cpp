@@ -3,7 +3,7 @@
 
   extern "C" std::int32_t cvFsError_(const char* const message)
   {
-    cvFsCallUsrErrFn(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&gCvFsErrorObject)), message);
+    cvFsCallUsrErrFn(static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&gCvFsErrorObject)), message);
     return 0;
   }
 
@@ -13,7 +13,7 @@
    * What it does:
    * Dispatches one CVFS error message to the registered user callback object.
    */
-  void cvFsCallUsrErrFn(const std::int32_t errorObjectAddress, const char* const message)
+  void cvFsCallUsrErrFn(const SofdecAddressWord errorObjectAddress, const char* const message)
   {
     (void)errorObjectAddress;
     if (cvfs_errfn != nullptr) {
@@ -27,7 +27,7 @@
    * What it does:
    * Registers or clears the global CVFS user-error callback pair.
    */
-  std::int32_t cvFsEntryErrFunc(const std::int32_t errorCallbackAddress, const std::int32_t errorObjectAddress)
+  SofdecAddressWord cvFsEntryErrFunc(const SofdecAddressWord errorCallbackAddress, const SofdecAddressWord errorObjectAddress)
   {
     if (errorCallbackAddress == 0) {
       cvfs_errfn = nullptr;
@@ -36,7 +36,7 @@
     }
 
     cvfs_errfn = reinterpret_cast<CvFsUserErrorBridgeFn>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(errorCallbackAddress))
+      static_cast<std::uintptr_t>(errorCallbackAddress)
     );
     cvfs_errobj = errorObjectAddress;
     return errorObjectAddress;
@@ -52,7 +52,7 @@
   {
     const char* result = kCvFsVersionString;
     if (cvfs_init_cnt == 0) {
-      for (CvFsHandleView& handle : gCvFsHandlePool) {
+      for (CvFsHandle& handle : gCvFsHandlePool) {
         handle.interfaceView = nullptr;
         handle.handleAddress = 0;
       }
@@ -82,7 +82,7 @@
       return;
     }
 
-    for (CvFsHandleView& handle : gCvFsHandlePool) {
+    for (CvFsHandle& handle : gCvFsHandlePool) {
       if (handle.interfaceView != nullptr) {
         handle.interfaceView->closeFile(handle.handleAddress);
       }
@@ -103,7 +103,7 @@
    * What it does:
    * Returns the registered CVFS device name for one opened handle.
    */
-  const char* cvFsGetDevName(const CvFsHandleView* const handle)
+  const char* cvFsGetDevName(const CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrGetDevNameVtable);
@@ -125,7 +125,7 @@
    * Dispatches one option packet through CVFS option bridge slot #1.
    */
   std::int32_t cvFsOptFn1(
-    CvFsHandleView* const handle,
+    CvFsHandle* const handle,
     const std::int32_t optionCode,
     const std::int32_t optionArg0,
     const std::int32_t optionArg1
@@ -143,7 +143,7 @@
     }
 
     return optionBridge(
-      reinterpret_cast<void*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(handle->handleAddress))),
+      reinterpret_cast<void*>(static_cast<std::uintptr_t>(handle->handleAddress)),
       optionCode,
       optionArg0,
       optionArg1
@@ -157,7 +157,7 @@
    * Dispatches one option packet through CVFS option bridge slot #2.
    */
   std::int32_t cvFsOptFn2(
-    CvFsHandleView* const handle,
+    CvFsHandle* const handle,
     const std::int32_t optionCode,
     const std::int32_t optionArg0,
     const std::int32_t optionArg1
@@ -175,7 +175,7 @@
     }
 
     return optionBridge(
-      reinterpret_cast<void*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(handle->handleAddress))),
+      reinterpret_cast<void*>(static_cast<std::uintptr_t>(handle->handleAddress)),
       optionCode,
       optionArg0,
       optionArg1
@@ -188,7 +188,7 @@
    * What it does:
    * Returns max byte-rate capability from one opened CVFS handle.
    */
-  std::int32_t cvFsGetMaxByteRate(CvFsHandleView* const handle)
+  std::int32_t cvFsGetMaxByteRate(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrGetMaxByteRateHandle);
@@ -225,7 +225,7 @@
       return -1;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceName, filePath, fileName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceName, filePath, fileName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrMakeDirDeviceNotFound);
       return -1;
@@ -261,7 +261,7 @@
       return -1;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceName, filePath, fileName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceName, filePath, fileName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrRemoveDirDeviceNotFound);
       return -1;
@@ -297,7 +297,7 @@
       return -1;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceName, filePath, fileName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceName, filePath, fileName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrDeleteFileDeviceNotFound);
       return -1;
@@ -319,7 +319,7 @@
    * Clears one CVFS handle lane (`interface`, `handleAddress`) and returns the
    * original handle pointer.
    */
-  extern "C" CvFsHandleView* releaseCvFsHn(CvFsHandleView* const handle)
+  extern "C" CvFsHandle* releaseCvFsHn(CvFsHandle* const handle)
   {
     handle->handleAddress = 0;
     handle->interfaceView = nullptr;
@@ -333,7 +333,7 @@
    * Validates one CVFS handle lane, invokes vtable close callback when
    * available, and releases the handle bookkeeping.
    */
-  extern "C" std::int32_t cvFsClose(CvFsHandleView* const handle)
+  extern "C" SofdecAddressWord cvFsClose(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       return cvFsError_(kCvFsErrCloseHandle);
@@ -349,7 +349,7 @@
     }
 
     closeBridge(handle->handleAddress);
-    return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(releaseCvFsHn(handle)));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(releaseCvFsHn(handle)));
   }
 
   /**
@@ -369,7 +369,7 @@
    * What it does:
    * Returns current stream position for one CVFS handle.
    */
-  extern "C" std::int32_t cvFsTell(CvFsHandleView* const handle)
+  extern "C" std::int32_t cvFsTell(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrTellHandle);
@@ -392,8 +392,8 @@
    * Queues one read request for the selected CVFS stream handle.
    */
   extern "C" std::int32_t cvFsReqRd(
-    CvFsHandleView* const handle,
-    const std::int32_t bufferAddress,
+    CvFsHandle* const handle,
+    const SofdecAddressWord bufferAddress,
     const std::int32_t byteCount
   )
   {
@@ -418,8 +418,8 @@
    * Queues one write request for the selected CVFS stream handle.
    */
   extern "C" std::int32_t cvFsReqWr(
-    CvFsHandleView* const handle,
-    const std::int32_t bufferAddress,
+    CvFsHandle* const handle,
+    const SofdecAddressWord bufferAddress,
     const std::int32_t byteCount
   )
   {
@@ -443,7 +443,7 @@
    * What it does:
    * Requests transfer stop for one opened CVFS stream handle.
    */
-  extern "C" std::int32_t cvFsStopTr(CvFsHandleView* const handle)
+  extern "C" std::int32_t cvFsStopTr(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       return cvFsError_(kCvFsErrStopTrHandle);
@@ -466,7 +466,7 @@
   extern "C" void cvFsExecServer()
   {
     for (const CvFsDeviceSlot& deviceSlot : gCvFsDeviceSlots) {
-      CvFsDeviceInterfaceView* const deviceInterface = deviceSlot.interfaceView;
+      CvFsDeviceInterface* const deviceInterface = deviceSlot.interfaceView;
       if (deviceInterface == nullptr) {
         continue;
       }
@@ -499,7 +499,7 @@
       return 0;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceName, filePath, fileName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceName, filePath, fileName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrGetFileSizeDeviceNotFound);
       return 0;
@@ -535,7 +535,7 @@
       return 0;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceName, filePath, fileName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceName, filePath, fileName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrGetFileSizeExDeviceNotFound);
       return 0;
@@ -556,7 +556,7 @@
    * What it does:
    * Returns stream file size via option lane `300` for one opened CVFS handle.
    */
-  extern "C" std::int32_t cvFsGetFileSizeByHndl(CvFsHandleView* const handle)
+  extern "C" std::int32_t cvFsGetFileSizeByHndl(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrGetFileSizeByHandleIllegalHandle);
@@ -571,7 +571,7 @@
     }
 
     return optionBridge(
-      reinterpret_cast<void*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(handle->handleAddress))),
+      reinterpret_cast<void*>(static_cast<std::uintptr_t>(handle->handleAddress)),
       kCvFsOptionGetFileSizeByHandle,
       0,
       0
@@ -586,7 +586,7 @@
    * device seek bridge.
    */
   extern "C" std::int32_t cvFsSeek(
-    CvFsHandleView* const handle,
+    CvFsHandle* const handle,
     const std::int32_t seekOffset,
     const std::int32_t seekOrigin
   )
@@ -612,7 +612,7 @@
    * Validates one CVFS handle lane and queries the current stream status from
    * the device status bridge.
    */
-  extern "C" std::int32_t cvFsGetStat(CvFsHandleView* const handle)
+  extern "C" std::int32_t cvFsGetStat(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrGetStatHandle);
@@ -681,7 +681,7 @@
    * What it does:
    * Queries device sector-length lane for one opened CVFS handle.
    */
-  extern "C" std::int32_t cvFsGetSctLen(CvFsHandleView* const handle)
+  extern "C" std::int32_t cvFsGetSctLen(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrGetSctLenHandle);
@@ -703,7 +703,7 @@
    * What it does:
    * Dispatches one sector-length update request for an opened CVFS handle.
    */
-  extern "C" std::int32_t cvFsSetSctLen(CvFsHandleView* const handle)
+  extern "C" std::int32_t cvFsSetSctLen(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       return cvFsError_(kCvFsErrSetSctLenHandle);
@@ -723,7 +723,7 @@
    * What it does:
    * Queries transfer-count lane for one opened CVFS handle.
    */
-  extern "C" std::int32_t cvFsGetNumTr(CvFsHandleView* const handle)
+  extern "C" std::int32_t cvFsGetNumTr(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrGetNumTrHandle);
@@ -761,7 +761,7 @@
       return -1;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceName, filePath, directoryName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceName, filePath, directoryName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrChangeDirDeviceNotFound);
       return -1;
@@ -792,7 +792,7 @@
       return 0;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceName, filePath, fileName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceName, filePath, fileName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrIsExistFileDeviceNotFound);
       return 0;
@@ -822,7 +822,7 @@
         continue;
       }
 
-      CvFsDeviceInterfaceView* const deviceInterface = deviceSlot.interfaceView;
+      CvFsDeviceInterface* const deviceInterface = deviceSlot.interfaceView;
       if (isNeedDevName(deviceName) != 0) {
         if (deviceInterface != nullptr) {
           CvFsDeviceOptionFn const optionBridge = deviceInterface->option;
@@ -868,7 +868,7 @@
     }
 
     (void)addDevName(deviceName, filePath);
-    CvFsDeviceInterfaceView* const deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* const deviceInterface = getDevice(deviceName);
     if (deviceInterface == nullptr) {
       return 0;
     }
@@ -887,7 +887,7 @@
    * What it does:
    * Dispatches CVFS option code `299` to query 64-bit filesystem info lane.
    */
-  extern "C" std::int32_t cvFsGetFsys64Info(CvFsHandleView* const handle)
+  extern "C" std::int32_t cvFsGetFsys64Info(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrGetFsys64InfoHandle);
@@ -900,7 +900,7 @@
     }
 
     return optionBridge(
-      reinterpret_cast<void*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(handle->handleAddress))),
+      reinterpret_cast<void*>(static_cast<std::uintptr_t>(handle->handleAddress)),
       299,
       0,
       0
@@ -924,7 +924,7 @@
       return -1;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* const deviceInterface = getDevice(deviceName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrSetCurVolumeDeviceNotFound);
       return -1;
@@ -949,7 +949,7 @@
   extern "C" std::int32_t cvFsAddVolumeEx(
     char* const deviceName,
     const std::int32_t volumeName,
-    const std::int32_t imageHandleAddress,
+    const SofdecAddressWord imageHandleAddress,
     const std::int32_t modeOrFlags
   )
   {
@@ -966,13 +966,13 @@
       return -1;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* const deviceInterface = getDevice(deviceName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrAddVolumeExDeviceNotFound);
       return -1;
     }
 
-    std::int32_t optionValues[5]{};
+    SofdecAddressWord optionValues[5]{};
     optionValues[0] = imageHandleAddress;
     optionValues[1] = volumeName;
     optionValues[2] = modeOrFlags;
@@ -1002,7 +1002,7 @@
       return -1;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* const deviceInterface = getDevice(deviceName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrDelVolumeDeviceNotFound);
       return -1;
@@ -1040,7 +1040,7 @@
       return -1;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* const deviceInterface = getDevice(deviceName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrGetVolumeInfoDeviceNotFound);
       return -1;
@@ -1075,7 +1075,7 @@
    * What it does:
    * Queries and combines high/low 32-bit transfer-count option lanes.
    */
-  extern "C" std::uint64_t cvFsGetNumTr64(CvFsHandleView* const handle)
+  extern "C" std::uint64_t cvFsGetNumTr64(CvFsHandle* const handle)
   {
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrGetNumTr64Handle);
@@ -1087,9 +1087,9 @@
       return 0;
     }
 
-    const std::int32_t handleAddress = handle->handleAddress;
+    const SofdecAddressWord handleAddress = handle->handleAddress;
     const void* const optionContext
-      = reinterpret_cast<void*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(handleAddress)));
+      = reinterpret_cast<void*>(static_cast<std::uintptr_t>(handleAddress));
 
     const std::uint32_t highPart = static_cast<std::uint32_t>(optionBridge(const_cast<void*>(optionContext), 200, 0, 0));
     const std::uint32_t lowPart = static_cast<std::uint32_t>(optionBridge(const_cast<void*>(optionContext), 201, 0, 0));
@@ -1108,14 +1108,14 @@
     char deviceName[300]{};
     getDevName(deviceName, filePath, fileName);
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceName, filePath, fileName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceName, filePath, fileName);
     CvFsDeviceOptionFn const optionBridge = deviceInterface->option;
     if (optionBridge == nullptr) {
       return 0;
     }
 
-    const std::int32_t pathAddress
-      = static_cast<std::int32_t>(static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(filePath)));
+    const SofdecAddressWord pathAddress
+      = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(filePath));
     const std::uint32_t highPart
       = static_cast<std::uint32_t>(optionBridge(fileName, 202, pathAddress, 0));
     const std::uint32_t lowPart
@@ -1135,7 +1135,7 @@
     char deviceName[300];
 
     // Preserve original lane order from binary: probe device before parsing.
-    CvFsDeviceInterfaceView* const deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* const deviceInterface = getDevice(deviceName);
     if (deviceInterface == nullptr) {
       return 0;
     }
@@ -1147,8 +1147,8 @@
       return 0;
     }
 
-    const std::int32_t pathAddress
-      = static_cast<std::int32_t>(static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(filePath)));
+    const SofdecAddressWord pathAddress
+      = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(filePath));
     const std::uint32_t highPart
       = static_cast<std::uint32_t>(optionBridge(fileName, 204, pathAddress, optionArg));
     const std::uint32_t lowPart
@@ -1187,6 +1187,7 @@
     const std::size_t bytesToCopy = (nameLength + 1u < gCvFsDefaultDeviceName.size())
       ? (nameLength + 1u)
       : gCvFsDefaultDeviceName.size();
+    // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
     std::memcpy(gCvFsDefaultDeviceName.data(), upperName.data(), bytesToCopy);
     return static_cast<std::int32_t>(nameLength + 1u);
   }
@@ -1197,7 +1198,7 @@
    * What it does:
    * Returns the CVFS interface lane for one device-name prefix match.
    */
-  CvFsDeviceInterfaceView* getDevice(const char* const deviceName)
+  CvFsDeviceInterface* getDevice(const char* const deviceName)
   {
     if (deviceName == nullptr) {
       return nullptr;
@@ -1218,7 +1219,7 @@
    * What it does:
    * Adds one device-interface lane to the fixed CVFS device table when absent.
    */
-  CvFsDeviceInterfaceView* addDevice(const char* const deviceName, void* (__cdecl* const deviceFactory)())
+  CvFsDeviceInterface* addDevice(const char* const deviceName, void* (__cdecl* const deviceFactory)())
   {
     std::array<char, kCvFsDeviceNameBytes> upperDeviceName{};
     if (deviceName != nullptr) {
@@ -1226,7 +1227,7 @@
     }
     (void)toUpperStr(upperDeviceName.data());
 
-    auto* const deviceInterface = reinterpret_cast<CvFsDeviceInterfaceView*>(deviceFactory());
+    auto* const deviceInterface = reinterpret_cast<CvFsDeviceInterface*>(deviceFactory());
     if (getDevice(upperDeviceName.data()) != nullptr) {
       return deviceInterface;
     }
@@ -1277,9 +1278,9 @@
    * What it does:
    * Returns one free CVFS handle from the fixed handle pool.
    */
-  CvFsHandleView* allocCvFsHn()
+  CvFsHandle* allocCvFsHn()
   {
-    for (CvFsHandleView& handle : gCvFsHandlePool) {
+    for (CvFsHandle& handle : gCvFsHandlePool) {
       if (handle.handleAddress == 0) {
         return &handle;
       }
@@ -1348,6 +1349,7 @@
     const char firstChar = gCvFsDefaultDeviceName[0];
     if (firstChar != '\0') {
       const std::size_t byteCount = std::strlen(gCvFsDefaultDeviceName.data()) + 1u;
+      // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
       std::memcpy(outDeviceName, gCvFsDefaultDeviceName.data(), byteCount);
       return firstChar;
     }
@@ -1364,7 +1366,7 @@
    */
   std::int32_t isNeedDevName(char* const deviceName)
   {
-    CvFsDeviceInterfaceView* const deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* const deviceInterface = getDevice(deviceName);
     if (deviceInterface != nullptr && deviceInterface->option != nullptr) {
       return deviceInterface->option(nullptr, 100, 0, 0);
     }
@@ -1398,7 +1400,7 @@
    * What it does:
    * Resolves effective open-device and rewritten file path for CVFS operations.
    */
-  CvFsDeviceInterfaceView* variousProc(char* const deviceName, char* const filePath, const char* const originalPath)
+  CvFsDeviceInterface* variousProc(char* const deviceName, char* const filePath, const char* const originalPath)
   {
     if (deviceName[0] == '\0') {
       (void)getDefDev(deviceName);
@@ -1408,7 +1410,7 @@
     }
 
     (void)addDevName(deviceName, filePath);
-    CvFsDeviceInterfaceView* deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* deviceInterface = getDevice(deviceName);
     if (deviceInterface == nullptr) {
       (void)getDefDev(deviceName);
       deviceInterface = getDevice(deviceName);
@@ -1425,7 +1427,7 @@
    * What it does:
    * Opens one CVFS handle through the resolved device interface.
    */
-  extern "C" CvFsHandleView* cvFsOpen(char* const fileName, const std::int32_t openMode, const std::int32_t openFlags)
+  extern "C" CvFsHandle* cvFsOpen(char* const fileName, const std::int32_t openMode, const std::int32_t openFlags)
   {
     if (fileName == nullptr) {
       (void)cvFsError_(kCvFsErrOpenIllegalFileName);
@@ -1440,13 +1442,13 @@
       return nullptr;
     }
 
-    CvFsHandleView* const handle = allocCvFsHn();
+    CvFsHandle* const handle = allocCvFsHn();
     if (handle == nullptr) {
       (void)cvFsError_(kCvFsErrOpenHandleAllocFailed);
       return nullptr;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = variousProc(deviceBuffer, pathBuffer, fileName);
+    CvFsDeviceInterface* const deviceInterface = variousProc(deviceBuffer, pathBuffer, fileName);
     handle->interfaceView = deviceInterface;
     if (deviceInterface == nullptr) {
       (void)releaseCvFsHn(handle);
@@ -1488,7 +1490,7 @@
       return;
     }
 
-    CvFsDeviceInterfaceView* const deviceInterface = getDevice(deviceName);
+    CvFsDeviceInterface* const deviceInterface = getDevice(deviceName);
     if (deviceInterface == nullptr) {
       (void)cvFsError_(kCvFsErrSetDefVolDeviceNotFound);
       return;
@@ -1540,7 +1542,7 @@
   int ADXPC_SetupFileSystem(const char** const rootDirArgv)
   {
     (void)ADXPC_GetVersion();
-    (void)cvFsEntryErrFunc(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&ADXPC_ReportDvdError)), 0);
+    (void)cvFsEntryErrFunc(static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&ADXPC_ReportDvdError)), 0);
 
     cvFsAddDev(kCvFsDeviceMf, &mfCiGetInterface);
     xeCiInit();

@@ -21,6 +21,22 @@ namespace moho
 
   struct SAniManipBinding
   {
+    /**
+     * Address: 0x0063CD00 (FUN_0063CD00)
+     *
+     * What it does:
+     * Saves this object's members.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef) const;
+
+    /**
+     * Address: 0x0063CCA0 (FUN_0063CCA0)
+     *
+     * What it does:
+     * Loads this object's members.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
     std::int32_t mBoneIndex; // +0x00
     std::int32_t mFlags;     // +0x04
 
@@ -162,7 +178,7 @@ namespace moho
     /**
      * Every field below had a matching one-line accessor emitted out of line by
      * MSVC, and the whole set was recovered as free functions over an
-     * `IAniManipulatorBaseRuntimeView` -- a byte-for-byte restatement of this
+     * a deleted overlay -- a byte-for-byte restatement of this
      * class as `std::uint8_t mScriptEventPrefix[0x44]` plus these members.
      * The view and its accessors are gone (RULE ONE, 2026-09-22); the addresses
      * stay here, on the fields they read. All have zero callers and are
@@ -189,7 +205,7 @@ namespace moho
     /**
      * Address: 0x0063B960 (FUN_0063B960 -- linear scan of `[begin, end)` for a
      *   binding whose `mBoneIndex` matches, returning bool; formerly
-     *   `HasWatchedBoneIndex` over an `IAniManipulatorWatchBoneRuntimeView`.)
+     *   `HasWatchedBoneIndex` over an a deleted overlay.)
      */
     gpg::fastvector_n<SAniManipBinding, 2> mWatchBones; // +0x60
   };
@@ -411,7 +427,7 @@ namespace moho
     /**
      * Address: 0x006346E0 (FUN_006346E0 -- a three-float copy into this field;
      *   formerly `CopyRuntimeVectorToSlot94`, written over an
-     *   `IAniManipulatorScalarPairRuntimeView` whose `+0x94` lane was a bare
+     *   a deleted overlay whose `+0x94` lane was a bare
      *   `{float x, y, z}` struct. That one view was laid over two unrelated
      *   classes at once: this `mPivot`, and `CBuilderArmManipulator`'s
      *   `mHeading`/`mPitch` at `+0x88`/`+0x8C`. Zero callers, unreachable.)
@@ -465,7 +481,7 @@ namespace moho
    *
    * Prior recovery modeled this as a `CBoneEntityManipulatorSerializerStartupNode`
    * raw struct (`void* mVtable` field, no real base) reached into via a
-   * `CBoneEntityManipulatorSerializerRuntimeView` struct that duplicated
+   * `CBoneEntityManipulatorSerializer` struct that duplicated
    * this class's own layout instead of using it directly, wired through two
    * `[[maybe_unused]]`, zero-caller `startup_*` functions -- i.e. the
    * reflection callbacks were never actually installed in that source. This

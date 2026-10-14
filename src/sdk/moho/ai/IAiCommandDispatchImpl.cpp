@@ -34,7 +34,7 @@
 
 #include "moho/lua/SCR_ToLua.h"
 #include "moho/resource/blueprints/RBlueprint.h"
-#include "moho/sim/ArmyUnitSet.h"
+#include "moho/entity/Entity.h"
 #include "moho/sim/CArmyImpl.h"
 #include "moho/sim/EAllianceTypeInfo.h"
 #include "moho/sim/ReconBlip.h"
@@ -63,6 +63,7 @@
 #include "moho/unit/tasks/CUnitUpgradeTask.h"
 #include "moho/unit/tasks/CUnitWaitForFerryTask.h"
 #include "moho/script/CUnitScriptTask.h"
+#include "gpg/core/reflection/Reflection.h"
 
 using namespace moho;
 
@@ -519,13 +520,13 @@ namespace
         }
 
         if (CUnitCommand::GetTarget(command) == unit) {
-          SEntitySetTemplateUnit workingSet;
+          EntitySetTemplate<Unit> workingSet;
           for (Entity* const entry : command->mUnitSet.mVec) {
             if (Unit* const setUnit = static_cast<Unit*>(entry)) {
-              (void)workingSet.AddUnit(setUnit);
+              (void)workingSet.Add(setUnit);
             }
           }
-          (void)workingSet.RemoveUnit(unit);
+          (void)workingSet.Remove(unit);
 
           if (unit->IsInCategory("CARRIER")) {
             if (command->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_TransportLoadUnits) {
@@ -538,7 +539,7 @@ namespace
               Entity* const entity = *it;
               Unit* const setUnit = entity ? entity->IsUnit() : nullptr;
               if (setUnit != nullptr && setUnit->GetTransportedBy() != nullptr) {
-                (void)workingSet.RemoveUnit(setUnit);
+                (void)workingSet.Remove(setUnit);
                 it = workingSet.mVec.begin(); // RemoveUnit compacts mVec; re-seek from head
               } else {
                 ++it;
@@ -576,8 +577,8 @@ namespace
           if (!unit->AiTransport || !CUnitCommand::GetTarget(command)) {
             return;
           }
-          SEntitySetTemplateUnit loadSet;
-          (void)loadSet.AddUnit(CUnitCommand::GetTarget(command));
+          EntitySetTemplate<Unit> loadSet;
+          (void)loadSet.Add(CUnitCommand::GetTarget(command));
           if (unit->IsInCategory("CARRIER")) {
             CUnitCarrierRetrieve::Create(dispatch, loadSet);
             return;
@@ -747,17 +748,17 @@ namespace
         // both are non-empty, dispatch an assist-move (transport) or a move variant.
         CUnitCommand::Move(unit, command);
 
-        SEntitySetTemplateUnit transportSet;
-        SEntitySetTemplateUnit mobileLandSet;
+        EntitySetTemplate<Unit> transportSet;
+        EntitySetTemplate<Unit> mobileLandSet;
         for (Entity* const entry : command->mUnitSet.mVec) {
           Unit* const setUnit = static_cast<Unit*>(entry);
           if (setUnit == nullptr) {
             continue;
           }
           if (setUnit->IsInCategory("TRANSPORTATION")) {
-            (void)transportSet.AddUnit(setUnit);
+            (void)transportSet.Add(setUnit);
           } else if (setUnit->IsInCategory("MOBILE") && setUnit->IsInCategory("LAND")) {
-            (void)mobileLandSet.AddUnit(setUnit);
+            (void)mobileLandSet.Add(setUnit);
           }
         }
 
@@ -890,8 +891,8 @@ void IAiCommandDispatchImpl::OnEvent(const EUnitCommandQueueStatus event)
  * Address: 0x0060A490 (FUN_0060A490, Moho::IAiCommandDispatchImpl::Stop)
  *
  * What it does:
- * Stops the unit's AI-side attack/silo work, requests a UI refresh, and marks
- * the dispatch result as stopped.
+ * Stops the unit's AI-side attack/silo work, marks the unit for the next
+ * sync beat, and marks the dispatch result as stopped.
  */
 int IAiCommandDispatchImpl::Stop()
 {
@@ -903,7 +904,11 @@ int IAiCommandDispatchImpl::Stop()
     mUnit->AiSiloBuild->SiloStopBuild();
   }
 
-  mUnit->VarDat().mDidRefresh = true;
+  // 0x0060A4B9 `mov byte [esi+0A2h], 1`: the entity's needs-sync flag, not
+  // `mUnitVarDat.mDidRefresh` (which SyncInterface clears before use). Without
+  // it a stationary unit whose queue was just cleared is never re-synced, so
+  // the UI keeps the stopped command (e.g. an upgrade stays "pending").
+  mUnit->MarkNeedsSyncGameData();
   mLinkResult = static_cast<EAiResult>(1);
   return 1;
 }
@@ -1132,80 +1137,90 @@ void IAiCommandDispatchImpl::IssueRefuelTask(Unit* const unit)
  * Address: 0x00599330 (FUN_00599330, Moho::IAiCommandDispatchImpl::MemberConstruct)
  */
 void IAiCommandDispatchImpl::MemberConstruct(
-  gpg::ReadArchive* const,
-  const int,
-  gpg::RRef* const,
-  gpg::SerConstructResult* const result
+  gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result
 )
 {
-  if (!result) {
-    return;
-  }
-
-  IAiCommandDispatchImpl* const object = new (std::nothrow) IAiCommandDispatchImplConstructed();
-  result->SetUnowned(MakeDispatchObjectRef(object), 0u);
+  result.SetUnowned(MakeDispatchObjectRef(new IAiCommandDispatchImplConstructed()), 0u);
 }
 
 /**
  * Address: 0x00599C80 (FUN_00599C80, Moho::IAiCommandDispatchImpl::MemberDeserialize)
  */
-void IAiCommandDispatchImpl::MemberDeserialize(gpg::ReadArchive* const archive, IAiCommandDispatchImpl* const object)
-{
-  if (!archive || !object) {
-    return;
-  }
-
-  const gpg::RRef ownerRef{};
-  archive->Read(CachedCCommandTaskType(), object, ownerRef);
-
-  bool state = false;
-  archive->ReadBool(&state);
-  object->mState = state ? 1u : 0u;
-
-  object->mCommandQueue = ReadCommandQueuePointer(archive, ownerRef);
-}
-
-/**
- * Address: 0x00599A30 (FUN_00599A30)
- *
- * What it does:
- * Serializer bridge thunk that forwards to `IAiCommandDispatchImpl::MemberDeserialize`.
- */
-[[maybe_unused]] void IAiCommandDispatchImplMemberDeserializeBridgeA(
-  gpg::ReadArchive* const archive,
-  IAiCommandDispatchImpl* const object
-)
-{
-  IAiCommandDispatchImpl::MemberDeserialize(archive, object);
-}
-
-/**
- * Address: 0x00599C60 (FUN_00599C60)
- *
- * What it does:
- * Serializer bridge thunk that forwards to `IAiCommandDispatchImpl::MemberDeserialize`.
- */
-[[maybe_unused]] void IAiCommandDispatchImplMemberDeserializeBridgeB(
-  gpg::ReadArchive* const archive,
-  IAiCommandDispatchImpl* const object
-)
-{
-  IAiCommandDispatchImpl::MemberDeserialize(archive, object);
-}
-
-/**
- * Address: 0x00599CF0 (FUN_00599CF0, Moho::IAiCommandDispatchImpl::MemberSerialize)
- */
-void IAiCommandDispatchImpl::MemberSerialize(const IAiCommandDispatchImpl* const object, gpg::WriteArchive* const archive)
+void IAiCommandDispatchImpl::MemberDeserialize(gpg::ReadArchive* const archive)
 {
   if (!archive) {
     return;
   }
 
   const gpg::RRef ownerRef{};
-  archive->Write(CachedCCommandTaskType(), object, ownerRef);
-  archive->WriteBool(object && object->mState != 0u);
+  archive->Read(CachedCCommandTaskType(), this, ownerRef);
 
-  const gpg::RRef queueRef = MakeCommandQueueRef(object ? object->mCommandQueue : nullptr);
+  bool state = false;
+  archive->ReadBool(&state);
+  mState = state ? 1u : 0u;
+
+  mCommandQueue = ReadCommandQueuePointer(archive, ownerRef);
+}
+
+/**
+ * Address: 0x00599CF0 (FUN_00599CF0, Moho::IAiCommandDispatchImpl::MemberSerialize)
+ */
+void IAiCommandDispatchImpl::MemberSerialize(gpg::WriteArchive* const archive) const
+{
+  if (!archive) {
+    return;
+  }
+
+  const gpg::RRef ownerRef{};
+  archive->Write(CachedCCommandTaskType(), this, ownerRef);
+  archive->WriteBool(this && mState != 0u);
+
+  const gpg::RRef queueRef = MakeCommandQueueRef(this ? mCommandQueue : nullptr);
   gpg::WriteRawPointer(archive, queueRef, gpg::TrackedPointerState::Unowned, ownerRef);
 }
+
+namespace moho
+{
+  /**
+   * `gpg::SerConstructHelper<IAiCommandDispatchImpl>`, vtable 0x00E1B3F8.
+   *
+   * Address: 0x00BCBEC0 (FUN_00BCBEC0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF66C0 (FUN_00BF66C0 -- the global's destructor.)
+   * Address: 0x00599650 (FUN_00599650 -- `Init`.)
+   * Address: 0x00599320 (FUN_00599320 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x005999D0 (FUN_005999D0 -- `Delete`.)
+   */
+  struct IAiCommandDispatchImplConstruct : gpg::SerConstructHelper<IAiCommandDispatchImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AE404 -- process-global `IAiCommandDispatchImplConstruct` singleton.
+  moho::IAiCommandDispatchImplConstruct gIAiCommandDispatchImplConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<IAiCommandDispatchImpl>`, vtable 0x00E1B408.
+   *
+   * Address: 0x00BCBF00 (FUN_00BCBF00 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF66F0 (FUN_00BF66F0 -- the global's destructor.)
+   * Address: 0x00599A30 (FUN_00599A30 -- an unreferenced copy of `Deserialize`.)
+   * Address: 0x00599C60 (FUN_00599C60 -- an unreferenced copy of `Deserialize`.)
+   * Address: 0x00599A40 (FUN_00599A40 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x00599C70 (FUN_00599C70 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005996D0 (FUN_005996D0 -- `Init`.)
+   * Address: 0x005993C0 (FUN_005993C0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005993D0 (FUN_005993D0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct IAiCommandDispatchImplSerializer : gpg::SerSaveLoadHelper<IAiCommandDispatchImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AE324 -- process-global `IAiCommandDispatchImplSerializer` singleton.
+  moho::IAiCommandDispatchImplSerializer gIAiCommandDispatchImplSerializer;
+} // namespace

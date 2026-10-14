@@ -16,6 +16,15 @@ namespace gpg
   class RType;
 }
 
+namespace gpg
+{
+  class ReadArchive;
+  class RRef;
+  class SerConstructResult;
+  class SerSaveConstructArgsResult;
+  class WriteArchive;
+} // namespace gpg
+
 namespace moho
 {
   class CRandomStream;
@@ -177,17 +186,17 @@ namespace moho
   struct RUnitBlueprintRaisedPlatform
   {
     float Vertex0X; // +0x00
-    float Vertex0Y; // +0x04
-    float Vertex0Z; // +0x08
+    float Vertex0Z; // +0x04
+    float Vertex0Y; // +0x08
     float Vertex1X; // +0x0C
-    float Vertex1Y; // +0x10
-    float Vertex1Z; // +0x14
+    float Vertex1Z; // +0x10
+    float Vertex1Y; // +0x14
     float Vertex2X; // +0x18
-    float Vertex2Y; // +0x1C
-    float Vertex2Z; // +0x20
+    float Vertex2Z; // +0x1C
+    float Vertex2Y; // +0x20
     float Vertex3X; // +0x24
-    float Vertex3Y; // +0x28
-    float Vertex3Z; // +0x2C
+    float Vertex3Z; // +0x28
+    float Vertex3Y; // +0x2C
   };
 
   /**
@@ -531,6 +540,26 @@ namespace moho
    */
   struct RUnitBlueprintWeapon
   {
+    /**
+     * What it does:
+     * Reads the owning unit blueprint and the weapon index and hands back that
+     * weapon, owned by the blueprint. Inlined into
+     * `SerConstructHelper<RUnitBlueprintWeapon>::Construct` 0x00522F40.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
+
+    /**
+     * Address: 0x00522E60 (FUN_00522E60)
+     *
+     * What it does:
+     * Saves the owning unit blueprint (unowned) and this weapon's index.
+     */
+    void MemberSaveConstructArgs(
+      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+    );
+
     RUnitBlueprint* OwnerBlueprint;                 // +0x00
     std::uint32_t WeaponIndex;                      // +0x04
     msvc8::string Label;                            // +0x08
@@ -733,6 +762,27 @@ namespace moho
    */
   struct RUnitBlueprint : public REntityBlueprint
   {
+    /**
+     * What it does:
+     * Reads the owning rules and the blueprint id and hands back the rules'
+     * own `RUnitBlueprint` (owned by the rules, so the archive may not delete it).
+     * Inlined into `SerConstructHelper<RUnitBlueprint>::Construct` 0x00522CC0.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
+
+    /**
+     * Address: 0x00522BE0 (FUN_00522BE0)
+     *
+     * What it does:
+     * Saves the owning rules (unowned) and the blueprint id for
+     * `MemberConstruct` to look the blueprint up by.
+     */
+    void MemberSaveConstructArgs(
+      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+    );
+
     static gpg::RType* sPointerType;
 
     /**
@@ -970,6 +1020,14 @@ namespace moho
   static_assert(
     offsetof(RUnitBlueprintRaisedPlatform, Vertex0X) == 0x00,
     "RUnitBlueprintRaisedPlatform::Vertex0X offset must be 0x00"
+  );
+  static_assert(
+    offsetof(RUnitBlueprintRaisedPlatform, Vertex0Z) == 0x04,
+    "RUnitBlueprintRaisedPlatform::Vertex0Z offset must be 0x04"
+  );
+  static_assert(
+    offsetof(RUnitBlueprintRaisedPlatform, Vertex0Y) == 0x08,
+    "RUnitBlueprintRaisedPlatform::Vertex0Y offset must be 0x08"
   );
   static_assert(
     offsetof(RUnitBlueprintRaisedPlatform, Vertex1X) == 0x0C,

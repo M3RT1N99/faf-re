@@ -4,9 +4,9 @@
    * What it does:
    * Returns current bit cursor position for one M2A bitstream lane.
    */
-  std::int32_t M2ABSR_Tell(const std::int32_t bitstreamHandle, std::int32_t* const outBitPosition)
+  std::int32_t M2ABSR_Tell(const SofdecAddressWord bitstreamHandle, std::int32_t* const outBitPosition)
   {
-    auto* const bitstream = reinterpret_cast<M2aBitstreamRuntimeView*>(bitstreamHandle);
+    auto* const bitstream = reinterpret_cast<M2aBitstreamState*>(bitstreamHandle);
     if (bitstream == nullptr || outBitPosition == nullptr) {
       return -1;
     }
@@ -21,9 +21,9 @@
    * What it does:
    * Writes whether current bit cursor reached/exceeded the bit-end position.
    */
-  std::int32_t M2ABSR_IsEndOfBuffer(const std::int32_t bitstreamHandle, std::int32_t* const outIsEndOfBuffer)
+  std::int32_t M2ABSR_IsEndOfBuffer(const SofdecAddressWord bitstreamHandle, std::int32_t* const outIsEndOfBuffer)
   {
-    auto* const bitstream = reinterpret_cast<M2aBitstreamRuntimeView*>(bitstreamHandle);
+    auto* const bitstream = reinterpret_cast<M2aBitstreamState*>(bitstreamHandle);
     if (bitstream == nullptr || outIsEndOfBuffer == nullptr) {
       return -1;
     }
@@ -38,9 +38,9 @@
    * What it does:
    * Returns overrun counter/status lane from one M2A bitstream context.
    */
-  std::int32_t M2ABSR_Overruns(const std::int32_t bitstreamHandle, std::int32_t* const outOverrunCount)
+  std::int32_t M2ABSR_Overruns(const SofdecAddressWord bitstreamHandle, std::int32_t* const outOverrunCount)
   {
-    auto* const bitstream = reinterpret_cast<M2aBitstreamRuntimeView*>(bitstreamHandle);
+    auto* const bitstream = reinterpret_cast<M2aBitstreamState*>(bitstreamHandle);
     if (bitstream == nullptr || outOverrunCount == nullptr) {
       return -1;
     }
@@ -56,10 +56,10 @@
    * Allocates one M2A bitstream/runtime block from heap manager lane when
    * present, otherwise from process heap.
    */
-  void* m2absr_malloc(const std::int32_t heapManagerHandle, const SIZE_T byteCount)
+  void* m2absr_malloc(const SofdecAddressWord heapManagerHandle, const SIZE_T byteCount)
   {
     if (heapManagerHandle != 0) {
-      int allocatedPointer = 0;
+      SofdecAddressWord allocatedPointer = 0;
       HEAPMNG_Allocate(heapManagerHandle, byteCount, &allocatedPointer);
       return reinterpret_cast<void*>(allocatedPointer);
     }
@@ -74,10 +74,10 @@
    * Frees one M2A bitstream/runtime block through heap-manager or process-heap
    * lane.
    */
-  void m2absr_free(const std::int32_t heapManagerHandle, LPVOID memoryBlock)
+  void m2absr_free(const SofdecAddressWord heapManagerHandle, LPVOID memoryBlock)
   {
     if (heapManagerHandle != 0) {
-      HEAPMNG_Free(heapManagerHandle, reinterpret_cast<int>(memoryBlock));
+      HEAPMNG_Free(heapManagerHandle, reinterpret_cast<SofdecAddressWord>(memoryBlock));
       return;
     }
 
@@ -124,13 +124,13 @@
    * What it does:
    * Allocates and zero-initializes one M2A bitstream state object.
    */
-  std::int32_t M2ABSR_Create(const std::int32_t heapManagerHandle, std::int32_t** const outBitstream)
+  std::int32_t M2ABSR_Create(const SofdecAddressWord heapManagerHandle, std::int32_t** const outBitstream)
   {
     if (outBitstream == nullptr) {
       return -1;
     }
 
-    auto* const bitstream = static_cast<M2aBitstreamRuntimeView*>(m2absr_malloc(heapManagerHandle, 0x18u));
+    auto* const bitstream = static_cast<M2aBitstreamState*>(m2absr_malloc(heapManagerHandle, 0x18u));
     if (bitstream == nullptr) {
       return -1;
     }
@@ -153,7 +153,7 @@
       return -1;
     }
 
-    auto* const bitstream = reinterpret_cast<M2aBitstreamRuntimeView*>(bitstreamHandle);
+    auto* const bitstream = reinterpret_cast<M2aBitstreamState*>(bitstreamHandle);
     const auto heapManagerHandle = *reinterpret_cast<std::int32_t*>(bitstream);
     m2absr_clear(bitstream, 0x18u);
     m2absr_free(heapManagerHandle, bitstream);
@@ -211,12 +211,12 @@
    * Reads one bounded bit range and advances current bit cursor.
    */
   std::int32_t M2ABSR_Read(
-    const std::int32_t bitstreamHandle,
+    const SofdecAddressWord bitstreamHandle,
     const std::int32_t bitCount,
     void* const outBits
   )
   {
-    auto* const bitstream = reinterpret_cast<M2aBitstreamRuntimeView*>(bitstreamHandle);
+    auto* const bitstream = reinterpret_cast<M2aBitstreamState*>(bitstreamHandle);
     auto* const outBitsValue = static_cast<std::int32_t*>(outBits);
     if (bitstream == nullptr || outBitsValue == nullptr) {
       return -1;
@@ -271,9 +271,9 @@
    * What it does:
    * Advances bit cursor to next byte boundary.
    */
-  std::int32_t M2ABSR_AlignToByteBoundary(const std::int32_t bitstreamHandle)
+  std::int32_t M2ABSR_AlignToByteBoundary(const SofdecAddressWord bitstreamHandle)
   {
-    auto* const bitstream = reinterpret_cast<M2aBitstreamRuntimeView*>(bitstreamHandle);
+    auto* const bitstream = reinterpret_cast<M2aBitstreamState*>(bitstreamHandle);
     if (bitstream == nullptr) {
       return -1;
     }
@@ -289,12 +289,12 @@
    * Sets or offsets the bit cursor using begin/current/end origins.
    */
   std::int32_t M2ABSR_Seek(
-    const std::int32_t bitstreamHandle,
+    const SofdecAddressWord bitstreamHandle,
     const std::int32_t bitOffset,
     const std::int32_t origin
   )
   {
-    auto* const bitstream = reinterpret_cast<M2aBitstreamRuntimeView*>(bitstreamHandle);
+    auto* const bitstream = reinterpret_cast<M2aBitstreamState*>(bitstreamHandle);
     if (bitstream == nullptr) {
       return -1;
     }

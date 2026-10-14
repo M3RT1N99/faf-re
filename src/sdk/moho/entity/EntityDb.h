@@ -19,7 +19,8 @@ namespace moho
 {
   class Entity;
   class EntitySetBase;
-  struct SEntitySetTemplateUnit;
+  template <class T>
+  class EntitySetTemplate;
   struct BVIntSetAddResult;
   class Prop;
   class CArmyImpl;
@@ -51,7 +52,7 @@ namespace moho
    * `Handle` returned by `Insert` keep resolving to the right node across
    * heap reorders.
    */
-  struct CEntityDbBoundedPropQueueRuntime
+  struct CEntityDbBoundedPropQueue
   {
     msvc8::vector<CEntityDbBoundedPropQueueNode> heap; // +0x00 (proxy +0x00, first +0x04, last +0x08, end +0x0C)
     msvc8::vector<std::int32_t> handleSlots;           // +0x10 (proxy +0x10, first +0x14, last +0x18, end +0x1C)
@@ -66,7 +67,7 @@ namespace moho
      * `handleSlots` members already start empty, so only `lastHandle`'s
      * default member initializer above is needed to reproduce it.
      */
-    CEntityDbBoundedPropQueueRuntime() noexcept = default;
+    CEntityDbBoundedPropQueue() noexcept = default;
 
     /**
      * Address: 0x00684360 (FUN_00684360 -- the implicit destructor, emitted
@@ -74,10 +75,10 @@ namespace moho
      * 0x006843B0 for `mBoundedProps`. Members go last-declared first:
      * `handleSlots`' storage is freed, then `heap`'s nodes are destroyed
      * through `destroy_range` 0x006892E0, each `WeakPtr<Prop>` unlinking
-     * itself, and its storage freed. Formerly `Reset()`, which `~CEntityDb`
+     * itself, and its storage freed. Formerly `Reset()`, which `~EntityDB`
      * called by hand and which tore `heap` down first, removed 2026-09-30.)
      */
-    ~CEntityDbBoundedPropQueueRuntime() = default;
+    ~CEntityDbBoundedPropQueue() = default;
 
     /**
      * Address: 0x006859F0 (FUN_006859F0)
@@ -153,14 +154,14 @@ namespace moho
     void Swap(std::int32_t lhs, std::int32_t rhs) noexcept;
   };
   static_assert(
-    sizeof(CEntityDbBoundedPropQueueRuntime) == 0x24, "CEntityDbBoundedPropQueueRuntime size must be 0x24"
+    sizeof(CEntityDbBoundedPropQueue) == 0x24, "CEntityDbBoundedPropQueue size must be 0x24"
   );
-  static_assert(offsetof(CEntityDbBoundedPropQueueRuntime, heap) == 0x00, "CEntityDbBoundedPropQueueRuntime::heap offset must be 0x00");
-  static_assert(offsetof(CEntityDbBoundedPropQueueRuntime, handleSlots) == 0x10, "CEntityDbBoundedPropQueueRuntime::handleSlots offset must be 0x10");
-  static_assert(offsetof(CEntityDbBoundedPropQueueRuntime, lastHandle) == 0x20, "CEntityDbBoundedPropQueueRuntime::lastHandle offset must be 0x20");
+  static_assert(offsetof(CEntityDbBoundedPropQueue, heap) == 0x00, "CEntityDbBoundedPropQueue::heap offset must be 0x00");
+  static_assert(offsetof(CEntityDbBoundedPropQueue, handleSlots) == 0x10, "CEntityDbBoundedPropQueue::handleSlots offset must be 0x10");
+  static_assert(offsetof(CEntityDbBoundedPropQueue, lastHandle) == 0x20, "CEntityDbBoundedPropQueue::lastHandle offset must be 0x20");
 
   /**
-   * Iterator payload used by all-army unit scans against `CEntityDb::mAllUnits`.
+   * Iterator payload used by all-army unit scans against `EntityDB::mAllUnits`.
    */
   class CUnitIterAllArmies
   {
@@ -170,7 +171,7 @@ namespace moho
      *
      * What it does:
      * Initializes one all-armies iterator lane for a specific army source id
-     * by taking `[source, source + 1)` bounds inside `CEntityDb::mAllUnits`.
+     * by taking `[source, source + 1)` bounds inside `EntityDB::mAllUnits`.
      */
     explicit CUnitIterAllArmies(CArmyImpl* army);
 
@@ -203,7 +204,7 @@ namespace moho
   static_assert(offsetof(CUnitIterAllArmies, mEnd) == 0x04, "CUnitIterAllArmies::mEnd offset must be 0x04");
   static_assert(offsetof(CUnitIterAllArmies, mCur) == 0x08, "CUnitIterAllArmies::mCur offset must be 0x08");
 
-  class CEntityDb
+  class EntityDB
   {
   public:
     // Reflection RTTI cache slot -- confirmed against the real
@@ -218,7 +219,7 @@ namespace moho
      * Constructs all tree/list sentinel lanes and clears bounded-prop queue
      * ranges for a fresh EntityDB instance.
      */
-    CEntityDb();
+    EntityDB();
 
     /**
      * Address: 0x006843B0 (FUN_006843B0, Moho::EntityDB::~EntityDB)
@@ -227,7 +228,7 @@ namespace moho
      * Tears down bounded-prop/entity-list/id-pool/all-units lanes and clears
      * DB-owned runtime tracking maps.
      */
-    ~CEntityDb();
+    ~EntityDB();
 
     /**
      * Address: 0x00684560 (FUN_00684560)
@@ -358,7 +359,7 @@ namespace moho
      * What it does:
      * Registers one intrusive entity-set node in the DB-owned set registry.
      */
-    void RegisterEntitySet(SEntitySetTemplateUnit& set) noexcept;
+    void RegisterEntitySet(EntitySetTemplate<Unit>& set) noexcept;
 
     /**
      * What it does:
@@ -445,114 +446,17 @@ namespace moho
     // `MemberSerialize` (0x006897F0) writes it whole at `this + 0x20`. Every
     // live entity is in `mAllUnits`, not here.
     msvc8::list<Entity*> mEntList;                  // +0x20
-    CEntityDbBoundedPropQueueRuntime mBoundedProps; // +0x2C
+    CEntityDbBoundedPropQueue mBoundedProps; // +0x2C
   };
 
-  static_assert(offsetof(CEntityDb, mAllUnits) == 0x00, "CEntityDb::mAllUnits offset must be 0x00");
-  static_assert(sizeof(msvc8::map<std::uint32_t, Entity*>) == 0x0C, "CEntityDb::mAllUnits must be the 12-byte MSVC8 map header");
-  static_assert(offsetof(CEntityDb, mIdPoolTree) == 0x0C, "CEntityDb::mIdPoolTree offset must be 0x0C");
+  static_assert(offsetof(EntityDB, mAllUnits) == 0x00, "EntityDB::mAllUnits offset must be 0x00");
+  static_assert(sizeof(msvc8::map<std::uint32_t, Entity*>) == 0x0C, "EntityDB::mAllUnits must be the 12-byte MSVC8 map header");
+  static_assert(offsetof(EntityDB, mIdPoolTree) == 0x0C, "EntityDB::mIdPoolTree offset must be 0x0C");
   static_assert(
-    offsetof(CEntityDb, mRegisteredEntitySets) == 0x18, "CEntityDb::mRegisteredEntitySets offset must be 0x18"
+    offsetof(EntityDB, mRegisteredEntitySets) == 0x18, "EntityDB::mRegisteredEntitySets offset must be 0x18"
   );
-  static_assert(offsetof(CEntityDb, mEntList) == 0x20, "CEntityDb::mEntList offset must be 0x20");
-  static_assert(offsetof(CEntityDb, mBoundedProps) == 0x2C, "CEntityDb::mBoundedProps offset must be 0x2C");
-  static_assert(sizeof(CEntityDb) == 0x50, "CEntityDb size must be 0x50");
+  static_assert(offsetof(EntityDB, mEntList) == 0x20, "EntityDB::mEntList offset must be 0x20");
+  static_assert(offsetof(EntityDB, mBoundedProps) == 0x2C, "EntityDB::mBoundedProps offset must be 0x2C");
+  static_assert(sizeof(EntityDB) == 0x50, "EntityDB size must be 0x50");
 
-  /**
-   * VFTABLE: 0x00E27980
-   * COL: 0x00E8D0F0
-   *
-   * `vtable_writers` for `EntityDBSerializer@Moho` shows two writers:
-   * `FUN_00BD51A0` (real, `__xc_a`-reachable via one incoming xref) and
-   * `FUN_00684930` (zero incoming xrefs, unreachable -- dead COMDAT twin,
-   * marked `skip`). `FUN_00686010.xrefs.txt` shows this class's own
-   * `??_7EntityDBSerializer@Moho@@6B@` vtable slot 0 AND the separately
-   * emitted (never directly named in source) `gpg::SerSaveLoadHelper<Moho::
-   * EntityDB>` intermediate vtable's slot 0 both point at the exact same
-   * address (0x00686010) -- so this class does not override `Init()` with
-   * any class-specific logic, it is the plain generic
-   * `gpg::SerSaveLoadHelper<T>::Init()` body. Deserialize/Serialize
-   * (0x00684910/0x00684920) likewise just forward to
-   * `CEntityDb::MemberDeserialize`/`MemberSerialize`, matching the generic
-   * template's `T::MemberDeserialize`/`MemberSerialize` calls exactly. Kept
-   * as its own concrete `SerHelperBase` derivative rather than the
-   * `gpg::SerSaveLoadHelper<CEntityDb>` alias (the `BVIntSetSerializer`
-   * shape) because `CEntityDb::MemberSerialize` is not `const`-qualified
-   * (it folds `gRuntimePools` back into `mIdPoolTree` before writing) and
-   * the generic template's `Serialize()` requires a `const T*` call --
-   * forcing that would mean changing already-recovered `MemberSerialize`
-   * behavior, which is out of scope here.
-   */
-  class EntityDBSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BD51A0 (FUN_00BD51A0, dynamic initializer for the global
-     * `EntityDBSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    EntityDBSerializer();
-
-    /**
-     * Address: 0x00BFCAD0 (FUN_00BFCAD0, Moho::EntityDBSerializer::~EntityDBSerializer)
-     *
-     * What it does:
-     * Unlinks this helper node from whatever intrusive list it currently
-     * sits in and restores a self-linked sentinel state.
-     */
-    ~EntityDBSerializer();
-
-    /**
-     * Address: 0x00684910 (FUN_00684910, Moho::EntityDBSerializer::Deserialize)
-     *
-     * What it does:
-     * Forwards archive-load flow into `CEntityDb::MemberDeserialize`.
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00684920 (FUN_00684920, Moho::EntityDBSerializer::Serialize)
-     *
-     * What it does:
-     * Forwards archive-save flow into `CEntityDb::MemberSerialize`.
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00686010 (FUN_00686010, gpg::SerSaveLoadHelper_EntityDB::Init)
-     *
-     * What it does:
-     * Resolves `EntityDB` RTTI (caching on `CEntityDb::sType`) and installs
-     * this helper's load/save callbacks onto that type descriptor.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mDeserialize; // +0x0C
-    gpg::RType::save_func_t mSerialize;   // +0x10
-  };
-  static_assert(
-    offsetof(EntityDBSerializer, mDeserialize) == 0x0C, "EntityDBSerializer::mDeserialize offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(EntityDBSerializer, mSerialize) == 0x10, "EntityDBSerializer::mSerialize offset must be 0x10"
-  );
-  static_assert(sizeof(EntityDBSerializer) == 0x14, "EntityDBSerializer size must be 0x14");
-
-  /**
-   * Address: 0x00BD51A0 (FUN_00BD51A0, register_EntityDBSerializer)
-   *
-   * What it does:
-   * Forces this translation unit's global `EntityDBSerializer` instance to
-   * link into the reflection bootstrap sequence. The ctor/vtable-install/
-   * atexit-dtor-registration sequence this address decompiles to is MSVC's
-   * own compiler-generated dynamic initializer for that global, not
-   * hand-written source -- see `gpg::SerSaveLoadHelper<T>` in Reflection.h,
-   * which documents the same shape for other real instantiations
-   * (`BVIntSetSerializer`, etc).
-   */
-  void register_EntityDBSerializer();
 } // namespace moho

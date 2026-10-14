@@ -1,3 +1,4 @@
+#include <cstddef>
 #include "moho/serialization/PrefetchHandleBase.h"
 
 #include <cstdlib>
@@ -12,9 +13,9 @@
 #include "legacy/containers/Vector.h"
 #include "moho/resource/ResourceManager.h"
 #include "moho/serialization/CPrefetchSet.h"
-#include "moho/serialization/PrefetchHandleBaseSerializer.h"
 #include "moho/serialization/PrefetchHandleBaseTypeInfo.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/reflection/Reflection.h"
 
 namespace
 {
@@ -42,7 +43,7 @@ namespace
   static_assert(sizeof(moho::CPrefetchSet) == 0x10, "moho::CPrefetchSet size must be 0x10");
 #endif
 
-  [[nodiscard]] gpg::RType* ResolvePrefetchSetRuntimeType()
+  [[nodiscard]] gpg::RType* ResolvePrefetchSetType()
   {
     if (moho::CPrefetchSet::sType == nullptr) {
       moho::CPrefetchSet::sType = gpg::LookupRType(typeid(moho::CPrefetchSet));
@@ -50,19 +51,6 @@ namespace
     return moho::CPrefetchSet::sType;
   }
 
-  /**
-   * Address: 0x004A89A0 (FUN_004A89A0)
-   *
-   * What it does:
-   * Destroys one half-open `PrefetchHandleBase` range `[begin, end)`.
-   */
-  void DestroyPrefetchHandleRange(moho::PrefetchHandleBase* begin, moho::PrefetchHandleBase* end)
-  {
-    while (begin != end) {
-      begin->~PrefetchHandleBase();
-      ++begin;
-    }
-  }
 
   /**
    * Address: 0x004A71B0 (FUN_004A71B0, Moho::CPrefetchset::NewRef)
@@ -70,12 +58,12 @@ namespace
    * What it does:
    * Allocates one CPrefetchSet object and returns it wrapped in `gpg::RRef`.
    */
-  [[nodiscard]] gpg::RRef NewPrefetchSetRuntimeRef()
+  [[nodiscard]] gpg::RRef NewPrefetchSetRef()
   {
     // msvc8::vector's default constructor already null-initialises all three
     // lanes; the binary's explicit zeroing here IS that constructor inlined.
     moho::CPrefetchSet* const object = new (std::nothrow) moho::CPrefetchSet();
-    return gpg::RRef(object, ResolvePrefetchSetRuntimeType());
+    return gpg::RRef(object, ResolvePrefetchSetType());
   }
 
   /**
@@ -85,7 +73,7 @@ namespace
    * Constructs one CPrefetchSet in caller-provided storage and returns the
    * reflected object reference.
    */
-  [[nodiscard]] gpg::RRef ConstructPrefetchSetRuntimeRef(void* const objectStorage)
+  [[nodiscard]] gpg::RRef ConstructPrefetchSetRef(void* const objectStorage)
   {
     auto* const object = static_cast<moho::CPrefetchSet*>(objectStorage);
     if (object != nullptr) {
@@ -93,7 +81,7 @@ namespace
       // the binary's explicit lane zeroing right after it is.
       new (object) moho::CPrefetchSet();
     }
-    return gpg::RRef(object, ResolvePrefetchSetRuntimeType());
+    return gpg::RRef(object, ResolvePrefetchSetType());
   }
 
   /**
@@ -101,17 +89,17 @@ namespace
    *
    * What it does:
    * Destroys all `PrefetchHandleBase` elements, frees backing storage, and
-   * deletes the owning CPrefetchSet object.
+   * deletes the owning CPrefetchSet object. The empty-vector assignment is
+   * VC8 `_Tidy()`: one element sweep, one deallocate, empty triple
+   * (FUN_004A89A0 is that sweep's out-of-line body).
    */
-  void DeletePrefetchSetRuntime(void* const objectStorage)
+  void DeletePrefetchSet(void* const objectStorage)
   {
     auto* const object = static_cast<moho::CPrefetchSet*>(objectStorage);
     if (object == nullptr) {
       return;
     }
 
-    // Element destructor sweep, free, null all three lanes: VC8 _Tidy().
-    DestroyPrefetchHandleRange(object->mHandles.begin(), object->mHandles.end());
     object->mHandles = msvc8::vector<moho::PrefetchHandleBase>{};
 
     ::operator delete(object);
@@ -122,17 +110,16 @@ namespace
    *
    * What it does:
    * Destroys all `PrefetchHandleBase` elements and frees vector backing storage
-   * without deleting the owning CPrefetchSet storage.
+   * without deleting the owning CPrefetchSet storage. As above, the
+   * empty-vector assignment is the single `_Tidy()` the binary performed.
    */
-  void DestructPrefetchSetRuntime(void* const objectStorage)
+  void DestructPrefetchSet(void* const objectStorage)
   {
     auto* const object = static_cast<moho::CPrefetchSet*>(objectStorage);
     if (object == nullptr) {
       return;
     }
 
-    // Element destructor sweep, free, null all three lanes: VC8 _Tidy().
-    DestroyPrefetchHandleRange(object->mHandles.begin(), object->mHandles.end());
     object->mHandles = msvc8::vector<moho::PrefetchHandleBase>{};
   }
 
@@ -149,17 +136,17 @@ namespace
       return nullptr;
     }
 
-    typeInfo->newRefFunc_ = &NewPrefetchSetRuntimeRef;
-    typeInfo->ctorRefFunc_ = &ConstructPrefetchSetRuntimeRef;
-    typeInfo->deleteFunc_ = &DeletePrefetchSetRuntime;
-    typeInfo->dtrFunc_ = &DestructPrefetchSetRuntime;
+    typeInfo->newRefFunc_ = &NewPrefetchSetRef;
+    typeInfo->ctorRefFunc_ = &ConstructPrefetchSetRef;
+    typeInfo->deleteFunc_ = &DeletePrefetchSet;
+    typeInfo->dtrFunc_ = &DestructPrefetchSet;
     return typeInfo;
   }
 
-  class CPrefetchSetTypeInfoRuntime final : public gpg::RType
+  class CPrefetchSetTypeInfo final : public gpg::RType
   {
   public:
-    ~CPrefetchSetTypeInfoRuntime() override;
+    ~CPrefetchSetTypeInfo() override;
 
     [[nodiscard]] const char* GetName() const override;
 
@@ -182,7 +169,7 @@ namespace
   /**
    * Address: 0x004A51D0 (FUN_004A51D0, Moho::CPrefetchSetTypeInfo::dtr)
    */
-  CPrefetchSetTypeInfoRuntime::~CPrefetchSetTypeInfoRuntime()
+  CPrefetchSetTypeInfo::~CPrefetchSetTypeInfo()
   {
     bases_.clear();
     fields_.clear();
@@ -191,12 +178,12 @@ namespace
   /**
    * Address: 0x004A51C0 (FUN_004A51C0, Moho::CPrefetchSetTypeInfo::GetName)
    */
-  const char* CPrefetchSetTypeInfoRuntime::GetName() const
+  const char* CPrefetchSetTypeInfo::GetName() const
   {
     return "CPrefetchSet";
   }
 
-  CPrefetchSetTypeInfoRuntime gPrefetchSetTypeInfoRuntime{};
+  CPrefetchSetTypeInfo gPrefetchSetTypeInfo{};
 
   /**
    * Address: 0x004A5120 (FUN_004A5120)
@@ -207,12 +194,12 @@ namespace
   [[nodiscard]] gpg::RType* EnsurePrefetchSetTypeRegistered()
   {
     static const bool kRegistered = []() {
-      gpg::PreRegisterRType(typeid(moho::CPrefetchSet), &gPrefetchSetTypeInfoRuntime);
-      moho::CPrefetchSet::sType = &gPrefetchSetTypeInfoRuntime;
+      gpg::PreRegisterRType(typeid(moho::CPrefetchSet), &gPrefetchSetTypeInfo);
+      moho::CPrefetchSet::sType = &gPrefetchSetTypeInfo;
       return true;
     }();
     (void)kRegistered;
-    return &gPrefetchSetTypeInfoRuntime;
+    return &gPrefetchSetTypeInfo;
   }
 
   struct PrefetchSetTypeRegistration
@@ -233,9 +220,6 @@ namespace
     static moho::PrefetchHandleBaseTypeInfo sInstance;
     return &sInstance;
   }
-
-  // Address: 0x010A8938 -- process-global `PrefetchHandleBaseSerializer` singleton.
-  moho::PrefetchHandleBaseSerializer gPrefetchHandleBaseSerializer;
 
   void EnsurePrefetchHandleBaseRegistered()
   {
@@ -268,30 +252,14 @@ namespace moho
   }
 
   /**
-   * Address: 0x004ABF30 (FUN_004ABF30, Moho::RES_PrefetchResource)
+   * Address: 0x004ABF30 (FUN_004ABF30, ?RES_PrefetchResource@Moho@@YA?AVPrefetchHandleBase@1@VStrArg@gpg@@PBVRType@4@@Z)
    *
    * What it does:
-   * Ensures the resource-manager singleton and forwards prefetch-handle
-   * creation to `ResourceManager::CreatePrefetchData`.
+   * `ResourceManager::PrefetchResource` on the singleton.
    */
-  boost::shared_ptr<PrefetchData>* RES_PrefetchResource(
-    boost::shared_ptr<PrefetchData>* const outPrefetchData,
-    const gpg::StrArg resourcePath,
-    const gpg::RType* const type
-  )
+  PrefetchHandleBase RES_PrefetchResource(const gpg::StrArg resourcePath, const gpg::RType* const type)
   {
-    if (outPrefetchData == nullptr) {
-      return nullptr;
-    }
-
-    RES_EnsureResourceManager();
-    ResourceManager* const manager = RES_GetResourceManager();
-    if (manager == nullptr) {
-      outPrefetchData->reset();
-      return outPrefetchData;
-    }
-
-    return manager->CreatePrefetchData(outPrefetchData, resourcePath, const_cast<gpg::RType*>(type));
+    return RES_GetResourceManager()->PrefetchResource(resourcePath, type);
   }
 
   /**
@@ -360,9 +328,13 @@ namespace moho
 
     const gpg::TypeHandle typeHandle = archive->ReadTypeHandle();
 
-    boost::shared_ptr<PrefetchData> payload{};
-    RES_PrefetchResource(&payload, resourcePath.c_str(), typeHandle.type);
-    mPtr = payload;
+    *this = RES_PrefetchResource(resourcePath.c_str(), typeHandle.type);
+  }
+
+  void PrefetchHandleBase::MemberSerialize(gpg::WriteArchive* const archive) const
+  {
+    archive->WriteString(&mPtr->mRecord->mId.name);
+    archive->WriteRefCounts(mPtr->mRecord->mType);
   }
 
   /**
@@ -370,8 +342,8 @@ namespace moho
    */
   const msvc8::string& PrefetchHandleBase::GetName() const
   {
-    GPG_ASSERT(mPtr.get() != nullptr && mPtr->mRequest != nullptr);
-    return mPtr->mRequest->mResourceId.name;
+    GPG_ASSERT(mPtr.get() != nullptr && mPtr->mRecord != nullptr);
+    return mPtr->mRecord->mId.name;
   }
 
   /**
@@ -379,8 +351,8 @@ namespace moho
    */
   gpg::RType* PrefetchHandleBase::GetResourceRType() const
   {
-    GPG_ASSERT(mPtr.get() != nullptr && mPtr->mRequest != nullptr);
-    return mPtr->mRequest->mResourceType;
+    GPG_ASSERT(mPtr.get() != nullptr && mPtr->mRecord != nullptr);
+    return const_cast<gpg::RType*>(mPtr->mRecord->mType);
   }
 } // namespace moho
 
@@ -390,3 +362,24 @@ namespace moho
 GPG_PREREGISTER_INIT(register_PrefetchHandleBaseTypeInfo_dee002, moho::register_PrefetchHandleBaseTypeInfo)
 
 GPG_PREREGISTER_INIT(EnsurePrefetchSetTypeRegistered_dee002, EnsurePrefetchSetTypeRegistered)
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<PrefetchHandleBase>`, vtable 0x00E07658.
+   *
+   * Address: 0x00BC5BE0 (FUN_00BC5BE0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF0620 (FUN_00BF0620 -- the global's destructor.)
+   * Address: 0x004ACCF0 (FUN_004ACCF0 -- `Init`.)
+   * Address: 0x004ABD30 (FUN_004ABD30 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x004ABD40 (FUN_004ABD40 -- `Serialize`, `MemberSerialize` inlined.)
+   */
+  struct PrefetchHandleBaseSerializer : gpg::SerSaveLoadHelper<PrefetchHandleBase>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010A8938 -- process-global `PrefetchHandleBaseSerializer` singleton.
+  moho::PrefetchHandleBaseSerializer gPrefetchHandleBaseSerializer;
+} // namespace

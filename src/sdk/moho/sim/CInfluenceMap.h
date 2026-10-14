@@ -14,6 +14,13 @@ namespace LuaPlus
   class LuaObject;
 }
 
+namespace gpg
+{
+  class ReadArchive;
+  class RRef;
+  class SerConstructResult;
+} // namespace gpg
+
 namespace moho
 {
   class CArmyImpl;
@@ -121,6 +128,22 @@ namespace moho
 
   struct InfluenceMapEntry
   {
+    /**
+     * Address: 0x0071CC30 (FUN_0071CC30)
+     *
+     * What it does:
+     * Saves this object's members.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef) const;
+
+    /**
+     * Address: 0x0071CB20 (FUN_0071CB20)
+     *
+     * What it does:
+     * Loads this object's members.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
     static gpg::RType* sType;
     [[nodiscard]] static gpg::RType* StaticGetClass();
 
@@ -161,6 +184,22 @@ namespace moho
   class InfluenceGrid
   {
   public:
+    /**
+     * Address: 0x0071D010 (FUN_0071D010)
+     *
+     * What it does:
+     * Saves this object's members.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef) const;
+
+    /**
+     * Address: 0x0071CF30 (FUN_0071CF30)
+     *
+     * What it does:
+     * Loads this object's members.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
     static gpg::RType* sType;
     [[nodiscard]] static gpg::RType* StaticGetClass();
 
@@ -227,6 +266,22 @@ namespace moho
   class CInfluenceMap
   {
   public:
+    /**
+     * Address: 0x0071F400 (FUN_0071F400)
+     *
+     * What it does:
+     * Saves this object's members.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef);
+
+    /**
+     * Address: 0x0071F330 (FUN_0071F330)
+     *
+     * What it does:
+     * Loads this object's members.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
     static gpg::RType* sType;
     [[nodiscard]] static gpg::RType* StaticGetClass();
 
@@ -246,6 +301,17 @@ namespace moho
      * one InfluenceGrid per map cell.
      */
     CInfluenceMap(std::int32_t gridSize, Sim* sim, CArmyImpl* army);
+
+    /**
+     * Address: 0x00717670 (FUN_00717670)
+     *
+     * What it does:
+     * Builds a new `CInfluenceMap` for an archive load and hands it back unowned; its
+     * members are loaded over it afterwards.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
 
     /**
      * Address: 0x007163A0 (FUN_007163A0, ??1CInfluenceMap@Moho@@QAE@Z)

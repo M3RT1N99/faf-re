@@ -1,3 +1,4 @@
+#include <cstddef>
 #include "moho/ai/IAiTransport.h"
 
 #include <cstdint>
@@ -12,18 +13,12 @@
 #include "gpg/core/reflection/Reflection.h"
 #include "gpg/core/utils/Global.h"
 #include "moho/ai/CAiTransportImpl.h"
-#include "moho/ai/CAiTransportImplConstruct.h"
-#include "moho/ai/CAiTransportImplSerializer.h"
 #include "moho/ai/CAiTransportImplTypeInfo.h"
 #include "moho/ai/EAiTransportEventTypeInfo.h"
-#include "moho/ai/IAiTransportSerializer.h"
 #include "moho/ai/IAiTransportTypeInfo.h"
 #include "moho/ai/SAiReservedTransportBone.h"
-#include "moho/ai/SAiReservedTransportBoneSerializer.h"
 #include "moho/ai/SAiReservedTransportBoneTypeInfo.h"
-#include "moho/ai/SAttachPointSerializer.h"
 #include "moho/ai/SAttachPointTypeInfo.h"
-#include "moho/ai/STransportPickUpInfoSerializer.h"
 #include "moho/ai/STransportPickUpInfoTypeInfo.h"
 #include "moho/misc/Listener.h"
 
@@ -1111,16 +1106,10 @@ namespace
     {
       (void)moho::register_EAiTransportEventTypeInfo();
       (void)moho::register_SAiReservedTransportBoneTypeInfo();
-      (void)moho::register_SAiReservedTransportBoneSerializer();
       (void)moho::register_SAttachPointTypeInfo();
-      (void)moho::register_SAttachPointSerializer();
       (void)moho::register_STransportPickUpInfoTypeInfo();
-      (void)moho::register_STransportPickUpInfoSerializer();
       (void)moho::register_IAiTransportTypeInfo();
-      (void)moho::register_IAiTransportSerializer();
       (void)moho::register_CAiTransportImplTypeInfo();
-      (void)moho::register_CAiTransportImplConstruct();
-      (void)moho::register_CAiTransportImplSerializer();
       (void)moho::register_RBroadcasterRType_EAiTransportEvent();
       (void)moho::register_RListenerRType_EAiTransportEvent();
       (void)moho::register_RVectorType_int();

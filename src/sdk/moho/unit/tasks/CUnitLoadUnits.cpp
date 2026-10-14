@@ -28,6 +28,7 @@
 #include "moho/unit/core/Unit.h"
 #include "moho/unit/tasks/CUnitMoveTask.h"
 #include "moho/misc/DiagnosticBudget.h"
+#include "gpg/core/reflection/Reflection.h"
 
 namespace moho
 {
@@ -37,23 +38,6 @@ namespace moho
 
 namespace
 {
-  // TEMPORARY PROBE SINK -- transport/effects triage, delete when resolved.
-  // gpg::Warnf reaches nothing until `/log <name>` installs a target
-  // (gpg::InitLogSingleton creates the context but registers no target), so the
-  // probes below append here instead. The file lands beside the executable.
-  void DiagLine(const char* const fmt, ...)
-  {
-    std::FILE* const sink = std::fopen("faf_diag.log", "a");
-    if (sink == nullptr) {
-      return;
-    }
-    std::va_list args;
-    va_start(args, fmt);
-    (void)std::vfprintf(sink, fmt, args);
-    va_end(args);
-    (void)std::fputc('\n', sink);
-    (void)std::fclose(sink);
-  }
   constexpr std::uint64_t kUnitStateMaskTransportLoading = (1ull << static_cast<std::uint32_t>(moho::UNITSTATE_TransportLoading));
   constexpr std::uint64_t kUnitStateMaskHoldingPattern = (1ull << static_cast<std::uint32_t>(moho::UNITSTATE_HoldingPattern));
   constexpr int kPickupTimeoutTicks = 300;
@@ -258,7 +242,7 @@ namespace moho
    * binds transport mode flags, links unit-set ownership in EntityDB, and
    * starts transport-loading script/state.
    */
-  CUnitLoadUnits::CUnitLoadUnits(CCommandTask* const parentTask, const SEntitySetTemplateUnit& requestedUnits)
+  CUnitLoadUnits::CUnitLoadUnits(CCommandTask* const parentTask, const EntitySetTemplate<Unit>& requestedUnits)
     : CCommandTask(parentTask)
     , mPickupQueue()
     , mRequestedUnits(requestedUnits)
@@ -347,7 +331,7 @@ namespace moho
    * Allocates one load-units task and forwards constructor arguments into
    * in-place construction.
    */
-  CUnitLoadUnits* CUnitLoadUnits::Create(CCommandTask* const parentTask, const SEntitySetTemplateUnit* const requestedUnits)
+  CUnitLoadUnits* CUnitLoadUnits::Create(CCommandTask* const parentTask, const EntitySetTemplate<Unit>* const requestedUnits)
   {
     if (requestedUnits == nullptr) {
       return nullptr;
@@ -391,7 +375,7 @@ namespace moho
     mLoadedUnitCount = static_cast<std::int32_t>(loadedUnits.Size());
 
     for (Entity* const unitSlot : mRequestedUnits.mVec) {
-      Unit* const candidate = SEntitySetTemplateUnit::UnitFromEntry(unitSlot);
+      Unit* const candidate = static_cast<Unit*>(unitSlot);
       if (!IsEligiblePickupCandidate(candidate)) {
         continue;
       }
@@ -431,7 +415,7 @@ namespace moho
         mPickupCenter.z += pos.z;
 
         (void)unitsToPickup.Add(candidate);
-        (void)mRequestedUnits.ContainsUnit(candidate);
+        (void)mRequestedUnits.Contains(candidate);
         ++mReadyUnitCount;
 
         if (transport->TransportGetWaitingFormation() != nullptr) {
@@ -508,9 +492,7 @@ namespace moho
     }
 
     if (!mRequestedUnits.Empty() && transport->TransportGetWaitingFormation() == nullptr && (mIsStagingPlatform || mIsTeleporter)) {
-      EntitySetTemplate<Unit> waitingUnits{};
-      mRequestedUnits.CopyTo(waitingUnits);
-      transport->TransportGenerateWaitingFormationForUnits(waitingUnits);
+      transport->TransportGenerateWaitingFormationForUnits(mRequestedUnits);
     }
   }
 
@@ -549,7 +531,7 @@ namespace moho
 
           CUnitCommand* const ownerHeadCommand = mUnit->CommandQueue != nullptr ? mUnit->CommandQueue->GetCurrentCommand() : nullptr;
           for (Entity* const unitSlot : mRequestedUnits.mVec) {
-            Unit* const candidate = SEntitySetTemplateUnit::UnitFromEntry(unitSlot);
+            Unit* const candidate = static_cast<Unit*>(unitSlot);
             if (!IsUsableUnitSlot(candidate)) {
               continue;
             }
@@ -562,19 +544,6 @@ namespace moho
             CUnitCommand* const candidateHeadCommand =
               candidate->CommandQueue != nullptr ? candidate->CommandQueue->GetCurrentCommand() : nullptr;
             if (candidateHeadCommand != ownerHeadCommand) {
-              // TEMPORARY PROBE -- transport-load triage, delete when resolved.
-              // This early return leaves kUnitStateMaskHoldingPattern set, and
-              // CUnitCallTransport's own TASKSTATE_Preparing refuses to advance
-              // while the transport is in a holding pattern, so a head-command
-              // mismatch deadlocks both halves with the order still queued.
-              static moho::DiagnosticBudget sHeadMismatchProbe;
-              if ((sHeadMismatchProbe.Next() % 60) == 0) {
-                DiagLine(
-                  "[XPORTDIAG] LoadUnits head mismatch: transport=%p ownerHead=%p candidate=%p candHead=%p",
-                  static_cast<void*>(mUnit), static_cast<void*>(ownerHeadCommand),
-                  static_cast<void*>(candidate), static_cast<void*>(candidateHeadCommand)
-                );
-              }
               return 1;
             }
           }
@@ -583,15 +552,6 @@ namespace moho
         }
 
         DoTask();
-        // TEMPORARY PROBE -- transport-load triage, delete when resolved.
-        // ready==0 here means no candidate survived IsEligiblePickupCandidate
-        // or TransportAssignSlot, which is what leaves the transport with
-        // nothing to fly to.
-        DiagLine(
-          "[XPORTDIAG] LoadUnits DoTask: transport=%p requested=%u ready=%d loaded=%d",
-          static_cast<void*>(mUnit), static_cast<unsigned int>(mRequestedUnits.Size()),
-          static_cast<int>(mReadyUnitCount), static_cast<int>(mLoadedUnitCount)
-        );
         mTaskState = NextTaskState(mTaskState);
         return 0;
       }
@@ -690,7 +650,7 @@ namespace moho
         }
 
         const EntitySetTemplate<Unit> waitingForPickup = transport->TransportGetUnitsWaitingForPickup();
-        mRequestedUnits.AddUnits(waitingForPickup);
+        mRequestedUnits.AddRange(waitingForPickup.mVec.begin(), waitingForPickup.mVec.end());
 
         if (!mRequestedUnits.Empty() && mIsTeleporter) {
           mTaskState = TASKSTATE_Preparing;
@@ -713,7 +673,7 @@ namespace moho
         }
 
         const EntitySetTemplate<Unit> waitingForPickup = transport->TransportGetUnitsWaitingForPickup();
-        mRequestedUnits.AddUnits(waitingForPickup);
+        mRequestedUnits.AddRange(waitingForPickup.mVec.begin(), waitingForPickup.mVec.end());
 
         if (!mRequestedUnits.Empty()) {
           mTaskState = TASKSTATE_Preparing;
@@ -781,3 +741,24 @@ namespace moho
     archive->WriteBool(mCompletedSuccessfully);
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CUnitLoadUnits>`, vtable 0x00E20E6C.
+   *
+   * Address: 0x00BD1CB0 (FUN_00BD1CB0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFA5B0 (FUN_00BFA5B0 -- the global's destructor.)
+   * Address: 0x00626F90 (FUN_00626F90 -- `Init`.)
+   * Address: 0x00624FF0 (FUN_00624FF0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00625000 (FUN_00625000 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CUnitLoadUnitsSerializer : gpg::SerSaveLoadHelper<CUnitLoadUnits>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B1E1C -- process-global `CUnitLoadUnitsSerializer` singleton.
+  moho::CUnitLoadUnitsSerializer gCUnitLoadUnitsSerializer;
+} // namespace

@@ -34,10 +34,10 @@ namespace moho
      * Address: 0x0063A8F0 (FUN_0063A8F0, ??0CAniActor@Moho@@QAE@ABV?$shared_ptr@VCAniPose@Moho@@@boost@@0@Z)
      *
      * What it does:
-     * Initializes actor pose handles from `{priorPose, pose}` and self-links
-     * the manipulator intrusive list head.
+     * Copies both pose handles (current pose first: the binary takes it in ECX
+     * and stores it at +0x00) and self-links the manipulator list head.
      */
-    CAniActor(const boost::SharedPtrRaw<CAniPose>& priorPose, const boost::SharedPtrRaw<CAniPose>& pose);
+    CAniActor(const boost::shared_ptr<CAniPose>& pose, const boost::shared_ptr<CAniPose>& priorPose);
 
     /**
      * Address: 0x0063A930 (FUN_0063A930, ??1CAniActor@Moho@@QAE@XZ)
@@ -55,7 +55,9 @@ namespace moho
      * Allocates one `CAniActor` and publishes it as an unowned serialization
      * construct result.
      */
-    static void MemberConstruct(gpg::SerConstructResult* result);
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
 
     /**
      * Address: 0x0063E200 (FUN_0063E200, sub_63E200)
@@ -104,16 +106,9 @@ namespace moho
      * Address: 0x0063AA20 (FUN_0063AA20)
      *
      * What it does:
-     * Replaces both `mPose` and `mPriorPose` raw shared-ptr lanes in one call,
-     * retaining new control blocks and releasing prior ones. Out-of-line
-     * helper emitted for callers (e.g. `Unit::SetPoses`) that assign both
-     * pose lanes together; preserves VC8 ordering (use_count_++ before
-     * release() on the swapped-out partner).
+     * Replaces both pose handles; `Unit::SetPoses` calls it.
      */
-    void AssignPoses(
-      const boost::SharedPtrRaw<CAniPose>& pose,
-      const boost::SharedPtrRaw<CAniPose>& priorPose
-    ) noexcept;
+    void AssignPoses(const boost::shared_ptr<CAniPose>& pose, const boost::shared_ptr<CAniPose>& priorPose) noexcept;
 
     /**
      * Address: 0x0063AA80 (FUN_0063AA80, ?UpdateManipulators@CAniActor@Moho@@QAEXABVVTransform@2@@Z)
@@ -185,58 +180,9 @@ namespace moho
   public:
     static gpg::RType* sType;
 
-    boost::SharedPtrRaw<CAniPose> mPose;                       // +0x00
-    boost::SharedPtrRaw<CAniPose> mPriorPose;                  // +0x08
+    boost::shared_ptr<CAniPose> mPose;                         // +0x00
+    boost::shared_ptr<CAniPose> mPriorPose;                    // +0x08
     TDatList<IAniManipulator, void> mManipulatorsByPrecedence; // +0x10
-  };
-
-  class CAniActorConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BD2B20 (FUN_00BD2B20, dynamic initializer for the global
-     * `CAniActorConstruct` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * construct/delete callback fields.
-     */
-    CAniActorConstruct();
-
-    /**
-     * Address: 0x00BFACD0 (FUN_00BFACD0, Moho::CAniActorConstruct::~CAniActorConstruct)
-     */
-    ~CAniActorConstruct();
-
-    /**
-     * Address: 0x0063B020 (FUN_0063B020, Moho::CAniActorConstruct::Construct)
-     *
-     * What it does:
-     * Dispatches construct callback flow into `CAniActor::MemberConstruct`.
-     */
-    static void Construct(
-      gpg::ReadArchive* archive, int version, gpg::RRef* ownerRef, gpg::SerConstructResult* result
-    );
-
-    /**
-     * Address: 0x0063CAB0 (FUN_0063CAB0, Moho::CAniActorConstruct::Deconstruct)
-     *
-     * What it does:
-     * Runs deleting teardown for one constructed `CAniActor`.
-     */
-    static void Deconstruct(void* objectPtr);
-
-    /**
-     * Address: 0x0063C190 (FUN_0063C190, Moho::CAniActorConstruct::Init)
-     *
-     * What it does:
-     * Installs construct/delete callbacks into `CAniActor` RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::construct_func_t mSerConstructFunc; // +0x0C
-    gpg::RType::delete_func_t mDeleteFunc;           // +0x10
   };
 
   /**
@@ -317,13 +263,5 @@ namespace moho
     "CAniActor::mManipulatorsByPrecedence offset must be 0x10"
   );
   static_assert(sizeof(CAniActor) == 0x18, "CAniActor size must be 0x18");
-  static_assert(
-    offsetof(CAniActorConstruct, mSerConstructFunc) == 0x0C,
-    "CAniActorConstruct::mSerConstructFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CAniActorConstruct, mDeleteFunc) == 0x10, "CAniActorConstruct::mDeleteFunc offset must be 0x10"
-  );
-  static_assert(sizeof(CAniActorConstruct) == 0x14, "CAniActorConstruct size must be 0x14");
   static_assert(sizeof(CAniActorTypeInfo) == 0x64, "CAniActorTypeInfo size must be 0x64");
 } // namespace moho

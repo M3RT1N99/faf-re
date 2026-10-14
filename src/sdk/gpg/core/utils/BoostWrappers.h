@@ -292,6 +292,11 @@ namespace boost
          * It is the `enable_shared_from_this<EffectD3D9>` base's weak-this, so the
          * effect constructors' unwind funclets reach it on `this + 4` (0x00B5DD86,
          * 0x00B5DF62, 0x00B5DF96); the destructor inlines it.)
+         * Address: 0x004A9B10 (FUN_004A9B10 -- `~weak_ptr<moho::PrefetchData>`: the weak
+         * release on `pn`; `ResourceManager::PrefetchResource` (0x004AAC20) and
+         * `PrefetchThread` (0x004AB180) drop their queue-element temporaries through it.
+         * Formerly `ReleaseWeakControlFromPair` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
+         * Address: 0x00796DA0 (FUN_00796DA0 -- an ICF twin of 0x004A9B10; zero callers.)
          *
          * NOTE (2026-08-20 audit): 0x004229B0 was historically cited here and is
          * WRONG - that address decrements `use_count_` at +0x04 first and calls
@@ -382,13 +387,16 @@ namespace boost
          * Releases one shared owner from the control block, disposes the pointee
          * on last use, and clears the borrowed raw-ptr lanes.
          * Address: 0x007FAD40 (FUN_007FAD40 -- `shared_ptr<T>::reset()` (`px = 0; pn.release()`) as emitted for WRenViewport's device-resource handles (0x007F70F0); callers 0x007F70F0; formerly `ClearSharedOwnershipPairLaneA` in moho/containers/LegacyContainerRuntime.cpp (RULE ONE), file removed 2026-09-10.)
+         * Address: 0x004ABF80 (FUN_004ABF80 -- `shared_ptr<void>::reset()`: `ResourceManager::
+         * LoadRecord` (0x004AA690) dropping `PrefetchData::mPrefetchData` once it has been
+         * loaded from; formerly `ResetSharedPairReleaseControl` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
          * Address: 0x007FADB0 (FUN_007FADB0 -- `shared_ptr<T>::reset()` (`px = 0; pn.release()`), the second handle type of 0x007F70F0; callers 0x007F70F0; formerly `ClearSharedOwnershipPairLaneB` in moho/containers/LegacyContainerRuntime.cpp (RULE ONE), file removed 2026-09-10.)
          * Address: 0x008E34E0 (FUN_008E34E0 -- `shared_ptr<T>::~shared_ptr()`
          * reached through the owning object: the control block at owner +0x04
          * is dropped, `dispose()` runs at use-count zero and `destroy()` at
          * weak-count zero. Zero callers, unreachable; formerly
          * `ReleaseOwnerSharedCountControlLane` over a
-         * `SharedCountOwnerRuntimeView` stand-in in
+         * a deleted overlay stand-in in
          * gpg/core/algorithms/Cluster.cpp (RULE ONE), removed 2026-09-18.)
          * Address: 0x0064DFE0 (FUN_0064DFE0 -- another branch-for-branch copy of this release, object in EAX: the `shared_ptr<moho::CIntelGrid>` handle inside RDebugRadar's `ReconCoverageDecalPass` stack block, dropped after every coverage pass by `TraverseRadarCellsRecursive` (eight calls 0x0064DBBA .. 0x0064DEF0) and by its unwind funclets 0x00B9F81B .. 0x00B9F88B; the accessor's own temporary goes through 0x005BE250 right after; formerly `ReleaseSharedCounterOwnerRuntime` in moho/sim/SimRecoveryRuntime.cpp (RULE ONE), removed 2026-09-30.)
          */
@@ -441,7 +449,7 @@ namespace boost
     };
 
     template <class T>
-    struct SharedPtrLayoutView
+    struct SharedPtrLayout
     {
         T* px;
         detail::sp_counted_base* pi;
@@ -449,7 +457,7 @@ namespace boost
 
     /**
      * Same `(px, pi)` layout as `boost::shared_ptr<T>` and
-     * `SharedPtrLayoutView<T>` above, but types `pi` as a real,
+     * `SharedPtrLayout<T>` above, but types `pi` as a real,
      * placement-newable `detail::shared_count` instead of the bare
      * control-block pointer it wraps.
      *
@@ -466,13 +474,13 @@ namespace boost
      * its private members. See `ConstructSharedFromRawViaCountCtor` below.
      */
     template <class T>
-    struct SharedPtrConstructionView
+    struct SharedPtrConstruction
     {
         T* px;
         detail::shared_count pi;
     };
 
-    static_assert(sizeof(SharedPtrConstructionView<void>) == 0x08, "SharedPtrConstructionView size must be 0x08");
+    static_assert(sizeof(SharedPtrConstruction<void>) == 0x08, "SharedPtrConstruction size must be 0x08");
 
     struct SharedCountPair
     {
@@ -523,6 +531,14 @@ namespace boost
      * a graph it just created (0x00895F34). Formerly
      * `CopySharedToWeakCommandGraph` in moho/sim/CWldSession.cpp, removed
      * 2026-09-25.)
+     * Address: 0x004AEF90 (FUN_004AEF90 -- `weak_ptr<void>::operator=(shared_ptr const&)`: `px`,
+     * weak add-ref on the incoming block, weak release of the old one. `ResourceManager::
+     * LoadRecord` storing what it loaded into `ResourceRecord::mResource` (0x004AAB1C). The
+     * source had a strong assign here, so the manager held every resource forever;
+     * formerly `AssignSharedPairRetainRelease_004AEF90` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
+     * Address: 0x004AEFF0 (FUN_004AEFF0 -- `weak_ptr<moho::PrefetchData>(shared_ptr const&)`: the
+     * temporary `ResourceManager::PrefetchThread` pushes back onto the queue (0x004AB484);
+     * formerly `AssignSharedPairRetain_004AEFF0` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
      *
      * What it does:
      * Per-T binding of `boost::weak_ptr<TWeak>`'s converting constructor
@@ -547,6 +563,14 @@ namespace boost
      * `effect_` (24 call sites, 0x008F3CDF .. 0x00944DB8); formerly
      * `LockWeakEffectD3D9` in gpg/gal/backends/d3d9/D3D9Interfaces.cpp (RULE
      * ONE), removed 2026-09-24.)
+     * Address: 0x004AC0E0 (FUN_004AC0E0 -- `weak_ptr<void>::lock()`, `ResourceRecord::mResource`:
+     * `ResourceManager::LoadRecord` (0x004AA729), `PrefetchResource` (0x004AAE32) and
+     * `PrefetchThread` (0x004AB3A6). The source added a weak reference here instead of a
+     * strong one; formerly `BuildWeakPairFromLiveSharedVariant1` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
+     * Address: 0x004AC1C0 (FUN_004AC1C0 -- `weak_ptr<moho::PrefetchData>::lock()`, the record's
+     * prefetch and the queue's front: `LoadRecord` (0x004AA6C2), `PrefetchResource`
+     * (0x004AAD30), `PrefetchThread` (0x004AB368) and `OnDiskWatchEvent` (0x004AB8B8);
+     * formerly `BuildWeakPairFromLiveSharedVariant2` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
      * Address: 0x00898F70 (FUN_00898F70 -- `weak_ptr<Moho::UICommandGraph>::lock()`:
      * empty when the block is gone or its use count is zero, otherwise
      * `shared_count(weak_count const&)` (0x00447030) inside a try whose catch
@@ -809,12 +833,12 @@ namespace boost
     inline void ResetSharedPtrRawOwning(SharedPtrRaw<T>& target, T* const rawPointer)
     {
         static_assert(
-            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrLayoutView<T>),
+            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrLayout<T>),
             "boost::shared_ptr<T> layout must match (px,pi) pair on this target"
         );
 
         boost::shared_ptr<T> owner(rawPointer);
-        auto* const ownerLanes = reinterpret_cast<SharedPtrLayoutView<T>*>(&owner);
+        auto* const ownerLanes = reinterpret_cast<SharedPtrLayout<T>*>(&owner);
 
         detail::sp_counted_base* const previous = target.pi;
         target.px = ownerLanes->px;
@@ -994,6 +1018,27 @@ namespace boost
      * Address: 0x00755FC0 (FUN_00755FC0, sp_counted_impl_p<Moho::ISimResources>::dispose, vtable 0x00E348EC slot 1 - `delete px_` (+0x0C) through ISimResources' virtual deleting destructor, `push 1; call [vtbl]`, skipped for null; the vtable is installed by `shared_count(ISimResources*)` 0x00754BD0; formerly `ReleaseOptionalOwnedObjectRuntime` in moho/sim/SimRecoveryRuntime.cpp (RULE ONE), removed 2026-09-30.)
      * Address: 0x007E6AD0 (FUN_007E6AD0, checked_delete<Moho::RMeshBlueprintLOD> - the non-virtual `~RMeshBlueprintLOD` 0x00519800 then `operator delete`, pointer in EAX, skipped for null; from the catch of `shared_count(RMeshBlueprintLOD*)` 0x007E6650 (0x007E66C1); formerly `RunCleanupThenDeleteObjectRuntime` in moho/sim/SimRecoveryRuntime.cpp (RULE ONE), removed 2026-09-30.)
      * Address: 0x007E6650 (FUN_007E6650, shared_count(RMeshBlueprintLOD*) - `pi_ = new sp_counted_impl_p<RMeshBlueprintLOD>(p)` (vtable 0x00E3F4E4) in a try whose catch runs checked_delete 0x007E6AD0 and rethrows, `this` in ECX, `ret 4`; from `shared_ptr<RMeshBlueprintLOD>::reset` 0x007E5170 (0x007E517F); formerly `ConstructSharedMeshBlueprintLODFromRaw` in moho/mesh/Mesh.h/.cpp, labelled as the shared_ptr constructor (RULE ONE), removed 2026-09-30.)
+     * Address: 0x004AF790 (FUN_004AF790, shared_count(Moho::PrefetchData*) - `pi_ = new
+     * sp_counted_impl_p<PrefetchData>(p)` (vtable 0x00E07668) in a try whose catch runs
+     * checked_delete 0x004AFAE0; `ResourceManager::PrefetchResource` (0x004AAD70); formerly
+     * `ConstructPrefetchSharedCountFromRaw_004AF790` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
+     * Address: 0x004AFAE0 (FUN_004AFAE0, checked_delete<Moho::PrefetchData> - `~PrefetchData`
+     * 0x004A9920 then `operator delete`, skipped for null; formerly
+     * `DestroyPrefetchDataPayloadIfPresent_004AFAE0`.)
+     * Address: 0x004AEFD0 (FUN_004AEFD0, shared_ptr<Moho::PrefetchData>(PrefetchData*) - `px`, then
+     * 0x004AF790; unreferenced, `PrefetchResource` inlines it; formerly
+     * `ConstructSharedPrefetchDataFromRaw_004AEFD0`.)
+     * Address: 0x004AFA60 (FUN_004AFA60, sp_counted_impl_p<Moho::PrefetchData>(PrefetchData*) - both
+     * counts 1, vtable 0x00E07668, `px_` at +0x0C; unreferenced, 0x004AF790 inlines it; formerly
+     * `InitializePrefetchDataCountedImplStorage_004AFA60`.)
+     * Address: 0x004AFA80 (FUN_004AFA80, sp_counted_impl_p<Moho::PrefetchData>::dispose, vtable
+     * 0x00E07668 slot 1 - `delete px_`; formerly `DisposePrefetchDataCountedPayload_004AFA80`.)
+     * Address: 0x004AFAA0 (FUN_004AFAA0, sp_counted_impl_p<Moho::PrefetchData>::get_deleter - null;
+     * formerly `GetPrefetchDataCountedImplDeleterNullResult_004AFAA0`.)
+     * Address: 0x004AFAB0 (FUN_004AFAB0, the deleting destructor of that block (slot 0); formerly
+     * `DestructPrefetchCountedBaseDeleting_004AFAB0`.)
+     * Address: 0x004AFAD0 (FUN_004AFAD0, its destructor body, restoring the `sp_counted_base`
+     * vtable 0x00D42210; formerly `DestructPrefetchCountedBaseNonDeleting_004AFAD0`.)
      */
     template <class T>
     [[nodiscard]] inline detail::shared_count* ConstructSharedCountFromRaw(
@@ -1010,7 +1055,7 @@ namespace boost
      * `px` first, then construct the control block through the caller-
      * supplied per-T `shared_count(T*)` helper (`constructCount`, typically
      * one of the `ConstructSharedCount<Type>FromRaw` free functions next to
-     * each type's outer wrapper). This is `SharedPtrConstructionView<T>`'s
+     * each type's outer wrapper). This is `SharedPtrConstruction<T>`'s
      * one intended use: reinterpret the raw output slot through the typed
      * view, write both lanes explicitly, and hand back the original
      * pointer - matching boost's real `shared_ptr(Y* p): px(p), pi_(p) {}`
@@ -1032,11 +1077,11 @@ namespace boost
     )
     {
         static_assert(
-            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrConstructionView<T>),
-            "boost::shared_ptr<T> layout must match the (px,pi) SharedPtrConstructionView pair"
+            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrConstruction<T>),
+            "boost::shared_ptr<T> layout must match the (px,pi) SharedPtrConstruction pair"
         );
 
-        auto* const view = reinterpret_cast<SharedPtrConstructionView<T>*>(outShared);
+        auto* const view = reinterpret_cast<SharedPtrConstruction<T>*>(outShared);
         view->px = rawPointer;
         constructCount(&view->pi, rawPointer);
         return outShared;
@@ -2063,7 +2108,7 @@ namespace boost
     // `const char*` that follows the 0x0C `std::exception` sub-object. Zero
     // callers in the binary and none in source; formerly
     // `GetBadPtrContainerMessage` reading through a
-    // BadPtrContainerOperationRuntimeView copy of that same layout (RULE ONE),
+    // a deleted overlay copy of that same layout (RULE ONE),
     // removed 2026-09-18. Call `what()` on the exception instead.)
 
     /**
@@ -2271,11 +2316,11 @@ namespace boost
     [[nodiscard]] SharedPtrRaw<T> SharedPtrRawFromSharedBorrow(const boost::shared_ptr<T>& source) noexcept
     {
         static_assert(
-            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrLayoutView<T>),
+            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrLayout<T>),
             "boost::shared_ptr<T> layout must match (px,pi) pair on this target"
         );
 
-        const auto* const layout = reinterpret_cast<const SharedPtrLayoutView<T>*>(&source);
+        const auto* const layout = reinterpret_cast<const SharedPtrLayout<T>*>(&source);
         SharedPtrRaw<T> out{};
         out.px = layout->px;
         out.pi = layout->pi;
@@ -2304,12 +2349,12 @@ namespace boost
     [[nodiscard]] boost::shared_ptr<T> SharedPtrFromRawAdopt(const SharedPtrRaw<T>& source) noexcept
     {
         static_assert(
-            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrLayoutView<T>),
+            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrLayout<T>),
             "boost::shared_ptr<T> layout must match (px,pi) pair on this target"
         );
 
         boost::shared_ptr<T> out{};
-        auto* const layout = reinterpret_cast<SharedPtrLayoutView<T>*>(&out);
+        auto* const layout = reinterpret_cast<SharedPtrLayout<T>*>(&out);
         layout->px = source.px;
         layout->pi = source.pi;
         return out;
@@ -2319,12 +2364,12 @@ namespace boost
     [[nodiscard]] boost::shared_ptr<T> SharedPtrFromRawRetained(const SharedPtrRaw<T>& source) noexcept
     {
         static_assert(
-            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrLayoutView<T>),
+            sizeof(boost::shared_ptr<T>) == sizeof(SharedPtrLayout<T>),
             "boost::shared_ptr<T> layout must match (px,pi) pair on this target"
         );
 
         boost::shared_ptr<T> out{};
-        auto* const layout = reinterpret_cast<SharedPtrLayoutView<T>*>(&out);
+        auto* const layout = reinterpret_cast<SharedPtrLayout<T>*>(&out);
         layout->px = source.px;
         layout->pi = source.pi;
         if (layout->pi != nullptr) {

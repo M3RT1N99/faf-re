@@ -173,7 +173,7 @@ namespace moho
   class CParticleTexture;
   class CUnitCommand;
   class CUnitCommandQueue;
-  class CCommandDb;
+  class CCommandDB;
   class CUnitMotion;
   class IEffect;
   class IEffectManager;
@@ -196,7 +196,7 @@ namespace moho
   class Motor;
   class Entity;
   class CollisionBeamEntity;
-  class CEntityDb;
+  class EntityDB;
   class EntitySetBase;
   template <class T>
   class EntitySetTemplate;
@@ -700,11 +700,11 @@ namespace gpg
      * Address: 0x00758230 (FUN_00758230 -- `Upcast<moho::CRandomStream>`; formerly `UpcastToCRandomStream` in gpg/core/containers/ReadArchive.cpp.)
      * Address: 0x00758270 (FUN_00758270 -- `Upcast<moho::SPhysConstants>`; formerly `UpcastToSPhysConstants` in gpg/core/containers/ReadArchive.cpp.)
      * Address: 0x007582B0 (FUN_007582B0 -- `Upcast<moho::IAiFormationDB>`; formerly `UpcastToIAiFormationDB` in gpg/core/containers/ReadArchive.cpp.)
-     * Address: 0x007586B0 (FUN_007586B0 -- `Upcast<moho::CCommandDb>`; formerly `UpcastToCCommandDb` in gpg/core/containers/ReadArchive.cpp.)
+     * Address: 0x007586B0 (FUN_007586B0 -- `Upcast<moho::CCommandDB>`; formerly `UpcastToCCommandDb` in gpg/core/containers/ReadArchive.cpp.)
      * Address: 0x007586F0 (FUN_007586F0 -- `Upcast<moho::CDecalBuffer>`; formerly `UpcastToCDecalBuffer` in gpg/core/containers/ReadArchive.cpp.)
      * Address: 0x007588D0 (FUN_007588D0 -- `Upcast<moho::IEffectManager>`; formerly `UpcastToIEffectManager` in gpg/core/containers/ReadArchive.cpp.)
      * Address: 0x00758AC0 (FUN_00758AC0 -- `Upcast<moho::ISoundManager>`; formerly `UpcastToISoundManager` in gpg/core/containers/ReadArchive.cpp.)
-     * Address: 0x00758CB0 (FUN_00758CB0 -- `Upcast<moho::CEntityDb>`; formerly `UpcastToCEntityDb` in gpg/core/containers/ReadArchive.cpp.)
+     * Address: 0x00758CB0 (FUN_00758CB0 -- `Upcast<moho::EntityDB>`; formerly `UpcastToCEntityDb` in gpg/core/containers/ReadArchive.cpp.)
      * Address: 0x0076B6E0 (FUN_0076B6E0 -- `Upcast<moho::PathQueue::Impl>`; formerly `UpcastToPathQueueImpl` in gpg/core/containers/ReadArchive.cpp.)
      * Address: 0x0076ED90 (FUN_0076ED90 -- `Upcast<moho::CIntelPosHandle>`; formerly `UpcastToCIntelPosHandle` in gpg/core/containers/ReadArchive.cpp.)
      * Address: 0x0054EBC0 (FUN_0054EBC0 -- `Upcast<moho::CAniPose>`, the type check of `ReadPointerShared<moho::CAniPose>`; formerly `gpg::RRef::Upcast_CAniPose` in gpg/core/containers/ArchiveSerialization.cpp.)
@@ -1089,6 +1089,12 @@ namespace gpg
    * first -- the binary does not; removed 2026-09-30.)
    * Address: 0x0073AAE0 (FUN_0073AAE0 -- `RTypeOf<moho::SMinMax<float>>`; formerly `CachedSMinMaxFloatType`
    * in moho/sim/CDamage.cpp, removed 2026-09-30.)
+   * Address: 0x0054CFC0 (FUN_0054CFC0 -- `RTypeOf<moho::CAniDefaultSkel>`; formerly `CachedDefaultSkelType` in
+   * moho/animation/CAniDefaultSkelConstruct.cpp, removed 2026-09-30.)
+   * Address: 0x0050D390 (FUN_0050D390 -- `RTypeOf<gpg::Rect2i>`, slot 0x010C6D98; formerly `CachedRect2iType`
+   * in gpg/core/reflection/Reflection.cpp, removed 2026-10-01.)
+   * Address: 0x006D2EA0 (FUN_006D2EA0 -- `RTypeOf<moho::WeakEntitySetTemplate<moho::Unit>>`; formerly
+   * `ResolveWeakUnitSetType` in moho/serialization/WeakUnitSetSerializer.cpp, removed 2026-10-01.)
    *
    * A pointer type is the exception: its descriptor is the pointee's
    * `RPointerType` object, which `U::GetPointerType()` constructs before it
@@ -1108,6 +1114,22 @@ namespace gpg
       }
       return sType;
     }
+  }
+
+  /**
+   * Address: 0x0053B1E0 (FUN_0053B1E0 -- `SetShared<moho::RScaResource>`; formerly `SetConstructResultSharedScaResource` in moho/resource/RScaResource.cpp.)
+   * Address: 0x00539D80 (FUN_00539D80 -- `SetShared<moho::RScmResource>`; formerly `SetConstructResultSharedModelResource` in moho/resource/RScmResource.cpp.)
+   * Address: 0x00539C80 (FUN_00539C80 -- `SetShared<const moho::CAniSkel>`; formerly `SetConstructResultSharedAniSkel` in moho/resource/CAniResourceSkelConstruct.cpp.)
+   *
+   * What it does:
+   * Copies the pointer into a `shared_ptr<void>`, looks up `T`'s type through
+   * its cache slot, and hands both to the untyped `SetShared`.
+   */
+  template <class T>
+  void SerConstructResult::SetShared(const boost::shared_ptr<T>& object, const unsigned int flags)
+  {
+    using Object = std::remove_const_t<T>;
+    SetShared(boost::shared_ptr<void>(boost::const_pointer_cast<Object>(object)), RTypeOf<Object>(), flags);
   }
 
   RRef REF_UpcastPtr(const RRef& source, const RType* targetType);
@@ -1565,7 +1587,7 @@ namespace gpg
    * Wrapper that materializes one temporary `RRef_EntityDB` and copies its
    * object/type lanes into the destination ref.
    */
-  RRef* AssignEntityDBRef(RRef* out, moho::CEntityDb* value);
+  RRef* AssignEntityDBRef(RRef* out, moho::EntityDB* value);
 
   /**
    * Address: 0x00698D60 (FUN_00698D60, gpg::RRef_SPhysConstants pack lane A)
@@ -2754,182 +2776,20 @@ namespace gpg
   /**
    * Demangled: gpg::SerSaveLoadHelper<T>
    *
-   * Canonical template for a `gpg::SerHelperBase`-derived serializer that
-   * forwards archive load/save flow into a reflected class/struct's own
-   * `MemberDeserialize(ReadArchive*)` / `MemberSerialize(WriteArchive*) const`
-   * pair. Sibling of `PrimitiveSerHelper<T,IntType>` (enum-only, casts to/from
-   * a single integral lane) but a distinct mechanism confirmed to be for
-   * class/struct `T`'s that already know how to (de)serialize their own
-   * fields -- the two are NOT naming variants of the same template.
+   * Installs `T`'s load/save hooks: the archive loads and saves a `T` through
+   * `T::MemberDeserialize` / `T::MemberSerialize`. Every helper in the binary
+   * derives an empty named struct from this
+   * (`Moho::CAniPoseSerializer : gpg::SerSaveLoadHelper<Moho::CAniPose>`), so
+   * RTTI shows two vtables per `T` that share one `Init`; the per-`T`
+   * addresses are cited on those structs.
    *
-   * `vtable_writers` shows ~56 rows demangling as `SerSaveLoadHelper<T>`.
-   * 11 of those are ENUM `T`'s (`EAlliance`, `ELayer`, `EVisibilityMode`,
-   * `EImpactType`, `ESiloType`, `EIntel`, `ECollisionType`, `EPathPointState`,
-   * `ECommandEvent`, `EThreatType`, `ESquadClass`) and are NOT real
-   * instantiations of this template at all: every one is a zero-xref,
-   * unreachable COMDAT duplicate ctor that happens to share its global's
-   * storage address with the real, `__xc_a`-reachable
-   * `PrimitiveSerHelper<EnumT,int>` instance for the same enum (established
-   * for ELayer/EVisibilityMode/EAlliance earlier this session; confirmed here
-   * to hold for all 8 remaining enum rows too -- enums cannot provide the
-   * `T::MemberDeserialize` this template calls, so they were never real
-   * candidates for it). The other ~45 rows are real class/struct
-   * instantiations (`SDelayedSubVizInfo`, `CIntelGrid`, `CAniPose`,
-   * `CAniPoseBone`, `BVIntSet`, `EntityDB`, `CCommandDB`, `CUnitCommand`,
-   * `CInfluenceMap`, ... one per reflected engine class/struct).
-   *
-   * Every real instantiation follows the identical two-address shape already
-   * established for `PrimitiveSerHelper`: a dead, zero-xref duplicate ctor at
-   * a LOW address (the address `vtable_writers` reports -- e.g. for
-   * `CAniPose`, `FUN_0054C5E0`) and the real, `__xc_a`-reachable
-   * `register_<T>Serializer` ctor at a HIGH address in the same
-   * 0x00BCxxxx-0x00BDxxxx cluster (e.g. `FUN_00BC9960` for `CAniPose`),
-   * constructing a named global `Moho::<T>Serializer`. Unlike
-   * `PrimitiveSerHelper`, every real instantiation checked gets a REAL
-   * MANGLED destructor (e.g. `??1CAniPoseSerializer@Moho@@QAE@@Z`), not a
-   * plain unlink thunk -- so this template declares a real destructor
-   * unconditionally instead of treating it as instantiation-dependent.
-   *
-   * `Init()`'s real body (confirmed from `CAniPose`'s raw asm at
-   * `FUN_0054C610` -- the SAME compiled body serves both the dead duplicate's
-   * vtable slot and the real global's vtable slot, there is only one `Init()`
-   * per `T`) caches the looked-up `RType*` directly on `T::sType` (a static
-   * member the target type itself already provides), NOT on a helper-owned
-   * static. Confirmed against `BVIntSet` and `CAniPose`, both of which
-   * already declare `static gpg::RType* sType;` at this exact cache slot.
-   * This is the one structural difference from `PrimitiveSerHelper::Init()`
-   * (which caches on its own template-static `sCachedType`, because that
-   * template is also instantiated for enums, and an enum cannot host a
-   * static member of its own).
-   *
-   * `Rect2iSerializer`/`Rect2fSerializer` (below) and `SOCellPosSerializer`
-   * (`moho/sim/SOCellPos.h`, see `git show 2f18a6b0`) are confirmed-real
-   * prior-art instantiations of this exact template -- their dead-duplicate
-   * ctors were directly traced to a `gpg::SerSaveLoadHelper<T>` vtable write
-   * onto the same storage as their real ctor. RTTI (`dumps/rtti_dump_all.hpp`)
-   * confirms `Rect2iSerializer`'s real inheritance chain is
-   * `SerHelperBase -> SerSaveLoadHelper<Rect2<int>> -> Rect2iSerializer`
-   * (`HierarchyAttribs: 0x0`, single inheritance, every base at `mdisp=0` --
-   * `mLoadCallback`/`mSaveCallback` actually belong to the
-   * `SerSaveLoadHelper<T>` level, not to `Rect2iSerializer` itself), with
-   * `Rect2iSerializer::Init()` fully overriding the generic one below (Rect2
-   * has no `MemberDeserialize`/`MemberSerialize`, so it can't use the generic
-   * path). Left as concrete `SerHelperBase`-derived classes rather than
-   * converted to inherit this template directly: it adds zero data/behavior
-   * that they don't already fully override, so collapsing the redundant
-   * intermediate level would be a source-shape change with no binary-behavior
-   * difference and nontrivial ctor-reordering risk (their existing ctors
-   * point `mLoadCallback`/`mSaveCallback` at their OWN static methods, not
-   * this template's) -- valid prior art either way; a future pass may still
-   * choose to unify them.
-   *
-   * Pilot conversions from the old `{ mHelperNext, mHelperPrev, ... }`
-   * raw-struct mimic (or `*RuntimeView`-style reach-in) shape to this
-   * template: `moho::BVIntSetSerializer`, `Moho::CAniPoseSerializer`,
-   * `Moho::CAniPoseBoneSerializer`, `Moho::CIntelGridSerializer`. ~41 real
-   * instantiations remain to convert.
-   *
-   * `Moho::CEfxTrailEmitterSerializer` (`moho/effects/rendering/
-   * CEfxTrailEmitter.cpp`) is a fresh direct instantiation (the class had no
-   * prior hand-rolled serializer at all), not a conversion -- but it flags a
-   * nuance worth checking for any of the ~41 remaining: unlike the pilot
-   * conversions above, RTTI/`vtable_writers` show it needs a real (if empty)
-   * derived class, `class CEfxTrailEmitterSerializer : public
-   * SerSaveLoadHelper<CEfxTrailEmitter> {};`, NOT a `using` alias. The
-   * binary carries two distinct adjacent vtable symbols
-   * (`??_7CEfxTrailEmitterSerializer@Moho@@6B@` at 0x00E2695C and
-   * `??_7?$SerSaveLoadHelper@VCEfxTrailEmitter@Moho@@@gpg@@6B@` at
-   * 0x00E26964, both resolving `Init()` to the same 0x006722F0 body), which
-   * a same-address `using` alias cannot produce -- check `vtable_writers`
-   * for a distinct `XSerializer@Namespace` vtable head before assuming the
-   * simpler alias shape applies to any given remaining T.
-   *
-   * `Moho::CUnitFormAndMoveTaskSerializer` (`moho/unit/tasks/
-   * CUnitFormAndMoveTask.cpp`, VFTABLE 0x00E206F8 / base VFTABLE 0x00E20700)
-   * and `Moho::CUnitUnloadUnitsSerializer` (`moho/unit/tasks/
-   * CUnitUnloadUnits.cpp`, VFTABLE 0x00E20EB8 / base VFTABLE 0x00E20EC0) hit
-   * the exact same CEfxTrailEmitter nuance -- both need the empty-derived-
-   * class shape, confirmed via the same two-distinct-adjacent-vtables test.
-   * Both also surfaced a related trap worth watching for across the ~41
-   * remaining conversions: an earlier pass at each of these two files had
-   * already recovered the template's own per-T `Deserialize`/`Serialize`
-   * bodies (e.g. 0x006199D0/0x006199E0 for `CUnitFormAndMoveTask`), but
-   * mis-modeled them as hand-written standalone free-function thunks
-   * (`CUnitFormAndMoveTaskMemberDeserializeThunk` and friends) instead of
-   * recognizing them as this template's own compiler-emitted
-   * `Deserialize`/`Serialize` for that T. The tell is the same tail-jump
-   * shape documented above for CEfxTrailEmitter's Deserialize/Serialize
-   * thunks (`mov eax, [esp+arg_0]; mov ecx, [esp+arg_4]; jmp
-   * T::MemberDeserialize`) -- when a "thunk" free function found near a
-   * `MemberDeserialize`/`MemberSerialize` pair has exactly that shape and
-   * its address is what a `SerSaveLoadHelper<T>`-shaped ctor writes into
-   * `mLoadCallback`/`mSaveCallback`, it is this template's own per-T method,
-   * not a separately hand-written forwarder -- delete the standalone
-   * free-function modeling and cite the address on the derived class instead
-   * (see either file for the corrected shape).
-   *
-   * `Moho::CUnitAssistMoveTaskSerializer` (`moho/unit/tasks/
-   * CUnitAssistMoveTask.cpp`) looks superficially like the same pattern
-   * (RTTI also lists `SerSaveLoadHelper<CUnitAssistMoveTask>` as a base) but
-   * is NOT a template instantiation of any shape: `CUnitAssistMoveTask::
-   * MemberDeserialize`/`MemberSerialize` are STATIC 4-argument forwarders
-   * (`archive, task, version, ownerRef`), not the instance-method,
-   * single-`archive`-argument shape `Deserialize`/`Serialize` below call
-   * (`object->MemberDeserialize(archive)`) -- that shape cannot be
-   * instantiated for this T with the template as currently written, so it
-   * stays a concrete `SerHelperBase`-derived class instead (matching
-   * `CUnitCarrierRetrieveSerializerHelper`/`CUnitReclaimTaskSerializer`).
-   * Confirm the real `MemberDeserialize`/`MemberSerialize` parameter count
-   * from the class header before assuming any given remaining T fits the
-   * template at all, not just which derived-class shape it needs.
-   *
-   * `Moho::CUnitTeleportTaskSerializer` and `Moho::CUnitFireAtTaskSerializer`
-   * (both `moho/unit/tasks/CUnitCallTeleport.{h,cpp}` /
-   * `moho/unit/tasks/CUnitFireAtTask.{h,cpp}` -- note `CUnitTeleportTask` is
-   * the SECOND, unrelated class declared in the `CUnitCallTeleport.*` pair;
-   * `Moho::CUnitCallTeleport` itself has its own separate, non-template
-   * serializer in `moho/serialization/CUnitCallTeleportSerializer.*` and is
-   * untouched by this instantiation) hit the exact same CEfxTrailEmitter
-   * empty-derived-class nuance -- both need a real (if empty) derived class,
-   * confirmed via the same two-distinct-adjacent-vtables test:
-   *  - T=Moho::CUnitTeleportTask: VFTABLE 0x00E20348 / base VFTABLE
-   *    0x00E20350, ctor 0x00BD0650 (no dead duplicate found), atexit
-   *    0x00BF9C60, Init 0x0060BBA0, Deserialize 0x0060AA10 (tail-calls
-   *    `MemberDeserialize` at 0x0060D270), Serialize 0x0060AA20 (tail-calls
-   *    `MemberSerialize` at 0x0060D350). Also hit the CUnitFormAndMoveTask
-   *    mis-modeling trap: an earlier pass had already recovered 0x0060AA10/
-   *    0x0060AA20 as hand-written 2-argument free functions
-   *    (`CUnitTeleportTaskSerializerLoad`/`Save`) plus `volatile`
-   *    function-pointer anchors to keep them ODR-used -- wrong signature
-   *    (the real slot is `RType::load_func_t`/`save_func_t`, 4 arguments)
-   *    and never actually invoked by anything; deleted in favor of this
-   *    template instantiation, which supplies the equivalent bodies itself.
-   *  - T=Moho::CUnitFireAtTask: VFTABLE 0x00E20394 / base VFTABLE
-   *    0x00E2039C, ctor 0x00BD06B0 (no dead duplicate found), atexit
-   *    0x00BF9CF0, Init 0x0060BC60, Deserialize 0x0060B100 (tail-jmp shape,
-   *    archive in EAX / objectPtr in ECX, into `MemberDeserialize` at
-   *    0x0060D430), Serialize 0x0060B110 (tail-calls `MemberSerialize` at
-   *    0x0060D510). This T additionally required recovering
-   *    `MemberDeserialize`/`MemberSerialize` from scratch (previously
-   *    missing entirely): `mDispatch` (`IAiCommandDispatchImpl*` at +0x30)
-   *    reflects through the `CCommandTask` base type via
-   *    `ReadPointer_CCommandTask`/`RRef_CCommandTask`+`WriteRawPointer`,
-   *    exactly the established `CUnitPatrolTask`/`CFactoryBuildTask`/
-   *    `CUnitAssistMoveTask` idiom for an `IAiCommandDispatchImpl`-typed
-   *    dispatch-task field; `mTarget` (`CAiTarget` at +0x34) is a plain
-   *    reflected-value field, same as `CUnitTeleportTask::mTarget` above and
-   *    `CUnitAttackTargetTask::mTarget`; `mWeapon` (`UnitWeapon*` at +0x54)
-   *    is a tracked pointer via `ReadPointer_UnitWeapon`/`RRef_UnitWeapon`,
-   *    exact match to `CUnitAttackTargetTask::mWeapon`; `mIsNuclear`
-   *    (`std::int32_t` at +0x58) is read/written through the `ESiloType`
-   *    reflected type (RTTI typeinfo `??_R0?AW4ESiloType@Moho@@@8`) rather
-   *    than as a raw int -- confirmed by raw asm on both the load and save
-   *    sides, and consistent with every other use of this field being an
-   *    `ESiloType` (`static_cast<ESiloType>(mIsNuclear)` in `Execute()`).
-   *    The field's own declared C++ type is left as `std::int32_t` (an
-   *    `ESiloType` retype would ripple into the ctor/`Create()` signatures,
-   *    which are out of scope here); only the archive lane's reflected type
-   *    changed to match the binary.
+   * `Deserialize` / `Serialize` are out of line only where the member is, as
+   * a `jmp` or a short forward; otherwise the member is inlined into them.
+   * Members take `(archive)`, `(archive, version)` or
+   * `(archive, version, ownerRef)`, whichever the binary's body reads. The
+   * enum instantiations `vtable_writers` also lists are unreferenced copies
+   * sharing a `PrimitiveSerHelper<E, int>` global's storage, not uses of
+   * this template.
    */
   template <class T>
   class SerSaveLoadHelper : public SerHelperBase
@@ -2943,14 +2803,7 @@ namespace gpg
     ~SerSaveLoadHelper() = default;
 
     /**
-     * Address: 0x0050C7D0 (FUN_0050C7D0 -- `Init()` for `SOCellPos`; formerly `InstallMohoSOCellPosSerializerCallbacks` in gpg/core/containers/ArchiveSerialization.cpp, whose by-name lookup was disproven.)
-     * Address: 0x0050C910 (FUN_0050C910 -- `Init()` for `SPointVector`; formerly `InstallMohoSPointVectorSerializerCallbacks` in gpg/core/containers/ArchiveSerialization.cpp, whose by-name lookup was disproven.)
-     * Address: 0x0055B2A0 (FUN_0055B2A0 -- `Init()` for `SSTITarget`; formerly `InstallMohoSSTITargetSerializerCallbacks` in gpg/core/containers/ArchiveSerialization.cpp, whose by-name lookup was disproven.)
-     * Address: 0x0056CA10 (FUN_0056CA10 -- `Init()` for `CFormationInstance`; formerly `InstallMohoCFormationInstanceSerializerCallbacks` in gpg/core/containers/ArchiveSerialization.cpp, whose by-name lookup was disproven.)
      * Address: 0x005B9230 (FUN_005B9230 -- `Init()` for `SValuePair`; formerly `InstallMohoSValuePairSerializerCallbacks` in gpg/core/containers/ArchiveSerialization.cpp, whose by-name lookup was disproven.)
-     * Address: 0x005E91E0 (FUN_005E91E0 -- `Init()` for `SAttachPoint`; formerly `InstallMohoSAttachPointSerializerCallbacks` in gpg/core/containers/ArchiveSerialization.cpp, whose by-name lookup was disproven.)
-     * Address: 0x005E9490 (FUN_005E9490 -- `Init()` for `STransportPickUpInfo`; formerly `InstallMohoSTransportPickUpInfoSerializerCallbacks` in gpg/core/containers/ArchiveSerialization.cpp, whose by-name lookup was disproven.)
-     * Address: 0x00626B30 (FUN_00626B30 -- `Init()` for `SPickUpInfo`; formerly `InstallMohoSPickUpInfoSerializerCallbacks` in gpg/core/containers/ArchiveSerialization.cpp, whose by-name lookup was disproven.)
      *
      * What it does:
      * Installs this helper's load/save callbacks on `T`'s type (vtable slot 0,
@@ -2976,21 +2829,43 @@ namespace gpg
     /**
      * What it does:
      * Reflection load callback that forwards archive-load flow into
-     * `T::MemberDeserialize`.
+     * `T::MemberDeserialize`, with the archived version when `T`'s takes one
+     * (`Unit`'s rejects versions below 1) and the owner reference when it
+     * takes that too (the Lua objects read their payload against the
+     * owning thread).
      */
-    static void Deserialize(ReadArchive* const archive, const int objectPtr, const int, RRef* const)
+    static void Deserialize(ReadArchive* const archive, const int objectPtr, const int version, RRef* const ownerRef)
     {
-      SerLoadMembers(archive, *reinterpret_cast<T*>(static_cast<std::uintptr_t>(objectPtr)));
+      T& object = *reinterpret_cast<T*>(static_cast<std::uintptr_t>(objectPtr));
+      if constexpr (requires { object.MemberDeserialize(archive, version, *ownerRef); }) {
+        object.MemberDeserialize(archive, version, *ownerRef);
+      } else if constexpr (requires { object.MemberDeserialize(archive, version); }) {
+        object.MemberDeserialize(archive, version);
+      } else if constexpr (requires { object.MemberDeserialize(archive); }) {
+        object.MemberDeserialize(archive);
+      } else {
+        SerLoadMembers(archive, object);
+      }
     }
 
     /**
      * What it does:
      * Reflection save callback that forwards archive-save flow into
-     * `T::MemberSerialize`.
+     * `T::MemberSerialize`, with the version and the owner reference when
+     * `T`'s takes them.
      */
-    static void Serialize(WriteArchive* const archive, const int objectPtr, const int, RRef* const)
+    static void Serialize(WriteArchive* const archive, const int objectPtr, const int version, RRef* const ownerRef)
     {
-      SerSaveMembers(archive, *reinterpret_cast<const T*>(static_cast<std::uintptr_t>(objectPtr)));
+      T& object = *reinterpret_cast<T*>(static_cast<std::uintptr_t>(objectPtr));
+      if constexpr (requires { object.MemberSerialize(archive, version, *ownerRef); }) {
+        object.MemberSerialize(archive, version, *ownerRef);
+      } else if constexpr (requires { object.MemberSerialize(archive, version); }) {
+        object.MemberSerialize(archive, version);
+      } else if constexpr (requires { object.MemberSerialize(archive); }) {
+        object.MemberSerialize(archive);
+      } else {
+        SerSaveMembers(archive, static_cast<const T&>(object));
+      }
     }
 
   public:
@@ -2999,64 +2874,105 @@ namespace gpg
   };
 
   /**
-   * VFTABLE: 0x00D44B44
-   * COL:  0x00E51514
+   * Demangled: gpg::SerConstructHelper<T>
    *
-   * Demangled: gpg::SerSaveLoadHelper<class gpg::Rect2<int>>
+   * Installs `T`'s load-construct hook: the archive builds a `T` through
+   * `T::MemberConstruct` instead of default-constructing it and loading the
+   * members over it, and frees one it no longer owns with a plain `delete`.
+   * Every helper in the binary derives an empty named struct from this
+   * (`Moho::EntityConstruct : gpg::SerConstructHelper<Moho::Entity>`); the
+   * per-`T` addresses are cited on those structs.
+   *
+   * `Construct` is out of line only where `MemberConstruct` is, as a 5- or
+   * 8-instruction forward (whole-program optimisation drops the arguments
+   * `MemberConstruct` never reads, so a 5-instruction one pushes the result
+   * alone); otherwise `MemberConstruct` is inlined into it. `Delete` is
+   * `delete static_cast<T*>(object)`: the deleting destructor through the
+   * vtable for a polymorphic `T`, the destructor and `operator delete`
+   * otherwise, and `operator delete` alone for a trivially destructible one.
    */
-  class Rect2iSerializer : public SerHelperBase
+  template <class T>
+  struct SerConstructHelper : SerHelperBase
   {
-  public:
-    /**
-     * Address: 0x00905E40 (FUN_00905E40)
-     * Demangled: gpg::SerSaveLoadHelper<class gpg::Rect2<int>>::Init
-     *
-     * What it does:
-     * Binds Rect2<int> load/save callbacks onto the reflected type descriptor.
-     */
-    void Init() override;
+    SerConstructHelper()
+      : mConstructFunc(&SerConstructHelper::Construct)
+      , mDeleteFunc(&SerConstructHelper::Delete)
+    {}
 
-  public:
-    RType::load_func_t mLoadCallback;
-    RType::save_func_t mSaveCallback;
+    /**
+     * What it does:
+     * Installs the construct and delete hooks on `T`'s type, asserting no
+     * construct hook was installed before (serialization.h line 231). The
+     * delete hook is stored unchecked.
+     */
+    void Init() override
+    {
+      RType* const type = RTypeOf<T>();
+      if (type->serConstructFunc_ != nullptr) {
+        HandleAssertFailure("!type->mSerConstructFunc", 231, detail::kSerializationHeaderPath);
+      }
+      type->serConstructFunc_ = mConstructFunc;
+      type->deleteFunc_ = mDeleteFunc;
+    }
+
+    static void Construct(ReadArchive* const archive, const int version, RRef* const ownerRef, SerConstructResult* const result)
+    {
+      T::MemberConstruct(*archive, version, *ownerRef, *result);
+    }
+
+    static void Delete(void* const object)
+    {
+      delete static_cast<T*>(object);
+    }
+
+    RType::construct_func_t mConstructFunc; // +0x0C
+    RType::delete_func_t mDeleteFunc;       // +0x10
   };
-  static_assert(
-    offsetof(Rect2iSerializer, mLoadCallback) == 0x0C, "Rect2iSerializer::mLoadCallback offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(Rect2iSerializer, mSaveCallback) == 0x10, "Rect2iSerializer::mSaveCallback offset must be 0x10"
-  );
-  static_assert(sizeof(Rect2iSerializer) == 0x14, "Rect2iSerializer size must be 0x14");
 
   /**
-   * VFTABLE: 0x00D44B3C
-   * COL:  0x00E514BC
+   * Demangled: gpg::SerSaveConstructHelper<T>
    *
-   * Demangled: gpg::SerSaveLoadHelper<class gpg::Rect2<float>>
+   * Installs `T`'s save-construct hook: before its members, the archive
+   * writes what `T::MemberConstruct` will need to rebuild the object, through
+   * `T::MemberSaveConstructArgs`, which also reports how the pointer is owned.
+   * Paired with a `SerConstructHelper<T>`, and like it always derived into an
+   * empty named struct (`Moho::EntitySaveConstruct`) where the per-`T`
+   * addresses are cited.
    */
-  class Rect2fSerializer : public SerHelperBase
+  template <class T>
+  struct SerSaveConstructHelper : SerHelperBase
   {
-  public:
-    /**
-     * Address: 0x00905EE0 (FUN_00905EE0)
-     * Demangled: gpg::SerSaveLoadHelper<class gpg::Rect2<float>>::Init
-     *
-     * What it does:
-     * Binds Rect2<float> load/save callbacks onto the reflected type descriptor.
-     */
-    void Init() override;
+    SerSaveConstructHelper()
+      : mSaveConstructArgsFunc(&SerSaveConstructHelper::SaveConstructArgs)
+    {}
 
-  public:
-    RType::load_func_t mLoadCallback;
-    RType::save_func_t mSaveCallback;
+    /**
+     * What it does:
+     * Installs the save-construct hook on `T`'s type, asserting none was
+     * installed before (serialization.h line 189).
+     */
+    void Init() override
+    {
+      RType* const type = RTypeOf<T>();
+      if (type->serSaveConstructArgsFunc_ != nullptr) {
+        HandleAssertFailure("!type->mSerSaveConstructArgsFunc", 189, detail::kSerializationHeaderPath);
+      }
+      type->serSaveConstructArgsFunc_ = mSaveConstructArgsFunc;
+    }
+
+    static void SaveConstructArgs(
+      WriteArchive* const archive,
+      void* const object,
+      const int version,
+      RRef* const ownerRef,
+      SerSaveConstructArgsResult* const result
+    )
+    {
+      static_cast<T*>(object)->MemberSaveConstructArgs(*archive, version, *ownerRef, *result);
+    }
+
+    RType::save_construct_args_func_t mSaveConstructArgsFunc; // +0x0C
   };
-  static_assert(
-    offsetof(Rect2fSerializer, mLoadCallback) == 0x0C, "Rect2fSerializer::mLoadCallback offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(Rect2fSerializer, mSaveCallback) == 0x10, "Rect2fSerializer::mSaveCallback offset must be 0x10"
-  );
-  static_assert(sizeof(Rect2fSerializer) == 0x14, "Rect2fSerializer size must be 0x14");
 
   /**
    * Demangled: gpg::PrimitiveSerHelper<T,IntType>
@@ -5348,11 +5264,11 @@ namespace gpg
    * Address: 0x00757540 (FUN_00757540 -- `ReadPointerOwned<moho::CRandomStream>`; formerly `ReadPointerOwned_CRandomStream`.)
    * Address: 0x00757680 (FUN_00757680 -- `ReadPointerOwned<moho::SPhysConstants>`; formerly `ReadPointerOwned_SPhysConstants`.)
    * Address: 0x007577C0 (FUN_007577C0 -- `ReadPointerOwned<moho::IAiFormationDB>`; formerly `ReadPointerOwned_IAiFormationDB`.)
-   * Address: 0x00757B10 (FUN_00757B10 -- `ReadPointerOwned<moho::CCommandDb>`; formerly `ReadPointerOwned_CCommandDB`.)
+   * Address: 0x00757B10 (FUN_00757B10 -- `ReadPointerOwned<moho::CCommandDB>`; formerly `ReadPointerOwned_CCommandDB`.)
    * Address: 0x00757C50 (FUN_00757C50 -- `ReadPointerOwned<moho::CDecalBuffer>`; formerly `ReadPointerOwned_CDecalBuffer`.)
    * Address: 0x00757D90 (FUN_00757D90 -- `ReadPointerOwned<moho::IEffectManager>`; formerly `ReadPointerOwned_IEffectManager`.)
    * Address: 0x00757ED0 (FUN_00757ED0 -- `ReadPointerOwned<moho::ISoundManager>`; formerly `ReadPointerOwned_ISoundManager`.)
-   * Address: 0x00758010 (FUN_00758010 -- `ReadPointerOwned<moho::CEntityDb>`; formerly `ReadPointerOwned_EntityDB`.)
+   * Address: 0x00758010 (FUN_00758010 -- `ReadPointerOwned<moho::EntityDB>`; formerly `ReadPointerOwned_EntityDB`.)
    * Address: 0x0076B570 (FUN_0076B570 -- `ReadPointerOwned<moho::PathQueue::Impl>`; formerly `ReadPointerOwned_PathQueue_Impl`.)
    * Address: 0x0076EC30 (FUN_0076EC30 -- `ReadPointerOwned<moho::CIntelPosHandle>`; formerly `ReadPointerOwned_CIntelPosHandle`.)
    * Address: 0x0077D7A0 (FUN_0077D7A0 -- `ReadPointerOwned<moho::CDecalHandle>`; formerly `ReadPointerOwned_CDecalHandle`.)
@@ -5391,11 +5307,11 @@ namespace gpg
    * Address: 0x00682020 (FUN_00682020 -- `ReadPointerOwned<moho::Motor>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `ReadOwnedRawPointerFromMotorSlotLaneLegacyA` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
    * Address: 0x00706540 (FUN_00706540 -- `ReadPointerOwned<moho::CArmyStats>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `ReadOwnedRawPointerFromCArmyStatsSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
    * Address: 0x00706B60 (FUN_00706B60 -- `ReadPointerOwned<moho::CArmyStats>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `LoadOwnedRawPointerFromCArmyStatsSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
-   * Address: 0x00756330 (FUN_00756330 -- `ReadPointerOwned<moho::CCommandDb>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `ReadOwnedRawPointerFromCCommandDbSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
-   * Address: 0x00756F90 (FUN_00756F90 -- `ReadPointerOwned<moho::CCommandDb>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `LoadOwnedRawPointerFromCCommandDbSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
-   * Address: 0x00756430 (FUN_00756430 -- `ReadPointerOwned<moho::CEntityDb>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `ReadOwnedRawPointerFromCEntityDbSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
+   * Address: 0x00756330 (FUN_00756330 -- `ReadPointerOwned<moho::CCommandDB>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `ReadOwnedRawPointerFromCCommandDbSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
+   * Address: 0x00756F90 (FUN_00756F90 -- `ReadPointerOwned<moho::CCommandDB>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `LoadOwnedRawPointerFromCCommandDbSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
+   * Address: 0x00756430 (FUN_00756430 -- `ReadPointerOwned<moho::EntityDB>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `ReadOwnedRawPointerFromCEntityDbSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
    * Address: 0x006B4600 (FUN_006B4600 -- `ReadPointerOwned<moho::CAniActor>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `LoadOwnedRawPointerFromCAniActorSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
-   * Address: 0x00757160 (FUN_00757160 -- `ReadPointerOwned<moho::CEntityDb>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `LoadOwnedRawPointerFromCEntityDbSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
+   * Address: 0x00757160 (FUN_00757160 -- `ReadPointerOwned<moho::EntityDB>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `LoadOwnedRawPointerFromCEntityDbSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
    * Address: 0x00706C20 (FUN_00706C20 -- `ReadPointerOwned<moho::PathQueue>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `LoadOwnedRawPointerFromPathQueueSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
    * Address: 0x00706510 (FUN_00706510 -- `ReadPointerOwned<moho::CEconomy>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `ReadOwnedRawPointerFromCEconomySlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
    * Address: 0x00706B00 (FUN_00706B00 -- `ReadPointerOwned<moho::CEconomy>` into an owning slot, deleting the object it replaces; no references in the PE; formerly `LoadOwnedRawPointerFromCEconomySlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
@@ -5909,6 +5825,8 @@ namespace gpg
    * Address: 0x00584800 (FUN_00584800 -- `WritePointer<moho::Sim>` from a slot, state folded to Unowned; no references in the PE; formerly `WriteUnownedRawPointerFromSimSlotLane1` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
    * Address: 0x006E1140 (FUN_006E1140 -- `WritePointer<moho::Sim>` from a slot, state folded to Unowned; no references in the PE; formerly `SaveUnownedRawPointerFromSimSlotLane2` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
    * Address: 0x006E2A40 (FUN_006E2A40 -- `WritePointer<moho::Sim>` from a slot, state folded to Unowned; no references in the PE; formerly `SaveUnownedRawPointerFromSimSlotLane3` in gpg/core/containers/ArchiveSerialization.cpp, removed 2026-09-30.)
+   * Address: 0x00774B80 (FUN_00774B80 -- `WritePointer<moho::CEconomy>` from a slot, state folded to Unowned; no references in the PE; formerly `SerializeUnownedCEconomyPointer` in moho/sim/CEconStorage.cpp, removed 2026-09-30.)
+   * Address: 0x00774BC0 (FUN_00774BC0 -- the same, archive on the stack; no references in the PE; formerly `SerializeUnownedCEconomyPointerBinary` in moho/sim/CEconStorage.cpp, removed 2026-09-30.)
    *
    * What it does:
    * Writes `value` as a tracked pointer in `state`, owned by `ownerRef`:
@@ -5931,7 +5849,7 @@ namespace gpg
      * (`RRef_Entity` 0x006805E0 reaches it through the TLS slot at
      * `fs:[0x2C]`, guard bit 1 of `+0x898`).
      */
-    struct RecentRuntimeTypes
+    struct RecentRegisteredTypes
     {
       struct Entry
       {
@@ -6077,6 +5995,7 @@ namespace gpg
    * Address: 0x005EDED0 (FUN_005EDED0 -- `MakeRRef<moho::SAttachPoint>`; formerly `gpg::RRef_SAttachPoint`.)
    * Address: 0x005EE1B0 (FUN_005EE1B0 -- `MakeRRef<moho::Listener<moho::EAiTransportEvent>>`; formerly `gpg::RRef_Listener_EAiTransportEvent`.)
    * Address: 0x005F5280 (FUN_005F5280 -- `MakeRRef<moho::CUnitCommand>`; formerly `gpg::RRef_CUnitCommand`.)
+   * Address: 0x0061CCA0 (FUN_0061CCA0 -- `MakeRRef<moho::CUnitPatrolTask>`; formerly `gpg::RRef_CUnitPatrolTask`.)
    * Address: 0x005FDCD0 (FUN_005FDCD0 -- `MakeRRef<moho::CUnitMobileBuildTask>`; formerly `gpg::RRef_CUnitMobileBuildTask`.)
    * Address: 0x005FDE80 (FUN_005FDE80 -- `MakeRRef<moho::CUnitUpgradeTask>`; formerly `gpg::RRef_CUnitUpgradeTask`.)
    * Address: 0x005FE030 (FUN_005FE030 -- `MakeRRef<moho::CUnitRepairTask>`; formerly `gpg::RRef_CUnitRepairTask`.)
@@ -6120,7 +6039,7 @@ namespace gpg
    * Address: 0x00683600 (FUN_00683600 -- `MakeRRef<moho::CTextureScroller>`; formerly `gpg::RRef_CTextureScroller`.)
    * Address: 0x006837E0 (FUN_006837E0 -- `MakeRRef<moho::SPhysBody>`; formerly `gpg::RRef_SPhysBody`.)
    * Address: 0x006839C0 (FUN_006839C0 -- `MakeRRef<moho::Motor>`; formerly `gpg::RRef_Motor`.)
-   * Address: 0x00689360 (FUN_00689360 -- `MakeRRef<moho::CEntityDb>`; formerly `gpg::RRef_EntityDB`.)
+   * Address: 0x00689360 (FUN_00689360 -- `MakeRRef<moho::EntityDB>`; formerly `gpg::RRef_EntityDB`.)
    * Address: 0x00689920 (FUN_00689920 -- `MakeRRef<moho::EntitySetBase>`; formerly `gpg::RRef_EntitySetBase`.)
    * Address: 0x00692DB0 (FUN_00692DB0 -- `MakeRRef<moho::EVisibilityMode>`; formerly `gpg::RRef_EVisibilityMode`.)
    * Address: 0x00692F50 (FUN_00692F50 -- `MakeRRef<moho::EIntel>`; formerly `gpg::RRef_EIntel`.)
@@ -6144,7 +6063,7 @@ namespace gpg
    * Address: 0x006D22F0 (FUN_006D22F0 -- `MakeRRef<moho::ERuleBPUnitCommandCaps>`; formerly `gpg::RRef_ERuleBPUnitCommandCaps`.)
    * Address: 0x006DD790 (FUN_006DD790 -- `MakeRRef<moho::ELayer>`; formerly `gpg::RRef_ELayer`.)
    * Address: 0x006DED40 (FUN_006DED40 -- `MakeRRef<moho::CFireWeaponTask>`; formerly `gpg::RRef_CFireWeaponTask`.)
-   * Address: 0x006E3150 (FUN_006E3150 -- `MakeRRef<moho::CCommandDb>`; formerly `gpg::RRef_CCommandDB`.)
+   * Address: 0x006E3150 (FUN_006E3150 -- `MakeRRef<moho::CCommandDB>`; formerly `gpg::RRef_CCommandDB`.)
    * Address: 0x006E3310 (FUN_006E3310 -- `MakeRRef<moho::CUnitCommand*>`; formerly `gpg::RRef_CUnitCommand_P`.)
    * Address: 0x006EC1D0 (FUN_006EC1D0 -- `MakeRRef<moho::WeakPtr<moho::CUnitCommand>>`; formerly `gpg::RRef_WeakPtr_CUnitCommand`.)
    * Address: 0x006EC620 (FUN_006EC620 -- `MakeRRef<moho::Listener<moho::ECommandEvent>>`; formerly `gpg::RRef_Listener_ECommandEvent`.)
@@ -6213,7 +6132,7 @@ namespace gpg
    * What it does:
    * A reference to `*value` as the object it really is. For a polymorphic
    * `T` whose dynamic type is not `T` itself, the dynamic type is looked up
-   * (`detail::RecentRuntimeTypes`), asserted to derive from `T` (`"isDer"`,
+   * (`detail::RecentRegisteredTypes`), asserted to derive from `T` (`"isDer"`,
    * reflection.h line 458) and the pointer moved back to the start of the
    * whole object; otherwise the reference is `{value, RTypeOf<T>()}` -- for a
    * pointer `T` that is the pointee's `RPointerType`, the reference to a
@@ -6227,7 +6146,7 @@ namespace gpg
     auto* const object = const_cast<Object*>(value);
     if constexpr (std::is_polymorphic_v<Object>) {
       if (object != nullptr && typeid(*object) != typeid(Object)) {
-        thread_local detail::RecentRuntimeTypes sRecent{};
+        thread_local detail::RecentRegisteredTypes sRecent{};
         RType* const runtime = sRecent.Find(typeid(*object));
 
         std::int32_t baseOffset = 0;

@@ -32,7 +32,7 @@
    * What it does:
    * Allocates and initializes one M2A decoder context and bitstream object.
    */
-  std::int32_t __cdecl M2ADEC_Create(const std::int32_t heapManagerHandle, M2aDecoderContext** outContext)
+  std::int32_t __cdecl M2ADEC_Create(const SofdecAddressWord heapManagerHandle, M2aDecoderContext** outContext)
   {
     if (outContext == nullptr) {
       return -1;
@@ -254,7 +254,7 @@
    */
   std::int32_t __cdecl M2ADEC_Process(
     M2aDecoderContext* context,
-    const std::int32_t sourceAddress,
+    const SofdecAddressWord sourceAddress,
     const std::int32_t sourceBytes,
     std::int32_t* outConsumedBytes
   )
@@ -498,7 +498,7 @@
   std::int32_t __cdecl M2ADEC_GetPcm(
     M2aDecoderContext* context,
     std::int32_t channelIndex,
-    const std::int32_t destinationAddress
+    const SofdecAddressWord destinationAddress
   )
   {
     if (context == nullptr || destinationAddress == 0) {
@@ -562,7 +562,7 @@
   std::int32_t __cdecl M2ADEC_GetDownmixedPcm(
     M2aDecoderContext* context,
     const std::int32_t outputChannelIndex,
-    const std::int32_t destinationAddress
+    const SofdecAddressWord destinationAddress
   )
   {
     if (context == nullptr || destinationAddress == 0 || outputChannelIndex > 2) {
@@ -632,7 +632,7 @@
   std::int32_t __cdecl M2ADEC_GetSurroundPcm(
     M2aDecoderContext* context,
     const std::int32_t outputChannelIndex,
-    const std::int32_t destinationAddress
+    const SofdecAddressWord destinationAddress
   )
   {
     if (context == nullptr || destinationAddress == 0 || outputChannelIndex > 2) {
@@ -718,12 +718,12 @@
    * What it does:
    * Allocates one decode helper block from heap-manager lane or process heap.
    */
-  HANDLE __cdecl m2adec_malloc(std::int32_t heapManagerHandle, const SIZE_T byteCount)
+  HANDLE __cdecl m2adec_malloc(SofdecAddressWord heapManagerHandle, const SIZE_T byteCount)
   {
     if (heapManagerHandle != 0) {
       HEAPMNG_Allocate(heapManagerHandle, byteCount, &heapManagerHandle);
       return reinterpret_cast<HANDLE>(
-        static_cast<std::uintptr_t>(static_cast<std::uint32_t>(heapManagerHandle))
+        static_cast<std::uintptr_t>(heapManagerHandle)
       );
     }
 
@@ -745,19 +745,19 @@
    * What it does:
    * Frees one decode helper block through heap-manager lane or process heap.
    */
-  HANDLE __cdecl m2adec_free(const std::int32_t heapManagerHandle, LPVOID memoryBlock)
+  HANDLE __cdecl m2adec_free(const SofdecAddressWord heapManagerHandle, LPVOID memoryBlock)
   {
     if (heapManagerHandle != 0) {
-      return reinterpret_cast<HANDLE>(HEAPMNG_Free(heapManagerHandle, M2aPtrToWord(memoryBlock)));
+      return reinterpret_cast<HANDLE>(static_cast<std::intptr_t>(HEAPMNG_Free(heapManagerHandle, M2aPtrToWord(memoryBlock))));
     }
 
     if (m2adec_global_heap != nullptr) {
-      return reinterpret_cast<HANDLE>(HeapFree(m2adec_global_heap, 0, memoryBlock));
+      return reinterpret_cast<HANDLE>(static_cast<std::intptr_t>(HeapFree(m2adec_global_heap, 0, memoryBlock)));
     }
 
     m2adec_global_heap = GetProcessHeap();
     if (m2adec_global_heap != nullptr) {
-      return reinterpret_cast<HANDLE>(HeapFree(m2adec_global_heap, 0, memoryBlock));
+      return reinterpret_cast<HANDLE>(static_cast<std::intptr_t>(HeapFree(m2adec_global_heap, 0, memoryBlock)));
     }
 
     return m2adec_global_heap;
@@ -1993,6 +1993,7 @@
    */
   std::uint32_t m2adec_copy(void* const destination, const void* const source, const std::size_t byteCount)
   {
+    // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
     std::memcpy(destination, source, byteCount);
     return static_cast<std::uint32_t>(byteCount);
   }
@@ -2787,7 +2788,7 @@
 
           if (codebookIndex == 11) {
             M2AHUFFMAN_GetEscValue(
-              static_cast<int>(reinterpret_cast<std::uintptr_t>(unpackedValues)),
+              static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(unpackedValues)),
               context->bitstreamHandle
             );
           }
@@ -2877,7 +2878,7 @@
 
               if (sectionCodebookWindows[targetWindow][band] == 11) {
                 M2AHUFFMAN_GetEscValue(
-                  static_cast<int>(reinterpret_cast<std::uintptr_t>(unpackedValues)),
+                  static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(unpackedValues)),
                   context->bitstreamHandle
                 );
               }

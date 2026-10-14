@@ -5,6 +5,7 @@
 #include "legacy/exceptions/StdExcept.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <initializer_list>
@@ -44,7 +45,7 @@
 #include "moho/script/CScriptEvent.h"
 #include "moho/serialization/SBuildReserveInfo.h"
 #include "moho/serialization/typeinfo/SBuildReserveInfoTypeInfo.h"
-#include "moho/sim/ArmyUnitSet.h"
+#include "moho/entity/Entity.h"
 #include "moho/sim/CArmyImpl.h"
 #include "moho/sim/CArmyStats.h"
 #include "moho/sim/CInfluenceMap.h"
@@ -71,6 +72,7 @@
 #include "moho/unit/core/Unit.h"
 
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/reflection/Reflection.h"
 #if !defined(_MSC_VER)
 #include "platform/Atomic32.h"
 #endif
@@ -165,8 +167,8 @@ namespace moho
 
     const float elevation = mapData->GetHeightField()->GetElevation(cellPos.x, cellPos.z);
 
-    SEntitySetTemplateUnit selectedUnits{};
-    (void)selectedUnits.AddUnit(builder);
+    EntitySetTemplate<Unit> selectedUnits{};
+    (void)selectedUnits.Add(builder);
 
     const Wm3::Vector3f orientation = *ori;
 
@@ -482,15 +484,15 @@ namespace
     return (row.mOccupancyWords[wordIndex] & (1 << (column & 0x1F))) != 0;
   }
 
-  // `CSquadUnitsRuntimeView` (0x10 pad bytes then `void** mUnitSlotsStart/End`
-  // at +0x10/+0x14) and `CPlatoonLuaRuntimeView` (`mLuaObj` at +0x20, a squad
+  // a deleted overlay (0x10 pad bytes then `void** mUnitSlotsStart/End`
+  // at +0x10/+0x14) and a deleted overlay (`mLuaObj` at +0x20, a squad
   // pointer pair at +0x40/+0x44, `mUniqueName` at +0xAC) used to stand here,
   // together with a `CountSquadUnits`/`CountPlatoonUnits` pair that walked
   // them. Every one of those offsets names a field `CSquad`/`CPlatoon` already
   // has:
   //
   //   +0x10/+0x14  `CSquad::mUnits.mVec`'s `start_`/`end_` -- `mUnits` is a
-  //                `SEntitySetTemplateUnit` at +0x08 whose `gpg::fastvector_n<
+  //                `EntitySetTemplate<Unit>` at +0x08 whose `gpg::fastvector_n<
   //                Entity*, 4> mVec` sits at +0x08 inside it.
   //   +0x20        `CScriptObject::mLuaObj`, inherited.
   //   +0x40/+0x44  `CPlatoon::mSquadList`'s `start_`/`end_`
@@ -499,7 +501,7 @@ namespace
   //                wrong and is the reason it is gone. See
   //                `cfunc_CAiBrainGetPlatoonsListL` below for the asm.
   //
-  // The two counting helpers are `CPlatoon::CountAllSquadUnitSlots()`
+  // The two counting helpers are `CPlatoon::CountUnits()`
   // (0x00725840), the same loop with the same per-squad `end_ - start_`.
 
   [[nodiscard]] moho::CScrLuaInitFormSet& SimLuaInitSet()
@@ -612,12 +614,10 @@ namespace
     for (;;) {
       const std::int32_t observedValueBits = AtomicLoadStatValueBits(valueBits);
 
-      float observedValue = 0.0f;
-      std::memcpy(&observedValue, &observedValueBits, sizeof(observedValue));
+      const float observedValue = std::bit_cast<float>(observedValueBits);
       const float nextValue = observedValue + delta;
 
-      std::int32_t nextValueBits = 0;
-      std::memcpy(&nextValueBits, &nextValue, sizeof(nextValueBits));
+      const std::int32_t nextValueBits = std::bit_cast<std::int32_t>(nextValue);
 
 #if defined(_MSC_VER)
       const std::int32_t exchangedValueBits = static_cast<std::int32_t>(InterlockedCompareExchange(
@@ -742,13 +742,11 @@ namespace
     if (moho::CArmyStatItem* const statItem = ResolveCachedArmyStatPath(armyStats, statPath); statItem != nullptr) {
       statItem->SynchronizeAsFloat();
 
-      std::int32_t candidateBits = 0;
-      std::memcpy(&candidateBits, &candidate, sizeof(candidateBits));
+      const std::int32_t candidateBits = std::bit_cast<std::int32_t>(candidate);
 
       for (;;) {
         const std::int32_t observedBits = AtomicLoadStatValueBits(&statItem->mPrimaryValueBits);
-        float observed = 0.0f;
-        std::memcpy(&observed, &observedBits, sizeof(observed));
+        const float observed = std::bit_cast<float>(observedBits);
         if (candidate <= observed) {
           return;
         }
@@ -824,8 +822,8 @@ namespace
       return false;
     }
 
-    SEntitySetTemplateUnit selectedUnits{};
-    (void)selectedUnits.AddUnit(builder);
+    EntitySetTemplate<Unit> selectedUnits{};
+    (void)selectedUnits.Add(builder);
 
     for (int issueIndex = 0; issueIndex < count; ++issueIndex) {
       SSTICommandIssueData issueData(EUnitCommandType::UNITCOMMAND_BuildFactory);
@@ -973,7 +971,7 @@ namespace
     moho::CEntityDbAllUnitsNode* node = sim->mEntityDB->AllUnitsEnd(armyIndex);
     moho::CEntityDbAllUnitsNode* const endNode = sim->mEntityDB->AllUnitsEnd(armyIndex + 1u);
     while (node != endNode) {
-      moho::Unit* const unit = moho::CEntityDb::UnitFromAllUnitsNode(node);
+      moho::Unit* const unit = moho::EntityDB::UnitFromAllUnitsNode(node);
       if (unit == nullptr) {
         break;
       }
@@ -988,7 +986,7 @@ namespace
         }
       }
 
-      node = moho::CEntityDb::NextAllUnitsNode(node);
+      node = moho::EntityDB::NextAllUnitsNode(node);
     }
 
     return nullptr;
@@ -1565,7 +1563,7 @@ namespace
    * Platoon Lua bindings to pull a Lua-side unit list into a typed unit set
    * before issuing army-side reassignment / squad-add operations.
    */
-  void PopulateUnitSetFromLuaList(SEntitySetTemplateUnit& destSet, const LuaPlus::LuaObject& sourceTable)
+  void PopulateUnitSetFromLuaList(EntitySetTemplate<Unit>& destSet, const LuaPlus::LuaObject& sourceTable)
   {
     const int rowCount = sourceTable.GetCount();
     for (int row = 1; row <= rowCount; ++row) {
@@ -1590,7 +1588,7 @@ namespace moho
    * `1..N` with each entity's script object lane in storage order.
    */
   LuaPlus::LuaObject* FillLuaTableWithEntities(
-    const SEntitySetTemplateUnit& entities,
+    const EntitySetTemplate<Unit>& entities,
     LuaPlus::LuaObject* const outTable,
     LuaPlus::LuaState* const state
   )
@@ -1617,9 +1615,9 @@ namespace moho
    * Called by CPlatoon::FindClosestUnitToPos (the COMPARE_LeastDefended lane)
    * to score how well-defended each candidate is.
    */
-  SEntitySetTemplateUnit* CollectUnitsAroundPointFiltered(
+  EntitySetTemplate<Unit>* CollectUnitsAroundPointFiltered(
     CAiBrain* const brain,
-    SEntitySetTemplateUnit* const outUnits,
+    EntitySetTemplate<Unit>* const outUnits,
     const EntityCategorySet* const categorySet,
     const Wm3::Vector3f& position,
     const float dist,
@@ -1670,7 +1668,7 @@ namespace moho
       }
 
       if (EntityCategory::HasBlueprint(candidateEntity->BluePrint, categorySet)) {
-        (void)outUnits->AddUnit(candidateUnit);
+        (void)outUnits->Add(candidateUnit);
       }
     }
 
@@ -1813,12 +1811,12 @@ namespace moho
   {
     // Recon-blip candidate set (populated for parity with the binary; the
     // shipped function never scores it — see the ally set below).
-    SEntitySetTemplateUnit reconCandidates{};
+    EntitySetTemplate<Unit> reconCandidates{};
     // Ally candidate set — this is the set actually iterated for scoring.
-    SEntitySetTemplateUnit allyCandidates{};
+    EntitySetTemplate<Unit> allyCandidates{};
 
     if (alliance == ALLIANCE_Ally) {
-      SEntitySetTemplateUnit armyUnits{};
+      EntitySetTemplate<Unit> armyUnits{};
       brain->mArmy->GetUnits(&armyUnits, const_cast<EntityCategorySet*>(category));
       allyCandidates.mVec.AddAll(&armyUnits.mVec);
     }
@@ -1827,7 +1825,7 @@ namespace moho
     for (ReconBlip* const blip : reconDb->ReconGetBlips()) {
       Unit* const creator = blip ? blip->GetCreator() : nullptr;
       if (creator != nullptr && !creator->IsDead()) {
-        (void)reconCandidates.AddUnit(creator);
+        (void)reconCandidates.Add(creator);
       }
     }
 
@@ -1894,7 +1892,7 @@ namespace moho
           CAiBrain* const candidateBrain =
             (candidate->ArmyRef != nullptr) ? candidate->ArmyRef->GetArmyBrain() : nullptr;
 
-          SEntitySetTemplateUnit nearbyDefenders{};
+          EntitySetTemplate<Unit> nearbyDefenders{};
           CollectUnitsAroundPointFiltered(
             candidateBrain, &nearbyDefenders, category, candidatePos, scanRadius, ALLIANCE_Ally
           );
@@ -2045,7 +2043,7 @@ namespace moho
           break;
         }
         case COMPARE_HighestValue: {
-          SEntitySetTemplateUnit nearbyUnits{};
+          EntitySetTemplate<Unit> nearbyUnits{};
           CollectUnitsAroundPointFiltered(this, &nearbyUnits, category, squadCenter, 0.0f, alliance);
 
           float score = 0.0f;
@@ -2075,7 +2073,7 @@ namespace moho
           break;
         }
         case COMPARE_LeastDefended: {
-          SEntitySetTemplateUnit nearbyUnits{};
+          EntitySetTemplate<Unit> nearbyUnits{};
           CollectUnitsAroundPointFiltered(this, &nearbyUnits, category, squadCenter, kLeastDefendedScanRadius, alliance);
 
           const float score =
@@ -2437,7 +2435,7 @@ void CAiBrain::ProcessAttackVectors()
   const std::int32_t colCount = (heightField->width - 1) / kAiDebugGridStep;
   const std::int32_t rowCount = (heightField->height - 1) / kAiDebugGridStep;
 
-  SEntitySetTemplateUnit enemyUnits{};
+  EntitySetTemplate<Unit> enemyUnits{};
   mCurrentEnemy->GetUnits(&enemyUnits, &mBuildCategoryRange);
 
   if (rowCount <= 0) {
@@ -2601,8 +2599,8 @@ CAiBrain* CAiBrain::DrawDebug(CAiBrain* const brain)
  * Builds one `(FACTORY - MOBILE)` category set, then appends live non-busy
  * factory builders into `outSet`, with optional XZ distance filtering.
  */
-SEntitySetTemplateUnit* CAiBrain::GetAvailableFactories(
-  SEntitySetTemplateUnit* const outSet,
+EntitySetTemplate<Unit>* CAiBrain::GetAvailableFactories(
+  EntitySetTemplate<Unit>* const outSet,
   const Wm3::Vector3f* const referencePosition,
   const float maxDistance
 )
@@ -2620,11 +2618,11 @@ SEntitySetTemplateUnit* CAiBrain::GetAvailableFactories(
     candidateCategory.ResetToEmpty(mobileCategory->mUniverse);
   }
 
-  SEntitySetTemplateUnit foundUnits{};
+  EntitySetTemplate<Unit> foundUnits{};
   mArmy->GetUnits(&foundUnits, &candidateCategory);
 
   for (Entity* const* unitIt = foundUnits.mVec.begin(); unitIt != foundUnits.mVec.end(); ++unitIt) {
-    Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*unitIt);
+    Unit* const unit = static_cast<Unit*>(*unitIt);
     if (unit == nullptr || unit->IsDead() || unit->DestroyQueued()) {
       continue;
     }
@@ -2648,7 +2646,7 @@ SEntitySetTemplateUnit* CAiBrain::GetAvailableFactories(
       }
     }
 
-    (void)outSet->AddUnit(unit);
+    (void)outSet->Add(unit);
   }
 
   return outSet;
@@ -2708,11 +2706,11 @@ moho::Unit* moho::FindAvailableFactory(
       }
     }
 
-    SEntitySetTemplateUnit foundFactories{};
+    EntitySetTemplate<Unit> foundFactories{};
     brain->mArmy->GetUnits(&foundFactories, &staticFactoryCategory);
 
     for (Entity* const* slot = foundFactories.mVec.begin(); slot != foundFactories.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       if (unit != nullptr) {
         candidates.push_back(unit);
       }
@@ -3373,8 +3371,7 @@ int moho::cfunc_CAiBrainSetArmyStatL(LuaPlus::LuaState* const state)
     if (CArmyStatItem* const statItem = ResolveCachedArmyStatPath(armyStats, statName); statItem != nullptr) {
       statItem->SynchronizeAsFloat();
 
-      std::int32_t floatValueBits = 0;
-      std::memcpy(&floatValueBits, &floatValue, sizeof(floatValueBits));
+      const std::int32_t floatValueBits = std::bit_cast<std::int32_t>(floatValue);
       AtomicStoreStatValueBits(&statItem->mPrimaryValueBits, floatValueBits);
     }
   }
@@ -3929,12 +3926,12 @@ int moho::cfunc_CAiBrainGetListOfUnitsL(LuaPlus::LuaState* const state)
     requireBuilt = LuaPlus::LuaStackObject(state, 4).GetBoolean();
   }
 
-  SEntitySetTemplateUnit categoryUnits{};
+  EntitySetTemplate<Unit> categoryUnits{};
   brain->mArmy->GetUnits(&categoryUnits, categorySet);
 
-  SEntitySetTemplateUnit filteredUnits{};
+  EntitySetTemplate<Unit> filteredUnits{};
   for (Entity* const* it = categoryUnits.mVec.begin(); it != categoryUnits.mVec.end(); ++it) {
-    Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+    Unit* const unit = static_cast<Unit*>(*it);
     if (unit == nullptr) {
       continue;
     }
@@ -3951,7 +3948,7 @@ int moho::cfunc_CAiBrainGetListOfUnitsL(LuaPlus::LuaState* const state)
       continue;
     }
 
-    (void)filteredUnits.AddUnit(unit);
+    (void)filteredUnits.Add(unit);
   }
 
   LuaPlus::LuaObject outUnits{};
@@ -5480,11 +5477,11 @@ int moho::cfunc_CAiBrainFindUnitL(LuaPlus::LuaState* const state)
 
   const bool needToBeIdle = LuaPlus::LuaStackObject(state, 3).GetBoolean();
 
-  SEntitySetTemplateUnit categoryUnits{};
+  EntitySetTemplate<Unit> categoryUnits{};
   brain->mArmy->GetUnits(&categoryUnits, categorySet);
 
   for (Entity* const* it = categoryUnits.mVec.begin(); it != categoryUnits.mVec.end(); ++it) {
-    Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+    Unit* const unit = static_cast<Unit*>(*it);
     if (unit == nullptr) {
       continue;
     }
@@ -5836,7 +5833,7 @@ int moho::cfunc_CAiBrainGetAvailableFactories(lua_State* const luaContext)
  *
  * What it does:
  * Reads `(brain[, referencePosition, maxDistance])` from the Lua stack,
- * builds an empty `SEntitySetTemplateUnit`, calls
+ * builds an empty `EntitySetTemplate<Unit>`, calls
  * `CAiBrain::GetAvailableFactories(set, &position, distance)` to populate
  * it with live non-busy factory units, then fills a Lua table from the
  * collected entities and pushes it on the stack.
@@ -5875,7 +5872,7 @@ int moho::cfunc_CAiBrainGetAvailableFactoriesL(LuaPlus::LuaState* const state)
     maxDistance = static_cast<float>(lua_tonumber(rawState, 3));
   }
 
-  SEntitySetTemplateUnit availableFactories{};
+  EntitySetTemplate<Unit> availableFactories{};
   brain->GetAvailableFactories(&availableFactories, &referencePosition, maxDistance);
 
   LuaPlus::LuaObject resultTable;
@@ -6355,10 +6352,10 @@ bool moho::CAiBrain::CanBuildStructureAt(
     // neutral-alliance structures, both around the candidate position.
     const EAlliance mirroredAlliance = (alliance == ALLIANCE_Enemy) ? ALLIANCE_Ally : ALLIANCE_Enemy;
 
-    SEntitySetTemplateUnit mirroredStructures{};
+    EntitySetTemplate<Unit> mirroredStructures{};
     (void)CollectUnitsAroundPointFiltered(this, &mirroredStructures, structureCategory, pos, extent, mirroredAlliance);
 
-    SEntitySetTemplateUnit neutralStructures{};
+    EntitySetTemplate<Unit> neutralStructures{};
     (void)CollectUnitsAroundPointFiltered(this, &neutralStructures, structureCategory, pos, extent, ALLIANCE_Neutral);
 
     if (alliance == ALLIANCE_Enemy) {
@@ -7013,11 +7010,11 @@ int moho::cfunc_CAiBrainNumCurrentlyBuildingL(LuaPlus::LuaState* const state)
 
   std::int32_t count = 0;
   if (brain != nullptr && brain->mArmy != nullptr) {
-    SEntitySetTemplateUnit builderUnits{};
+    EntitySetTemplate<Unit> builderUnits{};
     brain->mArmy->GetUnits(&builderUnits, builderCategory);
 
     for (Entity* const* it = builderUnits.mVec.begin(); it != builderUnits.mVec.end(); ++it) {
-      Unit* const builder = SEntitySetTemplateUnit::UnitFromEntry(*it);
+      Unit* const builder = static_cast<Unit*>(*it);
       if (builder == nullptr || builder->IsDead() || builder->DestroyQueued()) {
         continue;
       }
@@ -7147,11 +7144,11 @@ int moho::cfunc_CAiBrainIsAnyEngineerBuildingL(LuaPlus::LuaState* const state)
   if (brain != nullptr && brain->mArmy != nullptr && brain->mSim != nullptr && brain->mSim->mRules != nullptr) {
     const EntityCategorySet* const engineerCategory = brain->mSim->mRules->GetEntityCategory(kEngineerCategoryName);
 
-    SEntitySetTemplateUnit engineerUnits{};
+    EntitySetTemplate<Unit> engineerUnits{};
     brain->mArmy->GetUnits(&engineerUnits, const_cast<EntityCategorySet*>(engineerCategory));
 
     for (Entity* const* it = engineerUnits.mVec.begin(); it != engineerUnits.mVec.end(); ++it) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+      Unit* const unit = static_cast<Unit*>(*it);
       if (unit == nullptr || unit->IsDead()) {
         continue;
       }
@@ -7436,7 +7433,7 @@ int moho::cfunc_CAiBrainGetPlatoonsListL(LuaPlus::LuaState* const state)
       continue;
     }
 
-    if (platoon->CountAllSquadUnitSlots() > 0) {
+    if (platoon->CountUnits() > 0) {
       outPlatoons.Insert(platoonLuaIndex, platoon->mLuaObj);
       ++platoonLuaIndex;
     }
@@ -7700,12 +7697,12 @@ Wm3::Vec3f* moho::CAiBrain::CenterOfArmy(Wm3::Vec3f* const outPosition)
   EntityCategorySet mobileMinusStructure{};
   EntityCategory::Sub(&mobileMinusStructure, mobileCategory, structureCategory);
 
-  SEntitySetTemplateUnit candidateUnits{};
+  EntitySetTemplate<Unit> candidateUnits{};
   mArmy->GetUnits(&candidateUnits, &mobileMinusStructure);
 
   std::uint32_t aliveUnitCount = 0u;
   for (Entity* const* unitIt = candidateUnits.mVec.begin(); unitIt != candidateUnits.mVec.end(); ++unitIt) {
-    Unit* const candidateUnit = SEntitySetTemplateUnit::UnitFromEntry(*unitIt);
+    Unit* const candidateUnit = static_cast<Unit*>(*unitIt);
     if (candidateUnit == nullptr || candidateUnit->IsDead() || candidateUnit->DestroyQueued()) {
       continue;
     }
@@ -7963,7 +7960,7 @@ int moho::cfunc_CAiBrainGetUnitsAroundPointL(LuaPlus::LuaState* const state)
   }
   const float radius = static_cast<float>(lua_tonumber(rawState, 4));
 
-  SEntitySetTemplateUnit gatheredUnits{};
+  EntitySetTemplate<Unit> gatheredUnits{};
 
   if (lua_gettop(rawState) == 5) {
     EAlliance requestedAlliance{};
@@ -7977,11 +7974,11 @@ int moho::cfunc_CAiBrainGetUnitsAroundPointL(LuaPlus::LuaState* const state)
     }
     SCR_GetEnum(state, allianceName, allianceRef);
 
-    SEntitySetTemplateUnit scratchUnits{};
+    EntitySetTemplate<Unit> scratchUnits{};
     (void)CollectUnitsAroundPointFiltered(brain, &scratchUnits, categorySet, point, radius, requestedAlliance);
     gatheredUnits.mVec.AddAll(&scratchUnits.mVec);
   } else {
-    SEntitySetTemplateUnit scratchUnits{};
+    EntitySetTemplate<Unit> scratchUnits{};
     (void)CollectUnitsAroundPointFiltered(
       brain, &scratchUnits, categorySet, point, radius, static_cast<EAlliance>(kAiBrainAllianceAnySentinel));
     gatheredUnits.mVec.AddAll(&scratchUnits.mVec);
@@ -8455,7 +8452,7 @@ int moho::cfunc_CAiBrainAssignUnitsToPlatoonL(LuaPlus::LuaState* const state)
     return 1;
   }
 
-  SEntitySetTemplateUnit incomingUnits{};
+  EntitySetTemplate<Unit> incomingUnits{};
   PopulateUnitSetFromLuaList(incomingUnits, unitTableObject);
 
   brain->mArmy->RemoveUnitsFromPlatoons(&incomingUnits);
@@ -8465,9 +8462,7 @@ int moho::cfunc_CAiBrainAssignUnitsToPlatoonL(LuaPlus::LuaState* const state)
     destinationSquad = CSquad::AllocateOnPlatoon(targetPlatoon, squadClass, squadNameObject.GetString());
   }
 
-  destinationSquad->mUnits.AddRange(incomingUnits.mVec.begin(), incomingUnits.mVec.end());
-
-  targetPlatoon->mHasLuaList = 0;
+  targetPlatoon->AppendUnitsToSquad(destinationSquad, incomingUnits);
   (void)targetPlatoon->RunScript("OnUnitsAddedToPlatoon");
   return 1;
 }
@@ -8593,7 +8588,7 @@ int moho::cfunc_CAiBrainMakePlatoonL(LuaPlus::LuaState* const state)
     squadClassRef = gpg::MakeRRef<moho::ESquadClass>(&squadClass);
     SCR_GetEnum(state, squadClassNameObject.GetString(), squadClassRef);
 
-    SEntitySetTemplateUnit pulledUnits{};
+    EntitySetTemplate<Unit> pulledUnits{};
     armyPool->GetUnassignedUnitsWithBP(blueprintIdObject.GetString(), countObject.GetInteger(), pulledUnits);
     brain->mArmy->RemoveUnitsFromPlatoons(&pulledUnits);
 
@@ -8602,8 +8597,7 @@ int moho::cfunc_CAiBrainMakePlatoonL(LuaPlus::LuaState* const state)
       destinationSquad = CSquad::AllocateOnPlatoon(newPlatoon, squadClass, squadNameObject.GetString());
     }
 
-    destinationSquad->mUnits.AddRange(pulledUnits.mVec.begin(), pulledUnits.mVec.end());
-    newPlatoon->mHasLuaList = 0;
+    newPlatoon->AppendUnitsToSquad(destinationSquad, pulledUnits);
   }
 
   newPlatoon->mLuaObj.PushStack(state);
@@ -8825,4 +8819,56 @@ namespace
   };
 
   const CAiBrainLuaFuncDefBootstrap gCAiBrainLuaFuncDefBootstrap{};
+} // namespace
+
+namespace moho
+{
+  /**
+   * Address: 0x00579D00 (FUN_00579D00)
+   */
+  void CAiBrain::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CAiBrain()), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CAiBrain>`, vtable 0x00E19A48.
+   *
+   * Address: 0x00BCB3F0 (FUN_00BCB3F0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF62C0 (FUN_00BF62C0 -- the global's destructor.)
+   * Address: 0x0057E3E0 (FUN_0057E3E0 -- `Init`.)
+   * Address: 0x00579CF0 (FUN_00579CF0 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x00581890 (FUN_00581890 -- `Delete`.)
+   */
+  struct CAiBrainConstruct : gpg::SerConstructHelper<CAiBrain>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AD510 -- process-global `CAiBrainConstruct` singleton.
+  moho::CAiBrainConstruct gCAiBrainConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CAiBrain>`, vtable 0x00E19A58.
+   *
+   * Address: 0x00BCB430 (FUN_00BCB430 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF62F0 (FUN_00BF62F0 -- the global's destructor.)
+   * Address: 0x00579DE0 (FUN_00579DE0 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x00579E10 (FUN_00579E10 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x0057E460 (FUN_0057E460 -- `Init`.)
+   * Address: 0x00579D90 (FUN_00579D90 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00579DA0 (FUN_00579DA0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CAiBrainSerializer : gpg::SerSaveLoadHelper<CAiBrain>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AD79C -- process-global `CAiBrainSerializer` singleton.
+  moho::CAiBrainSerializer gCAiBrainSerializer;
 } // namespace

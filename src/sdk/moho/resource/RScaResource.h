@@ -15,6 +15,15 @@ namespace gpg
   class RType;
 }
 
+namespace gpg
+{
+  class ReadArchive;
+  class RRef;
+  class SerConstructResult;
+  class SerSaveConstructArgsResult;
+  class WriteArchive;
+} // namespace gpg
+
 namespace moho
 {
   // ============================================================================
@@ -91,6 +100,26 @@ namespace moho
   class RScaResource
   {
   public:
+    /**
+     * What it does:
+     * Reads the animation path and hands back the shared resource for it
+     * (`GetScaResource`). Inlined into `SerConstructHelper<RScaResource>::Construct`
+     * 0x0053A8C0.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
+
+    /**
+     * Address: 0x0053A770 (FUN_0053A770)
+     *
+     * What it does:
+     * Saves the resource's file name as a mounted path.
+     */
+    void MemberSaveConstructArgs(
+      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+    );
+
     static gpg::RType* sType;
 
     /**
@@ -153,7 +182,6 @@ namespace moho
   class CScaResourceFactory final : public ResourceFactory<RScaResource>
   {
   public:
-    using ResourceHandle = boost::shared_ptr<RScaResource>;
 
     /**
      * Address: 0x0053A9E0 (FUN_0053A9E0, Moho::CScaResourceFactory::CScaResourceFactory)
@@ -166,49 +194,26 @@ namespace moho
     CScaResourceFactory() = default;
 
     /**
-     * Address: 0x0053AD00 (FUN_0053AD00, Moho::ResourceFactory_RScaResource::Init)
-     *
-     * What it does:
-     * Resolves cached `RScaResource` RTTI and updates the prefetch/resource
-     * type lanes used by factory virtual dispatch.
-     */
-    void Init() override;
-
-    /**
      * Address: 0x0053AAD0 (FUN_0053AAD0)
-     * Primary vtable slot 4 -- the pure slot `ResourceFactory<RScaResource>`
-     * declares and this class fills in. ??_7CScaResourceFactory@Moho@@6B@
-     * (0x00E1646C) holds this body at slot 4 where the template's own
-     * vftable (0x00E1648C) holds `_purecall`; slots 1..3 are the template's
-     * Load/Preload/LoadFrom in BOTH, so this class overrides neither.
-     * Mangled: ?Load@CScaResourceFactory@Moho@@UAEAAV?$shared_ptr@VRScaResource@Moho@@@boost@@AAV34@PBD@Z
-     *
-     * IDA signature:
-     * boost::shared_ptr<Moho::RScaResource>* __thiscall
-     * Moho::CScaResourceFactory::Load(
-     *   Moho::CScaResourceFactory *this,
-     *   boost::shared_ptr<Moho::RScaResource>* outResource,
-     *   const char* path);
+     * Vtable slot 4 of ??_7CScaResourceFactory@Moho@@6B@ (0x00E1646C), the
+     * only slot it overrides; the template's own vftable (0x00E1648C) holds
+     * `_purecall` there.
      *
      * What it does:
      * Default-constructs an `RScaResource`, parses the SCA file via
-     * `LoadScaFile`, and resets the out handle on failure.
+     * `LoadScaFile`, and returns nothing on failure.
      */
-    ResourceHandle& LoadImpl(ResourceHandle& outResource, const char* path) override;
+    boost::shared_ptr<RScaResource> LoadImpl(gpg::StrArg path) override;
   };
 
   /**
    * Address: 0x0053B100 (FUN_0053B100)
    *
-   * IDA signature:
-   * gpg::RRef* __cdecl Moho::func_GetScaResource(gpg::RRef* outRef, const char* path);
-   *
    * What it does:
-   * Looks up the cached reflection type for `RScaResource`, calls
-   * `RES_GetResource` to fetch a weak handle to the resource, wraps it as a
-   * typed `gpg::RRef`, and releases the temporary weak-pointer count.
+   * Returns the animation at `path` through the resource manager, as an
+   * owning handle (empty when it cannot be loaded).
    */
-  gpg::RRef* GetScaResource(gpg::RRef* outRef, const char* path);
+  [[nodiscard]] boost::shared_ptr<RScaResource> GetScaResource(gpg::StrArg path);
 
   /**
    * Address: 0x00BC9280 (FUN_00BC9280)

@@ -26,13 +26,11 @@
 #include "moho/particles/SParticleBuffer.h"
 #include "moho/sim/CDebugCanvas.h"
 #include "moho/ui/SDebugLine.h"
+#include "gpg/core/reflection/Reflection.h"
 
 
 namespace
 {
-  // TEMPORARY PROBE SINK -- effects triage, delete when resolved.
-  // gpg::Warnf reaches nothing until `/log <name>` installs a target, so the
-  // probes below append here instead. The file lands beside the executable.
   void DiagLine(const char* const fmt, ...)
   {
     std::FILE* const sink = std::fopen("faf_diag.log", "a");
@@ -523,13 +521,8 @@ namespace moho
     const bool startVisible = reconDb->ReconCanDetect(mBeam.mCurStart.pos_, static_cast<int>(RECON_LOSNow)) != RECON_None;
     mVisible = startVisible || reconDb->BeamIsVisible(mBeam);
 
-    // TEMPORARY PROBE -- enemy build-beam triage, delete when resolved.
-    // The probe position is the beam's own start, so comparing a culled line
-    // here against where the map is actually unfogged says whether the focus
-    // army's vision grid really lacks coverage at that point, or whether the
-    // beam is being tested at a stale/wrong position.
     static int sBeamVisProbe = 0;
-    if (!mVisible && (sBeamVisProbe++ % 60) == 0) {
+    if (dbg_EfxBeams && !mVisible && (sBeamVisProbe++ % 60) == 0) {
       // Probe every sense as well: RECON_AnySense == 0 at the same point means
       // the focus army has no intel there at all (so a culled beam is correct
       // behaviour and the base only looks lit because terrain stays explored
@@ -621,8 +614,10 @@ namespace moho
       Entity* const endEntity = ResolveAttachEntity(mEnd);
       if (endEntity == nullptr) {
         mBeam.mFromStart = false;
+        // Effects tick before AdvanceCoords: retain current/pending samples.
+        // SWorldBeam's legacy mLast* names denote the second (pending) sample.
         mBeam.mCurStart = sourceEntity->mVarDat.mCurTransform;
-        mBeam.mLastStart = sourceEntity->mVarDat.mLastTransform;
+        mBeam.mLastStart = sourceEntity->mPendingTransform;
         mBeam.mStart = FetchVectorParam(*this, 0);
 
         const float beamLength = GetFloatParam(6);
@@ -648,10 +643,12 @@ namespace moho
         mBeam.mLastEnd.pos_ = ApplyPoint(mBeam.mLastStart, mBeam.mEnd);
       } else {
         mBeam.mFromStart = true;
+        // Effects tick before AdvanceCoords: retain current/pending samples.
+        // SWorldBeam's legacy mLast* names denote the second (pending) sample.
         mBeam.mCurStart = sourceEntity->mVarDat.mCurTransform;
-        mBeam.mLastStart = sourceEntity->mVarDat.mLastTransform;
+        mBeam.mLastStart = sourceEntity->mPendingTransform;
         mBeam.mCurEnd = endEntity->mVarDat.mCurTransform;
-        mBeam.mLastEnd = endEntity->mVarDat.mLastTransform;
+        mBeam.mLastEnd = endEntity->mPendingTransform;
 
         const VTransform sourceBoneTransform = sourceEntity->GetBoneLocalTransform(mEntityInfo.mParentBoneIndex);
         const Wm3::Vec3f localStart = FetchVectorParam(*this, 0);
@@ -866,3 +863,24 @@ namespace moho
     debugCanvas->DebugDrawLine(endLine);
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CEfxBeam>`, vtable 0x00E23C4C.
+   *
+   * Address: 0x00BD3F50 (FUN_00BD3F50 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFB910 (FUN_00BFB910 -- the global's destructor.)
+   * Address: 0x00657B80 (FUN_00657B80 -- `Init`.)
+   * Address: 0x00655F60 (FUN_00655F60 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00655F70 (FUN_00655F70 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CEfxBeamSerializer : gpg::SerSaveLoadHelper<CEfxBeam>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B3A44 -- process-global `CEfxBeamSerializer` singleton.
+  moho::CEfxBeamSerializer gCEfxBeamSerializer;
+} // namespace

@@ -14,31 +14,11 @@
 #include <new>
 #include <typeinfo>
 #include "gpg/core/reflection/StaticInitPhase.h"
-#include "gpg/core/utils/Logging.h" // TEMPORARY PROBE (do not commit)
 
 namespace moho
 {
 
 gpg::RType* RScaResource::sType = nullptr;
-
-// Forward declaration: the real definition sits further down in this TU
-// (needs Construct_RScaResource's own dependencies resolved first); the
-// RScaResourceSaveConstruct ctor below only needs the signature to bind the
-// callback pointer.
-void SaveConstructArgs_RScaResourceThunk(
-  gpg::WriteArchive* archive,
-  int objectPtr,
-  int version,
-  gpg::RRef* ownerRef,
-  gpg::SerSaveConstructArgsResult* result
-);
-
-// Forward declaration: the real definition sits further down in this TU; the
-// RScaResourceConstruct ctor below only needs the signature to bind the
-// callback pointer.
-void Construct_RScaResource(
-  gpg::ReadArchive* archive, int version, gpg::RRef* ownerRef, gpg::SerConstructResult* result
-);
 
 namespace
 {
@@ -51,197 +31,6 @@ namespace
     }
     return type;
   }
-
-  /**
-   * Demangled: Moho::RScaResourceConstruct
-   *
-   * What it does:
-   * Binds the construct/delete callbacks used to load `RScaResource` from a
-   * mounted-path string and to tear one down. Base-class construction
-   * (`gpg::SerHelperBase::SerHelperBase`) self-links this node and splices it
-   * into the pending `sNewHelpers` list; `InitNewHelpers` later dispatches
-   * `Init()` on it.
-   */
-  class RScaResourceConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC9220 (FUN_00BC9220, dynamic initializer for the global
-     * `RScaResourceConstruct` singleton)
-     */
-    RScaResourceConstruct();
-
-    /**
-     * Address: 0x00BF3D70 (FUN_00BF3D70, Moho::RScaResourceConstruct::~RScaResourceConstruct)
-     */
-    ~RScaResourceConstruct();
-
-    /**
-     * Address: 0x0053AC50 (FUN_0053AC50, Moho::RScaResourceConstruct::Init)
-     *
-     * IDA signature:
-     * void(__cdecl *) __thiscall sub_53AC50(RScaResourceConstruct *this);
-     *
-     * What it does:
-     * Lazily resolves the `RScaResource` reflection descriptor, asserts the
-     * construct callback slot is empty, and publishes this helper's
-     * construct/delete callbacks to the descriptor.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::construct_func_t mConstructCallback;
-    gpg::RType::delete_func_t mDeleteCallback;
-  };
-  static_assert(
-    offsetof(RScaResourceConstruct, mConstructCallback) == 0x0C,
-    "RScaResourceConstruct::mConstructCallback offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(RScaResourceConstruct, mDeleteCallback) == 0x10,
-    "RScaResourceConstruct::mDeleteCallback offset must be 0x10"
-  );
-  static_assert(sizeof(RScaResourceConstruct) == 0x14, "RScaResourceConstruct size must be 0x14");
-
-  /**
-   * VFTABLE: 0x00E1644C
-   *
-   * Demangled: gpg::SerSaveConstructHelper<class Moho::RScaResource>
-   *
-   * What it does:
-   * Binds the save-construct-args callback used to serialize `RScaResource`
-   * pointer lanes by mounted-path string. Base-class construction
-   * (`gpg::SerHelperBase::SerHelperBase`) self-links this node and splices it
-   * into the pending `sNewHelpers` list; `InitNewHelpers` later dispatches
-   * `Init()` on it.
-   */
-  class RScaResourceSaveConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC91F0 (FUN_00BC91F0, dynamic initializer for `gRScaResourceSaveConstructHelper`)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base (self-links `this` and
-     * splices it into the pending `sNewHelpers` list), binds the
-     * save-construct-args callback and installs this helper's vtable; the
-     * compiler registers the destructor with `atexit`.
-     */
-    RScaResourceSaveConstruct();
-
-    /**
-     * Address: 0x00BF3D40 (FUN_00BF3D40, dynamic atexit destructor for `gRScaResourceSaveConstructHelper`)
-     *
-     * What it does:
-     * Unlinks this helper node from the serializer-helper list (the
-     * `TDatListItem` base destructor). `FUN_0053A710` and `FUN_0053A740` are
-     * unreferenced out-of-line copies of the same body.
-     */
-    ~RScaResourceSaveConstruct() = default;
-
-    /**
-     * Address: 0x0053ABD0 (FUN_0053ABD0, gpg::SerSaveConstructHelper<Moho::RScaResource>::Init)
-     *
-     * IDA signature:
-     * gpg::RType *__thiscall sub_53ABD0(SerSaveConstructHelperView *this);
-     *
-     * What it does:
-     * Lazily resolves the `RScaResource` reflection descriptor, asserts the
-     * save-construct-args callback slot is empty, and publishes this helper's
-     * save-construct-args callback to the descriptor.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::save_construct_args_func_t mSaveConstructArgsCallback;
-  };
-  static_assert(
-    offsetof(RScaResourceSaveConstruct, mSaveConstructArgsCallback) == 0x0C,
-    "RScaResourceSaveConstruct::mSaveConstructArgsCallback offset must be 0x0C"
-  );
-  static_assert(sizeof(RScaResourceSaveConstruct) == 0x10, "RScaResourceSaveConstruct size must be 0x10");
-
-  /**
-   * Address: 0x00BC91F0 (FUN_00BC91F0, dynamic initializer for `gRScaResourceSaveConstructHelper`)
-   *
-   * What it does:
-   * Binds this helper's save-construct-args callback.
-   */
-  RScaResourceSaveConstruct::RScaResourceSaveConstruct()
-    : mSaveConstructArgsCallback(
-        reinterpret_cast<gpg::RType::save_construct_args_func_t>(&moho::SaveConstructArgs_RScaResourceThunk)
-      )
-  {}
-
-  void RScaResourceSaveConstruct::Init()
-  {
-    constexpr const char* kSaveConstructAssertText = "!type->mSerSaveConstructArgsFunc";
-    constexpr int kSerializationSaveConstructLine = 189;
-    constexpr const char* kSerializationSourcePath =
-      "c:\\work\\rts\\main\\code\\src\\libs\\gpgcore/reflection/serialization.h";
-
-    gpg::RType* const type = ResolveRScaResourceTypeCached();
-    if (type->serSaveConstructArgsFunc_ != nullptr) {
-      gpg::HandleAssertFailure(
-        kSaveConstructAssertText,
-        kSerializationSaveConstructLine,
-        kSerializationSourcePath
-      );
-    }
-    type->serSaveConstructArgsFunc_ = mSaveConstructArgsCallback;
-  }
-
-  RScaResourceSaveConstruct gRScaResourceSaveConstructHelper;
-
-  /**
-   * Address: 0x0053B0E0 (FUN_0053B0E0)
-   *
-   * What it does:
-   * Destroys and frees one heap-owned `RScaResource`.
-   */
-  void DeleteConstructedRScaResource(void* const objectPtr)
-  {
-    delete static_cast<moho::RScaResource*>(objectPtr);
-  }
-
-  /**
-   * Address: 0x00BC9220 (FUN_00BC9220, dynamic initializer for the global
-   * `RScaResourceConstruct` singleton)
-   */
-  RScaResourceConstruct::RScaResourceConstruct()
-    : mConstructCallback(reinterpret_cast<gpg::RType::construct_func_t>(&moho::Construct_RScaResource))
-    , mDeleteCallback(&DeleteConstructedRScaResource)
-  {}
-
-  /**
-   * Address: 0x00BF3D70 (FUN_00BF3D70, Moho::RScaResourceConstruct::~RScaResourceConstruct)
-   *
-   * `FUN_0053A860` and `FUN_0053A890` are duplicate-emission twins of this
-   * exact unlink/reset lane (same `ResetLinks()` shape, folded to separate
-   * addresses); they have no distinct source-level body of their own.
-   */
-  RScaResourceConstruct::~RScaResourceConstruct() = default;
-
-  /**
-   * Address: 0x0053AC50 (FUN_0053AC50, Moho::RScaResourceConstruct::Init)
-   */
-  void RScaResourceConstruct::Init()
-  {
-    constexpr const char* kConstructAssertText = "!type->mSerConstructFunc";
-    constexpr int kSerializationConstructLine = 231;
-    constexpr const char* kSerializationSourcePath =
-      "c:\\work\\rts\\main\\code\\src\\libs\\gpgcore/reflection/serialization.h";
-
-    gpg::RType* const type = ResolveRScaResourceTypeCached();
-    if (type->serConstructFunc_ != nullptr) {
-      gpg::HandleAssertFailure(kConstructAssertText, kSerializationConstructLine, kSerializationSourcePath);
-    }
-    type->serConstructFunc_ = mConstructCallback;
-    type->deleteFunc_ = mDeleteCallback;
-  }
-
-  // Address: 0x010ABCD4 -- process-global `RScaResourceConstruct` singleton.
-  RScaResourceConstruct gRScaResourceConstructHelper;
 
   class RScaResourceTypeInfo final : public gpg::RType
   {
@@ -302,123 +91,6 @@ boost::detail::sp_counted_impl_p<RScaResource>* ConstructRScaSharedCountedImpl(
 )
 {
   return ::new (outControlBlock) boost::detail::sp_counted_impl_p<RScaResource>(resource);
-}
-
-/**
- * Address: 0x0053B1E0 (FUN_0053B1E0)
- *
- * What it does:
- * Packages one shared `RScaResource` lane into construct-result shared
- * payload with resolved `RScaResource` runtime type metadata.
- */
-void SetConstructResultSharedScaResource(
-  gpg::SerConstructResult* const result,
-  const boost::shared_ptr<RScaResource>& resource
-)
-{
-  gpg::RType* resourceType = RScaResource::sType;
-  if (resourceType == nullptr) {
-    resourceType = gpg::LookupRType(typeid(RScaResource));
-    RScaResource::sType = resourceType;
-  }
-
-  const boost::shared_ptr<void>& sharedAny =
-    reinterpret_cast<const boost::shared_ptr<void>&>(resource);
-  result->SetShared(sharedAny, resourceType, 1u);
-}
-
-/**
- * Address: 0x0053A8C0 (FUN_0053A8C0)
- *
- * What it does:
- * Reads one animation path from archive, resolves/loads the referenced SCA
- * resource, and forwards it into construct-result shared ownership.
- */
-void Construct_RScaResource(
-  gpg::ReadArchive* const archive, const int, gpg::RRef* const, gpg::SerConstructResult* const result
-)
-{
-  msvc8::string resourcePath{};
-  archive->ReadString(&resourcePath);
-
-  gpg::RType* resourceType = RScaResource::sType;
-  if (resourceType == nullptr) {
-    resourceType = gpg::LookupRType(typeid(RScaResource));
-    RScaResource::sType = resourceType;
-  }
-
-  boost::weak_ptr<RScaResource> weakResource{};
-  (void)RES_GetResource(&weakResource, resourcePath.c_str(), nullptr, resourceType);
-  const boost::shared_ptr<RScaResource> sharedResource = weakResource.lock();
-  SetConstructResultSharedScaResource(result, sharedResource);
-}
-
-/**
- * Address: 0x0053A770 (FUN_0053A770)
- *
- * What it does:
- * Writes one mounted-path string save-construct arg for one `RScaResource`
- * and marks the construct-result ownership lane as shared.
- */
-void SaveConstructArgs_RScaResource(
-  gpg::WriteArchive* const archive,
-  const int objectPtr,
-  const int,
-  gpg::RRef* const,
-  gpg::SerSaveConstructArgsResult* const result
-)
-{
-  const auto* const resource = reinterpret_cast<const RScaResource*>(static_cast<std::uintptr_t>(objectPtr));
-
-  msvc8::string mountedPath{};
-  (void)FILE_ToMountedPath(&mountedPath, resource->mFilename.c_str());
-  archive->WriteString(&mountedPath);
-  result->SetShared(1u);
-}
-
-/**
- * Address: 0x0053A6F0 (FUN_0053A6F0)
- *
- * What it does:
- * Thin callback thunk forwarding save-construct arg serialization for one
- * `RScaResource`.
- */
-void SaveConstructArgs_RScaResourceThunk(
-  gpg::WriteArchive* const archive,
-  const int objectPtr,
-  const int version,
-  gpg::RRef* const ownerRef,
-  gpg::SerSaveConstructArgsResult* const result
-)
-{
-  SaveConstructArgs_RScaResource(archive, objectPtr, version, ownerRef, result);
-}
-
-/**
- * Address: 0x0053AD00 (FUN_0053AD00, Moho::ResourceFactory_RScaResource::Init)
- *
- * What it does:
- * Resolves cached `RScaResource` RTTI and updates the prefetch/resource
- * type lanes used by factory virtual dispatch.
- */
-void CScaResourceFactory::Init()
-{
-  (void)preregister_RScaResourceTypeInfo();
-
-  gpg::RType* firstResolvedType = RScaResource::sType;
-  if (firstResolvedType == nullptr) {
-    firstResolvedType = gpg::LookupRType(typeid(RScaResource));
-    RScaResource::sType = firstResolvedType;
-  }
-
-  gpg::RType* resolvedType = firstResolvedType;
-  if (resolvedType == nullptr) {
-    resolvedType = gpg::LookupRType(typeid(RScaResource));
-    RScaResource::sType = resolvedType;
-  }
-
-  mPrefetchType = firstResolvedType;
-  mResourceType = resolvedType;
 }
 
 /**
@@ -496,48 +168,29 @@ bool RScaResource::LoadScaFile(const char* filename)
 
 /**
  * Address: 0x0053AAD0 (FUN_0053AAD0)
- * Mangled: ?Load@CScaResourceFactory@Moho@@UAEAAV?$shared_ptr@VRScaResource@Moho@@@boost@@AAV34@PBD@Z
- *
- * IDA signature:
- * boost::shared_ptr<Moho::RScaResource>* __thiscall
- * Moho::CScaResourceFactory::Load(
- *   Moho::CScaResourceFactory *this,
- *   boost::shared_ptr<Moho::RScaResource>* outResource,
- *   const char* path);
  *
  * What it does:
- * Allocates a fresh `RScaResource`, parses the SCA file via `LoadScaFile`,
- * and resets the out handle to null when parsing fails.
+ * Allocates a fresh `RScaResource` straight into the returned handle, parses
+ * the SCA file via `LoadScaFile`, and empties the handle when parsing fails.
  */
-CScaResourceFactory::ResourceHandle&
-CScaResourceFactory::LoadImpl(ResourceHandle& outResource, const char* const path)
+boost::shared_ptr<RScaResource> CScaResourceFactory::LoadImpl(const gpg::StrArg path)
 {
-  auto* const rawResource = new (std::nothrow) RScaResource();
-  outResource.reset(rawResource);
-
-  if (rawResource == nullptr) {
-    return outResource;
+  boost::shared_ptr<RScaResource> resource(new RScaResource());
+  if (!resource->LoadScaFile(path)) {
+    resource.reset();
   }
-
-  if (!rawResource->LoadScaFile(path)) {
-    outResource.reset();
-  }
-
-  return outResource;
+  return resource;
 }
 
 /**
  * Address: 0x0053B100 (FUN_0053B100)
  *
- * IDA signature:
- * gpg::RRef* __cdecl Moho::func_GetScaResource(gpg::RRef* outRef, const char* path);
- *
  * What it does:
- * Resolves the cached `RScaResource` reflection type, fetches a weak handle
- * via `RES_GetResource`, packages it as a typed `gpg::RRef` into `outRef`,
- * then drops the temporary weak-ptr reference count.
+ * Asks the resource manager for the animation at `path` and returns it as an
+ * owning handle: `RES_GetResource`'s `shared_ptr<void>` is converted in place
+ * (0x0053B2C0) and the temporary released.
  */
-gpg::RRef* GetScaResource(gpg::RRef* const outRef, const char* const path)
+boost::shared_ptr<RScaResource> GetScaResource(const gpg::StrArg path)
 {
   gpg::RType* resourceType = RScaResource::sType;
   if (resourceType == nullptr) {
@@ -545,21 +198,9 @@ gpg::RRef* GetScaResource(gpg::RRef* const outRef, const char* const path)
     RScaResource::sType = resourceType;
   }
 
-  boost::weak_ptr<RScaResource> weakResource{};
-  (void)RES_GetResource(&weakResource, path, nullptr, resourceType);
-
-  // The binary packages the live referent and reflected type into the RRef
-  // and then releases the temporary weak count when `weakResource` falls out
-  // of scope. The locked shared_ptr's referent is the same pointer the binary
-  // read directly from the weak_ptr `px` lane.
-  if (const boost::shared_ptr<RScaResource> liveResource = weakResource.lock(); liveResource) {
-    outRef->mObj = liveResource.get();
-  } else {
-    outRef->mObj = nullptr;
-  }
-  outRef->mType = resourceType;
-  { static int sScaBudget = 12; if (sScaBudget > 0) { --sScaBudget; gpg::Warnf("[SCADIAG] path='%s' weakExpired=%d useCount=%ld obj=%p", path != nullptr ? path : "", weakResource.expired() ? 1 : 0, weakResource.use_count(), outRef->mObj); } } // TEMPORARY PROBE (do not commit)
-  return outRef;
+  const boost::shared_ptr<RScaResource> resource =
+    boost::static_pointer_cast<RScaResource>(RES_GetResource(path, nullptr, resourceType));
+  return resource;
 }
 
 /**
@@ -622,3 +263,58 @@ namespace
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
 GPG_PREREGISTER_INIT(preregister_RScaResourceTypeInfo_ed4da3, moho::preregister_RScaResourceTypeInfo)
+
+namespace moho
+{
+  void RScaResource::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    msvc8::string path;
+    archive.ReadString(&path);
+    result.SetShared(GetScaResource(path.c_str()), 1u);
+  }
+
+  /**
+   * Address: 0x0053A770 (FUN_0053A770)
+   */
+  void RScaResource::MemberSaveConstructArgs(
+    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+  )
+  {
+    msvc8::string mountedPath;
+    (void)FILE_ToMountedPath(&mountedPath, mFilename.c_str());
+    archive.WriteString(&mountedPath);
+    result.SetShared(1u);
+  }
+
+  /**
+   * `gpg::SerSaveConstructHelper<RScaResource>`, vtable 0x00E1644C.
+   *
+   * Address: 0x00BC91F0 (FUN_00BC91F0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF3D40 (FUN_00BF3D40 -- the global's destructor.)
+   * Address: 0x0053ABD0 (FUN_0053ABD0 -- `Init`.)
+   * Address: 0x0053A6F0 (FUN_0053A6F0 -- `SaveConstructArgs`, a forward to `MemberSaveConstructArgs`.)
+   */
+  struct RScaResourceSaveConstruct : gpg::SerSaveConstructHelper<RScaResource>
+  {};
+
+  /**
+   * `gpg::SerConstructHelper<RScaResource>`, vtable 0x00E1645C.
+   *
+   * Address: 0x00BC9220 (FUN_00BC9220 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF3D70 (FUN_00BF3D70 -- the global's destructor.)
+   * Address: 0x0053AC50 (FUN_0053AC50 -- `Init`.)
+   * Address: 0x0053A8C0 (FUN_0053A8C0 -- `Construct`, `MemberConstruct` inlined.)
+   * Address: 0x0053B0E0 (FUN_0053B0E0 -- `Delete`.)
+   */
+  struct RScaResourceConstruct : gpg::SerConstructHelper<RScaResource>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010ABC5C -- process-global `RScaResourceSaveConstruct` singleton.
+  moho::RScaResourceSaveConstruct gRScaResourceSaveConstruct;
+
+  // Address: 0x010ABCD4 -- process-global `RScaResourceConstruct` singleton.
+  moho::RScaResourceConstruct gRScaResourceConstruct;
+} // namespace

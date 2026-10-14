@@ -18,7 +18,7 @@
 #include "moho/resource/blueprints/RUnitBlueprint.h"
 #include "moho/script/CScriptObject.h"
 #include "moho/script/CScriptEvent.h"
-#include "moho/sim/ArmyUnitSet.h"
+#include "moho/entity/Entity.h"
 #include "moho/sim/CArmyImpl.h"
 #include "moho/sim/ReconBlip.h"
 #include "moho/sim/RRuleGameRules.h"
@@ -520,12 +520,6 @@ namespace
  * `CScriptObject` base (0x005D6CF0) and the `IAiAttacker` base, whose
  * listener ring unlinks at 0x005D6CFB.
  *
- * Caller chain: CAiAttackerImplConstruct::Deconstruct
- *   (CAiAttackerImplConstruct.cpp:156) calls
- *   `delete static_cast<CAiAttackerImpl*>(object)` which invokes
- *   the scalar deleting dtor; the deserialization callback that
- *   triggers `Deconstruct` is registered at CRT static-init by
- *   `register_CAiAttackerImplConstruct` (same chain as the ctor).
  */
 CAiAttackerImpl::~CAiAttackerImpl()
 {
@@ -567,9 +561,6 @@ CAiAttackerImpl::~CAiAttackerImpl()
  * then `CScriptObject` at +0x0C), then the members: `mUnit` null, `mStage`
  * constructed, both vectors, `mThread` and `mDesiredTarget` empty, and
  * `mReportingState` zero. The body adds the binary's `targetPoint = -1`.
- * Called from `ConstructCAiAttackerImplForResult` (in
- * `CAiAttackerImplConstruct.cpp`) via the `SerConstruct` callback registered
- * at process init by `register_CAiAttackerImplConstruct`.
  */
 CAiAttackerImpl::CAiAttackerImpl() noexcept
 {
@@ -579,6 +570,37 @@ CAiAttackerImpl::CAiAttackerImpl() noexcept
   // source line and so stays here.
   mDesiredTarget.targetPoint = -1;
 }
+
+/**
+ * Address: 0x005D83A0 (FUN_005D83A0)
+ */
+void CAiAttackerImpl::MemberConstruct(
+  gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result
+)
+{
+  result.SetUnowned(gpg::MakeRRef(new CAiAttackerImpl()), 0u);
+}
+
+namespace moho
+{
+  /**
+   * `gpg::SerConstructHelper<CAiAttackerImpl>`, vtable 0x00E1EAD4.
+   *
+   * Address: 0x00BCE890 (FUN_00BCE890 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF8400 (FUN_00BF8400 -- the global's destructor.)
+   * Address: 0x005DC050 (FUN_005DC050 -- `Init`.)
+   * Address: 0x005D8390 (FUN_005D8390 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x005DEB50 (FUN_005DEB50 -- `Delete`.)
+   */
+  struct CAiAttackerImplConstruct : gpg::SerConstructHelper<CAiAttackerImpl>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B028C -- process-global `CAiAttackerImplConstruct` singleton.
+  moho::CAiAttackerImplConstruct gCAiAttackerImplConstruct;
+} // namespace
 
 /**
  * Address: 0x005D6AA0 (FUN_005D6AA0, Moho::CAiAttackerImpl::CAiAttackerImpl)
@@ -1394,10 +1416,10 @@ bool CAiAttackerImpl::IsTargetExempt(Entity* const target)
     return false;
   }
 
-  SEntitySetTemplateUnit engineerUnits{};
+  EntitySetTemplate<Unit> engineerUnits{};
   ownerUnit->ArmyRef->GetUnits(&engineerUnits, const_cast<void*>(static_cast<const void*>(engineerCategory)));
   for (Entity* const* it = engineerUnits.mVec.begin(); it != engineerUnits.mVec.end(); ++it) {
-    Unit* const engineer = SEntitySetTemplateUnit::UnitFromEntry(*it);
+    Unit* const engineer = static_cast<Unit*>(*it);
     if (engineer == nullptr || engineer->IsDead() || engineer->DestroyQueued()) {
       continue;
     }
@@ -1463,7 +1485,7 @@ void CAiAttackerImpl::ResetReportingState()
  * are the two implicit subobject adjustments this reads as: the task's
  * `ManyToOneListener<EProjectileImpactEvent>` base sits at mdisp=24 and the
  * projectile's `ManyToOneBroadcaster<EProjectileImpactEvent>` lane at 0x270.
- * This used to go through a `ProjectileImpactBroadcasterRuntimeView` - 0x270
+ * This used to go through a deleted overlay - 0x270
  * pad bytes and a bare `WeakPtr<void>` - plus a `BindManyToOneListener`
  * template that `reinterpret_cast`ed the broadcaster to `WeakPtr<void>&` and
  * open-coded the `listener + kOwnerLinkOffset` encoding.

@@ -130,7 +130,7 @@ namespace moho
      * Loads IAiNavigator broadcaster listener payload through reflected
      * `Broadcaster<EAiNavigatorEvent>` metadata.
      */
-    static void MemberDeserialize(IAiNavigator* object, gpg::ReadArchive* archive);
+    void MemberDeserialize(gpg::ReadArchive* archive);
 
     /**
      * Address: 0x005A7BB0 (FUN_005A7BB0, Moho::IAiNavigator::MemberSerialize)
@@ -139,7 +139,7 @@ namespace moho
      * Saves IAiNavigator broadcaster listener payload through reflected
      * `Broadcaster<EAiNavigatorEvent>` metadata.
      */
-    static void MemberSerialize(const IAiNavigator* object, gpg::WriteArchive* archive);
+    void MemberSerialize(gpg::WriteArchive* archive) const;
 
     /**
      * Address: 0x005A3600 (FUN_005A3600)
@@ -276,7 +276,7 @@ namespace moho
      * VFTable SLOT: 15
      */
     [[nodiscard]]
-    virtual bool CanPathTo(const SAiNavigatorGoal& goal) const = 0;
+    virtual bool CanPathTo(Wm3::Vector3f* outTargetPos, const SAiNavigatorGoal& goal) const = 0;
 
     /**
      * Address: 0x005A2D10 (FUN_005A2D10)

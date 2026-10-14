@@ -14,7 +14,7 @@
 #include "moho/unit/CUnitMotion.h"
 #include "moho/unit/core/IUnit.h"
 #include "moho/unit/core/Unit.h"
-#include "moho/misc/DiagnosticBudget.h"
+#include "gpg/core/containers/ArchiveSerialization.h"
 
 using namespace moho;
 
@@ -143,40 +143,40 @@ CAiNavigatorAir::~CAiNavigatorAir()
  * Loads base navigator state, destination weak link, current target, goal
  * position, and formation-tracking flag.
  */
-void CAiNavigatorAir::MemberDeserialize(CAiNavigatorAir* const object, gpg::ReadArchive* const archive)
+void CAiNavigatorAir::MemberDeserialize(gpg::ReadArchive* const archive)
 {
   if (!archive) {
     return;
   }
 
   const gpg::RRef ownerRef{};
-  archive->Read(CachedCAiNavigatorImplType(), object, ownerRef);
+  archive->Read(CachedCAiNavigatorImplType(), this, ownerRef);
 
   WeakPtr<Entity> destination{};
   archive->Read(
     CachedWeakEntityType(),
-    object ? static_cast<void*>(&object->mDestinationEntity) : static_cast<void*>(&destination),
+    this ? static_cast<void*>(&mDestinationEntity) : static_cast<void*>(&destination),
     ownerRef
   );
 
   Wm3::Vector3f currentTarget = Wm3::Vector3f::Zero();
   archive->Read(
     CachedVector3fType(),
-    object ? static_cast<void*>(&object->mCurrentTargetPos) : static_cast<void*>(&currentTarget),
+    this ? static_cast<void*>(&mCurrentTargetPos) : static_cast<void*>(&currentTarget),
     ownerRef
   );
 
   Wm3::Vector3f goalPos = Wm3::Vector3f::Zero();
   archive->Read(
     CachedVector3fType(),
-    object ? static_cast<void*>(&object->mGoalPos) : static_cast<void*>(&goalPos),
+    this ? static_cast<void*>(&mGoalPos) : static_cast<void*>(&goalPos),
     ownerRef
   );
 
   bool trackFormation = false;
   archive->ReadBool(&trackFormation);
-  if (object) {
-    object->mTrackFormationTarget = trackFormation ? 1u : 0u;
+  if (this) {
+    mTrackFormationTarget = trackFormation ? 1u : 0u;
   }
 }
 
@@ -187,37 +187,37 @@ void CAiNavigatorAir::MemberDeserialize(CAiNavigatorAir* const object, gpg::Read
  * Saves base navigator state, destination weak link, current target, goal
  * position, and formation-tracking flag.
  */
-void CAiNavigatorAir::MemberSerialize(const CAiNavigatorAir* const object, gpg::WriteArchive* const archive)
+void CAiNavigatorAir::MemberSerialize(gpg::WriteArchive* const archive) const
 {
   if (!archive) {
     return;
   }
 
   const gpg::RRef ownerRef{};
-  archive->Write(CachedCAiNavigatorImplType(), object, ownerRef);
+  archive->Write(CachedCAiNavigatorImplType(), this, ownerRef);
 
   const WeakPtr<Entity> destination{};
   archive->Write(
     CachedWeakEntityType(),
-    object ? static_cast<const void*>(&object->mDestinationEntity) : static_cast<const void*>(&destination),
+    this ? static_cast<const void*>(&mDestinationEntity) : static_cast<const void*>(&destination),
     ownerRef
   );
 
   const Wm3::Vector3f currentTarget = Wm3::Vector3f::Zero();
   archive->Write(
     CachedVector3fType(),
-    object ? static_cast<const void*>(&object->mCurrentTargetPos) : static_cast<const void*>(&currentTarget),
+    this ? static_cast<const void*>(&mCurrentTargetPos) : static_cast<const void*>(&currentTarget),
     ownerRef
   );
 
   const Wm3::Vector3f goalPos = Wm3::Vector3f::Zero();
   archive->Write(
     CachedVector3fType(),
-    object ? static_cast<const void*>(&object->mGoalPos) : static_cast<const void*>(&goalPos),
+    this ? static_cast<const void*>(&mGoalPos) : static_cast<const void*>(&goalPos),
     ownerRef
   );
 
-  archive->WriteBool(object && object->mTrackFormationTarget != 0u);
+  archive->WriteBool(this && mTrackFormationTarget != 0u);
 }
 
 /**
@@ -402,8 +402,10 @@ bool CAiNavigatorAir::AtGoal() const
 /**
  * Address: 0x005A49E0 (FUN_005A49E0)
  */
-bool CAiNavigatorAir::CanPathTo(const SAiNavigatorGoal&) const
+bool CAiNavigatorAir::CanPathTo(Wm3::Vector3f* outTargetPos, const SAiNavigatorGoal& goal) const
 {
+  (void)outTargetPos;
+  (void)goal;
   return true;
 }
 
@@ -429,38 +431,6 @@ int CAiNavigatorAir::Execute()
   const std::int16_t goalCellX = GridCellCoord(mGoalPos.x, footprint.mSizeX);
   const std::int16_t goalCellZ = GridCellCoord(mGoalPos.z, footprint.mSizeZ);
 
-  // TEMPORARY PROBE -- air-transport "unloads instantly at the current position,
-  // then flies to the drop point" triage. Delete once resolved.
-  //
-  // Every function feeding this decision has now been verified 1:1 against the
-  // binary -- AtTarget (0x006B9730), ShouldHoverInsteadOfLand (0x006BC820),
-  // SetGoal's goal->current-target copy (0x005A4C60 +112..+120 from +124..+132),
-  // and this cell test itself. On paper the original arrives instantly too,
-  // which cannot be right, so the remaining difference is WHEN this runs
-  // relative to CalcMoveAir -- the only thing that converts UMVE_Hover into
-  // UMVE_Up and so makes AtTarget stop returning true regardless of distance.
-  //
-  // This reports the decision inputs on the first ticks after a goal is set. A
-  // line with atTarget=1 and a large dist is the bug reproducing: arrival
-  // declared while still far away, because vert=Hover skipped the distance test.
-  {
-    static DiagnosticBudget sProbe;
-    if (sProbe.Take(60)) {
-      const CUnitMotion* const motion = mUnit->UnitMotion;
-      const float dx = mGoalPos.x - mUnit->GetPosition().x;
-      const float dz = mGoalPos.z - mUnit->GetPosition().z;
-      gpg::Warnf(
-        "[XPORTARRIVE] atTarget=%d vert=%d curLayer=%d tgtLayer=%d dist=%.1f cells=(%d,%d)vs(%d,%d)",
-        (motion != nullptr && motion->AtTarget()) ? 1 : 0,
-        motion != nullptr ? static_cast<int>(motion->mVertEvent) : -1,
-        static_cast<int>(mUnit->mVarDat.mLayerMask),
-        motion != nullptr ? static_cast<int>(motion->mLayer) : -1,
-        std::sqrt((dx * dx) + (dz * dz)),
-        static_cast<int>(currentTargetCellX), static_cast<int>(currentTargetCellZ),
-        static_cast<int>(goalCellX), static_cast<int>(goalCellZ)
-      );
-    }
-  }
 
   if (mUnit->UnitMotion && mUnit->UnitMotion->AtTarget() &&
       static_cast<std::uint16_t>(currentTargetCellX) == static_cast<std::uint16_t>(goalCellX) &&
@@ -613,3 +583,60 @@ void CAiNavigatorAir::UpdateCurrentTargetFromFormation()
   mCurrentTargetPos = mGoalPos;
   ApplyCurrentTargetToMotion();
 }
+
+namespace moho
+{
+  /**
+   * Address: 0x005A5640 (FUN_005A5640)
+   */
+  void CAiNavigatorAir::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    result.SetUnowned(gpg::MakeRRef(new CAiNavigatorAir()), 0u);
+  }
+
+  /**
+   * `gpg::SerConstructHelper<CAiNavigatorAir>`, vtable 0x00E1C140.
+   *
+   * Address: 0x00BCC840 (FUN_00BCC840 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF6F40 (FUN_00BF6F40 -- the global's destructor.)
+   * Address: 0x005A74D0 (FUN_005A74D0 -- `Init`.)
+   * Address: 0x005A5630 (FUN_005A5630 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x005A7ED0 (FUN_005A7ED0 -- `Delete`.)
+   */
+  struct CAiNavigatorAirConstruct : gpg::SerConstructHelper<CAiNavigatorAir>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AE848 -- process-global `CAiNavigatorAirConstruct` singleton.
+  moho::CAiNavigatorAirConstruct gCAiNavigatorAirConstruct;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<CAiNavigatorAir>`, vtable 0x00E1C150.
+   *
+   * Address: 0x00BCC880 (FUN_00BCC880 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF6F70 (FUN_00BF6F70 -- the global's destructor.)
+   * Address: 0x005A7F30 (FUN_005A7F30 -- an unreferenced copy of `Deserialize`.)
+   * Address: 0x005A7F40 (FUN_005A7F40 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005A8950 (FUN_005A8950 -- an unreferenced copy of `Deserialize`.)
+   * Address: 0x005A8960 (FUN_005A8960 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x005A5700 (FUN_005A5700 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x005A5730 (FUN_005A5730 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x005A5760 (FUN_005A5760 -- an unreferenced copy of the global's destructor.)
+   * Address: 0x005A7550 (FUN_005A7550 -- `Init`.)
+   * Address: 0x005A56D0 (FUN_005A56D0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x005A56E0 (FUN_005A56E0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CAiNavigatorAirSerializer : gpg::SerSaveLoadHelper<CAiNavigatorAir>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AEC28 -- process-global `CAiNavigatorAirSerializer` singleton.
+  moho::CAiNavigatorAirSerializer gCAiNavigatorAirSerializer;
+} // namespace

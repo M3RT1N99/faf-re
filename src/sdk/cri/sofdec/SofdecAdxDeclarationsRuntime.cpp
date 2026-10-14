@@ -195,14 +195,14 @@
    * What it does:
    * Returns ADXT RNA handle lane under ADXCRS enter/leave guards.
    */
-  std::int32_t ADXT_GetRna(void* adxtRuntime);
+  SofdecAddressWord ADXT_GetRna(void* adxtRuntime);
   /**
    * Address: 0x00B0EF10 (FUN_00B0EF10, _adxt_GetRna)
    *
    * What it does:
    * Returns ADXT RNA handle lane at offset `+0x0C`.
    */
-  std::int32_t adxt_GetRna(void* adxtRuntime);
+  SofdecAddressWord adxt_GetRna(void* adxtRuntime);
   /**
    * Address: 0x00B0EF20 (FUN_00B0EF20, _ADXT_SetDefFmt)
    *
@@ -216,21 +216,21 @@
    * What it does:
    * Forwards requested default format to ADXSJD for the owning ADXT SJD handle.
    */
-  std::int32_t adxt_SetDefFmt(void* adxtRuntime, std::int32_t requestedFormat);
+  SofdecAddressWord adxt_SetDefFmt(void* adxtRuntime, std::int32_t requestedFormat);
   /**
    * Address: 0x00B0E830 (FUN_00B0E830, _ADXT_GetStm)
    *
    * What it does:
    * Returns ADXT stream handle lane under ADXCRS enter/leave guards.
    */
-  std::int32_t ADXT_GetStm(void* adxtRuntime);
+  SofdecAddressWord ADXT_GetStm(void* adxtRuntime);
   /**
    * Address: 0x00B0E850 (FUN_00B0E850, _adxt_GetStm)
    *
    * What it does:
    * Returns ADXT runtime stream handle lane.
    */
-  std::int32_t adxt_GetStm(void* adxtRuntime);
+  SofdecAddressWord adxt_GetStm(void* adxtRuntime);
   /**
    * Address: 0x00B0E860 (FUN_00B0E860, _ADXT_TermSupply)
    *
@@ -657,7 +657,7 @@
    * What it does:
    * Returns ADXT input-SJ handle lane under ADXCRS enter/leave guards.
    */
-  std::int32_t ADXT_GetInputSj(void* adxtRuntime);
+  SofdecAddressWord ADXT_GetInputSj(void* adxtRuntime);
   /**
    * Address: 0x00B0E510 (FUN_00B0E510, _adxt_GetInputSj)
    *
@@ -665,7 +665,7 @@
    * Returns ADXT runtime input-SJ handle lane or reports null-runtime parameter
    * error.
    */
-  std::int32_t adxt_GetInputSj(void* adxtRuntime);
+  SofdecAddressWord adxt_GetInputSj(void* adxtRuntime);
   /**
    * Address: 0x00B0E530 (FUN_00B0E530, _ADXT_SetWaitPlayStart)
    *
@@ -774,7 +774,7 @@
    * What it does:
    * Returns ADXT transpose lanes from RNA transpose words.
    */
-  std::int32_t adxt_GetTranspose(void* adxtRuntime, std::int32_t* outTransposeOctaves, std::int32_t* outTransposeCents);
+  SofdecAddressWord adxt_GetTranspose(void* adxtRuntime, std::int32_t* outTransposeOctaves, std::int32_t* outTransposeCents);
   /**
    * Address: 0x00B0E8F0 (FUN_00B0E8F0, _ADXT_EntryErrFunc)
    *
@@ -858,7 +858,7 @@
    * What it does:
    * Returns ADXT playback time units/frequency pair from RNA/SJD lanes.
    */
-  std::int32_t adxt_GetTimeSfreq(void* adxtRuntime, std::int32_t* outTimeUnits, std::int32_t* outTimeScale);
+  SofdecAddressWord adxt_GetTimeSfreq(void* adxtRuntime, std::int32_t* outTimeUnits, std::int32_t* outTimeScale);
   /**
    * Address: 0x00B0D4F0 (FUN_00B0D4F0, _ADXT_GetTimeSfreq2)
    *
@@ -908,7 +908,7 @@
    * What it does:
    * Forwards one ADXT header-filter callback lane into ADXSJD filter registration.
    */
-  std::int32_t adxt_SetCbHdrDec(void* adxtRuntime, void* filterCallbackAddress, std::int32_t filterCallbackContext);
+  SofdecAddressWord adxt_SetCbHdrDec(void* adxtRuntime, void* filterCallbackAddress, std::int32_t filterCallbackContext);
   /**
    * Address: 0x00B0EB10 (FUN_00B0EB10, _ADXT_GetDecNumSmpl)
    *
@@ -950,7 +950,7 @@
    * What it does:
    * Forwards one ADXT decode callback lane into ADXSJD decode callback registration.
    */
-  std::int32_t adxt_SetCbDec(void* adxtRuntime, void* decodeCallbackAddress, std::int32_t decodeCallbackContext);
+  SofdecAddressWord adxt_SetCbDec(void* adxtRuntime, void* decodeCallbackAddress, std::int32_t decodeCallbackContext);
   /**
    * Address: 0x00B0EC10 (FUN_00B0EC10, _ADXT_IsHeader)
    *
@@ -992,7 +992,7 @@
   std::int32_t ADXT_SetOutputMonoMode(std::int32_t enabled);
   std::int32_t ADXT_GetStatRead(void* adxtRuntime);
   std::int32_t adxt_GetStatRead(void* adxtRuntime);
-  std::int32_t adxt_eos_entry(void* adxtRuntime);
+  SofdecAddressWord adxt_eos_entry(void* adxtRuntime);
   std::int32_t adxt_set_outpan(void* adxtRuntime);
   using AdxtEndDecodeInfoCallback =
     std::int32_t(__cdecl*)(std::int32_t adxtRuntime, std::int32_t sampleRate, std::int32_t channelCount, std::int32_t sampleCount);
@@ -1002,7 +1002,7 @@
   std::int32_t adxt_stat_prep(void* adxtRuntime);
   std::int32_t adxt_stat_playing(void* adxtRuntime);
   std::int32_t adxt_stat_decend(void* adxtRuntime);
-  std::int32_t adxt_trap_entry_lps(void* adxtRuntime);
+  SofdecAddressWord adxt_trap_entry_lps(void* adxtRuntime);
   std::int32_t adxt_trap_entry(void* adxtRuntime);
   std::int32_t adxt_nlp_trap_entry(void* adxtRuntime);
   int ADX_ScanInfoCode(const std::uint8_t* sourceBytes, std::int32_t sourceLength, std::int16_t* outOffset);
@@ -1054,12 +1054,12 @@
   std::int32_t ADXT_SetLnkSw(void* adxtRuntime, std::int32_t enabled);
   std::int32_t SFTRN_IsSetup(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj, std::int32_t transferLaneType);
   std::int32_t SFTRN_CallTrtTrif(
-    std::int32_t sfbufHandleAddress,
-    std::int32_t transferHandleAddress,
-    std::int32_t trifCommandId,
-    std::int32_t arg0,
-    std::int32_t arg1
-  );
+  SofdecAddressWord workctrlAddress,
+  std::int32_t transferLaneIndex,
+  std::int32_t callbackIndex,
+  std::int32_t arg0,
+  std::int32_t arg1
+);
   std::int32_t sftrn_ConnBufTrn(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj, std::int32_t sourceLane, std::int32_t targetLane);
   std::int32_t sftrn_ConnTrnBuf0(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj, std::int32_t sourceLane, std::int32_t targetLane);
   std::int32_t sftrn_ConnTrnBufV(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj, std::int32_t sourceLane, std::int32_t targetLane);
@@ -1083,8 +1083,6 @@
    */
   void CFT_Ycc420plnToArgb8888IntInit();
   void CFT_Ycc420plnToArgb8888PrgInit();
-  struct CftYcc420PlanarPackedWords;
-  struct CftRgb16OutputPackedWords;
 
   /**
    * Address: 0x00AF37F0 (FUN_00AF37F0, _CFT_Ycc420plnToRgb555)
@@ -1094,8 +1092,8 @@
    * clip lookup tables.
    */
   std::int32_t CFT_Ycc420plnToRgb555(
-    const CftYcc420PlanarPackedWords* inputWords,
-    const CftRgb16OutputPackedWords* outputWords
+    const moho::CftBuffer* inputWords,
+    const moho::CftBuffer* outputWords
   );
 
   /**
@@ -1106,8 +1104,8 @@
    * clip lookup tables.
    */
   std::int32_t CFT_Ycc420plnToRgb555WithDither(
-    const CftYcc420PlanarPackedWords* inputWords,
-    const CftRgb16OutputPackedWords* outputWords
+    const moho::CftBuffer* inputWords,
+    const moho::CftBuffer* outputWords
   );
 
   /**
@@ -1118,8 +1116,8 @@
    * clip lookup tables.
    */
   std::int32_t CFT_Ycc420plnToRgb565(
-    const CftYcc420PlanarPackedWords* inputWords,
-    const CftRgb16OutputPackedWords* outputWords
+    const moho::CftBuffer* inputWords,
+    const moho::CftBuffer* outputWords
   );
 
   /**
@@ -1130,8 +1128,8 @@
    * clip lookup tables.
    */
   std::int32_t CFT_Ycc420plnToRgb565WithDither(
-    const CftYcc420PlanarPackedWords* inputWords,
-    const CftRgb16OutputPackedWords* outputWords
+    const moho::CftBuffer* inputWords,
+    const moho::CftBuffer* outputWords
   );
   /**
    * Address: 0x00B031B0 (FUN_00B031B0, _cft_sse_Ycc420plnToRgb888Prg)
@@ -1183,9 +1181,9 @@
    * ARGB8888 conversion through user/default table selection.
    */
   std::int32_t CFT_Ycc420plnToArgb8888Split(
-    const CftYcc420PlanarPackedWords* inputWords,
-    const CftRgb16OutputPackedWords* outputWords,
-    const std::int32_t* userTableAddress
+    const moho::CftBuffer* inputWords,
+    const moho::CftBuffer* outputWords,
+    const SofdecAddressWord* userTableAddress
   );
 
   /**
@@ -1195,10 +1193,10 @@
    * Repackages packed conversion lanes and dispatches one-sample or two-sample
    * YCC420->YCC422 conversion path using optimize/alignment rules.
    */
-  std::int32_t CFT_Ycc420plnToYcc422pix2Int(
-    const CftYcc420PlanarPackedWords* inputWords,
-    const CftRgb16OutputPackedWords* outputWords,
-    const std::int32_t* scratchBufferWords
+  SofdecAddressWord CFT_Ycc420plnToYcc422pix2Int(
+    const moho::CftBuffer* inputWords,
+    const moho::CftBuffer* outputWords,
+    const SofdecAddressWord* scratchBufferWords
   );
 
   /**
@@ -1208,7 +1206,7 @@
    * Chooses scalar or SSE 1-sample YCC420->YCC422 pixel2/int conversion lane
    * based on runtime alignment and stride constraints.
    */
-  std::int32_t CFT_Ycc420plnToYcc422pix2Int1smp(
+  SofdecAddressWord CFT_Ycc420plnToYcc422pix2Int1smp(
     const CftYcc420PlanarInputLanes* inputLanes,
     const CftPixelSurfaceLanes* outputSurface
   );
@@ -1278,7 +1276,7 @@
    * SSE-eligible two-sample conversion lane using caller-provided scratch
    * workspace.
    */
-  std::int32_t cft_sse_Ycc420plnToYcc422pix2Int2smp(
+  SofdecAddressWord cft_sse_Ycc420plnToYcc422pix2Int2smp(
     const CftYcc420PlanarInputLanes* inputLanes,
     const CftPixelSurfaceLanes* outputSurface,
     std::uintptr_t scratchBufferAddress,
@@ -1302,41 +1300,41 @@
   );
   void SUD_Init();
   std::int32_t SUD_Finish();
-  std::int32_t SFLIB_SetErr(std::int32_t errorObjectAddress, std::int32_t errorCode);
+  std::int32_t SFLIB_SetErr(SofdecAddressWord errorObjectAddress, std::int32_t errorCode);
   std::int32_t sfbuf_InitSjUuid();
   void sfbuf_SetSupSj(
-    std::int32_t* supplyLaneWords,
-    const std::int32_t* createdSjStateWords,
-    std::int32_t ownerAddress,
-    std::int32_t ownershipMode
-  );
-  std::int32_t sfbuf_RingGetSub(std::int32_t sfbufHandleAddress, std::int32_t ringIndex, std::int32_t* outCursor, std::int32_t laneMode);
+  SofdecAddressWord* supplyLaneWords,
+  const SofdecAddressWord* supplyDescriptorWords,
+  SofdecAddressWord ownerLaneAddress,
+  std::int32_t setupState
+);
+  std::int32_t sfbuf_RingGetSub(SofdecAddressWord sfbufHandleAddress, std::int32_t ringIndex, std::int32_t* outCursor, std::int32_t laneMode);
   std::int32_t sfbuf_RingAddSub(
-    std::int32_t sfbufHandleAddress,
+    SofdecAddressWord sfbufHandleAddress,
     std::int32_t ringIndex,
     std::int32_t advanceCount,
     std::int32_t laneMode
   );
-  std::uint32_t sfbuf_ResetConti(std::int32_t* supplyStateWords);
+  std::uint32_t sfbuf_ResetConti(SofdecAddressWord* supplyStateWords);
   std::int32_t sfbuf_PeekChunk(
-    std::int32_t ringHandleAddress,
+    SofdecAddressWord ringHandleAddress,
     std::int32_t laneMode,
     moho::SjChunkRange* outFirstChunk,
     moho::SjChunkRange* outSecondChunk
   );
-  std::int32_t sfbuf_MoveChunk(std::int32_t ringHandleAddress, std::int32_t laneMode, std::int32_t requestedBytes);
+  std::int32_t sfbuf_MoveChunk(SofdecAddressWord ringHandleAddress, std::int32_t laneMode, std::int32_t requestedBytes);
   std::int32_t SFX_DecideTableAlph3(moho::SfxCallbackFrameContext* conversionState, moho::SfxStreamState* streamState);
   void SFX_MakeTable(moho::SfxCallbackFrameContext* conversionState, moho::SfxStreamState* streamState, std::int32_t tableMode);
   void sfxcnv_ExecCnvFrmByCbFunc(
     moho::SfxCallbackFrameContext* conversionState,
     moho::SfxStreamState* streamState,
-    std::int32_t callbackArg,
+    SofdecAddressWord callbackArg,
     std::int32_t useLookupTable
   );
   void sfxcnv_ExecFullAlphaByCbFunc(
     moho::SfxCallbackFrameContext* conversionState,
     moho::SfxStreamState* streamState,
-    std::int32_t callbackArg
+    SofdecAddressWord callbackArg
   );
   void SFXLIB_Error(moho::SfxCallbackFrameContext* conversionState, moho::SfxStreamState* streamState, const char* message);
   std::int32_t ADXT_IsInitialized();
@@ -1388,33 +1386,33 @@
    * `\\` separator when missing.
    */
   std::int32_t xeDirSetRootDir(const char* rootDirectory);
-  std::int32_t cvFsEntryErrFunc(std::int32_t errorCallbackAddress, std::int32_t errorObjectAddress);
+  SofdecAddressWord cvFsEntryErrFunc(SofdecAddressWord errorCallbackAddress, SofdecAddressWord errorObjectAddress);
   std::int32_t cvFsSetDefDev(const char* deviceName);
   std::int32_t cvFsError_(const char* message);
-  void cvFsCallUsrErrFn(std::int32_t errorObjectAddress, const char* message);
-  const char* cvFsGetDevName(const CvFsHandleView* handle);
-  std::int32_t cvFsOptFn1(CvFsHandleView* handle, std::int32_t optionCode, std::int32_t optionArg0, std::int32_t optionArg1);
-  std::int32_t cvFsOptFn2(CvFsHandleView* handle, std::int32_t optionCode, std::int32_t optionArg0, std::int32_t optionArg1);
-  std::int32_t cvFsGetMaxByteRate(CvFsHandleView* handle);
+  void cvFsCallUsrErrFn(SofdecAddressWord errorObjectAddress, const char* message);
+  const char* cvFsGetDevName(const CvFsHandle* handle);
+  std::int32_t cvFsOptFn1(CvFsHandle* handle, std::int32_t optionCode, std::int32_t optionArg0, std::int32_t optionArg1);
+  std::int32_t cvFsOptFn2(CvFsHandle* handle, std::int32_t optionCode, std::int32_t optionArg0, std::int32_t optionArg1);
+  std::int32_t cvFsGetMaxByteRate(CvFsHandle* handle);
   std::int32_t cvFsMakeDir(char* fileName);
   std::int32_t cvFsRemoveDir(char* fileName);
   std::int32_t cvFsDeleteFile(char* fileName);
   std::int32_t cvFsGetFreeSize(const char* deviceName);
-  std::int32_t cvFsGetSctLen(CvFsHandleView* handle);
-  std::int32_t cvFsSetSctLen(CvFsHandleView* handle);
-  std::int32_t cvFsGetNumTr(CvFsHandleView* handle);
+  std::int32_t cvFsGetSctLen(CvFsHandle* handle);
+  std::int32_t cvFsSetSctLen(CvFsHandle* handle);
+  std::int32_t cvFsGetNumTr(CvFsHandle* handle);
   std::int32_t cvFsChangeDir(char* directoryName);
   std::int32_t cvFsIsExistFile(char* fileName);
   std::int32_t cvFsGetNumFiles(char* deviceName);
   std::int32_t cvFsLoadDirInfo(char* fileName, std::int32_t optionArg0, std::int32_t optionArg1);
   char* cvFsGetDefDev();
-  std::int32_t cvFsTell(CvFsHandleView* handle);
-  std::int32_t cvFsReqRd(CvFsHandleView* handle, std::int32_t bufferAddress, std::int32_t byteCount);
-  std::int32_t cvFsReqWr(CvFsHandleView* handle, std::int32_t bufferAddress, std::int32_t byteCount);
-  std::int32_t cvFsStopTr(CvFsHandleView* handle);
+  std::int32_t cvFsTell(CvFsHandle* handle);
+  std::int32_t cvFsReqRd(CvFsHandle* handle, SofdecAddressWord bufferAddress, std::int32_t byteCount);
+  std::int32_t cvFsReqWr(CvFsHandle* handle, SofdecAddressWord bufferAddress, std::int32_t byteCount);
+  std::int32_t cvFsStopTr(CvFsHandle* handle);
   void cvFsExecServer();
   std::int32_t cvFsGetFileSizeEx(char* fileName, std::int32_t optionArg);
-  std::int32_t cvFsGetFileSizeByHndl(CvFsHandleView* handle);
+  std::int32_t cvFsGetFileSizeByHndl(CvFsHandle* handle);
 
   /**
    * Address: 0x00B11F40 (FUN_00B11F40, _addDevice)
@@ -1422,7 +1420,7 @@
    * What it does:
    * Registers one CVFS device interface in the fixed device table.
    */
-  CvFsDeviceInterfaceView* addDevice(const char* deviceName, void* (__cdecl* deviceFactory)());
+  CvFsDeviceInterface* addDevice(const char* deviceName, void* (__cdecl* deviceFactory)());
 
   /**
    * Address: 0x00B11FB0 (FUN_00B11FB0, _getDevice)
@@ -1430,7 +1428,7 @@
    * What it does:
    * Resolves one CVFS device name prefix to its registered interface.
    */
-  CvFsDeviceInterfaceView* getDevice(const char* deviceName);
+  CvFsDeviceInterface* getDevice(const char* deviceName);
 
   /**
    * Address: 0x00B12040 (FUN_00B12040, _cvFsDelDev)
@@ -1446,7 +1444,7 @@
    * What it does:
    * Opens one CVFS handle through the selected device interface.
    */
-  extern "C" CvFsHandleView* cvFsOpen(char* fileName, std::int32_t openMode, std::int32_t openFlags);
+  extern "C" CvFsHandle* cvFsOpen(char* fileName, std::int32_t openMode, std::int32_t openFlags);
 
   /**
    * Address: 0x00B12290 (FUN_00B12290, _variousProc)
@@ -1454,7 +1452,7 @@
    * What it does:
    * Resolves effective device + rewritten path for CVFS open operations.
    */
-  CvFsDeviceInterfaceView* variousProc(char* deviceName, char* filePath, const char* originalPath);
+  CvFsDeviceInterface* variousProc(char* deviceName, char* filePath, const char* originalPath);
 
   /**
    * Address: 0x00B12300 (FUN_00B12300, _allocCvFsHn)
@@ -1462,7 +1460,7 @@
    * What it does:
    * Returns one free entry from the fixed CVFS handle pool.
    */
-  CvFsHandleView* allocCvFsHn();
+  CvFsHandle* allocCvFsHn();
 
   /**
    * Address: 0x00B12350 (FUN_00B12350, _getDevName)
@@ -1484,13 +1482,13 @@
   std::int32_t cvFsAddVolumeEx(
     char* deviceName,
     std::int32_t volumeName,
-    std::int32_t imageHandleAddress,
+    SofdecAddressWord imageHandleAddress,
     std::int32_t modeOrFlags
   );
   std::int32_t cvFsDelVolume(char* deviceName, std::int32_t volumeName);
   std::int32_t cvFsGetVolumeInfo(char* deviceName, std::int32_t volumeName, std::int32_t infoCode);
   BOOL cvFsIsExistDevice(char* deviceName);
-  std::uint64_t cvFsGetNumTr64(CvFsHandleView* handle);
+  std::uint64_t cvFsGetNumTr64(CvFsHandle* handle);
   std::uint64_t cvFsGetFileSize64(char* fileName);
   std::uint64_t cvFsGetFileSizeEx64(char* fileName, std::int32_t optionArg);
 
@@ -1518,7 +1516,7 @@
    */
   std::int32_t addDevName(char* deviceName, char* filePath);
 
-  extern "C" std::int32_t cvFsGetFsys64Info(CvFsHandleView* handle);
+  extern "C" std::int32_t cvFsGetFsys64Info(CvFsHandle* handle);
 
   void* mfCiGetInterface();
   CvFsUserErrorBridgeFn __cdecl mfCiEntryErrFunc(CvFsUserErrorBridgeFn callbackFunction, std::int32_t callbackObject);
@@ -1528,13 +1526,13 @@
   std::uint32_t __cdecl mfci_strtoul(const char* text, const char** outNextText, std::int32_t base);
   std::uint32_t __cdecl mfci_get_adr_size(const char* addressAndSizeText, std::uint32_t* outSizeBytes);
   std::int32_t __cdecl mfci_alloc();
-  std::int32_t __cdecl mfci_free(std::int32_t handleAddress);
-  std::int32_t __cdecl mfci_reset_hn(std::int32_t handleAddress);
-  void __cdecl mfCiClose(std::int32_t handleAddress);
-  std::int32_t __cdecl mfCiSeek(std::int32_t handleAddress, std::int32_t seekOffset, std::int32_t seekOrigin);
-  std::int32_t __cdecl mfCiTell(std::int32_t handleAddress);
-  void __cdecl mfCiStopTr(std::int32_t handleAddress);
-  std::int32_t __cdecl mfCiGetStat(std::int32_t handleAddress);
+  std::int32_t __cdecl mfci_free(SofdecAddressWord handleAddress);
+  std::int32_t __cdecl mfci_reset_hn(SofdecAddressWord handleAddress);
+  void __cdecl mfCiClose(SofdecAddressWord handleAddress);
+  std::int32_t __cdecl mfCiSeek(SofdecAddressWord handleAddress, std::int32_t seekOffset, std::int32_t seekOrigin);
+  std::int32_t __cdecl mfCiTell(SofdecAddressWord handleAddress);
+  void __cdecl mfCiStopTr(SofdecAddressWord handleAddress);
+  std::int32_t __cdecl mfCiGetStat(SofdecAddressWord handleAddress);
   std::int32_t __cdecl mfCiGetFileSize(const char* fileNameOrAddressRange);
   void mfCrsLock();
   void mfCrsUnlock();
@@ -1560,7 +1558,7 @@
    * What it does:
    * Dispatches ADXT MPEG-audio detach through installed detach callback lane.
    */
-  std::int32_t ADXT_DetachMpa();
+  SofdecAddressWord ADXT_DetachMpa();
   /**
    * Address: 0x00B0CB60 (FUN_00B0CB60, _ADXT_Create)
    *
@@ -1598,7 +1596,7 @@
    * What it does:
    * Dispatches ADXT MPEG-2 AAC detach through the installed link callback lane.
    */
-  extern "C" std::int32_t ADXT_DetachMPEG2AAC(void* adxtRuntime);
+  extern "C" SofdecAddressWord ADXT_DetachMPEG2AAC(void* adxtRuntime);
   void adxt_Stop(void* adxtRuntime);
   std::int32_t ADXB_SetAhxInSj(moho::AdxBitstreamDecoderState* decoder);
   std::uint32_t ADXB_SetAhxDecSmpl(moho::AdxBitstreamDecoderState* decoder, std::int32_t maxDecodeSamples);
@@ -1612,8 +1610,8 @@
   std::int32_t ADXB_GetDecDtLen(const moho::AdxBitstreamDecoderState* decoder);
   std::int32_t ADXB_GetDecNumSmpl(const moho::AdxBitstreamDecoderState* decoder);
   std::int32_t ADXB_Reset(moho::AdxBitstreamDecoderState* decoder);
-  std::int32_t ADXSJD_Create(
-    std::int32_t inputSourceHandleAddress,
+  SofdecAddressWord ADXSJD_Create(
+    SofdecAddressWord inputSourceHandleAddress,
     std::int32_t outputHandleCount,
     std::int32_t* outputHandleAddresses
   );
@@ -1623,83 +1621,83 @@
     std::int32_t* outWritableSamples,
     std::int32_t* outUntilTrapSamples
   );
-  std::int32_t ADXSJD_Stop(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_SetInSj(std::int32_t sjdHandle, void* sourceJoinHandle);
-  std::int32_t ADXSJD_SetOutSj(std::int32_t sjdHandle, std::int32_t outputLane, void* outputHandle);
-  std::uint32_t ADXSJD_SetMaxDecSmpl(std::int32_t sjdHandle, std::int32_t maxDecodeSamples);
-  std::int32_t ADXSJD_Start(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetDecPos(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_SetDecPos(std::int32_t sjdHandle, std::int32_t decodePosition);
-  std::int32_t ADXSJD_SetCbDec(std::int32_t sjdHandle, void* callbackAddress, std::int32_t callbackContext);
-  std::int32_t ADXSJD_SetLnkSw(std::int32_t sjdHandle, std::int32_t enabled);
-  std::int32_t ADXSJD_GetLnkSw(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetNumChan(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetOutBps(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetBlkSmpl(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetBlkLen(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetTotalNumSmpl(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetCof(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetNumLoop(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetLpInsNsmpl(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetLpStartPos(std::int32_t sjdHandle);
-  std::int16_t ADXSJD_GetDefPan(std::int32_t sjdHandle, std::int32_t laneIndex);
-  std::int32_t ADXSJD_SetDefFmt(std::int32_t sjdHandle, std::int32_t requestedFormat);
-  std::int32_t ADXSJD_GetLpStartOfst(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetLpEndPos(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetLpEndOfst(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetAinfLen(std::int32_t sjdHandle);
-  std::int16_t ADXSJD_GetDefOutVol(std::int32_t sjdHandle);
-  std::uint8_t* ADXSJD_GetDataId(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetHdrLen(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetFmtBps(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetSpsdInfo(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_TakeSnapshot(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_RestoreSnapshot(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetDecDtLen(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_SetTrapNumSmpl(std::int32_t sjdHandle, std::int32_t trapSampleCount);
-  std::int32_t ADXSJD_GetTrapNumSmpl(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_SetTrapCnt(std::int32_t sjdHandle, std::int32_t trapCount);
-  std::int32_t ADXSJD_GetTrapCnt(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_SetTrapDtLen(std::int32_t sjdHandle, std::int32_t trapDataLengthBytes);
-  std::int32_t ADXSJD_GetTrapDtLen(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_EntryTrapFunc(std::int32_t sjdHandle, void* callbackAddress, std::int32_t callbackContext);
-  std::int32_t ADXSJD_EntryFltFunc(std::int32_t sjdHandle, void* callbackAddress, std::int32_t callbackContext);
-  std::int32_t ADXSJD_AdjustSmpl(std::int32_t sjdHandle, std::int32_t sampleDelta);
-  moho::AdxBitstreamDecoderState* ADXSJD_SetExtString(std::int32_t sjdHandle, const char* extString);
+  std::int32_t ADXSJD_Stop(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_SetInSj(SofdecAddressWord sjdHandle, void* sourceJoinHandle);
+  SofdecAddressWord ADXSJD_SetOutSj(SofdecAddressWord sjdHandle, std::int32_t outputLane, void* outputHandle);
+  std::uint32_t ADXSJD_SetMaxDecSmpl(SofdecAddressWord sjdHandle, std::int32_t maxDecodeSamples);
+  SofdecAddressWord ADXSJD_Start(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetDecPos(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_SetDecPos(SofdecAddressWord sjdHandle, std::int32_t decodePosition);
+  SofdecAddressWord ADXSJD_SetCbDec(SofdecAddressWord sjdHandle, void* callbackAddress, std::int32_t callbackContext);
+  std::int32_t ADXSJD_SetLnkSw(SofdecAddressWord sjdHandle, std::int32_t enabled);
+  std::int32_t ADXSJD_GetLnkSw(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetNumChan(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetOutBps(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetBlkSmpl(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetBlkLen(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetTotalNumSmpl(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetCof(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetNumLoop(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetLpInsNsmpl(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetLpStartPos(SofdecAddressWord sjdHandle);
+  std::int16_t ADXSJD_GetDefPan(SofdecAddressWord sjdHandle, std::int32_t laneIndex);
+  SofdecAddressWord ADXSJD_SetDefFmt(SofdecAddressWord sjdHandle, std::int32_t requestedFormat);
+  SofdecAddressWord ADXSJD_GetLpStartOfst(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetLpEndPos(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetLpEndOfst(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetAinfLen(SofdecAddressWord sjdHandle);
+  std::int16_t ADXSJD_GetDefOutVol(SofdecAddressWord sjdHandle);
+  std::uint8_t* ADXSJD_GetDataId(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetHdrLen(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetFmtBps(SofdecAddressWord sjdHandle);
+  SofdecAddressWord ADXSJD_GetSpsdInfo(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_TakeSnapshot(SofdecAddressWord sjdHandle);
+  SofdecAddressWord ADXSJD_RestoreSnapshot(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetDecDtLen(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_SetTrapNumSmpl(SofdecAddressWord sjdHandle, std::int32_t trapSampleCount);
+  std::int32_t ADXSJD_GetTrapNumSmpl(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_SetTrapCnt(SofdecAddressWord sjdHandle, std::int32_t trapCount);
+  std::int32_t ADXSJD_GetTrapCnt(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_SetTrapDtLen(SofdecAddressWord sjdHandle, std::int32_t trapDataLengthBytes);
+  std::int32_t ADXSJD_GetTrapDtLen(SofdecAddressWord sjdHandle);
+  SofdecAddressWord ADXSJD_EntryTrapFunc(SofdecAddressWord sjdHandle, void* callbackAddress, std::int32_t callbackContext);
+  SofdecAddressWord ADXSJD_EntryFltFunc(SofdecAddressWord sjdHandle, void* callbackAddress, std::int32_t callbackContext);
+  std::int32_t ADXSJD_AdjustSmpl(SofdecAddressWord sjdHandle, std::int32_t sampleDelta);
+  moho::AdxBitstreamDecoderState* ADXSJD_SetExtString(SofdecAddressWord sjdHandle, const char* extString);
   std::int32_t ADXSJD_SetDefExtString(const char* extString);
   std::int16_t ADXSJD_GetExtParams(
-    std::int32_t sjdHandle,
+    SofdecAddressWord sjdHandle,
     std::int16_t* outK0,
     std::int16_t* outKMultiplier,
     std::int16_t* outKAdder
   );
   moho::AdxBitstreamDecoderState* ADXSJD_SetExtParams(
-    std::int32_t sjdHandle,
+    SofdecAddressWord sjdHandle,
     std::int16_t k0,
     std::int16_t kMultiplier,
     std::int16_t kAdder
   );
-  std::int32_t ADXSJD_GetFormat(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetSfreq(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetStat(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_GetDecNumSmpl(std::int32_t sjdHandle);
-  std::int32_t ADXSJD_TermSupply(std::int32_t sjdHandle);
+  std::int32_t ADXSJD_GetFormat(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetSfreq(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetStat(SofdecAddressWord sjdHandle);
+  std::int32_t ADXSJD_GetDecNumSmpl(SofdecAddressWord sjdHandle);
+  SofdecAddressWord ADXSJD_TermSupply(SofdecAddressWord sjdHandle);
   std::int32_t ADXAMP_Start(void* channelExpandHandle);
   void ADXAMP_Stop(void* channelExpandHandle);
   void CRIERR_CallErr(const char* format, ...);
   std::int32_t j__CRIERR_SetCbErr(moho::AdxmErrorCallback callbackFunction, std::int32_t callbackObject);
   std::int32_t ADXRNA_EntryErrFunc(moho::AdxmErrorCallback callbackFunction, std::int32_t callbackObject);
-  std::int32_t ADXRNA_Create(std::int32_t sourceJoinHandleTableAddress, std::int32_t channelCount);
-  std::int32_t ADXRNA_GetNumData(std::int32_t rnaHandle);
-  void ADXRNA_ExecHndl(std::int32_t rnaHandle);
-  void j__ADXRNA_Stop(std::int32_t rnaHandle);
-  void j__ADXRNA_SetTransSw(std::int32_t rnaHandle, std::int32_t enabled);
-  void j__ADXRNA_SetPlaySw(std::int32_t rnaHandle, std::int32_t enabled);
-  void ADXRNA_Destroy(std::int32_t rnaHandle);
-  void* mwRnaCreate(std::int32_t sourceJoinHandleTableAddress, std::int32_t channelCount);
-  void ADXSJD_Destroy(std::int32_t sjdHandle);
+  SofdecAddressWord ADXRNA_Create(SofdecAddressWord sourceJoinHandleTableAddress, std::int32_t channelCount);
+  std::int32_t ADXRNA_GetNumData(SofdecAddressWord rnaHandle);
+  void ADXRNA_ExecHndl(SofdecAddressWord rnaHandle);
+  void j__ADXRNA_Stop(SofdecAddressWord rnaHandle);
+  void j__ADXRNA_SetTransSw(SofdecAddressWord rnaHandle, std::int32_t enabled);
+  void j__ADXRNA_SetPlaySw(SofdecAddressWord rnaHandle, std::int32_t enabled);
+  void ADXRNA_Destroy(SofdecAddressWord rnaHandle);
+  void* mwRnaCreate(SofdecAddressWord sourceJoinHandleTableAddress, std::int32_t channelCount);
+  void ADXSJD_Destroy(SofdecAddressWord sjdHandle);
   void* adxf_AllocAdxFs();
-  struct AdxstmServerSlotView;
+  struct AdxstmServerSlot;
   /**
    * Address: 0x00B0F4A0 (FUN_00B0F4A0)
    *
@@ -1776,7 +1774,7 @@
    * lanes.
    */
   void* ADXSTMF_CreateCvfsRt(
-    CvFsHandleView* cvfsHandle,
+    CvFsHandle* cvfsHandle,
     std::int32_t baseOffset,
     std::int32_t fileLengthBytes,
     moho::SofdecSjSupplyHandle* sourceJoinObject
@@ -1789,8 +1787,8 @@
    * default stream state.
    */
   void ADXSTMF_SetupHandleMember(
-    AdxstmServerSlotView* streamHandle,
-    CvFsHandleView* cvfsHandle,
+    AdxstmServerSlot* streamHandle,
+    CvFsHandle* cvfsHandle,
     std::int32_t baseOffset,
     std::int32_t fileLengthBytes,
     moho::SofdecSjSupplyHandle* sourceJoinObject
@@ -1803,7 +1801,7 @@
    * lanes.
    */
   void* ADXSTMF_CreateCvfs(
-    CvFsHandleView* cvfsHandle,
+    CvFsHandle* cvfsHandle,
     std::int32_t baseOffset,
     std::int32_t fileLengthBytes,
     moho::SofdecSjSupplyHandle* sourceJoinObject
@@ -1815,7 +1813,7 @@
    * Export thunk that forwards EOS callback registration into ADXSTM runtime.
    */
   std::int32_t
-  ADXSTM_EntryEosFunc(std::int32_t streamHandleAddress, std::int32_t callbackAddress, std::int32_t callbackContext);
+  ADXSTM_EntryEosFunc(SofdecAddressWord streamHandleAddress, SofdecAddressWord callbackAddress, std::int32_t callbackContext);
   /**
    * Address: 0x00B0FB30 (FUN_00B0FB30, _ADXSTM_StopNw)
    *
@@ -1869,7 +1867,7 @@
    * What it does:
    * Export thunk that updates ADXSTM end-of-stream sector lane.
    */
-  std::int32_t ADXSTM_SetEos(void* streamHandle, std::int32_t eosSector);
+  SofdecAddressWord ADXSTM_SetEos(void* streamHandle, std::int32_t eosSector);
   /**
    * Address: 0x00B10110 (FUN_00B10110, _ADXSTM_SetBufSize)
    *
@@ -2058,14 +2056,14 @@
   void* adxf_CreateAdxFs();
   void* adxf_OpenAfsNw(void* afsPointHandle, std::int32_t fileIndex);
   std::int32_t adxf_GetFnameRangeEx(
-    std::int32_t afsHandle,
+    SofdecAddressWord afsHandle,
     std::int32_t fileIndex,
     char* outFileName,
     std::int32_t* outStartOffset,
     std::int32_t* outRangeStart,
     std::int32_t* outRangeEnd
   );
-  const char* adxf_GetFnameFromPt(std::int32_t afsHandle);
+  const char* adxf_GetFnameFromPt(SofdecAddressWord afsHandle);
   std::int32_t adxf_SetAfsFileInfo(void* adxfHandle, void* afsPointHandle, std::int32_t fileIndex);
   // The second and third arguments are a file name and a bind offset, not an
   // AFS point handle and an index: adxf_SetFileInfoEx hands them straight to
@@ -2093,7 +2091,7 @@
    * What it does:
    * Appends one ADXF command history entry and updates per-command call count.
    */
-  std::int32_t adxf_SetCmdHstry(
+  SofdecAddressWord adxf_SetCmdHstry(
     std::int32_t commandId,
     std::int32_t commandStage,
     void* handleArg0,
@@ -2104,13 +2102,13 @@
   // The third argument is the caller's buffer address, not a mode:
   // adxf_ReadNw32 hands it to SJRBF_Create (0x00B0B8EF) as the ring's backing
   // store, and rejects it with `'buf' is NULL` when it is zero.
-  std::int32_t adxf_ReadNw32(void* adxfHandle, std::int32_t requestedSectors, std::int32_t bufferAddress);
+  std::int32_t adxf_ReadNw32(void* adxfHandle, std::int32_t requestedSectors, SofdecAddressWord bufferAddress);
   std::int32_t adxf_GetStat(void* adxfHandle);
   void adxf_wait_until_file_open(void* streamHandle);
   std::int32_t adxf_GetPtStat(std::int32_t pointId);
   std::int32_t adxf_GetPtStatJumpThunk(std::int32_t pointId);
   std::int32_t adxf_CloseLdptnwHn();
-  std::int32_t adxf_StopPtLd();
+  SofdecAddressWord adxf_StopPtLd();
   std::int32_t SofdecSetMonoRoutingMode(std::int32_t monoRoutingMode);
   std::int32_t SofdecGetMonoRoutingMode();
   std::int32_t SofdecSetBufferPlacementMode(std::int32_t bufferPlacementMode);
@@ -2267,7 +2265,7 @@
    * Runs one ADXSTM filesystem-handle service lane.
    */
   std::int32_t ADXSTMF_ExecHndl(void* streamHandle);
-  std::int32_t ADXT_IsActiveFsSvr();
+  SofdecAddressWord ADXT_IsActiveFsSvr();
   void ADXCRS_Enter();
   void ADXCRS_Leave();
   /**
@@ -2304,8 +2302,8 @@
 
   std::int32_t __cdecl HEAPMNG_Create(void* heapBuffer, std::uint32_t heapByteCount, void** outHeapManager);
   std::int32_t __cdecl HEAPMNG_Destroy(void* heapManagerHandle);
-  int HEAPMNG_Allocate(int heapManagerHandle, SIZE_T byteCount, int* outPointer);
-  int HEAPMNG_Free(int heapManagerHandle, int pointerValue);
+  int HEAPMNG_Allocate(SofdecAddressWord heapManagerHandle, SIZE_T byteCount, SofdecAddressWord* outPointer);
+  int HEAPMNG_Free(SofdecAddressWord heapManagerHandle, SofdecAddressWord pointerValue);
 
   void SJCRS_Init();
   std::int32_t SJCRS_Finish();
@@ -2395,25 +2393,25 @@
    * Leaves SVM lock lane using default lock-type token `1`.
    */
   void SVM_Unlock();
-  int M2ABSR_Read(std::int32_t bitstreamHandle, std::int32_t bitCount, void* outBits);
-  int M2ABSR_Tell(std::int32_t bitstreamHandle, std::int32_t* outBitPosition);
-  int M2ABSR_Seek(std::int32_t bitstreamHandle, std::int32_t bitPosition, std::int32_t origin);
-  int M2ABSR_Overruns(std::int32_t bitstreamHandle, std::int32_t* outOverrunFlag);
-  int M2ABSR_AlignToByteBoundary(std::int32_t bitstreamHandle);
+  int M2ABSR_Read(SofdecAddressWord bitstreamHandle, std::int32_t bitCount, void* outBits);
+  int M2ABSR_Tell(SofdecAddressWord bitstreamHandle, std::int32_t* outBitPosition);
+  int M2ABSR_Seek(SofdecAddressWord bitstreamHandle, std::int32_t bitPosition, std::int32_t origin);
+  int M2ABSR_Overruns(SofdecAddressWord bitstreamHandle, std::int32_t* outOverrunFlag);
+  int M2ABSR_AlignToByteBoundary(SofdecAddressWord bitstreamHandle);
   int M2ABSR_Initialize();
   int M2ABSR_Finalize();
-  int M2ABSR_Create(std::int32_t heapManagerHandle, std::int32_t** outBitstream);
+  int M2ABSR_Create(SofdecAddressWord heapManagerHandle, std::int32_t** outBitstream);
   int M2ABSR_Destroy(std::int32_t* bitstreamHandle);
   int M2ABSR_Reset(std::uint32_t* bitstreamState);
   int M2ABSR_SetBuffer(std::uint32_t* bitstreamState, std::int32_t sourceBuffer, std::int32_t sourceBytes);
-  int M2ABSR_IsEndOfBuffer(std::int32_t bitstreamHandle, std::int32_t* outIsEnd);
+  int M2ABSR_IsEndOfBuffer(SofdecAddressWord bitstreamHandle, std::int32_t* outIsEnd);
   int M2AHUFFMAN_Initialize();
   int M2AHUFFMAN_Finalize();
   int M2AIMDCT_Initialize();
   int M2AIMDCT_Finalize();
   std::int32_t M2ADEC_Initialize();
   std::int32_t M2ADEC_Finalize();
-  std::int32_t __cdecl M2ADEC_Create(const std::int32_t heapManagerHandle, M2aDecoderContext** outContext);
+  std::int32_t __cdecl M2ADEC_Create(const SofdecAddressWord heapManagerHandle, M2aDecoderContext** outContext);
   std::int32_t __cdecl M2ADEC_Destroy(M2aDecoderContext* context);
 
   std::int32_t __cdecl M2ADEC_Reset(M2aDecoderContext* context);
@@ -2423,7 +2421,7 @@
   std::int32_t __cdecl M2ADEC_Stop(M2aDecoderContext* context);
   std::int32_t __cdecl M2ADEC_Process(
     M2aDecoderContext* context,
-    std::int32_t sourceAddress,
+    SofdecAddressWord sourceAddress,
     std::int32_t sourceBytes,
     std::int32_t* outConsumedBytes
   );
@@ -2435,19 +2433,19 @@
   std::int32_t __cdecl M2ADEC_GetFrequency(M2aDecoderContext* context, std::int32_t* outFrequency);
   std::int32_t __cdecl M2ADEC_GetNumChannels(M2aDecoderContext* context, std::int32_t* outChannelCount);
   std::int32_t __cdecl M2ADEC_GetChannelConfiguration(M2aDecoderContext* context, std::int32_t* outChannelConfiguration);
-  std::int32_t __cdecl M2ADEC_GetPcm(M2aDecoderContext* context, std::int32_t channelIndex, std::int32_t destinationAddress);
+  std::int32_t __cdecl M2ADEC_GetPcm(M2aDecoderContext* context, std::int32_t channelIndex, SofdecAddressWord destinationAddress);
   std::int32_t __cdecl M2ADEC_GetDownmixedPcm(
     M2aDecoderContext* context,
     std::int32_t outputChannelIndex,
-    std::int32_t destinationAddress
+    SofdecAddressWord destinationAddress
   );
   std::int32_t __cdecl M2ADEC_GetSurroundPcm(
     M2aDecoderContext* context,
     std::int32_t outputChannelIndex,
-    std::int32_t destinationAddress
+    SofdecAddressWord destinationAddress
   );
-  HANDLE __cdecl m2adec_malloc(std::int32_t heapManagerHandle, SIZE_T byteCount);
-  HANDLE __cdecl m2adec_free(std::int32_t heapManagerHandle, LPVOID memoryBlock);
+  HANDLE __cdecl m2adec_malloc(SofdecAddressWord heapManagerHandle, SIZE_T byteCount);
+  HANDLE __cdecl m2adec_free(SofdecAddressWord heapManagerHandle, LPVOID memoryBlock);
   std::int32_t __cdecl m2adec_decode_header(M2aDecoderContext* context);
   std::int32_t __cdecl m2adec_get_header_type(
     const std::uint8_t* sourceBytes,
@@ -2474,31 +2472,31 @@
   std::int32_t __cdecl m2adec_decode_pce(M2aDecoderContext* context);
   std::int32_t __cdecl m2adec_specify_location(M2aDecoderContext* context);
   std::int32_t __cdecl m2adec_find_sync_offset(M2aDecoderContext* context, std::int32_t* outOffset);
-  std::int32_t __cdecl m2adec_convert_to_pcm16(float* sourceSamples, std::int32_t destinationAddress);
+  std::int32_t __cdecl m2adec_convert_to_pcm16(float* sourceSamples, SofdecAddressWord destinationAddress);
 
   int __cdecl mpabdr_Init();
   int __cdecl mpabdr_Finish();
-  int __cdecl MPARBF_SetUsrMallocFunc(std::int32_t allocatorFunctionAddress);
-  int __cdecl MPARBF_SetUsrFreeFunc(std::int32_t freeFunctionAddress);
-  int __cdecl MPARBF_Create(std::int32_t bufferBytes, std::int32_t* outHandle);
-  int __cdecl MPARBF_Destroy(std::int32_t* handleAddress);
-  int __cdecl MPARBF_Reset(std::int32_t handleAddress);
-  int __cdecl MPARBF_GetDataSize(std::int32_t bitReaderHandle, std::uint32_t* outDataBytes);
-  int __cdecl MPARBF_GetFreeSize(std::int32_t bitReaderHandle, std::uint32_t* outFreeBytes);
+  int __cdecl MPARBF_SetUsrMallocFunc(SofdecAddressWord allocatorFunctionAddress);
+  int __cdecl MPARBF_SetUsrFreeFunc(SofdecAddressWord freeFunctionAddress);
+  int __cdecl MPARBF_Create(std::int32_t bufferBytes, SofdecAddressWord* outHandle);
+  int __cdecl MPARBF_Destroy(SofdecAddressWord* handleAddress);
+  int __cdecl MPARBF_Reset(SofdecAddressWord handleAddress);
+  int __cdecl MPARBF_GetDataSize(SofdecAddressWord bitReaderHandle, std::uint32_t* outDataBytes);
+  int __cdecl MPARBF_GetFreeSize(SofdecAddressWord bitReaderHandle, std::uint32_t* outFreeBytes);
   int __cdecl MPARBF_ReadData(
-    std::int32_t bitReaderHandle,
+    SofdecAddressWord bitReaderHandle,
     char* destinationBytes,
     std::uint32_t byteCount,
     std::uint32_t* outReadBytes
   );
   int __cdecl MPARBF_WriteData(
-    std::int32_t bitReaderHandle,
-    std::int32_t sourceAddress,
+    SofdecAddressWord bitReaderHandle,
+    SofdecAddressWord sourceAddress,
     std::uint32_t byteCount,
     std::uint32_t* outWrittenBytes
   );
   int __cdecl MPARBF_ReturnData(
-    std::int32_t bitReaderHandle,
+    SofdecAddressWord bitReaderHandle,
     std::uint32_t returnBytes,
     std::uint32_t* outReturnedBytes
   );
@@ -2527,9 +2525,9 @@
   std::int32_t __cdecl mparbd_GetNumChannel(MparbdDecoderState* decoder, std::int32_t* outChannelCount);
   std::int32_t __cdecl MPARBD_GetNumBit(MparbdDecoderState* decoder, std::int32_t* outBitsPerSample);
   std::int32_t __cdecl mparbd_GetNumBit(MparbdDecoderState* decoder, std::int32_t* outBitsPerSample);
-  std::int32_t __cdecl MPARBD_EntryErrFunc(std::int32_t callbackFunctionAddress, std::int32_t callbackContext);
-  std::int32_t __cdecl MPARBD_SetUsrMallocFunc(std::int32_t allocatorFunctionAddress);
-  std::int32_t __cdecl MPARBD_SetUsrFreeFunc(std::int32_t freeFunctionAddress);
+  std::int32_t __cdecl MPARBD_EntryErrFunc(SofdecAddressWord callbackFunctionAddress, std::int32_t callbackContext);
+  std::int32_t __cdecl MPARBD_SetUsrMallocFunc(SofdecAddressWord allocatorFunctionAddress);
+  std::int32_t __cdecl MPARBD_SetUsrFreeFunc(SofdecAddressWord freeFunctionAddress);
   std::int32_t __cdecl MPARBD_Init();
   std::int32_t __cdecl MPARBD_Finish();
   std::int32_t __cdecl MPARBD_Create(MparbdDecoderState** outDecoder);
@@ -2628,15 +2626,15 @@
   std::uint32_t m2adec_copy(void* destination, const void* source, std::size_t byteCount);
   std::int32_t __cdecl m2adec_clear(void* destination, std::uint32_t byteCount);
   int M2AHUFFMAN_GetCodebook(int index, std::uintptr_t* outCodebook);
-  int M2AHUFFMAN_Decode(int codebookHandle, int bitstreamHandle);
+  int M2AHUFFMAN_Decode(int codebookHandle, SofdecAddressWord bitstreamHandle);
   int M2AHUFFMAN_Unpack(
     std::uint32_t* codebook,
     int packedValue,
     std::int32_t* outValues,
     std::int32_t* outDimension,
-    int bitstreamHandle
+    SofdecAddressWord bitstreamHandle
   );
-  int M2AHUFFMAN_GetEscValue(int valuesHandle, int bitstreamHandle);
+  int M2AHUFFMAN_GetEscValue(int valuesHandle, SofdecAddressWord bitstreamHandle);
   extern float m2adec_tns_decode_table[];
   extern std::int32_t m2adec_frequency_table[];
   extern std::int32_t m2adec_num_spectra_per_sfb[];
@@ -2723,9 +2721,9 @@
   std::int32_t __cdecl M2ASJD_Init();
   std::int32_t __cdecl M2ASJD_Finish();
   std::int32_t __cdecl
-  M2ASJD_Create(std::int32_t heapManagerHandle, std::int32_t heapManagerOwner, M2asjdDecoderState** outDecoder);
+  M2ASJD_Create(SofdecAddressWord heapManagerHandle, std::int32_t heapManagerOwner, M2asjdDecoderState** outDecoder);
   std::int32_t __cdecl
-  m2asjd_Create(std::int32_t heapManagerHandle, std::int32_t heapManagerOwner, M2asjdDecoderState** outDecoder);
+  m2asjd_Create(SofdecAddressWord heapManagerHandle, std::int32_t heapManagerOwner, M2asjdDecoderState** outDecoder);
   std::int32_t __cdecl M2ASJD_Destroy(M2asjdDecoderState* decoder);
   std::int32_t __cdecl m2asjd_SetCbDcd(M2asjdDecodeCallback decodeCallback, std::int32_t callbackObject);
   std::int32_t __cdecl m2asjd_default_callback(std::int32_t callbackObject, const char* errorMessage);
@@ -2776,8 +2774,8 @@
     std::int32_t outputStreamCount,
     M2asjdIoStream** outputStreams
   );
-  void* __cdecl m2asjd_malloc(std::int32_t heapManagerHandle, SIZE_T byteCount);
-  void __cdecl m2asjd_free(std::int32_t heapManagerHandle, LPVOID memoryBlock);
+  void* __cdecl m2asjd_malloc(SofdecAddressWord heapManagerHandle, SIZE_T byteCount);
+  void __cdecl m2asjd_free(SofdecAddressWord heapManagerHandle, LPVOID memoryBlock);
   std::int32_t __cdecl m2asjd_clear(void* destinationBytes, std::uint32_t byteCount);
   std::uint32_t __cdecl m2asjd_copy(void* destinationBytes, const void* sourceBytes, std::uint32_t byteCount);
   std::int32_t __cdecl M2ASJD_GetDownmixMode(M2asjdDecoderState* decoder, std::int32_t* outDownmixMode);
@@ -3023,22 +3021,22 @@
   std::int32_t __cdecl adxsje_calc_rsig(AdxStreamJoinEncoderState* encoder, std::int32_t channelIndex);
   std::int32_t __cdecl adxsje_set_rsig(AdxStreamJoinEncoderState* encoder, std::int32_t channelIndex);
   char* __cdecl iirflt_create();
-  std::int32_t __cdecl iirflt_destroy(std::int32_t iirFilterHandle);
+  std::int32_t __cdecl iirflt_destroy(SofdecAddressWord iirFilterHandle);
   std::int32_t __cdecl
-  iirflt_set_coef(std::int32_t iirFilterHandle, std::int16_t coefficient0, std::int16_t coefficient1);
+  iirflt_set_coef(SofdecAddressWord iirFilterHandle, std::int16_t coefficient0, std::int16_t coefficient1);
   std::int32_t __cdecl
-  iirflt_set_delay(std::int32_t iirFilterHandle, std::int16_t delay0, std::int16_t delay1);
+  iirflt_set_delay(SofdecAddressWord iirFilterHandle, std::int16_t delay0, std::int16_t delay1);
   std::int16_t __cdecl
-  iirflt_get_delay(std::int32_t iirFilterHandle, std::int16_t* outDelay0, std::int16_t* outDelay1);
-  std::int16_t __cdecl iirflt_put_sig(std::int32_t iirFilterHandle, std::int16_t sample);
+  iirflt_get_delay(SofdecAddressWord iirFilterHandle, std::int16_t* outDelay0, std::int16_t* outDelay1);
+  std::int16_t __cdecl iirflt_put_sig(SofdecAddressWord iirFilterHandle, std::int16_t sample);
   std::int32_t __cdecl
-  pflt_set_coef(std::int32_t filterHandle, std::int16_t coefficient0, std::int16_t coefficient1);
-  std::int32_t __cdecl pflt_set_delay(std::int32_t filterHandle, std::int16_t delay0, std::int16_t delay1);
-  std::int32_t __cdecl pflt_put_sig(std::int32_t filterHandle, std::int32_t sampleIndex, std::int16_t sample);
-  std::int32_t __cdecl pflt_calc_gain(std::int32_t filterHandle);
-  std::int16_t __cdecl pflt_get_rsig(std::int32_t filterHandle, std::int32_t sampleIndex);
-  std::int8_t __cdecl pflt_get_rsig_q(std::int32_t filterHandle, std::int32_t sampleIndex);
-  std::int8_t __cdecl pflt_set_rsig_q(std::int32_t filterHandle, std::int32_t sampleIndex, std::int8_t value);
+  pflt_set_coef(SofdecAddressWord filterHandle, std::int16_t coefficient0, std::int16_t coefficient1);
+  std::int32_t __cdecl pflt_set_delay(SofdecAddressWord filterHandle, std::int16_t delay0, std::int16_t delay1);
+  std::int32_t __cdecl pflt_put_sig(SofdecAddressWord filterHandle, std::int32_t sampleIndex, std::int16_t sample);
+  std::int32_t __cdecl pflt_calc_gain(SofdecAddressWord filterHandle);
+  std::int16_t __cdecl pflt_get_rsig(SofdecAddressWord filterHandle, std::int32_t sampleIndex);
+  std::int8_t __cdecl pflt_get_rsig_q(SofdecAddressWord filterHandle, std::int32_t sampleIndex);
+  std::int8_t __cdecl pflt_set_rsig_q(SofdecAddressWord filterHandle, std::int32_t sampleIndex, std::int8_t value);
   std::int32_t __cdecl ADX_GetCoefficient(
     std::int32_t coefficientIndex,
     std::int32_t sampleRate,
@@ -3054,8 +3052,8 @@
   void __cdecl ADXCRS_Lock();
   void __cdecl ADXCRS_Unlock();
   std::int32_t __cdecl pflt_create(std::int32_t blockSampleCount);
-  void __cdecl pflt_destroy(std::int32_t filterHandle);
-  std::int32_t __cdecl pflt_calc_coef(std::int32_t filterHandle, std::int32_t preset, std::int32_t sampleRate);
+  void __cdecl pflt_destroy(SofdecAddressWord filterHandle);
+  std::int32_t __cdecl pflt_calc_coef(SofdecAddressWord filterHandle, std::int32_t preset, std::int32_t sampleRate);
   std::int32_t __cdecl iirflt_init();
 
   std::uint8_t* adxb_ResetAinf(moho::AdxBitstreamDecoderState* decoder);
@@ -3072,12 +3070,12 @@
   int ADXB_DecodeHeaderAu(moho::AdxBitstreamDecoderState* decoder, const std::uint8_t* headerBytes, std::int32_t headerSize);
   int ADXB_DecodeHeaderMpa(moho::AdxBitstreamDecoderState* decoder, const std::uint8_t* headerBytes, std::int32_t headerSize);
   int ADXB_DecodeHeaderM2a(moho::AdxBitstreamDecoderState* decoder, const std::uint8_t* headerBytes, std::int32_t headerSize);
-  std::int32_t ADXB_SetMpaInSj(moho::AdxBitstreamDecoderState* decoder);
+  SofdecAddressWord ADXB_SetMpaInSj(moho::AdxBitstreamDecoderState* decoder);
   std::uint32_t ADXB_SetMpaDecSmpl(moho::AdxBitstreamDecoderState* decoder, std::int32_t maxDecodeSamples);
   std::int32_t ADXB_SetM2aInSj(moho::AdxBitstreamDecoderState* decoder);
   std::int32_t ADXB_SetM2aDecSmpl(moho::AdxBitstreamDecoderState* decoder, std::int32_t maxDecodeSamples);
-  std::int32_t ADXB_MpaTermSupply(moho::AdxBitstreamDecoderState* decoder);
-  std::int32_t ADXB_M2aTermSupply(moho::AdxBitstreamDecoderState* decoder);
+  SofdecAddressWord ADXB_MpaTermSupply(moho::AdxBitstreamDecoderState* decoder);
+  SofdecAddressWord ADXB_M2aTermSupply(moho::AdxBitstreamDecoderState* decoder);
   std::int32_t __cdecl ADXB_ExecOneWav(moho::AdxBitstreamDecoderState* decoder);
   std::int32_t __cdecl ADXB_ExecOneSpsd(moho::AdxBitstreamDecoderState* decoder);
   std::int32_t __cdecl ADXB_ExecOneAiff(moho::AdxBitstreamDecoderState* decoder);
@@ -3085,9 +3083,8 @@
   std::int32_t __cdecl ADXB_ExecOneAhx(moho::AdxBitstreamDecoderState* decoder);
   std::int32_t __cdecl ADXB_ExecOneMpa(moho::AdxBitstreamDecoderState* decoder);
   std::int32_t __cdecl ADXB_ExecOneM2a(moho::AdxBitstreamDecoderState* decoder);
-  struct SflibErrorInfo;
-  struct SflibLibWorkRuntime;
-  using SflibErrorCallback = std::int32_t(__cdecl*)(std::int32_t callbackObject, std::int32_t errorCode);
+  using moho::SflibErrorInfo;
+  struct SflibLibWork;
   // 0x00AE7150: void, not int - it just forwards 32 static slots to SFH_Init.
   void SFHDS_Init();
   std::int32_t SFHDS_Finish();
@@ -3097,7 +3094,7 @@
   std::int32_t sfply_StatPrep(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t sfply_IsPrepEnd(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t sfply_AdjustPrepEnd(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
-  std::int32_t sfply_FixAvPlay(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
+  SofdecAddressWord sfply_FixAvPlay(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t sfply_AdjustSyncMode(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t sfply_AdjustEtrg(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t sfply_StatStby(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
@@ -3109,10 +3106,10 @@
   std::int32_t sfply_IsBpaOff(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t SFD_VbIn();
   void SFD_VbOut();
-  std::int32_t sfply_ExecOneSub(std::int32_t workctrlAddress);
-  std::int32_t sfply_TrExecServer(std::int32_t workctrlAddress);
-  std::int32_t SFSEE_ExecServer(std::int32_t workctrlAddress);
-  std::int32_t SFSEE_FixAvPlay(std::int32_t workctrlAddress, std::int32_t condition5State, std::int32_t condition6State);
+  std::int32_t sfply_ExecOneSub(SofdecAddressWord workctrlAddress);
+  std::int32_t sfply_TrExecServer(SofdecAddressWord workctrlAddress);
+  std::int32_t SFSEE_ExecServer(SofdecAddressWord workctrlAddress);
+  SofdecAddressWord SFSEE_FixAvPlay(SofdecAddressWord workctrlAddress, std::int32_t condition5State, std::int32_t condition6State);
   std::int32_t sfply_ExecOne(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t sfply_ChkFin(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t sfply_IsEtime(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
@@ -3124,7 +3121,7 @@
   std::int32_t sfply_ChkCrePara(const moho::SfplyCreateParams* createParams);
   std::int32_t sfply_SearchFreeHn();
   std::int32_t sfply_InitMvInf(moho::SfplyMovieInfo* movieInfo);
-  std::int32_t sfply_InitPlyInf(moho::SfplyPlaybackInfo* playbackInfo);
+  SofdecAddressWord sfply_InitPlyInf(moho::SfplyPlaybackInfo* playbackInfo);
   moho::SfplyFlowCount* sfply_InitFlowCnt(moho::SfplyFlowCount* flowCount);
   std::int32_t sfply_InitTmrInf(moho::SfplyTimerInfo* timerInfo);
   std::int32_t SFPLY_AddDecPic(
@@ -3146,7 +3143,7 @@
   std::int32_t SFPLY_Stop(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t SFPLY_SetResetFlg(std::int32_t enabled);
   std::int32_t SFPLY_GetResetFlg();
-  std::int32_t sfply_TrStop(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
+  SofdecAddressWord sfply_TrStop(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   std::int32_t sfply_ResetHn(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
   moho::SofdecSfdWorkctrlSubobj* sfply_InitHn(moho::SfplyCreateParams* createParams, std::int32_t createContext);
   std::int32_t sfply_IsAnyoneTerm(moho::SofdecSfdWorkctrlSubobj* workctrlSubobj);
@@ -3203,7 +3200,7 @@
    * What it does:
    * Converts ADXT start PTS (90 kHz) to sample index at requested sample rate.
    */
-  std::int32_t SFTIM_GetAudioStartSample(void* adxtRuntime, std::int32_t audioSampleRate);
+  SofdecAddressWord SFTIM_GetAudioStartSample(void* adxtRuntime, std::int32_t audioSampleRate);
   /**
    * Address: 0x00ADAF90 (FUN_00ADAF90, _SFTIM_GetVideoStartSample)
    *
@@ -3219,22 +3216,22 @@
    * Stores one per-handle playback start-time pair.
    */
   std::int32_t
-  SFTIM_SetStartTime(std::int32_t workctrlAddress, std::int32_t startTimeMajor, std::int32_t startTimeMinor);
-  void SFTIM_GetTime(std::int32_t workctrlAddress, std::int32_t* outTimeMajor, std::int32_t* outTimeMinor);
+  SFTIM_SetStartTime(SofdecAddressWord workctrlAddress, std::int32_t startTimeMajor, std::int32_t startTimeMinor);
+  void SFTIM_GetTime(SofdecAddressWord workctrlAddress, std::int32_t* outTimeMajor, std::int32_t* outTimeMinor);
   /**
    * Address: 0x00ADBEC0 (FUN_00ADBEC0, _SFTIM_SetSpeed)
    *
    * What it does:
    * Stores one per-handle timer speed rational lane.
    */
-  std::int32_t SFTIM_SetSpeed(std::int32_t workctrlAddress, std::int32_t speedRational);
+  std::int32_t SFTIM_SetSpeed(SofdecAddressWord workctrlAddress, std::int32_t speedRational);
   /**
    * Address: 0x00ADBED0 (FUN_00ADBED0, _SFTIM_GetSpeed)
    *
    * What it does:
    * Returns one per-handle timer speed rational lane.
    */
-  std::int32_t SFTIM_GetSpeed(std::int32_t workctrlAddress);
+  std::int32_t SFTIM_GetSpeed(SofdecAddressWord workctrlAddress);
   std::int32_t SFTIM_GetTimeSub(
     moho::SofdecSfdWorkctrlSubobj* workctrlSubobj,
     std::int32_t* outTimeMajor,
@@ -3303,10 +3300,10 @@
   void sflib_InitBaseLib();
   void sflib_InitSub();
   void sflib_InitCs();
-  SflibErrorInfo* sflib_InitErr(SflibErrorInfo* errInfo);
-  SflibErrorInfo*
-  sflib_SetErrFnSub(SflibErrorInfo* errInfo, SflibErrorCallback callback, std::int32_t callbackObject);
-  SflibLibWorkRuntime* sflib_InitResetPara(SflibLibWorkRuntime* libWork);
+  moho::SflibErrorInfo* sflib_InitErr(moho::SflibErrorInfo* errInfo);
+  moho::SflibErrorInfo*
+  sflib_SetErrFnSub(moho::SflibErrorInfo* errInfo, moho::SflibErrorCallback callback, std::int32_t callbackObject);
+  SflibLibWork* sflib_InitResetPara(SflibLibWork* libWork);
   /**
    * Address: 0x00ADA9C0 (FUN_00ADA9C0, _SFTIM_Init)
    *
@@ -3383,13 +3380,13 @@
   extern char wxfic_cache_file[0x140];
   extern XeciObject xedir_work[80];
   extern CvFsUserErrorBridgeFn cvfs_errfn;
-  extern std::int32_t cvfs_errobj;
+  extern SofdecAddressWord cvfs_errobj;
   extern MfciHandle mfci_obj[80];
   extern CvFsUserErrorBridgeFn mfci_err_func;
   extern std::int32_t mfci_err_obj;
   extern char mfci_err_str[0x100];
-  extern CvFsDeviceInterfaceView mfci_vtbl;
-  extern CvFsDeviceInterfaceView xeci_vtbl;
+  extern CvFsDeviceInterface mfci_vtbl;
+  extern CvFsDeviceInterface xeci_vtbl;
   extern std::int32_t cvfs_init_cnt;
   extern std::array<char, MAX_PATH> gXeDirRootDirectory;
   extern moho::AdxmErrorCallback crierr_callback_func;
@@ -3419,7 +3416,7 @@
   std::int32_t adxt_dbg_sj_backlog = 0;
   std::int32_t adxt_dbg_sj_channels = 0;
   moho::AdxBitstreamDecoderState adxb_obj[32]{};
-  AdxampRuntimeState adxamp_obj[kAdxsjdObjectCount]{};
+  AdxampState adxamp_obj[kAdxsjdObjectCount]{};
   moho::AdxrnaTimingState adxrna_timing_pool[32]{};
   std::int32_t(__cdecl* adxrna_GetTime)() = nullptr;
   using AdxtCodecDetachCallback = std::int32_t(__cdecl*)(void* adxtRuntime);
@@ -3493,7 +3490,7 @@
   char wxfic_cache_file[0x140]{};
   XeciObject xedir_work[80]{};
   CvFsUserErrorBridgeFn cvfs_errfn = nullptr;
-  std::int32_t cvfs_errobj = 0;
+  SofdecAddressWord cvfs_errobj = 0;
   moho::AdxmErrorCallback crierr_callback_func = nullptr;
   std::int32_t crierr_callback_obj = 0;
   char crierr_err_msg[0x100]{};
@@ -3501,8 +3498,8 @@
   CvFsUserErrorBridgeFn mfci_err_func = nullptr;
   std::int32_t mfci_err_obj = 0;
   char mfci_err_str[0x100]{};
-  CvFsDeviceInterfaceView mfci_vtbl{};
-  CvFsDeviceInterfaceView xeci_vtbl{};
+  CvFsDeviceInterface mfci_vtbl{};
+  CvFsDeviceInterface xeci_vtbl{};
   std::int32_t cvfs_init_cnt = 0;
   float m2asjd_downmix_table[4] = {0.5f, 0.35355338f, 0.25f, 0.0f};
   float m2asjd_downmix_buffer[1024]{};
@@ -3537,112 +3534,79 @@
   std::int32_t gSofdecSoundPortVtable2Tag = 0;
   moho::MwsfdLibWork gMwsfdLibWork{};
 
-  struct SflibErrorInfo
-  {
-    SflibErrorCallback callback = nullptr; // +0x00
-    std::int32_t callbackObject = 0; // +0x04
-    std::int32_t firstErrorCode = 0; // +0x08
-    std::int32_t reserved0 = 0; // +0x0C
-    std::int32_t reserved1 = 0; // +0x10
-  };
 
-  static_assert(offsetof(SflibErrorInfo, callback) == 0x00, "SflibErrorInfo::callback offset must be 0x00");
-  static_assert(
-    offsetof(SflibErrorInfo, callbackObject) == 0x04, "SflibErrorInfo::callbackObject offset must be 0x04"
-  );
-  static_assert(
-    offsetof(SflibErrorInfo, firstErrorCode) == 0x08, "SflibErrorInfo::firstErrorCode offset must be 0x08"
-  );
-  static_assert(sizeof(SflibErrorInfo) == 0x14, "SflibErrorInfo size must be 0x14");
-
-  struct SflibTransferInitRuntimeView
+  struct SflibTransferInit
   {
     std::uint8_t mUnknown00[0x3C]{};
     std::int32_t resetParameter = 0; // +0x3C
-    std::int32_t adxtHandle = 0; // +0x40
+    SofdecAddressWord adxtHandle = 0; // +0x40
   };
 
   static_assert(
-    offsetof(SflibTransferInitRuntimeView, resetParameter) == 0x3C,
-    "SflibTransferInitRuntimeView::resetParameter offset must be 0x3C"
+    offsetof(SflibTransferInit, resetParameter) == 0x3C,
+    "SflibTransferInit::resetParameter offset must be 0x3C"
   );
   static_assert(
-    offsetof(SflibTransferInitRuntimeView, adxtHandle) == 0x40,
-    "SflibTransferInitRuntimeView::adxtHandle offset must be 0x40"
+    offsetof(SflibTransferInit, adxtHandle) == 0x40,
+    "SflibTransferInit::adxtHandle offset must be 0x40"
   );
-  static_assert(sizeof(SflibTransferInitRuntimeView) == 0x44, "SflibTransferInitRuntimeView size must be 0x44");
+  static_assert(sizeof(SflibTransferInit) == 0x44, "SflibTransferInit size must be 0x44");
 
-  struct SflibLibWorkRuntime
+  struct SflibLibWork
   {
     std::array<std::uint32_t, 0x64> defaultConditions{}; // +0x000
     moho::MwsfdInitSfdParams initParams{}; // +0x190
     std::int32_t initState = 0; // +0x198
-    SflibErrorInfo errInfo{}; // +0x19C
+    moho::SflibErrorInfo errInfo{}; // +0x19C
     std::uint8_t timeState[0x0C]{}; // +0x1B0
     std::uint8_t sfbufState[0x04]{}; // +0x1BC
-    SflibTransferInitRuntimeView transferInitState{}; // +0x1C0
+    SflibTransferInit transferInitState{}; // +0x1C0
     std::array<void*, 32> objectHandles{}; // +0x204
     std::int32_t versionTag = 0; // +0x284
   };
 
   static_assert(
-    offsetof(SflibLibWorkRuntime, defaultConditions) == 0x000,
-    "SflibLibWorkRuntime::defaultConditions offset must be 0x000"
+    offsetof(SflibLibWork, defaultConditions) == 0x000,
+    "SflibLibWork::defaultConditions offset must be 0x000"
   );
   static_assert(
-    offsetof(SflibLibWorkRuntime, initParams) == 0x190,
-    "SflibLibWorkRuntime::initParams offset must be 0x190"
+    offsetof(SflibLibWork, initParams) == 0x190,
+    "SflibLibWork::initParams offset must be 0x190"
   );
-  static_assert(offsetof(SflibLibWorkRuntime, initState) == 0x198, "SflibLibWorkRuntime::initState offset must be 0x198");
-  static_assert(offsetof(SflibLibWorkRuntime, errInfo) == 0x19C, "SflibLibWorkRuntime::errInfo offset must be 0x19C");
+  static_assert(offsetof(SflibLibWork, initState) == 0x198, "SflibLibWork::initState offset must be 0x198");
+  static_assert(offsetof(SflibLibWork, errInfo) == 0x19C, "SflibLibWork::errInfo offset must be 0x19C");
   static_assert(
-    offsetof(SflibLibWorkRuntime, timeState) == 0x1B0,
-    "SflibLibWorkRuntime::timeState offset must be 0x1B0"
-  );
-  static_assert(
-    offsetof(SflibLibWorkRuntime, sfbufState) == 0x1BC,
-    "SflibLibWorkRuntime::sfbufState offset must be 0x1BC"
+    offsetof(SflibLibWork, timeState) == 0x1B0,
+    "SflibLibWork::timeState offset must be 0x1B0"
   );
   static_assert(
-    offsetof(SflibLibWorkRuntime, transferInitState) == 0x1C0,
-    "SflibLibWorkRuntime::transferInitState offset must be 0x1C0"
+    offsetof(SflibLibWork, sfbufState) == 0x1BC,
+    "SflibLibWork::sfbufState offset must be 0x1BC"
   );
   static_assert(
-    offsetof(SflibLibWorkRuntime, transferInitState) + offsetof(SflibTransferInitRuntimeView, resetParameter) == 0x1FC,
-    "SflibLibWorkRuntime::resetParameter offset must be 0x1FC"
+    offsetof(SflibLibWork, transferInitState) == 0x1C0,
+    "SflibLibWork::transferInitState offset must be 0x1C0"
   );
   static_assert(
-    offsetof(SflibLibWorkRuntime, transferInitState) + offsetof(SflibTransferInitRuntimeView, adxtHandle) == 0x200,
-    "SflibLibWorkRuntime::adxtHandle offset must be 0x200"
+    offsetof(SflibLibWork, transferInitState) + offsetof(SflibTransferInit, resetParameter) == 0x1FC,
+    "SflibLibWork::resetParameter offset must be 0x1FC"
   );
   static_assert(
-    offsetof(SflibLibWorkRuntime, objectHandles) == 0x204,
-    "SflibLibWorkRuntime::objectHandles offset must be 0x204"
+    offsetof(SflibLibWork, transferInitState) + offsetof(SflibTransferInit, adxtHandle) == 0x200,
+    "SflibLibWork::adxtHandle offset must be 0x200"
   );
   static_assert(
-    offsetof(SflibLibWorkRuntime, versionTag) == 0x284,
-    "SflibLibWorkRuntime::versionTag offset must be 0x284"
+    offsetof(SflibLibWork, objectHandles) == 0x204,
+    "SflibLibWork::objectHandles offset must be 0x204"
   );
-  static_assert(sizeof(SflibLibWorkRuntime) == 0x288, "SflibLibWorkRuntime size must be 0x288");
+  static_assert(
+    offsetof(SflibLibWork, versionTag) == 0x284,
+    "SflibLibWork::versionTag offset must be 0x284"
+  );
+  static_assert(sizeof(SflibLibWork) == 0x288, "SflibLibWork size must be 0x288");
 
-  struct SflibErrorOwnerRuntimeView
-  {
-    std::uint8_t mUnknown00[0x48]{};
-    std::int32_t handleState = 0; // +0x48
-    std::uint8_t mUnknown4C[0x9AC]{};
-    SflibErrorInfo errInfo{}; // +0x9F8
-  };
 
-  static_assert(
-    offsetof(SflibErrorOwnerRuntimeView, handleState) == 0x48,
-    "SflibErrorOwnerRuntimeView::handleState offset must be 0x48"
-  );
-  static_assert(
-    offsetof(SflibErrorOwnerRuntimeView, errInfo) == 0x9F8,
-    "SflibErrorOwnerRuntimeView::errInfo offset must be 0x9F8"
-  );
-
-  SflibLibWorkRuntime gSflibLibWork{};
+  SflibLibWork gSflibLibWork{};
 
   /**
    * Address: 0x00D7F40C (`_mwsfd_initsfdpara`)
@@ -3654,7 +3618,7 @@
    * it hands to `SFD_Init`; a null here stops `SFTRN_Init` from reaching
    * `sflib_InitSub`, so the SFH analyzer pool never gets built.
    */
-  extern SftrnEntryListView gSofdecTransferStrategyList;
+  extern SftrnEntryList gSofdecTransferStrategyList;
   moho::MwsfdInitSfdParams gMwsfdInitSfdParams{
     reinterpret_cast<std::uintptr_t>(&gSofdecTransferStrategyList),
     0
@@ -3671,7 +3635,7 @@
   const char* gCriVerstrPtrCfg = "";
   const char* gCriVerstrPtrSfd = "";
   const char* gCriVerstrPtrCft = "";
-  SfxaLibWorkView gSfxaLibWork{};
+  SfxaLibWork gSfxaLibWork{};
   const char* gCftcomFunctionName = nullptr;
   std::int32_t gCftcomOptimizeSpeed = 0;
   std::int32_t gUtySseSupportState = -1;
@@ -3797,7 +3761,7 @@
   using M2vDispatchCallback = std::int32_t(__cdecl*)(...);
   using M2vVersionStringCallback = const char*(__cdecl*)();
   using M2vSimpleCallback = std::int32_t(__cdecl*)();
-  using M2vDestroyCallback = std::int32_t(__cdecl*)(std::int32_t decoderHandle);
+  using M2vDestroyCallback = std::int32_t(__cdecl*)(SofdecAddressWord decoderHandle);
   using M2pVersionStringCallback = const char*(__cdecl*)();
   using M2pSimpleCallback = std::int32_t(__cdecl*)();
   std::int32_t m2vapi_issetup = 0;
@@ -4562,7 +4526,7 @@ namespace
   constexpr std::uint32_t kM2aDownmixBufferBytes =
     static_cast<std::uint32_t>(kM2aPcmWindowSampleCount * sizeof(float));
 
-  struct AdxtDolbyRuntimeState
+  struct AdxtDolbyState
   {
     void* workBufferBase = nullptr; // +0x00
     std::int32_t workBufferBytes = 0; // +0x04
@@ -4578,49 +4542,49 @@ namespace
   };
 
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, workBufferBase) == 0x00,
-    "AdxtDolbyRuntimeState::workBufferBase offset must be 0x00"
+    offsetof(AdxtDolbyState, workBufferBase) == 0x00,
+    "AdxtDolbyState::workBufferBase offset must be 0x00"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, workBufferBytes) == 0x04,
-    "AdxtDolbyRuntimeState::workBufferBytes offset must be 0x04"
+    offsetof(AdxtDolbyState, workBufferBytes) == 0x04,
+    "AdxtDolbyState::workBufferBytes offset must be 0x04"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, historyLaneA) == 0x08,
-    "AdxtDolbyRuntimeState::historyLaneA offset must be 0x08"
+    offsetof(AdxtDolbyState, historyLaneA) == 0x08,
+    "AdxtDolbyState::historyLaneA offset must be 0x08"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, historyLaneB) == 0x0C,
-    "AdxtDolbyRuntimeState::historyLaneB offset must be 0x0C"
+    offsetof(AdxtDolbyState, historyLaneB) == 0x0C,
+    "AdxtDolbyState::historyLaneB offset must be 0x0C"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, sampleRate) == 0x10, "AdxtDolbyRuntimeState::sampleRate offset must be 0x10"
+    offsetof(AdxtDolbyState, sampleRate) == 0x10, "AdxtDolbyState::sampleRate offset must be 0x10"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, historyWriteIndex) == 0x14,
-    "AdxtDolbyRuntimeState::historyWriteIndex offset must be 0x14"
+    offsetof(AdxtDolbyState, historyWriteIndex) == 0x14,
+    "AdxtDolbyState::historyWriteIndex offset must be 0x14"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, historyWindowLength) == 0x18,
-    "AdxtDolbyRuntimeState::historyWindowLength offset must be 0x18"
+    offsetof(AdxtDolbyState, historyWindowLength) == 0x18,
+    "AdxtDolbyState::historyWindowLength offset must be 0x18"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, mixTableIndexA) == 0x1C,
-    "AdxtDolbyRuntimeState::mixTableIndexA offset must be 0x1C"
+    offsetof(AdxtDolbyState, mixTableIndexA) == 0x1C,
+    "AdxtDolbyState::mixTableIndexA offset must be 0x1C"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, mixTableIndexB) == 0x20,
-    "AdxtDolbyRuntimeState::mixTableIndexB offset must be 0x20"
+    offsetof(AdxtDolbyState, mixTableIndexB) == 0x20,
+    "AdxtDolbyState::mixTableIndexB offset must be 0x20"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, mixTableIndexC) == 0x24,
-    "AdxtDolbyRuntimeState::mixTableIndexC offset must be 0x24"
+    offsetof(AdxtDolbyState, mixTableIndexC) == 0x24,
+    "AdxtDolbyState::mixTableIndexC offset must be 0x24"
   );
   static_assert(
-    offsetof(AdxtDolbyRuntimeState, mixTableIndexD) == 0x28,
-    "AdxtDolbyRuntimeState::mixTableIndexD offset must be 0x28"
+    offsetof(AdxtDolbyState, mixTableIndexD) == 0x28,
+    "AdxtDolbyState::mixTableIndexD offset must be 0x28"
   );
-  static_assert(sizeof(AdxtDolbyRuntimeState) == 0x2C, "AdxtDolbyRuntimeState size must be 0x2C");
+  static_assert(sizeof(AdxtDolbyState) == 0x2C, "AdxtDolbyState size must be 0x2C");
 
   struct AdxtDestroyableHandle
   {
@@ -4665,15 +4629,15 @@ namespace
     virtual std::int32_t QueryDecodeBacklog(std::int32_t lane) = 0; // +0x24
   };
 
-  struct AdxtRuntimeState
+  struct AdxtState
   {
     std::uint8_t used = 0; // +0x00
     std::uint8_t mUnknown01 = 0; // +0x01
     std::uint8_t mUnknown02 = 0; // +0x02
     std::int8_t maxChannelCount = 0; // +0x03
-    std::int32_t sjdHandle = 0; // +0x04
+    SofdecAddressWord sjdHandle = 0; // +0x04
     void* streamHandle = nullptr; // +0x08
-    std::int32_t rnaHandle = 0; // +0x0C
+    SofdecAddressWord rnaHandle = 0; // +0x0C
     AdxtDestroyableHandle* sourceRingHandle = nullptr; // +0x10
     AdxtStreamJoinHandle* streamJoinInputHandle = nullptr; // +0x14
     std::uint8_t mUnknown18[0x24]{}; // +0x18
@@ -4951,123 +4915,91 @@ namespace
     }
   };
 
-  static_assert(offsetof(AdxtRuntimeState, used) == 0x00, "AdxtRuntimeState::used offset must be 0x00");
+  static_assert(offsetof(AdxtState, used) == 0x00, "AdxtState::used offset must be 0x00");
   static_assert(
-    offsetof(AdxtRuntimeState, maxChannelCount) == 0x03, "AdxtRuntimeState::maxChannelCount offset must be 0x03"
+    offsetof(AdxtState, maxChannelCount) == 0x03, "AdxtState::maxChannelCount offset must be 0x03"
   );
-  static_assert(offsetof(AdxtRuntimeState, sjdHandle) == 0x04, "AdxtRuntimeState::sjdHandle offset must be 0x04");
-  static_assert(offsetof(AdxtRuntimeState, streamHandle) == 0x08, "AdxtRuntimeState::streamHandle offset must be 0x08");
-  static_assert(offsetof(AdxtRuntimeState, rnaHandle) == 0x0C, "AdxtRuntimeState::rnaHandle offset must be 0x0C");
+  static_assert(offsetof(AdxtState, sjdHandle) == 0x04, "AdxtState::sjdHandle offset must be 0x04");
+  static_assert(offsetof(AdxtState, streamHandle) == 0x08, "AdxtState::streamHandle offset must be 0x08");
+  static_assert(offsetof(AdxtState, rnaHandle) == 0x0C, "AdxtState::rnaHandle offset must be 0x0C");
   static_assert(
-    offsetof(AdxtRuntimeState, sourceRingHandle) == 0x10, "AdxtRuntimeState::sourceRingHandle offset must be 0x10"
-  );
-  static_assert(
-    offsetof(AdxtRuntimeState, streamJoinInputHandle) == 0x14,
-    "AdxtRuntimeState::streamJoinInputHandle offset must be 0x14"
+    offsetof(AdxtState, sourceRingHandle) == 0x10, "AdxtState::sourceRingHandle offset must be 0x10"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, mUnknown18) == 0x18, "AdxtRuntimeState::mUnknown18 offset must be 0x18"
+    offsetof(AdxtState, streamJoinInputHandle) == 0x14,
+    "AdxtState::streamJoinInputHandle offset must be 0x14"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, streamBufferSectorLimitHint) == 0x3C,
-    "AdxtRuntimeState::streamBufferSectorLimitHint offset must be 0x3C"
+    offsetof(AdxtState, mUnknown18) == 0x18, "AdxtState::mUnknown18 offset must be 0x18"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, seamlessFlowSectorHint) == 0x3E,
-    "AdxtRuntimeState::seamlessFlowSectorHint offset must be 0x3E"
+    offsetof(AdxtState, streamBufferSectorLimitHint) == 0x3C,
+    "AdxtState::streamBufferSectorLimitHint offset must be 0x3C"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, streamStartScratchWord) == 0x4C,
-    "AdxtRuntimeState::streamStartScratchWord offset must be 0x4C"
+    offsetof(AdxtState, seamlessFlowSectorHint) == 0x3E,
+    "AdxtState::seamlessFlowSectorHint offset must be 0x3E"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, streamStartLatchByte) == 0x71,
-    "AdxtRuntimeState::streamStartLatchByte offset must be 0x71"
+    offsetof(AdxtState, streamStartScratchWord) == 0x4C,
+    "AdxtState::streamStartScratchWord offset must be 0x4C"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, channelExpandHandle) == 0x74,
-    "AdxtRuntimeState::channelExpandHandle offset must be 0x74"
+    offsetof(AdxtState, streamStartLatchByte) == 0x71,
+    "AdxtState::streamStartLatchByte offset must be 0x71"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, linkReadCursor) == 0x88, "AdxtRuntimeState::linkReadCursor offset must be 0x88"
+    offsetof(AdxtState, channelExpandHandle) == 0x74,
+    "AdxtState::channelExpandHandle offset must be 0x74"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, streamEndSector) == 0x8C, "AdxtRuntimeState::streamEndSector offset must be 0x8C"
+    offsetof(AdxtState, linkReadCursor) == 0x88, "AdxtState::linkReadCursor offset must be 0x88"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, streamLoopStartSample) == 0x90,
-    "AdxtRuntimeState::streamLoopStartSample offset must be 0x90"
+    offsetof(AdxtState, streamEndSector) == 0x8C, "AdxtState::streamEndSector offset must be 0x8C"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, linkControlHandle) == 0x94,
-    "AdxtRuntimeState::linkControlHandle offset must be 0x94"
+    offsetof(AdxtState, streamLoopStartSample) == 0x90,
+    "AdxtState::streamLoopStartSample offset must be 0x90"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, linkSwitchRequested) == 0x98,
-    "AdxtRuntimeState::linkSwitchRequested offset must be 0x98"
+    offsetof(AdxtState, linkControlHandle) == 0x94,
+    "AdxtState::linkControlHandle offset must be 0x94"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, playbackTimeBaseFrames) == 0x9C,
-    "AdxtRuntimeState::playbackTimeBaseFrames offset must be 0x9C"
+    offsetof(AdxtState, linkSwitchRequested) == 0x98,
+    "AdxtState::linkSwitchRequested offset must be 0x98"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, playbackTimeVsyncAnchor) == 0xA0,
-    "AdxtRuntimeState::playbackTimeVsyncAnchor offset must be 0xA0"
+    offsetof(AdxtState, playbackTimeBaseFrames) == 0x9C,
+    "AdxtState::playbackTimeBaseFrames offset must be 0x9C"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, playbackTimeDeltaFrames) == 0xA4,
-    "AdxtRuntimeState::playbackTimeDeltaFrames offset must be 0xA4"
+    offsetof(AdxtState, playbackTimeVsyncAnchor) == 0xA0,
+    "AdxtState::playbackTimeVsyncAnchor offset must be 0xA0"
   );
   static_assert(
-    offsetof(AdxtRuntimeState, linkSwitchActive) == 0xA8,
-    "AdxtRuntimeState::linkSwitchActive offset must be 0xA8"
+    offsetof(AdxtState, playbackTimeDeltaFrames) == 0xA4,
+    "AdxtState::playbackTimeDeltaFrames offset must be 0xA4"
   );
-  static_assert(offsetof(AdxtRuntimeState, mUnknownA9) == 0xA9, "AdxtRuntimeState::mUnknownA9 offset must be 0xA9");
   static_assert(
-    offsetof(AdxtRuntimeState, streamDecodeWindowState) == 0xC0,
-    "AdxtRuntimeState::streamDecodeWindowState offset must be 0xC0"
+    offsetof(AdxtState, linkSwitchActive) == 0xA8,
+    "AdxtState::linkSwitchActive offset must be 0xA8"
   );
-  static_assert(sizeof(AdxtRuntimeState) == 0xC4, "AdxtRuntimeState size must be 0xC4");
+  static_assert(offsetof(AdxtState, mUnknownA9) == 0xA9, "AdxtState::mUnknownA9 offset must be 0xA9");
+  static_assert(
+    offsetof(AdxtState, streamDecodeWindowState) == 0xC0,
+    "AdxtState::streamDecodeWindowState offset must be 0xC0"
+  );
+  static_assert(sizeof(AdxtState) == 0xC4, "AdxtState size must be 0xC4");
   constexpr std::size_t kAdxtRuntimeSlotCount = 0x20;
   static_assert(
-    (sizeof(AdxtRuntimeState) * kAdxtRuntimeSlotCount) == 0x1880,
+    (sizeof(AdxtState) * kAdxtRuntimeSlotCount) == 0x1880,
     "ADXT runtime slot pool size must be 0x1880 bytes"
   );
-  std::array<AdxtRuntimeState, kAdxtRuntimeSlotCount> gAdxtRuntimePool{};
+  std::array<AdxtState, kAdxtRuntimeSlotCount> gAdxtRuntimePool{};
 
-  struct MwsfdPicUserBufferDescriptor
-  {
-    std::int32_t bufferAddress = 0; // +0x00
-    std::int32_t bufferBytes = 0; // +0x04
-    std::int32_t bytesPerFrame = 0; // +0x08
-  };
-
-  static_assert(
-    offsetof(MwsfdPicUserBufferDescriptor, bufferAddress) == 0x00,
-    "MwsfdPicUserBufferDescriptor::bufferAddress offset must be 0x00"
-  );
-  static_assert(
-    offsetof(MwsfdPicUserBufferDescriptor, bufferBytes) == 0x04,
-    "MwsfdPicUserBufferDescriptor::bufferBytes offset must be 0x04"
-  );
-  static_assert(
-    offsetof(MwsfdPicUserBufferDescriptor, bytesPerFrame) == 0x08,
-    "MwsfdPicUserBufferDescriptor::bytesPerFrame offset must be 0x08"
-  );
-  static_assert(sizeof(MwsfdPicUserBufferDescriptor) == 0x0C, "MwsfdPicUserBufferDescriptor size must be 0x0C");
-
-  struct MwsfdPlaybackPicUserView
-  {
-    std::uint8_t mUnknown00[0x178]{};
-    MwsfdPicUserBufferDescriptor* picUserBuffer = nullptr; // +0x178
-  };
-
-  static_assert(
-    offsetof(MwsfdPlaybackPicUserView, picUserBuffer) == 0x178,
-    "MwsfdPlaybackPicUserView::picUserBuffer offset must be 0x178"
-  );
-
-  struct AdxfRuntimeHandleView
+  struct AdxfHandle
   {
     std::uint8_t used = 0; // +0x00
     std::uint8_t status = 0; // +0x01
@@ -5091,86 +5023,86 @@ namespace
     std::int32_t boundRangeSectorCount = 0; // +0x40
   };
 
-  static_assert(offsetof(AdxfRuntimeHandleView, used) == 0x00, "AdxfRuntimeHandleView::used offset must be 0x00");
+  static_assert(offsetof(AdxfHandle, used) == 0x00, "AdxfHandle::used offset must be 0x00");
   static_assert(
-    offsetof(AdxfRuntimeHandleView, status) == 0x01,
-    "AdxfRuntimeHandleView::status offset must be 0x01"
+    offsetof(AdxfHandle, status) == 0x01,
+    "AdxfHandle::status offset must be 0x01"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, sjFlag) == 0x02,
-    "AdxfRuntimeHandleView::sjFlag offset must be 0x02"
+    offsetof(AdxfHandle, sjFlag) == 0x02,
+    "AdxfHandle::sjFlag offset must be 0x02"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, stopWithoutNetworkFlag) == 0x03,
-    "AdxfRuntimeHandleView::stopWithoutNetworkFlag offset must be 0x03"
+    offsetof(AdxfHandle, stopWithoutNetworkFlag) == 0x03,
+    "AdxfHandle::stopWithoutNetworkFlag offset must be 0x03"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, streamHandle) == 0x04,
-    "AdxfRuntimeHandleView::streamHandle offset must be 0x04"
+    offsetof(AdxfHandle, streamHandle) == 0x04,
+    "AdxfHandle::streamHandle offset must be 0x04"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, sourceJoinObject) == 0x08,
-    "AdxfRuntimeHandleView::sourceJoinObject offset must be 0x08"
+    offsetof(AdxfHandle, sourceJoinObject) == 0x08,
+    "AdxfHandle::sourceJoinObject offset must be 0x08"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, fileSizeSectors) == 0x0C,
-    "AdxfRuntimeHandleView::fileSizeSectors offset must be 0x0C"
+    offsetof(AdxfHandle, fileSizeSectors) == 0x0C,
+    "AdxfHandle::fileSizeSectors offset must be 0x0C"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, fileSizeBytes) == 0x10,
-    "AdxfRuntimeHandleView::fileSizeBytes offset must be 0x10"
+    offsetof(AdxfHandle, fileSizeBytes) == 0x10,
+    "AdxfHandle::fileSizeBytes offset must be 0x10"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, readStartSector) == 0x14,
-    "AdxfRuntimeHandleView::readStartSector offset must be 0x14"
+    offsetof(AdxfHandle, readStartSector) == 0x14,
+    "AdxfHandle::readStartSector offset must be 0x14"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, requestSectorStart) == 0x18,
-    "AdxfRuntimeHandleView::requestSectorStart offset must be 0x18"
+    offsetof(AdxfHandle, requestSectorStart) == 0x18,
+    "AdxfHandle::requestSectorStart offset must be 0x18"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, requestSectorCount) == 0x1C,
-    "AdxfRuntimeHandleView::requestSectorCount offset must be 0x1C"
+    offsetof(AdxfHandle, requestSectorCount) == 0x1C,
+    "AdxfHandle::requestSectorCount offset must be 0x1C"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, readProgressSectors) == 0x20,
-    "AdxfRuntimeHandleView::readProgressSectors offset must be 0x20"
+    offsetof(AdxfHandle, readProgressSectors) == 0x20,
+    "AdxfHandle::readProgressSectors offset must be 0x20"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, ocbiCallbackArg0) == 0x24,
-    "AdxfRuntimeHandleView::ocbiCallbackArg0 offset must be 0x24"
+    offsetof(AdxfHandle, ocbiCallbackArg0) == 0x24,
+    "AdxfHandle::ocbiCallbackArg0 offset must be 0x24"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, ocbiCallbackArg1) == 0x28,
-    "AdxfRuntimeHandleView::ocbiCallbackArg1 offset must be 0x28"
+    offsetof(AdxfHandle, ocbiCallbackArg1) == 0x28,
+    "AdxfHandle::ocbiCallbackArg1 offset must be 0x28"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, requestedReadSizeSectors) == 0x2C,
-    "AdxfRuntimeHandleView::requestedReadSizeSectors offset must be 0x2C"
+    offsetof(AdxfHandle, requestedReadSizeSectors) == 0x2C,
+    "AdxfHandle::requestedReadSizeSectors offset must be 0x2C"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, fileStartSector) == 0x30,
-    "AdxfRuntimeHandleView::fileStartSector offset must be 0x30"
+    offsetof(AdxfHandle, fileStartSector) == 0x30,
+    "AdxfHandle::fileStartSector offset must be 0x30"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, fileStartOffset) == 0x34,
-    "AdxfRuntimeHandleView::fileStartOffset offset must be 0x34"
+    offsetof(AdxfHandle, fileStartOffset) == 0x34,
+    "AdxfHandle::fileStartOffset offset must be 0x34"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, boundFileName) == 0x38,
-    "AdxfRuntimeHandleView::boundFileName offset must be 0x38"
+    offsetof(AdxfHandle, boundFileName) == 0x38,
+    "AdxfHandle::boundFileName offset must be 0x38"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, boundRangeStartSector) == 0x3C,
-    "AdxfRuntimeHandleView::boundRangeStartSector offset must be 0x3C"
+    offsetof(AdxfHandle, boundRangeStartSector) == 0x3C,
+    "AdxfHandle::boundRangeStartSector offset must be 0x3C"
   );
   static_assert(
-    offsetof(AdxfRuntimeHandleView, boundRangeSectorCount) == 0x40,
-    "AdxfRuntimeHandleView::boundRangeSectorCount offset must be 0x40"
+    offsetof(AdxfHandle, boundRangeSectorCount) == 0x40,
+    "AdxfHandle::boundRangeSectorCount offset must be 0x40"
   );
-  static_assert(sizeof(AdxfRuntimeHandleView) == 0x44, "AdxfRuntimeHandleView size must be 0x44");
+  static_assert(sizeof(AdxfHandle) == 0x44, "AdxfHandle size must be 0x44");
 
-  struct AdxfPointInfoRuntimeView
+  struct AdxfPointInfo
   {
     std::int32_t mUnknown00 = 0; // +0x00
     std::int32_t pointInfoSizeBytes = 0; // +0x04
@@ -5210,28 +5142,28 @@ namespace
   };
 
   static_assert(
-    offsetof(AdxfPointInfoRuntimeView, pointInfoSizeBytes) == 0x04,
-    "AdxfPointInfoRuntimeView::pointInfoSizeBytes offset must be 0x04"
+    offsetof(AdxfPointInfo, pointInfoSizeBytes) == 0x04,
+    "AdxfPointInfo::pointInfoSizeBytes offset must be 0x04"
   );
   static_assert(
-    offsetof(AdxfPointInfoRuntimeView, fileCount) == 0x08,
-    "AdxfPointInfoRuntimeView::fileCount offset must be 0x08"
+    offsetof(AdxfPointInfo, fileCount) == 0x08,
+    "AdxfPointInfo::fileCount offset must be 0x08"
   );
   static_assert(
-    offsetof(AdxfPointInfoRuntimeView, archiveFileName) == 0x10,
-    "AdxfPointInfoRuntimeView::archiveFileName offset must be 0x10"
+    offsetof(AdxfPointInfo, archiveFileName) == 0x10,
+    "AdxfPointInfo::archiveFileName offset must be 0x10"
   );
   static_assert(
-    offsetof(AdxfPointInfoRuntimeView, fileStartOffsetBytes) == 0x110,
-    "AdxfPointInfoRuntimeView::fileStartOffsetBytes offset must be 0x110"
+    offsetof(AdxfPointInfo, fileStartOffsetBytes) == 0x110,
+    "AdxfPointInfo::fileStartOffsetBytes offset must be 0x110"
   );
   static_assert(
-    offsetof(AdxfPointInfoRuntimeView, rangeBase) == 0x114,
-    "AdxfPointInfoRuntimeView::rangeBase offset must be 0x114"
+    offsetof(AdxfPointInfo, rangeBase) == 0x114,
+    "AdxfPointInfo::rangeBase offset must be 0x114"
   );
   static_assert(
-    offsetof(AdxfPointInfoRuntimeView, rangeTableHeader) == 0x118,
-    "AdxfPointInfoRuntimeView::rangeTableHeader offset must be 0x118"
+    offsetof(AdxfPointInfo, rangeTableHeader) == 0x118,
+    "AdxfPointInfo::rangeTableHeader offset must be 0x118"
   );
 
   constexpr std::size_t kAdxfHandleCount = 16;
@@ -5262,8 +5194,8 @@ namespace
 
   std::int32_t gAdxfInitCount = 0;
   const char* gCriVersionStringAdxf = nullptr;
-  std::array<AdxfRuntimeHandleView, kAdxfHandleCount> gAdxfHandlePool{};
-  std::array<AdxfPointInfoRuntimeView*, kAdxfPointInfoCount> gAdxfPointInfoById{};
+  std::array<AdxfHandle, kAdxfHandleCount> gAdxfHandlePool{};
+  std::array<AdxfPointInfo*, kAdxfPointInfoCount> gAdxfPointInfoById{};
   std::array<AdxfCommandHistoryEntry, kAdxfCommandHistoryCount> gAdxfCommandHistory{};
   std::array<std::uint16_t, 16> gAdxfCommandCallCountById{};
   std::int32_t gAdxfHistoryWriteIndex = 0;
@@ -5275,7 +5207,7 @@ namespace
   std::int32_t gAdxfLoadedPointReadSectors = 0;
   std::int32_t gAdxfLoadedPointLastStatus = 1;
 
-  struct AdxsjdRuntimeView
+  struct AdxsjdState
   {
     std::uint8_t used = 0; // +0x00
     std::int8_t streamFormatClass = 0; // +0x01
@@ -5318,95 +5250,95 @@ namespace
     }
   };
 
-  static_assert(offsetof(AdxsjdRuntimeView, used) == 0x00, "AdxsjdRuntimeView::used offset must be 0x00");
+  static_assert(offsetof(AdxsjdState, used) == 0x00, "AdxsjdState::used offset must be 0x00");
   static_assert(
-    offsetof(AdxsjdRuntimeView, streamFormatClass) == 0x01,
-    "AdxsjdRuntimeView::streamFormatClass offset must be 0x01"
+    offsetof(AdxsjdState, streamFormatClass) == 0x01,
+    "AdxsjdState::streamFormatClass offset must be 0x01"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, outputHandleCount) == 0x02,
-    "AdxsjdRuntimeView::outputHandleCount offset must be 0x02"
+    offsetof(AdxsjdState, outputHandleCount) == 0x02,
+    "AdxsjdState::outputHandleCount offset must be 0x02"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, decodeExecState) == 0x03,
-    "AdxsjdRuntimeView::decodeExecState offset must be 0x03"
+    offsetof(AdxsjdState, decodeExecState) == 0x03,
+    "AdxsjdState::decodeExecState offset must be 0x03"
   );
-  static_assert(offsetof(AdxsjdRuntimeView, adxbHandle) == 0x04, "AdxsjdRuntimeView::adxbHandle offset must be 0x04");
+  static_assert(offsetof(AdxsjdState, adxbHandle) == 0x04, "AdxsjdState::adxbHandle offset must be 0x04");
   static_assert(
-    offsetof(AdxsjdRuntimeView, inputSourceHandle) == 0x08,
-    "AdxsjdRuntimeView::inputSourceHandle offset must be 0x08"
-  );
-  static_assert(
-    offsetof(AdxsjdRuntimeView, outputHandles) == 0x0C,
-    "AdxsjdRuntimeView::outputHandles offset must be 0x0C"
+    offsetof(AdxsjdState, inputSourceHandle) == 0x08,
+    "AdxsjdState::inputSourceHandle offset must be 0x08"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, outputWriteChunks) == 0x1C,
-    "AdxsjdRuntimeView::outputWriteChunks offset must be 0x1C"
+    offsetof(AdxsjdState, outputHandles) == 0x0C,
+    "AdxsjdState::outputHandles offset must be 0x0C"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, decodedSampleCount) == 0x2C,
-    "AdxsjdRuntimeView::decodedSampleCount offset must be 0x2C"
+    offsetof(AdxsjdState, outputWriteChunks) == 0x1C,
+    "AdxsjdState::outputWriteChunks offset must be 0x1C"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, decodedDataLengthBytes) == 0x30,
-    "AdxsjdRuntimeView::decodedDataLengthBytes offset must be 0x30"
+    offsetof(AdxsjdState, decodedSampleCount) == 0x2C,
+    "AdxsjdState::decodedSampleCount offset must be 0x2C"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, decodePositionSamples) == 0x34,
-    "AdxsjdRuntimeView::decodePositionSamples offset must be 0x34"
+    offsetof(AdxsjdState, decodedDataLengthBytes) == 0x30,
+    "AdxsjdState::decodedDataLengthBytes offset must be 0x30"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, maxDecodeSamples) == 0x38,
-    "AdxsjdRuntimeView::maxDecodeSamples offset must be 0x38"
+    offsetof(AdxsjdState, decodePositionSamples) == 0x34,
+    "AdxsjdState::decodePositionSamples offset must be 0x34"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, trapSampleCount) == 0x3C,
-    "AdxsjdRuntimeView::trapSampleCount offset must be 0x3C"
+    offsetof(AdxsjdState, maxDecodeSamples) == 0x38,
+    "AdxsjdState::maxDecodeSamples offset must be 0x38"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, trapCount) == 0x40,
-    "AdxsjdRuntimeView::trapCount offset must be 0x40"
+    offsetof(AdxsjdState, trapSampleCount) == 0x3C,
+    "AdxsjdState::trapSampleCount offset must be 0x3C"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, trapDataLengthBytes) == 0x44,
-    "AdxsjdRuntimeView::trapDataLengthBytes offset must be 0x44"
+    offsetof(AdxsjdState, trapCount) == 0x40,
+    "AdxsjdState::trapCount offset must be 0x40"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, trapCallback) == 0x48,
-    "AdxsjdRuntimeView::trapCallback offset must be 0x48"
+    offsetof(AdxsjdState, trapDataLengthBytes) == 0x44,
+    "AdxsjdState::trapDataLengthBytes offset must be 0x44"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, trapCallbackContext) == 0x4C,
-    "AdxsjdRuntimeView::trapCallbackContext offset must be 0x4C"
+    offsetof(AdxsjdState, trapCallback) == 0x48,
+    "AdxsjdState::trapCallback offset must be 0x48"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, filterCallback) == 0x50,
-    "AdxsjdRuntimeView::filterCallback offset must be 0x50"
+    offsetof(AdxsjdState, trapCallbackContext) == 0x4C,
+    "AdxsjdState::trapCallbackContext offset must be 0x4C"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, filterCallbackContext) == 0x54,
-    "AdxsjdRuntimeView::filterCallbackContext offset must be 0x54"
+    offsetof(AdxsjdState, filterCallback) == 0x50,
+    "AdxsjdState::filterCallback offset must be 0x50"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, headerLengthBytes) == 0x98,
-    "AdxsjdRuntimeView::headerLengthBytes offset must be 0x98"
+    offsetof(AdxsjdState, filterCallbackContext) == 0x54,
+    "AdxsjdState::filterCallbackContext offset must be 0x54"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, linkSwitchEnabled) == 0x9C,
-    "AdxsjdRuntimeView::linkSwitchEnabled offset must be 0x9C"
+    offsetof(AdxsjdState, headerLengthBytes) == 0x98,
+    "AdxsjdState::headerLengthBytes offset must be 0x98"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, positiveSampleAdjust) == 0xA0,
-    "AdxsjdRuntimeView::positiveSampleAdjust offset must be 0xA0"
+    offsetof(AdxsjdState, linkSwitchEnabled) == 0x9C,
+    "AdxsjdState::linkSwitchEnabled offset must be 0x9C"
   );
   static_assert(
-    offsetof(AdxsjdRuntimeView, negativeSampleAdjust) == 0xA4,
-    "AdxsjdRuntimeView::negativeSampleAdjust offset must be 0xA4"
+    offsetof(AdxsjdState, positiveSampleAdjust) == 0xA0,
+    "AdxsjdState::positiveSampleAdjust offset must be 0xA0"
   );
-  static_assert(sizeof(AdxsjdRuntimeView) == 0xA8, "AdxsjdRuntimeView size must be 0xA8");
+  static_assert(
+    offsetof(AdxsjdState, negativeSampleAdjust) == 0xA4,
+    "AdxsjdState::negativeSampleAdjust offset must be 0xA4"
+  );
+  static_assert(sizeof(AdxsjdState) == 0xA8, "AdxsjdState size must be 0xA8");
 
-  AdxsjdRuntimeView gAdxsjdObjectPool[kAdxsjdObjectCount]{};
+  AdxsjdState gAdxsjdObjectPool[kAdxsjdObjectCount]{};
   std::int32_t gAdxsjdInitCount = 0;
 
   struct AdxrnaPanDispatchTable
@@ -5517,35 +5449,35 @@ namespace
     "AdxrnaPanDispatchTable::consumeTransferUnits offset must be 0x60"
   );
 
-  struct AdxrnaOutputRuntimeView
+  struct AdxrnaOutput
   {
     AdxrnaPanDispatchTable* dispatchTable = nullptr; // +0x00
   };
 
-  struct AdxrnaRuntimeView
+  struct AdxrnaState
   {
     std::uint8_t inUse = 0; // +0x00
     std::uint8_t mUnknown01 = 0; // +0x01
     std::uint8_t maxChannelCount = 0; // +0x02
     std::uint8_t channelCount = 0; // +0x03
     std::uint8_t mUnknown04[0x34]{}; // +0x04
-    AdxrnaOutputRuntimeView* outputRuntime = nullptr; // +0x38
+    AdxrnaOutput* outputRuntime = nullptr; // +0x38
     std::uint8_t mUnknown3C[0x28]{}; // +0x3C
     std::int32_t outputPanByChannel[16]{}; // +0x64
   };
 
-  static_assert(offsetof(AdxrnaRuntimeView, maxChannelCount) == 0x02, "AdxrnaRuntimeView::maxChannelCount offset must be 0x02");
-  static_assert(offsetof(AdxrnaRuntimeView, channelCount) == 0x03, "AdxrnaRuntimeView::channelCount offset must be 0x03");
+  static_assert(offsetof(AdxrnaState, maxChannelCount) == 0x02, "AdxrnaState::maxChannelCount offset must be 0x02");
+  static_assert(offsetof(AdxrnaState, channelCount) == 0x03, "AdxrnaState::channelCount offset must be 0x03");
   static_assert(
-    offsetof(AdxrnaRuntimeView, outputRuntime) == 0x38,
-    "AdxrnaRuntimeView::outputRuntime offset must be 0x38"
+    offsetof(AdxrnaState, outputRuntime) == 0x38,
+    "AdxrnaState::outputRuntime offset must be 0x38"
   );
   static_assert(
-    offsetof(AdxrnaRuntimeView, outputPanByChannel) == 0x64,
-    "AdxrnaRuntimeView::outputPanByChannel offset must be 0x64"
+    offsetof(AdxrnaState, outputPanByChannel) == 0x64,
+    "AdxrnaState::outputPanByChannel offset must be 0x64"
   );
 
-  struct AdxrnaTransportRuntimeView
+  struct AdxrnaTransport
   {
     std::uint8_t inUse = 0; // +0x00
     std::uint8_t stateFlags = 0; // +0x01
@@ -5562,7 +5494,7 @@ namespace
     std::int32_t transferWritePosition = 0; // +0x2C
     std::int32_t transferReadPosition = 0; // +0x30
     std::int32_t queuedDataUnits = 0; // +0x34
-    AdxrnaOutputRuntimeView* outputRuntime = nullptr; // +0x38
+    AdxrnaOutput* outputRuntime = nullptr; // +0x38
     std::int32_t pendingTransferUnits = 0; // +0x3C
     std::int32_t restoreWritePosition = 0; // +0x40
     std::int32_t restoreReadPosition = 0; // +0x44
@@ -5581,94 +5513,94 @@ namespace
   };
 
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, stateFlags) == 0x01,
-    "AdxrnaTransportRuntimeView::stateFlags offset must be 0x01"
+    offsetof(AdxrnaTransport, stateFlags) == 0x01,
+    "AdxrnaTransport::stateFlags offset must be 0x01"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, transportResetState) == 0x04,
-    "AdxrnaTransportRuntimeView::transportResetState offset must be 0x04"
+    offsetof(AdxrnaTransport, transportResetState) == 0x04,
+    "AdxrnaTransport::transportResetState offset must be 0x04"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, pendingTransferAck) == 0x05,
-    "AdxrnaTransportRuntimeView::pendingTransferAck offset must be 0x05"
+    offsetof(AdxrnaTransport, pendingTransferAck) == 0x05,
+    "AdxrnaTransport::pendingTransferAck offset must be 0x05"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, decodeControlFlags) == 0x06,
-    "AdxrnaTransportRuntimeView::decodeControlFlags offset must be 0x06"
+    offsetof(AdxrnaTransport, decodeControlFlags) == 0x06,
+    "AdxrnaTransport::decodeControlFlags offset must be 0x06"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, outputSyncPending) == 0x07,
-    "AdxrnaTransportRuntimeView::outputSyncPending offset must be 0x07"
+    offsetof(AdxrnaTransport, outputSyncPending) == 0x07,
+    "AdxrnaTransport::outputSyncPending offset must be 0x07"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, channelCount) == 0x03,
-    "AdxrnaTransportRuntimeView::channelCount offset must be 0x03"
+    offsetof(AdxrnaTransport, channelCount) == 0x03,
+    "AdxrnaTransport::channelCount offset must be 0x03"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, transferWritePosition) == 0x2C,
-    "AdxrnaTransportRuntimeView::transferWritePosition offset must be 0x2C"
+    offsetof(AdxrnaTransport, transferWritePosition) == 0x2C,
+    "AdxrnaTransport::transferWritePosition offset must be 0x2C"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, transferReadPosition) == 0x30,
-    "AdxrnaTransportRuntimeView::transferReadPosition offset must be 0x30"
+    offsetof(AdxrnaTransport, transferReadPosition) == 0x30,
+    "AdxrnaTransport::transferReadPosition offset must be 0x30"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, queuedDataUnits) == 0x34,
-    "AdxrnaTransportRuntimeView::queuedDataUnits offset must be 0x34"
+    offsetof(AdxrnaTransport, queuedDataUnits) == 0x34,
+    "AdxrnaTransport::queuedDataUnits offset must be 0x34"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, outputRuntime) == 0x38,
-    "AdxrnaTransportRuntimeView::outputRuntime offset must be 0x38"
+    offsetof(AdxrnaTransport, outputRuntime) == 0x38,
+    "AdxrnaTransport::outputRuntime offset must be 0x38"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, pendingTransferUnits) == 0x3C,
-    "AdxrnaTransportRuntimeView::pendingTransferUnits offset must be 0x3C"
+    offsetof(AdxrnaTransport, pendingTransferUnits) == 0x3C,
+    "AdxrnaTransport::pendingTransferUnits offset must be 0x3C"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, restoreWritePosition) == 0x40,
-    "AdxrnaTransportRuntimeView::restoreWritePosition offset must be 0x40"
+    offsetof(AdxrnaTransport, restoreWritePosition) == 0x40,
+    "AdxrnaTransport::restoreWritePosition offset must be 0x40"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, restoreReadPosition) == 0x44,
-    "AdxrnaTransportRuntimeView::restoreReadPosition offset must be 0x44"
+    offsetof(AdxrnaTransport, restoreReadPosition) == 0x44,
+    "AdxrnaTransport::restoreReadPosition offset must be 0x44"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, decodeCursorUnits) == 0x48,
-    "AdxrnaTransportRuntimeView::decodeCursorUnits offset must be 0x48"
+    offsetof(AdxrnaTransport, decodeCursorUnits) == 0x48,
+    "AdxrnaTransport::decodeCursorUnits offset must be 0x48"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, decodedDataUnits) == 0x4C,
-    "AdxrnaTransportRuntimeView::decodedDataUnits offset must be 0x4C"
+    offsetof(AdxrnaTransport, decodedDataUnits) == 0x4C,
+    "AdxrnaTransport::decodedDataUnits offset must be 0x4C"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, transferFreezePosition) == 0x50,
-    "AdxrnaTransportRuntimeView::transferFreezePosition offset must be 0x50"
+    offsetof(AdxrnaTransport, transferFreezePosition) == 0x50,
+    "AdxrnaTransport::transferFreezePosition offset must be 0x50"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, transferAccumulatedUnits) == 0x54,
-    "AdxrnaTransportRuntimeView::transferAccumulatedUnits offset must be 0x54"
+    offsetof(AdxrnaTransport, transferAccumulatedUnits) == 0x54,
+    "AdxrnaTransport::transferAccumulatedUnits offset must be 0x54"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, transferCarryUnits) == 0x58,
-    "AdxrnaTransportRuntimeView::transferCarryUnits offset must be 0x58"
+    offsetof(AdxrnaTransport, transferCarryUnits) == 0x58,
+    "AdxrnaTransport::transferCarryUnits offset must be 0x58"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, transferStopPending) == 0x5C,
-    "AdxrnaTransportRuntimeView::transferStopPending offset must be 0x5C"
+    offsetof(AdxrnaTransport, transferStopPending) == 0x5C,
+    "AdxrnaTransport::transferStopPending offset must be 0x5C"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, outputSyncStateWord) == 0x8C,
-    "AdxrnaTransportRuntimeView::outputSyncStateWord offset must be 0x8C"
+    offsetof(AdxrnaTransport, outputSyncStateWord) == 0x8C,
+    "AdxrnaTransport::outputSyncStateWord offset must be 0x8C"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, transitionGuardFlag) == 0x90,
-    "AdxrnaTransportRuntimeView::transitionGuardFlag offset must be 0x90"
+    offsetof(AdxrnaTransport, transitionGuardFlag) == 0x90,
+    "AdxrnaTransport::transitionGuardFlag offset must be 0x90"
   );
   static_assert(
-    offsetof(AdxrnaTransportRuntimeView, serverPendingCount) == 0x98,
-    "AdxrnaTransportRuntimeView::serverPendingCount offset must be 0x98"
+    offsetof(AdxrnaTransport, serverPendingCount) == 0x98,
+    "AdxrnaTransport::serverPendingCount offset must be 0x98"
   );
-  static_assert(sizeof(AdxrnaTransportRuntimeView) == 0xB0, "AdxrnaTransportRuntimeView size must be 0xB0");
+  static_assert(sizeof(AdxrnaTransport) == 0xB0, "AdxrnaTransport size must be 0xB0");
 
   struct AdxrnaDsoundHandlerDispatch
   {
@@ -5677,7 +5609,7 @@ namespace
     std::uintptr_t mUnknown08 = 0; // +0x08
     void(__cdecl* initialize)(IDirectSound8* directSound) = nullptr; // +0x0C
     void(__cdecl* shutdown)() = nullptr; // +0x10
-    AdxrnaOutputRuntimeView*(__cdecl* createOutputRuntime)(std::int32_t channelCount) = nullptr; // +0x14
+    AdxrnaOutput*(__cdecl* createOutputRuntime)(std::int32_t channelCount) = nullptr; // +0x14
   };
 
   static_assert(
@@ -5693,7 +5625,7 @@ namespace
     "AdxrnaDsoundHandlerDispatch::createOutputRuntime offset must be 0x14"
   );
 
-  struct AdxrnaPlaySwitchRuntimeView
+  struct AdxrnaPlaySwitch
   {
     std::uint8_t mUnknown00 = 0; // +0x00
     std::uint8_t stateFlags = 0; // +0x01
@@ -5704,23 +5636,23 @@ namespace
   };
 
   static_assert(
-    offsetof(AdxrnaPlaySwitchRuntimeView, stateFlags) == 0x01,
-    "AdxrnaPlaySwitchRuntimeView::stateFlags offset must be 0x01"
+    offsetof(AdxrnaPlaySwitch, stateFlags) == 0x01,
+    "AdxrnaPlaySwitch::stateFlags offset must be 0x01"
   );
   static_assert(
-    offsetof(AdxrnaPlaySwitchRuntimeView, playSwitch) == 0x94,
-    "AdxrnaPlaySwitchRuntimeView::playSwitch offset must be 0x94"
+    offsetof(AdxrnaPlaySwitch, playSwitch) == 0x94,
+    "AdxrnaPlaySwitch::playSwitch offset must be 0x94"
   );
   static_assert(
-    offsetof(AdxrnaPlaySwitchRuntimeView, appliedPlaySwitch) == 0x98,
-    "AdxrnaPlaySwitchRuntimeView::appliedPlaySwitch offset must be 0x98"
+    offsetof(AdxrnaPlaySwitch, appliedPlaySwitch) == 0x98,
+    "AdxrnaPlaySwitch::appliedPlaySwitch offset must be 0x98"
   );
   static_assert(
-    offsetof(AdxrnaPlaySwitchRuntimeView, stopTransitionPending) == 0x9C,
-    "AdxrnaPlaySwitchRuntimeView::stopTransitionPending offset must be 0x9C"
+    offsetof(AdxrnaPlaySwitch, stopTransitionPending) == 0x9C,
+    "AdxrnaPlaySwitch::stopTransitionPending offset must be 0x9C"
   );
 
-  struct AdxrnaLegacyMetricsRuntimeView
+  struct AdxrnaLegacyMetrics
   {
     std::uint8_t mUnknown00_07[0x08]{}; // +0x00
     std::int32_t queuedDataCount = 0; // +0x08
@@ -5744,71 +5676,71 @@ namespace
   };
 
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, queuedDataCount) == 0x08,
-    "AdxrnaLegacyMetricsRuntimeView::queuedDataCount offset must be 0x08"
+    offsetof(AdxrnaLegacyMetrics, queuedDataCount) == 0x08,
+    "AdxrnaLegacyMetrics::queuedDataCount offset must be 0x08"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, timeScaleBase) == 0x0C,
-    "AdxrnaLegacyMetricsRuntimeView::timeScaleBase offset must be 0x0C"
+    offsetof(AdxrnaLegacyMetrics, timeScaleBase) == 0x0C,
+    "AdxrnaLegacyMetrics::timeScaleBase offset must be 0x0C"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamInfoWord60) == 0x60,
-    "AdxrnaLegacyMetricsRuntimeView::streamInfoWord60 offset must be 0x60"
+    offsetof(AdxrnaLegacyMetrics, streamInfoWord60) == 0x60,
+    "AdxrnaLegacyMetrics::streamInfoWord60 offset must be 0x60"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamInfoWords64) == 0x64,
-    "AdxrnaLegacyMetricsRuntimeView::streamInfoWords64 offset must be 0x64"
+    offsetof(AdxrnaLegacyMetrics, streamInfoWords64) == 0x64,
+    "AdxrnaLegacyMetrics::streamInfoWords64 offset must be 0x64"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamInfoWord6C) == 0x6C,
-    "AdxrnaLegacyMetricsRuntimeView::streamInfoWord6C offset must be 0x6C"
+    offsetof(AdxrnaLegacyMetrics, streamInfoWord6C) == 0x6C,
+    "AdxrnaLegacyMetrics::streamInfoWord6C offset must be 0x6C"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamInfoWord70) == 0x70,
-    "AdxrnaLegacyMetricsRuntimeView::streamInfoWord70 offset must be 0x70"
+    offsetof(AdxrnaLegacyMetrics, streamInfoWord70) == 0x70,
+    "AdxrnaLegacyMetrics::streamInfoWord70 offset must be 0x70"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamInfoWord74) == 0x74,
-    "AdxrnaLegacyMetricsRuntimeView::streamInfoWord74 offset must be 0x74"
+    offsetof(AdxrnaLegacyMetrics, streamInfoWord74) == 0x74,
+    "AdxrnaLegacyMetrics::streamInfoWord74 offset must be 0x74"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, transposeOctaves) == 0x78,
-    "AdxrnaLegacyMetricsRuntimeView::transposeOctaves offset must be 0x78"
+    offsetof(AdxrnaLegacyMetrics, transposeOctaves) == 0x78,
+    "AdxrnaLegacyMetrics::transposeOctaves offset must be 0x78"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, transposeCents) == 0x7C,
-    "AdxrnaLegacyMetricsRuntimeView::transposeCents offset must be 0x7C"
+    offsetof(AdxrnaLegacyMetrics, transposeCents) == 0x7C,
+    "AdxrnaLegacyMetrics::transposeCents offset must be 0x7C"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamHeaderLane3Word0) == 0x80,
-    "AdxrnaLegacyMetricsRuntimeView::streamHeaderLane3Word0 offset must be 0x80"
+    offsetof(AdxrnaLegacyMetrics, streamHeaderLane3Word0) == 0x80,
+    "AdxrnaLegacyMetrics::streamHeaderLane3Word0 offset must be 0x80"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamHeaderLane3Word1) == 0x84,
-    "AdxrnaLegacyMetricsRuntimeView::streamHeaderLane3Word1 offset must be 0x84"
+    offsetof(AdxrnaLegacyMetrics, streamHeaderLane3Word1) == 0x84,
+    "AdxrnaLegacyMetrics::streamHeaderLane3Word1 offset must be 0x84"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamInfoWord88) == 0x88,
-    "AdxrnaLegacyMetricsRuntimeView::streamInfoWord88 offset must be 0x88"
+    offsetof(AdxrnaLegacyMetrics, streamInfoWord88) == 0x88,
+    "AdxrnaLegacyMetrics::streamInfoWord88 offset must be 0x88"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, streamInfoWordA0) == 0xA0,
-    "AdxrnaLegacyMetricsRuntimeView::streamInfoWordA0 offset must be 0xA0"
+    offsetof(AdxrnaLegacyMetrics, streamInfoWordA0) == 0xA0,
+    "AdxrnaLegacyMetrics::streamInfoWordA0 offset must be 0xA0"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, appliedOutputVolume) == 0xA4,
-    "AdxrnaLegacyMetricsRuntimeView::appliedOutputVolume offset must be 0xA4"
+    offsetof(AdxrnaLegacyMetrics, appliedOutputVolume) == 0xA4,
+    "AdxrnaLegacyMetrics::appliedOutputVolume offset must be 0xA4"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, calculatedSampleRate) == 0xA8,
-    "AdxrnaLegacyMetricsRuntimeView::calculatedSampleRate offset must be 0xA8"
+    offsetof(AdxrnaLegacyMetrics, calculatedSampleRate) == 0xA8,
+    "AdxrnaLegacyMetrics::calculatedSampleRate offset must be 0xA8"
   );
   static_assert(
-    offsetof(AdxrnaLegacyMetricsRuntimeView, appliedSampleRate) == 0xAC,
-    "AdxrnaLegacyMetricsRuntimeView::appliedSampleRate offset must be 0xAC"
+    offsetof(AdxrnaLegacyMetrics, appliedSampleRate) == 0xAC,
+    "AdxrnaLegacyMetrics::appliedSampleRate offset must be 0xAC"
   );
 
-  struct AdxrnaStateControlRuntimeView
+  struct AdxrnaStateControl
   {
     std::uint8_t mUnknown00 = 0; // +0x00
     std::uint8_t stateByte = 0; // +0x01
@@ -5817,23 +5749,23 @@ namespace
   };
 
   static_assert(
-    offsetof(AdxrnaStateControlRuntimeView, stateByte) == 0x01,
-    "AdxrnaStateControlRuntimeView::stateByte offset must be 0x01"
+    offsetof(AdxrnaStateControl, stateByte) == 0x01,
+    "AdxrnaStateControl::stateByte offset must be 0x01"
   );
   static_assert(
-    offsetof(AdxrnaStateControlRuntimeView, flowLimitWord) == 0x44,
-    "AdxrnaStateControlRuntimeView::flowLimitWord offset must be 0x44"
+    offsetof(AdxrnaStateControl, flowLimitWord) == 0x44,
+    "AdxrnaStateControl::flowLimitWord offset must be 0x44"
   );
 
-  struct AdxtPanCacheRuntimeView
+  struct AdxtPanCache
   {
     std::uint8_t mUnknown00[0x42]{}; // +0x00
     std::int16_t requestedPanByChannel[16]{}; // +0x42
   };
 
   static_assert(
-    offsetof(AdxtPanCacheRuntimeView, requestedPanByChannel) == 0x42,
-    "AdxtPanCacheRuntimeView::requestedPanByChannel offset must be 0x42"
+    offsetof(AdxtPanCache, requestedPanByChannel) == 0x42,
+    "AdxtPanCache::requestedPanByChannel offset must be 0x42"
   );
 
   using SofdecReportCallback = std::int32_t(__cdecl*)(std::int32_t callbackContext, const char* message);
@@ -5862,7 +5794,7 @@ namespace
   std::int32_t gAdxrnaInitCount = 0;
   IDirectSound8* gAdxrnaDirectSound8 = nullptr;
   constexpr std::size_t kAdxrnaRuntimeObjectCount = 32;
-  std::array<AdxrnaTransportRuntimeView, kAdxrnaRuntimeObjectCount> gAdxrnaRuntimePool{};
+  std::array<AdxrnaTransport, kAdxrnaRuntimeObjectCount> gAdxrnaRuntimePool{};
   std::array<std::uint8_t, 0x820> gAdxrnaScratchStateA{};
   std::array<std::uint8_t, 0x800> gAdxrnaScratchStateB{};
   AdxrnaDsoundHandlerDispatch* gAdxrnaDsoundHandler = nullptr;
@@ -5879,41 +5811,41 @@ namespace
     return pointer + (4u - misalignment);
   }
 
-  [[nodiscard]] AdxsjdRuntimeView* AsAdxsjdRuntimeView(const std::int32_t sjdHandle)
+  [[nodiscard]] AdxsjdState* AdxsjdStateOf(const SofdecAddressWord sjdHandle)
   {
-    return reinterpret_cast<AdxsjdRuntimeView*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(sjdHandle)));
+    return reinterpret_cast<AdxsjdState*>(static_cast<std::uintptr_t>(sjdHandle));
   }
 
-  [[nodiscard]] AdxrnaRuntimeView* AsAdxrnaRuntimeView(const std::int32_t rnaHandle)
+  [[nodiscard]] AdxrnaState* AdxrnaStateOf(const SofdecAddressWord rnaHandle)
   {
-    return reinterpret_cast<AdxrnaRuntimeView*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(rnaHandle)));
+    return reinterpret_cast<AdxrnaState*>(static_cast<std::uintptr_t>(rnaHandle));
   }
 
-  [[nodiscard]] AdxrnaTransportRuntimeView* AsAdxrnaTransportRuntimeView(const std::int32_t rnaHandle)
+  [[nodiscard]] AdxrnaTransport* AdxrnaTransportOf(const SofdecAddressWord rnaHandle)
   {
-    return reinterpret_cast<AdxrnaTransportRuntimeView*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(rnaHandle))
+    return reinterpret_cast<AdxrnaTransport*>(
+      static_cast<std::uintptr_t>(rnaHandle)
     );
   }
 
-  [[nodiscard]] AdxrnaPlaySwitchRuntimeView* AsAdxrnaPlaySwitchRuntimeView(const std::int32_t rnaHandle)
+  [[nodiscard]] AdxrnaPlaySwitch* AdxrnaPlaySwitchOf(const SofdecAddressWord rnaHandle)
   {
-    return reinterpret_cast<AdxrnaPlaySwitchRuntimeView*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(rnaHandle))
+    return reinterpret_cast<AdxrnaPlaySwitch*>(
+      static_cast<std::uintptr_t>(rnaHandle)
     );
   }
 
-  [[nodiscard]] AdxrnaLegacyMetricsRuntimeView* AsAdxrnaLegacyMetricsRuntimeView(const std::int32_t rnaHandle)
+  [[nodiscard]] AdxrnaLegacyMetrics* AdxrnaLegacyMetricsOf(const SofdecAddressWord rnaHandle)
   {
-    return reinterpret_cast<AdxrnaLegacyMetricsRuntimeView*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(rnaHandle))
+    return reinterpret_cast<AdxrnaLegacyMetrics*>(
+      static_cast<std::uintptr_t>(rnaHandle)
     );
   }
 
-  [[nodiscard]] AdxrnaStateControlRuntimeView* AsAdxrnaStateControlRuntimeView(const std::int32_t rnaHandle)
+  [[nodiscard]] AdxrnaStateControl* AdxrnaStateControlOf(const SofdecAddressWord rnaHandle)
   {
-    return reinterpret_cast<AdxrnaStateControlRuntimeView*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(rnaHandle))
+    return reinterpret_cast<AdxrnaStateControl*>(
+      static_cast<std::uintptr_t>(rnaHandle)
     );
   }
 
@@ -5927,7 +5859,7 @@ namespace
     {
     }
 
-    AdxrnaOutputRuntimeView* __cdecl AdxrnaDsoundNoOpCreateOutputRuntime(std::int32_t)
+    AdxrnaOutput* __cdecl AdxrnaDsoundNoOpCreateOutput(std::int32_t)
     {
       return nullptr;
     }
@@ -5938,7 +5870,7 @@ namespace
       0,
       &AdxrnaDsoundNoOpInitialize,
       &AdxrnaDsoundNoOpShutdown,
-      &AdxrnaDsoundNoOpCreateOutputRuntime
+      &AdxrnaDsoundNoOpCreateOutput
     };
   } // namespace
 
@@ -5986,11 +5918,11 @@ namespace
   }
 
   [[nodiscard]] std::int16_t ResolveAdxsjdDefaultPanLane(
-    const std::int32_t sjdHandle,
+    const SofdecAddressWord sjdHandle,
     const std::int32_t channelIndex
   )
   {
-    auto* const sjdRuntime = AsAdxsjdRuntimeView(sjdHandle);
+    auto* const sjdRuntime = AdxsjdStateOf(sjdHandle);
     if (
       ADXB_GetAinfLen(sjdRuntime->adxbHandle) > 0
       && (sjdRuntime->streamFormatClass == 2u || sjdRuntime->streamFormatClass == 3u)
@@ -6000,9 +5932,9 @@ namespace
     return -128;
   }
 
-  [[nodiscard]] std::int32_t ResolveAdxsjdChannelCount(const std::int32_t sjdHandle)
+  [[nodiscard]] std::int32_t ResolveAdxsjdChannelCount(const SofdecAddressWord sjdHandle)
   {
-    return ADXB_GetNumChan(AsAdxsjdRuntimeView(sjdHandle)->adxbHandle);
+    return ADXB_GetNumChan(AdxsjdStateOf(sjdHandle)->adxbHandle);
   }
 
   // `SetAdxrnaOutputPan` used to live here as an unaddressed duplicate of
@@ -6023,13 +5955,13 @@ namespace
     void* callbackOwner,
     std::int32_t channelIndex,
     std::int32_t startUnit,
-    std::int32_t sourceAddress,
+    SofdecAddressWord sourceAddress,
     std::int32_t transferUnits
   );
 
   struct MwlRnaTransferSinkVtable
   {
-    std::uint8_t mUnknown00[0x54]{};
+    void(__cdecl* reservedSlots[21])(){}; // +0x00 slots this lane never reaches
     MwlRnaTransferChunkFn transferChunk = nullptr; // +0x54
   };
 
@@ -6048,7 +5980,7 @@ namespace
     "MwlRnaTransferSink::dispatchTable offset must be 0x00"
   );
 
-  struct MwlRnaRuntimeView
+  struct MwlRna
   {
     std::uint8_t inUse = 0; // +0x00
     std::uint8_t stateFlags = 0; // +0x01
@@ -6075,66 +6007,66 @@ namespace
     std::int32_t transferIssuedFlag = 0; // +0x5C
   };
 
-  static_assert(offsetof(MwlRnaRuntimeView, channelCount) == 0x03, "MwlRnaRuntimeView::channelCount offset must be 0x03");
+  static_assert(offsetof(MwlRna, channelCount) == 0x03, "MwlRna::channelCount offset must be 0x03");
   static_assert(
-    offsetof(MwlRnaRuntimeView, pendingTransferAck) == 0x05,
-    "MwlRnaRuntimeView::pendingTransferAck offset must be 0x05"
+    offsetof(MwlRna, pendingTransferAck) == 0x05,
+    "MwlRna::pendingTransferAck offset must be 0x05"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, outputSyncPending) == 0x07,
-    "MwlRnaRuntimeView::outputSyncPending offset must be 0x07"
+    offsetof(MwlRna, outputSyncPending) == 0x07,
+    "MwlRna::outputSyncPending offset must be 0x07"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, bitsPerSample) == 0x08,
-    "MwlRnaRuntimeView::bitsPerSample offset must be 0x08"
+    offsetof(MwlRna, bitsPerSample) == 0x08,
+    "MwlRna::bitsPerSample offset must be 0x08"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, channelSjHandle0) == 0x20,
-    "MwlRnaRuntimeView::channelSjHandle0 offset must be 0x20"
+    offsetof(MwlRna, channelSjHandle0) == 0x20,
+    "MwlRna::channelSjHandle0 offset must be 0x20"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, channelSjHandle1) == 0x24,
-    "MwlRnaRuntimeView::channelSjHandle1 offset must be 0x24"
+    offsetof(MwlRna, channelSjHandle1) == 0x24,
+    "MwlRna::channelSjHandle1 offset must be 0x24"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferCapacityBytes) == 0x28,
-    "MwlRnaRuntimeView::transferCapacityBytes offset must be 0x28"
+    offsetof(MwlRna, transferCapacityBytes) == 0x28,
+    "MwlRna::transferCapacityBytes offset must be 0x28"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferWriteCursor) == 0x2C,
-    "MwlRnaRuntimeView::transferWriteCursor offset must be 0x2C"
+    offsetof(MwlRna, transferWriteCursor) == 0x2C,
+    "MwlRna::transferWriteCursor offset must be 0x2C"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferReadCursor) == 0x30,
-    "MwlRnaRuntimeView::transferReadCursor offset must be 0x30"
+    offsetof(MwlRna, transferReadCursor) == 0x30,
+    "MwlRna::transferReadCursor offset must be 0x30"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferConsumedBytes) == 0x34,
-    "MwlRnaRuntimeView::transferConsumedBytes offset must be 0x34"
+    offsetof(MwlRna, transferConsumedBytes) == 0x34,
+    "MwlRna::transferConsumedBytes offset must be 0x34"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferCallbackOwner) == 0x38,
-    "MwlRnaRuntimeView::transferCallbackOwner offset must be 0x38"
+    offsetof(MwlRna, transferCallbackOwner) == 0x38,
+    "MwlRna::transferCallbackOwner offset must be 0x38"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, lastTransferUnits) == 0x3C,
-    "MwlRnaRuntimeView::lastTransferUnits offset must be 0x3C"
+    offsetof(MwlRna, lastTransferUnits) == 0x3C,
+    "MwlRna::lastTransferUnits offset must be 0x3C"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferFreezePosition) == 0x50,
-    "MwlRnaRuntimeView::transferFreezePosition offset must be 0x50"
+    offsetof(MwlRna, transferFreezePosition) == 0x50,
+    "MwlRna::transferFreezePosition offset must be 0x50"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferAccumulatedUnits) == 0x54,
-    "MwlRnaRuntimeView::transferAccumulatedUnits offset must be 0x54"
+    offsetof(MwlRna, transferAccumulatedUnits) == 0x54,
+    "MwlRna::transferAccumulatedUnits offset must be 0x54"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferCarryUnits) == 0x58,
-    "MwlRnaRuntimeView::transferCarryUnits offset must be 0x58"
+    offsetof(MwlRna, transferCarryUnits) == 0x58,
+    "MwlRna::transferCarryUnits offset must be 0x58"
   );
   static_assert(
-    offsetof(MwlRnaRuntimeView, transferIssuedFlag) == 0x5C,
-    "MwlRnaRuntimeView::transferIssuedFlag offset must be 0x5C"
+    offsetof(MwlRna, transferIssuedFlag) == 0x5C,
+    "MwlRna::transferIssuedFlag offset must be 0x5C"
   );
 
   std::int32_t gMwlRnaChunkScratch0 = 0;
@@ -6147,10 +6079,10 @@ namespace
    * Dispatches one RNA transfer callback chunk and marks transfer-issued lane.
    */
   std::int32_t mwlRnaDispatchTransferChunk(
-    MwlRnaRuntimeView* const runtime,
+    MwlRna* const runtime,
     const std::int32_t channelIndex,
     const std::int32_t startUnit,
-    const std::int32_t sourceAddress,
+    const SofdecAddressWord sourceAddress,
     const std::int32_t transferUnits
   )
   {
@@ -6171,7 +6103,7 @@ namespace
    * Pulls per-channel source chunks, computes aligned transferable unit count,
    * dispatches transfer callback lanes, then returns split chunks to SJ lanes.
    */
-  std::int32_t mwlRnaStartTrans(MwlRnaRuntimeView* const runtime)
+  std::int32_t mwlRnaStartTrans(MwlRna* const runtime)
   {
     if (runtime == nullptr || runtime->bitsPerSample <= 0) {
       return 0;
@@ -6241,8 +6173,8 @@ namespace
           &headChunk,
           &tailChunk
         );
-        sjHandle->dispatchTable->submitChunk(sjHandle, 0, &headChunk);
-        sjHandle->dispatchTable->putChunk(sjHandle, 1, &tailChunk);
+        sjHandle->dispatchTable->putChunk(sjHandle, 0, &headChunk);
+        sjHandle->dispatchTable->ungetChunk(sjHandle, 1, &tailChunk);
       }
 
       runtime->lastTransferUnits = transferredUnits;
@@ -6256,7 +6188,7 @@ namespace
         CRIERR_CallErr(kMwlRnaStartTransNullSjMessage);
       }
 
-      sjHandle->dispatchTable->putChunk(sjHandle, 1, &sourceChunks[static_cast<std::size_t>(channelIndex)]);
+      sjHandle->dispatchTable->ungetChunk(sjHandle, 1, &sourceChunks[static_cast<std::size_t>(channelIndex)]);
     }
 
     return 0;
@@ -6279,10 +6211,10 @@ namespace
    * Samples output transfer-read cursor, aligns it to transfer stride, then
    * reconciles queued/decode cursor lanes under RNA critical section.
    */
-  [[maybe_unused]] void adxrna_UpdateTransferReadState(const std::int32_t rnaHandle)
+  [[maybe_unused]] void adxrna_UpdateTransferReadState(const SofdecAddressWord rnaHandle)
   {
-    auto* const runtime = AsAdxrnaTransportRuntimeView(rnaHandle);
-    auto* const mwlRuntime = reinterpret_cast<MwlRnaRuntimeView*>(runtime);
+    auto* const runtime = AdxrnaTransportOf(rnaHandle);
+    auto* const mwlRuntime = reinterpret_cast<MwlRna*>(runtime);
 
     const std::int32_t previousReadCursor = runtime->transferReadPosition;
     const std::int32_t outputReadCursor = runtime->outputRuntime->dispatchTable->queryTransferReadCursor(runtime->outputRuntime, 0);
@@ -6330,7 +6262,7 @@ namespace
   {
     for (auto& runtime : gAdxrnaRuntimePool) {
       if (runtime.inUse == 1u) {
-        ADXRNA_ExecHndl(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&runtime)));
+        ADXRNA_ExecHndl(static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&runtime)));
       }
     }
   }
@@ -6341,14 +6273,14 @@ namespace
    * What it does:
    * Sets decode-control pending byte lane (`+0x06`) on one RNA runtime.
    */
-  [[maybe_unused]] AdxrnaTransportRuntimeView* adxrna_SetDecodeControlPending(const std::int32_t rnaHandle)
+  [[maybe_unused]] AdxrnaTransport* adxrna_SetDecodeControlPending(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return nullptr;
     }
 
-    auto* const runtime = AsAdxrnaTransportRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaTransportOf(rnaHandle);
     if (runtime->decodeControlFlags != 1u) {
       runtime->decodeControlFlags = 1u;
     }
@@ -6361,7 +6293,7 @@ namespace
    * What it does:
    * Returns the first free ADXRNA runtime object from the global pool.
    */
-  [[maybe_unused]] AdxrnaTransportRuntimeView* adxrna_GetNextFreeRuntimeObject()
+  [[maybe_unused]] AdxrnaTransport* adxrna_GetNextFreeInstance()
   {
     for (auto& runtime : gAdxrnaRuntimePool) {
       if (runtime.inUse == 0u) {
@@ -6378,7 +6310,7 @@ namespace
    * Resets one ADXRNA runtime object's transport/metrics control lanes to the
    * legacy create-time defaults.
    */
-  [[maybe_unused]] AdxrnaTransportRuntimeView* adxrna_ResetRuntimeDefaults(AdxrnaTransportRuntimeView* const runtime)
+  [[maybe_unused]] AdxrnaTransport* adxrna_ResetDefaults(AdxrnaTransport* const runtime)
   {
     runtime->stateFlags = 0;
     runtime->transportResetState = 0;
@@ -6391,7 +6323,7 @@ namespace
     runtime->restoreReadPosition = 0x2000;
     runtime->decodeCursorUnits = 0;
 
-    auto* const metricsRuntime = reinterpret_cast<AdxrnaLegacyMetricsRuntimeView*>(runtime);
+    auto* const metricsRuntime = reinterpret_cast<AdxrnaLegacyMetrics*>(runtime);
     metricsRuntime->streamInfoWord60 = 0;
     metricsRuntime->streamInfoWord6C = 0;
     metricsRuntime->streamInfoWord70 = 0;
@@ -6419,7 +6351,7 @@ namespace
     adxrna_GetTime = getTimeCallback;
   }
 
-  [[maybe_unused]] void adxrna_CommitOutputSyncState(const std::int32_t rnaHandle);
+  [[maybe_unused]] void adxrna_CommitOutputSyncState(const SofdecAddressWord rnaHandle);
 
   /**
    * Address: 0x00B15370 (FUN_00B15370, sub_B15370)
@@ -6428,7 +6360,7 @@ namespace
    * Dispatches one aligned silent transfer chunk from ADXRNA scratch lanes and
    * stores returned carry units for later cursor reconciliation.
    */
-  [[maybe_unused]] std::int32_t mwlRnaDispatchScratchTransfer(MwlRnaRuntimeView* const runtime)
+  [[maybe_unused]] std::int32_t mwlRnaDispatchScratchTransfer(MwlRna* const runtime)
   {
     const std::int32_t bitsPerSample = runtime->bitsPerSample;
     const std::int32_t transferCapacityBytes = runtime->transferCapacityBytes;
@@ -6458,7 +6390,7 @@ namespace
 
     const std::uintptr_t scratchAddressAligned
       = (reinterpret_cast<std::uintptr_t>(scratchBase + 32u)) & static_cast<std::uintptr_t>(~0x1Fu);
-    const std::int32_t scratchWordAddress = static_cast<std::int32_t>(scratchAddressAligned);
+    const SofdecAddressWord scratchWordAddress = static_cast<std::int32_t>(scratchAddressAligned);
 
     const std::int32_t channelCount = static_cast<std::int32_t>(runtime->channelCount);
     if (channelCount > 0) {
@@ -6484,10 +6416,10 @@ namespace
    * Reconciles desired play/volume/sample-rate control lanes with output runtime
    * dispatch state and updates applied-value mirrors.
    */
-  [[maybe_unused]] std::int32_t adxrna_SyncOutputControlLanes(AdxrnaTransportRuntimeView* const runtime)
+  [[maybe_unused]] std::int32_t adxrna_SyncOutputControlLanes(AdxrnaTransport* const runtime)
   {
-    auto* const playSwitchRuntime = reinterpret_cast<AdxrnaPlaySwitchRuntimeView*>(runtime);
-    auto* const metricsRuntime = reinterpret_cast<AdxrnaLegacyMetricsRuntimeView*>(runtime);
+    auto* const playSwitchRuntime = reinterpret_cast<AdxrnaPlaySwitch*>(runtime);
+    auto* const metricsRuntime = reinterpret_cast<AdxrnaLegacyMetrics*>(runtime);
     const std::int32_t requestedPlaySwitch = playSwitchRuntime->playSwitch;
     const std::int32_t appliedPlaySwitch = playSwitchRuntime->appliedPlaySwitch;
 
@@ -6519,7 +6451,7 @@ namespace
       metricsRuntime->appliedOutputVolume = metricsRuntime->streamInfoWordA0;
     }
 
-    std::int32_t result = metricsRuntime->appliedSampleRate;
+    SofdecAddressWord result = metricsRuntime->appliedSampleRate;
     if (metricsRuntime->calculatedSampleRate != metricsRuntime->appliedSampleRate) {
       runtime->outputRuntime->dispatchTable->setLaneWordPair(runtime->outputRuntime, 5, metricsRuntime->calculatedSampleRate, 0);
       result = metricsRuntime->calculatedSampleRate;
@@ -6537,7 +6469,7 @@ namespace
    */
   [[maybe_unused]] std::int32_t adxrna_SetPauseAllState(const std::int32_t pauseAllEnabled)
   {
-    std::int32_t result = gAdxrnaPauseAllState;
+    SofdecAddressWord result = gAdxrnaPauseAllState;
     if (pauseAllEnabled == 1) {
       if (gAdxrnaPauseAllState != 1) {
         gAdxrnaPauseAllState = 1;
@@ -6549,7 +6481,7 @@ namespace
       }
     } else if (gAdxrnaPauseAllState != 0) {
       for (auto& runtime : gAdxrnaRuntimePool) {
-        const std::int32_t rnaHandle = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(&runtime));
+        const SofdecAddressWord rnaHandle = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(&runtime));
         result = rnaHandle;
         if (runtime.inUse == 1u) {
           result = static_cast<std::int32_t>((runtime.stateFlags >> 1) & 1u);
@@ -6581,14 +6513,14 @@ namespace
    * Latches output-sync request state and runs one immediate sync pass for the
    * target RNA handle.
    */
-  [[maybe_unused]] void adxrna_RequestOutputSyncPass(const std::int32_t rnaHandle)
+  [[maybe_unused]] void adxrna_RequestOutputSyncPass(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return;
     }
 
-    auto* const runtime = AsAdxrnaTransportRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaTransportOf(rnaHandle);
     CRICRS_Enter();
     if (runtime->outputSyncPending == 0u) {
       const std::int32_t playEnabled = static_cast<std::int32_t>((runtime->stateFlags >> 1) & 1u);
@@ -6637,18 +6569,18 @@ namespace
    * Completes one pending output-sync pass and restores play-switch lane when
    * latched sync state requires active playback.
    */
-  [[maybe_unused]] void adxrna_CompleteOutputSyncPass(const std::int32_t rnaHandle)
+  [[maybe_unused]] void adxrna_CompleteOutputSyncPass(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return;
     }
 
-    auto* const runtime = AsAdxrnaTransportRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaTransportOf(rnaHandle);
     CRICRS_Enter();
     if (runtime->outputSyncPending == 1u) {
       if (runtime->outputSyncStateWord >= 2) {
-        auto* const playSwitchRuntime = AsAdxrnaPlaySwitchRuntimeView(rnaHandle);
+        auto* const playSwitchRuntime = AdxrnaPlaySwitchOf(rnaHandle);
         playSwitchRuntime->playSwitch = 1;
         if (((playSwitchRuntime->stateFlags >> 1) & 1u) != 1u) {
           playSwitchRuntime->stateFlags = static_cast<std::uint8_t>(playSwitchRuntime->stateFlags | 0x02u);
@@ -6665,10 +6597,10 @@ namespace
    * What it does:
    * Returns ADXRNA output-sync-pending flag.
    */
-  [[maybe_unused]] std::int32_t adxrna_IsOutputSyncPending(const std::int32_t rnaHandle)
+  [[maybe_unused]] std::int32_t adxrna_IsOutputSyncPending(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle != 0) {
-      return static_cast<std::int32_t>(AsAdxrnaTransportRuntimeView(rnaHandle)->outputSyncPending);
+      return static_cast<std::int32_t>(AdxrnaTransportOf(rnaHandle)->outputSyncPending);
     }
 
     CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
@@ -6682,14 +6614,14 @@ namespace
    * Commits one pending transfer/output sync pass, reconciling transport cursor
    * lanes from output-consumed unit counts.
    */
-  [[maybe_unused]] void adxrna_CommitOutputSyncState(const std::int32_t rnaHandle)
+  [[maybe_unused]] void adxrna_CommitOutputSyncState(const SofdecAddressWord rnaHandle)
   {
     if (rnaHandle == 0) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
       return;
     }
 
-    auto* const runtime = AsAdxrnaTransportRuntimeView(rnaHandle);
+    auto* const runtime = AdxrnaTransportOf(rnaHandle);
     CRICRS_Enter();
     if (runtime->pendingTransferAck == 1u) {
       if ((runtime->stateFlags & 0x01u) != 0u) {
@@ -6743,7 +6675,7 @@ namespace
    * Validates requested RNA channel count against runtime max-channel lane,
    * stores active count, and forwards the update to the output runtime bridge.
    */
-  void __cdecl mwRnaSetNumChan(AdxrnaRuntimeView* const runtime, const std::int32_t channelCount)
+  void __cdecl mwRnaSetNumChan(AdxrnaState* const runtime, const std::int32_t channelCount)
   {
     if (runtime == nullptr) {
       CRIERR_CallErr(kAdxrnaIllegalParameterMessage);
@@ -6775,19 +6707,19 @@ namespace
   }
 
   template <typename T>
-  [[nodiscard]] T* M2aWordToPtr(const std::int32_t addressWord)
+  [[nodiscard]] T* M2aWordToPtr(const SofdecAddressWord addressWord)
   {
-    return reinterpret_cast<T*>(static_cast<std::uintptr_t>(static_cast<std::uint32_t>(addressWord)));
+    return reinterpret_cast<T*>(static_cast<std::uintptr_t>(addressWord));
   }
 
-  [[nodiscard]] std::int32_t M2aPtrToWord(const void* pointer)
+  [[nodiscard]] SofdecAddressWord M2aPtrToWord(const void* pointer)
   {
-    return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(pointer));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(pointer));
   }
 
-  [[nodiscard]] void* M2aAllocFromHeap(const std::int32_t heapManagerHandle, const SIZE_T byteCount)
+  [[nodiscard]] void* M2aAllocFromHeap(const SofdecAddressWord heapManagerHandle, const SIZE_T byteCount)
   {
-    int allocatedPointer = 0;
+    SofdecAddressWord allocatedPointer = 0;
     if (heapManagerHandle != 0 && HEAPMNG_Allocate(heapManagerHandle, byteCount, &allocatedPointer) >= 0) {
       return M2aWordToPtr<void>(allocatedPointer);
     }
@@ -6928,6 +6860,7 @@ namespace
       }
 
       scratch[coefficientIndex] = decodedCoefficients[coefficientIndex - 1];
+      // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
       std::memcpy(coefficients, scratch, static_cast<std::size_t>(coefficientIndex + 1) * sizeof(float));
     }
   }
@@ -7234,14 +7167,14 @@ namespace
     return static_cast<std::int32_t>(static_cast<double>(static_cast<std::uint32_t>(micros)) * scale);
   }
 
-  [[nodiscard]] MparbfRuntimeBuffer* AsMparbfRuntimeBuffer(const std::int32_t handleAddress)
+  [[nodiscard]] MparbfBuffer* AsMparbfBuffer(const SofdecAddressWord handleAddress)
   {
-    return reinterpret_cast<MparbfRuntimeBuffer*>(
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(handleAddress))
+    return reinterpret_cast<MparbfBuffer*>(
+      static_cast<std::uintptr_t>(handleAddress)
     );
   }
 
-  void M2aFreeHeapAllocation(const std::int32_t heapManagerHandle, void* allocation)
+  void M2aFreeHeapAllocation(const SofdecAddressWord heapManagerHandle, void* allocation)
   {
     if (allocation != nullptr) {
       HEAPMNG_Free(heapManagerHandle, M2aPtrToWord(allocation));

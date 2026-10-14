@@ -17,7 +17,8 @@ namespace gpg
 
 namespace moho
 {
-  struct SEntitySetTemplateUnit;
+  template <class T>
+  class EntitySetTemplate;
   class Unit;
 
   class CUnitAssistMoveTask final : public CCommandTask
@@ -64,7 +65,7 @@ namespace moho
      * Deserializes base command-task, dispatch pointer, move-goal payload,
      * goal world-position vector, and pathfinding-candidate flag.
      */
-    static void MemberDeserialize(gpg::ReadArchive* archive, CUnitAssistMoveTask* task, int version, gpg::RRef* ownerRef);
+    void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
 
     /**
      * Address: 0x005F2010 (FUN_005F2010, CUnitAssistMoveTask serializer save callback body)
@@ -73,9 +74,7 @@ namespace moho
      * Serializes base command-task, dispatch pointer, move-goal payload,
      * goal world-position vector, and pathfinding-candidate flag.
      */
-    static void MemberSerialize(
-      gpg::WriteArchive* archive, const CUnitAssistMoveTask* task, int version, gpg::RRef* ownerRef
-    );
+    void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef) const;
 
     /**
      * Address: 0x005F1950 (FUN_005F1950, Moho::CUnitAssistMoveTask::TaskTick)
@@ -119,7 +118,7 @@ namespace moho
      * Builds one candidate set of loadable allied mobile land units near
      * this assist task's context and writes filtered results into `outUnits`.
      */
-    SEntitySetTemplateUnit* GetEntitiesAlreadyAtLoc(SEntitySetTemplateUnit* outUnits);
+    EntitySetTemplate<Unit>* GetEntitiesAlreadyAtLoc(EntitySetTemplate<Unit>* outUnits);
 
   public:
     static gpg::RType* sType;

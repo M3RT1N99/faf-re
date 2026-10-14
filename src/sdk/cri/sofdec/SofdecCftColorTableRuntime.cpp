@@ -80,17 +80,15 @@ namespace
   CftArgb8888AlphaLane* cft_ptr_cr_rgb = nullptr;
 
   template <typename T>
-  [[nodiscard]] T* ResolveAddress(const std::int32_t address32)
+  [[nodiscard]] T* ResolveAddress(const SofdecAddressWord addressWord)
   {
-    const auto addressAsU32 = static_cast<std::uint32_t>(address32);
-    const auto address = static_cast<std::uintptr_t>(addressAsU32);
-    return reinterpret_cast<T*>(address);
+    return reinterpret_cast<T*>(static_cast<std::uintptr_t>(addressWord));
   }
 
   // ClampToByteRange: shared with SofdecSvmTransferRuntime.cpp, which defines it
   // earlier in this translation unit.
 
-  [[nodiscard]] CftArgb8888AlphaTablePack* ResolveAlphaPack(const std::int32_t tableAddress)
+  [[nodiscard]] CftArgb8888AlphaTablePack* ResolveAlphaPack(const SofdecAddressWord tableAddress)
   {
     return ResolveAddress<CftArgb8888AlphaTablePack>(tableAddress);
   }
@@ -331,38 +329,36 @@ namespace
 
 namespace
 {
-  struct CftYcc420A256SourceView
+  struct CftYcc420A256Source
   {
-    std::int32_t sourceRowAddress = 0;   // +0x00
-    std::int32_t reserved04Address = 0;  // +0x04
-    std::int32_t reserved08Address = 0;  // +0x08
-    std::int32_t sourceStrideBytes = 0;  // +0x0C
+    SofdecAddressWord sourceRowAddress = 0;   // +0x00
+    SofdecAddressWord reserved04Address = 0;  // +0x04
+    SofdecAddressWord reserved08Address = 0;  // +0x08
+    SofdecAddressWord sourceStrideBytes = 0;  // +0x0C
   };
-  static_assert(offsetof(CftYcc420A256SourceView, sourceRowAddress) == 0x00, "CftYcc420A256SourceView::sourceRowAddress offset must be 0x00");
-  static_assert(offsetof(CftYcc420A256SourceView, sourceStrideBytes) == 0x0C, "CftYcc420A256SourceView::sourceStrideBytes offset must be 0x0C");
-  static_assert(sizeof(CftYcc420A256SourceView) == 0x10, "CftYcc420A256SourceView size must be 0x10");
+  static_assert(offsetof(CftYcc420A256Source, sourceRowAddress) == 0x00, "CftYcc420A256Source::sourceRowAddress offset must be 0x00");
+  static_assert(offsetof(CftYcc420A256Source, sourceStrideBytes) == 0x0C, "CftYcc420A256Source::sourceStrideBytes offset must be 0x0C");
+  static_assert(sizeof(CftYcc420A256Source) == 0x10, "CftYcc420A256Source size must be 0x10");
 
-  struct CftYcc420A256TargetView
+  struct CftYcc420A256Target
   {
-    std::int32_t destinationAddress = 0;      // +0x00
+    SofdecAddressWord destinationAddress = 0; // +0x00
     std::int32_t widthPixels = 0;             // +0x04
     std::int32_t heightPixels = 0;            // +0x08
     std::int32_t destinationStrideBytes = 0;  // +0x0C
   };
-  static_assert(offsetof(CftYcc420A256TargetView, destinationAddress) == 0x00, "CftYcc420A256TargetView::destinationAddress offset must be 0x00");
-  static_assert(offsetof(CftYcc420A256TargetView, widthPixels) == 0x04, "CftYcc420A256TargetView::widthPixels offset must be 0x04");
-  static_assert(offsetof(CftYcc420A256TargetView, heightPixels) == 0x08, "CftYcc420A256TargetView::heightPixels offset must be 0x08");
+  static_assert(offsetof(CftYcc420A256Target, destinationAddress) == 0x00, "CftYcc420A256Target::destinationAddress offset must be 0x00");
+  static_assert(offsetof(CftYcc420A256Target, widthPixels) == 0x04, "CftYcc420A256Target::widthPixels offset must be 0x04");
+  static_assert(offsetof(CftYcc420A256Target, heightPixels) == 0x08, "CftYcc420A256Target::heightPixels offset must be 0x08");
   static_assert(
-    offsetof(CftYcc420A256TargetView, destinationStrideBytes) == 0x0C,
-    "CftYcc420A256TargetView::destinationStrideBytes offset must be 0x0C"
+    offsetof(CftYcc420A256Target, destinationStrideBytes) == 0x0C,
+    "CftYcc420A256Target::destinationStrideBytes offset must be 0x0C"
   );
-  static_assert(sizeof(CftYcc420A256TargetView) == 0x10, "CftYcc420A256TargetView size must be 0x10");
+  static_assert(sizeof(CftYcc420A256Target) == 0x10, "CftYcc420A256Target size must be 0x10");
 
-  [[nodiscard]] std::int32_t PointerToAddress32(const void* const pointer)
+  [[nodiscard]] SofdecAddressWord PointerToAddressWord(const void* const pointer)
   {
-    return static_cast<std::int32_t>(
-      static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(pointer))
-    );
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(pointer));
   }
 }
 
@@ -374,8 +370,8 @@ namespace
  * fixed source bytes.
  */
 std::uint8_t* cnvStaticYcc420plnToA256V(
-  const CftYcc420A256SourceView* const sourceView,
-  const CftYcc420A256TargetView* const targetView
+  const CftYcc420A256Source* const sourceView,
+  const CftYcc420A256Target* const targetView
 )
 {
   const std::int32_t widthPixels = targetView->widthPixels;
@@ -407,9 +403,9 @@ std::uint8_t* cnvStaticYcc420plnToA256V(
  * through one caller-provided 256-byte remap table.
  */
 std::int32_t cnvDynamicYcc420plnToA256UserTable(
-  const CftYcc420A256SourceView* const sourceView,
-  const CftYcc420A256TargetView* const targetView,
-  const std::int32_t userTableAddress
+  const CftYcc420A256Source* const sourceView,
+  const CftYcc420A256Target* const targetView,
+  const SofdecAddressWord userTableAddress
 )
 {
   const std::int32_t widthPixels = targetView->widthPixels;
@@ -432,7 +428,7 @@ std::int32_t cnvDynamicYcc420plnToA256UserTable(
     sourceCursor += sourceRowAdvance;
   }
 
-  return PointerToAddress32(destinationCursor);
+  return PointerToAddressWord(destinationCursor);
 }
 
 /**
@@ -444,24 +440,24 @@ std::int32_t cnvDynamicYcc420plnToA256UserTable(
  */
 std::uint8_t* CFT_Ycc420plnToA256V(
   std::uint8_t** const sourcePlanes,
-  const std::int32_t* const conversionWords,
-  const std::int32_t* const userTableAddress
+  const SofdecAddressWord* const conversionWords,
+  const SofdecAddressWord* const userTableAddress
 )
 {
-  CftYcc420A256SourceView sourceView{};
-  sourceView.sourceRowAddress = PointerToAddress32(sourcePlanes[1]);
-  sourceView.reserved04Address = PointerToAddress32(sourcePlanes[5]);
-  sourceView.reserved08Address = PointerToAddress32(sourcePlanes[9]);
-  sourceView.sourceStrideBytes = PointerToAddress32(sourcePlanes[4]);
+  CftYcc420A256Source sourceView{};
+  sourceView.sourceRowAddress = PointerToAddressWord(sourcePlanes[1]);
+  sourceView.reserved04Address = PointerToAddressWord(sourcePlanes[5]);
+  sourceView.reserved08Address = PointerToAddressWord(sourcePlanes[9]);
+  sourceView.sourceStrideBytes = PointerToAddressWord(sourcePlanes[4]);
 
-  CftYcc420A256TargetView targetView{};
+  CftYcc420A256Target targetView{};
   targetView.destinationAddress = conversionWords[1];
-  targetView.widthPixels = conversionWords[2];
-  targetView.heightPixels = conversionWords[3];
-  targetView.destinationStrideBytes = conversionWords[4];
+  targetView.widthPixels = static_cast<std::int32_t>(conversionWords[2]);
+  targetView.heightPixels = static_cast<std::int32_t>(conversionWords[3]);
+  targetView.destinationStrideBytes = static_cast<std::int32_t>(conversionWords[4]);
 
   if (*userTableAddress != 0) {
-    const std::int32_t convertedAddress =
+    const SofdecAddressWord convertedAddress =
       cnvDynamicYcc420plnToA256UserTable(&sourceView, &targetView, *userTableAddress);
     return ResolveAddress<std::uint8_t>(convertedAddress);
   }
@@ -475,7 +471,7 @@ std::uint8_t* CFT_Ycc420plnToA256V(
  * What it does:
  * Builds one YCC422 color-adjust table pack for Sofdec conversion lanes.
  */
-std::int32_t CFT_MakeYcc422ColAdjTbl(const std::int32_t tableAddress)
+std::int32_t CFT_MakeYcc422ColAdjTbl(const SofdecAddressWord tableAddress)
 {
   auto* const tablePack = ResolveAddress<CftYcc422ColAdjTablePack>(tableAddress);
 
@@ -525,7 +521,7 @@ std::int32_t CFT_MakeYcc422ColAdjTbl(const std::int32_t tableAddress)
  * Initializes ARGB8888 Y/Cb/Cr conversion table lane pointers and rebuilds
  * conversion tables.
  */
-std::int32_t CFT_MakeArgb8888ColAdjTbl(const std::int32_t tableAddress)
+std::int32_t CFT_MakeArgb8888ColAdjTbl(const SofdecAddressWord tableAddress)
 {
   auto* const tablePack = ResolveAlphaPack(tableAddress);
   cft_ptr_y_rgb = tablePack->base.data();

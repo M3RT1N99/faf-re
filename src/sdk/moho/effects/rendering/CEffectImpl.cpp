@@ -1,5 +1,6 @@
 #include "moho/effects/rendering/CEffectImpl.h"
 
+#include <algorithm>
 #include <cstring>
 #include <new>
 #include <typeinfo>
@@ -38,14 +39,6 @@ namespace
     }
     ReleaseParticleTextureRef(slot);
     slot = newTexture;
-  }
-
-  void ClearStringRange(msvc8::string* it, const msvc8::string* const end) noexcept
-  {
-    while (it != end) {
-      it->tidy(true, 0u);
-      ++it;
-    }
   }
 
   /**
@@ -119,7 +112,7 @@ namespace moho
   {
     mEntityInfo.mAttachTargetWeak.UnlinkFromOwnerChain();
 
-    ClearStringRange(mStrings.start_, mStrings.end_);
+    mStrings.clear();
     mStrings.ResetStorageToInline();
 
     ReleaseCountedTexturePointerRangeAndClear(mParticleTextures.start_, mParticleTextures.end_);
@@ -241,7 +234,8 @@ namespace moho
    */
   void CEffectImpl::SetNParam(const std::int32_t paramIndex, const float* const values, const std::int32_t valueCount)
   {
-    std::memcpy(&mParams.start_[paramIndex], values, static_cast<std::size_t>(valueCount) * sizeof(float));
+    // Raw float-lane blob write into the effect parameter array slice.
+    std::copy_n(values, static_cast<std::size_t>(valueCount), &mParams.start_[paramIndex]);
     Invalidate(paramIndex, valueCount);
   }
 

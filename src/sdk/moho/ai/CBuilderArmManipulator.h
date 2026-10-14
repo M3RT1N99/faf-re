@@ -93,7 +93,7 @@ namespace moho
      * state: the `IAniManipulator` base, the goal weak-pointer lane, and every
      * builder-arm tracking parameter.
      */
-    static void MemberDeserialize(CBuilderArmManipulator* object, gpg::ReadArchive* archive);
+    void MemberDeserialize(gpg::ReadArchive* archive);
 
     /**
      * Address: 0x00637640 (FUN_00637640)
@@ -103,7 +103,7 @@ namespace moho
      * state: the `IAniManipulator` base, the goal weak-pointer lane, and every
      * builder-arm tracking parameter.
      */
-    static void MemberSerialize(const CBuilderArmManipulator* object, gpg::WriteArchive* archive);
+    void MemberSerialize(gpg::WriteArchive* archive) const;
 
   private:
     /**
@@ -146,7 +146,7 @@ namespace moho
      * The pair the `CBuilderArmManipulatorGetHeadingPitch` /
      * `SetHeadingPitch` Lua binders read and write. MSVC emitted an
      * out-of-line accessor for each, and all three were recovered as free
-     * functions over an `IAniManipulatorScalarPairRuntimeView` -- a pad to
+     * functions over an a deleted overlay -- a pad to
      * `+0x88` plus two floats, laid over this class and over
      * `CBoneEntityManipulator` at the same time. Removed 2026-09-22 (RULE
      * ONE); all three have zero callers and are unreachable.

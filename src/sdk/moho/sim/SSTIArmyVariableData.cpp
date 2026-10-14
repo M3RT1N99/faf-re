@@ -1,16 +1,18 @@
 #include "SSTIArmyVariableData.h"
-
+#include <algorithm>
 #include <cstdlib>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <iterator>
 #include <new>
 #include <typeinfo>
 
 #include "gpg/core/utils/Global.h"
 
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/reflection/Reflection.h"
 
 namespace
 {
@@ -101,82 +103,14 @@ namespace
     return destination;
   }
 
-  /**
-   * Address: 0x00550F20 (FUN_00550F20, j_Moho::SSTIArmyVariableData::MemberDeserialize)
-   *
-   * What it does:
-   * Thin forwarding thunk to `SSTIArmyVariableData::SerializeLoadBody`.
-   */
-  void SSTIArmyVariableDataMemberDeserializeThunk(
-    moho::SSTIArmyVariableData* const data, gpg::ReadArchive* const archive
-  )
-  {
-    if (!data) {
-      return;
-    }
-
-    data->SerializeLoadBody(archive, nullptr);
-  }
-
-  /**
-   * Address: 0x00550F30 (FUN_00550F30, j_Moho::SSTIArmyVariableData::MemberSerialize)
-   *
-   * What it does:
-   * Thin forwarding thunk to `SSTIArmyVariableData::SerializeSaveBody`.
-   */
-  void SSTIArmyVariableDataMemberSerializeThunk(
-    const moho::SSTIArmyVariableData* const data, gpg::WriteArchive* const archive
-  )
-  {
-    if (!data) {
-      return;
-    }
-
-    data->SerializeSaveBody(archive, nullptr);
-  }
-
-  /**
-   * Address: 0x00550F80 (FUN_00550F80, j_Moho::SSTIArmyVariableData::MemberDeserialize_0)
-   *
-   * What it does:
-   * Secondary forwarding thunk to `SSTIArmyVariableData::SerializeLoadBody`.
-   */
-  void SSTIArmyVariableDataMemberDeserializeThunkSecondary(
-    moho::SSTIArmyVariableData* const data, gpg::ReadArchive* const archive
-  )
-  {
-    if (!data) {
-      return;
-    }
-
-    data->SerializeLoadBody(archive, nullptr);
-  }
-
-  /**
-   * Address: 0x00550F90 (FUN_00550F90, j_Moho::SSTIArmyVariableData::MemberSerialize_0)
-   *
-   * What it does:
-   * Secondary forwarding thunk to `SSTIArmyVariableData::SerializeSaveBody`.
-   */
-  void SSTIArmyVariableDataMemberSerializeThunkSecondary(
-    const moho::SSTIArmyVariableData* const data, gpg::WriteArchive* const archive
-  )
-  {
-    if (!data) {
-      return;
-    }
-
-    data->SerializeSaveBody(archive, nullptr);
-  }
-
-  struct SSTIArmyVariableDataOwnerSlotRuntime
+  struct SSTIArmyVariableDataOwnerSlot
   {
     std::uint8_t reserved00_7F[0x80]{};
     moho::SSTIArmyVariableData variableData;
   };
   static_assert(
-    offsetof(SSTIArmyVariableDataOwnerSlotRuntime, variableData) == 0x80,
-    "SSTIArmyVariableDataOwnerSlotRuntime::variableData offset must be 0x80"
+    offsetof(SSTIArmyVariableDataOwnerSlot, variableData) == 0x80,
+    "SSTIArmyVariableDataOwnerSlot::variableData offset must be 0x80"
   );
 
 } // namespace
@@ -208,7 +142,7 @@ namespace moho
     , mHandicapExtra(0.0f)
   {
     std::memset(&mEconomyTotals, 0, sizeof(mEconomyTotals));
-    mRuntimeWordVectorWithMeta.mMetaWord = 0u;
+    mWordVectorWithMeta.mMetaWord = 0u;
     mCategoryFilterSet.ResetToEmpty(0u);
     mArmyStart = Wm3::Vector2f(0.0f, 0.0f);
     mNoRushOffset = Wm3::Vector2f(0.0f, 0.0f);
@@ -234,7 +168,7 @@ namespace moho
     , mArmyType(other.mArmyType)
     , mFaction(other.mFaction)
     , mUseWholeMap(other.mUseWholeMap)
-    , mRuntimeWordVectorWithMeta(other.mRuntimeWordVectorWithMeta)
+    , mWordVectorWithMeta(other.mWordVectorWithMeta)
     , mShowScore(other.mShowScore)
     , mCategoryFilterSet(other.mCategoryFilterSet)
     , mIsOutOfGame(other.mIsOutOfGame)
@@ -245,12 +179,13 @@ namespace moho
     , mHandicapValue(other.mHandicapValue)
     , mHandicapExtra(other.mHandicapExtra)
   {
-    std::memcpy(mPad_0039_0040, other.mPad_0039_0040, sizeof(mPad_0039_0040));
-    std::memcpy(mPad_00A1_00A8, other.mPad_00A1_00A8, sizeof(mPad_00A1_00A8));
-    std::memcpy(mPad_00F1_00F4, other.mPad_00F1_00F4, sizeof(mPad_00F1_00F4));
-    std::memcpy(mRuntimePad_0109_0110, other.mRuntimePad_0109_0110, sizeof(mRuntimePad_0109_0110));
-    std::memcpy(mPad_0139_013C, other.mPad_0139_013C, sizeof(mPad_0139_013C));
-    std::memcpy(mPad_015C_0160, other.mPad_015C_0160, sizeof(mPad_015C_0160));
+    // Opaque layout pad bytes: preserved bit-for-bit, no typed meaning to copy.
+    std::copy_n(other.mPad_0039_0040, std::size(other.mPad_0039_0040), mPad_0039_0040);
+    std::copy_n(other.mPad_00A1_00A8, std::size(other.mPad_00A1_00A8), mPad_00A1_00A8);
+    std::copy_n(other.mPad_00F1_00F4, std::size(other.mPad_00F1_00F4), mPad_00F1_00F4);
+    std::copy_n(other.mRuntimePad_0109_0110, std::size(other.mRuntimePad_0109_0110), mRuntimePad_0109_0110);
+    std::copy_n(other.mPad_0139_013C, std::size(other.mPad_0139_013C), mPad_0139_013C);
+    std::copy_n(other.mPad_015C_0160, std::size(other.mPad_015C_0160), mPad_015C_0160);
   }
 
   /**
@@ -285,28 +220,28 @@ namespace moho
   }
 
   /**
-   * Address: 0x00551270 (FUN_00551270, Moho::SSTIArmyVariableDataSerializer::Deserialize)
+   * Address: 0x00551270 (FUN_00551270, Moho::SSTIArmyVariableData::MemberDeserialize)
    */
-  void SSTIArmyVariableData::SerializeLoadBody(gpg::ReadArchive* const archive, gpg::RRef* const ownerRef)
+  void SSTIArmyVariableData::MemberDeserialize(gpg::ReadArchive* const archive)
   {
     if (archive == nullptr) {
       return;
     }
 
-    DeserializeObjectByRTypeName(archive, &mEconomyTotals, {"SEconTotals", "Moho::SEconTotals"}, ownerRef);
+    DeserializeObjectByRTypeName(archive, &mEconomyTotals, {"SEconTotals", "Moho::SEconTotals"}, nullptr);
 
     bool boolValue = false;
     archive->ReadBool(&boolValue);
     mIsResourceSharingEnabled = boolValue ? 1u : 0u;
 
-    DeserializeObjectByRTypeName(archive, &mNeutrals, {"BVIntSet", "Moho::BVIntSet"}, ownerRef);
-    DeserializeObjectByRTypeName(archive, &mAllies, {"BVIntSet", "Moho::BVIntSet"}, ownerRef);
-    DeserializeObjectByRTypeName(archive, &mEnemies, {"BVIntSet", "Moho::BVIntSet"}, ownerRef);
+    DeserializeObjectByRTypeName(archive, &mNeutrals, {"BVIntSet", "Moho::BVIntSet"}, nullptr);
+    DeserializeObjectByRTypeName(archive, &mAllies, {"BVIntSet", "Moho::BVIntSet"}, nullptr);
+    DeserializeObjectByRTypeName(archive, &mEnemies, {"BVIntSet", "Moho::BVIntSet"}, nullptr);
 
     archive->ReadBool(&boolValue);
     mIsAlly = boolValue ? 1u : 0u;
 
-    DeserializeObjectByRTypeName(archive, &mValidCommandSources, {"BVIntSet", "Moho::BVIntSet"}, ownerRef);
+    DeserializeObjectByRTypeName(archive, &mValidCommandSources, {"BVIntSet", "Moho::BVIntSet"}, nullptr);
 
     archive->ReadUInt(&mPlayerColorBgra);
     archive->ReadUInt(&mArmyColorBgra);
@@ -325,38 +260,38 @@ namespace moho
       {"BVSet<Moho::RBlueprint const *,Moho::EntityCategoryHelper>",
        "Moho::BVSet<Moho::RBlueprint const *,Moho::EntityCategoryHelper>",
        "BVSet<RBlueprint const *,EntityCategoryHelper>"},
-      ownerRef
+      nullptr
     );
 
     archive->ReadBool(&boolValue);
     mIsOutOfGame = boolValue ? 1u : 0u;
 
-    DeserializeObjectByRTypeName(archive, &mArmyStart, {"Vector2<float>", "Wm3::Vector2<float>"}, ownerRef);
+    DeserializeObjectByRTypeName(archive, &mArmyStart, {"Vector2<float>", "Wm3::Vector2<float>"}, nullptr);
     archive->ReadInt(&mNoRushTimer);
     archive->ReadFloat(&mNoRushRadius);
-    DeserializeObjectByRTypeName(archive, &mNoRushOffset, {"Vector2<float>", "Wm3::Vector2<float>"}, ownerRef);
+    DeserializeObjectByRTypeName(archive, &mNoRushOffset, {"Vector2<float>", "Wm3::Vector2<float>"}, nullptr);
     archive->ReadFloat(&mHandicapValue);
     archive->ReadFloat(&mHandicapExtra);
   }
 
   /**
-   * Address: 0x00551500 (FUN_00551500, Moho::SSTIArmyVariableDataSerializer::Serialize)
+   * Address: 0x00551500 (FUN_00551500, Moho::SSTIArmyVariableData::MemberSerialize)
    */
-  void SSTIArmyVariableData::SerializeSaveBody(gpg::WriteArchive* const archive, gpg::RRef* const ownerRef) const
+  void SSTIArmyVariableData::MemberSerialize(gpg::WriteArchive* const archive) const
   {
     if (archive == nullptr) {
       return;
     }
 
-    SerializeObjectByRTypeName(archive, &mEconomyTotals, {"SEconTotals", "Moho::SEconTotals"}, ownerRef);
+    SerializeObjectByRTypeName(archive, &mEconomyTotals, {"SEconTotals", "Moho::SEconTotals"}, nullptr);
     archive->WriteBool(mIsResourceSharingEnabled != 0u);
 
-    SerializeObjectByRTypeName(archive, &mNeutrals, {"BVIntSet", "Moho::BVIntSet"}, ownerRef);
-    SerializeObjectByRTypeName(archive, &mAllies, {"BVIntSet", "Moho::BVIntSet"}, ownerRef);
-    SerializeObjectByRTypeName(archive, &mEnemies, {"BVIntSet", "Moho::BVIntSet"}, ownerRef);
+    SerializeObjectByRTypeName(archive, &mNeutrals, {"BVIntSet", "Moho::BVIntSet"}, nullptr);
+    SerializeObjectByRTypeName(archive, &mAllies, {"BVIntSet", "Moho::BVIntSet"}, nullptr);
+    SerializeObjectByRTypeName(archive, &mEnemies, {"BVIntSet", "Moho::BVIntSet"}, nullptr);
 
     archive->WriteBool(mIsAlly != 0u);
-    SerializeObjectByRTypeName(archive, &mValidCommandSources, {"BVIntSet", "Moho::BVIntSet"}, ownerRef);
+    SerializeObjectByRTypeName(archive, &mValidCommandSources, {"BVIntSet", "Moho::BVIntSet"}, nullptr);
 
     archive->WriteUInt(mPlayerColorBgra);
     archive->WriteUInt(mArmyColorBgra);
@@ -371,93 +306,16 @@ namespace moho
       {"BVSet<Moho::RBlueprint const *,Moho::EntityCategoryHelper>",
        "Moho::BVSet<Moho::RBlueprint const *,Moho::EntityCategoryHelper>",
        "BVSet<RBlueprint const *,EntityCategoryHelper>"},
-      ownerRef
+      nullptr
     );
 
     archive->WriteBool(mIsOutOfGame != 0u);
-    SerializeObjectByRTypeName(archive, &mArmyStart, {"Vector2<float>", "Wm3::Vector2<float>"}, ownerRef);
+    SerializeObjectByRTypeName(archive, &mArmyStart, {"Vector2<float>", "Wm3::Vector2<float>"}, nullptr);
     archive->WriteInt(mNoRushTimer);
     archive->WriteFloat(mNoRushRadius);
-    SerializeObjectByRTypeName(archive, &mNoRushOffset, {"Vector2<float>", "Wm3::Vector2<float>"}, ownerRef);
+    SerializeObjectByRTypeName(archive, &mNoRushOffset, {"Vector2<float>", "Wm3::Vector2<float>"}, nullptr);
     archive->WriteFloat(mHandicapValue);
     archive->WriteFloat(mHandicapExtra);
-  }
-
-  /**
-   * Address: 0x00550A00 (FUN_00550A00, Moho::SSTIArmyVariableDataSerializer::Deserialize callback)
-   *
-   * What it does:
-   * Archive callback thunk forwarding into `SSTIArmyVariableData::SerializeLoadBody`.
-   */
-  void SSTIArmyVariableDataSerializer::Deserialize(
-    gpg::ReadArchive* const archive,
-    const int objectPtr,
-    const int,
-    gpg::RRef* const ownerRef
-  )
-  {
-    auto* const data = reinterpret_cast<SSTIArmyVariableData*>(objectPtr);
-    GPG_ASSERT(data != nullptr);
-    if (ownerRef != nullptr) {
-      data->SerializeLoadBody(archive, ownerRef);
-      return;
-    }
-
-    SSTIArmyVariableDataMemberDeserializeThunk(data, archive);
-  }
-
-  /**
-   * Address: 0x00550A10 (FUN_00550A10, Moho::SSTIArmyVariableDataSerializer::Serialize callback)
-   *
-   * What it does:
-   * Archive callback thunk forwarding into `SSTIArmyVariableData::SerializeSaveBody`.
-   */
-  void SSTIArmyVariableDataSerializer::Serialize(
-    gpg::WriteArchive* const archive,
-    const int objectPtr,
-    const int,
-    gpg::RRef* const ownerRef
-  )
-  {
-    const auto* const data = reinterpret_cast<const SSTIArmyVariableData*>(objectPtr);
-    GPG_ASSERT(data != nullptr);
-    if (ownerRef != nullptr) {
-      data->SerializeSaveBody(archive, ownerRef);
-      return;
-    }
-
-    SSTIArmyVariableDataMemberSerializeThunk(data, archive);
-  }
-
-  /**
-   * Address: 0x00BC9B10 (FUN_00BC9B10, dynamic initializer for the global
-   * `SSTIArmyVariableDataSerializer` singleton)
-   *
-   * What it does:
-   * Default-constructs the `gpg::SerHelperBase` base and binds the
-   * load/save callback fields.
-   */
-  SSTIArmyVariableDataSerializer::SSTIArmyVariableDataSerializer()
-    : mSerLoadFunc(&SSTIArmyVariableDataSerializer::Deserialize)
-    , mSerSaveFunc(&SSTIArmyVariableDataSerializer::Serialize)
-  {}
-
-  SSTIArmyVariableDataSerializer::~SSTIArmyVariableDataSerializer() = default;
-
-  /**
-   * Address: 0x00550D90 (FUN_00550D90, shared Init() body)
-   */
-  void SSTIArmyVariableDataSerializer::Init()
-  {
-    if (SSTIArmyVariableData::sType == nullptr) {
-      SSTIArmyVariableData::sType = gpg::LookupRType(typeid(SSTIArmyVariableData));
-    }
-
-    gpg::RType* const type = SSTIArmyVariableData::sType;
-    GPG_ASSERT(type->serLoadFunc_ == nullptr);
-    type->serLoadFunc_ = mSerLoadFunc;
-    GPG_ASSERT(type->serSaveFunc_ == nullptr);
-    type->serSaveFunc_ = mSerSaveFunc;
   }
 
   /**
@@ -531,14 +389,34 @@ namespace moho
 
 namespace
 {
-  // Address: 0x010AC350 -- process-global `SSTIArmyVariableDataSerializer`
-  // singleton. SSTIArmyVariableDataTypeInfo's own registration is
-  // independently __xc_a-reachable through GPG_PREREGISTER_INIT below; the
-  // two are unrelated hierarchies (gpg::RType vs gpg::SerHelperBase).
-  moho::SSTIArmyVariableDataSerializer gSSTIArmyVariableDataSerializer;
 } // namespace
 
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
 GPG_PREREGISTER_INIT(register_SSTIArmyVariableDataTypeInfo_275369, moho::register_SSTIArmyVariableDataTypeInfo)
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<SSTIArmyVariableData>`, vtable 0x00E17574.
+   *
+   * Address: 0x00BC9B10 (FUN_00BC9B10 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF4870 (FUN_00BF4870 -- the global's destructor.)
+   * Address: 0x00550F20 (FUN_00550F20 -- an unreferenced copy of `Deserialize`.)
+   * Address: 0x00550F80 (FUN_00550F80 -- an unreferenced copy of `Deserialize`.)
+   * Address: 0x00550F30 (FUN_00550F30 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x00550F90 (FUN_00550F90 -- an unreferenced copy of `Serialize`.)
+   * Address: 0x00550D90 (FUN_00550D90 -- `Init`.)
+   * Address: 0x00550A00 (FUN_00550A00 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00550A10 (FUN_00550A10 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct SSTIArmyVariableDataSerializer : gpg::SerSaveLoadHelper<SSTIArmyVariableData>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AC350 -- process-global `SSTIArmyVariableDataSerializer` singleton.
+  moho::SSTIArmyVariableDataSerializer gSSTIArmyVariableDataSerializer;
+} // namespace

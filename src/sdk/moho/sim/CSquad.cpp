@@ -17,6 +17,8 @@
 #include "moho/sim/CPlatoon.h"
 #include "moho/sim/Sim.h"
 #include "moho/sim/STIMap.h"
+#include "moho/unit/CUnitCommand.h"
+#include "moho/unit/CUnitCommandQueue.h"
 #include "moho/unit/core/Unit.h"
 
 #ifdef _MSC_VER
@@ -105,24 +107,10 @@ namespace moho
    * The fastvector and string members destruct in declaration order; this
    * destructor only needs to clear the category vector and unlink the
    * intrusive unit-set node. The compiler-generated member dtors handle
-   * `mUnits.mVec`, `mName`, and `mCats` heap teardown via `~SEntitySetTemplateUnit`,
+   * `mUnits.mVec`, `mName`, and `mCats` heap teardown via `~EntitySetTemplate<Unit>`,
    * `~msvc8::string`, and `~msvc8::vector` respectively.
    */
   CSquad::~CSquad() = default;
-
-  /**
-   * Address: 0x00725040 (FUN_00725040)
-   *
-   * What it does:
-   * Runs one `CSquad` destructor lane and then releases the object storage with
-   * scalar `operator delete`, returning the same pointer.
-   */
-  [[maybe_unused]] CSquad* DestroySquadAndDeleteStorage(CSquad* const squad)
-  {
-    squad->~CSquad();
-    ::operator delete(squad);
-    return squad;
-  }
 
   /**
    * Address: 0x00725580 (FUN_00725580, Moho::CSquad::operator new)
@@ -144,13 +132,57 @@ namespace moho
     CPlatoon* const parentPlatoon, const ESquadClass squadClass, const char* const name
   )
   {
-    parentPlatoon->mHasLuaList = 0;
+    parentPlatoon->mHasLuaList = false;
 
     void* const storage = ::operator new(sizeof(CSquad));
     auto* const newSquad = ::new (storage) CSquad(squadClass, parentPlatoon->mSim, name);
 
     parentPlatoon->mSquadList.PushBack(newSquad);
     return newSquad;
+  }
+
+  /**
+   * What it does:
+   * Linear scan of `mUnits` for `unit`, inlined at its three platoon callers.
+   */
+  bool CSquad::HasUnit(const Unit* const unit) const
+  {
+    for (Entity* const entity : mUnits.mVec) {
+      if (static_cast<const Unit*>(entity) == unit) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Address: 0x00724150 (FUN_00724150, Moho::CSquad::RemoveUnit)
+   *
+   * What it does:
+   * Erases the first entry that is `unit`; later entries move down one slot.
+   */
+  void CSquad::RemoveUnit(Unit* const unit)
+  {
+    auto& entries = mUnits.mVec;
+    for (auto it = entries.begin(); it != entries.end(); ++it) {
+      if (static_cast<Unit*>(*it) == unit) {
+        (void)entries.erase(it);
+        return;
+      }
+    }
+  }
+
+  /**
+   * Address: 0x007241C0 (FUN_007241C0)
+   *
+   * What it does:
+   * Removes each unit of `units` from this squad.
+   */
+  void CSquad::RemoveUnits(const EntitySetTemplate<Unit>& units)
+  {
+    for (Entity* const entity : units.mVec) {
+      RemoveUnit(static_cast<Unit*>(entity));
+    }
   }
 
   /**
@@ -164,7 +196,7 @@ namespace moho
   {
     int count = 0;
     for (Entity* const* slot = mUnits.mVec.begin(); slot != mUnits.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       if (unit == nullptr || unit->IsDead() || unit->DestroyQueued() || unit->IsBeingBuilt()) {
         continue;
       }
@@ -189,7 +221,7 @@ namespace moho
   {
     int count = 0;
     for (Entity* const* slot = mUnits.mVec.begin(); slot != mUnits.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       if (unit == nullptr || unit->IsDead() || unit->DestroyQueued() || unit->IsBeingBuilt()) {
         continue;
       }
@@ -218,7 +250,7 @@ namespace moho
     Entity* const targetEntity = target != nullptr ? static_cast<Entity*>(target) : nullptr;
 
     for (Entity* const* slot = mUnits.mVec.begin(); slot != mUnits.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       if (unit == nullptr || unit->IsDead()) {
         continue;
       }
@@ -236,13 +268,12 @@ namespace moho
    * Address: 0x00724750 (FUN_00724750, Moho::CSquad::HasUnitWithState)
    *
    * What it does:
-   * Iterates squad unit slots and returns true as soon as one live unit
-   * reports the requested unit-state lane.
+   * Returns true as soon as one live unit is in `state`.
    */
   bool CSquad::HasUnitWithState(const EUnitState state) const
   {
     for (Entity* const* slot = mUnits.mVec.begin(); slot != mUnits.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       if (unit == nullptr || unit->IsDead()) {
         continue;
       }
@@ -253,6 +284,62 @@ namespace moho
     }
 
     return false;
+  }
+
+  /**
+   * Address: 0x007247A0 (FUN_007247A0, Moho::CSquad::UnitHasOrder)
+   *
+   * What it does:
+   * False as soon as a live unit has a command at the head of its queue.
+   */
+  bool CSquad::IsIdle() const
+  {
+    for (Entity* const entity : mUnits.mVec) {
+      Unit* const unit = static_cast<Unit*>(entity);
+      if (unit == nullptr || unit->IsDead()) {
+        continue;
+      }
+
+      const CUnitCommandQueue* const commandQueue = unit->CommandQueue;
+      if (commandQueue != nullptr && !commandQueue->mCommandVec.empty()
+          && commandQueue->mCommandVec.front().GetObjectPtr() != nullptr) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Address: 0x00724810 (FUN_00724810)
+   *
+   * What it does:
+   * Replaces the target-priority categories. Self-assignment is
+   * `operator=`'s own first check.
+   */
+  void CSquad::SetPrioritizedTargetList(const msvc8::vector<EntityCategorySet>& categories)
+  {
+    mCats = categories;
+  }
+
+  /**
+   * Address: 0x00724820 (FUN_00724820, Moho::CSquad::Stop)
+   *
+   * What it does:
+   * Clears each live unit's command queue and stops its attacker.
+   */
+  void CSquad::Stop()
+  {
+    for (Entity* const entity : mUnits.mVec) {
+      Unit* const unit = static_cast<Unit*>(entity);
+      if (unit == nullptr || unit->IsDead()) {
+        continue;
+      }
+
+      unit->CommandQueue->ClearCommandQueue();
+      if (CAiAttackerImpl* const attacker = unit->AiAttacker; attacker != nullptr) {
+        attacker->Stop();
+      }
+    }
   }
 
   /**
@@ -271,11 +358,11 @@ namespace moho
    * against `blueprintId` and adds them to `outUnits` until `maxCount`
    * matches have been collected.
    */
-  void CSquad::AppendUnitsWithBP(const char* const blueprintId, const int maxCount, SEntitySetTemplateUnit& outUnits)
+  void CSquad::AppendUnitsWithBP(const char* const blueprintId, const int maxCount, EntitySetTemplate<Unit>& outUnits)
   {
     int matchCount = 0;
     for (Entity* const* slot = mUnits.mVec.begin(); slot != mUnits.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       if (unit == nullptr || unit->IsDead() || unit->DestroyQueued() || unit->IsBeingBuilt()) {
         continue;
       }
@@ -286,7 +373,7 @@ namespace moho
         continue;
       }
 
-      (void)outUnits.AddUnit(unit);
+      (void)outUnits.Add(unit);
       if (++matchCount >= maxCount) {
         break;
       }
@@ -309,12 +396,12 @@ namespace moho
    * `categorySet` until `maxCount` accepted units have been added.
    */
   void CSquad::AppendUnitsInCategory(
-    const EntityCategorySet* const categorySet, const int maxCount, SEntitySetTemplateUnit& outUnits
+    const EntityCategorySet* const categorySet, const int maxCount, EntitySetTemplate<Unit>& outUnits
   )
   {
     int matchCount = 0;
     for (Entity* const* slot = mUnits.mVec.begin(); slot != mUnits.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       if (unit == nullptr || unit->IsDead() || unit->DestroyQueued() || unit->IsBeingBuilt()) {
         continue;
       }
@@ -324,7 +411,7 @@ namespace moho
         continue;
       }
 
-      (void)outUnits.AddUnit(unit);
+      (void)outUnits.Add(unit);
       if (++matchCount >= maxCount) {
         return;
       }
@@ -347,7 +434,7 @@ namespace moho
     COGrid* const occupancyGrid = mSim->mOGrid;
 
     for (Entity* const* slot = mUnits.mVec.begin(); slot != mUnits.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       if (unit == nullptr || unit->IsDead()) {
         continue;
       }
@@ -433,7 +520,7 @@ namespace moho
     }
 
     for (Entity* const* slot = mUnits.mVec.begin(); slot != mUnits.mVec.end(); ++slot) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*slot);
+      Unit* const unit = static_cast<Unit*>(*slot);
       const Wm3::Vec3f& unitPosition = unit->GetPosition();
       outPos->x += unitPosition.x;
       outPos->y += unitPosition.y;
@@ -454,55 +541,6 @@ namespace moho
     outPos->y *= inverseCount;
     outPos->z *= inverseCount;
     return outPos;
-  }
-
-  /**
-   * Address: 0x006DE1C0 (FUN_006DE1C0, Moho::CSquad::SetPrioritizedTargetList)
-   *
-   * IDA signature:
-   * int __userpurge Moho::CSquad::SetPrioritizedTargetList@<eax>(
-   *   int result@<eax>,                       // &this->mCats
-   *   std::vector_EntityCategory *a2);        // source category vector
-   *
-   * What it does:
-   * Replaces this squad's prioritized target-category vector (`mCats`) with
-   * the contents of `categorySource`. The binary expands the MSVC8
-   * `vector<EntityCategorySet>::operator=` template emission inline at the
-   * `mCats` lane:
-   *
-   *   - self-assignment (`&mCats == &source`) is a no-op.
-   *   - empty source path: destroys current `mCats` elements via
-   *     `ResetEntityCategorySetWordStorageRange` (FUN_006DEB80), releases
-   *     storage when present (`operator delete` on `_Myfirst`), and rewinds
-   *     `_Mylast` to `_Myfirst` so the vector becomes logically empty while
-   *     retaining the freed-storage zero state.
-   *   - non-empty source, `source.size() <= mCats.size()` ("fits in size"):
-   *     copy-assigns the first `source.size()` slots in place via
-   *     `CopyEntityCategorySetRangeForward` (FUN_006DDA60), destroys excess
-   *     trailing slots via `ResetEntityCategorySetWordStorageRange`
-   *     (FUN_006DEB80), and rewinds `_Mylast` to `_Myfirst + source.size()`.
-   *   - non-empty source, `mCats.size() < source.size() <= mCats.capacity()`
-   *     ("fits in capacity, grow into reserved slack"): copy-assigns the
-   *     first `mCats.size()` slots in place, then uninit-copies the
-   *     remaining source range into the previously-uninitialised tail via
-   *     `UninitializedCopyEntityCategorySetRange` (FUN_006DEF60 → FUN_006E00A0),
-   *     and advances `_Mylast`.
-   *   - non-empty source, `source.size() > mCats.capacity()` ("grow buffer"):
-   *     destroys current elements, releases storage, allocates a fresh buffer
-   *     sized exactly for the source via `EnsureCapacity` (FUN_006DBBB0), and
-   *     uninit-copies the source into the new buffer, advancing `_Mylast`.
-   *
-   * The modern `msvc8::vector::operator=` already implements all of these
-   * sub-cases identically, so the recovery collapses to a single
-   * vector-assignment expression while preserving the binary's observable
-   * behaviour (same slot-by-slot destroy/copy/uninit-copy ordering).
-   */
-  void CSquad::SetPrioritizedTargetList(const msvc8::vector<EntityCategorySet>& categorySource)
-  {
-    if (&mCats == &categorySource) {
-      return;
-    }
-    mCats = categorySource;
   }
 
   /**

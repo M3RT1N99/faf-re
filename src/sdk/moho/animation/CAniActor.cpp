@@ -20,9 +20,6 @@ namespace
 {
   constexpr std::uint32_t kWatchBoneEnabledFlag = 0x8000u;
 
-  // Address: 0x010B284C -- process-global `CAniActorConstruct` singleton.
-  moho::CAniActorConstruct gCAniActorConstruct;
-
   // Address: 0x00BD2B60 (FUN_00BD2B60, register_CAniActorSerializer) -- MSVC's
   // own compiler-generated dynamic initializer for this global runs the real
   // `gpg::SerSaveLoadHelper<CAniActor>` ctor (self-links into `sNewHelpers`,
@@ -117,16 +114,6 @@ namespace
     }
 
     ThrowPointerTypeMismatch(source, expectedType, fallback);
-  }
-
-  void WriteSharedCAniPosePointer(
-    const boost::SharedPtrRaw<moho::CAniPose>& pointer,
-    gpg::WriteArchive* const archive,
-    const gpg::RRef& ownerRef
-  )
-  {
-    const gpg::RRef objectRef = MakeDerivedRef(pointer.px, CachedCAniPoseType());
-    gpg::WriteRawPointer(archive, objectRef, gpg::TrackedPointerState::Shared, ownerRef);
   }
 
   [[nodiscard]] moho::IAniManipulator* ReadOwnedManipulatorPointer(gpg::ReadArchive* const archive, const gpg::RRef& ownerRef)
@@ -245,7 +232,7 @@ namespace
       return false;
     }
 
-    const moho::CAniPose* const pose = ownerActor->mPose.px;
+    const moho::CAniPose* const pose = ownerActor->mPose.get();
     if (pose == nullptr) {
       return false;
     }
@@ -359,12 +346,10 @@ namespace moho
   /**
    * Address: 0x0063A8F0 (FUN_0063A8F0, ??0CAniActor@Moho@@QAE@ABV?$shared_ptr@VCAniPose@Moho@@@boost@@0@Z)
    */
-  CAniActor::CAniActor(const boost::SharedPtrRaw<CAniPose>& priorPose, const boost::SharedPtrRaw<CAniPose>& pose)
-  {
-    mPose.assign_retain(pose);
-    mPriorPose.assign_retain(priorPose);
-    mManipulatorsByPrecedence.ListResetLinks();
-  }
+  CAniActor::CAniActor(const boost::shared_ptr<CAniPose>& pose, const boost::shared_ptr<CAniPose>& priorPose)
+    : mPose(pose)
+    , mPriorPose(priorPose)
+  {}
 
   /**
    * Address: 0x0063A930 (FUN_0063A930, ??1CAniActor@Moho@@QAE@XZ)
@@ -381,26 +366,14 @@ namespace moho
     }
 
     ResetActorListHeadLinks(this);
-    mPriorPose.release();
-    mPose.release();
   }
 
   /**
    * Address: 0x0063B030 (FUN_0063B030, Moho::CAniActor::MemberConstruct)
    */
-  void CAniActor::MemberConstruct(gpg::SerConstructResult* const result)
+  void CAniActor::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
   {
-    CAniActor* actor = nullptr;
-    void* const storage = ::operator new(sizeof(CAniActor), std::nothrow);
-    if (storage) {
-      actor = new (storage) CAniActor();
-    }
-
-    if (!result) {
-      delete actor;
-      return;
-    }
-    result->SetUnowned(MakeDerivedRef(actor, CachedCAniActorType()), 0u);
+    result.SetUnowned(gpg::MakeRRef(new CAniActor()), 0u);
   }
 
   /**
@@ -412,8 +385,8 @@ namespace moho
       return;
     }
 
-    archive->TrackPointer(MakeDerivedRef(mPose.px, CachedCAniPoseType()));
-    archive->TrackPointer(MakeDerivedRef(mPriorPose.px, CachedCAniPoseType()));
+    archive->TrackPointer(gpg::MakeRRef(&mPose));
+    archive->TrackPointer(gpg::MakeRRef(&mPriorPose));
 
     const gpg::RRef nullOwner{};
     archive->ReadPointerShared(&mPose, &nullOwner);
@@ -462,11 +435,11 @@ namespace moho
       return;
     }
 
-    archive->PreCreatedPtr(MakeDerivedRef(mPose.px, CachedCAniPoseType()));
-    archive->PreCreatedPtr(MakeDerivedRef(mPriorPose.px, CachedCAniPoseType()));
+    archive->PreCreatedPtr(gpg::MakeRRef(const_cast<boost::shared_ptr<CAniPose>*>(&mPose)));
+    archive->PreCreatedPtr(gpg::MakeRRef(const_cast<boost::shared_ptr<CAniPose>*>(&mPriorPose)));
 
-    WriteSharedCAniPosePointer(mPose, archive, gpg::RRef{});
-    WriteSharedCAniPosePointer(mPriorPose, archive, gpg::RRef{});
+    archive->WritePointer(mPose.get(), gpg::TrackedPointerState::Shared, gpg::RRef{});
+    archive->WritePointer(mPriorPose.get(), gpg::TrackedPointerState::Shared, gpg::RRef{});
     SerializeManipulatorList(this, archive);
   }
 
@@ -507,7 +480,7 @@ namespace moho
    */
   boost::shared_ptr<const CAniSkel> CAniActor::GetSkeleton() const
   {
-    return mPose.px->GetSkeleton();
+    return mPose->GetSkeleton();
   }
 
   /**
@@ -518,7 +491,7 @@ namespace moho
    */
   boost::shared_ptr<CAniPose> CAniActor::GetPoseShared() const
   {
-    return boost::SharedPtrFromRawRetained(mPose);
+    return mPose;
   }
 
   /**
@@ -529,7 +502,7 @@ namespace moho
    */
   boost::shared_ptr<CAniPose> CAniActor::GetPriorPoseShared() const
   {
-    return boost::SharedPtrFromRawRetained(mPriorPose);
+    return mPriorPose;
   }
 
   /**
@@ -539,22 +512,13 @@ namespace moho
    * _DWORD *__usercall sub_63AA20@<eax>(_DWORD *result@<eax>, _DWORD *a2@<ebx>, _DWORD *a3@<esi>);
    *
    * What it does:
-   * Out-of-line pair-assign emitted for `Unit::SetPoses` and similar callers.
-   * Re-binds both `mPose` and `mPriorPose` raw shared-ptr lanes against new
-   * borrowed sources while preserving VC8-era assign ordering: copy `px`,
-   * compare control blocks, retain the incoming `pi` before releasing the
-   * outgoing one. The binary mismatch where IDA reports `weak_release` is
-   * the unified VC8 `sp_counted_base::release()` body at 0x004229B0 —
-   * `--use_count_; dispose; --weak_count_; destroy` — i.e. ordinary shared
-   * release semantics, not weak-only.
+   * Two `shared_ptr` assignments, current pose first; `Unit::SetPoses`
+   * (0x006ABB90) calls it.
    */
-  void CAniActor::AssignPoses(
-    const boost::SharedPtrRaw<CAniPose>& pose,
-    const boost::SharedPtrRaw<CAniPose>& priorPose
-  ) noexcept
+  void CAniActor::AssignPoses(const boost::shared_ptr<CAniPose>& pose, const boost::shared_ptr<CAniPose>& priorPose) noexcept
   {
-    mPose.assign_retain(pose);
-    mPriorPose.assign_retain(priorPose);
+    mPose = pose;
+    mPriorPose = priorPose;
   }
 
   /**
@@ -574,15 +538,15 @@ namespace moho
     // 0x0063AA9C-0x0063AAB5 exchanges both `(px,pi)` pairs with no refcount
     // traffic: last frame's pose becomes the prior pose, and the lane it
     // vacates is about to be overwritten anyway.
-    std::swap(mPose, mPriorPose);
+    mPose.swap(mPriorPose);
 
     // 0x0063AAB0-0x0063AAE7: `mPose.reset(new CAniPose(*mPriorPose.px))`. The
     // new frame starts as a copy of the pose just retired, under a fresh
     // control block; the referent this lane held before the swap is released.
-    boost::ResetSharedPtrRawOwning(mPose, new CAniPose(*mPriorPose.px));
+    mPose.reset(new CAniPose(*mPriorPose));
 
-    mPose.px->UpdateBones();                     // 0x0063AAEE
-    mPose.px->SetWorldTransform(worldTransform); // 0x0063AAFA
+    mPose->UpdateBones();                     // 0x0063AAEE
+    mPose->SetWorldTransform(worldTransform); // 0x0063AAFA
 
     auto* const listHead = static_cast<TDatListItem<IAniManipulator, void>*>(&mManipulatorsByPrecedence);
     for (auto* node = mManipulatorsByPrecedence.mNext; node != listHead;) {
@@ -769,52 +733,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x0063B020 (FUN_0063B020, Moho::CAniActorConstruct::Construct)
-   */
-  void CAniActorConstruct::Construct(
-    gpg::ReadArchive* const, const int, gpg::RRef* const, gpg::SerConstructResult* const result
-  )
-  {
-    if (!result) {
-      return;
-    }
-    CAniActor::MemberConstruct(result);
-  }
-
-  /**
-   * Address: 0x0063CAB0 (FUN_0063CAB0, Moho::CAniActorConstruct::Deconstruct)
-   */
-  void CAniActorConstruct::Deconstruct(void* const objectPtr)
-  {
-    delete static_cast<CAniActor*>(objectPtr);
-  }
-
-  /**
-   * Address: 0x0063C190 (FUN_0063C190, Moho::CAniActorConstruct::Init)
-   */
-  void CAniActorConstruct::Init()
-  {
-    gpg::RType* const type = CachedCAniActorType();
-    GPG_ASSERT(type->serConstructFunc_ == nullptr || type->serConstructFunc_ == mSerConstructFunc);
-    type->serConstructFunc_ = mSerConstructFunc;
-    type->deleteFunc_ = mDeleteFunc;
-  }
-
-  /**
-   * Address: 0x00BD2B20 (FUN_00BD2B20, dynamic initializer for the global
-   * `CAniActorConstruct` singleton)
-   */
-  CAniActorConstruct::CAniActorConstruct()
-    : mSerConstructFunc(reinterpret_cast<gpg::RType::construct_func_t>(&CAniActorConstruct::Construct))
-    , mDeleteFunc(&CAniActorConstruct::Deconstruct)
-  {}
-
-  /**
-   * Address: 0x00BFACD0 (FUN_00BFACD0, Moho::CAniActorConstruct::~CAniActorConstruct)
-   */
-  CAniActorConstruct::~CAniActorConstruct() = default;
-
-  /**
    * Address: 0x0063A770 (FUN_0063A770, ??0CAniActorTypeInfo@Moho@@QAE@@Z)
    */
   CAniActorTypeInfo::CAniActorTypeInfo()
@@ -888,3 +806,24 @@ namespace
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
 GPG_PREREGISTER_INIT(register_CAniActorTypeInfo_22c0a4, moho::register_CAniActorTypeInfo)
+
+namespace moho
+{
+  /**
+   * `gpg::SerConstructHelper<CAniActor>`, vtable 0x00E21EC4.
+   *
+   * Address: 0x00BD2B20 (FUN_00BD2B20 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFACD0 (FUN_00BFACD0 -- the global's destructor.)
+   * Address: 0x0063C190 (FUN_0063C190 -- `Init`.)
+   * Address: 0x0063B020 (FUN_0063B020 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x0063CAB0 (FUN_0063CAB0 -- `Delete`.)
+   */
+  struct CAniActorConstruct : gpg::SerConstructHelper<CAniActor>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B284C -- process-global `CAniActorConstruct` singleton.
+  moho::CAniActorConstruct gCAniActorConstruct;
+} // namespace

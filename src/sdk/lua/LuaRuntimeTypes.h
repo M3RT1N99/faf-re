@@ -49,6 +49,40 @@ struct __declspec(align(4)) TString
 	lu_hash hash;        // Cached hash for string table lookup.
 	size_t len;          // String length in bytes.
 	char str[1];         // Flexible array tail.
+
+	/**
+	 * What it does:
+	 * Reads the characters and interns them in the owning thread's state,
+	 * handed back owned. Inlined into `SerConstructHelper<TString>::Construct`
+	 * 0x00921280.
+	 */
+	static void MemberConstruct(
+		gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+	);
+
+	/**
+	 * Address: 0x00921500 (FUN_00921500)
+	 *
+	 * What it does:
+	 * Saves the characters, owned.
+	 */
+	void MemberSaveConstructArgs(
+		gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+	);
+
+	/**
+	 * What it does:
+	 * Nothing: the construct hook built the string from its characters.
+	 * `SerSaveLoadHelper<TString>::Deserialize` 0x0091E4D0 is a bare `ret`.
+	 */
+	void MemberDeserialize(gpg::ReadArchive*) {}
+
+	/**
+	 * What it does:
+	 * Nothing: the characters went out with the construct arguments.
+	 * `SerSaveLoadHelper<TString>::Serialize` 0x0091E4E0 is a bare `ret`.
+	 */
+	void MemberSerialize(gpg::WriteArchive*) const {}
 };
 static_assert(offsetof(TString, tt) == 0x04, "TString::tt must be at +0x04");
 static_assert(offsetof(TString, marked) == 0x05, "TString::marked must be at +0x05");
@@ -99,7 +133,7 @@ struct Table
 	 * Serializes one table metatable pointer lane, dense array payload lanes,
 	 * and non-empty hash key/value lanes using the archive owner context.
 	 */
-	static void MemberSerialize(gpg::WriteArchive* archive, Table* object, int version, const gpg::RRef* ownerRef);
+	void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef);
 
 	/**
 	 * Address: 0x00922950 (FUN_00922950, Table::MemberDeserialize)
@@ -108,7 +142,31 @@ struct Table
 	 * Deserializes one Lua table metatable pointer lane, dense array payload
 	 * lanes, and hashed key/value lanes under owner GC traversal lock.
 	 */
-	static void MemberDeserialize(gpg::ReadArchive* archive, Table* object, int version, const gpg::RRef& ownerRef);
+	void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
+	/**
+	 * What it does:
+	 * Reads whether the table was saved by name. A named table is looked up
+	 * in the loading state's `__serialize_object_for_name` and handed back
+	 * as it is; anything else is a fresh table of the saved array and hash
+	 * sizes, owned. Inlined into `SerConstructHelper<Table>::Construct`
+	 * 0x00922190.
+	 */
+	static void MemberConstruct(
+		gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+	);
+
+	/**
+	 * Address: 0x00921590 (FUN_00921590)
+	 *
+	 * What it does:
+	 * Saves the table's name when the owning state's
+	 * `__serialize_name_for_object` has one for it, otherwise its array and
+	 * hash sizes.
+	 */
+	void MemberSaveConstructArgs(
+		gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+	);
 
 	static gpg::RType* sType;
 };
@@ -147,7 +205,7 @@ struct Udata
 	 * Serializes userdata metatable pointer lane and typed payload bytes using
 	 * one owning Lua thread reference as archive owner context.
 	 */
-	static void MemberSerialize(gpg::WriteArchive* archive, Udata* object, int version, gpg::RRef* ownerRef);
+	void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef);
 
 	/**
 	 * Address: 0x00923170 (FUN_00923170, Udata::MemberDeserialize)
@@ -156,7 +214,26 @@ struct Udata
 	 * Deserializes userdata metatable pointer lane and payload bytes under one
 	 * owning Lua thread traversal lock context.
 	 */
-	static void MemberDeserialize(gpg::ReadArchive* archive, Udata* object, int version, const gpg::RRef& ownerRef);
+	void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
+	/**
+	 * What it does:
+	 * Reads the payload type and builds a default-constructed userdata of it
+	 * in the owning thread's state (`luaS_newudata`), owned. Inlined into
+	 * `SerConstructHelper<Udata>::Construct` 0x00920D30.
+	 */
+	static void MemberConstruct(
+		gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+	);
+
+	/**
+	 * What it does:
+	 * Saves the payload type, owned. Inlined into
+	 * `SerSaveConstructHelper<Udata>::SaveConstructArgs` 0x0091E530.
+	 */
+	void MemberSaveConstructArgs(
+		gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+	);
 
 	static gpg::RType* sType;
 };
@@ -230,7 +307,7 @@ struct Proto
 	 * Serializes proto scalar metadata, constants/code/nested-proto lanes, and
 	 * debug name/source pointer lanes under the owning thread archive context.
 	 */
-	static void MemberSerialize(gpg::WriteArchive* archive, Proto* object, int version, gpg::RRef* ownerRef);
+	void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef);
 
 	/**
 	 * Address: 0x00922B20 (FUN_00922B20, Proto::MemberDeserialize)
@@ -239,7 +316,25 @@ struct Proto
 	 * Deserializes proto scalar metadata, constants/code/nested-proto lanes,
 	 * and debug name/source pointer lanes, then validates bytecode consistency.
 	 */
-	static void MemberDeserialize(gpg::ReadArchive* archive, Proto* object, int version, gpg::RRef* ownerRef);
+	void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
+	/**
+	 * What it does:
+	 * Builds an empty prototype in the owning thread's state, owned. Inlined
+	 * into `SerConstructHelper<Proto>::Construct` 0x00920C20.
+	 */
+	static void MemberConstruct(
+		gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+	);
+
+	/**
+	 * What it does:
+	 * Saves nothing; the prototype is owned. Inlined into
+	 * `SerSaveConstructHelper<Proto>::SaveConstructArgs` 0x0091E520.
+	 */
+	void MemberSaveConstructArgs(
+		gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+	);
 
 	static gpg::RType* sType;
 };
@@ -303,7 +398,45 @@ struct UpVal
 	lu_byte marked;
 	LuaPlus::TObject* v; // Points to stack slot when open.
 	LuaPlus::TObject value; // Closed value storage.
+
+	/**
+	 * What it does:
+	 * Builds a closed upvalue in the owning thread's state, owned. Inlined
+	 * into `SerConstructHelper<UpVal>::Construct` 0x00920B10.
+	 */
+	static void MemberConstruct(
+		gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+	);
+
+	/**
+	 * What it does:
+	 * Saves nothing; the upvalue is owned. Inlined into
+	 * `SerSaveConstructHelper<UpVal>::SaveConstructArgs` 0x0091E510.
+	 */
+	void MemberSaveConstructArgs(
+		gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+	);
+
+	/**
+	 * What it does:
+	 * Loads the value `v` points at. Inlined into
+	 * `SerSaveLoadHelper<UpVal>::Deserialize` 0x00920B60.
+	 */
+	void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
+	/**
+	 * What it does:
+	 * Saves the value `v` points at. Inlined into
+	 * `SerSaveLoadHelper<UpVal>::Serialize` 0x00920BA0.
+	 */
+	void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef) const;
 };
+
+// luaF_newupval (FUN_00914F40) allocates "push 14h" and stores
+// "lea eax,[esi+0Ch]" into [esi+8]: v at +0x08 points at value at +0x0C.
+static_assert(offsetof(UpVal, v) == 0x08, "UpVal::v must be at +0x08");
+static_assert(offsetof(UpVal, value) == 0x0C, "UpVal::value must be at +0x0C");
+static_assert(sizeof(UpVal) == 0x14, "UpVal size must be 0x14 (luaF_newupval allocates 0x14)");
 
 // Shares its header with CClosure: tt/marked are single bytes like every other
 // collectable, and nupvalues/isC sit at +0x08/+0x09. The previous model made
@@ -330,7 +463,7 @@ struct LClosure
 	 * Serializes one closure's proto pointer, global-object lane, and upvalue
 	 * pointer array lanes under the owning thread archive context.
 	 */
-	static void MemberSerialize(gpg::WriteArchive* archive, LClosure* object, int version, const gpg::RRef* ownerRef);
+	void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef);
 
 	/**
 	 * Address: 0x00922AB0 (FUN_00922AB0, LClosure::MemberDeserialize)
@@ -339,7 +472,26 @@ struct LClosure
 	 * Deserializes prototype/global-object/upvalue pointer lanes for one
 	 * Lua closure object.
 	 */
-	static void MemberDeserialize(gpg::ReadArchive* archive, LClosure* object, int version, const gpg::RRef& ownerRef);
+	void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
+	/**
+	 * What it does:
+	 * Reads the upvalue count and builds a closure with that many slots over
+	 * the owning thread's globals, owned. Inlined into
+	 * `SerConstructHelper<LClosure>::Construct` 0x00920A80.
+	 */
+	static void MemberConstruct(
+		gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+	);
+
+	/**
+	 * What it does:
+	 * Saves the upvalue count, owned. Inlined into
+	 * `SerSaveConstructHelper<LClosure>::SaveConstructArgs` 0x0091F490.
+	 */
+	void MemberSaveConstructArgs(
+		gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+	);
 
 	static gpg::RType* sType;
 };
@@ -456,12 +608,7 @@ struct __declspec(align(8)) lua_State
 	 * Serializes raw VM stack/callframe/global/upvalue lanes for one
 	 * `lua_State` runtime object.
 	 */
-	static void MemberSerialize(
-		gpg::WriteArchive* archive,
-		lua_State* state,
-		int version,
-		const gpg::RRef* ownerRef
-	);
+	void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef);
 
 	/**
 	 * Address: 0x00922DD0 (FUN_00922DD0, lua_State::MemberDeserialize)
@@ -470,11 +617,28 @@ struct __declspec(align(8)) lua_State
 	 * Restores one Lua thread stack/callframe/global/upvalue lane set from a
 	 * serialized archive payload.
 	 */
-	static void MemberDeserialize(
-		gpg::ReadArchive* archive,
-		lua_State* state,
-		int version,
-		gpg::RRef* ownerRef
+	void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
+
+	/**
+	 * What it does:
+	 * Reads whether the saved thread was the main one: that is the loading
+	 * state itself, handed back unowned; any other becomes a new thread of
+	 * it, owned. Inlined into `SerConstructHelper<lua_State>::Construct`
+	 * 0x00920C70.
+	 */
+	static void MemberConstruct(
+		gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+	);
+
+	/**
+	 * Address: 0x00921630 (FUN_00921630)
+	 *
+	 * What it does:
+	 * Checks the thread belongs to the owning state and saves whether it is
+	 * the main one; refuses a thread inside a C call.
+	 */
+	void MemberSaveConstructArgs(
+		gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
 	);
 
 	// The object ends at +0x48: lua_open (FUN_009246D0) allocates it with

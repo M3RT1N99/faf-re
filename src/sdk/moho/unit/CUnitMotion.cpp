@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <new>
@@ -32,6 +33,7 @@
 #include "moho/sim/SimConVarAccess.h"
 #include "moho/sim/STIMap.h"
 #include "moho/sim/Sim.h"
+#include "moho/sim/SimStartupRegistrations.h"
 #include "moho/unit/CUnitCommandQueue.h"
 #include "moho/unit/core/IUnit.h"
 #include "moho/unit/core/Unit.h"
@@ -887,10 +889,8 @@ namespace moho
     // offset inside +/- the RandomElevationOffset con-var so a group of them
     // does not stack at one altitude.
     if (mUnit->mIsAir && !mUnit->IsInCategory("POD")) {
-      float elevationOffset = 0.0f;
-      if (ReadSimConVarValue<float>(mUnit->SimulationRef, "RandomElevationOffset", elevationOffset)) {
-        mRandomElevation = mUnit->SimulationRef->mRngState->FRand(-elevationOffset, elevationOffset);
-      }
+      const float elevationOffset = ReadSimConVar(mUnit->SimulationRef, gSimConVar_RandomElevationOffset);
+      mRandomElevation = mUnit->SimulationRef->mRngState->FRand(-elevationOffset, elevationOffset);
     }
   }
 
@@ -902,15 +902,9 @@ namespace moho
    * Allocates one `CUnitMotion`, default-constructs it, and returns it as an
    * unowned reflected construct result.
    */
-  void CUnitMotion::MemberConstruct(
-    gpg::ReadArchive&,
-    const int,
-    const gpg::RRef&,
-    gpg::SerConstructResult& result
-  )
+  void CUnitMotion::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
   {
-    CUnitMotion* const motion = new (std::nothrow) CUnitMotion();
-    result.SetUnowned(MakeCUnitMotionRef(motion), 0u);
+    result.SetUnowned(gpg::MakeRRef(new CUnitMotion()), 0u);
   }
 
   /**
@@ -934,167 +928,167 @@ namespace moho
   /**
    * Address: 0x006BACE0 (FUN_006BACE0, Moho::CUnitMotion::MemberDeserialize)
    */
-  void CUnitMotion::MemberDeserialize(gpg::ReadArchive* const archive, CUnitMotion* const motion)
+  void CUnitMotion::MemberDeserialize(gpg::ReadArchive* const archive)
   {
-    if (archive == nullptr || motion == nullptr) {
+    if (archive == nullptr) {
       return;
     }
 
     const gpg::RRef ownerRef = NullOwnerRef();
-    motion->mUnit = ReadPointerUnowned<Unit>(*archive, ownerRef, "Unit");
-    motion->mNextWaypoint = ReadPointerUnowned<CPathPoint>(*archive, ownerRef, "CPathPoint");
-    motion->mFollowingWaypoint = ReadPointerUnowned<CPathPoint>(*archive, ownerRef, "CPathPoint");
+    mUnit = ReadPointerUnowned<Unit>(*archive, ownerRef, "Unit");
+    mNextWaypoint = ReadPointerUnowned<CPathPoint>(*archive, ownerRef, "CPathPoint");
+    mFollowingWaypoint = ReadPointerUnowned<CPathPoint>(*archive, ownerRef, "CPathPoint");
 
-    archive->ReadFloat(&motion->mFuelUseTime);
-    archive->ReadBool(&motion->mStopRequested);
+    archive->ReadFloat(&mFuelUseTime);
+    archive->ReadBool(&mStopRequested);
 
-    ReadTypedValue(*archive, motion->mTargetPosition, ownerRef);
-    ReadTypedValue(*archive, motion->mFormationVec, ownerRef);
-    ReadTypedValue(*archive, motion->mPos, ownerRef);
-    ReadTypedValue(*archive, motion->mVelocity, ownerRef);
-    ReadTypedValue(*archive, motion->mVector44, ownerRef);
+    ReadTypedValue(*archive, mTargetPosition, ownerRef);
+    ReadTypedValue(*archive, mFormationVec, ownerRef);
+    ReadTypedValue(*archive, mPos, ownerRef);
+    ReadTypedValue(*archive, mVelocity, ownerRef);
+    ReadTypedValue(*archive, mVector44, ownerRef);
 
-    archive->ReadFloat(&motion->mCurElevation);
-    archive->ReadFloat(&motion->mTargetElevation);
-    archive->ReadFloat(&motion->mNewElevation);
-    archive->ReadFloat(&motion->mSubElevation);
-    archive->ReadFloat(&motion->mDivingSpeed);
-    archive->ReadFloat(&motion->mHeight);
+    archive->ReadFloat(&mCurElevation);
+    archive->ReadFloat(&mTargetElevation);
+    archive->ReadFloat(&mNewElevation);
+    archive->ReadFloat(&mSubElevation);
+    archive->ReadFloat(&mDivingSpeed);
+    archive->ReadFloat(&mHeight);
 
-    ReadTypedValue(*archive, motion->mVector68, ownerRef);
-    ReadTypedValue(*archive, motion->mLayer, ownerRef);
-    ReadTypedValue(*archive, motion->mMotionState, ownerRef);
-    ReadTypedValue(*archive, motion->mHorzEvent, ownerRef);
-    ReadTypedValue(*archive, motion->mVertEvent, ownerRef);
-    ReadTypedValue(*archive, motion->mTurnEvent, ownerRef);
-    ReadTypedValue(*archive, motion->mCarrierEvent, ownerRef);
+    ReadTypedValue(*archive, mVector68, ownerRef);
+    ReadTypedValue(*archive, mLayer, ownerRef);
+    ReadTypedValue(*archive, mMotionState, ownerRef);
+    ReadTypedValue(*archive, mHorzEvent, ownerRef);
+    ReadTypedValue(*archive, mVertEvent, ownerRef);
+    ReadTypedValue(*archive, mTurnEvent, ownerRef);
+    ReadTypedValue(*archive, mCarrierEvent, ownerRef);
 
-    archive->ReadBool(&motion->mAlwaysUseTopSpeed);
-    archive->ReadBool(&motion->mIsBeingPushed);
-    archive->ReadBool(&motion->mInStateTransition);
-    archive->ReadBool(&motion->mUnknownBool8F);
-    archive->ReadBool(&motion->mProcessSurfaceCollision);
-    archive->ReadBool(&motion->mUnknownBool91);
+    archive->ReadBool(&mAlwaysUseTopSpeed);
+    archive->ReadBool(&mIsBeingPushed);
+    archive->ReadBool(&mInStateTransition);
+    archive->ReadBool(&mUnknownBool8F);
+    archive->ReadBool(&mProcessSurfaceCollision);
+    archive->ReadBool(&mUnknownBool91);
 
-    archive->ReadFloat(&motion->mUnknownFloat94);
-    archive->ReadFloat(&motion->mUnknownFloat98);
-    archive->ReadFloat(&motion->mRandomElevation);
+    archive->ReadFloat(&mUnknownFloat94);
+    archive->ReadFloat(&mUnknownFloat98);
+    archive->ReadFloat(&mRandomElevation);
 
-    ReadTypedValue(*archive, motion->mCombatState, ownerRef);
+    ReadTypedValue(*archive, mCombatState, ownerRef);
 
-    archive->ReadUInt(&motion->mCombatStateTimeoutTick);
-    archive->ReadInt(&motion->mSustainedTurnTicks);
-    archive->ReadInt(&motion->mPreparationTick);
-    archive->ReadInt(&motion->mStateWordB0);
+    archive->ReadUInt(&mCombatStateTimeoutTick);
+    archive->ReadInt(&mSustainedTurnTicks);
+    archive->ReadInt(&mPreparationTick);
+    archive->ReadInt(&mStateWordB0);
 
-    ReadTypedValue(*archive, motion->mPreviousVelocity, ownerRef);
-    ReadTypedValue(*archive, motion->mBodyTiltOffset, ownerRef);
-    ReadTypedValue(*archive, motion->mRecoilImpulse, ownerRef);
-    ReadTypedValue(*archive, motion->mWobbleOffset, ownerRef);
-    ReadTypedValue(*archive, motion->mWobbleVelocity, ownerRef);
-    ReadTypedValue(*archive, motion->mWobbleTarget, ownerRef);
-    ReadTypedValue(*archive, motion->mForce, ownerRef);
-    ReadTypedValue(*archive, motion->mTorque, ownerRef);
-    ReadTypedValue(*archive, motion->mRaisedPlatformUnit, ownerRef);
+    ReadTypedValue(*archive, mPreviousVelocity, ownerRef);
+    ReadTypedValue(*archive, mBodyTiltOffset, ownerRef);
+    ReadTypedValue(*archive, mRecoilImpulse, ownerRef);
+    ReadTypedValue(*archive, mWobbleOffset, ownerRef);
+    ReadTypedValue(*archive, mWobbleVelocity, ownerRef);
+    ReadTypedValue(*archive, mWobbleTarget, ownerRef);
+    ReadTypedValue(*archive, mForce, ownerRef);
+    ReadTypedValue(*archive, mTorque, ownerRef);
+    ReadTypedValue(*archive, mRaisedPlatformUnit, ownerRef);
 
-    archive->ReadFloat(&motion->mLayerTransitionTicks);
+    archive->ReadFloat(&mLayerTransitionTicks);
 
-    ReadTypedValue(*archive, motion->mLastTrans, ownerRef);
-    ReadTypedValue(*archive, motion->mCurTrans, ownerRef);
-    ReadTypedValue(*archive, motion->mReservation, ownerRef);
+    ReadTypedValue(*archive, mLastTrans, ownerRef);
+    ReadTypedValue(*archive, mCurTrans, ownerRef);
+    ReadTypedValue(*archive, mReservation, ownerRef);
 
-    archive->ReadBool(&motion->mHasDoneCallback);
+    archive->ReadBool(&mHasDoneCallback);
 
     CEconRequest* const loadedRequest = ReadPointerOwned<CEconRequest>(*archive, ownerRef, "CEconRequest");
-    ReplaceEconomyRequestPointer(motion->mEconomyRequest, loadedRequest);
+    ReplaceEconomyRequestPointer(mEconomyRequest, loadedRequest);
 
-    ReadTypedValue(*archive, motion->mRepairConsumption, ownerRef);
+    ReadTypedValue(*archive, mRepairConsumption, ownerRef);
   }
 
   /**
    * Address: 0x006BB460 (FUN_006BB460, Moho::CUnitMotion::MemberSerialize)
    */
-  void CUnitMotion::MemberSerialize(CUnitMotion* const motion, gpg::WriteArchive* const archive)
+  void CUnitMotion::MemberSerialize(gpg::WriteArchive* const archive) const
   {
-    if (archive == nullptr || motion == nullptr) {
+    if (archive == nullptr) {
       return;
     }
 
     const gpg::RRef ownerRef = NullOwnerRef();
     gpg::WriteRawPointer(
-      archive, MakeTrackedRef(motion->mUnit), gpg::TrackedPointerState::Unowned, ownerRef
+      archive, MakeTrackedRef(mUnit), gpg::TrackedPointerState::Unowned, ownerRef
     );
     gpg::WriteRawPointer(
-      archive, MakeTrackedRef(motion->mNextWaypoint), gpg::TrackedPointerState::Unowned, ownerRef
+      archive, MakeTrackedRef(mNextWaypoint), gpg::TrackedPointerState::Unowned, ownerRef
     );
     gpg::WriteRawPointer(
-      archive, MakeTrackedRef(motion->mFollowingWaypoint), gpg::TrackedPointerState::Unowned, ownerRef
+      archive, MakeTrackedRef(mFollowingWaypoint), gpg::TrackedPointerState::Unowned, ownerRef
     );
 
-    archive->WriteFloat(motion->mFuelUseTime);
-    archive->WriteBool(motion->mStopRequested);
+    archive->WriteFloat(mFuelUseTime);
+    archive->WriteBool(mStopRequested);
 
-    WriteTypedValue(*archive, motion->mTargetPosition, ownerRef);
-    WriteTypedValue(*archive, motion->mFormationVec, ownerRef);
-    WriteTypedValue(*archive, motion->mPos, ownerRef);
-    WriteTypedValue(*archive, motion->mVelocity, ownerRef);
-    WriteTypedValue(*archive, motion->mVector44, ownerRef);
+    WriteTypedValue(*archive, mTargetPosition, ownerRef);
+    WriteTypedValue(*archive, mFormationVec, ownerRef);
+    WriteTypedValue(*archive, mPos, ownerRef);
+    WriteTypedValue(*archive, mVelocity, ownerRef);
+    WriteTypedValue(*archive, mVector44, ownerRef);
 
-    archive->WriteFloat(motion->mCurElevation);
-    archive->WriteFloat(motion->mTargetElevation);
-    archive->WriteFloat(motion->mNewElevation);
-    archive->WriteFloat(motion->mSubElevation);
-    archive->WriteFloat(motion->mDivingSpeed);
-    archive->WriteFloat(motion->mHeight);
+    archive->WriteFloat(mCurElevation);
+    archive->WriteFloat(mTargetElevation);
+    archive->WriteFloat(mNewElevation);
+    archive->WriteFloat(mSubElevation);
+    archive->WriteFloat(mDivingSpeed);
+    archive->WriteFloat(mHeight);
 
-    WriteTypedValue(*archive, motion->mVector68, ownerRef);
-    WriteTypedValue(*archive, motion->mLayer, ownerRef);
-    WriteTypedValue(*archive, motion->mMotionState, ownerRef);
-    WriteTypedValue(*archive, motion->mHorzEvent, ownerRef);
-    WriteTypedValue(*archive, motion->mVertEvent, ownerRef);
-    WriteTypedValue(*archive, motion->mTurnEvent, ownerRef);
-    WriteTypedValue(*archive, motion->mCarrierEvent, ownerRef);
+    WriteTypedValue(*archive, mVector68, ownerRef);
+    WriteTypedValue(*archive, mLayer, ownerRef);
+    WriteTypedValue(*archive, mMotionState, ownerRef);
+    WriteTypedValue(*archive, mHorzEvent, ownerRef);
+    WriteTypedValue(*archive, mVertEvent, ownerRef);
+    WriteTypedValue(*archive, mTurnEvent, ownerRef);
+    WriteTypedValue(*archive, mCarrierEvent, ownerRef);
 
-    archive->WriteBool(motion->mAlwaysUseTopSpeed);
-    archive->WriteBool(motion->mIsBeingPushed);
-    archive->WriteBool(motion->mInStateTransition);
-    archive->WriteBool(motion->mUnknownBool8F);
-    archive->WriteBool(motion->mProcessSurfaceCollision);
-    archive->WriteBool(motion->mUnknownBool91);
+    archive->WriteBool(mAlwaysUseTopSpeed);
+    archive->WriteBool(mIsBeingPushed);
+    archive->WriteBool(mInStateTransition);
+    archive->WriteBool(mUnknownBool8F);
+    archive->WriteBool(mProcessSurfaceCollision);
+    archive->WriteBool(mUnknownBool91);
 
-    archive->WriteFloat(motion->mUnknownFloat94);
-    archive->WriteFloat(motion->mUnknownFloat98);
-    archive->WriteFloat(motion->mRandomElevation);
+    archive->WriteFloat(mUnknownFloat94);
+    archive->WriteFloat(mUnknownFloat98);
+    archive->WriteFloat(mRandomElevation);
 
-    WriteTypedValue(*archive, motion->mCombatState, ownerRef);
+    WriteTypedValue(*archive, mCombatState, ownerRef);
 
-    archive->WriteUInt(motion->mCombatStateTimeoutTick);
-    archive->WriteInt(motion->mSustainedTurnTicks);
-    archive->WriteInt(motion->mPreparationTick);
-    archive->WriteInt(motion->mStateWordB0);
+    archive->WriteUInt(mCombatStateTimeoutTick);
+    archive->WriteInt(mSustainedTurnTicks);
+    archive->WriteInt(mPreparationTick);
+    archive->WriteInt(mStateWordB0);
 
-    WriteTypedValue(*archive, motion->mPreviousVelocity, ownerRef);
-    WriteTypedValue(*archive, motion->mBodyTiltOffset, ownerRef);
-    WriteTypedValue(*archive, motion->mRecoilImpulse, ownerRef);
-    WriteTypedValue(*archive, motion->mWobbleOffset, ownerRef);
-    WriteTypedValue(*archive, motion->mWobbleVelocity, ownerRef);
-    WriteTypedValue(*archive, motion->mWobbleTarget, ownerRef);
-    WriteTypedValue(*archive, motion->mForce, ownerRef);
-    WriteTypedValue(*archive, motion->mTorque, ownerRef);
-    WriteTypedValue(*archive, motion->mRaisedPlatformUnit, ownerRef);
+    WriteTypedValue(*archive, mPreviousVelocity, ownerRef);
+    WriteTypedValue(*archive, mBodyTiltOffset, ownerRef);
+    WriteTypedValue(*archive, mRecoilImpulse, ownerRef);
+    WriteTypedValue(*archive, mWobbleOffset, ownerRef);
+    WriteTypedValue(*archive, mWobbleVelocity, ownerRef);
+    WriteTypedValue(*archive, mWobbleTarget, ownerRef);
+    WriteTypedValue(*archive, mForce, ownerRef);
+    WriteTypedValue(*archive, mTorque, ownerRef);
+    WriteTypedValue(*archive, mRaisedPlatformUnit, ownerRef);
 
-    archive->WriteFloat(motion->mLayerTransitionTicks);
+    archive->WriteFloat(mLayerTransitionTicks);
 
-    WriteTypedValue(*archive, motion->mLastTrans, ownerRef);
-    WriteTypedValue(*archive, motion->mCurTrans, ownerRef);
-    WriteTypedValue(*archive, motion->mReservation, ownerRef);
+    WriteTypedValue(*archive, mLastTrans, ownerRef);
+    WriteTypedValue(*archive, mCurTrans, ownerRef);
+    WriteTypedValue(*archive, mReservation, ownerRef);
 
-    archive->WriteBool(motion->mHasDoneCallback);
+    archive->WriteBool(mHasDoneCallback);
     gpg::WriteRawPointer(
-      archive, MakeTrackedRef(motion->mEconomyRequest), gpg::TrackedPointerState::Owned, ownerRef
+      archive, MakeTrackedRef(mEconomyRequest), gpg::TrackedPointerState::Owned, ownerRef
     );
 
-    WriteTypedValue(*archive, motion->mRepairConsumption, ownerRef);
+    WriteTypedValue(*archive, mRepairConsumption, ownerRef);
   }
 
   /**
@@ -1133,8 +1127,6 @@ namespace moho
   void CUnitMotion::Stop(const Wm3::Vector3f* const holdPosition)
   {
     Unit* const unit = mUnit;
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    gpg::Warnf("[MOTDIAG] Stop unit=%p hold=%d state=%d", static_cast<void*>(unit), holdPosition ? 1 : 0, static_cast<int>(mMotionState));
     mStopRequested = 1;
 
     if (unit->mIsAir && !unit->IsUnitState(UNITSTATE_TransportUnloading) &&
@@ -1211,20 +1203,6 @@ namespace moho
     const ELayer layer
   )
   {
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    // Bounded: this is a sim hot path (every move order, every unit, every
-    // retarget), and ungated it buries every other probe in the .sclog and
-    // slows the beat enough to change the timing being measured.
-    {
-      static DiagnosticBudget sMotDiag;
-      if (sMotDiag.Take(200)) {
-        gpg::Warnf(
-          "[MOTDIAG] SetTarget unit=%p target=(%.1f,%.1f) layer=%d state=%d",
-          static_cast<void*>(mUnit), target.x, target.z,
-          static_cast<int>(layer), static_cast<int>(mMotionState)
-        );
-      }
-    }
     mStopRequested = 0;
     mTargetPosition = target;
 
@@ -1359,14 +1337,6 @@ namespace moho
 
     Entity& entity = *static_cast<Entity*>(mUnit);
     entity.SetPendingTransform(transform, pendingVelocityScale);
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    {
-      static DiagnosticBudget sCount;
-      if (const int moveCount = sCount.Next() + 1; (moveCount - 1) % 20 == 0) {
-        gpg::Warnf("[MOTDIAG] MoveTo unit=%p to=(%.2f,%.2f,%.2f) step=%.3f n=%d", static_cast<void*>(mUnit),
-                   transform.pos_.x, transform.pos_.y, transform.pos_.z, timeStep, moveCount);
-      }
-    }
     mUnit->SimulationRef->Logf(
       "  MoveTo(<%7.2f,%7.2f,%7.2f>)\n",
       transform.pos_.x,
@@ -2494,8 +2464,6 @@ namespace moho
       }
     }
 
-    // TEMPORARY PROBE -- lever-arm triage for the ground-collision angular
-    // runaway. Delete when resolved.
     if (anyGroundHit) {
       static DiagnosticBudget sLeverCount;
       if (sLeverCount.Take(12)) {
@@ -2907,31 +2875,6 @@ namespace moho
     }
 
     if (initiallyFits && UnitWontFitAt(transform.pos_, unit)) {
-      // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-      {
-        const SFootprint& fp = unit->GetFootprint();
-        const SOCellPos cell = fp.ToCellPos(transform.pos_);
-        const COGrid& grid = *unit->SimulationRef->mOGrid;
-        const EOccupancyCaps mobileCaps = OCCUPY_MobileCheck(fp, *unit->SimulationRef->mMapData, cell);
-        gpg::Warnf("[MOTDIAG] WontFit from=(%.2f,%.2f) to=(%.2f,%.2f) cell=(%d,%d) fp=%dx%d caps=0x%X terrainOcc=%d waterOcc=%d filter=0x%X",
-                   originalPosition.x, originalPosition.z, transform.pos_.x, transform.pos_.z, static_cast<int>(cell.x), static_cast<int>(cell.z),
-                   static_cast<int>(fp.mSizeX), static_cast<int>(fp.mSizeZ), static_cast<unsigned>(mobileCaps),
-                   grid.terrainOccupation.GetRectOr(cell.x, cell.z, 1, 1, true) ? 1 : 0,
-                   grid.waterOccupation.GetRectOr(cell.x, cell.z, 1, 1, true) ? 1 : 0,
-                   static_cast<unsigned>(OCCUPY_Filter(fp, grid, cell, mobileCaps)));
-        static bool sDumped = false;
-        if (!sDumped) {
-          sDumped = true;
-          for (int z = static_cast<int>(cell.z) - 6; z <= static_cast<int>(cell.z) + 6; ++z) {
-            char row[40] = {};
-            int w = 0;
-            for (int x = static_cast<int>(cell.x) - 12; x <= static_cast<int>(cell.x) + 12; ++x) {
-              row[w++] = grid.terrainOccupation.GetRectOr(static_cast<std::int16_t>(x), static_cast<std::int16_t>(z), 1, 1, true) ? '#' : '.';
-            }
-            gpg::Warnf("[MOTDIAG] occ z=%d x=%d.. %s", z, static_cast<int>(cell.x) - 12, row);
-          }
-        }
-      }
       mVector44 = {};
       mVelocity = {};
       if (!mIsBeingPushed) {
@@ -3206,10 +3149,14 @@ namespace moho
     }
 
     float bankFactor = air.BankFactor;
+    // 0x006BDC75..0x006BDCA8 uses the unrotated horizontal target
+    // direction, not the ten-times-yaw steering vector above. Banking from
+    // that steering vector amplifies small approach corrections and also
+    // introduces banking when only the requested elevation changes.
     float forwardAlignment =
-      (rotatedSelectedVector.x * referenceVector.x) +
-      (rotatedSelectedVector.y * referenceVector.y) +
-      (rotatedSelectedVector.z * referenceVector.z);
+      (selectedPlanarVector.y * referenceVector.y) +
+      (selectedPlanarVector.z * referenceVector.z) +
+      (selectedPlanarVector.x * referenceVector.x);
 
     if (combatState == kAirCombatStateNormalTurn) {
       const float alignmentSquared = forwardAlignment * forwardAlignment;
@@ -3542,28 +3489,6 @@ namespace moho
     Wm3::Vector3f torqueWorld{};
     MultQuadVec(&torqueWorld, &torqueLocalScaled, &body.mOrientation);
 
-    // TEMPORARY PROBE -- air force runaway triage, delete when resolved.
-    {
-      const float accelMag = std::sqrt((accelX * accelX) + (accelY * accelY) + (accelZ * accelZ));
-      if (!std::isfinite(accelMag) || accelMag > 2000.0f) {
-        static DiagnosticBudget sAirBlowCount;
-        if (sAirBlowCount.Take(24)) {
-          gpg::Warnf(
-            "[AIRBLOW] unit=%p load=%.5f gains(turn=%.4f roll=%.4f lift=%.4f) dampMv=%.4f "
-            "KMove=%.4f KLiftDamp=%.4f KTurnDamp=%.4f steer=(%.2f,%.2f,%.2f) vel=(%.2f,%.2f,%.2f) "
-            "accel=(%.2f,%.2f,%.2f) mass=%.3f topSpeed=%.3f dock=%d wImp=(%.2f,%.2f,%.2f) "
-            "rotErr=(%.3f,%.3f,%.3f) invI=(%.4f,%.4f,%.4f)",
-            static_cast<void*>(mUnit), loadFactor, turnGain, rollGain, liftGain, movementDamping,
-            air.KMove, air.KLiftDamping, air.KTurnDamping, steeringForce.x, steeringForce.y, steeringForce.z,
-            body.mVelocity.x, body.mVelocity.y, body.mVelocity.z, accelX, accelY, accelZ, mass,
-            mUnit->mInfoCache.mFormationTopSpeed, useDockingBlend ? 1 : 0,
-            body.mWorldImpulse.x, body.mWorldImpulse.y, body.mWorldImpulse.z,
-            rotationError.x, rotationError.y, rotationError.z,
-            body.mInvInertiaTensor.x, body.mInvInertiaTensor.y, body.mInvInertiaTensor.z
-          );
-        }
-      }
-    }
 
     out->force = force;
     out->torque = torqueWorld;
@@ -3987,16 +3912,15 @@ namespace moho
       const float maxAirSpeed = unit->GetAttributes().moveSpeedMult * air.MaxAirspeed * 5.0f;
       const float lookAheadSpeed = std::min(maxAirSpeed, horizontalDistance);
 
-      float airLookAheadMult = 1.0f;
-      (void)ReadSimConVarValue<float>(sim, "AirLookAheadMult", airLookAheadMult);
+      const float airLookAheadMult = ReadSimConVar(sim, gSimConVar_AirLookAheadMult);
       float lookAheadElevation =
         mapData->LookAheadForMaxTerrain(outTransform.pos_, air.FlyInWater != 0, airLookAheadMult * lookAheadSpeed);
       const float liftClearance = std::max(lookAheadElevation - outTransform.pos_.y, 0.0f);
 
       if (liftClearance > air.LiftFactor && lookAheadSpeed > 1.0f) {
         const float halfSpeed = lookAheadSpeed * 0.5f;
-        float airLookAheadMult2 = 1.0f;
-        (void)ReadSimConVarValue<float>(sim, "AirLookAheadMult", airLookAheadMult2);
+        // 0x006BF8C5 re-reads the con-var instead of reusing the first value.
+        const float airLookAheadMult2 = ReadSimConVar(sim, gSimConVar_AirLookAheadMult);
         const float lookAhead2 =
           mapData->LookAheadForMaxTerrain(outTransform.pos_, air.FlyInWater != 0, halfSpeed * airLookAheadMult2) * 1.5f;
         const float liftClearance2 = std::max(lookAhead2 - outTransform.pos_.y, 0.0f);
@@ -4234,8 +4158,6 @@ namespace moho
     // `mPreviousVelocity` (+0xB4) every beat, not just on the landing return.
     mPreviousVelocity = physBody->mVelocity;
 
-    // TEMPORARY PROBE -- angular runaway triage. Snapshots mWorldImpulse around
-    // its writer so the growth can be attributed. Delete when resolved.
     const Wm3::Vector3f wImpBeforeIntegrate = physBody->mWorldImpulse;
 
     physBody->IntegrateFreefallStep(control.force, kFixedIntegrationDt, control.torque);
@@ -4258,32 +4180,6 @@ namespace moho
       }
     }
 
-    // TEMPORARY PROBE -- "collides with ground then flees at insane speed"
-    // triage. Reports the tick's whole velocity history so the runaway can be
-    // attributed to the control force or the freefall step. Delete when
-    // resolved.
-    {
-      const float postSpeed = Wm3::Vector3f::Length(physBody->mVelocity);
-      const float preSpeed = Wm3::Vector3f::Length(mPreviousVelocity);
-      if (!std::isfinite(postSpeed) || postSpeed > 250.0f) {
-        static DiagnosticBudget sFleeCount;
-        if (sFleeCount.Take(24)) {
-          gpg::Warnf(
-            "[AIRFLEE] unit=%p preSpeed=%.2f postSpeed=%.2f pre=(%.2f,%.2f,%.2f) "
-            "post=(%.2f,%.2f,%.2f) force=(%.1f,%.1f,%.1f) torque=(%.1f,%.1f,%.1f) "
-            "pos=(%.1f,%.1f,%.1f) curElev=%.2f tgtElev=%.2f newElev=%.2f layer=%d vert=%d",
-            static_cast<void*>(unit), preSpeed, postSpeed,
-            mPreviousVelocity.x, mPreviousVelocity.y, mPreviousVelocity.z,
-            physBody->mVelocity.x, physBody->mVelocity.y, physBody->mVelocity.z,
-            control.force.x, control.force.y, control.force.z,
-            control.torque.x, control.torque.y, control.torque.z,
-            physBody->mPos.x, physBody->mPos.y, physBody->mPos.z,
-            mCurElevation, mTargetElevation, mNewElevation,
-            static_cast<int>(mLayer), static_cast<int>(mVertEvent)
-          );
-        }
-      }
-    }
 
     // No terrain collision for a flier: every FAF build, 2025.7.1 included,
     // hot-patches it out of this tail, and FAF's scripts depend on that.
@@ -4338,15 +4234,6 @@ namespace moho
    */
   ETaskStatus CUnitMotion::MotionTick()
   {
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    {
-      static DiagnosticBudget sCount;
-      if (const int tickCount = sCount.Next() + 1; (tickCount - 1) % 100 == 0) {
-        gpg::Warnf("[MOTDIAG] CUnitMotion::MotionTick unit=%p state=%d target=(%.1f,%.1f,%.1f) n=%d",
-                   static_cast<void*>(mUnit), static_cast<int>(mMotionState), mTargetPosition.x, mTargetPosition.y,
-                   mTargetPosition.z, tickCount);
-      }
-    }
     if (mUnit->IsBeingBuilt()) {
       if (mUnit->mVarDat.mLayerMask == LAYER_Sub) {
         SetMotionVertEvent(UMVE_Bottom);
@@ -4790,3 +4677,39 @@ namespace moho
     unit->mUnitVarDat.mFuelRatio = nextFuelRatio;
   }
 } // namespace moho
+
+namespace moho
+{
+  /**
+   * `gpg::SerConstructHelper<CUnitMotion>`, vtable 0x00E2ACD8.
+   *
+   * Address: 0x00BD7240 (FUN_00BD7240 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFE070 (FUN_00BFE070 -- the global's destructor.)
+   * Address: 0x006BA7F0 (FUN_006BA7F0 -- `Init`.)
+   * Address: 0x006BA270 (FUN_006BA270 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x006BAC40 (FUN_006BAC40 -- `Delete`.)
+   */
+  struct CUnitMotionConstruct : gpg::SerConstructHelper<CUnitMotion>
+  {};
+
+  /**
+   * `gpg::SerSaveLoadHelper<CUnitMotion>`, vtable 0x00E2ACE8.
+   *
+   * Address: 0x00BD7280 (FUN_00BD7280 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFE0A0 (FUN_00BFE0A0 -- the global's destructor.)
+   * Address: 0x006BA870 (FUN_006BA870 -- `Init`.)
+   * Address: 0x006BA2E0 (FUN_006BA2E0 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x006BA2F0 (FUN_006BA2F0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct CUnitMotionSerializer : gpg::SerSaveLoadHelper<CUnitMotion>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B5E70 -- process-global `CUnitMotionConstruct` singleton.
+  moho::CUnitMotionConstruct gCUnitMotionConstruct;
+
+  // Address: 0x010B60C0 -- process-global `CUnitMotionSerializer` singleton.
+  moho::CUnitMotionSerializer gCUnitMotionSerializer;
+} // namespace

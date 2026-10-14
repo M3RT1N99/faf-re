@@ -16,6 +16,7 @@
 #include "moho/sim/Sim.h"
 #include "moho/task/CTask.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
+#include "gpg/core/reflection/Reflection.h"
 
 namespace moho
 {
@@ -55,56 +56,6 @@ namespace moho
 
   static_assert(sizeof(SEntAttachInfoTypeInfo) == 0x64, "SEntAttachInfoTypeInfo size must be 0x64");
 
-  class SEntAttachInfoSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BD4F20 (FUN_00BD4F20, dynamic initializer for the global
-     * `SEntAttachInfoSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    SEntAttachInfoSerializer();
-
-    /**
-     * Address: 0x00BFC6F0 (FUN_00BFC6F0, Moho::SEntAttachInfoSerializer::~SEntAttachInfoSerializer)
-     */
-    ~SEntAttachInfoSerializer();
-
-    /**
-     * Address: 0x00676E90 (FUN_00676E90, Moho::SEntAttachInfoSerializer::Deserialize)
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00676EA0 (FUN_00676EA0, Moho::SEntAttachInfoSerializer::Serialize)
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x0067C2D0 (FUN_0067C2D0, gpg::SerSaveLoadHelper_SEntAttach::Init)
-     *
-     * What it does:
-     * Binds load/save callbacks into reflected RTTI for `SEntAttachInfo`.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mDeserialize; // +0x0C
-    gpg::RType::save_func_t mSerialize;   // +0x10
-  };
-
-  static_assert(
-    offsetof(SEntAttachInfoSerializer, mDeserialize) == 0x0C,
-    "SEntAttachInfoSerializer::mDeserialize offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(SEntAttachInfoSerializer, mSerialize) == 0x10, "SEntAttachInfoSerializer::mSerialize offset must be 0x10"
-  );
-  static_assert(sizeof(SEntAttachInfoSerializer) == 0x14, "SEntAttachInfoSerializer size must be 0x14");
-
   /**
    * VFTABLE: 0x00E27694
    * COL: 0x00E8714C
@@ -140,56 +91,6 @@ namespace moho
   };
 
   static_assert(sizeof(PositionHistoryTypeInfo) == 0x64, "PositionHistoryTypeInfo size must be 0x64");
-
-  class PositionHistorySerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BD4F80 (FUN_00BD4F80, dynamic initializer for the global
-     * `PositionHistorySerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    PositionHistorySerializer();
-
-    /**
-     * Address: 0x00BFC780 (FUN_00BFC780, Moho::PositionHistorySerializer::~PositionHistorySerializer)
-     */
-    ~PositionHistorySerializer();
-
-    /**
-     * Address: 0x00677120 (FUN_00677120, Moho::PositionHistorySerializer::Deserialize)
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00677140 (FUN_00677140, Moho::PositionHistorySerializer::Serialize)
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x0067C3B0 (FUN_0067C3B0, gpg::SerSaveLoadHelper_PositionHistory::Init)
-     *
-     * What it does:
-     * Binds load/save callbacks into reflected RTTI for `PositionHistory`.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mDeserialize; // +0x0C
-    gpg::RType::save_func_t mSerialize;   // +0x10
-  };
-
-  static_assert(
-    offsetof(PositionHistorySerializer, mDeserialize) == 0x0C,
-    "PositionHistorySerializer::mDeserialize offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(PositionHistorySerializer, mSerialize) == 0x10, "PositionHistorySerializer::mSerialize offset must be 0x10"
-  );
-  static_assert(sizeof(PositionHistorySerializer) == 0x14, "PositionHistorySerializer size must be 0x14");
 
   /**
    * VFTABLE: 0x00E2759C
@@ -232,132 +133,31 @@ namespace moho
   static_assert(sizeof(EntityTypeInfo) == 0x64, "EntityTypeInfo size must be 0x64");
 
   /**
-   * VFTABLE: 0x00E276DC
-   * COL: 0x00E7FFE4
+   * `gpg::SerSaveConstructHelper<Entity>`, vtable 0x00E276D4.
+   *
+   * Address: 0x00BD4FE0 (FUN_00BD4FE0 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFC810 (FUN_00BFC810 -- the global's destructor.)
+   * Address: 0x0067C500 (FUN_0067C500 -- `Init`.)
+   * Address: 0x0067B3E0 (FUN_0067B3E0 -- `SaveConstructArgs`, a forward to `MemberSaveConstructArgs`.)
    */
-  class EntitySaveConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BD4FE0 (FUN_00BD4FE0, dynamic initializer for the global
-     * `EntitySaveConstruct` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * save-construct-args callback field. Plain unlink atexit target,
-     * modeled as the compiler's implicit static-destructor registration.
-     */
-    EntitySaveConstruct();
-
-    /**
-     * What it does:
-     * Unlinks this helper node from whatever intrusive list it currently
-     * sits in and restores a self-linked sentinel state.
-     */
-    ~EntitySaveConstruct();
-
-    /**
-     * Address: 0x0067B3E0 (FUN_0067B3E0, Moho::EntitySaveConstruct::Construct)
-     *
-     * What it does:
-     * Forwards save-construct callback flow into `Entity::MemberSaveConstructArgs`.
-     */
-    static void Construct(
-      gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef*, gpg::SerSaveConstructArgsResult* result
-    );
-
-    /**
-     * Address: 0x0067C500 (FUN_0067C500, gpg::SerSaveConstructHelper_Entity::Init)
-     *
-     * What it does:
-     * Binds save-construct callback into reflected RTTI for `Entity`.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::save_construct_args_func_t mConstructCallback; // +0x0C
-  };
-
-  static_assert(
-    offsetof(EntitySaveConstruct, mConstructCallback) == 0x0C,
-    "EntitySaveConstruct::mConstructCallback offset must be 0x0C"
-  );
-  static_assert(sizeof(EntitySaveConstruct) == 0x10, "EntitySaveConstruct size must be 0x10");
+  struct EntitySaveConstruct : gpg::SerSaveConstructHelper<Entity>
+  {};
 
   /**
-   * VFTABLE: 0x00E276EC
-   * COL: 0x00E7FF38
+   * `gpg::SerConstructHelper<Entity>`, vtable 0x00E276E4.
+   *
+   * Address: 0x00BD5010 (FUN_00BD5010 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFC840 (FUN_00BFC840 -- the global's destructor.)
+   * Address: 0x0067C580 (FUN_0067C580 -- `Init`.)
+   * Address: 0x0067B550 (FUN_0067B550 -- `Construct`, a forward to `MemberConstruct`.)
+   * Address: 0x0067F5D0 (FUN_0067F5D0 -- `Delete`.)
    */
-  class EntityConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BD5010 (FUN_00BD5010, dynamic initializer for the global
-     * `EntityConstruct` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * construct/delete callback fields. Plain unlink atexit target,
-     * modeled as the compiler's implicit static-destructor registration.
-     */
-    EntityConstruct();
-
-    /**
-     * What it does:
-     * Unlinks this helper node from whatever intrusive list it currently
-     * sits in and restores a self-linked sentinel state.
-     */
-    ~EntityConstruct();
-
-    /**
-     * Address: 0x0067B550 (FUN_0067B550, Moho::EntityConstruct::Construct)
-     *
-     * What it does:
-     * Forwards construct callback flow into `Entity::MemberConstruct`.
-     */
-    static void Construct(
-      gpg::ReadArchive* archive, const int version, gpg::RRef* const, gpg::SerConstructResult* result
-    );
-
-    /**
-     * Address: 0x0067F5D0 (FUN_0067F5D0, Moho::EntityConstruct::Deconstruct)
-     *
-     * What it does:
-     * Executes virtual deleting-dtor lane for one constructed `Entity`.
-     */
-    static void Deconstruct(void* objectPtr);
-
-    /**
-     * Address: 0x0067C580 (FUN_0067C580, gpg::SerConstructHelper_Entity::Init)
-     *
-     * What it does:
-     * Binds construct/delete callbacks into reflected RTTI for `Entity`.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::construct_func_t mConstructCallback;   // +0x0C
-    gpg::RType::delete_func_t mDeconstructCallback;     // +0x10
-  };
-
-  static_assert(
-    offsetof(EntityConstruct, mConstructCallback) == 0x0C,
-    "EntityConstruct::mConstructCallback offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(EntityConstruct, mDeconstructCallback) == 0x10,
-    "EntityConstruct::mDeconstructCallback offset must be 0x10"
-  );
-  static_assert(sizeof(EntityConstruct) == 0x14, "EntityConstruct size must be 0x14");
+  struct EntityConstruct : gpg::SerConstructHelper<Entity>
+  {};
 } // namespace moho
 
 namespace
 {
-  // Address: 0x010B4384 -- process-global `SEntAttachInfoSerializer` singleton.
-  moho::SEntAttachInfoSerializer gSEntAttachInfoSerializer;
-
-  // Address: 0x010B4474 -- process-global `PositionHistorySerializer` singleton.
-  moho::PositionHistorySerializer gPositionHistorySerializer;
 
   // Address: 0x010B4398 -- process-global `EntitySaveConstruct` singleton.
   moho::EntitySaveConstruct gEntitySaveConstruct;
@@ -369,7 +169,6 @@ namespace
   gpg::RType* gVTransformType = nullptr;
   gpg::RType* gCScriptObjectType = nullptr;
   gpg::RType* gCTaskType = nullptr;
-  gpg::RType* gEntityType = nullptr;
 
   template <typename TObject>
   [[nodiscard]] gpg::RType* ResolveCachedType(gpg::RType*& slot)
@@ -390,11 +189,6 @@ namespace
     return ResolveCachedType<moho::PositionHistory>(moho::PositionHistory::sType);
   }
 
-  [[nodiscard]] gpg::RType* ResolveEntityType()
-  {
-    return ResolveCachedType<moho::Entity>(gEntityType);
-  }
-
   [[nodiscard]] gpg::RType* ResolveWeakPtrEntityType()
   {
     return ResolveCachedType<moho::WeakPtr<moho::Entity>>(gWeakPtrEntityType);
@@ -405,18 +199,18 @@ namespace
     return ResolveCachedType<moho::VTransform>(gVTransformType);
   }
 
-  struct ScaledDirectionLaneView
+  struct ScaledDirectionLane
   {
     Wm3::Vector3f base;      // +0x00
     Wm3::Vector3f direction; // +0x0C
     float scale;             // +0x18
   };
 
-  static_assert(sizeof(ScaledDirectionLaneView) == 0x1C, "ScaledDirectionLaneView size must be 0x1C");
+  static_assert(sizeof(ScaledDirectionLane) == 0x1C, "ScaledDirectionLane size must be 0x1C");
   static_assert(
-    offsetof(ScaledDirectionLaneView, direction) == 0x0C, "ScaledDirectionLaneView::direction offset must be 0x0C"
+    offsetof(ScaledDirectionLane, direction) == 0x0C, "ScaledDirectionLane::direction offset must be 0x0C"
   );
-  static_assert(offsetof(ScaledDirectionLaneView, scale) == 0x18, "ScaledDirectionLaneView::scale offset must be 0x18");
+  static_assert(offsetof(ScaledDirectionLane, scale) == 0x18, "ScaledDirectionLane::scale offset must be 0x18");
 
   /**
    * Address: 0x00675300 (FUN_00675300)
@@ -426,7 +220,7 @@ namespace
    */
   [[maybe_unused]] [[nodiscard]] Wm3::Vector3f* ComposeScaledDirectionOffsetAdd(
     Wm3::Vector3f* const out,
-    const ScaledDirectionLaneView* const lane
+    const ScaledDirectionLane* const lane
   ) noexcept
   {
     GPG_ASSERT(out != nullptr);
@@ -450,7 +244,7 @@ namespace
    */
   [[maybe_unused]] [[nodiscard]] Wm3::Vector3f* ComposeScaledDirectionOffsetSub(
     Wm3::Vector3f* const out,
-    const ScaledDirectionLaneView* const lane
+    const ScaledDirectionLane* const lane
   ) noexcept
   {
     GPG_ASSERT(out != nullptr);
@@ -466,13 +260,13 @@ namespace
     return out;
   }
 
-  struct ByteLaneFlagAt18View
+  struct ByteLaneFlagAt18
   {
     std::uint8_t pad_00_18[0x18];
     std::uint8_t flagValue; // +0x18
   };
 
-  static_assert(offsetof(ByteLaneFlagAt18View, flagValue) == 0x18, "ByteLaneFlagAt18View::flagValue offset must be 0x18");
+  static_assert(offsetof(ByteLaneFlagAt18, flagValue) == 0x18, "ByteLaneFlagAt18::flagValue offset must be 0x18");
 
   /**
    * Address: 0x006767F0 (FUN_006767F0)
@@ -480,7 +274,7 @@ namespace
    * What it does:
    * Returns one raw flag byte from lane `+0x18`.
    */
-  [[maybe_unused]] [[nodiscard]] std::uint8_t ReadFlagByteAtOffset18(const ByteLaneFlagAt18View* const view) noexcept
+  [[maybe_unused]] [[nodiscard]] std::uint8_t ReadFlagByteAtOffset18(const ByteLaneFlagAt18* const view) noexcept
   {
     GPG_ASSERT(view != nullptr);
     if (!view) {
@@ -490,14 +284,14 @@ namespace
     return view->flagValue;
   }
 
-  struct PackedHistoryIndexWordView
+  struct PackedHistoryIndexWord
   {
     std::uint32_t packedWord;
   };
 
   static_assert(
-    offsetof(PackedHistoryIndexWordView, packedWord) == 0x00,
-    "PackedHistoryIndexWordView::packedWord offset must be 0x00"
+    offsetof(PackedHistoryIndexWord, packedWord) == 0x00,
+    "PackedHistoryIndexWord::packedWord offset must be 0x00"
   );
 
   inline constexpr std::uint32_t kPackedHistoryIndexShift = 20u;
@@ -510,7 +304,7 @@ namespace
    * What it does:
    * Decodes packed table index bits (`[27:20]`) from one 32-bit lane.
    */
-  [[nodiscard]] std::uint32_t DecodePackedHistoryIndexByte(const PackedHistoryIndexWordView* const packedWord
+  [[nodiscard]] std::uint32_t DecodePackedHistoryIndexByte(const PackedHistoryIndexWord* const packedWord
   ) noexcept
   {
     GPG_ASSERT(packedWord != nullptr);
@@ -545,7 +339,7 @@ namespace
       return nullptr;
     }
 
-    const PackedHistoryIndexWordView packedWord{entityId};
+    const PackedHistoryIndexWord packedWord{entityId};
     const std::uint32_t armyIndex = DecodePackedHistoryIndexByte(&packedWord);
     if (armyIndex == kPackedHistoryIndexInvalid) {
       return nullptr;
@@ -911,54 +705,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00676E90 (FUN_00676E90, Moho::SEntAttachInfoSerializer::Deserialize)
-   */
-  void SEntAttachInfoSerializer::Deserialize(gpg::ReadArchive* const archive, const int objectPtr, int, gpg::RRef*)
-  {
-    auto* const attachInfo = reinterpret_cast<SEntAttachInfo*>(objectPtr);
-    if (!archive || !attachInfo) {
-      return;
-    }
-    attachInfo->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x00676EA0 (FUN_00676EA0, Moho::SEntAttachInfoSerializer::Serialize)
-   */
-  void SEntAttachInfoSerializer::Serialize(gpg::WriteArchive* const archive, const int objectPtr, int, gpg::RRef*)
-  {
-    const auto* const attachInfo = reinterpret_cast<const SEntAttachInfo*>(objectPtr);
-    if (!archive || !attachInfo) {
-      return;
-    }
-    attachInfo->MemberSerialize(archive);
-  }
-
-  /**
-   * Address: 0x0067C2D0 (FUN_0067C2D0, gpg::SerSaveLoadHelper_SEntAttach::Init)
-   */
-  void SEntAttachInfoSerializer::Init()
-  {
-    gpg::RType* const type = ResolveSEntAttachInfoType();
-    GPG_ASSERT(type != nullptr);
-    GPG_ASSERT(type->serLoadFunc_ == nullptr);
-    GPG_ASSERT(type->serSaveFunc_ == nullptr);
-    type->serLoadFunc_ = mDeserialize;
-    type->serSaveFunc_ = mSerialize;
-  }
-
-  /**
-   * Address: 0x00BD4F20 (FUN_00BD4F20, dynamic initializer for the global
-   * `SEntAttachInfoSerializer` singleton)
-   */
-  SEntAttachInfoSerializer::SEntAttachInfoSerializer()
-    : mDeserialize(&SEntAttachInfoSerializer::Deserialize)
-    , mSerialize(&SEntAttachInfoSerializer::Serialize)
-  {}
-
-  SEntAttachInfoSerializer::~SEntAttachInfoSerializer() = default;
-
-  /**
    * Address: 0x00676F40 (FUN_00676F40, Moho::PositionHistoryTypeInfo::PositionHistoryTypeInfo)
    */
   PositionHistoryTypeInfo::PositionHistoryTypeInfo()
@@ -1011,54 +757,6 @@ namespace moho
     gpg::RType::Init();
     Finish();
   }
-
-  /**
-   * Address: 0x00677120 (FUN_00677120, Moho::PositionHistorySerializer::Deserialize)
-   */
-  void PositionHistorySerializer::Deserialize(gpg::ReadArchive* const archive, const int objectPtr, int, gpg::RRef*)
-  {
-    auto* const history = reinterpret_cast<PositionHistory*>(objectPtr);
-    if (!archive || !history) {
-      return;
-    }
-    history->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x00677140 (FUN_00677140, Moho::PositionHistorySerializer::Serialize)
-   */
-  void PositionHistorySerializer::Serialize(gpg::WriteArchive* const archive, const int objectPtr, int, gpg::RRef*)
-  {
-    const auto* const history = reinterpret_cast<const PositionHistory*>(objectPtr);
-    if (!archive || !history) {
-      return;
-    }
-    history->MemberSerialize(archive);
-  }
-
-  /**
-   * Address: 0x0067C3B0 (FUN_0067C3B0, gpg::SerSaveLoadHelper_PositionHistory::Init)
-   */
-  void PositionHistorySerializer::Init()
-  {
-    gpg::RType* const type = ResolvePositionHistoryType();
-    GPG_ASSERT(type != nullptr);
-    GPG_ASSERT(type->serLoadFunc_ == nullptr);
-    GPG_ASSERT(type->serSaveFunc_ == nullptr);
-    type->serLoadFunc_ = mDeserialize;
-    type->serSaveFunc_ = mSerialize;
-  }
-
-  /**
-   * Address: 0x00BD4F80 (FUN_00BD4F80, dynamic initializer for the global
-   * `PositionHistorySerializer` singleton)
-   */
-  PositionHistorySerializer::PositionHistorySerializer()
-    : mDeserialize(&PositionHistorySerializer::Deserialize)
-    , mSerialize(&PositionHistorySerializer::Serialize)
-  {}
-
-  PositionHistorySerializer::~PositionHistorySerializer() = default;
 
   /**
    * Address: 0x006771F0 (FUN_006771F0, Moho::EntityTypeInfo::EntityTypeInfo)
@@ -1130,100 +828,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x0067B3E0 (FUN_0067B3E0, Moho::EntitySaveConstruct::Construct)
-   */
-  void EntitySaveConstruct::Construct(
-    gpg::WriteArchive* const archive,
-    const int objectPtr,
-    const int version,
-    gpg::RRef* const, gpg::SerSaveConstructArgsResult* const result
-  )
-  {
-    auto* const entity = reinterpret_cast<Entity*>(objectPtr);
-    if (!archive || !entity || !result) {
-      return;
-    }
-
-    const gpg::RRef ownerRef{};
-    entity->MemberSaveConstructArgs(*archive, version, ownerRef, *result);
-  }
-
-  /**
-   * Address: 0x0067C500 (FUN_0067C500, gpg::SerSaveConstructHelper_Entity::Init)
-   *
-   * What it does:
-   * Resolves `Entity` RTTI and binds save-construct callback lane.
-   */
-  void EntitySaveConstruct::Init()
-  {
-    gpg::RType* const type = ResolveEntityType();
-    GPG_ASSERT(type != nullptr);
-    GPG_ASSERT(type->serSaveConstructArgsFunc_ == nullptr || type->serSaveConstructArgsFunc_ == mConstructCallback);
-    type->serSaveConstructArgsFunc_ = mConstructCallback;
-  }
-
-  /**
-   * Address: 0x00BD4FE0 (FUN_00BD4FE0, dynamic initializer for the global
-   * `EntitySaveConstruct` singleton)
-   */
-  EntitySaveConstruct::EntitySaveConstruct()
-    : mConstructCallback(reinterpret_cast<gpg::RType::save_construct_args_func_t>(&EntitySaveConstruct::Construct))
-  {}
-
-  EntitySaveConstruct::~EntitySaveConstruct() = default;
-
-  /**
-   * Address: 0x0067B550 (FUN_0067B550, Moho::EntityConstruct::Construct)
-   */
-  void
-  EntityConstruct::Construct(gpg::ReadArchive* const archive, const int version, gpg::RRef* const, gpg::SerConstructResult* const result)
-  {
-    if (!archive || !result) {
-      return;
-    }
-
-    const gpg::RRef ownerRef{};
-    Entity::MemberConstruct(*archive, version, ownerRef, *result);
-  }
-
-  /**
-   * Address: 0x0067F5D0 (FUN_0067F5D0, Moho::EntityConstruct::Deconstruct)
-   */
-  void EntityConstruct::Deconstruct(void* const objectPtr)
-  {
-    // `if (p) p->[slot 2](1)`: the virtual scalar deleting destructor of
-    // `Entity` (~Entity is VFTable slot 2), i.e. a plain `delete`.
-    delete static_cast<Entity*>(objectPtr);
-  }
-
-  /**
-   * Address: 0x0067C580 (FUN_0067C580, gpg::SerConstructHelper_Entity::Init)
-   *
-   * What it does:
-   * Resolves `Entity` RTTI and binds construct/delete callback lanes.
-   */
-  void EntityConstruct::Init()
-  {
-    gpg::RType* const type = ResolveEntityType();
-    GPG_ASSERT(type != nullptr);
-    GPG_ASSERT(type->serConstructFunc_ == nullptr || type->serConstructFunc_ == mConstructCallback);
-    GPG_ASSERT(type->deleteFunc_ == nullptr || type->deleteFunc_ == mDeconstructCallback);
-    type->serConstructFunc_ = mConstructCallback;
-    type->deleteFunc_ = mDeconstructCallback;
-  }
-
-  /**
-   * Address: 0x00BD5010 (FUN_00BD5010, dynamic initializer for the global
-   * `EntityConstruct` singleton)
-   */
-  EntityConstruct::EntityConstruct()
-    : mConstructCallback(reinterpret_cast<gpg::RType::construct_func_t>(&EntityConstruct::Construct))
-    , mDeconstructCallback(&EntityConstruct::Deconstruct)
-  {}
-
-  EntityConstruct::~EntityConstruct() = default;
-
-  /**
    * Address: 0x00BD4F00 (FUN_00BD4F00, register_SEntAttachInfoTypeInfo)
    *
    * What it does:
@@ -1277,3 +881,45 @@ namespace
 GPG_PREREGISTER_INIT(register_SEntAttachInfoTypeInfo_b8ac72, moho::register_SEntAttachInfoTypeInfo)
 GPG_PREREGISTER_INIT(register_PositionHistoryTypeInfo_b8ac72, moho::register_PositionHistoryTypeInfo)
 GPG_PREREGISTER_INIT(register_EntityTypeInfo_b8ac72, moho::register_EntityTypeInfo)
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<PositionHistory>`, vtable 0x00E276C4.
+   *
+   * Address: 0x00BD4F80 (FUN_00BD4F80 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFC780 (FUN_00BFC780 -- the global's destructor.)
+   * Address: 0x0067C3B0 (FUN_0067C3B0 -- `Init`.)
+   * Address: 0x00677120 (FUN_00677120 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00677140 (FUN_00677140 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct PositionHistorySerializer : gpg::SerSaveLoadHelper<PositionHistory>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B4474 -- process-global `PositionHistorySerializer` singleton.
+  moho::PositionHistorySerializer gPositionHistorySerializer;
+} // namespace
+
+namespace moho
+{
+  /**
+   * `gpg::SerSaveLoadHelper<SEntAttachInfo>`, vtable 0x00E27684.
+   *
+   * Address: 0x00BD4F20 (FUN_00BD4F20 -- constructs the global and registers its destructor.)
+   * Address: 0x00BFC6F0 (FUN_00BFC6F0 -- the global's destructor.)
+   * Address: 0x0067C2D0 (FUN_0067C2D0 -- `Init`.)
+   * Address: 0x00676E90 (FUN_00676E90 -- `Deserialize`, a forward to `MemberDeserialize`.)
+   * Address: 0x00676EA0 (FUN_00676EA0 -- `Serialize`, a forward to `MemberSerialize`.)
+   */
+  struct SEntAttachInfoSerializer : gpg::SerSaveLoadHelper<SEntAttachInfo>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010B4384 -- process-global `SEntAttachInfoSerializer` singleton.
+  moho::SEntAttachInfoSerializer gSEntAttachInfoSerializer;
+} // namespace

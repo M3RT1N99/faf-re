@@ -13,315 +13,16 @@
 #include "moho/resource/RResId.h"
 #include "moho/resource/RScmResource.h"
 #include "moho/resource/ResourceManager.h"
+#include "gpg/core/containers/ArchiveSerialization.h"
+#include "gpg/core/containers/ReadArchive.h"
+#include "gpg/core/containers/String.h"
+#include "gpg/core/containers/WriteArchive.h"
+#include "moho/sim/RRuleGameRules.h"
 
 namespace moho
 {
   namespace
   {
-    /**
-     * Address: 0x0051AF70 (FUN_0051AF70, copy_RMeshBlueprintLOD_counted_range_with_rollback)
-     *
-     * What it does:
-     * Copy-constructs `count` contiguous `RMeshBlueprintLOD` elements from
-     * `source` into `destination`, then destroys already-built elements before
-     * rethrowing if one copy step throws.
-     */
-    RMeshBlueprintLOD* CopyRMeshBlueprintLODCountedRangeWithRollback(
-      RMeshBlueprintLOD* destination,
-      int count,
-      const RMeshBlueprintLOD* source
-    )
-    {
-      RMeshBlueprintLOD* destinationCursor = destination;
-      try {
-        while (count > 0) {
-          if (destinationCursor != nullptr) {
-            ::new (destinationCursor) RMeshBlueprintLOD(*source);
-          }
-          --count;
-          ++source;
-          ++destinationCursor;
-        }
-        return destinationCursor;
-      } catch (...) {
-        for (RMeshBlueprintLOD* destroyCursor = destination; destroyCursor != destinationCursor; ++destroyCursor) {
-          destroyCursor->~RMeshBlueprintLOD();
-        }
-        throw;
-      }
-    }
-
-    /**
-     * Address: 0x0051A0A0 (FUN_0051A0A0)
-     *
-     * What it does:
-     * Adapts one register-lane caller shape into the canonical counted
-     * `RMeshBlueprintLOD` copy-with-rollback helper.
-     */
-    [[maybe_unused]] RMeshBlueprintLOD* CopyRMeshBlueprintLODCountedRangeRegisterAdapter(
-      RMeshBlueprintLOD* const destination,
-      const int count,
-      const RMeshBlueprintLOD* const source
-    )
-    {
-      return CopyRMeshBlueprintLODCountedRangeWithRollback(destination, count, source);
-    }
-
-    /**
-     * Address: 0x0051A640 (FUN_0051A640)
-     *
-     * What it does:
-     * Alternate register-shape adapter lane that forwards one counted
-     * `RMeshBlueprintLOD` copy-with-rollback request into the canonical helper.
-     */
-    [[maybe_unused]] RMeshBlueprintLOD* CopyRMeshBlueprintLODCountedRangeRegisterAdapterAlt(
-      RMeshBlueprintLOD* const destination,
-      const int count,
-      const RMeshBlueprintLOD* const source
-    )
-    {
-      return CopyRMeshBlueprintLODCountedRangeWithRollback(destination, count, source);
-    }
-
-    /**
-     * Address: 0x0051B330 (FUN_0051B330, copy_RMeshBlueprintLOD_range_with_rollback)
-     * Address: 0x0051B4A0 (FUN_0051B4A0, sub_51B4A0)
-     *
-     * What it does:
-     * Copy-constructs one contiguous source range into destination storage and
-     * destroys already-built destination elements before rethrowing on failure.
-     */
-    RMeshBlueprintLOD* CopyRMeshBlueprintLODRangeWithRollback(
-      RMeshBlueprintLOD* destinationBegin,
-      RMeshBlueprintLOD* destinationEnd,
-      const RMeshBlueprintLOD* sourceBegin
-    )
-    {
-      RMeshBlueprintLOD* destinationCursor = destinationBegin;
-      const RMeshBlueprintLOD* sourceCursor = sourceBegin;
-      try {
-        while (destinationCursor != destinationEnd) {
-          if (sourceCursor != nullptr) {
-            ::new (destinationCursor) RMeshBlueprintLOD(*sourceCursor);
-          }
-          ++destinationCursor;
-          ++sourceCursor;
-        }
-        return destinationCursor;
-      } catch (...) {
-        for (RMeshBlueprintLOD* destroyCursor = destinationBegin; destroyCursor != destinationCursor; ++destroyCursor) {
-          destroyCursor->~RMeshBlueprintLOD();
-        }
-        throw;
-      }
-    }
-
-    /**
-     * Address: 0x0051AE30 (FUN_0051AE30)
-     *
-     * What it does:
-     * Adapter lane that forwards one destination/source range copy request
-     * into the canonical mesh-LOD range copy-with-rollback helper.
-     */
-    [[maybe_unused]] [[nodiscard]] RMeshBlueprintLOD* CopyRMeshBlueprintLODRangeAdapterLaneA(
-      RMeshBlueprintLOD* const destinationBegin,
-      RMeshBlueprintLOD* const destinationEnd,
-      const RMeshBlueprintLOD* const sourceBegin
-    )
-    {
-      return CopyRMeshBlueprintLODRangeWithRollback(destinationBegin, destinationEnd, sourceBegin);
-    }
-
-    /**
-     * Address: 0x0051B020 (FUN_0051B020)
-     *
-     * What it does:
-     * Adapter lane that forwards one destination/source range copy request
-     * into the canonical mesh-LOD range copy-with-rollback helper.
-     */
-    [[maybe_unused]] [[nodiscard]] RMeshBlueprintLOD* CopyRMeshBlueprintLODRangeAdapterLaneB(
-      RMeshBlueprintLOD* const destinationBegin,
-      RMeshBlueprintLOD* const destinationEnd,
-      const RMeshBlueprintLOD* const sourceBegin
-    )
-    {
-      return CopyRMeshBlueprintLODRangeWithRollback(destinationBegin, destinationEnd, sourceBegin);
-    }
-
-    /**
-     * Address: 0x0051B190 (FUN_0051B190)
-     *
-     * What it does:
-     * Adapter lane that forwards one destination/source range copy request
-     * into the canonical mesh-LOD range copy-with-rollback helper.
-     */
-    [[maybe_unused]] [[nodiscard]] RMeshBlueprintLOD* CopyRMeshBlueprintLODRangeAdapterLaneC(
-      RMeshBlueprintLOD* const destinationBegin,
-      RMeshBlueprintLOD* const destinationEnd,
-      const RMeshBlueprintLOD* const sourceBegin
-    )
-    {
-      return CopyRMeshBlueprintLODRangeWithRollback(destinationBegin, destinationEnd, sourceBegin);
-    }
-
-    /**
-     * Address: 0x0051B220 (FUN_0051B220)
-     *
-     * What it does:
-     * Adapter lane that forwards one destination/source range copy request
-     * into the canonical mesh-LOD range copy-with-rollback helper.
-     */
-    [[maybe_unused]] [[nodiscard]] RMeshBlueprintLOD* CopyRMeshBlueprintLODRangeAdapterLaneD(
-      RMeshBlueprintLOD* const destinationBegin,
-      RMeshBlueprintLOD* const destinationEnd,
-      const RMeshBlueprintLOD* const sourceBegin
-    )
-    {
-      return CopyRMeshBlueprintLODRangeWithRollback(destinationBegin, destinationEnd, sourceBegin);
-    }
-
-    /**
-     * Address: 0x0051B2F0 (FUN_0051B2F0)
-     *
-     * What it does:
-     * Adapter lane that forwards one destination/source range copy request
-     * into the canonical mesh-LOD range copy-with-rollback helper.
-     */
-    [[maybe_unused]] [[nodiscard]] RMeshBlueprintLOD* CopyRMeshBlueprintLODRangeAdapterLaneE(
-      RMeshBlueprintLOD* const destinationBegin,
-      RMeshBlueprintLOD* const destinationEnd,
-      const RMeshBlueprintLOD* const sourceBegin
-    )
-    {
-      return CopyRMeshBlueprintLODRangeWithRollback(destinationBegin, destinationEnd, sourceBegin);
-    }
-
-    [[nodiscard]] const RMeshBlueprintLOD* CopyConstructRMeshBlueprintLodIfPresent(
-      RMeshBlueprintLOD* const destination,
-      const RMeshBlueprintLOD* const source
-    )
-    {
-      if (source == nullptr) {
-        return source;
-      }
-
-      return ::new (destination) RMeshBlueprintLOD(*source);
-    }
-
-    /**
-     * Address: 0x0051B130 (FUN_0051B130)
-     *
-     * What it does:
-     * Primary adapter lane that copy-constructs one `RMeshBlueprintLOD` into
-     * destination storage only when source is non-null.
-     */
-    [[maybe_unused]] [[nodiscard]] const RMeshBlueprintLOD* CopyConstructRMeshBlueprintLodIfPresentPrimary(
-      RMeshBlueprintLOD* const destination,
-      const RMeshBlueprintLOD* const source
-    )
-    {
-      return CopyConstructRMeshBlueprintLodIfPresent(destination, source);
-    }
-
-    /**
-     * Address: 0x0051B270 (FUN_0051B270)
-     *
-     * What it does:
-     * Secondary adapter lane for nullable `RMeshBlueprintLOD` copy-construction.
-     */
-    [[maybe_unused]] [[nodiscard]] const RMeshBlueprintLOD* CopyConstructRMeshBlueprintLodIfPresentSecondary(
-      RMeshBlueprintLOD* const destination,
-      const RMeshBlueprintLOD* const source
-    )
-    {
-      return CopyConstructRMeshBlueprintLodIfPresent(destination, source);
-    }
-
-    /**
-     * Address: 0x0051A580 (FUN_0051A580)
-     *
-     * What it does:
-     * Copy-assigns one contiguous destination LOD range from source lanes and
-     * returns the advanced source cursor.
-     */
-    [[maybe_unused]] const RMeshBlueprintLOD* CopyAssignRMeshBlueprintLODRange(
-      RMeshBlueprintLOD* destinationBegin,
-      RMeshBlueprintLOD* destinationEnd,
-      const RMeshBlueprintLOD* sourceBegin
-    )
-    {
-      RMeshBlueprintLOD* destinationCursor = destinationBegin;
-      const RMeshBlueprintLOD* sourceCursor = sourceBegin;
-
-      while (destinationCursor != destinationEnd) {
-        *destinationCursor = *sourceCursor;
-        ++destinationCursor;
-        ++sourceCursor;
-      }
-
-      return sourceCursor;
-    }
-
-    /**
-     * Address: 0x0051A5E0 (FUN_0051A5E0)
-     *
-     * IDA signature:
-     * int __usercall sub_51A5E0@<eax>(int a1@<ecx>, int a2@<ebx>);
-     * (additional `RMeshBlueprintLOD* source` arrives in EAX, saved into EDI
-     * for the inner `__usercall` operator= contract.)
-     *
-     * What it does:
-     * Fill-assigns the half-open range
-     * `[destinationFirst, destinationLast)` with copies of `*source` by
-     * stepping the destination cursor in 0xCC-byte strides and dispatching
-     * each slot through `RMeshBlueprintLOD::operator=`. Returns the address
-     * of the last destination slot that was assigned, or the original source
-     * pointer when the range is empty (matching the binary's EAX
-     * post-condition).
-     */
-    [[maybe_unused]] RMeshBlueprintLOD* FillRMeshBlueprintLODRangeWithCopyAssign(
-      RMeshBlueprintLOD* destinationFirst,
-      RMeshBlueprintLOD* destinationLast,
-      RMeshBlueprintLOD* source
-    ) noexcept
-    {
-      RMeshBlueprintLOD* lastTouched = source;
-      for (RMeshBlueprintLOD* cursor = destinationFirst; cursor != destinationLast; ++cursor) {
-        *cursor = *source;
-        lastTouched = cursor;
-      }
-      return lastTouched;
-    }
-
-    /**
-     * Address: 0x0051A610 (FUN_0051A610)
-     *
-     * IDA signature:
-     * int __usercall sub_51A610@<eax>(int a1@<eax>, int a2@<ecx>, int a3@<ebx>);
-     * (a1 = source one-past-end, a2 = destination one-past-end,
-     *  a3 = source begin sentinel; returns final destination begin)
-     *
-     * What it does:
-     * Copies the source range `[sourceFirst, sourceLast)` of
-     * `RMeshBlueprintLOD` slots backward into the destination range ending at
-     * `destinationLast`, dispatching each slot through
-     * `RMeshBlueprintLOD::operator=`. Returns the address of the final
-     * destination begin (the lowest destination address written), matching
-     * the binary's `mov eax, esi` exit.
-     */
-    [[maybe_unused]] RMeshBlueprintLOD* CopyBackwardRMeshBlueprintLODRange(
-      RMeshBlueprintLOD* sourceLast,
-      RMeshBlueprintLOD* destinationLast,
-      RMeshBlueprintLOD* sourceFirst
-    ) noexcept
-    {
-      while (sourceLast != sourceFirst) {
-        --sourceLast;
-        --destinationLast;
-        *destinationLast = *sourceLast;
-      }
-      return destinationLast;
-    }
 
     [[nodiscard]] std::string ExtractMeshFamilyPrefix(const std::string_view sourcePath)
     {
@@ -654,3 +355,62 @@ namespace moho
     return boost::shared_ptr<RScmResource>{};
   }
 } // namespace moho
+
+namespace moho
+{
+  void RMeshBlueprint::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  {
+    RRuleGameRules* rules = nullptr;
+    const gpg::RRef owner{};
+    archive.ReadPointer(&rules, &owner);
+    msvc8::string id;
+    archive.ReadString(&id);
+    RResId resId{};
+    gpg::STR_CopyFilename(&resId.name, &id);
+    result.SetOwned(gpg::MakeRRef(rules->GetMeshBlueprint(resId)), 1u);
+  }
+
+  /**
+   * Address: 0x00518FC0 (FUN_00518FC0)
+   */
+  void RMeshBlueprint::MemberSaveConstructArgs(
+    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+  )
+  {
+    archive.WritePointer(mOwner, gpg::TrackedPointerState::Unowned, gpg::RRef{});
+    archive.WriteString(&mBlueprintId);
+    result.SetOwned(1u);
+  }
+
+  /**
+   * `gpg::SerSaveConstructHelper<RMeshBlueprint>`, vtable 0x00E0FE90.
+   *
+   * Address: 0x00BC8550 (FUN_00BC8550 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF2CC0 (FUN_00BF2CC0 -- the global's destructor.)
+   * Address: 0x00519470 (FUN_00519470 -- `Init`.)
+   * Address: 0x00518F40 (FUN_00518F40 -- `SaveConstructArgs`, a forward to `MemberSaveConstructArgs`.)
+   */
+  struct RMeshBlueprintSaveConstruct : gpg::SerSaveConstructHelper<RMeshBlueprint>
+  {};
+
+  /**
+   * `gpg::SerConstructHelper<RMeshBlueprint>`, vtable 0x00E0FEA0.
+   *
+   * Address: 0x00BC8580 (FUN_00BC8580 -- constructs the global and registers its destructor.)
+   * Address: 0x00BF2CF0 (FUN_00BF2CF0 -- the global's destructor.)
+   * Address: 0x005194F0 (FUN_005194F0 -- `Init`.)
+   * Address: 0x005190A0 (FUN_005190A0 -- `Construct`, `MemberConstruct` inlined.)
+   * Address: 0x0051A3B0 (FUN_0051A3B0 -- `Delete`.)
+   */
+  struct RMeshBlueprintConstruct : gpg::SerConstructHelper<RMeshBlueprint>
+  {};
+} // namespace moho
+
+namespace
+{
+  // Address: 0x010AAC3C -- process-global `RMeshBlueprintSaveConstruct` singleton.
+  moho::RMeshBlueprintSaveConstruct gRMeshBlueprintSaveConstruct;
+
+  // Address: 0x010AABC4 -- process-global `RMeshBlueprintConstruct` singleton.
+  moho::RMeshBlueprintConstruct gRMeshBlueprintConstruct;
+} // namespace

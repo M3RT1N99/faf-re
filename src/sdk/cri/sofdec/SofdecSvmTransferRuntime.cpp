@@ -54,7 +54,7 @@
    * Registers one VINT callback lane and caches selected slot id.
    */
   std::int32_t MWSFSVM_EntryVint(
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -71,7 +71,7 @@
    * Registers one VSYNC callback lane and caches selected slot id.
    */
   std::int32_t MWSFSVM_EntryVfunc(
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -90,7 +90,7 @@
    */
   std::int32_t MWSFSVM_EntryIdVfunc(
     const std::int32_t laneId,
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -107,7 +107,7 @@
    * Registers one MAIN callback lane and caches selected slot id.
    */
   std::int32_t MWSFSVM_EntryMainFunc(
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -124,7 +124,7 @@
    * Registers one IDLE callback lane and caches selected slot id.
    */
   std::int32_t MWSFSVM_EntryIdleFunc(
-    const std::int32_t callbackAddress,
+    const SofdecAddressWord callbackAddress,
     const std::int32_t callbackObject,
     const char* const callbackName
   )
@@ -235,7 +235,7 @@
    * sector transfer.
    */
   std::int32_t adxf_read_sj32(
-    AdxfRuntimeHandleView* const adxfHandle,
+    AdxfHandle* const adxfHandle,
     const std::int32_t requestedSectors,
     void* const sourceJoinObject
   )
@@ -282,7 +282,7 @@
    */
   [[maybe_unused]] void* adxf_CreateAdxFs()
   {
-    auto* const handle = static_cast<AdxfRuntimeHandleView*>(adxf_AllocAdxFs());
+    auto* const handle = static_cast<AdxfHandle*>(adxf_AllocAdxFs());
     if (handle == nullptr) {
       (void)ADXERR_CallErrFunc1_(kAdxfErrCreateNoHandles);
       return nullptr;
@@ -393,7 +393,7 @@
    */
   void mwPlyEntryAfs(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    const std::int32_t afsHandle,
+    const SofdecAddressWord afsHandle,
     const std::int32_t fileIndex
   )
   {
@@ -419,7 +419,7 @@
    */
   void mwPlyStartAfsLp(
     moho::MwsfdPlaybackStateSubobj* const ply,
-    const std::int32_t afsHandle,
+    const SofdecAddressWord afsHandle,
     const std::int32_t fileIndex
   )
   {
@@ -676,7 +676,7 @@
     const std::int32_t luminancePivot,
     const std::int32_t luminanceMin,
     const std::int32_t luminanceMax,
-    const std::int32_t tableAddress
+    const SofdecAddressWord tableAddress
   )
   {
     auto* const tableWords = reinterpret_cast<std::int16_t*>(SjAddressToPointer(tableAddress));
@@ -750,7 +750,7 @@
    * [0x800..0x17FF].
    */
   std::int32_t CFT_MakeArgb8888Alp3110Tbl(
-    const std::int32_t tableAddress,
+    const SofdecAddressWord tableAddress,
     const std::int32_t alpha0,
     const std::int32_t alpha1,
     const std::int32_t alpha2
@@ -810,7 +810,7 @@
    * [0x800..0x17FF].
    */
   std::int32_t CFT_MakeArgb8888Alp3211Tbl(
-    const std::int32_t tableAddress,
+    const SofdecAddressWord tableAddress,
     const std::int32_t alpha0,
     const std::int32_t alpha1,
     const std::int32_t alpha2
@@ -1603,143 +1603,11 @@
     );
   }
 
-  struct CftYcc420PlanarPackedWords;
-  struct CftRgb16OutputPackedWords;
-
   namespace
   {
-    struct CftYcc420PlanarPackedWordsView
-    {
-      std::int32_t reserved00 = 0; // +0x00
-      std::uint32_t* yPlaneWords = nullptr; // +0x04
-      std::int32_t reserved08 = 0; // +0x08
-      std::int32_t reserved0C = 0; // +0x0C
-      std::int32_t yStrideBytes = 0; // +0x10
-      std::uint32_t* cbPlaneWords = nullptr; // +0x14
-      std::int32_t reserved18 = 0; // +0x18
-      std::int32_t reserved1C = 0; // +0x1C
-      std::int32_t cbStrideBytes = 0; // +0x20
-      std::uint32_t* crPlaneWords = nullptr; // +0x24
-      std::int32_t reserved28 = 0; // +0x28
-      std::int32_t reserved2C = 0; // +0x2C
-      std::int32_t crStrideBytes = 0; // +0x30
-    };
-    static_assert(
-      offsetof(CftYcc420PlanarPackedWordsView, yPlaneWords) == 0x04,
-      "CftYcc420PlanarPackedWordsView::yPlaneWords offset must be 0x04"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarPackedWordsView, yStrideBytes) == 0x10,
-      "CftYcc420PlanarPackedWordsView::yStrideBytes offset must be 0x10"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarPackedWordsView, cbPlaneWords) == 0x14,
-      "CftYcc420PlanarPackedWordsView::cbPlaneWords offset must be 0x14"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarPackedWordsView, cbStrideBytes) == 0x20,
-      "CftYcc420PlanarPackedWordsView::cbStrideBytes offset must be 0x20"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarPackedWordsView, crPlaneWords) == 0x24,
-      "CftYcc420PlanarPackedWordsView::crPlaneWords offset must be 0x24"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarPackedWordsView, crStrideBytes) == 0x30,
-      "CftYcc420PlanarPackedWordsView::crStrideBytes offset must be 0x30"
-    );
-    static_assert(sizeof(CftYcc420PlanarPackedWordsView) == 0x34, "CftYcc420PlanarPackedWordsView size must be 0x34");
 
-    struct CftRgb16OutputPackedWordsView
-    {
-      std::int32_t reserved00 = 0; // +0x00
-      std::uint8_t* pixelBase = nullptr; // +0x04
-      std::int32_t widthPixels = 0; // +0x08
-      std::int32_t heightPixels = 0; // +0x0C
-      std::int32_t strideBytes = 0; // +0x10
-    };
-    static_assert(
-      offsetof(CftRgb16OutputPackedWordsView, pixelBase) == 0x04,
-      "CftRgb16OutputPackedWordsView::pixelBase offset must be 0x04"
-    );
-    static_assert(
-      offsetof(CftRgb16OutputPackedWordsView, widthPixels) == 0x08,
-      "CftRgb16OutputPackedWordsView::widthPixels offset must be 0x08"
-    );
-    static_assert(
-      offsetof(CftRgb16OutputPackedWordsView, heightPixels) == 0x0C,
-      "CftRgb16OutputPackedWordsView::heightPixels offset must be 0x0C"
-    );
-    static_assert(
-      offsetof(CftRgb16OutputPackedWordsView, strideBytes) == 0x10,
-      "CftRgb16OutputPackedWordsView::strideBytes offset must be 0x10"
-    );
-    static_assert(sizeof(CftRgb16OutputPackedWordsView) == 0x14, "CftRgb16OutputPackedWordsView size must be 0x14");
 
-    struct CftYcc420PlanarInputLanesView
-    {
-      std::uint8_t* yPlane = nullptr; // +0x00
-      std::uint8_t* cbPlane = nullptr; // +0x04
-      std::uint8_t* crPlane = nullptr; // +0x08
-      std::int32_t yStrideBytes = 0; // +0x0C
-      std::int32_t cbStrideBytes = 0; // +0x10
-      std::int32_t crStrideBytes = 0; // +0x14
-    };
-    static_assert(
-      offsetof(CftYcc420PlanarInputLanesView, yPlane) == 0x00,
-      "CftYcc420PlanarInputLanesView::yPlane offset must be 0x00"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarInputLanesView, cbPlane) == 0x04,
-      "CftYcc420PlanarInputLanesView::cbPlane offset must be 0x04"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarInputLanesView, crPlane) == 0x08,
-      "CftYcc420PlanarInputLanesView::crPlane offset must be 0x08"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarInputLanesView, yStrideBytes) == 0x0C,
-      "CftYcc420PlanarInputLanesView::yStrideBytes offset must be 0x0C"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarInputLanesView, cbStrideBytes) == 0x10,
-      "CftYcc420PlanarInputLanesView::cbStrideBytes offset must be 0x10"
-    );
-    static_assert(
-      offsetof(CftYcc420PlanarInputLanesView, crStrideBytes) == 0x14,
-      "CftYcc420PlanarInputLanesView::crStrideBytes offset must be 0x14"
-    );
-    static_assert(sizeof(CftYcc420PlanarInputLanesView) == 0x18, "CftYcc420PlanarInputLanesView size must be 0x18");
 
-    struct CftPixelSurfaceLanesView
-    {
-      std::uint8_t* pixelBase = nullptr; // +0x00
-      std::int32_t widthPixels = 0; // +0x04
-      std::int32_t heightPixels = 0; // +0x08
-      std::int32_t strideBytes = 0; // +0x0C
-      std::int32_t reserved = 0; // +0x10
-    };
-    static_assert(
-      offsetof(CftPixelSurfaceLanesView, pixelBase) == 0x00,
-      "CftPixelSurfaceLanesView::pixelBase offset must be 0x00"
-    );
-    static_assert(
-      offsetof(CftPixelSurfaceLanesView, widthPixels) == 0x04,
-      "CftPixelSurfaceLanesView::widthPixels offset must be 0x04"
-    );
-    static_assert(
-      offsetof(CftPixelSurfaceLanesView, heightPixels) == 0x08,
-      "CftPixelSurfaceLanesView::heightPixels offset must be 0x08"
-    );
-    static_assert(
-      offsetof(CftPixelSurfaceLanesView, strideBytes) == 0x0C,
-      "CftPixelSurfaceLanesView::strideBytes offset must be 0x0C"
-    );
-    static_assert(
-      offsetof(CftPixelSurfaceLanesView, reserved) == 0x10,
-      "CftPixelSurfaceLanesView::reserved offset must be 0x10"
-    );
-    static_assert(sizeof(CftPixelSurfaceLanesView) == 0x14, "CftPixelSurfaceLanesView size must be 0x14");
 
     /**
      * Default BGRA conversion table, `_cftbgra256x3` at 0x00F420E0 (`.data`).
@@ -2532,11 +2400,11 @@
 
     static_assert(sizeof(cftbgra256x3) == 3 * 256 * 8, "cftbgra256x3 must be three 256-entry BGRA planes");
 
-    [[nodiscard]] const void* ResolveArgb8888UserTable(const std::int32_t* const userTableAddress) noexcept
+    [[nodiscard]] const void* ResolveArgb8888UserTable(const SofdecAddressWord* const userTableAddress) noexcept
     {
       if (userTableAddress != nullptr && *userTableAddress != 0) {
         return reinterpret_cast<const void*>(
-          static_cast<std::uintptr_t>(static_cast<std::uint32_t>(*userTableAddress))
+          static_cast<std::uintptr_t>(*userTableAddress)
         );
       }
 
@@ -2819,32 +2687,30 @@
    * on alternate rows.
    */
   std::int32_t CFT_Ycc420plnToArgb8888Int(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords,
-    const std::int32_t* const scratchBufferWords
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords,
+    const SofdecAddressWord* const scratchBufferWords
   )
   {
-    const auto* const inputView = reinterpret_cast<const CftYcc420PlanarPackedWordsView*>(inputWords);
-    const auto* const outputView = reinterpret_cast<const CftRgb16OutputPackedWordsView*>(outputWords);
 
-    CftYcc420PlanarInputLanesView inputLanes{};
-    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(inputView->yPlaneWords);
-    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(inputView->cbPlaneWords);
-    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(inputView->crPlaneWords);
-    inputLanes.yStrideBytes = inputView->yStrideBytes;
-    inputLanes.cbStrideBytes = inputView->cbStrideBytes;
-    inputLanes.crStrideBytes = inputView->crStrideBytes;
+    CftYcc420PlanarInputLanes inputLanes{};
+    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[0].bytes()));
+    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[1].bytes()));
+    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[2].bytes()));
+    inputLanes.yStrideBytes = inputWords->planes[0].pitch;
+    inputLanes.cbStrideBytes = inputWords->planes[1].pitch;
+    inputLanes.crStrideBytes = inputWords->planes[2].pitch;
 
-    CftPixelSurfaceLanesView outputSurface{};
-    outputSurface.pixelBase = outputView->pixelBase;
-    outputSurface.widthPixels = outputView->widthPixels;
-    outputSurface.heightPixels = outputView->heightPixels;
-    outputSurface.strideBytes = outputView->strideBytes;
+    CftPixelSurfaceLanes outputSurface{};
+    outputSurface.pixelBase = outputWords->planes[0].bytes();
+    outputSurface.widthPixels = outputWords->planes[0].width;
+    outputSurface.heightPixels = outputWords->planes[0].height;
+    outputSurface.strideBytes = outputWords->planes[0].pitch;
 
     const auto* const inputLanesPtr = reinterpret_cast<const CftYcc420PlanarInputLanes*>(&inputLanes);
     const auto* const outputSurfacePtr = reinterpret_cast<const CftPixelSurfaceLanes*>(&outputSurface);
     const std::uintptr_t scratchBufferAddress =
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(scratchBufferWords[1]));
+      static_cast<std::uintptr_t>(scratchBufferWords[1]);
 
     if (CFTCOM_GetOptimizeSpeed() != 0) {
       return CFT_Ycc420plnToArgb8888Int1smp(
@@ -2875,35 +2741,33 @@
   }
 
   std::int32_t CFT_Ycc420plnToArgb8888Prg(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords,
-    const std::int32_t* const scratchBufferWords
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords,
+    const SofdecAddressWord* const scratchBufferWords
   )
   {
-    const auto* const inputView = reinterpret_cast<const CftYcc420PlanarPackedWordsView*>(inputWords);
-    const auto* const outputView = reinterpret_cast<const CftRgb16OutputPackedWordsView*>(outputWords);
 
-    CftYcc420PlanarInputLanesView inputLanes{};
-    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(inputView->yPlaneWords);
-    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(inputView->cbPlaneWords);
-    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(inputView->crPlaneWords);
-    inputLanes.yStrideBytes = inputView->yStrideBytes;
-    inputLanes.cbStrideBytes = inputView->cbStrideBytes;
-    inputLanes.crStrideBytes = inputView->crStrideBytes;
+    CftYcc420PlanarInputLanes inputLanes{};
+    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[0].bytes()));
+    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[1].bytes()));
+    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[2].bytes()));
+    inputLanes.yStrideBytes = inputWords->planes[0].pitch;
+    inputLanes.cbStrideBytes = inputWords->planes[1].pitch;
+    inputLanes.crStrideBytes = inputWords->planes[2].pitch;
 
     // The four words 0x00AEEB74-0x00AEEB8B copy across. `reserved` is left
     // alone here, unlike the interlaced siblings that zero it: nothing below
     // reads it.
-    CftPixelSurfaceLanesView outputSurface{};
-    outputSurface.pixelBase = outputView->pixelBase;
-    outputSurface.widthPixels = outputView->widthPixels;
-    outputSurface.heightPixels = outputView->heightPixels;
-    outputSurface.strideBytes = outputView->strideBytes;
+    CftPixelSurfaceLanes outputSurface{};
+    outputSurface.pixelBase = outputWords->planes[0].bytes();
+    outputSurface.widthPixels = outputWords->planes[0].width;
+    outputSurface.heightPixels = outputWords->planes[0].height;
+    outputSurface.strideBytes = outputWords->planes[0].pitch;
 
     const auto* const inputLanesPtr = reinterpret_cast<const CftYcc420PlanarInputLanes*>(&inputLanes);
     const auto* const outputSurfacePtr = reinterpret_cast<const CftPixelSurfaceLanes*>(&outputSurface);
     const std::uintptr_t scratchBufferAddress =
-      static_cast<std::uintptr_t>(static_cast<std::uint32_t>(scratchBufferWords[1]));
+      static_cast<std::uintptr_t>(scratchBufferWords[1]);
 
     if (CFTCOM_GetOptimizeSpeed() != 0) {
       return CFT_Ycc420plnToArgb8888Prg1smp(
@@ -2942,27 +2806,25 @@
    * pointer or the default ARGB table.
    */
   std::int32_t CFT_Ycc420plnToArgb8888(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords,
-    const std::int32_t* const userTableAddress
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords,
+    const SofdecAddressWord* const userTableAddress
   )
   {
-    const auto* const inputView = reinterpret_cast<const CftYcc420PlanarPackedWordsView*>(inputWords);
-    const auto* const outputView = reinterpret_cast<const CftRgb16OutputPackedWordsView*>(outputWords);
 
-    CftYcc420PlanarInputLanesView inputLanes{};
-    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(inputView->yPlaneWords);
-    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(inputView->cbPlaneWords);
-    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(inputView->crPlaneWords);
-    inputLanes.yStrideBytes = inputView->yStrideBytes;
-    inputLanes.cbStrideBytes = inputView->cbStrideBytes;
-    inputLanes.crStrideBytes = inputView->crStrideBytes;
+    CftYcc420PlanarInputLanes inputLanes{};
+    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[0].bytes()));
+    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[1].bytes()));
+    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[2].bytes()));
+    inputLanes.yStrideBytes = inputWords->planes[0].pitch;
+    inputLanes.cbStrideBytes = inputWords->planes[1].pitch;
+    inputLanes.crStrideBytes = inputWords->planes[2].pitch;
 
-    CftPixelSurfaceLanesView outputSurface{};
-    outputSurface.pixelBase = outputView->pixelBase;
-    outputSurface.widthPixels = outputView->widthPixels;
-    outputSurface.heightPixels = outputView->heightPixels;
-    outputSurface.strideBytes = outputView->strideBytes;
+    CftPixelSurfaceLanes outputSurface{};
+    outputSurface.pixelBase = outputWords->planes[0].bytes();
+    outputSurface.widthPixels = outputWords->planes[0].width;
+    outputSurface.heightPixels = outputWords->planes[0].height;
+    outputSurface.strideBytes = outputWords->planes[0].pitch;
     outputSurface.reserved = 0;
 
     return cft_Ycc420plnToArgb8888UserTable(
@@ -2981,27 +2843,25 @@
    * pointer or the default ARGB table.
    */
   std::int32_t CFT_Ycc420plnToArgb8888Split(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords,
-    const std::int32_t* const userTableAddress
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords,
+    const SofdecAddressWord* const userTableAddress
   )
   {
-    const auto* const inputView = reinterpret_cast<const CftYcc420PlanarPackedWordsView*>(inputWords);
-    const auto* const outputView = reinterpret_cast<const CftRgb16OutputPackedWordsView*>(outputWords);
 
-    CftYcc420PlanarInputLanesView inputLanes{};
-    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(inputView->yPlaneWords);
-    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(inputView->cbPlaneWords);
-    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(inputView->crPlaneWords);
-    inputLanes.yStrideBytes = inputView->yStrideBytes;
-    inputLanes.cbStrideBytes = inputView->cbStrideBytes;
-    inputLanes.crStrideBytes = inputView->crStrideBytes;
+    CftYcc420PlanarInputLanes inputLanes{};
+    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[0].bytes()));
+    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[1].bytes()));
+    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[2].bytes()));
+    inputLanes.yStrideBytes = inputWords->planes[0].pitch;
+    inputLanes.cbStrideBytes = inputWords->planes[1].pitch;
+    inputLanes.crStrideBytes = inputWords->planes[2].pitch;
 
-    CftPixelSurfaceLanesView outputSurface{};
-    outputSurface.pixelBase = outputView->pixelBase;
-    outputSurface.widthPixels = outputView->widthPixels;
-    outputSurface.heightPixels = outputView->heightPixels;
-    outputSurface.strideBytes = outputView->strideBytes;
+    CftPixelSurfaceLanes outputSurface{};
+    outputSurface.pixelBase = outputWords->planes[0].bytes();
+    outputSurface.widthPixels = outputWords->planes[0].width;
+    outputSurface.heightPixels = outputWords->planes[0].height;
+    outputSurface.strideBytes = outputWords->planes[0].pitch;
     outputSurface.reserved = 0;
 
     return cft_Ycc420plnToArgb8888SplitUserTable(
@@ -3084,6 +2944,7 @@
                 _mm_add_pi16(chromaSum, lumaTable[lumaRows[quadRow][lumaColumn + quadColumn]]), 6
               );
               const std::int32_t packed = _mm_cvtsi64_si32(_mm_packs_pu16(pixel, pixel));
+              // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
               std::memcpy(targetRows[quadRow] + (4 * (lumaColumn + quadColumn)), &packed, sizeof(packed));
             }
           }
@@ -3267,7 +3128,7 @@
    * Publishes SSE lane identity, aligns caller scratch workspace, and executes
    * the two-sample YCC420 planar -> YCC422 pixel2/int conversion pipeline.
    */
-  std::int32_t cft_sse_Ycc420plnToYcc422pix2Int2smp(
+  SofdecAddressWord cft_sse_Ycc420plnToYcc422pix2Int2smp(
     const CftYcc420PlanarInputLanes* const inputLanes,
     const CftPixelSurfaceLanes* const outputSurface,
     const std::uintptr_t scratchBufferAddress,
@@ -3280,9 +3141,7 @@
     (void)alignedScratchBufferAddress;
     (void)scratchBufferSizeBytes;
 
-    return static_cast<std::int32_t>(
-      reinterpret_cast<std::intptr_t>(ConvertYcc420PlanarToYcc422pix2Int2smp(inputLanes, outputSurface))
-    );
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(ConvertYcc420PlanarToYcc422pix2Int2smp(inputLanes, outputSurface)));
   }
 
   /**
@@ -3292,15 +3151,13 @@
    * Chooses scalar or SSE 1-sample YCC420->YCC422 pixel2/int conversion lane
    * based on alignment/stride preconditions.
    */
-  std::int32_t CFT_Ycc420plnToYcc422pix2Int1smp(
+  SofdecAddressWord CFT_Ycc420plnToYcc422pix2Int1smp(
     const CftYcc420PlanarInputLanes* const inputLanes,
     const CftPixelSurfaceLanes* const outputSurface
   )
   {
     if (UTY_SupportSse() == 0) {
-      return static_cast<std::int32_t>(
-        reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface))
-      );
+      return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface)));
     }
 
     const std::uintptr_t alignmentMask =
@@ -3309,23 +3166,17 @@
       reinterpret_cast<std::uintptr_t>(inputLanes->cbPlane) |
       reinterpret_cast<std::uintptr_t>(inputLanes->crPlane);
     if ((alignmentMask & 0x0Fu) != 0u) {
-      return static_cast<std::int32_t>(
-        reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface))
-      );
+      return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface)));
     }
 
     if ((outputSurface->heightPixels & 3) != 0) {
-      return static_cast<std::int32_t>(
-        reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface))
-      );
+      return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface)));
     }
 
     const std::int32_t widthPixels = outputSurface->widthPixels;
     const std::int32_t alignedWidthPixels = (widthPixels + 15) & ~15;
     if ((widthPixels & 0x0F) != 0 || std::abs(outputSurface->strideBytes) < (2 * alignedWidthPixels)) {
-      return static_cast<std::int32_t>(
-        reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface))
-      );
+      return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface)));
     }
 
     return cft_sse_Ycc420plnToYcc422pix2Int1smp(inputLanes, outputSurface);
@@ -3339,28 +3190,26 @@
    * fast lane or the two-sample scalar/SSE lane based on optimize mode and
    * alignment/stride preconditions.
    */
-  std::int32_t CFT_Ycc420plnToYcc422pix2Int(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords,
-    const std::int32_t* const scratchBufferWords
+  SofdecAddressWord CFT_Ycc420plnToYcc422pix2Int(
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords,
+    const SofdecAddressWord* const scratchBufferWords
   )
   {
-    const auto* const inputView = reinterpret_cast<const CftYcc420PlanarPackedWordsView*>(inputWords);
-    const auto* const outputView = reinterpret_cast<const CftRgb16OutputPackedWordsView*>(outputWords);
 
-    CftYcc420PlanarInputLanesView inputLanes{};
-    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(inputView->yPlaneWords);
-    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(inputView->cbPlaneWords);
-    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(inputView->crPlaneWords);
-    inputLanes.yStrideBytes = inputView->yStrideBytes;
-    inputLanes.cbStrideBytes = inputView->cbStrideBytes;
-    inputLanes.crStrideBytes = inputView->crStrideBytes;
+    CftYcc420PlanarInputLanes inputLanes{};
+    inputLanes.yPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[0].bytes()));
+    inputLanes.cbPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[1].bytes()));
+    inputLanes.crPlane = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uint32_t*>(inputWords->planes[2].bytes()));
+    inputLanes.yStrideBytes = inputWords->planes[0].pitch;
+    inputLanes.cbStrideBytes = inputWords->planes[1].pitch;
+    inputLanes.crStrideBytes = inputWords->planes[2].pitch;
 
-    CftPixelSurfaceLanesView outputSurface{};
-    outputSurface.pixelBase = outputView->pixelBase;
-    outputSurface.widthPixels = outputView->widthPixels;
-    outputSurface.heightPixels = outputView->heightPixels;
-    outputSurface.strideBytes = outputView->strideBytes;
+    CftPixelSurfaceLanes outputSurface{};
+    outputSurface.pixelBase = outputWords->planes[0].bytes();
+    outputSurface.widthPixels = outputWords->planes[0].width;
+    outputSurface.heightPixels = outputWords->planes[0].height;
+    outputSurface.strideBytes = outputWords->planes[0].pitch;
     outputSurface.reserved = 0;
 
     if (CFTCOM_GetOptimizeSpeed() != 0) {
@@ -3388,14 +3237,10 @@
       (outputSurface.widthPixels & 0x0F) != 0 ||
       std::abs(outputSurface.strideBytes) < (2 * alignedWidthPixels)
     ) {
-      return static_cast<std::int32_t>(
-        reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int2smp(inputLanesPtr, outputSurfacePtr))
-      );
+      return static_cast<SofdecAddressWord>(reinterpret_cast<std::intptr_t>(cft_c_Ycc420plnToYcc422pix2Int2smp(inputLanesPtr, outputSurfacePtr)));
     }
 
-    const std::uintptr_t scratchBufferAddress = static_cast<std::uintptr_t>(
-      static_cast<std::uint32_t>(scratchBufferWords[0])
-    );
+    const std::uintptr_t scratchBufferAddress = static_cast<std::uintptr_t>(scratchBufferWords[0]);
     const std::int32_t scratchBufferSizeBytes = scratchBufferWords[1];
     return cft_sse_Ycc420plnToYcc422pix2Int2smp(
       inputLanesPtr,
@@ -3610,33 +3455,31 @@
   {
     CFTCOM_SetCftFunctionName("cft_c_Ycc420plnToArgb8888Prg");
 
-    const auto* const input = reinterpret_cast<const CftYcc420PlanarInputLanesView*>(inputLanes);
-    const auto* const output = reinterpret_cast<const CftPixelSurfaceLanesView*>(outputSurface);
 
-    const std::uint8_t* lumaRow0 = input->yPlane;
-    const std::uint8_t* lumaRow1 = input->yPlane + input->yStrideBytes;
-    const std::uint8_t* chromaBlueRow = input->cbPlane;
-    const std::uint8_t* chromaRedRow = input->crPlane;
+    const std::uint8_t* lumaRow0 = inputLanes->yPlane;
+    const std::uint8_t* lumaRow1 = inputLanes->yPlane + inputLanes->yStrideBytes;
+    const std::uint8_t* chromaBlueRow = inputLanes->cbPlane;
+    const std::uint8_t* chromaRedRow = inputLanes->crPlane;
 
-    auto* pixelRow0 = reinterpret_cast<std::uint32_t*>(output->pixelBase);
-    auto* pixelRow1 = reinterpret_cast<std::uint32_t*>(output->pixelBase) + (output->strideBytes / 4);
+    auto* pixelRow0 = reinterpret_cast<std::uint32_t*>(outputSurface->pixelBase);
+    auto* pixelRow1 = reinterpret_cast<std::uint32_t*>(outputSurface->pixelBase) + (outputSurface->strideBytes / 4);
 
-    const std::int32_t widthPixels = output->widthPixels;
-    const std::int32_t heightPixels = output->heightPixels;
+    const std::int32_t widthPixels = outputSurface->widthPixels;
+    const std::int32_t heightPixels = outputSurface->heightPixels;
 
     // An odd width means the final pair carries only its even pixel.
     const std::int32_t oddWidth = widthPixels & 1;
     const std::uint32_t pixelPairsPerRow =
       static_cast<std::uint32_t>(widthPixels + oddWidth) >> 1;
 
-    const std::int32_t lumaRowPairAdvance = 2 * input->yStrideBytes - widthPixels;
+    const std::int32_t lumaRowPairAdvance = 2 * inputLanes->yStrideBytes - widthPixels;
 
     if (heightPixels > 1) {
       const std::int32_t chromaRowAdvance =
-        input->cbStrideBytes - static_cast<std::int32_t>(pixelPairsPerRow) + 1;
+        inputLanes->cbStrideBytes - static_cast<std::int32_t>(pixelPairsPerRow) + 1;
       const std::int32_t pixelRowPairAdvance =
         static_cast<std::int32_t>(
-          static_cast<std::uint32_t>(2 * (output->strideBytes - 2 * widthPixels)) >> 2
+          static_cast<std::uint32_t>(2 * (outputSurface->strideBytes - 2 * widthPixels)) >> 2
         );
 
       std::int32_t rowPair = 1;
@@ -3766,31 +3609,29 @@
   {
     CFTCOM_SetCftFunctionName("cft_c_Ycc420plnToArgb8888Prg1smp");
 
-    const auto* const input = reinterpret_cast<const CftYcc420PlanarInputLanesView*>(inputLanes);
-    const auto* const output = reinterpret_cast<const CftPixelSurfaceLanesView*>(outputSurface);
 
-    const std::uint8_t* lumaRow0 = input->yPlane;
-    const std::uint8_t* lumaRow1 = input->yPlane + input->yStrideBytes;
-    const std::uint8_t* chromaBlueRow = input->cbPlane;
-    const std::uint8_t* chromaRedRow = input->crPlane;
+    const std::uint8_t* lumaRow0 = inputLanes->yPlane;
+    const std::uint8_t* lumaRow1 = inputLanes->yPlane + inputLanes->yStrideBytes;
+    const std::uint8_t* chromaBlueRow = inputLanes->cbPlane;
+    const std::uint8_t* chromaRedRow = inputLanes->crPlane;
 
-    auto* pixelRow0 = reinterpret_cast<std::uint32_t*>(output->pixelBase);
-    auto* pixelRow1 = reinterpret_cast<std::uint32_t*>(output->pixelBase) + (output->strideBytes / 4);
+    auto* pixelRow0 = reinterpret_cast<std::uint32_t*>(outputSurface->pixelBase);
+    auto* pixelRow1 = reinterpret_cast<std::uint32_t*>(outputSurface->pixelBase) + (outputSurface->strideBytes / 4);
 
-    const std::int32_t widthPixels = output->widthPixels;
-    const std::int32_t heightPixels = output->heightPixels;
+    const std::int32_t widthPixels = outputSurface->widthPixels;
+    const std::int32_t heightPixels = outputSurface->heightPixels;
     const std::int32_t oddWidth = widthPixels & 1;
     const std::uint32_t pixelPairsPerRow =
       static_cast<std::uint32_t>(widthPixels + oddWidth) >> 1;
 
-    const std::int32_t lumaRowPairAdvance = 2 * input->yStrideBytes - widthPixels;
+    const std::int32_t lumaRowPairAdvance = 2 * inputLanes->yStrideBytes - widthPixels;
 
     if (heightPixels > 1) {
       const std::int32_t chromaRowAdvance =
-        input->cbStrideBytes - static_cast<std::int32_t>(pixelPairsPerRow) + 1;
+        inputLanes->cbStrideBytes - static_cast<std::int32_t>(pixelPairsPerRow) + 1;
       const std::int32_t pixelRowPairAdvance =
         static_cast<std::int32_t>(
-          static_cast<std::uint32_t>(2 * (output->strideBytes - 2 * widthPixels)) >> 2
+          static_cast<std::uint32_t>(2 * (outputSurface->strideBytes - 2 * widthPixels)) >> 2
         );
 
       std::int32_t rowPair = 1;
@@ -3907,15 +3748,13 @@
   {
     CFTCOM_SetCftFunctionName("cft_c_Ycc420plnToArgb8888Int1smp");
 
-    const auto* const input = reinterpret_cast<const CftYcc420PlanarInputLanesView*>(inputLanes);
-    const auto* const output = reinterpret_cast<const CftPixelSurfaceLanesView*>(outputSurface);
 
-    const std::int32_t widthPixels = output->widthPixels;
-    const std::int32_t heightPixels = output->heightPixels;
-    const std::int32_t strideBytes = output->strideBytes;
-    const std::int32_t yStrideBytes = input->yStrideBytes;
-    const std::int32_t cbStrideBytes = input->cbStrideBytes;
-    const std::int32_t crStrideBytes = input->crStrideBytes;
+    const std::int32_t widthPixels = outputSurface->widthPixels;
+    const std::int32_t heightPixels = outputSurface->heightPixels;
+    const std::int32_t strideBytes = outputSurface->strideBytes;
+    const std::int32_t yStrideBytes = inputLanes->yStrideBytes;
+    const std::int32_t cbStrideBytes = inputLanes->cbStrideBytes;
+    const std::int32_t crStrideBytes = inputLanes->crStrideBytes;
 
     const std::int32_t oddWidth = widthPixels & 1;
     const std::uint32_t pixelPairsPerRow =
@@ -3930,10 +3769,10 @@
       2 * cbStrideBytes - static_cast<std::int32_t>(pixelPairsPerRow) + 1;
     const std::int32_t pixelGroupAdvance = strideBytes - widthPixels;
 
-    const std::uint8_t* lumaRow = input->yPlane;
-    const std::uint8_t* chromaBlueRow = input->cbPlane;
-    const std::uint8_t* chromaRedRow = input->crPlane;
-    auto* pixelRow = reinterpret_cast<std::uint32_t*>(output->pixelBase);
+    const std::uint8_t* lumaRow = inputLanes->yPlane;
+    const std::uint8_t* chromaBlueRow = inputLanes->cbPlane;
+    const std::uint8_t* chromaRedRow = inputLanes->crPlane;
+    auto* pixelRow = reinterpret_cast<std::uint32_t*>(outputSurface->pixelBase);
 
     // One row of the leading/trailing phases.
     const auto convertPlainRow = [&]() {
@@ -4098,15 +3937,13 @@
   {
     CFTCOM_SetCftFunctionName("cft_c_Ycc420plnToArgb8888Int2smp");
 
-    const auto* const input = reinterpret_cast<const CftYcc420PlanarInputLanesView*>(inputLanes);
-    const auto* const output = reinterpret_cast<const CftPixelSurfaceLanesView*>(outputSurface);
 
-    const std::int32_t widthPixels = output->widthPixels;
-    const std::int32_t heightPixels = output->heightPixels;
-    const std::int32_t strideBytes = output->strideBytes;
-    const std::int32_t yStrideBytes = input->yStrideBytes;
-    const std::int32_t cbStrideBytes = input->cbStrideBytes;
-    const std::int32_t crStrideBytes = input->crStrideBytes;
+    const std::int32_t widthPixels = outputSurface->widthPixels;
+    const std::int32_t heightPixels = outputSurface->heightPixels;
+    const std::int32_t strideBytes = outputSurface->strideBytes;
+    const std::int32_t yStrideBytes = inputLanes->yStrideBytes;
+    const std::int32_t cbStrideBytes = inputLanes->cbStrideBytes;
+    const std::int32_t crStrideBytes = inputLanes->crStrideBytes;
 
     const std::int32_t oddWidth = widthPixels & 1;
     const std::uint32_t pixelPairsPerRow =
@@ -4122,10 +3959,10 @@
       2 * cbStrideBytes - static_cast<std::int32_t>(pixelPairsPerRow) + 1;
     const std::int32_t pixelGroupAdvance = strideBytes - widthPixels;
 
-    const std::uint8_t* lumaRow = input->yPlane;
-    const std::uint8_t* chromaBlueRow = input->cbPlane;
-    const std::uint8_t* chromaRedRow = input->crPlane;
-    auto* pixelRow = reinterpret_cast<std::uint32_t*>(output->pixelBase);
+    const std::uint8_t* lumaRow = inputLanes->yPlane;
+    const std::uint8_t* chromaBlueRow = inputLanes->cbPlane;
+    const std::uint8_t* chromaRedRow = inputLanes->crPlane;
+    auto* pixelRow = reinterpret_cast<std::uint32_t*>(outputSurface->pixelBase);
 
     // One row of the leading/trailing phases: chroma read straight off the row.
     const auto convertPlainRow = [&]() {
@@ -5176,43 +5013,6 @@
     }
   }
 
-  struct CftYcc420PlanarPackedWords
-  {
-    std::int32_t reserved00 = 0; // +0x00
-    std::uint32_t* yPlaneWords = nullptr; // +0x04
-    std::int32_t reserved08 = 0; // +0x08
-    std::int32_t reserved0C = 0; // +0x0C
-    std::int32_t yStrideBytes = 0; // +0x10
-    std::uint32_t* cbPlaneWords = nullptr; // +0x14
-    std::int32_t reserved18 = 0; // +0x18
-    std::int32_t reserved1C = 0; // +0x1C
-    std::int32_t cbStrideBytes = 0; // +0x20
-    std::uint32_t* crPlaneWords = nullptr; // +0x24
-    std::int32_t reserved28 = 0; // +0x28
-    std::int32_t reserved2C = 0; // +0x2C
-    std::int32_t crStrideBytes = 0; // +0x30
-  };
-  static_assert(offsetof(CftYcc420PlanarPackedWords, yPlaneWords) == 0x04, "CftYcc420PlanarPackedWords::yPlaneWords offset must be 0x04");
-  static_assert(offsetof(CftYcc420PlanarPackedWords, yStrideBytes) == 0x10, "CftYcc420PlanarPackedWords::yStrideBytes offset must be 0x10");
-  static_assert(offsetof(CftYcc420PlanarPackedWords, cbPlaneWords) == 0x14, "CftYcc420PlanarPackedWords::cbPlaneWords offset must be 0x14");
-  static_assert(offsetof(CftYcc420PlanarPackedWords, cbStrideBytes) == 0x20, "CftYcc420PlanarPackedWords::cbStrideBytes offset must be 0x20");
-  static_assert(offsetof(CftYcc420PlanarPackedWords, crPlaneWords) == 0x24, "CftYcc420PlanarPackedWords::crPlaneWords offset must be 0x24");
-  static_assert(offsetof(CftYcc420PlanarPackedWords, crStrideBytes) == 0x30, "CftYcc420PlanarPackedWords::crStrideBytes offset must be 0x30");
-  static_assert(sizeof(CftYcc420PlanarPackedWords) == 0x34, "CftYcc420PlanarPackedWords size must be 0x34");
-
-  struct CftRgb16OutputPackedWords
-  {
-    std::int32_t reserved00 = 0; // +0x00
-    std::uint8_t* pixelBase = nullptr; // +0x04
-    std::int32_t widthPixels = 0; // +0x08
-    std::int32_t heightPixels = 0; // +0x0C
-    std::int32_t strideBytes = 0; // +0x10
-  };
-  static_assert(offsetof(CftRgb16OutputPackedWords, pixelBase) == 0x04, "CftRgb16OutputPackedWords::pixelBase offset must be 0x04");
-  static_assert(offsetof(CftRgb16OutputPackedWords, widthPixels) == 0x08, "CftRgb16OutputPackedWords::widthPixels offset must be 0x08");
-  static_assert(offsetof(CftRgb16OutputPackedWords, heightPixels) == 0x0C, "CftRgb16OutputPackedWords::heightPixels offset must be 0x0C");
-  static_assert(offsetof(CftRgb16OutputPackedWords, strideBytes) == 0x10, "CftRgb16OutputPackedWords::strideBytes offset must be 0x10");
-  static_assert(sizeof(CftRgb16OutputPackedWords) == 0x14, "CftRgb16OutputPackedWords size must be 0x14");
 
   [[nodiscard]] inline std::uint8_t PackedByte(const std::uint32_t word, const std::uint32_t byteIndex) noexcept
   {
@@ -5241,8 +5041,8 @@
 
   std::int32_t CftYcc420plnToRgb16Core(
     const char* const functionName,
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords,
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords,
     const std::int32_t* const yToY2,
     const std::int32_t* const crToR,
     const std::int32_t* const cbToG,
@@ -5256,28 +5056,28 @@
   {
     CFTCOM_SetCftFunctionName(functionName);
 
-    auto* yTop = inputWords->yPlaneWords;
+    auto* yTop = reinterpret_cast<std::uint32_t*>(inputWords->planes[0].bytes());
     auto* yBottom =
-      reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::uint8_t*>(yTop) + inputWords->yStrideBytes);
-    auto* cbWords = inputWords->cbPlaneWords;
-    auto* crWords = inputWords->crPlaneWords;
+      reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::uint8_t*>(yTop) + inputWords->planes[0].pitch);
+    auto* cbWords = reinterpret_cast<std::uint32_t*>(inputWords->planes[1].bytes());
+    auto* crWords = reinterpret_cast<std::uint32_t*>(inputWords->planes[2].bytes());
 
-    std::uint16_t* topOut = reinterpret_cast<std::uint16_t*>(outputWords->pixelBase);
-    const std::int32_t outputStrideEvenBytes = 2 * (outputWords->strideBytes >> 1);
-    std::uint16_t* bottomOut = reinterpret_cast<std::uint16_t*>(outputWords->pixelBase + outputStrideEvenBytes);
+    std::uint16_t* topOut = reinterpret_cast<std::uint16_t*>(outputWords->planes[0].bytes());
+    const std::int32_t outputStrideEvenBytes = 2 * (outputWords->planes[0].pitch >> 1);
+    std::uint16_t* bottomOut = reinterpret_cast<std::uint16_t*>(outputWords->planes[0].bytes() + outputStrideEvenBytes);
 
     const std::uint32_t yRowTailWords =
-      static_cast<std::uint32_t>((2 * inputWords->yStrideBytes) - outputWords->widthPixels) >> 2;
+      static_cast<std::uint32_t>((2 * inputWords->planes[0].pitch) - outputWords->planes[0].width) >> 2;
     const std::uint32_t cbRowTailWords =
-      static_cast<std::uint32_t>(inputWords->cbStrideBytes - (outputWords->widthPixels / 2)) >> 2;
+      static_cast<std::uint32_t>(inputWords->planes[1].pitch - (outputWords->planes[0].width / 2)) >> 2;
     const std::uint32_t crRowTailWords =
-      static_cast<std::uint32_t>(inputWords->crStrideBytes - (outputWords->widthPixels / 2)) >> 2;
+      static_cast<std::uint32_t>(inputWords->planes[2].pitch - (outputWords->planes[0].width / 2)) >> 2;
 
-    const std::int32_t rowTailBytes = outputStrideEvenBytes - outputWords->widthPixels;
+    const std::int32_t rowTailBytes = outputStrideEvenBytes - outputWords->planes[0].width;
     const std::int32_t rowPairAdvanceBytes = 2 * rowTailBytes;
 
     std::int32_t result = rowTailBytes;
-    std::int32_t remainingRowPairs = outputWords->heightPixels / 2;
+    std::int32_t remainingRowPairs = outputWords->planes[0].height / 2;
     if (remainingRowPairs <= 0) {
       return result;
     }
@@ -5287,7 +5087,7 @@
       : std::array<std::uint32_t, 4>{0u, 0u, 0u, 0u};
 
     do {
-      std::int32_t blocks = outputWords->widthPixels / 8;
+      std::int32_t blocks = outputWords->planes[0].width / 8;
       while (blocks-- > 0) {
         const std::uint32_t cbPacked = *cbWords++;
         const std::uint32_t crPacked = *crWords++;
@@ -5417,8 +5217,8 @@
    * prebuilt fixed-point lookup tables.
    */
   std::int32_t CFT_Ycc420plnToRgb555(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords
   )
   {
     return CftYcc420plnToRgb16Core(
@@ -5445,8 +5245,8 @@
    * 4-phase dither clip tables.
    */
   std::int32_t CFT_Ycc420plnToRgb555WithDither(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords
   )
   {
     return CftYcc420plnToRgb16Core(
@@ -5473,8 +5273,8 @@
    * prebuilt fixed-point lookup tables.
    */
   std::int32_t CFT_Ycc420plnToRgb565(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords
   )
   {
     return CftYcc420plnToRgb16Core(
@@ -5501,8 +5301,8 @@
    * 4-phase dither clip tables.
    */
   std::int32_t CFT_Ycc420plnToRgb565WithDither(
-    const CftYcc420PlanarPackedWords* const inputWords,
-    const CftRgb16OutputPackedWords* const outputWords
+    const moho::CftBuffer* const inputWords,
+    const moho::CftBuffer* const outputWords
   )
   {
     return CftYcc420plnToRgb16Core(
@@ -5778,7 +5578,7 @@
   /**
    * Address: 0x00ADE230 (FUN_00ADE230, _sfxamv_SearchFreeHn)
    */
-  std::int32_t sfxamv_SearchFreeHn()
+  SofdecAddressWord sfxamv_SearchFreeHn()
   {
     const std::int32_t maxHandleCount = gSfxaLibWork.last;
     if (maxHandleCount <= 0) {
@@ -5798,14 +5598,14 @@
   /**
    * Address: 0x00ADE200 (FUN_00ADE200, _SFXA_Create)
    */
-  std::int32_t SFXA_Create()
+  SofdecAddressWord SFXA_Create()
   {
-    const std::int32_t sfxaHandleAddress = sfxamv_SearchFreeHn();
+    const SofdecAddressWord sfxaHandleAddress = sfxamv_SearchFreeHn();
     if (sfxaHandleAddress == 0) {
       return 0;
     }
 
-    auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     (void)sfxamv_InitHn(sfxaHandleAddress);
     ++gSfxaLibWork.cur;
     handleView->used = 1;
@@ -5815,9 +5615,9 @@
   /**
    * Address: 0x00ADE260 (FUN_00ADE260, _sfxamv_InitHn)
    */
-  std::int32_t sfxamv_InitHn(const std::int32_t sfxaHandleAddress)
+  SofdecAddressWord sfxamv_InitHn(const SofdecAddressWord sfxaHandleAddress)
   {
-    auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     handleView->luminancePivot = 0;
     handleView->luminanceMin = 31;
     handleView->luminanceMax = 100;
@@ -5832,13 +5632,13 @@
   /**
    * Address: 0x00ADE290 (FUN_00ADE290, _SFXA_Destroy)
    */
-  void SFXA_Destroy(const std::int32_t sfxaHandleAddress)
+  void SFXA_Destroy(const SofdecAddressWord sfxaHandleAddress)
   {
     if (sfxaHandleAddress == 0) {
       return;
     }
 
-    auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     handleView->used = 0;
     --gSfxaLibWork.cur;
   }
@@ -5846,16 +5646,16 @@
   /**
    * Address: 0x00ADE2B0 (FUN_00ADE2B0, _SFXA_MakeAlpLumiTbl)
    */
-  std::int32_t SFXA_MakeAlpLumiTbl(
-    const std::int32_t sfxaHandleAddress,
+  SofdecAddressWord SFXA_MakeAlpLumiTbl(
+    const SofdecAddressWord sfxaHandleAddress,
     const std::int32_t reservedMode,
-    const std::int32_t tableAddress
+    const SofdecAddressWord tableAddress
   )
   {
     (void)reservedMode;
 
-    auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
-    std::int32_t callbackResult = 0;
+    auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
+    SofdecAddressWord callbackResult = 0;
     if (handleView->luminanceBuilder != nullptr) {
       callbackResult = handleView->luminanceBuilder(
         handleView->luminancePivot,
@@ -5871,16 +5671,16 @@
   /**
    * Address: 0x00ADE2E0 (FUN_00ADE2E0, _SFXA_MakeAlp3110Tbl)
    */
-  std::int32_t SFXA_MakeAlp3110Tbl(
-    const std::int32_t sfxaHandleAddress,
+  SofdecAddressWord SFXA_MakeAlp3110Tbl(
+    const SofdecAddressWord sfxaHandleAddress,
     const std::int32_t reservedMode,
-    const std::int32_t tableAddress
+    const SofdecAddressWord tableAddress
   )
   {
     (void)reservedMode;
 
-    const auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
-    std::int32_t callbackResult = sfxaHandleAddress;
+    const auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
+    SofdecAddressWord callbackResult = sfxaHandleAddress;
     if (handleView->alpha3110Builder != nullptr) {
       callbackResult = handleView->alpha3110Builder(
         tableAddress,
@@ -5896,14 +5696,14 @@
    * Address: 0x00ADE310 (FUN_00ADE310, _SFXA_MakeAlp3211Tbl)
    */
   std::int32_t SFXA_MakeAlp3211Tbl(
-    const std::int32_t sfxaHandleAddress,
+    const SofdecAddressWord sfxaHandleAddress,
     const std::int32_t reservedMode,
-    const std::int32_t tableAddress
+    const SofdecAddressWord tableAddress
   )
   {
     (void)reservedMode;
 
-    const auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    const auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     std::int32_t callbackResult = sfxaHandleAddress;
     if (handleView->alpha3211Builder != nullptr) {
       callbackResult = handleView->alpha3211Builder(
@@ -5919,23 +5719,23 @@
   /**
    * Address: 0x00ADE340 (FUN_00ADE340, _SFXA_IsNeedUpdateLumiTbl)
    */
-  std::int32_t SFXA_IsNeedUpdateLumiTbl(const std::int32_t sfxaHandleAddress)
+  std::int32_t SFXA_IsNeedUpdateLumiTbl(const SofdecAddressWord sfxaHandleAddress)
   {
-    const auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    const auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     return handleView->needsLumiTableUpdate;
   }
 
   /**
    * Address: 0x00ADE350 (FUN_00ADE350, _SFXA_SetLumiPrm)
    */
-  std::int32_t SFXA_SetLumiPrm(
-    const std::int32_t sfxaHandleAddress,
+  SofdecAddressWord SFXA_SetLumiPrm(
+    const SofdecAddressWord sfxaHandleAddress,
     const std::int32_t luminanceMin,
     const std::int32_t luminanceMax,
     const std::int32_t luminancePivot
   )
   {
-    auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     handleView->luminancePivot = luminancePivot;
     handleView->luminanceMin = luminanceMin;
     handleView->luminanceMax = luminanceMax;
@@ -5947,13 +5747,13 @@
    * Address: 0x00ADE380 (FUN_00ADE380, _SFXA_GetLumiPrm)
    */
   std::int32_t SFXA_GetLumiPrm(
-    const std::int32_t sfxaHandleAddress,
+    const SofdecAddressWord sfxaHandleAddress,
     std::int32_t* const outLuminanceMin,
     std::int32_t* const outLuminanceMax,
     std::int32_t* const outLuminancePivot
   )
   {
-    const auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    const auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     *outLuminancePivot = handleView->luminancePivot;
     *outLuminanceMin = handleView->luminanceMin;
     *outLuminanceMax = handleView->luminanceMax;
@@ -5963,14 +5763,14 @@
   /**
    * Address: 0x00ADE3A0 (FUN_00ADE3A0, _SFXA_SetAlp3Prm)
    */
-  std::int32_t SFXA_SetAlp3Prm(
-    const std::int32_t sfxaHandleAddress,
+  SofdecAddressWord SFXA_SetAlp3Prm(
+    const SofdecAddressWord sfxaHandleAddress,
     const std::int8_t alpha0,
     const std::int8_t alpha1,
     const std::int8_t alpha2
   )
   {
-    auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     handleView->alpha0 = alpha0;
     handleView->alpha1 = alpha1;
     handleView->alpha2 = alpha2;
@@ -5981,13 +5781,13 @@
    * Address: 0x00ADE3C0 (FUN_00ADE3C0, _SFXA_GetAlp3Prm)
    */
   std::int32_t SFXA_GetAlp3Prm(
-    const std::int32_t sfxaHandleAddress,
+    const SofdecAddressWord sfxaHandleAddress,
     std::int8_t* const outAlpha0,
     std::int8_t* const outAlpha1,
     std::int8_t* const outAlpha2
   )
   {
-    const auto* const handleView = reinterpret_cast<SfxaRuntimeHandleView*>(SjAddressToPointer(sfxaHandleAddress));
+    const auto* const handleView = reinterpret_cast<SfxaHandle*>(SjAddressToPointer(sfxaHandleAddress));
     *outAlpha0 = handleView->alpha0;
     *outAlpha1 = handleView->alpha1;
     *outAlpha2 = handleView->alpha2;
@@ -6013,10 +5813,10 @@
   /**
    * Address: 0x00ADE580 (FUN_00ADE580, _sfbuf_MakeBufPtr)
    */
-  std::int32_t sfbuf_MakeBufPtr(
-    std::int32_t* const outBufferPointers,
+  SofdecAddressWord sfbuf_MakeBufPtr(
+    SofdecAddressWord* const outBufferPointers,
     const std::int32_t* const ringBufferSizes,
-    std::int32_t baseBufferAddress
+    SofdecAddressWord baseBufferAddress
   )
   {
     constexpr std::int32_t kSfbufRingLaneCount = 8;
@@ -6030,20 +5830,19 @@
   /**
    * Address: 0x00ADE8E0 (FUN_00ADE8E0, _sfbuf_InitBufData)
    */
-  std::int32_t* sfbuf_InitBufData(
-    std::int32_t* const sfbufLaneWords,
+  moho::SfbufLane* sfbuf_InitBufData(
+    moho::SfbufLane* const laneView,
     const std::int32_t laneType,
     const std::int32_t setupState
   )
   {
-    auto* const laneView = reinterpret_cast<SfbufSupplyLaneView*>(sfbufLaneWords);
     laneView->laneType = laneType;
     laneView->isSetup = setupState;
     laneView->prepFlag = 0;
     laneView->termFlag = 0;
     laneView->runtimeState0 = 9;
     laneView->runtimeState1 = 9;
-    return sfbufLaneWords;
+    return laneView;
   }
 
   /**
@@ -6052,23 +5851,23 @@
    * as `base + laneIndex * 0x74`. The accessors that run afterwards
    * (`sfbuf_SetSupplySjSub`, `sfbuf_RingGetSub`, `SFBUF_RingGetDataSiz`, ...)
    * are handed the workctrl base instead and reach the same storage through
-   * `SfbufRuntimeHandleView::lanes` at +0x1310. Overlaying the handle view on
+   * `SfbufHandle::lanes` at +0x1310. Overlaying the handle view on
    * an already-offset base put every lane 0x1310 bytes past where the readers
    * look, so the whole array stayed zero and `MWSFCRE_SetSupplySj` reported
    * `FF000409` ("lane not awaiting supply") for a lane that had never been
    * initialised at all.
    */
-  std::array<SfbufSupplyLaneView, 9>& SfbufLanesAt(const std::int32_t sfbufLaneArrayAddress)
+  std::array<moho::SfbufLane, 9>& SfbufLanesAt(const SofdecAddressWord sfbufLaneArrayAddress)
   {
-    return *reinterpret_cast<std::array<SfbufSupplyLaneView, 9>*>(SjAddressToPointer(sfbufLaneArrayAddress));
+    return reinterpret_cast<moho::SfbufBufferState*>(SjAddressToPointer(sfbufLaneArrayAddress))->lanes;
   }
 
   /**
    * Address: 0x00ADE910 (FUN_00ADE910, _sfbuf_InitUoSj)
    */
-  std::int32_t* sfbuf_InitUoSj(std::int32_t* const uoSjStateWords)
+  SofdecAddressWord* sfbuf_InitUoSj(SofdecAddressWord* const uoSjStateWords)
   {
-    std::int32_t* cursor = uoSjStateWords + 2;
+    SofdecAddressWord* cursor = uoSjStateWords + 2;
     for (std::int32_t block = 0; block < 3; ++block) {
       cursor[-2] = 0;
       cursor[-1] = 0;
@@ -6082,9 +5881,9 @@
   /**
    * Address: 0x00ADE8B0 (FUN_00ADE8B0, _sfbuf_InitUoSjBuf)
    */
-  std::int32_t* sfbuf_InitUoSjBuf(
-    const std::int32_t sfbufLaneArrayAddress,
-    const std::int32_t* const bufferAddressTable,
+  SofdecAddressWord* sfbuf_InitUoSjBuf(
+    const SofdecAddressWord sfbufLaneArrayAddress,
+    const SofdecAddressWord* const bufferAddressTable,
     const std::int32_t* const bufferSizeTable,
     const std::int32_t laneIndex
   )
@@ -6092,8 +5891,8 @@
     (void)bufferAddressTable;
     (void)bufferSizeTable;
 
-    SfbufSupplyLaneView* const laneView = &SfbufLanesAt(sfbufLaneArrayAddress)[laneIndex];
-    (void)sfbuf_InitBufData(reinterpret_cast<std::int32_t*>(laneView), 3, 1);
+    moho::SfbufLane* const laneView = &SfbufLanesAt(sfbufLaneArrayAddress)[laneIndex];
+    (void)sfbuf_InitBufData(laneView, 3, 1);
     return sfbuf_InitUoSj(&laneView->sourceBufferAddress);
   }
 
@@ -6101,15 +5900,15 @@
    * Address: 0x00ADE7D0 (FUN_00ADE7D0, _sfbuf_InitAringBuf)
    */
   std::int32_t sfbuf_InitAringBuf(
-    const std::int32_t sfbufLaneArrayAddress,
-    const std::int32_t* const bufferAddressTable,
+    const SofdecAddressWord sfbufLaneArrayAddress,
+    const SofdecAddressWord* const bufferAddressTable,
     const std::int32_t* const bufferSizeTable,
     const std::int32_t laneIndex
   )
   {
-    SfbufSupplyLaneView* const laneView = &SfbufLanesAt(sfbufLaneArrayAddress)[laneIndex];
+    moho::SfbufLane* const laneView = &SfbufLanesAt(sfbufLaneArrayAddress)[laneIndex];
     const std::int32_t setupState = (bufferSizeTable[laneIndex] != 0) ? 1 : 0;
-    (void)sfbuf_InitBufData(reinterpret_cast<std::int32_t*>(laneView), 2, setupState);
+    (void)sfbuf_InitBufData(laneView, 2, setupState);
     laneView->sourceBufferAddress = bufferAddressTable[laneIndex];
     const std::int32_t sourceBufferBytes = bufferSizeTable[laneIndex];
     laneView->laneParam18 = 0;
@@ -6120,8 +5919,8 @@
     laneView->delimiterSecondaryAddress = 0;
     laneView->writeTotalBytes = 0;
     laneView->readTotalBytes = 0;
-    laneView->laneParam38 = 0;
-    laneView->laneParam3C = 0;
+    laneView->ptsQueue.entriesBaseAddress = 0;
+    laneView->ptsQueue.entryCapacity = 0;
     laneView->sourceBufferBytes = sourceBufferBytes;
     return sourceBufferBytes;
   }
@@ -6135,23 +5934,23 @@
    * stores the updated aring descriptor lanes.
    */
   std::int32_t SFBUF_FixAringBuf(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t laneIndex,
     const std::int32_t sampleMode,
     const std::int32_t transferParam2,
     const std::int32_t transferParam0
   )
   {
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    SfbufSupplyLaneView* const laneView = &runtimeView->lanes[laneIndex];
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[laneIndex];
 
-    const std::int32_t primarySampleBaseAddress = laneView->sourceBufferAddress;
+    const SofdecAddressWord primarySampleBaseAddress = laneView->sourceBufferAddress;
     std::int32_t sampleWindowBytes = laneView->sourceBufferBytes;
     if (transferParam2 > 1) {
       sampleWindowBytes /= transferParam2;
     }
 
-    auto* const aringState = reinterpret_cast<SfbufAringLaneStateView*>(&laneView->laneParam18);
+    auto* const aringState = reinterpret_cast<SfbufAringLaneState*>(&laneView->laneParam18);
     aringState->transferParam0 = transferParam0;
     aringState->sampleMode = sampleMode;
     aringState->transferParam2 = transferParam2;
@@ -6168,41 +5967,37 @@
    * Address: 0x00ADE740 (FUN_00ADE740, _sfbuf_InitVfrmBuf)
    */
   std::int32_t sfbuf_InitVfrmBuf(
-    const std::int32_t vfrmOwnerAddress,
-    const std::int32_t sfbufLaneArrayAddress,
-    const std::int32_t* const bufferAddressTable,
+    const SofdecAddressWord vfrmOwnerAddress,
+    const SofdecAddressWord sfbufLaneArrayAddress,
+    const SofdecAddressWord* const bufferAddressTable,
     const std::int32_t* const bufferSizeTable,
     const std::int32_t laneIndex
   )
   {
-    constexpr std::int32_t kVfrmScratchBaseOffset = 0x16B0;
-    constexpr std::int32_t kVfrmScratchClearSpan = 0x880;
-    constexpr std::int32_t kVfrmScratchStride = 0x88;
-
-    SfbufSupplyLaneView* const laneView = &SfbufLanesAt(sfbufLaneArrayAddress)[laneIndex];
+    moho::SfbufLane* const laneView = &SfbufLanesAt(sfbufLaneArrayAddress)[laneIndex];
     const std::int32_t setupState = (bufferSizeTable[laneIndex] != 0) ? 1 : 0;
-    (void)sfbuf_InitBufData(reinterpret_cast<std::int32_t*>(laneView), 1, setupState);
+    (void)sfbuf_InitBufData(laneView, 1, setupState);
     laneView->sourceBufferAddress = bufferAddressTable[laneIndex];
     laneView->sourceBufferBytes = bufferSizeTable[laneIndex];
     laneView->laneParam18 = 0;
     laneView->queuedDataBytes = 0;
-    laneView->laneParam20 = vfrmOwnerAddress + kVfrmScratchBaseOffset;
-
-    std::int32_t scratchOffset = 0;
-    while (scratchOffset < kVfrmScratchClearSpan) {
-      auto* const scratchWord = reinterpret_cast<std::int32_t*>(SjAddressToPointer(laneView->laneParam20 + scratchOffset));
-      *scratchWord = 0;
-      scratchOffset += kVfrmScratchStride;
+    // `owner + 0x16B0`: the workctrl's 16 VFRM data lanes (0x88 apart), whose
+    // draw states are cleared here.
+    auto* const vfrmOwner = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(vfrmOwnerAddress));
+    auto& vfrmDataLanes = vfrmOwner->bufferState.frames.vfrmDataLanes;
+    laneView->laneParam20 = SjPointerToAddress(&vfrmDataLanes[0]);
+    for (moho::SfmpvfVfrmDataLane& dataLane : vfrmDataLanes) {
+      dataLane.vfrmData.drawState = 0;
     }
-    return scratchOffset;
+    return static_cast<std::int32_t>(sizeof(vfrmDataLanes));
   }
 
   /**
    * Address: 0x00ADE650 (FUN_00ADE650, _sfbuf_CreateSj)
    */
   std::int32_t sfbuf_CreateSj(
-    std::int32_t* const outSjCreateStateWords,
-    const std::int32_t sourceBufferAddress,
+    SofdecAddressWord* const outSjCreateStateWords,
+    const SofdecAddressWord sourceBufferAddress,
     const std::int32_t sourceBufferBytes,
     const std::int32_t extraBufferBytes
   )
@@ -6210,7 +6005,7 @@
     constexpr std::int32_t kSfbufErrInvalidBufferSpan = -16776180;
     constexpr std::int32_t kSfbufErrCreateSjFailed = -16776182;
 
-    auto* const createState = reinterpret_cast<SfbufSjCreateStateView*>(outSjCreateStateWords);
+    auto* const createState = reinterpret_cast<SfbufSjCreateState*>(outSjCreateStateWords);
     createState->ownerTag = 0;
     createState->sourceBufferAddress = sourceBufferAddress;
 
@@ -6233,23 +6028,23 @@
    * Address: 0x00ADE5B0 (FUN_00ADE5B0, _sfbuf_InitRingSj)
    */
   std::int32_t sfbuf_InitRingSj(
-    const std::int32_t sfbufLaneArrayAddress,
-    const std::int32_t* const bufferAddressTable,
+    const SofdecAddressWord sfbufLaneArrayAddress,
+    const SofdecAddressWord* const bufferAddressTable,
     const std::int32_t* const bufferSizeTable,
     const std::int32_t laneIndex,
     const std::int32_t extraBufferBytes
   )
   {
-    SfbufSupplyLaneView* const laneView = &SfbufLanesAt(sfbufLaneArrayAddress)[laneIndex];
+    moho::SfbufLane* const laneView = &SfbufLanesAt(sfbufLaneArrayAddress)[laneIndex];
     const std::int32_t laneBufferBytes = bufferSizeTable[laneIndex];
     if (laneBufferBytes == 0) {
-      (void)sfbuf_InitBufData(reinterpret_cast<std::int32_t*>(laneView), 4, 0);
+      (void)sfbuf_InitBufData(laneView, 4, 0);
       return 0;
     }
 
-    SfbufSjCreateStateView createState{};
+    SfbufSjCreateState createState{};
     const std::int32_t status = sfbuf_CreateSj(
-      reinterpret_cast<std::int32_t*>(&createState),
+      reinterpret_cast<SofdecAddressWord*>(&createState),
       bufferAddressTable[laneIndex],
       laneBufferBytes,
       extraBufferBytes
@@ -6260,11 +6055,11 @@
 
     (void)sfbuf_SetSupSj(
       &laneView->sourceBufferAddress,
-      reinterpret_cast<const std::int32_t*>(&createState),
+      reinterpret_cast<const SofdecAddressWord*>(&createState),
       SjPointerToAddress(laneView),
       1
     );
-    (void)sfbuf_InitBufData(reinterpret_cast<std::int32_t*>(laneView), 5, 1);
+    (void)sfbuf_InitBufData(laneView, 5, 1);
     return 0;
   }
 
@@ -6272,8 +6067,8 @@
    * Address: 0x00ADE4B0 (FUN_00ADE4B0, _SFBUF_InitHn)
    */
   std::int32_t SFBUF_InitHn(
-    const std::int32_t vfrmOwnerAddress,
-    const std::int32_t sfbufLaneArrayAddress,
+    const SofdecAddressWord vfrmOwnerAddress,
+    const SofdecAddressWord sfbufLaneArrayAddress,
     const std::int32_t* const sfbufInitConfigWords
   )
   {
@@ -6286,9 +6081,9 @@
     constexpr std::int32_t kSfbufAringLane1 = 6;
     constexpr std::int32_t kSfbufUoSjLane = 7;
 
-    const auto* const initConfig = reinterpret_cast<const SfbufInitLayoutConfigView*>(sfbufInitConfigWords);
+    const auto* const initConfig = reinterpret_cast<const SfbufInitLayoutConfig*>(sfbufInitConfigWords);
     const std::int32_t* const laneBufferSizes = initConfig->laneBufferSizes.data();
-    std::array<std::int32_t, 8> laneBufferAddresses{};
+    std::array<SofdecAddressWord, 8> laneBufferAddresses{};
     (void)sfbuf_MakeBufPtr(laneBufferAddresses.data(), laneBufferSizes, initConfig->baseBufferAddress);
 
     std::int32_t status = sfbuf_InitRingSj(
@@ -6335,7 +6130,7 @@
   /**
    * Address: 0x00ADE9C0 (FUN_00ADE9C0, _sfbuf_ChkSupSj)
    */
-  std::int32_t sfbuf_ChkSupSj(const std::int32_t* const supplyDescriptorWords)
+  std::int32_t sfbuf_ChkSupSj(const SofdecAddressWord* const supplyDescriptorWords)
   {
     if (supplyDescriptorWords[1] == 0) {
       return -1;
@@ -6358,7 +6153,7 @@
   /**
    * Address: 0x00ADEAC0 (FUN_00ADEAC0, _sfbuf_InitConti)
    */
-  std::int32_t* sfbuf_InitConti(std::int32_t* const continuityStateWords)
+  SofdecAddressWord* sfbuf_InitConti(SofdecAddressWord* const continuityStateWords)
   {
     continuityStateWords[0] = 0;
     continuityStateWords[1] = 0;
@@ -6371,7 +6166,7 @@
    * What it does:
    * Clears one 5-word supply-lane tail payload and returns the same base lane.
    */
-  std::int32_t* sfbuf_ClearSupplyTailFiveWords(std::int32_t* const tailWords) noexcept
+  SofdecAddressWord* sfbuf_ClearSupplyTailFiveWords(SofdecAddressWord* const tailWords) noexcept
   {
     if (tailWords == nullptr) {
       return nullptr;
@@ -6387,14 +6182,14 @@
    * Address: 0x00ADEA60 (FUN_00ADEA60, _sfbuf_SetSupSj)
    */
   void sfbuf_SetSupSj(
-    std::int32_t* const supplyLaneWords,
-    const std::int32_t* const supplyDescriptorWords,
-    const std::int32_t ownerLaneAddress,
+    SofdecAddressWord* const supplyLaneWords,
+    const SofdecAddressWord* const supplyDescriptorWords,
+    const SofdecAddressWord ownerLaneAddress,
     const std::int32_t setupState
   )
   {
     SFLIB_LockCs();
-    auto* const laneOwner = reinterpret_cast<SfbufSupplyLaneView*>(SjAddressToPointer(ownerLaneAddress));
+    auto* const laneOwner = reinterpret_cast<moho::SfbufLane*>(SjAddressToPointer(ownerLaneAddress));
     laneOwner->isSetup = setupState;
 
     for (std::int32_t laneWord = 0; laneWord < 6; ++laneWord) {
@@ -6412,16 +6207,16 @@
    * Address: 0x00ADEA00 (FUN_00ADEA00, _sfbuf_SetSupplySjSub)
    */
   std::int32_t sfbuf_SetSupplySjSub(
-    const std::int32_t sfbufHandleAddress,
-    const std::int32_t* const supplyDescriptorWords,
+    const SofdecAddressWord sfbufHandleAddress,
+    const SofdecAddressWord* const supplyDescriptorWords,
     const std::int32_t transferLaneIndex
   )
   {
     constexpr std::int32_t kSfbufLaneStateAwaitingSupply = 4;
     constexpr std::int32_t kSfbufErrLaneNotAwaitingSupply = -16776183;
 
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    SfbufSupplyLaneView* const laneView = &runtimeView->lanes[transferLaneIndex];
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[transferLaneIndex];
     if (laneView->laneType != kSfbufLaneStateAwaitingSupply) {
       return SFLIB_SetErr(sfbufHandleAddress, kSfbufErrLaneNotAwaitingSupply);
     }
@@ -6441,12 +6236,12 @@
    */
   std::int32_t SFBUF_SetSupplySj(
     moho::SofdecSfdWorkctrlSubobj* const workctrlSubobj,
-    const std::int32_t* const supplyDescriptorWords
+    const SofdecAddressWord* const supplyDescriptorWords
   )
   {
     constexpr std::int32_t kSfbufErrInvalidSupplyDescriptor = -16776184;
 
-    const std::int32_t sfbufHandleAddress = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(workctrlSubobj));
+    const SofdecAddressWord sfbufHandleAddress = static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(workctrlSubobj));
     if (sfbuf_ChkSupSj(supplyDescriptorWords) != 0) {
       return SFLIB_SetErr(sfbufHandleAddress, kSfbufErrInvalidSupplyDescriptor);
     }
@@ -6465,16 +6260,16 @@
   /**
    * Address: 0x00ADEAE0 (FUN_00ADEAE0, _SFBUF_SetUoch)
    */
-  std::int32_t* SFBUF_SetUoch(
-    const std::int32_t sfbufHandleAddress,
+  SofdecAddressWord* SFBUF_SetUoch(
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t laneIndex,
     const std::int32_t uochSlotIndex,
-    const std::int32_t* const chunkDescriptorWords
+    const SofdecAddressWord* const chunkDescriptorWords
   )
   {
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    SfbufSupplyLaneView* const laneView = &runtimeView->lanes[laneIndex];
-    auto* const uochEntry = reinterpret_cast<SfbufUochDescriptorView*>(
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[laneIndex];
+    auto* const uochEntry = reinterpret_cast<SfbufUochDescriptor*>(
       &laneView->sourceBufferAddress + (uochSlotIndex * 4)
     );
     uochEntry->word0 = chunkDescriptorWords[0];
@@ -6488,15 +6283,15 @@
    * Address: 0x00ADEB30 (FUN_00ADEB30, _SFBUF_GetUoch)
    */
   std::int32_t SFBUF_GetUoch(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t laneIndex,
     const std::int32_t uochSlotIndex,
-    std::int32_t* const outChunkDescriptorWords
+    SofdecAddressWord* const outChunkDescriptorWords
   )
   {
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[laneIndex];
-    const auto* const uochEntry = reinterpret_cast<const SfbufUochDescriptorView*>(
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[laneIndex];
+    const auto* const uochEntry = reinterpret_cast<const SfbufUochDescriptor*>(
       &laneView->sourceBufferAddress + (uochSlotIndex * 4)
     );
     outChunkDescriptorWords[0] = uochEntry->word0;
@@ -6510,13 +6305,13 @@
    * Address: 0x00ADEB80 (FUN_00ADEB80, _SFBUF_GetRingSj)
    */
   std::int32_t SFBUF_GetRingSj(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t laneIndex,
-    std::int32_t* const outRingHandleAddress
+    SofdecAddressWord* const outRingHandleAddress
   )
   {
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    *outRingHandleAddress = runtimeView->lanes[laneIndex].sourceBufferBytes;
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    *outRingHandleAddress = sfbuf->bufferState.lanes[laneIndex].sourceBufferBytes;
     return sfbufHandleAddress;
   }
 
@@ -6524,19 +6319,19 @@
    * Address: 0x00ADEBF0 (FUN_00ADEBF0, _sfbuf_RingGetSub)
    */
   std::int32_t sfbuf_RingGetSub(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     std::int32_t* const outCursorWords,
     const std::int32_t laneMode
   )
   {
-    auto* const outCursor = reinterpret_cast<SfbufRingCursorSnapshotView*>(outCursorWords);
+    auto* const outCursor = reinterpret_cast<SfbufRingCursorSnapshot*>(outCursorWords);
     outCursor->firstChunk = {};
     outCursor->secondChunk = {};
     outCursor->reservedWords = {0, 0, 0};
 
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     if ((laneView->isSetup != 0) && (laneView->sourceBufferBytes != 0)) {
       (void)sfbuf_PeekChunk(
         laneView->sourceBufferBytes,
@@ -6552,7 +6347,7 @@
    * Address: 0x00ADECB0 (FUN_00ADECB0, _sfbuf_RingAddSub)
    */
   std::int32_t sfbuf_RingAddSub(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     const std::int32_t advanceCount,
     const std::int32_t laneMode
@@ -6561,8 +6356,8 @@
     constexpr std::int32_t kSfbufErrAdvanceMismatch = -16776181;
 
     std::int32_t status = 0;
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     if ((advanceCount == 0) || (laneView->isSetup == 0) || (laneView->sourceBufferBytes == 0)) {
       return 0;
     }
@@ -6586,17 +6381,17 @@
       laneView->writeTotalBytes += advanceCount;
     }
 
-    auto* const runtimeStatus = reinterpret_cast<SfbufRuntimeStatusView*>(SjAddressToPointer(sfbufHandleAddress));
-    runtimeStatus->dirtyFlag = 1;
+    auto* const runtimeStatus = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    runtimeStatus->serverWorkPending = 1;
     return status;
   }
 
   /**
    * Address: 0x00ADEDA0 (FUN_00ADEDA0, _sfbuf_ResetConti)
    */
-  std::uint32_t sfbuf_ResetConti(std::int32_t* const supplyStateWords)
+  std::uint32_t sfbuf_ResetConti(SofdecAddressWord* const supplyStateWords)
   {
-    auto* const supplyState = reinterpret_cast<SfbufSupplyStateWindowView*>(supplyStateWords);
+    auto* const supplyState = reinterpret_cast<SfbufSupplyStateWindow*>(supplyStateWords);
     moho::SjChunkRange firstChunk{};
     moho::SjChunkRange secondChunk{};
     (void)sfbuf_PeekChunk(supplyState->ringHandleAddress, 1, &firstChunk, &secondChunk);
@@ -6617,7 +6412,7 @@
    * Address: 0x00ADEE00 (FUN_00ADEE00, _sfbuf_PeekChunk)
    */
   std::int32_t sfbuf_PeekChunk(
-    const std::int32_t ringHandleAddress,
+    const SofdecAddressWord ringHandleAddress,
     const std::int32_t laneMode,
     moho::SjChunkRange* const outFirstChunk,
     moho::SjChunkRange* const outSecondChunk
@@ -6643,7 +6438,7 @@
    * Address: 0x00ADEE90 (FUN_00ADEE90, _sfbuf_MoveChunk)
    */
   std::int32_t sfbuf_MoveChunk(
-    const std::int32_t ringHandleAddress,
+    const SofdecAddressWord ringHandleAddress,
     const std::int32_t laneMode,
     const std::int32_t requestedBytes
   )
@@ -6660,7 +6455,7 @@
    * Address: 0x00ADEBB0 (FUN_00ADEBB0, _SFBUF_RingGetWrite)
    */
   std::int32_t SFBUF_RingGetWrite(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     std::int32_t* const outCursor
   )
@@ -6672,7 +6467,7 @@
    * Address: 0x00ADEBD0 (FUN_00ADEBD0, _SFBUF_RingGetRead)
    */
   std::int32_t SFBUF_RingGetRead(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     std::int32_t* const outCursor
   )
@@ -6684,7 +6479,7 @@
    * Address: 0x00ADEC80 (FUN_00ADEC80, _SFBUF_RingAddWrite)
    */
   std::int32_t SFBUF_RingAddWrite(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     const std::int32_t advanceCount
   )
@@ -6696,7 +6491,7 @@
    * Address: 0x00ADEC90 (FUN_00ADEC90, _SFBUF_RingAddRead)
    */
   std::int32_t SFBUF_RingAddRead(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     const std::int32_t advanceCount
   )
@@ -6708,15 +6503,15 @@
    * Address: 0x00ADEED0 (FUN_00ADEED0, _SFBUF_RingGetDlm)
    */
   void SFBUF_RingGetDlm(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
-    std::int32_t* const outPrimaryDelimiterAddress,
-    std::int32_t* const outSecondaryDelimiterAddress
+    SofdecAddressWord* const outPrimaryDelimiterAddress,
+    SofdecAddressWord* const outSecondaryDelimiterAddress
   )
   {
     SFLIB_LockCs();
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     *outPrimaryDelimiterAddress = laneView->delimiterPrimaryAddress;
     *outSecondaryDelimiterAddress = laneView->delimiterSecondaryAddress;
     SFLIB_UnlockCs();
@@ -6726,15 +6521,15 @@
    * Address: 0x00ADEF20 (FUN_00ADEF20, _SFBUF_RingSetDlm)
    */
   void SFBUF_RingSetDlm(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
-    const std::int32_t primaryDelimiterAddress,
-    const std::int32_t secondaryDelimiterAddress
+    const SofdecAddressWord primaryDelimiterAddress,
+    const SofdecAddressWord secondaryDelimiterAddress
   )
   {
     SFLIB_LockCs();
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     laneView->delimiterPrimaryAddress = primaryDelimiterAddress;
     laneView->delimiterSecondaryAddress = secondaryDelimiterAddress;
     SFLIB_UnlockCs();
@@ -6743,13 +6538,13 @@
   /**
    * Address: 0x00ADEFB0 (FUN_00ADEFB0, _SFBUF_GetWTot)
    */
-  std::int32_t SFBUF_GetWTot(const std::int32_t sfbufHandleAddress, const std::int32_t ringIndex)
+  std::int32_t SFBUF_GetWTot(const SofdecAddressWord sfbufHandleAddress, const std::int32_t ringIndex)
   {
     constexpr std::int32_t kSfbufTotalSaturated = 0x7FFFFFFF;
 
     SFLIB_LockCs();
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
 
     std::int32_t totalWriteBytes = laneView->writeTotalBytes;
     const std::int32_t totalReadBytes = laneView->readTotalBytes;
@@ -6771,16 +6566,16 @@
    * Address: 0x00ADF020 (FUN_00ADF020, _SFBUF_RingGetSj)
    */
   std::int32_t SFBUF_RingGetSj(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
-    std::int32_t* const outRingHandleAddress
+    SofdecAddressWord* const outRingHandleAddress
   )
   {
     constexpr std::int32_t kSfbufErrRingNotSetup = -16776191;
 
     *outRingHandleAddress = 0;
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     if (laneView->isSetup == 0) {
       return SFLIB_SetErr(sfbufHandleAddress, kSfbufErrRingNotSetup);
     }
@@ -6791,14 +6586,14 @@
   /**
    * Address: 0x00ADF070 (FUN_00ADF070, _SFBUF_AddRtotSj)
    */
-  std::int32_t* SFBUF_AddRtotSj(
-    const std::int32_t sfbufHandleAddress,
+  SofdecAddressWord* SFBUF_AddRtotSj(
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     const std::int32_t addBytes
   )
   {
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     if (laneView->readTotalBytes >= 0) {
       laneView->readTotalBytes += addBytes;
     }
@@ -6809,26 +6604,26 @@
    * Address: 0x00ADF0A0 (FUN_00ADF0A0, _SFBUF_AringGetWrite)
    */
   std::int32_t SFBUF_AringGetWrite(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     std::int32_t* const outAringSnapshotWords
   )
   {
     constexpr std::int32_t kSfbufErrRingNotSetup = -16776191;
 
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     if (laneView->isSetup == 0) {
       return SFLIB_SetErr(sfbufHandleAddress, kSfbufErrRingNotSetup);
     }
 
     SFLIB_LockCs();
-    const auto* const aringState = reinterpret_cast<const SfbufAringLaneStateView*>(&laneView->laneParam18);
+    const auto* const aringState = reinterpret_cast<const SfbufAringLaneState*>(&laneView->laneParam18);
     const std::int32_t transferParam0 = aringState->transferParam0;
     const std::int32_t sampleMode = aringState->sampleMode;
     const std::int32_t transferParam2 = aringState->transferParam2;
-    const std::int32_t primarySampleBaseAddress = aringState->primarySampleBaseAddress;
-    const std::int32_t secondarySampleBaseAddress = aringState->secondarySampleBaseAddress;
+    const SofdecAddressWord primarySampleBaseAddress = aringState->primarySampleBaseAddress;
+    const SofdecAddressWord secondarySampleBaseAddress = aringState->secondarySampleBaseAddress;
     const std::int32_t ringCapacitySamples = aringState->ringCapacitySamples;
     const std::int32_t writeCursorSamples = aringState->writeCursorSamples;
     const std::int32_t readCursorSamples = aringState->readCursorSamples;
@@ -6836,7 +6631,7 @@
     const std::int32_t readTotalSamples = aringState->readTotalSamples;
     SFLIB_UnlockCs();
 
-    auto* const outSnapshot = reinterpret_cast<SfbufAringTransferSnapshotView*>(outAringSnapshotWords);
+    auto* const outSnapshot = reinterpret_cast<SfbufAringTransferSnapshot*>(outAringSnapshotWords);
     outSnapshot->transferParam0 = transferParam0;
     outSnapshot->sampleMode = sampleMode;
     outSnapshot->transferParam2 = transferParam2;
@@ -6874,7 +6669,7 @@
    * Address: 0x00ADF220 (FUN_00ADF220, _SFBUF_AringAddWrite)
    */
   std::int32_t SFBUF_AringAddWrite(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     const std::int32_t addSamples
   )
@@ -6886,15 +6681,15 @@
       return 0;
     }
 
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     if (laneView->isSetup == 0) {
       return SFLIB_SetErr(sfbufHandleAddress, kSfbufErrRingNotSetup);
     }
 
     std::int32_t status = 0;
     SFLIB_LockCs();
-    auto* const aringState = reinterpret_cast<SfbufAringLaneStateView*>(&laneView->laneParam18);
+    auto* const aringState = reinterpret_cast<SfbufAringLaneState*>(&laneView->laneParam18);
 
     const std::int32_t ringCapacitySamples = aringState->ringCapacitySamples;
     std::int32_t nextWriteCursor = addSamples + aringState->writeCursorSamples;
@@ -6910,8 +6705,8 @@
       status = SFLIB_SetErr(sfbufHandleAddress, kSfbufErrAringWriteOverflow);
     }
 
-    auto* const runtimeStatus = reinterpret_cast<SfbufRuntimeStatusView*>(SjAddressToPointer(sfbufHandleAddress));
-    runtimeStatus->dirtyFlag = 1;
+    auto* const runtimeStatus = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    runtimeStatus->serverWorkPending = 1;
     SFLIB_UnlockCs();
     return status;
   }
@@ -6920,26 +6715,26 @@
    * Address: 0x00ADF2D0 (FUN_00ADF2D0, _SFBUF_AringGetRead)
    */
   std::int32_t SFBUF_AringGetRead(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     std::int32_t* const outAringSnapshotWords
   )
   {
     constexpr std::int32_t kSfbufErrRingNotSetup = -16776191;
 
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     if (laneView->isSetup == 0) {
       return SFLIB_SetErr(sfbufHandleAddress, kSfbufErrRingNotSetup);
     }
 
     SFLIB_LockCs();
-    const auto* const aringState = reinterpret_cast<const SfbufAringLaneStateView*>(&laneView->laneParam18);
+    const auto* const aringState = reinterpret_cast<const SfbufAringLaneState*>(&laneView->laneParam18);
     const std::int32_t transferParam0 = aringState->transferParam0;
     const std::int32_t sampleMode = aringState->sampleMode;
     const std::int32_t transferParam2 = aringState->transferParam2;
-    const std::int32_t primarySampleBaseAddress = aringState->primarySampleBaseAddress;
-    const std::int32_t secondarySampleBaseAddress = aringState->secondarySampleBaseAddress;
+    const SofdecAddressWord primarySampleBaseAddress = aringState->primarySampleBaseAddress;
+    const SofdecAddressWord secondarySampleBaseAddress = aringState->secondarySampleBaseAddress;
     const std::int32_t ringCapacitySamples = aringState->ringCapacitySamples;
     const std::int32_t writeCursorSamples = aringState->writeCursorSamples;
     const std::int32_t readCursorSamples = aringState->readCursorSamples;
@@ -6947,7 +6742,7 @@
     const std::int32_t readTotalSamples = aringState->readTotalSamples;
     SFLIB_UnlockCs();
 
-    auto* const outSnapshot = reinterpret_cast<SfbufAringTransferSnapshotView*>(outAringSnapshotWords);
+    auto* const outSnapshot = reinterpret_cast<SfbufAringTransferSnapshot*>(outAringSnapshotWords);
     outSnapshot->transferParam0 = transferParam0;
     outSnapshot->sampleMode = sampleMode;
     outSnapshot->transferParam2 = transferParam2;
@@ -6985,7 +6780,7 @@
    * Address: 0x00ADF450 (FUN_00ADF450, _SFBUF_AringAddRead)
    */
   std::int32_t SFBUF_AringAddRead(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t ringIndex,
     const std::int32_t addSamples
   )
@@ -6997,15 +6792,15 @@
       return 0;
     }
 
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    SfbufSupplyLaneView* const laneView = &runtimeView->lanes[ringIndex];
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[ringIndex];
     if (laneView->isSetup == 0) {
       return SFLIB_SetErr(sfbufHandleAddress, kSfbufErrRingNotSetup);
     }
 
     std::int32_t status = 0;
     SFLIB_LockCs();
-    auto* const aringState = reinterpret_cast<SfbufAringLaneStateView*>(&laneView->laneParam18);
+    auto* const aringState = reinterpret_cast<SfbufAringLaneState*>(&laneView->laneParam18);
 
     const std::int32_t ringCapacitySamples = aringState->ringCapacitySamples;
     std::int32_t nextReadCursor = addSamples + aringState->readCursorSamples;
@@ -7021,8 +6816,8 @@
       status = SFLIB_SetErr(sfbufHandleAddress, kSfbufErrAringReadOverflow);
     }
 
-    auto* const runtimeStatus = reinterpret_cast<SfbufRuntimeStatusView*>(SjAddressToPointer(sfbufHandleAddress));
-    runtimeStatus->dirtyFlag = 1;
+    auto* const runtimeStatus = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    runtimeStatus->serverWorkPending = 1;
     SFLIB_UnlockCs();
     return status;
   }
@@ -7038,10 +6833,10 @@
   /**
    * Address: 0x00ADF510 (FUN_00ADF510, _SFBUF_VfrmAddWrite)
    */
-  std::int32_t SFBUF_VfrmAddWrite(const std::int32_t sfbufHandleAddress)
+  std::int32_t SFBUF_VfrmAddWrite(const SofdecAddressWord sfbufHandleAddress)
   {
-    auto* const runtimeStatus = reinterpret_cast<SfbufRuntimeStatusView*>(SjAddressToPointer(sfbufHandleAddress));
-    runtimeStatus->dirtyFlag = 1;
+    auto* const runtimeStatus = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    runtimeStatus->serverWorkPending = 1;
     return 0;
   }
 
@@ -7049,14 +6844,14 @@
    * Address: 0x00ADF520 (FUN_00ADF520, _SFBUF_VfrmGetRead)
    */
   std::int32_t SFBUF_VfrmGetRead(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t laneIndex,
     const std::int32_t arg0,
     const std::int32_t arg1
   )
   {
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[laneIndex];
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[laneIndex];
     if (laneView->isSetup != 0) {
       return 0;
     }
@@ -7067,20 +6862,20 @@
    * Address: 0x00ADF570 (FUN_00ADF570, _SFBUF_VfrmAddRead)
    */
   std::int32_t SFBUF_VfrmAddRead(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t laneIndex,
     const std::int32_t arg0,
     const std::int32_t arg1
   )
   {
     std::int32_t result = 0;
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    const SfbufSupplyLaneView* const laneView = &runtimeView->lanes[laneIndex];
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    const moho::SfbufLane* const laneView = &sfbuf->bufferState.lanes[laneIndex];
     if (laneView->isSetup == 0) {
       result = SFTRN_CallTrtTrif(sfbufHandleAddress, laneView->runtimeState0, 12, arg0, arg1);
     }
-    auto* const runtimeStatus = reinterpret_cast<SfbufRuntimeStatusView*>(SjAddressToPointer(sfbufHandleAddress));
-    runtimeStatus->dirtyFlag = 1;
+    auto* const runtimeStatus = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    runtimeStatus->serverWorkPending = 1;
     return result;
   }
 
@@ -7088,54 +6883,54 @@
    * Address: 0x00ADF5C0 (FUN_00ADF5C0, _SFBUF_SetPrepFlg)
    */
   std::int32_t SFBUF_SetPrepFlg(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t laneIndex,
     const std::int32_t prepFlag
   )
   {
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    runtimeView->lanes[laneIndex].prepFlag = prepFlag;
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    sfbuf->bufferState.lanes[laneIndex].prepFlag = prepFlag;
     return prepFlag;
   }
 
   /**
    * Address: 0x00ADF5E0 (FUN_00ADF5E0, _SFBUF_GetPrepFlg)
    */
-  std::int32_t SFBUF_GetPrepFlg(const std::int32_t sfbufHandleAddress, const std::int32_t laneIndex)
+  std::int32_t SFBUF_GetPrepFlg(const SofdecAddressWord sfbufHandleAddress, const std::int32_t laneIndex)
   {
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    return runtimeView->lanes[laneIndex].prepFlag;
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    return sfbuf->bufferState.lanes[laneIndex].prepFlag;
   }
 
   /**
    * Address: 0x00ADF600 (FUN_00ADF600, _SFBUF_SetTermFlg)
    */
   std::int32_t SFBUF_SetTermFlg(
-    const std::int32_t sfbufHandleAddress,
+    const SofdecAddressWord sfbufHandleAddress,
     const std::int32_t laneIndex,
     const std::int32_t termFlag
   )
   {
-    auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    runtimeView->lanes[laneIndex].termFlag = termFlag;
+    auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    sfbuf->bufferState.lanes[laneIndex].termFlag = termFlag;
     return termFlag;
   }
 
   /**
    * Address: 0x00ADF620 (FUN_00ADF620, _SFBUF_GetTermFlg)
    */
-  std::int32_t SFBUF_GetTermFlg(const std::int32_t sfbufHandleAddress, const std::int32_t laneIndex)
+  std::int32_t SFBUF_GetTermFlg(const SofdecAddressWord sfbufHandleAddress, const std::int32_t laneIndex)
   {
-    const auto* const runtimeView = reinterpret_cast<SfbufRuntimeHandleView*>(SjAddressToPointer(sfbufHandleAddress));
-    return runtimeView->lanes[laneIndex].termFlag;
+    const auto* const sfbuf = reinterpret_cast<moho::SofdecSfdWorkctrlSubobj*>(SjAddressToPointer(sfbufHandleAddress));
+    return sfbuf->bufferState.lanes[laneIndex].termFlag;
   }
 
   /**
    * Address: 0x00ADF640 (FUN_00ADF640, _SFBUF_GetRingBufSiz)
    */
-  std::int32_t SFBUF_GetRingBufSiz(const std::int32_t sfbufHandleAddress, const std::int32_t ringIndex)
+  std::int32_t SFBUF_GetRingBufSiz(const SofdecAddressWord sfbufHandleAddress, const std::int32_t ringIndex)
   {
-    SfbufRingCursorSnapshotView ringSnapshot{};
+    SfbufRingCursorSnapshot ringSnapshot{};
     (void)SFBUF_RingGetRead(sfbufHandleAddress, ringIndex, reinterpret_cast<std::int32_t*>(&ringSnapshot));
     return ringSnapshot.firstChunk.byteCount + ringSnapshot.secondChunk.byteCount;
   }
@@ -7143,9 +6938,9 @@
   /**
    * Address: 0x00ADF670 (FUN_00ADF670, _SFBUF_RingGetFreeSiz)
    */
-  std::int32_t SFBUF_RingGetFreeSiz(const std::int32_t sfbufHandleAddress, const std::int32_t ringIndex)
+  std::int32_t SFBUF_RingGetFreeSiz(const SofdecAddressWord sfbufHandleAddress, const std::int32_t ringIndex)
   {
-    SfbufRingCursorSnapshotView ringSnapshot{};
+    SfbufRingCursorSnapshot ringSnapshot{};
     (void)SFBUF_RingGetWrite(sfbufHandleAddress, ringIndex, reinterpret_cast<std::int32_t*>(&ringSnapshot));
     return ringSnapshot.firstChunk.byteCount + ringSnapshot.secondChunk.byteCount;
   }
@@ -7172,7 +6967,7 @@
   /**
    * Address: 0x00ADF770 (FUN_00ADF770, _sfbuf_IsSjRbf)
    */
-  std::int32_t sfbuf_IsSjRbf(const std::int32_t sjHandleAddress)
+  std::int32_t sfbuf_IsSjRbf(const SofdecAddressWord sjHandleAddress)
   {
     auto* const ringBufferHandle = reinterpret_cast<moho::SofdecSjRingBufferHandle*>(SjAddressToPointer(sjHandleAddress));
     return (SJRBF_GetUuid(ringBufferHandle) == gSfbufSjRingBufferUuid) ? 1 : 0;
@@ -7181,7 +6976,7 @@
   /**
    * Address: 0x00ADF790 (FUN_00ADF790, _sfbuf_IsSjMem)
    */
-  std::int32_t sfbuf_IsSjMem(const std::int32_t sjHandleAddress)
+  std::int32_t sfbuf_IsSjMem(const SofdecAddressWord sjHandleAddress)
   {
     auto* const memoryHandle = reinterpret_cast<moho::SofdecSjMemoryHandle*>(SjAddressToPointer(sjHandleAddress));
     return (SJMEM_GetUuid(memoryHandle) == gSfbufSjMemoryUuid) ? 1 : 0;
@@ -7191,7 +6986,7 @@
    * Address: 0x00ADF6A0 (FUN_00ADF6A0, _SFBUF_GetFlowCnt)
    */
   std::int32_t SFBUF_GetFlowCnt(
-    const std::int32_t sjHandleAddress,
+    const SofdecAddressWord sjHandleAddress,
     std::int32_t* const outLane1FlowCount,
     std::int32_t* const outLane0FlowCount
   )
@@ -7214,7 +7009,7 @@
 
     *outLane1FlowCount = 0;
     *outLane0FlowCount = 0;
-    return static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(outLane1FlowCount));
+    return static_cast<SofdecAddressWord>(reinterpret_cast<std::uintptr_t>(outLane1FlowCount));
   }
 
   /**
@@ -7241,9 +7036,10 @@
    */
   std::int32_t SFTRN_Init(void* const outTransferEntryTable, void* const transferEntryTable)
   {
-    auto* const outEntryList = reinterpret_cast<SftrnEntryListView*>(outTransferEntryTable);
-    auto* const sourceEntryList = reinterpret_cast<SftrnEntryListView*>(transferEntryTable);
-    std::memcpy(outEntryList, sourceEntryList, sizeof(SftrnEntryListView));
+    auto* const outEntryList = reinterpret_cast<SftrnEntryList*>(outTransferEntryTable);
+    auto* const sourceEntryList = reinterpret_cast<SftrnEntryList*>(transferEntryTable);
+    // Codec blob IO: vendored codec port keeps raw byte copies 1:1.
+    std::memcpy(outEntryList, sourceEntryList, sizeof(SftrnEntryList));
     return sftrn_CallTrEntry(sourceEntryList, kSftrnEntrySelectorInit);
   }
 
@@ -7260,7 +7056,7 @@
    */
   std::int32_t sftrn_CallTrEntry(void* const transferEntryTable, const std::int32_t entrySelector)
   {
-    auto* const entryList = reinterpret_cast<SftrnEntryListView*>(transferEntryTable);
+    auto* const entryList = reinterpret_cast<SftrnEntryList*>(transferEntryTable);
     std::int32_t result = 0;
     for (SofdecTransferStrategy* const strategy : entryList->entries) {
       if (strategy == nullptr) {
@@ -7279,24 +7075,24 @@
   /**
    * Address: 0x00ADF870 (FUN_00ADF870, _SFTRN_InitHn)
    */
-  std::int32_t SFTRN_InitHn(
-    const std::int32_t workctrlAddress,
-    const std::int32_t transferDataArrayAddress,
-    const std::int32_t* const transferBuildConfigAddressPtr
+  SofdecAddressWord SFTRN_InitHn(
+    const SofdecAddressWord workctrlAddress,
+    const SofdecAddressWord transferDataArrayAddress,
+    const SofdecAddressWord* const transferBuildConfigAddressPtr
   )
   {
     constexpr std::int32_t kSftrnTransferLaneCount = 9;
     constexpr std::int32_t kSftrnErrBuildFailed = -16776446;
 
-    const std::int32_t transferBuildConfigAddress = *transferBuildConfigAddressPtr;
-    auto* const transferLanes = reinterpret_cast<SftrnTransferDataLaneView*>(SjAddressToPointer(transferDataArrayAddress));
+    const SofdecAddressWord transferBuildConfigAddress = *transferBuildConfigAddressPtr;
+    auto* const transferLanes = reinterpret_cast<moho::SftrnTransferLane*>(SjAddressToPointer(transferDataArrayAddress));
     const auto* const transferBuildConfigWords =
-      reinterpret_cast<const std::int32_t*>(SjAddressToPointer(transferBuildConfigAddress));
+      reinterpret_cast<const SofdecAddressWord*>(SjAddressToPointer(transferBuildConfigAddress));
 
     for (std::int32_t laneIndex = 0; laneIndex < kSftrnTransferLaneCount; ++laneIndex) {
-      transferLanes[laneIndex].setupState = 0;
+      transferLanes[laneIndex].transferHandle = 0;
       (void)sftrn_InitTrData(
-        reinterpret_cast<std::int32_t*>(&transferLanes[laneIndex]),
+        &transferLanes[laneIndex],
         transferBuildConfigWords[laneIndex]
       );
     }
@@ -7311,18 +7107,17 @@
   /**
    * Address: 0x00ADF8D0 (FUN_00ADF8D0, _sftrn_InitTrData)
    */
-  std::int32_t* sftrn_InitTrData(std::int32_t* const transferDataWords, const std::int32_t transferDescriptorAddress)
+  moho::SftrnTransferLane* sftrn_InitTrData(moho::SftrnTransferLane* const transferLane, const SofdecAddressWord transferDescriptorAddress)
   {
-    auto* const transferLane = reinterpret_cast<SftrnTransferDataLaneView*>(transferDataWords);
     transferLane->termFlag = 0;
     transferLane->prepFlag = 0;
     transferLane->transferDescriptorAddress = transferDescriptorAddress;
     transferLane->sourceLaneIndex = 8;
-    transferLane->targetLaneIndex0 = 8;
-    transferLane->targetLaneIndex1 = 8;
-    transferLane->targetLaneIndex2 = 8;
+    transferLane->targetLaneIndex[0] = 8;
+    transferLane->targetLaneIndex[1] = 8;
+    transferLane->targetLaneIndex[2] = 8;
     transferLane->transferEndState = -1;
-    return transferDataWords;
+    return transferLane;
   }
 
   /**
@@ -7330,14 +7125,13 @@
    */
   std::int32_t sftrn_BuildAll(
     moho::SofdecSfdWorkctrlSubobj* const workctrlSubobj,
-    const std::int32_t* const transferBuildConfigWords
+    const SofdecAddressWord* const transferBuildConfigWords
   )
   {
     constexpr std::int32_t kSfsetAudioCondition = 5;
     constexpr std::int32_t kSfsetVideoCondition = 6;
 
-    const auto* const transferBuildConfig = reinterpret_cast<const SftrnBuildConfigView*>(transferBuildConfigWords);
-    auto* const workctrlState = reinterpret_cast<SftrnWorkctrlStateView*>(workctrlSubobj);
+    const auto* const transferBuildConfig = reinterpret_cast<const SftrnBuildConfig*>(transferBuildConfigWords);
 
     if (transferBuildConfig->hasSystemLane != 0) {
       (void)sftrn_ConnTrnBuf0(workctrlSubobj, 0, 0);
@@ -7348,14 +7142,14 @@
       (void)sftrn_ConnTrnBuf0(workctrlSubobj, 0, 1);
       (void)sftrn_BuildAudio(workctrlSubobj, transferBuildConfigWords);
       SFSET_SetCond(workctrlSubobj, kSfsetVideoCondition, 0);
-      workctrlState->videoConditionState = 0;
+      workctrlSubobj->defaultConditions[kSfsetVideoCondition] = 0;
       return 0;
     }
     if (transferBuildConfig->hasVideoLane != 0) {
       (void)sftrn_ConnTrnBuf0(workctrlSubobj, 0, 2);
       (void)sftrn_BuildVideo(workctrlSubobj, transferBuildConfigWords);
       SFSET_SetCond(workctrlSubobj, kSfsetAudioCondition, 0);
-      workctrlState->audioConditionState = 0;
+      workctrlSubobj->defaultConditions[kSfsetAudioCondition] = 0;
       return 0;
     }
     if (transferBuildConfig->hasUserLane != 0) {
@@ -7363,8 +7157,8 @@
       (void)sftrn_BuildUsr(workctrlSubobj);
       SFSET_SetCond(workctrlSubobj, kSfsetVideoCondition, 0);
       SFSET_SetCond(workctrlSubobj, kSfsetAudioCondition, 0);
-      workctrlState->audioConditionState = 0;
-      workctrlState->videoConditionState = 0;
+      workctrlSubobj->defaultConditions[kSfsetAudioCondition] = 0;
+      workctrlSubobj->defaultConditions[kSfsetVideoCondition] = 0;
       return 0;
     }
     return -1;
@@ -7375,14 +7169,13 @@
    */
   std::int32_t sftrn_BuildSystem(
     moho::SofdecSfdWorkctrlSubobj* const workctrlSubobj,
-    const std::int32_t* const transferBuildConfigWords
+    const SofdecAddressWord* const transferBuildConfigWords
   )
   {
     constexpr std::int32_t kSfsetAudioCondition = 5;
     constexpr std::int32_t kSfsetVideoCondition = 6;
 
-    const auto* const transferBuildConfig = reinterpret_cast<const SftrnBuildConfigView*>(transferBuildConfigWords);
-    auto* const workctrlState = reinterpret_cast<SftrnWorkctrlStateView*>(workctrlSubobj);
+    const auto* const transferBuildConfig = reinterpret_cast<const SftrnBuildConfig*>(transferBuildConfigWords);
 
     (void)sftrn_ConnBufTrn(workctrlSubobj, 0, 1);
     if (transferBuildConfig->hasAudioLane != 0) {
@@ -7390,7 +7183,7 @@
       (void)sftrn_BuildAudio(workctrlSubobj, transferBuildConfigWords);
     } else {
       SFSET_SetCond(workctrlSubobj, kSfsetAudioCondition, 0);
-      workctrlState->audioConditionState = 0;
+      workctrlSubobj->defaultConditions[kSfsetAudioCondition] = 0;
     }
 
     if (transferBuildConfig->hasVideoLane != 0) {
@@ -7398,7 +7191,7 @@
       (void)sftrn_BuildVideo(workctrlSubobj, transferBuildConfigWords);
     } else {
       SFSET_SetCond(workctrlSubobj, kSfsetVideoCondition, 0);
-      workctrlState->videoConditionState = 0;
+      workctrlSubobj->defaultConditions[kSfsetVideoCondition] = 0;
     }
 
     const std::int32_t hasUserLane = transferBuildConfig->hasUserLane;
@@ -7414,10 +7207,10 @@
    */
   std::int32_t sftrn_BuildAudio(
     moho::SofdecSfdWorkctrlSubobj* const workctrlSubobj,
-    const std::int32_t* const transferBuildConfigWords
+    const SofdecAddressWord* const transferBuildConfigWords
   )
   {
-    const auto* const transferBuildConfig = reinterpret_cast<const SftrnBuildConfigView*>(transferBuildConfigWords);
+    const auto* const transferBuildConfig = reinterpret_cast<const SftrnBuildConfig*>(transferBuildConfigWords);
     (void)sftrn_ConnBufTrn(workctrlSubobj, 1, 2);
     (void)sftrn_ConnTrnBuf0(workctrlSubobj, 2, 3);
     if (transferBuildConfig->hasAudioExtendedLane == 0) {
@@ -7433,10 +7226,10 @@
    */
   std::int32_t sftrn_BuildVideo(
     moho::SofdecSfdWorkctrlSubobj* const workctrlSubobj,
-    const std::int32_t* const transferBuildConfigWords
+    const SofdecAddressWord* const transferBuildConfigWords
   )
   {
-    const auto* const transferBuildConfig = reinterpret_cast<const SftrnBuildConfigView*>(transferBuildConfigWords);
+    const auto* const transferBuildConfig = reinterpret_cast<const SftrnBuildConfig*>(transferBuildConfigWords);
     (void)sftrn_ConnBufTrn(workctrlSubobj, 2, 3);
     (void)sftrn_ConnTrnBuf0(workctrlSubobj, 3, 4);
     if (transferBuildConfig->hasVideoExtendedLane == 0) {

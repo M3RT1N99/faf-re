@@ -122,7 +122,7 @@ namespace
 {
   /**
    * The UI classes here are thin: their real layout lives in the matching
-   * `*RuntimeView`, so placement-new runs only the vptr-carrying constructors
+   * a deleted-overlay, so placement-new runs only the vptr-carrying constructors
    * and none of the member constructors the binary's real classes have.
    * `operator new` hands back uninitialised bytes, so lanes such as
    * `CScriptObject::cObject` (+0x0C) and `mLuaObj` (+0x20) start as garbage.
@@ -1711,7 +1711,7 @@ namespace
    * allocation site asks for `operator new(0x20)` (0x00870B43 in
    * `CUIWorldView::HandleEvent`), which is the size asserted below.
    *
-   * This was previously modelled as a vtable-less `CameraDraggerRuntimeView`
+   * This was previously modelled as a vtable-less `CameraDragger`
    * aggregate whose helpers were all unreachable. Since `HandleEvent` hands the
    * instance to `func_PostDragger`, which dispatches
    * `OnCurrentDraggerReplaced` through slot +0x0C on the *previous* dragger,
@@ -1811,7 +1811,7 @@ namespace
    * exactly the `operator new(0x24)` the sole allocation site issues
    * (0x00870D8C in `CUIWorldView::HandleEvent`).
    *
-   * The previous `MiniMapDraggerRuntimeView` modelling put a spare dword at
+   * The previous a deleted overlay modelling put a spare dword at
    * +0x08 and the string at +0x0C, which made the object 0x28 bytes; that
    * offset is corrected here against the constructor disassembly.
    */
@@ -2602,7 +2602,7 @@ namespace
     return screenPoint;
   }
 
-  // CUIWorldMeshRuntimeView used to sit here: a pad-to-0x34 struct whose only
+  // CUIWorldMesh used to sit here: a pad-to-0x34 struct whose only
   // member aliased CUIWorldMesh::mMeshInstance. That member is public and
   // typed on the class, at the same offset and with its own static_assert, so
   // the twelve call sites below now read `worldMesh->mMeshInstance` directly
@@ -3380,7 +3380,6 @@ float moho::ui_FootprintMinThickness = 2.0f;
 float moho::cam_DefaultMiniLOD = 1.8f;
 bool moho::ui_WindowedAlwaysShowsCursor = false;
 bool moho::ui_DragSelect2D = true;
-bool moho::ui_AttackGroundIgnoresFireState = false; // not in the binary; see the declaration
 // Byte-verified shipped defaults, read straight out of bin/external/ForgedAlliance.exe
 // at the addresses in the header doc blocks (0x00F57AA4/A8/AC/B0, 0x00F57A8C, 0x00F57887).
 float moho::ui_KeyboardPanSpeed = 90.0f;
@@ -8313,47 +8312,8 @@ namespace
  * Rebuilds the queued mobile-build ghost meshes into a fresh lane and swaps it
  * over `mPreviewPositions`; see the header for the full description.
  */
-namespace
-{ // TEMPORARY PROBE (do not commit)
-  struct GhostProbeEntry
-  {
-    unsigned mCmd;
-    bool mUnderway;
-  };
-  std::vector<GhostProbeEntry> gGhostProbeScan;
-
-  void ProbeDragPreviewState(
-    const moho::ECommandMode mode,
-    const void* const activeMesh,
-    const std::size_t meshCount,
-    const int placedCount,
-    const bool previewInvalid,
-    const char* const where
-  )
-  {
-    char line[256];
-    (void)std::snprintf(
-      line,
-      sizeof(line),
-      "mode=%d mesh=%p meshes=%u placed=%d invalid=%d @%s",
-      static_cast<int>(mode),
-      activeMesh,
-      static_cast<unsigned>(meshCount),
-      placedCount,
-      previewInvalid ? 1 : 0,
-      where
-    );
-    static char lastLine[256] = {};
-    if (std::strcmp(line, lastLine) != 0) {
-      gpg::Warnf("[DRAGPV] %s", line);
-      std::strcpy(lastLine, line);
-    }
-  }
-} // namespace
-
 void moho::CBuildDragPreview::RefreshQueuedBuildGhosts()
 {
-  gGhostProbeScan.clear(); // TEMPORARY PROBE (do not commit)
   // Built from scratch every pass. Whatever stays behind in the map this one
   // displaces belongs to orders that are gone, and dies with it below.
   msvc8::map<moho::CmdId, boost::shared_ptr<moho::MeshInstance>> refreshed;
@@ -8369,10 +8329,7 @@ void moho::CBuildDragPreview::RefreshQueuedBuildGhosts()
       continue;
     }
 
-    const bool ghostUnderway = IsQueuedBuildAlreadyUnderway(*helper); // TEMPORARY PROBE (do not commit)
-    gGhostProbeScan.push_back(
-      {static_cast<unsigned>(helper->mConstantData.cmd), ghostUnderway}
-    ); // TEMPORARY PROBE (do not commit)
+    const bool ghostUnderway = IsQueuedBuildAlreadyUnderway(*helper);
     if (ghostUnderway) {
       continue;
     }
@@ -8425,15 +8382,6 @@ void moho::CBuildDragPreview::RefreshQueuedBuildGhosts()
 
       refreshed[orderId] = ghost;
       ghost->color = kQueuedBuildGhostColor;
-      {
-        static unsigned made = 0;
-        gpg::Warnf(
-          "[GHOST] created cmd=0x%08X instance=%p total=%u",
-          static_cast<unsigned>(orderId),
-          static_cast<void*>(ghost.get()),
-          ++made
-        );
-      } // TEMPORARY PROBE (do not commit)
     }
 
     // Ghosts never rotate - the stance is the identity orientation at the
@@ -8444,31 +8392,6 @@ void moho::CBuildDragPreview::RefreshQueuedBuildGhosts()
     ghost->SetStance(stance, stance);
   }
 
-  { // TEMPORARY PROBE (do not commit)
-    char line[512];
-    int used = 0;
-    used += std::snprintf(
-      line + used,
-      sizeof(line) - static_cast<std::size_t>(used),
-      "build=%u kept=%u prev=%u |",
-      static_cast<unsigned>(gGhostProbeScan.size()),
-      static_cast<unsigned>(refreshed.size()),
-      static_cast<unsigned>(mPreviewPositions.size())
-    );
-    for (const GhostProbeEntry& entry : gGhostProbeScan) {
-      if (used > 440) {
-        break;
-      }
-      used += std::snprintf(
-        line + used, sizeof(line) - static_cast<std::size_t>(used), " %08X:%c", entry.mCmd, entry.mUnderway ? 'B' : 'g'
-      );
-    }
-    static char lastLine[512] = {};
-    if (std::strcmp(line, lastLine) != 0) {
-      gpg::Warnf("[GHOST] %s", line);
-      std::strcpy(lastLine, line);
-    }
-  }
   mPreviewPositions.swap(refreshed);
 }
 
@@ -8856,9 +8779,6 @@ void moho::CBuildDragPreview::UpdateDragPreview()
     mActiveBuildMesh->mLods.empty()
   ) {
     mPreviewInvalid = true;
-    ProbeDragPreviewState(
-      mode.mMode, mActiveBuildMesh, mMeshes.size(), -1, mPreviewInvalid, "notbuild"
-    ); // TEMPORARY PROBE (do not commit)
     return;
   }
 
@@ -8873,9 +8793,6 @@ void moho::CBuildDragPreview::UpdateDragPreview()
 
   if (!moho::IsValidVector3f(dragStart) || !moho::IsValidVector3f(dragEnd)) {
     mPreviewInvalid = true;
-    ProbeDragPreviewState(
-      mode.mMode, mActiveBuildMesh, mMeshes.size(), -2, mPreviewInvalid, "nodrag"
-    ); // TEMPORARY PROBE (do not commit)
     return;
   }
 
@@ -9033,10 +8950,6 @@ void moho::CBuildDragPreview::UpdateDragPreview()
     mMeshes.resize(static_cast<std::size_t>(placedCount));
     mBlueprints.resize(static_cast<std::size_t>(placedCount));
   }
-  ProbeDragPreviewState(
-    mode.mMode, mActiveBuildMesh, mMeshes.size(), placedCount, mPreviewInvalid, "run"
-  ); // TEMPORARY PROBE (do not commit)
-
   // `buildTemplate` is a local `gpg::fastvector_n<SBuildTemplateInfo, 16>`;
   // its own destructor releases every entry and any spilled heap storage.
 }
@@ -9919,23 +9832,6 @@ void moho::CMauiWxEventMapper::OnMouseMove(
   const bool isPress = mouseEvent.ButtonDown();
   const bool isDoubleClick = mouseEvent.ButtonDClick();
 
-  // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-  {
-    const bool isRelease = mouseEvent.ButtonUp();
-    if (isPress || isDoubleClick || isRelease) {
-      gpg::Warnf(
-        "[WXDIAG] evtType=%d press=%d dclick=%d release=%d selector=%d tracked=%p dragger=%p draggerKey=%d",
-        static_cast<int>(mouseEvent.GetEventType()),
-        isPress ? 1 : 0,
-        isDoubleClick ? 1 : 0,
-        isRelease ? 1 : 0,
-        mouseEvent.GetButton(),
-        static_cast<void*>(trackedControl),
-        static_cast<void*>(func_GetCurrentDraggerFromMouseMoveLane()),
-        sCurrentDraggerKeycode
-      );
-    }
-  }
 
   if (!isPress && !isDoubleClick) {
     // ---- Non-press paths: release / motion / wheel / skip ----
@@ -15247,16 +15143,15 @@ bool moho::CMauiMovie::LoadFile(
   const char* const filename
 )
 {
-#if !defined(_M_IX86) && !defined(__i386__)
-  // The Sofdec movie middleware is not ported to x64 yet: it carries pointers
-  // as 32-bit words through its own layout views, and opening a movie faults.
-  // Until it is, x64 takes the same path `/nomovie` does, and so does every
-  // other non-x86 target (arm64 Android, docs/port/android-roadmap.md W4).
-  constexpr bool kMoviePlaybackSupported = false;
-#else
-  constexpr bool kMoviePlaybackSupported = true;
+#if !defined(_M_IX86) && !defined(__i386__) && !defined(_M_X64)
+  // Port: the Sofdec movie middleware (cri/sofdec, moho/movie) decodes with MMX/SSE intrinsics and
+  // is verified on x86 and, since the x64 fold-up, on Windows x64. Every other target - arm64
+  // Android, where platform/MmxOnX64.h stands in for MMX, and Android x86_64, whose LP64 `long` is
+  // not Windows x64's - takes the same path `/nomovie` does until the decoder is verified there or
+  // replaced (docs/port/android-roadmap.md W4).
+  return false;
 #endif
-  if (!kMoviePlaybackSupported || moho::CFG_GetArgOption("/nomovie", 0u, nullptr)) {
+  if (moho::CFG_GetArgOption("/nomovie", 0u, nullptr)) {
     return false;
   }
 
@@ -19426,10 +19321,7 @@ void moho::CLuaWldUIProvider::UpdateLoadingDialog(
  */
 void moho::CLuaWldUIProvider::StopLoadingDialog()
 {
-  // TEMPORARY PROBE (do not commit).
-  ::OutputDebugStringA("[FRAMEDIAG] StopLoadingDialog: before RunScript\n");
   (void)static_cast<CScriptObject*>(this)->RunScript("StopLoadingDialog");
-  ::OutputDebugStringA("[FRAMEDIAG] StopLoadingDialog: after RunScript\n");
 }
 
 /**
@@ -20499,7 +20391,7 @@ int moho::cfunc_CUIWorldMeshGetInterpolatedSphereL(
 
   // The owner accessor at 0x0086AF80 does exactly this -- refresh the mesh
   // instance's interpolated lanes and hand back its world sphere -- so call it
-  // by name instead of reaching through a CUIWorldMeshRuntimeView at +0x34.
+  // by name instead of reaching through a CUIWorldMesh at +0x34.
   Wm3::Sphere3f sphere{};
   sphere.Center = Wm3::Vector3f{0.0f, 0.0f, 0.0f};
   sphere.Radius = 0.0f;
@@ -20885,15 +20777,6 @@ void moho::CUIWorldView::DoRender(
         // `bottom - top` gave the minimap a 228x19 viewport - a sliver a few pixels
         // tall - instead of its real 253x211.
         camera->CameraSetViewport(Wm3::Vector2f(left, top), Wm3::Vector2f(width, height));
-        gpg::Warnf(
-          "[MMDIAG] DoRender PUSHED this=%p isMiniMap=%d viewport=(%.1f,%.1f,%.1f,%.1f)",
-          static_cast<const void*>(this),
-          static_cast<int>(this->IsMiniMap()),
-          left,
-          top,
-          width,
-          height
-        );
       }
     }
     return;
@@ -20969,59 +20852,10 @@ void moho::CUIWorldView::UpdateSelection(
       (cameraZoom <= 150.0f) ? static_cast<EEntityType>(ENTITYTYPE_Unit | ENTITYTYPE_Prop) : ENTITYTYPE_Unit;
     (void)spatialDb->CollectInVolume(collected, volumeEntityMask, &selectionSolid);
 
-    // TEMPORARY PROBE -- hover/selection triage, delete when resolved.
-    {
-      static unsigned sPickProbeCalls = 0;
-      if ((sPickProbeCalls++ % 120u) == 0u) {
-        const UserEntity* firstUnit = nullptr;
-        for (UserEntity* const candidate : collected) {
-          if (candidate->IsUserUnit() != nullptr) {
-            firstUnit = candidate;
-            break;
-          }
-        }
-        if (firstUnit != nullptr && firstUnit->mMeshInstance != nullptr) {
-          const MeshInstance* const mi = firstUnit->mMeshInstance;
-          gpg::Warnf(
-            "[PICKDIAG] mouse=(%.0f,%.0f) world=(%.1f,%.1f,%.1f) collected=%u zoom=%.1f unit=%p "
-            "box=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) pos=(%.1f,%.1f,%.1f)",
-            mouseScreenPos.x,
-            mouseScreenPos.y,
-            hit.mMouseWorldPos.x,
-            hit.mMouseWorldPos.y,
-            hit.mMouseWorldPos.z,
-            static_cast<unsigned>(collected.size()),
-            cameraZoom,
-            static_cast<const void*>(firstUnit),
-            mi->xMin,
-            mi->yMin,
-            mi->zMin,
-            mi->xMax,
-            mi->yMax,
-            mi->zMax,
-            firstUnit->mVariableData.mCurTransform.pos_.x,
-            firstUnit->mVariableData.mCurTransform.pos_.y,
-            firstUnit->mVariableData.mCurTransform.pos_.z
-          );
-        } else {
-          gpg::Warnf(
-            "[PICKDIAG] mouse=(%.0f,%.0f) world=(%.1f,%.1f,%.1f) collected=%u zoom=%.1f (no unit)",
-            mouseScreenPos.x,
-            mouseScreenPos.y,
-            hit.mMouseWorldPos.x,
-            hit.mMouseWorldPos.y,
-            hit.mMouseWorldPos.z,
-            static_cast<unsigned>(collected.size()),
-            cameraZoom
-          );
-        }
-      }
-    }
 
     float bestDistSq = std::numeric_limits<float>::max();
 
     for (UserEntity* const candidate : collected) {
-      // TEMPORARY PROBE (do not commit): click-select triage - why is a unit rejected?
       static int sRejectBudget = 0;
       const auto rejectProbe = [&](const char* const why, const char* const extra = "") {
         if (candidate->IsUserUnit() != nullptr && sRejectBudget < 40) {
@@ -21493,23 +21327,6 @@ bool moho::CUIWorldView::HandleEvent(
   const SMauiEventData& eventData
 )
 {
-  // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-  if (
-    eventData.mEventType == MET_ButtonPress || eventData.mEventType == MET_ButtonRelease ||
-    eventData.mEventType == MET_ButtonDClick
-  ) {
-    gpg::Warnf(
-      "[EVTDIAG] worldview=%p type=%d key=%d mods=%d pos=(%.0f,%.0f) minimap=%d",
-      static_cast<void*>(this),
-      static_cast<int>(eventData.mEventType),
-      eventData.mKeyCode,
-      eventData.mModifiers,
-      eventData.mMousePos.x,
-      eventData.mMousePos.y,
-      IsMiniMap() ? 1 : 0
-    );
-  }
-
   // --- cursor enter / exit ------------------------------------------------
   if (eventData.mEventType == MET_MouseEnter) {
     mCursorInside = 1u;
@@ -21809,20 +21626,6 @@ bool moho::CUIWorldView::HandleEvent(
     (void)func_GetRightMouseButtonAction(&rightCommand, &cursorInfo, eventData.mModifiers, mWldSession);
     mCommandData = rightCommand;
 
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    gpg::Warnf(
-      "[ORDERDIAG] right %s: mods=0x%X mode=%d caps=0x%X selection=%d hover=%p hit=%u world=(%.1f,%.1f,%.1f)",
-      eventData.mEventType == MET_ButtonDClick ? "dclick" : "press",
-      static_cast<unsigned>(eventData.mModifiers),
-      static_cast<int>(mCommandData.mMode),
-      static_cast<unsigned>(mCommandData.mCommandCaps),
-      static_cast<int>(mWldSession->GetSelection().Size()),
-      static_cast<void*>(cursorInfo.HoveredEntity()),
-      static_cast<unsigned>(cursorInfo.mHitValid),
-      cursorInfo.mMouseWorldPos.x,
-      cursorInfo.mMouseWorldPos.y,
-      cursorInfo.mMouseWorldPos.z
-    );
 
     if (mCommandData.mMode != COMMOD_Order) {
       return false;
@@ -21837,12 +21640,6 @@ bool moho::CUIWorldView::HandleEvent(
     mWldSession->GetSelectionUnits(formationUnits);
     mWldSession->mCurFormation->ProcessMouse(
       &formationUnits, true, cursorInfo.mMouseWorldPos, useLastQueuedDestination
-    );
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    gpg::Warnf(
-      "[ORDERDIAG] right press: ProcessMouse returned (ready=%u) shiftQueue=%d",
-      static_cast<unsigned>(mWldSession->mCurFormation->mReady),
-      useLastQueuedDestination ? 1 : 0
     );
     return false;
   }
@@ -21868,14 +21665,6 @@ bool moho::CUIWorldView::HandleEvent(
         }
       }
     } else {
-      // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-      gpg::Warnf(
-        "[ORDERDIAG] right release: mode=%d scrubbing=%u lastEvent=%d overHovered=%d",
-        static_cast<int>(mCommandData.mMode),
-        static_cast<unsigned>(sMouseIsScrubbing),
-        static_cast<int>(mLastRightButtonEvent),
-        overHoveredCommand ? 1 : 0
-      );
       if (mCommandData.mMode != COMMOD_None && sMouseIsScrubbing == 0u) {
         mCommandData.HandleEvent(*mWldSession, mLastRightButtonEvent == MET_ButtonDClick);
       }
@@ -25085,9 +24874,6 @@ void moho::CMauiFrame::Frame(
   // cannot tear down the root while they're still iterating.
   boost::shared_ptr<CMauiFrame> selfLock(mSelfWeak);
 
-  // TEMPORARY PROBE (do not commit). Does any control actually get ticked?
-  // The faction loading overlay fades itself out from `OnFrame`, so if this
-  // walk never dispatches, that bitmap covers the viewport forever.
   static int sProbeCalls = 0;
   static int sProbeBudget = 0;
   int probeVisited = 0;
@@ -25116,10 +24902,6 @@ void moho::CMauiFrame::Frame(
     sProbePeakVisited = probeVisited;
   }
 
-  // TEMPORARY PROBE (do not commit). Once the in-game tree exists, dump what
-  // is actually in it -- name, alpha, hidden, invisible, depth -- so we can see
-  // whether the faction loading bitmap is still parked on top at alpha 1 or
-  // whether the whole HUD simply is not drawing.
   if (probeVisited > 100) {
     static bool sDumpedTree = false;
     if (!sDumpedTree) {

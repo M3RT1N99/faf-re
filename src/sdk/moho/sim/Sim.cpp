@@ -1,5 +1,6 @@
 #include "Sim.h"
 #include "legacy/math/X87Math.h"
+#include "moho/misc/DiagnosticBudget.h"
 #include "moho/sim/CSimConCommand.h"
 #include "moho/sim/CSimConVarBase.h"
 #include "SimDriver.h"
@@ -136,7 +137,6 @@
 #include "moho/misc/FileWaitHandleSet.h"
 #include "moho/misc/StartupHelpers.h"
 #include "moho/net/CClientManagerImpl.h"
-#include "moho/sim/ArmyUnitSet.h"
 #include "moho/sim/BlueprintLoaderContext.h"
 #include "moho/sim/CArmyImpl.h"
 #include "moho/sim/CArmyStats.h"
@@ -888,6 +888,10 @@ namespace
   constexpr const char* kSessionGetLocalCommandSourceHelpText =
     "Return the local command source.  Returns 0 if the local client can't issue commands.";
   constexpr const char* kSessionIsReplayUserHelpText = "Return true iff the active session is a replay session.";
+  constexpr const char* kSetFocusArmySimHelpText = "SetFocusArmy(armyIndex or -1)";
+  constexpr const char* kGetTimeForProfileSimHelpText = "(OriginTime)";
+  constexpr const char* kGetDepositsAroundPointHelpText = "(X, Z, Radius, Type)";
+  constexpr const char* kSetCommandSourceSimHelpText = "(targetArmyIndex, sourceHumanIndex, Set or Unset)";
   constexpr const char* kSessionIsBeingRecordedHelpText = "Return true iff the active session is a being recorded.";
   constexpr const char* kSessionIsMultiplayerHelpText = "Return true iff the active session is a multiplayer session.";
   constexpr const char* kSessionIsObservingAllowedHelpText =
@@ -1781,14 +1785,14 @@ namespace
   }
 
   template <class THandler>
-  void ForEachSelectedUnit(SEntitySetTemplateUnit* const selectedUnits, THandler&& handler)
+  void ForEachSelectedUnit(EntitySetTemplate<Unit>* const selectedUnits, THandler&& handler)
   {
     if (selectedUnits == nullptr) {
       return;
     }
 
     for (Entity* const* it = selectedUnits->mVec.begin(); it != selectedUnits->mVec.end(); ++it) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+      Unit* const unit = static_cast<Unit*>(*it);
       if (unit != nullptr) {
         handler(*unit);
       }
@@ -2329,7 +2333,7 @@ namespace
     (void)events.back().mUnits.Add(unit);
   }
 
-  CUnitCommand* FindCommandById(CCommandDb* commandDb, const CmdId cmdId)
+  CUnitCommand* FindCommandById(CCommandDB* commandDb, const CmdId cmdId)
   {
     if (!commandDb || !commandDb->commands.header_ptr()) {
       return nullptr;
@@ -2355,7 +2359,7 @@ namespace
    * consumer in the sim (IssueCommand, DestroyEntity, WarpEntity, AdvanceBeat,
    * ProcessInfoPair, ...) open-codes around that one map lookup.
    */
-  Entity* FindEntityById(CEntityDb* entityDb, const EntId id)
+  Entity* FindEntityById(EntityDB* entityDb, const EntId id)
   {
     if (!entityDb) {
       return nullptr;
@@ -2369,19 +2373,19 @@ namespace
     return it->second;
   }
 
-  static_assert(sizeof(SEntitySetTemplateUnit) == 0x28, "SEntitySetTemplateUnit size must be 0x28");
+  static_assert(sizeof(EntitySetTemplate<Unit>) == 0x28, "EntitySetTemplate<Unit> size must be 0x28");
   static_assert(
-    sizeof(TDatList<EntitySetBase, void>) == 0x08, "SEntitySetTemplateUnit link-node size must be 0x08"
+    sizeof(TDatList<EntitySetBase, void>) == 0x08, "EntitySetTemplate<Unit> link-node size must be 0x08"
   );
 
-  void InitSimDebugEntitySet(SEntitySetTemplateUnit& outSet)
+  void InitSimDebugEntitySet(EntitySetTemplate<Unit>& outSet)
   {
     outSet.mNext = &outSet;
     outSet.mPrev = &outSet;
     outSet.mVec.RebindInlineNoFree();
   }
 
-  void DestroySimDebugEntitySet(SEntitySetTemplateUnit& set)
+  void DestroySimDebugEntitySet(EntitySetTemplate<Unit>& set)
   {
     set.mVec.ResetStorageToInline();
 
@@ -2529,10 +2533,10 @@ namespace
   }
 
   /**
-   * The guarded shape of `CCommandDb::RemoveCmd` (0x006E0EC0, CCommandDb.cpp)
+   * The guarded shape of `CCommandDB::RemoveCmd` (0x006E0EC0, CCommandDb.cpp)
    * that this file's issue paths need.
    *
-   * The retire body itself belongs to `CCommandDb` and lives there now -- it is
+   * The retire body itself belongs to `CCommandDB` and lives there now -- it is
    * called unconditionally from `~CUnitCommand` (0x006E8500), which is how a
    * completed or cancelled order actually leaves the sim's command map. What
    * stays here is the pair of call-site guards the binary applies around it:
@@ -2540,7 +2544,7 @@ namespace
    * still the unresolved `0xFF......` sentinel, and one Sim.cpp path
    * deliberately passes a possibly-null `mCommandDB`.
    */
-  void ReleaseCommandIdIfUnconsumed(CCommandDb* commandDb, const CmdId cmdId)
+  void ReleaseCommandIdIfUnconsumed(CCommandDB* commandDb, const CmdId cmdId)
   {
     if (!commandDb) {
       return;
@@ -2703,7 +2707,7 @@ namespace moho
 namespace
 {
   [[nodiscard]] CUnitCommand* AddIssueDataToCommandDb(
-    CCommandDb* const commandDb,
+    CCommandDB* const commandDb,
     const SSTICommandIssueData& issueData
   )
   {
@@ -2736,23 +2740,6 @@ namespace
     }
 
     return currentCommand->mUnit.GetObjectPtr();
-  }
-
-  // TEMPORARY PROBE SINK -- transport triage, delete when resolved.
-  // gpg::Warnf reaches nothing until `/log <name>` installs a target, so the
-  // probe below appends here instead. The file lands beside the executable.
-  void DiagLine(const char* const fmt, ...)
-  {
-    std::FILE* const sink = std::fopen("faf_diag.log", "a");
-    if (sink == nullptr) {
-      return;
-    }
-    std::va_list args;
-    va_start(args, fmt);
-    (void)std::vfprintf(sink, fmt, args);
-    va_end(args);
-    (void)std::fputc(0x0A, sink);
-    (void)std::fclose(sink);
   }
 
   [[nodiscard]] bool HasCommandCap(const Unit* const unit, const ERuleBPUnitCommandCaps commandCap) noexcept
@@ -2793,8 +2780,8 @@ namespace
   }
 
   [[nodiscard]] bool CommandUnitSetMatchesSelection(
-    const SEntitySetTemplateUnit& commandUnits,
-    const SEntitySetTemplateUnit& selectedUnits
+    const EntitySetTemplate<Unit>& commandUnits,
+    const EntitySetTemplate<Unit>& selectedUnits
   ) noexcept
   {
     std::size_t commandUnitCount = 0;
@@ -2809,7 +2796,7 @@ namespace
     }
 
     for (Entity* const* it = selectedUnits.mVec.begin(); it != selectedUnits.mVec.end(); ++it) {
-      const Unit* const selectedUnit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+      const Unit* const selectedUnit = static_cast<Unit*>(*it);
       if (selectedUnit == nullptr) {
         return false;
       }
@@ -2901,14 +2888,14 @@ namespace
   void RetargetReverseLoadUnits(
     const SSTICommandIssueData& issueData,
     Sim* const sim,
-    SEntitySetTemplateUnit& selectedUnits
+    EntitySetTemplate<Unit>& selectedUnits
   )
   {
     if (sim == nullptr || issueData.mCommandType != EUnitCommandType::UNITCOMMAND_TransportReverseLoadUnits) {
       return;
     }
 
-    SEntitySetTemplateUnit originalSelection{};
+    EntitySetTemplate<Unit> originalSelection{};
     for (Entity* const* it = selectedUnits.mVec.begin(); it != selectedUnits.mVec.end(); ++it) {
       originalSelection.mVec.PushBack(*it);
     }
@@ -2925,7 +2912,7 @@ namespace
     float bestScore = gpg::pInf;
 
     for (Entity* const* it = originalSelection.mVec.begin(); it != originalSelection.mVec.end(); ++it) {
-      Unit* const candidate = SEntitySetTemplateUnit::UnitFromEntry(*it);
+      Unit* const candidate = static_cast<Unit*>(*it);
       if (candidate == nullptr || candidate->IsDead() || candidate->IsBeingBuilt()) {
         continue;
       }
@@ -2956,8 +2943,8 @@ namespace
     }
 
     if (bestTransport != nullptr) {
-      (void)selectedUnits.AddUnit(bestTransport);
-      (void)selectedUnits.AddUnit(targetUnit);
+      (void)selectedUnits.Add(bestTransport);
+      (void)selectedUnits.Add(targetUnit);
     }
   }
 
@@ -2984,7 +2971,7 @@ namespace
     const SSTICommandIssueData& commandIssueData,
     Unit* const unit,
     const bool clearQueue,
-    const SEntitySetTemplateUnit& selectedUnits
+    const EntitySetTemplate<Unit>& selectedUnits
   )
   {
     if (sim == nullptr || unit == nullptr) {
@@ -3241,7 +3228,7 @@ namespace
 
         Unit* candidateTransport = nullptr;
         for (Entity* const* it = selectedUnits.mVec.begin(); it != selectedUnits.mVec.end(); ++it) {
-          Unit* const candidate = SEntitySetTemplateUnit::UnitFromEntry(*it);
+          Unit* const candidate = static_cast<Unit*>(*it);
           if (candidate == nullptr || candidate->IsDead() || candidate->IsBeingBuilt() || candidate->AiTransport == nullptr) {
             continue;
           }
@@ -3281,21 +3268,15 @@ namespace
           return false;
         }
 
-        // FAF Binary Patch (non-1:1 with original binary):
-        // The retail path allows restricted upgrades to pass initial validation,
-        // which can later reach CUnitUpgradeTask::TaskTick (FUN_005F8890) and
-        // crash on a null-vtable weak-focus dereference at 0x005F8B20.
-        // Fixed behavior: reject restricted upgrades at issue time (including
-        // restricted mex tier-up), so the crashing task path is never entered.
-        // Related: https://github.com/FAForever/FA-Binary-Patches/issues/125
-        if (!unit->CanBuild(upgradeBlueprint)) {
-          return false;
-        }
-
+        // 0x006F00A9: the arm goes straight from the blueprint lookup to the
+        // SeedUnit / UpgradesTo / UpgradesFromBase tests. There is no buildable-
+        // category gate here, so a later tier (T1 mex -> T3 mex, issued after a
+        // queued T2 by FAF's IssueUpgradeOrders) is accepted through
+        // UpgradesFromBase.
         const char* const seedUnitId = upgradeBlueprint->General.SeedUnit.name.c_str();
         if (seedUnitId != nullptr && seedUnitId[0] != '\0') {
-          if (!EqualsNoCase(unitBlueprint->mBlueprintId.c_str(), seedUnitId)
-              && !EqualsNoCase(unitBlueprint->General.UpgradesFromBase.name.c_str(), seedUnitId)) {
+          // 0x006F00DD..0x006F0102: one compare, the unit's own blueprint id.
+          if (!EqualsNoCase(unitBlueprint->mBlueprintId.c_str(), seedUnitId)) {
             return false;
           }
         } else {
@@ -3348,7 +3329,7 @@ namespace
    */
   [[nodiscard]] CUnitCommand* IssueFactoryCommandToSelectedUnitsImpl(
     Sim* const sim,
-    const SEntitySetTemplateUnit& selectedUnits,
+    const EntitySetTemplate<Unit>& selectedUnits,
     const SSTICommandIssueData& commandIssueData,
     const bool clearQueue
   )
@@ -3362,7 +3343,7 @@ namespace
 
     CUnitCommand* issuedCommand = nullptr;
     for (Entity* const* it = selectedUnits.mVec.begin(); it != selectedUnits.mVec.end(); ++it) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+      Unit* const unit = static_cast<Unit*>(*it);
       if (!unit || unit->IsDead()) {
         continue;
       }
@@ -3411,7 +3392,7 @@ namespace
    */
   [[nodiscard]] CUnitCommand* IssueCommandToSelectedUnitsImpl(
     Sim* const sim,
-    SEntitySetTemplateUnit& selectedUnits,
+    EntitySetTemplate<Unit>& selectedUnits,
     const SSTICommandIssueData& commandIssueData,
     const bool clearQueue
   )
@@ -3434,7 +3415,7 @@ namespace
     const bool appendByDefault = insertBeforeTopByte == 0xFF000000u;
 
     for (Entity* const* it = selectedUnits.mVec.begin(); it != selectedUnits.mVec.end(); ++it) {
-      Unit* const unit = SEntitySetTemplateUnit::UnitFromEntry(*it);
+      Unit* const unit = static_cast<Unit*>(*it);
       CUnitCommandQueue* const queue = (unit != nullptr) ? unit->CommandQueue : nullptr;
       if (queue == nullptr) {
         continue;
@@ -3476,22 +3457,6 @@ namespace
 
     // TEMPORARY PROBE -- transport-load triage, delete when resolved.
     // Covers the half the dispatch probe cannot see: whether the order was
-    // issued at all, what target id rode with it, and how many of the selected
-    // units actually took it. A TransportLoadUnits (22) line with queued=0, or
-    // with a target id that resolves to nothing, says the failure is here
-    // rather than in the task.
-    if (commandIssueData.mCommandType == EUnitCommandType::UNITCOMMAND_TransportLoadUnits
-        || commandIssueData.mCommandType == EUnitCommandType::UNITCOMMAND_TransportReverseLoadUnits
-        || commandIssueData.mCommandType == EUnitCommandType::UNITCOMMAND_Dock) {
-      DiagLine(
-        "[XPORTDIAG] Issue: cmd=%d targetType=%d targetId=0x%08x cmdObj=%p queued=%d",
-        static_cast<int>(commandIssueData.mCommandType),
-        static_cast<int>(commandIssueData.mTarget.mType),
-        static_cast<unsigned int>(commandIssueData.mTarget.mEntityId),
-        static_cast<void*>(issuedCommand), queuedAtLeastOnce ? 1 : 0
-      );
-    }
-
     if (issuedCommand == nullptr || !queuedAtLeastOnce) {
       ReleaseCommandIdIfUnconsumed(sim->mCommandDB, commandIssueData.nextCommandId);
     }
@@ -3628,9 +3593,7 @@ namespace
 
   std::uint32_t FloatBits(const float value)
   {
-    std::uint32_t bits = 0;
-    std::memcpy(&bits, &value, sizeof(bits));
-    return bits;
+    return std::bit_cast<std::uint32_t>(value);
   }
 
   void ReadEntityVelocity(Entity* entity, Wm3::Vec3f* outVelocity)
@@ -4264,7 +4227,7 @@ namespace
    * Chooses one live unit from the candidate unit-set lane that has a resolved
    * footprint and the largest blueprint size-Z lane.
    */
-  Unit* PathPreviewSelectLargestUnit(const SEntitySetTemplateUnit* const unitSet)
+  Unit* PathPreviewSelectLargestUnit(const EntitySetTemplate<Unit>* const unitSet)
   {
     if (!unitSet) {
       return nullptr;
@@ -4374,7 +4337,7 @@ namespace moho
    * IDA signature:
    * void __cdecl Moho::Sim::path_GeneratePreview(
    *   Moho::Sim* sim, std::vector<std::string>* commandArgs, Wm3::Vector3f* worldPos,
-   *   Moho::CArmyImpl* focusArmy, Moho::SEntitySetTemplateUnit* selectedUnits);
+   *   Moho::CArmyImpl* focusArmy, Moho::EntitySetTemplate<Unit>* selectedUnits);
    *
    * What it does:
    * `path_GeneratePreview` SimCon command. Picks the largest selected unit with
@@ -4393,7 +4356,7 @@ namespace moho
     CSimConCommand::ParsedCommandArgs* const commandArgs,
     Wm3::Vector3f* const worldPos,
     CArmyImpl* const focusArmy,
-    SEntitySetTemplateUnit* const selectedUnits
+    EntitySetTemplate<Unit>* const selectedUnits
   )
   {
     if (focusArmy == nullptr) {
@@ -4838,7 +4801,7 @@ namespace moho
 {
   [[nodiscard]] CUnitCommand* IssueFactoryCommandToSelectedUnits(
     Sim* const sim,
-    const SEntitySetTemplateUnit& selectedUnits,
+    const EntitySetTemplate<Unit>& selectedUnits,
     const SSTICommandIssueData& commandIssueData,
     const bool clearQueue
   )
@@ -4848,7 +4811,7 @@ namespace moho
 
   [[nodiscard]] CUnitCommand* IssueCommandToSelectedUnits(
     Sim* const sim,
-    SEntitySetTemplateUnit& selectedUnits,
+    EntitySetTemplate<Unit>& selectedUnits,
     const SSTICommandIssueData& commandIssueData,
     const bool clearQueue
   )
@@ -5187,7 +5150,7 @@ void Sim::SerializeLoadBody(gpg::ReadArchive* archive)
   mFormationDB =
     static_cast<CAiFormationDBImpl*>(LoadPointerByRType(archive, {"IAiFormationDB", "Moho::IAiFormationDB"}, ownerRef));
   mEntityDB =
-    static_cast<CEntityDb*>(LoadPointerByRType(archive, {"EntityDB", "CEntityDB", "Moho::EntityDB"}, ownerRef));
+    static_cast<EntityDB*>(LoadPointerByRType(archive, {"EntityDB", "CEntityDB", "Moho::EntityDB"}, ownerRef));
   archive->ReadUInt(&mReserved98C);
   mDecalBuffer =
     static_cast<CDecalBuffer*>(LoadPointerByRType(archive, {"CDecalBuffer", "Moho::CDecalBuffer"}, ownerRef));
@@ -5208,7 +5171,7 @@ void Sim::SerializeLoadBody(gpg::ReadArchive* archive)
   mGameOver = bitFlag;
 
   mCommandDB =
-    static_cast<CCommandDb*>(LoadPointerByRType(archive, {"CCommandDB", "CCommandDb", "Moho::CCommandDB"}, ownerRef));
+    static_cast<CCommandDB*>(LoadPointerByRType(archive, {"CCommandDB", "CCommandDB", "Moho::CCommandDB"}, ownerRef));
 
   // Restore the sim's Lua globals table: read (key, value) pairs into the globals
   // until a nil-key sentinel (binary tail: mLuaState->GetGlobals() + FUN_00744E50).
@@ -5369,7 +5332,7 @@ void Sim::SerializeSaveBody(gpg::WriteArchive* archive)
   archive->WriteBool(mCheatsEnabled);
   archive->WriteBool(mGameOver);
   SavePointerByRType(
-    archive, mCommandDB, {"CCommandDB", "CCommandDb", "Moho::CCommandDB"}, gpg::TrackedPointerState::Owned, ownerRef
+    archive, mCommandDB, {"CCommandDB", "CCommandDB", "Moho::CCommandDB"}, gpg::TrackedPointerState::Owned, ownerRef
   );
 
   // Persist the sim's Lua globals table as (key, value) entries + nil terminator
@@ -5569,7 +5532,7 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   // swapped over like the lanes below. `Sim::mSyncCamShake` (Sim+0x09C8) was
   // declared `msvc8::vector<void*> mSyncSerializeGroup1` and had no users at
   // all; the `ShakeCamera` Lua binding reached the same storage through a
-  // `reinterpret_cast<SimCameraShakeQueueOwnerRuntimeView*>(sim)` whose
+  // `reinterpret_cast<the deleted owner-overlay*>(sim)` whose
   // `pad_0000[0x09C8]` pinned the offset. Both sides are `SCamShakeParams` now.
   mSyncCamShake.swap(outSyncData->mCamShakeParams);
 
@@ -5721,7 +5684,7 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   //     mov  ecx, [edi]        ; syncData
   //     mov  edx, [ebp+a3]     ; forceRefresh
   //     mov  eax, [ebx+988h]   ; mCommandDb  (NOT +0x984 - adjacent to it)
-  //     call CCommandDb::PublishSyncData
+  //     call CCommandDB::PublishSyncData
   //
   // `EntityDB::Purge` (0x00684560) has exactly one caller in the binary and
   // this is it, so nothing destroyed the queued entities before this; and
@@ -6851,21 +6814,6 @@ void Sim::Logf(const char* fmt, ...)
   va_end(args);
 }
 
-namespace
-{
-  // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-  void ProbeTerrainOccupancy(const moho::COGrid* const grid, const char* const stage)
-  {
-    if (grid == nullptr) { return; }
-    const gpg::BitArray2D& occ = grid->terrainOccupation;
-    int setBits = 0;
-    for (int i = 0; i < occ.size; ++i) { std::uint32_t w = static_cast<std::uint32_t>(occ.ptr[i]); while (w != 0u) { w &= w - 1u; ++setBits; } }
-    gpg::Warnf("[OCCDIAG] %s terrainOcc setBits=%d ptr=%p size=%d grid=%p gridSim=%p water=%p occ=%p", stage, setBits,
-               static_cast<const void*>(occ.ptr), occ.size, static_cast<const void*>(grid), static_cast<const void*>(grid->sim),
-               static_cast<const void*>(grid->waterOccupation.ptr), static_cast<const void*>(grid->mOccupation.ptr));
-  }
-} // namespace
-
 /**
  * Address: 0x007462A0 (FUN_007462A0, ?Printf@Sim@Moho@@QAAXPBDZZ)
  *
@@ -7022,7 +6970,6 @@ Sim::Sim(LaunchInfoBase* const info)
       delete previousGrid;
     }
     ogridScope.Emit();
-    ProbeTerrainOccupancy(mOGrid, "after COGrid ctor");
   }
 
   // Allocate the path tables sized to the interior of the heightfield.
@@ -7039,7 +6986,6 @@ Sim::Sim(LaunchInfoBase* const info)
     }
   }
 
-  ProbeTerrainOccupancy(mOGrid, "after PathTables ctor");
   // Seed the rolling sim checksum from the rules and log the initial digest.
   mRules->UpdateChecksum(&mContext, mLog);
   const gpg::MD5Digest digest = mContext.Digest();
@@ -7126,7 +7072,6 @@ void Sim::Setup(LaunchInfoNew* const info)
     } catch (const msvc8::runtime_error& error) {
       gpg::Warnf("Error running SetupSession in SimInit.lua: %s", error.what());
     }
-    ProbeTerrainOccupancy(mOGrid, "after SetupSession");
   }
 
   // Refresh heightfield bounds to the full grid.
@@ -7165,8 +7110,8 @@ void Sim::Setup(LaunchInfoNew* const info)
 
   // Entity database.
   {
-    auto* const newEntityDB = new CEntityDb();
-    CEntityDb* const previousEntityDB = mEntityDB;
+    auto* const newEntityDB = new EntityDB();
+    EntityDB* const previousEntityDB = mEntityDB;
     mEntityDB = newEntityDB;
     if (previousEntityDB) {
       delete previousEntityDB;
@@ -7175,8 +7120,8 @@ void Sim::Setup(LaunchInfoNew* const info)
 
   // Command database.
   {
-    auto* const newCommandDB = new CCommandDb(this);
-    CCommandDb* const previousCommandDB = mCommandDB;
+    auto* const newCommandDB = new CCommandDB(this);
+    CCommandDB* const previousCommandDB = mCommandDB;
     mCommandDB = newCommandDB;
     if (previousCommandDB) {
       delete previousCommandDB;
@@ -7194,9 +7139,7 @@ void Sim::Setup(LaunchInfoNew* const info)
   }
 
   // Create the armies from the scenario launch info.
-  ProbeTerrainOccupancy(mOGrid, "before CreateArmies");
   CreateArmies(info->mArmyLaunchInfo, armySetupObjects, scenarioInfoOptions);
-  ProbeTerrainOccupancy(mOGrid, "after CreateArmies");
 
   // Optional sound manager: only when a non-empty engine list is configured and
   // sound is not disabled.
@@ -7218,22 +7161,12 @@ void Sim::Setup(LaunchInfoNew* const info)
     int propCount = 0;
     if (props != nullptr && !props->mEntries.empty()) {
       propCount = static_cast<int>(props->mEntries.size());
-      // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-      const void* probeOccPtr = mOGrid ? static_cast<const void*>(mOGrid->terrainOccupation.ptr) : nullptr;
-      int probeIndex = 0;
-      for (const CWldPropEntry* entry = props->mEntries.begin(); entry != props->mEntries.end(); ++entry, ++probeIndex) {
+      for (const CWldPropEntry* entry = props->mEntries.begin(); entry != props->mEntries.end(); ++entry) {
         (void)PROP_Create(this, entry->mTransform, entry->mBlueprintPath.c_str());
-        if (mOGrid && static_cast<const void*>(mOGrid->terrainOccupation.ptr) != probeOccPtr) {
-          gpg::Warnf("[OCCDIAG] terrainOcc.ptr changed after prop #%d %s at (%.1f,%.1f,%.1f): %p -> %p", probeIndex,
-                     entry->mBlueprintPath.c_str(), entry->mTransform.pos_.x, entry->mTransform.pos_.y, entry->mTransform.pos_.z,
-                     probeOccPtr, static_cast<const void*>(mOGrid->terrainOccupation.ptr));
-          probeOccPtr = static_cast<const void*>(mOGrid->terrainOccupation.ptr);
-        }
       }
     }
     gpg::Warnf(" NUM PROPS = %d", propCount);
   }
-  ProbeTerrainOccupancy(mOGrid, "after props");
 
   // BeginSession() Lua callback: lookup and call are both guarded
   // (std::exception, FuncInfo 0x00F29640 try states 22..26, handler 0x007448AA).
@@ -7243,11 +7176,9 @@ void Sim::Setup(LaunchInfoNew* const info)
   } catch (const std::exception& error) {
     gpg::Warnf("BeginSession() failed: %s", error.what());
   }
-  ProbeTerrainOccupancy(mOGrid, "after BeginSession");
 
   // Final post-initialization pass (prebuilt units, etc.).
   PostInitialize(scenarioInfoOptions);
-  ProbeTerrainOccupancy(mOGrid, "end of Sim::Setup");
 }
 
 /**
@@ -8079,8 +8010,8 @@ void Sim::SingleStep()
  * `mCommandDB->mCommands` and rejects only when the found node is real and
  * its value is non-null (`a1 == head || !a1->_Myval.cmd` -> allow). It does
  * not null-check `mCommandDB` or the map head first -- both guards were a
- * `CCommandDbRuntimeView` reach-in artifact; `mCommandDB->commands` is
- * `CCommandDb`'s own real typed member (`CCommandDb.h`) and is always valid
+ * `CCommandDb` reach-in artifact; `mCommandDB->commands` is
+ * `CCommandDB`'s own real typed member (`CCommandDb.h`) and is always valid
  * once `Sim` is constructed.
  */
 bool Sim::ValidateNewCommandId(const CmdId cmdId, const char* callsiteName) const
@@ -8595,20 +8526,42 @@ void Sim::IssueCommand(
     return;
   }
 
-  SEntitySetTemplateUnit selectedUnits{};
+  // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+  {
+    static int sProbeSimIssue = 0;
+    if ((++sProbeSimIssue % 5) == 1) {
+      std::size_t resolvedCount = 0;
+      unsigned int firstRaw = 0xDEAD;
+      entities.ForEachValue([this, &resolvedCount, &firstRaw](const unsigned int value) {
+        if (firstRaw == 0xDEAD) {
+          firstRaw = value;
+        }
+        Entity* entity = FindEntityById(mEntityDB, static_cast<EntId>(value));
+        if (entity != nullptr && OkayToMessWith(entity)) {
+          ++resolvedCount;
+        }
+      });
+      if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+        std::fprintf(
+          sink,
+          "[BEATPIPE] simIssue n=%d type=%u cmdId=0x%08x bits=%u first=0x%08x resolved=%u curSrc=%d\n",
+          sProbeSimIssue,
+          static_cast<unsigned>(static_cast<std::uint32_t>(commandIssueData.mCommandType)),
+          static_cast<unsigned>(commandIssueData.nextCommandId),
+          static_cast<unsigned>(entities.Bits().Count()),
+          firstRaw,
+          static_cast<unsigned>(resolvedCount),
+          static_cast<int>(mCurCommandSource)
+        );
+        std::fclose(sink);
+      }
+    }
+  }
+
+  EntitySetTemplate<Unit> selectedUnits{};
 
   auto collectUnit = [this, &selectedUnits](const EntId entId) {
     Entity* entity = FindEntityById(mEntityDB, entId);
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    {
-      const bool okay = entity != nullptr && OkayToMessWith(entity);
-      auto* const armyImpl = entity != nullptr ? static_cast<CArmyImpl*>(static_cast<SimArmy*>(entity->ArmyRef)) : nullptr;
-      DiagLine("[ORDERDIAG]   collect id=0x%08X entity=%p army=%p okay=%d curSrc=%d outOfGame=%d validSrcCount=%d isUnit=%p",
-                 static_cast<unsigned>(entId), static_cast<void*>(entity), static_cast<void*>(armyImpl), okay ? 1 : 0,
-                 static_cast<int>(mCurCommandSource), armyImpl != nullptr ? (armyImpl->mVarDat.mIsOutOfGame ? 1 : 0) : -1,
-                 armyImpl != nullptr ? static_cast<int>(reinterpret_cast<const BVIntSet&>(armyImpl->mVarDat.mValidCommandSources).Count()) : -1,
-                 entity != nullptr ? static_cast<void*>(entity->IsUnit()) : nullptr);
-    }
     if (!entity || !OkayToMessWith(entity)) {
       return;
     }
@@ -8618,19 +8571,12 @@ void Sim::IssueCommand(
       return;
     }
 
-    (void)selectedUnits.AddUnit(unit);
+    (void)selectedUnits.Add(unit);
   };
 
   entities.ForEachValue([&collectUnit](const unsigned int value) {
     collectUnit(static_cast<EntId>(value));
   });
-
-  // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-  DiagLine("[ORDERDIAG] Sim::IssueCommand type=%d id=0x%08X targetType=%d pos=(%.1f,%.1f,%.1f) selectedEmpty=%d clear=%d",
-             static_cast<int>(commandIssueData.mCommandType), static_cast<unsigned>(commandIssueData.nextCommandId),
-             static_cast<int>(commandIssueData.mTarget.mType), commandIssueData.mTarget.mPos.x,
-             commandIssueData.mTarget.mPos.y, commandIssueData.mTarget.mPos.z, selectedUnits.Empty() ? 1 : 0,
-             clearQueue ? 1 : 0);
 
   if (selectedUnits.Empty()) {
     ReleaseCommandIdIfUnconsumed(mCommandDB, commandIssueData.nextCommandId);
@@ -8660,7 +8606,7 @@ void Sim::IssueFactoryCommand(
     return;
   }
 
-  SEntitySetTemplateUnit selectedFactories{};
+  EntitySetTemplate<Unit> selectedFactories{};
   auto collectFactory = [this, &selectedFactories](const EntId entId) {
     Entity* entity = FindEntityById(mEntityDB, entId);
     if (!entity || !OkayToMessWith(entity)) {
@@ -8672,7 +8618,7 @@ void Sim::IssueFactoryCommand(
       return;
     }
 
-    (void)selectedFactories.AddUnit(unit);
+    (void)selectedFactories.Add(unit);
   };
 
   entities.ForEachValue([&collectFactory](const unsigned int value) {
@@ -8950,6 +8896,18 @@ void Sim::LuaSimCallback(
     doCallback(callbackName, args, selectedUnits);
     lua_settop(state, oldTop);
   } catch (const lua_RuntimeError& error) {
+    // TEMPORARY PROBE -- lua_RuntimeError storm triage; mirrors the /log-only
+    // warning into faf_diag.log (bounded) so repro sessions without /log keep
+    // the callback name and message.
+    {
+      static DiagnosticBudget sSimCallbackErrorBudget;
+      if (sSimCallbackErrorBudget.Take(200)) {
+        if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+          std::fprintf(sink, "[LUADIAG] sim callback '%s': %s\n", callbackName, error.what());
+          std::fclose(sink);
+        }
+      }
+    }
     gpg::Warnf("Error running sim lua callback function '%s':\n%s", callbackName, error.what());
   }
 }
@@ -8963,7 +8921,7 @@ void Sim::LuaSimCallback(
  *   std::vector<std::string>* commandArgs,
  *   Wm3::Vector3<float>* worldPos,
  *   Moho::CArmyImpl* focusArmy,
- *   Moho::SEntitySetTemplateUnit* selectedUnits);
+ *   Moho::EntitySetTemplate<Unit>* selectedUnits);
  *
  * What it does:
  * Parses and applies the `SetArmyColor` sim-console command.
@@ -8973,7 +8931,7 @@ int Sim::SetArmyColor(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9028,7 +8986,7 @@ int Sim::DamageUnit(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9076,7 +9034,7 @@ int Sim::dbg(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9158,7 +9116,7 @@ int Sim::DebugSetConsumptionActive(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -9183,7 +9141,7 @@ int Sim::DebugSetConsumptionInActive(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -9209,7 +9167,7 @@ int Sim::DebugSetProductionActive(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -9236,7 +9194,7 @@ int Sim::DebugSetProductionInActive(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -9262,7 +9220,7 @@ int Sim::DebugAIStatesOn(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -9288,7 +9246,7 @@ int Sim::DebugAIStatesOff(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -9315,7 +9273,7 @@ int Sim::TrackStats(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9416,7 +9374,7 @@ int Sim::DumpUnits(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)commandArgs;
@@ -9432,12 +9390,12 @@ int Sim::DumpUnits(
   // vector<DumpUnitsCountEntry>::_Insert_n (FUN_0075F810) on the capacity-full
   // path, matching the original binary; std::vector would inline its own grow.
   msvc8::vector<DumpUnitsCountEntry> counts;
-  CEntityDb* const entityDb = sim->mEntityDB;
+  EntityDB* const entityDb = sim->mEntityDB;
   CEntityDbAllUnitsNode* node = entityDb->AllUnitsEnd(0u);
   CEntityDbAllUnitsNode* const end = entityDb->AllUnitsEnd();
   while (node != end) {
-    Unit* const unit = CEntityDb::UnitFromAllUnitsNode(node);
-    node = CEntityDb::NextAllUnitsNode(node);
+    Unit* const unit = EntityDB::UnitFromAllUnitsNode(node);
+    node = EntityDB::NextAllUnitsNode(node);
     if (unit == nullptr) {
       continue;
     }
@@ -9497,7 +9455,7 @@ int Sim::DebugDumpArmyStats(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9532,7 +9490,7 @@ int Sim::SallyShears(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)commandArgs;
@@ -9605,7 +9563,7 @@ int Sim::BlingBling(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)commandArgs;
@@ -9652,7 +9610,7 @@ int Sim::ZeroExtraStorage(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)commandArgs;
@@ -9690,7 +9648,7 @@ int Sim::AddImpulse(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9731,7 +9689,7 @@ int Sim::ReconFlush(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)commandArgs;
@@ -9768,7 +9726,7 @@ int Sim::Purge(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9833,7 +9791,7 @@ int Sim::KillAll(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9858,7 +9816,7 @@ int Sim::DestroyAll(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9894,7 +9852,7 @@ int Sim::efx_NewEmitter(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)focusArmy;
@@ -9931,7 +9889,7 @@ int Sim::efx_AttachEmitter(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -9983,7 +9941,7 @@ int Sim::AddLightParticle(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)focusArmy;
@@ -10037,7 +9995,7 @@ int Sim::Log(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -10069,7 +10027,7 @@ int Sim::SimWarn(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -10106,7 +10064,7 @@ int Sim::SimError(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -10141,7 +10099,7 @@ int Sim::sim_Gravity(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -10194,7 +10152,7 @@ int Sim::SimAssert(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -10216,7 +10174,7 @@ int Sim::SimCrash(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -10240,7 +10198,7 @@ int Sim::sim_DebugCrash(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)sim;
@@ -10265,7 +10223,7 @@ int Sim::sim_TestFunc(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)commandArgs;
@@ -10289,7 +10247,7 @@ int Sim::ScenarioMethod(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -10334,7 +10292,7 @@ int Sim::SimLua(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -10357,7 +10315,7 @@ int Sim::SimLua(
   LuaPlus::LuaObject globals = sim->mLuaState->GetGlobals();
   Unit* selectedUnit = nullptr;
   if (selectedUnits != nullptr && selectedUnits->mVec.begin() != selectedUnits->mVec.end()) {
-    selectedUnit = SEntitySetTemplateUnit::UnitFromEntry(*selectedUnits->mVec.begin());
+    selectedUnit = static_cast<Unit*>(*selectedUnits->mVec.begin());
   }
 
   if (selectedUnit != nullptr) {
@@ -10374,7 +10332,21 @@ int Sim::SimLua(
   }
 
   sim->Printf("%s", commandText.c_str());
-  (void)SCR_LuaDoString(commandText.c_str(), sim->mLuaState);
+
+  // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+  {
+    if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+      std::fprintf(sink, "[BEATPIPE] simLua running len=%u head=%.60s\n", static_cast<unsigned>(commandText.size()), commandText.c_str());
+      std::fclose(sink);
+    }
+  }
+  const int luaResult = SCR_LuaDoString(commandText.c_str(), sim->mLuaState);
+  {
+    if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+      std::fprintf(sink, "[BEATPIPE] simLua result=%d\n", luaResult);
+      std::fclose(sink);
+    }
+  }
   clearSelectedUnitGlobal();
   return 0;
 }
@@ -10400,7 +10372,7 @@ int Sim::DebugSetPlayableRect(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -10447,7 +10419,7 @@ int Sim::DebugMoveCamera(
   CSimConCommand::ParsedCommandArgs* const commandArgs,
   Wm3::Vector3f* const worldPos,
   CArmyImpl* const focusArmy,
-  SEntitySetTemplateUnit* const selectedUnits
+  EntitySetTemplate<Unit>* const selectedUnits
 )
 {
   (void)worldPos;
@@ -10483,7 +10455,7 @@ int Sim::DebugMoveCamera(
  *   char *commandText,
  *   Wm3::Vector3<float> *worldPos,
  *   Moho::CArmyImpl *focusArmy,
- *   Moho::SEntitySetTemplateUnit *selectedUnits);
+ *   Moho::EntitySetTemplate<Unit> *selectedUnits);
  *
  * What it does:
  * Parses one or more sim debug command segments, resolves each segment through
@@ -10494,7 +10466,7 @@ void Sim::TryParseSimCommand(
   const char* command,
   const Wm3::Vector3<float>& worldPos,
   CArmyImpl* focusArmy,
-  SEntitySetTemplateUnit& selectedUnits
+  EntitySetTemplate<Unit>& selectedUnits
 )
 {
   const char* const rawCommandText = command ? command : "";
@@ -10552,7 +10524,7 @@ void Sim::ExecuteDebugCommand(
   const BVSet<EntId, EntIdUniverse>& entities
 )
 {
-  SEntitySetTemplateUnit selectedUnits{};
+  EntitySetTemplate<Unit> selectedUnits{};
   InitSimDebugEntitySet(selectedUnits);
 
   auto appendSelectedUnit = [this, &selectedUnits](const EntId entId) {
@@ -10566,7 +10538,7 @@ void Sim::ExecuteDebugCommand(
       return;
     }
 
-    selectedUnits.AppendUniqueEntity(static_cast<Entity*>(unit));
+    (void)selectedUnits.Add(unit);
   };
 
   entities.ForEachValue([&appendSelectedUnit](const unsigned int value) {
@@ -10627,6 +10599,23 @@ void Sim::AdvanceBeat(const int amt)
       );
     }
   }
+  {
+    static int sProbeBeat = 0;
+    if ((++sProbeBeat % 200) == 0) {
+      if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+        std::fprintf(
+          sink,
+          "[BEATPIPE] simAdvanceBeat n=%d beat=%u tick=%u paused=%d singleStep=%d\n",
+          sProbeBeat,
+          mCurBeat,
+          mCurTick,
+          static_cast<int>(mPausedByCommandSource),
+          static_cast<int>(mSingleStep)
+        );
+        std::fclose(sink);
+      }
+    }
+  }
 
   if (!mGameOver && (mPausedByCommandSource == -1 || mSingleStep)) {
     ++mCurTick;
@@ -10661,21 +10650,6 @@ void Sim::AdvanceBeat(const int amt)
     TickTaskStage(&mDiskWatcherTaskStage);
     TickTaskStage(&mTaskStageA);
     RefreshBlips();
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    if (mOGrid != nullptr) {
-      static int sLastCount = -1;
-      const gpg::BitArray2D& occ = mOGrid->terrainOccupation;
-      int setBits = 0;
-      for (int i = 0; i < occ.size; ++i) {
-        std::uint32_t w = static_cast<std::uint32_t>(occ.ptr[i]);
-        while (w != 0u) { w &= w - 1u; ++setBits; }
-      }
-      if (setBits != sLastCount) {
-        gpg::Warnf("[OCCDIAG] tick=%u terrainOcc setBits=%d (was %d) ptr=%p size=%d w=%d h=%d", mCurTick, setBits, sLastCount,
-                   static_cast<const void*>(occ.ptr), occ.size, occ.width, occ.height);
-        sLastCount = setBits;
-      }
-    }
 
     // TEMPORARY PROBE -- delete once resolved.
     //
@@ -10819,7 +10793,7 @@ void Sim::Shutdown()
   //   0x0074581C  call 0x5C87A0         ; ++it
   //   0x00745825  cmp eax, edi / jne    ; until end()
   //
-  // This used to walk `CEntityDb::Entities()`, a hand-kept side table of
+  // This used to walk `EntityDB::Entities()`, a hand-kept side table of
   // entity pointers that could outlive its entries; it was removed
   // 2026-09-22. `mAllUnits` cannot: `~Entity` -> `ReleaseId` erases the node.
   //
@@ -12627,8 +12601,8 @@ int moho::cfunc_TryCopyPoseL(LuaPlus::LuaState* const state)
   Entity* const entityTo = SCR_FromLua_Entity(entityToObject, state);
 
   const bool sameMeshAndSkeleton =
-    unitFrom->GetMesh().px == entityTo->GetMesh().px &&
-    entityTo->GetMesh().px->GetSkeleton() == unitFrom->GetMesh().px->GetSkeleton();
+    unitFrom->GetMesh() == entityTo->GetMesh() &&
+    entityTo->GetMesh()->GetSkeleton() == unitFrom->GetMesh()->GetSkeleton();
 
   if (!sameMeshAndSkeleton) {
     lua_pushboolean(state->m_state, 0);
@@ -23684,6 +23658,86 @@ moho::CScrLuaInitForm* moho::func_SessionIsReplaySim_LuaFuncDef()
 }
 
 /**
+ * What it does:
+ * Publishes the sim-lane Lua binder definition for global `SetFocusArmy`.
+ * The shipped build binds this through the `.exxt` patch def chain (node
+ * 0x0128EA38, function slot 0x0128BBFC) rather than a `func_*_LuaFuncDef`
+ * factory, so only the bound worker has an address.
+ */
+moho::CScrLuaInitForm* moho::func_SetFocusArmySim_LuaFuncDef()
+{
+  static CScrLuaBinder binder(
+    SimLuaInitSet(),
+    "SetFocusArmy",
+    &moho::cfunc_SetFocusArmySim,
+    nullptr,
+    "<global>",
+    kSetFocusArmySimHelpText
+  );
+  return &binder;
+}
+
+/**
+ * What it does:
+ * Publishes the sim-lane Lua binder definition for global
+ * `GetTimeForProfile` (`.exxt` def chain node 0x0128EA70, function slot
+ * 0x0128B0BF).
+ */
+moho::CScrLuaInitForm* moho::func_GetTimeForProfileSim_LuaFuncDef()
+{
+  static CScrLuaBinder binder(
+    SimLuaInitSet(),
+    "GetTimeForProfile",
+    &moho::cfunc_GetTimeForProfileSim,
+    nullptr,
+    "<global>",
+    kGetTimeForProfileSimHelpText
+  );
+  return &binder;
+}
+
+/**
+ * What it does:
+ * Publishes the sim-lane Lua binder definition for global
+ * `GetDepositsAroundPoint` (`.exxt` def chain node 0x0128EA8C, function
+ * slot 0x0128B884).
+ */
+moho::CScrLuaInitForm* moho::func_GetDepositsAroundPoint_LuaFuncDef()
+{
+  static CScrLuaBinder binder(
+    SimLuaInitSet(),
+    "GetDepositsAroundPoint",
+    &moho::cfunc_GetDepositsAroundPoint,
+    nullptr,
+    "<global>",
+    kGetDepositsAroundPointHelpText
+  );
+  return &binder;
+}
+
+/**
+ * What it does:
+ * Publishes the sim-lane Lua binder definition for global
+ * `SetCommandSource` (`.exxt` def chain node 0x0128EAA8, function slot
+ * 0x0128BB51). `/lua/sim/victorycondition/abstractvictorycondition.lua`
+ * calls it from `ToObserver` while processing a defeated army; leaving it
+ * unregistered aborted that pass, so the victory flow never removed the
+ * defeated players' command sources and the session never concluded.
+ */
+moho::CScrLuaInitForm* moho::func_SetCommandSourceSim_LuaFuncDef()
+{
+  static CScrLuaBinder binder(
+    SimLuaInitSet(),
+    "SetCommandSource",
+    &moho::cfunc_SetCommandSourceSim,
+    nullptr,
+    "<global>",
+    kSetCommandSourceSimHelpText
+  );
+  return &binder;
+}
+
+/**
  * Address: 0x0128BBFC (FUN_0128BBFC, cfunc_SetFocusArmySim)
  *
  * What it does:
@@ -26399,19 +26453,6 @@ namespace moho
     // recovered 3-arg driver IssueCommand returns void, so nothing is discarded.
     BVSet<EntId, EntIdUniverse> issuedEntitySet{};
     func_DecodeEntIdSet(issuedEntitySet, units);
-    // TEMPORARY PROBE -- inert move order triage, delete when resolved.
-    DiagLine("[ORDERDIAG] ISSUE_Command type=%d targetType=%d pos=(%.1f,%.1f,%.1f) units=%u clear=%d id=0x%08X driver=%p",
-               static_cast<int>(data.mCommandType), static_cast<int>(data.mTarget.mType),
-               data.mTarget.mPos.x, data.mTarget.mPos.y, data.mTarget.mPos.z,
-               static_cast<unsigned>(units.size()), clearQueue ? 1 : 0,
-               static_cast<unsigned>(data.nextCommandId), static_cast<void*>(WLD_GetDriver()));
-    issuedEntitySet.ForEachValue([](const unsigned int value) {
-      DiagLine("[ORDERDIAG]   sent id=0x%08X", value);
-    });
-    for (moho::UserUnit* const unit : units) {
-      DiagLine("[ORDERDIAG]   user unit=%p entityId=0x%08X", static_cast<void*>(unit),
-                 reinterpret_cast<const moho::UserEntity*>(unit)->mParams.mEntityId);
-    }
 
     if (ISTIDriver* const simDriver = WLD_GetDriver()) {
       simDriver->IssueCommand(issuedEntitySet, data, clearQueue);
@@ -27144,6 +27185,10 @@ namespace
       (void)::moho::func_SessionGetLocalCommandSource_LuaFuncDef();
       (void)::moho::func_SessionIsReplayUser_LuaFuncDef();
       (void)::moho::func_SessionIsReplaySim_LuaFuncDef();
+      (void)::moho::func_SetFocusArmySim_LuaFuncDef();
+      (void)::moho::func_GetTimeForProfileSim_LuaFuncDef();
+      (void)::moho::func_GetDepositsAroundPoint_LuaFuncDef();
+      (void)::moho::func_SetCommandSourceSim_LuaFuncDef();
       (void)::moho::func_SessionIsBeingRecorded_LuaFuncDef();
       (void)::moho::func_SessionIsMultiplayer_LuaFuncDef();
       (void)::moho::func_SessionIsObservingAllowed_LuaFuncDef();

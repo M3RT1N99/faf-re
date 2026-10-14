@@ -448,8 +448,9 @@ the app away from the recent apps while the test runs.
 [26675870](https://replay.faforever.com/26675870) (SCMP_026, 465 beats, about 10 s on the x86_64
 emulator, 40 s under ARM translation): its chain does not depend on leftover heap contents, nor on the
 optional `mods.scd`/`skins.scd`/`loc_*.scd`. Longer replays work but take minutes and write large engine
-logs (1.6-22 MB per 1000 beats, the engine's `[MOTDIAG]` diagnostics); the card notes replays over 20
-minutes and less than 1 GB of free space. Chains of replays whose sims read uninitialised heap memory
+logs (up to 0.5.0: 1.6-22 MB per 1000 beats, the engine's `[MOTDIAG]` diagnostics, which the
+2026-10 master merge removed); the card notes replays over 20 minutes and less than 1 GB of free
+space. Chains of replays whose sims read uninitialised heap memory
 (T3 26679175, see [headless-replay.md](headless-replay.md#in-app-replay-test-release-040)) can differ
 between the app and the adb runs and are no parity check.
 
@@ -799,10 +800,10 @@ a MIME type the app does not register. Use **Pick replay…** in the Replay test
 **Replay test: a step was killed by SIGSYS (exit 159)** - the runner made a system call the app
 seccomp filter blocks; the step's `.logcat.txt` and the `[runner] CRASH` line name it (`syscall=`).
 
-**Replay test: a long replay is slow and the run directory huge** - the engine logs diagnostics for
-every moving unit (`[MOTDIAG]`), so a long, large game writes hundreds of MB and the sim waits on the
-log. Use the reference replay 26675870; **Clear logs** deletes old runs. The zip keeps the first 16 MB
-and the last 48 MB of a file larger than 64 MB.
+**Replay test: a long replay is slow and the run directory huge** - up to 0.5.0 the engine logged
+diagnostics for every moving unit (`[MOTDIAG]`, removed by the 2026-10 master merge), so a long, large
+game wrote hundreds of MB and the sim waited on the log. Use the reference replay 26675870; **Clear
+logs** deletes old runs. The zip keeps the first 16 MB and the last 48 MB of a file larger than 64 MB.
 
 **Replay test stops when the screen is off or the app is in the background** - set the app's battery
 usage to *Unrestricted* (Samsung: also take it off the sleeping-apps lists), keep the notification,

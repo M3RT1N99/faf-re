@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 
@@ -27,6 +28,7 @@ namespace
 {
   float GetBottleneckUiTimestampMs(const CClientManagerImpl& manager)
   {
+    // Low-dword float pun over Timer::mTime (binary reads only 4 of the 8 bytes).
     float out = 0.0f;
     std::memcpy(&out, &manager.mTimer2.mTime, sizeof(out));
     return out;
@@ -34,6 +36,7 @@ namespace
 
   void SetBottleneckUiTimestampMs(CClientManagerImpl& manager, const float value)
   {
+    // Low-dword float pun over Timer::mTime (binary writes only 4 of the 8 bytes).
     std::memcpy(&manager.mTimer2.mTime, &value, sizeof(value));
   }
 
@@ -806,6 +809,51 @@ void CClientManagerImpl::ProcessClients(CMessage& msg)
   }
 }
 
+// TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+void CClientManagerImpl::DumpClientLanesForProbe(std::FILE* const sink)
+{
+  if (sink == nullptr) {
+    return;
+  }
+
+  std::fprintf(
+    sink,
+    "[BEATPIPE]   mgr clients=%u dispatched=%d partialQ=%d fullQ=%d avail=%d\n",
+    static_cast<unsigned>(mClients.size()),
+    mDispatchedBeat,
+    mPartiallyQueuedBeat,
+    mFullyQueuedBeat,
+    mAvailableBeat
+  );
+
+  for (std::size_t index = 0; index < mClients.size(); ++index) {
+    CClientBase* const client = mClients[index];
+    if (client == nullptr) {
+      std::fprintf(sink, "[BEATPIPE]   client[%u] = null\n", static_cast<unsigned>(index));
+      continue;
+    }
+
+    std::fprintf(
+      sink,
+      "[BEATPIPE]   client[%u] ready=%d queued=%u dispatched=%u ejected=%d pend=%d lanes=[",
+      static_cast<unsigned>(index),
+      static_cast<int>(client->mReady),
+      static_cast<unsigned>(client->mQueuedBeat),
+      static_cast<unsigned>(client->mDispatchedBeat),
+      static_cast<int>(client->mEjected),
+      static_cast<int>(client->mEjectPending)
+    );
+
+    const msvc8::vector<std::int32_t>* const lanes = client->GetLatestAcksVector();
+    if (lanes != nullptr) {
+      for (std::size_t lane = 0; lane < lanes->size(); ++lane) {
+        std::fprintf(sink, "%s%d", lane != 0 ? "," : "", static_cast<int>((*lanes)[lane]));
+      }
+    }
+    std::fprintf(sink, "]\n");
+  }
+}
+
 /**
  * Address: 0x0053EEC0 (FUN_0053EEC0)
  *
@@ -908,6 +956,25 @@ void CClientManagerImpl::DoBeat()
   }
 
   if (EveryoneResponsiveSince(mAvailableBeat + 1)) {
+    // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+    {
+      static int sProbeAvail = 0;
+      if ((++sProbeAvail % 50) == 1) {
+        if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+          std::fprintf(
+            sink,
+            "[BEATPIPE] availAdvance n=%d from=%d clients=%u ready=%d everyone=%d\n",
+            sProbeAvail,
+            mAvailableBeat,
+            static_cast<unsigned>(mClients.size()),
+            static_cast<int>(mWeAreReady),
+            static_cast<int>(mEveryoneIsReady)
+          );
+          DumpClientLanesForProbe(sink);
+          std::fclose(sink);
+        }
+      }
+    }
     do {
       ++mAvailableBeat;
     } while (EveryoneResponsiveSince(mAvailableBeat + 1));
@@ -1023,7 +1090,7 @@ void CClientManagerImpl::UpdateStates(const int beat)
 /**
  * Address: 0x0053F4C0 (FUN_0053F4C0)
  */
-SSendStampView CClientManagerImpl::GetBetween(const int since)
+SSendStampWindow CClientManagerImpl::GetBetween(const int since)
 {
   std::scoped_lock lock(mLock);
   const auto nowUs = static_cast<uint64_t>(mTimer3.ElapsedMicroseconds());

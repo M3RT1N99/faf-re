@@ -5,11 +5,18 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <limits>
 #include <new>
 #include <vector>
+
+// Port: dbghelp only serves master's TEMPORARY PROBE stall watchdog in ThreadRun, a Windows thread
+// suspend-and-StackWalk; off Windows the watchdog is left out with it.
+#if defined(_WIN32)
+#include <dbghelp.h>
+#endif
 
 #include "boost/function.hpp"
 #include <boost/bind.hpp>
@@ -35,12 +42,12 @@
 #include "moho/misc/Stats.h"
 #include "moho/misc/TimeBar.h"
 #include "moho/misc/CDecoder.h"
-#include "moho/misc/LaunchInfoBase.h"
 #include "moho/net/CClientManagerImpl.h"
 #include "moho/render/CDecalTypes.h"
 #include "moho/sim/SSTIArmyConstantData.h"
 #include "moho/sim/SSTIArmyVariableData.h"
 #include "moho/unit/core/Unit.h"
+#include "moho/misc/LaunchInfoBase.h"
 #include "Sim.h"
 #if !defined(_MSC_VER)
 #include "platform/Atomic32.h"
@@ -51,6 +58,11 @@ using namespace moho;
 namespace
 {
   bool gSimInterlocked = false;
+
+#if defined(_WIN32)
+  // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+  DWORD gSimThreadOsIdForWatchdog = 0;
+#endif
 
   // Issue-thread pacing, from CSimDriver::ThreadRun (0x0073BDF0).
   constexpr unsigned int kCurrentThreadId = 0xFFFFFFFFu;
@@ -457,98 +469,6 @@ void moho::SetUnitUpdateReconFlags(SUnitVariableUpdateEntry* const entry, const 
   }
 }
 
-namespace
-{
-  /**
-   * Replicates the binary's per-slot shared-pointer swap used by
-   * `ReconBlip::SyncInterface`: writes the new pointee first, then, when the
-   * control block changes, add_ref_copy()s the new block and release()s the
-   * old one before storing it. Mirrors the `lock xadd [pi+4], 1` /
-   * `sp_counted_base::release` sequence at 0x005BF0AA.. and 0x005BF18C..
-   * operating on a raw `{px, pi}` pair.
-   *
-   * NOTE (2026-08-20 audit): the old-block drop is a strong release, not a
-   * weak one. The call at 0x005BF0C0 (and its twin at 0x005BF19E) resolves
-   * by rel32 to 0x004229B0 - confirmed `sp_counted_base::release()` with
-   * `weak_release()` inlined into it, not a standalone weak drop (see
-   * `BoostWrappers.h`'s `release()`/`weak_release()` evidence blocks and the
-   * same-session fixes in `BoostWrappers.cpp`/`CWldSession.cpp`). The old
-   * code called `weak_release()` here while the acquire side already
-   * correctly did `add_ref_copy()` - the same one-sided bug: the previous
-   * pose/mesh control block's strong reference was never actually dropped
-   * (leak) while its weak_count_ was wrongly decremented instead.
-   */
-  void SwapSharedPointerSlotWithReconRefcount(
-    boost::SharedPtrRaw<void>& slot,
-    void* const newPx,
-    boost::detail::sp_counted_base* const newPi) noexcept
-  {
-    slot.px = newPx;
-    if (newPi == slot.pi) {
-      return;
-    }
-    if (newPi != nullptr) {
-      newPi->add_ref_copy();
-    }
-    if (slot.pi != nullptr) {
-      slot.pi->release();
-    }
-    slot.pi = newPi;
-  }
-} // namespace
-
-void moho::PatchUnitUpdateReconPose(
-  SUnitVariableUpdateEntry* const entry,
-  void* const priorPosePx,
-  boost::detail::sp_counted_base* const priorPosePi,
-  void* const posePx,
-  boost::detail::sp_counted_base* const posePi,
-  const bool applyStunTicks,
-  const std::int32_t stunTicks) noexcept
-{
-  if (entry == nullptr) {
-    return;
-  }
-
-  // The binary writes the current-pose slot (varData +0x8C / entry +0x94) before
-  // the prior-pose slot (varData +0x84 / entry +0x8C); preserve that order.
-  auto& sharedPose = reinterpret_cast<boost::SharedPtrRaw<void>&>(entry->mVariableData.mSharedPose);
-  SwapSharedPointerSlotWithReconRefcount(sharedPose, posePx, posePi);
-
-  auto& priorSharedPose = reinterpret_cast<boost::SharedPtrRaw<void>&>(entry->mVariableData.mPriorSharedPose);
-  SwapSharedPointerSlotWithReconRefcount(priorSharedPose, priorPosePx, priorPosePi);
-
-  if (applyStunTicks) {
-    entry->mVariableData.mStunTicks = stunTicks;
-  }
-}
-
-void moho::PatchEntityUpdateReconMesh(
-  SSyncData* const syncData,
-  const RMeshBlueprint* const meshBlueprint,
-  void* const scmResourcePx,
-  boost::detail::sp_counted_base* const scmResourcePi,
-  const float health,
-  const float maxHealth,
-  const float fractionComplete,
-  const std::uint8_t isDead) noexcept
-{
-  if (syncData == nullptr || syncData->mEntityUpdates.empty()) {
-    return;
-  }
-
-  SSTIEntityVariableData& mDat = syncData->mEntityUpdates.back().mVariableData;
-  mDat.mMeshBlueprint = meshBlueprint;
-
-  auto& scmResource = reinterpret_cast<boost::SharedPtrRaw<void>&>(mDat.mScmResource);
-  SwapSharedPointerSlotWithReconRefcount(scmResource, scmResourcePx, scmResourcePi);
-
-  mDat.mHealth = health;
-  mDat.mMaxHealth = maxHealth;
-  mDat.mFractionComplete = fractionComplete;
-  mDat.mIsDead = isDead;
-}
-
 /**
  * Address: 0x0073B940 (FUN_0073B940, ??1SSyncDataQueue@Moho@@QAE@XZ)
  *
@@ -751,17 +671,15 @@ CSimDriver::CSimDriver(
   , mSimSpeedSamples{}
   , mCurrentSimRate(10)
 {
-  // 0x0073B7CC..0x0073B7DC: the pending filter starts on the launch info's original command
-  // source (`mov eax,[edi+10h]; mov ecx,[eax+68h]` - SLaunchCommandSources::mOriginalSource: the
-  // local player's army slot, -1 for a replay or an observer, the saved focus army for a loaded
-  // save). The active filter keeps its constructed -1 (0x0073B6C2) until the first sync copies the
-  // pending one over. Sim::Sim (Sim.cpp mSyncFilter) and CWldSession start from the same value.
-  // Seeding both from `commandSourceId` - a command-source index, not an army index - put a
-  // replay's or an observer's focus army at 255, the "no source" id: the opening Sim::Sync reported
-  // "Invalid army 255" from NoteFocusArmyChanged and ReconBlip::SyncInterface indexed
-  // mReconDat[255], past the armies, and faulted on beat 1. In a lobby game whose slots and
-  // command sources are numbered differently it focused another player's army.
-  mPendingSyncFilter.focusArmy = mLaunchInfo->mCommandSources.mOriginalSource;
+  // Binary 0x0073B7CC..0x0073B7DC seeds ONLY the pending filter, and from
+  // `mLaunchInfo->mCommandSources.mOriginalSource` (LaunchInfoBase+0x54,
+  // SLaunchCommandSources+0x14), not from this driver's command-source id.
+  // Replay sessions carry mOriginalSource = -1 (spectator); seeding with the
+  // command-source id instead put 255 into the sync filter, which DoBeat then
+  // stored as the session focus army and every userArmies[255] reader crashed
+  // on. The active filter stays default (-1) until the first sync adopts it.
+  const std::int32_t originalSource = launchInfo ? launchInfo->mCommandSources.mOriginalSource : -1;
+  mPendingSyncFilter.focusArmy = originalSource;
 
   mConnectionEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
   mSyncDataAvailableEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -926,6 +844,25 @@ void CSimDriver::FinalizeSyncDispatchLocked(boost::mutex::scoped_lock& lock)
 
   const int32_t currentBeat = static_cast<int32_t>(mSim->mCurBeat);
   const int32_t syncBeat = syncData->mCurBeat;
+
+  // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+  {
+    static int sProbeSync = 0;
+    if ((++sProbeSync % 50) == 0) {
+      if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+        std::fprintf(
+          sink,
+          "[BEATPIPE] syncProduced cur=%d syncBeat=%d pausedBy=%d gameOver=%d\n",
+          static_cast<int>(currentBeat),
+          static_cast<int>(syncBeat),
+          static_cast<int>(syncData->mPausedBy),
+          static_cast<int>(syncData->mGameOver)
+        );
+        std::fclose(sink);
+      }
+    }
+  }
+
   const int32_t oldestRetainedBeat = currentBeat - 128;
   if (syncBeat >= oldestRetainedBeat && syncBeat < currentBeat) {
     const gpg::MD5Digest& expectedDigest = mSim->mSimHashes[syncBeat & 0x7F];
@@ -960,6 +897,17 @@ void CSimDriver::ExecuteDispatchStepLocked(boost::mutex::scoped_lock& lock)
 {
   const int32_t beatToDispatch = mDispatchBeat;
   ++mDispatchBeat;
+
+  // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+  {
+    static int sProbeStep = 0;
+    if ((++sProbeStep % 50) == 1) {
+      if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+        std::fprintf(sink, "[BEATPIPE] dispatchStep n=%d beat=%d\n", sProbeStep, static_cast<int>(beatToDispatch));
+        std::fclose(sink);
+      }
+    }
+  }
 
   gpg::time::Timer dispatchTimer;
 
@@ -1140,11 +1088,11 @@ void CSimDriver::ShutDown()
     // 0x0073BD7D-0x0073BD88: Shutdown, then one last sync pass, and only then
     // the delete. The sync pass is not bookkeeping - it is what retires the
     // commands. Shutdown destroys every unit, but a command only leaves
-    // `CCommandDb::commands` when `RefreshPublishedCommandEvent` finds its
+    // `CCommandDB::commands` when `RefreshPublishedCommandEvent` finds its
     // live-unit set empty and deletes it, and the only thing that runs that
-    // over the map is `CCommandDb::PublishSyncData`, reached from `Sim::Sync`
+    // over the map is `CCommandDB::PublishSyncData`, reached from `Sim::Sync`
     // at 0x00747B0C. Without it every order still standing at quit outlived
-    // the map, and `~CCommandDb` met its own "isn't empty" Die - so ending a
+    // the map, and `~CCommandDB` met its own "isn't empty" Die - so ending a
     // game with any unit under orders killed the process on the way out
     // instead of returning to the front end.
     mSim->Shutdown();
@@ -1171,6 +1119,12 @@ void CSimDriver::ShutDown()
 void CSimDriver::ThreadCreateSim()
 {
   PinThisThreadToOneNumaNodeIfRequested();
+
+#if defined(_WIN32)
+  // TEMPORARY PROBE -- replay beat-pipeline triage: remember the sim thread's
+  // OS id so the issue-thread watchdog can suspend/dump it on stalls.
+  gSimThreadOsIdForWatchdog = ::GetCurrentThreadId();
+#endif
 
   // The sim runs at reduced x87 precision so its arithmetic is bit-identical
   // on every machine in the game.
@@ -1284,7 +1238,137 @@ void CSimDriver::ThreadRun()
   }
 
   while (!mStopSimThread) {
+#if defined(_WIN32)
+    // TEMPORARY PROBE -- replay beat-pipeline triage: watchdog that dumps the
+    // sim thread's stack when dispatch stalls. Delete when resolved.
+    {
+      static int sWatchdogArmed = 0;
+      static std::int32_t sLastProgressBeat = -1;
+      static std::int64_t sLastProgressCycles = 0;
+      static int sDumpsTaken = 0;
+      const std::int32_t progressBeat = mDispatchBeat;
+      const std::int64_t nowCycles = mTimer.ElapsedCycles();
+      if (progressBeat != sLastProgressBeat || sLastProgressCycles == 0) {
+        sLastProgressBeat = progressBeat;
+        sLastProgressCycles = nowCycles;
+      } else if (
+        sDumpsTaken < 3 && mSimThread != nullptr
+        && gpg::time::CyclesToMilliseconds(nowCycles - sLastProgressCycles) > 15000.0f
+      ) {
+        ++sDumpsTaken;
+        sLastProgressCycles = nowCycles;
+        HANDLE simThread = nullptr;
+        if (gSimThreadOsIdForWatchdog != 0) {
+          simThread = ::OpenThread(THREAD_ALL_ACCESS, FALSE, gSimThreadOsIdForWatchdog);
+        }
+        if (simThread != nullptr && ::SuspendThread(simThread) != 0xFFFFFFFF) {
+          CONTEXT ctx{};
+          ctx.ContextFlags = CONTEXT_FULL;
+          if (::GetThreadContext(simThread, &ctx)) {
+            STACKFRAME frame{};
+            frame.AddrPC.Mode = AddrModeFlat;
+#if defined(_M_X64)
+            frame.AddrPC.Offset = ctx.Rip;
+            frame.AddrStack.Offset = ctx.Rsp;
+            frame.AddrFrame.Offset = ctx.Rbp;
+            constexpr DWORD kStallMachine = IMAGE_FILE_MACHINE_AMD64;
+            const unsigned long long stallPc = ctx.Rip;
+#else
+            frame.AddrPC.Offset = ctx.Eip;
+            frame.AddrStack.Offset = ctx.Esp;
+            frame.AddrFrame.Offset = ctx.Ebp;
+            constexpr DWORD kStallMachine = IMAGE_FILE_MACHINE_I386;
+            const unsigned long long stallPc = ctx.Eip;
+#endif
+            frame.AddrStack.Mode = AddrModeFlat;
+            frame.AddrFrame.Mode = AddrModeFlat;
+            if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+              std::fprintf(
+                sink,
+                "[SIMSTALL] dispatchBeat=%d state=%d eip=0x%08llx\n",
+                static_cast<int>(mDispatchBeat),
+                static_cast<int>(mState),
+                stallPc
+              );
+              for (int i = 0; i < 40; ++i) {
+                if (::StackWalk(
+                      kStallMachine,
+                      ::GetCurrentProcess(),
+                      simThread,
+                      &frame,
+                      &ctx,
+                      nullptr,
+                      ::SymFunctionTableAccess,
+                      ::SymGetModuleBase,
+                      nullptr
+                    )
+                    == FALSE) {
+                  break;
+                }
+                if (frame.AddrPC.Offset == 0) {
+                  continue;
+                }
+                DWORD64 pc = frame.AddrPC.Offset;
+                if (i != 0) {
+                  pc -= 5;
+                }
+                char symbolText[300] = {};
+                unsigned char storage[sizeof(SYMBOL_INFO) + 256] = {};
+                auto* const symbol = reinterpret_cast<SYMBOL_INFO*>(storage);
+                symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+                symbol->MaxNameLen = 255;
+                DWORD64 displacement = 0;
+                if (::SymFromAddr(::GetCurrentProcess(), pc, &displacement, symbol) != FALSE) {
+                  (void)std::snprintf(
+                    symbolText, sizeof(symbolText), " %s+0x%llx", symbol->Name, static_cast<unsigned long long>(displacement)
+                  );
+                }
+                std::fprintf(sink, "[SIMSTALL]   #%d 0x%08llx%s\n", i, static_cast<unsigned long long>(pc), symbolText);
+              }
+              std::fclose(sink);
+            }
+          }
+          ::ResumeThread(simThread);
+        }
+        if (simThread != nullptr) {
+          ::CloseHandle(simThread);
+        }
+      }
+      sWatchdogArmed = 1;
+      (void)sWatchdogArmed;
+    }
+#endif
+
     mClientManager->DoBeat();
+
+    // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+    {
+      static int sProbePass = 0;
+      if ((++sProbePass % 100) == 0) {
+        int partiallyQueuedBeat = 0;
+        int availableBeat = 0;
+        mClientManager->GetPartiallyQueuedBeat(partiallyQueuedBeat);
+        mClientManager->GetAvailableBeat(availableBeat);
+        if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+          std::fprintf(
+            sink,
+            "[BEATPIPE] issueThread lastSync=%lld outstanding=%u syncQ=%u nextIssue=%d lastDeq=%d "
+            "partialQ=%d avail=%d simBusy=%d state=%d\n",
+            static_cast<long long>(mLastSyncCycleTime),
+            static_cast<unsigned>(mOutstandingRequests),
+            static_cast<unsigned>(mSyncDataQueue.Size()),
+            mNextIssueBeat,
+            mLastDequeuedBeat,
+            partiallyQueuedBeat,
+            availableBeat,
+            static_cast<int>(mSimBusy),
+            static_cast<int>(mState)
+          );
+          mClientManager->DumpClientLanesForProbe(sink);
+          std::fclose(sink);
+        }
+      }
+    }
 
     int waitMilliseconds = kIssueThreadIdleWaitMs;
     const std::int64_t now = mTimer.ElapsedCycles();
@@ -1585,7 +1669,27 @@ void CSimDriver::PromoteToDispatchingWhenBeatAvailable(const int beatQuerySeed)
 {
   int availableBeat = beatQuerySeed;
   mClientManager->GetAvailableBeat(availableBeat);
-  if (availableBeat >= mDispatchBeat) {
+  const bool willPromote = availableBeat >= mDispatchBeat;
+
+  // TEMPORARY PROBE -- replay beat-pipeline triage. Delete when resolved.
+  {
+    static int sProbePromote = 0;
+    if ((++sProbePromote % 50) == 0 || willPromote) {
+      if (std::FILE* const sink = std::fopen("faf_diag.log", "a"); sink != nullptr) {
+        std::fprintf(
+          sink,
+          "[BEATPIPE] promote n=%d avail=%d dispatchBeat=%d promote=%d\n",
+          sProbePromote,
+          availableBeat,
+          static_cast<int>(mDispatchBeat),
+          static_cast<int>(willPromote)
+        );
+        std::fclose(sink);
+      }
+    }
+  }
+
+  if (willPromote) {
     SetStateAndNotify(EDriverState::Dispatching);
   }
 }

@@ -1,5 +1,4 @@
 #include "moho/terrain/LowFidelityTerrain.h"
-#include "gpg/core/utils/Logging.h"   // TEMPORARY PROBE (do not commit)
 
 #include <algorithm>
 #include <cmath>
@@ -76,7 +75,7 @@ namespace
     }
   }
 
-  struct LowFidelityTriangleBatchRuntime
+  struct LowFidelityTriangleBatch
   {
     std::uint32_t pad00[5];         // +0x00
     moho::CD3DVertexSheet* vtx;     // +0x14
@@ -85,15 +84,15 @@ namespace
     std::int32_t indexCount;        // +0x20
     std::int32_t endVertexInclusive; // +0x24
   };
-  static_assert(offsetof(LowFidelityTriangleBatchRuntime, vtx) == 0x14, "LowFidelityTriangleBatchRuntime::vtx");
-  static_assert(offsetof(LowFidelityTriangleBatchRuntime, idx) == 0x18, "LowFidelityTriangleBatchRuntime::idx");
+  static_assert(offsetof(LowFidelityTriangleBatch, vtx) == 0x14, "LowFidelityTriangleBatch::vtx");
+  static_assert(offsetof(LowFidelityTriangleBatch, idx) == 0x18, "LowFidelityTriangleBatch::idx");
   static_assert(
-    offsetof(LowFidelityTriangleBatchRuntime, indexCount) == 0x20,
-    "LowFidelityTriangleBatchRuntime::indexCount"
+    offsetof(LowFidelityTriangleBatch, indexCount) == 0x20,
+    "LowFidelityTriangleBatch::indexCount"
   );
   static_assert(
-    offsetof(LowFidelityTriangleBatchRuntime, endVertexInclusive) == 0x24,
-    "LowFidelityTriangleBatchRuntime::endVertexInclusive"
+    offsetof(LowFidelityTriangleBatch, endVertexInclusive) == 0x24,
+    "LowFidelityTriangleBatch::endVertexInclusive"
   );
 
   /**
@@ -103,7 +102,7 @@ namespace
    * Issues one triangle-list draw for one prebuilt low-fidelity terrain batch
    * when the batch has a non-zero index count.
    */
-  void DrawLowFidelityTerrainBatch(const LowFidelityTriangleBatchRuntime& batch)
+  void DrawLowFidelityTerrainBatch(const LowFidelityTriangleBatch& batch)
   {
     if (batch.indexCount == 0 || batch.vtx == nullptr || batch.idx == nullptr) {
       return;
@@ -453,7 +452,7 @@ namespace moho
       shaderVars.heightScale.SetFloat(mTesselator->GetHeightScale());
     }
 
-    DrawLowFidelityTerrainBatch(reinterpret_cast<const LowFidelityTriangleBatchRuntime&>(*this));
+    DrawLowFidelityTerrainBatch(reinterpret_cast<const LowFidelityTriangleBatch&>(*this));
   }
 
   /**
@@ -504,7 +503,7 @@ namespace moho
       shaderVars.heightScale.SetFloat(heightScale);
     }
 
-    DrawLowFidelityTerrainBatch(reinterpret_cast<const LowFidelityTriangleBatchRuntime&>(*this));
+    DrawLowFidelityTerrainBatch(reinterpret_cast<const LowFidelityTriangleBatch&>(*this));
   }
 
   /**
@@ -850,7 +849,8 @@ namespace moho
 
     void* const lockedVertices =
       mDynamicVertexSheet->GetVertStream(0U)->Lock(0, static_cast<std::int32_t>(splatVertexCount), false, true);
-    std::memcpy(lockedVertices, splatVertices.data(), sizeof(moho::CWldSplat::SplatVertex) * splatVertexCount);
+    // Raw GPU upload: splat vertex blob into the locked stream.
+    std::copy_n(splatVertices.data(), splatVertexCount, static_cast<moho::CWldSplat::SplatVertex*>(lockedVertices));
     mDynamicVertexSheet->GetVertStream(0U)->Unlock();
 
     D3D_GetDevice()->SelectTechnique("LowFidelitySplat");
@@ -895,7 +895,7 @@ namespace moho
     CD3DDevice* const device = D3D_GetDevice();
 
     LoadShaderVars();
-    DrawLowFidelityTerrainBatch(reinterpret_cast<const LowFidelityTriangleBatchRuntime&>(*this));
+    DrawLowFidelityTerrainBatch(reinterpret_cast<const LowFidelityTriangleBatch&>(*this));
     LoadTerrainLighting(shadowContext);
 
     auto* const terrainRes = mTerrainResource;
@@ -1187,27 +1187,21 @@ namespace moho
 
     const std::int32_t rectCacheCount = mTesselator->GetRectCacheCount();
     std::int32_t collisionIndexCount = mTesselator->GetCollisionIndexCount();
-    // TEMPORARY PROBE (do not commit)
-    {
-      static int sRectBudget = 0;
-      if (sRectBudget < 8) {
-        ++sRectBudget;
-        gpg::Warnf("[TERRDIAG-LOW] rectCacheCount=%d collisionIndexCount=%d", rectCacheCount, collisionIndexCount);
-      }
-    }
     if (collisionIndexCount > kSkirtMaxIndexCount) {
       collisionIndexCount = kSkirtMaxIndexCount;
     }
 
     if (rectCacheCount > 0) {
       void* const lockedVertices = mTerrainVertexSheet->GetVertStream(0U)->Lock(0, rectCacheCount, false, true);
-      std::memcpy(lockedVertices, mTesselator->GetRectCacheData(), sizeof(CTesselator::Rect16) * rectCacheCount);
+      // Raw GPU upload: tessellator rect blob into the locked stream.
+      std::copy_n(mTesselator->GetRectCacheData(), rectCacheCount, static_cast<CTesselator::Rect16*>(lockedVertices));
       mTerrainVertexSheet->GetVertStream(0U)->Unlock();
     }
 
     if (collisionIndexCount > 0) {
       std::int16_t* const lockedIndices = mTerrainIndexSheet->Lock(0, collisionIndexCount, false, true);
-      std::memcpy(lockedIndices, mTesselator->GetCollisionIndexData(), sizeof(std::uint16_t) * collisionIndexCount);
+      // Raw GPU upload: collision index blob into the locked sheet.
+      std::copy_n(mTesselator->GetCollisionIndexData(), collisionIndexCount, lockedIndices);
       mTerrainIndexSheet->Unlock();
     }
   }

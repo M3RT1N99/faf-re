@@ -35,9 +35,9 @@ namespace moho
   struct SUnitConstructionParams;
   struct ArmyLaunchInfo;
   class CDecalBuffer;
-  class CCommandDb;
+  class CCommandDB;
   class CUnitCommand;
-  class CEntityDb;
+  class EntityDB;
   class CAiFormationDBImpl;
   class CSimConVarBase;
   class Unit;
@@ -78,7 +78,8 @@ namespace moho
   class CEffectManagerImpl;
   class CSimSoundManager;
   struct SParticleBuffer;
-  struct SEntitySetTemplateUnit;
+  template <class T>
+  class EntitySetTemplate;
   struct RUnitBlueprint;
   class CScrLuaInitForm;
   // Full definition lives in moho/render/camera/CameraImpl.h; only used here
@@ -108,7 +109,7 @@ namespace moho
    */
   [[nodiscard]] CUnitCommand* IssueFactoryCommandToSelectedUnits(
     Sim* sim,
-    const SEntitySetTemplateUnit& selectedUnits,
+    const EntitySetTemplate<Unit>& selectedUnits,
     const SSTICommandIssueData& commandIssueData,
     bool clearQueue
   );
@@ -122,7 +123,7 @@ namespace moho
    */
   [[nodiscard]] CUnitCommand* IssueCommandToSelectedUnits(
     Sim* sim,
-    SEntitySetTemplateUnit& selectedUnits,
+    EntitySetTemplate<Unit>& selectedUnits,
     const SSTICommandIssueData& commandIssueData,
     bool clearQueue
   );
@@ -415,7 +416,7 @@ namespace moho
      *   std::vector<std::string>* commandArgs,
      *   Wm3::Vector3<float>* worldPos,
      *   Moho::CArmyImpl* focusArmy,
-     *   Moho::SEntitySetTemplateUnit* selectedUnits);
+     *   Moho::EntitySetTemplate<Unit>* selectedUnits);
      *
      * What it does:
      * Parses `SetArmyColor` sim-command args and writes packed color lanes
@@ -426,7 +427,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -448,7 +449,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -463,7 +464,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -477,7 +478,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -491,7 +492,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -506,7 +507,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -521,7 +522,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -535,7 +536,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -552,7 +553,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -567,7 +568,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -582,7 +583,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -597,7 +598,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -619,7 +620,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -633,7 +634,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -647,7 +648,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -661,7 +662,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -676,7 +677,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -690,7 +691,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -705,7 +706,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -720,7 +721,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -735,7 +736,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -750,7 +751,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -765,7 +766,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -780,7 +781,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -795,7 +796,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -810,7 +811,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -827,7 +828,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -844,7 +845,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -858,7 +859,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -872,7 +873,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -886,7 +887,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -901,7 +902,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -916,7 +917,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -932,7 +933,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -953,7 +954,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -968,7 +969,7 @@ namespace moho
       CSimConCommand::ParsedCommandArgs* commandArgs,
       Wm3::Vector3f* worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit* selectedUnits
+      EntitySetTemplate<Unit>* selectedUnits
     );
 
     /**
@@ -1258,7 +1259,7 @@ namespace moho
       const char* command,
       const Wm3::Vector3<float>& worldPos,
       CArmyImpl* focusArmy,
-      SEntitySetTemplateUnit& selectedUnits
+      EntitySetTemplate<Unit>& selectedUnits
     );
 
     /**
@@ -1495,8 +1496,8 @@ namespace moho
     boost::shared_ptr<CDebugCanvas> mDebugCanvas2;  // 0x0974
     PathTables* mPathTables;
     CAiFormationDBImpl* mFormationDB; // 0x0980
-    CEntityDb* mEntityDB;             // 0x0984
-    CCommandDb* mCommandDB;           // 0x0988
+    EntityDB* mEntityDB;             // 0x0984
+    CCommandDB* mCommandDB;           // 0x0988
     uint32_t mReserved98C;
     uint32_t mReserved990;
     boost::shared_ptr<SParticleBuffer> mParticleBuffer;
@@ -1524,7 +1525,7 @@ namespace moho
     /// `SSyncData::mCamShakeParams` (+0x1F0) by `Sim::Sync`'s swap. Was
     /// declared `msvc8::vector<void*> mSyncSerializeGroup1` with no users at
     /// all, while `Entity.cpp` reached the same storage through a
-    /// `reinterpret_cast<SimCameraShakeQueueOwnerRuntimeView*>(sim)` whose
+    /// `reinterpret_cast<the deleted owner-overlay*>(sim)` whose
     /// `pad_0000[0x09C8]` pinned this exact offset.
     msvc8::vector<SCamShakeParams> mSyncCamShake; // 0x09C8
     msvc8::vector<SUpgradeNotifyPair> mAllyUpgradeNotifications; // 0x9D8 (was mSyncSerializeGroup3)
@@ -1532,7 +1533,7 @@ namespace moho
     // 0x09F8 / 0x0A08: accumulated map-rect lists (each an msvc8::vector<gpg::Rect2i>,
     // 0x10 bytes: proxy/first/last/end). FlattenMapRect (FUN_0074B120) push_back's the
     // clamped flatten rect into both; the Sim map-data serializer (FUN_00745120) streams
-    // them element-wise (see SimSerMapDataRuntimeView). Same 0x10 size as a bare Rect2i,
+    // them element-wise (see the deleted SimSerMapData overlay). Same 0x10 size as a bare Rect2i,
     // so downstream offsets are unaffected.
     msvc8::vector<gpg::Rect2i> mCachedMapRects; // 0x09F8
     msvc8::vector<gpg::Rect2i> mLoadedMapRects; // 0x0A08
@@ -5991,6 +5992,37 @@ namespace moho
    * Publishes the sim-lane Lua binder definition for global `SessionIsReplay`.
    */
   CScrLuaInitForm* func_SessionIsReplaySim_LuaFuncDef();
+
+  /**
+   * What it does:
+   * Publishes the sim-lane Lua binder definition for global `SetFocusArmy`
+   * (`.exxt` def chain node 0x0128EA38, function slot 0x0128BBFC).
+   */
+  CScrLuaInitForm* func_SetFocusArmySim_LuaFuncDef();
+
+  /**
+   * What it does:
+   * Publishes the sim-lane Lua binder definition for global
+   * `GetTimeForProfile` (`.exxt` def chain node 0x0128EA70, function slot
+   * 0x0128B0BF).
+   */
+  CScrLuaInitForm* func_GetTimeForProfileSim_LuaFuncDef();
+
+  /**
+   * What it does:
+   * Publishes the sim-lane Lua binder definition for global
+   * `GetDepositsAroundPoint` (`.exxt` def chain node 0x0128EA8C, function
+   * slot 0x0128B884).
+   */
+  CScrLuaInitForm* func_GetDepositsAroundPoint_LuaFuncDef();
+
+  /**
+   * What it does:
+   * Publishes the sim-lane Lua binder definition for global
+   * `SetCommandSource` (`.exxt` def chain node 0x0128EAA8, function slot
+   * 0x0128BB51).
+   */
+  CScrLuaInitForm* func_SetCommandSourceSim_LuaFuncDef();
 
   /**
    * Address: 0x0128BBFC (FUN_0128BBFC, cfunc_SetFocusArmySim)

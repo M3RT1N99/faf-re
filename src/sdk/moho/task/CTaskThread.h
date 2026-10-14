@@ -80,12 +80,23 @@ namespace moho
     void Unstage();
 
     /**
+     * Address: 0x004094F0 (FUN_004094F0)
+     *
+     * What it does:
+     * Builds a new `CTaskThread` for an archive load and hands it back unowned; its
+     * members are loaded over it afterwards.
+     */
+    static void MemberConstruct(
+      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
+    );
+
+    /**
      * Address: 0x0040CF90 (FUN_0040CF90, Moho::CTaskThread::MemberDeserialize)
      *
      * What it does:
      * Loads stage pointer, pending-frame counter, staged flag, and task stack.
      */
-    void MemberDeserialize(gpg::ReadArchive* archive, gpg::RRef* ownerRef);
+    void MemberDeserialize(gpg::ReadArchive* archive, int version, const gpg::RRef& ownerRef);
 
     /**
      * Address: 0x0040CFE0 (FUN_0040CFE0, Moho::CTaskThread::MemberSerialize)
@@ -93,127 +104,13 @@ namespace moho
      * What it does:
      * Saves stage pointer, pending-frame counter, staged flag, and task stack.
      */
-    void MemberSerialize(gpg::WriteArchive* archive, gpg::RRef* ownerRef);
+    void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef);
   };
   static_assert(sizeof(CTaskThread) == 0x1C, "CTaskThread == 0x1C");
   static_assert(offsetof(CTaskThread, mStage) == 0x0C, "CTaskThread::mStage offset must be 0x0C");
   static_assert(offsetof(CTaskThread, mTaskTop) == 0x10, "CTaskThread::mTaskTop offset must be 0x10");
   static_assert(offsetof(CTaskThread, mPendingFrames) == 0x14, "CTaskThread::mPendingFrames offset must be 0x14");
   static_assert(offsetof(CTaskThread, mStaged) == 0x18, "CTaskThread::mStaged offset must be 0x18");
-
-  class CTaskThreadConstruct : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC3040 (FUN_00BC3040, dynamic initializer for the global
-     * `CTaskThreadConstruct` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * construct/delete callback fields.
-     */
-    CTaskThreadConstruct();
-
-    /**
-     * Address: 0x00BEE3A0 (FUN_00BEE3A0, Moho::CTaskThreadConstruct::~CTaskThreadConstruct)
-     */
-    ~CTaskThreadConstruct();
-
-    /**
-     * Address: 0x004094E0 (FUN_004094E0, Moho::CTaskThreadConstruct::Construct)
-     * Address: 0x00724910 (FUN_00724910)
-     *
-     * What it does:
-     * Forwards serializer construct callback into CTaskThread allocation/init path.
-     */
-    static void Construct(
-      gpg::ReadArchive* archive, int version, gpg::RRef* ownerRef, gpg::SerConstructResult* result
-    );
-
-    /**
-     * Address: 0x0040B420 (FUN_0040B420, Moho::CTaskThreadConstruct::Deconstruct)
-     *
-     * What it does:
-     * Runs `CTaskThread` destructor and releases storage for constructed object.
-     */
-    static void Deconstruct(void* object);
-
-    /**
-     * Address: 0x0040A630 (FUN_0040A630, Moho::CTaskThreadConstruct::Init)
-     *
-     * What it does:
-     * Binds construct/delete callbacks into CTaskThread RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::construct_func_t mSerConstructFunc; // +0x0C
-    gpg::RType::delete_func_t mDeleteFunc;           // +0x10
-  };
-
-  static_assert(
-    offsetof(CTaskThreadConstruct, mSerConstructFunc) == 0x0C,
-    "CTaskThreadConstruct::mSerConstructFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CTaskThreadConstruct, mDeleteFunc) == 0x10, "CTaskThreadConstruct::mDeleteFunc offset must be 0x10"
-  );
-  static_assert(sizeof(CTaskThreadConstruct) == 0x14, "CTaskThreadConstruct size must be 0x14");
-
-  class CTaskThreadSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC3080 (FUN_00BC3080, dynamic initializer for the global
-     * `CTaskThreadSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    CTaskThreadSerializer();
-
-    /**
-     * Address: 0x00BEE3D0 (FUN_00BEE3D0, Moho::CTaskThreadSerializer::~CTaskThreadSerializer)
-     */
-    ~CTaskThreadSerializer();
-
-    /**
-      * Alias of FUN_004095F0 (non-canonical helper lane).
-     *
-     * What it does:
-     * Loads stage pointer, pending-frame counter, staged flag, and task stack.
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-      * Alias of FUN_00409610 (non-canonical helper lane).
-     *
-     * What it does:
-     * Saves stage pointer, pending-frame counter, staged flag, and task stack.
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x0040A6B0 (FUN_0040A6B0, Moho::CTaskThreadSerializer::Init)
-     *
-     * What it does:
-     * Binds load/save serializer callbacks into CTaskThread RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mSerLoadFunc; // +0x0C
-    gpg::RType::save_func_t mSerSaveFunc; // +0x10
-  };
-
-  static_assert(
-    offsetof(CTaskThreadSerializer, mSerLoadFunc) == 0x0C, "CTaskThreadSerializer::mSerLoadFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CTaskThreadSerializer, mSerSaveFunc) == 0x10, "CTaskThreadSerializer::mSerSaveFunc offset must be 0x10"
-  );
-  static_assert(sizeof(CTaskThreadSerializer) == 0x14, "CTaskThreadSerializer size must be 0x14");
 
   class CTaskThreadTypeInfo : public gpg::RType
   {
@@ -241,6 +138,18 @@ namespace moho
   class CTaskStage
   {
   public:
+    /**
+     * What it does:
+     * Saves this object's members. Inlined into `gpg::SerSaveLoadHelper<CTaskStage>::Serialize` 0x00409C20.
+     */
+    void MemberSerialize(gpg::WriteArchive* archive);
+
+    /**
+     * What it does:
+     * Loads this object's members. Inlined into `gpg::SerSaveLoadHelper<CTaskStage>::Deserialize` 0x00409BF0.
+     */
+    void MemberDeserialize(gpg::ReadArchive* archive);
+
     static gpg::RType* sType;
 
     TDatList<CTaskThread, void> mThreads;       // 0x00
@@ -303,61 +212,6 @@ namespace moho
    *   per-frame user task-stage update.
    */
   extern CTaskStage* sUserStage;
-
-  class CTaskStageSerializer : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BC30E0 (FUN_00BC30E0, dynamic initializer for the global
-     * `CTaskStageSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    CTaskStageSerializer();
-
-    /**
-     * Address: 0x00BEE460 (FUN_00BEE460, Moho::CTaskStageSerializer::~CTaskStageSerializer)
-     */
-    ~CTaskStageSerializer();
-
-    /**
-     * Address: 0x00409BF0 (FUN_00409BF0, Moho::CTaskStageSerializer::Deserialize)
-     *
-     * What it does:
-     * Loads active flag and owned/staged thread list.
-     */
-    static void Deserialize(gpg::ReadArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x00409C20 (FUN_00409C20, Moho::CTaskStageSerializer::Serialize)
-     *
-     * What it does:
-     * Saves active flag and owned/staged thread list.
-     */
-    static void Serialize(gpg::WriteArchive* archive, int objectPtr, int version, gpg::RRef* ownerRef);
-
-    /**
-     * Address: 0x0040A7F0 (FUN_0040A7F0, Moho::CTaskStageSerializer::Init)
-     *
-     * What it does:
-     * Binds load/save serializer callbacks into CTaskStage RTTI.
-     */
-    void Init() override;
-
-  public:
-    gpg::RType::load_func_t mSerLoadFunc; // +0x0C
-    gpg::RType::save_func_t mSerSaveFunc; // +0x10
-  };
-
-  static_assert(
-    offsetof(CTaskStageSerializer, mSerLoadFunc) == 0x0C, "CTaskStageSerializer::mSerLoadFunc offset must be 0x0C"
-  );
-  static_assert(
-    offsetof(CTaskStageSerializer, mSerSaveFunc) == 0x10, "CTaskStageSerializer::mSerSaveFunc offset must be 0x10"
-  );
-  static_assert(sizeof(CTaskStageSerializer) == 0x14, "CTaskStageSerializer size must be 0x14");
 
   class CTaskStageTypeInfo : public gpg::RType
   {

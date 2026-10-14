@@ -20,13 +20,11 @@
 #include "moho/misc/Stats.h"
 #include "moho/resource/blueprints/RUnitBlueprint.h"
 #include "moho/sim/CArmyStats.h"
+#include "gpg/core/reflection/RSharedPointerType.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
 
 namespace
 {
-  constexpr const char kReflectSharedPtrHeaderPath[] =
-    "c:\\work\\rts\\main\\code\\src\\libs\\gpgcore/reflection/reflect_shared_ptr.h";
-
   class ETriggerOperatorTypeInfo final : public gpg::REnumType
   {
   public:
@@ -210,158 +208,10 @@ namespace
   };
   static_assert(sizeof(STriggerTypeInfo) == 0x64, "STriggerTypeInfo size must be 0x64");
 
-  class SConditionSerializer final : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BDA060 (FUN_00BDA060, dynamic initializer for the global
-     * `SConditionSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    SConditionSerializer()
-      : mLoadCallback(&SConditionSerializer::Deserialize)
-      , mSaveCallback(&SConditionSerializer::Serialize)
-    {}
-
-    /**
-     * Address: 0x00BFF610 (FUN_00BFF610, ??1SConditionSerializer@Moho@@QAE@@Z)
-     *
-     * What it does:
-     * Unlinks this helper node from whatever intrusive list it currently
-     * sits in and restores a self-linked sentinel state.
-     */
-    ~SConditionSerializer() = default;
-
-    /**
-     * Address: 0x0070B120 (FUN_0070B120, Moho::SConditionSerializer::Deserialize)
-     */
-    static void Deserialize(
-      gpg::ReadArchive* const archive, const int objectPtr, const int, gpg::RRef* const
-    )
-    {
-      auto* const object = reinterpret_cast<moho::SCondition*>(objectPtr);
-      if (archive && object) {
-        object->MemberDeserialize(archive);
-      }
-    }
-
-    /**
-     * Address: 0x0070B130 (FUN_0070B130, Moho::SConditionSerializer::Serialize)
-     */
-    static void Serialize(
-      gpg::WriteArchive* const archive, const int objectPtr, const int, gpg::RRef* const
-    )
-    {
-      auto* const object = reinterpret_cast<const moho::SCondition*>(objectPtr);
-      if (archive && object) {
-        object->MemberSerialize(archive);
-      }
-    }
-
-    /**
-     * Address: 0x0070E5B0 (FUN_0070E5B0, shared Init() body -- also serves
-     * the dead SerSaveLoadHelper<SCondition> duplicate's vtable slot 0)
-     */
-    void Init() override
-    {
-      gpg::RType* const type = moho::SCondition::StaticGetClass();
-      GPG_ASSERT(type != nullptr);
-      if (!type) {
-        return;
-      }
-
-      GPG_ASSERT(type->serLoadFunc_ == nullptr);
-      GPG_ASSERT(type->serSaveFunc_ == nullptr);
-      type->serLoadFunc_ = mLoadCallback;
-      type->serSaveFunc_ = mSaveCallback;
-    }
-
-  public:
-    gpg::RType::load_func_t mLoadCallback; // +0x0C
-    gpg::RType::save_func_t mSaveCallback; // +0x10
-  };
 #if defined(MOHO_ABI_MSVC8_COMPAT)
-  static_assert(sizeof(SConditionSerializer) == 0x14, "SConditionSerializer size must be 0x14");
 #endif
 
-  class STriggerSerializer final : public gpg::SerHelperBase
-  {
-  public:
-    /**
-     * Address: 0x00BDA0C0 (FUN_00BDA0C0, dynamic initializer for the global
-     * `STriggerSerializer` singleton)
-     *
-     * What it does:
-     * Default-constructs the `gpg::SerHelperBase` base and binds the
-     * load/save callback fields.
-     */
-    STriggerSerializer()
-      : mLoadCallback(&STriggerSerializer::Deserialize)
-      , mSaveCallback(&STriggerSerializer::Serialize)
-    {}
-
-    /**
-     * Address: 0x00BFF6A0 (FUN_00BFF6A0, ??1STriggerSerializer@Moho@@QAE@@Z)
-     *
-     * What it does:
-     * Unlinks this helper node from whatever intrusive list it currently
-     * sits in and restores a self-linked sentinel state.
-     */
-    ~STriggerSerializer() = default;
-
-    /**
-     * Address: 0x0070B380 (FUN_0070B380, Moho::STriggerSerializer::Deserialize)
-     */
-    static void Deserialize(
-      gpg::ReadArchive* const archive, const int objectPtr, const int, gpg::RRef* const
-    )
-    {
-      auto* const object = reinterpret_cast<moho::STrigger*>(objectPtr);
-      if (archive && object) {
-        object->MemberDeserialize(archive);
-      }
-    }
-
-    /**
-     * Address: 0x0070B390 (FUN_0070B390, Moho::STriggerSerializer::Serialize)
-     */
-    static void Serialize(
-      gpg::WriteArchive* const archive, const int objectPtr, const int, gpg::RRef* const
-    )
-    {
-      auto* const object = reinterpret_cast<const moho::STrigger*>(objectPtr);
-      if (archive && object) {
-        object->MemberSerialize(archive);
-      }
-    }
-
-    /**
-     * Address: 0x0070E9F0 (FUN_0070E9F0, shared Init() body -- also serves
-     * the dead SerSaveLoadHelper<STrigger> duplicate's vtable slot 0)
-     */
-    void Init() override
-    {
-      gpg::RType* const type = moho::STrigger::StaticGetClass();
-      GPG_ASSERT(type != nullptr);
-      if (!type) {
-        return;
-      }
-
-      GPG_ASSERT(type->serLoadFunc_ == nullptr);
-      GPG_ASSERT(type->serSaveFunc_ == nullptr);
-      type->serLoadFunc_ = mLoadCallback;
-      type->serSaveFunc_ = mSaveCallback;
-    }
-
-  public:
-    gpg::RType::load_func_t mLoadCallback; // +0x0C
-    gpg::RType::save_func_t mSaveCallback; // +0x10
-  };
 #if defined(MOHO_ABI_MSVC8_COMPAT)
-  static_assert(sizeof(STriggerSerializer) == 0x14, "STriggerSerializer size must be 0x14");
 #endif
 
   [[nodiscard]] gpg::RType* CachedSConditionType()
@@ -532,116 +382,6 @@ namespace
     }
   };
   static_assert(sizeof(RFastVectorSConditionTypeInfo) == 0x68, "RFastVectorSConditionTypeInfo size must be 0x68");
-
-  class RSharedPointerSTriggerTypeInfo final : public gpg::RType, public gpg::RIndexed
-  {
-  public:
-    RSharedPointerSTriggerTypeInfo()
-      : gpg::RType()
-      , gpg::RIndexed()
-    {
-      gpg::PreRegisterRType(typeid(boost::shared_ptr<moho::STrigger>), this);
-    }
-
-    /**
-     * Address: 0x00713190 (FUN_00713190, gpg::RSharedPointerType_STrigger::dtr)
-     */
-    ~RSharedPointerSTriggerTypeInfo() override = default;
-
-    /**
-     * Address: 0x0070EA60 (FUN_0070EA60, gpg::RSharedPointerType_STrigger::GetName)
-     * Address: 0x00BFF940 (FUN_00BFF940, atexit destructor of GetName's cached name)
-     *
-     * What it does:
-     * Builds `boost::shared_ptr<STrigger>` once and returns it.
-     */
-    [[nodiscard]] const char* GetName() const override
-    {
-      static const msvc8::string sName =
-        gpg::STR_Printf("boost::shared_ptr<%s>", moho::STrigger::StaticGetClass()->GetName());
-      return sName.c_str();
-    }
-
-    /**
-     * Address: 0x0070EB10 (FUN_0070EB10, gpg::RSharedPointerType_STrigger::GetLexical)
-     */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override
-    {
-      auto* const ptr = static_cast<boost::shared_ptr<moho::STrigger>*>(ref.mObj);
-      if (!ptr || !ptr->get()) {
-        return msvc8::string("NULL");
-      }
-
-      gpg::RRef objectRef{};
-      objectRef.mObj = ptr->get();
-      objectRef.mType = moho::STrigger::StaticGetClass();
-      return gpg::STR_Printf("[%s]", objectRef.GetLexical().c_str());
-    }
-
-    /**
-     * Address: 0x0070EC90 (FUN_0070EC90, gpg::RSharedPointerType_STrigger::IsIndexed)
-     */
-    [[nodiscard]] const gpg::RIndexed* IsIndexed() const override
-    {
-      return this;
-    }
-
-    /**
-     * Address: 0x0070ECA0 (FUN_0070ECA0, gpg::RSharedPointerType_STrigger::IsPointer)
-     */
-    [[nodiscard]] const gpg::RIndexed* IsPointer() const override
-    {
-      return this;
-    }
-
-    static void Deserialize(gpg::ReadArchive* const archive, const int objectPtr, const int, gpg::RRef* const ownerRef)
-    {
-      archive->ReadPointerShared(reinterpret_cast<boost::shared_ptr<moho::STrigger>*>(objectPtr), ownerRef);
-    }
-
-    static void Serialize(gpg::WriteArchive* const archive, const int objectPtr, const int, gpg::RRef* const ownerRef)
-    {
-      const auto* const pointer = reinterpret_cast<const boost::shared_ptr<moho::STrigger>*>(objectPtr);
-      archive->WritePointer(pointer->get(), gpg::TrackedPointerState::Shared, *ownerRef);
-    }
-
-    /**
-     * Address: 0x0070EB00 (FUN_0070EB00, gpg::RSharedPointerType_STrigger::Init)
-     */
-    void Init() override
-    {
-      size_ = sizeof(boost::shared_ptr<moho::STrigger>);
-      version_ = 1;
-      serLoadFunc_ = &RSharedPointerSTriggerTypeInfo::Deserialize;
-      serSaveFunc_ = &RSharedPointerSTriggerTypeInfo::Serialize;
-    }
-
-    /**
-     * Address: 0x0070ECC0 (FUN_0070ECC0, gpg::RSharedPointerType_STrigger::SubscriptIndex)
-     *
-     * What it does:
-     * Asserts `index == 0` and returns the pointee of `boost::shared_ptr<STrigger>` as an `RRef`.
-     */
-    gpg::RRef SubscriptIndex(void* const obj, const int ind) const override
-    {
-      if (ind != 0) {
-        gpg::HandleAssertFailure("index == 0", 65, kReflectSharedPtrHeaderPath);
-      }
-
-      auto* const ptr = static_cast<boost::shared_ptr<moho::STrigger>*>(obj);
-      return MakeSTriggerRef(ptr->get());
-    }
-
-    size_t GetCount(void* const obj) const override
-    {
-      if (!obj) {
-        return 0u;
-      }
-      auto* const ptr = static_cast<boost::shared_ptr<moho::STrigger>*>(obj);
-      return (ptr && ptr->get()) ? 1u : 0u;
-    }
-  };
-  static_assert(sizeof(RSharedPointerSTriggerTypeInfo) == 0x68, "RSharedPointerSTriggerTypeInfo size must be 0x68");
 
   using UnitBlueprintWeightMap = std::map<const moho::RUnitBlueprint*, float>;
   using StringToArmyStatItemMap = std::map<std::string, moho::CArmyStatItem*>;
@@ -1102,12 +842,10 @@ namespace
   gpg::PrimitiveSerHelper<moho::ETriggerOperator, int> gETriggerOperatorPrimitiveSerializer;
 
   SConditionTypeInfo gSConditionTypeInfo;
-  SConditionSerializer gSConditionSerializer;
   STriggerTypeInfo gSTriggerTypeInfo;
-  STriggerSerializer gSTriggerSerializer;
 
   RFastVectorSConditionTypeInfo gFastVectorSConditionTypeInfo;
-  RSharedPointerSTriggerTypeInfo gSharedPointerSTriggerTypeInfo;
+  gpg::RSharedPointerType<moho::STrigger> gSharedPointerSTriggerTypeInfo;
   /**
    * `gpg::RListType<boost::shared_ptr<moho::STrigger>>` (the trigger lists):
    *
