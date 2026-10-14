@@ -92,7 +92,7 @@ namespace faf::android::galplay {
       try {
         dil::SetupDevice(device, &requested);
       } catch (const gal::Error& error) {
-        outcome.deviceError = std::string(error.what()) + " (" + error.GetRuntimeMessage() + ")";
+        outcome.deviceError = std::string(error.what()) + " (" + error.GetFile() + ")";
         delete device;
         if (request.onDeviceError) {
           request.onDeviceError(outcome.deviceError);
