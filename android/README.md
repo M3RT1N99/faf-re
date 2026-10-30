@@ -72,5 +72,8 @@ the game data they imported. Everything lives in the app's external files folder
 - **Share results** zips `summary.json`, the math output, the log and each replay's `headless.out`,
   `engine.log` and `speed.csv`.
 
-The default replays (26930624 and 26902315) and *Use the core set* are from
-[docs/PR_REPLAY_CHECK.md](../docs/PR_REPLAY_CHECK.md), all recorded on FAF game version 3835.
+The default replays (26930624 and 26902315), *Use the core set* and *Use the extended set* (the core
+set and its ten longer games) are from [docs/PR_REPLAY_CHECK.md](../docs/PR_REPLAY_CHECK.md), all
+recorded on FAF game version 3835. A test runs at full speed only with the app in front: Android
+moves a background app, and the simulation process it started, to another CPU group, on a Galaxy
+S22 Ultra the little cores.

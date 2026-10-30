@@ -50,6 +50,8 @@ public final class MainActivity extends Activity {
 
     /** docs/PR_REPLAY_CHECK.md, the core set (FAF game version 3835), shortest first. */
     private static final long[] CORE_SET = {26902315, 26930624, 26943656, 26883423, 26881085, 26928211, 26989770, 26897073};
+    /** The extended set's ten games beyond the core set, shortest first (28 to 83 minutes). */
+    private static final long[] EXTENDED_SET = {26975290, 26953273, 27034831, 26917867, 26876279, 26935800, 26898759, 27004084, 26915859, 26905122};
     private static final String QUICK_SET = "26930624 26902315";
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
@@ -108,8 +110,9 @@ public final class MainActivity extends Activity {
         // 3. Replays.
         LinearLayout replays = card(column, "3 · Replay parity",
             "FAF vault replays played to the end on the engine's simulation. The players' games recorded a checksum every "
-                + "50 beats; PASS means every one of them equals this phone's. The two default replays take a few minutes; "
-                + "the core set (8 games, 13 to 34 minutes long) longer.");
+                + "50 beats; PASS means every one of them equals this phone's. The two default replays take a few minutes, "
+                + "the core set (8 games, 13 to 34 minutes long) about 40 minutes, the extended set (those and 10 games of "
+                + "28 to 83 minutes) a few hours. Keep the app in front: Android gives a background app only the slow cores.");
         replays.addView(text("Replay IDs", 13, MUTED));
         mReplayIds = new EditText(this);
         mReplayIds.setText(QUICK_SET);
@@ -126,13 +129,8 @@ public final class MainActivity extends Activity {
         mWorkers.setEms(3);
         row.addView(mWorkers);
         replays.addView(row);
-        button(replays, "Use the core set", v -> {
-            StringBuilder ids = new StringBuilder();
-            for (long id : CORE_SET) {
-                ids.append(ids.length() == 0 ? "" : " ").append(id);
-            }
-            mReplayIds.setText(ids);
-        });
+        button(replays, "Use the core set", v -> mReplayIds.setText(ids(CORE_SET)));
+        button(replays, "Use the extended set", v -> mReplayIds.setText(ids(CORE_SET) + " " + ids(EXTENDED_SET)));
         mStartButtons.add(button(replays, "Play replays", v -> playReplays()));
         mReplayResults = text("", 14, TEXT);
         mReplayResults.setTypeface(Typeface.MONOSPACE);
@@ -238,6 +236,15 @@ public final class MainActivity extends Activity {
         } catch (IOException | NumberFormatException e) {
             mDataStatus.setText("Storage: " + e.getMessage());
         }
+    }
+
+    /** "26902315 26930624 ...": a replay set for the ID field. */
+    private static String ids(long[] set) {
+        StringBuilder out = new StringBuilder();
+        for (long id : set) {
+            out.append(out.length() == 0 ? "" : " ").append(id);
+        }
+        return out.toString();
     }
 
     private void playReplays() {
