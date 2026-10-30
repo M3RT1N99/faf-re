@@ -35,6 +35,7 @@ Every performance change has a switch that brings back the original path, and bo
 | `sim_ParallelCoords` | 1 | `/con` | live | Per-entity half of the coordinate advance (transforms, history, collision shape) on sim workers; grid relinks, intel updates and list links stay serial in list order (needs `sim_Workers` > 0) |
 | `sim_ReconBlipIndex` | 1 | `/con` | live | Recon blip lookup by entity id through a hash index instead of the blip map walk |
 | flat A* node table | on | `/astartable 0` or `FAF_ASTARTABLE=0` | startup only | Unit pathfinding (`PathQueue`) keeps its A* search records in an open-addressing table over a node pool, cleared by a generation bump, instead of the binary's `hash_map` (a node allocation per cell and a full free after each query); the search only finds and inserts, so paths are the same. The log says `path: flat A* node table on/off` |
+| 1 ms timer resolution | on | `/hrtimer 0` or `FAF_HRTIMER=0` | startup only | The movie manager raises the process timer resolution to 1 ms (`timeBeginPeriod(1)`), as the binary's ADX middleware did when it started (0x00B06C10) and the independent movie backend does not, so the finite `MsgWaitForMultipleObjectsEx` timeout that paces the main loop is honored and `sc_FrameTimeClamp` (10 ms) holds. Off is not the binary's path: Windows rounds the timeout up to the ~15.6 ms system tick and a frame waits a whole tick. The log says `time: 1 ms timer resolution on/off/failed` |
 | `sim_PathTraverseCache` | 1 | `/con` | live | Unit pathfinding remembers each cell's traversability (`CanTraverseCell`, an occupation-grid gather per cell) for the rest of one A* pass instead of asking the unit again for every neighbouring cell it is expanded from; nothing moves during a pass and the cache is emptied when a pass starts and ends |
 | `sim_ParallelBlipFlush` | 1 | `/con` | live | The bulk blip-unlink pass splices separate weak chains on sim workers (needs `sim_Workers` > 0) |
 | `sim_ParallelSyncHeap` | 1 | `/con` | live | With `sim_ParallelSync`, the allocating members of unit-update records are copied on workers too |
@@ -71,6 +72,7 @@ Every performance change has a switch that brings back the original path, and bo
 | `ren_GpuSelectBrackets` | −1 (auto) | `/con` | live | Selection brackets drawn by the GPU |
 | `ren_GpuProjectileIcons` | −1 (auto) | `/con` | live | Projectile icons drawn by the GPU |
 | `ren_GpuShapes` | −1 (auto) | `/con` | live | FAF's `UI_DrawLine`/`UI_DrawRect`/`UI_DrawCircle` world shapes drawn by the GPU, one instanced draw per run of same-kind shapes (0: the prim batcher, as FA-Binary-Patches draws them) |
+| `ren_GpuRanges` | −1 (auto: off, no backend verified) | `/con` | live | Range rings' stencil volumes ("Cast") drawn by the GPU, one instanced draw per ring batch from a buffer uploaded once per ring pass, with range.fx's stencil state; same image. On Direct3D 12 it cuts the pass's GPU time with `range_ViewCull 0` but adds up to 1.5 ms with it on (the pass is then a few volumes plus fixed per-batch cost), so auto leaves it off (0: the range effect and the dynamic vertex buffer) |
 | `ren_ParticleBatch` | −1 (auto) | `/con` | live | Each particle bucket drawn as one instanced draw |
 | `ren_CacheFogFootprint` | 1 | `/con` | live | The fog pass keeps each camera's terrain footprint until the camera or terrain changes |
 | `ui_IconRecords` | 1 | `/con` | live | Strategic icons classified from per-unit records refreshed only after a sync beat or a view-list rebuild |
@@ -78,6 +80,7 @@ Every performance change has a switch that brings back the original path, and bo
 | `ren_LargeParticlePools` | 1 | `/con` | first world particle (startup) | Particle and trail-segment render-buffer pools of 4096 and 400 buffers (FAF FA-Binary-Patches #165); 0 keeps the original 400 and 100, which run out in big fights and drop particles ("Particle cap exceeded") and trail segments |
 | `ren_MinimapRanges` | 1 | `/con` | live | Range rings on the minimap; 0 skips that pass (FAF FA-Binary-Patches #158, FAF's own name) |
 | `range_StencilFlush` | 1 | `/con` | live | Range rings drawn 127 at a time with a stencil flush after each batch, so 128 or more overlapping rings (a big engineer cluster with the build-range overlay) merge into one shape (FAF FA-Binary-Patches #149), and their outer outline has no gaps (also batched here; #149 leaves it); 0 keeps the original 1000-ring batches, which leave ring outlines inside the merged area and drop the outline where exactly 128 or 256 rings meet |
+| `range_ViewCull` | 1 | `/con` | live | Range-ring volumes that cannot change the image are not drawn: those outside the part of the view between the lowest terrain in view and the map's highest height, and, with `range_StencilFlush` and the far plane below the map, the fills and outlines that only reach parts of the view (a 24×24 grid at most) some single fill already holds. Zoomed in on 500 selected artillery, 1500 volumes become 2 and the pass drops from 6.5 ms to under 0.1 ms of GPU time (D3D12, `tools/scenarios/1p-ringgpu-main.yaml`); same image. 0 draws every volume |
 | `ren_MinimapDebugOverlays` | 0 | `/con` | live | 1 draws the debug overlays (`ren_ShowFrameTimes`, `ren_ShowNetworkStats`, `ren_ShowBandwidthUsage`, `UI_ShowControlUnderMouse`) into the minimap again, as before FAF FA-Binary-Patches #158 |
 | `ui_StrategicIconScale`, `ui_DepositIconScale`, `ui_ProjectileIconScale` | 1.0 | `/con` | live | Size multipliers of unit strategic icons (with their paused, stunned and underlay overlays), deposit icons and projectile icons (FAF FA-Binary-Patches #147; 1.0 is the original size) |
 | `d3d_PipelineCache` | 1 | `/nopipelinecache` turns it off before the device is created | live | Direct3D 12 pipeline states kept on disk (`pipelines-d3d12.bin` in the shader cache directory), so a later session loads them instead of compiling each one in the frame that first draws it (10–40 ms per mesh pipeline, several at once when new units come into view); 0 creates every one in that frame |
@@ -107,12 +110,12 @@ The switches below are read when a session begins. In a multiplayer game every c
 
 ## Protection against other players
 
-Not performance switches: these guard a game against players who send crafted traffic or host crafted maps and mods. The defaults are the protected ones.
+Not performance switches: these guard a game against players who send crafted traffic or host crafted maps and mods. The defaults are the protected ones, except `lua_AllowPrecompiledChunks`, which stays on while mods and maps move to source.
 
 | Switch | Default | At startup | Applies | What it does |
 |---|---|---|---|---|
 | `net_CheckOrderStreams` | 1 | `/con` | next game | Compares every player's orders as each client received them (a hash in the acknowledgements the engine already sends; the shipped exe ignores it). 1 logs and shows in chat who sent players different orders; desyncs against a player whose own acknowledgement contradicts what reached this client are logged instead of reported to FAF. 2 also stops the game; 0 turns the check off |
-| `lua_AllowPrecompiledChunks` | 0 | `/con` | live | 1 lets Lua load compiled chunks as well as source. Off, a map or mod cannot run crafted bytecode, which can get past the loader's checks |
+| `lua_AllowPrecompiledChunks` | 1 | `/con` | live | 1 lets Lua load compiled chunks as well as source, and logs each one it loads (`Lua: loaded compiled chunk ...`) so its author can ship source instead. 0 refuses them: a map or mod cannot run crafted bytecode, which can get past the loader's checks. On for now while mods and maps migrate; it will become 0 by default |
 | `net_DebugAlterOrdersTo` | −1 | `/con` | live | Test only: alters this client's checksum reports to the player with that client index, for `tools/scenarios/3p-retail-orders-cheat.yaml` |
 
 Game Lua states (sim, user interface, blueprints, session) read files through the mounted game folders only: `dofile` and `loadfile` look paths up like `doscript` and `import`, a path that climbs above a mount with `..` is not found, and `LuaDumpBinary` is gone. The start-up state that runs the init file keeps real paths.
@@ -171,6 +174,16 @@ The last line it prints is `VERDICT ended=<True|False> mismatches=<n> crash=<Tru
 | `--label text` | `headless` | Prefix of every printed line |
 
 Engine switches work as in the game: `/init`, `/log`, `/synclog`, `/simworkers`, `/con`, `/prefs`, `/sse2`, `/noversioncheck`. Exit code: 0 every recorded checksum matched and the replay reached its end; 1 a mismatch; 2 the end was not reached in time; 3 a crash or fatal error; 4 bad arguments or a replay that could not be loaded.
+
+## Desync recorder
+
+Issue #216. The recorder keeps the `/synclog` text of recent beats in memory, compressed, and writes `desync_<FAF game id>_beat<N>_army<A>.zip` next to the game log once the sim reaches the mismatched beat + 30, the same beat on every client so their state snapshots line up (at least 10 beats after the mismatch was seen). Nothing goes to disk before that, except a temporary file for the start-of-game rules trace, which is deleted at once. Checksums are the same with it on or off.
+
+| Switch | Default | At startup | Applies | What it does |
+|---|---|---|---|---|
+| `sim_DesyncRecorder` | 0 | `/desyncrecorder` or `/con sim_DesyncRecorder=1` | next game | Records beats for a desync dump; recording stops once the dump is taken |
+| `sim_DesyncRecorderMB` | 32 | `/con` | live | Memory cap for the recorded beats; the oldest go first. The beats kept reach back to the last beat every player's checksum agreed on, at most 192 (one checksum period, 128 beats of report delay and the beats recorded after a mismatch is seen) |
+| `sim_DesyncTestNudgeBeat` | -1 | `/desynctestbeat N` or `/con` | live | Test only: on the first checksum beat at or after N, this client alone raises its lowest-id moving unit's health by one float step, so the game desyncs for real |
 
 ## Debugging aids
 

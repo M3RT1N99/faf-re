@@ -395,6 +395,7 @@ set(FAF_ENGINE_SOURCES
   moho/sim/SimDriver.cpp
   moho/sim/SimDriverNetworkStats.cpp
   moho/sim/SimWorkerPool.cpp
+  moho/sim/DesyncRecorder.cpp
   moho/sim/UnitUpdateFill.cpp
   moho/sim/SSyncFilter.cpp
   moho/sim/SSTIArmyConstantData.cpp
@@ -898,6 +899,7 @@ set(FAF_ENGINE_SOURCES
   moho/render/StrategicIconRenderer.cpp
   moho/render/SelectionBracketGpuRenderer.cpp
   moho/render/WorldShapeGpuRenderer.cpp
+  moho/render/RangeGpuRenderer.cpp
   moho/ui/UiWorldShapes.cpp
   moho/render/ProjectileIconRenderer.cpp
   moho/render/GpuPathSettings.cpp
