@@ -89,7 +89,10 @@ extern "C" __declspec(selectany) std::FILE _iob[20]{};
  * `__acrt_iob_func(0)` from `ucrtbase.dll` (the modern replacement) and
  * falls back to a static placeholder array if the symbol is unavailable.
  * Provided here because UCRT does not export `__iob_func` directly.
+ * Windows only: the POSIX C libraries have their own `stdin`/`stderr`, and
+ * bionic's `FILE` is an incomplete type, so no placeholder array exists there.
  */
+#if FAFRE_PLATFORM_WINDOWS
 extern "C" std::FILE* __cdecl __iob_func(
   void
 )
@@ -110,6 +113,7 @@ extern "C" std::FILE* __cdecl __iob_func(
   static std::FILE sLegacyIobFallback[20]{};
   return sLegacyIobFallback;
 }
+#endif // FAFRE_PLATFORM_WINDOWS
 
 // FUN_00923F20 / FUN_00923F40 are recovered once, further down this file, as
 // the `extern "C"` pair that `luaHelper_Realloc` / `luaHelper_Free` point at.
