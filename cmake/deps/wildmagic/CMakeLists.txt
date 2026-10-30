@@ -22,6 +22,10 @@ if(FAF_LINUX)
   # Foundation only (below), without WIN32.
   target_compile_definitions(faf_wm3_build_flags INTERFACE NDEBUG _LIB)
   target_compile_options(faf_wm3_build_flags INTERFACE -w "$<$<COMPILE_LANGUAGE:CXX>:${FAF_LINUX_MS_DIALECT}>")
+  if(FAF_ANDROID)
+    # Engine addition (Android port): <sys/timeb.h>, which bionic lacks (System::GetTime).
+    target_include_directories(faf_wm3_build_flags INTERFACE "${PROJECT_SOURCE_DIR}/src/platform/posix/bionic")
+  endif()
 else()
   target_compile_definitions(faf_wm3_build_flags INTERFACE WIN32 NDEBUG _LIB)
   target_compile_options(faf_wm3_build_flags INTERFACE /EHsc /W0)

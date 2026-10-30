@@ -10,11 +10,18 @@ faf_sim objects that calls one (nm -u, then objdump relocations) and fails on an
 calling sin/cos are allowed as a class: they are the Wm3 axis-angle constants of
 QuaternionMath.h, whose float results are millions of ulps from any rounding boundary (WPR.57).
 
-Usage: LibmGate.py <allowlist> <object>...
+Usage: LibmGate.py <allowlist> <object>|@<file with one object per line>...
+
+FAF_NM and FAF_OBJDUMP name the tools (default nm and objdump); cmake/FafLinux.cmake passes
+the toolchain's, which read x86-64 and AArch64 objects alike.
 """
+import os
 import re
 import subprocess
 import sys
+
+NM = os.environ.get("FAF_NM") or "nm"
+OBJDUMP = os.environ.get("FAF_OBJDUMP") or "objdump"
 
 TRANSCENDENTALS = {
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "exp2", "expm1", "log", "log2",
@@ -36,26 +43,38 @@ def load_allowlist(path):
 
 def calls(obj):
     """(symbol, demangled caller) for every transcendental this object calls."""
-    undefined = subprocess.run(["nm", "-u", obj], capture_output=True, text=True).stdout.split()
+    undefined = subprocess.run([NM, "-u", obj], capture_output=True, text=True).stdout.split()
     if not TRANSCENDENTALS.intersection(undefined):
         return set()
-    listing = subprocess.run(["objdump", "-dr", "--no-show-raw-insn", "-C", obj], capture_output=True, text=True).stdout
+    listing = subprocess.run([OBJDUMP, "-dr", "--no-show-raw-insn", "-C", obj], capture_output=True, text=True).stdout
     found, function = set(), "?"
     for line in listing.splitlines():
         head = re.match(r"^[0-9a-f]+ <(.*)>:$", line)
         if head:
-            function = head.group(1)
+            # The allowlist spells libc++'s inline namespace as Linux does (std::__1);
+            # the NDK's libc++ names it std::__ndk1.
+            function = head.group(1).replace("std::__ndk1::", "std::__1::")
             continue
-        reloc = re.search(r"R_X86_64_(?:PLT32|PC32|GOTPCREL\w*)\s+(\w+)(?:-0x[0-9a-f]+)?$", line)
+        reloc = re.search(r"R_(?:X86_64_(?:PLT32|PC32|GOTPCREL\w*)|AARCH64_(?:CALL26|JUMP26))\s+(\w+)(?:[-+]0x[0-9a-f]+)?$", line)
         if reloc and reloc.group(1) in TRANSCENDENTALS:
             found.add((reloc.group(1), function))
     return found
 
 
+def objects(arguments):
+    """The object paths, with each @<file> argument replaced by the lines of that file."""
+    for argument in arguments:
+        if argument.startswith("@"):
+            yield from (line.strip() for line in open(argument[1:], encoding="utf-8") if line.strip())
+        else:
+            yield argument
+
+
 def main():
     allowed = load_allowlist(sys.argv[1])
     unexpected = []
-    for obj in sys.argv[2:]:
+    paths = list(objects(sys.argv[2:]))
+    for obj in paths:
         for symbol, function in sorted(calls(obj)):
             if function.startswith("_GLOBAL__sub_I_") and symbol in ("sin", "cos"):
                 continue
@@ -66,7 +85,7 @@ def main():
         for line in unexpected:
             print("  " + line)
         return 1
-    print(f"libm gate: {len(sys.argv) - 2} objects, no unreviewed transcendental call")
+    print(f"libm gate: {len(paths)} objects, no unreviewed transcendental call")
     return 0
 
 

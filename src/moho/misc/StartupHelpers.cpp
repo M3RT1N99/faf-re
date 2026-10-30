@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <ios>
 #include <limits>
@@ -4456,7 +4457,9 @@ void moho::USER_SavePreferences()
   const std::wstring preferencesPathWide = gpg::STR_Utf8ToWide(preferencesPathText != nullptr ? preferencesPathText : "");
   const std::wstring temporaryPathWide = preferencesPathWide + L".new";
 
-  std::ofstream outputStream(temporaryPathWide.c_str());
+  // Through std::filesystem::path: the wchar_t* constructor is an MSVC STL extension
+  // (libc++ converts the path to UTF-8 on POSIX).
+  std::ofstream outputStream{std::filesystem::path(temporaryPathWide)};
   if (!outputStream.is_open()) {
     const std::wstring warningWide = std::wstring(L"Unable to open preference file: ") + temporaryPathWide;
     const msvc8::string warningUtf8 = gpg::STR_WideToUtf8(warningWide.c_str());

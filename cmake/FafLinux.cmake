@@ -6,17 +6,34 @@
 # movie, wx or Win32 code.
 #
 #   cmake --preset linux-clang-x64-release && cmake --build --preset linux-clang-x64-release
+#
+# The Android toolchains (cmake/toolchains/android-*.cmake, FAF_ANDROID) build the
+# same targets with the NDK against bionic, for arm64-v8a and x86_64:
+#
+#   cmake --preset android-arm64-release && cmake --build --preset android-arm64-release
 
 if(NOT FAF_LINUX)
-  message(FATAL_ERROR "cmake/FafLinux.cmake needs cmake/toolchains/linux-clang-x64.cmake.")
+  message(FATAL_ERROR "cmake/FafLinux.cmake needs cmake/toolchains/linux-clang-x64.cmake or android-*.cmake.")
 endif()
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
   message(FATAL_ERROR "The Linux build expects clang with the GNU driver: use the linux-clang-x64-release preset.")
 endif()
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-  message(FATAL_ERROR "The Linux build is x86_64 only.")
+  message(FATAL_ERROR "The Linux build is 64-bit only.")
 endif()
-set(FAF_TARGET_ARCH x64)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+  set(FAF_TARGET_ARCH arm64)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+  set(FAF_TARGET_ARCH x64)
+else()
+  message(FATAL_ERROR "The Linux build targets x86_64 and arm64, not ${CMAKE_SYSTEM_PROCESSOR}.")
+endif()
+# The platform half of the names below (build info, the sim-math tests' known list).
+if(FAF_ANDROID)
+  set(FAF_LINUX_PLATFORM android)
+else()
+  set(FAF_LINUX_PLATFORM linux)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 
@@ -33,6 +50,17 @@ foreach(_lang C CXX ASM)
   string(REPLACE "-O3" "-O2" CMAKE_${_lang}_FLAGS_RELEASE "${CMAKE_${_lang}_FLAGS_RELEASE}")
   string(REPLACE "-O2 -DNDEBUG -O2 -DNDEBUG" "-O2 -DNDEBUG" CMAKE_${_lang}_FLAGS_RELEASE "${CMAKE_${_lang}_FLAGS_RELEASE}")
 endforeach()
+
+if(FAF_ANDROID)
+  # Android's executables link bionic dynamically, as every program on a device does (the
+  # emulator's ARM translation runs no other kind). FAF_ANDROID_STATIC_EXECUTABLES links it
+  # statically, so the same file also runs on a Linux host of its architecture, which has
+  # no Android dynamic linker: CI runs the tests there.
+  option(FAF_ANDROID_STATIC_EXECUTABLES "Link bionic statically, to run the executables on a Linux host" OFF)
+  if(FAF_ANDROID_STATIC_EXECUTABLES)
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " -static")
+  endif()
+endif()
 
 # --- Locations ------------------------------------------------------------------------
 set(FAF_DEPENDENCIES_DIR "${PROJECT_SOURCE_DIR}/dependencies" CACHE PATH
@@ -117,16 +145,21 @@ target_link_libraries(faf_sim PUBLIC faf_sim_settings)
 
 # The git commit for gpg/core/diagnostics/BuildInfo.cpp, read on every build.
 include(FafBuildInfo)
-faf_build_info(faf_sim x64-linux)
+faf_build_info(faf_sim ${FAF_TARGET_ARCH}-${FAF_LINUX_PLATFORM})
 
-# The x64 half of legacy/math/X87Math.cpp, in GNU syntax for System V (the
-# Windows build assembles X87Math64.asm, plan WPL.10).
-enable_language(ASM)
-target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/legacy/math/X87Math64.S")
+if(FAF_TARGET_ARCH STREQUAL "x64")
+  # The x64 half of legacy/math/X87Math.cpp, in GNU syntax for System V (the
+  # Windows build assembles X87Math64.asm, plan WPL.10).
+  enable_language(ASM)
+  target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/legacy/math/X87Math64.S")
+endif()
 # gpg::gal::Math without D3DX (Windows' faf_main uses gpg/gal/Matrix.cpp, plan WPR.12).
 target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/gpg/gal/MatrixPortable.cpp")
 # The Win32 calls the shared code makes, on POSIX (plan WPL.5).
 target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/platform/posix/Win32Shim.cpp")
+# Stack walks for the diagnostics below, on any C library (bionic before API 33 has no
+# backtrace(3)).
+target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/platform/posix/Backtrace.cpp")
 # The crash diagnostics' headers on POSIX (plan WPL.5).
 target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp")
 # moho/misc/WinPlatform.cpp's platform services (call stacks, error text, message boxes) and
@@ -158,6 +191,9 @@ target_include_directories(faf_sim_settings INTERFACE
   "${FAF_DEPENDENCIES_DIR}/zlib-1.2.3")
 target_link_libraries(faf_sim_settings INTERFACE faf_codegen)
 target_link_libraries(faf_sim PUBLIC Wm3Foundation zlib123)
+# dlopen/dlsym (Win32Shim's LoadLibrary) and dladdr (symbol names in call stacks): part of
+# glibc's libc since 2.34, libdl on bionic.
+target_link_libraries(faf_sim_settings INTERFACE ${CMAKE_DL_LIBS})
 
 set(_faf_sim_options
   # The recovered tree's x86 layout asserts, off as on Windows x64 (see the
@@ -204,13 +240,18 @@ endforeach()
 add_executable(faf_sim_math_tests "${PROJECT_SOURCE_DIR}/tests/sim_math/SimMathTests.cpp")
 target_link_libraries(faf_sim_math_tests PRIVATE faf_sim)
 set(_faf_sim_math_args "${PROJECT_SOURCE_DIR}/tests/sim_math/golden.txt")
-if(EXISTS "${PROJECT_SOURCE_DIR}/tests/sim_math/known_linux-x64.txt")
-  list(APPEND _faf_sim_math_args --known "${PROJECT_SOURCE_DIR}/tests/sim_math/known_linux-x64.txt")
+set(_faf_sim_math_known "${PROJECT_SOURCE_DIR}/tests/sim_math/known_${FAF_LINUX_PLATFORM}-${FAF_TARGET_ARCH}.txt")
+if(EXISTS "${_faf_sim_math_known}")
+  list(APPEND _faf_sim_math_args --known "${_faf_sim_math_known}")
 endif()
-add_custom_command(TARGET faf_sim_math_tests POST_BUILD
-  COMMAND "$<TARGET_FILE:faf_sim_math_tests>" ${_faf_sim_math_args}
-  COMMENT "Checking the simulation's arithmetic against tests/sim_math/golden.txt"
-  VERBATIM)
+# A cross build (Android) runs its tests where the target runs: a device, the emulator,
+# a host of its architecture (CI), or CMAKE_CROSSCOMPILING_EMULATOR.
+if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR)
+  add_custom_command(TARGET faf_sim_math_tests POST_BUILD
+    COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} "$<TARGET_FILE:faf_sim_math_tests>" ${_faf_sim_math_args}
+    COMMENT "Checking the simulation's arithmetic against tests/sim_math/golden.txt"
+    VERBATIM)
+endif()
 
 # --- faf-sim-link -----------------------------------------------------------------------
 # Every faf_sim object linked into one executable with no entry point of its
@@ -237,12 +278,17 @@ target_compile_definitions(headless PRIVATE FAF_SERVER_MODE=1)
 target_link_options(headless PRIVATE -Wl,--error-limit=0)
 
 # The libm gate (plan WPL.13): the faf_sim objects call no host libm transcendental outside
-# tests/linux/libm_allowlist.txt; headless is not built while one does.
+# tests/linux/libm_allowlist.txt; headless is not built while one does. It reads the objects
+# with the toolchain's nm and objdump (the NDK's llvm-nm and llvm-objdump for Android).
+# The object list goes in a response file: on a Windows host (Android builds) it is longer
+# than a command line may be.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/faf_sim_objects.rsp" CONTENT "$<JOIN:$<TARGET_OBJECTS:faf_sim>,\n>\n")
 add_custom_target(faf_sim_libm_gate
-  COMMAND python3 "${PROJECT_SOURCE_DIR}/tests/linux/LibmGate.py"
-          "${PROJECT_SOURCE_DIR}/tests/linux/libm_allowlist.txt" "$<TARGET_OBJECTS:faf_sim>"
+  COMMAND "${CMAKE_COMMAND}" -E env "FAF_NM=${CMAKE_NM}" "FAF_OBJDUMP=${CMAKE_OBJDUMP}"
+          "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/linux/LibmGate.py"
+          "${PROJECT_SOURCE_DIR}/tests/linux/libm_allowlist.txt" "@${CMAKE_BINARY_DIR}/faf_sim_objects.rsp"
   DEPENDS faf_sim
-  COMMAND_EXPAND_LISTS
   COMMENT "Checking faf_sim's libm transcendental calls against tests/linux/libm_allowlist.txt"
   VERBATIM)
 add_dependencies(headless faf_sim_libm_gate)

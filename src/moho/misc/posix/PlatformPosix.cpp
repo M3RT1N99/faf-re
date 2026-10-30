@@ -19,7 +19,7 @@
 
 #include <cxxabi.h>
 #include <dlfcn.h>
-#include <execinfo.h>
+#include "platform/posix/Backtrace.h"
 
 #include "gpg/core/containers/String.h"
 
@@ -77,7 +77,7 @@ std::uint32_t moho::PLAT_GetCallStack(void* const contextRecord, const std::uint
     return 0;
   }
   std::vector<void*> frames(maxFrames + 1u);
-  const int count = ::backtrace(frames.data(), static_cast<int>(frames.size()));
+  const int count = platform::posix::Backtrace(frames.data(), static_cast<int>(frames.size()));
   // Frame 0 is this function, as the Windows walk starts at its caller.
   std::uint32_t written = 0;
   for (int index = 1; index < count && written < maxFrames; ++index) {

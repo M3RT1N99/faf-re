@@ -12,7 +12,11 @@
 #include <new>
 #include <stdexcept>
 #include <string>
+#if defined(_WIN32)
+// _ftime64. The POSIX builds take it from platform/posix/win32/Windows.h; bionic has
+// no <sys/timeb.h>.
 #include <sys/timeb.h>
+#endif
 #include <typeinfo>
 #include <vector>
 

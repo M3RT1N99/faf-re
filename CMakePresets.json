@@ -69,6 +69,25 @@
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
       "toolchainFile": "${sourceDir}/cmake/toolchains/linux-clang-x64.cmake",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "android-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "android-arm64-release",
+      "displayName": "Android arm64-v8a Release (headless simulation)",
+      "inherits": "android-base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/android-arm64.cmake"
+    },
+    {
+      "name": "android-x64-release",
+      "displayName": "Android x86_64 Release (headless simulation, emulator)",
+      "inherits": "android-base",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/android-x64.cmake"
     }
   ],
   "buildPresets": [
@@ -80,6 +99,8 @@
     { "name": "clang-x86-debug", "configurePreset": "clang-x86-debug" },
     { "name": "clang-x64-release-server", "configurePreset": "clang-x64-release-server" },
     { "name": "clang-x86-release-server", "configurePreset": "clang-x86-release-server" },
-    { "name": "linux-clang-x64-release", "configurePreset": "linux-clang-x64-release" }
+    { "name": "linux-clang-x64-release", "configurePreset": "linux-clang-x64-release" },
+    { "name": "android-arm64-release", "configurePreset": "android-arm64-release" },
+    { "name": "android-x64-release", "configurePreset": "android-x64-release" }
   ]
 }

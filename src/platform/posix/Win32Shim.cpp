@@ -989,9 +989,11 @@ DWORD_PTR SetThreadAffinityMask(const HANDLE thread, const DWORD_PTR mask)
     tLastError = ERROR_INVALID_PARAMETER;
     return 0;
   }
+  // sched_*affinity on pid 0 is the calling thread's mask, as pthread_*affinity_np on
+  // pthread_self(), which bionic does not have.
   cpu_set_t previous;
   CPU_ZERO(&previous);
-  (void)::pthread_getaffinity_np(::pthread_self(), sizeof(previous), &previous);
+  (void)::sched_getaffinity(0, sizeof(previous), &previous);
   cpu_set_t wanted;
   CPU_ZERO(&wanted);
   for (unsigned cpu = 0; cpu < sizeof(DWORD_PTR) * 8; ++cpu) {
@@ -999,7 +1001,7 @@ DWORD_PTR SetThreadAffinityMask(const HANDLE thread, const DWORD_PTR mask)
       CPU_SET(cpu, &wanted);
     }
   }
-  if (::pthread_setaffinity_np(::pthread_self(), sizeof(wanted), &wanted) != 0) {
+  if (::sched_setaffinity(0, sizeof(wanted), &wanted) != 0) {
     tLastError = ERROR_INVALID_PARAMETER;
     return 0;
   }
