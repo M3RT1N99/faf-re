@@ -40,6 +40,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#if defined(__aarch64__)
+#include <xmmintrin.h> // platform/posix/arm64: MXCSR as FPCR carries it
+#endif
+
 namespace
 {
   thread_local DWORD tLastError = 0;
@@ -1783,11 +1787,30 @@ int _memicmp(const void* const lhs, const void* const rhs, const std::size_t cou
   return 0;
 }
 
+#if defined(__aarch64__)
+// The software x87's control word, per thread (legacy/math/X87MathSoft.cpp).
+extern "C" unsigned int msvc8_x87_control_word();
+extern "C" void msvc8_x87_set_control_word(unsigned int controlWord);
+#endif
+
 unsigned int _controlfp(const unsigned int newValue, const unsigned int mask) noexcept
 {
   // Windows x64: the rounding and exception-mask fields apply to the x87 control word and to
   // MXCSR; the precision field is not supported (ignored). Only the rounding field and the
   // exception masks are mapped; the engine passes _MCW_PC only, which is ignored as on x64.
+#if defined(__aarch64__)
+  // arm64: the same fields of the software x87's control word (legacy/math/X87MathSoft.cpp)
+  // and of MXCSR as FPCR carries it (platform/posix/arm64/xmmintrin.h).
+  unsigned int x87 = msvc8_x87_control_word();
+  unsigned int mxcsr = _mm_getcsr();
+  if ((mask & _MCW_RC) != 0) {
+    const unsigned int rc = (newValue & _MCW_RC) >> 8; // CRT 0..3 = near, down, up, chop
+    x87 = (x87 & ~0x0C00u) | (rc << 10);
+    mxcsr = (mxcsr & ~0x6000u) | (rc << 13);
+    msvc8_x87_set_control_word(x87);
+    _mm_setcsr(mxcsr);
+  }
+#else
   std::uint16_t x87 = 0;
   __asm__ volatile("fnstcw %0" : "=m"(x87));
   std::uint32_t mxcsr = 0;
@@ -1799,6 +1822,7 @@ unsigned int _controlfp(const unsigned int newValue, const unsigned int mask) no
     __asm__ volatile("fldcw %0" ::"m"(x87));
     __asm__ volatile("ldmxcsr %0" ::"m"(mxcsr));
   }
+#endif
   const unsigned int rcBits = ((mxcsr >> 13) & 3u) << 8;
   return rcBits;
 }

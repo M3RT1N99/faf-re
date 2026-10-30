@@ -1,8 +1,8 @@
 #pragma once
 
 // Force-included into every x64 engine translation unit (src/CMakeLists.txt)
-// and into the Linux x86_64 simulation (cmake/FafLinux.cmake), and by nothing
-// else.
+// and into the Linux and Android simulation (cmake/FafLinux.cmake: x86_64 and
+// arm64), and by nothing else.
 //
 // The recovered tree pins the Win32 layout of the 2007 binary with thousands of
 // `static_assert(sizeof(T) == 0xNN)` / `static_assert(offsetof(T, m) == 0xNN)`.
@@ -16,7 +16,7 @@
 // Code that must be checked on x64 as well (wire formats, file headers) cannot
 // rely on static_assert in this configuration; the x86 build still checks it,
 // and its layout carries no pointers, so it is the same on both.
-#if defined(__cplusplus) && (defined(_M_X64) || defined(__x86_64__))
+#if defined(__cplusplus) && (defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__))
 #define _ALLOW_KEYWORD_MACROS
 #define static_assert(...) static_assert(true, "x86 layout assert, not checked on x64")
 #endif

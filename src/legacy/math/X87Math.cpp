@@ -25,8 +25,9 @@ extern "C" int __cdecl SetSse2Mode(const int enableSse2)
   return mode;
 }
 
-// x64 (Windows x64 and System V): legacy/math/X87Math64.asm / X87Math64.S.
-#if defined(_M_X64) || defined(__x86_64__)
+// x64 (Windows x64 and System V): legacy/math/X87Math64.asm / X87Math64.S;
+// arm64, which has no x87 unit: legacy/math/X87MathSoft.cpp, the same routines in software.
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
 // legacy/math/X87Math64.asm: the same instruction sequences for 64-bit code,
 // which has no inline assembly.
 extern "C" float __cdecl msvc8_x87_sinf(float x);

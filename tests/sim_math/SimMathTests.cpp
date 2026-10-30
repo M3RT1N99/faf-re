@@ -493,6 +493,12 @@ namespace
     return "windows-x64";
 #elif defined(_WIN32)
     return "windows-x86";
+#elif defined(__ANDROID__) && defined(__aarch64__)
+    return "android-arm64";
+#elif defined(__ANDROID__) && defined(__x86_64__)
+    return "android-x64";
+#elif defined(__aarch64__)
+    return "linux-arm64";
 #elif defined(__x86_64__)
     return "linux-x64";
 #else

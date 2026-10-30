@@ -14,6 +14,17 @@ pow msvc8::pow(double, double)
 # powf: the sim driver's wall-clock pacing only (SimDriver.cpp, the beat rate from the sim rate).
 pow msvc8::powf(float, float)
 
+# legacy/math/X87MathSoft (arm64, which has no x87 unit): the x87's transcendental instructions,
+# from the C library's binary128 functions rounded to the register's 64 bits. Those are accurate
+# to about 2^-112, so every C library with a binary128 long double (bionic, glibc on AArch64)
+# gives the same register value; tests/sim_math checks the routines against the x87.
+sinl (anonymous namespace)::SineOfQuadrant(long double, unsigned int)
+cosl (anonymous namespace)::SineOfQuadrant(long double, unsigned int)
+tanl (anonymous namespace)::TangentOfQuadrant(long double, unsigned int)
+atan2l (anonymous namespace)::Fpatan(long double, long double)
+log2l (anonymous namespace)::Fyl2x(long double, long double)
+expm1l (anonymous namespace)::F2xm1(long double)
+
 # Camera projection (effect culling against the sync filter's cameras, the render-side view):
 # visual only.
 tanf moho::GeomCamera3::ViewInitPerspective(float, float, float, float)

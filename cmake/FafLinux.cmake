@@ -147,11 +147,18 @@ target_link_libraries(faf_sim PUBLIC faf_sim_settings)
 include(FafBuildInfo)
 faf_build_info(faf_sim ${FAF_TARGET_ARCH}-${FAF_LINUX_PLATFORM})
 
-if(FAF_TARGET_ARCH STREQUAL "x64")
+# FAF_X87_SOFT puts the software x87 into an x86_64 build too, where long double is binary128
+# (Android x86_64), so the two can be compared on one machine (faf_sim_math_tests --sweep).
+option(FAF_X87_SOFT "Software x87 helpers (legacy/math/X87MathSoft.cpp) on x86_64 as well" OFF)
+if(FAF_TARGET_ARCH STREQUAL "x64" AND NOT FAF_X87_SOFT)
   # The x64 half of legacy/math/X87Math.cpp, in GNU syntax for System V (the
   # Windows build assembles X87Math64.asm, plan WPL.10).
   enable_language(ASM)
   target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/legacy/math/X87Math64.S")
+else()
+  # arm64 has no x87 unit: the same routines computed in software, bit for bit
+  # (legacy/math/X87MathSoft.cpp).
+  target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/legacy/math/X87MathSoft.cpp")
 endif()
 # gpg::gal::Math without D3DX (Windows' faf_main uses gpg/gal/Matrix.cpp, plan WPR.12).
 target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/gpg/gal/MatrixPortable.cpp")
@@ -181,6 +188,11 @@ target_compile_definitions(faf_sim_settings INTERFACE
   # The server-mode build, as Windows' faf_engine with FAF_SERVER_MODE (src/CMakeLists.txt):
   # the Linux programs are the server and the replay runner.
   FAF_SERVER_MODE=1)
+if(FAF_TARGET_ARCH STREQUAL "arm64")
+  # The x86 intrinsics the shared code names (<xmmintrin.h>, <emmintrin.h>, <immintrin.h>),
+  # defined for AArch64; ahead of the compiler's own headers, which are x86-only.
+  target_include_directories(faf_sim_settings BEFORE INTERFACE "${PROJECT_SOURCE_DIR}/src/platform/posix/arm64")
+endif()
 target_include_directories(faf_sim_settings INTERFACE
   "${PROJECT_SOURCE_DIR}/src"
   # <Windows.h> and <intrin.h> for the shared code (plan WPL.5), and <windows.h>, the

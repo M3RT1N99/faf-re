@@ -15,6 +15,12 @@
 #include <sys/syscall.h>
 #include <ucontext.h>
 #include <unistd.h>
+#if defined(__aarch64__)
+#include <asm/sigcontext.h>
+#include <xmmintrin.h> // platform/posix/arm64: MXCSR from FPCR
+
+extern "C" unsigned int msvc8_x87_control_word();
+#endif
 #endif
 
 #include <algorithm>
@@ -40,6 +46,28 @@ namespace faf::headless
     void OnSampleSignal(int, siginfo_t*, void* const rawContext)
     {
       const auto* const context = static_cast<const ucontext_t*>(rawContext);
+#if defined(__aarch64__)
+      // arm64 (Android port): FPCR and FPSR are in the frame's FPSIMD record, reported as the
+      // MXCSR an x86 thread would have; the x87 control word is the software x87's
+      // (legacy/math/X87MathSoft.cpp), per thread, and this handler runs on the sampled thread.
+      const unsigned char* record = context != nullptr ? context->uc_mcontext.__reserved : nullptr;
+      const unsigned char* const end = record != nullptr ? record + sizeof(context->uc_mcontext.__reserved) : nullptr;
+      while (record != nullptr && record + sizeof(_aarch64_ctx) <= end) {
+        const auto* const head = reinterpret_cast<const _aarch64_ctx*>(record);
+        if (head->magic == 0 || head->size == 0) {
+          break;
+        }
+        if (head->magic == FPSIMD_MAGIC) {
+          const auto* const fpsimd = reinterpret_cast<const fpsimd_context*>(head);
+          gSampledControlWord = msvc8_x87_control_word();
+          gSampledMxcsr = platform::posix::arm64::MxcsrFromFpcr(fpsimd->fpcr, fpsimd->fpsr);
+          gSampleDone.store(1, std::memory_order_release);
+          return;
+        }
+        record += head->size;
+      }
+      gSampleDone.store(2, std::memory_order_release);
+#else
       if (context != nullptr && context->uc_mcontext.fpregs != nullptr) {
         gSampledControlWord = context->uc_mcontext.fpregs->cwd;
         gSampledMxcsr = context->uc_mcontext.fpregs->mxcsr;
@@ -47,6 +75,7 @@ namespace faf::headless
       } else {
         gSampleDone.store(2, std::memory_order_release);
       }
+#endif
     }
 
     struct SThreadSamples

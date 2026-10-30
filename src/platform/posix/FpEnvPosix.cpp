@@ -11,6 +11,11 @@
 // The main thread gets it before any static initialiser (constructor priority 100); every
 // other thread at its start, through `-Wl,--wrap=pthread_create` (cmake/FafLinux.cmake):
 // boost.thread, std::thread and the sim worker pool all start threads there.
+//
+// arm64 (Android port): FPCR 0, the same controls (round to nearest, no flush-to-zero, no trap;
+// also no default-NaN substitution, so NaN payloads pass through as on x86). The x87 routines
+// run in software there (legacy/math/X87MathSoft.cpp), each thread from the control word
+// kSimX87ControlWord.
 
 #if !defined(_WIN32)
 
@@ -21,25 +26,43 @@
 
 #include <pthread.h>
 
+#if defined(__aarch64__)
+#include <xmmintrin.h> // platform/posix/arm64: MXCSR as FPCR reads it
+
+extern "C" unsigned int msvc8_x87_control_word();
+extern "C" void msvc8_x87_set_control_word(unsigned int controlWord);
+#endif
+
 namespace platform::posix
 {
   void SetSimFloatingPointEnvironment() noexcept
   {
+#if defined(__aarch64__)
+    const std::uint64_t fpcr = 0;
+    asm volatile("msr fpcr, %0" : : "r"(fpcr));
+    msvc8_x87_set_control_word(kSimX87ControlWord);
+#else
     const std::uint16_t controlWord = kSimX87ControlWord;
     const std::uint32_t mxcsr = kSimMxcsr;
     asm volatile("fldcw %0" : : "m"(controlWord));
     asm volatile("ldmxcsr %0" : : "m"(mxcsr));
+#endif
   }
 
   FloatingPointState ReadFloatingPointEnvironment() noexcept
   {
     FloatingPointState state{};
+#if defined(__aarch64__)
+    state.x87ControlWord = msvc8_x87_control_word();
+    state.mxcsr = _mm_getcsr();
+#else
     std::uint16_t controlWord = 0;
     std::uint32_t mxcsr = 0;
     asm volatile("fnstcw %0" : "=m"(controlWord));
     asm volatile("stmxcsr %0" : "=m"(mxcsr));
     state.x87ControlWord = controlWord;
     state.mxcsr = mxcsr;
+#endif
     return state;
   }
 } // namespace platform::posix
