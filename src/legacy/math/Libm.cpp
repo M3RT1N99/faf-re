@@ -52,10 +52,14 @@ namespace msvc8::libm
       return _mm_cvtsd_f64(_mm_sqrt_sd(_mm_setzero_pd(), _mm_set_sd(value)));
     }
 
-    /// The quiet NaN `(x - x) / (x - x)` gives: `x` itself for a NaN, the hardware's default
-    /// NaN otherwise (musl's __math_invalid).
+    /// The quiet NaN `(x - x) / (x - x)` gives on x86: `x` itself for a NaN, otherwise the
+    /// default NaN, which is the negative x87/SSE indefinite there (musl's __math_invalid).
+    /// AArch64's default NaN is positive, so the indefinite is spelled out (Android port).
     [[nodiscard]] double Invalid(const double x) noexcept
     {
+      if (!std::isnan(x)) {
+        return AsDouble(0xFFF8000000000000ull);
+      }
       const double difference = x - x;
       return difference / difference;
     }
@@ -663,7 +667,7 @@ namespace msvc8::libm
       if (((ix - 0x3ff00000u) | lx) == 0) {
         return x * kPio2Hi + 0x1p-120f; // asin(+-1) = +-pi/2, inexact
       }
-      return 0.0 / (x - x);
+      return Invalid(x);
     }
     if (ix < 0x3fe00000u) {
       // |x| < 0.5; 0x1p-1022 <= |x| < 0x1p-26 returns x (no underflow).

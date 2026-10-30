@@ -112,6 +112,11 @@ namespace msvc8
     [[nodiscard]] float RoundExactProductToFloat(const double a, const double b) noexcept
     {
       const double product = a * b;
+      if (std::isnan(product) && !std::isnan(a) && !std::isnan(b)) {
+        // Engine addition (Android port): 0 * infinity, the x87 and SSE indefinite on every
+        // platform (AArch64's default NaN is positive).
+        return static_cast<float>(DomainErrorNaN());
+      }
       const double residual = std::fma(a, b, -product);
 
       float rounded = static_cast<float>(product);
@@ -933,7 +938,13 @@ namespace msvc8
 
   float powf(const float x, const float y) noexcept
   {
-    return static_cast<float>(std::pow(static_cast<double>(x), static_cast<double>(y)));
+    const double result = std::pow(static_cast<double>(x), static_cast<double>(y));
+    if (std::isnan(result) && !std::isnan(x) && !std::isnan(y)) {
+      // Engine addition (Android port): a domain error's NaN as on Windows (DomainErrorNaN);
+      // the host CRT's is the hardware's, positive on AArch64.
+      return static_cast<float>(DomainErrorNaN());
+    }
+    return static_cast<float>(result);
   }
 
   float VectorLengthZYXX87(const float* const lanes) noexcept
