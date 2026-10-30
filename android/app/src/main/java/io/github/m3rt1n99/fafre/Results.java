@@ -35,7 +35,7 @@ final class Results {
         return out.toString();
     }
 
-    static File write(Storage storage) throws IOException {
+    static File write(android.content.Context context, Storage storage) throws IOException {
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
         File zip = new File(storage.results(), "faf-re-results-" + stamp + ".zip");
         JSONObject summary = new JSONObject();
@@ -70,6 +70,10 @@ final class Results {
         try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(zip))) {
             add(out, "summary.json", summary.toString(2).getBytes(StandardCharsets.UTF_8));
             add(out, "math.txt", TestState.mathOutput().getBytes(StandardCharsets.UTF_8));
+            File known = new File(context.getFilesDir(), MathCheck.KNOWN_FILE);
+            if (known.isFile()) {
+                addFile(out, MathCheck.KNOWN_FILE, known);
+            }
             add(out, "log.txt", String.join("\n", TestState.log()).getBytes(StandardCharsets.UTF_8));
             for (TestState.Replay replay : TestState.replaySnapshot()) {
                 File run = new File(storage.runs(), String.valueOf(replay.id));

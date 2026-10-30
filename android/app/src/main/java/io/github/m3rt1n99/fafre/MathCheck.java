@@ -21,12 +21,18 @@ import java.util.regex.Pattern;
  */
 final class MathCheck {
     private static final Pattern SUMMARY = Pattern.compile("(\\d+) cases, (\\d+) differ, (\\d+) missing");
+    private static final Pattern FUNCTION = Pattern.compile("^FAIL (\\S+): (\\d+) case", Pattern.MULTILINE);
+
+    /** Every case this phone computes differently, in tests/sim_math's overlay format (--generate-known). */
+    static final String KNOWN_FILE = "sim_math_known.txt";
 
     private MathCheck() {
     }
 
     static void run(Context context) throws IOException {
         File golden = new File(context.getFilesDir(), "golden.txt");
+        File known = new File(context.getFilesDir(), KNOWN_FILE);
+        known.delete();
         try (InputStream in = context.getAssets().open("golden.txt"); OutputStream out = new FileOutputStream(golden)) {
             byte[] buffer = new byte[1 << 16];
             int read;
@@ -62,11 +68,41 @@ final class MathCheck {
         if (m.find() && exit == 0 && "0".equals(m.group(2)) && "0".equals(m.group(3))) {
             verdict = String.format(Locale.ROOT, "PASS: %s cases, all equal to the x87 (%.1f s)", m.group(1), seconds);
         } else if (m.find(0)) {
-            verdict = String.format(Locale.ROOT, "FAIL: %s of %s cases differ, %s missing (exit %d)", m.group(2), m.group(1), m.group(3), exit);
+            StringBuilder functions = new StringBuilder();
+            Matcher f = FUNCTION.matcher(output);
+            while (f.find()) {
+                functions.append(functions.length() == 0 ? "" : ", ").append(f.group(1)).append(' ').append(f.group(2));
+            }
+            verdict = String.format(Locale.ROOT, "FAIL: %s of %s cases differ, %s missing (%s)", m.group(2), m.group(1), m.group(3),
+                functions.length() > 0 ? functions.toString() : "exit " + exit);
+            writeKnown(context, golden, known);
         } else {
             verdict = "FAIL: no summary (exit " + exit + ")";
         }
         TestState.math(verdict, output.toString());
         TestState.line(verdict);
+    }
+
+    /** The full list of differing cases, for the results zip (the run itself names one per function). */
+    private static void writeKnown(Context context, File golden, File known) throws IOException {
+        TestState.step("Listing every differing case");
+        ProcessBuilder builder = new ProcessBuilder(HeadlessRun.program(context, "libfafsimmath.so").getAbsolutePath(),
+            "--generate-known", golden.getAbsolutePath(), known.getAbsolutePath(),
+            "measured on " + Results.device() + " by faf-re-android " + BuildConfig.VERSION_NAME + "; not reviewed")
+            .redirectErrorStream(true);
+        HeadlessRun.environment(context, new Storage(context), builder);
+        Process process = builder.start();
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = in.readLine()) != null) {
+                TestState.line(line);
+            }
+        }
+        try {
+            process.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted");
+        }
     }
 }

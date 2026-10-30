@@ -268,7 +268,7 @@ public final class MainActivity extends Activity {
 
     private void share() {
         try {
-            File zip = Results.write(new Storage(this));
+            File zip = Results.write(this, new Storage(this));
             Uri uri = ResultsProvider.uri(zip);
             Intent send = new Intent(Intent.ACTION_SEND)
                 .setType("application/zip")
