@@ -9,11 +9,13 @@
 # builds the Linux project (cmake/FafLinux.cmake) for it; FAF_ANDROID selects
 # what differs there (bionic, the ABI, tests that cannot run on the build host).
 #
-#   FAF_ANDROID_NDK                 NDK root. Default: $ANDROID_NDK_ROOT, else
-#                                   $ANDROID_NDK_HOME, else the pinned release
+#   FAF_ANDROID_NDK                 NDK root. Default: the pinned release
 #                                   (android-pins.cmake) under the SDK in
 #                                   $ANDROID_HOME, $ANDROID_SDK_ROOT or Android
-#                                   Studio's default location.
+#                                   Studio's default location, else
+#                                   $ANDROID_NDK_ROOT or $ANDROID_NDK_HOME (which
+#                                   often name another release, e.g. on CI
+#                                   runners).
 #   FAF_ANDROID_ALLOW_UNPINNED_NDK  ON: accept an NDK release other than the
 #                                   pinned one.
 #
@@ -35,14 +37,6 @@ list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES FAF_ANDROID_ABI FAF_ANDROID_NDK
 
 # --- NDK ----------------------------------------------------------------------------------
 if(NOT FAF_ANDROID_NDK)
-  foreach(_faf_var IN ITEMS ANDROID_NDK_ROOT ANDROID_NDK_HOME)
-    if(DEFINED ENV{${_faf_var}} AND EXISTS "$ENV{${_faf_var}}/build/cmake/android.toolchain.cmake")
-      set(FAF_ANDROID_NDK "$ENV{${_faf_var}}")
-      break()
-    endif()
-  endforeach()
-endif()
-if(NOT FAF_ANDROID_NDK)
   set(_faf_sdk_roots "")
   foreach(_faf_var IN ITEMS ANDROID_HOME ANDROID_SDK_ROOT)
     if(DEFINED ENV{${_faf_var}})
@@ -59,6 +53,14 @@ if(NOT FAF_ANDROID_NDK)
   foreach(_faf_sdk IN LISTS _faf_sdk_roots)
     if(EXISTS "${_faf_sdk}/ndk/${FAF_ANDROID_PINNED_NDK_REVISION}/build/cmake/android.toolchain.cmake")
       set(FAF_ANDROID_NDK "${_faf_sdk}/ndk/${FAF_ANDROID_PINNED_NDK_REVISION}")
+      break()
+    endif()
+  endforeach()
+endif()
+if(NOT FAF_ANDROID_NDK)
+  foreach(_faf_var IN ITEMS ANDROID_NDK_ROOT ANDROID_NDK_HOME)
+    if(DEFINED ENV{${_faf_var}} AND EXISTS "$ENV{${_faf_var}}/build/cmake/android.toolchain.cmake")
+      set(FAF_ANDROID_NDK "$ENV{${_faf_var}}")
       break()
     endif()
   endforeach()

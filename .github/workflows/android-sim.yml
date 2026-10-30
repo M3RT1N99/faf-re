@@ -1,0 +1,93 @@
+name: Android simulation
+
+# Builds the simulation for Android with the pinned NDK (the android-x64-release and
+# android-arm64-release presets, cmake/toolchains/android-*.cmake) and runs what runs without a
+# phone: the toolchain check and the sim-math golden tests (tests/sim_math), the x86_64 build on
+# an x86_64 runner, the arm64 build on an arm64 runner (its x87 helpers are the software ones,
+# legacy/math/X87MathSoft.cpp). The programs are linked statically
+# (FAF_ANDROID_STATIC_EXECUTABLES), as a Linux runner has no Android dynamic linker. The NDK
+# runs on x86_64 hosts only, so the arm64 programs are built there and run on the arm64 runner.
+on:
+  pull_request:
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - cmake/**
+      - src/**
+      - tests/**
+      - dependencies/patches/**
+      - .github/workflows/android-sim.yml
+  push:
+    branches: [master]
+    paths:
+      - CMakeLists.txt
+      - CMakePresets.json
+      - cmake/**
+      - src/**
+      - tests/**
+      - dependencies/patches/**
+      - .github/workflows/android-sim.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-sim-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # cmake/toolchains/android-pins.cmake
+  NDK_VERSION: "29.0.14206865"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build
+      - name: Pinned NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+      - uses: actions/cache@v6
+        with:
+          path: dependencies/.downloads
+          key: deps-${{ hashFiles('cmake/FafDependencies.cmake') }}
+      - run: cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;boost_1_34_1" -P cmake/FafDependencies.cmake
+      - run: cmake --preset android-${{ matrix.abi }}-release -DFAF_ANDROID_STATIC_EXECUTABLES=ON
+      - run: >
+          cmake --build --preset android-${{ matrix.abi }}-release
+          --target headless faf_sim_math_tests faf-linux-toolchain-check faf-sim-link
+      - if: matrix.abi == 'x64'
+        run: |
+          build/android-x64-release/faf-linux-toolchain-check
+          build/android-x64-release/faf_sim_math_tests tests/sim_math/golden.txt
+      - if: matrix.abi == 'arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-arm64-tests
+          path: |
+            build/android-arm64-release/faf_sim_math_tests
+            build/android-arm64-release/faf-linux-toolchain-check
+          retention-days: 7
+
+  test-arm64:
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tests/sim_math
+      - uses: actions/download-artifact@v8
+        with:
+          name: android-arm64-tests
+          path: bin
+      - run: |
+          chmod +x bin/*
+          bin/faf-linux-toolchain-check
+          bin/faf_sim_math_tests tests/sim_math/golden.txt
