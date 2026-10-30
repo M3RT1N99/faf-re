@@ -1,0 +1,62 @@
+name: Android app
+
+# Builds the Android test app (android/README.md): the engine's arm64 programs from the
+# android-arm64-release preset with the pinned NDK, then the APK with Gradle. The APK is signed
+# with the runner's own debug key, so it installs on a phone without an earlier release, not as an
+# update of one; testers' releases are built where their key is.
+on:
+  push:
+    branches: [android-app]
+  pull_request:
+    paths:
+      - android/**
+      - .github/workflows/android-app.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-app-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # cmake/toolchains/android-pins.cmake
+  NDK_VERSION: "29.0.14206865"
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      # The whole history: versionCode is the commit count.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build
+      - name: Pinned NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+      - uses: actions/cache@v6
+        with:
+          path: dependencies/.downloads
+          key: deps-${{ hashFiles('cmake/FafDependencies.cmake') }}
+      - run: cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;boost_1_34_1" -P cmake/FafDependencies.cmake
+      - run: cmake --preset android-arm64-release
+      - run: cmake --build --preset android-arm64-release --target headless faf_sim_math_tests
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Debug key
+        run: |
+          mkdir -p ~/.android
+          [ -f ~/.android/debug.keystore ] || keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android \
+            -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+      - working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --console=plain
+      - uses: actions/upload-artifact@v7
+        with:
+          name: faf-re-android-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 14

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon foreground: three rank chevrons inside the 66dp safe zone of
+  the 108dp canvas. Original artwork; deliberately not FAF's or GPG's logo.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/icon_foreground"
+        android:pathData="M34,47 L54,27 L74,47 L74,56 L54,36 L34,56 Z" />
+    <path
+        android:fillAlpha="0.8"
+        android:fillColor="@color/icon_foreground"
+        android:pathData="M34,59 L54,39 L74,59 L74,68 L54,48 L34,68 Z" />
+    <path
+        android:fillAlpha="0.6"
+        android:fillColor="@color/icon_foreground"
+        android:pathData="M34,71 L54,51 L74,71 L74,80 L54,60 L34,80 Z" />
+</vector>
