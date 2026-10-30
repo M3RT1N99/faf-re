@@ -48,6 +48,7 @@
 
 #include <gtest/gtest.h>
 
+#include "legacy/math/X87Float.h"
 #include "legacy/math/X87Math.h"
 #include "moho/ai/NavigatorCellMath.h"
 #include "platform/X87Precision.h"
@@ -923,6 +924,60 @@ TEST(
   const std::string golden = ResolveGoldenPath();
   const std::string known = ResolveKnownPath(golden);
   RunParityCheck(golden.empty() ? nullptr : golden.c_str(), known.empty() ? nullptr : known.c_str());
+}
+
+// Engine addition (Android port): fa::X87Float, the x87 register of Wm3's collision queries, gives
+// the x87's NaNs on every CPU: an invalid operation the indefinite (AArch64's own NaN is positive),
+// a NaN operand itself. The operands come through volatile reads: the compiler folds a constant
+// inf - inf to a positive NaN of its own, which no CPU computes.
+namespace
+{
+  std::uint32_t StoredBits(
+    const fa::X87Float value
+  )
+  {
+    return std::bit_cast<std::uint32_t>(static_cast<float>(value));
+  }
+
+  fa::X87Float Opaque(
+    const std::uint32_t bits
+  )
+  {
+    const volatile std::uint32_t loaded = bits;
+    return fa::X87Float(std::bit_cast<float>(static_cast<std::uint32_t>(loaded)));
+  }
+} // namespace
+
+TEST(
+  X87Float,
+  InvalidOperationGivesTheIndefinite
+)
+{
+  constexpr std::uint32_t kIndefinite = 0xFFC00000u; // the x87 indefinite, stored to a float
+  const fa::X87Float inf = Opaque(0x7F800000u);
+  const fa::X87Float zero = Opaque(0x00000000u);
+  EXPECT_EQ(StoredBits(inf - inf), kIndefinite);
+  EXPECT_EQ(StoredBits(inf + -inf), kIndefinite);
+  EXPECT_EQ(StoredBits(-inf + inf), kIndefinite);
+  EXPECT_EQ(StoredBits(zero * inf), kIndefinite);
+  EXPECT_EQ(StoredBits(-inf * zero), kIndefinite);
+  EXPECT_EQ(StoredBits(zero / zero), kIndefinite);
+  EXPECT_EQ(StoredBits(-inf / inf), kIndefinite);
+}
+
+TEST(
+  X87Float,
+  NaNOperandPassesThrough
+)
+{
+  const fa::X87Float one = Opaque(0x3F800000u);
+  for (const std::uint32_t nan : {0x7FC00000u, 0xFFC00000u, 0x7FC01234u, 0xFFC04321u}) {
+    const fa::X87Float value = Opaque(nan);
+    EXPECT_EQ(StoredBits(value + one), nan);
+    EXPECT_EQ(StoredBits(one - value), nan);
+    EXPECT_EQ(StoredBits(value * one), nan);
+    EXPECT_EQ(StoredBits(one / value), nan);
+  }
 }
 
 int main(
