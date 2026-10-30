@@ -14,6 +14,12 @@
 //    them);
 //  - fld, fabs, fchs, fscale and frndint exactly; fstp to the memory format, once.
 //
+// binary128 arithmetic is software on every CPU, and the collision test's box radius alone made
+// a game's simulation several times slower with it. So the routines without a transcendental
+// instruction compute in double when their inputs and results are finite, which gives the same
+// bits by construction (see "The routines that only compute, in double" below); binary128 is
+// left for NaNs, infinities and the transcendental routines.
+//
 // The transcendental results come from the C library's binary128 functions (bionic and glibc
 // both carry FreeBSD's ld128 msun, about one ulp at 113 bits), rounded to the nearest 64-bit
 // value. The x87 rounds its own internal result instead, within one 64-bit ulp of the true
@@ -412,17 +418,17 @@ namespace
     return static_cast<double>(value);
   }
 
-  /// fistp dword under the thread's rounding field: the integer indefinite 0x80000000 for NaN
-  /// and for a result outside int32.
-  [[nodiscard]] std::int32_t StoreInt32(const Reg value) noexcept
+  /// fistp dword of a float under the thread's rounding field: the integer indefinite
+  /// 0x80000000 for NaN and for a result outside int32. A float is exact in double.
+  [[nodiscard]] std::int32_t StoreInt32(const double value) noexcept
   {
     if (std::isnan(value)) {
       return INT32_MIN;
     }
-    Reg rounded = 0;
+    double rounded = 0;
     switch ((tControlWord >> 10) & 3u) {
     case 0:
-      rounded = nearbyintl(value);
+      rounded = std::nearbyint(value);
       break;
     case 1:
       rounded = std::floor(value);
@@ -434,10 +440,68 @@ namespace
       rounded = std::trunc(value);
       break;
     }
-    if (!(rounded >= -2147483648.0L && rounded <= 2147483647.0L)) {
+    if (!(rounded >= -2147483648.0 && rounded <= 2147483647.0)) {
       return INT32_MIN;
     }
     return static_cast<std::int32_t>(rounded);
+  }
+
+  // --- The routines that only compute, in double -----------------------------------------------
+  //
+  // The routines without a transcendental instruction start from floats, and every step under
+  // PC24 leaves at most 24 significant bits. In double, a product of two such values is exact,
+  // and a sum, quotient or square root rounded to double and then to 24 bits is the one rounding
+  // to 24 bits the x87 makes (rounding twice is harmless when the wider format has at least
+  // 2p + 2 bits: 53 >= 50). Nothing they form from floats comes near double's exponent limits
+  // (a product of three floats is at least 2^-447), so double also holds the extended exponent
+  // range the x87 keeps until the store. This path takes finite inputs and results only: a NaN
+  // or an infinity anywhere goes to the binary128 path, which follows the x87's NaN rules.
+
+  /// `value` (finite, zero or normal) rounded to 24 significant bits, to nearest even.
+  [[nodiscard]] inline double Round24(const double value) noexcept
+  {
+    std::uint64_t raw = std::bit_cast<std::uint64_t>(value);
+    if ((raw & 0x7FF0000000000000ull) == 0) {
+      return value; // zero: no value formed here is a double denormal
+    }
+    constexpr std::uint64_t kUnit = std::uint64_t{1} << 29;
+    const std::uint64_t low = raw & (kUnit - 1);
+    raw -= low;
+    if (low > (kUnit >> 1) || (low == (kUnit >> 1) && (raw & kUnit) != 0)) {
+      raw += kUnit; // a carry out of the significand moves to the next binade, exactly
+    }
+    return std::bit_cast<double>(raw);
+  }
+
+  [[nodiscard]] inline double Mul24(const double a, const double b) noexcept
+  {
+    return Round24(a * b);
+  }
+
+  [[nodiscard]] inline double Add24(const double a, const double b) noexcept
+  {
+    return Round24(a + b);
+  }
+
+  [[nodiscard]] inline double Sub24(const double a, const double b) noexcept
+  {
+    return Round24(a - b);
+  }
+
+  [[nodiscard]] inline double Div24(const double a, const double b) noexcept
+  {
+    return Round24(a / b);
+  }
+
+  [[nodiscard]] inline double Sqrt24(const double a) noexcept
+  {
+    return Round24(std::sqrt(a));
+  }
+
+  template <class... Values>
+  [[nodiscard]] inline bool AllFinite(const Values... values) noexcept
+  {
+    return (std::isfinite(values) && ...);
   }
 } // namespace
 
@@ -455,7 +519,7 @@ extern "C" void FAF_X87_SOFT_NAME(msvc8_x87_set_control_word)(const unsigned int
 // fld dword; fistp dword.
 extern "C" std::int32_t FAF_X87_SOFT_NAME(msvc8_x87_round_to_int)(const float value)
 {
-  return StoreInt32(Load(value));
+  return StoreInt32(value);
 }
 
 // a = h00 + (h01 - h00) * fracZ, b = h10 + (h11 - h10) * fracZ, then a + (b - a) * fracX.
@@ -463,6 +527,11 @@ extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_bilinear_height)(
   const float h00, const float h01, const float h10, const float h11, const float fracX, const float fracZ
 )
 {
+  if (AllFinite(h00, h01, h10, h11, fracX, fracZ)) {
+    const double a = Add24(h00, Mul24(Sub24(h01, h00), fracZ));
+    const double b = Add24(Mul24(fracZ, Sub24(h11, h10)), h10);
+    return static_cast<float>(Add24(a, Mul24(Sub24(b, a), fracX)));
+  }
   const Reg z = Load(fracZ);
   const Reg a = Add(Load(h00), Mul(Sub(Load(h01), Load(h00)), z));
   const Reg b = Add(Mul(z, Sub(Load(h11), Load(h10))), Load(h10));
@@ -611,6 +680,15 @@ extern "C" void FAF_X87_SOFT_NAME(msvc8_x87_scale_vector_max_length)(
   float* const x, float* const y, float* const z, const float maxLength, const float lengthSq
 )
 {
+  if (AllFinite(maxLength, lengthSq, *x, *y, *z)) {
+    const double factor = Div24(maxLength, Sqrt24(lengthSq));
+    if (std::isfinite(factor)) {
+      *x = static_cast<float>(Mul24(*x, factor));
+      *y = static_cast<float>(Mul24(*y, factor));
+      *z = static_cast<float>(Mul24(factor, *z));
+      return;
+    }
+  }
   const Reg scale = Div(Memory(maxLength), Sqrt(Load(lengthSq)));
   *x = StoreFloat(Mul(Load(*x), scale));
   *y = StoreFloat(Mul(Load(*y), scale));
@@ -622,6 +700,15 @@ extern "C" void FAF_X87_SOFT_NAME(msvc8_x87_scale_vector_to_length)(
   float* const destLanes, const float* const sourceLanes, const float lengthSq, const float length
 )
 {
+  if (AllFinite(length, lengthSq, sourceLanes[0], sourceLanes[1], sourceLanes[2])) {
+    const double factor = Div24(length, Sqrt24(lengthSq));
+    if (std::isfinite(factor)) {
+      destLanes[0] = static_cast<float>(Mul24(sourceLanes[0], factor));
+      destLanes[1] = static_cast<float>(Mul24(factor, sourceLanes[1]));
+      destLanes[2] = static_cast<float>(Mul24(factor, sourceLanes[2]));
+      return;
+    }
+  }
   const Reg scale = Div(Memory(length), Sqrt(Load(lengthSq)));
   destLanes[0] = StoreFloat(Mul(Load(sourceLanes[0]), scale));
   destLanes[1] = StoreFloat(Mul(scale, Memory(sourceLanes[1])));
@@ -632,6 +719,12 @@ extern "C" void FAF_X87_SOFT_NAME(msvc8_x87_scale_vector)(
   float* const destLanes, const float* const sourceLanes, const float scale
 )
 {
+  if (AllFinite(scale, sourceLanes[0], sourceLanes[1], sourceLanes[2])) {
+    destLanes[0] = static_cast<float>(Mul24(sourceLanes[0], scale));
+    destLanes[1] = static_cast<float>(Mul24(sourceLanes[1], scale));
+    destLanes[2] = static_cast<float>(Mul24(scale, sourceLanes[2]));
+    return;
+  }
   const Reg factor = Load(scale);
   destLanes[0] = StoreFloat(Mul(Load(sourceLanes[0]), factor));
   destLanes[1] = StoreFloat(Mul(Load(sourceLanes[1]), factor));
@@ -643,6 +736,18 @@ extern "C" void FAF_X87_SOFT_NAME(msvc8_x87_scale_vector_to_length_of)(
   float* const destLanes, const float* const sourceLanes, const float* const targetLanes, const float sourceLengthSq
 )
 {
+  if (AllFinite(targetLanes[0], targetLanes[1], targetLanes[2], sourceLengthSq, sourceLanes[0], sourceLanes[1], sourceLanes[2])) {
+    const double x = targetLanes[0];
+    const double y = targetLanes[1];
+    const double z = targetLanes[2];
+    const double factor = Sqrt24(Div24(Add24(Add24(Mul24(x, x), Mul24(y, y)), Mul24(z, z)), sourceLengthSq));
+    if (std::isfinite(factor)) {
+      destLanes[0] = static_cast<float>(Mul24(sourceLanes[0], factor));
+      destLanes[1] = static_cast<float>(Mul24(factor, sourceLanes[1]));
+      destLanes[2] = static_cast<float>(Mul24(factor, sourceLanes[2]));
+      return;
+    }
+  }
   const Reg tx = Load(targetLanes[0]);
   const Reg ty = Load(targetLanes[1]);
   const Reg tz = Load(targetLanes[2]);
@@ -658,6 +763,22 @@ extern "C" void FAF_X87_SOFT_NAME(msvc8_x87_scale_vector_to_length_of)(
 // axis0.x are fmul's memory operands, everything else is loaded.
 extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_box_radius_on_axis)(const float* const boxLanes, const float* const axisLanes)
 {
+  bool finite = AllFinite(axisLanes[0], axisLanes[1], axisLanes[2]);
+  for (int lane = 3; lane < 15 && finite; ++lane) {
+    finite = std::isfinite(boxLanes[lane]);
+  }
+  if (finite) {
+    const double ax = axisLanes[0];
+    const double ay = axisLanes[1];
+    const double az = axisLanes[2];
+    const auto dot = [&](const float* const axis) {
+      return Add24(Add24(Mul24(axis[1], ay), Mul24(axis[2], az)), Mul24(axis[0], ax));
+    };
+    const double radius2 = Mul24(std::fabs(dot(boxLanes + 9)), boxLanes[14]);
+    const double radius1 = Mul24(std::fabs(dot(boxLanes + 6)), boxLanes[13]);
+    const double radius0 = Mul24(std::fabs(dot(boxLanes + 3)), boxLanes[12]);
+    return static_cast<float>(Add24(Add24(radius2, radius1), radius0));
+  }
   const Reg ax = Load(axisLanes[0]);
   const Reg ay = Load(axisLanes[1]);
   const Reg az = Load(axisLanes[2]);
@@ -673,6 +794,12 @@ extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_box_radius_on_axis)(const float* co
 // sqrt((z*z + y*y) + x*x).
 extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_vector_length_zyx)(const float* const lanes)
 {
+  if (AllFinite(lanes[0], lanes[1], lanes[2])) {
+    const double x = lanes[0];
+    const double y = lanes[1];
+    const double z = lanes[2];
+    return static_cast<float>(Sqrt24(Add24(Add24(Mul24(z, z), Mul24(y, y)), Mul24(x, x))));
+  }
   const Reg x = Load(lanes[0]);
   const Reg y = Load(lanes[1]);
   const Reg z = Load(lanes[2]);
