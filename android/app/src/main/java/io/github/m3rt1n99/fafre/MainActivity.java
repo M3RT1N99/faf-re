@@ -18,6 +18,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -53,6 +54,7 @@ public final class MainActivity extends Activity {
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private long mShownRevision = -1;
+    private boolean mScreenKeptOn;
 
     private TextView mMathResult;
     private TextView mDataStatus;
@@ -163,6 +165,18 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        TestState.visible(true);
+    }
+
+    @Override
+    protected void onStop() {
+        TestState.visible(false);
+        super.onStop();
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         mShownRevision = -1;
@@ -182,6 +196,15 @@ public final class MainActivity extends Activity {
             button.setEnabled(!running);
         }
         mCancel.setEnabled(running);
+        if (running != mScreenKeptOn) {
+            // A game is played with the screen on; a phone with the screen off may run the CPU slower.
+            mScreenKeptOn = running;
+            if (running) {
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } else {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        }
         if (revision == mShownRevision) {
             return;
         }

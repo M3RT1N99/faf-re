@@ -25,6 +25,7 @@ final class TestState {
         double playSeconds;
         double wallSeconds;
         String note = "";
+        SpeedSampler.Summary speed;
 
         Replay(long id) {
             this.id = id;
@@ -60,6 +61,10 @@ final class TestState {
             if (!note.isEmpty()) {
                 out.append("  ").append(note);
             }
+            String speedLine = speed != null ? speed.line() : "";
+            if (!speedLine.isEmpty()) {
+                out.append("\n    ").append(speedLine);
+            }
             return out.toString();
         }
     }
@@ -73,6 +78,7 @@ final class TestState {
     private static String sMathOutput = "";
     private static String sMathVerdict = "";
     private static long sRevision;
+    private static boolean sVisible;
 
     private TestState() {
     }
@@ -154,6 +160,15 @@ final class TestState {
 
     static synchronized List<Replay> replaySnapshot() {
         return new ArrayList<>(sReplays);
+    }
+
+    /** Whether MainActivity is on screen (between onStart and onStop). */
+    static synchronized void visible(boolean visible) {
+        sVisible = visible;
+    }
+
+    static synchronized boolean visible() {
+        return sVisible;
     }
 
     /** Called after a field of a Replay changed. */

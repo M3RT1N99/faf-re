@@ -139,6 +139,7 @@ final class HeadlessRun {
         environment(context, storage, builder);
         Process process = builder.start();
         sProcess = process;
+        SpeedSampler sampler = SpeedSampler.start(context, command.get(0), replay, new File(run, "speed.csv"));
         boolean ended = false;
         boolean over = false;
         Boolean verdictCrash = null;
@@ -195,6 +196,7 @@ final class HeadlessRun {
                 process.destroyForcibly();
                 waitFor(process, 10);
             }
+            replay.speed = sampler.stop();
         }
         replay.wallSeconds = (System.nanoTime() - started) / 1e9;
         int exit = process.isAlive() ? -1 : process.exitValue();

@@ -42,6 +42,7 @@ final class Results {
         try {
             summary.put("app", BuildConfig.VERSION_NAME + " (" + BuildConfig.GIT_COMMIT + ")");
             summary.put("device", device());
+            summary.put("cores", SpeedSampler.cores().describe());
             summary.put("math", TestState.mathVerdict());
             JSONArray replays = new JSONArray();
             for (TestState.Replay replay : TestState.replaySnapshot()) {
@@ -61,6 +62,32 @@ final class Results {
                 entry.put("play_s", replay.playSeconds);
                 entry.put("wall_s", replay.wallSeconds);
                 entry.put("note", replay.note);
+                if (replay.speed != null && replay.speed.seconds > 0) {
+                    SpeedSampler.Summary speed = replay.speed;
+                    JSONObject cpu = new JSONObject();
+                    cpu.put("line", speed.line());
+                    cpu.put("thread", speed.thread);
+                    cpu.put("sampled_s", Math.round(speed.seconds));
+                    cpu.put("cpu_s", Math.round(speed.cpuSeconds * 10) / 10.0);
+                    JSONObject classes = new JSONObject();
+                    for (String name : speed.classOrder) {
+                        Double share = speed.classShare.get(name);
+                        classes.put(name, share != null ? Math.round(share * 1000) / 1000.0 : 0);
+                    }
+                    cpu.put("classes", classes);
+                    cpu.put("average_mhz", Math.round(speed.averageMhz));
+                    cpu.put("lowest_cap_mhz", speed.lowestCapMhz);
+                    cpu.put("rated_mhz", speed.ratedMhz);
+                    cpu.put("thermal_max", speed.thermal);
+                    if (!Double.isNaN(speed.batteryStartC)) {
+                        cpu.put("battery_start_c", speed.batteryStartC);
+                        cpu.put("battery_max_c", speed.batteryMaxC);
+                    }
+                    cpu.put("charging_s", speed.chargingSeconds);
+                    cpu.put("screen_off_s", speed.screenOffSeconds);
+                    cpu.put("app_not_in_front_s", speed.hiddenSeconds);
+                    entry.put("speed", cpu);
+                }
                 replays.put(entry);
             }
             summary.put("replays", replays);
@@ -77,7 +104,7 @@ final class Results {
             add(out, "log.txt", String.join("\n", TestState.log()).getBytes(StandardCharsets.UTF_8));
             for (TestState.Replay replay : TestState.replaySnapshot()) {
                 File run = new File(storage.runs(), String.valueOf(replay.id));
-                for (String name : new String[] {"headless.out", "engine.log"}) {
+                for (String name : new String[] {"headless.out", "engine.log", "speed.csv"}) {
                     File file = new File(run, name);
                     if (file.isFile()) {
                         addFile(out, replay.id + "/" + name, file);

@@ -49,19 +49,28 @@ the game data they imported. Everything lives in the app's external files folder
 | `scfa/` | The user's own *Supreme Commander: Forged Alliance*: `gamedata/*.scd` (*Import SCFA folder…*, or an earlier release's import), `maps/` if imported |
 | `parity/game/<version>/` | FAF's game files for one game version, packed as `tools/parity-data` packs them for CI: `gamedata/*.nx2` cut to the files headless reads, `bin/init_ci.lua`, `fa_path.lua` pointing at `scfa/` |
 | `parity/replays/`, `maps/`, `m28/` | Downloaded replays, vault maps and M28AI versions |
-| `parity/runs/<id>/` | One replay's run: `replay.scfareplay`, its own vault, `headless.out`, `engine.log` |
+| `parity/runs/<id>/` | One replay's run: `replay.scfareplay`, its own vault, `headless.out`, `engine.log`, `speed.csv` |
 | `parity/results/` | The results zips |
 
-- **Math check**: `faf_sim_math_tests golden.txt`. PASS means all golden cases (recorded on the x87 of
-  windows-x64) equal the phone's results.
+- **Math check**: `faf_sim_math_tests golden.txt --known known_android-<arch>.txt` (the overlay only
+  where `tests/sim_math` has one for the ABI: arm64's records the square root of a negative number,
+  whose NaN is positive on ARM). PASS means all golden cases (recorded on the x87 of windows-x64),
+  with the overlay's recorded differences, equal the phone's results. On a failure the app also
+  writes every differing case (`sim_math_known.txt`, the overlay format).
 - **Replay parity** follows `tools/parity-data/shard.py`: the replay from FAF's vault, decoded
   (zstd or zlib) and checked (featured mod `faf`, engine version, M28AI as the only sim mod); FAF's
   game files of its version from FAF's updater (about 700 MB downloaded once per version, 35 MB kept);
   its map from `scfa/maps` or FAF's map vault; then `headless --replay`. The verdicts are shard.py's:
   *pass*, *desync* (with the first beat whose checksum differs; a desync one live client had alone is
   not counted), *crash*, *incomplete*. Requests to FAF go one at a time, a second apart.
-- **Share results** zips `summary.json`, the math output, the log and each replay's `headless.out`
-  and `engine.log`.
+- **Where the simulation ran**: once a second during a replay, the busiest thread of the headless
+  process (the simulation's) from `/proc/<pid>/task/<tid>/stat` (CPU time, last CPU), that CPU's
+  class (little, mid, big by `cpuinfo_max_freq`), clock (`scaling_cur_freq`) and cap
+  (`scaling_max_freq`), Android's thermal status, the battery's temperature and charger, the screen
+  and whether the app is in front: a line under each replay, `speed` in `summary.json`, the rows in
+  `speed.csv`. The screen stays on while a test runs.
+- **Share results** zips `summary.json`, the math output, the log and each replay's `headless.out`,
+  `engine.log` and `speed.csv`.
 
 The default replays (26930624 and 26902315) and *Use the core set* are from
 [docs/PR_REPLAY_CHECK.md](../docs/PR_REPLAY_CHECK.md), all recorded on FAF game version 3835.
