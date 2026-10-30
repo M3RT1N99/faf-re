@@ -114,7 +114,10 @@ extern "C" void __cdecl _dosmaperr(unsigned long) {}
  * `__acrt_iob_func(0)` from `ucrtbase.dll` (the modern replacement) and
  * falls back to a static placeholder array if the symbol is unavailable.
  * Provided here because UCRT does not export `__iob_func` directly.
+ * Windows only: the POSIX C libraries have their own `stdin`/`stderr`, and
+ * bionic's `FILE` is an incomplete type, so no placeholder array exists there.
  */
+#if defined(_WIN32)
 extern "C" std::FILE* __cdecl __iob_func(void)
 {
 	using AcrtIobFunc = std::FILE* (__cdecl*)(unsigned int);
@@ -135,6 +138,7 @@ extern "C" std::FILE* __cdecl __iob_func(void)
 	static std::FILE sLegacyIobFallback[20]{};
 	return sLegacyIobFallback;
 }
+#endif // defined(_WIN32)
 
 // FUN_00923F20 / FUN_00923F40 are recovered once, further down this file, as
 // the `extern "C"` pair that `luaHelper_Realloc` / `luaHelper_Free` point at.
@@ -8372,11 +8376,11 @@ namespace
 	{
 		char inputBuffer[kLuaDebugInputBufferSize]{};
 
-		std::FILE* ioBase = __iob_func();
-		std::fputs(kLuaDebugPrompt, &ioBase[2]);
+		// `stderr` and `stdin` are MSVC8's `&__iob_func()[2]` and `&__iob_func()[0]`,
+		// the stream addresses the binary computes before each call.
+		std::fputs(kLuaDebugPrompt, stderr);
 
-		ioBase = __iob_func();
-		if (std::fgets(inputBuffer, kLuaDebugReadLineLimit, &ioBase[0]) == nullptr) {
+		if (std::fgets(inputBuffer, kLuaDebugReadLineLimit, stdin) == nullptr) {
 			return 0;
 		}
 
@@ -8388,10 +8392,8 @@ namespace
 			lua_dostring(state, inputBuffer);
 			lua_settop(state, 0);
 
-			ioBase = __iob_func();
-			std::fputs(kLuaDebugPrompt, &ioBase[2]);
-			ioBase = __iob_func();
-		} while (std::fgets(inputBuffer, kLuaDebugReadLineLimit, &ioBase[0]) != nullptr);
+			std::fputs(kLuaDebugPrompt, stderr);
+		} while (std::fgets(inputBuffer, kLuaDebugReadLineLimit, stdin) != nullptr);
 
 		return 0;
 	}
