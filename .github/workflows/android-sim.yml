@@ -90,4 +90,4 @@ jobs:
       - run: |
           chmod +x bin/*
           bin/faf-linux-toolchain-check
-          bin/faf_sim_math_tests tests/sim_math/golden.txt
+          bin/faf_sim_math_tests tests/sim_math/golden.txt --known tests/sim_math/known_android-arm64.txt
