@@ -128,8 +128,10 @@ val stageFafNative by tasks.registering(Sync::class) {
 }
 
 val stageFafAssets by tasks.registering(Sync::class) {
-    description = "Puts the sim-math golden values into the assets."
-    from(repoRoot.resolve("tests/sim_math/golden.txt"))
+    description = "Puts the sim-math golden values and the platforms' known differences into the assets."
+    from(repoRoot.resolve("tests/sim_math")) {
+        include("golden.txt", "known_android-*.txt")
+    }
     into(layout.buildDirectory.dir("fafAssets"))
 }
 
