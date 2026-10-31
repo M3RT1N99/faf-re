@@ -38,6 +38,7 @@ using UCHAR = unsigned char;
 using CHAR = char;
 using WCHAR = wchar_t;
 using WORD = std::uint16_t;
+using USHORT = std::uint16_t;
 using DWORD = std::uint32_t;
 using UINT = unsigned int;
 using INT = int;
@@ -128,11 +129,111 @@ struct tagSIZE
 };
 using SIZE = tagSIZE;
 using HBITMAP = void*;
+using COLORREF = DWORD;
 
 struct FILETIME
 {
   DWORD dwLowDateTime;
   DWORD dwHighDateTime;
+};
+
+/// -1, 0 or 1 as `a` is earlier than, equal to or later than `b`.
+inline LONG CompareFileTime(const FILETIME* const a, const FILETIME* const b) noexcept
+{
+  const std::uint64_t left = (std::uint64_t{a->dwHighDateTime} << 32) | a->dwLowDateTime;
+  const std::uint64_t right = (std::uint64_t{b->dwHighDateTime} << 32) | b->dwLowDateTime;
+  return left < right ? -1 : (left > right ? 1 : 0);
+}
+
+// The bitmap file and DIB headers, as data: the render backends write screenshots as .bmp
+// files and build cursors from them. Layouts as wingdi.h declares them.
+#define BI_RGB 0L
+#define BI_BITFIELDS 3L
+#define DIB_RGB_COLORS 0u
+#pragma pack(push, 2)
+struct BITMAPFILEHEADER
+{
+  WORD bfType;
+  DWORD bfSize;
+  WORD bfReserved1;
+  WORD bfReserved2;
+  DWORD bfOffBits;
+};
+#pragma pack(pop)
+struct BITMAPINFOHEADER
+{
+  DWORD biSize;
+  LONG biWidth;
+  LONG biHeight;
+  WORD biPlanes;
+  WORD biBitCount;
+  DWORD biCompression;
+  DWORD biSizeImage;
+  LONG biXPelsPerMeter;
+  LONG biYPelsPerMeter;
+  DWORD biClrUsed;
+  DWORD biClrImportant;
+};
+struct RGBQUAD
+{
+  BYTE rgbBlue;
+  BYTE rgbGreen;
+  BYTE rgbRed;
+  BYTE rgbReserved;
+};
+struct BITMAPINFO
+{
+  BITMAPINFOHEADER bmiHeader;
+  RGBQUAD bmiColors[1];
+};
+struct CIEXYZ
+{
+  LONG ciexyzX;
+  LONG ciexyzY;
+  LONG ciexyzZ;
+};
+struct CIEXYZTRIPLE
+{
+  CIEXYZ ciexyzRed;
+  CIEXYZ ciexyzGreen;
+  CIEXYZ ciexyzBlue;
+};
+struct BITMAPV5HEADER
+{
+  DWORD bV5Size;
+  LONG bV5Width;
+  LONG bV5Height;
+  WORD bV5Planes;
+  WORD bV5BitCount;
+  DWORD bV5Compression;
+  DWORD bV5SizeImage;
+  LONG bV5XPelsPerMeter;
+  LONG bV5YPelsPerMeter;
+  DWORD bV5ClrUsed;
+  DWORD bV5ClrImportant;
+  DWORD bV5RedMask;
+  DWORD bV5GreenMask;
+  DWORD bV5BlueMask;
+  DWORD bV5AlphaMask;
+  DWORD bV5CSType;
+  CIEXYZTRIPLE bV5Endpoints;
+  DWORD bV5GammaRed;
+  DWORD bV5GammaGreen;
+  DWORD bV5GammaBlue;
+  DWORD bV5Intent;
+  DWORD bV5ProfileData;
+  DWORD bV5ProfileSize;
+  DWORD bV5Reserved;
+};
+struct BITMAP
+{
+  LONG bmType;
+  LONG bmWidth;
+  LONG bmHeight;
+  LONG bmWidthBytes;
+  WORD bmPlanes;
+  WORD bmBitsPixel;
+  void* bmBits;
 };
 
 union LARGE_INTEGER
@@ -216,6 +317,15 @@ BOOL InitOnceExecuteOnce(PINIT_ONCE initOnce, PINIT_ONCE_FN function, PVOID para
 
 /// The process's command line (/proc/self/cmdline, arguments joined by spaces).
 const wchar_t* GetCommandLineW();
+/// The same command line, as UTF-8.
+const char* GetCommandLineA();
+
+/// No message queue here: the wait for the handles alone (MWMO_WAITALL waits for all).
+#define QS_ALLINPUT 0x04FFu
+#define MWMO_WAITALL 0x0001u
+#define MWMO_ALERTABLE 0x0002u
+#define MWMO_INPUTAVAILABLE 0x0004u
+DWORD MsgWaitForMultipleObjectsEx(DWORD count, const HANDLE* handles, DWORD milliseconds, DWORD wakeMask, DWORD flags);
 
 /// A slim reader/writer lock, as a POSIX rwlock (statically initialisable as SRWLOCK_INIT).
 struct SRWLOCK
@@ -417,6 +527,21 @@ int MultiByteToWideChar(UINT codePage, DWORD flags, const char* multiByte, int m
 // scans numbers only, where it is sscanf.
 #define sscanf_s sscanf
 DWORD GetModuleFileNameW(HMODULE module, wchar_t* fileName, DWORD size);
+/// The executable's path for a null module, else the path of the shared object at `module`.
+DWORD GetModuleFileNameA(HMODULE module, char* fileName, DWORD size);
+#define GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT 0x00000002u
+#define GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS 0x00000004u
+/// With GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS only: the shared object holding the address.
+BOOL GetModuleHandleExA(DWORD flags, const char* moduleName, HMODULE* module);
+/// Up to `framesToCapture` return addresses, after `framesToSkip` of the caller's own.
+USHORT RtlCaptureStackBackTrace(DWORD framesToSkip, DWORD framesToCapture, void** backTrace, DWORD* backTraceHash);
+/// True while a tracer (a debugger) is attached (/proc/self/status TracerPid).
+BOOL IsDebuggerPresent();
+/// Stops in the attached debugger (SIGTRAP).
+inline void DebugBreak() noexcept
+{
+  __builtin_debugtrap();
+}
 BOOL SetProcessAffinityMask(HANDLE process, DWORD_PTR processMask);
 
 // The shell folders, as the XDG directories: CSIDL_LOCAL_APPDATA is $XDG_DATA_HOME
@@ -429,6 +554,11 @@ BOOL SetProcessAffinityMask(HANDLE process, DWORD_PTR processMask);
 #define CSIDL_LOCAL_APPDATA 0x001C
 #define CSIDL_FLAG_CREATE 0x8000
 HRESULT SHGetFolderPathW(HWND owner, int folder, HANDLE token, DWORD flags, wchar_t* path);
+#define SHGFP_TYPE_CURRENT 0
+/// SHGetFolderPathW's folders, as UTF-8.
+HRESULT SHGetFolderPathA(HWND owner, int folder, HANDLE token, DWORD flags, char* path);
+/// `mkdir -p`: ERROR_SUCCESS, ERROR_ALREADY_EXISTS when it was there, else the error.
+int SHCreateDirectoryExA(HWND window, const char* path, const void* security);
 
 // Shell file operations are not available: SHFileOperation fails with ERROR_NOT_SUPPORTED and
 // touches nothing.
@@ -489,6 +619,7 @@ BOOL SetEndOfFile(HANDLE file);
 DWORD GetFileAttributesW(const wchar_t* path);
 DWORD GetFileAttributesA(const char* path);
 BOOL MoveFileExW(const wchar_t* from, const wchar_t* to, DWORD flags);
+BOOL MoveFileExA(const char* from, const char* to, DWORD flags);
 BOOL MoveFileW(const wchar_t* from, const wchar_t* to);
 BOOL DeleteFileW(const wchar_t* path);
 BOOL DeleteFileA(const char* path);
@@ -583,6 +714,9 @@ inline int sprintf_s(char (&buffer)[N], const char* const format, Args... args) 
   return sprintf_s(buffer, N, format, args...);
 }
 int vsprintf_s(char* buffer, std::size_t size, const char* format, va_list arguments) noexcept;
+/// The CRT's getenv_s: `*requiredSize` is the value's size with its NUL (0 when unset); ERANGE
+/// when `buffer` is too small for it.
+int getenv_s(std::size_t* requiredSize, char* buffer, std::size_t bufferSize, const char* name) noexcept;
 #define _TRUNCATE (static_cast<std::size_t>(-1))
 
 int _memicmp(const void* lhs, const void* rhs, std::size_t count) noexcept;
