@@ -4,7 +4,9 @@
 #include "gpg/gal/D3D9Utils.h"
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/Error.hpp"
+#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
+#endif
 
 namespace moho
 {

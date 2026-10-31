@@ -25,10 +25,14 @@
 #include "gpg/gal/EffectTechnique.hpp"
 #include "gpg/gal/EffectVariable.hpp"
 #include "gpg/gal/IndexBuffer.hpp"
+#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/TextureD3D9.hpp"
+#endif
 #include "gpg/gal/VertexBuffer.hpp"
 #include "gpg/gal/VertexFormat.hpp"
+#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
+#endif
 #include "gpg/gal/DeviceContext.hpp"
 #include "gpg/gal/Head.hpp"
 #include "gpg/gal/OutputContext.hpp"
