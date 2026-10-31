@@ -57,6 +57,9 @@ using HLOCAL = void*;
 using HWND = void*;
 using HDC = void*;
 using HFONT = void*;
+// The render backends' cursor helper (gpg/gal/backends/common/WindowsCursor.h) keeps these.
+using HCURSOR = void*;
+using HICON = void*;
 using LPVOID = void*;
 using LPCVOID = const void*;
 using LPSTR = char*;
