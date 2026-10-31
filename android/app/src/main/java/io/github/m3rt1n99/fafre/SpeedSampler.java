@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.BatteryManager;
 import android.os.Build;
+import android.os.PerformanceHintManager;
 import android.os.PowerManager;
 import android.system.Os;
 import android.system.OsConstants;
@@ -29,7 +30,8 @@ import java.util.TreeSet;
  * scaling_cur_freq and scaling_max_freq), Android's thermal status, the battery's temperature and
  * charger, the screen and whether the app was in front. Beats per second alone cannot tell a slow
  * core from a capped clock: in 0.4.1's runs a Galaxy S22 Ultra's X2 core ran at 1.5 to 1.9 of its
- * 2.8 GHz.
+ * 2.8 GHz. If asked, it also holds an Android performance hint session for the simulation thread
+ * (hintLoop) and records whether the phone granted it.
  */
 final class SpeedSampler {
     private static final String[] THERMAL = {"none", "light", "moderate", "severe", "critical", "emergency", "shutdown"};
@@ -98,6 +100,8 @@ final class SpeedSampler {
         double batteryStartC = Double.NaN;
         double batteryMaxC = Double.NaN;
         int chargingSeconds;
+        /** The performance hint: off, requested, on, or why not. */
+        String hint = "off";
 
         double busy() {
             return seconds > 0 ? cpuSeconds / seconds : 0;
@@ -127,6 +131,7 @@ final class SpeedSampler {
                 }
             }
             out.append("; thermal ").append(thermal);
+            out.append("; performance hint ").append(hint);
             if (!Double.isNaN(batteryStartC)) {
                 out.append(String.format(Locale.ROOT, "; battery %.0f to %.0f °C", batteryStartC, batteryMaxC));
             }
@@ -153,6 +158,10 @@ final class SpeedSampler {
         int ratedMhz;
     }
 
+    /** The performance hint's reporting window and target: a busy thread reports twice its target. */
+    private static final long HINT_WINDOW_MS = 100;
+    private static final long HINT_TARGET_NS = 50_000_000L;
+
     private final Context mContext;
     private final String mProgram;
     private final TestState.Replay mReplay;
@@ -161,25 +170,39 @@ final class SpeedSampler {
     private final Map<Integer, Task> mTasks = new HashMap<>();
     private final Summary mSummary = new Summary();
     private final Thread mThread;
+    private final Thread mHintThread;
     private volatile boolean mStopped;
+    private volatile int mPid = -1;
+    private volatile int mBusiestTid = -1;
 
-    private SpeedSampler(Context context, String program, TestState.Replay replay, File csv) {
+    private SpeedSampler(Context context, String program, TestState.Replay replay, File csv, boolean hint) {
         mContext = context;
         mProgram = program;
         mReplay = replay;
         mCsv = csv;
         mThread = new Thread(this::loop, "faf-re speed sampler");
         mThread.setDaemon(true);
+        mHintThread = hint ? new Thread(this::hintLoop, "faf-re performance hint") : null;
+        if (mHintThread != null) {
+            mHintThread.setDaemon(true);
+        }
+        mSummary.hint = hint ? "requested" : "off";
     }
 
     static Cores cores() {
         return new Cores();
     }
 
-    /** Starts sampling the child process running {@code program}; its rows go to {@code csv}. */
-    static SpeedSampler start(Context context, String program, TestState.Replay replay, File csv) {
-        SpeedSampler sampler = new SpeedSampler(context, program, replay, csv);
+    /**
+     * Starts sampling the child process running {@code program}; its rows go to {@code csv}. With
+     * {@code hint}, the simulation thread also gets an Android performance hint session.
+     */
+    static SpeedSampler start(Context context, String program, TestState.Replay replay, File csv, boolean hint) {
+        SpeedSampler sampler = new SpeedSampler(context, program, replay, csv, hint);
         sampler.mThread.start();
+        if (sampler.mHintThread != null) {
+            sampler.mHintThread.start();
+        }
         return sampler;
     }
 
@@ -187,13 +210,98 @@ final class SpeedSampler {
     Summary stop() {
         mStopped = true;
         mThread.interrupt();
+        if (mHintThread != null) {
+            mHintThread.interrupt();
+        }
         try {
             mThread.join(5000);
+            if (mHintThread != null) {
+                mHintThread.join(5000);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
         synchronized (this) {
             return mSummary;
+        }
+    }
+
+    /**
+     * Android's performance hint (ADPF, Android 12 and later) for the simulation thread, the one
+     * a game would use: every 100 ms the thread's run time (schedstat) is reported against a 50 ms
+     * target, so the system sees it behind and may raise its clock. Whether a phone does, and
+     * whether it lets an app hint the thread of a process it started, is what this measures.
+     */
+    private void hintLoop() {
+        if (Build.VERSION.SDK_INT < 31) {
+            hint("off: needs Android 12");
+            return;
+        }
+        PerformanceHintManager manager = mContext.getSystemService(PerformanceHintManager.class);
+        if (manager == null || manager.getPreferredUpdateRateNanos() < 0) {
+            hint("not supported by this phone");
+            return;
+        }
+        int tid;
+        while ((tid = mBusiestTid) <= 0) {
+            if (!pause(200)) {
+                return;
+            }
+        }
+        PerformanceHintManager.Session session;
+        try {
+            session = manager.createHintSession(new int[] {tid}, HINT_TARGET_NS);
+        } catch (RuntimeException e) {
+            hint("refused: " + e.getMessage());
+            return;
+        }
+        if (session == null) {
+            hint("not supported by this phone (no session)");
+            return;
+        }
+        hint("on");
+        File schedstat = new File("/proc/" + mPid + "/task/" + tid + "/schedstat");
+        long last = firstLong(readString(schedstat));
+        try {
+            while (pause(HINT_WINDOW_MS)) {
+                long run = firstLong(readString(schedstat));
+                if (run <= 0) {
+                    break; // the thread ended
+                }
+                if (run > last) {
+                    session.reportActualWorkDuration(run - last);
+                }
+                last = run;
+            }
+        } catch (RuntimeException e) {
+            hint("stopped: " + e.getMessage());
+        } finally {
+            session.close();
+        }
+    }
+
+    private void hint(String state) {
+        synchronized (this) {
+            mSummary.hint = state;
+        }
+    }
+
+    /** Sleeps; false once the sampler is stopped. */
+    private boolean pause(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            return false;
+        }
+        return !mStopped;
+    }
+
+    private static long firstLong(String text) {
+        int end = text.indexOf(' ');
+        try {
+            return Long.parseLong(end < 0 ? text : text.substring(0, end));
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
@@ -222,6 +330,7 @@ final class SpeedSampler {
                 if (pid < 0 && (pid = findChild(mProgram)) < 0) {
                     continue;
                 }
+                mPid = pid;
                 int thermal = Build.VERSION.SDK_INT >= 29 ? power.getCurrentThermalStatus() : -1;
                 boolean screenOn = power.isInteractive();
                 boolean inFront = TestState.visible();
@@ -332,13 +441,18 @@ final class SpeedSampler {
     /** The busiest thread so far is the simulation's; with one sim worker it carries the game. */
     private void summarize(long ticksPerSecond, int maxThermal) {
         Task busiest = null;
-        for (Task task : mTasks.values()) {
-            if (busiest == null || task.ticks > busiest.ticks) {
-                busiest = task;
+        int busiestTid = -1;
+        for (Map.Entry<Integer, Task> entry : mTasks.entrySet()) {
+            if (busiest == null || entry.getValue().ticks > busiest.ticks) {
+                busiest = entry.getValue();
+                busiestTid = entry.getKey();
             }
         }
         if (busiest == null) {
             return;
+        }
+        if (mSummary.seconds >= 2 && mBusiestTid < 0) {
+            mBusiestTid = busiestTid; // the performance hint's thread, once loading has shown which it is
         }
         long classified = 0;
         for (long ticks : busiest.classTicks) {

@@ -25,7 +25,8 @@ final class Http {
     static final String MOD_URL = "https://content.faforever.com/mods/";
 
     private static final long REQUEST_GAP_MS = 1000;
-    private static final int[] RETRY_DELAYS_MS = {2_000, 5_000, 15_000};
+    /** About ten minutes in all: a phone left running overnight can lose its network for a while. */
+    private static final int[] RETRY_DELAYS_MS = {2_000, 5_000, 15_000, 30_000, 60_000, 120_000, 300_000};
     private static long sLastRequest;
 
     /** A status other than 200/206; 404 means the file is not there. */
@@ -98,7 +99,7 @@ final class Http {
         IOException last = null;
         for (int attempt = 0; attempt <= RETRY_DELAYS_MS.length; ++attempt) {
             if (attempt > 0) {
-                sleep(RETRY_DELAYS_MS[attempt - 1]);
+                retryAfter(attempt, url, last);
             }
             HttpURLConnection connection = null;
             try {
@@ -131,7 +132,7 @@ final class Http {
         IOException last = null;
         for (int attempt = 0; attempt <= RETRY_DELAYS_MS.length; ++attempt) {
             if (attempt > 0) {
-                sleep(RETRY_DELAYS_MS[attempt - 1]);
+                retryAfter(attempt, url, last);
             }
             long have = part.isFile() ? part.length() : 0;
             HttpURLConnection connection = null;
@@ -195,6 +196,14 @@ final class Http {
         if (progress != null) {
             progress.bytes(done, total);
         }
+    }
+
+    /** Waits before the next try, and says so in the log. */
+    private static void retryAfter(int attempt, String url, IOException last) throws IOException {
+        long ms = RETRY_DELAYS_MS[attempt - 1];
+        TestState.line("Network: " + (last != null ? last.getMessage() : "error") + "; trying " + url + " again in " + ms / 1000
+            + " s (" + attempt + " of " + RETRY_DELAYS_MS.length + ")");
+        sleep(ms);
     }
 
     private static void sleep(long ms) throws IOException {

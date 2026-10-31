@@ -21,9 +21,12 @@
       data is the user's own copy of the game and far too large for a backup.
       extractNativeLibs: the tests start lib/<abi>/libfafheadless.so as a process, and an app may
       only start files from nativeLibraryDir, where only extracted lib*.so files land.
+      appCategory game: the system files the app as the game it tests, as phones' game modes and
+      Samsung's Game Booster tell games from other apps (0.6.2 found the CPU clock capped).
     -->
     <application
         android:allowBackup="false"
+        android:appCategory="game"
         android:extractNativeLibs="true"
         android:hasFragileUserData="true"
         android:icon="@mipmap/ic_launcher"

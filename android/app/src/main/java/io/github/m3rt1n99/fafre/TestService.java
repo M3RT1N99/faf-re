@@ -30,6 +30,7 @@ public final class TestService extends Service {
     static final String ACTION_CANCEL = "io.github.m3rt1n99.fafre.CANCEL";
     static final String EXTRA_IDS = "ids";
     static final String EXTRA_WORKERS = "workers";
+    static final String EXTRA_HINT = "hint";
 
     private static final String CHANNEL = "tests";
     private static final int NOTIFICATION = 1;
@@ -104,7 +105,8 @@ public final class TestService extends Service {
             } else if (ACTION_IMPORT.equals(action)) {
                 ScfaImport.run(this, storage, intent.getData());
             } else if (ACTION_REPLAYS.equals(action)) {
-                playReplays(storage, intent.getLongArrayExtra(EXTRA_IDS), intent.getIntExtra(EXTRA_WORKERS, 1));
+                playReplays(storage, intent.getLongArrayExtra(EXTRA_IDS), intent.getIntExtra(EXTRA_WORKERS, 1),
+                    intent.getBooleanExtra(EXTRA_HINT, true));
             }
         } catch (Cancellation.Cancelled e) {
             TestState.line("Cancelled.");
@@ -120,7 +122,7 @@ public final class TestService extends Service {
         }
     }
 
-    private void playReplays(Storage storage, long[] ids, int workers) {
+    private void playReplays(Storage storage, long[] ids, int workers, boolean hint) {
         List<TestState.Replay> replays = new ArrayList<>();
         for (long id : ids) {
             replays.add(new TestState.Replay(id));
@@ -143,7 +145,7 @@ public final class TestService extends Service {
                 continue;
             }
             try {
-                HeadlessRun.play(this, storage, replay, workers, log);
+                HeadlessRun.play(this, storage, replay, workers, hint, log);
             } catch (Cancellation.Cancelled e) {
                 replay.state = "cancelled";
             } catch (Exception e) {
@@ -181,8 +183,8 @@ public final class TestService extends Service {
             .build();
     }
 
-    static Intent replays(long[] ids, int workers) {
-        return new Intent(ACTION_REPLAYS).putExtra(EXTRA_IDS, ids).putExtra(EXTRA_WORKERS, workers);
+    static Intent replays(long[] ids, int workers, boolean hint) {
+        return new Intent(ACTION_REPLAYS).putExtra(EXTRA_IDS, ids).putExtra(EXTRA_WORKERS, workers).putExtra(EXTRA_HINT, hint);
     }
 
     static Intent importScfa(Uri tree) {

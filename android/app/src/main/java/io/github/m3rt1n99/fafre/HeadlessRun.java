@@ -62,7 +62,7 @@ final class HeadlessRun {
         environment.put("TMPDIR", context.getCacheDir().getAbsolutePath());
     }
 
-    static void play(Context context, Storage storage, TestState.Replay replay, int simWorkers, GameFiles.Log log)
+    static void play(Context context, Storage storage, TestState.Replay replay, int simWorkers, boolean hint, GameFiles.Log log)
         throws IOException {
         // The replay.
         replay.state = "preparing";
@@ -139,7 +139,7 @@ final class HeadlessRun {
         environment(context, storage, builder);
         Process process = builder.start();
         sProcess = process;
-        SpeedSampler sampler = SpeedSampler.start(context, command.get(0), replay, new File(run, "speed.csv"));
+        SpeedSampler sampler = SpeedSampler.start(context, command.get(0), replay, new File(run, "speed.csv"), hint);
         boolean ended = false;
         boolean over = false;
         Boolean verdictCrash = null;

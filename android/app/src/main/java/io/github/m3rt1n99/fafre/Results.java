@@ -1,5 +1,7 @@
 package io.github.m3rt1n99.fafre;
 
+import android.app.GameManager;
+import android.content.pm.ApplicationInfo;
 import android.os.Build;
 
 import org.json.JSONArray;
@@ -35,6 +37,21 @@ final class Results {
         return out.toString();
     }
 
+    /**
+     * How Android files the app: its category (the manifest says game, which Samsung's Game
+     * Booster may treat differently) and the game mode the system gives it.
+     */
+    static String game(android.content.Context context) {
+        String category = context.getApplicationInfo().category == ApplicationInfo.CATEGORY_GAME ? "category game" : "not a game";
+        if (Build.VERSION.SDK_INT < 31) {
+            return category;
+        }
+        GameManager games = context.getSystemService(GameManager.class);
+        int mode = games != null ? games.getGameMode() : GameManager.GAME_MODE_UNSUPPORTED;
+        String[] names = {"unsupported", "standard", "performance", "battery", "custom"};
+        return category + ", game mode " + (mode >= 0 && mode < names.length ? names[mode] : String.valueOf(mode));
+    }
+
     static File write(android.content.Context context, Storage storage) throws IOException {
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
         File zip = new File(storage.results(), "faf-re-results-" + stamp + ".zip");
@@ -43,6 +60,7 @@ final class Results {
             summary.put("app", BuildConfig.VERSION_NAME + " (" + BuildConfig.GIT_COMMIT + ")");
             summary.put("device", device());
             summary.put("cores", SpeedSampler.cores().describe());
+            summary.put("game", game(context));
             summary.put("math", TestState.mathVerdict());
             JSONArray replays = new JSONArray();
             for (TestState.Replay replay : TestState.replaySnapshot()) {
@@ -79,6 +97,7 @@ final class Results {
                     cpu.put("lowest_cap_mhz", speed.lowestCapMhz);
                     cpu.put("rated_mhz", speed.ratedMhz);
                     cpu.put("thermal_max", speed.thermal);
+                    cpu.put("performance_hint", speed.hint);
                     if (!Double.isNaN(speed.batteryStartC)) {
                         cpu.put("battery_start_c", speed.batteryStartC);
                         cpu.put("battery_max_c", speed.batteryMaxC);

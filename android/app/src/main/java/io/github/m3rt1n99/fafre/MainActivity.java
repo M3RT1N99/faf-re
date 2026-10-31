@@ -20,6 +20,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -65,6 +66,7 @@ public final class MainActivity extends Activity {
     private TextView mLog;
     private EditText mReplayIds;
     private EditText mWorkers;
+    private CheckBox mHint;
     private final List<Button> mStartButtons = new ArrayList<>();
     private Button mCancel;
 
@@ -129,6 +131,11 @@ public final class MainActivity extends Activity {
         mWorkers.setEms(3);
         row.addView(mWorkers);
         replays.addView(row);
+        mHint = new CheckBox(this);
+        mHint.setText("Ask Android for full speed (performance hint)");
+        mHint.setTextColor(TEXT);
+        mHint.setChecked(true);
+        replays.addView(mHint);
         button(replays, "Use the core set", v -> mReplayIds.setText(ids(CORE_SET)));
         button(replays, "Use the extended set", v -> mReplayIds.setText(ids(CORE_SET) + " " + ids(EXTENDED_SET)));
         mStartButtons.add(button(replays, "Play replays", v -> playReplays()));
@@ -273,7 +280,7 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < array.length; ++i) {
             array[i] = ids.get(i);
         }
-        TestService.start(this, TestService.replays(array, workers));
+        TestService.start(this, TestService.replays(array, workers, mHint.isChecked()));
     }
 
     private void pickScfa() {

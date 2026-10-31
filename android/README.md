@@ -69,6 +69,12 @@ the game data they imported. Everything lives in the app's external files folder
   (`scaling_max_freq`), Android's thermal status, the battery's temperature and charger, the screen
   and whether the app is in front: a line under each replay, `speed` in `summary.json`, the rows in
   `speed.csv`. The screen stays on while a test runs.
+- **Performance hint** (the box under the replay IDs, on by default): the app opens an Android
+  performance hint session (`PerformanceHintManager`, Android 12+) for the simulation thread and
+  reports its run time every 100 ms against a 50 ms target, as a game reports its frames; the
+  speed line says whether the phone granted it. The manifest files the app as a game
+  (`android:appCategory`); `summary.json` `game` shows the category and game mode the phone gives
+  it. Downloads are retried for about ten minutes when the network drops.
 - **Share results** zips `summary.json`, the math output, the log and each replay's `headless.out`,
   `engine.log` and `speed.csv`.
 
