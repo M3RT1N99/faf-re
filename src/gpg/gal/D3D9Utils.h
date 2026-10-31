@@ -12,6 +12,10 @@
 //
 #if defined(_WIN32)
 #include <d3d9types.h>
+#elif __has_include(<d3d9types.h>)
+// Builds without the Windows SDK that carry the engine's stand-ins (platform/posix/directx, the
+// Android client): D3DVIEWPORT9 and D3DLOCKED_RECT for the gal interfaces.
+#include <d3d9types.h>
 #endif
 
 namespace gpg::gal
