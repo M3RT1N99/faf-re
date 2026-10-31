@@ -23,16 +23,23 @@
       only start files from nativeLibraryDir, where only extracted lib*.so files land.
       appCategory game: the system files the app as the game it tests, as phones' game modes and
       Samsung's Game Booster tell games from other apps (0.6.2 found the CPU clock capped).
+      isGame is the older flag for the same (deprecated since Android 8, still read by some game
+      launchers); the game_mode_config meta-data below is Android 13's game mode configuration.
     -->
     <application
         android:allowBackup="false"
         android:appCategory="game"
+        android:isGame="true"
         android:extractNativeLibs="true"
         android:hasFragileUserData="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.FafRe"
         tools:targetApi="29">
+
+        <meta-data
+            android:name="android.game_mode_config"
+            android:resource="@xml/game_mode_config" />
 
         <activity
             android:name=".MainActivity"

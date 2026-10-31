@@ -42,7 +42,11 @@ final class Results {
      * Booster may treat differently) and the game mode the system gives it.
      */
     static String game(android.content.Context context) {
-        String category = context.getApplicationInfo().category == ApplicationInfo.CATEGORY_GAME ? "category game" : "not a game";
+        ApplicationInfo app = context.getApplicationInfo();
+        @SuppressWarnings("deprecation")
+        boolean isGame = (app.flags & ApplicationInfo.FLAG_IS_GAME) != 0;
+        String category = (app.category == ApplicationInfo.CATEGORY_GAME ? "category game" : "not a game")
+            + (isGame ? ", isGame" : "");
         if (Build.VERSION.SDK_INT < 31) {
             return category;
         }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 13's game mode configuration (GameModeConfig): the app offers the performance and
+  battery game modes itself, and the system applies no interventions (no resolution scaling, no
+  frame rate override). Game panels such as Samsung's may offer the modes for the app.
+-->
+<game-mode-config xmlns:android="http://schemas.android.com/apk/res/android"
+    android:allowGameDownscaling="false"
+    android:allowGameFpsOverride="false"
+    android:supportsBatteryGameMode="true"
+    android:supportsPerformanceGameMode="true" />
