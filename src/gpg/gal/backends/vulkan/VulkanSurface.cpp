@@ -28,4 +28,12 @@ namespace gpg::gal::vulkan
     result = create(instance, &info, nullptr, &surface);
     return (result == VK_SUCCESS) ? surface : VK_NULL_HANDLE;
   }
+
+  void WindowClientSize(void* const window, std::uint32_t& width, std::uint32_t& height)
+  {
+    RECT client{};
+    ::GetClientRect(static_cast<HWND>(window), &client);
+    width = static_cast<std::uint32_t>(client.right - client.left > 1 ? client.right - client.left : 1);
+    height = static_cast<std::uint32_t>(client.bottom - client.top > 1 ? client.bottom - client.top : 1);
+  }
 } // namespace gpg::gal::vulkan

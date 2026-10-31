@@ -10,8 +10,10 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
 #include <d3dcompiler.h>
 #include <wrl/client.h>
+#endif
 
 #include "VulkanSurface.h"
 #include "gpg/core/utils/Logging.h"
@@ -797,10 +799,7 @@ namespace gpg::gal
       std::uint32_t width = head.mWidth;
       std::uint32_t height = head.mHeight;
       if (width == 0U || height == 0U) {
-        RECT client{};
-        ::GetClientRect(static_cast<HWND>(head.mWindow), &client);
-        width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
-        height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
+        vulkan::WindowClientSize(head.mWindow, width, height);
       }
       CreateSwapChain(mSwapChains[static_cast<std::size_t>(headIndex)], width, height);
     }
@@ -1543,15 +1542,16 @@ namespace gpg::gal
     for (const MacroPair& macro : kInjectedMacros) {
       localContext.DefineMacro(macro.name, macro.value);
     }
+
+    const DWORD started = ::GetTickCount();
+    const char* const sourceName = context.mSourcePath.c_str();
+    const std::size_t sourceBytes = static_cast<std::size_t>(context.mSourceBuffer.mEnd - context.mSourceBuffer.mBegin);
+#if defined(_WIN32)
     std::vector<D3D_SHADER_MACRO> defines;
     for (const EffectMacro& macro : localContext.mMacros) {
       defines.push_back(D3D_SHADER_MACRO{macro.keyText_.c_str(), macro.valueText_.c_str()});
     }
     defines.push_back(D3D_SHADER_MACRO{nullptr, nullptr});
-
-    const DWORD started = ::GetTickCount();
-    const char* const sourceName = context.mSourcePath.c_str();
-    const std::size_t sourceBytes = static_cast<std::size_t>(context.mSourceBuffer.mEnd - context.mSourceBuffer.mBegin);
     Microsoft::WRL::ComPtr<ID3DBlob> preprocessed;
     Microsoft::WRL::ComPtr<ID3DBlob> errors;
     if (FAILED(::D3DPreprocess(context.mSourceBuffer.mBegin, sourceBytes, sourceName, defines.data(), nullptr, &preprocessed, &errors))) {
@@ -1559,8 +1559,16 @@ namespace gpg::gal
         ((errors != nullptr) ? std::string(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize()) : std::string());
       ThrowError("DeviceVulkan.cpp", __LINE__, message.c_str());
     }
+    const std::string_view preprocessedText(static_cast<const char*>(preprocessed->GetBufferPointer()), preprocessed->GetBufferSize() - 1U);
+#else
+    // d3dcompiler is Windows-only; elsewhere the effects' preprocessor comes with DXC
+    // (android/CLIENT_PLAN.md, C2).
+    ThrowError("DeviceVulkan.cpp", __LINE__, (std::string("unable to preprocess effect: ") + sourceName +
+      " reason: no effect preprocessor on this platform yet").c_str());
+    const std::string_view preprocessedText;
+#endif
     d3d11::TranslatedEffectSource translated = d3d11::TranslateEffectSource(
-      std::string_view(static_cast<const char*>(preprocessed->GetBufferPointer()), preprocessed->GetBufferSize() - 1U), true,
+      preprocessedText, true,
       // No original source: the D3D9 alpha test is applied by the effect layer (EffectDescription),
       // and running the translator's copy as well would test twice.
       std::string_view{}
@@ -2016,10 +2024,7 @@ namespace gpg::gal
       std::uint32_t width = head.mWidth;
       std::uint32_t height = head.mHeight;
       if (width == 0U || height == 0U) {
-        RECT client{};
-        ::GetClientRect(static_cast<HWND>(head.mWindow), &client);
-        width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
-        height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
+        vulkan::WindowClientSize(head.mWindow, width, height);
       }
       CreateSwapChain(mSwapChains[headIndex], width, height);
     }
