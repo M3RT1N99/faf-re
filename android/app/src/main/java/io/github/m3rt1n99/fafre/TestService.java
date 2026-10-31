@@ -154,8 +154,7 @@ public final class TestService extends Service {
             } catch (Cancellation.Cancelled e) {
                 replay.state = "cancelled";
             } catch (Exception e) {
-                replay.state = "error";
-                replay.note = "download: " + e.getMessage();
+                failed(replay, "download: ", e);
             }
             if (!ready.contains(replay)) {
                 TestState.line(replay.line());
@@ -173,11 +172,23 @@ public final class TestService extends Service {
             } catch (Cancellation.Cancelled e) {
                 replay.state = "cancelled";
             } catch (Exception e) {
-                replay.state = "error";
-                replay.note = String.valueOf(e.getMessage());
+                failed(replay, "", e);
             }
             TestState.line(replay.line());
             TestState.touch();
+        }
+    }
+
+    /**
+     * A replay that stopped with an exception. Cancel closes the running engine's output, so the
+     * read fails ("interrupted by close()"): after a cancel that is the cancel, not an error.
+     */
+    private static void failed(TestState.Replay replay, String what, Exception e) {
+        if (Cancellation.requested()) {
+            replay.state = "cancelled";
+        } else {
+            replay.state = "error";
+            replay.note = what + e.getMessage();
         }
     }
 
