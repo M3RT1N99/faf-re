@@ -74,7 +74,9 @@ the game data they imported. Everything lives in the app's external files folder
   reports its run time every 100 ms against a 50 ms target, as a game reports its frames; the
   speed line says whether the phone granted it. The manifest files the app as a game
   (`android:appCategory`); `summary.json` `game` shows the category and game mode the phone gives
-  it. Downloads are retried for about ten minutes when the network drops.
+  it. A run first downloads every replay, map and M28AI version it needs, then plays them, so a
+  long run needs no network once the games start; downloads are retried for about ten minutes
+  when the network drops.
 - **Share results** zips `summary.json`, the math output, the log and each replay's `headless.out`,
   `engine.log` and `speed.csv`.
 

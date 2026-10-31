@@ -62,11 +62,8 @@ final class HeadlessRun {
         environment.put("TMPDIR", context.getCacheDir().getAbsolutePath());
     }
 
-    static void play(Context context, Storage storage, TestState.Replay replay, int simWorkers, boolean hint, GameFiles.Log log)
-        throws IOException {
-        // The replay.
-        replay.state = "preparing";
-        TestState.touch();
+    /** The replay from the cache, downloaded first if it is not there; its header fills the replay's line. */
+    private static ReplayFile load(Storage storage, TestState.Replay replay, GameFiles.Log log) throws IOException {
         File cached = new File(storage.replays(), replay.id + ".fafreplay");
         if (!cached.isFile()) {
             log.step("Downloading replay " + replay.id);
@@ -79,6 +76,42 @@ final class HeadlessRun {
         replay.gameVersion = info.gameVersion;
         replay.expectedBeats = info.beats;
         TestState.touch();
+        return file;
+    }
+
+    /**
+     * Everything a replay needs from the network, into the caches: the replay, FAF's game files
+     * of its version, its map and its M28AI version. A run fetches all its replays before it
+     * plays the first, so a download problem shows at once, and the games need no network.
+     * False when the replay cannot be played; its state and note say why.
+     */
+    static boolean fetch(Storage storage, TestState.Replay replay, GameFiles.Log log) throws IOException {
+        replay.state = "downloading";
+        TestState.touch();
+        ReplayFile.Info info = load(storage, replay, log).info();
+        if (info.unsupported != null) {
+            replay.state = "unsupported";
+            replay.note = info.unsupported;
+            TestState.touch();
+            return false;
+        }
+        GameFiles.ensure(storage, info.gameVersion, log);
+        Vault.map(storage, info.map, log);
+        if (info.m28 != null) {
+            Vault.m28(storage, info.m28, log);
+        }
+        replay.state = "ready";
+        TestState.touch();
+        return true;
+    }
+
+    static void play(Context context, Storage storage, TestState.Replay replay, int simWorkers, boolean hint, GameFiles.Log log)
+        throws IOException {
+        // The replay.
+        replay.state = "preparing";
+        TestState.touch();
+        ReplayFile file = load(storage, replay, log);
+        ReplayFile.Info info = file.info();
         if (info.unsupported != null) {
             replay.state = "unsupported";
             replay.note = info.unsupported;
@@ -86,7 +119,7 @@ final class HeadlessRun {
             return;
         }
 
-        // Its game files, map and M28AI.
+        // Its game files, map and M28AI (fetch put them in the caches).
         File gameDir = GameFiles.ensure(storage, info.gameVersion, log);
         File map = Vault.map(storage, info.map, log);
         File mod = info.m28 != null ? Vault.m28(storage, info.m28, log) : null;

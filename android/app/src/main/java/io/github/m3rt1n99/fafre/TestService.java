@@ -139,7 +139,31 @@ public final class TestService extends Service {
                 TestState.step(text);
             }
         };
+        // First everything from the network: a download problem shows while the tester is still
+        // there, and the games, which can take hours, need no network.
+        List<TestState.Replay> ready = new ArrayList<>();
         for (TestState.Replay replay : replays) {
+            if (Cancellation.requested()) {
+                replay.state = "cancelled";
+                continue;
+            }
+            try {
+                if (HeadlessRun.fetch(storage, replay, log)) {
+                    ready.add(replay);
+                }
+            } catch (Cancellation.Cancelled e) {
+                replay.state = "cancelled";
+            } catch (Exception e) {
+                replay.state = "error";
+                replay.note = "download: " + e.getMessage();
+            }
+            if (!ready.contains(replay)) {
+                TestState.line(replay.line());
+            }
+            TestState.touch();
+        }
+        TestState.line(ready.size() + " of " + replays.size() + " replays ready; no more downloads in this run");
+        for (TestState.Replay replay : ready) {
             if (Cancellation.requested()) {
                 replay.state = "cancelled";
                 continue;
