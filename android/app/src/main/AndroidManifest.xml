@@ -51,6 +51,13 @@
             </intent-filter>
         </activity>
 
+        <!-- The renderer test (GalSmoke): a full-screen surface for the engine's Vulkan device. -->
+        <activity
+            android:name=".GalSmokeActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
         <service
             android:name=".TestService"
             android:exported="false"

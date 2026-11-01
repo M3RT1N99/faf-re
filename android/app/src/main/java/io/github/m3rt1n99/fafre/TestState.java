@@ -79,6 +79,7 @@ final class TestState {
     private static String sMathVerdict = "";
     private static long sRevision;
     private static boolean sVisible;
+    private static String sRendererReport = "";
 
     private TestState() {
     }
@@ -160,6 +161,26 @@ final class TestState {
 
     static synchronized List<Replay> replaySnapshot() {
         return new ArrayList<>(sReplays);
+    }
+
+    /** The renderer test's report (GalSmokeActivity). */
+    static synchronized void renderer(String report) {
+        sRendererReport = report;
+        ++sRevision;
+    }
+
+    static synchronized String rendererReport() {
+        return sRendererReport;
+    }
+
+    /** "Renderer: PASS: 600 frames ..." from the report, or that it has not run. */
+    static synchronized String rendererVerdict() {
+        for (String line : sRendererReport.split("\n")) {
+            if (line.startsWith("PASS") || line.startsWith("FAIL")) {
+                return "Renderer: " + line;
+            }
+        }
+        return sRendererReport.isEmpty() ? "" : "Renderer: incomplete (see the report)";
     }
 
     /** Whether MainActivity is on screen (between onStart and onStop). */

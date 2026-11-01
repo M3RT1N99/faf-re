@@ -3,8 +3,10 @@
 An Android app that runs the engine's simulation on a phone, without graphics: the sim-math tests
 and FAF vault replays played to the end on the headless simulation (`src/headless`), with every
 checksum the players' games recorded compared against the phone's. It is how a phone's CPU is
-checked before the game itself runs there. The engine programs come from the Android presets
-(`cmake/toolchains/android-*.cmake`); this folder only packages them.
+checked before the game itself runs there. A renderer test brings up the engine's Vulkan device on
+the screen, the first step of the game client ([CLIENT_PLAN.md](CLIENT_PLAN.md)). The engine
+programs and libraries come from the Android presets (`cmake/toolchains/android-*.cmake`); this
+folder only packages them.
 
 ## Building
 
@@ -15,21 +17,22 @@ and Python 3. `ANDROID_HOME` names the SDK.
 ```sh
 # The engine (dependencies once, then the presets):
 cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;boost_1_34_1" -P cmake/FafDependencies.cmake
-cmake --preset android-arm64-release
-cmake --build --preset android-arm64-release --target headless faf_sim_math_tests
+cmake --preset android-arm64-release -B build/android-arm64-client -DFAF_ANDROID_CLIENT=ON
+cmake --build build/android-arm64-client --target headless faf_sim_math_tests fafgalsmoke
 
 # The app (JAVA_HOME = JDK 17):
 cd android
 ./gradlew assembleRelease    # app/build/outputs/apk/release/faf-re-android-<version>-arm64-v8a.apk
 ```
 
-For the emulator, build `android-x64-release` too and add its ABI:
-`./gradlew assembleRelease -PfafAbis=arm64-v8a,x86_64`. The emulator runs x86_64 natively and arm64
-under its ARM translation (an arm64-only APK).
+For the emulator, build `android-x64-release` the same way (`-B build/android-x64-client`) and add
+its ABI: `./gradlew assembleRelease -PfafAbis=arm64-v8a,x86_64`. The emulator runs x86_64 natively
+and arm64 under its ARM translation (an arm64-only APK).
 
 - `stageFafNative` packages `headless` and `faf_sim_math_tests` as `libfafheadless.so` and
   `libfafsimmath.so`: Android extracts only `lib*.so` files into the app's native library folder, the
-  one place an app may start a program from. `gradle.properties` names the build folders.
+  one place an app may start a program from. It adds the renderer test's `libfafgalsmoke.so`.
+  `gradle.properties` names the build folders.
 - `stageFafAssets` puts `tests/sim_math/golden.txt` into the assets.
 - `versionCode` is `git rev-list --count HEAD`, so a newer commit installs over an older one;
   `versionName` is in `gradle.properties`.
@@ -77,8 +80,15 @@ the game data they imported. Everything lives in the app's external files folder
   it. A run first downloads every replay, map and M28AI version it needs, then plays them, so a
   long run needs no network once the games start; downloads are retried for about ten minutes
   when the network drops.
-- **Share results** zips `summary.json`, the math output, the log and each replay's `headless.out`,
-  `engine.log` and `speed.csv`.
+- **Renderer test** (card 4, `GalSmokeActivity`): `libfafgalsmoke.so`
+  (`src/platform/android/GalSmoke.cpp`) lists the phone's Vulkan devices, creates the engine's gal
+  device (the Vulkan backend, which needs Vulkan 1.3) on a full-screen surface, then clears it in
+  changing colours and presents for ten seconds. It needs no game data and draws without shaders or
+  textures, which come with C2. The report gives the device, the engine's log lines and the frame
+  rate, or the line that failed. The emulator's SwiftShader offers only Vulkan 1.2, so the test fails
+  there.
+- **Share results** zips `summary.json`, the math output, the log, the renderer report
+  (`renderer.txt`) and each replay's `headless.out`, `engine.log` and `speed.csv`.
 
 The default replays (26930624 and 26902315), *Use the core set* and *Use the extended set* (the core
 set and its ten longer games) are from [docs/PR_REPLAY_CHECK.md](../docs/PR_REPLAY_CHECK.md), all

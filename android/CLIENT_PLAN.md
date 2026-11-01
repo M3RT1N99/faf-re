@@ -67,3 +67,26 @@ replaced by upstream's Vulkan backend and effect layer.
 **First step of C1:** the portable DirectX type headers and leaving the Windows-only backends out,
 then the probe again, which shows the real errors behind the headers. wx-lite follows: it decides
 most of C1, as 56 files stop at wx.
+
+## Progress
+
+*2026-11-01:*
+- **Done:**
+  - the DirectX type stand-ins (`src/platform/posix/directx`);
+  - the Windows-only backends left out of non-Windows builds;
+  - the Vulkan backend's Android surface;
+  - what the render code needs from the POSIX Win32 layer;
+  - stand-ins for DXC, D3DX and the Win32 cursor.
+- **Client build:** `-DFAF_ANDROID_CLIENT=ON` (`cmake/FafAndroidClient.cmake`) builds the renderer
+  (`faf_gal`) and the client objects (`faf_client`, outside the default build until they compile).
+- **Renderer test:** `libfafgalsmoke.so` is card 4 of the app, from release 0.7.0. The engine's gal
+  brings up its Vulkan device on the phone's screen, then clears and presents. On the emulator it
+  stops at SwiftShader's Vulkan 1.2.
+- **Open for C1:**
+  - wx-lite;
+  - the XACT stand-in;
+  - the GDI font (`CD3DFont`);
+  - the DirectSound movie sink;
+  - the mesh vertex formatters (in the Direct3D 9 and 10 backends' files, on D3DX's float16).
+
+  After that, `libfafgame.so` links.

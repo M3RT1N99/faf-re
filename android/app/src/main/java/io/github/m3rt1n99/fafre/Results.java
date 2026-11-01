@@ -66,6 +66,7 @@ final class Results {
             summary.put("cores", SpeedSampler.cores().describe());
             summary.put("game", game(context));
             summary.put("math", TestState.mathVerdict());
+            summary.put("renderer", TestState.rendererVerdict());
             JSONArray replays = new JSONArray();
             for (TestState.Replay replay : TestState.replaySnapshot()) {
                 JSONObject entry = new JSONObject();
@@ -125,6 +126,9 @@ final class Results {
                 addFile(out, MathCheck.KNOWN_FILE, known);
             }
             add(out, "log.txt", String.join("\n", TestState.log()).getBytes(StandardCharsets.UTF_8));
+            if (!TestState.rendererReport().isEmpty()) {
+                add(out, "renderer.txt", TestState.rendererReport().getBytes(StandardCharsets.UTF_8));
+            }
             for (TestState.Replay replay : TestState.replaySnapshot()) {
                 File run = new File(storage.runs(), String.valueOf(replay.id));
                 for (String name : new String[] {"headless.out", "engine.log", "speed.csv"}) {

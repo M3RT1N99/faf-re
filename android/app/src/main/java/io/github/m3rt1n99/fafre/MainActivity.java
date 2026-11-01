@@ -60,6 +60,7 @@ public final class MainActivity extends Activity {
     private boolean mScreenKeptOn;
 
     private TextView mMathResult;
+    private TextView mRendererResult;
     private TextView mDataStatus;
     private TextView mStep;
     private TextView mReplayResults;
@@ -143,6 +144,15 @@ public final class MainActivity extends Activity {
         mReplayResults.setTypeface(Typeface.MONOSPACE);
         replays.addView(mReplayResults);
 
+        // 4. Renderer.
+        LinearLayout renderer = card(column, "4 · Renderer (Vulkan)",
+            "The engine's own renderer on this phone: the Vulkan backend the PC version uses brings up its device on "
+                + "the screen and clears it in changing colours for " + GalSmokeActivity.SECONDS + " seconds. No game data, "
+                + "no shaders yet. Back ends it early.");
+        mStartButtons.add(button(renderer, "Run renderer test", v -> startActivity(new Intent(this, GalSmokeActivity.class))));
+        mRendererResult = text("", 14, TEXT);
+        renderer.addView(mRendererResult);
+
         // Running.
         LinearLayout running = card(column, "Progress", null);
         mStep = text("", 14, ACCENT);
@@ -216,6 +226,9 @@ public final class MainActivity extends Activity {
         mShownRevision = revision;
         String math = TestState.mathVerdict();
         mMathResult.setText(math);
+        String rendererVerdict = TestState.rendererVerdict();
+        mRendererResult.setText(rendererVerdict);
+        mRendererResult.setTextColor(rendererVerdict.contains("PASS") ? PASS : rendererVerdict.contains("FAIL") ? FAIL : TEXT);
         mMathResult.setTextColor(math.startsWith("PASS") ? PASS : math.startsWith("FAIL") ? FAIL : TEXT);
         mStep.setText(running ? (TestState.step().isEmpty() ? "Running…" : TestState.step()) : "Idle");
         mReplayResults.setText(String.join("\n", TestState.replayLines()));

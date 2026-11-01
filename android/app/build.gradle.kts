@@ -101,26 +101,37 @@ dependencies {
     implementation("com.github.luben:zstd-jni:1.5.7-12@aar")
 }
 
+// The engine's programs, started as processes, and its libraries, loaded by the app; the client's
+// (FAF_ANDROID_CLIENT=ON, android/CLIENT_PLAN.md) come from the same build directory.
+val fafNativePrograms = listOf("headless" to "libfafheadless.so", "faf_sim_math_tests" to "libfafsimmath.so")
+val fafNativeLibraries = listOf("libfafgalsmoke.so")
+
 val stageFafNative by tasks.registering(Sync::class) {
-    description = "Packages the engine's Android programs (CMake preset builds) as lib<name>.so."
+    description = "Packages the engine's Android programs (CMake preset builds) as lib<name>.so, and its libraries."
     into(layout.buildDirectory.dir("fafNative"))
     for (abi in fafAbis) {
         val dir = repoRoot.resolve(providers.gradleProperty("fafNativeDir.$abi").get())
-        for ((program, library) in listOf("headless" to "libfafheadless.so", "faf_sim_math_tests" to "libfafsimmath.so")) {
+        for ((program, library) in fafNativePrograms) {
             from(dir.resolve(program)) {
                 into(abi)
                 rename { library }
+            }
+        }
+        for (library in fafNativeLibraries) {
+            from(dir.resolve(library)) {
+                into(abi)
             }
         }
     }
     doFirst {
         for (abi in fafAbis) {
             val dir = repoRoot.resolve(providers.gradleProperty("fafNativeDir.$abi").get())
-            for (program in listOf("headless", "faf_sim_math_tests")) {
-                if (!dir.resolve(program).isFile) {
+            for (file in fafNativePrograms.map { it.first } + fafNativeLibraries) {
+                if (!dir.resolve(file).isFile) {
                     throw GradleException(
-                        "$dir/$program is missing: build the engine first " +
-                            "(cmake --preset android-<abi>-release, cmake --build --preset android-<abi>-release)")
+                        "$dir/$file is missing: build the engine first " +
+                            "(cmake --preset android-<abi>-release -B build/android-<abi>-client -DFAF_ANDROID_CLIENT=ON, " +
+                            "cmake --build build/android-<abi>-client --target headless faf_sim_math_tests fafgalsmoke)")
                 }
             }
         }
