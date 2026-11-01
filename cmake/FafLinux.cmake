@@ -129,6 +129,8 @@ list(LENGTH _faf_sim_files _faf_sim_count)
 message(STATUS "faf_sim: ${_faf_sim_count} translation units")
 
 file(WRITE "${CMAKE_BINARY_DIR}/win32-alias/windows.h" "#pragma once\n#include <Windows.h>\n")
+# The effects' shader cache (gpg/gal/effects/EffectRuntime.cpp, the Android client) spells it so.
+file(WRITE "${CMAKE_BINARY_DIR}/win32-alias/shlobj.h" "#pragma once\n#include <ShlObj.h>\n")
 
 # The wire format of server-authoritative sessions (remote/sources.cmake, FAF_REMOTE_SOURCES),
 # after the engine's sources as in the Windows server-mode build: headless's wire checks
