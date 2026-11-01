@@ -18,7 +18,7 @@ on:
       - dependencies/patches/**
       - .github/workflows/android-sim.yml
   push:
-    branches: [master, android-app]
+    branches: [master, android-app, android-client]
     paths:
       - CMakeLists.txt
       - CMakePresets.json
