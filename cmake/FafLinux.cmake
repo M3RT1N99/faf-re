@@ -100,6 +100,9 @@ add_subdirectory("${PROJECT_SOURCE_DIR}/cmake/deps/zlib" "${CMAKE_BINARY_DIR}/de
 # initialiser runs, as in the Windows executable.
 include("${PROJECT_SOURCE_DIR}/src/sources.cmake")
 include("${PROJECT_SOURCE_DIR}/src/sim_sources.cmake")
+# The simulation's sources before the POSIX filters below: the Android client
+# (cmake/FafAndroidClient.cmake) builds the rest of the engine from the difference.
+set(_faf_sim_sources_unfiltered ${FAF_SIM_SOURCES})
 
 # boost.thread 1.34.1 on pthreads: the Win32 TLS hooks are left out.
 list(FILTER FAF_SIM_SOURCES EXCLUDE REGEX "/libs/thread/src/tss_(dll|hooks|pe)\\.cpp$")
@@ -310,3 +313,9 @@ add_dependencies(headless faf_sim_libm_gate)
 # sections must equal Windows' faf_registration_dump_sim (src/CMakeLists.txt).
 add_executable(faf_registration_dump_sim EXCLUDE_FROM_ALL "${PROJECT_SOURCE_DIR}/tests/registry/RegistrationDump.cpp")
 target_link_libraries(faf_registration_dump_sim PRIVATE faf_sim)
+
+# --- the game client on Android (android/CLIENT_PLAN.md) ---------------------------------
+option(FAF_ANDROID_CLIENT "Build the game client as libfafgame.so (Android, android/CLIENT_PLAN.md)" OFF)
+if(FAF_ANDROID_CLIENT)
+  include(FafAndroidClient)
+endif()
