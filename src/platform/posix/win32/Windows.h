@@ -81,6 +81,7 @@ using LONGLONG = std::int64_t;
 #define S_OK (static_cast<HRESULT>(0))
 #define E_FAIL (static_cast<HRESULT>(0x80004005u))
 #define E_INVALIDARG (static_cast<HRESULT>(0x80070057u))
+#define E_NOTIMPL (static_cast<HRESULT>(0x80004001u))
 #define SUCCEEDED(hr) (static_cast<HRESULT>(hr) >= 0)
 #define FAILED(hr) (static_cast<HRESULT>(hr) < 0)
 
