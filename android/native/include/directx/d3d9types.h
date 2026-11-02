@@ -5,7 +5,7 @@
 // SDK: Android. The gal device interface takes a D3DVIEWPORT9, and texture sheets lock into a
 // D3DLOCKED_RECT, whichever backend draws. Layouts as the SDK's d3d9types.h declares them.
 
-#include <windows.h> // DWORD, INT: platform/posix/win32/Windows.h
+#include <Windows.h> // DWORD, INT, RECT
 
 typedef struct _D3DVIEWPORT9
 {

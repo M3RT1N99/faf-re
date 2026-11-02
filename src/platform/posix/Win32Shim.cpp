@@ -6,7 +6,6 @@
 
 #include "platform/posix/win32/Windows.h"
 #include "platform/posix/win32/io.h"
-#include "platform/posix/Backtrace.h"
 #include "gpg/core/containers/String.h"
 
 #include <algorithm>
@@ -822,30 +821,6 @@ const wchar_t* GetCommandLineW()
   return sCommandLine;
 }
 
-const char* GetCommandLineA()
-{
-  // GetCommandLineW's line, narrowed once; it holds bytes the way /proc/self/cmdline had them.
-  static char sCommandLine[8192];
-  static INIT_ONCE sOnce = INIT_ONCE_STATIC_INIT;
-  (void)InitOnceExecuteOnce(&sOnce, [](PINIT_ONCE, PVOID, PVOID*) -> BOOL {
-    const wchar_t* const wide = GetCommandLineW();
-    std::size_t out = 0;
-    for (; wide[out] != L'\0' && out + 1 < sizeof(sCommandLine); ++out) {
-      sCommandLine[out] = static_cast<char>(wide[out]);
-    }
-    sCommandLine[out] = '\0';
-    return TRUE;
-  }, nullptr, nullptr);
-  return sCommandLine;
-}
-
-DWORD MsgWaitForMultipleObjectsEx(
-  const DWORD count, const HANDLE* const handles, const DWORD milliseconds, DWORD, const DWORD flags
-)
-{
-  return WaitForMultipleObjects(count, handles, (flags & MWMO_WAITALL) != 0 ? TRUE : FALSE, milliseconds);
-}
-
 HANDLE GetProcessHeap()
 {
   static int sProcessHeap = 0;
@@ -1412,21 +1387,6 @@ BOOL MoveFileW(const wchar_t* const from, const wchar_t* const to)
   return MoveFileExW(from, to, 0);
 }
 
-BOOL MoveFileExA(const char* const from, const char* const to, const DWORD flags)
-{
-  const std::string source = ResolveCase(SlashPath(from));
-  const std::string target = ResolveCase(SlashPath(to));
-  if ((flags & MOVEFILE_REPLACE_EXISTING) == 0 && ::access(target.c_str(), F_OK) == 0) {
-    tLastError = ERROR_ALREADY_EXISTS;
-    return FALSE;
-  }
-  if (::rename(source.c_str(), target.c_str()) != 0) {
-    SetErrnoError();
-    return FALSE;
-  }
-  return TRUE;
-}
-
 BOOL DeleteFileA(const char* const path)
 {
   if (::unlink(SlashPath(path).c_str()) != 0) {
@@ -1589,89 +1549,6 @@ DWORD GetModuleFileNameW(const HMODULE module, wchar_t* const fileName, const DW
   return static_cast<DWORD>(wide.size());
 }
 
-DWORD GetModuleFileNameA(const HMODULE module, char* const fileName, const DWORD size)
-{
-  if (fileName == nullptr || size == 0) {
-    tLastError = ERROR_INVALID_PARAMETER;
-    return 0;
-  }
-  std::string path;
-  if (module == nullptr) {
-    char exe[4096]{};
-    const ssize_t length = ::readlink("/proc/self/exe", exe, sizeof(exe) - 1);
-    if (length <= 0) {
-      SetErrnoError();
-      return 0;
-    }
-    path.assign(exe, static_cast<std::size_t>(length));
-  } else {
-    // A module is a shared object's base address (GetModuleHandleExA).
-    Dl_info info{};
-    if (::dladdr(module, &info) == 0 || info.dli_fname == nullptr) {
-      tLastError = ERROR_INVALID_PARAMETER;
-      return 0;
-    }
-    path = info.dli_fname;
-  }
-  if (path.size() >= size) {
-    std::memcpy(fileName, path.c_str(), size - 1);
-    fileName[size - 1] = '\0';
-    tLastError = ERROR_INSUFFICIENT_BUFFER;
-    return size;
-  }
-  std::memcpy(fileName, path.c_str(), path.size() + 1);
-  tLastError = ERROR_SUCCESS;
-  return static_cast<DWORD>(path.size());
-}
-
-BOOL GetModuleHandleExA(const DWORD flags, const char* const moduleName, HMODULE* const module)
-{
-  if (module == nullptr || (flags & GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS) == 0) {
-    tLastError = ERROR_INVALID_PARAMETER;
-    return FALSE;
-  }
-  Dl_info info{};
-  if (::dladdr(moduleName, &info) == 0 || info.dli_fbase == nullptr) {
-    *module = nullptr;
-    tLastError = ERROR_INVALID_PARAMETER;
-    return FALSE;
-  }
-  *module = info.dli_fbase;
-  return TRUE;
-}
-
-USHORT RtlCaptureStackBackTrace(
-  const DWORD framesToSkip, const DWORD framesToCapture, void** const backTrace, DWORD* const backTraceHash
-)
-{
-  void* frames[128];
-  // Frame 0 of Backtrace is this function: the caller's own frames start at 1.
-  const int got = platform::posix::Backtrace(frames, 128);
-  const int first = 1 + static_cast<int>(framesToSkip);
-  int copied = 0;
-  DWORD hash = 0;
-  for (int at = first; at < got && copied < static_cast<int>(framesToCapture); ++at, ++copied) {
-    backTrace[copied] = frames[at];
-    hash += static_cast<DWORD>(reinterpret_cast<std::uintptr_t>(frames[at]));
-  }
-  if (backTraceHash != nullptr) {
-    *backTraceHash = hash;
-  }
-  return static_cast<USHORT>(copied);
-}
-
-BOOL IsDebuggerPresent()
-{
-  std::ifstream status("/proc/self/status");
-  std::string line;
-  while (std::getline(status, line)) {
-    if (line.rfind("TracerPid:", 0) == 0) {
-      return std::strtol(line.c_str() + 10, nullptr, 10) != 0 ? TRUE : FALSE;
-    }
-  }
-  return FALSE;
-}
-
 BOOL SetProcessAffinityMask(const HANDLE process, const DWORD_PTR processMask)
 {
   if (process != kCurrentProcessPseudoHandle || processMask == 0) {
@@ -1729,42 +1606,6 @@ HRESULT SHGetFolderPathW(HWND, const int folder, HANDLE, DWORD, wchar_t* const p
   }
   std::wmemcpy(path, wide.c_str(), wide.size() + 1);
   return S_OK;
-}
-
-HRESULT SHGetFolderPathA(const HWND owner, const int folder, const HANDLE token, const DWORD flags, char* const path)
-{
-  if (path == nullptr) {
-    return E_INVALIDARG;
-  }
-  wchar_t wide[MAX_PATH]{};
-  const HRESULT result = SHGetFolderPathW(owner, folder, token, flags, wide);
-  if (result != S_OK) {
-    return result;
-  }
-  const std::string narrow = NarrowPath(wide);
-  if (narrow.size() >= MAX_PATH) {
-    return E_FAIL;
-  }
-  std::memcpy(path, narrow.c_str(), narrow.size() + 1);
-  return S_OK;
-}
-
-int SHCreateDirectoryExA(HWND, const char* const path, const void*)
-{
-  if (path == nullptr || path[0] == '\0') {
-    return static_cast<int>(ERROR_INVALID_PARAMETER);
-  }
-  const std::filesystem::path directory(SlashPath(path));
-  std::error_code error;
-  if (std::filesystem::is_directory(directory, error)) {
-    return static_cast<int>(ERROR_ALREADY_EXISTS);
-  }
-  if (!std::filesystem::create_directories(directory, error) && error) {
-    errno = error.value();
-    SetErrnoError();
-    return static_cast<int>(tLastError);
-  }
-  return static_cast<int>(ERROR_SUCCESS);
 }
 
 int SHFileOperationA(SHFILEOPSTRUCTA*)
@@ -1908,32 +1749,6 @@ int strncpy_s(char* const dest, const std::size_t destSize, const char* const sr
 int strcpy_s(char* const dest, const std::size_t destSize, const char* const src) noexcept
 {
   return strncpy_s(dest, destSize, src, src != nullptr ? std::strlen(src) : 0);
-}
-
-int getenv_s(std::size_t* const requiredSize, char* const buffer, const std::size_t bufferSize, const char* const name) noexcept
-{
-  if (requiredSize == nullptr || name == nullptr || (buffer == nullptr && bufferSize != 0)) {
-    return EINVAL;
-  }
-  const char* const value = std::getenv(name);
-  if (value == nullptr) {
-    *requiredSize = 0;
-    if (buffer != nullptr) {
-      buffer[0] = '\0';
-    }
-    return 0;
-  }
-  const std::size_t needed = std::strlen(value) + 1;
-  *requiredSize = needed;
-  if (buffer == nullptr) {
-    return 0; // the size query
-  }
-  if (needed > bufferSize) {
-    buffer[0] = '\0';
-    return ERANGE;
-  }
-  std::memcpy(buffer, value, needed);
-  return 0;
 }
 
 int vsprintf_s(char* const buffer, const std::size_t size, const char* const format, va_list arguments) noexcept

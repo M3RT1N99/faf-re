@@ -1,17 +1,16 @@
-// Engine addition (android/CLIENT_PLAN.md, C1): ImageCodec.h where d3dx11_43.dll cannot be
-// loaded, in place of ImageCodec.cpp. There is no codec, as on a Windows host without the
-// DirectX End-User Runtime: Instance() is null and the backends take that path. C2 makes the
-// codec portable (the direct DDS load and a decoder without D3DX). Image::Allocate and
-// FromGalFormat are ImageCodec.cpp's, unchanged.
+// The texture codec (gpg/gal/backends/common/ImageCodec.h) for the Android client build, in place
+// of ImageCodec.cpp, which decodes with D3DX11 on a WARP device (d3dx11_43.dll). There is no
+// codec here yet, as on a Windows host without the DirectX End-User Runtime: every decode fails.
+// CLIENT_PLAN.md's C2 brings a codec without D3DX.
 //
-// FAF_GAL_SMOKE_TEST (the renderer test library) gives an instance whose decodes fail, so the
-// Vulkan device comes up for a test without textures.
+// Image::Allocate, FromGalFormat and the two settings are ImageCodec.cpp's, unchanged: that file
+// holds them with the D3DX code. Instance() is in GalAvailabilityAndroid.cpp, so the renderer test
+// can give its own answer (src/smoke/GalSmokeDoubles.cpp).
 
-#include "ImageCodec.h"
+#include "gpg/gal/backends/common/ImageCodec.h"
 
 #include <algorithm>
 
-#include "gpg/core/utils/Logging.h"
 #include "gpg/gal/backends/dxgi/DxgiFormats.h"
 
 namespace gpg::gal::imaging
@@ -55,21 +54,6 @@ namespace gpg::gal::imaging
 
   bool gDdsDirectLoad = true;
   bool gTextureDecodeCache = true;
-
-  ImageCodec* ImageCodec::Instance()
-  {
-#if defined(FAF_GAL_SMOKE_TEST)
-    static ImageCodec* const sCodec = new ImageCodec();
-    return sCodec;
-#else
-    static const bool sReported = [] {
-      gpg::Warnf("imaging: no texture codec on this platform yet (android/CLIENT_PLAN.md C2)");
-      return true;
-    }();
-    (void)sReported;
-    return nullptr;
-#endif
-  }
 
   ImageCodec::~ImageCodec() = default;
 

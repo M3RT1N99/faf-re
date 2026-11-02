@@ -15,13 +15,7 @@ namespace gpg::gal::vulkan
     if (module != nullptr) {
       return true;
     }
-#if defined(_WIN32)
     module = ::LoadLibraryA("vulkan-1.dll");
-#elif defined(__ANDROID__)
-    module = ::LoadLibraryA("libvulkan.so");
-#else
-    module = ::LoadLibraryA("libvulkan.so.1");
-#endif
     if (module == nullptr) {
       return false;
     }

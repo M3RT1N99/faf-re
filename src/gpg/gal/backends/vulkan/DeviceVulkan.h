@@ -309,7 +309,6 @@ namespace gpg::gal
     std::uint64_t mSubmittedSerial = 0;
     bool mAnisotropy = false;
     bool mWireframeSupported = false;
-    bool mBcTextures = false;   // textureCompressionBC (FAF addition: optional, phones' GPUs lack it)
     bool mMemoryBudget = false; // VK_EXT_memory_budget enabled
     std::string mDriverName;    // VkPhysicalDeviceDriverProperties driverName + driverInfo
     VkFormat mDepthStencilFormat = VK_FORMAT_D24_UNORM_S8_UINT;

@@ -1,0 +1,43 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "android-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "android-arm64",
+      "displayName": "Android arm64-v8a: the engine's programs, the client, the renderer test",
+      "inherits": "android-base",
+      "toolchainFile": "${sourceDir}/../../cmake/toolchains/android-arm64.cmake"
+    },
+    {
+      "name": "android-x64",
+      "displayName": "Android x86_64 (emulator): the engine's programs, the client, the renderer test",
+      "inherits": "android-base",
+      "toolchainFile": "${sourceDir}/../../cmake/toolchains/android-x64.cmake"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "android-arm64",
+      "configurePreset": "android-arm64",
+      "targets": ["headless", "faf_sim_math_tests", "fafgalsmoke"]
+    },
+    {
+      "name": "android-x64",
+      "configurePreset": "android-x64",
+      "targets": ["headless", "faf_sim_math_tests", "fafgalsmoke"]
+    }
+  ]
+}

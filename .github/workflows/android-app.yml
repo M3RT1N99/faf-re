@@ -1,8 +1,8 @@
 name: Android app
 
 # Builds the Android test app (android/README.md): the engine's arm64 programs and the renderer
-# test library from the android-arm64-release preset with the client (FAF_ANDROID_CLIENT=ON,
-# android/CLIENT_PLAN.md) and the pinned NDK, then the APK with Gradle. The APK is signed
+# test library with the Android native build (android/native, its android-arm64 preset) and the
+# pinned NDK, then the APK with Gradle. The APK is signed
 # with the runner's own debug key, so it installs on a phone without an earlier release, not as an
 # update of one; testers' releases are built where their key is.
 on:
@@ -43,8 +43,10 @@ jobs:
           path: dependencies/.downloads
           key: deps-${{ hashFiles('cmake/FafDependencies.cmake') }}
       - run: cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;boost_1_34_1" -P cmake/FafDependencies.cmake
-      - run: cmake --preset android-arm64-release -B build/android-arm64-client -DFAF_ANDROID_CLIENT=ON
-      - run: cmake --build build/android-arm64-client --target headless faf_sim_math_tests fafgalsmoke
+      - working-directory: android/native
+        run: |
+          cmake --preset android-arm64
+          cmake --build --preset android-arm64
       - uses: actions/setup-java@v5
         with:
           distribution: temurin

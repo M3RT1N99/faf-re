@@ -1,0 +1,14 @@
+diff --git a/src/gpg/gal/D3D9Utils.h b/src/gpg/gal/D3D9Utils.h
+--- a/src/gpg/gal/D3D9Utils.h
++++ b/src/gpg/gal/D3D9Utils.h
+@@ -12,6 +12,10 @@
+ //
+ #if defined(_WIN32)
+ #include <d3d9types.h>
++#elif __has_include(<d3d9types.h>)
++// The Android client build's DirectX stand-ins (android/native/include/directx): the gal
++// interfaces take a D3DVIEWPORT9 there too.
++#include <d3d9types.h>
+ #endif
+ 
+ namespace gpg::gal

@@ -9,10 +9,6 @@
 
 #if defined(_WIN32)
 #include <d3d9types.h>
-#elif __has_include(<d3d9types.h>)
-// Builds without the Windows SDK that carry the engine's stand-ins (platform/posix/directx, the
-// Android client): RECT from the POSIX Windows.h, D3DLOCKED_RECT from d3d9types.h.
-#include <d3d9types.h>
 #else
 struct RECT
 {

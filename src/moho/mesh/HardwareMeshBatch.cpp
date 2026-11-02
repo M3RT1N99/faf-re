@@ -28,18 +28,13 @@
 #include "gpg/gal/Texture.hpp"
 #include "gpg/gal/TextureContext.h"
 #include "gpg/gal/VertexBufferContext.hpp"
-#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
 #include "gpg/gal/backends/d3d9/EffectTechniqueD3D9.hpp"
-#endif
 #include "gpg/gal/EffectTechnique.hpp"
-#include "gpg/gal/MeshFormatter.h"
-#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/Float16HardwareVertexFormatterD3D9.hpp"
 #include "gpg/gal/backends/d3d9/IndexBufferD3D9.hpp"
 #include "gpg/gal/backends/d3d9/VertexBufferD3D9.hpp"
 #include "gpg/gal/backends/d3d9/VertexFormatD3D9.hpp"
-#endif
 #include "moho/render/d3d/CD3DDevice.h"
 #include "moho/render/d3d/CD3DEffectTechnique.h"
 #include "moho/render/d3d/ShaderVar.h"
@@ -797,8 +792,6 @@ namespace moho
     // since (the skinning palettes). Multi-pass techniques keep the loop below.
     // The two open-pass draws are FAF's; they keep the binary's fatal handling
     // of a failed draw, as the per-pass draw below does.
-    // Direct3D 9 only, so only where that backend exists (Windows).
-#if defined(_WIN32)
     if (sOpenPassTechnique != nullptr && technique == sOpenPassTechnique) {
       static_cast<gpg::gal::EffectTechniqueD3D9*>(technique)->CommitChanges();
       try {
@@ -808,10 +801,8 @@ namespace moho
       }
       return;
     }
-#endif
 
     const int passCount = technique->BeginTechnique();
-#if defined(_WIN32)
     if (passCount == 1 && device->GetDeviceContext()->mDeviceType == gpg::gal::DeviceApi::Direct3D9) {
       technique->BeginPass(0);
       try {
@@ -822,7 +813,6 @@ namespace moho
       sOpenPassTechnique = technique;
       return;
     }
-#endif
 
     for (int pass = 0; pass < passCount; ++pass) {
       technique->BeginPass(pass);

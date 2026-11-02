@@ -10,13 +10,9 @@
 #include "gpg/core/utils/Global.h"
 #include "gpg/core/utils/Logging.h"
 #include "gpg/gal/Device.hpp"
-#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
-#endif
 #include "gpg/gal/EffectVariable.hpp"
-#if defined(_WIN32)
 #include "gpg/gal/backends/d3d9/TextureD3D9.hpp"
-#endif
 #include "moho/misc/ID3DDeviceResources.h"
 #include "moho/render/ID3DRenderTarget.h"
 #include "moho/render/ID3DVertexSheet.h"

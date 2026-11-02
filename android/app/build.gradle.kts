@@ -1,7 +1,7 @@
 // The test app: the engine's headless replay runner and sim-math tests, run on the phone.
 //
-// The native programs are not built here: the CMake presets build them
-// (cmake --build --preset android-arm64-release), and stageFafNative packages them as
+// The native programs are not built here: the Android native build builds them (android/native:
+// cmake --build --preset android-arm64), and stageFafNative packages them as
 // lib<name>.so, the only files Android extracts into nativeLibraryDir, from where an app may
 // start a program. tests/sim_math/golden.txt goes into the assets.
 
@@ -101,8 +101,8 @@ dependencies {
     implementation("com.github.luben:zstd-jni:1.5.7-12@aar")
 }
 
-// The engine's programs, started as processes, and its libraries, loaded by the app; the client's
-// (FAF_ANDROID_CLIENT=ON, android/CLIENT_PLAN.md) come from the same build directory.
+// The engine's programs, started as processes, and the libraries the app loads, all from the
+// Android native build's bin folder (android/native, gradle.properties fafNativeDir).
 val fafNativePrograms = listOf("headless" to "libfafheadless.so", "faf_sim_math_tests" to "libfafsimmath.so")
 val fafNativeLibraries = listOf("libfafgalsmoke.so")
 
@@ -129,9 +129,8 @@ val stageFafNative by tasks.registering(Sync::class) {
             for (file in fafNativePrograms.map { it.first } + fafNativeLibraries) {
                 if (!dir.resolve(file).isFile) {
                     throw GradleException(
-                        "$dir/$file is missing: build the engine first " +
-                            "(cmake --preset android-<abi>-release -B build/android-<abi>-client -DFAF_ANDROID_CLIENT=ON, " +
-                            "cmake --build build/android-<abi>-client --target headless faf_sim_math_tests fafgalsmoke)")
+                        "$dir/$file is missing: build the engine first, in android/native " +
+                            "(cmake --preset android-<abi>, cmake --build --preset android-<abi>)")
                 }
             }
         }

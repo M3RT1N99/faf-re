@@ -39,10 +39,8 @@
 #include <Shlwapi.h>
 #include "gpg/core/utils/Global.h"
 #include "gpg/core/utils/Logging.h"
-#if defined(_WIN32)
 #include "gpg/gal/backends/d3d10/DeviceD3D10.hpp"
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
-#endif
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/DeviceContext.hpp"
 #include "gpg/gal/Error.hpp"

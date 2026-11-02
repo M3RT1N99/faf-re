@@ -10,10 +10,8 @@
 #include <string>
 #include <vector>
 
-#if defined(_WIN32)
 #include <d3dcompiler.h>
 #include <wrl/client.h>
-#endif
 
 #include "VulkanSurface.h"
 #include "gpg/core/utils/Logging.h"
@@ -101,30 +99,6 @@ namespace gpg::gal
     {
       const DXGI_FORMAT format = static_cast<TextureVulkan&>(texture).DxgiFormat();
       return format == DXGI_FORMAT_R8G8B8A8_UNORM || format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-    }
-
-    /**
-     * FAF addition: whether an image of format `actual` holds `wanted`'s bytes with red and blue
-     * swapped. The back buffer keeps the engine's B8G8R8A8 while Android's window surfaces are
-     * R8G8B8A8 (CreateSwapChain); every other image has its own format's channel order.
-     */
-    [[nodiscard]] bool SwapsRedBlue(const VkFormat actual, const DXGI_FORMAT wanted) noexcept
-    {
-      const bool rgba = actual == VK_FORMAT_R8G8B8A8_UNORM || actual == VK_FORMAT_R8G8B8A8_SRGB;
-      const bool bgra = actual == VK_FORMAT_B8G8R8A8_UNORM || actual == VK_FORMAT_B8G8R8A8_SRGB;
-      const bool wantsRgba = wanted == DXGI_FORMAT_R8G8B8A8_UNORM || wanted == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB ||
-        wanted == DXGI_FORMAT_R8G8B8A8_TYPELESS;
-      const bool wantsBgra = wanted == DXGI_FORMAT_B8G8R8A8_UNORM || wanted == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB ||
-        wanted == DXGI_FORMAT_B8G8R8A8_TYPELESS;
-      return (rgba && wantsBgra) || (bgra && wantsRgba);
-    }
-
-    /** FAF addition: 8-bit RGBA and BGRA, whose texels a plain copy would move with red and blue swapped. */
-    [[nodiscard]] bool OtherChannelOrder(const VkFormat first, const VkFormat second) noexcept
-    {
-      const auto rgba = [](const VkFormat format) { return format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB; };
-      const auto bgra = [](const VkFormat format) { return format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB; };
-      return (rgba(first) && bgra(second)) || (bgra(first) && rgba(second));
     }
 
     /** See DeviceD3D12: plain counts, D3DSTREAMSOURCE_INDEXEDDATA | count, or an instance-data stream. */
@@ -561,12 +535,8 @@ namespace gpg::gal
     features.features.textureCompressionBC = available.features.textureCompressionBC;
     mAnisotropy = available.features.samplerAnisotropy == VK_TRUE;
     mWireframeSupported = available.features.fillModeNonSolid == VK_TRUE;
-    // FAF addition: BC textures were required. Phones' GPUs mostly lack them (the Galaxy S22's
-    // Xclipse 920 has ETC2 and ASTC): the device comes up without, and a BC texture is refused
-    // in CreateTexture until they are decoded on the CPU.
-    mBcTextures = available.features.textureCompressionBC == VK_TRUE;
-    if (!mBcTextures) {
-      gpg::Warnf("Vulkan: the device has no BC texture compression; BC textures cannot be created on it");
+    if (available.features.textureCompressionBC != VK_TRUE) {
+      ThrowError("DeviceVulkan.cpp", __LINE__, "the Vulkan device has no BC texture compression");
     }
 
     const float priority = 1.0f;
@@ -726,19 +696,14 @@ namespace gpg::gal
     Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, nullptr);
     std::vector<VkSurfaceFormatKHR> formats(count);
     Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, formats.data());
-    // B8G8R8A8_UNORM, the engine's back buffer format. FAF addition: Android's window surfaces
-    // have R8G8B8A8_UNORM instead. The back buffer target stays B8G8R8A8 for the engine, and
-    // copies and readbacks put the channels in order (CopyImage, ReadImageLevel).
-    VkSurfaceFormatKHR chosen{formats.empty() ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_UNDEFINED, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-    for (const VkFormat wanted : {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM}) {
-      for (const VkSurfaceFormatKHR& format : formats) {
-        if (chosen.format == VK_FORMAT_UNDEFINED && format.format == wanted && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-          chosen = format;
-        }
+    VkSurfaceFormatKHR chosen = formats.empty() ? VkSurfaceFormatKHR{VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR} : formats.front();
+    for (const VkSurfaceFormatKHR& format : formats) {
+      if (format.format == VK_FORMAT_B8G8R8A8_UNORM && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        chosen = format;
       }
     }
-    if (chosen.format == VK_FORMAT_UNDEFINED) {
-      ThrowError("DeviceVulkan.cpp", __LINE__, "the window surface has neither B8G8R8A8_UNORM nor R8G8B8A8_UNORM");
+    if (chosen.format != VK_FORMAT_B8G8R8A8_UNORM) {
+      ThrowError("DeviceVulkan.cpp", __LINE__, "the window surface has no B8G8R8A8_UNORM format");
     }
     Vk().vkGetPhysicalDeviceSurfacePresentModesKHR(mPhysical, swapChain.surface, &count, nullptr);
     std::vector<VkPresentModeKHR> modes(count);
@@ -771,9 +736,8 @@ namespace gpg::gal
     info.imageColorSpace = chosen.colorSpace;
     info.imageExtent = extent;
     info.imageArrayLayers = 1U;
-    // FAF addition: only what the surface supports (all of it on Windows), the attachment always.
-    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-      ((VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT) & capabilities.supportedUsageFlags);
+    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+      VK_IMAGE_USAGE_SAMPLED_BIT;
     info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     info.preTransform = capabilities.currentTransform;
     info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -803,8 +767,7 @@ namespace gpg::gal
     }
     swapChain.hasImage = false;
     gpg::Logf(
-      "Vulkan: swap chain %ux%u, %u images, %s, %s", extent.width, extent.height, count,
-      (chosen.format == VK_FORMAT_B8G8R8A8_UNORM) ? "B8G8R8A8" : "R8G8B8A8",
+      "Vulkan: swap chain %ux%u, %u images, %s", extent.width, extent.height, count,
       (mode == VK_PRESENT_MODE_FIFO_KHR) ? "FIFO (vsync)" : (mode == VK_PRESENT_MODE_MAILBOX_KHR) ? "mailbox" : "immediate"
     );
   }
@@ -834,7 +797,10 @@ namespace gpg::gal
       std::uint32_t width = head.mWidth;
       std::uint32_t height = head.mHeight;
       if (width == 0U || height == 0U) {
-        vulkan::WindowClientSize(head.mWindow, width, height);
+        RECT client{};
+        ::GetClientRect(static_cast<HWND>(head.mWindow), &client);
+        width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
+        height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
       }
       CreateSwapChain(mSwapChains[static_cast<std::size_t>(headIndex)], width, height);
     }
@@ -1391,11 +1357,6 @@ namespace gpg::gal
     Vk().vkCmdCopyImageToBuffer(mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1U, &region);
     Submit(true, false);
     bytes.assign(readback.memory.mapped, readback.memory.mapped + layout.ByteSize());
-    if (SwapsRedBlue(source.format, format)) {
-      for (std::size_t pixel = 0U; pixel + 3U < bytes.size(); pixel += 4U) {
-        std::swap(bytes[pixel], bytes[pixel + 2U]);
-      }
-    }
     Vk().vkDestroyBuffer(mDevice, readback.buffer, nullptr);
     mMemory.Free(readback.memory);
   }
@@ -1582,16 +1543,15 @@ namespace gpg::gal
     for (const MacroPair& macro : kInjectedMacros) {
       localContext.DefineMacro(macro.name, macro.value);
     }
-
-    const DWORD started = ::GetTickCount();
-    const char* const sourceName = context.mSourcePath.c_str();
-    const std::size_t sourceBytes = static_cast<std::size_t>(context.mSourceBuffer.mEnd - context.mSourceBuffer.mBegin);
-#if defined(_WIN32)
     std::vector<D3D_SHADER_MACRO> defines;
     for (const EffectMacro& macro : localContext.mMacros) {
       defines.push_back(D3D_SHADER_MACRO{macro.keyText_.c_str(), macro.valueText_.c_str()});
     }
     defines.push_back(D3D_SHADER_MACRO{nullptr, nullptr});
+
+    const DWORD started = ::GetTickCount();
+    const char* const sourceName = context.mSourcePath.c_str();
+    const std::size_t sourceBytes = static_cast<std::size_t>(context.mSourceBuffer.mEnd - context.mSourceBuffer.mBegin);
     Microsoft::WRL::ComPtr<ID3DBlob> preprocessed;
     Microsoft::WRL::ComPtr<ID3DBlob> errors;
     if (FAILED(::D3DPreprocess(context.mSourceBuffer.mBegin, sourceBytes, sourceName, defines.data(), nullptr, &preprocessed, &errors))) {
@@ -1599,16 +1559,8 @@ namespace gpg::gal
         ((errors != nullptr) ? std::string(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize()) : std::string());
       ThrowError("DeviceVulkan.cpp", __LINE__, message.c_str());
     }
-    const std::string_view preprocessedText(static_cast<const char*>(preprocessed->GetBufferPointer()), preprocessed->GetBufferSize() - 1U);
-#else
-    // d3dcompiler is Windows-only; elsewhere the effects' preprocessor comes with DXC
-    // (android/CLIENT_PLAN.md, C2).
-    ThrowError("DeviceVulkan.cpp", __LINE__, (std::string("unable to preprocess effect: ") + sourceName +
-      " reason: no effect preprocessor on this platform yet").c_str());
-    const std::string_view preprocessedText;
-#endif
     d3d11::TranslatedEffectSource translated = d3d11::TranslateEffectSource(
-      preprocessedText, true,
+      std::string_view(static_cast<const char*>(preprocessed->GetBufferPointer()), preprocessed->GetBufferSize() - 1U), true,
       // No original source: the D3D9 alpha test is applied by the effect layer (EffectDescription),
       // and running the translator's copy as well would test twice.
       std::string_view{}
@@ -1682,12 +1634,6 @@ namespace gpg::gal
     if (format.format == VK_FORMAT_UNDEFINED) {
       char message[128]{};
       std::snprintf(message, sizeof(message), "unsupported texture format (DXGI %d)", static_cast<int>(dxgiFormat));
-      ThrowError("DeviceVulkan.cpp", __LINE__, message);
-    }
-    if (!mBcTextures && dxgi::IsBlockCompressed(dxgiFormat)) {
-      char message[640]{};
-      std::snprintf(message, sizeof(message), "texture %s is BC compressed (DXGI %d), which this device cannot sample",
-                    context->location_.c_str(), static_cast<int>(dxgiFormat));
       ThrowError("DeviceVulkan.cpp", __LINE__, message);
     }
 
@@ -1865,31 +1811,7 @@ namespace gpg::gal
     EndRendering();
     Transition(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     TransitionForTransferWrite(destination);
-    if (!scale && OtherChannelOrder(source.format, destination.format)) {
-      // FAF addition: the same pixels in another channel order (an R8G8B8A8 back buffer on
-      // Android, CreateSwapChain). vkCmdCopyImage copies bits, a blit converts.
-      VkImageBlit region{};
-      region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
-      region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
-      std::int32_t width = static_cast<std::int32_t>(std::min(source.width, destination.width));
-      std::int32_t height = static_cast<std::int32_t>(std::min(source.height, destination.height));
-      VkOffset3D from{0, 0, 0};
-      VkOffset3D to{0, 0, 0};
-      if (sourceRect != nullptr) {
-        from = {sourceRect->left, sourceRect->top, 0};
-        width = sourceRect->right - sourceRect->left;
-        height = sourceRect->bottom - sourceRect->top;
-      }
-      if (destinationRect != nullptr) {
-        to = {destinationRect->left, destinationRect->top, 0};
-      }
-      region.srcOffsets[0] = from;
-      region.srcOffsets[1] = {from.x + width, from.y + height, 1};
-      region.dstOffsets[0] = to;
-      region.dstOffsets[1] = {to.x + width, to.y + height, 1};
-      Vk().vkCmdBlitImage(mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination.image,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &region, VK_FILTER_NEAREST);
-    } else if (!scale) {
+    if (!scale) {
       VkImageCopy region{};
       region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
       region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
@@ -1950,8 +1872,7 @@ namespace gpg::gal
     auto* const to = static_cast<RenderTargetVulkan*>(destination.get());
     vulkan::TrackedImage& fromImage = from->Current().image;
     vulkan::TrackedImage& toImage = to->Current().image;
-    const bool same = fromImage.width == toImage.width && fromImage.height == toImage.height &&
-      (fromImage.format == toImage.format || OtherChannelOrder(fromImage.format, toImage.format));
+    const bool same = fromImage.width == toImage.width && fromImage.height == toImage.height && fromImage.format == toImage.format;
     CopyImage(fromImage, toImage, same ? sourceRect : nullptr, same ? destinationRect : nullptr, !same);
   }
 
@@ -2095,7 +2016,10 @@ namespace gpg::gal
       std::uint32_t width = head.mWidth;
       std::uint32_t height = head.mHeight;
       if (width == 0U || height == 0U) {
-        vulkan::WindowClientSize(head.mWindow, width, height);
+        RECT client{};
+        ::GetClientRect(static_cast<HWND>(head.mWindow), &client);
+        width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
+        height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
       }
       CreateSwapChain(mSwapChains[headIndex], width, height);
     }

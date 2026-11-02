@@ -1,0 +1,14 @@
+diff --git a/src/moho/render/ID3DTextureSheet.h b/src/moho/render/ID3DTextureSheet.h
+--- a/src/moho/render/ID3DTextureSheet.h
++++ b/src/moho/render/ID3DTextureSheet.h
+@@ -9,6 +9,10 @@
+ 
+ #if defined(_WIN32)
+ #include <d3d9types.h>
++#elif __has_include(<d3d9types.h>)
++// The Android client build's DirectX stand-ins (android/native/include/directx): RECT comes from
++// its Windows.h there, which these definitions would clash with; D3DLOCKED_RECT from d3d9types.h.
++#include <d3d9types.h>
+ #else
+ struct RECT
+ {

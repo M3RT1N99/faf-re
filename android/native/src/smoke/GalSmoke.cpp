@@ -1,10 +1,11 @@
-// Engine addition (android/CLIENT_PLAN.md, C2 groundwork): the engine's renderer on the phone.
+// The renderer test (android/native, card 4 of the app): the engine's renderer on the phone.
 // The activity hands over its surface; on a thread of its own the engine's gal creates its Vulkan
 // device on that ANativeWindow (gal::Device::Create, the backend Windows uses), then clears the
 // frame in changing colours and presents it for a few seconds, timed. No effects and no textures:
-// those need the shader compiler and the texture codec of C2. What the device said, the engine's
-// log lines included, is the report the app shows and shares. Each line goes to the report file
-// as it comes, so the file holds what the test got to if the process dies in the driver.
+// those need the shader compiler and the texture codec of CLIENT_PLAN.md's C2. What the device
+// said, the engine's log lines included, is the report the app shows and shares. Each line goes to
+// the report file as it comes, so the file holds what the test got to if the process dies in the
+// driver.
 
 #include <android/log.h>
 #include <android/native_window.h>
@@ -24,6 +25,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <Windows.h>
 
 #include "gpg/core/utils/Logging.h"
 #include "gpg/gal/Device.hpp"
@@ -224,6 +227,8 @@ namespace
 
       Report("creating the engine's Vulkan device");
       const auto created = std::chrono::steady_clock::now();
+      // The host puts its window in front, as Windows does for the game's (WindowIsForeground).
+      ::SetForegroundWindow(window);
       gpg::gal::Device* const device = gpg::gal::Device::Create(&context);
       const double setupMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - created).count();
       char line[160];
@@ -270,6 +275,7 @@ namespace
     } catch (...) {
       Report("FAIL: unknown exception");
     }
+    ::SetForegroundWindow(nullptr);
     ANativeWindow_release(window);
     CloseReportFile();
     gRunning.store(false);

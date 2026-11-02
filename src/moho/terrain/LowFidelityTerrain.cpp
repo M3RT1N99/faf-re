@@ -1,5 +1,4 @@
 #include "moho/terrain/LowFidelityTerrain.h"
-#include "platform/Interlocked.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1087,7 +1086,7 @@ namespace moho
                 (void)sEngineStatRenderFlatDecals->Release(0);
               }
               _InterlockedExchangeAdd(
-                reinterpret_cast<volatile platform::InterlockedLong*>(&sEngineStatRenderFlatDecals->mPrimaryValueBits), 1);
+                reinterpret_cast<volatile long*>(&sEngineStatRenderFlatDecals->mPrimaryValueBits), 1);
             }
           } else {
             std::int32_t baselineIndexCount = 0;
@@ -1112,7 +1111,7 @@ namespace moho
                 sEngineStatRenderDecals = engineStats->GetItem("Render_Decals", true);
                 (void)sEngineStatRenderDecals->Release(0);
               }
-              _InterlockedExchangeAdd(reinterpret_cast<volatile platform::InterlockedLong*>(&sEngineStatRenderDecals->mPrimaryValueBits), 1);
+              _InterlockedExchangeAdd(reinterpret_cast<volatile long*>(&sEngineStatRenderDecals->mPrimaryValueBits), 1);
             }
           }
         }

@@ -1,8 +1,9 @@
-// Engine addition (android/CLIENT_PLAN.md, C1): WindowsCursor.h without the Win32 cursor, in
-// place of WindowsCursor.cpp. There is no system cursor to set: touch has none, and a mouse's
-// pointer icon comes with the Android host's input (C3).
+// The render backends' cursor helper (gpg/gal/backends/common/WindowsCursor.h) for the Android
+// client build, in place of WindowsCursor.cpp, which draws Win32 cursors. There is no system
+// cursor to set: touch has none, and a mouse's pointer icon comes with the Android host's input
+// (CLIENT_PLAN.md, C3).
 
-#include "WindowsCursor.h"
+#include "gpg/gal/backends/common/WindowsCursor.h"
 
 namespace gpg::gal
 {

@@ -1,5 +1,4 @@
 #include "moho/terrain/water/Shoreline.h"
-#include "platform/Interlocked.h"
 
 #include <algorithm>
 #include <array>
@@ -123,7 +122,7 @@ namespace
       return;
     }
 
-    volatile platform::InterlockedLong* const counter = reinterpret_cast<volatile platform::InterlockedLong*>(&slot->mPrimaryValueBits);
+    volatile long* const counter = reinterpret_cast<volatile long*>(&slot->mPrimaryValueBits);
     long observed = 0;
     do {
       observed = ::InterlockedCompareExchange(counter, 0, 0);
