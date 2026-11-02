@@ -103,6 +103,30 @@ namespace gpg::gal
       return format == DXGI_FORMAT_R8G8B8A8_UNORM || format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     }
 
+    /**
+     * FAF addition: whether an image of format `actual` holds `wanted`'s bytes with red and blue
+     * swapped. The back buffer keeps the engine's B8G8R8A8 while Android's window surfaces are
+     * R8G8B8A8 (CreateSwapChain); every other image has its own format's channel order.
+     */
+    [[nodiscard]] bool SwapsRedBlue(const VkFormat actual, const DXGI_FORMAT wanted) noexcept
+    {
+      const bool rgba = actual == VK_FORMAT_R8G8B8A8_UNORM || actual == VK_FORMAT_R8G8B8A8_SRGB;
+      const bool bgra = actual == VK_FORMAT_B8G8R8A8_UNORM || actual == VK_FORMAT_B8G8R8A8_SRGB;
+      const bool wantsRgba = wanted == DXGI_FORMAT_R8G8B8A8_UNORM || wanted == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB ||
+        wanted == DXGI_FORMAT_R8G8B8A8_TYPELESS;
+      const bool wantsBgra = wanted == DXGI_FORMAT_B8G8R8A8_UNORM || wanted == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB ||
+        wanted == DXGI_FORMAT_B8G8R8A8_TYPELESS;
+      return (rgba && wantsBgra) || (bgra && wantsRgba);
+    }
+
+    /** FAF addition: 8-bit RGBA and BGRA, whose texels a plain copy would move with red and blue swapped. */
+    [[nodiscard]] bool OtherChannelOrder(const VkFormat first, const VkFormat second) noexcept
+    {
+      const auto rgba = [](const VkFormat format) { return format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB; };
+      const auto bgra = [](const VkFormat format) { return format == VK_FORMAT_B8G8R8A8_UNORM || format == VK_FORMAT_B8G8R8A8_SRGB; };
+      return (rgba(first) && bgra(second)) || (bgra(first) && rgba(second));
+    }
+
     /** See DeviceD3D12: plain counts, D3DSTREAMSOURCE_INDEXEDDATA | count, or an instance-data stream. */
     [[nodiscard]] std::uint32_t InstanceCount(const std::int32_t token) noexcept
     {
@@ -698,14 +722,19 @@ namespace gpg::gal
     Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, nullptr);
     std::vector<VkSurfaceFormatKHR> formats(count);
     Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, formats.data());
-    VkSurfaceFormatKHR chosen = formats.empty() ? VkSurfaceFormatKHR{VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR} : formats.front();
-    for (const VkSurfaceFormatKHR& format : formats) {
-      if (format.format == VK_FORMAT_B8G8R8A8_UNORM && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-        chosen = format;
+    // B8G8R8A8_UNORM, the engine's back buffer format. FAF addition: Android's window surfaces
+    // have R8G8B8A8_UNORM instead. The back buffer target stays B8G8R8A8 for the engine, and
+    // copies and readbacks put the channels in order (CopyImage, ReadImageLevel).
+    VkSurfaceFormatKHR chosen{formats.empty() ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_UNDEFINED, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    for (const VkFormat wanted : {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM}) {
+      for (const VkSurfaceFormatKHR& format : formats) {
+        if (chosen.format == VK_FORMAT_UNDEFINED && format.format == wanted && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+          chosen = format;
+        }
       }
     }
-    if (chosen.format != VK_FORMAT_B8G8R8A8_UNORM) {
-      ThrowError("DeviceVulkan.cpp", __LINE__, "the window surface has no B8G8R8A8_UNORM format");
+    if (chosen.format == VK_FORMAT_UNDEFINED) {
+      ThrowError("DeviceVulkan.cpp", __LINE__, "the window surface has neither B8G8R8A8_UNORM nor R8G8B8A8_UNORM");
     }
     Vk().vkGetPhysicalDeviceSurfacePresentModesKHR(mPhysical, swapChain.surface, &count, nullptr);
     std::vector<VkPresentModeKHR> modes(count);
@@ -738,8 +767,9 @@ namespace gpg::gal
     info.imageColorSpace = chosen.colorSpace;
     info.imageExtent = extent;
     info.imageArrayLayers = 1U;
-    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-      VK_IMAGE_USAGE_SAMPLED_BIT;
+    // FAF addition: only what the surface supports (all of it on Windows), the attachment always.
+    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+      ((VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT) & capabilities.supportedUsageFlags);
     info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     info.preTransform = capabilities.currentTransform;
     info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -769,7 +799,8 @@ namespace gpg::gal
     }
     swapChain.hasImage = false;
     gpg::Logf(
-      "Vulkan: swap chain %ux%u, %u images, %s", extent.width, extent.height, count,
+      "Vulkan: swap chain %ux%u, %u images, %s, %s", extent.width, extent.height, count,
+      (chosen.format == VK_FORMAT_B8G8R8A8_UNORM) ? "B8G8R8A8" : "R8G8B8A8",
       (mode == VK_PRESENT_MODE_FIFO_KHR) ? "FIFO (vsync)" : (mode == VK_PRESENT_MODE_MAILBOX_KHR) ? "mailbox" : "immediate"
     );
   }
@@ -1356,6 +1387,11 @@ namespace gpg::gal
     Vk().vkCmdCopyImageToBuffer(mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1U, &region);
     Submit(true, false);
     bytes.assign(readback.memory.mapped, readback.memory.mapped + layout.ByteSize());
+    if (SwapsRedBlue(source.format, format)) {
+      for (std::size_t pixel = 0U; pixel + 3U < bytes.size(); pixel += 4U) {
+        std::swap(bytes[pixel], bytes[pixel + 2U]);
+      }
+    }
     Vk().vkDestroyBuffer(mDevice, readback.buffer, nullptr);
     mMemory.Free(readback.memory);
   }
@@ -1819,7 +1855,31 @@ namespace gpg::gal
     EndRendering();
     Transition(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     TransitionForTransferWrite(destination);
-    if (!scale) {
+    if (!scale && OtherChannelOrder(source.format, destination.format)) {
+      // FAF addition: the same pixels in another channel order (an R8G8B8A8 back buffer on
+      // Android, CreateSwapChain). vkCmdCopyImage copies bits, a blit converts.
+      VkImageBlit region{};
+      region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
+      region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
+      std::int32_t width = static_cast<std::int32_t>(std::min(source.width, destination.width));
+      std::int32_t height = static_cast<std::int32_t>(std::min(source.height, destination.height));
+      VkOffset3D from{0, 0, 0};
+      VkOffset3D to{0, 0, 0};
+      if (sourceRect != nullptr) {
+        from = {sourceRect->left, sourceRect->top, 0};
+        width = sourceRect->right - sourceRect->left;
+        height = sourceRect->bottom - sourceRect->top;
+      }
+      if (destinationRect != nullptr) {
+        to = {destinationRect->left, destinationRect->top, 0};
+      }
+      region.srcOffsets[0] = from;
+      region.srcOffsets[1] = {from.x + width, from.y + height, 1};
+      region.dstOffsets[0] = to;
+      region.dstOffsets[1] = {to.x + width, to.y + height, 1};
+      Vk().vkCmdBlitImage(mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &region, VK_FILTER_NEAREST);
+    } else if (!scale) {
       VkImageCopy region{};
       region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
       region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
@@ -1880,7 +1940,8 @@ namespace gpg::gal
     auto* const to = static_cast<RenderTargetVulkan*>(destination.get());
     vulkan::TrackedImage& fromImage = from->Current().image;
     vulkan::TrackedImage& toImage = to->Current().image;
-    const bool same = fromImage.width == toImage.width && fromImage.height == toImage.height && fromImage.format == toImage.format;
+    const bool same = fromImage.width == toImage.width && fromImage.height == toImage.height &&
+      (fromImage.format == toImage.format || OtherChannelOrder(fromImage.format, toImage.format));
     CopyImage(fromImage, toImage, same ? sourceRect : nullptr, same ? destinationRect : nullptr, !same);
   }
 
