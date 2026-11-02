@@ -84,8 +84,11 @@ the game data they imported. Everything lives in the app's external files folder
   (`src/platform/android/GalSmoke.cpp`) lists the phone's Vulkan devices, creates the engine's gal
   device (the Vulkan backend, which needs Vulkan 1.3) on a full-screen surface, then clears it in
   changing colours and presents for ten seconds. It needs no game data and draws without shaders or
-  textures, which come with C2. The report gives the device, the engine's log lines and the frame
-  rate, or the line that failed. The test runs in a process of its own (`:renderer`), and the native
+  textures, which come with C2. The report gives:
+  - the screen: the display mode and the app's size, which shows a scaled-down app;
+  - each Vulkan device with the features the backend needs;
+  - the engine's log lines;
+  - the frame rate, or the line that failed. The test runs in a process of its own (`:renderer`), and the native
   side writes each report line to `renderer.txt` in the app's files as it comes. If the driver takes
   that process down, the app keeps the lines up to the crash and the reason Android gives for the
   end (`ApplicationExitInfo`). On Android 12 and later it also keeps the tombstone, which goes into

@@ -2,9 +2,13 @@ package io.github.m3rt1n99.fafre;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.graphics.Rect;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.DisplayMetrics;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -29,6 +33,8 @@ public final class GalSmokeActivity extends Activity implements SurfaceHolder.Ca
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private TextView mText;
+    /** The screen's facts, the report's first line (from Java; the native side appends). */
+    private String mScreen = "";
     private boolean mStarted;
     private boolean mFinished;
 
@@ -36,7 +42,7 @@ public final class GalSmokeActivity extends Activity implements SurfaceHolder.Ca
         @Override
         public void run() {
             String report = GalSmoke.report();
-            mText.setText(report);
+            mText.setText(mScreen + report);
             if (mStarted && !GalSmoke.running()) {
                 finishTest(report);
                 return;
@@ -62,8 +68,44 @@ public final class GalSmokeActivity extends Activity implements SurfaceHolder.Ca
         root.addView(mText);
         setContentView(root);
         RendererReport.clear(this);
+        mScreen = screen() + "\n";
+        append(mScreen);
         if (GalSmoke.loadError() != null) {
             failed("FAIL: libfafgalsmoke.so did not load: " + GalSmoke.loadError());
+        }
+    }
+
+    /**
+     * The display's mode and the app's share of it. The Galaxy S22's 0.7.0 run drew 720x1544, which
+     * is 2/3 of its FHD+ 1080x2316. Either the phone is set to HD+, or it scales the app down.
+     */
+    private String screen() {
+        @SuppressWarnings("deprecation")
+        Display display = getWindowManager().getDefaultDisplay();
+        Display.Mode mode = display.getMode();
+        StringBuilder line = new StringBuilder("screen: display mode ")
+            .append(mode.getPhysicalWidth()).append('x').append(mode.getPhysicalHeight())
+            .append(" at ").append(Math.round(mode.getRefreshRate())).append(" Hz (modes");
+        for (Display.Mode supported : display.getSupportedModes()) {
+            line.append(' ').append(supported.getPhysicalWidth()).append('x').append(supported.getPhysicalHeight())
+                .append('@').append(Math.round(supported.getRefreshRate()));
+        }
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        line.append("), app ").append(metrics.widthPixels).append('x').append(metrics.heightPixels)
+            .append(" at ").append(metrics.densityDpi).append(" dpi");
+        if (Build.VERSION.SDK_INT >= 30) {
+            Rect bounds = getWindowManager().getCurrentWindowMetrics().getBounds();
+            line.append(", window ").append(bounds.width()).append('x').append(bounds.height());
+        }
+        return line.toString();
+    }
+
+    /** Lines from this side of the test into the report file, ahead of or instead of the native ones. */
+    private void append(String text) {
+        try (FileOutputStream out = new FileOutputStream(RendererReport.file(this), true)) {
+            out.write(text.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            mScreen += "(the report file: " + e.getMessage() + ")\n";
         }
     }
 
@@ -99,20 +141,17 @@ public final class GalSmokeActivity extends Activity implements SurfaceHolder.Ca
 
     /** A failure before the native side runs: the report file gets it from here. */
     private void failed(String line) {
-        try (FileOutputStream out = new FileOutputStream(RendererReport.file(this))) {
-            out.write((line + "\n").getBytes(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            line += "\n(the report file: " + e.getMessage() + ")";
-        }
-        finishTest(line);
+        append(line + "\n");
+        finishTest(line + "\n");
     }
 
+    /** `report`: the native side's lines (or the failure), shown under the screen's facts. */
     private void finishTest(String report) {
         mHandler.removeCallbacks(mPoll);
         if (mFinished) {
             return;
         }
         mFinished = true;
-        mText.setText(report + "\n(back to return)");
+        mText.setText(mScreen + report + "(back to return)");
     }
 }

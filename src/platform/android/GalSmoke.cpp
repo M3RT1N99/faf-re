@@ -108,6 +108,46 @@ namespace
       std::to_string(VK_API_VERSION_PATCH(version));
   }
 
+  /**
+   * What DeviceVulkan::CreateLogicalDevice requires (dynamic rendering, synchronization2, timeline
+   * semaphores, scalar block layout) and what the textures will need, so one run tells all.
+   */
+  void ReportFeatures(
+    const VkPhysicalDevice device, const VkPhysicalDeviceProperties& properties, const std::uint32_t instanceVersion,
+    const PFN_vkGetPhysicalDeviceFeatures2 features2
+  )
+  {
+    if (features2 == nullptr || properties.apiVersion < VK_API_VERSION_1_3 || instanceVersion < VK_API_VERSION_1_3) {
+      return;
+    }
+    VkPhysicalDeviceVulkan13Features features13{};
+    features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    VkPhysicalDeviceVulkan12Features features12{};
+    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    features12.pNext = &features13;
+    VkPhysicalDeviceFeatures2 features{};
+    features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features.pNext = &features12;
+    features2(device, &features);
+    const auto attachable = [device](const VkFormat format) {
+      VkFormatProperties formatProperties{};
+      vkGetPhysicalDeviceFormatProperties(device, format, &formatProperties);
+      return (formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U ? 1 : 0;
+    };
+    const VkPhysicalDeviceFeatures& core = features.features;
+    char line[400];
+    std::snprintf(
+      line, sizeof(line),
+      "  features: dynamic rendering %d, synchronization2 %d, timeline semaphores %d, scalar block layout %d, "
+      "textures BC %d ETC2 %d ASTC %d, anisotropy %d, wireframe %d, depth D24S8 %d D32S8 %d, 2D textures up to %u",
+      features13.dynamicRendering, features13.synchronization2, features12.timelineSemaphore, features12.scalarBlockLayout,
+      core.textureCompressionBC, core.textureCompressionETC2, core.textureCompressionASTC_LDR, core.samplerAnisotropy,
+      core.fillModeNonSolid, attachable(VK_FORMAT_D24_UNORM_S8_UINT), attachable(VK_FORMAT_D32_SFLOAT_S8_UINT),
+      properties.limits.maxImageDimension2D
+    );
+    Report(line);
+  }
+
   /** What the phone's Vulkan offers, apart from the engine: the backend wants 1.3 and a queue that presents. */
   void ReportVulkanDevices()
   {
@@ -122,7 +162,8 @@ namespace
     VkApplicationInfo application{};
     application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     application.pApplicationName = "faf-re renderer test";
-    application.apiVersion = VK_API_VERSION_1_1;
+    // 1.3 where the loader has it: the feature query below reads Vulkan 1.2's and 1.3's features.
+    application.apiVersion = loaderVersion >= VK_API_VERSION_1_3 ? VK_API_VERSION_1_3 : VK_API_VERSION_1_1;
     VkInstanceCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     info.pApplicationInfo = &application;
@@ -133,6 +174,8 @@ namespace
     }
     const auto properties2 =
       reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties2"));
+    const auto features2 =
+      reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceFeatures2"));
     std::uint32_t count = 0U;
     (void)vkEnumeratePhysicalDevices(instance, &count, nullptr);
     std::vector<VkPhysicalDevice> devices(count);
@@ -156,6 +199,7 @@ namespace
         static_cast<int>(p.deviceType), p.apiVersion < VK_API_VERSION_1_3 ? " (below the 1.3 the backend needs)" : ""
       );
       Report(line);
+      ReportFeatures(device, p, application.apiVersion, features2);
     }
     vkDestroyInstance(instance, nullptr);
   }
@@ -249,7 +293,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_GalSmoke_sta
     if (gReportFile >= 0) {
       ::close(gReportFile);
     }
-    gReportFile = ::open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    // Appended: the activity starts the file with the screen's facts.
+    gReportFile = ::open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
     env->ReleaseStringUTFChars(reportPath, path);
   }
   ANativeWindow* const window = ANativeWindow_fromSurface(env, surface);
