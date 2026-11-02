@@ -80,8 +80,11 @@ most of C1, as 56 files stop at wx.
 - **Client build:** `-DFAF_ANDROID_CLIENT=ON` (`cmake/FafAndroidClient.cmake`) builds the renderer
   (`faf_gal`) and the client objects (`faf_client`, outside the default build until they compile).
 - **Renderer test:** `libfafgalsmoke.so` is card 4 of the app, from release 0.7.0. The engine's gal
-  brings up its Vulkan device on the phone's screen, then clears and presents. On the emulator it
-  stops at SwiftShader's Vulkan 1.2.
+  brings up its Vulkan device on the phone's screen, then clears and presents.
+  - On the emulator with SwiftShader (Vulkan 1.2) it stops at the device.
+  - With `-gpu host` on a Radeon RX 9070 XT (Vulkan 1.3 through the emulator) it passes: 602 frames
+    in 10 s at the 60 Hz vsync.
+  - Android's window surfaces have no B8G8R8A8, so the backend's swap chain takes R8G8B8A8 there.
 - **Open for C1:**
   - wx-lite;
   - the XACT stand-in;

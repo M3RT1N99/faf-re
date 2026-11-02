@@ -90,7 +90,7 @@ public final class MainActivity extends Activity {
         TextView title = text(getString(R.string.app_name) + " " + BuildConfig.VERSION_NAME, 22, ACCENT);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         column.addView(title);
-        column.addView(text("Engine test build " + BuildConfig.GIT_COMMIT + " · headless simulation, no graphics", 13, MUTED));
+        column.addView(text("Engine test build " + BuildConfig.GIT_COMMIT + " · headless simulation and a renderer test", 13, MUTED));
         column.addView(text(Results.device(), 13, MUTED));
 
         // 1. Arithmetic.
@@ -205,6 +205,7 @@ public final class MainActivity extends Activity {
     }
 
     private void refresh() {
+        RendererReport.refresh(this);
         long revision = TestState.revision();
         boolean running = TestState.running();
         for (Button button : mStartButtons) {
@@ -228,7 +229,8 @@ public final class MainActivity extends Activity {
         mMathResult.setText(math);
         String rendererVerdict = TestState.rendererVerdict();
         mRendererResult.setText(rendererVerdict);
-        mRendererResult.setTextColor(rendererVerdict.contains("PASS") ? PASS : rendererVerdict.contains("FAIL") ? FAIL : TEXT);
+        mRendererResult.setTextColor(rendererVerdict.startsWith("Renderer: PASS") ? PASS
+            : rendererVerdict.isEmpty() || rendererVerdict.startsWith("Renderer: running") ? TEXT : FAIL);
         mMathResult.setTextColor(math.startsWith("PASS") ? PASS : math.startsWith("FAIL") ? FAIL : TEXT);
         mStep.setText(running ? (TestState.step().isEmpty() ? "Running…" : TestState.step()) : "Idle");
         mReplayResults.setText(String.join("\n", TestState.replayLines()));

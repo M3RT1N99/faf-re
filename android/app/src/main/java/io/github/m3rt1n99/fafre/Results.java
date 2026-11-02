@@ -57,6 +57,7 @@ final class Results {
     }
 
     static File write(android.content.Context context, Storage storage) throws IOException {
+        RendererReport.refresh(context);
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
         File zip = new File(storage.results(), "faf-re-results-" + stamp + ".zip");
         JSONObject summary = new JSONObject();
@@ -128,6 +129,10 @@ final class Results {
             add(out, "log.txt", String.join("\n", TestState.log()).getBytes(StandardCharsets.UTF_8));
             if (!TestState.rendererReport().isEmpty()) {
                 add(out, "renderer.txt", TestState.rendererReport().getBytes(StandardCharsets.UTF_8));
+            }
+            File tombstone = RendererReport.tombstone(context);
+            if (tombstone.isFile()) {
+                addFile(out, RendererReport.TOMBSTONE, tombstone);
             }
             for (TestState.Replay replay : TestState.replaySnapshot()) {
                 File run = new File(storage.runs(), String.valueOf(replay.id));

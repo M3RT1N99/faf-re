@@ -3,12 +3,15 @@
 // device on that ANativeWindow (gal::Device::Create, the backend Windows uses), then clears the
 // frame in changing colours and presents it for a few seconds, timed. No effects and no textures:
 // those need the shader compiler and the texture codec of C2. What the device said, the engine's
-// log lines included, is the report the app shows and shares.
+// log lines included, is the report the app shows and shares. Each line goes to the report file
+// as it comes, so the file holds what the test got to if the process dies in the driver.
 
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
+#include <fcntl.h>
 #include <jni.h>
+#include <unistd.h>
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
@@ -32,6 +35,7 @@ namespace
 {
   std::mutex gLock;
   std::string gReport;
+  int gReportFile = -1;
   std::thread gThread;
   std::atomic<bool> gStop{false};
   std::atomic<bool> gRunning{false};
@@ -45,9 +49,23 @@ namespace
       }
     }
     __android_log_print(ANDROID_LOG_INFO, "fafre-gal", "%s", line.c_str());
+    line += '\n';
     const std::lock_guard<std::mutex> lock(gLock);
     gReport += line;
-    gReport += '\n';
+    if (gReportFile >= 0) {
+      // Unbuffered: the kernel has the line before the next driver call.
+      const ssize_t written = ::write(gReportFile, line.data(), line.size());
+      (void)written;
+    }
+  }
+
+  void CloseReportFile()
+  {
+    const std::lock_guard<std::mutex> lock(gLock);
+    if (gReportFile >= 0) {
+      ::close(gReportFile);
+      gReportFile = -1;
+    }
   }
 
   /** The engine's log lines (gpg::Logf, Warnf) into the report. */
@@ -160,6 +178,7 @@ namespace
       head.mHeight = static_cast<std::uint32_t>(height);
       context.AddHead(head);
 
+      Report("creating the engine's Vulkan device");
       const auto created = std::chrono::steady_clock::now();
       gpg::gal::Device* const device = gpg::gal::Device::Create(&context);
       const double setupMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - created).count();
@@ -183,6 +202,10 @@ namespace
         device->Present();
         ++frames;
         const auto after = std::chrono::steady_clock::now();
+        if (frames == 1) {
+          std::snprintf(line, sizeof(line), "first frame presented in %.0f ms", std::chrono::duration<double, std::milli>(after - now).count());
+          Report(line);
+        }
         if (frames > 1) {
           slowestMs = std::max(slowestMs, std::chrono::duration<double, std::milli>(after - previous).count());
         }
@@ -190,8 +213,8 @@ namespace
       }
       const double total = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
       std::snprintf(
-        line, sizeof(line), "PASS: %d frames in %.1f s (%.1f per second, slowest %.1f ms)", frames, total,
-        total > 0 ? frames / total : 0.0, slowestMs
+        line, sizeof(line), "PASS: %d frames in %.1f s (%.1f per second, slowest %.1f ms%s)", frames, total,
+        total > 0 ? frames / total : 0.0, slowestMs, gStop.load() ? ", stopped early" : ""
       );
       Report(line);
       gpg::gal::Device::DestroyInstance();
@@ -204,12 +227,14 @@ namespace
       Report("FAIL: unknown exception");
     }
     ANativeWindow_release(window);
+    CloseReportFile();
     gRunning.store(false);
   }
 } // namespace
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_io_github_m3rt1n99_fafre_GalSmoke_start(JNIEnv* const env, jclass, jobject const surface, jint const seconds)
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_GalSmoke_start(
+  JNIEnv* const env, jclass, jobject const surface, jint const seconds, jstring const reportPath
+)
 {
   if (gRunning.load()) {
     return JNI_FALSE;
@@ -217,14 +242,21 @@ Java_io_github_m3rt1n99_fafre_GalSmoke_start(JNIEnv* const env, jclass, jobject 
   if (gThread.joinable()) {
     gThread.join();
   }
+  {
+    const char* const path = env->GetStringUTFChars(reportPath, nullptr);
+    const std::lock_guard<std::mutex> lock(gLock);
+    gReport.clear();
+    if (gReportFile >= 0) {
+      ::close(gReportFile);
+    }
+    gReportFile = ::open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    env->ReleaseStringUTFChars(reportPath, path);
+  }
   ANativeWindow* const window = ANativeWindow_fromSurface(env, surface);
   if (window == nullptr) {
     Report("FAIL: no window for the surface");
+    CloseReportFile();
     return JNI_FALSE;
-  }
-  {
-    const std::lock_guard<std::mutex> lock(gLock);
-    gReport.clear();
   }
   gStop.store(false);
   gRunning.store(true);

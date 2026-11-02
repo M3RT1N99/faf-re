@@ -163,7 +163,7 @@ final class TestState {
         return new ArrayList<>(sReplays);
     }
 
-    /** The renderer test's report (GalSmokeActivity). */
+    /** The renderer test's report, from its process (RendererReport). */
     static synchronized void renderer(String report) {
         sRendererReport = report;
         ++sRevision;
@@ -176,11 +176,11 @@ final class TestState {
     /** "Renderer: PASS: 600 frames ..." from the report, or that it has not run. */
     static synchronized String rendererVerdict() {
         for (String line : sRendererReport.split("\n")) {
-            if (line.startsWith("PASS") || line.startsWith("FAIL")) {
+            if (RendererReport.isVerdict(line)) {
                 return "Renderer: " + line;
             }
         }
-        return sRendererReport.isEmpty() ? "" : "Renderer: incomplete (see the report)";
+        return sRendererReport.isEmpty() ? "" : "Renderer: running, no verdict yet";
     }
 
     /** Whether MainActivity is on screen (between onStart and onStop). */

@@ -26,8 +26,11 @@ final class GalSmoke {
         return sLoadError;
     }
 
-    /** Starts the test on `surface` for `seconds`; false if one is running or the surface has no window. */
-    static native boolean start(Surface surface, int seconds);
+    /**
+     * Starts the test on `surface` for `seconds`, each report line written to `reportPath` as it
+     * comes; false if one is running or the surface has no window.
+     */
+    static native boolean start(Surface surface, int seconds, String reportPath);
 
     /** Ends the test early and waits for its thread. */
     static native void stop();
