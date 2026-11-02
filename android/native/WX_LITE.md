@@ -90,7 +90,9 @@ The classes and functions the engine uses, declared as in wxWindows 2.4.2:
   https; the names compare with case). It opens no connections. `ShellExecuteW` hands the link to
   the host, which shows it with what Android has for it (`include/win32/Win32AndroidHost.h`).
 - **The tool windows are left out.** wx-lite has none of their controls (trees, tree lists,
-  notebooks, sliders), and their files are not built.
+  notebooks, sliders). Their files are not built, and the two console commands that open an editor
+  say in the log that the build has none: `SC_CreateEntityDialog` (`src/app`) and
+  `EFX_CreateEmitterWindow` (a build-time patch, `patches/README.md`).
 
 wx-lite takes its behaviour from wxWindows 2.4.2's own sources in `dependencies/wxWindows-2.4.2`
 (`src/common/event.cpp` for event processing, `src/msw/window.cpp` for message translation). Where
@@ -120,5 +122,6 @@ The activity's native half:
 
 1. The headers and the basics, until the 48 files compile. *Done.*
 2. The message layer and the translation. *Done.*
-3. `libfafgame.so` links (the vertex formatters and whatever else the linker names).
+3. `libfafgame.so` links (the vertex formatters and whatever else the linker names). *Done
+   2026-11-03, for arm64 and x86_64 ([../CLIENT_PLAN.md](../CLIENT_PLAN.md), Progress).*
 4. The host: the engine starts on the emulator.

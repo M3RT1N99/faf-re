@@ -111,3 +111,26 @@ most of C1, as 56 files stop at wx.
     that matches D3DX's.
 
   After that, `libfafgame.so` links.
+
+*2026-11-03:*
+- **`libfafgame.so` links**, for arm64 and x86_64: the whole engine, with every client translation
+  unit but the Windows-only ones (195 of the engine's and the renderer's 24), on 15 patched engine
+  files. Everything that was open for C1 above is done. The library has no entry point yet. It is
+  in the default build now, so the app's CI builds it too.
+- **wx-lite** ([native/WX_LITE.md](native/WX_LITE.md)) is the part of wxWindows 2.4.2 the engine
+  uses, with wxWindows' behaviour: event tables, `ProcessEvent`'s order, `MSWWindowProc`'s message
+  translation. It runs on a **Win32 message layer** (`include/win32/WinUser.h`,
+  `src/win32/User32Android.cpp`): windows, a queue per thread, `SendMessageW` across threads,
+  focus, activation, capture and the keyboard state. The host feeds the input and the activity's
+  state into it (`include/win32/Win32AndroidHost.h`). The renderer test draws on one of its
+  windows.
+- **The mesh formatters** are the engine's Direct3D 10 code. Their halves match D3DX9_43's
+  `D3DXFloat32To16Array` (the x64 DLL the Windows build links) for all 2^32 floats, called one value
+  at a time as the engine calls it. D3DX picks its routine by CPU: this is the one it runs on Intel
+  CPUs. On other CPUs its SSE routine rounds 2.3 % of the patterns differently (half denormals, the
+  top of each binade, NaNs).
+- Left out, and said so in the log: the wx tool windows (the script debugger, the emitter and
+  reflection editors, the directory dialogs). Game discovery has no socket, as outside Windows.
+  `OpenURL` parses the link with wxURL and opens it through the host.
+- **Next for C1:** the host (`src/host`, step 4 of WX_LITE.md), which starts the engine on the
+  emulator, and the test program for the event system and the message layer.

@@ -102,9 +102,10 @@ set(_faf_client_windows_only
   # finds no FFmpeg.
   "^moho/movie/sfd/FfmpegSfdDecoder\\.cpp$"
   # The wx script debugger's windows and the wx tool windows (emitter editor, reflection editor,
-  # directory dialogs, URLs).
+  # directory dialogs): wx-lite leaves them out (WX_LITE.md). The console commands that open the
+  # editors say so in the log (src/app, patches/src/moho/console).
   "^moho/misc/(ScrDebugWindow|ScrFileCtrl|ScrSourceCtrl|ScrWatchCtrl|ScrGotoDialog|ScrPauseEvent|TreeData)\\.cpp$"
-  "^moho/app/(WEmitterWx|WRefEditDialog|FrameDumpCommands|SnapshotDirectoryDialog|WxUrl)\\.cpp$")
+  "^moho/app/(WEmitterWx|WRefEditDialog|FrameDumpCommands|SnapshotDirectoryDialog)\\.cpp$")
 foreach(_pattern IN LISTS _faf_client_windows_only)
   list(FILTER _faf_client_sources EXCLUDE REGEX "${_pattern}")
 endforeach()
@@ -152,8 +153,10 @@ target_link_libraries(faf_android_settings INTERFACE faf_sim_settings Wm3Foundat
 
 # The libraries export only their JNI entry points: the static libraries' symbols stay local, and
 # what nothing reaches is dropped, as the linker drops it from the simulation's programs
-# (WildMagic's ContBox3 brings ContMinBox, whose ConvexHull3 the Linux build leaves out).
-set(_faf_android_library_options -Wl,--error-limit=0 -Wl,--exclude-libs,ALL -Wl,--gc-sections)
+# (WildMagic's ContBox3 brings ContMinBox, whose ConvexHull3 the Linux build leaves out). The
+# Windows import libraries the sources name (#pragma comment(lib, "psapi.lib")) do not exist here.
+set(_faf_android_library_options
+  -Wl,--error-limit=0 -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,--no-dependent-libraries)
 
 # --- Objects -----------------------------------------------------------------------------------
 # The simulation's objects compiled once more with this build's headers: a few of its headers
@@ -215,14 +218,16 @@ add_library(faf_wx_lite OBJECT
 target_include_directories(faf_wx_lite PUBLIC "${FAF_ANDROID_DIR}/include")
 target_link_libraries(faf_wx_lite PUBLIC faf_android_settings)
 
-# Out of the default build until every client file compiles and libfafgame.so links (C1: wx-lite,
-# the XACT stand-in, the GDI font, the vertex formatters); name the targets to build them.
-add_library(faf_client OBJECT EXCLUDE_FROM_ALL ${_faf_client_files}
+add_library(faf_client OBJECT ${_faf_client_files}
+  src/app/EntityDialogAndroid.cpp
   src/audio/AudioAndroid.cpp
   src/diag/FrameSamplerAndroid.cpp
   src/movie/FfmpegSfdDecoderAndroid.cpp
   src/gal/D3D9Unavailable.cpp
-  src/gal/GalAvailabilityAndroid.cpp)
+  src/gal/D3D12SwitchesAndroid.cpp
+  src/gal/GalAvailabilityAndroid.cpp
+  src/gal/MeshFormattersAndroid.cpp
+  src/net/DatagramSocketAndroid.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings faf_wx_lite)
 # As the Windows build gives CLobby.cpp _HAS_AUTO_PTR_ETC (src/CMakeLists.txt): boost's string
 # algorithms there use std::unary_function, which libc++ keeps behind this opt-in from C++17 on.
@@ -231,7 +236,7 @@ set_property(SOURCE "${FAF_REPO}/src/moho/net/CLobby.cpp" APPEND PROPERTY COMPIL
 
 # --- Libraries ---------------------------------------------------------------------------------
 # libfafgame.so: the activity's native half, the whole engine.
-add_library(fafgame SHARED EXCLUDE_FROM_ALL
+add_library(fafgame SHARED
   $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_gal>
   $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client>)
 target_link_libraries(fafgame PRIVATE faf_game_sim android log)

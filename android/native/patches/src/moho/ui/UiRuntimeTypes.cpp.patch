@@ -1,0 +1,17 @@
+diff --git a/src/moho/ui/UiRuntimeTypes.cpp b/src/moho/ui/UiRuntimeTypes.cpp
+index b5199dc0..64288b05 100644
+--- a/src/moho/ui/UiRuntimeTypes.cpp
++++ b/src/moho/ui/UiRuntimeTypes.cpp
+@@ -1603,9 +1603,9 @@ namespace
+   )
+   {
+     moho::StatItem* const item = EnsureEngineFloatStat(slot, statPath);
+-    volatile long* const counter = reinterpret_cast<volatile long*>(&item->mPrimaryValueBits);
+-    const long nextBits = std::bit_cast<long>(value);
+-    long observed = 0;
++    volatile LONG* const counter = reinterpret_cast<volatile LONG*>(&item->mPrimaryValueBits);
++    const LONG nextBits = std::bit_cast<LONG>(value);
++    LONG observed = 0;
+     do {
+       observed = ::InterlockedCompareExchange(counter, 0, 0);
+     } while (::InterlockedCompareExchange(counter, nextBits, observed) != observed);

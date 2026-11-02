@@ -7,7 +7,7 @@ it, and so does its Windows build. Everything Android needs beyond it is in this
 ```sh
 cd android/native
 cmake --preset android-arm64          # or android-x64 for the emulator
-cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgalsmoke
+cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgalsmoke, fafgame
 ```
 
 The outputs land in `build/android-<abi>/bin`, where the app (`android/app`) takes them from.
@@ -26,8 +26,9 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_game_sim` | The simulation's objects again, with this build's headers, so every object of a library sees the same types |
 | `faf_android_platform` | `src/win32`, `src/gal`: what the Vulkan backend stands on here |
 | `faf_gal` | The renderer (`gpg/gal`): the Vulkan backend and what it shares with the others |
-| `faf_client` | The rest of the client; outside the default build until it compiles (CLIENT_PLAN.md, C1) |
-| `fafgame` | `libfafgame.so`, all of the above; likewise |
+| `faf_wx_lite` | wx-lite, the part of wxWindows 2.4.2 the client uses, on the message layer (`WX_LITE.md`) |
+| `faf_client` | The rest of the client, with the Android halves of what it needs from the left-out files |
+| `fafgame` | `libfafgame.so`, all of the above: the whole engine. The host that starts it is still to come (`WX_LITE.md`, Order) |
 | `fafgalsmoke` | `libfafgalsmoke.so`, the renderer test (card 4 of the app) |
 
 The client's files are the engine's (`src/sources.cmake`) minus the simulation's
@@ -42,18 +43,24 @@ The client's targets put four folders ahead of the engine's include path, in thi
 |---|---|
 | `build/android-<abi>/overlay/src` | Patched engine headers (see Patches) |
 | `include/shadow` | Stand-ins for the Windows-only backends' headers that shared code includes (`include/shadow/README.md`) |
-| `include/win32` | The Win32 names the client needs beyond the engine's POSIX layer: `Windows.h` adds them (COM's base, the registry, `OVERLAPPED`, ...) and continues with `#include_next` to the engine's own `src/platform/posix/win32/Windows.h`; `shlobj.h`, `mmsystem.h`, `mmreg.h` and `dsound.h` do the same for the engine's headers of those names; `psapi.h`, `DbgHelp.h`, `TlHelp32.h`, `objbase.h` and `commctrl.h` stand in for Windows headers the engine's layer does not have |
+| `include/win32` | The Win32 names the client needs beyond the engine's POSIX layer: `Windows.h` adds them (COM's base, the registry, `OVERLAPPED`, structured exceptions, ...) and continues with `#include_next` to the engine's own `src/platform/posix/win32/Windows.h`; `WinUser.h` is the message layer's USER API; `shlobj.h`, `mmsystem.h`, `mmreg.h` and `dsound.h` do the same for the engine's headers of those names; `psapi.h`, `DbgHelp.h`, `TlHelp32.h`, `objbase.h` and `commctrl.h` stand in for Windows headers the engine's layer does not have |
 | `include/directx` | DirectX type stand-ins (`include/directx/README.md`) |
 
-An HWND of the engine is an `ANativeWindow*` here: the surface an activity hands over.
-`GetClientRect` gives its size, and the host reports the window in front with
-`SetForegroundWindow` (`src/win32/Win32Android.cpp`).
+`faf_wx_lite` and the targets that use it also have `include` itself on the path, for wx-lite's
+`<wx/...>` headers.
+
+An HWND is a window of the message layer (`src/win32/User32Android.cpp`): an object with a window
+procedure, a size and a parent, whose messages come from its thread's queue as on Windows. The
+host (`include/win32/Win32AndroidHost.h`) gives a top-level window the activity's surface, which
+the Vulkan backend draws on, and feeds the input and the activity's state in as Win32 messages.
 
 ### Sources
 
 | File | Stands for |
 |---|---|
-| `src/win32/Win32Android.cpp` | The Win32 functions `include/win32/Windows.h` adds, on the engine's POSIX layer's public functions; no COM class and no registry key exist |
+| `src/win32/Win32Android.cpp` | The Win32 functions `include/win32/Windows.h` adds, on the engine's POSIX layer's public functions; no COM class and no registry key exist, no program starts, and `ShellExecuteW` opens a link through the host |
+| `src/win32/User32Android.cpp` | The message layer: windows, message queues per thread, `SendMessageW` across threads, focus, activation, capture, the cursor, keyboard state and hooks, the clipboard; the host's input arrives through it |
+| `src/win32/ExceptionsAndroid.cpp` | `SetUnhandledExceptionFilter` on the fault signals, with the fault's code, address and context |
 | `src/win32/FindFileAndroid.cpp` | `FindFirstFileA` and the rest, on POSIX directories with Win32's matching |
 | `src/win32/PsapiAndroid.cpp` | `GetProcessMemoryInfo`, from `/proc/self/status` |
 | `src/win32/DbgHelpAndroid.cpp` | `SymFromAddr`, from the dynamic symbol tables with demangled names |
@@ -68,7 +75,12 @@ An HWND of the engine is an `ANativeWindow*` here: the surface an activity hands
 | `src/gal/ImageCodecAndroid.cpp` | The D3DX11 texture codec: none yet (C2) |
 | `src/gal/GalAvailabilityAndroid.cpp` | The game's answer to "is there a compiler, a codec?": no |
 | `src/gal/GalInterfacesAndroid.cpp` | Five gal interfaces' constructors and destructors, which the engine keeps in the Direct3D 9 backend's file |
-| `src/gal/D3D9Unavailable.cpp` | The two Direct3D 9 methods shared code calls on paths only a Direct3D 9 device takes |
+| `src/gal/D3D9Unavailable.cpp` | The Direct3D 9 methods and mesh formatters shared code names, on paths only a Direct3D 9 device takes |
+| `src/gal/MeshFormattersAndroid.cpp` | The Direct3D 10 mesh formatters, which every other API packs its vertices with, the engine's code with a float-to-half conversion that matches D3DX's |
+| `src/gal/D3D12SwitchesAndroid.cpp` | The storage of two Direct3D 12 console switches |
+| `src/net/DatagramSocketAndroid.cpp` | The game discovery's broadcast socket: none, as outside Windows (the Winsock transport is Windows only) |
+| `src/app/EntityDialogAndroid.cpp` | `SC_CreateEntityDialog`: no reflection editor (a wx tool window) |
+| `src/wx` | wx-lite (`WX_LITE.md`) |
 | `src/smoke/GalSmoke.cpp` | The renderer test |
 | `src/smoke/GalSmokeDoubles.cpp` | The renderer test's answer: compiler and codec count as there, so the device comes up |
 

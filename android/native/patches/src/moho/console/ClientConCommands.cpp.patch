@@ -1,0 +1,59 @@
+diff --git a/src/moho/console/ClientConCommands.cpp b/src/moho/console/ClientConCommands.cpp
+index 9406189a..5e1617c0 100644
+--- a/src/moho/console/ClientConCommands.cpp
++++ b/src/moho/console/ClientConCommands.cpp
+@@ -531,21 +531,6 @@ namespace
+     const auto first = selection.begin();
+     return first != selection.end() ? *first : nullptr;
+   }
+-  /**
+-   * Resolves the first still-live `UserEntity` held by one session selection
+-   * set, or null when the selection has none left.
+-   *
+-   * 0x00669F14..0x00669F58 runs the tombstone-pruning `find` twice: once to
+-   * test the set against its head sentinel and once more to read the surviving
+-   * node's weak owner-link slot back into an entity pointer.
+-   */
+-  [[nodiscard]] moho::UserEntity* FirstLiveSelectedUserEntity(const moho::WeakSet<moho::UserEntity>& selection)
+-  {
+-    if (selection.Empty()) {
+-      return nullptr;
+-    }
+-    return *selection.begin();
+-  }
+   [[nodiscard]]
+   msvc8::string JoinConCommandTokens(const msvc8::vector<msvc8::string>& args, const std::size_t firstTokenIndex)
+   {
+@@ -2295,26 +2280,15 @@ void moho::CON_mesh_Rebatch(const msvc8::vector<msvc8::string>& args)
+  * argument vector carries a bone-name token *and* that target survived; every
+  * other combination opens the free-standing editor at the same cursor world
+  * position.
++ *
++ * Android build (android/native/patches): the editor is a wxWindows tool
++ * window, which wx-lite leaves out (android/native/WX_LITE.md), so the command
++ * says so in the log.
+  */
+ void moho::EFX_CreateEmitterWindow(const msvc8::vector<msvc8::string>& args)
+ {
+-  // The editor is held through a weak pointer for the Show call; the
+-  // WeakPtr<WWinManagedFrame> Set emission is 0x0066A2A0.
+-  WeakPtr<WWinManagedFrame> editor;
+-
+-  // 0x00669EDF: the binary loads the active-session global and dereferences it
+-  // straight away - this command is only reachable from an in-session console.
+-  CWldSession& session = *WLD_GetActiveSession();
+-
+-  const Wm3::Vector3f spawnPosition = session.CursorWorldPos;
+-  UserEntity* const attachEntity = FirstLiveSelectedUserEntity(session.mSelection);
+-
+-  editor.Set(
+-    args.size() > 1u && attachEntity != nullptr
+-      ? new WEmitterWx(attachEntity, spawnPosition, ConCommandArg(args, 1u)->c_str())
+-      : new WEmitterWx(nullptr, spawnPosition, nullptr)
+-  );
+-  editor.GetObjectPtr()->Show(true);
++  (void)args;
++  gpg::Warnf("EFX_CreateEmitterWindow: the Android build has no emitter editor");
+ }
+ 
+ 

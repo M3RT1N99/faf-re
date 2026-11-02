@@ -32,12 +32,12 @@
     {
       "name": "android-arm64",
       "configurePreset": "android-arm64",
-      "targets": ["headless", "faf_sim_math_tests", "fafgalsmoke"]
+      "targets": ["headless", "faf_sim_math_tests", "fafgalsmoke", "fafgame"]
     },
     {
       "name": "android-x64",
       "configurePreset": "android-x64",
-      "targets": ["headless", "faf_sim_math_tests", "fafgalsmoke"]
+      "targets": ["headless", "faf_sim_math_tests", "fafgalsmoke", "fafgame"]
     }
   ]
 }

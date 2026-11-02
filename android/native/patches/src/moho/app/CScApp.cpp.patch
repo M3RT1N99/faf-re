@@ -1,0 +1,19 @@
+diff --git a/src/moho/app/CScApp.cpp b/src/moho/app/CScApp.cpp
+index f3238127..a1d5b3dd 100644
+--- a/src/moho/app/CScApp.cpp
++++ b/src/moho/app/CScApp.cpp
+@@ -177,11 +177,11 @@ namespace
+       return;
+     }
+ 
+-    volatile long* const counter = reinterpret_cast<volatile long*>(&slot->mPrimaryValueBits);
+-    long observed = 0;
++    volatile LONG* const counter = reinterpret_cast<volatile LONG*>(&slot->mPrimaryValueBits);
++    LONG observed = 0;
+     do {
+       observed = ::InterlockedCompareExchange(counter, 0, 0);
+-    } while (::InterlockedCompareExchange(counter, static_cast<long>(value), observed) != observed);
++    } while (::InterlockedCompareExchange(counter, static_cast<LONG>(value), observed) != observed);
+   }
+ 
+   /**
