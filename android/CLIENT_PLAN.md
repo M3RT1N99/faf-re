@@ -70,15 +70,20 @@ most of C1, as 56 files stop at wx.
 
 ## Progress
 
-*2026-11-01:*
-- **Done:**
-  - the DirectX type stand-ins (`src/platform/posix/directx`);
-  - the Windows-only backends left out of non-Windows builds;
+*2026-11-02:*
+- **The client builds in `android/native`** ([native/README.md](native/README.md)). That project
+  builds the engine for Android as the repository's own presets do and adds the client on top. It
+  changes no file of the engine, so the engine's tree and its Windows build stay as upstream has
+  them. It holds:
+  - the Win32 names the client needs beyond the engine's POSIX layer;
+  - DirectX type stand-ins and stand-ins for the Windows-only backends' headers that shared code
+    includes;
   - the Vulkan backend's Android surface;
-  - what the render code needs from the POSIX Win32 layer;
-  - stand-ins for DXC, D3DX and the Win32 cursor.
-- **Client build:** `-DFAF_ANDROID_CLIENT=ON` (`cmake/FafAndroidClient.cmake`) builds the renderer
-  (`faf_gal`) and the client objects (`faf_client`, outside the default build until they compile).
+  - stand-ins for DXC, D3DX and the Win32 cursor;
+  - nine engine files the Android build compiles patched ([native/patches/README.md](native/patches/README.md)).
+- **Client objects:** 139 of the client's 200 translation units compile for arm64. The other 61
+  stop at wxWindows (45), XACT (8), DbgHelp, psapi, Winsock, DirectSound, ffmpeg, the GDI font and
+  `std::unary_function`.
 - **Renderer test:** `libfafgalsmoke.so` is card 4 of the app, from release 0.7.0. The engine's gal
   brings up its Vulkan device on the phone's screen, then clears and presents.
   - On the emulator with SwiftShader (Vulkan 1.2) it stops at the device.
@@ -94,11 +99,15 @@ most of C1, as 56 files stop at wx.
       and ASTC, and D32S8 but no D24S8.
     - The game's DXT textures need the CPU decode of C2.
     - The phone was set to HD+: the display mode was 720x1544 at 120 Hz, of WQHD+, FHD+ and HD+.
-- **Open for C1:**
-  - wx-lite;
-  - the XACT stand-in;
-  - the GDI font (`CD3DFont`);
-  - the DirectSound movie sink;
-  - the mesh vertex formatters (in the Direct3D 9 and 10 backends' files, on D3DX's float16).
+- **Open for C1**, each in `android/native` and none by changing the engine:
+  - wx-lite: the wxWindows names the engine uses, as headers under `include/` and an Android
+    implementation, for the engine's own wx code to compile against;
+  - `xact3.h`: the engine brings its own XACT interfaces and needs only the header's data
+    structures; without an engine it stays silent, as on a PC without XACT;
+  - stand-ins for `DbgHelp.h`, `psapi.h` and `ws2tcpip.h`;
+  - the GDI font (`CD3DFont`) and the DirectSound movie sink;
+  - the mesh vertex formatters: their headers need nothing of Windows, their code is in the
+    Direct3D 9 and 10 backends' files, so Android gets its own copy with a float16 conversion
+    that matches D3DX's.
 
   After that, `libfafgame.so` links.
