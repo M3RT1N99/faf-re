@@ -20,6 +20,14 @@ namespace
       mBytes.push_back('\0');
     }
 
+    HRESULT QueryInterface(REFIID, void** const object) override
+    {
+      if (object != nullptr) {
+        *object = nullptr;
+      }
+      return E_NOINTERFACE;
+    }
+
     ULONG AddRef() override
     {
       return ++mReferences;

@@ -10,16 +10,96 @@
 
 #include_next <Windows.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 
 using USHORT = std::uint16_t;
 using COLORREF = DWORD;
+using LPBYTE = BYTE*;
+using PWSTR = wchar_t*;
 // The render backends' cursor helper (gpg/gal/backends/common/WindowsCursor.h) keeps these.
 using HCURSOR = void*;
 using HICON = void*;
 
 #define E_NOTIMPL (static_cast<HRESULT>(0x80004001u))
+#define E_NOINTERFACE (static_cast<HRESULT>(0x80004002u))
+
+/// An asynchronous I/O request (the XACT file callbacks name it), with Win32's layout.
+struct OVERLAPPED
+{
+  ULONG_PTR Internal;
+  ULONG_PTR InternalHigh;
+  union
+  {
+    struct
+    {
+      DWORD Offset;
+      DWORD OffsetHigh;
+    };
+    PVOID Pointer;
+  };
+  HANDLE hEvent;
+};
+
+// --- COM ----------------------------------------------------------------------------------------
+// The base of COM, as the audio engine and DirectSound use it. No COM class is registered here:
+// CoCreateInstance fails as on Windows for a class that is not installed (src/win32/Win32Android.cpp).
+
+struct GUID
+{
+  DWORD Data1;
+  WORD Data2;
+  WORD Data3;
+  BYTE Data4[8];
+};
+using IID = GUID;
+using CLSID = GUID;
+using REFIID = const IID&;
+using REFCLSID = const CLSID&;
+using LPCGUID = const GUID*;
+
+inline bool operator==(const GUID& a, const GUID& b) noexcept
+{
+  return a.Data1 == b.Data1 && a.Data2 == b.Data2 && a.Data3 == b.Data3 &&
+    std::equal(std::begin(a.Data4), std::end(a.Data4), std::begin(b.Data4));
+}
+
+inline bool operator!=(const GUID& a, const GUID& b) noexcept
+{
+  return !(a == b);
+}
+
+struct IUnknown
+{
+  virtual HRESULT QueryInterface(REFIID iid, void** object) = 0;
+  virtual ULONG AddRef() = 0;
+  virtual ULONG Release() = 0;
+
+protected:
+  ~IUnknown() = default;
+};
+using LPUNKNOWN = IUnknown*;
+
+#define CLSCTX_INPROC_SERVER 0x1u
+#define REGDB_E_CLASSNOTREG (static_cast<HRESULT>(0x80040154u))
+
+/// Fails with REGDB_E_CLASSNOTREG: no COM class is installed on Android.
+HRESULT CoCreateInstance(REFCLSID clsid, LPUNKNOWN outer, DWORD context, REFIID iid, void** object);
+
+// --- Registry -----------------------------------------------------------------------------------
+// Android has no registry: every key is missing, as a key that was never written is on Windows.
+
+using HKEY = struct HKEY__*;
+#define HKEY_LOCAL_MACHINE (reinterpret_cast<HKEY>(static_cast<ULONG_PTR>(static_cast<LONG>(0x80000002u))))
+#define REG_DWORD 4u
+
+/// ERROR_FILE_NOT_FOUND: there is no key.
+LONG RegOpenKeyExW(HKEY key, const wchar_t* subKey, DWORD options, DWORD access, HKEY* result);
+/// ERROR_FILE_NOT_FOUND: there is no value.
+LONG RegQueryValueExW(HKEY key, const wchar_t* valueName, DWORD* reserved, DWORD* type, BYTE* data, DWORD* dataSize);
+LONG RegCloseKey(HKEY key);
 
 /// -1, 0 or 1 as `a` is earlier than, equal to or later than `b`.
 inline LONG CompareFileTime(const FILETIME* const a, const FILETIME* const b) noexcept

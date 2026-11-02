@@ -15,16 +15,11 @@ struct D3D_SHADER_MACRO
 /// The include handler; the engine passes null.
 struct ID3DInclude;
 
-/// d3dcommon.h's blob: a buffer with a COM lifetime (AddRef, Release).
-struct ID3D10Blob
+/// d3dcommon.h's blob: a buffer with a COM lifetime.
+struct ID3D10Blob : IUnknown
 {
-  virtual ULONG AddRef() = 0;
-  virtual ULONG Release() = 0;
   virtual LPVOID GetBufferPointer() = 0;
   virtual SIZE_T GetBufferSize() = 0;
-
-protected:
-  ~ID3D10Blob() = default;
 };
 using ID3DBlob = ID3D10Blob;
 

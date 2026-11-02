@@ -228,6 +228,32 @@ BOOL GetClientRect(const HWND window, RECT* const rect)
   return TRUE;
 }
 
+HRESULT CoCreateInstance(REFCLSID, LPUNKNOWN, DWORD, REFIID, void** const object)
+{
+  if (object != nullptr) {
+    *object = nullptr;
+  }
+  return REGDB_E_CLASSNOTREG;
+}
+
+LONG RegOpenKeyExW(HKEY, const wchar_t*, DWORD, DWORD, HKEY* const result)
+{
+  if (result != nullptr) {
+    *result = nullptr;
+  }
+  return static_cast<LONG>(ERROR_FILE_NOT_FOUND);
+}
+
+LONG RegQueryValueExW(HKEY, const wchar_t*, DWORD*, DWORD*, BYTE*, DWORD*)
+{
+  return static_cast<LONG>(ERROR_FILE_NOT_FOUND);
+}
+
+LONG RegCloseKey(HKEY)
+{
+  return static_cast<LONG>(ERROR_SUCCESS);
+}
+
 HWND GetForegroundWindow()
 {
   return gForegroundWindow.load();

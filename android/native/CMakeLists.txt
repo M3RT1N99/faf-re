@@ -89,6 +89,9 @@ set(_faf_client_windows_only
   "^gpg/gal/effects/ShaderCompiler\\.cpp$"
   # The crash dialog (CrashReport.cpp's hook stays unset, as in the simulation build).
   "^gpg/core/diagnostics/CrashReportDialog\\.cpp$"
+  # The XACT engine DLL's clock imports, patched in its PE image: src/audio/AudioAndroid.cpp has
+  # the one function, for an engine that does not exist here.
+  "^moho/audio/XactClock\\.cpp$"
   # The wx script debugger's windows and the wx tool windows (emitter editor, reflection editor,
   # directory dialogs, URLs).
   "^moho/misc/(ScrDebugWindow|ScrFileCtrl|ScrSourceCtrl|ScrWatchCtrl|ScrGotoDialog|ScrPauseEvent|TreeData)\\.cpp$"
@@ -186,6 +189,7 @@ target_link_libraries(faf_gal PUBLIC faf_android_settings)
 # Out of the default build until every client file compiles and libfafgame.so links (C1: wx-lite,
 # the XACT stand-in, the GDI font, the vertex formatters); name the targets to build them.
 add_library(faf_client OBJECT EXCLUDE_FROM_ALL ${_faf_client_files}
+  src/audio/AudioAndroid.cpp
   src/gal/D3D9Unavailable.cpp
   src/gal/GalAvailabilityAndroid.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings)

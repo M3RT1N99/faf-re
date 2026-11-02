@@ -12,3 +12,4 @@ the Windows builds use the SDK's own headers.
 | `d3d11.h` | The input-layout description the Direct3D 11 vertex layouts give the Vulkan backend. |
 | `d3dcompiler.h` | `D3DPreprocess`, `D3D_SHADER_MACRO` and the blob, as the Vulkan backend's effect creation calls them. `src/gal/D3DCompilerAndroid.cpp` implements the function. |
 | `wrl/client.h` | `Microsoft::WRL::ComPtr`, the subset the engine uses, with WRL's ownership rules. |
+| `xact3.h` | The data the XACT engine and the game exchange (runtime parameters, notifications, streaming parameters), with the June 2010 SDK's layouts; the engine brings its own XACT interfaces. No XACT engine exists here. |
