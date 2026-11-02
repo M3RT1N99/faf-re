@@ -561,8 +561,12 @@ namespace gpg::gal
     features.features.textureCompressionBC = available.features.textureCompressionBC;
     mAnisotropy = available.features.samplerAnisotropy == VK_TRUE;
     mWireframeSupported = available.features.fillModeNonSolid == VK_TRUE;
-    if (available.features.textureCompressionBC != VK_TRUE) {
-      ThrowError("DeviceVulkan.cpp", __LINE__, "the Vulkan device has no BC texture compression");
+    // FAF addition: BC textures were required. Phones' GPUs mostly lack them (the Galaxy S22's
+    // Xclipse 920 has ETC2 and ASTC): the device comes up without, and a BC texture is refused
+    // in CreateTexture until they are decoded on the CPU.
+    mBcTextures = available.features.textureCompressionBC == VK_TRUE;
+    if (!mBcTextures) {
+      gpg::Warnf("Vulkan: the device has no BC texture compression; BC textures cannot be created on it");
     }
 
     const float priority = 1.0f;
@@ -1678,6 +1682,12 @@ namespace gpg::gal
     if (format.format == VK_FORMAT_UNDEFINED) {
       char message[128]{};
       std::snprintf(message, sizeof(message), "unsupported texture format (DXGI %d)", static_cast<int>(dxgiFormat));
+      ThrowError("DeviceVulkan.cpp", __LINE__, message);
+    }
+    if (!mBcTextures && dxgi::IsBlockCompressed(dxgiFormat)) {
+      char message[640]{};
+      std::snprintf(message, sizeof(message), "texture %s is BC compressed (DXGI %d), which this device cannot sample",
+                    context->location_.c_str(), static_cast<int>(dxgiFormat));
       ThrowError("DeviceVulkan.cpp", __LINE__, message);
     }
 
