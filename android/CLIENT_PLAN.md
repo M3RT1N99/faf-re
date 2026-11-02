@@ -85,6 +85,15 @@ most of C1, as 56 files stop at wx.
   - With `-gpu host` on a Radeon RX 9070 XT (Vulkan 1.3 through the emulator) it passes: 602 frames
     in 10 s at the 60 Hz vsync.
   - Android's window surfaces have no B8G8R8A8, so the backend's swap chain takes R8G8B8A8 there.
+  - **Galaxy S22 Ultra (Xclipse 920, Vulkan 1.3.279, release 0.7.1, 2026-11-02): PASS.**
+    - 1203 frames in 10 s at the 120 Hz vsync, the slowest 18 ms. The device was ready in 43 ms,
+      with a swap chain of 4 R8G8B8A8 images.
+    - The GPU has every feature the backend checks (dynamic rendering, synchronization2, timeline
+      semaphores, scalar block layout, anisotropy, wireframe) and textures up to 16384.
+    - It has no BC: 0.7.0 stopped there, and from 0.7.1 the device comes up without. It has ETC2
+      and ASTC, and D32S8 but no D24S8.
+    - The game's DXT textures need the CPU decode of C2.
+    - The phone was set to HD+: the display mode was 720x1544 at 120 Hz, of WQHD+, FHD+ and HD+.
 - **Open for C1:**
   - wx-lite;
   - the XACT stand-in;
