@@ -33,6 +33,11 @@ build ([README.md](README.md)).
   - the splash screen and message boxes.
 - **Other classes** that `moho/app/WxRuntimeTypes.h` names: files and streams (`wxFile`,
   `wxFFile`, `wxFileName`), images (`wxImage`, `wxBitmap`), `wxColourDatabase`.
+- **Links:** `OpenURL` (`moho/app/WxUrl.cpp`) parses the link with `wxURL` and opens it with
+  `ShellExecuteW` when its protocol is allowed.
+- **Tool windows for development:** the script debugger, the emitter editor
+  (`EFX_CreateEmitterWindow`), the reflection editor (`SC_CreateEntityDialog`) and the directory
+  dialogs of the frame dumps.
 
 ## The design
 
@@ -52,7 +57,8 @@ can carry the `ANativeWindow` of the activity's surface, and the Vulkan surface 
 
 The classes and functions the engine uses, declared as in wxWindows 2.4.2:
 - **Basics:**
-  - `wxObject` and `wxClassInfo` with the dynamic class macros;
+  - `wxObject`, the class the event tables' member pointers are cast to. Nothing in the engine
+    asks for run-time class information, so there is no `wxClassInfo`;
   - `wxString` (the Unicode build: `wxChar` is `wchar_t`);
   - `wxPoint`, `wxSize`, `wxRect`, `wxArrayString`.
 - **Events:**
@@ -74,8 +80,17 @@ The classes and functions the engine uses, declared as in wxWindows 2.4.2:
 - **The rest of what `WxRuntimeTypes.h` names:**
   - Controls and dialogs exist as windows without a picture. A modal dialog ends at once with
     `wxID_CANCEL`, and a message box goes to the log.
-  - The file classes work on POSIX.
-  - Images and bitmaps hold their pixels but draw nothing.
+  - The headers of the file and stream classes and of the list, tree and notebook controls are
+    empty: `WxRuntimeTypes.h` includes them, and no client file uses their classes. Its size check
+    of `wxColourDatabase` is one of the x86 layout checks that 64-bit builds leave out
+    (`src/platform/X64LayoutAsserts.h`), so there is no colour database either.
+  - Images and bitmaps hold the pixels they are given but draw nothing. The PNG handler loads
+    nothing, so the splash screen does not show.
+- **Links:** `wxURL` parses as wxWindows 2.4.2 does, with its protocols http, ftp and file (no
+  https; the names compare with case). It opens no connections. `ShellExecuteW` hands the link to
+  the host, which shows it with what Android has for it (`include/win32/Win32AndroidHost.h`).
+- **The tool windows are left out.** wx-lite has none of their controls (trees, tree lists,
+  notebooks, sliders), and their files are not built.
 
 wx-lite takes its behaviour from wxWindows 2.4.2's own sources in `dependencies/wxWindows-2.4.2`
 (`src/common/event.cpp` for event processing, `src/msw/window.cpp` for message translation). Where
@@ -103,7 +118,7 @@ The activity's native half:
 
 ## Order
 
-1. The headers and the basics, until the 48 files compile.
-2. The message layer and the translation.
+1. The headers and the basics, until the 48 files compile. *Done.*
+2. The message layer and the translation. *Done.*
 3. `libfafgame.so` links (the vertex formatters and whatever else the linker names).
 4. The host: the engine starts on the emulator.

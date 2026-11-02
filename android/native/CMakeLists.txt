@@ -201,6 +201,20 @@ target_link_libraries(faf_android_platform PUBLIC faf_android_settings)
 add_library(faf_gal OBJECT ${_faf_gal_files})
 target_link_libraries(faf_gal PUBLIC faf_android_settings)
 
+# wx-lite (WX_LITE.md): the part of wxWindows 2.4.2 the client uses, on the message layer.
+add_library(faf_wx_lite OBJECT
+  src/wx/app.cpp
+  src/wx/common.cpp
+  src/wx/controls.cpp
+  src/wx/event.cpp
+  src/wx/gdi.cpp
+  src/wx/sizer.cpp
+  src/wx/toplevel.cpp
+  src/wx/url.cpp
+  src/wx/window.cpp)
+target_include_directories(faf_wx_lite PUBLIC "${FAF_ANDROID_DIR}/include")
+target_link_libraries(faf_wx_lite PUBLIC faf_android_settings)
+
 # Out of the default build until every client file compiles and libfafgame.so links (C1: wx-lite,
 # the XACT stand-in, the GDI font, the vertex formatters); name the targets to build them.
 add_library(faf_client OBJECT EXCLUDE_FROM_ALL ${_faf_client_files}
@@ -209,7 +223,7 @@ add_library(faf_client OBJECT EXCLUDE_FROM_ALL ${_faf_client_files}
   src/movie/FfmpegSfdDecoderAndroid.cpp
   src/gal/D3D9Unavailable.cpp
   src/gal/GalAvailabilityAndroid.cpp)
-target_link_libraries(faf_client PUBLIC faf_android_settings)
+target_link_libraries(faf_client PUBLIC faf_android_settings faf_wx_lite)
 # As the Windows build gives CLobby.cpp _HAS_AUTO_PTR_ETC (src/CMakeLists.txt): boost's string
 # algorithms there use std::unary_function, which libc++ keeps behind this opt-in from C++17 on.
 set_property(SOURCE "${FAF_REPO}/src/moho/net/CLobby.cpp" APPEND PROPERTY COMPILE_DEFINITIONS
@@ -219,7 +233,7 @@ set_property(SOURCE "${FAF_REPO}/src/moho/net/CLobby.cpp" APPEND PROPERTY COMPIL
 # libfafgame.so: the activity's native half, the whole engine.
 add_library(fafgame SHARED EXCLUDE_FROM_ALL
   $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_gal>
-  $<TARGET_OBJECTS:faf_client>)
+  $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client>)
 target_link_libraries(fafgame PRIVATE faf_game_sim android log)
 target_link_options(fafgame PRIVATE ${_faf_android_library_options})
 

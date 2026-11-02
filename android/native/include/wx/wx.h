@@ -1,0 +1,32 @@
+#pragma once
+
+// wx-lite (android/native/WX_LITE.md): wxWindows 2.4.2's <wx/wx.h>, the common headers, as far as
+// wx-lite has them.
+
+#include "wx/defs.h"
+#include "wx/object.h"
+#include "wx/string.h"
+#include "wx/event.h"
+#include "wx/app.h"
+#include "wx/stream.h"
+#include "wx/window.h"
+#include "wx/panel.h"
+#include "wx/frame.h"
+#include "wx/dc.h"
+#include "wx/dcclient.h"
+#include "wx/button.h"
+#include "wx/menu.h"
+#include "wx/brush.h"
+#include "wx/icon.h"
+#include "wx/dialog.h"
+#include "wx/control.h"
+#include "wx/bmpbuttn.h"
+#include "wx/checkbox.h"
+#include "wx/stattext.h"
+#include "wx/statbox.h"
+#include "wx/textctrl.h"
+#include "wx/slider.h"
+#include "wx/combobox.h"
+#include "wx/layout.h"
+#include "wx/sizer.h"
+#include "wx/validate.h"
