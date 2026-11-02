@@ -1,7 +1,9 @@
 // The renderer test (android/native, card 4 of the app): the engine's renderer on the phone.
-// The activity hands over its surface; on a thread of its own the engine's gal creates its Vulkan
-// device on that ANativeWindow (gal::Device::Create, the backend Windows uses), then clears the
-// frame in changing colours and presents it for a few seconds, timed. No effects and no textures:
+// The activity hands over its surface. On a thread of its own the test makes a window of the
+// message layer on it, as the game's frame is (include/win32/Win32AndroidHost.h), and the engine's
+// gal creates its Vulkan device for that window (gal::Device::Create, the backend Windows uses),
+// then clears the frame in changing colours and presents it for a few seconds, timed, while the
+// thread takes its messages as the game's loop does. No effects and no textures:
 // those need the shader compiler and the texture codec of CLIENT_PLAN.md's C2. What the device
 // said, the engine's log lines included, is the report the app shows and shares. Each line goes to
 // the report file as it comes, so the file holds what the test got to if the process dies in the
@@ -27,6 +29,7 @@
 #include <vector>
 
 #include <Windows.h>
+#include <Win32AndroidHost.h>
 
 #include "gpg/core/utils/Logging.h"
 #include "gpg/gal/Device.hpp"
@@ -207,13 +210,56 @@ namespace
     vkDestroyInstance(instance, nullptr);
   }
 
-  void Run(ANativeWindow* const window, const int seconds)
+  /// Takes this thread's messages, as the game's loop does between frames.
+  void PumpMessages()
+  {
+    MSG message{};
+    while (::PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE) != FALSE) {
+      (void)::TranslateMessage(&message);
+      (void)::DispatchMessageW(&message);
+    }
+  }
+
+  /// The test's window: a top-level window of the message layer on the activity's surface, in
+  /// front, as the host shows the game's frame.
+  HWND CreateTestWindow(ANativeWindow* const surface, const int width, const int height)
+  {
+    static const bool sRegistered = [] {
+      WNDCLASSW windowClass{};
+      windowClass.lpfnWndProc = &::DefWindowProcW;
+      windowClass.lpszClassName = L"FafGalSmoke";
+      return ::RegisterClassW(&windowClass) != 0;
+    }();
+    if (!sRegistered) {
+      return nullptr;
+    }
+    Win32Android_SetScreenSize(width, height);
+    const HWND window = ::CreateWindowExW(0, L"FafGalSmoke", L"", WS_POPUP, 0, 0, width, height, nullptr, nullptr, nullptr, nullptr);
+    if (window == nullptr) {
+      return nullptr;
+    }
+    (void)Win32Android_SetWindowSurface(window, surface);
+    (void)::ShowWindow(window, SW_SHOW);
+    Win32Android_SetForeground(window, TRUE);
+    PumpMessages();
+    return window;
+  }
+
+  void Run(ANativeWindow* const surface, const int seconds)
   {
     static ReportLogTarget sLogTarget;
     ReportVulkanDevices();
-    const int width = ANativeWindow_getWidth(window);
-    const int height = ANativeWindow_getHeight(window);
+    const int width = ANativeWindow_getWidth(surface);
+    const int height = ANativeWindow_getHeight(surface);
     Report("surface " + std::to_string(width) + "x" + std::to_string(height));
+    const HWND window = CreateTestWindow(surface, width, height);
+    if (window == nullptr) {
+      Report("FAIL: no window on the surface (error " + std::to_string(::GetLastError()) + ")");
+      ANativeWindow_release(surface);
+      CloseReportFile();
+      gRunning.store(false);
+      return;
+    }
     try {
       gpg::gal::DeviceContext context(gpg::gal::DeviceApi::Vulkan);
       context.mVSync = true;
@@ -227,8 +273,6 @@ namespace
 
       Report("creating the engine's Vulkan device");
       const auto created = std::chrono::steady_clock::now();
-      // The host puts its window in front, as Windows does for the game's (WindowIsForeground).
-      ::SetForegroundWindow(window);
       gpg::gal::Device* const device = gpg::gal::Device::Create(&context);
       const double setupMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - created).count();
       char line[160];
@@ -245,6 +289,7 @@ namespace
         if (gStop.load() || elapsed >= seconds) {
           break;
         }
+        PumpMessages();
         device->BeginScene();
         device->Clear(true, true, true, Colour(elapsed), 1.0f, 0);
         device->EndScene();
@@ -275,8 +320,11 @@ namespace
     } catch (...) {
       Report("FAIL: unknown exception");
     }
-    ::SetForegroundWindow(nullptr);
-    ANativeWindow_release(window);
+    Win32Android_SetForeground(window, FALSE);
+    PumpMessages();
+    (void)Win32Android_SetWindowSurface(window, nullptr);
+    (void)::DestroyWindow(window);
+    ANativeWindow_release(surface);
     CloseReportFile();
     gRunning.store(false);
   }

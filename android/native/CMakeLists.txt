@@ -184,6 +184,8 @@ target_include_directories(faf_game_sim PRIVATE "${CMAKE_BINARY_DIR}/generated")
 
 add_library(faf_android_platform OBJECT
   src/win32/Win32Android.cpp
+  src/win32/User32Android.cpp
+  src/win32/ExceptionsAndroid.cpp
   src/win32/DbgHelpAndroid.cpp
   src/win32/FindFileAndroid.cpp
   src/win32/GdiAndroid.cpp

@@ -1,7 +1,8 @@
-// FindFirstFileA, FindNextFileA and FindClose (include/win32/Windows.h) on POSIX directories,
-// with Win32's matching: `*` and `?` in the pattern's last part, letters in any case, "." and ".."
+// FindFirstFile, FindNextFile (A and W) and FindClose (include/win32/Windows.h) on POSIX
+// directories, with Win32's matching: `*` and `?` in the pattern's last part, letters in any case, "." and ".."
 // listed like any entry. The render info counts the shader cache's files with them
-// (moho/render/RenderInfo.cpp).
+// (moho/render/RenderInfo.cpp), the startup code finds the game's files with the W pair. The
+// wide names are UTF-8 on the file system.
 
 #include <Windows.h>
 
@@ -107,5 +108,52 @@ BOOL FindClose(const HANDLE handle)
   auto* const search = static_cast<Search*>(handle);
   ::closedir(search->directory);
   delete search;
+  return TRUE;
+}
+
+namespace
+{
+  void Widen(const WIN32_FIND_DATAA& narrow, WIN32_FIND_DATAW* const wide)
+  {
+    *wide = WIN32_FIND_DATAW{};
+    wide->dwFileAttributes = narrow.dwFileAttributes;
+    wide->ftCreationTime = narrow.ftCreationTime;
+    wide->ftLastAccessTime = narrow.ftLastAccessTime;
+    wide->ftLastWriteTime = narrow.ftLastWriteTime;
+    wide->nFileSizeHigh = narrow.nFileSizeHigh;
+    wide->nFileSizeLow = narrow.nFileSizeLow;
+    (void)::MultiByteToWideChar(CP_UTF8, 0, narrow.cFileName, -1, wide->cFileName, MAX_PATH);
+    wide->cFileName[MAX_PATH - 1] = 0;
+  }
+} // namespace
+
+HANDLE FindFirstFileW(const wchar_t* const pattern, WIN32_FIND_DATAW* const data)
+{
+  if (pattern == nullptr || data == nullptr) {
+    ::SetLastError(ERROR_INVALID_PARAMETER);
+    return INVALID_HANDLE_VALUE;
+  }
+  const int length = ::WideCharToMultiByte(CP_UTF8, 0, pattern, -1, nullptr, 0, nullptr, nullptr);
+  std::string narrow(static_cast<std::size_t>(std::max(length, 1)), '\0');
+  (void)::WideCharToMultiByte(CP_UTF8, 0, pattern, -1, narrow.data(), length, nullptr, nullptr);
+  WIN32_FIND_DATAA found{};
+  const HANDLE search = ::FindFirstFileA(narrow.c_str(), &found);
+  if (search != INVALID_HANDLE_VALUE) {
+    Widen(found, data);
+  }
+  return search;
+}
+
+BOOL FindNextFileW(const HANDLE handle, WIN32_FIND_DATAW* const data)
+{
+  if (data == nullptr) {
+    ::SetLastError(ERROR_INVALID_PARAMETER);
+    return FALSE;
+  }
+  WIN32_FIND_DATAA found{};
+  if (::FindNextFileA(handle, &found) == FALSE) {
+    return FALSE;
+  }
+  Widen(found, data);
   return TRUE;
 }

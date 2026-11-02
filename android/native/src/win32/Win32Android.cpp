@@ -4,7 +4,6 @@
 
 #include <Windows.h>
 
-#include <android/native_window.h>
 #include <dlfcn.h>
 
 #include <atomic>
@@ -14,10 +13,17 @@
 #include <fstream>
 #include <string>
 
+#include <Win32AndroidHost.h>
+
 #include "platform/posix/Backtrace.h"
 
 namespace
 {
+  // ShellExecuteW's answer when the host opened the file: any value above 32 means success.
+  constexpr ULONG_PTR kShellExecuteOpened = 33;
+
+  std::atomic<Win32AndroidShellOpen> gShellOpen{nullptr};
+
   std::wstring Widen(const char* const text)
   {
     const int length = ::MultiByteToWideChar(CP_UTF8, 0, text, -1, nullptr, 0);
@@ -56,19 +62,12 @@ namespace
     ::SetLastError(ERROR_SUCCESS);
     return static_cast<DWORD>(text.size());
   }
-
-  std::atomic<HWND> gForegroundWindow{nullptr};
 } // namespace
 
 const char* GetCommandLineA()
 {
   static const std::string sCommandLine = Narrow(::GetCommandLineW());
   return sCommandLine.c_str();
-}
-
-DWORD MsgWaitForMultipleObjectsEx(const DWORD count, const HANDLE* const handles, const DWORD milliseconds, DWORD, const DWORD flags)
-{
-  return ::WaitForMultipleObjects(count, handles, (flags & MWMO_WAITALL) != 0 ? TRUE : FALSE, milliseconds);
 }
 
 DWORD GetModuleFileNameA(const HMODULE module, char* const fileName, const DWORD size)
@@ -107,6 +106,21 @@ BOOL GetModuleHandleExA(const DWORD flags, const char* const moduleName, HMODULE
   }
   *module = info.dli_fbase;
   return TRUE;
+}
+
+BOOL GetModuleHandleExW(const DWORD flags, const wchar_t* const moduleName, HMODULE* const module)
+{
+  // With GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS the "name" is an address: the same lookup.
+  return ::GetModuleHandleExA(flags, reinterpret_cast<const char*>(moduleName), module);
+}
+
+HMODULE LoadLibraryW(const wchar_t* const fileName)
+{
+  if (fileName == nullptr) {
+    ::SetLastError(ERROR_INVALID_PARAMETER);
+    return nullptr;
+  }
+  return ::LoadLibraryA(Narrow(fileName).c_str());
 }
 
 USHORT RtlCaptureStackBackTrace(const DWORD framesToSkip, const DWORD framesToCapture, void** const backTrace, DWORD* const backTraceHash)
@@ -214,20 +228,6 @@ int getenv_s(std::size_t* const requiredSize, char* const buffer, const std::siz
   return 0;
 }
 
-BOOL GetClientRect(const HWND window, RECT* const rect)
-{
-  if (window == nullptr || rect == nullptr) {
-    ::SetLastError(ERROR_INVALID_PARAMETER);
-    return FALSE;
-  }
-  auto* const native = static_cast<ANativeWindow*>(window);
-  rect->left = 0;
-  rect->top = 0;
-  rect->right = ANativeWindow_getWidth(native);
-  rect->bottom = ANativeWindow_getHeight(native);
-  return TRUE;
-}
-
 DWORD SuspendThread(HANDLE)
 {
   ::SetLastError(ERROR_NOT_SUPPORTED);
@@ -266,13 +266,136 @@ LONG RegCloseKey(HKEY)
   return static_cast<LONG>(ERROR_SUCCESS);
 }
 
-HWND GetForegroundWindow()
+LONG RegOpenKeyExA(HKEY, const char*, DWORD, DWORD, HKEY* const result)
 {
-  return gForegroundWindow.load();
+  if (result != nullptr) {
+    *result = nullptr;
+  }
+  return static_cast<LONG>(ERROR_FILE_NOT_FOUND);
 }
 
-BOOL SetForegroundWindow(const HWND window)
+LONG RegQueryValueExA(HKEY, const char*, DWORD*, DWORD*, BYTE*, DWORD*)
 {
-  gForegroundWindow.store(window);
-  return TRUE;
+  return static_cast<LONG>(ERROR_FILE_NOT_FOUND);
+}
+
+LONG RegCreateKeyExA(HKEY, const char*, DWORD, char*, DWORD, DWORD, void*, HKEY* const result, DWORD*)
+{
+  if (result != nullptr) {
+    *result = nullptr;
+  }
+  return static_cast<LONG>(ERROR_ACCESS_DENIED);
+}
+
+LONG RegSetValueExA(HKEY, const char*, DWORD, DWORD, const BYTE*, DWORD)
+{
+  return static_cast<LONG>(ERROR_INVALID_HANDLE);
+}
+
+BOOL CreateProcessA(
+  const char*, char*, void*, void*, BOOL, DWORD, void*, const char*, STARTUPINFOA*, PROCESS_INFORMATION* const processInformation
+)
+{
+  if (processInformation != nullptr) {
+    *processInformation = PROCESS_INFORMATION{};
+  }
+  ::SetLastError(ERROR_NOT_SUPPORTED);
+  return FALSE;
+}
+
+BOOL CreateProcessW(
+  const wchar_t*, wchar_t*, void*, void*, BOOL, DWORD, void*, const wchar_t*, STARTUPINFOW*,
+  PROCESS_INFORMATION* const processInformation
+)
+{
+  if (processInformation != nullptr) {
+    *processInformation = PROCESS_INFORMATION{};
+  }
+  ::SetLastError(ERROR_NOT_SUPPORTED);
+  return FALSE;
+}
+
+BOOL ShellExecuteExW(SHELLEXECUTEINFOW* const info)
+{
+  if (info != nullptr) {
+    info->hProcess = nullptr;
+    info->hInstApp = reinterpret_cast<HINSTANCE>(static_cast<ULONG_PTR>(SE_ERR_NOASSOC));
+  }
+  ::SetLastError(ERROR_NOT_SUPPORTED);
+  return FALSE;
+}
+
+void Win32Android_SetShellOpen(const Win32AndroidShellOpen open)
+{
+  gShellOpen.store(open);
+}
+
+HINSTANCE ShellExecuteW(
+  HWND, const wchar_t* const operation, const wchar_t* const file, const wchar_t*, const wchar_t*, int
+)
+{
+  // A null verb is the default one, which is "open" for what the game opens.
+  const bool opens = operation == nullptr || ::_wcsicmp(operation, L"open") == 0;
+  const Win32AndroidShellOpen open = gShellOpen.load();
+  if (opens && file != nullptr && open != nullptr && open(file)) {
+    ::SetLastError(ERROR_SUCCESS);
+    return reinterpret_cast<HINSTANCE>(static_cast<ULONG_PTR>(kShellExecuteOpened));
+  }
+  ::SetLastError(ERROR_NO_ASSOCIATION);
+  return reinterpret_cast<HINSTANCE>(static_cast<ULONG_PTR>(SE_ERR_NOASSOC));
+}
+
+BOOL TerminateProcess(const HANDLE process, const UINT exitCode)
+{
+  if (process != ::GetCurrentProcess()) {
+    ::SetLastError(ERROR_ACCESS_DENIED);
+    return FALSE;
+  }
+  std::_Exit(static_cast<int>(exitCode));
+}
+
+BOOL CopyFileW(const wchar_t* const existingFileName, const wchar_t* const newFileName, const BOOL failIfExists)
+{
+  if (existingFileName == nullptr || newFileName == nullptr) {
+    ::SetLastError(ERROR_INVALID_PARAMETER);
+    return FALSE;
+  }
+  // Through the engine's layer, which resolves the paths' separators and case.
+  const HANDLE source = ::CreateFileW(existingFileName, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+  if (source == INVALID_HANDLE_VALUE) {
+    return FALSE;
+  }
+  const HANDLE target =
+    ::CreateFileW(newFileName, GENERIC_WRITE, 0, nullptr, failIfExists != FALSE ? CREATE_NEW : CREATE_ALWAYS, 0, nullptr);
+  if (target == INVALID_HANDLE_VALUE) {
+    const DWORD error = ::GetLastError();
+    (void)::CloseHandle(source);
+    ::SetLastError(error);
+    return FALSE;
+  }
+  char buffer[64 * 1024];
+  BOOL ok = TRUE;
+  for (;;) {
+    DWORD read = 0;
+    if (::ReadFile(source, buffer, sizeof(buffer), &read, nullptr) == FALSE) {
+      ok = FALSE;
+      break;
+    }
+    if (read == 0) {
+      break;
+    }
+    DWORD written = 0;
+    if (::WriteFile(target, buffer, read, &written, nullptr) == FALSE || written != read) {
+      ok = FALSE;
+      break;
+    }
+  }
+  const DWORD error = ::GetLastError();
+  (void)::CloseHandle(target);
+  (void)::CloseHandle(source);
+  if (ok == FALSE) {
+    (void)::DeleteFileW(newFileName);
+    ::SetLastError(error);
+  }
+  return ok;
 }

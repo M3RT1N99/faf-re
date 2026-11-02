@@ -1,9 +1,9 @@
 #pragma once
 
 // The Android client build's <Windows.h>: the engine's POSIX Win32 layer
-// (src/platform/posix/win32/Windows.h, which the simulation build uses as it is), and the few
-// names more that the client's render code calls. This directory comes ahead of the engine's on
-// the include path; #include_next continues the search behind it.
+// (src/platform/posix/win32/Windows.h, which the simulation build uses as it is), the names more
+// that the client calls, and at the end the message layer's USER API (WinUser.h). This directory
+// comes ahead of the engine's on the include path; #include_next continues the search behind it.
 //
 // Additions only. If the engine's layer declares one of these names one day, the build stops at
 // the duplicate, and the line goes here.
@@ -236,7 +236,20 @@ struct BITMAP
 /// GetCommandLineW's line, as UTF-8.
 const char* GetCommandLineA();
 
-/// No message queue here: the wait for the handles alone (MWMO_WAITALL waits for all).
+/// The wait for the handles or a message in the calling thread's queue (the message layer,
+/// include/win32/WinUser.h): WAIT_OBJECT_0 + `count` for a message. With MWMO_INPUTAVAILABLE a
+/// message already in the queue ends the wait at once; MWMO_WAITALL waits for all the handles.
+/// MWMO_ALERTABLE has nothing to wake for: the engine's POSIX layer queues no APCs.
+#define QS_KEY 0x0001u
+#define QS_MOUSEMOVE 0x0002u
+#define QS_MOUSEBUTTON 0x0004u
+#define QS_POSTMESSAGE 0x0008u
+#define QS_TIMER 0x0010u
+#define QS_PAINT 0x0020u
+#define QS_SENDMESSAGE 0x0040u
+#define QS_HOTKEY 0x0080u
+#define QS_ALLPOSTMESSAGE 0x0100u
+#define QS_RAWINPUT 0x0400u
 #define QS_ALLINPUT 0x04FFu
 #define MWMO_WAITALL 0x0001u
 #define MWMO_ALERTABLE 0x0002u
@@ -249,6 +262,9 @@ DWORD GetModuleFileNameA(HMODULE module, char* fileName, DWORD size);
 #define GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS 0x00000004u
 /// With GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS only: the shared object holding the address.
 BOOL GetModuleHandleExA(DWORD flags, const char* moduleName, HMODULE* module);
+BOOL GetModuleHandleExW(DWORD flags, const wchar_t* moduleName, HMODULE* module);
+/// LoadLibraryA of the UTF-8 name: a plain dlopen (no Windows DLL exists here).
+HMODULE LoadLibraryW(const wchar_t* fileName);
 /// Up to `framesToCapture` return addresses, after `framesToSkip` of the caller's own.
 USHORT RtlCaptureStackBackTrace(DWORD framesToSkip, DWORD framesToCapture, void** backTrace, DWORD* backTraceHash);
 /// True while a tracer (a debugger) is attached (/proc/self/status TracerPid).
@@ -269,6 +285,20 @@ BOOL MoveFileExA(const char* from, const char* to, DWORD flags);
 /// The CRT's getenv_s: `*requiredSize` is the value's size with its NUL (0 when unset); ERANGE
 /// when `buffer` is too small for it.
 int getenv_s(std::size_t* requiredSize, char* buffer, std::size_t bufferSize, const char* name) noexcept;
+
+/// The CRT's _wcsicmp in the "C" locale, which the engine runs in: A to Z compare as a to z, and
+/// nothing else changes case. The result is the difference of the first two that differ.
+inline int _wcsicmp(const wchar_t* lhs, const wchar_t* rhs) noexcept
+{
+  const auto lower = [](const wchar_t c) { return (c >= L'A' && c <= L'Z') ? static_cast<wchar_t>(c - L'A' + L'a') : c; };
+  wchar_t l;
+  wchar_t r;
+  do {
+    l = lower(*lhs++);
+    r = lower(*rhs++);
+  } while (l != L'\0' && l == r);
+  return static_cast<int>(l) - static_cast<int>(r);
+}
 
 // --- GDI fonts ---------------------------------------------------------------------------------
 // What the font renderer (moho/render/d3d/CD3DFont.cpp) draws glyphs with: a font, a memory DC
@@ -338,16 +368,232 @@ COLORREF GetPixel(HDC dc, int x, int y);
 int DrawTextW(HDC dc, const wchar_t* text, int length, RECT* rect, UINT format);
 HGDIOBJ GetStockObject(int object);
 int FillRect(HDC dc, const RECT* rect, HBRUSH brush);
+/// Fonts from memory (the game's own, CD3DDevice): null, as no font can be installed until the
+/// GDI renders with FreeType (C3).
+HANDLE AddFontMemResourceEx(void* fontData, DWORD size, void* reserved, DWORD* fontCount);
 
-// --- Windows ---------------------------------------------------------------------------------
-// An HWND of the engine is an ANativeWindow* here: the surface an Android activity hands over
-// (android/native/README.md). The client area is the window's size in pixels.
+// --- Structured exceptions ----------------------------------------------------------------------
+// The engine's crash filter (SetUnhandledExceptionFilter) runs on the signals of a fault: SIGSEGV,
+// SIGBUS, SIGFPE, SIGILL and SIGTRAP, with the exception record Windows gives for it. The signal
+// then goes on to the handler that was there before, so Android's debuggerd still writes its
+// tombstone, whatever the filter answers (src/win32/ExceptionsAndroid.cpp).
 
-/// The size of the native window `window`, as Win32 gives a window's client area (0, 0, w, h).
-BOOL GetClientRect(HWND window, RECT* rect);
-/// The window the Android host last put in front with SetForegroundWindow; null while the app is
-/// in the background.
-HWND GetForegroundWindow();
-/// The Android host's call when an activity's window comes to the front (null: the app went to
-/// the background).
-BOOL SetForegroundWindow(HWND window);
+#define EXCEPTION_MAXIMUM_PARAMETERS 15
+struct EXCEPTION_RECORD
+{
+  DWORD ExceptionCode;
+  DWORD ExceptionFlags;
+  EXCEPTION_RECORD* ExceptionRecord;
+  PVOID ExceptionAddress;
+  DWORD NumberParameters;
+  ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+};
+using PEXCEPTION_RECORD = EXCEPTION_RECORD*;
+/// The thread's state at the fault. Nothing in the engine reads it (moho::PLAT_GetCallStack takes
+/// it as a pointer): its definition stays with the signal handler.
+struct _CONTEXT;
+using CONTEXT = _CONTEXT;
+using PCONTEXT = CONTEXT*;
+struct _EXCEPTION_POINTERS
+{
+  PEXCEPTION_RECORD ExceptionRecord;
+  PCONTEXT ContextRecord;
+};
+using EXCEPTION_POINTERS = _EXCEPTION_POINTERS;
+using PEXCEPTION_POINTERS = _EXCEPTION_POINTERS*;
+using LPEXCEPTION_POINTERS = _EXCEPTION_POINTERS*;
+using LPTOP_LEVEL_EXCEPTION_FILTER = LONG (*)(_EXCEPTION_POINTERS* exceptionInfo);
+
+#define EXCEPTION_EXECUTE_HANDLER 1
+#define EXCEPTION_CONTINUE_SEARCH 0
+#define EXCEPTION_CONTINUE_EXECUTION (-1)
+#define EXCEPTION_NONCONTINUABLE 0x1u
+
+#define EXCEPTION_GUARD_PAGE 0x80000001u
+#define EXCEPTION_DATATYPE_MISALIGNMENT 0x80000002u
+#define EXCEPTION_BREAKPOINT 0x80000003u
+#define EXCEPTION_SINGLE_STEP 0x80000004u
+#define EXCEPTION_ACCESS_VIOLATION 0xC0000005u
+#define EXCEPTION_IN_PAGE_ERROR 0xC0000006u
+#define EXCEPTION_INVALID_HANDLE 0xC0000008u
+#define EXCEPTION_ILLEGAL_INSTRUCTION 0xC000001Du
+#define EXCEPTION_NONCONTINUABLE_EXCEPTION 0xC0000025u
+#define EXCEPTION_INVALID_DISPOSITION 0xC0000026u
+#define EXCEPTION_ARRAY_BOUNDS_EXCEEDED 0xC000008Cu
+#define EXCEPTION_FLT_DENORMAL_OPERAND 0xC000008Du
+#define EXCEPTION_FLT_DIVIDE_BY_ZERO 0xC000008Eu
+#define EXCEPTION_FLT_INEXACT_RESULT 0xC000008Fu
+#define EXCEPTION_FLT_INVALID_OPERATION 0xC0000090u
+#define EXCEPTION_FLT_OVERFLOW 0xC0000091u
+#define EXCEPTION_FLT_STACK_CHECK 0xC0000092u
+#define EXCEPTION_FLT_UNDERFLOW 0xC0000093u
+#define EXCEPTION_INT_DIVIDE_BY_ZERO 0xC0000094u
+#define EXCEPTION_INT_OVERFLOW 0xC0000095u
+#define EXCEPTION_PRIV_INSTRUCTION 0xC0000096u
+#define EXCEPTION_STACK_OVERFLOW 0xC00000FDu
+
+/// Installs `filter` for the faults of every thread and returns the one before (null at first).
+LPTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(LPTOP_LEVEL_EXCEPTION_FILTER filter);
+
+// --- Processes ----------------------------------------------------------------------------------
+// An Android app starts no Windows programs: CreateProcess and ShellExecuteEx fail with
+// ERROR_NOT_SUPPORTED (the engine starts dxdiag for a crash report, and GPGnet). ShellExecuteW's
+// "open", with which the game opens a link, goes to the host's opener (Win32AndroidHost.h);
+// without one, and for any other verb, it fails as for a file that nothing opens. TerminateProcess
+// ends the calling process alone (GetCurrentProcess), with `exitCode`.
+
+struct STARTUPINFOA
+{
+  DWORD cb;
+  LPSTR lpReserved;
+  LPSTR lpDesktop;
+  LPSTR lpTitle;
+  DWORD dwX;
+  DWORD dwY;
+  DWORD dwXSize;
+  DWORD dwYSize;
+  DWORD dwXCountChars;
+  DWORD dwYCountChars;
+  DWORD dwFillAttribute;
+  DWORD dwFlags;
+  WORD wShowWindow;
+  WORD cbReserved2;
+  LPBYTE lpReserved2;
+  HANDLE hStdInput;
+  HANDLE hStdOutput;
+  HANDLE hStdError;
+};
+struct STARTUPINFOW
+{
+  DWORD cb;
+  LPWSTR lpReserved;
+  LPWSTR lpDesktop;
+  LPWSTR lpTitle;
+  DWORD dwX;
+  DWORD dwY;
+  DWORD dwXSize;
+  DWORD dwYSize;
+  DWORD dwXCountChars;
+  DWORD dwYCountChars;
+  DWORD dwFillAttribute;
+  DWORD dwFlags;
+  WORD wShowWindow;
+  WORD cbReserved2;
+  LPBYTE lpReserved2;
+  HANDLE hStdInput;
+  HANDLE hStdOutput;
+  HANDLE hStdError;
+};
+struct PROCESS_INFORMATION
+{
+  HANDLE hProcess;
+  HANDLE hThread;
+  DWORD dwProcessId;
+  DWORD dwThreadId;
+};
+
+BOOL CreateProcessA(
+  const char* applicationName, char* commandLine, void* processAttributes, void* threadAttributes, BOOL inheritHandles,
+  DWORD creationFlags, void* environment, const char* currentDirectory, STARTUPINFOA* startupInfo,
+  PROCESS_INFORMATION* processInformation
+);
+BOOL CreateProcessW(
+  const wchar_t* applicationName, wchar_t* commandLine, void* processAttributes, void* threadAttributes,
+  BOOL inheritHandles, DWORD creationFlags, void* environment, const wchar_t* currentDirectory,
+  STARTUPINFOW* startupInfo, PROCESS_INFORMATION* processInformation
+);
+BOOL TerminateProcess(HANDLE process, UINT exitCode);
+
+// <shellapi.h>, which the engine's POSIX layer has include this header.
+#define SE_ERR_NOASSOC 31
+#define ERROR_NO_ASSOCIATION 1155u
+
+/// Above 32 when `file` was opened; SE_ERR_NOASSOC (ERROR_NO_ASSOCIATION) when nothing opens it.
+HINSTANCE ShellExecuteW(
+  HWND window, const wchar_t* operation, const wchar_t* file, const wchar_t* parameters, const wchar_t* directory,
+  int showCommand
+);
+
+#define SEE_MASK_NOCLOSEPROCESS 0x00000040u
+struct SHELLEXECUTEINFOW
+{
+  DWORD cbSize;
+  ULONG fMask;
+  HWND hwnd;
+  LPCWSTR lpVerb;
+  LPCWSTR lpFile;
+  LPCWSTR lpParameters;
+  LPCWSTR lpDirectory;
+  int nShow;
+  HINSTANCE hInstApp;
+  void* lpIDList;
+  LPCWSTR lpClass;
+  HKEY hkeyClass;
+  DWORD dwHotKey;
+  union
+  {
+    HANDLE hIcon;
+    HANDLE hMonitor;
+  };
+  HANDLE hProcess;
+};
+BOOL ShellExecuteExW(SHELLEXECUTEINFOW* info);
+
+// --- Registry (continued) ----------------------------------------------------------------------
+// Keys cannot be created either: RegCreateKeyExA fails with ERROR_ACCESS_DENIED.
+
+#define HKEY_CLASSES_ROOT (reinterpret_cast<HKEY>(static_cast<ULONG_PTR>(static_cast<LONG>(0x80000000u))))
+#define HKEY_CURRENT_USER (reinterpret_cast<HKEY>(static_cast<ULONG_PTR>(static_cast<LONG>(0x80000001u))))
+#define HKEY_USERS (reinterpret_cast<HKEY>(static_cast<ULONG_PTR>(static_cast<LONG>(0x80000003u))))
+#define HKEY_PERFORMANCE_DATA (reinterpret_cast<HKEY>(static_cast<ULONG_PTR>(static_cast<LONG>(0x80000004u))))
+#define HKEY_CURRENT_CONFIG (reinterpret_cast<HKEY>(static_cast<ULONG_PTR>(static_cast<LONG>(0x80000005u))))
+#define REG_SZ 1u
+
+LONG RegOpenKeyExA(HKEY key, const char* subKey, DWORD options, DWORD access, HKEY* result);
+LONG RegQueryValueExA(HKEY key, const char* valueName, DWORD* reserved, DWORD* type, BYTE* data, DWORD* dataSize);
+LONG RegCreateKeyExA(
+  HKEY key, const char* subKey, DWORD reserved, char* className, DWORD options, DWORD access, void* security,
+  HKEY* result, DWORD* disposition
+);
+LONG RegSetValueExA(HKEY key, const char* valueName, DWORD reserved, DWORD type, const BYTE* data, DWORD dataSize);
+
+// --- Files (continued) -------------------------------------------------------------------------
+
+union ULARGE_INTEGER
+{
+  struct
+  {
+    DWORD LowPart;
+    DWORD HighPart;
+  };
+  ULONGLONG QuadPart;
+};
+
+struct WIN32_FIND_DATAW
+{
+  DWORD dwFileAttributes;
+  FILETIME ftCreationTime;
+  FILETIME ftLastAccessTime;
+  FILETIME ftLastWriteTime;
+  DWORD nFileSizeHigh;
+  DWORD nFileSizeLow;
+  DWORD dwReserved0;
+  DWORD dwReserved1;
+  WCHAR cFileName[MAX_PATH];
+  WCHAR cAlternateFileName[14];
+};
+
+/// FindFirstFileA's search, with wide names.
+HANDLE FindFirstFileW(const wchar_t* pattern, WIN32_FIND_DATAW* data);
+BOOL FindNextFileW(HANDLE search, WIN32_FIND_DATAW* data);
+
+/// Copies the file; with `failIfExists`, ERROR_FILE_EXISTS when the target is there.
+BOOL CopyFileW(const wchar_t* existingFileName, const wchar_t* newFileName, BOOL failIfExists);
+
+#define FILE_MAP_WRITE 0x0002u
+
+/// The engine's platform check: Android is not the Windows 9x line.
+#define VER_PLATFORM_WIN32_WINDOWS 1u
+
+// The message layer: windows, messages, input, the clipboard.
+#include <WinUser.h>

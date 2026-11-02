@@ -100,3 +100,11 @@ int FillRect(HDC, const RECT*, HBRUSH)
 {
   return 0;
 }
+
+HANDLE AddFontMemResourceEx(void*, DWORD, void*, DWORD* const fontCount)
+{
+  if (fontCount != nullptr) {
+    *fontCount = 0;
+  }
+  return nullptr;
+}

@@ -9,6 +9,19 @@
 
 #define WAVE_FORMAT_PCM 1
 
+// The timer resolution: the kernel's timers are finer than a millisecond already, so a request for
+// one succeeds and changes nothing.
+#define TIMERR_NOERROR 0u
+#define TIMERR_NOCANDO 97u
+inline UINT timeBeginPeriod(UINT) noexcept
+{
+  return TIMERR_NOERROR;
+}
+inline UINT timeEndPeriod(UINT) noexcept
+{
+  return TIMERR_NOERROR;
+}
+
 #pragma pack(push, 1)
 struct WAVEFORMATEX
 {
