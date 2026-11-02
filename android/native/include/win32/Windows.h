@@ -16,6 +16,7 @@
 #include <iterator>
 
 using USHORT = std::uint16_t;
+using ULONG64 = std::uint64_t;
 using COLORREF = DWORD;
 using LPBYTE = BYTE*;
 using PWSTR = wchar_t*;
@@ -25,6 +26,38 @@ using HICON = void*;
 
 #define E_NOTIMPL (static_cast<HRESULT>(0x80004001u))
 #define E_NOINTERFACE (static_cast<HRESULT>(0x80004002u))
+#define ERROR_NO_MORE_FILES 18u
+#define ERROR_NOT_FOUND 1168u
+
+// --- Directory search ---------------------------------------------------------------------------
+// FindFirstFileA as Win32 matches: `*` and `?` in the pattern's last part, letters in any case,
+// "." and ".." included. Paths take either slash (src/win32/FindFileAndroid.cpp).
+
+struct WIN32_FIND_DATAA
+{
+  DWORD dwFileAttributes;
+  FILETIME ftCreationTime;
+  FILETIME ftLastAccessTime;
+  FILETIME ftLastWriteTime;
+  DWORD nFileSizeHigh;
+  DWORD nFileSizeLow;
+  DWORD dwReserved0;
+  DWORD dwReserved1;
+  CHAR cFileName[MAX_PATH];
+  CHAR cAlternateFileName[14];
+};
+
+HANDLE FindFirstFileA(const char* pattern, WIN32_FIND_DATAA* data);
+BOOL FindNextFileA(HANDLE search, WIN32_FIND_DATAA* data);
+BOOL FindClose(HANDLE search);
+
+// --- Threads ------------------------------------------------------------------------------------
+// The crash report suspends the other threads (moho/app/WinApp.cpp). A POSIX thread cannot be
+// suspended from another thread: both calls fail with ERROR_NOT_SUPPORTED.
+
+#define THREAD_SUSPEND_RESUME 0x0002u
+DWORD SuspendThread(HANDLE thread);
+DWORD ResumeThread(HANDLE thread);
 
 /// An asynchronous I/O request (the XACT file callbacks name it), with Win32's layout.
 struct OVERLAPPED
@@ -236,6 +269,75 @@ BOOL MoveFileExA(const char* from, const char* to, DWORD flags);
 /// The CRT's getenv_s: `*requiredSize` is the value's size with its NUL (0 when unset); ERANGE
 /// when `buffer` is too small for it.
 int getenv_s(std::size_t* requiredSize, char* buffer, std::size_t bufferSize, const char* name) noexcept;
+
+// --- GDI fonts ---------------------------------------------------------------------------------
+// What the font renderer (moho/render/d3d/CD3DFont.cpp) draws glyphs with: a font, a memory DC
+// with a 32-bit bitmap, the font's metrics and kerning, DrawTextW, the bitmap's pixels. There is
+// no GDI on Android yet: CreateFontA finds no font, so the game has no text, until these functions
+// render with FreeType (CLIENT_PLAN.md, C3; src/win32/GdiAndroid.cpp).
+
+using HGDIOBJ = void*;
+using HBRUSH = void*;
+
+#define BLACK_BRUSH 4
+
+#define RGB(r, g, b) \
+  (static_cast<COLORREF>(static_cast<BYTE>(r) | (static_cast<WORD>(static_cast<BYTE>(g)) << 8) | \
+                         (static_cast<DWORD>(static_cast<BYTE>(b)) << 16)))
+#define TMPF_TRUETYPE 0x04u
+
+struct TEXTMETRICW
+{
+  LONG tmHeight;
+  LONG tmAscent;
+  LONG tmDescent;
+  LONG tmInternalLeading;
+  LONG tmExternalLeading;
+  LONG tmAveCharWidth;
+  LONG tmMaxCharWidth;
+  LONG tmWeight;
+  LONG tmOverhang;
+  LONG tmDigitizedAspectX;
+  LONG tmDigitizedAspectY;
+  WCHAR tmFirstChar;
+  WCHAR tmLastChar;
+  WCHAR tmDefaultChar;
+  WCHAR tmBreakChar;
+  BYTE tmItalic;
+  BYTE tmUnderlined;
+  BYTE tmStruckOut;
+  BYTE tmPitchAndFamily;
+  BYTE tmCharSet;
+};
+
+struct KERNINGPAIR
+{
+  WORD wFirst;
+  WORD wSecond;
+  int iKernAmount;
+};
+
+/// Null: no font exists here yet.
+HFONT CreateFontA(
+  int height, int width, int escapement, int orientation, int weight, DWORD italic, DWORD underline, DWORD strikeOut, DWORD charSet,
+  DWORD outPrecision, DWORD clipPrecision, DWORD quality, DWORD pitchAndFamily, const char* faceName
+);
+BOOL DeleteObject(HGDIOBJ object);
+HDC CreateCompatibleDC(HDC dc);
+HBITMAP CreateBitmap(int width, int height, UINT planes, UINT bitsPerPixel, const void* bits);
+HGDIOBJ SelectObject(HDC dc, HGDIOBJ object);
+BOOL GetTextMetricsW(HDC dc, TEXTMETRICW* metrics);
+DWORD GetKerningPairsW(HDC dc, DWORD pairCount, KERNINGPAIR* pairs);
+int GetObjectW(HGDIOBJ object, int size, void* out);
+LONG GetBitmapBits(HBITMAP bitmap, LONG size, void* bits);
+BOOL GdiFlush();
+UINT SetTextAlign(HDC dc, UINT align);
+COLORREF SetBkColor(HDC dc, COLORREF color);
+COLORREF SetTextColor(HDC dc, COLORREF color);
+COLORREF GetPixel(HDC dc, int x, int y);
+int DrawTextW(HDC dc, const wchar_t* text, int length, RECT* rect, UINT format);
+HGDIOBJ GetStockObject(int object);
+int FillRect(HDC dc, const RECT* rect, HBRUSH brush);
 
 // --- Windows ---------------------------------------------------------------------------------
 // An HWND of the engine is an ANativeWindow* here: the surface an Android activity hands over

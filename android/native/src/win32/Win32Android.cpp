@@ -228,6 +228,18 @@ BOOL GetClientRect(const HWND window, RECT* const rect)
   return TRUE;
 }
 
+DWORD SuspendThread(HANDLE)
+{
+  ::SetLastError(ERROR_NOT_SUPPORTED);
+  return static_cast<DWORD>(-1);
+}
+
+DWORD ResumeThread(HANDLE)
+{
+  ::SetLastError(ERROR_NOT_SUPPORTED);
+  return static_cast<DWORD>(-1);
+}
+
 HRESULT CoCreateInstance(REFCLSID, LPUNKNOWN, DWORD, REFIID, void** const object)
 {
   if (object != nullptr) {

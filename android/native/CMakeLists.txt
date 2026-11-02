@@ -89,9 +89,18 @@ set(_faf_client_windows_only
   "^gpg/gal/effects/ShaderCompiler\\.cpp$"
   # The crash dialog (CrashReport.cpp's hook stays unset, as in the simulation build).
   "^gpg/core/diagnostics/CrashReportDialog\\.cpp$"
+  # The frame sampler: it suspends the main thread and reads its context, which Android has no
+  # call for. src/diag has its frame mark.
+  "^gpg/core/diagnostics/FrameSampler\\.cpp$"
   # The XACT engine DLL's clock imports, patched in its PE image: src/audio/AudioAndroid.cpp has
   # the one function, for an engine that does not exist here.
   "^moho/audio/XactClock\\.cpp$"
+  # The Windows program's entry and its process setup (CRT hooks, the allocation log, crash tests,
+  # accessibility keys, Media Center): on Android the host starts the engine.
+  "^moho/app/WinMain\\.cpp$"
+  # The movie decoder on FFmpeg, which is not built for Android yet: src/movie has the decoder that
+  # finds no FFmpeg.
+  "^moho/movie/sfd/FfmpegSfdDecoder\\.cpp$"
   # The wx script debugger's windows and the wx tool windows (emitter editor, reflection editor,
   # directory dialogs, URLs).
   "^moho/misc/(ScrDebugWindow|ScrFileCtrl|ScrSourceCtrl|ScrWatchCtrl|ScrGotoDialog|ScrPauseEvent|TreeData)\\.cpp$"
@@ -175,6 +184,10 @@ target_include_directories(faf_game_sim PRIVATE "${CMAKE_BINARY_DIR}/generated")
 
 add_library(faf_android_platform OBJECT
   src/win32/Win32Android.cpp
+  src/win32/DbgHelpAndroid.cpp
+  src/win32/FindFileAndroid.cpp
+  src/win32/GdiAndroid.cpp
+  src/win32/PsapiAndroid.cpp
   src/gal/D3DCompilerAndroid.cpp
   src/gal/GalInterfacesAndroid.cpp
   src/gal/ImageCodecAndroid.cpp
@@ -190,9 +203,15 @@ target_link_libraries(faf_gal PUBLIC faf_android_settings)
 # the XACT stand-in, the GDI font, the vertex formatters); name the targets to build them.
 add_library(faf_client OBJECT EXCLUDE_FROM_ALL ${_faf_client_files}
   src/audio/AudioAndroid.cpp
+  src/diag/FrameSamplerAndroid.cpp
+  src/movie/FfmpegSfdDecoderAndroid.cpp
   src/gal/D3D9Unavailable.cpp
   src/gal/GalAvailabilityAndroid.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings)
+# As the Windows build gives CLobby.cpp _HAS_AUTO_PTR_ETC (src/CMakeLists.txt): boost's string
+# algorithms there use std::unary_function, which libc++ keeps behind this opt-in from C++17 on.
+set_property(SOURCE "${FAF_REPO}/src/moho/net/CLobby.cpp" APPEND PROPERTY COMPILE_DEFINITIONS
+  _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1)
 
 # --- Libraries ---------------------------------------------------------------------------------
 # libfafgame.so: the activity's native half, the whole engine.
