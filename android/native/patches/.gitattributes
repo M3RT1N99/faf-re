@@ -1,0 +1,2 @@
+# The patches are byte-exact LF, as git diff writes them (README.md): no line-ending conversion.
+*.patch -text
