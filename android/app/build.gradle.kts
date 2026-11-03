@@ -104,7 +104,7 @@ dependencies {
 // The engine's programs, started as processes, and the libraries the app loads, all from the
 // Android native build's bin folder (android/native, gradle.properties fafNativeDir).
 val fafNativePrograms = listOf("headless" to "libfafheadless.so", "faf_sim_math_tests" to "libfafsimmath.so")
-val fafNativeLibraries = listOf("libfafgalsmoke.so")
+val fafNativeLibraries = listOf("libfafgalsmoke.so", "libfafgame.so")
 
 val stageFafNative by tasks.registering(Sync::class) {
     description = "Packages the engine's Android programs (CMake preset builds) as lib<name>.so, and its libraries."

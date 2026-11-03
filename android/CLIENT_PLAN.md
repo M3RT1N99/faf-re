@@ -132,5 +132,23 @@ most of C1, as 56 files stop at wx.
 - Left out, and said so in the log: the wx tool windows (the script debugger, the emitter and
   reflection editors, the directory dialogs). Game discovery has no socket, as outside Windows.
   `OpenURL` parses the link with wxURL and opens it through the host.
-- **Next for C1:** the host (`src/host`, step 4 of WX_LITE.md), which starts the engine on the
-  emulator, and the test program for the event system and the message layer.
+- **The engine starts under the host** (`native/src/host`, card 5 of the app from release 0.8.0),
+  on the emulator for x86_64 and for arm64 under its ARM translation, with SCFA and FAF 3835's
+  game files. `CScApp`'s initialisation runs: the archives are mounted, the preferences and the
+  documents get their folders, the user Lua and the UI start, the fonts are tried. `CreateDevice`
+  tries the renderers in FAF's order; Vulkan stops without its shader compiler (C2), and the
+  engine ends with exit code 1, as a PC without a usable renderer does. Only now does the linker
+  see the program's whole graph (before, nothing reached `CScApp`); it named one more function:
+  `D3DXMatrixLookAtRH`, which the shadows call. Android has D3DX's own C routine for it, checked
+  against the DLL for 50 million inputs (D3DX's Intel and SSE routines differ from it in the last
+  bits).
+- **Found on the way**, for later steps:
+  - Without XACT the sound functions raise Lua errors ("SND: Error retrieving XACT COM
+    interface"), which stop the import of `/lua/usermusic.lua` and with it
+    `/lua/options/options.lua`, as on a PC without XACT. The menu needs the options: audio on
+    FACT (C3) or an XACT engine that is silent but there.
+  - Each font fails to load (no GDI fonts yet, C3).
+  - FAF's init asks for the process priority "high", which Android does not give an app (C4).
+  - The SCFA import takes `gamedata/*.scd` and `maps/`; the game also wants `fonts/`, `sounds/`
+    and `movies/` (C3).
+- **Next for C1:** the test program for the event system and the message layer. Then C2.

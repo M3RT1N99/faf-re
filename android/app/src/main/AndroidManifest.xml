@@ -60,6 +60,17 @@
             android:exported="false"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
+        <!-- The game (libfafgame.so): the engine's program on a full-screen surface, in a process of
+             its own that ends with the program, as a Windows program's does. Landscape, as the
+             game is; it takes every configuration change itself, as a Windows window does. -->
+        <activity
+            android:name=".GameActivity"
+            android:process=":game"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
         <service
             android:name=".TestService"
             android:exported="false"

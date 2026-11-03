@@ -80,6 +80,7 @@ final class TestState {
     private static long sRevision;
     private static boolean sVisible;
     private static String sRendererReport = "";
+    private static String sGameReport = "";
 
     private TestState() {
     }
@@ -181,6 +182,26 @@ final class TestState {
             }
         }
         return sRendererReport.isEmpty() ? "" : "Renderer: running, no verdict yet";
+    }
+
+    /** The game's report, from its process (GameReport). */
+    static synchronized void game(String report) {
+        sGameReport = report;
+        ++sRevision;
+    }
+
+    static synchronized String gameReport() {
+        return sGameReport;
+    }
+
+    /** "Game: the engine ended its process, exit code 1 ..." from the report, or that it runs. */
+    static synchronized String gameVerdict() {
+        for (String line : sGameReport.split("\n")) {
+            if (line.startsWith(GameReport.END)) {
+                return "Game: " + line.substring(GameReport.END.length());
+            }
+        }
+        return sGameReport.isEmpty() ? "" : "Game: running";
     }
 
     /** Whether MainActivity is on screen (between onStart and onStop). */

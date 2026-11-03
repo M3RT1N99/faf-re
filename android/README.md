@@ -4,7 +4,8 @@ An Android app that runs the engine's simulation on a phone, without graphics: t
 and FAF vault replays played to the end on the headless simulation (`src/headless`), with every
 checksum the players' games recorded compared against the phone's. It is how a phone's CPU is
 checked before the game itself runs there. A renderer test brings up the engine's Vulkan device on
-the screen, the first step of the game client ([CLIENT_PLAN.md](CLIENT_PLAN.md)). The engine's
+the screen, and the game card starts the whole engine, the game client's first steps
+([CLIENT_PLAN.md](CLIENT_PLAN.md)). The engine's
 programs and libraries come from the Android native build ([native/README.md](native/README.md)),
 which builds the engine for Android without changing its files and the client on top.
 
@@ -31,7 +32,8 @@ under its ARM translation (an arm64-only APK).
 
 - `stageFafNative` packages `headless` and `faf_sim_math_tests` as `libfafheadless.so` and
   `libfafsimmath.so`: Android extracts only `lib*.so` files into the app's native library folder, the
-  one place an app may start a program from. It adds the renderer test's `libfafgalsmoke.so`.
+  one place an app may start a program from. It adds the renderer test's `libfafgalsmoke.so` and
+  the game's `libfafgame.so`.
   `gradle.properties` names the build folders.
 - `stageFafAssets` puts `tests/sim_math/golden.txt` into the assets.
 - `versionCode` is `git rev-list --count HEAD`, so a newer commit installs over an older one;
@@ -54,6 +56,7 @@ the game data they imported. Everything lives in the app's external files folder
 | `parity/replays/`, `maps/`, `m28/` | Downloaded replays, vault maps and M28AI versions |
 | `parity/runs/<id>/` | One replay's run: `replay.scfareplay`, its own vault, `headless.out`, `engine.log`, `speed.csv` |
 | `parity/results/` | The results zips |
+| `game/` | The game's: `home/` (its HOME: the preferences, the documents), `vault/`, `engine.sclog` |
 
 - **Math check**: `faf_sim_math_tests golden.txt --known known_android-<arch>.txt` (the overlay only
   where `tests/sim_math` has one for the ABI: arm64's records the square root of a negative number,
@@ -97,8 +100,20 @@ the game data they imported. Everything lives in the app's external files folder
   the zip as `renderer-tombstone.pb`. The emulator's SwiftShader offers only Vulkan 1.2, so the test
   fails there. Started with `-gpu host` on a PC whose GPU has Vulkan 1.3, the emulator gives the
   guest Vulkan 1.3, and the test runs.
+- **Game** (card 5, `GameActivity`): `libfafgame.so`, the whole engine with its host
+  (`native/src/host`), starts as the PC starts it, with the SCFA import and FAF's game files of the
+  newest version a replay downloaded: `ForgedAlliance.exe /init <its init file> /log
+  game/engine.sclog`, the program's path in the game files' `bin` folder. It runs in a process of
+  its own (`:game`) on a full-screen surface, which ends with the program, as a Windows program's
+  does. Touch and the mouse are the mouse, keys the keyboard, Back is Esc. Until the renderer has
+  its shader compiler (C2), the engine initialises (archives, preferences, Lua, the UI) and stops at
+  the renderer, ending its process with exit code 1 as a PC without a usable renderer does. The
+  host writes `game.txt` in the app's files; when the process is gone, the app adds how it ended
+  (the exit code, or what `ApplicationExitInfo` says, the tombstone of a native crash) and why the
+  renderer could not start, from the engine's log.
 - **Share results** zips `summary.json`, the math output, the log, the renderer report
-  (`renderer.txt`) and each replay's `headless.out`, `engine.log` and `speed.csv`.
+  (`renderer.txt`), the game's report and log (`game.txt`, `game/engine.sclog`) and each replay's
+  `headless.out`, `engine.log` and `speed.csv`.
 
 The default replays (26930624 and 26902315), *Use the core set* and *Use the extended set* (the core
 set and its ten longer games) are from [docs/PR_REPLAY_CHECK.md](../docs/PR_REPLAY_CHECK.md), all
