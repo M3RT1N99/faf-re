@@ -98,6 +98,9 @@ set(_faf_client_windows_only
   # The Windows program's entry and its process setup (CRT hooks, the allocation log, crash tests,
   # accessibility keys, Media Center): on Android the host starts the engine.
   "^moho/app/WinMain\\.cpp$"
+  # The in-engine peer links on netlink (libjuice, libdatachannel), which is not built for Android
+  # yet (C5): src/net has them off.
+  "^moho/net/NetlinkPeers\\.cpp$"
   # The movie decoder on FFmpeg, which is not built for Android yet: src/movie has the decoder that
   # finds no FFmpeg.
   "^moho/movie/sfd/FfmpegSfdDecoder\\.cpp$"
@@ -149,11 +152,11 @@ target_include_directories(faf_android_settings BEFORE INTERFACE
 # Hidden symbols: a library exports its JNI entry points (JNIEXPORT) alone, and the linker can drop
 # what nothing reaches, as it does in the simulation's programs.
 target_compile_options(faf_android_settings INTERFACE -fvisibility=hidden -fvisibility-inlines-hidden)
-target_link_libraries(faf_android_settings INTERFACE faf_sim_settings Wm3Foundation zlib123)
+# Wild Magic is headers only (cmake/deps/wildmagic): its queries are engine code.
+target_link_libraries(faf_android_settings INTERFACE faf_sim_settings Wm3Headers zlib123)
 
 # The libraries export only their JNI entry points: the static libraries' symbols stay local, and
-# what nothing reaches is dropped, as the linker drops it from the simulation's programs
-# (WildMagic's ContBox3 brings ContMinBox, whose ConvexHull3 the Linux build leaves out). The
+# what nothing reaches is dropped, as the linker drops it from the simulation's programs. The
 # Windows import libraries the sources name (#pragma comment(lib, "psapi.lib")) do not exist here.
 set(_faf_android_library_options
   -Wl,--error-limit=0 -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,--no-dependent-libraries)
@@ -228,7 +231,8 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/gal/D3DXMathAndroid.cpp
   src/gal/GalAvailabilityAndroid.cpp
   src/gal/MeshFormattersAndroid.cpp
-  src/net/DatagramSocketAndroid.cpp)
+  src/net/DatagramSocketAndroid.cpp
+  src/net/NetlinkPeersAndroid.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings faf_wx_lite)
 # As the Windows build gives CLobby.cpp _HAS_AUTO_PTR_ETC (src/CMakeLists.txt): boost's string
 # algorithms there use std::unary_function, which libc++ keeps behind this opt-in from C++17 on.

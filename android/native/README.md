@@ -82,6 +82,7 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/gal/MeshFormattersAndroid.cpp` | The Direct3D 10 mesh formatters, which every other API packs its vertices with, the engine's code with a float-to-half conversion that matches D3DX's |
 | `src/gal/D3D12SwitchesAndroid.cpp` | The storage of two Direct3D 12 console switches |
 | `src/net/DatagramSocketAndroid.cpp` | The game discovery's broadcast socket: none, as outside Windows (the Winsock transport is Windows only) |
+| `src/net/NetlinkPeersAndroid.cpp` | The in-engine peer links and native networking, off: netlink (libjuice, libdatachannel) is not built for Android yet (C5); asking for them says so in the log |
 | `src/app/EntityDialogAndroid.cpp` | `SC_CreateEntityDialog`: no reflection editor (a wx tool window) |
 | `src/gal/D3DXMathAndroid.cpp` | `D3DXMatrixLookAtRH`, which the shadows call: D3DX's own C routine, checked against the DLL |
 | `src/host/GameHost.cpp` | The host: `WinMain`'s program on the engine's thread, with the command line, HOME and a Windows user profile's folders; the surface, the pointer, the keys and the foreground into the message layer; a report of its own |

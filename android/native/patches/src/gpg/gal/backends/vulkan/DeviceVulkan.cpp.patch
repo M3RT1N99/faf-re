@@ -1,4 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
+index b4d2ae45..14d39804 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 @@ -101,6 +101,18 @@ namespace gpg::gal
@@ -145,13 +146,3 @@ diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends
        VkImageCopy region{};
        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
-@@ -1872,7 +1935,8 @@ namespace gpg::gal
-     auto* const to = static_cast<RenderTargetVulkan*>(destination.get());
-     vulkan::TrackedImage& fromImage = from->Current().image;
-     vulkan::TrackedImage& toImage = to->Current().image;
--    const bool same = fromImage.width == toImage.width && fromImage.height == toImage.height && fromImage.format == toImage.format;
-+    const bool same = fromImage.width == toImage.width && fromImage.height == toImage.height &&
-+      (fromImage.format == toImage.format || OtherChannelOrder(fromImage.format, toImage.format));
-     CopyImage(fromImage, toImage, same ? sourceRect : nullptr, same ? destinationRect : nullptr, !same);
-   }
- 
