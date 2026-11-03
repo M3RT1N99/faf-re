@@ -258,3 +258,23 @@ add_library(fafgalsmoke SHARED
   "${FAF_REPO}/src/platform/posix/ClientTypeInfoPosix.cpp")
 target_link_libraries(fafgalsmoke PRIVATE faf_game_sim faf_android_settings android log vulkan)
 target_link_options(fafgalsmoke PRIVATE ${_faf_android_library_options})
+
+# --- Tests -------------------------------------------------------------------------------------
+# faf_wx_lite_tests (WX_LITE.md, Checks): wx-lite's event system, the message layer, and the
+# translation of the layer's messages into wx events. Linked statically, it runs on the emulator
+# and on Linux hosts alike (CI's arm64 runner), where liblog and libandroid do not exist: the test
+# stands in for the three functions the layer calls of theirs (tests/wx/NdkDoubles.cpp). The
+# simulation's objects come from an archive, so that only what the test reaches is linked (the
+# engine's POSIX layer).
+add_library(faf_game_sim_archive STATIC EXCLUDE_FROM_ALL $<TARGET_OBJECTS:faf_game_sim>)
+add_executable(faf_wx_lite_tests
+  tests/wx/Main.cpp
+  tests/wx/EventTests.cpp
+  tests/wx/MessageLayerTests.cpp
+  tests/wx/WindowTests.cpp
+  tests/wx/NdkDoubles.cpp
+  $<TARGET_OBJECTS:faf_wx_lite>
+  $<TARGET_OBJECTS:faf_android_platform>)
+target_include_directories(faf_wx_lite_tests PRIVATE "${FAF_ANDROID_DIR}/include")
+target_link_libraries(faf_wx_lite_tests PRIVATE faf_android_settings faf_game_sim_archive ${_faf_sim_libraries})
+target_link_options(faf_wx_lite_tests PRIVATE -static -Wl,--gc-sections -Wl,--no-dependent-libraries)

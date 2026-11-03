@@ -127,7 +127,29 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
 
 - A test program for the event system and the message layer: handler order, `Skip`, propagation,
   and the translation of each message. It runs on the emulator, and on the GitHub arm64 runner as
-  the sim-math tests do.
+  the sim-math tests do. *Done 2026-11-03:* `faf_wx_lite_tests` (`tests/wx`), 39 tests, all passing
+  on the x86_64 emulator; the app's workflow runs the arm64 build on an arm64 runner. It is linked
+  statically, so the same program runs on Android and on a Linux host, with the test's own
+  stand-ins for the three functions of liblog and libandroid the layer calls.
+  - The event system (`EventTests.cpp`): the table entries' types, ids and ranges; that a table
+    ends at its first match even when it skips (wxWindows 2.4.2's `SearchEventTable`); derived
+    tables before the base; dynamic handlers first, the newest first; `Disconnect`; the next and
+    a disabled handler; the application as the last stop, but not for idle events; pending events
+    and `wxWakeUpIdle`; command events up to the parent unless a window blocks them; pushed
+    handlers.
+  - The message layer (`MessageLayerTests.cpp`): the queue's order, ranges and windows;
+    `SendMessageW` within and across threads (`InSendMessage`); `WM_QUIT` after the posted
+    messages; `WM_PAINT` until validated; buttons for the window under the pointer in its client
+    coordinates, with `WM_SETCURSOR` first; the capture; double clicks by the class's
+    `CS_DBLCLKS`; key messages' `lParam` bits (repeat count, scan code, extended, context, previous
+    state, transition), `TranslateMessage`, `GetKeyState`; Alt and F10 as system keys; the
+    low-level keyboard hooks; the foreground and the window it activates again; the waits'
+    wake-ups with and without `MWMO_INPUTAVAILABLE`; destruction's order; the screen's surface and
+    its references; maximized windows on a new screen size.
+  - The translation into wx events (`WindowTests.cpp`): clicks in the window's coordinates and
+    the focus a click gives; entering a window; the wheel at the screen's position (as wxWindows
+    2.4.2 leaves it); key down, char and key up, the char of a special key from its key down, no
+    char after a key down handler took the key; Shift; size; focus; `WM_CLOSE` and its veto.
 - On the emulator, then the phone: the engine starts under the host, its log shows `CScApp`'s
   initialisation, the loop runs, and input arrives.
 

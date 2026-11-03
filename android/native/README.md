@@ -7,7 +7,7 @@ it, and so does its Windows build. Everything Android needs beyond it is in this
 ```sh
 cd android/native
 cmake --preset android-arm64          # or android-x64 for the emulator
-cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgalsmoke, fafgame
+cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgalsmoke, fafgame, faf_wx_lite_tests
 ```
 
 The outputs land in `build/android-<abi>/bin`, where the app (`android/app`) takes them from.
@@ -31,6 +31,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_host` | `src/host`: the program's start as `WinMain` does it, and the activity's surface, input and lifecycle as Win32 messages |
 | `fafgame` | `libfafgame.so`, all of the above: the whole engine and its host (card 5 of the app) |
 | `fafgalsmoke` | `libfafgalsmoke.so`, the renderer test (card 4 of the app) |
+| `faf_wx_lite_tests` | wx-lite's and the message layer's tests (`tests/wx`, `WX_LITE.md` Checks), linked statically |
 
 The client's files are the engine's (`src/sources.cmake`) minus the simulation's
 (`src/sim_sources.cmake`) and minus the Windows-only ones (`CMakeLists.txt`,
@@ -90,6 +91,25 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/smoke/GalSmokeDoubles.cpp` | The renderer test's answer: compiler and codec count as there, so the device comes up |
 
 Where a file copies engine code, it names the original and keeps it unchanged.
+
+## Tests
+
+`faf_wx_lite_tests` (`tests/wx`) checks wx-lite's event system, the Win32 message layer and the
+translation of its messages into wx events against wxWindows 2.4.2 and Win32. It is linked
+statically, so the same program runs on the emulator and on a Linux host; the app's workflow runs
+the arm64 build on an arm64 runner. It takes the simulation's objects from an archive
+(`faf_game_sim_archive`), so that only the engine's POSIX layer is linked in, and stands in for the
+three functions of liblog and libandroid the layer calls (`tests/wx/NdkDoubles.cpp`). On the
+x86_64 emulator:
+
+```sh
+adb push build/android-x64/bin/faf_wx_lite_tests /data/local/tmp/
+adb shell "chmod 755 /data/local/tmp/faf_wx_lite_tests && /data/local/tmp/faf_wx_lite_tests"
+```
+
+It prints each test's name and the checks that failed, then `<n> tests, <m> failed`, and exits
+with 0 when every check passed. The emulator's ARM translation runs no static executables, so the
+arm64 build runs on real ARM only (the CI runner).
 
 ## Patches
 

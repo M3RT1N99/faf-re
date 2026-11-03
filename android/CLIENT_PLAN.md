@@ -157,4 +157,13 @@ most of C1, as 56 files stop at wx.
   - FAF's init asks for the process priority "high", which Android does not give an app (C4).
   - The SCFA import takes `gamedata/*.scd` and `maps/`; the game also wants `fonts/`, `sounds/`
     and `movies/` (C3).
-- **Next for C1:** the test program for the event system and the message layer. Then C2.
+- **The test program for the event system and the message layer** (`native/tests/wx`,
+  `faf_wx_lite_tests`): 39 tests of wx-lite's event order, the message layer's queue, sends, input
+  parameters, hooks, activation and waits, and the translation into wx events, against wxWindows
+  2.4.2 and Win32. All pass on the x86_64 emulator; the app's workflow runs the arm64 build on an
+  arm64 runner.
+- **C1 is done:** the whole engine compiles and links for Android, as one library an activity
+  starts, and its window and input layer is tested.
+- **Next, C2 (the first picture):** the shader compiler for the Vulkan backend (DXC for arm64, a
+  preprocessor in place of `D3DPreprocess`), the textures (direct DDS, the CPU decode of BC, mips),
+  and for the menu the options' Lua, which needs the sound functions to work without XACT.
