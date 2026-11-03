@@ -142,6 +142,12 @@ most of C1, as 56 files stop at wx.
   `D3DXMatrixLookAtRH`, which the shadows call. Android has D3DX's own C routine for it, checked
   against the DLL for 50 million inputs (D3DX's Intel and SSE routines differ from it in the last
   bits).
+- **Galaxy S22 Ultra (Exynos 2200, Android 16, release 0.8.0, 2026-11-03): as on the emulator.**
+  The engine starts under the host on the phone and runs the same initialisation, the preferences'
+  and documents' folders included, up to Vulkan's missing shader compiler: exit code 1. The math
+  check and the renderer test pass (1203 frames in 10 s at 120 Hz). The surface was 1544x720
+  (landscape, the phone set to HD+). The phone's SCFA import holds 8 archives, without the
+  localisation, mods and skins archives, which the menu will want (C2).
 - **Found on the way**, for later steps:
   - Without XACT the sound functions raise Lua errors ("SND: Error retrieving XACT COM
     interface"), which stop the import of `/lua/usermusic.lua` and with it
