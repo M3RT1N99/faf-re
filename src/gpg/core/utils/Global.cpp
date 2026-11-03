@@ -295,7 +295,7 @@ namespace
     return node;
   }
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
   // x64 always allocates from a system heap. The engine allocator is the x86
   // binary's: its smallest size classes (4..28 bytes, step 4) cannot hold the
   // 8-byte free-list link a freed block carries, nor give the 16-byte
@@ -1380,7 +1380,7 @@ namespace
     (void)moduleHandle;
     (void)reserved;
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
     // Not in the binary: the x64 FAF_HIGHMEM test mode has to run before
     // the CRT allocates anything, and this callback is the first code the
     // loader runs in the image.
@@ -1832,7 +1832,7 @@ extern "C" const PIMAGE_TLS_CALLBACK gAllocatorTlsCallbackEntry = &TlsCallback_1
 #pragma const_seg()
 #endif // _WIN32 (POSIX: RegisterThreadHeapCacheExit)
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
 void gpg::LogHighMemoryReservation()
 {
   // Plan 7.1: Stage A keeps the image below 4 GB (static addresses still
@@ -1972,7 +1972,7 @@ extern "C" void* __cdecl malloc_0(
   const std::uint32_t size
 )
 {
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
   void* block = (size <= small_pool::kMaxPooledBytes && small_pool::Enabled()) ? small_pool::Allocate(size) : nullptr;
   if (block == nullptr) {
     block = SystemHeapAlloc(size); // larger blocks, no pool, or the pool's range is used up
@@ -2085,7 +2085,7 @@ extern "C" void __cdecl free_0(
   }
 #endif
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
   // This has to come before `GetPageOwner`, which is only meaningful for
   // pages the engine allocator owns.
   if (gMemHook != nullptr) {
@@ -2158,7 +2158,7 @@ extern "C" size_t __cdecl msize(
     return 0;
   }
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
   // `realloc_0` sizes its copy from this, so it has to answer for system-heap
   // blocks; `HeapSize` reports `(SIZE_T)-1` for a pointer it does not own.
   if (small_pool::Owns(memblock)) {
@@ -2483,7 +2483,7 @@ void gpg::GetHeapInfo(
     return;
   }
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
   // On the x64 system heap the engine allocator never starts, and must not
   // be started here just to read its (empty) counters.
   FillSystemHeapStats(*outStats);

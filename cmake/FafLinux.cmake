@@ -9,8 +9,9 @@
 #
 # The Android toolchains (cmake/toolchains/android-*.cmake, FAF_ANDROID) build the
 # headless simulation with the NDK against bionic, for arm64-v8a and x86_64: the
-# targets their build presets name (headless, faf_sim_math_tests, faf-sim-link and
-# the toolchain check), not the x86 difffuzz dump (faf_math_dump).
+# targets their build presets name (headless, faf_sim_math_tests, faf-sim-link, the
+# toolchain check and, on x86_64, faf_x87_soft_check), not the x86 difffuzz dump
+# (faf_math_dump).
 #
 #   cmake --preset android-arm64-release && cmake --build --preset android-arm64-release
 
@@ -214,11 +215,21 @@ target_link_libraries(faf_sim PUBLIC faf_sim_settings)
 include(FafBuildInfo)
 faf_build_info(faf_sim ${FAF_TARGET_ARCH}-${FAF_LINUX_PLATFORM})
 
-if(FAF_TARGET_ARCH STREQUAL "x64")
+# FAF_X87_SOFT puts the software x87 into an x86_64 build in place of X87Math64.S, where long
+# double is binary128 too (Android x86_64): the replays and the golden tests then run the
+# routines arm64 runs, on a machine whose x87 they can be compared with (faf_x87_soft_check).
+option(FAF_X87_SOFT "Software x87 helpers (legacy/math/X87MathSoft.cpp) on x86_64 as well" OFF)
+if(FAF_TARGET_ARCH STREQUAL "x64" AND NOT FAF_X87_SOFT)
   # The x64 half of legacy/math/X87Math.cpp, in GNU syntax for System V (the
   # Windows build assembles X87Math64.asm, plan WPL.10).
   enable_language(ASM)
   target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/legacy/math/X87Math64.S")
+else()
+  # arm64 has no x87 unit: the same routines computed in software (legacy/math/X87MathSoft.cpp).
+  # Their arithmetic rounds as the x87 rounds it; the transcendental instructions come from the
+  # C library's binary128 functions rounded to 64 bits, which can differ from a CPU's x87 in the
+  # last of those bits, as two CPUs' x87 can (see the file).
+  target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/legacy/math/X87MathSoft.cpp")
 endif()
 # gpg::gal::Math without D3DX (plan WPR.12; Windows' faf_main links it too, #317).
 target_sources(faf_sim PRIVATE "${PROJECT_SOURCE_DIR}/src/gpg/gal/MatrixPortable.cpp")
@@ -249,6 +260,11 @@ target_compile_definitions(faf_sim_settings INTERFACE
   # The server-mode build, as Windows' faf_engine with FAF_SERVER_MODE (src/CMakeLists.txt):
   # the Linux programs are the server and the replay runner.
   FAF_SERVER_MODE=1)
+if(FAF_TARGET_ARCH STREQUAL "arm64")
+  # The x86 intrinsics the shared code names (<xmmintrin.h>, <emmintrin.h>, <immintrin.h>),
+  # defined for AArch64; ahead of the compiler's own headers, which are x86-only.
+  target_include_directories(faf_sim_settings BEFORE INTERFACE "${PROJECT_SOURCE_DIR}/src/platform/posix/arm64")
+endif()
 target_include_directories(faf_sim_settings INTERFACE
   "${PROJECT_SOURCE_DIR}/src"
   # <Windows.h> and <intrin.h> for the shared code (plan WPL.5), and <windows.h>, the
@@ -320,6 +336,24 @@ if(NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR)
     VERBATIM)
 endif()
 add_test(NAME sim_math COMMAND "$<TARGET_FILE:faf_sim_math_tests>" ${_faf_sim_math_args})
+
+# --- faf_x87_soft_check (Android x86_64) --------------------------------------------------
+# The software x87 (legacy/math/X87MathSoft.cpp) against the x87 (X87Math64.S), routine by
+# routine and bit for bit: Android x86_64 is the one target with both an x87 unit and the
+# binary128 long double the software x87 needs. Edge cases and seeded random inputs;
+# `--exhaustive [threads]` adds every float input of the routines that take one float
+# (tests/sim_math/X87SoftCheck.cpp).
+if(FAF_ANDROID AND FAF_TARGET_ARCH STREQUAL "x64")
+  enable_language(ASM)
+  add_executable(faf_x87_soft_check
+    "${PROJECT_SOURCE_DIR}/tests/sim_math/X87SoftCheck.cpp"
+    "${PROJECT_SOURCE_DIR}/src/legacy/math/X87Math64.S")
+  target_include_directories(faf_x87_soft_check PRIVATE "${PROJECT_SOURCE_DIR}/src")
+  target_link_libraries(faf_x87_soft_check PRIVATE faf_codegen gtest)
+  set_target_properties(faf_x87_soft_check PROPERTIES FOLDER "Tests/Sim")
+  add_test(NAME x87_soft_check COMMAND faf_x87_soft_check)
+  set_tests_properties(x87_soft_check PROPERTIES LABELS "Sim")
+endif()
 
 # --- faf_math_dump (plan WPR.21) --------------------------------------------------------
 # The difffuzz targets on every faf_sim object, as Windows builds them on faf_engine,

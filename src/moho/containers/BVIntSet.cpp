@@ -11,7 +11,7 @@
 #include "gpg/core/utils/Global.h"
 #include "moho/sim/SimBlockLane.h"
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
 namespace
 {
   const bool gSimBlockLaneWatchesUIntStorage = []() noexcept {
