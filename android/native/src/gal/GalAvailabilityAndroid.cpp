@@ -1,8 +1,8 @@
 // The game's answers to the two questions the Vulkan backend asks before it creates a device
-// (DeviceVulkan::Setup): is there a shader compiler, is there a texture codec? On Android there
-// is neither yet (ShaderCompilerAndroid.cpp, ImageCodecAndroid.cpp), so device creation stops
-// with the compiler's LoadError, as on a Windows host without DXC. The renderer test answers
-// differently (src/smoke/GalSmokeDoubles.cpp).
+// (DeviceVulkan::Setup): is there a shader compiler, is there a texture codec? The compiler is
+// there when DXC loaded (ShaderCompilerAndroid.cpp), as on Windows. There is no codec yet
+// (ImageCodecAndroid.cpp), so device creation stops there. The renderer test answers differently
+// (src/smoke/GalSmokeDoubles.cpp).
 
 #include "gpg/core/utils/Logging.h"
 #include "gpg/gal/backends/common/ImageCodec.h"
@@ -12,7 +12,7 @@ namespace gpg::gal
 {
   bool effects::ShaderCompiler::Available() const noexcept
   {
-    return false;
+    return mLibrary != nullptr;
   }
 
   imaging::ImageCodec* imaging::ImageCodec::Instance()
