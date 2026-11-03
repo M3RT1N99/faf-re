@@ -219,7 +219,9 @@ add_library(faf_android_platform OBJECT
   src/gal/D3DCompilerAndroid.cpp
   src/gal/FxcPreprocessor.cpp
   src/gal/GalInterfacesAndroid.cpp
+  src/gal/BlockCompressionAndroid.cpp
   src/gal/ImageCodecAndroid.cpp
+  src/gal/ImageFilesAndroid.cpp
   src/gal/ShaderCompilerAndroid.cpp
   src/gal/VulkanSurfaceAndroid.cpp
   src/gal/WindowsCursorAndroid.cpp)
