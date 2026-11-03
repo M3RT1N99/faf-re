@@ -28,7 +28,8 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_gal` | The renderer (`gpg/gal`): the Vulkan backend and what it shares with the others |
 | `faf_wx_lite` | wx-lite, the part of wxWindows 2.4.2 the client uses, on the message layer (`WX_LITE.md`) |
 | `faf_client` | The rest of the client, with the Android halves of what it needs from the left-out files |
-| `fafgame` | `libfafgame.so`, all of the above: the whole engine. The host that starts it is still to come (`WX_LITE.md`, Order) |
+| `faf_host` | `src/host`: the program's start as `WinMain` does it, and the activity's surface, input and lifecycle as Win32 messages |
+| `fafgame` | `libfafgame.so`, all of the above: the whole engine and its host (card 5 of the app) |
 | `fafgalsmoke` | `libfafgalsmoke.so`, the renderer test (card 4 of the app) |
 
 The client's files are the engine's (`src/sources.cmake`) minus the simulation's
@@ -51,8 +52,9 @@ The client's targets put four folders ahead of the engine's include path, in thi
 
 An HWND is a window of the message layer (`src/win32/User32Android.cpp`): an object with a window
 procedure, a size and a parent, whose messages come from its thread's queue as on Windows. The
-host (`include/win32/Win32AndroidHost.h`) gives a top-level window the activity's surface, which
-the Vulkan backend draws on, and feeds the input and the activity's state in as Win32 messages.
+activity's surface is the screen every window is shown on, as a Windows window is part of the
+desktop; the Vulkan backend draws on it. The host (`include/win32/Win32AndroidHost.h`) gives the
+layer the surface and feeds the input and the activity's state in as Win32 messages.
 
 ### Sources
 
@@ -80,6 +82,9 @@ the Vulkan backend draws on, and feeds the input and the activity's state in as 
 | `src/gal/D3D12SwitchesAndroid.cpp` | The storage of two Direct3D 12 console switches |
 | `src/net/DatagramSocketAndroid.cpp` | The game discovery's broadcast socket: none, as outside Windows (the Winsock transport is Windows only) |
 | `src/app/EntityDialogAndroid.cpp` | `SC_CreateEntityDialog`: no reflection editor (a wx tool window) |
+| `src/gal/D3DXMathAndroid.cpp` | `D3DXMatrixLookAtRH`, which the shadows call: D3DX's own C routine, checked against the DLL |
+| `src/host/GameHost.cpp` | The host: `WinMain`'s program on the engine's thread, with the command line, HOME and a Windows user profile's folders; the surface, the pointer, the keys and the foreground into the message layer; a report of its own |
+| `src/host/KeysAndroid.cpp` | Android's key codes as a PC keyboard's: virtual keys, set-1 scan codes, the extended keys |
 | `src/wx` | wx-lite (`WX_LITE.md`) |
 | `src/smoke/GalSmoke.cpp` | The renderer test |
 | `src/smoke/GalSmokeDoubles.cpp` | The renderer test's answer: compiler and codec count as there, so the device comes up |

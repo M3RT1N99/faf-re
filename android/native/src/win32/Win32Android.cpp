@@ -4,6 +4,7 @@
 
 #include <Windows.h>
 
+#include <android/log.h>
 #include <dlfcn.h>
 
 #include <atomic>
@@ -351,6 +352,7 @@ BOOL TerminateProcess(const HANDLE process, const UINT exitCode)
     ::SetLastError(ERROR_ACCESS_DENIED);
     return FALSE;
   }
+  __android_log_print(ANDROID_LOG_INFO, "faf", "TerminateProcess: exit code %u", exitCode);
   std::_Exit(static_cast<int>(exitCode));
 }
 

@@ -1,13 +1,13 @@
 // The renderer test (android/native, card 4 of the app): the engine's renderer on the phone.
-// The activity hands over its surface. On a thread of its own the test makes a window of the
-// message layer on it, as the game's frame is (include/win32/Win32AndroidHost.h), and the engine's
-// gal creates its Vulkan device for that window (gal::Device::Create, the backend Windows uses),
-// then clears the frame in changing colours and presents it for a few seconds, timed, while the
-// thread takes its messages as the game's loop does. No effects and no textures:
-// those need the shader compiler and the texture codec of CLIENT_PLAN.md's C2. What the device
-// said, the engine's log lines included, is the report the app shows and shares. Each line goes to
-// the report file as it comes, so the file holds what the test got to if the process dies in the
-// driver.
+// The activity hands over its surface, the screen of the message layer
+// (include/win32/Win32AndroidHost.h). On a thread of its own the test makes a window on it, as the
+// game makes its frame, and the engine's gal creates its Vulkan device for that window
+// (gal::Device::Create, the backend Windows uses). It then clears the frame in changing colours
+// and presents it for a few seconds, timed, while the thread takes its messages as the game's loop
+// does. No effects and no textures: those need the shader compiler and the texture codec of
+// CLIENT_PLAN.md's C2. What the device said, the engine's log lines included, is the report the
+// app shows and shares. Each line goes to the report file as it comes, so the file holds what the
+// test got to if the process dies in the driver.
 
 #include <android/log.h>
 #include <android/native_window.h>
@@ -234,13 +234,13 @@ namespace
       return nullptr;
     }
     Win32Android_SetScreenSize(width, height);
+    Win32Android_SetScreenSurface(surface);
+    Win32Android_SetForeground(TRUE);
     const HWND window = ::CreateWindowExW(0, L"FafGalSmoke", L"", WS_POPUP, 0, 0, width, height, nullptr, nullptr, nullptr, nullptr);
     if (window == nullptr) {
       return nullptr;
     }
-    (void)Win32Android_SetWindowSurface(window, surface);
     (void)::ShowWindow(window, SW_SHOW);
-    Win32Android_SetForeground(window, TRUE);
     PumpMessages();
     return window;
   }
@@ -255,6 +255,7 @@ namespace
     const HWND window = CreateTestWindow(surface, width, height);
     if (window == nullptr) {
       Report("FAIL: no window on the surface (error " + std::to_string(::GetLastError()) + ")");
+      Win32Android_SetScreenSurface(nullptr);
       ANativeWindow_release(surface);
       CloseReportFile();
       gRunning.store(false);
@@ -320,10 +321,10 @@ namespace
     } catch (...) {
       Report("FAIL: unknown exception");
     }
-    Win32Android_SetForeground(window, FALSE);
+    Win32Android_SetForeground(FALSE);
     PumpMessages();
-    (void)Win32Android_SetWindowSurface(window, nullptr);
     (void)::DestroyWindow(window);
+    Win32Android_SetScreenSurface(nullptr);
     ANativeWindow_release(surface);
     CloseReportFile();
     gRunning.store(false);

@@ -49,9 +49,9 @@ The Win32 USER functions that the engine and wx-lite need:
 - windows as objects that carry a window procedure, a size and a parent (an `HWND`), and the
   window functions the engine calls.
 
-`MsgWaitForMultipleObjectsEx` also wakes when a message arrives, as on Windows. A top-level window
-can carry the `ANativeWindow` of the activity's surface, and the Vulkan surface is made from that
-(`src/gal/VulkanSurfaceAndroid.cpp`).
+`MsgWaitForMultipleObjectsEx` also wakes when a message arrives, as on Windows. The activity's
+surface (`ANativeWindow`) is the screen every window is shown on, as a Windows window is part of
+the desktop, and the Vulkan surface is made from it (`src/gal/VulkanSurfaceAndroid.cpp`).
 
 ### 2. wx-lite proper (`include/wx`, `src/wx`)
 
@@ -100,15 +100,28 @@ it differs, it says so at the place.
 
 ### 3. The Android host (`src/host`)
 
-The activity's native half:
-- It starts the engine thread, which runs the program as `WinMain` does: `CScApp` and
-  `WIN_AppExecute`, with `WinMain`'s error handling.
-- It attaches the activity's surface to the top-level window.
+The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
+- It starts the engine thread, which runs the program as `WinMain` does: the diagnostic hooks,
+  the die handler and the startup switches, then `CScApp` and `WIN_AppExecute`, with `WinMain`'s
+  error handling. The thread has the x64 program's stack (4 MB). Left out, as Windows' own: the
+  crash tests, the probes on the debug registers, AQtime, the CRT's allocation log, the
+  accessibility keys and Media Center.
+- The command line goes to the CRT's `__argc` and `__argv`, which the engine reads. `argv[0]` is
+  the program's path in its install (`<game files>/bin/ForgedAlliance.exe`, as FAF's client starts
+  it): the engine takes its install's folder from it. HOME and TMPDIR are the app's folders, and
+  the host makes the folders a Windows user profile always has (`SHGetFolderPath`'s), which the
+  preferences and the documents go into.
+- The activity's surface is the screen (`Win32Android_SetScreenSurface`), with its size.
 - It turns Android's input and lifecycle into Win32 messages for that thread:
-  - touches and a mouse into `WM_*BUTTON*`, `WM_MOUSEMOVE` and `WM_MOUSEWHEEL`;
-  - keys into `WM_KEYDOWN`, `WM_KEYUP` and `WM_CHAR`;
-  - surface changes into `WM_SIZE`;
-  - pause and resume into `WM_ACTIVATEAPP`.
+  - touch into the left button where the first finger is, a mouse's buttons into `WM_*BUTTON*`,
+    its moves into `WM_MOUSEMOVE` and its wheel into `WM_MOUSEWHEEL`;
+  - keys into `WM_KEYDOWN`, `WM_KEYUP` and `WM_CHAR`, as a PC keyboard's (`src/host/KeysAndroid.cpp`:
+    virtual keys, set-1 scan codes, the extended keys); Back is Esc;
+  - surface changes into `WM_SIZE` of the maximized windows;
+  - pause and resume into the application's activation (`WM_ACTIVATEAPP`, `WM_ACTIVATE`).
+- When the program returns, its process ends with the exit code, the streams flushed. The engine
+  ends the process itself when it cannot start (`TerminateProcess`), as on Windows; the app reads
+  how it ended from Android (`ApplicationExitInfo`).
 
 ## Checks
 
@@ -124,4 +137,8 @@ The activity's native half:
 2. The message layer and the translation. *Done.*
 3. `libfafgame.so` links (the vertex formatters and whatever else the linker names). *Done
    2026-11-03, for arm64 and x86_64 ([../CLIENT_PLAN.md](../CLIENT_PLAN.md), Progress).*
-4. The host: the engine starts on the emulator.
+4. The host: the engine starts on the emulator. *Started 2026-11-03, for x86_64 and for arm64
+   under the emulator's ARM translation: `CScApp`'s initialisation runs (the archives, the
+   preferences, the user Lua, the fonts, the UI) up to `CreateDevice`. The Vulkan renderer stops
+   there without its shader compiler (C2), so the engine ends with exit code 1, as a PC without a
+   usable renderer does. The loop and the input come once the renderer does.*

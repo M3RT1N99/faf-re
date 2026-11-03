@@ -225,6 +225,7 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/movie/FfmpegSfdDecoderAndroid.cpp
   src/gal/D3D9Unavailable.cpp
   src/gal/D3D12SwitchesAndroid.cpp
+  src/gal/D3DXMathAndroid.cpp
   src/gal/GalAvailabilityAndroid.cpp
   src/gal/MeshFormattersAndroid.cpp
   src/net/DatagramSocketAndroid.cpp)
@@ -234,11 +235,16 @@ target_link_libraries(faf_client PUBLIC faf_android_settings faf_wx_lite)
 set_property(SOURCE "${FAF_REPO}/src/moho/net/CLobby.cpp" APPEND PROPERTY COMPILE_DEFINITIONS
   _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1)
 
+# The host (WX_LITE.md): the program's start, and the activity's surface, input and lifecycle as
+# Win32 messages.
+add_library(faf_host OBJECT src/host/GameHost.cpp src/host/KeysAndroid.cpp)
+target_link_libraries(faf_host PUBLIC faf_android_settings faf_wx_lite)
+
 # --- Libraries ---------------------------------------------------------------------------------
-# libfafgame.so: the activity's native half, the whole engine.
+# libfafgame.so: the activity's native half, the whole engine and its host.
 add_library(fafgame SHARED
   $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_gal>
-  $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client>)
+  $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_host>)
 target_link_libraries(fafgame PRIVATE faf_game_sim android log)
 target_link_options(fafgame PRIVATE ${_faf_android_library_options})
 

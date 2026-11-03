@@ -66,7 +66,6 @@ namespace
     RECT update{}; // client coordinates
     bool destroying = false;
     ThreadQueue* queue = nullptr;
-    ANativeWindow* surface = nullptr; // a top-level window's, from the host
   };
 
   struct Posted
@@ -141,6 +140,7 @@ namespace
     std::vector<std::unique_ptr<Hook>> keyboardHooks; // the last installed first
     Window* focus = nullptr;
     Window* active = nullptr;
+    Window* lastActive = nullptr; // the active window when the activity went to the back
     Window* capture = nullptr;
     bool foreground = false; // the activity is in front (the host)
     bool appActive = false; // the windows had WM_ACTIVATEAPP(TRUE) last
@@ -153,6 +153,7 @@ namespace
     BYTE asyncKeys[256]{}; // GetAsyncKeyState
     int screenWidth = 0;
     int screenHeight = 0;
+    ANativeWindow* screenSurface = nullptr; // the activity's, from the host; one reference held
     Click lastClick;
     DWORD clipboardThread = 0;
     bool clipboardOpen = false;
@@ -777,6 +778,10 @@ namespace
     }
     // To the back: the application and its active window go inactive, and the focus goes; they
     // come back with the window's activation (DefWindowProc and wx set the focus on WM_ACTIVATE).
+    {
+      Lock lock(layer.mutex);
+      layer.lastActive = layer.active;
+    }
     ActivateApplication(false);
     Activate(nullptr);
     (void)::SetFocus(nullptr);
@@ -810,6 +815,9 @@ namespace
     if (layer.active == window) {
       layer.active = nullptr;
     }
+    if (layer.lastActive == window) {
+      layer.lastActive = nullptr;
+    }
     if (layer.focus == window) {
       layer.focus = nullptr;
     }
@@ -820,9 +828,6 @@ namespace
       if (context->window == window) {
         context->window = nullptr;
       }
-    }
-    if (window->surface != nullptr) {
-      ANativeWindow_release(window->surface);
     }
     layer.windows.erase(window);
     delete window;
@@ -2831,37 +2836,43 @@ void Win32Android_SetScreenSize(const int width, const int height)
   }
 }
 
-BOOL Win32Android_SetWindowSurface(const HWND handle, ANativeWindow* const surface)
+void Win32Android_SetScreenSurface(ANativeWindow* const surface)
 {
-  Lock lock(Layer().mutex);
-  Window* const window = WindowLocked(handle);
-  if (window == nullptr || window->parent != nullptr) {
-    ::SetLastError(ERROR_INVALID_WINDOW_HANDLE);
-    return FALSE;
-  }
+  State& layer = Layer();
+  Lock lock(layer.mutex);
   if (surface != nullptr) {
     ANativeWindow_acquire(surface);
   }
-  if (window->surface != nullptr) {
-    ANativeWindow_release(window->surface);
+  if (layer.screenSurface != nullptr) {
+    ANativeWindow_release(layer.screenSurface);
   }
-  window->surface = surface;
-  return TRUE;
+  layer.screenSurface = surface;
 }
 
 ANativeWindow* Win32Android_GetWindowSurface(const HWND handle)
 {
-  Lock lock(Layer().mutex);
-  Window* const window = WindowLocked(handle);
-  return window != nullptr ? RootLocked(window)->surface : nullptr;
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  return WindowLocked(handle) != nullptr ? layer.screenSurface : nullptr;
 }
 
-void Win32Android_SetForeground(const HWND handle, const BOOL foreground)
+void Win32Android_SetForeground(const BOOL foreground)
 {
   State& layer = Layer();
   Lock lock(layer.mutex);
-  Window* const window = foreground != FALSE ? WindowLocked(handle) : layer.active;
+  Window* window = layer.active;
+  if (foreground != FALSE && window == nullptr) {
+    // What Windows activates when an application comes back: the window that was active, else
+    // the top visible one.
+    window = layer.lastActive;
+    for (auto top = layer.topLevel.begin(); window == nullptr && top != layer.topLevel.end(); ++top) {
+      if (((*top)->style & WS_VISIBLE) != 0 && !(*top)->minimized) {
+        window = *top;
+      }
+    }
+  }
   if (window == nullptr) {
+    // No window to activate: the first one shown is activated (ShowWindow).
     layer.foreground = foreground != FALSE;
     return;
   }

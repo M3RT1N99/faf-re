@@ -12,18 +12,20 @@ struct ANativeWindow;
 /// The screen's size in pixels: the activity's surface. Maximized windows take the new size.
 void Win32Android_SetScreenSize(int width, int height);
 
-/// Gives `window` (a top-level window) the surface it is shown on, or takes it away (null). The
-/// layer holds a reference to the surface while the window has it.
-BOOL Win32Android_SetWindowSurface(HWND window, ANativeWindow* surface);
+/// The activity's surface, which is the screen every window is shown on (null: there is none).
+/// The layer holds a reference to it while it is the screen's.
+void Win32Android_SetScreenSurface(ANativeWindow* surface);
 
-/// The surface `window` is shown on: its top-level window's. Null while there is none. The
-/// pointer stays valid while the window has the surface.
+/// The surface `window` is shown on: the screen's, as on Windows a window is part of the desktop.
+/// Null while there is none or `window` is no window. The pointer stays valid while it is the
+/// screen's surface; a Vulkan surface made from it holds a reference of its own.
 ANativeWindow* Win32Android_GetWindowSurface(HWND window);
 
 /// The activity came to the front (TRUE) or went to the back (FALSE): the application's
-/// activation (WM_ACTIVATEAPP, WM_ACTIVATE, the focus), with `window` (a top-level window) as the
-/// foreground window when it comes to the front.
-void Win32Android_SetForeground(HWND window, BOOL foreground);
+/// activation (WM_ACTIVATEAPP, WM_ACTIVATE, the focus). Coming back, the window that was active
+/// is activated again, as Windows does when the user switches to an application; before any was,
+/// the top visible window, and before there is one, the first window shown.
+void Win32Android_SetForeground(BOOL foreground);
 
 // --- Input -------------------------------------------------------------------------------------
 // Positions are screen pixels. The mouse messages go to the capture window, else to the window
