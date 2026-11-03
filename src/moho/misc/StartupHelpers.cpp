@@ -1119,6 +1119,23 @@ namespace
 
 namespace moho
 {
+  /// See the declaration (#247): one lock for every thread that touches the preferences state.
+  /// FAF_PREFS_NOLOCK=1 (test only, tests/prefs) gives each thread a lock of its own, so the
+  /// threads no longer exclude each other and the race the lock prevents comes back.
+  std::recursive_mutex& USER_PreferencesLock()
+  {
+    static const bool sPerThread = [] {
+      char value[4] = {};
+      return ::GetEnvironmentVariableA("FAF_PREFS_NOLOCK", value, sizeof(value)) == 1u && value[0] == '1';
+    }();
+    if (sPerThread) {
+      thread_local std::recursive_mutex tLock;
+      return tLock;
+    }
+    static std::recursive_mutex sLock;
+    return sLock;
+  }
+
   /**
    * RTTI `.?AVCUserPrefs@Moho@@`, vftable 0x00E4E344 (20 slots), 0x84 bytes:
    * `USER_GetPreferences` allocates it with `operator new(0x84)` (0x008C913A).
@@ -1179,6 +1196,7 @@ namespace moho
      */
     bool GetBoolean(const msvc8::string& key, const bool fallback) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       const LuaPlus::LuaObject value = LookupKey(key);
       if (value.IsNil()) {
         return fallback;
@@ -1196,6 +1214,7 @@ namespace moho
      */
     std::int32_t GetInteger(const msvc8::string& key, const std::int32_t fallback) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       const LuaPlus::LuaObject value = LookupKey(key);
       if (value.IsNil()) {
         return fallback;
@@ -1213,6 +1232,7 @@ namespace moho
      */
     float GetNumber(const msvc8::string& key, const float fallback) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       const LuaPlus::LuaObject value = LookupKey(key);
       if (value.IsNil()) {
         return fallback;
@@ -1230,6 +1250,7 @@ namespace moho
      */
     std::uint32_t GetHex(const msvc8::string& key, const std::uint32_t fallback) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       const LuaPlus::LuaObject value = LookupKey(key);
       if (!value.IsConvertibleToString()) {
         return fallback;
@@ -1256,6 +1277,7 @@ namespace moho
      */
     msvc8::string GetString(const msvc8::string& key, const msvc8::string& fallback) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       const LuaPlus::LuaObject value = LookupKey(key);
       if (value.IsNil()) {
         return fallback;
@@ -1276,6 +1298,7 @@ namespace moho
     msvc8::list<msvc8::string>
     GetStringArr(const msvc8::string& key, const msvc8::list<msvc8::string>& fallback) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       msvc8::list<msvc8::string> outValues = fallback;
 
       const LuaPlus::LuaObject value = LookupKey(key);
@@ -1303,6 +1326,7 @@ namespace moho
      */
     void SetBoolean(const msvc8::string& key, const bool value) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       SetPreferenceBooleanRecursive(&mState, &mRoot, key, value);
     }
 
@@ -1316,6 +1340,7 @@ namespace moho
      */
     void SetInteger(const msvc8::string& key, const std::int32_t value) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       SetPreferenceIntegerRecursive(&mState, &mRoot, key, value);
     }
 
@@ -1329,6 +1354,7 @@ namespace moho
      */
     void SetNumber(const msvc8::string& key, const float value) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       SetPreferenceNumberRecursive(&mState, &mRoot, key, value);
     }
 
@@ -1341,6 +1367,7 @@ namespace moho
      */
     void SetHex(const msvc8::string& key, const std::uint32_t value) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       const msvc8::string valueText = gpg::STR_Printf("0x%08x", static_cast<unsigned int>(value));
       SetPreferenceStringRecursive(&mState, &mRoot, key, valueText);
     }
@@ -1355,6 +1382,7 @@ namespace moho
      */
     void SetString(const msvc8::string& key, const msvc8::string& value) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       SetPreferenceStringRecursive(&mState, &mRoot, key, value);
     }
 
@@ -1368,6 +1396,7 @@ namespace moho
      */
     void SetStringArr(const msvc8::string& key, const msvc8::list<msvc8::string>& values) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       SetPreferenceStringArrayRecursive(&mState, &mRoot, key, values);
     }
 
@@ -1384,6 +1413,7 @@ namespace moho
      */
     LuaPlus::LuaObject LookupCurrentOption(const msvc8::string& key) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       LuaPlus::LuaObject currentProfile = mRoot.Lookup("profile.current");
       if (currentProfile.IsNil()) {
         return currentProfile;
@@ -1414,6 +1444,7 @@ namespace moho
      */
     LuaPlus::LuaObject LookupKey(const msvc8::string& key) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       if (mRoot.IsNil()) {
         return LuaPlus::LuaObject(mRoot);
       }
@@ -1432,6 +1463,7 @@ namespace moho
      */
     LuaPlus::LuaObject GetPreferenceTable() override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       return mRoot;
     }
 
@@ -1445,6 +1477,7 @@ namespace moho
      */
     void SetObject(const msvc8::string& key, void* const valueObject) override
     {
+      const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
       SetPreferenceObjectRecursive(&mState, &mRoot, key, *static_cast<LuaPlus::LuaObject*>(valueObject));
     }
 
@@ -4467,7 +4500,10 @@ void moho::USER_SavePreferences()
     return;
   }
 
-  SerializePreferenceRootTable(outputStream, preferences->GetPreferenceTable());
+  {
+    const std::lock_guard<std::recursive_mutex> lock(USER_PreferencesLock());
+    SerializePreferenceRootTable(outputStream, preferences->GetPreferenceTable());
+  }
 
   if (std::filebuf* const fileBuffer = outputStream.rdbuf(); fileBuffer != nullptr) {
     if (fileBuffer->close() == nullptr) {

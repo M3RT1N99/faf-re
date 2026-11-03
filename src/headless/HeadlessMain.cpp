@@ -27,11 +27,16 @@
 #include "moho/core/ThreadPlacement.h"
 #include "moho/lua/CScrLuaObjectFactory.h"
 #include "moho/math/MathReflection.h"
+#include "moho/effects/rendering/CEffectManagerImpl.h"
+#include "moho/misc/CZipFile.h"
 #include "moho/misc/FileWaitHandleSet.h"
 #include "moho/misc/StartupHelpers.h"
+#include "moho/resource/RScmResource.h"
+#include "moho/sim/CWldSessionLoaderImpl.h"
 #include "platform/X87Precision.h"
 #include "headless/ReplayLaunchCheck.h"
 #include "headless/ReplayRunner.h"
+#include "moho/animation/CAniActor.h"
 
 namespace
 {
@@ -49,10 +54,19 @@ namespace
 
   std::string gLabel = "headless";
 
+#if defined(FAF_COVERAGE_PROFILE)
+  extern "C" int __llvm_profile_write_file(void);
+#endif
+
   [[noreturn]] void EndProcess(const int exitCode)
   {
     // Every output stream: stdout, stderr and the --disk-trace file.
     std::fflush(nullptr);
+#if defined(FAF_COVERAGE_PROFILE)
+    // A build with -fprofile-instr-generate writes its counters from an atexit
+    // handler, which TerminateProcess skips.
+    (void)__llvm_profile_write_file();
+#endif
     // The sim and loader threads are still running; nothing after the verdict is observed,
     // so the process ends here instead of tearing them down.
 #if defined(_WIN32)
@@ -154,8 +168,38 @@ namespace
       "                            (server-mode build)\n"
       "  --command-check           every command decoded and marshalled again as a client sends it, compared\n"
       "                            (server-mode build)\n"
-      "  --launch-check            rebuild the header's launch with BuildLaunchInfo and compare (plays nothing)\n"
+      "  --oracle-check            the visibility oracle for the --focus army against what the sim publishes,\n"
+      "                            every entity and beat (server-mode build)\n"
+      "  --oracle-digests <file>  with --oracle-check: per beat, the oracle's answers for every army (unfocused)\n"
+      "                            or for the focus army, one digest line each\n"
+      "  --changeset-check         the sync walk's change set against its packet, every beat (server-mode build;\n"
+      "                            not with --oracle-check)\n"
+      "  --view-packets <army> <file>  per beat, a digest of each entity lane of that army's packet: rebuilt\n"
+      "                            from the change set when unfocused, the sim's own when focused on the army\n"
+      "                            (server-mode build; not with the other two checks)\n"
+      "  --view-packets-entries <file>  with --view-packets: one line per record (beat, lane, id, digest),\n"
+      "                            so two runs can be compared entry by entry\n"
+      "  --view-packets-entries-every <n>  with --view-packets-entries: the records of every nth beat only\n"
+      "  --view-frames <file>      unfocused: every army's frame per beat (CSV: entities, withheld, delta bytes),\n"
+      "                            each decoded again and compared (server-mode build; not with the checks above)\n"
+      "  --view-ids                with --view-frames: blips, foreign projectiles and foreign command ids renumbered\n"
+      "                            per view, and every renumbered id checked to map back to its sim id\n"
+      "  --view-loss <percent> [--view-ack-delay <beats>]  with --view-frames: every view's frames also go over a\n"
+      "                            simulated channel that loses that share of frames and acknowledges late; each\n"
+      "                            frame is encoded against the newest acknowledged one and must decode exactly\n"
+      "  --view-bench <file>       unfocused: only the server's view work per beat (views with their own ids, every\n"
+      "                            lane encoded for every client), timed (CSV: build, send and beat ms, entities,\n"
+      "                            bytes; server-mode build; not with the checks above)\n"
+      "  --keep-client-data        keep what only a client reads: model vertices and indices, the session's and the rules' blueprint tables, files read from archives, what effects draw, the pose handles kept for a client\n"
+      "  --view-bench-check        with --view-bench: every view's kept frame is compared with one built whole\n"
+      "  --parallel-views          with --view-frames or --view-bench: the views are built on the sim's workers\n"
+      "  --spy                     with --view-frames: every view's decoded frame checked against the oracle and\n"
+      "                            for names of entities its client does not hold\n"
+      "  --inbound-check           with --view-ids: every command sent again in its army's view ids and translated\n"
+      "                            back as the server would; it must marshal to the same bytes\n"
+      "  --launch-check           rebuild the header's launch with BuildLaunchInfo and compare (plays nothing)\n"
       "  --disk-trace <file>       write every file the engine finds, reads or maps and every directory listing\n"
+      "  --path-spelling <file>    Linux: write each path found on disk only by ignoring case, as asked and as on disk\n"
       "  --checksum-period <n>     sim_ChecksumPeriod for this run (default: the game's, 50)\n"
       "  --lead <n>                beats the sim may run ahead (sim_ReplayLead, default 10)\n"
       "  --timeout <minutes>       give up after this long (default 180)\n"
@@ -226,20 +270,70 @@ int main(int argc, char** argv)
   options.fpuReport = moho::CFG_GetArgOption("--fpu-report", 0, nullptr);
   options.loopback = moho::CFG_GetArgOption("--loopback", 0, nullptr);
   options.commandCheck = moho::CFG_GetArgOption("--command-check", 0, nullptr);
+  options.oracleCheck = moho::CFG_GetArgOption("--oracle-check", 0, nullptr);
+  if (ReadOption("--oracle-digests", options.oracleDigestsPath)) {
+    options.oracleCheck = true;
+  }
+  options.changeSetCheck = moho::CFG_GetArgOption("--changeset-check", 0, nullptr);
+  {
+    msvc8::vector<msvc8::string> viewArgs;
+    if (moho::CFG_GetArgOption("--view-packets", 2, &viewArgs) && viewArgs.size() == 2) {
+      options.viewPacketsArmy = std::atoi(viewArgs[0].c_str());
+      options.viewPacketsPath = viewArgs[1].c_str();
+    }
+  }
+  (void)ReadOption("--view-packets-entries", options.viewPacketsEntriesPath);
+  (void)ReadOption("--view-frames", options.viewFramesPath);
+  (void)ReadOption("--view-bench", options.viewBenchPath);
+  options.viewIds = moho::CFG_GetArgOption("--view-ids", 0, nullptr);
+  if (ReadIntOption("--view-loss", options.viewLossPercent, bad)
+      && (options.viewLossPercent < 0 || options.viewLossPercent > 100)) {
+    bad = true;
+  }
+  if (ReadIntOption("--view-ack-delay", options.viewAckDelay, bad) && options.viewAckDelay < 0) {
+    bad = true;
+  }
+  options.parallelViews = moho::CFG_GetArgOption("--parallel-views", 0, nullptr);
+  options.viewBenchCheck = moho::CFG_GetArgOption("--view-bench-check", 0, nullptr);
+  options.keepClientData = moho::CFG_GetArgOption("--keep-client-data", 0, nullptr);
+  options.spy = moho::CFG_GetArgOption("--spy", 0, nullptr);
+  options.inboundCheck = moho::CFG_GetArgOption("--inbound-check", 0, nullptr);
+  if (options.inboundCheck && (!options.viewIds || options.commandCheck)) {
+    std::printf("[%s] --inbound-check needs --view-frames and --view-ids, and not --command-check\n", gLabel.c_str());
+    bad = true;
+  }
+  if ((options.oracleCheck ? 1 : 0) + (options.changeSetCheck ? 1 : 0) + (options.viewPacketsPath.empty() ? 0 : 1)
+        + (options.viewFramesPath.empty() ? 0 : 1) + (options.viewBenchPath.empty() ? 0 : 1) + (options.loopback ? 1 : 0)
+      > 1) {
+    std::printf(
+      "[%s] --oracle-check, --changeset-check, --view-packets, --view-frames, --view-bench and --loopback (its grid copies) all "
+      "observe the sync walk: one at a time\n",
+      gLabel.c_str()
+    );
+    return kExitBadInput;
+  }
   (void)ReadIntOption("--loopback-dr", options.loopbackDeadReckoning, bad);
   (void)ReadIntOption("--loopback-turns", options.loopbackTurnTolerance, bad);
   (void)ReadIntOption("--checksum-period", options.checksumPeriod, bad);
   (void)ReadIntOption("--lead", options.replayLead, bad);
   (void)ReadIntOption("--timeout", options.timeoutMinutes, bad);
+  if (ReadIntOption("--view-packets-entries-every", options.viewPacketsEntriesEvery, bad)
+      && options.viewPacketsEntriesEvery < 1) {
+    bad = true;
+  }
   if (bad) {
     PrintUsage();
     return kExitBadInput;
   }
 #if !FAF_SERVER_MODE
   // The wire format and the remote client (src/remote) are built only with FAF_SERVER_MODE.
-  if (!options.wireStatsPath.empty() || options.loopback || options.commandCheck) {
+  if (!options.wireStatsPath.empty() || options.loopback || options.commandCheck || options.oracleCheck
+      || options.changeSetCheck || !options.viewPacketsPath.empty() || !options.viewFramesPath.empty()
+      || !options.viewBenchPath.empty()) {
     std::printf(
-      "[%s] --wire-stats, --loopback and --command-check need a server-mode build "
+      "[%s] --wire-stats, --loopback, --command-check, --oracle-check, --changeset-check, --view-packets, --view-frames and "
+      "--view-bench need a "
+      "server-mode build "
       "(FAF_SERVER_MODE, the *-server presets)\n",
       gLabel.c_str()
     );
@@ -259,6 +353,27 @@ int main(int argc, char** argv)
     }
     moho::DISK_SetAccessTrace(diskTrace);
   }
+#if !defined(_WIN32)
+  std::string pathSpellingPath;
+  if (ReadOption("--path-spelling", pathSpellingPath)) {
+    std::FILE* const pathSpelling = std::fopen(pathSpellingPath.c_str(), "w");
+    if (pathSpelling == nullptr) {
+      std::printf("[%s] --path-spelling: cannot write %s\n", gLabel.c_str(), pathSpellingPath.c_str());
+      return kExitBadInput;
+    }
+    FAF_SetPathSpellingTrace(pathSpelling);
+  }
+#endif
+
+  // Nothing here draws or runs a UI: models keep what the sim reads (`RScmResource::DropGeometry`),
+  // and the session's Lua state gets no copy of the blueprints.
+  const bool keepClientData = moho::CFG_GetArgOption("--keep-client-data", 0, nullptr);
+  moho::RScmResource::SetKeepGeometry(keepClientData);
+  moho::WLD_SetSessionKeepsBlueprints(keepClientData);
+  moho::CZipFile::SetKeepEntryData(keepClientData);
+  moho::EFFECT_SetLifetimeOnly(!keepClientData);
+  // `--bone-stats` reads the poses in the sim's packets.
+  moho::POSE_SetKeepClientHandles(keepClientData || moho::CFG_GetArgOption("--bone-stats", 0, nullptr));
 
   // `WinMain` / `CScApp::CScApp`.
   moho::APP_InitializeIdentity();
@@ -328,8 +443,26 @@ int main(int argc, char** argv)
     }
     std::printf("[%s] %s\n", label, summary.c_str());
   }
+  if (!result.inboundSummary.empty()) {
+    std::printf("[%s] %s\n", label, result.inboundSummary.c_str());
+  }
   if (!result.commandSummary.empty()) {
     std::printf("[%s] %s\n", label, result.commandSummary.c_str());
+  }
+  if (!result.oracleSummary.empty()) {
+    std::printf("[%s] %s\n", label, result.oracleSummary.c_str());
+  }
+  if (!result.changeSetSummary.empty()) {
+    std::printf("[%s] %s\n", label, result.changeSetSummary.c_str());
+  }
+  if (!result.viewPacketsSummary.empty()) {
+    std::printf("[%s] %s\n", label, result.viewPacketsSummary.c_str());
+  }
+  if (!result.viewFramesSummary.empty()) {
+    std::printf("[%s] %s\n", label, result.viewFramesSummary.c_str());
+  }
+  if (!result.viewBenchSummary.empty()) {
+    std::printf("[%s] %s\n", label, result.viewBenchSummary.c_str());
   }
   if (!result.boneSummary.empty()) {
     std::printf("[%s] %s\n", label, result.boneSummary.c_str());
@@ -379,7 +512,8 @@ int main(int argc, char** argv)
   } else if (result.crashed) {
     exitCode = kExitCrash;
   } else if ((recordedChecksumsComparable && result.mismatches > 0) || result.loopbackFailures > 0
-             || result.commandFailures > 0) {
+             || result.commandFailures > 0 || result.oracleFailures > 0 || result.inboundFailures > 0
+             || result.changeSetFailures > 0 || result.viewFramesFailures > 0 || result.viewBenchFailures > 0) {
     exitCode = kExitMismatch;
   } else if (!result.gameOver) {
     exitCode = kExitIncomplete;

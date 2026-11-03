@@ -55,6 +55,11 @@ namespace faf::remote::wire
     [[nodiscard]] bool operator==(const SCategoryBits& other) const noexcept = default;
   };
 
+  /** A category set on the wire: its first word index, then its words. */
+  void WriteCategoryBits(BitWriter& writer, const SCategoryBits& bits);
+  /** False, with the reader failed, for more than `SCategoryBits::kMaxWords` words or a short stream. */
+  [[nodiscard]] bool ReadCategoryBits(BitReader& reader, SCategoryBits& bits);
+
   /** One weapon's UI facts (`UnitWeaponInfo`): target categories, layer, ranges, range rings. */
   struct SUnitWeapon
   {
@@ -209,6 +214,12 @@ namespace faf::remote::wire
      */
     [[nodiscard]] bool operator==(const SEntityRecord& other) const noexcept;
   };
+
+  /**
+   * A fingerprint of what a blip's update writes to a view's record: everything but the id and the
+   * creation constants, and `detail` by value. Bitwise like `SEntityRecord::operator==`; never 0.
+   */
+  [[nodiscard]] std::uint64_t HashBlipUpdate(const SEntityRecord& record, const SUnitDetail& detail) noexcept;
 
   /**
    * Change-mask bits, one per field after the id. On the wire the mask is a varint, so the
@@ -399,6 +410,37 @@ namespace faf::remote::wire
   [[nodiscard]] bool EncodeFrame(
     const SViewFrame& frame, const SViewFrame* baseline, const SFrameCodec& codec, BitWriter& writer
   );
+
+  /** One changed record for `EncodeFrameChanges`: which fields, and the record before and after. */
+  struct SFrameChange
+  {
+    std::uint32_t fields;
+    const SEntityRecord* after;
+    const SEntityRecord* before;
+  };
+
+  /**
+   * A frame as what differs from its baseline, for an encoder that already knows (plan WPR.35):
+   * each list ascending by id, as `EncodeFrame` finds them by walking two whole frames.
+   */
+  struct SFrameChanges
+  {
+    std::uint32_t frameId = 0;
+    std::uint32_t baselineId = kNoBaseline;
+    std::uint32_t beat = 0;
+    std::int32_t simRate = 0;
+    std::uint32_t serverMs = 0;
+    std::size_t entityCount = 0; // records in the whole frame
+    std::span<const std::uint32_t> removed;
+    std::span<const SEntityRecord* const> created;
+    std::span<const SFrameChange> changed;
+  };
+
+  /**
+   * The bytes `EncodeFrame` writes for the same frame and baseline. Only the created and changed
+   * records are tested against the codec: the others passed when they were sent.
+   */
+  [[nodiscard]] bool EncodeFrameChanges(const SFrameChanges& changes, const SFrameCodec& codec, BitWriter& writer);
 
   /** The baseline a frame on the wire was encoded against (`kNoBaseline` for a full frame). */
   [[nodiscard]] std::uint32_t PeekFrameBaseline(std::span<const std::uint8_t> bytes) noexcept;
