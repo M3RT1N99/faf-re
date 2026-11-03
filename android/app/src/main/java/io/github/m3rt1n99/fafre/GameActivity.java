@@ -108,9 +108,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (archives == 0) {
             return "FAIL: no Supreme Commander: Forged Alliance imported yet (card 2)";
         }
+        String[] fonts = new File(storage.scfa, "fonts").list();
+        if (fonts == null || fonts.length == 0) {
+            return "FAIL: no fonts of Supreme Commander: Forged Alliance yet: import it again (card 2), which now takes fonts/ too";
+        }
         int version = newestGameFiles(storage);
         if (version < 0) {
-            return "FAIL: no FAF game files yet; the first replay downloads them (card 3)";
+            return "FAIL: no whole FAF game files yet; the replay test downloads them (card 3)";
         }
         File game = storage.game(version);
         File folder = Storage.mkdirs(GameReport.folder(storage));

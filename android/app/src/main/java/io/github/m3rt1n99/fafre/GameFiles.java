@@ -6,38 +6,30 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.CRC32;
-import java.util.zip.Deflater;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-import java.util.zip.ZipOutputStream;
 
 /**
- * FAF's game files for one game version, packed as tools/parity-data packs them for CI
- * (prewarm.py game, make_pack.py): each package downloaded from FAF's updater and cut down
- * to the files headless reads (blueprints, Lua, animations, meshes' bones, maps), every other
- * file kept as an empty file of the same name and time; FAF's init file with the vault set
- * per run; fa_path.lua pointing at the user's own Supreme Commander: Forged Alliance.
+ * FAF's game files for one game version: each package as FAF's updater publishes it (whole, as
+ * the game reads textures, shaders and sounds that headless never reads; tools/parity-data's
+ * CI pack cuts them down to headless's files, which leaves the replays' checksums as they are),
+ * FAF's init file with the vault set per run, fa_path.lua pointing at the user's own Supreme
+ * Commander: Forged Alliance.
  */
 final class GameFiles {
     /** FAF's packages the init file mounts; not every version publishes every one. */
     static final List<String> PACKAGES =
         Arrays.asList("effects", "env", "etc", "loc", "lua", "meshes", "mods", "projectiles", "textures", "units");
     static final Set<String> REQUIRED = new HashSet<>(Arrays.asList("lua", "units"));
-    /** make_pack.py CONTENT_TYPES: the files whose bytes headless reads. */
-    static final Set<String> CONTENT_TYPES = new HashSet<>(Arrays.asList(".bp", ".lua", ".scm", ".sca", ".scmap"));
 
     static final String VAULT_ANCHOR = "if custom_vault_path then";
     private static final Pattern VAULT_LINE = Pattern.compile("^custom_vault_path = .*$", Pattern.MULTILINE);
@@ -53,10 +45,11 @@ final class GameFiles {
     }
 
     /**
-     * Raised when the packing changes; an older pack is packed again from itself. 2: no data
-     * descriptors (0.6.0 test builds before it wrote them, which the engine cannot read).
+     * Raised when the packing changes. 2: no data descriptors (0.6.0 test builds before it wrote
+     * them, which the engine cannot read). 3: the packages whole, for the game; packs before it
+     * were cut down to headless's files, so their packages are downloaded again.
      */
-    static final int PACK_FORMAT = 2;
+    static final int PACK_FORMAT = 3;
 
     static boolean ready(Storage storage, int version) {
         File dir = storage.game(version);
@@ -82,7 +75,7 @@ final class GameFiles {
         if (ready(storage, version)) {
             return dir;
         }
-        boolean repack = packFormat(dir) >= 1;
+        boolean stale = packFormat(dir) >= 1 && packFormat(dir) < PACK_FORMAT;
         File gamedata = Storage.mkdirs(new File(dir, "gamedata"));
         JSONObject manifest = new JSONObject();
         try {
@@ -91,12 +84,8 @@ final class GameFiles {
             for (String name : PACKAGES) {
                 File packed = new File(gamedata, name + ".nx2");
                 String remote = name + "." + version + ".nx2";
-                if (packed.isFile()) {
-                    if (repack) {
-                        log.step("Packing " + remote + " again");
-                        pack(packed, packed);
-                    }
-                    manifest.put(remote, "packed");
+                if (packed.isFile() && !stale) {
+                    manifest.put(remote, "whole");
                     continue;
                 }
                 File download = new File(storage.downloads(), remote);
@@ -113,12 +102,9 @@ final class GameFiles {
                     }
                     throw e;
                 }
-                log.step("Packing " + remote);
-                long[] stats = pack(download, packed);
-                log.line(String.format(Locale.ROOT, "%s: %.1f MB -> %.1f MB, %d files kept, %d emptied", remote,
-                    download.length() / 1048576.0, packed.length() / 1048576.0, stats[0], stats[1]));
-                download.delete();
-                manifest.put(remote, "packed");
+                Files.move(download.toPath(), packed.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                log.line(String.format(Locale.ROOT, "%s: %.1f MB", remote, packed.length() / 1048576.0));
+                manifest.put(remote, "whole");
             }
             String initName = "init_faf_" + version + ".lua";
             log.step("Downloading " + initName);
@@ -163,93 +149,6 @@ final class GameFiles {
         File init = new File(gameDir, "bin/init_" + label + ".lua");
         write(init, text);
         return init;
-    }
-
-    /**
-     * make_pack.py pack_archive: the same entries, order, names and times; bytes only for the
-     * content types. Returns {kept, emptied}.
-     */
-    static long[] pack(File source, File dest) throws IOException {
-        File temp = new File(dest.getPath() + ".tmp");
-        long kept = 0;
-        long emptied = 0;
-        byte[] buffer = new byte[1 << 16];
-        try (ZipFile in = new ZipFile(source); ZipOutputStream out = new ZipOutputStream(new FileOutputStream(temp))) {
-            out.setLevel(9);
-            for (Enumeration<? extends ZipEntry> entries = in.entries(); entries.hasMoreElements(); ) {
-                ZipEntry entry = entries.nextElement();
-                ZipEntry copy = new ZipEntry(entry.getName());
-                copy.setTime(entry.getTime());
-                String name = entry.getName().toLowerCase(Locale.ROOT);
-                int dot = name.lastIndexOf('.');
-                boolean content = !entry.isDirectory() && dot > name.lastIndexOf('/') && CONTENT_TYPES.contains(name.substring(dot));
-                if (content) {
-                    // Sizes and CRC in the local header, no data descriptor after the data: the
-                    // engine's zip reader, like the 2007 one, does not know data descriptors, and
-                    // ZipOutputStream writes one for a DEFLATED entry whose sizes it is not given.
-                    // Its deflater at level 9 gives the size computed here.
-                    byte[] data;
-                    try (InputStream stream = in.getInputStream(entry)) {
-                        data = readAll(stream, buffer);
-                    }
-                    CRC32 crc = new CRC32();
-                    crc.update(data);
-                    copy.setMethod(ZipEntry.DEFLATED);
-                    copy.setSize(data.length);
-                    copy.setCompressedSize(deflatedSize(data, buffer));
-                    copy.setCrc(crc.getValue());
-                    out.putNextEntry(copy);
-                    out.write(data);
-                    ++kept;
-                } else {
-                    copy.setMethod(ZipEntry.STORED);
-                    copy.setSize(0);
-                    copy.setCompressedSize(0);
-                    copy.setCrc(new CRC32().getValue());
-                    out.putNextEntry(copy);
-                    if (!entry.isDirectory()) {
-                        ++emptied;
-                    }
-                }
-                out.closeEntry();
-                Cancellation.check();
-            }
-        } catch (IOException e) {
-            temp.delete();
-            throw e;
-        }
-        if (dest.exists() && !dest.delete()) {
-            throw new IOException("cannot replace " + dest);
-        }
-        if (!temp.renameTo(dest)) {
-            throw new IOException("cannot rename " + temp);
-        }
-        return new long[] {kept, emptied};
-    }
-
-    private static byte[] readAll(InputStream in, byte[] buffer) throws IOException {
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        int read;
-        while ((read = in.read(buffer)) > 0) {
-            out.write(buffer, 0, read);
-        }
-        return out.toByteArray();
-    }
-
-    /** The size of {@code data} deflated as ZipOutputStream at level 9 deflates it (raw, no zlib header). */
-    private static long deflatedSize(byte[] data, byte[] buffer) {
-        Deflater deflater = new Deflater(9, true);
-        try {
-            deflater.setInput(data);
-            deflater.finish();
-            long size = 0;
-            while (!deflater.finished()) {
-                size += deflater.deflate(buffer);
-            }
-            return size;
-        } finally {
-            deflater.end();
-        }
     }
 
     static void write(File file, String text) throws IOException {

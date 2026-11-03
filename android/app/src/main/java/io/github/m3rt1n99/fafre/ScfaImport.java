@@ -18,8 +18,8 @@ import java.util.Locale;
 
 /**
  * Copies the game archives the engine needs from the user's own Supreme Commander: Forged
- * Alliance folder (picked with the system's folder picker) into scfa/: gamedata/*.scd, and
- * maps/ when the folder has one (FAF's map vault has the retail maps too, so it is optional).
+ * Alliance folder (picked with the system's folder picker) into scfa/: gamedata/*.scd, fonts/
+ * (the game's text), and maps/ when the folder has one (FAF's map vault has the retail maps too, so it is optional).
  */
 final class ScfaImport {
     private static final class Child {
@@ -65,6 +65,12 @@ final class ScfaImport {
         if (maps != null) {
             int files = copyTree(resolver, tree, maps, new File(storage.scfa, "maps"));
             TestState.line("Imported maps/ (" + files + " files)");
+        }
+        // The game draws its text with the folder's TrueType fonts (D3D_InitFonts).
+        Child fonts = find(resolver, tree, rootId, "fonts");
+        if (fonts != null) {
+            int files = copyTree(resolver, tree, fonts, new File(storage.scfa, "fonts"));
+            TestState.line("Imported fonts/ (" + files + " files)");
         }
     }
 
