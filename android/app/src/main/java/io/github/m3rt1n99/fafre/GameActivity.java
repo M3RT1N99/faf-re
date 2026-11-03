@@ -123,8 +123,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         } catch (IOException e) {
             return "FAIL: the init file: " + e.getMessage();
         }
+        // /nomovie as FAF's client passes it: the splash screen waits for its movies to end, and
+        // without FFmpeg (C3) no movie opens, so it would wait for a tap.
         String[] arguments = {
-            new File(game, PROGRAM).getPath(), "/init", init.getPath(), "/log", GameReport.log(storage).getPath(),
+            new File(game, PROGRAM).getPath(), "/init", init.getPath(), "/log", GameReport.log(storage).getPath(), "/nomovie",
         };
         GameReport.append(this, "game: FAF game version " + version + ", " + archives + " SCFA archives");
         File home = Storage.mkdirs(new File(folder, "home"));

@@ -68,7 +68,8 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/win32/PsapiAndroid.cpp` | `GetProcessMemoryInfo`, from `/proc/self/status` |
 | `src/win32/DbgHelpAndroid.cpp` | `SymFromAddr`, from the dynamic symbol tables with demangled names |
 | `src/win32/GdiAndroid.cpp` | GDI's font functions: no font yet, so no text (C3 renders through them with FreeType) |
-| `src/audio/AudioAndroid.cpp` | The audio platform: none yet, so the game is silent as on a PC without XACT and a sound device (`DirectSoundCreate`, X3DAudio, the XACT clock) |
+| `src/audio/AudioAndroid.cpp` | The audio platform: none yet (`DirectSoundCreate` finds no device, X3DAudio places nothing, no XACT clock) |
+| `src/audio/XactEngineAndroid.cpp` | An XACT engine that plays nothing, until FACT (C3): the sound functions work and so do the options, which import the music's Lua; `CoCreateInstance` creates it |
 | `src/movie/FfmpegSfdDecoderAndroid.cpp` | The movie decoder: no FFmpeg for Android yet, so the player skips movies |
 | `src/diag/FrameSamplerAndroid.cpp` | The frame sampler's mark: nothing to sample with (the Windows one suspends the main thread) |
 | `src/gal/VulkanSurfaceAndroid.cpp` | The Vulkan backend's platform unit (`VulkanSurface.h`) for Android: `VK_KHR_android_surface` |

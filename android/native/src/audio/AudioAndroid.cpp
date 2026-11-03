@@ -3,9 +3,11 @@
 // FAudio's FACT, a reimplementation of XACT 3). What the engine names of it:
 //
 // - DirectSoundCreate (include/win32/dsound.h): no device, DSERR_NODRIVER;
-// - the XACT engine: CoCreateInstance finds no class (src/win32/Win32Android.cpp);
-// - X3DAudio and the XACT clock (moho/audio/XactClock.cpp, left out of this build): only an XACT
-//   engine leads to them, so they are never reached here.
+// - the XACT engine: one that plays nothing (XactEngineAndroid.cpp), so the sound functions and
+//   the options work;
+// - X3DAudio: nothing to place, as nothing plays;
+// - the XACT clock (moho/audio/XactClock.cpp, left out of this build): there is no XACT DLL to
+//   patch.
 
 #include <dsound.h>
 
@@ -32,7 +34,7 @@ extern "C" void X3DAudioInitialize(std::uint32_t, float, void*) {}
 
 namespace moho
 {
-  // The Windows build patches the XACT engine's clock imports (XactClock.cpp); there is no XACT
-  // engine here to patch.
+  // The Windows build patches the XACT engine DLL's clock imports (XactClock.cpp); the engine here
+  // is no DLL and has no clock.
   void SND_InstallXactClock(const IXACTEngine&) {}
 } // namespace moho

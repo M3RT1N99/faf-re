@@ -241,10 +241,18 @@ DWORD ResumeThread(HANDLE)
   return static_cast<DWORD>(-1);
 }
 
-HRESULT CoCreateInstance(REFCLSID, LPUNKNOWN, DWORD, REFIID, void** const object)
+// The client's own classes (src/audio/XactEngineAndroid.cpp: the XACT engine), where the library
+// has the client: the renderer test and the tests link this file without it, and know no class.
+extern "C" HRESULT FafAndroid_CreateClientInstance(REFCLSID, REFIID, void**) __attribute__((weak));
+
+HRESULT CoCreateInstance(REFCLSID classId, LPUNKNOWN, DWORD, REFIID interfaceId, void** const object)
 {
-  if (object != nullptr) {
-    *object = nullptr;
+  if (object == nullptr) {
+    return E_INVALIDARG;
+  }
+  *object = nullptr;
+  if (FafAndroid_CreateClientInstance != nullptr) {
+    return FafAndroid_CreateClientInstance(classId, interfaceId, object);
   }
   return REGDB_E_CLASSNOTREG;
 }

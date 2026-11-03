@@ -259,6 +259,7 @@ target_link_libraries(faf_wx_lite PUBLIC faf_android_settings)
 add_library(faf_client OBJECT ${_faf_client_files}
   src/app/EntityDialogAndroid.cpp
   src/audio/AudioAndroid.cpp
+  src/audio/XactEngineAndroid.cpp
   src/diag/FrameSamplerAndroid.cpp
   src/movie/FfmpegSfdDecoderAndroid.cpp
   src/gal/D3D9Unavailable.cpp

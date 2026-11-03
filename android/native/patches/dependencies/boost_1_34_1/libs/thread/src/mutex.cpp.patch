@@ -1,0 +1,22 @@
+diff --git a/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp b/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp
+--- a/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp
++++ b/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp
+@@ -193,8 +193,16 @@
+ 
+ mutex::mutex()
+ {
+-    int res = 0;
+-    res = pthread_mutex_init(&m_mutex, 0);
++    // faf-re's Android client build: recursive, as boost::mutex is on Windows (a critical
++    // section), which the engine's code relies on: STAT_GetLuaTable holds a stat's lock while
++    // StatItem::ToLua takes it again.
++    pthread_mutexattr_t attributes;
++    int res = pthread_mutexattr_init(&attributes);
++    if (res == 0)
++        res = pthread_mutexattr_settype(&attributes, PTHREAD_MUTEX_RECURSIVE);
++    if (res == 0)
++        res = pthread_mutex_init(&m_mutex, &attributes);
++    pthread_mutexattr_destroy(&attributes);
+     if (res != 0)
+         throw thread_resource_error();
+ }
