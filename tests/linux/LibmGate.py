@@ -52,8 +52,9 @@ def calls(obj):
         head = re.match(r"^[0-9a-f]+ <(.*)>:$", line)
         if head:
             # The allowlist spells libc++'s inline namespace as Linux does (std::__1);
-            # the NDK's libc++ names it std::__ndk1.
-            function = head.group(1).replace("std::__ndk1::", "std::__1::")
+            # the NDK's libc++ names it std::__ndk1. Android x86_64's binary128 long double
+            # demangles as __float128 (FAF_X87_SOFT builds).
+            function = head.group(1).replace("std::__ndk1::", "std::__1::").replace("__float128", "long double")
             continue
         reloc = re.search(r"R_(?:X86_64_(?:PLT32|PC32|GOTPCREL\w*)|AARCH64_(?:CALL26|JUMP26))\s+(\w+)(?:[-+]0x[0-9a-f]+)?$", line)
         if reloc and reloc.group(1) in TRANSCENDENTALS:

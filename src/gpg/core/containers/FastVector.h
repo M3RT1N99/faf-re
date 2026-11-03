@@ -135,7 +135,7 @@ namespace gpg::core
      * came from; never mix in `new T[]` / `delete[]`, which for a non-trivially
      * destructible `T` hides an element-count cookie in front of the block.
      */
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
     /// `moho::SimBlockLane`'s account of `unsigned int` storage, whose bytes are the same in the binary. Null where no
     /// sim is linked.
     inline void (*gUIntStorageAllocated)(const void*, std::size_t) = nullptr;
@@ -148,7 +148,7 @@ namespace gpg::core
     )
     {
       T* const block = static_cast<T*>(::operator new(count * sizeof(T)));
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
       if constexpr (std::is_same_v<T, unsigned int>) {
         if (gUIntStorageAllocated != nullptr) {
           gUIntStorageAllocated(block, count * sizeof(T));
@@ -163,7 +163,7 @@ namespace gpg::core
       T* const block
     ) noexcept
     {
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
       if constexpr (std::is_same_v<T, unsigned int>) {
         if (gUIntStorageFreed != nullptr) {
           gUIntStorageFreed(block);

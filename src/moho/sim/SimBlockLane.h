@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
 
 #include <cstddef>
 #include <cstdint>
@@ -15,8 +15,8 @@
 namespace moho
 {
   /**
-   * x64 only: the free list formations and projectiles share on the sim thread, the last freed block handed out
-   * first. 11-bone pose arrays, `unsigned int` storage and visible decal storage take blocks from it too.
+   * x64 and arm64 only: the free list formations and projectiles share on the sim thread, the last freed block handed
+   * out first. 11-bone pose arrays, `unsigned int` storage and visible decal storage take blocks from it too.
    *
    * Units keep a raw formation pointer (`SInfoCache::mFormationLayer`), and `IsSameFormationLayerWith` (0x006A8D40)
    * compares pointers, so a stale pointer can equal a new formation at a reused address. In the binary these objects
