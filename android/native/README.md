@@ -73,10 +73,12 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/diag/FrameSamplerAndroid.cpp` | The frame sampler's mark: nothing to sample with (the Windows one suspends the main thread) |
 | `src/gal/VulkanSurfaceAndroid.cpp` | The Vulkan backend's platform unit (`VulkanSurface.h`) for Android: `VK_KHR_android_surface` |
 | `src/gal/WindowsCursorAndroid.cpp` | The backends' Win32 cursor helper: no system cursor |
-| `src/gal/D3DCompilerAndroid.cpp` | `D3DPreprocess`: no effect preprocessor yet (C2) |
-| `src/gal/ShaderCompilerAndroid.cpp` | The effects' DXC compiler: none yet (C2) |
+| `src/gal/D3DCompilerAndroid.cpp` | `D3DPreprocess`, on `FxcPreprocessor.cpp` |
+| `src/gal/FxcPreprocessor.cpp` | d3dcompiler_47's preprocessor, byte for byte: the effect translator reads its exact text (checked on Windows by `tests/fxc`) |
+| `src/gal/ShaderCompilerAndroid.cpp` | The effects' shader compiler (`gpg/gal/effects/ShaderCompiler.h`) on DXC, with `ShaderCompiler.cpp`'s arguments (the configure stops when that file changes) |
+| `src/gal/DxcAndroid.cpp` | DXC itself: `libdxcompiler.so` loaded from the app's libraries (or `FAF_DXC_DIR`), a compiler per thread, the reflection; compiled with DXC's headers alone (`faf_android_dxc`) |
 | `src/gal/ImageCodecAndroid.cpp` | The D3DX11 texture codec: none yet (C2) |
-| `src/gal/GalAvailabilityAndroid.cpp` | The game's answer to "is there a compiler, a codec?": no |
+| `src/gal/GalAvailabilityAndroid.cpp` | The game's answer to "is there a compiler, a codec?": a compiler when `libdxcompiler.so` loads; no codec yet |
 | `src/gal/GalInterfacesAndroid.cpp` | Five gal interfaces' constructors and destructors, which the engine keeps in the Direct3D 9 backend's file |
 | `src/gal/D3D9Unavailable.cpp` | The Direct3D 9 methods and mesh formatters shared code names, on paths only a Direct3D 9 device takes |
 | `src/gal/MeshFormattersAndroid.cpp` | The Direct3D 10 mesh formatters, which every other API packs its vertices with, the engine's code with a float-to-half conversion that matches D3DX's |
@@ -92,6 +94,15 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/smoke/GalSmokeDoubles.cpp` | The renderer test's answer: compiler and codec count as there, so the device comes up |
 
 Where a file copies engine code, it names the original and keeps it unchanged.
+
+### The shader compiler
+
+The Vulkan backend compiles the effects with DXC, which Microsoft does not build for Android.
+`cmake/FafAndroidDxc.cmake` builds `libdxcompiler.so` from the sources of the release the Windows
+build downloads (v1.9.2609), pinned by SHA256 and cached in `dependencies/.downloads`: first its
+table generators for the build host, then the library for the ABI (target `faf_dxc`, a few minutes
+the first time). The app packages it with the engine's libraries and its licences in the assets
+(`licenses/`).
 
 ## Tests
 

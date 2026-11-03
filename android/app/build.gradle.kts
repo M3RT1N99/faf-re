@@ -3,7 +3,7 @@
 // The native programs are not built here: the Android native build builds them (android/native:
 // cmake --build --preset android-arm64), and stageFafNative packages them as
 // lib<name>.so, the only files Android extracts into nativeLibraryDir, from where an app may
-// start a program. tests/sim_math/golden.txt goes into the assets.
+// start a program. tests/sim_math/golden.txt and the native libraries' licences go into the assets.
 
 import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 
@@ -104,7 +104,7 @@ dependencies {
 // The engine's programs, started as processes, and the libraries the app loads, all from the
 // Android native build's bin folder (android/native, gradle.properties fafNativeDir).
 val fafNativePrograms = listOf("headless" to "libfafheadless.so", "faf_sim_math_tests" to "libfafsimmath.so")
-val fafNativeLibraries = listOf("libfafgalsmoke.so", "libfafgame.so")
+val fafNativeLibraries = listOf("libfafgalsmoke.so", "libfafgame.so", "libdxcompiler.so")
 
 val stageFafNative by tasks.registering(Sync::class) {
     description = "Packages the engine's Android programs (CMake preset builds) as lib<name>.so, and its libraries."
@@ -138,9 +138,14 @@ val stageFafNative by tasks.registering(Sync::class) {
 }
 
 val stageFafAssets by tasks.registering(Sync::class) {
-    description = "Puts the sim-math golden values and the platforms' known differences into the assets."
+    description = "Puts the sim-math golden values, the platforms' known differences and the licences into the assets."
     from(repoRoot.resolve("tests/sim_math")) {
         include("golden.txt", "known_android-*.txt")
+    }
+    // The licences of what the native build makes from others' sources (DXC), the same for every
+    // ABI: from the first ABI's build folder, next to its bin.
+    from(repoRoot.resolve(providers.gradleProperty("fafNativeDir.${fafAbis.first()}").get()).resolveSibling("licenses")) {
+        into("licenses")
     }
     into(layout.buildDirectory.dir("fafAssets"))
 }

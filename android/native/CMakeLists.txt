@@ -10,7 +10,8 @@
 #                 engine's POSIX layer (win32/), DirectX type stand-ins (directx/), stand-ins for
 #                 the Windows-only backends' headers that shared code includes (shadow/)
 #   src/          the Android implementations: Win32 additions, the Vulkan surface, the cursor,
-#                 the shader compiler and texture codec stand-ins, the renderer test (smoke/)
+#                 the effects' preprocessor and shader compiler, the texture codec stand-in, the
+#                 renderer test (smoke/)
 #   patches/      the engine files compiled changed (cmake/FafAndroidOverlay.cmake)
 #
 # Targets, with everything the app packages in ${CMAKE_BINARY_DIR}/bin:
@@ -18,6 +19,8 @@
 #   headless, faf_sim_math_tests   the engine's programs (cmake/FafLinux.cmake)
 #   faf_game_sim                   the simulation's objects, compiled with the client's headers
 #   faf_android_platform           src/win32 and src/gal: what the Vulkan backend stands on here
+#   faf_android_dxc                src/gal/DxcAndroid.cpp, the one file on DXC's own headers
+#   faf_dxc                        libdxcompiler.so, DXC for the effects (cmake/FafAndroidDxc.cmake)
 #   faf_gal                        the renderer (gpg/gal): the Vulkan backend with what it shares
 #   faf_client                     the rest of the client (out of the default build until C1 is
 #                                  done: CLIENT_PLAN.md)
@@ -60,6 +63,23 @@ endif()
 # name from the header's folder.
 set(FAF_ANDROID_OVERLAY_SIBLINGS src/moho/render/ID3DTextureSheet.cpp)
 include("${FAF_ANDROID_DIR}/cmake/FafAndroidOverlay.cmake")
+
+# DXC, the effects' shader compiler (cmake/FafAndroidDxc.cmake): libdxcompiler.so for the ABI in
+# ${CMAKE_BINARY_DIR}/bin, its licences in ${CMAKE_BINARY_DIR}/licenses, both for the app.
+include("${FAF_ANDROID_DIR}/cmake/FafAndroidDxc.cmake")
+
+# src/gal/ShaderCompilerAndroid.cpp gives DXC the arguments of the engine's
+# gpg/gal/effects/ShaderCompiler.cpp, which this build leaves out. When upstream changes that file,
+# the configure stops here, so that the Android half follows it (and this hash with it) instead of
+# compiling the effects differently. The hash is of the file with LF line ends.
+file(READ "${FAF_REPO}/src/gpg/gal/effects/ShaderCompiler.cpp" _faf_shader_compiler)
+string(REPLACE "\r\n" "\n" _faf_shader_compiler "${_faf_shader_compiler}")
+string(SHA256 _faf_shader_compiler_hash "${_faf_shader_compiler}")
+if(NOT _faf_shader_compiler_hash STREQUAL "fa8fedad15b0a1eb40acc48b0123cba2577829f4cd88bb1ca5bb454a0d30ed39")
+  message(FATAL_ERROR "android/native: src/gpg/gal/effects/ShaderCompiler.cpp changed (SHA256 "
+    "${_faf_shader_compiler_hash}): bring src/gal/ShaderCompilerAndroid.cpp in line with it, then renew "
+    "the hash in CMakeLists.txt.")
+endif()
 
 # --- The client's files --------------------------------------------------------------------
 # Every translation unit of the engine that the simulation build leaves out (src/sources.cmake,
@@ -197,12 +217,25 @@ add_library(faf_android_platform OBJECT
   src/win32/GdiAndroid.cpp
   src/win32/PsapiAndroid.cpp
   src/gal/D3DCompilerAndroid.cpp
+  src/gal/FxcPreprocessor.cpp
   src/gal/GalInterfacesAndroid.cpp
   src/gal/ImageCodecAndroid.cpp
   src/gal/ShaderCompilerAndroid.cpp
   src/gal/VulkanSurfaceAndroid.cpp
   src/gal/WindowsCursorAndroid.cpp)
 target_link_libraries(faf_android_platform PUBLIC faf_android_settings)
+
+# DxcAndroid.cpp calls DXC through DXC's own headers, which declare the Windows types themselves
+# (dxc/WinAdapter.h). It is compiled without this build's settings, whose Win32 stand-ins and the
+# engine's forced POSIX header would declare them again, and sees of the engine only the shader
+# compiler's plain types.
+add_library(faf_android_dxc OBJECT src/gal/DxcAndroid.cpp)
+target_include_directories(faf_android_dxc PRIVATE
+  "${FAF_REPO}/src"
+  "${FAF_ANDROID_DXC_SOURCE}/include"
+  "${FAF_ANDROID_DXC_SOURCE}/external/DirectX-Headers/include/directx"
+  "${FAF_ANDROID_DXC_SOURCE}/external/DirectX-Headers/include/wsl/stubs")
+target_compile_options(faf_android_dxc PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
 
 add_library(faf_gal OBJECT ${_faf_gal_files})
 target_link_libraries(faf_gal PUBLIC faf_android_settings)
@@ -247,20 +280,21 @@ target_link_libraries(faf_host PUBLIC faf_android_settings faf_wx_lite)
 # --- Libraries ---------------------------------------------------------------------------------
 # libfafgame.so: the activity's native half, the whole engine and its host.
 add_library(fafgame SHARED
-  $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_gal>
-  $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_host>)
-target_link_libraries(fafgame PRIVATE faf_game_sim android log)
+  $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_android_dxc>
+  $<TARGET_OBJECTS:faf_gal> $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_host>)
+target_link_libraries(fafgame PRIVATE faf_game_sim android log ${CMAKE_DL_LIBS})
 target_link_options(fafgame PRIVATE ${_faf_android_library_options})
 
 # libfafgalsmoke.so: the renderer on the phone's Vulkan without the client (src/smoke). Without
 # the client, the client classes' type_info the simulation names come from the stand-in, as in
 # the simulation's programs.
 add_library(fafgalsmoke SHARED
-  $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_gal>
+  $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_android_dxc>
+  $<TARGET_OBJECTS:faf_gal>
   src/smoke/GalSmoke.cpp
   src/smoke/GalSmokeDoubles.cpp
   "${FAF_REPO}/src/platform/posix/ClientTypeInfoPosix.cpp")
-target_link_libraries(fafgalsmoke PRIVATE faf_game_sim faf_android_settings android log vulkan)
+target_link_libraries(fafgalsmoke PRIVATE faf_game_sim faf_android_settings android log vulkan ${CMAKE_DL_LIBS})
 target_link_options(fafgalsmoke PRIVATE ${_faf_android_library_options})
 
 # --- Tests -------------------------------------------------------------------------------------
@@ -278,7 +312,8 @@ add_executable(faf_wx_lite_tests
   tests/wx/WindowTests.cpp
   tests/wx/NdkDoubles.cpp
   $<TARGET_OBJECTS:faf_wx_lite>
-  $<TARGET_OBJECTS:faf_android_platform>)
+  $<TARGET_OBJECTS:faf_android_platform>
+  $<TARGET_OBJECTS:faf_android_dxc>)
 target_include_directories(faf_wx_lite_tests PRIVATE "${FAF_ANDROID_DIR}/include")
-target_link_libraries(faf_wx_lite_tests PRIVATE faf_android_settings faf_game_sim_archive ${_faf_sim_libraries})
+target_link_libraries(faf_wx_lite_tests PRIVATE faf_android_settings faf_game_sim_archive ${_faf_sim_libraries} ${CMAKE_DL_LIBS})
 target_link_options(faf_wx_lite_tests PRIVATE -static -Wl,--gc-sections -Wl,--no-dependent-libraries)
