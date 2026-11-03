@@ -33,6 +33,7 @@
 #include "moho/misc/StartupHelpers.h"
 #include "moho/misc/StatItem.h"
 #include "moho/misc/Stats.h"
+#include "moho/sim/DesyncTelemetry.h"
 #include "moho/misc/TimeBar.h"
 #include "moho/misc/CDiskWatch.h"
 #include "moho/net/CGpgNetInterface.h"
@@ -51,6 +52,7 @@
 #include "moho/ui/IUIManager.h"
 #include "moho/ui/UiWorldShapes.h"
 #if FAF_SERVER_MODE
+#include "remote/client/OracleGolden.h"
 #include "remote/client/ServerConnect.h"
 #endif
 
@@ -368,6 +370,9 @@ namespace
       moho::CON_Execute("WIN_ShowLogDialog true");
     }
 
+    // Engine addition (issue #218): telemetry flags and the switch defaults, before /con changes them.
+    moho::TELEMETRY_Startup();
+
     // Engine addition: `/con name=value;name2=value2` runs console commands at startup, so a
     // launcher can set user-side console variables (e.g. `/con sim_ReplayLead=0`).
     if (moho::CFG_GetArgOption("/con", 1, &args) && !args.empty()) {
@@ -389,6 +394,10 @@ namespace
     moho::PlaceCurrentThread(moho::EThreadRole::Main);
 
 #if FAF_SERVER_MODE
+    // Engine addition, server mode: `/oraclegolden <file>`, the visibility oracle's golden test
+    // (remote/client/OracleGolden.h), for whatever session starts below.
+    (void)faf::remote::client::InstallOracleGoldenFromCommandLine();
+
     // Engine addition, server mode: `/connectserver` takes over startup. Without it, every
     // path below runs as before.
     switch (faf::remote::StartServerSessionFromCommandLine()) {
@@ -909,7 +918,7 @@ namespace
 {
   /**
    * Engine addition: which frame time advances the session clock in replays and single-player
-   * sessions (never in network sessions, which keep the binary's clock).
+   * sessions, and in network sessions when `wld_FrameClockNetwork` is set.
    * - 0: the median of the last frames, as the binary does. When one frame per beat is long (the
    *   one that applies the beat) and the rest are short, the median is a short frame, so the game
    *   runs slower than real time even though both threads keep up.
@@ -923,6 +932,19 @@ namespace
     "Replays and single player: 0 advances the game clock by the median frame time (original), 1 by "
     "the mean, 2 by each frame's own time.",
     &wld_FrameClock
+  );
+
+  /**
+   * Engine addition: lets `wld_FrameClock` apply in network sessions too, where the clock also sets
+   * when this client issues beats to the other clients. Off by default: with a retail client in the
+   * session the mean gave no reliable gain and more frames with no beat ready (docs/SWITCHES.md).
+   */
+  int wld_FrameClockNetwork = 0;
+
+  moho::TConVar<int> gTConVar_wld_FrameClockNetwork(
+    "wld_FrameClockNetwork",
+    "Network sessions: 1 applies wld_FrameClock, 0 keeps the original median frame time.",
+    &wld_FrameClockNetwork
   );
 } // namespace
 
@@ -1141,9 +1163,10 @@ void CScApp::Main()
   moho::DISK_UpdateWatcher();
 
   float smoothedFrameSeconds = fixedFrameSeconds > 0.0f ? fixedFrameSeconds : framerates.Median();
-  // Engine addition (wld_FrameClock): outside network sessions the clock may follow real time.
+  // Engine addition (wld_FrameClock): the clock may follow real time, in network sessions only with
+  // wld_FrameClockNetwork.
   if (fixedFrameSeconds <= 0.0f && wld_FrameClock != 0 &&
-      moho::SIM_GetSessionPacing() != moho::ESimSessionPacing::Network) {
+      (moho::SIM_GetSessionPacing() != moho::ESimSessionPacing::Network || wld_FrameClockNetwork != 0)) {
     smoothedFrameSeconds = wld_FrameClock == 2 ? frameSeconds : framerates.Mean();
   }
   if (!moho::WLD_Frame(smoothedFrameSeconds) && wxTheApp != nullptr) {

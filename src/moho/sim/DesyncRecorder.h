@@ -13,18 +13,30 @@ namespace gpg
 
 namespace moho
 {
+  class CTelemetryAttributes;
   class ICommandSink;
   class Sim;
 
   /**
-   * Engine addition (issue #216): `sim_DesyncRecorder`, a user-side switch seeded by
-   * `/desyncrecorder` on the command line. Read when a sim is created, so a change takes effect at
-   * the next game. It never reaches the sim: the recorder only reads state and writes text.
+   * Engine addition (issue #216): `sim_DesyncRecorder`, a user-side switch for the full sync-log
+   * recording, which costs sim time. 0, the default, never records; 1 always does; -1 records live
+   * multiplayer games only. Seeded by `/desyncrecorder` (1) and `/nodesyncrecorder` (0). Read when a sim is created, so a
+   * change takes effect at the next game. It never reaches the sim: the recorder only reads state
+   * and writes text.
    */
-  extern bool sim_DesyncRecorder;
+  extern int sim_DesyncRecorder;
 
   /// Engine addition (issue #216): memory cap in MB for the recorded beats; the oldest go first.
   extern int sim_DesyncRecorderMB;
+
+  /**
+   * Engine addition: `sim_DesyncDump`. Without `sim_DesyncRecorder`, the recorder keeps the state
+   * each beat hashes (`Sim::UpdateChecksum`'s values, copied as bytes into memory, nothing
+   * formatted) for the recent beats, and a desync writes a dump whose beat logs are that state.
+   * -1, the default, does it in live multiplayer games only; 0 never, 1 always. Seeded by
+   * `/desyncdump` (1) and `/nodesyncdump` (0); read when a sim is created.
+   */
+  extern int sim_DesyncDump;
 
   /**
    * Engine addition (issue #216), test only: at this beat, this client alone raises the health of
@@ -32,6 +44,13 @@ namespace moho
    * clients don't have. -1, the default, does nothing. Seeded by `/desynctestbeat N`.
    */
   extern int sim_DesyncTestNudgeBeat;
+
+  /**
+   * Engine addition (issue #217): the recorder writes its dump at this beat whether or not a
+   * checksum mismatched, so a headless replay can rebuild the side of a desync nobody sent. -1, the
+   * default, waits for a mismatch. Seeded by `/desyncdumpbeat N`; read when a sim is created.
+   */
+  extern int sim_DesyncDumpBeat;
 
   /**
    * Engine addition (issue #216): the desync recorder. While a game runs it keeps the sync-log
@@ -46,11 +65,22 @@ namespace moho
   class CDesyncRecorder
   {
   public:
-    /// Creates the recorder for `sim` when `sim_DesyncRecorder` is on. Called once the sim exists.
+    /// Creates the recorder for `sim` when `sim_DesyncRecorder` applies to this game, or for
+    /// telemetry's checksums alone. Called once the sim exists.
     static void Attach(Sim& sim);
 
     /// Writes a dump still owed, waits for the recorder's thread and drops the recorder.
     static void Detach(const Sim& sim);
+
+    /**
+     * Sim thread: the buffer `Sim::UpdateChecksum` appends this beat's hashed state to
+     * (`sim_DesyncDump`), or null when none is kept. Records, little-endian, as hashed:
+     * `'A'`, army index (int32), `SEconTotals`; `'E'`, entity id (uint32), health (float),
+     * blueprint id length (uint16, 0xFFFF for none) and bytes, orientation and position (28 bytes),
+     * velocity (12 bytes); `'G'`, the Mersenne Twister state (0x9C0 bytes), the Marsaglia flag
+     * (1 byte) and pair (4 bytes).
+     */
+    [[nodiscard]] std::string* StateTap() noexcept;
 
     /// The recorder recording `sim`, or null.
     [[nodiscard]] static CDesyncRecorder* For(const Sim* const sim) noexcept
@@ -58,8 +88,16 @@ namespace moho
       return sim != nullptr && sim == sSim ? sInstance : nullptr;
     }
 
-    /// The user side's session facts for the next dump header (map, replay or live game).
-    static void SetSessionInfo(const char* mapName, bool isReplay);
+    /// The user side's session facts for the next dump header (map, game mods, replay or live game)
+    /// and for telemetry, which is sent for live multiplayer games only.
+    static void SetSessionInfo(const char* mapName, const char* gameMods, bool isReplay, bool isMultiplayer);
+
+    /// Issue #218: `source`'s orders were proven altered on their way to this client.
+    static void NoteOrdersAltered(int source);
+
+    /// Issue #218: notes the console switch values as they are before `/con` runs, so telemetry
+    /// can list the ones a player changed. Called by `TELEMETRY_Startup`.
+    static void NoteSwitchDefaults();
 
     /// The dump file this game writes, empty until the first mismatch. Any thread.
     [[nodiscard]] static std::string DumpPath();
@@ -91,6 +129,22 @@ namespace moho
 
   private:
     explicit CDesyncRecorder(Sim& sim);
+
+    /// Names the dump `desync_<game id>_<tag>_army<local army>.zip` next to the game log.
+    void ChooseDumpPath(const Sim& sim, const std::string& tag);
+
+    /// Issue #218: telemetry is on and this is a live multiplayer game.
+    [[nodiscard]] bool TelemetryApplies() const;
+
+    /// Issue #218: the attributes both telemetry records carry (game, settings, switches).
+    void AddGameAttributes(const Sim& sim, CTelemetryAttributes& out) const;
+
+    /// Issue #218: one `faf.desync` record per player that disagreed at the first mismatched beat,
+    /// sent from the recorder's thread after the dump. Sim thread.
+    void SendDesyncTelemetry(const Sim& sim);
+
+    /// Issue #218: the `faf.game.end` record. Sim thread, from `Detach`.
+    void SendGameEnd(const Sim& sim);
 
     /// Stops recording and hands the dump to the recorder's thread. Sim thread.
     void TakeDump(const Sim& sim);

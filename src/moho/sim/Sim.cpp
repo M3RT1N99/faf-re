@@ -23,6 +23,7 @@
 #include <initializer_list>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <new>
 #include <stdexcept>
 #include <set>
@@ -60,6 +61,7 @@
 #include "moho/animation/CAniActor.h"
 #include "moho/animation/CAniPose.h"
 #include "moho/animation/CAniSkel.h"
+#include "moho/animation/PoseJobs.h"
 #include "moho/audio/CSimSoundManager.h"
 #include "moho/command/CCommandDb.h"
 #include "moho/command/CommandIssueHelper.h"
@@ -479,13 +481,17 @@ void moho::REF_UpdateMD5(
     || refType == GetBoolRType() || refType->IsEnumType() != nullptr;
 
   if (isPrimitiveLike) {
-    PrintMd5TraceLexical(traceFile, depth, ref.GetLexical());
+    if (traceFile != nullptr) {
+      PrintMd5TraceLexical(traceFile, depth, ref.GetLexical());
+    }
     md5.Update(ref.mObj, static_cast<std::size_t>(refType->size_));
     return;
   }
 
   if (refType == GetStringRType()) {
-    PrintMd5TraceLexical(traceFile, depth, ref.GetLexical());
+    if (traceFile != nullptr) {
+      PrintMd5TraceLexical(traceFile, depth, ref.GetLexical());
+    }
     const auto& stringValue = *static_cast<const msvc8::string*>(ref.mObj);
     md5.Update(stringValue.c_str(), stringValue.size() + 1u);
     return;
@@ -2192,8 +2198,11 @@ namespace
       return nullptr;
     }
 
-    CAiTarget target{};
-    target.DecodeFromSSTITarget(commandIssueData.mTarget, sim);
+    // 0x006F1530..0x006F1596 tests the raw target; decoding it here would draw
+    // from the sim RNG (replay 27960975 desynced at beat 31123).
+    CAiTarget noRushTarget{};
+    noRushTarget.targetType = commandIssueData.mTarget.mType;
+    noRushTarget.position = commandIssueData.mTarget.mPos;
 
     CUnitCommand* issuedCommand = nullptr;
     for (Entity* const* it = selectedUnits.mVec.begin(); it != selectedUnits.mVec.end(); ++it) {
@@ -2206,7 +2215,7 @@ namespace
         continue;
       }
 
-      if (IsOutsideArmyNoRushRadius(unit->ArmyRef, target)) {
+      if (IsOutsideArmyNoRushRadius(unit->ArmyRef, noRushTarget)) {
         continue;
       }
 
@@ -4264,6 +4273,28 @@ namespace
   }
 } // namespace
 
+#if FAF_SERVER_MODE
+namespace
+{
+  CSyncObserver* sSyncObserver = nullptr;
+  // Held by `Sync` from its walk to `OnSyncWalkDone`, so a caller that removes the observer
+  // knows no call into it is still running on the sim's thread.
+  std::mutex sSyncObserverLock;
+} // namespace
+
+void Sim::SetSyncObserver(CSyncObserver* const observer) noexcept
+{
+  const std::lock_guard<std::mutex> guard(sSyncObserverLock);
+  sSyncObserver = observer;
+}
+
+CSyncObserver* Sim::SyncObserver() noexcept
+{
+  const std::lock_guard<std::mutex> guard(sSyncObserverLock);
+  return sSyncObserver;
+}
+#endif
+
 /**
  * Address: 0x007474B0 (FUN_007474B0)
  *
@@ -4478,6 +4509,10 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
     }
     RefreshUnitSyncBlocksParallel(sSyncUnits);
   }
+#if FAF_SERVER_MODE
+  std::unique_lock<std::mutex> observerLock(sSyncObserverLock);
+  CSyncObserver* const observer = sSyncObserver;
+#endif
   if (focusArmyChanged) {
     // 0x007478AA..0x0074791A walks the entity DB's whole id map -- every
     // entity, not only units -- and dispatches Sync on each node's value.
@@ -4486,8 +4521,18 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
     // replay viewer switching focus army changed the sim checksum.
     for (const auto& idAndEntity : mEntityDB->mAllUnits) {
       if (Entity* const entity = idAndEntity.second; entity != nullptr) {
+#if FAF_SERVER_MODE
+        if (observer != nullptr) {
+          observer->OnEntityWillSync(*entity);
+        }
+#endif
         entity->Sync(outSyncData);
         ++syncedEntityCount;
+#if FAF_SERVER_MODE
+        if (observer != nullptr) {
+          observer->OnEntitySynced(*entity);
+        }
+#endif
       }
     }
   } else {
@@ -4496,13 +4541,29 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
       Entity* const entity = *it;
       ++it;
       if (entity != nullptr) {
+#if FAF_SERVER_MODE
+        if (observer != nullptr) {
+          observer->OnEntityWillSync(*entity);
+        }
+#endif
         entity->Sync(outSyncData);
         ++syncedEntityCount;
+#if FAF_SERVER_MODE
+        if (observer != nullptr) {
+          observer->OnEntitySynced(*entity);
+        }
+#endif
       }
     }
   }
   unitUpdateFills.Finish();
   StoreSyncEntityCountStat(syncedEntityCount);
+#if FAF_SERVER_MODE
+  if (observer != nullptr) {
+    observer->OnSyncWalkDone(*this, *outSyncData);
+  }
+  observerLock.unlock();
+#endif
 
   if (mRequestXMLArmyStatsSubmit) {
     mRequestXMLArmyStatsSubmit = false;
@@ -4793,6 +4854,15 @@ namespace moho
 {
   /// Engine addition: switch for MD5UpdateBatch (batched checksum updates). Live; same digests.
   bool sim_ParallelCoords = true;
+  // The trace is text only: the checksum is the same with it or without it.
+  bool dbg_RulesTraceAlways = false;
+  TConVar<bool> gTConVar_dbg_RulesTraceAlways(
+    "dbg_RulesTraceAlways",
+    "Write the rules checksum's text trace to a temporary file at every session start (1), or only when a desync "
+    "recorder is recording (0, the default), since no one else reads it.",
+    &dbg_RulesTraceAlways
+  );
+
   TConVar<bool> gTConVar_sim_ParallelCoords(
     "sim_ParallelCoords",
     "Advance entity coordinates (transforms, history, collision bounds) on sim workers; relinks and intel stay serial (needs sim_Workers > 0).",
@@ -4924,6 +4994,13 @@ void Sim::UpdateChecksum()
 {
   // Engine addition (issue #216): read once; the binary tested `mLog` at each line.
   const bool syncLog = IsSyncLogOn();
+  // Engine addition (sim_DesyncDump): the hashed values, framed, also go into the desync recorder's
+  // memory ring (CDesyncRecorder::StateTap documents the records); copied, nothing formatted.
+  CDesyncRecorder* const recorder = CDesyncRecorder::For(this);
+  std::string* const stateTap = recorder != nullptr ? recorder->StateTap() : nullptr;
+  const auto tap = [stateTap](const void* const data, const std::size_t size) {
+    stateTap->append(static_cast<const char*>(data), size);
+  };
   auto logChecksumDigest = [this, syncLog]() {
     if (!syncLog) {
       return;
@@ -4942,6 +5019,12 @@ void Sim::UpdateChecksum()
 
     const SEconTotals& economy = army->GetEconomy()->economy;
     mContext.Update(&economy, sizeof(economy));
+    if (stateTap != nullptr) {
+      const std::int32_t armyIndex = army->mConstDat.mArmyIndex;
+      stateTap->push_back('A');
+      tap(&armyIndex, sizeof(armyIndex));
+      tap(&economy, sizeof(economy));
+    }
     if (syncLog) {
       Logf("    mStored=%.1f,%.1f\n", economy.mStored.ENERGY, economy.mStored.MASS);
       Logf("    mIncome=%.1f,%.1f\n", economy.mIncome.ENERGY, economy.mIncome.MASS);
@@ -5040,6 +5123,20 @@ void Sim::UpdateChecksum()
       entityChecksum.Flush();
       logChecksumDigest();
     }
+    if (stateTap != nullptr) {
+      const std::uint16_t blueprintLength = blueprintId != nullptr
+        ? static_cast<std::uint16_t>(std::min<std::size_t>(std::strlen(blueprintId), 0xFFFEu))
+        : std::uint16_t{0xFFFFu};
+      stateTap->push_back('E');
+      tap(&entityId, sizeof(entityId));
+      tap(&health, sizeof(health));
+      tap(&blueprintLength, sizeof(blueprintLength));
+      if (blueprintId != nullptr) {
+        tap(blueprintId, blueprintLength);
+      }
+      tap(&entity->mVarDat.mCurTransform.orient_, 0x1Cu);
+      tap(&velocity, sizeof(velocity));
+    }
   }
   entityChecksum.Flush();
 
@@ -5049,6 +5146,16 @@ void Sim::UpdateChecksum()
   mContext.Update(&mRngState->hasMarsagliaPair, 1u);
   if (mRngState->hasMarsagliaPair) {
     mContext.Update(&mRngState->marsagliaPair, 4u);
+  }
+  if (stateTap != nullptr) {
+    std::uint32_t pair = 0;
+    if (mRngState->hasMarsagliaPair) {
+      std::memcpy(&pair, &mRngState->marsagliaPair, sizeof(pair));
+    }
+    stateTap->push_back('G');
+    tap(&mRngState->twister.state[0], kRngMtBytes);
+    tap(&mRngState->hasMarsagliaPair, 1u);
+    tap(&pair, sizeof(pair));
   }
 }
 
@@ -5900,6 +6007,7 @@ Sim::Sim(LaunchInfoBase* const info)
     mRules->ExportToLuaState(mLuaState);
     luaBpScope.Emit();
   }
+  static_cast<RRuleGameRulesImpl*>(mRules)->OnSimHasBlueprints();
 
   {
     LuaPlus::LuaObject globals = mLuaState->GetGlobals();
@@ -5937,7 +6045,10 @@ Sim::Sim(LaunchInfoBase* const info)
   }
 
   // Seed the rolling sim checksum from the rules and log the initial digest.
-  if (CDesyncRecorder* const recorder = CDesyncRecorder::For(this)) {
+  // Engine addition: a recorder that isn't recording drops the text, so with one like that only the
+  // /synclog file, if any, gets the trace (dbg_RulesTraceAlways 1: every session writes it, as before).
+  CDesyncRecorder* const recorder = CDesyncRecorder::For(this);
+  if (recorder != nullptr && (recorder->IsRecording() || dbg_RulesTraceAlways)) {
     // Engine addition (issue #216): REF_UpdateMD5 traces into a FILE*, so the recorder takes the
     // rules trace through a temporary file the CRT deletes when it is closed; the /synclog file,
     // when there is one, gets the same text.
@@ -7321,10 +7432,10 @@ void Sim::CreateUnit(const uint32_t armyIndex, const RResId& blueprintId, const 
     nullptr,
     true
   );
-  params.mUseLayerOverride = 0;
+  // 0x00748BE7 clears only the elevation byte (+0x25). mUseLayerOverride stays 1
+  // from the ctor, so the Unit ctor keeps the requested heading instead of
+  // resetting it (or drawing a random yaw for SpawnRandomRotation blueprints).
   params.mFixElevation = 0;
-  params.mLayer = 0;
-  params.mComplete = 1;
 
   (void)CreateUnit(params, true);
 }
@@ -7546,12 +7657,15 @@ void Sim::IssueCommand(
     collectUnit(static_cast<EntId>(value));
   });
 
-  if (selectedUnits.Empty()) {
-    ReleaseCommandIdIfUnconsumed(mCommandDB, commandIssueData.nextCommandId);
+  // 0x00749411..0x0074945E: the DestroySelf cheat test follows the entity loop
+  // directly, so CheatsEnabled() (which folds its flag into the checksum) runs
+  // even when nothing was selected, and a refused order returns without
+  // releasing the command id.
+  if (commandIssueData.mCommandType == EUnitCommandType::UNITCOMMAND_DestroySelf && !CheatsEnabled()) {
     return;
   }
 
-  if (commandIssueData.mCommandType == EUnitCommandType::UNITCOMMAND_DestroySelf && !CheatsEnabled()) {
+  if (selectedUnits.Empty()) {
     ReleaseCommandIdIfUnconsumed(mCommandDB, commandIssueData.nextCommandId);
     return;
   }
@@ -8426,7 +8540,8 @@ namespace
 {
   constexpr std::uint64_t kInt64SignBitMask = 0x8000000000000000ull;
   constexpr std::uint64_t kInt64MagnitudeMask = 0x7FFFFFFFFFFFFFFFull;
-  constexpr double kSignedInt64HighBitContribution = -9223372036854775808.0;
+  // 0x0064BA94..0x0064BAA4: fild of the sign-bit-only qword, then fchs: +2^63.
+  constexpr double kSignedInt64HighBitContribution = 9223372036854775808.0;
 
   [[nodiscard]] float ConvertSignedStorageLaneToFloat(const std::uint64_t lane) noexcept
   {
@@ -8492,12 +8607,12 @@ int Sim::BlingBling(
   storage->mAmt.mass += 10000.0f;
   (void)storage->Chng(1);
 
+  // 0x0064BC79..0x0064BC96 adds into economy-info +0x08 (this tick's banked
+  // resources), not the stored totals; the next economy tick moves it into storage.
   SEconPair grantedStorage{};
   (void)BuildSignedMaxStorageFloatPair(&grantedStorage, economyInfo->economy);
-  economyInfo->economy.mStored.ENERGY += grantedStorage.ENERGY;
-  economyInfo->economy.mStored.MASS += grantedStorage.MASS;
-  focusArmy->mVarDat.mEconomyTotals.mStored.ENERGY = economyInfo->economy.mStored.ENERGY;
-  focusArmy->mVarDat.mEconomyTotals.mStored.MASS = economyInfo->economy.mStored.MASS;
+  economyInfo->mResources.ENERGY += grantedStorage.ENERGY;
+  economyInfo->mResources.MASS += grantedStorage.MASS;
 
   return 0;
 }
@@ -9672,6 +9787,7 @@ void Sim::AdvanceBeat(const int amt)
       {
         FAF_PROFILE_ZONE_NAMED("Sim::TaskStageA");
         TickTaskStage(&mTaskStageA);
+        POSE_FinishStage(); // engine addition (sim_ParallelPose): every queued pose update done here
       }
     }
     {
@@ -10255,7 +10371,7 @@ namespace
    *     disagreed with the header's `offsetof(REntityBlueprint,
    *     mCategories) == 0x60` and with `REntityBlueprintTypeInfo::AddFields`
    *     (FUN_00512870, `push 60h` for the reflected "Categories" field).
-   *     It does not: `msvc8::vector<T>` in this codebase is 16 bytes
+   *     It does not: the binary's vector is 16 bytes
    *     (leading `myProxy_` before `first_`/`last_`/`end_`, matching VC8's
    *     `_SECURE_SCL=1` `_Container_base12` proxy word), so `begin()`/
    *     `end()` sit at the vector object's `+0x4`/`+0x8` -- `this+0x64`/
@@ -14347,7 +14463,8 @@ int moho::cfunc_DrawLinePopL(LuaPlus::LuaState* const state)
   lineDirection.z = start.z - end.z;
 
   const float directionLengthSquared =
-    (lineDirection.x * lineDirection.x) + (lineDirection.y * lineDirection.y) + (lineDirection.z * lineDirection.z);
+    // 0x0075DF76: (z*z + y*y) + x*x.
+    ((lineDirection.z * lineDirection.z) + (lineDirection.y * lineDirection.y)) + (lineDirection.x * lineDirection.x);
   if (directionLengthSquared > 0.0f) {
     const float scale = 2.0f / std::sqrt(directionLengthSquared);
     lineDirection.x *= scale;
@@ -18951,8 +19068,9 @@ namespace
 
     const float extentX = p0z - p0x;
     const float extentZ = p1x - p0y;
-    int cursorX = static_cast<int>(std::floor(p0x));
-    int cursorZ = static_cast<int>(std::floor(p0y));
+    // FUN_0040D860's inlined floor (0x0040D908, 0x0040D93A); the step-1 mask is -1.
+    int cursorX = msvc8::FloorToIntX87(p0x);
+    int cursorZ = msvc8::FloorToIntX87(p0y);
 
     for (;;) {
       const int cellDX = dirMaskX ^ cursorX;

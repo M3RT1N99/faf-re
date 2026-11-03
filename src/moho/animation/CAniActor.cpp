@@ -3,9 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <new>
 #include <typeinfo>
 #include <utility>
+#include <vector>
 
 #include "gpg/core/containers/ArchiveSerialization.h"
 #include "gpg/core/containers/String.h"
@@ -14,6 +16,7 @@
 #include "moho/animation/CAniPose.h"
 #include "moho/animation/CAniSkel.h"
 #include "moho/animation/IAniManipulator.h"
+#include "moho/animation/PoseJobs.h"
 #include "moho/console/CConCommand.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
 
@@ -25,6 +28,8 @@ namespace
     "Recycle CAniPose buffers in-place when unique to eliminate heap churn.",
     &sim_RecyclePose
   );
+
+  bool gKeepClientPoseHandles = true;
 
   constexpr std::uint32_t kWatchBoneEnabledFlag = 0x8000u;
 
@@ -364,6 +369,8 @@ namespace moho
    */
   CAniActor::~CAniActor()
   {
+    POSE_WaitFor(this); // engine addition (sim_ParallelPose): a queued update must not outlive us
+
     auto* const listHead = static_cast<TDatListItem<IAniManipulator, void>*>(&mManipulatorsByPrecedence);
     while (listHead->mNext != listHead) {
       IAniManipulator* const manipulator = ListNodeToManipulator(listHead->mNext);
@@ -488,6 +495,7 @@ namespace moho
    */
   boost::shared_ptr<const CAniSkel> CAniActor::GetSkeleton() const
   {
+    POSE_WaitFor(this); // engine addition (sim_ParallelPose)
     return mPose->GetSkeleton();
   }
 
@@ -499,6 +507,7 @@ namespace moho
    */
   boost::shared_ptr<CAniPose> CAniActor::GetPoseShared() const
   {
+    POSE_WaitFor(this); // engine addition (sim_ParallelPose)
     return mPose;
   }
 
@@ -510,6 +519,7 @@ namespace moho
    */
   boost::shared_ptr<CAniPose> CAniActor::GetPriorPoseShared() const
   {
+    POSE_WaitFor(this); // engine addition (sim_ParallelPose)
     return mPriorPose;
   }
 
@@ -552,7 +562,8 @@ namespace moho
     // new frame starts as a copy of the pose just retired, under a fresh
     // control block; the referent this lane held before the swap is released.
     // Engine addition (sim_RecyclePose): when unique, overwrite in-place without heap reallocation.
-    if (sim_RecyclePose && mPose != nullptr && mPose.unique()) {
+    // Not an 11-bone pose: the block order of the binary's allocator class depends on these (see SimBlockLane).
+    if (sim_RecyclePose && mPose != nullptr && mPose.unique() && mPose->mBones.size() != CAniPoseBoneArray::kBinaryLaneBones) {
       mPose->OverwritePose(*mPriorPose);
     } else {
       mPose.reset(new CAniPose(*mPriorPose));
@@ -560,6 +571,12 @@ namespace moho
 
     mPose->UpdateBones();                     // 0x0063AAEE
     mPose->SetWorldTransform(worldTransform); // 0x0063AAFA
+
+    const AniBoneWriteHook hook = gAniBoneWriteHook;
+    std::vector<VTransform> before;
+    if (hook != nullptr) {
+      hook(mPose.get(), nullptr, -1);
+    }
 
     auto* const listHead = static_cast<TDatListItem<IAniManipulator, void>*>(&mManipulatorsByPrecedence);
     for (auto* node = mManipulatorsByPrecedence.mNext; node != listHead;) {
@@ -572,10 +589,64 @@ namespace moho
       node = node->mNext;
 
       if (enabled) {
+        // The class is read before the update: the manipulator may delete itself inside it.
+        // RTTI, not `GetClass()`: several manipulators (rotate, slide, slave, builder arm) inherit
+        // IAniManipulator's and would all report the base class.
+        const char* const manipulatorClass = hook != nullptr ? typeid(*manipulator).name() : nullptr;
+        if (hook != nullptr) {
+          before.clear();
+          for (const CAniPoseBone& bone : mPose->mBones) {
+            before.push_back(bone.mLocalTransform);
+          }
+        }
+
         // Result discarded at the call site.
         (void)manipulator->ManipulatorUpdate();
+
+        if (hook != nullptr) {
+          int index = 0;
+          for (const CAniPoseBone& bone : mPose->mBones) {
+            if (static_cast<std::size_t>(index) < before.size()
+                && std::memcmp(&bone.mLocalTransform, &before[index], sizeof(VTransform)) != 0) {
+              hook(mPose.get(), manipulatorClass, index);
+            }
+            ++index;
+          }
+        }
       }
     }
+  }
+
+  AniBoneWriteHook gAniBoneWriteHook = nullptr;
+
+  void POSE_SetKeepClientHandles(const bool keep) noexcept
+  {
+    gKeepClientPoseHandles = keep;
+  }
+
+  bool POSE_KeepClientHandles() noexcept
+  {
+    return gKeepClientPoseHandles;
+  }
+
+  bool POSE_HoldClientHandles(const CAniActor& actor) noexcept
+  {
+    return gKeepClientPoseHandles
+      || (actor.mPose.get() != nullptr && actor.mPose->mBones.size() == CAniPoseBoneArray::kBinaryLaneBones);
+  }
+
+  bool CAniActor::AllEnabledManipulators(bool (*const test)(const IAniManipulator& manipulator)) const
+  {
+    auto* const listHead = const_cast<TDatListItem<IAniManipulator, void>*>(
+      static_cast<const TDatListItem<IAniManipulator, void>*>(&mManipulatorsByPrecedence)
+    );
+    for (auto* node = listHead->mNext; node != listHead; node = node->mNext) {
+      const IAniManipulator* const manipulator = ListNodeToManipulator(node);
+      if (manipulator != nullptr && manipulator->mEnabled && !test(*manipulator)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**

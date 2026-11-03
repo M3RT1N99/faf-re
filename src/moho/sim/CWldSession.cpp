@@ -6902,8 +6902,11 @@ namespace moho
     IsMultiplayer = sessionInfo.mIsMultiplayer;
     IsGameOver = 0;
 
-    // Engine addition (issue #216): the desync dump's header names the map and the session kind.
-    CDesyncRecorder::SetSessionInfo(mMapName.c_str(), IsReplay);
+    // Engine addition (issues #216, #218): the desync dump's header names the map, the game mods
+    // and the session kind; telemetry is sent for live multiplayer games only.
+    CDesyncRecorder::SetSessionInfo(
+      mMapName.c_str(), mLaunchInfo.get() != nullptr ? mLaunchInfo->mGameMods.c_str() : "", IsReplay, IsMultiplayer
+    );
 
     if (const LaunchInfoBase* const launchInfo = mLaunchInfo.get(); launchInfo != nullptr) {
       // One null army slot per launch-info army (0x008932A7): the run has to
@@ -8543,6 +8546,20 @@ namespace moho
     return mBeatDebugCanvas.clone_retained();
   }
 
+#if FAF_SERVER_MODE
+  namespace
+  {
+    CWldSession::BeatObserver sBeatObserver = nullptr;
+    void* sBeatObserverContext = nullptr;
+  } // namespace
+
+  void CWldSession::SetBeatObserver(const BeatObserver observer, void* const context) noexcept
+  {
+    sBeatObserverContext = context;
+    sBeatObserver = observer;
+  }
+#endif
+
   /**
    * Address: 0x00894530 (FUN_00894530,
    * ?DoBeat@CWldSession@Moho@@QAEXV?$auto_ptr@USSyncData@Moho@@@std@@@Z)
@@ -8769,6 +8786,7 @@ namespace moho
             "beat %d, %s: orders reached this client differently from what %s acknowledged sending", desync.beat,
             armyName.c_str(), armyName.c_str()
           ).c_str());
+          CDesyncRecorder::NoteOrdersAltered(desync.army); // issue #218: faf.orders_altered
           continue;
         }
         desyncArmyNames.push_back(armyName);
@@ -8793,6 +8811,22 @@ namespace moho
       IsGameOver = 1u;
       UI_NoteGameOver();
       if (CFG_GetArgOption("/exitongameover", 0u, nullptr)) {
+        wxTheApp->ExitMainLoop();
+      }
+    }
+
+    // Engine addition (issue #218), test only: `/exitattick N` quits the app at game tick N the
+    // way /exitongameover does, so a scenario ends its games cleanly (the game-end telemetry
+    // record is sent on that path; mpemu's kill would skip it).
+    {
+      static int sExitAtTick = -2;
+      if (sExitAtTick == -2) {
+        msvc8::vector<msvc8::string> args;
+        sExitAtTick = CFG_GetArgOption("/exitattick", 1u, &args) && !args.empty() ? std::atoi(args[0].c_str()) : -1;
+      }
+      if (sExitAtTick >= 0 && static_cast<int>(mGameTick) >= sExitAtTick) {
+        sExitAtTick = -1;
+        gpg::Logf("exitattick: quitting at game tick %d", static_cast<int>(mGameTick));
         wxTheApp->ExitMainLoop();
       }
     }
@@ -8854,6 +8888,11 @@ namespace moho
         entity->UpdateVisibility();
       }
     }
+#if FAF_SERVER_MODE
+    if (sBeatObserver != nullptr) {
+      sBeatObserver(*this, beat.mCurBeat, sBeatObserverContext);
+    }
+#endif
 
     AdvanceCommandIssueHelpersToBeat(*mCommandManager, beat.mCurBeat);
 
@@ -8897,7 +8936,7 @@ namespace moho
     CFormation::UpdateOrientation(CursorInfo().mMouseWorldPos, mCurFormation);
 
     const std::int32_t tickAtFrameStart = mGameTick;
-    const std::int32_t targetTick = mGameTick + static_cast<std::int32_t>(std::floor(mTimeSinceLastTick));
+    const std::int32_t targetTick = mGameTick + msvc8::FloorToIntX87(mTimeSinceLastTick); // 0x00895BEA..0x00895BFD
 
     // Drain the driver's sync queue. Bounded at 100 beats so a burst after a
     // stall cannot make one frame arbitrarily long.
@@ -14913,11 +14952,43 @@ namespace moho
       (void)UI_UpdateDisconnectDialogCallback();
     }
 
+    /**
+     * Address: 0x0088C9D0 (FUN_0088C9D0, func_CreateSWldSessionInfo)
+     *
+     * What it does:
+     * Drives the world-session `CreateSession` frame action, which only an
+     * explicit restart request (`RestartSession`) sets: builds a fresh session
+     * info from the active session - its map, its launch info, whether it is
+     * recorded - gives it a local client named after the session's own command
+     * source, and begins it, which schedules `Preload`.
+     *
+     * This only set `Preload`. `WLD_DoInitializing` has already released the
+     * pending session info, so `Preload` tore the session down, opened the
+     * loading screen and prefetched nothing, and `Loading` waited for a
+     * scenario that was never requested: a restart hung in the loading screen.
+     */
     void WLD_CreateSessionInfo()
     {
-      // Full `FUN_0088C9D0` session-info recreation still depends on
-      // unrecovered LaunchInfoNew/session bootstrap ownership lanes.
-      gWldFrameAction = EWldFrameAction::Preload;
+      // Engine addition: the binary reads the active session unchecked;
+      // without one there is nothing to restart, so leave to the front end.
+      const CWldSession* const session = gActiveWldSession;
+      if (session == nullptr) {
+        gWldFrameAction = EWldFrameAction::Exit;
+        return;
+      }
+
+      msvc8::auto_ptr<SWldSessionInfo> sessionInfo(new SWldSessionInfo());
+      sessionInfo->mMapName = session->mMapName;
+      sessionInfo->mLaunchInfo = session->mLaunchInfo;
+      sessionInfo->mIsBeingRecorded = session->IsBeingRecorded;
+      sessionInfo->mIsReplay = false;
+      sessionInfo->mIsMultiplayer = false;
+      sessionInfo->mClientManager = nullptr;
+      sessionInfo->mSourceId = 0xFFu;
+
+      const SSTICommandSource& localSource = session->cmdSources[static_cast<std::size_t>(session->ourCmdSource)];
+      SetupSinglePlayerCommandSourceLane(*sessionInfo, localSource.mName.c_str());
+      WLD_BeginSession(sessionInfo);
     }
   } // namespace
 

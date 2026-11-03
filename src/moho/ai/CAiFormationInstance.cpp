@@ -41,6 +41,7 @@
 #include "moho/unit/CUnitCommandQueue.h"
 #include "moho/unit/CUnitMotion.h"
 #include "moho/unit/core/Unit.h"
+#include "moho/sim/SimBlockLane.h"
 
 namespace moho
 {
@@ -2440,21 +2441,9 @@ namespace moho
     mScale = 0.0f;
   }
 
-  namespace
-  {
-    /// The formation free list: freed blocks, the last freed at the back (see `operator new`).
-    struct SFormationRecycler
-    {
-      std::mutex lock;
-      std::vector<void*> blocks;
-    };
-
-    SFormationRecycler& FormationRecycler()
-    {
-      static SFormationRecycler sRecycler;
-      return sRecycler;
-    }
-  } // namespace
+#if defined(_M_X64) || defined(__x86_64__)
+  static_assert(sizeof(CAiFormationInstance) <= SimBlockLane::kBlockBytes);
+#endif
 
   void* CAiFormationInstance::operator new(const std::size_t size)
   {
@@ -2466,15 +2455,13 @@ namespace moho
 
   void* CAiFormationInstance::operator new(const std::size_t size, const std::nothrow_t&) noexcept
   {
+    // x86 runs the recovered binary allocator (malloc_0, 0x00958B20), whose per-thread 896-byte lane formations share
+    // with projectiles and others; a list of our own would override that order (26916583 fails at beat 4900 with one).
+#if defined(_M_X64) || defined(__x86_64__)
     if (size == sizeof(CAiFormationInstance)) {
-      SFormationRecycler& recycler = FormationRecycler();
-      const std::lock_guard guard(recycler.lock);
-      if (!recycler.blocks.empty()) {
-        void* const block = recycler.blocks.back();
-        recycler.blocks.pop_back();
-        return block;
-      }
+      return SimBlockLane::Allocate();
     }
+#endif
     return ::operator new(size, std::nothrow);
   }
 
@@ -2483,15 +2470,14 @@ namespace moho
     if (block == nullptr) {
       return;
     }
+#if defined(_M_X64) || defined(__x86_64__)
     if (size == sizeof(CAiFormationInstance)) {
-      SFormationRecycler& recycler = FormationRecycler();
-      const std::lock_guard guard(recycler.lock);
-      try {
-        recycler.blocks.push_back(block);
-        return;
-      } catch (...) {
-      }
+      SimBlockLane::Free(block);
+      return;
     }
+#else
+    (void)size;
+#endif
     ::operator delete(block);
   }
 

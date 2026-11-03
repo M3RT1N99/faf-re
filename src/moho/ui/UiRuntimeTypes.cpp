@@ -113,7 +113,7 @@
 #include "moho/unit/core/IUnit.h"
 #include "moho/unit/core/UserUnit.h"
 #include "Wm3Box3.h"
-#include "Wm3IntrLine3Box3.h"
+#include "moho/math/Wm3Queries.h"
 #include "Wm3Line3.h"
 #include "lua/LuaCrashDump.h"
 
@@ -2258,24 +2258,6 @@ namespace
       }
     }
     return cached;
-  }
-
-  [[nodiscard]] LuaPlus::LuaObject CopyLuaObjectToState(
-    const LuaPlus::LuaObject& source,
-    LuaPlus::LuaState* const targetState
-  )
-  {
-    if (!targetState || !targetState->GetCState()) {
-      return {};
-    }
-
-    LuaPlus::LuaObject copy{};
-    lua_State* const lstate = targetState->GetCState();
-    const int savedTop = lua_gettop(lstate);
-    const_cast<LuaPlus::LuaObject&>(source).PushStack(lstate);
-    copy = LuaPlus::LuaObject(LuaPlus::LuaStackObject(targetState, -1));
-    lua_settop(lstate, savedTop);
-    return copy;
   }
 
   gpg::RRef ExtractUserDataRef(
@@ -17343,8 +17325,8 @@ int moho::cfunc_SetFrontEndDataL(
 
   const LuaPlus::LuaObject callerValue(LuaPlus::LuaStackObject(state, 2));
   const LuaPlus::LuaObject callerKey(LuaPlus::LuaStackObject(state, 1));
-  const LuaPlus::LuaObject valueOnUserState = CopyLuaObjectToState(callerValue, userState);
-  const LuaPlus::LuaObject keyOnUserState = CopyLuaObjectToState(callerKey, userState);
+  const LuaPlus::LuaObject valueOnUserState = SCR_Copy(callerValue, userState);
+  const LuaPlus::LuaObject keyOnUserState = SCR_Copy(callerKey, userState);
   frontEndData.SetObject(keyOnUserState, valueOnUserState);
   return 0;
 }
@@ -17396,9 +17378,9 @@ int moho::cfunc_GetFrontEndDataL(
   LuaPlus::LuaObject frontEndData = userState->GetGlobals()["FrontEndData"];
 
   const LuaPlus::LuaObject keyObject(LuaPlus::LuaStackObject(state, 1));
-  const LuaPlus::LuaObject keyOnUserState = CopyLuaObjectToState(keyObject, userState);
+  const LuaPlus::LuaObject keyOnUserState = SCR_Copy(keyObject, userState);
   const LuaPlus::LuaObject valueOnUserState = frontEndData.GetByObject(keyOnUserState);
-  LuaPlus::LuaObject valueOnCallerState = CopyLuaObjectToState(valueOnUserState, state);
+  LuaPlus::LuaObject valueOnCallerState = SCR_Copy(valueOnUserState, state);
   valueOnCallerState.PushStack(state);
   return 1;
 }
@@ -21001,8 +20983,7 @@ void moho::CUIWorldView::UpdateSelection(
           const GeomLine3 pickRay = cameraView.Unproject(mouseScreenPos);
           const Wm3::Line3f wmPickRay(pickRay.pos, pickRay.dir);
           mesh->UpdateInterpolatedFields();
-          Wm3::IntrLine3Box3f intersector(wmPickRay, mesh->box);
-          if (!intersector.Test()) {
+          if (!Wm3::TestLine3Box3(wmPickRay, mesh->box)) {
             continue;
           }
         } else {
