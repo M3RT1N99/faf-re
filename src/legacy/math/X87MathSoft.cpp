@@ -478,6 +478,33 @@ namespace
     return Round24(a * b);
   }
 
+  /**
+   * a * b rounded to 24 bits, a of 24 bits and b of more (a 31-bit integer): the exact product may
+   * need more than double's 53 bits. Rounding to double cannot pass a 24-bit halfway point, only
+   * land on one, so the double product decides alone but there, where the sign of the exact rest
+   * (fma) does.
+   */
+  [[nodiscard]] inline double MulWide24(const double a, const double b) noexcept
+  {
+    const double product = a * b;
+    std::uint64_t raw = std::bit_cast<std::uint64_t>(product);
+    if ((raw & 0x7FF0000000000000ull) == 0) {
+      return product; // zero
+    }
+    constexpr std::uint64_t kUnit = std::uint64_t{1} << 29;
+    const std::uint64_t low = raw & (kUnit - 1);
+    raw -= low;
+    bool up = low > (kUnit >> 1);
+    if (low == (kUnit >> 1)) {
+      const double rest = std::fma(a, b, -product);
+      up = rest != 0.0 ? ((rest > 0.0) == (product > 0.0)) : ((raw & kUnit) != 0);
+    }
+    if (up) {
+      raw += kUnit;
+    }
+    return std::bit_cast<double>(raw);
+  }
+
   [[nodiscard]] inline double Add24(const double a, const double b) noexcept
   {
     return Round24(a + b);
@@ -536,6 +563,22 @@ extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_bilinear_height)(
   const Reg a = Add(Load(h00), Mul(Sub(Load(h01), Load(h00)), z));
   const Reg b = Add(Mul(z, Sub(Load(h11), Load(h10))), Load(h10));
   return StoreFloat(Add(a, Mul(Sub(b, a), Memory(fracX))));
+}
+
+// The same block as msvc8_x87_bilinear_height, then top - height (fsubr m32) before the store.
+extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_subtract_bilinear_height)(
+  const float top, const float h00, const float h01, const float h10, const float h11, const float fracX, const float fracZ
+)
+{
+  if (AllFinite(top, h00, h01, h10, h11, fracX, fracZ)) {
+    const double a = Add24(h00, Mul24(Sub24(h01, h00), fracZ));
+    const double b = Add24(Mul24(fracZ, Sub24(h11, h10)), h10);
+    return static_cast<float>(Sub24(top, Add24(a, Mul24(Sub24(b, a), fracX))));
+  }
+  const Reg z = Load(fracZ);
+  const Reg a = Add(Load(h00), Mul(Sub(Load(h01), Load(h00)), z));
+  const Reg b = Add(Mul(z, Sub(Load(h11), Load(h10))), Load(h10));
+  return StoreFloat(Sub(Memory(top), Add(a, Mul(Sub(b, a), Memory(fracX)))));
 }
 
 extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_sinf)(const float x)
@@ -611,6 +654,35 @@ extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_sin_times_cos)(const float sinArg, 
 extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_sin_times)(const float sinArg, const float factor)
 {
   return StoreFloat(Mul(Fsin(Load(sinArg)), Memory(factor)));
+}
+
+// fld a; fmul b; fsin; fmul factor.
+extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_sin_of_product_times)(const float a, const float b, const float factor)
+{
+  return StoreFloat(Mul(Fsin(Mul(Load(a), Memory(b))), Memory(factor)));
+}
+
+// fild the word as signed and fadd 2^32 when it loaded negative (the only rounding of the word),
+// then lower + (upper - lower) * word * 2^-32 (the range by fsub st(1), the sum by faddp).
+extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_twister_word_in_range)(
+  const float lower, const float upper, const std::uint32_t word
+)
+{
+  constexpr float kTwoTo32 = 4294967296.0f;
+  constexpr float kInvTwoTo32 = 2.3283064365386962890625e-10f;
+  const auto signedWord = static_cast<std::int32_t>(word);
+  if (AllFinite(lower, upper)) {
+    // A word that loads non-negative keeps up to 31 bits: its product needs MulWide24.
+    const double wordValue = (signedWord < 0) ? Round24(static_cast<double>(word)) : static_cast<double>(signedWord);
+    const double scaled = MulWide24(Sub24(upper, lower), wordValue) * static_cast<double>(kInvTwoTo32);
+    return static_cast<float>(Add24(lower, scaled));
+  }
+  Reg loaded = static_cast<Reg>(signedWord);
+  if (signedWord < 0) {
+    loaded = Add(loaded, Memory(kTwoTo32));
+  }
+  const Reg range = Sub(Load(upper), Load(lower));
+  return StoreFloat(Add(Load(lower), Mul(Mul(range, loaded), Memory(kInvTwoTo32))));
 }
 
 // inv = 1 / sin(angle); w1 = sin(angle * oneMinusT) * inv; w2 = sin(angle * t) * inv; then
