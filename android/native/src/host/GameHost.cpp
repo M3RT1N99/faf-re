@@ -12,6 +12,11 @@
 // host's lines go to a report file, which the app reads when the game's process has ended; the
 // engine writes its log to the /log file.
 //
+// The screen is the activity's surface, and it has one mode: the program waits for the first
+// surface and asks for its size with /fullscreen, unless the command line chooses a size. Otherwise
+// the options' default adapter (1024 x 768) would draw into the corner of the back buffer, which
+// has the surface's size, where Windows would switch the display to the mode.
+//
 // When the program returns, the process ends with its exit code as the headless programs end
 // (src/headless/HeadlessMain.cpp): the output streams flushed, without the static destructors.
 // The activity's process holds the runtime's own threads, and nothing after the end is observed.
@@ -23,8 +28,10 @@
 #include <pthread.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -63,6 +70,12 @@ namespace
   std::chrono::steady_clock::time_point gStartTime;
   std::vector<std::string> gArguments;
   std::vector<char*> gArgv;
+
+  // The first surface's size, for the program's start.
+  std::mutex gFirstSurfaceMutex;
+  std::condition_variable gFirstSurfaceReady;
+  int gFirstSurfaceWidth = 0;
+  int gFirstSurfaceHeight = 0;
 
   std::mutex gReportMutex;
   int gReportFile = -1;
@@ -163,8 +176,44 @@ namespace
     return exitCode;
   }
 
+  /// The CRT's copies of the command line, from gArguments.
+  void PublishArguments()
+  {
+    gArgv.clear();
+    for (std::string& argument : gArguments) {
+      gArgv.push_back(argument.data());
+    }
+    gArgv.push_back(nullptr);
+    __argc = static_cast<int>(gArguments.size());
+    __argv = gArgv.data();
+  }
+
+  /// Waits for the activity's first surface and makes its size the program's display mode, also
+  /// for a screen smaller than the 1024 x 768 the engine holds as the least a mode may be.
+  void TakeScreenMode()
+  {
+    int width = 0;
+    int height = 0;
+    {
+      std::unique_lock<std::mutex> lock(gFirstSurfaceMutex);
+      gFirstSurfaceReady.wait(lock, [] { return gFirstSurfaceWidth > 0 && gFirstSurfaceHeight > 0; });
+      width = gFirstSurfaceWidth;
+      height = gFirstSurfaceHeight;
+    }
+    if (moho::CFG_GetArgOptionAliases(moho::CFG_GetFullscreenOptionAliases(), 0, nullptr) ||
+        moho::CFG_GetArgOptionAliases(moho::CFG_GetWindowedOptionAliases(), 0, nullptr) || moho::CFG_HasMaximizeOption()) {
+      return;
+    }
+    gArguments.insert(gArguments.end(), {"/fullscreen", std::to_string(width), std::to_string(height)});
+    PublishArguments();
+    moho::wnd_DefaultCreateWidth = (std::min)(moho::wnd_DefaultCreateWidth, width);
+    moho::wnd_DefaultCreateHeight = (std::min)(moho::wnd_DefaultCreateHeight, height);
+    Report("display mode " + std::to_string(width) + "x" + std::to_string(height));
+  }
+
   void* EngineThread(void*)
   {
+    TakeScreenMode();
     const int exitCode = RunProgram();
     Report("exit " + std::to_string(exitCode));
     std::fflush(nullptr);
@@ -245,13 +294,10 @@ extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_start(
     env->DeleteLocalRef(argument);
   }
   std::string commandLine;
-  for (std::string& argument : gArguments) {
-    gArgv.push_back(argument.data());
+  for (const std::string& argument : gArguments) {
     commandLine += (commandLine.empty() ? "" : " ") + argument;
   }
-  gArgv.push_back(nullptr);
-  __argc = static_cast<int>(gArguments.size());
-  __argv = gArgv.data();
+  PublishArguments();
   (void)::setenv("HOME", Utf8(env, home).c_str(), 1);
   (void)::setenv("TMPDIR", Utf8(env, temp).c_str(), 1);
   Report("program: " + commandLine);
@@ -286,6 +332,13 @@ Java_io_github_m3rt1n99_fafre_Game_surface(JNIEnv* const env, jclass, const jobj
   if (window != nullptr) {
     // The layer holds a reference of its own.
     ANativeWindow_release(window);
+    // After the screen is set: the program goes on from here (TakeScreenMode).
+    const std::lock_guard<std::mutex> lock(gFirstSurfaceMutex);
+    if (gFirstSurfaceWidth == 0) {
+      gFirstSurfaceWidth = width;
+      gFirstSurfaceHeight = height;
+      gFirstSurfaceReady.notify_all();
+    }
   }
 }
 

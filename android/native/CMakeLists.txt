@@ -21,6 +21,7 @@
 #   faf_android_platform           src/win32 and src/gal: what the Vulkan backend stands on here
 #   faf_android_dxc                src/gal/DxcAndroid.cpp, the one file on DXC's own headers
 #   faf_dxc                        libdxcompiler.so, DXC for the effects (cmake/FafAndroidDxc.cmake)
+#   freetype                       FreeType, under the GDI font functions (cmake/FafAndroidFreetype.cmake)
 #   faf_gal                        the renderer (gpg/gal): the Vulkan backend with what it shares
 #   faf_client                     the rest of the client (out of the default build until C1 is
 #                                  done: CLIENT_PLAN.md)
@@ -67,6 +68,10 @@ include("${FAF_ANDROID_DIR}/cmake/FafAndroidOverlay.cmake")
 # DXC, the effects' shader compiler (cmake/FafAndroidDxc.cmake): libdxcompiler.so for the ABI in
 # ${CMAKE_BINARY_DIR}/bin, its licences in ${CMAKE_BINARY_DIR}/licenses, both for the app.
 include("${FAF_ANDROID_DIR}/cmake/FafAndroidDxc.cmake")
+
+# FreeType, under the GDI font functions (cmake/FafAndroidFreetype.cmake): a static library of this
+# build, its licences in ${CMAKE_BINARY_DIR}/licenses for the app.
+include("${FAF_ANDROID_DIR}/cmake/FafAndroidFreetype.cmake")
 
 # src/gal/ShaderCompilerAndroid.cpp gives DXC the arguments of the engine's
 # gpg/gal/effects/ShaderCompiler.cpp, which this build leaves out. When upstream changes that file,
@@ -215,6 +220,7 @@ add_library(faf_android_platform OBJECT
   src/win32/DbgHelpAndroid.cpp
   src/win32/FindFileAndroid.cpp
   src/win32/GdiAndroid.cpp
+  src/win32/GdiFonts.cpp
   src/win32/PsapiAndroid.cpp
   src/gal/D3DCompilerAndroid.cpp
   src/gal/FxcPreprocessor.cpp
@@ -226,6 +232,8 @@ add_library(faf_android_platform OBJECT
   src/gal/VulkanSurfaceAndroid.cpp
   src/gal/WindowsCursorAndroid.cpp)
 target_link_libraries(faf_android_platform PUBLIC faf_android_settings)
+# FreeType's headers, for GdiFonts.cpp. Whoever takes these objects links the library itself.
+target_link_libraries(faf_android_platform PRIVATE freetype)
 
 # DxcAndroid.cpp calls DXC through DXC's own headers, which declare the Windows types themselves
 # (dxc/WinAdapter.h). It is compiled without this build's settings, whose Win32 stand-ins and the
@@ -285,7 +293,7 @@ target_link_libraries(faf_host PUBLIC faf_android_settings faf_wx_lite)
 add_library(fafgame SHARED
   $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_android_dxc>
   $<TARGET_OBJECTS:faf_gal> $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_host>)
-target_link_libraries(fafgame PRIVATE faf_game_sim android log ${CMAKE_DL_LIBS})
+target_link_libraries(fafgame PRIVATE faf_game_sim freetype android log ${CMAKE_DL_LIBS})
 target_link_options(fafgame PRIVATE ${_faf_android_library_options})
 
 # libfafgalsmoke.so: the renderer on the phone's Vulkan without the client (src/smoke). Without
@@ -297,20 +305,21 @@ add_library(fafgalsmoke SHARED
   src/smoke/GalSmoke.cpp
   src/smoke/GalSmokeDoubles.cpp
   "${FAF_REPO}/src/platform/posix/ClientTypeInfoPosix.cpp")
-target_link_libraries(fafgalsmoke PRIVATE faf_game_sim faf_android_settings android log vulkan ${CMAKE_DL_LIBS})
+target_link_libraries(fafgalsmoke PRIVATE faf_game_sim faf_android_settings freetype android log vulkan ${CMAKE_DL_LIBS})
 target_link_options(fafgalsmoke PRIVATE ${_faf_android_library_options})
 
 # --- Tests -------------------------------------------------------------------------------------
-# faf_wx_lite_tests (WX_LITE.md, Checks): wx-lite's event system, the message layer, and the
-# translation of the layer's messages into wx events. Linked statically, it runs on the emulator
-# and on Linux hosts alike (CI's arm64 runner), where liblog and libandroid do not exist: the test
-# stands in for the three functions the layer calls of theirs (tests/wx/NdkDoubles.cpp). The
-# simulation's objects come from an archive, so that only what the test reaches is linked (the
-# engine's POSIX layer).
+# faf_wx_lite_tests (WX_LITE.md, Checks): wx-lite's event system, the message layer, the
+# translation of the layer's messages into wx events, and GDI's fonts on FreeType. Linked
+# statically, it runs on the emulator and on Linux hosts alike (CI's arm64 runner), where liblog
+# and libandroid do not exist: the test stands in for the three functions the layer calls of theirs
+# (tests/wx/NdkDoubles.cpp). The simulation's objects come from an archive, so that only what the
+# test reaches is linked (the engine's POSIX layer).
 add_library(faf_game_sim_archive STATIC EXCLUDE_FROM_ALL $<TARGET_OBJECTS:faf_game_sim>)
 add_executable(faf_wx_lite_tests
   tests/wx/Main.cpp
   tests/wx/EventTests.cpp
+  tests/wx/GdiTests.cpp
   tests/wx/MessageLayerTests.cpp
   tests/wx/WindowTests.cpp
   tests/wx/NdkDoubles.cpp
@@ -318,5 +327,5 @@ add_executable(faf_wx_lite_tests
   $<TARGET_OBJECTS:faf_android_platform>
   $<TARGET_OBJECTS:faf_android_dxc>)
 target_include_directories(faf_wx_lite_tests PRIVATE "${FAF_ANDROID_DIR}/include")
-target_link_libraries(faf_wx_lite_tests PRIVATE faf_android_settings faf_game_sim_archive ${_faf_sim_libraries} ${CMAKE_DL_LIBS})
+target_link_libraries(faf_wx_lite_tests PRIVATE faf_android_settings faf_game_sim_archive freetype ${_faf_sim_libraries} ${CMAKE_DL_LIBS})
 target_link_options(faf_wx_lite_tests PRIVATE -static -Wl,--gc-sections -Wl,--no-dependent-libraries)

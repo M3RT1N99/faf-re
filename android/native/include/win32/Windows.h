@@ -239,7 +239,8 @@ const char* GetCommandLineA();
 /// The wait for the handles or a message in the calling thread's queue (the message layer,
 /// include/win32/WinUser.h): WAIT_OBJECT_0 + `count` for a message. With MWMO_INPUTAVAILABLE a
 /// message already in the queue ends the wait at once; MWMO_WAITALL waits for all the handles.
-/// MWMO_ALERTABLE has nothing to wake for: the engine's POSIX layer queues no APCs.
+/// MWMO_ALERTABLE has nothing to wake for: the engine's POSIX layer queues no APCs. An endless wait
+/// on a queue that stays silent gets a WM_NULL, as Windows' system messages would end it.
 #define QS_KEY 0x0001u
 #define QS_MOUSEMOVE 0x0002u
 #define QS_MOUSEBUTTON 0x0004u
@@ -302,9 +303,8 @@ inline int _wcsicmp(const wchar_t* lhs, const wchar_t* rhs) noexcept
 
 // --- GDI fonts ---------------------------------------------------------------------------------
 // What the font renderer (moho/render/d3d/CD3DFont.cpp) draws glyphs with: a font, a memory DC
-// with a 32-bit bitmap, the font's metrics and kerning, DrawTextW, the bitmap's pixels. There is
-// no GDI on Android yet: CreateFontA finds no font, so the game has no text, until these functions
-// render with FreeType (CLIENT_PLAN.md, C3; src/win32/GdiAndroid.cpp).
+// with a 32-bit bitmap, the font's metrics and kerning, DrawTextW, the bitmap's pixels. They render
+// with FreeType, with GDI's metrics and glyph images (src/win32/GdiAndroid.cpp, GdiFonts.cpp).
 
 using HGDIOBJ = void*;
 using HBRUSH = void*;
@@ -347,7 +347,7 @@ struct KERNINGPAIR
   int iKernAmount;
 };
 
-/// Null: no font exists here yet.
+/// Never null for a face name: as GDI it gives the closest face there is (src/win32/GdiFonts.h).
 HFONT CreateFontA(
   int height, int width, int escapement, int orientation, int weight, DWORD italic, DWORD underline, DWORD strikeOut, DWORD charSet,
   DWORD outPrecision, DWORD clipPrecision, DWORD quality, DWORD pitchAndFamily, const char* faceName
@@ -368,8 +368,7 @@ COLORREF GetPixel(HDC dc, int x, int y);
 int DrawTextW(HDC dc, const wchar_t* text, int length, RECT* rect, UINT format);
 HGDIOBJ GetStockObject(int object);
 int FillRect(HDC dc, const RECT* rect, HBRUSH brush);
-/// Fonts from memory (the game's own, CD3DDevice): null, as no font can be installed until the
-/// GDI renders with FreeType (C3).
+/// Fonts from memory (the game's own, CD3DDevice's REN_Init), for this process.
 HANDLE AddFontMemResourceEx(void* fontData, DWORD size, void* reserved, DWORD* fontCount);
 
 // --- Structured exceptions ----------------------------------------------------------------------

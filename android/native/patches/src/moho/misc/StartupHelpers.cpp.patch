@@ -1,0 +1,17 @@
+diff --git a/src/moho/misc/StartupHelpers.cpp b/src/moho/misc/StartupHelpers.cpp
+index 6325853..2740fec 100644
+--- a/src/moho/misc/StartupHelpers.cpp
++++ b/src/moho/misc/StartupHelpers.cpp
+@@ -4494,7 +4494,11 @@ void moho::USER_SavePreferences()
+ 
+   // Through std::filesystem::path: the wchar_t* constructor is an MSVC STL extension
+   // (libc++ converts the path to UTF-8 on POSIX).
+-  std::ofstream outputStream{std::filesystem::path(temporaryPathWide)};
++  // Android client build: a stream takes the path as it is, and POSIX reads Windows' separators as
++  // part of a file name. The Win32 functions of the engine's POSIX layer convert them themselves.
++  std::wstring streamPathWide = temporaryPathWide;
++  std::replace(streamPathWide.begin(), streamPathWide.end(), L'\\', L'/');
++  std::ofstream outputStream{std::filesystem::path(streamPathWide)};
+   if (!outputStream.is_open()) {
+     const std::wstring warningWide = std::wstring(L"Unable to open preference file: ") + temporaryPathWide;
+     const msvc8::string warningUtf8 = gpg::STR_WideToUtf8(warningWide.c_str());

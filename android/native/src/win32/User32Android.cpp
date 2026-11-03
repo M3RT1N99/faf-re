@@ -1908,6 +1908,14 @@ BOOL GetMessageW(MSG* const message, const HWND window, const UINT filterMin, co
   }
 }
 
+// A Windows queue is not silent for long: the mouse, the window manager and the system's broadcasts
+// all post to it, and the engine's frame loop counts on that. Each frame asks for the next one with
+// a paint (CScApp::Main), and a message pump after that takes the paint: the main menu's FlushEvents
+// in the first frame, with a profile saved. The loop's next wait is then endless, until the next
+// message, which on a PC comes by itself; a touch screen sends none until it is touched. So a queue
+// that stays silent in an endless wait gets a message, as from the system.
+constexpr DWORD kSilentQueueMilliseconds = 100;
+
 DWORD MsgWaitForMultipleObjectsEx(
   const DWORD count, const HANDLE* const handles, const DWORD milliseconds, const DWORD wakeMask, const DWORD flags
 )
@@ -1927,12 +1935,20 @@ DWORD MsgWaitForMultipleObjectsEx(
   }
   const DWORD start = ::GetTickCount();
   for (;;) {
-    DWORD remaining = INFINITE;
+    DWORD remaining = kSilentQueueMilliseconds;
     if (milliseconds != INFINITE) {
       const DWORD elapsed = ::GetTickCount() - start;
       remaining = elapsed >= milliseconds ? 0 : milliseconds - elapsed;
     }
     const DWORD result = ::WaitForMultipleObjects(count + 1, all.data(), FALSE, remaining);
+    if (result == WAIT_TIMEOUT && milliseconds == INFINITE) {
+      if ((wakeMask & QS_POSTMESSAGE) == 0) {
+        continue;
+      }
+      Lock lock(layer.mutex);
+      PostLocked(CurrentQueueLocked(), nullptr, WM_NULL, 0, 0);
+      return WAIT_OBJECT_0 + count;
+    }
     if (result != WAIT_OBJECT_0 + count) {
       return result;
     }

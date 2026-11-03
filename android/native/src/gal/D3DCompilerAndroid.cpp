@@ -67,15 +67,16 @@ namespace
 
   /**
    * The source's name made absolute, as d3dcompiler_47 makes it with GetFullPathNameA for its
-   * #line directives, __FILE__ and messages: a path from the root stays as it is, any other is
-   * taken from the working directory.
+   * #line directives, __FILE__ and messages: a path from the root stays as it is, with either
+   * slash (the engine's file layer writes backslashes), any other is taken from the working
+   * directory.
    */
   [[nodiscard]] std::string FullPath(const char* const name)
   {
     if (name == nullptr) {
       return {};
     }
-    if (name[0] == '\0' || name[0] == '/') {
+    if (name[0] == '\0' || name[0] == '/' || name[0] == '\\') {
       return name;
     }
     char directory[4096]{};

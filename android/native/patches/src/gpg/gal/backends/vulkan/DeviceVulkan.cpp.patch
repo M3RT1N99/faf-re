@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-index b4d2ae45..9d3a0622 100644
+index b4d2ae4..f1cef11 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 @@ -35,6 +35,16 @@
@@ -88,7 +88,7 @@ index b4d2ae45..9d3a0622 100644
      }
      Vk().vkGetPhysicalDeviceSurfacePresentModesKHR(mPhysical, swapChain.surface, &count, nullptr);
      std::vector<VkPresentModeKHR> modes(count);
-@@ -736,8 +777,9 @@ namespace gpg::gal
+@@ -736,10 +777,17 @@ namespace gpg::gal
      info.imageColorSpace = chosen.colorSpace;
      info.imageExtent = extent;
      info.imageArrayLayers = 1U;
@@ -98,9 +98,18 @@ index b4d2ae45..9d3a0622 100644
 +    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
 +      ((VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT) & capabilities.supportedUsageFlags);
      info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-     info.preTransform = capabilities.currentTransform;
+-    info.preTransform = capabilities.currentTransform;
++    // Android client build: the compositor turns the image with the display. currentTransform says
++    // how the display stands against the panel's natural orientation (a phone's is portrait, the
++    // game runs in landscape); a swap chain created with it promises the image is already turned,
++    // and the engine draws upright.
++    info.preTransform = ((capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0U)
++      ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
++      : capabilities.currentTransform;
      info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-@@ -767,7 +809,8 @@ namespace gpg::gal
+     info.presentMode = mode;
+     info.clipped = VK_TRUE;
+@@ -767,7 +815,8 @@ namespace gpg::gal
      }
      swapChain.hasImage = false;
      gpg::Logf(
@@ -110,7 +119,7 @@ index b4d2ae45..9d3a0622 100644
        (mode == VK_PRESENT_MODE_FIFO_KHR) ? "FIFO (vsync)" : (mode == VK_PRESENT_MODE_MAILBOX_KHR) ? "mailbox" : "immediate"
      );
    }
-@@ -1316,9 +1359,17 @@ namespace gpg::gal
+@@ -1316,9 +1365,17 @@ namespace gpg::gal
      const std::uint32_t height = std::max(1U, destination.height >> level);
      const std::uint32_t depth = std::max(1U, destination.depth >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -130,7 +139,7 @@ index b4d2ae45..9d3a0622 100644
      EndRendering();
      TransitionForTransferWrite(destination);
      VkBufferImageCopy region{};
-@@ -1336,10 +1387,13 @@ namespace gpg::gal
+@@ -1336,10 +1393,13 @@ namespace gpg::gal
      const std::uint32_t width = std::max(1U, source.width >> level);
      const std::uint32_t height = std::max(1U, source.height >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -145,7 +154,7 @@ index b4d2ae45..9d3a0622 100644
      info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
      CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkCreateBuffer(mDevice, &info, nullptr, &readback.buffer));
      VkMemoryRequirements requirements{};
-@@ -1356,7 +1410,18 @@ namespace gpg::gal
+@@ -1356,7 +1416,18 @@ namespace gpg::gal
      region.imageExtent = {width, height, 1U};
      Vk().vkCmdCopyImageToBuffer(mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1U, &region);
      Submit(true, false);
@@ -165,7 +174,7 @@ index b4d2ae45..9d3a0622 100644
      Vk().vkDestroyBuffer(mDevice, readback.buffer, nullptr);
      mMemory.Free(readback.memory);
    }
-@@ -1630,12 +1695,31 @@ namespace gpg::gal
+@@ -1630,12 +1701,31 @@ namespace gpg::gal
      } else {
        ThrowError("DeviceVulkan.cpp", __LINE__, "invalid source specified for texture data");
      }
@@ -198,7 +207,7 @@ index b4d2ae45..9d3a0622 100644
  
      vulkan::TrackedImage tracked;
      VkImageCreateInfo info{};
-@@ -1811,7 +1895,31 @@ namespace gpg::gal
+@@ -1811,7 +1901,31 @@ namespace gpg::gal
      EndRendering();
      Transition(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
      TransitionForTransferWrite(destination);

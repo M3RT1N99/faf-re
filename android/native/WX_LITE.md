@@ -49,9 +49,12 @@ The Win32 USER functions that the engine and wx-lite need:
 - windows as objects that carry a window procedure, a size and a parent (an `HWND`), and the
   window functions the engine calls.
 
-`MsgWaitForMultipleObjectsEx` also wakes when a message arrives, as on Windows. The activity's
-surface (`ANativeWindow`) is the screen every window is shown on, as a Windows window is part of
-the desktop, and the Vulkan surface is made from it (`src/gal/VulkanSurfaceAndroid.cpp`).
+`MsgWaitForMultipleObjectsEx` also wakes when a message arrives, as on Windows. Windows' queues are
+not silent for long, and the engine's frame loop counts on that: its first frame on the main menu
+ends in an endless wait with nothing to end it. So an endless wait on a silent queue gets a `WM_NULL`
+after 100 ms. The activity's surface (`ANativeWindow`) is the screen every window is shown on, as a
+Windows window is part of the desktop, and the Vulkan surface is made from it
+(`src/gal/VulkanSurfaceAndroid.cpp`).
 
 ### 2. wx-lite proper (`include/wx`, `src/wx`)
 
@@ -111,7 +114,10 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
   it): the engine takes its install's folder from it. HOME and TMPDIR are the app's folders, and
   the host makes the folders a Windows user profile always has (`SHGetFolderPath`'s), which the
   preferences and the documents go into.
-- The activity's surface is the screen (`Win32Android_SetScreenSurface`), with its size.
+- The activity's surface is the screen (`Win32Android_SetScreenSurface`), with its size. The screen
+  has one mode: the engine thread waits for the first surface and adds its size to the command line
+  (`/fullscreen <width> <height>`), unless the command line chooses a size. The options' default
+  adapter (1024 x 768) would otherwise draw into a corner of the back buffer.
 - It turns Android's input and lifecycle into Win32 messages for that thread:
   - touch into the left button where the first finger is, a mouse's buttons into `WM_*BUTTON*`,
     its moves into `WM_MOUSEMOVE` and its wheel into `WM_MOUSEWHEEL`;
@@ -144,8 +150,8 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
     `CS_DBLCLKS`; key messages' `lParam` bits (repeat count, scan code, extended, context, previous
     state, transition), `TranslateMessage`, `GetKeyState`; Alt and F10 as system keys; the
     low-level keyboard hooks; the foreground and the window it activates again; the waits'
-    wake-ups with and without `MWMO_INPUTAVAILABLE`; destruction's order; the screen's surface and
-    its references; maximized windows on a new screen size.
+    wake-ups with and without `MWMO_INPUTAVAILABLE`, the message for a silent queue; destruction's
+    order; the screen's surface and its references; maximized windows on a new screen size.
   - The translation into wx events (`WindowTests.cpp`): clicks in the window's coordinates and
     the focus a click gives; entering a window; the wheel at the screen's position (as wxWindows
     2.4.2 leaves it); key down, char and key up, the char of a special key from its key down, no

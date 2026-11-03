@@ -462,6 +462,17 @@ WXT_TEST(MsgWaitWakesForNewMessagesAndOldOnesOnlyWhenAsked)
   wxtest::Pump();
 }
 
+WXT_TEST(AnEndlessMsgWaitOnASilentQueueGetsAMessage)
+{
+  wxtest::Pump();
+  WXT_CHECK_EQ(::MsgWaitForMultipleObjectsEx(0, nullptr, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE), DWORD{WAIT_OBJECT_0});
+  MSG msg;
+  WXT_CHECK(::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE));
+  WXT_CHECK_EQ(msg.message, UINT{WM_NULL});
+  WXT_CHECK(msg.hwnd == nullptr);
+  WXT_CHECK(!::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE));
+}
+
 WXT_TEST(DestroyingAWindowDestroysItsChildren)
 {
   RecordingWindow top(nullptr, 0, 0, 100, 100, WS_POPUP);

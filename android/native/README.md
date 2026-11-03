@@ -25,13 +25,14 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 |---|---|
 | `faf_game_sim` | The simulation's objects again, with this build's headers, so every object of a library sees the same types |
 | `faf_android_platform` | `src/win32`, `src/gal`: what the Vulkan backend stands on here |
+| `freetype` | FreeType, under the GDI font functions (see The fonts) |
 | `faf_gal` | The renderer (`gpg/gal`): the Vulkan backend and what it shares with the others |
 | `faf_wx_lite` | wx-lite, the part of wxWindows 2.4.2 the client uses, on the message layer (`WX_LITE.md`) |
 | `faf_client` | The rest of the client, with the Android halves of what it needs from the left-out files |
 | `faf_host` | `src/host`: the program's start as `WinMain` does it, and the activity's surface, input and lifecycle as Win32 messages |
 | `fafgame` | `libfafgame.so`, all of the above: the whole engine and its host (card 5 of the app) |
 | `fafgalsmoke` | `libfafgalsmoke.so`, the renderer test (card 4 of the app) |
-| `faf_wx_lite_tests` | wx-lite's and the message layer's tests (`tests/wx`, `WX_LITE.md` Checks), linked statically |
+| `faf_wx_lite_tests` | wx-lite's, the message layer's and the GDI fonts' tests (`tests/wx`, `WX_LITE.md` Checks), linked statically |
 
 The client's files are the engine's (`src/sources.cmake`) minus the simulation's
 (`src/sim_sources.cmake`) and minus the Windows-only ones (`CMakeLists.txt`,
@@ -67,7 +68,8 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/win32/FindFileAndroid.cpp` | `FindFirstFileA` and the rest, on POSIX directories with Win32's matching |
 | `src/win32/PsapiAndroid.cpp` | `GetProcessMemoryInfo`, from `/proc/self/status` |
 | `src/win32/DbgHelpAndroid.cpp` | `SymFromAddr`, from the dynamic symbol tables with demangled names |
-| `src/win32/GdiAndroid.cpp` | GDI's font functions: no font yet, so no text (C3 renders through them with FreeType) |
+| `src/win32/GdiAndroid.cpp` | GDI's font functions, as the font renderer calls them: handles for fonts, bitmaps, brushes and memory DCs, `DrawTextW`, the bitmap's pixels (see The fonts) |
+| `src/win32/GdiFonts.cpp` | GDI's TrueType fonts on FreeType: the fonts from memory, the face a name finds, metrics, advances, kerning pairs and glyphs as GDI has them (checked on Windows by `tests/gdifont`) |
 | `src/audio/AudioAndroid.cpp` | The audio platform: none yet (`DirectSoundCreate` finds no device, X3DAudio places nothing, no XACT clock) |
 | `src/audio/XactEngineAndroid.cpp` | An XACT engine that plays nothing, until FACT (C3): the sound functions work and so do the options, which import the music's Lua; `CoCreateInstance` creates it |
 | `src/movie/FfmpegSfdDecoderAndroid.cpp` | The movie decoder: no FFmpeg for Android yet, so the player skips movies |
@@ -106,11 +108,38 @@ table generators for the build host, then the library for the ABI (target `faf_d
 the first time). The app packages it with the engine's libraries and its licences in the assets
 (`licenses/`).
 
+### The fonts
+
+The font renderer (`moho/render/d3d/CD3DFont.cpp`) draws each new character with GDI into a bitmap
+and turns that into a texture. `src/win32/GdiAndroid.cpp` has the GDI functions it calls;
+`src/win32/GdiFonts.cpp` is what GDI does behind them, on FreeType.
+`cmake/FafAndroidFreetype.cmake` builds FreeType 2.14.3 from source as a static library of this
+build, pinned by SHA256 and cached in `dependencies/.downloads`, without any of its optional
+libraries; its licence goes to `licenses/`. FreeType reads and hints the fonts; these are GDI's own:
+
+- **The face.** GDI goes by the family name alone, whatever the case. `"Arial Bold"`, a full name
+  the game's Lua asks for, is unknown to it, as are `"Arial Gras"` and `"Andale Mono"`, so they are
+  Arial's regular style. (On Windows such a name finds Arial, but the bitmap font MS Sans Serif at the
+  sizes that has exactly: 16, 18 and 24 pixels. Android has no such font.) Fonts Windows has installed
+  and the game does not bring (`"Courier New"`) are Arial here too.
+- **The metrics.** The ascent and descent from the VDMX table at the sizes it lists, else scaled from
+  the OS/2 table's Windows extents; TEXTMETRIC's other fields by the formulas of Wine's GDI.
+- **The advances.** Whole pixels, from the `hdmx` table at its sizes, else scaled where the font says
+  no instruction changes them (`head`, `LTSH`), else hinted. FreeType runs the instructions as
+  Windows does without ClearType (interpreter version 35), and its auto-hinter stays out.
+- **The glyphs.** The font's `gasp` table says whether a size has grey levels, even for
+  `ANTIALIASED_QUALITY`: Arial is bi-level from 9 to 17 pixels. Without the table GDI takes those same
+  sizes. A grey pixel counts which of its 4 x 4 samples are inside the hinted outline: GDI's 17
+  levels, with the intensities Wine measured, and nothing for a single sample.
+
+A character a face lacks is its missing glyph here; GDI takes it from a font linked to the face, where
+Windows links one (CJK, for instance). That is open.
+
 ## Tests
 
 `faf_wx_lite_tests` (`tests/wx`) checks wx-lite's event system, the Win32 message layer and the
-translation of its messages into wx events against wxWindows 2.4.2 and Win32. It is linked
-statically, so the same program runs on the emulator and on a Linux host; the app's workflow runs
+translation of its messages into wx events against wxWindows 2.4.2 and Win32, and GDI's fonts. It is
+linked statically, so the same program runs on the emulator and on a Linux host; the app's workflow runs
 the arm64 build on an arm64 runner. It takes the simulation's objects from an archive
 (`faf_game_sim_archive`), so that only the engine's POSIX layer is linked in, and stands in for the
 three functions of liblog and libandroid the layer calls (`tests/wx/NdkDoubles.cpp`). On the
@@ -124,6 +153,18 @@ adb shell "chmod 755 /data/local/tmp/faf_wx_lite_tests && /data/local/tmp/faf_wx
 It prints each test's name and the checks that failed, then `<n> tests, <m> failed`, and exits
 with 0 when every check passed. The emulator's ARM translation runs no static executables, so the
 arm64 build runs on real ARM only (the CI runner).
+
+`faf_wx_lite_tests` also checks GDI's fonts (`tests/wx/GdiTests.cpp`) on TrueType files it makes
+itself: boxes whose edges fall where the metrics and pixels can be worked out by hand.
+
+`gdifont_compare` (`tests/gdifont`, a CMake project of its own for a Windows host) registers a
+folder's fonts (the game's `fonts/`, copied somewhere outside the repository) with GDI as the game
+does and with `GdiFonts.cpp`, and compares for the faces and sizes the game's Lua asks for: the face
+each picks, and on the file GDI took, TEXTMETRIC, the advances, the kerning pairs and the glyphs pixel
+by pixel. With the game's 14 fonts and those Windows brought for the faces it has, at 8 to 32, 36 and
+48 pixels (414 fonts): the metrics are equal in all, 67 of 119952 advances differ, 12 of 903123
+kerning pairs; 85 % of the glyphs are equal, and 1.1 % of the inked pixels differ, most of those by a
+grey level.
 
 `imagecodec_compare` (`tests/imagecodec`, a CMake project of its own for a Windows host) decodes
 texture files with D3DX11 on WARP as `ImageCodec.cpp` does and with the Android codec, and compares
