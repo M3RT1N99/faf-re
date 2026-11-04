@@ -100,6 +100,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
 
         @Override
+        public void startLine(float x, float y) {
+            Game.mouseButton(Game.BUTTON_LEFT, true, pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void cancelLine() {
+            Game.cancelLine();
+        }
+
+        @Override
         public void wheel(int delta, float x, float y) {
             Game.mouseWheel(delta, pictureX(x), pictureY(y));
         }

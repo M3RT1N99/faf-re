@@ -195,8 +195,9 @@ most of C1, as 56 files stop at wx.
   first start without a profile. The phone showed what was missing: a finger covers the place it
   chooses for a building, which made setting one against a factory hard, and a queued order was hard
   to hit, so that a tap placed a new one. So a tap now puts a building's ghost, a finger moves it and a
-  tap on it places it, and *Del* deletes the order nearest to a tap (0.9.1; the emulator's fingers
-  only so far).
+  tap on it places it, and *Del* deletes the order nearest to a tap (0.10.0). That took away the line
+  of buildings a finger drew: a finger that stays on the ghost until the tick and then moves draws one
+  now (0.10.1). All of this on the emulator's fingers only so far.
 - **Sound and movies, C3's rest:** the XACT engine on FACT over AAudio, X3DAudio on F3DAudio, the
   movies on FFmpeg ([native README](native/README.md), Sound and movies). Checked on the emulator: the
   game's banks through the mix's numbers (`faf_audio_tests`), the logos, the intro film with its music

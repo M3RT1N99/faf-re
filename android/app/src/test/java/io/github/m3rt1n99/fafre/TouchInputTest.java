@@ -34,6 +34,16 @@ public class TouchInputTest {
         }
 
         @Override
+        public void startLine(float x, float y) {
+            events.add("line from " + (int) x + " " + (int) y);
+        }
+
+        @Override
+        public void cancelLine() {
+            events.add("line given up");
+        }
+
+        @Override
         public void wheel(int delta, float x, float y) {
             events.add("wheel " + delta + " " + (int) x + " " + (int) y);
         }
@@ -445,6 +455,114 @@ public class TouchInputTest {
         down(0, 510, 300, 4000);
         up(0, 4050);
         expect("tap 510 300 near ghost 506 301");
+    }
+
+    /** A ghost at 500 300, which a tap put there. */
+    private void putGhost() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        mouse.events.clear();
+    }
+
+    /** A finger that stayed on the ghost at 500 300 draws to 700 300. */
+    private void startLineTo700() {
+        putGhost();
+        down(0, 500, 300, 2000);
+        timerRuns();
+        moveFirst(700, 300);
+    }
+
+    @Test
+    public void whilePlacingAFingerThatStaysOnTheGhostThenMovesDrawsALine() {
+        putGhost();
+        down(0, 510, 300, 2000);
+        timerRuns();
+        expect("held");
+        moveFirst(600, 300);
+        moveFirst(700, 320);
+        up(0, 3000);
+        expect("held", "line from 500 300", "move 590 300", "move 690 320", "left up 690 320");
+    }
+
+    @Test
+    public void whilePlacingAFingerThatStaysOnTheGhostAndLiftsDoesNothing() {
+        putGhost();
+        down(0, 500, 300, 2000);
+        moveFirst(503, 300); // within the slop
+        timerRuns();
+        moveFirst(504, 300);
+        up(0, 3000);
+        expect("held");
+        mouse.events.clear();
+        down(0, 505, 300, 4000);
+        up(0, 4050);
+        expect("tap 505 300 near ghost 500 300");
+    }
+
+    @Test
+    public void whilePlacingAQuickDragOfTheGhostTakesItAlong() {
+        putGhost();
+        down(0, 500, 300, 2000);
+        moveFirst(600, 300);
+        up(0, 2100);
+        expect("move 600 300");
+    }
+
+    @Test
+    public void whilePlacingASecondFingerGivesUpTheLineAndTheGhostGoesBack() {
+        startLineTo700();
+        down(1, 100, 100, 2500);
+        moveFirst(800, 300);
+        up(0, 2600);
+        up(1, 2700);
+        expect("held", "line from 500 300", "move 700 300", "line given up", "move 500 300");
+        mouse.events.clear();
+        down(0, 500, 300, 3000);
+        up(0, 3050);
+        expect("tap 500 300 near ghost 500 300");
+    }
+
+    @Test
+    public void whilePlacingTheSystemTakingTheFingersGivesUpTheLine() {
+        startLineTo700();
+        touch.cancel();
+        expect("held", "line from 500 300", "move 700 300", "line given up", "move 500 300");
+    }
+
+    @Test
+    public void whilePlacingTheTapAfterALinePutsTheGhostThoughItIsNear() {
+        startLineTo700();
+        up(0, 2600);
+        mouse.events.clear();
+        down(0, 705, 300, 4000);
+        up(0, 4050);
+        expect("left down 705 300", "left up 705 300");
+    }
+
+    @Test
+    public void whilePlacingAFingerThatStaysOnAUsedGhostMovesIt() {
+        putGhost();
+        down(0, 500, 300, 2000);
+        up(0, 2050);
+        mouse.events.clear();
+        down(0, 500, 300, 3000);
+        timerRuns();
+        moveFirst(504, 300);
+        up(0, 4000);
+        expect("move 500 300", "held", "move 504 300");
+    }
+
+    @Test
+    public void whilePlacingTwoFingersOnAFingerThatStayedOnTheGhostMoveTheCamera() {
+        putGhost();
+        down(0, 500, 300, 2000);
+        timerRuns();
+        down(1, 700, 300, 2400);
+        moveBoth(540, 340, 740, 340);
+        up(0, 2600);
+        up(1, 2700);
+        expect("held", "move 700 300", "move 600 300", "middle down 600 300", "move 640 340", "middle up 640 340", "move 500 300");
     }
 
     @Test

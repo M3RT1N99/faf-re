@@ -64,6 +64,7 @@ namespace moho
   // src/moho/ui/CUIWorldViewEvents.cpp's, by its patch.
   [[nodiscard]] bool UI_PlacingBuilding() noexcept;
   [[nodiscard]] bool UI_WorldViewAt(float x, float y);
+  void UI_CancelBuildDrag();
 } // namespace moho
 
 // The CRT's copies of the command line, which the engine reads (src/platform/posix/Win32Shim.cpp).
@@ -362,6 +363,11 @@ namespace
       Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, fingerX, fingerY);
     }
   }
+
+  void CancelLine(const WPARAM)
+  {
+    moho::UI_CancelBuildDrag();
+  }
 } // namespace
 
 /// Starts the program on the engine's thread: `arguments` is its command line, the program's
@@ -500,6 +506,12 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_tapNearGhos
 )
 {
   Win32Android_RunOnWindowThread(&TapNearGhost, Places(fingerX, fingerY, ghostX, ghostY));
+}
+
+/// A finger gave up the line of buildings it was drawing, after the input it gave so far.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_cancelLine(JNIEnv*, jclass)
+{
+  Win32Android_RunOnWindowThread(&CancelLine, 0);
 }
 
 /// Deletes the queued order of the selected units nearest to the cursor, which is at this place.

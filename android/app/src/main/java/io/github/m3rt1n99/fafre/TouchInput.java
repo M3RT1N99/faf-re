@@ -27,8 +27,11 @@ package io.github.m3rt1n99.fafre;
  *   <li>a tap near the ghost places the building where the ghost is, and with Shift the ghost stays
  *       for the next, which a tap puts, even near there, or a finger takes along;
  *   <li>a finger that moves takes the ghost along, from wherever on the screen it landed;
- *   <li>a finger that stays takes it along too, by the smallest steps, for setting it against another
- *       building, and whenever it lifts it has placed nothing;
+ *   <li>a finger that stays away from the ghost takes it along too, by the smallest steps, for setting
+ *       it against another building, and whenever it lifts it has placed nothing;
+ *   <li>a finger that stays on the ghost and then moves draws a line of buildings from there, with the
+ *       game's own preview, which go up when it lifts; a second finger gives the line up, and the ghost
+ *       goes back to where it began; if it lifts without moving, nothing has happened;
  *   <li>a quick tap of two fingers is the right button whatever else is set, which cancels.
  * </ul>
  *
@@ -51,6 +54,15 @@ final class TouchInput {
          * is there or under the finger, and is a tap at the finger then.
          */
         void tapNearGhost(float fingerX, float fingerY, float ghostX, float ghostY);
+
+        /**
+         * A line of buildings begins here, where the ghost is: the left button as a mouse presses it, which
+         * {@link #button} lets go. The game draws the line to wherever the cursor goes until then.
+         */
+        void startLine(float x, float y);
+
+        /** Gives up the line begun with {@link #startLine}, with nothing built. */
+        void cancelLine();
 
         /** `delta` in WHEEL_DELTA's units, positive towards the screen. */
         void wheel(int delta, float x, float y);
@@ -103,6 +115,10 @@ final class TouchInput {
         PLACE_PENDING,
         /** One finger takes the ghost along. */
         PLACE_DRAGGING,
+        /** One finger stayed on the ghost: when it moves, it draws a line of buildings from there. */
+        PLACE_LINE_READY,
+        /** One finger draws a line of buildings. */
+        PLACE_LINE,
         /** Two fingers, and nothing shown yet of what they do. */
         TWO_PENDING,
         PANNING,
@@ -153,6 +169,9 @@ final class TouchInput {
     /** Where the finger that takes the ghost along last was. */
     private float mGhostFingerX;
     private float mGhostFingerY;
+    /** Where the ghost was when the line began, for a line given up. */
+    private float mLineStartX;
+    private float mLineStartY;
     /** Two fingers came down over a ghost, and took the cursor from it. */
     private boolean mGhostToRestore;
     /** A click that waits for the cursor to settle: NO_CLICK, or what it does. */
@@ -203,8 +222,11 @@ final class TouchInput {
             bringCursorBackToGhost();
             mSecond.id = -1;
             startOneFinger(id, x, y, time);
-        } else if (mState == State.PENDING || mState == State.PLACE_PENDING) {
-            mGhostToRestore = mState == State.PLACE_PENDING && mGhostPlaced;
+        } else if (mState == State.PLACE_LINE) {
+            giveUpLine();
+            mState = State.SPENT;
+        } else if (mState == State.PENDING || mState == State.PLACE_PENDING || mState == State.PLACE_LINE_READY) {
+            mGhostToRestore = mState != State.PENDING && mGhostPlaced;
             mMouse.stopTimer();
             mSecond.id = id;
             mSecond.place(x, y);
@@ -276,7 +298,13 @@ final class TouchInput {
                     startTakingGhost();
                 }
                 break;
+            case PLACE_LINE_READY:
+                if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
+                    startLine();
+                }
+                break;
             case PLACE_DRAGGING:
+            case PLACE_LINE:
                 moveGhost();
                 break;
             case TWO_PENDING:
@@ -320,6 +348,12 @@ final class TouchInput {
                     mState = State.SPENT;
                     break;
                 case PLACE_DRAGGING:
+                case PLACE_LINE_READY:
+                    mState = State.SPENT;
+                    break;
+                case PLACE_LINE:
+                    mMouse.button(Game.BUTTON_LEFT, false, mGhostX, mGhostY);
+                    mGhostUsed = true;
                     mState = State.SPENT;
                     break;
                 case TWO_PENDING:
@@ -367,7 +401,8 @@ final class TouchInput {
 
     /**
      * The system took the fingers. What is held goes up, as a mouse's would, so a right button that a
-     * finger held gives its order; no gesture comes of what is left of them.
+     * finger held gives its order; no gesture comes of what is left of them. A line builds nothing that
+     * the finger did not finish.
      */
     void cancel() {
         mMouse.stopTimer();
@@ -375,6 +410,8 @@ final class TouchInput {
             mMouse.button(mPressed, false, mFirst.x, mFirst.y);
         } else if (mState == State.PANNING) {
             mMouse.button(Game.BUTTON_MIDDLE, false, middleX(), middleY());
+        } else if (mState == State.PLACE_LINE) {
+            giveUpLine();
         }
         finishClick();
         bringCursorBackToGhost();
@@ -387,7 +424,11 @@ final class TouchInput {
             press(holdButton(), mStartX, mStartY);
             mMouse.held();
         } else if (mState == State.PLACE_PENDING) {
-            startTakingGhost();
+            if (startedOnGhost()) {
+                mState = State.PLACE_LINE_READY;
+            } else {
+                startTakingGhost();
+            }
             mMouse.held();
         }
         finishClick();
@@ -423,9 +464,30 @@ final class TouchInput {
         mMouse.move(mGhostX, mGhostY);
     }
 
+    private boolean startedOnGhost() {
+        return mGhostPlaced && !mGhostUsed && Math.hypot(mStartX - mGhostX, mStartY - mGhostY) <= GHOST_REACH_SLOPS * mSlop;
+    }
+
+    private void startLine() {
+        mLineStartX = mGhostX;
+        mLineStartY = mGhostY;
+        mMouse.startLine(mGhostX, mGhostY);
+        mGhostFingerX = mStartX;
+        mGhostFingerY = mStartY;
+        mState = State.PLACE_LINE;
+        moveGhost();
+    }
+
+    private void giveUpLine() {
+        mMouse.cancelLine();
+        mGhostX = mLineStartX;
+        mGhostY = mLineStartY;
+        mMouse.move(mGhostX, mGhostY);
+    }
+
     /** The game takes a finger's press to put the ghost there, unless it lands on its UI. */
     private void tapWhilePlacing() {
-        boolean onGhost = mGhostPlaced && !mGhostUsed && Math.hypot(mStartX - mGhostX, mStartY - mGhostY) <= GHOST_REACH_SLOPS * mSlop;
+        boolean onGhost = startedOnGhost();
         mGhostUsed = onGhost;
         if (onGhost) {
             mMouse.tapNearGhost(mStartX, mStartY, mGhostX, mGhostY);

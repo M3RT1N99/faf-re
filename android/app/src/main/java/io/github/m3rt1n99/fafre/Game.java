@@ -54,6 +54,9 @@ final class Game {
     /** A finger tapped near a building's ghost: it places the building, unless the game's UI is under the finger or the ghost. */
     static native void tapNearGhost(int fingerX, int fingerY, int ghostX, int ghostY);
 
+    /** Gives up the line of buildings a finger is drawing, with nothing built. */
+    static native void cancelLine();
+
     /** Deletes the queued order of the selected units nearest to the cursor, which is at this place, if one is near. */
     static native void deleteOrder(int x, int y);
 

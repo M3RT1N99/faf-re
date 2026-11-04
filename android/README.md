@@ -113,8 +113,9 @@ the game data they imported. Everything lives in the app's external files folder
   fingers that move together pan the camera and two that move apart or closer zoom it. While a
   building's ghost waits to be placed, a tap puts it there and a tap on it places the building; a
   finger that moves takes it along, from wherever on the screen it landed, and one that stays a moment
-  moves it by the smallest steps, to set it against another building; a quick tap of two fingers
-  cancels. A bar at the screen's edge has what fingers have not: *Order* swaps the left and right
+  away from it moves it by the smallest steps, to set it against another building; a finger that stays
+  on the ghost until the tick and then moves draws a line of buildings, which go up when it lifts, and a
+  second finger gives that up; a quick tap of two fingers cancels. A bar at the screen's edge has what fingers have not: *Order* swaps the left and right
   buttons, so that taps give orders, *Shift* and *Ctrl* stay down until tapped again, *Del* makes a tap
   delete the queued order under it, and *Keys* opens the on-screen keyboard, which plain keys go to the
   game from, with what it typed shown over the picture, as it covers the game's text field. The game draws at a size of its own (`PictureSize`, a button on the
