@@ -1,0 +1,18 @@
+diff --git a/src/platform/posix/Win32Shim.cpp b/src/platform/posix/Win32Shim.cpp
+index 9821fb9f..0077aeee 100644
+--- a/src/platform/posix/Win32Shim.cpp
++++ b/src/platform/posix/Win32Shim.cpp
+@@ -1654,6 +1654,13 @@ int MultiByteToWideChar(
+   return static_cast<int>(out.size());
+ }
+ 
++// Android client build: a path as the engine spells it, the way the disk has it, for what opens
++// files past this layer (moho/audio/SofdecRuntime.cpp).
++std::string Win32Android_DiskPath(const char* const path)
++{
++  return SlashPath(path);
++}
++
+ BOOL PathFileExistsW(const wchar_t* const path)
+ {
+   return ::access(ResolveCase(NarrowPath(path)).c_str(), F_OK) == 0 ? TRUE : FALSE;

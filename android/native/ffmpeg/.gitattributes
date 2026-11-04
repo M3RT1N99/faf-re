@@ -1,0 +1,2 @@
+# sh takes no CRLF, whatever the checkout's line ends are.
+generate.sh text eol=lf

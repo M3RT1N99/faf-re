@@ -1,0 +1,60 @@
+diff --git a/src/moho/audio/SofdecRuntime.cpp b/src/moho/audio/SofdecRuntime.cpp
+index 82d57894..d87b3dd7 100644
+--- a/src/moho/audio/SofdecRuntime.cpp
++++ b/src/moho/audio/SofdecRuntime.cpp
+@@ -20,6 +20,10 @@
+ #include <exception>
+ #include <memory>
+ #include <span>
++#include <string>
++
++// Android client build: src/platform/posix/Win32Shim.cpp has it.
++std::string Win32Android_DiskPath(const char* path);
+ 
+ namespace moho
+ {
+@@ -28,6 +32,8 @@ namespace moho
+     sfd::Player player;
+     int outputPitch{}, outputHeight{};
+     std::shared_ptr<sfd::DecodedVideoFrame> borrowedFrame;
++    // Android client build: what the texture has, held so that a new frame cannot take its address.
++    std::shared_ptr<sfd::DecodedVideoFrame> uploadedFrame;
+   };
+ } // namespace moho
+ std::int32_t mwPlyCalcWorkCprmSfd(
+@@ -83,7 +89,10 @@ void mwPlyStartFname(
+ {
+   if (p) {
+     p->borrowedFrame.reset();
+-    p->player.Open(path);
++    p->uploadedFrame.reset();
++    // Android client build: CMovie's path is the file system's, Windows-style and in lower case, and
++    // the player and FFmpeg open it themselves, past the layer that takes such a path.
++    p->player.Open(Win32Android_DiskPath(path).c_str());
+   }
+ }
+ std::int32_t mwPlyGetStat(
+@@ -101,8 +110,13 @@ moho::MwsfdFrameInfo* mwPlyGetCurFrm(
+     return nullptr;
+   out->bufferAddress = nullptr;
+   if (p) {
+-    p->borrowedFrame = p->player.CurrentFrame();
+-    out->bufferAddress = p->borrowedFrame.get();
++    // Android client build: nothing to copy while the texture has this frame. The game draws faster
++    // than a movie runs, and a big frame costs a phone milliseconds of each frame it draws.
++    std::shared_ptr<moho::sfd::DecodedVideoFrame> current = p->player.CurrentFrame();
++    if (current != p->uploadedFrame) {
++      p->borrowedFrame = std::move(current);
++      out->bufferAddress = p->borrowedFrame.get();
++    }
+   }
+   return out;
+ }
+@@ -150,6 +164,7 @@ void mwPlyFxCnvFrmARGB8888(
+       frame.bgra.data() + static_cast<std::size_t>(y) * frame.pitch,
+       frame.pitch
+     );
++  p->uploadedFrame = p->borrowedFrame;
+ }
+ std::int32_t mwPlyGetSubtitle(
+   moho::MwsfdPlaybackStateSubobj*,

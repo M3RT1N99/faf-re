@@ -3,8 +3,8 @@
 // The Android client build's <dsound.h>: the engine's POSIX one (src/platform/posix/win32), and
 // the DirectSound the audio engine (the speaker setup) and the movies' sound sink use. There is no
 // DirectSound on Android: DirectSoundCreate fails with DSERR_NODRIVER, as on a Windows PC without
-// a sound device, and the engine takes its default speaker setup and plays movies without sound
-// (src/audio/AudioAndroid.cpp). The interfaces have the SDK's methods in the SDK's order.
+// a sound device, and the engine takes its default speaker setup and plays a movie without the
+// track of its own that one could have (src/audio/AudioAndroid.cpp). The interfaces have the SDK's methods in the SDK's order.
 
 #include_next <dsound.h>
 

@@ -1,0 +1,94 @@
+diff --git a/src/moho/movie/sfd/IndependentSfdBackend.cpp b/src/moho/movie/sfd/IndependentSfdBackend.cpp
+index b38d1055..9a6500cd 100644
+--- a/src/moho/movie/sfd/IndependentSfdBackend.cpp
++++ b/src/moho/movie/sfd/IndependentSfdBackend.cpp
+@@ -85,7 +85,35 @@ namespace moho::sfd
+     void Decode()
+     {
+       DecodeBatch batch;
+-      if (!decoder->Read(batch))
++      const bool more = decoder->Read(batch);
++      Queue(batch, more);
++    }
++    // Android client build: the worker decodes without the lock. A big frame takes it a good part of
++    // a frame's time on a phone, and the game's thread asks for the current frame under the lock each
++    // frame, so it would wait out each decode and, after a stall, a whole catch-up. Only Close and
++    // Open touch the decoder otherwise, and they join the worker first.
++    void DecodeUnlocked(
++      std::unique_lock<std::mutex>& lock
++    )
++    {
++      DecodeBatch batch;
++      bool more{};
++      lock.unlock();
++      try {
++        more = decoder->Read(batch);
++      } catch (...) {
++        lock.lock();
++        throw;
++      }
++      lock.lock();
++      Queue(batch, more);
++    }
++    void Queue(
++      DecodeBatch& batch,
++      bool more
++    )
++    {
++      if (!more)
+         eof = true;
+       for (auto& frame : batch.video) {
+         if (frame->width != metadata.header.width || frame->height != metadata.header.height)
+@@ -142,25 +170,36 @@ namespace moho::sfd
+         audioFinished = true;
+       }
+     }
+-    void Tick()
++    // Android client build: a frame that is due leaves the queue at once, not only after the decoding
++    // in Tick. On a CPU that is only just fast enough, or after a stall of this thread, late frames
++    // piled up behind the half second kept ready, and Queue's limit is 17 frames at 1824x1024.
++    void PresentDue()
++    {
++      const double now = Time();
++      while (!video.empty() && (video.front()->pts <= now + 0.005 || !current)) {
++        current = std::move(video.front());
++        video.pop_front();
++      }
++    }
++    void Tick(
++      std::unique_lock<std::mutex>& lock
++    )
+     {
+       SupplyAudio();
++      PresentDue();
+       double now = Time();
+       // Keep about half a second ready. A worker pumps independently of rendering,
+       // including while the engine is loading or not requesting textures.
+-      for (unsigned budget = 0; !eof && budget < 256; ++budget) {
++      for (unsigned budget = 0; !eof && !quitting && budget < 256; ++budget) {
+         const bool needVideo = video.empty() || video.back()->pts < now + 0.5;
+         const bool needAudio = sink && sink->Submitted() < now + 0.5;
+         if (!needVideo && !needAudio)
+           break;
+-        Decode();
++        DecodeUnlocked(lock);
+         SupplyAudio();
++        PresentDue();
+       }
+       now = Time();
+-      while (!video.empty() && (video.front()->pts <= now + 0.005 || !current)) {
+-        current = std::move(video.front());
+-        video.pop_front();
+-      }
+       if (eof && video.empty() && (!sink || (audio.empty() && sink->Empty())) && now >= endTime)
+         status = 3;
+     }
+@@ -170,7 +209,7 @@ namespace moho::sfd
+       while (!quitting && status == 2) {
+         if (!paused) {
+           try {
+-            Tick();
++            Tick(lock);
+           } catch (const std::exception& error) {
+             Fail(error);
+           }

@@ -1,6 +1,9 @@
 // What the engine's audio needs beside the XACT engine (XactEngineAndroid.cpp):
 //
-// - DirectSoundCreate (include/win32/dsound.h): no device, DSERR_NODRIVER, so movies have no sound;
+// - DirectSoundCreate (include/win32/dsound.h): no device, DSERR_NODRIVER. The engine's speaker
+//   setup stays at its default, stereo as this output is. The sound of the game's movies comes from
+//   the XACT engine: only e3_demo_cut has a track of its own, and no menu plays that movie. A movie
+//   with a track plays without it, on the player's steady clock;
 // - X3DAudio: F3DAudio, FAudio's reimplementation of it (cmake/FafAndroidFAudio.cmake);
 // - the XACT clock (moho/audio/XactClock.cpp, left out of this build): there is no XACT DLL to
 //   patch.
