@@ -4,10 +4,8 @@
 // (moho/audio/AudioEngine.h) and takes from the SDK header only the data the XACT engine and the
 // game exchange: the runtime parameters, the notification structures, the streaming parameters.
 // Their layouts are the June 2010 SDK's: the notifications packed to 1 byte, the rest at the
-// default alignment. AudioEngine.h checks the sizes and offsets it relies on.
-//
-// No XACT engine exists on Android (CoCreateInstance finds none: src/win32/Win32Android.cpp), so
-// the game runs without sound, as on a Windows PC without the XACT runtime.
+// default alignment. AudioEngine.h checks the sizes and offsets it relies on. The XACT engine is
+// src/audio/XactEngineAndroid.cpp.
 
 #include <Windows.h>
 

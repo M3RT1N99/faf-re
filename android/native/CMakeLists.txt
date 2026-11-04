@@ -22,6 +22,8 @@
 #   faf_android_dxc                src/gal/DxcAndroid.cpp, the one file on DXC's own headers
 #   faf_dxc                        libdxcompiler.so, DXC for the effects (cmake/FafAndroidDxc.cmake)
 #   freetype                       FreeType, under the GDI font functions (cmake/FafAndroidFreetype.cmake)
+#   faudio                         FAudio, under the XACT engine and X3DAudio (cmake/FafAndroidFAudio.cmake)
+#   faf_audio                      src/audio: the XACT engine on FACT, X3DAudio on F3DAudio
 #   faf_gal                        the renderer (gpg/gal): the Vulkan backend with what it shares
 #   faf_client                     the rest of the client
 #   fafgame                        libfafgame.so, all of it
@@ -71,6 +73,10 @@ include("${FAF_ANDROID_DIR}/cmake/FafAndroidDxc.cmake")
 # FreeType, under the GDI font functions (cmake/FafAndroidFreetype.cmake): a static library of this
 # build, its licences in ${CMAKE_BINARY_DIR}/licenses for the app.
 include("${FAF_ANDROID_DIR}/cmake/FafAndroidFreetype.cmake")
+
+# FAudio, under the XACT engine and X3DAudio (cmake/FafAndroidFAudio.cmake): a static library of this
+# build, its licence in ${CMAKE_BINARY_DIR}/licenses for the app.
+include("${FAF_ANDROID_DIR}/cmake/FafAndroidFAudio.cmake")
 
 # src/gal/ShaderCompilerAndroid.cpp gives DXC the arguments of the engine's
 # gpg/gal/effects/ShaderCompiler.cpp, which this build leaves out. When upstream changes that file,
@@ -263,8 +269,6 @@ target_link_libraries(faf_wx_lite PUBLIC faf_android_settings)
 
 add_library(faf_client OBJECT ${_faf_client_files}
   src/app/EntityDialogAndroid.cpp
-  src/audio/AudioAndroid.cpp
-  src/audio/XactEngineAndroid.cpp
   src/diag/FrameSamplerAndroid.cpp
   src/movie/FfmpegSfdDecoderAndroid.cpp
   src/gal/D3D9Unavailable.cpp
@@ -280,6 +284,12 @@ target_link_libraries(faf_client PUBLIC faf_android_settings faf_wx_lite)
 set_property(SOURCE "${FAF_REPO}/src/moho/net/CLobby.cpp" APPEND PROPERTY COMPILE_DEFINITIONS
   _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1)
 
+# The XACT engine and X3DAudio apart from the rest: the audio test takes them without the client.
+add_library(faf_audio OBJECT src/audio/AudioAndroid.cpp src/audio/XactEngineAndroid.cpp)
+target_link_libraries(faf_audio PUBLIC faf_android_settings)
+# FAudio's headers. Whoever takes these objects links the library itself.
+target_link_libraries(faf_audio PRIVATE faudio)
+
 # The host (WX_LITE.md): the program's start, and the activity's surface, input and lifecycle as
 # Win32 messages.
 add_library(faf_host OBJECT src/host/GameHost.cpp src/host/KeysAndroid.cpp)
@@ -289,8 +299,9 @@ target_link_libraries(faf_host PUBLIC faf_android_settings faf_wx_lite)
 # libfafgame.so: the activity's native half, the whole engine and its host.
 add_library(fafgame SHARED
   $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_android_dxc>
-  $<TARGET_OBJECTS:faf_gal> $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_host>)
-target_link_libraries(fafgame PRIVATE faf_game_sim freetype android log ${CMAKE_DL_LIBS})
+  $<TARGET_OBJECTS:faf_gal> $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_audio>
+  $<TARGET_OBJECTS:faf_host>)
+target_link_libraries(fafgame PRIVATE faf_game_sim freetype faudio android log ${CMAKE_DL_LIBS})
 target_link_options(fafgame PRIVATE ${_faf_android_library_options})
 
 # libfafgalsmoke.so: the renderer on the phone's Vulkan without the client (src/smoke). Without
@@ -326,3 +337,10 @@ add_executable(faf_wx_lite_tests
 target_include_directories(faf_wx_lite_tests PRIVATE "${FAF_ANDROID_DIR}/include")
 target_link_libraries(faf_wx_lite_tests PRIVATE faf_android_settings faf_game_sim_archive freetype ${_faf_sim_libraries} ${CMAKE_DL_LIBS})
 target_link_options(faf_wx_lite_tests PRIVATE -static -Wl,--gc-sections -Wl,--no-dependent-libraries)
+
+# faf_audio_tests (tests/audio): the game's XACT engine with the game's banks, the mix heard through
+# the platform's observer, on a device: it needs Android's libaaudio, so it is not static. Like the
+# game, it takes the engine's POSIX layer from the simulation's objects.
+add_executable(faf_audio_tests tests/audio/AudioTests.cpp $<TARGET_OBJECTS:faf_audio>)
+target_link_libraries(faf_audio_tests PRIVATE faf_android_settings faudio faf_game_sim_archive ${_faf_sim_libraries} ${CMAKE_DL_LIBS})
+target_link_options(faf_audio_tests PRIVATE -Wl,--gc-sections -Wl,--no-dependent-libraries)

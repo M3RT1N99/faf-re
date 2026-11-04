@@ -63,6 +63,9 @@ final class Game {
     /** The activity came to the front or went to the back. */
     static native void foreground(boolean front);
 
+    /** The activity got the audio focus or lost it; without it the game's sound pauses. */
+    static native void audioFocus(boolean held);
+
     /** The pointer's position in the surface's pixels. */
     static native void mouseMove(int x, int y);
 

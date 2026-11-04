@@ -1,0 +1,138 @@
+diff --git a/src/FACT.c b/src/FACT.c
+index ae299fb..7860ed1 100644
+--- a/src/FACT.c
++++ b/src/FACT.c
+@@ -248,6 +248,32 @@ uint32_t FACTAudioEngine_GetFinalMixFormat(
+ 	return FAUDIO_OK;
+ }
+ 
++/* A category sounds at its authored volume, times what the program set, times
++ * its parent's: what comes down the hierarchy, whichever part of it changed.
++ */
++static void FACT_INTERNAL_UpdateCategoryVolume(
++	FACTAudioEngine *pEngine,
++	uint16_t nCategory
++) {
++	FACTAudioCategory *category = &pEngine->categories[nCategory];
++	uint16_t i;
++
++	category->currentVolume = category->volume * category->setVolume;
++	if (category->parentCategory != -1)
++	{
++		category->currentVolume *= pEngine->categories[
++			category->parentCategory
++		].currentVolume;
++	}
++	for (i = 0; i < pEngine->categoryCount; i += 1)
++	{
++		if (pEngine->categories[i].parentCategory == nCategory)
++		{
++			FACT_INTERNAL_UpdateCategoryVolume(pEngine, i);
++		}
++	}
++}
++
+ uint32_t FACTAudioEngine_Initialize(
+ 	FACTAudioEngine *pEngine,
+ 	const FACTRuntimeParameters *pParams
+@@ -255,6 +281,7 @@ uint32_t FACTAudioEngine_Initialize(
+ 	FAudioDeviceDetails device_details;
+ 	uint32_t parseRet;
+ 	uint32_t deviceIndex;
++	uint16_t i;
+ 	FAudioVoiceDetails masterDetails;
+ 	FAudioEffectDescriptor reverbDesc;
+ 	FAudioEffectChain reverbChain;
+@@ -330,6 +357,18 @@ uint32_t FACTAudioEngine_Initialize(
+ 		}
+ 	}
+ 
++	for (i = 0; i < pEngine->categoryCount; i += 1)
++	{
++		pEngine->categories[i].setVolume = 1.0f;
++	}
++	for (i = 0; i < pEngine->categoryCount; i += 1)
++	{
++		if (pEngine->categories[i].parentCategory == -1)
++		{
++			FACT_INTERNAL_UpdateCategoryVolume(pEngine, i);
++		}
++	}
++
+ 	pEngine->notifications = NULL;
+ 	pEngine->notification_count = 0;
+ 	pEngine->notifications_capacity = 0;
+@@ -870,23 +909,9 @@ uint32_t FACTAudioEngine_SetVolume(
+ 	uint16_t nCategory,
+ 	float volume
+ ) {
+-	uint16_t i;
+ 	FAudio_PlatformLockMutex(pEngine->apiLock);
+-	pEngine->categories[nCategory].currentVolume = (
+-		pEngine->categories[nCategory].volume *
+-		volume
+-	);
+-	for (i = 0; i < pEngine->categoryCount; i += 1)
+-	{
+-		if (pEngine->categories[i].parentCategory == nCategory)
+-		{
+-			FACTAudioEngine_SetVolume(
+-				pEngine,
+-				i,
+-				pEngine->categories[i].currentVolume
+-			);
+-		}
+-	}
++	pEngine->categories[nCategory].setVolume = volume;
++	FACT_INTERNAL_UpdateCategoryVolume(pEngine, nCategory);
+ 	FAudio_PlatformUnlockMutex(pEngine->apiLock);
+ 	return FAUDIO_OK;
+ }
+diff --git a/src/FACT_internal.c b/src/FACT_internal.c
+index 1cdb334..592b022 100644
+--- a/src/FACT_internal.c
++++ b/src/FACT_internal.c
+@@ -878,6 +878,10 @@ bool play_sound(FACTCue *cue)
+ void FACT_INTERNAL_DestroySound(FACTSoundInstance *sound)
+ {
+ 	uint8_t i;
++	/* Only play_sound counts an instance: a Cue that failed its limit, or
++	 * was stopped or destroyed while prepared, has none to give back.
++	 */
++	const bool counted = sound->state != SOUND_STATE_STOPPED;
+ 
+ 	sound->parentCue->playingSound = NULL;
+ 	for (i = 0; i < sound->sound->trackCount; i += 1)
+@@ -900,7 +904,7 @@ void FACT_INTERNAL_DestroySound(FACTSoundInstance *sound)
+ 	}
+ 	sound->parentCue->parentBank->parentEngine->pFree(sound->tracks);
+ 
+-	if (sound->sound->category != FACTCATEGORY_INVALID)
++	if (counted && sound->sound->category != FACTCATEGORY_INVALID)
+ 	{
+ 		sound->parentCue->parentBank->parentEngine->categories[
+ 			sound->sound->category
+@@ -911,7 +915,10 @@ void FACT_INTERNAL_DestroySound(FACTSoundInstance *sound)
+ 	{
+ 		sound->parentCue->state |= FACT_STATE_STOPPED;
+ 		sound->parentCue->state &= ~(FACT_STATE_PLAYING | FACT_STATE_PAUSED | FACT_STATE_STOPPING);
+-		sound->parentCue->data->instanceCount -= 1;
++		if (counted)
++		{
++			sound->parentCue->data->instanceCount -= 1;
++		}
+ 
+ 		FACT_INTERNAL_SendCueNotification(sound->parentCue, FACTNOTIFICATIONTYPE_CUESTOP);
+ 	}
+diff --git a/src/FACT_internal.h b/src/FACT_internal.h
+index 864d369..f976c98 100644
+--- a/src/FACT_internal.h
++++ b/src/FACT_internal.h
+@@ -56,6 +56,7 @@ typedef struct FACTAudioCategory
+ 
+ 	uint8_t instanceCount;
+ 	float currentVolume;
++	float setVolume;
+ } FACTAudioCategory;
+ 
+ typedef struct FACTVariable

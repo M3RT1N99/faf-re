@@ -1,0 +1,2 @@
+# FAudio's sources have LF line ends, and git apply takes the patch as it is on any checkout.
+FAudio.patch -text

@@ -1,27 +1,30 @@
-// The XACT engine of the Android client build: one that is there and plays nothing, until C3
-// brings FAudio's FACT (CLIENT_PLAN.md). Without an engine every sound function raises a Lua error
-// ("SND: Error retrieving XACT COM interface"), as on a PC without the XACT runtime. That stops the
-// import of /lua/usermusic.lua and with it /lua/options/options.lua, so every option reads as an
-// empty string, and an empty "secondary_adapter" makes CScApp::CreateDevice ask for a second head
-// on the one screen. With this engine the game runs as on a PC whose sound is muted.
+// The XACT engine of the Android client build: FACT, FAudio's reimplementation of XACT 3
+// (cmake/FafAndroidFAudio.cmake), behind the engine's own XACT interfaces (moho/audio/AudioEngine.h).
+// FAudioPlatformAndroid.c plays what it mixes. CoCreateInstance (src/win32/Win32Android.cpp) creates
+// it through FafAndroid_CreateClientInstance for XACT's three class IDs.
 //
-// The interfaces are the engine's own (moho/audio/AudioEngine.h). Without looking into the banks,
-// the engine answers as XACT does for names it knows: every cue, category and variable name has an
-// index of its own, a cue plays for a moment and then stops, and a global variable keeps what was
-// set. CoCreateInstance (src/win32/Win32Android.cpp) creates it through
-// FafAndroid_CreateClientInstance for XACT's three class IDs.
+// Each interface holds its FACT object, and each method is FACT's function of that name. The
+// engine's structures are XACT's and FACT's its own, so they are copied field by field. Where FACT
+// has nothing, the method answers as an engine without the feature would:
+//
+// - PrepareWave, PrepareInMemoryWave, PrepareStreamingWave: TODOs in FACT that hand back no wave.
+//   They fail here; the engine never calls them.
+// - QueryInterface: FACT has no COM. There is the one interface.
+// - The sound bank's and cue's reserved slots: the engine never calls them.
 
 #include <Windows.h>
 #include <mmreg.h>
 
+#include <FACT.h>
+
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
-#include <string>
 #include <unordered_map>
 
+#include "FAudioPlatformAndroid.h"
+#include "gpg/core/utils/Logging.h"
 #include "moho/audio/AudioEngine.h"
 
 namespace
@@ -33,63 +36,161 @@ namespace
     {0xcedde475u, 0x50b5u, 0x47efu, {0x91u, 0xa7u, 0x3bu, 0x49u, 0xa0u, 0xe8u, 0xe5u, 0x88u}},
   };
 
-  // XACT's cue states (XACT_CUESTATE_*).
-  constexpr std::int32_t kCuePrepared = 0x04;
-  constexpr std::int32_t kCuePlaying = 0x08;
-  constexpr std::int32_t kCueStopped = 0x20;
+  // XACTENGINE_E_NOGLOBALSETTINGS (moho/audio/AudioEngine.cpp has its text).
+  constexpr std::int32_t kNoGlobalSettings = static_cast<std::int32_t>(0x8AC70009u);
 
-  // How long a cue counts as playing. The sound manager frees a one-shot sound's record when its
-  // cue stops and starts a looping one (music, ambience) again, so a short time keeps both cheap.
-  constexpr std::chrono::milliseconds kCuePlayTime{1000};
+  [[maybe_unused]] const bool gLogHandlerSet = [] {
+    FAudioAndroid_SetLogHandler([](const char* const line) { gpg::Logf("FAudio: %s", line); });
+    return true;
+  }();
 
-  /** Names and the indices handed out for them, in the order they were first asked for. */
-  class NameIndex
+  // FACT's codes are HRESULTs in an unsigned type.
+  [[nodiscard]] constexpr bool Failed(const std::uint32_t result)
+  {
+    return static_cast<std::int32_t>(result) < 0;
+  }
+
+  // --- Notifications ----------------------------------------------------------------------------
+  // FACT's callback gets FACT's objects and has no context of ours, so the way back to the engine's
+  // interfaces and its callback is process-wide. The engine gives all its instances one callback.
+
+  std::mutex gInterfacesMutex;
+  std::unordered_map<const void*, void*> gInterfaces; // FACT's object: the interface over it
+  std::atomic<XACT_NOTIFICATION_CALLBACK> gNotificationCallback{nullptr};
+
+  void BindInterface(const void* const fact, void* const engineInterface)
+  {
+    const std::lock_guard<std::mutex> lock(gInterfacesMutex);
+    gInterfaces[fact] = engineInterface;
+  }
+
+  void UnbindInterface(const void* const fact)
+  {
+    const std::lock_guard<std::mutex> lock(gInterfacesMutex);
+    gInterfaces.erase(fact);
+  }
+
+  /// A managed cue has no interface: the engine never got one.
+  template <class Opaque>
+  [[nodiscard]] Opaque* InterfaceOver(const void* const fact)
+  {
+    const std::lock_guard<std::mutex> lock(gInterfacesMutex);
+    const auto found = gInterfaces.find(fact);
+    return (found != gInterfaces.end()) ? static_cast<Opaque*>(found->second) : nullptr;
+  }
+
+  void HandleFactNotification(const FACTNotification* const fact)
+  {
+    XACT_NOTIFICATION notification{};
+    notification.type = fact->type;
+    notification.timeStamp = fact->timeStamp;
+    notification.pvContext = fact->pvContext;
+    switch (fact->type) {
+    case FACTNOTIFICATIONTYPE_CUEPREPARED:
+    case FACTNOTIFICATIONTYPE_CUEPLAY:
+    case FACTNOTIFICATIONTYPE_CUESTOP:
+    case FACTNOTIFICATIONTYPE_CUEDESTROYED:
+      notification.cue.cueIndex = fact->cue.cueIndex;
+      notification.cue.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->cue.pSoundBank);
+      notification.cue.pCue = InterfaceOver<IXACT3Cue>(fact->cue.pCue);
+      break;
+    case FACTNOTIFICATIONTYPE_MARKER:
+      notification.marker.cueIndex = fact->marker.cueIndex;
+      notification.marker.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->marker.pSoundBank);
+      notification.marker.pCue = InterfaceOver<IXACT3Cue>(fact->marker.pCue);
+      notification.marker.marker = fact->marker.marker;
+      break;
+    case FACTNOTIFICATIONTYPE_SOUNDBANKDESTROYED:
+      notification.soundBank.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->soundBank.pSoundBank);
+      break;
+    case FACTNOTIFICATIONTYPE_WAVEBANKDESTROYED:
+    case FACTNOTIFICATIONTYPE_WAVEBANKPREPARED:
+    case FACTNOTIFICATIONTYPE_WAVEBANKSTREAMING_INVALIDCONTENT:
+      notification.waveBank.pWaveBank = InterfaceOver<IXACT3WaveBank>(fact->waveBank.pWaveBank);
+      break;
+    case FACTNOTIFICATIONTYPE_LOCALVARIABLECHANGED:
+    case FACTNOTIFICATIONTYPE_GLOBALVARIABLECHANGED:
+      notification.variable.cueIndex = fact->variable.cueIndex;
+      notification.variable.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->variable.pSoundBank);
+      notification.variable.pCue = InterfaceOver<IXACT3Cue>(fact->variable.pCue);
+      notification.variable.variableIndex = fact->variable.variableIndex;
+      notification.variable.variableValue = fact->variable.variableValue;
+      notification.variable.local = fact->variable.local;
+      break;
+    case FACTNOTIFICATIONTYPE_GUICONNECTED:
+    case FACTNOTIFICATIONTYPE_GUIDISCONNECTED:
+      notification.gui.reserved = fact->gui.reserved;
+      break;
+    case FACTNOTIFICATIONTYPE_WAVEPREPARED:
+    case FACTNOTIFICATIONTYPE_WAVEPLAY:
+    case FACTNOTIFICATIONTYPE_WAVESTOP:
+    case FACTNOTIFICATIONTYPE_WAVELOOPED:
+    case FACTNOTIFICATIONTYPE_WAVEDESTROYED:
+      notification.wave.pWaveBank = InterfaceOver<IXACT3WaveBank>(fact->wave.pWaveBank);
+      notification.wave.waveIndex = fact->wave.waveIndex;
+      notification.wave.cueIndex = fact->wave.cueIndex;
+      notification.wave.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->wave.pSoundBank);
+      notification.wave.pCue = InterfaceOver<IXACT3Cue>(fact->wave.pCue);
+      // No interface exists for a wave: as an identity, it is FACT's.
+      notification.wave.pWave = reinterpret_cast<IXACT3Wave*>(fact->wave.pWave);
+      break;
+    default:
+      break;
+    }
+    if (const XACT_NOTIFICATION_CALLBACK callback = gNotificationCallback.load(); callback != nullptr) {
+      callback(&notification);
+    }
+  }
+
+  // --- The interfaces ---------------------------------------------------------------------------
+
+  class FactCue final : public moho::IXACTCue
   {
   public:
-    [[nodiscard]] std::uint16_t Get(const char* const name)
+    explicit FactCue(FACTCue* const cue)
+      : mCue(cue)
     {
-      const std::lock_guard<std::mutex> lock(mMutex);
-      const auto [entry, added] =
-        mIndices.try_emplace((name != nullptr) ? name : "", static_cast<std::uint16_t>(mIndices.size()));
-      return entry->second;
+      BindInterface(mCue, static_cast<moho::IXACTCue*>(this));
     }
 
-  private:
-    std::mutex mMutex;
-    std::unordered_map<std::string, std::uint16_t> mIndices;
-  };
-
-  class SilentCue final : public moho::IXACTCue
-  {
-  public:
-    explicit SilentCue(NameIndex& variables)
-      : mVariables(variables)
-    {}
+    [[nodiscard]] FACTCue* Fact() const
+    {
+      return mCue;
+    }
 
     std::int32_t __stdcall Play() override
     {
-      mStarted.store(std::chrono::steady_clock::now().time_since_epoch().count());
-      mPlayed.store(true);
-      return S_OK;
+      return static_cast<std::int32_t>(FACTCue_Play(mCue));
     }
 
-    void __stdcall Stop(std::int32_t) override
+    void __stdcall Stop(const std::int32_t stopFlags) override
     {
-      mStopped.store(true);
+      FACTCue_Stop(mCue, static_cast<std::uint32_t>(stopFlags));
     }
 
+    // XACT's cue has one state, and the engine compares with it. FACT's are flags that stay on:
+    // PREPARED on a cue stopped before it played, PLAYING on one that fades out.
     std::int32_t __stdcall GetState(std::int32_t* const outState) override
     {
-      if (outState != nullptr) {
-        *outState = State();
+      std::uint32_t state = 0U;
+      const std::uint32_t result = FACTCue_GetState(mCue, &state);
+      if ((state & FACT_STATE_STOPPED) != 0U) {
+        state = FACT_STATE_STOPPED;
+      } else if ((state & FACT_STATE_STOPPING) != 0U) {
+        state = FACT_STATE_STOPPING;
       }
-      return S_OK;
+      if (outState != nullptr) {
+        *outState = static_cast<std::int32_t>(state);
+      }
+      return static_cast<std::int32_t>(result);
     }
 
     std::int32_t __stdcall Destroy() override
     {
+      const std::uint32_t result = FACTCue_Destroy(mCue);
+      UnbindInterface(mCue);
       delete this;
-      return S_OK;
+      return static_cast<std::int32_t>(result);
     }
 
     void __stdcall Reserved10() override {}
@@ -97,53 +198,48 @@ namespace
     void __stdcall Reserved18() override {}
     void __stdcall Reserved1C() override {}
 
-    std::int32_t __stdcall SetMatrixCoefficients(std::uint32_t, std::uint32_t, const float*) override
+    std::int32_t __stdcall SetMatrixCoefficients(
+      const std::uint32_t srcChannelCount, const std::uint32_t dstChannelCount, const float* const matrixCoefficients
+    ) override
     {
-      return S_OK;
+      return static_cast<std::int32_t>(
+        FACTCue_SetMatrixCoefficients(mCue, srcChannelCount, dstChannelCount, const_cast<float*>(matrixCoefficients))
+      );
     }
 
     std::uint16_t __stdcall GetVariableIndex(const char* const variableName) override
     {
-      return mVariables.Get(variableName);
+      return FACTCue_GetVariableIndex(mCue, variableName);
     }
 
-    std::int32_t __stdcall SetVariable(std::uint16_t, float) override
+    std::int32_t __stdcall SetVariable(const std::uint16_t variableIndex, const float value) override
     {
-      return S_OK;
+      return static_cast<std::int32_t>(FACTCue_SetVariable(mCue, variableIndex, value));
     }
 
   private:
-    ~SilentCue() = default;
+    ~FactCue() = default;
 
-    [[nodiscard]] std::int32_t State() const
-    {
-      if (mStopped.load()) {
-        return kCueStopped;
-      }
-      if (!mPlayed.load()) {
-        return kCuePrepared;
-      }
-      const std::chrono::steady_clock::duration played =
-        std::chrono::steady_clock::now().time_since_epoch() - std::chrono::steady_clock::duration(mStarted.load());
-      return (played < kCuePlayTime) ? kCuePlaying : kCueStopped;
-    }
-
-    NameIndex& mVariables;
-    std::atomic<std::chrono::steady_clock::rep> mStarted{0};
-    std::atomic<bool> mPlayed{false};
-    std::atomic<bool> mStopped{false};
+    FACTCue* mCue;
   };
 
-  class SilentSoundBank final : public moho::IXACTSoundBank
+  class FactSoundBank final : public moho::IXACTSoundBank
   {
   public:
-    explicit SilentSoundBank(NameIndex& cueVariables)
-      : mCueVariables(cueVariables)
-    {}
+    explicit FactSoundBank(FACTSoundBank* const bank)
+      : mBank(bank)
+    {
+      BindInterface(mBank, static_cast<moho::IXACTSoundBank*>(this));
+    }
+
+    [[nodiscard]] FACTSoundBank* Fact() const
+    {
+      return mBank;
+    }
 
     std::uint16_t __stdcall GetCueIndex(const char* const cueName) override
     {
-      return mCues.Get(cueName);
+      return FACTSoundBank_GetCueIndex(mBank, cueName);
     }
 
     std::int32_t __stdcall Reserved04() override
@@ -156,23 +252,42 @@ namespace
       return E_NOTIMPL;
     }
 
-    std::int32_t __stdcall Prepare(std::uint16_t, std::uint32_t, std::uint32_t, moho::IXACTCue** const outCue) override
+    std::int32_t __stdcall Prepare(
+      const std::uint16_t cueIndex, const std::uint32_t flags, const std::uint32_t timeOffset, moho::IXACTCue** const outCue
+    ) override
     {
       if (outCue == nullptr) {
         return E_INVALIDARG;
       }
-      *outCue = new SilentCue(mCueVariables);
-      return S_OK;
+      *outCue = nullptr;
+      FACTCue* cue = nullptr;
+      const std::uint32_t result = FACTSoundBank_Prepare(mBank, cueIndex, flags, static_cast<std::int32_t>(timeOffset), &cue);
+      if (!Failed(result)) {
+        *outCue = new FactCue(cue);
+      }
+      return static_cast<std::int32_t>(result);
     }
 
-    // Without a cue to hand back, XACT plays the cue on its own; here there is nothing to play.
-    std::int32_t __stdcall Play(std::uint16_t, std::uint32_t, std::uint32_t, moho::IXACTCue** const outCue) override
+    // Without a cue to hand back, FACT owns the cue and destroys it when it ends. With one this is
+    // not FACTSoundBank_Play: that drops what FACTCue_Play says about the instance limit, and a cue
+    // that cannot play is not handed out.
+    std::int32_t __stdcall Play(
+      const std::uint16_t cueIndex, const std::uint32_t flags, const std::uint32_t timeOffset, moho::IXACTCue** const outCue
+    ) override
     {
-      if (outCue != nullptr) {
-        *outCue = new SilentCue(mCueVariables);
-        (*outCue)->Play();
+      if (outCue == nullptr) {
+        return static_cast<std::int32_t>(FACTSoundBank_Play(mBank, cueIndex, flags, static_cast<std::int32_t>(timeOffset), nullptr));
       }
-      return S_OK;
+      const std::int32_t prepared = Prepare(cueIndex, flags, timeOffset, outCue);
+      if (prepared < 0) {
+        return prepared;
+      }
+      const std::int32_t played = (*outCue)->Play();
+      if (played < 0) {
+        (*outCue)->Destroy();
+        *outCue = nullptr;
+      }
+      return played;
     }
 
     std::int32_t __stdcall Reserved14() override
@@ -182,31 +297,101 @@ namespace
 
     void __stdcall Destroy() override
     {
+      FACTSoundBank_Destroy(mBank);
+      UnbindInterface(mBank);
       delete this;
     }
 
   private:
-    ~SilentSoundBank() = default;
+    ~FactSoundBank() = default;
 
-    NameIndex mCues;
-    NameIndex& mCueVariables;
+    FACTSoundBank* mBank;
   };
 
-  class SilentWaveBank final : public moho::IXACTWaveBank
+  class FactWaveBank final : public moho::IXACTWaveBank
   {
   public:
+    /// `stream`: what a streaming bank reads from, for as long as it lives; else null.
+    FactWaveBank(FACTWaveBank* const bank, FAudioIOStream* const stream)
+      : mBank(bank)
+      , mStream(stream)
+    {
+      BindInterface(mBank, static_cast<moho::IXACTWaveBank*>(this));
+    }
+
+    [[nodiscard]] FACTWaveBank* Fact() const
+    {
+      return mBank;
+    }
+
     void __stdcall Destroy() override
     {
+      FACTWaveBank_Destroy(mBank);
+      UnbindInterface(mBank);
+      if (mStream != nullptr) {
+        FAudio_close(mStream);
+      }
       delete this;
     }
 
   private:
-    ~SilentWaveBank() = default;
+    ~FactWaveBank() = default;
+
+    FACTWaveBank* mBank;
+    FAudioIOStream* mStream;
   };
 
-  class SilentEngine final : public moho::IXACTEngine
+  // XACT reads a streaming bank from the file handle it is given; FACT's reader takes a stream.
+  // The engine's handle is one of its POSIX layer's, and it closes the handle after the bank.
+  std::size_t ReadHandle(void* const handle, void* const destination, const std::size_t size, const std::size_t count)
+  {
+    DWORD read = 0U;
+    if (size == 0U || !::ReadFile(handle, destination, static_cast<DWORD>(size * count), &read, nullptr)) {
+      return 0U;
+    }
+    return read / size;
+  }
+
+  std::int64_t SeekHandle(void* const handle, const std::int64_t offset, const int origin)
+  {
+    LARGE_INTEGER distance{};
+    distance.QuadPart = offset;
+    LARGE_INTEGER position{};
+    // FAudio's FAUDIO_SEEK_ values are FILE_BEGIN and the others.
+    if (!::SetFilePointerEx(handle, distance, &position, static_cast<DWORD>(origin))) {
+      return -1;
+    }
+    return position.QuadPart;
+  }
+
+  [[nodiscard]] FACTNotificationDescription ToFact(const moho::AudioNotificationDesc& description)
+  {
+    FACTNotificationDescription fact{};
+    fact.type = description.type;
+    fact.flags = description.flags;
+    if (IXACT3SoundBank* const bank = description.pSoundBank; bank != nullptr) {
+      fact.pSoundBank = static_cast<FactSoundBank*>(reinterpret_cast<moho::IXACTSoundBank*>(bank))->Fact();
+    }
+    if (IXACT3WaveBank* const bank = description.pWaveBank; bank != nullptr) {
+      fact.pWaveBank = static_cast<FactWaveBank*>(reinterpret_cast<moho::IXACTWaveBank*>(bank))->Fact();
+    }
+    if (IXACT3Cue* const cue = description.pCue; cue != nullptr) {
+      fact.pCue = static_cast<FactCue*>(reinterpret_cast<moho::IXACTCue*>(cue))->Fact();
+    }
+    fact.pWave = reinterpret_cast<FACTWave*>(description.pWave);
+    fact.cueIndex = description.cueIndex;
+    fact.waveIndex = description.waveIndex;
+    fact.pvContext = description.pvContext;
+    return fact;
+  }
+
+  class FactEngine final : public moho::IXACTEngine
   {
   public:
+    explicit FactEngine(FACTAudioEngine* const engine)
+      : mEngine(engine)
+    {}
+
     std::int32_t __stdcall QueryInterface(const void*, void** const outObject) override
     {
       if (outObject == nullptr) {
@@ -219,12 +404,12 @@ namespace
 
     std::uint32_t __stdcall AddRef() override
     {
-      return ++mReferences;
+      return FACTAudioEngine_AddRef(mEngine);
     }
 
     std::uint32_t __stdcall Release() override
     {
-      const std::uint32_t left = --mReferences;
+      const std::uint32_t left = FACTAudioEngine_Release(mEngine);
       if (left == 0U) {
         delete this;
       }
@@ -233,77 +418,150 @@ namespace
 
     std::int32_t __stdcall GetRendererCount(std::uint16_t* const outRendererCount) override
     {
-      if (outRendererCount != nullptr) {
-        *outRendererCount = 1U;
+      if (outRendererCount == nullptr) {
+        return E_INVALIDARG;
       }
-      return S_OK;
+      return static_cast<std::int32_t>(FACTAudioEngine_GetRendererCount(mEngine, outRendererCount));
     }
 
-    std::int32_t __stdcall GetRendererDetails(std::uint16_t, void*) override
+    // XACT_RENDERER_DETAILS: FACT's structure has Windows' 16-bit wchar_t, and the layout.
+    std::int32_t __stdcall GetRendererDetails(const std::uint16_t rendererIndex, void* const outRendererDetails) override
     {
-      return E_NOTIMPL;
+      if (outRendererDetails == nullptr) {
+        return E_INVALIDARG;
+      }
+      return static_cast<std::int32_t>(
+        FACTAudioEngine_GetRendererDetails(mEngine, rendererIndex, static_cast<FACTRendererDetails*>(outRendererDetails))
+      );
     }
 
-    // A stereo mix of 48 kHz floats, the format of a phone's output.
     std::int32_t __stdcall GetFinalMixFormat(void* const outWaveFormatExtensible) override
     {
       if (outWaveFormatExtensible == nullptr) {
         return E_INVALIDARG;
       }
+      FAudioWaveFormatExtensible fact{};
+      const std::uint32_t result = FACTAudioEngine_GetFinalMixFormat(mEngine, &fact);
+      if (Failed(result)) {
+        return static_cast<std::int32_t>(result);
+      }
       WAVEFORMATEXTENSIBLE format{};
-      format.Format.wFormatTag = 0xFFFEU; // WAVE_FORMAT_EXTENSIBLE
-      format.Format.nChannels = 2U;
-      format.Format.nSamplesPerSec = 48000U;
-      format.Format.wBitsPerSample = 32U;
-      format.Format.nBlockAlign = 8U;
-      format.Format.nAvgBytesPerSec = 48000U * 8U;
-      format.Format.cbSize = 22U;
-      format.Samples.wValidBitsPerSample = 32U;
-      format.dwChannelMask = 0x3U; // SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+      format.Format.wFormatTag = fact.Format.wFormatTag;
+      format.Format.nChannels = fact.Format.nChannels;
+      format.Format.nSamplesPerSec = fact.Format.nSamplesPerSec;
+      format.Format.nAvgBytesPerSec = fact.Format.nAvgBytesPerSec;
+      format.Format.nBlockAlign = fact.Format.nBlockAlign;
+      format.Format.wBitsPerSample = fact.Format.wBitsPerSample;
+      format.Format.cbSize = fact.Format.cbSize;
+      format.Samples.wValidBitsPerSample = fact.Samples.wValidBitsPerSample;
+      format.dwChannelMask = fact.dwChannelMask;
+      format.SubFormat.Data1 = fact.SubFormat.Data1;
+      format.SubFormat.Data2 = fact.SubFormat.Data2;
+      format.SubFormat.Data3 = fact.SubFormat.Data3;
+      std::memcpy(format.SubFormat.Data4, fact.SubFormat.Data4, sizeof(format.SubFormat.Data4));
       std::memcpy(outWaveFormatExtensible, &format, sizeof(format));
       return S_OK;
     }
 
-    std::int32_t __stdcall Initialize(const moho::AudioRuntimeParams*) override
+    // No file callbacks: the engine sets none, and reads go through what CreateStreamingWaveBank
+    // makes of its handle. No renderer ID: the engine sets none, and there is the one output.
+    std::int32_t __stdcall Initialize(const moho::AudioRuntimeParams* const runtimeParams) override
     {
-      return S_OK;
+      if (runtimeParams == nullptr) {
+        return E_INVALIDARG;
+      }
+      // An import without sounds/. FACT would make up a few categories and open an output for
+      // nothing, and the engine would turn sound off only at the variable it then misses.
+      if (runtimeParams->pGlobalSettingsBuffer == nullptr) {
+        return kNoGlobalSettings;
+      }
+      gNotificationCallback.store(runtimeParams->fnNotificationCallback);
+
+      FACTRuntimeParameters fact{};
+      fact.lookAheadTime = runtimeParams->lookAheadTime;
+      fact.pGlobalSettingsBuffer = runtimeParams->pGlobalSettingsBuffer;
+      fact.globalSettingsBufferSize = runtimeParams->globalSettingsBufferSize;
+      fact.globalSettingsFlags = runtimeParams->globalSettingsFlags;
+      fact.globalSettingsAllocAttributes = runtimeParams->globalSettingsAllocAttributes;
+      fact.fnNotificationCallback = (runtimeParams->fnNotificationCallback != nullptr) ? &HandleFactNotification : nullptr;
+      return static_cast<std::int32_t>(FACTAudioEngine_Initialize(mEngine, &fact));
     }
 
-    void __stdcall ShutDown() override {}
+    void __stdcall ShutDown() override
+    {
+      FACTAudioEngine_ShutDown(mEngine);
+    }
 
     std::int32_t __stdcall DoWork() override
     {
-      return S_OK;
+      return static_cast<std::int32_t>(FACTAudioEngine_DoWork(mEngine));
     }
 
-    std::int32_t __stdcall CreateSoundBank(const void*, std::int32_t, std::uint32_t, std::uint32_t, moho::IXACTSoundBank** const outSoundBank) override
+    std::int32_t __stdcall CreateSoundBank(
+      const void* const data,
+      const std::int32_t sizeBytes,
+      const std::uint32_t flags,
+      const std::uint32_t allocAttributes,
+      moho::IXACTSoundBank** const outSoundBank
+    ) override
     {
       if (outSoundBank == nullptr) {
         return E_INVALIDARG;
       }
-      *outSoundBank = new SilentSoundBank(mCueVariables);
-      return S_OK;
+      *outSoundBank = nullptr;
+      FACTSoundBank* bank = nullptr;
+      const std::uint32_t result =
+        FACTAudioEngine_CreateSoundBank(mEngine, data, static_cast<std::uint32_t>(sizeBytes), flags, allocAttributes, &bank);
+      if (!Failed(result)) {
+        *outSoundBank = new FactSoundBank(bank);
+      }
+      return static_cast<std::int32_t>(result);
     }
 
-    std::int32_t __stdcall CreateInMemoryWaveBank(const void*, std::int32_t, std::uint32_t, std::uint32_t, moho::IXACTWaveBank** const outWaveBank) override
+    std::int32_t __stdcall CreateInMemoryWaveBank(
+      const void* const data,
+      const std::int32_t sizeBytes,
+      const std::uint32_t flags,
+      const std::uint32_t allocAttributes,
+      moho::IXACTWaveBank** const outWaveBank
+    ) override
     {
       if (outWaveBank == nullptr) {
         return E_INVALIDARG;
       }
-      *outWaveBank = new SilentWaveBank();
-      return S_OK;
+      *outWaveBank = nullptr;
+      FACTWaveBank* bank = nullptr;
+      const std::uint32_t result =
+        FACTAudioEngine_CreateInMemoryWaveBank(mEngine, data, static_cast<std::uint32_t>(sizeBytes), flags, allocAttributes, &bank);
+      if (!Failed(result)) {
+        *outWaveBank = new FactWaveBank(bank, nullptr);
+      }
+      return static_cast<std::int32_t>(result);
     }
 
-    std::int32_t __stdcall CreateStreamingWaveBank(const void*, moho::IXACTWaveBank** const outWaveBank) override
+    std::int32_t __stdcall CreateStreamingWaveBank(const void* const streamingParams, moho::IXACTWaveBank** const outWaveBank) override
     {
-      if (outWaveBank == nullptr) {
+      if (streamingParams == nullptr || outWaveBank == nullptr) {
         return E_INVALIDARG;
       }
-      *outWaveBank = new SilentWaveBank();
-      return S_OK;
+      *outWaveBank = nullptr;
+      const auto& parameters = *static_cast<const XACT_STREAMING_PARAMETERS*>(streamingParams);
+      FAudioIOStream* const stream = FAudioAndroid_OpenStream(parameters.file, &ReadHandle, &SeekHandle);
+      FACTStreamingParameters fact{};
+      fact.file = stream;
+      fact.offset = parameters.offset;
+      fact.flags = parameters.flags;
+      fact.packetSize = parameters.packetSize;
+      FACTWaveBank* bank = nullptr;
+      const std::uint32_t result = FACTAudioEngine_CreateStreamingWaveBank(mEngine, &fact, &bank);
+      if (Failed(result)) {
+        FAudio_close(stream);
+      } else {
+        *outWaveBank = new FactWaveBank(bank, stream);
+      }
+      return static_cast<std::int32_t>(result);
     }
 
-    // Single waves outside a bank: the engine plays none.
     std::int32_t __stdcall PrepareWave(std::uint32_t, const char*, std::uint16_t, std::uint32_t, std::uint32_t, std::uint8_t, void** const outWave) override
     {
       return NoWave(outWave);
@@ -319,44 +577,53 @@ namespace
       return NoWave(outWave);
     }
 
-    // No sound ends, so there is nothing to notify.
-    std::int32_t __stdcall RegisterNotification(const moho::AudioNotificationDesc*) override
+    std::int32_t __stdcall RegisterNotification(const moho::AudioNotificationDesc* const notificationDesc) override
     {
-      return S_OK;
+      if (notificationDesc == nullptr) {
+        return E_INVALIDARG;
+      }
+      const FACTNotificationDescription fact = ToFact(*notificationDesc);
+      return static_cast<std::int32_t>(FACTAudioEngine_RegisterNotification(mEngine, &fact));
     }
 
-    std::int32_t __stdcall UnRegisterNotification(const moho::AudioNotificationDesc*) override
+    // Null takes all registrations off, in XACT and in FACT.
+    std::int32_t __stdcall UnRegisterNotification(const moho::AudioNotificationDesc* const notificationDesc) override
     {
-      return S_OK;
+      if (notificationDesc == nullptr) {
+        return static_cast<std::int32_t>(FACTAudioEngine_UnRegisterNotification(mEngine, nullptr));
+      }
+      const FACTNotificationDescription fact = ToFact(*notificationDesc);
+      return static_cast<std::int32_t>(FACTAudioEngine_UnRegisterNotification(mEngine, &fact));
     }
 
     std::uint16_t __stdcall GetCategory(const char* const categoryName) override
     {
-      return mCategories.Get(categoryName);
+      return FACTAudioEngine_GetCategory(mEngine, categoryName);
     }
 
-    void __stdcall Stop(std::uint16_t, std::int32_t) override {}
-
-    std::int32_t __stdcall SetVolume(std::uint16_t, float) override
+    void __stdcall Stop(const std::uint16_t category, const std::int32_t flags) override
     {
-      return S_OK;
+      FACTAudioEngine_Stop(mEngine, category, static_cast<std::uint32_t>(flags));
     }
 
-    std::int32_t __stdcall Pause(std::uint16_t, std::int32_t) override
+    std::int32_t __stdcall SetVolume(const std::uint16_t category, const float volume) override
     {
-      return S_OK;
+      return static_cast<std::int32_t>(FACTAudioEngine_SetVolume(mEngine, category, volume));
+    }
+
+    std::int32_t __stdcall Pause(const std::uint16_t category, const std::int32_t pause) override
+    {
+      return static_cast<std::int32_t>(FACTAudioEngine_Pause(mEngine, category, pause));
     }
 
     std::uint16_t __stdcall GetGlobalVariableIndex(const char* const variableName) override
     {
-      return mGlobalNames.Get(variableName);
+      return FACTAudioEngine_GetGlobalVariableIndex(mEngine, variableName);
     }
 
     std::int32_t __stdcall SetGlobalVariable(const std::uint16_t variableIndex, const float value) override
     {
-      const std::lock_guard<std::mutex> lock(mGlobalMutex);
-      mGlobalValues[variableIndex] = value;
-      return S_OK;
+      return static_cast<std::int32_t>(FACTAudioEngine_SetGlobalVariable(mEngine, variableIndex, value));
     }
 
     std::int32_t __stdcall GetGlobalVariable(const std::uint16_t variableIndex, float* const outValue) override
@@ -364,14 +631,11 @@ namespace
       if (outValue == nullptr) {
         return E_INVALIDARG;
       }
-      const std::lock_guard<std::mutex> lock(mGlobalMutex);
-      const auto found = mGlobalValues.find(variableIndex);
-      *outValue = (found != mGlobalValues.end()) ? found->second : 0.0F;
-      return S_OK;
+      return static_cast<std::int32_t>(FACTAudioEngine_GetGlobalVariable(mEngine, variableIndex, outValue));
     }
 
   private:
-    ~SilentEngine() = default;
+    ~FactEngine() = default;
 
     [[nodiscard]] static std::int32_t NoWave(void** const outWave)
     {
@@ -381,12 +645,7 @@ namespace
       return E_NOTIMPL;
     }
 
-    std::atomic<std::uint32_t> mReferences{1U};
-    NameIndex mCategories;
-    NameIndex mGlobalNames;
-    NameIndex mCueVariables;
-    std::mutex mGlobalMutex;
-    std::unordered_map<std::uint16_t, float> mGlobalValues;
+    FACTAudioEngine* mEngine;
   };
 } // namespace
 
@@ -395,7 +654,12 @@ extern "C" HRESULT FafAndroid_CreateClientInstance(REFCLSID classId, REFIID, voi
 {
   for (const GUID& xact : kXactClasses) {
     if (std::memcmp(&classId, &xact, sizeof(GUID)) == 0) {
-      *object = static_cast<moho::IXACTEngine*>(new SilentEngine());
+      FACTAudioEngine* engine = nullptr;
+      const std::uint32_t result = FACTCreateEngine(0U, &engine);
+      if (Failed(result)) {
+        return static_cast<HRESULT>(result);
+      }
+      *object = static_cast<moho::IXACTEngine*>(new FactEngine(engine));
       return S_OK;
     }
   }

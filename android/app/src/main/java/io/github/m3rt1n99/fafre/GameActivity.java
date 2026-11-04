@@ -5,6 +5,9 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -73,6 +76,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private int mLines;
     private int mPictureWidth;
     private int mPictureHeight;
+    /** Held while the activity is in front. The system lowers the game itself for a short sound of another app. */
+    private AudioFocusRequest mAudioFocus;
 
     private TouchInput mTouch;
     private final Runnable mTouchTimer = () -> mTouch.timer();
@@ -136,6 +141,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+        mAudioFocus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).build())
+            .setAcceptsDelayedFocusGain(true)
+            .setOnAudioFocusChangeListener(this::onAudioFocusChange, mHandler)
+            .build();
         if (Build.VERSION.SDK_INT >= 28) {
             WindowManager.LayoutParams attributes = getWindow().getAttributes();
             attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
@@ -455,6 +466,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         hideSystemBars();
         if (mStarted) {
             Game.foreground(true);
+            // While a call has the focus this is delayed, and onAudioFocusChange hears when it comes.
+            int focus = getSystemService(AudioManager.class).requestAudioFocus(mAudioFocus);
+            Game.audioFocus(focus == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
         }
     }
 
@@ -463,8 +477,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (mStarted) {
             mTouch.cancel();
             Game.foreground(false);
+            getSystemService(AudioManager.class).abandonAudioFocusRequest(mAudioFocus);
         }
         super.onPause();
+    }
+
+    private void onAudioFocusChange(int change) {
+        if (change == AudioManager.AUDIOFOCUS_GAIN) {
+            Game.audioFocus(true);
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            Game.audioFocus(false);
+        }
     }
 
     @Override

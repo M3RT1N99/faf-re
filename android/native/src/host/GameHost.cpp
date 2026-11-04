@@ -46,6 +46,7 @@
 #include <Windows.h>
 #include <Win32AndroidHost.h>
 
+#include "../audio/FAudioPlatformAndroid.h"
 #include "KeysAndroid.h"
 #include "gpg/core/diagnostics/CrashHooks.h"
 #include "gpg/core/diagnostics/CrashReport.h"
@@ -446,7 +447,16 @@ Java_io_github_m3rt1n99_fafre_Game_surface(JNIEnv* const env, jclass, const jobj
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_foreground(JNIEnv*, jclass, const jboolean front)
 {
   Report(front != JNI_FALSE ? "to the front" : "to the back");
+  // Here and not with the message: silence comes at once, whatever the game's thread is doing.
+  FAudioAndroid_SetForeground(front != JNI_FALSE ? 1 : 0);
   Win32Android_SetForeground(front != JNI_FALSE ? TRUE : FALSE);
+}
+
+/// The activity got the audio focus or lost it.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_audioFocus(JNIEnv*, jclass, const jboolean held)
+{
+  Report(held != JNI_FALSE ? "audio focus" : "no audio focus");
+  FAudioAndroid_SetAudioFocus(held != JNI_FALSE ? 1 : 0);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_mouseMove(JNIEnv*, jclass, const jint x, const jint y)

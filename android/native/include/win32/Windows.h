@@ -77,8 +77,9 @@ struct OVERLAPPED
 };
 
 // --- COM ----------------------------------------------------------------------------------------
-// The base of COM, as the audio engine and DirectSound use it. No COM class is registered here:
-// CoCreateInstance fails as on Windows for a class that is not installed (src/win32/Win32Android.cpp).
+// The base of COM, as the audio engine and DirectSound use it. The client's XACT engine is the one
+// COM class here; CoCreateInstance fails for others as on Windows for a class that is not installed
+// (src/win32/Win32Android.cpp).
 
 struct GUID
 {
@@ -118,7 +119,7 @@ using LPUNKNOWN = IUnknown*;
 #define CLSCTX_INPROC_SERVER 0x1u
 #define REGDB_E_CLASSNOTREG (static_cast<HRESULT>(0x80040154u))
 
-/// Fails with REGDB_E_CLASSNOTREG: no COM class is installed on Android.
+/// The client's XACT engine; else fails with REGDB_E_CLASSNOTREG.
 HRESULT CoCreateInstance(REFCLSID clsid, LPUNKNOWN outer, DWORD context, REFIID iid, void** object);
 
 // --- Registry -----------------------------------------------------------------------------------
