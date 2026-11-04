@@ -167,3 +167,25 @@ most of C1, as 56 files stop at wx.
 - **Next, C2 (the first picture):** the shader compiler for the Vulkan backend (DXC for arm64, a
   preprocessor in place of `D3DPreprocess`), the textures (direct DDS, the CPU decode of BC, mips),
   and for the menu the options' Lua, which needs the sound functions to work without XACT.
+
+*2026-11-04:*
+- **C2 on the emulator (x86_64, the PC's GPU): the main menu and a skirmish draw and run**, with the
+  game's real files, every effect through the preprocessor and DXC, and the textures through the codec.
+  The menu holds 60 fps; the skirmish about 13 fps, which is C4's. arm64 builds, but no build of
+  this state has run on a phone yet.
+  - The effects' preprocessor: all 22 effects byte for byte against d3dcompiler_47
+    (`tests/fxc`; its header comment has what still differs on generated sources).
+  - The texture codec: BC1 to BC3 texel for texel against WARP, the game's files by route against
+    D3DX11, malformed files refused (`tests/imagecodec`).
+  - Taken ahead from C3: fonts on FreeType, as GDI renders them (`tests/gdifont`), and touch as the
+    mouse. Without sound yet: an XACT engine that plays nothing, so the options load; `/nomovie`.
+  - Android's own: the surface comes and goes (Home and back in the menu, in the skirmish and during
+    its loading), a new size is followed, also one that comes before the program's window;
+    a fatal error ends the process with its message as the app's verdict; a crash leaves the engine's
+    report and debuggerd's tombstone, both in the results zip.
+  - The app keeps FAF's packages whole (about 700 MB) and imports SCFA's `fonts/`.
+- **On the phone it needs:** SCFA imported again (`fonts/`), FAF's files downloaded again (whole).
+  Still unknown there: R32F and RG32F with linear filtering, 64 textures and samplers per stage
+  (a warning in the log says when a GPU has fewer), the speed.
+- **Next:** the first picture on a phone. Then what makes a skirmish playable on one: a touch scheme
+  (right click, camera) and the UI's scale. Sound and movies (C3) after those.

@@ -1,6 +1,6 @@
 // The audio platform of the Android client build: none yet. The game runs without sound, as on a
-// Windows PC without the XACT runtime and without a sound device (CLIENT_PLAN.md: C3 brings
-// FAudio's FACT, a reimplementation of XACT 3). What the engine names of it:
+// Windows PC whose sound is muted (CLIENT_PLAN.md: C3 brings FAudio's FACT, a reimplementation of
+// XACT 3). What the engine names of it:
 //
 // - DirectSoundCreate (include/win32/dsound.h): no device, DSERR_NODRIVER;
 // - the XACT engine: one that plays nothing (XactEngineAndroid.cpp), so the sound functions and

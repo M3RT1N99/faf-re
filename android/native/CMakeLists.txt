@@ -23,9 +23,8 @@
 #   faf_dxc                        libdxcompiler.so, DXC for the effects (cmake/FafAndroidDxc.cmake)
 #   freetype                       FreeType, under the GDI font functions (cmake/FafAndroidFreetype.cmake)
 #   faf_gal                        the renderer (gpg/gal): the Vulkan backend with what it shares
-#   faf_client                     the rest of the client (out of the default build until C1 is
-#                                  done: CLIENT_PLAN.md)
-#   fafgame                        libfafgame.so, all of it (likewise)
+#   faf_client                     the rest of the client
+#   fafgame                        libfafgame.so, all of it
 #   fafgalsmoke                    libfafgalsmoke.so, the renderer test (src/smoke)
 
 cmake_minimum_required(VERSION 3.25)
@@ -118,7 +117,7 @@ set(_faf_client_windows_only
   # call for. src/diag has its frame mark.
   "^gpg/core/diagnostics/FrameSampler\\.cpp$"
   # The XACT engine DLL's clock imports, patched in its PE image: src/audio/AudioAndroid.cpp has
-  # the one function, for an engine that does not exist here.
+  # the one function, for a DLL that does not exist here.
   "^moho/audio/XactClock\\.cpp$"
   # The Windows program's entry and its process setup (CRT hooks, the allocation log, crash tests,
   # accessibility keys, Media Center): on Android the host starts the engine.
@@ -237,8 +236,7 @@ target_link_libraries(faf_android_platform PRIVATE freetype)
 
 # DxcAndroid.cpp calls DXC through DXC's own headers, which declare the Windows types themselves
 # (dxc/WinAdapter.h). It is compiled without this build's settings, whose Win32 stand-ins and the
-# engine's forced POSIX header would declare them again, and sees of the engine only the shader
-# compiler's plain types.
+# engine's forced POSIX header would declare them again, and sees nothing of the engine.
 add_library(faf_android_dxc OBJECT src/gal/DxcAndroid.cpp)
 target_include_directories(faf_android_dxc PRIVATE "${FAF_ANDROID_DXC_SOURCE}/include")
 target_compile_options(faf_android_dxc PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)

@@ -15,24 +15,33 @@
 //     an unknown pragma does the same with nothing written. #pragma warning and #pragma def go to
 //     the top of the output, before everything (defs first, warnings by number); #pragma message
 //     goes to the messages.
+//   - A directive's continuation lines count as blank lines, which are dropped at the start of the
+//     output. A newline inside a block comment is softer than a source line's (Printer::SoftNewline).
+//     A first blank line after content waits for more to come, and the end of the input drops it.
 //
 // Tokens.
 //   - Numbers are literals, not C's preprocessing numbers: `1.0.0` is `1.0` and `.0`, `0x` is `0`
 //     and `x`, `08` is `0` and `8`, `1e` is `1` and `e`. Hexadecimal has a lower-case `0x`; floats
-//     take one suffix of f, h or l (either case); integers u, l, ul or lu.
+//     take one suffix of f, h or l (either case); integers u, l, ul or lu. In a macro's definition,
+//     also one given to the call, a number is nearly C's preprocessing number: `08` and `1abc` whole.
 //   - Identifiers join across `::` (`a::b`, `::a`). Strings and character literals as in C, but an
 //     unterminated string takes the newline in and does not count the line. No digraphs.
-//   - A backslash before a newline continues a directive; in text it is a newline, and in a line
-//     comment it continues the comment and writes the newline. Comments are space.
+//   - A backslash before a newline continues a directive, and a continuation into an empty line
+//     ends the directive there; in text it is a newline that keeps the logical line (no directive
+//     can follow on it), and in a line comment it continues the comment and writes the newline.
+//     Comments are space.
 //
 // Macros.
 //   - Arguments are expanded before # and ## see them: `#x` stringizes the expanded argument, and
 //     `##` joins the spellings of the expanded neighbours, which are then read as tokens again.
-//     `##` at either end of a body and `#` in an object-like one are tokens; `#` before an
-//     identifier that is no parameter stringizes the identifier.
+//     `##` works in function-like macros only. There, at either end of a body it is a token, and `#`
+//     stringizes whatever token follows it, a parameter or not, and nothing at the end of the body.
+//     In an object-like macro both are tokens.
+//   - Arguments are expanded while they are collected. `(`, `[` and `{` nest, and a closing `)`, `]`
+//     or `}` at depth 0 ends the list (`]` and `}` stay in the text).
 //   - A macro that would expand within its own expansion is not expanded at all: the invocation is
 //     written as it stands, from the outermost one in the text or, inside the argument of one, from
-//     the outermost one in that argument.
+//     the outermost one in that argument. Only a function-like name that really gets `(` counts.
 //   - A function-like macro needs `(` after spaces or tabs on its line; a comment or a newline
 //     between them makes the name plain text. An empty argument, too few or too many make an error
 //     and leave the name alone. There are no parameterless and no variadic macros.
@@ -47,6 +56,16 @@
 //
 // Errors are reported with d3dcompiler_47's wording and position, but processing goes on (and the
 // call succeeds), except for #error and #include, which end it.
+//
+// Known differences. The game's and FAF's 22 effects come out the same, byte for byte. Of tests/fxc's
+// generated sources (seed 1, 4000) 240 of the 1734 without errors still differ, and the ones reduced
+// so far come down to corners no effect has:
+//   - `S(S(A,A))`, where S's body ends in S's own name: d3dcompiler_47 leaves the whole outer
+//     invocation as it stands, and this expands it.
+//   - `#` on an argument that expansion did not change: d3dcompiler_47 keeps its source's spelling
+//     (`"(1,2)"`), and this has tokens with their spaces (`"( 1 , 2 )"`).
+//   - A function-like name at the end of a body that takes its `(` from the text after the invocation.
+//   - A blank line and a `#line` after a block comment that ends a line.
 
 #include "FxcPreprocessor.h"
 
