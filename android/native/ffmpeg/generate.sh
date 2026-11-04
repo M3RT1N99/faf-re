@@ -52,9 +52,6 @@ fi
 TMPDIR=$(cygpath -u "${TMPDIR:-${TEMP:-/tmp}}")
 export TMPDIR
 
-# The line ends are the checkout's business: CMakeLists.txt hashes these the same way.
-sha256_lf() { tr -d '\r' < "$1" | sha256sum | cut -d' ' -f1; }
-
 generate() {
   abi=$1
   case $abi in
@@ -115,9 +112,9 @@ generate() {
   } >> "$out/sources.cmake"
 
   {
-    echo "release $(tr -d '\r\n' < "$SRC/RELEASE")"
-    echo "faf/generate.sh $(sha256_lf "$FAF/generate.sh")"
-    echo "faf/gen_sources.py $(sha256_lf "$FAF/gen_sources.py")"
+    echo "commit $(git -C "$SRC" rev-parse HEAD)"
+    echo "api $API"
+    echo "ndk $NDK_REVISION"
   } > "$out/stamp.txt"
 
   # The checks that must not rest on anyone reading the output.

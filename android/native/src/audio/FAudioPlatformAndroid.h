@@ -13,8 +13,8 @@ extern "C" {
 struct FAudioIOStream;
 
 /// The output plays while the activity is in front and holds the audio focus; both are so until
-/// the host says otherwise. Paused, the stream is silent from the end of the write under way, and
-/// nothing in the engine knows. These do not wait for it.
+/// the host says otherwise. Otherwise it has no stream, and nothing in the engine knows. These do not
+/// wait for it.
 void FAudioAndroid_SetForeground(int foreground);
 void FAudioAndroid_SetAudioFocus(int held);
 

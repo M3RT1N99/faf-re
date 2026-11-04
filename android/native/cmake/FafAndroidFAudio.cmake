@@ -5,7 +5,7 @@
 # under them. The library leaves out FAudio's SDL and Win32 platform files, which
 # src/audio/FAudioPlatformAndroid.c replaces, and XNA_Song.c, a player of files the game has none of.
 #
-# FAudio.patch mends two things of FACT's that the game's banks run into (tests/audio has both):
+# FAudio.patch mends what the game's banks run into in FACT, and one crash (tests/audio has them all):
 # - A category's volume does not come down its hierarchy. FACTAudioEngine_SetVolume gave each child
 #   its own volume once more, whatever the parent's: the sound options' "World" reached no unit or
 #   weapon, each change made those quieter for good, and "Global" (SND_Mute) muted nothing. It also
@@ -13,6 +13,7 @@
 # - A cue that fails its instance limit gives back an instance it never counted, as does one stopped
 #   or destroyed while prepared. Past the limit, a cue went on playing and its count wrapped below
 #   zero, after which it failed about 250 times. 1805 of the game's 3171 cues have such a limit.
+# - Playing a cue index out of range uses a pointer that nothing set, where preparing it says so.
 #
 # ../CMakeLists.txt includes this. It gives the target `faudio` and puts FAudio's licence in
 # ${CMAKE_BINARY_DIR}/licenses, from where the app puts it into its assets.

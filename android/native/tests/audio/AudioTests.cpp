@@ -135,7 +135,14 @@ namespace
     while (HeardSoFar().frames < static_cast<std::uint64_t>(duration.count()) * kFramesPerMillisecond && std::chrono::steady_clock::now() < end) {
       std::this_thread::sleep_for(5ms);
     }
-    return HeardSoFar();
+    const Heard heard = HeardSoFar();
+    CHECK_MESSAGE(
+      heard.frames >= static_cast<std::uint64_t>(duration.count()) * kFramesPerMillisecond,
+      "the stream took %llu frames in time for %lld ms",
+      static_cast<unsigned long long>(heard.frames),
+      static_cast<long long>(duration.count())
+    );
+    return heard;
   }
 
   /// What goes out in `duration` by the clock, for the times when nothing should.
@@ -150,8 +157,11 @@ namespace
 
   std::atomic<bool> gLoseDevice{false};
   std::atomic<bool> gNoOutput{false};
+  std::atomic<bool> gStartFails{false};
+  std::atomic<bool> gTakesNothing{false};
+  std::atomic<int> gEmptyWrites{0};
   std::atomic<int> gStreamsOpened{0}; // the tries to
-  std::atomic<std::chrono::steady_clock::rep> gStreamPaused{0}; // when, as steady_clock counts
+  std::atomic<std::chrono::steady_clock::rep> gStreamClosed{0}; // when, as steady_clock counts
 } // namespace
 
 // These stand in for AAudio's functions in this program, which reach the real ones: a test can pull
@@ -163,14 +173,28 @@ extern "C" aaudio_result_t AAudioStream_write(AAudioStream* const stream, const 
   if (gLoseDevice.exchange(false)) {
     return AAUDIO_ERROR_DISCONNECTED;
   }
+  if (gTakesNothing) {
+    ++gEmptyWrites;
+    return 0;
+  }
   return real(stream, buffer, frames, timeoutNanoseconds);
 }
 
-extern "C" aaudio_result_t AAudioStream_requestPause(AAudioStream* const stream)
+extern "C" aaudio_result_t AAudioStream_close(AAudioStream* const stream)
 {
   using Function = aaudio_result_t (*)(AAudioStream*);
-  static const auto real = reinterpret_cast<Function>(::dlsym(RTLD_NEXT, "AAudioStream_requestPause"));
-  gStreamPaused = std::chrono::steady_clock::now().time_since_epoch().count();
+  static const auto real = reinterpret_cast<Function>(::dlsym(RTLD_NEXT, "AAudioStream_close"));
+  gStreamClosed = std::chrono::steady_clock::now().time_since_epoch().count();
+  return real(stream);
+}
+
+extern "C" aaudio_result_t AAudioStream_requestStart(AAudioStream* const stream)
+{
+  using Function = aaudio_result_t (*)(AAudioStream*);
+  static const auto real = reinterpret_cast<Function>(::dlsym(RTLD_NEXT, "AAudioStream_requestStart"));
+  if (gStartFails.exchange(false)) {
+    return AAUDIO_ERROR_INTERNAL;
+  }
   return real(stream);
 }
 
@@ -409,6 +433,7 @@ namespace
     moho::IXACTCue* invalid = nullptr;
     CHECK(bank->Prepare(0xFFF0U, 0U, 0U, &invalid) < 0);
     CHECK(invalid == nullptr);
+    CHECK(bank->Play(0xFFF0U, 0U, 0U, nullptr) < 0);
 
     const Heard before = Listen(100ms);
     CHECK_MESSAGE(before.frames > 0U && before.peak == 0.0F, "frames %llu peak %f", static_cast<unsigned long long>(before.frames), before.peak);
@@ -698,14 +723,14 @@ namespace
     CHECK_MESSAGE(playing.peak > 0.001F, "peak %f", playing.peak);
 
     const auto expectPausedAndBack = [&](void (*const set)(int)) {
-      gStreamPaused = 0;
+      gStreamClosed = 0;
       const auto asked = std::chrono::steady_clock::now();
       set(0);
       std::this_thread::sleep_for(500ms);
-      const auto paused = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(gStreamPaused.load())) - asked;
-      const auto pausedAfter = std::chrono::duration_cast<std::chrono::milliseconds>(paused).count();
-      std::printf("  the stream paused %lld ms after the word\n", static_cast<long long>(pausedAfter));
-      CHECK(gStreamPaused.load() != 0);
+      const auto closed = std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(gStreamClosed.load())) - asked;
+      const auto closedAfter = std::chrono::duration_cast<std::chrono::milliseconds>(closed).count();
+      std::printf("  the stream closed %lld ms after the word\n", static_cast<long long>(closedAfter));
+      CHECK(gStreamClosed.load() != 0);
       const Heard away = ListenAway(300ms);
       CHECK_MESSAGE(away.frames == 0U, "frames %llu", static_cast<unsigned long long>(away.frames));
       CHECK(StateOf(cue) == kCuePlaying);
@@ -806,6 +831,49 @@ namespace
     std::this_thread::sleep_for(100ms);
     const Heard afterAway = Listen(300ms);
     CHECK_MESSAGE(afterAway.peak > 0.001F, "peak %f", afterAway.peak);
+
+    cue->Stop(1);
+    CHECK(cue->Destroy() == S_OK);
+  }
+
+  /// A stream whose start got lost takes nothing and says nothing: the output does not spin on it,
+  /// and a new stream takes over. So it does after a start that fails.
+  void TestStreamThatTakesNothing()
+  {
+    Engine engine;
+    engine.LoadStreamingWaves("Music");
+    moho::IXACTSoundBank* const sounds = engine.LoadSounds("Music");
+    moho::IXACTCue* const cue = PlayCue(sounds, "Main_Menu");
+    CHECK(Listen(200ms).peak > 0.001F);
+
+    const auto waitForStreams = [](const int count) {
+      const auto end = std::chrono::steady_clock::now() + 6s;
+      while (gStreamsOpened.load() < count && std::chrono::steady_clock::now() < end) {
+        std::this_thread::sleep_for(10ms);
+      }
+      CHECK(gStreamsOpened.load() >= count);
+    };
+
+    const int opened = gStreamsOpened.load();
+    gEmptyWrites = 0;
+    gTakesNothing = true;
+    std::this_thread::sleep_for(1s);
+    const int emptyWrites = gEmptyWrites.load();
+    std::printf("  %d empty writes in a second\n", emptyWrites);
+    CHECK_MESSAGE(emptyWrites > 0 && emptyWrites < 1100, "%d empty writes", emptyWrites);
+    waitForStreams(opened + 1);
+    gTakesNothing = false;
+    std::this_thread::sleep_for(100ms);
+    CHECK(Listen(300ms).peak > 0.001F);
+
+    const int beforeFailure = gStreamsOpened.load();
+    FAudioAndroid_SetForeground(0);
+    std::this_thread::sleep_for(100ms);
+    gStartFails = true;
+    FAudioAndroid_SetForeground(1);
+    waitForStreams(beforeFailure + 2);
+    std::this_thread::sleep_for(100ms);
+    CHECK(Listen(300ms).peak > 0.001F);
 
     cue->Stop(1);
     CHECK(cue->Destroy() == S_OK);
@@ -1006,6 +1074,7 @@ namespace
     {"AwayAndBackAtOnce", &TestAwayAndBackAtOnce},
     {"SoundsEndWhileAway", &TestSoundsEndWhileAway},
     {"DeviceLost", &TestDeviceLost},
+    {"StreamThatTakesNothing", &TestStreamThatTakesNothing},
     {"NoOutput", &TestNoOutput},
     {"ShutdownWhileAway", &TestShutdownWhileAway},
     {"X3DAudio", &TestX3DAudio},

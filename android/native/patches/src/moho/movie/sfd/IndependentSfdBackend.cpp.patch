@@ -1,5 +1,5 @@
 diff --git a/src/moho/movie/sfd/IndependentSfdBackend.cpp b/src/moho/movie/sfd/IndependentSfdBackend.cpp
-index b38d1055..9a6500cd 100644
+index b38d1055..b5776efd 100644
 --- a/src/moho/movie/sfd/IndependentSfdBackend.cpp
 +++ b/src/moho/movie/sfd/IndependentSfdBackend.cpp
 @@ -85,7 +85,35 @@ namespace moho::sfd
@@ -39,7 +39,7 @@ index b38d1055..9a6500cd 100644
          eof = true;
        for (auto& frame : batch.video) {
          if (frame->width != metadata.header.width || frame->height != metadata.header.height)
-@@ -142,25 +170,36 @@ namespace moho::sfd
+@@ -142,25 +170,38 @@ namespace moho::sfd
          audioFinished = true;
        }
      }
@@ -65,8 +65,11 @@ index b38d1055..9a6500cd 100644
        // Keep about half a second ready. A worker pumps independently of rendering,
        // including while the engine is loading or not requesting textures.
 -      for (unsigned budget = 0; !eof && budget < 256; ++budget) {
+-        const bool needVideo = video.empty() || video.back()->pts < now + 0.5;
 +      for (unsigned budget = 0; !eof && !quitting && budget < 256; ++budget) {
-         const bool needVideo = video.empty() || video.back()->pts < now + 0.5;
++        // Android client build: a quarter of a second. A big frame is 7.5 MB on a phone, and with the
++        // worker off the lock more buys nothing.
++        const bool needVideo = video.empty() || video.back()->pts < now + 0.25;
          const bool needAudio = sink && sink->Submitted() < now + 0.5;
          if (!needVideo && !needAudio)
            break;
@@ -83,7 +86,7 @@ index b38d1055..9a6500cd 100644
        if (eof && video.empty() && (!sink || (audio.empty() && sink->Empty())) && now >= endTime)
          status = 3;
      }
-@@ -170,7 +209,7 @@ namespace moho::sfd
+@@ -170,7 +211,7 @@ namespace moho::sfd
        while (!quitting && status == 2) {
          if (!paused) {
            try {

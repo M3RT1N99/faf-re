@@ -1,9 +1,11 @@
 // FAudio's platform on Android (its FAudio_internal.h, "Platform Functions"), in place of its SDL
 // and Win32 files: the output on AAudio, threads, mutexes and files on POSIX.
 //
-// Each FAudio engine has one stream and a thread of its own that mixes and writes it with blocking
-// AAudioStream_write. Not AAudio's data callback: FACT reads streaming wave banks on the mix path
-// (FACT_INTERNAL_OnBufferEnd), and memory-mapped banks page in there, which that thread must not do.
+// Each FAudio engine has one stream and a thread of its own that mixes and writes it. Not AAudio's
+// data callback: FACT reads streaming wave banks on the mix path (FACT_INTERNAL_OnBufferEnd), and
+// memory-mapped banks page in there, which that thread must not do. The writes do not block: this
+// kind of stream takes a timeout for a yes and waits for ever (AudioStreamTrack::write), also on an
+// audio server that stalls, where the thread would see neither a pause nor the end of the program.
 
 #include "FAudioPlatformAndroid.h"
 
@@ -22,8 +24,9 @@
 
 #define LOG_TAG "FAudio"
 
-// How late the thread sees a pause or the end while the stream takes nothing.
-#define WRITE_TIMEOUT_NANOSECONDS (100 * 1000 * 1000)
+// A stream that takes nothing for this long is given up: one whose start got lost does just that,
+// and reports no error.
+#define STALL_MILLISECONDS 2000
 // Until the next try after the output failed: a route that just changed may take a moment.
 #define REOPEN_DELAY_MILLISECONDS 500
 // How many lines an output says of its failures. One that stays comes back at each try to open the
@@ -40,18 +43,28 @@ typedef struct Output
   uint32_t channels;
   uint32_t rate;
   pthread_t thread;
-  AAudioStream* stream; // the thread's: changed under sLock, for the stop that ends a write
   uint32_t failureLines; // the thread's
+  bool saidOutput; // the thread's
   bool quit;
 } Output;
 
 static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t sChanged = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t sChanged;
 static bool sForeground = true;
 static bool sFocus = true;
 static FAudioAndroidMixObserver sObserver;
 static void* sObserverContext;
 static FAudioAndroidLogHandler sLogHandler;
+
+// On the monotonic clock: a clock set back must not stretch a wait, which holds up the mix.
+__attribute__((constructor)) static void InitChanged(void)
+{
+  pthread_condattr_t attributes;
+  pthread_condattr_init(&attributes);
+  pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
+  pthread_cond_init(&sChanged, &attributes);
+  pthread_condattr_destroy(&attributes);
+}
 
 void FAudioAndroid_SetLogHandler(const FAudioAndroidLogHandler handler)
 {
@@ -72,11 +85,11 @@ static void Log(const int priority, const char* const format, ...)
   }
 }
 
-static void LogFailure(Output* const output, const char* const what, const aaudio_result_t result)
+static void LogFailure(Output* const output, const char* const what, const char* const why)
 {
   if (output->failureLines < MAX_FAILURE_LINES) {
     output->failureLines += 1;
-    Log(ANDROID_LOG_WARN, "%s: %s", what, AAudio_convertResultToText(result));
+    Log(ANDROID_LOG_WARN, "%s: %s", what, why);
   }
 }
 
@@ -109,7 +122,7 @@ static AAudioStream* OpenStream(Output* const output)
   AAudioStreamBuilder* builder = NULL;
   aaudio_result_t result = AAudio_createStreamBuilder(&builder);
   if (result != AAUDIO_OK) {
-    LogFailure(output, "AAudio_createStreamBuilder", result);
+    LogFailure(output, "AAudio_createStreamBuilder", AAudio_convertResultToText(result));
     return NULL;
   }
   AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_FLOAT);
@@ -125,13 +138,20 @@ static AAudioStream* OpenStream(Output* const output)
   result = AAudioStreamBuilder_openStream(builder, &stream);
   AAudioStreamBuilder_delete(builder);
   if (result != AAUDIO_OK) {
-    LogFailure(output, "AAudioStreamBuilder_openStream", result);
+    LogFailure(output, "AAudioStreamBuilder_openStream", AAudio_convertResultToText(result));
     return NULL;
   }
-  if (output->failureLines < MAX_FAILURE_LINES) {
+  if (!output->saidOutput) {
+    output->saidOutput = true;
     Log(ANDROID_LOG_INFO, "Output: %d Hz, %d channels, buffer %d of %d frames, burst %d, performance mode %d",
       AAudioStream_getSampleRate(stream), AAudioStream_getChannelCount(stream), AAudioStream_getBufferSizeInFrames(stream),
       AAudioStream_getBufferCapacityInFrames(stream), AAudioStream_getFramesPerBurst(stream), AAudioStream_getPerformanceMode(stream));
+  }
+  result = AAudioStream_requestStart(stream);
+  if (result != AAUDIO_OK) {
+    LogFailure(output, "AAudioStream_requestStart", AAudio_convertResultToText(result));
+    AAudioStream_close(stream);
+    return NULL;
   }
   return stream;
 }
@@ -139,7 +159,7 @@ static AAudioStream* OpenStream(Output* const output)
 static void WaitLocked(const int milliseconds)
 {
   struct timespec until;
-  clock_gettime(CLOCK_REALTIME, &until);
+  clock_gettime(CLOCK_MONOTONIC, &until);
   until.tv_sec += milliseconds / 1000;
   until.tv_nsec += (long)(milliseconds % 1000) * 1000000L;
   if (until.tv_nsec >= 1000000000L) {
@@ -152,9 +172,11 @@ static void WaitLocked(const int milliseconds)
 static void* OutputThread(void* const data)
 {
   Output* const output = data;
+  AAudioStream* stream = NULL;
   uint32_t written = output->frames; // of the mix: nothing waits to go out yet
-  bool started = false;
   uint32_t nextOpen = FAudio_timems();
+  uint32_t lastTaken = nextOpen;
+  int waitWhenFull = 1;
 
   // As FACT's thread is: one that takes a lock the other waits for must not wait behind the game.
   FAudio_PlatformThreadPriority(FAUDIO_THREAD_PRIORITY_HIGH);
@@ -165,35 +187,30 @@ static void* OutputThread(void* const data)
     const bool paused = !sForeground || !sFocus;
     const FAudioAndroidMixObserver observer = sObserver;
     void* const observerContext = sObserverContext;
-    AAudioStream* stream = output->stream;
     pthread_mutex_unlock(&sLock);
 
-    if (!paused && stream == NULL && (int32_t)(FAudio_timems() - nextOpen) >= 0) {
+    const uint32_t now = FAudio_timems();
+    // Closed, not paused: what a paused stream still holds would come out on the return, sound from
+    // before it, and the track would stay taken behind the activity.
+    if (paused && stream != NULL) {
+      AAudioStream_close(stream);
+      stream = NULL;
+      nextOpen = now;
+    }
+    if (!paused && stream == NULL && (int32_t)(now - nextOpen) >= 0) {
       stream = OpenStream(output);
-      nextOpen = FAudio_timems() + REOPEN_DELAY_MILLISECONDS;
-      pthread_mutex_lock(&sLock);
-      output->stream = stream;
-      pthread_mutex_unlock(&sLock);
-    }
-
-    // On this thread alone: its write runs AAudio's state machine (AudioStreamTrack::write), and a
-    // pause from another thread soon after the start was lost to it, which left the stream paused
-    // and calling itself started, so that it could not start again.
-    if (stream != NULL && started == paused) {
-      const aaudio_result_t result = paused ? AAudioStream_requestPause(stream) : AAudioStream_requestStart(stream);
-      if (result != AAUDIO_OK) {
-        // The next write finds out what became of the stream.
-        LogFailure(output, paused ? "AAudioStream_requestPause" : "AAudioStream_requestStart", result);
+      nextOpen = now + REOPEN_DELAY_MILLISECONDS;
+      lastTaken = now;
+      if (stream != NULL) {
+        waitWhenFull = FAudio_clamp(500 * AAudioStream_getFramesPerBurst(stream) / (int)output->rate, 1, 20);
       }
-      started = !paused;
     }
 
-    const bool heard = !paused && stream != NULL;
     if (written == output->frames) {
       // The mix adds to what is there, and leaves it when the engine is stopped.
       FAudio_zero(output->mix, sizeof(float) * output->frames * output->channels);
       FAudio_INTERNAL_UpdateEngine(output->audio, output->mix);
-      if (heard && observer != NULL) {
+      if (stream != NULL && observer != NULL) {
         observer(output->mix, output->frames, output->channels, observerContext);
       }
       written = 0;
@@ -202,36 +219,42 @@ static void* OutputThread(void* const data)
     // The game goes on behind the activity and while no stream opens, so its sounds do, unheard. A
     // mix that stood still would hold them all, up to the instance limits, and start them together
     // on the return.
-    if (!heard) {
+    if (stream == NULL) {
       written = output->frames;
       pthread_mutex_lock(&sLock);
       WaitLocked((int)(1000 * output->frames / output->rate));
       continue;
     }
 
-    const aaudio_result_t result = AAudioStream_write(
-      stream, output->mix + written * output->channels, (int32_t)(output->frames - written), WRITE_TIMEOUT_NANOSECONDS
-    );
-    if (result >= 0) {
+    const aaudio_result_t result =
+      AAudioStream_write(stream, output->mix + written * output->channels, (int32_t)(output->frames - written), 0);
+    if (result > 0) {
       written += (uint32_t)result;
-      pthread_mutex_lock(&sLock);
-      continue;
+      lastTaken = now;
+    }
+    // Headphones out, Bluetooth gone (AAUDIO_ERROR_DISCONNECTED), or a stream that takes nothing any
+    // more: a new stream goes to the device that is there now.
+    if (result < 0 || (int32_t)(now - lastTaken) >= STALL_MILLISECONDS) {
+      if (result == 0) {
+        LogFailure(output, "AAudioStream_write", "no room for a while");
+      } else if (result != AAUDIO_ERROR_DISCONNECTED) {
+        LogFailure(output, "AAudioStream_write", AAudio_convertResultToText(result));
+      }
+      AAudioStream_close(stream);
+      stream = NULL;
+      nextOpen = now + REOPEN_DELAY_MILLISECONDS;
     }
 
-    // Headphones out, Bluetooth gone (AAUDIO_ERROR_DISCONNECTED), or a stream stopped by the end:
-    // a new stream goes to the device that is there now.
-    if (result != AAUDIO_ERROR_DISCONNECTED) {
-      LogFailure(output, "AAudioStream_write", result);
+    pthread_mutex_lock(&sLock);
+    // The stream is full: there is room again as it plays, half a burst later.
+    if (stream != NULL && written < output->frames) {
+      WaitLocked(waitWhenFull);
     }
-    pthread_mutex_lock(&sLock);
-    output->stream = NULL;
-    pthread_mutex_unlock(&sLock);
-    AAudioStream_close(stream);
-    started = false;
-    nextOpen = FAudio_timems() + REOPEN_DELAY_MILLISECONDS;
-    pthread_mutex_lock(&sLock);
   }
   pthread_mutex_unlock(&sLock);
+  if (stream != NULL) {
+    AAudioStream_close(stream);
+  }
   return NULL;
 }
 
@@ -270,17 +293,10 @@ void FAudio_PlatformQuit(void* const platformDevice)
   Output* const output = platformDevice;
   pthread_mutex_lock(&sLock);
   output->quit = true;
-  if (output->stream != NULL) {
-    // A write that waits ends with this.
-    AAudioStream_requestStop(output->stream);
-  }
   pthread_cond_broadcast(&sChanged);
   pthread_mutex_unlock(&sLock);
 
   pthread_join(output->thread, NULL);
-  if (output->stream != NULL) {
-    AAudioStream_close(output->stream);
-  }
   free(output->mix);
   free(output);
 }

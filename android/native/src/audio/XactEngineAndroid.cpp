@@ -52,7 +52,8 @@ namespace
 
   // --- Notifications ----------------------------------------------------------------------------
   // FACT's callback gets FACT's objects and has no context of ours, so the way back to the engine's
-  // interfaces and its callback is process-wide. The engine gives all its instances one callback.
+  // wave banks and its callback is process-wide. The engine gives all its instances one callback, and
+  // registers for the wave banks' and the GUI's notifications alone (moho/audio/AudioEngine.cpp).
 
   std::mutex gInterfacesMutex;
   std::unordered_map<const void*, void*> gInterfaces; // FACT's object: the interface over it
@@ -70,7 +71,6 @@ namespace
     gInterfaces.erase(fact);
   }
 
-  /// A managed cue has no interface: the engine never got one.
   template <class Opaque>
   [[nodiscard]] Opaque* InterfaceOver(const void* const fact)
   {
@@ -86,53 +86,14 @@ namespace
     notification.timeStamp = fact->timeStamp;
     notification.pvContext = fact->pvContext;
     switch (fact->type) {
-    case FACTNOTIFICATIONTYPE_CUEPREPARED:
-    case FACTNOTIFICATIONTYPE_CUEPLAY:
-    case FACTNOTIFICATIONTYPE_CUESTOP:
-    case FACTNOTIFICATIONTYPE_CUEDESTROYED:
-      notification.cue.cueIndex = fact->cue.cueIndex;
-      notification.cue.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->cue.pSoundBank);
-      notification.cue.pCue = InterfaceOver<IXACT3Cue>(fact->cue.pCue);
-      break;
-    case FACTNOTIFICATIONTYPE_MARKER:
-      notification.marker.cueIndex = fact->marker.cueIndex;
-      notification.marker.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->marker.pSoundBank);
-      notification.marker.pCue = InterfaceOver<IXACT3Cue>(fact->marker.pCue);
-      notification.marker.marker = fact->marker.marker;
-      break;
-    case FACTNOTIFICATIONTYPE_SOUNDBANKDESTROYED:
-      notification.soundBank.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->soundBank.pSoundBank);
-      break;
     case FACTNOTIFICATIONTYPE_WAVEBANKDESTROYED:
     case FACTNOTIFICATIONTYPE_WAVEBANKPREPARED:
     case FACTNOTIFICATIONTYPE_WAVEBANKSTREAMING_INVALIDCONTENT:
       notification.waveBank.pWaveBank = InterfaceOver<IXACT3WaveBank>(fact->waveBank.pWaveBank);
       break;
-    case FACTNOTIFICATIONTYPE_LOCALVARIABLECHANGED:
-    case FACTNOTIFICATIONTYPE_GLOBALVARIABLECHANGED:
-      notification.variable.cueIndex = fact->variable.cueIndex;
-      notification.variable.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->variable.pSoundBank);
-      notification.variable.pCue = InterfaceOver<IXACT3Cue>(fact->variable.pCue);
-      notification.variable.variableIndex = fact->variable.variableIndex;
-      notification.variable.variableValue = fact->variable.variableValue;
-      notification.variable.local = fact->variable.local;
-      break;
     case FACTNOTIFICATIONTYPE_GUICONNECTED:
     case FACTNOTIFICATIONTYPE_GUIDISCONNECTED:
       notification.gui.reserved = fact->gui.reserved;
-      break;
-    case FACTNOTIFICATIONTYPE_WAVEPREPARED:
-    case FACTNOTIFICATIONTYPE_WAVEPLAY:
-    case FACTNOTIFICATIONTYPE_WAVESTOP:
-    case FACTNOTIFICATIONTYPE_WAVELOOPED:
-    case FACTNOTIFICATIONTYPE_WAVEDESTROYED:
-      notification.wave.pWaveBank = InterfaceOver<IXACT3WaveBank>(fact->wave.pWaveBank);
-      notification.wave.waveIndex = fact->wave.waveIndex;
-      notification.wave.cueIndex = fact->wave.cueIndex;
-      notification.wave.pSoundBank = InterfaceOver<IXACT3SoundBank>(fact->wave.pSoundBank);
-      notification.wave.pCue = InterfaceOver<IXACT3Cue>(fact->wave.pCue);
-      // No interface exists for a wave: as an identity, it is FACT's.
-      notification.wave.pWave = reinterpret_cast<IXACT3Wave*>(fact->wave.pWave);
       break;
     default:
       break;
@@ -149,9 +110,7 @@ namespace
   public:
     explicit FactCue(FACTCue* const cue)
       : mCue(cue)
-    {
-      BindInterface(mCue, static_cast<moho::IXACTCue*>(this));
-    }
+    {}
 
     [[nodiscard]] FACTCue* Fact() const
     {
@@ -188,7 +147,6 @@ namespace
     std::int32_t __stdcall Destroy() override
     {
       const std::uint32_t result = FACTCue_Destroy(mCue);
-      UnbindInterface(mCue);
       delete this;
       return static_cast<std::int32_t>(result);
     }
@@ -228,9 +186,7 @@ namespace
   public:
     explicit FactSoundBank(FACTSoundBank* const bank)
       : mBank(bank)
-    {
-      BindInterface(mBank, static_cast<moho::IXACTSoundBank*>(this));
-    }
+    {}
 
     [[nodiscard]] FACTSoundBank* Fact() const
     {
@@ -298,7 +254,6 @@ namespace
     void __stdcall Destroy() override
     {
       FACTSoundBank_Destroy(mBank);
-      UnbindInterface(mBank);
       delete this;
     }
 

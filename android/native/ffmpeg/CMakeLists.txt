@@ -33,16 +33,15 @@ endif()
 
 # Upstream moves the submodule, and what is checked in here describes the old one: stop and say so, as
 # android/native/CMakeLists.txt does for ShaderCompiler.cpp, instead of building one FFmpeg's sources
-# with another's configuration. The hashes are of the files with LF line ends.
+# with another's configuration. The same for the API level and the NDK it was made with.
 function(_ffmpeg_faf_check_stamp)
-  file(STRINGS "${FFMPEG_FAF_SOURCE_DIR}/RELEASE" _release LIMIT_COUNT 1)
-  set(_expected "release ${_release}\n")
-  foreach(_file generate.sh gen_sources.py)
-    file(READ "${FFMPEG_FAF_SOURCE_DIR}/faf/${_file}" _text)
-    string(REPLACE "\r\n" "\n" _text "${_text}")
-    string(SHA256 _hash "${_text}")
-    string(APPEND _expected "faf/${_file} ${_hash}\n")
-  endforeach()
+  find_package(Git REQUIRED)
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${FFMPEG_FAF_SOURCE_DIR}" rev-parse HEAD
+    OUTPUT_VARIABLE _commit
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/toolchains/android-pins.cmake")
+  set(_expected "commit ${_commit}\napi ${FAF_ANDROID_API_LEVEL}\nndk ${FAF_ANDROID_PINNED_NDK_REVISION}\n")
   set(_have "(none)")
   if(EXISTS "${FFMPEG_FAF_CONFIG_DIR}/stamp.txt")
     file(READ "${FFMPEG_FAF_CONFIG_DIR}/stamp.txt" _have)

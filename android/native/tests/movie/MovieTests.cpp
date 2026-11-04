@@ -3,11 +3,17 @@
 // pixels, another over all audio, so a decode that differs anywhere shows.
 //
 //   faf_movie_tests [--frame N out.raw] movie.sfd ...
+//   faf_movie_tests --play SECONDS movie.sfd ...
+//
+// --play runs the engine's player by the clock, as the game does, with a reader that asks for the current
+// frame all the time and stalls now and then. It must not end the movie, on a device that is only just
+// fast enough either, nor keep the reader waiting while it decodes.
 //
 // --frame writes frame N of the first movie that has one, BGRA, top row first. Exits non-zero when a
 // file fails, has no frames or a frame has a wrong size, and when the frame asked for does not exist.
 
 #include "moho/movie/sfd/FfmpegSfdDecoder.h"
+#include "moho/movie/sfd/IndependentSfdBackend.h"
 
 #include <chrono>
 #include <cstdint>
@@ -18,6 +24,10 @@
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
+#include <thread>
+
+// The player's one call into the engine's POSIX layer, which this program does not take.
+void OutputDebugStringA(const char*) {}
 
 namespace
 {
@@ -164,6 +174,72 @@ namespace
     );
     std::fflush(stdout);
   }
+
+  std::string gPlayerError;
+
+  int __cdecl HearPlayerError(
+    std::uint32_t,
+    const char* message
+  )
+  {
+    gPlayerError = message ? message : "an error without a message";
+    return 0;
+  }
+
+  void PlayMovie(
+    const char* filename,
+    int seconds
+  )
+  {
+    using Clock = std::chrono::steady_clock;
+    constexpr int kFinished = 3;
+    constexpr int kFailed = 4;
+    gPlayerError.clear();
+    moho::sfd::SetErrorCallback(&HearPlayerError, 0);
+    moho::sfd::Player player;
+    if (!player.Open(filename) || !player.Pause(false))
+      throw std::runtime_error("the player did not start: " + gPlayerError);
+
+    const auto start = Clock::now();
+    auto nextStall = start + std::chrono::seconds(2);
+    long pictures = 0;
+    long long longestAskUs = 0;
+    const moho::sfd::DecodedVideoFrame* last = nullptr;
+    std::shared_ptr<moho::sfd::DecodedVideoFrame> held;
+    while (player.Status() != kFinished && player.Status() != kFailed &&
+           Clock::now() - start < std::chrono::seconds(seconds)) {
+      const auto asked = Clock::now();
+      held = player.CurrentFrame();
+      const auto askUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - asked).count();
+      longestAskUs = askUs > longestAskUs ? askUs : longestAskUs;
+      if (held.get() != last) {
+        last = held.get();
+        ++pictures;
+      }
+      if (Clock::now() >= nextStall) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        nextStall = Clock::now() + std::chrono::seconds(2);
+      } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+      }
+    }
+    const int status = player.Status();
+    const auto wall = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
+    if (status == kFailed)
+      throw std::runtime_error("the player gave up after " + std::to_string(wall) + " ms: " + gPlayerError);
+    if (pictures < 2)
+      throw std::runtime_error("the picture did not change");
+    std::printf(
+      "OK play %s status=%d pictures=%ld wall_ms=%lld longest_ask_us=%lld peak_kb=%ld\n",
+      filename,
+      status,
+      pictures,
+      static_cast<long long>(wall),
+      longestAskUs,
+      PeakKilobytes()
+    );
+    std::fflush(stdout);
+  }
 } // namespace
 
 int main(
@@ -173,7 +249,15 @@ int main(
 {
   FrameRequest request;
   int first = 1;
-  if (argc >= 4 && std::strcmp(argv[1], "--frame") == 0) {
+  int playSeconds = 0;
+  if (argc >= 4 && std::strcmp(argv[1], "--play") == 0) {
+    playSeconds = std::atoi(argv[2]);
+    if (playSeconds <= 0) {
+      std::fprintf(stderr, "faf_movie_tests: bad number of seconds %s\n", argv[2]);
+      return 2;
+    }
+    first = 3;
+  } else if (argc >= 4 && std::strcmp(argv[1], "--frame") == 0) {
     char* end = nullptr;
     request.index = std::strtol(argv[2], &end, 10);
     if (*end != '\0' || request.index < 0) {
@@ -184,14 +268,17 @@ int main(
     first = 4;
   }
   if (first >= argc) {
-    std::fprintf(stderr, "usage: faf_movie_tests [--frame N out.raw] movie.sfd ...\n");
+    std::fprintf(stderr, "usage: faf_movie_tests [--frame N out.raw | --play SECONDS] movie.sfd ...\n");
     return 2;
   }
 
   int failures = 0;
   for (int i = first; i < argc; ++i) {
     try {
-      DecodeMovie(argv[i], request);
+      if (playSeconds > 0)
+        PlayMovie(argv[i], playSeconds);
+      else
+        DecodeMovie(argv[i], request);
     } catch (const std::exception& e) {
       std::printf("FAIL %s: %s\n", argv[i], e.what());
       std::fflush(stdout);

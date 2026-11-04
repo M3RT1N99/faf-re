@@ -76,8 +76,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private int mLines;
     private int mPictureWidth;
     private int mPictureHeight;
-    /** Held while the activity is in front. The system lowers the game itself for a short sound of another app. */
+    /** Held while the activity is in front. The game's sound stops for another app's, even for a short one: the system lowers no AAudio stream. */
     private AudioFocusRequest mAudioFocus;
+    /** Gone for good: nothing will give it back, as it does after a call. */
+    private boolean mAudioFocusLost;
 
     private TouchInput mTouch;
     private final Runnable mTouchTimer = () -> mTouch.timer();
@@ -145,6 +147,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mAudioFocus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).build())
             .setAcceptsDelayedFocusGain(true)
+            .setWillPauseWhenDucked(true)
             .setOnAudioFocusChangeListener(this::onAudioFocusChange, mHandler)
             .build();
         if (Build.VERSION.SDK_INT >= 28) {
@@ -465,10 +468,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         super.onResume();
         hideSystemBars();
         if (mStarted) {
+            // First: the output starts at the word that both are so, and it must not during a call.
+            requestAudioFocus();
             Game.foreground(true);
-            // While a call has the focus this is delayed, and onAudioFocusChange hears when it comes.
-            int focus = getSystemService(AudioManager.class).requestAudioFocus(mAudioFocus);
-            Game.audioFocus(focus == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
         }
     }
 
@@ -482,11 +484,29 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         super.onPause();
     }
 
+    /** While a call has the focus this is delayed, and onAudioFocusChange hears when it comes. */
+    private void requestAudioFocus() {
+        int focus = getSystemService(AudioManager.class).requestAudioFocus(mAudioFocus);
+        mAudioFocusLost = focus == AudioManager.AUDIOFOCUS_REQUEST_FAILED;
+        Game.audioFocus(focus == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
+    }
+
     private void onAudioFocusChange(int change) {
         if (change == AudioManager.AUDIOFOCUS_GAIN) {
+            mAudioFocusLost = false;
             Game.audioFocus(true);
-        } else if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS) {
+            mAudioFocusLost = true;
             Game.audioFocus(false);
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+            Game.audioFocus(false);
+        }
+    }
+
+    /** The player is back at the game: its sound returns if the app that took the focus for good has stopped. */
+    private void takeAudioFocusBack() {
+        if (mAudioFocusLost && !getSystemService(AudioManager.class).isMusicActive()) {
+            requestAudioFocus();
         }
     }
 
@@ -502,6 +522,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             hideSystemBars();
+            if (mStarted) {
+                takeAudioFocusBack();
+            }
         }
     }
 
@@ -549,6 +572,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (!mStarted) {
             return false;
         }
+        takeAudioFocusBack();
         if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
             mouse(event);
             return true;

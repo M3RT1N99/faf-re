@@ -24,8 +24,8 @@
 #   freetype                       FreeType, under the GDI font functions (cmake/FafAndroidFreetype.cmake)
 #   faudio                         FAudio, under the XACT engine and X3DAudio (cmake/FafAndroidFAudio.cmake)
 #   faf_audio                      src/audio: the XACT engine on FACT, X3DAudio on F3DAudio
-#   FFmpeg::FFmpeg                 FFmpeg's libraries, under the movie decoder (ffmpeg/)
-#   faf_movie_decoder              the engine's movie decoder, the one file on FFmpeg's headers
+#   FFmpeg::FFmpeg                 FFmpeg's libraries, under the movie player (ffmpeg/)
+#   faf_movie_player               the engine's movie player, whose decoder is on FFmpeg's headers
 #   faf_gal                        the renderer (gpg/gal): the Vulkan backend with what it shares
 #   faf_client                     the rest of the client
 #   fafgame                        libfafgame.so, all of it
@@ -80,7 +80,7 @@ include("${FAF_ANDROID_DIR}/cmake/FafAndroidFreetype.cmake")
 # build, its licence in ${CMAKE_BINARY_DIR}/licenses for the app.
 include("${FAF_ANDROID_DIR}/cmake/FafAndroidFAudio.cmake")
 
-# FFmpeg, under the movie decoder (ffmpeg/CMakeLists.txt): static libraries of this build, its
+# FFmpeg, under the movie player (ffmpeg/CMakeLists.txt): static libraries of this build, its
 # licence in ${CMAKE_BINARY_DIR}/licenses for the app.
 add_subdirectory(ffmpeg "${CMAKE_BINARY_DIR}/ffmpeg" EXCLUDE_FROM_ALL SYSTEM)
 
@@ -137,8 +137,8 @@ set(_faf_client_windows_only
   # The in-engine peer links on netlink (libjuice, libdatachannel), which is not built for Android
   # yet (C5): src/net has them off.
   "^moho/net/NetlinkPeers\\.cpp$"
-  # The movie decoder, the one file on FFmpeg's headers: faf_movie_decoder has it.
-  "^moho/movie/sfd/FfmpegSfdDecoder\\.cpp$"
+  # The movie player, whose decoder is on FFmpeg's headers: faf_movie_player has it.
+  "^moho/movie/sfd/(IndependentSfdBackend|DirectSoundMovieSink|SfdMetadata|FfmpegSfdDecoder)\\.cpp$"
   # The wx script debugger's windows and the wx tool windows (emitter editor, reflection editor,
   # directory dialogs): wx-lite leaves them out (WX_LITE.md). The console commands that open the
   # editors say so in the log (src/app, patches/src/moho/console).
@@ -294,12 +294,17 @@ target_link_libraries(faf_audio PUBLIC faf_android_settings)
 # FAudio's headers. Whoever takes these objects links the library itself.
 target_link_libraries(faf_audio PRIVATE faudio)
 
-# The movie decoder apart from the rest: FFmpeg's headers are for this one file, and the movie test
-# takes it without the client.
-add_library(faf_movie_decoder OBJECT "${FAF_REPO}/src/moho/movie/sfd/FfmpegSfdDecoder.cpp")
-target_link_libraries(faf_movie_decoder PUBLIC faf_android_settings)
+# The movie player apart from the rest: FFmpeg's headers are for its decoder, and the movie test takes
+# it without the client.
+set(_faf_movie_player_files "")
+foreach(_file IndependentSfdBackend DirectSoundMovieSink SfdMetadata FfmpegSfdDecoder)
+  list(APPEND _faf_movie_player_files "${FAF_REPO}/src/moho/movie/sfd/${_file}.cpp")
+endforeach()
+faf_android_overlay_sources(_faf_movie_player_files ${_faf_movie_player_files})
+add_library(faf_movie_player OBJECT ${_faf_movie_player_files})
+target_link_libraries(faf_movie_player PUBLIC faf_android_settings)
 # FFmpeg's headers. Whoever takes these objects links the libraries itself.
-target_link_libraries(faf_movie_decoder PRIVATE FFmpeg::FFmpeg)
+target_link_libraries(faf_movie_player PRIVATE FFmpeg::FFmpeg)
 
 # The host (WX_LITE.md): the program's start, and the activity's surface, input and lifecycle as
 # Win32 messages.
@@ -311,7 +316,7 @@ target_link_libraries(faf_host PUBLIC faf_android_settings faf_wx_lite)
 add_library(fafgame SHARED
   $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_android_dxc>
   $<TARGET_OBJECTS:faf_gal> $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_audio>
-  $<TARGET_OBJECTS:faf_movie_decoder> $<TARGET_OBJECTS:faf_host>)
+  $<TARGET_OBJECTS:faf_movie_player> $<TARGET_OBJECTS:faf_host>)
 target_link_libraries(fafgame PRIVATE faf_game_sim freetype faudio FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
 target_link_options(fafgame PRIVATE ${_faf_android_library_options})
 
@@ -356,10 +361,13 @@ add_executable(faf_audio_tests tests/audio/AudioTests.cpp $<TARGET_OBJECTS:faf_a
 target_link_libraries(faf_audio_tests PRIVATE faf_android_settings faudio faf_game_sim_archive ${_faf_sim_libraries} ${CMAKE_DL_LIBS})
 target_link_options(faf_audio_tests PRIVATE -Wl,--gc-sections -Wl,--no-dependent-libraries)
 
-# faf_movie_tests (tests/movie): the engine's movie decoder on real movies, on a device, for comparing
-# the ABIs and for seeing what a movie costs. It takes nothing else of the engine, so not this build's
-# settings, whose link options want the engine's POSIX layer.
-add_executable(faf_movie_tests tests/movie/MovieTests.cpp $<TARGET_OBJECTS:faf_movie_decoder>)
+# faf_movie_tests (tests/movie): the engine's movie player and decoder on real movies, on a device, for
+# comparing the ABIs and for seeing what a movie costs. It takes nothing else of the engine, so not this
+# build's settings, whose link options want the engine's POSIX layer. The player's header parser is one
+# of the simulation's files.
+add_executable(faf_movie_tests tests/movie/MovieTests.cpp "${FAF_REPO}/src/moho/movie/sfd/SfdHeaderParser.cpp"
+  $<TARGET_OBJECTS:faf_movie_player>)
+target_compile_features(faf_movie_tests PRIVATE cxx_std_20)
 target_include_directories(faf_movie_tests PRIVATE "${FAF_REPO}/src")
 target_link_libraries(faf_movie_tests PRIVATE FFmpeg::FFmpeg)
 target_link_options(faf_movie_tests PRIVATE -Wl,--gc-sections)
