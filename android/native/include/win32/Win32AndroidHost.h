@@ -39,6 +39,9 @@ void Win32Android_ReleaseTakenSurface();
 /// Waits for the screen to have a surface: the program can start while the activity is in the back.
 void Win32Android_WaitForScreenSurface();
 
+/// Runs `task` on the thread of the program's windows, after the input given so far. Nothing without a window.
+void Win32Android_RunOnWindowThread(void (*task)(WPARAM argument), WPARAM argument);
+
 /// What draws on the screen says that a frame went to it, and the host hears of the first one.
 void Win32Android_FramePresented();
 void Win32Android_SetFirstFrameHandler(void (*handler)());
@@ -63,6 +66,8 @@ void Win32Android_SetForeground(BOOL foreground);
 
 void Win32Android_MouseMove(int x, int y);
 void Win32Android_MouseButton(int button, BOOL down, int x, int y);
+/// A button as Windows gives it for a finger on a touch screen: GetMessageExtraInfo tells it from a mouse's.
+void Win32Android_TouchButton(int button, BOOL down, int x, int y);
 /// `delta` in WHEEL_DELTA units of 120 per notch, positive away from the user.
 void Win32Android_MouseWheel(int delta, int x, int y);
 

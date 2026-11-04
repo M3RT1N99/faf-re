@@ -15,22 +15,54 @@ package io.github.m3rt1n99.fafre;
  * </ul>
  *
  * With {@link #setSwapped} the left and right buttons change places, for giving one order after the
- * other. Fingers beyond the two a gesture uses are ignored. Positions are the screen's pixels, which
- * {@link Mouse} turns into the game's.
+ * other. With {@link #setDeleting} one finger does nothing but this: a tap deletes the queued order
+ * under it.
+ *
+ * <p>While a building's ghost waits to be placed ({@link Mouse#placing}), a finger would cover the
+ * place it chooses, so one finger moves the ghost and only a tap on it places it:
+ *
+ * <ul>
+ *   <li>a tap on the game's UI is the UI's, such as another building's button;
+ *   <li>a tap away from the ghost puts it there;
+ *   <li>a tap near the ghost places the building where the ghost is, and with Shift the ghost stays
+ *       for the next, which a tap puts, even near there, or a finger takes along;
+ *   <li>a finger that moves takes the ghost along, from wherever on the screen it landed;
+ *   <li>a finger that stays takes it along too, by the smallest steps, for setting it against another
+ *       building, and whenever it lifts it has placed nothing;
+ *   <li>a quick tap of two fingers is the right button whatever else is set, which cancels.
+ * </ul>
+ *
+ * Fingers beyond the two a gesture uses are ignored. Positions are the screen's pixels, which {@link
+ * Mouse} turns into the game's.
  */
 final class TouchInput {
     /** What the fingers do, on the thread that calls this class. */
     interface Mouse {
         void move(float x, float y);
 
-        /** `button`: Game.BUTTON_LEFT and the rest. */
+        /**
+         * `button`: Game.BUTTON_LEFT and the rest. A press where a building's ghost waits only puts the
+         * ghost there, whatever this class knows of the ghost by then, which may be behind the game.
+         */
         void button(int button, boolean down, float x, float y);
+
+        /**
+         * A tap near a building's ghost: it places the building where the ghost is, unless the game's UI
+         * is there or under the finger, and is a tap at the finger then.
+         */
+        void tapNearGhost(float fingerX, float fingerY, float ghostX, float ghostY);
 
         /** `delta` in WHEEL_DELTA's units, positive towards the screen. */
         void wheel(int delta, float x, float y);
 
-        /** A finger stayed: it now holds a button, which the user should feel. */
+        /** A finger stayed: it does something else now, which the user should feel. */
         void held();
+
+        /** Whether a building's ghost waits to be placed. */
+        boolean placing();
+
+        /** Deletes the queued order nearest to the cursor, which has come here, unless the game's UI is here. */
+        void deleteOrder(float x, float y);
 
         /** Calls {@link #timer} after this long, in place of the time set before. */
         void startTimer(long milliseconds);
@@ -49,9 +81,16 @@ final class TouchInput {
     static final long SETTLE_MILLISECONDS = 120;
     /** Two clicks this close, and near each other, are the game's double click. */
     static final long DOUBLE_TAP_MILLISECONDS = 400;
+    /** How far above the finger, in slops, a ghost starts that nothing has put anywhere yet. */
+    private static final float GHOST_ABOVE_SLOPS = 12;
+    /** How far from a ghost, in slops, a tap is still a tap on it. */
+    private static final float GHOST_REACH_SLOPS = 6;
     /** The wheel for two fingers twice as far apart: cam_ZoomAmount's default is 0.4 notches' worth. */
     private static final double WHEEL_PER_DOUBLING = Game.WHEEL_DELTA / 0.4;
     private static final double LOG_2 = Math.log(2.0);
+    /** What a waiting click does instead of a button. */
+    private static final int NO_CLICK = -1;
+    private static final int DELETE_ORDER = -2;
 
     private enum State {
         /** No finger. */
@@ -60,6 +99,10 @@ final class TouchInput {
         PENDING,
         /** One finger holds `mPressed`. */
         PRESSED,
+        /** One finger, a building's ghost waiting, and nothing shown yet of what the finger does. */
+        PLACE_PENDING,
+        /** One finger takes the ghost along. */
+        PLACE_DRAGGING,
         /** Two fingers, and nothing shown yet of what they do. */
         TWO_PENDING,
         PANNING,
@@ -83,6 +126,7 @@ final class TouchInput {
     private final float mSlop;
     private State mState = State.NONE;
     private boolean mSwapped;
+    private boolean mDeleting;
     private final Finger mFirst = new Finger();
     private final Finger mSecond = new Finger();
     /** Where the gesture began: the first finger's place, or the point between two. */
@@ -100,13 +144,26 @@ final class TouchInput {
     private float mZoomX;
     private float mZoomY;
     private float mZoomDistance;
-    /** A click that waits for the cursor to settle: -1, or its button. */
-    private int mClickButton = -1;
+    /** Where a building's ghost is, once a finger has put it somewhere. */
+    private boolean mGhostPlaced;
+    private float mGhostX;
+    private float mGhostY;
+    /** A building went up where the ghost is, and neither has moved since: a tap there would only place it again. */
+    private boolean mGhostUsed;
+    /** Where the finger that takes the ghost along last was. */
+    private float mGhostFingerX;
+    private float mGhostFingerY;
+    /** Two fingers came down over a ghost, and took the cursor from it. */
+    private boolean mGhostToRestore;
+    /** A click that waits for the cursor to settle: NO_CLICK, or what it does. */
+    private int mClickButton = NO_CLICK;
     private float mClickX;
     private float mClickY;
     private long mLastClickTime = Long.MIN_VALUE / 2;
     private float mLastClickX;
     private float mLastClickY;
+    private float mScreenWidth = Float.MAX_VALUE;
+    private float mScreenHeight = Float.MAX_VALUE;
 
     /** `slop`: how far a finger may wander in the screen's pixels and still count as staying. */
     TouchInput(Mouse mouse, float slop) {
@@ -116,6 +173,16 @@ final class TouchInput {
 
     void setSwapped(boolean swapped) {
         mSwapped = swapped;
+    }
+
+    void setDeleting(boolean deleting) {
+        mDeleting = deleting;
+    }
+
+    /** The screen's size in its pixels, which a ghost does not leave. */
+    void setScreen(float width, float height) {
+        mScreenWidth = width;
+        mScreenHeight = height;
     }
 
     private int tapButton() {
@@ -133,9 +200,11 @@ final class TouchInput {
                 cancel();
             }
             finishClick();
+            bringCursorBackToGhost();
             mSecond.id = -1;
-            startPending(id, x, y, time);
-        } else if (mState == State.PENDING) {
+            startOneFinger(id, x, y, time);
+        } else if (mState == State.PENDING || mState == State.PLACE_PENDING) {
+            mGhostToRestore = mState == State.PLACE_PENDING && mGhostPlaced;
             mMouse.stopTimer();
             mSecond.id = id;
             mSecond.place(x, y);
@@ -150,6 +219,15 @@ final class TouchInput {
         }
     }
 
+    private void startOneFinger(int id, float x, float y, long time) {
+        if (!mDeleting && mMouse.placing()) {
+            startPlacing(id, x, y, time);
+        } else {
+            mGhostPlaced = false;
+            startPending(id, x, y, time);
+        }
+    }
+
     private void startPending(int id, float x, float y, long time) {
         mFirst.id = id;
         mFirst.place(x, y);
@@ -159,6 +237,16 @@ final class TouchInput {
         mMouse.move(x, y);
         mMouse.startTimer(HOLD_MILLISECONDS);
         mState = State.PENDING;
+    }
+
+    private void startPlacing(int id, float x, float y, long time) {
+        mFirst.id = id;
+        mFirst.place(x, y);
+        mStartX = x;
+        mStartY = y;
+        mStartTime = time;
+        mMouse.startTimer(HOLD_MILLISECONDS);
+        mState = State.PLACE_PENDING;
     }
 
     /** Where a finger is now. {@link #moved} follows when all of an event's fingers are in. */
@@ -173,7 +261,7 @@ final class TouchInput {
     void moved() {
         switch (mState) {
             case PENDING:
-                if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
+                if (!mDeleting && Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
                     mMouse.stopTimer();
                     press(tapButton(), mStartX, mStartY);
                     mMouse.move(mFirst.x, mFirst.y);
@@ -181,6 +269,15 @@ final class TouchInput {
                 break;
             case PRESSED:
                 mMouse.move(mFirst.x, mFirst.y);
+                break;
+            case PLACE_PENDING:
+                if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
+                    mMouse.stopTimer();
+                    startTakingGhost();
+                }
+                break;
+            case PLACE_DRAGGING:
+                moveGhost();
                 break;
             case TWO_PENDING:
                 if (Math.abs(distance() - mStartDistance) > 2 * mSlop) {
@@ -210,16 +307,25 @@ final class TouchInput {
             switch (mState) {
                 case PENDING:
                     mMouse.stopTimer();
-                    click(tapButton(), mStartX, mStartY, time - mStartTime, time);
+                    click(mDeleting ? DELETE_ORDER : tapButton(), mStartX, mStartY, time - mStartTime, time);
                     mState = State.SPENT;
                     break;
                 case PRESSED:
                     mMouse.button(mPressed, false, mFirst.x, mFirst.y);
                     mState = State.SPENT;
                     break;
+                case PLACE_PENDING:
+                    mMouse.stopTimer();
+                    tapWhilePlacing();
+                    mState = State.SPENT;
+                    break;
+                case PLACE_DRAGGING:
+                    mState = State.SPENT;
+                    break;
                 case TWO_PENDING:
                     if (time - mStartTime <= TWO_FINGER_TAP_MILLISECONDS) {
-                        click(holdButton(), mSecondX, mSecondY, time - mStartTime, time);
+                        int button = mMouse.placing() ? Game.BUTTON_RIGHT : holdButton();
+                        click(button, mSecondX, mSecondY, time - mStartTime, time);
                     }
                     mState = State.SPENT;
                     break;
@@ -235,6 +341,7 @@ final class TouchInput {
             }
         }
         if (last) {
+            bringCursorBackToGhost();
             mState = State.NONE;
             mFirst.id = -1;
             mSecond.id = -1;
@@ -252,7 +359,7 @@ final class TouchInput {
             float x = left.x;
             float y = left.y;
             mSecond.id = -1;
-            startPending(leftId, x, y, time);
+            startOneFinger(leftId, x, y, time);
         } else if (id == mFirst.id || id == mSecond.id) {
             cancel();
         }
@@ -270,16 +377,65 @@ final class TouchInput {
             mMouse.button(Game.BUTTON_MIDDLE, false, middleX(), middleY());
         }
         finishClick();
+        bringCursorBackToGhost();
         mState = State.SPENT;
     }
 
     /** The time from {@link Mouse#startTimer} has passed. */
     void timer() {
-        if (mState == State.PENDING) {
+        if (mState == State.PENDING && !mDeleting) {
             press(holdButton(), mStartX, mStartY);
+            mMouse.held();
+        } else if (mState == State.PLACE_PENDING) {
+            startTakingGhost();
             mMouse.held();
         }
         finishClick();
+    }
+
+    private void bringCursorBackToGhost() {
+        if (mGhostToRestore) {
+            mGhostToRestore = false;
+            mMouse.move(mGhostX, mGhostY);
+        }
+    }
+
+    private void startTakingGhost() {
+        if (!mGhostPlaced) {
+            // Its first place: above the finger, where the finger does not cover it.
+            mGhostPlaced = true;
+            mGhostX = mStartX;
+            mGhostY = mStartY - GHOST_ABOVE_SLOPS * mSlop;
+        }
+        mGhostFingerX = mStartX;
+        mGhostFingerY = mStartY;
+        mGhostUsed = false;
+        mState = State.PLACE_DRAGGING;
+        moveGhost();
+    }
+
+    /** On the screen, or the ghost would wait there for the finger to come all the way back. */
+    private void moveGhost() {
+        mGhostX = Math.max(0, Math.min(mScreenWidth, mGhostX + mFirst.x - mGhostFingerX));
+        mGhostY = Math.max(0, Math.min(mScreenHeight, mGhostY + mFirst.y - mGhostFingerY));
+        mGhostFingerX = mFirst.x;
+        mGhostFingerY = mFirst.y;
+        mMouse.move(mGhostX, mGhostY);
+    }
+
+    /** The game takes a finger's press to put the ghost there, unless it lands on its UI. */
+    private void tapWhilePlacing() {
+        boolean onGhost = mGhostPlaced && !mGhostUsed && Math.hypot(mStartX - mGhostX, mStartY - mGhostY) <= GHOST_REACH_SLOPS * mSlop;
+        mGhostUsed = onGhost;
+        if (onGhost) {
+            mMouse.tapNearGhost(mStartX, mStartY, mGhostX, mGhostY);
+            return;
+        }
+        mGhostPlaced = true;
+        mGhostX = mStartX;
+        mGhostY = mStartY;
+        mMouse.button(Game.BUTTON_LEFT, true, mGhostX, mGhostY);
+        mMouse.button(Game.BUTTON_LEFT, false, mGhostX, mGhostY);
     }
 
     private void press(int button, float x, float y) {
@@ -308,17 +464,22 @@ final class TouchInput {
     }
 
     private void finishClick() {
-        if (mClickButton < 0) {
+        if (mClickButton == NO_CLICK) {
             return;
         }
         mMouse.stopTimer();
         int button = mClickButton;
-        mClickButton = -1;
+        mClickButton = NO_CLICK;
+        if (button == DELETE_ORDER) {
+            mMouse.deleteOrder(mClickX, mClickY);
+            return;
+        }
         mMouse.button(button, true, mClickX, mClickY);
         mMouse.button(button, false, mClickX, mClickY);
     }
 
     private void startPanning() {
+        mGhostUsed = false;
         mMouse.move(mStartX, mStartY);
         mMouse.button(Game.BUTTON_MIDDLE, true, mStartX, mStartY);
         mMouse.move(middleX(), middleY());
@@ -327,6 +488,7 @@ final class TouchInput {
     }
 
     private void startZooming() {
+        mGhostUsed = false;
         mWheelDistance = distance();
         mWheelRemainder = 0;
         mZoomX = middleX();

@@ -48,6 +48,15 @@ final class Game {
     /** Whether the program runs in this process: Android can make the activity anew around it. */
     static native boolean running();
 
+    /** Whether a building's ghost waits to be placed. */
+    static native boolean placingBuilding();
+
+    /** A finger tapped near a building's ghost: it places the building, unless the game's UI is under the finger or the ghost. */
+    static native void tapNearGhost(int fingerX, int fingerY, int ghostX, int ghostY);
+
+    /** Deletes the queued order of the selected units nearest to the cursor, which is at this place, if one is near. */
+    static native void deleteOrder(int x, int y);
+
     /** The surface and its size in pixels; null when it is gone. */
     static native void surface(Surface surface, int width, int height);
 
@@ -58,6 +67,9 @@ final class Game {
     static native void mouseMove(int x, int y);
 
     static native void mouseButton(int button, boolean down, int x, int y);
+
+    /** A finger's button: as a mouse's, except that where a building's ghost waits, its press only puts the ghost there. */
+    static native void touchButton(int button, boolean down, int x, int y);
 
     /** `delta` in WHEEL_DELTA units, positive away from the user. */
     static native void mouseWheel(int delta, int x, int y);

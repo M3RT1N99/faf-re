@@ -559,6 +559,10 @@ LRESULT DispatchMessageW(const MSG* message);
 void PostQuitMessage(int exitCode);
 LRESULT DefWindowProcW(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 LRESULT CallWindowProcW(WNDPROC procedure, HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+/// What the host gave with the message taken last: for a finger's mouse message, these bits, which
+/// Windows documents but its headers do not define.
+#define MOUSEEVENTF_FROMTOUCH 0xFF515700
+LPARAM GetMessageExtraInfo();
 LONG GetMessageTime();
 DWORD GetMessagePos();
 BOOL InSendMessage();

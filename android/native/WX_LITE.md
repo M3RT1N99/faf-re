@@ -120,7 +120,8 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
   adapter (1024 x 768) would otherwise draw into a corner of the back buffer.
 - It turns Android's input and lifecycle into Win32 messages for that thread:
   - a mouse's buttons into `WM_*BUTTON*`, its moves into `WM_MOUSEMOVE` and its wheel into
-    `WM_MOUSEWHEEL`, and fingers into the same (the app's `TouchInput`);
+    `WM_MOUSEWHEEL`, and fingers into the same (the app's `TouchInput`), whose buttons
+    `GetMessageExtraInfo` tells from a mouse's, as on Windows (`MOUSEEVENTF_FROMTOUCH`);
   - keys into `WM_KEYDOWN`, `WM_KEYUP` and `WM_CHAR`, as a PC keyboard's (`src/host/KeysAndroid.cpp`:
     virtual keys, set-1 scan codes, the extended keys); Back is Esc;
   - surface changes into `WM_SIZE` of the maximized windows, of those that fill the screen and of

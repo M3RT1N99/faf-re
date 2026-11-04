@@ -16,6 +16,7 @@ public class TouchInputTest {
     private static final class Recorder implements TouchInput.Mouse {
         final List<String> events = new ArrayList<>();
         long timer = -1;
+        boolean placing;
 
         @Override
         public void move(float x, float y) {
@@ -28,6 +29,11 @@ public class TouchInputTest {
         }
 
         @Override
+        public void tapNearGhost(float fingerX, float fingerY, float ghostX, float ghostY) {
+            events.add("tap " + (int) fingerX + " " + (int) fingerY + " near ghost " + (int) ghostX + " " + (int) ghostY);
+        }
+
+        @Override
         public void wheel(int delta, float x, float y) {
             events.add("wheel " + delta + " " + (int) x + " " + (int) y);
         }
@@ -35,6 +41,16 @@ public class TouchInputTest {
         @Override
         public void held() {
             events.add("held");
+        }
+
+        @Override
+        public boolean placing() {
+            return placing;
+        }
+
+        @Override
+        public void deleteOrder(float x, float y) {
+            events.add("delete " + (int) x + " " + (int) y);
         }
 
         @Override
@@ -354,6 +370,274 @@ public class TouchInputTest {
         expect("move 100 50", "left down 100 50", "move 130 50", "left up 130 50");
         down(0, 10, 10, 2000);
         assertEquals(TouchInput.HOLD_MILLISECONDS, mouse.timer);
+    }
+
+    @Test
+    public void whilePlacingATapPutsTheGhostThereAndATapOnItPlacesIt() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        expect("left down 500 300", "left up 500 300");
+        mouse.events.clear();
+        down(0, 530, 320, 2000); // within the reach of six slops
+        up(0, 2050);
+        expect("tap 530 320 near ghost 500 300");
+    }
+
+    @Test
+    public void whilePlacingATapAwayMovesTheGhost() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        mouse.events.clear();
+        down(0, 900, 300, 2000);
+        up(0, 2050);
+        expect("left down 900 300", "left up 900 300");
+    }
+
+    @Test
+    public void whilePlacingAFingerTakesTheGhostAlongFromAnywhere() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        mouse.events.clear();
+        down(0, 1000, 600, 2000);
+        moveFirst(1020, 600);
+        moveFirst(1020, 610);
+        up(0, 2200);
+        expect("move 520 300", "move 520 310");
+        assertEquals(-1, mouse.timer);
+    }
+
+    @Test
+    public void whilePlacingTheFirstDragStartsAboveTheFinger() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        moveFirst(520, 300);
+        up(0, 1200);
+        expect("move 520 180");
+    }
+
+    @Test
+    public void whilePlacingAFingerThatStaysShowsTheGhostAboveItAndPlacesNothing() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        timerRuns();
+        up(0, 5000);
+        expect("move 500 180", "held");
+    }
+
+    @Test
+    public void whilePlacingAFingerThatStaysMovesTheGhostByTheSmallestSteps() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        mouse.events.clear();
+        down(0, 1000, 600, 2000);
+        moveFirst(1003, 600); // within the slop, which counts only for a tap
+        timerRuns();
+        moveFirst(1005, 600);
+        moveFirst(1006, 601);
+        up(0, 3000);
+        expect("move 503 300", "held", "move 505 300", "move 506 301");
+        // Still a ghost to tap, where it is now.
+        mouse.events.clear();
+        down(0, 510, 300, 4000);
+        up(0, 4050);
+        expect("tap 510 300 near ghost 506 301");
+    }
+
+    @Test
+    public void whilePlacingAPalmLeavesTheOtherFingerToTheGhost() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        mouse.events.clear();
+        down(0, 1000, 600, 2000);
+        down(1, 1200, 600, 2020);
+        touch.forget(1, 2040);
+        --fingers;
+        moveFirst(1040, 600);
+        up(0, 2200);
+        expect("move 1200 600", "move 540 300", "move 540 300"); // last: the cursor back to the ghost, as for any two fingers
+    }
+
+    @Test
+    public void whilePlacingAQuickTapOfTwoFingersIsTheRightButtonThoughSwapped() {
+        touch.setSwapped(true);
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        down(1, 700, 300, 1020);
+        up(0, 1150);
+        up(1, 1160);
+        expect("move 700 300", "right down 700 300", "right up 700 300");
+    }
+
+    @Test
+    public void whilePlacingTheTapAfterAPlacingPutsTheGhostThoughItIsNear() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        down(0, 500, 300, 2000);
+        up(0, 2050);
+        mouse.events.clear();
+        down(0, 530, 320, 3000);
+        up(0, 3050);
+        expect("left down 530 320", "left up 530 320");
+        // That one is a ghost to tap again.
+        mouse.events.clear();
+        down(0, 510, 310, 4000);
+        up(0, 4050);
+        expect("tap 510 310 near ghost 530 320");
+    }
+
+    @Test
+    public void whilePlacingAFingerTakesTheGhostOnFromWhereABuildingWentUp() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        down(0, 500, 300, 2000);
+        up(0, 2050);
+        mouse.events.clear();
+        down(0, 1000, 600, 3000);
+        moveFirst(1040, 600);
+        up(0, 3200);
+        expect("move 540 300");
+        // Moved, it is a ghost to tap again.
+        mouse.events.clear();
+        down(0, 550, 300, 4000);
+        up(0, 4050);
+        expect("tap 550 300 near ghost 540 300");
+    }
+
+    @Test
+    public void whilePlacingTheCameraMakesAUsedGhostOneToTapAgain() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        down(0, 500, 300, 2000);
+        up(0, 2050);
+        down(0, 100, 100, 3000);
+        down(1, 300, 100, 3040);
+        moveBoth(120, 100, 320, 100);
+        up(0, 3300);
+        up(1, 3310);
+        mouse.events.clear();
+        down(0, 510, 300, 4000);
+        up(0, 4050);
+        expect("tap 510 300 near ghost 500 300");
+    }
+
+    @Test
+    public void whilePlacingTheGhostStaysOnTheScreen() {
+        touch.setScreen(2400, 1080);
+        mouse.placing = true;
+        // Above the finger is above the screen.
+        down(0, 100, 50, 1000);
+        moveFirst(130, 50);
+        moveFirst(130, 60);
+        up(0, 1200);
+        expect("move 130 0", "move 130 10");
+        mouse.events.clear();
+        // It follows the finger back at once, however far the finger went.
+        down(0, 2000, 500, 2000);
+        moveFirst(1500, 500);
+        moveFirst(1550, 500);
+        moveFirst(1560, 1050);
+        moveFirst(1560, 1000);
+        up(0, 2500);
+        expect("move 0 10", "move 50 10", "move 60 560", "move 60 510");
+        mouse.events.clear();
+        down(0, 100, 100, 3000);
+        moveFirst(2500, 700);
+        moveFirst(2490, 690);
+        up(0, 3500);
+        expect("move 2400 1080", "move 2390 1070");
+    }
+
+    @Test
+    public void whilePlacingTwoFingersMoveTheCameraAndTheGhostComesBack() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        mouse.events.clear();
+        down(0, 100, 100, 2000);
+        down(1, 300, 100, 2040);
+        moveBoth(120, 100, 320, 100);
+        up(0, 2300);
+        up(1, 2310);
+        expect("move 300 100", "move 200 100", "middle down 200 100", "move 220 100", "middle up 220 100", "move 500 300");
+    }
+
+    @Test
+    public void whilePlacingACancelBringsTheCursorBackToTheGhost() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        mouse.events.clear();
+        down(0, 100, 100, 2000);
+        down(1, 300, 100, 2040);
+        moveBoth(120, 100, 320, 100);
+        touch.cancel();
+        expect("move 300 100", "move 200 100", "middle down 200 100", "move 220 100", "middle up 220 100", "move 500 300");
+    }
+
+    @Test
+    public void whilePlacingAFirstFingerBringsTheCursorBackWhenTheEndWentUnheard() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        down(0, 100, 100, 2000);
+        down(1, 300, 100, 2040);
+        moveBoth(120, 100, 320, 100);
+        up(0, 2300); // the other's end does not come
+        fingers = 0;
+        mouse.events.clear();
+        down(0, 900, 600, 3000);
+        expect("move 500 300");
+    }
+
+    @Test
+    public void theGhostIsForgottenWhenThePlacingIsOver() {
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        up(0, 1050);
+        mouse.placing = false;
+        down(0, 10, 10, 2000);
+        up(0, 2200);
+        mouse.events.clear();
+        mouse.placing = true;
+        // A new ghost starts above the finger again, not from where the last one was.
+        down(0, 520, 300, 3000);
+        moveFirst(560, 300);
+        up(0, 3300);
+        expect("move 560 180");
+    }
+
+    @Test
+    public void deletingATapDeletesWhenTheCursorHasSettled() {
+        touch.setDeleting(true);
+        down(0, 500, 300, 1000);
+        up(0, 1030);
+        expect("move 500 300");
+        timerRuns();
+        expect("move 500 300", "delete 500 300");
+        // Over a ghost as well: it is the deleting that was asked for.
+        mouse.events.clear();
+        mouse.placing = true;
+        down(0, 600, 300, 2000);
+        up(0, 2200);
+        expect("move 600 300", "delete 600 300");
+    }
+
+    @Test
+    public void deletingAFingerThatStaysOrWandersStillOnlyDeletes() {
+        touch.setDeleting(true);
+        down(0, 500, 300, 1000);
+        timerRuns();
+        moveFirst(560, 300);
+        up(0, 1500);
+        expect("move 500 300", "delete 500 300");
     }
 
     @Test

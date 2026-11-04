@@ -75,6 +75,7 @@ namespace
   {
     MSG msg{};
     wchar_t character = 0; // what a key press types, for TranslateMessage
+    LPARAM extraInfo = 0;  // for GetMessageExtraInfo
   };
 
   /// A message sent from another thread, or a task of the layer for this thread.
@@ -99,6 +100,7 @@ namespace
     HANDLE wake = nullptr; // manual reset: something arrived since the thread last looked
     int inSend = 0;
     LONG messageTime = 0;
+    LPARAM messageExtraInfo = 0;
     DWORD messagePos = 0;
     MSG lastKeyDown{}; // the last key press taken from the queue, and what it types
     wchar_t lastKeyCharacter = 0;
@@ -179,6 +181,8 @@ namespace
 
   constexpr int kDoubleClickDistance = 4; // SM_CXDOUBLECLK, SM_CYDOUBLECLK
   constexpr UINT kDoubleClickTime = 500;
+  /// A task in the queue's order (Win32Android_RunOnWindowThread): its argument in wParam, its function in lParam.
+  constexpr UINT kRunTaskMessage = 0xBFFF;
   constexpr std::chrono::seconds kSurfaceReleaseTime{2}; // well below Android's patience with the activity's thread
   char kMonitor; // the one monitor's identity
 
@@ -380,12 +384,14 @@ namespace
   /// Input from the host. A mouse move replaces one still waiting for the same window, as
   /// Windows coalesces them.
   void PostInputLocked(
-    ThreadQueue& queue, Window* window, const UINT message, const WPARAM wParam, const LPARAM lParam, const wchar_t character
+    ThreadQueue& queue, Window* window, const UINT message, const WPARAM wParam, const LPARAM lParam, const wchar_t character,
+    const LPARAM extraInfo = 0
   )
   {
     Posted posted;
     posted.msg = MSG{Handle(window), message, wParam, lParam, ::GetTickCount(), Layer().cursor};
     posted.character = character;
+    posted.extraInfo = extraInfo;
     if (message == WM_MOUSEMOVE && !queue.posted.empty() && queue.posted.back().msg.message == WM_MOUSEMOVE
         && queue.posted.back().msg.hwnd == posted.msg.hwnd) {
       queue.posted.back() = posted;
@@ -593,7 +599,7 @@ namespace
 
   /// A mouse message for the capture window or the one under the pointer, in its client
   /// coordinates.
-  void PostMouseLocked(UINT message, const WORD xButton)
+  void PostMouseLocked(UINT message, const WORD xButton, const LPARAM extraInfo = 0)
   {
     State& layer = Layer();
     Window* const target = layer.capture != nullptr ? layer.capture : WindowAtLocked(layer.topLevel, layer.cursor, POINT{0, 0});
@@ -619,7 +625,7 @@ namespace
     }
 
     const WPARAM wParam = MouseKeysLocked() | (static_cast<WPARAM>(xButton) << 16);
-    PostInputLocked(*target->queue, target, message, wParam, MAKELPARAM(client.x, client.y), 0);
+    PostInputLocked(*target->queue, target, message, wParam, MAKELPARAM(client.x, client.y), 0, extraInfo);
   }
 
   // --- Unlocked helpers ---------------------------------------------------------------------------
@@ -672,6 +678,7 @@ namespace
       const Posted posted = *it;
       *out = posted.msg;
       queue.messageTime = static_cast<LONG>(posted.msg.time);
+      queue.messageExtraInfo = posted.extraInfo;
       queue.messagePos = static_cast<DWORD>(MAKELONG(posted.msg.pt.x, posted.msg.pt.y));
       if ((remove & PM_REMOVE) == 0) {
         return TRUE;
@@ -2161,6 +2168,10 @@ LRESULT DispatchMessageW(const MSG* const message)
   if (message == nullptr || message->hwnd == nullptr) {
     return 0;
   }
+  if (message->message == kRunTaskMessage) {
+    reinterpret_cast<void (*)(WPARAM)>(message->lParam)(message->wParam);
+    return 0;
+  }
   WNDPROC procedure = nullptr;
   {
     Lock lock(Layer().mutex);
@@ -2187,6 +2198,12 @@ void PostQuitMessage(const int exitCode)
 LRESULT CallWindowProcW(const WNDPROC procedure, const HWND handle, const UINT message, const WPARAM wParam, const LPARAM lParam)
 {
   return procedure != nullptr ? procedure(handle, message, wParam, lParam) : 0;
+}
+
+LPARAM GetMessageExtraInfo()
+{
+  Lock lock(Layer().mutex);
+  return CurrentQueueLocked().messageExtraInfo;
 }
 
 LONG GetMessageTime()
@@ -3081,6 +3098,16 @@ void Win32Android_SetForeground(const BOOL foreground)
   PostTaskLocked(*window->queue, [root, foreground] { ApplyForeground(root, foreground); });
 }
 
+void Win32Android_RunOnWindowThread(void (*const task)(WPARAM), const WPARAM argument)
+{
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  if (!layer.topLevel.empty()) {
+    Window* const window = layer.topLevel.front();
+    PostInputLocked(*window->queue, window, kRunTaskMessage, argument, reinterpret_cast<LPARAM>(task), 0);
+  }
+}
+
 void Win32Android_MouseMove(const int x, const int y)
 {
   State& layer = Layer();
@@ -3089,21 +3116,34 @@ void Win32Android_MouseMove(const int x, const int y)
   PostMouseLocked(WM_MOUSEMOVE, 0);
 }
 
+namespace
+{
+  void PostMouseButton(const int button, const BOOL down, const int x, const int y, const LPARAM extraInfo)
+  {
+    static const UINT kDown[] = {WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN, WM_XBUTTONDOWN};
+    static const UINT kUp[] = {WM_LBUTTONUP, WM_RBUTTONUP, WM_MBUTTONUP, WM_XBUTTONUP, WM_XBUTTONUP};
+    static const int kKey[] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
+    if (button < WIN32ANDROID_BUTTON_LEFT || button > WIN32ANDROID_BUTTON_X2) {
+      return;
+    }
+    State& layer = Layer();
+    Lock lock(layer.mutex);
+    layer.cursor = ClampToClipLocked(POINT{x, y});
+    BYTE& key = layer.asyncKeys[kKey[button]];
+    key = down != FALSE ? static_cast<BYTE>(key | 0x80) : static_cast<BYTE>(key & ~0x80);
+    const WORD xButton = button == WIN32ANDROID_BUTTON_X1 ? XBUTTON1 : (button == WIN32ANDROID_BUTTON_X2 ? XBUTTON2 : 0);
+    PostMouseLocked(down != FALSE ? kDown[button] : kUp[button], xButton, extraInfo);
+  }
+} // namespace
+
 void Win32Android_MouseButton(const int button, const BOOL down, const int x, const int y)
 {
-  static const UINT kDown[] = {WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN, WM_XBUTTONDOWN};
-  static const UINT kUp[] = {WM_LBUTTONUP, WM_RBUTTONUP, WM_MBUTTONUP, WM_XBUTTONUP, WM_XBUTTONUP};
-  static const int kKey[] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
-  if (button < WIN32ANDROID_BUTTON_LEFT || button > WIN32ANDROID_BUTTON_X2) {
-    return;
-  }
-  State& layer = Layer();
-  Lock lock(layer.mutex);
-  layer.cursor = ClampToClipLocked(POINT{x, y});
-  BYTE& key = layer.asyncKeys[kKey[button]];
-  key = down != FALSE ? static_cast<BYTE>(key | 0x80) : static_cast<BYTE>(key & ~0x80);
-  const WORD xButton = button == WIN32ANDROID_BUTTON_X1 ? XBUTTON1 : (button == WIN32ANDROID_BUTTON_X2 ? XBUTTON2 : 0);
-  PostMouseLocked(down != FALSE ? kDown[button] : kUp[button], xButton);
+  PostMouseButton(button, down, x, y, 0);
+}
+
+void Win32Android_TouchButton(const int button, const BOOL down, const int x, const int y)
+{
+  PostMouseButton(button, down, x, y, MOUSEEVENTF_FROMTOUCH);
 }
 
 void Win32Android_MouseWheel(const int delta, const int x, const int y)

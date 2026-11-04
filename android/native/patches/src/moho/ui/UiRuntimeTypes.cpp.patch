@@ -1,8 +1,16 @@
 diff --git a/src/moho/ui/UiRuntimeTypes.cpp b/src/moho/ui/UiRuntimeTypes.cpp
-index 95af8bc2..59deabf0 100644
+index 95af8bc2..9c500212 100644
 --- a/src/moho/ui/UiRuntimeTypes.cpp
 +++ b/src/moho/ui/UiRuntimeTypes.cpp
-@@ -1603,9 +1603,9 @@ namespace
+@@ -8,6 +8,7 @@
+ #include <Windows.h>
+ 
+ #include <algorithm>
++#include <atomic>
+ #include <bit>
+ #include <cctype>
+ #include <cmath>
+@@ -1603,9 +1604,9 @@ namespace
    )
    {
      moho::StatItem* const item = EnsureEngineFloatStat(slot, statPath);
@@ -15,7 +23,7 @@ index 95af8bc2..59deabf0 100644
      do {
        observed = ::InterlockedCompareExchange(counter, 0, 0);
      } while (::InterlockedCompareExchange(counter, nextBits, observed) != observed);
-@@ -3351,7 +3351,9 @@ bool moho::cam_Free = false;
+@@ -3351,7 +3352,53 @@ bool moho::cam_Free = false;
  // 0x00F57AA0 `?ren_BgLowerBound@Moho@@3MA`; the shipped `.data` word is
  // `00 00 fa 42` == 125.0f.
  float moho::ren_BgLowerBound = 125.0f;
@@ -23,10 +31,54 @@ index 95af8bc2..59deabf0 100644
 +// Android client build: Android's pointer and the fingers say where they are, and do not move
 +// relative to a cursor the engine holds still for the middle button's camera drag.
 +bool moho::ui_DisableCursorFixing = true;
++
++// Android client build: placing a building by finger (CUIWorldView::HandleEvent), and what the app,
++// on its own thread, asks about it.
++namespace
++{
++  std::atomic<bool> sPlacingBuilding{false};
++  moho::CUIWorldView* sMainWorldView = nullptr;
++
++  [[nodiscard]] bool IsPlacingBuilding()
++  {
++    moho::UICommandModeData commandMode{};
++    moho::UI_GetCommandMode(commandMode);
++    return commandMode.mMode == "build" || commandMode.mMode == "buildanchored";
++  }
++} // namespace
++
++namespace moho
++{
++  /** Whether a building's ghost waits to be placed, as the last frame saw it. */
++  bool UI_PlacingBuilding() noexcept
++  {
++    return sPlacingBuilding.load();
++  }
++
++  /** Whether a press here would come to a world view, not stay with the UI over it. On the window thread. */
++  bool UI_WorldViewAt(const float x, const float y)
++  {
++    CMauiControl* root = ResolveTopInputCaptureControl();
++    if (root == nullptr && sMainWorldView != nullptr) {
++      root = sMainWorldView->GetRootFrame();
++    }
++    if (root == nullptr) {
++      return false;
++    }
++    // What a press finds goes on to the parents, as a marker on the map does that does not take it.
++    for (CMauiControl* control = CMauiControl::GetTopmostControl(root, x, y); control != nullptr; control = control->GetParent()) {
++      if (dynamic_cast<CUIWorldView*>(control) != nullptr) {
++        return true;
++      }
++    }
++    return false;
++  }
++} // namespace moho
++
  float moho::ui_SelectTolerance = 4.0f;
  float moho::ui_ExtractSnapTolerance = 20.0f;
  float moho::ui_MinExtractSnapPixels = 20.0f;
-@@ -15493,7 +15495,8 @@ void moho::CMauiMovie::Stop()
+@@ -15493,7 +15540,8 @@ void moho::CMauiMovie::Stop()
   */
  bool moho::CMauiMovie::IsLoaded() const
  {
@@ -36,7 +88,7 @@ index 95af8bc2..59deabf0 100644
  }
  
  /**
-@@ -15504,7 +15507,7 @@ bool moho::CMauiMovie::IsLoaded() const
+@@ -15504,7 +15552,7 @@ bool moho::CMauiMovie::IsLoaded() const
   */
  std::int32_t moho::CMauiMovie::GetNumFrames() const
  {
@@ -45,7 +97,7 @@ index 95af8bc2..59deabf0 100644
  }
  
  /**
-@@ -15515,7 +15518,7 @@ std::int32_t moho::CMauiMovie::GetNumFrames() const
+@@ -15515,7 +15563,7 @@ std::int32_t moho::CMauiMovie::GetNumFrames() const
   */
  float moho::CMauiMovie::GetFrameRate() const
  {
@@ -54,7 +106,7 @@ index 95af8bc2..59deabf0 100644
  }
  
  /**
-@@ -15592,8 +15595,11 @@ int moho::cfunc_CMauiMovieInternalSetL(
+@@ -15592,8 +15640,11 @@ int moho::cfunc_CMauiMovieInternalSetL(
      filename = "";
    }
  
@@ -68,7 +120,7 @@ index 95af8bc2..59deabf0 100644
    (void)lua_gettop(state->m_state);
    return 1;
  }
-@@ -18604,9 +18610,6 @@ moho::CUIWorldView::CUIWorldView(
+@@ -18604,9 +18655,6 @@ moho::CUIWorldView::CUIWorldView(
        if (!params["ui_SelectTolerance"].IsNil()) {
          moho::ui_SelectTolerance = params["ui_SelectTolerance"].GetNumber();
        }
@@ -78,3 +130,65 @@ index 95af8bc2..59deabf0 100644
        if (!params["ui_ExtractSnapTolerance"].IsNil()) {
          moho::ui_ExtractSnapTolerance = params["ui_ExtractSnapTolerance"].GetNumber();
        }
+@@ -18682,6 +18730,12 @@ moho::CUIWorldView::~CUIWorldView()
+   }
+ 
+   ren_Viewport->RemoveWorldView(this);
++
++  // Android client build: a game that ended leaves no frame to say so (UI_PlacingBuilding).
++  sPlacingBuilding.store(false);
++  if (sMainWorldView == this) {
++    sMainWorldView = nullptr;
++  }
+ }
+ 
+ /**
+@@ -21520,7 +21574,11 @@ bool moho::CUIWorldView::HandleEvent(
+   // Ordering matters: this test sits ahead of the left-press one, and a
+   // double-click on any other button falls straight through into the
+   // right-double-click arm at 0x00870F1B.
+-  if (eventData.mEventType == MET_ButtonDClick && eventData.mKeyCode == kPostDraggerLeftButton) {
++  // Android client build: two quick taps are how a finger places a building, and the second is a press
++  // like any other (see the press below).
++  const bool placingAgain =
++    eventData.mEventType == MET_ButtonDClick && eventData.mKeyCode == kPostDraggerLeftButton && IsPlacingBuilding();
++  if (eventData.mEventType == MET_ButtonDClick && eventData.mKeyCode == kPostDraggerLeftButton && !placingAgain) {
+     if (mWldSession->mCurFormation->mReady) {
+       mWldSession->mCurFormation->LuaFinalize();
+       return true;
+@@ -21548,7 +21606,7 @@ bool moho::CUIWorldView::HandleEvent(
+   }
+ 
+   // --- left-button press (0x00870CA4) ------------------------------------
+-  if (eventData.mEventType == MET_ButtonPress && eventData.mKeyCode == kPostDraggerLeftButton) {
++  if ((eventData.mEventType == MET_ButtonPress || placingAgain) && eventData.mKeyCode == kPostDraggerLeftButton) {
+     if (mWldSession->mCurFormation->mReady) {
+       mWldSession->mCurFormation->LuaFinalize();
+       return true;
+@@ -21566,6 +21624,13 @@ bool moho::CUIWorldView::HandleEvent(
+ 
+     case COMMOD_Build:
+     case COMMOD_BuildAnchored:
++      // Android client build: a finger has no hover. Nothing shows where a building would go until
++      // the finger is down, and then the finger covers it. So a finger's press only puts the building's
++      // ghost there, and the app sends a mouse's press for a finger that taps the ghost (TouchInput).
++      // A mouse places at once as ever.
++      if ((::GetMessageExtraInfo() & MOUSEEVENTF_FROMTOUCH) == MOUSEEVENTF_FROMTOUCH) {
++        return true;
++      }
+       func_NewUIBuildDragger(GetRootFrame(), mWldSession, &eventData, mCamera.get(), &mBuildDrag);
+       return true;
+ 
+@@ -21692,6 +21757,12 @@ void moho::CUIWorldView::Frame(
+ {
+   func_ProcessMouseScrubbing();
+ 
++  // Android client build: for the app's fingers (UI_PlacingBuilding, UI_WorldViewAt).
++  if (!IsMiniMap()) {
++    sMainWorldView = this;
++    sPlacingBuilding.store(IsPlacingBuilding());
++  }
++
+   if (mCursorInside != 0u && sMouseIsScrubbing == 0u) {
+     UpdateSelection(mWldSession->CursorInfo().mMouseScreenPos);
+     RunScript("OnUpdateCursor");

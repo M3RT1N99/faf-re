@@ -171,8 +171,7 @@ most of C1, as 56 files stop at wx.
 *2026-11-04:*
 - **C2 on the emulator (x86_64, the PC's GPU): the main menu and a skirmish draw and run**, with the
   game's real files, every effect through the preprocessor and DXC, and the textures through the codec.
-  The menu holds 60 fps; the skirmish about 13 fps, which is C4's. arm64 builds, but no build of
-  this state has run on a phone yet.
+  The menu holds 60 fps; the skirmish about 13 fps, which is C4's.
   - The effects' preprocessor: all 22 effects byte for byte against d3dcompiler_47
     (`tests/fxc`; its header comment has what still differs on generated sources).
   - The texture codec: BC1 to BC3 texel for texel against WARP, the game's files by route against
@@ -185,11 +184,17 @@ most of C1, as 56 files stop at wx.
     report and debuggerd's tombstone, both in the results zip.
   - The app keeps FAF's packages whole (about 700 MB) and imports SCFA's `fonts/`.
 - **On the phone it needs:** SCFA imported again (`fonts/`), FAF's files downloaded again (whole).
-  Still unknown there: R32F and RG32F with linear filtering, 64 textures and samplers per stage
-  (a warning in the log says when a GPU has fewer), the speed.
+- **On a phone (0.9.0, a Galaxy S22 Ultra set to HD+: Xclipse 920, Vulkan 1.3.279):** the picture is
+  right and the speed good. A skirmish on an 8-player map against 7 AIs ran at 95 % of real time at
+  1647 x 768, with the CPU's BC decode and all the GPU-driven features on and BC as the only Vulkan
+  warning, with at most 185 MB of heap; it ended after 170 s by the player's own hand.
 - **Playable by fingers, from C4:** the game draws at a size of its own, 768 lines on a phone, which
   makes its UI larger and leaves fewer pixels to fill, and fingers act as a mouse, with the camera on
   two fingers and a bar for what fingers have not (`TouchInput`, [README](README.md)). Checked on the
   emulator with real multi-touch events: selecting, orders, queues, the camera, the keyboard on a
-  first start without a profile. Its feel on a phone is still to be seen.
-- **Next:** the first picture on a phone. Sound and movies (C3) after that, then the speed (C4).
+  first start without a profile. The phone showed what was missing: a finger covers the place it
+  chooses for a building, which made setting one against a factory hard, and a queued order was hard
+  to hit, so that a tap placed a new one. So a tap now puts a building's ghost, a finger moves it and a
+  tap on it places it, and *Del* deletes the order nearest to a tap (0.9.1; the emulator's fingers
+  only so far).
+- **Next:** sound and movies (C3), then the speed (C4).

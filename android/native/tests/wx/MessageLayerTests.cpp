@@ -34,6 +34,13 @@ namespace
     Win32Android_MouseButton(button, TRUE, x, y);
     Win32Android_MouseButton(button, FALSE, x, y);
   }
+
+  WPARAM sTaskArgument = 0;
+
+  void Task(const WPARAM argument)
+  {
+    sTaskArgument = argument;
+  }
 } // namespace
 
 WXT_TEST(PostedMessagesComeInOrder)
@@ -50,6 +57,41 @@ WXT_TEST(PostedMessagesComeInOrder)
     WXT_CHECK(msg.hwnd == window.hwnd());
   }
   WXT_CHECK(!Take(&msg, WM_USER, WM_USER + 100));
+}
+
+WXT_TEST(ATaskForTheWindowThreadComesAfterTheInputBeforeIt)
+{
+  RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
+  wxtest::Pump();
+  sTaskArgument = 0;
+  Win32Android_MouseMove(10, 10);
+  Win32Android_RunOnWindowThread(&Task, 7);
+  Win32Android_MouseMove(20, 20);
+  MSG msg;
+  WXT_CHECK(Take(&msg));
+  WXT_CHECK_EQ(msg.message, UINT{WM_MOUSEMOVE});
+  WXT_CHECK_EQ(GET_X_LPARAM(msg.lParam), 10);
+  (void)::DispatchMessageW(&msg);
+  WXT_CHECK_EQ(sTaskArgument, WPARAM{0});
+  WXT_CHECK(Take(&msg));
+  (void)::DispatchMessageW(&msg);
+  WXT_CHECK_EQ(sTaskArgument, WPARAM{7});
+  WXT_CHECK(Take(&msg));
+  WXT_CHECK_EQ(GET_X_LPARAM(msg.lParam), 20);
+}
+
+WXT_TEST(AFingersButtonSaysSoWithItsMessage)
+{
+  RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
+  wxtest::Pump();
+  Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, 15, 15);
+  Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, FALSE, 15, 15);
+  MSG msg;
+  WXT_CHECK(Take(&msg, WM_LBUTTONDOWN, WM_LBUTTONDBLCLK));
+  WXT_CHECK(msg.message != UINT{WM_LBUTTONUP});
+  WXT_CHECK_EQ(::GetMessageExtraInfo(), LPARAM{MOUSEEVENTF_FROMTOUCH});
+  WXT_CHECK(Take(&msg, WM_LBUTTONUP, WM_LBUTTONUP));
+  WXT_CHECK_EQ(::GetMessageExtraInfo(), LPARAM{0});
 }
 
 WXT_TEST(PeekTakesTheFirstInItsRangeAndWindowAndCanLeaveIt)

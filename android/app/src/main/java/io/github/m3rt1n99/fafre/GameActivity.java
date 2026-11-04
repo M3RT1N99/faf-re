@@ -84,7 +84,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void button(int button, boolean down, float x, float y) {
-            Game.mouseButton(button, down, pictureX(x), pictureY(y));
+            Game.touchButton(button, down, pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void tapNearGhost(float fingerX, float fingerY, float ghostX, float ghostY) {
+            Game.tapNearGhost(pictureX(fingerX), pictureY(fingerY), pictureX(ghostX), pictureY(ghostY));
         }
 
         @Override
@@ -95,6 +100,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         @Override
         public void held() {
             mSurface.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
+
+        @Override
+        public boolean placing() {
+            return Game.placingBuilding();
+        }
+
+        @Override
+        public void deleteOrder(float x, float y) {
+            Game.deleteOrder(pictureX(x), pictureY(y));
         }
 
         @Override
@@ -132,8 +147,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mSurface = new SurfaceView(this);
         mSurface.getHolder().addCallback(this);
         mSurface.setOnTouchListener((view, event) -> onSurfaceTouch(event));
-        mSurface.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-            fitPicture(right - left, bottom - top));
+        mSurface.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            mTouch.setScreen(right - left, bottom - top);
+            fitPicture(right - left, bottom - top);
+        });
         fitPicture();
         root.addView(mSurface);
         mKeyboardTarget = new KeyboardTarget(this);
@@ -232,6 +249,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         toggle(bar, "Order", mTouch::setSwapped);
         toggle(bar, "Shift", on -> Game.key(KeyEvent.KEYCODE_SHIFT_LEFT, 0, on, 0));
         toggle(bar, "Ctrl", on -> Game.key(KeyEvent.KEYCODE_CTRL_LEFT, 0, on, 0));
+        toggle(bar, "Del", mTouch::setDeleting);
         barButton(bar, "Keys").setOnClickListener(view -> toggleKeyboard());
         return bar;
     }

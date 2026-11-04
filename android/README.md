@@ -109,11 +109,14 @@ the game data they imported. Everything lives in the app's external files folder
   mouse is the mouse, keys are the keyboard and Back is Esc. Fingers act as a mouse (`TouchInput`):
   a tap is a click, a finger that moves drags, a finger that stays holds the right button until it
   lifts (an order), a quick tap of two fingers is a right click where the second came down, two
-  fingers that move together pan the camera and two that move apart or closer zoom it. A bar at the
-  screen's edge has what fingers have not: *Order* swaps the left and right buttons, so that taps
-  give orders, *Shift* and *Ctrl* stay down until tapped again, and *Keys* opens the on-screen
-  keyboard, which plain keys go to the game from, with what it typed shown over the picture, as it
-  covers the game's text field. The game draws at a size of its own (`PictureSize`, a button on the
+  fingers that move together pan the camera and two that move apart or closer zoom it. While a
+  building's ghost waits to be placed, a tap puts it there and a tap on it places the building; a
+  finger that moves takes it along, from wherever on the screen it landed, and one that stays a moment
+  moves it by the smallest steps, to set it against another building; a quick tap of two fingers
+  cancels. A bar at the screen's edge has what fingers have not: *Order* swaps the left and right
+  buttons, so that taps give orders, *Shift* and *Ctrl* stay down until tapped again, *Del* makes a tap
+  delete the queued order under it, and *Keys* opens the on-screen keyboard, which plain keys go to the
+  game from, with what it typed shown over the picture, as it covers the game's text field. The game draws at a size of its own (`PictureSize`, a button on the
   card): its UI has a fixed size in pixels, so 768 lines on a phone make it larger, with fewer pixels
   to fill, and the compositor scales the picture to the panel. The host writes `game.txt` in the
   app's files; when the process is gone, the app adds how it ended (the exit code, a fatal error's

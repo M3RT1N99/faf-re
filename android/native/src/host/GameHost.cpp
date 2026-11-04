@@ -54,8 +54,16 @@
 #include "gpg/core/utils/Logging.h"
 #include "gpg/gal/Error.hpp"
 #include "moho/app/CScApp.h"
+#include "moho/console/CConCommand.h"
 #include "moho/app/WinApp.h"
 #include "moho/misc/StartupHelpers.h"
+
+namespace moho
+{
+  // src/moho/ui/UiRuntimeTypes.cpp's, by its patch.
+  [[nodiscard]] bool UI_PlacingBuilding() noexcept;
+  [[nodiscard]] bool UI_WorldViewAt(float x, float y);
+} // namespace moho
 
 // The CRT's copies of the command line, which the engine reads (src/platform/posix/Win32Shim.cpp).
 extern int __argc;
@@ -298,6 +306,63 @@ namespace
   }
 } // namespace
 
+namespace
+{
+  static_assert(sizeof(WPARAM) >= 8, "two places of the picture go in a task's argument");
+
+  /// A task's argument: up to two places of the picture, each coordinate below 65536.
+  [[nodiscard]] WPARAM Places(const int x0, const int y0, const int x1 = 0, const int y1 = 0)
+  {
+    const auto word = [](const int value) { return static_cast<WPARAM>(value) & 0xFFFFU; };
+    return word(x0) | word(y0) << 16 | word(x1) << 32 | word(y1) << 48;
+  }
+
+  [[nodiscard]] int Coordinate(const WPARAM places, const int index)
+  {
+    return static_cast<int>(places >> (16 * index) & 0xFFFFU);
+  }
+
+  /// On the program's thread, where the cursor has come to the place. PC players delete a queued order
+  /// by pointing at it, within a few pixels; this takes the nearest within a part of the view, which a
+  /// finger can hit. Nothing for a tap on the UI, as the cursor's place in the world then says nothing.
+  void DeleteOrderAtCursor(const WPARAM place)
+  {
+    if (!moho::UI_WorldViewAt(static_cast<float>(Coordinate(place, 0)), static_cast<float>(Coordinate(place, 1)))) {
+      return;
+    }
+    moho::CON_Execute(
+      "UI_Lua local mouse = GetMouseWorldPos() "
+      "local reach = GetCamera('WorldCamera'):GetZoom() * 0.1 "
+      "local best, bestDistance = nil, reach * reach "
+      "for _, unit in GetSelectedUnits() or {} do "
+      "for _, order in unit:GetCommandQueue() or {} do "
+      "local x, z = order.position[1] - mouse[1], order.position[3] - mouse[3] "
+      "if x * x + z * z < bestDistance then best, bestDistance = order.ID, x * x + z * z end "
+      "end end "
+      "if best then DeleteCommand(best) end"
+    );
+  }
+
+  /// On the program's thread, which knows what is under the finger and the ghost: a tap on the UI is the
+  /// UI's, and a ghost under the UI is not there to be tapped. A mouse's click places the building, and a
+  /// finger's only puts the ghost.
+  void TapNearGhost(const WPARAM places)
+  {
+    const int fingerX = Coordinate(places, 0);
+    const int fingerY = Coordinate(places, 1);
+    const int ghostX = Coordinate(places, 2);
+    const int ghostY = Coordinate(places, 3);
+    if (moho::UI_WorldViewAt(static_cast<float>(fingerX), static_cast<float>(fingerY))
+        && moho::UI_WorldViewAt(static_cast<float>(ghostX), static_cast<float>(ghostY))) {
+      Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, TRUE, ghostX, ghostY);
+      Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, FALSE, ghostX, ghostY);
+    } else {
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, fingerX, fingerY);
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, fingerX, fingerY);
+    }
+  }
+} // namespace
+
 /// Starts the program on the engine's thread: `arguments` is its command line, the program's
 /// path first; `home` and `temp` its HOME and TMPDIR; the host's lines go to the end of
 /// `reportPath`.
@@ -397,11 +462,40 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_mouseButton
   Win32Android_MouseButton(button, down != JNI_FALSE ? TRUE : FALSE, x, y);
 }
 
+/// A finger's button (Win32Android_TouchButton): where a building's ghost waits, its press does not
+/// place the building (CUIWorldView::HandleEvent).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_touchButton(
+  JNIEnv*, jclass, const jint button, const jboolean down, const jint x, const jint y
+)
+{
+  Win32Android_TouchButton(button, down != JNI_FALSE ? TRUE : FALSE, x, y);
+}
+
 /// `delta` in WHEEL_DELTA units of 120 per notch, positive away from the user.
 extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_mouseWheel(JNIEnv*, jclass, const jint delta, const jint x, const jint y)
 {
   Win32Android_MouseWheel(delta, x, y);
+}
+
+/// Whether a building's ghost waits to be placed: fingers then move it (TouchInput).
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_placingBuilding(JNIEnv*, jclass)
+{
+  return moho::UI_PlacingBuilding() ? JNI_TRUE : JNI_FALSE;
+}
+
+/// A finger tapped near a building's ghost (TapNearGhost).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_tapNearGhost(
+  JNIEnv*, jclass, const jint fingerX, const jint fingerY, const jint ghostX, const jint ghostY
+)
+{
+  Win32Android_RunOnWindowThread(&TapNearGhost, Places(fingerX, fingerY, ghostX, ghostY));
+}
+
+/// Deletes the queued order of the selected units nearest to the cursor, which is at this place.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_deleteOrder(JNIEnv*, jclass, const jint x, const jint y)
+{
+  Win32Android_RunOnWindowThread(&DeleteOrderAtCursor, Places(x, y));
 }
 
 /// A key of Android's (`keyCode`, AKEYCODE_*) went down or up; `scanCode` is the event's Linux
