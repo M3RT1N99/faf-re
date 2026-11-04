@@ -44,9 +44,6 @@ namespace gpg::gal::imaging::files
 
     constexpr std::uint8_t kPngSignature[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
 
-    // Larger images are refused before anything is allocated (the game's largest are 4096 wide).
-    constexpr std::uint32_t kMaxSide = 16384U;
-
     [[nodiscard]] bool PlausibleTga(const std::uint8_t* const data, const std::size_t bytes) noexcept
     {
       if (bytes < 18U) {
@@ -56,12 +53,40 @@ namespace gpg::gal::imaging::files
       const std::uint32_t type = data[2];
       const std::uint32_t bpp = data[16];
       const bool mapped = type == 1U || type == 9U;
-      const bool known = mapped || type == 2U || type == 3U || type == 10U || type == 11U;
-      return known && mapType == (mapped ? 1U : 0U) && (bpp == 8U || bpp == 15U || bpp == 16U || bpp == 24U || bpp == 32U) &&
-        Le16(data + 12) != 0U && Le16(data + 14) != 0U;
+      const bool gray = type == 3U || type == 11U;
+      const bool known = mapped || gray || type == 2U || type == 10U;
+      // True colour takes 15 bits at least.
+      const bool bppKnown = bpp == 15U || bpp == 16U || bpp == 24U || bpp == 32U || (bpp == 8U && (mapped || gray));
+      return known && mapType == (mapped ? 1U : 0U) && bppKnown && Le16(data + 12) != 0U && Le16(data + 14) != 0U;
     }
 
     // ---- PNG ------------------------------------------------------------------------------------
+
+    /**
+     * The header is the first chunk: that is where ReadSize takes the size from, and the engine sizes
+     * its copy of a batch texture's blocks by that answer (CD3DRawBatchTexture::BuildTextureData).
+     */
+    [[nodiscard]] bool PngHeaderFirst(const std::uint8_t* const data, const std::size_t bytes) noexcept
+    {
+      return bytes >= 33U && Be32(data + 8) == 13U && std::memcmp(data + 12, "IHDR", 4) == 0;
+    }
+
+    /** The colour types and depths PNG has. */
+    [[nodiscard]] bool PngFormatKnown(const std::uint32_t colorType, const std::uint32_t depth) noexcept
+    {
+      switch (colorType) {
+      case 0:
+        return depth == 1U || depth == 2U || depth == 4U || depth == 8U || depth == 16U;
+      case 3:
+        return depth == 1U || depth == 2U || depth == 4U || depth == 8U;
+      case 2:
+      case 4:
+      case 6:
+        return depth == 8U || depth == 16U;
+      default:
+        return false;
+      }
+    }
 
     /** Inflates a zlib stream into exactly `expected` bytes. */
     [[nodiscard]] bool Inflate(const std::vector<std::uint8_t>& input, const std::size_t expected, std::vector<std::uint8_t>& output)
@@ -213,13 +238,24 @@ namespace gpg::gal::imaging::files
 
     [[nodiscard]] bool DecodePng(const std::uint8_t* const data, const std::size_t bytes, Pixels& out)
     {
+      if (!PngHeaderFirst(data, bytes)) {
+        return false;
+      }
       PngHeader header;
+      header.width = Be32(data + 16);
+      header.height = Be32(data + 20);
+      header.depth = data[24];
+      header.colorType = data[25];
+      header.interlace = data[28];
+      if (!PngFormatKnown(header.colorType, header.depth) || header.interlace > 1U || header.width == 0U || header.height == 0U ||
+          header.width > kMaxSide || header.height > kMaxSide) {
+        return false;
+      }
       std::vector<std::uint8_t> compressed;
       for (std::uint32_t entry = 0U; entry < 256U; ++entry) {
         header.palette[entry][3] = 255U;
       }
-      std::size_t at = 8U;
-      bool sawHeader = false;
+      std::size_t at = 33U;
       while (at + 12U <= bytes) {
         const std::uint32_t length = Be32(data + at);
         const std::uint8_t* const type = data + at + 4;
@@ -227,14 +263,7 @@ namespace gpg::gal::imaging::files
         if (length > bytes - at - 12U) {
           return false;
         }
-        if (std::memcmp(type, "IHDR", 4) == 0 && length >= 13U) {
-          header.width = Be32(body);
-          header.height = Be32(body + 4);
-          header.depth = body[8];
-          header.colorType = body[9];
-          header.interlace = body[12];
-          sawHeader = true;
-        } else if (std::memcmp(type, "PLTE", 4) == 0) {
+        if (std::memcmp(type, "PLTE", 4) == 0) {
           for (std::uint32_t entry = 0U; entry < 256U && entry * 3U + 2U < length; ++entry) {
             std::memcpy(header.palette[entry], body + entry * 3U, 3U);
           }
@@ -257,15 +286,9 @@ namespace gpg::gal::imaging::files
         } else if (std::memcmp(type, "IEND", 4) == 0) {
           break;
         }
-        at += 12U + length;
+        at += 12U + static_cast<std::size_t>(length);
       }
-      const std::uint32_t depth = header.depth;
-      const bool depthKnown = depth == 1U || depth == 2U || depth == 4U || depth == 8U || depth == 16U;
-      if (!sawHeader || !depthKnown || header.width == 0U || header.height == 0U || header.width > kMaxSide || header.height > kMaxSide ||
-          header.colorType == 1U || header.colorType == 5U || header.colorType > 6U) {
-        return false;
-      }
-      const std::size_t pixelBits = static_cast<std::size_t>(Channels(header.colorType)) * depth;
+      const std::size_t pixelBits = static_cast<std::size_t>(Channels(header.colorType)) * header.depth;
       const std::size_t pixelBytes = std::max<std::size_t>(1U, pixelBits / 8U);
       struct Pass
       {
@@ -286,6 +309,10 @@ namespace gpg::gal::imaging::files
         if (passSize(passes[pass], columns, rows)) {
           expected += static_cast<std::size_t>(rows) * (1U + (columns * pixelBits + 7U) / 8U);
         }
+      }
+      // Deflate makes at most 1032 bytes of one: a stream too short for the image takes no memory.
+      if (expected > compressed.size() * 1032U) {
+        return false;
       }
       std::vector<std::uint8_t> raw;
       if (!Inflate(compressed, expected, raw)) {
@@ -357,13 +384,19 @@ namespace gpg::gal::imaging::files
       const bool alpha = (descriptor & 15U) != 0U;
       const std::uint32_t pixelBytes = (bits + 7U) / 8U;
       const std::uint32_t mapEntryBytes = (mapBits + 7U) / 8U;
-      std::size_t at = 18U + data[0];
-      const std::uint8_t* const map = data + at;
-      at += static_cast<std::size_t>(mapLength) * mapEntryBytes;
-      if (at > bytes || (mapped && mapBits != 15U && mapBits != 16U && mapBits != 24U && mapBits != 32U)) {
+      const std::size_t mapAt = 18U + data[0];
+      std::size_t at = mapAt + static_cast<std::size_t>(mapLength) * mapEntryBytes;
+      if (width > kMaxSide || height > kMaxSide || at > bytes || (mapped && mapBits != 15U && mapBits != 16U && mapBits != 24U && mapBits != 32U)) {
         return false;
       }
-      std::vector<std::uint8_t> linear(static_cast<std::size_t>(width) * height * 4U, 0U);
+      const std::uint8_t* const map = data + mapAt;
+      const std::size_t count = static_cast<std::size_t>(width) * height;
+      // A file too short for its image takes no memory: a run packet holds 128 pixels at most.
+      const std::size_t leastBytes = rle ? (count + 127U) / 128U * (1U + pixelBytes) : count * pixelBytes;
+      if (leastBytes > bytes - at) {
+        return false;
+      }
+      std::vector<std::uint8_t> linear(count * 4U, 0U);
       const auto pixel = [&](const std::uint8_t* const source, std::uint8_t* const target) {
         if (mapped) {
           const std::uint32_t index = (pixelBytes == 1U ? source[0] : Le16(source)) - mapFirst;
@@ -374,13 +407,9 @@ namespace gpg::gal::imaging::files
           TgaPixel(source, bits, gray, alpha, target);
         }
       };
-      const std::size_t count = static_cast<std::size_t>(width) * height;
       std::size_t written = 0U;
       while (written < count) {
         if (!rle) {
-          if (at + pixelBytes > bytes) {
-            return false;
-          }
           pixel(data + at, linear.data() + written * 4U);
           at += pixelBytes;
           ++written;
@@ -439,7 +468,13 @@ namespace gpg::gal::imaging::files
         ++shift;
       }
       const std::uint32_t maximum = mask >> shift;
-      return static_cast<std::uint8_t>((((value & mask) >> shift) * 255U + maximum / 2U) / maximum);
+      return static_cast<std::uint8_t>((static_cast<std::uint64_t>((value & mask) >> shift) * 255U + maximum / 2U) / maximum);
+    }
+
+    /** A BMP's height whichever way its rows run; -2^31 has one as an unsigned number too. */
+    [[nodiscard]] std::uint32_t Magnitude(const std::int32_t value) noexcept
+    {
+      return value < 0 ? 0U - static_cast<std::uint32_t>(value) : static_cast<std::uint32_t>(value);
     }
 
     [[nodiscard]] bool DecodeBmp(const std::uint8_t* const data, const std::size_t bytes, Pixels& out)
@@ -447,16 +482,17 @@ namespace gpg::gal::imaging::files
       if (bytes < 54U) {
         return false;
       }
-      const std::uint32_t pixelsAt = Le32(data + 10);
-      const std::uint32_t headerBytes = Le32(data + 14);
+      const std::size_t pixelsAt = Le32(data + 10);
+      const std::size_t headerBytes = Le32(data + 14);
       const auto width = static_cast<std::int32_t>(Le32(data + 18));
       const auto signedHeight = static_cast<std::int32_t>(Le32(data + 22));
       const std::uint32_t bits = Le16(data + 28);
       const std::uint32_t compression = Le32(data + 30);
-      std::uint32_t colors = Le32(data + 46);
-      const std::uint32_t height = static_cast<std::uint32_t>(signedHeight < 0 ? -signedHeight : signedHeight);
-      if (width <= 0 || height == 0U || static_cast<std::uint32_t>(width) > kMaxSide || height > kMaxSide ||
-          (compression != 0U && compression != 3U)) {
+      const std::uint32_t height = Magnitude(signedHeight);
+      const bool bitsKnown = bits == 1U || bits == 2U || bits == 4U || bits == 8U || bits == 16U || bits == 24U || bits == 32U;
+      // A shorter header has these fields elsewhere; one longer than the file is no header.
+      if (headerBytes < 40U || headerBytes > bytes - 14U || !bitsKnown || width <= 0 || height == 0U ||
+          static_cast<std::uint32_t>(width) > kMaxSide || height > kMaxSide || (compression != 0U && compression != 3U)) {
         return false;
       }
       // 16 and 32 bits: X1R5G5B5 and X8R8G8B8 unless masks say otherwise; no alpha, as WIC reads them.
@@ -474,14 +510,16 @@ namespace gpg::gal::imaging::files
           masks[3] = Le32(data + 14U + 52U);
         }
       }
-      if (colors == 0U && bits <= 8U) {
-        colors = 1U << bits;
-      }
-      const std::uint8_t* const palette = data + 14U + headerBytes;
+      // No more colours than the pixels can index, whatever the header says.
+      const std::uint32_t indexable = bits <= 8U ? 1U << bits : 0U;
+      const std::uint32_t declared = Le32(data + 46);
+      const std::uint32_t colors = (declared == 0U || declared > indexable) ? indexable : declared;
+      const std::size_t paletteAt = 14U + headerBytes;
       const std::size_t stride = ((static_cast<std::size_t>(width) * bits + 31U) / 32U) * 4U;
-      if (pixelsAt + stride * height > bytes || (bits <= 8U && 14U + headerBytes + colors * 4U > bytes)) {
+      if (pixelsAt > bytes || stride * height > bytes - pixelsAt || colors * 4U > bytes - paletteAt) {
         return false;
       }
+      const std::uint8_t* const palette = data + paletteAt;
       out.width = static_cast<std::uint32_t>(width);
       out.height = height;
       out.rgba.assign(static_cast<std::size_t>(width) * height * 4U, 255U);
@@ -500,13 +538,11 @@ namespace gpg::gal::imaging::files
             target[0] = row[x * 3U + 2U];
             target[1] = row[x * 3U + 1U];
             target[2] = row[x * 3U];
-          } else if (bits == 16U || bits == 32U) {
+          } else {
             const std::uint32_t value = bits == 16U ? Le16(row + x * 2U) : Le32(row + x * 4U);
             for (int channel = 0; channel < 4; ++channel) {
               target[channel] = MaskValue(value, masks[channel]);
             }
-          } else {
-            return false;
           }
         }
       }
@@ -536,21 +572,19 @@ namespace gpg::gal::imaging::files
   {
     switch (container) {
     case Container::Png:
-      if (bytes < 24U) {
+      if (!PngHeaderFirst(data, bytes)) {
         return false;
       }
       outWidth = Be32(data + 16);
       outHeight = Be32(data + 20);
       return true;
-    case Container::Bmp: {
+    case Container::Bmp:
       if (bytes < 26U) {
         return false;
       }
-      const auto height = static_cast<std::int32_t>(Le32(data + 22));
       outWidth = Le32(data + 18);
-      outHeight = static_cast<std::uint32_t>(height < 0 ? -height : height);
+      outHeight = Magnitude(static_cast<std::int32_t>(Le32(data + 22)));
       return true;
-    }
     case Container::Tga:
       outWidth = Le16(data + 12);
       outHeight = Le16(data + 14);

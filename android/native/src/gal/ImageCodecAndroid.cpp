@@ -17,6 +17,9 @@
 //   tests/imagecodec: converted UI textures 228 of 250 identical; generated levels within a mean
 //   difference of 0.9 per channel, more at odd sides, where D3DX11 filters differently).
 //
+// Files come from other players' mods and maps: one that is malformed, or too large for this load
+// (files::kMaxSide), fails with E_FAIL, and so does a load that runs out of memory.
+//
 // The codec has no state and no lock: decodes run in parallel. There is no decode cache
 // (gTextureDecodeCache): what took D3DX11 30-40 ms per texture takes a fraction of that here.
 //
@@ -29,6 +32,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <new>
 
 #include "BlockCompressionAndroid.h"
 #include "ImageFilesAndroid.h"
@@ -456,7 +460,10 @@ namespace gpg::gal::imaging
       const std::uint32_t bitCount = ReadU32(data + 88);
       const std::uint32_t masks[4] = {ReadU32(data + 92), ReadU32(data + 96), ReadU32(data + 100), ReadU32(data + 104)};
       const std::uint32_t caps2 = ReadU32(data + 112);
-      if (width == 0U || height == 0U || width > 16384U || height > 16384U || mipCount > 16U || (caps2 & 0x200000U) != 0U) {
+      if (width == 0U || height == 0U || width > files::kMaxSide || height > files::kMaxSide || mipCount > 16U) {
+        return E_FAIL;
+      }
+      if ((caps2 & 0x200000U) != 0U) {
         return E_NOTIMPL;
       }
       std::size_t at = kHeaderBytes;
@@ -494,6 +501,10 @@ namespace gpg::gal::imaging
         legacy = true;
       } else {
         return E_NOTIMPL;
+      }
+      // Six faces together are held to what one image of the largest size may take.
+      if (static_cast<std::size_t>(width) * height * faces > static_cast<std::size_t>(files::kMaxSide) * files::kMaxSide) {
+        return E_FAIL;
       }
       out.format = legacy ? DXGI_FORMAT_R8G8B8A8_UNORM : stored;
       out.mipCount = mipCount;
@@ -723,10 +734,18 @@ namespace gpg::gal::imaging
   HRESULT ImageCodec::Decode(const void* const data, const std::size_t bytes, const DecodeOptions& options, Image& outImage)
   {
     tLastDecodeRoute = "direct";
-    if (gDdsDirectLoad && TryReadBlockCompressedDds(static_cast<const std::uint8_t*>(data), bytes, options, outImage)) {
-      return S_OK;
+    const auto* const file = static_cast<const std::uint8_t*>(data);
+    // The direct path takes any size; over the limit it is left to ReadDds to refuse the file.
+    const bool directFits = bytes >= 20U && ReadU32(file + 12) <= files::kMaxSide && ReadU32(file + 16) <= files::kMaxSide;
+    // What the engine handles around a load is the gal::Error a failed HRESULT becomes, not bad_alloc.
+    try {
+      if (gDdsDirectLoad && directFits && TryReadBlockCompressedDds(file, bytes, options, outImage)) {
+        return S_OK;
+      }
+      return DecodeWithD3dx(data, bytes, options, outImage);
+    } catch (const std::bad_alloc&) {
+      return E_FAIL;
     }
-    return DecodeWithD3dx(data, bytes, options, outImage);
   }
 
   HRESULT ImageCodec::DecodeWithD3dx(const void* const data, const std::size_t bytes, const DecodeOptions& options, Image& outImage)

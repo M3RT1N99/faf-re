@@ -11,6 +11,13 @@
 
 namespace gpg::gal::imaging::files
 {
+  /**
+   * The longest side the codec loads. Where D3DX11 goes up to 16384 this refuses earlier: a few
+   * kilobytes of file can claim or inflate to any size, and loading an image of this one takes
+   * under a gigabyte (tests/imagecodec checks). The game's largest are 4096 wide.
+   */
+  inline constexpr std::uint32_t kMaxSide = 8192U;
+
   enum class Container
   {
     Unknown,
@@ -36,7 +43,7 @@ namespace gpg::gal::imaging::files
   [[nodiscard]] bool ReadSize(Container container, const std::uint8_t* data, std::size_t bytes, std::uint32_t& outWidth,
                               std::uint32_t& outHeight) noexcept;
 
-  /** The pixels of a PNG, BMP or TGA. */
+  /** The pixels of a PNG, BMP or TGA; false for one that is malformed or over kMaxSide. */
   [[nodiscard]] bool Decode(Container container, const std::uint8_t* data, std::size_t bytes, Pixels& outPixels);
 
   /** A 32 bpp top-down BMP, as ImageCodec.cpp writes 8-bit RGBA and BGRA images. */

@@ -33,8 +33,8 @@ namespace gpg::gal::imaging
 
   /**
    * Encodes `rgba` (R8G8B8A8, `width` * 4 bytes per row) as whole 4x4 blocks with `rowPitch`
-   * bytes per row of blocks. A block that reaches past the level repeats the level's last column
-   * and row, as D3DX fills partial blocks.
+   * bytes per row of blocks. A block that reaches past the level repeats its own texels, as D3DX
+   * fills partial blocks: columns and rows 0 1 0 1 for two of them, 0 1 2 1 for three.
    */
   void EncodeBcLevel(DXGI_FORMAT format, const std::uint8_t* rgba, std::uint32_t width, std::uint32_t height, void* blocks,
                      std::size_t rowPitch);

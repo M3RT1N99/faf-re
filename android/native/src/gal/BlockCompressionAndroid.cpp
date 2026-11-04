@@ -266,11 +266,9 @@ namespace gpg::gal::imaging
           const float dot =
             (points[point].r - x.r) * axis.r + (points[point].g - x.g) * axis.g + (points[point].b - x.b) * axis.b;
           std::size_t step = 0U;
-          // As D3DX: the first test has no else, so a dot under zero still takes the last branch.
           if (dot <= 0.0f) {
             step = 0U;
-          }
-          if (dot >= stepCount) {
+          } else if (dot >= stepCount) {
             step = steps - 1U;
           } else {
             step = static_cast<std::size_t>(dot + 0.5f);
