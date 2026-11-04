@@ -67,6 +67,7 @@
             android:name=".GameActivity"
             android:process=":game"
             android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustNothing|stateHidden"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode|mcc|mnc|locale|touchscreen|fontScale|fontWeightAdjustment|grammaticalGender|layoutDirection|colorMode"
             android:exported="false"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />

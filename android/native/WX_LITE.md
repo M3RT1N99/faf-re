@@ -119,8 +119,8 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
   (`/fullscreen <width> <height>`), unless the command line chooses a size. The options' default
   adapter (1024 x 768) would otherwise draw into a corner of the back buffer.
 - It turns Android's input and lifecycle into Win32 messages for that thread:
-  - touch into the left button where the first finger is, a mouse's buttons into `WM_*BUTTON*`,
-    its moves into `WM_MOUSEMOVE` and its wheel into `WM_MOUSEWHEEL`;
+  - a mouse's buttons into `WM_*BUTTON*`, its moves into `WM_MOUSEMOVE` and its wheel into
+    `WM_MOUSEWHEEL`, and fingers into the same (the app's `TouchInput`);
   - keys into `WM_KEYDOWN`, `WM_KEYUP` and `WM_CHAR`, as a PC keyboard's (`src/host/KeysAndroid.cpp`:
     virtual keys, set-1 scan codes, the extended keys); Back is Esc;
   - surface changes into `WM_SIZE` of the maximized windows, of those that fill the screen and of

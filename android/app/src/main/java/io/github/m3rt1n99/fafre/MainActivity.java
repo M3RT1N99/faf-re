@@ -158,9 +158,16 @@ public final class MainActivity extends Activity {
         // 5. The game.
         LinearLayout game = card(column, "5 · Game",
             "The whole game on this phone, as the PC starts it: with your SCFA and FAF's game files of the newest version a "
-                + "replay downloaded (cards 2 and 3). It draws the menus and plays a skirmish, without sound or movies yet: "
-                + "touch is the mouse, Back is Esc. The report says how it ended.");
+                + "replay downloaded (cards 2 and 3). It draws the menus and plays a skirmish, without sound or movies yet. "
+                + "A tap is a click, a finger that moves drags, a finger that stays is the right button (an order); two fingers "
+                + "move the camera and zoom. The bar at the screen's edge has Order (taps give orders), Shift, Ctrl and the "
+                + "keyboard, and Back is Esc. The report says how it ended.");
         mStartButtons.add(button(game, "Start the game", v -> startActivity(new Intent(this, GameActivity.class))));
+        Button size = button(game, PictureSize.label(this), null);
+        size.setOnClickListener(v -> {
+            PictureSize.next(this);
+            size.setText(PictureSize.label(this));
+        });
         mGameResult = text("", 14, TEXT);
         game.addView(mGameResult);
 

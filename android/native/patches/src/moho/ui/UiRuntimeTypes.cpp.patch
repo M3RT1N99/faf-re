@@ -1,5 +1,5 @@
 diff --git a/src/moho/ui/UiRuntimeTypes.cpp b/src/moho/ui/UiRuntimeTypes.cpp
-index b5199dc0..64288b05 100644
+index 95af8bc2..59deabf0 100644
 --- a/src/moho/ui/UiRuntimeTypes.cpp
 +++ b/src/moho/ui/UiRuntimeTypes.cpp
 @@ -1603,9 +1603,9 @@ namespace
@@ -15,3 +15,66 @@ index b5199dc0..64288b05 100644
      do {
        observed = ::InterlockedCompareExchange(counter, 0, 0);
      } while (::InterlockedCompareExchange(counter, nextBits, observed) != observed);
+@@ -3351,7 +3351,9 @@ bool moho::cam_Free = false;
+ // 0x00F57AA0 `?ren_BgLowerBound@Moho@@3MA`; the shipped `.data` word is
+ // `00 00 fa 42` == 125.0f.
+ float moho::ren_BgLowerBound = 125.0f;
+-bool moho::ui_DisableCursorFixing = false;
++// Android client build: Android's pointer and the fingers say where they are, and do not move
++// relative to a cursor the engine holds still for the middle button's camera drag.
++bool moho::ui_DisableCursorFixing = true;
+ float moho::ui_SelectTolerance = 4.0f;
+ float moho::ui_ExtractSnapTolerance = 20.0f;
+ float moho::ui_MinExtractSnapPixels = 20.0f;
+@@ -15493,7 +15495,8 @@ void moho::CMauiMovie::Stop()
+  */
+ bool moho::CMauiMovie::IsLoaded() const
+ {
+-  return mMovie != nullptr && mMovie->IsLoaded();
++  // Android client build: no movie has loaded, and is over as soon as it is played (Play).
++  return mMovie == nullptr || mMovie->IsLoaded();
+ }
+ 
+ /**
+@@ -15504,7 +15507,7 @@ bool moho::CMauiMovie::IsLoaded() const
+  */
+ std::int32_t moho::CMauiMovie::GetNumFrames() const
+ {
+-  return mMovie->GetFrameCount();
++  return mMovie != nullptr ? mMovie->GetFrameCount() : 0;
+ }
+ 
+ /**
+@@ -15515,7 +15518,7 @@ std::int32_t moho::CMauiMovie::GetNumFrames() const
+  */
+ float moho::CMauiMovie::GetFrameRate() const
+ {
+-  return mMovie->GetFrameRate();
++  return mMovie != nullptr ? mMovie->GetFrameRate() : 1.0f;
+ }
+ 
+ /**
+@@ -15592,8 +15595,11 @@ int moho::cfunc_CMauiMovieInternalSetL(
+     filename = "";
+   }
+ 
+-  const bool loaded = movie->LoadFile(filename);
+-  lua_pushboolean(state->m_state, loaded);
++  // Android client build: there are no movies yet, and one that cannot play is over as soon as it is
++  // played (Play). Screens wait for that, and the first visit to the campaign would wait in black for
++  // ever.
++  (void)movie->LoadFile(filename);
++  lua_pushboolean(state->m_state, true);
+   (void)lua_gettop(state->m_state);
+   return 1;
+ }
+@@ -18604,9 +18610,6 @@ moho::CUIWorldView::CUIWorldView(
+       if (!params["ui_SelectTolerance"].IsNil()) {
+         moho::ui_SelectTolerance = params["ui_SelectTolerance"].GetNumber();
+       }
+-      if (!params["ui_DisableCursorFixing"].IsNil()) {
+-        moho::ui_DisableCursorFixing = params["ui_DisableCursorFixing"].GetBoolean();
+-      }
+       if (!params["ui_ExtractSnapTolerance"].IsNil()) {
+         moho::ui_ExtractSnapTolerance = params["ui_ExtractSnapTolerance"].GetNumber();
+       }

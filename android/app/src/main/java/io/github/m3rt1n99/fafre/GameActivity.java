@@ -1,12 +1,17 @@
 package io.github.m3rt1n99.fafre;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
@@ -14,10 +19,16 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.inputmethod.BaseInputConnection;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.File;
@@ -29,9 +40,10 @@ import java.nio.file.Files;
  * The game (android/CLIENT_PLAN.md, C1): the engine's program on a full-screen surface, in a
  * process of its own (":game") that ends with the program, as a Windows program's does. It plays
  * FAF's game files of the newest version this app has (the replay test downloads them) on the
- * user's Supreme Commander: Forged Alliance. The pointer and touch are the mouse, keys the
- * keyboard, and Back is Esc. The report's lines show on the screen while the game starts, and again
- * when it ends or fails.
+ * user's Supreme Commander: Forged Alliance. A mouse is the mouse and fingers act as one
+ * (TouchInput), keys are the keyboard, and Back is Esc; a bar at the screen's edge has what a mouse
+ * and keyboard have and fingers have not. The game draws at its own size (PictureSize). The report's
+ * lines show on the screen while the game starts, and again when it ends or fails.
  */
 public final class GameActivity extends Activity implements SurfaceHolder.Callback {
     /** The program's path in its install, as FAF's client starts it: the engine takes its folder from it. */
@@ -48,10 +60,54 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     };
 
     private final Handler mHandler = new Handler(Looper.getMainLooper());
+    private SurfaceView mSurface;
     private TextView mText;
+    private LinearLayout mBar;
+    private View mKeyboardTarget;
+    /** What the on-screen keyboard has typed: in landscape it covers most of the game's screen. */
+    private TextView mTyped;
     private boolean mStarted;
     /** The mouse's buttons that are down (MotionEvent's BUTTON_ bits). */
     private int mButtons;
+    /** The lines the user chose, and the picture's size as the surface has it. */
+    private int mLines;
+    private int mPictureWidth;
+    private int mPictureHeight;
+
+    private TouchInput mTouch;
+    private final Runnable mTouchTimer = () -> mTouch.timer();
+    private final TouchInput.Mouse mTouchMouse = new TouchInput.Mouse() {
+        @Override
+        public void move(float x, float y) {
+            Game.mouseMove(pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void button(int button, boolean down, float x, float y) {
+            Game.mouseButton(button, down, pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void wheel(int delta, float x, float y) {
+            Game.mouseWheel(delta, pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void held() {
+            mSurface.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
+
+        @Override
+        public void startTimer(long milliseconds) {
+            mHandler.removeCallbacks(mTouchTimer);
+            mHandler.postDelayed(mTouchTimer, milliseconds);
+        }
+
+        @Override
+        public void stopTimer() {
+            mHandler.removeCallbacks(mTouchTimer);
+        }
+    };
 
     private final Runnable mPoll = new Runnable() {
         @Override
@@ -70,10 +126,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             getWindow().setAttributes(attributes);
         }
+        mLines = PictureSize.lines(this);
+        mTouch = new TouchInput(mTouchMouse, ViewConfiguration.get(this).getScaledTouchSlop());
         FrameLayout root = new FrameLayout(this);
-        SurfaceView surface = new SurfaceView(this);
-        surface.getHolder().addCallback(this);
-        root.addView(surface);
+        mSurface = new SurfaceView(this);
+        mSurface.getHolder().addCallback(this);
+        mSurface.setOnTouchListener((view, event) -> onSurfaceTouch(event));
+        mSurface.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+            fitPicture(right - left, bottom - top));
+        fitPicture();
+        root.addView(mSurface);
+        mKeyboardTarget = new KeyboardTarget(this);
+        root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
         mText = new TextView(this);
         mText.setTextColor(Color.WHITE);
         mText.setShadowLayer(4, 0, 0, Color.BLACK);
@@ -81,6 +145,29 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mText.setGravity(Gravity.TOP | Gravity.START);
         mText.setPadding(48, 48, 48, 48);
         root.addView(mText);
+        mBar = bar();
+        mBar.setVisibility(View.GONE);
+        FrameLayout.LayoutParams barPlace = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.CENTER_VERTICAL);
+        root.addView(mBar, barPlace);
+        mTyped = new TextView(this);
+        mTyped.setTextSize(18);
+        mTyped.setTextColor(Color.WHITE);
+        mTyped.setHintTextColor(Color.LTGRAY);
+        mTyped.setHint("Typing goes to the game's text field");
+        mTyped.setBackground(barBackground(false));
+        mTyped.setPadding(dp(12), dp(6), dp(12), dp(6));
+        mTyped.setVisibility(View.GONE);
+        root.addView(mTyped, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+        if (Build.VERSION.SDK_INT >= 30) {
+            root.setOnApplyWindowInsetsListener((view, insets) -> {
+                showTyped(insets.isVisible(WindowInsets.Type.ime()));
+                // A phone's camera can sit in the middle of the screen's short edge.
+                mBar.setPadding(insets.getInsets(WindowInsets.Type.displayCutout()).left, 0, 0, 0);
+                return insets;
+            });
+        }
         setContentView(root);
         hideSystemBars();
 
@@ -99,6 +186,159 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             return;
         }
         mHandler.post(mPoll);
+    }
+
+    // --- The picture ----------------------------------------------------------------------------
+
+    /** Before the first layout: the window as it will be once the activity has turned. */
+    private void fitPicture() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            Rect bounds = getWindowManager().getCurrentWindowMetrics().getBounds();
+            fitPicture(Math.max(bounds.width(), bounds.height()), Math.min(bounds.width(), bounds.height()));
+        }
+    }
+
+    private void fitPicture(int viewWidth, int viewHeight) {
+        // Standing is the moment before the activity has turned, unless the window is a part of the screen.
+        if (viewWidth <= 0 || viewHeight <= 0 || (viewHeight > viewWidth && !isInMultiWindowMode())) {
+            return;
+        }
+        int[] size = PictureSize.of(viewWidth, viewHeight, mLines);
+        mSurface.getHolder().setFixedSize(size[0], size[1]);
+    }
+
+    /** From the view's pixels to the picture's, which are the game's screen. */
+    private int pictureX(float x) {
+        return toPicture(x, mSurface.getWidth(), mPictureWidth);
+    }
+
+    private int pictureY(float y) {
+        return toPicture(y, mSurface.getHeight(), mPictureHeight);
+    }
+
+    /** Always on the picture: a finger can leave the view, and a mouse button that goes up off the game's window is lost. */
+    private static int toPicture(float place, int viewSize, int pictureSize) {
+        if (viewSize <= 0 || pictureSize <= 0) {
+            return Math.round(place);
+        }
+        return Math.max(0, Math.min(pictureSize - 1, Math.round(place * pictureSize / viewSize)));
+    }
+
+    // --- The bar: what a mouse and a keyboard have and fingers have not ---------------------------
+
+    private LinearLayout bar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.VERTICAL);
+        toggle(bar, "Order", mTouch::setSwapped);
+        toggle(bar, "Shift", on -> Game.key(KeyEvent.KEYCODE_SHIFT_LEFT, 0, on, 0));
+        toggle(bar, "Ctrl", on -> Game.key(KeyEvent.KEYCODE_CTRL_LEFT, 0, on, 0));
+        barButton(bar, "Keys").setOnClickListener(view -> toggleKeyboard());
+        return bar;
+    }
+
+    private interface Toggled {
+        void set(boolean on);
+    }
+
+    private void toggle(LinearLayout bar, String label, Toggled toggled) {
+        TextView button = barButton(bar, label);
+        button.setOnClickListener(view -> {
+            view.setSelected(!view.isSelected());
+            view.setBackground(barBackground(view.isSelected()));
+            toggled.set(view.isSelected());
+        });
+    }
+
+    private TextView barButton(LinearLayout bar, String label) {
+        TextView button = new TextView(this);
+        button.setText(label);
+        button.setTextSize(12);
+        button.setTextColor(Color.WHITE);
+        button.setGravity(Gravity.CENTER);
+        button.setBackground(barBackground(false));
+        LinearLayout.LayoutParams place = new LinearLayout.LayoutParams(dp(52), dp(40));
+        place.setMargins(dp(4), dp(3), dp(4), dp(3));
+        bar.addView(button, place);
+        return button;
+    }
+
+    private GradientDrawable barBackground(boolean on) {
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(dp(8));
+        background.setColor(on ? 0xC0D08020 : 0x70202830);
+        return background;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void toggleKeyboard() {
+        if (mTyped.getVisibility() == View.VISIBLE) {
+            hideKeyboard();
+            return;
+        }
+        mKeyboardTarget.requestFocus();
+        getSystemService(InputMethodManager.class).showSoftInput(mKeyboardTarget, 0);
+        showTyped(true);
+    }
+
+    private void hideKeyboard() {
+        getSystemService(InputMethodManager.class).hideSoftInputFromWindow(mKeyboardTarget.getWindowToken(), 0);
+        showTyped(false);
+    }
+
+    private void showTyped(boolean shown) {
+        if (!shown) {
+            mTyped.setText("");
+        }
+        mTyped.setVisibility(shown ? View.VISIBLE : View.GONE);
+    }
+
+    /** A key that went down, while the keyboard covers the game's text field. */
+    private void noteTyped(int keyCode, int character) {
+        CharSequence typed = mTyped.getText();
+        if (keyCode == KeyEvent.KEYCODE_DEL) {
+            mTyped.setText(typed.length() > 0 ? typed.subSequence(0, typed.length() - 1) : typed);
+        } else if (character != 0) {
+            mTyped.append(String.valueOf((char) character));
+        }
+    }
+
+    /** What the on-screen keyboard types at: it sends plain keys, which go on as a keyboard's (dispatchKeyEvent). */
+    private static final class KeyboardTarget extends View {
+        KeyboardTarget(Context context) {
+            super(context);
+            setFocusable(true);
+            setFocusableInTouchMode(true);
+        }
+
+        @Override
+        public boolean onCheckIsTextEditor() {
+            return true;
+        }
+
+        @Override
+        public InputConnection onCreateInputConnection(EditorInfo attributes) {
+            attributes.inputType = InputType.TYPE_NULL;
+            attributes.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_FLAG_NO_EXTRACT_UI;
+            return new BaseInputConnection(this, false) {
+                /** Some keyboards delete through here and not with the key. The text is in the game. */
+                @Override
+                public boolean deleteSurroundingText(int before, int after) {
+                    press(KeyEvent.KEYCODE_DEL, before);
+                    press(KeyEvent.KEYCODE_FORWARD_DEL, after);
+                    return true;
+                }
+
+                private void press(int key, int times) {
+                    for (int at = 0; at < times; ++at) {
+                        sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, key));
+                        sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, key));
+                    }
+                }
+            };
+        }
     }
 
     /** Starts the program, or says why it cannot. */
@@ -176,6 +416,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             return;
         }
         boolean ended = GameReport.ended(report);
+        mBar.setVisibility(GameReport.firstFrame(report) && !ended ? View.VISIBLE : View.GONE);
         if (GameReport.firstFrame(report) && !ended) {
             mText.setVisibility(View.GONE);
             return;
@@ -201,6 +442,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override
     protected void onPause() {
         if (mStarted) {
+            mTouch.cancel();
             Game.foreground(false);
         }
         super.onPause();
@@ -209,6 +451,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override
     protected void onDestroy() {
         mHandler.removeCallbacks(mPoll);
+        mHandler.removeCallbacks(mTouchTimer);
         super.onDestroy();
     }
 
@@ -243,6 +486,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        mPictureWidth = width;
+        mPictureHeight = height;
         if (mStarted) {
             Game.surface(holder.getSurface(), width, height);
         }
@@ -257,29 +502,41 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     // --- Input --------------------------------------------------------------------------------
 
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
+    /** What lands on the picture: on the bar's buttons a finger is theirs, and the others stay here. */
+    private boolean onSurfaceTouch(MotionEvent event) {
         if (!mStarted) {
-            return super.onTouchEvent(event);
+            return false;
         }
         if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
             mouse(event);
             return true;
         }
-        // A touch is the left button where the first finger is.
-        int x = Math.round(event.getX(0));
-        int y = Math.round(event.getY(0));
-        switch (event.getActionMasked()) {
+        int index = event.getActionIndex();
+        int id = event.getPointerId(index);
+        int action = event.getActionMasked();
+        switch (action) {
             case MotionEvent.ACTION_DOWN:
-                Game.mouseMove(x, y);
-                Game.mouseButton(Game.BUTTON_LEFT, true, x, y);
+            case MotionEvent.ACTION_POINTER_DOWN:
+                mTouch.down(id, event.getX(index), event.getY(index), event.getEventTime(), action == MotionEvent.ACTION_DOWN);
                 break;
             case MotionEvent.ACTION_MOVE:
-                Game.mouseMove(x, y);
+                for (int at = 0; at < event.getPointerCount(); ++at) {
+                    mTouch.move(event.getPointerId(at), event.getX(at), event.getY(at));
+                }
+                mTouch.moved();
                 break;
             case MotionEvent.ACTION_UP:
+                mTouch.up(id, event.getEventTime(), true);
+                break;
+            case MotionEvent.ACTION_POINTER_UP:
+                if ((event.getFlags() & MotionEvent.FLAG_CANCELED) != 0) {
+                    mTouch.forget(id, event.getEventTime());
+                } else {
+                    mTouch.up(id, event.getEventTime(), false);
+                }
+                break;
             case MotionEvent.ACTION_CANCEL:
-                Game.mouseButton(Game.BUTTON_LEFT, false, x, y);
+                mTouch.cancel();
                 break;
             default:
                 break;
@@ -295,7 +552,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (event.getActionMasked() == MotionEvent.ACTION_SCROLL) {
             int delta = Math.round(event.getAxisValue(MotionEvent.AXIS_VSCROLL) * Game.WHEEL_DELTA);
             if (delta != 0) {
-                Game.mouseWheel(delta, Math.round(event.getX()), Math.round(event.getY()));
+                Game.mouseWheel(delta, pictureX(event.getX()), pictureY(event.getY()));
             }
             return true;
         }
@@ -305,8 +562,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     /** A mouse's event: where it is, and the buttons that went down or up since its last one. */
     private void mouse(MotionEvent event) {
-        int x = Math.round(event.getX());
-        int y = Math.round(event.getY());
+        int x = pictureX(event.getX());
+        int y = pictureY(event.getY());
         Game.mouseMove(x, y);
         int buttons = event.getButtonState();
         int changed = buttons ^ mButtons;
@@ -327,7 +584,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             String characters = event.getCharacters();
             if (characters != null) {
                 Game.text(characters);
+                if (mTyped.getVisibility() == View.VISIBLE) {
+                    mTyped.append(characters);
+                }
             }
+            return true;
+        }
+        // An on-screen keyboard's capital comes with a Shift of its own, which would let go of the bar's;
+        // the character says it all.
+        if (event.getDeviceId() == KeyCharacterMap.VIRTUAL_KEYBOARD && KeyEvent.isModifierKey(event.getKeyCode())) {
             return true;
         }
         boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
@@ -337,6 +602,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             character = 0;
         }
         Game.key(event.getKeyCode(), event.getScanCode(), down, character);
+        if (mTyped.getVisibility() == View.VISIBLE) {
+            if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
+                // Whatever it was typed for is done with it.
+                if (!down) {
+                    hideKeyboard();
+                }
+            } else if (down) {
+                noteTyped(event.getKeyCode(), character);
+            }
+        }
         return true;
     }
 

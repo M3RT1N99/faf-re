@@ -187,5 +187,9 @@ most of C1, as 56 files stop at wx.
 - **On the phone it needs:** SCFA imported again (`fonts/`), FAF's files downloaded again (whole).
   Still unknown there: R32F and RG32F with linear filtering, 64 textures and samplers per stage
   (a warning in the log says when a GPU has fewer), the speed.
-- **Next:** the first picture on a phone. Then what makes a skirmish playable on one: a touch scheme
-  (right click, camera) and the UI's scale. Sound and movies (C3) after those.
+- **Playable by fingers, from C4:** the game draws at a size of its own, 768 lines on a phone, which
+  makes its UI larger and leaves fewer pixels to fill, and fingers act as a mouse, with the camera on
+  two fingers and a bar for what fingers have not (`TouchInput`, [README](README.md)). Checked on the
+  emulator with real multi-touch events: selecting, orders, queues, the camera, the keyboard on a
+  first start without a profile. Its feel on a phone is still to be seen.
+- **Next:** the first picture on a phone. Sound and movies (C3) after that, then the speed (C4).

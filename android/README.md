@@ -105,8 +105,17 @@ the game data they imported. Everything lives in the app's external files folder
   newest version a replay downloaded: `ForgedAlliance.exe /init <its init file> /log
   game/engine.sclog`, the program's path in the game files' `bin` folder. It runs in a process of
   its own (`:game`) on a full-screen surface, which ends with the program, as a Windows program's
-  does. It draws the menus and plays a skirmish, without sound or movies yet (`/nomovie`, C3). Touch
-  and the mouse are the mouse, keys the keyboard, Back is Esc. The host writes `game.txt` in the
+  does. It draws the menus and plays a skirmish, without sound or movies yet (`/nomovie`, C3). A
+  mouse is the mouse, keys are the keyboard and Back is Esc. Fingers act as a mouse (`TouchInput`):
+  a tap is a click, a finger that moves drags, a finger that stays holds the right button until it
+  lifts (an order), a quick tap of two fingers is a right click where the second came down, two
+  fingers that move together pan the camera and two that move apart or closer zoom it. A bar at the
+  screen's edge has what fingers have not: *Order* swaps the left and right buttons, so that taps
+  give orders, *Shift* and *Ctrl* stay down until tapped again, and *Keys* opens the on-screen
+  keyboard, which plain keys go to the game from, with what it typed shown over the picture, as it
+  covers the game's text field. The game draws at a size of its own (`PictureSize`, a button on the
+  card): its UI has a fixed size in pixels, so 768 lines on a phone make it larger, with fewer pixels
+  to fill, and the compositor scales the picture to the panel. The host writes `game.txt` in the
   app's files; when the process is gone, the app adds how it ended (the exit code, a fatal error's
   message, or what `ApplicationExitInfo` says, the tombstone of a native crash) and why the renderer
   could not start, from the engine's log. A new game keeps the last game's as `game-previous.txt`

@@ -99,6 +99,7 @@ dependencies {
     // FAF's vault serves replays as zstd frames; java.util.zip has no zstd. 1.5.7-13 and later
     // require compileSdk 37.
     implementation("com.github.luben:zstd-jni:1.5.7-12@aar")
+    testImplementation("junit:junit:4.13.2")
 }
 
 // The engine's programs, started as processes, and the libraries the app loads, all from the
