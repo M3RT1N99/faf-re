@@ -121,6 +121,9 @@ set(_faf_dxc_options
   -DHLSL_ENABLE_FIXED_VER=ON
   -DHLSL_DISABLE_SOURCE_GENERATION=ON
   -DHLSL_AUTOCRLF=OFF
+  # What DXC's generators write stays unformatted: a host's clang-format would read this repository's
+  # .clang-format from above the build folder, and an older one refuses it and stops the build.
+  -DCLANG_FORMAT_EXE=
   # A newer compiler's warnings in SPIRV-Tools do not stop the build.
   -DSPIRV_WERROR=OFF)
 
