@@ -34,11 +34,20 @@ final class ScfaImport {
 
     /** How many archives scfa/gamedata holds. */
     static int archives(Storage storage) {
-        String[] names = new File(storage.scfa, "gamedata").list();
+        return count(new File(storage.scfa, "gamedata"), ".scd");
+    }
+
+    /** How many fonts scfa/fonts holds, of the kind the game reads (an import cut off leaves .part files). */
+    static int fonts(Storage storage) {
+        return count(new File(storage.scfa, "fonts"), ".ttf");
+    }
+
+    private static int count(File dir, String suffix) {
+        String[] names = dir.list();
         int count = 0;
         if (names != null) {
             for (String name : names) {
-                if (name.toLowerCase(Locale.ROOT).endsWith(".scd")) {
+                if (name.toLowerCase(Locale.ROOT).endsWith(suffix)) {
                     ++count;
                 }
             }
@@ -71,6 +80,9 @@ final class ScfaImport {
         if (fonts != null) {
             int files = copyTree(resolver, tree, fonts, new File(storage.scfa, "fonts"));
             TestState.line("Imported fonts/ (" + files + " files)");
+        }
+        if (fonts(storage) == 0) {
+            TestState.line("No fonts: the picked folder has no fonts folder with .ttf files, and the game cannot start without them");
         }
     }
 

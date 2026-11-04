@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipFile;
 
 /**
  * FAF's game files for one game version: each package as FAF's updater publishes it (whole, as
@@ -112,6 +113,7 @@ final class GameFiles {
                     }
                     throw e;
                 }
+                checkArchive(download);
                 Files.move(download.toPath(), packed.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 log.line(String.format(Locale.ROOT, "%s: %.1f MB", remote, packed.length() / 1048576.0));
                 manifest.put(remote, "whole");
@@ -123,12 +125,27 @@ final class GameFiles {
                 "fa_path = '" + storage.scfa.getAbsolutePath() + "'\nGameType = \"faf\"\nGameVersion = \"" + version
                     + "\"\nClientVersion = \"faf-re-android-" + BuildConfig.VERSION_NAME + "\"\n");
             write(manifestFile, manifest.toString(2));
-            // Last: with it the pack is ready.
-            write(init, ciInit(initText));
+            // Last: with it the pack is ready, so it comes whole or not at all.
+            File part = new File(init.getPath() + ".part");
+            write(part, ciInit(initText));
+            Files.move(part.toPath(), init.toPath(), StandardCopyOption.ATOMIC_MOVE);
         } catch (JSONException e) {
             throw new IOException(e);
         }
         return dir;
+    }
+
+    /**
+     * A package stays in gamedata for good, so only a whole archive may get there: a response without
+     * a length that was cut off, or an error page with a 200, has passed the download's checks.
+     */
+    private static void checkArchive(File download) throws IOException {
+        try {
+            new ZipFile(download).close();
+        } catch (IOException e) {
+            download.delete();
+            throw new IOException(download.getName() + " is not a whole archive: " + e.getMessage(), e);
+        }
     }
 
     /**

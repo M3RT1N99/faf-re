@@ -12,9 +12,9 @@ import java.io.IOException;
  *
  * <pre>
  *   scfa/                  the user's Supreme Commander: Forged Alliance (fa_path): gamedata/*.scd,
- *                          maps/ if imported
- *   parity/game/&lt;v&gt;/       FAF's files for game version v, as tools/parity-data packs them:
- *                          gamedata/*.nx2 (stripped), bin/init_ci.lua, fa_path.lua
+ *                          fonts/, maps/ if imported
+ *   parity/game/&lt;v&gt;/       FAF's files for game version v (GameFiles): gamedata/*.nx2 (whole, as FAF
+ *                          publishes them), bin/init_ci.lua, fa_path.lua
  *   parity/replays/        downloaded .fafreplay files
  *   parity/maps/, m28/     vault maps and M28AI versions
  *   parity/runs/&lt;id&gt;/      one replay's run: replay.scfareplay, its vault, headless.out, engine.log

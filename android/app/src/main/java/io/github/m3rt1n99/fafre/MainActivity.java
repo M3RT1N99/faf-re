@@ -104,9 +104,10 @@ public final class MainActivity extends Activity {
 
         // 2. Game data.
         LinearLayout data = card(column, "2 · Game data",
-            "Your own Supreme Commander: Forged Alliance (its gamedata/*.scd archives), imported once. Earlier releases of "
-                + "this app imported it already. FAF's own files for a replay's game version are downloaded on the first run "
-                + "(about 700 MB from FAF, kept whole), replays and maps as needed.");
+            "Your own Supreme Commander: Forged Alliance (its gamedata/*.scd archives and its fonts/), imported once. An "
+                + "import by an earlier release has no fonts, which the game needs: import the folder again. FAF's own files "
+                + "for a replay's game version are downloaded on the first run (about 700 MB from FAF, kept whole), replays "
+                + "and maps as needed.");
         mDataStatus = text("", 14, TEXT);
         data.addView(mDataStatus);
         mStartButtons.add(button(data, "Import SCFA folder…", v -> pickScfa()));
@@ -155,10 +156,10 @@ public final class MainActivity extends Activity {
         renderer.addView(mRendererResult);
 
         // 5. The game.
-        LinearLayout game = card(column, "5 · Game (engine start)",
-            "The whole game's engine on this phone, as the PC starts it: with your SCFA and FAF's game files of the newest "
-                + "version a replay downloaded (cards 2 and 3). It starts up to the renderer and stops there: drawing needs the "
-                + "shader compiler that comes next. The report says how far it got.");
+        LinearLayout game = card(column, "5 · Game",
+            "The whole game on this phone, as the PC starts it: with your SCFA and FAF's game files of the newest version a "
+                + "replay downloaded (cards 2 and 3). It draws the menus and plays a skirmish, without sound or movies yet: "
+                + "touch is the mouse, Back is Esc. The report says how it ended.");
         mStartButtons.add(button(game, "Start the game", v -> startActivity(new Intent(this, GameActivity.class))));
         mGameResult = text("", 14, TEXT);
         game.addView(mGameResult);
@@ -253,8 +254,9 @@ public final class MainActivity extends Activity {
         try {
             Storage storage = new Storage(this);
             int archives = ScfaImport.archives(storage);
+            int fonts = ScfaImport.fonts(storage);
             StringBuilder status = new StringBuilder();
-            status.append(archives > 0 ? "SCFA: " + archives + " archives in " + storage.scfa : "SCFA: not imported yet");
+            status.append(archives > 0 ? "SCFA: " + archives + " archives, " + fonts + " fonts in " + storage.scfa : "SCFA: not imported yet");
             String[] versions = new File(storage.parity, "game").list();
             status.append("\nFAF game files: ");
             boolean any = false;
@@ -268,7 +270,7 @@ public final class MainActivity extends Activity {
             }
             status.append(any ? "" : "none yet (downloaded on the first replay)");
             mDataStatus.setText(status);
-            mDataStatus.setTextColor(archives > 0 ? TEXT : FAIL);
+            mDataStatus.setTextColor(archives > 0 && fonts > 0 ? TEXT : FAIL);
         } catch (IOException | NumberFormatException e) {
             mDataStatus.setText("Storage: " + e.getMessage());
         }
