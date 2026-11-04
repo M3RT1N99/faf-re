@@ -41,6 +41,8 @@
 #include "moho/unit/core/Unit.h"
 #include "moho/misc/LaunchInfoBase.h"
 #include "Sim.h"
+#include "moho/sim/SimArchiveMode.h"
+#include "moho/sim/SimKeyframe.h"
 
 using namespace moho;
 
@@ -815,6 +817,7 @@ void CSimDriver::PreparePendingSaveRequestLocked(boost::mutex::scoped_lock& lock
   try {
     gpg::WriteArchive* const archive = mSaveGameRequest->GetArchive();
     mSim->SaveState(archive);
+    gSimExactArchive.store(false); // engine addition (replay keyframes)
     mPendingSaveName.clear();
     mSaveRequestUsesSuggestedName = true;
   } catch (const std::exception& ex) {
@@ -824,6 +827,7 @@ void CSimDriver::PreparePendingSaveRequestLocked(boost::mutex::scoped_lock& lock
     mPendingSaveName.clear();
     mSaveRequestUsesSuggestedName = false;
   }
+  gSimExactArchive.store(false); // the throwing paths above too
   lock.lock();
 
   mWantsToSave = true;
@@ -863,6 +867,11 @@ void CSimDriver::FinalizeSyncDispatchLocked(boost::mutex::scoped_lock& lock)
 
     ScopedStatTimer syncTimer(gEngineStatSimSync);
     mSim->Sync(mActiveSyncFilter, syncData);
+  }
+
+  // Engine addition (replay keyframes): the opening sync of a restored sim.
+  if (SIM_KeyframeRestore() != nullptr) {
+    SIM_FinishKeyframeRestore(*mSim);
   }
 
   lock.lock();
@@ -1411,7 +1420,7 @@ void CSimDriver::Dispatch()
   boost::mutex::scoped_lock lock(mLock);
 
   if (mWantsToSave) {
-    CSaveGameRequestImpl* request = mSaveGameRequest;
+    ISaveRequest* request = mSaveGameRequest;
     SSaveGameDispatchData data{};
     data.useSuggestedName = mSaveRequestUsesSuggestedName;
     data.saveName = mPendingSaveName;
@@ -1509,7 +1518,7 @@ void CSimDriver::GetSyncData(SSyncData*& outSyncData)
   // (FUN_0073F9C0) is preserved at the source-level callsite.
   outSyncData = PopFrontSSyncDataPtrDeque(mSyncDataQueue);
   if (outSyncData) {
-    mLastDequeuedBeat = outSyncData->mCurBeat;
+    mLastDequeuedBeat = outSyncData->mCurBeat - gSimBeatOrigin.load(std::memory_order_relaxed);
     // Engine addition, off by default: net_Lag follows the pauses this player sees, up to net_AdaptiveLagMax.
     if (net_AdaptiveLagMax > 0) {
       const std::int64_t takenAt = mTimer.ElapsedCycles();
@@ -1923,7 +1932,7 @@ void CSimDriver::ReleaseInterlockRef()
  * Address: 0x0073DF60 (FUN_0073DF60), ISTIDriver slot 38
  * Queues a save-game request and wakes dispatch waiters.
  */
-void CSimDriver::RequestSaveGame(CSaveGameRequestImpl* request)
+void CSimDriver::RequestSaveGame(ISaveRequest* request)
 {
   boost::mutex::scoped_lock lock(mLock);
   mSaveGameRequest = request;

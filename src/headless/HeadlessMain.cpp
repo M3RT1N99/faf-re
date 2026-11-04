@@ -158,6 +158,13 @@ namespace
       "  --sync-keys <file>        write every top-level Lua Sync key seen, with beat counts\n"
       "  --state-digests <file>    write \"beat digest\" of what the sim published, every beat\n"
       "  --fpu-report              at beat 1, every thread's x87 control word and MXCSR (sampled)\n"
+      "  --keyframe-every <beats>  save the sim between beats every <beats>, as a saved game; size, zlib size, md5, time\n"
+      "  --keyframe-dir <dir>      where the keyframe files go (default: keyframes)\n"
+      "  --keyframe-keep           keep the keyframe files after measuring them\n"
+      "  --resume-from <file>      continue the replay from one of its keyframes instead of its start\n"
+      "  --seek <beat,beat,...>    with --keyframe-every: move to each beat in turn inside this process, by ending\n"
+      "                            the session and restoring the newest keyframe before it, then play to the end;\n"
+      "                            --digests, --state-digests and --lane-sizes get one numbered file per session\n"
       "  --bone-stats <file>      write changed bones per beat (CSV) and per blueprint (<file>.blueprints.csv)\n"
       "  --lane-sizes <file>      write per-beat element counts and bytes of every sync lane (CSV)\n"
       "  --blueprint-order <file> write every blueprint by ordinal, in the rules' load order\n"
@@ -204,6 +211,8 @@ namespace
       "  --path-spelling <file>    Linux: write each path found on disk only by ignoring case, as asked and as on disk\n"
       "  --checksum-period <n>     sim_ChecksumPeriod for this run (default: the game's, 50)\n"
       "  --lead <n>                beats the sim may run ahead (sim_ReplayLead, default 10)\n"
+      "  --pace <ms>               one beat per this many ms, as a live game plays (100 is speed 0); time a late\n"
+      "                            beat loses is not made up, and the run prints how much was lost\n"
       "  --timeout <minutes>       give up after this long (default 180)\n"
       "  --label <text>            prefix for every printed line\n"
       "  engine flags as in the game: /log <file>, /synclog <dir>, /simworkers <n>,\n"
@@ -270,6 +279,24 @@ int main(int argc, char** argv)
   (void)ReadOption("--lua-pairs", options.luaPairsPath);
   (void)ReadOption("--bone-stats", options.boneStatsPath);
   options.fpuReport = moho::CFG_GetArgOption("--fpu-report", 0, nullptr);
+  (void)ReadIntOption("--keyframe-every", options.keyframeEvery, bad);
+  if (!ReadOption("--keyframe-dir", options.keyframeDir)) {
+    options.keyframeDir = "keyframes";
+  }
+  options.keyframeKeep = moho::CFG_GetArgOption("--keyframe-keep", 0, nullptr);
+  (void)ReadOption("--resume-from", options.resumeFrom);
+  std::vector<int> seekPlan;
+  {
+    std::string seekText;
+    if (ReadOption("--seek", seekText)) {
+      for (std::size_t begin = 0; begin < seekText.size();) {
+        const std::size_t end = std::min(seekText.find(',', begin), seekText.size());
+        seekPlan.push_back(std::atoi(seekText.substr(begin, end - begin).c_str()));
+        begin = end + 1;
+      }
+      bad = bad || seekPlan.empty() || options.keyframeEvery <= 0 || !options.resumeFrom.empty();
+    }
+  }
   options.loopback = moho::CFG_GetArgOption("--loopback", 0, nullptr);
   options.commandCheck = moho::CFG_GetArgOption("--command-check", 0, nullptr);
   options.oracleCheck = moho::CFG_GetArgOption("--oracle-check", 0, nullptr);
@@ -332,6 +359,7 @@ int main(int argc, char** argv)
   (void)ReadIntOption("--loopback-turns", options.loopbackTurnTolerance, bad);
   (void)ReadIntOption("--checksum-period", options.checksumPeriod, bad);
   (void)ReadIntOption("--lead", options.replayLead, bad);
+  (void)ReadIntOption("--pace", options.paceMs, bad);
   (void)ReadIntOption("--timeout", options.timeoutMinutes, bad);
   if (ReadIntOption("--view-packets-entries-every", options.viewPacketsEntriesEvery, bad)
       && options.viewPacketsEntriesEvery < 1) {
@@ -440,7 +468,8 @@ int main(int argc, char** argv)
   }
 
   faf::headless::InstallChecksumWatch(gLabel);
-  const faf::headless::SReplayResult result = faf::headless::RunReplay(options);
+  const faf::headless::SReplayResult result =
+    seekPlan.empty() ? faf::headless::RunReplay(options) : faf::headless::RunSeekPlan(options, seekPlan);
 
   const char* const label = gLabel.c_str();
   if (!result.error.empty()) {
@@ -482,6 +511,9 @@ int main(int argc, char** argv)
   }
   if (!result.boneSummary.empty()) {
     std::printf("[%s] %s\n", label, result.boneSummary.c_str());
+  }
+  if (!result.keyframeSummary.empty()) {
+    std::printf("[%s] %s\n", label, result.keyframeSummary.c_str());
   }
   if (!result.fpuReport.empty()) {
     std::printf("[%s] floating-point state at beat 1, busiest thread first:\n%s", label, result.fpuReport.c_str());
@@ -529,7 +561,8 @@ int main(int argc, char** argv)
     exitCode = kExitCrash;
   } else if ((recordedChecksumsComparable && result.mismatches > 0) || result.loopbackFailures > 0
              || result.commandFailures > 0 || result.oracleFailures > 0 || result.inboundFailures > 0
-             || result.changeSetFailures > 0 || result.viewFramesFailures > 0 || result.viewBenchFailures > 0) {
+             || result.changeSetFailures > 0 || result.viewFramesFailures > 0 || result.viewBenchFailures > 0
+             || result.keyframeFailures > 0) {
     exitCode = kExitMismatch;
   } else if (!result.gameOver) {
     exitCode = kExitIncomplete;
