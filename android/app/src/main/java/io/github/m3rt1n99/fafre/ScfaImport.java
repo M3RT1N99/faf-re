@@ -19,7 +19,8 @@ import java.util.Locale;
 /**
  * Copies the game archives the engine needs from the user's own Supreme Commander: Forged
  * Alliance folder (picked with the system's folder picker) into scfa/: gamedata/*.scd, fonts/
- * (the game's text), and maps/ when the folder has one (FAF's map vault has the retail maps too, so it is optional).
+ * (the game's text), sounds/ and movies/ (the game runs without them, silent and without its films), and
+ * maps/ when the folder has one (FAF's map vault has the retail maps too, so it is optional).
  */
 final class ScfaImport {
     private static final class Child {
@@ -40,6 +41,16 @@ final class ScfaImport {
     /** How many fonts scfa/fonts holds, of the kind the game reads (an import cut off leaves .part files). */
     static int fonts(Storage storage) {
         return count(new File(storage.scfa, "fonts"), ".ttf");
+    }
+
+    /** How many sound banks scfa/sounds holds, without the voices of its subfolders. */
+    static int soundBanks(Storage storage) {
+        return count(new File(storage.scfa, "sounds"), ".xwb");
+    }
+
+    /** How many movies scfa/movies holds. */
+    static int movies(Storage storage) {
+        return count(new File(storage.scfa, "movies"), ".sfd");
     }
 
     private static int count(File dir, String suffix) {
@@ -70,19 +81,21 @@ final class ScfaImport {
             }
         }
         TestState.line("Imported " + copied + " archives into " + new File(storage.scfa, "gamedata"));
-        Child maps = find(resolver, tree, rootId, "maps");
-        if (maps != null) {
-            int files = copyTree(resolver, tree, maps, new File(storage.scfa, "maps"));
-            TestState.line("Imported maps/ (" + files + " files)");
-        }
+        copyFolder(resolver, tree, rootId, storage, "maps");
         // The game draws its text with the folder's TrueType fonts (D3D_InitFonts).
-        Child fonts = find(resolver, tree, rootId, "fonts");
-        if (fonts != null) {
-            int files = copyTree(resolver, tree, fonts, new File(storage.scfa, "fonts"));
-            TestState.line("Imported fonts/ (" + files + " files)");
-        }
+        copyFolder(resolver, tree, rootId, storage, "fonts");
+        copyFolder(resolver, tree, rootId, storage, "sounds");
+        copyFolder(resolver, tree, rootId, storage, "movies");
         if (fonts(storage) == 0) {
             TestState.line("No fonts: the picked folder has no fonts folder with .ttf files, and the game cannot start without them");
+        }
+    }
+
+    private static void copyFolder(ContentResolver resolver, Uri tree, String rootId, Storage storage, String name) throws IOException {
+        Child folder = find(resolver, tree, rootId, name);
+        if (folder != null) {
+            int files = copyTree(resolver, tree, folder, new File(storage.scfa, name));
+            TestState.line("Imported " + name + "/ (" + files + " files)");
         }
     }
 

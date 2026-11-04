@@ -104,8 +104,9 @@ public final class MainActivity extends Activity {
 
         // 2. Game data.
         LinearLayout data = card(column, "2 · Game data",
-            "Your own Supreme Commander: Forged Alliance (its gamedata/*.scd archives and its fonts/), imported once. An "
-                + "import by an earlier release has no fonts, which the game needs: import the folder again. FAF's own files "
+            "Your own Supreme Commander: Forged Alliance (its gamedata/*.scd archives, fonts/, sounds/ and movies/, about "
+                + "7.5 GB), imported once. An import by an earlier release has no sounds or movies, without which the game "
+                + "is silent and has no films: import the folder again, which copies only what is missing. FAF's own files "
                 + "for a replay's game version are downloaded on the first run (about 700 MB from FAF, kept whole), replays "
                 + "and maps as needed.");
         mDataStatus = text("", 14, TEXT);
@@ -263,7 +264,10 @@ public final class MainActivity extends Activity {
             int archives = ScfaImport.archives(storage);
             int fonts = ScfaImport.fonts(storage);
             StringBuilder status = new StringBuilder();
-            status.append(archives > 0 ? "SCFA: " + archives + " archives, " + fonts + " fonts in " + storage.scfa : "SCFA: not imported yet");
+            status.append(archives > 0
+                ? "SCFA: " + archives + " archives, " + fonts + " fonts, " + ScfaImport.soundBanks(storage) + " sound banks, "
+                    + ScfaImport.movies(storage) + " movies in " + storage.scfa
+                : "SCFA: not imported yet");
             String[] versions = new File(storage.parity, "game").list();
             status.append("\nFAF game files: ");
             boolean any = false;
