@@ -79,7 +79,7 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/gal/D3DCompilerAndroid.cpp` | `D3DPreprocess`, on `FxcPreprocessor.cpp` |
 | `src/gal/FxcPreprocessor.cpp` | d3dcompiler_47's preprocessor, byte for byte: the effect translator reads its exact text (checked on Windows by `tests/fxc`) |
 | `src/gal/ShaderCompilerAndroid.cpp` | The effects' shader compiler (`gpg/gal/effects/ShaderCompiler.h`) on DXC, with `ShaderCompiler.cpp`'s arguments (the configure stops when that file changes) |
-| `src/gal/DxcAndroid.cpp` | DXC itself: `libdxcompiler.so` loaded from the app's libraries (or `FAF_DXC_DIR`), a compiler per thread, the reflection; compiled with DXC's headers alone (`faf_android_dxc`) |
+| `src/gal/DxcAndroid.cpp` | DXC itself: `libdxcompiler.so` loaded from the app's libraries (or `FAF_DXC_DIR`), a compiler per thread; compiled with DXC's headers alone (`faf_android_dxc`) |
 | `src/gal/ImageCodecAndroid.cpp` | The D3DX11 texture codec: DDS with BC1-3 and a full chain through the engine's direct path, everything else as D3DX11 loads it (its formats, padding and mip chain; generated and converted levels close to D3DX11's, not equal), PNG/TGA/BMP from `ImageFilesAndroid.cpp` |
 | `src/gal/BlockCompressionAndroid.cpp` | BC1-3 on the CPU: WARP's decode (for the codec and for GPUs without BC, patches/README.md), and an encoder after D3DX's |
 | `src/gal/GalAvailabilityAndroid.cpp` | The game's answer to "is there a compiler, a codec?": the compiler when DXC loaded, the codec always |

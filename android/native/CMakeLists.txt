@@ -240,11 +240,7 @@ target_link_libraries(faf_android_platform PRIVATE freetype)
 # engine's forced POSIX header would declare them again, and sees of the engine only the shader
 # compiler's plain types.
 add_library(faf_android_dxc OBJECT src/gal/DxcAndroid.cpp)
-target_include_directories(faf_android_dxc PRIVATE
-  "${FAF_REPO}/src"
-  "${FAF_ANDROID_DXC_SOURCE}/include"
-  "${FAF_ANDROID_DXC_SOURCE}/external/DirectX-Headers/include/directx"
-  "${FAF_ANDROID_DXC_SOURCE}/external/DirectX-Headers/include/wsl/stubs")
+target_include_directories(faf_android_dxc PRIVATE "${FAF_ANDROID_DXC_SOURCE}/include")
 target_compile_options(faf_android_dxc PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
 
 add_library(faf_gal OBJECT ${_faf_gal_files})

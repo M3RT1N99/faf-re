@@ -117,7 +117,7 @@ namespace gpg::gal::effects
 
   CompiledShader ShaderCompiler::Run(const std::string_view hlsl, const std::vector<std::wstring>& arguments) const
   {
-    faf::android::dxc::Result compiled = faf::android::dxc::Compile(hlsl, arguments, faf::android::dxc::Output::Object);
+    faf::android::dxc::Result compiled = faf::android::dxc::Compile(hlsl, arguments);
     CompiledShader result;
     result.succeeded = compiled.succeeded;
     result.code = std::move(compiled.output);
@@ -125,11 +125,9 @@ namespace gpg::gal::effects
     return result;
   }
 
-  std::vector<ShaderInput> ShaderCompiler::ReflectInputs(const std::vector<std::uint8_t>& dxil) const
+  // Only DXIL is reflected (EffectRuntime.cpp), for the Direct3D 12 backend, which this build has not.
+  std::vector<ShaderInput> ShaderCompiler::ReflectInputs(const std::vector<std::uint8_t>&) const
   {
-    if (mLibrary == nullptr || dxil.empty()) {
-      return {};
-    }
-    return faf::android::dxc::ReflectInputs(dxil);
+    return {};
   }
 } // namespace gpg::gal::effects
