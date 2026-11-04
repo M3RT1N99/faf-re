@@ -149,3 +149,19 @@ bool KeyFromAndroid(const int keyCode, const int linuxScanCode, WindowsKey* cons
   }
   return false;
 }
+
+wchar_t KeyCharacter(const WindowsKey& key, const int androidCharacter)
+{
+  switch (key.virtualKey) {
+  case VK_BACK:
+    return L'\b';
+  case VK_RETURN:
+    return L'\r';
+  case VK_TAB:
+    return L'\t';
+  case VK_ESCAPE:
+    return L'\x1B';
+  default:
+    return static_cast<wchar_t>(androidCharacter);
+  }
+}

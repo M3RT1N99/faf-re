@@ -413,7 +413,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_key(
 {
   WindowsKey key;
   if (KeyFromAndroid(keyCode, scanCode, &key)) {
-    Win32Android_Key(key.virtualKey, key.scanCode, down != JNI_FALSE ? TRUE : FALSE, key.extended ? TRUE : FALSE, static_cast<wchar_t>(character));
+    Win32Android_Key(key.virtualKey, key.scanCode, down != JNI_FALSE ? TRUE : FALSE, key.extended ? TRUE : FALSE, KeyCharacter(key, character));
   } else if (down != JNI_FALSE && character != 0) {
     const wchar_t text[2] = {static_cast<wchar_t>(character), L'\0'};
     Win32Android_Text(text);

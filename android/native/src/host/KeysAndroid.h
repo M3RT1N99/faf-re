@@ -18,3 +18,7 @@ struct WindowsKey
 /// The PC key for Android's `keyCode` (AKEYCODE_*), with the event's `linuxScanCode` (0 for a
 /// key without one, such as an on-screen keyboard's). False for a key a PC keyboard has not.
 bool KeyFromAndroid(int keyCode, int linuxScanCode, WindowsKey* key);
+
+/// The character a key's press types, as TranslateMessage makes it: `androidCharacter` is what
+/// Android says, which for some keys is another character or none.
+wchar_t KeyCharacter(const WindowsKey& key, int androidCharacter);
