@@ -45,6 +45,9 @@ final class Game {
      */
     static native boolean start(String[] arguments, String home, String temp, String reportPath);
 
+    /** Whether the program runs in this process: Android can make the activity anew around it. */
+    static native boolean running();
+
     /** The surface and its size in pixels; null when it is gone. */
     static native void surface(Surface surface, int width, int height);
 

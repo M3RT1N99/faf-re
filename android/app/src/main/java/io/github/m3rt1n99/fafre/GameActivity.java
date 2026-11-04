@@ -84,7 +84,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         setContentView(root);
         hideSystemBars();
 
-        GameReport.clear(this);
+        // Android made the activity anew around the running program (it does when it destroys a
+        // stopped activity): the same game goes on, with the callbacks of this one.
+        if (Game.loadError() == null && Game.running()) {
+            mStarted = true;
+            mHandler.post(mPoll);
+            return;
+        }
+        GameReport.begin(this);
         String problem = start();
         if (problem != null) {
             GameReport.append(this, GameReport.END + problem);
@@ -109,9 +116,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (archives == 0) {
             return "FAIL: no Supreme Commander: Forged Alliance imported yet (card 2)";
         }
-        String[] fonts = new File(storage.scfa, "fonts").list();
-        if (fonts == null || fonts.length == 0) {
-            return "FAIL: no fonts of Supreme Commander: Forged Alliance yet: import it again (card 2), which now takes fonts/ too";
+        if (ScfaImport.fonts(storage) == 0) {
+            return "FAIL: no fonts of Supreme Commander: Forged Alliance yet: import its folder again (card 2), which takes fonts/ too";
         }
         int version = newestGameFiles(storage);
         if (version < 0) {
@@ -134,7 +140,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             new File(game, PROGRAM).getPath(), "/init", init.getPath(), "/log", GameReport.log(storage).getPath(), "/nomovie",
         };
         GameReport.append(this, "game: FAF game version " + version + ", " + archives + " SCFA archives");
-        File home = Storage.mkdirs(new File(folder, "home"));
+        File home = Storage.mkdirs(GameReport.home(storage));
         if (!Game.start(arguments, home.getPath(), getCacheDir().getPath(), GameReport.file(this).getPath())) {
             return "FAIL: the program did not start";
         }

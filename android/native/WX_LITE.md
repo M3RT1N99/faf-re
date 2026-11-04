@@ -132,9 +132,15 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
     gets to it, and a window shown while there is none is minimized with them;
   - pause and resume into the application's activation (`WM_ACTIVATEAPP`, `WM_ACTIVATE`).
 - When the program returns, its process ends with the exit code, the streams flushed, and so it
-  does with exit code 1 after a fatal error (`gpg::Die`), whose message is the app's verdict. The
-  engine ends the process itself when it cannot start (`TerminateProcess`), as on Windows; the app
-  reads how it ended from Android (`ApplicationExitInfo`).
+  does with exit code 1 after a fatal error (`gpg::Die`), whose message is the app's verdict. A
+  failed assertion goes on, as on Windows after the dialog, with a line of the report. The engine
+  ends the process itself when it cannot start (`TerminateProcess`), as on Windows; the app reads
+  how it ended from Android (`ApplicationExitInfo`).
+- A crash leaves the engine's crash report in HOME and goes on to debuggerd's tombstone
+  (`patches/README.md`). The app keeps the tombstone, and the results zip holds both.
+- Android can make the activity anew around the running program (`Game.running`): the same game goes
+  on. A new game keeps the last game's report and tombstone as the previous one's
+  (`game-previous.txt`), with how its process ended when nobody saw it end, in the back.
 
 ## Checks
 

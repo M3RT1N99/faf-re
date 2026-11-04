@@ -19,11 +19,15 @@ import java.util.regex.Pattern;
  * (android/native/src/host/GameHost.cpp), and the engine's own log. When the process is gone, the
  * report gets how it ended: the program's exit code, which the host writes when the program
  * returns, or what Android says of the process (the engine ends its process itself when it cannot
- * start, as on Windows), with what the engine's log says of it.
+ * start, as on Windows), with what the engine's log says of it. The last game's report and
+ * tombstone stay beside the new game's.
  */
 final class GameReport {
     /** The tombstone's name in the app's files and in the results zip. */
     static final String TOMBSTONE = "game-tombstone.pb";
+    /** The last game's report and tombstone, by these names in the app's files and in the results zip. */
+    static final String PREVIOUS = "game-previous.txt";
+    static final String PREVIOUS_TOMBSTONE = "game-previous-tombstone.pb";
     static final String PROCESS = ":game";
     /** The report's last line begins with this: how the game ended. */
     static final String END = "END: ";
@@ -32,8 +36,8 @@ final class GameReport {
     private static final Pattern EXIT = Pattern.compile("^(\\d+) ms: exit (-?\\d+)$", Pattern.MULTILINE);
     /** The host's line when the first frame went to the screen. */
     private static final Pattern FIRST_FRAME = Pattern.compile("^\\d+ ms: first frame$", Pattern.MULTILINE);
-    /** The host's line when the program stopped on a fatal error, with the lines its message goes on in. */
-    private static final Pattern FATAL = Pattern.compile("^\\d+ ms: fatal: (.*(?:\\n(?!\\d+ ms: ).+)*)", Pattern.MULTILINE);
+    /** The host's line when the program stopped on a fatal error, with the lines its message goes on in, also empty ones. */
+    private static final Pattern FATAL = Pattern.compile("^\\d+ ms: fatal: (.*(?:\\n(?!\\d+ ms: ).*)*)", Pattern.MULTILINE);
     /** How much of the engine's log's end is read for its last warning. */
     private static final int LOG_TAIL = 1 << 16;
 
@@ -51,19 +55,61 @@ final class GameReport {
         return new File(context.getFilesDir(), TOMBSTONE);
     }
 
+    static File previous(Context context) {
+        return new File(context.getFilesDir(), PREVIOUS);
+    }
+
+    static File previousTombstone(Context context) {
+        return new File(context.getFilesDir(), PREVIOUS_TOMBSTONE);
+    }
+
     /** The game's folder in the app's storage: its HOME, its vault and the engine's log. */
     static File folder(Storage storage) {
         return new File(storage.root, "game");
+    }
+
+    static File home(Storage storage) {
+        return new File(folder(storage), "home");
     }
 
     static File log(Storage storage) {
         return new File(folder(storage), "engine.sclog");
     }
 
-    /** A new game (its own process): no report and no tombstone yet. */
-    static void clear(Context context) {
-        file(context).delete();
-        tombstone(context).delete();
+    /** The engine's newest crash report, in its HOME (gpg/core/diagnostics). */
+    static File crashReport(Storage storage) {
+        return new File(home(storage), "faf_crash_latest.txt");
+    }
+
+    /**
+     * A new game (its own process): no report and no tombstone yet, and the last game's are the
+     * previous one's. A game whose process died in the back has nobody's word on how it ended yet.
+     */
+    static void begin(Context context) {
+        File file = file(context);
+        if (!file.isFile()) {
+            return;
+        }
+        try {
+            String report = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            if (!hasEnd(report)) {
+                append(context, end(context, report, file.lastModified()));
+            }
+        } catch (IOException e) {
+            // It stays as it is.
+        }
+        replace(file, previous(context));
+        replace(tombstone(context), previousTombstone(context));
+    }
+
+    /** `from` becomes `to`; without a `from`, `to` holds nothing of an earlier game either. */
+    private static void replace(File from, File to) {
+        to.delete();
+        from.renameTo(to);
+    }
+
+    private static boolean hasEnd(String report) {
+        return report.contains("\n" + END) || report.startsWith(END);
     }
 
     /** Whether the report says that the first frame came. */
@@ -105,7 +151,7 @@ final class GameReport {
             return;
         }
         sAwaiting = false;
-        if (!report.contains("\n" + END) && !report.startsWith(END)) {
+        if (!hasEnd(report)) {
             if (ProcessExit.running(context, PROCESS)) {
                 sAwaiting = true;
                 if (stamp != sLoaded) {
@@ -126,9 +172,13 @@ final class GameReport {
 
     /** How the game ended, for a report whose process is gone; `since` is the report's last write. */
     private static String end(Context context, String report, long since) {
+        // Before all else: a crash leaves its tombstone also after a fatal's line.
+        ProcessExit.End end = ProcessExit.last(context, PROCESS, since, tombstone(context));
+        // Without the file's name: a report and its tombstone change names together (begin).
+        String saved = end != null && end.tombstone ? " (tombstone in the results)" : "";
         Matcher fatal = FATAL.matcher(report);
         if (fatal.find()) {
-            return END + "FAILED: " + fatal.group(1).replace('\n', ' ');
+            return END + "FAILED: " + fatal.group(1).trim().replaceAll("\\s*\\n\\s*", " ") + saved;
         }
         String engine = engineSummary(context);
         String tail = engine.isEmpty() ? "" : "; " + engine;
@@ -145,13 +195,11 @@ final class GameReport {
         if (Build.VERSION.SDK_INT < 30) {
             return END + "the game's process ended" + tail;
         }
-        ProcessExit.End end = ProcessExit.last(context, PROCESS, since, tombstone(context));
         if (end == null) {
             return END + "the game's process ended, and Android gives no reason" + tail;
         }
         if (end.crashed()) {
-            return END + "CRASHED: " + end.describe() + (end.tombstone ? " (tombstone in the results: " + TOMBSTONE + ")" : "")
-                + tail;
+            return END + "CRASHED: " + end.describe() + saved + tail;
         }
         if (end.exitedItself()) {
             return END + "the engine ended its process, exit code " + end.status + tail;

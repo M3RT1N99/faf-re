@@ -105,15 +105,18 @@ the game data they imported. Everything lives in the app's external files folder
   newest version a replay downloaded: `ForgedAlliance.exe /init <its init file> /log
   game/engine.sclog`, the program's path in the game files' `bin` folder. It runs in a process of
   its own (`:game`) on a full-screen surface, which ends with the program, as a Windows program's
-  does. Touch and the mouse are the mouse, keys the keyboard, Back is Esc. Until the renderer has
-  its shader compiler (C2), the engine initialises (archives, preferences, Lua, the UI) and stops at
-  the renderer, ending its process with exit code 1 as a PC without a usable renderer does. The
-  host writes `game.txt` in the app's files; when the process is gone, the app adds how it ended
-  (the exit code, or what `ApplicationExitInfo` says, the tombstone of a native crash) and why the
-  renderer could not start, from the engine's log.
+  does. It draws the menus and plays a skirmish, without sound or movies yet (`/nomovie`, C3). Touch
+  and the mouse are the mouse, keys the keyboard, Back is Esc. The host writes `game.txt` in the
+  app's files; when the process is gone, the app adds how it ended (the exit code, a fatal error's
+  message, or what `ApplicationExitInfo` says, the tombstone of a native crash) and why the renderer
+  could not start, from the engine's log. A new game keeps the last game's as `game-previous.txt`
+  and `game-previous-tombstone.pb`. A crash also leaves the engine's own report in the game's HOME
+  (`faf_crash_latest.txt`).
 - **Share results** zips `summary.json`, the math output, the log, the renderer report
-  (`renderer.txt`), the game's report and log (`game.txt`, `game/engine.sclog`) and each replay's
-  `headless.out`, `engine.log` and `speed.csv`.
+  (`renderer.txt`, `renderer-tombstone.pb`), the game's report, tombstone, log and crash report
+  (`game.txt`, `game-tombstone.pb`, `game/engine.sclog`, `game/faf_crash_latest.txt`), the last
+  game's (`game-previous.txt`, `game-previous-tombstone.pb`) and each replay's `headless.out`,
+  `engine.log` and `speed.csv`. `tools/tombstone.py` reads a tombstone, with its stacks symbolized.
 
 The default replays (26930624 and 26902315), *Use the core set* and *Use the extended set* (the core
 set and its ten longer games) are from [docs/PR_REPLAY_CHECK.md](../docs/PR_REPLAY_CHECK.md), all

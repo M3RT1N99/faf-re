@@ -9,8 +9,9 @@
 // which the host sets before the thread starts; argv[0] is the program's path in its install, as
 // FAF's client starts it, because the engine takes its install's folder from it
 // (DISK_GetLaunchDir). HOME and TMPDIR give the engine its own folders (SHGetFolderPath). The
-// host's lines go to a report file, which the app reads when the game's process has ended; the
-// engine writes its log to the /log file.
+// host's lines go to a report file, which the activity shows as it grows and the app reads when
+// the game's process has ended; the engine writes its log to the /log file and its crash report
+// to HOME (gpg/core/diagnostics).
 //
 // The screen is the activity's surface, and it has one mode: the program waits for the first
 // surface and asks for its size with /fullscreen, unless the command line chooses a size. Otherwise
@@ -32,7 +33,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -71,16 +71,18 @@ namespace
   /// end: it reads the report twice a second (GameActivity).
   constexpr DWORD kShowEndMilliseconds = 1500;
 
+  /// What gpg::HandleAssertFailure's messages begin with.
+  constexpr char kFailedAssertion[] = "Failed assertion:";
+
+  /// How many failed assertions the report takes: one that repeats each frame would grow it without
+  /// end, and the activity reads all of it twice a second. Windows reports the first alone.
+  constexpr int kReportedAssertions = 16;
+
   std::atomic<bool> gStarted{false};
+  std::atomic<int> gFailedAssertions{0};
   std::chrono::steady_clock::time_point gStartTime;
   std::vector<std::string> gArguments;
   std::vector<char*> gArgv;
-
-  // The first surface's size, for the program's start.
-  std::mutex gFirstSurfaceMutex;
-  std::condition_variable gFirstSurfaceReady;
-  int gFirstSurfaceWidth = 0;
-  int gFirstSurfaceHeight = 0;
 
   std::mutex gReportMutex;
   int gReportFile = -1;
@@ -109,11 +111,20 @@ namespace
     std::_Exit(exitCode);
   }
 
-  /// WinMain's die handler: the crash report (gpg/core/diagnostics), and a line of the report. On
-  /// Windows the debug break after the handler ends the program; here gpg::Die would go on to spin.
+  /// WinMain's die handler, which gpg::Die and a failed assertion both call. A failed assertion goes
+  /// on, as on Windows after the dialog, with a line of the report. gpg::Die leaves the crash report
+  /// (gpg/core/diagnostics) and a line of the report, the app's verdict, and ends here. Past the
+  /// handler it has clang's __debugbreak: brk on arm64, where debuggerd's handler would end the
+  /// process, and int3 on x86_64, where returning from the handler runs on into gpg::Die's spin.
   void FatalErrorDieHandler(const char* const message)
   {
     const char* const reason = (message != nullptr) ? message : "engine Die()";
+    if (std::strncmp(reason, kFailedAssertion, sizeof(kFailedAssertion) - 1) == 0) {
+      if (gFailedAssertions.fetch_add(1) < kReportedAssertions) {
+        Report(reason);
+      }
+      return;
+    }
     Report(std::string("fatal: ") + reason);
     gpg::diag::CrashReportContext reportContext{};
     reportContext.reason = reason;
@@ -213,14 +224,9 @@ namespace
   /// for a screen smaller than the 1024 x 768 the engine holds as the least a mode may be.
   void TakeScreenMode()
   {
-    int width = 0;
-    int height = 0;
-    {
-      std::unique_lock<std::mutex> lock(gFirstSurfaceMutex);
-      gFirstSurfaceReady.wait(lock, [] { return gFirstSurfaceWidth > 0 && gFirstSurfaceHeight > 0; });
-      width = gFirstSurfaceWidth;
-      height = gFirstSurfaceHeight;
-    }
+    Win32Android_WaitForScreenSurface();
+    const int width = ::GetSystemMetrics(SM_CXSCREEN);
+    const int height = ::GetSystemMetrics(SM_CYSCREEN);
     if (moho::CFG_GetArgOptionAliases(moho::CFG_GetFullscreenOptionAliases(), 0, nullptr) ||
         moho::CFG_GetArgOptionAliases(moho::CFG_GetWindowedOptionAliases(), 0, nullptr) || moho::CFG_HasMaximizeOption()) {
       return;
@@ -333,9 +339,21 @@ extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_start(
   (void)::pthread_attr_destroy(&attributes);
   if (error != 0) {
     Report(std::string("no engine thread: ") + std::strerror(error));
+    // No program runs (Game_running), and a next start begins anew.
+    (void)::close(gReportFile);
+    gReportFile = -1;
+    gArguments.clear();
+    gStarted.store(false);
     return JNI_FALSE;
   }
   return JNI_TRUE;
+}
+
+/// Whether the program runs in this process, which it does until the process ends: Android can make
+/// the activity anew around it.
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_running(JNIEnv*, jclass)
+{
+  return gStarted.load() ? JNI_TRUE : JNI_FALSE;
 }
 
 /// The activity's surface and its size in pixels, or null when it is gone.
@@ -344,6 +362,7 @@ Java_io_github_m3rt1n99_fafre_Game_surface(JNIEnv* const env, jclass, const jobj
 {
   ANativeWindow* const window = surface != nullptr ? ANativeWindow_fromSurface(env, surface) : nullptr;
   if (window != nullptr) {
+    // Before the surface: with it the program goes on, and reads the size (TakeScreenMode).
     Win32Android_SetScreenSize(width, height);
     Report("surface " + std::to_string(width) + "x" + std::to_string(height));
   } else {
@@ -355,13 +374,6 @@ Java_io_github_m3rt1n99_fafre_Game_surface(JNIEnv* const env, jclass, const jobj
   if (window != nullptr) {
     // The layer holds a reference of its own.
     ANativeWindow_release(window);
-    // After the screen is set: the program goes on from here (TakeScreenMode).
-    const std::lock_guard<std::mutex> lock(gFirstSurfaceMutex);
-    if (gFirstSurfaceWidth == 0) {
-      gFirstSurfaceWidth = width;
-      gFirstSurfaceHeight = height;
-      gFirstSurfaceReady.notify_all();
-    }
   }
 }
 

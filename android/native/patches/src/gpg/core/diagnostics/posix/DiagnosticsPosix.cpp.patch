@@ -1,0 +1,385 @@
+diff --git a/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp b/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
+index 606c4af2..2355bd92 100644
+--- a/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
++++ b/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
+@@ -3,11 +3,12 @@
+ // place of CrashHooks.cpp, CrashReport.cpp and ProbeWatch.cpp, which are built on dbghelp,
+ // vectored exception handlers, minidumps and the debug registers.
+ //
+-// What is kept: faf_diag.log beside the executable, fatal signals and std::terminate written
+-// as a text report (reason, the faulting thread's stack, the registered sections) to
+-// faf_crash_<time>.txt and faf_crash_latest.txt beside the executable, and the report's path
+-// on stderr. Minidumps are the system's core dumps; memory watches and code probes are not
+-// available.
++// What is kept: faf_diag.log in HOME, fatal signals and std::terminate written as a text report
++// (reason, the faulting thread's stack, the registered sections) to faf_crash_<time>.txt and
++// faf_crash_latest.txt in HOME, and the report's path on stderr. Then the signal goes on to the
++// handler that was there first: Android's debuggerd writes the tombstone, which the app collects.
++// The report has a thread of its own, so that nothing in it can cost the tombstone (ReportThread).
++// Memory watches and code probes are not available.
+ 
+ #if !defined(_WIN32)
+ 
+@@ -27,10 +28,14 @@
+ #include <ctime>
+ #include <exception>
+ 
++#include <Windows.h>
+ #include <csignal>
+ #include <dlfcn.h>
+ #include "platform/posix/Backtrace.h"
++#include <cerrno>
+ #include <fcntl.h>
++#include <pthread.h>
++#include <semaphore.h>
+ #include <sys/utsname.h>
+ #include <unistd.h>
+ 
+@@ -38,6 +43,9 @@ namespace
+ {
+   constexpr std::size_t kPathBytes = 4096;
+   constexpr int kMaxFrames = 64;
++  constexpr int kFatalSignals[] = {SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
++  constexpr int kReportWaitSeconds = 3;
++  constexpr std::size_t kReportThreadStackBytes = 1024U * 1024U;
+ 
+   struct CrashSection
+   {
+@@ -50,30 +58,31 @@ namespace
+   int gSectionCount = 0;
+   std::atomic<bool> gWritingReport{false};
+ 
+-  char gExeDir[kPathBytes]{};
++  // The report's thread, and what the thread that asks leaves it (WriteCrashReport).
++  sem_t gReportAsked;
++  sem_t gReportEnded;
++  pthread_t gReportThread;
++  std::atomic<bool> gReportThreadRuns{false};
++  std::atomic<bool> gReportWritten{false};
++  char gReportReason[2048]{};
++  void* gReportFrames[kMaxFrames]{};
++  int gReportFrameCount = 0;
++
++  char gReportDir[kPathBytes]{};
+   char gDiagLogPath[kPathBytes]{};
+   char gReportPath[kPathBytes]{};
+   char gLatestReportPath[kPathBytes]{};
+   char gDumpPath[kPathBytes]{};
+ 
+-  /// The directory of the running executable, with a trailing '/'.
+-  const char* ExeDir()
+-  {
+-    if (gExeDir[0] == '\0') {
+-      char exe[kPathBytes]{};
+-      const ssize_t length = ::readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+-      if (length > 0) {
+-        exe[length] = '\0';
+-        char* const slash = std::strrchr(exe, '/');
+-        if (slash != nullptr) {
+-          slash[1] = '\0';
+-        }
+-        std::snprintf(gExeDir, sizeof(gExeDir), "%s", exe);
+-      } else {
+-        std::snprintf(gExeDir, sizeof(gExeDir), "./");
+-      }
++  /// The folder of the reports, with a trailing '/': HOME. An app's executable is the system's
++  /// /system/bin/app_process64, and nothing can be written beside it.
++  const char* ReportDir()
++  {
++    if (gReportDir[0] == '\0') {
++      const char* const home = std::getenv("HOME");
++      std::snprintf(gReportDir, sizeof(gReportDir), "%s/", home != nullptr ? home : ".");
+     }
+-    return gExeDir;
++    return gReportDir;
+   }
+ 
+   void AppendToFile(const char* const path, const char* const text, const std::size_t length)
+@@ -93,14 +102,13 @@ namespace
+     (void)::close(fd);
+   }
+ 
++  /// The stack of the thread that asked for the report.
+   void WriteStack(std::FILE* const sink, const int skipFrames)
+   {
+-    void* frames[kMaxFrames]{};
+-    const int count = platform::posix::Backtrace(frames, kMaxFrames);
+-    for (int index = skipFrames; index < count; ++index) {
++    for (int index = skipFrames; index < gReportFrameCount; ++index) {
+       char line[1024]{};
+-      gpg::diag::DiagDescribeAddress(frames[index], line, sizeof(line));
+-      std::fprintf(sink, "  #%02d %p %s\n", index - skipFrames, frames[index], line);
++      gpg::diag::DiagDescribeAddress(gReportFrames[index], line, sizeof(line));
++      std::fprintf(sink, "  #%02d %p %s\n", index - skipFrames, gReportFrames[index], line);
+     }
+   }
+ 
+@@ -122,8 +130,33 @@ namespace
+     }
+   }
+ 
+-  void OnFatalSignal(const int signalNumber, siginfo_t* const info, void*)
++  /// The fatal signals' handlers as this library found them, taken before its own: debuggerd's,
++  /// which Android's linker installs in every process.
++  struct sigaction gFirstActions[NSIG]{};
++
++  /// A fatal signal's end. debuggerd's handler writes the tombstone from the fault's context and
++  /// sends the signal again, which ends the process when this handler returns. Otherwise the
++  /// default action follows.
++  void EndFatalSignal(const int signalNumber, siginfo_t* const info, void* const machine)
++  {
++    const struct sigaction& first = gFirstActions[signalNumber];
++    if ((first.sa_flags & SA_SIGINFO) != 0) {
++      first.sa_sigaction(signalNumber, info, machine);
++    }
++    std::signal(signalNumber, SIG_DFL);
++    (void)::raise(signalNumber);
++  }
++
++  void OnFatalSignal(const int signalNumber, siginfo_t* const info, void* const machine)
+   {
++    // A fault in the report ends the report, and the thread that waits for it goes on.
++    if (gReportThreadRuns.load() && ::pthread_equal(::pthread_self(), gReportThread) != 0) {
++      (void)::sem_post(&gReportEnded);
++      for (;;) {
++        (void)::pause();
++      }
++    }
++
+     char reason[256]{};
+     std::snprintf(
+       reason, sizeof(reason), "%s at address %p", SignalName(signalNumber), info != nullptr ? info->si_addr : nullptr
+@@ -131,15 +164,12 @@ namespace
+     gpg::diag::CrashReportContext context{};
+     context.reason = reason;
+     gpg::diag::HandleFatalPath(context);
+-
+-    // The default action (terminate, core dump where enabled) follows.
+-    std::signal(signalNumber, SIG_DFL);
+-    (void)::raise(signalNumber);
++    EndFatalSignal(signalNumber, info, machine);
+   }
+ 
+   /// Until InstallCrtDiagnosticHooks runs (static initialisation, early startup): the signal
+-  /// and the raw stack on stderr, async-signal-safe, then the default action.
+-  void OnEarlyFatalSignal(const int signalNumber, siginfo_t* const info, void*)
++  /// and the raw stack on stderr, async-signal-safe, then the signal's end.
++  void OnEarlyFatalSignal(const int signalNumber, siginfo_t* const info, void* const machine)
+   {
+     char line[128];
+     const int length = std::snprintf(
+@@ -150,8 +180,7 @@ namespace
+     void* frames[kMaxFrames];
+     const int count = platform::posix::Backtrace(frames, kMaxFrames);
+     platform::posix::BacktraceSymbolsFd(frames, count, 2);
+-    std::signal(signalNumber, SIG_DFL);
+-    (void)::raise(signalNumber);
++    EndFatalSignal(signalNumber, info, machine);
+   }
+ 
+   // Priority 100: before the reflection pre-registration phase (101, StaticInitPhase.h).
+@@ -163,8 +192,8 @@ namespace
+     action.sa_sigaction = &OnEarlyFatalSignal;
+     action.sa_flags = SA_SIGINFO | SA_RESETHAND;
+     sigemptyset(&action.sa_mask);
+-    for (const int signalNumber : {SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT}) {
+-      (void)::sigaction(signalNumber, &action, nullptr);
++    for (const int signalNumber : kFatalSignals) {
++      (void)::sigaction(signalNumber, &action, &gFirstActions[signalNumber]);
+     }
+   }
+ #pragma clang diagnostic pop
+@@ -180,6 +209,85 @@ namespace
+ 
+ namespace gpg::diag
+ {
++  namespace
++  {
++    bool WriteReport()
++    {
++      // The newest report's file first: the app collects it, also when a section ends the report early.
++      const char* const latestPath = CrashLatestReportPath();
++      std::FILE* const sink = std::fopen(latestPath, "w");
++      if (sink == nullptr) {
++        return false;
++      }
++      std::setvbuf(sink, nullptr, _IOLBF, 0);
++
++      const std::time_t now = std::time(nullptr);
++      std::fprintf(sink, "FAF crash report (POSIX)\n");
++      std::fprintf(sink, "time: %s", std::ctime(&now));
++      std::fprintf(sink, "process: %d\n", static_cast<int>(::getpid()));
++      std::fprintf(sink, "reason: %s\n", gReportReason);
++
++      const CrashSectionInfo info{};
++      int section = 0;
++      for (; section < gSectionCount && gSections[section].priority < kAfterModulesPriority; ++section) {
++        std::fprintf(sink, "\n== %s ==\n", gSections[section].name);
++        gSections[section].writer(sink, info);
++      }
++      std::fprintf(sink, "\n== Stack ==\n");
++      WriteStack(sink, 1);
++      for (; section < gSectionCount; ++section) {
++        std::fprintf(sink, "\n== %s ==\n", gSections[section].name);
++        gSections[section].writer(sink, info);
++      }
++      std::fclose(sink);
++
++      // The report again, by its time.
++      const char* const reportPath = CrashReportPath();
++      if (std::FILE* const source = std::fopen(latestPath, "r")) {
++        if (std::FILE* const timed = std::fopen(reportPath, "w")) {
++          char buffer[4096];
++          std::size_t got = 0;
++          while ((got = std::fread(buffer, 1, sizeof(buffer), source)) > 0) {
++            (void)std::fwrite(buffer, 1, got, timed);
++          }
++          std::fclose(timed);
++        }
++        std::fclose(source);
++      }
++      DiagLine("crash report written: %s (%s)", reportPath, gReportReason);
++      return true;
++    }
++
++    /**
++     * The report reads a state that has just faulted, with the engine's section writers. On the
++     * faulting thread a fault in it, the stack buffers on a thread's small signal stack, or a lock of
++     * stdio's or malloc's that the fault holds would cost the tombstone, the one sure stack a tester
++     * can send. Here they cost the report: the thread that asks goes on, at the latest after
++     * kReportWaitSeconds, and a fault here ends only this thread (OnFatalSignal).
++     */
++    void* ReportThread(void*)
++    {
++      while (::sem_wait(&gReportAsked) != 0) {
++      }
++      gReportWritten.store(WriteReport());
++      (void)::sem_post(&gReportEnded);
++      return nullptr;
++    }
++
++    void StartReportThread()
++    {
++      if (::sem_init(&gReportAsked, 0, 0U) != 0 || ::sem_init(&gReportEnded, 0, 0U) != 0) {
++        return;
++      }
++      pthread_attr_t attributes;
++      (void)::pthread_attr_init(&attributes);
++      (void)::pthread_attr_setstacksize(&attributes, kReportThreadStackBytes);
++      (void)::pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
++      gReportThreadRuns.store(::pthread_create(&gReportThread, &attributes, &ReportThread, nullptr) == 0);
++      (void)::pthread_attr_destroy(&attributes);
++    }
++  } // namespace
++
+   void InstallCrtDiagnosticHooks(const CrtDiagOptions& options)
+   {
+     (void)options; // CRT heap validation is MSVC's.
+@@ -193,19 +301,22 @@ namespace gpg::diag
+ 
+     struct sigaction action{};
+     action.sa_sigaction = &OnFatalSignal;
+-    action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
++    // A fault on the way to the report comes back here: without SA_RESETHAND, and without SA_NODEFER
++    // it would end the process in the kernel, without a tombstone.
++    action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_NODEFER;
+     sigemptyset(&action.sa_mask);
+-    for (const int signalNumber : {SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT}) {
++    for (const int signalNumber : kFatalSignals) {
+       (void)::sigaction(signalNumber, &action, nullptr);
+     }
+     std::set_terminate(&OnTerminate);
++    StartReportThread();
+     DiagLine("diagnostic hooks installed (POSIX: fatal signals, std::terminate)");
+   }
+ 
+   const char* DiagLogPath()
+   {
+     if (gDiagLogPath[0] == '\0') {
+-      std::snprintf(gDiagLogPath, sizeof(gDiagLogPath), "%sfaf_diag.log", ExeDir());
++      std::snprintf(gDiagLogPath, sizeof(gDiagLogPath), "%sfaf_diag.log", ReportDir());
+     }
+     return gDiagLogPath;
+   }
+@@ -291,7 +402,7 @@ namespace gpg::diag
+       (void)::localtime_r(&now, &parts);
+       char stamp[32]{};
+       (void)std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &parts);
+-      std::snprintf(gReportPath, sizeof(gReportPath), "%sfaf_crash_%s.txt", ExeDir(), stamp);
++      std::snprintf(gReportPath, sizeof(gReportPath), "%sfaf_crash_%s.txt", ReportDir(), stamp);
+     }
+     return gReportPath;
+   }
+@@ -299,7 +410,7 @@ namespace gpg::diag
+   const char* CrashLatestReportPath()
+   {
+     if (gLatestReportPath[0] == '\0') {
+-      std::snprintf(gLatestReportPath, sizeof(gLatestReportPath), "%sfaf_crash_latest.txt", ExeDir());
++      std::snprintf(gLatestReportPath, sizeof(gLatestReportPath), "%sfaf_crash_latest.txt", ReportDir());
+     }
+     return gLatestReportPath;
+   }
+@@ -323,47 +434,25 @@ namespace gpg::diag
+       return false;
+     }
+ 
+-    const char* const reportPath = CrashReportPath();
+-    std::FILE* const sink = std::fopen(reportPath, "w");
+-    if (sink == nullptr) {
+-      return false;
++    // What only this thread knows. The exception filter gives the fault's record for a reason.
++    if (context.reason == nullptr && context.exceptionInfo != nullptr) {
++      const EXCEPTION_RECORD& record = *context.exceptionInfo->ExceptionRecord;
++      std::snprintf(gReportReason, sizeof(gReportReason), "exception 0x%08X at %p", record.ExceptionCode, record.ExceptionAddress);
++    } else {
++      std::snprintf(gReportReason, sizeof(gReportReason), "%s", context.reason != nullptr ? context.reason : "(unknown)");
+     }
+-    std::setvbuf(sink, nullptr, _IOLBF, 0);
++    gReportFrameCount = platform::posix::Backtrace(gReportFrames, kMaxFrames);
+ 
+-    const std::time_t now = std::time(nullptr);
+-    std::fprintf(sink, "FAF crash report (POSIX)\n");
+-    std::fprintf(sink, "time: %s", std::ctime(&now));
+-    std::fprintf(sink, "process: %d\n", static_cast<int>(::getpid()));
+-    std::fprintf(sink, "reason: %s\n", context.reason != nullptr ? context.reason : "(unknown)");
+-
+-    const CrashSectionInfo info{};
+-    int section = 0;
+-    for (; section < gSectionCount && gSections[section].priority < kAfterModulesPriority; ++section) {
+-      std::fprintf(sink, "\n== %s ==\n", gSections[section].name);
+-      gSections[section].writer(sink, info);
+-    }
+-    std::fprintf(sink, "\n== Stack ==\n");
+-    WriteStack(sink, 1);
+-    for (; section < gSectionCount; ++section) {
+-      std::fprintf(sink, "\n== %s ==\n", gSections[section].name);
+-      gSections[section].writer(sink, info);
+-    }
+-    std::fclose(sink);
+-
+-    // The stable copy of the newest report.
+-    if (std::FILE* const source = std::fopen(reportPath, "r")) {
+-      if (std::FILE* const latest = std::fopen(CrashLatestReportPath(), "w")) {
+-        char buffer[4096];
+-        std::size_t got = 0;
+-        while ((got = std::fread(buffer, 1, sizeof(buffer), source)) > 0) {
+-          (void)std::fwrite(buffer, 1, got, latest);
+-        }
+-        std::fclose(latest);
+-      }
+-      std::fclose(source);
++    if (!gReportThreadRuns.load()) {
++      return WriteReport();
+     }
+-    DiagLine("crash report written: %s (%s)", reportPath, context.reason != nullptr ? context.reason : "");
+-    return true;
++    (void)::sem_post(&gReportAsked);
++    timespec until{};
++    (void)::clock_gettime(CLOCK_REALTIME, &until);
++    until.tv_sec += kReportWaitSeconds;
++    while (::sem_timedwait(&gReportEnded, &until) != 0 && errno == EINTR) {
++    }
++    return gReportWritten.load();
+   }
+ 
+   void WriteEnvironmentReport(std::FILE* const sink)

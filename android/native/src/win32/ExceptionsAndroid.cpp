@@ -26,7 +26,8 @@ namespace
 
   std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> gFilter{nullptr};
   std::atomic<bool> gInstalled{false};
-  // A fault inside the filter goes straight on to the handler before.
+  // A fault inside the filter goes straight on to the handler before; SA_NODEFER lets it reach this
+  // one, as blocked it would end the process in the kernel, without a tombstone.
   std::atomic_flag gInFilter = ATOMIC_FLAG_INIT;
   struct sigaction gPrevious[NSIG];
 
@@ -140,7 +141,7 @@ namespace
     }
     struct sigaction action{};
     action.sa_sigaction = &OnFault;
-    action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_NODEFER;
     (void)::sigemptyset(&action.sa_mask);
     for (const int signalNumber : kSignals) {
       (void)::sigaction(signalNumber, &action, &gPrevious[signalNumber]);

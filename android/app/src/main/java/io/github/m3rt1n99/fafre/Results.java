@@ -143,9 +143,21 @@ final class Results {
             if (gameTombstone.isFile()) {
                 addFile(out, GameReport.TOMBSTONE, gameTombstone);
             }
+            File previousGame = GameReport.previous(context);
+            if (previousGame.isFile()) {
+                addFile(out, GameReport.PREVIOUS, previousGame);
+            }
+            File previousTombstone = GameReport.previousTombstone(context);
+            if (previousTombstone.isFile()) {
+                addFile(out, GameReport.PREVIOUS_TOMBSTONE, previousTombstone);
+            }
             File gameLog = GameReport.log(storage);
             if (gameLog.isFile()) {
                 addFile(out, "game/engine.sclog", gameLog);
+            }
+            File crashReport = GameReport.crashReport(storage);
+            if (crashReport.isFile()) {
+                addFile(out, "game/" + crashReport.getName(), crashReport);
             }
             for (TestState.Replay replay : TestState.replaySnapshot()) {
                 File run = new File(storage.runs(), String.valueOf(replay.id));
