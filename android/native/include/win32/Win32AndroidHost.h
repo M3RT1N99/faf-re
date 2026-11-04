@@ -9,24 +9,29 @@
 
 struct ANativeWindow;
 
-/// The screen's size in pixels: the activity's surface. Maximized windows take the new size.
+/// The screen's size in pixels: the activity's surface. Maximized windows and those that filled the
+/// screen take the new size, also when they come back from being minimized.
 void Win32Android_SetScreenSize(int width, int height);
 
 /// The activity's surface, which is the screen every window is shown on (null: there is none).
 /// The layer holds a reference to it while it is the screen's.
 ///
-/// With null, the visible top-level windows are minimized, as Windows minimizes a full-screen
-/// program's when the display is taken from it, and the next surface restores them. Android allows
-/// no use of a surface after its surfaceDestroyed returns, so null waits until the surface taken
-/// from the layer (below) is released, and says whether that came in time: two seconds, as the
-/// activity's thread cannot wait for a program that is busy for longer.
+/// Without one, the visible top-level windows are minimized, as Windows minimizes a full-screen
+/// program's when the display is taken from it, and a window shown then with them; the next surface
+/// restores them. Each window's thread does this by the surface there is when it gets to it, so a
+/// surface that comes and goes before that changes nothing. Android allows no use of a surface after
+/// its surfaceDestroyed returns, so null waits until the surface taken from the layer (below) is
+/// released, and says whether that came in time: two seconds, as the activity's thread cannot wait
+/// for a program that is busy for longer.
 BOOL Win32Android_SetScreenSurface(ANativeWindow* surface);
 
 /// For what draws on the screen: the surface `window` is shown on, the screen's, as on Windows a
-/// window is part of the desktop. Null while there is none or `window` is no window. The pointer
-/// stays valid while it is the screen's surface; a Vulkan surface made from it holds a reference of
-/// its own. The taker stands on the surface until it releases it, which it does as soon as it can
-/// when the surface stops being the screen's.
+/// window is part of the desktop, and its top-level window takes the surface's size. Null while
+/// there is none or `window` is no window. The layer holds a reference to it until it is released,
+/// and a Vulkan surface made from it holds one of its own. The taker stands on the surface until it
+/// releases it, which it does as soon as it can when it stops being current: when the surface stops
+/// being the screen's, or the screen stops having the size it was taken at, which the same surface
+/// can do.
 ANativeWindow* Win32Android_TakeWindowSurface(HWND window);
 BOOL Win32Android_TakenSurfaceIsCurrent();
 void Win32Android_ReleaseTakenSurface();

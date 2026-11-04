@@ -62,6 +62,7 @@ namespace
     RECT restored{}; // the rectangle before it was minimized or maximized
     std::wstring text;
     bool minimized = false;
+    bool minimizedWithScreen = false; // for the screen's lack of a surface: the next one restores it
     bool maximized = false;
     bool updatePending = false;
     bool erasePending = false;
@@ -156,9 +157,10 @@ namespace
     int screenWidth = 0;
     int screenHeight = 0;
     ANativeWindow* screenSurface = nullptr; // the activity's, from the host; one reference held
-    ANativeWindow* takenSurface = nullptr; // what a renderer stands on until it releases it
+    ANativeWindow* takenSurface = nullptr; // what a renderer stands on until it releases it; one reference held
+    int takenWidth = 0;                    // the screen's size when it took it
+    int takenHeight = 0;
     std::condition_variable surfaceChanged; // of either
-    std::vector<HWND> minimizedWithScreen; // restored when a surface comes back
     void (*firstFrameHandler)() = nullptr;
     Click lastClick;
     DWORD clipboardThread = 0;
@@ -1382,6 +1384,61 @@ BOOL EnableWindow(const HWND handle, const BOOL enable)
   return wasDisabled ? TRUE : FALSE;
 }
 
+namespace
+{
+  /// What the screen asks of a top-level window as things are now: a visible one is minimized
+  /// without a surface, as Windows minimizes a full-screen program's when the display is taken from
+  /// it, and what that minimized is restored with a surface. 0: nothing.
+  int ScreenCommandLocked(const Window& window)
+  {
+    if ((window.style & WS_VISIBLE) == 0) {
+      return 0;
+    }
+    if (Layer().screenSurface == nullptr) {
+      return window.minimized ? 0 : SW_MINIMIZE;
+    }
+    return window.minimized && window.minimizedWithScreen ? SW_RESTORE : 0;
+  }
+
+  /// On the window's thread after each change of the surface. It decides by the surface when the
+  /// thread gets here, as surfaces can have come and gone since the task was posted.
+  void FollowScreenSurface(const HWND handle)
+  {
+    int command = 0;
+    {
+      Lock lock(Layer().mutex);
+      Window* const window = WindowLocked(handle);
+      if (window == nullptr) {
+        return;
+      }
+      command = ScreenCommandLocked(*window);
+      if (command == SW_MINIMIZE) {
+        window->minimizedWithScreen = true;
+      } else if (command == SW_RESTORE || !window->minimized) {
+        window->minimizedWithScreen = false;
+      }
+    }
+    if (command != 0) {
+      (void)::ShowWindow(handle, command);
+    }
+  }
+
+  void PostFollowScreenSurfaceLocked(Window* const window)
+  {
+    const HWND handle = Handle(window);
+    PostTaskLocked(*window->queue, [handle] { FollowScreenSurface(handle); });
+  }
+
+  /// A window that was shown: without a surface a top-level one goes the way of the others, and with
+  /// one it comes back if it was hidden while minimized for the lack of one.
+  void FollowScreenSurfaceAfterShowLocked(Window* const window)
+  {
+    if (window->parent == nullptr && ScreenCommandLocked(*window) != 0) {
+      PostFollowScreenSurfaceLocked(window);
+    }
+  }
+} // namespace
+
 BOOL ShowWindow(const HWND handle, const int command)
 {
   State& layer = Layer();
@@ -1479,6 +1536,7 @@ BOOL ShowWindow(const HWND handle, const int command)
     if (nowVisible && (!wasVisible || sized || stateChanged)) {
       InvalidateTreeLocked(window);
     }
+    FollowScreenSurfaceAfterShowLocked(window);
   }
 
   if (nowVisible != wasVisible) {
@@ -1583,6 +1641,9 @@ BOOL SetWindowPos(const HWND handle, const HWND insertAfter, const int x, const 
     };
     if (nowVisible && (sized || visibilityChanged) && (flags & SWP_NOREDRAW) == 0) {
       InvalidateTreeLocked(window);
+    }
+    if (visibilityChanged) {
+      FollowScreenSurfaceAfterShowLocked(window);
     }
   }
   if ((position.flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE) || visibilityChanged
@@ -2841,28 +2902,63 @@ BOOL IsClipboardFormatAvailable(const UINT format)
 
 // --- The host ---------------------------------------------------------------------------------------
 
+namespace
+{
+  bool SameRect(const RECT& first, const RECT& second)
+  {
+    return first.left == second.left && first.top == second.top && first.right == second.right && first.bottom == second.bottom;
+  }
+
+  /// A window takes the screen's size now. A minimized one takes it when it is restored.
+  void FillScreen(const HWND handle)
+  {
+    RECT screen{};
+    {
+      Lock lock(Layer().mutex);
+      Window* const window = WindowLocked(handle);
+      if (window == nullptr) {
+        return;
+      }
+      screen = ScreenLocked();
+      if (window->minimized) {
+        if (!window->maximized) {
+          window->restored = screen;
+        }
+        return;
+      }
+      if (SameRect(window->rect, screen)) {
+        return;
+      }
+    }
+    (void)::SetWindowPos(handle, nullptr, 0, 0, Width(screen), Height(screen), SWP_NOZORDER | SWP_NOACTIVATE);
+  }
+
+  /// After a new screen size: a maximized window follows it, and one that filled the screen as it was.
+  void FollowScreen(const HWND handle, const RECT previous)
+  {
+    {
+      Lock lock(Layer().mutex);
+      const Window* const window = WindowLocked(handle);
+      if (window == nullptr || (!window->maximized && !SameRect(window->minimized ? window->restored : window->rect, previous))) {
+        return;
+      }
+    }
+    FillScreen(handle);
+  }
+} // namespace
+
 void Win32Android_SetScreenSize(const int width, const int height)
 {
   State& layer = Layer();
   Lock lock(layer.mutex);
+  const RECT previous = ScreenLocked();
   layer.screenWidth = width;
   layer.screenHeight = height;
-  // A maximized window takes the new size, on its own thread.
+  // On each window's own thread, in order with the minimize and the restore that a surface's going
+  // and coming posts there, and with a size that follows this one.
   for (Window* top : layer.topLevel) {
-    if (top->maximized && !top->minimized) {
-      const HWND handle = Handle(top);
-      PostTaskLocked(*top->queue, [handle, width, height] {
-        Window* window = nullptr;
-        {
-          Lock inner(Layer().mutex);
-          window = WindowLocked(handle);
-          if (window == nullptr || !window->maximized || window->minimized) {
-            return;
-          }
-        }
-        (void)::SetWindowPos(handle, nullptr, 0, 0, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
-      });
-    }
+    const HWND handle = Handle(top);
+    PostTaskLocked(*top->queue, [handle, previous] { FollowScreen(handle, previous); });
   }
 }
 
@@ -2877,24 +2973,16 @@ BOOL Win32Android_SetScreenSurface(ANativeWindow* const surface)
     ANativeWindow_release(layer.screenSurface);
   }
   layer.screenSurface = surface;
+  bool released = true;
   if (surface != nullptr) {
-    for (const HWND handle : layer.minimizedWithScreen) {
-      if (Window* const window = WindowLocked(handle)) {
-        PostTaskLocked(*window->queue, [handle] { (void)::ShowWindow(handle, SW_RESTORE); });
-      }
-    }
-    layer.minimizedWithScreen.clear();
     layer.surfaceChanged.notify_all();
-    return TRUE;
+  } else {
+    // Before the windows hear of it: a minimized program does not paint, and its renderer lets go
+    // of the surface when it paints.
+    released = layer.surfaceChanged.wait_for(lock, kSurfaceReleaseTime, [&layer] { return layer.takenSurface == nullptr; });
   }
-  const bool released =
-    layer.surfaceChanged.wait_for(lock, kSurfaceReleaseTime, [&layer] { return layer.takenSurface == nullptr; });
   for (Window* const top : layer.topLevel) {
-    if ((top->style & WS_VISIBLE) != 0 && !top->minimized) {
-      const HWND handle = Handle(top);
-      layer.minimizedWithScreen.push_back(handle);
-      PostTaskLocked(*top->queue, [handle] { (void)::ShowWindow(handle, SW_MINIMIZE); });
-    }
+    PostFollowScreenSurfaceLocked(top);
   }
   return released ? TRUE : FALSE;
 }
@@ -2903,10 +2991,25 @@ ANativeWindow* Win32Android_TakeWindowSurface(const HWND handle)
 {
   State& layer = Layer();
   Lock lock(layer.mutex);
-  if (WindowLocked(handle) == nullptr || layer.screenSurface == nullptr) {
+  Window* const window = WindowLocked(handle);
+  if (window == nullptr || layer.screenSurface == nullptr) {
     return nullptr;
   }
-  layer.takenSurface = layer.screenSurface;
+  if (layer.takenSurface != layer.screenSurface) {
+    ANativeWindow_acquire(layer.screenSurface);
+    if (layer.takenSurface != nullptr) {
+      ANativeWindow_release(layer.takenSurface);
+    }
+    layer.takenSurface = layer.screenSurface;
+  }
+  layer.takenWidth = layer.screenWidth;
+  layer.takenHeight = layer.screenHeight;
+  // What draws on the window draws on the whole surface, so its top-level window is as large. The
+  // program can have made it at another size: the one it took at its start, which the first surface
+  // can have for a moment before the activity has turned.
+  Window* const root = RootLocked(window);
+  const HWND rootHandle = Handle(root);
+  PostTaskLocked(*root->queue, [rootHandle] { FillScreen(rootHandle); });
   return layer.takenSurface;
 }
 
@@ -2914,13 +3017,17 @@ BOOL Win32Android_TakenSurfaceIsCurrent()
 {
   State& layer = Layer();
   Lock lock(layer.mutex);
-  return layer.takenSurface != nullptr && layer.takenSurface == layer.screenSurface ? TRUE : FALSE;
+  const bool sameSize = layer.takenWidth == layer.screenWidth && layer.takenHeight == layer.screenHeight;
+  return layer.takenSurface != nullptr && layer.takenSurface == layer.screenSurface && sameSize ? TRUE : FALSE;
 }
 
 void Win32Android_ReleaseTakenSurface()
 {
   State& layer = Layer();
   Lock lock(layer.mutex);
+  if (layer.takenSurface != nullptr) {
+    ANativeWindow_release(layer.takenSurface);
+  }
   layer.takenSurface = nullptr;
   layer.surfaceChanged.notify_all();
 }

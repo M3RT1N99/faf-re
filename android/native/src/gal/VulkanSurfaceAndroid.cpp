@@ -21,8 +21,8 @@ namespace gpg::gal::vulkan
   {
     ANativeWindow* const surface = Win32Android_TakeWindowSurface(static_cast<HWND>(window));
     if (surface == nullptr) {
-      // The window is not on a surface (yet, or any more).
-      result = VK_ERROR_SURFACE_LOST_KHR;
+      // The window is not on a surface (yet, or any more). No surface helps what is no window.
+      result = (::IsWindow(static_cast<HWND>(window)) != FALSE) ? VK_ERROR_SURFACE_LOST_KHR : VK_ERROR_INITIALIZATION_FAILED;
       return VK_NULL_HANDLE;
     }
     const auto create =

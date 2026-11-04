@@ -1,0 +1,73 @@
+diff --git a/src/gpg/gal/backends/vulkan/GpuDrivenVulkan.cpp b/src/gpg/gal/backends/vulkan/GpuDrivenVulkan.cpp
+index fb082787..f1600df0 100644
+--- a/src/gpg/gal/backends/vulkan/GpuDrivenVulkan.cpp
++++ b/src/gpg/gal/backends/vulkan/GpuDrivenVulkan.cpp
+@@ -178,6 +178,31 @@ namespace gpg::gal
+ 
+   void DeviceVulkan::CreateGpuDrivenObjects()
+   {
++    // CopyVertexBufferRegion is vkCmdCopyBuffer between transfer barriers.
++    mGpuFeatures = kGpuFeatureBufferCopy;
++
++    // Timestamps, when the queue supports them in graphics and compute work.
++    if (mProperties.limits.timestampComputeAndGraphics == VK_TRUE && mProperties.limits.timestampPeriod > 0.0f) {
++      VkQueryPoolCreateInfo pool{};
++      pool.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
++      pool.queryType = VK_QUERY_TYPE_TIMESTAMP;
++      pool.queryCount = kProfileFrames * 2U * (kMaxTimedRegionsPerFrame + 1U);
++      if (Vk().vkCreateQueryPool(mDevice, &pool, nullptr, &mTimestampPool) == VK_SUCCESS) {
++        mTimestampToMilliseconds = static_cast<double>(mProperties.limits.timestampPeriod) / 1.0e6;
++        mGpuFeatures |= kGpuFeatureTimestamps;
++      }
++    }
++
++    // Android client build: the set below has this many storage buffers for every stage. Vulkan only
++    // promises 4, which a phone's GPU may have; without them the engine's paths draw as they do
++    // without a GPU-driven device (GpuPathEnabled).
++    constexpr std::uint32_t kStorageBuffers = kGpuMaxReadBuffers + kGpuMaxWriteBuffers;
++    if (mProperties.limits.maxPerStageDescriptorStorageBuffers < kStorageBuffers) {
++      gpg::Warnf("Vulkan: %u storage buffers per stage where GPU-driven drawing needs %u: it is off",
++                 mProperties.limits.maxPerStageDescriptorStorageBuffers, kStorageBuffers);
++      return;
++    }
++
+     VkDescriptorSetLayoutBinding bindings[kBindingCount]{};
+     for (std::uint32_t binding = 0U; binding < kBindingCount; ++binding) {
+       bindings[binding].binding = binding;
+@@ -216,19 +241,16 @@ namespace gpg::gal
+     }
+ 
+     mGpuNullBuffer = CreateDeviceBuffer(kNullBufferBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+-    // CopyVertexBufferRegion is vkCmdCopyBuffer between transfer barriers.
+-    mGpuFeatures = kGpuFeatureVertexPulling | kGpuFeatureCompute | kGpuFeatureIndirectDraw | kGpuFeatureBufferCopy;
++    mGpuFeatures |= kGpuFeatureVertexPulling | kGpuFeatureIndirectDraw;
+ 
+-    // Timestamps, when the queue supports them in graphics and compute work.
+-    if (mProperties.limits.timestampComputeAndGraphics == VK_TRUE && mProperties.limits.timestampPeriod > 0.0f) {
+-      VkQueryPoolCreateInfo pool{};
+-      pool.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+-      pool.queryType = VK_QUERY_TYPE_TIMESTAMP;
+-      pool.queryCount = kProfileFrames * 2U * (kMaxTimedRegionsPerFrame + 1U);
+-      if (Vk().vkCreateQueryPool(mDevice, &pool, nullptr, &mTimestampPool) == VK_SUCCESS) {
+-        mTimestampToMilliseconds = static_cast<double>(mProperties.limits.timestampPeriod) / 1.0e6;
+-        mGpuFeatures |= kGpuFeatureTimestamps;
+-      }
++    // Android client build: CompactIconsCS has this many threads in a group, where Vulkan only
++    // promises 128 and a phone's GPU may have fewer; the icons then classify on the CPU.
++    constexpr std::uint32_t kComputeGroup = 1024U;
++    if (mProperties.limits.maxComputeWorkGroupSize[0] >= kComputeGroup && mProperties.limits.maxComputeWorkGroupInvocations >= kComputeGroup) {
++      mGpuFeatures |= kGpuFeatureCompute;
++    } else {
++      gpg::Warnf("Vulkan: compute groups of %u threads where GPU-driven icon classification needs %u: it is off",
++                 std::min(mProperties.limits.maxComputeWorkGroupSize[0], mProperties.limits.maxComputeWorkGroupInvocations), kComputeGroup);
+     }
+   }
+ 
+@@ -369,6 +391,7 @@ namespace gpg::gal
+     GpuWriteBarrier();
+     const VkBufferCopy region{static_cast<VkDeviceSize>(firstElement) * desc.stride, 0U, bytes};
+     Vk().vkCmdCopyBuffer(mCommands, static_cast<GpuBufferVulkan&>(buffer).Buffer().buffer, readback.buffer, 1U, &region);
++    HostReadBarrier();
+     Submit(true, false);
+     std::memcpy(out, readback.memory.mapped, static_cast<std::size_t>(bytes));
+     Vk().vkDestroyBuffer(mDevice, readback.buffer, nullptr);

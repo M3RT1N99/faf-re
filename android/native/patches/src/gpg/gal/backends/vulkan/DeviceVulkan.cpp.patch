@@ -1,8 +1,16 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-index b4d2ae45..bb1a09f3 100644
+index b4d2ae45..4e8498a6 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-@@ -23,6 +23,7 @@
+@@ -14,6 +14,7 @@
+ #include <wrl/client.h>
+ 
+ #include "VulkanSurface.h"
++#include "gpg/core/utils/Global.h"
+ #include "gpg/core/utils/Logging.h"
+ #include "gpg/gal/CubeRenderTargetContext.hpp"
+ #include "gpg/gal/CursorContext.hpp"
+@@ -23,6 +24,7 @@
  #include "gpg/gal/DrawStatistics.h"
  #include "gpg/gal/EffectContext.hpp"
  #include "gpg/gal/EffectMacro.hpp"
@@ -10,7 +18,7 @@ index b4d2ae45..bb1a09f3 100644
  #include "gpg/gal/Head.hpp"
  #include "gpg/gal/IndexBufferContext.hpp"
  #include "gpg/gal/RenderTargetContext.hpp"
-@@ -35,6 +36,26 @@
+@@ -35,6 +37,26 @@
  #include "gpg/gal/backends/d3d11/EffectSourceD3D11.h"
  #include "gpg/gal/backends/dxgi/DxgiFormats.h"
  
@@ -37,7 +45,7 @@ index b4d2ae45..bb1a09f3 100644
  namespace gpg::gal
  {
    using backend::CheckHresult;
-@@ -101,6 +122,29 @@ namespace gpg::gal
+@@ -101,6 +123,41 @@ namespace gpg::gal
        return format == DXGI_FORMAT_R8G8B8A8_UNORM || format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
      }
  
@@ -64,10 +72,22 @@ index b4d2ae45..bb1a09f3 100644
 +        (imageFormat == VK_FORMAT_R8G8B8A8_UNORM || imageFormat == VK_FORMAT_R8G8B8A8_SRGB);
 +    }
 +
++    /**
++     * Android client build: around a submission, a thrown error would reach CD3DDevice::Paint, which
++     * goes on with the next frame and a command buffer in no state to record into. A phone can run out
++     * of memory here: the program ends, and says why.
++     */
++    void CheckCommandBuffer(const VkResult result, const int line)
++    {
++      if (result != VK_SUCCESS) {
++        gpg::Die("Vulkan: %s at DeviceVulkan.cpp(%d)", vulkan::ResultName(result), line);
++      }
++    }
++
      /** See DeviceD3D12: plain counts, D3DSTREAMSOURCE_INDEXEDDATA | count, or an instance-data stream. */
      [[nodiscard]] std::uint32_t InstanceCount(const std::int32_t token) noexcept
      {
-@@ -355,7 +399,7 @@ namespace gpg::gal
+@@ -355,7 +412,7 @@ namespace gpg::gal
      } else {
        for (SwapChain& swapChain : mSwapChains) {
          if (swapChain.surface != VK_NULL_HANDLE && mInstance != VK_NULL_HANDLE) {
@@ -76,10 +96,14 @@ index b4d2ae45..bb1a09f3 100644
          }
        }
        mSwapChains.clear();
-@@ -535,8 +579,11 @@ namespace gpg::gal
+@@ -533,10 +590,15 @@ namespace gpg::gal
+     features.features.samplerAnisotropy = available.features.samplerAnisotropy;
+     features.features.fillModeNonSolid = available.features.fillModeNonSolid;
      features.features.textureCompressionBC = available.features.textureCompressionBC;
++    features.features.depthBiasClamp = available.features.depthBiasClamp;
      mAnisotropy = available.features.samplerAnisotropy == VK_TRUE;
      mWireframeSupported = available.features.fillModeNonSolid == VK_TRUE;
++    mDepthBiasClamp = available.features.depthBiasClamp == VK_TRUE;
 +    // Android client build: phones' GPUs mostly lack BC textures (the Galaxy S22's Xclipse 920
 +    // has ETC2 and ASTC). The device comes up without them; CreateTexture holds BC1 to BC3 as
 +    // R8G8B8A8, decoded on the CPU, and refuses the other BC formats.
@@ -89,7 +113,22 @@ index b4d2ae45..bb1a09f3 100644
      }
  
      const float priority = 1.0f;
-@@ -696,14 +743,19 @@ namespace gpg::gal
+@@ -608,6 +670,14 @@ namespace gpg::gal
+ 
+   void DeviceVulkan::CreateLayouts()
+   {
++    // Android client build: the layout gives each stage all of an effect's textures and samplers, by
++    // the effect's numbers (terrain.fx has 34 and 36), where Vulkan promises a stage only 16 of each.
++    if (mProperties.limits.maxPerStageDescriptorSampledImages < kTextureBindings ||
++        mProperties.limits.maxPerStageDescriptorSamplers < kSamplerBindings) {
++      gpg::Warnf("Vulkan: the device allows %u textures and %u samplers per stage where the effects' layout has %u and %u",
++                 mProperties.limits.maxPerStageDescriptorSampledImages, mProperties.limits.maxPerStageDescriptorSamplers, kTextureBindings,
++                 kSamplerBindings);
++    }
+     std::vector<VkDescriptorSetLayoutBinding> bindings;
+     for (std::uint32_t index = 0U; index < kTextureBindings + kSamplerBindings; ++index) {
+       VkDescriptorSetLayoutBinding binding{};
+@@ -696,14 +766,19 @@ namespace gpg::gal
      Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, nullptr);
      std::vector<VkSurfaceFormatKHR> formats(count);
      Vk().vkGetPhysicalDeviceSurfaceFormatsKHR(mPhysical, swapChain.surface, &count, formats.data());
@@ -115,7 +154,7 @@ index b4d2ae45..bb1a09f3 100644
      }
      Vk().vkGetPhysicalDeviceSurfacePresentModesKHR(mPhysical, swapChain.surface, &count, nullptr);
      std::vector<VkPresentModeKHR> modes(count);
-@@ -736,10 +788,17 @@ namespace gpg::gal
+@@ -736,11 +811,22 @@ namespace gpg::gal
      info.imageColorSpace = chosen.colorSpace;
      info.imageExtent = extent;
      info.imageArrayLayers = 1U;
@@ -126,6 +165,7 @@ index b4d2ae45..bb1a09f3 100644
 +      ((VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT) & capabilities.supportedUsageFlags);
      info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 -    info.preTransform = capabilities.currentTransform;
+-    info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 +    // Android client build: the compositor turns the image with the display. currentTransform says
 +    // how the display stands against the panel's natural orientation (a phone's is portrait, the
 +    // game runs in landscape); a swap chain created with it promises the image is already turned,
@@ -133,10 +173,27 @@ index b4d2ae45..bb1a09f3 100644
 +    info.preTransform = ((capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0U)
 +      ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
 +      : capabilities.currentTransform;
-     info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
++    // Android client build: Android's surfaces have only INHERIT: the window says, and a SurfaceView
++    // is opaque.
++    info.compositeAlpha = ((capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) != 0U)
++      ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
++      : static_cast<VkCompositeAlphaFlagBitsKHR>(capabilities.supportedCompositeAlpha & (~capabilities.supportedCompositeAlpha + 1U));
      info.presentMode = mode;
      info.clipped = VK_TRUE;
-@@ -766,8 +825,10 @@ namespace gpg::gal
+     info.oldSwapchain = swapChain.swapchain;
+@@ -751,6 +837,11 @@ namespace gpg::gal
+     }
+     swapChain.swapchain = created;
+     swapChain.format = chosen.format;
++    // Android client build: the surface says the size, whatever the engine asks for (Setup, Reset),
++    // and the engine lays out by the head's (CD3DDevice::GetHeadWidth).
++    Head& head = mDeviceContext.GetHead(static_cast<std::uint32_t>(&swapChain - mSwapChains.data()));
++    head.mWidth = extent.width;
++    head.mHeight = extent.height;
+     swapChain.extent = extent;
+     swapChain.presentMode = mode;
+     Vk().vkGetSwapchainImagesKHR(mDevice, created, &count, nullptr);
+@@ -766,8 +857,10 @@ namespace gpg::gal
        CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkCreateSemaphore(mDevice, &semaphore, nullptr, &finished));
      }
      swapChain.hasImage = false;
@@ -148,7 +205,7 @@ index b4d2ae45..bb1a09f3 100644
        (mode == VK_PRESENT_MODE_FIFO_KHR) ? "FIFO (vsync)" : (mode == VK_PRESENT_MODE_MAILBOX_KHR) ? "mailbox" : "immediate"
      );
    }
-@@ -785,7 +846,7 @@ namespace gpg::gal
+@@ -785,11 +878,23 @@ namespace gpg::gal
      swapChain.images.clear();
      swapChain.hasImage = false;
      if (!keepSurface && swapChain.surface != VK_NULL_HANDLE) {
@@ -157,7 +214,46 @@ index b4d2ae45..bb1a09f3 100644
        swapChain.surface = VK_NULL_HANDLE;
      }
    }
-@@ -815,30 +876,40 @@ namespace gpg::gal
+ 
++  void DeviceVulkan::WaitForSurface(SwapChain& swapChain)
++  {
++    // Android client build: the program can get here while the activity is in the back, and the
++    // surface can go again before it is taken.
++    VkResult result = VK_SUCCESS;
++    do {
++      vulkan::WaitForWindowSurface();
++      swapChain.surface = vulkan::CreateWindowSurface(mInstance, swapChain.window, result);
++    } while (result == VK_ERROR_SURFACE_LOST_KHR);
++    CheckVk("DeviceVulkan.cpp", __LINE__, result);
++  }
++
+   void DeviceVulkan::CreateSwapChains(const DeviceContext& context)
+   {
+     for (int headIndex = 0; headIndex < context.GetHeadCount(); ++headIndex) {
+@@ -802,7 +907,21 @@ namespace gpg::gal
+         width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
+         height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
+       }
+-      CreateSwapChain(mSwapChains[static_cast<std::size_t>(headIndex)], width, height);
++      // Android client build: a surface that went since Setup took it (its activity waits for it
++      // for 2 s) is waited out, as the first one was. Any other failure stands.
++      SwapChain& swapChain = mSwapChains[static_cast<std::size_t>(headIndex)];
++      for (;;) {
++        try {
++          CreateSwapChain(swapChain, width, height);
++          break;
++        } catch (const Error&) {
++          if (vulkan::WindowSurfaceIsCurrent()) {
++            throw;
++          }
++          DestroySwapChain(swapChain, false);
++          WaitForSurface(swapChain);
++        }
++      }
+     }
+     VkSemaphoreCreateInfo semaphore{};
+     semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+@@ -815,30 +934,40 @@ namespace gpg::gal
      }
    }
  
@@ -216,24 +312,154 @@ index b4d2ae45..bb1a09f3 100644
        OutputContext& output = mHeadOutputContexts[headIndex];
        auto* const target = new RenderTargetVulkan(std::move(buffers), DXGI_FORMAT_B8G8R8A8_UNORM, static_cast<int>(headIndex));
        output.surface.reset(target);
-@@ -932,6 +1003,8 @@ namespace gpg::gal
+@@ -932,9 +1061,7 @@ namespace gpg::gal
      for (int headIndex = 0; headIndex < context->GetHeadCount(); ++headIndex) {
        SwapChain& swapChain = mSwapChains[static_cast<std::size_t>(headIndex)];
        swapChain.window = context->GetHead(static_cast<std::uint32_t>(headIndex)).mWindow;
-+      // Android client build: the program can get here while the activity is in the back.
-+      vulkan::WaitForWindowSurface();
-       VkResult result = VK_SUCCESS;
-       swapChain.surface = vulkan::CreateWindowSurface(mInstance, swapChain.window, result);
-       CheckVk("DeviceVulkan.cpp", __LINE__, result);
-@@ -1166,6 +1239,7 @@ namespace gpg::gal
+-      VkResult result = VK_SUCCESS;
+-      swapChain.surface = vulkan::CreateWindowSurface(mInstance, swapChain.window, result);
+-      CheckVk("DeviceVulkan.cpp", __LINE__, result);
++      WaitForSurface(swapChain);
+     }
+     PickPhysicalDevice(context->mAdapter);
+     CreateLogicalDevice();
+@@ -943,13 +1070,15 @@ namespace gpg::gal
+     CreateLayouts();
+     CreateNullImages();
+     CreateGpuDrivenObjects();
++    // Android client build: before the swap chains. It takes the engine's context whole, and they give
++    // the heads the surface's size (CreateSwapChain).
++    CheckAvailableFormats(context);
+     CreateSwapChains(*context);
+     AcquireNextImages();
+ 
+     std::fill(std::begin(mStreamFrequencies), std::end(mStreamFrequencies), 0);
+     mPipelineState.reset(new PipelineStateVulkan());
+     ResetState();
+-    CheckAvailableFormats(context);
+     CreateRenderTargets();
+     gpg::Logf(
+       "Vulkan: ready (%d head(s), effects through the FAF effect layer, %s SPIR-V, shader cache %s, vsync %s)",
+@@ -1034,21 +1163,21 @@ namespace gpg::gal
+       info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+       info.commandBufferCount = 1U;
+       VkCommandBuffer buffer = VK_NULL_HANDLE;
+-      CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkAllocateCommandBuffers(mDevice, &info, &buffer));
++      CheckCommandBuffer(Vk().vkAllocateCommandBuffers(mDevice, &info, &buffer), __LINE__);
+       frame.buffers.push_back(buffer);
+     }
+     mCommands = frame.buffers[frame.used++];
+     VkCommandBufferBeginInfo begin{};
+     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+-    CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkBeginCommandBuffer(mCommands, &begin));
++    CheckCommandBuffer(Vk().vkBeginCommandBuffer(mCommands, &begin), __LINE__);
+     mViewportDirty = true;
+   }
+ 
+   void DeviceVulkan::Submit(const bool wait, const bool present)
+   {
+     EndRendering();
+-    CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkEndCommandBuffer(mCommands));
++    CheckCommandBuffer(Vk().vkEndCommandBuffer(mCommands), __LINE__);
+ 
+     std::vector<VkSemaphoreSubmitInfo> waits;
+     std::vector<VkSemaphoreSubmitInfo> signals;
+@@ -1063,7 +1192,7 @@ namespace gpg::gal
+         semaphore.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+         waits.push_back(semaphore);
+       }
+-      if (present && swapChain.hasImage) {
++      if (present && ImageIsDrawn(index)) {
+         VkSemaphoreSubmitInfo semaphore{};
+         semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+         semaphore.semaphore = swapChain.renderFinished[swapChain.acquired];
+@@ -1090,7 +1219,7 @@ namespace gpg::gal
+     submit.pCommandBufferInfos = &commands;
+     submit.signalSemaphoreInfoCount = static_cast<std::uint32_t>(signals.size());
+     submit.pSignalSemaphoreInfos = signals.data();
+-    CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkQueueSubmit2(mQueue, 1U, &submit, VK_NULL_HANDLE));
++    CheckCommandBuffer(Vk().vkQueueSubmit2(mQueue, 1U, &submit, VK_NULL_HANDLE), __LINE__);
+     frame.serial = serial;
+     // Waited once; later submissions of the frame need not wait again.
+     for (SwapChain& swapChain : mSwapChains) {
+@@ -1118,7 +1247,7 @@ namespace gpg::gal
+     info.semaphoreCount = 1U;
+     info.pSemaphores = &mTimeline;
+     info.pValues = &serial;
+-    CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkWaitSemaphores(mDevice, &info, ~0ULL));
++    CheckCommandBuffer(Vk().vkWaitSemaphores(mDevice, &info, ~0ULL), __LINE__);
+   }
+ 
+   void DeviceVulkan::CollectCompleted()
+@@ -1155,8 +1284,8 @@ namespace gpg::gal
+     Frame& frame = mFrames[mFrameIndex];
+     for (std::size_t index = 0U; index < mSwapChains.size(); ++index) {
+       SwapChain& swapChain = mSwapChains[index];
+-      swapChain.hasImage = false;
+-      if (swapChain.swapchain == VK_NULL_HANDLE) {
++      // Android client build: an image that was not shown stays for the frame that draws it (Present).
++      if (swapChain.hasImage || swapChain.swapchain == VK_NULL_HANDLE) {
+         continue;
+       }
+       const VkResult result =
+@@ -1164,8 +1293,11 @@ namespace gpg::gal
+       if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+         swapChain.hasImage = true;
          swapChain.acquireWaitPending = true;
++      } else if (result == VK_ERROR_DEVICE_LOST) {
++        CheckVk("DeviceVulkan.cpp", __LINE__, result);
        } else {
          gpg::Warnf("Vulkan: acquiring head %u's image failed (%s)", static_cast<unsigned>(index), vulkan::ResultName(result));
 +        swapChain.stale = true;
        }
      }
    }
-@@ -1316,9 +1390,17 @@ namespace gpg::gal
+@@ -1175,6 +1307,11 @@ namespace gpg::gal
+     return (swapChain < mSwapChains.size()) ? mSwapChains[swapChain].acquired : 0U;
+   }
+ 
++  bool DeviceVulkan::HasAcquiredImage(const std::uint32_t swapChain) const noexcept
++  {
++    return swapChain < mSwapChains.size() && mSwapChains[swapChain].hasImage;
++  }
++
+   vulkan::UploadAllocation DeviceVulkan::AllocateUpload(const VkDeviceSize bytes, const VkDeviceSize alignment)
+   {
+     const std::lock_guard<std::recursive_mutex> lock(mMutex);
+@@ -1221,6 +1358,31 @@ namespace gpg::gal
+     Vk().vkCmdPipelineBarrier2(mCommands, &dependency);
+   }
+ 
++  void DeviceVulkan::RecordMemoryBarrier(
++    const VkPipelineStageFlags2 sourceStages, const VkAccessFlags2 sourceAccess, const VkPipelineStageFlags2 targetStages,
++    const VkAccessFlags2 targetAccess
++  )
++  {
++    VkMemoryBarrier2 barrier{};
++    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
++    barrier.srcStageMask = sourceStages;
++    barrier.srcAccessMask = sourceAccess;
++    barrier.dstStageMask = targetStages;
++    barrier.dstAccessMask = targetAccess;
++    VkDependencyInfo dependency{};
++    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
++    dependency.memoryBarrierCount = 1U;
++    dependency.pMemoryBarriers = &barrier;
++    Vk().vkCmdPipelineBarrier2(mCommands, &dependency);
++  }
++
++  void DeviceVulkan::HostReadBarrier()
++  {
++    // A semaphore wait and coherent memory do not make a device's writes available to the host: a
++    // phone's GPU may still hold them in caches that a submission's end does not flush.
++    RecordMemoryBarrier(VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_READ_BIT);
++  }
++
+   void DeviceVulkan::UploadBuffer(vulkan::TrackedBuffer& destination, const VkDeviceSize offset, const void* const data, const VkDeviceSize bytes)
+   {
+     const std::lock_guard<std::recursive_mutex> lock(mMutex);
+@@ -1316,9 +1478,17 @@ namespace gpg::gal
      const std::uint32_t height = std::max(1U, destination.height >> level);
      const std::uint32_t depth = std::max(1U, destination.depth >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -253,7 +479,7 @@ index b4d2ae45..bb1a09f3 100644
      EndRendering();
      TransitionForTransferWrite(destination);
      VkBufferImageCopy region{};
-@@ -1336,10 +1418,13 @@ namespace gpg::gal
+@@ -1336,10 +1506,13 @@ namespace gpg::gal
      const std::uint32_t width = std::max(1U, source.width >> level);
      const std::uint32_t height = std::max(1U, source.height >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -268,9 +494,11 @@ index b4d2ae45..bb1a09f3 100644
      info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
      CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkCreateBuffer(mDevice, &info, nullptr, &readback.buffer));
      VkMemoryRequirements requirements{};
-@@ -1356,7 +1441,18 @@ namespace gpg::gal
+@@ -1355,8 +1528,20 @@ namespace gpg::gal
+     region.imageSubresource = {AspectOf(source.format) & VK_IMAGE_ASPECT_COLOR_BIT, level, layer, 1U};
      region.imageExtent = {width, height, 1U};
      Vk().vkCmdCopyImageToBuffer(mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1U, &region);
++    HostReadBarrier();
      Submit(true, false);
 -    bytes.assign(readback.memory.mapped, readback.memory.mapped + layout.ByteSize());
 +    if (decoded) {
@@ -288,7 +516,7 @@ index b4d2ae45..bb1a09f3 100644
      Vk().vkDestroyBuffer(mDevice, readback.buffer, nullptr);
      mMemory.Free(readback.memory);
    }
-@@ -1364,6 +1460,10 @@ namespace gpg::gal
+@@ -1364,6 +1549,10 @@ namespace gpg::gal
    void DeviceVulkan::ReadImage(vulkan::TrackedImage& source, const DXGI_FORMAT format, imaging::Image& image)
    {
      const std::lock_guard<std::recursive_mutex> lock(mMutex);
@@ -299,7 +527,7 @@ index b4d2ae45..bb1a09f3 100644
      image.Allocate(format, source.width, source.height, source.mipLevels, source.layers);
      for (std::uint32_t layer = 0U; layer < source.layers; ++layer) {
        for (std::uint32_t level = 0U; level < source.mipLevels; ++level) {
-@@ -1411,6 +1511,13 @@ namespace gpg::gal
+@@ -1411,6 +1600,13 @@ namespace gpg::gal
      }
      auto* const target = static_cast<RenderTargetVulkan*>(outputContext_.surface.get());
      RenderTargetVulkan::Buffer& buffer = target->Current();
@@ -313,7 +541,24 @@ index b4d2ae45..bb1a09f3 100644
      format = buffer.image.format;
      image = &buffer.image;
      width = buffer.image.width;
-@@ -1630,12 +1737,31 @@ namespace gpg::gal
+@@ -1446,6 +1642,16 @@ namespace gpg::gal
+       return;
+     }
+     EndRendering();
++    // Android client build: this scope loads what an earlier one stored. A transition orders that
++    // for its own image; without one a tile-based GPU may load before the store has happened.
++    if ((colorImage != nullptr && colorImage->layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) ||
++        (depthImage != nullptr && depthImage->layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)) {
++      constexpr VkPipelineStageFlags2 kAttachmentStages = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT |
++        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
++      constexpr VkAccessFlags2 kAttachmentWrites = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
++      constexpr VkAccessFlags2 kAttachmentReads = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
++      RecordMemoryBarrier(kAttachmentStages, kAttachmentWrites, kAttachmentStages, kAttachmentReads | kAttachmentWrites);
++    }
+     if (colorImage != nullptr) {
+       Transition(*colorImage, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+     }
+@@ -1630,12 +1836,31 @@ namespace gpg::gal
      } else {
        ThrowError("DeviceVulkan.cpp", __LINE__, "invalid source specified for texture data");
      }
@@ -346,7 +591,7 @@ index b4d2ae45..bb1a09f3 100644
  
      vulkan::TrackedImage tracked;
      VkImageCreateInfo info{};
-@@ -1808,10 +1934,38 @@ namespace gpg::gal
+@@ -1808,10 +2033,26 @@ namespace gpg::gal
      const bool scale
    )
    {
@@ -360,44 +605,47 @@ index b4d2ae45..bb1a09f3 100644
 -    if (!scale) {
 +    if (!scale && OtherChannelOrder(source.format, destination.format)) {
 +      // Android client build: the same pixels in another channel order (an R8G8B8A8 back buffer,
-+      // CreateSwapChain). vkCmdCopyImage copies bits, a blit converts.
++      // CreateSwapChain). vkCmdCopyImage copies bits, a blit converts. Only GetRenderTargetData
++      // gets here, with no rects: StretchRect stretches between two formats.
 +      VkImageBlit region{};
 +      region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
 +      region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
-+      std::int32_t width = static_cast<std::int32_t>(std::min(source.width, destination.width));
-+      std::int32_t height = static_cast<std::int32_t>(std::min(source.height, destination.height));
-+      VkOffset3D from{0, 0, 0};
-+      VkOffset3D to{0, 0, 0};
-+      if (sourceRect != nullptr) {
-+        from = {sourceRect->left, sourceRect->top, 0};
-+        width = sourceRect->right - sourceRect->left;
-+        height = sourceRect->bottom - sourceRect->top;
-+      }
-+      if (destinationRect != nullptr) {
-+        to = {destinationRect->left, destinationRect->top, 0};
-+      }
-+      region.srcOffsets[0] = from;
-+      region.srcOffsets[1] = {from.x + width, from.y + height, 1};
-+      region.dstOffsets[0] = to;
-+      region.dstOffsets[1] = {to.x + width, to.y + height, 1};
++      region.srcOffsets[1] = {static_cast<std::int32_t>(std::min(source.width, destination.width)),
++                              static_cast<std::int32_t>(std::min(source.height, destination.height)), 1};
++      region.dstOffsets[1] = region.srcOffsets[1];
 +      Vk().vkCmdBlitImage(mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination.image,
 +                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &region, VK_FILTER_NEAREST);
 +    } else if (!scale) {
        VkImageCopy region{};
        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
-@@ -2034,6 +2188,10 @@ namespace gpg::gal
+@@ -2034,6 +2275,11 @@ namespace gpg::gal
      Vk().vkDeviceWaitIdle(mDevice);
      CollectCompleted();
      for (std::size_t headIndex = 0U; headIndex < mSwapChains.size(); ++headIndex) {
-+      // Android client build: a head without a surface gets its swap chain from TestCooperativeLevel.
++      // Android client build: a head without a surface gets its swap chain from TestCooperativeLevel,
++      // and so does one whose surface has gone by now: the engine's things do not wait for it.
 +      if (mSwapChains[headIndex].surface == VK_NULL_HANDLE) {
 +        continue;
 +      }
        Head& head = mDeviceContext.GetHead(static_cast<std::uint32_t>(headIndex));
        std::uint32_t width = head.mWidth;
        std::uint32_t height = head.mHeight;
-@@ -2057,9 +2215,80 @@ namespace gpg::gal
+@@ -2043,7 +2289,12 @@ namespace gpg::gal
+         width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
+         height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
+       }
+-      CreateSwapChain(mSwapChains[headIndex], width, height);
++      try {
++        CreateSwapChain(mSwapChains[headIndex], width, height);
++      } catch (const Error& error) {
++        gpg::Warnf("Vulkan: head %u's swap chain failed (%s)", static_cast<unsigned>(headIndex), error.what());
++        DestroySwapChain(mSwapChains[headIndex], false);
++      }
+     }
+     // The acquire semaphores of the old images may be signalled: start the frame over.
+     Submit(true, false);
+@@ -2057,9 +2308,93 @@ namespace gpg::gal
      Reset(&mDeviceContext);
    }
  
@@ -425,26 +673,38 @@ index b4d2ae45..bb1a09f3 100644
 +  bool DeviceVulkan::AttachSurface(const std::size_t headIndex)
 +  {
 +    SwapChain& swapChain = mSwapChains[headIndex];
-+    static int logged = 0;
++    std::string failure; // on a surface that is there: one that went is only waited for
 +    VkResult result = VK_SUCCESS;
 +    swapChain.surface = vulkan::CreateWindowSurface(mInstance, swapChain.window, result);
-+    if (swapChain.surface == VK_NULL_HANDLE) {
-+      if (result != VK_ERROR_SURFACE_LOST_KHR && logged++ < 8) {
-+        gpg::Warnf("Vulkan: head %u's window surface failed (%s)", static_cast<unsigned>(headIndex), vulkan::ResultName(result));
++    if (swapChain.surface != VK_NULL_HANDLE) {
++      try {
++        CreateSwapChain(swapChain, swapChain.extent.width, swapChain.extent.height);
++        RebindBackBuffer(headIndex);
++        mSurfaceFailingSince = 0U;
++        return true;
++      } catch (const Error& error) {
++        if (vulkan::WindowSurfaceIsCurrent()) {
++          failure = error.what();
++        }
++        DestroySwapChain(swapChain, false);
 +      }
-+      return false;
++    } else if (result != VK_ERROR_SURFACE_LOST_KHR) {
++      failure = vulkan::ResultName(result);
 +    }
-+    try {
-+      CreateSwapChain(swapChain, swapChain.extent.width, swapChain.extent.height);
-+      RebindBackBuffer(headIndex);
-+    } catch (const Error& error) {
-+      if (logged++ < 8) {
-+        gpg::Warnf("Vulkan: head %u's swap chain failed (%s)", static_cast<unsigned>(headIndex), error.what());
-+      }
-+      DestroySwapChain(swapChain, false);
-+      return false;
++
++    // A surface that stays and refuses would leave a black screen over a running game, with nobody
++    // told. It gets a moment, as it can be on its way out.
++    constexpr DWORD kSurfaceFailureMilliseconds = 5000U;
++    const DWORD now = ::GetTickCount();
++    if (failure.empty()) {
++      mSurfaceFailingSince = 0U;
++    } else if (mSurfaceFailingSince == 0U) {
++      mSurfaceFailingSince = now;
++      gpg::Warnf("Vulkan: head %u's surface failed (%s)", static_cast<unsigned>(headIndex), failure.c_str());
++    } else if (now - mSurfaceFailingSince > kSurfaceFailureMilliseconds) {
++      gpg::Die("Vulkan: head %u's surface failed (%s)", static_cast<unsigned>(headIndex), failure.c_str());
 +    }
-+    return true;
++    return false;
 +  }
 +
    int DeviceVulkan::TestCooperativeLevel()
@@ -454,7 +714,8 @@ index b4d2ae45..bb1a09f3 100644
 +    // stays. A head lets go of a surface that went at a frame's edge, as here, and stands on the
 +    // next one as soon as there is one. Until then the engine sees a lost device, as Direct3D 9's
 +    // when the display is taken from it. Vulkan loses nothing but the swap chain, so nothing of the
-+    // engine's is made anew when the new images are of the old size: Reset is for a new size.
++    // engine's is made anew when the new images are of the old size: Reset is for a new size, which
++    // the head has by then (CreateSwapChain), for Paint's InitContext to lay everything out by.
 +    const std::lock_guard<std::recursive_mutex> lock(mMutex);
 +    bool attached = false;
 +    bool resized = false;
@@ -479,7 +740,55 @@ index b4d2ae45..bb1a09f3 100644
    }
  
    void DeviceVulkan::BeginScene() {}
-@@ -2145,10 +2374,13 @@ namespace gpg::gal
+@@ -2079,7 +2414,7 @@ namespace gpg::gal
+   void DeviceVulkan::DumpBackBufferIfDue()
+   {
+     static const char* const directory = std::getenv("FAF_GAL_DUMP_DIR");
+-    if (directory == nullptr || directory[0] == 0 || mHeadOutputContexts.empty() || !mSwapChains.front().hasImage) {
++    if (directory == nullptr || directory[0] == 0 || mHeadOutputContexts.empty() || !ImageIsDrawn(0U)) {
+       return;
+     }
+     static const DWORD interval = [] {
+@@ -2103,6 +2438,12 @@ namespace gpg::gal
+     WriteBmp(path, image);
+   }
+ 
++  bool DeviceVulkan::ImageIsDrawn(const std::size_t headIndex)
++  {
++    return mSwapChains[headIndex].hasImage &&
++      static_cast<RenderTargetVulkan*>(mHeadOutputContexts[headIndex].surface.get())->Current().image.layout != VK_IMAGE_LAYOUT_UNDEFINED;
++  }
++
+   void DeviceVulkan::Present()
+   {
+     const std::lock_guard<std::recursive_mutex> lock(mMutex);
+@@ -2121,7 +2462,7 @@ namespace gpg::gal
+     DumpBackBufferIfDue();
+ 
+     for (std::size_t index = 0U; index < mHeadOutputContexts.size(); ++index) {
+-      if (mSwapChains[index].hasImage) {
++      if (ImageIsDrawn(index)) {
+         Transition(static_cast<RenderTargetVulkan*>(mHeadOutputContexts[index].surface.get())->Current().image,
+                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+       }
+@@ -2131,7 +2472,9 @@ namespace gpg::gal
+ 
+     for (std::size_t index = 0U; index < mSwapChains.size(); ++index) {
+       SwapChain& swapChain = mSwapChains[index];
+-      if (!swapChain.hasImage) {
++      // Android client build: Paint presents before it renders, so the first image of a new swap
++      // chain holds nothing yet. It is not shown, and stays for the frame that draws it.
++      if (!ImageIsDrawn(index)) {
+         continue;
+       }
+       VkPresentInfoKHR present{};
+@@ -2142,13 +2485,20 @@ namespace gpg::gal
+       present.pSwapchains = &swapChain.swapchain;
+       present.pImageIndices = &swapChain.acquired;
+       const VkResult result = Vk().vkQueuePresentKHR(mQueue, &present);
++      // Android client build: when the image comes back it holds nothing of the next frame.
++      static_cast<RenderTargetVulkan*>(mHeadOutputContexts[index].surface.get())->Current().image.layout = VK_IMAGE_LAYOUT_UNDEFINED;
++      swapChain.hasImage = false;
        if (result == VK_ERROR_DEVICE_LOST) {
          CheckVk("DeviceVulkan.cpp", __LINE__, result);
        } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -488,12 +797,42 @@ index b4d2ae45..bb1a09f3 100644
          if (logged++ < 8) {
            gpg::Warnf("Vulkan: present of head %u: %s", static_cast<unsigned>(index), vulkan::ResultName(result));
          }
-+      } else {
++      } else if (PendingDrawStatistics().drawCalls != 0U) {
++        // The engine's first frames are only its clear: this one is a picture.
 +        vulkan::WindowSurfacePresented();
        }
      }
  
-@@ -2918,7 +3150,7 @@ namespace gpg::gal
+@@ -2158,7 +2508,7 @@ namespace gpg::gal
+     Frame& frame = mFrames[mFrameIndex];
+     WaitForSerial(frame.serial);
+     CollectCompleted();
+-    CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkResetCommandPool(mDevice, frame.pool, 0U));
++    CheckCommandBuffer(Vk().vkResetCommandPool(mDevice, frame.pool, 0U), __LINE__);
+     frame.used = 0U;
+     for (VkDescriptorPool pool : frame.descriptorPools) {
+       Vk().vkResetDescriptorPool(mDevice, pool, 0U);
+@@ -2673,7 +3023,8 @@ namespace gpg::gal
+     const effects::SpirvInterface& vertexInterface = InterfaceOf(*vertex);
+     const effects::SpirvInterface& pixelInterface = InterfaceOf(entry);
+     std::map<std::uint32_t, std::uint32_t> locations;
+-    std::uint32_t spare = 31U;
++    // Android client build: from the device's last location, as a phone may have fewer than 32.
++    std::uint32_t spare = mProperties.limits.maxFragmentInputComponents / 4U - 1U;
+     for (const effects::SpirvInterfaceVariable& input : pixelInterface.inputs) {
+       if (input.builtIn) {
+         continue;
+@@ -2834,7 +3185,8 @@ namespace gpg::gal
+     raster.frontFace = rasterizer.frontCounterClockwise ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
+     raster.depthBiasEnable = (rasterizer.depthBias != 0 || rasterizer.slopeScaledDepthBias != 0.0f) ? VK_TRUE : VK_FALSE;
+     raster.depthBiasConstantFactor = static_cast<float>(rasterizer.depthBias);
+-    raster.depthBiasClamp = rasterizer.depthBiasClamp;
++    // Android client build: without the feature a pipeline's clamp has to be 0.
++    raster.depthBiasClamp = mDepthBiasClamp ? rasterizer.depthBiasClamp : 0.0f;
+     raster.depthBiasSlopeFactor = rasterizer.slopeScaledDepthBias;
+     raster.lineWidth = 1.0f;
+     VkPipelineMultisampleStateCreateInfo multisample{};
+@@ -2918,7 +3270,7 @@ namespace gpg::gal
      return pipeline;
    }
  
@@ -502,7 +841,7 @@ index b4d2ae45..bb1a09f3 100644
    {
      if (topologyToken == 0U || topologyToken >= std::size(kTopologyByToken)) {
        ThrowError("DeviceVulkan.cpp", __LINE__, "invalid topology specified");
-@@ -2936,11 +3168,14 @@ namespace gpg::gal
+@@ -2936,11 +3288,14 @@ namespace gpg::gal
      const std::span<const D3D11_INPUT_ELEMENT_DESC> elements =
        (mBoundFormat < d3d11::kVertexFormatCount) ? d3d11::VertexLayoutElements(mBoundFormat) : std::span<const D3D11_INPUT_ELEMENT_DESC>{};
      std::uint32_t instanceSlots = 0U;
@@ -517,7 +856,7 @@ index b4d2ae45..bb1a09f3 100644
      }
      // The instances the per-instance streams hold from their bound offset.
      // Direct3D 12 binds each stream with its exact size and reads zeros past
-@@ -2960,21 +3195,44 @@ namespace gpg::gal
+@@ -2960,21 +3315,44 @@ namespace gpg::gal
      for (std::uint32_t slot = 0U; slot < 16U; ++slot) {
        vertexBuffers[slot] = mZeroBuffer.buffer;
      }
@@ -565,7 +904,7 @@ index b4d2ae45..bb1a09f3 100644
      }
      if (mPass.sampled != nullptr) {
        TransitionSampled(*mPass.sampled);
-@@ -2992,8 +3250,8 @@ namespace gpg::gal
+@@ -2992,8 +3370,8 @@ namespace gpg::gal
        Vk().vkCmdBindDescriptorSets(mCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 1U, 1U, &mPass.constants, 0U, nullptr);
      }
      Vk().vkCmdBindVertexBuffers(mCommands, 0U, 16U, vertexBuffers, vertexOffsets);
@@ -576,7 +915,7 @@ index b4d2ae45..bb1a09f3 100644
      }
      VkViewport viewport{
        static_cast<float>(mViewport.X), static_cast<float>(mViewport.Y), static_cast<float>(mViewport.Width),
-@@ -3028,7 +3286,7 @@ namespace gpg::gal
+@@ -3028,7 +3406,7 @@ namespace gpg::gal
        return;
      }
      mPreparingDraw = true;
@@ -585,7 +924,7 @@ index b4d2ae45..bb1a09f3 100644
      mPreparingDraw = false;
      const std::uint32_t instances = std::min(InstanceCount(mStreamFrequencies[0]), mDrawInstanceLimit);
      if (!ready || instances == 0U) {
-@@ -3042,7 +3300,7 @@ namespace gpg::gal
+@@ -3042,7 +3420,7 @@ namespace gpg::gal
    {
      const std::lock_guard<std::recursive_mutex> lock(mMutex);
      mPreparingDraw = true;

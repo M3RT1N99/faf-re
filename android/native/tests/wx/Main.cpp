@@ -187,10 +187,14 @@ int main()
   }
   Win32Android_SetScreenSize(wxtest::kScreenWidth, wxtest::kScreenHeight);
 
+  int screenStand = 0;
   int failedTests = 0;
   for (const wxtest::Test& test : wxtest::Tests()) {
     gFailedChecks = 0;
     gMessages.clear();
+    // Each test runs on a screen with a surface, as the program does: without one, a window shown
+    // is minimized. Whatever a test leaves of its own surfaces goes here.
+    (void)Win32Android_SetScreenSurface(reinterpret_cast<ANativeWindow*>(&screenStand));
     std::printf("%s\n", test.name);
     test.run();
     // What a test leaves goes before the next one starts.

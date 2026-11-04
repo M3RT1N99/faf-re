@@ -1,8 +1,16 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.h b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-index bd287501..8822ec0a 100644
+index bd287501..1d3dd22e 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-@@ -205,6 +205,7 @@ namespace gpg::gal
+@@ -153,6 +153,7 @@ namespace gpg::gal
+     [[nodiscard]] std::uint64_t RecordingSerial() const noexcept { return mSubmittedSerial + 1U; }
+     /** The image of swap chain `swapChain` the frame draws into. */
+     [[nodiscard]] std::uint32_t AcquiredImage(std::uint32_t swapChain);
++    [[nodiscard]] bool HasAcquiredImage(std::uint32_t swapChain) const noexcept;
+ 
+     [[nodiscard]] vulkan::UploadAllocation AllocateUpload(VkDeviceSize bytes, VkDeviceSize alignment);
+     [[nodiscard]] vulkan::TrackedBuffer CreateDeviceBuffer(VkDeviceSize bytes, VkBufferUsageFlags usage);
+@@ -205,6 +206,7 @@ namespace gpg::gal
        std::uint32_t acquired = 0;
        bool hasImage = false;
        bool acquireWaitPending = false; // the next submission waits for the acquire
@@ -10,8 +18,11 @@ index bd287501..8822ec0a 100644
        void* window = nullptr;
      };
  
-@@ -241,6 +242,12 @@ namespace gpg::gal
+@@ -239,8 +241,17 @@ namespace gpg::gal
+     void CreateSwapChains(const DeviceContext& context);
+     void CreateSwapChain(SwapChain& swapChain, std::uint32_t width, std::uint32_t height);
      void DestroySwapChain(SwapChain& swapChain, bool keepSurface) noexcept;
++    void WaitForSurface(SwapChain& swapChain);
      void CreateRenderTargets();
      void ReleaseRenderTargets() noexcept;
 +    /** What a head's back buffer target holds: its swap chain's images, or one empty buffer of their size without any. */
@@ -20,10 +31,22 @@ index bd287501..8822ec0a 100644
 +    void RebindBackBuffer(std::size_t headIndex);
 +    void ReleaseSurface(std::size_t headIndex);
 +    [[nodiscard]] bool AttachSurface(std::size_t headIndex);
++    /** Whether a head has an image that something drew since it was acquired, which it can show. */
++    [[nodiscard]] bool ImageIsDrawn(std::size_t headIndex);
      void CheckAvailableFormats(DeviceContext* context);
      void Shutdown() noexcept;
      void ResetState();
-@@ -274,7 +281,8 @@ namespace gpg::gal
+@@ -258,6 +269,9 @@ namespace gpg::gal
+     void TransitionForTransferWrite(vulkan::TrackedImage& image);
+     void TransitionSampled(const std::vector<effects::TextureBinding>& bindings);
+     void TransferBarrier();
++    void RecordMemoryBarrier(VkPipelineStageFlags2 sourceStages, VkAccessFlags2 sourceAccess, VkPipelineStageFlags2 targetStages, VkAccessFlags2 targetAccess);
++    /** Android client build: for a copy to host memory, before the submission that is waited for. */
++    void HostReadBarrier();
+ 
+     [[nodiscard]] ProgramState& StateFor(effects::EffectProgram& program);
+     [[nodiscard]] VkDescriptorSet AllocateSet(VkDescriptorSetLayout layout);
+@@ -274,7 +288,8 @@ namespace gpg::gal
      [[nodiscard]] VkShaderModule ModuleFor(const effects::CompiledEntry& entry, const effects::CompiledEntry* vertex);
      [[nodiscard]] const effects::SpirvInterface& InterfaceOf(const effects::CompiledEntry& entry);
      [[nodiscard]] VkPipeline PipelineFor(const BoundPass& pass, VkPrimitiveTopology topology);
@@ -33,3 +56,12 @@ index bd287501..8822ec0a 100644
      [[nodiscard]] VkImageView TargetView(VkFormat& format, vulkan::TrackedImage*& image, std::uint32_t& width, std::uint32_t& height);
      void Trace(const char* format, ...);
      void DumpBackBufferIfDue();
+@@ -309,6 +324,8 @@ namespace gpg::gal
+     std::uint64_t mSubmittedSerial = 0;
+     bool mAnisotropy = false;
+     bool mWireframeSupported = false;
++    bool mDepthBiasClamp = false; // Android client build: the feature, which phones may lack
++    DWORD mSurfaceFailingSince = 0U; // Android client build: since when AttachSurface fails on a surface that is there
+     bool mMemoryBudget = false; // VK_EXT_memory_budget enabled
+     std::string mDriverName;    // VkPhysicalDeviceDriverProperties driverName + driverInfo
+     VkFormat mDepthStencilFormat = VK_FORMAT_D24_UNORM_S8_UINT;

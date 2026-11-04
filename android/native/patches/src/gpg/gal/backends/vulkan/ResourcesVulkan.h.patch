@@ -1,8 +1,16 @@
 diff --git a/src/gpg/gal/backends/vulkan/ResourcesVulkan.h b/src/gpg/gal/backends/vulkan/ResourcesVulkan.h
-index 32d46046..b85b3763 100644
+index 32d46046..556acdb1 100644
 --- a/src/gpg/gal/backends/vulkan/ResourcesVulkan.h
 +++ b/src/gpg/gal/backends/vulkan/ResourcesVulkan.h
-@@ -135,13 +135,27 @@ namespace gpg::gal
+@@ -88,6 +88,7 @@ namespace gpg::gal
+   private:
+     RenderTargetContext mContext;
+     std::vector<Buffer> mBuffers;
++    Buffer mNoImage; // Android client build: Current() of a head without an acquired image
+     DXGI_FORMAT mDxgiFormat = DXGI_FORMAT_UNKNOWN;
+     int mSwapChainIndex = -1;
+   };
+@@ -135,13 +136,27 @@ namespace gpg::gal
      [[nodiscard]] std::uint8_t* Lock(std::uint32_t offset, std::uint32_t size, MohoD3DLockFlags flags);
      void Unlock();
  
@@ -32,7 +40,7 @@ index 32d46046..b85b3763 100644
      std::uint32_t mByteWidth = 0;
      const char* mKind = nullptr;
      bool mDynamic = false;
-@@ -151,6 +165,8 @@ namespace gpg::gal
+@@ -151,6 +166,8 @@ namespace gpg::gal
      VkDeviceSize mChunkOffset = 0;
      std::uint8_t* mChunkCpu = nullptr;
      std::uint64_t mChunkSerial = 0;
@@ -41,7 +49,7 @@ index 32d46046..b85b3763 100644
      bool mLocked = false;
      std::uint32_t mLockOffset = 0;
      std::uint32_t mLockSize = 0;
-@@ -186,6 +202,8 @@ namespace gpg::gal
+@@ -186,6 +203,8 @@ namespace gpg::gal
  
      [[nodiscard]] BufferStorageVulkan& Storage() noexcept { return mStorage; }
      [[nodiscard]] VkIndexType IndexType() const noexcept;

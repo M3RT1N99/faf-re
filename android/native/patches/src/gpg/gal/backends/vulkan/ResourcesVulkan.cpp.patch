@@ -1,8 +1,28 @@
 diff --git a/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp b/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
-index 8c9a4db0..f31535be 100644
+index 8c9a4db0..f7ad81ef 100644
 --- a/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
-@@ -314,35 +314,44 @@ namespace gpg::gal
+@@ -214,10 +214,15 @@ namespace gpg::gal
+ 
+   RenderTargetVulkan::Buffer& RenderTargetVulkan::Current()
+   {
+-    if (mSwapChainIndex >= 0 && mBuffers.size() > 1U) {
+-      DeviceVulkan* const device = ActiveDevice();
+-      const std::uint32_t index = (device != nullptr) ? device->AcquiredImage(static_cast<std::uint32_t>(mSwapChainIndex)) : 0U;
+-      return mBuffers[std::min<std::size_t>(index, mBuffers.size() - 1U)];
++    DeviceVulkan* const device = (mSwapChainIndex >= 0) ? ActiveDevice() : nullptr;
++    if (device != nullptr) {
++      const auto swapChain = static_cast<std::uint32_t>(mSwapChainIndex);
++      // Android client build: while a head has no image, which a failed acquire leaves it with, it
++      // owns none of the swap chain's. What would draw into it draws into none, as without a surface.
++      if (!device->HasAcquiredImage(swapChain)) {
++        return mNoImage;
++      }
++      return mBuffers[std::min<std::size_t>(device->AcquiredImage(swapChain), mBuffers.size() - 1U)];
+     }
+     return mBuffers.front();
+   }
+@@ -314,35 +319,44 @@ namespace gpg::gal
        device.UploadBuffer(mBuffer, mLockOffset, mShadow.data() + mLockOffset, mLockSize);
        return;
      }
@@ -67,7 +87,7 @@ index 8c9a4db0..f31535be 100644
      outBuffer = mChunkBuffer;
      outOffset = mChunkOffset;
    }
-@@ -398,6 +407,22 @@ namespace gpg::gal
+@@ -398,6 +412,22 @@ namespace gpg::gal
      return (mContext.format_ == 1U) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
    }
  
