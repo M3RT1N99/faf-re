@@ -169,6 +169,11 @@ foreach(_src IN LISTS _faf_client_sources)
     list(APPEND _faf_client_files "${_file}")
   endif()
 endforeach()
+# As the Windows build gives CLobby.cpp _HAS_AUTO_PTR_ETC (src/CMakeLists.txt): boost's string
+# algorithms there use std::unary_function, which libc++ keeps behind this opt-in from C++17 on.
+# Before the overlay, whose copy of a patched file takes the file's settings along.
+set_property(SOURCE "${FAF_REPO}/src/moho/net/CLobby.cpp" APPEND PROPERTY COMPILE_DEFINITIONS
+  _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1)
 faf_android_overlay_sources(_faf_gal_files ${_faf_gal_files})
 faf_android_overlay_sources(_faf_client_files ${_faf_client_files})
 list(LENGTH _faf_gal_files _faf_gal_count)
@@ -283,10 +288,6 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/net/DatagramSocketAndroid.cpp
   src/net/NetlinkPeersAndroid.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings faf_wx_lite)
-# As the Windows build gives CLobby.cpp _HAS_AUTO_PTR_ETC (src/CMakeLists.txt): boost's string
-# algorithms there use std::unary_function, which libc++ keeps behind this opt-in from C++17 on.
-set_property(SOURCE "${FAF_REPO}/src/moho/net/CLobby.cpp" APPEND PROPERTY COMPILE_DEFINITIONS
-  _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION=1)
 
 # The XACT engine and X3DAudio apart from the rest: the audio test takes them without the client.
 add_library(faf_audio OBJECT src/audio/AudioAndroid.cpp src/audio/XactEngineAndroid.cpp)
@@ -312,12 +313,19 @@ add_library(faf_host OBJECT src/host/GameHost.cpp src/host/KeysAndroid.cpp)
 target_link_libraries(faf_host PUBLIC faf_android_settings faf_wx_lite)
 
 # --- Libraries ---------------------------------------------------------------------------------
+# The net channel (src/remote/net), which the engine's build makes when it has Monocypher: the lobby's
+# style proofs sign with it (moho/net/LobbyPeerFeatures.cpp). Its licence goes to the app's assets.
+if(NOT TARGET faf_netchannel)
+  message(FATAL_ERROR "android/native: the client needs the net channel, and so Monocypher (FAF_FETCH_DEPENDENCIES, cmake/FafLinux.cmake).")
+endif()
+configure_file("${FAF_DEPENDENCIES_DIR}/monocypher/LICENCE.md" "${CMAKE_BINARY_DIR}/licenses/Monocypher.txt" COPYONLY)
+
 # libfafgame.so: the activity's native half, the whole engine and its host.
 add_library(fafgame SHARED
   $<TARGET_OBJECTS:faf_game_sim> $<TARGET_OBJECTS:faf_android_platform> $<TARGET_OBJECTS:faf_android_dxc>
   $<TARGET_OBJECTS:faf_gal> $<TARGET_OBJECTS:faf_wx_lite> $<TARGET_OBJECTS:faf_client> $<TARGET_OBJECTS:faf_audio>
   $<TARGET_OBJECTS:faf_movie_player> $<TARGET_OBJECTS:faf_host>)
-target_link_libraries(fafgame PRIVATE faf_game_sim freetype faudio FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
+target_link_libraries(fafgame PRIVATE faf_game_sim faf_netchannel freetype faudio FFmpeg::FFmpeg android log ${CMAKE_DL_LIBS})
 target_link_options(fafgame PRIVATE ${_faf_android_library_options})
 
 # libfafgalsmoke.so: the renderer on the phone's Vulkan without the client (src/smoke). Without

@@ -1,8 +1,8 @@
 diff --git a/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp b/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
-index 8c9a4db0..f7ad81ef 100644
+index e3bc1f18..1e717f13 100644
 --- a/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
-@@ -214,10 +214,15 @@ namespace gpg::gal
+@@ -216,10 +216,15 @@ namespace gpg::gal
  
    RenderTargetVulkan::Buffer& RenderTargetVulkan::Current()
    {
@@ -22,7 +22,7 @@ index 8c9a4db0..f7ad81ef 100644
      }
      return mBuffers.front();
    }
-@@ -314,35 +319,44 @@ namespace gpg::gal
+@@ -329,35 +334,44 @@ namespace gpg::gal
        device.UploadBuffer(mBuffer, mLockOffset, mShadow.data() + mLockOffset, mLockSize);
        return;
      }
@@ -72,7 +72,7 @@ index 8c9a4db0..f7ad81ef 100644
 +    if (end > from) {
 +      std::memcpy(mChunkCpu + from, mShadow.data() + from, end - from);
 +      mChunkFilled = std::max(mChunkFilled, end);
-     }
++    }
 +  }
 +
 +  void BufferStorageVulkan::PrepareForDraw(DeviceVulkan& device, const std::uint64_t readEnd, VkBuffer& outBuffer, VkDeviceSize& outOffset)
@@ -81,18 +81,22 @@ index 8c9a4db0..f7ad81ef 100644
 +      outBuffer = mBuffer.buffer;
 +      outOffset = 0U;
 +      return;
-+    }
+     }
 +    const auto end = static_cast<std::uint32_t>(std::min<std::uint64_t>(readEnd, mByteWidth));
 +    FillChunk(device, end, end);
      outBuffer = mChunkBuffer;
      outOffset = mChunkOffset;
    }
-@@ -398,6 +412,22 @@ namespace gpg::gal
+@@ -413,6 +427,26 @@ namespace gpg::gal
      return (mContext.format_ == 1U) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
    }
  
 +  std::uint32_t IndexBufferVulkan::HighestIndex(const std::uint32_t start, const std::uint32_t count) const noexcept
 +  {
++    // A mesh's indices are on the GPU alone (ReleaseCopy): they may reach any vertex.
++    if (mStorage.CopyReleased()) {
++      return UINT32_MAX;
++    }
 +    const auto highest = [&]<typename Index>(const Index* const indices) {
 +      const std::uint32_t held = mStorage.ByteWidth() / sizeof(Index);
 +      const std::uint32_t first = std::min(start, held);

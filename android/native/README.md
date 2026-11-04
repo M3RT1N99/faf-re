@@ -34,7 +34,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_audio` | `src/audio`: the XACT engine on FACT, X3DAudio on F3DAudio |
 | `faf_movie_player` | The engine's movie player, whose decoder is on FFmpeg's headers |
 | `faf_host` | `src/host`: the program's start as `WinMain` does it, and the activity's surface, input and lifecycle as Win32 messages |
-| `fafgame` | `libfafgame.so`, all of the above: the whole engine and its host (card 5 of the app) |
+| `fafgame` | `libfafgame.so`, all of the above and the engine's net channel (`faf_netchannel`, whose Monocypher signs the lobby's style proofs): the whole engine and its host (card 5 of the app) |
 | `fafgalsmoke` | `libfafgalsmoke.so`, the renderer test (card 4 of the app) |
 | `faf_wx_lite_tests` | wx-lite's, the message layer's and the GDI fonts' tests (`tests/wx`, `WX_LITE.md` Checks), linked statically |
 | `faf_audio_tests` | The XACT engine on the game's banks, heard through the mix (`tests/audio`) |
@@ -92,7 +92,7 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/gal/GalInterfacesAndroid.cpp` | Five gal interfaces' constructors and destructors, which the engine keeps in the Direct3D 9 backend's file |
 | `src/gal/D3D9Unavailable.cpp` | The Direct3D 9 methods and mesh formatters shared code names, on paths only a Direct3D 9 device takes |
 | `src/gal/MeshFormattersAndroid.cpp` | The Direct3D 10 mesh formatters, which every other API packs its vertices with, the engine's code with a float-to-half conversion that matches D3DX's |
-| `src/gal/D3D12SwitchesAndroid.cpp` | The storage of two Direct3D 12 console switches |
+| `src/gal/D3D12SwitchesAndroid.cpp` | The storage of three Direct3D 12 console switches |
 | `src/net/DatagramSocketAndroid.cpp` | The game discovery's broadcast socket: none, as outside Windows (the Winsock transport is Windows only) |
 | `src/net/NetlinkPeersAndroid.cpp` | The in-engine peer links and native networking, off: netlink (libjuice, libdatachannel) is not built for Android yet (C5); asking for them says so in the log |
 | `src/app/EntityDialogAndroid.cpp` | `SC_CreateEntityDialog`: no reflection editor (a wx tool window) |

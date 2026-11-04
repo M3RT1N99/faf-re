@@ -69,7 +69,7 @@ namespace gpg::gal
     FormatterWithoutDirect3D9();
   }
 
-  // Declared by moho/render/Shadow.cpp, defined in backends/d3d9/D3D9Interfaces.cpp on Windows:
+  // Declared by moho/render/Shadow.cpp, defined in backends/d3d9/D3D9DebugDump.cpp on Windows:
   // the shadow-map dump (FAF_TOGGLE_DIR) saves a Direct3D 9 surface with D3DX.
   long DebugSaveSurfaceToFileA(const char* filePath, unsigned int fileFormat, void* sourceSurface);
 

@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
-index b4d2ae45..4e8498a6 100644
+index e1c40158..0486de4e 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.cpp
 @@ -14,6 +14,7 @@
@@ -459,7 +459,7 @@ index b4d2ae45..4e8498a6 100644
    void DeviceVulkan::UploadBuffer(vulkan::TrackedBuffer& destination, const VkDeviceSize offset, const void* const data, const VkDeviceSize bytes)
    {
      const std::lock_guard<std::recursive_mutex> lock(mMutex);
-@@ -1316,9 +1478,17 @@ namespace gpg::gal
+@@ -1326,9 +1488,17 @@ namespace gpg::gal
      const std::uint32_t height = std::max(1U, destination.height >> level);
      const std::uint32_t depth = std::max(1U, destination.depth >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -479,7 +479,7 @@ index b4d2ae45..4e8498a6 100644
      EndRendering();
      TransitionForTransferWrite(destination);
      VkBufferImageCopy region{};
-@@ -1336,10 +1506,13 @@ namespace gpg::gal
+@@ -1346,10 +1516,13 @@ namespace gpg::gal
      const std::uint32_t width = std::max(1U, source.width >> level);
      const std::uint32_t height = std::max(1U, source.height >> level);
      const dxgi::LevelLayout layout = dxgi::ComputeLevelLayout(format, width, height);
@@ -494,7 +494,7 @@ index b4d2ae45..4e8498a6 100644
      info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
      CheckVk("DeviceVulkan.cpp", __LINE__, Vk().vkCreateBuffer(mDevice, &info, nullptr, &readback.buffer));
      VkMemoryRequirements requirements{};
-@@ -1355,8 +1528,20 @@ namespace gpg::gal
+@@ -1365,8 +1538,20 @@ namespace gpg::gal
      region.imageSubresource = {AspectOf(source.format) & VK_IMAGE_ASPECT_COLOR_BIT, level, layer, 1U};
      region.imageExtent = {width, height, 1U};
      Vk().vkCmdCopyImageToBuffer(mCommands, source.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1U, &region);
@@ -516,7 +516,7 @@ index b4d2ae45..4e8498a6 100644
      Vk().vkDestroyBuffer(mDevice, readback.buffer, nullptr);
      mMemory.Free(readback.memory);
    }
-@@ -1364,6 +1549,10 @@ namespace gpg::gal
+@@ -1374,6 +1559,10 @@ namespace gpg::gal
    void DeviceVulkan::ReadImage(vulkan::TrackedImage& source, const DXGI_FORMAT format, imaging::Image& image)
    {
      const std::lock_guard<std::recursive_mutex> lock(mMutex);
@@ -527,7 +527,7 @@ index b4d2ae45..4e8498a6 100644
      image.Allocate(format, source.width, source.height, source.mipLevels, source.layers);
      for (std::uint32_t layer = 0U; layer < source.layers; ++layer) {
        for (std::uint32_t level = 0U; level < source.mipLevels; ++level) {
-@@ -1411,6 +1600,13 @@ namespace gpg::gal
+@@ -1421,6 +1610,13 @@ namespace gpg::gal
      }
      auto* const target = static_cast<RenderTargetVulkan*>(outputContext_.surface.get());
      RenderTargetVulkan::Buffer& buffer = target->Current();
@@ -541,7 +541,7 @@ index b4d2ae45..4e8498a6 100644
      format = buffer.image.format;
      image = &buffer.image;
      width = buffer.image.width;
-@@ -1446,6 +1642,16 @@ namespace gpg::gal
+@@ -1456,6 +1652,16 @@ namespace gpg::gal
        return;
      }
      EndRendering();
@@ -558,7 +558,7 @@ index b4d2ae45..4e8498a6 100644
      if (colorImage != nullptr) {
        Transition(*colorImage, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
      }
-@@ -1630,12 +1836,31 @@ namespace gpg::gal
+@@ -1640,12 +1846,31 @@ namespace gpg::gal
      } else {
        ThrowError("DeviceVulkan.cpp", __LINE__, "invalid source specified for texture data");
      }
@@ -591,7 +591,7 @@ index b4d2ae45..4e8498a6 100644
  
      vulkan::TrackedImage tracked;
      VkImageCreateInfo info{};
-@@ -1808,10 +2033,26 @@ namespace gpg::gal
+@@ -1818,10 +2043,26 @@ namespace gpg::gal
      const bool scale
    )
    {
@@ -619,7 +619,7 @@ index b4d2ae45..4e8498a6 100644
        VkImageCopy region{};
        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0U, 0U, 1U};
-@@ -2034,6 +2275,11 @@ namespace gpg::gal
+@@ -2044,6 +2285,11 @@ namespace gpg::gal
      Vk().vkDeviceWaitIdle(mDevice);
      CollectCompleted();
      for (std::size_t headIndex = 0U; headIndex < mSwapChains.size(); ++headIndex) {
@@ -631,7 +631,7 @@ index b4d2ae45..4e8498a6 100644
        Head& head = mDeviceContext.GetHead(static_cast<std::uint32_t>(headIndex));
        std::uint32_t width = head.mWidth;
        std::uint32_t height = head.mHeight;
-@@ -2043,7 +2289,12 @@ namespace gpg::gal
+@@ -2053,7 +2299,12 @@ namespace gpg::gal
          width = static_cast<std::uint32_t>(std::max<LONG>(client.right - client.left, 1));
          height = static_cast<std::uint32_t>(std::max<LONG>(client.bottom - client.top, 1));
        }
@@ -645,7 +645,7 @@ index b4d2ae45..4e8498a6 100644
      }
      // The acquire semaphores of the old images may be signalled: start the frame over.
      Submit(true, false);
-@@ -2057,9 +2308,93 @@ namespace gpg::gal
+@@ -2067,9 +2318,93 @@ namespace gpg::gal
      Reset(&mDeviceContext);
    }
  
@@ -740,7 +740,7 @@ index b4d2ae45..4e8498a6 100644
    }
  
    void DeviceVulkan::BeginScene() {}
-@@ -2079,7 +2414,7 @@ namespace gpg::gal
+@@ -2089,7 +2424,7 @@ namespace gpg::gal
    void DeviceVulkan::DumpBackBufferIfDue()
    {
      static const char* const directory = std::getenv("FAF_GAL_DUMP_DIR");
@@ -749,7 +749,7 @@ index b4d2ae45..4e8498a6 100644
        return;
      }
      static const DWORD interval = [] {
-@@ -2103,6 +2438,12 @@ namespace gpg::gal
+@@ -2113,6 +2448,12 @@ namespace gpg::gal
      WriteBmp(path, image);
    }
  
@@ -759,11 +759,11 @@ index b4d2ae45..4e8498a6 100644
 +      static_cast<RenderTargetVulkan*>(mHeadOutputContexts[headIndex].surface.get())->Current().image.layout != VK_IMAGE_LAYOUT_UNDEFINED;
 +  }
 +
-   void DeviceVulkan::Present()
+   void DeviceVulkan::LogMemoryIfDue()
    {
-     const std::lock_guard<std::recursive_mutex> lock(mMutex);
-@@ -2121,7 +2462,7 @@ namespace gpg::gal
-     DumpBackBufferIfDue();
+     // Diagnostics: with FAF_GAL_MEMORY_LOG=<seconds>, as Direct3D 12 logs it.
+@@ -2154,7 +2495,7 @@ namespace gpg::gal
+     LogMemoryIfDue();
  
      for (std::size_t index = 0U; index < mHeadOutputContexts.size(); ++index) {
 -      if (mSwapChains[index].hasImage) {
@@ -771,7 +771,7 @@ index b4d2ae45..4e8498a6 100644
          Transition(static_cast<RenderTargetVulkan*>(mHeadOutputContexts[index].surface.get())->Current().image,
                     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
        }
-@@ -2131,7 +2472,9 @@ namespace gpg::gal
+@@ -2164,7 +2505,9 @@ namespace gpg::gal
  
      for (std::size_t index = 0U; index < mSwapChains.size(); ++index) {
        SwapChain& swapChain = mSwapChains[index];
@@ -782,7 +782,7 @@ index b4d2ae45..4e8498a6 100644
          continue;
        }
        VkPresentInfoKHR present{};
-@@ -2142,13 +2485,20 @@ namespace gpg::gal
+@@ -2175,13 +2518,20 @@ namespace gpg::gal
        present.pSwapchains = &swapChain.swapchain;
        present.pImageIndices = &swapChain.acquired;
        const VkResult result = Vk().vkQueuePresentKHR(mQueue, &present);
@@ -803,7 +803,7 @@ index b4d2ae45..4e8498a6 100644
        }
      }
  
-@@ -2158,7 +2508,7 @@ namespace gpg::gal
+@@ -2191,7 +2541,7 @@ namespace gpg::gal
      Frame& frame = mFrames[mFrameIndex];
      WaitForSerial(frame.serial);
      CollectCompleted();
@@ -812,7 +812,7 @@ index b4d2ae45..4e8498a6 100644
      frame.used = 0U;
      for (VkDescriptorPool pool : frame.descriptorPools) {
        Vk().vkResetDescriptorPool(mDevice, pool, 0U);
-@@ -2673,7 +3023,8 @@ namespace gpg::gal
+@@ -2706,7 +3056,8 @@ namespace gpg::gal
      const effects::SpirvInterface& vertexInterface = InterfaceOf(*vertex);
      const effects::SpirvInterface& pixelInterface = InterfaceOf(entry);
      std::map<std::uint32_t, std::uint32_t> locations;
@@ -822,7 +822,7 @@ index b4d2ae45..4e8498a6 100644
      for (const effects::SpirvInterfaceVariable& input : pixelInterface.inputs) {
        if (input.builtIn) {
          continue;
-@@ -2834,7 +3185,8 @@ namespace gpg::gal
+@@ -2867,7 +3218,8 @@ namespace gpg::gal
      raster.frontFace = rasterizer.frontCounterClockwise ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
      raster.depthBiasEnable = (rasterizer.depthBias != 0 || rasterizer.slopeScaledDepthBias != 0.0f) ? VK_TRUE : VK_FALSE;
      raster.depthBiasConstantFactor = static_cast<float>(rasterizer.depthBias);
@@ -832,7 +832,7 @@ index b4d2ae45..4e8498a6 100644
      raster.depthBiasSlopeFactor = rasterizer.slopeScaledDepthBias;
      raster.lineWidth = 1.0f;
      VkPipelineMultisampleStateCreateInfo multisample{};
-@@ -2918,7 +3270,7 @@ namespace gpg::gal
+@@ -2951,7 +3303,7 @@ namespace gpg::gal
      return pipeline;
    }
  
@@ -841,7 +841,7 @@ index b4d2ae45..4e8498a6 100644
    {
      if (topologyToken == 0U || topologyToken >= std::size(kTopologyByToken)) {
        ThrowError("DeviceVulkan.cpp", __LINE__, "invalid topology specified");
-@@ -2936,11 +3288,14 @@ namespace gpg::gal
+@@ -2969,11 +3321,14 @@ namespace gpg::gal
      const std::span<const D3D11_INPUT_ELEMENT_DESC> elements =
        (mBoundFormat < d3d11::kVertexFormatCount) ? d3d11::VertexLayoutElements(mBoundFormat) : std::span<const D3D11_INPUT_ELEMENT_DESC>{};
      std::uint32_t instanceSlots = 0U;
@@ -856,7 +856,7 @@ index b4d2ae45..4e8498a6 100644
      }
      // The instances the per-instance streams hold from their bound offset.
      // Direct3D 12 binds each stream with its exact size and reads zeros past
-@@ -2960,21 +3315,44 @@ namespace gpg::gal
+@@ -2993,21 +3348,44 @@ namespace gpg::gal
      for (std::uint32_t slot = 0U; slot < 16U; ++slot) {
        vertexBuffers[slot] = mZeroBuffer.buffer;
      }
@@ -904,7 +904,7 @@ index b4d2ae45..4e8498a6 100644
      }
      if (mPass.sampled != nullptr) {
        TransitionSampled(*mPass.sampled);
-@@ -2992,8 +3370,8 @@ namespace gpg::gal
+@@ -3025,8 +3403,8 @@ namespace gpg::gal
        Vk().vkCmdBindDescriptorSets(mCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, mPipelineLayout, 1U, 1U, &mPass.constants, 0U, nullptr);
      }
      Vk().vkCmdBindVertexBuffers(mCommands, 0U, 16U, vertexBuffers, vertexOffsets);
@@ -915,7 +915,7 @@ index b4d2ae45..4e8498a6 100644
      }
      VkViewport viewport{
        static_cast<float>(mViewport.X), static_cast<float>(mViewport.Y), static_cast<float>(mViewport.Width),
-@@ -3028,7 +3406,7 @@ namespace gpg::gal
+@@ -3061,7 +3439,7 @@ namespace gpg::gal
        return;
      }
      mPreparingDraw = true;
@@ -924,7 +924,7 @@ index b4d2ae45..4e8498a6 100644
      mPreparingDraw = false;
      const std::uint32_t instances = std::min(InstanceCount(mStreamFrequencies[0]), mDrawInstanceLimit);
      if (!ready || instances == 0U) {
-@@ -3042,7 +3420,7 @@ namespace gpg::gal
+@@ -3075,7 +3453,7 @@ namespace gpg::gal
    {
      const std::lock_guard<std::recursive_mutex> lock(mMutex);
      mPreparingDraw = true;

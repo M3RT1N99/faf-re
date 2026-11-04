@@ -1,8 +1,8 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.h b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-index bd287501..1d3dd22e 100644
+index db3a561d..7a38ede7 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-@@ -153,6 +153,7 @@ namespace gpg::gal
+@@ -155,6 +155,7 @@ namespace gpg::gal
      [[nodiscard]] std::uint64_t RecordingSerial() const noexcept { return mSubmittedSerial + 1U; }
      /** The image of swap chain `swapChain` the frame draws into. */
      [[nodiscard]] std::uint32_t AcquiredImage(std::uint32_t swapChain);
@@ -10,7 +10,7 @@ index bd287501..1d3dd22e 100644
  
      [[nodiscard]] vulkan::UploadAllocation AllocateUpload(VkDeviceSize bytes, VkDeviceSize alignment);
      [[nodiscard]] vulkan::TrackedBuffer CreateDeviceBuffer(VkDeviceSize bytes, VkBufferUsageFlags usage);
-@@ -205,6 +206,7 @@ namespace gpg::gal
+@@ -207,6 +208,7 @@ namespace gpg::gal
        std::uint32_t acquired = 0;
        bool hasImage = false;
        bool acquireWaitPending = false; // the next submission waits for the acquire
@@ -18,7 +18,7 @@ index bd287501..1d3dd22e 100644
        void* window = nullptr;
      };
  
-@@ -239,8 +241,17 @@ namespace gpg::gal
+@@ -241,8 +243,17 @@ namespace gpg::gal
      void CreateSwapChains(const DeviceContext& context);
      void CreateSwapChain(SwapChain& swapChain, std::uint32_t width, std::uint32_t height);
      void DestroySwapChain(SwapChain& swapChain, bool keepSurface) noexcept;
@@ -36,7 +36,7 @@ index bd287501..1d3dd22e 100644
      void CheckAvailableFormats(DeviceContext* context);
      void Shutdown() noexcept;
      void ResetState();
-@@ -258,6 +269,9 @@ namespace gpg::gal
+@@ -260,6 +271,9 @@ namespace gpg::gal
      void TransitionForTransferWrite(vulkan::TrackedImage& image);
      void TransitionSampled(const std::vector<effects::TextureBinding>& bindings);
      void TransferBarrier();
@@ -46,7 +46,7 @@ index bd287501..1d3dd22e 100644
  
      [[nodiscard]] ProgramState& StateFor(effects::EffectProgram& program);
      [[nodiscard]] VkDescriptorSet AllocateSet(VkDescriptorSetLayout layout);
-@@ -274,7 +288,8 @@ namespace gpg::gal
+@@ -276,7 +290,8 @@ namespace gpg::gal
      [[nodiscard]] VkShaderModule ModuleFor(const effects::CompiledEntry& entry, const effects::CompiledEntry* vertex);
      [[nodiscard]] const effects::SpirvInterface& InterfaceOf(const effects::CompiledEntry& entry);
      [[nodiscard]] VkPipeline PipelineFor(const BoundPass& pass, VkPrimitiveTopology topology);
@@ -56,7 +56,7 @@ index bd287501..1d3dd22e 100644
      [[nodiscard]] VkImageView TargetView(VkFormat& format, vulkan::TrackedImage*& image, std::uint32_t& width, std::uint32_t& height);
      void Trace(const char* format, ...);
      void DumpBackBufferIfDue();
-@@ -309,6 +324,8 @@ namespace gpg::gal
+@@ -312,6 +327,8 @@ namespace gpg::gal
      std::uint64_t mSubmittedSerial = 0;
      bool mAnisotropy = false;
      bool mWireframeSupported = false;

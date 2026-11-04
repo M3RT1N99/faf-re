@@ -61,7 +61,7 @@
 
 namespace moho
 {
-  // src/moho/ui/UiRuntimeTypes.cpp's, by its patch.
+  // src/moho/ui/CUIWorldViewEvents.cpp's, by its patch.
   [[nodiscard]] bool UI_PlacingBuilding() noexcept;
   [[nodiscard]] bool UI_WorldViewAt(float x, float y);
 } // namespace moho

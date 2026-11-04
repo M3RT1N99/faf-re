@@ -87,25 +87,6 @@ namespace
     return nullptr;
   }
 
-  /// wxSetFocusToChild (src/common/containr.cpp): the last focused child, else the first that
-  /// takes the focus.
-  bool SetFocusToChild(wxWindow* const win, wxWindow** const childLastFocused)
-  {
-    if (*childLastFocused) {
-      if ((*childLastFocused)->GetParent() == win) {
-        (*childLastFocused)->SetFocus();
-        return true;
-      }
-      *childLastFocused = nullptr;
-    }
-    for (wxWindow* const child : win->GetChildren()) {
-      if (child->AcceptsFocus() && !child->IsTopLevel()) {
-        child->SetFocusFromKbd();
-        return true;
-      }
-    }
-    return false;
-  }
 } // namespace
 
 // --- Handles and the window procedure -------------------------------------------------------------

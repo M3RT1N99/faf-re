@@ -1,0 +1,15 @@
+diff --git a/src/moho/ui/UiMisc.cpp b/src/moho/ui/UiMisc.cpp
+index e187debc..57ea1ea0 100644
+--- a/src/moho/ui/UiMisc.cpp
++++ b/src/moho/ui/UiMisc.cpp
+@@ -283,7 +283,9 @@ bool moho::cam_Free = false;
+ // 0x00F57AA0 `?ren_BgLowerBound@Moho@@3MA`; the shipped `.data` word is
+ // `00 00 fa 42` == 125.0f.
+ float moho::ren_BgLowerBound = 125.0f;
+-bool moho::ui_DisableCursorFixing = false;
++// Android client build: Android's pointer and the fingers say where they are, and do not move
++// relative to a cursor the engine holds still for the middle button's camera drag.
++bool moho::ui_DisableCursorFixing = true;
+ float moho::ui_SelectTolerance = 4.0f;
+ float moho::ui_ExtractSnapTolerance = 20.0f;
+ float moho::ui_MinExtractSnapPixels = 20.0f;

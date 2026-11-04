@@ -1,8 +1,9 @@
 // The Direct3D 10 hardware-vertex formatters, for the Android client build. Every API but
 // Direct3D 9 packs its mesh vertices with them, the Vulkan backend too (gpg/gal/MeshVertex.cpp).
-// The engine defines them in backends/d3d10/D3D10Interfaces.cpp, which this build leaves out with
-// the rest of that backend; the bodies here are that file's, except that the float16 formatter's
-// halves come from ConvertFloatToHalf instead of D3DXFloat32To16Array.
+// The engine defines them in backends/d3d10/HardwareVertexFormatterD3D10.cpp and
+// Float16HardwareVertexFormatterD3D10.cpp, which this build leaves out with the rest of that
+// backend; the bodies here are those files', except that the float16 formatter's halves come from
+// ConvertFloatToHalf instead of D3DXFloat32To16Array.
 //
 // The Direct3D 9 formatters, which only a Direct3D 9 device chooses, are in D3D9Unavailable.cpp.
 

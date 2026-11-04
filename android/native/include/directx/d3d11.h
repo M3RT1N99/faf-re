@@ -5,7 +5,7 @@
 // (gpg/gal/backends/d3d11/D3D11VertexLayouts.h). Layouts and values as the SDK's d3d11.h
 // declares them. The Direct3D 11 device interfaces belong to the Windows-only backend.
 
-#include <windows.h> // LPCSTR, UINT: platform/posix/win32/Windows.h
+#include <Windows.h> // LPCSTR, UINT: platform/posix/win32/Windows.h
 #include <dxgiformat.h>
 
 #define D3D11_APPEND_ALIGNED_ELEMENT (0xffffffff)

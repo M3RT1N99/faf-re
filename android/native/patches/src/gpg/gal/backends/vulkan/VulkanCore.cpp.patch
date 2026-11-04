@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/VulkanCore.cpp b/src/gpg/gal/backends/vulkan/VulkanCore.cpp
-index 02731621..772c1c97 100644
+index 9694140a..6561a914 100644
 --- a/src/gpg/gal/backends/vulkan/VulkanCore.cpp
 +++ b/src/gpg/gal/backends/vulkan/VulkanCore.cpp
 @@ -5,6 +5,7 @@
@@ -9,8 +9,8 @@ index 02731621..772c1c97 100644
 +#include "gpg/core/utils/Global.h"
  #include "gpg/core/utils/Logging.h"
  #include "gpg/gal/backends/common/BackendErrors.h"
- 
-@@ -63,6 +64,12 @@ namespace gpg::gal::vulkan
+ #include "gpg/gal/PlacedResources.h"
+@@ -64,6 +65,12 @@ namespace gpg::gal::vulkan
        // Logged here, before the throw: whatever catches it may not get to write anything.
        gpg::Warnf("Vulkan: %s at %s(%d)", message, (file != nullptr) ? file : "?", line);
      }

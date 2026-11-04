@@ -1,0 +1,45 @@
+diff --git a/src/moho/ui/CMauiMovie.cpp b/src/moho/ui/CMauiMovie.cpp
+index 20825876..da842eab 100644
+--- a/src/moho/ui/CMauiMovie.cpp
++++ b/src/moho/ui/CMauiMovie.cpp
+@@ -386,7 +386,8 @@ void moho::CMauiMovie::Stop()
+  */
+ bool moho::CMauiMovie::IsLoaded() const
+ {
+-  return mMovie != nullptr && mMovie->IsLoaded();
++  // Android client build: no movie has loaded, and is over as soon as it is played (Play).
++  return mMovie == nullptr || mMovie->IsLoaded();
+ }
+ 
+ /**
+@@ -397,7 +398,7 @@ bool moho::CMauiMovie::IsLoaded() const
+  */
+ std::int32_t moho::CMauiMovie::GetNumFrames() const
+ {
+-  return mMovie->GetFrameCount();
++  return mMovie != nullptr ? mMovie->GetFrameCount() : 0;
+ }
+ 
+ /**
+@@ -408,7 +409,7 @@ std::int32_t moho::CMauiMovie::GetNumFrames() const
+  */
+ float moho::CMauiMovie::GetFrameRate() const
+ {
+-  return mMovie->GetFrameRate();
++  return mMovie != nullptr ? mMovie->GetFrameRate() : 1.0f;
+ }
+ 
+ /**
+@@ -482,8 +483,10 @@ int moho::cfunc_CMauiMovieInternalSetL(
+     filename = "";
+   }
+ 
+-  const bool loaded = movie->LoadFile(filename);
+-  lua_pushboolean(state->m_state, loaded);
++  // Android client build: a movie that cannot play is over as soon as it is played (Play). Screens wait
++  // for that, and the first visit to the campaign would wait in black for ever.
++  (void)movie->LoadFile(filename);
++  lua_pushboolean(state->m_state, true);
+   (void)lua_gettop(state->m_state);
+   return 1;
+ }
