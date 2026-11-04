@@ -123,11 +123,14 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
     its moves into `WM_MOUSEMOVE` and its wheel into `WM_MOUSEWHEEL`;
   - keys into `WM_KEYDOWN`, `WM_KEYUP` and `WM_CHAR`, as a PC keyboard's (`src/host/KeysAndroid.cpp`:
     virtual keys, set-1 scan codes, the extended keys); Back is Esc;
-  - surface changes into `WM_SIZE` of the maximized windows;
+  - surface changes into `WM_SIZE` of the maximized windows; without a surface the visible windows
+    are minimized, as Windows minimizes a full-screen program's when the display is taken from it,
+    and the next surface restores them;
   - pause and resume into the application's activation (`WM_ACTIVATEAPP`, `WM_ACTIVATE`).
-- When the program returns, its process ends with the exit code, the streams flushed. The engine
-  ends the process itself when it cannot start (`TerminateProcess`), as on Windows; the app reads
-  how it ended from Android (`ApplicationExitInfo`).
+- When the program returns, its process ends with the exit code, the streams flushed, and so it
+  does with exit code 1 after a fatal error (`gpg::Die`), whose message is the app's verdict. The
+  engine ends the process itself when it cannot start (`TerminateProcess`), as on Windows; the app
+  reads how it ended from Android (`ApplicationExitInfo`).
 
 ## Checks
 
@@ -151,7 +154,9 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
     state, transition), `TranslateMessage`, `GetKeyState`; Alt and F10 as system keys; the
     low-level keyboard hooks; the foreground and the window it activates again; the waits'
     wake-ups with and without `MWMO_INPUTAVAILABLE`, the message for a silent queue; destruction's
-    order; the screen's surface and its references; maximized windows on a new screen size.
+    order; the screen's surface and its references; that a surface which goes waits for its taker,
+    and not for long; the windows minimized without a screen and restored, with the focus, by the
+    next surface; maximized windows on a new screen size.
   - The translation into wx events (`WindowTests.cpp`): clicks in the window's coordinates and
     the focus a click gives; entering a window; the wheel at the screen's position (as wxWindows
     2.4.2 leaves it); key down, char and key up, the char of a special key from its key down, no

@@ -19,7 +19,8 @@
 //
 // When the program returns, the process ends with its exit code as the headless programs end
 // (src/headless/HeadlessMain.cpp): the output streams flushed, without the static destructors.
-// The activity's process holds the runtime's own threads, and nothing after the end is observed.
+// The activity's process holds the runtime's own threads, and nothing after the end is observed
+// but the report, which the activity gets a moment to show.
 
 #include <android/log.h>
 #include <android/native_window_jni.h>
@@ -66,6 +67,10 @@ namespace
   /// thread here.
   constexpr std::size_t kMainThreadStackSize = 4000000;
 
+  /// How long the process stays when the program returned, for the activity to show the report's
+  /// end: it reads the report twice a second (GameActivity).
+  constexpr DWORD kShowEndMilliseconds = 1500;
+
   std::atomic<bool> gStarted{false};
   std::chrono::steady_clock::time_point gStartTime;
   std::vector<std::string> gArguments;
@@ -96,7 +101,16 @@ namespace
     }
   }
 
-  /// WinMain's die handler: the crash report (gpg/core/diagnostics), and a line of the report.
+  /// The process's end, with the report's end shown first; the streams flushed.
+  [[noreturn]] void EndProcess(const int exitCode)
+  {
+    ::Sleep(kShowEndMilliseconds);
+    std::fflush(nullptr);
+    std::_Exit(exitCode);
+  }
+
+  /// WinMain's die handler: the crash report (gpg/core/diagnostics), and a line of the report. On
+  /// Windows the debug break after the handler ends the program; here gpg::Die would go on to spin.
   void FatalErrorDieHandler(const char* const message)
   {
     const char* const reason = (message != nullptr) ? message : "engine Die()";
@@ -104,6 +118,13 @@ namespace
     gpg::diag::CrashReportContext reportContext{};
     reportContext.reason = reason;
     gpg::diag::HandleFatalPath(reportContext);
+    EndProcess(1);
+  }
+
+  /// The renderer's first frame: the activity takes the report off the screen (GameActivity).
+  void ReportFirstFrame()
+  {
+    Report("first frame");
   }
 
   /**
@@ -216,8 +237,7 @@ namespace
     TakeScreenMode();
     const int exitCode = RunProgram();
     Report("exit " + std::to_string(exitCode));
-    std::fflush(nullptr);
-    std::_Exit(exitCode);
+    EndProcess(exitCode);
   }
 
   /// The folders a Windows user profile always has, which SHGetFolderPath names: the POSIX layer
@@ -302,6 +322,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_start(
   (void)::setenv("TMPDIR", Utf8(env, temp).c_str(), 1);
   Report("program: " + commandLine);
   CreateProfileFolders();
+  Win32Android_SetFirstFrameHandler(&ReportFirstFrame);
 
   pthread_attr_t attributes;
   (void)::pthread_attr_init(&attributes);
@@ -328,7 +349,9 @@ Java_io_github_m3rt1n99_fafre_Game_surface(JNIEnv* const env, jclass, const jobj
   } else {
     Report("no surface");
   }
-  Win32Android_SetScreenSurface(window);
+  if (Win32Android_SetScreenSurface(window) == FALSE) {
+    Report("the program is busy: it lets go of the old surface when it can");
+  }
   if (window != nullptr) {
     // The layer holds a reference of its own.
     ANativeWindow_release(window);

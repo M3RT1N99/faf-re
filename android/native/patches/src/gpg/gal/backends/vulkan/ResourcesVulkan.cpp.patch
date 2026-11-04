@@ -1,0 +1,92 @@
+diff --git a/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp b/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
+index 8c9a4db0..f31535be 100644
+--- a/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
++++ b/src/gpg/gal/backends/vulkan/ResourcesVulkan.cpp
+@@ -314,35 +314,44 @@ namespace gpg::gal
+       device.UploadBuffer(mBuffer, mLockOffset, mShadow.data() + mLockOffset, mLockSize);
+       return;
+     }
+-    if (HasFlag(mLockFlags, MohoD3DLockFlags::NoOverwrite) && mChunkCpu != nullptr && mChunkSerial == device.RecordingSerial()) {
+-      std::memcpy(mChunkCpu + mLockOffset, mShadow.data() + mLockOffset, mLockSize);
+-      return;
++    if (!HasFlag(mLockFlags, MohoD3DLockFlags::NoOverwrite)) {
++      mChunkCpu = nullptr; // a new copy: earlier draws keep reading the old one
+     }
+-    // The whole buffer, DISCARD too: bytes outside the locked range keep their
+-    // last values, as a D3D9 driver's renamed buffer does (see BufferStorageD3D12).
+-    const vulkan::UploadAllocation chunk = device.AllocateUpload(mByteWidth, 256U);
+-    std::memcpy(chunk.cpu, mShadow.data(), mByteWidth);
+-    mChunkBuffer = chunk.buffer;
+-    mChunkOffset = chunk.offset;
+-    mChunkCpu = chunk.cpu;
+-    mChunkSerial = device.RecordingSerial();
++    FillChunk(device, mLockOffset, mLockOffset + mLockSize);
+   }
+ 
+-  void BufferStorageVulkan::PrepareForDraw(DeviceVulkan& device, VkBuffer& outBuffer, VkDeviceSize& outOffset)
++  void BufferStorageVulkan::FillChunk(DeviceVulkan& device, const std::uint32_t begin, const std::uint32_t end)
+   {
+-    if (!mDynamic) {
+-      outBuffer = mBuffer.buffer;
+-      outOffset = 0U;
+-      return;
+-    }
+-    if (mChunkCpu == nullptr || mChunkSerial != device.RecordingSerial()) {
+-      const vulkan::UploadAllocation chunk = device.AllocateUpload(mByteWidth, 256U);
+-      std::memcpy(chunk.cpu, mShadow.data(), mByteWidth);
++    const bool current = mChunkCpu != nullptr && mChunkSerial == device.RecordingSerial();
++    if (!current || end > mChunkBytes) {
++      // Bytes outside a locked range keep their last values for the draws that read them, as a
++      // D3D9 driver's renamed buffer does (see BufferStorageD3D12). A chunk need not hold them
++      // before a draw does read them, so a batch's lock costs its batch, not the whole buffer.
++      // One outgrown in its submission (a ring's appends, reads past the locks) gets room for all.
++      mChunkBytes = current ? mByteWidth : end;
++      const vulkan::UploadAllocation chunk = device.AllocateUpload(mChunkBytes, 256U);
+       mChunkBuffer = chunk.buffer;
+       mChunkOffset = chunk.offset;
+       mChunkCpu = chunk.cpu;
+       mChunkSerial = device.RecordingSerial();
++      mChunkFilled = 0U;
++    }
++    const std::uint32_t from = std::min(begin, mChunkFilled);
++    if (end > from) {
++      std::memcpy(mChunkCpu + from, mShadow.data() + from, end - from);
++      mChunkFilled = std::max(mChunkFilled, end);
+     }
++  }
++
++  void BufferStorageVulkan::PrepareForDraw(DeviceVulkan& device, const std::uint64_t readEnd, VkBuffer& outBuffer, VkDeviceSize& outOffset)
++  {
++    if (!mDynamic) {
++      outBuffer = mBuffer.buffer;
++      outOffset = 0U;
++      return;
++    }
++    const auto end = static_cast<std::uint32_t>(std::min<std::uint64_t>(readEnd, mByteWidth));
++    FillChunk(device, end, end);
+     outBuffer = mChunkBuffer;
+     outOffset = mChunkOffset;
+   }
+@@ -398,6 +407,22 @@ namespace gpg::gal
+     return (mContext.format_ == 1U) ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
+   }
+ 
++  std::uint32_t IndexBufferVulkan::HighestIndex(const std::uint32_t start, const std::uint32_t count) const noexcept
++  {
++    const auto highest = [&]<typename Index>(const Index* const indices) {
++      const std::uint32_t held = mStorage.ByteWidth() / sizeof(Index);
++      const std::uint32_t first = std::min(start, held);
++      const std::uint32_t last = first + std::min(count, held - first);
++      Index result = 0;
++      for (std::uint32_t at = first; at < last; ++at) {
++        result = std::max(result, indices[at]);
++      }
++      return static_cast<std::uint32_t>(result);
++    };
++    return (IndexType() == VK_INDEX_TYPE_UINT16) ? highest(reinterpret_cast<const std::uint16_t*>(mStorage.Bytes()))
++                                                 : highest(reinterpret_cast<const std::uint32_t*>(mStorage.Bytes()));
++  }
++
+   VertexFormatVulkan::VertexFormatVulkan(const std::uint32_t formatCode)
+   {
+     formatCode_ = formatCode;

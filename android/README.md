@@ -65,8 +65,8 @@ the game data they imported. Everything lives in the app's external files folder
   writes every differing case (`sim_math_known.txt`, the overlay format).
 - **Replay parity** follows `tools/parity-data/shard.py`: the replay from FAF's vault, decoded
   (zstd or zlib) and checked (featured mod `faf`, engine version, M28AI as the only sim mod); FAF's
-  game files of its version from FAF's updater (about 700 MB downloaded once per version, 35 MB kept);
-  its map from `scfa/maps` or FAF's map vault; then `headless --replay`. The verdicts are shard.py's:
+  game files of its version from FAF's updater (about 700 MB once per version, kept whole for the
+  game); its map from `scfa/maps` or FAF's map vault; then `headless --replay`. The verdicts are shard.py's:
   *pass*, *desync* (with the first beat whose checksum differs; a desync one live client had alone is
   not counted), *crash*, *incomplete*. Requests to FAF go one at a time, a second apart.
 - **Where the simulation ran**: once a second during a replay, the busiest thread of the headless

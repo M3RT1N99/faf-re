@@ -60,9 +60,9 @@ else()
   set(FAF_TARGET_ARCH x64)
 endif()
 
-# The files compiled changed (patches/), and the one that includes a patched header by its bare
-# name from the header's folder.
-set(FAF_ANDROID_OVERLAY_SIBLINGS src/moho/render/ID3DTextureSheet.cpp)
+# The files compiled changed (patches/), and those that include a patched header by its bare name
+# from the header's folder.
+set(FAF_ANDROID_OVERLAY_SIBLINGS src/moho/render/ID3DTextureSheet.cpp src/gpg/gal/backends/vulkan/GpuDrivenVulkan.cpp)
 include("${FAF_ANDROID_DIR}/cmake/FafAndroidOverlay.cmake")
 
 # DXC, the effects' shader compiler (cmake/FafAndroidDxc.cmake): libdxcompiler.so for the ABI in
@@ -249,6 +249,9 @@ target_compile_options(faf_android_dxc PRIVATE -fvisibility=hidden -fvisibility-
 
 add_library(faf_gal OBJECT ${_faf_gal_files})
 target_link_libraries(faf_gal PUBLIC faf_android_settings)
+# Device.cpp includes the patched DeviceVulkan.h by its path; the header finds the neighbours it
+# includes by their bare names here.
+target_include_directories(faf_gal PRIVATE "${FAF_REPO}/src/gpg/gal/backends/vulkan")
 
 # wx-lite (WX_LITE.md): the part of wxWindows 2.4.2 the client uses, on the message layer.
 add_library(faf_wx_lite OBJECT

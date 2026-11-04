@@ -1,0 +1,35 @@
+diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.h b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
+index bd287501..8822ec0a 100644
+--- a/src/gpg/gal/backends/vulkan/DeviceVulkan.h
++++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
+@@ -205,6 +205,7 @@ namespace gpg::gal
+       std::uint32_t acquired = 0;
+       bool hasImage = false;
+       bool acquireWaitPending = false; // the next submission waits for the acquire
++      bool stale = false;              // Android client build: acquiring or presenting failed on it
+       void* window = nullptr;
+     };
+ 
+@@ -241,6 +242,12 @@ namespace gpg::gal
+     void DestroySwapChain(SwapChain& swapChain, bool keepSurface) noexcept;
+     void CreateRenderTargets();
+     void ReleaseRenderTargets() noexcept;
++    /** What a head's back buffer target holds: its swap chain's images, or one empty buffer of their size without any. */
++    [[nodiscard]] std::vector<RenderTargetVulkan::Buffer> BackBuffers(const SwapChain& swapChain);
++    // Android client build: the activity's surface comes and goes (TestCooperativeLevel).
++    void RebindBackBuffer(std::size_t headIndex);
++    void ReleaseSurface(std::size_t headIndex);
++    [[nodiscard]] bool AttachSurface(std::size_t headIndex);
+     void CheckAvailableFormats(DeviceContext* context);
+     void Shutdown() noexcept;
+     void ResetState();
+@@ -274,7 +281,8 @@ namespace gpg::gal
+     [[nodiscard]] VkShaderModule ModuleFor(const effects::CompiledEntry& entry, const effects::CompiledEntry* vertex);
+     [[nodiscard]] const effects::SpirvInterface& InterfaceOf(const effects::CompiledEntry& entry);
+     [[nodiscard]] VkPipeline PipelineFor(const BoundPass& pass, VkPrimitiveTopology topology);
+-    [[nodiscard]] bool PrepareDraw(std::uint32_t topologyToken, bool indexed);
++    /** `indexed`: the indexed draw, or null for a draw of the vertices below `vertexEnd`. */
++    [[nodiscard]] bool PrepareDraw(std::uint32_t topologyToken, const DrawIndexedContext* indexed, std::uint32_t vertexEnd);
+     [[nodiscard]] VkImageView TargetView(VkFormat& format, vulkan::TrackedImage*& image, std::uint32_t& width, std::uint32_t& height);
+     void Trace(const char* format, ...);
+     void DumpBackBufferIfDue();

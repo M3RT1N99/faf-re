@@ -499,17 +499,118 @@ WXT_TEST(TheScreensSurfaceIsEveryWindowsSurface)
   RecordingWindow child(top.hwnd(), 0, 0, 10, 10, WS_CHILD);
   int stand = 0;
   auto* const surface = reinterpret_cast<ANativeWindow*>(&stand);
-  WXT_CHECK(Win32Android_GetWindowSurface(child.hwnd()) == nullptr);
+  WXT_CHECK(Win32Android_TakeWindowSurface(child.hwnd()) == nullptr);
 
-  Win32Android_SetScreenSurface(surface);
+  WXT_CHECK(Win32Android_SetScreenSurface(surface) != FALSE);
   WXT_CHECK_EQ(wxtest::SurfaceReferences(surface), 1);
-  WXT_CHECK(Win32Android_GetWindowSurface(top.hwnd()) == surface);
-  WXT_CHECK(Win32Android_GetWindowSurface(child.hwnd()) == surface);
-  WXT_CHECK(Win32Android_GetWindowSurface(nullptr) == nullptr);
+  WXT_CHECK(Win32Android_TakeWindowSurface(top.hwnd()) == surface);
+  WXT_CHECK(Win32Android_TakeWindowSurface(child.hwnd()) == surface);
+  WXT_CHECK(Win32Android_TakeWindowSurface(nullptr) == nullptr);
+  Win32Android_ReleaseTakenSurface();
 
-  Win32Android_SetScreenSurface(nullptr);
+  WXT_CHECK(Win32Android_SetScreenSurface(nullptr) != FALSE);
   WXT_CHECK_EQ(wxtest::SurfaceReferences(surface), 0);
-  WXT_CHECK(Win32Android_GetWindowSurface(top.hwnd()) == nullptr);
+  WXT_CHECK(Win32Android_TakeWindowSurface(top.hwnd()) == nullptr);
+}
+
+WXT_TEST(ASurfaceThatGoesWaitsForItsTaker)
+{
+  RecordingWindow top(nullptr, 0, 0, 100, 100, WS_POPUP);
+  int stand = 0;
+  int otherStand = 0;
+  auto* const surface = reinterpret_cast<ANativeWindow*>(&stand);
+  auto* const other = reinterpret_cast<ANativeWindow*>(&otherStand);
+  WXT_CHECK(Win32Android_SetScreenSurface(surface) != FALSE);
+  WXT_CHECK(Win32Android_TakenSurfaceIsCurrent() == FALSE);
+  WXT_CHECK(Win32Android_TakeWindowSurface(top.hwnd()) == surface);
+  WXT_CHECK(Win32Android_TakenSurfaceIsCurrent() != FALSE);
+
+  // The surface goes on the activity's thread, and the taker sees that and releases it.
+  std::atomic<bool> released{false};
+  std::thread taker([&released] {
+    while (Win32Android_TakenSurfaceIsCurrent() != FALSE) {
+      ::Sleep(1);
+    }
+    released.store(true);
+    Win32Android_ReleaseTakenSurface();
+  });
+  WXT_CHECK(Win32Android_SetScreenSurface(nullptr) != FALSE);
+  WXT_CHECK(released.load());
+  taker.join();
+
+  // A taker that does not release it within the time does not stop the activity for long, and
+  // the next surface is not the taken one, which is released later.
+  WXT_CHECK(Win32Android_SetScreenSurface(surface) != FALSE);
+  WXT_CHECK(Win32Android_TakeWindowSurface(top.hwnd()) == surface);
+  WXT_CHECK(Win32Android_SetScreenSurface(nullptr) == FALSE);
+  WXT_CHECK(Win32Android_SetScreenSurface(other) != FALSE);
+  WXT_CHECK(Win32Android_TakenSurfaceIsCurrent() == FALSE);
+  Win32Android_ReleaseTakenSurface();
+  WXT_CHECK(Win32Android_TakeWindowSurface(top.hwnd()) == other);
+  Win32Android_ReleaseTakenSurface();
+  WXT_CHECK(Win32Android_SetScreenSurface(nullptr) != FALSE);
+  wxtest::Pump();
+}
+
+WXT_TEST(WithoutAScreenTheWindowsAreMinimized)
+{
+  RecordingWindow shown(nullptr, 10, 10, 100, 100, WS_POPUP);
+  RecordingWindow hidden(nullptr, 10, 10, 100, 100, WS_POPUP);
+  (void)::ShowWindow(shown.hwnd(), SW_SHOW);
+  wxtest::Pump();
+  int stand = 0;
+  int nextStand = 0;
+  auto* const surface = reinterpret_cast<ANativeWindow*>(&stand);
+  auto* const next = reinterpret_cast<ANativeWindow*>(&nextStand);
+  WXT_CHECK(Win32Android_SetScreenSurface(surface) != FALSE);
+  wxtest::Pump();
+  WXT_CHECK(::IsIconic(shown.hwnd()) == FALSE);
+
+  Messages().clear();
+  WXT_CHECK(Win32Android_SetScreenSurface(nullptr) != FALSE);
+  wxtest::Pump();
+  WXT_CHECK(::IsIconic(shown.hwnd()) != FALSE);
+  WXT_CHECK(::IsIconic(hidden.hwnd()) == FALSE);
+  std::vector<wxtest::Message> sizes = Received(WM_SIZE);
+  WXT_CHECK(!sizes.empty() && sizes.back().wParam == WPARAM{SIZE_MINIMIZED});
+
+  // A new surface brings it back, in its place.
+  Messages().clear();
+  WXT_CHECK(Win32Android_SetScreenSurface(next) != FALSE);
+  wxtest::Pump();
+  WXT_CHECK(::IsIconic(shown.hwnd()) == FALSE);
+  RECT rect{};
+  WXT_CHECK(::GetWindowRect(shown.hwnd(), &rect));
+  WXT_CHECK_EQ(rect.left, LONG{10});
+  WXT_CHECK_EQ(rect.right, LONG{110});
+  sizes = Received(WM_SIZE);
+  WXT_CHECK(!sizes.empty() && sizes.back().wParam == WPARAM{SIZE_RESTORED});
+
+  // The application in between: its window is activated while minimized, which gives no focus, and
+  // gets WM_ACTIVATE again with the restore, as on Windows, which does.
+  Win32Android_SetForeground(FALSE);
+  WXT_CHECK(Win32Android_SetScreenSurface(nullptr) != FALSE);
+  wxtest::Pump();
+  Win32Android_SetForeground(TRUE);
+  wxtest::Pump();
+  WXT_CHECK(::GetActiveWindow() == shown.hwnd());
+  WXT_CHECK(::GetFocus() != shown.hwnd());
+  Messages().clear();
+  WXT_CHECK(Win32Android_SetScreenSurface(next) != FALSE);
+  wxtest::Pump();
+  const std::vector<wxtest::Message> activates = Received(WM_ACTIVATE);
+  WXT_CHECK(!activates.empty() && LOWORD(activates.back().wParam) == WORD{WA_ACTIVE} && HIWORD(activates.back().wParam) == 0);
+  WXT_CHECK(::GetFocus() == shown.hwnd());
+  Win32Android_SetForeground(FALSE);
+  wxtest::Pump();
+
+  WXT_CHECK(Win32Android_SetScreenSurface(nullptr) != FALSE);
+  wxtest::Pump();
+  // A window gone by the time of the next surface stays gone without harm.
+  (void)::DestroyWindow(shown.hwnd());
+  WXT_CHECK(Win32Android_SetScreenSurface(next) != FALSE);
+  WXT_CHECK(Win32Android_SetScreenSurface(nullptr) != FALSE);
+  wxtest::Pump();
 }
 
 WXT_TEST(AMaximizedWindowFollowsTheScreen)

@@ -30,7 +30,8 @@ import java.nio.file.Files;
  * process of its own (":game") that ends with the program, as a Windows program's does. It plays
  * FAF's game files of the newest version this app has (the replay test downloads them) on the
  * user's Supreme Commander: Forged Alliance. The pointer and touch are the mouse, keys the
- * keyboard, and Back is Esc. Until the renderer draws (C2), the report's lines show on the screen.
+ * keyboard, and Back is Esc. The report's lines show on the screen while the game starts, and again
+ * when it ends or fails.
  */
 public final class GameActivity extends Activity implements SurfaceHolder.Callback {
     /** The program's path in its install, as FAF's client starts it: the engine takes its folder from it. */
@@ -160,7 +161,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return newest;
     }
 
-    /** The report's last lines over the surface. */
+    /** The report's last lines over the surface, until the first frame and again at the end. */
     private void showReport() {
         String report;
         try {
@@ -168,12 +169,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         } catch (IOException e) {
             return;
         }
+        boolean ended = GameReport.ended(report);
+        if (GameReport.firstFrame(report) && !ended) {
+            mText.setVisibility(View.GONE);
+            return;
+        }
         String[] lines = report.split("\n");
-        StringBuilder text = new StringBuilder("Forged Alliance: the engine runs (C1); the picture comes with C2.\n\n");
+        StringBuilder text = new StringBuilder(ended ? "Forged Alliance has ended.\n\n" : "Forged Alliance is starting.\n\n");
         for (int i = Math.max(0, lines.length - REPORT_LINES); i < lines.length; ++i) {
             text.append(lines[i]).append('\n');
         }
         mText.setText(text);
+        mText.setVisibility(View.VISIBLE);
     }
 
     @Override

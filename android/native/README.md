@@ -74,7 +74,7 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/audio/XactEngineAndroid.cpp` | An XACT engine that plays nothing, until FACT (C3): the sound functions work and so do the options, which import the music's Lua; `CoCreateInstance` creates it |
 | `src/movie/FfmpegSfdDecoderAndroid.cpp` | The movie decoder: no FFmpeg for Android yet, so the player skips movies |
 | `src/diag/FrameSamplerAndroid.cpp` | The frame sampler's mark: nothing to sample with (the Windows one suspends the main thread) |
-| `src/gal/VulkanSurfaceAndroid.cpp` | The Vulkan backend's platform unit (`VulkanSurface.h`) for Android: `VK_KHR_android_surface` |
+| `src/gal/VulkanSurfaceAndroid.cpp` | The Vulkan backend's platform unit (`VulkanSurface.h`) for Android: `VK_KHR_android_surface`, and for the patched `DeviceVulkan.cpp` a surface's end and the first frame |
 | `src/gal/WindowsCursorAndroid.cpp` | The backends' Win32 cursor helper: no system cursor |
 | `src/gal/D3DCompilerAndroid.cpp` | `D3DPreprocess`, on `FxcPreprocessor.cpp` |
 | `src/gal/FxcPreprocessor.cpp` | d3dcompiler_47's preprocessor, byte for byte: the effect translator reads its exact text (checked on Windows by `tests/fxc`) |

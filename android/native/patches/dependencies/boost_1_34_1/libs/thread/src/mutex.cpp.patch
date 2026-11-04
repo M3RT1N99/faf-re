@@ -1,7 +1,7 @@
 diff --git a/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp b/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp
 --- a/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp
 +++ b/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp
-@@ -193,8 +193,16 @@
+@@ -193,8 +193,18 @@
  
  mutex::mutex()
  {
@@ -13,10 +13,12 @@ diff --git a/dependencies/boost_1_34_1/libs/thread/src/mutex.cpp b/dependencies/
 +    pthread_mutexattr_t attributes;
 +    int res = pthread_mutexattr_init(&attributes);
 +    if (res == 0)
++    {
 +        res = pthread_mutexattr_settype(&attributes, PTHREAD_MUTEX_RECURSIVE);
-+    if (res == 0)
-+        res = pthread_mutex_init(&m_mutex, &attributes);
-+    pthread_mutexattr_destroy(&attributes);
++        if (res == 0)
++            res = pthread_mutex_init(&m_mutex, &attributes);
++        pthread_mutexattr_destroy(&attributes);
++    }
      if (res != 0)
          throw thread_resource_error();
  }

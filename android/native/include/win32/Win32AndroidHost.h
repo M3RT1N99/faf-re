@@ -14,12 +14,29 @@ void Win32Android_SetScreenSize(int width, int height);
 
 /// The activity's surface, which is the screen every window is shown on (null: there is none).
 /// The layer holds a reference to it while it is the screen's.
-void Win32Android_SetScreenSurface(ANativeWindow* surface);
+///
+/// With null, the visible top-level windows are minimized, as Windows minimizes a full-screen
+/// program's when the display is taken from it, and the next surface restores them. Android allows
+/// no use of a surface after its surfaceDestroyed returns, so null waits until the surface taken
+/// from the layer (below) is released, and says whether that came in time: two seconds, as the
+/// activity's thread cannot wait for a program that is busy for longer.
+BOOL Win32Android_SetScreenSurface(ANativeWindow* surface);
 
-/// The surface `window` is shown on: the screen's, as on Windows a window is part of the desktop.
-/// Null while there is none or `window` is no window. The pointer stays valid while it is the
-/// screen's surface; a Vulkan surface made from it holds a reference of its own.
-ANativeWindow* Win32Android_GetWindowSurface(HWND window);
+/// For what draws on the screen: the surface `window` is shown on, the screen's, as on Windows a
+/// window is part of the desktop. Null while there is none or `window` is no window. The pointer
+/// stays valid while it is the screen's surface; a Vulkan surface made from it holds a reference of
+/// its own. The taker stands on the surface until it releases it, which it does as soon as it can
+/// when the surface stops being the screen's.
+ANativeWindow* Win32Android_TakeWindowSurface(HWND window);
+BOOL Win32Android_TakenSurfaceIsCurrent();
+void Win32Android_ReleaseTakenSurface();
+
+/// Waits for the screen to have a surface: the program can start while the activity is in the back.
+void Win32Android_WaitForScreenSurface();
+
+/// What draws on the screen says that a frame went to it, and the host hears of the first one.
+void Win32Android_FramePresented();
+void Win32Android_SetFirstFrameHandler(void (*handler)());
 
 /// The activity came to the front (TRUE) or went to the back (FALSE): the application's
 /// activation (WM_ACTIVATEAPP, WM_ACTIVATE, the focus). Coming back, the window that was active

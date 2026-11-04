@@ -51,6 +51,7 @@ final class GameFiles {
      */
     static final int PACK_FORMAT = 3;
 
+    /** The manifest says how gamedata's files are packed; the init file comes last of all. */
     static boolean ready(Storage storage, int version) {
         File dir = storage.game(version);
         return packFormat(dir) == PACK_FORMAT && new File(dir, "bin/init_ci.lua").isFile();
@@ -75,16 +76,25 @@ final class GameFiles {
         if (ready(storage, version)) {
             return dir;
         }
-        boolean stale = packFormat(dir) >= 1 && packFormat(dir) < PACK_FORMAT;
-        File gamedata = Storage.mkdirs(new File(dir, "gamedata"));
+        File gamedata = new File(dir, "gamedata");
+        File manifestFile = new File(dir, "manifest.json");
+        File init = new File(dir, "bin/init_ci.lua");
         JSONObject manifest = new JSONObject();
         try {
             manifest.put("game_version", String.valueOf(version));
             manifest.put("pack_format", PACK_FORMAT);
+            // An older pack, finished or not, goes. From here on the folder holds whole packages
+            // only, so a download that is cut off goes on with the package it was at.
+            if (packFormat(dir) != PACK_FORMAT) {
+                Storage.deleteTree(gamedata);
+                init.delete();
+                write(manifestFile, manifest.toString(2));
+            }
+            Storage.mkdirs(gamedata);
             for (String name : PACKAGES) {
                 File packed = new File(gamedata, name + ".nx2");
                 String remote = name + "." + version + ".nx2";
-                if (packed.isFile() && !stale) {
+                if (packed.isFile()) {
                     manifest.put(remote, "whole");
                     continue;
                 }
@@ -108,13 +118,13 @@ final class GameFiles {
             }
             String initName = "init_faf_" + version + ".lua";
             log.step("Downloading " + initName);
-            String init = Http.utf8(Http.bytes(Http.GAME_URL + initName));
-            File bin = Storage.mkdirs(new File(dir, "bin"));
-            write(new File(bin, "init_ci.lua"), ciInit(init));
+            String initText = Http.utf8(Http.bytes(Http.GAME_URL + initName));
             write(new File(dir, "fa_path.lua"),
                 "fa_path = '" + storage.scfa.getAbsolutePath() + "'\nGameType = \"faf\"\nGameVersion = \"" + version
                     + "\"\nClientVersion = \"faf-re-android-" + BuildConfig.VERSION_NAME + "\"\n");
-            write(new File(dir, "manifest.json"), manifest.toString(2));
+            write(manifestFile, manifest.toString(2));
+            // Last: with it the pack is ready.
+            write(init, ciInit(initText));
         } catch (JSONException e) {
             throw new IOException(e);
         }

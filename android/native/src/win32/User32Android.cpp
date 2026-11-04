@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <cwctype>
@@ -24,6 +25,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace
@@ -154,6 +156,10 @@ namespace
     int screenWidth = 0;
     int screenHeight = 0;
     ANativeWindow* screenSurface = nullptr; // the activity's, from the host; one reference held
+    ANativeWindow* takenSurface = nullptr; // what a renderer stands on until it releases it
+    std::condition_variable surfaceChanged; // of either
+    std::vector<HWND> minimizedWithScreen; // restored when a surface comes back
+    void (*firstFrameHandler)() = nullptr;
     Click lastClick;
     DWORD clipboardThread = 0;
     bool clipboardOpen = false;
@@ -171,6 +177,7 @@ namespace
 
   constexpr int kDoubleClickDistance = 4; // SM_CXDOUBLECLK, SM_CYDOUBLECLK
   constexpr UINT kDoubleClickTime = 500;
+  constexpr std::chrono::seconds kSurfaceReleaseTime{2}; // well below Android's patience with the activity's thread
   char kMonitor; // the one monitor's identity
 
   std::string Utf8(const wchar_t* text)
@@ -1381,6 +1388,7 @@ BOOL ShowWindow(const HWND handle, const int command)
   bool wasVisible = false;
   bool nowVisible = false;
   bool stateChanged = false;
+  bool restored = false;
   bool activate = false;
   bool deactivate = false;
   bool topLevel = false;
@@ -1458,6 +1466,7 @@ BOOL ShowWindow(const HWND handle, const int command)
 
     nowVisible = (window->style & WS_VISIBLE) != 0;
     stateChanged = wasMinimized != window->minimized || wasMaximized != window->maximized;
+    restored = wasMinimized && !window->minimized;
     const bool moved = before.left != window->rect.left || before.top != window->rect.top;
     const bool sized = Width(before) != Width(window->rect) || Height(before) != Height(window->rect);
     UINT flags = SWP_NOZORDER | SWP_NOACTIVATE;
@@ -1481,7 +1490,12 @@ BOOL ShowWindow(const HWND handle, const int command)
   if (deactivate) {
     Activate(nullptr);
   } else if (activate && nowVisible) {
+    const bool wasActive = ::GetActiveWindow() == handle;
     (void)::SetActiveWindow(handle);
+    if (wasActive && restored) {
+      // WM_ACTIVATE again, even though it is active: the one a minimized window got gave no focus.
+      (void)::SendMessageW(handle, WM_ACTIVATE, MAKEWPARAM(WA_ACTIVE, 0), 0);
+    }
   }
   return wasVisible ? TRUE : FALSE;
 }
@@ -2852,7 +2866,7 @@ void Win32Android_SetScreenSize(const int width, const int height)
   }
 }
 
-void Win32Android_SetScreenSurface(ANativeWindow* const surface)
+BOOL Win32Android_SetScreenSurface(ANativeWindow* const surface)
 {
   State& layer = Layer();
   Lock lock(layer.mutex);
@@ -2863,13 +2877,77 @@ void Win32Android_SetScreenSurface(ANativeWindow* const surface)
     ANativeWindow_release(layer.screenSurface);
   }
   layer.screenSurface = surface;
+  if (surface != nullptr) {
+    for (const HWND handle : layer.minimizedWithScreen) {
+      if (Window* const window = WindowLocked(handle)) {
+        PostTaskLocked(*window->queue, [handle] { (void)::ShowWindow(handle, SW_RESTORE); });
+      }
+    }
+    layer.minimizedWithScreen.clear();
+    layer.surfaceChanged.notify_all();
+    return TRUE;
+  }
+  const bool released =
+    layer.surfaceChanged.wait_for(lock, kSurfaceReleaseTime, [&layer] { return layer.takenSurface == nullptr; });
+  for (Window* const top : layer.topLevel) {
+    if ((top->style & WS_VISIBLE) != 0 && !top->minimized) {
+      const HWND handle = Handle(top);
+      layer.minimizedWithScreen.push_back(handle);
+      PostTaskLocked(*top->queue, [handle] { (void)::ShowWindow(handle, SW_MINIMIZE); });
+    }
+  }
+  return released ? TRUE : FALSE;
 }
 
-ANativeWindow* Win32Android_GetWindowSurface(const HWND handle)
+ANativeWindow* Win32Android_TakeWindowSurface(const HWND handle)
 {
   State& layer = Layer();
   Lock lock(layer.mutex);
-  return WindowLocked(handle) != nullptr ? layer.screenSurface : nullptr;
+  if (WindowLocked(handle) == nullptr || layer.screenSurface == nullptr) {
+    return nullptr;
+  }
+  layer.takenSurface = layer.screenSurface;
+  return layer.takenSurface;
+}
+
+BOOL Win32Android_TakenSurfaceIsCurrent()
+{
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  return layer.takenSurface != nullptr && layer.takenSurface == layer.screenSurface ? TRUE : FALSE;
+}
+
+void Win32Android_ReleaseTakenSurface()
+{
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  layer.takenSurface = nullptr;
+  layer.surfaceChanged.notify_all();
+}
+
+void Win32Android_WaitForScreenSurface()
+{
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  layer.surfaceChanged.wait(lock, [&layer] { return layer.screenSurface != nullptr; });
+}
+
+void Win32Android_FramePresented()
+{
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  const auto handler = std::exchange(layer.firstFrameHandler, nullptr);
+  lock.unlock();
+  if (handler != nullptr) {
+    handler();
+  }
+}
+
+void Win32Android_SetFirstFrameHandler(void (*const handler)())
+{
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  layer.firstFrameHandler = handler;
 }
 
 void Win32Android_SetForeground(const BOOL foreground)

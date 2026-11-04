@@ -19,7 +19,7 @@ namespace gpg::gal::vulkan
 
   VkSurfaceKHR CreateWindowSurface(const VkInstance instance, void* const window, VkResult& result)
   {
-    ANativeWindow* const surface = Win32Android_GetWindowSurface(static_cast<HWND>(window));
+    ANativeWindow* const surface = Win32Android_TakeWindowSurface(static_cast<HWND>(window));
     if (surface == nullptr) {
       // The window is not on a surface (yet, or any more).
       result = VK_ERROR_SURFACE_LOST_KHR;
@@ -28,6 +28,7 @@ namespace gpg::gal::vulkan
     const auto create =
       reinterpret_cast<PFN_vkCreateAndroidSurfaceKHR>(Vk().vkGetInstanceProcAddr(instance, "vkCreateAndroidSurfaceKHR"));
     if (create == nullptr) {
+      Win32Android_ReleaseTakenSurface();
       result = VK_ERROR_EXTENSION_NOT_PRESENT;
       return VK_NULL_HANDLE;
     }
@@ -36,6 +37,34 @@ namespace gpg::gal::vulkan
     info.window = surface;
     VkSurfaceKHR vulkanSurface = VK_NULL_HANDLE;
     result = create(instance, &info, nullptr, &vulkanSurface);
-    return (result == VK_SUCCESS) ? vulkanSurface : VK_NULL_HANDLE;
+    if (result != VK_SUCCESS) {
+      Win32Android_ReleaseTakenSurface();
+      return VK_NULL_HANDLE;
+    }
+    return vulkanSurface;
+  }
+
+  // These are not in VulkanSurface.h: Windows' window surface stays while the program runs. The
+  // patched DeviceVulkan.cpp declares them.
+
+  void DestroyWindowSurface(const VkInstance instance, const VkSurfaceKHR surface) noexcept
+  {
+    Vk().vkDestroySurfaceKHR(instance, surface, nullptr);
+    Win32Android_ReleaseTakenSurface();
+  }
+
+  bool WindowSurfaceIsCurrent() noexcept
+  {
+    return Win32Android_TakenSurfaceIsCurrent() != FALSE;
+  }
+
+  void WaitForWindowSurface() noexcept
+  {
+    Win32Android_WaitForScreenSurface();
+  }
+
+  void WindowSurfacePresented() noexcept
+  {
+    Win32Android_FramePresented();
   }
 } // namespace gpg::gal::vulkan

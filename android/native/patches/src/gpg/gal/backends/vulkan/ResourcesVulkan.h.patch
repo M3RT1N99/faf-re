@@ -1,0 +1,52 @@
+diff --git a/src/gpg/gal/backends/vulkan/ResourcesVulkan.h b/src/gpg/gal/backends/vulkan/ResourcesVulkan.h
+index 32d46046..b85b3763 100644
+--- a/src/gpg/gal/backends/vulkan/ResourcesVulkan.h
++++ b/src/gpg/gal/backends/vulkan/ResourcesVulkan.h
+@@ -135,13 +135,27 @@ namespace gpg::gal
+     [[nodiscard]] std::uint8_t* Lock(std::uint32_t offset, std::uint32_t size, MohoD3DLockFlags flags);
+     void Unlock();
+ 
+-    /** The buffer and offset draws read from. */
+-    void PrepareForDraw(DeviceVulkan& device, VkBuffer& outBuffer, VkDeviceSize& outOffset);
++    /** The buffer and offset draws read from; the draw reads no byte from `readEnd` on. */
++    void PrepareForDraw(DeviceVulkan& device, std::uint64_t readEnd, VkBuffer& outBuffer, VkDeviceSize& outOffset);
++    /** The buffer and offset for a read anywhere in it. */
++    void PrepareForDraw(DeviceVulkan& device, VkBuffer& outBuffer, VkDeviceSize& outOffset)
++    {
++      PrepareForDraw(device, mByteWidth, outBuffer, outOffset);
++    }
+     [[nodiscard]] std::uint32_t ByteWidth() const noexcept { return mByteWidth; }
++    [[nodiscard]] bool IsDynamic() const noexcept { return mDynamic; }
++    /** The buffer's bytes as the CPU last wrote them. */
++    [[nodiscard]] const std::uint8_t* Bytes() const noexcept { return mShadow.data(); }
+     /** A static buffer, for a GPU copy into it; nullptr for a dynamic buffer (upload memory). */
+     [[nodiscard]] vulkan::TrackedBuffer* CopyDestination() noexcept { return mDynamic ? nullptr : &mBuffer; }
+ 
+   private:
++    /**
++     * Makes the chunk hold the buffer's bytes from `begin` to `end`, and those below them: a chunk
++     * holds a beginning of the buffer, as far as locks and draws have reached.
++     */
++    void FillChunk(DeviceVulkan& device, std::uint32_t begin, std::uint32_t end);
++
+     std::uint32_t mByteWidth = 0;
+     const char* mKind = nullptr;
+     bool mDynamic = false;
+@@ -151,6 +165,8 @@ namespace gpg::gal
+     VkDeviceSize mChunkOffset = 0;
+     std::uint8_t* mChunkCpu = nullptr;
+     std::uint64_t mChunkSerial = 0;
++    std::uint32_t mChunkBytes = 0;  // its size
++    std::uint32_t mChunkFilled = 0; // it holds the buffer's bytes below this
+     bool mLocked = false;
+     std::uint32_t mLockOffset = 0;
+     std::uint32_t mLockSize = 0;
+@@ -186,6 +202,8 @@ namespace gpg::gal
+ 
+     [[nodiscard]] BufferStorageVulkan& Storage() noexcept { return mStorage; }
+     [[nodiscard]] VkIndexType IndexType() const noexcept;
++    /** The highest of the `count` indices from `start` on, up to which an indexed draw reads its vertices. */
++    [[nodiscard]] std::uint32_t HighestIndex(std::uint32_t start, std::uint32_t count) const noexcept;
+ 
+   private:
+     IndexBufferContext mContext;

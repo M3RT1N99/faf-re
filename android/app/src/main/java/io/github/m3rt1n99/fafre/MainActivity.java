@@ -106,7 +106,7 @@ public final class MainActivity extends Activity {
         LinearLayout data = card(column, "2 · Game data",
             "Your own Supreme Commander: Forged Alliance (its gamedata/*.scd archives), imported once. Earlier releases of "
                 + "this app imported it already. FAF's own files for a replay's game version are downloaded on the first run "
-                + "(about 700 MB from FAF, 35 MB kept), replays and maps as needed.");
+                + "(about 700 MB from FAF, kept whole), replays and maps as needed.");
         mDataStatus = text("", 14, TEXT);
         data.addView(mDataStatus);
         mStartButtons.add(button(data, "Import SCFA folder…", v -> pickScfa()));

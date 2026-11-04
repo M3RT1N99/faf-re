@@ -30,6 +30,10 @@ final class GameReport {
 
     /** The host's line when the program returned: "<ms> ms: exit <code>". */
     private static final Pattern EXIT = Pattern.compile("^(\\d+) ms: exit (-?\\d+)$", Pattern.MULTILINE);
+    /** The host's line when the first frame went to the screen. */
+    private static final Pattern FIRST_FRAME = Pattern.compile("^\\d+ ms: first frame$", Pattern.MULTILINE);
+    /** The host's line when the program stopped on a fatal error, with the lines its message goes on in. */
+    private static final Pattern FATAL = Pattern.compile("^\\d+ ms: fatal: (.*(?:\\n(?!\\d+ ms: ).+)*)", Pattern.MULTILINE);
     /** How much of the engine's log's end is read for its last warning. */
     private static final int LOG_TAIL = 1 << 16;
 
@@ -60,6 +64,16 @@ final class GameReport {
     static void clear(Context context) {
         file(context).delete();
         tombstone(context).delete();
+    }
+
+    /** Whether the report says that the first frame came. */
+    static boolean firstFrame(String report) {
+        return FIRST_FRAME.matcher(report).find();
+    }
+
+    /** Whether the report says that the program ended or failed, with its process still there. */
+    static boolean ended(String report) {
+        return EXIT.matcher(report).find() || FATAL.matcher(report).find();
     }
 
     /** A line from the activity's side into the report. */
@@ -112,6 +126,10 @@ final class GameReport {
 
     /** How the game ended, for a report whose process is gone; `since` is the report's last write. */
     private static String end(Context context, String report, long since) {
+        Matcher fatal = FATAL.matcher(report);
+        if (fatal.find()) {
+            return END + "FAILED: " + fatal.group(1).replace('\n', ' ');
+        }
         String engine = engineSummary(context);
         String tail = engine.isEmpty() ? "" : "; " + engine;
         Matcher exit = EXIT.matcher(report);
