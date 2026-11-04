@@ -12,7 +12,7 @@ import java.io.IOException;
  *
  * <pre>
  *   scfa/                  the user's Supreme Commander: Forged Alliance (fa_path): gamedata/*.scd,
- *                          fonts/, maps/ if imported
+ *                          fonts/, sounds/, movies/, maps/ if imported
  *   parity/game/&lt;v&gt;/       FAF's files for game version v (GameFiles): gamedata/*.nx2 (whole, as FAF
  *                          publishes them), bin/init_ci.lua, fa_path.lua
  *   parity/replays/        downloaded .fafreplay files

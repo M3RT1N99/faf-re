@@ -185,7 +185,7 @@ most of C1, as 56 files stop at wx.
   - The app keeps FAF's packages whole (about 700 MB) and imports SCFA's `fonts/`.
 - **On the phone it needs:** SCFA imported again (`fonts/`), FAF's files downloaded again (whole).
 - **On a phone (0.9.0, a Galaxy S22 Ultra set to HD+: Xclipse 920, Vulkan 1.3.279):** the picture is
-  right and the speed good. A skirmish on an 8-player map against 7 AIs ran at 95 % of real time at
+  right and the speed good. A skirmish on an 8-player map against 7 AIs ran at about 95 % of real time at
   1647 x 768, with the CPU's BC decode and all the GPU-driven features on and BC as the only Vulkan
   warning, with at most 185 MB of heap; it ended after 170 s by the player's own hand.
 - **Playable by fingers, from C4:** the game draws at a size of its own, 768 lines on a phone, which
@@ -197,4 +197,16 @@ most of C1, as 56 files stop at wx.
   to hit, so that a tap placed a new one. So a tap now puts a building's ghost, a finger moves it and a
   tap on it places it, and *Del* deletes the order nearest to a tap (0.9.1; the emulator's fingers
   only so far).
-- **Next:** sound and movies (C3), then the speed (C4).
+- **Sound and movies, C3's rest:** the XACT engine on FACT over AAudio, X3DAudio on F3DAudio, the
+  movies on FFmpeg ([native README](native/README.md), Sound and movies). Checked on the emulator: the
+  game's banks through the mix's numbers (`faf_audio_tests`), the logos, the intro film with its music
+  and voice, the menu's film and the timeline by screenshots and the mix's peaks, Home and back, a call,
+  six movies on both ABIs (`faf_movie_tests`). Nobody has heard it: the emulator has no audio output.
+  Its frame rate says nothing about a phone's during a film: copying a frame into its GPU memory takes
+  about 110 ms there, 40 MB/s. Open for the phone: the levels (the game's categories put the intro
+  film over full scale at its loudest, peaks of 1.2 to 1.3 in each of two streams) and the speed in the
+  menu, whose film is 1824x1024. A film keeps decoding while the app is in the back.
+  - FAF's Lua breaks the campaign from the main menu: `selectcampaign.lua` calls
+    `operationbriefing.CreateUI('X1CA_001', opData)`, which takes `(parent, scenarioPath)`, so that the
+    screen stays black after the timeline film. Not the port's (read in its Lua, not run on a PC).
+- **Next:** the phone's word on sound and movies, then the speed (C4) and online (C5).

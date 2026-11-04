@@ -7,13 +7,13 @@ it, and so does its Windows build. Everything Android needs beyond it is in this
 ```sh
 cd android/native
 cmake --preset android-arm64          # or android-x64 for the emulator
-cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgalsmoke, fafgame, faf_wx_lite_tests
+cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgalsmoke, fafgame, faf_wx_lite_tests, faf_audio_tests, faf_movie_tests
 ```
 
 The outputs land in `build/android-<abi>/bin`, where the app (`android/app`) takes them from.
 The dependencies come first, once, as for any engine build:
 `cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;boost_1_34_1" -P cmake/FafDependencies.cmake`
-(from the repository root).
+and `git submodule update --init dependencies/ffmpeg` (from the repository root).
 
 ## How it fits together
 
@@ -26,13 +26,19 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_game_sim` | The simulation's objects again, with this build's headers, so every object of a library sees the same types |
 | `faf_android_platform` | `src/win32`, `src/gal`: what the Vulkan backend stands on here |
 | `freetype` | FreeType, under the GDI font functions (see The fonts) |
+| `faudio` | FAudio, under the XACT engine and X3DAudio (see Sound and movies) |
+| `FFmpeg::FFmpeg` | FFmpeg's libraries, under the movie player (`ffmpeg/`, see Sound and movies) |
 | `faf_gal` | The renderer (`gpg/gal`): the Vulkan backend and what it shares with the others |
 | `faf_wx_lite` | wx-lite, the part of wxWindows 2.4.2 the client uses, on the message layer (`WX_LITE.md`) |
 | `faf_client` | The rest of the client, with the Android halves of what it needs from the left-out files |
+| `faf_audio` | `src/audio`: the XACT engine on FACT, X3DAudio on F3DAudio |
+| `faf_movie_player` | The engine's movie player, whose decoder is on FFmpeg's headers |
 | `faf_host` | `src/host`: the program's start as `WinMain` does it, and the activity's surface, input and lifecycle as Win32 messages |
 | `fafgame` | `libfafgame.so`, all of the above: the whole engine and its host (card 5 of the app) |
 | `fafgalsmoke` | `libfafgalsmoke.so`, the renderer test (card 4 of the app) |
 | `faf_wx_lite_tests` | wx-lite's, the message layer's and the GDI fonts' tests (`tests/wx`, `WX_LITE.md` Checks), linked statically |
+| `faf_audio_tests` | The XACT engine on the game's banks, heard through the mix (`tests/audio`) |
+| `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
 
 The client's files are the engine's (`src/sources.cmake`) minus the simulation's
 (`src/sim_sources.cmake`) and minus the Windows-only ones (`CMakeLists.txt`,
@@ -70,9 +76,9 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/win32/DbgHelpAndroid.cpp` | `SymFromAddr`, from the dynamic symbol tables with demangled names |
 | `src/win32/GdiAndroid.cpp` | GDI's font functions, as the font renderer calls them: handles for fonts, bitmaps, brushes and memory DCs, `DrawTextW`, the bitmap's pixels (see The fonts) |
 | `src/win32/GdiFonts.cpp` | GDI's TrueType fonts on FreeType: the fonts from memory, the face a name finds, metrics, advances, kerning pairs and glyphs as GDI has them (checked on Windows by `tests/gdifont`) |
-| `src/audio/AudioAndroid.cpp` | The audio platform: none yet (`DirectSoundCreate` finds no device, X3DAudio places nothing, no XACT clock) |
-| `src/audio/XactEngineAndroid.cpp` | An XACT engine that plays nothing, until FACT (C3): the sound functions work and so do the options, which import the music's Lua; `CoCreateInstance` creates it |
-| `src/movie/FfmpegSfdDecoderAndroid.cpp` | The movie decoder: no FFmpeg for Android yet, so the player skips movies |
+| `src/audio/AudioAndroid.cpp` | X3DAudio on F3DAudio, field by field; `DirectSoundCreate` finds no device (see Sound and movies); no XACT clock to patch |
+| `src/audio/XactEngineAndroid.cpp` | The XACT engine: FACT behind the engine's interfaces; `CoCreateInstance` creates it |
+| `src/audio/FAudioPlatformAndroid.c` | FAudio's platform in place of its SDL files: the output on AAudio, threads, mutexes and files on POSIX |
 | `src/diag/FrameSamplerAndroid.cpp` | The frame sampler's mark: nothing to sample with (the Windows one suspends the main thread) |
 | `src/gal/VulkanSurfaceAndroid.cpp` | The Vulkan backend's platform unit (`VulkanSurface.h`) for Android: `VK_KHR_android_surface`, and for the patched `DeviceVulkan.cpp` a surface's end and the first frame |
 | `src/gal/WindowsCursorAndroid.cpp` | The backends' Win32 cursor helper: no system cursor |
@@ -135,6 +141,33 @@ libraries; its licence goes to `licenses/`. FreeType reads and hints the fonts; 
 A character a face lacks is its missing glyph here; GDI takes it from a font linked to the face, where
 Windows links one (CJK, for instance). That is open.
 
+### Sound and movies
+
+The XACT engine is FACT, FAudio's reimplementation of XACT 3: release 26.11, pinned and built from
+source (`cmake/FafAndroidFAudio.cmake`), with `cmake/FAudio.patch` for what the game's banks run into
+in FACT (the module's header says what). `src/audio/FAudioPlatformAndroid.c` stands in
+for its SDL platform. Each FAudio engine, of which the game has three (`/sounds`, `voice/us`,
+`voice/us/tutorials`), has an AAudio stream at 48 kHz stereo and a thread of its own that mixes and
+writes it, since FACT reads streaming banks on the mix path, which AAudio's data callback must not.
+The writes do not block, as this kind of stream's blocking write has no timeout. Home and a lost audio
+focus close the stream, and with it what it still held. The mix goes on unheard, also while no stream
+will open, so that the game's sounds end when they should instead of all starting together on the
+return. A stream that takes nothing for 2 s is given up. The system lowers no AAudio stream for
+another app's short sound, so the game's sound stops for it. The output's lines reach the engine's log as well, since a phone's tester has no logcat.
+
+FFmpeg is the engine's submodule, unchanged, built by `ffmpeg/CMakeLists.txt` with the NDK's clang
+from what its configure writes for each ABI, checked in under `ffmpeg/<abi>/`. `ffmpeg/generate.sh`
+writes those (Git Bash, minutes per ABI) with the components of `dependencies/ffmpeg/faf/generate.sh`;
+when upstream moves the submodule, the configure stops and says to run it. This configuration is LGPL
+2.1 or later and linked statically: the sources are the submodule's, this repository builds the
+library anew, and the licence's text goes into the app's assets.
+
+The game's movies have no sound of their own: the Lua plays XACT cues beside each film (the banks
+`FMV_BG`, `X_FMV`, `Op_Briefing`). Only `e3_demo_cut` has a track, and no menu plays it, so there is no
+DirectSound here. `DirectSoundCreate` fails, the engine's speaker setup stays at stereo, and a movie
+with a track would play on the player's steady clock without it. `patches/README.md` has what the
+movie player needed.
+
 ## Tests
 
 `faf_wx_lite_tests` (`tests/wx`) checks wx-lite's event system, the Win32 message layer and the
@@ -156,6 +189,19 @@ arm64 build runs on real ARM only (the CI runner).
 
 `faf_wx_lite_tests` also checks GDI's fonts (`tests/wx/GdiTests.cpp`) on TrueType files it makes
 itself: boxes whose edges fall where the metrics and pixels can be worked out by hand.
+
+`faf_audio_tests <the game's sounds folder>` (`tests/audio`) plays the game's banks through the XACT
+engine, on a device or the emulator, where nobody hears them: the platform's mix observer is its ears.
+It stands in for three of AAudio's functions, to pull the headphones out and to have no output at all.
+It needs Android's libaaudio, so it is not static, and the arm64 build runs under the emulator's ARM
+translation.
+
+`faf_movie_tests [--frame N out.raw] movie.sfd ...` (`tests/movie`) decodes real movies with the
+engine's decoder and prints one line for each: size, frames, samples, a CRC over all pictures and one
+over all audio, the time and the peak memory. The audio's CRC is the same on both ABIs; the pictures'
+differ by the rounding of NEON's and C's IDCT (at most 3 levels, about 45 dB). With `--play SECONDS` it
+runs the engine's player by the clock with a reader that stalls now and then: it fails when the
+player gives up, and prints how long the reader had to wait.
 
 `gdifont_compare` (`tests/gdifont`, a CMake project of its own for a Windows host) registers a
 folder's fonts (the game's `fonts/`, copied somewhere outside the repository) with GDI as the game

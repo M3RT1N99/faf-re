@@ -51,7 +51,7 @@ the game data they imported. Everything lives in the app's external files folder
 
 | Folder | What |
 |---|---|
-| `scfa/` | The user's own *Supreme Commander: Forged Alliance*: `gamedata/*.scd` (*Import SCFA folder…*, or an earlier release's import), `maps/` if imported |
+| `scfa/` | The user's own *Supreme Commander: Forged Alliance*: `gamedata/*.scd`, `fonts/`, `sounds/`, `movies/` (*Import SCFA folder…*, which copies what an earlier release's import has not), `maps/` if imported |
 | `parity/game/<version>/` | FAF's game files for one game version, packed as `tools/parity-data` packs them for CI: `gamedata/*.nx2` cut to the files headless reads, `bin/init_ci.lua`, `fa_path.lua` pointing at `scfa/` |
 | `parity/replays/`, `maps/`, `m28/` | Downloaded replays, vault maps and M28AI versions |
 | `parity/runs/<id>/` | One replay's run: `replay.scfareplay`, its own vault, `headless.out`, `engine.log`, `speed.csv` |
@@ -105,7 +105,8 @@ the game data they imported. Everything lives in the app's external files folder
   newest version a replay downloaded: `ForgedAlliance.exe /init <its init file> /log
   game/engine.sclog`, the program's path in the game files' `bin` folder. It runs in a process of
   its own (`:game`) on a full-screen surface, which ends with the program, as a Windows program's
-  does. It draws the menus and plays a skirmish, without sound or movies yet (`/nomovie`, C3). A
+  does. It draws the menus and plays a skirmish, with the game's sound (FACT on AAudio) and its
+  movies (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film). A
   mouse is the mouse, keys are the keyboard and Back is Esc. Fingers act as a mouse (`TouchInput`):
   a tap is a click, a finger that moves drags, a finger that stays holds the right button until it
   lifts (an order), a quick tap of two fingers is a right click where the second came down, two

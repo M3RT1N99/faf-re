@@ -44,6 +44,8 @@ jobs:
           path: dependencies/.downloads
           key: deps-${{ hashFiles('cmake/FafDependencies.cmake') }}
       - run: cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;boost_1_34_1" -P cmake/FafDependencies.cmake
+      # FFmpeg's sources, for the game's movies (android/native/ffmpeg).
+      - run: git submodule update --init --depth 1 dependencies/ffmpeg
       - working-directory: android/native
         run: |
           cmake --preset android-arm64
