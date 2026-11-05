@@ -118,7 +118,9 @@ the game data they imported. Everything lives in the app's external files folder
   second finger gives that up; a quick tap of two fingers cancels. A bar at the screen's edge has what fingers have not: *Order* swaps the left and right
   buttons, so that taps give orders, *Shift* and *Ctrl* stay down until tapped again, *Del* makes a tap
   delete the queued order under it, and *Keys* opens the on-screen keyboard, which plain keys go to the
-  game from, with what it typed shown over the picture, as it covers the game's text field. The game draws at a size of its own (`PictureSize`, a button on the
+  game from, with what it typed shown over the picture, as it covers the game's text field. The game's HUD is scaled to the screen, a tap beside a small control
+  hits it, and the pointer leaves when the fingers have, so that rollovers go ([TOUCH_UI.md](TOUCH_UI.md), where the bar
+  is, and what each hook of the UI package `app/src/main/assets/fafre_ui` is for). The game draws at a size of its own (`PictureSize`, a button on the
   card): its UI has a fixed size in pixels, so 768 lines on a phone make it larger, with fewer pixels
   to fill, and the compositor scales the picture to the panel. The host writes `game.txt` in the
   app's files; when the process is gone, the app adds how it ended (the exit code, a fatal error's

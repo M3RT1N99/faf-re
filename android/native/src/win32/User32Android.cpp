@@ -104,6 +104,7 @@ namespace
     DWORD messagePos = 0;
     MSG lastKeyDown{}; // the last key press taken from the queue, and what it types
     wchar_t lastKeyCharacter = 0;
+    int taskInput = -1; // while the host's task runs on the thread: the input it has given so far, right behind it; else -1
   };
 
   struct DeviceContext
@@ -382,7 +383,7 @@ namespace
   }
 
   /// Input from the host. A mouse move replaces one still waiting for the same window, as
-  /// Windows coalesces them.
+  /// Windows coalesces them. What a task of the host gives comes next, in the task's place in the queue.
   void PostInputLocked(
     ThreadQueue& queue, Window* window, const UINT message, const WPARAM wParam, const LPARAM lParam, const wchar_t character,
     const LPARAM extraInfo = 0
@@ -392,7 +393,9 @@ namespace
     posted.msg = MSG{Handle(window), message, wParam, lParam, ::GetTickCount(), Layer().cursor};
     posted.character = character;
     posted.extraInfo = extraInfo;
-    if (message == WM_MOUSEMOVE && !queue.posted.empty() && queue.posted.back().msg.message == WM_MOUSEMOVE
+    if (queue.taskInput >= 0 && queue.threadId == ::GetCurrentThreadId()) {
+      queue.posted.insert(queue.posted.begin() + queue.taskInput++, posted);
+    } else if (message == WM_MOUSEMOVE && !queue.posted.empty() && queue.posted.back().msg.message == WM_MOUSEMOVE
         && queue.posted.back().msg.hwnd == posted.msg.hwnd) {
       queue.posted.back() = posted;
     } else {
@@ -2169,7 +2172,13 @@ LRESULT DispatchMessageW(const MSG* const message)
     return 0;
   }
   if (message->message == kRunTaskMessage) {
+    Lock lock(Layer().mutex);
+    ThreadQueue& queue = CurrentQueueLocked();
+    queue.taskInput = 0;
+    lock.unlock();
     reinterpret_cast<void (*)(WPARAM)>(message->lParam)(message->wParam);
+    lock.lock();
+    queue.taskInput = -1;
     return 0;
   }
   WNDPROC procedure = nullptr;
@@ -3104,6 +3113,23 @@ void Win32Android_RunOnWindowThread(void (*const task)(WPARAM), const WPARAM arg
   Lock lock(layer.mutex);
   if (!layer.topLevel.empty()) {
     Window* const window = layer.topLevel.front();
+    PostInputLocked(*window->queue, window, kRunTaskMessage, argument, reinterpret_cast<LPARAM>(task), 0);
+  }
+}
+
+void Win32Android_RunNewestOnWindowThread(void (*const task)(WPARAM), const WPARAM argument)
+{
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  if (layer.topLevel.empty()) {
+    return;
+  }
+  Window* const window = layer.topLevel.front();
+  std::deque<Posted>& posted = window->queue->posted;
+  if (!posted.empty() && posted.back().msg.message == kRunTaskMessage && posted.back().msg.lParam == reinterpret_cast<LPARAM>(task)) {
+    posted.back().msg.wParam = argument;
+    Wake(*window->queue);
+  } else {
     PostInputLocked(*window->queue, window, kRunTaskMessage, argument, reinterpret_cast<LPARAM>(task), 0);
   }
 }

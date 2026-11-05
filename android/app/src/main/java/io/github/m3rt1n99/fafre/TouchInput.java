@@ -37,6 +37,9 @@ package io.github.m3rt1n99.fafre;
  *
  * Fingers beyond the two a gesture uses are ignored. Positions are the screen's pixels, which {@link
  * Mouse} turns into the game's.
+ *
+ * <p>A mouse's pointer goes on being somewhere, and the game shows what it is over. A finger's goes, shortly after the
+ * last finger has lifted ({@link Mouse#leaveSoon}), so that a rollover does not stay in the way of what it opened.
  */
 final class TouchInput {
     /** What the fingers do, on the thread that calls this class. */
@@ -48,6 +51,9 @@ final class TouchInput {
          * ghost there, whatever this class knows of the ghost by then, which may be behind the game.
          */
         void button(int button, boolean down, float x, float y);
+
+        /** A tap, a click of the left button, which the game's UI may give to a small control beside it. */
+        void tap(float x, float y);
 
         /**
          * A tap near a building's ghost: it places the building where the ghost is, unless the game's UI
@@ -76,6 +82,12 @@ final class TouchInput {
         /** Deletes the queued order nearest to the cursor, which has come here, unless the game's UI is here. */
         void deleteOrder(float x, float y);
 
+        /** In {@link #LEAVE_MILLISECONDS} the pointer leaves what it is over. */
+        void leaveSoon();
+
+        /** A finger came: the pointer stays, whatever {@link #leaveSoon} said, also if the leave is on its way to the game. */
+        void stay();
+
         /** Calls {@link #timer} after this long, in place of the time set before. */
         void startTimer(long milliseconds);
 
@@ -91,6 +103,8 @@ final class TouchInput {
      * frame, and a quick tap can be over before a slow frame has seen where it landed.
      */
     static final long SETTLE_MILLISECONDS = 120;
+    /** How long the pointer stays after the last finger: a click is yet to come (SETTLE_MILLISECONDS), and frames to see it. */
+    static final long LEAVE_MILLISECONDS = 300;
     /** Two clicks this close, and near each other, are the game's double click. */
     static final long DOUBLE_TAP_MILLISECONDS = 400;
     /** How far above the finger, in slops, a ghost starts that nothing has put anywhere yet. */
@@ -214,9 +228,11 @@ final class TouchInput {
 
     /** A finger came down; `first`: no other is left on the glass, whatever this class heard of them. */
     void down(int id, float x, float y, long time, boolean first) {
+        // First: a leave on its way counts as taken back, whatever this finger goes on to send.
+        mMouse.stay();
         if (first) {
             if (mState != State.NONE && mState != State.SPENT) {
-                cancel();
+                endGesture();
             }
             finishClick();
             bringCursorBackToGhost();
@@ -379,6 +395,7 @@ final class TouchInput {
             mState = State.NONE;
             mFirst.id = -1;
             mSecond.id = -1;
+            mMouse.leaveSoon();
         }
     }
 
@@ -405,6 +422,11 @@ final class TouchInput {
      * the finger did not finish.
      */
     void cancel() {
+        endGesture();
+        mMouse.leaveSoon();
+    }
+
+    private void endGesture() {
         mMouse.stopTimer();
         if (mState == State.PRESSED) {
             mMouse.button(mPressed, false, mFirst.x, mFirst.y);
@@ -534,6 +556,10 @@ final class TouchInput {
         mClickButton = NO_CLICK;
         if (button == DELETE_ORDER) {
             mMouse.deleteOrder(mClickX, mClickY);
+            return;
+        }
+        if (button == Game.BUTTON_LEFT) {
+            mMouse.tap(mClickX, mClickY);
             return;
         }
         mMouse.button(button, true, mClickX, mClickY);

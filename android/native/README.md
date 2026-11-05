@@ -215,7 +215,7 @@ It prints each test's name and the checks that failed, then `<n> tests, <m> fail
 with 0 when every check passed. The emulator's ARM translation runs no static executables, so the
 arm64 build runs on real ARM only (the CI runner).
 
-`faf_wx_lite_tests` also checks GDI's fonts (`tests/wx/GdiTests.cpp`) on TrueType files it makes
+`faf_wx_lite_tests` also checks the choice of the small control a finger's tap meant (`tests/wx/TapTargetTests.cpp`, `../TOUCH_UI.md`) and GDI's fonts (`tests/wx/GdiTests.cpp`) on TrueType files it makes
 itself: boxes whose edges fall where the metrics and pixels can be worked out by hand.
 
 `faf_net_tests` (`tests/net`) runs Winsock's events and the engine's own datagram socket and UDP connector on

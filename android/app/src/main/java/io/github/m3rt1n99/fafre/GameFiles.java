@@ -1,11 +1,14 @@
 package io.github.m3rt1n99.fafre;
 
+import android.content.res.AssetManager;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,6 +34,8 @@ final class GameFiles {
     static final List<String> PACKAGES =
         Arrays.asList("effects", "env", "etc", "loc", "lua", "meshes", "mods", "projectiles", "textures", "units");
     static final Set<String> REQUIRED = new HashSet<>(Arrays.asList("lua", "units"));
+    /** The UI package (android/TOUCH_UI.md): in the APK's assets, beside the game's files, and mounted under this name. */
+    static final String UI_PACKAGE = "fafre_ui";
 
     static final String VAULT_ANCHOR = "if custom_vault_path then";
     private static final Pattern VAULT_LINE = Pattern.compile("^custom_vault_path = .*$", Pattern.MULTILINE);
@@ -170,12 +175,54 @@ final class GameFiles {
 
     /** The init file of one run: init_ci.lua with the run's own vault. */
     static File runInit(File gameDir, String label, File vault) throws IOException {
+        File init = new File(gameDir, "bin/init_" + label + ".lua");
+        write(init, runInitText(gameDir, vault));
+        return init;
+    }
+
+    /**
+     * The init file of a game: a run's, and the UI package (android/TOUCH_UI.md) comes along, from the
+     * APK, so that an update reaches it. A replay's run stays without it, as it pins the simulation.
+     */
+    static File gameInit(AssetManager assets, File gameDir, File vault) throws IOException {
+        File folder = new File(gameDir, UI_PACKAGE);
+        Storage.deleteTree(folder);
+        copyAssets(assets, UI_PACKAGE, folder);
+        File init = new File(gameDir, "bin/init_game.lua");
+        write(init, withUiPackage(runInitText(gameDir, vault)));
+        return init;
+    }
+
+    private static String runInitText(File gameDir, File vault) throws IOException {
         String text = new String(Files.readAllBytes(new File(gameDir, "bin/init_ci.lua").toPath()), StandardCharsets.UTF_8);
         String line = "custom_vault_path = '" + vault.getAbsolutePath() + "'";
-        text = VAULT_LINE.matcher(text).replaceFirst(Matcher.quoteReplacement(line));
-        File init = new File(gameDir, "bin/init_" + label + ".lua");
-        write(init, text);
-        return init;
+        return VAULT_LINE.matcher(text).replaceFirst(Matcher.quoteReplacement(line));
+    }
+
+    /** The init file with the UI package mounted and hooked: right before its vault line, ahead of the game's content. */
+    static String withUiPackage(String text) throws IOException {
+        Matcher vault = VAULT_LINE.matcher(text);
+        if (!vault.find()) {
+            throw new IOException("init file: no vault line");
+        }
+        String mount = "MountDirectory(InitFileDir .. '/../" + UI_PACKAGE + "', '/" + UI_PACKAGE + "')\n"
+            + "table.insert(hook, '/" + UI_PACKAGE + "')\n";
+        return text.substring(0, vault.start()) + mount + text.substring(vault.start());
+    }
+
+    private static void copyAssets(AssetManager assets, String path, File target) throws IOException {
+        String[] names = assets.list(path);
+        if (names == null || names.length == 0) {
+            // list() has nothing to say of a file.
+            Storage.mkdirs(target.getParentFile());
+            try (InputStream in = assets.open(path)) {
+                Files.copy(in, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+            return;
+        }
+        for (String name : names) {
+            copyAssets(assets, path + "/" + name, new File(target, name));
+        }
     }
 
     static void write(File file, String text) throws IOException {

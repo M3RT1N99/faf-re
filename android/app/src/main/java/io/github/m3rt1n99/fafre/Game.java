@@ -57,6 +57,24 @@ final class Game {
     /** Gives up the line of buildings a finger is drawing, with nothing built. */
     static native void cancelLine();
 
+    /** Whether a game goes on behind the game's UI, as opposed to the menus and the score screen. */
+    static native boolean gamePlaying();
+
+    /**
+     * A finger's tap, a click of the left button, which hits the small control it meant if there is one within
+     * `reach`; `smallSide`: what counts as small. Both in the picture's pixels. Where a ghost waits, it stays where it landed.
+     */
+    static native void tap(int x, int y, int reach, int smallSide);
+
+    /**
+     * No finger is on the glass: the pointer leaves what it is over, unless a building's ghost is with it over the world, or
+     * {@link #pointerStay} comes before the game has got to this.
+     */
+    static native void pointerLeave();
+
+    /** A finger came down, ahead of what it sends: a {@link #pointerLeave} that has not happened by now does not happen. */
+    static native void pointerStay();
+
     /** Deletes the queued order of the selected units nearest to the cursor, which is at this place, if one is near. */
     static native void deleteOrder(int x, int y);
 

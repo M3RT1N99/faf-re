@@ -1,25 +1,90 @@
 diff --git a/src/moho/ui/CUIWorldViewEvents.cpp b/src/moho/ui/CUIWorldViewEvents.cpp
-index fda09e9c..266c49ae 100644
+index fda09e9c..5553d0aa 100644
 --- a/src/moho/ui/CUIWorldViewEvents.cpp
 +++ b/src/moho/ui/CUIWorldViewEvents.cpp
-@@ -1,6 +1,51 @@
+@@ -1,6 +1,180 @@
  #include "moho/ui/UiPrivate.h"
  #include "moho/lua/CScrLuaObjectFactory.h"
  
++#include <TapTarget.h>
++
 +#include <atomic>
++#include <exception>
 +
 +// Android client build: placing a building by finger (CUIWorldView::HandleEvent), and what the app,
 +// on its own thread, asks about it.
 +namespace
 +{
 +  std::atomic<bool> sPlacingBuilding{false};
-+  moho::CUIWorldView* sMainWorldView = nullptr;
++  std::atomic<bool> sGamePlaying{false};
++  std::atomic<moho::CUIWorldView*> sMainWorldView{nullptr};
 +
-+  [[nodiscard]] bool IsPlacingBuilding()
++  /** What the world's next press would be for, if anything: an order, a ping, a building. Ask only with a world view up. */
++  [[nodiscard]] msvc8::string CommandMode()
 +  {
 +    moho::UICommandModeData commandMode{};
 +    moho::UI_GetCommandMode(commandMode);
-+    return commandMode.mMode == "build" || commandMode.mMode == "buildanchored";
++    return commandMode.mMode;
++  }
++
++  [[nodiscard]] bool IsPlacingBuilding()
++  {
++    const msvc8::string mode = CommandMode();
++    return mode == "build" || mode == "buildanchored";
++  }
++
++  /** The world view a press on this control comes to: a press goes on to the parents, past what does not take it, such as a marker on the map. */
++  [[nodiscard]] moho::CUIWorldView* WorldViewOf(moho::CMauiControl* control)
++  {
++    for (; control != nullptr; control = control->GetParent()) {
++      if (moho::CUIWorldView* const view = dynamic_cast<moho::CUIWorldView*>(control)) {
++        return view;
++      }
++    }
++    return nullptr;
++  }
++
++  [[nodiscard]] taptarget::Box BoxOf(moho::CMauiControl* const control)
++  {
++    return taptarget::Box{
++      moho::CScriptLazyVar_float::GetValue(&control->mLeftLV), moho::CScriptLazyVar_float::GetValue(&control->mTopLV),
++      moho::CScriptLazyVar_float::GetValue(&control->mRightLV), moho::CScriptLazyVar_float::GetValue(&control->mBottomLV)
++    };
++  }
++
++  /**
++   * A window's title or one of its resize edges (lua/maui/window.lua names them so). They take a drag, and a press that moves
++   * nothing does no more than save the window's place, which then counts as the place the user chose.
++   */
++  [[nodiscard]] bool IsWindowHandle(moho::CMauiControl* const control)
++  {
++    const moho::CMauiControl* const parent = control->GetParent();
++    return control->mDebugName == "window title group" || (parent != nullptr && parent->mDebugName == "window resize group");
++  }
++
++  /** A finger's press can act on it: one of the engine's, or by its handlers in Lua (taptarget::ActsOnAPress). */
++  [[nodiscard]] bool IsLive(moho::CMauiControl* const control, const LuaPlus::LuaObject& plainHandler)
++  {
++    if (dynamic_cast<moho::CMauiItemList*>(control) != nullptr || dynamic_cast<moho::CMauiEdit*>(control) != nullptr
++        || dynamic_cast<moho::CMauiScrollbar*>(control) != nullptr) {
++      return true;
++    }
++    LuaPlus::LuaObject handler;
++    LuaPlus::LuaObject wrapped;
++    control->FindScript(&handler, "HandleEvent");
++    control->FindScript(&wrapped, "oldHandleEvent");
++    return !IsWindowHandle(control) && taptarget::ActsOnAPress(handler, wrapped, plainHandler);
++  }
++
++  /** Whether `part` is `whole` or lies within it. */
++  [[nodiscard]] bool IsPartOf(moho::CMauiControl* part, const moho::CMauiControl* const whole)
++  {
++    for (; part != nullptr; part = part->GetParent()) {
++      if (part == whole) {
++        return true;
++      }
++    }
++    return false;
 +  }
 +} // namespace
 +
@@ -31,30 +96,94 @@ index fda09e9c..266c49ae 100644
 +    return sPlacingBuilding.load();
 +  }
 +
++  /** Whether a game goes on behind the game's UI, as the last frame saw it: not in the menus, and not on the score screen. */
++  bool UI_GamePlaying() noexcept
++  {
++    return sGamePlaying.load();
++  }
++
 +  /** Whether a press here would come to a world view, not stay with the UI over it. On the window thread. */
 +  bool UI_WorldViewAt(const float x, const float y)
 +  {
 +    CMauiControl* root = ResolveTopInputCaptureControl();
-+    if (root == nullptr && sMainWorldView != nullptr) {
-+      root = sMainWorldView->GetRootFrame();
++    if (root == nullptr && sMainWorldView.load() != nullptr) {
++      root = sMainWorldView.load()->GetRootFrame();
 +    }
 +    if (root == nullptr) {
 +      return false;
 +    }
-+    // What a press finds goes on to the parents, as a marker on the map does that does not take it.
-+    for (CMauiControl* control = CMauiControl::GetTopmostControl(root, x, y); control != nullptr; control = control->GetParent()) {
-+      if (dynamic_cast<CUIWorldView*>(control) != nullptr) {
++    return WorldViewOf(CMauiControl::GetTopmostControl(root, x, y)) != nullptr;
++  }
++
++  /** Whether a building's ghost waits now, at this place over the world, where the pointer is with it. On the window thread. */
++  bool UI_GhostWaitsAt(const float x, const float y)
++  {
++    // The menus' Lua has no command mode to ask.
++    return sMainWorldView.load() != nullptr && IsPlacingBuilding() && UI_WorldViewAt(x, y);
++  }
++
++  /**
++   * Where a finger's tap at this place clicks (android/TOUCH_UI.md): the small control it meant, if one is within reach, at the
++   * pixel of it nearest to the tap. Otherwise where it landed: on the minimap; on the world with a command mode armed, which
++   * wants that very place; on what a finger can act on that is not small; on the world far from any small control. False
++   * when there is nothing to click: only a window's title or edge is there. On the window thread.
++   */
++  bool UI_TapTarget(const float x, const float y, const float reach, const float smallSide, float* const targetX, float* const targetY)
++  {
++    *targetX = x;
++    *targetY = y;
++    try {
++      CMauiControl* root = ResolveTopInputCaptureControl();
++      if (root == nullptr && g_UIManager != nullptr && !g_UIManager->mFrames.Empty()) {
++        root = g_UIManager->mFrames[0].get();
++      }
++      if (root == nullptr) {
 +        return true;
 +      }
++      const LuaPlus::LuaObject plainHandler =
++        SCR_Import(root->mLuaObj.GetActiveState(), "/lua/maui/control.lua")["Control"]["HandleEvent"];
++
++      CMauiControl* const top = CMauiControl::GetTopmostControl(root, x, y);
++      if (CUIWorldView* const view = WorldViewOf(top)) {
++        if (view->IsMiniMap() || !CommandMode().empty()) {
++          return true;
++        }
++      } else if (top != nullptr && IsLive(top, plainHandler) && !BoxOf(top).IsSmall(smallSide)) {
++        return true;
++      }
++      taptarget::Nearest<CMauiControl> nearest(x, y, reach, smallSide);
++      for (CMauiControl* control = root; control != nullptr; control = control->DepthFirstSuccessor(root)) {
++        // Nobody aims at what cannot be seen, such as an unused panel that stands there faded out.
++        if (control->IsHidden() || control->IsHitTestDisabled() || control->GetAlpha() <= 0) {
++          continue;
++        }
++        const taptarget::Box box = BoxOf(control);
++        if (nearest.Wants(box, IsPartOf(control, nearest.Best())) && IsLive(control, plainHandler)) {
++          // What a press there finds has to be it or a part of it, not what lies over it.
++          const taptarget::Place pixel = box.NearestPixel(x, y);
++          if (IsPartOf(CMauiControl::GetTopmostControl(root, pixel.x, pixel.y), control)) {
++            nearest.Take(control, box);
++          }
++        }
++      }
++      if (nearest.Best() != nullptr) {
++        const taptarget::Place target = nearest.Target();
++        *targetX = target.x;
++        *targetY = target.y;
++        return true;
++      }
++      return top == nullptr || !IsWindowHandle(top);
++    } catch (const std::exception& exception) {
++      gpg::Warnf("UI_TapTarget: %s", exception.what());
++      return true;
 +    }
-+    return false;
 +  }
 +} // namespace moho
 +
  namespace
  {
    // FAF community binary-patch addition (see CMauiControl::SetCustomRender).
-@@ -873,6 +918,25 @@ void moho::UIBuildDragger::DragRelease(
+@@ -873,6 +1047,25 @@ void moho::UIBuildDragger::DragRelease(
    delete this;
  }
  
@@ -80,7 +209,7 @@ index fda09e9c..266c49ae 100644
  /**
   * Address: 0x00822F60 (FUN_00822F60)
   *
-@@ -1821,9 +1885,6 @@ moho::CUIWorldView::CUIWorldView(
+@@ -1821,9 +2014,6 @@ moho::CUIWorldView::CUIWorldView(
        if (!params["ui_SelectTolerance"].IsNil()) {
          moho::ui_SelectTolerance = params["ui_SelectTolerance"].GetNumber();
        }
@@ -90,7 +219,7 @@ index fda09e9c..266c49ae 100644
        if (!params["ui_ExtractSnapTolerance"].IsNil()) {
          moho::ui_ExtractSnapTolerance = params["ui_ExtractSnapTolerance"].GetNumber();
        }
-@@ -1899,6 +1960,12 @@ moho::CUIWorldView::~CUIWorldView()
+@@ -1899,6 +2089,13 @@ moho::CUIWorldView::~CUIWorldView()
    }
  
    ren_Viewport->RemoveWorldView(this);
@@ -99,11 +228,12 @@ index fda09e9c..266c49ae 100644
 +  sPlacingBuilding.store(false);
 +  if (sMainWorldView == this) {
 +    sMainWorldView = nullptr;
++    sGamePlaying.store(false);
 +  }
  }
  
  /**
-@@ -3231,7 +3298,11 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3231,7 +3428,11 @@ bool moho::CUIWorldView::HandleEvent(
    // Ordering matters: this test sits ahead of the left-press one, and a
    // double-click on any other button falls straight through into the
    // right-double-click arm at 0x00870F1B.
@@ -116,7 +246,7 @@ index fda09e9c..266c49ae 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3259,7 +3330,7 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3259,7 +3460,7 @@ bool moho::CUIWorldView::HandleEvent(
    }
  
    // --- left-button press (0x00870CA4) ------------------------------------
@@ -125,7 +255,7 @@ index fda09e9c..266c49ae 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3277,6 +3348,13 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3277,6 +3478,13 @@ bool moho::CUIWorldView::HandleEvent(
  
      case COMMOD_Build:
      case COMMOD_BuildAnchored:
@@ -139,7 +269,7 @@ index fda09e9c..266c49ae 100644
        func_NewUIBuildDragger(GetRootFrame(), mWldSession, &eventData, mCamera.get(), &mBuildDrag);
        return true;
  
-@@ -3403,6 +3481,12 @@ void moho::CUIWorldView::Frame(
+@@ -3403,6 +3611,13 @@ void moho::CUIWorldView::Frame(
  {
    func_ProcessMouseScrubbing();
  
@@ -147,6 +277,7 @@ index fda09e9c..266c49ae 100644
 +  if (!IsMiniMap()) {
 +    sMainWorldView = this;
 +    sPlacingBuilding.store(IsPlacingBuilding());
++    sGamePlaying.store(mWldSession->IsGameOver == 0u);
 +  }
 +
    if (mCursorInside != 0u && sMouseIsScrubbing == 0u) {

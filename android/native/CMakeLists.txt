@@ -361,6 +361,7 @@ add_executable(faf_wx_lite_tests
   tests/wx/EventTests.cpp
   tests/wx/GdiTests.cpp
   tests/wx/MessageLayerTests.cpp
+  tests/wx/TapTargetTests.cpp
   tests/wx/WindowTests.cpp
   tests/wx/NdkDoubles.cpp
   $<TARGET_OBJECTS:faf_wx_lite>

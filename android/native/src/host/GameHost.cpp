@@ -63,7 +63,10 @@ namespace moho
 {
   // src/moho/ui/CUIWorldViewEvents.cpp's, by its patch.
   [[nodiscard]] bool UI_PlacingBuilding() noexcept;
+  [[nodiscard]] bool UI_GamePlaying() noexcept;
   [[nodiscard]] bool UI_WorldViewAt(float x, float y);
+  [[nodiscard]] bool UI_GhostWaitsAt(float x, float y);
+  [[nodiscard]] bool UI_TapTarget(float x, float y, float reach, float smallSide, float* targetX, float* targetY);
   void UI_CancelBuildDrag();
 } // namespace moho
 
@@ -312,7 +315,7 @@ namespace
 {
   static_assert(sizeof(WPARAM) >= 8, "two places of the picture go in a task's argument");
 
-  /// A task's argument: up to two places of the picture, each coordinate below 65536.
+  /// A task's argument: up to two places of the picture, each coordinate below 65536, or a place and two other numbers.
   [[nodiscard]] WPARAM Places(const int x0, const int y0, const int x1 = 0, const int y1 = 0)
   {
     const auto word = [](const int value) { return static_cast<WPARAM>(value) & 0xFFFFU; };
@@ -322,6 +325,32 @@ namespace
   [[nodiscard]] int Coordinate(const WPARAM places, const int index)
   {
     return static_cast<int>(places >> (16 * index) & 0xFFFFU);
+  }
+
+  // All the input from the activity comes to the program's thread as tasks, as a tap has to (it looks at the controls there):
+  // so all of it stays in the order it was given, and the cursor moves on that thread alone. Input that went straight to the
+  // queue from the activity's thread could overtake a task, or fall between its press and release. That costs a drag no
+  // frame: the program takes its queue until it is empty before each frame (WIN_AppExecute), and the moves of a long
+  // frame still make one move.
+
+  void MoveMouse(const WPARAM place)
+  {
+    Win32Android_MouseMove(Coordinate(place, 0), Coordinate(place, 1));
+  }
+
+  void PressMouseButton(const WPARAM press)
+  {
+    Win32Android_MouseButton(Coordinate(press, 2), Coordinate(press, 3), Coordinate(press, 0), Coordinate(press, 1));
+  }
+
+  void PressTouchButton(const WPARAM press)
+  {
+    Win32Android_TouchButton(Coordinate(press, 2), Coordinate(press, 3), Coordinate(press, 0), Coordinate(press, 1));
+  }
+
+  void TurnWheel(const WPARAM turn)
+  {
+    Win32Android_MouseWheel(static_cast<std::int16_t>(Coordinate(turn, 2)), Coordinate(turn, 0), Coordinate(turn, 1));
   }
 
   /// On the program's thread, where the cursor has come to the place. PC players delete a queued order
@@ -367,6 +396,41 @@ namespace
   void CancelLine(const WPARAM)
   {
     moho::UI_CancelBuildDrag();
+  }
+
+  /// On the program's thread, which knows the controls around the tap: a click where it landed, of the small
+  /// control it meant, or none. Press and release in one task, so that they stay together.
+  void Tap(const WPARAM places)
+  {
+    float targetX = 0;
+    float targetY = 0;
+    if (moho::UI_TapTarget(
+          static_cast<float>(Coordinate(places, 0)), static_cast<float>(Coordinate(places, 1)), static_cast<float>(Coordinate(places, 2)),
+          static_cast<float>(Coordinate(places, 3)), &targetX, &targetY
+        )) {
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, static_cast<int>(targetX), static_cast<int>(targetY));
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, static_cast<int>(targetX), static_cast<int>(targetY));
+    }
+  }
+
+  /// Off every control, where the pointer goes when no finger is on the glass.
+  constexpr int kPointerAway = -1000;
+
+  /// How many fingers have come down: a leave that was given before the last of them has come too late.
+  std::atomic<WPARAM> gFingersDown{0};
+
+  /// On the program's thread, unless a finger has come since: the pointer leaves what it is over, as a mouse that leaves the
+  /// window does, so that rollovers and tooltips go. A building's ghost follows the pointer over the world, and stays with it.
+  void PointerLeave(const WPARAM fingersDownThen)
+  {
+    if (gFingersDown.load() != fingersDownThen) {
+      return;
+    }
+    POINT cursor{};
+    (void)::GetCursorPos(&cursor);
+    if (!moho::UI_GhostWaitsAt(static_cast<float>(cursor.x), static_cast<float>(cursor.y))) {
+      Win32Android_MouseMove(kPointerAway, kPointerAway);
+    }
   }
 } // namespace
 
@@ -467,7 +531,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_audioFocus(
 
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_mouseMove(JNIEnv*, jclass, const jint x, const jint y)
 {
-  Win32Android_MouseMove(x, y);
+  Win32Android_RunNewestOnWindowThread(&MoveMouse, Places(x, y));
 }
 
 /// `button`: Game.BUTTON_LEFT and the rest, which are the layer's WIN32ANDROID_BUTTON_ numbers.
@@ -475,7 +539,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_mouseButton
   JNIEnv*, jclass, const jint button, const jboolean down, const jint x, const jint y
 )
 {
-  Win32Android_MouseButton(button, down != JNI_FALSE ? TRUE : FALSE, x, y);
+  Win32Android_RunOnWindowThread(&PressMouseButton, Places(x, y, button, down != JNI_FALSE ? TRUE : FALSE));
 }
 
 /// A finger's button (Win32Android_TouchButton): where a building's ghost waits, its press does not
@@ -484,14 +548,14 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_touchButton
   JNIEnv*, jclass, const jint button, const jboolean down, const jint x, const jint y
 )
 {
-  Win32Android_TouchButton(button, down != JNI_FALSE ? TRUE : FALSE, x, y);
+  Win32Android_RunOnWindowThread(&PressTouchButton, Places(x, y, button, down != JNI_FALSE ? TRUE : FALSE));
 }
 
-/// `delta` in WHEEL_DELTA units of 120 per notch, positive away from the user.
+/// `delta` in WHEEL_DELTA units of 120 per notch, positive away from the user; less than 32768 at a time.
 extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_mouseWheel(JNIEnv*, jclass, const jint delta, const jint x, const jint y)
 {
-  Win32Android_MouseWheel(delta, x, y);
+  Win32Android_RunOnWindowThread(&TurnWheel, Places(x, y, delta));
 }
 
 /// Whether a building's ghost waits to be placed: fingers then move it (TouchInput).
@@ -512,6 +576,31 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_tapNearGhos
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_cancelLine(JNIEnv*, jclass)
 {
   Win32Android_RunOnWindowThread(&CancelLine, 0);
+}
+
+/// Whether a game goes on behind the game's UI, as opposed to the menus and the score screen.
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_gamePlaying(JNIEnv*, jclass)
+{
+  return moho::UI_GamePlaying() ? JNI_TRUE : JNI_FALSE;
+}
+
+/// A finger's tap, the left button's click (Tap). `reach` and `smallSide` in the picture's pixels.
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_tap(JNIEnv*, jclass, const jint x, const jint y, const jint reach, const jint smallSide)
+{
+  Win32Android_RunOnWindowThread(&Tap, Places(x, y, reach, smallSide));
+}
+
+/// No finger is on the glass (PointerLeave).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_pointerLeave(JNIEnv*, jclass)
+{
+  Win32Android_RunOnWindowThread(&PointerLeave, gFingersDown.load());
+}
+
+/// A finger came down, ahead of what it sends (PointerLeave).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_pointerStay(JNIEnv*, jclass)
+{
+  gFingersDown.fetch_add(1);
 }
 
 /// Deletes the queued order of the selected units nearest to the cursor, which is at this place.

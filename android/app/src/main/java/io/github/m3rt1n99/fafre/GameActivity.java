@@ -14,6 +14,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.util.DisplayMetrics;
+import android.util.TypedValue;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
@@ -39,6 +42,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * The game (android/CLIENT_PLAN.md, C1): the engine's program on a full-screen surface, in a
@@ -53,6 +59,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** The program's path in its install, as FAF's client starts it: the engine takes its folder from it. */
     private static final String PROGRAM = "bin/ForgedAlliance.exe";
     private static final int REPORT_LINES = 14;
+    /** A test's factor for the HUD, in place of the screen's (am start --ef). */
+    private static final String EXTRA_HUD_SCALE = "hudScale";
+    /** How far a finger's tap looks for a small control, and what counts as one. */
+    private static final double TAP_REACH_MM = 2.5;
+    private static final double TAP_SMALL_MM = 5;
+    /** The bar's buttons: in a session at a finger's size if there is room, in the menus smaller. */
+    private static final double BAR_BUTTON_MM = 9;
+    private static final double BAR_MENU_BUTTON_MM = 6.5;
+    private static final double BAR_GAP_MM = 0.5;
+    private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
     private static final int[][] BUTTONS = {
@@ -67,6 +83,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private SurfaceView mSurface;
     private TextView mText;
     private LinearLayout mBar;
+    /** What the bar has in a game and not in the menus, and the Keys, which it has in both. */
+    private final List<TextView> mGameButtons = new ArrayList<>();
+    private TextView mKeysButton;
+    private boolean mBarInGame;
+    /** The HUD's factor and the screen's short side, which the picture's lines are spread over. */
+    private double mHudScale;
+    private double mScreenMm;
     private View mKeyboardTarget;
     /** What the on-screen keyboard has typed: in landscape it covers most of the game's screen. */
     private TextView mTyped;
@@ -86,6 +109,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     private TouchInput mTouch;
     private final Runnable mTouchTimer = () -> mTouch.timer();
+    private final Runnable mPointerLeave = Game::pointerLeave;
     private final TouchInput.Mouse mTouchMouse = new TouchInput.Mouse() {
         @Override
         public void move(float x, float y) {
@@ -95,6 +119,23 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         @Override
         public void button(int button, boolean down, float x, float y) {
             Game.touchButton(button, down, pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void tap(float x, float y) {
+            Game.tap(pictureX(x), pictureY(y), pictureMm(TAP_REACH_MM), pictureMm(TAP_SMALL_MM));
+        }
+
+        @Override
+        public void leaveSoon() {
+            mHandler.removeCallbacks(mPointerLeave);
+            mHandler.postDelayed(mPointerLeave, TouchInput.LEAVE_MILLISECONDS);
+        }
+
+        @Override
+        public void stay() {
+            mHandler.removeCallbacks(mPointerLeave);
+            Game.pointerStay();
         }
 
         @Override
@@ -174,6 +215,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             getWindow().setAttributes(attributes);
         }
         mLines = PictureSize.lines(this);
+        mHudScale = hudScale();
+        mScreenMm = screenShortSideMm();
         mTouch = new TouchInput(mTouchMouse, ViewConfiguration.get(this).getScaledTouchSlop());
         FrameLayout root = new FrameLayout(this);
         mSurface = new SurfaceView(this);
@@ -196,9 +239,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         root.addView(mText);
         mBar = bar();
         mBar.setVisibility(View.GONE);
-        FrameLayout.LayoutParams barPlace = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.CENTER_VERTICAL);
-        root.addView(mBar, barPlace);
+        root.addView(mBar, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.TOP));
+        placeBar(false);
         mTyped = new TextView(this);
         mTyped.setTextSize(18);
         mTyped.setTextColor(Color.WHITE);
@@ -256,6 +299,59 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mSurface.getHolder().setFixedSize(size[0], size[1]);
     }
 
+    /** The HUD's factor for this screen, or what a test gives (the emulator keeps its own millimetres at another size). */
+    private double hudScale() {
+        double given = getIntent().getFloatExtra(EXTRA_HUD_SCALE, 0);
+        return given > 0 ? given : HudScale.factor(pictureLines(), screenShortSideMm());
+    }
+
+    /** The lines the picture will have, whatever the activity's turn has done so far. */
+    private int pictureLines() {
+        DisplayMetrics metrics = realMetrics();
+        int longSide = Math.max(metrics.widthPixels, metrics.heightPixels);
+        int shortSide = Math.min(metrics.widthPixels, metrics.heightPixels);
+        return PictureSize.of(longSide, shortSide, mLines)[1];
+    }
+
+    private double screenShortSideMm() {
+        DisplayMetrics metrics = realMetrics();
+        return HudScale.shortSideMm(shortSide(display().getMode()), largestModeShortSide(), (metrics.xdpi + metrics.ydpi) / 2,
+            Math.min(metrics.widthPixels, metrics.heightPixels), metrics.densityDpi);
+    }
+
+    /** What the factor came from, for the report: phones differ in what they say of their screens. */
+    private String screenInWords() {
+        DisplayMetrics metrics = realMetrics();
+        return String.format(Locale.ROOT, "%d lines, %s, xdpi %.0f ydpi %.0f, window %dx%d", pictureLines(),
+            HudScale.shortSideInWords(shortSide(display().getMode()), largestModeShortSide(), (metrics.xdpi + metrics.ydpi) / 2,
+                Math.min(metrics.widthPixels, metrics.heightPixels), metrics.densityDpi),
+            metrics.xdpi, metrics.ydpi, metrics.widthPixels, metrics.heightPixels);
+    }
+
+    private int largestModeShortSide() {
+        int largest = 0;
+        for (Display.Mode mode : display().getSupportedModes()) {
+            largest = Math.max(largest, shortSide(mode));
+        }
+        return largest;
+    }
+
+    private static int shortSide(Display.Mode mode) {
+        return Math.min(mode.getPhysicalWidth(), mode.getPhysicalHeight());
+    }
+
+    @SuppressWarnings("deprecation")
+    private Display display() {
+        return getWindowManager().getDefaultDisplay();
+    }
+
+    @SuppressWarnings("deprecation")
+    private DisplayMetrics realMetrics() {
+        DisplayMetrics metrics = new DisplayMetrics();
+        display().getRealMetrics(metrics);
+        return metrics;
+    }
+
     /** From the view's pixels to the picture's, which are the game's screen. */
     private int pictureX(float x) {
         return toPicture(x, mSurface.getWidth(), mPictureWidth);
@@ -278,20 +374,75 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private LinearLayout bar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.VERTICAL);
-        toggle(bar, "Order", mTouch::setSwapped);
-        toggle(bar, "Shift", on -> Game.key(KeyEvent.KEYCODE_SHIFT_LEFT, 0, on, 0));
-        toggle(bar, "Ctrl", on -> Game.key(KeyEvent.KEYCODE_CTRL_LEFT, 0, on, 0));
-        toggle(bar, "Del", mTouch::setDeleting);
-        barButton(bar, "Keys").setOnClickListener(view -> toggleKeyboard());
+        LinearLayout top = new LinearLayout(this);
+        toggle(top, "Order", mTouch::setSwapped);
+        toggle(top, "Shift", on -> Game.key(KeyEvent.KEYCODE_SHIFT_LEFT, 0, on, 0));
+        toggle(top, "Ctrl", on -> Game.key(KeyEvent.KEYCODE_CTRL_LEFT, 0, on, 0));
+        bar.addView(top);
+        LinearLayout bottom = new LinearLayout(this);
+        toggle(bottom, "Del", mTouch::setDeleting);
+        mKeysButton = barButton(bottom, "Keys");
+        mKeysButton.setOnClickListener(view -> toggleKeyboard());
+        bar.addView(bottom);
         return bar;
+    }
+
+    /** In a game the bar sits where the HUD leaves room (HudScale), in the menus only the keyboard's button stays, in a corner. */
+    private void placeBar(boolean inGame) {
+        mBarInGame = inGame;
+        int size = viewMm(inGame ? Math.min(BAR_BUTTON_MM, barRoomMm() / 2 - BAR_GAP_MM) : BAR_MENU_BUTTON_MM);
+        int gap = viewMm(BAR_GAP_MM / 2);
+        for (TextView button : mGameButtons) {
+            button.setVisibility(inGame ? View.VISIBLE : View.GONE);
+            sizeBarButton(button, size, gap);
+            // The menus have no use for them, and a finger could not let go of one there.
+            if (!inGame && button.isSelected()) {
+                button.performClick();
+            }
+        }
+        sizeBarButton(mKeysButton, size, gap);
+        FrameLayout.LayoutParams place = (FrameLayout.LayoutParams) mBar.getLayoutParams();
+        place.topMargin = inGame ? (int) Math.round(HudScale.barTopPixels(mHudScale) * viewPixelsPerPicturePixel()) : 0;
+        mBar.setLayoutParams(place);
+    }
+
+    /** The room the HUD leaves for the bar, in mm. */
+    private double barRoomMm() {
+        return HudScale.barRoomPixels(mHudScale, pictureLines()) * mScreenMm / pictureLines();
+    }
+
+    private static void sizeBarButton(TextView button, int size, int gap) {
+        LinearLayout.LayoutParams place = (LinearLayout.LayoutParams) button.getLayoutParams();
+        place.width = size;
+        place.height = size;
+        place.setMargins(gap, gap, gap, gap);
+        button.setLayoutParams(place);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_PX, size * BAR_TEXT_PER_BUTTON);
+    }
+
+    /** This many mm in the view's pixels. */
+    private int viewMm(double mm) {
+        DisplayMetrics metrics = realMetrics();
+        return (int) Math.round(mm * Math.min(metrics.widthPixels, metrics.heightPixels) / mScreenMm);
+    }
+
+    private double viewPixelsPerPicturePixel() {
+        DisplayMetrics metrics = realMetrics();
+        return (double) Math.min(metrics.widthPixels, metrics.heightPixels) / pictureLines();
+    }
+
+    /** This many mm in the picture's pixels. */
+    private int pictureMm(double mm) {
+        return (int) Math.round(mm * mPictureHeight / mScreenMm);
     }
 
     private interface Toggled {
         void set(boolean on);
     }
 
-    private void toggle(LinearLayout bar, String label, Toggled toggled) {
-        TextView button = barButton(bar, label);
+    private void toggle(LinearLayout row, String label, Toggled toggled) {
+        TextView button = barButton(row, label);
+        mGameButtons.add(button);
         button.setOnClickListener(view -> {
             view.setSelected(!view.isSelected());
             view.setBackground(barBackground(view.isSelected()));
@@ -299,16 +450,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         });
     }
 
-    private TextView barButton(LinearLayout bar, String label) {
+    private TextView barButton(LinearLayout row, String label) {
         TextView button = new TextView(this);
         button.setText(label);
-        button.setTextSize(12);
         button.setTextColor(Color.WHITE);
         button.setGravity(Gravity.CENTER);
         button.setBackground(barBackground(false));
-        LinearLayout.LayoutParams place = new LinearLayout.LayoutParams(dp(52), dp(40));
-        place.setMargins(dp(4), dp(3), dp(4), dp(3));
-        bar.addView(button, place);
+        row.addView(button, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         return button;
     }
 
@@ -420,17 +568,19 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         Storage.mkdirs(new File(vault, "mods"));
         File init;
         try {
-            init = GameFiles.runInit(game, "game", vault);
+            init = GameFiles.gameInit(getAssets(), game, vault);
         } catch (IOException e) {
             return "FAIL: the init file: " + e.getMessage();
         }
         String program = new File(game, PROGRAM).getPath();
         String log = GameReport.log(storage).getPath();
+        String hudScale = HudScale.argument(mHudScale);
         // An import by an earlier release has no movies, and the splash screen would wait for a tap for each.
         String[] arguments = ScfaImport.movies(storage) > 0
-            ? new String[] {program, "/init", init.getPath(), "/log", log}
-            : new String[] {program, "/init", init.getPath(), "/log", log, "/nomovie"};
+            ? new String[] {program, "/init", init.getPath(), "/log", log, HudScale.SWITCH, hudScale}
+            : new String[] {program, "/init", init.getPath(), "/log", log, HudScale.SWITCH, hudScale, "/nomovie"};
         GameReport.append(this, "game: FAF game version " + version + ", " + archives + " SCFA archives");
+        GameReport.append(this, "game: HUD scale " + hudScale + " on " + screenInWords());
         File home = Storage.mkdirs(GameReport.home(storage));
         if (!Game.start(arguments, home.getPath(), getCacheDir().getPath(), GameReport.file(this).getPath())) {
             return "FAIL: the program did not start";
@@ -468,6 +618,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         boolean ended = GameReport.ended(report);
         mBar.setVisibility(GameReport.firstFrame(report) && !ended ? View.VISIBLE : View.GONE);
+        if (Game.gamePlaying() != mBarInGame) {
+            placeBar(!mBarInGame);
+        }
         if (GameReport.firstFrame(report) && !ended) {
             mText.setVisibility(View.GONE);
             return;
@@ -538,6 +691,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     protected void onDestroy() {
         mHandler.removeCallbacks(mPoll);
         mHandler.removeCallbacks(mTouchTimer);
+        mHandler.removeCallbacks(mPointerLeave);
         super.onDestroy();
     }
 

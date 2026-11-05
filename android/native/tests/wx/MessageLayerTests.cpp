@@ -41,6 +41,47 @@ namespace
   {
     sTaskArgument = argument;
   }
+
+  // The host's input, as src/host/GameHost.cpp gives it: as tasks that post it.
+
+  constexpr WPARAM PlaceOf(const int x, const int y)
+  {
+    return static_cast<WPARAM>(x) | static_cast<WPARAM>(y) << 16;
+  }
+
+  void MoveTask(const WPARAM place)
+  {
+    Win32Android_MouseMove(LOWORD(place), HIWORD(place));
+  }
+
+  void PressTask(const WPARAM place)
+  {
+    Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, LOWORD(place), HIWORD(place));
+  }
+
+  void ReleaseTask(const WPARAM place)
+  {
+    Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, LOWORD(place), HIWORD(place));
+  }
+
+  void TapTask(const WPARAM place)
+  {
+    PressTask(place);
+    ReleaseTask(place);
+  }
+
+  std::size_t sPressesTheTaskSaw = 0;
+
+  void CountPresses(const WPARAM)
+  {
+    sPressesTheTaskSaw = Received(WM_LBUTTONDOWN).size();
+  }
+
+  void PressWhileAnotherThreadMoves(const WPARAM place)
+  {
+    std::thread([] { Win32Android_MouseMove(30, 30); }).join();
+    PressTask(place);
+  }
 } // namespace
 
 WXT_TEST(PostedMessagesComeInOrder)
@@ -78,6 +119,76 @@ WXT_TEST(ATaskForTheWindowThreadComesAfterTheInputBeforeIt)
   WXT_CHECK_EQ(sTaskArgument, WPARAM{7});
   WXT_CHECK(Take(&msg));
   WXT_CHECK_EQ(GET_X_LPARAM(msg.lParam), 20);
+}
+
+WXT_TEST(ATapsPressAndReleaseComeAheadOfTheNextFingersMove)
+{
+  RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
+  wxtest::Pump();
+  Messages().clear();
+  Win32Android_RunOnWindowThread(&TapTask, PlaceOf(10, 10));
+  Win32Android_RunOnWindowThread(&MoveTask, PlaceOf(20, 20));
+  wxtest::Pump();
+  WXT_CHECK((Sequence({WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP}) == std::vector<UINT>{WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE}));
+  WXT_CHECK_EQ(GET_X_LPARAM(Received(WM_LBUTTONDOWN)[0].lParam), 10);
+  WXT_CHECK_EQ(GET_X_LPARAM(Received(WM_LBUTTONUP)[0].lParam), 10);
+  WXT_CHECK_EQ(GET_X_LPARAM(Received(WM_MOUSEMOVE)[0].lParam), 20);
+  POINT cursor{};
+  (void)::GetCursorPos(&cursor);
+  WXT_CHECK_EQ(cursor.x, LONG{20});
+}
+
+WXT_TEST(ADragGivenAsTasksStaysBetweenItsPressAndRelease)
+{
+  RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
+  wxtest::Pump();
+  Messages().clear();
+  Win32Android_RunOnWindowThread(&PressTask, PlaceOf(10, 10));
+  Win32Android_RunNewestOnWindowThread(&MoveTask, PlaceOf(20, 20));
+  Win32Android_RunNewestOnWindowThread(&MoveTask, PlaceOf(30, 30));
+  Win32Android_RunOnWindowThread(&ReleaseTask, PlaceOf(30, 30));
+  Win32Android_RunNewestOnWindowThread(&MoveTask, PlaceOf(40, 40));
+  wxtest::Pump();
+  WXT_CHECK((Sequence({WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP}) == std::vector<UINT>{WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_LBUTTONUP, WM_MOUSEMOVE}));
+  WXT_CHECK_EQ(GET_X_LPARAM(Received(WM_MOUSEMOVE)[0].lParam), 30);
+  WXT_CHECK_EQ(GET_X_LPARAM(Received(WM_MOUSEMOVE)[1].lParam), 40);
+}
+
+WXT_TEST(TheMovesOfALongFrameMakeOneMove)
+{
+  RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
+  wxtest::Pump();
+  Messages().clear();
+  for (int x = 1; x <= 50; ++x) {
+    Win32Android_RunNewestOnWindowThread(&MoveTask, PlaceOf(x, 10));
+  }
+  wxtest::Pump();
+  WXT_CHECK_EQ(Received(WM_MOUSEMOVE).size(), std::size_t{1});
+  WXT_CHECK_EQ(GET_X_LPARAM(Received(WM_MOUSEMOVE)[0].lParam), 50);
+}
+
+WXT_TEST(ATaskSeesWhatTheInputBeforeItHasDone)
+{
+  // A long frame holds both back: a tap that follows a press has to see what the press did.
+  RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
+  wxtest::Pump();
+  Messages().clear();
+  sPressesTheTaskSaw = 0;
+  Win32Android_RunOnWindowThread(&TapTask, PlaceOf(10, 10));
+  Win32Android_RunOnWindowThread(&CountPresses, 0);
+  wxtest::Pump();
+  WXT_CHECK_EQ(sPressesTheTaskSaw, std::size_t{1});
+}
+
+WXT_TEST(WhatAnotherThreadGivesMeanwhileComesBehindATasksInput)
+{
+  RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
+  wxtest::Pump();
+  Messages().clear();
+  Win32Android_RunOnWindowThread(&PressWhileAnotherThreadMoves, PlaceOf(10, 10));
+  Win32Android_RunOnWindowThread(&ReleaseTask, PlaceOf(10, 10));
+  wxtest::Pump();
+  WXT_CHECK((Sequence({WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP}) == std::vector<UINT>{WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE}));
 }
 
 WXT_TEST(AFingersButtonSaysSoWithItsMessage)

@@ -1,6 +1,7 @@
 package io.github.m3rt1n99.fafre;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
@@ -17,6 +18,11 @@ public class TouchInputTest {
         final List<String> events = new ArrayList<>();
         long timer = -1;
         boolean placing;
+        /** Whether the pointer is to leave, by the time this has passed. */
+        boolean leaving;
+        /** What had gone to the game by the last {@link #stay}. */
+        int sentBeforeStay = -1;
+        int tapped;
 
         @Override
         public void move(float x, float y) {
@@ -26,6 +32,24 @@ public class TouchInputTest {
         @Override
         public void button(int button, boolean down, float x, float y) {
             events.add(name(button) + (down ? " down " : " up ") + (int) x + " " + (int) y);
+        }
+
+        @Override
+        public void tap(float x, float y) {
+            events.add("left down " + (int) x + " " + (int) y);
+            events.add("left up " + (int) x + " " + (int) y);
+            tapped++;
+        }
+
+        @Override
+        public void leaveSoon() {
+            leaving = true;
+        }
+
+        @Override
+        public void stay() {
+            leaving = false;
+            sentBeforeStay = events.size();
         }
 
         @Override
@@ -131,6 +155,105 @@ public class TouchInputTest {
         moveFirst(105, 50);
         up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
         expect("move 100 50", "left down 100 50", "left up 100 50");
+    }
+
+    @Test
+    public void aTapIsATapForTheGamesUiAndGivesAFingerItsHelp() {
+        down(0, 100, 50, 1000);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        assertEquals(1, mouse.tapped);
+    }
+
+    @Test
+    public void anOrderByTapIsTheRightButtonWhereItLanded() {
+        touch.setSwapped(true);
+        down(0, 100, 50, 1000);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "right down 100 50", "right up 100 50");
+        assertEquals(0, mouse.tapped);
+    }
+
+    @Test
+    public void thePointerLeavesWhenTheLastFingerHasLifted() {
+        down(0, 100, 50, 1000);
+        assertFalse("a finger rests, and a tooltip may show", mouse.leaving);
+        up(0, 1200);
+        assertTrue(mouse.leaving);
+    }
+
+    @Test
+    public void aNewFingerKeepsThePointer() {
+        down(0, 100, 50, 1000);
+        up(0, 1030);
+        assertTrue(mouse.leaving);
+        down(0, 300, 60, 1050);
+        assertFalse(mouse.leaving);
+    }
+
+    @Test
+    public void aFingerKeepsThePointerAheadOfAllItSends() {
+        down(0, 100, 50, 1000);
+        up(0, 1030);
+        mouse.events.clear();
+        // The click that waited, and this finger's place.
+        down(0, 300, 60, 1050);
+        assertEquals(0, mouse.sentBeforeStay);
+        expect("left down 100 50", "left up 100 50", "move 300 60");
+        // A second finger too.
+        mouse.events.clear();
+        down(1, 400, 60, 1100);
+        assertEquals(0, mouse.sentBeforeStay);
+        expect("move 400 60");
+    }
+
+    @Test
+    public void aFingerAfterAGestureThatWasCutOffKeepsThePointer() {
+        down(0, 100, 50, 1000);
+        moveFirst(120, 50);
+        fingers = 0;
+        mouse.events.clear();
+        down(0, 300, 60, 1500);
+        assertEquals(0, mouse.sentBeforeStay);
+        assertFalse(mouse.leaving);
+        expect("left up 120 50", "move 300 60");
+    }
+
+    @Test
+    public void aFingerWhoseLiftGotLostStillLeavesThePointerToTheNext() {
+        down(0, 100, 50, 1000);
+        fingers = 0;
+        down(0, 300, 60, 1500);
+        assertFalse(mouse.leaving);
+    }
+
+    @Test
+    public void thePointerStaysUntilTheLastOfTwoFingersHasLifted() {
+        down(0, 100, 50, 1000);
+        down(1, 400, 200, 1040);
+        up(1, 1100);
+        assertFalse(mouse.leaving);
+        up(0, 1110);
+        assertTrue(mouse.leaving);
+    }
+
+    @Test
+    public void thePointerLeavesAfterADragAndAfterAHold() {
+        down(0, 100, 50, 1000);
+        moveFirst(120, 50);
+        up(0, 1200);
+        assertTrue(mouse.leaving);
+        down(0, 100, 50, 2000);
+        timerRuns();
+        assertFalse(mouse.leaving);
+        up(0, 2500);
+        assertTrue(mouse.leaving);
+    }
+
+    @Test
+    public void whenTheSystemTakesTheFingersThePointerLeaves() {
+        down(0, 100, 50, 1000);
+        touch.cancel();
+        assertTrue(mouse.leaving);
     }
 
     @Test

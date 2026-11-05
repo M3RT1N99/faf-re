@@ -39,8 +39,11 @@ void Win32Android_ReleaseTakenSurface();
 /// Waits for the screen to have a surface: the program can start while the activity is in the back.
 void Win32Android_WaitForScreenSurface();
 
-/// Runs `task` on the thread of the program's windows, after the input given so far. Nothing without a window.
+/// Runs `task` on the thread of the program's windows, in the queue's order: what was given before it has been
+/// taken, and the input the task gives comes next, ahead of what was given after it. Nothing without a window.
 void Win32Android_RunOnWindowThread(void (*task)(WPARAM argument), WPARAM argument);
+/// The same, in place of this task if it is still the last thing waiting, as Windows coalesces mouse moves.
+void Win32Android_RunNewestOnWindowThread(void (*task)(WPARAM argument), WPARAM argument);
 
 /// What draws on the screen says that a frame went to it, and the host hears of the first one.
 void Win32Android_FramePresented();
