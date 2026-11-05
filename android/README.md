@@ -179,6 +179,8 @@ the game data they imported. Everything lives in the app's external files folder
     other, to the address and port; they cannot reach each other there through the emulator's NAT. The emulator's NAT
     also rewrites an address: joining by `10.0.2.2` the host passes on `127.0.0.1`, the other game's packets arrive
     from `10.0.2.2`, its own from the LAN address, and each side rejects the other (*Connecting to ...* stays).
+  - The app starts the game with `/notelemetry`: the engine's records of desyncs and of a game's end, with the players'
+    names, stay on the phone instead of going to the engine author's server.
 - **Share results** zips `summary.json`, the math output, the log, the renderer report
   (`renderer.txt`, `renderer-tombstone.pb`), the game's report, tombstone, log and crash report
   (`game.txt`, `game-tombstone.pb`, `game/engine.sclog`, `game/faf_crash_latest.txt`), the last

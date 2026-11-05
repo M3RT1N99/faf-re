@@ -791,10 +791,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         String log = GameReport.log(storage).getPath();
         String hudScale = HudScale.argument(mHudScale);
         String hudMost = HudScale.argument(HudScale.most(pictureLines()));
-        // An import by an earlier release has no movies, and the splash screen would wait for a tap for each.
+        // /notelemetry: the engine would send its records of desyncs and of a game's end to its author's server, with the
+        // players' names, and nobody here has agreed to that. An import by an earlier release has no movies, and the splash
+        // screen would wait for a tap for each.
         String[] arguments = ScfaImport.movies(storage) > 0
-            ? new String[] {program, "/init", init.getPath(), "/log", log, HudScale.SWITCH, hudScale, HudScale.MOST_SWITCH, hudMost}
-            : new String[] {program, "/init", init.getPath(), "/log", log, HudScale.SWITCH, hudScale, HudScale.MOST_SWITCH, hudMost, "/nomovie"};
+            ? new String[] {program, "/init", init.getPath(), "/log", log, "/notelemetry", HudScale.SWITCH, hudScale, HudScale.MOST_SWITCH, hudMost}
+            : new String[] {program, "/init", init.getPath(), "/log", log, "/notelemetry", HudScale.SWITCH, hudScale, HudScale.MOST_SWITCH, hudMost, "/nomovie"};
         GameReport.append(this, "game: FAF game version " + version + ", " + archives + " SCFA archives");
         GameReport.append(this, "game: HUD scale " + hudScale + " on " + screenInWords());
         File home = Storage.mkdirs(GameReport.home(storage));
