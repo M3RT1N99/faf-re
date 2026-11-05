@@ -63,10 +63,11 @@ do
                 self._scrollbar:Destroy()
                 self._scrollbar = nil
             end
-            -- It grows to the left, up to the picture's edge: larger letters need more room than the combo has.
+            -- It grows to the left, up to what the screen shows: larger letters need more room than the combo has.
             local margins = LayoutHelpers.ScaleNumber(self._scrollbar and 27 or 5) + dropdown.Width() - list.Width()
             local width = self.Width() - LayoutHelpers.ScaleNumber(5)
-            dropdown.Width:Set(math.max(width, math.min(WidestRow(self) + margins, self.Right() - frame.Left())))
+            dropdown.Width:Set(math.max(width, math.min(WidestRow(self) + margins, self.Right() - Scale.ShownLeft())))
+            list:ShowItem(list:GetSelection())
             Scale.ShowLines(dropdown.Top(), dropdown.Bottom())
         end
 
@@ -114,7 +115,7 @@ do
             end
         end
 
-        --- A dropdown of pictures has no scroll bar: if its rows do not fit below it they go in columns, to the left.
+        --- A dropdown of pictures has no scroll bar: if its rows do not fit below it they go in columns, to the left, as far as the screen shows.
         local function FitBitmapDropdown(self)
             local rows = {}
             for key = 1, table.getsize(self._list) + 1 do
@@ -123,8 +124,9 @@ do
                 end
             end
             local dropdown = self._dropdown
-            -- The upper left corner, which is what the dropdown's left goes by.
-            local corner = ChildrenOf(dropdown)[1]
+            -- The upper corners, which are what the dropdown's sides go by.
+            local children = ChildrenOf(dropdown)
+            local leftCorner, rightCorner = children[1], children[3]
             self._columnWidth = self._columnWidth or dropdown.Width()
             local width = self._columnWidth
             local height = math.ceil(Scale.PicturePixels(ROW_MM))
@@ -133,8 +135,10 @@ do
             local perColumn = math.max(1, math.floor(room / (height + gap)))
             local columns = math.ceil(table.getn(rows) / perColumn)
             local left = self._btnLeft.Left() + LayoutHelpers.ScaleNumber(5) - (columns - 1) * width
+            local tooFar = math.max(0, Scale.ShownLeft() - left)
 
-            corner.Left:Set(left)
+            leftCorner.Left:Set(left + tooFar)
+            rightCorner.Right:Set(self._btnRight.Right() + tooFar)
             for index, row in rows do
                 local x = math.floor((index - 1) / perColumn) * width
                 local y = math.mod(index - 1, perColumn) * (height + gap)

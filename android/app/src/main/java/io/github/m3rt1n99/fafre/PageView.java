@@ -1,7 +1,7 @@
 package io.github.m3rt1n99.fafre;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * How the game's picture lies on the screen (android/TOUCH_UI.md). Without a page it fills the screen. With a page, a part of
@@ -25,8 +25,29 @@ final class PageView {
     /** Where the view's top is on the screen, which the scroll moves. */
     private float mViewTop;
     private int mKeyboard;
-    /** Where the pages that a page now open covers stood. */
-    private final Map<String, Float> mCovered = new HashMap<>();
+    /** The pages under the one now open, the newest last, and where they stood. */
+    private final List<CoveredPage> mCovered = new ArrayList<>();
+
+    /** A page that another has opened over. */
+    private static final class CoveredPage {
+        final int left;
+        final int top;
+        final int right;
+        final int bottom;
+        final float viewTop;
+
+        CoveredPage(int left, int top, int right, int bottom, float viewTop) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.viewTop = viewTop;
+        }
+
+        boolean is(int otherLeft, int otherTop, int otherRight, int otherBottom) {
+            return left == otherLeft && top == otherTop && right == otherRight && bottom == otherBottom;
+        }
+    }
 
     void setScreen(int width, int height) {
         mScreenWidth = width;
@@ -40,23 +61,40 @@ final class PageView {
         settle();
     }
 
-    /** A page in the picture's pixels; false if it is the one there already. It starts at its top, or where it stood when one opened over it. */
+    /**
+     * A page in the picture's pixels; false if it is the one there already. A page opens at its top, over the one there. One that was
+     * under it comes back where it stood, and what stood over it has closed: when that opens again it opens at its top.
+     */
     boolean setPage(int left, int top, int right, int bottom) {
         if (mPage && left == mLeft && top == mTop && right == mRight && bottom == mBottom) {
             return false;
         }
-        if (mPage) {
-            mCovered.put(key(mLeft, mTop, mRight, mBottom), mViewTop);
+        Float stood = null;
+        int under = coveredIndex(left, top, right, bottom);
+        if (under >= 0) {
+            stood = mCovered.get(under).viewTop;
+            mCovered.subList(under, mCovered.size()).clear();
+        } else if (mPage) {
+            mCovered.add(new CoveredPage(mLeft, mTop, mRight, mBottom, mViewTop));
         }
         mPage = true;
         mLeft = left;
         mTop = top;
         mRight = right;
         mBottom = bottom;
-        Float stood = mCovered.remove(key(left, top, right, bottom));
         mViewTop = stood != null ? stood : mostTop();
         settle();
         return true;
+    }
+
+    /** Where this page is among those under the one now open, or -1. */
+    private int coveredIndex(int left, int top, int right, int bottom) {
+        for (int index = mCovered.size() - 1; index >= 0; --index) {
+            if (mCovered.get(index).is(left, top, right, bottom)) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     /** No page; false if there was none. */
@@ -66,10 +104,6 @@ final class PageView {
         mCovered.clear();
         settle();
         return had;
-    }
-
-    private static String key(int left, int top, int right, int bottom) {
-        return left + "," + top + "," + right + "," + bottom;
     }
 
     /** Whether the view is larger than the screen. */
@@ -122,9 +156,6 @@ final class PageView {
 
     /** Moves the page as far as it takes to show these lines of the picture above the keyboard. */
     void reveal(int top, int bottom) {
-        if (!zoomed()) {
-            return;
-        }
         float margin = SHOW_MARGIN * scale();
         float screenBottom = mViewTop + bottom * scale();
         float screenTop = mViewTop + top * scale();

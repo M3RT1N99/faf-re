@@ -11,7 +11,9 @@ package io.github.m3rt1n99.fafre;
  *   <li>a finger that moves mainly sideways is a mouse's drag from where it came down: a slider;
  *   <li>a finger that rested {@link #REST_MILLISECONDS} and then moves is a mouse's drag in any direction: a scroll bar's
  *       thumb, a window;
- *   <li>two fingers do nothing.
+ *   <li>two fingers do nothing;
+ *   <li>a mouse's wheel on a page scrolls as a finger does, the list under the pointer first and then the page: a mouse can click only
+ *       what the view shows.
  * </ul>
  *
  * Positions are the screen's pixels, which {@link Mouse} turns into the game's. As in a game the pointer goes shortly after
@@ -63,6 +65,9 @@ final class PageInput implements Fingers {
     /** How long a finger stays before it lifts for a click of the right button. */
     static final long RIGHT_CLICK_MILLISECONDS = 500;
 
+    /** After this long a wheel's next notch starts anew, with what list is under the pointer by then. */
+    static final long WHEEL_PAUSE_MILLISECONDS = 400;
+
     private enum State {
         /** No finger. */
         NONE,
@@ -95,6 +100,11 @@ final class PageInput implements Fingers {
     private float mLastY;
     private boolean mClickWaits;
     private final TouchInput.ClickPlace mClick = new TouchInput.ClickPlace();
+    /** The wheel's last notch: whether the list it asked for is still the one asked for last, and its place and time. */
+    private boolean mWheelAsked;
+    private float mWheelX;
+    private float mWheelY;
+    private long mWheelTime;
 
     /** `slop`: how far a finger may wander in the screen's pixels and still count as staying. */
     PageInput(Mouse mouse, float slop) {
@@ -127,6 +137,7 @@ final class PageInput implements Fingers {
         mStartX = x;
         mStartY = y;
         mStartTime = time;
+        mWheelAsked = false;
         mMouse.move(x, y);
         mMouse.lookForList(x, y);
         mMouse.startTimer(REST_MILLISECONDS);
@@ -245,6 +256,21 @@ final class PageInput implements Fingers {
         }
         finishClick();
         mState = State.SPENT;
+    }
+
+    /** A mouse's wheel turned, this far on the screen, positive as a finger going down. A gesture under way has the list and the page to itself. */
+    void wheel(float x, float y, float dy, long time) {
+        if (mState != State.NONE && mState != State.SPENT) {
+            return;
+        }
+        if (!mWheelAsked || x != mWheelX || y != mWheelY || time - mWheelTime > WHEEL_PAUSE_MILLISECONDS) {
+            mMouse.lookForList(x, y);
+            mWheelAsked = true;
+            mWheelX = x;
+            mWheelY = y;
+        }
+        mWheelTime = time;
+        mMouse.scroll(dy);
     }
 
     /** The time from {@link Mouse#startTimer} has passed. */

@@ -1,0 +1,19 @@
+diff --git a/src/moho/net/CClientBase.cpp b/src/moho/net/CClientBase.cpp
+index 92682a7d..d08d6462 100644
+--- a/src/moho/net/CClientBase.cpp
++++ b/src/moho/net/CClientBase.cpp
+@@ -814,6 +814,14 @@ void CClientBase::UpdateState(
+           mCommandSourceId = kInvalidCommandSource;
+         }
+       }
++#if defined(__ANDROID__)
++      // Who only watches has no command source, a replay's viewer or an observer, and his own end of
++      // the game is no command: without it End Replay left the sim running and FAF's Lua waiting for
++      // the score its game over sends. It comes from nowhere else (CNetClient drops a peer's).
++      else if (op == ECmdStreamOp::CMDST_EndGame && this == mManager->mLocalClient) {
++        outPipe->Write(message.mBuff.start_, message.mBuff.Size());
++      }
++#endif
+     }
+   }
+ }

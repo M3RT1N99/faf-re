@@ -1,8 +1,8 @@
 // What FAF's UI and the app tell each other about the fingers in the menus (android/TOUCH_UI.md). FAF's Lua declares a
-// screen's page and whose the fingers are, by three functions added to its UI's globals, and the activity follows on its own
-// thread (Game.fromProgram wakes it, and it reads what is new). A finger that scrolls asks what list is under it, and a list
-// takes its drag on the program's thread, where FAF's lists live, in the order of the rest of the input; what a list cannot
-// take goes back to the activity for the page.
+// screen's page, whose the fingers are, the HUD's factor and what to bring into view, by four functions added to its UI's
+// globals, and the activity follows on its own thread (Game.fromProgram wakes it, and it reads what is new). A finger that
+// scrolls asks what list is under it, and a list takes its drag on the program's thread, where FAF's lists live, in the
+// order of the rest of the input; what a list cannot take goes back to the activity for the page.
 
 #include "MenuFingers.h"
 

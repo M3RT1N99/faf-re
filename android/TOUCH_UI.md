@@ -115,7 +115,8 @@ FAF's other readers of the `ui_scale` option in a session:
 | `lua/maui/effecthelpers.lua:32` | A local factor with a getter and a setter that nothing reads | Nothing to do |
 | `lua/ui/dialogs/myeffecthelpers.lua:20` | The same, and it starts at 1.0 | Nothing to do |
 | `lua/ui/help/tooltips.lua:850` | The option's text in the Options dialog | Says what the option does now (below) |
-| `lua/ui/controls/textarea.lua:8`, `lua/ui/lobby/unitstooltip.lua:18`, `lua/ui/dialogs/createunit.lua:2` | A local factor from `GetPixelScaleFactor`, as they are first imported | What it was: in the front end 1, in a session the factor at that moment. The option's value does not reach them by itself any more |
+| `lua/ui/controls/textarea.lua:8`, `lua/ui/dialogs/createunit.lua:2` | A local factor from `GetPixelScaleFactor`, as they are first imported | What it was: in the front end 1, in a session the factor at that moment. The option's value does not reach them by itself any more |
+| `lua/ui/lobby/unitstooltip.lua:18` | The same, which its tooltip undoes to get at its height, and by which it goes above a unit or below it | Set by the hook as each tooltip is made: the file is imported before the Unit Manager's factor holds |
 
 The option is the user's own adjustment of the HUD. The front end does not read it: the hook of `layouthelpers.lua` sets
 FAF's factor to 1, so that a value above 100 % cannot cut off the menus. `StartSession` multiplies the app's factor by it, within
@@ -139,6 +140,8 @@ is after they are set, so a factor has to be there for as long as what it laid o
   evaluate again gets the factor there is then.
 - `AtHud`: what the game calls for the HUD runs at the HUD's factor whatever dialog is open: `OnSelectionChanged`,
   `OnQueueChanged`, `OnBeat`, `OnPause`, `OnResume`, `OnSync` and the unit view's `OnFrame`.
+- `AtFrontEnd`: the same for a screen of the front end that goes on under a dialog with a factor of its own, the lobby under the Unit Manager, at the
+  front end's factor of 1. The dialog's factor is back when it returns, so what is due under the screen's root is evaluated there, but for what the dialogs made.
 - `Try`: what a wrapper does beyond calling FAF runs later than the hook's own `pcall`, so it goes through this, which
   logs a failure with `WARN`.
 
@@ -154,8 +157,10 @@ dialogs below was seen to build from there.
 - `Page`: see "The menus". Inside a `DialogAt` it is at that factor.
 
 The factor is one for all, so what lies under a dialog that holds one must not move. The main menu hides for its dialogs, and a question
-holds none. One thing does change under any dialog: the button that opened it, which the finger leaves after the dialog is there, and which
-FAF then sizes anew with its next texture at the dialog's factor. So a bitmap keeps the size it was made at (the hook of `maui/bitmap.lua`).
+holds none. The lobby goes on under the Unit Manager, which holds the HUD's size on the glass: what the host sends and a peer that goes fill slots and set fonts, offsets, the map
+and the options, the ping's thread names a peer who has come, and what is typed goes to the chat. All of that runs through `AtFrontEnd` (the hook of `ui/lobby/lobby.lua`). What else
+the lobby does by itself does not change its layout: the ping's bars, the letters of the map's name. One thing does change under any dialog: the button that opened it, which the
+finger leaves after the dialog is there, and which FAF then sizes anew with its next texture at the dialog's factor. So a bitmap keeps the size it was made at (the hook of `maui/bitmap.lua`).
 
 ### The hooks
 
@@ -177,6 +182,7 @@ FAF then sizes anew with its next texture at the dialog's factor. So a bitmap ke
 | `lua/ui/dialogs/modmanager.lua` | FAF hands the function that shows the main menu again to where the Mods Manager goes through the other players' mods, which calls it as the mods load: the menu came back under the dialog, at the dialog's factor. Here it comes when the dialog has closed |
 | `lua/ui/lobby/modsmanager.lua` | `Dialog`: FAF lays it out by the screen's height at any factor |
 | `lua/ui/lobby/unitsmanager.lua` | `DialogAt` and `Page` of the whole picture; a resting finger reads a unit's tooltip and changes nothing |
+| `lua/ui/lobby/unitstooltip.lua` | Its local factor as each tooltip is made (above) |
 | `lua/ui/dialogs/mapselect.lua`, `lua/ui/lobby/changelog.lua` | The rows of the maps and of the patches; the patch notes show from their top |
 | `lua/ui/lobby/gamecreate.lua` | `Dialog` |
 | `lua/ui/campaign/selectcampaign.lua` | Skipping the timeline's film (a tap, or Back) went to a call of FAF's with arguments it no longer takes, which left a black screen: it goes where the film's end goes |
@@ -184,8 +190,8 @@ FAF then sizes anew with its next texture at the dialog's factor. So a bitmap ke
 | `lua/ui/uimain.lua` | A new front end takes the fingers and the view back from what the last state declared |
 | `lua/maui/layouthelpers.lua` | The front end's factor is 1, whatever the UI scale says |
 | `lua/maui/slider.lua` | A press on a slider's bar also takes the thumb, for the drag that may follow |
-| `lua/ui/controls/combo.lua` | A dropdown's rows are 5 mm on the glass, and it stays on the picture |
-| `lua/ui/lobby/lobby.lua` | `Page`; the slot rows' distance; the row under a finger in the list of observers |
+| `lua/ui/controls/combo.lua` | A dropdown's rows are 5 mm on the glass, it stays on what the screen shows, and it opens with its choice in view |
+| `lua/ui/lobby/lobby.lua` | `Page`; the slot rows' distance; the row under a finger in the list of observers; what goes on under a dialog with a factor of its own stays at the lobby's (`AtFrontEnd`) |
 | `lua/ui/lobby/gameselect.lua` | `Page` |
 | `lua/ui/dialogs/keybindings.lua`, `lua/ui/notify/customiser.lua` | `Dialog`, 740 lines |
 | `lua/ui/game/connectivity.lua` | `Dialog`, 640 lines, which hold nine players |
@@ -297,9 +303,9 @@ look stays: the same textures and fonts, no new art.
 
 ### Who decides
 
-FAF's Lua declares a screen's page and whose the fingers are, through three functions the app adds to the UI's globals
-(`android/native/src/host/MenuFingers.cpp`): `FafreSetPage([left, top, right, bottom])`, `FafreSetFingers(menu)` and `FafreShowLines(top,
-bottom)`. The native side keeps what they say; `Game.fromProgram` wakes the activity, which reads it on its own thread. `fafre/scale.lua` is
+FAF's Lua declares a screen's page and whose the fingers are, through four functions the app adds to the UI's globals
+(`android/native/src/host/MenuFingers.cpp`): `FafreSetPage([left, top, right, bottom])`, `FafreSetFingers(menu)`, `FafreShowLines(top,
+bottom)` and `FafreSetHud(factor)`. The native side keeps what they say; `Game.fromProgram` wakes the activity, which reads it on its own thread. `fafre/scale.lua` is
 the only one that calls them. The front end's fingers are the menus' from the start. A session's are the game's (`TouchInput` as it
 was), except while a `Dialog`, `DialogAt` or `Page` is open.
 
@@ -311,7 +317,7 @@ CreateUI = Scale.Page(CreateUI, function(made) return made[1] end)
 
 `Page` wraps what builds the screen. `find` gets the controls it made and says which control the page goes by, and has the place of,
 and if a side of the page is not that control's, a table with `left`, `top`, `right`, `bottom`. When that control is gone so is the page.
-Pages nest: the one under comes back as it stood.
+Pages nest: the one under comes back as it stood, and one that has closed opens at its top when it opens again.
 
 ### The view
 
@@ -355,6 +361,9 @@ what it scrolls). The answer says *none* or *one*.
   that it follows the finger one to one, carries the remainder, and gives what is left at the list's end back: `Game.takePageDrag`.
 - Until the answer has come, what the finger has gone waits (`mUnsentDrag`).
 
+A mouse can click only what the view shows, so its wheel on a page goes the same way (`PageInput.wheel`): a notch is a drag of the system's scroll factor, the list under
+the pointer first and then the page. It asks for the list as it starts after a pause, or when the pointer has moved. Where no page is larger than the screen the wheel stays a wheel for FAF's lists and the world view.
+
 ### The screens
 
 | Screen | How | Why |
@@ -375,8 +384,8 @@ what it scrolls). The answer says *none* or *one*.
 | Campaign | As FAF's, full screen: rows 3.2 mm and 4.1 mm apart, with reach; the choice of difficulty 5 mm a row | The art fits the picture, and the buttons do |
 | LAN screen | A page of its panel's width and its Create button, which stands out of it: 1014 wide, 1.62 times as large | 974x734 |
 | Options | **Reflowed**, no page: a factor of about 1.75, for rows of 5.8 mm as far as 440 of FAF's lines allow, and as many rows as fit, 5 at 768 lines; the list scrolls by finger. On a screen so large that FAF's whole dialog fits at that factor it stays as FAF has it | It stays sharp, and all of it is larger, not only what a finger hits. See below |
-| Choices everywhere | Rows 5 mm by a larger size of FAF's font; the list grows to the left for its longer rows, up to the picture's edge, opens upwards if there is more room there, and has as many rows as show at a time, which scroll by finger; a page goes where it shows | |
-| Choices of pictures (colour, faction) | Rows 5 mm, the picture filling them; they have no scroll bar, so if they do not fit below they go in columns to the left | 19 colours |
+| Choices everywhere | Rows 5 mm by a larger size of FAF's font; the list grows to the left for its longer rows, as far as the screen shows, opens upwards if there is more room there, and has as many rows as show at a time, which scroll by finger, with the choice among them; a page goes where it shows | |
+| Choices of pictures (colour, faction) | Rows 5 mm, the picture filling them; they have no scroll bar, so if they do not fit below they go in columns to the left, as far as the screen shows | 19 colours |
 
 **Options' frame.** FAF's background is one Bitmap of 698x598 with the list's art in the middle. MAUI's `SetUV` shows a part of a picture, so
 two Bitmaps of the same picture show its top and its bottom, with the same part of the middle left out, and the dialog's own Bitmap is
@@ -451,7 +460,7 @@ combos' own buttons, which keep their art at 2.8 mm in the lobby and 3 mm in Opt
 small texts; Unit Manager's cells, which at 3.9 mm lie side by side, so that reach cannot help; Key Bindings' rows, 2.1 mm; a Mods Manager row
 of FAF's pictures, of which 2 show at a time. The picture is scaled up on a page, so it is a little soft. 19 colours in two columns or three cover what is beside them while open.
 
-Not tried on a real phone: all of this is the emulator's composition and its touch screen, at the phone's size. A real LAN's server list:
+Not tried on a real phone: all of this is the emulator's composition and its touch screen, at the phone's size; a mouse's wheel is the emulator's injected one. A real LAN's server list:
 the emulator's network shows none, so the list was tried with made-up entries, one of which pointed at the PC's game (`Join` worked), and
 the PC's game by address. The emulator's game has one map and no campaign beyond the first operation: long lists of maps, and the campaign's
 list of operations, were tried with made-up entries beside the real one, and the Credits' film is not there at all, so it was seen to give way to the

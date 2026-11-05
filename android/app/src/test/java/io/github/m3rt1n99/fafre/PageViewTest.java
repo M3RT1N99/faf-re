@@ -23,6 +23,19 @@ public class PageViewTest {
         view.setPage(312, 0, 1336, 768);
     }
 
+    /** A page as wide as the picture and higher than the screen, which is no zoom until the picture grows. */
+    private void pageThatIsNoZoom() {
+        view.setPage(0, 0, 1647, 1400);
+        assertFalse(view.zoomed());
+    }
+
+    /** Where such a page stands once it is a zoom: viewTop() says 0 for as long as it is not. */
+    private float whereItStandsOnceAZoom() {
+        view.setPicture(3000, 1400);
+        assertTrue(view.zoomed());
+        return view.viewTop();
+    }
+
     @Test
     public void withoutAPageThePictureFillsTheScreen() {
         assertFalse(view.zoomed());
@@ -107,8 +120,13 @@ public class PageViewTest {
         view.setPage(0, 0, 1647, 768);
         assertFalse(view.zoomed());
         assertEquals(1544, view.viewWidth());
+    }
+
+    @Test
+    public void aFingerMovesNoPageThatIsNoZoom() {
+        pageThatIsNoZoom();
         view.scrollBy(-100);
-        assertEquals(0, view.viewTop(), 0);
+        assertEquals(0, whereItStandsOnceAZoom(), 0);
     }
 
     @Test
@@ -147,6 +165,44 @@ public class PageViewTest {
         view.setPage(346, 38, 1302, 730);
         lobby();
         assertEquals(-100, view.viewTop(), 0);
+    }
+
+    @Test
+    public void pagesNestAndComeBackAsTheyStood() {
+        lobby();
+        view.scrollBy(-100);
+        view.setPage(346, 38, 1302, 730);
+        view.scrollBy(-50);
+        float second = view.viewTop();
+        view.setPage(500, 0, 1147, 768);
+        view.scrollBy(-20);
+        view.setPage(346, 38, 1302, 730);
+        assertEquals(second, view.viewTop(), 0);
+        lobby();
+        assertEquals(-100, view.viewTop(), 0);
+    }
+
+    @Test
+    public void aPageThatHasClosedOpensAgainAtItsTop() {
+        lobby();
+        view.setPage(346, 38, 1302, 730);
+        float top = view.viewTop();
+        view.scrollBy(-50);
+        lobby();
+        assertTrue(view.setPage(346, 38, 1302, 730));
+        assertEquals(top, view.viewTop(), 0);
+    }
+
+    @Test
+    public void aPageUnderTwoThatComesBackClosesThemBoth() {
+        lobby();
+        view.setPage(346, 38, 1302, 730);
+        float top = view.viewTop();
+        view.scrollBy(-50);
+        view.setPage(500, 0, 1147, 768);
+        lobby();
+        view.setPage(346, 38, 1302, 730);
+        assertEquals(top, view.viewTop(), 0);
     }
 
     @Test
@@ -199,9 +255,11 @@ public class PageViewTest {
     }
 
     @Test
-    public void aFieldOnNoPageMovesNothing() {
+    public void aFieldOnAPageThatIsNoZoomMovesNothing() {
+        pageThatIsNoZoom();
         view.setKeyboard(360);
         view.reveal(684, 706);
-        assertEquals(0, view.viewTop(), 0);
+        view.setKeyboard(0);
+        assertEquals(0, whereItStandsOnceAZoom(), 0);
     }
 }

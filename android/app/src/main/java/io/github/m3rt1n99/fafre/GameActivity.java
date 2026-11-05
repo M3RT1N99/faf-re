@@ -110,6 +110,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private View mFingerLayer;
     private final PageView mPageView = new PageView();
     private final int[] mPageRect = new int[4];
+    /** A mouse wheel's notch on a page, in the screen's pixels. */
+    private float mWheelPixels;
     /** A text field that was tapped or has the focus, in the picture's lines, until the keyboard has been up and gone. */
     private final int[] mField = new int[2];
     private final int[] mToShow = new int[2];
@@ -311,6 +313,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mScreenMm = screenShortSideMm();
         mTouch = new TouchInput(mTouchMouse, ViewConfiguration.get(this).getScaledTouchSlop());
         mPageInput = new PageInput(mPageMouse, ViewConfiguration.get(this).getScaledTouchSlop());
+        mWheelPixels = ViewConfiguration.get(this).getScaledVerticalScrollFactor();
         mFingers = mTouch;
         FrameLayout root = new FrameLayout(this);
         mSurface = new SurfaceView(this);
@@ -1011,9 +1014,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             return super.onGenericMotionEvent(event);
         }
         if (event.getActionMasked() == MotionEvent.ACTION_SCROLL) {
-            int delta = Math.round(event.getAxisValue(MotionEvent.AXIS_VSCROLL) * Game.WHEEL_DELTA);
-            if (delta != 0) {
-                Game.mouseWheel(delta, pictureX(event.getX()), pictureY(event.getY()));
+            float turned = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            if (mPageView.zoomed()) {
+                if (turned != 0) {
+                    mPageInput.wheel(event.getX(), event.getY(), turned * mWheelPixels, event.getEventTime());
+                }
+            } else {
+                int delta = Math.round(turned * Game.WHEEL_DELTA);
+                if (delta != 0) {
+                    Game.mouseWheel(delta, pictureX(event.getX()), pictureY(event.getY()));
+                }
             }
             return true;
         }

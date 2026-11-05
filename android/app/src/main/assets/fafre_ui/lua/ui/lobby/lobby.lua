@@ -1,7 +1,8 @@
 
 -- The UI package (android/TOUCH_UI.md): the lobby is a page of its panel and of its Launch button, which stands out below it: all of
 -- FAF's 768 lines. Its slot rows lie further apart when the map has few of them: the 16 rows of FAF's layout have room for 8 at twice the
--- distance. A finger that rests on an observer for the host's right click sees which row it has.
+-- distance. A finger that rests on an observer for the host's right click sees which row it has. A dialog can hold a factor of its own over the
+-- lobby, the Unit Manager, while the host goes on sending and the ping's thread and the keyboard go on: what they do stays at the lobby's.
 do
     local ok, problem = pcall(function()
         local Scale = import('/fafre_ui/lua/fafre/scale.lua')
@@ -14,6 +15,8 @@ do
 
         local Create = CreateUI
         CreateUI = Scale.Page(function(...)
+            -- A new lobby has new rows, of FAF's height.
+            rowHeight = false
             local results = {Create(unpack(arg))}
             Scale.Try('the list of observers', function() GUI.observerList:ShowMouseoverItem(true) end)
             return unpack(results)
@@ -53,6 +56,22 @@ do
                     -- FAF keeps showing the background of a row it has hidden, for which there is no room here.
                     slot.SlotBackground:SetHidden(index > numAvailStartSpots and pitch > LEAST_PITCH)
                 end
+            end)
+        end
+
+        local function AtLobby(work)
+            return Scale.AtFrontEnd(work, function() return GUI end)
+        end
+        UpdateGame = AtLobby(UpdateGame)
+        RefreshOptionDisplayData = AtLobby(RefreshOptionDisplayData)
+        AddChatText = AtLobby(AddChatText)
+        CalcConnectionStatus = AtLobby(CalcConnectionStatus)
+        local InitComm = InitLobbyComm
+        InitLobbyComm = function(...)
+            InitComm(unpack(arg))
+            Scale.Try('the messages of a lobby', function()
+                lobbyComm.DataReceived = AtLobby(lobbyComm.DataReceived)
+                lobbyComm.PeerDisconnected = AtLobby(lobbyComm.PeerDisconnected)
             end)
         end
     end)

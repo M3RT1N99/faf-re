@@ -78,6 +78,11 @@ local function Build(entry, build, arguments)
     return results
 end
 
+--- Whatever is due of a control's layout functions runs now, at the factor there is now.
+local function Evaluate(control)
+    return control.Left(), control.Top(), control.Right(), control.Bottom(), control.Width(), control.Height()
+end
+
 --- A hook's work that runs after the hook has loaded: FAF's Lua changes under it, and that may cost a feature, not the game.
 function Try(name, work)
     local ok, problem = pcall(work)
@@ -147,10 +152,10 @@ end
 
 --- `build` opens a screen that a finger reads on a page (android/TOUCH_UI.md). `find` is given what `build` made and says which
 --- control the page goes by and has the place of, and in a table of left, top, right, bottom any side where it has another. Built
---- within a dialog's `build`, it is at the dialog's factor.
+--- within a dialog's `build`, it is at the dialog's factor, and what it makes is the dialog's.
 function Page(build, find)
     return function(...)
-        local entry = {factor = building and building.factor, made = {}, page = true}
+        local entry = {factor = building and building.factor, made = building and building.made or {}, page = true}
         local results = Build(entry, build, arg)
         Try('a page', function()
             local root, box = find(entry.made)
@@ -227,6 +232,12 @@ function FitByList(control, file, margin, even)
     end
 end
 
+--- The picture's first column that the screen shows.
+function ShownLeft()
+    local page = pages[table.getn(pages)]
+    return page and page.left or GetFrame(0).Left()
+end
+
 --- What the screen shows of the picture's lines at a time, with the margins that ShowLines leaves.
 function ShownLines()
     return GetFrame(0).Height() / PageZoom() - 16
@@ -257,9 +268,7 @@ function BuiltAt(factor, build)
         local results = Build(entry, function()
             local inner = {build(unpack(arg))}
             for _, control in entry.made do
-                pcall(function()
-                    return control.Left(), control.Top(), control.Right(), control.Bottom(), control.Width(), control.Height()
-                end)
+                pcall(Evaluate, control)
             end
             return unpack(inner)
         end, {})
@@ -295,6 +304,45 @@ function GiveWindowHome(window, resetButton, goNow, left, top, right, bottom)
         Reset(self, modifiers)
         GoHome()
         window:SaveWindowLocation()
+    end
+end
+
+--- All under this control, but for what the dialogs that hold a factor made, is evaluated now. ApplyFunction goes one level down.
+local function EvaluateUnder(control, dialogs)
+    pcall(Evaluate, control)
+    control:ApplyFunction(function(child)
+        if child ~= control and not dialogs[child] then
+            EvaluateUnder(child, dialogs)
+        end
+    end)
+end
+
+--- What `screen` does is the front end's, at its factor, also under a dialog that holds another: FAF's lobby goes on with its messages under
+--- the Unit Manager. That dialog's factor is back when this returns, so what is due under `root()` is evaluated here.
+function AtFrontEnd(screen, root)
+    if not screen then
+        error('nothing to call')
+    end
+    return function(...)
+        if LayoutHelpers.GetPixelScaleFactor() == 1 then
+            return screen(unpack(arg))
+        end
+        return unpack(Build({factor = 1, made = {}}, function(...)
+            local results = {screen(unpack(arg))}
+            Try('what is due of a screen', function()
+                local control = root()
+                if control and not IsDestroyed(control) then
+                    local dialogs = {}
+                    for _, entry in open do
+                        for _, made in entry.made do
+                            dialogs[made] = true
+                        end
+                    end
+                    EvaluateUnder(control, dialogs)
+                end
+            end)
+            return unpack(results)
+        end, arg))
     end
 end
 

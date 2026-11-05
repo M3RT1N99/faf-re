@@ -225,7 +225,8 @@ datagrams, a network that goes silent, a thread that does not start), that a clo
 and a destroyed connector when it has said goodbye, also from inside `Pull`, and that what waits costs no CPU. And
 what the protocol puts on the wire, whose sizes the Windows game fixes (`LOBMSG_NewPeer`, what is copied raw: no
 `static_assert` guards it in a 64-bit build), and what *End Game* leaves: a local and a net client, the beats this
-client queued run, none more, and the sim hears of no one's leaving. It takes about 20 s, is linked statically like
+client queued run, none more, the sim hears of no one's leaving, and the other counts as ejected by this client. *End Replay* likewise: the viewer's end of the
+game reaches the sim, with no command source, and nothing more of the file. It takes about 20 s, is linked statically like
 `faf_wx_lite_tests`, and the app's workflow runs the arm64 build on an arm64 runner. A broadcast comes back to its
 sender on most networks: a plain socket asks first, and the test checks the engine's path if one came back and says
 "not checked" only if none did. On the emulator it reaches `wlan0`; what a real network does with it only a phone

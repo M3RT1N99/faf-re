@@ -30,7 +30,9 @@
 #include "boost/thread/exceptions.hpp"
 #include "boost/weak_ptr.h"
 #include "gpg/core/algorithms/MD5.h"
+#include "gpg/core/streams/PipeStream.h"
 #include "moho/containers/SCoordsVec2.h"
+#include "moho/net/CClientBase.h"
 #include "moho/net/CClientManagerImpl.h"
 #include "moho/net/CMessage.h"
 #include "moho/net/CNetClient.h"
@@ -972,7 +974,7 @@ namespace
     moho::CClientManagerImpl* const manager = moho::CLIENT_CreateClientManager(2, connector, 0, false);
     Messages stream;
     manager->PushReceiver(0u, 50u, &stream);
-    manager->CreateLocalClient("this one", 0, 1, 0);
+    auto* const local = static_cast<moho::CClientBase*>(manager->CreateLocalClient("this one", 0, 1, 0));
     auto* const other = static_cast<moho::CNetClient*>(manager->CreateNetClient("other", 1, 2, 1, connection));
     moho::CMarshaller marshaller(manager);
     manager->Cleanup(); // this client has loaded; the other says nothing, as one still loading
@@ -1009,6 +1011,13 @@ namespace
     CHECK(manager->IsEveryoneReady());
     CHECK(manager->GetSimRate() == 0);
 
+    // It has gone, and this client, the one still in, has ejected it: what keeps FAF's disconnect panel away.
+    msvc8::vector<const moho::CClientBase*> ejecters;
+    other->CollectEjecters(ejecters);
+    CHECK(!other->NoEjectionPending());
+    CHECK(ejecters.size() == 1 && ejecters[0] == local);
+    CHECK(local->NoEjectionPending());
+
     // The next beat this client issues carries the end into the stream, and nothing says the other's army is
     // abandoned: the player who left was this one.
     marshaller.AdvanceBeat(1);
@@ -1025,6 +1034,79 @@ namespace
     };
     CHECK(seen(moho::ECmdStreamOp::CMDST_EndGame));
     CHECK(!seen(moho::ECmdStreamOp::CMDST_CommandSourceTerminated));
+
+    delete manager;
+  }
+
+  void EndingAReplayEndsItsSim()
+  {
+    // A file of a player's beats, longer than this test goes, the client of the file and the viewer's, who has no
+    // command source, as a replay's session makes them.
+    constexpr std::uint8_t kPlayersSource = 0;
+    constexpr unsigned int kNoSource = 0xFF;
+    auto* const file = new gpg::PipeStream();
+    moho::CMessage source{moho::ECmdStreamOp::CMDST_SetCommandSource};
+    source.Append(reinterpret_cast<const char*>(&kPlayersSource), sizeof(kPlayersSource));
+    file->Write(source.mBuff.start_, source.mBuff.Size());
+    for (int beat = 0; beat < 100; ++beat) {
+      moho::CMessage advance{moho::ECmdStreamOp::CMDST_Advance};
+      const std::int32_t one = 1;
+      advance.Append(reinterpret_cast<const char*>(&one), sizeof(one));
+      file->Write(advance.mBuff.start_, advance.mBuff.Size());
+    }
+    file->VirtFlush();
+    gpg::Stream* fileStream = file;
+    moho::BVIntSet sources;
+    sources.Add(kPlayersSource);
+
+    moho::CClientManagerImpl* const manager = moho::CLIENT_CreateClientManager(2, nullptr, 0, true);
+    Messages stream;
+    manager->PushReceiver(0u, 50u, &stream);
+    auto* const replay = static_cast<moho::CClientBase*>(manager->CreateReplayClient(&fileStream, &sources));
+    auto* const viewer = static_cast<moho::CClientBase*>(manager->CreateLocalClient("viewer", 1, 1, kNoSource));
+    moho::CMarshaller marshaller(manager);
+    marshaller.SetCommandSource(kNoSource);
+    manager->Cleanup();
+
+    int dispatched = 0;
+    const auto beats = [&](const int count) {
+      for (int pass = 0; pass < count; ++pass) {
+        marshaller.AdvanceBeat(1);
+        manager->DoBeat();
+        int available = 0;
+        manager->GetAvailableBeat(available);
+        while (dispatched < available) {
+          manager->UpdateStates(++dispatched);
+        }
+      }
+    };
+    const auto seen = [&](const moho::ECmdStreamOp op) {
+      return std::find(stream.types.begin(), stream.types.end(), static_cast<unsigned>(op)) != stream.types.end();
+    };
+
+    // It plays, and what is said in the viewer's name reaches no sim.
+    beats(5);
+    CHECK(dispatched == 5);
+    CHECK(!seen(moho::ECmdStreamOp::CMDST_EndGame));
+    moho::CMessage viewers{moho::ECmdStreamOp::CMDST_ProcessInfoPair};
+    manager->ProcessClients(viewers);
+    beats(2);
+    CHECK(!seen(moho::ECmdStreamOp::CMDST_ProcessInfoPair));
+    CHECK(dispatched == 7);
+
+    // End Replay: the end reaches the sim with the next beat, no army is abandoned, nothing more of the file comes,
+    // whose checksums a sim that is over would fail one by one, and FAF's disconnect panel stays away.
+    manager->Disconnect();
+    msvc8::vector<const moho::CClientBase*> ejecters;
+    replay->CollectEjecters(ejecters);
+    CHECK(!replay->NoEjectionPending());
+    CHECK(ejecters.size() == 1 && ejecters[0] == viewer);
+    const std::uint32_t played = replay->mDispatchedBeat;
+    beats(3);
+    CHECK(dispatched == 10);
+    CHECK(seen(moho::ECmdStreamOp::CMDST_EndGame));
+    CHECK(!seen(moho::ECmdStreamOp::CMDST_CommandSourceTerminated));
+    CHECK(replay->mDispatchedBeat == played);
 
     delete manager;
   }
@@ -1055,6 +1137,7 @@ namespace
     {"NewPeerIsTheNamePlusTenBytes", &NewPeerIsTheNamePlusTenBytes},
     {"WhatIsCopiedRawHasItsSize", &WhatIsCopiedRawHasItsSize},
     {"EndingTheGameLeavesTheBeatsToThisClient", &EndingTheGameLeavesTheBeatsToThisClient},
+    {"EndingAReplayEndsItsSim", &EndingAReplayEndsItsSim},
   };
 } // namespace
 

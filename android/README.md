@@ -121,7 +121,7 @@ the game data they imported. Everything lives in the app's external files folder
   game from, with what it typed shown over the picture, as it covers the game's text field; a tap on a text field opens it. In the menus, and over a
   dialog in a game, a tap is a click, a finger up or down scrolls the list under it and then the page, a finger sideways is a drag (sliders), one that rests and
   then moves drags anywhere (scroll bars), one that rests half a second, which it feels twice, and lifts is a right click (the host's kick of an observer, closing a
-  start position on the map), and two fingers do nothing; the lobby and the LAN screen are shown larger as a page, Options, Replay, Save and Load have fewer
+  start position on the map), and two fingers do nothing; the lobby and the LAN screen are shown larger as a page, which a mouse's wheel moves too, Options, Replay, Save and Load have fewer
   rows at a larger size, and FAF's other dialogs are sized to what they need. The game's HUD is scaled to the screen, a tap beside a small control
   hits it, and the pointer leaves when the fingers have, so that rollovers go ([TOUCH_UI.md](TOUCH_UI.md), where the bar
   is, and what each hook of the UI package `app/src/main/assets/fafre_ui` is for). The game draws at a size of its own (`PictureSize`, a button on the
@@ -149,7 +149,7 @@ the game data they imported. Everything lives in the app's external files folder
     players, whose connection dialog opens. Back in time, it goes on in sync. From 85 s the others can eject the
     player, and after 170 s each side ejects the others by itself and plays on alone. These are the game's rules.
   - A lost network or a host that vanishes ends in the game's dialogs: in the lobby *Connection to host timed out*
-    (*Keep Trying*, *Give Up*), in a game the connection dialog. *End Game* goes to the score screen; the others play
+    (*Keep Trying*, *Give Up*), in a game the connection dialog. *End Game*, as *End Replay* in a replay, goes to the score screen; the others play
     on. A port another program holds gives *Connecting...* with its *Abort Connect*, and the log says
     `bind(<port>) failed: WSAEADDRINUSE`.
   - A third player: the host passes each player's address on to the others, and they connect to each other. Checked

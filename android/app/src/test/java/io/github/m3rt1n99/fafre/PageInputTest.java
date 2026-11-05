@@ -304,7 +304,7 @@ public class PageInputTest {
     }
 
     @Test
-    public void aSecondFingerLeavesAScrollAndADragAsTheyAre() {
+    public void aSecondFingerLeavesAScrollAsItIs() {
         input.down(FINGER, 100, 200, 0, true);
         moveTo(100, 230);
         input.down(OTHER, 300, 200, 50, false);
@@ -317,6 +317,19 @@ public class PageInputTest {
         moveTo(100, 300);
         input.up(OTHER, 300, true);
         assertEquals(events("scroll 10"), mouse.events);
+    }
+
+    @Test
+    public void aSecondFingerLeavesADragAsItIs() {
+        input.down(FINGER, 100, 200, 0, true);
+        moveTo(150, 200);
+        input.down(OTHER, 300, 200, 50, false);
+        mouse.events.clear();
+        moveTo(170, 200);
+        input.up(OTHER, 100, false);
+        moveTo(190, 200);
+        input.up(FINGER, 200, true);
+        assertEquals(events("move 170 200", "move 190 200", "release 190 200"), mouse.events);
     }
 
     @Test
@@ -389,6 +402,56 @@ public class PageInputTest {
         assertTrue(mouse.leaving);
         input.down(FINGER, 100, 200, 250, true);
         assertFalse(mouse.leaving);
+    }
+
+    @Test
+    public void aWheelScrollsTheListUnderThePointerAndAsksOnlyOnce() {
+        input.wheel(100, 200, -60, 1000);
+        input.wheel(100, 200, -60, 1100);
+        input.wheel(100, 200, 60, 1200);
+        assertEquals(events("list? 100 200", "scroll -60", "scroll -60", "scroll 60"), mouse.events);
+    }
+
+    @Test
+    public void aWheelAsksAgainAfterAPauseOrWhereThePointerHasGone() {
+        input.wheel(100, 200, -60, 1000);
+        mouse.events.clear();
+        input.wheel(100, 200, -60, 1000 + PageInput.WHEEL_PAUSE_MILLISECONDS + 1);
+        assertEquals(events("list? 100 200", "scroll -60"), mouse.events);
+        mouse.events.clear();
+        input.wheel(130, 200, -60, 1500);
+        assertEquals(events("list? 130 200", "scroll -60"), mouse.events);
+    }
+
+    @Test
+    public void aFingerAsksForItsListSoAWheelAsksAgainAfterIt() {
+        input.wheel(100, 200, -60, 1000);
+        input.down(FINGER, 300, 400, 1050, true);
+        input.up(FINGER, 1090, true);
+        input.timer();
+        mouse.events.clear();
+        input.wheel(100, 200, -60, 1100);
+        assertEquals(events("list? 100 200", "scroll -60"), mouse.events);
+    }
+
+    @Test
+    public void aWheelLeavesAFingerOnTheGlassItsListAndItsPage() {
+        input.down(FINGER, 100, 200, 0, true);
+        moveTo(100, 230);
+        mouse.events.clear();
+        input.wheel(300, 400, -60, 50);
+        assertEquals(events(), mouse.events);
+        moveTo(100, 240);
+        assertEquals(events("scroll 10"), mouse.events);
+    }
+
+    @Test
+    public void aWheelGoesOnWhenTheSystemHasTakenTheFingers() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.cancel();
+        mouse.events.clear();
+        input.wheel(300, 400, -60, 50);
+        assertEquals(events("list? 300 400", "scroll -60"), mouse.events);
     }
 
     @Test

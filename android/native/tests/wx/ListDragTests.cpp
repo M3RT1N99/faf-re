@@ -93,6 +93,45 @@ WXT_TEST(ListDragTheCarriedPartIsLostToNoDirection)
   WXT_CHECK_EQ(list.top, 3);
 }
 
+WXT_TEST(ListDragRoomForPartOfALineGoesToThePage)
+{
+  // FAF's numbers need not be whole: two and a half lines to go, of a list that shows four.
+  listdrag::ListDrag drag;
+  int lastBy = 0;
+  const auto towardsEnd = [&](const float pixels, const float room) {
+    lastBy = 0;
+    const listdrag::Position position{0, 10, 6 - room, 10 - room};
+    return drag.Take(pixels, position, kPixelsPerLine, [&lastBy](const int by) {
+      lastBy = by;
+      return by;
+    });
+  };
+  // Three and a half lines' worth: the whole lines there is room for, and the rest for the page.
+  WXT_CHECK_EQ(towardsEnd(-140, 2.5f), -60.0f);
+  WXT_CHECK_EQ(lastBy, 2);
+  // By line, with what is less than a line carried, as long as there is room for one.
+  WXT_CHECK_EQ(towardsEnd(-50, 2.5f), 0.0f);
+  WXT_CHECK_EQ(lastBy, 1);
+  WXT_CHECK_EQ(towardsEnd(-35, 1.5f), 0.0f);
+  WXT_CHECK_EQ(lastBy, 1);
+  // Less than a line of room: no line, and what is carried goes as well.
+  WXT_CHECK_EQ(towardsEnd(-20, 0.5f), -25.0f);
+  WXT_CHECK_EQ(lastBy, 0);
+}
+
+WXT_TEST(ListDragRoomForPartOfALineTowardsItsStart)
+{
+  listdrag::ListDrag drag;
+  const listdrag::Position position{0, 10, 0.5f, 4.5f};
+  int asked = 0;
+  const float rest = drag.Take(50, position, kPixelsPerLine, [&asked](int) {
+    ++asked;
+    return 0;
+  });
+  WXT_CHECK_EQ(rest, 50.0f);
+  WXT_CHECK_EQ(asked, 0);
+}
+
 WXT_TEST(ListDragAListThatRefusesCountsAsAtItsEnd)
 {
   // A list's own idea of its end can differ from its numbers: lobby.lua's chat.
