@@ -283,6 +283,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         @Override
         public void run() {
             showReport();
+            NetworkGameService.startIfNeeded(GameActivity.this);
             mHandler.postDelayed(this, 500);
         }
     };
@@ -850,6 +851,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override
     protected void onResume() {
         super.onResume();
+        NetworkGameService.front(true);
         hideSystemBars();
         if (mDiscoveryLock != null) {
             mDiscoveryLock.acquire();
@@ -863,6 +865,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override
     protected void onPause() {
+        // Still allowed now: a socket opened since the last poll has its service too.
+        NetworkGameService.startIfNeeded(this);
+        NetworkGameService.front(false);
         if (mStarted) {
             mFingers.cancel();
             Game.foreground(false);

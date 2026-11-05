@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">FAF (faf-re)</string>
     <string name="channel_name">Engine tests</string>
+    <string name="channel_network_game">Network games</string>
 </resources>

@@ -45,6 +45,7 @@
 
 #include <Windows.h>
 #include <Win32AndroidHost.h>
+#include <winsock2.h>
 
 #include "../audio/FAudioPlatformAndroid.h"
 #include "KeysAndroid.h"
@@ -546,6 +547,18 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_audioFocus(
 {
   Report(held != JNI_FALSE ? "audio focus" : "no audio focus");
   FAudioAndroid_SetAudioFocus(held != JNI_FALSE ? 1 : 0);
+}
+
+/// Whether a network lobby or game has its socket open: NetworkGameService goes by it.
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_networkInUse(JNIEnv*, jclass)
+{
+  return Win32Android_ConnectorSocketOpen() ? JNI_TRUE : JNI_FALSE;
+}
+
+/// A line of the host's report from the app's side, which also goes to the system log.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_report(JNIEnv* const env, jclass, const jstring line)
+{
+  Report(Utf8(env, line));
 }
 
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_mouseMove(JNIEnv*, jclass, const jint x, const jint y)

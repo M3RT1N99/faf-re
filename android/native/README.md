@@ -194,8 +194,11 @@ lobby's screens asks for it. `/hostgame tcp` fails with a line in the log. GPGNe
 C5 (`NET_TCPConnect`). `src/net/NetlinkPeersAndroid.cpp` keeps the in-engine peer links off.
 
 The app holds a `MulticastLock` while the activity is in front, without which Wi-Fi hands a phone no broadcasts
-(`GameActivity`). Android cuts an app's network a few seconds after it goes to the back (`APP_BACKGROUND`): the
-players see the game's own connection dialog until it comes back ([README](../README.md)).
+(`GameActivity`). Android cuts an app's network a few seconds after it goes to the back (`APP_BACKGROUND`), unless
+it has a foreground service: `Win32Android_ConnectorSocketOpen` says whether a socket is selected for `FD_WRITE`, which
+of the game's sockets only a UDP connector's is, and the app's `NetworkGameService` runs while that is so
+([README](../README.md)). The engine needs no change for the back: with the surface gone the window is minimized, and
+`CScApp::Main` draws nothing and waits for the next beat.
 
 ## Tests
 
@@ -222,7 +225,8 @@ itself: boxes whose edges fall where the metrics and pixels can be worked out by
 `faf_net_tests` (`tests/net`) runs Winsock's events and the engine's own datagram socket and UDP connector on
 real sockets over the loopback: what is signalled when, the failures (a bad socket, a taken port, malformed
 datagrams, a network that goes silent, a thread that does not start), that a closed socket frees its port at once
-and a destroyed connector when it has said goodbye, also from inside `Pull`, and that what waits costs no CPU. And
+and a destroyed connector when it has said goodbye, also from inside `Pull`, that what waits costs no CPU, and that a
+connector's socket counts as the network in use where a discovery socket does not. And
 what the protocol puts on the wire, whose sizes the Windows game fixes (`LOBMSG_NewPeer`, what is copied raw: no
 `static_assert` guards it in a 64-bit build), and what *End Game* leaves: a local and a net client, the beats this
 client queued run, none more, the sim hears of no one's leaving, and the other counts as ejected by this client. *End Replay* likewise: the viewer's end of the

@@ -38,3 +38,7 @@ int getsockname(SOCKET socket, sockaddr* name, int* nameLength);
 // closesocket ends the socket's selection: the engine's inline knows no events.
 int Win32Android_CloseSocket(SOCKET socket);
 #define closesocket Win32Android_CloseSocket
+
+// Whether a socket is selected for FD_WRITE: of the game's sockets only a UDP connector's is, while a network lobby
+// or game has it open. A discovery socket (the LAN screen's, a host's listener) only reads, a skirmish has none.
+bool Win32Android_ConnectorSocketOpen();

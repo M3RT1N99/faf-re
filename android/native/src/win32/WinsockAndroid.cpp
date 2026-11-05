@@ -239,6 +239,15 @@ int getsockname(const SOCKET socket, sockaddr* const name, int* const nameLength
   return result;
 }
 
+bool Win32Android_ConnectorSocketOpen()
+{
+  Watcher& watcher = TheWatcher();
+  std::lock_guard<std::mutex> lock(watcher.mutex);
+  return std::any_of(watcher.selections.begin(), watcher.selections.end(), [](const Selection& selection) {
+    return (selection.selected & FD_WRITE) != 0;
+  });
+}
+
 int Win32Android_CloseSocket(const SOCKET socket)
 {
   Watcher& watcher = TheWatcher();

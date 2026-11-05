@@ -145,9 +145,29 @@ the game data they imported. Everything lives in the app's external files folder
     *Connect*, then the *Ready* box. On the same Wi-Fi the PC's game should also be in the list above them, with a
     *Join* button.
   - On the PC: *AI: Easy* in an open slot, *Ready*, *Launch Game*.
-  - Home: Android cuts the app's network a few seconds later (`APP_BACKGROUND`), so the game stands still for all
-    players, whose connection dialog opens. Back in time, it goes on in sync. From 85 s the others can eject the
-    player, and after 170 s each side ejects the others by itself and plays on alone. These are the game's rules.
+  - Home or the screen going off: the game goes on for everybody, and back in the app it is in sync. While a network
+    lobby or game has its socket open, a foreground service runs in the game's process (`NetworkGameService`, type
+    `specialUse`, as `dataSync` is limited to 6 hours in 24 on Android 15), with a partial wake lock. Without it Android
+    cuts the app's network a few seconds after Home (`APP_BACKGROUND`), the game stands still for all players, whose
+    connection dialog opens, and from 170 s each side ejects the others by FAF's rules. Its notification says *A network
+    game is running*, and a tap on it brings the game back. In the back the game's window is minimized: it draws nothing,
+    and its simulation and network go on, also while a game that the host launched loads.
+    - The source is the transport (`Game.networkInUse`): a UDP connector's socket. A skirmish has none (`LOBBY: Game
+      port 0[None]`) and starts no service, nor does the LAN screen's search for games, whose list has no use for the
+      network in the back. The service goes within a second of the socket's end (leaving a lobby, the program's end), about
+      3 s after a game has ended, as the game over panel and the score screen hold the socket with nothing left to play,
+      and after 30 minutes in the back, so that a lobby left behind does not keep a phone awake; it comes back with the
+      activity if the network is still needed. While it runs Wi-Fi does not save power on the socket either (a Wi-Fi lock
+      of high performance), which only a phone can show the worth of. A host in the back does not answer a LAN search on
+      a real Wi-Fi, as the multicast lock is held in front only: join it by its address then. A swipe in Recents ends the game's process, as it does without the service; force-stop and a crash leave nothing,
+      and nothing restarts it.
+    - Android allows the start only from the front. A refusal leaves `network game: no foreground service: <why>` in
+      `game.txt`, the game goes on, and the app asks again the next time the activity comes to the front; until then Home
+      stops the game for everybody, as above.
+    - What remains is what only a phone shows, as all of this ran on the emulator's Android 16: Samsung's and others' own
+      limits on a background app (*Put unused apps to sleep*, deep sleep), a CPU that really sleeps and Wi-Fi's power
+      saving with the screen off, and whether a phone keeps the game's speed in the back, where all players wait for the
+      slowest.
   - A lost network or a host that vanishes ends in the game's dialogs: in the lobby *Connection to host timed out*
     (*Keep Trying*, *Give Up*), in a game the connection dialog. *End Game*, as *End Replay* in a replay, goes to the score screen; the others play
     on. A port another program holds gives *Connecting...* with its *Abort Connect*, and the log says

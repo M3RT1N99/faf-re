@@ -653,6 +653,44 @@ namespace
     CHECK(closesocket(stranger) == 0);
   }
 
+  /// Whether the connectors that were destroyed have closed their sockets in time: their threads say goodbye first.
+  bool NoConnectorSocketIsLeft()
+  {
+    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while (Win32Android_ConnectorSocketOpen()) {
+      if (std::chrono::steady_clock::now() > end) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return true;
+  }
+
+  /// What the app's NetworkGameService goes by: the connector of a network lobby or game, from its making until its
+  /// socket has closed, and not the LAN screen's search for games. The two differ only by what they select.
+  void OnlyAConnectorCountsAsTheNetworkInUse()
+  {
+    CHECK(NoConnectorSocketIsLeft());
+
+    Datagrams handler;
+    moho::INetDatagramSocket* const discovery = moho::NET_OpenDatagramSocket(0, &handler);
+    CHECK(discovery != nullptr);
+    if (discovery == nullptr) {
+      return;
+    }
+    CHECK(discovery->CreateEvent() != nullptr);
+    CHECK(!Win32Android_ConnectorSocketOpen());
+
+    moho::INetConnector* const connector = MakeConnector();
+    CHECK(connector != nullptr);
+    if (connector != nullptr) {
+      CHECK(Win32Android_ConnectorSocketOpen());
+      connector->Destroy();
+      CHECK(NoConnectorSocketIsLeft());
+    }
+    delete discovery;
+  }
+
   /// Passes datagrams between two UDP sockets until `running` goes false: a network that can go.
   void RelayDatagrams(const SOCKET towardsGuest, const SOCKET towardsHost, const u_short hostPort, const std::atomic<bool>& running)
   {
@@ -1130,6 +1168,7 @@ namespace
     {"DatagramSocketSendsToItself", &DatagramSocketSendsToItself},
     {"DatagramSocketBroadcasts", &DatagramSocketBroadcasts},
     {"ConnectorsTalkOverTheLoopback", &ConnectorsTalkOverTheLoopback},
+    {"OnlyAConnectorCountsAsTheNetworkInUse", &OnlyAConnectorCountsAsTheNetworkInUse},
     {"ALostNetworkIsSilenceUntilItComesBack", &ALostNetworkIsSilenceUntilItComesBack},
     {"WhatArrivesAfterDestroySetsNoEvent", &WhatArrivesAfterDestroySetsNoEvent},
     {"ADestroyInsidePullEndsTheConnector", &ADestroyInsidePullEndsTheConnector},

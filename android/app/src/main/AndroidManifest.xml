@@ -11,9 +11,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- GameActivity's multicast lock: Wi-Fi hands a phone the broadcasts that find LAN games only under it. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <!-- TestService: downloads and test runs keep going with the screen off or the app in the background. -->
+    <!-- TestService: downloads and test runs keep going with the screen off or the app in the background. NetworkGameService: so does a network game. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -78,6 +79,18 @@
             android:name=".TestService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- specialUse: dataSync is limited to 6 hours in 24 on Android 15, and no other type fits a game that plays with
+             others over the network. Google Play would review the subtype; this app is not there. -->
+        <service
+            android:name=".NetworkGameService"
+            android:process=":game"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="A running network game of the player, whose other players wait for it in lockstep." />
+        </service>
 
         <!-- Hands the results zip to the app the user shares it with (read-only, by grant). -->
         <provider

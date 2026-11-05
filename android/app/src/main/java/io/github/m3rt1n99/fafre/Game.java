@@ -154,6 +154,12 @@ final class Game {
     /** The activity got the audio focus or lost it; without it the game's sound pauses. */
     static native void audioFocus(boolean held);
 
+    /** Whether a network lobby or game has its socket open: not a skirmish, not the LAN screen's search for games. */
+    static native boolean networkInUse();
+
+    /** A line of the game's report, which also goes to the system log. */
+    static native void report(String line);
+
     /** The pointer's position in the surface's pixels. */
     static native void mouseMove(int x, int y);
 

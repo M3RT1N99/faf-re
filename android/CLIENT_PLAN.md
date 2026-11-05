@@ -225,9 +225,15 @@ most of C1, as 56 files stop at wx.
   - Discovery: the emulator's broadcasts reach the PC's game, and its replies, which the NAT drops, handed over by
     hand put the PC's game in the emulator's list, where *Join* joins it. A datagram sent to itself through the real
     socket and a broadcast that comes back are in `faf_net_tests`.
-  - Android blocks an app's network in the back (`APP_BACKGROUND`): after Home the game stands still for everybody and
-    the connection dialogs open. Back within 138 s it went on in sync; after about 3 minutes each side had ejected
-    the other, by the game's rules, and played on alone.
+  - Android blocks an app's network in the back (`APP_BACKGROUND`): after Home the game stood still for everybody and
+    the connection dialogs opened; after about 3 minutes each side had ejected the other, by the game's rules, and played
+    on alone. A foreground service now runs while a UDP connector's socket is open (`NetworkGameService`, [README](README.md)).
+    Against the PC's 3835 game, Home for 60 s and for 5 minutes and the screen off for 60 s, also under a forced Doze:
+    the PC's game time went on without a stall (9 s behind real time over 9 1/2 minutes, as in front), no connection dialog on
+    either side, `effective=NONE` in `dumpsys netpolicy`, 0 mismatched, and a game the host launched loaded in the back. The
+    engine needs no change: its window is minimized, so `CScApp::Main` stops drawing, as the PC's does, and the main thread
+    takes about 5 % of a core. The service ends with the socket, and a swipe in Recents ends the process, which a foreground
+    service would otherwise keep alive and frozen (`onTaskRemoved`). Not checked on a phone.
   - Two things the rebuilt engine had never run: the connector was never deleted, so a lobby left its port taken, and
     *End Game* froze the game with no score screen, as the 3835 exe's own quit handshake is not in the engine's body
     (patches/README.md).
@@ -236,6 +242,6 @@ most of C1, as 56 files stop at wx.
     each other, with all three joining by the PC's LAN address, and two Windows clients read what the emulator as host
     passes on ([README](README.md)). No game of three humans has been played.
   - Open: a phone on real Wi-Fi (broadcasts through a router, the multicast lock, its power saving, Wi-Fi without
-    internet beside mobile data); keeping the network in the back, which takes a foreground service; the TCP half of
-    the transport, for GPGNet (C5).
+    internet beside mobile data); the service on a phone (its own battery rules, the game's speed in the back, Wi-Fi with
+    the screen off); the TCP half of the transport, for GPGNet (C5).
 - **Next:** the phone's word on sound, movies and the LAN game, then the speed (C4) and the rest of online (C5).
