@@ -68,13 +68,13 @@ namespace taptarget
     {
     }
 
-    /// Whether the control with this box would be the best so far, if it is one a finger can act on. `withinBest`: it is a
-    /// part of the best so far, which it then goes ahead of whatever the distance. A small control around others is a row
-    /// around its choice, say, and what is in it is what the finger meant: a walk from the root comes to the row first.
-    [[nodiscard]] bool Wants(const Box& box, const bool withinBest) const
+    /// Whether the control with this box would be the best so far, if it is one a finger can act on. What a tap is on stays
+    /// ahead of what is in it and only near: the lobby's AI choice holds its Fill Slots button below, and a tap on the choice
+    /// means the choice. A row that does nothing on a press is no candidate at all (ActsOnAPress).
+    [[nodiscard]] bool Wants(const Box& box) const
     {
       const float distance = box.SquaredDistanceTo(mX, mY);
-      return box.IsSmall(mSmallSide) && distance <= mReachSquared && (mBest == nullptr || withinBest || distance < mBestDistance);
+      return box.IsSmall(mSmallSide) && distance <= mReachSquared && (mBest == nullptr || distance < mBestDistance);
     }
 
     void Take(Control* const control, const Box& box)

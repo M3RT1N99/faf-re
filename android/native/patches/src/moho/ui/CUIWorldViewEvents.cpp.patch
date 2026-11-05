@@ -158,7 +158,7 @@ index fda09e9c..5553d0aa 100644
 +          continue;
 +        }
 +        const taptarget::Box box = BoxOf(control);
-+        if (nearest.Wants(box, IsPartOf(control, nearest.Best())) && IsLive(control, plainHandler)) {
++        if (nearest.Wants(box) && IsLive(control, plainHandler)) {
 +          // What a press there finds has to be it or a part of it, not what lies over it.
 +          const taptarget::Place pixel = box.NearestPixel(x, y);
 +          if (IsPartOf(CMauiControl::GetTopmostControl(root, pixel.x, pixel.y), control)) {

@@ -35,10 +35,10 @@ namespace
   constexpr Handler kOwn{2};
   constexpr Handler kWrapper{3};
 
-  /// As UI_TapTarget offers them; `withinBest`: this one is a part of the best so far.
-  void Offer(Nearest& nearest, const char* const control, const taptarget::Box& box, const bool withinBest = false)
+  /// As UI_TapTarget offers them.
+  void Offer(Nearest& nearest, const char* const control, const taptarget::Box& box)
   {
-    if (nearest.Wants(box, withinBest)) {
+    if (nearest.Wants(box)) {
       nearest.Take(control, box);
     }
   }
@@ -102,45 +102,27 @@ WXT_TEST(TapTargetATapOnASmallControlStaysWhereItLanded)
   WXT_CHECK(nearest.Best() == kSecond);
 }
 
-WXT_TEST(TapTargetASmallRowGivesWayToTheChoiceInIt)
+WXT_TEST(TapTargetATapOnAControlStaysAheadOfWhatIsInItAndOnlyNear)
 {
-  // Options' row, 40 high and 715 wide: it takes only the wheel. Its choice is 26 high, and the tap 5 above that, on the row.
-  Nearest nearest(500, 100, kReach, kSmall);
-  Offer(nearest, kRow, {100, 90, 815, 130});
+  // The lobby's AI choice, a walk from the root comes to it first; its Fill Slots button, a child of it, lies below it.
+  // A tap on the lower part of the choice opens the choice: it filled every slot when the button went ahead of it.
+  Nearest nearest(500, 104, kReach, kSmall);
+  Offer(nearest, kRow, {400, 90, 800, 108});
   WXT_CHECK(nearest.Best() == kRow);
-  Offer(nearest, kFirst, {400, 105, 700, 131}, true);
-  WXT_CHECK(nearest.Best() == kFirst);
+  Offer(nearest, kFirst, {420, 112, 640, 142});
+  WXT_CHECK(nearest.Best() == kRow);
   WXT_CHECK_EQ(nearest.Target().x, 500.0f);
-  WXT_CHECK_EQ(nearest.Target().y, 105.0f);
+  WXT_CHECK_EQ(nearest.Target().y, 104.0f);
 }
 
-WXT_TEST(TapTargetARowKeepsATapWithNoChoiceInReach)
+WXT_TEST(TapTargetATapBesideTwoControlsTakesTheNearerWhereverItLies)
 {
-  Nearest nearest(150, 100, kReach, kSmall);
-  Offer(nearest, kRow, {100, 90, 815, 130});
-  Offer(nearest, kFirst, {400, 105, 700, 131}, true);
-  WXT_CHECK(nearest.Best() == kRow);
-  WXT_CHECK_EQ(nearest.Target().x, 150.0f);
-  WXT_CHECK_EQ(nearest.Target().y, 100.0f);
-}
-
-WXT_TEST(TapTargetWhatTookOverFromARowGoesOnBeingCompared)
-{
-  // The choice 15 away goes ahead of its row, and the next row's choice 10 away goes ahead of it, as any nearer one does.
+  // Nothing under the tap: of the two within reach, the one 10 away goes ahead of the one 15 away, also when it comes later.
   Nearest nearest(500, 100, kReach, kSmall);
-  Offer(nearest, kRow, {100, 90, 815, 130});
-  Offer(nearest, kFirst, {400, 115, 700, 131}, true);
+  Offer(nearest, kFirst, {400, 115, 700, 131});
   WXT_CHECK(nearest.Best() == kFirst);
   Offer(nearest, kSecond, {400, 80, 700, 90});
   WXT_CHECK(nearest.Best() == kSecond);
-}
-
-WXT_TEST(TapTargetOnlyAPartGoesAheadOfWhatTheTapIsOn)
-{
-  Nearest nearest(500, 100, kReach, kSmall);
-  Offer(nearest, kRow, {100, 90, 815, 130});
-  Offer(nearest, kFirst, {400, 80, 700, 90});
-  WXT_CHECK(nearest.Best() == kRow);
 }
 
 WXT_TEST(TapTargetANearMissClicksTheNearestPixelNotTheCentre)

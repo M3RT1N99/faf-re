@@ -222,8 +222,8 @@ A left button's tap is `Game.tap`, decided on the window thread by `UI_TapTarget
 place's topmost control takes events and is not small, if it is the minimap (the place on it is what the tap says), or if it
 is the world and a command mode is armed, an order, a ping or a building, which wants that very place. A tap that lands
 on the HUD gets the help with a command mode armed too. Otherwise it looks 2.5 mm around for small controls that take
-events (a side under 5 mm) and takes the nearest by distance to its rectangle, except that a small control gives way to
-a small one within it: a row of Options around its choice. It clicks the pixel of the control nearest to the tap, not its
+events (a side under 5 mm) and takes the nearest by distance to its rectangle; what the tap is on stays ahead of what is
+only near, also of a child: the lobby's AI choice holds its Fill Slots button. It clicks the pixel of the control nearest to the tap, not its
 centre, as sliders and scroll bars act on the place; a tap on the control stays where it landed. That pixel has to find the
 control or a part of it, not what lies over it.
 
