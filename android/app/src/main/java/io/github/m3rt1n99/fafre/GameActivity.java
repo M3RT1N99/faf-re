@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -80,6 +81,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private AudioFocusRequest mAudioFocus;
     /** Gone for good: nothing will give it back, as it does after a call. */
     private boolean mAudioFocusLost;
+    /** Held while the activity is in front: Wi-Fi drops the broadcasts that find LAN games on a phone without it, and holding it costs battery. */
+    private WifiManager.MulticastLock mDiscoveryLock;
 
     private TouchInput mTouch;
     private final Runnable mTouchTimer = () -> mTouch.timer();
@@ -160,6 +163,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             .setWillPauseWhenDucked(true)
             .setOnAudioFocusChangeListener(this::onAudioFocusChange, mHandler)
             .build();
+        WifiManager wifi = getApplicationContext().getSystemService(WifiManager.class);
+        if (wifi != null) {
+            mDiscoveryLock = wifi.createMulticastLock("faf-game-discovery");
+            mDiscoveryLock.setReferenceCounted(false);
+        }
         if (Build.VERSION.SDK_INT >= 28) {
             WindowManager.LayoutParams attributes = getWindow().getAttributes();
             attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
@@ -477,6 +485,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     protected void onResume() {
         super.onResume();
         hideSystemBars();
+        if (mDiscoveryLock != null) {
+            mDiscoveryLock.acquire();
+        }
         if (mStarted) {
             // First: the output starts at the word that both are so, and it must not during a call.
             requestAudioFocus();
@@ -490,6 +501,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mTouch.cancel();
             Game.foreground(false);
             getSystemService(AudioManager.class).abandonAudioFocusRequest(mAudioFocus);
+        }
+        if (mDiscoveryLock != null) {
+            mDiscoveryLock.release();
         }
         super.onPause();
     }

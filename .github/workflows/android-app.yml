@@ -4,8 +4,9 @@ name: Android app
 # and the game's library with the Android native build (android/native, its android-arm64 preset)
 # and the pinned NDK, then the APK with Gradle. The APK is signed with the runner's own debug key,
 # so it installs on a phone without an earlier release, not as an update of one; testers' releases
-# are built where their key is. The same build's wx-lite tests (android/native/tests/wx, linked
-# statically) run on an arm64 runner: the event system and the message layer on a real ARM core.
+# are built where their key is. The same build's wx-lite tests and network tests (android/native/tests/wx
+# and tests/net, linked statically) run on an arm64 runner: the event system, the message layer and the
+# game's UDP transport on a real ARM core.
 on:
   push:
     branches: [android-app, android-client]
@@ -69,17 +70,21 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: faf-wx-lite-tests-arm64
-          path: build/android-arm64/bin/faf_wx_lite_tests
+          path: |
+            build/android-arm64/bin/faf_wx_lite_tests
+            build/android-arm64/bin/faf_net_tests
           retention-days: 7
 
   wx-lite-tests-arm64:
     needs: apk
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
     steps:
       - uses: actions/download-artifact@v8
         with:
           name: faf-wx-lite-tests-arm64
           path: bin
       - run: |
-          chmod +x bin/faf_wx_lite_tests
+          chmod +x bin/faf_wx_lite_tests bin/faf_net_tests
           bin/faf_wx_lite_tests
+          bin/faf_net_tests

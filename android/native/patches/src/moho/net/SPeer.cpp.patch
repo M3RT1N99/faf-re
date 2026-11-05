@@ -1,0 +1,15 @@
+diff --git a/src/moho/net/SPeer.cpp b/src/moho/net/SPeer.cpp
+index 17f2ea2e..b5a4d8c4 100644
+--- a/src/moho/net/SPeer.cpp
++++ b/src/moho/net/SPeer.cpp
+@@ -121,7 +121,9 @@ namespace moho
+     CMessage msg(ELobbyMsg::LOBMSG_NewPeer);
+     CMessageStream stream(msg, CMessageStream::Access::kReadWrite);
+     stream.Write(playerName);
+-    stream.Write(address);
++    // Four bytes on the wire, the Windows game's u_long. An LP64 system's is eight, whose top half the
++    // receiver would read as the port.
++    stream.Write(static_cast<std::uint32_t>(address));
+     stream.Write(port);
+     stream.Write(uid);
+     connection->Write(msg);

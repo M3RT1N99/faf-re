@@ -1,0 +1,61 @@
+diff --git a/src/moho/net/Common.cpp b/src/moho/net/Common.cpp
+index a38f8457..e76d6239 100644
+--- a/src/moho/net/Common.cpp
++++ b/src/moho/net/Common.cpp
+@@ -17,6 +17,10 @@
+ #include "CNetUDPConnector.h"
+ #else
+ #include "INetTCPSocket.h"
++#if defined(__ANDROID__)
++#include <winsock2.h>
++#include "CNetUDPConnector.h"
++#endif
+ #endif
+ #include "gpg/core/containers/String.h"
+ #include "gpg/core/streams/BinaryReader.h"
+@@ -724,7 +728,7 @@ SNetCommandArg moho::NET_DecodeSocketArg(gpg::BinaryReader& reader)
+  */
+ bool moho::NET_Init()
+ {
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   static bool sWinsockInitialized = false;
+   if (!sWinsockInitialized) {
+     WSAData wsaData;
+@@ -786,7 +790,7 @@ INetConnector* moho::NET_MakeConnector(
+  */
+ INetConnector* moho::NET_MakeUDPConnector(const u_short port, boost::weak_ptr<INetNATTraversalProvider> prov)
+ {
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   if (!NET_Init()) {
+     return nullptr;
+   }
+@@ -808,7 +812,7 @@ INetConnector* moho::NET_MakeUDPConnector(const u_short port, boost::weak_ptr<IN
+   sockaddr_in name;
+   name.sin_family = AF_INET;
+   name.sin_port = ::htons(port);
+-  name.sin_addr.S_un.S_addr = ::htonl(0);
++  name.sin_addr.s_addr = ::htonl(0);
+   if (::bind(sock, (SOCKADDR*)&name, sizeof(name)) == SOCKET_ERROR) {
+     gpg::Logf("NET_MakeUDPConnector: bind(%d) failed: %s", port, NET_GetWinsockErrorString());
+     ::closesocket(sock);
+@@ -890,6 +894,9 @@ INetConnector* moho::NET_MakeTCPConnector(const u_short port)
+ #else
+   // Engine addition (dedicated-server plan WPL.5): see NET_MakeUDPConnector.
+   (void)port;
++#if defined(__ANDROID__)
++  gpg::Logf("NET_MakeTCPConnector: this build's lobby is on UDP only (android/CLIENT_PLAN.md, C5)");
++#endif
+   return nullptr;
+ #endif
+ }
+@@ -942,7 +949,7 @@ msvc8::string moho::NET_GetHostName(const u_long address)
+  */
+ const char* moho::NET_GetWinsockErrorString() noexcept
+ {
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   const int e = ::WSAGetLastError();
+   if (e == 0) {
+     return "NOERROR";

@@ -1,9 +1,9 @@
 // The in-engine peer links (moho/net/NetlinkPeers.h) for the Android client build, in place of
 // NetlinkPeers.cpp, which runs them on netlink (src/netlink: libjuice and libdatachannel). Those
-// are not built for Android yet, nor is the UDP connector their peer transport belongs to
-// (DatagramSocketAndroid.cpp): online play is step C5 (android/CLIENT_PLAN.md). The game talks to
+// are not built for Android yet: online play is step C5 (android/CLIENT_PLAN.md). The game talks to
 // an ICE adapter as the shipped game does, which is what these functions do with net_InEngineLinks
-// and net_NativeNet off; asking for either says in the log that the build has neither.
+// and net_NativeNet off; asking for either says in the log that the build has neither. The game's
+// own lobby needs none of this: its UDP connector works here on the sockets themselves.
 
 #include "moho/net/NetlinkPeers.h"
 

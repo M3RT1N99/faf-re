@@ -210,4 +210,32 @@ most of C1, as 56 files stop at wx.
   - FAF's Lua breaks the campaign from the main menu: `selectcampaign.lua` calls
     `operationbriefing.CreateUI('X1CA_001', opData)`, which takes `(parent, scenarioPath)`, so that the
     screen stays black after the timeline film. Not the port's (read in its Lua, not run on a PC).
-- **Next:** the phone's word on sound and movies, then the speed (C4) and online (C5).
+- **The game's own lobby on Android, C5's first half:** *Multiplayer LAN* plays against FAF's real game on a PC, with
+  nothing from FAF's servers ([native README](native/README.md), The network). The engine's UDP transport runs on a
+  small POSIX Winsock (`WSAEventSelect` as a thread that polls), so `NET_MakeUDPConnector` and
+  `NET_OpenDatagramSocket` are real and the discovery stand-in is gone. Checked on the x86_64 emulator against
+  `ForgedAlliance.exe` of FAF 3835 on the PC, through the emulator's NAT:
+  - Creating a game, joining by address and port by taps, both lobbies with both players, and a whole game with an
+    easy AI in lockstep, with orders by fingers, until the AI had killed both commanders: 12:58 of game time, 155
+    checksums each way, all equal, and the same beats for each army's end in both logs. The emulator hosts as well,
+    with a PC that reaches it through a redirect and a small proxy. The arm64 build, under the emulator's ARM
+    translation, played 5:30 of game time the same way, every checksum equal.
+  - The first game ran against the PC's newer exe (the FAF client's `bin` folder) on 3835's Lua: 46 checksums agreed,
+    and from beat 2350 on every one differed. So both sides need the same game version, exe included.
+  - Discovery: the emulator's broadcasts reach the PC's game, and its replies, which the NAT drops, handed over by
+    hand put the PC's game in the emulator's list, where *Join* joins it. A datagram sent to itself through the real
+    socket and a broadcast that comes back are in `faf_net_tests`.
+  - Android blocks an app's network in the back (`APP_BACKGROUND`): after Home the game stands still for everybody and
+    the connection dialogs open. Back within 138 s it went on in sync; after about 3 minutes each side had ejected
+    the other, by the game's rules, and played on alone.
+  - Two things the rebuilt engine had never run: the connector was never deleted, so a lobby left its port taken, and
+    *End Game* froze the game with no score screen, as the 3835 exe's own quit handshake is not in the engine's body
+    (patches/README.md).
+  - A third player in the lobby: `LOBMSG_NewPeer` carried a `u_long`, 8 bytes here and 4 on Windows, the protocol's only
+    field of that kind. As 4 bytes, the emulator, a Windows host and a second Windows client in one lobby all connect to
+    each other, with all three joining by the PC's LAN address, and two Windows clients read what the emulator as host
+    passes on ([README](README.md)). No game of three humans has been played.
+  - Open: a phone on real Wi-Fi (broadcasts through a router, the multicast lock, its power saving, Wi-Fi without
+    internet beside mobile data); keeping the network in the back, which takes a foreground service; the TCP half of
+    the transport, for GPGNet (C5).
+- **Next:** the phone's word on sound, movies and the LAN game, then the speed (C4) and the rest of online (C5).

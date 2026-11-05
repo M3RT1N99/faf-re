@@ -1,8 +1,31 @@
 diff --git a/src/moho/net/CLobby.cpp b/src/moho/net/CLobby.cpp
-index 397ad4ac..2e4bef89 100644
+index 397ad4ac..3fff35ed 100644
 --- a/src/moho/net/CLobby.cpp
 +++ b/src/moho/net/CLobby.cpp
-@@ -2238,7 +2238,7 @@ int moho::cfunc_CLobbyGetPeerStyle(
+@@ -571,6 +571,13 @@ CLobby::~CLobby()
+         peer->peerConnection = nullptr;
+       }
+     }
++    // Destroy lets the connector's thread delete the connections, and with them this receiver's
++    // linkages. ~IMessageReceiver would unlink the same rings further down with no lock in common with
++    // that thread, so they go now: until Destroy only Pull, on this thread, deletes a connection.
++    while (!mLinkages.empty()) {
++      SMsgReceiverLinkage* const linkage = mLinkages.mNext->Get();
++      linkage->mDispatcher->RemoveLinkage(linkage);
++    }
+     connector->Push();
+     connector->Destroy();
+     connector = nullptr;
+@@ -966,7 +973,7 @@ void CLobby::OnNewPeer(
+   const gpg::BinaryReader br{&s};
+ 
+   msvc8::string name{};
+-  u_long host{0};
++  std::uint32_t host{0}; // four bytes on the wire: SPeer::SendInfoTo
+   u_short port{0};
+   int32_t uid{0};
+ 
+@@ -2238,7 +2245,7 @@ int moho::cfunc_CLobbyGetPeerStyle(
  moho::CScrLuaInitForm* moho::func_CLobbyGetPeerStyle_LuaFuncDef()
  {
    static CScrLuaBinder binder(
@@ -11,7 +34,7 @@ index 397ad4ac..2e4bef89 100644
      "GetPeerStyle",
      &moho::cfunc_CLobbyGetPeerStyle,
      &CScrLuaMetatableFactory<CLobby>::Instance(),
-@@ -2256,10 +2256,7 @@ int moho::cfunc_CLobbyGetPeerStyleL(
+@@ -2256,10 +2263,7 @@ int moho::cfunc_CLobbyGetPeerStyleL(
    LuaPlus::LuaState* const state
  )
  {

@@ -208,6 +208,14 @@ set(_faf_android_library_options
 # simulation's programs; here the classes are real.
 get_target_property(_faf_game_sim_sources faf_sim SOURCES)
 list(FILTER _faf_game_sim_sources EXCLUDE REGEX "/platform/posix/ClientTypeInfoPosix\\.cpp$")
+# The lockstep transport over UDP, which the simulation build leaves out (cmake/FafLinux.cmake): the
+# game's lobby and its games, on the Winsock of include/win32/winsock2.h, which on Windows
+# platform/Platform.h includes. The TCP half stays out (C5, CLIENT_PLAN.md).
+foreach(_name CNetDatagramSocketImpl CNetUDPConnection CNetUDPConnector INetDatagramSocket NetPeerTransport)
+  set(_file "${FAF_REPO}/src/moho/net/${_name}.cpp")
+  list(APPEND _faf_game_sim_sources "${_file}")
+  set_property(SOURCE "${_file}" APPEND PROPERTY COMPILE_OPTIONS -includewinsock2.h)
+endforeach()
 # The settings the engine gives single files (boost.thread's sources: cmake/FafLinux.cmake). CMake
 # keeps source properties per directory, so they are read from the engine's and set here too.
 foreach(_file IN LISTS _faf_game_sim_sources)
@@ -237,6 +245,7 @@ add_library(faf_android_platform OBJECT
   src/win32/GdiAndroid.cpp
   src/win32/GdiFonts.cpp
   src/win32/PsapiAndroid.cpp
+  src/win32/WinsockAndroid.cpp
   src/gal/D3DCompilerAndroid.cpp
   src/gal/FxcPreprocessor.cpp
   src/gal/GalInterfacesAndroid.cpp
@@ -285,7 +294,6 @@ add_library(faf_client OBJECT ${_faf_client_files}
   src/gal/D3DXMathAndroid.cpp
   src/gal/GalAvailabilityAndroid.cpp
   src/gal/MeshFormattersAndroid.cpp
-  src/net/DatagramSocketAndroid.cpp
   src/net/NetlinkPeersAndroid.cpp)
 target_link_libraries(faf_client PUBLIC faf_android_settings faf_wx_lite)
 
@@ -361,6 +369,15 @@ add_executable(faf_wx_lite_tests
 target_include_directories(faf_wx_lite_tests PRIVATE "${FAF_ANDROID_DIR}/include")
 target_link_libraries(faf_wx_lite_tests PRIVATE faf_android_settings faf_game_sim_archive freetype ${_faf_sim_libraries} ${CMAKE_DL_LIBS})
 target_link_options(faf_wx_lite_tests PRIVATE -static -Wl,--gc-sections -Wl,--no-dependent-libraries)
+
+# faf_net_tests (tests/net): the Winsock events on real sockets, and the engine's datagram socket and UDP
+# connector on them, over the loopback. Linked statically, as faf_wx_lite_tests is. The connector's console
+# variables reach most of the simulation, whose reflection wants all of it, so all of it comes along; without
+# the client, the client classes' type_info comes from the stand-in, as for the renderer test.
+add_executable(faf_net_tests tests/net/NetTests.cpp src/win32/WinsockAndroid.cpp $<TARGET_OBJECTS:faf_game_sim>
+  "${FAF_REPO}/src/platform/posix/ClientTypeInfoPosix.cpp")
+target_link_libraries(faf_net_tests PRIVATE faf_game_sim faf_android_settings ${CMAKE_DL_LIBS})
+target_link_options(faf_net_tests PRIVATE -static -Wl,--gc-sections -Wl,--no-dependent-libraries)
 
 # faf_audio_tests (tests/audio): the game's XACT engine with the game's banks, the mix heard through
 # the platform's observer, on a device: it needs Android's libaaudio, so it is not static. Like the

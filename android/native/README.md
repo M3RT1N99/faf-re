@@ -7,7 +7,7 @@ it, and so does its Windows build. Everything Android needs beyond it is in this
 ```sh
 cd android/native
 cmake --preset android-arm64          # or android-x64 for the emulator
-cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgalsmoke, fafgame, faf_wx_lite_tests, faf_audio_tests, faf_movie_tests
+cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgalsmoke, fafgame, faf_wx_lite_tests, faf_net_tests, faf_audio_tests, faf_movie_tests
 ```
 
 The outputs land in `build/android-<abi>/bin`, where the app (`android/app`) takes them from.
@@ -23,7 +23,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 
 | Target | What |
 |---|---|
-| `faf_game_sim` | The simulation's objects again, with this build's headers, so every object of a library sees the same types |
+| `faf_game_sim` | The simulation's objects again, with this build's headers, so every object of a library sees the same types, and the UDP half of the lockstep transport, which the simulation build leaves out (see The network) |
 | `faf_android_platform` | `src/win32`, `src/gal`: what the Vulkan backend stands on here |
 | `freetype` | FreeType, under the GDI font functions (see The fonts) |
 | `faudio` | FAudio, under the XACT engine and X3DAudio (see Sound and movies) |
@@ -37,6 +37,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `fafgame` | `libfafgame.so`, all of the above and the engine's net channel (`faf_netchannel`, whose Monocypher signs the lobby's style proofs): the whole engine and its host (card 5 of the app) |
 | `fafgalsmoke` | `libfafgalsmoke.so`, the renderer test (card 4 of the app) |
 | `faf_wx_lite_tests` | wx-lite's, the message layer's and the GDI fonts' tests (`tests/wx`, `WX_LITE.md` Checks), linked statically |
+| `faf_net_tests` | The Winsock events and the engine's datagram socket and UDP connector on real sockets (`tests/net`), linked statically |
 | `faf_audio_tests` | The XACT engine on the game's banks, heard through the mix (`tests/audio`) |
 | `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
 
@@ -52,7 +53,7 @@ The client's targets put four folders ahead of the engine's include path, in thi
 |---|---|
 | `build/android-<abi>/overlay/src` | Patched engine headers (see Patches) |
 | `include/shadow` | Stand-ins for the Windows-only backends' headers that shared code includes (`include/shadow/README.md`) |
-| `include/win32` | The Win32 names the client needs beyond the engine's POSIX layer: `Windows.h` adds them (COM's base, the registry, `OVERLAPPED`, structured exceptions, ...) and continues with `#include_next` to the engine's own `src/platform/posix/win32/Windows.h`; `WinUser.h` is the message layer's USER API; `shlobj.h`, `mmsystem.h`, `mmreg.h` and `dsound.h` do the same for the engine's headers of those names; `psapi.h`, `DbgHelp.h`, `TlHelp32.h`, `objbase.h` and `commctrl.h` stand in for Windows headers the engine's layer does not have |
+| `include/win32` | The Win32 names the client needs beyond the engine's POSIX layer: `Windows.h` adds them (COM's base, the registry, `OVERLAPPED`, structured exceptions, ...) and continues with `#include_next` to the engine's own `src/platform/posix/win32/Windows.h`; `WinUser.h` is the message layer's USER API; `shlobj.h`, `mmsystem.h`, `mmreg.h`, `dsound.h` and `winsock2.h` do the same for the engine's headers of those names; `psapi.h`, `DbgHelp.h`, `TlHelp32.h`, `objbase.h` and `commctrl.h` stand in for Windows headers the engine's layer does not have |
 | `include/directx` | DirectX type stand-ins (`include/directx/README.md`) |
 
 `faf_wx_lite` and the targets that use it also have `include` itself on the path, for wx-lite's
@@ -73,6 +74,7 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/win32/ExceptionsAndroid.cpp` | `SetUnhandledExceptionFilter` on the fault signals, with the fault's code, address and context |
 | `src/win32/FindFileAndroid.cpp` | `FindFirstFileA` and the rest, on POSIX directories with Win32's matching |
 | `src/win32/PsapiAndroid.cpp` | `GetProcessMemoryInfo`, from `/proc/self/status` |
+| `src/win32/WinsockAndroid.cpp` | Winsock's event objects and `WSAEventSelect` for the UDP transport, on POSIX sockets: what the Windows kernel does after a selection, a thread does here (see The network) |
 | `src/win32/DbgHelpAndroid.cpp` | `SymFromAddr`, from the dynamic symbol tables with demangled names |
 | `src/win32/GdiAndroid.cpp` | GDI's font functions, as the font renderer calls them: handles for fonts, bitmaps, brushes and memory DCs, `DrawTextW`, the bitmap's pixels (see The fonts) |
 | `src/win32/GdiFonts.cpp` | GDI's TrueType fonts on FreeType: the fonts from memory, the face a name finds, metrics, advances, kerning pairs and glyphs as GDI has them (checked on Windows by `tests/gdifont`) |
@@ -93,7 +95,6 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/gal/D3D9Unavailable.cpp` | The Direct3D 9 methods and mesh formatters shared code names, on paths only a Direct3D 9 device takes |
 | `src/gal/MeshFormattersAndroid.cpp` | The Direct3D 10 mesh formatters, which every other API packs its vertices with, the engine's code with a float-to-half conversion that matches D3DX's |
 | `src/gal/D3D12SwitchesAndroid.cpp` | The storage of three Direct3D 12 console switches |
-| `src/net/DatagramSocketAndroid.cpp` | The game discovery's broadcast socket: none, as outside Windows (the Winsock transport is Windows only) |
 | `src/net/NetlinkPeersAndroid.cpp` | The in-engine peer links and native networking, off: netlink (libjuice, libdatachannel) is not built for Android yet (C5); asking for them says so in the log |
 | `src/app/EntityDialogAndroid.cpp` | `SC_CreateEntityDialog`: no reflection editor (a wx tool window) |
 | `src/gal/D3DXMathAndroid.cpp` | `D3DXMatrixLookAtRH`, which the shadows call: D3DX's own C routine, checked against the DLL |
@@ -168,6 +169,33 @@ DirectSound here. `DirectSoundCreate` fails, the engine's speaker setup stays at
 with a track would play on the player's steady clock without it. `patches/README.md` has what the
 movie player needed.
 
+### The network
+
+The game's own lobby, its games and the discovery of LAN games run on the engine's UDP transport
+(`moho/net/CNetUDPConnector.cpp`, `CNetUDPConnection.cpp`, `CNetDatagramSocketImpl.cpp`, `INetDatagramSocket.cpp`,
+`NetPeerTransport.cpp`), which the simulation build leaves out, with its logic unchanged (`patches/README.md` has the
+few lines that change). It waits on Winsock's event objects, and `include/win32/winsock2.h` and
+`src/win32/WinsockAndroid.cpp` are what it needs of Winsock beyond the engine's POSIX layer, with Winsock's meaning:
+
+- An event is a manual-reset event of the POSIX layer, so that `CWaitHandleSet`'s wait on the game's thread can
+  take it as it takes any other.
+- After `WSAEventSelect` a thread does what the Windows kernel does: it polls the selected sockets and sets their
+  events. A network event that was signalled is not polled for until `recvfrom` enables it again, so data nobody
+  has read costs nothing, and with nothing to report the thread sleeps in `poll`.
+- `closesocket` ends the selection and waits until the thread has let go of the socket, so that the port is free
+  and the socket's number can be the next socket's when it returns. The thread and its state last until the
+  process ends, and the system closes what sockets are left then.
+- `FD_WRITE` is signalled once and not again after a send that would block, which Windows does: the transport
+  ignores `sendto`'s result and waits for its own timers.
+
+The TCP half of the transport is not built: `CNetTCP*` want Winsock's `fd_set` and its `accept`, and nothing of the
+lobby's screens asks for it. `/hostgame tcp` fails with a line in the log. GPGNet to an ICE adapter wants it for
+C5 (`NET_TCPConnect`). `src/net/NetlinkPeersAndroid.cpp` keeps the in-engine peer links off.
+
+The app holds a `MulticastLock` while the activity is in front, without which Wi-Fi hands a phone no broadcasts
+(`GameActivity`). Android cuts an app's network a few seconds after it goes to the back (`APP_BACKGROUND`): the
+players see the game's own connection dialog until it comes back ([README](../README.md)).
+
 ## Tests
 
 `faf_wx_lite_tests` (`tests/wx`) checks wx-lite's event system, the Win32 message layer and the
@@ -189,6 +217,18 @@ arm64 build runs on real ARM only (the CI runner).
 
 `faf_wx_lite_tests` also checks GDI's fonts (`tests/wx/GdiTests.cpp`) on TrueType files it makes
 itself: boxes whose edges fall where the metrics and pixels can be worked out by hand.
+
+`faf_net_tests` (`tests/net`) runs Winsock's events and the engine's own datagram socket and UDP connector on
+real sockets over the loopback: what is signalled when, the failures (a bad socket, a taken port, malformed
+datagrams, a network that goes silent, a thread that does not start), that a closed socket frees its port at once
+and a destroyed connector when it has said goodbye, also from inside `Pull`, and that what waits costs no CPU. And
+what the protocol puts on the wire, whose sizes the Windows game fixes (`LOBMSG_NewPeer`, what is copied raw: no
+`static_assert` guards it in a 64-bit build), and what *End Game* leaves: a local and a net client, the beats this
+client queued run, none more, and the sim hears of no one's leaving. It takes about 20 s, is linked statically like
+`faf_wx_lite_tests`, and the app's workflow runs the arm64 build on an arm64 runner. A broadcast comes back to its
+sender on most networks: a plain socket asks first, and the test checks the engine's path if one came back and says
+"not checked" only if none did. On the emulator it reaches `wlan0`; what a real network does with it only a phone
+shows.
 
 `faf_audio_tests <the game's sounds folder>` (`tests/audio`) plays the game's banks through the XACT
 engine, on a device or the emulator, where nobody hears them: the platform's mix observer is its ears.

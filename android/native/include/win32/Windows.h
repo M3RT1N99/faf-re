@@ -11,8 +11,11 @@
 #include_next <Windows.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <iterator>
 
 using USHORT = std::uint16_t;
@@ -591,6 +594,18 @@ BOOL FindNextFileW(HANDLE search, WIN32_FIND_DATAW* data);
 BOOL CopyFileW(const wchar_t* existingFileName, const wchar_t* newFileName, BOOL failIfExists);
 
 #define FILE_MAP_WRITE 0x0002u
+
+/// A copy of the variable, or null when it is not set, as the UDP connector's packet log asks for %TEMP%.
+using errno_t = int;
+inline errno_t _dupenv_s(char** const value, std::size_t* const length, const char* const name) noexcept
+{
+  const char* const found = std::getenv(name);
+  *value = found != nullptr ? ::strdup(found) : nullptr;
+  if (length != nullptr) {
+    *length = *value != nullptr ? std::strlen(*value) + 1 : 0;
+  }
+  return found != nullptr && *value == nullptr ? ENOMEM : 0;
+}
 
 /// The engine's platform check: Android is not the Windows 9x line.
 #define VER_PLATFORM_WIN32_WINDOWS 1u

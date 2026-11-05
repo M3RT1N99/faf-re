@@ -1,0 +1,18 @@
+diff --git a/src/moho/sim/SimDriver.cpp b/src/moho/sim/SimDriver.cpp
+index f12cdfa1..e29d8b8e 100644
+--- a/src/moho/sim/SimDriver.cpp
++++ b/src/moho/sim/SimDriver.cpp
+@@ -902,6 +902,13 @@ CSimDriver::~CSimDriver()
+ {
+   ShutDown();
+ 
++#if defined(__ANDROID__)
++  // The connector's thread sets this event until the client manager below is gone. On Windows that
++  // fails once the handle is closed; the POSIX layer's CloseHandle frees the event.
++  if (mClientManager.get() != nullptr) {
++    mClientManager->SelectEvent(nullptr);
++  }
++#endif
+   if (mConnectionEvent) {
+     CloseHandle(mConnectionEvent);
+     mConnectionEvent = nullptr;

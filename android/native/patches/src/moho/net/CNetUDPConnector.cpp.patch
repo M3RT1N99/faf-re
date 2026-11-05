@@ -1,0 +1,153 @@
+diff --git a/src/moho/net/CNetUDPConnector.cpp b/src/moho/net/CNetUDPConnector.cpp
+index 008f5223..67fc14c7 100644
+--- a/src/moho/net/CNetUDPConnector.cpp
++++ b/src/moho/net/CNetUDPConnector.cpp
+@@ -3,10 +3,12 @@
+ #include "moho/net/NetPeerTransport.h"
+ #include "gpg/core/profiling/Profiler.h"
+ 
++#include <atomic>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+ #include <ctime>
++#include <memory>
+ #include <new>
+ 
+ #include "boost/thread.h"
+@@ -58,7 +60,7 @@ ENetProtocolType CNetUDPConnector::GetProtocol()
+  */
+ bool CNetUDPConnector::SignalSocketEvent() noexcept
+ {
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   return ::WSASetEvent(event_) != FALSE;
+ #else
+   return false;
+@@ -99,10 +101,13 @@ CNetUDPConnector::~CNetUDPConnector()
+     delete static_cast<SNetPacket*>(mPacketList.mNext);
+   }
+ 
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   if (socket_ != INVALID_SOCKET)
+     closesocket(socket_);
+ #endif
++#if defined(__ANDROID__)
++  ::WSACloseEvent(event_);
++#endif
+ 
+   if (mPacketLogFile) {
+     fclose(mPacketLogFile);
+@@ -157,8 +162,15 @@ CNetUDPConnector::CNetUDPConnector(SOCKET sock, boost::weak_ptr<INetNATTraversal
+   mTimeBaseUs = static_cast<int64_t>(ticks.QuadPart / 10ULL);
+ 
+   // Keep one aliasing shared_ptr alive in worker thread so provider weak_ptr
+-  // remains lockable during connector lifetime.
+-  auto selfOwner = boost::shared_ptr<CNetUDPConnector>(this, [](CNetUDPConnector*) {});
++  // remains lockable during connector lifetime. The last owner deletes the connector, but not while
++  // this constructor is the one unwinding, from a thread that did not start: then the last owner goes
++  // with this scope, and the object is not one to delete.
++  const auto started = std::make_shared<std::atomic<bool>>(false);
++  boost::shared_ptr<CNetUDPConnector> selfOwner(this, [started](CNetUDPConnector* const connector) {
++    if (started->load()) {
++      delete connector;
++    }
++  });
+   {
+     boost::recursive_mutex::scoped_lock lock{lock_};
+ 
+@@ -169,6 +181,7 @@ CNetUDPConnector::CNetUDPConnector(SOCKET sock, boost::weak_ptr<INetNATTraversal
+     boost::thread([selfOwner]() {
+       selfOwner->Entry();
+     });
++    started->store(true);
+   }
+ 
+   const auto natProviderWeak = CopyLiveNatTraversalProviderWeakPtr(mNatTraversalProvider);
+@@ -204,7 +217,8 @@ void CNetUDPConnector::Destroy()
+   }
+ 
+   mClosed = true;
+-#if defined(_WIN32)
++  mSelectedEvent = nullptr;
++#if defined(_WIN32) || defined(__ANDROID__)
+   SignalSocketEvent();
+ #endif
+ }
+@@ -236,7 +250,7 @@ u_short CNetUDPConnector::GetLocalPort()
+ CNetUDPConnection* CNetUDPConnector::Connect(const u_long address, const u_short port)
+ {
+   boost::recursive_mutex::scoped_lock lock{lock_};
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   SignalSocketEvent();
+ #endif
+ 
+@@ -380,9 +394,11 @@ void CNetUDPConnector::Pull()
+     conn->DispatchFromInput();
+   }
+ 
++  // Under the lock: once it is released with both flags so, Entry may delete this connector.
++  boost::recursive_mutex::scoped_lock lock{lock_};
+   mIsPulling = false;
+   if (mClosed) {
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+     SignalSocketEvent();
+ #endif
+   }
+@@ -407,7 +423,7 @@ void CNetUDPConnector::Push()
+   }
+ 
+   if (didFlush) {
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+     SignalSocketEvent();
+ #endif
+   }
+@@ -424,7 +440,7 @@ void CNetUDPConnector::SelectEvent(const HANDLE ev)
+ {
+   boost::recursive_mutex::scoped_lock lock{lock_};
+   mSelectedEvent = ev;
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   SignalSocketEvent();
+ #endif
+ }
+@@ -608,7 +624,7 @@ void CNetUDPConnector::HandleReceivedDatagram(
+     ) {
+       packet->ListUnlink();
+       mInboundTraversalPackets.push_back({packet, addrHost, portHost});
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+       if (mSelectedEvent) {
+         SetEvent(mSelectedEvent);
+       }
+@@ -812,7 +828,7 @@ void CNetUDPConnector::ProcessConnect(const SNetPacket* packet, const u_long add
+   }
+ 
+   newConnection->ProcessConnect(packet);
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   if (mSelectedEvent) {
+     SetEvent(mSelectedEvent);
+   }
+@@ -954,7 +970,7 @@ void CNetUDPConnector::ReceivePacket(const u_long address, const u_short port, c
+   const SReceivePacket r{packet, address, port};
+   mOutboundPackets.push_back(r);
+ 
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   SignalSocketEvent();
+ #endif
+ }
+@@ -1056,7 +1072,7 @@ int32_t CNetUDPConnector::SendData()
+     sockaddr_in name;
+     name.sin_family = AF_INET;
+     name.sin_port = ::htons(packet.mPort);
+-    name.sin_addr.S_un.S_addr = ::htonl(packet.mAddr);
++    name.sin_addr.s_addr = ::htonl(packet.mAddr);
+ 
+     const auto payload = packet.mPacket->GetPayload();
+     const auto payloadSize = packet.mPacket->GetPayloadSize();

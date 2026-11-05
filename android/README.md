@@ -126,6 +126,33 @@ the game data they imported. Everything lives in the app's external files folder
   could not start, from the engine's log. A new game keeps the last game's as `game-previous.txt`
   and `game-previous-tombstone.pb`. A crash also leaves the engine's own report in the game's HOME
   (`faf_crash_latest.txt`).
+- **Network games**: *Multiplayer LAN* in the game's menu is the game's own lobby, with nothing from FAF's servers
+  (`native/README.md`, The network). It plays against FAF's game on a PC in lockstep, and both sides need the same
+  game: the app's FAF files are those of the newest version a replay downloaded, 3835 so far. A PC's FAF folder may
+  be on another version. Then the lobby and the first minutes look right, and the game desyncs (a newer exe on 3835's
+  Lua did at beat 2350). FAF's client keeps the version of the last replay it played in `replaydata`, program and files.
+  The map must be on both sides.
+  - On the PC: `<FAF>\replaydata\bin\ForgedAlliance.exe /init <FAF>\replaydata\bin\init.lua /windowed 1280 800
+    /hostgame UDP 16010 PC LAN SCMP_009`, with the program allowed through Windows' firewall on the private network
+    (it asks the first time).
+  - On the phone: *Multiplayer LAN*, the PC's address and 16010 in the IP and port fields (*Keys* opens the keyboard),
+    *Connect*, then the *Ready* box. On the same Wi-Fi the PC's game should also be in the list above them, with a
+    *Join* button.
+  - On the PC: *AI: Easy* in an open slot, *Ready*, *Launch Game*.
+  - Home: Android cuts the app's network a few seconds later (`APP_BACKGROUND`), so the game stands still for all
+    players, whose connection dialog opens. Back in time, it goes on in sync. From 85 s the others can eject the
+    player, and after 170 s each side ejects the others by itself and plays on alone. These are the game's rules.
+  - A lost network or a host that vanishes ends in the game's dialogs: in the lobby *Connection to host timed out*
+    (*Keep Trying*, *Give Up*), in a game the connection dialog. *End Game* goes to the score screen; the others play
+    on. A port another program holds gives *Connecting...* with its *Abort Connect*, and the log says
+    `bind(<port>) failed: WSAEADDRINUSE`.
+  - A third player: the host passes each player's address on to the others, and they connect to each other. Checked
+    in the lobby, not in a game. With the PC's game hosting, the emulator and a second game on the PC joining by the
+    PC's LAN address, all three are connected to each other (`"PCJoin" ... has established connections to: 0, 1` in
+    the emulator's log). With the emulator hosting, each of two games on the PC reads what it passes on about the
+    other, to the address and port; they cannot reach each other there through the emulator's NAT. The emulator's NAT
+    also rewrites an address: joining by `10.0.2.2` the host passes on `127.0.0.1`, the other game's packets arrive
+    from `10.0.2.2`, its own from the LAN address, and each side rejects the other (*Connecting to ...* stays).
 - **Share results** zips `summary.json`, the math output, the log, the renderer report
   (`renderer.txt`, `renderer-tombstone.pb`), the game's report, tombstone, log and crash report
   (`game.txt`, `game-tombstone.pb`, `game/engine.sclog`, `game/faf_crash_latest.txt`), the last

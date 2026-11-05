@@ -1,0 +1,76 @@
+diff --git a/src/moho/net/CNetUDPConnection.cpp b/src/moho/net/CNetUDPConnection.cpp
+index 1e29d164..ae28d8aa 100644
+--- a/src/moho/net/CNetUDPConnection.cpp
++++ b/src/moho/net/CNetUDPConnection.cpp
+@@ -196,7 +196,7 @@ void CNetUDPConnection::Write(NetDataSpan* data)
+     );
+   }
+ 
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   mConnector->SignalSocketEvent();
+ #endif
+ }
+@@ -226,7 +226,7 @@ void CNetUDPConnection::Close()
+   mOutputShutdown = true;
+   mOutputFlushPending = false;
+ 
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   mConnector->SignalSocketEvent();
+ #endif
+ }
+@@ -255,7 +255,7 @@ void CNetUDPConnection::ScheduleDestroy()
+   Close();
+   mScheduleDestroy = true;
+ 
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   mConnector->SignalSocketEvent();
+ #endif
+ }
+@@ -549,7 +549,7 @@ bool CNetUDPConnection::ProcessConnect(const SNetPacket* packet)
+     mInputBuffer.Close(gpg::Stream::ModeBoth);
+ 
+     if (mConnector->mSelectedEvent) {
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+       SetEvent(mConnector->mSelectedEvent);
+ #endif
+     }
+@@ -661,7 +661,7 @@ void CNetUDPConnection::ProcessAnswer(const SNetPacket* packet)
+   // Binary rebinds/repurposes packet memory to this connection.
+   AdoptPacket(packet);
+ 
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   if (mConnector->mSelectedEvent) {
+     SetEvent(mConnector->mSelectedEvent);
+   }
+@@ -931,7 +931,7 @@ void CNetUDPConnection::ProcessData(SNetPacket* packet)
+   EarlyRebuildAckMask(mExpectedSequenceNumber, mMask);
+ 
+   // Signal connector event if progressed (matches SetEvent path in asm)
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   if (progressed && mConnector && mConnector->mSelectedEvent) {
+     SetEvent(mConnector->mSelectedEvent);
+   }
+@@ -1004,7 +1004,7 @@ bool CNetUDPConnection::ProcessGoodbye(const SNetPacket* packet)
+     }
+ 
+     mInputBuffer.Close(gpg::Stream::ModeBoth);
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+     if (mConnector && mConnector->mSelectedEvent) {
+       SetEvent(mConnector->mSelectedEvent);
+     }
+@@ -1488,7 +1488,7 @@ void CNetUDPConnection::SendPacket(SNetPacket* packet)
+   packet->header.mSerialNumber = mNextSerialNumber;
+   packet->header.mInResponseTo = mInResponseTo;
+ 
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__ANDROID__)
+   sockaddr_in to{};
+   to.sin_family = AF_INET;
+   to.sin_port = htons(mPort);

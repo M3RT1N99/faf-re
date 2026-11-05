@@ -1,0 +1,23 @@
+diff --git a/src/moho/net/CClientManagerImpl.cpp b/src/moho/net/CClientManagerImpl.cpp
+index 9527b1d3..9bd2ed91 100644
+--- a/src/moho/net/CClientManagerImpl.cpp
++++ b/src/moho/net/CClientManagerImpl.cpp
+@@ -1435,6 +1435,18 @@ void CClientManagerImpl::Disconnect()
+   for (CClientBase* const client : mClients) {
+     if (client != nullptr && client != mLocalClient) {
+       client->Open();
++#if defined(__ANDROID__)
++      // The end of the game goes into the local stream, behind beats this client has queued ahead of
++      // the others, who send no more now. Without them holding back those beats the sim gets there,
++      // and the score screen that FAF's Lua waits for comes. Eject's state, all of it at once and not
++      // Eject itself: nothing of theirs is still to come to this sim, whose armies are not abandoned
++      // (CClientBase::UpdateState would say so) by a player who left himself. Pending too: a client
++      // ejected but not pending counts as having queued every beat (DoBeat's partially queued beat),
++      // which would run the issue thread's beats unpaced once the game is over.
++      client->mEjectPending = true;
++      client->mReady = true;
++      client->mEjected = true;
++#endif
+     }
+   }
+ 

@@ -1,0 +1,14 @@
+diff --git a/src/moho/net/CHostManager.cpp b/src/moho/net/CHostManager.cpp
+index 13b6a734..33a6ec97 100644
+--- a/src/moho/net/CHostManager.cpp
++++ b/src/moho/net/CHostManager.cpp
+@@ -287,6 +287,9 @@ msvc8::string CHostManager::ResolveHostName(const std::uint32_t host)
+     sizeof(nodeBuffer),
+     serviceBuffer,
+     sizeof(serviceBuffer),
++#if defined(__ANDROID__)
++    NI_NUMERICHOST |
++#endif
+     NI_NUMERICSERV
+   );
+ 
