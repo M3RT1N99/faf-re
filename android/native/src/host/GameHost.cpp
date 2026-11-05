@@ -48,6 +48,8 @@
 
 #include "../audio/FAudioPlatformAndroid.h"
 #include "KeysAndroid.h"
+#include "MenuFingers.h"
+#include "TaskPlaces.h"
 #include "gpg/core/diagnostics/CrashHooks.h"
 #include "gpg/core/diagnostics/CrashReport.h"
 #include "gpg/core/time/Timer.h"
@@ -313,19 +315,8 @@ namespace
 
 namespace
 {
-  static_assert(sizeof(WPARAM) >= 8, "two places of the picture go in a task's argument");
-
-  /// A task's argument: up to two places of the picture, each coordinate below 65536, or a place and two other numbers.
-  [[nodiscard]] WPARAM Places(const int x0, const int y0, const int x1 = 0, const int y1 = 0)
-  {
-    const auto word = [](const int value) { return static_cast<WPARAM>(value) & 0xFFFFU; };
-    return word(x0) | word(y0) << 16 | word(x1) << 32 | word(y1) << 48;
-  }
-
-  [[nodiscard]] int Coordinate(const WPARAM places, const int index)
-  {
-    return static_cast<int>(places >> (16 * index) & 0xFFFFU);
-  }
+  using hosttask::Coordinate;
+  using hosttask::Places;
 
   // All the input from the activity comes to the program's thread as tasks, as a tap has to (it looks at the controls there):
   // so all of it stays in the order it was given, and the cursor moves on that thread alone. Input that went straight to the
@@ -410,7 +401,23 @@ namespace
         )) {
       Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, static_cast<int>(targetX), static_cast<int>(targetY));
       Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, static_cast<int>(targetX), static_cast<int>(targetY));
+      menufingers::NoteTapOnField(targetX, targetY);
     }
+  }
+
+  /// On the program's thread: a finger's press that starts a drag goes where a tap's click would, and where a tap would click
+  /// nothing, a window's title, it stays where it landed: the title takes a drag.
+  void PressNear(const WPARAM places)
+  {
+    float targetX = 0;
+    float targetY = 0;
+    const float x = static_cast<float>(Coordinate(places, 0));
+    const float y = static_cast<float>(Coordinate(places, 1));
+    if (!moho::UI_TapTarget(x, y, static_cast<float>(Coordinate(places, 2)), static_cast<float>(Coordinate(places, 3)), &targetX, &targetY)) {
+      targetX = x;
+      targetY = y;
+    }
+    Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, static_cast<int>(targetX), static_cast<int>(targetY));
   }
 
   /// Off every control, where the pointer goes when no finger is on the glass.
@@ -589,6 +596,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_tap(JNIEnv*, jclass, const jint x, const jint y, const jint reach, const jint smallSide)
 {
   Win32Android_RunOnWindowThread(&Tap, Places(x, y, reach, smallSide));
+}
+
+/// A finger's press for a drag, the left button's (PressNear). `reach` and `smallSide` in the picture's pixels.
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_pressNear(JNIEnv*, jclass, const jint x, const jint y, const jint reach, const jint smallSide)
+{
+  Win32Android_RunOnWindowThread(&PressNear, Places(x, y, reach, smallSide));
 }
 
 /// No finger is on the glass (PointerLeave).

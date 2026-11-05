@@ -100,6 +100,7 @@ layer the surface and feeds the input and the activity's state in as Win32 messa
 | `src/gal/D3DXMathAndroid.cpp` | `D3DXMatrixLookAtRH`, which the shadows call: D3DX's own C routine, checked against the DLL |
 | `src/host/GameHost.cpp` | The host: `WinMain`'s program on the engine's thread, with the command line, HOME and a Windows user profile's folders; the surface, the pointer, the keys and the foreground into the message layer; a report of its own |
 | `src/host/KeysAndroid.cpp` | Android's key codes as a PC keyboard's: virtual keys, set-1 scan codes, the extended keys |
+| `src/host/MenuFingers.cpp` | What FAF's Lua says of the menus' fingers (a screen's page, whose the fingers are) and what a finger on a list needs, on the program's thread (`../TOUCH_UI.md`) |
 | `src/wx` | wx-lite (`WX_LITE.md`) |
 | `src/smoke/GalSmoke.cpp` | The renderer test |
 | `src/smoke/GalSmokeDoubles.cpp` | The renderer test's answer: compiler and codec count as there, so the device comes up |
@@ -215,7 +216,7 @@ It prints each test's name and the checks that failed, then `<n> tests, <m> fail
 with 0 when every check passed. The emulator's ARM translation runs no static executables, so the
 arm64 build runs on real ARM only (the CI runner).
 
-`faf_wx_lite_tests` also checks the choice of the small control a finger's tap meant (`tests/wx/TapTargetTests.cpp`, `../TOUCH_UI.md`) and GDI's fonts (`tests/wx/GdiTests.cpp`) on TrueType files it makes
+`faf_wx_lite_tests` also checks the choice of the small control a finger's tap meant (`tests/wx/TapTargetTests.cpp`, `../TOUCH_UI.md`), the sharing out of a finger's drag between a list and the page (`tests/wx/ListDragTests.cpp`) and GDI's fonts (`tests/wx/GdiTests.cpp`) on TrueType files it makes
 itself: boxes whose edges fall where the metrics and pixels can be worked out by hand.
 
 `faf_net_tests` (`tests/net`) runs Winsock's events and the engine's own datagram socket and UDP connector on

@@ -19,7 +19,17 @@ final class Game {
     /** WHEEL_DELTA: one notch of a mouse wheel. */
     static final int WHEEL_DELTA = 120;
 
+    /** {@link #listAnswer}: what is known of the list under the last finger. */
+    static final int NO_LIST = 1;
+    static final int LIST = 2;
+
+    /** {@link #takeToShow}: why the activity is to bring these lines into view. */
+    static final int FIELD_TAPPED = 1;
+    static final int LINES_TO_SHOW = 3;
+
     private static String sLoadError;
+    /** Who hears that the program has something new to read. */
+    private static volatile Runnable sListener;
 
     static {
         try {
@@ -47,6 +57,60 @@ final class Game {
 
     /** Whether the program runs in this process: Android can make the activity anew around it. */
     static native boolean running();
+
+    /** `listener` hears, on the program's thread, that there is something new to read: a page, a list's answer, a text field. */
+    static void listen(Runnable listener) {
+        sListener = listener;
+    }
+
+    /** `listener` hears no more, unless another has taken its place, as a new activity does. */
+    static void stopListening(Runnable listener) {
+        if (sListener == listener) {
+            sListener = null;
+        }
+    }
+
+    /** The program, on its thread (src/host/MenuFingers.cpp). */
+    @SuppressWarnings("unused")
+    private static void fromProgram() {
+        Runnable listener = sListener;
+        if (listener != null) {
+            listener.run();
+        }
+    }
+
+    /** The page FAF's Lua has declared, in the picture's pixels: left, top, right, bottom. False when there is none. */
+    static native boolean page(int[] rect);
+
+    /** Whether fingers act as in the menus ({@link PageInput}) or as in a game ({@link TouchInput}), as FAF's Lua has declared. */
+    static native boolean menuFingers();
+
+    /** The UI factor of the session's HUD, as FAF's Lua has set it; 0 before any has. */
+    static native float hudFactor();
+
+    /** A finger came down here: what list would it scroll? {@link #listAnswer} says. */
+    static native void lookForList(int x, int y);
+
+    /** 0 until it is known, then NO_LIST or LIST. */
+    static native int listAnswer();
+
+    /** The last finger's drag in the picture's pixels, positive downwards: the list takes it, and what it cannot take comes back as {@link #takePageDrag}. */
+    static native void scrollList(float drag);
+
+    /** What no list took, since the last call. */
+    static native float takePageDrag();
+
+    /** The keyboard is coming: if a text field has the focus, {@link #takeToShow} says where. */
+    static native void askForField();
+
+    /**
+     * Lines of the picture to bring into view, top and bottom, which the activity has not heard of yet: 0 when there are none, or
+     * why: a text field (FIELD_TAPPED, or another for what {@link #askForField} found) or FAF's Lua (LINES_TO_SHOW).
+     */
+    static native int takeToShow(int[] place);
+
+    /** A finger's press for a drag, the left button's, on the small control it meant if there is one within `reach`. */
+    static native void pressNear(int x, int y, int reach, int smallSide);
 
     /** Whether a building's ghost waits to be placed. */
     static native boolean placingBuilding();

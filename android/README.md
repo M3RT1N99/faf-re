@@ -108,7 +108,7 @@ the game data they imported. Everything lives in the app's external files folder
   does. It draws the menus and plays a skirmish, with the game's sound (FACT on AAudio) and its
   movies (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film). A
   mouse is the mouse, keys are the keyboard and Back is Esc. Fingers act as a mouse (`TouchInput`):
-  a tap is a click, a finger that moves drags, a finger that stays holds the right button until it
+  in a game a tap is a click, a finger that moves drags, a finger that stays holds the right button until it
   lifts (an order), a quick tap of two fingers is a right click where the second came down, two
   fingers that move together pan the camera and two that move apart or closer zoom it. While a
   building's ghost waits to be placed, a tap puts it there and a tap on it places the building; a
@@ -118,7 +118,10 @@ the game data they imported. Everything lives in the app's external files folder
   second finger gives that up; a quick tap of two fingers cancels. A bar at the screen's edge has what fingers have not: *Order* swaps the left and right
   buttons, so that taps give orders, *Shift* and *Ctrl* stay down until tapped again, *Del* makes a tap
   delete the queued order under it, and *Keys* opens the on-screen keyboard, which plain keys go to the
-  game from, with what it typed shown over the picture, as it covers the game's text field. The game's HUD is scaled to the screen, a tap beside a small control
+  game from, with what it typed shown over the picture, as it covers the game's text field; a tap on a text field opens it. In the menus, and over a
+  dialog in a game, a tap is a click, a finger up or down scrolls the list under it and then the page, a finger sideways is a drag (sliders), one that rests and
+  then moves drags anywhere (scroll bars), and two fingers do nothing; the lobby and the LAN screen are shown larger as a page, and Options has fewer
+  rows at a larger size. The game's HUD is scaled to the screen, a tap beside a small control
   hits it, and the pointer leaves when the fingers have, so that rollovers go ([TOUCH_UI.md](TOUCH_UI.md), where the bar
   is, and what each hook of the UI package `app/src/main/assets/fafre_ui` is for). The game draws at a size of its own (`PictureSize`, a button on the
   card): its UI has a fixed size in pixels, so 768 lines on a phone make it larger, with fewer pixels

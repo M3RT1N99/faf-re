@@ -9,6 +9,13 @@ import org.junit.Test;
 
 /** The HUD's factor for a screen and a picture. */
 public class HudScaleTest {
+    @Test
+    public void theMostTheUserCanHaveLeavesTheHudItsLines() {
+        assertEquals(768.0 / 460, HudScale.most(768), 0.001);
+        assertEquals(1080.0 / 460, HudScale.most(1080), 0.001);
+        assertEquals(1.0, HudScale.most(400), 0);
+    }
+
     private static final double S22_ULTRA_MM = 73;
 
     @Test

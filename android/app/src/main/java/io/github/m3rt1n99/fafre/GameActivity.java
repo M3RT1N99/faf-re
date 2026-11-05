@@ -98,7 +98,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private int mButtons;
     /** The lines the user chose, and the picture's size as the surface has it. */
     private int mLines;
-    private int mPictureWidth;
     private int mPictureHeight;
     /** Held while the activity is in front. The game's sound stops for another app's, even for a short one: the system lowers no AAudio stream. */
     private AudioFocusRequest mAudioFocus;
@@ -107,9 +106,31 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** Held while the activity is in front: Wi-Fi drops the broadcasts that find LAN games on a phone without it, and holding it costs battery. */
     private WifiManager.MulticastLock mDiscoveryLock;
 
+    /** Takes the fingers: it does not move with the picture, so their places stay the screen's. */
+    private View mFingerLayer;
+    private final PageView mPageView = new PageView();
+    private final int[] mPageRect = new int[4];
+    /** A text field that was tapped or has the focus, in the picture's lines, until the keyboard has been up and gone. */
+    private final int[] mField = new int[2];
+    private final int[] mToShow = new int[2];
+    private boolean mFieldKnown;
+    private int mKeyboardPixels;
+    /** What a finger has gone in the screen's pixels and nobody has taken yet: the program has not said what list is under it. */
+    private float mUnsentDrag;
+
     private TouchInput mTouch;
+    private PageInput mPageInput;
+    /** Whose the fingers now on the glass are: Lua can change it, not under them. */
+    private Fingers mFingers;
     private final Runnable mTouchTimer = () -> mTouch.timer();
+    private final Runnable mPageTimer = () -> mPageInput.timer();
     private final Runnable mPointerLeave = Game::pointerLeave;
+    private final Runnable mReadProgram = this::readProgram;
+    /** On the program's thread. */
+    private final Runnable mProgramSaid = () -> {
+        mHandler.removeCallbacks(mReadProgram);
+        mHandler.post(mReadProgram);
+    };
     private final TouchInput.Mouse mTouchMouse = new TouchInput.Mouse() {
         @Override
         public void move(float x, float y) {
@@ -185,6 +206,72 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
     };
 
+    private final PageInput.Mouse mPageMouse = new PageInput.Mouse() {
+        @Override
+        public void move(float x, float y) {
+            Game.mouseMove(pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void press(float x, float y) {
+            Game.pressNear(pictureX(x), pictureY(y), pictureMm(TAP_REACH_MM), pictureMm(TAP_SMALL_MM));
+        }
+
+        @Override
+        public void release(float x, float y) {
+            Game.touchButton(Game.BUTTON_LEFT, false, pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void tap(float x, float y) {
+            mTouchMouse.tap(x, y);
+        }
+
+        @Override
+        public void lookForList(float x, float y) {
+            mUnsentDrag = 0;
+            Game.lookForList(pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void scroll(float dy) {
+            mUnsentDrag += dy;
+            passDrag();
+        }
+
+        @Override
+        public void held() {
+            mTouchMouse.held();
+        }
+
+        @Override
+        public void leave() {
+            mHandler.removeCallbacks(mPointerLeave);
+            Game.pointerLeave();
+        }
+
+        @Override
+        public void leaveSoon() {
+            mTouchMouse.leaveSoon();
+        }
+
+        @Override
+        public void stay() {
+            mTouchMouse.stay();
+        }
+
+        @Override
+        public void startTimer(long milliseconds) {
+            mHandler.removeCallbacks(mPageTimer);
+            mHandler.postDelayed(mPageTimer, milliseconds);
+        }
+
+        @Override
+        public void stopTimer() {
+            mHandler.removeCallbacks(mPageTimer);
+        }
+    };
+
     private final Runnable mPoll = new Runnable() {
         @Override
         public void run() {
@@ -218,16 +305,24 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mHudScale = hudScale();
         mScreenMm = screenShortSideMm();
         mTouch = new TouchInput(mTouchMouse, ViewConfiguration.get(this).getScaledTouchSlop());
+        mPageInput = new PageInput(mPageMouse, ViewConfiguration.get(this).getScaledTouchSlop());
+        mFingers = mTouch;
         FrameLayout root = new FrameLayout(this);
         mSurface = new SurfaceView(this);
         mSurface.getHolder().addCallback(this);
-        mSurface.setOnTouchListener((view, event) -> onSurfaceTouch(event));
-        mSurface.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            mTouch.setScreen(right - left, bottom - top);
-            fitPicture(right - left, bottom - top);
-        });
         fitPicture();
         root.addView(mSurface);
+        mFingerLayer = new View(this);
+        // It draws nothing, and the surface's hole in the window stays a hole.
+        mFingerLayer.setWillNotDraw(true);
+        mFingerLayer.setOnTouchListener((view, event) -> onSurfaceTouch(event));
+        mFingerLayer.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            mTouch.setScreen(right - left, bottom - top);
+            mPageView.setScreen(right - left, bottom - top);
+            fitPicture(right - left, bottom - top);
+            placeSurface();
+        });
+        root.addView(mFingerLayer);
         mKeyboardTarget = new KeyboardTarget(this);
         root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
         mText = new TextView(this);
@@ -254,7 +349,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
         if (Build.VERSION.SDK_INT >= 30) {
             root.setOnApplyWindowInsetsListener((view, insets) -> {
-                showTyped(insets.isVisible(WindowInsets.Type.ime()));
+                boolean typing = insets.isVisible(WindowInsets.Type.ime());
+                showTyped(typing);
+                keyboardCovers(typing ? insets.getInsets(WindowInsets.Type.ime()).bottom : 0);
                 // A phone's camera can sit in the middle of the screen's short edge.
                 mBar.setPadding(insets.getInsets(WindowInsets.Type.displayCutout()).left, 0, 0, 0);
                 return insets;
@@ -262,12 +359,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         setContentView(root);
         hideSystemBars();
+        Game.listen(mProgramSaid);
 
         // Android made the activity anew around the running program (it does when it destroys a
         // stopped activity): the same game goes on, with the callbacks of this one.
         if (Game.loadError() == null && Game.running()) {
             mStarted = true;
             mHandler.post(mPoll);
+            mHandler.post(mReadProgram);
             return;
         }
         GameReport.begin(this);
@@ -352,21 +451,103 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return metrics;
     }
 
-    /** From the view's pixels to the picture's, which are the game's screen. */
+    /** From the screen's pixels to the picture's, which are the game's screen. */
     private int pictureX(float x) {
-        return toPicture(x, mSurface.getWidth(), mPictureWidth);
+        return mPageView.pictureX(x);
     }
 
     private int pictureY(float y) {
-        return toPicture(y, mSurface.getHeight(), mPictureHeight);
+        return mPageView.pictureY(y);
     }
 
-    /** Always on the picture: a finger can leave the view, and a mouse button that goes up off the game's window is lost. */
-    private static int toPicture(float place, int viewSize, int pictureSize) {
-        if (viewSize <= 0 || pictureSize <= 0) {
-            return Math.round(place);
+    // --- The page: FAF's Lua says which, and a finger scrolls it ------------------------------------
+
+    /** On the activity's thread: what the program has said since the last time. */
+    private void readProgram() {
+        if (!mStarted) {
+            return;
         }
-        return Math.max(0, Math.min(pictureSize - 1, Math.round(place * pictureSize / viewSize)));
+        boolean changed = Game.page(mPageRect)
+            ? mPageView.setPage(mPageRect[0], mPageRect[1], mPageRect[2], mPageRect[3])
+            : mPageView.clearPage();
+        if (changed) {
+            hideKeyboard();
+            placeSurface();
+        }
+        placeBarAsNow();
+        passDrag();
+        float rest = Game.takePageDrag();
+        if (rest != 0) {
+            movePage(rest * mPageView.scale());
+        }
+        int why = Game.takeToShow(mToShow);
+        if (why == Game.LINES_TO_SHOW) {
+            mPageView.reveal(mToShow[0], mToShow[1]);
+            placeSurface();
+        } else if (why != 0) {
+            mField[0] = mToShow[0];
+            mField[1] = mToShow[1];
+            mFieldKnown = true;
+            if (why == Game.FIELD_TAPPED && mTyped.getVisibility() != View.VISIBLE) {
+                showKeyboard();
+            }
+            revealField();
+        }
+    }
+
+    /** Lays the surface out at the size of the view. Its buffers keep the picture's size (setFixedSize), so the swap chain stays as it is. */
+    private void placeSurface() {
+        int width = mPageView.zoomed() ? mPageView.viewWidth() : FrameLayout.LayoutParams.MATCH_PARENT;
+        int height = mPageView.zoomed() ? mPageView.viewHeight() : FrameLayout.LayoutParams.MATCH_PARENT;
+        FrameLayout.LayoutParams place = (FrameLayout.LayoutParams) mSurface.getLayoutParams();
+        if (place.width != width || place.height != height) {
+            place.width = width;
+            place.height = height;
+            mSurface.setLayoutParams(place);
+        }
+        mSurface.setTranslationX(mPageView.viewLeft());
+        mSurface.setTranslationY(mPageView.viewTop());
+    }
+
+    /** What a finger has gone goes to the list under it, or if it is known that none is, to the page. */
+    private void passDrag() {
+        if (mUnsentDrag == 0) {
+            return;
+        }
+        int answer = Game.listAnswer();
+        if (answer == Game.NO_LIST) {
+            movePage(mUnsentDrag);
+            mUnsentDrag = 0;
+        } else if (answer == Game.LIST) {
+            Game.scrollList(mUnsentDrag / mPageView.scale());
+            mUnsentDrag = 0;
+        }
+    }
+
+    private void movePage(float dy) {
+        mPageView.scrollBy(dy);
+        placeSurface();
+    }
+
+    /** The keyboard covers this much of the screen from below: what is typed in has to stay above it. */
+    private void keyboardCovers(int pixels) {
+        // Before it comes up, insets can say that it is not there yet.
+        if (mKeyboardPixels > 0 && pixels == 0) {
+            mFieldKnown = false;
+        }
+        mKeyboardPixels = pixels;
+        mPageView.setKeyboard(pixels);
+        placeSurface();
+        if (pixels > 0) {
+            revealField();
+        }
+    }
+
+    private void revealField() {
+        if (mFieldKnown && mTyped.getVisibility() == View.VISIBLE) {
+            mPageView.reveal(mField[0], mField[1]);
+            placeSurface();
+        }
     }
 
     // --- The bar: what a mouse and a keyboard have and fingers have not ---------------------------
@@ -387,6 +568,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return bar;
     }
 
+    /** The game's buttons are for a game that fingers are on: a dialog over it has the fingers of the menus. */
+    private void placeBarAsNow() {
+        boolean inGame = Game.gamePlaying() && !Game.menuFingers();
+        if (inGame != mBarInGame) {
+            placeBar(inGame);
+        }
+    }
+
     /** In a game the bar sits where the HUD leaves room (HudScale), in the menus only the keyboard's button stays, in a corner. */
     private void placeBar(boolean inGame) {
         mBarInGame = inGame;
@@ -402,13 +591,19 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         sizeBarButton(mKeysButton, size, gap);
         FrameLayout.LayoutParams place = (FrameLayout.LayoutParams) mBar.getLayoutParams();
-        place.topMargin = inGame ? (int) Math.round(HudScale.barTopPixels(mHudScale) * viewPixelsPerPicturePixel()) : 0;
+        place.topMargin = inGame ? (int) Math.round(HudScale.barTopPixels(hudFactor()) * viewPixelsPerPicturePixel()) : 0;
         mBar.setLayoutParams(place);
+    }
+
+    /** The HUD's factor: the user's UI scale can have changed what the app worked out. */
+    private double hudFactor() {
+        double factor = Game.hudFactor();
+        return factor > 0 ? factor : mHudScale;
     }
 
     /** The room the HUD leaves for the bar, in mm. */
     private double barRoomMm() {
-        return HudScale.barRoomPixels(mHudScale, pictureLines()) * mScreenMm / pictureLines();
+        return HudScale.barRoomPixels(hudFactor(), pictureLines()) * mScreenMm / pictureLines();
     }
 
     private static void sizeBarButton(TextView button, int size, int gap) {
@@ -431,9 +626,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return (double) Math.min(metrics.widthPixels, metrics.heightPixels) / pictureLines();
     }
 
-    /** This many mm in the picture's pixels. */
+    /** This many mm on the glass in the picture's pixels, which a page shows larger. */
     private int pictureMm(double mm) {
-        return (int) Math.round(mm * mPictureHeight / mScreenMm);
+        return (int) Math.round(mm * mPictureHeight / mScreenMm / mPageView.zoom());
     }
 
     private interface Toggled {
@@ -476,6 +671,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             hideKeyboard();
             return;
         }
+        if (mStarted) {
+            Game.askForField();
+        }
+        showKeyboard();
+    }
+
+    private void showKeyboard() {
         mKeyboardTarget.requestFocus();
         getSystemService(InputMethodManager.class).showSoftInput(mKeyboardTarget, 0);
         showTyped(true);
@@ -491,6 +693,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mTyped.setText("");
         }
         mTyped.setVisibility(shown ? View.VISIBLE : View.GONE);
+        if (Build.VERSION.SDK_INT < 30) {
+            // Nothing tells how high the keyboard is: in landscape about half of the screen.
+            keyboardCovers(shown ? mFingerLayer.getHeight() / 2 : 0);
+        }
     }
 
     /** A key that went down, while the keyboard covers the game's text field. */
@@ -575,10 +781,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         String program = new File(game, PROGRAM).getPath();
         String log = GameReport.log(storage).getPath();
         String hudScale = HudScale.argument(mHudScale);
+        String hudMost = HudScale.argument(HudScale.most(pictureLines()));
         // An import by an earlier release has no movies, and the splash screen would wait for a tap for each.
         String[] arguments = ScfaImport.movies(storage) > 0
-            ? new String[] {program, "/init", init.getPath(), "/log", log, HudScale.SWITCH, hudScale}
-            : new String[] {program, "/init", init.getPath(), "/log", log, HudScale.SWITCH, hudScale, "/nomovie"};
+            ? new String[] {program, "/init", init.getPath(), "/log", log, HudScale.SWITCH, hudScale, HudScale.MOST_SWITCH, hudMost}
+            : new String[] {program, "/init", init.getPath(), "/log", log, HudScale.SWITCH, hudScale, HudScale.MOST_SWITCH, hudMost, "/nomovie"};
         GameReport.append(this, "game: FAF game version " + version + ", " + archives + " SCFA archives");
         GameReport.append(this, "game: HUD scale " + hudScale + " on " + screenInWords());
         File home = Storage.mkdirs(GameReport.home(storage));
@@ -618,9 +825,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         boolean ended = GameReport.ended(report);
         mBar.setVisibility(GameReport.firstFrame(report) && !ended ? View.VISIBLE : View.GONE);
-        if (Game.gamePlaying() != mBarInGame) {
-            placeBar(!mBarInGame);
-        }
+        placeBarAsNow();
         if (GameReport.firstFrame(report) && !ended) {
             mText.setVisibility(View.GONE);
             return;
@@ -651,7 +856,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     @Override
     protected void onPause() {
         if (mStarted) {
-            mTouch.cancel();
+            mFingers.cancel();
             Game.foreground(false);
             getSystemService(AudioManager.class).abandonAudioFocusRequest(mAudioFocus);
         }
@@ -689,8 +894,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override
     protected void onDestroy() {
+        Game.stopListening(mProgramSaid);
         mHandler.removeCallbacks(mPoll);
+        mHandler.removeCallbacks(mReadProgram);
         mHandler.removeCallbacks(mTouchTimer);
+        mHandler.removeCallbacks(mPageTimer);
         mHandler.removeCallbacks(mPointerLeave);
         super.onDestroy();
     }
@@ -729,8 +937,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        mPictureWidth = width;
         mPictureHeight = height;
+        mPageView.setPicture(width, height);
+        placeSurface();
         if (mStarted) {
             Game.surface(holder.getSurface(), width, height);
         }
@@ -760,27 +969,30 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         int action = event.getActionMasked();
         switch (action) {
             case MotionEvent.ACTION_DOWN:
+                mFingers = Game.menuFingers() ? mPageInput : mTouch;
+                mFingers.down(id, event.getX(index), event.getY(index), event.getEventTime(), true);
+                break;
             case MotionEvent.ACTION_POINTER_DOWN:
-                mTouch.down(id, event.getX(index), event.getY(index), event.getEventTime(), action == MotionEvent.ACTION_DOWN);
+                mFingers.down(id, event.getX(index), event.getY(index), event.getEventTime(), false);
                 break;
             case MotionEvent.ACTION_MOVE:
                 for (int at = 0; at < event.getPointerCount(); ++at) {
-                    mTouch.move(event.getPointerId(at), event.getX(at), event.getY(at));
+                    mFingers.move(event.getPointerId(at), event.getX(at), event.getY(at));
                 }
-                mTouch.moved();
+                mFingers.moved();
                 break;
             case MotionEvent.ACTION_UP:
-                mTouch.up(id, event.getEventTime(), true);
+                mFingers.up(id, event.getEventTime(), true);
                 break;
             case MotionEvent.ACTION_POINTER_UP:
                 if ((event.getFlags() & MotionEvent.FLAG_CANCELED) != 0) {
-                    mTouch.forget(id, event.getEventTime());
+                    mFingers.forget(id, event.getEventTime());
                 } else {
-                    mTouch.up(id, event.getEventTime(), false);
+                    mFingers.up(id, event.getEventTime(), false);
                 }
                 break;
             case MotionEvent.ACTION_CANCEL:
-                mTouch.cancel();
+                mFingers.cancel();
                 break;
             default:
                 break;

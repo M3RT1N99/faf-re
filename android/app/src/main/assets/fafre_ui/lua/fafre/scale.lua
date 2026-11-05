@@ -1,4 +1,4 @@
--- The UI's factor in a session (android/TOUCH_UI.md). The app works out the HUD's factor from the screen. Some of FAF's
+-- The UI's factor, the fingers and the pages (android/TOUCH_UI.md). The app works out the HUD's factor from the screen. Some of FAF's
 -- panels and dialogs need more lines than the HUD's factor leaves: they get a smaller one, through FAF's own
 -- SetPixelScaleFactor. FAF's layout functions read that factor when they are evaluated, which is later than when
 -- they are set, and that makes two kinds of them:
@@ -7,41 +7,59 @@
 --           long as it is open. What the HUD builds meanwhile runs through AtHud.
 --   Built   leaves the HUD in use and builds nothing later: its factor stays only while it is built, and all it made
 --           is evaluated before the HUD's factor returns.
+--
+-- A page is a screen that a finger reads larger than the screen and scrolls through (Page). Whose the fingers are follows: the
+-- front end's are the menus', a session's are the game's, and the menus' again while a dialog with a factor of its own or a page is open.
 
 local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
 
--- The HUD's factor; false outside a session, where everything here stands aside.
+-- Whether this state is a session's.
+local inSession = false
+-- The HUD's factor; false outside a session, where the front end's factor of 1 holds and dialogs stand aside unless they say otherwise.
 local hudFactor = false
 -- The dialogs that are open with a factor of their own, the newest last.
 local open = {}
+-- The pages that are open, the newest last: {root = the control that goes by, left, top, right, bottom}.
+local pages = {}
 -- What is being built: {factor, made = the controls it has made so far}.
 local building = false
 
 local function Apply()
     local newest = open[table.getn(open)]
-    local factor = building and building.factor or newest and newest.factor or hudFactor
-    if factor then
-        LayoutHelpers.SetPixelScaleFactor(factor)
+    local factor = building and building.factor or newest and newest.factor or hudFactor or 1
+    LayoutHelpers.SetPixelScaleFactor(factor)
+end
+
+--- What the fingers do now, which the app goes by when the next one comes down.
+local function SayFingers()
+    FafreSetFingers(not inSession or table.getn(open) > 0 or table.getn(pages) > 0)
+end
+
+local function SayPage()
+    local page = pages[table.getn(pages)]
+    if page then
+        FafreSetPage(page.left, page.top, page.right, page.bottom)
+    else
+        FafreSetPage()
     end
 end
 
-local function Close(entry)
-    for index, other in open do
+local function RemoveFrom(list, entry)
+    for index, other in list do
         if other == entry then
-            table.remove(open, index)
+            table.remove(list, index)
             break
         end
     end
-    Apply()
 end
 
---- When the dialog's root is gone, so is the dialog. A thread looks, as a dialog's OnDestroy is its own to set at any time.
-local function CloseWhenGone(entry)
+--- When the dialog's or the page's root is gone, so is it. A thread looks, as a dialog's OnDestroy is its own to set at any time.
+local function WhenGone(root, close)
     ForkThread(function()
-        while not IsDestroyed(entry.root) do
+        while not IsDestroyed(root) do
             WaitFrames(1)
         end
-        Close(entry)
+        close()
     end)
 end
 
@@ -73,6 +91,24 @@ function Fit(lines)
     return math.min(hudFactor, GetFrame(0).Height() / lines)
 end
 
+--- `build` at this factor, which the dialog it opens keeps until it is gone. `root`, if it is given, says which control that goes by.
+local function OpenDialog(factor, build, arguments, root)
+    local entry = {factor = factor, made = {}}
+    local results = Build(entry, build, arguments)
+    entry.root = root and root() or entry.made[1]
+    if entry.root then
+        table.insert(open, entry)
+        Apply()
+        SayFingers()
+        WhenGone(entry.root, function()
+            RemoveFrom(open, entry)
+            Apply()
+            SayFingers()
+        end)
+    end
+    return unpack(results)
+end
+
 --- `build` opens a dialog that needs `lines` of FAF's lines: the dialog keeps its factor until it is gone. `root`, if it
 --- is given, says which control that goes by, where it is not the first that `build` makes.
 function Dialog(lines, build, root)
@@ -80,16 +116,80 @@ function Dialog(lines, build, root)
         if not hudFactor then
             return build(unpack(arg))
         end
-        local entry = {factor = Fit(lines), made = {}}
-        local results = Build(entry, build, arg)
-        entry.root = root and root() or entry.made[1]
-        if entry.root then
-            table.insert(open, entry)
-            Apply()
-            CloseWhenGone(entry)
+        return OpenDialog(Fit(lines), build, arg, root)
+    end
+end
+
+--- As Dialog, for a dialog whose factor is its own and larger than the HUD's: `factor` says it, and it holds in the front end too.
+function DialogAt(factor, build, root)
+    return function(...)
+        return OpenDialog(factor(), build, arg, root)
+    end
+end
+
+--- A dialog that has gone is gone now, ahead of the thread that looks: for what a dialog does in the moment it closes.
+function Settle()
+    for index = table.getn(open), 1, -1 do
+        if IsDestroyed(open[index].root) then
+            table.remove(open, index)
         end
+    end
+    Apply()
+    SayFingers()
+end
+
+--- `build` opens a screen that a finger reads on a page (android/TOUCH_UI.md). `find` is given what `build` made and says which
+--- control the page goes by and has the place of, and in a table of left, top, right, bottom any side where it has another.
+function Page(build, find)
+    return function(...)
+        local entry = {made = {}}
+        local results = Build(entry, build, arg)
+        Try('a page', function()
+            local root, box = find(entry.made)
+            box = box or {}
+            local page = {
+                root = root, left = box.left or root.Left(), top = box.top or root.Top(),
+                right = box.right or root.Right(), bottom = box.bottom or root.Bottom(),
+            }
+            table.insert(pages, page)
+            SayPage()
+            SayFingers()
+            WhenGone(root, function()
+                RemoveFrom(pages, page)
+                SayPage()
+                SayFingers()
+            end)
+        end)
         return unpack(results)
     end
+end
+
+--- How much larger the screen shows the picture than its pixels now, for what wants a size on the glass.
+function PageZoom()
+    local page = pages[table.getn(pages)]
+    return page and math.max(1, GetFrame(0).Width() / (page.right - page.left)) or 1
+end
+
+--- How many of the picture's pixels make this many mm on the glass now. A build icon's 48 pixels are 7.3 mm at the app's factor.
+function PicturePixels(mm)
+    local given = GetCommandLineArg('/fafre_hud_scale', 1)
+    return mm * (given and tonumber(given[1]) or 1) * 48 / 7.3 / PageZoom()
+end
+
+--- What the screen shows of the picture's lines at a time, with the margins that ShowLines leaves.
+function ShownLines()
+    return GetFrame(0).Height() / PageZoom() - 16
+end
+
+--- The page goes where these of the picture's lines show, if a page is open.
+function ShowLines(top, bottom)
+    FafreShowLines(top, bottom)
+end
+
+--- A new front end: the state that declared the last page and fingers has gone with them.
+function StartFrontEnd()
+    SayFingers()
+    SayPage()
 end
 
 --- `build` makes a panel beside the HUD that needs `lines` of FAF's lines, and does not build more later.
@@ -145,30 +245,33 @@ function AtHud(hud)
     end
 end
 
-local function WatchConstructors()
-    for _, kind in {'Bitmap', 'Border', 'Edit', 'Group', 'Histogram', 'ItemList', 'Movie', 'Scrollbar', 'Text', 'MapPreview', 'Mesh'} do
-        local name = 'InternalCreate' .. kind
-        local original = rawget(_G, name)
-        if original then
-            _G[name] = function(...)
-                if building then
-                    table.insert(building.made, arg[1])
-                end
-                return original(unpack(arg))
+for _, kind in {'Bitmap', 'Border', 'Edit', 'Group', 'Histogram', 'ItemList', 'Movie', 'Scrollbar', 'Text', 'MapPreview', 'Mesh'} do
+    local name = 'InternalCreate' .. kind
+    local original = rawget(_G, name)
+    if original then
+        _G[name] = function(...)
+            if building then
+                table.insert(building.made, arg[1])
             end
+            return original(unpack(arg))
         end
     end
 end
 
---- The factor of the session's HUD, which the app works out from the screen.
+--- The factor of the session's HUD: what the app works out from the screen, times the user's UI scale, within the lines the HUD needs.
 function StartSession()
+    inSession = true
+    SayPage()
+    SayFingers()
     local given = GetCommandLineArg('/fafre_hud_scale', 1)
     local factor = given and tonumber(given[1])
     if factor and factor > 0 then
-        hudFactor = factor
-        LayoutHelpers.SetPixelScaleFactor(factor)
-        WatchConstructors()
+        local option = import('/lua/user/prefs.lua').GetFromCurrentProfile('options').ui_scale or 1
+        local most = GetCommandLineArg('/fafre_hud_most', 1)
+        hudFactor = math.min(factor * option, math.max(factor, most and tonumber(most[1]) or factor))
+        LayoutHelpers.SetPixelScaleFactor(hudFactor)
+        FafreSetHud(hudFactor)
         _G.OnSync = AtHud(OnSync)
-        LOG('fafre_ui: the HUD at ' .. factor)
+        LOG('fafre_ui: the HUD at ' .. hudFactor .. ', the app\'s ' .. factor .. ' and the UI scale ' .. option)
     end
 end

@@ -317,8 +317,10 @@ target_link_libraries(faf_movie_player PRIVATE FFmpeg::FFmpeg)
 
 # The host (WX_LITE.md): the program's start, and the activity's surface, input and lifecycle as
 # Win32 messages.
-add_library(faf_host OBJECT src/host/GameHost.cpp src/host/KeysAndroid.cpp)
+add_library(faf_host OBJECT src/host/GameHost.cpp src/host/KeysAndroid.cpp src/host/MenuFingers.cpp)
 target_link_libraries(faf_host PUBLIC faf_android_settings faf_wx_lite)
+# It takes the engine's UI by its private header, whose helpers it mostly does not use.
+set_source_files_properties(src/host/MenuFingers.cpp PROPERTIES COMPILE_OPTIONS -Wno-unused-function)
 
 # --- Libraries ---------------------------------------------------------------------------------
 # The net channel (src/remote/net), which the engine's build makes when it has Monocypher: the lobby's
@@ -360,6 +362,7 @@ add_executable(faf_wx_lite_tests
   tests/wx/Main.cpp
   tests/wx/EventTests.cpp
   tests/wx/GdiTests.cpp
+  tests/wx/ListDragTests.cpp
   tests/wx/MessageLayerTests.cpp
   tests/wx/TapTargetTests.cpp
   tests/wx/WindowTests.cpp

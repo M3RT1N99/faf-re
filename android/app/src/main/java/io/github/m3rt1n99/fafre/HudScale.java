@@ -9,8 +9,9 @@ import java.util.Locale;
  * 48 pixels, the size a finger hits.
  */
 final class HudScale {
-    /** The command line's switch, which FAF's Lua reads (assets/fafre_ui/lua/fafre/scale.lua). */
+    /** The command line's switches, which FAF's Lua reads (assets/fafre_ui/lua/fafre/scale.lua): the factor, and the most that the user's UI scale can make of it. */
     static final String SWITCH = "/fafre_hud_scale";
+    static final String MOST_SWITCH = "/fafre_hud_most";
 
     private static final double ICON_PIXELS = 48;
     private static final double ICON_MM = 7.3;
@@ -34,8 +35,12 @@ final class HudScale {
     /** The factor for a picture of `lines` lines on a screen whose short side is `shortSideMm`. */
     static double factor(int lines, double shortSideMm) {
         double wanted = ICON_MM / ICON_PIXELS * lines / shortSideMm;
-        double most = Math.max(1.0, (double) lines / HUD_LINES);
-        return Math.max(1.0, Math.min(most, wanted));
+        return Math.max(1.0, Math.min(most(lines), wanted));
+    }
+
+    /** The most a HUD on a picture of `lines` lines can have: a larger factor would leave it too few of FAF's lines. */
+    static double most(int lines) {
+        return Math.max(1.0, (double) lines / HUD_LINES);
     }
 
     /**

@@ -1,0 +1,57 @@
+
+-- The UI package (android/TOUCH_UI.md): the lobby is a page of its panel and of its Launch button, which stands out below it: all of
+-- FAF's 768 lines. Its slot rows lie further apart when the map has few of them: the 16 rows of FAF's layout have room for 8 at twice the
+-- distance.
+do
+    local ok, problem = pcall(function()
+        local Scale = import('/fafre_ui/lua/fafre/scale.lua')
+        -- What the rows take in FAF's layout, 16 of them 22 apart.
+        local SLOTS_HEIGHT = 352
+        local LEAST_PITCH = 22
+        local MOST_PITCH = 44
+        local rowHeight = false
+        local pitch = LEAST_PITCH
+
+        CreateUI = Scale.Page(CreateUI, function()
+            return GUI.panel, {
+                top = math.max(0, GUI.panel.Top() - LayoutHelpers.ScaleNumber(8)),
+                bottom = math.min(GetFrame(0).Height(), GUI.panel.Bottom() + LayoutHelpers.ScaleNumber(8)),
+            }
+        end)
+
+        local function PlaceSlot(index)
+            local slot = GUI.slots[index]
+            local top = (index - 1) * LayoutHelpers.ScaleNumber(pitch)
+            local height = LayoutHelpers.ScaleNumber(pitch - 3)
+            slot.Top:Set(function()
+                return GUI.labelGroup.Bottom() + top + math.floor((height - rowHeight) / 2)
+            end)
+            slot.SlotBackground.Top:Set(function()
+                return GUI.labelGroup.Bottom() + top
+            end)
+            slot.SlotBackground.Height:Set(height)
+        end
+
+        local UpdateSlots = UpdateAvailableSlots
+        UpdateAvailableSlots = function(numAvailStartSpots, scenario)
+            UpdateSlots(numAvailStartSpots, scenario)
+            Scale.Try('the slot rows', function()
+                if not rowHeight then
+                    rowHeight = GUI.slots[1].Height()
+                    for index, slot in GUI.slots do
+                        slot.Height:Set(rowHeight)
+                    end
+                end
+                pitch = math.max(LEAST_PITCH, math.min(MOST_PITCH, math.floor(SLOTS_HEIGHT / numAvailStartSpots)))
+                for index, slot in GUI.slots do
+                    PlaceSlot(index)
+                    -- FAF keeps showing the background of a row it has hidden, for which there is no room here.
+                    slot.SlotBackground:SetHidden(index > numAvailStartSpots and pitch > LEAST_PITCH)
+                end
+            end)
+        end
+    end)
+    if not ok then
+        WARN('fafre_ui: ui/lobby/lobby.lua: ' .. tostring(problem))
+    end
+end

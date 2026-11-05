@@ -41,7 +41,7 @@ package io.github.m3rt1n99.fafre;
  * <p>A mouse's pointer goes on being somewhere, and the game shows what it is over. A finger's goes, shortly after the
  * last finger has lifted ({@link Mouse#leaveSoon}), so that a rollover does not stay in the way of what it opened.
  */
-final class TouchInput {
+final class TouchInput implements Fingers {
     /** What the fingers do, on the thread that calls this class. */
     interface Mouse {
         void move(float x, float y);
@@ -141,6 +141,33 @@ final class TouchInput {
         SPENT,
     }
 
+    /**
+     * Where a click goes. The game's double click wants the same few pixels, which two taps of a finger do not hit, so a
+     * click soon after the last and near it goes where that went.
+     */
+    static final class ClickPlace {
+        private long mTime = Long.MIN_VALUE / 2;
+        private float mX;
+        private float mY;
+
+        void clickedAt(float x, float y, long time, float slop) {
+            boolean again = time - mTime <= DOUBLE_TAP_MILLISECONDS && Math.hypot(x - mX, y - mY) <= 2 * slop;
+            mTime = time;
+            if (!again) {
+                mX = x;
+                mY = y;
+            }
+        }
+
+        float x() {
+            return mX;
+        }
+
+        float y() {
+            return mY;
+        }
+    }
+
     private static final class Finger {
         int id = -1;
         float x;
@@ -192,9 +219,7 @@ final class TouchInput {
     private int mClickButton = NO_CLICK;
     private float mClickX;
     private float mClickY;
-    private long mLastClickTime = Long.MIN_VALUE / 2;
-    private float mLastClickX;
-    private float mLastClickY;
+    private final ClickPlace mLastClick = new ClickPlace();
     private float mScreenWidth = Float.MAX_VALUE;
     private float mScreenHeight = Float.MAX_VALUE;
 
@@ -226,8 +251,8 @@ final class TouchInput {
         return mSwapped ? Game.BUTTON_LEFT : Game.BUTTON_RIGHT;
     }
 
-    /** A finger came down; `first`: no other is left on the glass, whatever this class heard of them. */
-    void down(int id, float x, float y, long time, boolean first) {
+    @Override
+    public void down(int id, float x, float y, long time, boolean first) {
         // First: a leave on its way counts as taken back, whatever this finger goes on to send.
         mMouse.stay();
         if (first) {
@@ -287,8 +312,8 @@ final class TouchInput {
         mState = State.PLACE_PENDING;
     }
 
-    /** Where a finger is now. {@link #moved} follows when all of an event's fingers are in. */
-    void move(int id, float x, float y) {
+    @Override
+    public void move(int id, float x, float y) {
         if (id == mFirst.id) {
             mFirst.place(x, y);
         } else if (id == mSecond.id) {
@@ -296,7 +321,8 @@ final class TouchInput {
         }
     }
 
-    void moved() {
+    @Override
+    public void moved() {
         switch (mState) {
             case PENDING:
                 if (!mDeleting && Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
@@ -345,8 +371,8 @@ final class TouchInput {
         }
     }
 
-    /** A finger lifted; `last`: no other is left on the glass. */
-    void up(int id, long time, boolean last) {
+    @Override
+    public void up(int id, long time, boolean last) {
         if (id == mFirst.id || id == mSecond.id) {
             switch (mState) {
                 case PENDING:
@@ -403,7 +429,8 @@ final class TouchInput {
      * Android says that a finger which lifted was a palm, with another still down: it is as if it had
      * not come down, when nothing has shown yet of what the two do.
      */
-    void forget(int id, long time) {
+    @Override
+    public void forget(int id, long time) {
         if (mState == State.TWO_PENDING && (id == mFirst.id || id == mSecond.id)) {
             Finger left = id == mFirst.id ? mSecond : mFirst;
             int leftId = left.id;
@@ -421,7 +448,8 @@ final class TouchInput {
      * finger held gives its order; no gesture comes of what is left of them. A line builds nothing that
      * the finger did not finish.
      */
-    void cancel() {
+    @Override
+    public void cancel() {
         endGesture();
         mMouse.leaveSoon();
     }
@@ -530,16 +558,10 @@ final class TouchInput {
 
     /** A click `rested` milliseconds after the cursor came there, now or when it has settled. */
     private void click(int button, float x, float y, long rested, long time) {
-        // The game's double click wants the same few pixels, which two taps of a finger do not hit.
-        boolean again = time - mLastClickTime <= DOUBLE_TAP_MILLISECONDS && Math.hypot(x - mLastClickX, y - mLastClickY) <= 2 * mSlop;
-        mLastClickTime = time;
-        if (!again) {
-            mLastClickX = x;
-            mLastClickY = y;
-        }
+        mLastClick.clickedAt(x, y, time, mSlop);
         mClickButton = button;
-        mClickX = mLastClickX;
-        mClickY = mLastClickY;
+        mClickX = mLastClick.x();
+        mClickY = mLastClick.y();
         if (rested >= SETTLE_MILLISECONDS) {
             finishClick();
         } else {
