@@ -17,7 +17,8 @@ and Exit, and the lobby no Launch Game. So the two parts are handled differently
 
 - **In the game** the UI scale goes up, only there: a session starts in a fresh Lua state.
 - **In the menus** the UI scale stays at 1. A screen that needs it is shown larger at a fixed size, its page, which a
-  finger scrolls down, and lists scroll inside it. There is no zoom gesture (the user's decision). See "The menus".
+  finger scrolls down, and lists scroll inside it; a dialog that fits gets a factor of its own, which leaves it sharp. There is no
+  zoom gesture (the user's decision). See "The menus".
 
 ## The measurements
 
@@ -53,8 +54,15 @@ With the UI scale at 1.6 every panel of the game grows as one, with sharp text a
 | Options | `ui/dialogs/options.lua` | 698x598 | rows 34 high (3.2 mm), choices 18 (1.7 mm), slider thumbs 30x22 (2.1 mm), tabs 178x58, buttons 170x50 |
 | Lobby | `ui/lobby/lobby.lua` | 1024 wide, all 768 lines | slot rows 22 apart (2.1 mm), choices 18 (1.7 mm), scroll bars 14 wide (1.3 mm), buttons 130x42 (4.0 mm), small toggles 98x42 |
 | LAN screen | `ui/lobby/gameselect.lua` | 974x734 | edit boxes 19 high, list rows |
-| Replay, load and save | `ui/dialogs/replay.lua`, `saveload.lua`, `ui/controls/filepicker.lua` | 702x586 | rows 20-22 high (2 mm), buttons 198x70 |
-| Profile | `ui/dialogs/profile.lua` | 578x446 | scroll buttons 34x26 |
+| Replay, load and save | `ui/dialogs/replay.lua`, `saveload.lua`, `ui/controls/filepicker.lua` | 702x586 | rows 20 high at any factor (1.9 mm), buttons 198x70 |
+| Profile | `ui/dialogs/profile.lua` | 578x446 | rows 18 high, scroll buttons 34x26 |
+| Mods Manager | `ui/lobby/modsmanager.lua` | 850 wide, the screen's height | filters 180x33 (3.1 mm), a star 25 wide |
+| Map and game options | `ui/dialogs/mapselect.lua` | 956x692 | map rows 18 high, choices 18 |
+| Unit Manager | `ui/lobby/unitsmanager.lua` | all of the picture | cells 43 (4.1 mm), buttons 130x42 |
+| Licence | `ui/menus/eula.lua` | 718x598 | its font of 12 points |
+| A question | `ui/uiutil.lua` | 428 wide | buttons 130x42 (4 mm) |
+| LAN's Create | `ui/lobby/gamecreate.lua` | 478x318 | fields 16 high |
+| Campaign | `ui/campaign/selectcampaign.lua`, `operationbriefing.lua` | all of the picture | rows 370x34, a film's buttons 34x34, a choice's rows 20 |
 | Choices everywhere | `ui/controls/combo.lua` | | 18 high, and the same when opened |
 
 The in-game menu is a counter example: its buttons are large already, so at 1.6 its list runs off the
@@ -122,11 +130,13 @@ Game.prefs as the user set it.
 is after they are set, so a factor has to be there for as long as what it laid out can be evaluated:
 
 - `Dialog`: a dialog that covers the game and builds more as it is used (tabs, rows), from local functions that a hook
-  cannot reach. Its factor stays until its root control is gone, and a thread watches for that, as a dialog's
-  `OnDestroy` is its own to set. Dialogs nest, and go in any order.
-- `Built`: a panel that leaves the HUD in use and builds nothing later, the Menu tab: its factor stays only while it is
-  built, and all it made is evaluated before the HUD's factor returns. What a later change makes evaluate again gets the
-  HUD's factor: a button's next texture would size it anew, so the hook fixes the buttons' sizes.
+  cannot reach. Its factor stays until its root control goes. A child of the root says that, in that moment, as a dialog's
+  `OnDestroy` is its own to set and what a dialog does as it closes (`MenuShow`, the next screen) has to be at the factor from
+  before it. Dialogs nest, and go in any order. In the front end it holds too: there is no HUD, and the factor is what makes it as
+  large on the glass as a session's (`GlassFactor`), which on a page that shows the picture as large already, the lobby's, is 1.
+- `Built`, `BuiltAt`: a panel that leaves the HUD in use and builds nothing later, the Menu tab, or a question in the front end: its
+  factor stays only while it is built, and all it made is evaluated before the factor from before it returns. What a later change makes
+  evaluate again gets the factor there is then.
 - `AtHud`: what the game calls for the HUD runs at the HUD's factor whatever dialog is open: `OnSelectionChanged`,
   `OnQueueChanged`, `OnBeat`, `OnPause`, `OnResume`, `OnSync` and the unit view's `OnFrame`.
 - `Try`: what a wrapper does beyond calling FAF runs later than the hook's own `pcall`, so it goes through this, which
@@ -140,8 +150,12 @@ dialog showed the HUD as before, also after units had gone on building while it 
 reverse should not arise: of a dialog only what `OnBeat` and `OnSync` build would run at the HUD's factor, and none of the
 dialogs below was seen to build from there.
 
-- `DialogAt`: as `Dialog`, for a dialog whose factor is its own, larger than the HUD's, and which holds in the front end too.
-- `Page`: see "The menus".
+- `DialogAt`: as `Dialog`, for a dialog whose factor is its own, larger than the HUD's.
+- `Page`: see "The menus". Inside a `DialogAt` it is at that factor.
+
+The factor is one for all, so what lies under a dialog that holds one must not move. The main menu hides for its dialogs, and a question
+holds none. One thing does change under any dialog: the button that opened it, which the finger leaves after the dialog is there, and which
+FAF then sizes anew with its next texture at the dialog's factor. So a bitmap keeps the size it was made at (the hook of `maui/bitmap.lua`).
 
 ### The hooks
 
@@ -153,15 +167,27 @@ dialogs below was seen to build from there.
 | `lua/ui/game/tabs.lua` | The Menu tab's ten large buttons fit at 0.92: `Built`, 837 of FAF's lines |
 | `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow |
 | `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the app's buttons, the multifunction panel and the unit view: a new window goes where it covers no panel, and the reset button brings it back there; a place the user chose stays |
-| `lua/ui/dialogs/options.lua` | `DialogAt`, in the front end too: shown larger, with fewer rows (see "The menus"); the UI scale needs no restart |
+| `lua/ui/dialogs/options.lua` | `DialogAt`: shown larger, with fewer rows (see "The menus"); the UI scale needs no restart |
+| `lua/maui/bitmap.lua` | A bitmap keeps the size it was made at (above) |
+| `lua/ui/uiutil.lua` | A question in the front end is `BuiltAt`, as large on the glass as a session's. It holds no factor, as the lobby asks one (that it is connecting) just before it builds all the rest |
+| `lua/ui/controls/popups/popup.lua` | A popup shows where the page stands, from its top if it is higher than the screen |
+| `lua/ui/controls/filepicker.lua`, `lua/ui/dialogs/replay.lua`, `saveload.lua` | `Dialog` for the three dialogs around a file picker, with the frame cut as Options' is; rows 5 mm, where FAF sets 20 pixels at any factor |
+| `lua/ui/dialogs/profile.lua` | `Dialog`, 510 lines; its list's rows |
+| `lua/ui/menus/eula.lua` | `Dialog`, with the frame cut |
+| `lua/ui/dialogs/modmanager.lua` | FAF hands the function that shows the main menu again to where the Mods Manager goes through the other players' mods, which calls it as the mods load: the menu came back under the dialog, at the dialog's factor. Here it comes when the dialog has closed |
+| `lua/ui/lobby/modsmanager.lua` | `Dialog`: FAF lays it out by the screen's height at any factor |
+| `lua/ui/lobby/unitsmanager.lua` | `DialogAt` and `Page` of the whole picture; a resting finger reads a unit's tooltip and changes nothing |
+| `lua/ui/dialogs/mapselect.lua`, `lua/ui/lobby/changelog.lua` | The rows of the maps and of the patches; the patch notes show from their top |
+| `lua/ui/lobby/gamecreate.lua` | `Dialog` |
+| `lua/ui/campaign/selectcampaign.lua` | Skipping the timeline's film (a tap, or Back) went to a call of FAF's with arguments it no longer takes, which left a black screen: it goes where the film's end goes |
+| `lua/ui/campaign/operationbriefing.lua` | The rows of the choice of difficulty and faction, `BuiltAt` a factor that makes them 5 mm |
 | `lua/ui/uimain.lua` | A new front end takes the fingers and the view back from what the last state declared |
 | `lua/maui/layouthelpers.lua` | The front end's factor is 1, whatever the UI scale says |
 | `lua/maui/slider.lua` | A press on a slider's bar also takes the thumb, for the drag that may follow |
 | `lua/ui/controls/combo.lua` | A dropdown's rows are 5 mm on the glass, and it stays on the picture |
-| `lua/ui/lobby/lobby.lua` | `Page`; the slot rows' distance |
+| `lua/ui/lobby/lobby.lua` | `Page`; the slot rows' distance; the row under a finger in the list of observers |
 | `lua/ui/lobby/gameselect.lua` | `Page` |
 | `lua/ui/dialogs/keybindings.lua`, `lua/ui/notify/customiser.lua` | `Dialog`, 740 lines |
-| `lua/ui/dialogs/saveload.lua` | `Dialog`, 640 lines |
 | `lua/ui/game/connectivity.lua` | `Dialog`, 640 lines, which hold nine players |
 | `lua/ui/dialogs/score.lua` | `Dialog`, 646 lines; its root is `dialog`, as setting the skin rebuilds the HUD before it makes its first control |
 | `lua/ui/dialogs/hotstats.lua` | Sets its local factor (above) |
@@ -249,9 +275,9 @@ the top arrow), only the strip at the screen's edge is the arrow's, and that edg
 | Dialog | Lua | Factor at 768 lines | Fits | What is small |
 |---|---|---|---|---|
 | Options | `ui/dialogs/options.lua` | 1.75 | yes, reflowed: see "The menus" | |
-| Key Bindings | `ui/dialogs/keybindings.lua` | 1.04 | yes | buttons 207x43 (4.1 mm), scroll bar 14 wide (1.3 mm) |
+| Key Bindings | `ui/dialogs/keybindings.lua` | 1.04 | yes | rows 986x22 (2.1 mm), buttons 207x43 (4.1 mm), scroll bar 14 wide (1.3 mm). Keys cannot be pressed on a phone: a finger reaches the rows, opens the groups and scrolls the list |
 | Notify Management | `ui/notify/customiser.lua` | 1.04 | yes | buttons 156x43 (4.1 mm), scroll bar 14 wide (1.3 mm) |
-| Save, Load | `ui/dialogs/saveload.lua` | 1.20 | yes | scroll bar 40 wide (3.8 mm), sort tabs 26 high (2.5 mm) |
+| Save, Load, Load Replay | `ui/dialogs/saveload.lua`, `replay.lua` | 1.60 | yes, with the frame cut: see "The menus" | sort tabs 35 high (3.3 mm) |
 | Scenario | `ui/game/objectivedetail.lua` | 1.60 | yes | |
 | Restart, End Game, Exit questions | `ui/uiutil.lua` | 1.60 | yes | |
 | Connectivity | `ui/game/connectivity.lua` | 1.20 | yes; tried with two players, and by its slots' height nine fit | |
@@ -305,15 +331,16 @@ what it covers, and what is typed shows over the picture, as before.
 
 `PageInput`, beside `TouchInput`:
 
-- a tap is a click, through `Game.tap`, so with tap help; also after a long rest, as a careful finger is slow;
+- a tap is a click, through `Game.tap`, so with tap help; also after a rest, as a careful finger is slow;
+- a finger that rests 500 ms, which it feels a second time, and lifts without moving is a right click where it rests, with tap help as well
+  (`Game.rightClickNear`), as what FAF's right clicks are for is small: the host's kick of an observer in the lobby's list, closing a start
+  position on the map. FAF's buttons take a right click for a click, so a slower tap still works, and it opens the keyboard on a text field;
 - a finger that moves mainly up or down past the slop scrolls, presses nothing, and the pointer leaves at once;
 - a finger that moves mainly sideways past the slop is a mouse's drag from where it came down: sliders;
-- a finger that rests 300 ms, which it feels, and then moves is a mouse's drag in any direction: scroll bars, windows;
+- a finger that rests 300 ms, which it feels, and then moves is a mouse's drag in any direction: scroll bars, windows. Also after the
+  500 ms. A press on a scroll bar stays where it landed, where a tap's help would give it to the arrow beside the thumb;
 - two fingers do nothing;
 - the pointer leaves 300 ms after the last finger, as in a game.
-
-There is no way to a right click here: FAF has two in the lobby, for the host, on an observer in the list (kick) and on a start position
-on the map (close it). A slot's own choices do the same for a player's slot.
 
 ### The list first
 
@@ -335,7 +362,17 @@ what it scrolls). The answer says *none* or *one*.
 | Main menu | As FAF's | Its buttons are 358x70, 6.7 mm |
 | Lobby, also a network game's | A page of its panel's width and all of FAF's lines: 1024 pixels fill the screen's width, the picture is 1.61 times as large, and 290 of FAF's lines are to scroll | Above a factor of 1 FAF's lobby loses its lower part, and it holds 16 slots, chat, the options list and the map on its 768 lines. The panel's 1024 are what a finger needs of the 1647; the rest is decoration |
 | Slot rows | 44 apart with up to 8 players, down to FAF's 22 with 16: the map's start spots share the 352 lines; the art of the row's background stretches, a plain strip | Combos stay 18 high, but with 26 free lines between rows tap help reaches the whole row |
-| Map and game options (`ui/dialogs/mapselect.lua`) | On the lobby's page: 956 wide, it fits | The next job can give it a page of its own |
+| Map and game options, Settings, Patchnotes, Presets, the large map, Load, the Mods Manager from there | On the lobby's page, at FAF's factor: all are narrower than its 1024 and a finger scrolls them; a popup comes into view from its top | They stand over the lobby, whose page is as large as they need. Rows a finger picks from are larger: maps 4 mm, patches 3.5 mm |
+| Unit Manager | **A page of the whole picture** over the lobby's, so no zoom, at the HUD's factor: FAF's grid of all units fills any width, and a page has no way sideways | On the lobby's page it was cut off. Its cells stay about 4 mm whatever the factor; the rest grows, and a tooltip can be read |
+| Replay, Save, Load, and their question boxes | **The frame cut**, as Options': the HUD's size on the glass, 1.6, and what is too high goes from the middle of the list and of the picture. 4 rows of 5 mm at a time. On the lobby's page it is whole, at a factor of 1. A session's is the same dialog at the HUD's factor | FAF's whole dialog fits only up to 1.2, with half of the screen's width unused |
+| Licence | **The frame cut**, at 1.6: 17 lines at a time | Its text is what is read |
+| Mods Manager from the main menu | The HUD's size on the glass, 1.6: FAF lays it out by the screen's height at any factor, 2 rows with their pictures or 6 without | Sharp, and all on one screen |
+| Profile and Enter your Name | 1.51, as far as its 510 lines go, no cut needed; a row 4.5 mm by a larger font | Also the first thing a new player sees |
+| LAN's Create | 1.6: its picture is small | |
+| Questions (`UIUtil.QuickDialog`) | 1.6 in the front end, 1 on the lobby's page; as they were in a session | Buttons 6.4 mm |
+| Main menu, Extras | As FAF's | |
+| Credits, and the timeline | A film: a tap skips it | |
+| Campaign | As FAF's, full screen: rows 3.2 mm and 4.1 mm apart, with reach; the choice of difficulty 5 mm a row | The art fits the picture, and the buttons do |
 | LAN screen | A page of its panel's width and its Create button, which stands out of it: 1014 wide, 1.62 times as large | 974x734 |
 | Options | **Reflowed**, no page: a factor of about 1.75, for rows of 5.8 mm as far as 440 of FAF's lines allow, and as many rows as fit, 5 at 768 lines; the list scrolls by finger. On a screen so large that FAF's whole dialog fits at that factor it stays as FAF has it | It stays sharp, and all of it is larger, not only what a finger hits. See below |
 | Choices everywhere | Rows 5 mm by a larger size of FAF's font; the list grows to the left for its longer rows, up to the picture's edge, opens upwards if there is more room there, and has as many rows as show at a time, which scroll by finger; a page goes where it shows | |
@@ -380,11 +417,42 @@ around, where nothing larger that takes events is in the way.
 | | Sliders and their thumbs | `:141`, `:143` | 345x38, 52x38 | 3.6 | a drag from anywhere on the bar |
 | | Tabs | `:476` | 310x101 | 9.6 | |
 | | Reset, Ok, Cancel, Apply | `:311`..`:346` | 296x87 | 8.3 | |
+| Replay, Save, Load | Rows | `ui/controls/filepicker.lua:213` | 945x52 | 5.0 | a list by finger, a double tap opens one |
+| | Sort tabs, Show only my files | `:502`, `:186` | 696x35, 41x41 | 3.3, 3.9 | reach |
+| | Filename | `:167` | 952x16 | 1.5 | reach; a tap opens the keyboard |
+| | Delete, Ok, Cancel | `ui/dialogs/replay.lua:97`..`:107` | 316x112 | 10.7 | |
+| Licence | Its lines | `ui/menus/eula.lua:45` | 1008x22 | 2.1 | a list by finger |
+| Mods Manager, main menu | Rows | `ui/lobby/modsmanager.lua:1068` | 1296x136, without pictures 56 | 13, 5.3 | |
+| | Star, filters | `:1087`, `:506` | 66x66, 288x53 | 6.3, 5.0 | |
+| | Search, its X, sort | `:421`, `:404`, `:1396` | 1263x38, 17x32, 120x22 | 3.6, 1.6, 2.1 | reach; a tap opens the keyboard |
+| Profile | Rows, buttons | `ui/dialogs/profile.lua:75`, `:41`.. | 47 high, 298x105 | 4.5, 10 | |
+| | Name | `:224` | 527x35 | 3.3 | reach; a tap opens the keyboard |
+| LAN's Create | Name, port, Auto Port | `ui/lobby/gamecreate.lua:22`, `:71` | 544x28, 41x41 | 2.7, 3.9 | reach |
+| | OK, Cancel | `:119`, `:41` | 316x112 | 10.7 | |
+| A question | Buttons | `ui/uiutil.lua:1083` | 208x67 | 6.4 | 42 high on the lobby's page, 6.4 mm too |
+| Map and game options | Map rows | `ui/dialogs/mapselect.lua:631` | 26 high | 4.0 | a list by finger |
+| | Filters, the options' choices | `:312`, `:361`, `:769` | 80x18, 60x18, 266x18 | 2.8 | reach |
+| | The options' rows | `:784` | 276x46 | 7.1 | the row's free part is the choice's by reach |
+| | Mods, Restrictions, Random Map, OK, Cancel | `:477`..`:543` | 130x42 | 6.4 | |
+| Unit Manager | Cells, presets | `ui/lobby/unitsmanager.lua:596`, `:783` | 41x41 | 3.9 | a grid by finger; a resting finger reads the tooltip |
+| | Ok, Cancel, Reset | `:456`..`:464` | 208x67 | 6.4 | |
+| Settings | Rows, sliders | `ui/lobby/lobby.lua:6550`.., `:6565` | 26 high, 198x22 | 4.0, 3.4 | reach; a drag from anywhere on the bar |
+| Patchnotes | Patches, X, footer | `ui/lobby/changelog.lua:210`, `:124`, `:148` | 23 high, 22x22, 130x42 | 3.5, 3.4, 6.4 | a list by finger |
+| Presets | Rows, X, buttons | `ui/lobby/presets.lua:189`, `:207`, `:212`.. | 18 high, 18x18, 130x42 | 2.8, 2.8, 6.4 | a list by finger; a double tap loads one |
+| Observers | Rows | `ui/lobby/lobby.lua:4344` | 15 high | 2.3 | a list by finger; the row under a resting finger lights up |
+| Start positions | Marker | `ui/controls/acubutton.lua:51` | 14x14 | 2.2 | reach, for a tap and for a right click |
+| Campaign | Rows | `ui/campaign/selectcampaign.lua:116` | 370x34, 43 apart | 3.2 | reach |
+| | Back, Load, Select | `:77`, `:95`, `:91` | 198x70, 294x70 | 6.7 | |
+| | A film's buttons, Hide Log | `ui/campaign/operationbriefing.lua:539`.., `:383` | 34x34, 174x30 | 3.2, 2.9 | reach |
+| | Difficulty, its rows | `:830`, `:893` | 98x34, 263x52 | 3.2, 5.0 | reach |
 
 What is still not comfortable: the slot rows at 16 players (22 apart, 3.4 mm, choices 2.8 mm: tap help picks the nearest); the
 combos' own buttons, which keep their art at 2.8 mm in the lobby and 3 mm in Options and rely on tap help; the score panel's and observers'
-small texts. The picture is scaled up on a page, so it is a little soft. 19 colours in two columns or three cover what is beside them while open.
+small texts; Unit Manager's cells, which at 3.9 mm lie side by side, so that reach cannot help; Key Bindings' rows, 2.1 mm; a Mods Manager row
+of FAF's pictures, of which 2 show at a time. The picture is scaled up on a page, so it is a little soft. 19 colours in two columns or three cover what is beside them while open.
 
 Not tried on a real phone: all of this is the emulator's composition and its touch screen, at the phone's size. A real LAN's server list:
 the emulator's network shows none, so the list was tried with made-up entries, one of which pointed at the PC's game (`Join` worked), and
-the PC's game by address.
+the PC's game by address. The emulator's game has one map and no campaign beyond the first operation: long lists of maps, and the campaign's
+list of operations, were tried with made-up entries beside the real one, and the Credits' film is not there at all, so it was seen to give way to the
+menu and not to play. A kick and a real observer: the observers were made up, and the question was answered with Cancel.

@@ -228,6 +228,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
 
         @Override
+        public void rightClick(float x, float y) {
+            Game.rightClickNear(pictureX(x), pictureY(y), pictureMm(TAP_REACH_MM), pictureMm(TAP_SMALL_MM));
+        }
+
+        @Override
         public void lookForList(float x, float y) {
             mUnsentDrag = 0;
             Game.lookForList(pictureX(x), pictureY(y));

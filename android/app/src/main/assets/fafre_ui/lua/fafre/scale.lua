@@ -4,7 +4,8 @@
 -- they are set, and that makes two kinds of them:
 --
 --   Dialog  covers the game and builds more as it is used, from places a hook does not reach: its factor stays for as
---           long as it is open. What the HUD builds meanwhile runs through AtHud.
+--           long as it is open. What the HUD builds meanwhile runs through AtHud. In the front end it holds too, as there is
+--           no HUD: the dialog is as large on the glass as a session's.
 --   Built   leaves the HUD in use and builds nothing later: its factor stays only while it is built, and all it made
 --           is evaluated before the HUD's factor returns.
 --
@@ -53,14 +54,13 @@ local function RemoveFrom(list, entry)
     end
 end
 
---- When the dialog's or the page's root is gone, so is it. A thread looks, as a dialog's OnDestroy is its own to set at any time.
+--- When the dialog's or the page's root goes, so does it, in that moment: what a dialog does as it closes is at the factor from before
+--- it. A child of the root says so, as a dialog's OnDestroy is its own to set at any time.
 local function WhenGone(root, close)
-    ForkThread(function()
-        while not IsDestroyed(root) do
-            WaitFrames(1)
-        end
-        close()
-    end)
+    local watcher = import('/lua/maui/group.lua').Group(root)
+    LayoutHelpers.FillParent(watcher, root)
+    watcher:DisableHitTest()
+    watcher.OnDestroy = close
 end
 
 --- Calls build at the entry's factor and gives back all it returned; an error goes on from here, with the factor as it was.
@@ -86,9 +86,30 @@ function Try(name, work)
     end
 end
 
---- The most a dialog of this many of FAF's lines can have on the screen, which is never more than the HUD's.
-function Fit(lines)
-    return math.min(hudFactor, GetFrame(0).Height() / lines)
+--- What the app has worked out for the HUD from the screen, whatever the UI scale says.
+local function AppFactor()
+    local given = GetCommandLineArg('/fafre_hud_scale', 1)
+    return given and tonumber(given[1]) or 1
+end
+
+--- How much larger the screen shows the picture than its pixels now, for what wants a size on the glass.
+function PageZoom()
+    local page = pages[table.getn(pages)]
+    return page and math.max(1, GetFrame(0).Width() / (page.right - page.left)) or 1
+end
+
+--- The factor at which FAF's sizes come out on the glass as a session's do at the app's factor, on a page that shows the picture
+--- `zoom` times as large, which by default is the page there is now.
+function GlassFactor(zoom)
+    return math.max(1, AppFactor() / (zoom or PageZoom()))
+end
+
+--- The most a dialog of this many of FAF's lines, and if it says so of this width, can have on the screen, which is never more than
+--- the HUD's size on the glass.
+function Fit(lines, width)
+    local frame = GetFrame(0)
+    local most = math.min(hudFactor or GlassFactor(), frame.Height() / lines)
+    return width and math.min(most, frame.Width() / width) or most
 end
 
 --- `build` at this factor, which the dialog it opens keeps until it is gone. `root`, if it is given, says which control that goes by.
@@ -109,14 +130,11 @@ local function OpenDialog(factor, build, arguments, root)
     return unpack(results)
 end
 
---- `build` opens a dialog that needs `lines` of FAF's lines: the dialog keeps its factor until it is gone. `root`, if it
---- is given, says which control that goes by, where it is not the first that `build` makes.
-function Dialog(lines, build, root)
+--- `build` opens a dialog that needs `lines` of FAF's lines, and if it says so `width` of FAF's pixels: the dialog keeps its factor until it
+--- is gone. `root`, if it is given, says which control that goes by, where it is not the first that `build` makes.
+function Dialog(lines, build, root, width)
     return function(...)
-        if not hudFactor then
-            return build(unpack(arg))
-        end
-        return OpenDialog(Fit(lines), build, arg, root)
+        return OpenDialog(Fit(lines, width), build, arg, root)
     end
 end
 
@@ -127,22 +145,12 @@ function DialogAt(factor, build, root)
     end
 end
 
---- A dialog that has gone is gone now, ahead of the thread that looks: for what a dialog does in the moment it closes.
-function Settle()
-    for index = table.getn(open), 1, -1 do
-        if IsDestroyed(open[index].root) then
-            table.remove(open, index)
-        end
-    end
-    Apply()
-    SayFingers()
-end
-
 --- `build` opens a screen that a finger reads on a page (android/TOUCH_UI.md). `find` is given what `build` made and says which
---- control the page goes by and has the place of, and in a table of left, top, right, bottom any side where it has another.
+--- control the page goes by and has the place of, and in a table of left, top, right, bottom any side where it has another. Built
+--- within a dialog's `build`, it is at the dialog's factor.
 function Page(build, find)
     return function(...)
-        local entry = {made = {}}
+        local entry = {factor = building and building.factor, made = {}, page = true}
         local results = Build(entry, build, arg)
         Try('a page', function()
             local root, box = find(entry.made)
@@ -164,16 +172,59 @@ function Page(build, find)
     end
 end
 
---- How much larger the screen shows the picture than its pixels now, for what wants a size on the glass.
-function PageZoom()
-    local page = pages[table.getn(pages)]
-    return page and math.max(1, GetFrame(0).Width() / (page.right - page.left)) or 1
-end
-
 --- How many of the picture's pixels make this many mm on the glass now. A build icon's 48 pixels are 7.3 mm at the app's factor.
 function PicturePixels(mm)
-    local given = GetCommandLineArg('/fafre_hud_scale', 1)
-    return mm * (given and tonumber(given[1]) or 1) * 48 / 7.3 / PageZoom()
+    return mm * AppFactor() * 48 / 7.3 / PageZoom()
+end
+
+--- A list of text has rows as high as its font: FAF's font, larger, for rows of this many mm on the glass.
+function FitRows(list, mm)
+    local wanted = PicturePixels(mm)
+    if list:GetRowHeight() < wanted then
+        local points = math.ceil(list._font._pointsize() * wanted / list:GetRowHeight())
+        list:SetFont(list._font._family(), (points + 0.5) / LayoutHelpers.GetPixelScaleFactor())
+    end
+end
+
+--- A dialog's frame, a picture as high as `dialog`, without `cut` of its lines from `upper` down. Of the picture its top and its bottom show, as
+--- MAUI's SetUV shows a part of a picture; what lies below keeps its distance from the dialog's bottom. What reaches across is the caller's.
+function CutFrame(dialog, file, upper, cut)
+    local Bitmap = import('/lua/maui/bitmap.lua').Bitmap
+    local fullHeight = dialog.Height()
+    local lower = fullHeight - upper - cut
+    local line = dialog.Top() + upper
+    local function Part(from, to, height)
+        local part = Bitmap(dialog, file)
+        part:SetUV(0, from, 1, to)
+        part.Height:Set(height)
+        part.Width:Set(dialog.Width)
+        part.Left:Set(dialog.Left)
+        -- Under what is on the dialog, whatever came first.
+        part.Depth:Set(dialog.Depth)
+        part:DisableHitTest()
+        return part
+    end
+    dialog:ApplyFunction(function(control)
+        if control ~= dialog and control.Top() >= line then
+            local fromBottom = dialog.Bottom() - control.Top()
+            control.Top:Set(function() return dialog.Bottom() - fromBottom end)
+        end
+    end)
+    dialog.Height:Set(upper + lower)
+    dialog:SetAlpha(0)
+    Part(0, upper / fullHeight, upper).Top:Set(dialog.Top)
+    Part(1 - lower / fullHeight, 1, lower).Top:Set(function() return dialog.Bottom() - lower end)
+end
+
+--- A dialog that stands around one control and is higher than the screen with `margin` of FAF's lines above and below: the control and the
+--- dialog's frame lose what is too much, from the middle of `even`, the part of the frame's picture under the control's list that looks the same all the way.
+function FitByList(control, file, margin, even)
+    local dialog = control:GetParent()
+    local cut = dialog.Height() + 2 * LayoutHelpers.ScaleNumber(margin) - GetFrame(0).Height()
+    if cut > 0 then
+        CutFrame(dialog, file, math.floor((even.Top() + even.Bottom() - cut) / 2 - dialog.Top()), cut)
+        control.Height:Set(control.Height() - cut)
+    end
 end
 
 --- What the screen shows of the picture's lines at a time, with the margins that ShowLines leaves.
@@ -181,9 +232,16 @@ function ShownLines()
     return GetFrame(0).Height() / PageZoom() - 16
 end
 
---- The page goes where these of the picture's lines show, if a page is open.
+--- The page goes where these of the picture's lines show, if a page is open, and that page stays where it stood if what is built now brings a page of its own.
 function ShowLines(top, bottom)
-    FafreShowLines(top, bottom)
+    if not (building and building.page) then
+        FafreShowLines(top, bottom)
+    end
+end
+
+--- The page goes where this control shows, from its top if it is higher than the screen shows.
+function ShowTopOf(control)
+    ShowLines(control.Top(), math.min(control.Bottom(), control.Top() + ShownLines()))
 end
 
 --- A new front end: the state that declared the last page and fingers has gone with them.
@@ -192,13 +250,10 @@ function StartFrontEnd()
     SayPage()
 end
 
---- `build` makes a panel beside the HUD that needs `lines` of FAF's lines, and does not build more later.
-function Built(lines, build)
+--- `build` makes something that does not build more later at the factor that `factor` says, for which it need not hold longer.
+function BuiltAt(factor, build)
     return function(...)
-        if not hudFactor then
-            return build(unpack(arg))
-        end
-        local entry = {factor = Fit(lines), made = {}}
+        local entry = {factor = factor(), made = {}}
         local results = Build(entry, function()
             local inner = {build(unpack(arg))}
             for _, control in entry.made do
@@ -209,6 +264,17 @@ function Built(lines, build)
             return unpack(inner)
         end, {})
         return unpack(results)
+    end
+end
+
+--- `build` makes a panel beside the HUD that needs `lines` of FAF's lines, and does not build more later.
+function Built(lines, build)
+    local built = BuiltAt(function() return Fit(lines) end, build)
+    return function(...)
+        if not hudFactor then
+            return build(unpack(arg))
+        end
+        return built(unpack(arg))
     end
 end
 
@@ -256,6 +322,11 @@ for _, kind in {'Bitmap', 'Border', 'Edit', 'Group', 'Histogram', 'ItemList', 'M
             return original(unpack(arg))
         end
     end
+end
+
+--- Whether this state is a session's.
+function InSession()
+    return inSession
 end
 
 --- The factor of the session's HUD: what the app works out from the screen, times the user's UI scale, within the lines the HUD needs.

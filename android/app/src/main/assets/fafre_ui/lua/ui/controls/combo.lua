@@ -40,12 +40,7 @@ do
             local list = self._list
             local dropdown = self._dropdown
             local frame = GetFrame(0)
-            -- A row of a list of text is as high as its font: FAF's font, larger.
-            local wanted = Scale.PicturePixels(ROW_MM)
-            if list:GetRowHeight() < wanted then
-                local points = math.ceil(list._font._pointsize() * wanted / list:GetRowHeight())
-                list:SetFont(list._font._family(), (points + 0.5) / LayoutHelpers.GetPixelScaleFactor())
-            end
+            Scale.FitRows(list, ROW_MM)
             local row = list:GetRowHeight()
             local border = dropdown.Height() - list.Height()
             local below = math.min(frame.Bottom() - self.Bottom(), Scale.ShownLines())

@@ -1,7 +1,7 @@
 
 -- The UI package (android/TOUCH_UI.md): the lobby is a page of its panel and of its Launch button, which stands out below it: all of
 -- FAF's 768 lines. Its slot rows lie further apart when the map has few of them: the 16 rows of FAF's layout have room for 8 at twice the
--- distance.
+-- distance. A finger that rests on an observer for the host's right click sees which row it has.
 do
     local ok, problem = pcall(function()
         local Scale = import('/fafre_ui/lua/fafre/scale.lua')
@@ -12,7 +12,12 @@ do
         local rowHeight = false
         local pitch = LEAST_PITCH
 
-        CreateUI = Scale.Page(CreateUI, function()
+        local Create = CreateUI
+        CreateUI = Scale.Page(function(...)
+            local results = {Create(unpack(arg))}
+            Scale.Try('the list of observers', function() GUI.observerList:ShowMouseoverItem(true) end)
+            return unpack(results)
+        end, function()
             return GUI.panel, {
                 top = math.max(0, GUI.panel.Top() - LayoutHelpers.ScaleNumber(8)),
                 bottom = math.min(GetFrame(0).Height(), GUI.panel.Bottom() + LayoutHelpers.ScaleNumber(8)),

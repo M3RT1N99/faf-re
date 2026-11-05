@@ -43,6 +43,11 @@ public class PageInputTest {
         }
 
         @Override
+        public void rightClick(float x, float y) {
+            events.add("right " + (int) x + " " + (int) y);
+        }
+
+        @Override
         public void lookForList(float x, float y) {
             events.add("list? " + (int) x + " " + (int) y);
         }
@@ -116,20 +121,114 @@ public class PageInputTest {
     }
 
     @Test
-    public void aTapAfterALongRestIsAClickAtOnce() {
+    public void aTapAfterARestIsAClickAtOnce() {
         input.down(FINGER, 100, 200, 0, true);
         input.timer();
         mouse.events.clear();
-        input.up(FINGER, 900, true);
+        input.up(FINGER, 400, true);
         assertEquals(events("tap 100 200"), mouse.events);
+        assertEquals("the right click's time goes", -1, mouse.timer);
     }
 
     @Test
-    public void aRestIsFelt() {
+    public void aRestIsFeltAndALongerRestIsFeltAgain() {
         input.down(FINGER, 100, 200, 0, true);
         mouse.events.clear();
         input.timer();
         assertEquals(events("held"), mouse.events);
+        assertEquals(PageInput.RIGHT_CLICK_MILLISECONDS - PageInput.REST_MILLISECONDS, mouse.timer);
+        input.timer();
+        assertEquals(events("held", "held"), mouse.events);
+    }
+
+    @Test
+    public void nothingMoreIsFeltAfterTheSecondTime() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.timer();
+        input.timer();
+        mouse.events.clear();
+        input.timer();
+        assertEquals(events(), mouse.events);
+    }
+
+    @Test
+    public void aLongRestThatLiftsIsARightClickWhereItRests() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.timer();
+        input.timer();
+        mouse.events.clear();
+        input.up(FINGER, 600, true);
+        assertEquals(events("right 100 200"), mouse.events);
+        assertTrue(mouse.leaving);
+    }
+
+    @Test
+    public void wanderingWithinTheSlopIsStillARightClick() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.timer();
+        moveTo(106, 206);
+        input.timer();
+        mouse.events.clear();
+        input.up(FINGER, 600, true);
+        assertEquals(events("right 100 200"), mouse.events);
+    }
+
+    @Test
+    public void aLongRestThatMovesStaysADrag() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.timer();
+        input.timer();
+        mouse.events.clear();
+        moveTo(100, 240);
+        input.up(FINGER, 800, true);
+        assertEquals(events("press 100 200", "move 100 240", "release 100 240"), mouse.events);
+    }
+
+    @Test
+    public void aRestThatMovesBeforeItIsLongLeavesNoRightClickBehind() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.timer();
+        moveTo(100, 240);
+        assertEquals("the right click's time goes", -1, mouse.timer);
+        mouse.events.clear();
+        input.timer();
+        input.up(FINGER, 800, true);
+        assertEquals(events("release 100 240"), mouse.events);
+    }
+
+    @Test
+    public void aSecondFingerTakesTheRightClickBack() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.timer();
+        input.timer();
+        input.down(OTHER, 300, 200, 600, false);
+        mouse.events.clear();
+        input.up(OTHER, 700, false);
+        input.up(FINGER, 800, true);
+        assertEquals(events(), mouse.events);
+    }
+
+    @Test
+    public void whenTheSystemTakesAFingerThatRestedNoRightClickComes() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.timer();
+        input.timer();
+        mouse.events.clear();
+        input.cancel();
+        input.up(FINGER, 800, true);
+        assertEquals(events(), mouse.events);
+    }
+
+    @Test
+    public void aRightClickLeavesNothingForTheNextTapToPairWith() {
+        input.down(FINGER, 100, 200, 0, true);
+        input.timer();
+        input.timer();
+        input.up(FINGER, 600, true);
+        input.down(FINGER, 110, 205, 650, true);
+        mouse.events.clear();
+        input.up(FINGER, 800, true);
+        assertEquals(events("tap 110 205"), mouse.events);
     }
 
     @Test

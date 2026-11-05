@@ -4,7 +4,9 @@ package io.github.m3rt1n99.fafre;
  * Fingers in the menus (android/TOUCH_UI.md), where a screen is read and scrolled:
  *
  * <ul>
- *   <li>a tap is a click, also after a long rest;
+ *   <li>a tap is a click, also after a rest, as a careful finger is slow;
+ *   <li>a finger that rests {@link #RIGHT_CLICK_MILLISECONDS}, which it feels a second time, and lifts without moving is a click of
+ *       the right button;
  *   <li>a finger that moves mainly up or down scrolls, the list under it first and then the page, and presses nothing;
  *   <li>a finger that moves mainly sideways is a mouse's drag from where it came down: a slider;
  *   <li>a finger that rested {@link #REST_MILLISECONDS} and then moves is a mouse's drag in any direction: a scroll bar's
@@ -27,6 +29,9 @@ final class PageInput implements Fingers {
 
         /** A tap, a click of the left button, which the game's UI may give to a small control beside it. */
         void tap(float x, float y);
+
+        /** A click of the right button, which the game's UI may give to a small control beside it as a tap's. */
+        void rightClick(float x, float y);
 
         /** A finger came down here: if it goes on to scroll, it is the list here that it scrolls. */
         void lookForList(float x, float y);
@@ -55,6 +60,9 @@ final class PageInput implements Fingers {
     /** How long a finger stays before it moves for a drag. */
     static final long REST_MILLISECONDS = 300;
 
+    /** How long a finger stays before it lifts for a click of the right button. */
+    static final long RIGHT_CLICK_MILLISECONDS = 500;
+
     private enum State {
         /** No finger. */
         NONE,
@@ -62,6 +70,8 @@ final class PageInput implements Fingers {
         PENDING,
         /** One finger rested: a move drags now. */
         RESTED,
+        /** One finger rested longer: a move still drags, and lifting it is a click of the right button. */
+        RESTED_LONG,
         SCROLLING,
         /** One finger holds the left button. */
         DRAGGING,
@@ -103,7 +113,7 @@ final class PageInput implements Fingers {
             finishClick();
             mSecondId = -1;
             startPending(id, x, y, time);
-        } else if (mState == State.PENDING || mState == State.RESTED) {
+        } else if (mState == State.PENDING || mState == State.RESTED || mState == State.RESTED_LONG) {
             mMouse.stopTimer();
             mSecondId = id;
             mState = State.TWO;
@@ -147,7 +157,9 @@ final class PageInput implements Fingers {
                 }
                 break;
             case RESTED:
+            case RESTED_LONG:
                 if (beyondSlop()) {
+                    mMouse.stopTimer();
                     startDrag();
                 }
                 break;
@@ -183,6 +195,10 @@ final class PageInput implements Fingers {
                 case RESTED:
                     mMouse.stopTimer();
                     click(time);
+                    mState = State.SPENT;
+                    break;
+                case RESTED_LONG:
+                    mMouse.rightClick(mStartX, mStartY);
                     mState = State.SPENT;
                     break;
                 case DRAGGING:
@@ -235,6 +251,10 @@ final class PageInput implements Fingers {
     void timer() {
         if (mState == State.PENDING) {
             mState = State.RESTED;
+            mMouse.held();
+            mMouse.startTimer(RIGHT_CLICK_MILLISECONDS - REST_MILLISECONDS);
+        } else if (mState == State.RESTED) {
+            mState = State.RESTED_LONG;
             mMouse.held();
         }
         finishClick();

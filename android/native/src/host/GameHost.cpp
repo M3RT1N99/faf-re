@@ -389,9 +389,9 @@ namespace
     moho::UI_CancelBuildDrag();
   }
 
-  /// On the program's thread, which knows the controls around the tap: a click where it landed, of the small
+  /// On the program's thread, which knows the controls around the place: a click where it landed, of the small
   /// control it meant, or none. Press and release in one task, so that they stay together.
-  void Tap(const WPARAM places)
+  void ClickNear(const WPARAM places, const int button)
   {
     float targetX = 0;
     float targetY = 0;
@@ -399,21 +399,33 @@ namespace
           static_cast<float>(Coordinate(places, 0)), static_cast<float>(Coordinate(places, 1)), static_cast<float>(Coordinate(places, 2)),
           static_cast<float>(Coordinate(places, 3)), &targetX, &targetY
         )) {
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, static_cast<int>(targetX), static_cast<int>(targetY));
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, FALSE, static_cast<int>(targetX), static_cast<int>(targetY));
+      Win32Android_TouchButton(button, TRUE, static_cast<int>(targetX), static_cast<int>(targetY));
+      Win32Android_TouchButton(button, FALSE, static_cast<int>(targetX), static_cast<int>(targetY));
       menufingers::NoteTapOnField(targetX, targetY);
     }
   }
 
-  /// On the program's thread: a finger's press that starts a drag goes where a tap's click would, and where a tap would click
-  /// nothing, a window's title, it stays where it landed: the title takes a drag.
+  void Tap(const WPARAM places)
+  {
+    ClickNear(places, WIN32ANDROID_BUTTON_LEFT);
+  }
+
+  void RightClickNear(const WPARAM places)
+  {
+    ClickNear(places, WIN32ANDROID_BUTTON_RIGHT);
+  }
+
+  /// On the program's thread: a finger's press that starts a drag goes where a tap's click would. Where a tap would click nothing, a
+  /// window's title, it stays where it landed: the title takes a drag. So it does on a scroll bar's thumb, which a tap's help could give
+  /// away to the arrow beside it.
   void PressNear(const WPARAM places)
   {
     float targetX = 0;
     float targetY = 0;
     const float x = static_cast<float>(Coordinate(places, 0));
     const float y = static_cast<float>(Coordinate(places, 1));
-    if (!moho::UI_TapTarget(x, y, static_cast<float>(Coordinate(places, 2)), static_cast<float>(Coordinate(places, 3)), &targetX, &targetY)) {
+    if (menufingers::OnScrollBar(x, y)
+        || !moho::UI_TapTarget(x, y, static_cast<float>(Coordinate(places, 2)), static_cast<float>(Coordinate(places, 3)), &targetX, &targetY)) {
       targetX = x;
       targetY = y;
     }
@@ -603,6 +615,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_io_github_m3rt1n99_fafre_Game_pressNear(JNIEnv*, jclass, const jint x, const jint y, const jint reach, const jint smallSide)
 {
   Win32Android_RunOnWindowThread(&PressNear, Places(x, y, reach, smallSide));
+}
+
+/// A finger's click of the right button (RightClickNear). `reach` and `smallSide` in the picture's pixels.
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_rightClickNear(JNIEnv*, jclass, const jint x, const jint y, const jint reach, const jint smallSide)
+{
+  Win32Android_RunOnWindowThread(&RightClickNear, Places(x, y, reach, smallSide));
 }
 
 /// No finger is on the glass (PointerLeave).

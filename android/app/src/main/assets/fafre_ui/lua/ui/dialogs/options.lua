@@ -11,10 +11,9 @@ do
         local ALL_LINES = 646
         local LEAST_LINES = 440
         local WIDTH = 780
-        -- The brackets above and below, what lies below the rows, and where the buttons stand from the bottom.
+        -- The brackets above and below, and what lies below the rows.
         local BRACKET_LINES = 24
         local BELOW_ROWS = 100
-        local BUTTONS_FROM_BOTTOM = 83
 
         local function Factor()
             local frame = GetFrame(0)
@@ -22,20 +21,7 @@ do
             return math.max(frame.Height() / ALL_LINES, math.min(frame.Height() / LEAST_LINES, frame.Width() / WIDTH, wanted))
         end
 
-        --- A part of the frame's picture: `height` of its pixels on the screen from `from` to `to` of the picture's height.
-        local function PartOfFrame(from, to, height)
-            local part = Bitmap(dialog, UIUtil.UIFile('/scx_menu/options/panel_bmp.dds'))
-            part:SetUV(0, from, 1, to)
-            part.Height:Set(height)
-            part.Width:Set(dialog.Width)
-            part.Left:Set(dialog.Left)
-            -- Under what is on the dialog, whatever came first.
-            part.Depth:Set(dialog.Depth)
-            part:DisableHitTest()
-            return part
-        end
-
-        local function Reflow(grid, applyButton)
+        local function Reflow(grid)
             local frame = GetFrame(0)
             local row = grid._itemHeight
             local fullHeight = dialog.Height()
@@ -47,20 +33,10 @@ do
             if rows >= visible then
                 return
             end
-            local height = rowsTop + rows * row + below
-            local upper = rowsTop + math.floor(rows / 2) * row
-            local lower = height - upper
-
-            dialog.Height:Set(height)
-            dialog:SetAlpha(0)
-            PartOfFrame(0, upper / fullHeight, upper).Top:Set(dialog.Top)
-            local bottom = PartOfFrame(1 - lower / fullHeight, 1, lower)
-            bottom.Top:Set(function() return dialog.Bottom() - lower end)
-
+            Scale.CutFrame(dialog, UIUtil.UIFile('/scx_menu/options/panel_bmp.dds'), rowsTop + math.floor(rows / 2) * row,
+                fullHeight - (rowsTop + rows * row + below))
             grid.Height:Set(rows * row)
             grid:EndBatch()
-            local fromBottom = LayoutHelpers.ScaleNumber(BUTTONS_FROM_BOTTOM)
-            applyButton.Top:Set(function() return dialog.Bottom() - fromBottom end)
         end
 
         -- A row's own handler is for the wheel, and at this size the row no longer counts as small. So that a tap beside a choice or a
@@ -75,32 +51,20 @@ do
 
         local Create = CreateDialog
         CreateDialog = Scale.DialogAt(Factor, function(over, exitBehavior)
-            -- FAF's locals of the function: the first of the buttons is the one the others stand beside.
-            local RealButton = Button
+            -- FAF's local of the function.
             local RealGrid = Grid
-            local firstButton = false
             local grid = false
-            Button = function(...)
-                local button = RealButton(unpack(arg))
-                firstButton = firstButton or button
-                return button
-            end
             Grid = function(...)
                 grid = RealGrid(unpack(arg))
                 return grid
             end
-            -- What comes after the dialog is at the factor it had before.
-            local made, problem = pcall(Create, over, exitBehavior and function()
-                Scale.Settle()
-                exitBehavior()
-            end)
-            Button = RealButton
+            local made, problem = pcall(Create, over, exitBehavior)
             Grid = RealGrid
             if not made then
                 error(problem, 0)
             end
             Scale.Try('the rows of Options', function()
-                Reflow(grid, firstButton)
+                Reflow(grid)
             end)
         end)
 

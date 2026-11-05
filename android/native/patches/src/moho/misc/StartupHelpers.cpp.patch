@@ -1,8 +1,28 @@
 diff --git a/src/moho/misc/StartupHelpers.cpp b/src/moho/misc/StartupHelpers.cpp
-index 6325853..2740fec 100644
+index 8a8816bf..f12c1afa 100644
 --- a/src/moho/misc/StartupHelpers.cpp
 +++ b/src/moho/misc/StartupHelpers.cpp
-@@ -4494,7 +4494,11 @@ void moho::USER_SavePreferences()
+@@ -3664,14 +3664,16 @@ msvc8::string moho::FILE_Dir(const gpg::StrArg filename)
+   if (filename == nullptr || filename[0] == '\0') {
+     ThrowStartupFileError("Moho::FILE_Dir", "Null argument.");
+   }
+-  if (filename[0] == '/' && filename[1] != ':' && filename[1] != '/') {
+-    ThrowStartupFileError("Moho::FILE_Dir", "System path expected, got local.");
+-  }
+ 
+   msvc8::string fileStr;
+   fileStr.assign_owned(filename);
+   gpg::STR_Replace(fileStr, "\\", "/", std::numeric_limits<unsigned int>::max());
+ 
++  // Android client build: a system path has no drive, and starts as a path of the game's own does.
++  if (fileStr.c_str()[0] == '/') {
++    return FILE_DirPrefix(fileStr.c_str());
++  }
++
+   const bool hasDrive = FILE_HasDrive(filename);
+   const bool hasUnc = FILE_HasUNC(filename);
+   constexpr int kPathBufferLen = 260;
+@@ -4459,7 +4461,11 @@ void moho::USER_SavePreferences()
  
    // Through std::filesystem::path: the wchar_t* constructor is an MSVC STL extension
    // (libc++ converts the path to UTF-8 on POSIX).

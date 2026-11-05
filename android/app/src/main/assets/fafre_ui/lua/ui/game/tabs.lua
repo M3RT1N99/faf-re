@@ -10,13 +10,6 @@ do
                 return BuildOther(contentID)
             end
             BuildMenu(contentID)
-            -- A button's next texture would size it anew at the HUD's factor.
-            Scale.Try('the size of the buttons of the Menu tab', function()
-                for _, button in (controls.contentGroup and controls.contentGroup.Buttons or {}) do
-                    button.Width:SetValue(button.Width())
-                    button.Height:SetValue(button.Height())
-                end
-            end)
         end
     end)
     if not ok then

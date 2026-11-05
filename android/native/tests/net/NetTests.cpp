@@ -877,8 +877,9 @@ namespace
   void AThreadThatDoesNotStartEndsTheConstructor()
   {
     // The connector's last owner deletes it, but not what is still being constructed: the exception unwinds the
-    // constructor as any other, and the new-expression frees the memory. What this process has mapped is all
-    // it may have for a moment, so a new thread's stack does not fit; the heap's regions are mapped already.
+    // constructor as any other, and the new-expression frees the memory. Half of what this process has mapped is
+    // all it may have for a moment, so a new thread's stack does not fit, also when the thread of an earlier
+    // connector ends meanwhile and gives its own stack back; the heap's regions are mapped already.
     rlimit before{};
     CHECK(::getrlimit(RLIMIT_AS, &before) == 0);
     FILE* const statm = std::fopen("/proc/self/statm", "r");
@@ -889,7 +890,7 @@ namespace
     }
     CHECK(std::fclose(statm) == 0);
     rlimit tight = before;
-    tight.rlim_cur = pages * static_cast<unsigned long long>(::sysconf(_SC_PAGESIZE));
+    tight.rlim_cur = pages * static_cast<unsigned long long>(::sysconf(_SC_PAGESIZE)) / 2;
     CHECK(::setrlimit(RLIMIT_AS, &tight) == 0);
     bool thrown = false;
     try {

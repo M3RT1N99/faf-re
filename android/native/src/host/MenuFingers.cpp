@@ -292,6 +292,16 @@ void menufingers::NoteTapOnField(const float x, const float y)
   }
 }
 
+bool menufingers::OnScrollBar(const float x, const float y)
+{
+  try {
+    return dynamic_cast<moho::CMauiScrollbar*>(ControlAt(x, y)) != nullptr;
+  } catch (const std::exception& exception) {
+    gpg::Warnf("MenuFingers: %s", exception.what());
+    return false;
+  }
+}
+
 JNIEXPORT jint JNI_OnLoad(JavaVM* const vm, void*)
 {
   JNIEnv* env = nullptr;

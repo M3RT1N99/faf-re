@@ -112,6 +112,9 @@ final class Game {
     /** A finger's press for a drag, the left button's, on the small control it meant if there is one within `reach`. */
     static native void pressNear(int x, int y, int reach, int smallSide);
 
+    /** A finger's click of the right button in the menus, on the small control it meant if there is one within `reach`. */
+    static native void rightClickNear(int x, int y, int reach, int smallSide);
+
     /** Whether a building's ghost waits to be placed. */
     static native boolean placingBuilding();
 
