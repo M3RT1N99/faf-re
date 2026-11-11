@@ -44,6 +44,9 @@ void Win32Android_WaitForScreenSurface();
 void Win32Android_RunOnWindowThread(void (*task)(WPARAM argument), WPARAM argument);
 /// The same, in place of this task if it is still the last thing waiting, as Windows coalesces mouse moves.
 void Win32Android_RunNewestOnWindowThread(void (*task)(WPARAM argument), WPARAM argument);
+/// Runs `task` on the thread of the program's windows once it has nothing else: its input, its tasks and its paint, in
+/// which the program draws, are taken. In place of this task if it still waits. Nothing without a window.
+void Win32Android_RunWhenIdle(void (*task)(WPARAM argument), WPARAM argument);
 
 /// What draws on the screen says that a frame went to it, and the host hears of the first one.
 void Win32Android_FramePresented();

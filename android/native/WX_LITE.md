@@ -159,7 +159,8 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
     handlers.
   - The message layer (`MessageLayerTests.cpp`): the queue's order, ranges and windows;
     `SendMessageW` within and across threads (`InSendMessage`); `WM_QUIT` after the posted
-    messages; `WM_PAINT` until validated; buttons for the window under the pointer in its client
+    messages; `WM_PAINT` until validated; the host's task for an idle thread after the input, the
+    tasks and the paint, the newest only; buttons for the window under the pointer in its client
     coordinates, with `WM_SETCURSOR` first; the capture; double clicks by the class's
     `CS_DBLCLKS`; key messages' `lParam` bits (repeat count, scan code, extended, context, previous
     state, transition), `TranslateMessage`, `GetKeyState`, also for a key let go in the back,

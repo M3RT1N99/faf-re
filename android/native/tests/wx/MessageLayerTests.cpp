@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -312,6 +313,117 @@ WXT_TEST(PaintComesWhenTheQueueIsEmptyUntilValidated)
   WXT_CHECK_EQ(msg.message, UINT{WM_PAINT});
   WXT_CHECK(::ValidateRect(window.hwnd(), nullptr));
   WXT_CHECK(!Take(&msg));
+}
+
+namespace
+{
+  int sIdleRuns = 0;
+  WPARAM sIdleArgument = 0;
+  std::vector<UINT> sSeenWhenIdle;
+
+  void IdleTask(const WPARAM argument)
+  {
+    ++sIdleRuns;
+    sIdleArgument = argument;
+    sSeenWhenIdle = Sequence({WM_USER + 1, WM_MOUSEMOVE, WM_PAINT});
+  }
+} // namespace
+
+WXT_TEST(ATaskForAnIdleThreadComesAfterItsInputAndPaintTheNewestOnly)
+{
+  RecordingWindow window(nullptr, 0, 0, 50, 50, kShownPopup);
+  wxtest::Pump();
+  Messages().clear();
+  sIdleRuns = 0;
+  sSeenWhenIdle.clear();
+
+  // As the program asks it in a frame, before the frame is drawn: what it draws is known after the paint.
+  Win32Android_RunWhenIdle(&IdleTask, 1);
+  WXT_CHECK(::InvalidateRect(window.hwnd(), nullptr, FALSE));
+  (void)::PostMessageW(window.hwnd(), WM_USER + 1, 0, 0);
+  Win32Android_RunOnWindowThread(&MoveTask, PlaceOf(20, 20));
+  Win32Android_RunWhenIdle(&IdleTask, 2);
+  wxtest::Pump();
+  WXT_CHECK_EQ(sIdleRuns, 1);
+  WXT_CHECK_EQ(sIdleArgument, WPARAM{2});
+  WXT_CHECK((sSeenWhenIdle == std::vector<UINT>{WM_USER + 1, WM_MOUSEMOVE, WM_PAINT}));
+
+  // Given from another thread to one that has looked, it wakes the wait.
+  std::thread giver([] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    Win32Android_RunWhenIdle(&IdleTask, 3);
+  });
+  WXT_CHECK_EQ(::MsgWaitForMultipleObjectsEx(0, nullptr, 10000, QS_ALLINPUT, 0), DWORD{WAIT_OBJECT_0});
+  giver.join();
+  wxtest::Pump();
+  WXT_CHECK_EQ(sIdleRuns, 2);
+  WXT_CHECK_EQ(sIdleArgument, WPARAM{3});
+  MSG msg;
+  WXT_CHECK(!Take(&msg));
+}
+
+WXT_TEST(ATaskForAnIdleThreadWaitsForAllElseWhateverTheFilters)
+{
+  RecordingWindow left(nullptr, 0, 0, 50, 50, kShownPopup);
+  RecordingWindow right(nullptr, 60, 0, 50, 50, kShownPopup);
+  wxtest::Pump();
+  sIdleRuns = 0;
+  Win32Android_RunWhenIdle(&IdleTask, 4);
+  MSG msg;
+  WXT_CHECK(::PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE));
+  const HWND carrier = msg.hwnd;
+  const HWND other = carrier == left.hwnd() ? right.hwnd() : left.hwnd();
+  WXT_CHECK(carrier == left.hwnd() || carrier == right.hwnd());
+
+  // Only for its window, and only with its message in the range.
+  WXT_CHECK(!::PeekMessageW(&msg, other, 0, 0, PM_NOREMOVE));
+  WXT_CHECK(!::PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE));
+  WXT_CHECK(::PeekMessageW(&msg, carrier, 0, 0, PM_NOREMOVE));
+
+  // Not while anything else waits that the filters leave out: another window's paint, a posted message, WM_QUIT.
+  WXT_CHECK(::InvalidateRect(other, nullptr, FALSE));
+  WXT_CHECK(!::PeekMessageW(&msg, carrier, 0, 0, PM_NOREMOVE));
+  WXT_CHECK(::ValidateRect(other, nullptr));
+  (void)::PostMessageW(other, WM_USER + 1, 0, 0);
+  WXT_CHECK(!::PeekMessageW(&msg, carrier, 0, 0, PM_NOREMOVE));
+  WXT_CHECK(Take(&msg));
+  WXT_CHECK_EQ(msg.message, WM_USER + 1);
+  ::PostQuitMessage(0);
+  WXT_CHECK(Take(&msg));
+  WXT_CHECK_EQ(msg.message, UINT{WM_QUIT});
+  WXT_CHECK(Take(&msg));
+  (void)::DispatchMessageW(&msg);
+  WXT_CHECK_EQ(sIdleRuns, 1);
+  WXT_CHECK_EQ(sIdleArgument, WPARAM{4});
+  WXT_CHECK(!Take(&msg));
+}
+
+WXT_TEST(ATaskForAnIdleThreadOutlivesItsWindowWhileTheThreadHasAnother)
+{
+  auto first = std::make_unique<RecordingWindow>(nullptr, 0, 0, 50, 50, kShownPopup);
+  auto second = std::make_unique<RecordingWindow>(nullptr, 60, 0, 50, 50, kShownPopup);
+  wxtest::Pump();
+  sIdleRuns = 0;
+  Win32Android_RunWhenIdle(&IdleTask, 5);
+  MSG msg;
+  WXT_CHECK(::PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE));
+  const bool firstCarries = msg.hwnd == first->hwnd();
+  std::unique_ptr<RecordingWindow>& carrier = firstCarries ? first : second;
+  std::unique_ptr<RecordingWindow>& remaining = firstCarries ? second : first;
+  carrier.reset();
+  WXT_CHECK(::PeekMessageW(&msg, remaining->hwnd(), 0, 0, PM_NOREMOVE));
+  WXT_CHECK(msg.hwnd == remaining->hwnd());
+  wxtest::Pump();
+  WXT_CHECK_EQ(sIdleRuns, 1);
+  WXT_CHECK_EQ(sIdleArgument, WPARAM{5});
+
+  // With the thread's last window it goes, as a posted task does.
+  Win32Android_RunWhenIdle(&IdleTask, 6);
+  remaining.reset();
+  wxtest::Pump();
+  RecordingWindow later(nullptr, 0, 0, 50, 50, kShownPopup);
+  wxtest::Pump();
+  WXT_CHECK_EQ(sIdleRuns, 1);
 }
 
 WXT_TEST(AButtonGoesToTheWindowUnderThePointerInItsCoordinates)

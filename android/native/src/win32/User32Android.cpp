@@ -105,6 +105,7 @@ namespace
     MSG lastKeyDown{}; // the last key press taken from the queue, and what it types
     wchar_t lastKeyCharacter = 0;
     int taskInput = -1; // while the host's task runs on the thread: the input it has given so far, right behind it; else -1
+    std::deque<Posted> idle; // the host's tasks for when the thread has nothing else (Win32Android_RunWhenIdle)
   };
 
   struct DeviceContext
@@ -450,6 +451,21 @@ namespace
     return window != nullptr && IsDescendantLocked(WindowLocked(filter), window);
   }
 
+  /// Which of the host's tasks for an idle thread these filters take (Win32Android_RunWhenIdle): the first they take, once the
+  /// thread has nothing else, whatever the filters: no posted message, no WM_QUIT, no window to paint. Else the end.
+  std::size_t IdleTaskLocked(const ThreadQueue& queue, const HWND filter, const UINT filterMin, const UINT filterMax)
+  {
+    if (queue.idle.empty() || !queue.posted.empty() || queue.quit || !InRange(kRunTaskMessage, filterMin, filterMax)
+        || PaintWindowLocked(Layer().topLevel, queue, nullptr) != nullptr) {
+      return queue.idle.size();
+    }
+    std::size_t at = 0;
+    while (at < queue.idle.size() && !ForWindowLocked(queue.idle[at].msg, filter)) {
+      ++at;
+    }
+    return at;
+  }
+
   UINT WakeBit(const UINT message)
   {
     if (message >= WM_KEYFIRST && message <= WM_KEYLAST) {
@@ -482,8 +498,11 @@ namespace
     if ((wakeMask & QS_POSTMESSAGE) != 0 && queue.quit && InRange(WM_QUIT, filterMin, filterMax)) {
       return true;
     }
-    return (wakeMask & QS_PAINT) != 0 && InRange(WM_PAINT, filterMin, filterMax)
-        && PaintWindowLocked(Layer().topLevel, queue, WindowLocked(filter)) != nullptr;
+    if ((wakeMask & QS_PAINT) != 0 && InRange(WM_PAINT, filterMin, filterMax)
+        && PaintWindowLocked(Layer().topLevel, queue, WindowLocked(filter)) != nullptr) {
+      return true;
+    }
+    return (wakeMask & QS_POSTMESSAGE) != 0 && IdleTaskLocked(queue, filter, filterMin, filterMax) < queue.idle.size();
   }
 
   /// A key or button going down or up in the key state (GetKeyState): bit 7 while down, bit 0 toggled by each press.
@@ -727,6 +746,15 @@ namespace
         return TRUE;
       }
     }
+
+    // Last, once the input, the tasks and the paint are taken: a task for when the thread has nothing else.
+    if (const std::size_t at = IdleTaskLocked(queue, filter, filterMin, filterMax); at < queue.idle.size()) {
+      *out = queue.idle[at].msg;
+      if ((remove & PM_REMOVE) != 0) {
+        queue.idle.erase(queue.idle.begin() + static_cast<std::ptrdiff_t>(at));
+      }
+      return TRUE;
+    }
     return FALSE;
   }
 
@@ -823,11 +851,26 @@ namespace
     std::vector<Window*>& siblings = SiblingsLocked(window);
     siblings.erase(std::remove(siblings.begin(), siblings.end(), window), siblings.end());
     for (auto& entry : layer.queues) {
-      std::deque<Posted>& posted = entry.second->posted;
+      ThreadQueue& queue = *entry.second;
+      std::deque<Posted>& posted = queue.posted;
       posted.erase(
         std::remove_if(posted.begin(), posted.end(), [window](const Posted& p) { return p.msg.hwnd == Handle(window); }),
         posted.end()
       );
+      // A task for the idle thread is the thread's, not the window's: another of its top-level windows takes it on, if any.
+      const auto carrier = std::find_if(layer.topLevel.begin(), layer.topLevel.end(), [window, &queue](const Window* top) {
+        return top != window && top->queue == &queue;
+      });
+      for (auto it = queue.idle.begin(); it != queue.idle.end();) {
+        if (it->msg.hwnd != Handle(window)) {
+          ++it;
+        } else if (carrier != layer.topLevel.end()) {
+          it->msg.hwnd = Handle(*carrier);
+          ++it;
+        } else {
+          it = queue.idle.erase(it);
+        }
+      }
     }
     for (Window* other : layer.windows) {
       if (other->owner == window) {
@@ -3140,6 +3183,27 @@ void Win32Android_RunNewestOnWindowThread(void (*const task)(WPARAM), const WPAR
   } else {
     PostInputLocked(*window->queue, window, kRunTaskMessage, argument, reinterpret_cast<LPARAM>(task), 0);
   }
+}
+
+void Win32Android_RunWhenIdle(void (*const task)(WPARAM), const WPARAM argument)
+{
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  if (layer.topLevel.empty()) {
+    return;
+  }
+  Window* const window = layer.topLevel.front();
+  ThreadQueue& queue = *window->queue;
+  for (Posted& waiting : queue.idle) {
+    if (waiting.msg.lParam == reinterpret_cast<LPARAM>(task)) {
+      waiting.msg.wParam = argument;
+      return;
+    }
+  }
+  Posted posted;
+  posted.msg = MSG{Handle(window), kRunTaskMessage, argument, reinterpret_cast<LPARAM>(task), ::GetTickCount(), layer.cursor};
+  queue.idle.push_back(posted);
+  Wake(queue);
 }
 
 void Win32Android_MouseMove(const int x, const int y)
