@@ -13,9 +13,11 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.InputType;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
+import android.view.Choreographer;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -51,8 +53,9 @@ import java.util.Locale;
  * process of its own (":game") that ends with the program, as a Windows program's does. It plays
  * FAF's game files of the newest version this app has (the replay test downloads them) on the
  * user's Supreme Commander: Forged Alliance. A mouse is the mouse and fingers act as one
- * (TouchInput), keys are the keyboard, and Back is Esc; a bar at the screen's edge has what a mouse
- * and keyboard have and fingers have not. The game draws at its own size (PictureSize). The report's
+ * (TouchInput), or with the touch scheme Griff (TouchScheme) as its gestures, keys are the keyboard,
+ * and Back is Esc; a bar at the screen's edge has what a mouse and keyboard have and fingers have
+ * not, or Griff's rail. The game draws at its own size (PictureSize). The report's
  * lines show on the screen while the game starts, and again when it ends or fails.
  */
 public final class GameActivity extends Activity implements SurfaceHolder.Callback {
@@ -68,6 +71,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double BAR_BUTTON_MM = 9;
     private static final double BAR_MENU_BUTTON_MM = 6.5;
     private static final double BAR_GAP_MM = 0.5;
+    /** Griff's rail: three buttons over each other, each at most this big. */
+    private static final double RAIL_BUTTON_MM = 11;
+    /**
+     * Griff's handle (the preview's sizes): its radius; how much further from it a finger is still on it; its room from the
+     * selection's units, of which a unit's icon takes some beyond its middle.
+     */
+    private static final double GRIFF_RADIUS_MM = 5.5;
+    private static final double GRIFF_TOUCH_MM = 1.5;
+    private static final double GRIFF_GAP_MM = 4.5;
+    /** How far beyond the handle's edge its arrow at a group elsewhere reaches. */
+    private static final double GRIFF_ARROW_MM = 2;
     private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
@@ -125,6 +139,25 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** Whose the fingers now on the glass are: Lua can change it, not under them. */
     private Fingers mFingers;
     private final Runnable mTouchTimer = () -> mTouch.timer();
+    /** The touch scheme Griff (TouchScheme) for this game, its rail, and what it draws over the game. */
+    private boolean mGriff;
+    private final Rail mRail = new Rail();
+    private final List<TextView> mRailButtons = new ArrayList<>();
+    private int mRailShown = -1;
+    private GriffLayer mGriffLayer;
+    /** The handle as Game.griff gives it, and where the screen shows it, while a game is on. */
+    private final float[] mGriffHandle = new float[6];
+    private boolean mGriffShown;
+    private float mGriffX;
+    private float mGriffY;
+    private boolean mGriffPolling;
+    private final Choreographer.FrameCallback mGriffFrame = new Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            readGriff();
+            Choreographer.getInstance().postFrameCallback(this);
+        }
+    };
     private final Runnable mPageTimer = () -> mPageInput.timer();
     private final Runnable mPointerLeave = Game::pointerLeave;
     private final Runnable mReadProgram = this::readProgram;
@@ -205,6 +238,70 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         @Override
         public void stopTimer() {
             mHandler.removeCallbacks(mTouchTimer);
+        }
+
+        @Override
+        public void smartTap(float x, float y, boolean again, int rail) {
+            Game.smartTap(pictureX(x), pictureY(y), again, rail);
+        }
+
+        @Override
+        public void deselect() {
+            Game.deselect();
+        }
+
+        @Override
+        public boolean onGriff(float x, float y) {
+            // As the last frame placed it. With Box the handle steps aside, for a box that starts under it.
+            readGriff();
+            return mGriffShown && (rail() & TouchInput.RAIL_BOX) == 0
+                && Math.hypot(x - mGriffX, y - mGriffY) <= (GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * viewPixelsPerMm();
+        }
+
+        @Override
+        public void griffTap() {
+            Game.toGroup();
+        }
+
+        @Override
+        public void route(float[] xs, float[] ys, int count, int rail) {
+            int[] places = new int[2 * count];
+            for (int at = 0; at < count; ++at) {
+                places[2 * at] = pictureX(xs[at]);
+                places[2 * at + 1] = pictureY(ys[at]);
+            }
+            Game.route(places, count, rail);
+        }
+
+        @Override
+        public void strokeShown(float[] xs, float[] ys, int count, boolean back) {
+            mGriffLayer.showStroke(xs, ys, count, back, (rail() & TouchInput.RAIL_ATTACK) != 0);
+        }
+
+        @Override
+        public int rail() {
+            return mRail.counting(SystemClock.uptimeMillis());
+        }
+
+        @Override
+        public void railUsed(int rail) {
+            mRail.used(rail);
+            showRail();
+        }
+
+        @Override
+        public void griffDrag(float x, float y, boolean rested, int rail) {
+            Game.griffDrag(pictureX(x), pictureY(y), rested, rail);
+        }
+
+        @Override
+        public void griffDragEnd(float x, float y) {
+            Game.griffDragEnd(pictureX(x), pictureY(y));
+        }
+
+        @Override
+        public void restTap(float x, float y, int rail) {
+            Game.restTap(pictureX(x), pictureY(y), rail);
         }
     };
 
@@ -313,6 +410,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mHudScale = hudScale();
         mScreenMm = screenShortSideMm();
         mTouch = new TouchInput(mTouchMouse, ViewConfiguration.get(this).getScaledTouchSlop());
+        mGriff = TouchScheme.of(this) == TouchScheme.GRIFF;
+        mTouch.setGriff(mGriff);
+        mTouch.setMillimetre(viewPixelsPerMm());
         mPageInput = new PageInput(mPageMouse, ViewConfiguration.get(this).getScaledTouchSlop());
         mWheelPixels = ViewConfiguration.get(this).getScaledVerticalScrollFactor();
         mFingers = mTouch;
@@ -332,6 +432,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             placeSurface();
         });
         root.addView(mFingerLayer);
+        if (mGriff) {
+            mGriffLayer = new GriffLayer(this);
+            mGriffLayer.setSizes(viewPixelsPerMm(), GRIFF_RADIUS_MM, GRIFF_ARROW_MM);
+            root.addView(mGriffLayer);
+        }
         mKeyboardTarget = new KeyboardTarget(this);
         root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
         mText = new TextView(this);
@@ -345,6 +450,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mBar.setVisibility(View.GONE);
         root.addView(mBar, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.TOP));
+        if (mGriff) {
+            mBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> setGriffBar());
+        }
         placeBar(false);
         mTyped = new TextView(this);
         mTyped.setTextSize(18);
@@ -564,6 +672,21 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private LinearLayout bar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.VERTICAL);
+        if (mGriff) {
+            // Griff's rail, Box, Plus and Attack over each other, and the keyboard's button beside the first.
+            LinearLayout first = new LinearLayout(this);
+            railButton(first, "Box", TouchInput.RAIL_BOX);
+            mKeysButton = barButton(first, "Keys");
+            mKeysButton.setOnClickListener(view -> toggleKeyboard());
+            bar.addView(first);
+            LinearLayout second = new LinearLayout(this);
+            railButton(second, "Plus", TouchInput.RAIL_QUEUE);
+            bar.addView(second);
+            LinearLayout third = new LinearLayout(this);
+            railButton(third, "Attack", TouchInput.RAIL_ATTACK);
+            bar.addView(third);
+            return bar;
+        }
         LinearLayout top = new LinearLayout(this);
         toggle(top, "Order", mTouch::setSwapped);
         toggle(top, "Shift", on -> Game.key(KeyEvent.KEYCODE_SHIFT_LEFT, 0, on, 0));
@@ -588,7 +711,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** In a game the bar sits where the HUD leaves room (HudScale), in the menus only the keyboard's button stays, in a corner. */
     private void placeBar(boolean inGame) {
         mBarInGame = inGame;
-        int size = viewMm(inGame ? Math.min(BAR_BUTTON_MM, barRoomMm() / 2 - BAR_GAP_MM) : BAR_MENU_BUTTON_MM);
+        int size = viewMm(inGame ? gameButtonMm() : BAR_MENU_BUTTON_MM);
         int gap = viewMm(BAR_GAP_MM / 2);
         for (TextView button : mGameButtons) {
             button.setVisibility(inGame ? View.VISIBLE : View.GONE);
@@ -602,6 +725,19 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         FrameLayout.LayoutParams place = (FrameLayout.LayoutParams) mBar.getLayoutParams();
         place.topMargin = inGame ? (int) Math.round(HudScale.barTopPixels(hudFactor()) * viewPixelsPerPicturePixel()) : 0;
         mBar.setLayoutParams(place);
+        if (mGriff) {
+            if (!inGame) {
+                releaseRail();
+            }
+            pollGriff(inGame);
+        }
+    }
+
+    /** In a game the bar's rows fill the room the HUD leaves, up to a finger's size: Griff's rail has three, the mouse's bar two. */
+    private double gameButtonMm() {
+        return mGriff
+            ? Math.min(RAIL_BUTTON_MM, barRoomMm() / 3 - BAR_GAP_MM)
+            : Math.min(BAR_BUTTON_MM, barRoomMm() / 2 - BAR_GAP_MM);
     }
 
     /** The HUD's factor: the user's UI scale can have changed what the app worked out. */
@@ -630,6 +766,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return (int) Math.round(mm * Math.min(metrics.widthPixels, metrics.heightPixels) / mScreenMm);
     }
 
+    /** The view's pixels in a mm on the glass. */
+    private float viewPixelsPerMm() {
+        DisplayMetrics metrics = realMetrics();
+        return (float) (Math.min(metrics.widthPixels, metrics.heightPixels) / mScreenMm);
+    }
+
     private double viewPixelsPerPicturePixel() {
         DisplayMetrics metrics = realMetrics();
         return (double) Math.min(metrics.widthPixels, metrics.heightPixels) / pictureLines();
@@ -652,6 +794,136 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             view.setBackground(barBackground(view.isSelected()));
             toggled.set(view.isSelected());
         });
+    }
+
+    /** One of Griff's rail buttons (Rail): a tap lights it for the next action, a hold counts while held; Plus held is Shift held. */
+    private void railButton(LinearLayout row, String label, int bit) {
+        TextView button = barButton(row, label);
+        button.setTag(bit);
+        mGameButtons.add(button);
+        mRailButtons.add(button);
+        button.setOnTouchListener(new RailTouch(bit, ViewConfiguration.get(this).getScaledTouchSlop()));
+    }
+
+    /** A finger on a rail button. It is the button's own: a finger on the map is another view's, and both go on at once. */
+    private final class RailTouch implements View.OnTouchListener {
+        private final int mBit;
+        private final float mSlop;
+        private float mDownX;
+        private float mDownY;
+        private boolean mMoved;
+
+        RailTouch(int bit, float slop) {
+            mBit = bit;
+            mSlop = slop;
+        }
+
+        @Override
+        public boolean onTouch(View view, MotionEvent event) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    mDownX = event.getX();
+                    mDownY = event.getY();
+                    mMoved = false;
+                    if (!mRail.held(mBit)) {
+                        mRail.press(mBit, event.getEventTime());
+                        if (mBit == TouchInput.RAIL_QUEUE) {
+                            Game.holdShift(true);
+                        }
+                    }
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    mMoved |= Math.hypot(event.getX() - mDownX, event.getY() - mDownY) > mSlop;
+                    break;
+                case MotionEvent.ACTION_UP:
+                    letGo(event.getEventTime(), !mMoved && event.getX() >= 0 && event.getY() >= 0
+                        && event.getX() < view.getWidth() && event.getY() < view.getHeight(), false);
+                    break;
+                case MotionEvent.ACTION_CANCEL:
+                    letGo(event.getEventTime(), false, true);
+                    break;
+                default:
+                    break;
+            }
+            showRail();
+            return true;
+        }
+
+        private void letGo(long time, boolean stayed, boolean cancelled) {
+            if (!mRail.held(mBit)) {
+                return;
+            }
+            if (cancelled) {
+                mRail.cancel(mBit);
+            } else {
+                mRail.release(mBit, time, stayed);
+            }
+            if (mBit == TouchInput.RAIL_QUEUE) {
+                Game.holdShift(false);
+            }
+        }
+    }
+
+    /** The rail as it is: its lit and held buttons, and the handle's look. */
+    private void showRail() {
+        int shown = mRail.shown();
+        if (shown == mRailShown) {
+            return;
+        }
+        mRailShown = shown;
+        for (TextView button : mRailButtons) {
+            button.setBackground(barBackground((shown & (Integer) button.getTag()) != 0));
+        }
+        if (mGriffLayer != null) {
+            mGriffLayer.setRail(shown);
+        }
+    }
+
+    /** The rail put away, and with Plus the Shift it holds: nothing is held where no finger can let go of it. */
+    private void releaseRail() {
+        if (mRail.held(TouchInput.RAIL_QUEUE)) {
+            Game.holdShift(false);
+        }
+        mRail.clear();
+        showRail();
+    }
+
+    /** The handle as the last frame placed it, where the screen shows it, while a game is on. */
+    private void readGriff() {
+        mGriffShown = mGriffPolling && Game.griff(mGriffHandle);
+        if (mGriffShown) {
+            mGriffX = mPageView.screenX(mGriffHandle[0]);
+            mGriffY = mPageView.screenY(mGriffHandle[1]);
+        }
+        mGriffLayer.setHandle(mGriffShown, mGriffX, mGriffY, mPageView.screenX(mGriffHandle[2]), mPageView.screenY(mGriffHandle[3]),
+            (int) mGriffHandle[4], mGriffHandle[5] != 0);
+    }
+
+    /** While a game is on and the activity in front, the handle follows the selection each frame of the screen's. */
+    private void pollGriff(boolean on) {
+        if (on == mGriffPolling) {
+            return;
+        }
+        mGriffPolling = on;
+        if (on) {
+            Choreographer.getInstance().postFrameCallback(mGriffFrame);
+        } else {
+            Choreographer.getInstance().removeFrameCallback(mGriffFrame);
+            readGriff();
+        }
+    }
+
+    /** Griff's sizes in the picture's pixels (a game's page has no zoom), by which the program places the handle and helps taps. */
+    private void setGriff() {
+        double pixels = mPictureHeight / mScreenMm;
+        Game.setGriff(mGriff, (float) (GRIFF_RADIUS_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * pixels),
+            (float) (GRIFF_GAP_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_ARROW_MM) * pixels), (float) (TAP_REACH_MM * pixels),
+            (float) (TAP_SMALL_MM * pixels));
+    }
+
+    /** Where the bar lies over the picture, which Griff's handle keeps clear of: its buttons would cover it. */
+    private void setGriffBar() {
+        Game.setGriffBar(pictureX(mBar.getLeft()), pictureY(mBar.getTop()), pictureX(mBar.getRight()), pictureY(mBar.getBottom()));
     }
 
     private TextView barButton(LinearLayout row, String label) {
@@ -862,6 +1134,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // First: the output starts at the word that both are so, and it must not during a call.
             requestAudioFocus();
             Game.foreground(true);
+            if (mGriff && mBarInGame) {
+                pollGriff(true);
+            }
         }
     }
 
@@ -872,6 +1147,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         NetworkGameService.front(false);
         if (mStarted) {
             mFingers.cancel();
+            if (mGriff) {
+                releaseRail();
+                pollGriff(false);
+            }
             Game.foreground(false);
             getSystemService(AudioManager.class).abandonAudioFocusRequest(mAudioFocus);
         }
@@ -915,6 +1194,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mHandler.removeCallbacks(mTouchTimer);
         mHandler.removeCallbacks(mPageTimer);
         mHandler.removeCallbacks(mPointerLeave);
+        Choreographer.getInstance().removeFrameCallback(mGriffFrame);
         super.onDestroy();
     }
 
@@ -957,6 +1237,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         placeSurface();
         if (mStarted) {
             Game.surface(holder.getSurface(), width, height);
+            setGriff();
+            if (mGriff) {
+                setGriffBar();
+            }
         }
     }
 

@@ -176,4 +176,58 @@ final class Game {
 
     /** Text without a key, as an input method commits it. */
     static native void text(String text);
+
+    // --- The touch scheme Griff (src/host/GriffAndroid.cpp) ---------------------------------------------------------
+
+    /**
+     * Griff on or off, and in the picture's pixels: the handle's radius, how far from its middle a finger is on it, its room
+     * from the selection's units and how far from its middle the tip of its arrow is; the tap help's reach and what counts as
+     * a small control (as for {@link #tap}).
+     */
+    static native void setGriff(boolean on, float radius, float touchRadius, float gap, float arrowReach, float tapReach,
+                                float tapSmallSide);
+
+    /** Where the app's bar lies over the picture, in its pixels: the handle keeps clear of it. */
+    static native void setGriffBar(int left, int top, int right, int bottom);
+
+    /**
+     * The handle over the selection as the last frame placed it, in the picture's pixels, into x, y, the group's middle x and y,
+     * the selection's count, and 1 if the group is out of view or under a panel and the handle points at it, else 0. False
+     * when there is none.
+     */
+    static native boolean griff(float[] handle);
+
+    /**
+     * A tap where the finger was and the pointer has rested: FAF's click by what it lands on. `again`: soon after the last tap and
+     * near it, which the program makes the game's double click where both click the same, the UI or one's own unit. `rail`:
+     * TouchInput's RAIL_ bits that count for it.
+     */
+    static native void smartTap(int x, int y, boolean again, int rail);
+
+    /** Two fingers' tap: an armed command mode goes, or with none the selection. */
+    static native void deselect();
+
+    /** The camera goes to the selection. */
+    static native void toGroup();
+
+    /**
+     * A route of `count` waypoints, x and y pairs in the picture's pixels: FAF's right click at each, the last on what is there;
+     * all but the first with Shift, and with RAIL_QUEUE the first too. With RAIL_ATTACK each is the left click of FAF's
+     * attack-move mode, armed again where FAF ended it, or the right click where FAF offers no attack-move.
+     */
+    static native void route(int[] places, int count, int rail);
+
+    /**
+     * A finger's drag from here (`rested`: after a rest), as the place wants it: on the map a pan, or a selection box after a
+     * rest or with RAIL_BOX, with RAIL_QUEUE adding to the selection; elsewhere the left button's drag. {@link #griffDragEnd} ends it.
+     */
+    static native void griffDrag(int x, int y, boolean rested, int rail);
+
+    static native void griffDragEnd(int x, int y);
+
+    /** A finger rested here and lifted: on a panel FAF's right click, with the tap help, and with Shift for RAIL_QUEUE; on the map nothing. */
+    static native void restTap(int x, int y, int rail);
+
+    /** The rail's Plus held or let go: Shift's key, in the order of the clicks. */
+    static native void holdShift(boolean down);
 }

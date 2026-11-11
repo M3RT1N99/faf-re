@@ -70,6 +70,17 @@ public class PageViewTest {
     }
 
     @Test
+    public void whatThePictureHasHereIsWhereTheScreenShowsIt() {
+        assertEquals(772, view.screenX(824), 1);
+        assertEquals(360, view.screenY(384), 1);
+        lobby();
+        assertEquals(0, view.screenX(312), 1);
+        assertEquals(1544, view.screenX(1336), 1);
+        assertEquals(500, view.screenX(view.pictureX(500)), 1);
+        assertEquals(700, view.screenY(view.pictureY(700)), 1);
+    }
+
+    @Test
     public void aFingerScrollsWithinThePagesHeight() {
         lobby();
         float range = 768 * LOBBY_SCALE - 720;

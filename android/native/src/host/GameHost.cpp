@@ -48,6 +48,7 @@
 #include <winsock2.h>
 
 #include "../audio/FAudioPlatformAndroid.h"
+#include "HostClicks.h"
 #include "KeysAndroid.h"
 #include "MenuFingers.h"
 #include "TaskPlaces.h"
@@ -390,20 +391,13 @@ namespace
     moho::UI_CancelBuildDrag();
   }
 
-  /// On the program's thread, which knows the controls around the place: a click where it landed, of the small
-  /// control it meant, or none. Press and release in one task, so that they stay together.
+  /// Press and release in one task, so that they stay together.
   void ClickNear(const WPARAM places, const int button)
   {
-    float targetX = 0;
-    float targetY = 0;
-    if (moho::UI_TapTarget(
-          static_cast<float>(Coordinate(places, 0)), static_cast<float>(Coordinate(places, 1)), static_cast<float>(Coordinate(places, 2)),
-          static_cast<float>(Coordinate(places, 3)), &targetX, &targetY
-        )) {
-      Win32Android_TouchButton(button, TRUE, static_cast<int>(targetX), static_cast<int>(targetY));
-      Win32Android_TouchButton(button, FALSE, static_cast<int>(targetX), static_cast<int>(targetY));
-      menufingers::NoteTapOnField(targetX, targetY);
-    }
+    hostclicks::ClickNear(
+      static_cast<float>(Coordinate(places, 0)), static_cast<float>(Coordinate(places, 1)), static_cast<float>(Coordinate(places, 2)),
+      static_cast<float>(Coordinate(places, 3)), button
+    );
   }
 
   void Tap(const WPARAM places)
@@ -453,6 +447,18 @@ namespace
     }
   }
 } // namespace
+
+/// On the program's thread, which knows the controls around the place.
+void hostclicks::ClickNear(const float x, const float y, const float reach, const float smallSide, const int button)
+{
+  float targetX = 0;
+  float targetY = 0;
+  if (moho::UI_TapTarget(x, y, reach, smallSide, &targetX, &targetY)) {
+    Win32Android_TouchButton(button, TRUE, static_cast<int>(targetX), static_cast<int>(targetY));
+    Win32Android_TouchButton(button, FALSE, static_cast<int>(targetX), static_cast<int>(targetY));
+    menufingers::NoteTapOnField(targetX, targetY);
+  }
+}
 
 /// Starts the program on the engine's thread: `arguments` is its command line, the program's
 /// path first; `home` and `temp` its HOME and TMPDIR; the host's lines go to the end of

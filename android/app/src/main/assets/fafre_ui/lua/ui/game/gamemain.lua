@@ -13,3 +13,17 @@ do
         WARN('fafre_ui: ui/game/gamemain.lua: ' .. tostring(problem))
     end
 end
+
+-- Griff, the app's touch scheme: the session's UI reports where the selection is, for the handle the app shows beside it.
+do
+    local CreateGameUI = CreateUI
+    CreateUI = function(isReplay)
+        CreateGameUI(isReplay)
+        local ok, problem = pcall(function()
+            import('/fafre_ui/lua/fafre/griff.lua').Start(GetGameParent())
+        end)
+        if not ok then
+            WARN('fafre_ui: ui/game/gamemain.lua: griff: ' .. tostring(problem))
+        end
+    end
+end

@@ -162,12 +162,22 @@ public final class MainActivity extends Activity {
                 + "replay downloaded (cards 2 and 3). It draws the menus and plays a skirmish, without sound or movies yet. "
                 + "A tap is a click, a finger that moves drags, a finger that stays is the right button (an order); two fingers "
                 + "move the camera and zoom. The bar at the screen's edge has Order (taps give orders), Shift, Ctrl and the "
-                + "keyboard, and Back is Esc. The report says how it ended.");
+                + "keyboard, and Back is Esc. The report says how it ended. With the touch controls Griff (the button below) "
+                + "one finger pans instead, a rest and a drag boxes, a tap selects your own unit or gives the selection FAF's "
+                + "order there, a stroke from the round handle beside the selection lays a route that ends in the order for what "
+                + "it ends on (your factory with engineers: assist), and two fingers tapping deselect; the bar has Box, Plus "
+                + "(queue) and Attack, lit by a tap for the next action or held for as long as they are held. The touch "
+                + "controls count from the game's next start: a game that runs keeps its own.");
         mStartButtons.add(button(game, "Start the game", v -> startActivity(new Intent(this, GameActivity.class))));
         Button size = button(game, PictureSize.label(this), null);
         size.setOnClickListener(v -> {
             PictureSize.next(this);
             size.setText(PictureSize.label(this));
+        });
+        Button touch = button(game, TouchScheme.label(this), null);
+        touch.setOnClickListener(v -> {
+            TouchScheme.next(this);
+            touch.setText(TouchScheme.label(this));
         });
         mGameResult = text("", 14, TEXT);
         game.addView(mGameResult);

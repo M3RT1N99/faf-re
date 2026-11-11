@@ -97,6 +97,75 @@ public class TouchInputTest {
             timer = -1;
         }
 
+        /** Griff: the handle's place, and the rail's buttons that count. */
+        float griffX = -1000;
+        float griffY = -1000;
+        float griffReach = 20;
+        int rail;
+        /** Griff: what the screen last got of the stroke. */
+        int shown = -1;
+        boolean shownBack;
+
+        @Override
+        public void smartTap(float x, float y, boolean again, int railNow) {
+            events.add("smart tap " + (int) x + " " + (int) y + (again ? " again" : "") + " rail " + railNow);
+        }
+
+        @Override
+        public void deselect() {
+            events.add("deselect");
+        }
+
+        @Override
+        public boolean onGriff(float x, float y) {
+            return Math.hypot(x - griffX, y - griffY) <= griffReach;
+        }
+
+        @Override
+        public void griffTap() {
+            events.add("griff tap");
+        }
+
+        @Override
+        public void route(float[] xs, float[] ys, int count, int railNow) {
+            StringBuilder route = new StringBuilder("route");
+            for (int at = 0; at < count; ++at) {
+                route.append(' ').append(Math.round(xs[at])).append(' ').append(Math.round(ys[at])).append(at + 1 < count ? "," : "");
+            }
+            events.add(route + " rail " + railNow);
+        }
+
+        @Override
+        public void strokeShown(float[] xs, float[] ys, int count, boolean back) {
+            shown = count;
+            shownBack = back;
+        }
+
+        @Override
+        public int rail() {
+            return rail;
+        }
+
+        @Override
+        public void railUsed(int used) {
+            events.add("rail used " + used);
+        }
+
+        @Override
+        public void griffDrag(float x, float y, boolean rested, int railNow) {
+            events.add("griff drag " + (int) x + " " + (int) y + (rested ? " rested" : "") + " rail " + railNow);
+        }
+
+        @Override
+        public void griffDragEnd(float x, float y) {
+            events.add("griff drag end " + (int) x + " " + (int) y);
+        }
+
+        @Override
+        public void restTap(float x, float y, int railNow) {
+            events.add("rest tap " + (int) x + " " + (int) y + " rail " + railNow);
+        }
+
         private static String name(int button) {
             return button == Game.BUTTON_LEFT ? "left" : button == Game.BUTTON_RIGHT ? "right" : "middle";
         }
@@ -146,6 +215,247 @@ public class TouchInputTest {
 
     private void expect(String... events) {
         assertEquals(List.of(events), mouse.events);
+    }
+
+    // --- Griff (buildstage/touch-concept-v2.md) ---------------------------------------------------
+
+    private void griff() {
+        touch.setGriff(true);
+        touch.setMillimetre(10);
+    }
+
+    /** A stroke from (x0, y0) to (x1, y1) in steps of 5 pixels, as a finger's moves. */
+    private void strokeFirst(float x0, float y0, float x1, float y1) {
+        int steps = (int) Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 5);
+        for (int at = 1; at <= steps; ++at) {
+            moveFirst(x0 + (x1 - x0) * at / steps, y0 + (y1 - y0) * at / steps);
+        }
+    }
+
+    @Test
+    public void griffAFingerThatMovesDragsWhatIsThere() {
+        griff();
+        down(0, 100, 50, 1000);
+        moveFirst(150, 50);
+        up(0, 1200);
+        expect("move 100 50", "griff drag 100 50 rail 0", "move 150 50", "griff drag end 150 50");
+    }
+
+    @Test
+    public void griffAPanIsNoActionForTheRail() {
+        griff();
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        down(0, 100, 50, 1000);
+        moveFirst(150, 50);
+        up(0, 1200);
+        expect("move 100 50", "griff drag 100 50 rail 2", "move 150 50", "griff drag end 150 50");
+    }
+
+    @Test
+    public void griffARestThenADragIsABox() {
+        griff();
+        down(0, 100, 50, 1000);
+        assertEquals(TouchInput.REST_MILLISECONDS, mouse.timer);
+        timerRuns();
+        moveFirst(200, 100);
+        up(0, 1600);
+        expect("move 100 50", "held", "griff drag 100 50 rested rail 0", "move 200 100", "griff drag end 200 100");
+    }
+
+    @Test
+    public void griffARestAndALiftAreARestTapWhereTheFingerRested() {
+        griff();
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(103, 50);
+        up(0, 1600);
+        expect("move 100 50", "held", "rest tap 100 50 rail 2", "rail used 2");
+    }
+
+    @Test
+    public void griffASecondFingerAfterARestIsTwoFingers() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        down(1, 200, 50, 1400);
+        up(1, 1500);
+        up(0, 1510);
+        expect("move 100 50", "held", "move 200 50", "deselect");
+    }
+
+    @Test
+    public void griffBoxOnTheRailMakesADragABoxAtOnce() {
+        griff();
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 100, 50, 1000);
+        moveFirst(200, 100);
+        up(0, 1200);
+        expect("move 100 50", "griff drag 100 50 rail 1", "move 200 100", "rail used 1", "griff drag end 200 100");
+    }
+
+    @Test
+    public void griffQueueOnTheRailMakesABoxAdd() {
+        griff();
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100);
+        up(0, 1600);
+        expect("move 100 50", "held", "griff drag 100 50 rested rail 2", "move 200 100", "rail used 2", "griff drag end 200 100");
+    }
+
+    @Test
+    public void griffATapIsFafsClickByWhatItLandsOnAndUsesTheRail() {
+        griff();
+        mouse.rail = TouchInput.RAIL_QUEUE | TouchInput.RAIL_ATTACK;
+        down(0, 100, 50, 1000);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "smart tap 100 50 rail 6", "rail used 6");
+    }
+
+    @Test
+    public void griffAQuickTapWaitsForTheCursorToSettle() {
+        griff();
+        down(0, 100, 50, 1000);
+        up(0, 1040);
+        expect("move 100 50");
+        assertEquals(TouchInput.SETTLE_MILLISECONDS - 40, mouse.timer);
+        timerRuns();
+        expect("move 100 50", "smart tap 100 50 rail 0");
+    }
+
+    @Test
+    public void griffATwoFingerTapLetsTheSelectionGo() {
+        griff();
+        down(0, 100, 50, 1000);
+        down(1, 200, 50, 1050);
+        up(1, 1150);
+        up(0, 1160);
+        assertTrue(mouse.events.contains("deselect"));
+        assertFalse(mouse.events.toString().contains("right"));
+    }
+
+    @Test
+    public void griffAStrokeFromTheHandleIsARouteEndingWhereItLifted() {
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        strokeFirst(100, 50, 400, 50);
+        assertTrue("the screen shows the stroke", mouse.shown > 1);
+        up(0, 1500);
+        // 300 pixels at 150 a waypoint, ending on the lift; nothing went to the game before it.
+        expect("route 250 50, 400 50 rail 0");
+        assertEquals(0, mouse.shown);
+    }
+
+    @Test
+    public void griffARouteKeepsTheStrokesCornerAndTheRail() {
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        mouse.rail = TouchInput.RAIL_ATTACK;
+        down(0, 100, 50, 1000);
+        strokeFirst(100, 50, 160, 50);
+        strokeFirst(160, 50, 160, 300);
+        up(0, 1500);
+        String route = mouse.events.get(0);
+        assertTrue(route, route.startsWith("route 160 50,"));
+        assertTrue(route, route.endsWith("160 300 rail 4"));
+        assertEquals("rail used 4", mouse.events.get(1));
+    }
+
+    @Test
+    public void griffATapOnTheHandleTakesTheCameraToTheSelection() {
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 102, 51, 1000);
+        up(0, 1100);
+        expect("griff tap");
+    }
+
+    @Test
+    public void griffAStrokeBackToTheHandleIsGivenUp() {
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        strokeFirst(100, 50, 200, 50);
+        assertFalse(mouse.shownBack);
+        strokeFirst(200, 50, 110, 50);
+        assertTrue("the screen says lifting gives it up", mouse.shownBack);
+        up(0, 1500);
+        expect();
+    }
+
+    @Test
+    public void griffAStrokeBackToTheHandleIsGivenUpHoweverLong() {
+        // 30 mm out and back, 59 mm in all (a mm is 10 pixels here): a mind changed, not a route out and back.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        strokeFirst(100, 50, 400, 50);
+        assertFalse(mouse.shownBack);
+        strokeFirst(400, 50, 110, 50);
+        assertTrue("the screen says lifting gives it up", mouse.shownBack);
+        up(0, 2500);
+        expect();
+        assertEquals(0, mouse.shown);
+    }
+
+    @Test
+    public void griffASecondFingerGivesTheStrokeUp() {
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        strokeFirst(100, 50, 300, 50);
+        down(1, 500, 200, 1300);
+        up(1, 1400);
+        up(0, 1500);
+        expect();
+        assertEquals(0, mouse.shown);
+    }
+
+    @Test
+    public void griffADoubleTapOnAUnitIsNotTakenByTheHandleItsFirstTapRaised() {
+        griff();
+        down(0, 100, 50, 1000);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        // The first tap selected the unit, and the handle came up over it.
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 102, 50, 1200);
+        up(0, 1200 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 102 50", "smart tap 102 50 again rail 0");
+    }
+
+    @Test
+    public void griffASecondTapSoonAfterIsDecidedWhereItsFingerWas() {
+        // The first on the ground, the second beside it on a unit: the program asks what the cursor rests on, at the second
+        // finger, and clicks there; it makes a double click only of two taps that click the same.
+        griff();
+        down(0, 100, 50, 1000);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        down(0, 115, 50, 1200);
+        up(0, 1200 + TouchInput.SETTLE_MILLISECONDS);
+        // Too late for a double click.
+        down(0, 115, 50, 1800);
+        up(0, 1800 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 115 50", "smart tap 115 50 again rail 0", "move 115 50",
+               "smart tap 115 50 rail 0");
+    }
+
+    @Test
+    public void griffPlacesABuildingAsTheMouseDoes() {
+        griff();
+        mouse.placing = true;
+        down(0, 100, 50, 1000);
+        up(0, 1100);
+        expect("left down 100 50", "left up 100 50");
     }
 
     @Test

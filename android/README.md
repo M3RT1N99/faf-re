@@ -132,6 +132,29 @@ the game data they imported. Everything lives in the app's external files folder
   could not start, from the engine's log. A new game keeps the last game's as `game-previous.txt`
   and `game-previous-tombstone.pb`. A crash also leaves the engine's own report in the game's HOME
   (`faf_crash_latest.txt`).
+- **Touch controls**: a button on the game card chooses how fingers play a game, *mouse* (the default, above) or *Griff*
+  (`TouchScheme`), from the game's next start on (a game that runs, also in the back, keeps the controls it started with),
+  and the menus are the same in both. With Griff a finger works the map directly, and every gesture is one of FAF's own
+  inputs, as a PC player gives them ([TOUCH_UI.md](TOUCH_UI.md), "Griff"):
+  - A tap on your own unit selects it, two quick taps select all of its type on the screen. A tap anywhere else gives the
+    selection FAF's order there, as its right click does: move, attack an enemy, assist a factory with engineers.
+  - One finger that moves pans the camera; one that rests a moment and then moves draws a selection box. Two fingers pan
+    and zoom, as with the mouse, and a quick tap of two fingers lets the selection go (or ends an order picked in the
+    orders panel). A finger that rests on a unit shows what it is, and lifts with nothing done.
+  - A round handle with the selection's count stands beside it, clear of its units, or at the screen's edge with an arrow
+    when the group is out of view or under a panel. A tap on it brings the camera to the group. A stroke from it lays a
+    route: moves queued along the way, and at its end FAF's order for what it ends on (an enemy: attack, a factory: assist,
+    the minimap: that place). For factories alone the route is their rally point. A second finger, or a stroke back to
+    the handle however far it went, gives the route up.
+  - The bar at the left edge has *Box* (a drag is a box at once, a tap on a unit adds it or takes it out), *Plus* (orders
+    are queued, as with Shift) and *Attack* (taps and routes are FAF's attack-move, where FAF's orders panel offers it),
+    beside *Keys*. A tap lights one for the next action; held, it counts until it is let go. An order picked in the
+    orders panel ends after the one that a lit *Plus* queues; a held *Plus* keeps it until it is let go, as Shift does.
+  - On FAF's panels a tap is a click and a rest a right click (on an avatar: go to it), with the same help beside small
+    controls as with the mouse, and a building's ghost is placed as with the mouse.
+  - Not there yet: three taps for all of a type on the map, two taps for an attack-move, patrol by a loop, buildings
+    drawn as a draft with a tick and a cross, undo, order pins, the loupe, and control groups (Griff has no Ctrl to make
+    one).
 - **Network games**: *Multiplayer LAN* in the game's menu is the game's own lobby, with nothing from FAF's servers
   (`native/README.md`, The network). It plays against FAF's game on a PC in lockstep, and both sides need the same
   game: the app's FAF files are those of the newest version a replay downloaded, 3835 so far. A PC's FAF folder may

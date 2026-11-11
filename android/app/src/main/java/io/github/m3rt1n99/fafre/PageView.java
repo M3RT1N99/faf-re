@@ -204,4 +204,17 @@ final class PageView {
         }
         return Math.max(0, Math.min(pictureSize - 1, Math.round(place * pictureSize / viewSize)));
     }
+
+    /** From the picture's pixels to the screen's, for what the app draws over the game. */
+    float screenX(float x) {
+        return toScreen(x, viewWidth(), mPictureWidth) + viewLeft();
+    }
+
+    float screenY(float y) {
+        return toScreen(y, viewHeight(), mPictureHeight) + viewTop();
+    }
+
+    private static float toScreen(float place, int viewSize, int pictureSize) {
+        return viewSize <= 0 || pictureSize <= 0 ? place : place * viewSize / pictureSize;
+    }
 }

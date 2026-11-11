@@ -40,6 +40,22 @@ package io.github.m3rt1n99.fafre;
  *
  * <p>A mouse's pointer goes on being somewhere, and the game shows what it is over. A finger's goes, shortly after the
  * last finger has lifted ({@link Mouse#leaveSoon}), so that a rollover does not stay in the way of what it opened.
+ *
+ * <p>With {@link #setGriff} the fingers follow the touch scheme Griff (buildstage/touch-concept-v2.md) instead, but for
+ * a building's ghost, which they place as above:
+ *
+ * <ul>
+ *   <li>a finger that moves pans the camera; one that rests {@link #REST_MILLISECONDS} and then moves draws a selection
+ *       box, with the rail's Box without the rest; on a panel or the minimap it drags as a mouse ({@link Mouse#griffDrag});
+ *   <li>a finger that rests and lifts is FAF's right click on a panel, and nothing on the map ({@link Mouse#restTap});
+ *   <li>a tap is FAF's click by what it lands on ({@link Mouse#smartTap}): one's own unit is selected, else the selection
+ *       gets FAF's right click there;
+ *   <li>a finger that starts on the handle over the selection ({@link Mouse#onGriff}) draws a route, whose waypoints go
+ *       to {@link Mouse#route} when it lifts; one that lifts where it began was a tap on the handle, and one that comes
+ *       back to the handle gives the route up, as does a second finger;
+ *   <li>a quick tap of two fingers lets the selection go;
+ *   <li>the rail's buttons ({@link Mouse#rail}) count for the next action, or while held.
+ * </ul>
  */
 final class TouchInput implements Fingers {
     /** What the fingers do, on the thread that calls this class. */
@@ -92,7 +108,71 @@ final class TouchInput implements Fingers {
         void startTimer(long milliseconds);
 
         void stopTimer();
+
+        /**
+         * Griff: a tap that the program decides by what is under it, where the finger was and the cursor has rested: the game's
+         * UI takes it as {@link #tap}; one's own unit is selected (with RAIL_BOX added to the selection or taken out); else the
+         * selection, if there is one, gets FAF's right click there (RAIL_QUEUE with Shift, RAIL_ATTACK as an attack-move).
+         * `again`: it came soon after the last tap and near it, which the program makes the game's double click where both
+         * click the same, the UI or one's own unit.
+         */
+        void smartTap(float x, float y, boolean again, int rail);
+
+        /** Griff: no unit is selected any more. */
+        void deselect();
+
+        /** Griff: whether the handle over the selection is under this place. */
+        boolean onGriff(float x, float y);
+
+        /** Griff: a tap on the handle, which takes the camera to the selection. */
+        void griffTap();
+
+        /**
+         * Griff: a route from the handle, `count` waypoints, each FAF's right click there, the last on what is there; all but the
+         * first with Shift, the first too with RAIL_QUEUE; with RAIL_ATTACK attack-moves ({@link Game#route}).
+         */
+        void route(float[] xs, float[] ys, int count, int rail);
+
+        /** Griff: the stroke as far as it goes, for the screen; count 0: none. `back`: lifting now gives it up. */
+        void strokeShown(float[] xs, float[] ys, int count, boolean back);
+
+        /** Griff: the rail's buttons that count now, RAIL_ bits. */
+        int rail();
+
+        /** Griff: an action used these of the rail's buttons: one that was on for the next action goes off. */
+        void railUsed(int rail);
+
+        /**
+         * Griff: a drag begins where the finger came down (`rested`: after a rest), which the program makes what the place
+         * wants: on the map a pan of the camera, or a selection box after a rest or with RAIL_BOX, with RAIL_QUEUE adding to
+         * the selection; on a panel or the minimap the left button's drag, as a mouse's. The pointer's moves follow, and
+         * {@link #griffDragEnd} ends it.
+         */
+        void griffDrag(float x, float y, boolean rested, int rail);
+
+        /** Griff: what {@link #griffDrag} pressed goes up here. */
+        void griffDragEnd(float x, float y);
+
+        /** Griff: a rest without a drag: on a panel FAF's right click there (RAIL_QUEUE with Shift), on the map nothing. */
+        void restTap(float x, float y, int rail);
     }
+
+    /** Griff: the rail's buttons, as Mouse#rail has them. */
+    static final int RAIL_BOX = 1;
+    static final int RAIL_QUEUE = 2;
+    static final int RAIL_ATTACK = 4;
+    /** Griff: how long a finger rests before its drag draws a box instead of panning. */
+    static final long REST_MILLISECONDS = 300;
+    /** Griff: a route's waypoints, about one per this many mm, and its corners within this. */
+    private static final float WAYPOINT_MM = 15;
+    private static final float CORNER_MM = 2.5f;
+    /**
+     * Griff: a stroke that comes back this near its start gives the route up, however long it went. (The concept's patrol, a long
+     * stroke that ends there, is not built: until it is, such a loop is a route given up too, not one out and back.)
+     */
+    private static final float BACK_MM = 7;
+    private static final int STROKE_POINTS = 512;
+    private static final int MAX_WAYPOINTS = 32;
 
     /** How long a finger stays before it holds the button. */
     static final long HOLD_MILLISECONDS = 350;
@@ -117,6 +197,7 @@ final class TouchInput implements Fingers {
     /** What a waiting click does instead of a button. */
     private static final int NO_CLICK = -1;
     private static final int DELETE_ORDER = -2;
+    private static final int GRIFF_TAP = -3;
 
     private enum State {
         /** No finger. */
@@ -133,6 +214,10 @@ final class TouchInput implements Fingers {
         PLACE_LINE_READY,
         /** One finger draws a line of buildings. */
         PLACE_LINE,
+        /** Griff: one finger rested; when it moves, it draws a selection box. */
+        RESTED,
+        /** Griff: one finger draws a route from the handle over the selection. */
+        STROKE,
         /** Two fingers, and nothing shown yet of what they do. */
         TWO_PENDING,
         PANNING,
@@ -150,13 +235,20 @@ final class TouchInput implements Fingers {
         private float mX;
         private float mY;
 
-        void clickedAt(float x, float y, long time, float slop) {
-            boolean again = time - mTime <= DOUBLE_TAP_MILLISECONDS && Math.hypot(x - mX, y - mY) <= 2 * slop;
+        /** A click here now; whether it comes soon after the last and near it. */
+        boolean clickedAt(float x, float y, long time, float slop) {
+            boolean again = recent(x, y, time, slop);
             mTime = time;
             if (!again) {
                 mX = x;
                 mY = y;
             }
+            return again;
+        }
+
+        /** Whether a click here now would be the game's double click with the last. */
+        boolean recent(float x, float y, long time, float slop) {
+            return time - mTime <= DOUBLE_TAP_MILLISECONDS && Math.hypot(x - mX, y - mY) <= 2 * slop;
         }
 
         float x() {
@@ -222,11 +314,36 @@ final class TouchInput implements Fingers {
     private final ClickPlace mLastClick = new ClickPlace();
     private float mScreenWidth = Float.MAX_VALUE;
     private float mScreenHeight = Float.MAX_VALUE;
+    /** Griff: the touch scheme is on; the screen's pixels in a mm. */
+    private boolean mGriff;
+    private float mMillimetre = 10;
+    /** Griff: the rail's buttons as they were when a waiting tap's finger lifted, and whether it came soon after the last tap. */
+    private int mClickRail;
+    private boolean mClickAgain;
+    /** Griff: what the finger holds is a drag the program pressed (Mouse#griffDrag), not `mPressed`. */
+    private boolean mPressedGriff;
+    /** Griff: the stroke from the handle, in the screen's pixels, and how far it has gone from its start. */
+    private final float[] mStrokeX = new float[STROKE_POINTS];
+    private final float[] mStrokeY = new float[STROKE_POINTS];
+    private int mStrokeCount;
+    private float mStrokeFar;
+    private final float[] mWaypointX = new float[MAX_WAYPOINTS];
+    private final float[] mWaypointY = new float[MAX_WAYPOINTS];
 
     /** `slop`: how far a finger may wander in the screen's pixels and still count as staying. */
     TouchInput(Mouse mouse, float slop) {
         mMouse = mouse;
         mSlop = slop;
+    }
+
+    /** The touch scheme Griff in place of the mouse, for the gestures that begin after this. */
+    void setGriff(boolean griff) {
+        mGriff = griff;
+    }
+
+    /** The screen's pixels in a mm on the glass, by which Griff's routes measure their waypoints. */
+    void setMillimetre(float pixels) {
+        mMillimetre = pixels;
     }
 
     void setSwapped(boolean swapped) {
@@ -266,8 +383,13 @@ final class TouchInput implements Fingers {
         } else if (mState == State.PLACE_LINE) {
             giveUpLine();
             mState = State.SPENT;
-        } else if (mState == State.PENDING || mState == State.PLACE_PENDING || mState == State.PLACE_LINE_READY) {
-            mGhostToRestore = mState != State.PENDING && mGhostPlaced;
+        } else if (mState == State.STROKE) {
+            // A second finger gives the route up.
+            mMouse.strokeShown(mStrokeX, mStrokeY, 0, false);
+            mState = State.SPENT;
+        } else if (mState == State.PENDING || mState == State.RESTED || mState == State.PLACE_PENDING
+                   || mState == State.PLACE_LINE_READY) {
+            mGhostToRestore = mState != State.PENDING && mState != State.RESTED && mGhostPlaced;
             mMouse.stopTimer();
             mSecond.id = id;
             mSecond.place(x, y);
@@ -285,6 +407,10 @@ final class TouchInput implements Fingers {
     private void startOneFinger(int id, float x, float y, long time) {
         if (!mDeleting && mMouse.placing()) {
             startPlacing(id, x, y, time);
+        } else if (mGriff && !mLastClick.recent(x, y, time, mSlop) && mMouse.onGriff(x, y)) {
+            // A second tap on a unit is its double click, even where the first one has raised the handle.
+            mGhostPlaced = false;
+            startStroke(id, x, y, time);
         } else {
             mGhostPlaced = false;
             startPending(id, x, y, time);
@@ -298,8 +424,21 @@ final class TouchInput implements Fingers {
         mStartY = y;
         mStartTime = time;
         mMouse.move(x, y);
-        mMouse.startTimer(HOLD_MILLISECONDS);
+        mMouse.startTimer(mGriff ? REST_MILLISECONDS : HOLD_MILLISECONDS);
         mState = State.PENDING;
+    }
+
+    /** Griff: a finger came down on the handle. Nothing goes to the game until it lifts. */
+    private void startStroke(int id, float x, float y, long time) {
+        mFirst.id = id;
+        mFirst.place(x, y);
+        mStartX = x;
+        mStartY = y;
+        mStartTime = time;
+        mStrokeCount = 0;
+        mStrokeFar = 0;
+        addStrokePoint(x, y);
+        mState = State.STROKE;
     }
 
     private void startPlacing(int id, float x, float y, long time) {
@@ -327,9 +466,21 @@ final class TouchInput implements Fingers {
             case PENDING:
                 if (!mDeleting && Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
                     mMouse.stopTimer();
-                    press(tapButton(), mStartX, mStartY);
-                    mMouse.move(mFirst.x, mFirst.y);
+                    if (!mGriff) {
+                        press(tapButton(), mStartX, mStartY);
+                        mMouse.move(mFirst.x, mFirst.y);
+                    } else {
+                        startGriffDrag(false);
+                    }
                 }
+                break;
+            case RESTED:
+                if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
+                    startGriffDrag(true);
+                }
+                break;
+            case STROKE:
+                strokeTo(mFirst.x, mFirst.y);
                 break;
             case PRESSED:
                 mMouse.move(mFirst.x, mFirst.y);
@@ -377,11 +528,24 @@ final class TouchInput implements Fingers {
             switch (mState) {
                 case PENDING:
                     mMouse.stopTimer();
-                    click(mDeleting ? DELETE_ORDER : tapButton(), mStartX, mStartY, time - mStartTime, time);
+                    if (mGriff) {
+                        mClickRail = mMouse.rail();
+                        click(GRIFF_TAP, mStartX, mStartY, time - mStartTime, time);
+                    } else {
+                        click(mDeleting ? DELETE_ORDER : tapButton(), mStartX, mStartY, time - mStartTime, time);
+                    }
+                    mState = State.SPENT;
+                    break;
+                case RESTED:
+                    restTap();
+                    mState = State.SPENT;
+                    break;
+                case STROKE:
+                    finishStroke();
                     mState = State.SPENT;
                     break;
                 case PRESSED:
-                    mMouse.button(mPressed, false, mFirst.x, mFirst.y);
+                    releasePressed();
                     mState = State.SPENT;
                     break;
                 case PLACE_PENDING:
@@ -400,8 +564,12 @@ final class TouchInput implements Fingers {
                     break;
                 case TWO_PENDING:
                     if (time - mStartTime <= TWO_FINGER_TAP_MILLISECONDS) {
-                        int button = mMouse.placing() ? Game.BUTTON_RIGHT : holdButton();
-                        click(button, mSecondX, mSecondY, time - mStartTime, time);
+                        if (mGriff && !mMouse.placing()) {
+                            mMouse.deselect();
+                        } else {
+                            int button = mMouse.placing() ? Game.BUTTON_RIGHT : holdButton();
+                            click(button, mSecondX, mSecondY, time - mStartTime, time);
+                        }
                     }
                     mState = State.SPENT;
                     break;
@@ -457,11 +625,14 @@ final class TouchInput implements Fingers {
     private void endGesture() {
         mMouse.stopTimer();
         if (mState == State.PRESSED) {
-            mMouse.button(mPressed, false, mFirst.x, mFirst.y);
+            releasePressed();
         } else if (mState == State.PANNING) {
             mMouse.button(Game.BUTTON_MIDDLE, false, middleX(), middleY());
         } else if (mState == State.PLACE_LINE) {
             giveUpLine();
+        } else if (mState == State.STROKE) {
+            // A route goes only where a finger lifted: the system's taking the fingers gives it up.
+            mMouse.strokeShown(mStrokeX, mStrokeY, 0, false);
         }
         finishClick();
         bringCursorBackToGhost();
@@ -471,7 +642,11 @@ final class TouchInput implements Fingers {
     /** The time from {@link Mouse#startTimer} has passed. */
     void timer() {
         if (mState == State.PENDING && !mDeleting) {
-            press(holdButton(), mStartX, mStartY);
+            if (mGriff) {
+                mState = State.RESTED;
+            } else {
+                press(holdButton(), mStartX, mStartY);
+            }
             mMouse.held();
         } else if (mState == State.PLACE_PENDING) {
             if (startedOnGhost()) {
@@ -552,16 +727,96 @@ final class TouchInput implements Fingers {
 
     private void press(int button, float x, float y) {
         mPressed = button;
+        mPressedGriff = false;
         mMouse.button(button, true, x, y);
         mState = State.PRESSED;
     }
 
+    /** Griff: a drag from where the finger came down, which the program makes a pan, a box or a panel's drag. */
+    private void startGriffDrag(boolean rested) {
+        int rail = mMouse.rail();
+        mPressedGriff = true;
+        mMouse.griffDrag(mStartX, mStartY, rested, rail);
+        mMouse.move(mFirst.x, mFirst.y);
+        mState = State.PRESSED;
+        // A box is an action that Box and Plus count for, a pan is none.
+        int used = rested || (rail & RAIL_BOX) != 0 ? rail & (RAIL_BOX | RAIL_QUEUE) : 0;
+        if (used != 0) {
+            mMouse.railUsed(used);
+        }
+    }
+
+    /** Griff: a rest and no drag. On the map the finger changed its mind; whatever it was, the rail counted for it. */
+    private void restTap() {
+        int rail = mMouse.rail();
+        mMouse.restTap(mStartX, mStartY, rail);
+        if (rail != 0) {
+            mMouse.railUsed(rail);
+        }
+    }
+
+    private void releasePressed() {
+        if (mPressedGriff) {
+            mMouse.griffDragEnd(mFirst.x, mFirst.y);
+            mPressedGriff = false;
+        } else {
+            mMouse.button(mPressed, false, mFirst.x, mFirst.y);
+        }
+    }
+
+    private void addStrokePoint(float x, float y) {
+        // Past the room for points the last one follows the finger: the route keeps its end.
+        int at = Math.min(mStrokeCount, STROKE_POINTS - 1);
+        mStrokeX[at] = x;
+        mStrokeY[at] = y;
+        mStrokeCount = at + 1;
+        mStrokeFar = Math.max(mStrokeFar, (float) Math.hypot(x - mStartX, y - mStartY));
+    }
+
+    /** Griff: the stroke follows the finger, a point per half mm, and the screen shows it. */
+    private void strokeTo(float x, float y) {
+        int last = mStrokeCount - 1;
+        if (Math.hypot(x - mStrokeX[last], y - mStrokeY[last]) < mMillimetre / 2) {
+            return;
+        }
+        addStrokePoint(x, y);
+        mMouse.strokeShown(mStrokeX, mStrokeY, mStrokeCount, strokeGoesBack());
+    }
+
+    /** Griff: lifting now gives the route up: the finger has come back to the handle. */
+    private boolean strokeGoesBack() {
+        int last = mStrokeCount - 1;
+        return Math.hypot(mStrokeX[last] - mStartX, mStrokeY[last] - mStartY) <= BACK_MM * mMillimetre;
+    }
+
+    /** Griff: the finger lifted from its stroke: a tap on the handle, a route given up, or a route. */
+    private void finishStroke() {
+        mMouse.strokeShown(mStrokeX, mStrokeY, 0, false);
+        if (mStrokeFar <= mSlop) {
+            mMouse.griffTap();
+            return;
+        }
+        addStrokePoint(mFirst.x, mFirst.y);
+        if (strokeGoesBack()) {
+            return;
+        }
+        int rail = mMouse.rail();
+        int count = Stroke.waypoints(mStrokeX, mStrokeY, mStrokeCount, WAYPOINT_MM * mMillimetre, CORNER_MM * mMillimetre,
+                                     mWaypointX, mWaypointY);
+        mMouse.route(mWaypointX, mWaypointY, count, rail);
+        if ((rail & (RAIL_QUEUE | RAIL_ATTACK)) != 0) {
+            mMouse.railUsed(rail & (RAIL_QUEUE | RAIL_ATTACK));
+        }
+    }
+
     /** A click `rested` milliseconds after the cursor came there, now or when it has settled. */
     private void click(int button, float x, float y, long rested, long time) {
-        mLastClick.clickedAt(x, y, time, mSlop);
+        mClickAgain = mLastClick.clickedAt(x, y, time, mSlop);
         mClickButton = button;
-        mClickX = mLastClick.x();
-        mClickY = mLastClick.y();
+        // Griff's tap is decided by what the cursor rests on, at the finger's place, so it clicks there; where a double click
+        // is meant, the program sends it to where the last went (Mouse#smartTap).
+        mClickX = button == GRIFF_TAP ? x : mLastClick.x();
+        mClickY = button == GRIFF_TAP ? y : mLastClick.y();
         if (rested >= SETTLE_MILLISECONDS) {
             finishClick();
         } else {
@@ -578,6 +833,14 @@ final class TouchInput implements Fingers {
         mClickButton = NO_CLICK;
         if (button == DELETE_ORDER) {
             mMouse.deleteOrder(mClickX, mClickY);
+            return;
+        }
+        if (button == GRIFF_TAP) {
+            // A tap is the next action whatever it turns out to be: the rail's buttons for it go off.
+            mMouse.smartTap(mClickX, mClickY, mClickAgain, mClickRail);
+            if (mClickRail != 0) {
+                mMouse.railUsed(mClickRail);
+            }
             return;
         }
         if (button == Game.BUTTON_LEFT) {
