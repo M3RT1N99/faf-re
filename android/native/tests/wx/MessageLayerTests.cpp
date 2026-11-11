@@ -584,6 +584,45 @@ WXT_TEST(TheForegroundActivatesTheApplicationAndComesBackToItsWindow)
   wxtest::Pump();
 }
 
+namespace
+{
+  void ReleaseShiftTask(const WPARAM)
+  {
+    Win32Android_Key(VK_SHIFT, 0x2A, FALSE, FALSE, 0);
+  }
+} // namespace
+
+WXT_TEST(AKeyLetGoInTheBackIsUpWhenTheWindowsComeBack)
+{
+  RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
+  Win32Android_SetForeground(TRUE);
+  wxtest::Pump();
+  (void)::SetFocus(window.hwnd());
+  Win32Android_Key(VK_SHIFT, 0x2A, TRUE, FALSE, 0);
+  wxtest::Pump();
+  WXT_CHECK(::GetKeyState(VK_SHIFT) < 0);
+  WXT_CHECK(::GetKeyState(VK_LSHIFT) < 0);
+
+  // As the host lets a key go that it holds for a gesture when the activity goes to the back: the key's task waits among the
+  // posted input, while the foreground's change, a sent one, comes first and leaves no window that could take the key.
+  Win32Android_RunOnWindowThread(&ReleaseShiftTask, 0);
+  Win32Android_SetForeground(FALSE);
+  wxtest::Pump();
+  WXT_CHECK(::GetFocus() == nullptr);
+  WXT_CHECK(::GetKeyState(VK_SHIFT) >= 0);
+  WXT_CHECK(::GetKeyState(VK_LSHIFT) >= 0);
+
+  // Back in front, nothing holds it.
+  Win32Android_SetForeground(TRUE);
+  wxtest::Pump();
+  WXT_CHECK(::GetFocus() == window.hwnd());
+  WXT_CHECK(::GetKeyState(VK_SHIFT) >= 0);
+  WXT_CHECK(::GetKeyState(VK_LSHIFT) >= 0);
+
+  Win32Android_SetForeground(FALSE);
+  wxtest::Pump();
+}
+
 WXT_TEST(MsgWaitWakesForNewMessagesAndOldOnesOnlyWhenAsked)
 {
   RecordingWindow window(nullptr, 0, 0, 100, 100, WS_POPUP);

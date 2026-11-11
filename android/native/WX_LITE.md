@@ -162,7 +162,8 @@ The activity's native half (`src/host/GameHost.cpp`, the app's `GameActivity`):
     messages; `WM_PAINT` until validated; buttons for the window under the pointer in its client
     coordinates, with `WM_SETCURSOR` first; the capture; double clicks by the class's
     `CS_DBLCLKS`; key messages' `lParam` bits (repeat count, scan code, extended, context, previous
-    state, transition), `TranslateMessage`, `GetKeyState`; Alt and F10 as system keys; the
+    state, transition), `TranslateMessage`, `GetKeyState`, also for a key let go in the back,
+    where no window takes it; Alt and F10 as system keys; the
     low-level keyboard hooks; the foreground and the window it activates again; the waits'
     wake-ups with and without `MWMO_INPUTAVAILABLE`, the message for a silent queue; destruction's
     order; the screen's surface and its references; that a surface which goes waits for its taker,

@@ -486,21 +486,37 @@ namespace
         && PaintWindowLocked(Layer().topLevel, queue, WindowLocked(filter)) != nullptr;
   }
 
+  /// A key or button going down or up in the key state (GetKeyState): bit 7 while down, bit 0 toggled by each press.
+  void PressLocked(const int key, const bool down)
+  {
+    BYTE& state = Layer().keys[key];
+    if (down) {
+      if ((state & 0x80) == 0) {
+        state ^= 0x01;
+      }
+      state |= 0x80;
+    } else {
+      state &= static_cast<BYTE>(~0x80);
+    }
+  }
+
+  /// A key going down or up in the key state, with the left or right one of Shift (by its scan code), Ctrl and Alt.
+  void PressKeyLocked(const int key, const bool down, const UINT scanCode, const bool extended)
+  {
+    PressLocked(key, down);
+    if (key == VK_SHIFT) {
+      PressLocked((scanCode & 0xFF) == 0x36 ? VK_RSHIFT : VK_LSHIFT, down);
+    } else if (key == VK_CONTROL) {
+      PressLocked(extended ? VK_RCONTROL : VK_LCONTROL, down);
+    } else if (key == VK_MENU) {
+      PressLocked(extended ? VK_RMENU : VK_LMENU, down);
+    }
+  }
+
   /// The key state as of an input message taken from the queue (GetKeyState).
   void TakeInputLocked(ThreadQueue& queue, const Posted& posted)
   {
-    State& layer = Layer();
     const MSG& msg = posted.msg;
-    auto press = [&layer](const int key, const bool down) {
-      if (down) {
-        if ((layer.keys[key] & 0x80) == 0) {
-          layer.keys[key] ^= 0x01;
-        }
-        layer.keys[key] |= 0x80;
-      } else {
-        layer.keys[key] &= static_cast<BYTE>(~0x80);
-      }
-    };
     switch (msg.message) {
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
@@ -508,15 +524,7 @@ namespace
     case WM_SYSKEYUP: {
       const bool down = msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN;
       const int key = static_cast<int>(msg.wParam & 0xFF);
-      press(key, down);
-      const bool extended = (msg.lParam & (1 << 24)) != 0;
-      if (key == VK_SHIFT) {
-        press(((msg.lParam >> 16) & 0xFF) == 0x36 ? VK_RSHIFT : VK_LSHIFT, down);
-      } else if (key == VK_CONTROL) {
-        press(extended ? VK_RCONTROL : VK_LCONTROL, down);
-      } else if (key == VK_MENU) {
-        press(extended ? VK_RMENU : VK_LMENU, down);
-      }
+      PressKeyLocked(key, down, static_cast<UINT>((msg.lParam >> 16) & 0xFF), (msg.lParam & (1 << 24)) != 0);
       if (down) {
         queue.lastKeyDown = msg;
         queue.lastKeyCharacter = posted.character;
@@ -525,29 +533,29 @@ namespace
     }
     case WM_LBUTTONDOWN:
     case WM_LBUTTONDBLCLK:
-      press(VK_LBUTTON, true);
+      PressLocked(VK_LBUTTON, true);
       break;
     case WM_LBUTTONUP:
-      press(VK_LBUTTON, false);
+      PressLocked(VK_LBUTTON, false);
       break;
     case WM_RBUTTONDOWN:
     case WM_RBUTTONDBLCLK:
-      press(VK_RBUTTON, true);
+      PressLocked(VK_RBUTTON, true);
       break;
     case WM_RBUTTONUP:
-      press(VK_RBUTTON, false);
+      PressLocked(VK_RBUTTON, false);
       break;
     case WM_MBUTTONDOWN:
     case WM_MBUTTONDBLCLK:
-      press(VK_MBUTTON, true);
+      PressLocked(VK_MBUTTON, true);
       break;
     case WM_MBUTTONUP:
-      press(VK_MBUTTON, false);
+      PressLocked(VK_MBUTTON, false);
       break;
     case WM_XBUTTONDOWN:
     case WM_XBUTTONDBLCLK:
     case WM_XBUTTONUP:
-      press(HIWORD(msg.wParam) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2, msg.message != WM_XBUTTONUP);
+      PressLocked(HIWORD(msg.wParam) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2, msg.message != WM_XBUTTONUP);
       break;
     default:
       break;
@@ -3230,6 +3238,9 @@ void Win32Android_Key(const UINT virtualKey, const UINT scanCode, const BOOL dow
     targetMessage = down != FALSE ? WM_SYSKEYDOWN : WM_SYSKEYUP;
   }
   if (target == nullptr) {
+    // In the back, where no message tells the windows' thread: its key state follows the keyboard, as a thread's does on
+    // Windows while another has the foreground, so that a key let go meanwhile is not down when the windows come back.
+    PressKeyLocked(key, down != FALSE, scanCode, extended != FALSE);
     return;
   }
   PostInputLocked(*target->queue, target, targetMessage, virtualKey, lParam, down != FALSE ? character : 0);
