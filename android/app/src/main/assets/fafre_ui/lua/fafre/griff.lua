@@ -65,20 +65,26 @@ local function PixelsPerLength(view, place)
     return math.max(Away(1, 0), Away(0, 1))
 end
 
---- The selection's units on the screen, in the picture's pixels: their middle and the box they take, with their sizes (a
---- factory is large on the screen), and the map's view, also with nothing selected (the app's free map).
-local function Report()
+--- The map's view on the screen, in the picture's pixels, as if nothing were selected: the app's free map, which its clicks,
+--- its plans and its pins are on; Report then adds the selection, where it can. Nothing without a view.
+local function ReportView()
     local view = WorldView.viewLeft
     if not view then
         FafreGriffBox(0)
         return
     end
-    local left, top, right, bottom = view.Left(), view.Top(), view.Right(), view.Bottom()
-    local units = GetSelectedUnits()
+    FafreGriffBox(0, 0, 0, 0, 0, 0, 0, view.Left(), view.Top(), view.Right(), view.Bottom())
+end
+
+--- The selection's units on the screen, in the picture's pixels: their middle and the box they take, with their sizes (a
+--- factory is large on the screen), and the map's view again; with nothing selected the view's own report stands.
+local function Report()
+    local view = WorldView.viewLeft
+    local units = view and GetSelectedUnits()
     if not units then
-        FafreGriffBox(0, 0, 0, 0, 0, 0, 0, left, top, right, bottom)
         return
     end
+    local left, top, right, bottom = view.Left(), view.Top(), view.Right(), view.Bottom()
     units = Members(units)
     local count = table.getn(units)
     local scale = PixelsPerLength(view, units[1]:GetPosition())
@@ -562,8 +568,10 @@ end
 
 --- Each frame of the session's UI under `parent`, while the app wants it: first the frame itself, counted for the program,
 --- whose clicks wait for frames by it, then the rest. An error stops what failed, with one warning, never the count: the
---- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on. FAF's UI tells each order it
---- gives (OnCommandIssued, which the engine looks up at each order): the program hears of it first.
+--- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on; the selection's report stops
+--- apart from the map's view, which goes on each frame (an error there says itself once), so that the clicks, the plans and
+--- the pins keep their map when the handle goes. FAF's UI tells each order it gives (OnCommandIssued, which the engine looks
+--- up at each order): the program hears of it first.
 function Start(parent)
     if not FafreGriffBox then
         return
@@ -575,16 +583,24 @@ function Start(parent)
     reporter.Height:Set(0)
     local reporting, seeing, driving = true, true, true
     local anchoring, placingPill = true, true
+    local viewSaid = false
     reporter.OnFrame = function(self, delta)
         if not FafreGriffWanted() then
             return
         end
         FafreGriffFrame()
+        local viewed, failure = pcall(ReportView)
+        if not viewed then
+            if not viewSaid then
+                WARN('fafre_ui: griff: view: ' .. tostring(failure))
+                viewSaid = true
+            end
+            FafreGriffBox(0)
+        end
         if reporting then
             local ok, problem = pcall(Report)
             if not ok then
                 WARN('fafre_ui: griff: ' .. tostring(problem))
-                FafreGriffBox(0)
                 reporting = false
             end
         end

@@ -82,7 +82,8 @@ package io.github.m3rt1n99.fafre;
  * </ul>
  *
  * While the program's own clicks run ({@link Mouse#clicking}: the draft's tick, the undo's), a finger that comes down rests and
- * gives nothing, as its gesture would act between them.
+ * gives nothing, as its gesture would act between them. A gesture they came into is given up: nothing more of it goes to the
+ * game, also once they are over ({@link Mouse#clickRuns}), as it would act on what they did.
  */
 final class TouchInput implements Fingers {
     /** What the fingers do, on the thread that calls this class. */
@@ -259,6 +260,12 @@ final class TouchInput implements Fingers {
          * a finger that comes down then rests, as its gesture would act between those clicks.
          */
         boolean clicking();
+
+        /**
+         * Griff: how many runs of the program's clicks have begun (Game.griffClickRuns): a gesture that one began in is given up,
+         * as the program's clicks take FAF's mode, the selection, Shift and the cursor from its first click on.
+         */
+        int clickRuns();
     }
 
     /** Griff: the rail's buttons, as Mouse#rail has them. */
@@ -639,6 +646,8 @@ final class TouchInput implements Fingers {
     /** Griff's draft: the plan the finger came down on (0: none), and the one a waiting tap was on. */
     private int mDraftPlan;
     private int mClickPlan;
+    /** Griff: how many runs of the program's clicks had begun when the gesture's first finger came down (#clicksCame). */
+    private int mClickRuns;
 
     /** `slop`: how far a finger may wander in the screen's pixels and still count as staying. */
     TouchInput(Mouse mouse, float slop) {
@@ -709,13 +718,18 @@ final class TouchInput implements Fingers {
         // First: a leave on its way counts as taken back, whatever this finger goes on to send.
         mMouse.stay();
         if (first) {
-            if (mState != State.NONE && mState != State.SPENT) {
+            if (live() && clicksCame()) {
+                giveUpForClicks();
+            } else if (live()) {
                 endGesture();
             }
             finishClick();
             bringCursorBackToGhost();
             mSecond.id = -1;
             startOneFinger(id, x, y, time);
+        } else if (live() && clicksCame()) {
+            // The finger joins a gesture the program's clicks came into: both rest until they lift.
+            giveUpForClicks();
         } else if (mState == State.PLACE_LINE) {
             giveUpLine();
             mState = State.SPENT;
@@ -776,6 +790,8 @@ final class TouchInput implements Fingers {
         int rail = mGriff ? mMouse.rail() : 0;
         mFingerBox = rail & RAIL_BOX;
         if (mGriff) {
+            // The runs of the program's clicks so far: one that begins while the gesture goes on gives it up (#clicksCame).
+            mClickRuns = mMouse.clickRuns();
             // A finger on the map stops the camera's glide, and FAF's reach for a unit beside a tap follows the selection, or
             // Box, which picks units: the finger's tap and rest go by this Box (#fingerRail).
             mMouse.griffDown(x, y, mFingerBox != 0);
@@ -876,6 +892,10 @@ final class TouchInput implements Fingers {
 
     @Override
     public void moved(long time) {
+        if (live() && clicksCame()) {
+            giveUpForClicks();
+            return;
+        }
         switch (mState) {
             case PENDING:
                 addTrail(time);
@@ -983,6 +1003,9 @@ final class TouchInput implements Fingers {
 
     @Override
     public void up(int id, long time, boolean last) {
+        if ((id == mFirst.id || id == mSecond.id) && live() && clicksCame()) {
+            giveUpForClicks();
+        }
         if (id == mFirst.id || id == mSecond.id) {
             switch (mState) {
                 case PENDING:
@@ -1085,7 +1108,10 @@ final class TouchInput implements Fingers {
      */
     @Override
     public void forget(int id, long time) {
-        if (mState == State.TWO_PENDING && (id == mFirst.id || id == mSecond.id)) {
+        if ((id == mFirst.id || id == mSecond.id) && live() && clicksCame()) {
+            // The finger left rests, as the gesture it was part of is given up.
+            giveUpForClicks();
+        } else if (mState == State.TWO_PENDING && (id == mFirst.id || id == mSecond.id)) {
             Finger left = id == mFirst.id ? mSecond : mFirst;
             int leftId = left.id;
             float x = left.x;
@@ -1104,8 +1130,63 @@ final class TouchInput implements Fingers {
      */
     @Override
     public void cancel() {
-        endGesture();
+        if (live() && clicksCame()) {
+            giveUpForClicks();
+        } else {
+            endGesture();
+        }
         mMouse.leaveSoon();
+    }
+
+    /** A gesture goes on: a finger is down, and what it does is not over. */
+    private boolean live() {
+        return mState != State.NONE && mState != State.SPENT;
+    }
+
+    /**
+     * Griff: whether the program's clicks came into the gesture: they run, or one of their runs began since its first finger came
+     * down. They take FAF's mode, the selection, Shift and the cursor for themselves, and the gesture's input would come between
+     * their clicks, or act on what they did once they are over (a tap after the tick's clicks would give its builders another
+     * order). Java hears of them a moment after they began; what a finger gave in that moment the program drops.
+     */
+    private boolean clicksCame() {
+        return mGriff && (mMouse.clicking() || mMouse.clickRuns() != mClickRuns);
+    }
+
+    /**
+     * Griff: the program's clicks came into the gesture (#clicksCame): it is given up, and nothing more of it goes to the game;
+     * its fingers rest until they lift. Only what shows of it goes: the ring, the stroke (Cancelled, as a stroke given up), the
+     * draft's line, move, aim or box as a second finger gives them up, and a pinch lets the camera go. A line of FAF's ghost the
+     * clicks gave up as they began, as its own cancel does, and the ghost's mode they took. A tap that waits goes too.
+     */
+    private void giveUpForClicks() {
+        mMouse.stopTimer();
+        switch (mState) {
+            case STROKE:
+                hideStroke();
+                mMouse.strokeGivenUp();
+                break;
+            case DRAFT_LINE:
+            case DRAFT_MOVE:
+            case DRAFT_AIM:
+            case DRAFT_BOX:
+                giveUpDraftGesture();
+                break;
+            case PINCHING:
+            case PINCH_PAN:
+                endPinch(false, 0);
+                break;
+            default:
+                break;
+        }
+        hideRing();
+        mPressedGriff = false;
+        mGhostToRestore = false;
+        mClickButton = NO_CLICK;
+        mLadder.clear();
+        if (mState != State.NONE) {
+            mState = State.SPENT;
+        }
     }
 
     private void endGesture() {
@@ -1132,6 +1213,10 @@ final class TouchInput implements Fingers {
 
     /** The time from {@link Mouse#startTimer} has passed. */
     void timer() {
+        if ((live() || mClickButton != NO_CLICK) && clicksCame()) {
+            giveUpForClicks();
+            return;
+        }
         if (mState == State.PENDING && !mDeleting) {
             if (mGriff) {
                 mState = State.RESTED;
@@ -1568,6 +1653,11 @@ final class TouchInput implements Fingers {
         mMouse.stopTimer();
         int button = mClickButton;
         mClickButton = NO_CLICK;
+        if (clicksCame()) {
+            // The program's clicks began since the tap's finger came down, as while its click waited for the cursor's rest: they
+            // took what it would act on.
+            return;
+        }
         if (button == DELETE_ORDER) {
             mMouse.deleteOrder(mClickX, mClickY);
             return;

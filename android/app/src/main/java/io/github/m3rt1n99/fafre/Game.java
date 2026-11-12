@@ -362,4 +362,10 @@ final class Game {
      * patience (2 s) count as over, and the next of the program's tasks ends them, a finger's down too.
      */
     static native boolean griffClicking();
+
+    /**
+     * How many runs of the program's clicks have begun, the tick's or the undo's: a gesture that one began in gives the game
+     * nothing more, as its input would come between those clicks or act on what they did (TouchInput).
+     */
+    static native int griffClickRuns();
 }

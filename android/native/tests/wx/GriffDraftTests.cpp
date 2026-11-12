@@ -1,8 +1,9 @@
 // The touch scheme Griff's draft (include/GriffDraft.h): where a plan lands, the ground plans take, the line from the newest
 // plan, the move of the whole draft and its limit, and the pixel a building's click goes to. Buildings as FAF's UEF ones: the
 // power generator (a cell, its skirt 2 by 2 about it), the mass extractor (the same, on a mass deposit), the land factory (5
-// cells, its skirt 8 by 8), the wall (a cell, its skirt the cell).
+// cells, its skirt 8 by 8), the wall (a cell, its skirt the cell); FAF drags each (DRAGBUILD).
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -23,22 +24,22 @@ namespace
 
   Building Generator()
   {
-    return Building{"ueb1101", 1, 1, -0.5f, -0.5f, 2, 2, Deposit::kNone};
+    return Building{"ueb1101", 1, 1, -0.5f, -0.5f, 2, 2, Deposit::kNone, true};
   }
 
   Building Extractor()
   {
-    return Building{"ueb1103", 1, 1, -0.5f, -0.5f, 2, 2, Deposit::kMass};
+    return Building{"ueb1103", 1, 1, -0.5f, -0.5f, 2, 2, Deposit::kMass, true};
   }
 
   Building Factory()
   {
-    return Building{"ueb0101", 5, 5, -1.5f, -1.5f, 8, 8, Deposit::kNone};
+    return Building{"ueb0101", 5, 5, -1.5f, -1.5f, 8, 8, Deposit::kNone, true};
   }
 
   Building Wall()
   {
-    return Building{"ueb5101", 1, 1, 0, 0, 1, 1, Deposit::kNone};
+    return Building{"ueb5101", 1, 1, 0, 0, 1, 1, Deposit::kNone, true};
   }
 
   /// A camera that shows the world evenly: `unitsPerPixel` world units a pixel across and down, a place at `shownX`, `shownY`
@@ -99,6 +100,42 @@ namespace
       WXT_CHECK(draft.PlaceAt(at.x, at.z, Anywhere) == Placed::kPlaced);
     }
     return draft;
+  }
+
+  /// The places FAF's build drag goes through for a click (src/moho/ui/CUIWorldViewEvents.cpp), each ordered where FAF's own
+  /// check lets it: UIBuildDragger starts where FAF's ghost put the building at the press (`ghost`: for a deposit's building
+  /// the middle of the deposit's cell it snapped to) and, for a building FAF drags, as every mass extractor, ends at the
+  /// surface point under the release (`under`, ReleaseDrag); IssueBuildDragOrders rounds both to the footprint's first cell
+  /// and steps from one to the other by the larger skirt (InitBuildDragStepState).
+  std::vector<Place> FafDrag(const Building& building, const Place& ghost, const Place& under)
+  {
+    const float halfX = static_cast<float>(building.footprintX) * 0.5f;
+    const float halfZ = static_cast<float>(building.footprintZ) * 0.5f;
+    const float startX = static_cast<float>(std::lrintf(ghost.x - halfX));
+    const float startZ = static_cast<float>(std::lrintf(ghost.z - halfZ));
+    const float deltaX = static_cast<float>(std::lrintf(under.x - halfX)) - startX;
+    const float deltaZ = static_cast<float>(std::lrintf(under.z - halfZ)) - startZ;
+    const float stride = (std::max)(building.skirtSizeX, building.skirtSizeZ);
+    const float most = (std::max)(std::fabs(deltaX), std::fabs(deltaZ));
+    float stepX = 0;
+    float stepZ = 0;
+    int count = 1;
+    if (most != 0) {
+      stepX = deltaX / most * stride;
+      stepZ = deltaZ / most * stride;
+      const float raw = most / stride;
+      const float rounded = std::nearbyintf(raw);
+      count = static_cast<int>(rounded) + (raw < rounded ? -1 : 0) + 1;
+    }
+    std::vector<Place> places;
+    float x = startX;
+    float z = startZ;
+    for (int step = 0; step < count; ++step) {
+      places.push_back(Place{static_cast<float>(std::lrintf(x)) + halfX, static_cast<float>(std::lrintf(z)) + halfZ});
+      x += stepX;
+      z += stepZ;
+    }
+    return places;
   }
 } // namespace
 
@@ -383,6 +420,80 @@ WXT_TEST(GriffDraftAnExtractorsClickLandsOnItsPlansDepositNotItsNeighbours)
   // The neighbour's plan, from the same place on the picture: its own deposit.
   WXT_CHECK(ClickFor(Extractor(), deposits, Camera{1.6f, {99.5f, 51.5f}, 640.3f, 300.0f}, clickX, clickY));
   WXT_CHECK_EQ(clickX, 640);
+}
+
+// An extractor's click must make FAF's drag build its plan's deposit alone. Mass deposits A, B and C in a row 2 apart, A first
+// in FAF's list, the plan on B, zoomed out to 1.6 world units a pixel with B's middle shown at 640.05: the nearest pixel ties
+// A and B and snaps to A, so ClickPixel takes the one across the middle, which snaps to B. But its world point is in cell
+// 103: FAF's drag from B's cell (101) to there has two steps, and the second is C, a free deposit, where FAF orders an
+// extractor that no plan asked for. No pixel about B's middle builds B alone here: the camera comes closer, and there one
+// does.
+WXT_TEST(GriffDraftAnExtractorsClickBuildsOnlyItsPlansDepositAlsoInARowOfThem)
+{
+  const std::vector<Candidate> deposits{{0, 0, {99.5f, 51.5f}}, {0, 0, {101.5f, 51.5f}}, {0, 0, {103.5f, 51.5f}}};
+  const Place b{101.5f, 51.5f};
+  const Camera far{1.6f, b, 640.05f, 300.0f};
+  const Place across = far.Under(641, 300);
+  WXT_CHECK_EQ(griffdraft::SnappedDeposit(deposits, Extractor(), across.x, across.z), 1);
+  CheckPlaces(FafDrag(Extractor(), b, across), {b, {103.5f, 51.5f}});
+  WXT_CHECK(!griffdraft::DragsOnePlace(Extractor(), b, across.x, across.z));
+  int clickX = -1;
+  int clickY = -1;
+  WXT_CHECK(!ClickFor(Extractor(), deposits, far, clickX, clickY));
+  const Camera closer{0.25f, b, 640.05f, 300.0f};
+  WXT_CHECK(ClickFor(Extractor(), deposits, closer, clickX, clickY));
+  const Place under = closer.Under(clickX, clickY);
+  WXT_CHECK_EQ(griffdraft::SnappedDeposit(deposits, Extractor(), under.x, under.z), 1);
+  CheckPlaces(FafDrag(Extractor(), b, under), {b});
+}
+
+// The rule FAF's drag sets is one step, not the deposit's own cell: with A and B only (...NotItsNeighbours above), the pixel
+// across B's middle at 640.3 lands in cell 102, one from B's: FAF's drag from B has one step, B alone, and that pixel is still
+// the click. A rule that wanted the raw point in B's cell would refuse it and move the camera for nothing.
+WXT_TEST(GriffDraftAnExtractorsClickMayLandACellBesideItsDepositWhereFafsDragHasOneStep)
+{
+  const std::vector<Candidate> deposits{{0, 0, {99.5f, 51.5f}}, {0, 0, {101.5f, 51.5f}}};
+  const Place b{101.5f, 51.5f};
+  const Camera far{1.6f, b, 640.3f, 300.0f};
+  int clickX = -1;
+  int clickY = -1;
+  WXT_CHECK(ClickFor(Extractor(), deposits, far, clickX, clickY));
+  WXT_CHECK_EQ(clickX, 641);
+  WXT_CHECK_EQ(clickY, 300);
+  CheckPlaces(FafDrag(Extractor(), b, far.Under(clickX, clickY)), {b});
+}
+
+// FAF drags only a building of its DRAGBUILD category: one it does not drag, as a mod's extractor without it, builds where
+// its ghost snapped at the press, wherever the release's world point is. Its click in the row above lands across the middle.
+WXT_TEST(GriffDraftOnlyABuildingFafDragsIsKeptToOneStep)
+{
+  const std::vector<Candidate> deposits{{0, 0, {99.5f, 51.5f}}, {0, 0, {101.5f, 51.5f}}, {0, 0, {103.5f, 51.5f}}};
+  const Place b{101.5f, 51.5f};
+  Building undragged = Extractor();
+  undragged.drags = false;
+  int clickX = -1;
+  int clickY = -1;
+  WXT_CHECK(ClickFor(undragged, deposits, Camera{1.6f, b, 640.05f, 300.0f}, clickX, clickY));
+  WXT_CHECK_EQ(clickX, 641);
+}
+
+// FAF's drag steps by the larger skirt along the axis the drag goes furthest on, either one: two cells down a column of
+// deposits are a second step as two across a row are. With no skirt to step by, a drag that goes anywhere orders nothing.
+WXT_TEST(GriffDraftADragStepsByTheLargerSkirtOnEitherAxis)
+{
+  const Place b{101.5f, 51.5f};
+  WXT_CHECK(griffdraft::DragsOnePlace(Extractor(), b, 102.4f, 52.4f));
+  WXT_CHECK(!griffdraft::DragsOnePlace(Extractor(), b, 101.5f, 53.6f));
+  WXT_CHECK(!griffdraft::DragsOnePlace(Extractor(), b, 99.4f, 51.5f));
+  Building oblong = Extractor();
+  oblong.skirtSizeZ = 4;
+  WXT_CHECK(griffdraft::DragsOnePlace(oblong, b, 104.6f, 51.5f));
+  WXT_CHECK(!griffdraft::DragsOnePlace(oblong, b, 105.6f, 51.5f));
+  Building bare = Extractor();
+  bare.skirtSizeX = 0;
+  bare.skirtSizeZ = 0;
+  WXT_CHECK(griffdraft::DragsOnePlace(bare, b, 101.7f, 51.2f));
+  WXT_CHECK(!griffdraft::DragsOnePlace(bare, b, 102.6f, 51.5f));
 }
 
 WXT_TEST(GriffDraftALineAddsItsFreePlacesInOrderUntilTheDraftIsFull)

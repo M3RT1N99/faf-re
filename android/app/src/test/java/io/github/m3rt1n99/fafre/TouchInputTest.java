@@ -289,12 +289,24 @@ public class TouchInputTest {
             events.add("draft drop");
         }
 
-        /** Griff: the program's clicks run, the tick's or the undo's. */
+        /** Griff: the program's clicks run, the tick's or the undo's, and how many runs of them have begun. */
         boolean clicking;
+        int clickRuns;
 
         @Override
         public boolean clicking() {
             return clicking;
+        }
+
+        @Override
+        public int clickRuns() {
+            return clickRuns;
+        }
+
+        /** A run of the program's clicks begins, as the tick's or the undo's does (StartClicks). */
+        void clicksBegin() {
+            clicking = true;
+            ++clickRuns;
         }
 
         /** A draft gesture's phase, and where it is unless it is given up. */
@@ -2021,6 +2033,241 @@ public class TouchInputTest {
         up(0, 9040);
         timerRuns();
         expect("move 400 300", "smart tap 400 300 rail 0");
+    }
+
+    @Test
+    public void griffAFingerDownBeforeTheProgramsClicksBeganMovesNoCursorWhileTheyRun() {
+        // A pan held from before the undo's clicks: FAF's camera drag takes each move of the cursor then, the undo's aims too,
+        // and FAF's cursor is the undo's to aim with. A finger still pending when they begin is the same once it drags.
+        griff();
+        down(0, 100, 50, 1000);
+        moveFirst(150, 50);
+        mouse.clicking = true;
+        mouse.events.clear();
+        moveFirst(200, 50);
+        moveFirst(250, 50);
+        for (String event : mouse.events) {
+            assertFalse(event, event.startsWith("move "));
+        }
+        mouse.clicking = false;
+        up(0, 1300);
+        down(0, 400, 300, 3000);
+        mouse.clicking = true;
+        mouse.events.clear();
+        moveFirst(460, 300);
+        moveFirst(500, 300);
+        for (String event : mouse.events) {
+            assertFalse(event, event.startsWith("move "));
+        }
+    }
+
+    @Test
+    public void griffAFingerOnFafsGhostBeforeTheProgramsClicksBeganClicksNothingWhileTheyRun() {
+        // FAF's ghost waited (a build key's mode) as the finger came down; the pill's undo then ended that mode and arms its
+        // own: the finger's lift would be a press in the undo's mode, with its selection and Shift, at the finger.
+        griff();
+        mouse.placing = true;
+        down(0, 500, 300, 1000);
+        mouse.placing = false;
+        mouse.clicking = true;
+        mouse.events.clear();
+        up(0, 1050);
+        for (String event : mouse.events) {
+            assertFalse(event, event.startsWith("left ") || event.startsWith("tap "));
+        }
+    }
+
+    @Test
+    public void griffAGestureTheProgramsClicksCameIntoGivesNothingOnceTheyAreOver() {
+        // A finger rests on the map as the other thumb ticks: the tick's clicks run and end while it stays. Its lift would be a
+        // tap, FAF's right click there, which would give the builders another order in place of their buildings.
+        griff();
+        down(0, 400, 300, 1000);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        mouse.events.clear();
+        up(0, 1080);
+        assertEquals(-1, mouse.timer);
+        // A rest that would draw a box: its ring goes, and nothing is pressed.
+        down(0, 400, 300, 2000);
+        timerRuns();
+        assertTrue(mouse.ringShown);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        moveFirst(460, 300);
+        assertFalse(mouse.ringShown);
+        up(0, 2600);
+        expect("move 400 300", "held");
+        // A rest that clicks began before: no ring, nothing to feel.
+        mouse.events.clear();
+        down(0, 400, 300, 2800);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        timerRuns();
+        expect("move 400 300");
+        assertFalse(mouse.ringShown);
+        up(0, 2900);
+        // A tap whose click waits for the cursor's rest, where clicks begin meanwhile; and one whose click the next finger's
+        // down would make.
+        mouse.events.clear();
+        down(0, 400, 300, 3000);
+        up(0, 3040);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        timerRuns();
+        expect("move 400 300");
+        down(0, 400, 300, 3200);
+        up(0, 3240);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        down(0, 600, 300, 3300);
+        up(0, 3500);
+        expect("move 400 300", "move 400 300", "move 600 300", "smart tap 600 300 rail 0");
+        // The next gesture is the finger's own again.
+        mouse.events.clear();
+        down(0, 400, 300, 4000);
+        up(0, 4040);
+        timerRuns();
+        expect("move 400 300", "smart tap 400 300 rail 0");
+    }
+
+    @Test
+    public void griffALineOnFafsGhostThatTheProgramsClicksCameIntoReleasesNothing() {
+        // The clicks gave the line up as they began (FAF's build drag cancelled) and took the ghost's mode: the line's finger,
+        // still all the while, moves and lifts once they are over, with nothing more of the line.
+        griff();
+        startLineTo700();
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        mouse.events.clear();
+        moveFirst(760, 300);
+        up(0, 2600);
+        expect();
+        // A second finger joins a gesture given up, and the two rest.
+        mouse.placing = false;
+        down(0, 400, 300, 3000);
+        mouse.clicksBegin();
+        mouse.events.clear();
+        down(1, 600, 300, 3030);
+        moveBoth(420, 300, 640, 300);
+        up(1, 3100);
+        up(0, 3110);
+        expect();
+    }
+
+    @Test
+    public void griffWhatTheSystemTakesOfAGestureTheProgramsClicksCameIntoGivesNothing() {
+        // A line on FAF's ghost that the system takes, as clicks ran: the clicks gave it up already.
+        griff();
+        startLineTo700();
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        mouse.events.clear();
+        touch.cancel();
+        expect();
+        up(0, 2600);
+        // Two fingers of which the system forgets one, a palm, once clicks ran: the one left is no gesture of its own.
+        mouse.placing = false;
+        down(0, 300, 300, 3000);
+        down(1, 500, 300, 3010);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        mouse.events.clear();
+        touch.forget(1, 3050);
+        moveFirst(360, 300, 3060);
+        expect();
+    }
+
+    @Test
+    public void griffAGestureTheProgramsClicksCameIntoLeavesTheCursorWhereTheyPutIt() {
+        // Two fingers came down over FAF's ghost and took the cursor from it, which their last lift would take back; and a
+        // first finger's down comes while a drag still goes on, as where Android lost its lift.
+        griff();
+        putGhost();
+        down(0, 500, 300, 2000);
+        down(1, 700, 300, 2010);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        mouse.events.clear();
+        moveBoth(480, 300, 720, 300);
+        up(1, 2100);
+        up(0, 2110);
+        expect();
+        mouse.placing = false;
+        down(0, 100, 50, 3000);
+        moveFirst(150, 50);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        mouse.events.clear();
+        touch.down(5, 900, 300, 3100, true);
+        expect("move 900 300");
+    }
+
+    @Test
+    public void griffTheTapLadderClimbsNoRungOverAGestureTheProgramsClicksCameInto() {
+        griff();
+        down(0, 100, 50, 1000);
+        up(0, 1040);
+        timerRuns();
+        touch.tapAnswered(mouse.lastTap, TouchInput.TAP_OWN);
+        down(0, 100, 50, 1100);
+        mouse.clicksBegin();
+        mouse.clicking = false;
+        up(0, 1140);
+        mouse.events.clear();
+        down(0, 100, 50, 1200);
+        up(0, 1240);
+        timerRuns();
+        expect("move 100 50", "smart tap 100 50 rail 0");
+    }
+
+    @Test
+    public void griffAGestureTheProgramsClicksCameIntoTakesWhatItShowsAway() {
+        // A stroke from the handle is given up, as by a second finger; the draft's line is put away, as by one; a pinch lets
+        // the camera go.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        strokeFirst(100, 50, 300, 50);
+        mouse.clicksBegin();
+        mouse.events.clear();
+        moveFirst(320, 50);
+        up(0, 1500);
+        expect("given up");
+        assertEquals("no stroke shown", 0, mouse.shown);
+        mouse.clicking = false;
+        draft(new int[] {1, 100, 50, 0});
+        mouse.events.clear();
+        down(0, 100, 50, 2000);
+        moveFirst(150, 50, 2010);
+        mouse.clicksBegin();
+        moveFirst(200, 50, 2020);
+        up(0, 2100);
+        expect("move 100 50", "draft line show 150 50", "draft line abort");
+        mouse.clicking = false;
+        mouse.drafting = false;
+        mouse.events.clear();
+        down(0, 300, 300, 3000);
+        down(1, 500, 300, 3010);
+        moveBoth(280, 300, 520, 300);
+        mouse.clicksBegin();
+        moveBoth(260, 300, 540, 300);
+        up(1, 3100);
+        up(0, 3110);
+        expect("move 300 300", "move 500 300", "pinch start 400 300 240", "pinch end");
+    }
+
+    @Test
+    public void theMouseSchemeAsksNothingOfTheProgramsClicks() {
+        // Griff's clicks never run with the mouse scheme, and its fingers go on as they always did.
+        mouse.clicksBegin();
+        down(0, 100, 50, 1000);
+        moveFirst(120, 50);
+        mouse.clicksBegin();
+        moveFirst(140, 60);
+        up(0, 1200);
+        expect("move 100 50", "left down 100 50", "move 120 50", "move 140 60", "left up 140 60");
     }
 
     @Test

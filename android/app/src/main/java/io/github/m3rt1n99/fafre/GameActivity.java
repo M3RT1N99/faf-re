@@ -496,6 +496,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         public boolean clicking() {
             return Game.griffClicking();
         }
+
+        @Override
+        public int clickRuns() {
+            return Game.griffClickRuns();
+        }
     };
 
     private final PageInput.Mouse mPageMouse = new PageInput.Mouse() {

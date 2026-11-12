@@ -273,7 +273,7 @@ with `fafre/griff.lua` for what only FAF's Lua knows. A finger stays within 2.5 
 | Tap on a panel, or on the map within reach of a small control | The tap help's left click (above), as with the mouse |
 | Taps in a row | The tap ladder (`TouchInput.TapLadder`): a tap within 350 ms of the last one's lift and 6 mm of it climbs a rung by what the ladder's first tap was, whatever lies under the next, which the program says of each tap (`Game.griffSaid`). After a tap that selected one's own unit: all of its type on the screen (FAF's key action `UI_SelectByCategory +inview` with the type's own category, which the engine gives each blueprint: a double click at the first tap's place could land on the panels its selection brought up), then all of it on the map (`UI_ExpandCurrentSelection`, FAF's select_all_units_of_same_type). After a plain move (FAF's right click there was a move, without *Plus* or *Attack*): an attack-move at the first tap's place, which replaces the move, as FAF cannot change an order's kind (where FAF offers no attack-move, as for factories alone, the right click again: the rally point). After a tap on nothing with nothing selected: all one's own mobile units on the screen (`UI_SelectByCategory +inview MOBILE`). A tap on FAF's UI is clicked again where the first went, within the game's own double-click reach, so the message layer makes it its double click. *Plus*, *Attack* and *Box*, a drag, a rest, a stroke and two fingers start the ladder anew. The handle leaves a finger to the ladder where it may climb (`TapLadder.climbing`: soon and near enough, below the third rung, not with *Box*, *Plus* or *Attack* counting); where its lift does not climb after all, as when it came too late or the program had not said what the first tap was, it is the handle's tap, never FAF's click at the handle's place |
 | Rest 300 ms and lift | A ring of 7 mm about the finger shows the rest. On a panel the tap help's right click (a factory's icon: one less; an avatar: select and go to it). On the map nothing: the cursor stood there, so FAF showed what is under it. With *Box* no rest (the mockup's): no ring, and the lift on the map is *Box*'s tap; *Box* as it counted at the finger's down |
-| One finger that moves | On the map the middle button's drag, FAF's pan, pressed where the finger passed the slop, so the map does not jump by it; after a rest, or with *Box*, the left button's, FAF's box, which *Plus* makes add (Shift). On a panel or the minimap the left button's drag, as a mouse's. A pan that lifts while moving (its last move within 70 ms) glides on at 0.9 of the finger's speed, slowing by e^-6t until under 0.7 mm a second: `griff.lua` moves the focus each frame of the UI by the ground the map's velocity takes past the view's middle, at FAF's own pan rate (`CameraPan`: the ground's breadth a pixel across the middle, both ways), on the system's clock, so a paused game glides too. A finger on the map or the minimap stops it, as do a key or the minimap moving the camera, and FAF's bounds of the camera |
+| One finger that moves | On the map the middle button's drag, FAF's pan, pressed where the finger passed the slop, so the map does not jump by it; after a rest, or with *Box*, the left button's, FAF's box, which *Plus* makes add (Shift). On a panel or the minimap the left button's drag, as a mouse's. A pan that lifts while moving (its last move within 70 ms) glides on (not while the program's clicks run, below) at 0.9 of the finger's speed, slowing by e^-6t until under 0.7 mm a second: `griff.lua` moves the focus each frame of the UI by the ground the map's velocity takes past the view's middle, at FAF's own pan rate (`CameraPan`: the ground's breadth a pixel across the middle, both ways), on the system's clock, so a paused game glides too. A finger on the map or the minimap stops it, as do a key or the minimap moving the camera, and FAF's bounds of the camera |
 | Two fingers | They zoom at their middle and move the camera with it at once, through the UI's camera (`griff.lua` `Pinch`, `SaveSettings`/`RestoreSettings`): the ground under their middle when they began stays under it, the zoom by how far apart they are from then, within FAF's own limits (`GetMinZoom`, `GetMaxZoom`), and the camera tilts for its zoom as FAF's does. Each move is measured on the camera the last frame drew, so it holds however many come in a frame, one frame behind the finger as FAF's own pan is; `griff.lua` takes that camera each frame apart from the glide's and the flight's steps, which an error stops alone, and where it has none the fingers do nothing. The finger left of the two moves the camera on, and a finger again beside it pinches anew. A second finger on a pan ends the pan and the two pinch, once the program has said the drag is a pan (`Game.SAID_PAN`, by the drag's number); on a box, a panel's drag or the minimap's it does nothing, and the drag goes on. A quick tap of two, within 350 ms of the first finger down and neither moved 1.5 mm, ends an armed command mode (`EndCommandMode`), else `SelectUnits(nil)` |
 | Tap on the handle | The camera flies to the group's middle, 1 - e^-14t of the way each frame (`ToGroup`), its zoom and turn kept, until it is within a pixel of it, or where FAF's bounds hold the camera (it moved less than half the step asked); at once where the system's animations are off |
 | Stroke from the handle | Waypoints about every 15 mm and at the corners (`Stroke.waypoints`); each the right click at its place, in a task of its own so that it sees what the one before did; the first replaces unless *Plus* counts, the rest go with Shift. Each picks what is under it, as the world view updates its pick at each event (`CUIWorldView::HandleEvent`), so the last one gives the order for what the stroke ends on, also on the minimap. While it is drawn, the cursor hovers at its end every 0.1 s, so FAF shows its order cursor there, and a label 14 mm above the finger says what lifting gives, from what FAF's right click there would order: Route, Attack, Assist (with engineers) or Guard, Reclaim, Capture, Order for FAF's others, Attack move with *Attack*, Minimap, Patrol, Cancel; with a dot at each waypoint. The handle stays where the stroke began. The lift counts where the finger was 50 ms before, as fingers wobble as they lift. A stroke that ends within 8 mm of where it began is a loop: longer than 40 mm, FAF's patrol (its orders panel's mode, `StartCommandMode('order', {name = 'RULEUCC_Patrol'})`, for each waypoint, armed again where FAF ended it), where FAF offers one (for factories alone a loop is their rally route, as any stroke); shorter, the finger took it back. Waypoints over a panel are left out, and a stroke that ends on a panel other than the minimap gives nothing. With *Attack* each is an attack-move, armed again where FAF ended the mode after a replacing order. A stroke given up, by a short loop, a second finger or an end on a panel, says Cancelled |
@@ -319,7 +319,8 @@ handle, and a finger makes plans (`TouchInput`'s `DRAFT_` states):
 Plans are the boxes their skirts take on the screen, in the build colour, the newest fuller, the line's fainter, red where the ground
 is taken (another plan's, or FAF's check). The tick and the cross (`DraftButton`, 13 and 11 mm, the mockup's look) stand on the map, their
 bottoms 2 mm above the construction panel, the tick 2 mm left of the column at the right (FAF's avatars), from where `griff.lua` reads them
-each frame. The cross drops the draft. The tick (`DraftCommitTask`): "No plan yet" without plans; the builders are the selected engineers,
+each frame. The cross drops the draft. The tick (`DraftCommitTask`): "No plan yet" without plans; "N plans were not ordered" at once, the
+draft kept, where the program knows no map's view to click on (`griff.lua`'s report of it failed); the builders are the selected engineers,
 else the draft's that still live ("No engineer" without), selected for the clicks (`griff.lua` `CommitBegin`) and the selection put back
 after (`CommitEnd`); plans FAF's check refuses now are left out ("N plans were on buildings", "All plans are on buildings" when none is
 left). Then per plan, a task each: FAF's build mode for its building (`StartCommandMode('build', ...)`, as the panel arms it for a build
@@ -327,24 +328,44 @@ icon, FAF's build templates cleared first: one the player picked and put away by
 build it in place of the plan) and a mouse's left click in its cell, the first replacing what the builders do unless *Plus* counts, the
 others with Shift. A finger's press would only take FAF's ghost along, so the clicks are a mouse's (`Win32Android_MouseButton`). FAF takes a
 click at a whole pixel and builds in the cell of the world point under it, so the click goes to a pixel whose world point is in the plan's
-cell, for a deposit's building one whose deposit FAF's ghost snaps to is the plan's (`include/GriffDraft.h` `ClickPixel`, `LandsAt`,
-tested): of the four pixels about the plan's middle on the picture, the nearest first. Zoomed far out a pixel spans more than a cell (on
+cell, for a deposit's building one whose deposit FAF's ghost snaps to is the plan's and, as FAF's click drags a building of its DRAGBUILD
+category (every extractor) from the snapped deposit to the world point under the release, one that keeps that drag to one step, which would
+else order an extractor on a free deposit beside (`include/GriffDraft.h` `ClickPixel`, `LandsAt`, `DragsOnePlace`, tested against a
+transcription of FAF's drag): of the four pixels about the plan's middle on the picture, the nearest first. Zoomed far out a pixel spans more than a cell (on
 Seton's Clutch fully zoomed out 1.9 world units on the phone's picture), and where none of them lands the camera comes closer for that plan
 (to a world unit's 4 pixels, not past FAF's nearest zoom) and the click comes after the next frame; a plan that cannot land then is not
 ordered. A plan not on the free map gets the camera first (`LookAt`: its focus, as high and turned as it was) and its click after the next
 frame drew it (griff.lua counts each frame of the session's UI for it, `FafreGriffFrame`, apart from its report, which an error stops: an
-idle task would come before the frame); the camera goes back after the last (`LookBack`). While the clicks run the fingers rest: no gesture
-starts (`Game.griffClicking`), the rail and the undo's pill take no tap, and a finger's task that comes after they began does nothing.
-Clicks that wait more than 2 s for a frame, as where griff.lua's frames stopped, end at the next task that would act between them (a
-finger's down is one, which goes also while the fingers rest) as their last click would end them, the plans left counted as not ordered.
+idle task would come before the frame); the camera goes back after the last (`LookBack`).
+
+The program's clicks, the tick's and the undo's (`ClickStepTask`, which both use), have FAF's mode, the selection, Shift, the cursor and the
+camera to themselves:
+- They wait while a finger's pan, box or panel drag holds FAF's dragger, which would take the cursor's moves they aim with and end between
+  them (a box's release selects): they begin after its lift, from the frame after it. The pill says *Undo…* meanwhile. A tick tapped then,
+  or while the undo's clicks run, comes after them, after an undo that waits as well (its record is a gesture's from before the tick, whose
+  orders would replace it); the cross takes a waiting tick back.
+- As they begin the camera stops (`griff.lua` `StopCamera`: a glide, a flight) and no glide starts while they run, and a line of buildings a
+  finger draws on FAF's ghost is given up, as its own cancel does: FAF's build drag holds the cursor as the others do.
+- While they run the fingers rest: no gesture starts (`Game.griffClicking`), the rail and the undo's pill take no tap. A gesture they came
+  into is given up (`TouchInput`, by the runs begun, `Game.griffClickRuns`): nothing more of it goes to the game, also once they are over,
+  where a tap would give the tick's builders another order; its fingers rest until they lift, and only what showed of it goes (a stroke
+  says Cancelled, the draft's line, move, aim or box goes as a second finger gives it up). The tasks that would act between them do nothing
+  (also the stroke's hover), and what a finger gave in the moment before the activity knew of them the program drops (`GameHost.cpp`'s
+  input tasks, the pointer's leave too).
+- Clicks that wait more than 2 s for a frame, as where griff.lua's frames stopped, end at the next task that would act between them (a
+  finger's down is one, which goes also while the fingers rest) as their last click would end them, the plans left counted as not
+  ordered; a tap on the tick then ends the tick's so, and its "N plans were not ordered" is the last word. The 2 s count only time without
+  a frame: a frame whose paint takes long has come.
+
 Picking another building keeps the plans, a
 change of selection does not end the draft, and an order mode armed while plans wait (the orders panel, a key) ends at once with "First ✓
 or ✕" (`griff.lua`'s start behaviour), while an empty draft ends and lets the mode be. The free map's cross (`griffplace::CrossAt`: how far the
 free map reaches from the view's middle up, left and right) gives its place and the stroke's label's bounds.
 
-The handle: `fafre/griff.lua`, started by the hook of `ui/game/gamemain.lua`, reports each frame of the session's UI where the selection's
-units are on the screen, with their size (`view:Project`, blueprint sizes; the mobile units, or all of a selection without any, such as
-factories). The program places it above the units, else below, right, left, 2 mm from their blueprint box (`include/GriffPlace.h`, tested in
+The handle: `fafre/griff.lua`, started by the hook of `ui/game/gamemain.lua`, reports each frame of the session's UI the map's view and,
+apart from it, where the selection's units are on the screen, with their size (`view:Project`, blueprint sizes; the mobile units, or all of
+a selection without any, such as factories): an error in the selection's walk stops that walk and the handle for the game, never the map's
+view, which the clicks, the plans and the pins go by. The program places it above the units, else below, right, left, 2 mm from their blueprint box (`include/GriffPlace.h`, tested in
 `tests/wx/GriffPlaceTests.cpp`), on the free map: the main map's view less what covers it, which one walk over the UI's controls each frame finds: the controls that
 can be seen at the map's depth or above (the HUD is drawn after the map's picture; below the map's depth are what holds it and the
 paused game's tint of the whole screen), the minimap, FAF's panels, also those that let a click through to the map beneath (the
@@ -381,7 +402,8 @@ under the rail, not where a tap for the next order goes; with no unit view laid 
 A tap on it takes the record back with a PC player's inputs (`include/GriffUndo.h`, tested in `tests/wx/GriffUndoTests.cpp`), once the
 sim has taken the gesture: the undo waits until none of the record's units has an edit of its queue that the sim has not taken yet (the
 engine's `UserCommandQueue::issueQueue`), 2 s at most (a network game takes an order its lag later, a paused game never), so that it reads
-the queues the sim holds; meanwhile the fingers rest and the pill says *Undo…*, also past its 3 s. Then, for each unit:
+the queues the sim holds; meanwhile the fingers rest and the pill says *Undo…*, also past its 3 s, as it does while a finger's pan or box
+the undo waits for still goes on. Then, for each unit:
 
 | What the gesture did to a unit | Its way back |
 |---|---|
@@ -416,8 +438,13 @@ of the gesture's that FAF draws no waypoint for (a script other than the attack-
 beside its AggressiveMove, which is done the moment it heads the queue), a waypoint FAF's cursor never hovered or a target it never picked,
 a place no frame brought onto the free map, a click FAF ordered nothing for, a unit FAF selected as the transport that carries it (left out,
 `SelectUnits` selects a carried unit's transport), and units the gesture ordered that were not selected as it began. The clicks come one a
-task, as the tick's (`ClickStepTask`, which both use), the tick's first where those run; while they run the fingers rest, as for the tick's,
-and clicks that wait more than 2 s for a frame end as the tick's, in part. After them the selection and the camera are as they were, and the
+task, as the tick's (`ClickStepTask`, which both use), the tick's first where those run, after the lift of a finger whose drag holds FAF's
+dragger; while they run the camera holds still and the fingers rest, as for the tick's, and clicks that wait more than 2 s for a frame end
+as the tick's, in part. A click comes a frame after the cursor went to its place, where FAF's cursor is found right, at the pixel that
+decides where it lands (`include/GriffUndo.h` `AimedClick`, tested): a release and a click on a unit where the cursor is, as FAF's hover
+there decides them (a unit, or a waypoint on it, may walk on meanwhile); a building at the pixel that lands it in its cell now; a click on
+the ground only while its place is shown where the cursor is still, else the cursor goes there again within the step's frames, as the
+picture still moves a frame after the camera went to a place. After them the selection and the camera are as they were, and the
 next tap climbs no ladder from the order taken back. The sim takes the undo's inputs a network delay later, as a player's, after the
 gesture's.
 

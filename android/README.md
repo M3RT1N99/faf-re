@@ -171,8 +171,9 @@ the game data they imported. Everything lives in the app's external files folder
     where a pixel spans more than a cell, and back; the cross, or a tap of two fingers, drops the draft. The selected
     engineers build it, or else the engineers selected when a building was last picked. Up to 30 plans, and a line of up to
     30; while plans wait, an order of the orders panel says "First ✓ or ✕". FAF's build keys and templates keep FAF's ghost,
-    which is placed as with the mouse; a template put away does not take the tick's place. While the tick's clicks (or the
-    undo's) run, a finger does nothing.
+    which is placed as with the mouse; a template put away does not take the tick's place. The tick (and the undo) waits
+    for a finger that pans or draws a box to lift; while their clicks run the camera holds still and a finger does nothing,
+    and a gesture they came into gives nothing more, also after them (a line on FAF's ghost is given up).
   - After an order of Griff's gestures a pill *Undo* stands for 3 s over the top of FAF's unit view, under the rail, with
     a bar of the time it has left; a tap on it takes the gesture's orders back with a PC player's inputs, once the game
     has taken them: each order of the gesture's goes by FAF's Shift+Ctrl right click on its waypoint, which takes it from
@@ -181,10 +182,10 @@ the game data they imported. Everything lives in the app's external files folder
     its name, one begun by its repair, an order on a unit where that unit is now and only while the cursor is on it; a
     factory's rally route by a first click that replaces). A route, a tick of the draft and a ground double tap are one
     undo each. Only the last order counts: one of FAF's build keys, a template, the keyboard's keys or the construction
-    panel (an enhancement, a factory's queue) takes the pill away. While it waits for the game and its clicks run the pill
-    says *Undo…*; what cannot come back (an enhancement the order took, an order on a unit that is gone) or go makes the
-    screen say *Undone in part*. Each order of Griff's gestures leaves pins at its places for 1.5 s, in the colour of its
-    kind (move, attack, patrol, build), beside FAF's own blips; FAF's ghost and keys leave none.
+    panel (an enhancement, a factory's queue) takes the pill away. While it waits for the game or a finger's pan or box and
+    its clicks run the pill says *Undo…*; what cannot come back (an enhancement the order took, an order on a unit that is
+    gone) or go makes the screen say *Undone in part*. Each order of Griff's gestures leaves pins at its places for 1.5 s,
+    in the colour of its kind (move, attack, patrol, build), beside FAF's own blips; FAF's ghost and keys leave none.
   - Not there yet: control groups (Griff has no Ctrl to make one).
 - **FAF's newest version** (card 5, *Get FAF's newest version*; `FafRelease`, `NewestGameFiles`, TestService's
   `ACTION_GAME_FILES`): so that the phone can play a PC on FAF's current version. The number is GitHub's latest release

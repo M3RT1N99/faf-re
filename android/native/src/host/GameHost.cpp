@@ -325,24 +325,39 @@ namespace
   // queue from the activity's thread could overtake a task, or fall between its press and release. That costs a drag no
   // frame: the program takes its queue until it is empty before each frame (WIN_AppExecute), and the moves of a long
   // frame still make one move.
+  // While Griff's own clicks run (the draft's tick's, the undo's), a finger's input does nothing: it would come between them
+  // in their mode, with their selection and Shift, or move the cursor they aim with. The activity holds a finger back once it
+  // knows of them (TouchInput), a moment after they began here; this is what it gave in that moment.
 
   void MoveMouse(const WPARAM place)
   {
+    if (hostclicks::GriffClicking()) {
+      return;
+    }
     Win32Android_MouseMove(Coordinate(place, 0), Coordinate(place, 1));
   }
 
   void PressMouseButton(const WPARAM press)
   {
+    if (hostclicks::GriffClicking()) {
+      return;
+    }
     Win32Android_MouseButton(Coordinate(press, 2), Coordinate(press, 3), Coordinate(press, 0), Coordinate(press, 1));
   }
 
   void PressTouchButton(const WPARAM press)
   {
+    if (hostclicks::GriffClicking()) {
+      return;
+    }
     Win32Android_TouchButton(Coordinate(press, 2), Coordinate(press, 3), Coordinate(press, 0), Coordinate(press, 1));
   }
 
   void TurnWheel(const WPARAM turn)
   {
+    if (hostclicks::GriffClicking()) {
+      return;
+    }
     Win32Android_MouseWheel(static_cast<std::int16_t>(Coordinate(turn, 2)), Coordinate(turn, 0), Coordinate(turn, 1));
   }
 
@@ -351,7 +366,8 @@ namespace
   /// finger can hit. Nothing for a tap on the UI, as the cursor's place in the world then says nothing.
   void DeleteOrderAtCursor(const WPARAM place)
   {
-    if (!moho::UI_WorldViewAt(static_cast<float>(Coordinate(place, 0)), static_cast<float>(Coordinate(place, 1)))) {
+    if (hostclicks::GriffClicking()
+        || !moho::UI_WorldViewAt(static_cast<float>(Coordinate(place, 0)), static_cast<float>(Coordinate(place, 1)))) {
       return;
     }
     moho::CON_Execute(
@@ -372,6 +388,9 @@ namespace
   /// finger's only puts the ghost.
   void TapNearGhost(const WPARAM places)
   {
+    if (hostclicks::GriffClicking()) {
+      return;
+    }
     const int fingerX = Coordinate(places, 0);
     const int fingerY = Coordinate(places, 1);
     const int ghostX = Coordinate(places, 2);
@@ -394,6 +413,9 @@ namespace
   /// Press and release in one task, so that they stay together.
   void ClickNear(const WPARAM places, const int button)
   {
+    if (hostclicks::GriffClicking()) {
+      return;
+    }
     hostclicks::ClickNear(
       static_cast<float>(Coordinate(places, 0)), static_cast<float>(Coordinate(places, 1)), static_cast<float>(Coordinate(places, 2)),
       static_cast<float>(Coordinate(places, 3)), button
@@ -415,6 +437,9 @@ namespace
   /// away to the arrow beside it.
   void PressNear(const WPARAM places)
   {
+    if (hostclicks::GriffClicking()) {
+      return;
+    }
     float targetX = 0;
     float targetY = 0;
     const float x = static_cast<float>(Coordinate(places, 0));
@@ -435,9 +460,10 @@ namespace
 
   /// On the program's thread, unless a finger has come since: the pointer leaves what it is over, as a mouse that leaves the
   /// window does, so that rollovers and tooltips go. A building's ghost follows the pointer over the world, and stays with it.
+  /// So does the cursor Griff's own clicks aim with while they run, which a finger lifted before they began would take away.
   void PointerLeave(const WPARAM fingersDownThen)
   {
-    if (gFingersDown.load() != fingersDownThen) {
+    if (gFingersDown.load() != fingersDownThen || hostclicks::GriffClicking()) {
       return;
     }
     POINT cursor{};

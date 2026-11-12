@@ -1,5 +1,6 @@
 // The touch scheme Griff's undo (include/GriffUndo.h): which commands are taken out, which lost orders are given again and
-// with which keys, and what cannot. Queues as the program reads them in a game: each command by its own id, the UI's from 0,
+// with which keys, what cannot, and the pixel of each aimed click. Queues as the program reads them in a game: each command
+// by its own id, the UI's from 0,
 // the sim's own with its source byte 0x80.
 
 #include <cmath>
@@ -521,4 +522,33 @@ WXT_TEST(GriffUndoWhichOrdersFAFDrawsAWaypointFor)
                            "DestroySelf", "Pause"}) {
     WXT_CHECK(!griffundo::Removable(Order(1, type, 0, 0)));
   }
+}
+
+// What decides where an aimed click lands: FAF's hover at the aim for a removal and a click on a unit, the building's cell
+// under the press, else the ground under it.
+WXT_TEST(GriffUndoAnAimedClickLandsByWhatFafsCursorOrItsPressPicks)
+{
+  using griffundo::Landing;
+  using griffundo::LandingOf;
+  WXT_CHECK_EQ(LandingOf(true, false, false), Landing::kHover);
+  WXT_CHECK_EQ(LandingOf(false, true, false), Landing::kHover);
+  WXT_CHECK_EQ(LandingOf(false, false, true), Landing::kBuilding);
+  WXT_CHECK_EQ(LandingOf(false, false, false), Landing::kGround);
+}
+
+// The camera glided on 16 pixels since a step aimed at 640 300. A building clicks where this frame shows its cell, a move
+// only where it is shown at the aim still, else the cursor goes there again; a removal releases at the aim, where FAF's
+// cursor hovers its command, also when the waypoint rides a unit that walked on, which an equal pixel would never meet.
+WXT_TEST(GriffUndoAnAimedClickGoesWhereItsLandingWasChecked)
+{
+  using griffundo::Aim;
+  using griffundo::AimedClick;
+  using griffundo::Landing;
+  WXT_CHECK_EQ(AimedClick(Landing::kBuilding, 640, 300, 656, 300), Aim::kHere);
+  WXT_CHECK_EQ(AimedClick(Landing::kBuilding, 640, 300, 640, 300), Aim::kHere);
+  WXT_CHECK_EQ(AimedClick(Landing::kGround, 640, 300, 656, 300), Aim::kAgain);
+  WXT_CHECK_EQ(AimedClick(Landing::kGround, 640, 300, 640, 301), Aim::kAgain);
+  WXT_CHECK_EQ(AimedClick(Landing::kGround, 640, 300, 640, 300), Aim::kAtAim);
+  WXT_CHECK_EQ(AimedClick(Landing::kHover, 640, 300, 652, 303), Aim::kAtAim);
+  WXT_CHECK_EQ(AimedClick(Landing::kHover, 640, 300, 640, 300), Aim::kAtAim);
 }

@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <limits>
 #include <string>
 #include <utility>
@@ -30,7 +31,9 @@ namespace griffdraft
   };
 
   /// What the draft takes of a building's blueprint: its footprint in whole cells and its skirt (FAF's Physics.SkirtOffset and
-  /// SkirtSize; a size of 0 is the footprint's, as FAF's GetSkirtRect has it), the ground no other building may take.
+  /// SkirtSize; a size of 0 is the footprint's, as FAF's GetSkirtRect has it), the ground no other building may take; and
+  /// whether FAF's click drags it (its DRAGBUILD category, as every extractor has): the click orders a line of it from where
+  /// its ghost was at the press to the world point under the release (UIBuildDragger::ReleaseDrag).
   struct Building
   {
     std::string id;
@@ -41,6 +44,7 @@ namespace griffdraft
     float skirtSizeX = 0;
     float skirtSizeZ = 0;
     Deposit deposit = Deposit::kNone;
+    bool drags = false;
 
     /// The skirt's breadth along x and z: a line of these buildings steps by it, so that their skirts touch, as FAF's own
     /// drag line puts them for its adjacency.
@@ -173,10 +177,26 @@ namespace griffdraft
     return nearest;
   }
 
+  /// Whether FAF's drag of a building that its ghost snapped to `deposit` at the press, to the world point under the release,
+  /// orders that one place only (IssueBuildDragOrders): it rounds both ends to the footprint's first cell, the start from the
+  /// deposit's middle cell as the ghost put it there, and steps by the larger skirt, as many times as the larger of the ends'
+  /// differences on the axes takes it, and once more (InitBuildDragStepState); with no skirt, any difference orders nothing.
+  /// A second step orders the building on whatever free deposit it comes to.
+  [[nodiscard]] inline bool DragsOnePlace(const Building& building, const Place& deposit, const float x, const float z)
+  {
+    const float halfX = static_cast<float>(building.footprintX) * 0.5f;
+    const float halfZ = static_cast<float>(building.footprintZ) * 0.5f;
+    const long startX = std::lrintf(std::floor(deposit.x) + 0.5f - halfX);
+    const long startZ = std::lrintf(std::floor(deposit.z) + 0.5f - halfZ);
+    const long apart = (std::max)(std::labs(std::lrintf(x - halfX) - startX), std::labs(std::lrintf(z - halfZ) - startZ));
+    return apart == 0 || static_cast<float>(apart) < (std::max)(building.skirtSizeX, building.skirtSizeZ);
+  }
+
   /// Whether FAF's click at this world point under the cursor builds `building` at `place` (a plan's, or an order's given
   /// again): its first cell there by Snap on both axes, as FAF's build click places it (IssueBuildDragOrders); a deposit's
   /// building on the deposit FAF's ghost snaps it to, which must be the one at `place`, of `deposits` (all of its kind; none
-  /// known, its cell as any building's).
+  /// known, its cell as any building's), and where FAF drags it, as every extractor, alone: the drag from that deposit to the
+  /// point may not step on to another.
   [[nodiscard]] inline bool LandsAt(const Building& building, const std::vector<Candidate>& deposits, const Place& place, const float x,
                                     const float z)
   {
@@ -190,7 +210,8 @@ namespace griffdraft
           at = static_cast<int>(candidate);
         }
       }
-      return SnappedDeposit(deposits, building, x, z) == at;
+      return at >= 0 && SnappedDeposit(deposits, building, x, z) == at
+          && (!building.drags || DragsOnePlace(building, deposits[static_cast<std::size_t>(at)].place, x, z));
     }
     return Snap(x, building.footprintX) == place.x && Snap(z, building.footprintZ) == place.z;
   }

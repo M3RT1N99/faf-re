@@ -7,8 +7,8 @@
 // Clear) gets what it lost given again by FAF's command modes and a left click each, all with Shift, onto its emptied
 // queue: a click FAF refuses loses only its own order. What FAF cannot give again, or take out, is counted. The plan reads
 // the queues once the sim has taken the gesture (no edit of the UI's pending), each command by its own id; the program
-// reads them and carries the plan out (src/host/GriffAndroid.cpp); here the rules alone, for their tests
-// (tests/wx/GriffUndoTests.cpp).
+// reads them and carries the plan out (src/host/GriffAndroid.cpp), each click at the pixel that decides where it lands;
+// here the rules alone, for their tests (tests/wx/GriffUndoTests.cpp).
 
 #include <algorithm>
 #include <cmath>
@@ -196,6 +196,54 @@ namespace griffundo
     return std::all_of(std::next(at), queue.end(), [&](const Entry& entry) {
       return std::find(removed.begin(), removed.end(), entry.id) != removed.end();
     });
+  }
+
+  /// What decides where an aimed click lands, the undo's, which goes a frame after FAF's cursor went to its place (the aim),
+  /// once FAF's cursor is found right there (the program's CursorAt): FAF's hover at the aim, which CursorAt checked (a
+  /// removal: the command its release takes out; a click on a unit: that unit, which may walk on, as may a waypoint on it);
+  /// the cell of a building under the press, which this frame's pixel was checked to land in (griffdraft::ClickPixel); or the
+  /// ground under the press, where CursorAt checked at the aim what FAF's cursor picks (for a move, no waypoint that every
+  /// selected unit holds).
+  enum class Landing
+  {
+    kHover,
+    kBuilding,
+    kGround,
+  };
+
+  [[nodiscard]] inline Landing LandingOf(const bool removal, const bool onUnit, const bool builds)
+  {
+    if (removal || onUnit) {
+      return Landing::kHover;
+    }
+    return builds ? Landing::kBuilding : Landing::kGround;
+  }
+
+  /// Where an aimed click goes: at the aim, where FAF's cursor is; at this frame's pixel of its place; or nowhere yet, as the
+  /// cursor goes to its place again, which the camera has moved off the aim (within the step's frames).
+  enum class Aim
+  {
+    kAtAim,
+    kHere,
+    kAgain,
+  };
+
+  /// The pixel of an aimed click (Aim), by what decides where it lands (Landing), from the aim and this frame's pixel of its
+  /// place: a hover at the aim, which FAF's press picks there, also where what it picked walked on since; a building at this
+  /// frame's pixel, whose landing the press takes there; the ground at the aim only while this frame's pixel is the aim, as
+  /// what CursorAt found lies there. A camera that moved since the aim, as a glide does, would put a building's or a move's
+  /// world point off its place by what the picture moved.
+  [[nodiscard]] inline Aim AimedClick(const Landing landing, const int aimX, const int aimY, const int x, const int y)
+  {
+    switch (landing) {
+      case Landing::kHover:
+        return Aim::kAtAim;
+      case Landing::kBuilding:
+        return Aim::kHere;
+      case Landing::kGround:
+        break;
+    }
+    return x == aimX && y == aimY ? Aim::kAtAim : Aim::kAgain;
   }
 
   namespace detail
