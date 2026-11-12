@@ -1,22 +1,19 @@
 #pragma once
 
 // The undo of the touch scheme Griff (android/TOUCH_UI.md, "Griff"; buildstage/griff-v3-spec.md, T3.1): the last gesture's
-// orders taken back with what FAF's UI itself sends, as a PC player's mouse and keyboard would. Of each unit the gesture
-// ordered, its queue before the gesture and now (UserUnit:GetCommandQueue) give the plan: the orders panel's Stop for a unit
-// that was idle, and for one that had orders, those given again by FAF's command modes and a left click at each order's
-// place, the first replacing what the unit does, which takes the gesture's orders with it. What FAF cannot give again (an
-// order it has no mode for, a target that is gone, a building it never named) is dropped and counted. The program carries it
-// out (src/host/GriffAndroid.cpp); here the rules alone, for their tests (tests/wx/GriffUndoTests.cpp).
-//
-// FAF's UI has DeleteCommand for a single command, by its id, but an id FAF's UI reads is no command's own: it gives a
-// finished command's id to the next, and the ids of the second army's commands on are 2^24 and more, which the game's Lua
-// numbers (floats) hold to an even number only. The phone as the second player of a game against the PC deleted none of
-// its appended orders so, where it did as the first in a skirmish. So an order the gesture appended goes as one it
-// replaced, with the queue given again.
+// orders taken back with what a PC player's mouse and keyboard send. Each command of the gesture's is taken out of its
+// units' queues by FAF's Shift+Ctrl right release on its waypoint (CUIWorldView::HandleEvent's right release, which strips
+// the hovered command from every unit it went to, by the command's own id). A unit whose queue the gesture replaced (FAF's
+// Clear) gets what it lost given again by FAF's command modes and a left click each, all with Shift, onto its emptied
+// queue: a click FAF refuses loses only its own order. What FAF cannot give again, or take out, is counted. The plan reads
+// the queues once the sim has taken the gesture (no edit of the UI's pending), each command by its own id; the program
+// reads them and carries the plan out (src/host/GriffAndroid.cpp); here the rules alone, for their tests
+// (tests/wx/GriffUndoTests.cpp).
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -24,7 +21,7 @@
 
 namespace griffundo
 {
-  /// No unit targeted, or none known: unit ids start at 0, the first army's commander's.
+  /// No entity targeted: entity ids start at 0, the first army's commander's.
   constexpr int kNoTarget = -1;
 
   /// A world place: FAF's x, its height and z.
@@ -35,31 +32,31 @@ namespace griffundo
     float z = 0;
   };
 
-  /// An order in a unit's queue, as FAF's UI reads it: its command's id, its type (FAF's name: Move, AggressiveMove, ...) and
-  /// its place, which for an order on an entity is where the entity was. With what Griff saw of the order when it was given,
-  /// where it did: the unit it targets (`target`, kNoTarget where not a unit or not seen), whether it targets a place that
-  /// stays where it is (`targetsPlace`: the ground, or a feature such as a wreck), the building it builds and the script it
-  /// runs (FAF's attack-move is a script order until the sim gives its AggressiveMove).
+  /// An order in a unit's queue as FAF's UI holds it: its command's own id (the engine's, whole: the game's Lua numbers hold
+  /// those of the second army on to an even number only), its type (FAF's name: Move, AggressiveMove, ...), its place (where
+  /// it goes, or where the entity it targets is), the entity it targets (kNoTarget: the ground, or none), the building it
+  /// builds, and its script's task (FAF's attack-move button gives a script, AttackMove, beside the sim's AggressiveMove).
   struct Entry
   {
     int id = 0;
     std::string type;
     Place place;
     int target = kNoTarget;
-    bool targetsPlace = false;
     std::string blueprint;
     std::string task;
   };
 
-  /// A unit that an order of the gesture went to: its queue before the gesture and now, whether an order replaced what it did
-  /// (FAF's Clear), and whether its queue is a factory's rally route, whose Stop would also take what it builds.
+  /// A unit an order of the gesture went to: whether one replaced its queue (FAF's Clear), whether the sim refills its queue
+  /// once it is empty (a factory's rally route: the sim rallies an emptied one to its own place again), its queue as the
+  /// gesture began and now, and the building it was building as the gesture began, where that is unfinished still.
   struct Unit
   {
     int id = 0;
-    bool factory = false;
     bool replaced = false;
+    bool refilled = false;
     std::vector<Entry> before;
     std::vector<Entry> now;
+    int site = kNoTarget;
   };
 
   /// How FAF's UI gives an order: the mode its orders panel arms for it (or its construction panel, for a building), then the
@@ -78,51 +75,67 @@ namespace griffundo
     kBuild,
   };
 
-  /// An order to give again: its way, where the click goes (a unit it targets: where that is now), the unit, the building, and
-  /// whether it is appended to the ones before it (Shift): the first of a queue replaces what the units do.
+  /// An order given again: its way, where the click goes (for one on an entity: where that is now, read again at the click),
+  /// the entity, the building, and whether the click carries Shift: every one does but a refilled queue's first, which
+  /// replaces the gesture's orders there and what the sim refilled.
   struct Click
   {
     Way way = Way::kNone;
     Place place;
     int target = kNoTarget;
     std::string blueprint;
-    bool appended = false;
+    bool shift = true;
 
     [[nodiscard]] bool operator==(const Click& other) const
     {
       return way == other.way && place.x == other.place.x && place.y == other.place.y && place.z == other.place.z
-          && target == other.target && blueprint == other.blueprint && appended == other.appended;
+          && target == other.target && blueprint == other.blueprint && shift == other.shift;
     }
   };
 
-  /// Units whose queues come back alike: selected together, and the clicks given them.
+  /// Units whose lost orders come back alike: selected together, and the clicks given them.
   struct Group
   {
     std::vector<int> units;
     std::vector<Click> clicks;
   };
 
+  /// A command of the gesture's to take out of its units' queues: its id, its waypoint as the plan read it, its units.
+  struct Removal
+  {
+    int command = 0;
+    Place place;
+    std::vector<int> units;
+  };
+
   struct Plan
   {
-    /// Units to stop.
-    std::vector<int> stops;
     std::vector<Group> groups;
-    /// Orders that could not come back, and gestures' orders that could not go.
+    std::vector<Removal> removals;
+    /// Orders that cannot come back, and orders of the gesture's that cannot go.
     int dropped = 0;
   };
 
-  /// Where the units that orders target are now, those that live.
+  /// Where the entities that orders target are now, those that live; the unfinished buildings units had begun too.
   using Targets = std::unordered_map<int, Place>;
 
+  /// Whether an order FAF's UI gave is a gesture's to take back: not FAF's by-product (None), nor the construction panel's own
+  /// queue (a factory's units, an upgrade, an enhancement: a script other than the attack-move's), which the panel itself
+  /// takes back. Any other order ends the pill's record: only the last order counts.
+  [[nodiscard]] inline bool Takeable(const std::string& type, const bool attackMove)
+  {
+    return type != "None" && type != "BuildFactory" && type != "Upgrade" && (type != "Script" || attackMove);
+  }
+
   /// The way FAF's UI gives an order of this kind again; kNone where its orders panel has no mode for it that a click gives
-  /// (a transport's, a missile's, an enhancement's), or it is the queue's Stop.
+  /// (a transport's, a missile's, an enhancement's).
   [[nodiscard]] inline Way WayOf(const Entry& entry)
   {
     const std::string& type = entry.type;
     if (type == "Move" || type == "FormMove") {
       return Way::kMove;
     }
-    if (type == "AggressiveMove" || type == "FormAggressiveMove" || (type == "Script" && entry.task == "AttackMove")) {
+    if (type == "AggressiveMove" || type == "FormAggressiveMove") {
       return Way::kAttackMove;
     }
     if (type == "Patrol" || type == "FormPatrol") {
@@ -149,136 +162,143 @@ namespace griffundo
     return Way::kNone;
   }
 
-  /// Whether two entries are the very same order: the same id, type and place (where FAF's UI reads none, as for a Stop or an
-  /// enhancement, alike). FAF's UI gives a finished command's id to the next, two of the second army's commands on can show
-  /// one id, and all the sim's own orders have one, so an order at another place is another.
-  [[nodiscard]] inline bool Exactly(const Entry& one, const Entry& other)
+  /// Whether an order leaves nothing to take out or give again: a Stop the sim has not taken yet, and the script FAF's
+  /// attack-move button gives beside the sim's AggressiveMove, which is done the moment it is the queue's head.
+  [[nodiscard]] inline bool Inert(const Entry& entry)
   {
-    const auto same = [](const float a, const float b) { return a == b || (std::isnan(a) && std::isnan(b)); };
-    return one.id == other.id && one.type == other.type && same(one.place.x, other.place.x) && same(one.place.z, other.place.z);
+    return entry.type == "Stop" || (entry.type == "Script" && entry.task == "AttackMove");
   }
 
-  /// Whether a queue is as it was before the gesture, order by order: then the gesture's orders did not take there, as where
-  /// the sim keeps a commander at its enhancement, and there is nothing to take back.
-  [[nodiscard]] inline bool Unchanged(const std::vector<Entry>& before, const std::vector<Entry>& now)
+  /// Whether FAF draws a waypoint for an order, which its Shift+Ctrl right release can take out: not for the kinds its command
+  /// graph leaves out (UICommandGraph's AddCommandQueueToCommandGraph, mask 0x2D80000EA).
+  [[nodiscard]] inline bool Removable(const Entry& entry)
   {
-    return before.size() == now.size() && std::equal(before.begin(), before.end(), now.begin(), Exactly);
+    static const char* const kUndrawn[] = {"Stop",    "Dive",   "BuildSiloTactical", "BuildSiloNuke", "BuildFactory",
+                                           "Upgrade", "Script", "KillSelf",          "DestroySelf",   "Pause"};
+    return std::none_of(std::begin(kUndrawn), std::end(kUndrawn), [&](const char* type) { return entry.type == type; });
   }
 
-  /// A queue's orders: a Stop that the sim has not taken yet stands in it, and leaves nothing.
-  [[nodiscard]] inline std::vector<Entry> Orders(const std::vector<Entry>& queue)
+  /// Whether a unit's own order, which FAF's cursor hovers where one of the gesture's waypoints lies, may be taken out with
+  /// the gesture's and given back after them: an order on a place (a move, an attack-move, a patrol point), whose click with
+  /// Shift gives it again exactly, that comes last in the unit's queue but for the gesture's (`removed`), so that given back
+  /// after them it stands where it stood. FAF anchors a patrol given with Shift at the queue's last place: there two
+  /// waypoints lie at one place, and FAF's cursor may hover either.
+  [[nodiscard]] inline bool ComesBackAfter(const std::vector<Entry>& queue, const int id, const std::vector<int>& removed)
   {
-    std::vector<Entry> orders;
-    for (const Entry& entry : queue) {
-      if (entry.type != "Stop") {
-        orders.push_back(entry);
-      }
+    const auto at = std::find_if(queue.begin(), queue.end(), [id](const Entry& entry) { return entry.id == id; });
+    if (at == queue.end() || at->target != kNoTarget) {
+      return false;
     }
-    return orders;
-  }
-
-  /// Of a queue before, the orders the unit holds still (`holds`) or not any more: what the sim kept through a replacing
-  /// order, as a commander's enhancement under way, or what the order took.
-  [[nodiscard]] inline std::vector<Entry> Held(const std::vector<Entry>& before, const std::vector<Entry>& now, const bool holds)
-  {
-    std::vector<Entry> held;
-    for (const Entry& entry : before) {
-      if (std::any_of(now.begin(), now.end(), [&](const Entry& kept) { return Exactly(entry, kept); }) == holds) {
-        held.push_back(entry);
-      }
+    const Way way = WayOf(*at);
+    if (way != Way::kMove && way != Way::kAttackMove && way != Way::kPatrol) {
+      return false;
     }
-    return held;
+    return std::all_of(std::next(at), queue.end(), [&](const Entry& entry) {
+      return std::find(removed.begin(), removed.end(), entry.id) != removed.end();
+    });
   }
 
   namespace detail
   {
-    /// Where the click for an order goes: its place, or where the unit it targets is now. False where it cannot be given again.
-    [[nodiscard]] inline bool ClickPlace(const Entry& entry, const Way way, const Targets& targets, Place& place)
+    [[nodiscard]] inline bool Holds(const std::vector<Entry>& queue, const int id)
     {
-      const auto living = [&](Place& at) {
-        const auto found = entry.target != kNoTarget ? targets.find(entry.target) : targets.end();
-        if (found == targets.end()) {
-          return false;
-        }
-        at = found->second;
-        return true;
-      };
-      // FAF's UI reads no place (NaN) for an order on an entity it does not find, which no click reaches.
-      const auto own = [&](Place& at) {
-        if (std::isnan(entry.place.x) || std::isnan(entry.place.z)) {
-          return false;
-        }
-        at = entry.place;
-        return true;
-      };
-      switch (way) {
-        case Way::kMove:
-        case Way::kAttackMove:
-        case Way::kPatrol:
-          return own(place);
-        case Way::kBuild:
-          return !entry.blueprint.empty() && own(place);
-        case Way::kAttack:
-        case Way::kReclaim:
-          return entry.targetsPlace ? own(place) : living(place);
-        case Way::kGuard:
-        case Way::kRepair:
-        case Way::kCapture:
-          return living(place);
-        case Way::kNone:
-          break;
-      }
-      return false;
+      return std::any_of(queue.begin(), queue.end(), [id](const Entry& entry) { return entry.id == id; });
     }
 
-    /// The clicks that give a queue again, as far as FAF can; the dropped orders counted.
-    [[nodiscard]] inline std::vector<Click> Again(const std::vector<Entry>& queue, const Targets& targets, int& dropped)
+    /// Whether a begun building stands at an order's place: FAF's build mode refuses a new one where it stands.
+    [[nodiscard]] inline bool At(const Place& site, const Place& place)
+    {
+      return std::abs(site.x - place.x) <= 1 && std::abs(site.z - place.z) <= 1;
+    }
+
+    /// The clicks that give a unit's lost orders again, as far as FAF can; the dropped ones counted. A begun building comes
+    /// back by its repair. A patrol's first point is FAF's own anchor: FAF anchors a patrol given with Shift at the queue's
+    /// last place, so the point comes back as a move to it (none where the click before ends there), which keeps FAF from
+    /// adding a point of its own.
+    [[nodiscard]] inline std::vector<Click> Again(const Unit& unit, const std::vector<Entry>& lost, const Targets& targets, int& dropped)
     {
       std::vector<Click> clicks;
-      for (const Entry& entry : queue) {
+      const auto site = unit.site != kNoTarget ? targets.find(unit.site) : targets.end();
+      for (std::size_t at = 0; at < lost.size(); ++at) {
+        const Entry& entry = lost[at];
+        if (Inert(entry)) {
+          continue;
+        }
         Click click;
         click.way = WayOf(entry);
-        if (!ClickPlace(entry, click.way, targets, click.place)) {
+        click.target = entry.target;
+        click.blueprint = entry.blueprint;
+        click.place = entry.place;
+        if (click.way == Way::kBuild && site != targets.end() && At(site->second, entry.place)) {
+          click.way = Way::kRepair;
+          click.target = unit.site;
+          click.blueprint.clear();
+        }
+        bool reached = click.way != Way::kNone;
+        if (reached && click.target != kNoTarget) {
+          const auto found = targets.find(click.target);
+          reached = found != targets.end();
+          if (reached) {
+            click.place = found->second;
+          }
+        } else if (reached) {
+          reached = !std::isnan(click.place.x) && !std::isnan(click.place.z) && (click.way != Way::kBuild || !click.blueprint.empty());
+        }
+        if (!reached) {
           ++dropped;
           continue;
         }
-        click.target = entry.target;
-        click.blueprint = entry.blueprint;
-        click.appended = !clicks.empty();
+        if (click.way == Way::kPatrol && (at == 0 || WayOf(lost[at - 1]) != Way::kPatrol)) {
+          if (!clicks.empty() && clicks.back().place.x == click.place.x && clicks.back().place.z == click.place.z) {
+            continue;
+          }
+          click.way = Way::kMove;
+        }
         clicks.push_back(std::move(click));
       }
       return clicks;
     }
   } // namespace detail
 
-  /// The plan that takes the gesture's orders back from these units, those that live. A unit whose queue a replacing order
-  /// took orders from gets them given again, the first click replacing; what it holds still the sim kept. A unit the gesture
-  /// appended to, or whose replacing order took nothing, gets what it holds still of its queue before given again, whose
-  /// replacing first click takes the gesture's orders with it; what it finished since stays done, as it would have without
-  /// the gesture. A unit that holds none of its orders before and gets none back is stopped (the orders panel's Stop, after
-  /// the gesture's orders): one that was idle, finished them since, or lost them to the gesture. One that holds orders FAF
-  /// cannot give again keeps them, and the gesture's, which counts as dropped. A factory with nothing to give again keeps the
-  /// gesture's rally point: its Stop would take what it builds too. A unit whose queue is as it was is left alone.
+  /// The plan that takes the gesture's orders back from these units, those that live. Each command of the gesture's (in a
+  /// unit's queue now, not in its queue before, also what the sim gave for it, as the attack-move's AggressiveMove) is taken
+  /// out of all its units at once; one FAF draws no waypoint for cannot go and counts as dropped. A unit whose queue the
+  /// gesture replaced gets what it lost (in its queue before, not now) given again, every click with Shift; what it holds
+  /// still the sim kept, as a commander's enhancement under way. One the gesture appended to keeps its queue before as it is
+  /// (a begun building goes on), and what it finished since stays done. A refilled queue's lost orders come back by a first
+  /// click that replaces the gesture's there instead, as an emptied rally route would come back as the sim's own.
   [[nodiscard]] inline Plan PlanUndo(const std::vector<Unit>& units, const Targets& targets)
   {
     Plan plan;
     for (const Unit& unit : units) {
-      if (Unchanged(unit.before, unit.now)) {
-        continue;
+      std::vector<Click> clicks;
+      if (unit.replaced) {
+        std::vector<Entry> lost;
+        std::copy_if(unit.before.begin(), unit.before.end(), std::back_inserter(lost),
+                     [&](const Entry& entry) { return !detail::Holds(unit.now, entry.id); });
+        clicks = detail::Again(unit, lost, targets, plan.dropped);
       }
-      const std::vector<Entry> before = Orders(unit.before);
-      const std::vector<Entry> now = Orders(unit.now);
-      const std::vector<Entry> lost = Held(before, now, false);
-      std::vector<Click> clicks =
-        detail::Again(unit.replaced && !lost.empty() ? lost : Held(before, now, true), targets, plan.dropped);
-      if (clicks.empty()) {
-        // Nothing comes back by a click. A unit that holds none of its orders before is stopped, which takes the gesture's
-        // with it; one that holds some keeps them, and the gesture's. A factory's Stop would take what it builds too.
-        if (unit.factory) {
-          ++plan.dropped;
-        } else if (lost.size() == before.size()) {
-          plan.stops.push_back(unit.id);
+      if (unit.refilled && !clicks.empty()) {
+        clicks.front().shift = false;
+      } else {
+        for (const Entry& entry : unit.now) {
+          if (detail::Holds(unit.before, entry.id) || Inert(entry)) {
+            continue;
+          }
+          if (!Removable(entry)) {
+            ++plan.dropped;
+            continue;
+          }
+          const auto removal = std::find_if(plan.removals.begin(), plan.removals.end(),
+                                            [&](const Removal& other) { return other.command == entry.id; });
+          if (removal != plan.removals.end()) {
+            removal->units.push_back(unit.id);
+          } else {
+            plan.removals.push_back(Removal{entry.id, entry.place, {unit.id}});
+          }
         }
+      }
+      if (clicks.empty()) {
         continue;
       }
       const auto group = std::find_if(plan.groups.begin(), plan.groups.end(), [&](const Group& other) { return other.clicks == clicks; });

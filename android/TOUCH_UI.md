@@ -287,8 +287,8 @@ is on the window's edge (`ui_ScreenEdgeScrollView`), where a mouse is pushed on 
 which took a stroke's route elsewhere than it was drawn.
 
 A toast (`GriffLayer.toast`) says a word for 1.8 s in a pill under the free map's top at the screen's middle (FAF's top panels): Cancelled for
-a stroke given up, the draft's words below, Undone in part for an undo that could not give every order back; control groups to come
-say theirs.
+a stroke given up, the draft's words below, Undone in part for an undo that could not take out every order of the gesture's or give back
+every one it replaced; control groups to come say theirs.
 
 #### The draft
 
@@ -361,13 +361,15 @@ worst frame of each 10 s, one unit selected).
 #### The undo and the pins
 
 What a gesture orders is watched (buildstage/griff-v3-spec.md, T3.1 and T3.2), from a tap's click, a rest's right click on a panel, a
-route's first waypoint or the draft's tick to the task after their input: `griff.lua` keeps the queues of the selected units as FAF's UI
-reads them (`UserUnit:GetCommandQueue`: each order's command id, type and place) and what each builds, and FAF's UI tells each order it
-gives (`commandmode.lua` `OnCommandIssued`, which `griff.lua` wraps; the engine has put the order in the queues by then): its units,
-whether it replaced what they did (FAF's Clear), the unit it targets and the building it builds, which Griff keeps of every order, a
-gesture's or not, so that an order in a queue comes back with them (below). A gesture that ordered is the record the pill takes back, one
-level: the next one's replaces it. The tap ladder's attack-move in place of a move belongs to the move's record. The construction panel's
-own queue (a factory's units, an upgrade, an enhancement) is no gesture's to take back.
+route's first waypoint or the draft's tick to the task after their input. The program keeps the queues of the selected units as FAF's UI
+holds them (`native/src/host/GriffAndroid.cpp` `StoreSelection`, from the engine's own command queues: each order by its command's own
+id, whole, with its type, its waypoint, the entity it targets, the building it builds) and the building each was building, and FAF's UI
+tells each order it gives (`commandmode.lua` `OnCommandIssued`, which `griff.lua` wraps and hands on with its units' ids; the engine has
+put the order in the queues by then): whether it replaced what they did (FAF's Clear) and which units it went to. A gesture that ordered
+is the record the pill takes back, one level: the next one's replaces it, and any other order ends it, as only the last order counts:
+FAF's ghost from a build key or a template, the Keys keyboard's hotkeys, the construction panel's own queue (a factory's units, an
+upgrade, an enhancement), none a gesture's to take back (`include/GriffUndo.h` `Takeable`); the pill goes with the record. The tap
+ladder's attack-move in place of a move belongs to the move's record.
 
 The pill (`UndoPill`, the mockup's drawUndo; `Undo` holds its time) stands for 3 s after the order, 2.5 mm from the screen's left (past a
 camera cutout's inset, as the rail), its top 0.3 H over FAF's unit view's top, which it covers under the rail, 6.6 H high, as wide as FAF's
@@ -376,33 +378,48 @@ panel colour, edged in the mark colour, a back arrow 4 mm from its left, *Undo* 
 has left. It is a view of its own, so a finger on it is exactly its own, never the map's. It stands at the unit view's place also while FAF
 fades that view out for a selection of more than one unit (`unitview.lua` shows it for one unit or a rollover): the place is FAF's panel's
 under the rail, not where a tap for the next order goes; with no unit view laid out there is no pill. A dialog over the game takes it away.
-A tap on it takes the record back with FAF's own inputs (`include/GriffUndo.h`, tested in `tests/wx/GriffUndoTests.cpp`):
+A tap on it takes the record back with a PC player's inputs (`include/GriffUndo.h`, tested in `tests/wx/GriffUndoTests.cpp`), once the
+sim has taken the gesture: the undo waits until none of the record's units has an edit of its queue that the sim has not taken yet (the
+engine's `UserCommandQueue::issueQueue`), 2 s at most (a network game takes an order its lag later, a paused game never), so that it reads
+the queues the sim holds; meanwhile the fingers rest and the pill says *Undo…*, also past its 3 s. Then, for each unit:
 
 | What the gesture did to a unit | Its way back |
 |---|---|
-| Replaced its queue | What it lost given again as a player gives it: a group of units whose queues come back alike selected, then for each order FAF's mode for it (the orders panel's move, attack-move, patrol, attack, assist, repair, reclaim or capture; the construction panel's build mode for a building) and a mouse's left click at its place, the first that FAF orders by replacing, the others with Shift; an order on a unit where that unit is now, if it lives. A place off the free map gets the camera first, as the tick's. What the unit holds still, the sim kept, as a commander's enhancement under way |
-| Appended to its queue | What it holds still of its queue before given again so, whose first click replaces and takes the gesture's orders with it; what it finished since stays done |
-| Left it none of its orders before and none to give again (it was idle, finished them since, or lost what FAF cannot give again) | The orders panel's Stop (`orders.lua` `Stop`) |
-| Set a factory's rally point | Its rally route before given again; with none, the gesture's stays and the undo is in part, as a factory's Stop would take what it builds too |
+| Gave it orders (in its queue now, not before; also what the sim gave for them, as the AggressiveMove of FAF's attack-move) | Each taken out by FAF's Shift+Ctrl right click on its waypoint (`CUIWorldView::HandleEvent`'s right release), which strips that command from all of its units, by the engine's own command id: the units selected, Shift held a frame before (FAF draws the waypoints only while Shift is down), the cursor on the waypoint and the click only once FAF's cursor hovers that very command, a waypoint off the free map with the camera there first, as the tick's. Checked in its units' queues after (the edit FAF sends the sim; a factory's rally route shows it once the sim took it) |
+| Appended to its queue | Nothing more: its queue before stays as it was, a building it had begun goes on, nothing of it is clicked again; what it finished since stays done |
+| Replaced its queue | What it lost (in its queue before, not now) given again as a player gives it, every click with Shift onto the emptied queue, so a click FAF refuses loses only its own order: a group of units whose orders come back alike selected, then for each order FAF's mode for it (the orders panel's move, attack-move, patrol, attack, assist, repair, reclaim or capture; the construction panel's build mode for a building, which lands in its cell as the tick's plans do) and a mouse's left click at its place, a frame after the cursor went there in that mode. An order on a unit at the place that unit is now, read again for each frame, and only while FAF's cursor picks that very unit, else counted missed, as is an order FAF gives on another entity. A building the unit had begun comes back by its repair. A patrol's first point comes back as a move to it, as FAF anchors a patrol given with Shift at the queue's last place and would add a point of its own. What the unit holds still the sim kept, as a commander's enhancement under way, which nothing of the undo stops |
+| Set a factory's rally point | As any unit's; but a rally route the gesture replaced comes back by a first click that replaces the gesture's rally point, the rest with Shift: the sim rallies an emptied route to the factory's own place again, which an appended route would follow |
 | Nothing (its queue is as it was) | Nothing |
 
+Where two waypoints of the selection's lie within the reach of FAF's cursor of each other, FAF's cursor may hover either
+(`UICommandGraph::ResolveCursorHighlightCommandId` takes the last of them), as at the anchor of a patrol given with Shift, which FAF puts
+at the queue's last place. Another of the gesture's is taken out in its turn; one of the unit's own on a place that comes last in its
+queue but for the gesture's (`ComesBackAfter`) is taken out too and given back after the gesture's, by its mode's click with Shift, so it
+stands where it stood; any other leaves the gesture's order there, counted. FAF draws a command it was asked to take out until the sim
+took the removal, and keeps the waypoint of one it let go until it draws its graph anew: the undo waits for the one (2 s at most) and
+lifts Shift for a frame for the other. A move's click goes only where FAF's cursor hovers no move that every selected unit holds: FAF's
+move mode restarts the selection's moves as a patrol by a click on one of theirs. FAF's move mode would keep its cursor from hovering
+waypoints at all (its ignore mode), but the console variable it sets, `ui_CommandClickScale`, is not the one this engine's hover reads.
+
 FAF's UI has `DeleteCommand` for one command of a queue, by its id, which the spec proposed for an appended order. But the ids FAF's UI
-reads are no command's own. The ids of the second army's commands on are 2^24 and more, and the game's Lua numbers are floats
+Lua reads are no command's own. The ids of the second army's commands on are 2^24 and more, and the game's Lua numbers are floats
 (`LUA_NUMBER`), which hold those to an even number only: the phone as the second player of a game against the PC's deleted none of its
 appended orders (twice; its queues showed only even ids, two commands one), where it did as the first in a skirmish. And FAF's UI gives a
-finished command's id to the next, while its queue shows the finished one until the sim says so. An appended order goes with the queue
-given again, which works for every army. What Griff learnt of an order (the unit it targets, the building) is kept by its entry's id,
-type and place; an order on a unit, whose place in the queue is that unit's, by id and type, the one whose unit is nearest.
+finished command's id to the next, while its queue shows the finished one until the sim says so. So the undo uses neither the Lua ids
+nor `DeleteCommand`: the program reads the queues in the engine, where each command's id is whole, and takes a command out by FAF's
+Shift+Ctrl right click on its waypoint, which strips it by the engine's own id, for every army (the second player of a LAN game took its
+orders out so).
 
-What FAF cannot give again is dropped, and the toast says *Undone in part*: an order its orders panel has no mode for (a transport's, a
-missile's, an enhancement), one on a unit that is gone, one whose place FAF's UI does not read (on an entity it does not find), a building
-Griff never saw named (one placed by FAF's own ghost), a click FAF ordered nothing for. A building the unit had begun comes back by its
-repair, as FAF's build mode refuses a new one where it stands. After
-a tap the pill says *Undo…* until its clicks are done. They come one a task, as the tick's (`ClickStepTask`, which both use), the tick's
-first where those run; a building given again lands in its cell as the tick's plans do, and while the clicks run the fingers rest, as for
-the tick's, and clicks that wait more than 2 s for a frame end as the tick's, in part. After them the selection and the camera are as they
-were, and the next tap climbs no ladder from the order taken back. The sim takes the orders given again a network delay later, as a
-player's.
+What cannot come back or go is counted, and the toast says *Undone in part*: an order its orders panel has no mode for (a transport's, a
+missile's, an enhancement the gesture's order took), one on an entity that is gone, a building whose name the order did not carry, an order
+of the gesture's that FAF draws no waypoint for (a script other than the attack-move's, a dive; not the script FAF's attack-move gives
+beside its AggressiveMove, which is done the moment it heads the queue), a waypoint FAF's cursor never hovered or a target it never picked,
+a place no frame brought onto the free map, a click FAF ordered nothing for, a unit FAF selected as the transport that carries it (left out,
+`SelectUnits` selects a carried unit's transport), and units the gesture ordered that were not selected as it began. The clicks come one a
+task, as the tick's (`ClickStepTask`, which both use), the tick's first where those run; while they run the fingers rest, as for the tick's,
+and clicks that wait more than 2 s for a frame end as the tick's, in part. After them the selection and the camera are as they were, and the
+next tap climbs no ladder from the order taken back. The sim takes the undo's inputs a network delay later, as a player's, after the
+gesture's.
 
 The pins (`include/GriffPins.h`, tested in `tests/wx/GriffPinsTests.cpp`; the mockup's drawPins): at the place of each order of a watched
 gesture a drop, its tip at the place, its sides out to 1.1 mm and up 2.4 mm into a circle of 1.5 mm whose middle is 3 mm above the tip, in

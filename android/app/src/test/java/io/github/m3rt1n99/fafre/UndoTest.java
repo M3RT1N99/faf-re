@@ -56,6 +56,29 @@ public class UndoTest {
     }
 
     @Test
+    public void aTappedPillStaysWhileItWaitsPastItsThreeSeconds() {
+        // The undo waits for the sim to take the gesture first, a network game's lag.
+        undo.ordered(4, 0);
+        assertEquals(4, undo.tap(2900));
+        assertTrue(undo.showing(3500));
+        assertTrue(undo.waiting());
+        assertEquals("tapped already", 0, undo.tap(3500));
+        undo.undone(4);
+        assertFalse(undo.showing(3600));
+    }
+
+    @Test
+    public void anOrderThatEndsTheRecordTakesThePillAway() {
+        // FAF's ghost, a key's order or the construction panel's: only the last order counts, and it is no gesture's.
+        undo.ordered(5, 0);
+        undo.ordered(0, 500);
+        assertFalse(undo.showing(600));
+        assertEquals(0, undo.tap(600));
+        undo.ordered(6, 700);
+        assertTrue(undo.showing(800));
+    }
+
+    @Test
     public void aNewOrderAfterATapIsTheNewRecordsNotTapped() {
         undo.ordered(1, 0);
         assertEquals(1, undo.tap(100));

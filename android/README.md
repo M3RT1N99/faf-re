@@ -173,14 +173,18 @@ the game data they imported. Everything lives in the app's external files folder
     30; while plans wait, an order of the orders panel says "First ✓ or ✕". FAF's build keys and templates keep FAF's ghost,
     which is placed as with the mouse; a template put away does not take the tick's place. While the tick's clicks (or the
     undo's) run, a finger does nothing.
-  - After an order a pill *Undo* stands for 3 s over the top of FAF's unit view, under the rail, with a bar of the time it
-    has left; a tap on it takes the last gesture's orders back with FAF's own inputs: units that were idle stopped by the
-    orders panel's Stop, the others' queues before given again by FAF's order modes and clicks, the first replacing, which
-    takes an appended order with it (a building by its name, one begun by its repair; an order on a unit where that unit
-    is now). A route, a tick of the draft and a ground double tap are one undo each; only the last order counts. While
-    its clicks run the pill says *Undo…*; what cannot come back (an enhancement, an order on a unit that is gone) makes
-    the screen say *Undone in part*. Each order leaves pins at its places for 1.5 s, in the colour of its kind (move,
-    attack, patrol, build), beside FAF's own blips.
+  - After an order of Griff's gestures a pill *Undo* stands for 3 s over the top of FAF's unit view, under the rail, with
+    a bar of the time it has left; a tap on it takes the gesture's orders back with a PC player's inputs, once the game
+    has taken them: each order of the gesture's goes by FAF's Shift+Ctrl right click on its waypoint, which takes it from
+    all of its units, so a queue it was appended to stays as it was (a building begun goes on) and a unit that was idle is
+    idle again; what an order replaced comes back by FAF's order modes and clicks, all queued with Shift (a building by
+    its name, one begun by its repair, an order on a unit where that unit is now and only while the cursor is on it; a
+    factory's rally route by a first click that replaces). A route, a tick of the draft and a ground double tap are one
+    undo each. Only the last order counts: one of FAF's build keys, a template, the keyboard's keys or the construction
+    panel (an enhancement, a factory's queue) takes the pill away. While it waits for the game and its clicks run the pill
+    says *Undo…*; what cannot come back (an enhancement the order took, an order on a unit that is gone) or go makes the
+    screen say *Undone in part*. Each order of Griff's gestures leaves pins at its places for 1.5 s, in the colour of its
+    kind (move, attack, patrol, build), beside FAF's own blips; FAF's ghost and keys leave none.
   - Not there yet: control groups (Griff has no Ctrl to make one).
 - **FAF's newest version** (card 5, *Get FAF's newest version*; `FafRelease`, `NewestGameFiles`, TestService's
   `ACTION_GAME_FILES`): so that the phone can play a PC on FAF's current version. The number is GitHub's latest release

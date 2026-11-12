@@ -3,9 +3,10 @@ package io.github.m3rt1n99.fafre;
 /**
  * The touch scheme Griff's undo as its pill shows it (buildstage/griff-v3-spec.md T3.1, the mockup's armUndo and doUndo): for
  * 3 s after a gesture ordered, a tap on the pill takes the gesture's orders back. One level: a new order's record replaces
- * the last. The program holds the record (GriffAndroid.cpp, include/GriffUndo.h) and says when one is made (Game.SAID_ORDERED)
- * and when it was taken back (Game.SAID_UNDONE), which takes as long as FAF's clicks that give orders back run. Between the
- * tap and then the pill says it waits.
+ * the last, and any other order ends it (the program says so as a record 0). The program holds the record (GriffAndroid.cpp,
+ * include/GriffUndo.h) and says when one is made (Game.SAID_ORDERED) and when it was taken back (Game.SAID_UNDONE), which
+ * takes as long as the sim takes to take the gesture and FAF's clicks that take its orders back run. Between the tap and then
+ * the pill says it waits, also past its 3 s.
  */
 final class Undo {
     /** How long the pill stays after an order. */
@@ -28,9 +29,9 @@ final class Undo {
         }
     }
 
-    /** Whether the pill shows at `time`. */
+    /** Whether the pill shows at `time`: for its 3 s, and while a tap on it waits for the program. */
     boolean showing(long time) {
-        return mRecord != 0 && time - mOrderedAt < MILLISECONDS;
+        return mRecord != 0 && (mTapped || time - mOrderedAt < MILLISECONDS);
     }
 
     /** How much of the pill's time is left at `time`, from 1 to 0: the bar at its bottom. */

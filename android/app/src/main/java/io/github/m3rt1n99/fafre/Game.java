@@ -237,7 +237,8 @@ final class Game {
      * shifted by 8; SAID_ROUTE_GIVEN_UP: a route ended on a panel; SAID_TOAST: what the draft says (TOAST_) and its number;
      * SAID_COMMITTED: the draft was ticked, with the rail's bits it used; SAID_PAN: a drag's number ({@link #griffDrag}) that the
      * program made a pan of; SAID_ORDERED: a gesture ordered, the number of its record, which the undo's pill takes back from
-     * now on; SAID_UNDONE: the record of this number was taken back, 1 if only in part.
+     * now on, or 0: an order no gesture's ended the record; SAID_UNDONE: the record of this number was taken back, 1 if only
+     * in part.
      */
     static native int griffSaid(int[] said);
 
