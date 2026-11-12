@@ -3,6 +3,7 @@ package io.github.m3rt1n99.fafre;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
@@ -26,6 +27,7 @@ import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.PixelCopy;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -93,6 +95,19 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double GRIFF_GLIDE_STOP_MM = 0.7;
     /** Griff's word for a gesture given up before it gave anything. */
     private static final String CANCELLED = "Cancelled";
+    /**
+     * Griff's draft (the mockup's): a finger is on a plan within this of the box its ground takes (Draft.LEAST_MM wide at
+     * least); an extractor takes the free deposit within this of the finger.
+     */
+    private static final double GRIFF_PLAN_REACH_MM = 1.5;
+    private static final double GRIFF_DEPOSIT_MM = 5;
+    /** The draft's tick and cross: their sides, and their room from FAF's construction panel, the column at the right and each other. */
+    private static final double GRIFF_TICK_MM = 13;
+    private static final double GRIFF_CROSS_MM = 11;
+    private static final double GRIFF_TICK_ROOM_MM = 2;
+    /** The loupe: the 6 mm about a resting finger, a copy of the game's picture at most this often. */
+    private static final double LOUPE_SOURCE_MM = 6;
+    private static final long LOUPE_MILLISECONDS = 33;
     private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
@@ -168,6 +183,35 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private int mStroke;
     /** What the program says (Game.griffSaid). */
     private final int[] mGriffSaid = new int[3 * 16];
+    /** Griff's draft as the program shows it (Game.griffDraft), and its tick and cross. */
+    private final Draft mDraft = new Draft();
+    private final float[] mDraftValues = new float[Draft.VALUES];
+    private final Draft.Screen mDraftScreen = new Draft.Screen() {
+        @Override
+        public float x(float pictureX) {
+            return mPageView.screenX(pictureX);
+        }
+
+        @Override
+        public float y(float pictureY) {
+            return mPageView.screenY(pictureY);
+        }
+    };
+    private DraftButton mTick;
+    private DraftButton mCross;
+    /**
+     * The loupe, while a finger rests in the draft at this place: the copy of the game's picture on its way, two pictures (the
+     * one shown and the next copy's), and whether the report has heard that the copy does not work here.
+     */
+    private boolean mLoupeOn;
+    private float mLoupeX;
+    private float mLoupeY;
+    private boolean mLoupeCopying;
+    private final Bitmap[] mLoupePictures = new Bitmap[2];
+    private int mLoupeNext;
+    private Bitmap mLoupeShown;
+    private boolean mLoupeFailureSaid;
+    private final Runnable mLoupeCopy = this::copyLoupe;
     private final Choreographer.FrameCallback mGriffFrame = new Choreographer.FrameCallback() {
         @Override
         public void doFrame(long frameTimeNanos) {
@@ -360,6 +404,71 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             float scale = mPageView.scale();
             Game.pinchEnd(velocityX / scale, velocityY / scale);
         }
+
+        @Override
+        public boolean drafting() {
+            readDraft();
+            return mDraft.open();
+        }
+
+        @Override
+        public int draftPlan(float x, float y) {
+            float pixels = viewPixelsPerMm();
+            return mDraft.planAt(x, y, (float) (GRIFF_PLAN_REACH_MM * pixels), Draft.LEAST_MM / 2 * pixels);
+        }
+
+        @Override
+        public boolean draftNewest(int plan) {
+            return mDraft.newest(plan);
+        }
+
+        @Override
+        public boolean draftOnDeposit(int plan) {
+            return mDraft.onDeposit(plan);
+        }
+
+        @Override
+        public boolean draftPicksDeposit() {
+            return mDraft.picksDeposit();
+        }
+
+        @Override
+        public void draftTap(float x, float y, int plan) {
+            Game.draftTap(fingerX(x), fingerY(y), plan);
+        }
+
+        @Override
+        public void draftLine(int phase, float x, float y) {
+            Game.draftLine(phase, fingerX(x), fingerY(y));
+        }
+
+        @Override
+        public void draftMove(int phase, float fromX, float fromY, float x, float y) {
+            Game.draftMove(phase, fingerX(fromX), fingerY(fromY), fingerX(x), fingerY(y));
+        }
+
+        @Override
+        public void draftAim(int phase, float x, float y) {
+            Game.draftAim(phase, fingerX(x), fingerY(y));
+            if (phase == TouchInput.DRAFT_SHOW) {
+                showLoupe(x, y);
+            } else {
+                hideLoupe();
+            }
+        }
+
+        @Override
+        public void draftBox(int phase, float x0, float y0, float x1, float y1) {
+            mGriffLayer.showDraftBox(phase == TouchInput.DRAFT_SHOW, x0, y0, x1, y1);
+            if (phase == TouchInput.DRAFT_END) {
+                Game.draftBox(fingerX(x0), fingerY(y0), fingerX(x1), fingerY(y1));
+            }
+        }
+
+        @Override
+        public void draftDrop() {
+            Game.draftDrop();
+        }
     };
 
     private final PageInput.Mouse mPageMouse = new PageInput.Mouse() {
@@ -493,6 +602,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mGriffLayer = new GriffLayer(this);
             mGriffLayer.setSizes(viewPixelsPerMm(), GRIFF_RADIUS_MM, GRIFF_ARROW_MM);
             root.addView(mGriffLayer);
+            // Over the layer that takes the fingers: a finger on the tick or the cross is theirs.
+            mTick = draftButton(true);
+            mCross = draftButton(false);
+            root.addView(mTick, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
+            root.addView(mCross, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
         }
         mKeyboardTarget = new KeyboardTarget(this);
         root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
@@ -804,6 +918,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 releaseRail();
             }
             pollGriff(inGame);
+            placeDraftButtons();
         }
     }
 
@@ -969,6 +1084,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      */
     private void readGriff() {
         boolean shown = mGriffPolling && Game.griff(mGriffHandle);
+        readDraft();
+        // While the draft is open there is no handle: no stroke starts (the mockup's).
+        shown = shown && !mDraft.open();
         if (mStroking) {
             if (mGriffHandle[Game.GRIFF_STROKE] == mStroke) {
                 mGriffLayer.setStrokeEnd((int) mGriffHandle[Game.GRIFF_STROKE_END]);
@@ -986,7 +1104,188 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_RIGHT]));
     }
 
-    /** What the program said of Griff's taps and routes: the rail's buttons a Box tap used, the tap ladder's answers, a toast. */
+    /** The draft as the program shows it now; the layer, the tick and the cross follow where it changed. */
+    private void readDraft() {
+        int count = mGriffPolling ? Game.griffDraft(mDraftValues) : 0;
+        if (!mDraft.update(mDraftValues, count, mDraftScreen)) {
+            return;
+        }
+        mGriffLayer.setDraft(mDraft);
+        placeDraftButtons();
+        if (!mDraft.open()) {
+            hideLoupe();
+        }
+    }
+
+    private DraftButton draftButton(boolean tick) {
+        DraftButton button = new DraftButton(this, tick);
+        button.setMillimetre(viewPixelsPerMm());
+        button.setVisibility(View.GONE);
+        if (tick) {
+            // With Plus counting, held or lit, every plan is appended to what the builders do; the program says what it used.
+            button.setOnClickListener(view -> Game.draftCommit((mRail.counting(SystemClock.uptimeMillis()) & TouchInput.RAIL_QUEUE) != 0));
+        } else {
+            button.setOnClickListener(view -> Game.draftDrop());
+        }
+        return button;
+    }
+
+    /**
+     * The tick and the cross while the draft is open in a game (the mockup's): on the map, their bottoms 2 mm above FAF's
+     * construction panel, the tick's right 2 mm left of the column at the right (FAF's avatars), the cross 2 mm left of it;
+     * against the screen's edges where FAF shows neither.
+     */
+    private void placeDraftButtons() {
+        if (mTick == null) {
+            return;
+        }
+        int visibility = mDraft.open() && mBarInGame ? View.VISIBLE : View.GONE;
+        mTick.setVisibility(visibility);
+        mCross.setVisibility(visibility);
+        if (visibility != View.VISIBLE) {
+            return;
+        }
+        float pixels = viewPixelsPerMm();
+        float room = (float) (GRIFF_TICK_ROOM_MM * pixels);
+        float width = mFingerLayer.getWidth();
+        float height = mFingerLayer.getHeight();
+        float bottom = (mDraft.constructionTop() >= 0 ? Math.min(mDraft.constructionTop(), height) : height) - room;
+        float right = (mDraft.columnLeft() >= 0 ? Math.min(mDraft.columnLeft(), width) : width) - room;
+        int tick = viewMm(GRIFF_TICK_MM);
+        int cross = viewMm(GRIFF_CROSS_MM);
+        placeView(mTick, right - tick, bottom - tick, tick);
+        placeView(mCross, right - tick - room - cross, bottom - cross, cross);
+    }
+
+    private static void placeView(View view, float left, float top, int side) {
+        FrameLayout.LayoutParams place = (FrameLayout.LayoutParams) view.getLayoutParams();
+        int x = Math.round(left);
+        int y = Math.round(top);
+        if (place.width == side && place.height == side && place.leftMargin == x && place.topMargin == y) {
+            return;
+        }
+        place.width = side;
+        place.height = side;
+        place.leftMargin = x;
+        place.topMargin = y;
+        view.setLayoutParams(place);
+    }
+
+    /** What the draft says: the mockup's words in the app's English. */
+    private static String draftWords(int toast, int number) {
+        switch (toast) {
+            case Game.TOAST_NO_FREE_RESOURCE:
+                return "No free resource here";
+            case Game.TOAST_TAKEN:
+                return "Taken";
+            case Game.TOAST_FULL:
+                return "Draft is full";
+            case Game.TOAST_NO_PLAN:
+                return "No plan yet";
+            case Game.TOAST_NO_ENGINEER:
+                return "No engineer";
+            case Game.TOAST_ALL_ON_BUILDINGS:
+                return "All plans are on buildings";
+            case Game.TOAST_SOME_ON_BUILDINGS:
+                return number == 1 ? "1 plan was on a building" : number + " plans were on buildings";
+            case Game.TOAST_FIRST_TICK_OR_CROSS:
+                return "First \u2713 or \u2715";
+            case Game.TOAST_NOT_ORDERED:
+                return number == 1 ? "1 plan was not ordered" : number + " plans were not ordered";
+            default:
+                return "";
+        }
+    }
+
+    /** The loupe follows a resting finger in the draft: copies of the game's picture about it, which the layer magnifies. */
+    private void showLoupe(float x, float y) {
+        mLoupeX = x;
+        mLoupeY = y;
+        if (mLoupeShown != null) {
+            mGriffLayer.showLoupe(mLoupeShown, x, y);
+        }
+        if (!mLoupeOn) {
+            mLoupeOn = true;
+            copyLoupe();
+        }
+    }
+
+    private void hideLoupe() {
+        mLoupeOn = false;
+        mLoupeShown = null;
+        mHandler.removeCallbacks(mLoupeCopy);
+        if (mGriffLayer != null) {
+            mGriffLayer.showLoupe(null, 0, 0);
+        }
+    }
+
+    /**
+     * The 6 mm of the game's picture about the finger, by PixelCopy of the surface, one copy at a time and at most each
+     * LOUPE_MILLISECONDS. Where a copy fails, or comes back blank, as the emulator's of the engine's Vulkan surface does, no
+     * loupe is shown, and the plan under the finger alone shows where it goes; the game's report hears it once.
+     */
+    private void copyLoupe() {
+        if (!mLoupeOn || mLoupeCopying || mPictureWidth <= 0 || mPictureHeight <= 0) {
+            return;
+        }
+        int side = Math.max(2, Math.min(pictureMm(LOUPE_SOURCE_MM), Math.min(mPictureWidth, mPictureHeight)));
+        int left = Math.max(0, Math.min(mPictureWidth - side, pictureX(mLoupeX) - side / 2));
+        int top = Math.max(0, Math.min(mPictureHeight - side, pictureY(mLoupeY) - side / 2));
+        Bitmap picture = mLoupePictures[mLoupeNext];
+        if (picture == null || picture.getWidth() != side) {
+            picture = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
+            mLoupePictures[mLoupeNext] = picture;
+        }
+        final Bitmap copy = picture;
+        mLoupeCopying = true;
+        try {
+            PixelCopy.request(mSurface, new Rect(left, top, left + side, top + side), copy, result -> {
+                mLoupeCopying = false;
+                if (!mLoupeOn) {
+                    return;
+                }
+                if (result == PixelCopy.SUCCESS && !blank(copy)) {
+                    // The game's surface has no alpha that means anything.
+                    copy.setHasAlpha(false);
+                    mLoupeShown = copy;
+                    mLoupeNext = 1 - mLoupeNext;
+                } else {
+                    mLoupeShown = null;
+                    loupeFailed(result == PixelCopy.SUCCESS ? "came back blank" : "failed, " + result);
+                }
+                mGriffLayer.showLoupe(mLoupeShown, mLoupeX, mLoupeY);
+                mHandler.postDelayed(mLoupeCopy, LOUPE_MILLISECONDS);
+            }, mHandler);
+        } catch (IllegalArgumentException e) {
+            // The surface is gone.
+            mLoupeCopying = false;
+            loupeFailed(e.getMessage());
+        }
+    }
+
+    /** Whether a copy holds no picture: every pixel of a grid over it black. */
+    private static boolean blank(Bitmap picture) {
+        for (int y = 0; y < picture.getHeight(); y += 4) {
+            for (int x = 0; x < picture.getWidth(); x += 4) {
+                if ((picture.getPixel(x, y) & 0xFFFFFF) != 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void loupeFailed(String why) {
+        if (!mLoupeFailureSaid) {
+            mLoupeFailureSaid = true;
+            GameReport.append(this, "griff: no loupe, the copy of the game's picture " + why);
+        }
+    }
+
+    /**
+     * What the program said of Griff's taps, routes and draft: the rail's buttons a Box tap or a tick used, the tap ladder's
+     * answers, a toast.
+     */
     private void readGriffSaid() {
         int count;
         while ((count = Game.griffSaid(mGriffSaid)) > 0) {
@@ -1000,6 +1299,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     }
                 } else if (mGriffSaid[at] == Game.SAID_ROUTE_GIVEN_UP) {
                     mGriffLayer.toast(CANCELLED);
+                } else if (mGriffSaid[at] == Game.SAID_TOAST) {
+                    mGriffLayer.toast(draftWords(mGriffSaid[at + 1], mGriffSaid[at + 2]));
+                } else if (mGriffSaid[at] == Game.SAID_COMMITTED) {
+                    // The tick's last click left the pointer on the map, which a finger's lift would have taken away.
+                    mTouchMouse.leaveSoon();
+                    if (mGriffSaid[at + 1] != 0) {
+                        mRail.used(mGriffSaid[at + 1]);
+                        showRail();
+                    }
                 }
             }
             if (count < mGriffSaid.length) {
@@ -1024,14 +1332,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     /**
      * Griff's sizes in the picture's pixels (a game's page has no zoom), by which the program places the handle, helps taps,
-     * picks units beside them and stops the camera's glide.
+     * picks units beside them, stops the camera's glide and finds a deposit for the draft's extractor.
      */
     private void setGriff() {
         double pixels = mPictureHeight / mScreenMm;
         Game.setGriff(mGriff, (float) (GRIFF_RADIUS_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * pixels),
             (float) (GRIFF_GAP_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_ARROW_MM) * pixels), (float) (TAP_REACH_MM * pixels),
             (float) (TAP_SMALL_MM * pixels), (float) (GRIFF_NEAR_MM * pixels), (float) (GRIFF_NEAR_TROOPS_MM * pixels),
-            (float) (GRIFF_GLIDE_STOP_MM * pixels));
+            (float) (GRIFF_GLIDE_STOP_MM * pixels), (float) (GRIFF_DEPOSIT_MM * pixels));
     }
 
     /** Where the bar lies over the picture, which Griff's handle keeps clear of: its buttons would cover it. */
@@ -1307,6 +1615,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mHandler.removeCallbacks(mTouchTimer);
         mHandler.removeCallbacks(mPageTimer);
         mHandler.removeCallbacks(mPointerLeave);
+        mHandler.removeCallbacks(mLoupeCopy);
         Choreographer.getInstance().removeFrameCallback(mGriffFrame);
         super.onDestroy();
     }

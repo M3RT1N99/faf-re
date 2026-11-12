@@ -158,9 +158,19 @@ the game data they imported. Everything lives in the app's external files folder
     An order picked in the orders panel ends after the one that a lit *Plus* queues; a held *Plus* keeps it until it is let
     go, as Shift does. With *Plus* or *Attack* and troops selected, a tap on one of your units is the order there too.
   - On FAF's panels a tap is a click and a rest a right click (on an avatar: go to it), with the same help beside small
-    controls as with the mouse, and a building's ghost is placed as with the mouse.
-  - Not there yet: buildings drawn as a draft with a tick and a cross, undo, order pins, the loupe, and control groups
-    (Griff has no Ctrl to make one).
+    controls as with the mouse.
+  - A build icon of the construction panel opens a draft instead of FAF's ghost: a tap on the map places a plan of that
+    building, on FAF's grid (an extractor on the free mass spot within 5 mm, else "No free resource here"), a tap on a plan
+    takes it away, a drag from the newest plan draws a line of them side by side, a drag from another plan moves them all
+    (extractors stay on their spots), and a drag elsewhere pans. A finger that rests shows the plan its lift places, with a
+    loupe above it of what the finger covers. With an extractor picked, *Box* and a drag give every free mass spot in the
+    box a plan. Another icon picks another building for the next plans; plans on taken ground are red. The tick orders them
+    all with FAF's build mode, as many clicks (the first replaces what the engineers do, the rest are queued; with *Plus* all
+    are queued), moving the camera to a plan the screen does not show and back; the cross, or a tap of two fingers, drops the
+    draft. The selected engineers build it, or the ones selected when the draft began. Up to 30 plans; while plans wait,
+    an order of the orders panel says "First ✓ or ✕". FAF's build keys and templates keep FAF's ghost, which is placed as
+    with the mouse.
+  - Not there yet: undo, order pins and control groups (Griff has no Ctrl to make one).
 - **Network games**: *Multiplayer LAN* in the game's menu is the game's own lobby, with nothing from FAF's servers
   (`native/README.md`, The network). It plays against FAF's game on a PC in lockstep, and both sides need the same
   game: the app's FAF files are those of the newest version a replay downloaded, 3835 so far. A PC's FAF folder may

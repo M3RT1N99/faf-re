@@ -169,7 +169,9 @@ public final class MainActivity extends Activity {
                 + "they are, a stroke from the round handle beside the selection lays a route that ends in the order its label "
                 + "names (your factory with engineers: assist), a long loop back to the handle patrols, and two fingers tapping "
                 + "deselect; the bar has Box, Plus (queue) and Attack, lit by a tap for the next action or held for as long as "
-                + "they are held. The touch controls count from the game's next start: a game that runs keeps its own.");
+                + "they are held. A build icon opens a draft: taps place plans (an extractor on its mass spot), a drag from the "
+                + "newest draws a line of them, from another moves them all, a rest shows a loupe; the tick orders them, the "
+                + "cross drops them. The touch controls count from the game's next start: a game that runs keeps its own.");
         mStartButtons.add(button(game, "Start the game", v -> startActivity(new Intent(this, GameActivity.class))));
         Button size = button(game, PictureSize.label(this), null);
         size.setOnClickListener(v -> {

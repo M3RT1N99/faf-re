@@ -1,8 +1,9 @@
 -- Griff, the app's touch scheme (buildstage/touch-concept-v2.md): where the selection is on the screen, for the handle
 -- that the app shows beside it; the camera's moves that its gestures make, as the UI moves the camera (a glide after a pan, a
--- flight to the group, a pinch), not the simulation; and the few things its gestures ask of FAF's UI. The app places the
--- handle and decides what a gesture clicks (android/native/src/host/GriffAndroid.cpp); with the mouse scheme nothing is
--- reported.
+-- flight to the group, a pinch), not the simulation; the few things its gestures ask of FAF's UI; and the draft's part that
+-- only FAF's UI knows: the build icon that opens it, its builders, the tick's build mode and selection. The app places the
+-- handle, holds the draft and decides what a gesture clicks (android/native/src/host/GriffAndroid.cpp); with the mouse scheme
+-- nothing is reported and FAF's build icons are FAF's.
 
 local Group = import('/lua/maui/group.lua').Group
 local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
@@ -259,6 +260,159 @@ function ToGroup(fly)
     camera:RestoreSettings(settings)
 end
 
+-- --- The draft ------------------------------------------------------------------------------------------------------------
+
+--- The draft's builders: the engineers selected when a building was picked, who build it if none is selected at the tick;
+--- the selection the tick replaced; the camera as it was before the tick moved it to a plan.
+local draft = {builders = false, before = false, camera = false}
+
+--- Whether two lists hold the same units.
+local function SameUnits(units, others)
+    if table.getn(units) ~= table.getn(others) then
+        return false
+    end
+    local ids = {}
+    for _, unit in units do
+        ids[unit:GetEntityId()] = true
+    end
+    for _, unit in others do
+        if not ids[unit:GetEntityId()] then
+            return false
+        end
+    end
+    return true
+end
+
+--- A button of FAF's construction panel was clicked (its hook, after FAF's own handler): a build icon that started FAF's build
+--- mode puts its building in the app's draft instead (FafreGriffDraft), and FAF's ghost goes. Only the panel's own click, the
+--- left button's: FAF's hotbuild keys and its templates keep FAF's ghost.
+function BuildIconClicked(item, modifiers)
+    if not FafreGriffWanted() or not item or item.type ~= 'item' or not modifiers or not modifiers.Left then
+        return
+    end
+    local mode = CommandMode.GetCommandMode()
+    if mode[1] ~= 'build' or not mode[2] or mode[2].name ~= item.id then
+        return
+    end
+    CommandMode.EndCommandMode(true)
+    local units = GetSelectedUnits()
+    local engineers = units and EntityCategoryFilterDown(categories.ENGINEER, units)
+    if engineers and not table.empty(engineers) then
+        draft.builders = engineers
+    end
+    FafreGriffDraft(item.id)
+end
+
+--- The draft ended (ticked, dropped, ended by an order mode): its builders are forgotten.
+function DraftEnded()
+    draft.builders = false
+end
+
+--- An order mode armed while the draft is open (FAF's orders panel, a key): with plans the draft comes first, by its tick or
+--- cross, and nothing is armed; an empty draft ends and the mode stays. FAF's own start behaviours have run before this one,
+--- as its identifier puts it after them.
+function OrderWhileDrafting(mode, data)
+    if mode ~= 'order' or not FafreGriffWanted() then
+        return
+    end
+    local plans = FafreGriffDraftPlans()
+    if plans > 0 then
+        CommandMode.EndCommandMode(true)
+        FafreGriffDraftRefused()
+    elseif plans == 0 then
+        FafreGriffDraftEnd()
+        DraftEnded()
+    end
+end
+
+--- Where the draft's tick and cross stand (the mockup's: above FAF's construction panel, left of the column at the right):
+--- the panel's top and the leftmost of the avatars and their idle lists, in the picture's pixels; -1 where not shown.
+function DraftAnchors()
+    local top = -1
+    local construction = import('/lua/ui/game/construction.lua').controls.constructionGroup
+    if construction and not construction:IsHidden() then
+        top = construction.Top()
+    end
+    local left = -1
+    local avatars = import('/lua/ui/game/avatars.lua').controls
+    local function Column(control)
+        if control and not control:IsHidden() then
+            local at = control.Left()
+            if left < 0 or at < left then
+                left = at
+            end
+        end
+    end
+    for _, avatar in avatars.avatars or {} do
+        Column(avatar)
+    end
+    Column(avatars.idleEngineers)
+    Column(avatars.idleFactories)
+    FafreGriffDraftAnchors(top, left)
+end
+
+--- The tick begins (the program's DraftCommitTask): its builders are the selected engineers, or else the draft's that still
+--- live, and they are selected for FAF's build clicks; the selection the player had comes back at CommitEnd. Answers whether
+--- there are any. Everything the tick orders comes between this and CommitEnd.
+function CommitBegin()
+    local units = GetSelectedUnits() or {}
+    local builders = EntityCategoryFilterDown(categories.ENGINEER, units)
+    if table.empty(builders) then
+        builders = {}
+        for _, unit in draft.builders or {} do
+            if not IsDestroyed(unit) and not unit:IsDead() then
+                table.insert(builders, unit)
+            end
+        end
+    end
+    if table.empty(builders) then
+        FafreGriffAnswer(No)
+        return
+    end
+    draft.before = false
+    if not SameUnits(units, builders) then
+        draft.before = units
+        SelectUnits(builders)
+    end
+    FafreGriffAnswer(Yes)
+end
+
+--- A plan's click comes next: FAF's build mode for its building, as its construction panel arms it.
+function StartBuild(id)
+    CommandMode.StartCommandMode('build', {name = id})
+end
+
+--- The tick is over: the build mode it left ends, and the selection the player had comes back.
+function CommitEnd()
+    CommandMode.EndCommandMode(true)
+    local before = draft.before
+    draft.before = false
+    if before then
+        SelectUnits(before)
+    end
+end
+
+--- The tick's camera to a plan the free map does not show, as high and turned as it is; LookBack puts it where it was.
+function LookAt(x, y, z)
+    StopCamera()
+    local camera = Camera()
+    if not draft.camera then
+        draft.camera = camera:SaveSettings()
+    end
+    local settings = camera:SaveSettings()
+    settings.Focus = Vector(x, y, z)
+    camera:RestoreSettings(settings)
+end
+
+function LookBack()
+    local saved = draft.camera
+    draft.camera = false
+    if saved then
+        StopCamera()
+        Camera():RestoreSettings(saved)
+    end
+end
+
 -- --- The session's UI, each frame -----------------------------------------------------------------------------------------
 
 --- Each frame of the session's UI under `parent`, while the app wants it. An error stops what failed, with one warning.
@@ -272,6 +426,7 @@ function Start(parent)
     reporter.Width:Set(0)
     reporter.Height:Set(0)
     local reporting, driving = true, true
+    local anchoring = true
     reporter.OnFrame = function(self, delta)
         if not FafreGriffWanted() then
             return
@@ -282,6 +437,13 @@ function Start(parent)
                 WARN('fafre_ui: griff: ' .. tostring(problem))
                 FafreGriffBox(0)
                 reporting = false
+            end
+        end
+        if anchoring and FafreGriffDraftPlans() >= 0 then
+            local ok, problem = pcall(DraftAnchors)
+            if not ok then
+                WARN('fafre_ui: griff: draft: ' .. tostring(problem))
+                anchoring = false
             end
         end
         if driving then
@@ -296,11 +458,12 @@ function Start(parent)
             self:SetNeedsFrameUpdate(false)
         end
     end
-    -- The game is over: what Griff set of FAF's goes back (FAF's reach for a unit beside a click).
+    -- The game is over: what Griff set of FAF's goes back (FAF's reach for a unit beside a click), and the draft goes.
     reporter.OnDestroy = function(self)
         FafreGriffEnded()
     end
     reporter:SetNeedsFrameUpdate(true)
+    CommandMode.AddStartBehavior(OrderWhileDrafting, 'fafre_griff')
 end
 
 -- --- What a gesture asks ----------------------------------------------------------------------------------------------------

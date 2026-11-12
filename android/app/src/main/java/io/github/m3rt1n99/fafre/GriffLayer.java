@@ -1,9 +1,11 @@
 package io.github.m3rt1n99.fafre;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.os.Build;
@@ -14,8 +16,9 @@ import android.view.View;
  * What the touch scheme Griff draws over the game (buildstage/touch-concept-v2.md, the mockup buildstage/touch-preview): the
  * handle beside the selection, with the selection's count and a line to the group's middle, or where the group is out of view
  * or under a panel, an arrow at it; the stroke a finger draws from it, with the waypoints its lift gives and a label of what it
- * gives; the ring of a finger that rests; and a toast, a short word for the user ({@link #toast}). In the screen's pixels, in
- * the mockup's sizes and colours. It takes no fingers: they go through to the layer under it.
+ * gives; the ring of a finger that rests; the draft's plans, the line and the plan a finger would add, Box's box over deposits
+ * and the loupe of what a resting finger covers; and a toast, a short word for the user ({@link #toast}). In the screen's pixels,
+ * in the mockup's sizes and colours. It takes no fingers: they go through to the layer under it.
  */
 final class GriffLayer extends View {
     private static final int OWN = 0xFF2DD4BF;
@@ -24,6 +27,8 @@ final class GriffLayer extends View {
     private static final int ATTACK = 0xFFFBBF24;
     private static final int PATROL = 0xFFC4B5FD;
     private static final int BUILD = 0xFF7DD3FC;
+    private static final int ALARM = 0xFFF87171;
+    private static final int BACKGROUND = 0xFF0A1118;
     private static final int MUTED = 0xFFA8BAC5;
     private static final int TEXT = 0xFFE8EEF2;
     private static final int PANEL_SOLID = 0xFF0E1922;
@@ -48,6 +53,19 @@ final class GriffLayer extends View {
     private static final float TOAST_PAD_MM = 3;
     private static final float TOAST_BELOW_TOP_MM = 2;
     private static final long TOAST_MILLISECONDS = 1800;
+    /** A plan: a box of its ground (at least Draft.LEAST_MM wide), the newest fuller than the others, a line's and the aim's between. */
+    private static final float PLAN_EDGE_MM = 1.5f * CSS_PIXEL_MM;
+    private static final int NEWEST_ALPHA = 140;
+    private static final int OLDER_ALPHA = 82;
+    private static final int LINE_ALPHA = 89;
+    /** Box's box over deposits: the own colour, faint, its edge the ring's. */
+    private static final int BOX_ALPHA = 36;
+    /** The loupe: a circle of this radius, this far above the finger, the 6 mm about it at twice its size, a cross in it. */
+    private static final float LOUPE_MM = 6;
+    private static final float LOUPE_ABOVE_MM = 14;
+    private static final float LOUPE_ROOM_MM = 1;
+    private static final float LOUPE_CROSS_MM = 1.2f;
+    private static final float LOUPE_MAGNIFIED = 2;
 
     private final Paint mFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mRing = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -59,9 +77,19 @@ final class GriffLayer extends View {
     private final Paint mRest = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mToastFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mToastEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mPlanFill = new Paint();
+    private final Paint mPlanEdge = new Paint();
+    private final Paint mBoxFill = new Paint();
+    private final Paint mBoxEdge = new Paint();
+    private final Paint mLoupeEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mLoupeBackground = new Paint();
+    private final Paint mLoupePicture = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Path mArrow = new Path();
     private final Path mStrokePath = new Path();
+    private final Path mLoupeCircle = new Path();
     private final RectF mPill = new RectF();
+    private final RectF mPlace = new RectF();
+    private final Rect mLoupeSource = new Rect();
     private float mMillimetre = 10;
     private float mRadius = 55;
     private float mArrowLength = 20;
@@ -91,6 +119,13 @@ final class GriffLayer extends View {
     private float mRingY;
     private String mToast;
     private long mToastUntil;
+    /** The draft as the program shows it, or none; Box's box over deposits; the loupe's picture and the finger it is of. */
+    private Draft mDraft;
+    private boolean mBoxShown;
+    private final RectF mBox = new RectF();
+    private Bitmap mLoupe;
+    private float mLoupeX;
+    private float mLoupeY;
 
     GriffLayer(Context context) {
         super(context);
@@ -111,6 +146,14 @@ final class GriffLayer extends View {
         mToastFill.setColor(PANEL_SOLID);
         mToastEdge.setStyle(Paint.Style.STROKE);
         mToastEdge.setColor(LINE);
+        mPlanEdge.setStyle(Paint.Style.STROKE);
+        mBoxFill.setColor(OWN);
+        mBoxFill.setAlpha(BOX_ALPHA);
+        mBoxEdge.setStyle(Paint.Style.STROKE);
+        mBoxEdge.setColor(RING);
+        mLoupeEdge.setStyle(Paint.Style.STROKE);
+        mLoupeEdge.setColor(RING);
+        mLoupeBackground.setColor(BACKGROUND);
     }
 
     /** The screen's pixels in a mm on the glass, the handle's radius in mm and how far beyond its edge its arrow reaches. */
@@ -125,6 +168,9 @@ final class GriffLayer extends View {
         mWords.setTextSize(FONT_MM * millimetre);
         mRest.setStrokeWidth(RING_LINE_MM * millimetre);
         mToastEdge.setStrokeWidth(Math.max(1, CSS_PIXEL_MM * millimetre));
+        mPlanEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
+        mBoxEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
+        mLoupeEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
         invalidate();
     }
 
@@ -208,6 +254,27 @@ final class GriffLayer extends View {
         }
     }
 
+    /** The draft as the program shows it now ({@link Draft#update} said it changed), or none. */
+    void setDraft(Draft draft) {
+        mDraft = draft;
+        invalidate();
+    }
+
+    /** Box's box over deposits in the draft, from one corner to the other, or none. */
+    void showDraftBox(boolean shown, float x0, float y0, float x1, float y1) {
+        mBoxShown = shown;
+        mBox.set(Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1));
+        invalidate();
+    }
+
+    /** The loupe of a finger at this place: the picture of the 6 mm about it (the game's, copied), or none. */
+    void showLoupe(Bitmap picture, float x, float y) {
+        mLoupe = picture;
+        mLoupeX = x;
+        mLoupeY = y;
+        invalidate();
+    }
+
     /** Says `text` for a moment, under the top of the free map, in place of what it said before. */
     void toast(String text) {
         mToast = text;
@@ -218,6 +285,9 @@ final class GriffLayer extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        if (mDraft != null && mDraft.open()) {
+            drawDraft(canvas);
+        }
         if (mShown) {
             drawHandle(canvas);
         }
@@ -286,6 +356,83 @@ final class GriffLayer extends View {
         float y = Math.max(mEndY - LABEL_ABOVE_MM * mMillimetre, mFreeTop + LABEL_BELOW_TOP_MM * mMillimetre);
         mWords.setColor(colour);
         canvas.drawText(words(says), x, y - (mWords.ascent() + mWords.descent()) / 2, mWords);
+    }
+
+    /** The mockup's drawDraft and drawLinePreview: each plan in the build colour, red where its ground is taken. */
+    private void drawDraft(Canvas canvas) {
+        Draft draft = mDraft;
+        for (int plan = 0; plan < draft.plans(); ++plan) {
+            drawPlace(canvas, draft, plan, draft.has(plan, Draft.NEWEST) ? NEWEST_ALPHA : OLDER_ALPHA);
+        }
+        for (int at = 0; at < draft.lineCount(); ++at) {
+            drawPlace(canvas, draft, draft.lineItem(at), LINE_ALPHA);
+        }
+        if (draft.aimShown()) {
+            drawPlace(canvas, draft, draft.aimItem(), NEWEST_ALPHA);
+        }
+        if (mBoxShown) {
+            canvas.drawRect(mBox, mBoxFill);
+            canvas.drawRect(mBox, mBoxEdge);
+        }
+        if (mLoupe != null && draft.restsOnMap()) {
+            drawLoupe(canvas, draft);
+        }
+    }
+
+    /** A place's box: the ground its skirt takes on the screen, at least Draft.LEAST_MM wide about its middle. */
+    private void placeBox(Draft draft, int item, RectF box) {
+        float half = Draft.LEAST_MM * mMillimetre / 2;
+        float x = draft.x(item);
+        float y = draft.y(item);
+        box.set(Math.min(draft.left(item), x - half), Math.min(draft.top(item), y - half), Math.max(draft.right(item), x + half),
+                Math.max(draft.bottom(item), y + half));
+    }
+
+    private void drawPlace(Canvas canvas, Draft draft, int item, int alpha) {
+        int colour = draft.has(item, Draft.TAKEN) ? ALARM : BUILD;
+        placeBox(draft, item, mPlace);
+        mPlanFill.setColor(colour);
+        mPlanFill.setAlpha(alpha);
+        canvas.drawRect(mPlace, mPlanFill);
+        mPlanEdge.setColor(colour);
+        canvas.drawRect(mPlace, mPlanEdge);
+    }
+
+    /**
+     * The mockup's drawLoupe: a circle of 12 mm, 14 mm above the finger (below it where the top has no room), kept off the
+     * screen's sides, the 6 mm about the finger in it at twice their size over the background colour, with the plan its lift
+     * places, a ring and a cross at its middle.
+     */
+    private void drawLoupe(Canvas canvas, Draft draft) {
+        float radius = LOUPE_MM * mMillimetre;
+        float room = radius + LOUPE_ROOM_MM * mMillimetre;
+        float x = Math.max(room, Math.min(getWidth() - room, mLoupeX));
+        float above = mLoupeY - LOUPE_ABOVE_MM * mMillimetre;
+        float y = above < room ? mLoupeY + LOUPE_ABOVE_MM * mMillimetre : above;
+        mLoupeCircle.rewind();
+        mLoupeCircle.addCircle(x, y, radius, Path.Direction.CW);
+        canvas.save();
+        canvas.clipPath(mLoupeCircle);
+        canvas.drawCircle(x, y, radius, mLoupeBackground);
+        mLoupeSource.set(0, 0, mLoupe.getWidth(), mLoupe.getHeight());
+        mPlace.set(x - radius, y - radius, x + radius, y + radius);
+        canvas.drawBitmap(mLoupe, mLoupeSource, mPlace, mLoupePicture);
+        if (draft.aimShown()) {
+            // The plan where it lands, at the loupe's scale about the finger.
+            int aim = draft.aimItem();
+            placeBox(draft, aim, mPlace);
+            mPlace.set(x + (mPlace.left - mLoupeX) * LOUPE_MAGNIFIED, y + (mPlace.top - mLoupeY) * LOUPE_MAGNIFIED,
+                       x + (mPlace.right - mLoupeX) * LOUPE_MAGNIFIED, y + (mPlace.bottom - mLoupeY) * LOUPE_MAGNIFIED);
+            int colour = draft.has(aim, Draft.TAKEN) ? ALARM : BUILD;
+            mPlanFill.setColor(colour);
+            mPlanFill.setAlpha(NEWEST_ALPHA);
+            canvas.drawRect(mPlace, mPlanFill);
+        }
+        canvas.restore();
+        canvas.drawCircle(x, y, radius, mLoupeEdge);
+        float cross = LOUPE_CROSS_MM * mMillimetre;
+        canvas.drawLine(x - cross, y, x + cross, y, mLoupeEdge);
+        canvas.drawLine(x, y - cross, x, y + cross, mLoupeEdge);
     }
 
     private void drawToast(Canvas canvas) {

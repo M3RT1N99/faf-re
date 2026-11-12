@@ -168,6 +168,7 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 |---|---|
 | `lua/sessioninit.lua` | The HUD's factor, in the session's fresh state, and `OnSync` at the HUD's factor |
 | `lua/ui/game/gamemain.lua` | `OnSelectionChanged`, `OnQueueChanged`, `OnBeat`, `OnPause`, `OnResume` at the HUD's factor; the game's UI starts Griff's report of the selection (`fafre/griff.lua`, see "Griff") |
+| `lua/ui/game/construction.lua` | Griff: a build icon's click (FAF's `OnClickHandler`, which the panel's buttons take when they are made) puts its building into the draft (`fafre/griff.lua` `BuildIconClicked`, after FAF's own handler), not FAF's ghost; FAF's build mode keys reach the handler without a mouse button and stay FAF's |
 | `lua/ui/game/unitview.lua` | Nothing hovers on a phone: FAF's "Single Unit Selected Info" is on, or a selected unit's view would go with the pointer; the abilities list, which stands over the middle of the screen, only for a finger that rests on a unit |
 | `lua/ui/game/tabs.lua` | The Menu tab's ten large buttons fit at 0.92: `Built`, 837 of FAF's lines |
 | `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow |
@@ -259,8 +260,10 @@ and its mockup buildstage/touch-preview, whose numbers it takes: buildstage/grif
 each gesture ends in a click of the left or right button, a drag of the left or middle one, Shift, a command mode as FAF's orders panel
 arms it, or a console key action FAF binds to keys, what a PC player gives with a mouse and a keyboard. FAF decides what they order,
 and nothing else reaches the simulation. The camera is the UI's, which FAF's Lua moves as a player's keys and minimap do. The activity
-keeps the fingers (`TouchInput` with `setGriff`: slop, timing, the tap ladder, the stroke, two fingers; `Rail` for the rail; `Stroke`
-for what a stroke gives) and draws the handle, the stroke, a resting finger's ring and a short word for the user, a toast (`GriffLayer`).
+keeps the fingers (`TouchInput` with `setGriff`: slop, timing, the tap ladder, the stroke, two fingers, the draft's gestures; `Rail` for the
+rail; `Stroke` for what a stroke gives; `Draft` for the draft's plans as the screen shows them) and draws the handle, the stroke, a resting
+finger's ring, the draft's plans and its loupe, and a short word for the user, a toast (`GriffLayer`; the draft's tick and cross are
+`DraftButton`s).
 What a gesture clicks is decided on the program's thread, which knows what lies under the finger (`native/src/host/GriffAndroid.cpp`),
 with `fafre/griff.lua` for what only FAF's Lua knows. A finger stays within 2.5 mm, the mockup's slop:
 
@@ -278,13 +281,52 @@ with `fafre/griff.lua` for what only FAF's Lua knows. A finger stays within 2.5 
 
 Attack-move is FAF's only where its orders panel offers the button (`orders.lua`: engineers, or mobile units with a fire state). For a factory
 alone *Attack* arms nothing and the tap stays the right click: FAF's `AttackMove` sim callback fails on structures, on every client. While
-a building's ghost waits, the fingers place it as in the mouse scheme, and with no game behind the UI any more (its end) a tap and a rest
-are the UI's clicks wherever they land. Griff keeps the game's cursor off the picture's edge pixel: FAF scrolls the view while its cursor
+FAF's own ghost waits (its build mode keys, hotbuild, a template), the fingers place it as in the mouse scheme, and with no game behind the
+UI any more (its end) a tap and a rest are the UI's clicks wherever they land. Griff keeps the game's cursor off the picture's edge pixel: FAF scrolls the view while its cursor
 is on the window's edge (`ui_ScreenEdgeScrollView`), where a mouse is pushed on purpose and a finger at the glass's edge would hold it,
 which took a stroke's route elsewhere than it was drawn.
 
-A toast (`GriffLayer.toast`) says a word for 1.8 s in a pill under the free map's top at the screen's middle (FAF's top panels); T1's
-word is Cancelled, and the draft, undo and control groups to come say theirs. The free map's cross (`griffplace::CrossAt`: how far the
+A toast (`GriffLayer.toast`) says a word for 1.8 s in a pill under the free map's top at the screen's middle (FAF's top panels): Cancelled for
+a stroke given up, the draft's words below, and undo and control groups to come say theirs.
+
+#### The draft
+
+A build icon of FAF's construction panel opens Griff's draft (buildstage/griff-v3-spec.md, T2) instead of FAF's ghost: the hook of
+`construction.lua` calls `griff.lua` `BuildIconClicked` after FAF's own click handler, which ends the build mode FAF started
+(`EndCommandMode`) and hands the blueprint to the program (`FafreGriffDraft`). Only the panel's click does: FAF's build mode keys reach the
+same handler without a mouse button, and its hotbuild keys and templates start the build mode elsewhere, so they keep FAF's ghost. The
+selection's engineers become the draft's builders, if any are selected. The draft lives on the program's thread
+(`include/GriffDraft.h`, its rules, tested in `tests/wx/GriffDraftTests.cpp`; `GriffAndroid.cpp` for what only the engine knows): each plan
+a world place and its building, from the camera's own unprojection of the finger's place (`CameraScreenToSurface`, as FAF's `UnProject`).
+After each frame's paint the program projects the plans through the map's camera (as `CUIWorldView:Project`) and the activity reads them
+with the frame (`Game.griffDraft`, `Draft`), draws them (`GriffLayer`) and knows which a finger is on. While the draft is open there is no
+handle, and a finger makes plans (`TouchInput`'s `DRAFT_` states):
+
+| Gesture | What it does |
+|---|---|
+| Tap on the map | A plan of the picked building where the finger came down, on FAF's grid: the footprint's first cell the nearest whole one, as FAF places it. An extractor or hydrocarbon plant goes on the free deposit of its kind nearest to the finger within 5 mm, as FAF's build check knows the deposits (`ISimResources`), else "No free resource here". Ground that a plan or FAF's own build check refuses (`USERUNIT_CanBeBuiltAt`, by which FAF's ghost turns red: the structures and queued buildings it sees, the ground) says "Taken"; a 31st plan "Draft is full" |
+| Tap on a plan | It goes: the newest under the finger, within its box and 1.5 mm, the box at least 2.3 mm wide; a plan under a panel is the panel's |
+| Tap on FAF's UI | The UI's, as any tap of Griff's |
+| Drag from the newest plan | A line of its building from it towards the finger: in 8 directions (an axis counts with at least tan 22.5 degrees of the other, in the building's steps), whole steps of its skirt, so that the buildings stand side by side as FAF's own drag line puts them for adjacency, none before half a step; shown as the finger moves, added where it was 50 ms before the lift, past taken places, up to the limit. A second finger gives it up and the two pinch |
+| Drag from another plan | The whole draft follows by whole world units, plans on deposits stay; kept where the finger was 50 ms before the lift; a second finger puts it back and the two pinch |
+| Drag with *Box* and a deposit's building picked | From anywhere: a box (drawn in the own colour), and at the lift every free deposit in it gets a plan; *Box* is used |
+| Drag elsewhere | A pan, whatever the rail says |
+| Rest 400 ms on no plan, without *Box* | The plan its lift places shows under the finger, with a loupe 14 mm above it (below where the top has no room): a circle of 12 mm, the 6 mm about the finger at twice their size, copied from the game's surface (`PixelCopy`, at most 30 times a second; on the emulator 0.6 to 15 ms, median 1.4 ms, for its 71 pixels), with the plan in it, a ring and a cross. A copy that fails or comes back blank (the emulator's at the main menu did) shows no loupe, and the game's report says so once. On a panel no loupe, and the lift is the rest's right click there |
+| Two fingers' tap | The draft goes |
+
+Plans are the boxes their skirts take on the screen, in the build colour, the newest fuller, the line's fainter, red where the ground
+is taken (another plan's, or FAF's check). The tick and the cross (`DraftButton`, 13 and 11 mm, the mockup's look) stand on the map, their
+bottoms 2 mm above the construction panel, the tick 2 mm left of the column at the right (FAF's avatars), from where `griff.lua` reads them
+each frame. The cross drops the draft. The tick (`DraftCommitTask`): "No plan yet" without plans; the builders are the selected engineers,
+else the draft's that still live ("No engineer" without), selected for the clicks (`griff.lua` `CommitBegin`) and the selection put back
+after (`CommitEnd`); plans FAF's check refuses now are left out ("N plans were on buildings", "All plans are on buildings" when none is
+left). Then per plan, a task each: FAF's build mode for its building (`StartCommandMode('build', ...)`, as the panel arms it) and a mouse's
+left click at its place, the first replacing what the builders do unless *Plus* counts, the others with Shift. A finger's press would only
+take FAF's ghost along, so the clicks are a mouse's (`Win32Android_MouseButton`). A plan not on the free map gets the camera first
+(`LookAt`: its focus, as high and turned as it was) and its click after the next frame drew it (the frames counted by griff.lua's report:
+an idle task would come before the frame); the camera goes back after the last (`LookBack`). Picking another building keeps the plans, a
+change of selection does not end the draft, and an order mode armed while plans wait (the orders panel, a key) ends at once with "First ✓
+or ✕" (`griff.lua`'s start behaviour), while an empty draft ends and lets the mode be. The free map's cross (`griffplace::CrossAt`: how far the
 free map reaches from the view's middle up, left and right) gives its place and the stroke's label's bounds.
 
 The handle: `fafre/griff.lua`, started by the hook of `ui/game/gamemain.lua`, reports each frame of the session's UI where the selection's

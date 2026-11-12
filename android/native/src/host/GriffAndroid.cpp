@@ -4,18 +4,22 @@
 // and to know a finger on it (Game.griff). A gesture's clicks are a mouse's, and Plus is the keyboard's Shift: FAF decides
 // what they order, as for a mouse, and each click picks what is under it at its own place (CUIWorldView::HandleEvent). The
 // camera moves as the UI moves it (griff.lua: its glide, its flight to the group, the pinch), not the simulation. They come
-// to the program's thread as tasks, in the order of the rest of the input (GameHost.cpp).
+// to the program's thread as tasks, in the order of the rest of the input (GameHost.cpp). The draft holds buildings planned
+// at world places (include/GriffDraft.h) until the tick orders them by FAF's build mode and a mouse's click per plan.
 
 #include <jni.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <deque>
 #include <exception>
 #include <mutex>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -23,6 +27,7 @@
 #include <Windows.h>
 #include <Win32AndroidHost.h>
 
+#include <GriffDraft.h>
 #include <GriffPlace.h>
 
 #include "HostClicks.h"
@@ -74,6 +79,24 @@ namespace
   // Game's SAID_.
   constexpr int kSaidTap = 1;
   constexpr int kSaidRouteGivenUp = 2;
+  constexpr int kSaidToast = 3;
+  constexpr int kSaidCommitted = 4;
+
+  // Game's TOAST_: what the draft says, the activity's words.
+  constexpr int kToastNoFreeResource = 1;
+  constexpr int kToastTaken = 2;
+  constexpr int kToastFull = 3;
+  constexpr int kToastNoPlan = 4;
+  constexpr int kToastNoEngineer = 5;
+  constexpr int kToastAllOnBuildings = 6;
+  constexpr int kToastSomeOnBuildings = 7;
+  constexpr int kToastFirstTickOrCross = 8;
+  constexpr int kToastNotOrdered = 9;
+
+  // Game's DRAFT_: a draft gesture's phase.
+  constexpr int kDraftShow = 0;
+  constexpr int kDraftEnd = 1;
+  constexpr int kDraftAbort = 2;
 
   // The answer of TapKind in griff.lua.
   constexpr int kOwnUnit = 1;
@@ -98,6 +121,10 @@ namespace
   constexpr char kStopCamera[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').StopCamera()";
   constexpr char kPinchEnd[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').PinchEnd()";
   constexpr char kTypeInView[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').SelectTypeInView()";
+  constexpr char kDraftEnded[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').DraftEnded()";
+  constexpr char kCommitBegin[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').CommitBegin()";
+  constexpr char kCommitEnd[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').CommitEnd()";
+  constexpr char kLookBack[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').LookBack()";
   /// FAF's key actions select_all_units_of_same_type and, with MOBILE for its ALLUNITS (the mockup's rough grab of the army,
   /// not the base), select_all_onscreen.
   constexpr char kAllOfType[] = "UI_ExpandCurrentSelection";
@@ -123,6 +150,8 @@ namespace
   std::atomic<float> gNearReachWithTroops{0};
   /// The speed a second under which the camera's glide stops.
   std::atomic<float> gGlideStop{0};
+  /// How far from a finger the draft looks for a free deposit for an extractor (the mockup's snap).
+  std::atomic<float> gDepositReach{0};
 
   /// The app's bar at the screen's edge, whose buttons lie over the picture: none until the activity has laid it out.
   std::mutex gBarMutex;
@@ -241,9 +270,12 @@ namespace
   /// The HUD is drawn after the map's picture (WRenViewport::Render), so what covers the map is told apart by depth: the
   /// controls at the map's depth or above, such as the unit view, a sibling of the map at its depth, wherever the walk meets
   /// them (FAF makes the map anew when it splits and joins the view, which puts it after the unit view); not what holds the
-  /// map or tints the whole screen at a depth below it, as the paused game's glow does.
-  [[nodiscard]] griffplace::FreeMap FreeMapOver(const Box& view)
+  /// map or tints the whole screen at a depth below it, as the paused game's glow does. With it, the main map in `mainMap`.
+  [[nodiscard]] griffplace::FreeMap FreeMapOver(const Box& view, moho::CUIWorldView** const mainMap = nullptr)
   {
+    if (mainMap != nullptr) {
+      *mainMap = nullptr;
+    }
     moho::CMauiControl* const root = UiRoot();
     if (root == nullptr) {
       return {};
@@ -275,6 +307,9 @@ namespace
         if (!found && LaidOutBox(map, box) && box.Contains(middleX, middleY)) {
           found = true;
           mapDepth = map->mDepth;
+          if (mainMap != nullptr) {
+            *mainMap = map;
+          }
         }
         continue;
       }
@@ -364,26 +399,273 @@ namespace
   /// Whether this game's free map has been worked out: without a selection it is worked out once, for a toast's place.
   bool gFreeKnown = false;
 
+  // --- The draft: plans at world places --------------------------------------------------------
+
+  /// The draft, on the program's thread: from a build icon of FAF's construction panel (griff.lua BuildIconClicked) to the
+  /// tick, the cross or the two fingers' tap.
+  griffdraft::Draft gDraft;
+  /// The blueprints of the draft's buildings by their ids, for FAF's own check of a place.
+  std::unordered_map<std::string, moho::RUnitBlueprint*> gDraftBlueprints;
+  /// What a finger shows of what it would add: the line from the newest plan, each place with whether it is free; and the plan
+  /// a finger that rests would place, of the picked building.
+  std::vector<std::pair<griffdraft::Place, bool>> gDraftLine;
+  bool gAimShown = false;
+  griffdraft::Place gAim;
+  /// The finger that rests is on the map, not on FAF's UI: the loupe is for the map.
+  bool gAimOnMap = false;
+  /// The world place under the finger where the draft's move began.
+  griffdraft::Place gMoveFrom;
+  /// Where FAF's construction panel's top and the left of the column at the right (its avatars) are, for the tick and the
+  /// cross (griff.lua); below 0 where not known.
+  float gConstructionTop = -1;
+  float gColumnLeft = -1;
+  /// The tick's clicks run (CommitStepTask): the draft takes no finger meanwhile. Its next step may wait for the next frame,
+  /// in which FAF lays its panels out for the builders' selection and the camera moves: the frames' number (each report of
+  /// griff.lua's counts one), and the one the step waits after.
+  bool gCommitting = false;
+  bool gCommitWaits = false;
+  std::uint32_t gFrame = 0;
+  std::uint32_t gCommitAfterFrame = 0;
+
+  /// What the activity reads of the draft (Game.griffDraft), as the last frame drew it.
+  std::mutex gDraftShownMutex;
+  std::vector<float> gDraftShown{0};
+
+  // Game.DRAFT_ values: a plan's flags, and how many numbers come before the plans and for each.
+  constexpr float kPlanNewest = 1;
+  constexpr float kPlanOnDeposit = 2;
+  constexpr float kPlanTaken = 4;
+  constexpr float kPlanFree = 8;
+  constexpr std::size_t kDraftHead = 8;
+  constexpr std::size_t kDraftItem = 8;
+  /// More of a line than the draft could ever hold is not shown.
+  constexpr std::size_t kLineShown = griffdraft::Draft::kMaxPlans;
+
+  /// A map's view and its place on the picture: plans are projected through its camera, a finger's place unprojected.
+  struct MapView
+  {
+    moho::CUIWorldView* view = nullptr;
+    Box box;
+  };
+
+  [[nodiscard]] bool MapOf(moho::CUIWorldView* const view, MapView& map)
+  {
+    if (view == nullptr || view->IsMiniMap() || view->GetCamera() == nullptr || !LaidOutBox(view, map.box)) {
+      return false;
+    }
+    map.view = view;
+    return true;
+  }
+
+  /// The map a finger at this place is on: none where FAF's UI or the minimap takes it.
+  [[nodiscard]] bool MapAt(const int x, const int y, MapView& map)
+  {
+    return MapOf(WorldViewAt(static_cast<float>(x), static_cast<float>(y)), map);
+  }
+
+  /// The main map of the reported view, whatever lies over a finger's place: a line or a move goes on under a panel.
+  [[nodiscard]] bool MainMap(MapView& map)
+  {
+    const Selection selection = gSelection;
+    moho::CMauiControl* const root = UiRoot();
+    if (!selection.viewKnown || root == nullptr) {
+      return false;
+    }
+    const float middleX = (selection.view.left + selection.view.right) / 2;
+    const float middleY = (selection.view.top + selection.view.bottom) / 2;
+    for (moho::CMauiControl* control = root; control != nullptr; control = control->DepthFirstSuccessor(root)) {
+      Box box;
+      if (auto* const view = dynamic_cast<moho::CUIWorldView*>(control);
+          view != nullptr && !view->IsMiniMap() && LaidOutBox(view, box) && box.Contains(middleX, middleY)) {
+        return MapOf(view, map);
+      }
+    }
+    return false;
+  }
+
+  /// A world place on the picture through the map's camera as it is (CUIWorldView:Project, which counts from the map's corner).
+  [[nodiscard]] bool Project(const MapView& map, const float x, const float y, const float z, float& screenX, float& screenY)
+  {
+    const Wm3::Vector2f at = map.view->GetCamera()->CameraGetView().Project(
+      Wm3::Vector3f(x, y, z), 0, map.box.right - map.box.left, map.box.bottom - map.box.top, 0
+    );
+    screenX = map.box.left + at.x;
+    screenY = map.box.top + at.y;
+    return std::isfinite(screenX) && std::isfinite(screenY);
+  }
+
+  /// The world place a click on the picture there lands on (UnProject, as FAF's own drags use it); false where none.
+  [[nodiscard]] bool Unproject(const MapView& map, const int screenX, const int screenY, griffdraft::Place& place)
+  {
+    const Wm3::Vector3f at =
+      map.view->GetCamera()->CameraScreenToSurface(Wm3::Vector2f(static_cast<float>(screenX), static_cast<float>(screenY)));
+    if (!std::isfinite(at.x) || !std::isfinite(at.z)) {
+      return false;
+    }
+    place = griffdraft::Place{at.x, at.z};
+    return true;
+  }
+
+  /// The height of what a click there lands on: the ground, or the water over it.
+  [[nodiscard]] float SurfaceAt(const float x, const float z)
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (session == nullptr || session->mWldMap == nullptr || session->mWldMap->mTerrainRes == nullptr) {
+      return 0;
+    }
+    moho::IWldTerrainRes* const terrain = session->mWldMap->mTerrainRes;
+    const float ground = terrain->GetHeightField()->GetElevation(x, z);
+    return terrain->IsWaterEnabled() ? (std::max)(ground, terrain->GetWaterElevation()) : ground;
+  }
+
+  /// FAF's own check of a building's place, the one its ghost turns red by: the structures and queued buildings it sees there
+  /// and the ground (USERUNIT_CanBeBuiltAt). Where it says no, FAF's click there orders nothing.
+  [[nodiscard]] bool GroundFree(const griffdraft::Building& building, const float x, const float z)
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    const auto blueprint = gDraftBlueprints.find(building.id);
+    if (session == nullptr || blueprint == gDraftBlueprints.end() || blueprint->second == nullptr) {
+      return false;
+    }
+    moho::SOccupationResult occupation{};
+    return moho::USERUNIT_CanBeBuiltAt(*session, blueprint->second, moho::SCoordsVec2{x, z}, false, &occupation, nullptr);
+  }
+
+  /// The deposits a building of this kind stands on, as FAF's build check knows them, with their middles on the picture.
+  [[nodiscard]] std::vector<griffdraft::Candidate> Deposits(const MapView& map, const griffdraft::Deposit kind)
+  {
+    std::vector<griffdraft::Candidate> candidates;
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (session == nullptr || session->mSimResources.px == nullptr || kind == griffdraft::Deposit::kNone) {
+      return candidates;
+    }
+    const moho::EDepositType type = kind == griffdraft::Deposit::kMass ? moho::kMass : moho::kHydrocarbon;
+    // As USERUNIT_CanBeBuiltAt reaches them.
+    const auto* const resources = reinterpret_cast<const moho::ISimResources*>(session->mSimResources.px);
+    for (const moho::ResourceDeposit& deposit : resources->GetDeposits()) {
+      if (deposit.depositType != type) {
+        continue;
+      }
+      const float x = static_cast<float>(deposit.footprintRect.x0 + deposit.footprintRect.x1) * 0.5f;
+      const float z = static_cast<float>(deposit.footprintRect.z0 + deposit.footprintRect.z1) * 0.5f;
+      griffdraft::Candidate candidate;
+      candidate.place = griffdraft::Place{x, z};
+      if (Project(map, x, SurfaceAt(x, z), z, candidate.screenX, candidate.screenY)) {
+        candidates.push_back(candidate);
+      }
+    }
+    return candidates;
+  }
+
+  /// A building's place for the activity: its middle on the picture and the box its skirt's corners take there, with its
+  /// number and flags (kDraftItem numbers).
+  void Show(std::vector<float>& shown, const MapView& map, const griffdraft::Building& building, const griffdraft::Place& at,
+            const float id, const float flags)
+  {
+    const float y = SurfaceAt(at.x, at.z);
+    float x = 0;
+    float screenY = 0;
+    if (!Project(map, at.x, y, at.z, x, screenY)) {
+      return;
+    }
+    float left = x;
+    float top = screenY;
+    float right = x;
+    float bottom = screenY;
+    const griffdraft::Rect skirt = griffdraft::SkirtRect(building, at.x, at.z);
+    const std::pair<float, float> corners[] = {{skirt.x0, skirt.z0}, {skirt.x1, skirt.z0}, {skirt.x0, skirt.z1}, {skirt.x1, skirt.z1}};
+    for (const auto& [cornerX, cornerZ] : corners) {
+      float cornerScreenX = 0;
+      float cornerScreenY = 0;
+      if (Project(map, cornerX, y, cornerZ, cornerScreenX, cornerScreenY)) {
+        left = (std::min)(left, cornerScreenX);
+        right = (std::max)(right, cornerScreenX);
+        top = (std::min)(top, cornerScreenY);
+        bottom = (std::max)(bottom, cornerScreenY);
+      }
+    }
+    shown.insert(shown.end(), {id, x, screenY, left, top, right, bottom, flags});
+  }
+
+  /// The draft as this frame drew it, for the activity (Game.griffDraft): whether it is open, whether its building stands on
+  /// a deposit, the tick's and the cross's anchors, how many plans, line places and aims follow, whether a resting finger is
+  /// on the map, then each, on the picture.
+  void PublishDraft(const griffplace::FreeMap& free, moho::CUIWorldView* const mainMap)
+  {
+    std::vector<float> shown{0};
+    MapView map;
+    if (gDraft.Open()) {
+      shown = {1, gDraft.Picked().deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f, gConstructionTop, gColumnLeft, 0, 0, 0,
+               gAimOnMap ? 1.0f : 0.0f};
+    }
+    if (gDraft.Open() && MapOf(mainMap, map)) {
+      const std::vector<griffdraft::Plan>& plans = gDraft.Plans();
+      for (std::size_t at = 0; at < plans.size(); ++at) {
+        const griffdraft::Plan& plan = plans[at];
+        const griffdraft::Building& building = gDraft.BuildingOf(plan);
+        float flags = at + 1 == plans.size() ? kPlanNewest : 0;
+        flags += building.deposit != griffdraft::Deposit::kNone ? kPlanOnDeposit : 0;
+        flags += gDraft.Taken(plan, GroundFree) ? kPlanTaken : 0;
+        const std::size_t before = shown.size();
+        Show(shown, map, building, griffdraft::Place{plan.x, plan.z}, static_cast<float>(plan.id), flags);
+        // Its middle on the free map: a finger there is on the plan, not on a panel over it.
+        if (shown.size() > before && free.Free(shown[before + 1], shown[before + 2])) {
+          shown.back() += kPlanFree;
+        }
+      }
+      shown[4] = static_cast<float>((shown.size() - kDraftHead) / kDraftItem);
+      const std::size_t lineFrom = shown.size();
+      if (const griffdraft::Plan* const start = gDraft.LineStart(); start != nullptr) {
+        const std::size_t count = (std::min)(gDraftLine.size(), kLineShown);
+        for (std::size_t at = 0; at < count; ++at) {
+          Show(shown, map, gDraft.BuildingOf(*start), gDraftLine[at].first, 0, gDraftLine[at].second ? 0 : kPlanTaken);
+        }
+      }
+      shown[5] = static_cast<float>((shown.size() - lineFrom) / kDraftItem);
+      if (gAimShown) {
+        const std::size_t aimFrom = shown.size();
+        Show(shown, map, gDraft.Picked(), gAim, 0, 0);
+        shown[6] = shown.size() > aimFrom ? 1.0f : 0.0f;
+      }
+    }
+    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
+    gDraftShown = std::move(shown);
+  }
+
+  void CommitStepTask(WPARAM);
+
   /// The handle for the reported selection, and the free map's cross, after the frame's drawing: FAF's Lua changes layouts
   /// in its frame, after which they are not known until the drawing works them out (unitview.lua places its panel anew each
   /// frame), and the free map reads only what is worked out (LaidOutBox). Without a selection the cross stays as it was: FAF's
-  /// panels at the map's middle hardly change, and the walk costs a frame up to a ms.
+  /// panels at the map's middle hardly change, and the walk costs a frame up to a ms. While a draft is open there is no
+  /// handle (the mockup's: no stroke starts), and the draft is shown each frame, as the camera moves its plans.
   void PlaceTask(const WPARAM)
   {
+    // The tick's next step once a frame after the one it waits after is drawn: this task comes after each frame's paint, and
+    // one of the frame the step began in may still wait.
+    if (gCommitting && gCommitWaits && gFrame != gCommitAfterFrame) {
+      gCommitWaits = false;
+      Win32Android_RunOnWindowThread(&CommitStepTask, 0);
+    }
     const Selection selection = gSelection;
     try {
-      if (!selection.viewKnown || (selection.count <= 0 && gFreeKnown)) {
-        if (selection.count <= 0) {
+      const bool drafting = gDraft.Open();
+      if (!selection.viewKnown || (!drafting && selection.count <= 0 && gFreeKnown)) {
+        if (selection.count <= 0 || drafting) {
           const std::lock_guard<std::mutex> lock(gHandleMutex);
           gHandle = Handle{};
         }
         return;
       }
-      const griffplace::FreeMap free = FreeMapOver(selection.view);
+      moho::CUIWorldView* mainMap = nullptr;
+      const griffplace::FreeMap free = FreeMapOver(selection.view, &mainMap);
       const griffplace::Cross cross = griffplace::CrossAt(free, selection.view);
-      const Handle handle = selection.count > 0
+      const Handle handle = selection.count > 0 && !drafting
                             ? Place(free, selection.count, selection.middleX, selection.middleY, selection.units, selection.view)
                             : Handle{};
+      if (drafting) {
+        PublishDraft(free, mainMap);
+      }
       gFreeKnown = true;
       const std::lock_guard<std::mutex> lock(gHandleMutex);
       gHandle = handle;
@@ -408,6 +690,7 @@ namespace
       selection.view = Box{number(8), number(9), number(10), number(11)};
     }
     gSelection = selection;
+    ++gFrame;
     // The frame's Lua runs before its paint, in which the program draws it (CScApp::Main asks for the paint).
     Win32Android_RunWhenIdle(&PlaceTask, 0);
     return 0;
@@ -448,6 +731,19 @@ namespace
     moho::CON_Execute(command);
   }
 
+  /// No draft any more on the program's side: its plans, its buildings, what a finger showed of it; the activity hears it with
+  /// the next read. A tick's clicks that still run end at their next step.
+  void ForgetDraft()
+  {
+    gDraft.Close();
+    gDraftBlueprints.clear();
+    gDraftLine.clear();
+    gAimShown = false;
+    gAimOnMap = false;
+    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
+    gDraftShown = {0};
+  }
+
   int Ended(lua_State*)
   {
     if (gToleranceSet && moho::ui_SelectTolerance == gTolerance) {
@@ -457,6 +753,112 @@ namespace
     }
     gToleranceSet = false;
     gFreeKnown = false;
+    ForgetDraft();
+    gConstructionTop = -1;
+    gColumnLeft = -1;
+    // A tick that waits for a frame gets none any more: its next step ends it, Shift too.
+    if (gCommitting) {
+      gCommitWaits = false;
+      Win32Android_RunOnWindowThread(&CommitStepTask, 0);
+    }
+    return 0;
+  }
+
+  // --- The draft's binders: what griff.lua tells it and asks of it ---------------------------------
+
+  constexpr char kDraftHelp[] = "FafreGriffDraft(blueprintId) - Griff's draft opens with this building, or takes it for its next plans";
+  constexpr char kDraftPlansHelp[] = "FafreGriffDraftPlans() - how many plans Griff's draft holds; -1 without a draft";
+  constexpr char kDraftRefusedHelp[] = "FafreGriffDraftRefused() - an order mode was refused while the draft has plans: the app says so";
+  constexpr char kDraftEndHelp[] = "FafreGriffDraftEnd() - Griff's empty draft ends, as an order mode is armed";
+  constexpr char kDraftAnchorsHelp[] =
+    "FafreGriffDraftAnchors(constructionTop, columnLeft) - where the draft's tick and cross stand, in the picture's pixels";
+
+  /// What goes into a console command when the draft is ticked (StartBuild): FAF's ids are letters, digits and underscores.
+  [[nodiscard]] bool PlainId(const char* const id)
+  {
+    if (id == nullptr || *id == 0) {
+      return false;
+    }
+    for (const char* at = id; *at != 0; ++at) {
+      const char letter = *at;
+      if (!((letter >= 'a' && letter <= 'z') || (letter >= 'A' && letter <= 'Z') || (letter >= '0' && letter <= '9') || letter == '_')) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// A building of FAF's construction panel goes into the draft (griff.lua BuildIconClicked): what the draft takes of its
+  /// blueprint, the footprint, the skirt and the deposit it wants.
+  int PickForDraft(lua_State* const lua)
+  {
+    const char* const id = lua_tostring(lua, 1);
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (!PlainId(id) || session == nullptr || session->mRules == nullptr || gCommitting) {
+      return 0;
+    }
+    moho::RResId resource{};
+    (void)gpg::STR_SetFilename(&resource.name, gpg::StrArg(id));
+    moho::RUnitBlueprint* const blueprint = session->mRules->GetUnitBlueprint(resource);
+    if (blueprint == nullptr) {
+      gpg::Warnf("Griff: no blueprint %s for the draft", id);
+      return 0;
+    }
+    griffdraft::Building building;
+    building.id = id;
+    building.footprintX = (std::max)(1, static_cast<int>(blueprint->mFootprint.mSizeX));
+    building.footprintZ = (std::max)(1, static_cast<int>(blueprint->mFootprint.mSizeZ));
+    building.skirtOffsetX = blueprint->Physics.SkirtOffsetX;
+    building.skirtOffsetZ = blueprint->Physics.SkirtOffsetZ;
+    building.skirtSizeX = blueprint->Physics.SkirtSizeX;
+    building.skirtSizeZ = blueprint->Physics.SkirtSizeZ;
+    switch (blueprint->Physics.BuildRestriction) {
+      case moho::RULEUBR_OnMassDeposit:
+        building.deposit = griffdraft::Deposit::kMass;
+        break;
+      case moho::RULEUBR_OnHydrocarbonDeposit:
+        building.deposit = griffdraft::Deposit::kHydrocarbon;
+        break;
+      default:
+        building.deposit = griffdraft::Deposit::kNone;
+        break;
+    }
+    gDraftBlueprints[building.id] = blueprint;
+    gDraft.Pick(building);
+    // The next frame shows it; a finger that comes before needs to know at once whether the draft is open.
+    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
+    if (gDraftShown.empty() || gDraftShown[0] == 0) {
+      gDraftShown = {1, building.deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f, gConstructionTop, gColumnLeft, 0, 0, 0, 0};
+    } else {
+      gDraftShown[1] = building.deposit != griffdraft::Deposit::kNone ? 1.0f : 0.0f;
+    }
+    return 0;
+  }
+
+  int DraftPlans(lua_State* const lua)
+  {
+    lua_pushnumber(lua, gDraft.Open() ? static_cast<lua_Number>(gDraft.Plans().size()) : -1);
+    return 1;
+  }
+
+  int DraftRefused(lua_State*)
+  {
+    Say(kSaidToast, kToastFirstTickOrCross, 0);
+    return 0;
+  }
+
+  int DraftEnd(lua_State*)
+  {
+    if (!gCommitting) {
+      ForgetDraft();
+    }
+    return 0;
+  }
+
+  int DraftAnchors(lua_State* const lua)
+  {
+    gConstructionTop = static_cast<float>(lua_tonumber(lua, 1));
+    gColumnLeft = static_cast<float>(lua_tonumber(lua, 2));
     return 0;
   }
 
@@ -464,6 +866,14 @@ namespace
   moho::CScrLuaBinder gBoxBinder(moho::SCR_UserLuaInitSet(), "FafreGriffBox", &ReportBox, nullptr, "<global>", kBoxHelp);
   moho::CScrLuaBinder gAnswerBinder(moho::SCR_UserLuaInitSet(), "FafreGriffAnswer", &Answer, nullptr, "<global>", kAnswerHelp);
   moho::CScrLuaBinder gEndedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffEnded", &Ended, nullptr, "<global>", kEndedHelp);
+  moho::CScrLuaBinder gDraftBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraft", &PickForDraft, nullptr, "<global>", kDraftHelp);
+  moho::CScrLuaBinder
+    gDraftPlansBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftPlans", &DraftPlans, nullptr, "<global>", kDraftPlansHelp);
+  moho::CScrLuaBinder
+    gDraftRefusedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftRefused", &DraftRefused, nullptr, "<global>", kDraftRefusedHelp);
+  moho::CScrLuaBinder gDraftEndBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftEnd", &DraftEnd, nullptr, "<global>", kDraftEndHelp);
+  moho::CScrLuaBinder
+    gDraftAnchorsBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftAnchors", &DraftAnchors, nullptr, "<global>", kDraftAnchorsHelp);
 
   /// Runs griff.lua's function, which answers by FafreGriffAnswer; 0 when it did not.
   [[nodiscard]] int Ask(const char* const command)
@@ -1060,6 +1470,434 @@ namespace
     gNextPoint = 0;
   }
 
+  // --- The draft's gestures ------------------------------------------------------------------------
+
+  /// What the draft says when a plan did not land, as the mockup words it.
+  void SayPlaced(const griffdraft::Placed placed)
+  {
+    switch (placed) {
+      case griffdraft::Placed::kNoFreeDeposit:
+        Say(kSaidToast, kToastNoFreeResource, 0);
+        break;
+      case griffdraft::Placed::kTaken:
+        Say(kSaidToast, kToastTaken, 0);
+        break;
+      case griffdraft::Placed::kFull:
+        Say(kSaidToast, kToastFull, 0);
+        break;
+      case griffdraft::Placed::kPlaced:
+        break;
+    }
+  }
+
+  /// A plan of the picked building for a finger at this place on the map: a deposit's building on the free deposit nearest to
+  /// it within reach, any other where the finger is, on FAF's grid.
+  void PlaceAt(const MapView& map, const int x, const int y)
+  {
+    const griffdraft::Deposit deposit = gDraft.Picked().deposit;
+    if (deposit != griffdraft::Deposit::kNone) {
+      SayPlaced(gDraft.PlaceOnDeposit(Deposits(map, deposit), static_cast<float>(x), static_cast<float>(y), gDepositReach.load(), GroundFree));
+      return;
+    }
+    griffdraft::Place at;
+    if (Unproject(map, x, y, at)) {
+      SayPlaced(gDraft.PlaceAt(at.x, at.z, GroundFree));
+    }
+  }
+
+  /// Where PlaceAt would put a plan for a finger there, without putting it: false where it would not.
+  [[nodiscard]] bool WouldPlace(const MapView& map, const int x, const int y, griffdraft::Place& place)
+  {
+    const griffdraft::Building& building = gDraft.Picked();
+    if (gDraft.Full()) {
+      return false;
+    }
+    if (building.deposit != griffdraft::Deposit::kNone) {
+      const std::vector<griffdraft::Candidate> deposits = Deposits(map, building.deposit);
+      const int nearest = gDraft.NearestFree(deposits, static_cast<float>(x), static_cast<float>(y), gDepositReach.load(), GroundFree);
+      if (nearest < 0) {
+        return false;
+      }
+      place = deposits[static_cast<std::size_t>(nearest)].place;
+      return true;
+    }
+    griffdraft::Place at;
+    if (!Unproject(map, x, y, at)) {
+      return false;
+    }
+    place = gDraft.Snapped(at.x, at.z);
+    return !gDraft.OnPlan(building, place.x, place.z) && GroundFree(building, place.x, place.z);
+  }
+
+  /// A tap in the draft (TouchInput's DRAFT_PENDING): the UI's where it lands on the UI, as any of Griff's taps; on the map it
+  /// removes the plan the finger was on (its number in the argument's last two words; 0: none) or places one, also where that
+  /// plan is gone by now, as the mockup's tap then finds none.
+  void DraftTapTask(const WPARAM places)
+  {
+    const int x = Coordinate(places, 0);
+    const int y = Coordinate(places, 1);
+    const int plan = Coordinate(places, 2) | Coordinate(places, 3) << 16;
+    try {
+      if (!moho::UI_GamePlaying() || UiTap(x, y)) {
+        ClickUi(false, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_LEFT);
+        return;
+      }
+      MapView map;
+      if (!gDraft.Open() || gCommitting || !MapAt(x, y, map)) {
+        return;
+      }
+      if (plan != 0 && gDraft.Remove(plan)) {
+        return;
+      }
+      PlaceAt(map, x, y);
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// The world place a finger's place stands for in a line or a move, through the main map, whatever lies over it there.
+  [[nodiscard]] bool DraftPlaceUnder(const int x, const int y, griffdraft::Place& place)
+  {
+    MapView map;
+    return gDraft.Open() && !gCommitting && MainMap(map) && Unproject(map, x, y, place);
+  }
+
+  /// A drag from the newest plan: the line to the finger shown (the moves coalesce), added where it lifted, or given up.
+  void DraftLineTask(const WPARAM places)
+  {
+    try {
+      gDraftLine.clear();
+      griffdraft::Place at;
+      if (DraftPlaceUnder(Coordinate(places, 0), Coordinate(places, 1), at)) {
+        gDraftLine = gDraft.LineTo(at.x, at.z, GroundFree);
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  void DraftLineEndTask(const WPARAM places)
+  {
+    try {
+      gDraftLine.clear();
+      griffdraft::Place at;
+      if (DraftPlaceUnder(Coordinate(places, 0), Coordinate(places, 1), at) && !gDraft.AddLine(at.x, at.z, GroundFree)) {
+        Say(kSaidToast, kToastFull, 0);
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  void DraftLineAbortTask(const WPARAM)
+  {
+    gDraftLine.clear();
+  }
+
+  /// A drag from another plan: the whole draft follows the finger from where it came down (the first two words), by whole world
+  /// units; the moves coalesce, the end keeps it, a second finger puts it back.
+  void DraftMoveTask(const WPARAM places)
+  {
+    try {
+      if (!gDraft.Moving()) {
+        if (!DraftPlaceUnder(Coordinate(places, 0), Coordinate(places, 1), gMoveFrom)) {
+          return;
+        }
+        gDraft.MoveBegin();
+      }
+      griffdraft::Place at;
+      if (DraftPlaceUnder(Coordinate(places, 2), Coordinate(places, 3), at)) {
+        gDraft.MoveBy(at.x - gMoveFrom.x, at.z - gMoveFrom.z);
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  void DraftMoveEndTask(const WPARAM places)
+  {
+    DraftMoveTask(places);
+    gDraft.MoveEnd();
+  }
+
+  void DraftMoveAbortTask(const WPARAM)
+  {
+    gDraft.MoveAbort();
+  }
+
+  /// A finger that rests in the draft on no plan: the plan its lift would place shown under it, as it moves (the moves
+  /// coalesce); at the lift that plan, or on the UI the rest's right click there, as Griff's rest on a panel gives.
+  void DraftAimTask(const WPARAM places)
+  {
+    try {
+      MapView map;
+      const int x = Coordinate(places, 0);
+      const int y = Coordinate(places, 1);
+      gAimOnMap = gDraft.Open() && !gCommitting && MapAt(x, y, map);
+      gAimShown = gAimOnMap && WouldPlace(map, x, y, gAim);
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+      gAimShown = false;
+    }
+  }
+
+  void DraftAimEndTask(const WPARAM places)
+  {
+    gAimShown = false;
+    gAimOnMap = false;
+    const int x = Coordinate(places, 0);
+    const int y = Coordinate(places, 1);
+    try {
+      if (!moho::UI_GamePlaying() || !OnMap(static_cast<float>(x), static_cast<float>(y))) {
+        ClickUi(false, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_RIGHT);
+        return;
+      }
+      MapView map;
+      if (gDraft.Open() && !gCommitting && MapAt(x, y, map)) {
+        PlaceAt(map, x, y);
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  void DraftAimGoneTask(const WPARAM)
+  {
+    gAimShown = false;
+    gAimOnMap = false;
+  }
+
+  /// Box over deposits with an extractor picked: every free deposit of its kind whose middle is in the box on the picture gets
+  /// a plan (FAF's own box is not pressed).
+  void DraftBoxTask(const WPARAM places)
+  {
+    try {
+      MapView map;
+      if (!gDraft.Open() || gCommitting || gDraft.Picked().deposit == griffdraft::Deposit::kNone || !MainMap(map)) {
+        return;
+      }
+      const int left = (std::min)(Coordinate(places, 0), Coordinate(places, 2));
+      const int right = (std::max)(Coordinate(places, 0), Coordinate(places, 2));
+      const int top = (std::min)(Coordinate(places, 1), Coordinate(places, 3));
+      const int bottom = (std::max)(Coordinate(places, 1), Coordinate(places, 3));
+      std::vector<griffdraft::Candidate> inside;
+      for (const griffdraft::Candidate& candidate : Deposits(map, gDraft.Picked().deposit)) {
+        if (candidate.screenX >= left && candidate.screenX <= right && candidate.screenY >= top && candidate.screenY <= bottom) {
+          inside.push_back(candidate);
+        }
+      }
+      bool full = false;
+      gDraft.PlaceOnDeposits(inside, GroundFree, full);
+      if (full) {
+        Say(kSaidToast, kToastFull, 0);
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  // --- The tick: FAF's build mode and a mouse's click per plan ------------------------------------------
+
+  /// The tick's plans, each with its building, and how far its clicks have come. One step a task, as a route's, so that each
+  /// sees what the one before did; T3's undo can take the whole tick from CommitBegin to CommitEnd (griff.lua).
+  struct Commit
+  {
+    std::vector<griffdraft::Plan> plans;
+    std::vector<griffdraft::Building> buildings;
+    std::size_t next = 0;
+    /// Plus counted: every order appended to what the builders do, the first too.
+    bool appendAll = false;
+    bool holdsShift = false;
+    /// The camera moved for a plan the free map did not show, and goes back at the end.
+    bool looked = false;
+    /// Frames the next plan waited for the camera, the plans no frame showed on the free map, and the clicks given: the first
+    /// one replaces unless Plus counted, whichever plan it is.
+    int waited = 0;
+    int unreached = 0;
+    int clicked = 0;
+  };
+
+  Commit gCommit;
+  /// How many frames a plan waits for the camera that went to it.
+  constexpr int kCommitFrames = 10;
+  /// How far inside the map and from any panel a click goes: FAF scrolls the view with a cursor on its edge pixel.
+  constexpr float kClickRoom = 2;
+
+  void CallGriffText(const char* const format, const char* const text)
+  {
+    char call[96];
+    std::snprintf(call, sizeof call, format, text);
+    char command[192];
+    std::snprintf(command, sizeof command, "%s%s", kGriffLua, call);
+    moho::CON_Execute(command);
+  }
+
+  void CallGriffPlace(const char* const format, const float x, const float y, const float z)
+  {
+    char call[96];
+    std::snprintf(call, sizeof call, format, static_cast<double>(x), static_cast<double>(y), static_cast<double>(z));
+    char command[192];
+    std::snprintf(command, sizeof command, "%s%s", kGriffLua, call);
+    moho::CON_Execute(command);
+  }
+
+  /// The tick's next step comes after the next frame (PlaceTask).
+  void WaitForFrame()
+  {
+    gCommitWaits = true;
+    gCommitAfterFrame = gFrame;
+  }
+
+  /// The tick is over: Shift as it was, FAF's build mode it left ended, the camera and the selection as the player had them,
+  /// the draft closed; the activity hears which of the rail's buttons it used. With no game any more, only Shift.
+  void FinishCommit()
+  {
+    gCommitting = false;
+    gCommitWaits = false;
+    if (gCommit.holdsShift) {
+      ReleaseShift();
+    }
+    if (moho::UI_GamePlaying()) {
+      if (gCommit.looked) {
+        moho::CON_Execute(kLookBack);
+      }
+      moho::CON_Execute(kCommitEnd);
+      moho::CON_Execute(kDraftEnded);
+    }
+    if (gCommit.unreached > 0) {
+      Say(kSaidToast, kToastNotOrdered, gCommit.unreached);
+    }
+    Say(kSaidCommitted, gCommit.appendAll ? kRailQueue : 0, 0);
+    ForgetDraft();
+    gCommit = Commit{};
+  }
+
+  /// The next plan's click: FAF's build mode for its building, as the construction panel arms it, and a mouse's left click at
+  /// its place on the picture, the first replacing what the builders do unless Plus counted, the others appended (Shift, held
+  /// to the end). A plan the free map does not show, under a panel or out of view, gets the camera first, as high and turned
+  /// as it is, and its click after the frame that drew it there.
+  void CommitStepTask(const WPARAM)
+  {
+    if (!gCommitting) {
+      return;
+    }
+    try {
+      if (!moho::UI_GamePlaying() || gCommit.next >= gCommit.plans.size()) {
+        FinishCommit();
+        return;
+      }
+      const griffdraft::Plan& plan = gCommit.plans[gCommit.next];
+      const griffdraft::Building& building = gCommit.buildings[gCommit.next];
+      const Selection selection = gSelection;
+      moho::CUIWorldView* mainMap = nullptr;
+      const griffplace::FreeMap free = selection.viewKnown ? FreeMapOver(selection.view, &mainMap) : griffplace::FreeMap{};
+      MapView map;
+      float x = 0;
+      float y = 0;
+      const float height = SurfaceAt(plan.x, plan.z);
+      if (MapOf(mainMap, map) && Project(map, plan.x, height, plan.z, x, y) && free.DiscFree(x, y, kClickRoom)) {
+        if ((gCommit.clicked > 0 || gCommit.appendAll) && !gCommit.holdsShift) {
+          HoldShift();
+          gCommit.holdsShift = true;
+        }
+        CallGriffText("StartBuild('%s')", building.id.c_str());
+        // A mouse's click: a finger's press would only take FAF's ghost along (Win32Android_TouchButton).
+        const int clickX = static_cast<int>(std::lround(x));
+        const int clickY = static_cast<int>(std::lround(y));
+        Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, TRUE, clickX, clickY);
+        Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, FALSE, clickX, clickY);
+        ++gCommit.clicked;
+        ++gCommit.next;
+        gCommit.waited = 0;
+        Win32Android_RunOnWindowThread(&CommitStepTask, 0);
+        return;
+      }
+      if (gCommit.waited == 0) {
+        CallGriffPlace("LookAt(%.3f, %.3f, %.3f)", plan.x, height, plan.z);
+        gCommit.looked = true;
+      }
+      if (++gCommit.waited > kCommitFrames) {
+        ++gCommit.unreached;
+        ++gCommit.next;
+        gCommit.waited = 0;
+        Win32Android_RunOnWindowThread(&CommitStepTask, 0);
+        return;
+      }
+      WaitForFrame();
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+      FinishCommit();
+    }
+  }
+
+  /// The tick (argument 1: Plus counts): no plans, no engineers, or nothing that can be built says so; else the builders are
+  /// selected (griff.lua CommitBegin: the selected engineers, or the draft's that live) and the plans FAF would build are
+  /// clicked, a step a task.
+  void DraftCommitTask(const WPARAM plus)
+  {
+    try {
+      if (!moho::UI_GamePlaying() || !gDraft.Open() || gCommitting) {
+        return;
+      }
+      if (gDraft.Plans().empty()) {
+        Say(kSaidToast, kToastNoPlan, 0);
+        return;
+      }
+      if (Ask(kCommitBegin) != kYes) {
+        Say(kSaidToast, kToastNoEngineer, 0);
+        return;
+      }
+      const std::vector<griffdraft::Plan> buildable = gDraft.Buildable(GroundFree);
+      if (buildable.empty()) {
+        Say(kSaidToast, kToastAllOnBuildings, 0);
+        moho::CON_Execute(kCommitEnd);
+        return;
+      }
+      if (buildable.size() < gDraft.Plans().size()) {
+        Say(kSaidToast, kToastSomeOnBuildings, static_cast<int>(gDraft.Plans().size() - buildable.size()));
+      }
+      gCommit = Commit{};
+      gCommit.plans = buildable;
+      for (const griffdraft::Plan& plan : buildable) {
+        gCommit.buildings.push_back(gDraft.BuildingOf(plan));
+      }
+      gCommit.appendAll = plus != 0;
+      gCommitting = true;
+      // FAF lays its panels out anew for the builders' selection in the next frame: the first click comes after it.
+      WaitForFrame();
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// The cross, or two fingers' tap in the draft: it goes, with nothing ordered.
+  void DraftDropTask(const WPARAM)
+  {
+    try {
+      if (gCommitting || !gDraft.Open()) {
+        return;
+      }
+      ForgetDraft();
+      if (moho::UI_GamePlaying()) {
+        moho::CON_Execute(kDraftEnded);
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// A draft gesture's task by its phase (Game.DRAFT_): shown as the finger moves, which coalesces, its end, or given up.
+  void RunDraft(const int phase, void (*show)(WPARAM), void (*end)(WPARAM), void (*abort)(WPARAM), const WPARAM places)
+  {
+    if (phase == kDraftShow) {
+      Win32Android_RunNewestOnWindowThread(show, places);
+    } else if (phase == kDraftEnd) {
+      Win32Android_RunOnWindowThread(end, places);
+    } else if (phase == kDraftAbort) {
+      Win32Android_RunOnWindowThread(abort, places);
+    }
+  }
+
   /// A velocity for a task's argument (SignedCoordinate).
   [[nodiscard]] int Velocity(const float pixelsASecond)
   {
@@ -1069,10 +1907,12 @@ namespace
 
 /// The scheme is on or off; the handle's radius, how far from its middle a finger is on it, its room from the group's units and
 /// how far from its middle its arrow reaches; the tap help's reach and what counts as a small control; how far beside a unit a
-/// tap picks it, without troops and with them; the speed a second under which the camera's glide stops: in the picture's pixels.
+/// tap picks it, without troops and with them; the speed a second under which the camera's glide stops; how far from a finger
+/// the draft finds a deposit: in the picture's pixels.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_setGriff(
   JNIEnv*, jclass, const jboolean on, const jfloat radius, const jfloat touchRadius, const jfloat gap, const jfloat arrowReach,
-  const jfloat tapReach, const jfloat tapSmallSide, const jfloat nearReach, const jfloat nearReachWithTroops, const jfloat glideStop
+  const jfloat tapReach, const jfloat tapSmallSide, const jfloat nearReach, const jfloat nearReachWithTroops, const jfloat glideStop,
+  const jfloat depositReach
 )
 {
   gRadius.store(radius);
@@ -1084,6 +1924,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_setGriff(
   gNearReach.store(nearReach);
   gNearReachWithTroops.store(nearReachWithTroops);
   gGlideStop.store(glideStop);
+  gDepositReach.store(depositReach);
   gOn.store(on != JNI_FALSE);
 }
 
@@ -1244,4 +2085,62 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_pinchEnd(JN
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_holdShift(JNIEnv*, jclass, const jboolean down)
 {
   Win32Android_RunOnWindowThread(&ShiftTask, down != JNI_FALSE ? 1 : 0);
+}
+
+/// The draft as the last frame drew it into `values` (Game.DRAFT_ layout), as much as fits; how many numbers.
+extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDraft(JNIEnv* const env, jclass, const jfloatArray values)
+{
+  std::vector<float> shown;
+  {
+    const std::lock_guard<std::mutex> lock(gDraftShownMutex);
+    shown = gDraftShown;
+  }
+  const jsize count = (std::min)(env->GetArrayLength(values), static_cast<jsize>(shown.size()));
+  env->SetFloatArrayRegion(values, 0, count, shown.data());
+  return count;
+}
+
+/// A tap in the draft, on the plan numbered `plan` (0: none) as the activity saw it (DraftTapTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftTap(JNIEnv*, jclass, const jint x, const jint y, const jint plan)
+{
+  Win32Android_RunOnWindowThread(&DraftTapTask, Places(x, y, plan & 0xFFFF, (plan >> 16) & 0xFFFF));
+}
+
+/// The line from the newest plan to a finger here, by its phase (Game.DRAFT_).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftLine(JNIEnv*, jclass, const jint phase, const jint x, const jint y)
+{
+  RunDraft(phase, &DraftLineTask, &DraftLineEndTask, &DraftLineAbortTask, Places(x, y));
+}
+
+/// The whole draft follows a finger from where it came down to where it is, by its phase.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftMove(
+  JNIEnv*, jclass, const jint phase, const jint fromX, const jint fromY, const jint x, const jint y
+)
+{
+  RunDraft(phase, &DraftMoveTask, &DraftMoveEndTask, &DraftMoveAbortTask, Places(fromX, fromY, x, y));
+}
+
+/// A finger that rests here in the draft shows the plan its lift places, by its phase (the abort: none shown).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftAim(JNIEnv*, jclass, const jint phase, const jint x, const jint y)
+{
+  RunDraft(phase, &DraftAimTask, &DraftAimEndTask, &DraftAimGoneTask, Places(x, y));
+}
+
+/// Box from one corner to the other over deposits, with an extractor picked (DraftBoxTask).
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_draftBox(JNIEnv*, jclass, const jint x0, const jint y0, const jint x1, const jint y1)
+{
+  Win32Android_RunOnWindowThread(&DraftBoxTask, Places(x0, y0, x1, y1));
+}
+
+/// The tick, with Plus counting or not (DraftCommitTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftCommit(JNIEnv*, jclass, const jboolean plus)
+{
+  Win32Android_RunOnWindowThread(&DraftCommitTask, plus != JNI_FALSE ? 1 : 0);
+}
+
+/// The cross, or two fingers' tap in the draft (DraftDropTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftDrop(JNIEnv*, jclass)
+{
+  Win32Android_RunOnWindowThread(&DraftDropTask, 0);
 }

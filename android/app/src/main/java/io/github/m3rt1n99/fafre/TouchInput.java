@@ -62,6 +62,19 @@ package io.github.m3rt1n99.fafre;
  *       moves it on; a quick tap of two lets the selection go;
  *   <li>the rail's buttons ({@link Mouse#rail}) count for the next action, or while held.
  * </ul>
+ *
+ * While Griff's draft is open ({@link Mouse#drafting}: a build icon picked a building, buildstage/griff-v3-spec.md T2) a finger
+ * makes plans instead, and there is no handle:
+ *
+ * <ul>
+ *   <li>a tap places a plan where it came down, or removes the plan it is on ({@link Mouse#draftTap});
+ *   <li>a drag from the newest plan draws a line of them ({@link Mouse#draftLine}), from another plan moves the whole draft
+ *       ({@link Mouse#draftMove}), with Box and an extractor picked is a box over deposits ({@link Mouse#draftBox}), else it
+ *       pans; a second finger gives the line, the move or the box up and the two pinch;
+ *   <li>a finger that rests {@link #DRAFT_REST_MILLISECONDS} on no plan, without Box, shows the plan its lift places under it
+ *       and a loupe ({@link Mouse#draftAim});
+ *   <li>a quick tap of two drops the draft ({@link Mouse#draftDrop}).
+ * </ul>
  */
 final class TouchInput implements Fingers {
     /** What the fingers do, on the thread that calls this class. */
@@ -191,6 +204,42 @@ final class TouchInput implements Fingers {
 
         /** Griff: the fingers have left the camera, which glides on at this velocity (pixels a second). */
         void pinchEnd(float velocityX, float velocityY);
+
+        /** Griff: whether the draft is open, as the program says now: a finger that comes down makes plans. */
+        boolean drafting();
+
+        /** Griff: the number of the draft's plan a finger here is on as the screen shows it, the newest first; 0: none. */
+        int draftPlan(float x, float y);
+
+        /** Griff: whether the plan numbered `plan` is the draft's newest, from which a drag draws a line. */
+        boolean draftNewest(int plan);
+
+        /** Griff: whether the plan numbered `plan` stands on a deposit: it neither starts a line nor moves with the draft. */
+        boolean draftOnDeposit(int plan);
+
+        /** Griff: whether the draft's building stands on a deposit: with Box a drag is a box over deposits. */
+        boolean draftPicksDeposit();
+
+        /**
+         * Griff: a tap in the draft where the finger came down, on the plan numbered `plan` (0: none): the program removes that
+         * plan, places one there, or on FAF's UI clicks as any tap of Griff's.
+         */
+        void draftTap(float x, float y, int plan);
+
+        /** Griff: the line from the newest plan to here: shown, added where the finger lifted, or given up (DRAFT_). */
+        void draftLine(int phase, float x, float y);
+
+        /** Griff: the whole draft follows a finger from where it came down to here: shown, kept, or put back (DRAFT_). */
+        void draftMove(int phase, float fromX, float fromY, float x, float y);
+
+        /** Griff: a finger rests here in the draft: the plan its lift places and the loupe shown, that plan placed, or gone. */
+        void draftAim(int phase, float x, float y);
+
+        /** Griff: Box over deposits from one corner to the other: shown as the finger moves, given where it lifted, or gone. */
+        void draftBox(int phase, float x0, float y0, float x1, float y1);
+
+        /** Griff: two fingers' tap in the draft: it goes, with nothing ordered. */
+        void draftDrop();
     }
 
     /** Griff: the rail's buttons, as Mouse#rail has them. */
@@ -212,6 +261,10 @@ final class TouchInput implements Fingers {
      * click on it: the first tap's selection brings FAF's panels up, which can cover where it was.
      */
     static final int STEP_TYPE_IN_VIEW = 5;
+    /** Griff: a draft gesture's phase (Mouse#draftLine and the others). */
+    static final int DRAFT_SHOW = 0;
+    static final int DRAFT_END = 1;
+    static final int DRAFT_ABORT = 2;
     /** Griff: what a STEP_TAP was, as the program answers it (Mouse#smartTap); 0 until it has. */
     static final int TAP_UI = 1;
     static final int TAP_OWN = 2;
@@ -220,6 +273,8 @@ final class TouchInput implements Fingers {
     static final int TAP_OTHER = 5;
     /** Griff: how long a finger rests before its drag draws a box instead of panning. */
     static final long REST_MILLISECONDS = 300;
+    /** Griff: how long a finger rests in the draft before the plan it would place shows under it, with the loupe. */
+    static final long DRAFT_REST_MILLISECONDS = 400;
     /** Griff: how far a finger may wander and still stay, for a tap, a rest and a stroke's tap on the handle (the mockup's). */
     static final float GRIFF_SLOP_MM = 2.5f;
     /** Griff: the tap ladder's next tap, this soon after the last one's lift and this near it. */
@@ -270,6 +325,7 @@ final class TouchInput implements Fingers {
     private static final int NO_CLICK = -1;
     private static final int DELETE_ORDER = -2;
     private static final int GRIFF_TAP = -3;
+    private static final int DRAFT_TAP = -4;
 
     private enum State {
         /** No finger. */
@@ -290,6 +346,16 @@ final class TouchInput implements Fingers {
         RESTED,
         /** Griff: one finger draws a route from the handle over the selection. */
         STROKE,
+        /** Griff's draft: one finger, and nothing shown yet of what it does. */
+        DRAFT_PENDING,
+        /** Griff's draft: one finger draws a line of plans from the newest. */
+        DRAFT_LINE,
+        /** Griff's draft: one finger moves the whole draft. */
+        DRAFT_MOVE,
+        /** Griff's draft: one finger rested on no plan, and the plan its lift places shows under it. */
+        DRAFT_AIM,
+        /** Griff's draft: one finger draws a box over deposits. */
+        DRAFT_BOX,
         /** Two fingers, and nothing shown yet of what they do. */
         TWO_PENDING,
         PANNING,
@@ -531,6 +597,9 @@ final class TouchInput implements Fingers {
     /** Griff: when the cursor last hovered for the stroke, and whether a hover waits for its time. */
     private long mHoverAt;
     private boolean mHoverWaits;
+    /** Griff's draft: the plan the finger came down on (0: none), and the one a waiting tap was on. */
+    private int mDraftPlan;
+    private int mClickPlan;
 
     /** `slop`: how far a finger may wander in the screen's pixels and still count as staying. */
     TouchInput(Mouse mouse, float slop) {
@@ -600,6 +669,16 @@ final class TouchInput implements Fingers {
             // A second finger gives the route up.
             giveUpStroke();
             mState = State.SPENT;
+        } else if (mState == State.DRAFT_LINE || mState == State.DRAFT_MOVE || mState == State.DRAFT_BOX) {
+            // The mockup's: a second finger gives the line, the move or the box up, and the two pinch at once, no tap of two,
+            // which would drop the whole draft.
+            giveUpDraftGesture();
+            startTwo(id, x, y, time);
+            startPinch();
+        } else if (mState == State.DRAFT_PENDING || mState == State.DRAFT_AIM) {
+            giveUpDraftGesture();
+            mMouse.stopTimer();
+            startTwo(id, x, y, time);
         } else if (mState == State.PENDING || mState == State.RESTED || mState == State.PLACE_PENDING
                    || mState == State.PLACE_LINE_READY) {
             mGhostToRestore = mState != State.PENDING && mState != State.RESTED && mGhostPlaced;
@@ -644,6 +723,10 @@ final class TouchInput implements Fingers {
         }
         if (!mDeleting && mMouse.placing()) {
             startPlacing(id, x, y, time);
+        } else if (mGriff && mMouse.drafting()) {
+            // The draft: fingers make plans, and there is no handle.
+            mGhostPlaced = false;
+            startDraft(id, x, y, time);
         } else if (mGriff && !mLadder.climbing(x, y, time, LADDER_MM * mMillimetre) && mMouse.onGriff(x, y)) {
             // The ladder first: a second tap on a unit is its double click, even where the first one has raised the handle.
             // After the third rung the handle takes a drag at once.
@@ -665,6 +748,21 @@ final class TouchInput implements Fingers {
         mMouse.move(x, y);
         mMouse.startTimer(mGriff ? REST_MILLISECONDS : HOLD_MILLISECONDS);
         mState = State.PENDING;
+    }
+
+    /** Griff: a finger came down in the draft, maybe on a plan; taps do not climb the ladder. */
+    private void startDraft(int id, float x, float y, long time) {
+        mFirst.id = id;
+        mFirst.place(x, y);
+        mStartX = x;
+        mStartY = y;
+        mStartTime = time;
+        startTrail(x, y, time);
+        mLadder.clear();
+        mDraftPlan = mMouse.draftPlan(x, y);
+        mMouse.move(x, y);
+        mMouse.startTimer(DRAFT_REST_MILLISECONDS);
+        mState = State.DRAFT_PENDING;
     }
 
     /** Griff: a finger came down on the handle. Nothing goes to the game until it lifts but the cursor's hover. */
@@ -732,6 +830,29 @@ final class TouchInput implements Fingers {
             case STROKE:
                 addTrail(time);
                 strokeTo(mFirst.x, mFirst.y, time);
+                break;
+            case DRAFT_PENDING:
+                addTrail(time);
+                if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mGriffSlop) {
+                    mMouse.stopTimer();
+                    startDraftDrag(time);
+                }
+                break;
+            case DRAFT_LINE:
+                addTrail(time);
+                mMouse.draftLine(DRAFT_SHOW, mFirst.x, mFirst.y);
+                break;
+            case DRAFT_MOVE:
+                addTrail(time);
+                mMouse.draftMove(DRAFT_SHOW, mStartX, mStartY, mFirst.x, mFirst.y);
+                break;
+            case DRAFT_AIM:
+                addTrail(time);
+                mMouse.draftAim(DRAFT_SHOW, mFirst.x, mFirst.y);
+                break;
+            case DRAFT_BOX:
+                addTrail(time);
+                mMouse.draftBox(DRAFT_SHOW, mStartX, mStartY, mFirst.x, mFirst.y);
                 break;
             case PRESSED:
                 mMouse.move(mFirst.x, mFirst.y);
@@ -811,6 +932,19 @@ final class TouchInput implements Fingers {
                     finishStroke(time);
                     mState = State.SPENT;
                     break;
+                case DRAFT_PENDING:
+                    mMouse.stopTimer();
+                    mClickPlan = mDraftPlan;
+                    click(DRAFT_TAP, mStartX, mStartY, time - mStartTime, time);
+                    mState = State.SPENT;
+                    break;
+                case DRAFT_LINE:
+                case DRAFT_MOVE:
+                case DRAFT_AIM:
+                case DRAFT_BOX:
+                    finishDraftGesture(time);
+                    mState = State.SPENT;
+                    break;
                 case PRESSED:
                     releasePressed(true, time);
                     mState = State.SPENT;
@@ -832,7 +966,9 @@ final class TouchInput implements Fingers {
                 case TWO_PENDING:
                     // Griff counts both fingers, from the first one down: a finger that rested and a quick second are no tap.
                     if (time - (mGriff ? mFirstDown : mStartTime) <= TWO_FINGER_TAP_MILLISECONDS) {
-                        if (mGriff && !mMouse.placing()) {
+                        if (mGriff && !mMouse.placing() && mMouse.drafting()) {
+                            mMouse.draftDrop();
+                        } else if (mGriff && !mMouse.placing()) {
                             mMouse.deselect();
                         } else {
                             int button = mMouse.placing() ? Game.BUTTON_RIGHT : holdButton();
@@ -911,6 +1047,8 @@ final class TouchInput implements Fingers {
         } else if (mState == State.STROKE) {
             // A route goes only where a finger lifted: the system's taking the fingers gives it up.
             hideStroke();
+        } else if (mState == State.DRAFT_LINE || mState == State.DRAFT_MOVE || mState == State.DRAFT_AIM || mState == State.DRAFT_BOX) {
+            giveUpDraftGesture();
         } else if (mState == State.PINCHING || mState == State.PINCH_PAN) {
             endPinch(false, 0);
         }
@@ -947,6 +1085,11 @@ final class TouchInput implements Fingers {
             mHoverWaits = false;
             mHoverAt += HOVER_MILLISECONDS;
             mMouse.strokeHover(mFirst.x, mFirst.y);
+        } else if (mState == State.DRAFT_PENDING && mDraftPlan == 0 && (mMouse.rail() & RAIL_BOX) == 0) {
+            // A rest on no plan, without Box (the mockup's): the plan its lift places shows under it, with the loupe.
+            mState = State.DRAFT_AIM;
+            mMouse.draftAim(DRAFT_SHOW, mFirst.x, mFirst.y);
+            mMouse.held();
         }
         finishClick();
     }
@@ -1029,7 +1172,11 @@ final class TouchInput implements Fingers {
      * where the finger passed the slop, so the map does not jump by it.
      */
     private void startGriffDrag(boolean rested, long time) {
-        int rail = mMouse.rail();
+        startGriffDrag(rested, time, mMouse.rail());
+    }
+
+    /** With these of the rail's buttons counting for it. */
+    private void startGriffDrag(boolean rested, long time, int rail) {
         mPressedGriff = true;
         mMayPan = !rested && (rail & RAIL_BOX) == 0;
         mLadder.clear();
@@ -1070,6 +1217,74 @@ final class TouchInput implements Fingers {
         if (mRing) {
             mRing = false;
             mMouse.ring(false, 0, 0);
+        }
+    }
+
+    // --- Griff's draft -------------------------------------------------------------------------------------------------
+
+    /**
+     * Griff: a finger in the draft passed the slop (the mockup's draftMoveA): with Box and a building on deposits a box over
+     * them, from wherever it came down; from the newest plan a line; from another plan the whole draft moves; from nothing, or
+     * from a plan on a deposit, it pans, whatever the rail says.
+     */
+    private void startDraftDrag(long time) {
+        boolean movable = mDraftPlan != 0 && !mMouse.draftOnDeposit(mDraftPlan);
+        mLadder.clear();
+        if ((mMouse.rail() & RAIL_BOX) != 0 && mMouse.draftPicksDeposit()) {
+            mState = State.DRAFT_BOX;
+            mMouse.draftBox(DRAFT_SHOW, mStartX, mStartY, mFirst.x, mFirst.y);
+        } else if (movable && mMouse.draftNewest(mDraftPlan)) {
+            mState = State.DRAFT_LINE;
+            mMouse.draftLine(DRAFT_SHOW, mFirst.x, mFirst.y);
+        } else if (movable) {
+            mState = State.DRAFT_MOVE;
+            mMouse.draftMove(DRAFT_SHOW, mStartX, mStartY, mFirst.x, mFirst.y);
+        } else {
+            startGriffDrag(false, time, 0);
+        }
+    }
+
+    /** Griff: the finger of a draft gesture lifted: what it gives counts where the finger was a moment before. */
+    private void finishDraftGesture(long time) {
+        int settled = settled(time);
+        float x = mTrailX[settled];
+        float y = mTrailY[settled];
+        switch (mState) {
+            case DRAFT_LINE:
+                mMouse.draftLine(DRAFT_END, x, y);
+                break;
+            case DRAFT_MOVE:
+                mMouse.draftMove(DRAFT_END, mStartX, mStartY, x, y);
+                break;
+            case DRAFT_AIM:
+                mMouse.draftAim(DRAFT_END, x, y);
+                break;
+            case DRAFT_BOX:
+                mMouse.draftBox(DRAFT_END, mStartX, mStartY, x, y);
+                mMouse.railUsed(RAIL_BOX);
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Griff: a draft gesture given up, by a second finger or the system: nothing comes of it, a move puts the plans back. */
+    private void giveUpDraftGesture() {
+        switch (mState) {
+            case DRAFT_LINE:
+                mMouse.draftLine(DRAFT_ABORT, mFirst.x, mFirst.y);
+                break;
+            case DRAFT_MOVE:
+                mMouse.draftMove(DRAFT_ABORT, mStartX, mStartY, mFirst.x, mFirst.y);
+                break;
+            case DRAFT_AIM:
+                mMouse.draftAim(DRAFT_ABORT, mFirst.x, mFirst.y);
+                break;
+            case DRAFT_BOX:
+                mMouse.draftBox(DRAFT_ABORT, mStartX, mStartY, mFirst.x, mFirst.y);
+                break;
+            default:
+                break;
         }
     }
 
@@ -1246,7 +1461,7 @@ final class TouchInput implements Fingers {
     /** A click `rested` milliseconds after the cursor came there, now or when it has settled. */
     private void click(int button, float x, float y, long rested, long time) {
         mClickButton = button;
-        if (button == GRIFF_TAP) {
+        if (button == GRIFF_TAP || button == DRAFT_TAP) {
             // Griff's tap is decided by what the cursor rests on, at the finger's place, so it clicks there; its ladder decides
             // where a double click goes.
             mClickLift = time;
@@ -1273,6 +1488,11 @@ final class TouchInput implements Fingers {
         mClickButton = NO_CLICK;
         if (button == DELETE_ORDER) {
             mMouse.deleteOrder(mClickX, mClickY);
+            return;
+        }
+        if (button == DRAFT_TAP) {
+            // A plan is no action of the rail's: Plus stays for the tick.
+            mMouse.draftTap(mClickX, mClickY, mClickPlan);
             return;
         }
         if (button == GRIFF_TAP) {

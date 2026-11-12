@@ -212,6 +212,91 @@ public class TouchInputTest {
             events.add("pinch end" + glide(velocityX, velocityY));
         }
 
+        /** Griff's draft: open or not, its building on a deposit, its plans as {number, x, y, on a deposit}, the newest last. */
+        boolean drafting;
+        boolean picksDeposit;
+        final List<int[]> draftPlans = new ArrayList<>();
+        /** A finger this far from a plan's middle each way is on it. */
+        int draftReach = 20;
+
+        @Override
+        public boolean drafting() {
+            return drafting;
+        }
+
+        @Override
+        public int draftPlan(float x, float y) {
+            for (int at = draftPlans.size() - 1; at >= 0; --at) {
+                int[] plan = draftPlans.get(at);
+                if (Math.abs(x - plan[1]) <= draftReach && Math.abs(y - plan[2]) <= draftReach) {
+                    return plan[0];
+                }
+            }
+            return 0;
+        }
+
+        @Override
+        public boolean draftNewest(int plan) {
+            return !draftPlans.isEmpty() && draftPlans.get(draftPlans.size() - 1)[0] == plan;
+        }
+
+        @Override
+        public boolean draftOnDeposit(int plan) {
+            for (int[] known : draftPlans) {
+                if (known[0] == plan) {
+                    return known[3] != 0;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public boolean draftPicksDeposit() {
+            return picksDeposit;
+        }
+
+        @Override
+        public void draftTap(float x, float y, int plan) {
+            events.add("draft tap " + (int) x + " " + (int) y + (plan != 0 ? " on " + plan : ""));
+        }
+
+        @Override
+        public void draftLine(int phase, float x, float y) {
+            events.add("draft line " + phase(phase, x, y));
+        }
+
+        @Override
+        public void draftMove(int phase, float fromX, float fromY, float x, float y) {
+            events.add("draft move " + (phase == TouchInput.DRAFT_ABORT ? "abort" : phase(phase, fromX, fromY) + " to " + (int) x + " " + (int) y));
+        }
+
+        @Override
+        public void draftAim(int phase, float x, float y) {
+            events.add("draft aim " + phase(phase, x, y));
+        }
+
+        @Override
+        public void draftBox(int phase, float x0, float y0, float x1, float y1) {
+            events.add("draft box " + (phase == TouchInput.DRAFT_ABORT ? "abort" : phase(phase, x0, y0) + " to " + (int) x1 + " " + (int) y1));
+        }
+
+        @Override
+        public void draftDrop() {
+            events.add("draft drop");
+        }
+
+        /** A draft gesture's phase, and where it is unless it is given up. */
+        private static String phase(int phase, float x, float y) {
+            switch (phase) {
+                case TouchInput.DRAFT_SHOW:
+                    return "show " + (int) x + " " + (int) y;
+                case TouchInput.DRAFT_END:
+                    return "end " + (int) x + " " + (int) y;
+                default:
+                    return "abort";
+            }
+        }
+
         private static String glide(float velocityX, float velocityY) {
             return velocityX == 0 && velocityY == 0 ? "" : " glide " + Math.round(velocityX) + " " + Math.round(velocityY);
         }
@@ -1581,6 +1666,181 @@ public class TouchInputTest {
         moveFirst(560, 300);
         up(0, 1500);
         expect("move 500 300", "delete 500 300");
+    }
+
+    // --- Griff's draft (buildstage/griff-v3-spec.md T2) ------------------------------------------------------------------
+
+    /** Griff with its draft open, its plans at these places (number, x, y, on a deposit), the newest last. */
+    private void draft(int[]... plans) {
+        griff();
+        mouse.drafting = true;
+        for (int[] plan : plans) {
+            mouse.draftPlans.add(plan);
+        }
+    }
+
+    @Test
+    public void griffDraftATapPlacesAPlanWhereTheFingerCameDown() {
+        draft();
+        down(0, 100, 50, 1000);
+        moveFirst(110, 55);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "draft tap 100 50");
+        assertEquals("the program hears the finger, as for any tap", List.of("100 50"), mouse.downs);
+    }
+
+    @Test
+    public void griffDraftATapOnAPlanRemovesIt() {
+        draft(new int[] {7, 100, 50, 0}, new int[] {8, 300, 50, 0});
+        down(0, 110, 60, 1000);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 110 60", "draft tap 110 60 on 7");
+    }
+
+    @Test
+    public void griffDraftATapIsNoActionForTheRailAndClimbsNoLadder() {
+        // Plus stays lit for the tick; a second tap soon after and near is another plan, not a rung.
+        draft();
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        down(0, 100, 50, 1000);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        down(0, 110, 50, 1200);
+        up(0, 1200 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "draft tap 100 50", "move 110 50", "draft tap 110 50");
+    }
+
+    @Test
+    public void griffDraftHasNoHandle() {
+        draft();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        strokeFirst(100, 50, 300, 50);
+        up(0, 1500);
+        assertFalse(mouse.events.toString(), mouse.events.toString().contains("route"));
+        assertEquals(-1, mouse.shown);
+    }
+
+    @Test
+    public void griffDraftADragFromTheNewestPlanDrawsALineToWhereTheFingerSettled() {
+        draft(new int[] {1, 50, 50, 0}, new int[] {2, 100, 50, 0});
+        down(0, 100, 50, 1000);
+        moveFirst(130, 50, 1010);
+        moveFirst(200, 50, 1020);
+        // It lifts 40 ms after its last move, 50 ms after the one before.
+        up(0, 1060);
+        expect("move 100 50", "draft line show 130 50", "draft line show 200 50", "draft line end 130 50");
+    }
+
+    @Test
+    public void griffDraftADragFromAnOlderPlanMovesTheWholeDraft() {
+        draft(new int[] {1, 50, 50, 0}, new int[] {2, 100, 50, 0});
+        down(0, 55, 50, 1000);
+        moveFirst(90, 60, 1010);
+        up(0, 1100);
+        expect("move 55 50", "draft move show 55 50 to 90 60", "draft move end 55 50 to 90 60");
+    }
+
+    @Test
+    public void griffDraftADragFromAPlanOnADepositOrFromNothingPansWhateverTheRailSays() {
+        // An extractor's plan stays on its deposit: no line, no move. Box with another building pans too (the mockup's).
+        draft(new int[] {1, 100, 50, 1});
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 100, 50, 1000);
+        moveFirst(150, 50, 1010);
+        up(0, 1200);
+        expect("move 100 50", "griff drag 100 50 now 150 50 rail 0", "move 150 50", "griff drag end 150 50");
+        mouse.events.clear();
+        down(0, 300, 50, 2000);
+        moveFirst(350, 50, 2010);
+        assertEquals("griff drag 300 50 now 350 50 rail 0", mouse.events.get(1));
+    }
+
+    @Test
+    public void griffDraftBoxWithAnExtractorPickedIsABoxOverDepositsFromAnywhere() {
+        draft(new int[] {1, 100, 50, 0});
+        mouse.picksDeposit = true;
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 100, 50, 1000);
+        moveFirst(200, 120, 1010);
+        up(0, 1100);
+        expect("move 100 50", "draft box show 100 50 to 200 120", "draft box end 100 50 to 200 120", "rail used 1");
+    }
+
+    @Test
+    public void griffDraftARestOnNoPlanAimsAndItsLiftPlacesWhereTheFingerSettled() {
+        draft(new int[] {1, 400, 50, 0});
+        down(0, 100, 50, 1000);
+        assertEquals("the mockup's REST_LOUPE", 400, mouse.timer);
+        timerRuns();
+        moveFirst(104, 52, 1410);
+        moveFirst(130, 60, 1500);
+        up(0, 1520);
+        expect("move 100 50", "draft aim show 100 50", "held", "draft aim show 104 52", "draft aim show 130 60", "draft aim end 104 52");
+    }
+
+    @Test
+    public void griffDraftARestOnAPlanOrWithBoxIsNoAimAndItsLiftIsATap() {
+        draft(new int[] {1, 100, 50, 0});
+        down(0, 100, 50, 1000);
+        timerRuns();
+        up(0, 1600);
+        expect("move 100 50", "draft tap 100 50 on 1");
+        mouse.events.clear();
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 300, 50, 2000);
+        timerRuns();
+        up(0, 2600);
+        expect("move 300 50", "draft tap 300 50");
+    }
+
+    @Test
+    public void griffDraftASecondFingerGivesTheLineUpAndTheTwoPinchWithoutATap() {
+        draft(new int[] {1, 100, 50, 0});
+        down(0, 100, 50, 1000);
+        moveFirst(150, 50, 1010);
+        down(1, 350, 50, 1020);
+        up(1, 1060);
+        up(0, 1070);
+        expect("move 100 50", "draft line show 150 50", "draft line abort", "move 350 50", "pinch start 250 50 200", "pinch start 150 50 0",
+               "pinch end");
+        assertFalse(mouse.events.contains("draft drop"));
+    }
+
+    @Test
+    public void griffDraftASecondFingerPutsAMoveBackAndEndsAnAim() {
+        draft(new int[] {1, 50, 50, 0}, new int[] {2, 100, 50, 0});
+        down(0, 50, 50, 1000);
+        moveFirst(90, 50, 1010);
+        down(1, 350, 50, 1020);
+        assertTrue(mouse.events.toString(), mouse.events.contains("draft move abort"));
+        up(1, 1500);
+        up(0, 1510);
+        mouse.events.clear();
+        down(0, 200, 50, 2000);
+        timerRuns();
+        down(1, 350, 50, 2450);
+        assertEquals(List.of("move 200 50", "draft aim show 200 50", "held", "draft aim abort", "move 350 50"), mouse.events);
+    }
+
+    @Test
+    public void griffDraftATwoFingerTapDropsTheDraft() {
+        draft(new int[] {1, 100, 50, 0});
+        down(0, 100, 50, 1000);
+        down(1, 200, 50, 1050);
+        up(1, 1150);
+        up(0, 1160);
+        assertTrue(mouse.events.toString(), mouse.events.contains("draft drop"));
+        assertFalse(mouse.events.contains("deselect"));
+    }
+
+    @Test
+    public void griffDraftGesturesTheSystemTakesGiveNothing() {
+        draft(new int[] {1, 50, 50, 0}, new int[] {2, 100, 50, 0});
+        down(0, 50, 50, 1000);
+        moveFirst(90, 50, 1010);
+        touch.cancel();
+        assertEquals("draft move abort", mouse.events.get(mouse.events.size() - 1));
     }
 
     @Test

@@ -190,15 +190,29 @@ final class Game {
     /** {@link #griffSaid}: what the program says, three numbers each: what, and two of its own. */
     static final int SAID_TAP = 1;
     static final int SAID_ROUTE_GIVEN_UP = 2;
+    static final int SAID_TOAST = 3;
+    static final int SAID_COMMITTED = 4;
+
+    /** SAID_TOAST: what the draft says (GameActivity's words), with a number where it counts. */
+    static final int TOAST_NO_FREE_RESOURCE = 1;
+    static final int TOAST_TAKEN = 2;
+    static final int TOAST_FULL = 3;
+    static final int TOAST_NO_PLAN = 4;
+    static final int TOAST_NO_ENGINEER = 5;
+    static final int TOAST_ALL_ON_BUILDINGS = 6;
+    static final int TOAST_SOME_ON_BUILDINGS = 7;
+    static final int TOAST_FIRST_TICK_OR_CROSS = 8;
+    static final int TOAST_NOT_ORDERED = 9;
 
     /**
      * Griff on or off, and in the picture's pixels: the handle's radius, how far from its middle a finger is on it, its room
      * from the selection's units and how far from its middle the tip of its arrow is; the tap help's reach and what counts as
      * a small control (as for {@link #tap}); how far beside a unit a tap still picks it, with nothing selected that takes
-     * orders and with troops; and the speed, a second, under which the camera's glide stops.
+     * orders and with troops; the speed, a second, under which the camera's glide stops; and how far from a finger the draft
+     * finds a deposit for an extractor.
      */
     static native void setGriff(boolean on, float radius, float touchRadius, float gap, float arrowReach, float tapReach,
-                                float tapSmallSide, float nearReach, float nearReachWithTroops, float glideStop);
+                                float tapSmallSide, float nearReach, float nearReachWithTroops, float glideStop, float depositReach);
 
     /** Where the app's bar lies over the picture, in its pixels: the handle keeps clear of it. */
     static native void setGriffBar(int left, int top, int right, int bottom);
@@ -214,7 +228,8 @@ final class Game {
     /**
      * Into `said` what the program has said since the last call, three numbers each (SAID_ and two of its own), as many as fit;
      * how many numbers that is. SAID_TAP: a tap's number and what it was (TouchInput.TAP_) with the rail's bits it used
-     * shifted by 8; SAID_ROUTE_GIVEN_UP: a route ended on a panel.
+     * shifted by 8; SAID_ROUTE_GIVEN_UP: a route ended on a panel; SAID_TOAST: what the draft says (TOAST_) and its number;
+     * SAID_COMMITTED: the draft was ticked, with the rail's bits it used.
      */
     static native int griffSaid(int[] said);
 
@@ -274,4 +289,36 @@ final class Game {
 
     /** The rail's Plus held or let go: Shift's key, in the order of the clicks. */
     static native void holdShift(boolean down);
+
+    // --- Griff's draft (buildstage/griff-v3-spec.md, T2; GriffAndroid.cpp, include/GriffDraft.h) --------------------------
+
+    /**
+     * The draft as the last frame drew it, into `values` ({@link Draft#VALUES} of them, {@link Draft#update} reads them), as many
+     * as fit: whether it is open, and its plans, line and aim on the picture. How many numbers.
+     */
+    static native int griffDraft(float[] values);
+
+    /**
+     * A tap in the draft: on FAF's UI the UI's click; on the map it removes the plan numbered `plan` the finger was on (0: none),
+     * else it places one of the draft's building there, an extractor on the free deposit nearest within reach.
+     */
+    static native void draftTap(int x, int y, int plan);
+
+    /** The line from the newest plan to here: shown, added or given up by `phase` (TouchInput.DRAFT_). */
+    static native void draftLine(int phase, int x, int y);
+
+    /** The whole draft follows a finger from where it came down to here, by whole world units: by `phase`. */
+    static native void draftMove(int phase, int fromX, int fromY, int x, int y);
+
+    /** A finger that rests here in the draft: the plan its lift places shown, placed (or on FAF's UI its right click), gone. */
+    static native void draftAim(int phase, int x, int y);
+
+    /** Box from one corner to the other, with an extractor picked: each free deposit in it gets a plan. */
+    static native void draftBox(int x0, int y0, int x1, int y1);
+
+    /** The tick: FAF's build mode and a click per plan, all appended with `plus` ({@link #SAID_COMMITTED} when done). */
+    static native void draftCommit(boolean plus);
+
+    /** The cross, or two fingers' tap in the draft: the draft goes, with nothing ordered. */
+    static native void draftDrop();
 }
