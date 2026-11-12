@@ -1,9 +1,10 @@
 -- Griff, the app's touch scheme (buildstage/touch-concept-v2.md): where the selection is on the screen, for the handle
 -- that the app shows beside it; the camera's moves that its gestures make, as the UI moves the camera (a glide after a pan, a
--- flight to the group, a pinch), not the simulation; the few things its gestures ask of FAF's UI; and the draft's part that
--- only FAF's UI knows: the build icon that opens it, its builders, the tick's build mode and selection. The app places the
--- handle, holds the draft and decides what a gesture clicks (android/native/src/host/GriffAndroid.cpp); with the mouse scheme
--- nothing is reported and FAF's build icons are FAF's.
+-- flight to the group, a pinch), not the simulation; the few things its gestures ask of FAF's UI; the draft's part that only
+-- FAF's UI knows: the build icon that opens it, its builders, the tick's build mode and selection; and what a gesture orders,
+-- for the pins at its places and the undo that takes it back with FAF's own inputs. The app places the handle, holds the draft
+-- and the pins, decides what a gesture clicks and how an undo goes (android/native/src/host/GriffAndroid.cpp); with the mouse
+-- scheme nothing is reported or watched and FAF's build icons are FAF's.
 
 local Group = import('/lua/maui/group.lua').Group
 local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
@@ -12,6 +13,17 @@ local CommandMode = import('/lua/ui/game/commandmode.lua')
 
 --- A large selection's box comes from this many of its units, spread over all of them: near enough for a handle.
 local SampledUnits = 64
+
+--- FAF's attack-move mode, as its orders panel's button arms it (orders.lua AttackMoveBehavior): a new table each time, as
+--- FAF writes into the mode's data when it ends.
+local function AttackMoveMode()
+    return {
+        name = 'RULEUCC_Script',
+        AbilityName = 'AttackMove',
+        TaskName = 'AttackMove',
+        Cursor = 'ATTACK_MOVE',
+    }
+end
 
 --- The answers of Troops and OffersPatrol to the app, whose 0 is no answer.
 local Yes, No = 2, 1
@@ -279,6 +291,328 @@ function ToGroup(fly)
     camera:RestoreSettings(settings)
 end
 
+-- --- What a gesture orders: its pins and its undo -------------------------------------------------------------------------
+
+--- Of FAF's orders, none of a gesture's to take back: the construction panel's own queue (a factory's units, an upgrade,
+--- which the panel itself takes back), and what FAF's UI gives beside another order.
+local NotOrders = {None = true, BuildFactory = true, Upgrade = true}
+
+--- The yes and no of the record's flags to the program.
+local function Flag(value)
+    return value and 1 or 0
+end
+
+--- Whether a unit's Stop would also take what it builds: a factory's units, a structure's upgrade, a launcher's missiles (FAF's
+--- soft stop leaves them out, orders.lua SoftStop; a commander's or engineer's silo of an enhancement is no launcher). A
+--- factory's queue as FAF's UI reads it is its rally route.
+local function IsFactory(unit)
+    local factories = (categories.SHOWQUEUE * categories.STRUCTURE) + categories.FACTORY + (categories.SILO - categories.CONSTRUCTION)
+    return EntityCategoryContains(factories, unit)
+end
+
+--- What Griff saw of the orders FAF's UI gave, for giving them again: FAF's queue tells an order's type and place, not the
+--- unit it targets, whether it targets a place, nor the building it builds. An id is no order's own: FAF's UI gives a
+--- command's id to the next once the sim is done with one, and the ids of the second army's commands on are 2^24 and more,
+--- which the game's Lua numbers (floats) hold to an even number only, so two commands can show one id. So what is learnt is
+--- kept by the entry's id, type and place. An order on a unit has that unit's place in the queue, which moves with it: those
+--- are kept by id and type too, the newest few, and the one whose unit is nearest to the entry's place counts. The oldest
+--- goes first.
+local learnt = {}
+local learntKeys = {}
+local LearntAtMost = 1024
+local OnUnitsAtMost = 4
+
+local function Remember(key, value)
+    if not learnt[key] then
+        table.insert(learntKeys, key)
+        if table.getn(learntKeys) > LearntAtMost then
+            learnt[table.remove(learntKeys, 1)] = nil
+        end
+    end
+    learnt[key] = value
+end
+
+local function PlaceKey(entry)
+    local at = entry.position or {}
+    return entry.ID .. ' ' .. entry.type .. ' ' .. tostring(at[1]) .. ' ' .. tostring(at[3])
+end
+
+local function Learn(entry, info)
+    Remember(PlaceKey(entry), info)
+    if info.target then
+        local key = entry.ID .. ' ' .. entry.type
+        local onUnits = {info}
+        for _, other in learnt[key] or {} do
+            if table.getn(onUnits) < OnUnitsAtMost and other.target ~= info.target then
+                table.insert(onUnits, other)
+            end
+        end
+        Remember(key, onUnits)
+    end
+end
+
+local function Learnt(entry)
+    local info = learnt[PlaceKey(entry)]
+    local at = entry.position
+    -- NaN, where FAF's UI does not find the entity an order targets, is not equal to itself.
+    if info or not at or at[1] ~= at[1] then
+        return info
+    end
+    local nearest, best = nil, nil
+    for _, other in learnt[entry.ID .. ' ' .. entry.type] or {} do
+        local unit = GetUnitById(tostring(other.target))
+        if unit and not unit:IsDead() then
+            local there = unit:GetPosition()
+            local far = (there[1] - at[1]) * (there[1] - at[1]) + (there[3] - at[3]) * (there[3] - at[3])
+            if not best or far < best then
+                nearest, best = other, far
+            end
+        end
+    end
+    return nearest
+end
+
+--- The gesture whose orders are watched (the program's UndoWatch to UndoWatchEnd): the queues of the selection's units before
+--- it, and the units its orders went to, whether any replaced what a unit did. The last gesture that ordered, which the pill
+--- takes back (`record`), by its number. An undo whose clicks run: the selection it puts back.
+local watch = false
+local record = false
+local records = 0
+local undo = false
+
+--- A gesture that may order begins: the queues of the selection's units as they are now, before its clicks, and what each
+--- builds now (its focus: a building it has begun). The tap ladder's attack-move in place of a move (`join` 1) goes on with
+--- the move's record, whose queues are from before the move.
+function UndoWatch(join)
+    if join == 1 and record then
+        watch = {join = record, units = {}, any = false}
+        return
+    end
+    local stored = {}
+    for _, unit in GetSelectedUnits() or {} do
+        stored[unit:GetEntityId()] = {queue = unit:GetCommandQueue() or {}, site = unit:GetFocus()}
+    end
+    watch = {stored = stored, units = {}, any = false}
+end
+
+--- FAF's UI gave an order (commandmode.lua OnCommandIssued, before FAF's own handler; the engine has put it in its units'
+--- queues already): the program pins its place if a gesture is watched, and counts it for the clicks that run. What the order
+--- targets and builds is learnt, whoever gave it, for giving it again later; a watched gesture keeps its units.
+local function Ordered(command)
+    local units = command.Units
+    local params = command.LuaParams
+    local attackMove = command.CommandType == 'Script' and params and params.TaskName == 'AttackMove' or false
+    -- A script's other orders, as an enhancement, are the construction panel's.
+    if NotOrders[command.CommandType] or (command.CommandType == 'Script' and not attackMove) or not units or table.empty(units) then
+        return
+    end
+    local target = command.Target or {}
+    local place = target.Type ~= 'None' and target.Position
+    local w = watch
+    FafreGriffOrdered(command.CommandType, Flag(attackMove), Flag(w), Flag(place), place and place[1] or 0,
+        place and place[2] or 0, place and place[3] or 0)
+    -- The entry the engine has just put last, behind what the sim keeps through a replacing order, if it is this order's:
+    -- FAF refuses some, as a building where one stands.
+    local queue = units[1]:GetCommandQueue() or {}
+    local entry = queue[table.getn(queue)]
+    if entry and entry.type == command.CommandType then
+        local info = {}
+        if attackMove then
+            info.task = 'AttackMove'
+        end
+        if command.CommandType == 'BuildMobile' then
+            info.blueprint = command.Blueprint
+        end
+        if target.Type == 'Entity' and target.EntityId and GetUnitById(target.EntityId) then
+            info.target = tonumber(target.EntityId)
+        elseif target.Type == 'Entity' or target.Type == 'Position' then
+            -- The ground, or a feature such as a wreck, which stays where it is.
+            info.targetsPlace = true
+        end
+        Learn(entry, info)
+    end
+    if not w then
+        return
+    end
+    for _, unit in units do
+        local id = unit:GetEntityId()
+        local touched = w.units[id]
+        if not touched then
+            touched = {unit = unit, replaced = false}
+            w.units[id] = touched
+        end
+        touched.replaced = touched.replaced or command.Clear
+    end
+    w.any = true
+end
+
+--- The watched gesture is over: if it ordered, it is the record the pill takes back from now on, one level, and the program
+--- hears of it (FafreGriffRecorded). A unit the gesture ordered whose queue was not known before it (not selected as it
+--- began) is not taken back.
+function UndoWatchEnd()
+    local w = watch
+    watch = false
+    if not w or not w.any then
+        return
+    end
+    local into = w.join
+    if into and into ~= record then
+        return
+    end
+    if not into then
+        records = records + 1
+        into = {number = records, units = {}, unknown = false}
+        record = into
+    end
+    for id, touched in w.units do
+        local known = into.units[id]
+        if known then
+            known.replaced = known.replaced or touched.replaced
+        elseif w.stored and w.stored[id] then
+            local stored = w.stored[id]
+            into.units[id] = {unit = touched.unit, factory = IsFactory(touched.unit), replaced = touched.replaced,
+                before = stored.queue, site = stored.site}
+        else
+            into.unknown = true
+        end
+    end
+    FafreGriffRecorded(into.number, Flag(into.unknown))
+end
+
+--- The building a unit began and left unfinished at this place, if it is there still: FAF's build mode refuses a new one where
+--- it stands, and a unit takes it up again by its repair.
+local function BegunSite(site, place)
+    if not site or IsDestroyed(site) or site:IsDead() or site:GetFractionComplete() >= 1 then
+        return nil
+    end
+    local at = site:GetPosition()
+    if math.abs(at[1] - place[1]) > 1 or math.abs(at[3] - place[3]) > 1 then
+        return nil
+    end
+    return site
+end
+
+--- The pill takes record `number` back: the program hears of each of its units that live, with their queues before and now
+--- (what Griff learnt of each order; a building begun before is its repair), and where the units its orders before targeted
+--- are now; the selection is kept for UndoEnd. Answers whether the record is there; it is taken back once.
+function UndoPlan(number)
+    local r = record
+    if not r or r.number ~= number then
+        FafreGriffAnswer(No)
+        return
+    end
+    record = false
+    undo = {selection = GetSelectedUnits()}
+    local targets = {}
+    local function Send(now, entry, site)
+        local at = entry.position or {0, 0, 0}
+        local begun = now == 0 and entry.type == 'BuildMobile' and BegunSite(site, at)
+        if begun then
+            local id = tonumber(begun:GetEntityId())
+            targets[id] = true
+            FafreGriffUndoEntry(now, entry.ID, 'Repair', at[1], at[2], at[3], id, 0, '', '')
+            return
+        end
+        local info = Learnt(entry)
+        -- No unit targeted is -1: units' ids start at 0, the first army's commander's.
+        FafreGriffUndoEntry(now, entry.ID, entry.type, at[1], at[2], at[3], info and info.target or -1,
+            Flag(info and info.targetsPlace), info and info.blueprint or '', info and info.task or '')
+        if now == 0 and info and info.target then
+            targets[info.target] = true
+        end
+    end
+    for id, unit in r.units do
+        if not IsDestroyed(unit.unit) and not unit.unit:IsDead() then
+            FafreGriffUndoUnit(tonumber(id), Flag(unit.factory), Flag(unit.replaced))
+            for _, entry in unit.before do
+                Send(0, entry, unit.site)
+            end
+            for _, entry in unit.unit:GetCommandQueue() or {} do
+                Send(1, entry)
+            end
+        end
+    end
+    for id in targets do
+        local unit = GetUnitById(tostring(id))
+        if unit and not unit:IsDead() then
+            local at = unit:GetPosition()
+            FafreGriffUndoTarget(id, at[1], at[2], at[3])
+        end
+    end
+    FafreGriffAnswer(Yes)
+end
+
+--- The modes FAF's orders panel arms for an order the undo gives again, by the number of its way (include/GriffUndo.h Way).
+local WayModes = {
+    [1] = function() return {name = 'RULEUCC_Move'} end,
+    [2] = AttackMoveMode,
+    [3] = function() return {name = 'RULEUCC_Patrol'} end,
+    [4] = function() return {name = 'RULEUCC_Attack'} end,
+    [5] = function() return {name = 'RULEUCC_Guard'} end,
+    [6] = function() return {name = 'RULEUCC_Repair'} end,
+    [7] = function() return {name = 'RULEUCC_Reclaim'} end,
+    [8] = function() return {name = 'RULEUCC_Capture'} end,
+}
+
+function Arm(way)
+    local mode = WayModes[way]
+    if mode then
+        CommandMode.StartCommandMode('order', mode())
+    end
+end
+
+--- The living units of a list of ids.
+local function UnitsOf(ids)
+    local units = {}
+    for _, id in ids do
+        local unit = GetUnitById(tostring(id))
+        if unit and not unit:IsDead() then
+            table.insert(units, unit)
+        end
+    end
+    return units
+end
+
+--- Units that hold none of their orders before the gesture and get none back: the orders panel's Stop for them.
+function UndoStop(ids)
+    local units = UnitsOf(ids)
+    if not table.empty(units) then
+        import('/lua/ui/game/orders.lua').Stop(units)
+    end
+end
+
+--- Units whose queue comes back alike, selected for the clicks that give it again.
+function UndoSelect(ids)
+    SelectUnits(UnitsOf(ids))
+end
+
+--- The undo is over: the mode its clicks left ended, and the selection the player had.
+function UndoEnd()
+    CommandMode.EndCommandMode(true)
+    local u = undo
+    undo = false
+    if u then
+        SelectUnits(u.selection)
+    end
+end
+
+--- Where the undo's pill stands (the mockup's: over the top of FAF's unit view, at most as wide as its orders panel): the unit
+--- view's top and the orders panel's left and right, in the picture's pixels; -1 where FAF has not laid them out. The unit
+--- view's place counts while FAF fades it out for more than one unit selected (unitview.lua): it is FAF's, under the rail.
+local function PillAnchors()
+    local top = -1
+    local view = import('/lua/ui/game/unitview.lua').controls.bg
+    if view and not view:IsHidden() then
+        top = view.Top()
+    end
+    local left, right = -1, -1
+    local orders = import('/lua/ui/game/orders.lua').controls.bg
+    if orders and not orders:IsHidden() then
+        left, right = orders.Left(), orders.Right()
+    end
+    FafreGriffPillAnchors(top, left, right)
+end
+
 -- --- The draft ------------------------------------------------------------------------------------------------------------
 
 --- The draft's builders: the engineers selected when a building was picked, who build it if none is selected at the tick;
@@ -331,7 +665,8 @@ end
 --- cross, and nothing is armed; an empty draft ends and the mode stays. FAF's own start behaviours have run before this one,
 --- as its identifier puts it after them.
 function OrderWhileDrafting(mode, data)
-    if mode ~= 'order' or not FafreGriffWanted() then
+    -- The undo's own modes, which give orders back, are none of the draft's.
+    if mode ~= 'order' or not FafreGriffWanted() or undo then
         return
     end
     local plans = FafreGriffDraftPlans()
@@ -435,7 +770,8 @@ end
 -- --- The session's UI, each frame -----------------------------------------------------------------------------------------
 
 --- Each frame of the session's UI under `parent`, while the app wants it. An error stops what failed, with one warning: the
---- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on.
+--- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on. FAF's UI tells each order it
+--- gives (OnCommandIssued, which the engine looks up at each order): Griff's watch sees it first.
 function Start(parent)
     if not FafreGriffBox then
         return
@@ -446,7 +782,7 @@ function Start(parent)
     reporter.Width:Set(0)
     reporter.Height:Set(0)
     local reporting, seeing, driving = true, true, true
-    local anchoring = true
+    local anchoring, placingPill = true, true
     reporter.OnFrame = function(self, delta)
         if not FafreGriffWanted() then
             return
@@ -464,6 +800,14 @@ function Start(parent)
             if not ok then
                 WARN('fafre_ui: griff: draft: ' .. tostring(problem))
                 anchoring = false
+            end
+        end
+        if placingPill then
+            local ok, problem = pcall(PillAnchors)
+            if not ok then
+                WARN('fafre_ui: griff: undo: ' .. tostring(problem))
+                FafreGriffPillAnchors(-1, -1, -1)
+                placingPill = false
             end
         end
         -- First what the frame drew, before a step moves the camera for the next.
@@ -493,6 +837,19 @@ function Start(parent)
     end
     reporter:SetNeedsFrameUpdate(true)
     CommandMode.AddStartBehavior(OrderWhileDrafting, 'fafre_griff')
+    local FafCommandIssued = CommandMode.OnCommandIssued
+    local watching = true
+    CommandMode.OnCommandIssued = function(command)
+        if watching and FafreGriffWanted() then
+            local ok, problem = pcall(Ordered, command)
+            if not ok then
+                WARN('fafre_ui: griff: orders: ' .. tostring(problem))
+                watch = false
+                watching = false
+            end
+        end
+        return FafCommandIssued(command)
+    end
 end
 
 -- --- What a gesture asks ----------------------------------------------------------------------------------------------------
@@ -599,12 +956,7 @@ end
 function StartAttackMove()
     local units = GetSelectedUnits()
     if units and OffersAttackMove(units) then
-        CommandMode.StartCommandMode('order', {
-            name = 'RULEUCC_Script',
-            AbilityName = 'AttackMove',
-            TaskName = 'AttackMove',
-            Cursor = 'ATTACK_MOVE',
-        })
+        CommandMode.StartCommandMode('order', AttackMoveMode())
     end
 end
 

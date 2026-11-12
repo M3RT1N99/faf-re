@@ -666,6 +666,11 @@ final class TouchInput implements Fingers {
         mLadder.answered(tap, kind);
     }
 
+    /** Griff: what the last taps ordered was taken back (the undo's pill): the next tap climbs no ladder from it. */
+    void clearLadder() {
+        mLadder.clear();
+    }
+
     /**
      * Griff: the program made a pan of drag number `drag` (Game.SAID_PAN), which only it can tell from a panel's drag or the
      * minimap's: a second finger turns that drag into two fingers. A word for an earlier drag counts for nothing.

@@ -193,6 +193,8 @@ final class Game {
     static final int SAID_TOAST = 3;
     static final int SAID_COMMITTED = 4;
     static final int SAID_PAN = 5;
+    static final int SAID_ORDERED = 6;
+    static final int SAID_UNDONE = 7;
 
     /** SAID_TOAST: what the draft says (GameActivity's words), with a number where it counts. */
     static final int TOAST_NO_FREE_RESOURCE = 1;
@@ -215,8 +217,11 @@ final class Game {
     static native void setGriff(boolean on, float radius, float touchRadius, float gap, float arrowReach, float tapReach,
                                 float tapSmallSide, float nearReach, float nearReachWithTroops, float glideStop, float depositReach);
 
-    /** Where the app's bar lies over the picture, in its pixels: the handle keeps clear of it. */
-    static native void setGriffBar(int left, int top, int right, int bottom);
+    /**
+     * Where the app's own pieces lie over the picture ({@link Covers}): `count` boxes in `boxes`, left, top, right and bottom in
+     * its pixels. The handle keeps clear of them, and a gesture finds nothing of the game's under them.
+     */
+    static native void setGriffCovers(int[] boxes, int count);
 
     /**
      * The handle over the selection as the last frame placed it, in the picture's pixels, into GRIFF_VALUES: x, y, the group's
@@ -231,7 +236,8 @@ final class Game {
      * how many numbers that is. SAID_TAP: a tap's number and what it was (TouchInput.TAP_) with the rail's bits it used
      * shifted by 8; SAID_ROUTE_GIVEN_UP: a route ended on a panel; SAID_TOAST: what the draft says (TOAST_) and its number;
      * SAID_COMMITTED: the draft was ticked, with the rail's bits it used; SAID_PAN: a drag's number ({@link #griffDrag}) that the
-     * program made a pan of.
+     * program made a pan of; SAID_ORDERED: a gesture ordered, the number of its record, which the undo's pill takes back from
+     * now on; SAID_UNDONE: the record of this number was taken back, 1 if only in part.
      */
     static native int griffSaid(int[] said);
 
@@ -326,4 +332,26 @@ final class Game {
 
     /** The cross, or two fingers' tap in the draft: the draft goes, with nothing ordered. */
     static native void draftDrop();
+
+    // --- What Griff's gestures order: the pins and the undo (buildstage/griff-v3-spec.md, T3.1 and T3.2) -----------------
+
+    /** {@link #griffOrders}: the numbers before the pins, and each pin's. */
+    static final int ORDERS_UNIT_VIEW_TOP = 0;
+    static final int ORDERS_PANEL_LEFT = 1;
+    static final int ORDERS_PANEL_RIGHT = 2;
+    static final int ORDERS_PINS = 3;
+    static final int ORDERS_HEAD = 4;
+    static final int ORDERS_PIN = 4;
+    /** Room for the head and the pins, of which there are 64 at most (include/GriffPins.h). */
+    static final int ORDERS_VALUES = ORDERS_HEAD + 64 * ORDERS_PIN;
+
+    /**
+     * What the last frame showed of the orders, into `values`, as many as fit; how many numbers. Where the undo's pill stands, in
+     * the picture's pixels (FAF's unit view's top, its orders panel's left and right; below 0 not known); how many pins; then
+     * each pin: its tip on the picture, its kind (GriffLayer's colours) and how much of it shows, 0 to 1.
+     */
+    static native int griffOrders(float[] values);
+
+    /** The undo's pill was tapped for record `record`: its orders taken back, once no clicks of the tick's or an undo's run. */
+    static native void griffUndo(int record);
 }

@@ -17,8 +17,9 @@ import android.view.View;
  * handle beside the selection, with the selection's count and a line to the group's middle, or where the group is out of view
  * or under a panel, an arrow at it; the stroke a finger draws from it, with the waypoints its lift gives and a label of what it
  * gives; the ring of a finger that rests; the draft's plans, the line and the plan a finger would add, Box's box over deposits
- * and the loupe of what a resting finger covers; and a toast, a short word for the user ({@link #toast}). In the screen's pixels,
- * in the mockup's sizes and colours. It takes no fingers: they go through to the layer under it.
+ * and the loupe of what a resting finger covers; the pins at the places orders went to, in the colour of each kind, which fade
+ * (include/GriffPins.h); and a toast, a short word for the user ({@link #toast}). In the screen's pixels, in the mockup's
+ * sizes and colours. It takes no fingers: they go through to the layer under it.
  */
 final class GriffLayer extends View {
     private static final int OWN = 0xFF2DD4BF;
@@ -66,6 +67,11 @@ final class GriffLayer extends View {
     private static final float LOUPE_ROOM_MM = 1;
     private static final float LOUPE_CROSS_MM = 1.2f;
     private static final float LOUPE_MAGNIFIED = 2;
+    /** A pin: a drop of this size, its tip at the order's place, its edge the background colour (the mockup's drawPins). */
+    private static final float PIN_MM = 1.5f;
+    /** The pins' kinds as the program gives them (include/GriffPins.h Kind): move, attack, patrol, build. */
+    private static final int[] PIN_COLOURS = {OWN, OWN, ATTACK, PATROL, BUILD};
+    private static final int MOST_PINS = 64;
 
     private final Paint mFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mRing = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -84,6 +90,10 @@ final class GriffLayer extends View {
     private final Paint mLoupeEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mLoupeBackground = new Paint();
     private final Paint mLoupePicture = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Paint mPinFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mPinEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path mPin = new Path();
+    private final RectF mPinHead = new RectF();
     private final Path mArrow = new Path();
     private final Path mStrokePath = new Path();
     private final Path mLoupeCircle = new Path();
@@ -126,6 +136,12 @@ final class GriffLayer extends View {
     private Bitmap mLoupe;
     private float mLoupeX;
     private float mLoupeY;
+    /** The pins that show: their tips, kinds and how much of each shows. */
+    private final float[] mPinX = new float[MOST_PINS];
+    private final float[] mPinY = new float[MOST_PINS];
+    private final int[] mPinKind = new int[MOST_PINS];
+    private final float[] mPinAlpha = new float[MOST_PINS];
+    private int mPins;
 
     GriffLayer(Context context) {
         super(context);
@@ -154,6 +170,8 @@ final class GriffLayer extends View {
         mLoupeEdge.setStyle(Paint.Style.STROKE);
         mLoupeEdge.setColor(RING);
         mLoupeBackground.setColor(BACKGROUND);
+        mPinEdge.setStyle(Paint.Style.STROKE);
+        mPinEdge.setColor(BACKGROUND);
     }
 
     /** The screen's pixels in a mm on the glass, the handle's radius in mm and how far beyond its edge its arrow reaches. */
@@ -171,6 +189,7 @@ final class GriffLayer extends View {
         mPlanEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
         mBoxEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
         mLoupeEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
+        mPinEdge.setStrokeWidth(Math.max(1, CSS_PIXEL_MM * millimetre));
         invalidate();
     }
 
@@ -275,6 +294,31 @@ final class GriffLayer extends View {
         invalidate();
     }
 
+    /**
+     * The pins as the program showed them (Game.griffOrders, from `from` on, `count` of them), with the picture's pixels mapped to
+     * the screen's: each one's tip, kind and how much of it shows.
+     */
+    void setPins(float[] values, int from, int count, Draft.Screen screen) {
+        int pins = Math.min(count, MOST_PINS);
+        boolean changed = pins != mPins;
+        for (int pin = 0; pin < pins; ++pin) {
+            int at = from + pin * Game.ORDERS_PIN;
+            float x = screen.x(values[at]);
+            float y = screen.y(values[at + 1]);
+            int kind = (int) values[at + 2];
+            float alpha = values[at + 3];
+            changed |= x != mPinX[pin] || y != mPinY[pin] || kind != mPinKind[pin] || alpha != mPinAlpha[pin];
+            mPinX[pin] = x;
+            mPinY[pin] = y;
+            mPinKind[pin] = kind;
+            mPinAlpha[pin] = alpha;
+        }
+        mPins = pins;
+        if (changed) {
+            invalidate();
+        }
+    }
+
     /** Says `text` for a moment, under the top of the free map, in place of what it said before. */
     void toast(String text) {
         mToast = text;
@@ -285,6 +329,7 @@ final class GriffLayer extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        drawPins(canvas);
         if (mDraft != null && mDraft.open()) {
             drawDraft(canvas);
         }
@@ -336,6 +381,31 @@ final class GriffLayer extends View {
         canvas.drawCircle(mX, mY, mRadius, mRing);
         mText.setAlpha(alpha);
         canvas.drawText(Integer.toString(mCount), mX, mY - (mText.ascent() + mText.descent()) / 2, mText);
+    }
+
+    /**
+     * The mockup's drawPins: a drop with its tip at the order's place, its sides out to 1.1 mm and up 2.4 mm into a circle of
+     * 1.5 mm whose middle is 3 mm above the tip, in its kind's colour, edged in the background colour, as much of it as shows.
+     */
+    private void drawPins(Canvas canvas) {
+        float size = PIN_MM * mMillimetre;
+        for (int pin = 0; pin < mPins; ++pin) {
+            float x = mPinX[pin];
+            float y = mPinY[pin];
+            int kind = mPinKind[pin];
+            int alpha = Math.round(255 * Math.max(0, Math.min(1, mPinAlpha[pin])));
+            mPin.rewind();
+            mPin.moveTo(x, y);
+            mPin.lineTo(x - size * 0.75f, y - size * 1.6f);
+            mPinHead.set(x - size, y - 3 * size, x + size, y - size);
+            mPin.arcTo(mPinHead, 144, 252, false);
+            mPin.close();
+            mPinFill.setColor(PIN_COLOURS[kind > 0 && kind < PIN_COLOURS.length ? kind : 0]);
+            mPinFill.setAlpha(alpha);
+            canvas.drawPath(mPin, mPinFill);
+            mPinEdge.setAlpha(alpha);
+            canvas.drawPath(mPin, mPinEdge);
+        }
     }
 
     /** The mockup's drawStroke: line, dots and label in the colour of what lifting gives. */

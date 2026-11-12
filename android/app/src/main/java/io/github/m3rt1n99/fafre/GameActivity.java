@@ -108,6 +108,19 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** The loupe: the 6 mm about a resting finger, a copy of the game's picture at most this often. */
     private static final double LOUPE_SOURCE_MM = 6;
     private static final long LOUPE_MILLISECONDS = 33;
+    /**
+     * The undo's pill (the mockup's): this far from the screen's left, at most this wide (and no wider than FAF's orders panel),
+     * this high in the mockup's H, and this much of an H over the top of FAF's unit view, which it covers under the rail. H is
+     * the mockup's unit of FAF's panels: a mm on screens of 73 mm and more, down to 0.7 mm on small ones.
+     */
+    private static final double PILL_LEFT_MM = 2.5;
+    private static final double PILL_WIDEST_MM = 34;
+    private static final double PILL_HIGH_H = 6.6;
+    private static final double PILL_OVER_H = 0.3;
+    private static final double H_SCREEN_MM = 73;
+    private static final double H_LEAST = 0.7;
+    /** Griff's word for an undo that could not give every order back. */
+    private static final String UNDONE_IN_PART = "Undone in part";
     private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
@@ -197,6 +210,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     };
     private DraftButton mTick;
     private DraftButton mCross;
+    /** What Griff's gestures ordered as the program shows it (Game.griffOrders): the pill's place, the pins. */
+    private final float[] mOrderValues = new float[Game.ORDERS_VALUES];
+    private final Undo mUndo = new Undo();
+    private UndoPill mPill;
+    /** The app's pieces over the picture, which the program hears of when they change (Game.setGriffCovers). */
+    private final Covers mCovers = new Covers();
+    private final int[] mPlaceOnWindow = new int[2];
+    private final int[] mLayerOnWindow = new int[2];
     /**
      * The loupe, while a finger rests in the draft at this place: the copy of the game's picture on its way, two pictures (the
      * one shown and the next copy's), and whether the report has heard that the copy does not work here.
@@ -597,11 +618,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mGriffLayer = new GriffLayer(this);
             mGriffLayer.setSizes(viewPixelsPerMm(), GRIFF_RADIUS_MM, GRIFF_ARROW_MM);
             root.addView(mGriffLayer);
-            // Over the layer that takes the fingers: a finger on the tick or the cross is theirs.
+            // Over the layer that takes the fingers: a finger on the tick, the cross or the pill is theirs.
             mTick = draftButton(true);
             mCross = draftButton(false);
             root.addView(mTick, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
             root.addView(mCross, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
+            mPill = new UndoPill(this);
+            mPill.setMillimetre(viewPixelsPerMm());
+            mPill.setVisibility(View.GONE);
+            mPill.setOnClickListener(view -> undo());
+            root.addView(mPill, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
         }
         mKeyboardTarget = new KeyboardTarget(this);
         root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
@@ -617,7 +643,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         root.addView(mBar, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.TOP));
         if (mGriff) {
-            mBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> setGriffBar());
+            mBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> setGriffCovers());
         }
         placeBar(false);
         mTyped = new TextView(this);
@@ -1081,6 +1107,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private void readGriff() {
         boolean shown = mGriffPolling && Game.griff(mGriffHandle);
         readDraft();
+        readOrders();
+        setGriffCovers();
         // While the draft is open there is no handle: no stroke starts (the mockup's).
         shown = shown && !mDraft.open();
         if (!mHandle.place(mGriffPolling, shown, mPageView.screenX(mGriffHandle[0]), mPageView.screenY(mGriffHandle[1]))) {
@@ -1149,17 +1177,91 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     private static void placeView(View view, float left, float top, int side) {
+        placeView(view, left, top, side, side);
+    }
+
+    private static void placeView(View view, float left, float top, int width, int height) {
         FrameLayout.LayoutParams place = (FrameLayout.LayoutParams) view.getLayoutParams();
         int x = Math.round(left);
         int y = Math.round(top);
-        if (place.width == side && place.height == side && place.leftMargin == x && place.topMargin == y) {
+        if (place.width == width && place.height == height && place.leftMargin == x && place.topMargin == y) {
             return;
         }
-        place.width = side;
-        place.height = side;
+        place.width = width;
+        place.height = height;
         place.leftMargin = x;
         place.topMargin = y;
         view.setLayoutParams(place);
+    }
+
+    /** What Griff's gestures ordered as the program's last frame showed it (Game.griffOrders): the pill's place, and the pins. */
+    private void readOrders() {
+        int count = mGriffPolling ? Game.griffOrders(mOrderValues) : 0;
+        if (count < Game.ORDERS_HEAD) {
+            mGriffLayer.setPins(mOrderValues, 0, 0, mDraftScreen);
+            placePill(-1, -1, -1);
+            return;
+        }
+        int pins = Math.min((int) mOrderValues[Game.ORDERS_PINS], (count - Game.ORDERS_HEAD) / Game.ORDERS_PIN);
+        mGriffLayer.setPins(mOrderValues, Game.ORDERS_HEAD, pins, mDraftScreen);
+        placePill(mOrderValues[Game.ORDERS_UNIT_VIEW_TOP], mOrderValues[Game.ORDERS_PANEL_LEFT], mOrderValues[Game.ORDERS_PANEL_RIGHT]);
+    }
+
+    /**
+     * The undo's pill while it shows in a game (the mockup's): 2.5 mm from the screen's left, over the top of FAF's unit view under
+     * the rail, 6.6 H high, as wide as FAF's orders panel up to 34 mm, with the time it has left. The unit view's place is FAF's
+     * panel's, also while FAF fades the view out for more than one unit selected: never where a tap for the next order goes. No
+     * pill where FAF has not laid its unit view out. In the picture's pixels.
+     */
+    private void placePill(float unitViewTop, float panelLeft, float panelRight) {
+        long now = SystemClock.uptimeMillis();
+        boolean shown = mBarInGame && unitViewTop >= 0 && mUndo.showing(now);
+        if (shown) {
+            float pixels = viewPixelsPerMm();
+            double h = Math.max(H_LEAST, Math.min(1, mScreenMm / H_SCREEN_MM)) * pixels;
+            float widest = (float) (PILL_WIDEST_MM * pixels);
+            float panel = panelLeft >= 0 && panelRight > panelLeft ? mPageView.screenX(panelRight) - mPageView.screenX(panelLeft) : widest;
+            placeView(mPill, (float) (PILL_LEFT_MM * pixels) + mBar.getPaddingLeft(),
+                (float) (mPageView.screenY(unitViewTop) - PILL_OVER_H * h), Math.round(Math.min(widest, panel)),
+                (int) Math.round(PILL_HIGH_H * h));
+            mPill.show(mUndo.waiting(), mUndo.left(now));
+        }
+        mPill.setVisibility(shown ? View.VISIBLE : View.GONE);
+    }
+
+    /** The pill was tapped: the program takes its record back, and the next tap climbs no ladder from an order undone. */
+    private void undo() {
+        int record = mUndo.tap(SystemClock.uptimeMillis());
+        if (record != 0) {
+            Game.griffUndo(record);
+            mTouch.clearLadder();
+        }
+    }
+
+    /**
+     * The app's pieces over the picture for the program (Covers): the rail's buttons and Keys, the draft's tick and cross and the
+     * undo's pill, each while it shows, in the picture's pixels; the program hears them when they changed.
+     */
+    private void setGriffCovers() {
+        mFingerLayer.getLocationInWindow(mLayerOnWindow);
+        mCovers.begin();
+        for (TextView button : mRailButtons) {
+            cover(button);
+        }
+        cover(mKeysButton);
+        cover(mTick);
+        cover(mCross);
+        cover(mPill);
+        if (mCovers.end()) {
+            Game.setGriffCovers(mCovers.boxes(), mCovers.count());
+        }
+    }
+
+    private void cover(View view) {
+        view.getLocationInWindow(mPlaceOnWindow);
+        float left = mPlaceOnWindow[0] - mLayerOnWindow[0];
+        float top = mPlaceOnWindow[1] - mLayerOnWindow[1];
+        mCovers.piece(view.isShown(), pictureX(left), pictureY(top), pictureX(left + view.getWidth()), pictureY(top + view.getHeight()));
     }
 
     /** What the draft says: the mockup's words in the app's English. */
@@ -1301,6 +1403,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                         mRail.used(mGriffSaid[at + 1]);
                         showRail();
                     }
+                } else if (mGriffSaid[at] == Game.SAID_ORDERED) {
+                    mUndo.ordered(mGriffSaid[at + 1], SystemClock.uptimeMillis());
+                } else if (mGriffSaid[at] == Game.SAID_UNDONE) {
+                    mUndo.undone(mGriffSaid[at + 1]);
+                    // The undo's last click left the pointer on the map, as the tick's.
+                    mTouchMouse.leaveSoon();
+                    if (mGriffSaid[at + 2] != 0) {
+                        mGriffLayer.toast(UNDONE_IN_PART);
+                    }
                 }
             }
             if (count < mGriffSaid.length) {
@@ -1309,7 +1420,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
     }
 
-    /** While a game is on and the activity in front, the handle follows the selection each frame of the screen's. */
+    /**
+     * While a game is on and the activity in front, the handle follows the selection each frame of the screen's, as do the pins
+     * and the undo's pill. Without the frames the pill goes with its record: a dialog over the game, or the game's end.
+     */
     private void pollGriff(boolean on) {
         if (on == mGriffPolling) {
             return;
@@ -1319,6 +1433,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Choreographer.getInstance().postFrameCallback(mGriffFrame);
         } else {
             Choreographer.getInstance().removeFrameCallback(mGriffFrame);
+            mUndo.clear();
             readGriff();
         }
     }
@@ -1333,11 +1448,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             (float) (GRIFF_GAP_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_ARROW_MM) * pixels), (float) (TAP_REACH_MM * pixels),
             (float) (TAP_SMALL_MM * pixels), (float) (GRIFF_NEAR_MM * pixels), (float) (GRIFF_NEAR_TROOPS_MM * pixels),
             (float) (GRIFF_GLIDE_STOP_MM * pixels), (float) (GRIFF_DEPOSIT_MM * pixels));
-    }
-
-    /** Where the bar lies over the picture, which Griff's handle keeps clear of: its buttons would cover it. */
-    private void setGriffBar() {
-        Game.setGriffBar(pictureX(mBar.getLeft()), pictureY(mBar.getTop()), pictureX(mBar.getRight()), pictureY(mBar.getBottom()));
     }
 
     private TextView barButton(LinearLayout row, String label) {
@@ -1655,7 +1765,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Game.surface(holder.getSurface(), width, height);
             setGriff();
             if (mGriff) {
-                setGriffBar();
+                setGriffCovers();
             }
         }
     }
