@@ -153,7 +153,7 @@ final class PageInput implements Fingers {
     }
 
     @Override
-    public void moved() {
+    public void moved(long time) {
         switch (mState) {
             case PENDING:
                 if (beyondSlop()) {

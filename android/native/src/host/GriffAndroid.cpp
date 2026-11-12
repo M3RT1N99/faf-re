@@ -2,12 +2,17 @@
 // the handle over the selection goes. FAF's Lua reports each frame where the selection is on the screen
 // (assets/fafre_ui/lua/fafre/griff.lua); the handle goes beside it where the map is free, and the activity reads it to draw it
 // and to know a finger on it (Game.griff). A gesture's clicks are a mouse's, and Plus is the keyboard's Shift: FAF decides
-// what they order, as for a mouse, and each click picks what is under it at its own place (CUIWorldView::HandleEvent). They
-// come to the program's thread as tasks, in the order of the rest of the input (GameHost.cpp).
+// what they order, as for a mouse, and each click picks what is under it at its own place (CUIWorldView::HandleEvent). The
+// camera moves as the UI moves it (griff.lua: its glide, its flight to the group, the pinch), not the simulation. They come
+// to the program's thread as tasks, in the order of the rest of the input (GameHost.cpp).
 
 #include <jni.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <exception>
 #include <mutex>
@@ -21,6 +26,7 @@
 #include <GriffPlace.h>
 
 #include "HostClicks.h"
+#include "MenuFingers.h"
 #include "TaskPlaces.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/console/CConCommand.h"
@@ -39,22 +45,63 @@ namespace
   using griffplace::Box;
   using hosttask::Coordinate;
   using hosttask::Places;
+  using hosttask::SignedCoordinate;
 
   // TouchInput's RAIL_ bits.
   constexpr int kRailBox = 1;
   constexpr int kRailQueue = 2;
   constexpr int kRailAttack = 4;
 
+  // TouchInput's STEP_: a tap's step on its ladder.
+  constexpr int kStepTap = 0;
+  constexpr int kStepAgain = 1;
+  constexpr int kStepAllOfType = 2;
+  constexpr int kStepAttackMove = 3;
+  constexpr int kStepAllMobile = 4;
+  constexpr int kStepTypeInView = 5;
+
+  // TouchInput's TAP_: what a tap was, for its ladder.
+  constexpr int kTapUi = 1;
+  constexpr int kTapOwn = 2;
+  constexpr int kTapGround = 3;
+  constexpr int kTapEmpty = 4;
+  constexpr int kTapOther = 5;
+
+  // Stroke's END_ that the program decides; griff.lua's StrokeKind answers the others.
+  constexpr int kEndPanel = 8;
+  constexpr int kEndMinimap = 9;
+
+  // Game's SAID_.
+  constexpr int kSaidTap = 1;
+  constexpr int kSaidRouteGivenUp = 2;
+
   // The answer of TapKind in griff.lua.
   constexpr int kOwnUnit = 1;
   constexpr int kSelection = 2;
+  constexpr int kUnitUnder = 4;
+  constexpr int kTroopsSelected = 8;
+  constexpr int kMoveOrder = 16;
 
+  // griff.lua's yes and no for Ask, whose 0 is no answer.
+  constexpr int kYes = 2;
+
+  constexpr char kGriffLua[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').";
   constexpr char kTapKind[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').TapKind()";
-  constexpr char kToGroup[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').ToGroup()";
+  constexpr char kTroops[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').Troops()";
+  constexpr char kStrokeKind[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').StrokeKind()";
   constexpr char kStartAttackMove[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').StartAttackMove()";
+  constexpr char kOffersPatrol[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').OffersPatrol()";
+  constexpr char kStartPatrol[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').StartPatrol()";
   constexpr char kEndCommandMode[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').EndCommandMode()";
   constexpr char kShiftLetGo[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').ShiftLetGo()";
   constexpr char kDeselect[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').Deselect()";
+  constexpr char kStopCamera[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').StopCamera()";
+  constexpr char kPinchEnd[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').PinchEnd()";
+  constexpr char kTypeInView[] = "UI_Lua import('/fafre_ui/lua/fafre/griff.lua').SelectTypeInView()";
+  /// FAF's key actions select_all_units_of_same_type and, with MOBILE for its ALLUNITS (the mockup's rough grab of the army,
+  /// not the base), select_all_onscreen.
+  constexpr char kAllOfType[] = "UI_ExpandCurrentSelection";
+  constexpr char kAllMobile[] = "UI_SelectByCategory +inview MOBILE";
 
   /// Shift's key, as the keyboard's left one (KeysAndroid.cpp).
   constexpr UINT kShiftScanCode = 0x2A;
@@ -71,10 +118,30 @@ namespace
   /// The tap help's reach and what counts as a small control (Game.tap).
   std::atomic<float> gTapReach{0};
   std::atomic<float> gTapSmallSide{0};
+  /// How far beside a unit a tap picks it: without troops selected, and with them.
+  std::atomic<float> gNearReach{0};
+  std::atomic<float> gNearReachWithTroops{0};
+  /// The speed a second under which the camera's glide stops.
+  std::atomic<float> gGlideStop{0};
 
   /// The app's bar at the screen's edge, whose buttons lie over the picture: none until the activity has laid it out.
   std::mutex gBarMutex;
   Box gBar;
+
+  // --- What the program says to the activity -----------------------------------------------------
+
+  std::mutex gSaidMutex;
+  std::deque<std::array<int, 3>> gSaid;
+
+  /// The activity hears it when it can (Game.griffSaid).
+  void Say(const int what, const int first, const int second)
+  {
+    {
+      const std::lock_guard<std::mutex> lock(gSaidMutex);
+      gSaid.push_back({what, first, second});
+    }
+    menufingers::NotifyActivity();
+  }
 
   // --- The map ----------------------------------------------------------------------------------
 
@@ -127,6 +194,23 @@ namespace
   {
     moho::CON_Execute(kStartAttackMove);
     return CommandModeArmed();
+  }
+
+  /// FAF's patrol mode for the next click, as its orders panel's button arms it (griff.lua StartPatrol): whether it is armed.
+  [[nodiscard]] bool ArmPatrol()
+  {
+    moho::CON_Execute(kStartPatrol);
+    return CommandModeArmed();
+  }
+
+  /// Runs a function of griff.lua, `format` with up to three numbers, as its console command.
+  void CallGriff(const char* const format, const int first, const int second, const int third)
+  {
+    char call[64];
+    std::snprintf(call, sizeof call, format, first, second, third);
+    char command[160];
+    std::snprintf(command, sizeof command, "%s%s", kGriffLua, call);
+    moho::CON_Execute(command);
   }
 
   // --- The handle -------------------------------------------------------------------------------
@@ -231,18 +315,15 @@ namespace
 
   std::mutex gHandleMutex;
   Handle gHandle;
-
-  void Publish(const Handle& handle)
-  {
-    const std::lock_guard<std::mutex> lock(gHandleMutex);
-    gHandle = handle;
-  }
+  griffplace::Cross gFree;
 
   /// The handle for the group whose units take `units` on the screen, about their middle (griffplace::Place).
-  [[nodiscard]] Handle Place(const int count, const float middleX, const float middleY, const Box& units, const Box& view)
+  [[nodiscard]] Handle Place(
+    const griffplace::FreeMap& free, const int count, const float middleX, const float middleY, const Box& units, const Box& view
+  )
   {
     const griffplace::Sizes sizes{gTouchRadius.load(), gRadius.load() + gGap.load(), gArrowReach.load()};
-    const griffplace::Spot spot = griffplace::Place(FreeMapOver(view), sizes, middleX, middleY, units, view);
+    const griffplace::Spot spot = griffplace::Place(free, sizes, middleX, middleY, units, view);
     Handle handle;
     handle.shown = spot.shown;
     handle.off = spot.off;
@@ -256,9 +337,10 @@ namespace
 
   constexpr char kWantedHelp[] = "FafreGriffWanted() - whether the app's touch scheme Griff wants FafreGriffBox";
   constexpr char kBoxHelp[] =
-    "FafreGriffBox(count, [middleX, middleY, left, top, right, bottom, viewLeft, viewTop, viewRight, viewBottom]) - "
-    "the selection's units on the screen, for Griff's handle; 0: nothing is selected";
+    "FafreGriffBox(count, middleX, middleY, left, top, right, bottom, viewLeft, viewTop, viewRight, viewBottom) - "
+    "the selection's units on the screen, for Griff's handle, and the map's view; count 0: nothing is selected";
   constexpr char kAnswerHelp[] = "FafreGriffAnswer(number) - griff.lua's answer to the app's question";
+  constexpr char kEndedHelp[] = "FafreGriffEnded() - Griff's game is over: what it set of FAF's goes back";
 
   int Wanted(lua_State* const lua)
   {
@@ -273,36 +355,59 @@ namespace
     float middleX = 0;
     float middleY = 0;
     Box units;
+    /// The map's view; none when the report had none.
+    bool viewKnown = false;
     Box view;
   };
 
   Selection gSelection;
+  /// Whether this game's free map has been worked out: without a selection it is worked out once, for a toast's place.
+  bool gFreeKnown = false;
 
-  /// The handle for the reported selection, after the frame's drawing: FAF's Lua changes layouts in its frame, after which
-  /// they are not known until the drawing works them out (unitview.lua places its panel anew each frame), and the free map
-  /// reads only what is worked out (LaidOutBox).
+  /// The handle for the reported selection, and the free map's cross, after the frame's drawing: FAF's Lua changes layouts
+  /// in its frame, after which they are not known until the drawing works them out (unitview.lua places its panel anew each
+  /// frame), and the free map reads only what is worked out (LaidOutBox). Without a selection the cross stays as it was: FAF's
+  /// panels at the map's middle hardly change, and the walk costs a frame up to a ms.
   void PlaceTask(const WPARAM)
   {
-    if (gSelection.count <= 0) {
-      Publish(Handle{});
-      return;
-    }
+    const Selection selection = gSelection;
     try {
-      Publish(Place(gSelection.count, gSelection.middleX, gSelection.middleY, gSelection.units, gSelection.view));
+      if (!selection.viewKnown || (selection.count <= 0 && gFreeKnown)) {
+        if (selection.count <= 0) {
+          const std::lock_guard<std::mutex> lock(gHandleMutex);
+          gHandle = Handle{};
+        }
+        return;
+      }
+      const griffplace::FreeMap free = FreeMapOver(selection.view);
+      const griffplace::Cross cross = griffplace::CrossAt(free, selection.view);
+      const Handle handle = selection.count > 0
+                            ? Place(free, selection.count, selection.middleX, selection.middleY, selection.units, selection.view)
+                            : Handle{};
+      gFreeKnown = true;
+      const std::lock_guard<std::mutex> lock(gHandleMutex);
+      gHandle = handle;
+      gFree = cross;
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
-      Publish(Handle{});
+      const std::lock_guard<std::mutex> lock(gHandleMutex);
+      gHandle = Handle{};
     }
   }
 
   int ReportBox(lua_State* const lua)
   {
-    const int count = static_cast<int>(lua_tonumber(lua, 1));
     const auto number = [lua](const int index) { return static_cast<float>(lua_tonumber(lua, index)); };
-    gSelection = count > 0 && lua_gettop(lua) >= 11
-                 ? Selection{count, number(2), number(3), Box{number(4), number(5), number(6), number(7)},
-                             Box{number(8), number(9), number(10), number(11)}}
-                 : Selection{};
+    Selection selection;
+    if (lua_gettop(lua) >= 11) {
+      selection.count = static_cast<int>(lua_tonumber(lua, 1));
+      selection.middleX = number(2);
+      selection.middleY = number(3);
+      selection.units = Box{number(4), number(5), number(6), number(7)};
+      selection.viewKnown = true;
+      selection.view = Box{number(8), number(9), number(10), number(11)};
+    }
+    gSelection = selection;
     // The frame's Lua runs before its paint, in which the program draws it (CScApp::Main asks for the paint).
     Win32Android_RunWhenIdle(&PlaceTask, 0);
     return 0;
@@ -317,9 +422,48 @@ namespace
     return 0;
   }
 
+  // --- FAF's reach for a unit beside a tap ------------------------------------------------------
+
+  /// What Griff set FAF's ui_SelectTolerance to last, the half side of the square about the cursor in which the world view
+  /// picks a unit, and what it was before: the player's, as FAF's options set it, which goes back when Griff's game ends.
+  bool gToleranceSet = false;
+  float gTolerance = 0;
+  float gPlayersTolerance = 0;
+
+  /// FAF's own console variable, as a PC player sets it, and only when it changes.
+  void SetTolerance(const float wanted)
+  {
+    const float now = moho::ui_SelectTolerance;
+    if (now == wanted) {
+      return;
+    }
+    // Set by someone else since Griff's last: the player's, or FAF's own as it leaves its reclaim mode.
+    if (!gToleranceSet || now != gTolerance) {
+      gPlayersTolerance = now;
+    }
+    gToleranceSet = true;
+    gTolerance = wanted;
+    char command[64];
+    std::snprintf(command, sizeof command, "ui_SelectTolerance %g", static_cast<double>(wanted));
+    moho::CON_Execute(command);
+  }
+
+  int Ended(lua_State*)
+  {
+    if (gToleranceSet && moho::ui_SelectTolerance == gTolerance) {
+      char command[64];
+      std::snprintf(command, sizeof command, "ui_SelectTolerance %g", static_cast<double>(gPlayersTolerance));
+      moho::CON_Execute(command);
+    }
+    gToleranceSet = false;
+    gFreeKnown = false;
+    return 0;
+  }
+
   moho::CScrLuaBinder gWantedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffWanted", &Wanted, nullptr, "<global>", kWantedHelp);
   moho::CScrLuaBinder gBoxBinder(moho::SCR_UserLuaInitSet(), "FafreGriffBox", &ReportBox, nullptr, "<global>", kBoxHelp);
   moho::CScrLuaBinder gAnswerBinder(moho::SCR_UserLuaInitSet(), "FafreGriffAnswer", &Answer, nullptr, "<global>", kAnswerHelp);
+  moho::CScrLuaBinder gEndedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffEnded", &Ended, nullptr, "<global>", kEndedHelp);
 
   /// Runs griff.lua's function, which answers by FafreGriffAnswer; 0 when it did not.
   [[nodiscard]] int Ask(const char* const command)
@@ -327,6 +471,30 @@ namespace
     gAnswer = 0;
     moho::CON_Execute(command);
     return gAnswer;
+  }
+
+  /// A first finger came down here: on the map or the minimap the camera's glide or flight stops, and FAF's reach for a unit
+  /// beside a tap is the mockup's for what is selected (with Box, which picks units, as without troops). Not while a command
+  /// mode is armed, which picks as FAF sets it: its reclaim mode reaches further for wrecks.
+  void DownTask(const WPARAM places)
+  {
+    const int x = Coordinate(places, 0);
+    const int y = Coordinate(places, 1);
+    const bool box = Coordinate(places, 2) != 0;
+    try {
+      if (!moho::UI_GamePlaying()) {
+        return;
+      }
+      if (WorldViewAt(static_cast<float>(x), static_cast<float>(y)) != nullptr) {
+        moho::CON_Execute(kStopCamera);
+      }
+      if (!CommandModeArmed()) {
+        const bool troops = !box && Ask(kTroops) == kYes;
+        SetTolerance(troops ? gNearReachWithTroops.load() : gNearReach.load());
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
   }
 
   // --- The clicks, on the program's thread ------------------------------------------------------
@@ -406,75 +574,149 @@ namespace
     return moho::UI_TapTarget(x, y, gTapReach.load(), gTapSmallSide.load(), &targetX, &targetY) && (targetX != x || targetY != y);
   }
 
-  /// What a tap clicked: the UI, one's own unit, or else.
-  enum class Clicked
+  /// Whether a tap here is the UI's: a panel's, the minimap's, or a small control's beside it.
+  [[nodiscard]] bool UiTap(const int x, const int y)
   {
-    kElse,
-    kUi,
-    kOwnUnit,
+    return !OnMap(static_cast<float>(x), static_cast<float>(y)) || MeantSmallControl(static_cast<float>(x), static_cast<float>(y));
+  }
+
+  /// A tap of the activity's (Game.smartTap): where its finger was, the rail's bits, its step on the ladder, the ladder's first
+  /// tap, and its number for the answer.
+  struct Tap
+  {
+    int x = 0;
+    int y = 0;
+    int rail = 0;
+    int step = kStepTap;
+    int baseX = 0;
+    int baseY = 0;
+    int number = 0;
   };
 
-  /// The last tap's click, and where it went.
-  Clicked gTapClicked = Clicked::kElse;
-  POINT gTapPlace{};
+  std::mutex gTapsMutex;
+  std::deque<Tap> gTaps;
 
-  /// Where the click goes of a tap that what lies at the finger's place (x, y) makes click `clicked`: there, or where the last
-  /// tap's click went if this one comes soon after it and near it (`again`, TouchInput's double tap) and clicks the same, the
-  /// UI or one's own unit, which the message layer then makes the game's double click. Kept for the next tap.
-  [[nodiscard]] POINT TapPlace(const Clicked clicked, const int x, const int y, const bool again)
+  /// What a STEP_TAP was, for the ladder (TouchInput.TapLadder), and with Box counting, which the activity then leaves to this
+  /// answer, the rail's bits it used.
+  void AnswerTap(const Tap& tap, const int kind, const int used)
   {
-    const bool doubled = again && clicked != Clicked::kElse && clicked == gTapClicked;
-    const POINT place = doubled ? gTapPlace : POINT{x, y};
-    gTapClicked = clicked;
-    gTapPlace = place;
-    return place;
+    Say(kSaidTap, tap.number, kind | ((tap.rail & kRailBox) != 0 ? used : 0) << 8);
   }
 
   /// A tap where the finger was and the cursor has rested (TouchInput): FAF's click by what it lands on. The UI's controls take
-  /// it, with the tap help; a command mode that FAF's orders panel armed takes it; with Attack it is an attack-move; one's own
-  /// unit is selected, with Box or Plus added to the selection or taken out (Shift's click); else the selection gets FAF's
-  /// right click there.
-  void SmartTap(const int x, const int y, const int rail, const bool again)
+  /// it, with the tap help; a command mode that FAF's orders panel armed takes it; Box adds one's own unit to the selection or
+  /// takes it out, and on anything else does nothing; with Attack it is an attack-move; one's own unit is selected, Plus adds it
+  /// (Shift's click); else the selection gets FAF's right click there, also on one's own unit with Plus or Attack and troops
+  /// selected: the order there, as the mockup has it. Near misses are FAF's own pick, within the reach DownTask set.
+  void TapByPlace(const Tap& tap)
   {
-    const bool queue = (rail & kRailQueue) != 0;
-    if (!OnMap(static_cast<float>(x), static_cast<float>(y)) || MeantSmallControl(static_cast<float>(x), static_cast<float>(y))) {
-      const POINT at = TapPlace(Clicked::kUi, x, y, again);
-      ClickUi(queue, static_cast<float>(at.x), static_cast<float>(at.y), WIN32ANDROID_BUTTON_LEFT);
+    const int x = tap.x;
+    const int y = tap.y;
+    const bool queue = (tap.rail & kRailQueue) != 0;
+    const bool attack = (tap.rail & kRailAttack) != 0;
+    if (UiTap(x, y)) {
+      ClickUi(queue, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_LEFT);
+      AnswerTap(tap, kTapUi, queue ? kRailQueue : 0);
       return;
     }
     if (CommandModeArmed()) {
-      const POINT at = TapPlace(Clicked::kElse, x, y, again);
-      ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, at.x, at.y);
+      ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
+      AnswerTap(tap, kTapOther, queue ? kRailQueue : 0);
       return;
     }
     // What the cursor is over, where it rested: the finger's place.
     const int kind = Ask(kTapKind);
+    const bool own = (kind & kOwnUnit) != 0;
     const bool selection = (kind & kSelection) != 0;
-    if ((rail & kRailAttack) != 0 && selection && ArmAttackMove()) {
-      const POINT at = TapPlace(Clicked::kElse, x, y, again);
-      ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, at.x, at.y);
-    } else if ((kind & kOwnUnit) != 0) {
-      const POINT at = TapPlace(Clicked::kOwnUnit, x, y, again);
-      ClickWith(queue || (rail & kRailBox) != 0, WIN32ANDROID_BUTTON_LEFT, at.x, at.y);
-    } else {
-      const POINT at = TapPlace(Clicked::kElse, x, y, again);
-      ClickWith(queue, selection ? WIN32ANDROID_BUTTON_RIGHT : WIN32ANDROID_BUTTON_LEFT, at.x, at.y);
+    if ((tap.rail & kRailBox) != 0) {
+      if (own) {
+        ClickWith(true, WIN32ANDROID_BUTTON_LEFT, x, y);
+      }
+      AnswerTap(tap, kTapOther, own ? kRailBox : 0);
+      return;
+    }
+    if (attack && selection && ArmAttackMove()) {
+      ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
+      AnswerTap(tap, kTapOther, 0);
+      return;
+    }
+    if (own && !((queue || attack) && (kind & kTroopsSelected) != 0)) {
+      ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
+      AnswerTap(tap, queue ? kTapOther : kTapOwn, 0);
+      return;
+    }
+    ClickWith(queue, selection ? WIN32ANDROID_BUTTON_RIGHT : WIN32ANDROID_BUTTON_LEFT, x, y);
+    int answer = kTapOther;
+    if (!selection) {
+      answer = (kind & kUnitUnder) != 0 ? kTapOther : kTapEmpty;
+    } else if ((kind & kMoveOrder) != 0 && !queue && !attack) {
+      answer = kTapGround;
+    }
+    AnswerTap(tap, answer, 0);
+  }
+
+  /// A tap of the ladder above its first rung, by what its first tap was, whatever lies under this one: the UI's click again
+  /// where the first went, which the message layer makes the game's double click; all of the selected unit's type in view (as
+  /// the game's double click on the unit, which could not reach it where the panels its selection brought up cover it), then on
+  /// the map; an attack-move at the first tap's place in place of its move (where FAF offers none, as for factories alone, a
+  /// right click again: the rally point); all one's own mobile units in view.
+  void TapByStep(const Tap& tap)
+  {
+    switch (tap.step) {
+      case kStepTypeInView:
+        moho::CON_Execute(kTypeInView);
+        break;
+      case kStepAgain:
+        if (UiTap(tap.baseX, tap.baseY)) {
+          ClickUi(false, static_cast<float>(tap.baseX), static_cast<float>(tap.baseY), WIN32ANDROID_BUTTON_LEFT);
+        } else {
+          Click(WIN32ANDROID_BUTTON_LEFT, tap.baseX, tap.baseY);
+        }
+        break;
+      case kStepAllOfType:
+        moho::CON_Execute(kAllOfType);
+        break;
+      case kStepAttackMove:
+        // FAF cannot change an order's kind: a new attack-move replaces the move, which replaced the queue too.
+        if (CommandModeArmed()) {
+          moho::CON_Execute(kEndCommandMode);
+        }
+        Click(ArmAttackMove() ? WIN32ANDROID_BUTTON_LEFT : WIN32ANDROID_BUTTON_RIGHT, tap.baseX, tap.baseY);
+        break;
+      case kStepAllMobile:
+        moho::CON_Execute(kAllMobile);
+        break;
+      default:
+        break;
     }
   }
 
-  void SmartTapTask(const WPARAM places)
+  void SmartTapTask(const WPARAM)
   {
-    const int x = Coordinate(places, 0);
-    const int y = Coordinate(places, 1);
-    const int rail = Coordinate(places, 2);
-    const bool again = Coordinate(places, 3) != 0;
+    Tap tap;
+    {
+      const std::lock_guard<std::mutex> lock(gTapsMutex);
+      if (gTaps.empty()) {
+        return;
+      }
+      tap = gTaps.front();
+      gTaps.pop_front();
+    }
     try {
       if (moho::UI_GamePlaying()) {
-        SmartTap(x, y, rail, again);
-      } else {
+        if (tap.step == kStepTap) {
+          TapByPlace(tap);
+        } else {
+          TapByStep(tap);
+        }
+      } else if (tap.step == kStepTap || tap.step == kStepAgain) {
         // No game behind the UI any more, such as at its end under FAF's last dialogs: a tap is the UI's, as the mouse's.
-        const POINT at = TapPlace(Clicked::kUi, x, y, again);
-        ClickUi(false, static_cast<float>(at.x), static_cast<float>(at.y), WIN32ANDROID_BUTTON_LEFT);
+        const bool again = tap.step == kStepAgain;
+        ClickUi(false, static_cast<float>(again ? tap.baseX : tap.x), static_cast<float>(again ? tap.baseY : tap.y),
+                WIN32ANDROID_BUTTON_LEFT);
+        if (!again) {
+          AnswerTap(tap, kTapUi, 0);
+        }
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -493,16 +735,19 @@ namespace
     }
   }
 
-  void ToGroupTask(const WPARAM)
+  /// The camera to the selection; argument 1: a flight, else at once.
+  void ToGroupTask(const WPARAM fly)
   {
     try {
       if (moho::UI_GamePlaying()) {
-        moho::CON_Execute(kToGroup);
+        CallGriff("ToGroup(%d)", fly != 0 ? 1 : 0, 0, 0);
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
   }
+
+  // --- Drags, the pan's glide and the pinch ---------------------------------------------------------
 
   /// What a finger's drag pressed, for its end.
   enum class Drag
@@ -516,11 +761,20 @@ namespace
 
   Drag gDrag = Drag::kNone;
 
-  void EndDrag(const int x, const int y)
+  /// The camera glides on at this velocity, in the picture's pixels a second (griff.lua Glide), or stays where it is.
+  void Glide(const int velocityX, const int velocityY)
+  {
+    if (velocityX != 0 || velocityY != 0) {
+      CallGriff("Glide(%d, %d, %d)", velocityX, velocityY, static_cast<int>(gGlideStop.load() + 0.5f));
+    }
+  }
+
+  void EndDrag(const int x, const int y, const int velocityX, const int velocityY)
   {
     switch (gDrag) {
       case Drag::kPan:
         Win32Android_TouchButton(WIN32ANDROID_BUTTON_MIDDLE, FALSE, x, y);
+        Glide(velocityX, velocityY);
         break;
       case Drag::kBox:
       case Drag::kPanel:
@@ -536,55 +790,124 @@ namespace
     gDrag = Drag::kNone;
   }
 
-  /// A finger's drag from here, as the place wants it: on the map the middle button's, which pans the camera, or after a rest
-  /// or with Box a selection box, which Plus makes add to the selection (Shift's); on a panel or the minimap the left button's,
-  /// as a mouse drags there.
-  void DragTask(const WPARAM places)
+  /// A finger's drag (Game.griffDrag): where it came down, where it is now, after a rest, the rail's bits.
+  struct DragStart
   {
-    const int x = Coordinate(places, 0);
-    const int y = Coordinate(places, 1);
-    const bool rested = Coordinate(places, 2) != 0;
-    const int rail = Coordinate(places, 3);
-    EndDrag(x, y);
+    int x = 0;
+    int y = 0;
+    int nowX = 0;
+    int nowY = 0;
+    bool rested = false;
+    int rail = 0;
+  };
+
+  std::mutex gDragsMutex;
+  std::deque<DragStart> gDrags;
+
+  /// A finger's drag from where it came down, as the place wants it: on the map the middle button's, which pans the camera,
+  /// pressed where the finger is now so that the map does not jump by the slop it went; after a rest or with Box a selection
+  /// box from where it came down, which Plus makes add to the selection (Shift's); on a panel or the minimap the left button's
+  /// from there, as a mouse drags there.
+  void DragTask(const WPARAM)
+  {
+    DragStart drag;
+    {
+      const std::lock_guard<std::mutex> lock(gDragsMutex);
+      if (gDrags.empty()) {
+        return;
+      }
+      drag = gDrags.front();
+      gDrags.pop_front();
+    }
+    EndDrag(drag.x, drag.y, 0, 0);
     bool map = false;
     try {
-      map = moho::UI_GamePlaying() && OnMap(static_cast<float>(x), static_cast<float>(y));
+      map = moho::UI_GamePlaying() && OnMap(static_cast<float>(drag.x), static_cast<float>(drag.y));
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
     if (!map) {
       gDrag = Drag::kPanel;
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, x, y);
-    } else if (rested || (rail & kRailBox) != 0) {
-      const bool adding = (rail & kRailQueue) != 0;
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, drag.x, drag.y);
+    } else if (drag.rested || (drag.rail & kRailBox) != 0) {
+      const bool adding = (drag.rail & kRailQueue) != 0;
       if (adding) {
         HoldShift();
       }
       gDrag = adding ? Drag::kAddingBox : Drag::kBox;
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, x, y);
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_LEFT, TRUE, drag.x, drag.y);
     } else {
       gDrag = Drag::kPan;
-      Win32Android_TouchButton(WIN32ANDROID_BUTTON_MIDDLE, TRUE, x, y);
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_MIDDLE, TRUE, drag.nowX, drag.nowY);
     }
   }
 
-  void DragEndTask(const WPARAM place)
+  /// The drag ends at a place, with the velocity a pan glides on at (SignedCoordinate).
+  void DragEndTask(const WPARAM places)
   {
-    EndDrag(Coordinate(place, 0), Coordinate(place, 1));
+    try {
+      EndDrag(Coordinate(places, 0), Coordinate(places, 1), SignedCoordinate(places, 2), SignedCoordinate(places, 3));
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// The camera keeps what lies at a place under the fingers (griff.lua): from here on, at the pinch's start or when one of two
+  /// fingers lifted; and as they move. Two kinds of task: the moves coalesce, a start must not be one of them.
+  void Pinch(const char* const format, const WPARAM places)
+  {
+    try {
+      if (moho::UI_GamePlaying()) {
+        CallGriff(format, Coordinate(places, 0), Coordinate(places, 1), Coordinate(places, 2));
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  void PinchStartTask(const WPARAM places)
+  {
+    Pinch("PinchStart(%d, %d, %d)", places);
+  }
+
+  void PinchTask(const WPARAM places)
+  {
+    Pinch("Pinch(%d, %d, %d)", places);
+  }
+
+  void PinchEndTask(const WPARAM places)
+  {
+    try {
+      if (moho::UI_GamePlaying()) {
+        moho::CON_Execute(kPinchEnd);
+        Glide(SignedCoordinate(places, 0), SignedCoordinate(places, 1));
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
   }
 
   /// A finger rested and lifted: on a panel FAF's right click, with the tap help, as the mouse scheme's hold gives it; on the map
-  /// the rest was for a box that did not come. With no game behind the UI any more, the UI's right click wherever it is.
+  /// the rest was for a box that did not come, but with Box it was none (TouchInput) and is Box's tap. With no game behind the
+  /// UI any more, the UI's right click wherever it is.
   void RestTapTask(const WPARAM places)
   {
-    const int x = Coordinate(places, 0);
-    const int y = Coordinate(places, 1);
-    const bool queue = (Coordinate(places, 2) & kRailQueue) != 0;
+    Tap tap;
+    tap.x = Coordinate(places, 0);
+    tap.y = Coordinate(places, 1);
+    tap.rail = Coordinate(places, 2);
     try {
-      if (moho::UI_GamePlaying() && OnMap(static_cast<float>(x), static_cast<float>(y))) {
+      if (moho::UI_GamePlaying() && OnMap(static_cast<float>(tap.x), static_cast<float>(tap.y))) {
+        if ((tap.rail & kRailBox) != 0) {
+          TapByPlace(tap);
+        }
         return;
       }
-      ClickUi(queue, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_RIGHT);
+      ClickUi((tap.rail & kRailQueue) != 0, static_cast<float>(tap.x), static_cast<float>(tap.y), WIN32ANDROID_BUTTON_RIGHT);
+      if ((tap.rail & kRailBox) != 0) {
+        // Box, which the activity left to the answer, was none of this; Plus counted for the right click.
+        AnswerTap(tap, kTapUi, tap.rail & kRailQueue);
+      }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
     }
@@ -599,12 +922,47 @@ namespace
     }
   }
 
+  // --- A stroke's end ---------------------------------------------------------------------------
+
+  /// The stroke the program last answered for, and what a click at its end would order (Stroke.END_): the activity reads
+  /// both at once.
+  std::atomic<std::int64_t> gStrokeAnswer{0};
+
+  /// What FAF would order by a click at the stroke's end, once the hover's move has come to the world view, which picks what
+  /// is under the cursor at each event: a panel, the minimap, or what griff.lua says of FAF's right click there.
+  void StrokeAnswerTask(const WPARAM places)
+  {
+    const int x = Coordinate(places, 0);
+    const int y = Coordinate(places, 1);
+    const int stroke = Coordinate(places, 2);
+    try {
+      if (!moho::UI_GamePlaying()) {
+        return;
+      }
+      moho::CUIWorldView* const view = WorldViewAt(static_cast<float>(x), static_cast<float>(y));
+      const int end = view == nullptr ? kEndPanel : view->IsMiniMap() ? kEndMinimap : Ask(kStrokeKind);
+      gStrokeAnswer.store(static_cast<std::int64_t>(stroke) << 32 | static_cast<std::uint32_t>(end));
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
+  /// The cursor hovers at the stroke's end, without a button: FAF shows its order cursor there and what is under it. The
+  /// answer comes in the task after the move's events.
+  void StrokeHoverTask(const WPARAM places)
+  {
+    Win32Android_MouseMove(Coordinate(places, 0), Coordinate(places, 1));
+    Win32Android_RunOnWindowThread(&StrokeAnswerTask, places);
+  }
+
   // --- A route ----------------------------------------------------------------------------------
 
   struct Route
   {
     std::vector<POINT> points;
     int rail = 0;
+    /// A loop: FAF's patrol, where it offers one.
+    bool patrol = false;
   };
 
   /// What the activity has given and the program's thread has not begun.
@@ -612,13 +970,15 @@ namespace
   std::deque<Route> gRoutes;
 
   /// On the program's thread: the route whose steps run, a click each. Each step is a task of its own, so that it sees what the
-  /// click before it has done: an attack-move's mode, which FAF ends after an order that replaces, comes back for the next.
+  /// click before it has done: an attack-move's or a patrol's mode, which FAF ends after an order that replaces, comes back
+  /// for the next.
   Route gRoute;
   std::size_t gNextPoint = 0;
   bool gRouteHoldsShift = false;
 
-  /// What a route gives: a stroke that ends on a panel other than the minimap gives nothing; on its way, only what is on the
-  /// map itself is a waypoint.
+  /// What a route gives: a stroke that ends on a panel other than the minimap gives nothing, which the activity says; on its
+  /// way, only what is on the map itself is a waypoint. A loop is a patrol where FAF's orders panel offers one, not for
+  /// factories alone: their loop is their rally route, as any stroke.
   void BeginRouteTask(const WPARAM)
   {
     gRoute = Route{};
@@ -638,9 +998,11 @@ namespace
       }
       const POINT end = given.points.back();
       if (WorldViewAt(static_cast<float>(end.x), static_cast<float>(end.y)) == nullptr) {
+        Say(kSaidRouteGivenUp, 0, 0);
         return;
       }
       gRoute.rail = given.rail;
+      gRoute.patrol = given.patrol && Ask(kOffersPatrol) == kYes;
       for (std::size_t at = 0; at + 1 < given.points.size(); ++at) {
         const POINT point = given.points[at];
         if (OnMap(static_cast<float>(point.x), static_cast<float>(point.y))) {
@@ -648,8 +1010,8 @@ namespace
         }
       }
       gRoute.points.push_back(end);
-      // Its clicks are right clicks, or an attack-move's left clicks in the mode each arms, which a command mode armed before
-      // would take for its own.
+      // Its clicks are right clicks, or an attack-move's or a patrol's left clicks in the mode each arms, which a command mode
+      // armed before would take for its own.
       if (CommandModeArmed()) {
         moho::CON_Execute(kEndCommandMode);
       }
@@ -660,7 +1022,7 @@ namespace
   }
 
   /// The next waypoint: FAF's right click there, the first one replacing what the units were doing unless Plus counts, the
-  /// others appended (Shift, held to the route's end). With Attack, an attack-move's left click.
+  /// others appended (Shift, held to the route's end). With Attack, an attack-move's left click; a patrol's, a patrol's.
   void RouteStepTask(const WPARAM)
   {
     if (gNextPoint >= gRoute.points.size()) {
@@ -674,8 +1036,10 @@ namespace
         HoldShift();
         gRouteHoldsShift = true;
       }
-      // An attack-move that FAF ended after a replacing order is armed again; where FAF offers none, a right click.
-      if ((gRoute.rail & kRailAttack) != 0 && (CommandModeArmed() || ArmAttackMove())) {
+      // A mode that FAF ended after a replacing order is armed again; where FAF offers no attack-move, a right click.
+      if (gRoute.patrol) {
+        Click(CommandModeArmed() || ArmPatrol() ? WIN32ANDROID_BUTTON_LEFT : WIN32ANDROID_BUTTON_RIGHT, point.x, point.y);
+      } else if ((gRoute.rail & kRailAttack) != 0 && (CommandModeArmed() || ArmAttackMove())) {
         Click(WIN32ANDROID_BUTTON_LEFT, point.x, point.y);
       } else {
         Click(WIN32ANDROID_BUTTON_RIGHT, point.x, point.y);
@@ -695,13 +1059,20 @@ namespace
     gRoute = Route{};
     gNextPoint = 0;
   }
+
+  /// A velocity for a task's argument (SignedCoordinate).
+  [[nodiscard]] int Velocity(const float pixelsASecond)
+  {
+    return static_cast<int>(std::clamp(pixelsASecond, -32767.0f, 32767.0f));
+  }
 } // namespace
 
 /// The scheme is on or off; the handle's radius, how far from its middle a finger is on it, its room from the group's units and
-/// how far from its middle its arrow reaches; the tap help's reach and what counts as a small control: in the picture's pixels.
+/// how far from its middle its arrow reaches; the tap help's reach and what counts as a small control; how far beside a unit a
+/// tap picks it, without troops and with them; the speed a second under which the camera's glide stops: in the picture's pixels.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_setGriff(
   JNIEnv*, jclass, const jboolean on, const jfloat radius, const jfloat touchRadius, const jfloat gap, const jfloat arrowReach,
-  const jfloat tapReach, const jfloat tapSmallSide
+  const jfloat tapReach, const jfloat tapSmallSide, const jfloat nearReach, const jfloat nearReachWithTroops, const jfloat glideStop
 )
 {
   gRadius.store(radius);
@@ -710,6 +1081,9 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_setGriff(
   gArrowReach.store(arrowReach);
   gTapReach.store(tapReach);
   gTapSmallSide.store(tapSmallSide);
+  gNearReach.store(nearReach);
+  gNearReachWithTroops.store(nearReachWithTroops);
+  gGlideStop.store(glideStop);
   gOn.store(on != JNI_FALSE);
 }
 
@@ -722,25 +1096,59 @@ Java_io_github_m3rt1n99_fafre_Game_setGriffBar(JNIEnv*, jclass, const jint left,
 }
 
 /// The handle as the last frame placed it, into x, y, the group's middle x and y, the selection's count and 1 if it points at
-/// the group from elsewhere, else 0; false when there is none.
+/// the group from elsewhere, else 0; the free map's left, top and right at its middle; the stroke last answered for and what
+/// its end is on. False when there is no handle.
 extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griff(JNIEnv* const env, jclass, const jfloatArray handle)
 {
   Handle now;
+  griffplace::Cross free;
   {
     const std::lock_guard<std::mutex> lock(gHandleMutex);
     now = gHandle;
+    free = gFree;
   }
-  const jfloat values[6] = {now.x, now.y, now.groupX, now.groupY, static_cast<jfloat>(now.count), now.off ? 1.0f : 0.0f};
-  env->SetFloatArrayRegion(handle, 0, 6, values);
+  const std::int64_t answer = gStrokeAnswer.load();
+  const jfloat values[11] = {
+    now.x,     now.y,    now.groupX, now.groupY, static_cast<jfloat>(now.count), now.off ? 1.0f : 0.0f,
+    free.left, free.top, free.right, static_cast<jfloat>(answer >> 32), static_cast<jfloat>(answer & 0xFFFFFFFF),
+  };
+  env->SetFloatArrayRegion(handle, 0, 11, values);
   return now.shown && gOn.load() ? JNI_TRUE : JNI_FALSE;
 }
 
-/// A tap's click by what it lands on (SmartTap); `again`: soon after the last tap and near it, the game's double click where
-/// both click the same; `rail`: TouchInput's RAIL_ bits that count for it.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_smartTap(JNIEnv*, jclass, const jint x, const jint y, const jboolean again, const jint rail)
+/// What the program said since the last call, three numbers each, as many as fit into `said`; how many numbers.
+extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffSaid(JNIEnv* const env, jclass, const jintArray said)
 {
-  Win32Android_RunOnWindowThread(&SmartTapTask, Places(x, y, rail, again != JNI_FALSE ? 1 : 0));
+  const jsize room = env->GetArrayLength(said) / 3;
+  std::vector<jint> values;
+  {
+    const std::lock_guard<std::mutex> lock(gSaidMutex);
+    while (!gSaid.empty() && static_cast<jsize>(values.size() / 3) < room) {
+      values.insert(values.end(), gSaid.front().begin(), gSaid.front().end());
+      gSaid.pop_front();
+    }
+  }
+  env->SetIntArrayRegion(said, 0, static_cast<jsize>(values.size()), values.data());
+  return static_cast<jint>(values.size());
+}
+
+/// A first finger came down here (DownTask); `box`: the rail's Box counts.
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_griffDown(JNIEnv*, jclass, const jint x, const jint y, const jboolean box)
+{
+  Win32Android_RunOnWindowThread(&DownTask, Places(x, y, box != JNI_FALSE ? 1 : 0));
+}
+
+/// A tap's click by what it lands on, or a step of its ladder (SmartTapTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_smartTap(
+  JNIEnv*, jclass, const jint x, const jint y, const jint rail, const jint step, const jint baseX, const jint baseY, const jint tap
+)
+{
+  {
+    const std::lock_guard<std::mutex> lock(gTapsMutex);
+    gTaps.push_back(Tap{x, y, rail, step, baseX, baseY, tap});
+  }
+  Win32Android_RunOnWindowThread(&SmartTapTask, 0);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_deselect(JNIEnv*, jclass)
@@ -748,15 +1156,17 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_deselect(JN
   Win32Android_RunOnWindowThread(&DeselectTask, 0);
 }
 
-/// The camera goes to the selection.
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_toGroup(JNIEnv*, jclass)
+/// The camera goes to the selection, by a flight or at once.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_toGroup(JNIEnv*, jclass, const jboolean fly)
 {
-  Win32Android_RunOnWindowThread(&ToGroupTask, 0);
+  Win32Android_RunOnWindowThread(&ToGroupTask, fly != JNI_FALSE ? 1 : 0);
 }
 
-/// A route's waypoints, `count` places as x, y pairs in the picture's pixels; `rail`: the RAIL_ bits that count for it.
-extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_route(JNIEnv* const env, jclass, const jintArray places, const jint count, const jint rail)
+/// A route's waypoints, `count` places as x, y pairs in the picture's pixels; `rail`: the RAIL_ bits that count for it; `patrol`:
+/// a loop.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_route(
+  JNIEnv* const env, jclass, const jintArray places, const jint count, const jint rail, const jboolean patrol
+)
 {
   if (count <= 0 || env->GetArrayLength(places) < 2 * count) {
     return;
@@ -765,6 +1175,7 @@ Java_io_github_m3rt1n99_fafre_Game_route(JNIEnv* const env, jclass, const jintAr
   env->GetIntArrayRegion(places, 0, 2 * count, values.data());
   Route route;
   route.rail = rail;
+  route.patrol = patrol != JNI_FALSE;
   for (jint at = 0; at < count; ++at) {
     route.points.push_back(POINT{values[2 * at], values[2 * at + 1]});
   }
@@ -779,22 +1190,54 @@ Java_io_github_m3rt1n99_fafre_Game_route(JNIEnv* const env, jclass, const jintAr
   Win32Android_RunOnWindowThread(&EndRouteTask, 0);
 }
 
-/// A finger's drag from here (DragTask); `rail`: the RAIL_ bits that count for it.
+/// The cursor hovers at a stroke's end (StrokeHoverTask), for stroke number `stroke`.
 extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_griffDrag(JNIEnv*, jclass, const jint x, const jint y, const jboolean rested, const jint rail)
+Java_io_github_m3rt1n99_fafre_Game_strokeHover(JNIEnv*, jclass, const jint x, const jint y, const jint stroke)
 {
-  Win32Android_RunOnWindowThread(&DragTask, Places(x, y, rested != JNI_FALSE ? 1 : 0, rail));
+  Win32Android_RunOnWindowThread(&StrokeHoverTask, Places(x, y, stroke & 0xFFFF));
 }
 
-extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDragEnd(JNIEnv*, jclass, const jint x, const jint y)
+/// A finger's drag from here, the finger now at `nowX`, `nowY` (DragTask); `rail`: the RAIL_ bits that count for it.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDrag(
+  JNIEnv*, jclass, const jint x, const jint y, const jint nowX, const jint nowY, const jboolean rested, const jint rail
+)
 {
-  Win32Android_RunOnWindowThread(&DragEndTask, Places(x, y));
+  {
+    const std::lock_guard<std::mutex> lock(gDragsMutex);
+    gDrags.push_back(DragStart{x, y, nowX, nowY, rested != JNI_FALSE, rail});
+  }
+  Win32Android_RunOnWindowThread(&DragTask, 0);
+}
+
+/// The drag ends here; a pan's camera glides on at this velocity in the picture's pixels a second.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDragEnd(
+  JNIEnv*, jclass, const jint x, const jint y, const jfloat velocityX, const jfloat velocityY
+)
+{
+  Win32Android_RunOnWindowThread(&DragEndTask, Places(x, y, Velocity(velocityX), Velocity(velocityY)));
 }
 
 /// A finger rested here and lifted (RestTapTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_restTap(JNIEnv*, jclass, const jint x, const jint y, const jint rail)
 {
   Win32Android_RunOnWindowThread(&RestTapTask, Places(x, y, rail));
+}
+
+/// The camera follows fingers: `start` keeps what lies at x, y under them, then fingers `distance` apart zoom it (0: one).
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_m3rt1n99_fafre_Game_pinch(JNIEnv*, jclass, const jboolean start, const jint x, const jint y, const jint distance)
+{
+  if (start != JNI_FALSE) {
+    Win32Android_RunOnWindowThread(&PinchStartTask, Places(x, y, distance));
+  } else {
+    Win32Android_RunNewestOnWindowThread(&PinchTask, Places(x, y, distance));
+  }
+}
+
+/// The fingers left the camera, which glides on at this velocity in the picture's pixels a second.
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_pinchEnd(JNIEnv*, jclass, const jfloat velocityX, const jfloat velocityY)
+{
+  Win32Android_RunOnWindowThread(&PinchEndTask, Places(Velocity(velocityX), Velocity(velocityY)));
 }
 
 /// Plus held, or let go: Shift's key, in the order of the clicks.

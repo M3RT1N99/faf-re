@@ -4,6 +4,9 @@
 
 namespace menufingers
 {
+  /// The activity reads what is new when it can (Game.fromProgram): another part of the host has something for it. Any thread.
+  void NotifyActivity();
+
   /// A finger's click goes down here: if it is on a text field, the app shows the keyboard for it. On the program's thread.
   void NoteTapOnField(float x, float y);
 

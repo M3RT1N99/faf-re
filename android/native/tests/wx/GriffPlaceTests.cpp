@@ -192,3 +192,31 @@ WXT_TEST(GriffPlaceTheFreeMapIsTheViewLessItsCovers)
   WXT_CHECK(!free.Free(1647, 400));
   WXT_CHECK(!FreeMap().Free(800, 400));
 }
+
+WXT_TEST(GriffPlaceTheCrossReachesFromTheMiddleToThePanels)
+{
+  // At the view's middle (823.5, 384): the score's and the economy's panels are left and right of it, not above, so up to the
+  // view's top; the app's bar at the left edge is beside the middle's height.
+  const griffplace::Cross open = griffplace::CrossAt(FreeMap(kView, kPanels), kView);
+  WXT_CHECK(open.top <= 1.0f);
+  WXT_CHECK(open.left >= 140.0f && open.left <= 142.0f);
+  WXT_CHECK(open.right >= 1645.0f && open.right < 1647.0f);
+  // FAF's tabs over the middle at the top: the cross ends under them.
+  std::vector<Box> panels = kPanels;
+  panels.push_back(Box{700, 0, 950, 60});
+  panels.push_back(Box{1500, 300, 1647, 500});
+  const griffplace::Cross under = griffplace::CrossAt(FreeMap(kView, panels), kView);
+  WXT_CHECK(under.top >= 60.0f && under.top <= 62.0f);
+  WXT_CHECK(under.right >= 1498.0f && under.right < 1500.0f);
+}
+
+WXT_TEST(GriffPlaceTheCrossOfACoveredMiddleIsTheView)
+{
+  const griffplace::Cross covered = griffplace::CrossAt(FreeMap(kView, {Box{700, 300, 950, 500}}), kView);
+  WXT_CHECK_EQ(covered.left, kView.left);
+  WXT_CHECK_EQ(covered.top, kView.top);
+  WXT_CHECK_EQ(covered.right, kView.right);
+  // Nor is anything free in a free map that is none.
+  const griffplace::Cross none = griffplace::CrossAt(FreeMap(), kView);
+  WXT_CHECK_EQ(none.top, kView.top);
+}

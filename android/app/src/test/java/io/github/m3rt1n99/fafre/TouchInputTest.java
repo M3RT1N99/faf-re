@@ -102,13 +102,36 @@ public class TouchInputTest {
         float griffY = -1000;
         float griffReach = 20;
         int rail;
-        /** Griff: what the screen last got of the stroke. */
+        /** Griff: the first fingers' places, the program's numbers of the taps sent, the ring. */
+        final List<String> downs = new ArrayList<>();
+        int lastTap;
+        boolean ringShown;
+        float ringX;
+        float ringY;
+        /** Griff: what the screen last got of the stroke, and where the cursor hovered for it. */
         int shown = -1;
-        boolean shownBack;
+        int shownMode = -1;
+        int shownWaypoints;
+        float shownEndX;
+        final List<String> hovers = new ArrayList<>();
 
         @Override
-        public void smartTap(float x, float y, boolean again, int railNow) {
-            events.add("smart tap " + (int) x + " " + (int) y + (again ? " again" : "") + " rail " + railNow);
+        public void griffDown(float x, float y, boolean box) {
+            downs.add((int) x + " " + (int) y + (box ? " box" : ""));
+        }
+
+        @Override
+        public void smartTap(float x, float y, int railNow, int step, float baseX, float baseY, int tap) {
+            lastTap = tap;
+            events.add("smart tap " + (int) x + " " + (int) y + " rail " + railNow
+                       + (step == TouchInput.STEP_TAP ? "" : " " + stepName(step) + " at " + (int) baseX + " " + (int) baseY));
+        }
+
+        @Override
+        public void ring(boolean shownNow, float x, float y) {
+            ringShown = shownNow;
+            ringX = x;
+            ringY = y;
         }
 
         @Override
@@ -127,8 +150,8 @@ public class TouchInputTest {
         }
 
         @Override
-        public void route(float[] xs, float[] ys, int count, int railNow) {
-            StringBuilder route = new StringBuilder("route");
+        public void route(float[] xs, float[] ys, int count, int railNow, boolean patrol) {
+            StringBuilder route = new StringBuilder(patrol ? "patrol" : "route");
             for (int at = 0; at < count; ++at) {
                 route.append(' ').append(Math.round(xs[at])).append(' ').append(Math.round(ys[at])).append(at + 1 < count ? "," : "");
             }
@@ -136,9 +159,21 @@ public class TouchInputTest {
         }
 
         @Override
-        public void strokeShown(float[] xs, float[] ys, int count, boolean back) {
+        public void strokeShown(float[] xs, float[] ys, int count, int mode, float[] waypointXs, float[] waypointYs, int waypoints) {
             shown = count;
-            shownBack = back;
+            shownMode = mode;
+            shownWaypoints = waypoints;
+            shownEndX = count > 0 ? xs[count - 1] : 0;
+        }
+
+        @Override
+        public void strokeHover(float x, float y) {
+            hovers.add((int) x + " " + (int) y);
+        }
+
+        @Override
+        public void strokeGivenUp() {
+            events.add("given up");
         }
 
         @Override
@@ -152,18 +187,50 @@ public class TouchInputTest {
         }
 
         @Override
-        public void griffDrag(float x, float y, boolean rested, int railNow) {
-            events.add("griff drag " + (int) x + " " + (int) y + (rested ? " rested" : "") + " rail " + railNow);
+        public void griffDrag(float x, float y, float nowX, float nowY, boolean rested, int railNow) {
+            events.add("griff drag " + (int) x + " " + (int) y + " now " + (int) nowX + " " + (int) nowY + (rested ? " rested" : "")
+                       + " rail " + railNow);
         }
 
         @Override
-        public void griffDragEnd(float x, float y) {
-            events.add("griff drag end " + (int) x + " " + (int) y);
+        public void griffDragEnd(float x, float y, float velocityX, float velocityY) {
+            events.add("griff drag end " + (int) x + " " + (int) y + glide(velocityX, velocityY));
         }
 
         @Override
         public void restTap(float x, float y, int railNow) {
             events.add("rest tap " + (int) x + " " + (int) y + " rail " + railNow);
+        }
+
+        @Override
+        public void pinch(boolean start, float x, float y, float distance) {
+            events.add((start ? "pinch start " : "pinch ") + (int) x + " " + (int) y + " " + Math.round(distance));
+        }
+
+        @Override
+        public void pinchEnd(float velocityX, float velocityY) {
+            events.add("pinch end" + glide(velocityX, velocityY));
+        }
+
+        private static String glide(float velocityX, float velocityY) {
+            return velocityX == 0 && velocityY == 0 ? "" : " glide " + Math.round(velocityX) + " " + Math.round(velocityY);
+        }
+
+        private static String stepName(int step) {
+            switch (step) {
+                case TouchInput.STEP_AGAIN:
+                    return "again";
+                case TouchInput.STEP_ALL_OF_TYPE:
+                    return "all of type";
+                case TouchInput.STEP_ATTACK_MOVE:
+                    return "attack move";
+                case TouchInput.STEP_ALL_MOBILE:
+                    return "all mobile";
+                case TouchInput.STEP_TYPE_IN_VIEW:
+                    return "type in view";
+                default:
+                    return "step " + step;
+            }
         }
 
         private static String name(int button) {
@@ -185,13 +252,17 @@ public class TouchInputTest {
     private final TouchInput touch = new TouchInput(mouse, SLOP);
 
     private int fingers;
+    /** The time of the fingers' events: a down's or an up's, and a millisecond on for each move without its own. */
+    private long clock;
 
     private void down(int id, float x, float y, long time) {
+        clock = time;
         touch.down(id, x, y, time, fingers == 0);
         ++fingers;
     }
 
     private void up(int id, long time) {
+        clock = time;
         --fingers;
         touch.up(id, time, fingers == 0);
     }
@@ -203,32 +274,59 @@ public class TouchInputTest {
     }
 
     private void moveFirst(float x, float y) {
+        moveFirst(x, y, clock + 1);
+    }
+
+    private void moveFirst(float x, float y, long time) {
+        clock = time;
         touch.move(0, x, y);
-        touch.moved();
+        touch.moved(time);
     }
 
     private void moveBoth(float x0, float y0, float x1, float y1) {
+        clock += 1;
         touch.move(0, x0, y0);
         touch.move(1, x1, y1);
-        touch.moved();
+        touch.moved(clock);
     }
 
     private void expect(String... events) {
         assertEquals(List.of(events), mouse.events);
     }
 
-    // --- Griff (buildstage/touch-concept-v2.md) ---------------------------------------------------
+    // --- Griff (buildstage/touch-concept-v2.md, the mockup buildstage/touch-preview) ---------------------------------
+    // A mm is 10 pixels here: Griff's slop 25, the ladder's reach 60, two fingers' stillness 15.
 
     private void griff() {
         touch.setGriff(true);
         touch.setMillimetre(10);
     }
 
-    /** A stroke from (x0, y0) to (x1, y1) in steps of 5 pixels, as a finger's moves. */
+    /** A stroke from (x0, y0) to (x1, y1) in steps of 5 pixels, as a finger's moves a millisecond apart. */
     private void strokeFirst(float x0, float y0, float x1, float y1) {
         int steps = (int) Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 5);
         for (int at = 1; at <= steps; ++at) {
             moveFirst(x0 + (x1 - x0) * at / steps, y0 + (y1 - y0) * at / steps);
+        }
+    }
+
+    /** The places of a route as the recorder writes it: "route X Y, X Y rail R". */
+    private static List<float[]> places(String route) {
+        List<float[]> places = new ArrayList<>();
+        String[] pairs = route.substring(route.indexOf(' ') + 1, route.lastIndexOf(" rail ")).split(", ");
+        for (String pair : pairs) {
+            String[] numbers = pair.split(" ");
+            places.add(new float[] {Float.parseFloat(numbers[0]), Float.parseFloat(numbers[1])});
+        }
+        return places;
+    }
+
+    /** A Griff tap down at `down` and up when the cursor has settled, its click; the program says what it was (`kind`, 0 not yet). */
+    private void tap(float x, float y, long down, int kind) {
+        down(0, x, y, down);
+        up(0, down + TouchInput.SETTLE_MILLISECONDS);
+        if (kind != 0) {
+            touch.tapAnswered(mouse.lastTap, kind);
         }
     }
 
@@ -238,7 +336,61 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         moveFirst(150, 50);
         up(0, 1200);
-        expect("move 100 50", "griff drag 100 50 rail 0", "move 150 50", "griff drag end 150 50");
+        expect("move 100 50", "griff drag 100 50 now 150 50 rail 0", "move 150 50", "griff drag end 150 50");
+    }
+
+    @Test
+    public void griffTheSlopIsTwoAndAHalfMillimetres() {
+        // The system's slop, 10 here, would make these 2 mm a drag.
+        griff();
+        down(0, 100, 50, 1000);
+        moveFirst(120, 50);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "smart tap 100 50 rail 0");
+        mouse.events.clear();
+        down(0, 100, 50, 2000);
+        moveFirst(127, 50);
+        assertEquals("griff drag 100 50 now 127 50 rail 0", mouse.events.get(1));
+    }
+
+    @Test
+    public void griffAPanStartsWhereTheFingerPassedTheSlop() {
+        // So the map does not jump by the slop: what is under the finger stays under it from there on.
+        griff();
+        down(0, 100, 50, 1000);
+        moveFirst(120, 50);
+        moveFirst(140, 50);
+        moveFirst(160, 50);
+        expect("move 100 50", "griff drag 100 50 now 140 50 rail 0", "move 140 50", "move 160 50");
+    }
+
+    @Test
+    public void griffAPanThatLiftsMovingGlidesOn() {
+        // 30 pixels each 10 ms: 3000 a second, of which each move takes 0.4 into its velocity, and the glide 0.9 of that.
+        griff();
+        down(0, 100, 50, 1000);
+        for (int at = 1; at <= 6; ++at) {
+            moveFirst(100 + 30 * at, 50, 1000 + 10 * at);
+        }
+        up(0, 1080);
+        String end = mouse.events.get(mouse.events.size() - 1);
+        assertTrue(end, end.startsWith("griff drag end 280 50 glide "));
+        int velocity = Integer.parseInt(end.split(" ")[6]);
+        // The drag began at the first move; five more: 3000 * (1 - 0.6^5) * 0.9.
+        assertEquals(2490, velocity, 2);
+        assertTrue(end, end.endsWith(" 0"));
+    }
+
+    @Test
+    public void griffAPanThatStoppedBeforeTheLiftStops() {
+        griff();
+        down(0, 100, 50, 1000);
+        for (int at = 1; at <= 6; ++at) {
+            moveFirst(100 + 30 * at, 50, 1000 + 10 * at);
+        }
+        // 70 ms after the last move.
+        up(0, 1130);
+        assertEquals("griff drag end 280 50", mouse.events.get(mouse.events.size() - 1));
     }
 
     @Test
@@ -248,18 +400,20 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         moveFirst(150, 50);
         up(0, 1200);
-        expect("move 100 50", "griff drag 100 50 rail 2", "move 150 50", "griff drag end 150 50");
+        expect("move 100 50", "griff drag 100 50 now 150 50 rail 2", "move 150 50", "griff drag end 150 50");
     }
 
     @Test
-    public void griffARestThenADragIsABox() {
+    public void griffARestThenADragIsABoxThatDoesNotGlide() {
         griff();
         down(0, 100, 50, 1000);
         assertEquals(TouchInput.REST_MILLISECONDS, mouse.timer);
         timerRuns();
-        moveFirst(200, 100);
-        up(0, 1600);
-        expect("move 100 50", "held", "griff drag 100 50 rested rail 0", "move 200 100", "griff drag end 200 100");
+        assertTrue("a ring shows the rest", mouse.ringShown);
+        moveFirst(200, 100, 1400);
+        assertFalse("the box goes on without it", mouse.ringShown);
+        up(0, 1410);
+        expect("move 100 50", "held", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100", "griff drag end 200 100");
     }
 
     @Test
@@ -269,19 +423,37 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         timerRuns();
         moveFirst(103, 50);
+        assertTrue(mouse.ringShown);
+        assertEquals("the ring follows the finger", 103, mouse.ringX, 0);
         up(0, 1600);
+        assertFalse(mouse.ringShown);
         expect("move 100 50", "held", "rest tap 100 50 rail 2", "rail used 2");
     }
 
     @Test
-    public void griffASecondFingerAfterARestIsTwoFingers() {
+    public void griffWithBoxARestIsNoneAndItsLiftIsLeftToTheProgram() {
+        // The mockup's rest is off with Box: no ring, nothing to feel; the lift is Box's tap on the map, which says what it used.
+        griff();
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        assertFalse(mouse.ringShown);
+        up(0, 1600);
+        expect("move 100 50", "rest tap 100 50 rail 1");
+        assertEquals(List.of("100 50 box"), mouse.downs);
+    }
+
+    @Test
+    public void griffARestThenAQuickSecondFingerIsNoTwoFingerTap() {
+        // Both fingers count, from the first one down.
         griff();
         down(0, 100, 50, 1000);
         timerRuns();
         down(1, 200, 50, 1400);
-        up(1, 1500);
-        up(0, 1510);
-        expect("move 100 50", "held", "move 200 50", "deselect");
+        assertFalse(mouse.ringShown);
+        up(1, 1450);
+        up(0, 1460);
+        expect("move 100 50", "held", "move 200 50");
     }
 
     @Test
@@ -291,7 +463,7 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         moveFirst(200, 100);
         up(0, 1200);
-        expect("move 100 50", "griff drag 100 50 rail 1", "move 200 100", "rail used 1", "griff drag end 200 100");
+        expect("move 100 50", "griff drag 100 50 now 200 100 rail 1", "move 200 100", "rail used 1", "griff drag end 200 100");
     }
 
     @Test
@@ -302,7 +474,8 @@ public class TouchInputTest {
         timerRuns();
         moveFirst(200, 100);
         up(0, 1600);
-        expect("move 100 50", "held", "griff drag 100 50 rested rail 2", "move 200 100", "rail used 2", "griff drag end 200 100");
+        expect("move 100 50", "held", "griff drag 100 50 now 200 100 rested rail 2", "move 200 100", "rail used 2",
+               "griff drag end 200 100");
     }
 
     @Test
@@ -312,6 +485,17 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
         expect("move 100 50", "smart tap 100 50 rail 6", "rail used 6");
+        assertEquals(List.of("100 50"), mouse.downs);
+    }
+
+    @Test
+    public void griffBoxsTapLeavesTheRailToTheProgram() {
+        // Box's tap on nothing leaves Box lit: the program says what the tap used.
+        griff();
+        mouse.rail = TouchInput.RAIL_BOX | TouchInput.RAIL_QUEUE;
+        down(0, 100, 50, 1000);
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "smart tap 100 50 rail 3");
     }
 
     @Test
@@ -326,6 +510,101 @@ public class TouchInputTest {
     }
 
     @Test
+    public void griffTheLadderOnAUnitTakesItsTypeOnTheScreenThenOnTheMap() {
+        // The second tap 4 mm beside the first, wherever it lands: the ladder counts by what the first tap was.
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_OWN);
+        tap(140, 50, 1300, 0);
+        tap(150, 60, 1600, 0);
+        tap(150, 60, 1900, 0);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 140 50", "smart tap 140 50 rail 0 type in view at 100 50", "move 150 60",
+               "smart tap 150 60 rail 0 all of type at 100 50", "move 150 60", "smart tap 150 60 rail 0 all of type at 100 50");
+    }
+
+    @Test
+    public void griffTheLadderOnGroundMakesTheMoveAnAttackMove() {
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_GROUND);
+        tap(130, 60, 1300, 0);
+        // The attack-move is the ladder's top: the next tap is a tap again.
+        tap(130, 60, 1600, 0);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 130 60", "smart tap 130 60 rail 0 attack move at 100 50",
+               "move 130 60", "smart tap 130 60 rail 0");
+    }
+
+    @Test
+    public void griffTheLadderOnNothingTakesAllOneOwnsOnTheScreen() {
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_EMPTY);
+        tap(100, 50, 1300, 0);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 100 50", "smart tap 100 50 rail 0 all mobile at 100 50");
+    }
+
+    @Test
+    public void griffTheLadderWantsItSoonNearWithoutTheRailAndKnown() {
+        griff();
+        // 350 ms from lift to lift: 360 is too late.
+        tap(100, 50, 1000, TouchInput.TAP_OWN);
+        tap(100, 50, 1360, TouchInput.TAP_OWN);
+        // 6 mm: 61 pixels is too far.
+        tap(161, 50, 1600, TouchInput.TAP_GROUND);
+        // Plus keeps a tap off the ladder.
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        tap(161, 50, 1800, 0);
+        mouse.rail = 0;
+        // Before the program has said what the last tap was, a tap is decided by its place.
+        tap(161, 50, 2000, 0);
+        tap(161, 50, 2200, 0);
+        // An attack, or anything else that is no rung: neither.
+        tap(161, 50, 2400, TouchInput.TAP_OTHER);
+        tap(161, 50, 2600, 0);
+        for (String event : mouse.events) {
+            assertFalse(event, event.contains(" at "));
+        }
+    }
+
+    @Test
+    public void griffTwoTapsOnTheUiClickTheSamePixel() {
+        // The game's double click on its UI wants the same place, within the system's reach and time; farther is a tap.
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_UI);
+        tap(115, 58, 1200, 0);
+        tap(100, 50, 2000, TouchInput.TAP_UI);
+        tap(125, 50, 2200, 0);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 115 58", "smart tap 115 58 rail 0 again at 100 50", "move 100 50",
+               "smart tap 100 50 rail 0", "move 125 50", "smart tap 125 50 rail 0");
+    }
+
+    @Test
+    public void griffADoubleTapOnAUnitIsNotTakenByTheHandleItsFirstTapRaised() {
+        griff();
+        tap(100, 50, 1000, 0);
+        // The first tap selected the unit, and the handle came up over it; the program has not said so yet.
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 102, 50, 1200);
+        touch.tapAnswered(mouse.lastTap, TouchInput.TAP_OWN);
+        up(0, 1200 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 102 50", "smart tap 102 50 rail 0 type in view at 100 50");
+    }
+
+    @Test
+    public void griffTheHandleTakesADragAfterTheThirdTap() {
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_OWN);
+        // The first tap selected the unit and the handle came up over it: the ladder keeps the handle away until its top.
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        tap(100, 50, 1300, 0);
+        tap(100, 50, 1600, 0);
+        mouse.events.clear();
+        down(0, 100, 50, 1800);
+        strokeFirst(100, 50, 400, 50);
+        up(0, 2300);
+        expect("route 250 50, 400 50 rail 0");
+    }
+
+    @Test
     public void griffATwoFingerTapLetsTheSelectionGo() {
         griff();
         down(0, 100, 50, 1000);
@@ -337,6 +616,100 @@ public class TouchInputTest {
     }
 
     @Test
+    public void griffATwoFingerTapCountsFromTheFirstFingerAndStaysWithinOneAndAHalfMillimetres() {
+        griff();
+        // 360 ms from the first finger: too long, though the second was quick.
+        down(0, 100, 50, 1000);
+        down(1, 200, 50, 1300);
+        up(1, 1360);
+        up(0, 1370);
+        assertFalse(mouse.events.contains("deselect"));
+        // 1.4 mm apart more still taps; 1.5 mm pinches.
+        down(0, 100, 50, 2000);
+        down(1, 200, 50, 2050);
+        moveBoth(93, 50, 207, 50);
+        up(1, 2100);
+        up(0, 2110);
+        assertTrue(mouse.events.contains("deselect"));
+        mouse.events.clear();
+        down(0, 100, 50, 3000);
+        down(1, 200, 50, 3050);
+        moveBoth(92, 50, 208, 50);
+        up(1, 3100);
+        up(0, 3110);
+        assertFalse(mouse.events.contains("deselect"));
+        assertTrue(mouse.events.toString(), mouse.events.contains("pinch start 150 50 116"));
+    }
+
+    @Test
+    public void griffTwoFingersZoomAndPanTheCameraTogether() {
+        griff();
+        down(0, 100, 100, 1000);
+        down(1, 300, 100, 1040);
+        moveBoth(80, 100, 320, 100);
+        moveBoth(70, 120, 350, 120);
+        expect("move 100 100", "move 300 100", "pinch start 200 100 240", "pinch 210 120 280");
+    }
+
+    @Test
+    public void griffTheFingerLeftOfAPinchMovesTheCameraOnAndGlides() {
+        griff();
+        down(0, 100, 100, 1000);
+        down(1, 300, 100, 1040);
+        moveBoth(80, 100, 320, 100);
+        up(1, 1100);
+        assertEquals("pinch start 80 100 0", mouse.events.get(mouse.events.size() - 1));
+        mouse.events.clear();
+        for (int at = 1; at <= 3; ++at) {
+            moveFirst(80 + 20 * at, 100, 1100 + 10 * at);
+        }
+        up(0, 1140);
+        // 2000 pixels a second from the start, each move taking 0.4 of it into the velocity: 1568, and 0.9 of that.
+        expect("pinch 100 100 0", "pinch 120 100 0", "pinch 140 100 0", "pinch end glide 1411 0");
+    }
+
+    @Test
+    public void griffAPinchThatEndsTogetherDoesNotGlide() {
+        griff();
+        down(0, 100, 100, 1000);
+        down(1, 300, 100, 1040);
+        moveBoth(80, 100, 320, 100);
+        up(1, 1100);
+        up(0, 1200);
+        assertEquals("pinch start 80 100 0", mouse.events.get(mouse.events.size() - 2));
+        assertEquals("pinch end", mouse.events.get(mouse.events.size() - 1));
+    }
+
+    @Test
+    public void griffAFingerAgainBesideTheOneLeftOfAPinchPinchesAnew() {
+        griff();
+        down(0, 100, 100, 1000);
+        down(1, 300, 100, 1040);
+        moveBoth(80, 100, 320, 100);
+        // The first finger lifts; the second moves the camera on, then a finger comes again.
+        up(0, 1100);
+        mouse.events.clear();
+        touch.move(1, 340, 110);
+        touch.moved(1110);
+        down(2, 500, 110, 1200);
+        touch.move(1, 330, 110);
+        touch.move(2, 520, 110);
+        touch.moved(1210);
+        expect("pinch 340 110 0", "pinch end", "move 500 110", "pinch start 425 110 190");
+    }
+
+    @Test
+    public void griffASecondFingerTurnsAPanIntoTwoFingers() {
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1100);
+        down(1, 400, 100, 1200);
+        moveBoth(130, 100, 420, 100);
+        expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "griff drag end 150 100", "move 400 100",
+               "pinch start 275 100 290");
+    }
+
+    @Test
     public void griffAStrokeFromTheHandleIsARouteEndingWhereItLifted() {
         griff();
         mouse.griffX = 100;
@@ -344,10 +717,29 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         strokeFirst(100, 50, 400, 50);
         assertTrue("the screen shows the stroke", mouse.shown > 1);
+        assertEquals(Stroke.ROUTE, mouse.shownMode);
+        assertEquals("the waypoints its lift gives", 2, mouse.shownWaypoints);
         up(0, 1500);
         // 300 pixels at 150 a waypoint, ending on the lift; nothing went to the game before it.
         expect("route 250 50, 400 50 rail 0");
         assertEquals(0, mouse.shown);
+    }
+
+    @Test
+    public void griffAStrokeEndsWhereTheFingerWasAMomentBeforeItLifted() {
+        // Fingers wobble as they lift: the last 50 ms do not count.
+        griff();
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        down(0, 100, 50, 1000);
+        for (int at = 1; at <= 30; ++at) {
+            moveFirst(100 + 10 * at, 50, 1000 + 10 * at);
+        }
+        moveFirst(420, 70, 1310);
+        moveFirst(440, 90, 1330);
+        // 50 ms after the move to 400 50; the one before it, at 390, would count for a lift 10 ms sooner.
+        up(0, 1350);
+        expect("route 250 50, 400 50 rail 0");
     }
 
     @Test
@@ -360,9 +752,10 @@ public class TouchInputTest {
         strokeFirst(100, 50, 160, 50);
         strokeFirst(160, 50, 160, 300);
         up(0, 1500);
-        String route = mouse.events.get(0);
-        assertTrue(route, route.startsWith("route 160 50,"));
-        assertTrue(route, route.endsWith("160 300 rail 4"));
+        // Its points are a mm apart: the corner stays within one.
+        List<float[]> route = places(mouse.events.get(0));
+        assertTrue(mouse.events.get(0), Math.hypot(route.get(0)[0] - 160, route.get(0)[1] - 50) <= 10);
+        assertTrue(mouse.events.get(0), mouse.events.get(0).endsWith("160 300 rail 4"));
         assertEquals("rail used 4", mouse.events.get(1));
     }
 
@@ -372,37 +765,47 @@ public class TouchInputTest {
         mouse.griffX = 100;
         mouse.griffY = 50;
         down(0, 102, 51, 1000);
+        moveFirst(120, 51);
         up(0, 1100);
+        // 1.8 mm is still a tap on it.
         expect("griff tap");
     }
 
     @Test
-    public void griffAStrokeBackToTheHandleIsGivenUp() {
+    public void griffAShortStrokeBackToTheHandleIsGivenUp() {
         griff();
         mouse.griffX = 100;
         mouse.griffY = 50;
         down(0, 100, 50, 1000);
         strokeFirst(100, 50, 200, 50);
-        assertFalse(mouse.shownBack);
+        assertEquals(Stroke.ROUTE, mouse.shownMode);
         strokeFirst(200, 50, 110, 50);
-        assertTrue("the screen says lifting gives it up", mouse.shownBack);
+        assertEquals("the screen says lifting gives it up", Stroke.CANCEL, mouse.shownMode);
         up(0, 1500);
-        expect();
+        expect("given up");
     }
 
     @Test
-    public void griffAStrokeBackToTheHandleIsGivenUpHoweverLong() {
-        // 30 mm out and back, 59 mm in all (a mm is 10 pixels here): a mind changed, not a route out and back.
+    public void griffALongLoopBackToTheHandleIsAPatrol() {
+        // 30 mm out, 10 down and back: 70 mm in all, ending 2 mm from its start.
         griff();
         mouse.griffX = 100;
         mouse.griffY = 50;
         down(0, 100, 50, 1000);
         strokeFirst(100, 50, 400, 50);
-        assertFalse(mouse.shownBack);
-        strokeFirst(400, 50, 110, 50);
-        assertTrue("the screen says lifting gives it up", mouse.shownBack);
+        strokeFirst(400, 50, 400, 150);
+        strokeFirst(400, 150, 110, 60);
+        assertEquals(Stroke.PATROL, mouse.shownMode);
         up(0, 2500);
-        expect();
+        String patrol = mouse.events.get(0);
+        assertTrue(patrol, patrol.startsWith("patrol "));
+        assertTrue(patrol, patrol.endsWith("110 60 rail 0"));
+        // The loop's corners are its waypoints, within its points' mm.
+        boolean corner = false;
+        for (float[] place : places(patrol)) {
+            corner |= Math.hypot(place[0] - 400, place[1] - 50) <= 10;
+        }
+        assertTrue(patrol, corner);
         assertEquals(0, mouse.shown);
     }
 
@@ -416,37 +819,26 @@ public class TouchInputTest {
         down(1, 500, 200, 1300);
         up(1, 1400);
         up(0, 1500);
-        expect();
+        expect("given up");
         assertEquals(0, mouse.shown);
     }
 
     @Test
-    public void griffADoubleTapOnAUnitIsNotTakenByTheHandleItsFirstTapRaised() {
+    public void griffTheCursorHoversAtTheStrokesEndAtMostEachTenthOfASecond() {
         griff();
-        down(0, 100, 50, 1000);
-        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
-        // The first tap selected the unit, and the handle came up over it.
         mouse.griffX = 100;
         mouse.griffY = 50;
-        down(0, 102, 50, 1200);
-        up(0, 1200 + TouchInput.SETTLE_MILLISECONDS);
-        expect("move 100 50", "smart tap 100 50 rail 0", "move 102 50", "smart tap 102 50 again rail 0");
-    }
-
-    @Test
-    public void griffASecondTapSoonAfterIsDecidedWhereItsFingerWas() {
-        // The first on the ground, the second beside it on a unit: the program asks what the cursor rests on, at the second
-        // finger, and clicks there; it makes a double click only of two taps that click the same.
-        griff();
         down(0, 100, 50, 1000);
-        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
-        down(0, 115, 50, 1200);
-        up(0, 1200 + TouchInput.SETTLE_MILLISECONDS);
-        // Too late for a double click.
-        down(0, 115, 50, 1800);
-        up(0, 1800 + TouchInput.SETTLE_MILLISECONDS);
-        expect("move 100 50", "smart tap 100 50 rail 0", "move 115 50", "smart tap 115 50 again rail 0", "move 115 50",
-               "smart tap 115 50 rail 0");
+        for (int at = 1; at <= 25; ++at) {
+            moveFirst(100 + 10 * at, 50, 1000 + 10 * at);
+        }
+        // At the handle, then at 100 and 200 ms; the place at 250 waits for 300, from the move at 210.
+        assertEquals(List.of("100 50", "200 50", "300 50"), mouse.hovers);
+        assertEquals(90, mouse.timer);
+        timerRuns();
+        assertEquals("350 50", mouse.hovers.get(3));
+        up(0, 1400);
+        assertEquals(-1, mouse.timer);
     }
 
     @Test
@@ -730,7 +1122,7 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         down(1, 400, 200, 1040);
         touch.move(1, 410, 200);
-        touch.moved();
+        touch.moved(++clock);
         up(1, 1040 + TouchInput.SETTLE_MILLISECONDS);
         up(0, 1040 + TouchInput.SETTLE_MILLISECONDS + 10);
         expect("move 100 50", "move 400 200", "right down 400 200", "right up 400 200");
@@ -773,7 +1165,7 @@ public class TouchInputTest {
         touch.cancel();
         mouse.events.clear();
         touch.move(0, 300, 50);
-        touch.moved();
+        touch.moved(++clock);
         up(0, 1500);
         assertEquals(List.of(), mouse.events);
     }
@@ -784,7 +1176,7 @@ public class TouchInputTest {
         moveFirst(130, 50);
         down(1, 400, 200, 1100);
         touch.move(1, 450, 200);
-        touch.moved();
+        touch.moved(++clock);
         up(1, 1200);
         up(0, 1300);
         expect("move 100 50", "left down 100 50", "move 130 50", "move 130 50", "left up 130 50");

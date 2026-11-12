@@ -8,7 +8,8 @@ interface Fingers {
     /** Where a finger is now. {@link #moved} follows when all of an event's fingers are in. */
     void move(int id, float x, float y);
 
-    void moved();
+    /** The event's fingers are in; `time`: the event's, as down's and up's. */
+    void moved(long time);
 
     /** A finger lifted; `last`: no other is left on the glass. */
     void up(int id, long time, boolean last);

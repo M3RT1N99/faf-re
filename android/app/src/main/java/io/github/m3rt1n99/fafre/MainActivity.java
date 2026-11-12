@@ -163,11 +163,13 @@ public final class MainActivity extends Activity {
                 + "A tap is a click, a finger that moves drags, a finger that stays is the right button (an order); two fingers "
                 + "move the camera and zoom. The bar at the screen's edge has Order (taps give orders), Shift, Ctrl and the "
                 + "keyboard, and Back is Esc. The report says how it ended. With the touch controls Griff (the button below) "
-                + "one finger pans instead, a rest and a drag boxes, a tap selects your own unit or gives the selection FAF's "
-                + "order there, a stroke from the round handle beside the selection lays a route that ends in the order for what "
-                + "it ends on (your factory with engineers: assist), and two fingers tapping deselect; the bar has Box, Plus "
-                + "(queue) and Attack, lit by a tap for the next action or held for as long as they are held. The touch "
-                + "controls count from the game's next start: a game that runs keeps its own.");
+                + "one finger pans instead and lets the map glide on, a rest and a drag boxes, a tap selects your own unit "
+                + "(also a little beside it) or gives the selection FAF's order there, two taps take all of its type on the "
+                + "screen and three on the map, two taps on the ground make the move an attack-move, two fingers zoom where "
+                + "they are, a stroke from the round handle beside the selection lays a route that ends in the order its label "
+                + "names (your factory with engineers: assist), a long loop back to the handle patrols, and two fingers tapping "
+                + "deselect; the bar has Box, Plus (queue) and Attack, lit by a tap for the next action or held for as long as "
+                + "they are held. The touch controls count from the game's next start: a game that runs keeps its own.");
         mStartButtons.add(button(game, "Start the game", v -> startActivity(new Intent(this, GameActivity.class))));
         Button size = button(game, PictureSize.label(this), null);
         size.setOnClickListener(v -> {

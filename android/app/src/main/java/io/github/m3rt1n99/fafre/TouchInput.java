@@ -41,19 +41,25 @@ package io.github.m3rt1n99.fafre;
  * <p>A mouse's pointer goes on being somewhere, and the game shows what it is over. A finger's goes, shortly after the
  * last finger has lifted ({@link Mouse#leaveSoon}), so that a rollover does not stay in the way of what it opened.
  *
- * <p>With {@link #setGriff} the fingers follow the touch scheme Griff (buildstage/touch-concept-v2.md) instead, but for
- * a building's ghost, which they place as above:
+ * <p>With {@link #setGriff} the fingers follow the touch scheme Griff (buildstage/touch-concept-v2.md, the mockup
+ * buildstage/touch-preview) instead, but for a building's ghost, which they place as above. A finger stays within
+ * {@link #GRIFF_SLOP_MM}:
  *
  * <ul>
- *   <li>a finger that moves pans the camera; one that rests {@link #REST_MILLISECONDS} and then moves draws a selection
- *       box, with the rail's Box without the rest; on a panel or the minimap it drags as a mouse ({@link Mouse#griffDrag});
+ *   <li>a finger that moves pans the camera from where it passed the slop, and glides on when it lifted moving
+ *       ({@link Mouse#griffDragEnd}); one that rests {@link #REST_MILLISECONDS} (a ring shows it, {@link Mouse#ring}) and
+ *       then moves draws a selection box, with the rail's Box without the rest; on a panel or the minimap it drags as a
+ *       mouse ({@link Mouse#griffDrag});
  *   <li>a finger that rests and lifts is FAF's right click on a panel, and nothing on the map ({@link Mouse#restTap});
  *   <li>a tap is FAF's click by what it lands on ({@link Mouse#smartTap}): one's own unit is selected, else the selection
- *       gets FAF's right click there;
- *   <li>a finger that starts on the handle over the selection ({@link Mouse#onGriff}) draws a route, whose waypoints go
- *       to {@link Mouse#route} when it lifts; one that lifts where it began was a tap on the handle, and one that comes
- *       back to the handle gives the route up, as does a second finger;
- *   <li>a quick tap of two fingers lets the selection go;
+ *       gets FAF's right click there; taps soon after each other and near climb a ladder ({@link TapLadder}): all of a
+ *       unit's type on the screen, then on the map, an attack-move in place of a move, all one's own on the screen;
+ *   <li>a finger that starts on the handle over the selection ({@link Mouse#onGriff}), unless the ladder climbs, draws a
+ *       route, whose waypoints go to {@link Mouse#route} when it lifts, counted where the finger was a moment before; one
+ *       that lifts where it began was a tap on the handle, a long loop back to the handle is a patrol, a short one gives
+ *       the route up, as does a second finger;
+ *   <li>two fingers zoom at their middle and move the camera with it ({@link Mouse#pinch}), and the one left of them
+ *       moves it on; a quick tap of two lets the selection go;
  *   <li>the rail's buttons ({@link Mouse#rail}) count for the next action, or while held.
  * </ul>
  */
@@ -110,13 +116,23 @@ final class TouchInput implements Fingers {
         void stopTimer();
 
         /**
-         * Griff: a tap that the program decides by what is under it, where the finger was and the cursor has rested: the game's
-         * UI takes it as {@link #tap}; one's own unit is selected (with RAIL_BOX added to the selection or taken out); else the
-         * selection, if there is one, gets FAF's right click there (RAIL_QUEUE with Shift, RAIL_ATTACK as an attack-move).
-         * `again`: it came soon after the last tap and near it, which the program makes the game's double click where both
-         * click the same, the UI or one's own unit.
+         * Griff: a first finger came down here: on the map or the minimap the camera's glide stops, and FAF's reach for a unit
+         * beside a tap is set for what is selected (`box`: the rail's Box counts, which picks units).
          */
-        void smartTap(float x, float y, boolean again, int rail);
+        void griffDown(float x, float y, boolean box);
+
+        /**
+         * Griff: a tap that the program decides by what is under it, where the finger was and the cursor has rested, or by the
+         * ladder's `step` (STEP_): STEP_TAP is decided by its place, as {@link #tap} on the game's UI; one's own unit is
+         * selected (with RAIL_BOX added to the selection or taken out); else the selection gets FAF's right click there
+         * (RAIL_QUEUE with Shift, RAIL_ATTACK as an attack-move). The other steps act at the ladder's first tap (`baseX`,
+         * `baseY`). The program answers a STEP_TAP with what it was ({@link #tapAnswered}, by `tap`), and with Box counting,
+         * with the rail's buttons it used.
+         */
+        void smartTap(float x, float y, int rail, int step, float baseX, float baseY, int tap);
+
+        /** Griff: the ring of a finger that rests, shown about this place or gone. */
+        void ring(boolean shown, float x, float y);
 
         /** Griff: no unit is selected any more. */
         void deselect();
@@ -129,12 +145,22 @@ final class TouchInput implements Fingers {
 
         /**
          * Griff: a route from the handle, `count` waypoints, each FAF's right click there, the last on what is there; all but the
-         * first with Shift, the first too with RAIL_QUEUE; with RAIL_ATTACK attack-moves ({@link Game#route}).
+         * first with Shift, the first too with RAIL_QUEUE; with RAIL_ATTACK attack-moves ({@link Game#route}). `patrol`: a loop,
+         * the waypoints FAF's patrol where it offers one.
          */
-        void route(float[] xs, float[] ys, int count, int rail);
+        void route(float[] xs, float[] ys, int count, int rail, boolean patrol);
 
-        /** Griff: the stroke as far as it goes, for the screen; count 0: none. `back`: lifting now gives it up. */
-        void strokeShown(float[] xs, float[] ys, int count, boolean back);
+        /**
+         * Griff: the stroke as far as it goes, for the screen: its points (count 0: none, and the handle is free again), what
+         * lifting now gives (Stroke.ROUTE, PATROL or CANCEL) and the waypoints it would order.
+         */
+        void strokeShown(float[] xs, float[] ys, int count, int mode, float[] waypointXs, float[] waypointYs, int waypoints);
+
+        /** Griff: the cursor hovers here for the stroke, so that the game shows and says what its end is on. */
+        void strokeHover(float x, float y);
+
+        /** Griff: the stroke was given up before it gave anything, which the user should see. */
+        void strokeGivenUp();
 
         /** Griff: the rail's buttons that count now, RAIL_ bits. */
         int rail();
@@ -144,39 +170,85 @@ final class TouchInput implements Fingers {
 
         /**
          * Griff: a drag begins where the finger came down (`rested`: after a rest), which the program makes what the place
-         * wants: on the map a pan of the camera, or a selection box after a rest or with RAIL_BOX, with RAIL_QUEUE adding to
-         * the selection; on a panel or the minimap the left button's drag, as a mouse's. The pointer's moves follow, and
-         * {@link #griffDragEnd} ends it.
+         * wants: on the map a pan of the camera, from where the finger is now (`nowX`, `nowY`), or a selection box after a rest
+         * or with RAIL_BOX, with RAIL_QUEUE adding to the selection; on a panel or the minimap the left button's drag, as a
+         * mouse's. The pointer's moves follow, and {@link #griffDragEnd} ends it.
          */
-        void griffDrag(float x, float y, boolean rested, int rail);
+        void griffDrag(float x, float y, float nowX, float nowY, boolean rested, int rail);
 
-        /** Griff: what {@link #griffDrag} pressed goes up here. */
-        void griffDragEnd(float x, float y);
+        /** Griff: what {@link #griffDrag} pressed goes up here; a pan's camera glides on at this velocity (pixels a second). */
+        void griffDragEnd(float x, float y, float velocityX, float velocityY);
 
         /** Griff: a rest without a drag: on a panel FAF's right click there (RAIL_QUEUE with Shift), on the map nothing. */
         void restTap(float x, float y, int rail);
+
+        /**
+         * Griff: the camera follows fingers: `start` takes what lies at this place as what stays under it; then the camera
+         * keeps it there, zoomed by how far apart two fingers are now from when they started (`distance` 0: one finger,
+         * which only moves it).
+         */
+        void pinch(boolean start, float x, float y, float distance);
+
+        /** Griff: the fingers have left the camera, which glides on at this velocity (pixels a second). */
+        void pinchEnd(float velocityX, float velocityY);
     }
 
     /** Griff: the rail's buttons, as Mouse#rail has them. */
     static final int RAIL_BOX = 1;
     static final int RAIL_QUEUE = 2;
     static final int RAIL_ATTACK = 4;
+    /** Griff: a tap's step on the ladder (Mouse#smartTap). */
+    static final int STEP_TAP = 0;
+    /** The ladder's first click on the game's UI again, which the game makes its double click there. */
+    static final int STEP_AGAIN = 1;
+    /** All of the selected type on the map (FAF's key action select_all_units_of_same_type). */
+    static final int STEP_ALL_OF_TYPE = 2;
+    /** An attack-move at the first tap's place, in place of its move. */
+    static final int STEP_ATTACK_MOVE = 3;
+    /** All of one's own mobile units on the screen. */
+    static final int STEP_ALL_MOBILE = 4;
+    /**
+     * All of the selected unit's type on the screen (FAF's key action select_all_onscreen for the type), as the game's double
+     * click on it: the first tap's selection brings FAF's panels up, which can cover where it was.
+     */
+    static final int STEP_TYPE_IN_VIEW = 5;
+    /** Griff: what a STEP_TAP was, as the program answers it (Mouse#smartTap); 0 until it has. */
+    static final int TAP_UI = 1;
+    static final int TAP_OWN = 2;
+    static final int TAP_GROUND = 3;
+    static final int TAP_EMPTY = 4;
+    static final int TAP_OTHER = 5;
     /** Griff: how long a finger rests before its drag draws a box instead of panning. */
     static final long REST_MILLISECONDS = 300;
-    /** Griff: a route's waypoints, about one per this many mm, and its corners within this. */
+    /** Griff: how far a finger may wander and still stay, for a tap, a rest and a stroke's tap on the handle (the mockup's). */
+    static final float GRIFF_SLOP_MM = 2.5f;
+    /** Griff: the tap ladder's next tap, this soon after the last one's lift and this near it. */
+    static final long LADDER_MILLISECONDS = 350;
+    static final float LADDER_MM = 6;
+    /** Griff: two fingers that move less than this, apart or together, are still a tap. */
+    static final float TWO_FINGERS_STILL_MM = 1.5f;
+    /** Griff: a lift counts where the finger was this long before it: fingers wobble as they lift. */
+    static final long SETTLE_LIFT_MILLISECONDS = 50;
+    /** Griff: the camera glides on only after a move this soon before the lift, at this much of the finger's speed. */
+    static final long GLIDE_MILLISECONDS = 70;
+    static final float GLIDE_SPEED = 0.9f;
+    /** Griff: the cursor hovers at a stroke's end at most this often. */
+    static final long HOVER_MILLISECONDS = 100;
+    /** Griff: a route's waypoints, about one per this many mm, and its corners within this; a stroke's points this far apart. */
     private static final float WAYPOINT_MM = 15;
     private static final float CORNER_MM = 2.5f;
-    /**
-     * Griff: a stroke that comes back this near its start gives the route up, however long it went. (The concept's patrol, a long
-     * stroke that ends there, is not built: until it is, such a loop is a route given up too, not one out and back.)
-     */
-    private static final float BACK_MM = 7;
+    private static final float STROKE_POINT_MM = 1;
     private static final int STROKE_POINTS = 512;
     private static final int MAX_WAYPOINTS = 32;
+    /** Griff: the moves that the settled lift and a stroke's trim to it look back over (the mockup's). */
+    private static final int TRAIL = 8;
+    private static final int TRIM_POINTS = 12;
+    /** Griff: how much of the last velocity each move keeps. */
+    private static final float VELOCITY_KEPT = 0.6f;
 
     /** How long a finger stays before it holds the button. */
     static final long HOLD_MILLISECONDS = 350;
-    /** How long two fingers may stay for a tap. */
+    /** How long two fingers may stay for a tap: with Griff from the first of them. */
     static final long TWO_FINGER_TAP_MILLISECONDS = 350;
     /**
      * How long the cursor rests before a click. The game looks for what is under the cursor once a
@@ -222,6 +294,10 @@ final class TouchInput implements Fingers {
         TWO_PENDING,
         PANNING,
         ZOOMING,
+        /** Griff: two fingers move and zoom the camera. */
+        PINCHING,
+        /** Griff: one finger left of a pinch moves the camera on. */
+        PINCH_PAN,
         /** Fingers left of a gesture that is over. */
         SPENT,
     }
@@ -260,6 +336,109 @@ final class TouchInput implements Fingers {
         }
     }
 
+    /**
+     * Griff's tap ladder (the mockup's tapA, nextTapCount): a tap within LADDER_MILLISECONDS of the last tap's lift and
+     * LADDER_MM of it climbs a rung, by what the ladder's first tap was, whatever lies under this one: after a tap that
+     * selected one's own unit, all of its type on the screen, then on the map; after a plain move, an attack-move there; after
+     * a tap on nothing with nothing selected, all one's own mobile units on the screen. The last two end the ladder. A tap on
+     * the game's UI is clicked again where the first went, as the game's double click wants it, within its own reach and time.
+     * Plus, Attack and Box keep a tap off the ladder, as do a drag, a rest, a stroke and two fingers.
+     */
+    static final class TapLadder {
+        /** Whether there is a last tap to climb from. */
+        private boolean mLast;
+        private long mLift;
+        private float mX;
+        private float mY;
+        /** The ladder's first tap: where it was, what it was (TAP_, 0 until the program says), its rung and its number. */
+        private float mBaseX;
+        private float mBaseY;
+        private int mKind;
+        private int mRung;
+        private int mTap;
+
+        /**
+         * The step of a tap here, lifted at `lift`, with these of the rail's buttons counting; it is the last tap from now on.
+         * `reach`: LADDER_MM in pixels; `uiReach`: how near the UI's double click wants the second click.
+         */
+        int next(float x, float y, long lift, int rail, float reach, float uiReach) {
+            int step = STEP_TAP;
+            if (mLast && (rail & (RAIL_BOX | RAIL_QUEUE | RAIL_ATTACK)) == 0) {
+                boolean climbs = lift - mLift <= LADDER_MILLISECONDS && Math.hypot(x - mX, y - mY) <= reach;
+                switch (mKind) {
+                    case TAP_UI:
+                        if (lift - mLift <= DOUBLE_TAP_MILLISECONDS && Math.hypot(x - mBaseX, y - mBaseY) <= uiReach) {
+                            step = STEP_AGAIN;
+                        }
+                        break;
+                    case TAP_OWN:
+                        if (climbs) {
+                            step = mRung >= 2 ? STEP_ALL_OF_TYPE : STEP_TYPE_IN_VIEW;
+                        }
+                        break;
+                    case TAP_GROUND:
+                        step = climbs ? STEP_ATTACK_MOVE : STEP_TAP;
+                        break;
+                    case TAP_EMPTY:
+                        step = climbs ? STEP_ALL_MOBILE : STEP_TAP;
+                        break;
+                    default:
+                        // Unknown yet, or nothing to climb from.
+                        break;
+                }
+            }
+            if (step == STEP_TAP) {
+                mBaseX = x;
+                mBaseY = y;
+                mKind = 0;
+                mRung = 1;
+                ++mTap;
+            } else {
+                mRung = Math.min(mRung + 1, 3);
+            }
+            // An attack-move and the grab of the army are the top of their ladders.
+            mLast = step != STEP_ATTACK_MOVE && step != STEP_ALL_MOBILE;
+            mLift = lift;
+            mX = x;
+            mY = y;
+            return step;
+        }
+
+        /** The program says what the ladder's first tap, number `tap`, was. */
+        void answered(int tap, int kind) {
+            if (tap == mTap && mRung == 1) {
+                mKind = kind;
+            }
+        }
+
+        /**
+         * Whether a finger down here at `time` may become the ladder's next tap, which the handle then leaves alone: so a
+         * double tap on a unit does not land on the handle its first tap raised. Also while the program has not said what the
+         * last tap was. After the third rung there is nothing to climb.
+         */
+        boolean climbing(float x, float y, long time, float reach) {
+            return mLast && mRung < 3 && mKind != TAP_UI && mKind != TAP_OTHER && time - mLift <= LADDER_MILLISECONDS
+                && Math.hypot(x - mX, y - mY) <= reach;
+        }
+
+        /** Another gesture came between: the next tap starts a ladder. */
+        void clear() {
+            mLast = false;
+        }
+
+        float baseX() {
+            return mBaseX;
+        }
+
+        float baseY() {
+            return mBaseY;
+        }
+
+        int tap() {
+            return mTap;
+        }
+    }
+
     private static final class Finger {
         int id = -1;
         float x;
@@ -283,6 +462,8 @@ final class TouchInput implements Fingers {
     private float mStartY;
     private float mStartDistance;
     private long mStartTime;
+    /** When the gesture's first finger came down. */
+    private long mFirstDown;
     /** Where the second finger came down. */
     private float mSecondX;
     private float mSecondY;
@@ -314,21 +495,42 @@ final class TouchInput implements Fingers {
     private final ClickPlace mLastClick = new ClickPlace();
     private float mScreenWidth = Float.MAX_VALUE;
     private float mScreenHeight = Float.MAX_VALUE;
-    /** Griff: the touch scheme is on; the screen's pixels in a mm. */
+    /** Griff: the touch scheme is on; the screen's pixels in a mm, and its slop in them. */
     private boolean mGriff;
     private float mMillimetre = 10;
-    /** Griff: the rail's buttons as they were when a waiting tap's finger lifted, and whether it came soon after the last tap. */
+    private float mGriffSlop = GRIFF_SLOP_MM * 10;
+    /** Griff: the rail's buttons as they were when a waiting tap's finger lifted, and when it lifted. */
     private int mClickRail;
-    private boolean mClickAgain;
-    /** Griff: what the finger holds is a drag the program pressed (Mouse#griffDrag), not `mPressed`. */
+    private long mClickLift;
+    private final TapLadder mLadder = new TapLadder();
+    /** Griff: what the finger holds is a drag the program pressed (Mouse#griffDrag), not `mPressed`; it may be a pan. */
     private boolean mPressedGriff;
-    /** Griff: the stroke from the handle, in the screen's pixels, and how far it has gone from its start. */
+    private boolean mMayPan;
+    /** Griff: a rest's ring is shown. */
+    private boolean mRing;
+    /** Griff: the first finger's last places with their times, the oldest overwritten: its down first. */
+    private final float[] mTrailX = new float[TRAIL];
+    private final float[] mTrailY = new float[TRAIL];
+    private final long[] mTrailTime = new long[TRAIL];
+    private int mTrailNext;
+    private int mTrailCount;
+    /** Griff: the finger that moves the camera, where it last was and when, and its velocity in pixels a second. */
+    private Finger mFollowed;
+    private float mFollowX;
+    private float mFollowY;
+    private long mFollowTime;
+    private float mVelocityX;
+    private float mVelocityY;
+    /** Griff: the stroke from the handle, in the screen's pixels, and how far the finger has gone from its start. */
     private final float[] mStrokeX = new float[STROKE_POINTS];
     private final float[] mStrokeY = new float[STROKE_POINTS];
     private int mStrokeCount;
     private float mStrokeFar;
     private final float[] mWaypointX = new float[MAX_WAYPOINTS];
     private final float[] mWaypointY = new float[MAX_WAYPOINTS];
+    /** Griff: when the cursor last hovered for the stroke, and whether a hover waits for its time. */
+    private long mHoverAt;
+    private boolean mHoverWaits;
 
     /** `slop`: how far a finger may wander in the screen's pixels and still count as staying. */
     TouchInput(Mouse mouse, float slop) {
@@ -341,9 +543,10 @@ final class TouchInput implements Fingers {
         mGriff = griff;
     }
 
-    /** The screen's pixels in a mm on the glass, by which Griff's routes measure their waypoints. */
+    /** The screen's pixels in a mm on the glass, by which Griff measures its gestures. */
     void setMillimetre(float pixels) {
         mMillimetre = pixels;
+        mGriffSlop = GRIFF_SLOP_MM * pixels;
     }
 
     void setSwapped(boolean swapped) {
@@ -360,12 +563,22 @@ final class TouchInput implements Fingers {
         mScreenHeight = height;
     }
 
+    /** Griff: the program says what tap number `tap` was (TAP_), for the ladder. */
+    void tapAnswered(int tap, int kind) {
+        mLadder.answered(tap, kind);
+    }
+
     private int tapButton() {
         return mSwapped ? Game.BUTTON_RIGHT : Game.BUTTON_LEFT;
     }
 
     private int holdButton() {
         return mSwapped ? Game.BUTTON_LEFT : Game.BUTTON_RIGHT;
+    }
+
+    /** How far a finger may wander and still stay: Griff's own for its gestures, the system's for the mouse's. */
+    private float slop() {
+        return mGriff ? mGriffSlop : mSlop;
     }
 
     @Override
@@ -385,30 +598,55 @@ final class TouchInput implements Fingers {
             mState = State.SPENT;
         } else if (mState == State.STROKE) {
             // A second finger gives the route up.
-            mMouse.strokeShown(mStrokeX, mStrokeY, 0, false);
+            giveUpStroke();
             mState = State.SPENT;
         } else if (mState == State.PENDING || mState == State.RESTED || mState == State.PLACE_PENDING
                    || mState == State.PLACE_LINE_READY) {
             mGhostToRestore = mState != State.PENDING && mState != State.RESTED && mGhostPlaced;
             mMouse.stopTimer();
-            mSecond.id = id;
-            mSecond.place(x, y);
-            mSecondX = x;
-            mSecondY = y;
-            mStartX = middleX();
-            mStartY = middleY();
-            mStartDistance = distance();
-            mStartTime = time;
-            mMouse.move(x, y);
-            mState = State.TWO_PENDING;
+            hideRing();
+            startTwo(id, x, y, time);
+        } else if (mState == State.PRESSED && mPressedGriff && mMayPan) {
+            // Griff: a second finger turns a pan into two fingers, which move the camera themselves.
+            mMouse.griffDragEnd(mFirst.x, mFirst.y, 0, 0);
+            mPressedGriff = false;
+            startTwo(id, x, y, time);
+        } else if (mState == State.PINCH_PAN) {
+            // Griff: a finger again beside the one left of a pinch pinches anew, from where the two are.
+            endPinch(false, time);
+            if (mFollowed != mFirst) {
+                mFirst.id = mFollowed.id;
+                mFirst.place(mFollowed.x, mFollowed.y);
+            }
+            startTwo(id, x, y, time);
         }
     }
 
+    private void startTwo(int id, float x, float y, long time) {
+        mSecond.id = id;
+        mSecond.place(x, y);
+        mSecondX = x;
+        mSecondY = y;
+        mStartX = middleX();
+        mStartY = middleY();
+        mStartDistance = distance();
+        mStartTime = time;
+        mLadder.clear();
+        mMouse.move(x, y);
+        mState = State.TWO_PENDING;
+    }
+
     private void startOneFinger(int id, float x, float y, long time) {
+        mFirstDown = time;
+        if (mGriff) {
+            // A finger on the map stops the camera's glide, and FAF's reach for a unit beside a tap follows the selection.
+            mMouse.griffDown(x, y, (mMouse.rail() & RAIL_BOX) != 0);
+        }
         if (!mDeleting && mMouse.placing()) {
             startPlacing(id, x, y, time);
-        } else if (mGriff && !mLastClick.recent(x, y, time, mSlop) && mMouse.onGriff(x, y)) {
-            // A second tap on a unit is its double click, even where the first one has raised the handle.
+        } else if (mGriff && !mLadder.climbing(x, y, time, LADDER_MM * mMillimetre) && mMouse.onGriff(x, y)) {
+            // The ladder first: a second tap on a unit is its double click, even where the first one has raised the handle.
+            // After the third rung the handle takes a drag at once.
             mGhostPlaced = false;
             startStroke(id, x, y, time);
         } else {
@@ -423,12 +661,13 @@ final class TouchInput implements Fingers {
         mStartX = x;
         mStartY = y;
         mStartTime = time;
+        startTrail(x, y, time);
         mMouse.move(x, y);
         mMouse.startTimer(mGriff ? REST_MILLISECONDS : HOLD_MILLISECONDS);
         mState = State.PENDING;
     }
 
-    /** Griff: a finger came down on the handle. Nothing goes to the game until it lifts. */
+    /** Griff: a finger came down on the handle. Nothing goes to the game until it lifts but the cursor's hover. */
     private void startStroke(int id, float x, float y, long time) {
         mFirst.id = id;
         mFirst.place(x, y);
@@ -438,6 +677,12 @@ final class TouchInput implements Fingers {
         mStrokeCount = 0;
         mStrokeFar = 0;
         addStrokePoint(x, y);
+        startTrail(x, y, time);
+        mLadder.clear();
+        showStroke();
+        mHoverAt = time;
+        mHoverWaits = false;
+        mMouse.strokeHover(x, y);
         mState = State.STROKE;
     }
 
@@ -461,29 +706,38 @@ final class TouchInput implements Fingers {
     }
 
     @Override
-    public void moved() {
+    public void moved(long time) {
         switch (mState) {
             case PENDING:
-                if (!mDeleting && Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
+                addTrail(time);
+                if (!mDeleting && Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > slop()) {
                     mMouse.stopTimer();
                     if (!mGriff) {
                         press(tapButton(), mStartX, mStartY);
                         mMouse.move(mFirst.x, mFirst.y);
                     } else {
-                        startGriffDrag(false);
+                        startGriffDrag(false, time);
                     }
                 }
                 break;
             case RESTED:
-                if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
-                    startGriffDrag(true);
+                addTrail(time);
+                if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mGriffSlop) {
+                    hideRing();
+                    startGriffDrag(true, time);
+                } else if (mRing) {
+                    mMouse.ring(true, mFirst.x, mFirst.y);
                 }
                 break;
             case STROKE:
-                strokeTo(mFirst.x, mFirst.y);
+                addTrail(time);
+                strokeTo(mFirst.x, mFirst.y, time);
                 break;
             case PRESSED:
                 mMouse.move(mFirst.x, mFirst.y);
+                if (mPressedGriff) {
+                    follow(time);
+                }
                 break;
             case PLACE_PENDING:
                 if (Math.hypot(mFirst.x - mStartX, mFirst.y - mStartY) > mSlop) {
@@ -501,7 +755,13 @@ final class TouchInput implements Fingers {
                 moveGhost();
                 break;
             case TWO_PENDING:
-                if (Math.abs(distance() - mStartDistance) > 2 * mSlop) {
+                if (mGriff) {
+                    // The mockup's: two fingers that hardly move may still be a tap, and past that they pinch at once.
+                    float still = TWO_FINGERS_STILL_MM * mMillimetre;
+                    if (Math.abs(distance() - mStartDistance) >= still || Math.hypot(middleX() - mStartX, middleY() - mStartY) >= still) {
+                        startPinch();
+                    }
+                } else if (Math.abs(distance() - mStartDistance) > 2 * mSlop) {
                     startZooming();
                 } else if (Math.hypot(middleX() - mStartX, middleY() - mStartY) > mSlop) {
                     startPanning();
@@ -516,6 +776,13 @@ final class TouchInput implements Fingers {
                 break;
             case ZOOMING:
                 zoom();
+                break;
+            case PINCHING:
+                mMouse.pinch(false, middleX(), middleY(), distance());
+                break;
+            case PINCH_PAN:
+                mMouse.pinch(false, mFollowed.x, mFollowed.y, 0);
+                follow(time);
                 break;
             default:
                 break;
@@ -541,11 +808,11 @@ final class TouchInput implements Fingers {
                     mState = State.SPENT;
                     break;
                 case STROKE:
-                    finishStroke();
+                    finishStroke(time);
                     mState = State.SPENT;
                     break;
                 case PRESSED:
-                    releasePressed();
+                    releasePressed(true, time);
                     mState = State.SPENT;
                     break;
                 case PLACE_PENDING:
@@ -563,7 +830,8 @@ final class TouchInput implements Fingers {
                     mState = State.SPENT;
                     break;
                 case TWO_PENDING:
-                    if (time - mStartTime <= TWO_FINGER_TAP_MILLISECONDS) {
+                    // Griff counts both fingers, from the first one down: a finger that rested and a quick second are no tap.
+                    if (time - (mGriff ? mFirstDown : mStartTime) <= TWO_FINGER_TAP_MILLISECONDS) {
                         if (mGriff && !mMouse.placing()) {
                             mMouse.deselect();
                         } else {
@@ -579,6 +847,16 @@ final class TouchInput implements Fingers {
                     break;
                 case ZOOMING:
                     mState = State.SPENT;
+                    break;
+                case PINCHING:
+                    // The finger left moves the camera on from where it is, as a pan.
+                    startPinchPan(id == mFirst.id ? mSecond : mFirst, time);
+                    break;
+                case PINCH_PAN:
+                    if (id == mFollowed.id) {
+                        endPinch(true, time);
+                        mState = State.SPENT;
+                    }
                     break;
                 default:
                     break;
@@ -625,15 +903,18 @@ final class TouchInput implements Fingers {
     private void endGesture() {
         mMouse.stopTimer();
         if (mState == State.PRESSED) {
-            releasePressed();
+            releasePressed(false, 0);
         } else if (mState == State.PANNING) {
             mMouse.button(Game.BUTTON_MIDDLE, false, middleX(), middleY());
         } else if (mState == State.PLACE_LINE) {
             giveUpLine();
         } else if (mState == State.STROKE) {
             // A route goes only where a finger lifted: the system's taking the fingers gives it up.
-            mMouse.strokeShown(mStrokeX, mStrokeY, 0, false);
+            hideStroke();
+        } else if (mState == State.PINCHING || mState == State.PINCH_PAN) {
+            endPinch(false, 0);
         }
+        hideRing();
         finishClick();
         bringCursorBackToGhost();
         mState = State.SPENT;
@@ -644,10 +925,17 @@ final class TouchInput implements Fingers {
         if (mState == State.PENDING && !mDeleting) {
             if (mGriff) {
                 mState = State.RESTED;
+                mLadder.clear();
+                // With Box a rest is none (the mockup's): no ring, nothing to feel, and its lift is Box's tap on the map.
+                if ((mMouse.rail() & RAIL_BOX) == 0) {
+                    mRing = true;
+                    mMouse.ring(true, mFirst.x, mFirst.y);
+                    mMouse.held();
+                }
             } else {
                 press(holdButton(), mStartX, mStartY);
+                mMouse.held();
             }
-            mMouse.held();
         } else if (mState == State.PLACE_PENDING) {
             if (startedOnGhost()) {
                 mState = State.PLACE_LINE_READY;
@@ -655,6 +943,10 @@ final class TouchInput implements Fingers {
                 startTakingGhost();
             }
             mMouse.held();
+        } else if (mState == State.STROKE && mHoverWaits) {
+            mHoverWaits = false;
+            mHoverAt += HOVER_MILLISECONDS;
+            mMouse.strokeHover(mFirst.x, mFirst.y);
         }
         finishClick();
     }
@@ -732,15 +1024,21 @@ final class TouchInput implements Fingers {
         mState = State.PRESSED;
     }
 
-    /** Griff: a drag from where the finger came down, which the program makes a pan, a box or a panel's drag. */
-    private void startGriffDrag(boolean rested) {
+    /**
+     * Griff: a drag from where the finger came down, which the program makes a pan, a box or a panel's drag. A pan starts
+     * where the finger passed the slop, so the map does not jump by it.
+     */
+    private void startGriffDrag(boolean rested, long time) {
         int rail = mMouse.rail();
         mPressedGriff = true;
-        mMouse.griffDrag(mStartX, mStartY, rested, rail);
+        mMayPan = !rested && (rail & RAIL_BOX) == 0;
+        mLadder.clear();
+        mMouse.griffDrag(mStartX, mStartY, mFirst.x, mFirst.y, rested, rail);
         mMouse.move(mFirst.x, mFirst.y);
+        startFollowing(mFirst, time);
         mState = State.PRESSED;
         // A box is an action that Box and Plus count for, a pan is none.
-        int used = rested || (rail & RAIL_BOX) != 0 ? rail & (RAIL_BOX | RAIL_QUEUE) : 0;
+        int used = !mMayPan ? rail & (RAIL_BOX | RAIL_QUEUE) : 0;
         if (used != 0) {
             mMouse.railUsed(used);
         }
@@ -748,21 +1046,105 @@ final class TouchInput implements Fingers {
 
     /** Griff: a rest and no drag. On the map the finger changed its mind; whatever it was, the rail counted for it. */
     private void restTap() {
+        hideRing();
         int rail = mMouse.rail();
         mMouse.restTap(mStartX, mStartY, rail);
-        if (rail != 0) {
+        // Box's tap on nothing leaves Box lit: with Box the program says what was used.
+        if (rail != 0 && (rail & RAIL_BOX) == 0) {
             mMouse.railUsed(rail);
         }
     }
 
-    private void releasePressed() {
+    /** `glide`: the finger lifted, and a pan that moved until then glides on. */
+    private void releasePressed(boolean glide, long time) {
         if (mPressedGriff) {
-            mMouse.griffDragEnd(mFirst.x, mFirst.y);
+            boolean moving = glide && mMayPan && time - mFollowTime < GLIDE_MILLISECONDS;
+            mMouse.griffDragEnd(mFirst.x, mFirst.y, moving ? GLIDE_SPEED * mVelocityX : 0, moving ? GLIDE_SPEED * mVelocityY : 0);
             mPressedGriff = false;
         } else {
             mMouse.button(mPressed, false, mFirst.x, mFirst.y);
         }
     }
+
+    private void hideRing() {
+        if (mRing) {
+            mRing = false;
+            mMouse.ring(false, 0, 0);
+        }
+    }
+
+    // --- Griff's trail, velocity and settled lift ---------------------------------------------------------------------
+
+    private void startTrail(float x, float y, long time) {
+        mTrailCount = 0;
+        mTrailNext = 0;
+        trail(x, y, time);
+    }
+
+    private void addTrail(long time) {
+        trail(mFirst.x, mFirst.y, time);
+    }
+
+    private void trail(float x, float y, long time) {
+        mTrailX[mTrailNext] = x;
+        mTrailY[mTrailNext] = y;
+        mTrailTime[mTrailNext] = time;
+        mTrailNext = (mTrailNext + 1) % TRAIL;
+        mTrailCount = Math.min(mTrailCount + 1, TRAIL);
+    }
+
+    /**
+     * Where a finger lifting at `time` counts as having lifted (the mockup's settle): its last place that is
+     * SETTLE_LIFT_MILLISECONDS old, or the oldest the trail has. Into the trail's slot past its newest.
+     */
+    private int settled(long time) {
+        int at = (mTrailNext - 1 + TRAIL) % TRAIL;
+        for (int k = 1; k < mTrailCount && mTrailTime[at] > time - SETTLE_LIFT_MILLISECONDS; ++k) {
+            at = (at - 1 + TRAIL) % TRAIL;
+        }
+        return at;
+    }
+
+    private void startFollowing(Finger finger, long time) {
+        mFollowed = finger;
+        mFollowX = finger.x;
+        mFollowY = finger.y;
+        mFollowTime = time;
+        mVelocityX = 0;
+        mVelocityY = 0;
+    }
+
+    /** The followed finger's velocity, smoothed over its moves (the mockup's panMove). */
+    private void follow(long time) {
+        float seconds = Math.max(1, time - mFollowTime) / 1000f;
+        mVelocityX = VELOCITY_KEPT * mVelocityX + (1 - VELOCITY_KEPT) * (mFollowed.x - mFollowX) / seconds;
+        mVelocityY = VELOCITY_KEPT * mVelocityY + (1 - VELOCITY_KEPT) * (mFollowed.y - mFollowY) / seconds;
+        mFollowX = mFollowed.x;
+        mFollowY = mFollowed.y;
+        mFollowTime = time;
+    }
+
+    // --- Griff's pinch -------------------------------------------------------------------------------------------------
+
+    private void startPinch() {
+        mGhostUsed = false;
+        mMouse.pinch(true, middleX(), middleY(), distance());
+        mState = State.PINCHING;
+    }
+
+    private void startPinchPan(Finger left, long time) {
+        mMouse.pinch(true, left.x, left.y, 0);
+        startFollowing(left, time);
+        mState = State.PINCH_PAN;
+    }
+
+    /** `glide`: the last finger lifted, and the camera glides on if it moved until then. */
+    private void endPinch(boolean glide, long time) {
+        boolean moving = glide && mState == State.PINCH_PAN && time - mFollowTime < GLIDE_MILLISECONDS;
+        mMouse.pinchEnd(moving ? GLIDE_SPEED * mVelocityX : 0, moving ? GLIDE_SPEED * mVelocityY : 0);
+    }
+
+    // --- Griff's stroke ------------------------------------------------------------------------------------------------
 
     private void addStrokePoint(float x, float y) {
         // Past the room for points the last one follows the finger: the route keeps its end.
@@ -770,40 +1152,92 @@ final class TouchInput implements Fingers {
         mStrokeX[at] = x;
         mStrokeY[at] = y;
         mStrokeCount = at + 1;
-        mStrokeFar = Math.max(mStrokeFar, (float) Math.hypot(x - mStartX, y - mStartY));
     }
 
-    /** Griff: the stroke follows the finger, a point per half mm, and the screen shows it. */
-    private void strokeTo(float x, float y) {
+    /** Griff: the stroke follows the finger, a point a mm once it has left the handle's middle by one; the screen shows it. */
+    private void strokeTo(float x, float y, long time) {
+        mStrokeFar = Math.max(mStrokeFar, (float) Math.hypot(x - mStartX, y - mStartY));
+        hover(x, y, time);
         int last = mStrokeCount - 1;
-        if (Math.hypot(x - mStrokeX[last], y - mStrokeY[last]) < mMillimetre / 2) {
+        if (mStrokeFar <= STROKE_POINT_MM * mMillimetre
+            || Math.hypot(x - mStrokeX[last], y - mStrokeY[last]) < STROKE_POINT_MM * mMillimetre) {
             return;
         }
         addStrokePoint(x, y);
-        mMouse.strokeShown(mStrokeX, mStrokeY, mStrokeCount, strokeGoesBack());
+        showStroke();
     }
 
-    /** Griff: lifting now gives the route up: the finger has come back to the handle. */
-    private boolean strokeGoesBack() {
-        int last = mStrokeCount - 1;
-        return Math.hypot(mStrokeX[last] - mStartX, mStrokeY[last] - mStartY) <= BACK_MM * mMillimetre;
+    /** The cursor at the stroke's end, at most each HOVER_MILLISECONDS, and the last place when the time has come. */
+    private void hover(float x, float y, long time) {
+        if (time - mHoverAt >= HOVER_MILLISECONDS) {
+            mHoverAt = time;
+            mHoverWaits = false;
+            mMouse.stopTimer();
+            mMouse.strokeHover(x, y);
+        } else if (!mHoverWaits) {
+            mHoverWaits = true;
+            mMouse.startTimer(mHoverAt + HOVER_MILLISECONDS - time);
+        }
     }
 
-    /** Griff: the finger lifted from its stroke: a tap on the handle, a route given up, or a route. */
-    private void finishStroke() {
-        mMouse.strokeShown(mStrokeX, mStrokeY, 0, false);
-        if (mStrokeFar <= mSlop) {
+    private int strokeWaypoints() {
+        return Stroke.waypoints(mStrokeX, mStrokeY, mStrokeCount, WAYPOINT_MM * mMillimetre, CORNER_MM * mMillimetre, mWaypointX,
+                                mWaypointY);
+    }
+
+    private void showStroke() {
+        mMouse.strokeShown(mStrokeX, mStrokeY, mStrokeCount, Stroke.classify(mStrokeX, mStrokeY, mStrokeCount, mMillimetre), mWaypointX,
+                           mWaypointY, strokeWaypoints());
+    }
+
+    private void hideStroke() {
+        mHoverWaits = false;
+        mMouse.strokeShown(mStrokeX, mStrokeY, 0, Stroke.CANCEL, mWaypointX, mWaypointY, 0);
+    }
+
+    private void giveUpStroke() {
+        mMouse.stopTimer();
+        hideStroke();
+        mMouse.strokeGivenUp();
+    }
+
+    /** Cuts the stroke back to its point nearest the settled lift (the mockup's strokeTrimTo), which takes its place. */
+    private void trimStrokeTo(float x, float y) {
+        int best = mStrokeCount - 1;
+        double bestDistance = Double.MAX_VALUE;
+        for (int k = mStrokeCount - 1; k >= Math.max(1, mStrokeCount - TRIM_POINTS); --k) {
+            double distance = Math.hypot(mStrokeX[k] - x, mStrokeY[k] - y);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = k;
+            }
+        }
+        mStrokeCount = best + 1;
+        mStrokeX[best] = x;
+        mStrokeY[best] = y;
+    }
+
+    /**
+     * Griff: the finger lifted from its stroke: a tap on the handle, or what the stroke gives where the finger was a moment
+     * before: a route, a patrol by a loop, or nothing for a loop taken back.
+     */
+    private void finishStroke(long time) {
+        mMouse.stopTimer();
+        hideStroke();
+        if (mStrokeFar <= mGriffSlop) {
             mMouse.griffTap();
             return;
         }
+        int settled = settled(time);
         addStrokePoint(mFirst.x, mFirst.y);
-        if (strokeGoesBack()) {
+        trimStrokeTo(mTrailX[settled], mTrailY[settled]);
+        int mode = Stroke.classify(mStrokeX, mStrokeY, mStrokeCount, mMillimetre);
+        if (mode == Stroke.CANCEL) {
+            mMouse.strokeGivenUp();
             return;
         }
         int rail = mMouse.rail();
-        int count = Stroke.waypoints(mStrokeX, mStrokeY, mStrokeCount, WAYPOINT_MM * mMillimetre, CORNER_MM * mMillimetre,
-                                     mWaypointX, mWaypointY);
-        mMouse.route(mWaypointX, mWaypointY, count, rail);
+        mMouse.route(mWaypointX, mWaypointY, strokeWaypoints(), rail, mode == Stroke.PATROL);
         if ((rail & (RAIL_QUEUE | RAIL_ATTACK)) != 0) {
             mMouse.railUsed(rail & (RAIL_QUEUE | RAIL_ATTACK));
         }
@@ -811,12 +1245,18 @@ final class TouchInput implements Fingers {
 
     /** A click `rested` milliseconds after the cursor came there, now or when it has settled. */
     private void click(int button, float x, float y, long rested, long time) {
-        mClickAgain = mLastClick.clickedAt(x, y, time, mSlop);
         mClickButton = button;
-        // Griff's tap is decided by what the cursor rests on, at the finger's place, so it clicks there; where a double click
-        // is meant, the program sends it to where the last went (Mouse#smartTap).
-        mClickX = button == GRIFF_TAP ? x : mLastClick.x();
-        mClickY = button == GRIFF_TAP ? y : mLastClick.y();
+        if (button == GRIFF_TAP) {
+            // Griff's tap is decided by what the cursor rests on, at the finger's place, so it clicks there; its ladder decides
+            // where a double click goes.
+            mClickLift = time;
+            mClickX = x;
+            mClickY = y;
+        } else {
+            mLastClick.clickedAt(x, y, time, mSlop);
+            mClickX = mLastClick.x();
+            mClickY = mLastClick.y();
+        }
         if (rested >= SETTLE_MILLISECONDS) {
             finishClick();
         } else {
@@ -836,9 +1276,11 @@ final class TouchInput implements Fingers {
             return;
         }
         if (button == GRIFF_TAP) {
-            // A tap is the next action whatever it turns out to be: the rail's buttons for it go off.
-            mMouse.smartTap(mClickX, mClickY, mClickAgain, mClickRail);
-            if (mClickRail != 0) {
+            int step = mLadder.next(mClickX, mClickY, mClickLift, mClickRail, LADDER_MM * mMillimetre, 2 * mSlop);
+            mMouse.smartTap(mClickX, mClickY, mClickRail, step, mLadder.baseX(), mLadder.baseY(), mLadder.tap());
+            // A tap is the next action whatever it turns out to be: the rail's buttons for it go off. Box's tap on nothing
+            // leaves Box lit, so with Box the program says what was used.
+            if (mClickRail != 0 && (mClickRail & RAIL_BOX) == 0) {
                 mMouse.railUsed(mClickRail);
             }
             return;

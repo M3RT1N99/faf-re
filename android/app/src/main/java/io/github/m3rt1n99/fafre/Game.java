@@ -179,54 +179,98 @@ final class Game {
 
     // --- The touch scheme Griff (src/host/GriffAndroid.cpp) ---------------------------------------------------------
 
+    /** {@link #griff}: the values it gives, and where in them. */
+    static final int GRIFF_VALUES = 11;
+    static final int GRIFF_FREE_LEFT = 6;
+    static final int GRIFF_FREE_TOP = 7;
+    static final int GRIFF_FREE_RIGHT = 8;
+    static final int GRIFF_STROKE = 9;
+    static final int GRIFF_STROKE_END = 10;
+
+    /** {@link #griffSaid}: what the program says, three numbers each: what, and two of its own. */
+    static final int SAID_TAP = 1;
+    static final int SAID_ROUTE_GIVEN_UP = 2;
+
     /**
      * Griff on or off, and in the picture's pixels: the handle's radius, how far from its middle a finger is on it, its room
      * from the selection's units and how far from its middle the tip of its arrow is; the tap help's reach and what counts as
-     * a small control (as for {@link #tap}).
+     * a small control (as for {@link #tap}); how far beside a unit a tap still picks it, with nothing selected that takes
+     * orders and with troops; and the speed, a second, under which the camera's glide stops.
      */
     static native void setGriff(boolean on, float radius, float touchRadius, float gap, float arrowReach, float tapReach,
-                                float tapSmallSide);
+                                float tapSmallSide, float nearReach, float nearReachWithTroops, float glideStop);
 
     /** Where the app's bar lies over the picture, in its pixels: the handle keeps clear of it. */
     static native void setGriffBar(int left, int top, int right, int bottom);
 
     /**
-     * The handle over the selection as the last frame placed it, in the picture's pixels, into x, y, the group's middle x and y,
-     * the selection's count, and 1 if the group is out of view or under a panel and the handle points at it, else 0. False
-     * when there is none.
+     * The handle over the selection as the last frame placed it, in the picture's pixels, into GRIFF_VALUES: x, y, the group's
+     * middle x and y, the selection's count, 1 if the group is out of view or under a panel and the handle points at it, else 0;
+     * the free map's left, top and right at its middle; and the stroke the program last answered for ({@link #strokeHover}) and
+     * what its end is on (Stroke.END_). False when there is no handle.
      */
     static native boolean griff(float[] handle);
 
     /**
-     * A tap where the finger was and the pointer has rested: FAF's click by what it lands on. `again`: soon after the last tap and
-     * near it, which the program makes the game's double click where both click the same, the UI or one's own unit. `rail`:
-     * TouchInput's RAIL_ bits that count for it.
+     * Into `said` what the program has said since the last call, three numbers each (SAID_ and two of its own), as many as fit;
+     * how many numbers that is. SAID_TAP: a tap's number and what it was (TouchInput.TAP_) with the rail's bits it used
+     * shifted by 8; SAID_ROUTE_GIVEN_UP: a route ended on a panel.
      */
-    static native void smartTap(int x, int y, boolean again, int rail);
+    static native int griffSaid(int[] said);
+
+    /**
+     * A first finger came down here: on the map or the minimap the camera's glide stops; FAF's reach for a unit beside a tap is
+     * set for the selection, or for Box, which picks units (`box`).
+     */
+    static native void griffDown(int x, int y, boolean box);
+
+    /**
+     * A tap where the finger was and the pointer has rested, or a step of the tap ladder (TouchInput.STEP_), which acts at the
+     * ladder's first tap (`baseX`, `baseY`); `rail`: TouchInput's RAIL_ bits that count for it. A STEP_TAP is FAF's click by
+     * what it lands on, which the program says, by its number `tap` ({@link #griffSaid}).
+     */
+    static native void smartTap(int x, int y, int rail, int step, int baseX, int baseY, int tap);
 
     /** Two fingers' tap: an armed command mode goes, or with none the selection. */
     static native void deselect();
 
-    /** The camera goes to the selection. */
-    static native void toGroup();
+    /** The camera goes to the selection, by a flight (`fly`) or at once. */
+    static native void toGroup(boolean fly);
 
     /**
      * A route of `count` waypoints, x and y pairs in the picture's pixels: FAF's right click at each, the last on what is there;
      * all but the first with Shift, and with RAIL_QUEUE the first too. With RAIL_ATTACK each is the left click of FAF's
-     * attack-move mode, armed again where FAF ended it, or the right click where FAF offers no attack-move.
+     * attack-move mode, armed again where FAF ended it, or the right click where FAF offers no attack-move. With `patrol` each
+     * is the left click of FAF's patrol mode where FAF offers it, so armed again.
      */
-    static native void route(int[] places, int count, int rail);
+    static native void route(int[] places, int count, int rail, boolean patrol);
 
     /**
-     * A finger's drag from here (`rested`: after a rest), as the place wants it: on the map a pan, or a selection box after a
-     * rest or with RAIL_BOX, with RAIL_QUEUE adding to the selection; elsewhere the left button's drag. {@link #griffDragEnd} ends it.
+     * The cursor hovers here for stroke number `stroke`, and the program says what a click would order there ({@link #griff}).
      */
-    static native void griffDrag(int x, int y, boolean rested, int rail);
+    static native void strokeHover(int x, int y, int stroke);
 
-    static native void griffDragEnd(int x, int y);
+    /**
+     * A finger's drag from here (`rested`: after a rest), as the place wants it: on the map a pan from where the finger is now
+     * (`nowX`, `nowY`), or a selection box after a rest or with RAIL_BOX, with RAIL_QUEUE adding to the selection; elsewhere the
+     * left button's drag. {@link #griffDragEnd} ends it.
+     */
+    static native void griffDrag(int x, int y, int nowX, int nowY, boolean rested, int rail);
+
+    /** The drag ends here; a pan's camera glides on at this velocity in the picture's pixels a second. */
+    static native void griffDragEnd(int x, int y, float velocityX, float velocityY);
 
     /** A finger rested here and lifted: on a panel FAF's right click, with the tap help, and with Shift for RAIL_QUEUE; on the map nothing. */
     static native void restTap(int x, int y, int rail);
+
+    /**
+     * The camera follows fingers (TouchInput.Mouse#pinch): `start` keeps what lies here under them; then two fingers
+     * `distance` apart zoom it, one (0) moves it. In the picture's pixels.
+     */
+    static native void pinch(boolean start, int x, int y, int distance);
+
+    /** The fingers left the camera, which glides on at this velocity in the picture's pixels a second. */
+    static native void pinchEnd(float velocityX, float velocityY);
 
     /** The rail's Plus held or let go: Shift's key, in the order of the clicks. */
     static native void holdShift(boolean down);

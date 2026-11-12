@@ -1,5 +1,6 @@
 package io.github.m3rt1n99.fafre;
 
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Color;
@@ -75,13 +76,23 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double RAIL_BUTTON_MM = 11;
     /**
      * Griff's handle (the preview's sizes): its radius; how much further from it a finger is still on it; its room from the
-     * selection's units, of which a unit's icon takes some beyond its middle.
+     * selection's units' blueprint box, which is wider than their icons.
      */
     private static final double GRIFF_RADIUS_MM = 5.5;
     private static final double GRIFF_TOUCH_MM = 1.5;
-    private static final double GRIFF_GAP_MM = 4.5;
+    private static final double GRIFF_GAP_MM = 2;
     /** How far beyond the handle's edge its arrow at a group elsewhere reaches. */
     private static final double GRIFF_ARROW_MM = 2;
+    /**
+     * Griff's near misses (the mockup's pick): a tap picks one's own unit this far beside it, less with troops selected, so that
+     * a tap for a move beside one's own units does not take the selection from them.
+     */
+    private static final double GRIFF_NEAR_MM = 3.5;
+    private static final double GRIFF_NEAR_TROOPS_MM = 2;
+    /** Griff: the camera's glide stops under this speed a second (the mockup's 4 pixels of its 5.64 a mm). */
+    private static final double GRIFF_GLIDE_STOP_MM = 0.7;
+    /** Griff's word for a gesture given up before it gave anything. */
+    private static final String CANCELLED = "Cancelled";
     private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
@@ -112,6 +123,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private int mButtons;
     /** The lines the user chose, and the picture's size as the surface has it. */
     private int mLines;
+    private int mPictureWidth;
     private int mPictureHeight;
     /** Held while the activity is in front. The game's sound stops for another app's, even for a short one: the system lowers no AAudio stream. */
     private AudioFocusRequest mAudioFocus;
@@ -146,11 +158,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private int mRailShown = -1;
     private GriffLayer mGriffLayer;
     /** The handle as Game.griff gives it, and where the screen shows it, while a game is on. */
-    private final float[] mGriffHandle = new float[6];
+    private final float[] mGriffHandle = new float[Game.GRIFF_VALUES];
     private boolean mGriffShown;
     private float mGriffX;
     private float mGriffY;
     private boolean mGriffPolling;
+    /** A stroke is drawn, and its number: the handle stays where the stroke began, and the program's answers are its own. */
+    private boolean mStroking;
+    private int mStroke;
+    /** What the program says (Game.griffSaid). */
+    private final int[] mGriffSaid = new int[3 * 16];
     private final Choreographer.FrameCallback mGriffFrame = new Choreographer.FrameCallback() {
         @Override
         public void doFrame(long frameTimeNanos) {
@@ -169,17 +186,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final TouchInput.Mouse mTouchMouse = new TouchInput.Mouse() {
         @Override
         public void move(float x, float y) {
-            Game.mouseMove(pictureX(x), pictureY(y));
+            Game.mouseMove(fingerX(x), fingerY(y));
         }
 
         @Override
         public void button(int button, boolean down, float x, float y) {
-            Game.touchButton(button, down, pictureX(x), pictureY(y));
+            Game.touchButton(button, down, fingerX(x), fingerY(y));
         }
 
         @Override
         public void tap(float x, float y) {
-            Game.tap(pictureX(x), pictureY(y), pictureMm(TAP_REACH_MM), pictureMm(TAP_SMALL_MM));
+            Game.tap(fingerX(x), fingerY(y), pictureMm(TAP_REACH_MM), pictureMm(TAP_SMALL_MM));
         }
 
         @Override
@@ -195,13 +212,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
 
         @Override
-        public void tapNearGhost(float fingerX, float fingerY, float ghostX, float ghostY) {
-            Game.tapNearGhost(pictureX(fingerX), pictureY(fingerY), pictureX(ghostX), pictureY(ghostY));
+        public void tapNearGhost(float x, float y, float ghostX, float ghostY) {
+            Game.tapNearGhost(fingerX(x), fingerY(y), fingerX(ghostX), fingerY(ghostY));
         }
 
         @Override
         public void startLine(float x, float y) {
-            Game.mouseButton(Game.BUTTON_LEFT, true, pictureX(x), pictureY(y));
+            Game.mouseButton(Game.BUTTON_LEFT, true, fingerX(x), fingerY(y));
         }
 
         @Override
@@ -211,7 +228,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void wheel(int delta, float x, float y) {
-            Game.mouseWheel(delta, pictureX(x), pictureY(y));
+            Game.mouseWheel(delta, fingerX(x), fingerY(y));
         }
 
         @Override
@@ -226,7 +243,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void deleteOrder(float x, float y) {
-            Game.deleteOrder(pictureX(x), pictureY(y));
+            Game.deleteOrder(fingerX(x), fingerY(y));
         }
 
         @Override
@@ -241,8 +258,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
 
         @Override
-        public void smartTap(float x, float y, boolean again, int rail) {
-            Game.smartTap(pictureX(x), pictureY(y), again, rail);
+        public void griffDown(float x, float y, boolean box) {
+            Game.griffDown(fingerX(x), fingerY(y), box);
+        }
+
+        @Override
+        public void smartTap(float x, float y, int rail, int step, float baseX, float baseY, int tap) {
+            Game.smartTap(fingerX(x), fingerY(y), rail, step, fingerX(baseX), fingerY(baseY), tap);
+        }
+
+        @Override
+        public void ring(boolean shown, float x, float y) {
+            mGriffLayer.showRing(shown, x, y);
         }
 
         @Override
@@ -260,22 +287,40 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void griffTap() {
-            Game.toGroup();
+            // The camera flies to the group, unless the user asked for no animations.
+            Game.toGroup(ValueAnimator.areAnimatorsEnabled());
         }
 
         @Override
-        public void route(float[] xs, float[] ys, int count, int rail) {
+        public void route(float[] xs, float[] ys, int count, int rail, boolean patrol) {
             int[] places = new int[2 * count];
             for (int at = 0; at < count; ++at) {
-                places[2 * at] = pictureX(xs[at]);
-                places[2 * at + 1] = pictureY(ys[at]);
+                places[2 * at] = fingerX(xs[at]);
+                places[2 * at + 1] = fingerY(ys[at]);
             }
-            Game.route(places, count, rail);
+            Game.route(places, count, rail, patrol);
         }
 
         @Override
-        public void strokeShown(float[] xs, float[] ys, int count, boolean back) {
-            mGriffLayer.showStroke(xs, ys, count, back, (rail() & TouchInput.RAIL_ATTACK) != 0);
+        public void strokeShown(float[] xs, float[] ys, int count, int mode, float[] waypointXs, float[] waypointYs, int waypoints) {
+            if (count > 0 && !mStroking) {
+                // A new stroke: the handle stays where it began, and only the program's answers for this one count (its
+                // number goes to the program in 16 bits).
+                mStroke = (mStroke + 1) & 0xFFFF;
+                mGriffLayer.setStrokeEnd(0);
+            }
+            mStroking = count > 0;
+            mGriffLayer.showStroke(xs, ys, count, mode, waypointXs, waypointYs, waypoints);
+        }
+
+        @Override
+        public void strokeHover(float x, float y) {
+            Game.strokeHover(fingerX(x), fingerY(y), mStroke);
+        }
+
+        @Override
+        public void strokeGivenUp() {
+            mGriffLayer.toast(CANCELLED);
         }
 
         @Override
@@ -290,18 +335,30 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
 
         @Override
-        public void griffDrag(float x, float y, boolean rested, int rail) {
-            Game.griffDrag(pictureX(x), pictureY(y), rested, rail);
+        public void griffDrag(float x, float y, float nowX, float nowY, boolean rested, int rail) {
+            Game.griffDrag(fingerX(x), fingerY(y), fingerX(nowX), fingerY(nowY), rested, rail);
         }
 
         @Override
-        public void griffDragEnd(float x, float y) {
-            Game.griffDragEnd(pictureX(x), pictureY(y));
+        public void griffDragEnd(float x, float y, float velocityX, float velocityY) {
+            float scale = mPageView.scale();
+            Game.griffDragEnd(fingerX(x), fingerY(y), velocityX / scale, velocityY / scale);
         }
 
         @Override
         public void restTap(float x, float y, int rail) {
-            Game.restTap(pictureX(x), pictureY(y), rail);
+            Game.restTap(fingerX(x), fingerY(y), rail);
+        }
+
+        @Override
+        public void pinch(boolean start, float x, float y, float distance) {
+            Game.pinch(start, fingerX(x), fingerY(y), Math.round(distance / mPageView.scale()));
+        }
+
+        @Override
+        public void pinchEnd(float velocityX, float velocityY) {
+            float scale = mPageView.scale();
+            Game.pinchEnd(velocityX / scale, velocityY / scale);
         }
     };
 
@@ -577,6 +634,20 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return mPageView.pictureY(y);
     }
 
+    /**
+     * A finger's place in the picture, with Griff never on its edge: FAF scrolls the view while its cursor is on the window's
+     * edge pixel (ui_ScreenEdgeScrollView), where a mouse is pushed on purpose and a finger at the glass's edge would hold it.
+     */
+    private int fingerX(float x) {
+        int place = pictureX(x);
+        return mGriff ? Math.max(1, Math.min(mPictureWidth - 2, place)) : place;
+    }
+
+    private int fingerY(float y) {
+        int place = pictureY(y);
+        return mGriff ? Math.max(1, Math.min(mPictureHeight - 2, place)) : place;
+    }
+
     // --- The page: FAF's Lua says which, and a finger scrolls it ------------------------------------
 
     /** On the activity's thread: what the program has said since the last time. */
@@ -592,6 +663,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             placeSurface();
         }
         placeBarAsNow();
+        if (mGriff) {
+            readGriffSaid();
+        }
         passDrag();
         float rest = Game.takePageDrag();
         if (rest != 0) {
@@ -802,7 +876,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         button.setTag(bit);
         mGameButtons.add(button);
         mRailButtons.add(button);
-        button.setOnTouchListener(new RailTouch(bit, ViewConfiguration.get(this).getScaledTouchSlop()));
+        // Griff's slop, as for its gestures on the map: a thumb that wobbles on the rail still taps.
+        button.setOnTouchListener(new RailTouch(bit, TouchInput.GRIFF_SLOP_MM * viewPixelsPerMm()));
     }
 
     /** A finger on a rail button. It is the button's own: a finger on the map is another view's, and both go on at once. */
@@ -888,15 +963,49 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         showRail();
     }
 
-    /** The handle as the last frame placed it, where the screen shows it, while a game is on. */
+    /**
+     * The handle as the last frame placed it, where the screen shows it, while a game is on; while a stroke is drawn it stays
+     * where the stroke began. With it the free map, and what the stroke's end is on.
+     */
     private void readGriff() {
-        mGriffShown = mGriffPolling && Game.griff(mGriffHandle);
+        boolean shown = mGriffPolling && Game.griff(mGriffHandle);
+        if (mStroking) {
+            if (mGriffHandle[Game.GRIFF_STROKE] == mStroke) {
+                mGriffLayer.setStrokeEnd((int) mGriffHandle[Game.GRIFF_STROKE_END]);
+            }
+            return;
+        }
+        mGriffShown = shown;
         if (mGriffShown) {
             mGriffX = mPageView.screenX(mGriffHandle[0]);
             mGriffY = mPageView.screenY(mGriffHandle[1]);
         }
         mGriffLayer.setHandle(mGriffShown, mGriffX, mGriffY, mPageView.screenX(mGriffHandle[2]), mPageView.screenY(mGriffHandle[3]),
             (int) mGriffHandle[4], mGriffHandle[5] != 0);
+        mGriffLayer.setFreeMap(mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_LEFT]), mPageView.screenY(mGriffHandle[Game.GRIFF_FREE_TOP]),
+            mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_RIGHT]));
+    }
+
+    /** What the program said of Griff's taps and routes: the rail's buttons a Box tap used, the tap ladder's answers, a toast. */
+    private void readGriffSaid() {
+        int count;
+        while ((count = Game.griffSaid(mGriffSaid)) > 0) {
+            for (int at = 0; at + 2 < count; at += 3) {
+                if (mGriffSaid[at] == Game.SAID_TAP) {
+                    int answer = mGriffSaid[at + 2];
+                    mTouch.tapAnswered(mGriffSaid[at + 1], answer & 0xFF);
+                    if ((answer >> 8) != 0) {
+                        mRail.used(answer >> 8);
+                        showRail();
+                    }
+                } else if (mGriffSaid[at] == Game.SAID_ROUTE_GIVEN_UP) {
+                    mGriffLayer.toast(CANCELLED);
+                }
+            }
+            if (count < mGriffSaid.length) {
+                break;
+            }
+        }
     }
 
     /** While a game is on and the activity in front, the handle follows the selection each frame of the screen's. */
@@ -913,12 +1022,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
     }
 
-    /** Griff's sizes in the picture's pixels (a game's page has no zoom), by which the program places the handle and helps taps. */
+    /**
+     * Griff's sizes in the picture's pixels (a game's page has no zoom), by which the program places the handle, helps taps,
+     * picks units beside them and stops the camera's glide.
+     */
     private void setGriff() {
         double pixels = mPictureHeight / mScreenMm;
         Game.setGriff(mGriff, (float) (GRIFF_RADIUS_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * pixels),
             (float) (GRIFF_GAP_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_ARROW_MM) * pixels), (float) (TAP_REACH_MM * pixels),
-            (float) (TAP_SMALL_MM * pixels));
+            (float) (TAP_SMALL_MM * pixels), (float) (GRIFF_NEAR_MM * pixels), (float) (GRIFF_NEAR_TROOPS_MM * pixels),
+            (float) (GRIFF_GLIDE_STOP_MM * pixels));
     }
 
     /** Where the bar lies over the picture, which Griff's handle keeps clear of: its buttons would cover it. */
@@ -1232,6 +1345,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        mPictureWidth = width;
         mPictureHeight = height;
         mPageView.setPicture(width, height);
         placeSurface();
@@ -1278,7 +1392,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 for (int at = 0; at < event.getPointerCount(); ++at) {
                     mFingers.move(event.getPointerId(at), event.getX(at), event.getY(at));
                 }
-                mFingers.moved();
+                mFingers.moved(event.getEventTime());
                 break;
             case MotionEvent.ACTION_UP:
                 mFingers.up(id, event.getEventTime(), true);

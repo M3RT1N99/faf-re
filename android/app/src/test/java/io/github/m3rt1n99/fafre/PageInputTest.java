@@ -93,7 +93,7 @@ public class PageInputTest {
 
     private void moveTo(float x, float y) {
         input.move(FINGER, x, y);
-        input.moved();
+        input.moved(0);
     }
 
     private List<String> events(String... expected) {
@@ -295,7 +295,7 @@ public class PageInputTest {
         mouse.events.clear();
         moveTo(100, 300);
         input.move(OTHER, 300, 300);
-        input.moved();
+        input.moved(0);
         input.timer();
         input.up(OTHER, 400, false);
         input.up(FINGER, 500, true);
@@ -311,7 +311,7 @@ public class PageInputTest {
         mouse.events.clear();
         moveTo(100, 240);
         input.move(OTHER, 400, 200);
-        input.moved();
+        input.moved(0);
         assertEquals(events("scroll 10"), mouse.events);
         input.up(FINGER, 200, false);
         moveTo(100, 300);
@@ -459,7 +459,7 @@ public class PageInputTest {
         input.down(FINGER, 100, 200, 0, true);
         mouse.events.clear();
         input.move(OTHER, 500, 500);
-        input.moved();
+        input.moved(0);
         assertEquals(events(), mouse.events);
     }
 }

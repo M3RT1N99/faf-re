@@ -1,6 +1,8 @@
 -- Griff, the app's touch scheme (buildstage/touch-concept-v2.md): where the selection is on the screen, for the handle
--- that the app shows beside it, and the few things its gestures ask of FAF's UI. The app places the handle and decides
--- what a gesture clicks (android/native/src/host/GriffAndroid.cpp); with the mouse scheme nothing is reported.
+-- that the app shows beside it; the camera's moves that its gestures make, as the UI moves the camera (a glide after a pan, a
+-- flight to the group, a pinch), not the simulation; and the few things its gestures ask of FAF's UI. The app places the
+-- handle and decides what a gesture clicks (android/native/src/host/GriffAndroid.cpp); with the mouse scheme nothing is
+-- reported.
 
 local Group = import('/lua/maui/group.lua').Group
 local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
@@ -9,6 +11,20 @@ local CommandMode = import('/lua/ui/game/commandmode.lua')
 
 --- A large selection's box comes from this many of its units, spread over all of them: near enough for a handle.
 local SampledUnits = 64
+
+--- The answers of Troops and OffersPatrol to the app, whose 0 is no answer.
+local Yes, No = 2, 1
+
+--- What a right click at a stroke's end orders, for its label (Stroke.END_): FAF's own orders by their names.
+local StrokeEnds = {
+    RULEUCC_Move = 1,
+    RULEUCC_Attack = 2,
+    RULEUCC_Guard = 3,
+    RULEUCC_Repair = 4,
+    RULEUCC_Reclaim = 5,
+    RULEUCC_Capture = 6,
+}
+local OtherEnd, EngineersSelected, PatrolOffered = 7, 16, 32
 
 --- What the handle stands for: the mobile units, which a route moves; a selection without any, such as factories,
 --- whose route is their rally point, all of it.
@@ -32,17 +48,21 @@ local function PixelsPerLength(view, place)
 end
 
 --- The selection's units on the screen, in the picture's pixels: their middle and the box they take, with their sizes (a
---- factory is large on the screen), and the map's view.
+--- factory is large on the screen), and the map's view, also with nothing selected (the app's free map).
 local function Report()
     local view = WorldView.viewLeft
-    local units = view and GetSelectedUnits()
-    if not units then
+    if not view then
         FafreGriffBox(0)
+        return
+    end
+    local left, top, right, bottom = view.Left(), view.Top(), view.Right(), view.Bottom()
+    local units = GetSelectedUnits()
+    if not units then
+        FafreGriffBox(0, 0, 0, 0, 0, 0, 0, left, top, right, bottom)
         return
     end
     units = Members(units)
     local count = table.getn(units)
-    local left, top = view.Left(), view.Top()
     local scale = PixelsPerLength(view, units[1]:GetPosition())
     local sumX, sumY, sampled = 0, 0, 0
     local minX, minY, maxX, maxY = 1e9, 1e9, -1e9, -1e9
@@ -56,49 +76,166 @@ local function Report()
         minX, maxX = math.min(minX, x - half), math.max(maxX, x + half)
         minY, maxY = math.min(minY, y - half), math.max(maxY, y + half)
     end
-    FafreGriffBox(count, sumX / sampled, sumY / sampled, minX, minY, maxX, maxY, left, top, view.Right(), view.Bottom())
+    FafreGriffBox(count, sumX / sampled, sumY / sampled, minX, minY, maxX, maxY, left, top, right, bottom)
 end
 
---- Each frame of the session's UI under `parent`, while the app wants it. An error stops it, with one warning.
-function Start(parent)
-    if not FafreGriffBox then
+-- --- The camera ---------------------------------------------------------------------------------------------------------
+
+--- The camera as Griff's gestures move it (the mockup's camUpdate). `seen`: the camera the last frame drew, which UnProject
+--- shows until the next; `glide`: after a pan, the map's velocity on the screen in the picture's pixels a second, slowing
+--- by e^-6t until under `stop`; `placed`: where the glide put the focus, to tell another's move; `flight`: where it flies to
+--- the group; `pinch`: what the fingers keep under them.
+local motion = {seen = false, glide = false, placed = false, flight = false, pinch = false}
+
+local function Valid(place)
+    return place and place[1] == place[1] and place[3] == place[3]
+end
+
+local function Camera()
+    return GetCamera('WorldCamera')
+end
+
+--- A finger on the map, or a new gesture of the camera: what moved it moves it no more.
+function StopCamera()
+    motion.glide = false
+    motion.placed = false
+    motion.flight = false
+end
+
+--- After a pan the map glides on at this velocity in the picture's pixels a second (the finger's), on the system's clock:
+--- a paused game glides too.
+function Glide(x, y, stop)
+    StopCamera()
+    motion.glide = {x = x, y = y, stop = math.max(stop, 1)}
+end
+
+local function GlideStep(view, settings, delta)
+    local glide = motion.glide
+    local focus = settings.Focus
+    -- Moved since by another, a key or the minimap, or held by the map's edge (FAF keeps its camera over the map): over.
+    local placed = motion.placed
+    if placed and (math.abs(focus[1] - placed[1]) > 0.05 or math.abs(focus[3] - placed[3]) > 0.05) then
+        StopCamera()
         return
     end
-    local reporter = Group(parent)
-    reporter:DisableHitTest()
-    LayoutHelpers.AtLeftTopIn(reporter, parent)
-    reporter.Width:Set(0)
-    reporter.Height:Set(0)
-    reporter.OnFrame = function(self, delta)
-        if FafreGriffWanted() then
-            local ok, problem = pcall(Report)
-            if not ok then
-                WARN('fafre_ui: griff: ' .. tostring(problem))
-                FafreGriffBox(0)
-                self:SetNeedsFrameUpdate(false)
-            end
-        end
+    -- The focus moves by the ground the map's velocity takes past the view's middle, at the rate of FAF's own pan, which it
+    -- goes on from: the ground's breadth a pixel across the middle for either way (CameraPan), though the tilted camera shows
+    -- more ground a pixel up and down.
+    local x, y = (view.Left() + view.Right()) / 2, (view.Top() + view.Bottom()) / 2
+    local here = UnProject(view, {x, y})
+    local across = UnProject(view, {x + 100, y})
+    local down = UnProject(view, {x, y + 100})
+    if not Valid(here) or not Valid(across) or not Valid(down) then
+        StopCamera()
+        return
     end
-    reporter:SetNeedsFrameUpdate(true)
+    local wide = math.sqrt((across[1] - here[1]) * (across[1] - here[1]) + (across[3] - here[3]) * (across[3] - here[3]))
+    local deep = math.sqrt((down[1] - here[1]) * (down[1] - here[1]) + (down[3] - here[3]) * (down[3] - here[3]))
+    local there = UnProject(view, {x - glide.x * delta, y - glide.y * delta * wide / math.max(deep, 1e-3)})
+    if not Valid(there) then
+        StopCamera()
+        return
+    end
+    settings.Focus = Vector(focus[1] + there[1] - here[1], focus[2] + there[2] - here[2], focus[3] + there[3] - here[3])
+    local camera = Camera()
+    camera:RestoreSettings(settings)
+    motion.placed = camera:SaveSettings().Focus
+    local kept = math.exp(-6 * delta)
+    glide.x, glide.y = glide.x * kept, glide.y * kept
+    if glide.x * glide.x + glide.y * glide.y < glide.stop * glide.stop then
+        StopCamera()
+    end
 end
 
---- For a tap: 1 if a unit the player selects is under the cursor, their own, or any one an observer sees (a replay, a
---- defeat); plus 2 if anything is selected.
-function TapKind()
-    local info = GetRolloverInfo()
-    local focus = GetFocusArmy()
-    local kind = 0
-    if info and info.armyIndex and (info.armyIndex + 1 == focus or (focus == -1 and info.userUnit)) then
-        kind = kind + 1
+--- The flight to the group (the mockup's camFly): 1 - e^-14t of the way each frame, there within a pixel; or where the map's
+--- edge holds the camera.
+local function FlightStep(view, settings, delta)
+    local target = motion.flight
+    local focus = settings.Focus
+    local part = 1 - math.exp(-14 * delta)
+    local x = focus[1] + (target[1] - focus[1]) * part
+    local y = focus[2] + (target[2] - focus[2]) * part
+    local z = focus[3] + (target[3] - focus[3]) * part
+    local dx, dz = target[1] - x, target[3] - z
+    if math.sqrt(dx * dx + dz * dz) * PixelsPerLength(view, target) < 1 then
+        x, y, z = target[1], target[2], target[3]
+        motion.flight = false
     end
-    if GetSelectedUnits() then
-        kind = kind + 2
+    settings.Focus = Vector(x, y, z)
+    local camera = Camera()
+    camera:RestoreSettings(settings)
+    local now = camera:SaveSettings().Focus
+    if math.abs(now[1] - focus[1]) + math.abs(now[3] - focus[3]) < 0.01 then
+        motion.flight = false
     end
-    FafreGriffAnswer(kind)
 end
 
---- The camera goes to the selection, as high and turned as it is.
-function ToGroup()
+--- Each frame of the UI, after the camera's: what it drew, and the glide's or the flight's next step.
+local function Drive(delta)
+    local view = WorldView.viewLeft
+    local camera = Camera()
+    if not view or not camera then
+        return
+    end
+    local settings = camera:SaveSettings()
+    motion.seen = {focus = settings.Focus, zoom = settings.Zoom}
+    if motion.glide then
+        GlideStep(view, settings, delta)
+    elseif motion.flight then
+        FlightStep(view, settings, delta)
+    end
+end
+
+--- Two fingers, or the one left of them, keep what lies under them at this place (the picture's pixels): its world point,
+--- the zoom as it is and how far apart the two are (0 for one).
+function PinchStart(x, y, distance)
+    StopCamera()
+    local view = WorldView.viewLeft
+    local camera = Camera()
+    local anchor = view and UnProject(view, {x, y})
+    if not camera or not Valid(anchor) then
+        motion.pinch = false
+        return
+    end
+    local zoom = motion.pinch and motion.pinch.last or (motion.seen and motion.seen.zoom) or camera:SaveSettings().Zoom
+    motion.pinch = {anchor = anchor, zoom = zoom, distance = distance, last = zoom}
+end
+
+--- The fingers are here now, `distance` apart (0: one finger): the zoom by how far apart they are from where they began, and
+--- the focus such that the world point they began on is under them again. Measured on the camera the last frame drew (its
+--- focus and zoom, and UnProject's picture), so that it holds however many moves come in a frame: a move of the focus moves
+--- what is under a place by as much, and a zoom about the focus by its factor.
+function Pinch(x, y, distance)
+    local pinch = motion.pinch
+    local view = WorldView.viewLeft
+    local camera = Camera()
+    local seen = motion.seen
+    if not pinch or not view or not camera or not seen then
+        return
+    end
+    local zoom = pinch.zoom
+    if distance > 0 and pinch.distance > 0 then
+        zoom = math.max(camera:GetMinZoom(), math.min(camera:GetMaxZoom(), pinch.zoom * pinch.distance / distance))
+    end
+    local under = UnProject(view, {x, y})
+    if not Valid(under) then
+        return
+    end
+    local scale = zoom / seen.zoom
+    local anchor, focus = pinch.anchor, seen.focus
+    local settings = camera:SaveSettings()
+    settings.Focus = Vector(anchor[1] - (under[1] - focus[1]) * scale, focus[2], anchor[3] - (under[3] - focus[3]) * scale)
+    settings.Zoom = zoom
+    camera:RestoreSettings(settings)
+    pinch.last = zoom
+end
+
+function PinchEnd()
+    motion.pinch = false
+end
+
+--- The camera goes to the selection, as high and turned as it is: by a flight (fly 1), else at once.
+function ToGroup(fly)
     local units = GetSelectedUnits()
     if not units then
         return
@@ -110,10 +247,71 @@ function ToGroup()
         x, y, z = x + place[1], y + place[2], z + place[3]
     end
     local count = table.getn(units)
-    local camera = GetCamera('WorldCamera')
+    StopCamera()
+    local target = Vector(x / count, y / count, z / count)
+    if fly == 1 then
+        motion.flight = target
+        return
+    end
+    local camera = Camera()
     local settings = camera:SaveSettings()
-    settings.Focus = Vector(x / count, y / count, z / count)
+    settings.Focus = target
     camera:RestoreSettings(settings)
+end
+
+-- --- The session's UI, each frame -----------------------------------------------------------------------------------------
+
+--- Each frame of the session's UI under `parent`, while the app wants it. An error stops what failed, with one warning.
+function Start(parent)
+    if not FafreGriffBox then
+        return
+    end
+    local reporter = Group(parent)
+    reporter:DisableHitTest()
+    LayoutHelpers.AtLeftTopIn(reporter, parent)
+    reporter.Width:Set(0)
+    reporter.Height:Set(0)
+    local reporting, driving = true, true
+    reporter.OnFrame = function(self, delta)
+        if not FafreGriffWanted() then
+            return
+        end
+        if reporting then
+            local ok, problem = pcall(Report)
+            if not ok then
+                WARN('fafre_ui: griff: ' .. tostring(problem))
+                FafreGriffBox(0)
+                reporting = false
+            end
+        end
+        if driving then
+            local ok, problem = pcall(Drive, delta)
+            if not ok then
+                WARN('fafre_ui: griff: camera: ' .. tostring(problem))
+                StopCamera()
+                driving = false
+            end
+        end
+        if not reporting and not driving then
+            self:SetNeedsFrameUpdate(false)
+        end
+    end
+    -- The game is over: what Griff set of FAF's goes back (FAF's reach for a unit beside a click).
+    reporter.OnDestroy = function(self)
+        FafreGriffEnded()
+    end
+    reporter:SetNeedsFrameUpdate(true)
+end
+
+-- --- What a gesture asks ----------------------------------------------------------------------------------------------------
+
+--- Whether the selection takes orders at a place: mobile units, or factories alone (their rally point), as the mockup's
+--- troops are.
+local function HasTroops(units)
+    if not table.empty(EntityCategoryFilterDown(categories.MOBILE, units)) then
+        return true
+    end
+    return table.getn(EntityCategoryFilterDown(categories.FACTORY, units)) == table.getn(units)
 end
 
 --- Whether FAF's orders panel offers its attack-move for these units (orders.lua CreateCommonOrders): engineers, or mobile
@@ -135,6 +333,75 @@ local function OffersAttackMove(units)
     return false
 end
 
+--- Whether FAF's orders panel offers its patrol for a loop of these units: mobile ones that can patrol. Factories alone have
+--- their own patrol of the units they make, which a loop is not: theirs is their rally route.
+local function OffersPatrolFor(units)
+    if table.empty(EntityCategoryFilterDown(categories.MOBILE, units)) then
+        return false
+    end
+    local orders = GetUnitCommandData(units)
+    for _, order in orders do
+        if order == 'RULEUCC_Patrol' then
+            return true
+        end
+    end
+    return false
+end
+
+--- For a tap, where the cursor rests: 1 if a unit the player selects is under the cursor, their own, or any one an observer
+--- sees (a replay, a defeat); 2 if anything is selected; 4 if any unit is under the cursor; 8 if the selection has troops;
+--- 16 if FAF's right click there is a plain move.
+function TapKind()
+    local info = GetRolloverInfo()
+    local focus = GetFocusArmy()
+    local units = GetSelectedUnits()
+    local view = WorldView.viewLeft
+    local kind = 0
+    if info and info.armyIndex and (info.armyIndex + 1 == focus or (focus == -1 and info.userUnit)) then
+        kind = kind + 1
+    end
+    if units then
+        kind = kind + 2
+        if HasTroops(units) then
+            kind = kind + 8
+        end
+        if view and view:GetRightMouseButtonOrder() == 'RULEUCC_Move' then
+            kind = kind + 16
+        end
+    end
+    if info then
+        kind = kind + 4
+    end
+    FafreGriffAnswer(kind)
+end
+
+--- Whether the selection has troops, for FAF's reach for a unit beside a tap.
+function Troops()
+    local units = GetSelectedUnits()
+    FafreGriffAnswer(units and HasTroops(units) and Yes or No)
+end
+
+--- For a stroke's label, where the cursor hovers at its end: what FAF's right click there orders (Stroke.END_), and whether
+--- engineers are selected and FAF offers its patrol.
+function StrokeKind()
+    local units = GetSelectedUnits()
+    local view = WorldView.viewLeft
+    local order = units and view and view:GetRightMouseButtonOrder()
+    local kind = StrokeEnds[order or 'RULEUCC_Move'] or OtherEnd
+    if units and not table.empty(EntityCategoryFilterDown(categories.ENGINEER, units)) then
+        kind = kind + EngineersSelected
+    end
+    if units and OffersPatrolFor(units) then
+        kind = kind + PatrolOffered
+    end
+    FafreGriffAnswer(kind)
+end
+
+function OffersPatrol()
+    local units = GetSelectedUnits()
+    FafreGriffAnswer(units and OffersPatrolFor(units) and Yes or No)
+end
+
 --- The rail's Attack: the next click on the map is FAF's attack-move there, as its orders panel's button makes it, where
 --- that button is offered for the selection.
 function StartAttackMove()
@@ -146,6 +413,23 @@ function StartAttackMove()
             TaskName = 'AttackMove',
             Cursor = 'ATTACK_MOVE',
         })
+    end
+end
+
+--- A loop from the handle: the next click on the map is FAF's patrol there, as its orders panel's button makes it.
+function StartPatrol()
+    local units = GetSelectedUnits()
+    if units and OffersPatrolFor(units) then
+        CommandMode.StartCommandMode('order', {name = 'RULEUCC_Patrol'})
+    end
+end
+
+--- The tap ladder's second rung on a unit: all of the selected unit's type on the screen, as FAF's double click on it, by its
+--- key action select_all_onscreen for the type's own category (the engine gives each unit's blueprint id one).
+function SelectTypeInView()
+    local units = GetSelectedUnits()
+    if units then
+        ConExecute('UI_SelectByCategory +inview ' .. units[1]:GetBlueprint().BlueprintId)
     end
 end
 

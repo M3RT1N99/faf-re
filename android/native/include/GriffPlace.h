@@ -88,6 +88,38 @@ namespace griffplace
     float y = 0;
   };
 
+  /// How far the free map reaches from the view's middle, left, up and right, to what covers it or the view's edge: where the
+  /// app keeps a word for the user, under FAF's top bar and clear of the panels at its sides. The view's where its middle is
+  /// covered, and nothing where the view is none.
+  struct Cross
+  {
+    float left = 0;
+    float top = 0;
+    float right = 0;
+  };
+
+  [[nodiscard]] inline Cross CrossAt(const FreeMap& free, const Box& view)
+  {
+    // Pixels a step: the walk to the edges is a few hundred steps of the covers.
+    constexpr float kStep = 2;
+    const float middleX = (view.left + view.right) / 2;
+    const float middleY = (view.top + view.bottom) / 2;
+    Cross cross{view.left, view.top, view.right};
+    if (!free.Free(middleX, middleY)) {
+      return cross;
+    }
+    for (cross.top = middleY; cross.top - kStep >= view.top && free.Free(middleX, cross.top - kStep);) {
+      cross.top -= kStep;
+    }
+    for (cross.left = middleX; cross.left - kStep >= view.left && free.Free(cross.left - kStep, middleY);) {
+      cross.left -= kStep;
+    }
+    for (cross.right = middleX; cross.right + kStep < view.right && free.Free(cross.right + kStep, middleY);) {
+      cross.right += kStep;
+    }
+    return cross;
+  }
+
   /// For a group in view, above its units (`units`, their middle at `middleX`, `middleY`), and where the map has no room
   /// there below, right, left. For one out of view, or where none of these is free, as for a group under a panel: from the
   /// group's place on the screen towards the view's middle, a finger's reach at a time, as far from the view's edges as the

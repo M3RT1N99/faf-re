@@ -3,9 +3,11 @@ package io.github.m3rt1n99.fafre;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 
+import java.util.Arrays;
+
 import org.junit.Test;
 
-/** A stroke's waypoints (touch scheme Griff). */
+/** A stroke's waypoints, what lifting it gives and what the screen says of it (touch scheme Griff). */
 public class StrokeTest {
     private final float[] outX = new float[8];
     private final float[] outY = new float[8];
@@ -55,5 +57,67 @@ public class StrokeTest {
     @Test
     public void noStrokeNoWaypoints() {
         assertEquals(0, waypoints(new float[] {5, 5}, 30));
+    }
+
+    /** A stroke of these points, a mm 10 pixels, classified. */
+    private static int classify(float... points) {
+        float[] xs = new float[points.length / 2];
+        float[] ys = new float[points.length / 2];
+        for (int at = 0; at < xs.length; ++at) {
+            xs[at] = points[2 * at];
+            ys[at] = points[2 * at + 1];
+        }
+        return Stroke.classify(xs, ys, xs.length, 10);
+    }
+
+    @Test
+    public void aStrokeThatEndsEightMillimetresAwayOrMoreIsARoute() {
+        assertEquals(Stroke.ROUTE, classify(0, 0, 80, 0));
+        assertEquals(Stroke.ROUTE, classify(0, 0, 300, 0, 300, 300, 0, 80));
+    }
+
+    @Test
+    public void aLoopLongerThanFortyMillimetresIsAPatrol() {
+        // 40.2 mm out and back, ending 7.9 mm from its start; 39.2 mm is a stroke taken back.
+        assertEquals(Stroke.PATROL, classify(0, 0, 240, 0, 240, 1, 79, 0));
+        assertEquals(Stroke.CANCEL, classify(0, 0, 235, 0, 235, 1, 79, 0));
+    }
+
+    @Test
+    public void aStrokeOfOnePointGivesNothing() {
+        assertEquals(Stroke.CANCEL, classify(5, 5));
+    }
+
+    @Test
+    public void theLabelSaysWhatTheEndIsOnInTheMockupsOrder() {
+        int engineers = Stroke.END_ENGINEERS;
+        // A panel or the minimap first, whatever the stroke is.
+        assertEquals(Stroke.SAYS_CANCEL, Stroke.meaning(Stroke.END_PANEL, Stroke.PATROL, false));
+        assertEquals(Stroke.SAYS_MINIMAP, Stroke.meaning(Stroke.END_MINIMAP, Stroke.CANCEL, true));
+        // Then a loop: taken back, or a patrol where FAF offers one; not yet known, a patrol too.
+        assertEquals(Stroke.SAYS_CANCEL, Stroke.meaning(Stroke.END_ATTACK, Stroke.CANCEL, false));
+        assertEquals(Stroke.SAYS_PATROL, Stroke.meaning(Stroke.END_MOVE | Stroke.END_PATROL_OFFERED, Stroke.PATROL, false));
+        assertEquals(Stroke.SAYS_PATROL, Stroke.meaning(0, Stroke.PATROL, false));
+        // For factories alone a loop is their rally route.
+        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(Stroke.END_MOVE, Stroke.PATROL, false));
+        // Then FAF's order there: an attack before Attack's attack-move, and Attack's before an assist.
+        assertEquals(Stroke.SAYS_ATTACK, Stroke.meaning(Stroke.END_ATTACK, Stroke.ROUTE, true));
+        assertEquals(Stroke.SAYS_ATTACK_MOVE, Stroke.meaning(Stroke.END_GUARD | engineers, Stroke.ROUTE, true));
+        assertEquals(Stroke.SAYS_ASSIST, Stroke.meaning(Stroke.END_GUARD | engineers, Stroke.ROUTE, false));
+        assertEquals(Stroke.SAYS_ASSIST, Stroke.meaning(Stroke.END_REPAIR | engineers, Stroke.ROUTE, false));
+        assertEquals(Stroke.SAYS_GUARD, Stroke.meaning(Stroke.END_GUARD, Stroke.ROUTE, false));
+        assertEquals(Stroke.SAYS_RECLAIM, Stroke.meaning(Stroke.END_RECLAIM | engineers, Stroke.ROUTE, false));
+        assertEquals(Stroke.SAYS_CAPTURE, Stroke.meaning(Stroke.END_CAPTURE | engineers, Stroke.ROUTE, false));
+        assertEquals(Stroke.SAYS_ORDER, Stroke.meaning(Stroke.END_OTHER, Stroke.ROUTE, false));
+        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(Stroke.END_MOVE | engineers, Stroke.ROUTE, false));
+        assertEquals(Stroke.SAYS_ROUTE, Stroke.meaning(0, Stroke.ROUTE, false));
+    }
+
+    @Test
+    public void theLengthIsAlongThePoints() {
+        float[] xs = {0, 30, 30};
+        float[] ys = {0, 0, 40};
+        assertEquals(70, Stroke.length(xs, ys, 3), 1e-9);
+        assertEquals(30, Stroke.length(Arrays.copyOf(xs, 2), Arrays.copyOf(ys, 2), 2), 1e-9);
     }
 }

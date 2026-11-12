@@ -1,18 +1,118 @@
 package io.github.m3rt1n99.fafre;
 
 /**
- * A finger's stroke from the selection's handle as a route's waypoints (touch scheme Griff, buildstage/touch-concept-v2.md):
- * about one every `step` along the straight, and every corner the finger drew, ending on the stroke's end; not its start.
- * The corners stay (Ramer-Douglas-Peucker within `tolerance`): far out, `step` is a long way on the map, and a route that cut a
- * corner would go elsewhere.
+ * A finger's stroke from the selection's handle (touch scheme Griff, buildstage/touch-concept-v2.md): what lifting it gives,
+ * its waypoints, and what the screen says it gives.
  */
 final class Stroke {
+    /** What lifting the stroke gives (the mockup's classifyStroke): a route out, a patrol by a loop, or nothing. */
+    static final int ROUTE = 0;
+    static final int PATROL = 1;
+    static final int CANCEL = 2;
+    /** A stroke that ends this near its start is a loop: a patrol if it is longer than PATROL_MM, else taken back. */
+    static final float LOOP_MM = 8;
+    static final float PATROL_MM = 40;
+
+    /**
+     * What the stroke's end is on, as the program says (GriffAndroid.cpp StrokeAnswerTask): FAF's right click there, which the
+     * world view decides by what the cursor is over, a panel or the minimap; 0 while it has not said.
+     */
+    static final int END_MOVE = 1;
+    static final int END_ATTACK = 2;
+    static final int END_GUARD = 3;
+    static final int END_REPAIR = 4;
+    static final int END_RECLAIM = 5;
+    static final int END_CAPTURE = 6;
+    static final int END_OTHER = 7;
+    static final int END_PANEL = 8;
+    static final int END_MINIMAP = 9;
+    private static final int END_PLACE = 15;
+    /** With it: engineers are selected; FAF offers its patrol for the selection (not for factories alone). */
+    static final int END_ENGINEERS = 16;
+    static final int END_PATROL_OFFERED = 32;
+
+    /** What the screen says lifting gives, the mockup's labels (strokeMeaning) and FAF's own for what it decides otherwise. */
+    static final int SAYS_ROUTE = 0;
+    static final int SAYS_ATTACK_MOVE = 1;
+    static final int SAYS_CANCEL = 2;
+    static final int SAYS_MINIMAP = 3;
+    static final int SAYS_PATROL = 4;
+    static final int SAYS_ATTACK = 5;
+    static final int SAYS_ASSIST = 6;
+    static final int SAYS_GUARD = 7;
+    static final int SAYS_RECLAIM = 8;
+    static final int SAYS_CAPTURE = 9;
+    static final int SAYS_ORDER = 10;
+
     private Stroke() {
     }
 
+    /** The length of the first `count` points of xs/ys. */
+    static double length(float[] xs, float[] ys, int count) {
+        double length = 0;
+        for (int i = 1; i < count; i++) {
+            length += Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
+        }
+        return length;
+    }
+
+    /** ROUTE, PATROL or CANCEL for the first `count` points, `millimetre` pixels to a mm. */
+    static int classify(float[] xs, float[] ys, int count, float millimetre) {
+        if (count < 2) {
+            return CANCEL;
+        }
+        if (Math.hypot(xs[count - 1] - xs[0], ys[count - 1] - ys[0]) >= LOOP_MM * millimetre) {
+            return ROUTE;
+        }
+        return length(xs, ys, count) > PATROL_MM * millimetre ? PATROL : CANCEL;
+    }
+
     /**
-     * Writes the waypoints of the first `count` points of xs/ys into outX/outY and returns how many. When out has too little room,
-     * the last waypoint is the stroke's end all the same.
+     * What lifting gives, in the mockup's order, by what the end is on (END_ and its flags, 0 unknown), the stroke's mode and
+     * whether Attack counts: a panel gives nothing, the minimap its place; then a loop; then FAF's order there: an attack, and
+     * with Attack an attack-move, assist with engineers or guard, reclaim; a plain move is the route. A loop is a patrol
+     * where FAF offers one; for factories alone it is their rally route, as any stroke.
+     */
+    static int meaning(int end, int mode, boolean attack) {
+        int place = end & END_PLACE;
+        if (place == END_PANEL) {
+            return SAYS_CANCEL;
+        }
+        if (place == END_MINIMAP) {
+            return SAYS_MINIMAP;
+        }
+        if (mode == CANCEL) {
+            return SAYS_CANCEL;
+        }
+        if (mode == PATROL && (place == 0 || (end & END_PATROL_OFFERED) != 0)) {
+            return SAYS_PATROL;
+        }
+        if (place == END_ATTACK) {
+            return SAYS_ATTACK;
+        }
+        if (attack) {
+            return SAYS_ATTACK_MOVE;
+        }
+        switch (place) {
+            case END_GUARD:
+            case END_REPAIR:
+                return (end & END_ENGINEERS) != 0 ? SAYS_ASSIST : SAYS_GUARD;
+            case END_RECLAIM:
+                return SAYS_RECLAIM;
+            case END_CAPTURE:
+                return SAYS_CAPTURE;
+            case END_OTHER:
+                return SAYS_ORDER;
+            default:
+                return SAYS_ROUTE;
+        }
+    }
+
+    /**
+     * Writes the waypoints of the first `count` points of xs/ys into outX/outY and returns how many: about one every `step`
+     * along the straight, and every corner the finger drew, ending on the stroke's end; not its start. The corners stay
+     * (Ramer-Douglas-Peucker within `tolerance`): far out, `step` is a long way on the map, and a route that cut a corner would
+     * go elsewhere. When out has too little room, the last waypoint is the stroke's end all the same.
      */
     static int waypoints(float[] xs, float[] ys, int count, float step, float tolerance, float[] outX, float[] outY) {
         if (count < 2 || outX.length == 0) {

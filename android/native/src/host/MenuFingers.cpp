@@ -271,6 +271,11 @@ namespace
   }
 } // namespace
 
+void menufingers::NotifyActivity()
+{
+  WakeActivity();
+}
+
 void menufingers::NoteTapOnField(const float x, const float y)
 {
   try {

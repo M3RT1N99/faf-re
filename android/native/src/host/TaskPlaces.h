@@ -21,4 +21,10 @@ namespace hosttask
   {
     return static_cast<int>(places >> (16 * index) & 0xFFFFU);
   }
+
+  /// A number that Places took within -32768 to 32767, such as a velocity, read back with its sign.
+  [[nodiscard]] inline int SignedCoordinate(const WPARAM places, const int index)
+  {
+    return static_cast<std::int16_t>(Coordinate(places, index));
+  }
 } // namespace hosttask
