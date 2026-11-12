@@ -289,6 +289,14 @@ public class TouchInputTest {
             events.add("draft drop");
         }
 
+        /** Griff: the program's clicks run, the tick's or the undo's. */
+        boolean clicking;
+
+        @Override
+        public boolean clicking() {
+            return clicking;
+        }
+
         /** A draft gesture's phase, and where it is unless it is given up. */
         private static String phase(int phase, float x, float y) {
             switch (phase) {
@@ -1956,6 +1964,63 @@ public class TouchInputTest {
         timerRuns();
         up(0, 2600);
         expect("move 300 50", "draft tap 300 50");
+    }
+
+    /** A tap, a rest that lifts, a rest that moves, a drag and a tap of two, the next at least a second after the last. */
+    private void tapRestDragAndTwo(float x, float y) {
+        down(0, x, y, 1000);
+        up(0, 1040);
+        down(0, x, y, 2000);
+        if (mouse.timer >= 0) {
+            timerRuns();
+        }
+        up(0, 2600);
+        down(0, x, y, 3000);
+        if (mouse.timer >= 0) {
+            timerRuns();
+        }
+        moveFirst(x + 80, y + 40, 3500);
+        up(0, 3600);
+        down(0, x, y, 4000);
+        moveFirst(x + 80, y, 4010);
+        moveFirst(x + 160, y, 4020);
+        up(0, 4100);
+        down(0, x, y, 5000);
+        down(1, x + 200, y, 5030);
+        up(1, 5100);
+        up(0, 5110);
+    }
+
+    @Test
+    public void griffTheFingersRestWhileTheProgramsClicksRun() {
+        // The tick's build mode is FAF's ghost to the activity, and the draft is open: a finger there would place the ghost or
+        // a plan, between the tick's clicks or the undo's.
+        draft(new int[] {1, 100, 50, 0});
+        mouse.placing = true;
+        mouse.clicking = true;
+        tapRestDragAndTwo(100, 50);
+        expect();
+        assertEquals("only the first fingers' downs went, which the program takes for nothing then", 5, mouse.downs.size());
+        assertEquals(-1, mouse.timer);
+    }
+
+    @Test
+    public void griffTheFingersRestWhileTheProgramsClicksRunAlsoOnTheHandleAndOnTheMap() {
+        griff();
+        mouse.clicking = true;
+        mouse.griffX = 100;
+        mouse.griffY = 50;
+        tapRestDragAndTwo(100, 50);
+        tapRestDragAndTwo(400, 300);
+        expect();
+        assertEquals("no stroke", -1, mouse.shown);
+        assertTrue(mouse.hovers.isEmpty());
+        // Once they are over, a finger's gestures are its own again.
+        mouse.clicking = false;
+        down(0, 400, 300, 9000);
+        up(0, 9040);
+        timerRuns();
+        expect("move 400 300", "smart tap 400 300 rail 0");
     }
 
     @Test

@@ -203,4 +203,19 @@ public class DraftTest {
         assertFalse(draft.newest(1));
         assertFalse("a number no plan has", draft.newest(7));
     }
+
+    @Test
+    public void theLoupesCopyIsTheSquareAboutTheFingerKeptOnThePicture() {
+        // The phone's 768-line picture: 6 mm are 68 pixels. About the finger in the middle of it.
+        assertEquals(366, Draft.loupeFrom(400, 68, 768));
+        // A finger 10 pixels from the top: the square at the top, its middle 24 pixels below the finger, where the loupe shows it.
+        int top = Draft.loupeFrom(10, 68, 768);
+        assertEquals(0, top);
+        assertEquals(24, top + 68 / 2 - 10);
+        // At the bottom and at the right of a 1647 by 768 picture.
+        assertEquals(700, Draft.loupeFrom(760, 68, 768));
+        assertEquals(1579, Draft.loupeFrom(1640, 68, 1647));
+        // A picture no larger than the square.
+        assertEquals(0, Draft.loupeFrom(30, 68, 68));
+    }
 }

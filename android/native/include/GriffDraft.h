@@ -3,19 +3,24 @@
 // The draft of the touch scheme Griff (android/TOUCH_UI.md, "Griff"; buildstage/griff-v3-spec.md, T2): buildings planned on
 // the map before anything is ordered, each a plan at a world place, ordered by FAF's build mode and a click per plan when the
 // player ticks them (src/host/GriffAndroid.cpp). Here the rules alone, for their tests (tests/wx/GriffDraftTests.cpp): where a
-// plan lands, which ground a plan takes, the line from the newest plan, the move of the whole draft, the limit. What FAF itself
-// says of a place (its own build check: structures it sees, queued buildings, the ground) the caller gives as `Free`, a
-// callable of (const Building&, float x, float z). World places are FAF's x and z.
+// plan lands, which ground a plan takes, the line from the newest plan, the move of the whole draft, the limit, and the pixel
+// a building's click goes to. What FAF itself says of a place (its own build check: structures it sees, queued buildings, the
+// ground) the caller gives as `Free`, a callable of (const Building&, float x, float z). World places are FAF's x and z.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace griffdraft
 {
+  /// The mockup's limit: a draft holds this many plans, and a line has no more places than that.
+  constexpr std::size_t kMaxPlans = 30;
+
   /// What a building must stand on: nothing, or a resource deposit of a kind, where FAF builds it only.
   enum class Deposit
   {
@@ -96,7 +101,9 @@ namespace griffdraft
   constexpr float kDirection = 0.414f;
 
   /// The places of a line of buildings after `from` towards `to`: in 8 directions, whole steps of the building's skirt in
-  /// each axis, as many as the way is long in steps, rounded, and none before half a step. Each on FAF's grid.
+  /// each axis, as many as the way is long in steps, rounded, and none before half a step, nor more than a draft holds: the
+  /// preview shows no more, the lift adds only what it showed, and FAF's build check is asked for each place at each move of
+  /// the finger. Each on FAF's grid.
   [[nodiscard]] inline std::vector<Place> Line(const Building& building, const Place& from, const Place& to)
   {
     std::vector<Place> places;
@@ -116,7 +123,8 @@ namespace griffdraft
     }
     const float unitX = acrossX >= acrossZ * kDirection ? (dx < 0 ? -1.0f : 1.0f) : 0.0f;
     const float unitZ = acrossZ >= acrossX * kDirection ? (dz < 0 ? -1.0f : 1.0f) : 0.0f;
-    const long count = std::lround(steps);
+    const long most = static_cast<long>(kMaxPlans);
+    const long count = steps < static_cast<float>(most) ? std::lround(steps) : most;
     for (long step = 1; step <= count; ++step) {
       const float along = static_cast<float>(step);
       places.push_back(Place{Snap(from.x + unitX * stepX * along, building.footprintX),
@@ -134,13 +142,96 @@ namespace griffdraft
     float z = 0;
   };
 
-  /// A place a deposit's building could take there, with the deposit's middle on the screen (the picture's pixels).
+  /// A place a deposit's building could take there, the deposit's middle (FAF's ResourceDeposit: its cells' rectangle, whose
+  /// middle cell is the place, floored), with that middle on the screen (the picture's pixels).
   struct Candidate
   {
     float screenX = 0;
     float screenY = 0;
     Place place;
   };
+
+  /// The deposit FAF's ghost puts a deposit's building on for the world point under the cursor (CUIWorldView::UpdateSelection,
+  /// CSimResources::FindClosestDeposit): from the building's first cell there, floored, the deposit whose middle cell is
+  /// nearest, the first of the nearest; its index in `deposits`, or -1 without one. FAF looks only within its snap's reach of
+  /// the cursor, which a click at a deposit's middle always is.
+  [[nodiscard]] inline int SnappedDeposit(const std::vector<Candidate>& deposits, const Building& building, const float x, const float z)
+  {
+    const float fromX = std::floor(x - static_cast<float>(building.footprintX) * 0.5f);
+    const float fromZ = std::floor(z - static_cast<float>(building.footprintZ) * 0.5f);
+    int nearest = -1;
+    float best = (std::numeric_limits<float>::max)();
+    for (std::size_t at = 0; at < deposits.size(); ++at) {
+      const float dx = fromX - std::floor(deposits[at].place.x);
+      const float dz = fromZ - std::floor(deposits[at].place.z);
+      const float distance = std::sqrt(dx * dx + dz * dz);
+      if (distance < best) {
+        best = distance;
+        nearest = static_cast<int>(at);
+      }
+    }
+    return nearest;
+  }
+
+  /// Whether FAF's click at this world point under the cursor builds `building` at `place` (a plan's, or an order's given
+  /// again): its first cell there by Snap on both axes, as FAF's build click places it (IssueBuildDragOrders); a deposit's
+  /// building on the deposit FAF's ghost snaps it to, which must be the one at `place`, of `deposits` (all of its kind; none
+  /// known, its cell as any building's).
+  [[nodiscard]] inline bool LandsAt(const Building& building, const std::vector<Candidate>& deposits, const Place& place, const float x,
+                                    const float z)
+  {
+    if (building.deposit != Deposit::kNone && !deposits.empty()) {
+      int at = -1;
+      float best = (std::numeric_limits<float>::max)();
+      for (std::size_t candidate = 0; candidate < deposits.size(); ++candidate) {
+        const float distance = std::hypot(deposits[candidate].place.x - place.x, deposits[candidate].place.z - place.z);
+        if (distance < best) {
+          best = distance;
+          at = static_cast<int>(candidate);
+        }
+      }
+      return SnappedDeposit(deposits, building, x, z) == at;
+    }
+    return Snap(x, building.footprintX) == place.x && Snap(z, building.footprintZ) == place.z;
+  }
+
+  /// The pixel a building's click goes to, whose middle the camera shows at `x`, `y` on the picture: of the four pixels about
+  /// it, the nearest first, the first whose click lands where it should (`lands(pixelX, pixelY)`: LandsAt for the world point
+  /// under that pixel); false where none does, as where a pixel spans more than a cell, which a closer camera makes good.
+  /// FAF takes a click at a whole pixel and places by the world point under it, so the pixel nearest the middle falls into a
+  /// neighbouring cell once a pixel spans more than a world unit; under a pitched or turned camera, or between two deposits, a
+  /// pixel across the middle can land where the nearest does not.
+  template <typename Lands>
+  [[nodiscard]] bool ClickPixel(const float x, const float y, Lands&& lands, int& clickX, int& clickY)
+  {
+    if (!std::isfinite(x) || !std::isfinite(y)) {
+      return false;
+    }
+    struct Pixel
+    {
+      float x;
+      float y;
+      float away;
+    };
+    std::array<Pixel, 4> pixels{};
+    std::size_t count = 0;
+    for (const float pixelX : {std::floor(x), std::floor(x) + 1}) {
+      for (const float pixelY : {std::floor(y), std::floor(y) + 1}) {
+        pixels[count++] = Pixel{pixelX, pixelY, std::hypot(pixelX - x, pixelY - y)};
+      }
+    }
+    std::stable_sort(pixels.begin(), pixels.end(), [](const Pixel& one, const Pixel& other) { return one.away < other.away; });
+    for (const Pixel& pixel : pixels) {
+      const int pixelX = static_cast<int>(pixel.x);
+      const int pixelY = static_cast<int>(pixel.y);
+      if (lands(pixelX, pixelY)) {
+        clickX = pixelX;
+        clickY = pixelY;
+        return true;
+      }
+    }
+    return false;
+  }
 
   enum class Placed
   {
@@ -156,8 +247,7 @@ namespace griffdraft
   class Draft
   {
   public:
-    /// The mockup's limit: a draft holds this many plans.
-    static constexpr std::size_t kMaxPlans = 30;
+    static constexpr std::size_t kMaxPlans = griffdraft::kMaxPlans;
 
     [[nodiscard]] bool Open() const
     {

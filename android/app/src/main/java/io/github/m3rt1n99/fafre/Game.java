@@ -354,4 +354,11 @@ final class Game {
 
     /** The undo's pill was tapped for record `record`: its orders taken back, once no clicks of the tick's or an undo's run. */
     static native void griffUndo(int record);
+
+    /**
+     * Whether the program's clicks run, the tick's or the undo's: no finger starts a gesture meanwhile, and the rail and the pill
+     * take no tap, as anything of theirs would act between those clicks. Clicks that have waited for a frame past their
+     * patience (2 s) count as over, and the next of the program's tasks ends them, a finger's down too.
+     */
+    static native boolean griffClicking();
 }

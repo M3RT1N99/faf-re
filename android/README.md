@@ -167,10 +167,12 @@ the game data they imported. Everything lives in the app's external files folder
     loupe above it of what the finger covers. With an extractor picked, *Box* and a drag give every free mass spot in the
     box a plan. Another icon picks another building for the next plans; plans on taken ground are red. The tick orders them
     all with FAF's build mode, as many clicks (the first replaces what the engineers do, the rest are queued; with *Plus* all
-    are queued), moving the camera to a plan the screen does not show and back; the cross, or a tap of two fingers, drops the
-    draft. The selected engineers build it, or the ones selected when the draft began. Up to 30 plans; while plans wait,
-    an order of the orders panel says "First ✓ or ✕". FAF's build keys and templates keep FAF's ghost, which is placed as
-    with the mouse.
+    are queued), each in its plan's cell also zoomed far out, moving the camera to a plan the screen does not show, or closer
+    where a pixel spans more than a cell, and back; the cross, or a tap of two fingers, drops the draft. The selected
+    engineers build it, or else the engineers selected when a building was last picked. Up to 30 plans, and a line of up to
+    30; while plans wait, an order of the orders panel says "First ✓ or ✕". FAF's build keys and templates keep FAF's ghost,
+    which is placed as with the mouse; a template put away does not take the tick's place. While the tick's clicks (or the
+    undo's) run, a finger does nothing.
   - After an order a pill *Undo* stands for 3 s over the top of FAF's unit view, under the rail, with a bar of the time it
     has left; a tap on it takes the last gesture's orders back with FAF's own inputs: units that were idle stopped by the
     orders panel's Stop, the others' queues before given again by FAF's order modes and clicks, the first replacing, which

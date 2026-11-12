@@ -129,11 +129,16 @@ final class GriffLayer extends View {
     private float mRingY;
     private String mToast;
     private long mToastUntil;
-    /** The draft as the program shows it, or none; Box's box over deposits; the loupe's picture and the finger it is of. */
+    /**
+     * The draft as the program shows it, or none; Box's box over deposits; the loupe's picture, the screen's place it was copied
+     * about and the finger it is for.
+     */
     private Draft mDraft;
     private boolean mBoxShown;
     private final RectF mBox = new RectF();
     private Bitmap mLoupe;
+    private float mLoupeCopyX;
+    private float mLoupeCopyY;
     private float mLoupeX;
     private float mLoupeY;
     /** The pins that show: their tips, kinds and how much of each shows. */
@@ -286,11 +291,16 @@ final class GriffLayer extends View {
         invalidate();
     }
 
-    /** The loupe of a finger at this place: the picture of the 6 mm about it (the game's, copied), or none. */
-    void showLoupe(Bitmap picture, float x, float y) {
+    /**
+     * The loupe of a finger at `fingerX`, `fingerY`: the picture of the 6 mm about it (the game's, copied about `copyX`, `copyY`,
+     * which is the finger's place but where the copy met the picture's edge or the finger has moved since), or none.
+     */
+    void showLoupe(Bitmap picture, float copyX, float copyY, float fingerX, float fingerY) {
         mLoupe = picture;
-        mLoupeX = x;
-        mLoupeY = y;
+        mLoupeCopyX = copyX;
+        mLoupeCopyY = copyY;
+        mLoupeX = fingerX;
+        mLoupeY = fingerY;
         invalidate();
     }
 
@@ -471,7 +481,8 @@ final class GriffLayer extends View {
     /**
      * The mockup's drawLoupe: a circle of 12 mm, 14 mm above the finger (below it where the top has no room), kept off the
      * screen's sides, the 6 mm about the finger in it at twice their size over the background colour, with the plan its lift
-     * places, a ring and a cross at its middle.
+     * places, a ring and a cross at its middle. The copy stands where it was taken, which near the picture's edge, or after
+     * the finger moved on, is beside the finger: the background shows where it does not reach.
      */
     private void drawLoupe(Canvas canvas, Draft draft) {
         float radius = LOUPE_MM * mMillimetre;
@@ -485,16 +496,18 @@ final class GriffLayer extends View {
         canvas.clipPath(mLoupeCircle);
         canvas.drawCircle(x, y, radius, mLoupeBackground);
         mLoupeSource.set(0, 0, mLoupe.getWidth(), mLoupe.getHeight());
-        mPlace.set(x - radius, y - radius, x + radius, y + radius);
+        float pictureX = x + (mLoupeCopyX - mLoupeX) * LOUPE_MAGNIFIED;
+        float pictureY = y + (mLoupeCopyY - mLoupeY) * LOUPE_MAGNIFIED;
+        mPlace.set(pictureX - radius, pictureY - radius, pictureX + radius, pictureY + radius);
         canvas.drawBitmap(mLoupe, mLoupeSource, mPlace, mLoupePicture);
         if (draft.aimShown()) {
-            // The plan where it lands, at the loupe's scale about the finger.
+            // The plan where it lands, at the loupe's scale about the finger. The aim is never on taken ground: there the lift
+            // places nothing, and none is shown.
             int aim = draft.aimItem();
             placeBox(draft, aim, mPlace);
             mPlace.set(x + (mPlace.left - mLoupeX) * LOUPE_MAGNIFIED, y + (mPlace.top - mLoupeY) * LOUPE_MAGNIFIED,
                        x + (mPlace.right - mLoupeX) * LOUPE_MAGNIFIED, y + (mPlace.bottom - mLoupeY) * LOUPE_MAGNIFIED);
-            int colour = draft.has(aim, Draft.TAKEN) ? ALARM : BUILD;
-            mPlanFill.setColor(colour);
+            mPlanFill.setColor(BUILD);
             mPlanFill.setAlpha(NEWEST_ALPHA);
             canvas.drawRect(mPlace, mPlanFill);
         }

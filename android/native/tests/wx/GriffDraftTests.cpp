@@ -1,7 +1,9 @@
 // The touch scheme Griff's draft (include/GriffDraft.h): where a plan lands, the ground plans take, the line from the newest
-// plan, the move of the whole draft and its limit. Buildings as FAF's UEF ones: the power generator (a cell, its skirt 2 by 2
-// about it), the mass extractor (the same, on a mass deposit), the land factory (5 cells, its skirt 8 by 8).
+// plan, the move of the whole draft and its limit, and the pixel a building's click goes to. Buildings as FAF's UEF ones: the
+// power generator (a cell, its skirt 2 by 2 about it), the mass extractor (the same, on a mass deposit), the land factory (5
+// cells, its skirt 8 by 8), the wall (a cell, its skirt the cell).
 
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -32,6 +34,40 @@ namespace
   Building Factory()
   {
     return Building{"ueb0101", 5, 5, -1.5f, -1.5f, 8, 8, Deposit::kNone};
+  }
+
+  Building Wall()
+  {
+    return Building{"ueb5101", 1, 1, 0, 0, 1, 1, Deposit::kNone};
+  }
+
+  /// A camera that shows the world evenly: `unitsPerPixel` world units a pixel across and down, a place at `shownX`, `shownY`
+  /// on the picture, and down the picture `skew` world units of x a pixel of y as well (a camera turned and pitched).
+  struct Camera
+  {
+    float unitsPerPixel = 1;
+    Place place;
+    float shownX = 0;
+    float shownY = 0;
+    float skew = 0;
+
+    [[nodiscard]] Place Under(const int pixelX, const int pixelY) const
+    {
+      const float across = static_cast<float>(pixelX) - shownX;
+      const float down = static_cast<float>(pixelY) - shownY;
+      return Place{place.x + unitsPerPixel * across, place.z + unitsPerPixel * down + skew * across};
+    }
+  };
+
+  /// The pixel ClickPixel picks for a building at `camera.place`, by where FAF's click at each pixel builds it under this
+  /// camera; false where none builds it there.
+  bool ClickFor(const Building& building, const std::vector<Candidate>& deposits, const Camera& camera, int& clickX, int& clickY)
+  {
+    const auto lands = [&](const int pixelX, const int pixelY) {
+      const Place under = camera.Under(pixelX, pixelY);
+      return griffdraft::LandsAt(building, deposits, camera.place, under.x, under.z);
+    };
+    return griffdraft::ClickPixel(camera.shownX, camera.shownY, lands, clickX, clickY);
   }
 
   /// FAF's own check, as the program asks it: everything free, or nothing.
@@ -256,6 +292,99 @@ WXT_TEST(GriffDraftALineGoesFromTheNewestPlanUnlessItIsOnADeposit)
   WXT_CHECK(draft.LineTo(70.5f, 50.5f, Anywhere).empty());
 }
 
+// LineTo asks FAF's own check (USERUNIT_CanBeBuiltAt: OCCUPY_Check, a spatial query, a walk over every queued command) once
+// per place, on each coalesced move of the finger, while the activity is shown at most kMaxPlans of them and the lift adds at
+// most kMaxPlans less the plans. A wall dragged 400 world units from the newest plan, as zoomed out: no more than a draft
+// holds.
+WXT_TEST(GriffDraftALineAsksNoMorePlacesThanTheDraftCouldHold)
+{
+  Draft draft;
+  draft.Pick(Wall());
+  WXT_CHECK(draft.PlaceAt(10.5f, 10.5f, Anywhere) == Placed::kPlaced);
+  std::size_t asked = 0;
+  const auto counting = [&asked](const Building&, float, float) {
+    ++asked;
+    return true;
+  };
+  const auto line = draft.LineTo(410.5f, 10.5f, counting);
+  WXT_CHECK(line.size() <= Draft::kMaxPlans);
+  WXT_CHECK(asked <= Draft::kMaxPlans);
+}
+
+// The activity is shown the line's first kMaxPlans places; the lift must add none beyond them, also where some of the shown
+// ones are taken. Generators from 10.5 towards 90.5: 40 places 2 apart, FAF refuses the 11 from 14.5 to 34.5; the preview
+// ends at 70.5.
+WXT_TEST(GriffDraftALineAddsNoPlaceItsPreviewDidNotShow)
+{
+  Draft draft;
+  draft.Pick(Generator());
+  WXT_CHECK(draft.PlaceAt(10.5f, 10.5f, Anywhere) == Placed::kPlaced);
+  const auto refused = [](const Building&, const float x, float) { return !(x >= 14 && x <= 35); };
+  const auto preview = draft.LineTo(90.5f, 10.5f, refused);
+  const std::size_t shown = preview.size() < Draft::kMaxPlans ? preview.size() : Draft::kMaxPlans;
+  WXT_CHECK(shown > 0);
+  const float lastShown = shown > 0 ? preview[shown - 1].first.x : 0;
+  (void)draft.AddLine(90.5f, 10.5f, refused);
+  for (const Plan& plan : draft.Plans()) {
+    WXT_CHECK(plan.x <= lastShown);
+  }
+}
+
+// FAF places a building by the world point under the click's whole pixel (IssueBuildDragOrders: its first cell by Snap).
+// Zoomed far out on a 20 km map (1024 world units on a 768-line picture) a pixel spans about 1.3 world units: the pixel
+// nearest a generator's middle at 100.5 (its cell 100), which the camera shows at 640.45, has its world point at 99.915, in
+// cell 99, and the one across at 101.215, in cell 101. No pixel builds it there: none is clicked, and the camera comes
+// closer for it first. Where the middle is shown nearer a pixel, that pixel builds it there.
+WXT_TEST(GriffDraftATicksClickLandsInItsPlansCellWhenAPixelSpansMoreThanAUnit)
+{
+  int clickX = -1;
+  int clickY = -1;
+  WXT_CHECK(!ClickFor(Generator(), {}, Camera{1.3f, {100.5f, 50.5f}, 640.45f, 300.45f}, clickX, clickY));
+  WXT_CHECK(ClickFor(Generator(), {}, Camera{1.3f, {100.5f, 50.5f}, 640.2f, 300.3f}, clickX, clickY));
+  WXT_CHECK_EQ(clickX, 640);
+  WXT_CHECK_EQ(clickY, 300);
+  // The camera at half the zoom: the nearest pixel.
+  WXT_CHECK(ClickFor(Generator(), {}, Camera{0.65f, {100.5f, 50.5f}, 640.45f, 300.45f}, clickX, clickY));
+  WXT_CHECK_EQ(clickX, 640);
+  WXT_CHECK_EQ(clickY, 300);
+  // A factory's middle is no more forgiving: its cells are as wide.
+  WXT_CHECK(!ClickFor(Factory(), {}, Camera{1.3f, {102.5f, 52.5f}, 640.45f, 300.45f}, clickX, clickY));
+}
+
+// A pitched or turned camera: down the picture the world's z moves by a pixel's x too. The pixel nearest the middle lands a
+// cell off on z; the one across the middle on y lands in the plan's cell, and is clicked.
+WXT_TEST(GriffDraftAClickGoesAcrossTheMiddleWhereTheNearestPixelLandsOff)
+{
+  int clickX = -1;
+  int clickY = -1;
+  const Camera turned{0.9f, {100.5f, 50.5f}, 640.4f, 300.45f, 0.3f};
+  const Place nearest = turned.Under(640, 300);
+  WXT_CHECK_EQ(griffdraft::Snap(nearest.z, 1), 49.5f);
+  WXT_CHECK(ClickFor(Generator(), {}, turned, clickX, clickY));
+  WXT_CHECK_EQ(clickX, 640);
+  WXT_CHECK_EQ(clickY, 301);
+}
+
+// An extractor's click lands on the deposit FAF's ghost snaps to: from its first cell under the cursor, floored, the deposit
+// whose middle cell is nearest, the first of the nearest (FindClosestDeposit). Two mass deposits 2 apart, as adjacent ones,
+// the neighbour first in FAF's list; zoomed out to 1.6 world units a pixel. The pixel nearest the plan's deposit is as near
+// the neighbour, which wins; the one across the middle snaps to the plan's.
+WXT_TEST(GriffDraftAnExtractorsClickLandsOnItsPlansDepositNotItsNeighbours)
+{
+  const std::vector<Candidate> deposits{{0, 0, {99.5f, 51.5f}}, {0, 0, {101.5f, 51.5f}}};
+  WXT_CHECK_EQ(griffdraft::SnappedDeposit(deposits, Extractor(), 101.02f, 51.5f), 0);
+  WXT_CHECK_EQ(griffdraft::SnappedDeposit(deposits, Extractor(), 102.62f, 51.5f), 1);
+  WXT_CHECK_EQ(griffdraft::SnappedDeposit({}, Extractor(), 102.62f, 51.5f), -1);
+  int clickX = -1;
+  int clickY = -1;
+  WXT_CHECK(ClickFor(Extractor(), deposits, Camera{1.6f, {101.5f, 51.5f}, 640.3f, 300.0f}, clickX, clickY));
+  WXT_CHECK_EQ(clickX, 641);
+  WXT_CHECK_EQ(clickY, 300);
+  // The neighbour's plan, from the same place on the picture: its own deposit.
+  WXT_CHECK(ClickFor(Extractor(), deposits, Camera{1.6f, {99.5f, 51.5f}, 640.3f, 300.0f}, clickX, clickY));
+  WXT_CHECK_EQ(clickX, 640);
+}
+
 WXT_TEST(GriffDraftALineAddsItsFreePlacesInOrderUntilTheDraftIsFull)
 {
   Draft draft = Generators({{10.5f, 10.5f}});
@@ -265,7 +394,7 @@ WXT_TEST(GriffDraftALineAddsItsFreePlacesInOrderUntilTheDraftIsFull)
   WXT_CHECK_EQ(draft.Plans()[1].x, 12.5f);
   WXT_CHECK_EQ(draft.Plans()[2].x, 16.5f);
   WXT_CHECK_EQ(draft.Plans()[3].x, 18.5f);
-  // From the newest, 26 room left: a line of 40 fills the draft and says so.
+  // From the newest, 26 room left: a line 40 steps long, of 30 places, fills the draft and says so.
   WXT_CHECK(!draft.AddLine(18.5f + 80, 10.5f, Anywhere));
   WXT_CHECK_EQ(draft.Plans().size(), Draft::kMaxPlans);
 }

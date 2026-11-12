@@ -80,6 +80,9 @@ package io.github.m3rt1n99.fafre;
  *       and a loupe ({@link Mouse#draftAim});
  *   <li>a quick tap of two drops the draft ({@link Mouse#draftDrop}).
  * </ul>
+ *
+ * While the program's own clicks run ({@link Mouse#clicking}: the draft's tick, the undo's), a finger that comes down rests and
+ * gives nothing, as its gesture would act between them.
  */
 final class TouchInput implements Fingers {
     /** What the fingers do, on the thread that calls this class. */
@@ -231,7 +234,8 @@ final class TouchInput implements Fingers {
 
         /**
          * Griff: a tap in the draft where the finger came down, on the plan numbered `plan` (0: none): the program removes that
-         * plan, places one there, or on FAF's UI clicks as any tap of Griff's.
+         * plan, places one there, or on FAF's UI gives the UI's click, with the tap help; a lit Plus stays for the tick (a held
+         * Plus is Shift as ever).
          */
         void draftTap(float x, float y, int plan);
 
@@ -249,6 +253,12 @@ final class TouchInput implements Fingers {
 
         /** Griff: two fingers' tap in the draft: it goes, with nothing ordered. */
         void draftDrop();
+
+        /**
+         * Griff: whether the program's clicks run, the draft's tick's or the undo's, as the program says now (Game.griffClicking):
+         * a finger that comes down then rests, as its gesture would act between those clicks.
+         */
+        boolean clicking();
     }
 
     /** Griff: the rail's buttons, as Mouse#rail has them. */
@@ -769,6 +779,12 @@ final class TouchInput implements Fingers {
             // A finger on the map stops the camera's glide, and FAF's reach for a unit beside a tap follows the selection, or
             // Box, which picks units: the finger's tap and rest go by this Box (#fingerRail).
             mMouse.griffDown(x, y, mFingerBox != 0);
+            if (mMouse.clicking()) {
+                // The program's clicks run: the fingers rest until they are over, also on FAF's ghost of the tick's build mode
+                // and on the handle. Only the down went, which then does nothing but end clicks that wait past their patience.
+                mState = State.SPENT;
+                return;
+            }
         }
         if (!mDeleting && mMouse.placing()) {
             startPlacing(id, x, y, time);

@@ -221,7 +221,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final int[] mLayerOnWindow = new int[2];
     /**
      * The loupe, while a finger rests in the draft at this place: the copy of the game's picture on its way, two pictures (the
-     * one shown and the next copy's), and whether the report has heard that the copy does not work here.
+     * one shown and the next copy's), the screen's places each was copied about (the finger's then, kept on the picture), and
+     * whether the report has heard that the copy does not work here.
      */
     private boolean mLoupeOn;
     private float mLoupeX;
@@ -230,6 +231,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final Bitmap[] mLoupePictures = new Bitmap[2];
     private int mLoupeNext;
     private Bitmap mLoupeShown;
+    private float mLoupeShownX;
+    private float mLoupeShownY;
+    private float mLoupeCopyX;
+    private float mLoupeCopyY;
     private boolean mLoupeFailureSaid;
     private final Runnable mLoupeCopy = this::copyLoupe;
     private final Choreographer.FrameCallback mGriffFrame = new Choreographer.FrameCallback() {
@@ -485,6 +490,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         @Override
         public void draftDrop() {
             Game.draftDrop();
+        }
+
+        @Override
+        public boolean clicking() {
+            return Game.griffClicking();
         }
     };
 
@@ -1037,7 +1047,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     mDownX = event.getX();
                     mDownY = event.getY();
                     mMoved = false;
-                    if (!mRail.held(mBit)) {
+                    // While the program's clicks run the finger rests, as on the map: a held Plus would be Shift between them.
+                    if (!mRail.held(mBit) && !Game.griffClicking()) {
                         mRail.press(mBit, event.getEventTime());
                         if (mBit == TouchInput.RAIL_QUEUE) {
                             Game.holdShift(true);
@@ -1230,8 +1241,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mPill.setVisibility(shown ? View.VISIBLE : View.GONE);
     }
 
-    /** The pill was tapped: the program takes its record back, and the next tap climbs no ladder from an order undone. */
+    /**
+     * The pill was tapped: the program takes its record back, and the next tap climbs no ladder from an order undone. Not while
+     * the program's clicks run: the finger rests, as on the map.
+     */
     private void undo() {
+        if (Game.griffClicking()) {
+            return;
+        }
         int record = mUndo.tap(SystemClock.uptimeMillis());
         if (record != 0) {
             Game.griffUndo(record);
@@ -1291,12 +1308,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
     }
 
-    /** The loupe follows a resting finger in the draft: copies of the game's picture about it, which the layer magnifies. */
+    /**
+     * The loupe follows a resting finger in the draft: copies of the game's picture about it, which the layer magnifies, each
+     * where it was copied about.
+     */
     private void showLoupe(float x, float y) {
         mLoupeX = x;
         mLoupeY = y;
         if (mLoupeShown != null) {
-            mGriffLayer.showLoupe(mLoupeShown, x, y);
+            mGriffLayer.showLoupe(mLoupeShown, mLoupeShownX, mLoupeShownY, x, y);
         }
         if (!mLoupeOn) {
             mLoupeOn = true;
@@ -1309,22 +1329,26 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mLoupeShown = null;
         mHandler.removeCallbacks(mLoupeCopy);
         if (mGriffLayer != null) {
-            mGriffLayer.showLoupe(null, 0, 0);
+            mGriffLayer.showLoupe(null, 0, 0, 0, 0);
         }
     }
 
     /**
-     * The 6 mm of the game's picture about the finger, by PixelCopy of the surface, one copy at a time and at most each
-     * LOUPE_MILLISECONDS. Where a copy fails, or comes back blank, as the emulator's of the engine's Vulkan surface does, no
-     * loupe is shown, and the plan under the finger alone shows where it goes; the game's report hears it once.
+     * The 6 mm of the game's picture about the finger, kept on the picture (Draft.loupeFrom), by PixelCopy of the surface, one
+     * copy at a time and at most each LOUPE_MILLISECONDS. Where a copy fails, or comes back blank, as the emulator's of the
+     * engine's Vulkan surface does, no loupe is shown, and the plan under the finger alone shows where it goes; the game's
+     * report hears it once.
      */
     private void copyLoupe() {
         if (!mLoupeOn || mLoupeCopying || mPictureWidth <= 0 || mPictureHeight <= 0) {
             return;
         }
         int side = Math.max(2, Math.min(pictureMm(LOUPE_SOURCE_MM), Math.min(mPictureWidth, mPictureHeight)));
-        int left = Math.max(0, Math.min(mPictureWidth - side, pictureX(mLoupeX) - side / 2));
-        int top = Math.max(0, Math.min(mPictureHeight - side, pictureY(mLoupeY) - side / 2));
+        int left = Draft.loupeFrom(pictureX(mLoupeX), side, mPictureWidth);
+        int top = Draft.loupeFrom(pictureY(mLoupeY), side, mPictureHeight);
+        // Where it is copied about, on the screen: the finger may have moved on by the time it shows.
+        mLoupeCopyX = mPageView.screenX(left + side / 2f);
+        mLoupeCopyY = mPageView.screenY(top + side / 2f);
         Bitmap picture = mLoupePictures[mLoupeNext];
         if (picture == null || picture.getWidth() != side) {
             picture = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
@@ -1342,12 +1366,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     // The game's surface has no alpha that means anything.
                     copy.setHasAlpha(false);
                     mLoupeShown = copy;
+                    mLoupeShownX = mLoupeCopyX;
+                    mLoupeShownY = mLoupeCopyY;
                     mLoupeNext = 1 - mLoupeNext;
                 } else {
                     mLoupeShown = null;
                     loupeFailed(result == PixelCopy.SUCCESS ? "came back blank" : "failed, " + result);
                 }
-                mGriffLayer.showLoupe(mLoupeShown, mLoupeX, mLoupeY);
+                mGriffLayer.showLoupe(mLoupeShown, mLoupeShownX, mLoupeShownY, mLoupeX, mLoupeY);
                 mHandler.postDelayed(mLoupeCopy, LOUPE_MILLISECONDS);
             }, mHandler);
         } catch (IllegalArgumentException e) {

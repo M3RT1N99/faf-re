@@ -236,4 +236,13 @@ final class Draft {
         int plan = planNumbered(id);
         return plan >= 0 && has(plan, ON_DEPOSIT);
     }
+
+    /**
+     * Where the loupe's copy of the game's picture begins on one axis: the square of `side` pixels about the finger at `finger`,
+     * kept on the picture of `extent` pixels; in the picture's pixels. Within half the side of an edge its middle is not the
+     * finger's, and the loupe shows the copy where it was taken.
+     */
+    static int loupeFrom(int finger, int side, int extent) {
+        return Math.max(0, Math.min(extent - side, finger - side / 2));
+    }
 }

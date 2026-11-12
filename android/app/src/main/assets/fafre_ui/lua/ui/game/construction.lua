@@ -1,7 +1,8 @@
 
 -- Griff, the app's touch scheme: a build icon of this panel puts its building into the app's draft, not FAF's ghost
 -- (fafre/griff.lua BuildIconClicked, after FAF's own handler). The panel's buttons take the handler when they are made, after
--- this runs; FAF's build mode keys reach it here too, without a mouse button, and stay FAF's.
+-- this runs. FAF's build mode keys arm the build mode themselves (buildmode.lua) and never come here; a template's key comes
+-- without a mouse button (BuildTemplate) and a template's click is no build item's, so both stay FAF's.
 do
     local ok, problem = pcall(function()
         local FafClick = OnClickHandler

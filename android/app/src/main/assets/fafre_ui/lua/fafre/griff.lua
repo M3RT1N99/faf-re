@@ -637,8 +637,9 @@ local function SameUnits(units, others)
 end
 
 --- A button of FAF's construction panel was clicked (its hook, after FAF's own handler): a build icon that started FAF's build
---- mode puts its building in the app's draft instead (FafreGriffDraft), and FAF's ghost goes. Only the panel's own click, the
---- left button's: FAF's hotbuild keys and its templates keep FAF's ghost.
+--- mode puts its building in the app's draft instead (FafreGriffDraft), and FAF's ghost goes. Only a build item's click with
+--- the left button: FAF's build mode keys and hotbuild arm the mode themselves, and a template's key (no button) and click (no
+--- build item) come here too; all keep FAF's ghost.
 function BuildIconClicked(item, modifiers)
     if not FafreGriffWanted() or not item or item.type ~= 'item' or not modifiers or not modifiers.Left then
         return
@@ -731,8 +732,12 @@ function CommitBegin()
     FafreGriffAnswer(Yes)
 end
 
---- A plan's click comes next: FAF's build mode for its building, as its construction panel arms it.
+--- A building's click comes next, the tick's or the undo's: FAF's build mode for it, as its construction panel arms it for a
+--- build icon, the build templates cleared first. A template the player picked and put away by a right click stays the
+--- session's (commandmode.lua clears it when a mode ends after its orders, not at a right click), and FAF's next build click
+--- would build the template in place of the building.
 function StartBuild(id)
+    ClearBuildTemplates()
     CommandMode.StartCommandMode('build', {name = id})
 end
 
@@ -746,8 +751,10 @@ function CommitEnd()
     end
 end
 
---- The tick's camera to a plan the free map does not show, as high and turned as it is; LookBack puts it where it was.
-function LookAt(x, y, z)
+--- The camera of the program's clicks, the tick's or the undo's, to a place the free map does not show, as high and turned as
+--- it is; with `closer` under 1, that much of its zoom as well (not past FAF's nearest), for a building whose cell no pixel
+--- of the picture lands in. LookBack puts it where it was.
+function LookAt(x, y, z, closer)
     StopCamera()
     local camera = Camera()
     if not draft.camera then
@@ -755,6 +762,9 @@ function LookAt(x, y, z)
     end
     local settings = camera:SaveSettings()
     settings.Focus = Vector(x, y, z)
+    if closer and closer < 1 then
+        settings.Zoom = math.max(camera:GetMinZoom(), settings.Zoom * closer)
+    end
     camera:RestoreSettings(settings)
 end
 
@@ -769,7 +779,8 @@ end
 
 -- --- The session's UI, each frame -----------------------------------------------------------------------------------------
 
---- Each frame of the session's UI under `parent`, while the app wants it. An error stops what failed, with one warning: the
+--- Each frame of the session's UI under `parent`, while the app wants it: first the frame itself, counted for the program,
+--- whose clicks wait for frames by it, then the rest. An error stops what failed, with one warning, never the count: the
 --- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on. FAF's UI tells each order it
 --- gives (OnCommandIssued, which the engine looks up at each order): Griff's watch sees it first.
 function Start(parent)
@@ -787,6 +798,7 @@ function Start(parent)
         if not FafreGriffWanted() then
             return
         end
+        FafreGriffFrame()
         if reporting then
             local ok, problem = pcall(Report)
             if not ok then
@@ -826,9 +838,6 @@ function Start(parent)
                 StopCamera()
                 driving = false
             end
-        end
-        if not reporting and not seeing and not driving then
-            self:SetNeedsFrameUpdate(false)
         end
     end
     -- The game is over: what Griff set of FAF's goes back (FAF's reach for a unit beside a click), and the draft goes.

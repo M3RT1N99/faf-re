@@ -400,6 +400,7 @@ namespace
   constexpr char kBoxHelp[] =
     "FafreGriffBox(count, middleX, middleY, left, top, right, bottom, viewLeft, viewTop, viewRight, viewBottom) - "
     "the selection's units on the screen, for Griff's handle, and the map's view; count 0: nothing is selected";
+  constexpr char kFrameHelp[] = "FafreGriffFrame() - a frame of the session's UI, for Griff's work after its paint";
   constexpr char kAnswerHelp[] = "FafreGriffAnswer(number) - griff.lua's answer to the app's question";
   constexpr char kEndedHelp[] = "FafreGriffEnded() - Griff's game is over: what it set of FAF's goes back";
 
@@ -445,26 +446,27 @@ namespace
   /// cross (griff.lua); below 0 where not known.
   float gConstructionTop = -1;
   float gColumnLeft = -1;
-  /// The tick's clicks run: the draft takes no finger meanwhile.
-  bool gCommitting = false;
 
   // --- Clicks at world places: the tick's plans, the undo's orders given again ---------------------------------------
 
   /// A click at a world place: FAF's mode for it (the call of griff.lua's that arms it), the place, and its run. The clicks of
   /// a run go to the units selected for it (`select`, griff.lua's list of their ids, at the run's first click; empty: the
   /// selection stays), the first that FAF orders by replacing what the units do unless all are appended, the others with
-  /// Shift held to the run's end.
+  /// Shift held to the run's end. A building's click (FAF's build mode, `builds`) lands in the cell of `building` at the place.
   struct ClickStep
   {
     std::string arm;
     griffundo::Place place;
     int run = 0;
     std::string select;
+    bool builds = false;
+    griffdraft::Building building;
   };
 
   /// The clicks that run (ClickStepTask), one a task, so that each sees what the one before did, and what comes after the last
   /// of them (`finish`), also once the game is over. A place the free map does not show gets the camera first, as high and
-  /// turned as it is, and its click after the next frame that drew it there; one that no frame brought onto it is not
+  /// turned as it is, and its click after the next frame that drew it there; a building whose cell no pixel lands in gets it
+  /// closer (`closer`, once a step). A place that no frame brought onto the free map, or that no pixel lands on then, is not
   /// clicked (`unreached`). The orders FAF's UI gave for a click are counted (FafreGriffOrdered), up to the next step, which
   /// comes after the click's input: a click that gave none was `refused`, as where the ground was taken meanwhile.
   struct Clicks
@@ -478,6 +480,7 @@ namespace
     bool holdsShift = false;
     bool looked = false;
     int waited = 0;
+    bool closer = false;
     bool counting = false;
     int ordered = 0;
     int unreached = 0;
@@ -485,12 +488,16 @@ namespace
   };
 
   Clicks gClicks;
-  bool gClicking = false;
+  /// The program's clicks run, the draft's tick's or the undo's: the fingers rest meanwhile (Game.griffClicking, ClicksRun),
+  /// as a gesture's click between them would act with their selection, in their mode, or move the camera they aim by.
+  std::atomic<bool> gClicking{false};
   /// A step may wait for the next frame, in which FAF lays its panels out for the units just selected and the camera moves:
-  /// the frames' number (each report of griff.lua's counts one), and the one the step waits after.
+  /// the frames' number (griff.lua counts each frame of the session's UI, FafreGriffFrame), the one the step waits after, and
+  /// since when it waits (0: it does not), for the clicks' patience.
   bool gClicksWait = false;
   std::uint32_t gFrame = 0;
   std::uint32_t gClicksAfterFrame = 0;
+  std::atomic<std::int64_t> gClicksWaitSince{0};
 
   // --- What a gesture ordered: its pins and its undo ----------------------------------------------------------------------
 
@@ -648,8 +655,16 @@ namespace
     return moho::USERUNIT_CanBeBuiltAt(*session, blueprint->second, moho::SCoordsVec2{x, z}, false, &occupation, nullptr);
   }
 
-  /// The deposits a building of this kind stands on, as FAF's build check knows them, with their middles on the picture.
-  [[nodiscard]] std::vector<griffdraft::Candidate> Deposits(const MapView& map, const griffdraft::Deposit kind)
+  /// The deposits a building of this kind stands on, as FAF's build check knows them, in FAF's order: their middles, not yet
+  /// on the picture; none for a building that needs none.
+  /// The walk reads the sim's list without CSimResources' lock, as the engine's own UI does (FindClosestDeposit for an
+  /// extractor's ghost at each move of the mouse, GetDepositsAroundPoint): the sim's thread adds a deposit under that lock
+  /// (AddDeposit), and the list that grows meanwhile may move, under this walk as under theirs. FAF's own Lua adds them all
+  /// once, as the session begins (ScenarioUtilities CreateResources, from the map's markers); later only a map's or a mod's
+  /// script can, by CreateResourceDeposit (FAF's MarkerUtilities hooks it for them), as the adaptive maps' Crazyrush option
+  /// does with each extractor built (loc adaptive_crazyrush_help: new mass points beside it). Nothing removes one. So it can
+  /// bite only on such a map, while a finger aims, taps or boxes for an extractor, or the tick clicks one, as a deposit comes.
+  [[nodiscard]] std::vector<griffdraft::Candidate> DepositsOf(const griffdraft::Deposit kind)
   {
     std::vector<griffdraft::Candidate> candidates;
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
@@ -663,10 +678,21 @@ namespace
       if (deposit.depositType != type) {
         continue;
       }
-      const float x = static_cast<float>(deposit.footprintRect.x0 + deposit.footprintRect.x1) * 0.5f;
-      const float z = static_cast<float>(deposit.footprintRect.z0 + deposit.footprintRect.z1) * 0.5f;
       griffdraft::Candidate candidate;
-      candidate.place = griffdraft::Place{x, z};
+      candidate.place = griffdraft::Place{static_cast<float>(deposit.footprintRect.x0 + deposit.footprintRect.x1) * 0.5f,
+                                          static_cast<float>(deposit.footprintRect.z0 + deposit.footprintRect.z1) * 0.5f};
+      candidates.push_back(candidate);
+    }
+    return candidates;
+  }
+
+  /// The deposits a building of this kind stands on, with their middles on the picture.
+  [[nodiscard]] std::vector<griffdraft::Candidate> Deposits(const MapView& map, const griffdraft::Deposit kind)
+  {
+    std::vector<griffdraft::Candidate> candidates;
+    for (griffdraft::Candidate& candidate : DepositsOf(kind)) {
+      const float x = candidate.place.x;
+      const float z = candidate.place.z;
       if (Project(map, x, SurfaceAt(x, z), z, candidate.screenX, candidate.screenY)) {
         candidates.push_back(candidate);
       }
@@ -751,6 +777,7 @@ namespace
 
   void ClickStepTask(WPARAM);
   void TryUndo();
+  [[nodiscard]] bool ClicksRun();
 
   /// What the activity reads of the orders (Game.griffOrders) as this frame drew them: the undo pill's anchors, then each pin
   /// whose tip is on the free map (`free`, where it was worked out: FAF's panels stand over the map's picture): its tip on the
@@ -788,6 +815,7 @@ namespace
     // one of the frame the step began in may still wait.
     if (gClicking && gClicksWait && gFrame != gClicksAfterFrame) {
       gClicksWait = false;
+      gClicksWaitSince = 0;
       Win32Android_RunOnWindowThread(&ClickStepTask, 0);
     }
     const Selection selection = gSelection;
@@ -839,6 +867,13 @@ namespace
       selection.view = Box{number(8), number(9), number(10), number(11)};
     }
     gSelection = selection;
+    return 0;
+  }
+
+  /// A frame of the session's UI (griff.lua, first each frame and apart from its report, which an error stops for the game):
+  /// the clicks' steps wait for frames by their number, so they never wait on the report.
+  int Frame(lua_State*)
+  {
     ++gFrame;
     // The frame's Lua runs before its paint, in which the program draws it (CScApp::Main asks for the paint).
     Win32Android_RunWhenIdle(&PlaceTask, 0);
@@ -886,7 +921,7 @@ namespace
   }
 
   /// No draft any more on the program's side: its plans, its buildings, what a finger showed of it; the activity hears it with
-  /// the next read. A tick's clicks that still run end at their next step.
+  /// the next read. The tick's clicks, which hold what they click, end by themselves.
   void ForgetDraft()
   {
     gDraft.Close();
@@ -922,6 +957,7 @@ namespace
     // Clicks that wait for a frame get none any more: their next step ends them, Shift too.
     if (gClicking) {
       gClicksWait = false;
+      gClicksWaitSince = 0;
       Win32Android_RunOnWindowThread(&ClickStepTask, 0);
     }
     return 0;
@@ -951,23 +987,20 @@ namespace
     return true;
   }
 
-  /// A building of FAF's construction panel goes into the draft (griff.lua BuildIconClicked): what the draft takes of its
-  /// blueprint, the footprint, the skirt and the deposit it wants.
-  int PickForDraft(lua_State* const lua)
+  /// What the draft and a building's click take of the blueprint `id`: its footprint, its skirt and the deposit it wants; the
+  /// blueprint itself, or none where the session has no such blueprint.
+  [[nodiscard]] moho::RUnitBlueprint* BlueprintBuilding(const char* const id, griffdraft::Building& building)
   {
-    const char* const id = lua_tostring(lua, 1);
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
-    if (!PlainId(id) || session == nullptr || session->mRules == nullptr || gCommitting) {
-      return 0;
+    if (!PlainId(id) || session == nullptr || session->mRules == nullptr) {
+      return nullptr;
     }
     moho::RResId resource{};
     (void)gpg::STR_SetFilename(&resource.name, gpg::StrArg(id));
     moho::RUnitBlueprint* const blueprint = session->mRules->GetUnitBlueprint(resource);
     if (blueprint == nullptr) {
-      gpg::Warnf("Griff: no blueprint %s for the draft", id);
-      return 0;
+      return nullptr;
     }
-    griffdraft::Building building;
     building.id = id;
     building.footprintX = (std::max)(1, static_cast<int>(blueprint->mFootprint.mSizeX));
     building.footprintZ = (std::max)(1, static_cast<int>(blueprint->mFootprint.mSizeZ));
@@ -985,6 +1018,24 @@ namespace
       default:
         building.deposit = griffdraft::Deposit::kNone;
         break;
+    }
+    return blueprint;
+  }
+
+  /// A building of FAF's construction panel goes into the draft (griff.lua BuildIconClicked), not while the program's clicks
+  /// run, whose draft it is.
+  int PickForDraft(lua_State* const lua)
+  {
+    const char* const id = lua_tostring(lua, 1);
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (gClicking || !PlainId(id) || session == nullptr || session->mRules == nullptr) {
+      return 0;
+    }
+    griffdraft::Building building;
+    moho::RUnitBlueprint* const blueprint = BlueprintBuilding(id, building);
+    if (blueprint == nullptr) {
+      gpg::Warnf("Griff: no blueprint %s for the draft", id);
+      return 0;
     }
     gDraftBlueprints[building.id] = blueprint;
     gDraft.Pick(building);
@@ -1012,7 +1063,7 @@ namespace
 
   int DraftEnd(lua_State*)
   {
-    if (!gCommitting) {
+    if (!gClicking) {
       ForgetDraft();
     }
     return 0;
@@ -1027,6 +1078,7 @@ namespace
 
   moho::CScrLuaBinder gWantedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffWanted", &Wanted, nullptr, "<global>", kWantedHelp);
   moho::CScrLuaBinder gBoxBinder(moho::SCR_UserLuaInitSet(), "FafreGriffBox", &ReportBox, nullptr, "<global>", kBoxHelp);
+  moho::CScrLuaBinder gFrameBinder(moho::SCR_UserLuaInitSet(), "FafreGriffFrame", &Frame, nullptr, "<global>", kFrameHelp);
   moho::CScrLuaBinder gAnswerBinder(moho::SCR_UserLuaInitSet(), "FafreGriffAnswer", &Answer, nullptr, "<global>", kAnswerHelp);
   moho::CScrLuaBinder gEndedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffEnded", &Ended, nullptr, "<global>", kEndedHelp);
   moho::CScrLuaBinder gDraftBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraft", &PickForDraft, nullptr, "<global>", kDraftHelp);
@@ -1207,14 +1259,15 @@ namespace
 
   /// A first finger came down here: on the map or the minimap the camera's glide or flight stops, and FAF's reach for a unit
   /// beside a tap is the mockup's for what is selected (with Box, which picks units, as without troops). Not while a command
-  /// mode is armed, which picks as FAF sets it: its reclaim mode reaches further for wrecks.
+  /// mode is armed, which picks as FAF sets it: its reclaim mode reaches further for wrecks. Nothing while the program's clicks
+  /// run, which pick as they began; the down still comes, as the task that ends clicks that wait past their patience.
   void DownTask(const WPARAM places)
   {
     const int x = Coordinate(places, 0);
     const int y = Coordinate(places, 1);
     const bool box = Coordinate(places, 2) != 0;
     try {
-      if (!moho::UI_GamePlaying()) {
+      if (!moho::UI_GamePlaying() || ClicksRun()) {
         return;
       }
       if (WorldViewAt(static_cast<float>(x), static_cast<float>(y)) != nullptr) {
@@ -1439,7 +1492,7 @@ namespace
     try {
       if (moho::UI_GamePlaying()) {
         const bool again = tap.step == kStepAgain;
-        if (gClicking || ((tap.step == kStepTap || again) && Covered(again ? tap.baseX : tap.x, again ? tap.baseY : tap.y))) {
+        if (ClicksRun() || ((tap.step == kStepTap || again) && Covered(again ? tap.baseX : tap.x, again ? tap.baseY : tap.y))) {
           // The undo's or the tick's clicks run, which a click of the finger's would come between; or one of the app's pieces
           // came over the place the finger went down at: the piece's, never the game's.
           if (tap.step == kStepTap) {
@@ -1471,11 +1524,12 @@ namespace
     }
   }
 
-  /// Two fingers' tap: an armed command mode goes, as a right click puts it away; with none, the selection goes.
+  /// Two fingers' tap: an armed command mode goes, as a right click puts it away; with none, the selection goes. Not between
+  /// the program's clicks, whose mode and selection it is.
   void DeselectTask(const WPARAM)
   {
     try {
-      if (moho::UI_GamePlaying()) {
+      if (moho::UI_GamePlaying() && !ClicksRun()) {
         moho::CON_Execute(CommandModeArmed() ? kEndCommandMode : kDeselect);
       }
     } catch (const std::exception& exception) {
@@ -1483,11 +1537,11 @@ namespace
     }
   }
 
-  /// The camera to the selection; argument 1: a flight, else at once.
+  /// The camera to the selection; argument 1: a flight, else at once. Not while the program's clicks run, which aim by it.
   void ToGroupTask(const WPARAM fly)
   {
     try {
-      if (moho::UI_GamePlaying()) {
+      if (moho::UI_GamePlaying() && !ClicksRun()) {
         CallGriff("ToGroup(%d)", fly != 0 ? 1 : 0, 0, 0);
       }
     } catch (const std::exception& exception) {
@@ -1572,9 +1626,9 @@ namespace
     bool map = false;
     try {
       const bool playing = moho::UI_GamePlaying();
-      // A box or a panel's drag would come between the undo's or the tick's clicks; and one of the app's pieces that came
-      // over where the finger went down takes it.
-      if (playing && (gClicking || Covered(drag.x, drag.y))) {
+      // A box, a panel's drag or a pan would come between the undo's or the tick's clicks; and one of the app's pieces that
+      // came over where the finger went down takes it.
+      if (playing && (ClicksRun() || Covered(drag.x, drag.y))) {
         return;
       }
       map = playing && OnMap(static_cast<float>(drag.x), static_cast<float>(drag.y));
@@ -1609,11 +1663,12 @@ namespace
   }
 
   /// The camera keeps what lies at a place under the fingers (griff.lua): from here on, at the pinch's start or when one of two
-  /// fingers lifted; and as they move. Two kinds of task: the moves coalesce, a start must not be one of them.
+  /// fingers lifted; and as they move. Two kinds of task: the moves coalesce, a start must not be one of them. Not while the
+  /// program's clicks run, which aim by the camera.
   void Pinch(const char* const format, const WPARAM places)
   {
     try {
-      if (moho::UI_GamePlaying()) {
+      if (moho::UI_GamePlaying() && !ClicksRun()) {
         CallGriff(format, Coordinate(places, 0), Coordinate(places, 1), Coordinate(places, 2));
       }
     } catch (const std::exception& exception) {
@@ -1636,7 +1691,9 @@ namespace
     try {
       if (moho::UI_GamePlaying()) {
         moho::CON_Execute(kPinchEnd);
-        Glide(SignedCoordinate(places, 0), SignedCoordinate(places, 1));
+        if (!ClicksRun()) {
+          Glide(SignedCoordinate(places, 0), SignedCoordinate(places, 1));
+        }
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -1654,7 +1711,7 @@ namespace
     tap.rail = Coordinate(places, 2);
     try {
       const bool playing = moho::UI_GamePlaying();
-      if (playing && (gClicking || Covered(tap.x, tap.y))) {
+      if (playing && (ClicksRun() || Covered(tap.x, tap.y))) {
         if ((tap.rail & kRailBox) != 0) {
           AnswerTap(tap, kTapOther, grifftap::Outcome::kBoxFoundNothing);
         }
@@ -1763,7 +1820,7 @@ namespace
       gRoutes.pop_front();
     }
     try {
-      if (!moho::UI_GamePlaying() || given.points.empty() || gClicking) {
+      if (!moho::UI_GamePlaying() || given.points.empty() || ClicksRun()) {
         return;
       }
       const POINT end = given.points.back();
@@ -1894,9 +1951,10 @@ namespace
     return !gDraft.OnPlan(building, place.x, place.z) && GroundFree(building, place.x, place.z);
   }
 
-  /// A tap in the draft (TouchInput's DRAFT_PENDING): the UI's where it lands on the UI, as any of Griff's taps; on the map it
-  /// removes the plan the finger was on (its number in the argument's last two words; 0: none) or places one, also where that
-  /// plan is gone by now, as the mockup's tap then finds none.
+  /// A tap in the draft (TouchInput's DRAFT_PENDING): on the UI the UI's click, with the tap help; a lit Plus stays for the tick
+  /// (a held Plus is Shift as ever). On the map it removes the plan the finger was on (its number in the argument's last two
+  /// words; 0: none) or places one, also where that plan is gone by now, as the mockup's tap then finds none. Nothing while the
+  /// program's clicks run, between which its click would come.
   void DraftTapTask(const WPARAM places)
   {
     const int x = Coordinate(places, 0);
@@ -1904,7 +1962,7 @@ namespace
     const int plan = Coordinate(places, 2) | Coordinate(places, 3) << 16;
     try {
       const bool playing = moho::UI_GamePlaying();
-      if (playing && Covered(x, y)) {
+      if (playing && (ClicksRun() || Covered(x, y))) {
         return;
       }
       if (!playing || UiTap(x, y)) {
@@ -1915,7 +1973,7 @@ namespace
         return;
       }
       MapView map;
-      if (!gDraft.Open() || gCommitting || !MapAt(x, y, map)) {
+      if (!gDraft.Open() || !MapAt(x, y, map)) {
         return;
       }
       if (plan != 0 && gDraft.Remove(plan)) {
@@ -1927,11 +1985,12 @@ namespace
     }
   }
 
-  /// The world place a finger's place stands for in a line or a move, through the main map, whatever lies over it there.
+  /// The world place a finger's place stands for in a line or a move, through the main map, whatever lies over it there; none
+  /// while the program's clicks run.
   [[nodiscard]] bool DraftPlaceUnder(const int x, const int y, griffdraft::Place& place)
   {
     MapView map;
-    return gDraft.Open() && !gCommitting && MainMap(map) && Unproject(map, x, y, place);
+    return gDraft.Open() && !ClicksRun() && MainMap(map) && Unproject(map, x, y, place);
   }
 
   /// A drag from the newest plan: the line to the finger shown (the moves coalesce), added where it lifted, or given up.
@@ -2005,7 +2064,7 @@ namespace
       MapView map;
       const int x = Coordinate(places, 0);
       const int y = Coordinate(places, 1);
-      gAimOnMap = gDraft.Open() && !gCommitting && MapAt(x, y, map);
+      gAimOnMap = gDraft.Open() && !ClicksRun() && MapAt(x, y, map);
       gAimShown = gAimOnMap && WouldPlace(map, x, y, gAim);
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -2021,7 +2080,8 @@ namespace
     const int y = Coordinate(places, 1);
     try {
       const bool playing = moho::UI_GamePlaying();
-      if (playing && Covered(x, y)) {
+      // Nothing between the program's clicks, the UI's right click as little as a plan.
+      if (playing && (ClicksRun() || Covered(x, y))) {
         return;
       }
       if (!playing || !OnMap(static_cast<float>(x), static_cast<float>(y))) {
@@ -2031,7 +2091,7 @@ namespace
         return;
       }
       MapView map;
-      if (gDraft.Open() && !gCommitting && MapAt(x, y, map)) {
+      if (gDraft.Open() && MapAt(x, y, map)) {
         PlaceAt(map, x, y);
       }
     } catch (const std::exception& exception) {
@@ -2051,7 +2111,7 @@ namespace
   {
     try {
       MapView map;
-      if (!gDraft.Open() || gCommitting || gDraft.Picked().deposit == griffdraft::Deposit::kNone || !MainMap(map)) {
+      if (!gDraft.Open() || ClicksRun() || gDraft.Picked().deposit == griffdraft::Deposit::kNone || !MainMap(map)) {
         return;
       }
       const int left = (std::min)(Coordinate(places, 0), Coordinate(places, 2));
@@ -2080,14 +2140,56 @@ namespace
   constexpr int kClickFrames = 10;
   /// How far inside the map and from any panel a click goes: FAF scrolls the view with a cursor on its edge pixel.
   constexpr float kClickRoom = 2;
+  /// How long the clicks wait for a frame at most, in ms. Past it the frames do not come (griff.lua's stopped, the activity in
+  /// the back), and the clicks would hold the fingers, Shift, the selection and the camera for good.
+  constexpr std::int64_t kClicksPatience = 2000;
+  /// How many pixels a world unit takes at least where the camera comes closer for a building whose cell no pixel lands in.
+  constexpr float kCellPixels = 4;
 
-  void CallGriffPlace(const char* const format, const float x, const float y, const float z)
+  /// The camera to a world place, as high and turned as it is, or closer by `closer` of its zoom (griff.lua LookAt).
+  void LookAt(const griffundo::Place& place, const float closer)
   {
-    char call[96];
-    std::snprintf(call, sizeof call, format, static_cast<double>(x), static_cast<double>(y), static_cast<double>(z));
-    char command[192];
-    std::snprintf(command, sizeof command, "%s%s", kGriffLua, call);
-    moho::CON_Execute(command);
+    char call[128];
+    std::snprintf(call, sizeof call, "LookAt(%.3f, %.3f, %.3f, %.3f)", static_cast<double>(place.x), static_cast<double>(place.y),
+                  static_cast<double>(place.z), static_cast<double>(closer));
+    CallGriffLine(call);
+  }
+
+  /// The part of its zoom the camera keeps to come so close to a place that a world unit there takes kCellPixels on both
+  /// axes, from what it takes now; 1 where it does already or where the map shows no unit there.
+  [[nodiscard]] float Closer(const MapView& map, const griffundo::Place& place)
+  {
+    float x = 0;
+    float y = 0;
+    float acrossX = 0;
+    float acrossY = 0;
+    float downX = 0;
+    float downY = 0;
+    if (!Project(map, place.x, place.y, place.z, x, y) || !Project(map, place.x + 1, place.y, place.z, acrossX, acrossY)
+        || !Project(map, place.x, place.y, place.z + 1, downX, downY)) {
+      return 1;
+    }
+    const float pixels = (std::min)(std::hypot(acrossX - x, acrossY - y), std::hypot(downX - x, downY - y));
+    return pixels > 0 && pixels < kCellPixels ? pixels / kCellPixels : 1;
+  }
+
+  /// The pixel a building's click goes to, whose place the map shows at `x`, `y`: one whose world point FAF builds it at, by
+  /// the camera's own unprojection, which FAF's click goes through (griffdraft::ClickPixel); false where none is.
+  [[nodiscard]] bool BuildPixel(const MapView& map, const ClickStep& step, const float x, const float y, int& clickX, int& clickY)
+  {
+    const griffdraft::Place place{step.place.x, step.place.z};
+    const std::vector<griffdraft::Candidate> deposits = DepositsOf(step.building.deposit);
+    const auto lands = [&](const int pixelX, const int pixelY) {
+      griffdraft::Place under;
+      return Unproject(map, pixelX, pixelY, under) && griffdraft::LandsAt(step.building, deposits, place, under.x, under.z);
+    };
+    return griffdraft::ClickPixel(x, y, lands, clickX, clickY);
+  }
+
+  /// Whether a wait for a frame since `since` (0: none) has outlasted the clicks' patience.
+  [[nodiscard]] bool Outwaited(const std::int64_t since, const std::int64_t now)
+  {
+    return since != 0 && now - since > kClicksPatience;
   }
 
   /// The next step comes after the next frame (PlaceTask).
@@ -2095,6 +2197,7 @@ namespace
   {
     gClicksWait = true;
     gClicksAfterFrame = gFrame;
+    gClicksWaitSince = Now();
   }
 
   /// The clicks begin after the next frame, in which FAF lays its panels out for the units just selected for them.
@@ -2110,6 +2213,7 @@ namespace
   {
     gClicking = false;
     gClicksWait = false;
+    gClicksWaitSince = 0;
     if (gClicks.holdsShift) {
       ReleaseShift();
     }
@@ -2122,10 +2226,36 @@ namespace
     gClicks = Clicks{};
   }
 
+  /// Whether the program's clicks run, for a task that would act between them, which then does nothing. Clicks that have
+  /// waited for a frame past their patience are over first, as their own end has them, their clicks not made not ordered: so
+  /// nothing holds the fingers, Shift, the selection or the camera longer, whatever kept the frames away.
+  bool ClicksRun()
+  {
+    if (gClicking && gClicksWait && Outwaited(gClicksWaitSince.load(), Now())) {
+      const int left = static_cast<int>(gClicks.steps.size() - gClicks.next);
+      gpg::Warnf("Griff: no frame came for the clicks in %lld ms, %d of %d not made", static_cast<long long>(kClicksPatience), left,
+                 static_cast<int>(gClicks.steps.size()));
+      gClicks.unreached += left;
+      FinishClicks();
+    }
+    return gClicking;
+  }
+
+  /// The step is not clicked: no frame brought its place onto the free map, or no pixel lands on it.
+  void SkipStep()
+  {
+    ++gClicks.unreached;
+    ++gClicks.next;
+    gClicks.waited = 0;
+    gClicks.closer = false;
+    Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+  }
+
   /// The next click: at a run's first, its units selected and a frame drawn for them; then FAF's mode for the click, as its
   /// panels arm it, and a mouse's left click at its place on the picture, the run's first that FAF orders by replacing what
   /// the units do unless all are appended, the others with Shift. A place the free map does not show, under a panel or out of
-  /// view, gets the camera first, as high and turned as it is, and its click after the frame that drew it there.
+  /// view, gets the camera first, as high and turned as it is, and its click after the frame that drew it there. A building's
+  /// click goes to a pixel whose world point FAF builds it at, in its cell: where none is, the camera comes closer first.
   void ClickStepTask(const WPARAM)
   {
     if (!gClicking) {
@@ -2168,32 +2298,43 @@ namespace
       float y = 0;
       const griffundo::Place& place = step.place;
       if (MapOf(mainMap, map) && Project(map, place.x, place.y, place.z, x, y) && free.DiscFree(x, y, kClickRoom)) {
+        int clickX = static_cast<int>(std::lround(x));
+        int clickY = static_cast<int>(std::lround(y));
+        if (step.builds && !BuildPixel(map, step, x, y, clickX, clickY)) {
+          // FAF would build it in a cell beside its place: no pixel's world point is in that cell here, as where a pixel spans
+          // more than one. Once the camera has come closer and still none is, it is not ordered.
+          if (gClicks.closer) {
+            SkipStep();
+            return;
+          }
+          gClicks.closer = true;
+          gClicks.looked = true;
+          LookAt(place, Closer(map, place));
+          WaitForFrame();
+          return;
+        }
         if ((gClicks.orderedInRun > 0 || gClicks.appendAll) && !gClicks.holdsShift) {
           HoldShift();
           gClicks.holdsShift = true;
         }
         CallGriffLine(step.arm);
         // A mouse's click: a finger's press would only take FAF's ghost along (Win32Android_TouchButton).
-        const int clickX = static_cast<int>(std::lround(x));
-        const int clickY = static_cast<int>(std::lround(y));
         Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, TRUE, clickX, clickY);
         Win32Android_MouseButton(WIN32ANDROID_BUTTON_LEFT, FALSE, clickX, clickY);
         ++gClicks.next;
         gClicks.waited = 0;
+        gClicks.closer = false;
         gClicks.counting = true;
         gClicks.ordered = 0;
         Win32Android_RunOnWindowThread(&ClickStepTask, 0);
         return;
       }
       if (gClicks.waited == 0) {
-        CallGriffPlace("LookAt(%.3f, %.3f, %.3f)", place.x, place.y, place.z);
+        LookAt(place, 1);
         gClicks.looked = true;
       }
       if (++gClicks.waited > kClickFrames) {
-        ++gClicks.unreached;
-        ++gClicks.next;
-        gClicks.waited = 0;
-        Win32Android_RunOnWindowThread(&ClickStepTask, 0);
+        SkipStep();
         return;
       }
       WaitForFrame();
@@ -2212,7 +2353,6 @@ namespace
   /// closed; the activity hears of plans no click ordered and of the rail's buttons the tick used. With no game, only that.
   void FinishCommit()
   {
-    gCommitting = false;
     if (moho::UI_GamePlaying()) {
       EndWatchTask(static_cast<WPARAM>(gCommitWatch));
       moho::CON_Execute(kCommitEnd);
@@ -2229,12 +2369,13 @@ namespace
 
   /// The tick (argument 1: Plus counts): no plans, no engineers, or nothing that can be built says so; else the builders are
   /// selected (griff.lua CommitBegin: the selected engineers, or the draft's that live) and each plan FAF would build is a
-  /// click: FAF's build mode for its building, as the construction panel arms it, at its place, the first replacing what the
-  /// builders do unless Plus counted. None while the undo's clicks run.
+  /// click: FAF's build mode for its building, as the construction panel arms it for a build icon (FAF's build templates
+  /// cleared first), in its cell, the first replacing what the builders do unless Plus counted. None while the undo's clicks
+  /// run.
   void DraftCommitTask(const WPARAM plus)
   {
     try {
-      if (!moho::UI_GamePlaying() || !gDraft.Open() || gClicking) {
+      if (!moho::UI_GamePlaying() || !gDraft.Open() || ClicksRun()) {
         return;
       }
       if (gDraft.Plans().empty()) {
@@ -2259,11 +2400,12 @@ namespace
         ClickStep step;
         step.arm = "StartBuild('" + gDraft.BuildingOf(plan).id + "')";
         step.place = griffundo::Place{plan.x, SurfaceAt(plan.x, plan.z), plan.z};
+        step.builds = true;
+        step.building = gDraft.BuildingOf(plan);
         clicks.steps.push_back(std::move(step));
       }
       clicks.appendAll = plus != 0;
       clicks.finish = &FinishCommit;
-      gCommitting = true;
       // The builders CommitBegin selected are the tick's units: their queues as they are now, for its undo.
       gCommitWatch = WatchOrders(false);
       StartClicks(std::move(clicks));
@@ -2312,7 +2454,7 @@ namespace
   /// The record is used up.
   void TryUndo()
   {
-    if (!gUndoable.asked || gUndoable.number == 0 || gClicking || !moho::UI_GamePlaying()) {
+    if (!gUndoable.asked || gUndoable.number == 0 || ClicksRun() || !moho::UI_GamePlaying()) {
       return;
     }
     const Undoable record = gUndoable;
@@ -2335,11 +2477,14 @@ namespace
     for (std::size_t run = 0; run < plan.groups.size(); ++run) {
       const griffundo::Group& group = plan.groups[run];
       for (std::size_t at = 0; at < group.clicks.size(); ++at) {
+        const griffundo::Click& click = group.clicks[at];
         ClickStep step;
-        step.arm = ArmCall(group.clicks[at]);
-        step.place = group.clicks[at].place;
+        step.arm = ArmCall(click);
+        step.place = click.place;
         step.run = static_cast<int>(run);
         step.select = at == 0 ? UnitList(group.units) : "";
+        // A building given again at its place lands in its cell, as the tick's.
+        step.builds = click.way == griffundo::Way::kBuild && BlueprintBuilding(click.blueprint.c_str(), step.building) != nullptr;
         clicks.steps.push_back(std::move(step));
       }
     }
@@ -2360,11 +2505,12 @@ namespace
     }
   }
 
-  /// The cross, or two fingers' tap in the draft: it goes, with nothing ordered.
+  /// The cross, or two fingers' tap in the draft: it goes, with nothing ordered. Not while the program's clicks run, which end
+  /// the tick's draft themselves.
   void DraftDropTask(const WPARAM)
   {
     try {
-      if (gCommitting || !gDraft.Open()) {
+      if (ClicksRun() || !gDraft.Open()) {
         return;
       }
       ForgetDraft();
@@ -2666,4 +2812,11 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffOrders
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffUndo(JNIEnv*, jclass, const jint number)
 {
   Win32Android_RunOnWindowThread(&UndoTask, static_cast<WPARAM>(number));
+}
+
+/// Whether the program's clicks run, the draft's tick's or the undo's: the fingers rest meanwhile. Clicks that have waited for a
+/// frame past their patience count as over, which the next task makes them (ClicksRun; a finger's down is one).
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griffClicking(JNIEnv*, jclass)
+{
+  return gClicking.load() && !Outwaited(gClicksWaitSince.load(), Now()) ? JNI_TRUE : JNI_FALSE;
 }
