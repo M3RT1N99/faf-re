@@ -30,8 +30,9 @@ option(FAF_SYNTAX_ONLY "Check faf_engine's sources without generating code" OFF)
 # Engine addition (dedicated-server plan WPL.2): the Linux build of the
 # simulation, chosen by its toolchain file (cmake/toolchains/linux-clang-*.cmake,
 # read by project(), sets FAF_LINUX) and described in cmake/FafLinux.cmake.
-# Nothing below this block runs for it.
-if(CMAKE_TOOLCHAIN_FILE MATCHES "/linux-clang-[^/]*\\.cmake$")
+# The Android toolchains (cmake/toolchains/android-*.cmake) build the same
+# project against bionic. Nothing below this block runs for them.
+if(CMAKE_TOOLCHAIN_FILE MATCHES "/(linux-clang|android)-[^/]*\\.cmake$")
   project(faf_engine LANGUAGES C CXX)
   include(cmake/FafLinux.cmake)
   return()

@@ -610,7 +610,9 @@ namespace
 
   const char* PlatformName()
   {
-#if FAFRE_PLATFORM_WINDOWS && defined(_M_X64)
+#if defined(FAF_SIM_MATH_PLATFORM)
+    return FAF_SIM_MATH_PLATFORM; // the Linux and Android builds (cmake/FafLinux.cmake)
+#elif FAFRE_PLATFORM_WINDOWS && defined(_M_X64)
     return "windows-x64";
 #elif FAFRE_PLATFORM_WINDOWS
     return "windows-x86";
