@@ -1,7 +1,7 @@
 // The touch scheme Griff's undo (include/GriffUndo.h): which commands are taken out, which lost orders are given again and
 // with which keys, what cannot, and the pixel of each aimed click. Queues as the program reads them in a game: each command
-// by its own id, the UI's from 0,
-// the sim's own with its source byte 0x80.
+// by its own id, the UI's from 0, the sim's own with its source byte 0x80; a factory's own queue and its rally route as two
+// units with its id.
 
 #include <cmath>
 #include <cstddef>
@@ -58,13 +58,23 @@ namespace
     return entry;
   }
 
+  /// A unit's queue as the program gives it where it read no view of the sim's as the replacement landed: `taken` is
+  /// `before`.
   Unit Of(const int id, const bool replaced, std::vector<Entry> before, std::vector<Entry> now)
   {
     Unit unit;
     unit.id = id;
     unit.replaced = replaced;
     unit.before = std::move(before);
+    unit.taken = unit.before;
     unit.now = std::move(now);
+    return unit;
+  }
+
+  /// What the sim held of the queue when the gesture's replacement landed.
+  Unit Taken(Unit unit, std::vector<Entry> taken)
+  {
+    unit.taken = std::move(taken);
     return unit;
   }
 
@@ -118,7 +128,6 @@ WXT_TEST(GriffUndoAnAppendedOrderIsTakenOutAndTheQueueBeforeStays)
   WXT_CHECK_EQ(plan.dropped, 0);
   if (plan.removals.size() == 1) {
     WXT_CHECK(plan.removals[0].units == (std::vector<int>{4}));
-    WXT_CHECK(plan.removals[0].place.x == 20 && plan.removals[0].place.z == 20);
   }
 }
 
@@ -148,14 +157,39 @@ WXT_TEST(GriffUndoAHeldBuildingNotBegunIsNeverClickedAgain)
     WXT_CHECK(plan->groups.empty());
     WXT_CHECK_EQ(plan->dropped, 0);
   }
-  // The attack-move with Plus: the sim's AggressiveMove goes, FAF's script beside it is done by itself.
+  // The attack-move with Plus: the sim's AggressiveMove goes; FAF's script beside it stays behind the building, which FAF
+  // draws no waypoint of to take out, and counts.
   const Plan sims = PlanUndo(
     {Of(4, false, {building}, {building, Task(Order(6, "Script", 30, 30), "AttackMove"), Order(kSimId, "AggressiveMove", 30, 30)})},
     kNoTargets
   );
   WXT_CHECK(Removed(sims) == (std::vector<int>{kSimId}));
   WXT_CHECK(sims.groups.empty());
-  WXT_CHECK_EQ(sims.dropped, 0);
+  WXT_CHECK_EQ(sims.dropped, 1);
+}
+
+// The verifier's (finding 5). An attack-move appended behind the engineer's building: the sim's AggressiveMove goes, FAF's
+// script stays behind the building, the queue's last command until the building is done, and FAF anchors a patrol given with
+// Shift at its place (CWldSessionCommands.cpp ResolveGroupMoveAnchorOrDetectPatrol takes the last queued helper of any type).
+// FAF draws no waypoint for it, so it cannot go: it counts, and the toast says in part.
+WXT_TEST(GriffUndoTheAttackMovesScriptLeftBehindAUnitsOwnOrdersCounts)
+{
+  const Entry building = Named(Order(3, "BuildMobile", 10, 10), "ueb1101");
+  const Entry script = Task(Order(6, "Script", 30, 30), "AttackMove");
+  const Entry aggressive = Order(kSimId, "AggressiveMove", 30, 30);
+  const Plan busy = PlanUndo({Of(4, false, {building}, {building, script, aggressive})}, kNoTargets);
+  WXT_CHECK(Removed(busy) == (std::vector<int>{kSimId}));
+  WXT_CHECK(busy.groups.empty());
+  WXT_CHECK_EQ(busy.dropped, 1);
+  // On an idle unit the script heads the queue and FAF's task is done with it at the next tick: nothing stays, nothing counts.
+  const Plan idle = PlanUndo({Of(5, false, {}, {script, aggressive})}, kNoTargets);
+  WXT_CHECK(Removed(idle) == (std::vector<int>{kSimId}));
+  WXT_CHECK_EQ(idle.dropped, 0);
+  // A replacing attack-move's script heads the emptied queue as well.
+  const Plan replaced = PlanUndo({Of(6, true, {Order(1, "Move", 5, 5)}, {script, aggressive})}, kNoTargets);
+  WXT_CHECK(Removed(replaced) == (std::vector<int>{kSimId}));
+  WXT_CHECK_EQ(replaced.dropped, 0);
+  WXT_CHECK(Clicks(replaced).size() == 1);
 }
 
 WXT_TEST(GriffUndoAReplacedQueueIsGivenAgainEveryClickWithShift)
@@ -309,6 +343,64 @@ WXT_TEST(GriffUndoWhatAUnitFinishedSinceIsNotGivenAgain)
   WXT_CHECK(Removed(plan) == (std::vector<int>{7}));
   WXT_CHECK(plan.groups.empty());
   WXT_CHECK_EQ(plan.dropped, 0);
+}
+
+WXT_TEST(GriffUndoWhatAReplacedUnitFinishedBeforeTheReplacementLandedIsNotGivenAgain)
+{
+  // A network game: the sim ran the old queue a lag on, and the tank reached A before the replacing move landed.
+  const Entry a = Order(1, "Move", 10, 10);
+  const Entry b = Order(2, "Move", 20, 20);
+  const Plan plan = PlanUndo({Taken(Of(4, true, {a, b}, {Order(9, "Move", 50, 50)}), {b})}, kNoTargets);
+  WXT_CHECK(Removed(plan) == (std::vector<int>{9}));
+  WXT_CHECK_EQ(plan.dropped, 0);
+  const std::vector<Click> clicks = Clicks(plan);
+  WXT_CHECK(clicks.size() == 1 && clicks[0].way == Way::kMove && clicks[0].place.x == 20 && clicks[0].shift);
+  // What the sim held then that the gesture began without (its own, as a rally point it refilled) is none of the unit's to
+  // give back; only the queue as it began comes back, in its order.
+  const Entry sims = Order(kSimId, "Move", 30, 30);
+  const std::vector<Click> again = Clicks(PlanUndo({Taken(Of(4, true, {a, b}, {Order(9, "Move", 50, 50)}), {b, sims, a})}, kNoTargets));
+  WXT_CHECK(again.size() == 2 && again[0].place.x == 10 && again[1].place.x == 20);
+  // A unit that finished all of it: nothing comes back, nothing counts.
+  const Plan done = PlanUndo({Taken(Of(4, true, {a, b}, {Order(9, "Move", 50, 50)}), {})}, kNoTargets);
+  WXT_CHECK(done.groups.empty());
+  WXT_CHECK_EQ(done.dropped, 0);
+  // Appended to, the unit gives nothing back whatever the sim held.
+  const Plan appended = PlanUndo({Taken(Of(4, false, {a, b}, {b, Order(9, "Move", 50, 50)}), {b})}, kNoTargets);
+  WXT_CHECK(Removed(appended) == (std::vector<int>{9}));
+  WXT_CHECK(appended.groups.empty());
+}
+
+WXT_TEST(GriffUndoAFactorysOwnQueueIsReadApartFromItsRallyRoute)
+{
+  // FAF's orders panel's Stop on a land factory with five tanks queued and a rally point: ISSUE_Command clears the factory's
+  // own queue (its build queue), not the route. What it lost cannot come back by a click: it counts, the route stays. A
+  // factory's build as the program reads it: no place, no building's name (EntryOf names a BuildMobile's only).
+  const Entry route = Order(kSimId, "Move", 30, 31);
+  std::vector<Entry> queued;
+  for (int at = 0; at < 5; ++at) {
+    queued.push_back(Order(10 + at, "BuildFactory", kNone, kNone));
+  }
+  const Plan stopped = PlanUndo({Of(1, true, queued, {}), Refilled(Of(1, false, {route}, {route}))}, kNoTargets);
+  WXT_CHECK(stopped.removals.empty());
+  WXT_CHECK(stopped.groups.empty());
+  WXT_CHECK_EQ(stopped.dropped, 5);
+  // An attack-move to tanks and the factory: its script replaced the factory's own queue too, which heads it.
+  const Entry script = Task(Order(6, "Script", 40, 40), "AttackMove");
+  const Plan attack = PlanUndo({Of(1, true, queued, {script}), Refilled(Of(1, false, {route}, {route}))}, kNoTargets);
+  WXT_CHECK(attack.removals.empty());
+  WXT_CHECK_EQ(attack.dropped, 5);
+  // Its rally point replaced while its own queue got an assist: each queue comes back by its own way, in a run each.
+  const Entry assist = On(Order(7, "Guard", 60, 60), 88);
+  const Plan both = PlanUndo({Of(1, false, queued, {queued[0], queued[1], queued[2], queued[3], queued[4], assist}),
+                              Refilled(Of(1, true, {route}, {Order(8, "Move", 20, 20)}))},
+                             kNoTargets);
+  WXT_CHECK(Removed(both) == (std::vector<int>{7}));
+  WXT_CHECK_EQ(both.dropped, 0);
+  WXT_CHECK_EQ(both.groups.size(), std::size_t{1});
+  if (both.groups.size() == 1) {
+    WXT_CHECK(both.groups[0].units == (std::vector<int>{1}));
+    WXT_CHECK(both.groups[0].clicks.size() == 1 && both.groups[0].clicks[0].place.x == 30 && !both.groups[0].clicks[0].shift);
+  }
 }
 
 WXT_TEST(GriffUndoACommandOfManyUnitsIsTakenOutOnce)

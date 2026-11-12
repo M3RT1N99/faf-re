@@ -178,13 +178,17 @@ the game data they imported. Everything lives in the app's external files folder
     a bar of the time it has left; a tap on it takes the gesture's orders back with a PC player's inputs, once the game
     has taken them: each order of the gesture's goes by FAF's Shift+Ctrl right click on its waypoint, which takes it from
     all of its units, so a queue it was appended to stays as it was (a building begun goes on) and a unit that was idle is
-    idle again; what an order replaced comes back by FAF's order modes and clicks, all queued with Shift (a building by
-    its name, one begun by its repair, an order on a unit where that unit is now and only while the cursor is on it; a
-    factory's rally route by a first click that replaces). A route, a tick of the draft and a ground double tap are one
-    undo each. Only the last order counts: one of FAF's build keys, a template, the keyboard's keys or the construction
-    panel (an enhancement, a factory's queue) takes the pill away. While it waits for the game or a finger's pan or box and
-    its clicks run the pill says *Undo…*; what cannot come back (an enhancement the order took, an order on a unit that is
-    gone) or go makes the screen say *Undone in part*. Each order of Griff's gestures leaves pins at its places for 1.5 s,
+    idle again; what an order replaced and the game still held when the order arrived (a network game's delay later)
+    comes back by FAF's order modes and clicks, all queued with Shift (a building by its name, one begun by its repair, an
+    order on a unit where that unit is now and only while the cursor is on it; a factory's rally route by a first click
+    that replaces). A route, a tick of the draft and a ground double tap are one undo each. Only the last order counts: one
+    of FAF's build keys, a template, the keyboard's keys or the construction panel (an enhancement, a factory's queue) takes
+    the pill away; FAF's own upgrade for an assist (its assist-to-upgrade option) does not. While it waits for the game
+    (the fingers free meanwhile) or a finger's pan or box and its clicks run the pill says *Undo…*; what cannot come back
+    (an enhancement the order took, a factory's builds a Stop took, an order on a unit that is gone) or go (the attack-move's
+    script left behind an order the unit kept) makes the screen say *Undone in part*; an undo whose clicks ended before
+    they made anything, or that an order or the game's end came before, says *Not undone*, and in the first case the pill
+    offers it again. Each order of Griff's gestures leaves pins at its places for 1.5 s,
     in the colour of its kind (move, attack, patrol, build), beside FAF's own blips; FAF's ghost and keys leave none.
   - Not there yet: control groups (Griff has no Ctrl to make one).
 - **FAF's newest version** (card 5, *Get FAF's newest version*; `FafRelease`, `NewestGameFiles`, TestService's

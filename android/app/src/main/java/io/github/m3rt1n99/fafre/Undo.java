@@ -4,13 +4,22 @@ package io.github.m3rt1n99.fafre;
  * The touch scheme Griff's undo as its pill shows it (buildstage/griff-v3-spec.md T3.1, the mockup's armUndo and doUndo): for
  * 3 s after a gesture ordered, a tap on the pill takes the gesture's orders back. One level: a new order's record replaces
  * the last, and any other order ends it (the program says so as a record 0). The program holds the record (GriffAndroid.cpp,
- * include/GriffUndo.h) and says when one is made (Game.SAID_ORDERED) and when it was taken back (Game.SAID_UNDONE), which
+ * include/GriffUndo.h) and says when one is made (Game.SAID_ORDERED) and when its undo is over (Game.SAID_UNDONE), which
  * takes as long as the sim takes to take the gesture and FAF's clicks that take its orders back run. Between the tap and then
- * the pill says it waits, also past its 3 s.
+ * the pill says it waits, also past its 3 s. An undo that clicked nothing leaves the record as it was: the program tells it
+ * anew, and the pill offers it again for its 3 s.
  */
 final class Undo {
     /** How long the pill stays after an order. */
     static final long MILLISECONDS = 3000;
+
+    /** The toast's word for what an undo did (Game.UNDONE_): none for all of the gesture's orders taken back. */
+    static String word(int undone) {
+        if (undone == Game.NOT_UNDONE) {
+            return "Not undone";
+        }
+        return undone == Game.UNDONE_IN_PART ? "Undone in part" : null;
+    }
 
     /** The record (0: none), when it was made, and whether the pill was tapped for it. */
     private int mRecord;
@@ -53,7 +62,7 @@ final class Undo {
         return mRecord;
     }
 
-    /** The program took record `record` back: the pill goes. */
+    /** The undo of record `record` is over, whatever it did: the pill goes. */
     void undone(int record) {
         if (record == mRecord) {
             mRecord = 0;

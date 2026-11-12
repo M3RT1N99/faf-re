@@ -196,6 +196,14 @@ final class Game {
     static final int SAID_ORDERED = 6;
     static final int SAID_UNDONE = 7;
 
+    /**
+     * SAID_UNDONE: what the undo did, all of the gesture's orders taken back, part of them, or none, where it had something to
+     * take out or give back and made no release and no click (its clicks ended first).
+     */
+    static final int UNDONE_WHOLE = 0;
+    static final int UNDONE_IN_PART = 1;
+    static final int NOT_UNDONE = 2;
+
     /** SAID_TOAST: what the draft says (GameActivity's words), with a number where it counts. */
     static final int TOAST_NO_FREE_RESOURCE = 1;
     static final int TOAST_TAKEN = 2;
@@ -237,8 +245,8 @@ final class Game {
      * shifted by 8; SAID_ROUTE_GIVEN_UP: a route ended on a panel; SAID_TOAST: what the draft says (TOAST_) and its number;
      * SAID_COMMITTED: the draft was ticked, with the rail's bits it used; SAID_PAN: a drag's number ({@link #griffDrag}) that the
      * program made a pan of; SAID_ORDERED: a gesture ordered, the number of its record, which the undo's pill takes back from
-     * now on, or 0: an order no gesture's ended the record; SAID_UNDONE: the record of this number was taken back, 1 if only
-     * in part.
+     * now on (a record told anew after its undo was not done is offered again), or 0: an order no gesture's ended the record;
+     * SAID_UNDONE: the undo of the record of this number is over, and what it did (UNDONE_).
      */
     static native int griffSaid(int[] said);
 

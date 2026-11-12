@@ -2,11 +2,12 @@ package io.github.m3rt1n99.fafre;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
-/** Griff's undo as its pill shows it: 3 s after an order, one level, a tap once, the waiting mark. */
+/** Griff's undo as its pill shows it: 3 s after an order, one level, a tap once, the waiting mark, the toast's word. */
 public class UndoTest {
     private final Undo undo = new Undo();
 
@@ -85,6 +86,42 @@ public class UndoTest {
         undo.ordered(2, 200);
         assertFalse(undo.waiting());
         assertEquals(2, undo.tap(300));
+    }
+
+    @Test
+    public void theToastSaysWhetherTheUndoTookBackPartOfTheOrdersOrNone() {
+        assertNull("all of them: no word", Undo.word(Game.UNDONE_WHOLE));
+        assertEquals("Undone in part", Undo.word(Game.UNDONE_IN_PART));
+        assertEquals("Not undone", Undo.word(Game.NOT_UNDONE));
+    }
+
+    @Test
+    public void aRecordNotUndoneThatTheProgramTellsAgainIsOfferedForItsTimeOnceMore() {
+        // Nothing of it was clicked (its clicks ended before their first step): the record holds, and the program tells it
+        // anew after the undo's word.
+        undo.ordered(7, 0);
+        assertEquals(7, undo.tap(1000));
+        undo.undone(7);
+        assertFalse(undo.showing(1100));
+        undo.ordered(7, 5000);
+        assertTrue(undo.showing(5000));
+        assertFalse("not tapped", undo.waiting());
+        assertEquals(1, undo.left(5000), 0);
+        assertTrue(undo.showing(7999));
+        assertFalse(undo.showing(8000));
+        assertEquals("tapped again", 7, undo.tap(6000));
+        assertTrue(undo.waiting());
+    }
+
+    @Test
+    public void aRecordNotUndoneThatTheProgramDroppedIsGone() {
+        // A new order ended it while its undo waited for the sim, or the game did: the pill goes with the word.
+        undo.ordered(8, 0);
+        assertEquals(8, undo.tap(100));
+        undo.undone(8);
+        assertFalse(undo.showing(200));
+        assertFalse(undo.waiting());
+        assertEquals(0, undo.tap(200));
     }
 
     @Test

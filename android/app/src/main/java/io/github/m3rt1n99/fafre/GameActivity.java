@@ -120,8 +120,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double PILL_OVER_H = 0.3;
     private static final double H_SCREEN_MM = 73;
     private static final double H_LEAST = 0.7;
-    /** Griff's word for an undo that could not give every order back. */
-    private static final String UNDONE_IN_PART = "Undone in part";
     private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
@@ -1441,8 +1439,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     mUndo.undone(mGriffSaid[at + 1]);
                     // The undo's last click left the pointer on the map, as the tick's.
                     mTouchMouse.leaveSoon();
-                    if (mGriffSaid[at + 2] != 0) {
-                        mGriffLayer.toast(UNDONE_IN_PART);
+                    String word = Undo.word(mGriffSaid[at + 2]);
+                    if (word != null) {
+                        mGriffLayer.toast(word);
                     }
                 }
             }

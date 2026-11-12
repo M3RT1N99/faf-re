@@ -22,7 +22,6 @@
 #include <deque>
 #include <exception>
 #include <iterator>
-#include <map>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -484,24 +483,21 @@ namespace
   };
 
   /// The clicks that run (ClickStepTask), one a task, so that each sees what the one before did, and what comes after the last
-  /// of them (`finish`), also once the game is over. They may wait for the sim first: until it has taken what the UI ordered
-  /// the `awaited` units (no edit of their queues pending) or `awaitUntil`, then `plan` makes the steps. A place the free map
-  /// does not show gets the camera first, as high and turned as it is, and its click after the next frame that drew it there;
-  /// a building whose cell no pixel lands in gets it closer (`closer`, once a step). A place that no frame brought onto the
-  /// free map, or that no pixel lands on then, is not clicked (`unreached`). An aimed step waits for FAF's cursor at most
-  /// kClickFrames frames (`aims`): a target it never picked is `missed`, a command it never hovered `unremoved`. The orders
-  /// FAF's UI gave for a click are counted (FafreGriffOrdered), up to the next step, which comes after the click's input: a
-  /// click that gave none was `refused`, as where the ground was taken meanwhile, one that gave an order on another entity
-  /// than its target `missed`. A removal is checked in its units' queues after its input. Units of a run that FAF selected as
-  /// another unit (a transport carrying them) are `leftOut`.
+  /// of them (`finish`), also once the game is over. A place the free map does not show gets the camera first, as high and
+  /// turned as it is, and its click after the next frame that drew it there; a building whose cell no pixel lands in gets it
+  /// closer (`closer`, once a step). A place that no frame brought onto the free map, or that no pixel lands on then, is not
+  /// clicked (`unreached`), nor is a step the clicks did not come to, as they ended without a frame, a game or after a throw.
+  /// An aimed step waits for FAF's cursor at most kClickFrames frames (`aims`): a target it never picked is `missed`, a
+  /// command it never hovered `unremoved`. The orders FAF's UI gave for a click are counted (FafreGriffOrdered), up to the
+  /// next step, which comes after the click's input: a click that gave none was `refused`, as where the ground was taken
+  /// meanwhile, one that gave an order on another entity than its target `missed`. A removal is checked in its units'
+  /// queues after its input. Units of a run that FAF selected as another unit (a transport carrying them) are `leftOut`.
+  /// How many releases and clicks were made (`acted`), and how many orders FAF's UI gave while the clicks ran (`orders`).
   struct Clicks
   {
     std::vector<ClickStep> steps;
     bool appendAll = false;
     void (*finish)() = nullptr;
-    std::vector<int> awaited;
-    std::int64_t awaitUntil = 0;
-    void (*plan)() = nullptr;
     std::size_t next = 0;
     int run = -1;
     int orderedInRun = 0;
@@ -519,6 +515,7 @@ namespace
     std::vector<int> released;
     std::int64_t releasedAt = 0;
     bool redrawn = false;
+    bool lifted = false;
     int ordered = 0;
     int orderedTarget = griffundo::kNoTarget;
     int unreached = 0;
@@ -526,6 +523,8 @@ namespace
     int missed = 0;
     int unremoved = 0;
     int leftOut = 0;
+    int acted = 0;
+    int orders = 0;
   };
 
   Clicks gClicks;
@@ -559,22 +558,60 @@ namespace
   float gOrdersLeft = -1;
   float gOrdersRight = -1;
 
-  /// A unit as a gesture began: its queue, each command by its own id, and the building it was building (its focus).
+  /// A command queue's newest edit as the UI made it (UserCommandQueue::issueQueue's back), by which the queue an order went
+  /// into is told: ISSUE_Command (a unit's own queue) and ISSUE_FactoryCommand (a factory's rally route, where FAF's move,
+  /// patrol and transport arms send a selection's factories their order) push their edit last and then tell FAF's UI of the
+  /// order (UI_OnCommandIssued), and the sync drops edits from the front only.
+  struct Mark
+  {
+    const moho::UserCommandIssueHelper* helper = nullptr;
+    moho::CmdId beat = 0;
+    moho::EUserQueueEdit edit = moho::EUserQueueEdit::Reset;
+    bool any = false;
+
+    [[nodiscard]] bool operator==(const Mark&) const = default;
+  };
+
+  /// One of a unit's command queues as a gesture began, and what the gesture's orders did to it: its orders then (as FAF's UI
+  /// held them, each command by its own id), its newest edit as last seen, whether an order of the gesture's went into it and
+  /// whether one replaced it (FAF's Clear). From the first that replaced it the sim runs the queue as it was until the sync
+  /// reaches that order's beat (`command`, `beat`), a network delay after the input: what the sim holds of it is read each
+  /// frame until then (`taken`), and kept from then on (`landed`), also where the replacement left the queue empty (a Stop)
+  /// or the sim gave orders of its own after it (the attack-move's AggressiveMove).
+  struct Queue
+  {
+    std::vector<griffundo::Entry> before;
+    Mark mark;
+    bool ordered = false;
+    bool replaced = false;
+    bool snapshot = false;
+    bool landed = false;
+    int command = 0;
+    moho::CmdId beat = 0;
+    std::vector<griffundo::Entry> taken;
+  };
+
+  /// A unit as a gesture began: its own queue, a factory's rally route apart (UserUnit::GetFactoryCommandQueue: the route the
+  /// units it builds take on; its own holds what it builds), and the building it was building (its focus).
   struct Stored
   {
-    std::vector<griffundo::Entry> queue;
+    Queue own;
+    Queue route;
     int focus = griffundo::kNoTarget;
   };
 
   /// The gesture whose orders are watched (WatchOrders to EndWatch), by its number (0: none): the selection's units as it
-  /// began (none for the tap ladder's attack-move, which `joins` the move's record), and the units its orders went to, with
-  /// whether one replaced what they did (FAF's Clear).
+  /// began (none for the tap ladder's attack-move, which `joins` the move's record and notes its orders there), whether its
+  /// orders went to units it knew no queue of (not selected as it began), the units its Guards went to, the upgrades FAF
+  /// ordered them for those Guards (AssistsUpgrade), and whether it ordered at all.
   struct Watch
   {
     int number = 0;
     bool joins = false;
     std::unordered_map<int, Stored> stored;
-    std::map<int, bool> ordered;
+    bool unknown = false;
+    std::unordered_set<int> guarded;
+    int upgrades = 0;
     bool any = false;
   };
 
@@ -582,15 +619,17 @@ namespace
   int gWatches = 0;
 
   /// The last gesture that ordered, which the undo's pill takes back: its number (0: none), whether the pill asked for its
-  /// undo, which comes once no clicks run, its units as it began and those it ordered, and whether it ordered units it knew
-  /// no queue of (not selected as it began). One level: the next gesture's replaces it, and any other order ends it.
+  /// undo, which comes once the sim took the gesture and no clicks run, its units as it began with what its orders did to
+  /// their queues, whether it ordered units it knew no queue of, the units its Guards went to and the upgrades FAF ordered
+  /// for them. One level: the next gesture's replaces it, and any other order ends it.
   struct Record
   {
     int number = 0;
     bool asked = false;
     std::unordered_map<int, Stored> stored;
-    std::map<int, bool> ordered;
     bool unknown = false;
+    std::unordered_set<int> guarded;
+    int upgrades = 0;
   };
 
   Record gRecord;
@@ -602,6 +641,11 @@ namespace
     Record record;
     int dropped = 0;
   };
+
+  // Game's UNDONE_WHOLE, UNDONE_IN_PART and NOT_UNDONE: what SAID_UNDONE says an undo did.
+  constexpr int kUndoneWhole = 0;
+  constexpr int kUndoneInPart = 1;
+  constexpr int kNotUndone = 2;
 
   Undoing gUndoing;
 
@@ -836,6 +880,8 @@ namespace
   void TryUndo();
   void DraftCommitTask(WPARAM plus);
   [[nodiscard]] bool ClicksRun();
+  void ReadTaken(std::unordered_map<int, Stored>& stored);
+  void DropRecord();
 
   /// A tick that waits until no clicks run and no finger's drag holds FAF's dragger (DraftCommitTask): whether Plus counted
   /// for it, plus one; 0: none.
@@ -871,8 +917,9 @@ namespace
   /// panels at the map's middle hardly change, and the walk costs a frame up to a ms; it runs while pins show, which keep to
   /// the free map. While a draft is open there is no handle (the mockup's: no stroke starts), and the draft is shown each
   /// frame, as the camera moves its plans, as are the orders' pins; without the map's view its plans have no place on the
-  /// picture, and none shows rather than where an earlier frame drew them. An undo the pill asked for and a tick that wait
-  /// for clicks or a finger's drag come now, the undo first, which was asked for the gesture before the tick.
+  /// picture, and none shows rather than where an earlier frame drew them. What the sim holds of the queues a gesture's orders
+  /// replaced is read until their replacement landed. An undo the pill asked for and a tick that wait for the sim, clicks or a
+  /// finger's drag come now, the undo first, which was asked for the gesture before the tick.
   void PlaceTask(const WPARAM)
   {
     // The clicks' next step once a frame after the one it waits after is drawn: this task comes after each frame's paint, and
@@ -884,6 +931,8 @@ namespace
     }
     const Selection selection = gSelection;
     try {
+      ReadTaken(gWatch.stored);
+      ReadTaken(gRecord.stored);
       if (gRecord.asked) {
         TryUndo();
       }
@@ -1018,9 +1067,9 @@ namespace
     ForgetDraft();
     gConstructionTop = -1;
     gColumnLeft = -1;
-    // The orders of this game: no watch, record, pin or pill any more.
+    // The orders of this game: no watch, record, pin or pill any more; an undo the pill asked for that waits is not done.
     gWatch = Watch{};
-    gRecord = Record{};
+    DropRecord();
     gPins.Clear();
     gUnitViewTop = -1;
     gOrdersLeft = -1;
@@ -1183,12 +1232,10 @@ namespace
     return static_cast<int>(entity.mParams.mEntityId);
   }
 
-  /// The queue of a unit's that its orders go to, as UserUnit:GetCommandQueue reads it: a factory's rally route, which the
-  /// units it builds take on, else its own.
-  [[nodiscard]] moho::UserCommandQueue* OrdersQueue(moho::UserUnit& unit)
+  /// One of a unit's command queues: its own, or a factory's rally route (none for other units).
+  [[nodiscard]] moho::UserCommandQueue* CommandsOf(moho::UserUnit& unit, const bool route)
   {
-    moho::UserCommandQueue* const factory = unit.GetFactoryCommandQueue();
-    return factory != nullptr ? factory : unit.GetCommandQueue();
+    return route ? unit.GetFactoryCommandQueue() : unit.GetCommandQueue();
   }
 
   /// A command of a queue as the undo reads it: by its own id, the engine's whole one; where FAF draws its waypoint, which is
@@ -1220,11 +1267,10 @@ namespace
     return entry;
   }
 
-  /// A unit's orders as FAF's UI holds them now: what the sim took, with the UI's edits it has not taken yet over it.
-  [[nodiscard]] std::vector<griffundo::Entry> QueueOf(moho::UserUnit& unit)
+  /// A queue's orders as FAF's UI holds them now: what the sim took, with the UI's edits it has not taken yet over it.
+  [[nodiscard]] std::vector<griffundo::Entry> QueueOf(moho::UserCommandQueue* const commands)
   {
     std::vector<griffundo::Entry> queue;
-    moho::UserCommandQueue* const commands = OrdersQueue(unit);
     if (commands == nullptr) {
       return queue;
     }
@@ -1236,22 +1282,97 @@ namespace
     return queue;
   }
 
-  /// Whether the sim has taken what the UI ordered these units: none of their queues' edits is pending, so their queues are
-  /// the sim's (UserCommandQueue::issueQueue). A unit that is gone has none.
-  [[nodiscard]] bool SimTook(const std::vector<int>& units)
+  /// What the sim holds of a queue as of the last sync, without the UI's edits: its primary links, which the sync sets from
+  /// the unit's commands (ResyncUserCommandQueueLinks).
+  [[nodiscard]] std::vector<griffundo::Entry> HeldOf(moho::UserCommandQueue& commands)
   {
-    return std::all_of(units.begin(), units.end(), [](const int id) {
-      moho::UserUnit* const unit = UnitOf(id);
+    std::vector<griffundo::Entry> queue;
+    for (const moho::WeakPtr<moho::UserCommandIssueHelper>& link : commands.primaryLinks) {
+      if (moho::UserCommandIssueHelper* const helper = link.GetObjectPtr(); helper != nullptr) {
+        queue.push_back(EntryOf(*helper));
+      }
+    }
+    return queue;
+  }
+
+  [[nodiscard]] Mark MarkOf(const moho::UserCommandQueue& commands)
+  {
+    if (commands.issueQueue.empty()) {
+      return Mark{};
+    }
+    const moho::UserManagerHelperEntry& edit = commands.issueQueue.back();
+    return Mark{edit.mHelper, edit.mCommandId, edit.mEdit, true};
+  }
+
+  /// Whether the sync has reached a beat for a queue: no edit of that beat waits in the queue (UserUnit::Tick drops them as
+  /// the sync reaches their beat; a later replacing order of the gesture's clears them too), nor in the helper of the command
+  /// issued for it, which keeps the units it went to as events of that beat until the sync reaches it
+  /// (UserCommandIssueHelper::AdvanceLocalEventsToBeat) and is gone from then on where the sim did not take the command. Both
+  /// go in the same DoBeat that sets the queue's primary links from what the sim did at that beat. Beats as the engine
+  /// compares them.
+  [[nodiscard]] bool SyncReached(const moho::UserCommandQueue& commands, const int command, const moho::CmdId beat)
+  {
+    const auto waits = [beat](const moho::CmdId due) { return due - beat <= 0; };
+    for (std::size_t at = 0; at < commands.issueQueue.size(); ++at) {
+      if (waits(commands.issueQueue[at].mCommandId)) {
+        return false;
+      }
+    }
+    const moho::UserCommandIssueHelper* const helper =
+      moho::FindCommandIssueHelperInSession(moho::WLD_GetActiveSession(), static_cast<moho::CmdId>(command));
+    if (helper != nullptr) {
+      for (std::size_t at = 0; at < helper->mLocalQueue.size(); ++at) {
+        if (waits(helper->mLocalQueue[at].mCmdId)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /// What the sim holds of the queues the gesture's orders replaced, read each frame until the replacement landed: from then
+  /// on it is what the units still held when it did. Each read comes after the frame's syncs (DoBeat), so the sync that
+  /// brings the replacement ends the reading before its view is read.
+  void ReadTaken(std::unordered_map<int, Stored>& stored)
+  {
+    for (auto& [id, kept] : stored) {
+      const bool reading = (kept.own.snapshot && !kept.own.landed) || (kept.route.snapshot && !kept.route.landed);
+      moho::UserUnit* const unit = reading ? UnitOf(id) : nullptr;
+      for (const bool route : {false, true}) {
+        Queue& queue = route ? kept.route : kept.own;
+        if (!queue.snapshot || queue.landed) {
+          continue;
+        }
+        moho::UserCommandQueue* const commands = unit != nullptr ? CommandsOf(*unit, route) : nullptr;
+        if (commands == nullptr || SyncReached(*commands, queue.command, queue.beat)) {
+          queue.landed = true;
+        } else {
+          queue.taken = HeldOf(*commands);
+        }
+      }
+    }
+  }
+
+  /// Whether the sim has taken what the UI ordered the units: none of their queues' edits is pending, so their queues are the
+  /// sim's (UserCommandQueue::issueQueue), a factory's own and its rally route alike. A unit that is gone has none.
+  [[nodiscard]] bool SimTook(const std::unordered_map<int, Stored>& stored)
+  {
+    return std::all_of(stored.begin(), stored.end(), [](const auto& item) {
+      moho::UserUnit* const unit = item.second.own.ordered || item.second.route.ordered ? UnitOf(item.first) : nullptr;
       if (unit == nullptr) {
         return true;
       }
-      const moho::UserCommandQueue* const commands = unit->GetCommandQueue();
-      const moho::UserCommandQueue* const factory = unit->GetFactoryCommandQueue();
-      return (commands == nullptr || commands->issueQueue.empty()) && (factory == nullptr || factory->issueQueue.empty());
+      for (const bool route : {false, true}) {
+        const moho::UserCommandQueue* const commands = CommandsOf(*unit, route);
+        if (commands != nullptr && !commands->issueQueue.empty()) {
+          return false;
+        }
+      }
+      return true;
     });
   }
 
-  /// The selection's units as a gesture begins, for its undo.
+  /// The selection's units as a gesture begins, for its undo: each queue's orders and its newest edit.
   [[nodiscard]] std::unordered_map<int, Stored> StoreSelection()
   {
     std::unordered_map<int, Stored> stored;
@@ -1262,9 +1383,49 @@ namespace
     msvc8::vector<moho::UserUnit*> units;
     session->GetSelectionUnits(units);
     for (moho::UserUnit* const unit : units) {
-      stored[IdOf(*unit)] = Stored{QueueOf(*unit), static_cast<int>(unit->mUnitVarDat.mFocusUnit)};
+      Stored& kept = stored[IdOf(*unit)];
+      for (const bool route : {false, true}) {
+        moho::UserCommandQueue* const commands = CommandsOf(*unit, route);
+        Queue& queue = route ? kept.route : kept.own;
+        queue.before = QueueOf(commands);
+        queue.mark = commands != nullptr ? MarkOf(*commands) : Mark{};
+      }
+      kept.focus = static_cast<int>(unit->mUnitVarDat.mFocusUnit);
     }
     return stored;
+  }
+
+  /// An order of the watched gesture's went to a unit selected as it began: into the queue whose newest edit it is now, which
+  /// it replaced if `clear`. The first that replaced the queue starts the reading of what the sim holds of it, until the sync
+  /// reaches that order's beat: the beat of the Reset it put at the queue's front, as the edits of the orders before it in
+  /// the queue went with it (ResetUserUnitManagerState). The sim's view now is the first read.
+  void NoteOrder(const int id, Stored& kept, const bool clear)
+  {
+    moho::UserUnit* const unit = UnitOf(id);
+    if (unit == nullptr) {
+      return;
+    }
+    for (const bool route : {false, true}) {
+      moho::UserCommandQueue* const commands = CommandsOf(*unit, route);
+      Queue& queue = route ? kept.route : kept.own;
+      const Mark mark = commands != nullptr ? MarkOf(*commands) : Mark{};
+      if (!mark.any || mark.edit != moho::EUserQueueEdit::Add || mark.helper == nullptr || mark == queue.mark) {
+        continue;
+      }
+      queue.mark = mark;
+      queue.ordered = true;
+      if (!clear || queue.replaced) {
+        continue;
+      }
+      queue.replaced = true;
+      const moho::UserManagerHelperEntry& reset = commands->issueQueue.front();
+      if (reset.mEdit == moho::EUserQueueEdit::Reset) {
+        queue.snapshot = true;
+        queue.beat = reset.mCommandId;
+        queue.command = static_cast<int>(mark.helper->mConstantData.cmd);
+        queue.taken = HeldOf(*commands);
+      }
+    }
   }
 
   /// The selection's units now.
@@ -1341,35 +1502,81 @@ namespace
 
   void FinishUndo();
 
+  /// The record goes: an undo the pill asked for it that waits is not done, and the activity hears so (SAID_UNDONE), never
+  /// that it just went.
+  void DropRecord()
+  {
+    if (gRecord.number != 0 && gRecord.asked) {
+      Say(kSaidUndone, gRecord.number, kNotUndone);
+    }
+    gRecord = Record{};
+  }
+
   /// The pill's record is gone: an order came that no gesture's watch counted, and only the last order counts.
   void EndRecord()
   {
     if (gRecord.number != 0) {
-      gRecord = Record{};
+      DropRecord();
       Say(kSaidOrdered, 0, 0);
     }
   }
 
+  /// FAF's assist-to-upgrade (its options assist_to_upgrade and assist_to_upgrade_radar): its UI orders an extractor's or a
+  /// radar's upgrade a frame or more after a Guard on it (commandmode.lua OnGuardIssued forks UpgradeUnit, which may wait for
+  /// an unpause first). Such an Upgrade of the target of a Guard that the watch, the record or the undo that runs holds is that
+  /// Guard's by-product: it neither ends nor joins the record, which notes it, as the undo takes the Guard out and leaves the
+  /// upgrade going.
+  [[nodiscard]] bool AssistsUpgrade(const std::string& type, const std::vector<int>& units)
+  {
+    if (type != "Upgrade" || units.size() != 1) {
+      return false;
+    }
+    if (gWatch.number != 0 && gWatch.guarded.count(units.front()) != 0) {
+      ++gWatch.upgrades;
+      return true;
+    }
+    for (Record* const record : {&gRecord, &gUndoing.record}) {
+      if (record->number != 0 && record->guarded.count(units.front()) != 0) {
+        ++record->upgrades;
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Of every order FAF's UI gives: its count for the clicks that run, with the entity it targets. A watched gesture's that
-  /// is one to take back (griffundo::Takeable) is pinned at its place and joins the gesture's record with its units; any other
-  /// but the undo's own ends the pill's record: FAF's ghost from a build key or a template, the Keys keyboard's hotkeys, the
-  /// construction panel's own queue.
+  /// is one to take back (griffundo::Takeable) is pinned at its place and noted in the queues of its units that it went into;
+  /// any other but the undo's own and FAF's upgrade for an assist ends the pill's record: FAF's ghost from a build key or a
+  /// template, the Keys keyboard's hotkeys, the construction panel's own queue.
   int Ordered(lua_State* const lua)
   {
     const std::string type = Text(lua, 1);
     const bool attackMove = Whole(lua, 2) != 0;
+    const std::vector<int> units = EntityIdsOf(Text(lua, 4));
+    const int target = EntityIdOf(Text(lua, 9));
+    if (AssistsUpgrade(type, units)) {
+      return 0;
+    }
     if (gClicking) {
       ++gClicks.ordered;
-      gClicks.orderedTarget = EntityIdOf(Text(lua, 9));
+      ++gClicks.orders;
+      gClicks.orderedTarget = target;
     }
     if (gWatch.number != 0 && griffundo::Takeable(type, attackMove)) {
       if (Whole(lua, 5) != 0) {
         gPins.Add(Number(lua, 6), Number(lua, 7), Number(lua, 8), griffpins::KindOf(type, attackMove), Now());
       }
       const bool clear = Whole(lua, 3) != 0;
-      for (const int unit : EntityIdsOf(Text(lua, 4))) {
-        bool& replaced = gWatch.ordered[unit];
-        replaced = replaced || clear;
+      std::unordered_map<int, Stored>& stored = gWatch.joins ? gRecord.stored : gWatch.stored;
+      for (const int unit : units) {
+        if (const auto kept = stored.find(unit); kept != stored.end()) {
+          NoteOrder(unit, kept->second, clear);
+        } else {
+          gWatch.unknown = true;
+        }
+      }
+      if (type == "Guard" && target != griffundo::kNoTarget) {
+        gWatch.guarded.insert(target);
       }
       gWatch.any = true;
     } else if (!(gClicking && gClicks.finish == &FinishUndo)) {
@@ -1407,8 +1614,10 @@ namespace
   // --- The watch over a gesture's orders ------------------------------------------------------------------------------------
 
   /// The watched gesture is over: if it ordered, it is the record the pill takes back from now on, one level, and the
-  /// activity hears of it (SAID_ORDERED). The tap ladder's attack-move adds to the move's record, whose time goes on. A unit
-  /// the gesture ordered whose queue was not known as it began (not selected then) is not taken back.
+  /// activity hears of it (SAID_ORDERED); an undo the pill asked for the record it replaces is not done. The tap ladder's
+  /// attack-move adds to the move's record, whose time goes on, and noted its orders there; where that record ended
+  /// meanwhile, its units' queues are not known. A unit the gesture ordered whose queue was not known as it began (not
+  /// selected then) is not taken back.
   void EndWatch()
   {
     if (gWatch.number == 0) {
@@ -1420,15 +1629,14 @@ namespace
       return;
     }
     if (!watch.joins || gRecord.number == 0) {
-      gRecord = Record{};
+      DropRecord();
       gRecord.number = ++gRecords;
       gRecord.stored = std::move(watch.stored);
+      gRecord.unknown = watch.joins;
     }
-    for (const auto& [unit, replaced] : watch.ordered) {
-      bool& known = gRecord.ordered[unit];
-      known = known || replaced;
-      gRecord.unknown = gRecord.unknown || gRecord.stored.count(unit) == 0;
-    }
+    gRecord.unknown = gRecord.unknown || watch.unknown;
+    gRecord.guarded.insert(watch.guarded.begin(), watch.guarded.end());
+    gRecord.upgrades += watch.upgrades;
     Say(kSaidOrdered, gRecord.number, 0);
   }
 
@@ -2367,10 +2575,9 @@ namespace
   /// How long the clicks wait for a frame at most, in ms. Past it the frames do not come (griff.lua's stopped, the activity in
   /// the back), and the clicks would hold the fingers, Shift, the selection and the camera for good.
   constexpr std::int64_t kClicksPatience = 2000;
-  /// How long the undo waits for the sim to take an input, at most, in ms: a network game takes one its lag later (FAF's
-  /// 500 ms and a beat), a paused game never. The gesture's, before the plan, which then reads the queues with the UI's edits
-  /// over the sim's (whose orders the sim takes before the undo's, as it takes a player's inputs in order); a release's, whose
-  /// waypoint FAF's cursor picks until then.
+  /// How long a removal waits at most, in ms, for the sim to take a release whose waypoint FAF's cursor picks until then: a
+  /// network game takes it its lag later (FAF's 500 ms and a beat). The gesture's orders the undo waits for without an end
+  /// (TryUndo), as its fingers are free meanwhile.
   constexpr std::int64_t kSimPatience = 2000;
   /// How many pixels a world unit takes at least where the camera comes closer for a building whose cell no pixel lands in.
   constexpr float kCellPixels = 4;
@@ -2444,12 +2651,16 @@ namespace
     WaitForFrame();
   }
 
-  /// The clicks are over, or the game is: Shift as it was, the camera where it was, then the tick's or the undo's own end.
+  /// The clicks are over, or the game is: Shift as it was (the key down again first where a step lifted it for a frame,
+  /// whatever else holds it), the camera where it was, then the tick's or the undo's own end.
   void FinishClicks()
   {
     gClicking = false;
     gClicksWait = false;
     gClicksWaitSince = 0;
+    if (gClicks.lifted) {
+      Win32Android_Key(VK_SHIFT, kShiftScanCode, TRUE, FALSE, 0);
+    }
     if (gClicks.holdsShift) {
       ReleaseShift();
     }
@@ -2518,11 +2729,11 @@ namespace
     return step.removal || !kept.empty();
   }
 
-  /// Whether a unit holds a command in its queue (as FAF's UI holds it, with the UI's edits over the sim's).
+  /// Whether a unit holds a command in one of its queues (as FAF's UI holds them, with the UI's edits over the sim's).
   [[nodiscard]] bool Holds(moho::UserUnit& unit, const moho::UserCommandIssueHelper* const helper)
   {
-    moho::UserCommandQueue* const commands = OrdersQueue(unit);
-    return commands != nullptr && moho::UserUnitManagerContainsCommandIssueHelper(commands, helper);
+    return moho::UserUnitManagerContainsCommandIssueHelper(unit.GetCommandQueue(), helper)
+        || moho::UserUnitManagerContainsCommandIssueHelper(unit.GetFactoryCommandQueue(), helper);
   }
 
   /// Whether FAF's release took a command out of the units it went to: none holds it any more, or FAF has sent the sim its
@@ -2553,10 +2764,11 @@ namespace
   }
 
   /// Whether FAF's cursor, which went to an aimed step's place a frame ago, is where the step wants it: on the command a
-  /// removal takes out, on the unit a click targets, and for a move's click on no waypoint that every selected unit holds:
-  /// FAF's move mode restarts the selection's moves as a patrol by a click on one of theirs (SCommandModeData::HandleEvent's
-  /// move arm, CanRestartMoveCommandAsPatrol). FAF's move cursor would keep it from hovering waypoints at all (its ignore
-  /// mode), but the console variable it sets, ui_CommandClickScale, is not the one this engine's hover reads.
+  /// removal takes out, on the unit a click targets, and for a move's click on no waypoint whose move FAF's move mode would
+  /// restart as a patrol instead of ordering (SCommandModeData::HandleEvent's move arm asks CanRestartMoveCommandAsPatrol of
+  /// the command its press is on: a move that every selected unit holds, not their last, in queues of moves alone). FAF's
+  /// move cursor would keep it from hovering waypoints at all (its ignore mode), but the console variable it sets,
+  /// ui_CommandClickScale, is not the one this engine's hover reads.
   [[nodiscard]] bool CursorAt(const ClickStep& step)
   {
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
@@ -2572,15 +2784,8 @@ namespace
       return hovered != nullptr && IdOf(*hovered) == step.target;
     }
     if (step.way == griffundo::Way::kMove) {
-      const moho::UserCommandIssueHelper* const hovered = moho::FindCommandIssueHelperInSession(session, cursor.mIsDragger);
-      if (hovered == nullptr) {
-        return true;
-      }
-      msvc8::vector<moho::UserUnit*> selected;
-      session->GetSelectionUnits(selected);
-      return selected.empty() || std::any_of(selected.begin(), selected.end(), [hovered](moho::UserUnit* const unit) {
-        return !moho::UserUnitManagerContainsCommandIssueHelper(unit->GetCommandQueue(), hovered);
-      });
+      moho::UserCommandIssueHelper* const hovered = moho::FindCommandIssueHelperInSession(session, cursor.mIsDragger);
+      return !moho::CanRestartSelectionMoveCommandAsPatrol(session->mSelection, hovered);
     }
     return true;
   }
@@ -2600,15 +2805,18 @@ namespace
     gClicks.removedUnits = std::move(units);
     gClicks.released.push_back(command);
     gClicks.releasedAt = Now();
+    ++gClicks.acted;
   }
 
   /// A removal's place where FAF's cursor hovers another command than the step's: one waypoint within the reach of FAF's
   /// cursor of another, of the selection's units both, either may be hovered (UICommandGraph::ResolveCursorHighlightCommandId
   /// takes the last of them). It is taken out instead, and the step aims again, within its frames: another of the gesture's,
-  /// whose own step then finds it gone; or one of the units' own orders on a place that comes last in their queues but for
-  /// the gesture's, as FAF anchors a patrol given with Shift at the queue's last place, which comes back after the gesture's
-  /// are out by its mode's click with Shift, appended to the steps. False for any other, which stays, and for one released
-  /// already, whose waypoint FAF draws until it draws its graph anew (and a factory's rally route shows until the sim took it).
+  /// whose own step then finds it gone; or an own order on a place that comes last in its units' queues but for the
+  /// gesture's, as FAF anchors a patrol given with Shift at the queue's last place, which comes back after the gesture's are
+  /// out by its mode's click with Shift, appended to the steps. FAF's release takes such an order from every unit it went
+  /// to, the gesture's or not, so it is given back to all of them; where one of them holds a later order of its own, it
+  /// stays, and so does the gesture's waypoint, counted. False for any other, which stays, and for one released already,
+  /// whose waypoint FAF draws until it draws its graph anew (and a factory's rally route shows until the sim took it).
   [[nodiscard]] bool TakeInstead(const int hovered)
   {
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
@@ -2631,7 +2839,9 @@ namespace
     }
     std::vector<int> units;
     for (moho::UserUnit* const unit : *moho::ResolveCommandIssueCursorEntities(*helper)) {
-      const std::vector<griffundo::Entry> queue = QueueOf(*unit);
+      moho::UserCommandQueue* const own = unit->GetCommandQueue();
+      const std::vector<griffundo::Entry> queue =
+        QueueOf(moho::UserUnitManagerContainsCommandIssueHelper(own, helper) ? own : unit->GetFactoryCommandQueue());
       if (std::none_of(queue.begin(), queue.end(), [hovered](const griffundo::Entry& entry) { return entry.id == hovered; })) {
         continue;
       }
@@ -2682,20 +2892,21 @@ namespace
       gClicks.counting = true;
       gClicks.ordered = 0;
       gClicks.orderedTarget = griffundo::kNoTarget;
+      ++gClicks.acted;
     }
     NextStep();
     Win32Android_RunOnWindowThread(&ClickStepTask, 0);
   }
 
   /// The next step. First what the last one's input did: what FAF ordered for a click (until FAF orders by one, the tick's next
-  /// click is the run's first, which replaces), whether a release took its command out. The clicks that wait for the sim make
-  /// their steps once it took what the UI ordered, or waited long enough. At a run's first step its units are selected and a
-  /// frame is drawn for them. A place the free map does not show, under a panel or out of view, gets the camera first, as
-  /// high and turned as it is, and its step after the frame that drew it there. A building's click goes to a pixel whose world
-  /// point FAF builds it at, in its cell: where none is, the camera comes closer first. A step that is not aimed (the tick's)
-  /// arms FAF's mode and clicks at once; an aimed one (the undo's) arms its mode, moves FAF's cursor to its place and comes
-  /// after the next frame, in which FAF's cursor takes the mode and picks what lies there, and again until the cursor is
-  /// where the step wants it (CursorAt): its command or target where it is now, read again each time.
+  /// click is the run's first, which replaces), whether a release took its command out. At a run's first step its units are
+  /// selected and a frame is drawn for them. A place the free map does not show, under a panel or out of view, gets the
+  /// camera first, as high and turned as it is, and its step after the frame that drew it there. A building's click goes to a
+  /// pixel whose world point FAF builds it at, in its cell: where none is, the camera comes closer first. A step that is not
+  /// aimed (the tick's) arms FAF's mode and clicks at once; an aimed one (the undo's) arms its mode, moves FAF's cursor to its
+  /// place and comes after the next frame, in which FAF's cursor takes the mode and picks what lies there, and again until the
+  /// cursor is where the step wants it (CursorAt): its command or target where it is now, read again each time. With no game
+  /// behind the UI any more, or after a throw, the steps not come to are not made.
   void ClickStepTask(const WPARAM)
   {
     if (!gClicking) {
@@ -2720,19 +2931,17 @@ namespace
           ++gClicks.unremoved;
         }
       }
-      if (gClicks.plan != nullptr) {
-        if (moho::UI_GamePlaying() && !SimTook(gClicks.awaited) && Now() < gClicks.awaitUntil) {
-          WaitForFrame();
-          return;
-        }
-        void (*const plan)() = gClicks.plan;
-        gClicks.plan = nullptr;
-        if (moho::UI_GamePlaying()) {
-          plan();
-        }
-      }
       if (!moho::UI_GamePlaying() || gClicks.next >= gClicks.steps.size()) {
+        gClicks.unreached += static_cast<int>(gClicks.steps.size() - gClicks.next);
         FinishClicks();
+        return;
+      }
+      // Shift down again after the frame without it that drew FAF's command graph anew (below), a frame before the cursor
+      // counts on it.
+      if (gClicks.lifted) {
+        gClicks.lifted = false;
+        Win32Android_Key(VK_SHIFT, kShiftScanCode, TRUE, FALSE, 0);
+        WaitForFrame();
         return;
       }
       const ClickStep& step = gClicks.steps[gClicks.next];
@@ -2761,7 +2970,8 @@ namespace
           return;
         }
       }
-      // Where the step goes now: the waypoint of a removal's command, which goes with what it targets; a click's target.
+      // Where the step goes now: the waypoint of a removal's command, read again each pass, as it goes with what the command
+      // targets (a unit walking on); a click's target where it is now.
       griffundo::Place place = step.place;
       moho::CWldSession* const session = moho::WLD_GetActiveSession();
       if (step.removal) {
@@ -2818,13 +3028,6 @@ namespace
           return;
         }
         if (step.aimed) {
-          // Shift down again after the graph was drawn anew (below), a frame before the cursor counts on it.
-          if (gClicks.appendAll && !gClicks.holdsShift) {
-            HoldShift();
-            gClicks.holdsShift = true;
-            WaitForFrame();
-            return;
-          }
           // Where FAF's cursor is found right, the click goes by what decides where it lands: FAF's hover at the aim, a
           // building's cell under this frame's pixel, the ground at the aim while the place is shown there still; else the
           // cursor goes to the place again, as below.
@@ -2848,14 +3051,14 @@ namespace
           // A command released already keeps its waypoint where FAF's cursor picks it, before others of the selection's,
           // until the sim took its removal and FAF let its command go: the step waits for that, within the sim's patience,
           // and counts none of those frames. FAF's graph keeps the waypoint of a command it let go, too, until it draws the
-          // graph anew, which it does after a frame without Shift (CUIWorldView::RenderCommandGraph lets it go): Shift goes
-          // up for a frame, once a step.
+          // graph anew, which it does after a frame without Shift (CUIWorldView::RenderCommandGraph lets it go): the key goes
+          // up for a frame, once a step, as Act's lift, whatever else holds Shift (a held Plus, gShiftHolders).
           const bool released = std::find(gClicks.released.begin(), gClicks.released.end(), hovered) != gClicks.released.end();
           const bool alive = released && moho::FindCommandIssueHelperInSession(session, hovered) != nullptr;
           const bool waits = step.removal && alive && Now() - gClicks.releasedAt < kSimPatience;
           if (step.removal && released && !alive && !gClicks.redrawn && gClicks.holdsShift) {
-            ReleaseShift();
-            gClicks.holdsShift = false;
+            Win32Android_Key(VK_SHIFT, kShiftScanCode, FALSE, FALSE, 0);
+            gClicks.lifted = true;
             gClicks.redrawn = true;
             WaitForFrame();
             return;
@@ -2887,6 +3090,7 @@ namespace
         gClicks.counting = true;
         gClicks.ordered = 0;
         gClicks.orderedTarget = griffundo::kNoTarget;
+        ++gClicks.acted;
         NextStep();
         Win32Android_RunOnWindowThread(&ClickStepTask, 0);
         return;
@@ -2902,6 +3106,7 @@ namespace
       WaitForFrame();
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
+      gClicks.unreached += static_cast<int>(gClicks.steps.size() - gClicks.next);
       FinishClicks();
     }
   }
@@ -2935,8 +3140,9 @@ namespace
   /// (FAF's build templates cleared first), in its cell, the first replacing what the builders do unless Plus counted. It
   /// waits while the undo's clicks run, or a finger's drag holds FAF's dragger (a pan's camera drag, a panel's), which would
   /// take the clicks' cursor and come between them: it comes after them, from the next frame on (PlaceTask), as the undo
-  /// does. Clicks that ran past their patience are over first, as their own end has them: the tick's own closes its draft,
-  /// and its 'not ordered' stays the last word.
+  /// does; and while an undo the pill asked for waits for the sim, as its record is a gesture's from before the tick, whose
+  /// orders would replace it. Clicks that ran past their patience are over first, as their own end has them: the tick's own
+  /// closes its draft, and its 'not ordered' stays the last word.
   void DraftCommitTask(const WPARAM plus)
   {
     gCommitAsked = 0;
@@ -2948,7 +3154,7 @@ namespace
       if (!gDraft.Open()) {
         return;
       }
-      if (clicking || gDrag != Drag::kNone) {
+      if (clicking || gDrag != Drag::kNone || gRecord.asked) {
         gCommitAsked = plus + 1;
         return;
       }
@@ -3006,67 +3212,100 @@ namespace
     return "Arm(" + std::to_string(static_cast<int>(click.way)) + ")";
   }
 
+  /// The pill's record, whose undo was not done and nothing of it clicked, holds as it was: the pill offers it again for its
+  /// time, as the activity is told the record anew (Undo.ordered after Undo.undone).
+  void OfferAgain()
+  {
+    gRecord.asked = false;
+    Say(kSaidOrdered, gRecord.number, 0);
+  }
+
   /// The undo's clicks are over: FAF's mode they left ended, the selection the player had; the activity hears whether all of
-  /// the gesture went and came back. An undo the backstop ended before its plan did nothing.
+  /// the gesture went and came back (an upgrade FAF ordered for one of its assists goes on), part of it (also where nothing
+  /// was left to click, as for a factory's builds a Stop took), or nothing, where it had steps and none of them made a release
+  /// or a click: as where its clicks ended before their first step (no frame came, the game ended, a throw). Nothing was
+  /// clicked then, so the record holds as it was and the pill offers it again, while the game goes on and no other order came
+  /// meanwhile, which would have ended it.
   void FinishUndo()
   {
     if (moho::UI_GamePlaying()) {
       moho::CON_Execute(kUndoEnd);
     }
-    const int notDone =
-      gUndoing.dropped + gClicks.unreached + gClicks.refused + gClicks.missed + gClicks.unremoved + gClicks.leftOut;
-    const bool inPart = gClicks.plan != nullptr || gUndoing.record.unknown || notDone > 0;
-    Say(kSaidUndone, gUndoing.record.number, inPart ? 1 : 0);
+    const int notDone = gUndoing.dropped + gUndoing.record.upgrades + gClicks.unreached + gClicks.refused + gClicks.missed
+                      + gClicks.unremoved + gClicks.leftOut;
+    const bool whole = notDone == 0 && !gUndoing.record.unknown;
+    const bool none = gClicks.acted == 0 && !gClicks.steps.empty();
+    const int said = whole ? kUndoneWhole : none ? kNotUndone : kUndoneInPart;
+    Say(kSaidUndone, gUndoing.record.number, said);
+    if (said == kNotUndone && gClicks.orders == 0 && moho::UI_GamePlaying()) {
+      gRecord = std::move(gUndoing.record);
+      OfferAgain();
+    }
     gUndoing = Undoing{};
   }
 
-  /// The undo's plan, once the sim took the gesture: of the record's units that live, their queues as it began and now, the
-  /// building each was building then if unfinished still, and where what their orders before target is now
-  /// (include/GriffUndo.h); then its steps: each command of the gesture's taken out, in a run of their units, then each order
-  /// lost given again, in a run for each group of units whose orders come back alike. A unit the gesture ordered whose queue
-  /// was not known as it began is not taken back.
-  void PlanUndoSteps()
+  /// The undo's steps, once the sim took the gesture: of the record's units that live, each queue an order of the gesture's
+  /// went into (a factory's own and its rally route apart), as it began, as the sim held it when the replacement landed, and
+  /// now, the building each unit was building then if unfinished still, and where what their orders before target is now
+  /// (include/GriffUndo.h); then each command of the gesture's taken out, in a run of their units, then each order lost given
+  /// again, in a run for each group of units whose orders come back alike; the orders that cannot come back or go counted
+  /// (`dropped`). A unit the gesture ordered whose queue was not known as it began is not taken back.
+  [[nodiscard]] std::vector<ClickStep> PlanUndoSteps(const Record& record, int& dropped)
   {
+    std::vector<ClickStep> steps;
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
     if (session == nullptr) {
-      return;
+      return steps;
     }
     const auto living = [session](const int id) {
       return session->LookupEntityId(static_cast<moho::EntId>(id));
     };
     std::vector<griffundo::Unit> units;
     griffundo::Targets targets;
-    Record& record = gUndoing.record;
-    for (const auto& [id, replaced] : record.ordered) {
+    std::vector<int> ids;
+    for (const auto& kept : record.stored) {
+      ids.push_back(kept.first);
+    }
+    std::sort(ids.begin(), ids.end());
+    for (const int id : ids) {
+      const Stored& kept = record.stored.at(id);
       moho::UserUnit* const unit = UnitOf(id);
-      const auto stored = record.stored.find(id);
-      if (unit == nullptr || stored == record.stored.end()) {
+      if (unit == nullptr) {
         continue;
       }
-      griffundo::Unit planned;
-      planned.id = id;
-      planned.replaced = replaced;
-      planned.refilled = unit->mIsFactory;
-      planned.before = stored->second.queue;
-      planned.now = QueueOf(*unit);
-      if (moho::UserUnit* const site = UnitOf(stored->second.focus); site != nullptr && site->IsBeingBuilt()) {
-        planned.site = stored->second.focus;
-      }
-      std::vector<int> aimedAt{planned.site};
-      for (const griffundo::Entry& entry : planned.before) {
-        aimedAt.push_back(entry.target);
-      }
-      for (const int target : aimedAt) {
-        if (moho::UserEntity* const entity = target != griffundo::kNoTarget ? living(target) : nullptr; entity != nullptr) {
-          const Wm3::Vector3f& at = entity->mVariableData.mCurTransform.pos_;
-          targets[target] = griffundo::Place{at.x, at.y, at.z};
+      moho::UserUnit* const building = UnitOf(kept.focus);
+      const int site = building != nullptr && building->IsBeingBuilt() ? kept.focus : griffundo::kNoTarget;
+      for (const bool route : {false, true}) {
+        const Queue& queue = route ? kept.route : kept.own;
+        moho::UserCommandQueue* const commands = CommandsOf(*unit, route);
+        if (!queue.ordered || commands == nullptr) {
+          continue;
         }
+        griffundo::Unit planned;
+        planned.id = id;
+        planned.replaced = queue.replaced;
+        planned.refilled = route;
+        planned.before = queue.before;
+        // Where no view of the sim's was read (the replacing order put no Reset at the queue's front, which ISSUE_Command
+        // and ISSUE_FactoryCommand always do), what the queue held as the gesture began stands for what the sim held.
+        planned.taken = queue.snapshot ? queue.taken : queue.before;
+        planned.now = QueueOf(commands);
+        planned.site = route ? griffundo::kNoTarget : site;
+        std::vector<int> aimedAt{planned.site};
+        for (const griffundo::Entry& entry : planned.before) {
+          aimedAt.push_back(entry.target);
+        }
+        for (const int target : aimedAt) {
+          if (moho::UserEntity* const entity = target != griffundo::kNoTarget ? living(target) : nullptr; entity != nullptr) {
+            const Wm3::Vector3f& at = entity->mVariableData.mCurTransform.pos_;
+            targets[target] = griffundo::Place{at.x, at.y, at.z};
+          }
+        }
+        units.push_back(std::move(planned));
       }
-      units.push_back(std::move(planned));
     }
     const griffundo::Plan plan = griffundo::PlanUndo(units, targets);
-    gUndoing.dropped = plan.dropped;
-    std::vector<ClickStep> steps;
+    dropped = plan.dropped;
     std::vector<int> removing;
     for (const griffundo::Removal& removal : plan.removals) {
       for (const int unit : removal.units) {
@@ -3080,7 +3319,6 @@ namespace
       step.removal = true;
       step.aimed = true;
       step.command = removal.command;
-      step.place = removal.place;
       step.units = removal.units;
       step.select = steps.empty() ? removing : std::vector<int>{};
       steps.push_back(std::move(step));
@@ -3104,33 +3342,49 @@ namespace
         steps.push_back(std::move(step));
       }
     }
-    gClicks.steps = std::move(steps);
+    return steps;
   }
 
-  /// The pill's undo, once no clicks run and no finger's drag holds FAF's dragger, which would take the clicks' cursor and
-  /// come between them (a pan's camera drag, a box's, a panel's): it comes after the finger's lift, and the pill says it
-  /// waits. The record is taken (one level), griff.lua keeps the selection and ends a command mode (UndoBegin), and the clicks
-  /// wait for the sim to take what the gesture ordered its units, so that the plan reads the queues the sim holds
-  /// (PlanUndoSteps); meanwhile the fingers rest and the pill says it waits. All of the undo's inputs go to the sim after the
-  /// gesture's, which it takes in order. Clicks that ran past their patience are over first: the tick's orders they end are
-  /// a record of their own, which an undo asked for the one before does not take back.
+  /// The pill's undo, once the sim took what the gesture ordered its units, so that its plan reads the queues the sim holds
+  /// (a paused game's after it resumed, a lagging one's its lag later), no clicks run and no finger's drag holds FAF's
+  /// dragger, which would take the clicks' cursor and come between them (a pan's camera drag, a box's, a panel's): until then
+  /// the fingers are free and the pill says it waits, and the next order ends the record as ever. Then the record is taken
+  /// (one level), griff.lua keeps the selection and ends a command mode (UndoBegin), and the clicks run. Without the map's
+  /// view, which their places are found on, or where the plan threw, nothing is clicked and the pill offers the record again.
+  /// All of the undo's inputs go to the sim after the gesture's, which it takes in order. Clicks that ran past their patience
+  /// are over first: the tick's orders they end are a record of their own, which an undo asked for the one before does not
+  /// take back.
   void TryUndo()
   {
     if (ClicksRun() || !gRecord.asked || gRecord.number == 0 || !moho::UI_GamePlaying() || gDrag != Drag::kNone) {
       return;
     }
+    ReadTaken(gRecord.stored);
+    if (!SimTook(gRecord.stored)) {
+      return;
+    }
+    if (!gSelection.viewKnown) {
+      Say(kSaidUndone, gRecord.number, kNotUndone);
+      OfferAgain();
+      return;
+    }
+    Clicks clicks;
+    int dropped = 0;
+    try {
+      clicks.steps = PlanUndoSteps(gRecord, dropped);
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+      Say(kSaidUndone, gRecord.number, kNotUndone);
+      OfferAgain();
+      return;
+    }
     gUndoing = Undoing{};
     gUndoing.record = std::move(gRecord);
+    gUndoing.dropped = dropped;
     gRecord = Record{};
     moho::CON_Execute(kUndoBegin);
-    Clicks clicks;
     clicks.finish = &FinishUndo;
     clicks.appendAll = true;
-    clicks.plan = &PlanUndoSteps;
-    for (const auto& ordered : gUndoing.record.ordered) {
-      clicks.awaited.push_back(ordered.first);
-    }
-    clicks.awaitUntil = Now() + kSimPatience;
     StartClicks(std::move(clicks));
   }
 

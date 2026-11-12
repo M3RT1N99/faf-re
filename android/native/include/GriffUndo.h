@@ -6,9 +6,9 @@
 // the hovered command from every unit it went to, by the command's own id). A unit whose queue the gesture replaced (FAF's
 // Clear) gets what it lost given again by FAF's command modes and a left click each, all with Shift, onto its emptied
 // queue: a click FAF refuses loses only its own order. What FAF cannot give again, or take out, is counted. The plan reads
-// the queues once the sim has taken the gesture (no edit of the UI's pending), each command by its own id; the program
-// reads them and carries the plan out (src/host/GriffAndroid.cpp), each click at the pixel that decides where it lands;
-// here the rules alone, for their tests (tests/wx/GriffUndoTests.cpp).
+// the queues once the sim has taken the gesture (no edit of the UI's pending), each command by its own id, a factory's own
+// queue and its rally route apart; the program reads them and carries the plan out (src/host/GriffAndroid.cpp), each click
+// at the pixel that decides where it lands; here the rules alone, for their tests (tests/wx/GriffUndoTests.cpp).
 
 #include <algorithm>
 #include <cmath>
@@ -46,15 +46,19 @@ namespace griffundo
     std::string task;
   };
 
-  /// A unit an order of the gesture went to: whether one replaced its queue (FAF's Clear), whether the sim refills its queue
-  /// once it is empty (a factory's rally route: the sim rallies an emptied one to its own place again), its queue as the
-  /// gesture began and now, and the building it was building as the gesture began, where that is unfinished still.
+  /// A queue of a unit's that an order of the gesture went into, its own or a factory's rally route (a factory is two Units
+  /// with its id): whether one replaced the queue (FAF's Clear), whether the sim refills it once it is empty (a rally route:
+  /// the sim rallies an emptied one to the factory's own place again), the queue as the gesture began, as the sim held it
+  /// when the gesture's replacement landed (`taken`: the sim runs the old queue until then, a network delay after the input,
+  /// and what the unit finished meanwhile is not lost; the program gives `before` where it read no such view) and now, and
+  /// the building the unit was building as the gesture began, where that is unfinished still.
   struct Unit
   {
     int id = 0;
     bool replaced = false;
     bool refilled = false;
     std::vector<Entry> before;
+    std::vector<Entry> taken;
     std::vector<Entry> now;
     int site = kNoTarget;
   };
@@ -100,11 +104,10 @@ namespace griffundo
     std::vector<Click> clicks;
   };
 
-  /// A command of the gesture's to take out of its units' queues: its id, its waypoint as the plan read it, its units.
+  /// A command of the gesture's to take out of its units' queues: its id and its units.
   struct Removal
   {
     int command = 0;
-    Place place;
     std::vector<int> units;
   };
 
@@ -162,8 +165,11 @@ namespace griffundo
     return Way::kNone;
   }
 
-  /// Whether an order leaves nothing to take out or give again: a Stop the sim has not taken yet, and the script FAF's
-  /// attack-move button gives beside the sim's AggressiveMove, which is done the moment it is the queue's head.
+  /// Whether an order leaves nothing to take out or give again: a Stop the sim had not taken as the gesture began, and the
+  /// script FAF's attack-move button gives beside the sim's AggressiveMove, which is done the moment it heads the queue.
+  /// Until then, behind an order the unit kept, the script stays its queue's last command, and FAF anchors a patrol given
+  /// with Shift at its place (ResolveGroupMoveAnchorOrDetectPatrol takes the last queued command of any kind): PlanUndo
+  /// counts it there, as FAF draws no waypoint for it to take out.
   [[nodiscard]] inline bool Inert(const Entry& entry)
   {
     return entry.type == "Stop" || (entry.type == "Script" && entry.task == "AttackMove");
@@ -202,8 +208,8 @@ namespace griffundo
   /// once FAF's cursor is found right there (the program's CursorAt): FAF's hover at the aim, which CursorAt checked (a
   /// removal: the command its release takes out; a click on a unit: that unit, which may walk on, as may a waypoint on it);
   /// the cell of a building under the press, which this frame's pixel was checked to land in (griffdraft::ClickPixel); or the
-  /// ground under the press, where CursorAt checked at the aim what FAF's cursor picks (for a move, no waypoint that every
-  /// selected unit holds).
+  /// ground under the press, where CursorAt checked at the aim what FAF's cursor picks (for a move, no waypoint whose move
+  /// FAF's move mode would restart as a patrol).
   enum class Landing
   {
     kHover,
@@ -308,12 +314,13 @@ namespace griffundo
     }
   } // namespace detail
 
-  /// The plan that takes the gesture's orders back from these units, those that live. Each command of the gesture's (in a
-  /// unit's queue now, not in its queue before, also what the sim gave for it, as the attack-move's AggressiveMove) is taken
-  /// out of all its units at once; one FAF draws no waypoint for cannot go and counts as dropped. A unit whose queue the
-  /// gesture replaced gets what it lost (in its queue before, not now) given again, every click with Shift; what it holds
-  /// still the sim kept, as a commander's enhancement under way. One the gesture appended to keeps its queue before as it is
-  /// (a begun building goes on), and what it finished since stays done. A refilled queue's lost orders come back by a first
+  /// The plan that takes the gesture's orders back from these units' queues, those that live. Each command of the gesture's
+  /// (in a queue now, not in it before, also what the sim gave for it, as the attack-move's AggressiveMove) is taken out of
+  /// all its units at once; one FAF draws no waypoint for cannot go and counts as dropped, as does the attack-move's script
+  /// left behind an order the unit kept. A queue the gesture replaced gets what it lost given again, every click with Shift:
+  /// what it held as the gesture began and still when the replacement landed (`taken`), not now; what it holds still the
+  /// sim kept, as a commander's enhancement under way. One the gesture appended to keeps its queue before as it is (a begun
+  /// building goes on), and what the unit finished since stays done. A refilled queue's lost orders come back by a first
   /// click that replaces the gesture's there instead, as an emptied rally route would come back as the sim's own.
   [[nodiscard]] inline Plan PlanUndo(const std::vector<Unit>& units, const Targets& targets)
   {
@@ -322,15 +329,24 @@ namespace griffundo
       std::vector<Click> clicks;
       if (unit.replaced) {
         std::vector<Entry> lost;
-        std::copy_if(unit.before.begin(), unit.before.end(), std::back_inserter(lost),
-                     [&](const Entry& entry) { return !detail::Holds(unit.now, entry.id); });
+        std::copy_if(unit.before.begin(), unit.before.end(), std::back_inserter(lost), [&](const Entry& entry) {
+          return detail::Holds(unit.taken, entry.id) && !detail::Holds(unit.now, entry.id);
+        });
         clicks = detail::Again(unit, lost, targets, plan.dropped);
       }
       if (unit.refilled && !clicks.empty()) {
         clicks.front().shift = false;
       } else {
+        bool kept = false;
         for (const Entry& entry : unit.now) {
-          if (detail::Holds(unit.before, entry.id) || Inert(entry)) {
+          if (detail::Holds(unit.before, entry.id)) {
+            kept = true;
+            continue;
+          }
+          if (Inert(entry)) {
+            if (kept && entry.type == "Script") {
+              ++plan.dropped;
+            }
             continue;
           }
           if (!Removable(entry)) {
@@ -342,7 +358,7 @@ namespace griffundo
           if (removal != plan.removals.end()) {
             removal->units.push_back(unit.id);
           } else {
-            plan.removals.push_back(Removal{entry.id, entry.place, {unit.id}});
+            plan.removals.push_back(Removal{entry.id, {unit.id}});
           }
         }
       }
