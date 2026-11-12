@@ -14,7 +14,11 @@
 #include <new>
 #include <stdexcept>
 #include <string>
+#if FAFRE_PLATFORM_WINDOWS
+// _ftime64. The POSIX builds take it from platform/posix/win32/Windows.h; bionic has
+// no <sys/timeb.h>.
 #include <sys/timeb.h>
+#endif
 #include <typeinfo>
 #include <vector>
 
