@@ -82,7 +82,8 @@ the game data they imported. Everything lives in the app's external files folder
   (`android:appCategory`); `summary.json` `game` shows the category and game mode the phone gives
   it. A run first downloads every replay, map and M28AI version it needs, then plays them, so a
   long run needs no network once the games start; downloads are retried for about ten minutes
-  when the network drops.
+  when the network drops; a failure on the phone's side, such as a full disk, ends a download at
+  once.
 - **Renderer test** (card 4, `GalSmokeActivity`): `libfafgalsmoke.so`
   (`native/src/smoke/GalSmoke.cpp`) lists the phone's Vulkan devices, creates the engine's gal
   device (the Vulkan backend, which needs Vulkan 1.3) on a full-screen surface, then clears it in
@@ -184,11 +185,16 @@ the game data they imported. Everything lives in the app's external files folder
   of FAForever/fa (`api.github.com/repos/FAForever/fa/releases/latest`, no key: 60 requests an hour from one address,
   which phones on mobile data may share), taken when FAF's updater has its `init_faf_<v>.lua`; a release that is tagged
   but not deployed yet gives way to the next lower numeric tag that is (`/tags`, at most five tried). The size is the
-  updater's Content-Length of the packages still to get, less what a cut-off download left (3840: 682 MB). Then
-  `GameFiles.ensure` downloads them as a replay's run does, with the Progress card's steps, cancel and log. On a metered
-  network (mobile data, a hotspot, a Wi-Fi set so) the card asks first; without that yes the download runs only on a
-  network that is not metered and stops when it becomes metered, and the next run goes on from where it stopped. The
-  card's line shows both versions, `FAF game files: 3835 (newest at FAF: 3840)`; if GitHub is unreachable or at its
+  updater's Content-Length of the packages still to get, less what a cut-off download left (3840: 682 MB). It must fit
+  in the phone's free space with 100 MB to spare (750 MB counted when the updater does not say), or the card says how
+  much is free and nothing is downloaded. The init file is fetched and checked first, so one the app cannot use fails
+  before the packages. Then `GameFiles.ensure` downloads them as a replay's run does, with the Progress card's steps,
+  cancel and log. On a metered network (mobile data, a hotspot, a Wi-Fi set so) the card asks first, and while it asks
+  the button asks again with the size it knows, without a new check; without that yes the download runs only on a
+  network that is not metered and stops when it becomes metered, and the next run goes on from where it stopped. When a
+  later check settles on another version, what the button's unfinished download of the old one left goes; a replay
+  test's partial downloads of other versions and every ready version stay. A phone with a version above FAF's newest
+  downloads nothing, and the card says the game starts the phone's. The card's line shows both versions, `FAF game files: 3835 (newest at FAF: 3840)`; if GitHub is unreachable or at its
   limit, the line says so and nothing is downloaded. Older versions stay for the replay test. The UI package's hooks are
   appended to FAF's files of whatever version, each in a pcall, so a change in FAF's files shows as a `fafre_ui:`
   warning in `engine.sclog` rather than a broken game. The check against the real servers is a JVM test outside the

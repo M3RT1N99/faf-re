@@ -166,7 +166,7 @@ public final class MainActivity extends Activity {
                 + "metered and after a question on mobile data. Older versions stay, for the replays. The app's UI hooks "
                 + "(fafre_ui) are appended to FAF's files of whatever version, each in a pcall, so a change in FAF's file "
                 + "shows as a \"fafre_ui:\" warning in the game's log rather than a broken game. "
-                + "It draws the menus and plays a skirmish, without sound or movies yet. "
+                + "It plays skirmishes and LAN games against FAF's game on a PC, with sound and movies. "
                 + "A tap is a click, a finger that moves drags, a finger that stays is the right button (an order); two fingers "
                 + "move the camera and zoom. The bar at the screen's edge has Order (taps give orders), Shift, Ctrl and the "
                 + "keyboard, and Back is Esc. The report says how it ended. With the touch controls Griff (the button below) "
@@ -178,7 +178,9 @@ public final class MainActivity extends Activity {
                 + "deselect; the bar has Box, Plus (queue) and Attack, lit by a tap for the next action or held for as long as "
                 + "they are held. A build icon opens a draft: taps place plans (an extractor on its mass spot), a drag from the "
                 + "newest draws a line of them, from another moves them all, a rest shows a loupe; the tick orders them, the "
-                + "cross drops them. The touch controls count from the game's next start: a game that runs keeps its own.");
+                + "cross drops them. After an order a pill Undo stands for 3 s under the bar, and a tap on it takes the order "
+                + "back; pins mark the order's places for a moment. The touch controls count from the game's next start: a "
+                + "game that runs keeps its own.");
         mStartButtons.add(button(game, "Start the game", v -> startActivity(new Intent(this, GameActivity.class))));
         Button size = button(game, PictureSize.label(this), null);
         size.setOnClickListener(v -> {
