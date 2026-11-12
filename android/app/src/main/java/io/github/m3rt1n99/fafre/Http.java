@@ -16,7 +16,8 @@ import java.nio.charset.StandardCharsets;
  * FAF's newest (FafRelease): one request at a time, at least a second apart, with a User-Agent
  * that names the project. A large file goes to
  * {@code <name>.part} and resumes with an HTTP Range request after a dropped connection or a
- * cancel.
+ * cancel. A failure on the phone's side, such as a full disk, ends a download at once: another
+ * try would fail the same way.
  */
 final class Http {
     /** FAF's game files by version (the FAF client's updater), replays, maps and mods. */
@@ -40,6 +41,17 @@ final class Http {
         }
     }
 
+    /** A failure on the phone's side of a download, such as a full disk: no new try of the network mends it. */
+    static final class StorageException extends IOException {
+        StorageException(String message) {
+            super(message);
+        }
+
+        StorageException(String message, IOException cause) {
+            super(message, cause);
+        }
+    }
+
     interface Progress {
         void bytes(long done, long total);
     }
@@ -56,32 +68,80 @@ final class Http {
         long length(String url) throws IOException;
     }
 
-    /** The network's answers; the user's Cancel stops a check before its next request. */
+    /** The network's answers; the user's Cancel before or during a request makes it a Cancelled. */
     static final Requests ONE_TRY = new Requests() {
         @Override
         public String text(String url) throws IOException {
-            Cancellation.check();
-            HttpURLConnection connection = open(url, "GET", 0);
-            try (InputStream in = connection.getInputStream()) {
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                copy(in, out, null, 0, -1);
-                return utf8(out.toByteArray());
-            } finally {
-                connection.disconnect();
-            }
+            return unlessCancelled(() -> {
+                HttpURLConnection connection = open(url, "GET", 0);
+                try (InputStream in = connection.getInputStream()) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    copy(in, out, null, 0, -1);
+                    return utf8(out.toByteArray());
+                } finally {
+                    connection.disconnect();
+                }
+            });
         }
 
         @Override
         public long length(String url) throws IOException {
-            Cancellation.check();
-            HttpURLConnection connection = open(url, "HEAD", 0);
-            try {
-                return connection.getContentLengthLong();
-            } finally {
-                connection.disconnect();
-            }
+            return unlessCancelled(() -> {
+                HttpURLConnection connection = open(url, "HEAD", 0);
+                try {
+                    return connection.getContentLengthLong();
+                } finally {
+                    connection.disconnect();
+                }
+            });
         }
     };
+
+    /**
+     * What a download gets from FAF's servers: each file tried again after a failure of the network, which a phone
+     * left running overnight can lose for a while. The tests answer instead of the network.
+     */
+    interface Downloads {
+        /** A small file, whole, in memory. */
+        byte[] bytes(String url) throws IOException;
+
+        /** {@code url} into {@code dest}, through {@code dest.part}, resuming what an earlier try left. */
+        void download(String url, File dest, Progress progress) throws IOException;
+    }
+
+    /** The network's answers, tried again. */
+    static final Downloads WITH_RETRIES = new Downloads() {
+        @Override
+        public byte[] bytes(String url) throws IOException {
+            return Http.bytes(url);
+        }
+
+        @Override
+        public void download(String url, File dest, Progress progress) throws IOException {
+            Http.download(url, dest, progress);
+        }
+    };
+
+    private interface Request<T> {
+        T answer() throws IOException;
+    }
+
+    /**
+     * A check's request: a Cancelled when the user's Cancel came before it or while it ran, whether it then failed (a
+     * stalled request at its timeout) or got an answer that nothing wants any more.
+     */
+    private static <T> T unlessCancelled(Request<T> request) throws IOException {
+        Cancellation.check();
+        T answer;
+        try {
+            answer = request.answer();
+        } catch (IOException e) {
+            Cancellation.check();
+            throw e;
+        }
+        Cancellation.check();
+        return answer;
+    }
 
     private Http() {
     }
@@ -185,17 +245,17 @@ final class Http {
                 }
                 long length = connection.getContentLengthLong();
                 long total = length < 0 ? -1 : have + length;
-                try (InputStream in = connection.getInputStream(); OutputStream out = new FileOutputStream(part, resumed)) {
+                try (InputStream in = connection.getInputStream(); OutputStream out = new PartFile(part, resumed)) {
                     copy(in, out, progress, have, total);
                 }
                 if (total >= 0 && part.length() != total) {
                     throw new IOException("short download of " + url + ": " + part.length() + " of " + total + " bytes");
                 }
                 if (dest.exists() && !dest.delete()) {
-                    throw new IOException("cannot replace " + dest);
+                    throw new StorageException("cannot replace " + dest);
                 }
                 if (!part.renameTo(dest)) {
-                    throw new IOException("cannot rename " + part + " to " + dest.getName());
+                    throw new StorageException("cannot rename " + part + " to " + dest.getName());
                 }
                 return;
             } catch (StatusException e) {
@@ -208,6 +268,9 @@ final class Http {
                 } else {
                     last = e;
                 }
+            } catch (StorageException e) {
+                // Not the network's: another try would fail the same way.
+                throw e;
             } catch (IOException e) {
                 Cancellation.check();
                 last = e;
@@ -219,6 +282,48 @@ final class Http {
             Cancellation.check();
         }
         throw last;
+    }
+
+    /** A download's .part, whose failures (opening, writing, closing it) are the phone's, not the network's. */
+    private static final class PartFile extends OutputStream {
+        private final File mFile;
+        private final OutputStream mOut;
+
+        PartFile(File file, boolean append) throws StorageException {
+            mFile = file;
+            try {
+                mOut = new FileOutputStream(file, append);
+            } catch (IOException e) {
+                throw failed(e);
+            }
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            write(new byte[] {(byte) b}, 0, 1);
+        }
+
+        @Override
+        public void write(byte[] bytes, int offset, int length) throws IOException {
+            try {
+                mOut.write(bytes, offset, length);
+            } catch (IOException e) {
+                throw failed(e);
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            try {
+                mOut.close();
+            } catch (IOException e) {
+                throw failed(e);
+            }
+        }
+
+        private StorageException failed(IOException e) {
+            return new StorageException("the phone cannot write " + mFile.getName() + " (" + e.getMessage() + ")", e);
+        }
     }
 
     private static void copy(InputStream in, OutputStream out, Progress progress, long done, long total) throws IOException {

@@ -95,7 +95,7 @@ final class HeadlessRun {
             TestState.touch();
             return false;
         }
-        GameFiles.ensure(storage, info.gameVersion, log);
+        GameFiles.ensure(storage, info.gameVersion, log, Http.WITH_RETRIES);
         Vault.map(storage, info.map, log);
         if (info.m28 != null) {
             Vault.m28(storage, info.m28, log);
@@ -120,7 +120,7 @@ final class HeadlessRun {
         }
 
         // Its game files, map and M28AI (fetch put them in the caches).
-        File gameDir = GameFiles.ensure(storage, info.gameVersion, log);
+        File gameDir = GameFiles.ensure(storage, info.gameVersion, log, Http.WITH_RETRIES);
         File map = Vault.map(storage, info.map, log);
         File mod = info.m28 != null ? Vault.m28(storage, info.m28, log) : null;
 

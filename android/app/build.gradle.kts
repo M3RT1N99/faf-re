@@ -100,6 +100,9 @@ dependencies {
     // require compileSdk 37.
     implementation("com.github.luben:zstd-jni:1.5.7-12@aar")
     testImplementation("junit:junit:4.13.2")
+    // android.jar's org.json is a stub that throws in the JVM tests; the real one reads and writes the game files'
+    // manifests there (GameFiles.ready, ensure).
+    testImplementation("org.json:json:20231013")
 }
 
 // The engine's programs, started as processes, and the libraries the app loads, all from the

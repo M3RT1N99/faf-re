@@ -54,8 +54,9 @@ import java.util.Locale;
 /**
  * The game (android/CLIENT_PLAN.md, C1): the engine's program on a full-screen surface, in a
  * process of its own (":game") that ends with the program, as a Windows program's does. It plays
- * FAF's game files of the newest version this app has (the replay test downloads them) on the
- * user's Supreme Commander: Forged Alliance. A mouse is the mouse and fingers act as one
+ * FAF's game files of the newest version this app has (the Game card's "Get FAF's newest version"
+ * or the replay test downloads them) on the user's Supreme Commander: Forged Alliance. A mouse is
+ * the mouse and fingers act as one
  * (TouchInput), or with the touch scheme Griff (TouchScheme) as its gestures, keys are the keyboard,
  * and Back is Esc; a bar at the screen's edge has what a mouse and keyboard have and fingers have
  * not, or Griff's rail. The game draws at its own size (PictureSize). The report's
@@ -1570,7 +1571,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         int version = newestGameFiles(storage);
         if (version < 0) {
-            return "FAIL: no whole FAF game files yet; the replay test downloads them (card 3)";
+            return "FAIL: no whole FAF game files yet; \"Get FAF's newest version\" on card 5 downloads them, as does the replay test (card 3)";
         }
         File game = storage.game(version);
         File folder = Storage.mkdirs(GameReport.folder(storage));
@@ -1603,23 +1604,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return null;
     }
 
-    /** The newest FAF game version whose files are ready, or -1. */
+    /** The newest FAF game version whose files are ready, or -1: the last that the Game card lists too. */
     private static int newestGameFiles(Storage storage) {
-        String[] names = new File(storage.parity, "game").list();
-        int newest = -1;
-        if (names != null) {
-            for (String name : names) {
-                try {
-                    int version = Integer.parseInt(name);
-                    if (version > newest && GameFiles.ready(storage, version)) {
-                        newest = version;
-                    }
-                } catch (NumberFormatException e) {
-                    // not a version's folder
-                }
-            }
-        }
-        return newest;
+        List<Integer> versions = GameFiles.readyVersions(storage);
+        return versions.isEmpty() ? -1 : versions.get(versions.size() - 1);
     }
 
     /** The report's last lines over the surface, until the first frame and again at the end. */

@@ -1,6 +1,7 @@
 package io.github.m3rt1n99.fafre;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 
@@ -33,10 +34,17 @@ public class NewestGameFilesTest {
         assertEquals("FAF game files: none on the phone yet (newest at FAF: 3840)", line(NewestGameFiles.Phase.KNOWN, 3840, -1, "", -1));
     }
 
+    /** A replay brought a version above FAF's newest (GitHub's latest moved back): the game starts the phone's. */
+    @Test
+    public void aNewerVersionOnThePhoneIsTheOneTheGameStarts() {
+        assertEquals("FAF game files: 3841 (newest at FAF: 3840); the game starts 3841, as it is newer",
+            line(NewestGameFiles.Phase.KNOWN, 3840, -1, "", 3841));
+    }
+
     @Test
     public void theSizeComesFirst() {
-        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\n3840 is 682 MB from FAF; on a metered network the app asks first",
-            line(NewestGameFiles.Phase.ASKING, 3840, BYTES, "", 3835));
+        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\n3840 is 682 MB from FAF; on a metered network the app asks first, "
+            + "and the button asks again", line(NewestGameFiles.Phase.ASKING, 3840, BYTES, "", 3835));
         assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nDownloading 3840 (682 MB): see Progress",
             line(NewestGameFiles.Phase.DOWNLOADING, 3840, BYTES, "", 3835));
         assertEquals("about 700 MB", NewestGameFiles.size(-1));
@@ -61,11 +69,19 @@ public class NewestGameFilesTest {
 
     @Test
     public void aMeteredNetworkWaitsForAYesAndTheFilesOnThePhoneForNothing() {
-        assertEquals(NewestGameFiles.Next.DOWNLOAD, NewestGameFiles.next(false, false, false));
-        assertEquals(NewestGameFiles.Next.ASK, NewestGameFiles.next(false, true, false));
-        assertEquals(NewestGameFiles.Next.DOWNLOAD, NewestGameFiles.next(false, true, true));
-        assertEquals(NewestGameFiles.Next.NOTHING, NewestGameFiles.next(true, true, false));
-        assertEquals(NewestGameFiles.Next.NOTHING, NewestGameFiles.next(true, false, true));
+        assertEquals(NewestGameFiles.Next.DOWNLOAD, NewestGameFiles.next(3835, 3840, false, false));
+        assertEquals(NewestGameFiles.Next.ASK, NewestGameFiles.next(3835, 3840, true, false));
+        assertEquals(NewestGameFiles.Next.ASK, NewestGameFiles.next(-1, 3840, true, false));
+        assertEquals(NewestGameFiles.Next.DOWNLOAD, NewestGameFiles.next(3835, 3840, true, true));
+        assertEquals(NewestGameFiles.Next.NOTHING, NewestGameFiles.next(3840, 3840, true, false));
+        assertEquals(NewestGameFiles.Next.NOTHING, NewestGameFiles.next(3840, 3840, false, true));
+    }
+
+    /** The game starts the phone's newest version, so FAF's older one would be 700 MB for nothing, also after a yes. */
+    @Test
+    public void aNewerVersionOnThePhoneLeavesNothingToDownload() {
+        assertEquals(NewestGameFiles.Next.NOTHING, NewestGameFiles.next(3841, 3840, false, false));
+        assertEquals(NewestGameFiles.Next.NOTHING, NewestGameFiles.next(3841, 3840, true, true));
     }
 
     @Test
@@ -80,6 +96,44 @@ public class NewestGameFilesTest {
         NewestGameFiles.asking(3840, BYTES);
         NewestGameFiles.downloading(3840, BYTES);
         assertNull("a download asks nothing", NewestGameFiles.question());
+    }
+
+    /** The question's dialog went (Not now, Back, a screen made anew): while the card asks, the button asks again. */
+    @Test
+    public void whileTheCardAsksTheButtonAsksAgainWithWhatItKnows() {
+        NewestGameFiles.asking(3840, BYTES);
+        NewestGameFiles.question();
+
+        NewestGameFiles pending = NewestGameFiles.pending();
+        assertEquals(3840, pending.newest);
+        assertEquals(BYTES, pending.bytes);
+        assertSame("asked again, as often as the button is pressed", pending, NewestGameFiles.pending());
+
+        NewestGameFiles.checking();
+        assertNull("a check asks nothing yet", NewestGameFiles.pending());
+        NewestGameFiles.asking(3840, BYTES);
+        NewestGameFiles.downloading(3840, BYTES);
+        assertNull("a download asks nothing", NewestGameFiles.pending());
+        NewestGameFiles.asking(3840, BYTES);
+        NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, "the phone has 286 MB free, and it needs 782 MB");
+        assertNull("a job that ended asks nothing", NewestGameFiles.pending());
+    }
+
+    /** The room on the phone: the download and 100 MB to spare for the game's and the runs' files. */
+    @Test
+    public void aDownloadThatDoesNotFitSaysWhatItNeedsAndWhatIsFree() {
+        assertEquals("the phone has 286 MB free, and it needs 782 MB", NewestGameFiles.noRoom(BYTES, 300_000_000L));
+        assertNull(NewestGameFiles.noRoom(BYTES, 2_000_000_000L));
+        assertNull("just fits", NewestGameFiles.noRoom(BYTES, BYTES + NewestGameFiles.SPARE_BYTES));
+        assertNotNull("a byte short", NewestGameFiles.noRoom(BYTES, BYTES + NewestGameFiles.SPARE_BYTES - 1));
+        assertEquals("the phone has less than 1 MB free, and it needs 100 MB", NewestGameFiles.noRoom(0, 1000));
+    }
+
+    /** A size the updater did not say counts as 750 MB, more than any version's so far. */
+    @Test
+    public void aSizeNotSaidIsTakenAsMoreThanAnyVersions() {
+        assertEquals("the phone has 763 MB free, and it needs 850 MB", NewestGameFiles.noRoom(-1, 800_000_000L));
+        assertNull(NewestGameFiles.noRoom(-1, 900_000_000L));
     }
 
     @Test

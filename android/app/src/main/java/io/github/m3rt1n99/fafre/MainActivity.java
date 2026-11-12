@@ -190,7 +190,7 @@ public final class MainActivity extends Activity {
             TouchScheme.next(this);
             touch.setText(TouchScheme.label(this));
         });
-        mStartButtons.add(button(game, "Get FAF's newest version", v -> TestService.start(this, TestService.newestGameFiles())));
+        mStartButtons.add(button(game, "Get FAF's newest version", v -> getNewestGameFiles()));
         mNewest = text("", 14, TEXT);
         game.addView(mNewest);
         mGameResult = text("", 14, TEXT);
@@ -312,14 +312,24 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /** The card's button: a check of FAF's newest version, or while the card asks, the question again. */
+    private void getNewestGameFiles() {
+        NewestGameFiles pending = NewestGameFiles.pending();
+        if (pending != null) {
+            askToDownload(pending);
+        } else {
+            TestService.start(this, TestService.checkNewestGameFiles());
+        }
+    }
+
     /** A download on a metered network waits for a yes to its size. */
     private void askToDownload(NewestGameFiles question) {
         String size = NewestGameFiles.size(question.bytes);
         new AlertDialog.Builder(this)
             .setTitle("Download " + size + " on a metered network?")
             .setMessage("FAF's game version " + question.newest + " is " + size + " from FAF's servers, and the phone's network "
-                + "is metered (mobile data, a hotspot, or a Wi-Fi set so). On a network that is not, the button downloads "
-                + "without asking.")
+                + "was metered when the app checked (mobile data, a hotspot, or a Wi-Fi set so). Until a yes, the button asks "
+                + "again.")
             .setPositiveButton("Download", (dialog, which) -> TestService.start(this, TestService.gameFiles(question.newest)))
             .setNegativeButton("Not now", null)
             .show();

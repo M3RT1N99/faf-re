@@ -18,7 +18,8 @@ import java.io.IOException;
  *   parity/replays/        downloaded .fafreplay files
  *   parity/maps/, m28/     vault maps and M28AI versions
  *   parity/runs/&lt;id&gt;/      one replay's run: replay.scfareplay, its vault, headless.out, engine.log
- *   parity/downloads/      partial downloads
+ *   parity/downloads/      partial downloads; newest-target, the version the Game card's last
+ *                          download was for (NewestGameFilesJob)
  * </pre>
  */
 final class Storage {
@@ -27,13 +28,22 @@ final class Storage {
     final File parity;
 
     Storage(Context context) throws IOException {
+        this(filesDir(context));
+    }
+
+    /** The app's files under {@code root}; the tests make one on a folder of their own. */
+    Storage(File root) {
+        this.root = root.getAbsoluteFile();
+        scfa = new File(this.root, "scfa");
+        parity = new File(this.root, "parity");
+    }
+
+    private static File filesDir(Context context) throws IOException {
         File dir = context.getExternalFilesDir(null);
         if (dir == null) {
             throw new IOException("shared storage is not available");
         }
-        root = dir.getAbsoluteFile();
-        scfa = new File(root, "scfa");
-        parity = new File(root, "parity");
+        return dir;
     }
 
     File game(int version) {

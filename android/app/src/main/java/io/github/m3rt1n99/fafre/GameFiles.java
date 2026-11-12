@@ -99,11 +99,16 @@ final class GameFiles {
     }
 
     /** The pack folder for {@code version}, downloading and packing what is missing. */
-    static File ensure(Storage storage, int version, Log log) throws IOException {
+    static File ensure(Storage storage, int version, Log log, Http.Downloads downloads) throws IOException {
         File dir = storage.game(version);
         if (ready(storage, version)) {
             return dir;
         }
+        // The init file first, so that one the app cannot use fails before 700 MB of packages, and nothing on the phone
+        // changes. It is written last of all.
+        String initName = "init_faf_" + version + ".lua";
+        log.step("Downloading " + initName);
+        String initText = ciInit(Http.utf8(downloads.bytes(Http.GAME_URL + initName)));
         File gamedata = new File(dir, "gamedata");
         File manifestFile = new File(dir, "manifest.json");
         File init = new File(dir, "bin/init_ci.lua");
@@ -129,7 +134,7 @@ final class GameFiles {
                 File download = new File(storage.downloads(), remote);
                 try {
                     log.step("Downloading FAF " + remote);
-                    Http.download(Http.GAME_URL + remote, download, (done, total) ->
+                    downloads.download(Http.GAME_URL + remote, download, (done, total) ->
                         log.step(String.format(Locale.ROOT, "Downloading FAF %s: %.0f / %s MB", remote, done / 1048576.0,
                             total < 0 ? "?" : String.format(Locale.ROOT, "%.0f", total / 1048576.0))));
                 } catch (Http.StatusException e) {
@@ -145,21 +150,35 @@ final class GameFiles {
                 log.line(String.format(Locale.ROOT, "%s: %.1f MB", remote, packed.length() / 1048576.0));
                 manifest.put(remote, "whole");
             }
-            String initName = "init_faf_" + version + ".lua";
-            log.step("Downloading " + initName);
-            String initText = Http.utf8(Http.bytes(Http.GAME_URL + initName));
             write(new File(dir, "fa_path.lua"),
                 "fa_path = '" + storage.scfa.getAbsolutePath() + "'\nGameType = \"faf\"\nGameVersion = \"" + version
                     + "\"\nClientVersion = \"faf-re-android-" + BuildConfig.VERSION_NAME + "\"\n");
             write(manifestFile, manifest.toString(2));
             // Last: with it the pack is ready, so it comes whole or not at all.
             File part = new File(init.getPath() + ".part");
-            write(part, ciInit(initText));
+            write(part, initText);
             Files.move(part.toPath(), init.toPath(), StandardCopyOption.ATOMIC_MOVE);
         } catch (JSONException e) {
             throw new IOException(e);
         }
         return dir;
+    }
+
+    /**
+     * What {@link #ensure} left of {@code version} when it is not ready: its folder and its partial downloads. A ready
+     * version stays whole, and false says so.
+     */
+    static boolean dropUnfinished(Storage storage, int version) {
+        if (ready(storage, version)) {
+            return false;
+        }
+        Storage.deleteTree(storage.game(version));
+        for (String name : PACKAGES) {
+            File download = new File(storage.downloads(), name + "." + version + ".nx2");
+            download.delete();
+            new File(download.getPath() + ".part").delete();
+        }
+        return true;
     }
 
     /**

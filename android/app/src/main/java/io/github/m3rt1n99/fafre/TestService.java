@@ -21,7 +21,6 @@ import android.os.PowerManager;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Runs the tests as a foreground service, so downloads and replays go on with the screen off
@@ -129,7 +128,18 @@ public final class TestService extends Service {
                 playReplays(storage, intent.getLongArrayExtra(EXTRA_IDS), intent.getIntExtra(EXTRA_WORKERS, 1),
                     intent.getBooleanExtra(EXTRA_HINT, true));
             } else if (ACTION_GAME_FILES.equals(action)) {
-                getGameFiles(storage, intent.getIntExtra(EXTRA_VERSION, -1));
+                NewestGameFilesJob.run(storage, intent.getIntExtra(EXTRA_VERSION, -1), Http.ONE_TRY, connectivity(),
+                    new NewestGameFilesJob.Download() {
+                        @Override
+                        public long room() {
+                            return storage.root.getUsableSpace();
+                        }
+
+                        @Override
+                        public void files(int version) throws IOException {
+                            GameFiles.ensure(storage, version, LOG, Http.WITH_RETRIES);
+                        }
+                    });
             }
         } catch (Cancellation.Cancelled e) {
             TestState.line("Cancelled.");
@@ -205,71 +215,32 @@ public final class TestService extends Service {
     }
 
     /**
-     * FAF's newest game version onto the phone, for the game (the Game card's button): the check, the size, then the
-     * files by GameFiles.ensure, as a replay's run gets its version's. Without the user's yes to the size ({@code yesTo}
-     * -1) the download runs only on a network that is not metered, and stops when the network becomes metered; the
-     * next one goes on from where it stopped.
+     * The phone's network for the Game card's job, by Android's rule for a download that should not run on a metered
+     * one. A default-network callback hears of the network as it is right after it is registered, then of its changes.
      */
-    private void getGameFiles(Storage storage, int yesTo) throws IOException {
-        int version = yesTo;
-        AtomicBoolean becameMetered = new AtomicBoolean();
-        ConnectivityManager.NetworkCallback watch = null;
-        try {
-            if (version < 0) {
-                NewestGameFiles.checking();
-                TestState.step("Checking FAF's newest game version");
-                try {
-                    version = FafRelease.newest(Http.ONE_TRY);
-                } catch (FafRelease.Failed e) {
-                    NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, e.getMessage());
-                    TestState.line("No check of FAF's newest game version: " + e.getMessage());
-                    return;
-                }
-                NewestGameFiles.known(version);
-                TestState.line("FAF's newest game version: " + version);
+    private NewestGameFilesJob.Connectivity connectivity() {
+        ConnectivityManager manager = getSystemService(ConnectivityManager.class);
+        return new NewestGameFilesJob.Connectivity() {
+            @Override
+            public boolean metered() {
+                Network network = manager.getActiveNetwork();
+                return network == null || TestService.metered(manager.getNetworkCapabilities(network));
             }
-            NewestGameFiles.Next next = NewestGameFiles.next(GameFiles.ready(storage, version), metered(), yesTo >= 0);
-            if (next == NewestGameFiles.Next.NOTHING) {
-                NewestGameFiles.known(version);
-                TestState.line("FAF game version " + version + " is on the phone already");
-                return;
-            }
-            TestState.step("Measuring the download of FAF game version " + version);
-            long bytes = GameFiles.toDownload(storage.game(version), storage.downloads(), version, Http.ONE_TRY);
-            TestState.line("FAF game version " + version + ": " + NewestGameFiles.size(bytes) + " to download");
-            if (next == NewestGameFiles.Next.ASK) {
-                NewestGameFiles.asking(version, bytes);
-                TestState.line("The network is metered: the app asks before it downloads");
-                return;
-            }
-            if (yesTo < 0) {
-                watch = stopWhenMetered(becameMetered);
-            }
-            NewestGameFiles.downloading(version, bytes);
-            GameFiles.ensure(storage, version, LOG);
-            NewestGameFiles.known(version);
-            TestState.line("FAF game version " + version + " is ready for the game");
-        } catch (Cancellation.Cancelled e) {
-            if (!becameMetered.get()) {
-                NewestGameFiles.stopped(NewestGameFiles.Phase.CANCELLED, "");
-                throw e;
-            }
-            NewestGameFiles.stopped(NewestGameFiles.Phase.METERED, "");
-        } catch (IOException | RuntimeException e) {
-            NewestGameFiles.stopped(NewestGameFiles.Phase.FAILED, e.getMessage() != null ? e.getMessage() : e.toString());
-            throw e;
-        } finally {
-            if (watch != null) {
-                getSystemService(ConnectivityManager.class).unregisterNetworkCallback(watch);
-            }
-        }
-    }
 
-    /** Whether the phone's network is metered (mobile data, a hotspot, a Wi-Fi set so); no network counts as one. */
-    private boolean metered() {
-        ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
-        Network network = connectivity.getActiveNetwork();
-        return network == null || metered(connectivity.getNetworkCapabilities(network));
+            @Override
+            public NewestGameFilesJob.Watch watch(Runnable onMetered) {
+                ConnectivityManager.NetworkCallback callback = new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+                        if (TestService.metered(capabilities)) {
+                            onMetered.run();
+                        }
+                    }
+                };
+                manager.registerDefaultNetworkCallback(callback);
+                return () -> manager.unregisterNetworkCallback(callback);
+            }
+        };
     }
 
     /** Android's rule for a download that should not run on a metered network, also for a plan unmetered for a while. */
@@ -278,21 +249,6 @@ public final class TestService extends Service {
             || !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
                 && !(Build.VERSION.SDK_INT >= 30
                     && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_TEMPORARILY_NOT_METERED));
-    }
-
-    /** Stops the download as Cancel does when the phone's network becomes metered, and says so in {@code stopped}. */
-    private ConnectivityManager.NetworkCallback stopWhenMetered(AtomicBoolean stopped) {
-        ConnectivityManager.NetworkCallback watch = new ConnectivityManager.NetworkCallback() {
-            @Override
-            public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
-                if (metered(capabilities) && !stopped.getAndSet(true)) {
-                    TestState.line("The network has become metered: the download stops");
-                    Cancellation.request();
-                }
-            }
-        };
-        getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(watch);
-        return watch;
     }
 
     private void goForeground(String text) {
@@ -329,8 +285,8 @@ public final class TestService extends Service {
         return new Intent(ACTION_IMPORT).setData(tree);
     }
 
-    /** FAF's newest game version: checked, then downloaded on a network that is not metered, else asked about first. */
-    static Intent newestGameFiles() {
+    /** A check of FAF's newest game version, then its download on a network that is not metered, else a question first. */
+    static Intent checkNewestGameFiles() {
         return new Intent(ACTION_GAME_FILES);
     }
 
