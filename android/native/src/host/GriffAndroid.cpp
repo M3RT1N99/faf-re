@@ -29,6 +29,7 @@
 
 #include <GriffDraft.h>
 #include <GriffPlace.h>
+#include <GriffTap.h>
 
 #include "HostClicks.h"
 #include "MenuFingers.h"
@@ -48,14 +49,12 @@ namespace moho
 namespace
 {
   using griffplace::Box;
+  using grifftap::kRailAttack;
+  using grifftap::kRailBox;
+  using grifftap::kRailQueue;
   using hosttask::Coordinate;
   using hosttask::Places;
   using hosttask::SignedCoordinate;
-
-  // TouchInput's RAIL_ bits.
-  constexpr int kRailBox = 1;
-  constexpr int kRailQueue = 2;
-  constexpr int kRailAttack = 4;
 
   // TouchInput's STEP_: a tap's step on its ladder.
   constexpr int kStepTap = 0;
@@ -81,6 +80,10 @@ namespace
   constexpr int kSaidRouteGivenUp = 2;
   constexpr int kSaidToast = 3;
   constexpr int kSaidCommitted = 4;
+  constexpr int kSaidPan = 5;
+
+  /// Game.GRIFF_VALUES: what Game.griff gives of the handle.
+  constexpr int kHandleValues = 11;
 
   // Game's TOAST_: what the draft says, the activity's words.
   constexpr int kToastNoFreeResource = 1;
@@ -713,6 +716,13 @@ namespace
   float gTolerance = 0;
   float gPlayersTolerance = 0;
 
+  /// The console's command for the reach, in digits that it reads back as this very float: so the program knows its own value
+  /// at the next down, and the player's goes back as it was.
+  void ExecuteTolerance(const float value)
+  {
+    moho::CON_Execute(("ui_SelectTolerance " + grifftap::FloatText(value)).c_str());
+  }
+
   /// FAF's own console variable, as a PC player sets it, and only when it changes.
   void SetTolerance(const float wanted)
   {
@@ -726,9 +736,7 @@ namespace
     }
     gToleranceSet = true;
     gTolerance = wanted;
-    char command[64];
-    std::snprintf(command, sizeof command, "ui_SelectTolerance %g", static_cast<double>(wanted));
-    moho::CON_Execute(command);
+    ExecuteTolerance(wanted);
   }
 
   /// No draft any more on the program's side: its plans, its buildings, what a finger showed of it; the activity hears it with
@@ -747,9 +755,7 @@ namespace
   int Ended(lua_State*)
   {
     if (gToleranceSet && moho::ui_SelectTolerance == gTolerance) {
-      char command[64];
-      std::snprintf(command, sizeof command, "ui_SelectTolerance %g", static_cast<double>(gPlayersTolerance));
-      moho::CON_Execute(command);
+      ExecuteTolerance(gPlayersTolerance);
     }
     gToleranceSet = false;
     gFreeKnown = false;
@@ -1007,10 +1013,11 @@ namespace
   std::deque<Tap> gTaps;
 
   /// What a STEP_TAP was, for the ladder (TouchInput.TapLadder), and with Box counting, which the activity then leaves to this
-  /// answer, the rail's bits it used.
-  void AnswerTap(const Tap& tap, const int kind, const int used)
+  /// answer, the rail's bits it used by what it turned out to be (`outcome`: Rail's rule, grifftap::Used).
+  void AnswerTap(const Tap& tap, const int kind, const grifftap::Outcome outcome = grifftap::Outcome::kOther)
   {
-    Say(kSaidTap, tap.number, kind | ((tap.rail & kRailBox) != 0 ? used : 0) << 8);
+    const int used = (tap.rail & kRailBox) != 0 ? grifftap::Used(tap.rail, outcome) : 0;
+    Say(kSaidTap, tap.number, kind | used << 8);
   }
 
   /// A tap where the finger was and the cursor has rested (TouchInput): FAF's click by what it lands on. The UI's controls take
@@ -1024,14 +1031,15 @@ namespace
     const int y = tap.y;
     const bool queue = (tap.rail & kRailQueue) != 0;
     const bool attack = (tap.rail & kRailAttack) != 0;
+    // With Box counting, the UI's tap and an armed mode's are none of Box's: it stays lit, Plus and Attack go out.
     if (UiTap(x, y)) {
       ClickUi(queue, static_cast<float>(x), static_cast<float>(y), WIN32ANDROID_BUTTON_LEFT);
-      AnswerTap(tap, kTapUi, queue ? kRailQueue : 0);
+      AnswerTap(tap, kTapUi);
       return;
     }
     if (CommandModeArmed()) {
       ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
-      AnswerTap(tap, kTapOther, queue ? kRailQueue : 0);
+      AnswerTap(tap, kTapOther);
       return;
     }
     // What the cursor is over, where it rested: the finger's place.
@@ -1042,17 +1050,17 @@ namespace
       if (own) {
         ClickWith(true, WIN32ANDROID_BUTTON_LEFT, x, y);
       }
-      AnswerTap(tap, kTapOther, own ? kRailBox : 0);
+      AnswerTap(tap, kTapOther, own ? grifftap::Outcome::kBoxToggled : grifftap::Outcome::kBoxFoundNothing);
       return;
     }
     if (attack && selection && ArmAttackMove()) {
       ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
-      AnswerTap(tap, kTapOther, 0);
+      AnswerTap(tap, kTapOther);
       return;
     }
     if (own && !((queue || attack) && (kind & kTroopsSelected) != 0)) {
       ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
-      AnswerTap(tap, queue ? kTapOther : kTapOwn, 0);
+      AnswerTap(tap, queue ? kTapOther : kTapOwn);
       return;
     }
     ClickWith(queue, selection ? WIN32ANDROID_BUTTON_RIGHT : WIN32ANDROID_BUTTON_LEFT, x, y);
@@ -1062,7 +1070,7 @@ namespace
     } else if ((kind & kMoveOrder) != 0 && !queue && !attack) {
       answer = kTapGround;
     }
-    AnswerTap(tap, answer, 0);
+    AnswerTap(tap, answer);
   }
 
   /// A tap of the ladder above its first rung, by what its first tap was, whatever lies under this one: the UI's click again
@@ -1125,7 +1133,7 @@ namespace
         ClickUi(false, static_cast<float>(again ? tap.baseX : tap.x), static_cast<float>(again ? tap.baseY : tap.y),
                 WIN32ANDROID_BUTTON_LEFT);
         if (!again) {
-          AnswerTap(tap, kTapUi, 0);
+          AnswerTap(tap, kTapUi);
         }
       }
     } catch (const std::exception& exception) {
@@ -1200,7 +1208,7 @@ namespace
     gDrag = Drag::kNone;
   }
 
-  /// A finger's drag (Game.griffDrag): where it came down, where it is now, after a rest, the rail's bits.
+  /// A finger's drag (Game.griffDrag): where it came down, where it is now, after a rest, the rail's bits, its number.
   struct DragStart
   {
     int x = 0;
@@ -1209,6 +1217,7 @@ namespace
     int nowY = 0;
     bool rested = false;
     int rail = 0;
+    int number = 0;
   };
 
   std::mutex gDragsMutex;
@@ -1217,7 +1226,7 @@ namespace
   /// A finger's drag from where it came down, as the place wants it: on the map the middle button's, which pans the camera,
   /// pressed where the finger is now so that the map does not jump by the slop it went; after a rest or with Box a selection
   /// box from where it came down, which Plus makes add to the selection (Shift's); on a panel or the minimap the left button's
-  /// from there, as a mouse drags there.
+  /// from there, as a mouse drags there. The activity hears which drag is a pan, which a second finger makes two of.
   void DragTask(const WPARAM)
   {
     DragStart drag;
@@ -1249,6 +1258,7 @@ namespace
     } else {
       gDrag = Drag::kPan;
       Win32Android_TouchButton(WIN32ANDROID_BUTTON_MIDDLE, TRUE, drag.nowX, drag.nowY);
+      Say(kSaidPan, drag.number, 0);
     }
   }
 
@@ -1315,8 +1325,8 @@ namespace
       }
       ClickUi((tap.rail & kRailQueue) != 0, static_cast<float>(tap.x), static_cast<float>(tap.y), WIN32ANDROID_BUTTON_RIGHT);
       if ((tap.rail & kRailBox) != 0) {
-        // Box, which the activity left to the answer, was none of this; Plus counted for the right click.
-        AnswerTap(tap, kTapUi, tap.rail & kRailQueue);
+        // Box, which the activity left to the answer, was none of this: it stays lit, and Plus and Attack go out.
+        AnswerTap(tap, kTapUi);
       }
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
@@ -1938,9 +1948,12 @@ Java_io_github_m3rt1n99_fafre_Game_setGriffBar(JNIEnv*, jclass, const jint left,
 
 /// The handle as the last frame placed it, into x, y, the group's middle x and y, the selection's count and 1 if it points at
 /// the group from elsewhere, else 0; the free map's left, top and right at its middle; the stroke last answered for and what
-/// its end is on. False when there is no handle.
+/// its end is on. False when there is no handle, or no room for it.
 extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griff(JNIEnv* const env, jclass, const jfloatArray handle)
 {
+  if (env->GetArrayLength(handle) < kHandleValues) {
+    return JNI_FALSE;
+  }
   Handle now;
   griffplace::Cross free;
   {
@@ -1949,11 +1962,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griff(J
     free = gFree;
   }
   const std::int64_t answer = gStrokeAnswer.load();
-  const jfloat values[11] = {
+  const jfloat values[kHandleValues] = {
     now.x,     now.y,    now.groupX, now.groupY, static_cast<jfloat>(now.count), now.off ? 1.0f : 0.0f,
     free.left, free.top, free.right, static_cast<jfloat>(answer >> 32), static_cast<jfloat>(answer & 0xFFFFFFFF),
   };
-  env->SetFloatArrayRegion(handle, 0, 11, values);
+  env->SetFloatArrayRegion(handle, 0, kHandleValues, values);
   return now.shown && gOn.load() ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -2038,14 +2051,16 @@ Java_io_github_m3rt1n99_fafre_Game_strokeHover(JNIEnv*, jclass, const jint x, co
   Win32Android_RunOnWindowThread(&StrokeHoverTask, Places(x, y, stroke & 0xFFFF));
 }
 
-/// A finger's drag from here, the finger now at `nowX`, `nowY` (DragTask); `rail`: the RAIL_ bits that count for it.
+/// A finger's drag from here, the finger now at `nowX`, `nowY` (DragTask); `rail`: the RAIL_ bits that count for it; `drag`: its
+/// number, which the program says when it made a pan of it.
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffDrag(
-  JNIEnv*, jclass, const jint x, const jint y, const jint nowX, const jint nowY, const jboolean rested, const jint rail
+  JNIEnv*, jclass, const jint x, const jint y, const jint nowX, const jint nowY, const jboolean rested, const jint rail,
+  const jint drag
 )
 {
   {
     const std::lock_guard<std::mutex> lock(gDragsMutex);
-    gDrags.push_back(DragStart{x, y, nowX, nowY, rested != JNI_FALSE, rail});
+    gDrags.push_back(DragStart{x, y, nowX, nowY, rested != JNI_FALSE, rail, drag});
   }
   Win32Android_RunOnWindowThread(&DragTask, 0);
 }

@@ -192,6 +192,7 @@ final class Game {
     static final int SAID_ROUTE_GIVEN_UP = 2;
     static final int SAID_TOAST = 3;
     static final int SAID_COMMITTED = 4;
+    static final int SAID_PAN = 5;
 
     /** SAID_TOAST: what the draft says (GameActivity's words), with a number where it counts. */
     static final int TOAST_NO_FREE_RESOURCE = 1;
@@ -229,7 +230,8 @@ final class Game {
      * Into `said` what the program has said since the last call, three numbers each (SAID_ and two of its own), as many as fit;
      * how many numbers that is. SAID_TAP: a tap's number and what it was (TouchInput.TAP_) with the rail's bits it used
      * shifted by 8; SAID_ROUTE_GIVEN_UP: a route ended on a panel; SAID_TOAST: what the draft says (TOAST_) and its number;
-     * SAID_COMMITTED: the draft was ticked, with the rail's bits it used.
+     * SAID_COMMITTED: the draft was ticked, with the rail's bits it used; SAID_PAN: a drag's number ({@link #griffDrag}) that the
+     * program made a pan of.
      */
     static native int griffSaid(int[] said);
 
@@ -268,14 +270,17 @@ final class Game {
     /**
      * A finger's drag from here (`rested`: after a rest), as the place wants it: on the map a pan from where the finger is now
      * (`nowX`, `nowY`), or a selection box after a rest or with RAIL_BOX, with RAIL_QUEUE adding to the selection; elsewhere the
-     * left button's drag. {@link #griffDragEnd} ends it.
+     * left button's drag. {@link #griffDragEnd} ends it. A pan the program says by the drag's number `drag` ({@link #SAID_PAN}).
      */
-    static native void griffDrag(int x, int y, int nowX, int nowY, boolean rested, int rail);
+    static native void griffDrag(int x, int y, int nowX, int nowY, boolean rested, int rail, int drag);
 
     /** The drag ends here; a pan's camera glides on at this velocity in the picture's pixels a second. */
     static native void griffDragEnd(int x, int y, float velocityX, float velocityY);
 
-    /** A finger rested here and lifted: on a panel FAF's right click, with the tap help, and with Shift for RAIL_QUEUE; on the map nothing. */
+    /**
+     * A finger rested here and lifted: on a panel FAF's right click, with the tap help, and with Shift for RAIL_QUEUE; on the map
+     * nothing. With RAIL_BOX there was no rest, and on the map it is Box's tap, which says the rail's bits it used (SAID_TAP).
+     */
     static native void restTap(int x, int y, int rail);
 
     /**

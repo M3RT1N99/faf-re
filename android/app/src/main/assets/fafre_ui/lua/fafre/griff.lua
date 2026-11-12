@@ -37,6 +37,11 @@ local function Members(units)
     return units
 end
 
+--- How long a move of dx and dz on the map is.
+local function Length(dx, dz)
+    return math.sqrt(dx * dx + dz * dz)
+end
+
 --- About how many of the picture's pixels one of the world's lengths takes on the screen at this place.
 local function PixelsPerLength(view, place)
     local here = view:Project(place)
@@ -157,21 +162,36 @@ local function FlightStep(view, settings, delta)
     local x = focus[1] + (target[1] - focus[1]) * part
     local y = focus[2] + (target[2] - focus[2]) * part
     local z = focus[3] + (target[3] - focus[3]) * part
-    local dx, dz = target[1] - x, target[3] - z
-    if math.sqrt(dx * dx + dz * dz) * PixelsPerLength(view, target) < 1 then
+    local scale = PixelsPerLength(view, target)
+    if Length(target[1] - x, target[3] - z) * scale < 1 then
         x, y, z = target[1], target[2], target[3]
         motion.flight = false
     end
     settings.Focus = Vector(x, y, z)
     local camera = Camera()
     camera:RestoreSettings(settings)
+    -- Held by the map's edge, as FAF keeps its camera over the map: FAF moved it less than half the step asked. A step under a
+    -- pixel says nothing of that, as from a frame's tiny delta, and so near the group the pixel's snap ends the flight.
+    local asked = Length(x - focus[1], z - focus[3])
     local now = camera:SaveSettings().Focus
-    if math.abs(now[1] - focus[1]) + math.abs(now[3] - focus[3]) < 0.01 then
+    if asked * scale >= 1 and Length(now[1] - focus[1], now[3] - focus[3]) < asked / 2 then
         motion.flight = false
     end
 end
 
---- Each frame of the UI, after the camera's: what it drew, and the glide's or the flight's next step.
+--- Each frame of the UI, after the camera's: the camera it drew, which UnProject shows until the next, for the pinch's moves.
+--- None without a view or a camera: a pinch then does nothing rather than work from an old camera.
+local function See()
+    motion.seen = false
+    local view = WorldView.viewLeft
+    local camera = Camera()
+    if view and camera then
+        local settings = camera:SaveSettings()
+        motion.seen = {focus = settings.Focus, zoom = settings.Zoom}
+    end
+end
+
+--- Each frame of the UI, after the camera's: the glide's or the flight's next step.
 local function Drive(delta)
     local view = WorldView.viewLeft
     local camera = Camera()
@@ -179,7 +199,6 @@ local function Drive(delta)
         return
     end
     local settings = camera:SaveSettings()
-    motion.seen = {focus = settings.Focus, zoom = settings.Zoom}
     if motion.glide then
         GlideStep(view, settings, delta)
     elseif motion.flight then
@@ -415,7 +434,8 @@ end
 
 -- --- The session's UI, each frame -----------------------------------------------------------------------------------------
 
---- Each frame of the session's UI under `parent`, while the app wants it. An error stops what failed, with one warning.
+--- Each frame of the session's UI under `parent`, while the app wants it. An error stops what failed, with one warning: the
+--- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on.
 function Start(parent)
     if not FafreGriffBox then
         return
@@ -425,7 +445,7 @@ function Start(parent)
     LayoutHelpers.AtLeftTopIn(reporter, parent)
     reporter.Width:Set(0)
     reporter.Height:Set(0)
-    local reporting, driving = true, true
+    local reporting, seeing, driving = true, true, true
     local anchoring = true
     reporter.OnFrame = function(self, delta)
         if not FafreGriffWanted() then
@@ -446,6 +466,15 @@ function Start(parent)
                 anchoring = false
             end
         end
+        -- First what the frame drew, before a step moves the camera for the next.
+        if seeing then
+            local ok, problem = pcall(See)
+            if not ok then
+                WARN('fafre_ui: griff: camera seen: ' .. tostring(problem))
+                motion.seen = false
+                seeing = false
+            end
+        end
         if driving then
             local ok, problem = pcall(Drive, delta)
             if not ok then
@@ -454,7 +483,7 @@ function Start(parent)
                 driving = false
             end
         end
-        if not reporting and not driving then
+        if not reporting and not seeing and not driving then
             self:SetNeedsFrameUpdate(false)
         end
     end

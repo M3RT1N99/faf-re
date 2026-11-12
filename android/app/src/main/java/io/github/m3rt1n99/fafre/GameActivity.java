@@ -172,15 +172,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final List<TextView> mRailButtons = new ArrayList<>();
     private int mRailShown = -1;
     private GriffLayer mGriffLayer;
-    /** The handle as Game.griff gives it, and where the screen shows it, while a game is on. */
+    /**
+     * The handle as Game.griff gives it, and as the screen shows it, while a game's frames are read: it stays where a stroke
+     * began, and the program's answers for the stroke are its own.
+     */
     private final float[] mGriffHandle = new float[Game.GRIFF_VALUES];
-    private boolean mGriffShown;
-    private float mGriffX;
-    private float mGriffY;
+    private final GriffHandle mHandle = new GriffHandle();
     private boolean mGriffPolling;
-    /** A stroke is drawn, and its number: the handle stays where the stroke began, and the program's answers are its own. */
-    private boolean mStroking;
-    private int mStroke;
     /** What the program says (Game.griffSaid). */
     private final int[] mGriffSaid = new int[3 * 16];
     /** Griff's draft as the program shows it (Game.griffDraft), and its tick and cross. */
@@ -325,8 +323,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         public boolean onGriff(float x, float y) {
             // As the last frame placed it. With Box the handle steps aside, for a box that starts under it.
             readGriff();
-            return mGriffShown && (rail() & TouchInput.RAIL_BOX) == 0
-                && Math.hypot(x - mGriffX, y - mGriffY) <= (GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * viewPixelsPerMm();
+            return mHandle.shown() && (rail() & TouchInput.RAIL_BOX) == 0
+                && Math.hypot(x - mHandle.x(), y - mHandle.y()) <= (GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * viewPixelsPerMm();
         }
 
         @Override
@@ -347,19 +345,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void strokeShown(float[] xs, float[] ys, int count, int mode, float[] waypointXs, float[] waypointYs, int waypoints) {
-            if (count > 0 && !mStroking) {
-                // A new stroke: the handle stays where it began, and only the program's answers for this one count (its
-                // number goes to the program in 16 bits).
-                mStroke = (mStroke + 1) & 0xFFFF;
+            if (mHandle.stroke(count > 0)) {
+                // A new stroke: the handle stays where it began, and only the program's answers for this one count.
                 mGriffLayer.setStrokeEnd(0);
             }
-            mStroking = count > 0;
             mGriffLayer.showStroke(xs, ys, count, mode, waypointXs, waypointYs, waypoints);
         }
 
         @Override
         public void strokeHover(float x, float y) {
-            Game.strokeHover(fingerX(x), fingerY(y), mStroke);
+            Game.strokeHover(fingerX(x), fingerY(y), mHandle.strokeNumber());
         }
 
         @Override
@@ -379,8 +374,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
 
         @Override
-        public void griffDrag(float x, float y, float nowX, float nowY, boolean rested, int rail) {
-            Game.griffDrag(fingerX(x), fingerY(y), fingerX(nowX), fingerY(nowY), rested, rail);
+        public void griffDrag(float x, float y, float nowX, float nowY, boolean rested, int rail, int drag) {
+            Game.griffDrag(fingerX(x), fingerY(y), fingerX(nowX), fingerY(nowY), rested, rail, drag);
         }
 
         @Override
@@ -1079,27 +1074,23 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * The handle as the last frame placed it, where the screen shows it, while a game is on; while a stroke is drawn it stays
-     * where the stroke began. With it the free map, and what the stroke's end is on.
+     * The handle as the last frame placed it, where the screen shows it, while a game's frames are read; while a stroke is drawn
+     * it stays where the stroke began, and with the frames it goes (GriffHandle). With it the free map, and what the stroke's
+     * end is on.
      */
     private void readGriff() {
         boolean shown = mGriffPolling && Game.griff(mGriffHandle);
         readDraft();
         // While the draft is open there is no handle: no stroke starts (the mockup's).
         shown = shown && !mDraft.open();
-        if (mStroking) {
-            if (mGriffHandle[Game.GRIFF_STROKE] == mStroke) {
+        if (!mHandle.place(mGriffPolling, shown, mPageView.screenX(mGriffHandle[0]), mPageView.screenY(mGriffHandle[1]))) {
+            if (mGriffHandle[Game.GRIFF_STROKE] == mHandle.strokeNumber()) {
                 mGriffLayer.setStrokeEnd((int) mGriffHandle[Game.GRIFF_STROKE_END]);
             }
             return;
         }
-        mGriffShown = shown;
-        if (mGriffShown) {
-            mGriffX = mPageView.screenX(mGriffHandle[0]);
-            mGriffY = mPageView.screenY(mGriffHandle[1]);
-        }
-        mGriffLayer.setHandle(mGriffShown, mGriffX, mGriffY, mPageView.screenX(mGriffHandle[2]), mPageView.screenY(mGriffHandle[3]),
-            (int) mGriffHandle[4], mGriffHandle[5] != 0);
+        mGriffLayer.setHandle(mHandle.shown(), mHandle.x(), mHandle.y(), mPageView.screenX(mGriffHandle[2]),
+            mPageView.screenY(mGriffHandle[3]), (int) mGriffHandle[4], mGriffHandle[5] != 0);
         mGriffLayer.setFreeMap(mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_LEFT]), mPageView.screenY(mGriffHandle[Game.GRIFF_FREE_TOP]),
             mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_RIGHT]));
     }
@@ -1283,8 +1274,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * What the program said of Griff's taps, routes and draft: the rail's buttons a Box tap or a tick used, the tap ladder's
-     * answers, a toast.
+     * What the program said of Griff's taps, drags, routes and draft: the rail's buttons a Box tap or a tick used, the tap ladder's
+     * answers, a drag it made a pan of, a toast.
      */
     private void readGriffSaid() {
         int count;
@@ -1297,6 +1288,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                         mRail.used(answer >> 8);
                         showRail();
                     }
+                } else if (mGriffSaid[at] == Game.SAID_PAN) {
+                    mTouch.panned(mGriffSaid[at + 1]);
                 } else if (mGriffSaid[at] == Game.SAID_ROUTE_GIVEN_UP) {
                     mGriffLayer.toast(CANCELLED);
                 } else if (mGriffSaid[at] == Game.SAID_TOAST) {

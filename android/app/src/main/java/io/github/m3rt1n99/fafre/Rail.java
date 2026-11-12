@@ -5,6 +5,14 @@ package io.github.m3rt1n99.fafre;
  * RAIL_ bits. A tap lights a button for the next action, which puts it out, as does a second tap; held, it counts until it
  * goes up, and a moment after, as a thumb and a finger often lift together. A press that an action used lights nothing; a
  * press that was no tap (a hold, a cancel, a finger that slid off) leaves the light as it was, unless the hold used it.
+ *
+ * <p>What a finger's tap or rest uses: the buttons that counted for it, whatever it turned out to be, Box as it counted when
+ * the finger came down (TouchInput). Box only where it took one's own unit into the selection or out of it: through a tap on
+ * FAF's UI, an armed command mode's tap or a rest's right click on a panel Box stays lit while Plus and Attack go out, and
+ * Box's tap on nothing at all is no action and uses none (the mockup's). Without Box the activity puts them out at once; with
+ * Box the program says what it used (Game.SAID_TAP, its rule in include/GriffTap.h). Of the other actions a box on the map uses
+ * Box and Plus, the draft's box over deposits Box, a route Plus and Attack, the draft's tick Plus; a pan, the handle's tap and
+ * the draft's plans use none.
  */
 final class Rail {
     /** A press shorter than this, which no action used and which stayed on the button, is a tap. */

@@ -186,8 +186,12 @@ public class TouchInputTest {
             events.add("rail used " + used);
         }
 
+        /** Griff: the number of the last drag sent, by which the program says it panned. */
+        int lastDrag;
+
         @Override
-        public void griffDrag(float x, float y, float nowX, float nowY, boolean rested, int railNow) {
+        public void griffDrag(float x, float y, float nowX, float nowY, boolean rested, int railNow, int drag) {
+            lastDrag = drag;
             events.add("griff drag " + (int) x + " " + (int) y + " now " + (int) nowX + " " + (int) nowY + (rested ? " rested" : "")
                        + " rail " + railNow);
         }
@@ -690,6 +694,95 @@ public class TouchInputTest {
     }
 
     @Test
+    public void griffAFingerTheLadderLetPastTheHandleIsNeverAPlainTapThere() {
+        // A finger 5 mm from a tap on a unit, on the handle that tap raised, comes down 300 ms after the tap's lift and lifts
+        // 390 ms after it, too late to climb. The handle left it to the ladder at its down, as the ladder might climb, so its
+        // lift is the ladder's rung or the handle's tap: never FAF's click at the handle's place, which with troops is a move.
+        griff();
+        down(0, 100, 50, 1000);
+        up(0, 1080);
+        timerRuns();
+        touch.tapAnswered(mouse.lastTap, TouchInput.TAP_OWN);
+        mouse.griffX = 160;
+        mouse.griffY = 50;
+        mouse.events.clear();
+        down(0, 150, 50, 1380);
+        up(0, 1470);
+        if (mouse.timer >= 0) {
+            timerRuns();
+        }
+        String events = mouse.events.toString();
+        assertFalse(events, mouse.events.contains("smart tap 150 50 rail 0"));
+        assertTrue(events, mouse.events.contains("griff tap") || mouse.events.contains("smart tap 150 50 rail 0 type in view at 100 50"));
+    }
+
+    @Test
+    public void griffAFingerOnTheHandleBeforeTheProgramAnsweredIsNeverAPlainTapThere() {
+        // The handle leaves a finger to the ladder while the program has not said what the last tap was, as the ladder might
+        // climb; the answer comes only after the finger's lift, as from a slow frame. The lift cannot climb, and is the
+        // handle's tap, not FAF's click at the handle's place.
+        griff();
+        down(0, 100, 50, 1000);
+        up(0, 1080);
+        timerRuns();
+        int first = mouse.lastTap;
+        mouse.griffX = 160;
+        mouse.griffY = 50;
+        mouse.events.clear();
+        down(0, 150, 50, 1200);
+        up(0, 1260);
+        if (mouse.timer >= 0) {
+            timerRuns();
+        }
+        touch.tapAnswered(first, TouchInput.TAP_OWN);
+        if (mouse.timer >= 0) {
+            timerRuns();
+        }
+        String events = mouse.events.toString();
+        assertFalse(events, mouse.events.contains("smart tap 150 50 rail 0"));
+        assertTrue(events, mouse.events.contains("griff tap") || mouse.events.contains("smart tap 150 50 rail 0 type in view at 100 50"));
+    }
+
+    @Test
+    public void griffWithPlusTheHandleTakesAStrokeRightAfterATap() {
+        // The ladder never climbs while Plus or Attack count, at the down as at the lift: a stroke from the handle 200 ms after
+        // a tap on a unit, with Plus held, is the handle's, a queued route, not a pan of a finger left to the ladder.
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_OWN);
+        mouse.griffX = 160;
+        mouse.griffY = 50;
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        mouse.events.clear();
+        down(0, 150, 50, 1320);
+        strokeFirst(150, 50, 450, 50);
+        up(0, 1800);
+        assertFalse(mouse.events.toString(), mouse.events.isEmpty());
+        assertTrue(mouse.events.toString(), mouse.events.get(0).startsWith("route ") && mouse.events.get(0).endsWith(" rail 2"));
+    }
+
+    @Test
+    public void griffTheHandlesTapOfAFingerTheLadderLetPassUsesNoRailAndStartsNoLadder() {
+        // The handle left the finger to the ladder; Plus, pressed before the lift, keeps the tap off the ladder: it is the
+        // handle's tap, as a stroke's is, and Plus stays for the next action.
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_OWN);
+        mouse.griffX = 160;
+        mouse.griffY = 50;
+        mouse.events.clear();
+        down(0, 150, 50, 1300);
+        mouse.rail = TouchInput.RAIL_QUEUE;
+        up(0, 1300 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 150 50", "griff tap");
+        // No ladder from it: a stroke from the handle at once is a route, not a finger left to a ladder that might climb.
+        mouse.rail = 0;
+        mouse.events.clear();
+        down(0, 150, 50, 1520);
+        strokeFirst(150, 50, 450, 50);
+        up(0, 1900);
+        assertTrue(mouse.events.toString(), mouse.events.get(0).startsWith("route "));
+    }
+
+    @Test
     public void griffATwoFingerTapLetsTheSelectionGo() {
         griff();
         down(0, 100, 50, 1000);
@@ -788,10 +881,81 @@ public class TouchInputTest {
         griff();
         down(0, 100, 100, 1000);
         moveFirst(150, 100, 1100);
+        // The program says that it made a pan of the drag (Game.SAID_PAN).
+        touch.panned(mouse.lastDrag);
         down(1, 400, 100, 1200);
         moveBoth(130, 100, 420, 100);
         expect("move 100 100", "griff drag 100 100 now 150 100 rail 0", "move 150 100", "griff drag end 150 100", "move 400 100",
                "pinch start 275 100 290");
+    }
+
+    @Test
+    public void griffASecondFingerLeavesADragNotKnownAsAPanAlone() {
+        // Only the program tells a pan from a drag on a panel or the minimap (DragTask): a second finger leaves a drag alone
+        // that the program has not said is a pan, and pinches no map behind a panel.
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1100);
+        mouse.events.clear();
+        down(1, 400, 100, 1200);
+        moveBoth(130, 100, 420, 100);
+        for (String event : mouse.events) {
+            assertFalse(mouse.events.toString(), event.startsWith("griff drag end") || event.startsWith("pinch"));
+        }
+    }
+
+    @Test
+    public void griffTheProgramsWordIsForOneDragAlone() {
+        // A pan, its word in time; then a drag on a panel, which no word makes a pan, nor a late word for the pan before.
+        griff();
+        down(0, 100, 100, 1000);
+        moveFirst(150, 100, 1100);
+        int pan = mouse.lastDrag;
+        touch.panned(pan);
+        up(0, 1200);
+        down(0, 600, 100, 2000);
+        moveFirst(650, 100, 2100);
+        mouse.events.clear();
+        down(1, 900, 100, 2200);
+        touch.panned(pan);
+        down(2, 900, 120, 2250);
+        moveBoth(630, 100, 920, 100);
+        expect("move 630 100");
+        // Its own word does.
+        touch.panned(mouse.lastDrag);
+        down(3, 900, 100, 2300);
+        assertEquals("griff drag end 630 100", mouse.events.get(1));
+    }
+
+    @Test
+    public void griffATapAndARestAreBoxsByBoxAsItCountedWhenTheFingerCameDown() {
+        // FAF's reach for a unit beside the finger is set at its down, for Box or for the selection: a held Box let go before
+        // the lift leaves the tap Box's, and Box held only after the down makes it none of Box's.
+        griff();
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 100, 50, 1000);
+        mouse.rail = 0;
+        up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
+        down(0, 200, 50, 2000);
+        mouse.rail = TouchInput.RAIL_BOX | TouchInput.RAIL_QUEUE;
+        up(0, 2000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 100 50", "smart tap 100 50 rail 1", "move 200 50", "smart tap 200 50 rail 2", "rail used 2");
+        assertEquals(List.of("100 50 box", "200 50"), mouse.downs);
+        // A rest the same: Box at its down makes it none, whatever Box does by its lift; Box only after the down leaves it one.
+        mouse.events.clear();
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 300, 50, 3000);
+        mouse.rail = 0;
+        timerRuns();
+        assertFalse("with Box no ring", mouse.ringShown);
+        up(0, 3600);
+        mouse.rail = 0;
+        down(0, 400, 50, 4000);
+        mouse.rail = TouchInput.RAIL_BOX;
+        timerRuns();
+        assertTrue("a ring: Box came after the down", mouse.ringShown);
+        up(0, 4600);
+        expect("move 300 50", "rest tap 300 50 rail 1", "move 400 50", "held", "rest tap 400 50 rail 0");
     }
 
     @Test
