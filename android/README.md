@@ -52,7 +52,7 @@ the game data they imported. Everything lives in the app's external files folder
 | Folder | What |
 |---|---|
 | `scfa/` | The user's own *Supreme Commander: Forged Alliance*: `gamedata/*.scd`, `fonts/`, `sounds/`, `movies/` (*Import SCFA folder…*, which copies what an earlier release's import has not), `maps/` if imported |
-| `parity/game/<version>/` | FAF's game files for one game version, packed as `tools/parity-data` packs them for CI: `gamedata/*.nx2` cut to the files headless reads, `bin/init_ci.lua`, `fa_path.lua` pointing at `scfa/` |
+| `parity/game/<version>/` | FAF's game files for one game version, packed as `tools/parity-data` packs them for CI: `gamedata/*.nx2` whole, as FAF's updater publishes them (pack format 3), `bin/init_ci.lua`, `fa_path.lua` pointing at `scfa/` |
 | `parity/replays/`, `maps/`, `m28/` | Downloaded replays, vault maps and M28AI versions |
 | `parity/runs/<id>/` | One replay's run: `replay.scfareplay`, its own vault, `headless.out`, `engine.log`, `speed.csv` |
 | `parity/results/` | The results zips |
@@ -102,7 +102,7 @@ the game data they imported. Everything lives in the app's external files folder
   guest Vulkan 1.3, and the test runs.
 - **Game** (card 5, `GameActivity`): `libfafgame.so`, the whole engine with its host
   (`native/src/host`), starts as the PC starts it, with the SCFA import and FAF's game files of the
-  newest version a replay downloaded: `ForgedAlliance.exe /init <its init file> /log
+  newest version on the phone (the highest whole one): `ForgedAlliance.exe /init <its init file> /log
   game/engine.sclog`, the program's path in the game files' `bin` folder. It runs in a process of
   its own (`:game`) on a full-screen surface, which ends with the program, as a Windows program's
   does. It draws the menus and plays a skirmish, with the game's sound (FACT on AAudio) and its
@@ -171,9 +171,24 @@ the game data they imported. Everything lives in the app's external files folder
     an order of the orders panel says "First ✓ or ✕". FAF's build keys and templates keep FAF's ghost, which is placed as
     with the mouse.
   - Not there yet: undo, order pins and control groups (Griff has no Ctrl to make one).
+- **FAF's newest version** (card 5, *Get FAF's newest version*; `FafRelease`, `NewestGameFiles`, TestService's
+  `ACTION_GAME_FILES`): so that the phone can play a PC on FAF's current version. The number is GitHub's latest release
+  of FAForever/fa (`api.github.com/repos/FAForever/fa/releases/latest`, no key: 60 requests an hour from one address,
+  which phones on mobile data may share), taken when FAF's updater has its `init_faf_<v>.lua`; a release that is tagged
+  but not deployed yet gives way to the next lower numeric tag that is (`/tags`, at most five tried). The size is the
+  updater's Content-Length of the packages still to get, less what a cut-off download left (3840: 682 MB). Then
+  `GameFiles.ensure` downloads them as a replay's run does, with the Progress card's steps, cancel and log. On a metered
+  network (mobile data, a hotspot, a Wi-Fi set so) the card asks first; without that yes the download runs only on a
+  network that is not metered and stops when it becomes metered, and the next run goes on from where it stopped. The
+  card's line shows both versions, `FAF game files: 3835 (newest at FAF: 3840)`; if GitHub is unreachable or at its
+  limit, the line says so and nothing is downloaded. Older versions stay for the replay test. The UI package's hooks are
+  appended to FAF's files of whatever version, each in a pcall, so a change in FAF's files shows as a `fafre_ui:`
+  warning in `engine.sclog` rather than a broken game. The check against the real servers is a JVM test outside the
+  normal run: `FAFRE_ONLINE=1 ./gradlew :app:testReleaseUnitTest --tests '*FafReleaseOnlineTest' --rerun`.
 - **Network games**: *Multiplayer LAN* in the game's menu is the game's own lobby, with nothing from FAF's servers
   (`native/README.md`, The network). It plays against FAF's game on a PC in lockstep, and both sides need the same
-  game: the app's FAF files are those of the newest version a replay downloaded, 3835 so far. A PC's FAF folder may
+  game: the app's FAF files are those of the newest version on the phone, and the game card's *Get FAF's newest
+  version* brings FAF's current one. A PC's FAF folder may
   be on another version. Then the lobby and the first minutes look right, and the game desyncs (a newer exe on 3835's
   Lua did at beat 2350). FAF's client keeps the version of the last replay it played in `replaydata`, program and files.
   The map must be on both sides.

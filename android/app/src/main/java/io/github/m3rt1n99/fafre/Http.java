@@ -12,8 +12,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Downloads from FAF's servers as tools/parity-data does: one request at a time, at least a
- * second apart, with a User-Agent that names the project. A large file goes to
+ * Downloads from FAF's servers as tools/parity-data does, and asks GitHub which game version is
+ * FAF's newest (FafRelease): one request at a time, at least a second apart, with a User-Agent
+ * that names the project. A large file goes to
  * {@code <name>.part} and resumes with an HTTP Range request after a dropped connection or a
  * cancel.
  */
@@ -42,6 +43,45 @@ final class Http {
     interface Progress {
         void bytes(long done, long total);
     }
+
+    /**
+     * What a check asks of GitHub and FAF's updater while the user waits for its answer: one try each, so that a
+     * failure shows at once rather than after minutes of retries. The tests answer instead of the network.
+     */
+    interface Requests {
+        /** A small text, whole. */
+        String text(String url) throws IOException;
+
+        /** A file's length by a HEAD request, -1 when the server does not say; a StatusException with 404 when it is not there. */
+        long length(String url) throws IOException;
+    }
+
+    /** The network's answers; the user's Cancel stops a check before its next request. */
+    static final Requests ONE_TRY = new Requests() {
+        @Override
+        public String text(String url) throws IOException {
+            Cancellation.check();
+            HttpURLConnection connection = open(url, "GET", 0);
+            try (InputStream in = connection.getInputStream()) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                copy(in, out, null, 0, -1);
+                return utf8(out.toByteArray());
+            } finally {
+                connection.disconnect();
+            }
+        }
+
+        @Override
+        public long length(String url) throws IOException {
+            Cancellation.check();
+            HttpURLConnection connection = open(url, "HEAD", 0);
+            try {
+                return connection.getContentLengthLong();
+            } finally {
+                connection.disconnect();
+            }
+        }
+    };
 
     private Http() {
     }
@@ -77,9 +117,10 @@ final class Http {
         sLastRequest = System.currentTimeMillis();
     }
 
-    private static HttpURLConnection open(String url, long from) throws IOException {
+    private static HttpURLConnection open(String url, String method, long from) throws IOException {
         pace();
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setRequestMethod(method);
         connection.setConnectTimeout(20_000);
         connection.setReadTimeout(60_000);
         connection.setRequestProperty("User-Agent", userAgent());
@@ -103,7 +144,7 @@ final class Http {
             }
             HttpURLConnection connection = null;
             try {
-                connection = open(url, 0);
+                connection = open(url, "GET", 0);
                 try (InputStream in = connection.getInputStream()) {
                     ByteArrayOutputStream out = new ByteArrayOutputStream();
                     copy(in, out, null, 0, -1);
@@ -137,7 +178,7 @@ final class Http {
             long have = part.isFile() ? part.length() : 0;
             HttpURLConnection connection = null;
             try {
-                connection = open(url, have);
+                connection = open(url, "GET", have);
                 boolean resumed = connection.getResponseCode() == 206;
                 if (!resumed) {
                     have = 0;

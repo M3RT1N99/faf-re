@@ -2,6 +2,7 @@ package io.github.m3rt1n99.fafre;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -62,6 +63,7 @@ public final class MainActivity extends Activity {
     private TextView mMathResult;
     private TextView mRendererResult;
     private TextView mGameResult;
+    private TextView mNewest;
     private TextView mDataStatus;
     private TextView mStep;
     private TextView mReplayResults;
@@ -107,8 +109,8 @@ public final class MainActivity extends Activity {
             "Your own Supreme Commander: Forged Alliance (its gamedata/*.scd archives, fonts/, sounds/ and movies/, about "
                 + "7.5 GB), imported once. An import by an earlier release has no sounds or movies, without which the game "
                 + "is silent and has no films: import the folder again, which copies only what is missing. FAF's own files "
-                + "for a replay's game version are downloaded on the first run (about 700 MB from FAF, kept whole), replays "
-                + "and maps as needed.");
+                + "for a replay's game version are downloaded on the first run, FAF's newest by the button on card 5 (about "
+                + "700 MB from FAF each, kept whole), replays and maps as needed.");
         mDataStatus = text("", 14, TEXT);
         data.addView(mDataStatus);
         mStartButtons.add(button(data, "Import SCFA folder…", v -> pickScfa()));
@@ -158,8 +160,13 @@ public final class MainActivity extends Activity {
 
         // 5. The game.
         LinearLayout game = card(column, "5 · Game",
-            "The whole game on this phone, as the PC starts it: with your SCFA and FAF's game files of the newest version a "
-                + "replay downloaded (cards 2 and 3). It draws the menus and plays a skirmish, without sound or movies yet. "
+            "The whole game on this phone, as the PC starts it: with your SCFA and FAF's game files of the newest version "
+                + "on the phone. The replay test brings each replay's own version (cards 2 and 3); \"Get FAF's newest "
+                + "version\" below brings the one PCs on FAF play now, about 700 MB, by itself on a network that is not "
+                + "metered and after a question on mobile data. Older versions stay, for the replays. The app's UI hooks "
+                + "(fafre_ui) are appended to FAF's files of whatever version, each in a pcall, so a change in FAF's file "
+                + "shows as a \"fafre_ui:\" warning in the game's log rather than a broken game. "
+                + "It draws the menus and plays a skirmish, without sound or movies yet. "
                 + "A tap is a click, a finger that moves drags, a finger that stays is the right button (an order); two fingers "
                 + "move the camera and zoom. The bar at the screen's edge has Order (taps give orders), Shift, Ctrl and the "
                 + "keyboard, and Back is Esc. The report says how it ended. With the touch controls Griff (the button below) "
@@ -183,6 +190,9 @@ public final class MainActivity extends Activity {
             TouchScheme.next(this);
             touch.setText(TouchScheme.label(this));
         });
+        mStartButtons.add(button(game, "Get FAF's newest version", v -> TestService.start(this, TestService.newestGameFiles())));
+        mNewest = text("", 14, TEXT);
+        game.addView(mNewest);
         mGameResult = text("", 14, TEXT);
         game.addView(mGameResult);
 
@@ -259,6 +269,10 @@ public final class MainActivity extends Activity {
             return;
         }
         mShownRevision = revision;
+        NewestGameFiles question = running ? null : NewestGameFiles.question();
+        if (question != null) {
+            askToDownload(question);
+        }
         String math = TestState.mathVerdict();
         mMathResult.setText(math);
         String rendererVerdict = TestState.rendererVerdict();
@@ -282,23 +296,33 @@ public final class MainActivity extends Activity {
                 ? "SCFA: " + archives + " archives, " + fonts + " fonts, " + ScfaImport.soundBanks(storage) + " sound banks, "
                     + ScfaImport.movies(storage) + " movies in " + storage.scfa
                 : "SCFA: not imported yet");
-            String[] versions = new File(storage.parity, "game").list();
+            List<Integer> versions = GameFiles.readyVersions(storage);
             status.append("\nFAF game files: ");
-            boolean any = false;
-            if (versions != null) {
-                for (String version : versions) {
-                    if (GameFiles.ready(storage, Integer.parseInt(version))) {
-                        status.append(any ? ", " : "").append(version);
-                        any = true;
-                    }
-                }
+            for (int i = 0; i < versions.size(); ++i) {
+                status.append(i > 0 ? ", " : "").append(versions.get(i));
             }
-            status.append(any ? "" : "none yet (downloaded on the first replay)");
+            status.append(versions.isEmpty() ? "none yet (downloaded on the first replay, or by card 5's button)" : "");
             mDataStatus.setText(status);
             mDataStatus.setTextColor(archives > 0 && fonts > 0 ? TEXT : FAIL);
-        } catch (IOException | NumberFormatException e) {
+            NewestGameFiles newest = NewestGameFiles.now();
+            mNewest.setText(newest.line(versions.isEmpty() ? -1 : versions.get(versions.size() - 1)));
+            mNewest.setTextColor(newest.phase == NewestGameFiles.Phase.FAILED ? FAIL : TEXT);
+        } catch (IOException e) {
             mDataStatus.setText("Storage: " + e.getMessage());
         }
+    }
+
+    /** A download on a metered network waits for a yes to its size. */
+    private void askToDownload(NewestGameFiles question) {
+        String size = NewestGameFiles.size(question.bytes);
+        new AlertDialog.Builder(this)
+            .setTitle("Download " + size + " on a metered network?")
+            .setMessage("FAF's game version " + question.newest + " is " + size + " from FAF's servers, and the phone's network "
+                + "is metered (mobile data, a hotspot, or a Wi-Fi set so). On a network that is not, the button downloads "
+                + "without asking.")
+            .setPositiveButton("Download", (dialog, which) -> TestService.start(this, TestService.gameFiles(question.newest)))
+            .setNegativeButton("Not now", null)
+            .show();
     }
 
     /** "26902315 26930624 ...": a replay set for the ID field. */

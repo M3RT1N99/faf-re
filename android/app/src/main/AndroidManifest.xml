@@ -9,6 +9,8 @@
 
     <!-- FAF's game files, replays, maps and mods (content.faforever.com, replay.faforever.com), the game's lobby and network games. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Whether the network is metered: the Game card's download of FAF's newest version runs by itself only on one that is not. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- GameActivity's multicast lock: Wi-Fi hands a phone the broadcasts that find LAN games only under it. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- TestService: downloads and test runs keep going with the screen off or the app in the background. NetworkGameService: so does a network game. -->

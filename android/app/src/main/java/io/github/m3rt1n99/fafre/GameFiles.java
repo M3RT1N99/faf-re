@@ -13,7 +13,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -61,6 +63,26 @@ final class GameFiles {
     static boolean ready(Storage storage, int version) {
         File dir = storage.game(version);
         return packFormat(dir) == PACK_FORMAT && new File(dir, "bin/init_ci.lua").isFile();
+    }
+
+    /** The game versions whose files are ready on the phone, oldest first; the game starts with the last. */
+    static List<Integer> readyVersions(Storage storage) {
+        List<Integer> versions = new ArrayList<>();
+        String[] names = new File(storage.parity, "game").list();
+        if (names != null) {
+            for (String name : names) {
+                try {
+                    int version = Integer.parseInt(name);
+                    if (ready(storage, version)) {
+                        versions.add(version);
+                    }
+                } catch (NumberFormatException e) {
+                    // not a version's folder
+                }
+            }
+        }
+        Collections.sort(versions);
+        return versions;
     }
 
     /** The manifest's pack format: -1 without a readable manifest, 1 before the field existed. */
@@ -138,6 +160,36 @@ final class GameFiles {
             throw new IOException(e);
         }
         return dir;
+    }
+
+    /**
+     * What {@link #ensure} downloads for {@code version} into {@code dir}, in bytes, by HEAD requests to FAF's
+     * updater: every package when the folder is not packed as now (ensure starts it over), else the ones not whole
+     * yet, less what a download that was cut off left to resume. -1 when the updater does not say a length.
+     */
+    static long toDownload(File dir, File downloads, int version, Http.Requests requests) throws IOException {
+        boolean current = packFormat(dir) == PACK_FORMAT;
+        long total = 0;
+        for (String name : PACKAGES) {
+            if (current && new File(dir, "gamedata/" + name + ".nx2").isFile()) {
+                continue;
+            }
+            String remote = name + "." + version + ".nx2";
+            long length;
+            try {
+                length = requests.length(Http.GAME_URL + remote);
+            } catch (Http.StatusException e) {
+                if (e.status == 404 && !REQUIRED.contains(name)) {
+                    continue;
+                }
+                throw e;
+            }
+            if (length < 0) {
+                return -1;
+            }
+            total += Math.max(0, length - new File(downloads, remote + ".part").length());
+        }
+        return total;
     }
 
     /**
