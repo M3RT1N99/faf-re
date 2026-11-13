@@ -677,16 +677,17 @@ local function OffersPatrolFor(units)
     return false
 end
 
---- For a tap, where the cursor rests: 1 if a unit the player selects is under the cursor, their own, or any one an observer
---- sees (a replay, a defeat); 2 if anything is selected; 4 if any unit is under the cursor; 8 if the selection has troops;
---- 16 if FAF's right click there is a plain move.
+--- For a tap, where the cursor rests: 1 if a unit the player selects is under the cursor, one of the focus army's, as the engine
+--- selects no other (CanSelectUnit: an observer without a focus army, as a replay begins or after a defeat, selects none, by a
+--- PC's click as by a tap); 2 if anything is selected; 4 if any unit is under the cursor; 8 if the selection has troops; 16 if
+--- FAF's right click there is a plain move.
 function TapKind()
     local info = GetRolloverInfo()
     local focus = GetFocusArmy()
     local units = GetSelectedUnits()
     local view = WorldView.viewLeft
     local kind = 0
-    if info and info.armyIndex and (info.armyIndex + 1 == focus or (focus == -1 and info.userUnit)) then
+    if info and info.armyIndex and info.armyIndex + 1 == focus then
         kind = kind + 1
     end
     if units then

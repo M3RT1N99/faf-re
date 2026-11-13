@@ -35,10 +35,10 @@ namespace
   constexpr Handler kOwn{2};
   constexpr Handler kWrapper{3};
 
-  /// As UI_TapTarget offers them.
+  /// As UI_TapTarget offers them: its rows are read only where it may be the one.
   void Offer(Nearest& nearest, const char* const control, const taptarget::Box& box)
   {
-    if (nearest.Wants(box)) {
+    if (nearest.MayWant(box.left, box.right) && nearest.Wants(box)) {
       nearest.Take(control, box);
     }
   }
@@ -87,6 +87,41 @@ WXT_TEST(TapTargetOnlySmallControls)
   WXT_CHECK(nearest.Best() == nullptr);
   Offer(nearest, kSecond, {110, 100, 161, 300});
   WXT_CHECK(nearest.Best() == kSecond);
+}
+
+WXT_TEST(TapTargetReadsNoRowsOfWhatCannotBeTheOne)
+{
+  // FAF's border group, 0 wide at the picture's left with no Top: not even for a tap at the very edge.
+  Nearest edge(1, 100, kReach, kSmall);
+  WXT_CHECK(!edge.MayWant(0, 0));
+  // A line of the UI, and what lies further across than the reach on either side.
+  Nearest nearest(100, 100, kReach, kSmall);
+  WXT_CHECK(!nearest.MayWant(110, 111));
+  WXT_CHECK(!nearest.MayWant(127, 140));
+  WXT_CHECK(!nearest.MayWant(40, 73.5f));
+  // Across the tap, and just within the reach beside it, also where its rows will put it out of reach.
+  WXT_CHECK(nearest.MayWant(90, 110));
+  WXT_CHECK(nearest.MayWant(126, 140));
+  WXT_CHECK(nearest.MayWant(40, 74));
+}
+
+WXT_TEST(TapTargetAllItWantsItMayWant)
+{
+  // MayWant only spares reading rows: whatever Wants takes passes it first, so the walk's choice stays as it was.
+  const float sides[] = {0, 1, 1.5f, 2, 3, 20, 51, 52, 60, 400};
+  for (float left = 40; left <= 160; left += 6.5f) {
+    for (const float width : sides) {
+      for (float top = 40; top <= 160; top += 6.5f) {
+        for (const float height : sides) {
+          const Nearest nearest(100, 100, kReach, kSmall);
+          const taptarget::Box box{left, top, left + width, top + height};
+          if (nearest.Wants(box)) {
+            WXT_CHECK(nearest.MayWant(box.left, box.right));
+          }
+        }
+      }
+    }
+  }
 }
 
 WXT_TEST(TapTargetATapOnASmallControlStaysWhereItLanded)

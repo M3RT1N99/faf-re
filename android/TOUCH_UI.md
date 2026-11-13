@@ -171,10 +171,10 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 | `lua/ui/game/gamemain.lua` | `OnSelectionChanged`, `OnQueueChanged`, `OnBeat`, `OnPause`, `OnResume` at the HUD's factor; the game's UI starts Griff's report of the selection (`fafre/griff.lua`, see "Griff") |
 | `lua/ui/game/construction.lua` | Griff: a build icon's click (FAF's `OnClickHandler`, which the panel's buttons take when they are made) puts its building into the draft (`fafre/griff.lua` `BuildIconClicked`, after FAF's own handler), not FAF's ghost; FAF's build mode keys arm the build mode themselves (`buildmode.lua`), and a template's key (no mouse button) and click (no build item) reach the handler but stay FAF's |
 | `lua/ui/game/unitview.lua` | Nothing hovers on a phone: FAF's "Single Unit Selected Info" is on, or a selected unit's view would go with the pointer; the abilities list, which stands over the middle of the screen, only for a finger that rests on a unit |
-| `lua/ui/game/tabs.lua` | The Menu tab has the app's *Keyboard* after Key Bindings, in both touch schemes: it brings the phone's keyboard as the bar's *Keys* does (`FafreKeyboard`, `MenuFingers.cpp`; Griff's rail has no *Keys*). The eleven large buttons fit at 0.85 on 768 lines: `Built`, 907 of FAF's lines, 70 a button |
+| `lua/ui/game/tabs.lua` | The Menu tab has the app's *Keyboard* after Key Bindings, in both touch schemes: it brings the phone's keyboard as the bar's *Keys* does (`FafreKeyboard`, `MenuFingers.cpp`; Griff's rail has no *Keys*). The large buttons are as large as the list FAF shows fits: `Built` with 137 of FAF's lines and 70 a button of the list as `BuildContent` picks it, on 768 lines a single-player game's eleven at 0.85, a replay's ten at 0.92, a network game's eight at 1.10 |
 | `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow. With Griff, groups 1, 2 and 3 are slots that always show (see "Griff") |
-| `lua/ui/game/avatars.lua` | A finger's pointer leaves after each tap (below), which FAF's avatar took for the mouse going and started its round of the idle units over, so that each tap took the first: the round goes on |
-| `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the app's buttons, the multifunction panel and the unit view: a new window goes where it covers no panel (but Griff's row at the top left, which lies over a part of both: "The rail, the control groups and the keyboard"), and the reset button brings it back there; a place the user chose stays |
+| `lua/ui/game/avatars.lua` | A finger's pointer leaves after each tap (below), which FAF's avatar took for the mouse going and started its round of the idle units over, so that each tap took the first: the round goes on while the unit it took last still stands just before it in the avatar's list, which FAF makes anew each beat without the units ordered since, and starts over at the best idle unit where it does not, as a mouse's click after the order does |
+| `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the multifunction panel, Griff's rail and the unit view: a new window goes where it covers no panel and none of Griff's pieces, the minimap right of the screen's middle and the chat window above it ("The rail, the control groups and the keyboard"), and the reset button brings it back there (the chat's lines made again for its size); a place the user chose stays |
 | `lua/ui/dialogs/options.lua` | `DialogAt`: shown larger, with fewer rows (see "The menus"); the UI scale needs no restart |
 | `lua/maui/bitmap.lua` | A bitmap keeps the size it was made at (above) |
 | `lua/ui/uiutil.lua` | A question in the front end is `BuiltAt`, as large on the glass as a session's. It holds no factor, as the lobby asks one (that it is connecting) just before it builds all the rest |
@@ -228,7 +228,11 @@ on the HUD gets the help with a command mode armed too. Otherwise it looks 2.5 m
 events (a side under 5 mm) and takes the nearest by distance to its rectangle; what the tap is on stays ahead of what is
 only near, also of a child: the lobby's AI choice holds its Fill Slots button. It clicks the pixel of the control nearest to the tap, not its
 centre, as sliders and scroll bars act on the place; a tap on the control stays where it landed. That pixel has to find the
-control or a part of it, not what lies over it.
+control or a part of it, not what lies over it. Of each control the walk reads Left and Right first, and Top and Bottom only
+where it can be the one, 2 pixels wide or more and within reach across (`Nearest::MayWant`, tested): the engine's own hit test
+reads a control's rows only where the place lies between its Left and Right, and FAF lays out no more than that. FAF's border
+group of the game (`borders.lua`), 0 wide, has no Top at all; reading it at a session's first tap failed with the engine's
+warning `Evaluating LazyVar failed` (`control.lua` Bottom and Top), which a PC's mouse never meets.
 
 "Takes events" is the census's: a `HandleEvent` of its own other than `Control`'s, which plain Text, Bitmap and Group have,
 or an ItemList, Edit or Scrollbar, whose handler is the engine's. C++ reads it through the control's Lua object, as it runs
@@ -274,7 +278,7 @@ with `fafre/griff.lua` for what only FAF's Lua knows. A finger stays within 2.5 
 
 | Gesture | FAF's input |
 |---|---|
-| Tap on the map | On one's own unit (an observer's: any unit) the left click, which selects it; on anything else, with a selection, the right click, which FAF makes the order for what is there; without one the left click. `TapKind` reads what the cursor is over (`GetRolloverInfo`, `GetRightMouseButtonOrder`) once the cursor has rested there, 120 ms as for every tap. A tap that misses a unit by a little still takes it: FAF's own pick reaches 3.5 mm about the cursor with nothing selected that takes orders, 2 mm with troops (mobile units, or factories alone), so that a tap for a move beside one's own units does not take the selection from them; the program sets FAF's console variable `ui_SelectTolerance` (an option of FAF's) at a first finger's down where it differs, but not while a command mode is armed, which picks as FAF sets it (its reclaim mode reaches further), and puts back the value it found when the game ends; both in as many digits as the console needs to read the very float back (`include/GriffTap.h` `FloatText`, tested). *Box* counts for the tap as it did at the finger's down, which set the reach. With a command mode armed: its left click. *Plus*: with Shift. *Box*: Shift's left click on one's own unit, which adds it or takes it out; on anything else nothing, and *Box* stays lit. A tap uses the rail's buttons that counted for it (`Rail`): *Box* only where it took or let go a unit, so a tap on FAF's UI or an armed mode's puts *Plus* and *Attack* out and leaves *Box* lit, and *Box*'s tap on nothing uses none (`include/GriffTap.h` `Used`, tested). *Attack*: FAF's attack-move mode (`StartCommandMode('order', {TaskName = 'AttackMove', ...})`, as its button), then the left click. With *Plus* or *Attack* and troops selected, a tap on one's own unit is the order there too (FAF's right click: assist or guard); adding a unit is *Box*'s |
+| Tap on the map | On one's own unit the left click, which selects it. One's own are the focus army's, as the engine selects no other (`CanSelectUnit`; FAF's world view leaves the click to it), which in a replay is the army that the score panel's row or the replay's army list focuses; an observer without a focus army, as a replay begins or after a defeat, selects nothing, by a PC's click as by a tap, which is the left click there too. On anything else, with a selection, the right click, which FAF makes the order for what is there; without one the left click. `TapKind` reads what the cursor is over (`GetRolloverInfo`, `GetRightMouseButtonOrder`) once the cursor has rested there, 120 ms as for every tap. A tap that misses a unit by a little still takes it: FAF's own pick reaches 3.5 mm about the cursor with nothing selected that takes orders, 2 mm with troops (mobile units, or factories alone), so that a tap for a move beside one's own units does not take the selection from them; the program sets FAF's console variable `ui_SelectTolerance` (an option of FAF's) at a first finger's down where it differs, but not while a command mode is armed, which picks as FAF sets it (its reclaim mode reaches further), and puts back the value it found when the game ends; both in as many digits as the console needs to read the very float back (`include/GriffTap.h` `FloatText`, tested). *Box* counts for the tap as it did at the finger's down, which set the reach. With a command mode armed: its left click. *Plus*: with Shift. *Box*: Shift's left click on one's own unit, which adds it or takes it out; on anything else nothing, and *Box* stays lit. A tap uses the rail's buttons that counted for it (`Rail`): *Box* only where it took or let go a unit, so a tap on FAF's UI or an armed mode's puts *Plus* and *Attack* out and leaves *Box* lit, and *Box*'s tap on nothing uses none (`include/GriffTap.h` `Used`, tested). *Attack*: FAF's attack-move mode (`StartCommandMode('order', {TaskName = 'AttackMove', ...})`, as its button), then the left click. With *Plus* or *Attack* and troops selected, a tap on one's own unit is the order there too (FAF's right click: assist or guard); adding a unit is *Box*'s |
 | Tap on a panel, or on the map within reach of a small control | The tap help's left click (above), as with the mouse |
 | Taps in a row | The tap ladder (`TouchInput.TapLadder`): a tap within 350 ms of the last one's lift and 6 mm of it climbs a rung by what the ladder's first tap was, whatever lies under the next, which the program says of each tap (`Game.griffSaid`). After a tap that selected one's own unit: all of its type on the screen (FAF's key action `UI_SelectByCategory +inview` with the type's own category, which the engine gives each blueprint: a double click at the first tap's place could land on the panels its selection brought up), then all of it on the map (`UI_ExpandCurrentSelection`, FAF's select_all_units_of_same_type). After a plain move (FAF's right click there was a move, without *Plus* or *Attack*): an attack-move at the first tap's place, which replaces the move, as FAF cannot change an order's kind (where FAF offers no attack-move, as for factories alone, the right click again: the rally point). After a tap on nothing with nothing selected: all one's own mobile units on the screen (`UI_SelectByCategory +inview MOBILE`). A tap on FAF's UI is clicked again where the first went, within the game's own double-click reach, so the message layer makes it its double click. *Plus*, *Attack* and *Box*, a drag, a rest, a stroke and two fingers start the ladder anew. The handle leaves a finger to the ladder where it may climb (`TapLadder.climbing`: soon and near enough, below the third rung, not with *Box*, *Plus* or *Attack* counting); where its lift does not climb after all, as when it came too late or the program had not said what the first tap was, it is the handle's tap, never FAF's click at the handle's place |
 | Rest 300 ms and lift | A ring of 7 mm about the finger shows the rest. On a panel the tap help's right click (a factory's icon: one less; an avatar: select and go to it). On the map nothing: the cursor stood there, so FAF showed what is under it. With *Box* no rest (the mockup's): no ring, and the lift on the map is *Box*'s tap; *Box* as it counted at the finger's down |
@@ -540,9 +544,24 @@ replay is under 9 mm: there the row reaches 0.2 mm into the unit view's top (65.
 (`Rail.look`, tested): idle in the button colour with the line's edge; held, while a finger is on it, in the button-on colour with the
 ring's edge; lit for the next action in the button-on colour with the mark's edge and "1×" in font XS, 2.2 mm from its right and 2 mm
 from its top, clear of the label. The moment after a lift, which still counts, looks idle. What keeps clear of the rail takes its views'
-places as they are: the covers (`Covers`), and with them the handle's free map. FAF's own windows that the UI package's hooks give a
-home beside the old column lie under the row now: the minimap's (its window, where the player opens it, from 226 to 416 of FAF's pixels
-across) under *Plus*, *Attack* and the pill, the chat window's under the pill's right part.
+places as they are: the covers (`Covers`), and with them the handle's free map.
+
+FAF's minimap and chat window, for a player who has not placed them (the hooks of `ui/game/minimap.lua` and `chat.lua`), have homes
+that cover none of FAF's panels and none of Griff's pieces: the rail's row with the pill at its widest, the group slots, the draft's tick
+and cross, and the handle's reach (7 mm) about the view's middle, where the handle goes when no place beside its group is free (above).
+Measured on the phone's picture (1647x768 at 1.6, the covers that the handle's free map counts) in a skirmish and a replay, with
+nothing and with a unit selected, the largest room clear of all of them lies right of the middle: below the score panel (93 of FAF's lines down
+in a game of two armies, 129 in a replay, whose panel has the observer's line and the speed, and 14 more each army), above the
+construction panel (338), left of the avatars' idle list where it opens (868) and the draft's cross (748). The minimap's window goes
+from 576 to 744 of FAF's pixels across and 166 to 328 down (921 to 1190 and 265 to 524 of the picture's): as high as that room is
+below the score panel of a game of up to seven armies and of a replay of up to four, and about as wide, since a map is square: 168 x
+162 of FAF's pixels (26 x 25 mm on the S22 Ultra), where FAF's own window is 227 x 210. The chat window goes from 472 to 662 across and
+72 to 186 down (755 to 1059 and 115 to 297), above the handle's reach between the pill at its widest and the score panel, under FAF's
+tabs; open, its bottom lies over the minimap's top. FAF's drag handles at the windows' corners reach a little past them: the
+minimap's lower right one under the draft's cross, the chat's lower left one under the pill's end and its upper left one 2 of the
+picture's lines into the bottom of FAF's tabs. Where the phone's keyboard is up for the chat, it covers all of the screen but its top,
+wherever the window stands. The homes are the phone's picture's: on a screen of another shape or at another factor one can meet a
+panel, and a window the player moves stays where they put it.
 
 The control groups (T3.3; the hook of `ui/game/controlgroups.lua`, under Griff only): Griff has no Ctrl to make a group with, so groups 1,
 2 and 3 are slots that always show, in FAF's place for its groups under the avatars, an empty one as a dim control of the same size.
@@ -568,13 +587,22 @@ panel and its right press, as a PC's; the scheme is the game's, read when its ac
 
 The keyboard (T3.4): the hook of `ui/game/tabs.lua` adds *Keyboard* to the Menu tab's list, after Key Bindings, in both schemes. A tap
 closes the menu as its other buttons do and calls `FafreKeyboard()` (`MenuFingers.cpp`), which the activity takes as a tap on *Keys* when
-it next reads what is new: the phone's keyboard comes, or goes where it is up. The menu's eleven buttons fit at 0.85 on 768 lines (the
-hook's `Built`, 907 of FAF's lines, 70 a button); the frame's bottom bracket reaches below the picture's edge, as with ten.
+it next reads what is new: the phone's keyboard comes, or goes where it is up. The menu is as large as the list FAF shows fits (the
+hook's `Built`, with 137 of FAF's lines for the tabs and their gap and 70 a button of the list as `BuildContent` picks it: the FAF
+client's, a network game's, a replay's, else a single-player game's, less the buttons a ranked game hides; where FAF's Lua has changed
+under the hook, those of its longest list): on 768 lines a single-player game's eleven buttons at 0.85, a replay's ten at 0.92, a
+network game's eight at 1.10. The frame's bottom bracket reaches below the picture's edge.
 
 FAF's avatars (T3.8) stay FAF's: a tap selects the next of an idle avatar's units, a double tap all of them, a rest (the right press)
 selects the next and goes to it, the arrow opens the idle list. FAF starts the round over when the pointer leaves the avatar, which a
 finger's pointer does after each tap (The pointer): each tap took the first idle unit. The hook of `ui/game/avatars.lua` keeps the round
-where it was when the pointer leaves, also a mouse's, so that taps take the idle units in turn as a mouse's clicks do.
+where it was when the pointer leaves, so that taps take the idle units in turn as a mouse's clicks do, but only while it fits the
+avatar's list, which FAF makes anew each beat, best first, without the units ordered since: at the next press the round goes on where
+the unit it took last still stands just before it, and starts over at the best idle unit where it does not, as once the player has
+ordered that unit, which a mouse's click after it went to give the order does too. So taps with an order between take the idle units in
+FAF's order, and a rest after an order goes to the best idle unit left. Where the list has not changed, a mouse that leaves goes on with
+the round too, where FAF starts it over, and after a double tap the round goes on from the unit after it, as FAF's index does for a
+mouse that stays.
 
 ### The game's panels now
 
@@ -590,7 +618,7 @@ where nothing larger that takes events is in the way.
 | Pause and small construction buttons | `ui/game/construction.lua:211` | 48x48 | 4.6 | reach |
 | Construction's scroll buttons | `ui/game/construction.lua:257` | 35x80 | 3.3 | reach |
 | Top tabs | `ui/game/tabs.lua:448` | 86x73 | 7.0 | |
-| Menu tab's buttons | `ui/game/tabs.lua:600` | 248x59 | 5.6 | at 0.85, eleven with the app's *Keyboard* |
+| Menu tab's buttons | `ui/game/tabs.lua:600` | 248x59, 269x64, 323x77 | 5.6, 6.1, 7.3 | at 0.85 with a single-player game's eleven, 0.92 with a replay's ten, 1.10 with a network game's eight, the app's *Keyboard* with them |
 | Multifunction panel's buttons | `ui/game/multifunction.lua:218` | 67x48 | 4.6 | reach |
 | Commander's avatar | `ui/game/avatars.lua:123` | 99x105 | 9.4 | |
 | Idle avatars | `ui/game/avatars.lua:237` | 86x80 | 7.6 | |

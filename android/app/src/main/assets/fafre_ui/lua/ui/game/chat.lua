@@ -1,5 +1,8 @@
 
--- The UI package (android/TOUCH_UI.md): a new chat window goes where it covers no panel and the on-screen keyboard leaves it in view: FAF's place at this factor lies over the multifunction panel and the app's buttons.
+-- The UI package (android/TOUCH_UI.md): FAF's place for a new chat window lies at this factor over the multifunction panel and
+-- Griff's rail. It goes above the screen's middle instead, between the rail's row with the undo's pill and the score panel, under
+-- FAF's tabs and short of the handle's reach about the middle, where it covers no panel and none of Griff's pieces; open, its
+-- bottom lies over the minimap's top. The phone's keyboard covers most of the screen while it is up, wherever the window stands.
 do
     local ok, problem = pcall(function()
         local Scale = import('/fafre_ui/lua/fafre/scale.lua')
@@ -8,7 +11,14 @@ do
             local placed = import('/lua/user/prefs.lua').GetFromCurrentProfile('chat_window')
             local window = Create()
             Scale.Try('the place of the chat window', function()
-                Scale.GiveWindowHome(window, window.ResetPositionBtn, not placed, 420, 80, 842, 235)
+                Scale.GiveWindowHome(window, window.ResetPositionBtn, not placed, 472, 72, 662, 186)
+                -- FAF's reset makes the lines for the size of its own place: they are made again for the home's, as after the
+                -- player's resize.
+                local Reset = window.ResetPositionBtn.OnClick
+                window.ResetPositionBtn.OnClick = function(self, modifiers)
+                    Reset(self, modifiers)
+                    window:OnResizeSet()
+                end
             end)
             return window
         end

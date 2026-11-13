@@ -1,8 +1,8 @@
 diff --git a/src/moho/ui/CUIWorldViewEvents.cpp b/src/moho/ui/CUIWorldViewEvents.cpp
-index fda09e9c..5553d0aa 100644
+index fda09e9c..28b54c99 100644
 --- a/src/moho/ui/CUIWorldViewEvents.cpp
 +++ b/src/moho/ui/CUIWorldViewEvents.cpp
-@@ -1,6 +1,180 @@
+@@ -1,6 +1,188 @@
  #include "moho/ui/UiPrivate.h"
  #include "moho/lua/CScrLuaObjectFactory.h"
  
@@ -157,7 +157,15 @@ index fda09e9c..5553d0aa 100644
 +        if (control->IsHidden() || control->IsHitTestDisabled() || control->GetAlpha() <= 0) {
 +          continue;
 +        }
-+        const taptarget::Box box = BoxOf(control);
++        // Its Top and Bottom only where it may be the one, as the engine's own hit test reads them (Nearest::MayWant).
++        const float left = CScriptLazyVar_float::GetValue(&control->mLeftLV);
++        const float right = CScriptLazyVar_float::GetValue(&control->mRightLV);
++        if (!nearest.MayWant(left, right)) {
++          continue;
++        }
++        const taptarget::Box box{
++          left, CScriptLazyVar_float::GetValue(&control->mTopLV), right, CScriptLazyVar_float::GetValue(&control->mBottomLV)
++        };
 +        if (nearest.Wants(box) && IsLive(control, plainHandler)) {
 +          // What a press there finds has to be it or a part of it, not what lies over it.
 +          const taptarget::Place pixel = box.NearestPixel(x, y);
@@ -183,7 +191,7 @@ index fda09e9c..5553d0aa 100644
  namespace
  {
    // FAF community binary-patch addition (see CMauiControl::SetCustomRender).
-@@ -873,6 +1047,25 @@ void moho::UIBuildDragger::DragRelease(
+@@ -873,6 +1055,25 @@ void moho::UIBuildDragger::DragRelease(
    delete this;
  }
  
@@ -209,7 +217,7 @@ index fda09e9c..5553d0aa 100644
  /**
   * Address: 0x00822F60 (FUN_00822F60)
   *
-@@ -1821,9 +2014,6 @@ moho::CUIWorldView::CUIWorldView(
+@@ -1821,9 +2022,6 @@ moho::CUIWorldView::CUIWorldView(
        if (!params["ui_SelectTolerance"].IsNil()) {
          moho::ui_SelectTolerance = params["ui_SelectTolerance"].GetNumber();
        }
@@ -219,7 +227,7 @@ index fda09e9c..5553d0aa 100644
        if (!params["ui_ExtractSnapTolerance"].IsNil()) {
          moho::ui_ExtractSnapTolerance = params["ui_ExtractSnapTolerance"].GetNumber();
        }
-@@ -1899,6 +2089,13 @@ moho::CUIWorldView::~CUIWorldView()
+@@ -1899,6 +2097,13 @@ moho::CUIWorldView::~CUIWorldView()
    }
  
    ren_Viewport->RemoveWorldView(this);
@@ -233,7 +241,7 @@ index fda09e9c..5553d0aa 100644
  }
  
  /**
-@@ -3231,7 +3428,11 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3231,7 +3436,11 @@ bool moho::CUIWorldView::HandleEvent(
    // Ordering matters: this test sits ahead of the left-press one, and a
    // double-click on any other button falls straight through into the
    // right-double-click arm at 0x00870F1B.
@@ -246,7 +254,7 @@ index fda09e9c..5553d0aa 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3259,7 +3460,7 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3259,7 +3468,7 @@ bool moho::CUIWorldView::HandleEvent(
    }
  
    // --- left-button press (0x00870CA4) ------------------------------------
@@ -255,7 +263,7 @@ index fda09e9c..5553d0aa 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3277,6 +3478,13 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3277,6 +3486,13 @@ bool moho::CUIWorldView::HandleEvent(
  
      case COMMOD_Build:
      case COMMOD_BuildAnchored:
@@ -269,7 +277,7 @@ index fda09e9c..5553d0aa 100644
        func_NewUIBuildDragger(GetRootFrame(), mWldSession, &eventData, mCamera.get(), &mBuildDrag);
        return true;
  
-@@ -3403,6 +3611,13 @@ void moho::CUIWorldView::Frame(
+@@ -3403,6 +3619,13 @@ void moho::CUIWorldView::Frame(
  {
    func_ProcessMouseScrubbing();
  

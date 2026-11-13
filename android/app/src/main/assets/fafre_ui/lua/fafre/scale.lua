@@ -276,9 +276,10 @@ function BuiltAt(factor, build)
     end
 end
 
---- `build` makes a panel beside the HUD that needs `lines` of FAF's lines, and does not build more later.
+--- `build` makes a panel beside the HUD that needs as many of FAF's lines as `lines()` says when it is built, and does not build
+--- more later.
 function Built(lines, build)
-    local built = BuiltAt(function() return Fit(lines) end, build)
+    local built = BuiltAt(function() return Fit(lines()) end, build)
     return function(...)
         if not hudFactor then
             return build(unpack(arg))

@@ -140,7 +140,9 @@ the game data they imported. Everything lives in the app's external files folder
   inputs, as a PC player gives them ([TOUCH_UI.md](TOUCH_UI.md), "Griff"):
   - A tap on your own unit selects it, also when it misses by a little (3.5 mm, 2 mm with troops selected, so that a tap
     for a move beside your units does not take them). A tap anywhere else gives the selection FAF's order there, as its
-    right click does: move, attack an enemy, assist a factory with engineers.
+    right click does: move, attack an enemy, assist a factory with engineers. In a replay your own are those of the army
+    you focus by its row in the score panel; with none focused, as a replay begins, a tap on a unit selects nothing, as a
+    PC's click does.
   - Taps in a row climb a ladder: two quick taps on a unit take all of its type on the screen, three all of it on the map;
     two on the ground turn the move of the first into an attack-move; two on nothing with nothing selected take all your
     mobile units on the screen.
@@ -163,8 +165,8 @@ the game data they imported. Everything lives in the app's external files folder
     *Plus* or *Attack* and troops selected, a tap on one of your units is the order there too. In a game the keyboard is
     *Keyboard* in FAF's Menu tab; *Keys* is the menus' only.
   - On FAF's panels a tap is a click and a rest a right click (on an avatar: go to it), with the same help beside small
-    controls as with the mouse. Taps on an idle avatar take its idle units in turn, as a mouse's clicks do, and a double tap
-    takes them all.
+    controls as with the mouse. Taps on an idle avatar take its idle units in turn, as a mouse's clicks do; once you have
+    given the one it took an order, the next tap takes the best idle unit left. A double tap takes them all.
   - A build icon of the construction panel opens a draft instead of FAF's ghost: a tap on the map places a plan of that
     building, on FAF's grid (an extractor on the free mass spot within 5 mm, else "No free resource here"), a tap on a plan
     takes it away, a drag from the newest plan draws a line of them side by side, a drag from another plan moves them all

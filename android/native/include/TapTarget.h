@@ -9,6 +9,9 @@
 
 namespace taptarget
 {
+  /// A thing of fewer pixels across is a line of the UI, not a thing to hit.
+  constexpr float kLeastSide = 2;
+
   struct Place
   {
     float x;
@@ -22,11 +25,11 @@ namespace taptarget
     float right;
     float bottom;
 
-    /// Too small for a finger: a thing of a pixel or two is a line of the UI, not a thing to hit.
+    /// Too small for a finger, but no line (kLeastSide).
     [[nodiscard]] bool IsSmall(const float smallSide) const
     {
       const float side = (std::min)(right - left, bottom - top);
-      return side >= 2 && side < smallSide;
+      return side >= kLeastSide && side < smallSide;
     }
 
     /// How far a place is from the box: 0 inside. The square of it, as only the order counts.
@@ -66,6 +69,16 @@ namespace taptarget
     Nearest(const float x, const float y, const float reach, const float smallSide)
       : mX(x), mY(y), mSmallSide(smallSide), mReachSquared(reach * reach)
     {
+    }
+
+    /// Whether a control across these columns can be one that Wants takes, before its Top and Bottom are read: what is thinner
+    /// than kLeastSide is a line, and what lies further across than the reach is out of it. The engine's own hit test reads a
+    /// control's Left and Right first and its Top and Bottom only where the place lies between them, so FAF lays out no more of
+    /// a control than that: the game's border group, 0 wide, has no Top, and reading it fails with the engine's warning.
+    [[nodiscard]] bool MayWant(const float left, const float right) const
+    {
+      const float across = mX < left ? left - mX : (mX >= right ? mX - right : 0);
+      return right - left >= kLeastSide && across * across <= mReachSquared;
     }
 
     /// Whether the control with this box would be the best so far, if it is one a finger can act on. What a tap is on stays
