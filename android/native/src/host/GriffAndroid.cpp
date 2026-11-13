@@ -552,27 +552,19 @@ namespace
   constexpr std::size_t kOrdersItem = 4;
   std::vector<float> gOrdersShown{0};
 
-  /// An order of a queue as a gesture began that the sim had not taken then, the UI's Add of it pending: its command, the beat
-  /// that Add goes to the sim at, and whether a read of what the sim holds came after the sync reached that beat and before
-  /// the gesture's replacement of the queue landed.
-  struct Unsynced
-  {
-    int command = 0;
-    moho::CmdId beat = 0;
-    bool read = false;
-  };
-
   /// One of a unit's command queues as a gesture began, and what the gesture's orders did to it: its orders then (as FAF's UI
   /// held them, each command by its own id) and those of them the sim had not taken yet (`unsynced`), its newest edit as last
   /// seen (griffundo::TookOrder tells the queue an order went into by it), whether an order of the gesture's went into it,
   /// the commands they put there (`given`), and whether one replaced it (FAF's Clear). From the first that replaced it the sim
   /// runs the queue as it was until the sync reaches that order's beat (`command`, `beat`), a network delay after the input:
-  /// what the sim holds of it is read each frame until then (`taken`), and kept from then on (`landed`), also where the
-  /// replacement left the queue empty (a Stop) or the sim gave orders of its own after it (the attack-move's AggressiveMove).
+  /// what the sim holds of it is read each frame until then (`taken`, with the game's tick as of that read), and kept from
+  /// then on (`landed`), also where the replacement left the queue empty (a Stop) or the sim gave orders of its own after it
+  /// (the attack-move's AggressiveMove); whether the sim may have ticked between that read and the replacement's beat
+  /// (`stale`, griffundo::Stale).
   struct Queue
   {
     std::vector<griffundo::Entry> before;
-    std::vector<Unsynced> unsynced;
+    std::vector<griffundo::Unsynced> unsynced;
     griffundo::Edit edit;
     bool ordered = false;
     std::vector<griffundo::Entry> given;
@@ -582,6 +574,8 @@ namespace
     int command = 0;
     moho::CmdId beat = 0;
     std::vector<griffundo::Entry> taken;
+    int readTick = 0;
+    bool stale = false;
   };
 
   /// A unit as a gesture began: its own queue, a factory's rally route apart (UserUnit::GetFactoryCommandQueue: the route the
@@ -628,13 +622,15 @@ namespace
   Record gRecord;
   int gRecords = 0;
 
-  /// The undo whose clicks run: its record, the orders it could not give again or take out, and those it gave back or left
-  /// as the units' own without knowing it (griffundo::Plan::unsure).
+  /// The undo whose clicks run: its record, the orders it could not give again or take out, those it gave back or left as the
+  /// units' own without knowing it (griffundo::Plan::unsure), and the targets of the Guards it gives back, for which FAF's
+  /// assist-to-upgrade may order an upgrade as it did for the units' own Guards (AssistsUpgrade).
   struct Undoing
   {
     Record record;
     int dropped = 0;
     int unsure = 0;
+    std::unordered_set<int> again;
   };
 
   // Game's UNDONE_WHOLE, UNDONE_IN_PART and NOT_UNDONE: what SAID_UNDONE says an undo did.
@@ -644,18 +640,9 @@ namespace
 
   Undoing gUndoing;
 
-  /// The last undo whose clicks are over, for FAF's assist-to-upgrade, which may order the upgrade of a target of one of its
-  /// record's Guards only after the undo said what it did: UpgradeUnit unpauses a paused extractor first and waits five of the
-  /// game's ticks, which a paused game holds back while the sim takes the undo. Its record's number, the targets of its
-  /// Guards, and whether it said it took all of the gesture back.
-  struct Undone
-  {
-    int number = 0;
-    std::unordered_set<int> guarded;
-    bool whole = false;
-  };
-
-  Undone gUndone;
+  /// The undos whose clicks are over in the game's last few ticks, for FAF's assist-to-upgrade, which may order the upgrade
+  /// of a target of one of their Guards only after they said what they did (griffundo::Undones).
+  griffundo::Undones gUndone;
 
   [[nodiscard]] std::int64_t Now()
   {
@@ -1078,7 +1065,7 @@ namespace
     // The orders of this game: no watch, record, pin or pill any more; an undo the pill asked for that waits is not done.
     gWatch = Watch{};
     DropRecord();
-    gUndone = Undone{};
+    gUndone.Clear();
     gPins.Clear();
     {
       const std::lock_guard<std::mutex> lock(gOrdersShownMutex);
@@ -1315,28 +1302,30 @@ namespace
     return queue;
   }
 
+  /// An edit of a queue's as FAF's UI made it (griffundo::Edit).
+  [[nodiscard]] griffundo::Edit EditFrom(const moho::UserManagerHelperEntry& edit)
+  {
+    griffundo::Edit made;
+    switch (edit.mEdit) {
+      case moho::EUserQueueEdit::Add:
+        made.kind = griffundo::EditKind::kAdd;
+        break;
+      case moho::EUserQueueEdit::Reset:
+        made.kind = griffundo::EditKind::kReset;
+        break;
+      case moho::EUserQueueEdit::Remove:
+        made.kind = griffundo::EditKind::kRemove;
+        break;
+    }
+    made.command = edit.mHelper != nullptr ? static_cast<int>(edit.mHelper->mConstantData.cmd) : 0;
+    made.beat = static_cast<int>(edit.mCommandId);
+    return made;
+  }
+
   /// A queue's newest edit as FAF's UI made it, as long as the sim has not taken it (griffundo::Edit).
   [[nodiscard]] griffundo::Edit EditOf(const moho::UserCommandQueue& commands)
   {
-    if (commands.issueQueue.empty()) {
-      return griffundo::Edit{};
-    }
-    const moho::UserManagerHelperEntry& edit = commands.issueQueue.back();
-    griffundo::Edit newest;
-    switch (edit.mEdit) {
-      case moho::EUserQueueEdit::Add:
-        newest.kind = griffundo::EditKind::kAdd;
-        break;
-      case moho::EUserQueueEdit::Reset:
-        newest.kind = griffundo::EditKind::kReset;
-        break;
-      case moho::EUserQueueEdit::Remove:
-        newest.kind = griffundo::EditKind::kRemove;
-        break;
-    }
-    newest.command = edit.mHelper != nullptr ? static_cast<int>(edit.mHelper->mConstantData.cmd) : 0;
-    newest.beat = static_cast<int>(edit.mCommandId);
-    return newest;
+    return commands.issueQueue.empty() ? griffundo::Edit{} : EditFrom(commands.issueQueue.back());
   }
 
   /// Whether the sync has reached a beat for a queue: no edit of that beat waits in the queue (UserUnit::Tick drops them as
@@ -1365,21 +1354,31 @@ namespace
     return true;
   }
 
-  /// A read of what the sim holds of a replaced queue (`taken`), before its replacement landed: it shows what became of each
-  /// order the sim had not taken as the gesture began whose beat the sync has reached by now (griffundo::Pending::kRead). That
-  /// order's own edit went with the replacement's Reset, but the helper of its command keeps the units it went to as events
-  /// of that beat until the sync reaches it.
+  /// The game's tick as of the syncs applied so far (CWldSession::mGameTick, which a paused game holds); 0 without a game.
+  [[nodiscard]] int GameTick()
+  {
+    const moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    return session != nullptr ? session->mGameTick : 0;
+  }
+
+  /// A read of what the sim holds of a replaced queue (`taken`), before its replacement landed, at the game's tick as of the
+  /// syncs applied so far: it shows what became of each order the sim had not taken as the gesture began whose beat the sync
+  /// has reached by now (griffundo::Pending::kRead). That order's own edit went with the replacement's Reset, but the helper
+  /// of its command keeps the units it went to as events of that beat until the sync reaches it.
   void Read(moho::UserCommandQueue& commands, Queue& queue)
   {
     queue.taken = HeldOf(commands);
-    for (Unsynced& order : queue.unsynced) {
-      order.read = order.read || SyncReached(commands, order.command, order.beat);
+    queue.readTick = GameTick();
+    for (griffundo::Unsynced& order : queue.unsynced) {
+      order.read = order.read || SyncReached(commands, order.command, static_cast<moho::CmdId>(order.beat));
     }
   }
 
   /// What the sim holds of the queues the gesture's orders replaced, read each frame until the replacement landed: from then
   /// on it is what the units still held when it did. Each read comes after the frame's syncs (DoBeat), so the sync that
-  /// brings the replacement ends the reading before its view is read.
+  /// brings the replacement ends the reading before its view is read; a frame that brought the beats before the
+  /// replacement's with it read none of them, and where the sim ticked in those, the unit may have done what the read
+  /// before shows (griffundo::Stale).
   void ReadTaken(std::unordered_map<int, Stored>& stored)
   {
     for (auto& [id, kept] : stored) {
@@ -1392,7 +1391,9 @@ namespace
         }
         moho::UserCommandQueue* const commands = unit != nullptr ? CommandsOf(*unit, route) : nullptr;
         if (commands == nullptr || SyncReached(*commands, queue.command, queue.beat)) {
+          const moho::CWldSession* const session = moho::WLD_GetActiveSession();
           queue.landed = true;
+          queue.stale = session != nullptr && griffundo::Stale(queue.readTick, session->mGameTick, session->mLastBeatWasTick != 0);
         } else {
           Read(*commands, queue);
         }
@@ -1420,8 +1421,8 @@ namespace
   }
 
   /// The selection's units as a gesture begins, for its undo: each queue's orders, those of them the sim has not taken yet
-  /// (their Add pending: not in the primary links, which the sync sets) with the beat each goes to the sim at, and its newest
-  /// edit.
+  /// (griffundo::UnsyncedOf, from the queue's pending edits that name a command and its primary links, which the sync sets)
+  /// with the beat each goes to the sim at, and its newest edit.
   [[nodiscard]] std::unordered_map<int, Stored> StoreSelection()
   {
     std::unordered_map<int, Stored> stored;
@@ -1441,17 +1442,13 @@ namespace
           continue;
         }
         queue.edit = EditOf(*commands);
-        const std::vector<griffundo::Entry> held = HeldOf(*commands);
+        std::vector<griffundo::Edit> edits;
         for (const moho::UserManagerHelperEntry& edit : commands->issueQueue) {
-          if (edit.mEdit != moho::EUserQueueEdit::Add || edit.mHelper == nullptr) {
-            continue;
-          }
-          const int command = static_cast<int>(edit.mHelper->mConstantData.cmd);
-          const auto has = [command](const griffundo::Entry& entry) { return entry.id == command; };
-          if (std::any_of(queue.before.begin(), queue.before.end(), has) && std::none_of(held.begin(), held.end(), has)) {
-            queue.unsynced.push_back(Unsynced{command, edit.mCommandId, false});
+          if (edit.mHelper != nullptr) {
+            edits.push_back(EditFrom(edit));
           }
         }
+        queue.unsynced = griffundo::UnsyncedOf(edits, queue.before, HeldOf(*commands));
       }
       kept.focus = static_cast<int>(unit->mUnitVarDat.mFocusUnit);
     }
@@ -1589,32 +1586,35 @@ namespace
   /// radar's upgrade a frame or more after a Guard on it (commandmode.lua OnGuardIssued forks UpgradeUnit, which may wait for
   /// an unpause first), with Clear, which no upgrade of the player's has (griffundo::AssistUpgrade). Such an Upgrade of the
   /// target of a Guard that the watch, the record or the undo that runs holds is that Guard's by-product: it neither ends nor
-  /// joins the record, which notes it, as the undo takes the Guard out and leaves the upgrade going. One for the last undo's
-  /// record that comes after that undo said it took all of the gesture back makes it one in part after all: the activity
-  /// hears so then (SAID_UNDONE once more, its toast).
+  /// joins the record, which notes it, as the undo takes the Guard out and leaves the upgrade going; so is one for a Guard
+  /// the undo that runs gives back, which is the unit's own order's again. One for an undo that finished in the game's last
+  /// few ticks (griffundo::Undones), whose word comes before it, neither: where that undo said it took all of the gesture
+  /// back, it makes it one in part after all, and the activity hears so then (SAID_UNDONE once more, its toast).
   [[nodiscard]] bool AssistsUpgrade(const std::string& type, const bool clear, const std::vector<int>& units)
   {
     if (!griffundo::AssistUpgrade(type, clear, units.size())) {
       return false;
     }
-    if (gWatch.number != 0 && gWatch.guarded.count(units.front()) != 0) {
+    const int target = units.front();
+    if (gWatch.number != 0 && gWatch.guarded.count(target) != 0) {
       ++gWatch.upgrades;
       return true;
     }
     for (Record* const record : {&gRecord, &gUndoing.record}) {
-      if (record->number != 0 && record->guarded.count(units.front()) != 0) {
+      if (record->number != 0 && record->guarded.count(target) != 0) {
         ++record->upgrades;
         return true;
       }
     }
-    if (gUndone.number != 0 && gUndone.guarded.count(units.front()) != 0) {
-      if (gUndone.whole) {
-        gUndone.whole = false;
-        Say(kSaidUndone, gUndone.number, kUndoneInPart);
-      }
+    if (gUndoing.record.number != 0 && gUndoing.again.count(target) != 0) {
       return true;
     }
-    return false;
+    std::vector<int> turned;
+    const bool undone = gUndone.Upgraded(target, GameTick(), turned);
+    for (const int number : turned) {
+      Say(kSaidUndone, number, kUndoneInPart);
+    }
+    return undone;
   }
 
   /// Of every order FAF's UI gives: its count for the clicks that run, with the entity it targets. A watched gesture's that
@@ -3313,11 +3313,13 @@ namespace
   /// as not), part of it (also where nothing was left to click, as for a factory's builds a Stop took), or nothing, where it
   /// had steps and none of them made a release or a click: as where its clicks ended before their first step (no frame came,
   /// the game ended, a throw). Nothing was clicked then, so the record holds as it was and the pill offers it again, while
-  /// the game goes on and no other order came meanwhile, which would have ended it. The record's Guards are kept for an
-  /// upgrade FAF's assist-to-upgrade orders only after this word (gUndone).
+  /// the game goes on and no other order came meanwhile, which would have ended it. The Guards of the record and those the
+  /// undo gave back wait for an upgrade FAF's assist-to-upgrade orders only after this word, for the game's next few ticks
+  /// (gUndone), while a game is playing: none outlives it.
   void FinishUndo()
   {
-    if (moho::UI_GamePlaying()) {
+    const bool playing = moho::UI_GamePlaying();
+    if (playing) {
       moho::CON_Execute(kUndoEnd);
     }
     const int notDone = gUndoing.dropped + gUndoing.unsure + gUndoing.record.upgrades + gClicks.unreached + gClicks.refused
@@ -3326,31 +3328,16 @@ namespace
     const bool none = gClicks.acted == 0 && !gClicks.steps.empty();
     const int said = whole ? kUndoneWhole : none ? kNotUndone : kUndoneInPart;
     Say(kSaidUndone, gUndoing.record.number, said);
-    gUndone = Undone{gUndoing.record.number, gUndoing.record.guarded, said == kUndoneWhole};
-    if (said == kNotUndone && gClicks.orders == 0 && moho::UI_GamePlaying()) {
+    if (playing) {
+      const std::unordered_set<int>& guarded = gUndoing.record.guarded;
+      gUndone.Finished(gUndoing.record.number, std::vector<int>(guarded.begin(), guarded.end()),
+                       std::vector<int>(gUndoing.again.begin(), gUndoing.again.end()), said == kUndoneWhole, GameTick());
+    }
+    if (said == kNotUndone && gClicks.orders == 0 && playing) {
       gRecord = std::move(gUndoing.record);
       OfferAgain();
     }
     gUndoing = Undoing{};
-  }
-
-  /// What the program read of an order of a queue as the gesture began, for the plan (griffundo::Pending): whether the sim
-  /// held it then; if not, for a queue the gesture replaced and whose replacement it read, whether a read of what the sim held
-  /// came after the sim took it, or else whether the sim took it in the replacement's own beat; for any other queue nothing.
-  [[nodiscard]] griffundo::Pending PendingOf(const Queue& queue, const int command)
-  {
-    const auto order = std::find_if(queue.unsynced.begin(), queue.unsynced.end(), [command](const Unsynced& unsynced) {
-      return unsynced.command == command;
-    });
-    if (order == queue.unsynced.end()) {
-      return griffundo::Pending::kNo;
-    }
-    if (!queue.snapshot) {
-      return griffundo::Pending::kUnread;
-    }
-    return order->read ? griffundo::Pending::kRead
-         : order->beat == queue.beat ? griffundo::Pending::kWithReplacement
-                                     : griffundo::Pending::kUnread;
   }
 
   /// The undo's steps, once the sim took the gesture: of the record's units that live, each queue an order of the gesture's
@@ -3358,10 +3345,11 @@ namespace
   /// not taken then, as the sim held it when the replacement landed, and now, the commands the gesture put there, the building
   /// each unit was building then if unfinished still, and where what their orders before target is now (include/GriffUndo.h);
   /// then each command of the gesture's taken out, in a run of their units, then each order lost given again, in a run for
-  /// each group of units whose orders come back alike; the orders that cannot come back or go counted (`dropped`), and those
-  /// the plan gives back or leaves without knowing whose they are or that the units held them still (`unsure`). A unit the
-  /// gesture ordered whose queue was not known as it began is not taken back.
-  [[nodiscard]] std::vector<ClickStep> PlanUndoSteps(const Record& record, int& dropped, int& unsure)
+  /// each group of units whose orders come back alike; the orders that cannot come back or go counted (`dropped`), those the
+  /// plan gives back or leaves without knowing whose they are or that the units held them still (`unsure`), and the targets
+  /// of the Guards it gives back (`again`). A unit the gesture ordered whose queue was not known as it began is not taken
+  /// back.
+  [[nodiscard]] std::vector<ClickStep> PlanUndoSteps(const Record& record, int& dropped, int& unsure, std::unordered_set<int>& again)
   {
     std::vector<ClickStep> steps;
     moho::CWldSession* const session = moho::WLD_GetActiveSession();
@@ -3398,17 +3386,20 @@ namespace
         planned.refilled = route;
         planned.before = queue.before;
         for (griffundo::Entry& entry : planned.before) {
-          entry.pending = PendingOf(queue, entry.id);
+          entry.pending = griffundo::PendingOf(queue.unsynced, entry.id, queue.snapshot, static_cast<int>(queue.beat));
         }
         // Where no view of the sim's was read (the replacing order put no Reset at the queue's front, which ISSUE_Command
         // and ISSUE_FactoryCommand always do), what the queue held as the gesture began stands for what the sim held.
         planned.taken = queue.snapshot ? queue.taken : queue.before;
+        planned.stale = queue.snapshot && queue.stale;
         planned.now = QueueOf(commands);
         planned.given = queue.given;
         planned.site = route ? griffundo::kNoTarget : site;
         std::vector<int> aimedAt{planned.site};
-        for (const griffundo::Entry& entry : planned.before) {
-          aimedAt.push_back(entry.target);
+        for (const std::vector<griffundo::Entry>* const orders : {&planned.before, &planned.taken}) {
+          for (const griffundo::Entry& entry : *orders) {
+            aimedAt.push_back(entry.target);
+          }
         }
         for (const int target : aimedAt) {
           if (moho::UserEntity* const entity = target != griffundo::kNoTarget ? living(target) : nullptr; entity != nullptr) {
@@ -3455,6 +3446,9 @@ namespace
         step.onUnit = click.target != griffundo::kNoTarget && UnitOf(click.target) != nullptr;
         // A building given again at its place lands in its cell, as the tick's.
         step.builds = click.way == griffundo::Way::kBuild && BlueprintBuilding(click.blueprint.c_str(), step.building) != nullptr;
+        if (click.way == griffundo::Way::kGuard && click.target != griffundo::kNoTarget) {
+          again.insert(click.target);
+        }
         steps.push_back(std::move(step));
       }
     }
@@ -3487,8 +3481,9 @@ namespace
     Clicks clicks;
     int dropped = 0;
     int unsure = 0;
+    std::unordered_set<int> again;
     try {
-      clicks.steps = PlanUndoSteps(gRecord, dropped, unsure);
+      clicks.steps = PlanUndoSteps(gRecord, dropped, unsure, again);
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
       Say(kSaidUndone, gRecord.number, kNotUndone);
@@ -3499,6 +3494,7 @@ namespace
     gUndoing.record = std::move(gRecord);
     gUndoing.dropped = dropped;
     gUndoing.unsure = unsure;
+    gUndoing.again = std::move(again);
     gRecord = Record{};
     moho::CON_Execute(kUndoBegin);
     clicks.finish = &FinishUndo;

@@ -30,6 +30,11 @@ namespace
   /// The sim's own commands, as the attack-move's AggressiveMove and a factory's first rally point.
   constexpr int kSimId = static_cast<int>(0x80000012u);
   constexpr int kSimOther = static_cast<int>(0x80000061u);
+  /// What FAF's sim callbacks make of an engineer's order: the BuildMobile of a wreck's Rebuild, the storages of an
+  /// extractor's rings.
+  constexpr int kRebuild = static_cast<int>(0x80000041u);
+  constexpr int kRing = static_cast<int>(0x80000031u);
+  constexpr int kRingOther = static_cast<int>(0x80000032u);
   const float kNone = std::numeric_limits<float>::quiet_NaN();
 
   Entry Order(const int id, const std::string& type, const float x, const float z)
@@ -108,6 +113,13 @@ namespace
   Unit Given(Unit unit, std::vector<Entry> given)
   {
     unit.given = std::move(given);
+    return unit;
+  }
+
+  /// `taken` is a read the sim may have ticked after before the replacement's beat.
+  Unit ReadTicksAgo(Unit unit)
+  {
+    unit.stale = true;
     return unit;
   }
 
@@ -584,6 +596,243 @@ WXT_TEST(GriffUndoAnOrderPendingAsTheGestureBeganComesBackByTheBeatTheSimTookItI
   WXT_CHECK_EQ(stop.unsure, 0);
 }
 
+// Review finding pending-byproducts-taken-out, appended. FAF's sim makes commands of an order in the beat it takes it: an
+// engineer's Repair on a wreck (88) brings FAF's Rebuild callback, which clears the Repair and gives the BuildMobile that
+// rebuilds the wreck's structure (commandmode.lua OnRepairIssued, wreckage.lua Rebuild); a Guard on an extractor (77) brings
+// its rings of storages (capping.lua AssistToCap, RingWithStorages, which appends them). The engineer's own order was pending
+// as a Plus tap appended move 9: the sim took it, and made those, before 9. They are the engineer's and stay; 9 goes, whole.
+WXT_TEST(GriffUndoWhatFAFMadeOfAPendingOrderStaysAheadOfTheGesturesCommandsWhereItAppended)
+{
+  const Entry g = Order(9, "Move", 50, 50);
+  const Entry repair = NotTaken(On(Order(5, "Repair", 40, 40), 88), Pending::kUnread);
+  const Entry rebuild = Named(Order(kRebuild, "BuildMobile", 40, 40), "ueb1301");
+  const Plan rebuilt = PlanUndo({Given(Of(4, false, {repair}, {rebuild, g}), {g})}, kNoTargets);
+  WXT_CHECK(Removed(rebuilt) == (std::vector<int>{9}));
+  WXT_CHECK_EQ(rebuilt.dropped, 0);
+  WXT_CHECK_EQ(rebuilt.unsure, 0);
+  // The rings behind the Guard, and without it where the sim's Guard of an idle extractor is done at once.
+  const Entry guard = NotTaken(On(Order(5, "Guard", 30, 30), 77), Pending::kUnread);
+  const Entry ring = Named(Order(kRing, "BuildMobile", 32, 30), "ueb1106");
+  const Entry ringOther = Named(Order(kRingOther, "BuildMobile", 30, 32), "ueb1106");
+  for (const std::vector<Entry>& now : {std::vector<Entry>{guard, ring, ringOther, g}, std::vector<Entry>{ring, ringOther, g}}) {
+    const Plan ringed = PlanUndo({Given(Of(4, false, {guard}, now), {g})}, kNoTargets);
+    WXT_CHECK(Removed(ringed) == (std::vector<int>{9}));
+    WXT_CHECK_EQ(ringed.unsure, 0);
+  }
+  // The gesture's own attack-move behind the rebuild: its AggressiveMove goes, the rebuild stays, and the script left behind
+  // the rebuild counts, as ever.
+  const Entry script = AttackMoveScript(9, 60, 60);
+  const Entry aggressive = Order(kSimOther, "AggressiveMove", 60, 60);
+  const Plan attack = PlanUndo({Given(Of(4, false, {repair}, {rebuild, script, aggressive}), {script})}, kNoTargets);
+  WXT_CHECK(Removed(attack) == (std::vector<int>{kSimOther}));
+  WXT_CHECK_EQ(attack.dropped, 1);
+  WXT_CHECK_EQ(attack.unsure, 0);
+}
+
+// Where the gesture's first command is gone (its attack-move's script, done at the queue's head; an attack whose target
+// died), what stands ahead of its next may be what that one made: it goes as the gesture's where nothing of the unit's was
+// pending, and where one of the unit's pending orders may have made it as well, whose it is cannot be told: it stays,
+// counted. The next command of the gesture's goes.
+WXT_TEST(GriffUndoWhereTheGesturesFirstCommandIsGoneWhatStandsAheadOfItsNextCounts)
+{
+  const Entry script = AttackMoveScript(8, 60, 60);
+  const Entry aggressive = Order(kSimOther, "AggressiveMove", 60, 60);
+  const Entry g = Order(9, "Move", 50, 50);
+  const Plan gestures = PlanUndo({Given(Of(4, false, {}, {aggressive, g}), {script, g})}, kNoTargets);
+  WXT_CHECK(Removed(gestures) == (std::vector<int>{kSimOther, 9}));
+  WXT_CHECK_EQ(gestures.unsure, 0);
+  const Entry repair = NotTaken(On(Order(5, "Repair", 40, 40), 88), Pending::kUnread);
+  const Entry rebuild = Named(Order(kRebuild, "BuildMobile", 40, 40), "ueb1301");
+  const Plan either = PlanUndo({Given(Of(4, false, {repair}, {rebuild, g}), {script, g})}, kNoTargets);
+  WXT_CHECK(Removed(either) == (std::vector<int>{9}));
+  WXT_CHECK_EQ(either.unsure, 1);
+  // None of the gesture's commands left: what the queue holds that it did not hold as the gesture began cannot be told.
+  const Entry attack = On(Order(9, "Attack", 50, 50), 66);
+  const Plan none = PlanUndo({Given(Of(4, false, {repair}, {rebuild}), {attack})}, kNoTargets);
+  WXT_CHECK(Removed(none).empty());
+  WXT_CHECK_EQ(none.unsure, 1);
+}
+
+// Review finding pending-byproducts-taken-out, replaced. The engineer's Repair on wreck 88 with Clear was pending as a
+// replacing move 9 began, and a read came after the sim took it (kRead): the sim held the rebuild alone, as FAF's Rebuild
+// cleared the Repair, when the replacement took it. It comes back by FAF's build mode at its place, by its name, whole; in
+// its place in the queue, after an order of the unit's that stood ahead of it, and also behind one the sim kept.
+WXT_TEST(GriffUndoWhatFAFMadeOfAPendingOrderComesBackByItsOwnWayWhereTheGestureReplaced)
+{
+  Targets wreck;
+  wreck[88] = Place{40, 18, 40};
+  const Entry repair = NotTaken(On(Order(5, "Repair", 40, 40), 88), Pending::kRead);
+  const Entry rebuild = Named(Order(kRebuild, "BuildMobile", 40, 40), "ueb1301");
+  const Entry g = Order(9, "Move", 50, 50);
+  const Plan plan = PlanUndo({Given(Taken(Of(4, true, {repair}, {g}), {rebuild}), {g})}, wreck);
+  WXT_CHECK(Removed(plan) == (std::vector<int>{9}));
+  const std::vector<Click> clicks = Clicks(plan);
+  WXT_CHECK(clicks.size() == 1 && clicks[0].way == Way::kBuild && clicks[0].blueprint == "ueb1301" && clicks[0].shift);
+  WXT_CHECK(clicks.size() == 1 && clicks[0].place.x == 40 && clicks[0].place.z == 40);
+  WXT_CHECK_EQ(plan.dropped, 0);
+  WXT_CHECK_EQ(plan.unsure, 0);
+  const Entry a = Order(1, "Move", 10, 10);
+  const Plan behindPlan = PlanUndo({Given(Taken(Of(4, true, {a, repair}, {g}), {a, rebuild}), {g})}, wreck);
+  const std::vector<Click> behind = Clicks(behindPlan);
+  WXT_CHECK(behind.size() == 2 && behind[0].way == Way::kMove && behind[1].way == Way::kBuild);
+  WXT_CHECK_EQ(behindPlan.unsure, 0);
+  const Entry enhancing = Order(2, "Script", kNone, kNone);
+  const Plan kept = PlanUndo({Given(Taken(Of(4, true, {enhancing, repair}, {enhancing, g}), {enhancing, rebuild}), {g})}, wreck);
+  WXT_CHECK(Clicks(kept).size() == 1 && ClickAt(kept, Way::kBuild, 40, 40));
+  // A command of the player's that the queue as the gesture began did not hold is none of what the sim made.
+  const Plan players = PlanUndo({Given(Taken(Of(4, true, {repair}, {g}), {Order(3, "Move", 70, 70), rebuild}), {g})}, wreck);
+  WXT_CHECK(Clicks(players).size() == 1 && ClickAt(players, Way::kBuild, 40, 40));
+  // What the sim holds still through the replacement it kept: nothing comes back.
+  const Plan still = PlanUndo({Given(Taken(Of(4, true, {repair}, {rebuild, g}), {rebuild}), {g})}, wreck);
+  WXT_CHECK(still.groups.empty());
+  // A pending attack-move's AggressiveMove stands for its script, which comes back as one attack-move, before the rebuild
+  // behind it.
+  const Entry script = NotTaken(AttackMoveScript(6, 30, 31), Pending::kRead);
+  const Plan bothPlan =
+    PlanUndo({Given(Taken(Of(4, true, {script, repair}, {g}), {Order(kSimId, "AggressiveMove", 30, 31), rebuild}), {g})}, wreck);
+  const std::vector<Click> both = Clicks(bothPlan);
+  WXT_CHECK(both.size() == 2 && both[0].way == Way::kAttackMove && both[1].way == Way::kBuild);
+  WXT_CHECK_EQ(bothPlan.unsure, 0);
+}
+
+// Only a read after the sim took one of the unit's pending orders shows what the sim made of it; before that, a command of
+// the sim's own in `taken` is its own doing (a rally point it refills): the Repair the sim took in the replacement's own beat
+// comes back by its repair, which FAF's Rebuild answers anew, and nothing else does. From the gesture's first command in
+// `taken` on (an order of its that landed before its replacement), what the sim made is the gesture's.
+WXT_TEST(GriffUndoOnlyAReadAfterTheSimTookAPendingOrderShowsWhatItMadeOfIt)
+{
+  Targets wreck;
+  wreck[88] = Place{40, 18, 40};
+  const Entry rebuild = Named(Order(kRebuild, "BuildMobile", 40, 40), "ueb1301");
+  const Entry g = Order(9, "Move", 50, 50);
+  const Entry sims = Order(kSimOther, "Move", 30, 30);
+  const Entry inBeat = NotTaken(On(Order(5, "Repair", 40, 40), 88), Pending::kWithReplacement);
+  const Plan plan = PlanUndo({Given(Taken(Of(4, true, {inBeat}, {g}), {sims}), {g})}, wreck);
+  const std::vector<Click> clicks = Clicks(plan);
+  WXT_CHECK(clicks.size() == 1 && clicks[0].way == Way::kRepair && clicks[0].target == 88);
+  WXT_CHECK_EQ(plan.unsure, 0);
+  // A read attack-move's AggressiveMove stands for its script, and a refill beside it is the sim's.
+  const Entry script = NotTaken(AttackMoveScript(6, 30, 31), Pending::kRead);
+  const Plan attack = PlanUndo({Given(Taken(Of(4, true, {script}, {g}), {Order(kSimId, "AggressiveMove", 30, 31), sims}), {g})}, kNoTargets);
+  WXT_CHECK(Clicks(attack).size() == 1 && ClickAt(attack, Way::kAttackMove, 30, 31));
+  // The gesture's Guard on extractor 77 with Plus landed first and FAF ringed it; its move 10 replaced the queue after.
+  const Entry repair = NotTaken(On(Order(5, "Repair", 40, 40), 88), Pending::kRead);
+  const Entry guard = On(Order(9, "Guard", 30, 30), 77);
+  const Entry ring = Named(Order(kRing, "BuildMobile", 32, 30), "ueb1106");
+  const Plan gestures =
+    PlanUndo({Given(Taken(Of(4, true, {repair}, {Order(10, "Move", 50, 50)}), {rebuild, guard, ring}), {guard, Order(10, "Move", 50, 50)})},
+             wreck);
+  WXT_CHECK(Clicks(gestures).size() == 1 && ClickAt(gestures, Way::kBuild, 40, 40));
+}
+
+// What the sim made of one of the unit's pending orders that stands right behind it in `taken`, where that order comes back
+// too: FAF may make it again of the order given again, as its own rules decide (its rings come again five game ticks after
+// the last at the soonest, which a paused game holds). It comes back all the same, never lost, and counts. Where the order is
+// done or gone, it comes back exact.
+WXT_TEST(GriffUndoWhatFAFMadeOfAPendingOrderThatComesBackCounts)
+{
+  Targets extractor;
+  extractor[77] = Place{30, 18, 30};
+  const Entry guard = NotTaken(On(Order(5, "Guard", 30, 30), 77), Pending::kRead);
+  const Entry ring = Named(Order(kRing, "BuildMobile", 32, 30), "ueb1106");
+  const Entry ringOther = Named(Order(kRingOther, "BuildMobile", 30, 32), "ueb1106");
+  const Entry g = Order(9, "Move", 50, 50);
+  const Plan plan = PlanUndo({Given(Taken(Of(4, true, {guard}, {g}), {guard, ring, ringOther}), {g})}, extractor);
+  const std::vector<Click> clicks = Clicks(plan);
+  WXT_CHECK(clicks.size() == 3 && clicks[0].way == Way::kGuard && clicks[0].target == 77);
+  WXT_CHECK(ClickAt(plan, Way::kBuild, 32, 30) && ClickAt(plan, Way::kBuild, 30, 32));
+  WXT_CHECK_EQ(plan.unsure, 2);
+  const Plan done = PlanUndo({Given(Taken(Of(4, true, {guard}, {g}), {ring, ringOther}), {g})}, extractor);
+  WXT_CHECK(Clicks(done).size() == 2 && ClickAt(done, Way::kBuild, 32, 30) && ClickAt(done, Way::kBuild, 30, 32));
+  WXT_CHECK_EQ(done.unsure, 0);
+}
+
+// Review finding stale-taken-trusted. Tank 4 held [A, B], both the sim's, as a replacing move 9 began. The read before the
+// landing showed [A, B]; where the frame that brought the replacement's beat brought the beat before it too, the tank may have
+// reached A in it: A and B come back, and each counts. A pending order a read showed counts so as well, and what the sim made
+// of one; one the sim took in the replacement's own beat is exact whatever was read.
+WXT_TEST(GriffUndoWhatAReadTheSimMayHaveTickedAfterShowsComesBackCounted)
+{
+  const Entry a = Order(1, "Move", 10, 10);
+  const Entry b = Order(2, "Move", 20, 20);
+  const Entry g = Order(9, "Move", 50, 50);
+  const Unit unit = Given(Taken(Of(4, true, {a, b}, {g}), {a, b}), {g});
+  const Plan fresh = PlanUndo({unit}, kNoTargets);
+  WXT_CHECK_EQ(Clicks(fresh).size(), std::size_t{2});
+  WXT_CHECK_EQ(fresh.unsure, 0);
+  const Plan old = PlanUndo({ReadTicksAgo(unit)}, kNoTargets);
+  WXT_CHECK_EQ(Clicks(old).size(), std::size_t{2});
+  WXT_CHECK_EQ(old.unsure, 2);
+  const Entry p = Order(3, "Move", 30, 30);
+  const Plan read = PlanUndo({ReadTicksAgo(Given(Taken(Of(4, true, {a, NotTaken(p, Pending::kRead)}, {g}), {a, p}), {g}))}, kNoTargets);
+  WXT_CHECK_EQ(read.unsure, 2);
+  const Plan inBeat =
+    PlanUndo({ReadTicksAgo(Given(Taken(Of(4, true, {a, NotTaken(p, Pending::kWithReplacement)}, {g}), {a}), {g}))}, kNoTargets);
+  WXT_CHECK_EQ(Clicks(inBeat).size(), std::size_t{2});
+  WXT_CHECK_EQ(inBeat.unsure, 1);
+  Targets wreck;
+  wreck[88] = Place{40, 18, 40};
+  const Entry repair = NotTaken(On(Order(5, "Repair", 40, 40), 88), Pending::kRead);
+  const Entry rebuild = Named(Order(kRebuild, "BuildMobile", 40, 40), "ueb1301");
+  const Plan made = PlanUndo({ReadTicksAgo(Given(Taken(Of(4, true, {repair}, {g}), {rebuild}), {g}))}, wreck);
+  WXT_CHECK(Clicks(made).size() == 1 && ClickAt(made, Way::kBuild, 40, 40));
+  WXT_CHECK_EQ(made.unsure, 1);
+}
+
+// Whether the sim may have ticked between the last read of a replaced queue and the replacement's beat: from the game's tick
+// at that read and at the read that found the replacement landed, and whether the newest sync's beat ticked.
+WXT_TEST(GriffUndoAReadIsOldWhereTheSimMayHaveTickedBeforeTheReplacementsBeat)
+{
+  using griffundo::Stale;
+  // A frame a beat: the read at tick 100 showed the beat before the replacement's, whose own beat made tick 101.
+  WXT_CHECK(!Stale(100, 101, true));
+  // The frame that brought the replacement's beat brought the one before it too, which made tick 101.
+  WXT_CHECK(Stale(100, 102, true));
+  // A paused game's beats make no tick, however many a frame brings.
+  WXT_CHECK(!Stale(100, 100, false));
+  // The newest beat made none (the game paused at it), one before it did.
+  WXT_CHECK(Stale(100, 101, false));
+}
+
+// Review finding pendingof-untested: the orders the sim had not taken as the gesture began, from the queue's pending edits as
+// FAF's UI made them: each that an Add adds, which the UI's view shows and the sim's primary links lack.
+WXT_TEST(GriffUndoAnOrderTheSimHadNotTakenIsOneWhoseAddWaitsAndThePrimaryLinksLack)
+{
+  using griffundo::Edit;
+  using griffundo::EditKind;
+  using griffundo::Unsynced;
+  using griffundo::UnsyncedOf;
+  const Entry a = Order(1, "Move", 10, 10);
+  const Entry p = Order(2, "Move", 20, 20);
+  const std::vector<Unsynced> unsynced = UnsyncedOf({Edit{EditKind::kAdd, 2, 700}}, {a, p}, {a});
+  WXT_CHECK_EQ(unsynced.size(), std::size_t{1});
+  if (unsynced.size() == 1) {
+    WXT_CHECK(unsynced[0].command == 2 && unsynced[0].beat == 700 && !unsynced[0].read);
+  }
+  // The primary links hold its command already: the sim has it.
+  WXT_CHECK(UnsyncedOf({Edit{EditKind::kAdd, 2, 700}}, {a, p}, {a, p}).empty());
+  // An Add of an order the UI's view does not show (a Remove after it took it out).
+  WXT_CHECK(UnsyncedOf({Edit{EditKind::kAdd, 3, 700}, Edit{EditKind::kRemove, 3, 701}}, {a, p}, {a}).empty());
+  // A removal of one the UI shows adds none, nor does a Reset.
+  WXT_CHECK(UnsyncedOf({Edit{EditKind::kReset, 0, 700}, Edit{EditKind::kRemove, 2, 701}}, {a, p}, {a}).empty());
+}
+
+// Review finding pendingof-untested: what the program read of an order the sim had not taken as the gesture began, by the
+// order's beat and the replacement's (its Reset at beat 705), and whether a read came after the sync reached the order's beat.
+WXT_TEST(GriffUndoWhatWasReadOfAnOrderTheSimHadNotTakenGoesByItsBeat)
+{
+  using griffundo::PendingOf;
+  const std::vector<griffundo::Unsynced> unsynced = {{2, 705, false}, {3, 704, false}, {4, 703, true}};
+  WXT_CHECK_EQ(PendingOf(unsynced, 1, true, 705), Pending::kNo);
+  WXT_CHECK_EQ(PendingOf(unsynced, 2, true, 705), Pending::kWithReplacement);
+  WXT_CHECK_EQ(PendingOf(unsynced, 3, true, 705), Pending::kUnread);
+  WXT_CHECK_EQ(PendingOf(unsynced, 4, true, 705), Pending::kRead);
+  // No view of the sim's read (a queue the gesture appended to): unread, whatever its beat.
+  WXT_CHECK_EQ(PendingOf(unsynced, 2, false, 705), Pending::kUnread);
+  WXT_CHECK_EQ(PendingOf(unsynced, 4, false, 705), Pending::kUnread);
+  WXT_CHECK_EQ(PendingOf(unsynced, 1, false, 705), Pending::kNo);
+}
+
 // Review finding factory-test-pins-nothing: which of a unit's queues an order went into, by each queue's newest edit before the
 // order and after it, as FAF's UI made the edits (the program's EditOf).
 WXT_TEST(GriffUndoAnOrderWentIntoTheQueueWhoseNewestEditIsItsAdd)
@@ -620,6 +869,53 @@ WXT_TEST(GriffUndoFafsAssistToUpgradeIsTheUpgradeOfOneUnitWithClear)
   WXT_CHECK(!griffundo::AssistUpgrade("Upgrade", false, 1));
   WXT_CHECK(!griffundo::AssistUpgrade("Upgrade", true, 2));
   WXT_CHECK(!griffundo::AssistUpgrade("Guard", true, 1));
+}
+
+// Review finding gundone-one-slot-no-end. FAF's assist-to-upgrade orders paused extractor 77's upgrade only after the undo of
+// the Guard on it said its word (UpgradeUnit unpauses it and waits five game ticks, which a paused game holds); a second
+// undo came meanwhile, in the paused game. The upgrade reaches the first undo's word, once; one of another unit is none of
+// theirs. An undo that said in part already turns nothing, and an upgrade for a Guard an undo gave back is the unit's own
+// order's again.
+WXT_TEST(GriffUndoFafsLateUpgradeReachesTheWordOfTheUndoWhoseGuardItWas)
+{
+  griffundo::Undones undones;
+  undones.Finished(1, {77}, {}, true, 100);
+  undones.Finished(2, {}, {}, true, 100);
+  std::vector<int> turned;
+  WXT_CHECK(undones.Upgraded(77, 105, turned));
+  WXT_CHECK(turned == (std::vector<int>{1}));
+  turned.clear();
+  WXT_CHECK(undones.Upgraded(77, 105, turned));
+  WXT_CHECK(turned.empty());
+  WXT_CHECK(!undones.Upgraded(78, 105, turned));
+  undones.Finished(3, {79}, {}, false, 105);
+  WXT_CHECK(undones.Upgraded(79, 105, turned));
+  undones.Finished(4, {}, {80}, true, 105);
+  WXT_CHECK(undones.Upgraded(80, 105, turned));
+  WXT_CHECK(turned.empty());
+}
+
+// An undo's Guards wait six of the game's ticks after it finished, which a paused game holds, and none outlives its game: not
+// one whose tick lies ahead of the game's, another game's whose ticks began anew, nor any once the game ended.
+WXT_TEST(GriffUndoAnUndosGuardsWaitSixOfTheGamesTicksForFafsUpgrade)
+{
+  std::vector<int> turned;
+  griffundo::Undones waiting;
+  waiting.Finished(1, {77}, {}, true, 100);
+  WXT_CHECK(waiting.Upgraded(77, 106, turned));
+  WXT_CHECK(turned == (std::vector<int>{1}));
+  turned.clear();
+  griffundo::Undones late;
+  late.Finished(1, {77}, {}, true, 100);
+  WXT_CHECK(!late.Upgraded(77, 107, turned));
+  griffundo::Undones another;
+  another.Finished(1, {77}, {}, true, 100);
+  WXT_CHECK(!another.Upgraded(77, 3, turned));
+  griffundo::Undones ended;
+  ended.Finished(1, {77}, {}, true, 100);
+  ended.Clear();
+  WXT_CHECK(!ended.Upgraded(77, 100, turned));
+  WXT_CHECK(turned.empty());
 }
 
 WXT_TEST(GriffUndoACommandOfManyUnitsIsTakenOutOnce)
