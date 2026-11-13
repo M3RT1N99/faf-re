@@ -74,6 +74,10 @@ void Win32Android_MouseMove(int x, int y);
 void Win32Android_MouseButton(int button, BOOL down, int x, int y);
 /// A button as Windows gives it for a finger on a touch screen: GetMessageExtraInfo tells it from a mouse's.
 void Win32Android_TouchButton(int button, BOOL down, int x, int y);
+/// How many milliseconds a press of `button` at x, y would still make a double click with the press before it, whoever gave
+/// that (0: none, it would be a press of its own), by the rule above. Who wants two presses there, as a player who wants two
+/// single clicks, waits that long.
+DWORD Win32Android_DoubleClickWait(int button, int x, int y);
 /// `delta` in WHEEL_DELTA units of 120 per notch, positive away from the user.
 void Win32Android_MouseWheel(int delta, int x, int y);
 

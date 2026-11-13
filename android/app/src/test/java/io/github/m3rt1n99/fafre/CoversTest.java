@@ -66,6 +66,49 @@ public class CoversTest {
     }
 
     @Test
+    public void theUndosPillCoversItsPlaceAShortWhileAfterItWent() {
+        // The pill shows at two places, its time runs out at 3000, and a tap meant for it is on its way: the place where it last
+        // showed stays covered until 500 ms after its last frame, then the program hears it go.
+        Covers.Lingering pill = new Covers.Lingering(500);
+        covers.begin();
+        covers.piece(pill, true, 30, 300, 330, 360, 1000);
+        assertTrue(covers.end());
+        covers.begin();
+        covers.piece(pill, true, 30, 310, 330, 370, 2990);
+        assertTrue("moved", covers.end());
+        covers.begin();
+        covers.piece(pill, false, 0, 0, 0, 0, 3000);
+        assertFalse("gone, and covering still", covers.end());
+        assertArrayEquals(new int[] {30, 310, 330, 370}, given());
+        covers.begin();
+        covers.piece(pill, false, 0, 0, 0, 0, 3489);
+        assertFalse(covers.end());
+        assertEquals(1, covers.count());
+        covers.begin();
+        covers.piece(pill, false, 0, 0, 0, 0, 3490);
+        assertTrue(covers.end());
+        assertEquals(0, covers.count());
+        // It shows again for a new order: it covers again, where it shows.
+        covers.begin();
+        covers.piece(pill, true, 30, 300, 330, 360, 5000);
+        assertTrue(covers.end());
+        assertArrayEquals(new int[] {30, 300, 330, 360}, given());
+    }
+
+    @Test
+    public void aPieceThatNeverShowedNeverCoversNorDoesOneWithoutASize() {
+        Covers.Lingering never = new Covers.Lingering(500);
+        assertFalse(never.covers(false, 30, 300, 330, 360, 0));
+        assertFalse("without a size", never.covers(true, 30, 300, 30, 360, 0));
+        Covers.Lingering pill = new Covers.Lingering(500);
+        covers.begin();
+        covers.piece(pill, false, 30, 300, 330, 360, 0);
+        covers.piece(new Covers.Lingering(500), true, 30, 300, 30, 360, 0);
+        covers.end();
+        assertEquals(0, covers.count());
+    }
+
+    @Test
     public void thereAreAtMostSoMany() {
         covers.begin();
         for (int piece = 0; piece <= Covers.MOST; ++piece) {

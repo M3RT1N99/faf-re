@@ -62,12 +62,17 @@ final class Undo {
         return mRecord;
     }
 
-    /** The undo of record `record` is over, whatever it did: the pill goes. */
-    void undone(int record) {
-        if (record == mRecord) {
-            mRecord = 0;
-            mTapped = false;
+    /**
+     * The undo of record `record` is over, whatever it did: the pill goes. Whether it was the pill's record: the program also
+     * tells of an undo over earlier, whose word changed afterwards (an upgrade FAF ordered for one of its assists only then).
+     */
+    boolean undone(int record) {
+        if (record != mRecord) {
+            return false;
         }
+        mRecord = 0;
+        mTapped = false;
+        return true;
     }
 
     /** No game any more: no pill. */

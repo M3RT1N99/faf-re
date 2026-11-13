@@ -627,12 +627,35 @@ namespace
     return point;
   }
 
+  /// The window a mouse message goes to: the capture window, else the one under the point.
+  Window* MouseTargetLocked(const POINT point)
+  {
+    State& layer = Layer();
+    return layer.capture != nullptr ? layer.capture : WindowAtLocked(layer.topLevel, point, POINT{0, 0});
+  }
+
+  /// How long a press (`message`, a button's DOWN) at `point` on `target` at `now` still makes a double click with the last
+  /// press, in milliseconds; 0 where it is a press of its own. As Windows has it for a window whose class has CS_DBLCLKS:
+  /// the same window and button, within the double-click time and within half the double-click rectangle's sides each way.
+  DWORD DoubleClickWaitLocked(const Window& target, const UINT message, const POINT point, const DWORD now)
+  {
+    const Click& last = Layer().lastClick;
+    if (target.windowClass == nullptr || (target.windowClass->style & CS_DBLCLKS) == 0 || last.window != &target
+        || last.message != message || now - last.time > kDoubleClickTime) {
+      return 0;
+    }
+    if (std::abs(last.point.x - point.x) > kDoubleClickDistance / 2 || std::abs(last.point.y - point.y) > kDoubleClickDistance / 2) {
+      return 0;
+    }
+    return kDoubleClickTime + 1 - (now - last.time);
+  }
+
   /// A mouse message for the capture window or the one under the pointer, in its client
   /// coordinates.
   void PostMouseLocked(UINT message, const WORD xButton, const LPARAM extraInfo = 0)
   {
     State& layer = Layer();
-    Window* const target = layer.capture != nullptr ? layer.capture : WindowAtLocked(layer.topLevel, layer.cursor, POINT{0, 0});
+    Window* const target = MouseTargetLocked(layer.cursor);
     if (target == nullptr) {
       return;
     }
@@ -642,11 +665,8 @@ namespace
     const bool press = message == WM_LBUTTONDOWN || message == WM_RBUTTONDOWN || message == WM_MBUTTONDOWN
                     || message == WM_XBUTTONDOWN;
     if (press && target->windowClass != nullptr && (target->windowClass->style & CS_DBLCLKS) != 0) {
-      const Click& last = layer.lastClick;
       const DWORD now = ::GetTickCount();
-      if (last.window == target && last.message == message && now - last.time <= kDoubleClickTime
-          && std::abs(last.point.x - layer.cursor.x) <= kDoubleClickDistance / 2
-          && std::abs(last.point.y - layer.cursor.y) <= kDoubleClickDistance / 2) {
+      if (DoubleClickWaitLocked(*target, message, layer.cursor, now) != 0) {
         message += WM_LBUTTONDBLCLK - WM_LBUTTONDOWN; // the DBLCLK message follows each DOWN
         layer.lastClick = Click{};
       } else {
@@ -3216,9 +3236,11 @@ void Win32Android_MouseMove(const int x, const int y)
 
 namespace
 {
+  /// Each host button's DOWN message.
+  constexpr UINT kButtonDown[] = {WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN, WM_XBUTTONDOWN};
+
   void PostMouseButton(const int button, const BOOL down, const int x, const int y, const LPARAM extraInfo)
   {
-    static const UINT kDown[] = {WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN, WM_XBUTTONDOWN};
     static const UINT kUp[] = {WM_LBUTTONUP, WM_RBUTTONUP, WM_MBUTTONUP, WM_XBUTTONUP, WM_XBUTTONUP};
     static const int kKey[] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
     if (button < WIN32ANDROID_BUTTON_LEFT || button > WIN32ANDROID_BUTTON_X2) {
@@ -3230,7 +3252,7 @@ namespace
     BYTE& key = layer.asyncKeys[kKey[button]];
     key = down != FALSE ? static_cast<BYTE>(key | 0x80) : static_cast<BYTE>(key & ~0x80);
     const WORD xButton = button == WIN32ANDROID_BUTTON_X1 ? XBUTTON1 : (button == WIN32ANDROID_BUTTON_X2 ? XBUTTON2 : 0);
-    PostMouseLocked(down != FALSE ? kDown[button] : kUp[button], xButton, extraInfo);
+    PostMouseLocked(down != FALSE ? kButtonDown[button] : kUp[button], xButton, extraInfo);
   }
 } // namespace
 
@@ -3242,6 +3264,18 @@ void Win32Android_MouseButton(const int button, const BOOL down, const int x, co
 void Win32Android_TouchButton(const int button, const BOOL down, const int x, const int y)
 {
   PostMouseButton(button, down, x, y, MOUSEEVENTF_FROMTOUCH);
+}
+
+DWORD Win32Android_DoubleClickWait(const int button, const int x, const int y)
+{
+  if (button < WIN32ANDROID_BUTTON_LEFT || button > WIN32ANDROID_BUTTON_X2) {
+    return 0;
+  }
+  State& layer = Layer();
+  Lock lock(layer.mutex);
+  const POINT point = ClampToClipLocked(POINT{x, y});
+  const Window* const target = MouseTargetLocked(point);
+  return target != nullptr ? DoubleClickWaitLocked(*target, kButtonDown[button], point, ::GetTickCount()) : 0;
 }
 
 void Win32Android_MouseWheel(const int delta, const int x, const int y)

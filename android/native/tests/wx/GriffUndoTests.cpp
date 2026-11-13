@@ -17,6 +17,7 @@ namespace
 {
   using griffundo::Click;
   using griffundo::Entry;
+  using griffundo::Pending;
   using griffundo::Place;
   using griffundo::Plan;
   using griffundo::PlanUndo;
@@ -58,6 +59,19 @@ namespace
     return entry;
   }
 
+  /// FAF's attack-move button's script at a place.
+  Entry AttackMoveScript(const int id, const float x, const float z)
+  {
+    return Task(Order(id, "Script", x, z), "AttackMove");
+  }
+
+  /// An order of the queue as the gesture began that the sim had not taken then, and what the program read of it after.
+  Entry NotTaken(Entry entry, const Pending pending)
+  {
+    entry.pending = pending;
+    return entry;
+  }
+
   /// A unit's queue as the program gives it where it read no view of the sim's as the replacement landed: `taken` is
   /// `before`.
   Unit Of(const int id, const bool replaced, std::vector<Entry> before, std::vector<Entry> now)
@@ -88,6 +102,26 @@ namespace
   {
     unit.site = site;
     return unit;
+  }
+
+  /// The commands the gesture's orders put into the queue.
+  Unit Given(Unit unit, std::vector<Entry> given)
+  {
+    unit.given = std::move(given);
+    return unit;
+  }
+
+  /// Whether one of the plan's clicks gives this way at this place.
+  bool ClickAt(const Plan& plan, const Way way, const float x, const float z)
+  {
+    for (const griffundo::Group& group : plan.groups) {
+      for (const Click& click : group.clicks) {
+        if (click.way == way && click.place.x == x && click.place.z == z) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// The plan's only group's clicks, or none.
@@ -370,7 +404,10 @@ WXT_TEST(GriffUndoWhatAReplacedUnitFinishedBeforeTheReplacementLandedIsNotGivenA
   WXT_CHECK(appended.groups.empty());
 }
 
-WXT_TEST(GriffUndoAFactorysOwnQueueIsReadApartFromItsRallyRoute)
+// A characterization of PlanUndo with a factory's two queues as two Units of one id: it pins nothing of which queue an order
+// went into, which the program tells by the queues' newest edits (griffundo::TookOrder, pinned below), and passes on the
+// rules before c907f4753 as well.
+WXT_TEST(GriffUndoCharacterizationAFactorysTwoQueuesPlanAsTwoUnitsOfOneId)
 {
   // FAF's orders panel's Stop on a land factory with five tanks queued and a rally point: ISSUE_Command clears the factory's
   // own queue (its build queue), not the route. What it lost cannot come back by a click: it counts, the route stays. A
@@ -401,6 +438,188 @@ WXT_TEST(GriffUndoAFactorysOwnQueueIsReadApartFromItsRallyRoute)
     WXT_CHECK(both.groups[0].units == (std::vector<int>{1}));
     WXT_CHECK(both.groups[0].clicks.size() == 1 && both.groups[0].clicks[0].place.x == 30 && !both.groups[0].clicks[0].shift);
   }
+}
+
+// Review finding pending-attack-move-taken-out, appended. The tank's own attack-move P (FAF's script, then its AttackMove
+// callback's AggressiveMove at the script's place) was not taken by the sim yet as the next gesture began, which appended a
+// move G with Plus: the sim made P's AggressiveMove after the program read `before`. It is the tank's own and stays; G goes.
+WXT_TEST(GriffUndoAPendingAttackMovesAggressiveMoveStaysWhereTheGestureAppended)
+{
+  const Entry scriptP = NotTaken(AttackMoveScript(5, 30, 30), Pending::kUnread);
+  const Entry aggressiveP = Order(kSimId, "AggressiveMove", 30, 30);
+  const Entry g = Order(9, "Move", 50, 50);
+  // An idle tank: P's script ran off at the head once the sim ticked.
+  const Plan idle = PlanUndo({Of(4, false, {scriptP}, {aggressiveP, g})}, kNoTargets);
+  WXT_CHECK(Removed(idle) == (std::vector<int>{9}));
+  WXT_CHECK_EQ(idle.dropped, 0);
+  WXT_CHECK_EQ(idle.unsure, 0);
+  // A tank busy with X: P's script stays behind X, its AggressiveMove behind the script.
+  const Entry x = Order(1, "Move", 10, 10);
+  const Plan busy = PlanUndo({Of(4, false, {x, scriptP}, {x, scriptP, aggressiveP, g})}, kNoTargets);
+  WXT_CHECK(Removed(busy) == (std::vector<int>{9}));
+  WXT_CHECK_EQ(busy.dropped, 0);
+  WXT_CHECK_EQ(busy.unsure, 0);
+  // The gesture's own attack-move at another place (P's x, another z): its AggressiveMove goes, P's stays, all told apart; also
+  // where P's is done since.
+  const Entry scriptElsewhere = AttackMoveScript(9, 30, 40);
+  const Entry aggressiveG = Order(kSimOther, "AggressiveMove", 30, 40);
+  const Plan elsewhere =
+    PlanUndo({Given(Of(4, false, {scriptP}, {aggressiveP, scriptElsewhere, aggressiveG}), {scriptElsewhere})}, kNoTargets);
+  WXT_CHECK(Removed(elsewhere) == (std::vector<int>{kSimOther}));
+  WXT_CHECK_EQ(elsewhere.unsure, 0);
+  const Plan done = PlanUndo({Given(Of(4, false, {scriptP}, {aggressiveG}), {scriptElsewhere})}, kNoTargets);
+  WXT_CHECK(Removed(done) == (std::vector<int>{kSimOther}));
+  WXT_CHECK_EQ(done.unsure, 0);
+  // An AggressiveMove the tank held at P's place already, of an earlier attack-move, is not the one the sim made of P.
+  const Entry earlier = Order(kSimOther, "AggressiveMove", 30, 30);
+  const Plan twice = PlanUndo({Of(4, false, {earlier, scriptP}, {earlier, scriptP, aggressiveP, g})}, kNoTargets);
+  WXT_CHECK(Removed(twice) == (std::vector<int>{9}));
+  // Two pending attack-moves at one place: each has its own AggressiveMove.
+  const Entry scriptQ = NotTaken(AttackMoveScript(6, 30, 30), Pending::kUnread);
+  const Entry aggressiveQ = Order(static_cast<int>(0x80000013u), "AggressiveMove", 30, 30);
+  const Plan two = PlanUndo({Of(4, false, {scriptP, scriptQ}, {aggressiveP, scriptQ, aggressiveQ, g})}, kNoTargets);
+  WXT_CHECK(Removed(two) == (std::vector<int>{9}));
+  // The sim held the tank's attack-move as the gesture began, its AggressiveMove with it: the gesture's at the same place is
+  // the gesture's, whose script stays behind the tank's (counted, as ever).
+  const Entry held = AttackMoveScript(5, 30, 30);
+  const Entry scriptG = AttackMoveScript(9, 30, 30);
+  const Entry aggressiveHere = Order(static_cast<int>(0x80000014u), "AggressiveMove", 30, 30);
+  const Plan gestures =
+    PlanUndo({Given(Of(4, false, {x, held, aggressiveP}, {x, held, aggressiveP, scriptG, aggressiveHere}), {scriptG})}, kNoTargets);
+  WXT_CHECK(Removed(gestures) == (std::vector<int>{static_cast<int>(0x80000014u)}));
+  WXT_CHECK_EQ(gestures.unsure, 0);
+}
+
+// The gesture's own attack-move went to the very place of a pending one of the tank's: once P's AggressiveMove is done, the one
+// left there may be either's. It stays, as the tank's own may never be taken out, and the report says in part.
+WXT_TEST(GriffUndoAnAggressiveMoveWhereBothThePendingAttackMoveAndTheGesturesWentCannotBeTold)
+{
+  const Entry scriptP = NotTaken(AttackMoveScript(5, 30, 30), Pending::kUnread);
+  const Entry scriptG = AttackMoveScript(9, 30, 30);
+  const Entry left = Order(kSimOther, "AggressiveMove", 30, 30);
+  const Plan plan = PlanUndo({Given(Of(4, false, {scriptP}, {left}), {scriptG})}, kNoTargets);
+  WXT_CHECK(Removed(plan).empty());
+  WXT_CHECK_EQ(plan.dropped, 0);
+  WXT_CHECK_EQ(plan.unsure, 1);
+  // Both there still: the first is P's, the gesture's goes, its script stays behind P's; the place is one, so the report
+  // says in part all the same.
+  const Entry aggressiveP = Order(kSimId, "AggressiveMove", 30, 30);
+  const Plan both = PlanUndo({Given(Of(4, false, {scriptP}, {aggressiveP, scriptG, left}), {scriptG})}, kNoTargets);
+  WXT_CHECK(Removed(both) == (std::vector<int>{kSimOther}));
+  WXT_CHECK_EQ(both.dropped, 1);
+  WXT_CHECK_EQ(both.unsure, 1);
+}
+
+// Review finding pending-attack-move-taken-out, replaced: the tank's pending attack-move P under a replacing gesture G.
+// Whatever the program read of the sim (P's script and AggressiveMove; the AggressiveMove alone, once the script ran off or
+// Clear's callback replaced it) or did not read (P went to the sim in the replacement's own beat), P comes back as one
+// attack-move at its place.
+WXT_TEST(GriffUndoAPendingAttackMoveTheGestureReplacedComesBackAsOneAttackMove)
+{
+  const Entry aggressiveP = Order(kSimId, "AggressiveMove", 30, 30);
+  const Entry g = Order(9, "Move", 50, 50);
+  const Entry read = NotTaken(AttackMoveScript(5, 30, 30), Pending::kRead);
+  for (const std::vector<Entry>& taken : {std::vector<Entry>{read, aggressiveP}, std::vector<Entry>{aggressiveP}}) {
+    const Plan plan = PlanUndo({Taken(Of(4, true, {read}, {g}), taken)}, kNoTargets);
+    WXT_CHECK(Removed(plan) == (std::vector<int>{9}));
+    WXT_CHECK(Clicks(plan).size() == 1 && ClickAt(plan, Way::kAttackMove, 30, 30));
+    WXT_CHECK_EQ(plan.dropped, 0);
+    WXT_CHECK_EQ(plan.unsure, 0);
+  }
+  // Read gone before the replacement landed: the tank did it.
+  const Plan done = PlanUndo({Taken(Of(4, true, {read}, {g}), {})}, kNoTargets);
+  WXT_CHECK(done.groups.empty());
+  WXT_CHECK_EQ(done.unsure, 0);
+  // Taken by the sim in the replacement's own beat, just before it: never read, in the queue the replacement emptied.
+  const Entry withReplacement = NotTaken(AttackMoveScript(5, 30, 30), Pending::kWithReplacement);
+  const Plan inBeat = PlanUndo({Taken(Of(4, true, {withReplacement}, {g}), {})}, kNoTargets);
+  WXT_CHECK(Clicks(inBeat).size() == 1 && ClickAt(inBeat, Way::kAttackMove, 30, 30));
+  WXT_CHECK_EQ(inBeat.unsure, 0);
+  // Taken in a beat before the replacement's that no read came after: it comes back, and the report says in part.
+  const Entry unread = NotTaken(AttackMoveScript(5, 30, 30), Pending::kUnread);
+  const Plan unseen = PlanUndo({Taken(Of(4, true, {unread}, {g}), {})}, kNoTargets);
+  WXT_CHECK(Clicks(unseen).size() == 1 && ClickAt(unseen, Way::kAttackMove, 30, 30));
+  WXT_CHECK_EQ(unseen.unsure, 1);
+  // The gesture's replacing attack-move at the same place: its AggressiveMove goes, P's attack-move comes back.
+  const Entry aggressiveG = Order(kSimOther, "AggressiveMove", 30, 30);
+  const Plan same =
+    PlanUndo({Given(Taken(Of(4, true, {withReplacement}, {aggressiveG}), {}), {AttackMoveScript(9, 30, 30)})}, kNoTargets);
+  WXT_CHECK(Removed(same) == (std::vector<int>{kSimOther}));
+  WXT_CHECK(ClickAt(same, Way::kAttackMove, 30, 30));
+  WXT_CHECK_EQ(same.unsure, 0);
+}
+
+// Review finding pending-order-missing-from-taken. Tank T holds [A]; a Plus tap appends P, a tap without Plus replaces with G
+// before the sim took P. In a paused game both go to the sim in one beat, P first (IssueCommand marks no activity): no read
+// of the sim's queue shows P, and G's Reset wiped P's edit, so `taken` is [A]. T held [A, P] as the gesture began.
+WXT_TEST(GriffUndoAnOrderPendingAsTheGestureBeganComesBackByTheBeatTheSimTookItIn)
+{
+  const Entry a = Order(1, "Move", 10, 10);
+  const Entry p = Order(2, "Move", 20, 20);
+  const Entry g = Order(9, "Move", 50, 50);
+  const Plan plan = PlanUndo({Taken(Of(4, true, {a, NotTaken(p, Pending::kWithReplacement)}, {g}), {a})}, kNoTargets);
+  WXT_CHECK(Removed(plan) == (std::vector<int>{9}));
+  const std::vector<Click> clicks = Clicks(plan);
+  WXT_CHECK(clicks.size() == 2 && clicks[0].place.x == 10 && clicks[1].place.x == 20 && AllWithShift(clicks));
+  WXT_CHECK_EQ(plan.dropped, 0);
+  WXT_CHECK_EQ(plan.unsure, 0);
+  // P replacing A (its Reset pending too): T held [P] as the gesture began; A, which the sim held until then, is not T's.
+  const Plan replacing = PlanUndo({Taken(Of(4, true, {NotTaken(p, Pending::kWithReplacement)}, {g}), {a})}, kNoTargets);
+  const std::vector<Click> back = Clicks(replacing);
+  WXT_CHECK(back.size() == 1 && back[0].place.x == 20);
+  WXT_CHECK_EQ(replacing.unsure, 0);
+  // P went to the sim in a beat before G's, whose syncs came in one frame: P comes back, and the report says in part.
+  const Plan unread = PlanUndo({Taken(Of(4, true, {a, NotTaken(p, Pending::kUnread)}, {g}), {a})}, kNoTargets);
+  WXT_CHECK_EQ(Clicks(unread).size(), std::size_t{2});
+  WXT_CHECK_EQ(unread.unsure, 1);
+  // A read came after the sim took P: what the sim held when G landed tells, as for A.
+  const Plan read = PlanUndo({Taken(Of(4, true, {a, NotTaken(p, Pending::kRead)}, {g}), {a, p})}, kNoTargets);
+  WXT_CHECK_EQ(Clicks(read).size(), std::size_t{2});
+  WXT_CHECK_EQ(read.unsure, 0);
+  const std::vector<Click> gone = Clicks(PlanUndo({Taken(Of(4, true, {a, NotTaken(p, Pending::kRead)}, {g}), {a})}, kNoTargets));
+  WXT_CHECK(gone.size() == 1 && gone[0].place.x == 10);
+  // A Stop pending in a beat no read came after leaves nothing to give back, nor to be unsure of.
+  const Plan stop = PlanUndo({Taken(Of(4, true, {NotTaken(Order(3, "Stop", kNone, kNone), Pending::kUnread)}, {g}), {})}, kNoTargets);
+  WXT_CHECK(stop.groups.empty());
+  WXT_CHECK_EQ(stop.unsure, 0);
+}
+
+// Review finding factory-test-pins-nothing: which of a unit's queues an order went into, by each queue's newest edit before the
+// order and after it, as FAF's UI made the edits (the program's EditOf).
+WXT_TEST(GriffUndoAnOrderWentIntoTheQueueWhoseNewestEditIsItsAdd)
+{
+  using griffundo::Edit;
+  using griffundo::EditKind;
+  using griffundo::TookOrder;
+  const Edit none;
+  // A land factory with a build queued (its own queue's edit not taken yet) gets a rally point: ISSUE_FactoryCommand adds it
+  // to the route, and the own queue's newest edit is the build's still.
+  const Edit build{EditKind::kAdd, 12, 700};
+  const Edit rally{EditKind::kAdd, 13, 701};
+  WXT_CHECK(TookOrder(none, rally));
+  WXT_CHECK(!TookOrder(build, build));
+  // FAF's orders panel's Stop: ISSUE_Command empties the own queue, its Reset first, and adds the Stop last; the route's
+  // newest edit is the rally point's still.
+  const Edit stop{EditKind::kAdd, 14, 702};
+  WXT_CHECK(TookOrder(build, stop));
+  WXT_CHECK(!TookOrder(rally, rally));
+  // The sync took the edits meanwhile: none waits, no order.
+  WXT_CHECK(!TookOrder(build, none));
+  // A removal, the player's or the undo's own release, is no order; nor is a Reset alone.
+  WXT_CHECK(!TookOrder(none, Edit{EditKind::kRemove, 12, 703}));
+  WXT_CHECK(!TookOrder(none, Edit{EditKind::kReset, 0, 703}));
+  // The gesture's next order into the same queue: its own Add.
+  WXT_CHECK(TookOrder(stop, Edit{EditKind::kAdd, 15, 702}));
+}
+
+// Residual of the review: FAF's assist-to-upgrade upgrades the one unit a Guard went to with Clear; the player's own upgrades go
+// without, so the player's upgrade of a guarded unit ends the record as any other order.
+WXT_TEST(GriffUndoFafsAssistToUpgradeIsTheUpgradeOfOneUnitWithClear)
+{
+  WXT_CHECK(griffundo::AssistUpgrade("Upgrade", true, 1));
+  WXT_CHECK(!griffundo::AssistUpgrade("Upgrade", false, 1));
+  WXT_CHECK(!griffundo::AssistUpgrade("Upgrade", true, 2));
+  WXT_CHECK(!griffundo::AssistUpgrade("Guard", true, 1));
 }
 
 WXT_TEST(GriffUndoACommandOfManyUnitsIsTakenOutOnce)

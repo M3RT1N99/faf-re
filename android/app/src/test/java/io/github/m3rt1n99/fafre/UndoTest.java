@@ -47,13 +47,27 @@ public class UndoTest {
         assertEquals(3, undo.tap(100));
         assertTrue(undo.waiting());
         assertEquals("tapped already", 0, undo.tap(200));
-        undo.undone(2);
-        assertTrue("another record's", undo.showing(300));
+        assertFalse("another record's", undo.undone(2));
+        assertTrue(undo.showing(300));
         assertTrue(undo.waiting());
-        undo.undone(3);
+        assertTrue("the pill's", undo.undone(3));
         assertFalse(undo.showing(300));
         assertFalse(undo.waiting());
         assertEquals(0, undo.tap(300));
+    }
+
+    @Test
+    public void aWordThatChangedAfterAnUndoOverEarlierIsNoneOfThePillsRecord() {
+        // The undo of record 9 said all of it went; FAF's assist-to-upgrade ordered an upgrade for one of its Guards only after
+        // that, and the program tells the undo's word once more, now in part, while the pill shows the next record.
+        undo.ordered(9, 0);
+        undo.tap(100);
+        assertTrue(undo.undone(9));
+        undo.ordered(10, 500);
+        assertFalse(undo.undone(9));
+        assertTrue("the next record's pill stays", undo.showing(600));
+        assertEquals(10, undo.tap(600));
+        assertFalse("nor before any record", new Undo().undone(9));
     }
 
     @Test
@@ -95,8 +109,12 @@ public class UndoTest {
         assertEquals("Not undone", Undo.word(Game.NOT_UNDONE));
     }
 
+    // The next two characterize how the pill takes what the program tells after an undo that clicked nothing. They cannot pin
+    // the rule that such a record holds and is offered again: the program decides it (GriffAndroid.cpp FinishUndo and
+    // OfferAgain, which tell SAID_UNDONE and then SAID_ORDERED anew), and Undo has always taken a record told after its undo
+    // as a new one, so they pass on Undo as it was before that rule too. They keep the pill to what the program relies on.
     @Test
-    public void aRecordNotUndoneThatTheProgramTellsAgainIsOfferedForItsTimeOnceMore() {
+    public void characterizationARecordNotUndoneThatTheProgramTellsAgainIsOfferedForItsTimeOnceMore() {
         // Nothing of it was clicked (its clicks ended before their first step): the record holds, and the program tells it
         // anew after the undo's word.
         undo.ordered(7, 0);
@@ -114,7 +132,7 @@ public class UndoTest {
     }
 
     @Test
-    public void aRecordNotUndoneThatTheProgramDroppedIsGone() {
+    public void characterizationARecordNotUndoneThatTheProgramDroppedIsGone() {
         // A new order ended it while its undo waited for the sim, or the game did: the pill goes with the word.
         undo.ordered(8, 0);
         assertEquals(8, undo.tap(100));

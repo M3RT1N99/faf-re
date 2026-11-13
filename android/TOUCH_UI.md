@@ -391,24 +391,39 @@ and its rally route apart) and the building each was building, and FAF's UI tell
 `OnCommandIssued`, which `griff.lua` wraps and hands on with its units' ids; on every path a gesture takes, `ISSUE_Command` and
 `ISSUE_FactoryCommand`, the engine has put the order's edit in the queues by then): whether it replaced what they did (FAF's Clear) and
 which units it went to. Which of a factory's queues an order went into the program tells by the queue's newest edit
-(`UserCommandQueue::issueQueue`): `ISSUE_FactoryCommand` gives the rally route the moves, patrols and transport loads that FAF's dispatch
-sends a selection's factories, `ISSUE_Command` gives their own queue everything else, as the orders panel's Stop and the attack-move's
-script. From the first order of the gesture's that replaced a queue the sim still runs the queue as it was, as long as the network delay:
-until the sync reaches the beat of the Reset that order put at the queue's front, the program reads each frame what the sim holds of it
-(its primary links), and keeps that from then on (`ReadTaken`, also where the replacement left the queue empty or the sim gave orders
-of its own after it): what the unit had not done yet when the replacement landed. A gesture that ordered is the record the pill takes
+(`UserCommandQueue::issueQueue`; `include/GriffUndo.h` `TookOrder`, tested): `ISSUE_FactoryCommand` gives the rally route the moves,
+patrols and transport loads that FAF's dispatch sends a selection's factories, `ISSUE_Command` gives their own queue everything else, as
+the orders panel's Stop and the attack-move's script; the program keeps each order's command as FAF's UI gave it (`given`). The
+queues as the gesture began are FAF's UI's, the sim's primary links with the UI's edits over them: an order given just before may not
+have reached the sim yet (a paused game holds an order back until it resumes or something marks the session busy, as the attack-move's
+sim callback does; a network game for its delay). The program keeps those orders apart with the beat each goes to the sim at
+(`StoreSelection`'s `unsynced`): what the sim makes of them is the unit's own, as an attack-move script's AggressiveMove, which FAF's
+`AttackMove` callback adds at the script's very place once the sim took the script. From the first order of the gesture's that
+replaced a queue the sim still runs the queue as it was, as long as the network delay: until the sync reaches the beat of the Reset
+that order put at the queue's front, the program reads each frame what the sim holds of it (its primary links), and keeps that from
+then on (`ReadTaken`, also where the replacement left the queue empty or the sim gave orders of its own after it): what the unit had
+not done yet when the replacement landed. With each read it notes which of the orders not taken as the gesture began the sync has
+reached by then (the helper of each one's command keeps that beat's events until it does): one a read came after shows in what the
+sim held; one the sim took in the replacement's own beat was in the queue the replacement emptied; one it took in a beat no read came
+after was there unless the unit did it in between, which the program cannot tell. A gesture that ordered is the record the pill takes
 back, one level: the next one's replaces it, and any other order ends it, as only the last order counts: FAF's ghost from a build key or
 a template, the keyboard's hotkeys, the construction panel's own queue (a factory's units, an upgrade, an enhancement), none a
 gesture's to take back (`include/GriffUndo.h` `Takeable`); the pill goes with the record. FAF's assist-to-upgrade (its options
 `assist_to_upgrade` and `assist_to_upgrade_radar`) orders an extractor's or a radar's upgrade a frame or more after a Guard on it
-(`OnGuardUpgrade`): such an Upgrade of the target of one of the record's Guards neither ends nor joins the record, which notes it. The tap
-ladder's attack-move in place of a move belongs to the move's record.
+(`OnGuardUpgrade`'s `UpgradeUnit`, which unpauses a paused one first and waits five of the game's ticks), the upgrade of that one unit
+with Clear, which no upgrade of the player's has (the construction panel's, the upgrade key's, hotbuild's and the build mode keys' go
+without: `include/GriffUndo.h` `AssistUpgrade`, tested): such an Upgrade of the target of one of the record's Guards neither ends nor
+joins the record, which notes it; the player's own upgrade of that unit ends the record as any other order. The tap ladder's
+attack-move in place of a move belongs to the move's record.
 
 The pill (`UndoPill`, the mockup's drawUndo; `Undo` holds its time) stands for 3 s after the order, 2.5 mm from the screen's left (past a
 camera cutout's inset, as the rail), its top 0.3 H over FAF's unit view's top, which it covers under the rail, 6.6 H high, as wide as FAF's
 orders panel up to 34 mm (H, the mockup's unit of FAF's panels: a mm, less on screens under 73 mm, 0.7 mm at least): fully rounded in the
 panel colour, edged in the mark colour, a back arrow 4 mm from its left, *Undo* right of its middle and at its bottom a bar of the time it
-has left. It is a view of its own, so a finger on it is exactly its own, never the map's. It stands at the unit view's place also while FAF
+has left. It is a view of its own, so a finger on it is exactly its own, never the map's. Its cover stays 600 ms after it went, where it
+last stood (`Covers.Lingering`, tested): a tap meant for it whose finger was on its way as its time ran out lands on nothing, never on the
+map beneath (the program checks a tap's place at its click, a settle after the finger's down: on the emulator 88 to 188 ms, and taps
+74 to 389 ms late were covered, one 542 ms late not). It stands at the unit view's place also while FAF
 fades that view out for a selection of more than one unit (`unitview.lua` shows it for one unit or a rollover): the place is FAF's panel's
 under the rail, not where a tap for the next order goes; with no unit view laid out there is no pill. A dialog over the game takes it away.
 A tap on it takes the record back with a PC player's inputs (`include/GriffUndo.h`, tested in `tests/wx/GriffUndoTests.cpp`), once the
@@ -422,8 +437,8 @@ gesture's went into:
 | What the gesture did to a unit | Its way back |
 |---|---|
 | Gave it orders (in its queue now, not before; also what the sim gave for them, as the AggressiveMove of FAF's attack-move) | Each taken out by FAF's Shift+Ctrl right click on its waypoint (`CUIWorldView::HandleEvent`'s right release), which strips that command from all of its units, by the engine's own command id: the units selected, Shift held a frame before (FAF draws the waypoints only while Shift is down), the cursor on the waypoint and the click only once FAF's cursor hovers that very command, a waypoint off the free map with the camera there first, as the tick's. Checked in its units' queues after (the edit FAF sends the sim; a factory's rally route shows it once the sim took it) |
-| Appended to its queue | Nothing more: its queue before stays as it was, a building it had begun goes on, nothing of it is clicked again; what it finished since stays done |
-| Replaced its queue | What it lost (in its queue as the gesture began and still in the sim's when the replacement landed, not now: what it did in the network delay between stays done) given again as a player gives it, every click with Shift onto the emptied queue, so a click FAF refuses loses only its own order: a group of units whose orders come back alike selected, then for each order FAF's mode for it (the orders panel's move, attack-move, patrol, attack, assist, repair, reclaim or capture; the construction panel's build mode for a building, which lands in its cell as the tick's plans do) and a mouse's left click at its place, a frame after the cursor went there in that mode. An order on a unit at the place that unit is now, read again for each frame, and only while FAF's cursor picks that very unit, else counted missed, as is an order FAF gives on another entity. A building the unit had begun comes back by its repair. A patrol's first point comes back as a move to it, as FAF anchors a patrol given with Shift at the queue's last place and would add a point of its own. What the unit holds still the sim kept, as a commander's enhancement under way, which nothing of the undo stops |
+| Appended to its queue | Nothing more: its queue before stays as it was, a building it had begun goes on, nothing of it is clicked again; what it finished since stays done. An attack-move of its own the sim had not taken as the gesture began keeps the AggressiveMove the sim made of it since (the first at its script's place that its queue before did not hold), which is no command of the gesture's; where the gesture gave an attack-move to that very place too, the program cannot tell whose the one left there is: it stays, counted |
+| Replaced its queue | What it lost (in its queue as the gesture began and still in the sim's when the replacement landed, not now: what it did in the network delay between stays done) given again as a player gives it, every click with Shift onto the emptied queue, so a click FAF refuses loses only its own order: a group of units whose orders come back alike selected, then for each order FAF's mode for it (the orders panel's move, attack-move, patrol, attack, assist, repair, reclaim or capture; the construction panel's build mode for a building, which lands in its cell as the tick's plans do) and a mouse's left click at its place, a frame after the cursor went there in that mode. An order on a unit at the place that unit is now, read again for each frame, and only while FAF's cursor picks that very unit, else counted missed, as is an order FAF gives on another entity. A building the unit had begun comes back by its repair. A patrol's first point comes back as a move to it, as FAF anchors a patrol given with Shift at the queue's last place and would add a point of its own. What the unit holds still the sim kept, as a commander's enhancement under way, which nothing of the undo stops. An order the sim had not taken as the gesture began was lost as far as a read after the sim took it shows; one it took in the replacement's own beat was lost with it (a paused game holds both back to one beat); one it took in a beat no read came after comes back, counted. Such an attack-move comes back as one attack-move at its place, whether its script, its AggressiveMove or nothing of it was read |
 | Set a factory's rally point | As any unit's; but a rally route the gesture replaced comes back by a first click that replaces the gesture's rally point, the rest with Shift: the sim rallies an emptied route to the factory's own place again, which an appended route would follow |
 | Replaced a factory's own queue (the orders panel's Stop; an attack-move to a selection with the factory, whose script FAF authorizes for every selected unit) | Its builds cannot come back by a click: counted; its rally route, which the order did not touch, stays |
 | Nothing (its queue is as it was) | Nothing |
@@ -457,7 +472,12 @@ attack-move gives beside its AggressiveMove where it stays behind an order the u
 whose place FAF anchors a patrol given with Shift; at the queue's head it is done by itself), a waypoint FAF's cursor never hovered or a
 target it never picked, a place no frame brought onto the free map, a click FAF ordered nothing for, a unit FAF selected as the transport
 that carries it (left out, `SelectUnits` selects a carried unit's transport), an upgrade FAF ordered for an assist of the gesture's (it
-goes on), and units the gesture ordered that were not selected as it began. An undo that had something to take out or give back and made
+goes on), units the gesture ordered that were not selected as it began, and what the plan cannot tell (`Plan::unsure`: an order the sim
+took in a beat no read came after, an AggressiveMove at a place where both the unit's own pending attack-move and the gesture's went).
+An upgrade FAF's assist-to-upgrade orders only after the undo said it took all of the gesture back (a paused extractor's, in a paused
+game, where the sim takes the undo meanwhile and the five game ticks wait for the game to resume) makes it in part after all: the
+program keeps the last undo's Guards for it and says so then, a toast later, which neither ends nor joins any record (`gUndone`; the
+activity's pill and pointer stay as they are). An undo that had something to take out or give back and made
 no release and no click, as where its clicks ended before their first step, says *Not undone*: nothing was clicked, so the record holds as
 it was and the pill offers it again for its 3 s, as it does where the program knows no map's view to click on (`griff.lua`'s report of it
 failed). The clicks come one a task, as the tick's (`ClickStepTask`, which both use), the tick's first where those run, after the lift of
@@ -466,7 +486,13 @@ wait more than 2 s for a frame end as the tick's: in part, or not undone where n
 decides where it lands (`include/GriffUndo.h` `AimedClick`, tested): a release and a click on a unit where the cursor is, as FAF's hover
 there decides them (a unit, or a waypoint on it, may walk on meanwhile); a building at the pixel that lands it in its cell now; a click on
 the ground only while its place is shown where the cursor is still, else the cursor goes there again within the step's frames, as the
-picture still moves a frame after the camera went to a place. After them the selection and the camera are as they were, and the
+picture still moves a frame after the camera went to a place. No press of the program's, the undo's or the tick's, makes a double
+click with the press before it, whoever gave that (a finger, the program): FAF's world view would take it as its double click, whose
+left one gives the first press's order again. Where the message layer says a press there would pair with the last one
+(`Win32Android_DoubleClickWait`, its own rule of the double-click time and rectangle, tested in `tests/wx/MessageLayerTests.cpp`), the
+step comes again after the next frame until the double-click time has passed, as a PC player who wants two single clicks there waits;
+none of those frames counts against the step's (two give-backs within 2 px, zoomed out, waited 465 ms; a release at the very pixel a
+finger had pressed 22 ms). After them the selection and the camera are as they were, and the
 next tap climbs no ladder from the order taken back. The sim takes the undo's inputs a network delay later, as a player's, after the
 gesture's.
 

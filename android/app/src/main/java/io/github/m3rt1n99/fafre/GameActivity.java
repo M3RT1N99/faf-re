@@ -116,6 +116,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double PILL_WIDEST_MM = 34;
     private static final double PILL_HIGH_H = 6.6;
     private static final double PILL_OVER_H = 0.3;
+    /**
+     * How long the pill's place stays covered after the pill went (Covers.Lingering), up to the program's check of a tap there:
+     * a finger meant for the pill that comes down up to 400 ms late, and the tap's click a settle after its down
+     * (TouchInput.SETTLE_MILLISECONDS; on the emulator the program checked 88 to 188 ms after the down, 118 the median, and a
+     * tap 398 ms late was checked 542 ms after the pill went).
+     */
+    private static final long PILL_COVER_AFTER_MS = 600;
     private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
@@ -213,6 +220,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private UndoPill mPill;
     /** The app's pieces over the picture, which the program hears of when they change (Game.setGriffCovers). */
     private final Covers mCovers = new Covers();
+    /** The undo's pill's cover, which stays a short while after the pill went: a late tap meant for it lands on nothing. */
+    private final Covers.Lingering mPillCover = new Covers.Lingering(PILL_COVER_AFTER_MS);
     private final int[] mPlaceOnWindow = new int[2];
     private final int[] mLayerOnWindow = new int[2];
     /**
@@ -1296,21 +1305,30 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mFingerLayer.getLocationInWindow(mLayerOnWindow);
         mCovers.begin();
         for (RailButton button : mRailButtons) {
-            cover(button);
+            cover(button, null);
         }
-        cover(mTick);
-        cover(mCross);
-        cover(mPill);
+        cover(mTick, null);
+        cover(mCross, null);
+        cover(mPill, mPillCover);
         if (mCovers.end()) {
             Game.setGriffCovers(mCovers.boxes(), mCovers.count());
         }
     }
 
-    private void cover(View view) {
+    /** A piece's cover while it shows, and with `lingering` a while after, where it last showed (Covers.Lingering). */
+    private void cover(View view, Covers.Lingering lingering) {
         view.getLocationInWindow(mPlaceOnWindow);
         float left = mPlaceOnWindow[0] - mLayerOnWindow[0];
         float top = mPlaceOnWindow[1] - mLayerOnWindow[1];
-        mCovers.piece(view.isShown(), pictureX(left), pictureY(top), pictureX(left + view.getWidth()), pictureY(top + view.getHeight()));
+        int pictureLeft = pictureX(left);
+        int pictureTop = pictureY(top);
+        int pictureRight = pictureX(left + view.getWidth());
+        int pictureBottom = pictureY(top + view.getHeight());
+        if (lingering != null) {
+            mCovers.piece(lingering, view.isShown(), pictureLeft, pictureTop, pictureRight, pictureBottom, SystemClock.uptimeMillis());
+        } else {
+            mCovers.piece(view.isShown(), pictureLeft, pictureTop, pictureRight, pictureBottom);
+        }
     }
 
     /** What the draft and the control groups say: the mockup's words in the app's English. */
@@ -1473,9 +1491,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 } else if (mGriffSaid[at] == Game.SAID_ORDERED) {
                     mUndo.ordered(mGriffSaid[at + 1], SystemClock.uptimeMillis());
                 } else if (mGriffSaid[at] == Game.SAID_UNDONE) {
-                    mUndo.undone(mGriffSaid[at + 1]);
-                    // The undo's last click left the pointer on the map, as the tick's.
-                    mTouchMouse.leaveSoon();
+                    // The undo's last click left the pointer on the map, as the tick's; a word that changed after an undo
+                    // over earlier comes without a click.
+                    if (mUndo.undone(mGriffSaid[at + 1])) {
+                        mTouchMouse.leaveSoon();
+                    }
                     String word = Undo.word(mGriffSaid[at + 2]);
                     if (word != null) {
                         mGriffLayer.toast(word);

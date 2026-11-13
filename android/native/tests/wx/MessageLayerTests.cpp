@@ -501,6 +501,48 @@ WXT_TEST(ASecondClickIsADoubleClickWhereTheClassWantsOne)
   WXT_CHECK(Sequence(buttons) == (std::vector<UINT>{WM_LBUTTONDOWN, WM_LBUTTONUP, WM_LBUTTONDOWN, WM_LBUTTONUP}));
 }
 
+// Griff's own clicks ask whether a press would make a double click with the one before it, whoever gave that, and wait until
+// it would not, as a player who wants two single clicks there does: the layer's own rule answers, by the system's double-click
+// time and rectangle.
+WXT_TEST(APressSaysHowLongItWouldStillMakeADoubleClick)
+{
+  RecordingWindow doubleClicks(nullptr, 0, 0, 100, 100, kShownPopup, true);
+  RecordingWindow plain(nullptr, 200, 0, 100, 100, kShownPopup, false);
+  wxtest::Pump();
+  const int half = ::GetSystemMetrics(SM_CXDOUBLECLK) / 2;
+  const DWORD time = ::GetDoubleClickTime();
+
+  Click(WIN32ANDROID_BUTTON_LEFT, 50, 50);
+  const DWORD wait = Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_LEFT, 50 + half, 50 - half);
+  WXT_CHECK(wait > 0 && wait <= time + 1);
+  // Farther than half the rectangle's side, another button, another window: a press of its own.
+  WXT_CHECK_EQ(Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_LEFT, 50 + half + 1, 50), DWORD{0});
+  WXT_CHECK_EQ(Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_LEFT, 50, 50 + half + 1), DWORD{0});
+  WXT_CHECK_EQ(Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_RIGHT, 50, 50), DWORD{0});
+  WXT_CHECK_EQ(Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_LEFT, 250, 50), DWORD{0});
+
+  // The press it says would make one makes one, which spends the pair.
+  wxtest::Pump();
+  Messages().clear();
+  Click(WIN32ANDROID_BUTTON_LEFT, 50 + half, 50);
+  wxtest::Pump();
+  WXT_CHECK_EQ(Received(WM_LBUTTONDBLCLK).size(), std::size_t{1});
+  WXT_CHECK_EQ(Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_LEFT, 50, 50), DWORD{0});
+
+  // Once the time it said has passed, the press is one of its own.
+  Click(WIN32ANDROID_BUTTON_LEFT, 50, 50);
+  const DWORD again = Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_LEFT, 50, 50);
+  WXT_CHECK(again > 0 && again <= time + 1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(again));
+  WXT_CHECK_EQ(Win32Android_DoubleClickWait(WIN32ANDROID_BUTTON_LEFT, 50, 50), DWORD{0});
+  wxtest::Pump();
+  Messages().clear();
+  Click(WIN32ANDROID_BUTTON_LEFT, 50, 50);
+  wxtest::Pump();
+  WXT_CHECK_EQ(Received(WM_LBUTTONDOWN).size(), std::size_t{1});
+  WXT_CHECK(Received(WM_LBUTTONDBLCLK).empty());
+}
+
 WXT_TEST(KeysGoToTheFocusWithWindowsParameters)
 {
   RecordingWindow window(nullptr, 0, 0, 100, 100, kShownPopup);
