@@ -154,9 +154,10 @@ the game data they imported. Everything lives in the app's external files folder
     the minimap: that place), which a label above the finger names while it draws, with a dot at each waypoint. A long loop
     back to the handle is a patrol; for factories alone the route is their rally point. A second finger, a short loop or an
     end on a panel gives the route up, and the screen says Cancelled.
-  - The rail at the left edge has, from the bottom up, *Box* (a drag is a box at once, a tap on a unit adds it or takes it
-    out, a tap on nothing leaves *Box* lit), *Plus* (orders are queued, as with Shift) and *Attack* (taps and routes are
-    FAF's attack-move, where FAF's orders panel offers it), between FAF's top panels and its unit view. A tap lights one for
+  - The rail is a row at the top left, just under FAF's top panels, of *Box* (a drag is a box at once, a tap on a unit adds
+    it or takes it out, a tap on nothing leaves *Box* lit), *Plus* (orders are queued, as with Shift) and *Attack* (taps and
+    routes are FAF's attack-move, where FAF's orders panel offers it), side by side, each as large as the room above FAF's
+    unit view where it stands highest (a replay) allows, 11 mm on the S22 Ultra and 9 mm at least. A tap lights one for
     the next action (a yellow edge and "1×"); held, it counts until it is let go (a white edge). An order picked in the
     orders panel ends after the one that a lit *Plus* queues; a held *Plus* keeps it until it is let go, as Shift does. With
     *Plus* or *Attack* and troops selected, a tap on one of your units is the order there too. In a game the keyboard is
@@ -178,7 +179,7 @@ the game data they imported. Everything lives in the app's external files folder
     which is placed as with the mouse; a template put away does not take the tick's place. The tick (and the undo) waits
     for a finger that pans or draws a box to lift; while their clicks run the camera holds still and a finger does nothing,
     and a gesture they came into gives nothing more, also after them (a line on FAF's ghost is given up).
-  - After an order of Griff's gestures a pill *Undo* stands for 3 s over the top of FAF's unit view, under the rail, with
+  - After an order of Griff's gestures a pill *Undo* stands for 3 s in the rail's row, right of *Attack* and as high, with
     a bar of the time it has left; a tap on it takes the gesture's orders back with a PC player's inputs, once the game
     has taken them: each order of the gesture's goes by FAF's Shift+Ctrl right click on its waypoint, which takes it from
     all of its units, so a queue it was appended to stays as it was (a building begun goes on) and a unit that was idle is
@@ -204,8 +205,9 @@ the game data they imported. Everything lives in the app's external files folder
   - Control groups 1, 2 and 3 always show under the avatars, an empty one dim, with the group's count: a tap selects the
     group (with *Plus*: adds it to the selection), two taps also move the camera to it as FAF's double click does (its option
     for control groups), and a tap on an empty one says "Empty group: rest to store". A rest stores the selection there,
-    replacing the group as Ctrl and the number do, and with *Plus* adds it to the group; the screen says "Group N stored" and
-    the phone buzzes, or "Nothing selected". FAF's other groups (4 to 0, which a keyboard's Ctrl makes) stand below them.
+    replacing the group as Ctrl and the number do, and with *Plus* adds it to the group; the screen says "Group N stored"
+    (the phone buzzed once, as the rest began), or "Nothing selected". FAF's other groups (4 to 0, which a keyboard's Ctrl
+    makes) stand below them.
     A group is no order: it leaves the undo's pill as it is.
 - **FAF's newest version** (card 5, *Get FAF's newest version*; `FafRelease`, `NewestGameFiles`, TestService's
   `ACTION_GAME_FILES`): so that the phone can play a PC on FAF's current version. The number is GitHub's latest release

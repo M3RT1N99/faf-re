@@ -14,19 +14,25 @@ package io.github.m3rt1n99.fafre;
  * Box and Plus, the draft's box over deposits Box, a route Plus and Attack, the draft's tick Plus; a pan, the handle's tap and
  * the draft's plans use none.
  *
- * <p>Where it stands (buildstage/griff-v3-spec.md T3.5, the mockup's layoutHud): its three buttons over each other at the
- * screen's left edge, from the bottom up Box, Plus and Attack (the thumb rests at the bottom), in the band between FAF's top
- * panels and its unit view, aligned to the band's bottom.
+ * <p>Where it stands (the user's decision of 2026-11-13, in place of the mockup's column at the left edge; android/TOUCH_UI.md):
+ * its three buttons side by side at the top left, from the left Box, Plus and Attack, at the top of the band between FAF's
+ * top panels at the left and its unit view, just under those panels; the undo's pill after them in the same row.
  */
 final class Rail {
     /** A press shorter than this, which no action used and which stayed on the button, is a tap. */
     static final long TAP_MILLISECONDS = 300;
     /** How long a held button still counts after it went up. */
     static final long LIFT_MILLISECONDS = 150;
-    /** A button's side at most, the room between two, and their room from the screen's left edge, in mm. */
+    /**
+     * A button's side at most (the mockup's) and at least (a finger's: Android's 48 dp are 9.1 mm on the S22 Ultra), the room
+     * between two, and the row's room from the screen's left edge, in mm.
+     */
     static final float SIDE_MM = 11;
+    static final float LEAST_MM = 9;
     static final float GAP_MM = 1.5f;
     static final float LEFT_MM = 2.5f;
+    /** The undo's pill at most as wide as the mockup's, in mm. */
+    static final float PILL_WIDEST_MM = 34;
 
     /** How a button looks ({@link #look}): idle, held, or lit for the next action. */
     static final int IDLE = 0;
@@ -131,16 +137,26 @@ final class Rail {
     }
 
     /**
-     * A button's side in a band this high, in the unit `millimetre` is in: as large as three with their two gaps fit, at most
-     * SIDE_MM, never below nothing.
+     * A button's side in a band this high, in the unit `millimetre` is in: the band's height, at most SIDE_MM, and at least
+     * LEAST_MM also where the band is lower, as a finger needs it (a small screen's at the HUD's largest factor).
      */
     static float side(float band, float millimetre) {
-        return Math.max(0, Math.min(SIDE_MM * millimetre, (band - 2 * GAP_MM * millimetre) / BUTTONS));
+        return Math.max(LEAST_MM * millimetre, Math.min(SIDE_MM * millimetre, band));
     }
 
-    /** The top of the button `fromBottom` places up from the band's bottom (0: Box at the bottom, 2: Attack at the top). */
-    static float top(int fromBottom, float bandBottom, float side, float millimetre) {
-        return bandBottom - side - fromBottom * (side + GAP_MM * millimetre);
+    /** Where the undo's pill begins in a row that begins at `left`: a gap right of Attack, the last of the buttons. */
+    static int pillLeft(int left, int side, int gap) {
+        return left + BUTTONS * (side + gap);
+    }
+
+    /**
+     * The undo's pill's width where it begins at `left`: PILL_WIDEST_MM, but ending `clear` before the screen's middle `middle`,
+     * and never narrower than the row is high. A handle that finds no place beside its group goes towards the view's middle
+     * (include/GriffPlace.h Place), so the pill, a cover, keeps the handle's reach (`clear`) off it; the free map's top at the
+     * middle, under which the toast stands, stays FAF's panels' then too. In the screen's pixels.
+     */
+    static int pillWidth(int left, int side, int middle, int clear, float millimetre) {
+        return Math.max(side, Math.min(Math.round(PILL_WIDEST_MM * millimetre), middle - clear - left));
     }
 
     /** All out, as if none had been touched: the rail is put away. */

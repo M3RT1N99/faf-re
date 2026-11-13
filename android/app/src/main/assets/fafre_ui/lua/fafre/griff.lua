@@ -383,23 +383,6 @@ function UndoEnd()
     end
 end
 
---- Where the undo's pill stands (the mockup's: over the top of FAF's unit view, at most as wide as its orders panel): the unit
---- view's top and the orders panel's left and right, in the picture's pixels; -1 where FAF has not laid them out. The unit
---- view's place counts while FAF fades it out for more than one unit selected (unitview.lua): it is FAF's, under the rail.
-local function PillAnchors()
-    local top = -1
-    local view = import('/lua/ui/game/unitview.lua').controls.bg
-    if view and not view:IsHidden() then
-        top = view.Top()
-    end
-    local left, right = -1, -1
-    local orders = import('/lua/ui/game/orders.lua').controls.bg
-    if orders and not orders:IsHidden() then
-        left, right = orders.Left(), orders.Right()
-    end
-    FafreGriffPillAnchors(top, left, right)
-end
-
 -- --- The draft ------------------------------------------------------------------------------------------------------------
 
 --- The draft's builders: the engineers selected when a building was picked, who build it if none is selected at the tick;
@@ -582,7 +565,7 @@ function Start(parent)
     reporter.Width:Set(0)
     reporter.Height:Set(0)
     local reporting, seeing, driving = true, true, true
-    local anchoring, placingPill = true, true
+    local anchoring = true
     local viewSaid = false
     reporter.OnFrame = function(self, delta)
         if not FafreGriffWanted() then
@@ -609,14 +592,6 @@ function Start(parent)
             if not ok then
                 WARN('fafre_ui: griff: draft: ' .. tostring(problem))
                 anchoring = false
-            end
-        end
-        if placingPill then
-            local ok, problem = pcall(PillAnchors)
-            if not ok then
-                WARN('fafre_ui: griff: undo: ' .. tostring(problem))
-                FafreGriffPillAnchors(-1, -1, -1)
-                placingPill = false
             end
         end
         -- First what the frame drew, before a step moves the camera for the next.

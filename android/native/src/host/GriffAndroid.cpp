@@ -545,18 +545,12 @@ namespace
   // --- What a gesture ordered: its pins and its undo ----------------------------------------------------------------------
 
   /// The pins of the orders of Griff's gestures, at world places, and what the activity reads of them (Game.griffOrders), as
-  /// the last frame drew them: the head (the undo pill's anchors, the pins' count), then each pin.
+  /// the last frame drew them: the head (the pins' count), then each pin.
   griffpins::Pins gPins;
   std::mutex gOrdersShownMutex;
-  constexpr std::size_t kOrdersHead = 4;
+  constexpr std::size_t kOrdersHead = 1;
   constexpr std::size_t kOrdersItem = 4;
-  std::vector<float> gOrdersShown{-1, -1, -1, 0};
-
-  /// Where the undo's pill stands (griff.lua PillAnchors): FAF's unit view's top and its orders panel's left and right, in the
-  /// picture's pixels; below 0 where not known.
-  float gUnitViewTop = -1;
-  float gOrdersLeft = -1;
-  float gOrdersRight = -1;
+  std::vector<float> gOrdersShown{0};
 
   /// An order of a queue as a gesture began that the sim had not taken then, the UI's Add of it pending: its command, the beat
   /// that Add goes to the sim at, and whether a read of what the sim holds came after the sync reached that beat and before
@@ -901,12 +895,12 @@ namespace
   /// for it, plus one; 0: none.
   WPARAM gCommitAsked = 0;
 
-  /// What the activity reads of the orders (Game.griffOrders) as this frame drew them: the undo pill's anchors, then each pin
-  /// whose tip is on the free map (`free`, where it was worked out: FAF's panels stand over the map's picture): its tip on the
-  /// picture, its kind and how much of it shows.
+  /// What the activity reads of the orders (Game.griffOrders) as this frame drew them: how many pins, then each pin whose tip
+  /// is on the free map (`free`, where it was worked out: FAF's panels stand over the map's picture): its tip on the picture,
+  /// its kind and how much of it shows.
   void PublishOrders(const griffplace::FreeMap* const free, moho::CUIWorldView* const mainMap)
   {
-    std::vector<float> shown{gUnitViewTop, gOrdersLeft, gOrdersRight, 0};
+    std::vector<float> shown{0};
     const std::int64_t now = Now();
     const std::vector<griffpins::Pin> live = gPins.Live(now);
     MapView map;
@@ -1086,12 +1080,9 @@ namespace
     DropRecord();
     gUndone = Undone{};
     gPins.Clear();
-    gUnitViewTop = -1;
-    gOrdersLeft = -1;
-    gOrdersRight = -1;
     {
       const std::lock_guard<std::mutex> lock(gOrdersShownMutex);
-      gOrdersShown = {-1, -1, -1, 0};
+      gOrdersShown = {0};
     }
     // Clicks that wait for a frame get none any more: their next step ends them, Shift too.
     if (gClicking) {
@@ -1237,7 +1228,7 @@ namespace
   constexpr char kToastHelp[] = "FafreGriffToast(kind, number) - a word of Griff's control groups for the app to say (Game's TOAST_)";
 
   /// A tap on an empty slot, a rest with nothing selected, a group stored with its number: the activity says it as the draft's
-  /// words, and buzzes for a group stored.
+  /// words.
   int Toast(lua_State* const lua)
   {
     Say(kSaidToast, static_cast<int>(lua_tonumber(lua, 1)), static_cast<int>(lua_tonumber(lua, 2)));
@@ -1532,8 +1523,6 @@ namespace
 
   constexpr char kOrderedHelp[] = "FafreGriffOrdered(commandType, attackMove, clear, unitIds, placed, x, y, z, targetId) - "
                                   "FAF's UI gave an order: a watched gesture's is pinned and its record's, any other ends that";
-  constexpr char kPillAnchorsHelp[] =
-    "FafreGriffPillAnchors(unitViewTop, ordersLeft, ordersRight) - where the undo's pill stands, in the picture's pixels";
 
   [[nodiscard]] float Number(lua_State* const lua, const int index)
   {
@@ -1669,17 +1658,7 @@ namespace
     return 0;
   }
 
-  int PillAnchors(lua_State* const lua)
-  {
-    gUnitViewTop = Number(lua, 1);
-    gOrdersLeft = Number(lua, 2);
-    gOrdersRight = Number(lua, 3);
-    return 0;
-  }
-
   moho::CScrLuaBinder gOrderedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffOrdered", &Ordered, nullptr, "<global>", kOrderedHelp);
-  moho::CScrLuaBinder
-    gPillAnchorsBinder(moho::SCR_UserLuaInitSet(), "FafreGriffPillAnchors", &PillAnchors, nullptr, "<global>", kPillAnchorsHelp);
 
   /// Runs griff.lua's function, which answers by FafreGriffAnswer; 0 when it did not.
   [[nodiscard]] int Ask(const char* const command)

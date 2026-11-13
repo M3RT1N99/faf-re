@@ -108,15 +108,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double LOUPE_SOURCE_MM = 6;
     private static final long LOUPE_MILLISECONDS = 33;
     /**
-     * The undo's pill (the mockup's): this far from the screen's left, at most this wide (and no wider than FAF's orders panel),
-     * this high in the mockup's H (HudScale.millimetresH), and this much of an H over the top of FAF's unit view, which it covers
-     * under the rail.
-     */
-    private static final double PILL_LEFT_MM = 2.5;
-    private static final double PILL_WIDEST_MM = 34;
-    private static final double PILL_HIGH_H = 6.6;
-    private static final double PILL_OVER_H = 0.3;
-    /**
      * How long the pill's place stays covered after the pill went (Covers.Lingering), up to the program's check of a tap there:
      * a finger meant for the pill that comes down up to 400 ms late, and the tap's click a settle after its down
      * (TouchInput.SETTLE_MILLISECONDS; on the emulator the program checked 88 to 188 ms after the down, 118 the median, and a
@@ -188,6 +179,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private boolean mGriff;
     private final Rail mRail = new Rail();
     private final List<RailButton> mRailButtons = new ArrayList<>();
+    /** The rail's buttons' side and the room between two in the screen's pixels, as placeRail set them: the pill's row. */
+    private int mRailSide;
+    private int mRailGap;
     private GriffLayer mGriffLayer;
     /**
      * The handle as Game.griff gives it, and as the screen shows it, while a game's frames are read: it stays where a stroke
@@ -639,7 +633,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mGriffLayer = new GriffLayer(this);
             mGriffLayer.setSizes(viewPixelsPerMm(), GRIFF_RADIUS_MM, GRIFF_ARROW_MM);
             root.addView(mGriffLayer);
-            // Over the layer that takes the fingers: a finger on the tick, the cross or the pill is theirs.
+            // Over the layer that takes the fingers: a finger on the tick, the cross or the pill is theirs. The pill is the bar's
+            // last, in the rail's row.
             mTick = draftButton(true);
             mCross = draftButton(false);
             root.addView(mTick, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
@@ -648,7 +643,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mPill.setMillimetre(viewPixelsPerMm());
             mPill.setVisibility(View.GONE);
             mPill.setOnClickListener(view -> undo());
-            root.addView(mPill, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
         }
         mKeyboardTarget = new KeyboardTarget(this);
         root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
@@ -905,16 +899,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     private LinearLayout bar() {
         LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.VERTICAL);
         if (mGriff) {
-            // The keyboard's button for the menus, and Griff's rail, from the bottom up Box, Plus and Attack (Rail).
+            // The keyboard's button for the menus, and Griff's rail: a row of Box, Plus and Attack (Rail), and the undo's pill.
+            bar.setOrientation(LinearLayout.HORIZONTAL);
             mKeysButton = barButton(bar, "Keys");
             mKeysButton.setOnClickListener(view -> toggleKeyboard());
-            railButton(bar, "Attack", TouchInput.RAIL_ATTACK);
-            railButton(bar, "Plus", TouchInput.RAIL_QUEUE);
             railButton(bar, "Box", TouchInput.RAIL_BOX);
+            railButton(bar, "Plus", TouchInput.RAIL_QUEUE);
+            railButton(bar, "Attack", TouchInput.RAIL_ATTACK);
+            bar.addView(mPill, new LinearLayout.LayoutParams(0, 0));
             return bar;
         }
+        bar.setOrientation(LinearLayout.VERTICAL);
         LinearLayout top = new LinearLayout(this);
         toggle(top, "Order", mTouch::setSwapped);
         toggle(top, "Shift", on -> Game.key(KeyEvent.KEYCODE_SHIFT_LEFT, 0, on, 0));
@@ -980,29 +976,29 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * Griff's rail in a game (the mockup's): its buttons as large as the band between FAF's top panels and its unit view holds
-     * them, an H (HudScale.millimetresH) from each, up to Rail.SIDE_MM; from the bottom up Box, Plus and Attack, Box on the
-     * band's bottom, Rail.GAP_MM apart, Rail.LEFT_MM from the screen's left, past a camera cutout's inset (the bar's padding).
+     * Griff's rail in a game (the user's decision of 2026-11-13): Box, Plus and Attack side by side, Rail.GAP_MM apart, from
+     * Rail.LEFT_MM past the screen's left and a camera cutout's inset (the bar's padding), at the top of the band at the left
+     * edge, an H (HudScale.millimetresH) under FAF's top panels there; as large as that band holds them where FAF's unit view
+     * stands highest (HudScale.railBandMm), so they fit every state of the HUD and keep their size, within Rail's limits. The
+     * undo's pill follows them in the row (placePill).
      */
     private void placeRail(FrameLayout.LayoutParams place) {
         float millimetre = viewPixelsPerMm();
-        double h = HudScale.millimetresH(mScreenMm) * millimetre;
-        double perPicturePixel = viewPixelsPerPicturePixel();
         double factor = hudFactor();
-        float top = (float) (HudScale.barTopPixels(factor) * perPicturePixel + h);
-        float bottom = (float) (HudScale.unitViewTopPixels(factor, pictureLines()) * perPicturePixel - h);
-        float side = Rail.side(bottom - top, millimetre);
-        int sidePixels = Math.round(side);
+        int side = Math.round(Rail.side((float) HudScale.railBandMm(factor, pictureLines(), mScreenMm) * millimetre, millimetre));
         int gap = Math.round(Rail.GAP_MM * millimetre);
         for (RailButton button : mRailButtons) {
             LinearLayout.LayoutParams size = (LinearLayout.LayoutParams) button.getLayoutParams();
-            size.width = sidePixels;
-            size.height = sidePixels;
-            size.setMargins(0, 0, 0, button.bit() == TouchInput.RAIL_BOX ? 0 : gap);
+            size.width = side;
+            size.height = side;
+            size.setMargins(0, 0, gap, 0);
             button.setLayoutParams(size);
         }
+        mRailSide = side;
+        mRailGap = gap;
         place.leftMargin = Math.round(Rail.LEFT_MM * millimetre);
-        place.topMargin = Math.round(Rail.top(mRailButtons.size() - 1, bottom, side, millimetre));
+        place.topMargin = (int) Math.round(
+            HudScale.barTopPixels(factor) * viewPixelsPerPicturePixel() + HudScale.millimetresH(mScreenMm) * millimetre);
     }
 
     /** The HUD's factor: the user's UI scale can have changed what the app worked out. */
@@ -1246,36 +1242,35 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         view.setLayoutParams(place);
     }
 
-    /** What Griff's gestures ordered as the program's last frame showed it (Game.griffOrders): the pill's place, and the pins. */
+    /** What Griff's gestures ordered as the program's last frame showed it (Game.griffOrders): the pins; and the pill. */
     private void readOrders() {
         int count = mGriffPolling ? Game.griffOrders(mOrderValues) : 0;
-        if (count < Game.ORDERS_HEAD) {
-            mGriffLayer.setPins(mOrderValues, 0, 0, mDraftScreen);
-            placePill(-1, -1, -1);
-            return;
-        }
-        int pins = Math.min((int) mOrderValues[Game.ORDERS_PINS], (count - Game.ORDERS_HEAD) / Game.ORDERS_PIN);
+        int pins = count < Game.ORDERS_HEAD
+            ? 0 : Math.min((int) mOrderValues[Game.ORDERS_PINS], (count - Game.ORDERS_HEAD) / Game.ORDERS_PIN);
         mGriffLayer.setPins(mOrderValues, Game.ORDERS_HEAD, pins, mDraftScreen);
-        placePill(mOrderValues[Game.ORDERS_UNIT_VIEW_TOP], mOrderValues[Game.ORDERS_PANEL_LEFT], mOrderValues[Game.ORDERS_PANEL_RIGHT]);
+        placePill();
     }
 
     /**
-     * The undo's pill while it shows in a game (the mockup's): 2.5 mm from the screen's left, over the top of FAF's unit view under
-     * the rail, 6.6 H high, as wide as FAF's orders panel up to 34 mm, with the time it has left. The unit view's place is FAF's
-     * panel's, also while FAF fades the view out for more than one unit selected: never where a tap for the next order goes. No
-     * pill where FAF has not laid its unit view out. In the picture's pixels.
+     * The undo's pill while it shows in a game (the mockup's look): the bar's last, in the rail's row a gap right of Attack, as
+     * high as the rail's buttons, Rail.PILL_WIDEST_MM wide but ending the handle's reach before the screen's middle, where a
+     * handle with no place beside its group goes (Rail.pillWidth), with the time it has left.
      */
-    private void placePill(float unitViewTop, float panelLeft, float panelRight) {
+    private void placePill() {
         long now = SystemClock.uptimeMillis();
-        boolean shown = mBarInGame && unitViewTop >= 0 && mUndo.showing(now);
+        boolean shown = mBarInGame && mUndo.showing(now);
         if (shown) {
-            float pixels = viewPixelsPerMm();
-            double h = HudScale.millimetresH(mScreenMm) * pixels;
-            float widest = (float) (PILL_WIDEST_MM * pixels);
-            float panel = panelLeft >= 0 && panelRight > panelLeft ? mPageView.screenX(panelRight) - mPageView.screenX(panelLeft) : widest;
-            placeView(mPill, (float) (PILL_LEFT_MM * pixels) + mBar.getPaddingLeft(),
-                (float) (mPageView.screenY(unitViewTop) - PILL_OVER_H * h), Math.round(Math.min(widest, panel)),
-                (int) Math.round(PILL_HIGH_H * h));
+            FrameLayout.LayoutParams row = (FrameLayout.LayoutParams) mBar.getLayoutParams();
+            int left = Rail.pillLeft(row.leftMargin + mBar.getPaddingLeft(), mRailSide, mRailGap);
+            float millimetre = viewPixelsPerMm();
+            int width = Rail.pillWidth(left, mRailSide, mFingerLayer.getWidth() / 2,
+                (int) Math.ceil((GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * millimetre), millimetre);
+            LinearLayout.LayoutParams size = (LinearLayout.LayoutParams) mPill.getLayoutParams();
+            if (size.width != width || size.height != mRailSide) {
+                size.width = width;
+                size.height = mRailSide;
+                mPill.setLayoutParams(size);
+            }
             mPill.show(mUndo.waiting(), mUndo.left(now));
         }
         mPill.setVisibility(shown ? View.VISIBLE : View.GONE);
@@ -1477,10 +1472,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 } else if (mGriffSaid[at] == Game.SAID_ROUTE_GIVEN_UP) {
                     mGriffLayer.toast(CANCELLED);
                 } else if (mGriffSaid[at] == Game.SAID_TOAST) {
+                    // A group stored buzzes once, as the mockup's: the rest that stored it buzzed as its ring came.
                     mGriffLayer.toast(toastWords(mGriffSaid[at + 1], mGriffSaid[at + 2]));
-                    if (mGriffSaid[at + 1] == Game.TOAST_GROUP_STORED) {
-                        buzz();
-                    }
                 } else if (mGriffSaid[at] == Game.SAID_COMMITTED) {
                     // The tick's last click left the pointer on the map, which a finger's lift would have taken away.
                     mTouchMouse.leaveSoon();
@@ -1559,7 +1552,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    /** What a finger feels: a hold, a rest, a control group that stored the selection. */
+    /** What a finger feels: a hold, a rest (also the one that stores a control group). */
     private void buzz() {
         mSurface.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
     }

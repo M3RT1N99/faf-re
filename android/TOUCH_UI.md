@@ -102,7 +102,8 @@ real density that may stay the panel's (about 501, which with that mode would sa
 supported one, at the density reported, and the one nearer what the logical size says is taken: logical pixels over the
 logical density, 61 mm there in every resolution, and a panel is about 15 % larger than that. Where the result is more
 than a factor of two from the logical size, the density is wrong and the logical size is all there is. At 460 lines the
-panels (365 lines from the multifunction panel down to the unit view) still leave the app's buttons about 6 mm each.
+panels (372 lines from the multifunction panel down to the unit view) still leave the mouse's buttons about 6 mm each, and
+Griff's rail its least, 9 mm.
 The value goes to the game as `/fafre_hud_scale`, which `fafre/scale.lua` reads, and the report has a line with it, what
 the size was taken from and what there was to choose from: only a phone can prove this. On the emulator `wm size` leaves
 its millimetres as they were, so a test gives the phone's factor: `am start ... --ef hudScale 1.6`.
@@ -173,7 +174,7 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 | `lua/ui/game/tabs.lua` | The Menu tab has the app's *Keyboard* after Key Bindings, in both touch schemes: it brings the phone's keyboard as the bar's *Keys* does (`FafreKeyboard`, `MenuFingers.cpp`; Griff's rail has no *Keys*). The eleven large buttons fit at 0.85 on 768 lines: `Built`, 907 of FAF's lines, 70 a button |
 | `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow. With Griff, groups 1, 2 and 3 are slots that always show (see "Griff") |
 | `lua/ui/game/avatars.lua` | A finger's pointer leaves after each tap (below), which FAF's avatar took for the mouse going and started its round of the idle units over, so that each tap took the first: the round goes on |
-| `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the app's buttons, the multifunction panel and the unit view: a new window goes where it covers no panel, and the reset button brings it back there; a place the user chose stays |
+| `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the app's buttons, the multifunction panel and the unit view: a new window goes where it covers no panel (but Griff's row at the top left, which lies over a part of both: "The rail, the control groups and the keyboard"), and the reset button brings it back there; a place the user chose stays |
 | `lua/ui/dialogs/options.lua` | `DialogAt`: shown larger, with fewer rows (see "The menus"); the UI scale needs no restart |
 | `lua/maui/bitmap.lua` | A bitmap keeps the size it was made at (above) |
 | `lua/ui/uiutil.lua` | A question in the front end is `BuiltAt`, as large on the glass as a session's. It holds no factor, as the lobby asks one (that it is connecting) just before it builds all the rest |
@@ -247,11 +248,13 @@ choice).
 ### The app's buttons
 
 In a game (`Game.gamePlaying`: the main world view is up and the game is not over) they are 3 + 2 buttons of up to 9 mm at
-the left edge between the multifunction panel and the unit view, 138 and 230 of FAF's lines from the two ends. The right
+the left edge between the multifunction panel and the unit view, 138 and 234 of FAF's lines from the two ends (the unit view's
+top while a selection shows the construction panel, `HudScale`). The right
 edge, which has more height, belongs to the avatars with their idle lists and to the control groups, and both grow.
 In the menus, on the score screen and over a dialog in a game, whose fingers are the menus', only *Keys* stays, 6.5 mm, in the upper left
 corner, which no menu uses for anything but a title. A toggle that is on goes off then. With the touch scheme Griff the bar is its rail
-in a game instead, from the bottom up *Box*, *Plus* and *Attack* (below, "The rail, the control groups and the keyboard"), and *Keys*
+in a game instead, a row of *Box*, *Plus* and *Attack* at the top left with the undo's pill after them (below, "The rail, the control
+groups and the keyboard"), and *Keys*
 is the menus' only: in a game the keyboard is *Keyboard* in FAF's Menu tab, in both schemes. A thumb on a rail button taps within
 Griff's slop of 2.5 mm.
 
@@ -372,7 +375,7 @@ view, which the clicks, the plans and the pins go by. The program places it abov
 can be seen at the map's depth or above (the HUD is drawn after the map's picture; below the map's depth are what holds it and the
 paused game's tint of the whole screen), the minimap, FAF's panels, also those that let a click through to the map beneath (the
 unit view, the map's sibling at its depth, and the multifunction panel do), and the app's own pieces (`Game.setGriffCovers`, `Covers`:
-the rail's buttons and *Keys*, the draft's tick and cross and the undo's pill, each while it shows). Only layouts that FAF has worked out count: the walk reads what a layout holds and evaluates none, as an
+the rail's buttons, the draft's tick and cross and the undo's pill, each while it shows). Only layouts that FAF has worked out count: the walk reads what a layout holds and evaluates none, as an
 evaluation before FAF lays a control out fails and leaves 0 in the layout's cache, where nothing clears it. So the walk runs after the
 frame is drawn, which works out what FAF's Lua changed in the frame (the unit view places its panel anew in each). A group out of view or under a panel gets the handle on the free map towards the view's middle, far enough from the edges that its
 arrow at the group stays on the screen; where no place is free, as for a group under FAF's announcement in the screen's middle, which
@@ -416,16 +419,17 @@ without: `include/GriffUndo.h` `AssistUpgrade`, tested): such an Upgrade of the 
 joins the record, which notes it; the player's own upgrade of that unit ends the record as any other order. The tap ladder's
 attack-move in place of a move belongs to the move's record.
 
-The pill (`UndoPill`, the mockup's drawUndo; `Undo` holds its time) stands for 3 s after the order, 2.5 mm from the screen's left (past a
-camera cutout's inset, as the rail), its top 0.3 H over FAF's unit view's top, which it covers under the rail, 6.6 H high, as wide as FAF's
-orders panel up to 34 mm (H, the mockup's unit of FAF's panels: a mm, less on screens under 73 mm, 0.7 mm at least): fully rounded in the
-panel colour, edged in the mark colour, a back arrow 4 mm from its left, *Undo* right of its middle and at its bottom a bar of the time it
-has left. It is a view of its own, so a finger on it is exactly its own, never the map's. Its cover stays 600 ms after it went, where it
-last stood (`Covers.Lingering`, tested): a tap meant for it whose finger was on its way as its time ran out lands on nothing, never on the
-map beneath (the program checks a tap's place at its click, a settle after the finger's down: on the emulator 88 to 188 ms, and taps
-74 to 389 ms late were covered, one 542 ms late not). It stands at the unit view's place also while FAF
-fades that view out for a selection of more than one unit (`unitview.lua` shows it for one unit or a rollover): the place is FAF's panel's
-under the rail, not where a tap for the next order goes; with no unit view laid out there is no pill. A dialog over the game takes it away.
+The pill (`UndoPill`, the mockup's drawUndo; `Undo` holds its time) stands for 3 s after the order in the rail's row (the user's decision
+of 2026-11-13), the bar's last view: a gap right of *Attack*, as high as the rail's buttons, 34 mm wide at most but ending the handle's
+reach (7 mm) before the screen's middle, which stays free for a handle that finds no place beside its group and goes towards the view's
+middle (`include/GriffPlace.h`), and never narrower than it is high (`Rail.pillLeft`, `Rail.pillWidth`, tested;
+`GameActivity.placePill`), 18 mm on the emulator at the phone's size and 31 mm less a camera cutout's inset on the S22 Ultra. It is
+fully rounded in the panel colour, edged in the mark colour, with a back arrow 4 mm from its left, *Undo* right of its middle and at its
+bottom a bar of the time it has left. It is a view of its own, so a finger
+on it is exactly its own, never the map's, and its place is the rail's, never where a tap for the next order goes. Its cover stays 600 ms
+after it went, where it last stood (`Covers.Lingering`, tested): a tap meant for it whose finger was on its way as its time ran out lands
+on nothing, never on the map beneath (the program checks a tap's place at its click, a settle after the finger's down: on the emulator 88
+to 188 ms, and taps 74 to 389 ms late were covered, one 542 ms late not). A dialog over the game takes it away.
 A tap on it takes the record back with a PC player's inputs (`include/GriffUndo.h`, tested in `tests/wx/GriffUndoTests.cpp`), once the
 sim has taken the gesture: the undo waits until none of the record's units has an edit of its queues that the sim has not taken yet (the
 engine's `UserCommandQueue::issueQueue`), however long that takes (a network game takes an order its lag later, a paused game once it
@@ -506,19 +510,26 @@ orders' lines.
 
 #### The rail, the control groups and the keyboard
 
-The rail (buildstage/griff-v3-spec.md T3.5, the mockup's layoutHud and drawRail) stands at the left edge, 2.5 mm from it (past a camera
-cutout's inset, as the pill), from the bottom up *Box*, *Plus* and *Attack*, 1.5 mm apart, on the bottom of the band that runs from FAF's
-top panels (138 of FAF's lines) + H down to FAF's unit view - H, the view where it stands with a selection: 234 of FAF's lines over the
-picture's bottom (`HudScale.unitViewTopPixels`; 120 under it and its own 114, `unitview_mini.lua`). Each button is as large as three fit
-with their gaps, up to 11 mm (`Rail.side`, `Rail.top`, `GameActivity.placeRail`). At 1.6 on 768 lines that band is 12.9 mm on the
-emulator at the phone's size (65.3 mm high) and the buttons 3.3 mm, 3.8 mm on a 73 mm screen: FAF's own panels at the HUD's factor leave
-the left edge far less room than the mockup's drawing of them, where the buttons are about 10 mm. Each button is a `RailButton`, rounded
-1.2 mm, its label in the mockup's font M (2.5 mm), *Attack*'s in the attack colour, in one of three looks (`Rail.look`, tested): idle in
-the button colour with the line's edge; held, while a finger is on it, in the button-on colour with the ring's edge; lit for the next
-action in the button-on colour with the mark's edge and "1×" in font XS, 2.2 mm from its right and 2 mm from its top. The moment after a
-lift, which still counts, looks idle. At 3.3 mm the labels do not fit (*Attack* shows as "ttac") and "1×" lies over the label. What
-keeps clear of the rail takes its views' places as they are: the covers (`Covers`), and with them the handle's free map; the pill stands
-under it, over the unit view.
+The rail (buildstage/griff-v3-spec.md T3.5, the mockup's drawRail) is a row at the top left, the user's decision of 2026-11-13 in place
+of the mockup's column at the left edge, where FAF's panels at the HUD's factor left buttons of 3.3 mm: *Box*, *Plus* and *Attack* side
+by side, 1.5 mm apart, from 2.5 mm past the screen's left (and a camera cutout's inset, the bar's padding), an H under FAF's top panels
+there (138 of FAF's lines; H, the mockup's unit of FAF's panels: a mm, less on screens under 73 mm, 0.7 mm at least), and the undo's
+pill after them. Below them the band at the left edge ends at FAF's unit view, which stands highest where FAF made no orders panel (a
+replay; 140 of its lines under the view and the view's own 114, `unitview_mini.lua`'s PositionWindow) while a selection shows the
+construction panel, 20 lines lower in a game (120 under it), and at the picture's bottom without the construction panel. The buttons are
+as high as that smallest band less an H at its top and bottom, at most the mockup's 11 mm and never under 9 mm, a finger's (Android's
+48 dp on the S22 Ultra) (`HudScale.railBandMm`, `Rail.side`, tested; `GameActivity.placeRail`): so the row fits every state of the HUD
+and keeps its size as FAF's panels come and go. At 1.6 on 768 lines they are 11 mm on a 73 mm screen (the S22 Ultra's smallest band is
+11.4 mm), the row's bottom 1.4 mm over the unit view in a replay and 4.4 mm in a game; on the emulator at the phone's size (65.3 mm)
+10.2 mm, 0.9 and 3.6 mm over it. A screen under 70 mm gets the most factor its lines allow (1.67 at 768 lines), where the band of a
+replay is under 9 mm: there the row reaches 0.2 mm into the unit view's top (65.3 mm), in a game it keeps 2.6 mm. Each button is a
+`RailButton`, rounded 1.2 mm, its label in the mockup's font M (2.5 mm), whole, *Attack*'s in the attack colour, in one of three looks
+(`Rail.look`, tested): idle in the button colour with the line's edge; held, while a finger is on it, in the button-on colour with the
+ring's edge; lit for the next action in the button-on colour with the mark's edge and "1×" in font XS, 2.2 mm from its right and 2 mm
+from its top, clear of the label. The moment after a lift, which still counts, looks idle. What keeps clear of the rail takes its views'
+places as they are: the covers (`Covers`), and with them the handle's free map. FAF's own windows that the UI package's hooks give a
+home beside the old column lie under the row now: the minimap's (its window, where the player opens it, from 226 to 416 of FAF's pixels
+across) under *Plus*, *Attack* and the pill, the chat window's under the pill's right part.
 
 The control groups (T3.3; the hook of `ui/game/controlgroups.lua`, under Griff only): Griff has no Ctrl to make a group with, so groups 1,
 2 and 3 are slots that always show, in FAF's place for its groups under the avatars, an empty one as a dim control of the same size.
@@ -535,7 +546,7 @@ second, as FAF's own controls do.
 | Tap | FAF's left press: the group is the selection (`ApplySelectionSet`); with *Plus* (Shift) it joins the selection |
 | Two taps | FAF's double click (the tap ladder clicks a second tap on FAF's UI where the first went, and the message layer makes it its double click): the group again, whose second selection soon after the first moves the camera to it as the player's option `selection_sets_double_tap_behavior` says |
 | Tap on an empty slot | Nothing; the toast says *Empty group: rest to store* |
-| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. The toast says *Group N stored* and the phone buzzes once more (the rest's ring buzzed as the rest began); with nothing selected *Nothing selected*, and the group stays as it was |
+| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. The toast says *Group N stored*; the phone buzzed once, as the rest's ring came (the mockup's one buzz), and the store adds none; with nothing selected *Nothing selected*, and the group stays as it was |
 
 The words come from the hook through `FafreGriffToast` (`GriffAndroid.cpp`) as the draft's do. A group is the UI's: nothing of it
 orders, so a tap or a rest on a slot neither ends the undo's record nor takes the pill away, and the handle follows the selection it

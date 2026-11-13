@@ -151,29 +151,40 @@ public class RailTest {
 
     @Test
     public void inABandWithRoomAButtonIsElevenMillimetres() {
-        assertEquals(11 * MM, Rail.side(60 * MM, MM), 0.001f);
+        // The S22 Ultra: 11.4 mm where FAF's unit view stands highest.
+        assertEquals(11 * MM, Rail.side(11.4f * MM, MM), 0.001f);
     }
 
     @Test
-    public void inANarrowBandThreeButtonsAndTheirTwoGapsFillIt() {
-        // The emulator at the phone's size: 12.9 mm between FAF's top panels and its unit view, an H in from each.
-        float band = 12.9f * MM;
-        float side = Rail.side(band, MM);
-        assertEquals((12.9f - 3) / 3 * MM, side, 0.001f);
-        assertEquals(band, 3 * side + 2 * Rail.GAP_MM * MM, 0.001f);
+    public void inALowerBandAButtonIsAsHighAsTheBand() {
+        // The emulator at the phone's size: 10.2 mm where FAF's unit view stands highest.
+        assertEquals(10.2f * MM, Rail.side(10.2f * MM, MM), 0.001f);
     }
 
     @Test
-    public void aBandWithoutRoomForTheGapsHasNoButtons() {
-        assertEquals(0, Rail.side(2 * MM, MM), 0);
+    public void aButtonStaysAFingersSizeInABandTooLowForIt() {
+        assertEquals(9 * MM, Rail.side(7 * MM, MM), 0.001f);
     }
 
     @Test
-    public void fromTheBottomUpBoxPlusAndAttackStandOnTheBandsBottom() {
-        float bottom = 400;
-        float side = 40;
-        assertEquals("Box ends at the band's bottom", bottom - side, Rail.top(0, bottom, side, MM), 0.001f);
-        assertEquals("Plus a gap above it", bottom - 2 * side - Rail.GAP_MM * MM, Rail.top(1, bottom, side, MM), 0.001f);
-        assertEquals("Attack at the top", bottom - 3 * side - 2 * Rail.GAP_MM * MM, Rail.top(2, bottom, side, MM), 0.001f);
+    public void thePillBeginsAGapRightOfAttack() {
+        // Box at 20, Plus at 20 + 115, Attack at 20 + 230, which ends at 20 + 330.
+        assertEquals(20 + 330 + 15, Rail.pillLeft(20, 100, 15));
+    }
+
+    @Test
+    public void thePillIsAtMostThirtyFourMillimetresWide() {
+        assertEquals(340, Rail.pillWidth(400, 100, 2000, 70, MM));
+    }
+
+    @Test
+    public void thePillEndsTheHandlesReachBeforeTheScreensMiddle() {
+        // The emulator at the phone's size: the pill from 45 mm, the screen's middle at 70 mm, the handle's reach 7 mm.
+        assertEquals(700 - 70 - 450, Rail.pillWidth(450, 102, 700, 70, MM));
+    }
+
+    @Test
+    public void thePillIsNeverNarrowerThanTheRowIsHigh() {
+        assertEquals(102, Rail.pillWidth(600, 102, 700, 70, MM));
     }
 }

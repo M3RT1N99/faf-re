@@ -209,7 +209,7 @@ final class Game {
 
     /**
      * SAID_TOAST: what the draft says (GameActivity's words), with a number where it counts; and what Griff's control groups
-     * say (the hook of FAF's controlgroups.lua, FafreGriffToast), a group stored with its number and a buzz.
+     * say (the hook of FAF's controlgroups.lua, FafreGriffToast), a group stored with its number.
      */
     static final int TOAST_NO_FREE_RESOURCE = 1;
     static final int TOAST_TAKEN = 2;
@@ -354,19 +354,15 @@ final class Game {
     // --- What Griff's gestures order: the pins and the undo (buildstage/griff-v3-spec.md, T3.1 and T3.2) -----------------
 
     /** {@link #griffOrders}: the numbers before the pins, and each pin's. */
-    static final int ORDERS_UNIT_VIEW_TOP = 0;
-    static final int ORDERS_PANEL_LEFT = 1;
-    static final int ORDERS_PANEL_RIGHT = 2;
-    static final int ORDERS_PINS = 3;
-    static final int ORDERS_HEAD = 4;
+    static final int ORDERS_PINS = 0;
+    static final int ORDERS_HEAD = 1;
     static final int ORDERS_PIN = 4;
     /** Room for the head and the pins, of which there are 64 at most (include/GriffPins.h). */
     static final int ORDERS_VALUES = ORDERS_HEAD + 64 * ORDERS_PIN;
 
     /**
-     * What the last frame showed of the orders, into `values`, as many as fit; how many numbers. Where the undo's pill stands, in
-     * the picture's pixels (FAF's unit view's top, its orders panel's left and right; below 0 not known); how many pins; then
-     * each pin: its tip on the picture, its kind (GriffLayer's colours) and how much of it shows, 0 to 1.
+     * What the last frame showed of the orders, into `values`, as many as fit; how many numbers. How many pins; then each pin:
+     * its tip on the picture, its kind (GriffLayer's colours) and how much of it shows, 0 to 1.
      */
     static native int griffOrders(float[] values);
 

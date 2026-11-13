@@ -98,15 +98,18 @@ public class HudScaleTest {
 
     @Test
     public void theButtonsHaveRoomBetweenTheMultifunctionPanelAndTheUnitView() {
-        // What the census measured at 1.6: the panel ends at 218, the view begins at 402.
+        // At 1.6 the census measured the panel's end at 218; FAF's unit view stood at 394 with the commander selected (T3 part
+        // 2's skirmish), which is 768 - 393.6.
         assertEquals(220.8, HudScale.barTopPixels(1.6), 0.01);
-        assertEquals(179.2, HudScale.barRoomPixels(1.6, 768), 0.01);
+        assertEquals(172.8, HudScale.barRoomPixels(1.6, 768), 0.01);
     }
 
     @Test
-    public void theUnitViewWithASelectionBeginsWhereFafPutsIt() {
-        // At 1.6 FAF's unit view stood at 394 with the commander selected (T3 part 2's skirmish), 6 over the bar's room.
-        assertEquals(393.6, HudScale.unitViewTopPixels(1.6, 768), 0.01);
+    public void theRailsBandEndsWhereTheUnitViewStandsInAReplay() {
+        // FAF's unit view 20 of its lines higher than in a game, an H under the panel and over the view: on the S22 Ultra
+        // (1 mm) and on the emulator at the phone's size (65.3 / 73 mm).
+        assertEquals(140.8 * 73 / 768 - 2, HudScale.railBandMm(1.6, 768, S22_ULTRA_MM), 1e-9);
+        assertEquals(140.8 * 65.3 / 768 - 2 * 65.3 / 73, HudScale.railBandMm(1.6, 768, 65.3), 1e-9);
     }
 
     @Test

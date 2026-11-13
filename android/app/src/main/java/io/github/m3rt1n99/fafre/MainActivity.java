@@ -176,12 +176,12 @@ public final class MainActivity extends Activity {
                 + "screen and three on the map, two taps on the ground make the move an attack-move, two fingers zoom where "
                 + "they are, a stroke from the round handle beside the selection lays a route that ends in the order its label "
                 + "names (your factory with engineers: assist), a long loop back to the handle patrols, and two fingers tapping "
-                + "deselect; the rail at the left edge has, from the bottom up, Box, Plus (queue) and Attack, lit by a tap for "
+                + "deselect; the rail at the top left has Box, Plus (queue) and Attack side by side, lit by a tap for "
                 + "the next action or held for as long as they are held, and in a game the keyboard is in its Menu tab. Control "
                 + "groups 1, 2 and 3 always show: a tap selects one, two taps go to it, a rest stores the selection there (with "
                 + "Plus: adds it). A build icon opens a draft: taps place plans (an extractor on its mass spot), a drag from the "
                 + "newest draws a line of them, from another moves them all, a rest shows a loupe; the tick orders them, the "
-                + "cross drops them. After an order a pill Undo stands for 3 s under the bar, and a tap on it takes the order "
+                + "cross drops them. After an order a pill Undo stands for 3 s beside Attack, and a tap on it takes the order "
                 + "back; pins mark the order's places for a moment. The touch controls count from the game's next start: a "
                 + "game that runs keeps its own.");
         mStartButtons.add(button(game, "Start the game", v -> startActivity(new Intent(this, GameActivity.class))));

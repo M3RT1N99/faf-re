@@ -25,14 +25,15 @@ final class HudScale {
      * the logical size at a mode of 3/4 of the largest, and from 0.8 to 1.5 times at 1/2.
      */
     private static final double PANEL_PER_LOGICAL = 1.15;
-    /** FAF's pixels above and below the room for the app's buttons at the left edge (android/TOUCH_UI.md). */
+    /** FAF's pixels above the room for the app's buttons at the left edge: its top panels there (android/TOUCH_UI.md). */
     private static final double BAR_ROOM_TOP = 138;
-    private static final double BAR_ROOM_BOTTOM = 230;
     /**
-     * FAF's pixels from the picture's bottom to its unit view's top while a selection shows the construction panel: 120 under
-     * the view and the view's 114 (unitview_mini.lua PositionWindow), the highest the view stands in a game.
+     * FAF's pixels from the picture's bottom to its unit view's top, where the room at the left edge ends: while a selection
+     * shows the construction panel, 120 under the view and the view's 114 (unitview_mini.lua PositionWindow); and where FAF made
+     * no orders panel, in a replay, 140 under it, the highest the view stands.
      */
     private static final double UNIT_VIEW_TOP = 234;
+    private static final double UNIT_VIEW_HIGHEST = 254;
     /** The mockup's H: a mm on screens whose short side is this or more, less on smaller ones, down to this much of one. */
     private static final double H_SCREEN_MM = 73;
     private static final double H_LEAST = 0.7;
@@ -91,14 +92,18 @@ final class HudScale {
         return BAR_ROOM_TOP * factor;
     }
 
-    /** How high the room is on a picture of this many lines: up to the unit view, which stands on the picture's bottom. */
+    /** How high the room is on a picture of this many lines: up to the unit view, where it stands in a game with a selection. */
     static double barRoomPixels(double factor, int lines) {
-        return lines - (BAR_ROOM_TOP + BAR_ROOM_BOTTOM) * factor;
+        return lines - (BAR_ROOM_TOP + UNIT_VIEW_TOP) * factor;
     }
 
-    /** The top of FAF's unit view on a picture of this many lines, in its pixels, where it stands with a selection. */
-    static double unitViewTopPixels(double factor, int lines) {
-        return lines - UNIT_VIEW_TOP * factor;
+    /**
+     * The band Griff's rail stands in, in mm on the glass of this short side: the room at the left edge where FAF's unit view
+     * stands highest, less the mockup's H (millimetresH) at its top and bottom. The smallest of every HUD state, so a rail
+     * that fits it fits them all and keeps its size as the HUD changes under a finger.
+     */
+    static double railBandMm(double factor, int lines, double shortSideMm) {
+        return (lines - (BAR_ROOM_TOP + UNIT_VIEW_HIGHEST) * factor) * shortSideMm / lines - 2 * millimetresH(shortSideMm);
     }
 
     /**
