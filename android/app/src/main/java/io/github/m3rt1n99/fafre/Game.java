@@ -103,6 +103,9 @@ final class Game {
     /** The keyboard is coming: if a text field has the focus, {@link #takeToShow} says where. */
     static native void askForField();
 
+    /** Whether FAF's Menu tab asked for the keyboard since the last call (its Keyboard button, FafreKeyboard). */
+    static native boolean keyboardAsked();
+
     /**
      * Lines of the picture to bring into view, top and bottom, which the activity has not heard of yet: 0 when there are none, or
      * why: a text field (FIELD_TAPPED, or another for what {@link #askForField} found) or FAF's Lua (LINES_TO_SHOW).
@@ -204,7 +207,10 @@ final class Game {
     static final int UNDONE_IN_PART = 1;
     static final int NOT_UNDONE = 2;
 
-    /** SAID_TOAST: what the draft says (GameActivity's words), with a number where it counts. */
+    /**
+     * SAID_TOAST: what the draft says (GameActivity's words), with a number where it counts; and what Griff's control groups
+     * say (the hook of FAF's controlgroups.lua, FafreGriffToast), a group stored with its number and a buzz.
+     */
     static final int TOAST_NO_FREE_RESOURCE = 1;
     static final int TOAST_TAKEN = 2;
     static final int TOAST_FULL = 3;
@@ -214,6 +220,9 @@ final class Game {
     static final int TOAST_SOME_ON_BUILDINGS = 7;
     static final int TOAST_FIRST_TICK_OR_CROSS = 8;
     static final int TOAST_NOT_ORDERED = 9;
+    static final int TOAST_EMPTY_GROUP = 10;
+    static final int TOAST_NOTHING_SELECTED = 11;
+    static final int TOAST_GROUP_STORED = 12;
 
     /**
      * Griff on or off, and in the picture's pixels: the handle's radius, how far from its middle a finger is on it, its room

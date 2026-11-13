@@ -98,7 +98,7 @@ namespace
   /// Game.GRIFF_VALUES: what Game.griff gives of the handle.
   constexpr int kHandleValues = 11;
 
-  // Game's TOAST_: what the draft says, the activity's words.
+  // Game's TOAST_: what the draft says, the activity's words. The control groups' (10 to 12) come from their hook as they are.
   constexpr int kToastNoFreeResource = 1;
   constexpr int kToastTaken = 2;
   constexpr int kToastFull = 3;
@@ -1216,6 +1216,20 @@ namespace
   moho::CScrLuaBinder gDraftEndBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftEnd", &DraftEnd, nullptr, "<global>", kDraftEndHelp);
   moho::CScrLuaBinder
     gDraftAnchorsBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftAnchors", &DraftAnchors, nullptr, "<global>", kDraftAnchorsHelp);
+
+  // --- What Griff's control groups say (the hook of FAF's controlgroups.lua) ----------------------------------------------
+
+  constexpr char kToastHelp[] = "FafreGriffToast(kind, number) - a word of Griff's control groups for the app to say (Game's TOAST_)";
+
+  /// A tap on an empty slot, a rest with nothing selected, a group stored with its number: the activity says it as the draft's
+  /// words, and buzzes for a group stored.
+  int Toast(lua_State* const lua)
+  {
+    Say(kSaidToast, static_cast<int>(lua_tonumber(lua, 1)), static_cast<int>(lua_tonumber(lua, 2)));
+    return 0;
+  }
+
+  moho::CScrLuaBinder gToastBinder(moho::SCR_UserLuaInitSet(), "FafreGriffToast", &Toast, nullptr, "<global>", kToastHelp);
 
   // --- The queues: what FAF's UI holds of the units' orders --------------------------------------------------------------
 

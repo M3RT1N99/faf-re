@@ -104,6 +104,20 @@ public class HudScaleTest {
     }
 
     @Test
+    public void theUnitViewWithASelectionBeginsWhereFafPutsIt() {
+        // At 1.6 FAF's unit view stood at 394 with the commander selected (T3 part 2's skirmish), 6 over the bar's room.
+        assertEquals(393.6, HudScale.unitViewTopPixels(1.6, 768), 0.01);
+    }
+
+    @Test
+    public void theMockupsHIsAMillimetreOnAScreenOf73MmAndLessOnASmallerOne() {
+        assertEquals(1, HudScale.millimetresH(73), 0);
+        assertEquals(1, HudScale.millimetresH(80), 0);
+        assertEquals(65.3 / 73, HudScale.millimetresH(65.3), 1e-9);
+        assertEquals(0.7, HudScale.millimetresH(40), 0);
+    }
+
+    @Test
     public void theRoomIsTheSameOnTheGlassAtEveryPictureTheAppOffers() {
         double mmAt768 = HudScale.barRoomPixels(HudScale.factor(768, S22_ULTRA_MM), 768) * S22_ULTRA_MM / 768;
         for (int lines : new int[] {900, 1080, 1440}) {

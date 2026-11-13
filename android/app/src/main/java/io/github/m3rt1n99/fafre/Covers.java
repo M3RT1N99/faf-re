@@ -8,7 +8,7 @@ package io.github.m3rt1n99.fafre;
  * the shown ones when they changed.
  */
 final class Covers {
-    /** More pieces than the app has: the rail's three and its Keys, the tick, the cross, the pill. */
+    /** More pieces than the app has: the rail's three, the tick, the cross, the pill. */
     static final int MOST = 16;
 
     private final int[] mBoxes = new int[4 * MOST];

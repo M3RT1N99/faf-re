@@ -28,6 +28,14 @@ final class HudScale {
     /** FAF's pixels above and below the room for the app's buttons at the left edge (android/TOUCH_UI.md). */
     private static final double BAR_ROOM_TOP = 138;
     private static final double BAR_ROOM_BOTTOM = 230;
+    /**
+     * FAF's pixels from the picture's bottom to its unit view's top while a selection shows the construction panel: 120 under
+     * the view and the view's 114 (unitview_mini.lua PositionWindow), the highest the view stands in a game.
+     */
+    private static final double UNIT_VIEW_TOP = 234;
+    /** The mockup's H: a mm on screens whose short side is this or more, less on smaller ones, down to this much of one. */
+    private static final double H_SCREEN_MM = 73;
+    private static final double H_LEAST = 0.7;
 
     private HudScale() {
     }
@@ -86,6 +94,19 @@ final class HudScale {
     /** How high the room is on a picture of this many lines: up to the unit view, which stands on the picture's bottom. */
     static double barRoomPixels(double factor, int lines) {
         return lines - (BAR_ROOM_TOP + BAR_ROOM_BOTTOM) * factor;
+    }
+
+    /** The top of FAF's unit view on a picture of this many lines, in its pixels, where it stands with a selection. */
+    static double unitViewTopPixels(double factor, int lines) {
+        return lines - UNIT_VIEW_TOP * factor;
+    }
+
+    /**
+     * The mockup's H in mm (buildstage/griff-v3-spec.md, section 0), its unit of FAF's panels, by which the app's own pieces
+     * keep their room from them: a mm on a screen whose short side is 73 mm or more, less on a smaller one, 0.7 mm at least.
+     */
+    static double millimetresH(double shortSideMm) {
+        return Math.max(H_LEAST, Math.min(1, shortSideMm / H_SCREEN_MM));
     }
 
     /** The factor as the switch gives it. */

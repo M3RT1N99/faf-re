@@ -1,8 +1,9 @@
 // What FAF's UI and the app tell each other about the fingers in the menus (android/TOUCH_UI.md). FAF's Lua declares a
-// screen's page, whose the fingers are, the HUD's factor and what to bring into view, by four functions added to its UI's
-// globals, and the activity follows on its own thread (Game.fromProgram wakes it, and it reads what is new). A finger that
-// scrolls asks what list is under it, and a list takes its drag on the program's thread, where FAF's lists live, in the
-// order of the rest of the input; what a list cannot take goes back to the activity for the page.
+// screen's page, whose the fingers are, the HUD's factor and what to bring into view, and asks for the phone's keyboard, by
+// five functions added to its UI's globals, and the activity follows on its own thread (Game.fromProgram wakes it, and it
+// reads what is new). A finger that scrolls asks what list is under it, and a list takes its drag on the program's thread,
+// where FAF's lists live, in the order of the rest of the input; what a list cannot take goes back to the activity for the
+// page.
 
 #include "MenuFingers.h"
 
@@ -138,6 +139,23 @@ namespace
   }
 
   moho::CScrLuaBinder gShowLinesBinder(moho::SCR_UserLuaInitSet(), "FafreShowLines", &ShowLines, nullptr, "<global>", kShowLinesHelp);
+
+  // --- The keyboard -----------------------------------------------------------------------------
+
+  /// FAF's Menu tab asked for the phone's keyboard (its Keyboard button, the hook of ui/game/tabs.lua), which the activity
+  /// takes as a tap on the bar's Keys when it reads what is new.
+  std::atomic<bool> gKeyboardAsked{false};
+
+  constexpr char kKeyboardHelp[] = "FafreKeyboard() - the phone's keyboard comes, or goes where it is up, as the app's Keys does";
+
+  int Keyboard(lua_State*)
+  {
+    gKeyboardAsked.store(true);
+    WakeActivity();
+    return 0;
+  }
+
+  moho::CScrLuaBinder gKeyboardBinder(moho::SCR_UserLuaInitSet(), "FafreKeyboard", &Keyboard, nullptr, "<global>", kKeyboardHelp);
 
   // --- The controls -----------------------------------------------------------------------------
 
@@ -385,6 +403,12 @@ extern "C" JNIEXPORT jfloat JNICALL Java_io_github_m3rt1n99_fafre_Game_takePageD
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_askForField(JNIEnv*, jclass)
 {
   Win32Android_RunOnWindowThread(&LookForField, 0);
+}
+
+/// Whether FAF's Menu tab asked for the keyboard since the last call.
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_keyboardAsked(JNIEnv*, jclass)
+{
+  return gKeyboardAsked.exchange(false) ? JNI_TRUE : JNI_FALSE;
 }
 
 /// The lines the activity has yet to bring into view, into top, bottom; 0: none, 1: a finger tapped a text field, 2:

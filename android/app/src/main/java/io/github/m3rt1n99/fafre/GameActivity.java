@@ -75,8 +75,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double BAR_BUTTON_MM = 9;
     private static final double BAR_MENU_BUTTON_MM = 6.5;
     private static final double BAR_GAP_MM = 0.5;
-    /** Griff's rail: three buttons over each other, each at most this big. */
-    private static final double RAIL_BUTTON_MM = 11;
     /**
      * Griff's handle (the preview's sizes): its radius; how much further from it a finger is still on it; its room from the
      * selection's units' blueprint box, which is wider than their icons.
@@ -111,15 +109,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final long LOUPE_MILLISECONDS = 33;
     /**
      * The undo's pill (the mockup's): this far from the screen's left, at most this wide (and no wider than FAF's orders panel),
-     * this high in the mockup's H, and this much of an H over the top of FAF's unit view, which it covers under the rail. H is
-     * the mockup's unit of FAF's panels: a mm on screens of 73 mm and more, down to 0.7 mm on small ones.
+     * this high in the mockup's H (HudScale.millimetresH), and this much of an H over the top of FAF's unit view, which it covers
+     * under the rail.
      */
     private static final double PILL_LEFT_MM = 2.5;
     private static final double PILL_WIDEST_MM = 34;
     private static final double PILL_HIGH_H = 6.6;
     private static final double PILL_OVER_H = 0.3;
-    private static final double H_SCREEN_MM = 73;
-    private static final double H_LEAST = 0.7;
     private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
@@ -135,7 +131,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private SurfaceView mSurface;
     private TextView mText;
     private LinearLayout mBar;
-    /** What the bar has in a game and not in the menus, and the Keys, which it has in both. */
+    /**
+     * What the mouse's bar has in a game and not in the menus, and the Keys, which it has in both. Griff's bar has its rail in a
+     * game and the Keys in the menus only: in a game the keyboard is a button of FAF's Menu tab (FafreKeyboard).
+     */
     private final List<TextView> mGameButtons = new ArrayList<>();
     private TextView mKeysButton;
     private boolean mBarInGame;
@@ -181,8 +180,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** The touch scheme Griff (TouchScheme) for this game, its rail, and what it draws over the game. */
     private boolean mGriff;
     private final Rail mRail = new Rail();
-    private final List<TextView> mRailButtons = new ArrayList<>();
-    private int mRailShown = -1;
+    private final List<RailButton> mRailButtons = new ArrayList<>();
     private GriffLayer mGriffLayer;
     /**
      * The handle as Game.griff gives it, and as the screen shows it, while a game's frames are read: it stays where a stroke
@@ -300,7 +298,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void held() {
-            mSurface.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            buzz();
         }
 
         @Override
@@ -815,6 +813,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         if (mGriff) {
             readGriffSaid();
         }
+        // The Keyboard of FAF's Menu tab, as the bar's Keys.
+        if (Game.keyboardAsked()) {
+            toggleKeyboard();
+        }
         passDrag();
         float rest = Game.takePageDrag();
         if (rest != 0) {
@@ -896,18 +898,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.VERTICAL);
         if (mGriff) {
-            // Griff's rail, Box, Plus and Attack over each other, and the keyboard's button beside the first.
-            LinearLayout first = new LinearLayout(this);
-            railButton(first, "Box", TouchInput.RAIL_BOX);
-            mKeysButton = barButton(first, "Keys");
+            // The keyboard's button for the menus, and Griff's rail, from the bottom up Box, Plus and Attack (Rail).
+            mKeysButton = barButton(bar, "Keys");
             mKeysButton.setOnClickListener(view -> toggleKeyboard());
-            bar.addView(first);
-            LinearLayout second = new LinearLayout(this);
-            railButton(second, "Plus", TouchInput.RAIL_QUEUE);
-            bar.addView(second);
-            LinearLayout third = new LinearLayout(this);
-            railButton(third, "Attack", TouchInput.RAIL_ATTACK);
-            bar.addView(third);
+            railButton(bar, "Attack", TouchInput.RAIL_ATTACK);
+            railButton(bar, "Plus", TouchInput.RAIL_QUEUE);
+            railButton(bar, "Box", TouchInput.RAIL_BOX);
             return bar;
         }
         LinearLayout top = new LinearLayout(this);
@@ -931,24 +927,36 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
     }
 
-    /** In a game the bar sits where the HUD leaves room (HudScale), in the menus only the keyboard's button stays, in a corner. */
+    /**
+     * In a game the bar sits where the HUD leaves room (HudScale), in the menus only the keyboard's button stays, in a corner.
+     * Griff's rail is the game's alone, and its Keys the menus': in a game the keyboard is a button of FAF's Menu tab.
+     */
     private void placeBar(boolean inGame) {
         mBarInGame = inGame;
-        int size = viewMm(inGame ? gameButtonMm() : BAR_MENU_BUTTON_MM);
-        int gap = viewMm(BAR_GAP_MM / 2);
-        for (TextView button : mGameButtons) {
-            button.setVisibility(inGame ? View.VISIBLE : View.GONE);
-            sizeBarButton(button, size, gap);
-            // The menus have no use for them, and a finger could not let go of one there.
-            if (!inGame && button.isSelected()) {
-                button.performClick();
-            }
-        }
-        sizeBarButton(mKeysButton, size, gap);
         FrameLayout.LayoutParams place = (FrameLayout.LayoutParams) mBar.getLayoutParams();
-        place.topMargin = inGame ? (int) Math.round(HudScale.barTopPixels(hudFactor()) * viewPixelsPerPicturePixel()) : 0;
+        if (mGriff && inGame) {
+            placeRail(place);
+        } else {
+            int size = viewMm(inGame ? gameButtonMm() : BAR_MENU_BUTTON_MM);
+            int gap = viewMm(BAR_GAP_MM / 2);
+            for (TextView button : mGameButtons) {
+                button.setVisibility(inGame ? View.VISIBLE : View.GONE);
+                sizeBarButton(button, size, gap);
+                // The menus have no use for them, and a finger could not let go of one there.
+                if (!inGame && button.isSelected()) {
+                    button.performClick();
+                }
+            }
+            sizeBarButton(mKeysButton, size, gap);
+            place.leftMargin = 0;
+            place.topMargin = inGame ? (int) Math.round(HudScale.barTopPixels(hudFactor()) * viewPixelsPerPicturePixel()) : 0;
+        }
         mBar.setLayoutParams(place);
         if (mGriff) {
+            for (RailButton button : mRailButtons) {
+                button.setVisibility(inGame ? View.VISIBLE : View.GONE);
+            }
+            mKeysButton.setVisibility(inGame ? View.GONE : View.VISIBLE);
             if (!inGame) {
                 releaseRail();
             }
@@ -957,11 +965,35 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
     }
 
-    /** In a game the bar's rows fill the room the HUD leaves, up to a finger's size: Griff's rail has three, the mouse's bar two. */
+    /** In a game the mouse's bar's two rows fill the room the HUD leaves, up to a finger's size. */
     private double gameButtonMm() {
-        return mGriff
-            ? Math.min(RAIL_BUTTON_MM, barRoomMm() / 3 - BAR_GAP_MM)
-            : Math.min(BAR_BUTTON_MM, barRoomMm() / 2 - BAR_GAP_MM);
+        return Math.min(BAR_BUTTON_MM, barRoomMm() / 2 - BAR_GAP_MM);
+    }
+
+    /**
+     * Griff's rail in a game (the mockup's): its buttons as large as the band between FAF's top panels and its unit view holds
+     * them, an H (HudScale.millimetresH) from each, up to Rail.SIDE_MM; from the bottom up Box, Plus and Attack, Box on the
+     * band's bottom, Rail.GAP_MM apart, Rail.LEFT_MM from the screen's left, past a camera cutout's inset (the bar's padding).
+     */
+    private void placeRail(FrameLayout.LayoutParams place) {
+        float millimetre = viewPixelsPerMm();
+        double h = HudScale.millimetresH(mScreenMm) * millimetre;
+        double perPicturePixel = viewPixelsPerPicturePixel();
+        double factor = hudFactor();
+        float top = (float) (HudScale.barTopPixels(factor) * perPicturePixel + h);
+        float bottom = (float) (HudScale.unitViewTopPixels(factor, pictureLines()) * perPicturePixel - h);
+        float side = Rail.side(bottom - top, millimetre);
+        int sidePixels = Math.round(side);
+        int gap = Math.round(Rail.GAP_MM * millimetre);
+        for (RailButton button : mRailButtons) {
+            LinearLayout.LayoutParams size = (LinearLayout.LayoutParams) button.getLayoutParams();
+            size.width = sidePixels;
+            size.height = sidePixels;
+            size.setMargins(0, 0, 0, button.bit() == TouchInput.RAIL_BOX ? 0 : gap);
+            button.setLayoutParams(size);
+        }
+        place.leftMargin = Math.round(Rail.LEFT_MM * millimetre);
+        place.topMargin = Math.round(Rail.top(mRailButtons.size() - 1, bottom, side, millimetre));
     }
 
     /** The HUD's factor: the user's UI scale can have changed what the app worked out. */
@@ -1021,10 +1053,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /** One of Griff's rail buttons (Rail): a tap lights it for the next action, a hold counts while held; Plus held is Shift held. */
-    private void railButton(LinearLayout row, String label, int bit) {
-        TextView button = barButton(row, label);
-        button.setTag(bit);
-        mGameButtons.add(button);
+    private void railButton(LinearLayout bar, String label, int bit) {
+        RailButton button = new RailButton(this, bit, label);
+        button.setMillimetre(viewPixelsPerMm());
+        button.setVisibility(View.GONE);
+        bar.addView(button, new LinearLayout.LayoutParams(0, 0));
         mRailButtons.add(button);
         // Griff's slop, as for its gestures on the map: a thumb that wobbles on the rail still taps.
         button.setOnTouchListener(new RailTouch(bit, TouchInput.GRIFF_SLOP_MM * viewPixelsPerMm()));
@@ -1090,18 +1123,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
     }
 
-    /** The rail as it is: its lit and held buttons, and the handle's look. */
+    /** The rail as it is: how each of its buttons looks (Rail#look), and the handle's look by those held or lit. */
     private void showRail() {
-        int shown = mRail.shown();
-        if (shown == mRailShown) {
-            return;
-        }
-        mRailShown = shown;
-        for (TextView button : mRailButtons) {
-            button.setBackground(barBackground((shown & (Integer) button.getTag()) != 0));
+        for (RailButton button : mRailButtons) {
+            button.setLook(mRail.look(button.bit()));
         }
         if (mGriffLayer != null) {
-            mGriffLayer.setRail(shown);
+            mGriffLayer.setRail(mRail.shown());
         }
     }
 
@@ -1233,7 +1261,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         boolean shown = mBarInGame && unitViewTop >= 0 && mUndo.showing(now);
         if (shown) {
             float pixels = viewPixelsPerMm();
-            double h = Math.max(H_LEAST, Math.min(1, mScreenMm / H_SCREEN_MM)) * pixels;
+            double h = HudScale.millimetresH(mScreenMm) * pixels;
             float widest = (float) (PILL_WIDEST_MM * pixels);
             float panel = panelLeft >= 0 && panelRight > panelLeft ? mPageView.screenX(panelRight) - mPageView.screenX(panelLeft) : widest;
             placeView(mPill, (float) (PILL_LEFT_MM * pixels) + mBar.getPaddingLeft(),
@@ -1260,16 +1288,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * The app's pieces over the picture for the program (Covers): the rail's buttons and Keys, the draft's tick and cross and the
-     * undo's pill, each while it shows, in the picture's pixels; the program hears them when they changed.
+     * The app's pieces over the picture for the program (Covers): the rail's buttons, the draft's tick and cross and the undo's
+     * pill, each while it shows, in the picture's pixels; the program hears them when they changed. The Keys shows in the menus
+     * only, where no finger is Griff's.
      */
     private void setGriffCovers() {
         mFingerLayer.getLocationInWindow(mLayerOnWindow);
         mCovers.begin();
-        for (TextView button : mRailButtons) {
+        for (RailButton button : mRailButtons) {
             cover(button);
         }
-        cover(mKeysButton);
         cover(mTick);
         cover(mCross);
         cover(mPill);
@@ -1285,8 +1313,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mCovers.piece(view.isShown(), pictureX(left), pictureY(top), pictureX(left + view.getWidth()), pictureY(top + view.getHeight()));
     }
 
-    /** What the draft says: the mockup's words in the app's English. */
-    private static String draftWords(int toast, int number) {
+    /** What the draft and the control groups say: the mockup's words in the app's English. */
+    private static String toastWords(int toast, int number) {
         switch (toast) {
             case Game.TOAST_NO_FREE_RESOURCE:
                 return "No free resource here";
@@ -1306,6 +1334,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 return "First \u2713 or \u2715";
             case Game.TOAST_NOT_ORDERED:
                 return number == 1 ? "1 plan was not ordered" : number + " plans were not ordered";
+            case Game.TOAST_EMPTY_GROUP:
+                return "Empty group: rest to store";
+            case Game.TOAST_NOTHING_SELECTED:
+                return "Nothing selected";
+            case Game.TOAST_GROUP_STORED:
+                return "Group " + number + " stored";
             default:
                 return "";
         }
@@ -1425,7 +1459,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 } else if (mGriffSaid[at] == Game.SAID_ROUTE_GIVEN_UP) {
                     mGriffLayer.toast(CANCELLED);
                 } else if (mGriffSaid[at] == Game.SAID_TOAST) {
-                    mGriffLayer.toast(draftWords(mGriffSaid[at + 1], mGriffSaid[at + 2]));
+                    mGriffLayer.toast(toastWords(mGriffSaid[at + 1], mGriffSaid[at + 2]));
+                    if (mGriffSaid[at + 1] == Game.TOAST_GROUP_STORED) {
+                        buzz();
+                    }
                 } else if (mGriffSaid[at] == Game.SAID_COMMITTED) {
                     // The tick's last click left the pointer on the map, which a finger's lift would have taken away.
                     mTouchMouse.leaveSoon();
@@ -1500,6 +1537,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    /** What a finger feels: a hold, a rest, a control group that stored the selection. */
+    private void buzz() {
+        mSurface.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
     }
 
     private void toggleKeyboard() {

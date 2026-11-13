@@ -170,8 +170,9 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 | `lua/ui/game/gamemain.lua` | `OnSelectionChanged`, `OnQueueChanged`, `OnBeat`, `OnPause`, `OnResume` at the HUD's factor; the game's UI starts Griff's report of the selection (`fafre/griff.lua`, see "Griff") |
 | `lua/ui/game/construction.lua` | Griff: a build icon's click (FAF's `OnClickHandler`, which the panel's buttons take when they are made) puts its building into the draft (`fafre/griff.lua` `BuildIconClicked`, after FAF's own handler), not FAF's ghost; FAF's build mode keys arm the build mode themselves (`buildmode.lua`), and a template's key (no mouse button) and click (no build item) reach the handler but stay FAF's |
 | `lua/ui/game/unitview.lua` | Nothing hovers on a phone: FAF's "Single Unit Selected Info" is on, or a selected unit's view would go with the pointer; the abilities list, which stands over the middle of the screen, only for a finger that rests on a unit |
-| `lua/ui/game/tabs.lua` | The Menu tab's ten large buttons fit at 0.92: `Built`, 837 of FAF's lines |
-| `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow |
+| `lua/ui/game/tabs.lua` | The Menu tab has the app's *Keyboard* after Key Bindings, in both touch schemes: it brings the phone's keyboard as the bar's *Keys* does (`FafreKeyboard`, `MenuFingers.cpp`; Griff's rail has no *Keys*). The eleven large buttons fit at 0.85 on 768 lines: `Built`, 907 of FAF's lines, 70 a button |
+| `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow. With Griff, groups 1, 2 and 3 are slots that always show (see "Griff") |
+| `lua/ui/game/avatars.lua` | A finger's pointer leaves after each tap (below), which FAF's avatar took for the mouse going and started its round of the idle units over, so that each tap took the first: the round goes on |
 | `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the app's buttons, the multifunction panel and the unit view: a new window goes where it covers no panel, and the reset button brings it back there; a place the user chose stays |
 | `lua/ui/dialogs/options.lua` | `DialogAt`: shown larger, with fewer rows (see "The menus"); the UI scale needs no restart |
 | `lua/maui/bitmap.lua` | A bitmap keeps the size it was made at (above) |
@@ -250,8 +251,9 @@ the left edge between the multifunction panel and the unit view, 138 and 230 of 
 edge, which has more height, belongs to the avatars with their idle lists and to the control groups, and both grow.
 In the menus, on the score screen and over a dialog in a game, whose fingers are the menus', only *Keys* stays, 6.5 mm, in the upper left
 corner, which no menu uses for anything but a title. A toggle that is on goes off then. With the touch scheme Griff the bar is its rail
-instead: *Box*, *Plus* and *Attack* over each other, up to 11 mm each, and *Keys* beside *Box* (below); a thumb on a rail
-button taps within Griff's slop of 2.5 mm.
+in a game instead, from the bottom up *Box*, *Plus* and *Attack* (below, "The rail, the control groups and the keyboard"), and *Keys*
+is the menus' only: in a game the keyboard is *Keyboard* in FAF's Menu tab, in both schemes. A thumb on a rail button taps within
+Griff's slop of 2.5 mm.
 
 ### Griff
 
@@ -263,7 +265,7 @@ and nothing else reaches the simulation. The camera is the UI's, which FAF's Lua
 keeps the fingers (`TouchInput` with `setGriff`: slop, timing, the tap ladder, the stroke, two fingers, the draft's gestures; `Rail` for the
 rail; `Stroke` for what a stroke gives; `Draft` for the draft's plans as the screen shows them; `Undo` for the undo's pill) and draws the
 handle, the stroke, a resting finger's ring, the draft's plans and its loupe, the pins of the orders given, and a short word for the user, a
-toast (`GriffLayer`; the draft's tick and cross are `DraftButton`s, the undo's pill an `UndoPill`).
+toast (`GriffLayer`; the draft's tick and cross are `DraftButton`s, the undo's pill an `UndoPill`, the rail's buttons `RailButton`s).
 What a gesture clicks is decided on the program's thread, which knows what lies under the finger (`native/src/host/GriffAndroid.cpp`),
 with `fafre/griff.lua` for what only FAF's Lua knows. A finger stays within 2.5 mm, the mockup's slop:
 
@@ -288,7 +290,7 @@ which took a stroke's route elsewhere than it was drawn.
 
 A toast (`GriffLayer.toast`) says a word for 1.8 s in a pill under the free map's top at the screen's middle (FAF's top panels): Cancelled for
 a stroke given up, the draft's words below, Undone in part for an undo that could not take out every order of the gesture's or give back
-every one it replaced, Not undone for one that clicked nothing of it; control groups to come say theirs.
+every one it replaced, Not undone for one that clicked nothing of it, and the control groups' words (below).
 
 #### The draft
 
@@ -396,7 +398,7 @@ until the sync reaches the beat of the Reset that order put at the queue's front
 (its primary links), and keeps that from then on (`ReadTaken`, also where the replacement left the queue empty or the sim gave orders
 of its own after it): what the unit had not done yet when the replacement landed. A gesture that ordered is the record the pill takes
 back, one level: the next one's replaces it, and any other order ends it, as only the last order counts: FAF's ghost from a build key or
-a template, the Keys keyboard's hotkeys, the construction panel's own queue (a factory's units, an upgrade, an enhancement), none a
+a template, the keyboard's hotkeys, the construction panel's own queue (a factory's units, an upgrade, an enhancement), none a
 gesture's to take back (`include/GriffUndo.h` `Takeable`); the pill goes with the record. FAF's assist-to-upgrade (its options
 `assist_to_upgrade` and `assist_to_upgrade_radar`) orders an extractor's or a radar's upgrade a frame or more after a Guard on it
 (`OnGuardUpgrade`): such an Upgrade of the target of one of the record's Guards neither ends nor joins the record, which notes it. The tap
@@ -476,6 +478,54 @@ the oldest's place. The program projects them through the map's camera after eac
 (FAF's panels stand over the map's picture); `GriffLayer` draws them under the handle. FAF's own blip at an order stays, and FAF draws the
 orders' lines.
 
+#### The rail, the control groups and the keyboard
+
+The rail (buildstage/griff-v3-spec.md T3.5, the mockup's layoutHud and drawRail) stands at the left edge, 2.5 mm from it (past a camera
+cutout's inset, as the pill), from the bottom up *Box*, *Plus* and *Attack*, 1.5 mm apart, on the bottom of the band that runs from FAF's
+top panels (138 of FAF's lines) + H down to FAF's unit view - H, the view where it stands with a selection: 234 of FAF's lines over the
+picture's bottom (`HudScale.unitViewTopPixels`; 120 under it and its own 114, `unitview_mini.lua`). Each button is as large as three fit
+with their gaps, up to 11 mm (`Rail.side`, `Rail.top`, `GameActivity.placeRail`). At 1.6 on 768 lines that band is 12.9 mm on the
+emulator at the phone's size (65.3 mm high) and the buttons 3.3 mm, 3.8 mm on a 73 mm screen: FAF's own panels at the HUD's factor leave
+the left edge far less room than the mockup's drawing of them, where the buttons are about 10 mm. Each button is a `RailButton`, rounded
+1.2 mm, its label in the mockup's font M (2.5 mm), *Attack*'s in the attack colour, in one of three looks (`Rail.look`, tested): idle in
+the button colour with the line's edge; held, while a finger is on it, in the button-on colour with the ring's edge; lit for the next
+action in the button-on colour with the mark's edge and "1×" in font XS, 2.2 mm from its right and 2 mm from its top. The moment after a
+lift, which still counts, looks idle. At 3.3 mm the labels do not fit (*Attack* shows as "ttac") and "1×" lies over the label. What
+keeps clear of the rail takes its views' places as they are: the covers (`Covers`), and with them the handle's free map; the pill stands
+under it, over the unit view.
+
+The control groups (T3.3; the hook of `ui/game/controlgroups.lua`, under Griff only): Griff has no Ctrl to make a group with, so groups 1,
+2 and 3 are slots that always show, in FAF's place for its groups under the avatars, an empty one as a dim control of the same size.
+Each is 7 x 5.1 H, 5.5 H apart, 2.5 H from the screen's right (the mockup's column 10 H wide, an H from the edge, the slots 1.5 H into
+it), with its number at 28 % of its width and its count at 68 %, in the mockup's font XS; H is 48/7.3 of FAF's pixels, as a build
+icon's 48 are 7.3 H in the mockup, so the slots grow with FAF's panels (73x53 of the picture's pixels at 1.6, as FAF's own groups). A
+group's slot is faf-on with the own colour's edge, an empty one faf-btn with faf-edge's and its number muted. FAF's own controls of the
+three are made invisible and take no events; its other groups (4 to 0, which a keyboard's Ctrl makes) stand below the slots as
+FAF lays them out, and the bracket closes under the last. FAF does not tell its panel when a group's units die: the slots look each
+second, as FAF's own controls do.
+
+| On a slot | FAF's input |
+|---|---|
+| Tap | FAF's left press: the group is the selection (`ApplySelectionSet`); with *Plus* (Shift) it joins the selection |
+| Two taps | FAF's double click (the tap ladder clicks a second tap on FAF's UI where the first went, and the message layer makes it its double click): the group again, whose second selection soon after the first moves the camera to it as the player's option `selection_sets_double_tap_behavior` says |
+| Tap on an empty slot | Nothing; the toast says *Empty group: rest to store* |
+| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. The toast says *Group N stored* and the phone buzzes once more (the rest's ring buzzed as the rest began); with nothing selected *Nothing selected*, and the group stays as it was |
+
+The words come from the hook through `FafreGriffToast` (`GriffAndroid.cpp`) as the draft's do. A group is the UI's: nothing of it
+orders, so a tap or a rest on a slot neither ends the undo's record nor takes the pill away, and the handle follows the selection it
+makes as any other. The rest is the panels' one rest time, not the mockup's 400 ms for groups. The mouse scheme keeps FAF's own groups
+panel and its right press, as a PC's; the scheme is the game's, read when its activity starts (`FafreGriffWanted`).
+
+The keyboard (T3.4): the hook of `ui/game/tabs.lua` adds *Keyboard* to the Menu tab's list, after Key Bindings, in both schemes. A tap
+closes the menu as its other buttons do and calls `FafreKeyboard()` (`MenuFingers.cpp`), which the activity takes as a tap on *Keys* when
+it next reads what is new: the phone's keyboard comes, or goes where it is up. The menu's eleven buttons fit at 0.85 on 768 lines (the
+hook's `Built`, 907 of FAF's lines, 70 a button); the frame's bottom bracket reaches below the picture's edge, as with ten.
+
+FAF's avatars (T3.8) stay FAF's: a tap selects the next of an idle avatar's units, a double tap all of them, a rest (the right press)
+selects the next and goes to it, the arrow opens the idle list. FAF starts the round over when the pointer leaves the avatar, which a
+finger's pointer does after each tap (The pointer): each tap took the first idle unit. The hook of `ui/game/avatars.lua` keeps the round
+where it was when the pointer leaves, also a mouse's, so that taps take the idle units in turn as a mouse's clicks do.
+
 ### The game's panels now
 
 Measured by the census at 1.6 on the phone's size; mm at 10.5 pixels to the millimetre. "Reach" is what tap help adds
@@ -490,13 +540,13 @@ where nothing larger that takes events is in the way.
 | Pause and small construction buttons | `ui/game/construction.lua:211` | 48x48 | 4.6 | reach |
 | Construction's scroll buttons | `ui/game/construction.lua:257` | 35x80 | 3.3 | reach |
 | Top tabs | `ui/game/tabs.lua:448` | 86x73 | 7.0 | |
-| Menu tab's buttons | `ui/game/tabs.lua:600` | 269x64 | 6.1 | at 0.92 |
+| Menu tab's buttons | `ui/game/tabs.lua:600` | 248x59 | 5.6 | at 0.85, eleven with the app's *Keyboard* |
 | Multifunction panel's buttons | `ui/game/multifunction.lua:218` | 67x48 | 4.6 | reach |
 | Commander's avatar | `ui/game/avatars.lua:123` | 99x105 | 9.4 | |
 | Idle avatars | `ui/game/avatars.lua:237` | 86x80 | 7.6 | |
 | Idle list's rows | `ui/game/avatars.lua:533` | 137x80 | 7.6 | |
 | The idle avatars' expand arrow | `ui/game/avatars.lua:256` | 16x48 | 1.5 | reach |
-| Control groups | `ui/game/controlgroups.lua:83` | 73x54 | 5.1 | |
+| Control groups | `ui/game/controlgroups.lua:83` | 73x54 | 5.1 | Griff's slots 73x53 |
 | Collapse arrows of every panel | `tabs.lua:441`, `economy.lua:82`, `multifunction.lua:209`, `score.lua:91`, `avatars.lua:54` | 28x41 | 2.7 | reach, at the screen's edge |
 | Score panel's rows and small icons | `ui/game/score.lua:280`, `:315` | 480x22, 22x22 | 2.1 | reach; tooltips and the display's switch |
 
