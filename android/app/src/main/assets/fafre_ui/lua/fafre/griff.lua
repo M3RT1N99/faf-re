@@ -2,14 +2,16 @@
 -- that the app shows beside it; the camera's moves that its gestures make, as the UI moves the camera (a glide after a pan, a
 -- flight to the group, a pinch), not the simulation; the few things its gestures ask of FAF's UI; the draft's part that only
 -- FAF's UI knows: the build icon that opens it, its builders, the tick's build mode and selection; and what a gesture orders,
--- for the pins at its places and the undo that takes it back with FAF's own inputs. The app places the handle, holds the draft
--- and the pins, decides what a gesture clicks and how an undo goes (android/native/src/host/GriffAndroid.cpp); with the mouse
--- scheme nothing is reported or watched and FAF's build icons are FAF's.
+-- for the pins at its places and the undo that takes it back with FAF's own inputs; and what the player opened of FAF's, which
+-- the app's pieces step aside from. The app places the handle, holds the draft and the pins, decides what a gesture clicks and
+-- how an undo goes (android/native/src/host/GriffAndroid.cpp); with the mouse scheme nothing is reported or watched and FAF's
+-- build icons are FAF's.
 
 local Group = import('/lua/maui/group.lua').Group
 local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
 local WorldView = import('/lua/ui/game/worldview.lua')
 local CommandMode = import('/lua/ui/game/commandmode.lua')
+local Opened = import('/fafre_ui/lua/fafre/opened.lua')
 
 --- A large selection's box comes from this many of its units, spread over all of them: near enough for a handle.
 local SampledUnits = 64
@@ -554,12 +556,29 @@ end
 
 -- --- The session's UI, each frame -----------------------------------------------------------------------------------------
 
+--- What the player opened of FAF's that shows (opened.lua), as the program last heard it.
+local openedSaid = {}
+
+--- The program hears what the player opened of FAF's that shows, where it changed: the app's pieces step aside from it.
+local function ReportOpened()
+    local boxes = Opened.Boxes()
+    local same = table.getn(boxes) == table.getn(openedSaid)
+    for index, value in boxes do
+        same = same and value == openedSaid[index]
+    end
+    if not same then
+        openedSaid = boxes
+        FafreGriffOpened(unpack(boxes))
+    end
+end
+
 --- Each frame of the session's UI under `parent`, while the app wants it: first the frame itself, counted for the program,
 --- whose clicks wait for frames by it, then the rest. An error stops what failed, with one warning, never the count: the
 --- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on; the selection's report stops
 --- apart from the map's view, which goes on each frame (an error there says itself once), so that the clicks, the plans and
---- the pins keep their map when the handle goes. FAF's UI tells each order it gives (OnCommandIssued, which the engine looks
---- up at each order): the program hears of it first. FAF's capping is held off while the undo's clicks run.
+--- the pins keep their map when the handle goes; the report of what the player opened stops with none, so that no piece of
+--- the app's stays away for it. FAF's UI tells each order it gives (OnCommandIssued, which the engine looks up at each
+--- order): the program hears of it first. FAF's capping is held off while the undo's clicks run.
 function Start(parent)
     if not FafreGriffBox then
         return
@@ -570,7 +589,7 @@ function Start(parent)
     reporter.Width:Set(0)
     reporter.Height:Set(0)
     local reporting, seeing, driving = true, true, true
-    local anchoring = true
+    local anchoring, opening = true, true
     local viewSaid = false
     reporter.OnFrame = function(self, delta)
         if not FafreGriffWanted() then
@@ -597,6 +616,14 @@ function Start(parent)
             if not ok then
                 WARN('fafre_ui: griff: draft: ' .. tostring(problem))
                 anchoring = false
+            end
+        end
+        if opening then
+            local ok, problem = pcall(ReportOpened)
+            if not ok then
+                WARN('fafre_ui: griff: opened: ' .. tostring(problem))
+                FafreGriffOpened()
+                opening = false
             end
         end
         -- First what the frame drew, before a step moves the camera for the next.

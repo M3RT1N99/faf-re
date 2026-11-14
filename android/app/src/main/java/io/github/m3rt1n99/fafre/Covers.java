@@ -11,8 +11,9 @@ final class Covers {
     /**
      * A piece whose cover stays a short while after it went, where it last showed: the undo's pill, which goes when its time
      * runs out, maybe under a finger already on its way to it. A tap meant for it that comes late then lands on nothing, never
-     * on the map beneath. The program finds a tap's place covered when it clicks, a settle after the finger's down
-     * (TouchInput.SETTLE_MILLISECONDS), so the time counts from the piece's last frame to that click.
+     * on the map beneath; but not where the player has opened something of FAF's (#forget). The program finds a tap's place
+     * covered when it clicks, a settle after the finger's down (TouchInput.SETTLE_MILLISECONDS), so the time counts from the
+     * piece's last frame to that click.
      */
     static final class Lingering {
         private final long mAfter;
@@ -41,6 +42,14 @@ final class Covers {
         /** Where it last showed: left, top, right and bottom. */
         int[] box() {
             return mBox;
+        }
+
+        /**
+         * It covers no more until it shows again: something the player opened of FAF's lies where it last showed (Opened), and a
+         * tap there is for that.
+         */
+        void forget() {
+            mShownOnce = false;
         }
     }
 

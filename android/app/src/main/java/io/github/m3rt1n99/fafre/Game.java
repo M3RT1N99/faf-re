@@ -241,6 +241,12 @@ final class Game {
     static native void setGriffCovers(int[] boxes, int count);
 
     /**
+     * What the player opened of FAF's that shows ({@link Opened}), as griff.lua last reported it: into `values` as many whole
+     * boxes as fit, left, top, right and bottom of each in the picture's pixels; how many numbers.
+     */
+    static native int griffOpened(float[] values);
+
+    /**
      * The handle over the selection as the last frame placed it, in the picture's pixels, into GRIFF_VALUES: x, y, the group's
      * middle x and y, the selection's count, 1 if the group is out of view or under a panel and the handle points at it, else 0;
      * the free map's left, top and right at its middle; and the stroke the program last answered for ({@link #strokeHover}) and

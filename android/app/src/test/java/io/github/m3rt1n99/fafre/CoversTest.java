@@ -96,6 +96,26 @@ public class CoversTest {
     }
 
     @Test
+    public void thePillsCoverGoesAtOnceWhereThePlayerOpenedSomethingOfFafs() {
+        // The pill went at 3000 and would cover its place until 3500; FAF's Menu opens over it at 3100: a tap there is the Menu's
+        // from then on. Shown again, it covers again.
+        Covers.Lingering pill = new Covers.Lingering(500);
+        covers.begin();
+        covers.piece(pill, true, 30, 300, 330, 360, 3000);
+        assertTrue(covers.end());
+        covers.begin();
+        covers.piece(pill, false, 0, 0, 0, 0, 3050);
+        assertFalse("still covering", covers.end());
+        pill.forget();
+        covers.begin();
+        covers.piece(pill, false, 0, 0, 0, 0, 3100);
+        assertTrue("gone at once", covers.end());
+        assertEquals(0, covers.count());
+        assertTrue(pill.covers(true, 30, 300, 330, 360, 5000));
+        assertTrue(pill.covers(false, 0, 0, 0, 0, 5100));
+    }
+
+    @Test
     public void aPieceThatNeverShowedNeverCoversNorDoesOneWithoutASize() {
         Covers.Lingering never = new Covers.Lingering(500);
         assertFalse(never.covers(false, 30, 300, 330, 360, 0));

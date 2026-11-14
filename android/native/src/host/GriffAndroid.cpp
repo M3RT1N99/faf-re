@@ -189,6 +189,12 @@ namespace
     return Covered(static_cast<float>(x), static_cast<float>(y));
   }
 
+  /// What the player opened of FAF's that shows, as griff.lua reports it where it changed (fafre/opened.lua): its windows, its
+  /// popups, the multifunction panel's dropouts and the tabs' content, left, top, right and bottom of each in the picture's
+  /// pixels. The activity's pieces step aside from them (Game.griffOpened).
+  std::mutex gOpenedMutex;
+  std::vector<float> gOpened;
+
   // --- What the program says to the activity -----------------------------------------------------
 
   std::mutex gSaidMutex;
@@ -1067,6 +1073,10 @@ namespace
     ForgetDraft();
     gConstructionTop = -1;
     gColumnLeft = -1;
+    {
+      const std::lock_guard<std::mutex> lock(gOpenedMutex);
+      gOpened.clear();
+    }
     // The orders of this game: no watch, record, pin or pill any more; an undo the pill asked for that waits is not done.
     gWatch = Watch{};
     DropRecord();
@@ -1229,6 +1239,27 @@ namespace
   }
 
   moho::CScrLuaBinder gToastBinder(moho::SCR_UserLuaInitSet(), "FafreGriffToast", &Toast, nullptr, "<global>", kToastHelp);
+
+  // --- What the player opened of FAF's (fafre/opened.lua) ------------------------------------------------------------------
+
+  constexpr char kOpenedHelp[] =
+    "FafreGriffOpened(left, top, right, bottom, ...) - what the player opened of FAF's that shows, which Griff's pieces step aside from";
+
+  /// What the player opened of FAF's that shows now, four numbers a box; none: nothing.
+  int ReportOpened(lua_State* const lua)
+  {
+    const int count = lua_gettop(lua) / 4 * 4;
+    std::vector<float> opened;
+    opened.reserve(static_cast<std::size_t>(count));
+    for (int at = 1; at <= count; ++at) {
+      opened.push_back(static_cast<float>(lua_tonumber(lua, at)));
+    }
+    const std::lock_guard<std::mutex> lock(gOpenedMutex);
+    gOpened = std::move(opened);
+    return 0;
+  }
+
+  moho::CScrLuaBinder gOpenedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffOpened", &ReportOpened, nullptr, "<global>", kOpenedHelp);
 
   // --- The queues: what FAF's UI holds of the units' orders --------------------------------------------------------------
 
@@ -3867,6 +3898,20 @@ extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffOrders
   }
   const jsize count = (std::min)(env->GetArrayLength(values), static_cast<jsize>(shown.size()));
   env->SetFloatArrayRegion(values, 0, count, shown.data());
+  return count;
+}
+
+/// What the player opened of FAF's that shows (FafreGriffOpened), into `values` as many whole boxes as fit, left, top, right and
+/// bottom of each in the picture's pixels; how many numbers.
+extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffOpened(JNIEnv* const env, jclass, const jfloatArray values)
+{
+  std::vector<float> opened;
+  {
+    const std::lock_guard<std::mutex> lock(gOpenedMutex);
+    opened = gOpened;
+  }
+  const jsize count = (std::min)(env->GetArrayLength(values) / 4 * 4, static_cast<jsize>(opened.size()));
+  env->SetFloatArrayRegion(values, 0, count, opened.data());
   return count;
 }
 

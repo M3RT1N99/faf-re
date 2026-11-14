@@ -620,6 +620,8 @@ final class TouchInput implements Fingers {
     private boolean mPanned;
     /** Griff: a rest's ring is shown. */
     private boolean mRing;
+    /** Griff: the last rest that lifted rang, and so buzzed, for the group its right press may store (#storeBuzzes). */
+    private boolean mRestRang;
     /** Griff: the first finger's last places with their times, the oldest overwritten: its down first. */
     private final float[] mTrailX = new float[TRAIL];
     private final float[] mTrailY = new float[TRAIL];
@@ -698,6 +700,18 @@ final class TouchInput implements Fingers {
         if (drag == mDrag) {
             mPanned = true;
         }
+    }
+
+    /**
+     * Griff: FAF stored a control group (Game.TOAST_GROUP_STORED, a right press on its slot): whether the phone buzzes for it now,
+     * so that each stored group is felt once, as the mockup's. It is the last rest's, which buzzed as it rang, unless Box counted:
+     * that gives a rest no ring, but on a panel leaves its lift FAF's right press. A rest's ring counts for one store, so one that
+     * no rest made after it, a mouse's right click, buzzes.
+     */
+    boolean storeBuzzes() {
+        boolean buzzed = mRestRang;
+        mRestRang = false;
+        return !buzzed;
     }
 
     private int tapButton() {
@@ -1357,6 +1371,8 @@ final class TouchInput implements Fingers {
      */
     private void restTap() {
         hideRing();
+        // It rang and buzzed unless Box counted at the finger's down (#timer), which on a panel is a rest all the same.
+        mRestRang = mFingerBox == 0;
         int rail = fingerRail();
         mMouse.restTap(mStartX, mStartY, rail);
         if (rail != 0 && (rail & RAIL_BOX) == 0) {

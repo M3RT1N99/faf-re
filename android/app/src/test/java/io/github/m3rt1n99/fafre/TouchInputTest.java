@@ -553,6 +553,32 @@ public class TouchInputTest {
     }
 
     @Test
+    public void griffAGroupStoredByARestWithBoxBuzzesAsItIsStored() {
+        // The rest with Box rang for nothing, but on a slot its lift is FAF's right press, which stores the group: the store is
+        // felt then, once (the mockup's one buzz a group).
+        griff();
+        mouse.rail = TouchInput.RAIL_BOX;
+        down(0, 100, 50, 1000);
+        timerRuns();
+        up(0, 1600);
+        expect("move 100 50", "rest tap 100 50 rail 1");
+        assertTrue("the store buzzes", touch.storeBuzzes());
+        assertTrue("and one no rest made after it", touch.storeBuzzes());
+    }
+
+    @Test
+    public void griffAGroupStoredByARestThatRangBuzzesNoMore() {
+        griff();
+        assertTrue("a store no rest made, a mouse's", touch.storeBuzzes());
+        down(0, 100, 50, 1000);
+        timerRuns();
+        up(0, 1600);
+        expect("move 100 50", "held", "rest tap 100 50 rail 0");
+        assertFalse("its ring buzzed", touch.storeBuzzes());
+        assertTrue("for one store: a mouse's after it buzzes", touch.storeBuzzes());
+    }
+
+    @Test
     public void griffARestThenAQuickSecondFingerIsNoTwoFingerTap() {
         // Both fingers count, from the first one down.
         griff();

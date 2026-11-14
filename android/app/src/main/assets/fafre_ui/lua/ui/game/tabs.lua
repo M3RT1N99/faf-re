@@ -48,11 +48,18 @@ do
         end
         local BuildMenu = Scale.Built(MenuLines, BuildContent)
         local BuildOther = BuildContent
+        local Opened = import('/fafre_ui/lua/fafre/opened.lua')
         BuildContent = function(contentID)
             if contentID ~= 'main' then
-                return BuildOther(contentID)
+                BuildOther(contentID)
+            else
+                BuildMenu(contentID)
             end
-            BuildMenu(contentID)
+            -- What a tab shows, the Menu's list or the diplomacy, is what the player opened, which nothing of Griff's may cover
+            -- (fafre/opened.lua). Where another was open, FAF first folds that one away and builds this one after.
+            if controls.contentGroup then
+                Opened.Add(controls.contentGroup)
+            end
         end
     end)
     if not ok then

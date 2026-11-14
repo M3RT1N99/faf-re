@@ -163,7 +163,9 @@ the game data they imported. Everything lives in the app's external files folder
     the next action (a yellow edge and "1×"); held, it counts until it is let go (a white edge). An order picked in the
     orders panel ends after the one that a lit *Plus* queues; a held *Plus* keeps it until it is let go, as Shift does. With
     *Plus* or *Attack* and troops selected, a tap on one of your units is the order there too. In a game the keyboard is
-    *Keyboard* in FAF's Menu tab; *Keys* is the menus' only.
+    *Keyboard* in FAF's Menu tab; *Keys* is the menus' only. Each of Griff's buttons (the rail's, the pill, the tick and the
+    cross) steps aside while something you opened of FAF's lies under it, such as the overlay filters' list beside the
+    multifunction panel, the Menu, a window or a question box, and comes back when that closes.
   - On FAF's panels a tap is a click and a rest a right click (on an avatar: go to it), with the same help beside small
     controls as with the mouse. Taps on an idle avatar take its idle units in turn, as a mouse's clicks do; once you have
     given the one it took an order, the next tap takes the best idle unit left. A double tap takes them all.
@@ -214,8 +216,8 @@ the game data they imported. Everything lives in the app's external files folder
     group (with *Plus*: adds it to the selection), two taps also move the camera to it as FAF's double click does (its option
     for control groups), and a tap on an empty one says "Empty group: rest to store". A rest stores the selection there,
     replacing the group as Ctrl and the number do, and with *Plus* adds it to the group; the screen says "Group N stored"
-    (the phone buzzed once, as the rest began), or "Nothing selected". FAF's other groups (4 to 0, which a keyboard's Ctrl
-    makes) stand below them.
+    and the phone buzzes once (as the rest began, or with *Box*, whose rest gives no ring, as the group is stored), or
+    "Nothing selected". FAF's other groups (4 to 0, which a keyboard's Ctrl makes) stand below them.
     A group is no order: it leaves the undo's pill as it is.
 - **FAF's newest version** (card 5, *Get FAF's newest version*; `FafRelease`, `NewestGameFiles`, TestService's
   `ACTION_GAME_FILES`): so that the phone can play a PC on FAF's current version. The number is GitHub's latest release

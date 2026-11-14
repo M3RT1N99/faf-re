@@ -171,14 +171,16 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 | `lua/ui/game/gamemain.lua` | `OnSelectionChanged`, `OnQueueChanged`, `OnBeat`, `OnPause`, `OnResume` at the HUD's factor; the game's UI starts Griff's report of the selection (`fafre/griff.lua`, see "Griff") |
 | `lua/ui/game/construction.lua` | Griff: a build icon's click (FAF's `OnClickHandler`, which the panel's buttons take when they are made) puts its building into the draft (`fafre/griff.lua` `BuildIconClicked`, after FAF's own handler), not FAF's ghost; FAF's build mode keys arm the build mode themselves (`buildmode.lua`), and a template's key (no mouse button) and click (no build item) reach the handler but stay FAF's |
 | `lua/ui/game/unitview.lua` | Nothing hovers on a phone: FAF's "Single Unit Selected Info" is on, or a selected unit's view would go with the pointer; the abilities list, which stands over the middle of the screen, only for a finger that rests on a unit |
-| `lua/ui/game/tabs.lua` | The Menu tab has the app's *Keyboard* after Key Bindings, in both touch schemes: it brings the phone's keyboard as the bar's *Keys* does (`FafreKeyboard`, `MenuFingers.cpp`; Griff's rail has no *Keys*). The large buttons are as large as the list FAF shows fits: `Built` with 137 of FAF's lines and 70 a button of the list as `BuildContent` picks it, on 768 lines a single-player game's eleven at 0.85, a replay's ten at 0.92, a network game's eight at 1.10 |
+| `lua/ui/game/tabs.lua` | The Menu tab has the app's *Keyboard* after Key Bindings, in both touch schemes: it brings the phone's keyboard as the bar's *Keys* does (`FafreKeyboard`, `MenuFingers.cpp`; Griff's rail has no *Keys*). The large buttons are as large as the list FAF shows fits: `Built` with 137 of FAF's lines and 70 a button of the list as `BuildContent` picks it, on 768 lines a single-player game's eleven at 0.85, a replay's ten at 0.92, a network game's eight at 1.10. What a tab shows is told to `fafre/opened.lua`: nothing of Griff's covers it (see "The rail, the control groups and the keyboard") |
+| `lua/ui/game/multifunction.lua` | Its dropouts (the overlay filters' list right of the panel, the map's options, the team colours) are told to `fafre/opened.lua` as their backgrounds are made: nothing of Griff's covers them |
 | `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow. With Griff, groups 1, 2 and 3 are slots that always show (see "Griff") |
 | `lua/ui/game/avatars.lua` | A finger's pointer leaves after each tap (below), which FAF's avatar took for the mouse going and started its round of the idle units over, so that each tap took the first: the round goes on while the unit it took last still stands just before it in the avatar's list, which FAF makes anew each beat without the units ordered since, and starts over at the best idle unit where it does not, as a mouse's click after the order does |
 | `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the multifunction panel, Griff's rail and the unit view: a new window goes where it covers no panel and none of Griff's pieces, the minimap right of the screen's middle and the chat window above it ("The rail, the control groups and the keyboard"), and the reset button brings it back there (the chat's lines made again for its size); a place the user chose stays |
 | `lua/ui/dialogs/options.lua` | `DialogAt`: shown larger, with fewer rows (see "The menus"); the UI scale needs no restart |
 | `lua/maui/bitmap.lua` | A bitmap keeps the size it was made at (above) |
+| `lua/maui/window.lua` | Each window (the chat's, its options', the minimap's) is told to `fafre/opened.lua` as it is made: nothing of Griff's covers it |
 | `lua/ui/uiutil.lua` | A question in the front end is `BuiltAt`, as large on the glass as a session's. It holds no factor, as the lobby asks one (that it is connecting) just before it builds all the rest |
-| `lua/ui/controls/popups/popup.lua` | A popup shows where the page stands, from its top if it is higher than the screen |
+| `lua/ui/controls/popups/popup.lua` | A popup shows where the page stands, from its top if it is higher than the screen. In a game nothing of Griff's lies over it: it is told to `fafre/opened.lua` with the screen's box, which its shadow takes |
 | `lua/ui/controls/filepicker.lua`, `lua/ui/dialogs/replay.lua`, `saveload.lua` | `Dialog` for the three dialogs around a file picker, with the frame cut as Options' is; rows 5 mm, where FAF sets 20 pixels at any factor |
 | `lua/ui/dialogs/profile.lua` | `Dialog`, 510 lines; its list's rows |
 | `lua/ui/menus/eula.lua` | `Dialog`, with the frame cut |
@@ -559,6 +561,26 @@ ring's edge; lit for the next action in the button-on colour with the mark's edg
 from its top, clear of the label. The moment after a lift, which still counts, looks idle. What keeps clear of the rail takes its views'
 places as they are: the covers (`Covers`), and with them the handle's free map.
 
+Nothing of Griff's covers what the player opened of FAF's (2026-11-14). FAF's overlay filters' list, which the arrow of the multifunction
+panel's military button opens right of the panel (from 356 of the picture's pixels across and 160 down at 1.6, 18 rows down the screen),
+lies across the rail's row; the Menu's list (699 to 947 across at 0.85), the map's options and a question box, which FAF puts in the
+middle, lie under the pill's right end. So the hooks of the files that make them tell `fafre/opened.lua` each one as it is made: FAF's
+windows (`maui/window.lua`: the chat, its options, the minimap), its popups (`ui/controls/popups/popup.lua`: each question box, whose shadow
+over the whole screen takes every press outside it and closes it, so that its box is the screen's), the dropouts of its multifunction
+panel (`ui/game/multifunction.lua`: the overlay filters, the map's options and the team colours, one background each) and the content
+of its tabs (`ui/game/tabs.lua`: the Menu, the diplomacy). `fafre/griff.lua` reports the boxes of those that show (not destroyed, neither
+they nor what holds them hidden) where they changed (`FafreGriffOpened`), and the activity reads them each frame (`Game.griffOpened`,
+`Opened`, tested): each of the rail's buttons, the undo's pill and the draft's tick and cross that one lies under, by more than an edge,
+steps aside until it has gone. It stays unseen in its place (`View.INVISIBLE`), so it takes no finger, the program hears no cover of it
+and the pieces beside it stand where they did; the pill's time runs on, and its cover that stays after it went goes at once
+(`Covers.Lingering.forget`, tested). On the emulator at the phone's size by real fingers: as the list grew over the row after an order,
+*Plus*, *Attack* and the pill stepped aside and *Box* stayed; a tap where *Attack* stands was FAF's click on the list (its *Build
+Preview* unchecked), and the pieces came back as the list folded away (it opened to 356 to 567 across and 160 to 656 down); with the
+Menu open the pill that an order 0.45 s before had brought stepped aside and the rail stayed; a question box (the Menu's *Restart Game*) took all three buttons away until its *No*. Not
+told, and so still covered where one meets a piece: the simulation's dialogues (a mission's, some mods'), the construction panel's
+template menu, and what a mod opens by other means. A dialog with a factor of its own, as the connectivity panel's, gives the menus the
+fingers, which puts the rail away anyway.
+
 FAF's minimap and chat window, for a player who has not placed them (the hooks of `ui/game/minimap.lua` and `chat.lua`), have homes
 that cover none of FAF's panels and none of Griff's pieces: the rail's row with the pill at its widest, the group slots, the draft's tick
 and cross, and the handle's reach (7 mm) about the view's middle, where the handle goes when no place beside its group is free (above).
@@ -577,7 +599,7 @@ wherever the window stands. The homes are the phone's picture's: on a screen of 
 panel or the handle's reach about the middle (at 1.67, the factor of a screen under 70 mm, the open chat window reaches into it, 8
 of the picture's lines on the emulator's screen; on a 21:9 picture the minimap's home does at either factor), and a window the player
 moves stays where they put it. The handle then goes to the free place nearest the middle (above): with the chat open at 1.67 on the
-emulator's screen, 10 lines below the middle.
+emulator's screen, 10 lines below the middle. A piece of Griff's that such a window lies over steps aside (above).
 
 The control groups (T3.3; the hook of `ui/game/controlgroups.lua`, under Griff only): Griff has no Ctrl to make a group with, so groups 1,
 2 and 3 are slots that always show, in FAF's place for its groups under the avatars, an empty one as a dim control of the same size.
@@ -594,7 +616,7 @@ second, as FAF's own controls do.
 | Tap | FAF's left press: the group is the selection (`ApplySelectionSet`); with *Plus* (Shift) it joins the selection |
 | Two taps | FAF's double click (the tap ladder clicks a second tap on FAF's UI where the first went, and the message layer makes it its double click): the group again, whose second selection soon after the first moves the camera to it as the player's option `selection_sets_double_tap_behavior` says |
 | Tap on an empty slot | Nothing; the toast says *Empty group: rest to store* |
-| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. The toast says *Group N stored*; the phone buzzed once, as the rest's ring came (the mockup's one buzz), and the store adds none; with nothing selected *Nothing selected*, and the group stays as it was |
+| Rest | FAF's right press, which the hook makes the key action of Ctrl and the number, `UI_MakeSelectionSet`: the selection is the group from now on (FAF's own right press would append). With *Plus*: FAF's own `AppendSelectionToSet`, the selection joins the group. The toast says *Group N stored*, and the phone buzzes once for it (the mockup's one buzz): as the rest's ring came, and the store adds none; with *Box* counting the rest rang for nothing (above), so the store buzzes, as does one that no rest made, a mouse's right press (`TouchInput.storeBuzzes`, tested; on the emulator one buzz each, with *Box* lit 28 ms after the lift, without it 303 ms after the finger's down). With nothing selected *Nothing selected*, and the group stays as it was |
 
 The words come from the hook through `FafreGriffToast` (`GriffAndroid.cpp`) as the draft's do. A group is the UI's: nothing of it
 orders, so a tap or a rest on a slot neither ends the undo's record nor takes the pill away, and the handle follows the selection it

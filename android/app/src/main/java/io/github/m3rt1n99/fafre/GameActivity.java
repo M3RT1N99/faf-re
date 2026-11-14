@@ -216,6 +216,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final Covers mCovers = new Covers();
     /** The undo's pill's cover, which stays a short while after the pill went: a late tap meant for it lands on nothing. */
     private final Covers.Lingering mPillCover = new Covers.Lingering(PILL_COVER_AFTER_MS);
+    /** What the player opened of FAF's that shows (Game.griffOpened), which Griff's pieces over the picture step aside from. */
+    private final Opened mOpened = new Opened();
+    private final float[] mOpenedValues = new float[Opened.VALUES];
     private final int[] mPlaceOnWindow = new int[2];
     private final int[] mLayerOnWindow = new int[2];
     /**
@@ -958,9 +961,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         mBar.setLayoutParams(place);
         if (mGriff) {
-            for (RailButton button : mRailButtons) {
-                button.setVisibility(inGame ? View.VISIBLE : View.GONE);
-            }
+            showRailButtons();
             mKeysButton.setVisibility(inGame ? View.GONE : View.VISIBLE);
             if (!inGame) {
                 releaseRail();
@@ -999,6 +1000,26 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         place.leftMargin = Math.round(Rail.LEFT_MM * millimetre);
         place.topMargin = (int) Math.round(
             HudScale.barTopPixels(factor) * viewPixelsPerPicturePixel() + HudScale.millimetresH(mScreenMm) * millimetre);
+    }
+
+    /**
+     * The rail's buttons in a game, where placeRail put them, each stepping aside while something the player opened of FAF's
+     * lies under it (Opened): FAF's overlay filters' list opens right of its multifunction panel, across the row. None in the
+     * menus.
+     */
+    private void showRailButtons() {
+        FrameLayout.LayoutParams row = (FrameLayout.LayoutParams) mBar.getLayoutParams();
+        int left = row.leftMargin + mBar.getPaddingLeft();
+        for (int at = 0; at < mRailButtons.size(); ++at) {
+            int buttonLeft = left + at * (mRailSide + mRailGap);
+            boolean aside = mBarInGame && openedUnder(buttonLeft, row.topMargin, mRailSide, mRailSide);
+            mRailButtons.get(at).setVisibility(Opened.visibility(mBarInGame, aside));
+        }
+    }
+
+    /** Whether something the player opened of FAF's lies under a piece at this place of the screen, of this size (Opened). */
+    private boolean openedUnder(float left, float top, float width, float height) {
+        return mOpened.under(pictureX(left), pictureY(top), pictureX(left + width), pictureY(top + height));
     }
 
     /** The HUD's factor: the user's UI scale can have changed what the app worked out. */
@@ -1154,6 +1175,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      */
     private void readGriff() {
         boolean shown = mGriffPolling && Game.griff(mGriffHandle);
+        readOpened();
         readDraft();
         readOrders();
         setGriffCovers();
@@ -1169,6 +1191,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mPageView.screenY(mGriffHandle[3]), (int) mGriffHandle[4], mGriffHandle[5] != 0);
         mGriffLayer.setFreeMap(mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_LEFT]), mPageView.screenY(mGriffHandle[Game.GRIFF_FREE_TOP]),
             mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_RIGHT]));
+    }
+
+    /**
+     * What the player opened of FAF's that shows now (Opened): where it changed, the rail's buttons and the draft's tick and cross
+     * step aside from it or come back. The pill follows each frame (placePill).
+     */
+    private void readOpened() {
+        if (mOpened.update(mOpenedValues, mGriffPolling ? Game.griffOpened(mOpenedValues) : 0)) {
+            showRailButtons();
+            placeDraftButtons();
+        }
     }
 
     /** The draft as the program shows it now; the layer, the tick and the cross follow where it changed. */
@@ -1200,16 +1233,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /**
      * The tick and the cross while the draft is open in a game (the mockup's): on the map, their bottoms 2 mm above FAF's
      * construction panel, the tick's right 2 mm left of the column at the right (FAF's avatars), the cross 2 mm left of it;
-     * against the screen's edges where FAF shows neither.
+     * against the screen's edges where FAF shows neither. Each steps aside while something the player opened of FAF's lies
+     * under it (Opened), such as a window the player moved there.
      */
     private void placeDraftButtons() {
         if (mTick == null) {
             return;
         }
-        int visibility = mDraft.open() && mBarInGame ? View.VISIBLE : View.GONE;
-        mTick.setVisibility(visibility);
-        mCross.setVisibility(visibility);
-        if (visibility != View.VISIBLE) {
+        if (!mDraft.open() || !mBarInGame) {
+            mTick.setVisibility(View.GONE);
+            mCross.setVisibility(View.GONE);
             return;
         }
         float pixels = viewPixelsPerMm();
@@ -1220,8 +1253,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         float right = (mDraft.columnLeft() >= 0 ? Math.min(mDraft.columnLeft(), width) : width) - room;
         int tick = viewMm(GRIFF_TICK_MM);
         int cross = viewMm(GRIFF_CROSS_MM);
+        float crossLeft = right - tick - room - cross;
         placeView(mTick, right - tick, bottom - tick, tick);
-        placeView(mCross, right - tick - room - cross, bottom - cross, cross);
+        placeView(mCross, crossLeft, bottom - cross, cross);
+        mTick.setVisibility(Opened.visibility(true, openedUnder(right - tick, bottom - tick, tick, tick)));
+        mCross.setVisibility(Opened.visibility(true, openedUnder(crossLeft, bottom - cross, cross, cross)));
     }
 
     private static void placeView(View view, float left, float top, int side) {
@@ -1254,12 +1290,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /**
      * The undo's pill while it shows in a game (the mockup's look): the bar's last, in the rail's row a gap right of Attack, as
      * high as the rail's buttons, Rail.PILL_WIDEST_MM wide but ending the handle's reach before the screen's middle, where a
-     * handle with no place beside its group goes (Rail.pillWidth), with the time it has left.
+     * handle with no place beside its group goes (Rail.pillWidth), with the time it has left. It steps aside while something the
+     * player opened of FAF's lies under it (Opened): the Menu's list, the map's options and a question box's shadow lie there,
+     * and its time runs on.
      */
     private void placePill() {
         long now = SystemClock.uptimeMillis();
-        boolean shown = mBarInGame && mUndo.showing(now);
-        if (shown) {
+        boolean wanted = mBarInGame && mUndo.showing(now);
+        boolean aside = false;
+        if (wanted) {
             FrameLayout.LayoutParams row = (FrameLayout.LayoutParams) mBar.getLayoutParams();
             int left = Rail.pillLeft(row.leftMargin + mBar.getPaddingLeft(), mRailSide, mRailGap);
             float millimetre = viewPixelsPerMm();
@@ -1271,9 +1310,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 size.height = mRailSide;
                 mPill.setLayoutParams(size);
             }
+            aside = openedUnder(left, row.topMargin, width, mRailSide);
             mPill.show(mUndo.waiting(), mUndo.left(now));
         }
-        mPill.setVisibility(shown ? View.VISIBLE : View.GONE);
+        mPill.setVisibility(Opened.visibility(wanted, aside));
     }
 
     /**
@@ -1294,7 +1334,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /**
      * The app's pieces over the picture for the program (Covers): the rail's buttons, the draft's tick and cross and the undo's
      * pill, each while it shows, in the picture's pixels; the program hears them when they changed. The Keys shows in the menus
-     * only, where no finger is Griff's.
+     * only, where no finger is Griff's. The pill's cover that stays after it went goes at once where something the player opened
+     * of FAF's lies, as the pieces step aside from it.
      */
     private void setGriffCovers() {
         mFingerLayer.getLocationInWindow(mLayerOnWindow);
@@ -1304,6 +1345,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         cover(mTick, null);
         cover(mCross, null);
+        int[] pillWas = mPillCover.box();
+        if (mOpened.under(pillWas[0], pillWas[1], pillWas[2], pillWas[3])) {
+            mPillCover.forget();
+        }
         cover(mPill, mPillCover);
         if (mCovers.end()) {
             Game.setGriffCovers(mCovers.boxes(), mCovers.count());
@@ -1472,7 +1517,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 } else if (mGriffSaid[at] == Game.SAID_ROUTE_GIVEN_UP) {
                     mGriffLayer.toast(CANCELLED);
                 } else if (mGriffSaid[at] == Game.SAID_TOAST) {
-                    // A group stored buzzes once, as the mockup's: the rest that stored it buzzed as its ring came.
+                    // A group stored buzzes once, as the mockup's: as the ring of the rest that stored it came, or now (TouchInput).
+                    if (mGriffSaid[at + 1] == Game.TOAST_GROUP_STORED && mTouch.storeBuzzes()) {
+                        buzz();
+                    }
                     mGriffLayer.toast(toastWords(mGriffSaid[at + 1], mGriffSaid[at + 2]));
                 } else if (mGriffSaid[at] == Game.SAID_COMMITTED) {
                     // The tick's last click left the pointer on the map, which a finger's lift would have taken away.
@@ -1552,7 +1600,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    /** What a finger feels: a hold, a rest (also the one that stores a control group). */
+    /** What a finger feels: a hold, a rest, a control group stored where its rest gave no buzz (TouchInput.storeBuzzes). */
     private void buzz() {
         mSurface.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
     }
