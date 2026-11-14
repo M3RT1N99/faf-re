@@ -1,17 +1,14 @@
 diff --git a/src/gpg/gal/backends/vulkan/VulkanLoader.cpp b/src/gpg/gal/backends/vulkan/VulkanLoader.cpp
+index c4ba9ed1a..c13d5b218 100644
 --- a/src/gpg/gal/backends/vulkan/VulkanLoader.cpp
 +++ b/src/gpg/gal/backends/vulkan/VulkanLoader.cpp
-@@ -15,7 +15,13 @@ namespace gpg::gal::vulkan
-     if (module != nullptr) {
-       return true;
+@@ -17,6 +17,9 @@ namespace gpg::gal::vulkan
      }
-+#if defined(_WIN32)
+ #if FAFRE_PLATFORM_WINDOWS
      module = ::LoadLibraryA("vulkan-1.dll");
-+#elif defined(__ANDROID__)
++#elif FAFRE_PLATFORM_ANDROID
++    // Android's loader has no versioned name.
 +    module = ::LoadLibraryA("libvulkan.so");
-+#else
-+    module = ::LoadLibraryA("libvulkan.so.1");
-+#endif
-     if (module == nullptr) {
-       return false;
-     }
+ #else
+     // The Linux client (issue #255): the Vulkan loader's soname; LoadLibraryA is dlopen there.
+     module = ::LoadLibraryA("libvulkan.so.1");

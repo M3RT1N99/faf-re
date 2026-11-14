@@ -1,5 +1,5 @@
 diff --git a/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp b/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
-index 606c4af2..2355bd92 100644
+index 81b683b5f..23d8b45ea 100644
 --- a/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
 +++ b/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
 @@ -3,11 +3,12 @@
@@ -18,7 +18,7 @@ index 606c4af2..2355bd92 100644
 +// The report has a thread of its own, so that nothing in it can cost the tombstone (ReportThread).
 +// Memory watches and code probes are not available.
  
- #if !defined(_WIN32)
+ #if !FAFRE_PLATFORM_WINDOWS
  
 @@ -27,10 +28,14 @@
  #include <ctime>
@@ -94,13 +94,16 @@ index 606c4af2..2355bd92 100644
 +    return gReportDir;
    }
  
-   void AppendToFile(const char* const path, const char* const text, const std::size_t length)
-@@ -93,14 +102,13 @@ namespace
+   void AppendToFile(
+@@ -97,17 +106,16 @@ namespace
      (void)::close(fd);
    }
  
 +  /// The stack of the thread that asked for the report.
-   void WriteStack(std::FILE* const sink, const int skipFrames)
+   void WriteStack(
+     std::FILE* const sink,
+     const int skipFrames
+   )
    {
 -    void* frames[kMaxFrames]{};
 -    const int count = platform::posix::Backtrace(frames, kMaxFrames);
@@ -114,11 +117,10 @@ index 606c4af2..2355bd92 100644
      }
    }
  
-@@ -122,8 +130,33 @@ namespace
+@@ -131,12 +139,41 @@ namespace
      }
    }
  
--  void OnFatalSignal(const int signalNumber, siginfo_t* const info, void*)
 +  /// The fatal signals' handlers as this library found them, taken before its own: debuggerd's,
 +  /// which Android's linker installs in every process.
 +  struct sigaction gFirstActions[NSIG]{};
@@ -126,7 +128,11 @@ index 606c4af2..2355bd92 100644
 +  /// A fatal signal's end. debuggerd's handler writes the tombstone from the fault's context and
 +  /// sends the signal again, which ends the process when this handler returns. Otherwise the
 +  /// default action follows.
-+  void EndFatalSignal(const int signalNumber, siginfo_t* const info, void* const machine)
++  void EndFatalSignal(
++    const int signalNumber,
++    siginfo_t* const info,
++    void* const machine
++  )
 +  {
 +    const struct sigaction& first = gFirstActions[signalNumber];
 +    if ((first.sa_flags & SA_SIGINFO) != 0) {
@@ -136,7 +142,12 @@ index 606c4af2..2355bd92 100644
 +    (void)::raise(signalNumber);
 +  }
 +
-+  void OnFatalSignal(const int signalNumber, siginfo_t* const info, void* const machine)
+   void OnFatalSignal(
+     const int signalNumber,
+     siginfo_t* const info,
+-    void*
++    void* const machine
+   )
    {
 +    // A fault in the report ends the report, and the thread that waits for it goes on.
 +    if (gReportThreadRuns.load() && ::pthread_equal(::pthread_self(), gReportThread) != 0) {
@@ -149,7 +160,7 @@ index 606c4af2..2355bd92 100644
      char reason[256]{};
      std::snprintf(
        reason, sizeof(reason), "%s at address %p", SignalName(signalNumber), info != nullptr ? info->si_addr : nullptr
-@@ -131,15 +164,12 @@ namespace
+@@ -144,18 +181,15 @@ namespace
      gpg::diag::CrashReportContext context{};
      context.reason = reason;
      gpg::diag::HandleFatalPath(context);
@@ -162,13 +173,16 @@ index 606c4af2..2355bd92 100644
  
    /// Until InstallCrtDiagnosticHooks runs (static initialisation, early startup): the signal
 -  /// and the raw stack on stderr, async-signal-safe, then the default action.
--  void OnEarlyFatalSignal(const int signalNumber, siginfo_t* const info, void*)
 +  /// and the raw stack on stderr, async-signal-safe, then the signal's end.
-+  void OnEarlyFatalSignal(const int signalNumber, siginfo_t* const info, void* const machine)
+   void OnEarlyFatalSignal(
+     const int signalNumber,
+     siginfo_t* const info,
+-    void*
++    void* const machine
+   )
    {
      char line[128];
-     const int length = std::snprintf(
-@@ -150,8 +180,7 @@ namespace
+@@ -170,8 +204,7 @@ namespace
      void* frames[kMaxFrames];
      const int count = platform::posix::Backtrace(frames, kMaxFrames);
      platform::posix::BacktraceSymbolsFd(frames, count, 2);
@@ -178,7 +192,7 @@ index 606c4af2..2355bd92 100644
    }
  
    // Priority 100: before the reflection pre-registration phase (101, StaticInitPhase.h).
-@@ -163,8 +192,8 @@ namespace
+@@ -183,8 +216,8 @@ namespace
      action.sa_sigaction = &OnEarlyFatalSignal;
      action.sa_flags = SA_SIGINFO | SA_RESETHAND;
      sigemptyset(&action.sa_mask);
@@ -189,7 +203,7 @@ index 606c4af2..2355bd92 100644
      }
    }
  #pragma clang diagnostic pop
-@@ -180,6 +209,85 @@ namespace
+@@ -200,6 +233,87 @@ namespace
  
  namespace gpg::diag
  {
@@ -249,7 +263,9 @@ index 606c4af2..2355bd92 100644
 +     * can send. Here they cost the report: the thread that asks goes on, at the latest after
 +     * kReportWaitSeconds, and a fault here ends only this thread (OnFatalSignal).
 +     */
-+    void* ReportThread(void*)
++    void* ReportThread(
++      void*
++    )
 +    {
 +      while (::sem_wait(&gReportAsked) != 0) {
 +      }
@@ -272,10 +288,10 @@ index 606c4af2..2355bd92 100644
 +    }
 +  } // namespace
 +
-   void InstallCrtDiagnosticHooks(const CrtDiagOptions& options)
-   {
-     (void)options; // CRT heap validation is MSVC's.
-@@ -193,19 +301,22 @@ namespace gpg::diag
+   void InstallCrtDiagnosticHooks(
+     const CrtDiagOptions& options
+   )
+@@ -215,19 +329,22 @@ namespace gpg::diag
  
      struct sigaction action{};
      action.sa_sigaction = &OnFatalSignal;
@@ -301,7 +317,7 @@ index 606c4af2..2355bd92 100644
      }
      return gDiagLogPath;
    }
-@@ -291,7 +402,7 @@ namespace gpg::diag
+@@ -334,7 +451,7 @@ namespace gpg::diag
        (void)::localtime_r(&now, &parts);
        char stamp[32]{};
        (void)std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &parts);
@@ -310,7 +326,7 @@ index 606c4af2..2355bd92 100644
      }
      return gReportPath;
    }
-@@ -299,7 +410,7 @@ namespace gpg::diag
+@@ -342,7 +459,7 @@ namespace gpg::diag
    const char* CrashLatestReportPath()
    {
      if (gLatestReportPath[0] == '\0') {
@@ -319,7 +335,7 @@ index 606c4af2..2355bd92 100644
      }
      return gLatestReportPath;
    }
-@@ -323,47 +434,25 @@ namespace gpg::diag
+@@ -368,47 +485,25 @@ namespace gpg::diag
        return false;
      }
  
@@ -382,4 +398,4 @@ index 606c4af2..2355bd92 100644
 +    return gReportWritten.load();
    }
  
-   void WriteEnvironmentReport(std::FILE* const sink)
+   void WriteEnvironmentReport(

@@ -1,27 +1,28 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.h b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-index db3a561d..7a38ede7 100644
+index 39ce88622..9ad2df8dc 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-@@ -155,6 +155,7 @@ namespace gpg::gal
-     [[nodiscard]] std::uint64_t RecordingSerial() const noexcept { return mSubmittedSerial + 1U; }
+@@ -210,6 +210,7 @@ namespace gpg::gal
+     }
      /** The image of swap chain `swapChain` the frame draws into. */
      [[nodiscard]] std::uint32_t AcquiredImage(std::uint32_t swapChain);
 +    [[nodiscard]] bool HasAcquiredImage(std::uint32_t swapChain) const noexcept;
  
      [[nodiscard]] vulkan::UploadAllocation AllocateUpload(VkDeviceSize bytes, VkDeviceSize alignment);
      [[nodiscard]] vulkan::TrackedBuffer CreateDeviceBuffer(VkDeviceSize bytes, VkBufferUsageFlags usage);
-@@ -207,6 +208,7 @@ namespace gpg::gal
-       std::uint32_t acquired = 0;
-       bool hasImage = false;
-       bool acquireWaitPending = false; // the next submission waits for the acquire
-+      bool stale = false;              // Android client build: acquiring or presenting failed on it
+@@ -284,6 +285,8 @@ namespace gpg::gal
+       std::uint32_t headWidth = 0; // the size the engine draws the head at
+       std::uint32_t headHeight = 0;
+       // Out of date or suboptimal for the window: made again at the window's size before the next acquire.
++      // Android client build: also when acquiring or presenting failed on it; TestCooperativeLevel then
++      // takes the next surface.
+       bool stale = false;
        void* window = nullptr;
      };
- 
-@@ -241,8 +243,17 @@ namespace gpg::gal
-     void CreateSwapChains(const DeviceContext& context);
-     void CreateSwapChain(SwapChain& swapChain, std::uint32_t width, std::uint32_t height);
-     void DestroySwapChain(SwapChain& swapChain, bool keepSurface) noexcept;
+@@ -333,8 +336,17 @@ namespace gpg::gal
+     void CopyHeadToSwapChain(vulkan::TrackedImage& head, SwapChain& swapChain);
+     /** A device-local colour image with a view, usable as a target, a texture and a copy source or destination. */
+     RenderTargetVulkan::Buffer CreateColorTargetImage(VkFormat format, std::uint32_t width, std::uint32_t height);
 +    void WaitForSurface(SwapChain& swapChain);
      void CreateRenderTargets();
      void ReleaseRenderTargets() noexcept;
@@ -36,32 +37,21 @@ index db3a561d..7a38ede7 100644
      void CheckAvailableFormats(DeviceContext* context);
      void Shutdown() noexcept;
      void ResetState();
-@@ -260,6 +271,9 @@ namespace gpg::gal
+@@ -352,6 +364,8 @@ namespace gpg::gal
      void TransitionForTransferWrite(vulkan::TrackedImage& image);
      void TransitionSampled(const std::vector<effects::TextureBinding>& bindings);
      void TransferBarrier();
-+    void RecordMemoryBarrier(VkPipelineStageFlags2 sourceStages, VkAccessFlags2 sourceAccess, VkPipelineStageFlags2 targetStages, VkAccessFlags2 targetAccess);
 +    /** Android client build: for a copy to host memory, before the submission that is waited for. */
 +    void HostReadBarrier();
  
      [[nodiscard]] ProgramState& StateFor(effects::EffectProgram& program);
      [[nodiscard]] VkDescriptorSet AllocateSet(VkDescriptorSetLayout layout);
-@@ -276,7 +290,8 @@ namespace gpg::gal
-     [[nodiscard]] VkShaderModule ModuleFor(const effects::CompiledEntry& entry, const effects::CompiledEntry* vertex);
-     [[nodiscard]] const effects::SpirvInterface& InterfaceOf(const effects::CompiledEntry& entry);
-     [[nodiscard]] VkPipeline PipelineFor(const BoundPass& pass, VkPrimitiveTopology topology);
--    [[nodiscard]] bool PrepareDraw(std::uint32_t topologyToken, bool indexed);
-+    /** `indexed`: the indexed draw, or null for a draw of the vertices below `vertexEnd`. */
-+    [[nodiscard]] bool PrepareDraw(std::uint32_t topologyToken, const DrawIndexedContext* indexed, std::uint32_t vertexEnd);
-     [[nodiscard]] VkImageView TargetView(VkFormat& format, vulkan::TrackedImage*& image, std::uint32_t& width, std::uint32_t& height);
-     void Trace(const char* format, ...);
-     void DumpBackBufferIfDue();
-@@ -312,6 +327,8 @@ namespace gpg::gal
-     std::uint64_t mSubmittedSerial = 0;
+@@ -420,6 +434,8 @@ namespace gpg::gal
      bool mAnisotropy = false;
      bool mWireframeSupported = false;
-+    bool mDepthBiasClamp = false; // Android client build: the feature, which phones may lack
-+    DWORD mSurfaceFailingSince = 0U; // Android client build: since when AttachSurface fails on a surface that is there
-     bool mMemoryBudget = false; // VK_EXT_memory_budget enabled
-     std::string mDriverName;    // VkPhysicalDeviceDriverProperties driverName + driverInfo
+     bool mTessellationSupported = false; // engine addition: tessellated passes draw only with it
++    bool mDepthBiasClamp = false;        // Android client build: the feature, which phones may lack
++    DWORD mSurfaceFailingSince = 0U;     // Android client build: since when AttachSurface fails on a surface that is there
+     bool mMemoryBudget = false;          // VK_EXT_memory_budget enabled
+     std::string mDriverName;             // VkPhysicalDeviceDriverProperties driverName + driverInfo
      VkFormat mDepthStencilFormat = VK_FORMAT_D24_UNORM_S8_UINT;

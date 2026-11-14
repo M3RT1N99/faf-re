@@ -1,19 +1,8 @@
 diff --git a/src/moho/audio/SofdecRuntime.cpp b/src/moho/audio/SofdecRuntime.cpp
-index 82d57894..d87b3dd7 100644
+index 82d578942..b4491481e 100644
 --- a/src/moho/audio/SofdecRuntime.cpp
 +++ b/src/moho/audio/SofdecRuntime.cpp
-@@ -20,6 +20,10 @@
- #include <exception>
- #include <memory>
- #include <span>
-+#include <string>
-+
-+// Android client build: src/platform/posix/Win32Shim.cpp has it.
-+std::string Win32Android_DiskPath(const char* path);
- 
- namespace moho
- {
-@@ -28,6 +32,8 @@ namespace moho
+@@ -28,6 +28,8 @@ namespace moho
      sfd::Player player;
      int outputPitch{}, outputHeight{};
      std::shared_ptr<sfd::DecodedVideoFrame> borrowedFrame;
@@ -22,19 +11,15 @@ index 82d57894..d87b3dd7 100644
    };
  } // namespace moho
  std::int32_t mwPlyCalcWorkCprmSfd(
-@@ -83,7 +89,10 @@ void mwPlyStartFname(
+@@ -83,6 +85,7 @@ void mwPlyStartFname(
  {
    if (p) {
      p->borrowedFrame.reset();
--    p->player.Open(path);
 +    p->uploadedFrame.reset();
-+    // Android client build: CMovie's path is the file system's, Windows-style and in lower case, and
-+    // the player and FFmpeg open it themselves, past the layer that takes such a path.
-+    p->player.Open(Win32Android_DiskPath(path).c_str());
+     p->player.Open(path);
    }
  }
- std::int32_t mwPlyGetStat(
-@@ -101,8 +110,13 @@ moho::MwsfdFrameInfo* mwPlyGetCurFrm(
+@@ -101,8 +104,13 @@ moho::MwsfdFrameInfo* mwPlyGetCurFrm(
      return nullptr;
    out->bufferAddress = nullptr;
    if (p) {
@@ -50,7 +35,7 @@ index 82d57894..d87b3dd7 100644
    }
    return out;
  }
-@@ -150,6 +164,7 @@ void mwPlyFxCnvFrmARGB8888(
+@@ -150,6 +158,7 @@ void mwPlyFxCnvFrmARGB8888(
        frame.bgra.data() + static_cast<std::size_t>(y) * frame.pitch,
        frame.pitch
      );

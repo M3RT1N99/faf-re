@@ -1,10 +1,10 @@
 diff --git a/src/moho/ui/CUIWorldViewEvents.cpp b/src/moho/ui/CUIWorldViewEvents.cpp
-index fda09e9c..28b54c99 100644
+index b9aa5fbf6..8d58357e9 100644
 --- a/src/moho/ui/CUIWorldViewEvents.cpp
 +++ b/src/moho/ui/CUIWorldViewEvents.cpp
-@@ -1,6 +1,188 @@
- #include "moho/ui/UiPrivate.h"
- #include "moho/lua/CScrLuaObjectFactory.h"
+@@ -6,6 +6,88 @@
+ #include "platform/Window.h"
+ #endif
  
 +#include <TapTarget.h>
 +
@@ -20,7 +20,7 @@ index fda09e9c..28b54c99 100644
 +  std::atomic<moho::CUIWorldView*> sMainWorldView{nullptr};
 +
 +  /** What the world's next press would be for, if anything: an order, a ping, a building. Ask only with a world view up. */
-+  [[nodiscard]] msvc8::string CommandMode()
++  [[nodiscard]] fa::string CommandMode()
 +  {
 +    moho::UICommandModeData commandMode{};
 +    moho::UI_GetCommandMode(commandMode);
@@ -29,7 +29,7 @@ index fda09e9c..28b54c99 100644
 +
 +  [[nodiscard]] bool IsPlacingBuilding()
 +  {
-+    const msvc8::string mode = CommandMode();
++    const fa::string mode = CommandMode();
 +    return mode == "build" || mode == "buildanchored";
 +  }
 +
@@ -88,8 +88,14 @@ index fda09e9c..28b54c99 100644
 +  }
 +} // namespace
 +
-+namespace moho
-+{
+ namespace moho
+ {
+   bool ren_BuildGhostsPerBeat = true;
+@@ -19,6 +101,103 @@ namespace moho
+       &ren_BuildGhostsPerBeat
+     );
+   } // namespace
++
 +  /** Whether a building's ghost waits to be placed, as the last frame saw it. */
 +  bool UI_PlacingBuilding() noexcept
 +  {
@@ -186,12 +192,10 @@ index fda09e9c..28b54c99 100644
 +      return true;
 +    }
 +  }
-+} // namespace moho
-+
+ } // namespace moho
+ 
  namespace
- {
-   // FAF community binary-patch addition (see CMauiControl::SetCustomRender).
-@@ -873,6 +1055,25 @@ void moho::UIBuildDragger::DragRelease(
+@@ -896,6 +1075,25 @@ void moho::UIBuildDragger::DragRelease(
    delete this;
  }
  
@@ -217,7 +221,7 @@ index fda09e9c..28b54c99 100644
  /**
   * Address: 0x00822F60 (FUN_00822F60)
   *
-@@ -1821,9 +2022,6 @@ moho::CUIWorldView::CUIWorldView(
+@@ -1853,9 +2051,6 @@ moho::CUIWorldView::CUIWorldView(
        if (!params["ui_SelectTolerance"].IsNil()) {
          moho::ui_SelectTolerance = params["ui_SelectTolerance"].GetNumber();
        }
@@ -227,7 +231,7 @@ index fda09e9c..28b54c99 100644
        if (!params["ui_ExtractSnapTolerance"].IsNil()) {
          moho::ui_ExtractSnapTolerance = params["ui_ExtractSnapTolerance"].GetNumber();
        }
-@@ -1899,6 +2097,13 @@ moho::CUIWorldView::~CUIWorldView()
+@@ -1928,6 +2123,13 @@ moho::CUIWorldView::~CUIWorldView()
    }
  
    ren_Viewport->RemoveWorldView(this);
@@ -241,7 +245,7 @@ index fda09e9c..28b54c99 100644
  }
  
  /**
-@@ -3231,7 +3436,11 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3257,7 +3459,11 @@ bool moho::CUIWorldView::HandleEvent(
    // Ordering matters: this test sits ahead of the left-press one, and a
    // double-click on any other button falls straight through into the
    // right-double-click arm at 0x00870F1B.
@@ -254,7 +258,7 @@ index fda09e9c..28b54c99 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3259,7 +3468,7 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3285,7 +3491,7 @@ bool moho::CUIWorldView::HandleEvent(
    }
  
    // --- left-button press (0x00870CA4) ------------------------------------
@@ -263,7 +267,7 @@ index fda09e9c..28b54c99 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3277,6 +3486,13 @@ bool moho::CUIWorldView::HandleEvent(
+@@ -3303,6 +3509,13 @@ bool moho::CUIWorldView::HandleEvent(
  
      case COMMOD_Build:
      case COMMOD_BuildAnchored:
@@ -277,7 +281,7 @@ index fda09e9c..28b54c99 100644
        func_NewUIBuildDragger(GetRootFrame(), mWldSession, &eventData, mCamera.get(), &mBuildDrag);
        return true;
  
-@@ -3403,6 +3619,13 @@ void moho::CUIWorldView::Frame(
+@@ -3428,6 +3641,13 @@ void moho::CUIWorldView::Frame(
  {
    func_ProcessMouseScrubbing();
  

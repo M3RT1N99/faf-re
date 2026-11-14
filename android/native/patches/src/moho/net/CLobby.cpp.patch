@@ -1,8 +1,8 @@
 diff --git a/src/moho/net/CLobby.cpp b/src/moho/net/CLobby.cpp
-index 397ad4ac..3fff35ed 100644
+index 6355040b6..ef8653d4f 100644
 --- a/src/moho/net/CLobby.cpp
 +++ b/src/moho/net/CLobby.cpp
-@@ -571,6 +571,13 @@ CLobby::~CLobby()
+@@ -577,6 +577,13 @@ CLobby::~CLobby()
          peer->peerConnection = nullptr;
        }
      }
@@ -16,33 +16,12 @@ index 397ad4ac..3fff35ed 100644
      connector->Push();
      connector->Destroy();
      connector = nullptr;
-@@ -966,7 +973,7 @@ void CLobby::OnNewPeer(
+@@ -972,7 +979,7 @@ void CLobby::OnNewPeer(
    const gpg::BinaryReader br{&s};
  
-   msvc8::string name{};
+   fa::string name{};
 -  u_long host{0};
 +  std::uint32_t host{0}; // four bytes on the wire: SPeer::SendInfoTo
    u_short port{0};
    int32_t uid{0};
  
-@@ -2238,7 +2245,7 @@ int moho::cfunc_CLobbyGetPeerStyle(
- moho::CScrLuaInitForm* moho::func_CLobbyGetPeerStyle_LuaFuncDef()
- {
-   static CScrLuaBinder binder(
--    UserLuaInitSet(),
-+    moho::SCR_UserLuaInitSet(),
-     "GetPeerStyle",
-     &moho::cfunc_CLobbyGetPeerStyle,
-     &CScrLuaMetatableFactory<CLobby>::Instance(),
-@@ -2256,10 +2263,7 @@ int moho::cfunc_CLobbyGetPeerStyleL(
-   LuaPlus::LuaState* const state
- )
- {
--  const int argumentCount = lua_gettop(state->m_state);
--  if (argumentCount != 2) {
--    LuaPlus::LuaState::Error(state, kLuaExpectedArgsWarning, kCLobbyGetPeerStyleHelp, 2, argumentCount);
--  }
-+  moho::SCR_ExpectExactArgs(state, 2, kCLobbyGetPeerStyleHelp);
- 
-   LuaPlus::LuaObject lobbyObject(LuaPlus::LuaStackObject(state, 1));
-   const CLobby* const lobby = SCR_FromLua_CLobby(lobbyObject, state);

@@ -65,7 +65,7 @@ endif()
 
 # The files compiled changed (patches/), and those that include a patched header by its bare name
 # from the header's folder.
-set(FAF_ANDROID_OVERLAY_SIBLINGS src/moho/render/ID3DTextureSheet.cpp)
+set(FAF_ANDROID_OVERLAY_SIBLINGS src/gpg/gal/backends/vulkan/RayTracingVulkan.cpp)
 include("${FAF_ANDROID_DIR}/cmake/FafAndroidOverlay.cmake")
 
 # DXC, the effects' shader compiler (cmake/FafAndroidDxc.cmake): libdxcompiler.so for the ABI in

@@ -1,8 +1,8 @@
 diff --git a/src/moho/misc/StartupHelpers.cpp b/src/moho/misc/StartupHelpers.cpp
-index 8a8816bf..f12c1afa 100644
+index 8a30fc65a..a65585817 100644
 --- a/src/moho/misc/StartupHelpers.cpp
 +++ b/src/moho/misc/StartupHelpers.cpp
-@@ -3664,14 +3664,16 @@ msvc8::string moho::FILE_Dir(const gpg::StrArg filename)
+@@ -3223,14 +3223,16 @@ fa::string moho::FILE_Dir(
    if (filename == nullptr || filename[0] == '\0') {
      ThrowStartupFileError("Moho::FILE_Dir", "Null argument.");
    }
@@ -10,7 +10,7 @@ index 8a8816bf..f12c1afa 100644
 -    ThrowStartupFileError("Moho::FILE_Dir", "System path expected, got local.");
 -  }
  
-   msvc8::string fileStr;
+   fa::string fileStr;
    fileStr.assign_owned(filename);
    gpg::STR_Replace(fileStr, "\\", "/", std::numeric_limits<unsigned int>::max());
  
@@ -22,16 +22,3 @@ index 8a8816bf..f12c1afa 100644
    const bool hasDrive = FILE_HasDrive(filename);
    const bool hasUnc = FILE_HasUNC(filename);
    constexpr int kPathBufferLen = 260;
-@@ -4459,7 +4461,11 @@ void moho::USER_SavePreferences()
- 
-   // Through std::filesystem::path: the wchar_t* constructor is an MSVC STL extension
-   // (libc++ converts the path to UTF-8 on POSIX).
--  std::ofstream outputStream{std::filesystem::path(temporaryPathWide)};
-+  // Android client build: a stream takes the path as it is, and POSIX reads Windows' separators as
-+  // part of a file name. The Win32 functions of the engine's POSIX layer convert them themselves.
-+  std::wstring streamPathWide = temporaryPathWide;
-+  std::replace(streamPathWide.begin(), streamPathWide.end(), L'\\', L'/');
-+  std::ofstream outputStream{std::filesystem::path(streamPathWide)};
-   if (!outputStream.is_open()) {
-     const std::wstring warningWide = std::wstring(L"Unable to open preference file: ") + temporaryPathWide;
-     const msvc8::string warningUtf8 = gpg::STR_WideToUtf8(warningWide.c_str());
