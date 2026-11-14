@@ -26,9 +26,6 @@
 #include <sys/stat.h>
 #include <thread>
 
-// The player's one call into the engine's POSIX layer, which this program does not take.
-void OutputDebugStringA(const char*) {}
-
 namespace
 {
   // CRC-32 (IEEE, reflected), byte by byte: the point is that it is the same everywhere.

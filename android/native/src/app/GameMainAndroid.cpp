@@ -1,0 +1,145 @@
+// The app's entry into libfafgame.so (exports.map). The game's activity (io.github.m3rt1n99.fafre.
+// GameActivity, an SDLActivity) names it as its main function, and SDL's activity calls it on a thread
+// of its own with the activity's arguments: the program's path, as FAF's client starts the game, then
+// its command line. It gives the engine's entry, SDL_main (src/platform/posix/ClientMainPosix.cpp with
+// patches/src/platform/posix/ClientMainPosix.cpp.patch), what it cannot know on Android, and runs it:
+//
+// - SDL's hints for a game on a phone: the program goes on in the back, as an online game's simulation
+//   keeps the others' pace (the surface goes, the loop does not stop); landscape only; no screen
+//   keyboard that comes by itself, as the engine asks for typed text in every window.
+// - argv[0] is the program's path, from which the engine takes its install's folder (DISK_GetLaunchDir):
+//   SDL's own is "app_process".
+// - The display mode of `/fullscreen <width> <height>`, which the activity gives with its surface's size,
+//   also for a screen smaller than the 1024 x 768 the engine holds as the least a mode may be (CScApp's
+//   SetUpHeads clamps the mode to wnd_DefaultCreateWidth and wnd_DefaultCreateHeight).
+// - The engine's main thread has the Windows program's stack (/STACK:4000000, src/CMakeLists.txt): SDL's
+//   thread is a Java thread with the runtime's default, 1 MB.
+// - The process ends with the program, as a Windows program's does: the engine is one program per
+//   process, and SDL's activity would outlive it.
+//
+// The report (FAF_GAME_REPORT, which the activity sets: GameReport.java) gets the lines the app reads:
+// when the first frame went to the screen, and the program's exit code.
+
+#include <android/log.h>
+#include <pthread.h>
+#include <strings.h>
+#include <time.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+#include <SDL3/SDL_hints.h>
+
+#include "moho/misc/StartupHelpers.h"
+
+// The engine's entry, as SDL_main.h declares it on Android (ClientMainPosix.cpp includes that header).
+extern "C" int SDL_main(int argc, char* argv[]);
+
+namespace
+{
+  constexpr char kLogTag[] = "faf";
+  /// The x64 Windows program's stack (/STACK:4000000, src/CMakeLists.txt).
+  constexpr std::size_t kMainThreadStackSize = 4000000;
+
+  std::int64_t gStartMilliseconds = 0;
+  std::atomic<bool> gFirstFrameReported{false};
+
+  std::int64_t NowMilliseconds()
+  {
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return static_cast<std::int64_t>(now.tv_sec) * 1000 + now.tv_nsec / 1000000;
+  }
+
+  /// A line of the report, as the app reads it: "<ms since the start> ms: <text>". Also to the system log.
+  void Report(const std::string& line)
+  {
+    __android_log_print(ANDROID_LOG_INFO, kLogTag, "game: %s", line.c_str());
+    const char* const path = std::getenv("FAF_GAME_REPORT");
+    if (path == nullptr || path[0] == '\0') {
+      return;
+    }
+    if (std::FILE* const file = std::fopen(path, "a")) {
+      std::fprintf(file, "%lld ms: %s\n", static_cast<long long>(NowMilliseconds() - gStartMilliseconds), line.c_str());
+      std::fclose(file);
+    }
+  }
+
+  /// `/fullscreen <width> <height>`'s size makes the engine's least display mode no larger than it.
+  void FitLeastMode(const int argc, char** const argv)
+  {
+    for (int index = 1; index + 2 < argc; ++index) {
+      if (strcasecmp(argv[index], "/fullscreen") != 0) {
+        continue;
+      }
+      const int width = std::atoi(argv[index + 1]);
+      const int height = std::atoi(argv[index + 2]);
+      if (width > 0 && height > 0) {
+        moho::wnd_DefaultCreateWidth = (std::min)(moho::wnd_DefaultCreateWidth, static_cast<std::int32_t>(width));
+        moho::wnd_DefaultCreateHeight = (std::min)(moho::wnd_DefaultCreateHeight, static_cast<std::int32_t>(height));
+      }
+      return;
+    }
+  }
+
+  struct Program
+  {
+    int argc = 0;
+    char** argv = nullptr;
+    int exitCode = 1;
+  };
+
+  void* RunProgram(void* const data)
+  {
+    Program& program = *static_cast<Program*>(data);
+    // On the program's thread: the first of SDL's calls makes it SDL's main thread.
+    (void)SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
+    (void)SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    (void)SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
+    program.exitCode = SDL_main(program.argc, program.argv);
+    return nullptr;
+  }
+} // namespace
+
+namespace platform::android
+{
+  // The renderer's first frame went to the screen (src/gal/VulkanSurfaceAndroid.cpp): the activity takes
+  // its start's text away (GameReport.firstFrame).
+  void FirstFramePresented()
+  {
+    if (!gFirstFrameReported.exchange(true)) {
+      Report("first frame");
+    }
+  }
+} // namespace platform::android
+
+extern "C" __attribute__((visibility("default"))) int FafGameMain(const int argc, char* argv[])
+{
+  gStartMilliseconds = NowMilliseconds();
+  // argv[0] is SDL's; the activity's arguments follow, the program's path first.
+  if (argc < 2) {
+    Report("fatal: the activity gave no program to start");
+    return 1;
+  }
+  Program program{argc - 1, argv + 1, 1};
+  FitLeastMode(program.argc, program.argv);
+
+  pthread_attr_t attributes;
+  pthread_attr_init(&attributes);
+  pthread_attr_setstacksize(&attributes, kMainThreadStackSize);
+  pthread_t thread{};
+  const int created = pthread_create(&thread, &attributes, &RunProgram, &program);
+  pthread_attr_destroy(&attributes);
+  if (created != 0) {
+    Report("fatal: the program's thread could not start (error " + std::to_string(created) + ")");
+    return 1;
+  }
+  pthread_join(thread, nullptr);
+  Report("exit " + std::to_string(program.exitCode));
+  std::fflush(nullptr);
+  std::_Exit(program.exitCode);
+}

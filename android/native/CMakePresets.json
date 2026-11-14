@@ -17,13 +17,13 @@
     },
     {
       "name": "android-arm64",
-      "displayName": "Android arm64-v8a: the engine's programs, the client, the renderer test",
+      "displayName": "Android arm64-v8a: the engine's programs and the client",
       "inherits": "android-base",
       "toolchainFile": "${sourceDir}/../../cmake/toolchains/android-arm64.cmake"
     },
     {
       "name": "android-x64",
-      "displayName": "Android x86_64 (emulator): the engine's programs, the client, the renderer test",
+      "displayName": "Android x86_64 (emulator): the engine's programs and the client",
       "inherits": "android-base",
       "toolchainFile": "${sourceDir}/../../cmake/toolchains/android-x64.cmake"
     }
@@ -32,12 +32,12 @@
     {
       "name": "android-arm64",
       "configurePreset": "android-arm64",
-      "targets": ["headless", "faf_sim_math_tests", "fafgalsmoke", "fafgame", "faf_dxc", "faf_wx_lite_tests", "faf_net_tests", "faf_audio_tests", "faf_movie_tests"]
+      "targets": ["headless", "faf_sim_math_tests", "fafgame", "faf_dxc", "faf_movie_tests", "faf_griff_tests"]
     },
     {
       "name": "android-x64",
       "configurePreset": "android-x64",
-      "targets": ["headless", "faf_sim_math_tests", "fafgalsmoke", "fafgame", "faf_dxc", "faf_wx_lite_tests", "faf_net_tests", "faf_audio_tests", "faf_movie_tests"]
+      "targets": ["headless", "faf_sim_math_tests", "fafgame", "faf_dxc", "faf_movie_tests", "faf_griff_tests"]
     }
   ]
 }

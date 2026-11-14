@@ -1,5 +1,5 @@
 diff --git a/src/moho/ui/CUIWorldViewEvents.cpp b/src/moho/ui/CUIWorldViewEvents.cpp
-index b9aa5fbf6..8d58357e9 100644
+index b9aa5fb..2164ea5 100644
 --- a/src/moho/ui/CUIWorldViewEvents.cpp
 +++ b/src/moho/ui/CUIWorldViewEvents.cpp
 @@ -6,6 +6,88 @@
@@ -267,21 +267,7 @@ index b9aa5fbf6..8d58357e9 100644
      if (mWldSession->mCurFormation->mReady) {
        mWldSession->mCurFormation->LuaFinalize();
        return true;
-@@ -3303,6 +3509,13 @@ bool moho::CUIWorldView::HandleEvent(
- 
-     case COMMOD_Build:
-     case COMMOD_BuildAnchored:
-+      // Android client build: a finger has no hover. Nothing shows where a building would go until
-+      // the finger is down, and then the finger covers it. So a finger's press only puts the building's
-+      // ghost there, and the app sends a mouse's press for a finger that taps the ghost (TouchInput).
-+      // A mouse places at once as ever.
-+      if ((::GetMessageExtraInfo() & MOUSEEVENTF_FROMTOUCH) == MOUSEEVENTF_FROMTOUCH) {
-+        return true;
-+      }
-       func_NewUIBuildDragger(GetRootFrame(), mWldSession, &eventData, mCamera.get(), &mBuildDrag);
-       return true;
- 
-@@ -3428,6 +3641,13 @@ void moho::CUIWorldView::Frame(
+@@ -3428,6 +3634,13 @@ void moho::CUIWorldView::Frame(
  {
    func_ProcessMouseScrubbing();
  

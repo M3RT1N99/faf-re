@@ -1,0 +1,52 @@
+diff --git a/src/platform/posix/Win32WindowPosix.cpp b/src/platform/posix/Win32WindowPosix.cpp
+index 649aee9..39d33db 100644
+--- a/src/platform/posix/Win32WindowPosix.cpp
++++ b/src/platform/posix/Win32WindowPosix.cpp
+@@ -5,6 +5,7 @@
+ // platform/posix/Win32WindowPosix.h. Until then windows have no rectangle and no key is down.
+ 
+ #include "platform/posix/Win32WindowPosix.h"
++#include "platform/posix/Backtrace.h"
+ 
+ #include <algorithm>
+ #include <array>
+@@ -19,8 +20,9 @@
+ #include <csignal>
+ #include <cstdio>
+ 
+-#include <execinfo.h>
++#if !FAFRE_PLATFORM_ANDROID
+ #include <spawn.h>
++#endif
+ #include <unistd.h> // environ
+ 
+ #include <Windows.h>
+@@ -143,6 +145,11 @@ namespace platform::posix
+     if (gOpenUrlHook != nullptr && gOpenUrlHook(utf8Url)) {
+       return;
+     }
++#if FAFRE_PLATFORM_ANDROID
++    // Only the system opens links there, which the window system asked (SDL_OpenURL); an app starts no
++    // programs of its own.
++    std::fprintf(stderr, "OpenUrl: the system could not open the link\n");
++#else
+     // The URL is one argument of its own: no shell sees it.
+     char program[] = "xdg-open";
+     std::string url = utf8Url;
+@@ -153,6 +160,7 @@ namespace platform::posix
+     }
+     // The child is not waited for; SIGCHLD's default disposition leaves a zombie until exit,
+     // which is harmless for the few links a session opens.
++#endif
+   }
+ 
+   bool (*gMessageBoxHook)(void* window, const char* utf8Text, const char* utf8Caption, bool yesNo) = nullptr;
+@@ -798,7 +806,7 @@ USHORT RtlCaptureStackBackTrace(
+ )
+ {
+   void* buffer[128];
+-  const int captured = ::backtrace(buffer, 128);
++  const int captured = platform::posix::Backtrace(buffer, 128);
+   USHORT written = 0;
+   // buffer[0] is this function.
+   for (int index = 1 + static_cast<int>(skip); index < captured && written < count; ++index) {

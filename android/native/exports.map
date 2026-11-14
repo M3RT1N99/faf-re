@@ -1,0 +1,13 @@
+/* What libfafgame.so exports (CMakeLists.txt): what the Java runtime and SDL's activity look up in it.
+ * JNI_OnLoad registers SDL's native methods with its Java classes; SDL_main is the engine's entry
+ * (patches/src/platform/posix/ClientMainPosix.cpp.patch); FafGameMain is the app's, which the game's
+ * activity names (src/app/GameMainAndroid.cpp); Java_* are JNI methods found by their names. */
+{
+  global:
+    JNI_OnLoad;
+    SDL_main;
+    FafGameMain;
+    Java_*;
+  local:
+    *;
+};

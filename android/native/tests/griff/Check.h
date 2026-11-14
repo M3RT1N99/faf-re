@@ -1,8 +1,8 @@
 #pragma once
 
-// The checks of the wx-lite tests (android/native/tests/wx, faf_wx_lite_tests): a test is a
-// function registered under its name; a check that fails records where and what, and the test
-// goes on, so one run shows every difference.
+// The checks of the touch scheme's tests (android/native/tests/griff, faf_griff_tests; they began as
+// wx-lite's, whose names they keep): a test is a function registered under its name; a check that
+// fails records where and what, and the test goes on, so one run shows every difference.
 
 #include <cstdint>
 #include <string>

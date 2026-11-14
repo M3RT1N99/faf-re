@@ -1,5 +1,5 @@
 diff --git a/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp b/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
-index 81b683b5f..23d8b45ea 100644
+index 81b683b..0bed2aa 100644
 --- a/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
 +++ b/src/gpg/core/diagnostics/posix/DiagnosticsPosix.cpp
 @@ -3,11 +3,12 @@
@@ -335,7 +335,7 @@ index 81b683b5f..23d8b45ea 100644
      }
      return gLatestReportPath;
    }
-@@ -368,47 +485,25 @@ namespace gpg::diag
+@@ -368,47 +485,20 @@ namespace gpg::diag
        return false;
      }
  
@@ -343,14 +343,10 @@ index 81b683b5f..23d8b45ea 100644
 -    std::FILE* const sink = std::fopen(reportPath, "w");
 -    if (sink == nullptr) {
 -      return false;
-+    // What only this thread knows. The exception filter gives the fault's record for a reason.
-+    if (context.reason == nullptr && context.exceptionInfo != nullptr) {
-+      const EXCEPTION_RECORD& record = *context.exceptionInfo->ExceptionRecord;
-+      std::snprintf(gReportReason, sizeof(gReportReason), "exception 0x%08X at %p", record.ExceptionCode, record.ExceptionAddress);
-+    } else {
-+      std::snprintf(gReportReason, sizeof(gReportReason), "%s", context.reason != nullptr ? context.reason : "(unknown)");
-     }
+-    }
 -    std::setvbuf(sink, nullptr, _IOLBF, 0);
++    // What only this thread knows.
++    std::snprintf(gReportReason, sizeof(gReportReason), "%s", context.reason != nullptr ? context.reason : "(unknown)");
 +    gReportFrameCount = platform::posix::Backtrace(gReportFrames, kMaxFrames);
  
 -    const std::time_t now = std::time(nullptr);

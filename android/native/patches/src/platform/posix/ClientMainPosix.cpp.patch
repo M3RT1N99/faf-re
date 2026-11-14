@@ -1,0 +1,36 @@
+diff --git a/src/platform/posix/ClientMainPosix.cpp b/src/platform/posix/ClientMainPosix.cpp
+index 1feac20..0997863 100644
+--- a/src/platform/posix/ClientMainPosix.cpp
++++ b/src/platform/posix/ClientMainPosix.cpp
+@@ -16,11 +16,30 @@
+ #include "moho/misc/StartupHelpers.h"
+ #include "platform/Window.h"
+ 
++#if FAFRE_PLATFORM_ANDROID
++// SDL's activity (org.libsdl.app.SDLActivity) starts the program: SDL_main.h names this main
++// SDL_main, which the activity calls on a thread of its own with the app's arguments.
++#include <SDL3/SDL_main.h>
++
++// The MSVC CRT's copies of the command line (platform/posix/Win32Shim.cpp), which the engine reads:
++// the library's constructors saw the app runtime's command line, not the program's.
++extern int __argc;
++extern char** __argv;
++#endif
++
+ // Set by headless/GameEntry.cpp, as in the Windows game (moho/app/WinMain.cpp defines it there).
+ int (*gGameReplayPlayerMain)(int argc, char** argv) = nullptr;
+ 
+-int main()
++int main(int argc, char* argv[])
+ {
++#if FAFRE_PLATFORM_ANDROID
++  __argc = argc;
++  __argv = argv;
++#else
++  (void)argc;
++  (void)argv;
++#endif
++
+   // The replay viewer's hidden process (moho/sim/ReplayTimeline.cpp): this same program with
+   // `/replaykeyframes` plays the replay with no window or device, as WinMain hands it over. It reads
+   // its arguments from the command line itself, so it needs none here.

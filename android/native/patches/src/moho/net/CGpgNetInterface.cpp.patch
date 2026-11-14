@@ -1,0 +1,28 @@
+diff --git a/src/moho/net/CGpgNetInterface.cpp b/src/moho/net/CGpgNetInterface.cpp
+index f2449b3..4b590ed 100644
+--- a/src/moho/net/CGpgNetInterface.cpp
++++ b/src/moho/net/CGpgNetInterface.cpp
+@@ -11,7 +11,7 @@
+ #include <stdexcept>
+ #include <utility>
+ #include <vector>
+-#if !FAFRE_PLATFORM_WINDOWS
++#if !FAFRE_PLATFORM_WINDOWS && !FAFRE_PLATFORM_ANDROID
+ #include <spawn.h>
+ #include <unistd.h> // environ
+ #endif
+@@ -1828,7 +1828,13 @@ void CGpgNetInterface::ConnectThread(
+   const fa::string listenerAddress = gpg::STR_Printf("127.0.0.1:%d", static_cast<int>(localPort));
+   const fa::string launchCommand = gpg::STR_Printf(launchCommandTemplate.c_str(), listenerAddress.c_str());
+ 
+-#if !FAFRE_PLATFORM_WINDOWS
++#if FAFRE_PLATFORM_ANDROID
++  // An app starts no programs of its own on Android, which has no /bin/sh either: the GPGNet side is
++  // the app that started the game, and it connects to the game.
++  gpg::Logf("CreateProcess() failed: Android starts no programs (%s)", launchCommand.c_str());
++  EnqueueCommand0("LaunchFailed", kNetStateTimedOut);
++  return;
++#elif !FAFRE_PLATFORM_WINDOWS
+   // The Linux client (issue #255): the command line through the shell, as CreateProcess takes one
+   // command string; the child isn't waited for, as on Windows.
+   {

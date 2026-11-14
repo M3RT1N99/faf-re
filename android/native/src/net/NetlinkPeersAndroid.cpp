@@ -1,9 +1,9 @@
-// The in-engine peer links (moho/net/NetlinkPeers.h) for the Android client build, in place of
-// NetlinkPeers.cpp, which runs them on netlink (src/netlink: libjuice and libdatachannel). Those
-// are not built for Android yet: online play is step C5 (android/CLIENT_PLAN.md). The game talks to
-// an ICE adapter as the shipped game does, which is what these functions do with net_InEngineLinks
-// and net_NativeNet off; asking for either says in the log that the build has neither. The game's
-// own lobby needs none of this: its UDP connector works here on the sockets themselves.
+// The in-engine peer links (moho/net/NetlinkPeers.h) for the Android build, in place of NetlinkPeers.cpp,
+// which runs them on netlink (src/netlink: libjuice and libdatachannel, with usrsctp, plog and Mbed TLS).
+// This build does not make those libraries yet. The game talks to an ICE adapter as the shipped game does,
+// which is what these functions do with net_InEngineLinks and net_NativeNet off; asking for either says in
+// the log that the build has neither, and the network panel shows no links. The game's own lobby needs none
+// of this: its UDP connector works on the sockets themselves.
 
 #include "moho/net/NetlinkPeers.h"
 
@@ -13,14 +13,26 @@
 
 namespace moho
 {
+  SNetlinkSnapshot NETLINK_GetSnapshot()
+  {
+    return SNetlinkSnapshot{};
+  }
+
+  void NETLINK_KeepLogLines() {}
+
+  bool NETLINK_ReconnectPeer(std::int64_t, const faf::netlink::PathChoice*)
+  {
+    return false;
+  }
+
   void NETLINK_SayHello(CGpgNetInterface&)
   {
     if (net_InEngineLinks != 0 || CFG_GetArgOption("/inenginelinks", 0u, nullptr)) {
-      gpg::Warnf("NETLINK: no in-engine links on Android yet (android/CLIENT_PLAN.md, C5)");
+      gpg::Warnf("NETLINK: this Android build has no in-engine links");
     }
   }
 
-  bool NETLINK_HandleCommand(const msvc8::string&, const msvc8::vector<SNetCommandArg>&)
+  bool NETLINK_HandleCommand(const fa::string&, const fa::vector<SNetCommandArg>&)
   {
     return false;
   }
@@ -35,11 +47,11 @@ namespace moho
   void NATIVENET_Start()
   {
     if (net_NativeNet != 0 || CFG_GetArgOption("/nativenet", 0u, nullptr)) {
-      gpg::Warnf("NATIVENET: no native networking on Android yet (android/CLIENT_PLAN.md, C5)");
+      gpg::Warnf("NATIVENET: this Android build has no native networking");
     }
   }
 
-  bool NATIVENET_HandleCommand(const msvc8::string&, msvc8::vector<SNetCommandArg>&)
+  bool NATIVENET_HandleCommand(const fa::string&, fa::vector<SNetCommandArg>&)
   {
     return false;
   }
