@@ -41,14 +41,11 @@ namespace moho
    * Clears reflected base/field vector lanes for one `UnitSetTypeInfo`
    * instance while preserving outer storage ownership.
    */
-  [[maybe_unused]] void DestroyUnitSetTypeInfoBody(UnitSetTypeInfo* const typeInfo) noexcept
+  void DestroyUnitSetTypeInfoBody(
+    UnitSetTypeInfo* const typeInfo
+  ) noexcept
   {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = {};
-    typeInfo->bases_ = {};
+    gpg::ClearTypeLists(typeInfo);
   }
 
   /**
@@ -74,7 +71,9 @@ namespace moho
    * What it does:
    * Resolves `EntitySetBase` RTTI and appends it as base type with zero offset.
    */
-  void UnitSetTypeInfo::AddBase_EntitySetBaseVariant2(gpg::RType* const typeInfo)
+  void UnitSetTypeInfo::AddBase_EntitySetBaseVariant2(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* baseType = EntitySetBase::sType;
     if (!baseType) {
@@ -88,13 +87,7 @@ namespace moho
       return;
     }
 
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, baseType);
   }
 
   /**
@@ -132,7 +125,10 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_UnitSetTypeInfo_a8678e, moho::register_UnitSetTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_UnitSetTypeInfo_a8678e,
+  moho::register_UnitSetTypeInfo
+)
 
 namespace moho
 {

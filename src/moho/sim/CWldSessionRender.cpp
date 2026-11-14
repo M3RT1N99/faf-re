@@ -1,45 +1,44 @@
 #include "moho/sim/CWldSessionPrivate.h"
 
+/**
+ * Session-global ghost list for the formation-placement preview.
+ *
+ * This is one plain `fa::vector` parked at 0x010C4258, not the three loose
+ * pointer globals an earlier pass modelled:
+ *   myProxy_ +0x00 -> 0x010C4258   first_ +0x04 -> 0x010C425C
+ *   last_    +0x08 -> 0x010C4260   end_   +0x0C -> 0x010C4264
+ *
+ * That the container head is 0x010C4258 is settled by FUN_0085A280 and
+ * FUN_0085A630: both are a bare `mov eax, offset 0x010C4258; retn`, i.e.
+ * they hand back the container itself. FUN_00859F70 pins the 0x10-byte
+ * element width - it derives both size and capacity by `sar ..., 4` over the
+ * same three lanes.
+ *
+ * `CWldSession::RenderMeshPreviews` (0x008599D0) is the only writer: it
+ * clears the vector at the top of every frame and repopulates it.
+ */
+fa::vector<SFormationPreviewGhost> gFormationPreviews;
 
-  /**
-   * Session-global ghost list for the formation-placement preview.
-   *
-   * This is one plain `msvc8::vector` parked at 0x010C4258, not the three loose
-   * pointer globals an earlier pass modelled:
-   *   myProxy_ +0x00 -> 0x010C4258   first_ +0x04 -> 0x010C425C
-   *   last_    +0x08 -> 0x010C4260   end_   +0x0C -> 0x010C4264
-   *
-   * That the container head is 0x010C4258 is settled by FUN_0085A280 and
-   * FUN_0085A630: both are a bare `mov eax, offset 0x010C4258; retn`, i.e.
-   * they hand back the container itself. FUN_00859F70 pins the 0x10-byte
-   * element width - it derives both size and capacity by `sar ..., 4` over the
-   * same three lanes.
-   *
-   * `CWldSession::RenderMeshPreviews` (0x008599D0) is the only writer: it
-   * clears the vector at the top of every frame and repopulates it.
-   */
-  msvc8::vector<SFormationPreviewGhost> gFormationPreviews;
+// `StrategicIconAux` (the real type) and `gStrategicIconAuxiliary`
+// live in the `moho`-scoped anonymous namespace alongside the type's
+// definition (see `CWldSession::RenderStrategicIcons`'s callee cluster) -
+// a plain forward declaration here would name an unrelated, permanently
+// incomplete type in *this* (global-scope) anonymous namespace instead.
 
-  // `StrategicIconAux` (the real type) and `gStrategicIconAuxiliary`
-  // live in the `moho`-scoped anonymous namespace alongside the type's
-  // definition (see `CWldSession::RenderStrategicIcons`'s callee cluster) -
-  // a plain forward declaration here would name an unrelated, permanently
-  // incomplete type in *this* (global-scope) anonymous namespace instead.
-
-  // The formation-preview container emissions used to live here as one
-  // hand-written free function per operation. They are `msvc8::vector`
-  // members, so the addresses now sit on the template in
-  // `legacy/containers/Vector.h` and the call sites just use the container:
-  //
-  //   FUN_00859E90  ~SFormationPreviewGhost (implicit, member order)
-  //   FUN_0085A1D0  destroy_range
-  //   FUN_0085A9F0  copy_or_move_assign, one slot
-  //   FUN_0085A130  erase, first..last
-  //   FUN_00859FE0  pop_back
-  //   FUN_00859F70  push_back
-  //   FUN_0085A920  uninit_fill_n / in-place construct, push_back fast path
-  //   FUN_0085A0E0  reallocate_to + insert, push_back grow path
-  //
+// The formation-preview container emissions used to live here as one
+// hand-written free function per operation. They are `fa::vector`
+// members, so the addresses now sit on the template in
+// `legacy/containers/Vector.h` and the call sites just use the container:
+//
+//   FUN_00859E90  ~SFormationPreviewGhost (implicit, member order)
+//   FUN_0085A1D0  destroy_range
+//   FUN_0085A9F0  copy_or_move_assign, one slot
+//   FUN_0085A130  erase, first..last
+//   FUN_00859FE0  pop_back
+//   FUN_00859F70  push_back
+//   FUN_0085A920  uninit_fill_n / in-place construct, push_back fast path
+//   FUN_0085A0E0  reallocate_to + insert, push_back grow path
+//
 namespace moho
 {
 
@@ -58,7 +57,7 @@ namespace moho
   // 75 is the shipped value: `bin/2025.7.1/ForgedAlliance.exe` holds
   // 0x42960000 at 0x00F57B08, and `func_UI_ResourceLODCutoff_ConVarDef`
   // (0x00BE6010) only binds the console variable to this same storage.
-  float UI_ResourceLODCutoff = 75.0f;       // 0x00F57B08
+  float UI_ResourceLODCutoff = 75.0f; // 0x00F57B08
 
   // Strategic-icon and unit-bar console variables. None of these existed in
   // the tree; every address below is the absolute operand of the instruction
@@ -72,33 +71,33 @@ namespace moho
   // 0x0085C0B1 that drops every collected strategic icon, and a 0.0f
   // `ui_LifebarLOD` can never exceed the current zoom (0x0085BFE8), so no unit
   // bar was ever collected either.
-  bool ui_RenderUnitBars = true;                  // 0x00F57B26 (0x0085BFDB)
-  bool ui_RenderIcons = true;                     // 0x00F57B27 (0x0085C0B1)
-  float ui_lifebarHeight = 0.125f;                // 0x00F57B6C (0x0085CDCB)
-  float ui_LifebarWidth = 1.5f;                   // 0x00F57B70 (0x0085CDB6)
-  float ui_LifebarLOD = 200.0f;                   // 0x00F57B74 (0x0085BFE8)
-  float ui_LifebarOffset = 0.1f;                  // 0x00F57B78 (0x0085CECE)
-  bool ui_NisRenderIcons = true;                  // 0x00F57B7C (0x0085C0A4)
-  bool ui_RenderCustomNames = true;               // 0x00F57B7D (0x0085E0BE)
-  bool ui_RenderSelectionSetNames = true;         // 0x00F57B7E (0x0085E3BE)
-  std::uint32_t ui_CustomNameColor = 0xFF00AA00u; // 0x00F57B80 (0x0085E2ED)
-  std::int32_t ui_CustomNameFontSize = 12;        // 0x00F57B84 (0x0085E145)
+  bool ui_RenderUnitBars = true;                         // 0x00F57B26 (0x0085BFDB)
+  bool ui_RenderIcons = true;                            // 0x00F57B27 (0x0085C0B1)
+  float ui_lifebarHeight = 0.125f;                       // 0x00F57B6C (0x0085CDCB)
+  float ui_LifebarWidth = 1.5f;                          // 0x00F57B70 (0x0085CDB6)
+  float ui_LifebarLOD = 200.0f;                          // 0x00F57B74 (0x0085BFE8)
+  float ui_LifebarOffset = 0.1f;                         // 0x00F57B78 (0x0085CECE)
+  bool ui_NisRenderIcons = true;                         // 0x00F57B7C (0x0085C0A4)
+  bool ui_RenderCustomNames = true;                      // 0x00F57B7D (0x0085E0BE)
+  bool ui_RenderSelectionSetNames = true;                // 0x00F57B7E (0x0085E3BE)
+  std::uint32_t ui_CustomNameColor = 0xFF00AA00u;        // 0x00F57B80 (0x0085E2ED)
+  std::int32_t ui_CustomNameFontSize = 12;               // 0x00F57B84 (0x0085E145)
   std::uint32_t ui_SelectionSetNamesColor = 0xFF00AA00u; // 0x00F57B88 (0x0085E72A)
-  float ui_StrategicIconBlinkRate = 0.6f;         // 0x00F57B8C (0x0085DC44)
-  float ui_FuelEmptyBlinkRate = 0.1f;             // 0x00F57B90 (0x0085D113)
-  float ui_StrategicIconBlinkDuration = 0.5f;     // 0x00F57B94 (0x0085DC22)
-  std::uint32_t ui_LifeBarGoodColor = 0xFF00FF00u; // 0x00F57B98 (0x0085D070)
-  std::uint32_t ui_LifeBarMedColor = 0xFFFFFF00u; // 0x00F57B9C (0x0085D085)
-  std::uint32_t ui_LifeBarBadColor = 0xFFFF0000u; // 0x00F57BA0 (0x0085D065)
-  float ui_LifeBarGoodCutoff = 0.75f;             // 0x00F57BA4 (0x0085D05E)
-  float ui_LifeBarBadCutoff = 0.25f;              // 0x00F57BA8 (0x0085D07C)
-  std::uint32_t ui_FuelBarColor = 0xFFF4EC4Du;    // 0x00F57BAC (0x0085D0EE)
-  std::uint32_t ui_FuelWarningColor = 0xFFFF0000u; // 0x00F57BB0 (0x0085D135)
-  std::uint32_t ui_ShieldBarColor = 0xFF00C3F7u;  // 0x00F57BB4 (0x0085D0DA)
-  std::uint32_t ui_ProgressBarColor = 0xFFFF9900u; // 0x00F57BB8 (0x0085D14B)
-  msvc8::string ui_CustomNameFont("Arial");       // 0x00F5B300 (0x0085E124), built "Arial" by FUN_00BE5720
-  bool ui_ForceLifbarsOnEnemy = false;            // 0x010A644A (0x0085C031)
-  bool ui_AlwaysRenderStrategicIcons = false;     // 0x010A644B (0x0085C148)
+  float ui_StrategicIconBlinkRate = 0.6f;                // 0x00F57B8C (0x0085DC44)
+  float ui_FuelEmptyBlinkRate = 0.1f;                    // 0x00F57B90 (0x0085D113)
+  float ui_StrategicIconBlinkDuration = 0.5f;            // 0x00F57B94 (0x0085DC22)
+  std::uint32_t ui_LifeBarGoodColor = 0xFF00FF00u;       // 0x00F57B98 (0x0085D070)
+  std::uint32_t ui_LifeBarMedColor = 0xFFFFFF00u;        // 0x00F57B9C (0x0085D085)
+  std::uint32_t ui_LifeBarBadColor = 0xFFFF0000u;        // 0x00F57BA0 (0x0085D065)
+  float ui_LifeBarGoodCutoff = 0.75f;                    // 0x00F57BA4 (0x0085D05E)
+  float ui_LifeBarBadCutoff = 0.25f;                     // 0x00F57BA8 (0x0085D07C)
+  std::uint32_t ui_FuelBarColor = 0xFFF4EC4Du;           // 0x00F57BAC (0x0085D0EE)
+  std::uint32_t ui_FuelWarningColor = 0xFFFF0000u;       // 0x00F57BB0 (0x0085D135)
+  std::uint32_t ui_ShieldBarColor = 0xFF00C3F7u;         // 0x00F57BB4 (0x0085D0DA)
+  std::uint32_t ui_ProgressBarColor = 0xFFFF9900u;       // 0x00F57BB8 (0x0085D14B)
+  fa::string ui_CustomNameFont("Arial");                 // 0x00F5B300 (0x0085E124), built "Arial" by FUN_00BE5720
+  bool ui_ForceLifbarsOnEnemy = false;                   // 0x010A644A (0x0085C031)
+  bool ui_AlwaysRenderStrategicIcons = false;            // 0x010A644B (0x0085C148)
 
   // FAF FA-Binary-Patches #147 (Scale projectile/deposit/strategic icons): screen-size multipliers
   // of the strategic-view icons. `ui_StrategicIconScale` is FAF's older strategic-icon scale (in the
@@ -109,7 +108,8 @@ namespace moho
 
   TConVar<float> gTConVar_ui_StrategicIconScale(
     "ui_StrategicIconScale",
-    "Size multiplier of unit strategic icons and their paused, stunned and underlay overlays (1 = the texture's own size).",
+    "Size multiplier of unit strategic icons and their paused, stunned and underlay overlays (1 = the texture's own "
+    "size).",
     &ui_StrategicIconScale
   );
   TConVar<float> gTConVar_ui_DepositIconScale(
@@ -139,8 +139,8 @@ namespace moho
   constexpr const char* kProjectileIconTechnique = "TAlphaBlendLinearSampleNoDepth";
   // 0x008624F2 masks the layer with 6 - seabed | sub - to pick the recon grid.
   constexpr std::int32_t kLayerUnderwaterMask = LAYER_Seabed | LAYER_Sub;
-namespace
-{
+  namespace
+  {
 
     // Forward-declared here (rather than defined) because the process-global
     // singleton lane below only ever holds a pointer; `StrategicIconAux`
@@ -149,39 +149,6 @@ namespace
     // cluster (0x0085B6E0's lazy-init target, address 0x010C4300).
     struct StrategicIconAux;
     StrategicIconAux* gStrategicIconAuxiliary = nullptr;
-
-    /**
-     * Address: 0x0085EFE0 (FUN_0085EFE0)
-     *
-     * What it does:
-     * Returns the global strategic-icon auxiliary object lane.
-     */
-    [[nodiscard]] StrategicIconAux* GetStrategicIconAuxiliaryLaneA() noexcept
-    {
-      return gStrategicIconAuxiliary;
-    }
-
-    /**
-     * Address: 0x0085EFF0 (FUN_0085EFF0)
-     *
-     * What it does:
-     * Secondary entrypoint returning the strategic-icon auxiliary object lane.
-     */
-    [[nodiscard]] StrategicIconAux* GetStrategicIconAuxiliaryLaneB() noexcept
-    {
-      return gStrategicIconAuxiliary;
-    }
-
-    /**
-     * Address: 0x0085F000 (FUN_0085F000)
-     *
-     * What it does:
-     * Third entrypoint returning the strategic-icon auxiliary object lane.
-     */
-    [[nodiscard]] StrategicIconAux* GetStrategicIconAuxiliaryLaneC() noexcept
-    {
-      return gStrategicIconAuxiliary;
-    }
 
     /**
      * One classified entity in the strategic-icon pass - `struct_UnitIconData`
@@ -217,35 +184,42 @@ namespace
      *    `shared_ptr` releases in reverse declaration order);
      *  - 0x0085CB00 is the compiler-generated `operator=`;
      *  - 0x0085ED70 / 0x0085EED0 / 0x0085F1B0 / 0x0085F290 are
-     *    `msvc8::vector<UnitIconData>`'s `reserve` / `push_back` /
+     *    `fa::vector<UnitIconData>`'s `reserve` / `push_back` /
      *    `erase(first,last)` / destructor, and 0x0085F140, 0x0085F930,
      *    0x0085FDB0, 0x0085FFB0 and 0x0085F310 are that same instantiation's
      *    grow, allocate, copy-construct, uninitialised-copy and length-error
-     *    lanes. They belong on `msvc8::vector<T>` in
+     *    lanes. They belong on `fa::vector<T>` in
      *    src/legacy/containers/Vector.h next to the other per-type
      *    emissions listed there, not as a second set of container primitives.
-     * Address: 0x0085F740 (FUN_0085F740 -- the implicit copy constructor `UnitIconData(const UnitIconData&)`, emitted out of line for `msvc8::vector<UnitIconData>`'s placement copies: member-wise in declaration order (the two pointers, the three floats through `fld`/`fstp`, each `shared_ptr` with a `lock xadd` +1 on the non-null control block's `use_count_` at +0x18/+0x20/+0x28, then the five flag bytes up to +0x30), no release, so a construction rather than `operator=` 0x0085CB00; callers 0x0085F414 (`_Insert_n` 0x0085F3F0's `_Tmp = _Val`), 0x0085FDC8 (`_Uninit_fill_n` 0x0085FDB0), 0x0085FFC9 (`_Uninit_copy` 0x0085FFB0), 0x0085FFF8 (0x0085FFE0), and the null-guarded tail jumps 0x0085FE64 / 0x0085FF24 (`_Construct` / `allocator::construct`, nothing references them); formerly `CopyRefCountedPayload49Runtime` in moho/sim/SimRecoveryRuntime.cpp (RULE ONE), removed 2026-09-30.)
+     * Address: 0x0085F740 (FUN_0085F740 -- the implicit copy constructor `UnitIconData(const UnitIconData&)`, emitted
+     * out of line for `fa::vector<UnitIconData>`'s placement copies: member-wise in declaration order (the two
+     * pointers, the three floats through `fld`/`fstp`, each `shared_ptr` with a `lock xadd` +1 on the non-null control
+     * block's `use_count_` at +0x18/+0x20/+0x28, then the five flag bytes up to +0x30), no release, so a construction
+     * rather than `operator=` 0x0085CB00; callers 0x0085F414 (`_Insert_n` 0x0085F3F0's `_Tmp = _Val`), 0x0085FDC8
+     * (`_Uninit_fill_n` 0x0085FDB0), 0x0085FFC9 (`_Uninit_copy` 0x0085FFB0), 0x0085FFF8 (0x0085FFE0), and the
+     * null-guarded tail jumps 0x0085FE64 / 0x0085FF24 (`_Construct` / `allocator::construct`, nothing references them);
+     * formerly `CopyRefCountedPayload49Runtime` in moho/sim/SimRecoveryRuntime.cpp (RULE ONE), removed 2026-09-30.)
      */
     struct UnitIconData
     {
-      UserEntity* mUnit = nullptr;                       // +0x00
-      const REntityBlueprint* mBlueprint = nullptr;      // +0x04
-      float mWorldX = 0.0f;                              // +0x08
-      float mWorldY = 0.0f;                              // +0x0C
-      float mWorldZ = 0.0f;                              // +0x10
-      boost::shared_ptr<CD3DBatchTexture> mIconTexture;    // +0x14
-      boost::shared_ptr<CD3DBatchTexture> mPausedTexture;  // +0x1C
-      boost::shared_ptr<CD3DBatchTexture> mStunnedTexture; // +0x24
+      UserEntity* mUnit = nullptr;                         // +0x00
+      const REntityBlueprint* mBlueprint = nullptr;        // +0x04
+      float mWorldX = 0.0f;                                // +0x08
+      float mWorldY = 0.0f;                                // +0x0C
+      float mWorldZ = 0.0f;                                // +0x10
+      std::shared_ptr<CD3DBatchTexture> mIconTexture;      // +0x14
+      std::shared_ptr<CD3DBatchTexture> mPausedTexture;    // +0x1C
+      std::shared_ptr<CD3DBatchTexture> mStunnedTexture;   // +0x24
       /// Own or allied unit: the only ones whose icon blinks while fresh.
-      bool mIsFriendly = false;        // +0x2C
+      bool mIsFriendly = false; // +0x2C
       /// Draw the pause/toggle-off overlay over the icon.
       bool mShowPausedOverlay = false; // +0x2D
       /// Draw the stunned overlay over the icon.
       bool mShowStunnedOverlay = false; // +0x2E
       /// The unit's mesh is already on screen, so only the overlays are drawn.
-      bool mSuppressBaseIcon = false;  // +0x2F
+      bool mSuppressBaseIcon = false; // +0x2F
       /// Formation-preview ghost rather than a live unit.
-      bool mIsFormationGhost = false;  // +0x30
+      bool mIsFormationGhost = false; // +0x30
       // +0x31..+0x33 is alignment padding, not a member: neither the copy
       // constructor (0x0085F740) nor `operator=` (0x0085CB00) copies it.
     };
@@ -256,12 +230,11 @@ namespace
     static_assert(offsetof(UnitIconData, mWorldZ) == 0x10, "UnitIconData::mWorldZ offset must be 0x10");
     static_assert(offsetof(UnitIconData, mIconTexture) == 0x14, "UnitIconData::mIconTexture offset must be 0x14");
     static_assert(offsetof(UnitIconData, mPausedTexture) == 0x1C, "UnitIconData::mPausedTexture offset must be 0x1C");
-    static_assert(
-      offsetof(UnitIconData, mStunnedTexture) == 0x24, "UnitIconData::mStunnedTexture offset must be 0x24"
-    );
+    static_assert(offsetof(UnitIconData, mStunnedTexture) == 0x24, "UnitIconData::mStunnedTexture offset must be 0x24");
     static_assert(offsetof(UnitIconData, mIsFriendly) == 0x2C, "UnitIconData::mIsFriendly offset must be 0x2C");
     static_assert(
-      offsetof(UnitIconData, mIsFormationGhost) == 0x30, "UnitIconData::mIsFormationGhost offset must be 0x30"
+      offsetof(UnitIconData, mIsFormationGhost) == 0x30,
+      "UnitIconData::mIsFormationGhost offset must be 0x30"
     );
 
     /**
@@ -299,7 +272,7 @@ namespace
      *    (`&_Myfirst[2 * iconType]`), and 0x0085F020 sizes it to exactly 8.
      *  - `+0x38`/`+0x40` the pause and stunned rest textures.
      *  - `+0x48`, `+0x58`, `+0x68`, `+0x78`, `+0x88` the five icon runs, each
-     *    a 0x10-byte `msvc8::vector` header the frame entry clears in turn
+     *    a 0x10-byte `fa::vector` header the frame entry clears in turn
      *    (`lea eax, [ebp+48h]` .. `lea eax, [ebp+88h]`,
      *    0x0085B7C3..0x0085B82D) and the constructor reserves at
      *    0x200/0x200/0x40/0x80/0x80 elements.
@@ -327,21 +300,21 @@ namespace
       CD3DPrimBatcher* mBatcher = nullptr;  // +0x14
       const GeomCamera3* mCamera = nullptr; // +0x18
       /// Sub-tick interpolant for this frame; see the `+0x1C` note above.
-      float mTickFraction = 0.0f;                                       // +0x1C
-      boost::shared_ptr<CD3DBatchTexture> mWhiteTexture;                // +0x20
-      msvc8::vector<boost::shared_ptr<CD3DBatchTexture>> mGenericIcons; // +0x28
-      boost::shared_ptr<CD3DBatchTexture> mPauseRestTexture;            // +0x38
-      boost::shared_ptr<CD3DBatchTexture> mStunnedRestTexture;          // +0x40
-      msvc8::vector<UnitIconData> mGroundIcons;       // +0x48
-      msvc8::vector<UnitIconData> mAirIcons;          // +0x58
-      msvc8::vector<UnitIconData> mHighPriorityIcons; // +0x68
-      msvc8::vector<UnitIconData> mSelectedIcons;     // +0x78
-      msvc8::vector<UnitIconData> mLifebarIcons;      // +0x88
-      std::uint32_t mSelfColor = 0u;         // +0x98
-      std::uint32_t mNeutralColor = 0u;      // +0x9C
-      std::uint32_t mAllyColor = 0u;         // +0xA0
-      std::uint32_t mEnemyColor = 0u;        // +0xA4
-      std::uint32_t mUnidentifiedColor = 0u; // +0xA8
+      float mTickFraction = 0.0f;                                    // +0x1C
+      std::shared_ptr<CD3DBatchTexture> mWhiteTexture;               // +0x20
+      fa::vector<std::shared_ptr<CD3DBatchTexture>> mGenericIcons;   // +0x28
+      std::shared_ptr<CD3DBatchTexture> mPauseRestTexture;           // +0x38
+      std::shared_ptr<CD3DBatchTexture> mStunnedRestTexture;         // +0x40
+      fa::vector<UnitIconData> mGroundIcons;                         // +0x48
+      fa::vector<UnitIconData> mAirIcons;                            // +0x58
+      fa::vector<UnitIconData> mHighPriorityIcons;                   // +0x68
+      fa::vector<UnitIconData> mSelectedIcons;                       // +0x78
+      fa::vector<UnitIconData> mLifebarIcons;                        // +0x88
+      std::uint32_t mSelfColor = 0u;                                 // +0x98
+      std::uint32_t mNeutralColor = 0u;                              // +0x9C
+      std::uint32_t mAllyColor = 0u;                                 // +0xA0
+      std::uint32_t mEnemyColor = 0u;                                // +0xA4
+      std::uint32_t mUnidentifiedColor = 0u;                         // +0xA8
 
       /**
        * Address: 0x0085B2A0 (FUN_0085B2A0, struct_TeamColors::struct_TeamColors)
@@ -361,15 +334,16 @@ namespace
 
       /**
        * Address: 0x0085E7F0 (FUN_0085E7F0, struct_IconAux::GetGenericIcons)
-       * Mangled: LuaPlus::LuaObject *__cdecl struct_IconAux::GetGenericIcons(Moho::CWldSession *session, std::vector *target)
+       * Mangled: LuaPlus::LuaObject *__cdecl struct_IconAux::GetGenericIcons(Moho::CWldSession *session, std::vector
+       * *target)
        *
        * What it does:
        * Loads `/lua/ui/game/strategicIcons.lua`'s `GenericIcons` table and
        * fills one `mGenericIcons` slot per `EGenericIconType` key with the
        * named batch texture. `mGenericIcons` is sized to exactly 8 first
-       * (0x0085F020, the `msvc8::vector<boost::shared_ptr<CD3DBatchTexture>>`
+       * (0x0085F020, the `fa::vector<boost::shared_ptr<CD3DBatchTexture>>`
        * resize lane for this instantiation - a per-type container emission
-       * already covered generically by `msvc8::vector<T>::resize`, the same
+       * already covered generically by `fa::vector<T>::resize`, the same
        * way the sibling `UnitIconData` instantiation's reserve/push_back/erase
        * lanes are documented above rather than hand-recovered).
        */
@@ -387,23 +361,23 @@ namespace
 
     static_assert(sizeof(StrategicIconAux) == 0xAC, "StrategicIconAux size must be 0xAC");
     static_assert(
-      offsetof(StrategicIconAux, mViewportWidth) == 0x08, "StrategicIconAux::mViewportWidth offset must be 0x08"
+      offsetof(StrategicIconAux, mViewportWidth) == 0x08,
+      "StrategicIconAux::mViewportWidth offset must be 0x08"
     );
-    static_assert(
-      offsetof(StrategicIconAux, mSession) == 0x10, "StrategicIconAux::mSession offset must be 0x10"
-    );
-    static_assert(
-      offsetof(StrategicIconAux, mBatcher) == 0x14, "StrategicIconAux::mBatcher offset must be 0x14"
-    );
+    static_assert(offsetof(StrategicIconAux, mSession) == 0x10, "StrategicIconAux::mSession offset must be 0x10");
+    static_assert(offsetof(StrategicIconAux, mBatcher) == 0x14, "StrategicIconAux::mBatcher offset must be 0x14");
     static_assert(offsetof(StrategicIconAux, mCamera) == 0x18, "StrategicIconAux::mCamera offset must be 0x18");
     static_assert(
-      offsetof(StrategicIconAux, mTickFraction) == 0x1C, "StrategicIconAux::mTickFraction offset must be 0x1C"
+      offsetof(StrategicIconAux, mTickFraction) == 0x1C,
+      "StrategicIconAux::mTickFraction offset must be 0x1C"
     );
     static_assert(
-      offsetof(StrategicIconAux, mWhiteTexture) == 0x20, "StrategicIconAux::mWhiteTexture offset must be 0x20"
+      offsetof(StrategicIconAux, mWhiteTexture) == 0x20,
+      "StrategicIconAux::mWhiteTexture offset must be 0x20"
     );
     static_assert(
-      offsetof(StrategicIconAux, mGenericIcons) == 0x28, "StrategicIconAux::mGenericIcons offset must be 0x28"
+      offsetof(StrategicIconAux, mGenericIcons) == 0x28,
+      "StrategicIconAux::mGenericIcons offset must be 0x28"
     );
     static_assert(
       offsetof(StrategicIconAux, mPauseRestTexture) == 0x38,
@@ -414,24 +388,23 @@ namespace
       "StrategicIconAux::mStunnedRestTexture offset must be 0x40"
     );
     static_assert(
-      offsetof(StrategicIconAux, mGroundIcons) == 0x48, "StrategicIconAux::mGroundIcons offset must be 0x48"
+      offsetof(StrategicIconAux, mGroundIcons) == 0x48,
+      "StrategicIconAux::mGroundIcons offset must be 0x48"
     );
-    static_assert(
-      offsetof(StrategicIconAux, mAirIcons) == 0x58, "StrategicIconAux::mAirIcons offset must be 0x58"
-    );
+    static_assert(offsetof(StrategicIconAux, mAirIcons) == 0x58, "StrategicIconAux::mAirIcons offset must be 0x58");
     static_assert(
       offsetof(StrategicIconAux, mHighPriorityIcons) == 0x68,
       "StrategicIconAux::mHighPriorityIcons offset must be 0x68"
     );
     static_assert(
-      offsetof(StrategicIconAux, mSelectedIcons) == 0x78, "StrategicIconAux::mSelectedIcons offset must be 0x78"
+      offsetof(StrategicIconAux, mSelectedIcons) == 0x78,
+      "StrategicIconAux::mSelectedIcons offset must be 0x78"
     );
     static_assert(
-      offsetof(StrategicIconAux, mLifebarIcons) == 0x88, "StrategicIconAux::mLifebarIcons offset must be 0x88"
+      offsetof(StrategicIconAux, mLifebarIcons) == 0x88,
+      "StrategicIconAux::mLifebarIcons offset must be 0x88"
     );
-    static_assert(
-      offsetof(StrategicIconAux, mSelfColor) == 0x98, "StrategicIconAux::mSelfColor offset must be 0x98"
-    );
+    static_assert(offsetof(StrategicIconAux, mSelfColor) == 0x98, "StrategicIconAux::mSelfColor offset must be 0x98");
     static_assert(
       offsetof(StrategicIconAux, mUnidentifiedColor) == 0xA8,
       "StrategicIconAux::mUnidentifiedColor offset must be 0xA8"
@@ -468,7 +441,7 @@ namespace
       StrategicIconAux& aux,
       const EStrategicIconRun run,
       const UnitIconData& data,
-      const boost::shared_ptr<CD3DBatchTexture>* const icon
+      const std::shared_ptr<CD3DBatchTexture>* const icon
     )
     {
       if (run == EStrategicIconRun::Hovered) {
@@ -484,25 +457,25 @@ namespace
         }
         return;
       }
-      msvc8::vector<UnitIconData>* target = nullptr;
+      fa::vector<UnitIconData>* target = nullptr;
       switch (run) {
-        case EStrategicIconRun::Ground:
-          target = &aux.mGroundIcons;
-          break;
-        case EStrategicIconRun::Air:
-          target = &aux.mAirIcons;
-          break;
-        case EStrategicIconRun::HighPriority:
-          target = &aux.mHighPriorityIcons;
-          break;
-        case EStrategicIconRun::Selected:
-          target = &aux.mSelectedIcons;
-          break;
-        case EStrategicIconRun::Lifebar:
-          target = &aux.mLifebarIcons;
-          break;
-        case EStrategicIconRun::Hovered:
-          return;
+      case EStrategicIconRun::Ground:
+        target = &aux.mGroundIcons;
+        break;
+      case EStrategicIconRun::Air:
+        target = &aux.mAirIcons;
+        break;
+      case EStrategicIconRun::HighPriority:
+        target = &aux.mHighPriorityIcons;
+        break;
+      case EStrategicIconRun::Selected:
+        target = &aux.mSelectedIcons;
+        break;
+      case EStrategicIconRun::Lifebar:
+        target = &aux.mLifebarIcons;
+        break;
+      case EStrategicIconRun::Hovered:
+        return;
       }
 
       target->push_back(data);
@@ -526,7 +499,7 @@ namespace
     struct StrategicIconCandidate
     {
       UnitIconData mData;
-      const boost::shared_ptr<CD3DBatchTexture>* mIcon;
+      const std::shared_ptr<CD3DBatchTexture>* mIcon;
       EStrategicIconRun mRun;
     };
 
@@ -563,18 +536,18 @@ namespace
     {
       enum Flags : std::uint16_t
       {
-        kFriendly = 1U << 0U,                 ///< no focus army, or an ally of it
-        kStunned = 1U << 1U,                  ///< `mShowStunnedOverlay`
-        kPaused = 1U << 2U,                   ///< `mShowPausedOverlay`
-        kCheckPlayableRect = 1U << 3U,        ///< no focus army, or the focus army's own unit
-        kSelectedVariantEligible = 1U << 4U,  ///< intel bit 0x08 (or not a unit)
-        kLifebarBlueprint = 1U << 5U,         ///< `mLifeBarRender != 0`
-        kLifebarUnit = 1U << 6U,              ///< a unit that is not being upgraded and shows lifebars
-        kBusy = 1U << 7U,                     ///< `mUnitVarDat.mIsBusy`
-        kBeingBuilt = 1U << 8U,               ///< `IsBeingBuilt()`
+        kFriendly = 1U << 0U,                ///< no focus army, or an ally of it
+        kStunned = 1U << 1U,                 ///< `mShowStunnedOverlay`
+        kPaused = 1U << 2U,                  ///< `mShowPausedOverlay`
+        kCheckPlayableRect = 1U << 3U,       ///< no focus army, or the focus army's own unit
+        kSelectedVariantEligible = 1U << 4U, ///< intel bit 0x08 (or not a unit)
+        kLifebarBlueprint = 1U << 5U,        ///< `mLifeBarRender != 0`
+        kLifebarUnit = 1U << 6U,             ///< a unit that is not being upgraded and shows lifebars
+        kBusy = 1U << 7U,                    ///< `mUnitVarDat.mIsBusy`
+        kBeingBuilt = 1U << 8U,              ///< `IsBeingBuilt()`
         kSkipWhenMeshVisible = 1U << 9U,
-        kHighPriority = 1U << 10U,            ///< sort priority below 'A'
-        kAir = 1U << 11U,                     ///< a unit whose blueprint can fly
+        kHighPriority = 1U << 10U, ///< sort priority below 'A'
+        kAir = 1U << 11U,          ///< a unit whose blueprint can fly
       };
 
       /// Null when the classifier drops this entry before reading anything per-frame.
@@ -586,14 +559,19 @@ namespace
       Wm3::Vector3f mCurrentPosition{};
       float mImpact = 0.0f;
       /// The icon `PickUnitStrategicIconTexture` picks for an unhovered unit, unselected and selected.
-      const boost::shared_ptr<CD3DBatchTexture>* mIcon = nullptr;
-      const boost::shared_ptr<CD3DBatchTexture>* mSelectedIcon = nullptr;
+      const std::shared_ptr<CD3DBatchTexture>* mIcon = nullptr;
+      const std::shared_ptr<CD3DBatchTexture>* mSelectedIcon = nullptr;
       /// The same for a hovered unit (`Over` / `SelectedOver`, or the highlighted generic icon).
-      const boost::shared_ptr<CD3DBatchTexture>* mHoveredIcon = nullptr;
-      const boost::shared_ptr<CD3DBatchTexture>* mHoveredSelectedIcon = nullptr;
+      const std::shared_ptr<CD3DBatchTexture>* mHoveredIcon = nullptr;
+      const std::shared_ptr<CD3DBatchTexture>* mHoveredSelectedIcon = nullptr;
       std::uint16_t mFlags = 0U;
 
-      [[nodiscard]] bool Has(const Flags flag) const noexcept { return (mFlags & flag) != 0U; }
+      [[nodiscard]] bool Has(
+        const Flags flag
+      ) const noexcept
+      {
+        return (mFlags & flag) != 0U;
+      }
     };
 
     /// Engine addition (`ui_IconRecords`): one camera's records, valid while its key holds.
@@ -614,7 +592,7 @@ namespace
       std::vector<std::uint32_t> mSelectionBits;
       std::vector<const UserEntity*> mSelectionSnapshot; // the selection the bits were built from
       std::uint64_t mSelectionVersion = 0U;
-      std::uint64_t mSelectionBuiltFor = ~0ull;          // `mGpuSourcesVersion` the bits were built for
+      std::uint64_t mSelectionBuiltFor = ~0ull; // `mGpuSourcesVersion` the bits were built for
       const UserEntity* mHoveredEntity = nullptr;
       std::uint32_t mHoveredIndex = 0xFFFFFFFFU;
       std::uint64_t mHoveredBuiltFor = ~0ull;
@@ -624,7 +602,9 @@ namespace
     constexpr std::size_t kParallelIconMinUnits = 1024u;
     constexpr std::size_t kParallelIconChunk = 512u;
 
-    [[nodiscard]] bool UseParallelIcons(const std::size_t count)
+    [[nodiscard]] bool UseParallelIcons(
+      const std::size_t count
+    )
     {
       return ui_ParallelIcons && count >= kParallelIconMinUnits && CUserWorkerPool::ConfiguredWorkerCount() != 0u;
     }
@@ -656,10 +636,10 @@ namespace
       // Decoded in the binary's source order (Self/Ally/Enemy/Neutral); the
       // storage order (Self/Neutral/Ally/Enemy) is just field layout, not a
       // reordering of which key feeds which member.
-      mSelfColor = SCR_DecodeColor(msvc8::string(teamColorMode["Self"].GetString()));
-      mAllyColor = SCR_DecodeColor(msvc8::string(teamColorMode["Ally"].GetString()));
-      mEnemyColor = SCR_DecodeColor(msvc8::string(teamColorMode["Enemy"].GetString()));
-      mNeutralColor = SCR_DecodeColor(msvc8::string(teamColorMode["Neutral"].GetString()));
+      mSelfColor = SCR_DecodeColor(fa::string(teamColorMode["Self"].GetString()));
+      mAllyColor = SCR_DecodeColor(fa::string(teamColorMode["Ally"].GetString()));
+      mEnemyColor = SCR_DecodeColor(fa::string(teamColorMode["Enemy"].GetString()));
+      mNeutralColor = SCR_DecodeColor(fa::string(teamColorMode["Neutral"].GetString()));
 
       mUnidentifiedColor = moho::GetUnidentifiedColor();
     }
@@ -672,7 +652,9 @@ namespace
      * fills one `mGenericIcons` slot per `EGenericIconType` key with the
      * named batch texture.
      */
-    void StrategicIconAux::LoadGenericIcons(CWldSession* const session)
+    void StrategicIconAux::LoadGenericIcons(
+      CWldSession* const session
+    )
     {
       mGenericIcons.resize(8);
 
@@ -696,7 +678,9 @@ namespace
      * Imports strategic icon Lua tables and refreshes pause/stunned overlay
      * rest textures for one icon-aux runtime object.
      */
-    void StrategicIconAux::LoadPauseAndStunnedRestTextures(CWldSession* const session)
+    void StrategicIconAux::LoadPauseAndStunnedRestTextures(
+      CWldSession* const session
+    )
     {
       LuaPlus::LuaObject iconTable = SCR_Import(session->mState, "/lua/ui/game/strategicIcons.lua");
       LuaPlus::LuaObject pauseIcons = iconTable.GetByName("PauseIcons");
@@ -717,7 +701,8 @@ namespace
      * Address: 0x0085CBD0 (FUN_0085CBD0, sub_85CBD0)
      *
      * IDA signature:
-     * _DWORD *callcnv_F3 sub_85CBD0@<eax>(_DWORD *a1@<eax>, _DWORD **a2@<ebx>, int a3@<edi>, _DWORD *a4@<esi>, char a5);
+     * _DWORD *callcnv_F3 sub_85CBD0@<eax>(_DWORD *a1@<eax>, _DWORD **a2@<ebx>, int a3@<edi>, _DWORD *a4@<esi>, char
+     * a5);
      *
      * What it does:
      * Picks the shared "no specific blueprint icon" texture for one unit:
@@ -740,8 +725,10 @@ namespace
      * ++src.pn->use_count_`) from one of `aux->mGenericIcons`'s eight slots
      * or `aux->mWhiteTexture` - never a weak-to-shared promotion.
      */
-    [[nodiscard]] const boost::shared_ptr<CD3DBatchTexture>& PickGenericStrategicIconTexture(
-      const StrategicIconAux& aux, const UnitIconData& iconData, const bool wantHighlightVariant
+    [[nodiscard]] const std::shared_ptr<CD3DBatchTexture>& PickGenericStrategicIconTexture(
+      const StrategicIconAux& aux,
+      const UnitIconData& iconData,
+      const bool wantHighlightVariant
     )
     {
       // Engine change: returns the persistent handle (an `aux` slot or a blueprint field) by
@@ -751,16 +738,16 @@ namespace
       }
 
       switch (static_cast<ELayer>(iconData.mUnit->mVariableData.mLayerMask)) {
-        case LAYER_Land:
-          return aux.mGenericIcons[wantHighlightVariant ? GIT_LandHL : GIT_Land];
-        case LAYER_Seabed:
-        case LAYER_Sub:
-        case LAYER_Water:
-          return aux.mGenericIcons[wantHighlightVariant ? GIT_NavalHL : GIT_Naval];
-        case LAYER_Air:
-          return aux.mGenericIcons[wantHighlightVariant ? GIT_AirHL : GIT_Air];
-        default:
-          return aux.mWhiteTexture;
+      case LAYER_Land:
+        return aux.mGenericIcons[wantHighlightVariant ? GIT_LandHL : GIT_Land];
+      case LAYER_Seabed:
+      case LAYER_Sub:
+      case LAYER_Water:
+        return aux.mGenericIcons[wantHighlightVariant ? GIT_NavalHL : GIT_Naval];
+      case LAYER_Air:
+        return aux.mGenericIcons[wantHighlightVariant ? GIT_AirHL : GIT_Air];
+      default:
+        return aux.mWhiteTexture;
       }
     }
 
@@ -796,7 +783,7 @@ namespace
      *    `mStrategicIconRest/Selected/Over/SelectedOver` exactly (see the
      *    retype note on those fields in `REntityBlueprint.h`).
      */
-    [[nodiscard]] const boost::shared_ptr<CD3DBatchTexture>& PickUnitStrategicIconTexture(
+    [[nodiscard]] const std::shared_ptr<CD3DBatchTexture>& PickUnitStrategicIconTexture(
       const StrategicIconAux& aux,
       const UnitIconData& iconData,
       const bool isSelected,
@@ -811,15 +798,14 @@ namespace
       // mIntelStateFlags; re-declared locally because that constant is
       // file-private there.
       constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
-      const bool usesGenericIcon =
-        asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) == 0u;
+      const bool usesGenericIcon = asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) == 0u;
 
       if (isHovered) {
         if (usesGenericIcon) {
           return PickGenericStrategicIconTexture(aux, iconData, /*wantHighlightVariant=*/true);
         }
         return (isSelected && selectedVariantEligible) ? iconData.mBlueprint->mStrategicIconSelectedOver
-                                                         : iconData.mBlueprint->mStrategicIconOver;
+                                                       : iconData.mBlueprint->mStrategicIconOver;
       }
 
       if (isSelected && selectedVariantEligible) {
@@ -831,7 +817,7 @@ namespace
       return iconData.mBlueprint->mStrategicIconRest;
     }
     /** `TELEPORTBEACON` category the teleport-beacon splat/icon branch tests for (0x00851C5D). */
-    const msvc8::string kCommandSplatTeleportBeaconCategory("TELEPORTBEACON", 14u);
+    const fa::string kCommandSplatTeleportBeaconCategory("TELEPORTBEACON", 14u);
 
     /** Default (non-teleport) command-splat line colour, `0x80800000` (0x00851D22). */
     constexpr std::uint32_t kCommandSplatDefaultColor = 0x80800000u;
@@ -867,7 +853,9 @@ namespace
      * a defensive `false` return instead of reproducing the crash.
      */
     [[nodiscard]] bool ResolveCommandSplatAnchorPosition(
-      UserEntity& entity, const std::int32_t boneIndex, Wm3::Vector3f& outPosition
+      UserEntity& entity,
+      const std::int32_t boneIndex,
+      Wm3::Vector3f& outPosition
     )
     {
       if (boneIndex < 0) {
@@ -879,7 +867,7 @@ namespace
         return false;
       }
 
-      const boost::shared_ptr<CAniPose> pose = entity.mMeshInstance->ComputeDebugPose();
+      const std::shared_ptr<CAniPose> pose = entity.mMeshInstance->ComputeDebugPose();
       if (!pose) {
         return false;
       }
@@ -904,13 +892,16 @@ namespace
      * `shared_ptr<ID3DTextureSheet>` the overload wants, since
      * `RD3DTextureResource` derives from `ID3DTextureSheet`).
      */
-    void BindCommandSplatIconTexture(CD3DPrimBatcher& batcher, const char* const path)
+    void BindCommandSplatIconTexture(
+      CD3DPrimBatcher& batcher,
+      const char* const path
+    )
     {
       CD3DDevice* const device = D3D_GetDevice();
       ID3DDeviceResources* const resources = device->GetResources();
       ID3DDeviceResources::TextureResourceHandle textureHandle{};
       (void)resources->GetTexture(textureHandle, path, nullptr, true);
-      batcher.SetTexture(boost::shared_ptr<ID3DTextureSheet>(textureHandle));
+      batcher.SetTexture(std::shared_ptr<ID3DTextureSheet>(textureHandle));
     }
 
     /**
@@ -928,31 +919,56 @@ namespace
      * visible quad shape and opaque-white tint and is not expected to read
      * any differently.
      */
-    void DrawCommandSplatIcon(CD3DPrimBatcher& batcher, const Wm3::Vector3f& worldPosition)
+    void DrawCommandSplatIcon(
+      CD3DPrimBatcher& batcher,
+      const Wm3::Vector3f& worldPosition
+    )
     {
       constexpr std::uint32_t kIconColor = 0xFFFFFFFFu;
 
       const CD3DPrimBatcher::Vertex topLeft{
-        worldPosition.x - kCommandSplatIconHalfExtent, worldPosition.y, worldPosition.z + kCommandSplatIconHalfExtent,
-        kIconColor, 0.0f, 0.0f};
+        worldPosition.x - kCommandSplatIconHalfExtent,
+        worldPosition.y,
+        worldPosition.z + kCommandSplatIconHalfExtent,
+        kIconColor,
+        0.0f,
+        0.0f
+      };
       const CD3DPrimBatcher::Vertex topRight{
-        worldPosition.x - kCommandSplatIconHalfExtent, worldPosition.y, worldPosition.z - kCommandSplatIconHalfExtent,
-        kIconColor, 0.0f, 1.0f};
+        worldPosition.x - kCommandSplatIconHalfExtent,
+        worldPosition.y,
+        worldPosition.z - kCommandSplatIconHalfExtent,
+        kIconColor,
+        0.0f,
+        1.0f
+      };
       const CD3DPrimBatcher::Vertex bottomRight{
-        worldPosition.x + kCommandSplatIconHalfExtent, worldPosition.y, worldPosition.z - kCommandSplatIconHalfExtent,
-        kIconColor, 1.0f, 1.0f};
+        worldPosition.x + kCommandSplatIconHalfExtent,
+        worldPosition.y,
+        worldPosition.z - kCommandSplatIconHalfExtent,
+        kIconColor,
+        1.0f,
+        1.0f
+      };
       const CD3DPrimBatcher::Vertex bottomLeft{
-        worldPosition.x + kCommandSplatIconHalfExtent, worldPosition.y, worldPosition.z + kCommandSplatIconHalfExtent,
-        kIconColor, 1.0f, 0.0f};
+        worldPosition.x + kCommandSplatIconHalfExtent,
+        worldPosition.y,
+        worldPosition.z + kCommandSplatIconHalfExtent,
+        kIconColor,
+        1.0f,
+        0.0f
+      };
       batcher.DrawQuad(topLeft, topRight, bottomRight, bottomLeft);
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x008515B0 (FUN_008515B0, ?DrawCommandSplats@CWldSession@Moho@@QAEXXZ)
    */
-  void CWldSession::DrawCommandSplats(GeomCamera3* const camera, CD3DPrimBatcher* const primBatcher)
+  void CWldSession::DrawCommandSplats(
+    GeomCamera3* const camera,
+    CD3DPrimBatcher* const primBatcher
+  )
   {
     // Walk the selection weak-set and collect the distinct army indices of
     // every live selected unit (0x008515D4..0x00851696, `WeakSet_UserEntity`
@@ -985,8 +1001,8 @@ namespace
     primBatcher->SetViewProjMatrix(*camera);
     primBatcher->SetTexture(CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu));
 
-    msvc8::vector<Wm3::Vector3f> attackIconPositions{};
-    msvc8::vector<Wm3::Vector3f> teleportIconPositions{};
+    fa::vector<Wm3::Vector3f> attackIconPositions{};
+    fa::vector<Wm3::Vector3f> teleportIconPositions{};
 
     // `mSyncExtraUnitData` is the per-beat extra-unit-data run
     // `CWldSession::DoBeat` copies wholesale from `beat.mSyncExtraUnitData`
@@ -1021,14 +1037,14 @@ namespace
         // Direction from source to target, normalized (zero vector when the
         // two points coincide) - 0x00851A37..0x00851AE9.
         Wm3::Vector3f direction{
-          targetPosition.x - sourcePosition.x, targetPosition.y - sourcePosition.y,
-          targetPosition.z - sourcePosition.z};
+          targetPosition.x - sourcePosition.x, targetPosition.y - sourcePosition.y, targetPosition.z - sourcePosition.z
+        };
         const float distance =
           std::sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
         if (distance > 0.0f) {
           const float inverseDistance = 1.0f / distance;
-          direction = Wm3::Vector3f{
-            direction.x * inverseDistance, direction.y * inverseDistance, direction.z * inverseDistance};
+          direction =
+            Wm3::Vector3f{direction.x * inverseDistance, direction.y * inverseDistance, direction.z * inverseDistance};
         } else {
           direction = Wm3::Vector3f{0.0f, 0.0f, 0.0f};
         }
@@ -1036,15 +1052,18 @@ namespace
         // Perpendicular bevel offset: the direction rotated 90 degrees
         // about Y, scaled to the ribbon half-width (0x00851B8C..0x00851BA6).
         const Wm3::Vector3f bevel{
-          direction.z * kCommandSplatLineHalfWidth, 0.0f, -direction.x * kCommandSplatLineHalfWidth};
+          direction.z * kCommandSplatLineHalfWidth, 0.0f, -direction.x * kCommandSplatLineHalfWidth
+        };
 
         // The line ribbon runs from one unit short of the source to one
         // unit short of the target (0x00851AE9..0x00851C50), offset to one
         // side by `bevel`.
         const Wm3::Vector3f nearSource{
-          sourcePosition.x + direction.x, sourcePosition.y + direction.y, sourcePosition.z + direction.z};
+          sourcePosition.x + direction.x, sourcePosition.y + direction.y, sourcePosition.z + direction.z
+        };
         const Wm3::Vector3f nearTarget{
-          targetPosition.x - direction.x, targetPosition.y - direction.y, targetPosition.z - direction.z};
+          targetPosition.x - direction.x, targetPosition.y - direction.y, targetPosition.z - direction.z
+        };
 
         const Wm3::Vector3f topLeft{nearSource.x + bevel.x, nearSource.y + bevel.y, nearSource.z + bevel.z};
         const Wm3::Vector3f& topRight = nearSource;
@@ -1077,15 +1096,14 @@ namespace
 
     primBatcher->Flush();
   }
-namespace
-{
+  namespace
+  {
     /**
      * Tint every formation-placement ghost is stamped with, written straight
      * into `MeshInstance::color` at 0x00859E0B as the literal `0D8D8D800h`.
      */
     constexpr std::int32_t kFormationPreviewTint = static_cast<std::int32_t>(0xD8D8D800u);
-}
-
+  } // namespace
 
   /**
    * Address: 0x008599D0 (FUN_008599D0, ?RenderMeshPreviews@CWldSession@Moho@@QAEHXZ)
@@ -1118,8 +1136,7 @@ namespace
     // `CAiFormationInstance` declares - `mCurInstance` is typed as the bare
     // `IFormationInstance` interface. Same reinterpret_cast the rest of the
     // tree already uses to reach the concrete instance (Unit.cpp).
-    CAiFormationInstance* const instance =
-      reinterpret_cast<CAiFormationInstance*>(formation->mCurInstance);
+    CAiFormationInstance* const instance = static_cast<CAiFormationInstance*>(formation->mCurInstance);
     WeakSet<UserUnit>& participants = formation->mParticipants;
 
     for (UserUnit* const unit : participants) {
@@ -1127,10 +1144,9 @@ namespace
         // The unit's `IUnit` bridge sub-object at +0x148 is what every
         // formation-side call below is handed.
         IUnit* const bridge = GetIUnitBridge(unit);
-        Unit* const formationUnit = reinterpret_cast<Unit*>(bridge);
+        Unit* const formationUnit = static_cast<Unit*>(bridge);
 
-        if (!bridge->IsDead() && instance->Contains(formationUnit, false)
-            && unit->GetAttachmentParent() == nullptr) {
+        if (!bridge->IsDead() && instance->Contains(formationUnit, false) && unit->GetAttachmentParent() == nullptr) {
           const RUnitBlueprint* const blueprint = bridge->GetBlueprint();
           const RMeshBlueprint* const meshBlueprint = unit->mVariableData.mMeshBlueprint;
           if (!meshBlueprint->mLods.empty()) {
@@ -1145,8 +1161,7 @@ namespace
             // Park the ghost on the terrain: surface height under the slot,
             // plus the unit's own half-height and its blueprint elevation.
             Wm3::Vec3f position{slot.x, 0.0f, slot.z};
-            position.y =
-              GetSTIMap()->GetSurface(position) + blueprint->mSizeY + blueprint->Physics.Elevation;
+            position.y = GetSTIMap()->GetSurface(position) + blueprint->mSizeY + blueprint->Physics.Elevation;
 
             gFormationPreviews.push_back(SFormationPreviewGhost{});
             SFormationPreviewGhost& preview = gFormationPreviews.back();
@@ -1156,19 +1171,18 @@ namespace
             // secondary maps are left empty (0x00859C3F..0x00859C71).
             const RMeshBlueprintLOD& lod = *meshBlueprint->mLods.begin();
             preview.mMaterial = MeshMaterial::Create(
-              msvc8::string{"UnitFormationPreview"},
+              fa::string{"UnitFormationPreview"},
               lod.mAlbedoName,
               lod.mNormalsName,
               lod.mSpecularName,
-              msvc8::string{},
-              msvc8::string{},
+              fa::string{},
+              fa::string{},
               nullptr
             );
 
             const float uniformScale = blueprint->Display.UniformScale;
-            preview.mMesh = boost::shared_ptr<MeshInstance>(renderer->CreateMeshInstance(
-              0, 0, meshBlueprint, Wm3::Vec3f{uniformScale, uniformScale, uniformScale}, false,
-              preview.mMaterial
+            preview.mMesh = std::shared_ptr<MeshInstance>(renderer->CreateMeshInstance(
+              0, 0, meshBlueprint, Wm3::Vec3f{uniformScale, uniformScale, uniformScale}, false, preview.mMaterial
             ));
 
             if (preview.mMesh) {
@@ -1199,8 +1213,8 @@ namespace
       }
     }
   }
-namespace
-{
+  namespace
+  {
     /**
      * Gap between two stacked bars, in screen pixels (`flt_DFEB0C` added twice
      * per row at 0x0085D22F / 0x0085D23E).
@@ -1251,7 +1265,9 @@ namespace
      * Reports whether a screen point carries a real position, i.e. neither
      * component is NaN. This is the read side of `InvalidScreenPoint()`.
      */
-    [[nodiscard]] bool IsValidScreenPoint(const Wm3::Vector2f& point)
+    [[nodiscard]] bool IsValidScreenPoint(
+      const Wm3::Vector2f& point
+    )
     {
       return !std::isnan(point.X()) && !std::isnan(point.Y());
     }
@@ -1270,11 +1286,11 @@ namespace
      */
     [[nodiscard]] CD3DFont* CustomNameFont()
     {
-      static boost::SharedPtrRaw<CD3DFont> font{};
-      if (font.px == nullptr) {
+      static moho::CountedPtr<CD3DFont> font{};
+      if (font.tex == nullptr) {
         font = CD3DFont::Create(ui_CustomNameFontSize, ui_CustomNameFont.c_str());
       }
-      return font.px;
+      return font.tex;
     }
 
     /**
@@ -1316,10 +1332,12 @@ namespace
      * on screen blinks in step: the whole-tick counter plus this frame's
      * sub-tick interpolant, scaled by the console rate and wrapped.
      */
-    [[nodiscard]] float FuelWarningBlinkPhase(const StrategicIconAux& aux)
+    [[nodiscard]] float FuelWarningBlinkPhase(
+      const StrategicIconAux& aux
+    )
     {
       const double simTime = static_cast<double>(aux.mSession->mGameTick) + static_cast<double>(aux.mTickFraction);
-      return static_cast<float>(msvc8::fmod(simTime * static_cast<double>(ui_FuelEmptyBlinkRate), 1.0));
+      return static_cast<float>(fa::fmod(simTime * static_cast<double>(ui_FuelEmptyBlinkRate), 1.0));
     }
 
     /**
@@ -1348,7 +1366,11 @@ namespace
      * bottom edge of the last row actually drawn, which is what
      * `DrawUnitCustomNameLabel` hangs its text off.
      */
-    void DrawUnitLifebars(const UnitIconData& icon, Wm3::Vector2f& labelCursor, const StrategicIconAux& aux)
+    void DrawUnitLifebars(
+      const UnitIconData& icon,
+      Wm3::Vector2f& labelCursor,
+      const StrategicIconAux& aux
+    )
     {
       CD3DPrimBatcher& primBatcher = *aux.mBatcher;
       primBatcher.SetTexture(aux.mWhiteTexture);
@@ -1399,11 +1421,9 @@ namespace
 
       // NDC to whole pixels, Y flipped, same mapping the resource splats use.
       const float inverseClipW = 1.0f / clipW;
-      const float anchorScreenX =
-        std::floor(((clipX * inverseClipW) - -1.0f) * aux.mViewportWidth * 0.5f);
-      const float anchorScreenY = std::floor(
-        ((((clipY * inverseClipW) - -1.0f) * (-0.0f - aux.mViewportHeight)) * 0.5f) + aux.mViewportHeight
-      );
+      const float anchorScreenX = std::floor(((clipX * inverseClipW) - -1.0f) * aux.mViewportWidth * 0.5f);
+      const float anchorScreenY =
+        std::floor(((((clipY * inverseClipW) - -1.0f) * (-0.0f - aux.mViewportHeight)) * 0.5f) + aux.mViewportHeight);
 
       const float halfBarWidth = barWidth * 0.5f;
       const float barLeft = anchorScreenX - halfBarWidth;
@@ -1498,15 +1518,11 @@ namespace
 
       float lastRowTop = barTop;
       if (secondRowFraction > 0.0f) {
-        DrawLifebarQuad(
-          primBatcher, barLeft, secondRowTop, barRight, secondRowTop + barHeight, kLifebarBackdropColor
-        );
+        DrawLifebarQuad(primBatcher, barLeft, secondRowTop, barRight, secondRowTop + barHeight, kLifebarBackdropColor);
         lastRowTop = secondRowTop;
 
         if (thirdRowFraction > 0.0f) {
-          DrawLifebarQuad(
-            primBatcher, barLeft, thirdRowTop, barRight, thirdRowTop + barHeight, kLifebarBackdropColor
-          );
+          DrawLifebarQuad(primBatcher, barLeft, thirdRowTop, barRight, thirdRowTop + barHeight, kLifebarBackdropColor);
           lastRowTop = thirdRowTop;
         }
       }
@@ -1584,10 +1600,9 @@ namespace
       UserUnit* const unit = icon.mUnit->IsUserUnit();
 
       // `UserUnit::GetCustomName` (vtable slot 24, `[vftable+0x60]`) hands back
-      // the address of the unit's `msvc8::string`, not a C string - the binary
-      // reads `_Mysize` at +0x14 and picks the inline buffer or heap pointer off
-      // `_Myres` at +0x18. Same reinterpret the console command family uses.
-      const auto& customName = *reinterpret_cast<const msvc8::string*>(unit->GetCustomName());
+      // the unit's `fa::string` - the binary reads `_Mysize` at +0x14 and picks
+      // the inline buffer or heap pointer off `_Myres` at +0x18.
+      const fa::string& customName = unit->GetCustomName();
       if (customName.empty()) {
         return InvalidScreenPoint();
       }
@@ -1606,11 +1621,7 @@ namespace
         textBaseline = labelCursor.Y();
       } else {
         const Wm3::Vector2f projected = aux.mCamera->Project(
-          Wm3::Vector3f(icon.mWorldX, icon.mWorldY, icon.mWorldZ),
-          0.0f,
-          aux.mViewportWidth,
-          aux.mViewportHeight,
-          0.0f
+          Wm3::Vector3f(icon.mWorldX, icon.mWorldY, icon.mWorldZ), 0.0f, aux.mViewportWidth, aux.mViewportHeight, 0.0f
         );
         textLeft = projected.X() - (textWidth * 0.5f);
         textBaseline = (icon.mBlueprint->mLifeBarOffset + projected.Y()) + ui_LifebarOffset;
@@ -1627,22 +1638,8 @@ namespace
       // call site - `Render2D` materialises its own axis constants on entry
       // (0x00426583..0x004265AB) - so both draws use the file's established
       // unscaled / unclipped defaults.
-      font->Render2D(
-        customName.c_str(),
-        aux.mBatcher,
-        shadowOrigin,
-        kLabelShadowColor,
-        1.0f,
-        gpg::NaN
-      );
-      font->Render2D(
-        customName.c_str(),
-        aux.mBatcher,
-        textOrigin,
-        ui_CustomNameColor,
-        1.0f,
-        gpg::NaN
-      );
+      font->Render2D(customName.c_str(), aux.mBatcher, shadowOrigin, kLabelShadowColor, 1.0f, gpg::NaN);
+      font->Render2D(customName.c_str(), aux.mBatcher, textOrigin, ui_CustomNameColor, 1.0f, gpg::NaN);
 
       return textOrigin;
     }
@@ -1676,7 +1673,7 @@ namespace
      * down-right first, same as the custom name label.
      *
      * The joined string is built by walking `unit->mSelectionSets` in its
-     * own key order (`msvc8::set<msvc8::string>`'s `begin()`/`end()`/
+     * own key order (`fa::set<fa::string>`'s `begin()`/`end()`/
      * `operator++`, i.e. the already-recovered `rb_increment` at
      * FUN_004DDD30 - also reached from `UserUnit::AddToSelectionSet` and
      * `cfunc_UserUnitGetSelectionSetsL`, confirming this is the same
@@ -1707,8 +1704,8 @@ namespace
 
       CD3DFont* const font = CustomNameFont();
 
-      msvc8::string joinedNames{};
-      for (const msvc8::string& name : unit->mSelectionSets) {
+      fa::string joinedNames{};
+      for (const fa::string& name : unit->mSelectionSets) {
         joinedNames.append(name.view());
         joinedNames.append(" ", 1);
       }
@@ -1726,11 +1723,7 @@ namespace
         textBaseline = labelCursor.Y();
       } else {
         const Wm3::Vector2f projected = aux.mCamera->Project(
-          Wm3::Vector3f(icon.mWorldX, icon.mWorldY, icon.mWorldZ),
-          0.0f,
-          aux.mViewportWidth,
-          aux.mViewportHeight,
-          0.0f
+          Wm3::Vector3f(icon.mWorldX, icon.mWorldY, icon.mWorldZ), 0.0f, aux.mViewportWidth, aux.mViewportHeight, 0.0f
         );
         textLeft = projected.X() - (textWidth * 0.5f);
         textBaseline = (icon.mBlueprint->mLifeBarOffset + projected.Y()) + ui_LifebarOffset;
@@ -1743,22 +1736,8 @@ namespace
       const Wm3::Vector2f shadowOrigin{snappedLeft + kLabelShadowOffset, snappedBaseline + kLabelShadowOffset};
       const Wm3::Vector2f textOrigin{snappedLeft, snappedBaseline};
 
-      font->Render2D(
-        joinedNames.c_str(),
-        aux.mBatcher,
-        shadowOrigin,
-        kLabelShadowColor,
-        1.0f,
-        gpg::NaN
-      );
-      font->Render2D(
-        joinedNames.c_str(),
-        aux.mBatcher,
-        textOrigin,
-        ui_SelectionSetNamesColor,
-        1.0f,
-        gpg::NaN
-      );
+      font->Render2D(joinedNames.c_str(), aux.mBatcher, shadowOrigin, kLabelShadowColor, 1.0f, gpg::NaN);
+      font->Render2D(joinedNames.c_str(), aux.mBatcher, textOrigin, ui_SelectionSetNamesColor, 1.0f, gpg::NaN);
 
       return textOrigin;
     }
@@ -1804,7 +1783,9 @@ namespace
      * byte position with the low bit cleared. Used to darken a strategic
      * icon's tint for units whose intel carries bit 0x40.
      */
-    [[nodiscard]] std::uint32_t DarkenRgbPreserveAlpha(const std::uint32_t argb)
+    [[nodiscard]] std::uint32_t DarkenRgbPreserveAlpha(
+      const std::uint32_t argb
+    )
     {
       const std::uint32_t alpha = argb & 0xFF000000u;
       const std::uint32_t red = ((argb >> 16) & 0xFFu) >> 1;
@@ -1826,10 +1807,13 @@ namespace
       std::uint32_t mColor = 0u;
       bool mVisible = true;
       /// The identified underlay to draw under the icon, or null (the entity's own handle).
-      const boost::shared_ptr<CD3DBatchTexture>* mUnderlay = nullptr;
+      const std::shared_ptr<CD3DBatchTexture>* mUnderlay = nullptr;
     };
 
-    [[nodiscard]] UnitIconPlacement PlaceUnitIcon(const UnitIconData& icon, const StrategicIconAux& aux)
+    [[nodiscard]] UnitIconPlacement PlaceUnitIcon(
+      const UnitIconData& icon,
+      const StrategicIconAux& aux
+    )
     {
       UnitIconPlacement placement{};
 
@@ -1886,7 +1870,7 @@ namespace
 
         // `UserEntity::GetStrategicUnderlayTexture` returns a copy of this handle; the draw only
         // needs to read it.
-        const boost::shared_ptr<CD3DBatchTexture>& underlay = icon.mUnit->mVariableData.mUnderlayTexture;
+        const std::shared_ptr<CD3DBatchTexture>& underlay = icon.mUnit->mVariableData.mUnderlayTexture;
         if (hasIdentifiedOwner && underlay) {
           placement.mUnderlay = &underlay;
         }
@@ -1902,7 +1886,11 @@ namespace
      * quad goes to `drawQuad(texture, centerX, centerY, color)`.
      */
     template <class DrawQuad>
-    void EmitUnitIconQuads(const UnitIconData& icon, const UnitIconPlacement& placement, DrawQuad&& drawQuad)
+    void EmitUnitIconQuads(
+      const UnitIconData& icon,
+      const UnitIconPlacement& placement,
+      DrawQuad&& drawQuad
+    )
     {
       constexpr std::uint32_t kOverlayNoTintColor = 0xFFFFFFFFu;
 
@@ -1931,12 +1919,20 @@ namespace
     }
 
     /// Engine addition: `EmitUnitIconQuads` straight into the batcher, one `SetTexture` per quad.
-    void EmitUnitIcon(const UnitIconData& icon, const UnitIconPlacement& placement, const StrategicIconAux& aux)
+    void EmitUnitIcon(
+      const UnitIconData& icon,
+      const UnitIconPlacement& placement,
+      const StrategicIconAux& aux
+    )
     {
-      EmitUnitIconQuads(icon, placement, [&](const boost::shared_ptr<CD3DBatchTexture>& texture, const float x, const float y, const std::uint32_t color) {
+      EmitUnitIconQuads(
+        icon,
+        placement,
+        [&](const std::shared_ptr<CD3DBatchTexture>& texture, const float x, const float y, const std::uint32_t color) {
         aux.mBatcher->SetTexture(texture);
         DrawStrategicIconQuad(*aux.mBatcher, x, y, *texture, color);
-      });
+      }
+      );
     }
 
     /**
@@ -1950,7 +1946,10 @@ namespace
     class StrategicIconBulkEmitter
     {
     public:
-      StrategicIconBulkEmitter(CD3DPrimBatcher& batcher, std::vector<CD3DPrimBatcher::ScreenQuad>& pending)
+      StrategicIconBulkEmitter(
+        CD3DPrimBatcher& batcher,
+        std::vector<CD3DPrimBatcher::ScreenQuad>& pending
+      )
         : mBatcher(batcher)
         , mPending(pending)
       {
@@ -1963,7 +1962,10 @@ namespace
       }
 
       void operator()(
-        const boost::shared_ptr<CD3DBatchTexture>& texture, const float centerX, const float centerY, const std::uint32_t color
+        const std::shared_ptr<CD3DBatchTexture>& texture,
+        const float centerX,
+        const float centerY,
+        const std::uint32_t color
       )
       {
         if (texture.get() != mLastTexture) {
@@ -1975,9 +1977,11 @@ namespace
         // `DrawStrategicIconQuad`'s corners, scaled the same way (FAF FA-Binary-Patches #147).
         const float halfWidth = static_cast<float>(texture->mWidth >> 1) * ui_StrategicIconScale;
         const float halfHeight = static_cast<float>(texture->mHeight >> 1) * ui_StrategicIconScale;
-        mPending.push_back(CD3DPrimBatcher::ScreenQuad{
-          centerX - halfWidth, centerY - halfHeight, centerX + halfWidth, centerY + halfHeight, color
-        });
+        mPending.push_back(
+          CD3DPrimBatcher::ScreenQuad{
+            centerX - halfWidth, centerY - halfHeight, centerX + halfWidth, centerY + halfHeight, color
+          }
+        );
       }
 
     private:
@@ -2020,7 +2024,7 @@ namespace
       // The textures `StoreStrategicIcon` would attach: the picked icon, and the paused and
       // stunned rest textures when the flags ask for them.
       const UnitIconData& icon = candidate.mData;
-      const boost::shared_ptr<CD3DBatchTexture>* layers[StrategicIconInstance::kLayerCount] = {
+      const std::shared_ptr<CD3DBatchTexture>* layers[StrategicIconInstance::kLayerCount] = {
         placement.mUnderlay,
         icon.mSuppressBaseIcon ? nullptr : candidate.mIcon,
         (icon.mShowPausedOverlay && aux.mPauseRestTexture) ? &aux.mPauseRestTexture : nullptr,
@@ -2063,7 +2067,7 @@ namespace
       sGpuPlacements.resize(count);
       sIncomplete.assign(count, 0U);
 
-      const auto findSlot = [&renderer](const boost::shared_ptr<CD3DBatchTexture>& texture) {
+      const auto findSlot = [&renderer](const std::shared_ptr<CD3DBatchTexture>& texture) {
         return renderer.FindSlot(texture.get());
       };
       const auto build = [&](const std::size_t begin, const std::size_t end) {
@@ -2081,7 +2085,7 @@ namespace
       }
 
       // Textures seen for the first time get their slot here, on this thread.
-      const auto addSlot = [&renderer](const boost::shared_ptr<CD3DBatchTexture>& texture) {
+      const auto addSlot = [&renderer](const std::shared_ptr<CD3DBatchTexture>& texture) {
         return renderer.AddSlot(texture);
       };
       for (std::size_t i = 0; i < count; ++i) {
@@ -2135,7 +2139,10 @@ namespace
      * resolved/darkened color; the underlay and both overlays draw at their
      * own native texture color.
      */
-    void RenderUnitIcon(const UnitIconData& icon, const StrategicIconAux& aux)
+    void RenderUnitIcon(
+      const UnitIconData& icon,
+      const StrategicIconAux& aux
+    )
     {
       EmitUnitIcon(icon, PlaceUnitIcon(icon, aux), aux);
     }
@@ -2146,12 +2153,17 @@ namespace
      * texture), logging the totals every 300 calls and the first few differences.
      */
     template <class FromUnits, class FromRecords>
-    void VerifyStrategicIconSources(const std::size_t count, FromUnits&& fromUnits, FromRecords&& fromRecords)
+    void VerifyStrategicIconSources(
+      const std::size_t count,
+      FromUnits&& fromUnits,
+      FromRecords&& fromRecords
+    )
     {
       static const bool sEnabled = [] {
         char value[8] = {};
         std::size_t length = 0u;
-        return ::getenv_s(&length, value, sizeof(value), "FAF_ICON_RECORDS_CHECK") == 0 && length != 0u && value[0] == '1';
+        return ::getenv_s(&length, value, sizeof(value), "FAF_ICON_RECORDS_CHECK") == 0 && length != 0u &&
+          value[0] == '1';
       }();
       if (!sEnabled) {
         return;
@@ -2163,7 +2175,9 @@ namespace
         float mX, mY, mZ;
         std::uint8_t mFlags;
         const CD3DBatchTexture* mTexture;
-        [[nodiscard]] bool operator==(const Stored& other) const noexcept
+        [[nodiscard]] bool operator==(
+          const Stored& other
+        ) const noexcept
         {
           return mRun == other.mRun && mUnit == other.mUnit && std::memcmp(&mX, &other.mX, sizeof(float) * 3u) == 0 &&
             mFlags == other.mFlags && mTexture == other.mTexture;
@@ -2176,13 +2190,24 @@ namespace
       static std::uint64_t sMismatches = 0u;
       static int sReported = 0;
       const auto recorder = [](std::vector<Stored>& out) {
-        return [&out](const EStrategicIconRun run, const UnitIconData& data, const boost::shared_ptr<CD3DBatchTexture>* const icon) {
-          out.push_back(Stored{
-            run, data.mUnit, data.mWorldX, data.mWorldY, data.mWorldZ,
-            static_cast<std::uint8_t>(data.mIsFriendly | (data.mShowPausedOverlay << 1) | (data.mShowStunnedOverlay << 2) |
-                                      (data.mSuppressBaseIcon << 3)),
-            icon != nullptr ? icon->get() : nullptr
-          });
+        return
+          [&out](
+            const EStrategicIconRun run, const UnitIconData& data, const std::shared_ptr<CD3DBatchTexture>* const icon
+          ) {
+          out.push_back(
+            Stored{
+              run,
+              data.mUnit,
+              data.mWorldX,
+              data.mWorldY,
+              data.mWorldZ,
+              static_cast<std::uint8_t>(
+                data.mIsFriendly | (data.mShowPausedOverlay << 1) | (data.mShowStunnedOverlay << 2) |
+                (data.mSuppressBaseIcon << 3)
+              ),
+              icon != nullptr ? icon->get() : nullptr
+            }
+          );
         };
       };
       for (std::size_t i = 0; i < count; ++i) {
@@ -2196,10 +2221,19 @@ namespace
           if (sReported < 8) {
             ++sReported;
             gpg::Warnf(
-              "icon record check: entry %zu differs (units stored %zu, records stored %zu; first run %d/%d, pos %g,%g,%g / %g,%g,%g)",
-              i, sA.size(), sB.size(), sA.empty() ? -1 : static_cast<int>(sA[0].mRun), sB.empty() ? -1 : static_cast<int>(sB[0].mRun),
-              sA.empty() ? 0.0 : sA[0].mX, sA.empty() ? 0.0 : sA[0].mY, sA.empty() ? 0.0 : sA[0].mZ, sB.empty() ? 0.0 : sB[0].mX,
-              sB.empty() ? 0.0 : sB[0].mY, sB.empty() ? 0.0 : sB[0].mZ
+              "icon record check: entry %zu differs (units stored %zu, records stored %zu; first run %d/%d, pos "
+              "%g,%g,%g / %g,%g,%g)",
+              i,
+              sA.size(),
+              sB.size(),
+              sA.empty() ? -1 : static_cast<int>(sA[0].mRun),
+              sB.empty() ? -1 : static_cast<int>(sB[0].mRun),
+              sA.empty() ? 0.0 : sA[0].mX,
+              sA.empty() ? 0.0 : sA[0].mY,
+              sA.empty() ? 0.0 : sA[0].mZ,
+              sB.empty() ? 0.0 : sB[0].mX,
+              sB.empty() ? 0.0 : sB[0].mY,
+              sB.empty() ? 0.0 : sB[0].mZ
             );
           }
         }
@@ -2229,7 +2263,9 @@ namespace
     }
 
     void CompareClassifiedStrategicIcons(
-      const std::vector<StrategicIconInstance>& expected, const std::vector<StrategicIconInstance>& drawn, const bool miniMap
+      const std::vector<StrategicIconInstance>& expected,
+      const std::vector<StrategicIconInstance>& drawn,
+      const bool miniMap
     )
     {
       static std::uint64_t sChecks = 0u;
@@ -2257,8 +2293,17 @@ namespace
           const StrategicIconInstance& a = expected[i];
           const StrategicIconInstance& b = drawn[i];
           gpg::Warnf(
-            "icon GPU check (%s): record %zu differs: cpu {pos %08X color %08X layers %08X %08X} gpu {pos %08X color %08X layers %08X %08X}",
-            miniMap ? "minimap" : "view", i, a.mPosition, a.mColor, a.mLayers01, a.mLayers23, b.mPosition, b.mColor, b.mLayers01,
+            "icon GPU check (%s): record %zu differs: cpu {pos %08X color %08X layers %08X %08X} gpu {pos %08X color "
+            "%08X layers %08X %08X}",
+            miniMap ? "minimap" : "view",
+            i,
+            a.mPosition,
+            a.mColor,
+            a.mLayers01,
+            a.mLayers23,
+            b.mPosition,
+            b.mColor,
+            b.mLayers01,
             b.mLayers23
           );
         }
@@ -2267,15 +2312,1101 @@ namespace
       sDiffering += differing;
       if (expected.size() != drawn.size() || differing != 0u || sChecks % 20u == 0u) {
         gpg::Logf(
-          "icon GPU check (%s): %zu records on the CPU, %zu drawn by the GPU, %zu differ; totals: %llu checks (%llu minimap), "
+          "icon GPU check (%s): %zu records on the CPU, %zu drawn by the GPU, %zu differ; totals: %llu checks (%llu "
+          "minimap), "
           "%llu records, %llu differ, %llu count mismatches",
-          miniMap ? "minimap" : "view", expected.size(), drawn.size(), differing, sChecks, sMiniMapChecks, sRecords, sDiffering,
+          miniMap ? "minimap" : "view",
+          expected.size(),
+          drawn.size(),
+          differing,
+          sChecks,
+          sMiniMapChecks,
+          sRecords,
+          sDiffering,
           sCountMismatches
         );
       }
     }
-}
+  } // namespace
 
+  namespace
+  {
+    /**
+     * One frame of `CWldSession::RenderStrategicIcons`: what its phases share. Lives for that call.
+     */
+    struct StrategicIconFrame
+    {
+      CWldSession& session;
+      StrategicIconAux& aux;
+      CameraImpl* const camera;
+      const GeomCamera3& view;
+      CD3DPrimBatcher* const primBatcher;
+      const float tickFraction;
+      const bool isMiniMap;
+      const bool showAttachedUnitLifebars;
+      const float currentZoomValue;
+      UserArmy* const focusArmy;
+      gpg::core::FastVectorInline<WeakPtr<UserEntity>>& frustumUnits;
+      const std::size_t frustumUnitCount;
+      StrategicIconRenderer& gpuIcons;
+      const UserEntity* const hoveredEntity;
+      const float maxZoomFade;
+      const bool classifyOnGpu;
+      const StrategicIconSource* iconSources = nullptr;
+      StrategicIconSourceSet* activeSourceSet = nullptr;
+
+      // Engine addition (`ui_ParallelIcons`): the classification below reads each entity and writes
+      // only that entity's interpolation cache and its own icon record, so chunks of the frustum list
+      // run on CUserWorkerPool and are merged back in list order, which keeps every run - and so the
+      // draw order - exactly as the serial walk builds it.
+      template <class Store>
+      void Classify(
+        const WeakPtr<UserEntity>& ref,
+        Store&& store
+      )
+      {
+        UserEntity* const entity = ref.GetObjectPtr();
+        if (entity == nullptr || entity->mVariableData.mIsDead) {
+          return;
+        }
+
+        UserUnit* const asUnit = entity->IsUserUnit();
+
+        // `mIntelStateFlags` bit 0x20: this unit renders through some other
+        // path already and its strategic icon is suppressed outright
+        // (`(v26->mSelectionMaskUsed & 0x20) == 0` gates entry at 0x0085BAC3).
+        constexpr std::uint32_t kStrategicIconEntitySuppressedMask = 0x20u;
+        if (asUnit != nullptr && (asUnit->mIntelStateFlags & kStrategicIconEntitySuppressedMask) != 0u) {
+          return;
+        }
+
+        const REntityBlueprint* const blueprint = entity->mParams.mBlueprint;
+        if (blueprint == nullptr || blueprint->mStrategicIconName.empty()) {
+          return;
+        }
+
+        UnitIconData iconData{};
+        iconData.mUnit = entity;
+        iconData.mBlueprint = blueprint;
+
+        const VTransform interpolated = entity->GetInterpolatedTransform(tickFraction);
+        iconData.mWorldX = interpolated.pos_.x;
+        iconData.mWorldY = interpolated.pos_.y;
+        iconData.mWorldZ = interpolated.pos_.z;
+
+        // `mIntelStateFlags` bit 0x08 ("health-valid") / bit 0x10
+        // ("has-data"): both default true for non-`UserUnit` entities
+        // (wrecks, props, ...), matching `isBusy_60`/`v49`'s init at
+        // 0x0085BB60..0x0085BB74.
+        constexpr std::uint32_t kIntelHealthValidMask = 0x08u;
+        constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
+        const bool selectedVariantEligible =
+          asUnit == nullptr || (asUnit->mIntelStateFlags & kIntelHealthValidMask) != 0u;
+        const bool hasFullBlueprintIconData =
+          asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) != 0u;
+
+        iconData.mIsFriendly =
+          focusArmy == nullptr || focusArmy->IsAlly(static_cast<std::uint32_t>(entity->mArmy->mArmyIndex));
+
+        iconData.mShowStunnedOverlay = asUnit != nullptr && asUnit->mUnitVarDat.mStunTicks != 0;
+        if (iconData.mIsFriendly && asUnit != nullptr) {
+          const std::uint32_t toggleCaps = asUnit->GetAttributes().toggleCapsMask;
+          // Script-bit indices from 0x0085BE51..0x0085BEFA. Shield uses
+          // the opposite polarity; weapon and special toggles are excluded.
+          iconData.mShowPausedOverlay = ((toggleCaps & RULEUTC_ShieldToggle) != 0u && !asUnit->HasScriptBit(0)) ||
+            ((toggleCaps & RULEUTC_JammingToggle) != 0u && asUnit->HasScriptBit(2)) ||
+            ((toggleCaps & RULEUTC_IntelToggle) != 0u && asUnit->HasScriptBit(3)) ||
+            ((toggleCaps & RULEUTC_ProductionToggle) != 0u && asUnit->HasScriptBit(4)) ||
+            ((toggleCaps & RULEUTC_StealthToggle) != 0u && asUnit->HasScriptBit(5)) ||
+            ((toggleCaps & RULEUTC_GenericToggle) != 0u && asUnit->HasScriptBit(6)) ||
+            ((toggleCaps & RULEUTC_CloakToggle) != 0u && asUnit->HasScriptBit(8)) || asUnit->mUnitVarDat.mIsPaused;
+        }
+
+        if (focusArmy == nullptr || entity->mArmy == focusArmy) {
+          if (
+            session.mWldMap != nullptr && session.mWldMap->mTerrainRes != nullptr &&
+            !session.mWldMap->mTerrainRes->IsInPlayableRect(interpolated.pos_)
+          ) {
+            return;
+          }
+        }
+
+        if (iconData.mIsFriendly) {
+          UserEntity* const attachmentParent = entity->GetAttachmentParent();
+          if (attachmentParent != nullptr && attachmentParent->IsInCategory(fa::string("CARRIER"))) {
+            return;
+          }
+        } else if (asUnit != nullptr && asUnit->mUnitVarDat.mIsBusy && asUnit->GetBlueprint()->Air.CanFly) {
+          return;
+        }
+
+        // --- Lifebar collection gate (0x0085BFDB..0x0085C09F) -------------
+        // The one producer of `mLifebarIcons`. Everything below is read in the
+        // binary's own order; each early-out lands on the same 0x0085C0A4
+        // continue as the icon test that follows.
+        if (
+          ui_RenderUnitBars && ui_LifebarLOD > currentZoomValue && !entity->mVariableData.mIsDead &&
+          blueprint->mLifeBarRender != 0
+        ) {
+          // Enemy units only get bars when their health is actually known
+          // (`selectedVariantEligible`, intel bit 0x08), and then only if the
+          // player forced enemy bars on or is hovering this unit. Friendly units
+          // skip all three tests.
+          bool eligible = iconData.mIsFriendly;
+          if (!eligible && selectedVariantEligible) {
+            eligible = ui_ForceLifbarsOnEnemy || entity == session.GetHoveredUserEntity();
+          }
+
+          if (eligible && asUnit != nullptr) {
+            // A unit mid-upgrade is drawn by the upgrade progress UI instead
+            // (slot 15, dispatched with `push 25h` at 0x0085C06B).
+            const IUnit* const unitBridge = GetIUnitBridge(asUnit);
+            const bool attachedAndHidden = !showAttachedUnitLifebars && asUnit->mUnitVarDat.mIsBusy;
+            if (
+              !unitBridge->IsUnitState(UNITSTATE_BeingUpgraded) && !attachedAndHidden &&
+              unitBridge->GetBlueprint()->Display.HideLifebars == 0
+            ) {
+              store(EStrategicIconRun::Lifebar, iconData, nullptr);
+            }
+          }
+        }
+
+        if (!ui_NisRenderIcons || (!ui_RenderIcons && !iconData.mShowPausedOverlay) || entity->IsBeingBuilt()) {
+          return;
+        }
+
+        // When the unit's own mesh is already close enough to be visible
+        // without help, skip the icon entirely for units that have full
+        // intel data (or belong to an immobile blueprint under a focus
+        // army) and aren't paused - everyone else still gets an icon.
+        const bool skipWhenMeshVisible =
+          (hasFullBlueprintIconData || (focusArmy != nullptr && !blueprint->IsMobile())) &&
+          !iconData.mShowPausedOverlay;
+
+        const RMeshBlueprint* const mesh = entity->mVariableData.mMeshBlueprint;
+        if (mesh != nullptr && !ui_AlwaysRenderStrategicIcons) {
+          const float fadeThreshold = std::min(mesh->mIconFadeInZoom, camera->GetMaxZoom() * 0.89f);
+          if (fadeThreshold > currentZoomValue) {
+            if (skipWhenMeshVisible) {
+              return;
+            }
+            iconData.mSuppressBaseIcon = iconData.mShowPausedOverlay || iconData.mShowStunnedOverlay;
+          }
+        }
+
+        const bool isHovered = entity == session.GetHoveredUserEntity();
+
+        const bool isSelected = session.mSelection.Find(entity) != session.mSelection.end();
+
+        // The texture handles are attached where the record is stored (`StoreStrategicIcon`).
+        const std::shared_ptr<CD3DBatchTexture>& icon =
+          PickUnitStrategicIconTexture(aux, iconData, isSelected, selectedVariantEligible, isHovered);
+        if (!icon) {
+          return;
+        }
+
+        // 0x0085C262..0x0085C28E: the hovered unit goes to the one hovered slot, not to a run.
+        if (isHovered) {
+          store(EStrategicIconRun::Hovered, iconData, &icon);
+          return;
+        }
+
+        if (isSelected) {
+          store(EStrategicIconRun::Selected, iconData, &icon);
+          return;
+        }
+
+        // Sort-priority byte < 'A' always wins the high-priority run
+        // (0x0085C2C0..0x0085C2C7). At/above 'A' the binary default-
+        // constructs a `WeakPtr_CD3DBatchTexture` and tests it - a
+        // no-argument constructor is unconditionally empty, so that branch
+        // is provably always false and always falls through to ground/air.
+        if (blueprint->mStrategicIconSortPriority < static_cast<std::uint8_t>('A')) {
+          store(EStrategicIconRun::HighPriority, iconData, &icon);
+          return;
+        }
+
+        if (asUnit != nullptr && asUnit->GetBlueprint()->Air.CanFly) {
+          store(EStrategicIconRun::Air, iconData, &icon);
+        } else {
+          store(EStrategicIconRun::Ground, iconData, &icon);
+        }
+      }
+
+      // Engine addition (`ui_IconRecords`): `classify` split in two. `describe` reads, once per
+      // entry of the in-view list, every input that only the sync apply changes; the records stay
+      // valid until a beat is applied, the list is rebuilt or the focus army changes (all on this
+      // thread, before rendering). `classifySource` then does `classify`'s per-frame work from the
+      // record, with the same tests in the same order.
+      void Describe(
+        const WeakPtr<UserEntity>& ref,
+        StrategicIconSource& source
+      )
+      {
+        source = StrategicIconSource{};
+        UserEntity* const entity = ref.GetObjectPtr();
+        if (entity == nullptr || entity->mVariableData.mIsDead) {
+          return;
+        }
+        UserUnit* const asUnit = entity->IsUserUnit();
+        constexpr std::uint32_t kStrategicIconEntitySuppressedMask = 0x20u;
+        if (asUnit != nullptr && (asUnit->mIntelStateFlags & kStrategicIconEntitySuppressedMask) != 0u) {
+          return;
+        }
+        const REntityBlueprint* const blueprint = entity->mParams.mBlueprint;
+        if (blueprint == nullptr || blueprint->mStrategicIconName.empty()) {
+          return;
+        }
+
+        constexpr std::uint32_t kIntelHealthValidMask = 0x08u;
+        constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
+        const bool selectedVariantEligible =
+          asUnit == nullptr || (asUnit->mIntelStateFlags & kIntelHealthValidMask) != 0u;
+        const bool hasFullBlueprintIconData =
+          asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) != 0u;
+        const bool friendly =
+          focusArmy == nullptr || focusArmy->IsAlly(static_cast<std::uint32_t>(entity->mArmy->mArmyIndex));
+
+        // `classify`'s two unconditional early-outs that read only beat data.
+        if (friendly) {
+          UserEntity* const attachmentParent = entity->GetAttachmentParent();
+          if (attachmentParent != nullptr && attachmentParent->IsInCategory(fa::string("CARRIER"))) {
+            return;
+          }
+        } else if (asUnit != nullptr && asUnit->mUnitVarDat.mIsBusy && asUnit->GetBlueprint()->Air.CanFly) {
+          return;
+        }
+
+        bool paused = false;
+        if (friendly && asUnit != nullptr) {
+          const std::uint32_t toggleCaps = asUnit->GetAttributes().toggleCapsMask;
+          paused = ((toggleCaps & RULEUTC_ShieldToggle) != 0u && !asUnit->HasScriptBit(0)) ||
+            ((toggleCaps & RULEUTC_JammingToggle) != 0u && asUnit->HasScriptBit(2)) ||
+            ((toggleCaps & RULEUTC_IntelToggle) != 0u && asUnit->HasScriptBit(3)) ||
+            ((toggleCaps & RULEUTC_ProductionToggle) != 0u && asUnit->HasScriptBit(4)) ||
+            ((toggleCaps & RULEUTC_StealthToggle) != 0u && asUnit->HasScriptBit(5)) ||
+            ((toggleCaps & RULEUTC_GenericToggle) != 0u && asUnit->HasScriptBit(6)) ||
+            ((toggleCaps & RULEUTC_CloakToggle) != 0u && asUnit->HasScriptBit(8)) || asUnit->mUnitVarDat.mIsPaused;
+        }
+
+        std::uint16_t flags = 0U;
+        const auto set = [&flags](const bool condition, const StrategicIconSource::Flags flag) {
+          if (condition) {
+            flags = static_cast<std::uint16_t>(flags | flag);
+          }
+        };
+        set(friendly, StrategicIconSource::kFriendly);
+        set(asUnit != nullptr && asUnit->mUnitVarDat.mStunTicks != 0, StrategicIconSource::kStunned);
+        set(paused, StrategicIconSource::kPaused);
+        set(focusArmy == nullptr || entity->mArmy == focusArmy, StrategicIconSource::kCheckPlayableRect);
+        set(selectedVariantEligible, StrategicIconSource::kSelectedVariantEligible);
+        set(blueprint->mLifeBarRender != 0, StrategicIconSource::kLifebarBlueprint);
+        if (asUnit != nullptr) {
+          const IUnit* const unitBridge = GetIUnitBridge(asUnit);
+          set(
+            !unitBridge->IsUnitState(UNITSTATE_BeingUpgraded) && unitBridge->GetBlueprint()->Display.HideLifebars == 0,
+            StrategicIconSource::kLifebarUnit
+          );
+          set(asUnit->mUnitVarDat.mIsBusy, StrategicIconSource::kBusy);
+          set(asUnit->GetBlueprint()->Air.CanFly, StrategicIconSource::kAir);
+        }
+        set(entity->IsBeingBuilt(), StrategicIconSource::kBeingBuilt);
+        set(
+          (hasFullBlueprintIconData || (focusArmy != nullptr && !blueprint->IsMobile())) && !paused,
+          StrategicIconSource::kSkipWhenMeshVisible
+        );
+        set(blueprint->mStrategicIconSortPriority < static_cast<std::uint8_t>('A'), StrategicIconSource::kHighPriority);
+
+        source.mEntity = entity;
+        source.mBlueprint = blueprint;
+        source.mMesh = entity->mVariableData.mMeshBlueprint;
+        source.mLastPosition = entity->mVariableData.mLastTransform.pos_;
+        source.mCurrentPosition = entity->mVariableData.mCurTransform.pos_;
+        source.mImpact = entity->mVariableData.mCurImpactValue;
+        source.mFlags = flags;
+
+        // `PickUnitStrategicIconTexture` for an unhovered unit; a hovered one never gets a run.
+        UnitIconData probe{};
+        probe.mUnit = entity;
+        probe.mBlueprint = blueprint;
+        source.mIcon = &PickUnitStrategicIconTexture(aux, probe, false, selectedVariantEligible, false);
+        source.mSelectedIcon = &PickUnitStrategicIconTexture(aux, probe, true, selectedVariantEligible, false);
+        source.mHoveredIcon = &PickUnitStrategicIconTexture(aux, probe, false, selectedVariantEligible, true);
+        source.mHoveredSelectedIcon = &PickUnitStrategicIconTexture(aux, probe, true, selectedVariantEligible, true);
+      }
+
+      // Engine addition (`ren_GpuIconClassify`): the GPU form of one record - `describe`'s flags and
+      // endpoints, `PlaceUnitIcon`'s colour up to the blink test, the identified underlay, the focus
+      // damage tick and the atlas slots. `FindSlot` only reads, so workers may call it; a texture
+      // without a slot yet sets `needsSlot` and gets one on this thread afterwards. The selected icon
+      // gets its slot when the unit is first selected.
+      void DescribeGpu(
+        const StrategicIconSource& source,
+        StrategicIconSourceRecord& record,
+        std::uint8_t& needsSlot
+      )
+      {
+        record = StrategicIconSourceRecord{};
+        needsSlot = 0U;
+        UserEntity* const entity = source.mEntity;
+        if (entity == nullptr) {
+          return;
+        }
+        using Gpu = StrategicIconSourceRecord;
+        std::uint32_t flags = Gpu::kValid;
+        const auto map = [&](const StrategicIconSource::Flags from, const Gpu::Flags to) {
+          if (source.Has(from)) {
+            flags |= to;
+          }
+        };
+        map(StrategicIconSource::kFriendly, Gpu::kFriendly);
+        map(StrategicIconSource::kStunned, Gpu::kStunned);
+        map(StrategicIconSource::kPaused, Gpu::kPaused);
+        map(StrategicIconSource::kCheckPlayableRect, Gpu::kCheckPlayableRect);
+        map(StrategicIconSource::kBeingBuilt, Gpu::kBeingBuilt);
+        map(StrategicIconSource::kSkipWhenMeshVisible, Gpu::kSkipWhenMeshVisible);
+        map(StrategicIconSource::kHighPriority, Gpu::kHighPriority);
+        map(StrategicIconSource::kAir, Gpu::kAir);
+        if (source.mMesh != nullptr) {
+          flags |= Gpu::kHasMesh;
+          record.mIconFadeInZoom = source.mMesh->mIconFadeInZoom;
+        }
+        record.mFlags = flags;
+        record.mLastPosition[0] = source.mLastPosition.x;
+        record.mLastPosition[1] = source.mLastPosition.y;
+        record.mLastPosition[2] = source.mLastPosition.z;
+        record.mCurrentPosition[0] = source.mCurrentPosition.x;
+        record.mCurrentPosition[1] = source.mCurrentPosition.y;
+        record.mCurrentPosition[2] = source.mCurrentPosition.z;
+        record.mImpact = source.mImpact;
+
+        // `PlaceUnitIcon`'s colour, everything before its blink test.
+        const UserUnit* const asUnit = entity->IsUserUnit();
+        constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
+        constexpr std::uint32_t kDarkenedTintMask = 0x40u;
+        const bool hasIdentifiedOwner =
+          asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) != 0u;
+        std::uint32_t iconColor;
+        if (hasIdentifiedOwner) {
+          if (session.mTeamColorMode && focusArmy != nullptr) {
+            iconColor = teamcolors[static_cast<std::size_t>(entity->mArmy->mArmyIndex)];
+          } else {
+            iconColor = entity->mArmy->mVarDat.mPlayerColorBgra;
+          }
+        } else {
+          iconColor = aux.mUnidentifiedColor;
+        }
+        if (asUnit != nullptr && (asUnit->mIntelStateFlags & kDarkenedTintMask) != 0u) {
+          iconColor = DarkenRgbPreserveAlpha(iconColor);
+        }
+        record.mColor = iconColor;
+        record.mLastFocusDamageTick = entity->mLastFocusDamageGameTick;
+
+        const auto findSlot = [this](const std::shared_ptr<CD3DBatchTexture>* const texture) -> std::uint32_t {
+          return (texture != nullptr && *texture) ? gpuIcons.FindSlot(texture->get()) : StrategicIconInstance::kNoLayer;
+        };
+        const std::uint32_t iconSlot = findSlot(source.mIcon);
+        if (iconSlot == StrategicIconInstance::kNoLayer && source.mIcon != nullptr && *source.mIcon) {
+          needsSlot = 1U;
+        }
+        record.mIconSlots = iconSlot | (findSlot(source.mSelectedIcon) << 16U);
+        // The hovered textures get their slots when the unit is first hovered.
+        record.mHoveredIconSlots = findSlot(source.mHoveredIcon) | (findSlot(source.mHoveredSelectedIcon) << 16U);
+        const std::shared_ptr<CD3DBatchTexture>& underlay = entity->mVariableData.mUnderlayTexture;
+        if (hasIdentifiedOwner && underlay) {
+          const std::uint32_t underlaySlot = gpuIcons.FindSlot(underlay.get());
+          if (underlaySlot == StrategicIconInstance::kNoLayer) {
+            needsSlot = 1U;
+          } else {
+            record.mUnderlaySlotOrNone = static_cast<std::int32_t>(underlaySlot);
+          }
+        }
+      }
+
+      template <class Store>
+      void ClassifySource(
+        const StrategicIconSource& source,
+        Store&& store
+      )
+      {
+        UserEntity* const entity = source.mEntity;
+        if (entity == nullptr) {
+          return;
+        }
+
+        // `GetInterpolatedTransform`'s position, from the endpoints the record holds.
+        const float alpha = std::clamp(source.mImpact * tickFraction, 0.0f, 1.0f);
+        Wm3::Vector3f position;
+        position.x = source.mLastPosition.x + (source.mCurrentPosition.x - source.mLastPosition.x) * alpha;
+        position.y = source.mLastPosition.y + (source.mCurrentPosition.y - source.mLastPosition.y) * alpha;
+        position.z = source.mLastPosition.z + (source.mCurrentPosition.z - source.mLastPosition.z) * alpha;
+
+        UnitIconData iconData{};
+        iconData.mUnit = entity;
+        iconData.mBlueprint = source.mBlueprint;
+        iconData.mWorldX = position.x;
+        iconData.mWorldY = position.y;
+        iconData.mWorldZ = position.z;
+        iconData.mIsFriendly = source.Has(StrategicIconSource::kFriendly);
+        iconData.mShowStunnedOverlay = source.Has(StrategicIconSource::kStunned);
+        iconData.mShowPausedOverlay = source.Has(StrategicIconSource::kPaused);
+
+        if (source.Has(StrategicIconSource::kCheckPlayableRect)) {
+          if (
+            session.mWldMap != nullptr && session.mWldMap->mTerrainRes != nullptr &&
+            !session.mWldMap->mTerrainRes->IsInPlayableRect(position)
+          ) {
+            return;
+          }
+        }
+
+        if (
+          ui_RenderUnitBars && ui_LifebarLOD > currentZoomValue && source.Has(StrategicIconSource::kLifebarBlueprint)
+        ) {
+          bool eligible = iconData.mIsFriendly;
+          if (!eligible && source.Has(StrategicIconSource::kSelectedVariantEligible)) {
+            eligible = ui_ForceLifbarsOnEnemy || entity == hoveredEntity;
+          }
+          if (eligible && source.Has(StrategicIconSource::kLifebarUnit)) {
+            const bool attachedAndHidden = !showAttachedUnitLifebars && source.Has(StrategicIconSource::kBusy);
+            if (!attachedAndHidden) {
+              store(EStrategicIconRun::Lifebar, iconData, nullptr);
+            }
+          }
+        }
+
+        if (
+          !ui_NisRenderIcons || (!ui_RenderIcons && !iconData.mShowPausedOverlay) ||
+          source.Has(StrategicIconSource::kBeingBuilt)
+        ) {
+          return;
+        }
+
+        if (source.mMesh != nullptr && !ui_AlwaysRenderStrategicIcons) {
+          const float fadeThreshold = std::min(source.mMesh->mIconFadeInZoom, maxZoomFade);
+          if (fadeThreshold > currentZoomValue) {
+            if (source.Has(StrategicIconSource::kSkipWhenMeshVisible)) {
+              return;
+            }
+            iconData.mSuppressBaseIcon = iconData.mShowPausedOverlay || iconData.mShowStunnedOverlay;
+          }
+        }
+
+        const bool isSelected = session.mSelection.Find(entity) != session.mSelection.end();
+        if (entity == hoveredEntity) {
+          const std::shared_ptr<CD3DBatchTexture>* const hoveredIcon =
+            isSelected ? source.mHoveredSelectedIcon : source.mHoveredIcon;
+          if (hoveredIcon != nullptr && *hoveredIcon) {
+            store(EStrategicIconRun::Hovered, iconData, hoveredIcon);
+          }
+          return;
+        }
+        const std::shared_ptr<CD3DBatchTexture>* const icon = isSelected ? source.mSelectedIcon : source.mIcon;
+        if (icon == nullptr || !*icon) {
+          return;
+        }
+        if (isSelected) {
+          store(EStrategicIconRun::Selected, iconData, icon);
+        } else if (source.Has(StrategicIconSource::kHighPriority)) {
+          store(EStrategicIconRun::HighPriority, iconData, icon);
+        } else if (source.Has(StrategicIconSource::kAir)) {
+          store(EStrategicIconRun::Air, iconData, icon);
+        } else {
+          store(EStrategicIconRun::Ground, iconData, icon);
+        }
+      }
+
+      // Engine addition (`ui_IconRecords`): brings this view's records up to date.
+      void UpdateSources()
+      {
+        static std::vector<StrategicIconSourceSet> sSourceSets;
+        StrategicIconSourceSet* sourceSet = nullptr;
+        for (StrategicIconSourceSet& candidate : sSourceSets) {
+          if (candidate.mCamera == camera) {
+            sourceSet = &candidate;
+          }
+        }
+        if (sourceSet == nullptr) {
+          sourceSet = &sSourceSets.emplace_back();
+          sourceSet->mCamera = camera;
+        }
+        const std::uint64_t frustumRebuild = CAM_FrustumUnitsRebuildCount();
+        if (
+          sourceSet->mSession != &session || sourceSet->mBeat != gUserSyncBeats ||
+          sourceSet->mFrustumRebuild != frustumRebuild || sourceSet->mFocusArmy != focusArmy ||
+          sourceSet->mTeamColorMode != session.mTeamColorMode || sourceSet->mSources.size() != frustumUnitCount ||
+          (classifyOnGpu && sourceSet->mGpuSources.size() != frustumUnitCount)
+        ) {
+          sourceSet->mSession = &session;
+          sourceSet->mBeat = gUserSyncBeats;
+          sourceSet->mFrustumRebuild = frustumRebuild;
+          sourceSet->mFocusArmy = focusArmy;
+          sourceSet->mTeamColorMode = session.mTeamColorMode;
+          sourceSet->mSources.resize(frustumUnitCount);
+          static std::vector<std::uint8_t> sNeedsSlot;
+          if (classifyOnGpu) {
+            sourceSet->mGpuSources.resize(frustumUnitCount);
+            sNeedsSlot.resize(frustumUnitCount);
+          } else {
+            sourceSet->mGpuSources.clear();
+          }
+          const auto describeRange = [&](const std::size_t begin, const std::size_t end) {
+            for (std::size_t i = begin; i < end; ++i) {
+              Describe(frustumUnits[i], sourceSet->mSources[i]);
+              if (classifyOnGpu) {
+                DescribeGpu(sourceSet->mSources[i], sourceSet->mGpuSources[i], sNeedsSlot[i]);
+              }
+            }
+          };
+          if (UseParallelIcons(frustumUnitCount)) {
+            CUserWorkerPool::Get().ParallelFor(frustumUnitCount, kParallelIconChunk, describeRange);
+          } else {
+            describeRange(0u, frustumUnitCount);
+          }
+          if (classifyOnGpu) {
+            // Textures seen for the first time get their slot here, on this thread.
+            for (std::size_t i = 0; i < frustumUnitCount; ++i) {
+              if (sNeedsSlot[i] == 0U) {
+                continue;
+              }
+              const StrategicIconSource& source = sourceSet->mSources[i];
+              StrategicIconSourceRecord& record = sourceSet->mGpuSources[i];
+              if (source.mIcon != nullptr && *source.mIcon) {
+                record.mIconSlots = (record.mIconSlots & 0xFFFF0000u) | gpuIcons.AddSlot(*source.mIcon);
+              }
+              const std::shared_ptr<CD3DBatchTexture>& underlay = source.mEntity->mVariableData.mUnderlayTexture;
+              const UserUnit* const asUnit = source.mEntity->IsUserUnit();
+              constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
+              if (underlay && (asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) != 0u)) {
+                const std::uint16_t slot = gpuIcons.AddSlot(underlay);
+                record.mUnderlaySlotOrNone =
+                  slot == StrategicIconInstance::kNoLayer ? -1 : static_cast<std::int32_t>(slot);
+              }
+            }
+            ++sourceSet->mGpuSourcesVersion;
+          }
+        }
+        activeSourceSet = sourceSet;
+        iconSources = sourceSet->mSources.data();
+        VerifyStrategicIconSources(frustumUnitCount, [&](const std::size_t i, auto&& store) {
+          Classify(frustumUnits[i], store);
+        }, [&](const std::size_t i, auto&& store) {
+          ClassifySource(iconSources[i], store);
+        });
+      }
+
+      // `classify` or, with `ui_IconRecords`, its record-based form, for entry `i` of the list.
+      template <class Store>
+      void ClassifyAt(
+        const std::size_t i,
+        Store&& store
+      )
+      {
+        if (iconSources != nullptr) {
+          ClassifySource(iconSources[i], store);
+        } else {
+          Classify(frustumUnits[i], store);
+        }
+      }
+
+      // Engine addition (`ren_GpuIconClassify`): the four icon runs classified, placed and drawn on
+      // the GPU (StrategicIconClassifyShader.h) from the records' GPU form. The CPU keeps the lifebar
+      // run, which exists only zoomed in, and per frame only gathers the selection, the hovered unit
+      // and the constants. If the renderer declines, the CPU path below runs as before.
+      // Returns false if the renderer declined.
+      bool DrawClassifiedOnGpu(
+        std::optional<gpg::gal::RenderProfileScope>& profilePhase
+      )
+      {
+        bool drawnByClassifier = false;
+        StrategicIconSourceSet& sourceSet = *activeSourceSet;
+        if (ui_RenderUnitBars && ui_LifebarLOD > currentZoomValue) {
+          const auto storeLifebar =
+            [this](
+              const EStrategicIconRun run, const UnitIconData& data, const std::shared_ptr<CD3DBatchTexture>* const icon
+            ) {
+            if (run == EStrategicIconRun::Lifebar) {
+              StoreStrategicIcon(aux, run, data, icon);
+            }
+          };
+          for (std::size_t i = 0; i < frustumUnitCount; ++i) {
+            ClassifySource(iconSources[i], storeLifebar);
+          }
+        }
+
+        // The selection as one bit per record, rebuilt when the selection or the records change.
+        static std::vector<const UserEntity*> sSelection;
+        sSelection.clear();
+        for (UserEntity* const selected : session.mSelection) {
+          sSelection.push_back(selected);
+        }
+        if (
+          sourceSet.mSelectionBuiltFor != sourceSet.mGpuSourcesVersion || sSelection != sourceSet.mSelectionSnapshot
+        ) {
+          sourceSet.mSelectionSnapshot = sSelection;
+          ++sourceSet.mSelectionVersion;
+          sourceSet.mSelectionBits.assign((frustumUnitCount + 31u) / 32u, 0u);
+          bool recordsChanged = false;
+          if (!sSelection.empty()) {
+            // The live selected objects, sorted: what `mSelection.Find` finds, searched without
+            // touching the set, so workers can do it. A chunk is a whole number of bit words.
+            static std::vector<const UserEntity*> sSorted;
+            sSorted.assign(sSelection.begin(), sSelection.end());
+            std::sort(sSorted.begin(), sSorted.end());
+            static_assert(kParallelIconChunk % 32u == 0u, "a chunk must own whole selection words");
+            const auto markRange = [&](const std::size_t begin, const std::size_t end) {
+              for (std::size_t i = begin; i < end; ++i) {
+                const UserEntity* const entity = iconSources[i].mEntity;
+                if (entity != nullptr && std::binary_search(sSorted.begin(), sSorted.end(), entity)) {
+                  sourceSet.mSelectionBits[i >> 5u] |= 1u << (i & 31u);
+                }
+              }
+            };
+            if (UseParallelIcons(frustumUnitCount)) {
+              CUserWorkerPool::Get().ParallelFor(frustumUnitCount, kParallelIconChunk, markRange);
+            } else {
+              markRange(0u, frustumUnitCount);
+            }
+            // A selected icon gets its atlas slot the first time it is needed.
+            for (std::size_t word = 0; word < sourceSet.mSelectionBits.size(); ++word) {
+              for (std::uint32_t bits = sourceSet.mSelectionBits[word]; bits != 0u; bits &= bits - 1u) {
+                const std::size_t i = word * 32u + static_cast<std::size_t>(std::countr_zero(bits));
+                StrategicIconSourceRecord& record = sourceSet.mGpuSources[i];
+                const std::shared_ptr<CD3DBatchTexture>* const selectedIcon = iconSources[i].mSelectedIcon;
+                if (
+                  (record.mIconSlots >> 16u) == StrategicIconInstance::kNoLayer && selectedIcon != nullptr &&
+                  *selectedIcon
+                ) {
+                  record.mIconSlots = (record.mIconSlots & 0xFFFFu) |
+                    (static_cast<std::uint32_t>(gpuIcons.AddSlot(*selectedIcon)) << 16u);
+                  recordsChanged = true;
+                }
+              }
+            }
+          }
+          if (recordsChanged) {
+            ++sourceSet.mGpuSourcesVersion;
+          }
+          sourceSet.mSelectionBuiltFor = sourceSet.mGpuSourcesVersion;
+        }
+
+        if (sourceSet.mHoveredBuiltFor != sourceSet.mGpuSourcesVersion || sourceSet.mHoveredEntity != hoveredEntity) {
+          sourceSet.mHoveredBuiltFor = sourceSet.mGpuSourcesVersion;
+          sourceSet.mHoveredEntity = hoveredEntity;
+          sourceSet.mHoveredIndex = 0xFFFFFFFFU;
+          for (std::size_t i = 0; hoveredEntity != nullptr && i < frustumUnitCount; ++i) {
+            if (iconSources[i].mEntity == hoveredEntity) {
+              sourceSet.mHoveredIndex = static_cast<std::uint32_t>(i);
+            }
+          }
+          // The hovered unit's textures get their atlas slots the first time they are needed. The
+          // last matching entry is the binary's: its hovered slot keeps the last one stored.
+          if (sourceSet.mHoveredIndex != 0xFFFFFFFFU) {
+            const StrategicIconSource& source = iconSources[sourceSet.mHoveredIndex];
+            StrategicIconSourceRecord& record = sourceSet.mGpuSources[sourceSet.mHoveredIndex];
+            std::uint32_t slots = record.mHoveredIconSlots;
+            const auto ensure =
+              [this](const std::shared_ptr<CD3DBatchTexture>* const texture, const std::uint32_t slot) {
+              return (slot == StrategicIconInstance::kNoLayer && texture != nullptr && *texture)
+                ? gpuIcons.AddSlot(*texture)
+                : slot;
+            };
+            slots =
+              ensure(source.mHoveredIcon, slots & 0xFFFFu) | (ensure(source.mHoveredSelectedIcon, slots >> 16U) << 16U);
+            if (slots != record.mHoveredIconSlots) {
+              record.mHoveredIconSlots = slots;
+              const bool selectionCurrent = sourceSet.mSelectionBuiltFor == sourceSet.mGpuSourcesVersion;
+              ++sourceSet.mGpuSourcesVersion;
+              if (selectionCurrent) {
+                sourceSet.mSelectionBuiltFor = sourceSet.mGpuSourcesVersion;
+              }
+            }
+          }
+          sourceSet.mHoveredBuiltFor = sourceSet.mGpuSourcesVersion;
+        }
+
+        using Constants = StrategicIconClassifyConstants;
+        Constants constants{};
+        for (std::size_t row = 0; row < 4u; ++row) {
+          constants.mViewProjection[row * 4u + 0u] = view.viewProjection.r[row].x;
+          constants.mViewProjection[row * 4u + 1u] = view.viewProjection.r[row].y;
+          constants.mViewProjection[row * 4u + 2u] = view.viewProjection.r[row].z;
+          constants.mViewProjection[row * 4u + 3u] = view.viewProjection.r[row].w;
+        }
+        // `PlaceUnitIcon`'s `Project(world, 0, width, height, 0)`.
+        constants.mViewport[0] = 0.0f;
+        constants.mViewport[1] = aux.mViewportWidth;
+        constants.mViewport[2] = aux.mViewportHeight;
+        constants.mViewport[3] = 0.0f;
+        std::uint32_t frameFlags = 0u;
+        if (
+          session.mWldMap != nullptr && session.mWldMap->mTerrainRes != nullptr &&
+          session.mWldMap->mTerrainRes->mMap != nullptr
+        ) {
+          // `CWldTerrainRes::IsInPlayableRect`'s bounds.
+          const gpg::Rect2i& playableRect = session.mWldMap->mTerrainRes->mMap->mPlayableRect;
+          constants.mPlayableRect[0] = static_cast<float>(playableRect.x0);
+          constants.mPlayableRect[1] = static_cast<float>(playableRect.z0);
+          constants.mPlayableRect[2] = static_cast<float>(playableRect.x1);
+          constants.mPlayableRect[3] = static_cast<float>(playableRect.z1);
+          frameFlags |= Constants::kHasPlayableRect;
+        }
+        constants.mTickFraction = tickFraction;
+        constants.mCurrentZoom = currentZoomValue;
+        constants.mMaxZoomFade = maxZoomFade;
+        // `PlaceUnitIcon`'s blink test: the phase is the same for every unit.
+        constexpr float kBlinkDurationTickScale = 10.0f;
+        constants.mBlinkTicks = ui_StrategicIconBlinkDuration * kBlinkDurationTickScale;
+        const double simTime = static_cast<double>(session.mGameTick) + static_cast<double>(aux.mTickFraction);
+        if (std::fmod(simTime * static_cast<double>(ui_StrategicIconBlinkRate), 1.0) <= 0.5) {
+          frameFlags |= Constants::kBlinkHidden;
+        }
+        if (ui_NisRenderIcons) {
+          frameFlags |= Constants::kNisRenderIcons;
+        }
+        if (ui_RenderIcons) {
+          frameFlags |= Constants::kRenderIcons;
+        }
+        if (ui_AlwaysRenderStrategicIcons) {
+          frameFlags |= Constants::kAlwaysRenderIcons;
+        }
+        constants.mFlags = frameFlags;
+        constants.mHovered = sourceSet.mHoveredIndex;
+        constants.mGameTick = session.mGameTick;
+        constants.mPausedSlot =
+          aux.mPauseRestTexture ? gpuIcons.AddSlot(aux.mPauseRestTexture) : StrategicIconInstance::kNoLayer;
+        constants.mStunnedSlot =
+          aux.mStunnedRestTexture ? gpuIcons.AddSlot(aux.mStunnedRestTexture) : StrategicIconInstance::kNoLayer;
+
+        profilePhase.reset();
+        profilePhase.emplace("IconDraw");
+        (void)primBatcher->Setup("TStrategicIcon");
+        drawnByClassifier = gpuIcons.DrawClassified(
+          *primBatcher,
+          camera,
+          std::span<const StrategicIconSourceRecord>(sourceSet.mGpuSources),
+          sourceSet.mGpuSourcesVersion,
+          std::span<const std::uint32_t>(sourceSet.mSelectionBits),
+          sourceSet.mSelectionVersion,
+          constants
+        );
+
+        static std::uint64_t sClassifiedDraws[2] = {}; // per kind of view, so both get checked
+        const std::uint32_t checkInterval = StrategicIconGpuCheckInterval();
+        if (drawnByClassifier && checkInterval != 0u && ++sClassifiedDraws[isMiniMap ? 1 : 0] % checkInterval == 0u) {
+          // What the CPU path would have drawn this frame: classify, runs in draw order, place, build.
+          std::vector<StrategicIconCandidate> candidates;
+          const auto record =
+            [&candidates](
+              const EStrategicIconRun run, const UnitIconData& data, const std::shared_ptr<CD3DBatchTexture>* const icon
+            ) {
+            if (run != EStrategicIconRun::Lifebar) {
+              candidates.push_back(StrategicIconCandidate{data, icon, run});
+            }
+          };
+          for (std::size_t i = 0; i < frustumUnitCount; ++i) {
+            ClassifySource(iconSources[i], record);
+          }
+          std::vector<StrategicIconInstance> expected;
+          expected.reserve(candidates.size());
+          const auto findSlot = [this](const std::shared_ptr<CD3DBatchTexture>& texture) {
+            return gpuIcons.FindSlot(texture.get());
+          };
+          for (const EStrategicIconRun run :
+               {EStrategicIconRun::Ground,
+                EStrategicIconRun::Air,
+                EStrategicIconRun::HighPriority,
+                EStrategicIconRun::Selected}) {
+            for (const StrategicIconCandidate& candidate : candidates) {
+              if (candidate.mRun == run) {
+                (void)BuildStrategicIconRecord(
+                  candidate, aux, PlaceUnitIcon(candidate.mData, aux), findSlot, expected.emplace_back()
+                );
+              }
+            }
+          }
+          // The hovered slot: the last hovered candidate.
+          for (auto it = candidates.rbegin(); it != candidates.rend(); ++it) {
+            if (it->mRun == EStrategicIconRun::Hovered) {
+              (void)BuildStrategicIconRecord(
+                *it, aux, PlaceUnitIcon(it->mData, aux), findSlot, expected.emplace_back()
+              );
+              break;
+            }
+          }
+          std::vector<StrategicIconInstance> drawn;
+          if (gpuIcons.ReadBackClassified(drawn)) {
+            CompareClassifiedStrategicIcons(expected, drawn, isMiniMap);
+          }
+        }
+
+        if (!drawnByClassifier) {
+          // The CPU path classifies again, lifebars included.
+          aux.mLifebarIcons.clear();
+          profilePhase.reset();
+          profilePhase.emplace("IconClassify");
+        }
+        return drawnByClassifier;
+      }
+
+      // The CPU path: classifies the frustum list and draws the icon quads.
+      void ClassifyAndDraw(
+        std::optional<gpg::gal::RenderProfileScope>& profilePhase
+      )
+      {
+        // Main-thread scratch, kept across frames so the chunk lists keep their capacity.
+        static std::vector<std::vector<StrategicIconCandidate>> sChunks;
+        // Engine addition (`ren_GpuIcons`): the candidates of the four icon runs in draw order.
+        static std::vector<const StrategicIconCandidate*> sGpuIcons;
+        const bool gpuIconsActive = gpuIcons.IsActive();
+        sGpuIcons.clear();
+        if (gpuIconsActive) {
+          // Engine addition (`ren_GpuIcons`): classify into candidates as the parallel path does
+          // (one chunk when the count is small), but keep the icon runs as candidates instead of
+          // copying them into `aux`: the GPU records are built from them directly. Lifebar records
+          // are stored as before, in the same order.
+          const std::size_t chunkCount =
+            std::max<std::size_t>(1u, (frustumUnitCount + kParallelIconChunk - 1u) / kParallelIconChunk);
+          if (sChunks.size() < chunkCount) {
+            sChunks.resize(chunkCount);
+          }
+          const auto classifyChunk = [&](const std::size_t begin, const std::size_t end) {
+            std::vector<StrategicIconCandidate>& chunk = sChunks[begin / kParallelIconChunk];
+            chunk.clear();
+            const auto record = [&chunk](
+                                  const EStrategicIconRun run,
+                                  const UnitIconData& data,
+                                  const std::shared_ptr<CD3DBatchTexture>* const icon
+                                ) {
+              chunk.push_back(StrategicIconCandidate{data, icon, run});
+            };
+            for (std::size_t i = begin; i < end; ++i) {
+              ClassifyAt(i, record);
+            }
+          };
+          if (UseParallelIcons(frustumUnitCount)) {
+            CUserWorkerPool::Get().ParallelFor(frustumUnitCount, kParallelIconChunk, classifyChunk);
+          } else {
+            classifyChunk(0u, frustumUnitCount);
+            for (std::size_t c = 1; c < chunkCount; ++c) {
+              sChunks[c].clear();
+            }
+          }
+          // Runs in draw order (ground, air, high priority, selected), each in classification order,
+          // then the hovered slot (the last hovered candidate, as the binary overwrites its slot).
+          std::size_t runCounts[4] = {};
+          const StrategicIconCandidate* hoveredCandidate = nullptr;
+          for (std::size_t c = 0; c < chunkCount; ++c) {
+            for (const StrategicIconCandidate& candidate : sChunks[c]) {
+              if (candidate.mRun == EStrategicIconRun::Lifebar) {
+                StoreStrategicIcon(aux, candidate.mRun, candidate.mData, candidate.mIcon);
+              } else if (candidate.mRun == EStrategicIconRun::Hovered) {
+                hoveredCandidate = &candidate;
+              } else {
+                ++runCounts[static_cast<std::size_t>(candidate.mRun)];
+              }
+            }
+          }
+          std::size_t runCursor[4] = {
+            0u, runCounts[0], runCounts[0] + runCounts[1], runCounts[0] + runCounts[1] + runCounts[2]
+          };
+          sGpuIcons.resize(runCursor[3] + runCounts[3]);
+          for (std::size_t c = 0; c < chunkCount; ++c) {
+            for (const StrategicIconCandidate& candidate : sChunks[c]) {
+              if (candidate.mRun != EStrategicIconRun::Lifebar && candidate.mRun != EStrategicIconRun::Hovered) {
+                sGpuIcons[runCursor[static_cast<std::size_t>(candidate.mRun)]++] = &candidate;
+              }
+            }
+          }
+          if (hoveredCandidate != nullptr) {
+            sGpuIcons.push_back(hoveredCandidate);
+          }
+        } else if (!UseParallelIcons(frustumUnitCount)) {
+          const auto storeInAux =
+            [this](
+              const EStrategicIconRun run, const UnitIconData& data, const std::shared_ptr<CD3DBatchTexture>* const icon
+            ) {
+            StoreStrategicIcon(aux, run, data, icon);
+          };
+          for (std::size_t i = 0; i < frustumUnitCount; ++i) {
+            ClassifyAt(i, storeInAux);
+          }
+        } else {
+          const std::size_t chunkCount = (frustumUnitCount + kParallelIconChunk - 1u) / kParallelIconChunk;
+          if (sChunks.size() < chunkCount) {
+            sChunks.resize(chunkCount);
+          }
+          CUserWorkerPool::Get().ParallelFor(
+            frustumUnitCount, kParallelIconChunk, [&](const std::size_t begin, const std::size_t end) {
+            std::vector<StrategicIconCandidate>& chunk = sChunks[begin / kParallelIconChunk];
+            chunk.clear();
+            const auto record = [&chunk](
+                                  const EStrategicIconRun run,
+                                  const UnitIconData& data,
+                                  const std::shared_ptr<CD3DBatchTexture>* const icon
+                                ) {
+              chunk.push_back(StrategicIconCandidate{data, icon, run});
+            };
+            for (std::size_t i = begin; i < end; ++i) {
+              ClassifyAt(i, record);
+            }
+          }
+          );
+          for (std::size_t c = 0; c < chunkCount; ++c) {
+            for (const StrategicIconCandidate& candidate : sChunks[c]) {
+              StoreStrategicIcon(aux, candidate.mRun, candidate.mData, candidate.mIcon);
+            }
+            sChunks[c].clear();
+          }
+        }
+
+        // --- Phase 3.5: draw the classified icon quads -----------------------
+        // The four runs collected above, each drawn through `RenderUnitIcon`
+        // (0x0085D9A0) under its own technique (0x0085B79D..0x0085BCCD in the
+        // binary). This runs before the lifebar pass below, matching the
+        // binary's own SetTexture/DrawQuad-then-Flush ordering (0x0085BBE9..
+        // 0x0085BCCD then Flush at 0x0085BFA9). The formation-preview icons
+        // follow in phase 3.75.
+        profilePhase.reset();
+        profilePhase.emplace("IconDraw");
+        (void)primBatcher->Setup("TStrategicIcon");
+
+        // Engine addition (`ren_GpuIcons`): one instanced draw from per-icon GPU records when the
+        // backend can; the batcher path below otherwise. If the GPU path declines, the candidates go
+        // into the runs exactly as the batcher path stores them.
+        bool drawnOnGpu = false;
+        if (gpuIconsActive) {
+          drawnOnGpu = DrawStrategicIconsOnGpu(gpuIcons, aux, camera, sGpuIcons);
+          if (!drawnOnGpu) {
+            for (const StrategicIconCandidate* const candidate : sGpuIcons) {
+              StoreStrategicIcon(aux, candidate->mRun, candidate->mData, candidate->mIcon);
+            }
+          }
+        }
+        const std::size_t drawnIconCount =
+          aux.mGroundIcons.size() + aux.mAirIcons.size() + aux.mHighPriorityIcons.size() + aux.mSelectedIcons.size();
+        if (drawnOnGpu) {
+          // Drawn: nothing left for the batcher.
+        } else if (!UseParallelIcons(drawnIconCount)) {
+          for (UnitIconData& groundIcon : aux.mGroundIcons) {
+            RenderUnitIcon(groundIcon, aux);
+          }
+          for (UnitIconData& airIcon : aux.mAirIcons) {
+            RenderUnitIcon(airIcon, aux);
+          }
+          for (UnitIconData& highPriorityIcon : aux.mHighPriorityIcons) {
+            RenderUnitIcon(highPriorityIcon, aux);
+          }
+          for (UnitIconData& selectedIcon : aux.mSelectedIcons) {
+            RenderUnitIcon(selectedIcon, aux);
+          }
+          if (sHoveredStrategicIcon.mUnit != nullptr) {
+            RenderUnitIcon(sHoveredStrategicIcon, aux);
+          }
+        } else {
+          // Engine addition (`ui_ParallelIcons`): place every icon of the four runs on workers, then
+          // draw them on this thread in the serial order (ground, air, high priority, selected).
+          const UnitIconData* const runStarts[4] = {
+            aux.mGroundIcons.data(), aux.mAirIcons.data(), aux.mHighPriorityIcons.data(), aux.mSelectedIcons.data()
+          };
+          const std::size_t runEnds[4] = {
+            aux.mGroundIcons.size(),
+            aux.mGroundIcons.size() + aux.mAirIcons.size(),
+            aux.mGroundIcons.size() + aux.mAirIcons.size() + aux.mHighPriorityIcons.size(),
+            drawnIconCount
+          };
+          const auto iconAt = [&](const std::size_t index) -> const UnitIconData& {
+            std::size_t run = 0;
+            while (index >= runEnds[run]) {
+              ++run;
+            }
+            return runStarts[run][index - (run == 0 ? 0 : runEnds[run - 1])];
+          };
+
+          static std::vector<UnitIconPlacement> sPlacements;
+          sPlacements.resize(drawnIconCount);
+          CUserWorkerPool::Get().ParallelFor(
+            drawnIconCount, kParallelIconChunk, [&](const std::size_t begin, const std::size_t end) {
+            for (std::size_t i = begin; i < end; ++i) {
+              sPlacements[i] = PlaceUnitIcon(iconAt(i), aux);
+            }
+          }
+          );
+          static std::vector<CD3DPrimBatcher::ScreenQuad> sPendingQuads;
+          StrategicIconBulkEmitter emit(*aux.mBatcher, sPendingQuads);
+          for (std::size_t i = 0; i < drawnIconCount; ++i) {
+            EmitUnitIconQuads(iconAt(i), sPlacements[i], emit);
+          }
+          if (sHoveredStrategicIcon.mUnit != nullptr) {
+            EmitUnitIconQuads(sHoveredStrategicIcon, PlaceUnitIcon(sHoveredStrategicIcon, aux), emit);
+          }
+        }
+      }
+
+      // --- Phase 3.75: formation-preview icons (0x0085C3C2..0x0085C859) -------
+      // While a formation is being placed, every participant's strategic icon is
+      // drawn at the slot the formation assigned it, as a ghost under its own
+      // technique. The gates and the slot height are the ones
+      // `RenderMeshPreviews` uses for the matching mesh ghosts.
+      void DrawFormationPreviews()
+      {
+        CFormation* const formation = session.mCurFormation;
+        // 0x0085C3E7 `comiss 0, mTimeLeft; jb`: only once the placement timer
+        // has run out.
+        if (formation->mReady && formation->mCurInstance != nullptr && formation->mTimeLeft <= 0.0f) {
+          (void)primBatcher->Setup("TStrategicFormationIcon");
+
+          // Same reinterpret_cast as `RenderMeshPreviews`: `Contains` (slot 16,
+          // 0x0085C4D9) and `GetFormationPosition` (slot 6, 0x0085C5C8) are
+          // declared on the concrete instance only.
+          CAiFormationInstance* const instance = static_cast<CAiFormationInstance*>(formation->mCurInstance);
+          for (UserUnit* const unit : formation->mParticipants) {
+            IUnit* const bridge = GetIUnitBridge(unit);
+            Unit* const formationUnit = static_cast<Unit*>(bridge);
+            // 0x0085C4E9..0x0085C51B is `GetAttachmentParent()` inlined.
+            if (
+              bridge->IsDead() || !instance->Contains(formationUnit, false) || unit->GetAttachmentParent() != nullptr
+            ) {
+              continue;
+            }
+
+            UnitIconData iconData{};
+            iconData.mUnit = session.LookupEntityId(bridge->GetEntityId());
+            iconData.mBlueprint = bridge->GetBlueprint();
+            // +0x150 is the size word of `mStrategicIconName` (0x0085C5AC).
+            if (iconData.mBlueprint->mStrategicIconName.empty()) {
+              continue;
+            }
+
+            SCoordsVec2 slot{};
+            instance->GetFormationPosition(&slot, formationUnit, nullptr);
+            const RUnitBlueprint* const blueprint = bridge->GetBlueprint();
+            iconData.mWorldX = slot.x;
+            iconData.mWorldY =
+              (blueprint->mSizeY + session.GetSTIMap()->GetSurface(slot.x, slot.z)) + blueprint->Physics.Elevation;
+            iconData.mWorldZ = slot.z;
+
+            // The camera-distance test of the main pass, without its
+            // `GetMaxZoom() * 0.89` clamp (0x0085C6A1..0x0085C6E0).
+            const auto& lodRow = aux.mCamera->viewport.r[1];
+            const float zoom = ((iconData.mWorldZ * lodRow.z) + (iconData.mWorldY * lodRow.y)) +
+              (lodRow.x * iconData.mWorldX) + lodRow.w;
+            if (iconData.mUnit->mVariableData.mMeshBlueprint->mIconFadeInZoom > zoom) {
+              continue;
+            }
+
+            // Not selected, selected variant eligible, hovered (0x0085C6E6..0x0085C6EF):
+            // the ghosts show the highlighted icon.
+            iconData.mIconTexture = PickUnitStrategicIconTexture(aux, iconData, false, true, true);
+            if (iconData.mIconTexture) {
+              iconData.mIsFormationGhost = true;
+              RenderUnitIcon(iconData, aux);
+            }
+          }
+        }
+      }
+    };
+  } // namespace
 
   /**
    * Address: 0x0085B6E0 (FUN_0085B6E0,
@@ -2331,7 +3462,10 @@ namespace
    * 0x0085C859) draw in phase 3.75.
    */
   void CWldSession::RenderStrategicIcons(
-    CameraImpl* const camera, CD3DPrimBatcher* const primBatcher, const float tickFraction, const bool isMiniMap
+    CameraImpl* const camera,
+    CD3DPrimBatcher* const primBatcher,
+    const float tickFraction,
+    const bool isMiniMap
   )
   {
     // Read once per frame, before the singleton is even built (0x0085B719).
@@ -2383,973 +3517,49 @@ namespace
 
     // --- Phase 3: classify every unit in frustum ------------------------
     UserArmy* const focusArmy = GetFocusArmy();
-    // Engine addition (`ui_ParallelIcons`): the classification below reads each entity and writes
-    // only that entity's interpolation cache and its own icon record, so chunks of the frustum list
-    // run on CUserWorkerPool and are merged back in list order, which keeps every run - and so the
-    // draw order - exactly as the serial walk builds it.
-    const auto classify = [&](const WeakPtr<UserEntity>& ref, auto&& store) {
-      UserEntity* const entity = ref.GetObjectPtr();
-      if (entity == nullptr || entity->mVariableData.mIsDead) {
-        return;
-      }
-
-      UserUnit* const asUnit = entity->IsUserUnit();
-
-      // `mIntelStateFlags` bit 0x20: this unit renders through some other
-      // path already and its strategic icon is suppressed outright
-      // (`(v26->mSelectionMaskUsed & 0x20) == 0` gates entry at 0x0085BAC3).
-      constexpr std::uint32_t kStrategicIconEntitySuppressedMask = 0x20u;
-      if (asUnit != nullptr && (asUnit->mIntelStateFlags & kStrategicIconEntitySuppressedMask) != 0u) {
-        return;
-      }
-
-      const REntityBlueprint* const blueprint = entity->mParams.mBlueprint;
-      if (blueprint == nullptr || blueprint->mStrategicIconName.empty()) {
-        return;
-      }
-
-      UnitIconData iconData{};
-      iconData.mUnit = entity;
-      iconData.mBlueprint = blueprint;
-
-      const VTransform interpolated = entity->GetInterpolatedTransform(tickFraction);
-      iconData.mWorldX = interpolated.pos_.x;
-      iconData.mWorldY = interpolated.pos_.y;
-      iconData.mWorldZ = interpolated.pos_.z;
-
-      // `mIntelStateFlags` bit 0x08 ("health-valid") / bit 0x10
-      // ("has-data"): both default true for non-`UserUnit` entities
-      // (wrecks, props, ...), matching `isBusy_60`/`v49`'s init at
-      // 0x0085BB60..0x0085BB74.
-      constexpr std::uint32_t kIntelHealthValidMask = 0x08u;
-      constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
-      const bool selectedVariantEligible =
-        asUnit == nullptr || (asUnit->mIntelStateFlags & kIntelHealthValidMask) != 0u;
-      const bool hasFullBlueprintIconData =
-        asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) != 0u;
-
-      iconData.mIsFriendly =
-        focusArmy == nullptr || focusArmy->IsAlly(static_cast<std::uint32_t>(entity->mArmy->mArmyIndex));
-
-      iconData.mShowStunnedOverlay = asUnit != nullptr && asUnit->mUnitVarDat.mStunTicks != 0;
-      if (iconData.mIsFriendly && asUnit != nullptr) {
-        const std::uint32_t toggleCaps = asUnit->GetAttributes().toggleCapsMask;
-        // Script-bit indices from 0x0085BE51..0x0085BEFA. Shield uses
-        // the opposite polarity; weapon and special toggles are excluded.
-        iconData.mShowPausedOverlay =
-          ((toggleCaps & RULEUTC_ShieldToggle) != 0u && !asUnit->HasScriptBit(0)) ||
-          ((toggleCaps & RULEUTC_JammingToggle) != 0u && asUnit->HasScriptBit(2)) ||
-          ((toggleCaps & RULEUTC_IntelToggle) != 0u && asUnit->HasScriptBit(3)) ||
-          ((toggleCaps & RULEUTC_ProductionToggle) != 0u && asUnit->HasScriptBit(4)) ||
-          ((toggleCaps & RULEUTC_StealthToggle) != 0u && asUnit->HasScriptBit(5)) ||
-          ((toggleCaps & RULEUTC_GenericToggle) != 0u && asUnit->HasScriptBit(6)) ||
-          ((toggleCaps & RULEUTC_CloakToggle) != 0u && asUnit->HasScriptBit(8)) ||
-          asUnit->mUnitVarDat.mIsPaused;
-      }
-
-      if (focusArmy == nullptr || entity->mArmy == focusArmy) {
-        if (mWldMap != nullptr && mWldMap->mTerrainRes != nullptr &&
-            !mWldMap->mTerrainRes->IsInPlayableRect(interpolated.pos_)) {
-          return;
-        }
-      }
-
-      if (iconData.mIsFriendly) {
-        UserEntity* const attachmentParent = entity->GetAttachmentParent();
-        if (attachmentParent != nullptr && attachmentParent->IsInCategory(msvc8::string("CARRIER"))) {
-          return;
-        }
-      } else if (asUnit != nullptr && asUnit->mUnitVarDat.mIsBusy && asUnit->GetBlueprint()->Air.CanFly) {
-        return;
-      }
-
-      // --- Lifebar collection gate (0x0085BFDB..0x0085C09F) -------------
-      // The one producer of `mLifebarIcons`. Everything below is read in the
-      // binary's own order; each early-out lands on the same 0x0085C0A4
-      // continue as the icon test that follows.
-      if (ui_RenderUnitBars && ui_LifebarLOD > currentZoomValue && !entity->mVariableData.mIsDead &&
-          blueprint->mLifeBarRender != 0) {
-        // Enemy units only get bars when their health is actually known
-        // (`selectedVariantEligible`, intel bit 0x08), and then only if the
-        // player forced enemy bars on or is hovering this unit. Friendly units
-        // skip all three tests.
-        bool eligible = iconData.mIsFriendly;
-        if (!eligible && selectedVariantEligible) {
-          eligible = ui_ForceLifbarsOnEnemy || entity == GetHoveredUserEntity();
-        }
-
-        if (eligible && asUnit != nullptr) {
-          // A unit mid-upgrade is drawn by the upgrade progress UI instead
-          // (slot 15, dispatched with `push 25h` at 0x0085C06B).
-          const IUnit* const unitBridge = GetIUnitBridge(asUnit);
-          const bool attachedAndHidden = !showAttachedUnitLifebars && asUnit->mUnitVarDat.mIsBusy;
-          if (!unitBridge->IsUnitState(UNITSTATE_BeingUpgraded) && !attachedAndHidden &&
-              unitBridge->GetBlueprint()->Display.HideLifebars == 0) {
-            store(EStrategicIconRun::Lifebar, iconData, nullptr);
-          }
-        }
-      }
-
-      if (!ui_NisRenderIcons || (!ui_RenderIcons && !iconData.mShowPausedOverlay) || entity->IsBeingBuilt()) {
-        return;
-      }
-
-      // When the unit's own mesh is already close enough to be visible
-      // without help, skip the icon entirely for units that have full
-      // intel data (or belong to an immobile blueprint under a focus
-      // army) and aren't paused - everyone else still gets an icon.
-      const bool skipWhenMeshVisible =
-        (hasFullBlueprintIconData || (focusArmy != nullptr && !blueprint->IsMobile())) &&
-        !iconData.mShowPausedOverlay;
-
-      const RMeshBlueprint* const mesh = entity->mVariableData.mMeshBlueprint;
-      if (mesh != nullptr && !ui_AlwaysRenderStrategicIcons) {
-        const float fadeThreshold = std::min(mesh->mIconFadeInZoom, camera->GetMaxZoom() * 0.89f);
-        if (fadeThreshold > currentZoomValue) {
-          if (skipWhenMeshVisible) {
-            return;
-          }
-          iconData.mSuppressBaseIcon = iconData.mShowPausedOverlay || iconData.mShowStunnedOverlay;
-        }
-      }
-
-      const bool isHovered = entity == GetHoveredUserEntity();
-
-      const bool isSelected = mSelection.Find(entity) != mSelection.end();
-
-      // The texture handles are attached where the record is stored (`StoreStrategicIcon`).
-      const boost::shared_ptr<CD3DBatchTexture>& icon =
-        PickUnitStrategicIconTexture(aux, iconData, isSelected, selectedVariantEligible, isHovered);
-      if (!icon) {
-        return;
-      }
-
-      // 0x0085C262..0x0085C28E: the hovered unit goes to the one hovered slot, not to a run.
-      if (isHovered) {
-        store(EStrategicIconRun::Hovered, iconData, &icon);
-        return;
-      }
-
-      if (isSelected) {
-        store(EStrategicIconRun::Selected, iconData, &icon);
-        return;
-      }
-
-      // Sort-priority byte < 'A' always wins the high-priority run
-      // (0x0085C2C0..0x0085C2C7). At/above 'A' the binary default-
-      // constructs a `WeakPtr_CD3DBatchTexture` and tests it - a
-      // no-argument constructor is unconditionally empty, so that branch
-      // is provably always false and always falls through to ground/air.
-      if (blueprint->mStrategicIconSortPriority < static_cast<std::uint8_t>('A')) {
-        store(EStrategicIconRun::HighPriority, iconData, &icon);
-        return;
-      }
-
-      if (asUnit != nullptr && asUnit->GetBlueprint()->Air.CanFly) {
-        store(EStrategicIconRun::Air, iconData, &icon);
-      } else {
-        store(EStrategicIconRun::Ground, iconData, &icon);
-      }
-    };
-
     gpg::core::FastVectorInline<WeakPtr<UserEntity>>& frustumUnits = *camera->GetAllUnitsInFrustum();
     const std::size_t frustumUnitCount = frustumUnits.size();
-
-    // Engine addition (`ui_IconRecords`): `classify` split in two. `describe` reads, once per
-    // entry of the in-view list, every input that only the sync apply changes; the records stay
-    // valid until a beat is applied, the list is rebuilt or the focus army changes (all on this
-    // thread, before rendering). `classifySource` then does `classify`'s per-frame work from the
-    // record, with the same tests in the same order.
-    const auto describe = [&](const WeakPtr<UserEntity>& ref, StrategicIconSource& source) {
-      source = StrategicIconSource{};
-      UserEntity* const entity = ref.GetObjectPtr();
-      if (entity == nullptr || entity->mVariableData.mIsDead) {
-        return;
-      }
-      UserUnit* const asUnit = entity->IsUserUnit();
-      constexpr std::uint32_t kStrategicIconEntitySuppressedMask = 0x20u;
-      if (asUnit != nullptr && (asUnit->mIntelStateFlags & kStrategicIconEntitySuppressedMask) != 0u) {
-        return;
-      }
-      const REntityBlueprint* const blueprint = entity->mParams.mBlueprint;
-      if (blueprint == nullptr || blueprint->mStrategicIconName.empty()) {
-        return;
-      }
-
-      constexpr std::uint32_t kIntelHealthValidMask = 0x08u;
-      constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
-      const bool selectedVariantEligible = asUnit == nullptr || (asUnit->mIntelStateFlags & kIntelHealthValidMask) != 0u;
-      const bool hasFullBlueprintIconData =
-        asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) != 0u;
-      const bool friendly =
-        focusArmy == nullptr || focusArmy->IsAlly(static_cast<std::uint32_t>(entity->mArmy->mArmyIndex));
-
-      // `classify`'s two unconditional early-outs that read only beat data.
-      if (friendly) {
-        UserEntity* const attachmentParent = entity->GetAttachmentParent();
-        if (attachmentParent != nullptr && attachmentParent->IsInCategory(msvc8::string("CARRIER"))) {
-          return;
-        }
-      } else if (asUnit != nullptr && asUnit->mUnitVarDat.mIsBusy && asUnit->GetBlueprint()->Air.CanFly) {
-        return;
-      }
-
-      bool paused = false;
-      if (friendly && asUnit != nullptr) {
-        const std::uint32_t toggleCaps = asUnit->GetAttributes().toggleCapsMask;
-        paused = ((toggleCaps & RULEUTC_ShieldToggle) != 0u && !asUnit->HasScriptBit(0)) ||
-          ((toggleCaps & RULEUTC_JammingToggle) != 0u && asUnit->HasScriptBit(2)) ||
-          ((toggleCaps & RULEUTC_IntelToggle) != 0u && asUnit->HasScriptBit(3)) ||
-          ((toggleCaps & RULEUTC_ProductionToggle) != 0u && asUnit->HasScriptBit(4)) ||
-          ((toggleCaps & RULEUTC_StealthToggle) != 0u && asUnit->HasScriptBit(5)) ||
-          ((toggleCaps & RULEUTC_GenericToggle) != 0u && asUnit->HasScriptBit(6)) ||
-          ((toggleCaps & RULEUTC_CloakToggle) != 0u && asUnit->HasScriptBit(8)) || asUnit->mUnitVarDat.mIsPaused;
-      }
-
-      std::uint16_t flags = 0U;
-      const auto set = [&flags](const bool condition, const StrategicIconSource::Flags flag) {
-        if (condition) {
-          flags = static_cast<std::uint16_t>(flags | flag);
-        }
-      };
-      set(friendly, StrategicIconSource::kFriendly);
-      set(asUnit != nullptr && asUnit->mUnitVarDat.mStunTicks != 0, StrategicIconSource::kStunned);
-      set(paused, StrategicIconSource::kPaused);
-      set(focusArmy == nullptr || entity->mArmy == focusArmy, StrategicIconSource::kCheckPlayableRect);
-      set(selectedVariantEligible, StrategicIconSource::kSelectedVariantEligible);
-      set(blueprint->mLifeBarRender != 0, StrategicIconSource::kLifebarBlueprint);
-      if (asUnit != nullptr) {
-        const IUnit* const unitBridge = GetIUnitBridge(asUnit);
-        set(!unitBridge->IsUnitState(UNITSTATE_BeingUpgraded) && unitBridge->GetBlueprint()->Display.HideLifebars == 0,
-            StrategicIconSource::kLifebarUnit);
-        set(asUnit->mUnitVarDat.mIsBusy, StrategicIconSource::kBusy);
-        set(asUnit->GetBlueprint()->Air.CanFly, StrategicIconSource::kAir);
-      }
-      set(entity->IsBeingBuilt(), StrategicIconSource::kBeingBuilt);
-      set((hasFullBlueprintIconData || (focusArmy != nullptr && !blueprint->IsMobile())) && !paused,
-          StrategicIconSource::kSkipWhenMeshVisible);
-      set(blueprint->mStrategicIconSortPriority < static_cast<std::uint8_t>('A'), StrategicIconSource::kHighPriority);
-
-      source.mEntity = entity;
-      source.mBlueprint = blueprint;
-      source.mMesh = entity->mVariableData.mMeshBlueprint;
-      source.mLastPosition = entity->mVariableData.mLastTransform.pos_;
-      source.mCurrentPosition = entity->mVariableData.mCurTransform.pos_;
-      source.mImpact = entity->mVariableData.mCurImpactValue;
-      source.mFlags = flags;
-
-      // `PickUnitStrategicIconTexture` for an unhovered unit; a hovered one never gets a run.
-      UnitIconData probe{};
-      probe.mUnit = entity;
-      probe.mBlueprint = blueprint;
-      source.mIcon = &PickUnitStrategicIconTexture(aux, probe, false, selectedVariantEligible, false);
-      source.mSelectedIcon = &PickUnitStrategicIconTexture(aux, probe, true, selectedVariantEligible, false);
-      source.mHoveredIcon = &PickUnitStrategicIconTexture(aux, probe, false, selectedVariantEligible, true);
-      source.mHoveredSelectedIcon = &PickUnitStrategicIconTexture(aux, probe, true, selectedVariantEligible, true);
-    };
-
-    // Engine addition (`ren_GpuIconClassify`): the GPU form of one record - `describe`'s flags and
-    // endpoints, `PlaceUnitIcon`'s colour up to the blink test, the identified underlay, the focus
-    // damage tick and the atlas slots. `FindSlot` only reads, so workers may call it; a texture
-    // without a slot yet sets `needsSlot` and gets one on this thread afterwards. The selected icon
-    // gets its slot when the unit is first selected.
     StrategicIconRenderer& gpuIcons = StrategicIconRenderer::Get();
-    const auto describeGpu = [&](const StrategicIconSource& source, StrategicIconSourceRecord& record, std::uint8_t& needsSlot) {
-      record = StrategicIconSourceRecord{};
-      needsSlot = 0U;
-      UserEntity* const entity = source.mEntity;
-      if (entity == nullptr) {
-        return;
-      }
-      using Gpu = StrategicIconSourceRecord;
-      std::uint32_t flags = Gpu::kValid;
-      const auto map = [&](const StrategicIconSource::Flags from, const Gpu::Flags to) {
-        if (source.Has(from)) {
-          flags |= to;
-        }
-      };
-      map(StrategicIconSource::kFriendly, Gpu::kFriendly);
-      map(StrategicIconSource::kStunned, Gpu::kStunned);
-      map(StrategicIconSource::kPaused, Gpu::kPaused);
-      map(StrategicIconSource::kCheckPlayableRect, Gpu::kCheckPlayableRect);
-      map(StrategicIconSource::kBeingBuilt, Gpu::kBeingBuilt);
-      map(StrategicIconSource::kSkipWhenMeshVisible, Gpu::kSkipWhenMeshVisible);
-      map(StrategicIconSource::kHighPriority, Gpu::kHighPriority);
-      map(StrategicIconSource::kAir, Gpu::kAir);
-      if (source.mMesh != nullptr) {
-        flags |= Gpu::kHasMesh;
-        record.mIconFadeInZoom = source.mMesh->mIconFadeInZoom;
-      }
-      record.mFlags = flags;
-      record.mLastPosition[0] = source.mLastPosition.x;
-      record.mLastPosition[1] = source.mLastPosition.y;
-      record.mLastPosition[2] = source.mLastPosition.z;
-      record.mCurrentPosition[0] = source.mCurrentPosition.x;
-      record.mCurrentPosition[1] = source.mCurrentPosition.y;
-      record.mCurrentPosition[2] = source.mCurrentPosition.z;
-      record.mImpact = source.mImpact;
-
-      // `PlaceUnitIcon`'s colour, everything before its blink test.
-      const UserUnit* const asUnit = entity->IsUserUnit();
-      constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
-      constexpr std::uint32_t kDarkenedTintMask = 0x40u;
-      const bool hasIdentifiedOwner = asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) != 0u;
-      std::uint32_t iconColor;
-      if (hasIdentifiedOwner) {
-        if (mTeamColorMode && focusArmy != nullptr) {
-          iconColor = teamcolors[static_cast<std::size_t>(entity->mArmy->mArmyIndex)];
-        } else {
-          iconColor = entity->mArmy->mVarDat.mPlayerColorBgra;
-        }
-      } else {
-        iconColor = aux.mUnidentifiedColor;
-      }
-      if (asUnit != nullptr && (asUnit->mIntelStateFlags & kDarkenedTintMask) != 0u) {
-        iconColor = DarkenRgbPreserveAlpha(iconColor);
-      }
-      record.mColor = iconColor;
-      record.mLastFocusDamageTick = entity->mLastFocusDamageGameTick;
-
-      const auto findSlot = [&gpuIcons](const boost::shared_ptr<CD3DBatchTexture>* const texture) -> std::uint32_t {
-        return (texture != nullptr && *texture) ? gpuIcons.FindSlot(texture->get()) : StrategicIconInstance::kNoLayer;
-      };
-      const std::uint32_t iconSlot = findSlot(source.mIcon);
-      if (iconSlot == StrategicIconInstance::kNoLayer && source.mIcon != nullptr && *source.mIcon) {
-        needsSlot = 1U;
-      }
-      record.mIconSlots = iconSlot | (findSlot(source.mSelectedIcon) << 16U);
-      // The hovered textures get their slots when the unit is first hovered.
-      record.mHoveredIconSlots = findSlot(source.mHoveredIcon) | (findSlot(source.mHoveredSelectedIcon) << 16U);
-      const boost::shared_ptr<CD3DBatchTexture>& underlay = entity->mVariableData.mUnderlayTexture;
-      if (hasIdentifiedOwner && underlay) {
-        const std::uint32_t underlaySlot = gpuIcons.FindSlot(underlay.get());
-        if (underlaySlot == StrategicIconInstance::kNoLayer) {
-          needsSlot = 1U;
-        } else {
-          record.mUnderlaySlotOrNone = static_cast<std::int32_t>(underlaySlot);
-        }
-      }
-    };
-
     const UserEntity* const hoveredEntity = GetHoveredUserEntity();
     const float maxZoomFade = camera->GetMaxZoom() * 0.89f;
-    const auto classifySource = [&](const StrategicIconSource& source, auto&& store) {
-      UserEntity* const entity = source.mEntity;
-      if (entity == nullptr) {
-        return;
-      }
-
-      // `GetInterpolatedTransform`'s position, from the endpoints the record holds.
-      const float alpha = std::clamp(source.mImpact * tickFraction, 0.0f, 1.0f);
-      Wm3::Vector3f position;
-      position.x = source.mLastPosition.x + (source.mCurrentPosition.x - source.mLastPosition.x) * alpha;
-      position.y = source.mLastPosition.y + (source.mCurrentPosition.y - source.mLastPosition.y) * alpha;
-      position.z = source.mLastPosition.z + (source.mCurrentPosition.z - source.mLastPosition.z) * alpha;
-
-      UnitIconData iconData{};
-      iconData.mUnit = entity;
-      iconData.mBlueprint = source.mBlueprint;
-      iconData.mWorldX = position.x;
-      iconData.mWorldY = position.y;
-      iconData.mWorldZ = position.z;
-      iconData.mIsFriendly = source.Has(StrategicIconSource::kFriendly);
-      iconData.mShowStunnedOverlay = source.Has(StrategicIconSource::kStunned);
-      iconData.mShowPausedOverlay = source.Has(StrategicIconSource::kPaused);
-
-      if (source.Has(StrategicIconSource::kCheckPlayableRect)) {
-        if (mWldMap != nullptr && mWldMap->mTerrainRes != nullptr && !mWldMap->mTerrainRes->IsInPlayableRect(position)) {
-          return;
-        }
-      }
-
-      if (ui_RenderUnitBars && ui_LifebarLOD > currentZoomValue && source.Has(StrategicIconSource::kLifebarBlueprint)) {
-        bool eligible = iconData.mIsFriendly;
-        if (!eligible && source.Has(StrategicIconSource::kSelectedVariantEligible)) {
-          eligible = ui_ForceLifbarsOnEnemy || entity == hoveredEntity;
-        }
-        if (eligible && source.Has(StrategicIconSource::kLifebarUnit)) {
-          const bool attachedAndHidden = !showAttachedUnitLifebars && source.Has(StrategicIconSource::kBusy);
-          if (!attachedAndHidden) {
-            store(EStrategicIconRun::Lifebar, iconData, nullptr);
-          }
-        }
-      }
-
-      if (!ui_NisRenderIcons || (!ui_RenderIcons && !iconData.mShowPausedOverlay) ||
-          source.Has(StrategicIconSource::kBeingBuilt)) {
-        return;
-      }
-
-      if (source.mMesh != nullptr && !ui_AlwaysRenderStrategicIcons) {
-        const float fadeThreshold = std::min(source.mMesh->mIconFadeInZoom, maxZoomFade);
-        if (fadeThreshold > currentZoomValue) {
-          if (source.Has(StrategicIconSource::kSkipWhenMeshVisible)) {
-            return;
-          }
-          iconData.mSuppressBaseIcon = iconData.mShowPausedOverlay || iconData.mShowStunnedOverlay;
-        }
-      }
-
-      const bool isSelected = mSelection.Find(entity) != mSelection.end();
-      if (entity == hoveredEntity) {
-        const boost::shared_ptr<CD3DBatchTexture>* const hoveredIcon =
-          isSelected ? source.mHoveredSelectedIcon : source.mHoveredIcon;
-        if (hoveredIcon != nullptr && *hoveredIcon) {
-          store(EStrategicIconRun::Hovered, iconData, hoveredIcon);
-        }
-        return;
-      }
-      const boost::shared_ptr<CD3DBatchTexture>* const icon = isSelected ? source.mSelectedIcon : source.mIcon;
-      if (icon == nullptr || !*icon) {
-        return;
-      }
-      if (isSelected) {
-        store(EStrategicIconRun::Selected, iconData, icon);
-      } else if (source.Has(StrategicIconSource::kHighPriority)) {
-        store(EStrategicIconRun::HighPriority, iconData, icon);
-      } else if (source.Has(StrategicIconSource::kAir)) {
-        store(EStrategicIconRun::Air, iconData, icon);
-      } else {
-        store(EStrategicIconRun::Ground, iconData, icon);
-      }
-    };
-
-    const StrategicIconSource* iconSources = nullptr;
-    StrategicIconSourceSet* activeSourceSet = nullptr;
     // Engine addition (`ren_GpuIconClassify`): classify on the GPU, from the records.
     const bool classifyOnGpu = ui_IconRecords && gpuIcons.IsClassifyActive();
-    if (ui_IconRecords) {
-      static std::vector<StrategicIconSourceSet> sSourceSets;
-      StrategicIconSourceSet* sourceSet = nullptr;
-      for (StrategicIconSourceSet& candidate : sSourceSets) {
-        if (candidate.mCamera == camera) {
-          sourceSet = &candidate;
-        }
-      }
-      if (sourceSet == nullptr) {
-        sourceSet = &sSourceSets.emplace_back();
-        sourceSet->mCamera = camera;
-      }
-      const std::uint64_t frustumRebuild = CAM_FrustumUnitsRebuildCount();
-      if (sourceSet->mSession != this || sourceSet->mBeat != gUserSyncBeats || sourceSet->mFrustumRebuild != frustumRebuild ||
-          sourceSet->mFocusArmy != focusArmy || sourceSet->mTeamColorMode != mTeamColorMode ||
-          sourceSet->mSources.size() != frustumUnitCount ||
-          (classifyOnGpu && sourceSet->mGpuSources.size() != frustumUnitCount)) {
-        sourceSet->mSession = this;
-        sourceSet->mBeat = gUserSyncBeats;
-        sourceSet->mFrustumRebuild = frustumRebuild;
-        sourceSet->mFocusArmy = focusArmy;
-        sourceSet->mTeamColorMode = mTeamColorMode;
-        sourceSet->mSources.resize(frustumUnitCount);
-        static std::vector<std::uint8_t> sNeedsSlot;
-        if (classifyOnGpu) {
-          sourceSet->mGpuSources.resize(frustumUnitCount);
-          sNeedsSlot.resize(frustumUnitCount);
-        } else {
-          sourceSet->mGpuSources.clear();
-        }
-        const auto describeRange = [&](const std::size_t begin, const std::size_t end) {
-          for (std::size_t i = begin; i < end; ++i) {
-            describe(frustumUnits[i], sourceSet->mSources[i]);
-            if (classifyOnGpu) {
-              describeGpu(sourceSet->mSources[i], sourceSet->mGpuSources[i], sNeedsSlot[i]);
-            }
-          }
-        };
-        if (UseParallelIcons(frustumUnitCount)) {
-          CUserWorkerPool::Get().ParallelFor(frustumUnitCount, kParallelIconChunk, describeRange);
-        } else {
-          describeRange(0u, frustumUnitCount);
-        }
-        if (classifyOnGpu) {
-          // Textures seen for the first time get their slot here, on this thread.
-          for (std::size_t i = 0; i < frustumUnitCount; ++i) {
-            if (sNeedsSlot[i] == 0U) {
-              continue;
-            }
-            const StrategicIconSource& source = sourceSet->mSources[i];
-            StrategicIconSourceRecord& record = sourceSet->mGpuSources[i];
-            if (source.mIcon != nullptr && *source.mIcon) {
-              record.mIconSlots = (record.mIconSlots & 0xFFFF0000u) | gpuIcons.AddSlot(*source.mIcon);
-            }
-            const boost::shared_ptr<CD3DBatchTexture>& underlay = source.mEntity->mVariableData.mUnderlayTexture;
-            const UserUnit* const asUnit = source.mEntity->IsUserUnit();
-            constexpr std::uint32_t kHasBlueprintIconDataMask = 0x10u;
-            if (underlay && (asUnit == nullptr || (asUnit->mIntelStateFlags & kHasBlueprintIconDataMask) != 0u)) {
-              const std::uint16_t slot = gpuIcons.AddSlot(underlay);
-              record.mUnderlaySlotOrNone = slot == StrategicIconInstance::kNoLayer ? -1 : static_cast<std::int32_t>(slot);
-            }
-          }
-          ++sourceSet->mGpuSourcesVersion;
-        }
-      }
-      activeSourceSet = sourceSet;
-      iconSources = sourceSet->mSources.data();
-      VerifyStrategicIconSources(frustumUnitCount, [&](const std::size_t i, auto&& store) { classify(frustumUnits[i], store); },
-                                 [&](const std::size_t i, auto&& store) { classifySource(iconSources[i], store); });
-    }
-    // `classify` or, with `ui_IconRecords`, its record-based form, for entry `i` of the list.
-    const auto classifyAt = [&](const std::size_t i, auto&& store) {
-      if (iconSources != nullptr) {
-        classifySource(iconSources[i], store);
-      } else {
-        classify(frustumUnits[i], store);
-      }
+    StrategicIconFrame frame{
+      *this,
+      aux,
+      camera,
+      view,
+      primBatcher,
+      tickFraction,
+      isMiniMap,
+      showAttachedUnitLifebars,
+      currentZoomValue,
+      focusArmy,
+      frustumUnits,
+      frustumUnitCount,
+      gpuIcons,
+      hoveredEntity,
+      maxZoomFade,
+      classifyOnGpu
     };
-    std::optional<gpg::gal::RenderProfileScope> profilePhase(std::in_place, "IconClassify"); // FAF instrumentation
-    // Main-thread scratch, kept across frames so the chunk lists keep their capacity.
-    static std::vector<std::vector<StrategicIconCandidate>> sChunks;
-
-    // Engine addition (`ren_GpuIconClassify`): the four icon runs classified, placed and drawn on
-    // the GPU (StrategicIconClassifyShader.h) from the records' GPU form. The CPU keeps the lifebar
-    // run, which exists only zoomed in, and per frame only gathers the selection, the hovered unit
-    // and the constants. If the renderer declines, the CPU path below runs as before.
-    bool drawnByClassifier = false;
-    if (classifyOnGpu && activeSourceSet != nullptr && activeSourceSet->mGpuSources.size() == frustumUnitCount) {
-      StrategicIconSourceSet& sourceSet = *activeSourceSet;
-      if (ui_RenderUnitBars && ui_LifebarLOD > currentZoomValue) {
-        const auto storeLifebar = [&aux](
-                                    const EStrategicIconRun run,
-                                    const UnitIconData& data,
-                                    const boost::shared_ptr<CD3DBatchTexture>* const icon
-                                  ) {
-          if (run == EStrategicIconRun::Lifebar) {
-            StoreStrategicIcon(aux, run, data, icon);
-          }
-        };
-        for (std::size_t i = 0; i < frustumUnitCount; ++i) {
-          classifySource(iconSources[i], storeLifebar);
-        }
-      }
-
-      // The selection as one bit per record, rebuilt when the selection or the records change.
-      static std::vector<const UserEntity*> sSelection;
-      sSelection.clear();
-      for (UserEntity* const selected : mSelection) {
-        sSelection.push_back(selected);
-      }
-      if (sourceSet.mSelectionBuiltFor != sourceSet.mGpuSourcesVersion || sSelection != sourceSet.mSelectionSnapshot) {
-        sourceSet.mSelectionSnapshot = sSelection;
-        ++sourceSet.mSelectionVersion;
-        sourceSet.mSelectionBits.assign((frustumUnitCount + 31u) / 32u, 0u);
-        bool recordsChanged = false;
-        if (!sSelection.empty()) {
-          // The live selected objects, sorted: what `mSelection.Find` finds, searched without
-          // touching the set, so workers can do it. A chunk is a whole number of bit words.
-          static std::vector<const UserEntity*> sSorted;
-          sSorted.assign(sSelection.begin(), sSelection.end());
-          std::sort(sSorted.begin(), sSorted.end());
-          static_assert(kParallelIconChunk % 32u == 0u, "a chunk must own whole selection words");
-          const auto markRange = [&](const std::size_t begin, const std::size_t end) {
-            for (std::size_t i = begin; i < end; ++i) {
-              const UserEntity* const entity = iconSources[i].mEntity;
-              if (entity != nullptr && std::binary_search(sSorted.begin(), sSorted.end(), entity)) {
-                sourceSet.mSelectionBits[i >> 5u] |= 1u << (i & 31u);
-              }
-            }
-          };
-          if (UseParallelIcons(frustumUnitCount)) {
-            CUserWorkerPool::Get().ParallelFor(frustumUnitCount, kParallelIconChunk, markRange);
-          } else {
-            markRange(0u, frustumUnitCount);
-          }
-          // A selected icon gets its atlas slot the first time it is needed.
-          for (std::size_t word = 0; word < sourceSet.mSelectionBits.size(); ++word) {
-            for (std::uint32_t bits = sourceSet.mSelectionBits[word]; bits != 0u; bits &= bits - 1u) {
-              const std::size_t i = word * 32u + static_cast<std::size_t>(std::countr_zero(bits));
-              StrategicIconSourceRecord& record = sourceSet.mGpuSources[i];
-              const boost::shared_ptr<CD3DBatchTexture>* const selectedIcon = iconSources[i].mSelectedIcon;
-              if ((record.mIconSlots >> 16u) == StrategicIconInstance::kNoLayer && selectedIcon != nullptr && *selectedIcon) {
-                record.mIconSlots = (record.mIconSlots & 0xFFFFu) | (static_cast<std::uint32_t>(gpuIcons.AddSlot(*selectedIcon)) << 16u);
-                recordsChanged = true;
-              }
-            }
-          }
-        }
-        if (recordsChanged) {
-          ++sourceSet.mGpuSourcesVersion;
-        }
-        sourceSet.mSelectionBuiltFor = sourceSet.mGpuSourcesVersion;
-      }
-
-      if (sourceSet.mHoveredBuiltFor != sourceSet.mGpuSourcesVersion || sourceSet.mHoveredEntity != hoveredEntity) {
-        sourceSet.mHoveredBuiltFor = sourceSet.mGpuSourcesVersion;
-        sourceSet.mHoveredEntity = hoveredEntity;
-        sourceSet.mHoveredIndex = 0xFFFFFFFFU;
-        for (std::size_t i = 0; hoveredEntity != nullptr && i < frustumUnitCount; ++i) {
-          if (iconSources[i].mEntity == hoveredEntity) {
-            sourceSet.mHoveredIndex = static_cast<std::uint32_t>(i);
-          }
-        }
-        // The hovered unit's textures get their atlas slots the first time they are needed. The
-        // last matching entry is the binary's: its hovered slot keeps the last one stored.
-        if (sourceSet.mHoveredIndex != 0xFFFFFFFFU) {
-          const StrategicIconSource& source = iconSources[sourceSet.mHoveredIndex];
-          StrategicIconSourceRecord& record = sourceSet.mGpuSources[sourceSet.mHoveredIndex];
-          std::uint32_t slots = record.mHoveredIconSlots;
-          const auto ensure = [&gpuIcons](const boost::shared_ptr<CD3DBatchTexture>* const texture, const std::uint32_t slot) {
-            return (slot == StrategicIconInstance::kNoLayer && texture != nullptr && *texture) ? gpuIcons.AddSlot(*texture) : slot;
-          };
-          slots = ensure(source.mHoveredIcon, slots & 0xFFFFu) | (ensure(source.mHoveredSelectedIcon, slots >> 16U) << 16U);
-          if (slots != record.mHoveredIconSlots) {
-            record.mHoveredIconSlots = slots;
-            const bool selectionCurrent = sourceSet.mSelectionBuiltFor == sourceSet.mGpuSourcesVersion;
-            ++sourceSet.mGpuSourcesVersion;
-            if (selectionCurrent) {
-              sourceSet.mSelectionBuiltFor = sourceSet.mGpuSourcesVersion;
-            }
-          }
-        }
-        sourceSet.mHoveredBuiltFor = sourceSet.mGpuSourcesVersion;
-      }
-
-      using Constants = StrategicIconClassifyConstants;
-      Constants constants{};
-      for (std::size_t row = 0; row < 4u; ++row) {
-        constants.mViewProjection[row * 4u + 0u] = view.viewProjection.r[row].x;
-        constants.mViewProjection[row * 4u + 1u] = view.viewProjection.r[row].y;
-        constants.mViewProjection[row * 4u + 2u] = view.viewProjection.r[row].z;
-        constants.mViewProjection[row * 4u + 3u] = view.viewProjection.r[row].w;
-      }
-      // `PlaceUnitIcon`'s `Project(world, 0, width, height, 0)`.
-      constants.mViewport[0] = 0.0f;
-      constants.mViewport[1] = aux.mViewportWidth;
-      constants.mViewport[2] = aux.mViewportHeight;
-      constants.mViewport[3] = 0.0f;
-      std::uint32_t frameFlags = 0u;
-      if (mWldMap != nullptr && mWldMap->mTerrainRes != nullptr && mWldMap->mTerrainRes->mMap != nullptr) {
-        // `CWldTerrainRes::IsInPlayableRect`'s bounds.
-        const gpg::Rect2i& playableRect = mWldMap->mTerrainRes->mMap->mPlayableRect;
-        constants.mPlayableRect[0] = static_cast<float>(playableRect.x0);
-        constants.mPlayableRect[1] = static_cast<float>(playableRect.z0);
-        constants.mPlayableRect[2] = static_cast<float>(playableRect.x1);
-        constants.mPlayableRect[3] = static_cast<float>(playableRect.z1);
-        frameFlags |= Constants::kHasPlayableRect;
-      }
-      constants.mTickFraction = tickFraction;
-      constants.mCurrentZoom = currentZoomValue;
-      constants.mMaxZoomFade = maxZoomFade;
-      // `PlaceUnitIcon`'s blink test: the phase is the same for every unit.
-      constexpr float kBlinkDurationTickScale = 10.0f;
-      constants.mBlinkTicks = ui_StrategicIconBlinkDuration * kBlinkDurationTickScale;
-      const double simTime = static_cast<double>(mGameTick) + static_cast<double>(aux.mTickFraction);
-      if (std::fmod(simTime * static_cast<double>(ui_StrategicIconBlinkRate), 1.0) <= 0.5) {
-        frameFlags |= Constants::kBlinkHidden;
-      }
-      if (ui_NisRenderIcons) {
-        frameFlags |= Constants::kNisRenderIcons;
-      }
-      if (ui_RenderIcons) {
-        frameFlags |= Constants::kRenderIcons;
-      }
-      if (ui_AlwaysRenderStrategicIcons) {
-        frameFlags |= Constants::kAlwaysRenderIcons;
-      }
-      constants.mFlags = frameFlags;
-      constants.mHovered = sourceSet.mHoveredIndex;
-      constants.mGameTick = mGameTick;
-      constants.mPausedSlot = aux.mPauseRestTexture ? gpuIcons.AddSlot(aux.mPauseRestTexture) : StrategicIconInstance::kNoLayer;
-      constants.mStunnedSlot = aux.mStunnedRestTexture ? gpuIcons.AddSlot(aux.mStunnedRestTexture) : StrategicIconInstance::kNoLayer;
-
-      profilePhase.reset();
-      profilePhase.emplace("IconDraw");
-      (void)primBatcher->Setup("TStrategicIcon");
-      drawnByClassifier = gpuIcons.DrawClassified(
-        *primBatcher, camera, std::span<const StrategicIconSourceRecord>(sourceSet.mGpuSources), sourceSet.mGpuSourcesVersion,
-        std::span<const std::uint32_t>(sourceSet.mSelectionBits), sourceSet.mSelectionVersion, constants
-      );
-
-      static std::uint64_t sClassifiedDraws[2] = {}; // per kind of view, so both get checked
-      const std::uint32_t checkInterval = StrategicIconGpuCheckInterval();
-      if (drawnByClassifier && checkInterval != 0u && ++sClassifiedDraws[isMiniMap ? 1 : 0] % checkInterval == 0u) {
-        // What the CPU path would have drawn this frame: classify, runs in draw order, place, build.
-        std::vector<StrategicIconCandidate> candidates;
-        const auto record = [&candidates](
-                              const EStrategicIconRun run,
-                              const UnitIconData& data,
-                              const boost::shared_ptr<CD3DBatchTexture>* const icon
-                            ) {
-          if (run != EStrategicIconRun::Lifebar) {
-            candidates.push_back(StrategicIconCandidate{data, icon, run});
-          }
-        };
-        for (std::size_t i = 0; i < frustumUnitCount; ++i) {
-          classifySource(iconSources[i], record);
-        }
-        std::vector<StrategicIconInstance> expected;
-        expected.reserve(candidates.size());
-        const auto findSlot = [&gpuIcons](const boost::shared_ptr<CD3DBatchTexture>& texture) {
-          return gpuIcons.FindSlot(texture.get());
-        };
-        for (const EStrategicIconRun run :
-             {EStrategicIconRun::Ground, EStrategicIconRun::Air, EStrategicIconRun::HighPriority, EStrategicIconRun::Selected}) {
-          for (const StrategicIconCandidate& candidate : candidates) {
-            if (candidate.mRun == run) {
-              (void)BuildStrategicIconRecord(candidate, aux, PlaceUnitIcon(candidate.mData, aux), findSlot, expected.emplace_back());
-            }
-          }
-        }
-        // The hovered slot: the last hovered candidate.
-        for (auto it = candidates.rbegin(); it != candidates.rend(); ++it) {
-          if (it->mRun == EStrategicIconRun::Hovered) {
-            (void)BuildStrategicIconRecord(*it, aux, PlaceUnitIcon(it->mData, aux), findSlot, expected.emplace_back());
-            break;
-          }
-        }
-        std::vector<StrategicIconInstance> drawn;
-        if (gpuIcons.ReadBackClassified(drawn)) {
-          CompareClassifiedStrategicIcons(expected, drawn, isMiniMap);
-        }
-      }
-
-      if (!drawnByClassifier) {
-        // The CPU path classifies again, lifebars included.
-        aux.mLifebarIcons.clear();
-        profilePhase.reset();
-        profilePhase.emplace("IconClassify");
-      }
+    if (ui_IconRecords) {
+      frame.UpdateSources();
     }
+    std::optional<gpg::gal::RenderProfileScope> profilePhase(std::in_place, "IconClassify"); // FAF instrumentation
 
+    bool drawnByClassifier = false;
+    if (
+      classifyOnGpu && frame.activeSourceSet != nullptr && frame.activeSourceSet->mGpuSources.size() == frustumUnitCount
+    ) {
+      drawnByClassifier = frame.DrawClassifiedOnGpu(profilePhase);
+    }
     if (!drawnByClassifier) {
-      // Engine addition (`ren_GpuIcons`): the candidates of the four icon runs in draw order.
-      static std::vector<const StrategicIconCandidate*> sGpuIcons;
-      const bool gpuIconsActive = gpuIcons.IsActive();
-      sGpuIcons.clear();
-      if (gpuIconsActive) {
-        // Engine addition (`ren_GpuIcons`): classify into candidates as the parallel path does
-        // (one chunk when the count is small), but keep the icon runs as candidates instead of
-        // copying them into `aux`: the GPU records are built from them directly. Lifebar records
-        // are stored as before, in the same order.
-        const std::size_t chunkCount =
-          std::max<std::size_t>(1u, (frustumUnitCount + kParallelIconChunk - 1u) / kParallelIconChunk);
-        if (sChunks.size() < chunkCount) {
-          sChunks.resize(chunkCount);
-        }
-        const auto classifyChunk = [&](const std::size_t begin, const std::size_t end) {
-          std::vector<StrategicIconCandidate>& chunk = sChunks[begin / kParallelIconChunk];
-          chunk.clear();
-          const auto record = [&chunk](
-                                const EStrategicIconRun run,
-                                const UnitIconData& data,
-                                const boost::shared_ptr<CD3DBatchTexture>* const icon
-                              ) { chunk.push_back(StrategicIconCandidate{data, icon, run}); };
-          for (std::size_t i = begin; i < end; ++i) {
-            classifyAt(i, record);
-          }
-        };
-        if (UseParallelIcons(frustumUnitCount)) {
-          CUserWorkerPool::Get().ParallelFor(frustumUnitCount, kParallelIconChunk, classifyChunk);
-        } else {
-          classifyChunk(0u, frustumUnitCount);
-          for (std::size_t c = 1; c < chunkCount; ++c) {
-            sChunks[c].clear();
-          }
-        }
-        // Runs in draw order (ground, air, high priority, selected), each in classification order,
-        // then the hovered slot (the last hovered candidate, as the binary overwrites its slot).
-        std::size_t runCounts[4] = {};
-        const StrategicIconCandidate* hoveredCandidate = nullptr;
-        for (std::size_t c = 0; c < chunkCount; ++c) {
-          for (const StrategicIconCandidate& candidate : sChunks[c]) {
-            if (candidate.mRun == EStrategicIconRun::Lifebar) {
-              StoreStrategicIcon(aux, candidate.mRun, candidate.mData, candidate.mIcon);
-            } else if (candidate.mRun == EStrategicIconRun::Hovered) {
-              hoveredCandidate = &candidate;
-            } else {
-              ++runCounts[static_cast<std::size_t>(candidate.mRun)];
-            }
-          }
-        }
-        std::size_t runCursor[4] = {
-          0u, runCounts[0], runCounts[0] + runCounts[1], runCounts[0] + runCounts[1] + runCounts[2]
-        };
-        sGpuIcons.resize(runCursor[3] + runCounts[3]);
-        for (std::size_t c = 0; c < chunkCount; ++c) {
-          for (const StrategicIconCandidate& candidate : sChunks[c]) {
-            if (candidate.mRun != EStrategicIconRun::Lifebar && candidate.mRun != EStrategicIconRun::Hovered) {
-              sGpuIcons[runCursor[static_cast<std::size_t>(candidate.mRun)]++] = &candidate;
-            }
-          }
-        }
-        if (hoveredCandidate != nullptr) {
-          sGpuIcons.push_back(hoveredCandidate);
-        }
-      } else if (!UseParallelIcons(frustumUnitCount)) {
-        const auto storeInAux = [&aux](
-                                  const EStrategicIconRun run,
-                                  const UnitIconData& data,
-                                  const boost::shared_ptr<CD3DBatchTexture>* const icon
-                                ) { StoreStrategicIcon(aux, run, data, icon); };
-        for (std::size_t i = 0; i < frustumUnitCount; ++i) {
-          classifyAt(i, storeInAux);
-        }
-      } else {
-        const std::size_t chunkCount = (frustumUnitCount + kParallelIconChunk - 1u) / kParallelIconChunk;
-        if (sChunks.size() < chunkCount) {
-          sChunks.resize(chunkCount);
-        }
-        CUserWorkerPool::Get().ParallelFor(frustumUnitCount, kParallelIconChunk, [&](const std::size_t begin, const std::size_t end) {
-          std::vector<StrategicIconCandidate>& chunk = sChunks[begin / kParallelIconChunk];
-          chunk.clear();
-          const auto record = [&chunk](
-                                const EStrategicIconRun run,
-                                const UnitIconData& data,
-                                const boost::shared_ptr<CD3DBatchTexture>* const icon
-                              ) { chunk.push_back(StrategicIconCandidate{data, icon, run}); };
-          for (std::size_t i = begin; i < end; ++i) {
-            classifyAt(i, record);
-          }
-        });
-        for (std::size_t c = 0; c < chunkCount; ++c) {
-          for (const StrategicIconCandidate& candidate : sChunks[c]) {
-            StoreStrategicIcon(aux, candidate.mRun, candidate.mData, candidate.mIcon);
-          }
-          sChunks[c].clear();
-        }
-      }
-
-      // --- Phase 3.5: draw the classified icon quads -----------------------
-      // The four runs collected above, each drawn through `RenderUnitIcon`
-      // (0x0085D9A0) under its own technique (0x0085B79D..0x0085BCCD in the
-      // binary). This runs before the lifebar pass below, matching the
-      // binary's own SetTexture/DrawQuad-then-Flush ordering (0x0085BBE9..
-      // 0x0085BCCD then Flush at 0x0085BFA9). The formation-preview icons
-      // follow in phase 3.75.
-      profilePhase.reset();
-      profilePhase.emplace("IconDraw");
-      (void)primBatcher->Setup("TStrategicIcon");
-
-      // Engine addition (`ren_GpuIcons`): one instanced draw from per-icon GPU records when the
-      // backend can; the batcher path below otherwise. If the GPU path declines, the candidates go
-      // into the runs exactly as the batcher path stores them.
-      bool drawnOnGpu = false;
-      if (gpuIconsActive) {
-        drawnOnGpu = DrawStrategicIconsOnGpu(gpuIcons, aux, camera, sGpuIcons);
-        if (!drawnOnGpu) {
-          for (const StrategicIconCandidate* const candidate : sGpuIcons) {
-            StoreStrategicIcon(aux, candidate->mRun, candidate->mData, candidate->mIcon);
-          }
-        }
-      }
-      const std::size_t drawnIconCount =
-        aux.mGroundIcons.size() + aux.mAirIcons.size() + aux.mHighPriorityIcons.size() + aux.mSelectedIcons.size();
-      if (drawnOnGpu) {
-        // Drawn: nothing left for the batcher.
-      } else if (!UseParallelIcons(drawnIconCount)) {
-        for (UnitIconData& groundIcon : aux.mGroundIcons) {
-          RenderUnitIcon(groundIcon, aux);
-        }
-        for (UnitIconData& airIcon : aux.mAirIcons) {
-          RenderUnitIcon(airIcon, aux);
-        }
-        for (UnitIconData& highPriorityIcon : aux.mHighPriorityIcons) {
-          RenderUnitIcon(highPriorityIcon, aux);
-        }
-        for (UnitIconData& selectedIcon : aux.mSelectedIcons) {
-          RenderUnitIcon(selectedIcon, aux);
-        }
-        if (sHoveredStrategicIcon.mUnit != nullptr) {
-          RenderUnitIcon(sHoveredStrategicIcon, aux);
-        }
-      } else {
-        // Engine addition (`ui_ParallelIcons`): place every icon of the four runs on workers, then
-        // draw them on this thread in the serial order (ground, air, high priority, selected).
-        const UnitIconData* const runStarts[4] = {
-          aux.mGroundIcons.data(), aux.mAirIcons.data(), aux.mHighPriorityIcons.data(), aux.mSelectedIcons.data()
-        };
-        const std::size_t runEnds[4] = {
-          aux.mGroundIcons.size(),
-          aux.mGroundIcons.size() + aux.mAirIcons.size(),
-          aux.mGroundIcons.size() + aux.mAirIcons.size() + aux.mHighPriorityIcons.size(),
-          drawnIconCount
-        };
-        const auto iconAt = [&](const std::size_t index) -> const UnitIconData& {
-          std::size_t run = 0;
-          while (index >= runEnds[run]) {
-            ++run;
-          }
-          return runStarts[run][index - (run == 0 ? 0 : runEnds[run - 1])];
-        };
-
-        static std::vector<UnitIconPlacement> sPlacements;
-        sPlacements.resize(drawnIconCount);
-        CUserWorkerPool::Get().ParallelFor(drawnIconCount, kParallelIconChunk, [&](const std::size_t begin, const std::size_t end) {
-          for (std::size_t i = begin; i < end; ++i) {
-            sPlacements[i] = PlaceUnitIcon(iconAt(i), aux);
-          }
-        });
-        static std::vector<CD3DPrimBatcher::ScreenQuad> sPendingQuads;
-        StrategicIconBulkEmitter emit(*aux.mBatcher, sPendingQuads);
-        for (std::size_t i = 0; i < drawnIconCount; ++i) {
-          EmitUnitIconQuads(iconAt(i), sPlacements[i], emit);
-        }
-        if (sHoveredStrategicIcon.mUnit != nullptr) {
-          EmitUnitIconQuads(sHoveredStrategicIcon, PlaceUnitIcon(sHoveredStrategicIcon, aux), emit);
-        }
-      }
-
+      frame.ClassifyAndDraw(profilePhase);
     }
 
     primBatcher->Flush();
 
-    // --- Phase 3.75: formation-preview icons (0x0085C3C2..0x0085C859) -------
-    // While a formation is being placed, every participant's strategic icon is
-    // drawn at the slot the formation assigned it, as a ghost under its own
-    // technique. The gates and the slot height are the ones
-    // `RenderMeshPreviews` uses for the matching mesh ghosts.
-    {
-      CFormation* const formation = mCurFormation;
-      // 0x0085C3E7 `comiss 0, mTimeLeft; jb`: only once the placement timer
-      // has run out.
-      if (formation->mReady && formation->mCurInstance != nullptr && formation->mTimeLeft <= 0.0f) {
-        (void)primBatcher->Setup("TStrategicFormationIcon");
-
-        // Same reinterpret_cast as `RenderMeshPreviews`: `Contains` (slot 16,
-        // 0x0085C4D9) and `GetFormationPosition` (slot 6, 0x0085C5C8) are
-        // declared on the concrete instance only.
-        CAiFormationInstance* const instance = reinterpret_cast<CAiFormationInstance*>(formation->mCurInstance);
-        for (UserUnit* const unit : formation->mParticipants) {
-          IUnit* const bridge = GetIUnitBridge(unit);
-          Unit* const formationUnit = reinterpret_cast<Unit*>(bridge);
-          // 0x0085C4E9..0x0085C51B is `GetAttachmentParent()` inlined.
-          if (bridge->IsDead() || !instance->Contains(formationUnit, false) || unit->GetAttachmentParent() != nullptr) {
-            continue;
-          }
-
-          UnitIconData iconData{};
-          iconData.mUnit = LookupEntityId(bridge->GetEntityId());
-          iconData.mBlueprint = bridge->GetBlueprint();
-          // +0x150 is the size word of `mStrategicIconName` (0x0085C5AC).
-          if (iconData.mBlueprint->mStrategicIconName.empty()) {
-            continue;
-          }
-
-          SCoordsVec2 slot{};
-          instance->GetFormationPosition(&slot, formationUnit, nullptr);
-          const RUnitBlueprint* const blueprint = bridge->GetBlueprint();
-          iconData.mWorldX = slot.x;
-          iconData.mWorldY = (blueprint->mSizeY + GetSTIMap()->GetSurface(slot.x, slot.z)) + blueprint->Physics.Elevation;
-          iconData.mWorldZ = slot.z;
-
-          // The camera-distance test of the main pass, without its
-          // `GetMaxZoom() * 0.89` clamp (0x0085C6A1..0x0085C6E0).
-          const auto& lodRow = aux.mCamera->viewport.r[1];
-          const float zoom = ((iconData.mWorldZ * lodRow.z) + (iconData.mWorldY * lodRow.y)) +
-            (lodRow.x * iconData.mWorldX) + lodRow.w;
-          if (iconData.mUnit->mVariableData.mMeshBlueprint->mIconFadeInZoom > zoom) {
-            continue;
-          }
-
-          // Not selected, selected variant eligible, hovered (0x0085C6E6..0x0085C6EF):
-          // the ghosts show the highlighted icon.
-          iconData.mIconTexture = PickUnitStrategicIconTexture(aux, iconData, false, true, true);
-          if (iconData.mIconTexture) {
-            iconData.mIsFormationGhost = true;
-            RenderUnitIcon(iconData, aux);
-          }
-        }
-      }
-    }
+    frame.DrawFormationPreviews();
     primBatcher->Flush();
 
     profilePhase.reset();
@@ -3447,7 +3657,7 @@ namespace
       gpuIcons.Begin(camera);
     }
     // The solid-colour icons this pass has looked up, by colour.
-    std::vector<std::pair<std::uint32_t, boost::shared_ptr<CD3DBatchTexture>>> solidIcons;
+    std::vector<std::pair<std::uint32_t, std::shared_ptr<CD3DBatchTexture>>> solidIcons;
     const auto flushGpuIcons = [&]() {
       if (iconsOnGpu && !gpuIcons.Flush(*primBatcher)) {
         gpuIcons.DrawWithBatcher(*primBatcher);
@@ -3481,11 +3691,11 @@ namespace
         return;
       }
 
-      const auto* const blueprint = reinterpret_cast<const RProjectileBlueprint*>(entity->mParams.mBlueprint);
+      const auto* const blueprint = static_cast<const RProjectileBlueprint*>(entity->mParams.mBlueprint);
       if (blueprint == nullptr) {
         return;
       }
-      if (projectileCategory == nullptr || !projectileCategory->mBits.Contains(blueprint->mCategoryBitIndex)) {
+      if (projectileCategory == nullptr || !projectileCategory->mBits.Contains(blueprint->mBlueprintOrdinal)) {
         return;
       }
 
@@ -3494,12 +3704,14 @@ namespace
       // Own and allied projectiles are always drawn; everyone else's have to be
       // under recon cover, and an underwater projectile is checked against the
       // fog grid rather than the explored grid.
-      if (focusArmy != nullptr && !focusArmy->IsAlly(static_cast<std::uint32_t>(entity->mArmy->mArmyIndex))
-          && !focusArmy->CanSeePoint(
-               worldPosition,
-               (entity->mVariableData.mLayerMask & kLayerUnderwaterMask) != 0 ? UserArmy::EReconGridMask::Fog
-                                                                 : UserArmy::EReconGridMask::Explored
-             )) {
+      if (
+        focusArmy != nullptr && !focusArmy->IsAlly(static_cast<std::uint32_t>(entity->mArmy->mArmyIndex)) &&
+        !focusArmy->CanSeePoint(
+          worldPosition,
+          (entity->mVariableData.mLayerMask & kLayerUnderwaterMask) != 0 ? UserArmy::EReconGridMask::Fog
+                                                                         : UserArmy::EReconGridMask::Explored
+        )
+      ) {
         return;
       }
       out.mBlueprint = blueprint;
@@ -3508,17 +3720,16 @@ namespace
     static std::vector<ProjectileIconTest> sProjectileTests;
     constexpr std::size_t kParallelProjectileMin = 1024U;
     constexpr std::size_t kParallelProjectileChunk = 512U;
-    const bool testedAhead = iconsOnGpu && visibleEntities.size() >= kParallelProjectileMin &&
-      CUserWorkerPool::ConfiguredWorkerCount() != 0U;
+    const bool testedAhead =
+      iconsOnGpu && visibleEntities.size() >= kParallelProjectileMin && CUserWorkerPool::ConfiguredWorkerCount() != 0U;
     if (testedAhead) {
       sProjectileTests.resize(visibleEntities.size());
       CUserWorkerPool::Get().ParallelFor(
-        visibleEntities.size(), kParallelProjectileChunk,
-        [&](const std::size_t begin, const std::size_t end) {
-          for (std::size_t i = begin; i < end; ++i) {
-            testProjectile(visibleEntities[i], sProjectileTests[i]);
-          }
+        visibleEntities.size(), kParallelProjectileChunk, [&](const std::size_t begin, const std::size_t end) {
+        for (std::size_t i = begin; i < end; ++i) {
+          testProjectile(visibleEntities[i], sProjectileTests[i]);
         }
+      }
       );
     }
 
@@ -3536,7 +3747,7 @@ namespace
       const RProjectileBlueprint* const blueprint = tested.mBlueprint;
       const Wm3::Vec3f worldPosition = tested.mPosition;
 
-      boost::shared_ptr<CD3DBatchTexture> icon{};
+      std::shared_ptr<CD3DBatchTexture> icon{};
       float halfWidth = 0.0f;
       float halfHeight = 0.0f;
       bool usesIconTexture = false;
@@ -3623,8 +3834,7 @@ namespace
       primBatcher->Flush();
       (void)primBatcher->Setup("TCommandGlow");
 
-      UI_CurGlowTime =
-        (UI_CurGlowTime <= UI_RenProjectileGlowPeriod) ? UI_CurGlowTime + frameSeconds : 0.0f;
+      UI_CurGlowTime = (UI_CurGlowTime <= UI_RenProjectileGlowPeriod) ? UI_CurGlowTime + frameSeconds : 0.0f;
 
       const float halfPeriod = UI_RenProjectileGlowPeriod * 0.5f;
       float glowFrom = UI_RenProjectileGlowMax;
@@ -3652,8 +3862,8 @@ namespace
     flushGpuIcons();
     primBatcher->Flush();
   }
-namespace
-{
+  namespace
+  {
     /** "/env/common/splats/mass_strategic.dds" - literal at 0x00E47488. */
     constexpr const char* kMassStrategicSplat = "/env/common/splats/mass_strategic.dds";
 
@@ -3694,7 +3904,7 @@ namespace
      */
     void DrawResourceSplats(
       CD3DPrimBatcher& primBatcher,
-      const boost::shared_ptr<CD3DBatchTexture>& splat,
+      const std::shared_ptr<CD3DBatchTexture>& splat,
       const gpg::fastvector<Wm3::Vector2f>& screenPoints
     )
     {
@@ -3704,8 +3914,7 @@ namespace
 
       // FAF FA-Binary-Patches #147 (Scale projectile/deposit/strategic icons): times
       // `ui_DepositIconScale` (0x008630A0 mass, 0x0086329D hydrocarbon).
-      const float halfWidth =
-        static_cast<float>(splat->mWidth >> kResourceSplatHalfExtentShift) * ui_DepositIconScale;
+      const float halfWidth = static_cast<float>(splat->mWidth >> kResourceSplatHalfExtentShift) * ui_DepositIconScale;
       const float halfHeight =
         static_cast<float>(splat->mHeight >> kResourceSplatHalfExtentShift) * ui_DepositIconScale;
       primBatcher.SetTexture(splat);
@@ -3723,8 +3932,7 @@ namespace
         primBatcher.DrawQuad(topLeft, bottomLeft, bottomRight, topRight);
       }
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x00862A80 (FUN_00862A80, ?RenderResources@CWldSession@Moho@@QAEXPAVGeomCamera3@2@PAVCD3DPrimBatcher@2@@Z)
@@ -3759,7 +3967,10 @@ namespace
    *   ebp-0x8B8 / ebp-0x8B4   the floored screen pixel
    *   ebp-0x848 / ebp-0x850   the mass / hydrocarbon splat handles
    */
-  void CWldSession::RenderResources(GeomCamera3* const camera, CD3DPrimBatcher* const primBatcher)
+  void CWldSession::RenderResources(
+    GeomCamera3* const camera,
+    CD3DPrimBatcher* const primBatcher
+  )
   {
     // 0x00862AA6..0x00862ACC: `D3D_GetDevice()->SelectFxFile("primbatcher")`,
     // `SelectTechnique("TResourceIcon")` and the composite-matrix invalidation
@@ -3782,12 +3993,12 @@ namespace
 
     // `mWldMap->mTerrainRes` + 0x04 is the active `STIMap`; its playable rect
     // sits at +0x08 (0x00862B09..0x00862B4D reads all four bounds).
-    const VisibilityRect& playableRect = VisibilityRect::FromRect2i(mWldMap->mTerrainRes->mMap->mPlayableRect);
+    const gpg::Rect2i& playableRect = mWldMap->mTerrainRes->mMap->mPlayableRect;
 
     primBatcher->SetProjectionMatrix(MakeViewportPixelProjection(*camera));
     primBatcher->SetViewMatrix(VMatrix4::Identity());
 
-    IResources* const resources = mSimResources.px;
+    IResources* const resources = mSimResources.get();
     CHeightField* const heightField = mWldMap->mTerrainRes->GetHeightField();
 
     // Declaration order is the binary's: the tail destroys the query output
@@ -3814,15 +4025,15 @@ namespace
       // Centre of the integer footprint, computed the binary's way: the extent
       // is differenced in integers first, then halved and re-based
       // (0x00862D8A..0x00862DC5).
-      const float centreX =
-        (static_cast<float>(footprint.x1 - footprint.x0) * 0.5f) + static_cast<float>(footprint.x0);
-      const float centreZ =
-        (static_cast<float>(footprint.z1 - footprint.z0) * 0.5f) + static_cast<float>(footprint.z0);
+      const float centreX = (static_cast<float>(footprint.x1 - footprint.x0) * 0.5f) + static_cast<float>(footprint.x0);
+      const float centreZ = (static_cast<float>(footprint.z1 - footprint.z0) * 0.5f) + static_cast<float>(footprint.z0);
 
       // A deposit that pokes out of the playable rect is dropped whole, not
       // clipped (four signed compares at 0x00862DB1..0x00862DF4).
-      if (footprint.x0 < playableRect.minX || playableRect.maxX < footprint.x1 ||
-          footprint.z0 < playableRect.minZ || playableRect.maxZ < footprint.z1) {
+      if (
+        footprint.x0 < playableRect.x0 || playableRect.x1 < footprint.x1 || footprint.z0 < playableRect.z0 ||
+        playableRect.z1 < footprint.z1
+      ) {
         continue;
       }
 
@@ -3855,17 +4066,17 @@ namespace
     // hydrocarbon one at 0x00863469 and the mass one at 0x008634A6, both past
     // `Flush`. The `1` border argument asks `FromFile` for a one-texel guard
     // band so the atlas neighbours cannot bleed into the splat.
-    const boost::shared_ptr<CD3DBatchTexture> massSplat = CD3DBatchTexture::FromFile(kMassStrategicSplat, 1u);
+    const std::shared_ptr<CD3DBatchTexture> massSplat = CD3DBatchTexture::FromFile(kMassStrategicSplat, 1u);
     DrawResourceSplats(*primBatcher, massSplat, massPoints);
 
-    const boost::shared_ptr<CD3DBatchTexture> hydrocarbonSplat =
+    const std::shared_ptr<CD3DBatchTexture> hydrocarbonSplat =
       CD3DBatchTexture::FromFile(kHydrocarbonStrategicSplat, 1u);
     DrawResourceSplats(*primBatcher, hydrocarbonSplat, hydrocarbonPoints);
 
     primBatcher->Flush();
   }
-namespace
-{
+  namespace
+  {
     // The economy lanes below are per-tick rates and the overlay shows them per
     // second; the sim runs ten ticks a second (0x00DFF31C).
     constexpr float kEconOverlayTicksPerSecond = 10.0f;
@@ -3888,16 +4099,16 @@ namespace
     // initial values are the ones the shipped .data holds.
     std::uint32_t gEconOverlayPositiveColor = 0xFF00D800u;          // 0x00F57C00
     std::uint32_t gEconOverlayNegativeColor = 0xFFD80000u;          // 0x00F57BFC
-    boost::shared_ptr<CD3DBatchTexture> gEconOverlayLeftTexture{};  // 0x010C4230
-    boost::shared_ptr<CD3DBatchTexture> gEconOverlayRightTexture{}; // 0x010C4238
-    boost::shared_ptr<CD3DBatchTexture> gEconOverlayMidTexture{};   // 0x010C4244
-    msvc8::string gEconOverlayFontName{};                           // 0x00F5B210
+    std::shared_ptr<CD3DBatchTexture> gEconOverlayLeftTexture{};    // 0x010C4230
+    std::shared_ptr<CD3DBatchTexture> gEconOverlayRightTexture{};   // 0x010C4238
+    std::shared_ptr<CD3DBatchTexture> gEconOverlayMidTexture{};     // 0x010C4244
+    fa::string gEconOverlayFontName{};                              // 0x00F5B210
     std::int32_t gEconOverlayFontSize = 12;                         // 0x00F57C04
     float gEconOverlayEnergyTopOffset = 0.0f;                       // 0x010A6458
     float gEconOverlayMassTopOffset = 14.0f;                        // 0x00F57C08
 
-    bool gEconOverlayParamsImported = false;                        // 0x010A6449
-    CD3DFont* gEconOverlayFont = nullptr;                           // 0x010C4228
+    bool gEconOverlayParamsImported = false; // 0x010A6449
+    CD3DFont* gEconOverlayFont = nullptr;    // 0x010C4228
 
     /**
      * Address: 0x00858850 (FUN_00858850, Moho::func_ImportEconOverlayParams)
@@ -3939,8 +4150,7 @@ namespace
         gEconOverlayMidTexture = CD3DBatchTexture::FromFile(params["midTexture"].GetString(), 1u);
       }
       if (!params["rightTexture"].IsNil()) {
-        gEconOverlayRightTexture =
-          CD3DBatchTexture::FromFile(params["rightTexture"].GetString(), 1u);
+        gEconOverlayRightTexture = CD3DBatchTexture::FromFile(params["rightTexture"].GetString(), 1u);
       }
       if (!params["fontName"].IsNil()) {
         const char* const fontName = params["fontName"].GetString();
@@ -3969,18 +4179,16 @@ namespace
      * released before the draw, as in the binary.
      */
     void FormatEconomyRateInto(
-      msvc8::string& out,
+      fa::string& out,
       const float ratePerSecond,
       const char* const wholeFormat,
       const char* const decimalFormat
     )
     {
-      const bool useDecimals =
-        kEconOverlayDecimalCutoff > ratePerSecond && ratePerSecond > -kEconOverlayDecimalCutoff;
-      const msvc8::string formatted =
-        useDecimals ? gpg::STR_Printf(decimalFormat, static_cast<double>(ratePerSecond))
-                    : gpg::STR_Printf(wholeFormat, static_cast<std::int32_t>(ratePerSecond));
-      (void)out.assign(formatted, 0, msvc8::string::npos);
+      const bool useDecimals = kEconOverlayDecimalCutoff > ratePerSecond && ratePerSecond > -kEconOverlayDecimalCutoff;
+      const fa::string formatted = useDecimals ? gpg::STR_Printf(decimalFormat, static_cast<double>(ratePerSecond))
+                                               : gpg::STR_Printf(wholeFormat, static_cast<std::int32_t>(ratePerSecond));
+      (void)out.assign(formatted, 0, fa::string::npos);
     }
 
     /**
@@ -3990,7 +4198,11 @@ namespace
      * vertex blocks apart from the x range, so they share this helper.
      */
     void DrawEconomyOverlaySlice(
-      CD3DPrimBatcher& primBatcher, const float x0, const float y0, const float x1, const float y1
+      CD3DPrimBatcher& primBatcher,
+      const float x0,
+      const float y0,
+      const float x1,
+      const float y1
     )
     {
       const CD3DPrimBatcher::Vertex topLeft{x0, y0, 0.0f, kEconOverlayBarColor, 0.0f, 0.0f};
@@ -4011,7 +4223,7 @@ namespace
     void DrawEconomyOverlayLabel(
       CD3DFont& font,
       CD3DPrimBatcher& primBatcher,
-      const msvc8::string& text,
+      const fa::string& text,
       const float x,
       const float y,
       const std::uint32_t color
@@ -4020,8 +4232,7 @@ namespace
       const Wm3::Vector2f origin{x, y};
       font.Render2D(text.c_str(), &primBatcher, origin, color, 0.0f, 0.0f);
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x00858D80 (FUN_00858D80, Moho::CWldSession::DrawEconomyOverlay)
@@ -4036,7 +4247,9 @@ namespace
    * frustum - see the header for the full description.
    */
   void CWldSession::DrawEconomyOverlay(
-    CameraImpl* const camera, CD3DPrimBatcher* const primBatcher, [[maybe_unused]] const float tickFraction
+    CameraImpl* const camera,
+    CD3DPrimBatcher* const primBatcher,
+    [[maybe_unused]] const float tickFraction
   )
   {
     if (!DisplayEconomyOverlay) {
@@ -4051,9 +4264,8 @@ namespace
     if (gEconOverlayFont == nullptr) {
       // `Create` hands back a borrowed shared lane; the overlay keeps its own
       // intrusive reference on the font and releases the lane straight away.
-      boost::SharedPtrRaw<CD3DFont> created =
-        CD3DFont::Create(gEconOverlayFontSize, gEconOverlayFontName.c_str());
-      CD3DFont* const font = created.px;
+      moho::CountedPtr<CD3DFont> created = CD3DFont::Create(gEconOverlayFontSize, gEconOverlayFontName.c_str());
+      CD3DFont* const font = created.tex;
       if (gEconOverlayFont != font) {
         if (gEconOverlayFont != nullptr) {
           (void)gEconOverlayFont->ReleaseReference();
@@ -4063,7 +4275,6 @@ namespace
           font->AddReference();
         }
       }
-      created.release();
     }
 
     (void)primBatcher->Setup("TAlphaBlendLinearSampleNoDepth");
@@ -4101,8 +4312,7 @@ namespace
       if (meshBlueprint == nullptr) {
         continue;
       }
-      if (view.viewport.ProjectViewportDepthRow1(unitBridge->GetPosition())
-          >= meshBlueprint->mIconFadeInZoom) {
+      if (view.viewport.ProjectViewportDepthRow1(unitBridge->GetPosition()) >= meshBlueprint->mIconFadeInZoom) {
         continue;
       }
 
@@ -4125,11 +4335,10 @@ namespace
       // once from a zeroed ebx (0x00858DAF -> 0x00858E0E) and never rewritten,
       // so the overlay always samples the untick-interpolated position.
       const Wm3::Vector3f worldPosition = entity->GetInterpolatedPosition(0.0f);
-      const Wm3::Vector2f screenPosition =
-        view.Project(worldPosition, 0.0f, viewportWidth, viewportHeight, 0.0f);
+      const Wm3::Vector2f screenPosition = view.Project(worldPosition, 0.0f, viewportWidth, viewportHeight, 0.0f);
 
-      msvc8::string energyText{};
-      msvc8::string massText{};
+      fa::string energyText{};
+      fa::string massText{};
       FormatEconomyRateInto(energyText, energyPerSecond, "%+4i ", "%+4.1f ");
       FormatEconomyRateInto(massText, massPerSecond, "%+4i", "%+4.1f");
 
@@ -4162,10 +4371,8 @@ namespace
       const float fontHeight = gEconOverlayFont->mHeight;
       const float energyBaseline = std::floor(gEconOverlayEnergyTopOffset) + fontHeight + barTop;
       const float massBaseline = std::floor(gEconOverlayMassTopOffset) + fontHeight + barTop;
-      const std::uint32_t energyColor =
-        energyPerSecond < 0.0f ? gEconOverlayNegativeColor : gEconOverlayPositiveColor;
-      const std::uint32_t massColor =
-        massPerSecond < 0.0f ? gEconOverlayNegativeColor : gEconOverlayPositiveColor;
+      const std::uint32_t energyColor = energyPerSecond < 0.0f ? gEconOverlayNegativeColor : gEconOverlayPositiveColor;
+      const std::uint32_t massColor = massPerSecond < 0.0f ? gEconOverlayNegativeColor : gEconOverlayPositiveColor;
 
       DrawEconomyOverlayLabel(
         *gEconOverlayFont,
@@ -4175,9 +4382,7 @@ namespace
         energyBaseline + kEconOverlayShadowOffset,
         kEconOverlayShadowColor
       );
-      DrawEconomyOverlayLabel(
-        *gEconOverlayFont, *primBatcher, energyText, barLeft, energyBaseline, energyColor
-      );
+      DrawEconomyOverlayLabel(*gEconOverlayFont, *primBatcher, energyText, barLeft, energyBaseline, energyColor);
       DrawEconomyOverlayLabel(
         *gEconOverlayFont,
         *primBatcher,
@@ -4186,12 +4391,9 @@ namespace
         massBaseline + kEconOverlayShadowOffset,
         kEconOverlayShadowColor
       );
-      DrawEconomyOverlayLabel(
-        *gEconOverlayFont, *primBatcher, massText, barLeft, massBaseline, massColor
-      );
+      DrawEconomyOverlayLabel(*gEconOverlayFont, *primBatcher, massText, barLeft, massBaseline, massColor);
     }
 
     primBatcher->Flush();
   }
-}
-
+} // namespace moho

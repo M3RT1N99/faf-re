@@ -13,7 +13,7 @@ namespace gpg
 {
   class ReadArchive;
   class WriteArchive;
-}
+} // namespace gpg
 
 namespace moho
 {
@@ -86,7 +86,7 @@ namespace moho
 
   public:
     WeakPtr<Unit> mTargetTransportUnit; // 0x30
-    bool mCompletedSuccessfully;         // 0x38
+    bool mCompletedSuccessfully;        // 0x38
     bool mIsOccupying;                  // 0x39
     std::uint8_t mPadding3A[2];         // 0x3A
   };
@@ -149,12 +149,8 @@ namespace moho
      * Allocates one teleport execution task and forwards constructor arguments
      * into in-place construction.
      */
-    static CUnitTeleportTask* Create(
-      CAiTarget* target,
-      CCommandTask* parentTask,
-      Unit* teleportBeaconUnit,
-      const VTransform* sourceTransform
-    );
+    static CUnitTeleportTask*
+    Create(CAiTarget* target, CCommandTask* parentTask, Unit* teleportBeaconUnit, const VTransform* sourceTransform);
 
     /**
      * Address: 0x0060AC00 (FUN_0060AC00, Moho::CUnitTeleportTask::TaskTick)
@@ -185,9 +181,9 @@ namespace moho
     void MemberSerialize(gpg::WriteArchive* archive) const;
 
   public:
-    CAiTarget mTarget;              // 0x30
+    CAiTarget mTarget;                 // 0x30
     WeakPtr<Unit> mTeleportBeaconUnit; // 0x50
-    Wm3::Quaternionf mOrientation;  // 0x58
+    Wm3::Quaternionf mOrientation;     // 0x58
   };
 
   static_assert(sizeof(CUnitTeleportTask) == 0x68, "CUnitTeleportTask size must be 0x68");
@@ -237,7 +233,7 @@ namespace moho
    *  - Deserialize(): 0x0060AA10 (confirmed via raw asm: `objectPtr` in EAX,
    *    `archive` in EDI, tail-calls `CUnitTeleportTask::MemberDeserialize`'s
    *    custom-ABI body at 0x0060D270 -- matches the template's
-   *    `reinterpret_cast<T*>(objectPtr)->MemberDeserialize(archive)` exactly)
+   *    `static_cast<T*>(objectPtr)->MemberDeserialize(archive)` exactly)
    *  - Serialize(): 0x0060AA20 (same shape, tail-calls
    *    `CUnitTeleportTask::MemberSerialize` at 0x0060D350)
    *
@@ -245,8 +241,7 @@ namespace moho
    * `MemberSerialize` 0x0060D350.)
    */
   class CUnitTeleportTaskSerializer final : public gpg::SerSaveLoadHelper<CUnitTeleportTask>
-  {
-  };
+  {};
 
   /**
    * Address: 0x00BD0650 (FUN_00BD0650, register_CUnitTeleportTaskSerializer)
@@ -264,12 +259,4 @@ namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x00603530 (FUN_00603530, gpg::RRef_CUnitCallTeleport)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitCallTeleport*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitCallTeleport(gpg::RRef* outRef, moho::CUnitCallTeleport* value);
 } // namespace gpg

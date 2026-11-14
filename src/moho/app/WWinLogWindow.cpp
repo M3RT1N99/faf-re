@@ -1,4 +1,7 @@
-#include "moho/app/WxPrivate.h"
+#include "moho/app/AppPrivate.h"
+#include "legacy/thread/Mutex.h"
+
+#include "imgui.h"
 
 namespace
 {
@@ -28,25 +31,36 @@ namespace
   constexpr const char* kLogWindowWidthPreferenceKey = "Windows.Log.width";
   constexpr const char* kLogWindowHeightPreferenceKey = "Windows.Log.height";
   constexpr std::int32_t kLogWindowGeometryFallback = -1;
-  constexpr std::int32_t kLogWindowSetSizeFlags = 3;
 
-  // The colour each category's lines are written in; the replayed context
-  // lines use the Info colour.
-  [[nodiscard]] wxTextAttr DefaultTextStyleForCategory(const std::uint32_t category)
+  constexpr std::int32_t kLogWindowDefaultWidth = 640;
+  constexpr std::int32_t kLogWindowDefaultHeight = 480;
+
+  // The colour each category's lines are written in (TextAttr colours in the binary); the
+  // replayed context lines use the Info colour. Info was black on the rich edit's white; the
+  // window is dark now, so Info is light grey.
+  [[nodiscard]] ImVec4 TextColourForCategory(
+    const std::uint32_t category
+  )
   {
     switch (category) {
     case 0u:
-      return wxTextAttr(wxColour(0x80, 0x80, 0x80));
+      return ImVec4(0x80 / 255.0f, 0x80 / 255.0f, 0x80 / 255.0f, 1.0f);
     case kWarningCategoryValue:
-      return wxTextAttr(wxColour(0xF7, 0xA1, 0x00));
+      return ImVec4(0xF7 / 255.0f, 0xA1 / 255.0f, 0x00 / 255.0f, 1.0f);
     case kErrorCategoryValue:
-      return wxTextAttr(wxColour(0xFF, 0x00, 0x00));
+      return ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
     default:
-      return wxTextAttr(wxColour(0x00, 0x00, 0x00));
+      return ImVec4(0.86f, 0.86f, 0.86f, 1.0f);
     }
   }
-}
 
+  [[nodiscard]] std::string Utf8Of(
+    const std::wstring& text
+  )
+  {
+    return gpg::STR_WideToUtf8(text.c_str()).c_str();
+  }
+} // namespace
 
 /**
  * Address: 0x004F73B0 (FUN_004F73B0)
@@ -65,13 +79,6 @@ moho::WWinLogTextBuilder::WWinLogTextBuilder() = default;
 const std::wstring& moho::WWinLogTextBuilder::Finalize() const noexcept
 {
   return mText;
-}
-
-void moho::WWinLogTextBuilder::SetFieldWidth(
-  const std::size_t width
-) noexcept
-{
-  mFieldWidth = width;
 }
 
 void moho::WWinLogTextBuilder::Clear() noexcept
@@ -123,26 +130,13 @@ void moho::WWinLogTextBuilder::WriteWideText(
 }
 
 /**
- * Address: 0x004F9DF0 (FUN_004F9DF0)
- *
- * What it does:
- * Emits one wide-string literal with width/padding behavior.
- */
-void moho::WWinLogTextBuilder::WriteWideLiteral(
-  const wchar_t* const text
-)
-{
-  WriteWideText(text != nullptr ? std::wstring(text) : std::wstring{});
-}
-
-/**
  * Address: 0x004FA000 (FUN_004FA000)
  *
  * What it does:
  * Emits one UTF-8 fragment by widening it then appending with width behavior.
  */
 void moho::WWinLogTextBuilder::WriteUtf8Text(
-  const msvc8::string& text
+  const fa::string& text
 )
 {
   WriteWideText(gpg::STR_Utf8ToWide(text.c_str()));
@@ -182,11 +176,6 @@ bool moho::CWinLogLine::IsReplayEntry() const noexcept
   return isReplayEntry != 0u;
 }
 
-bool moho::CWinLogLine::IsMessageEntry() const noexcept
-{
-  return !IsReplayEntry();
-}
-
 const wchar_t* moho::CWinLogLine::SeverityPrefix() const noexcept
 {
   switch (categoryMask) {
@@ -199,25 +188,6 @@ const wchar_t* moho::CWinLogLine::SeverityPrefix() const noexcept
   default:
     return L"INFO: ";
   }
-}
-
-/**
- * Address: 0x00BC7310 (FUN_00BC7310, static initialiser)
- *
- * What it does:
- * Numbers the log-addition event type from wxNewEventType (0x00978FD0).
- */
-DEFINE_EVENT_TYPE(moho::EVT_LOG_ADDITION)
-
-/**
- * Address: 0x004F37F0 (FUN_004F37F0)
- *
- * What it does:
- * Allocates and copy-clones one `CLogAdditionEvent` object.
- */
-wxEvent* moho::CLogAdditionEvent::Clone() const
-{
-  return new CLogAdditionEvent(*this);
 }
 
 /**
@@ -263,7 +233,7 @@ std::size_t moho::CWinLogTarget::CommittedLineCount() const
   return mCommittedLines.size();
 }
 
-const msvc8::vector<moho::CWinLogLine>& moho::CWinLogTarget::CommittedLines() const
+const fa::vector<moho::CWinLogLine>& moho::CWinLogTarget::CommittedLines() const
 {
   return mCommittedLines;
 }
@@ -275,31 +245,19 @@ const msvc8::vector<moho::CWinLogLine>& moho::CWinLogTarget::CommittedLines() co
  * Replaces committed-line storage with a copy of `nextCommittedLines`.
  */
 void moho::CWinLogTarget::ReplaceCommittedLines(
-  const msvc8::vector<CWinLogLine>& nextCommittedLines
+  const fa::vector<CWinLogLine>& nextCommittedLines
 )
 {
   mCommittedLines = nextCommittedLines;
 }
 
-void moho::CWinLogTarget::SnapshotCommittedLines(
-  msvc8::vector<CWinLogLine>* const outLines
-)
-{
-  if (outLines == nullptr) {
-    return;
-  }
-
-  boost::mutex::scoped_lock scopedLock(lock);
-  *outLines = mCommittedLines;
-}
-
 void moho::CWinLogTarget::ResetCommittedLinesFromReplayBuffer(
-  const msvc8::vector<msvc8::string>& replayLines
+  const fa::vector<fa::string>& replayLines
 )
 {
-  boost::mutex::scoped_lock scopedLock(lock);
+  fa::mutex::scoped_lock scopedLock(lock);
 
-  msvc8::vector<CWinLogLine> rebuiltLines;
+  fa::vector<CWinLogLine> rebuiltLines;
   rebuiltLines.reserve(replayLines.size());
   for (std::size_t index = 0; index < replayLines.size(); ++index) {
     CWinLogLine replayLine{};
@@ -322,7 +280,7 @@ void moho::CWinLogTarget::ResetCommittedLinesFromReplayBuffer(
  */
 void moho::CWinLogTarget::MergePendingLines()
 {
-  boost::mutex::scoped_lock scopedLock(lock);
+  fa::mutex::scoped_lock scopedLock(lock);
 
   const std::size_t pendingCount = mPendingLines.size();
   const std::size_t committedCount = mCommittedLines.size();
@@ -340,19 +298,19 @@ void moho::CWinLogTarget::MergePendingLines()
 /**
  * Address: 0x004F6860 (FUN_004F6860)
  *
- * gpg::LogSeverity level, msvc8::string const &, msvc8::vector<msvc8::string> const &, int
+ * gpg::LogSeverity level, fa::string const &, fa::vector<fa::string> const &, int
  *
  * What it does:
  * Queues replay/context lines plus the current line into the pending log queue.
  */
 void moho::CWinLogTarget::OnMessage(
   const gpg::LogSeverity level,
-  const msvc8::string& message,
-  const msvc8::vector<msvc8::string>& context,
+  const fa::string& message,
+  const fa::vector<fa::string>& context,
   const int previousDepth
 )
 {
-  boost::mutex::scoped_lock scopedLock(lock);
+  fa::mutex::scoped_lock scopedLock(lock);
 
   std::size_t replayStart = 0;
   if (previousDepth > 0) {
@@ -379,120 +337,49 @@ void moho::CWinLogTarget::OnMessage(
   messageLine.text = message;
   AppendPendingLine(messageLine);
 
-  // Any thread may log, so the dialog is told through its event queue rather
-  // than called: AddPendingEvent clones the event and the GUI thread runs
-  // OnTargetPendingLinesChanged when it next processes pending events. The
-  // binary posts while it still holds the lock (0x004F6A06 .. 0x004F6A2D).
+  // Any thread may log, so the window is told rather than called: the binary posted a
+  // CLogAdditionEvent while it still held the lock (0x004F6A06 .. 0x004F6A2D), and the GUI thread
+  // ran OnTargetPendingLinesChanged for it. The window merges on the main thread every frame.
   if (dialog != nullptr) {
-    CLogAdditionEvent event;
-    dialog->AddPendingEvent(event);
+    dialog->NotePendingLines();
   }
 }
-
-BEGIN_EVENT_TABLE(moho::WWinLogWindow, wxDialog)
-  EVT_LOG_ADDITION_EVENT(moho::WWinLogWindow::OnTargetPendingLinesChanged)
-  EVT_CHECKBOX(900, moho::WWinLogWindow::OnFilterOrCategoryControlsChanged)
-  EVT_CHECKBOX(901, moho::WWinLogWindow::OnFilterOrCategoryControlsChanged)
-  EVT_CHECKBOX(902, moho::WWinLogWindow::OnFilterOrCategoryControlsChanged)
-  EVT_CHECKBOX(903, moho::WWinLogWindow::OnFilterOrCategoryControlsChanged)
-  EVT_CHECKBOX(904, moho::WWinLogWindow::OnFilterOrCategoryControlsChanged)
-  EVT_TEXT(905, moho::WWinLogWindow::OnFilterOrCategoryControlsChanged)
-  EVT_BUTTON(906, moho::WWinLogWindow::OnClear)
-  EVT_SIZE(moho::WWinLogWindow::OnSize)
-  EVT_MOVE(moho::WWinLogWindow::OnMove)
-END_EVENT_TABLE()
 
 /**
  * Address: 0x004F4270 (FUN_004F4270)
  *
  * What it does:
- * Creates the "Moho Log" dialog and lays it out: a "Show" box holding the five
- * category check boxes (900-904) and the filter text (905) above a Clear
- * button (906) and the read-only rich output text. The check boxes and filter
- * start from the preferences, the window from its saved geometry, and the
- * output is filled from the target's committed lines before the initialising
- * flag drops.
+ * Creates the "Moho Log" window. The check boxes and the filter start from the preferences, the
+ * window from its saved geometry (Windows.Log.*), and the output is filled from the target's
+ * committed lines.
  */
 moho::WWinLogWindow::WWinLogWindow()
-  : WWinManagedDialog(
-      nullptr,
-      -1,
-      wxT("Moho Log"),
-      wxDefaultPosition,
-      wxDefaultSize,
-      wxCAPTION | wxSYSTEM_MENU | wxRESIZE_BORDER,
-      wxT("MohoDialogBox")
-    )
-  , mIsInitializingControls(true)
+  : platform::tools::ToolWindow("Moho Log", kLogWindowDefaultWidth, kLogWindowDefaultHeight)
   , mOwnerTarget(&sLogWindowTarget)
-  , mOutputTextControl(nullptr)
-  , mFilterTextControl(nullptr)
-  , mEnabledCategoriesMask(0)
-  , mFirstVisibleLine(0)
 {
   IUserPrefs* const preferences = USER_GetPreferences();
-
-  wxBoxSizer* const topSizer = new wxBoxSizer(wxVERTICAL);
-  wxStaticBoxSizer* const showSizer = new wxStaticBoxSizer(new wxStaticBox(this, -1, wxT("Show")), wxHORIZONTAL);
-
-  mDebugCategoryCheckBox = new wxCheckBox(this, 900, wxT("Debug"));
-  mInfoCategoryCheckBox = new wxCheckBox(this, 901, wxT("Info"));
-  mWarnCategoryCheckBox = new wxCheckBox(this, 902, wxT("Warn"));
-  mErrorCategoryCheckBox = new wxCheckBox(this, 903, wxT("Error"));
-  mCustomCategoryCheckBox = new wxCheckBox(this, 904, wxT("Custom"));
-  mFilterTextControl = new wxTextCtrl(this, 905, wxEmptyString);
-
-  const auto checkBoxes = CategoryCheckBoxes();
-  for (std::size_t index = 0; index < checkBoxes.size(); ++index) {
-    checkBoxes[index]->SetValue(
-      preferences->GetBoolean(msvc8::string(kLogCategoryPreferenceKeys[index]), kLogCategoryPreferenceDefaults[index])
-    );
+  for (std::size_t index = 0; index < mCategoryChecks.size(); ++index) {
+    mCategoryChecks[index] =
+      preferences->GetBoolean(fa::string(kLogCategoryPreferenceKeys[index]), kLogCategoryPreferenceDefaults[index]);
   }
+  const fa::string filter =
+    preferences->GetString(fa::string(kLogFilterPreferenceKey), fa::string(kLogFilterPreferenceDefault));
+  std::snprintf(mFilterEdit.data(), mFilterEdit.size(), "%s", filter.c_str());
 
-  mFilterText = preferences->GetString(msvc8::string(kLogFilterPreferenceKey), msvc8::string(kLogFilterPreferenceDefault));
-  mFilterTextControl->SetValue(gpg::STR_Utf8ToWide(mFilterText.c_str()).c_str());
-
-  for (wxCheckBox* const checkBox : checkBoxes) {
-    showSizer->Add(checkBox);
-  }
-  showSizer->Add(mFilterTextControl, 1, wxALIGN_CENTER_VERTICAL);
-
-  mOutputTextControl = new wxTextCtrl(
-    this,
-    -1,
-    wxEmptyString,
-    wxDefaultPosition,
-    wxSize(384, 512),
-    wxTE_MULTILINE | wxTE_READONLY | wxTE_RICH | wxHSCROLL
-  );
-
-  topSizer->Add(showSizer, 0, wxEXPAND);
-  topSizer->Add(new wxButton(this, 906, wxT("Clear")), 0, wxALIGN_BOTTOM);
-  topSizer->Add(mOutputTextControl, 1, wxEXPAND);
-
-  SetAutoLayout(true);
-  SetSizer(topSizer);
-  topSizer->SetSizeHints(this);
-  topSizer->Fit(this);
-
-  const std::int32_t height =
-    preferences->GetInteger(msvc8::string(kLogWindowHeightPreferenceKey), kLogWindowGeometryFallback);
-  const std::int32_t width =
-    preferences->GetInteger(msvc8::string(kLogWindowWidthPreferenceKey), kLogWindowGeometryFallback);
-  const std::int32_t y = preferences->GetInteger(msvc8::string(kLogWindowYPreferenceKey), kLogWindowGeometryFallback);
-  const std::int32_t x = preferences->GetInteger(msvc8::string(kLogWindowXPreferenceKey), kLogWindowGeometryFallback);
-  SetSize(x, y, width, height, kLogWindowSetSizeFlags);
+  mSavedHeight = preferences->GetInteger(fa::string(kLogWindowHeightPreferenceKey), kLogWindowGeometryFallback);
+  mSavedWidth = preferences->GetInteger(fa::string(kLogWindowWidthPreferenceKey), kLogWindowGeometryFallback);
+  mSavedY = preferences->GetInteger(fa::string(kLogWindowYPreferenceKey), kLogWindowGeometryFallback);
+  mSavedX = preferences->GetInteger(fa::string(kLogWindowXPreferenceKey), kLogWindowGeometryFallback);
+  SetBounds(mSavedX, mSavedY, mSavedWidth, mSavedHeight);
 
   RebuildVisibleLinesFromControls();
-  mIsInitializingControls = false;
 }
 
 /**
  * Address: 0x004F5380 (FUN_004F5380)
  *
  * What it does:
- * Detaches from the log target. The buffered lines, the filter text and
- * ~WWinManagedDialog (0x004F40A0) follow as member and base destruction.
+ * Detaches from the log target.
  */
 moho::WWinLogWindow::~WWinLogWindow()
 {
@@ -507,137 +394,93 @@ moho::WWinLogWindow::~WWinLogWindow()
  */
 void moho::WWinLogWindow::DetachFromTarget()
 {
-  boost::mutex::scoped_lock scopedLock(mOwnerTarget->lock);
-  mOwnerTarget->dialog = nullptr;
-}
-
-std::array<wxCheckBox*, 5> moho::WWinLogWindow::CategoryCheckBoxes() noexcept
-{
-  return {
-    mDebugCategoryCheckBox,
-    mInfoCategoryCheckBox,
-    mWarnCategoryCheckBox,
-    mErrorCategoryCheckBox,
-    mCustomCategoryCheckBox,
-  };
-}
-
-std::array<const wxCheckBox*, 5> moho::WWinLogWindow::CategoryCheckBoxes() const noexcept
-{
-  return {
-    mDebugCategoryCheckBox,
-    mInfoCategoryCheckBox,
-    mWarnCategoryCheckBox,
-    mErrorCategoryCheckBox,
-    mCustomCategoryCheckBox,
-  };
+  fa::mutex::scoped_lock scopedLock(mOwnerTarget->lock);
+  if (mOwnerTarget->dialog == this) {
+    mOwnerTarget->dialog = nullptr;
+  }
 }
 
 /**
  * Address: 0x004F5590 (FUN_004F5590)
  *
  * What it does:
- * Once the controls are built, rebuilds the visible lines and stores each
- * category check box and the filter text back into the preferences.
+ * Stores each category check box and the filter text in the preferences, after the visible
+ * lines were rebuilt from them.
  */
-void moho::WWinLogWindow::OnFilterOrCategoryControlsChanged(wxCommandEvent& event)
+void moho::WWinLogWindow::SaveControls()
 {
-  (void)event;
-  if (mIsInitializingControls) {
-    return;
-  }
-
-  RebuildVisibleLinesFromControls();
-
   IUserPrefs* const preferences = USER_GetPreferences();
-  const auto checkBoxes = CategoryCheckBoxes();
-  for (std::size_t index = 0; index < checkBoxes.size(); ++index) {
-    preferences->SetBoolean(msvc8::string(kLogCategoryPreferenceKeys[index]), checkBoxes[index]->GetValue());
+  for (std::size_t index = 0; index < mCategoryChecks.size(); ++index) {
+    preferences->SetBoolean(fa::string(kLogCategoryPreferenceKeys[index]), mCategoryChecks[index]);
   }
-  preferences->SetString(msvc8::string(kLogFilterPreferenceKey), mFilterText);
+  preferences->SetString(fa::string(kLogFilterPreferenceKey), mFilterText);
 }
 
 /**
- * Address: 0x004F6640 (FUN_004F6640)
+ * Address: 0x004F6640 (FUN_004F6640, OnSize) and 0x004F6520 (FUN_004F6520, OnMove)
  *
  * What it does:
- * wxTopLevelWindowBase::OnSize (0x0098CFD0) lays the single child out; then,
- * once the controls are built, the window's size is stored in
- * `Windows.Log.width` / `Windows.Log.height`.
+ * Stores the window's position in `Windows.Log.x` / `Windows.Log.y` and its size in
+ * `Windows.Log.width` / `Windows.Log.height` when they change.
  */
-void moho::WWinLogWindow::OnSize(wxSizeEvent& event)
+void moho::WWinLogWindow::SaveGeometry()
 {
-  wxDialog::OnSize(event);
-  if (mIsInitializingControls) {
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  if (!IsShown() || !GetBounds(x, y, width, height)) {
     return;
   }
-
   IUserPrefs* const preferences = USER_GetPreferences();
-  preferences->SetInteger(msvc8::string(kLogWindowWidthPreferenceKey), GetSize().x);
-  preferences->SetInteger(msvc8::string(kLogWindowHeightPreferenceKey), GetSize().y);
-}
-
-/**
- * Address: 0x004F6520 (FUN_004F6520)
- *
- * What it does:
- * Once the controls are built, stores the window's position in
- * `Windows.Log.x` / `Windows.Log.y`.
- */
-void moho::WWinLogWindow::OnMove(wxMoveEvent& event)
-{
-  (void)event;
-  if (mIsInitializingControls) {
-    return;
+  if (x != mSavedX || y != mSavedY) {
+    mSavedX = x;
+    mSavedY = y;
+    preferences->SetInteger(fa::string(kLogWindowXPreferenceKey), x);
+    preferences->SetInteger(fa::string(kLogWindowYPreferenceKey), y);
   }
-
-  IUserPrefs* const preferences = USER_GetPreferences();
-  preferences->SetInteger(msvc8::string(kLogWindowXPreferenceKey), GetPosition().x);
-  preferences->SetInteger(msvc8::string(kLogWindowYPreferenceKey), GetPosition().y);
+  if (width != mSavedWidth || height != mSavedHeight) {
+    mSavedWidth = width;
+    mSavedHeight = height;
+    preferences->SetInteger(fa::string(kLogWindowWidthPreferenceKey), width);
+    preferences->SetInteger(fa::string(kLogWindowHeightPreferenceKey), height);
+  }
 }
 
 /**
  * Address: 0x004F5440 (FUN_004F5440)
  *
  * What it does:
- * Clears the output and resets the target's committed lines to the buffered
- * replay context.
+ * Clears the output and resets the target's committed lines to the buffered replay context.
  */
-void moho::WWinLogWindow::OnClear(wxCommandEvent& event)
+void moho::WWinLogWindow::Clear()
 {
-  (void)event;
-  mOutputTextControl->Clear();
-  mPendingOutput.clear();
+  mOutput.clear();
   mFirstVisibleLine = 0;
   mOwnerTarget->ResetCommittedLinesFromReplayBuffer(mBufferedLines);
 }
 
-bool moho::WWinLogWindow::Show(const bool show)
+void moho::WWinLogWindow::AppendOutput(
+  const std::uint32_t styleCategory,
+  const std::wstring& text
+)
 {
-  if (show) {
-    FlushPendingOutput();
+  // One entry per line, for drawing only what is in view.
+  std::size_t start = 0;
+  while (start < text.size()) {
+    std::size_t end = text.find(L'\n', start);
+    if (end == std::wstring::npos) {
+      end = text.size();
+    }
+    mOutput.push_back(OutputLine{styleCategory, Utf8Of(text.substr(start, end - start))});
+    start = end + 1;
   }
-  return WWinManagedDialog::Show(show);
-}
-
-void moho::WWinLogWindow::AppendOutput(const std::uint32_t styleCategory, const std::wstring& text)
-{
-  if (!mPendingOutput.empty() && mPendingOutput.back().styleCategory == styleCategory) {
-    mPendingOutput.back().text += text;
-  } else {
-    mPendingOutput.push_back(PendingOutputRun{styleCategory, text});
+  // The target keeps 10,000 lines; the output keeps twice that before dropping its oldest.
+  if (mOutput.size() > 2u * kMaxCommittedLogLines) {
+    mOutput.erase(mOutput.begin(), mOutput.begin() + static_cast<std::ptrdiff_t>(kMaxCommittedLogLines / 2u));
   }
+  mScrollToEnd = true;
 }
-
-void moho::WWinLogWindow::FlushPendingOutput()
-{
-  for (const PendingOutputRun& run : mPendingOutput) {
-    mOutputTextControl->SetDefaultStyle(DefaultTextStyleForCategory(run.styleCategory));
-    mOutputTextControl->AppendText(run.text.c_str());
-  }
-  mPendingOutput.clear();
-}
-
 bool moho::WWinLogWindow::ShouldDisplayCommittedLine(
   const CWinLogLine& line
 ) const
@@ -653,7 +496,7 @@ bool moho::WWinLogWindow::ShouldDisplayCommittedLine(
     return false;
   }
 
-  const msvc8::string loweredLineText = gpg::STR_ToLower(line.text.c_str());
+  const fa::string loweredLineText = gpg::STR_ToLower(line.text.c_str());
   return std::strstr(loweredLineText.c_str(), mFilterText.c_str()) != nullptr;
 }
 
@@ -715,44 +558,26 @@ std::wstring moho::WWinLogWindow::BuildFormattedCommittedLineText(
 void moho::WWinLogWindow::RebuildVisibleLinesFromControls()
 {
   mEnabledCategoriesMask = 0;
-  const auto checkBoxes = CategoryCheckBoxes();
-  for (std::size_t index = 0; index < checkBoxes.size(); ++index) {
-    if (checkBoxes[index]->GetValue()) {
+  for (std::size_t index = 0; index < mCategoryChecks.size(); ++index) {
+    if (mCategoryChecks[index]) {
       mEnabledCategoriesMask |= (1u << index);
     }
   }
 
-  mFilterText = gpg::STR_ToLower(gpg::STR_WideToUtf8(mFilterTextControl->GetValue().c_str()).c_str());
+  mFilterText = gpg::STR_ToLower(mFilterEdit.data());
 
-  const bool outputShown = mOutputTextControl->IsShown();
-  if (outputShown) {
-    mOutputTextControl->Show(false);
-  }
-  mOutputTextControl->Clear();
-  mPendingOutput.clear();
+  mOutput.clear();
   mFirstVisibleLine = 0;
   mBufferedLines.clear();
 
-  const msvc8::vector<CWinLogLine>& committedLines = mOwnerTarget->CommittedLines();
+  fa::mutex::scoped_lock scopedLock(mOwnerTarget->lock);
+  const fa::vector<CWinLogLine>& committedLines = mOwnerTarget->CommittedLines();
   for (std::size_t index = 0; index < committedLines.size(); ++index) {
     AppendCommittedLine(committedLines[index]);
   }
-  if (IsShown()) {
-    FlushPendingOutput(); // engine change: queued by AppendCommittedLine, see AppendOutput
-  }
 
-  if (outputShown) {
-    mOutputTextControl->Show(true);
-  }
-
-  // The binary scrolls through the edit control directly: SB_THUMBTRACK to
-  // the last position (0x004F5A4F .. 0x004F5A79).
-  ::SendMessageW(
-    reinterpret_cast<HWND>(static_cast<std::uintptr_t>(mOutputTextControl->GetHWND())),
-    WM_VSCROLL,
-    MAKEWPARAM(SB_THUMBTRACK, static_cast<WORD>(mOutputTextControl->GetLastPosition())),
-    0
-  );
+  // The binary scrolled the output to its end (SB_THUMBTRACK, 0x004F5A4F .. 0x004F5A79).
+  mScrollToEnd = true;
 }
 
 /**
@@ -785,8 +610,6 @@ void moho::WWinLogWindow::AppendCommittedLine(
     return;
   }
 
-  // Engine change: the binary sets the default style and appends to the output control here;
-  // the text is queued instead and written while the dialog is shown (`AppendOutput`).
   if (mFirstVisibleLine < mBufferedLines.size()) {
     const std::wstring replayText = BuildReplayFlushText(mFirstVisibleLine);
 
@@ -817,19 +640,83 @@ void moho::WWinLogWindow::AppendCommittedLine(
  * cleared the output control and replayed every committed line on every single
  * log message, which is quadratic once the 10,000-line cap is reached.
  */
-void moho::WWinLogWindow::OnTargetPendingLinesChanged(
-  CLogAdditionEvent& event
-)
+void moho::WWinLogWindow::OnTargetPendingLinesChanged()
 {
-  (void)event;
   CWinLogTarget* const target = mOwnerTarget;
   std::size_t index = target->CommittedLineCount();
   target->MergePendingLines();
+  fa::mutex::scoped_lock scopedLock(target->lock);
   while (index < target->CommittedLineCount()) {
     AppendCommittedLine(target->CommittedLines()[index]);
     ++index;
   }
-  if (IsShown()) {
-    FlushPendingOutput(); // engine change: queued by AppendCommittedLine, see AppendOutput
+}
+
+void moho::WWinLogWindow::Tick()
+{
+  bool pending = false;
+  {
+    fa::mutex::scoped_lock scopedLock(mOwnerTarget->lock);
+    pending = mLinesPending;
+    mLinesPending = false;
   }
+  if (pending) {
+    OnTargetPendingLinesChanged();
+  }
+  SaveGeometry();
+}
+
+void moho::WWinLogWindow::Draw()
+{
+  // The "Show" box: the five categories and the custom filter (controls 900 .. 905).
+  static const char* const kCategoryLabels[] = {"Debug", "Info", "Warn", "Error", "Custom"};
+  bool changed = false;
+  ImGui::TextUnformatted("Show");
+  ImGui::SameLine();
+  for (std::size_t index = 0; index < mCategoryChecks.size(); ++index) {
+    changed |= ImGui::Checkbox(kCategoryLabels[index], &mCategoryChecks[index]);
+    ImGui::SameLine();
+  }
+  ImGui::SetNextItemWidth(-1.0f);
+  changed |= ImGui::InputText("##filter", mFilterEdit.data(), mFilterEdit.size());
+  if (changed) {
+    RebuildVisibleLinesFromControls();
+    SaveControls();
+  }
+
+  // The Clear button (906).
+  if (ImGui::Button("Clear")) {
+    Clear();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Copy")) {
+    std::string all;
+    for (const OutputLine& line : mOutput) {
+      all += line.utf8;
+      all += '\n';
+    }
+    ImGui::SetClipboardText(all.c_str());
+  }
+
+  // The output: read-only, coloured by category, following new lines while at its end.
+  if (
+    ImGui::BeginChild("##output", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)
+  ) {
+    const bool atEnd = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 1.0f;
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(mOutput.size()));
+    while (clipper.Step()) {
+      for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+        const OutputLine& line = mOutput[static_cast<std::size_t>(row)];
+        ImGui::PushStyleColor(ImGuiCol_Text, TextColourForCategory(line.styleCategory));
+        ImGui::TextUnformatted(line.utf8.c_str(), line.utf8.c_str() + line.utf8.size());
+        ImGui::PopStyleColor();
+      }
+    }
+    if (mScrollToEnd && (atEnd || mOutput.empty())) {
+      ImGui::SetScrollHereY(1.0f);
+    }
+    mScrollToEnd = false;
+  }
+  ImGui::EndChild();
 }

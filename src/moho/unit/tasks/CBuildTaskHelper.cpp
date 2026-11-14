@@ -32,16 +32,21 @@ namespace
   constexpr float kThreeQuarterProgress = 0.75f;
   constexpr const char* kOnAssignedFocusEntity = "OnAssignedFocusEntity";
 
-  [[nodiscard]] moho::Unit* ResolveFocusUnit(const moho::WeakPtr<moho::Unit>& focusLink) noexcept
+  [[nodiscard]] moho::Unit* ResolveFocusUnit(
+    const moho::WeakPtr<moho::Unit>& focusLink
+  ) noexcept
   {
     return focusLink.GetObjectPtr();
   }
 
-  [[nodiscard]] bool DidCrossBuildProgressBand(const float previous, const float current) noexcept
+  [[nodiscard]] bool DidCrossBuildProgressBand(
+    const float previous,
+    const float current
+  ) noexcept
   {
-    return (previous < kQuarterProgress && current >= kQuarterProgress)
-      || (previous < kHalfProgress && current >= kHalfProgress)
-      || (previous < kThreeQuarterProgress && current >= kThreeQuarterProgress);
+    return (previous < kQuarterProgress && current >= kQuarterProgress) ||
+      (previous < kHalfProgress && current >= kHalfProgress) ||
+      (previous < kThreeQuarterProgress && current >= kThreeQuarterProgress);
   }
 
   // 0x005F5F24-0x005F5F4F: 1.0 / (BuildTime / buildRate) * consumed * 0.1,
@@ -105,25 +110,15 @@ namespace moho
   /**
    * Address: 0x005F56F0 (FUN_005F56F0, ??0CBuildTaskHelper@Moho@@QAE@@Z)
    */
-  CBuildTaskHelper::CBuildTaskHelper(const char* const actionName, Unit* const unit)
+  CBuildTaskHelper::CBuildTaskHelper(
+    const char* const actionName,
+    Unit* const unit
+  )
     : CBuildTaskHelper()
   {
     mUnit = unit;
     mSim = unit ? unit->SimulationRef : nullptr;
     mActionName.assign_owned(actionName ? actionName : "");
-  }
-
-  /**
-   * Address: 0x005F5660 (FUN_005F5660)
-   *
-   * What it does:
-   * Stores the silo-mode flag lane and returns this helper for chained setup
-   * flow.
-   */
-  CBuildTaskHelper* CBuildTaskHelper::SetSiloMode(const bool isSilo) noexcept
-  {
-    mIsSilo = isSilo;
-    return this;
   }
 
   /**
@@ -141,7 +136,9 @@ namespace moho
   /**
    * Address: 0x005F5A20 (FUN_005F5A20, Moho::CBuildTaskHelper::OnStopBuild)
    */
-  void CBuildTaskHelper::OnStopBuild(const bool failed)
+  void CBuildTaskHelper::OnStopBuild(
+    const bool failed
+  )
   {
     Unit* const ownerUnit = mUnit;
     Unit* const focusUnit = ResolveFocusUnit(mFocus);
@@ -173,7 +170,9 @@ namespace moho
   /**
    * Address: 0x005F5B00 (FUN_005F5B00, Moho::CBuildTaskHelper::SetFocus)
    */
-  void CBuildTaskHelper::SetFocus(Unit* const focusUnit)
+  void CBuildTaskHelper::SetFocus(
+    Unit* const focusUnit
+  )
   {
     if (focusUnit == nullptr) {
       return;
@@ -251,8 +250,8 @@ namespace moho
       }
 
       const std::uint32_t commandCaps = focusUnit->GetAttributes().commandCapsMask;
-      const bool supportsSiloBuild = (commandCaps & static_cast<std::uint32_t>(RULEUCC_SiloBuildNuke)) != 0u
-        || (commandCaps & static_cast<std::uint32_t>(RULEUCC_SiloBuildTactical)) != 0u;
+      const bool supportsSiloBuild = (commandCaps & static_cast<std::uint32_t>(RULEUCC_SiloBuildNuke)) != 0u ||
+        (commandCaps & static_cast<std::uint32_t>(RULEUCC_SiloBuildTactical)) != 0u;
       if (!supportsSiloBuild) {
         return true;
       }
@@ -363,7 +362,8 @@ namespace moho
       }
 
       if (focusBlueprint->Physics.FuelUseTime > 0.0f && focusUnit->mUnitVarDat.mFuelRatio < 1.0f) {
-        float fuelTickDelta = (focusBlueprint->Physics.FuelRechargeRate / focusBlueprint->Physics.FuelUseTime) * kTickBuildScale;
+        float fuelTickDelta =
+          (focusBlueprint->Physics.FuelRechargeRate / focusBlueprint->Physics.FuelUseTime) * kTickBuildScale;
         if (focusUnitIsDamaged) {
           buildProgressDelta *= 0.5f;
           fuelTickDelta *= 0.5f;
@@ -435,7 +435,9 @@ namespace moho
    * Restores helper owner links, focus weak pointer, and runtime progress
    * lanes from one archive payload.
    */
-  void CBuildTaskHelper::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CBuildTaskHelper::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -472,7 +474,9 @@ namespace moho
    * Stores helper owner links, focus weak pointer, and runtime progress lanes
    * into one archive payload.
    */
-  void CBuildTaskHelper::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CBuildTaskHelper::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -498,7 +502,7 @@ namespace moho
     archive->WriteFloat(mUnknown14);
     archive->WriteFloat(mUnknown18);
     archive->WriteFloat(mDelta);
-    archive->WriteString(const_cast<msvc8::string*>(&mActionName));
+    archive->WriteString(const_cast<fa::string*>(&mActionName));
     archive->WriteFloat(mFractionComplete);
     archive->WriteBool(mIsSilo);
   }
@@ -584,12 +588,12 @@ namespace
    */
   void DeserializeCBuildTaskHelperSerializerCallback(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const
   )
   {
-    auto* const helper = reinterpret_cast<moho::CBuildTaskHelper*>(objectPtr);
+    auto* const helper = static_cast<moho::CBuildTaskHelper*>(objectPtr);
     if (helper == nullptr) {
       return;
     }
@@ -607,12 +611,12 @@ namespace
    */
   void SerializeCBuildTaskHelperSerializerCallback(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const
   )
   {
-    auto* const helper = reinterpret_cast<const moho::CBuildTaskHelper*>(objectPtr);
+    auto* const helper = static_cast<const moho::CBuildTaskHelper*>(objectPtr);
     if (helper == nullptr) {
       return;
     }

@@ -10,7 +10,7 @@
 #include <string>
 #include <string_view>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/DList.h"
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/core/containers/Rect2.h"
@@ -172,8 +172,6 @@ namespace moho
    */
   LuaPlus::LuaObject* func_GetUnitFactory(LuaPlus::LuaObject* object, LuaPlus::LuaState* state);
 
-
-
   /**
    * Packed pair emitted by Unit::GetExtraData during sync-filter serialization.
    *
@@ -256,31 +254,33 @@ namespace moho
     // `moho/unit/core/SInfoCacheReflection.cpp`.
     static gpg::RType* sType;
 
-    CFormationInstance* mFormationLayer;   // +0x00
-    WeakPtr<Unit> mFormationLeadRef;       // +0x04
-    std::int32_t mFormationPriorityOrder;  // +0x0C
-    bool mHasFormationSpeedData;           // +0x10
-    std::uint8_t mPad11[0x03];             // +0x11
-    float mFormationTopSpeed;              // +0x14
-    float mFormationDistanceMetric;        // +0x18
-    Wm3::Vector3f mFormationHeadingHint;   // +0x1C
+    CFormationInstance* mFormationLayer;  // +0x00
+    WeakPtr<Unit> mFormationLeadRef;      // +0x04
+    std::int32_t mFormationPriorityOrder; // +0x0C
+    bool mHasFormationSpeedData;          // +0x10
+    std::uint8_t mPad11[0x03];            // +0x11
+    float mFormationTopSpeed;             // +0x14
+    float mFormationDistanceMetric;       // +0x18
+    Wm3::Vector3f mFormationHeadingHint;  // +0x1C
   };
   static_assert(offsetof(SInfoCache, mFormationLayer) == 0x00, "SInfoCache::mFormationLayer offset must be 0x00");
   static_assert(offsetof(SInfoCache, mFormationLeadRef) == 0x04, "SInfoCache::mFormationLeadRef offset must be 0x04");
   static_assert(
-    offsetof(SInfoCache, mFormationPriorityOrder) == 0x0C, "SInfoCache::mFormationPriorityOrder offset must be 0x0C"
+    offsetof(SInfoCache, mFormationPriorityOrder) == 0x0C,
+    "SInfoCache::mFormationPriorityOrder offset must be 0x0C"
   );
   static_assert(
-    offsetof(SInfoCache, mHasFormationSpeedData) == 0x10, "SInfoCache::mHasFormationSpeedData offset must be 0x10"
+    offsetof(SInfoCache, mHasFormationSpeedData) == 0x10,
+    "SInfoCache::mHasFormationSpeedData offset must be 0x10"
+  );
+  static_assert(offsetof(SInfoCache, mFormationTopSpeed) == 0x14, "SInfoCache::mFormationTopSpeed offset must be 0x14");
+  static_assert(
+    offsetof(SInfoCache, mFormationDistanceMetric) == 0x18,
+    "SInfoCache::mFormationDistanceMetric offset must be 0x18"
   );
   static_assert(
-    offsetof(SInfoCache, mFormationTopSpeed) == 0x14, "SInfoCache::mFormationTopSpeed offset must be 0x14"
-  );
-  static_assert(
-    offsetof(SInfoCache, mFormationDistanceMetric) == 0x18, "SInfoCache::mFormationDistanceMetric offset must be 0x18"
-  );
-  static_assert(
-    offsetof(SInfoCache, mFormationHeadingHint) == 0x1C, "SInfoCache::mFormationHeadingHint offset must be 0x1C"
+    offsetof(SInfoCache, mFormationHeadingHint) == 0x1C,
+    "SInfoCache::mFormationHeadingHint offset must be 0x1C"
   );
   static_assert(sizeof(SInfoCache) == 0x28, "SInfoCache size must be 0x28");
 
@@ -321,11 +321,11 @@ namespace moho
 
     static gpg::RType* sType;
 
-    std::uint8_t mBuildStateTag;    // +0x00
-    std::uint8_t pad_01[3];         // +0x01
-    boost::shared_ptr<Stats<StatItem>> mStatsRoot; // +0x04
-    std::uint8_t mFake;             // +0x0C
-    std::uint8_t pad_0D[3];         // +0x0D
+    std::uint8_t mBuildStateTag;                   // +0x00
+    std::uint8_t pad_01[3];                        // +0x01
+    std::shared_ptr<Stats<StatItem>> mStatsRoot;   // +0x04
+    std::uint8_t mFake;                            // +0x0C
+    std::uint8_t pad_0D[3];                        // +0x0D
   };
   static_assert(sizeof(SSTIUnitConstantData) == 0x10, "SSTIUnitConstantData size must be 0x10");
   static_assert(
@@ -407,14 +407,14 @@ namespace moho
      */
     void MemberSerialize(gpg::WriteArchive* archive) const;
 
-    EntityCategorySet mCat1;                // +0x00
-    EntityCategorySet mCat2;                // +0x28
-    ELayer mLayer;                          // +0x50
-    float mMinRadius;                       // +0x54
-    float mMaxRadius;                       // +0x58
-    float mEffectiveRadius;                 // +0x5C
-    msvc8::string mUIMinRangeVisualId;      // +0x60
-    msvc8::string mUIMaxRangeVisualId;      // +0x7C
+    EntityCategorySet mCat1;        // +0x00
+    EntityCategorySet mCat2;        // +0x28
+    ELayer mLayer;                  // +0x50
+    float mMinRadius;               // +0x54
+    float mMaxRadius;               // +0x58
+    float mEffectiveRadius;         // +0x5C
+    fa::string mUIMinRangeVisualId; // +0x60
+    fa::string mUIMaxRangeVisualId; // +0x7C
   };
   static_assert(sizeof(UnitWeaponInfo) == 0x98, "UnitWeaponInfo size must be 0x98");
   static_assert(offsetof(UnitWeaponInfo, mCat1) == 0x00, "UnitWeaponInfo::mCat1 offset must be 0x00");
@@ -528,22 +528,22 @@ namespace moho
      */
     void MemberSerialize(gpg::WriteArchive* archive);
 
-    EntId mCreator;                // +0x000
-    std::int32_t mCreationTick;    // +0x004
-    bool mAutoMode;                // +0x008
-    bool mAutoSurfaceMode;         // +0x009
-    bool mIsBusy;                  // +0x00A
-    std::uint8_t mPad00B;          // +0x00B
-    float mFuelRatio;              // +0x00C
-    float mShieldRatio;            // +0x010
-    std::int32_t mStunTicks;       // +0x014
-    bool mIsPaused;                // +0x018
-    bool mIsValidTarget;           // +0x019
-    bool mRepeatQueue;             // +0x01A
-    std::uint8_t mPad01B;          // +0x01B
-    std::int32_t mJobType;         // +0x01C (EJobType storage lane)
-    std::int32_t mFireState;       // +0x020 (EFireState storage lane)
-    float mWorkProgress;           // +0x024
+    EntId mCreator;                            // +0x000
+    std::int32_t mCreationTick;                // +0x004
+    bool mAutoMode;                            // +0x008
+    bool mAutoSurfaceMode;                     // +0x009
+    bool mIsBusy;                              // +0x00A
+    std::uint8_t mPad00B;                      // +0x00B
+    float mFuelRatio;                          // +0x00C
+    float mShieldRatio;                        // +0x010
+    std::int32_t mStunTicks;                   // +0x014
+    bool mIsPaused;                            // +0x018
+    bool mIsValidTarget;                       // +0x019
+    bool mRepeatQueue;                         // +0x01A
+    std::uint8_t mPad01B;                      // +0x01B
+    std::int32_t mJobType;                     // +0x01C (EJobType storage lane)
+    std::int32_t mFireState;                   // +0x020 (EFireState storage lane)
+    float mWorkProgress;                       // +0x024
     std::int32_t mTacticalSiloBuildCount;      // +0x028
     std::int32_t mNukeSiloBuildCount;          // +0x02C
     std::int32_t mTacticalSiloStorageCount;    // +0x030
@@ -555,16 +555,16 @@ namespace moho
     /// reading this field at UserUnit+0x1D8) is its only known consumer: it
     /// resolves the id, adds that entity to the current selection and hands it
     /// this unit's selection-set names. Points the opposite way from `mCreator`.
-    EntId mSelectionInheritorId;  // +0x040
-    msvc8::string mCustomName;    // +0x044
-    SSTIUnitEconomyPair mProduced;         // +0x060
-    SSTIUnitEconomyPair mResourcesSpent;   // +0x068
-    SSTIUnitEconomyPair mMaintainenceCost; // +0x070
-    EntId mFocusUnit;             // +0x078
-    EntId mGuardedUnit;           // +0x07C
-    EntId mTargetBlip;            // +0x080
-    boost::shared_ptr<CAniPose> mPriorSharedPose; // +0x084
-    boost::shared_ptr<CAniPose> mSharedPose;      // +0x08C
+    EntId mSelectionInheritorId;                  // +0x040
+    fa::string mCustomName;                       // +0x044
+    SSTIUnitEconomyPair mProduced;                // +0x060
+    SSTIUnitEconomyPair mResourcesSpent;          // +0x068
+    SSTIUnitEconomyPair mMaintainenceCost;        // +0x070
+    EntId mFocusUnit;                             // +0x078
+    EntId mGuardedUnit;                           // +0x07C
+    EntId mTargetBlip;                            // +0x080
+    std::shared_ptr<CAniPose> mPriorSharedPose;   // +0x084
+    std::shared_ptr<CAniPose> mSharedPose;        // +0x08C
     std::uint8_t mPad094_097[0x04];               // +0x094
     // Per-sim CmdId snapshot lanes (NOT weak-command handles): the binary
     // treats these as 4-byte `CmdId` elements — `Unit::SyncInterface`
@@ -573,15 +573,15 @@ namespace moho
     // `SSTIUnitVariableData::Assign` (FUN_005BF1E0) copies them as raw dword
     // ranges (sub_561C80, `>> 2`). Inline count 8 keeps the lane 0x30 bytes
     // (0x10 header + 8 * 4).
-    gpg::fastvector_n<CmdId, 8> mCommands;   // +0x098
-    gpg::fastvector_n<CmdId, 8> mBuildQueue; // +0x0C8
+    gpg::fastvector_n<CmdId, 8> mCommands;            // +0x098
+    gpg::fastvector_n<CmdId, 8> mBuildQueue;          // +0x0C8
     gpg::fastvector_n<UnitWeaponInfo, 1> mWeaponInfo; // +0x0F8
-    UnitAttributes mAttributes;           // +0x1A0
-    std::uint32_t mScriptbits;            // +0x210
-    std::uint64_t mUnitStates;            // +0x218
-    bool mDidRefresh;                     // +0x220
-    bool mOverchargePaused;               // +0x221
-    std::uint8_t mPad222_227[0x06];       // +0x222
+    UnitAttributes mAttributes;                       // +0x1A0
+    std::uint32_t mScriptbits;                        // +0x210
+    std::uint64_t mUnitStates;                        // +0x218
+    bool mDidRefresh;                                 // +0x220
+    bool mOverchargePaused;                           // +0x221
+    std::uint8_t mPad222_227[0x06];                   // +0x222
   };
   static_assert(sizeof(SSTIUnitVariableData) == 0x228, "SSTIUnitVariableData size must be 0x228");
   static_assert(offsetof(SSTIUnitVariableData, mCustomName) == 0x044, "SSTIUnitVariableData::mCustomName offset");
@@ -593,7 +593,8 @@ namespace moho
   static_assert(offsetof(SSTIUnitVariableData, mUnitStates) == 0x218, "SSTIUnitVariableData::mUnitStates offset");
   static_assert(offsetof(SSTIUnitVariableData, mDidRefresh) == 0x220, "SSTIUnitVariableData::mDidRefresh offset");
   static_assert(
-    offsetof(SSTIUnitVariableData, mOverchargePaused) == 0x221, "SSTIUnitVariableData::mOverchargePaused offset"
+    offsetof(SSTIUnitVariableData, mOverchargePaused) == 0x221,
+    "SSTIUnitVariableData::mOverchargePaused offset"
   );
 
   /**
@@ -613,11 +614,11 @@ namespace moho
    */
   struct SUnitVariableUpdateEntry
   {
-    EntId mEntityId = 0;                    // +0x000
-    std::uint32_t mReserved04 = 0;          // +0x004
-    SSTIUnitVariableData mVariableData{};   // +0x008
-    std::int32_t mReconFlags = 0;           // +0x230
-    std::uint32_t mReserved234 = 0;         // +0x234
+    EntId mEntityId = 0;                  // +0x000
+    std::uint32_t mReserved04 = 0;        // +0x004
+    SSTIUnitVariableData mVariableData{}; // +0x008
+    std::int32_t mReconFlags = 0;         // +0x230
+    std::uint32_t mReserved234 = 0;       // +0x234
   };
   static_assert(
     offsetof(SUnitVariableUpdateEntry, mVariableData) == 0x08,
@@ -627,9 +628,7 @@ namespace moho
     offsetof(SUnitVariableUpdateEntry, mReconFlags) == 0x230,
     "SUnitVariableUpdateEntry::mReconFlags offset must be 0x230"
   );
-  static_assert(
-    sizeof(SUnitVariableUpdateEntry) == 0x238, "SUnitVariableUpdateEntry size must be 0x238"
-  );
+  static_assert(sizeof(SUnitVariableUpdateEntry) == 0x238, "SUnitVariableUpdateEntry size must be 0x238");
   /**
    * Address: 0x0055C620 (FUN_0055C620, preregister_SSTIUnitVariableDataTypeInfo)
    *
@@ -638,7 +637,10 @@ namespace moho
    */
   [[nodiscard]] gpg::RType* preregister_SSTIUnitVariableDataTypeInfo();
 
-  static_assert(sizeof(gpg::core::FastVectorN<WeakPtr<Entity>, 20>) == 0xB0, "FastVectorN<WeakPtr<Entity>,20> must be 0xB0");
+  static_assert(
+    sizeof(gpg::core::FastVectorN<WeakPtr<Entity>, 20>) == 0xB0,
+    "FastVectorN<WeakPtr<Entity>,20> must be 0xB0"
+  );
   static_assert(sizeof(gpg::core::FastVectorN<ReconBlip*, 2>) == 0x18, "FastVectorN<ReconBlip*,2> must be 0x18");
 
   /**
@@ -724,7 +726,6 @@ namespace moho
     friend class CUnitUpgradeTask;
 
   public:
-
     /**
      * Address: 0x006AD3C0 (FUN_006AD3C0, Moho::Unit::MemberConstruct)
      *
@@ -732,12 +733,8 @@ namespace moho
      * Deserializes construct-time owner lanes and returns a newly constructed
      * `Unit` via `SerConstructResult`.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive,
-      int version,
-      const gpg::RRef& ownerRef,
-      gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x006B2B50 (FUN_006B2B50, Moho::Unit::MemberDeserialize)
@@ -930,15 +927,6 @@ namespace moho
     void UpdateTerrainType(const Wm3::Vector3f& position);
 
     /**
-     * Address: 0x006A9A40 (FUN_006A9A40, Moho::Unit::HandleTerranEffects)
-     *
-     * What it does:
-     * Applies periodic terrain-driven health effects (`HealthEffectPerSecond`)
-     * from terrain-type Lua data and kills the unit when health drops to zero.
-     */
-    void HandleTerranEffects();
-
-    /**
      * Address: 0x006ABC30 (FUN_006ABC30, Moho::Unit::UpdateVisibility)
      *
      * What it does:
@@ -1005,13 +993,14 @@ namespace moho
     void InitializeArmor();
 
     /**
-     * Address: 0x006A9D60 (FUN_006A9D60, ?ProcessArmorOnDamage@Unit@Moho@@QBEMMV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
+     * Address: 0x006A9D60 (FUN_006A9D60,
+     * ?ProcessArmorOnDamage@Unit@Moho@@QBEMMV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
      *
      * What it does:
      * Looks up one armor multiplier by damage-type token and returns scaled
      * damage when a matching lane exists.
      */
-    [[nodiscard]] float ProcessArmorOnDamage(float amount, msvc8::string damageType) const;
+    [[nodiscard]] float ProcessArmorOnDamage(float amount, fa::string damageType) const;
 
     /**
      * Address: 0x006A9E10 (FUN_006A9E10, Moho::Unit::GetArmorMult)
@@ -1024,7 +1013,7 @@ namespace moho
      * Returns this unit's armor multiplier for one damage type, or 1.0 when
      * the type has no entry - i.e. an unlisted damage type is unmodified.
      */
-    [[nodiscard]] float GetArmorMult(const msvc8::string& damageType) const;
+    [[nodiscard]] float GetArmorMult(const fa::string& damageType) const;
 
     /**
      * Address: 0x006A9F40 (FUN_006A9F40, Moho::Unit::Materialize)
@@ -1154,7 +1143,8 @@ namespace moho
      * instead of released, so a worker never drops what may be a pose's last owner.
      */
     void RefreshSyncBlock(
-      boost::shared_ptr<CAniPose>* releasedPose = nullptr, boost::shared_ptr<CAniPose>* releasedPriorPose = nullptr
+      std::shared_ptr<CAniPose>* releasedPose = nullptr,
+      std::shared_ptr<CAniPose>* releasedPriorPose = nullptr
     );
 
     /**
@@ -1311,46 +1301,6 @@ namespace moho
     std::int32_t DecrementCapturers();
 
     /**
-     * Address: 0x00603F30 (FUN_00603F30)
-     *
-     * What it does:
-     * Returns the current non-negative captor reference count lane.
-     */
-    [[nodiscard]] std::int32_t GetCapturerCount() const noexcept;
-
-    /**
-     * Address: 0x005F24C0 (FUN_005F24C0)
-     *
-     * What it does:
-     * Returns whether this unit belongs to the MELEE category lane.
-     */
-    [[nodiscard]] bool IsMeleeUnit() const noexcept;
-
-    /**
-     * Address: 0x005F5570 (FUN_005F5570)
-     *
-     * What it does:
-     * Returns the current retaliation fire-state lane.
-     */
-    [[nodiscard]] std::int32_t GetFireStateValue() const noexcept;
-
-    /**
-     * Address: 0x005F5560 (FUN_005F5560)
-     *
-     * What it does:
-     * Stores one upgraded-unit entity id lane and returns that id.
-     */
-    [[nodiscard]] EntId SetUpgradedToEntityId(EntId upgradedToEntityId) noexcept;
-
-    /**
-     * Address: 0x005F5590 (FUN_005F5590)
-     *
-     * What it does:
-     * Returns the current silo-build implementation lane pointer.
-     */
-    [[nodiscard]] CAiSiloBuildImpl* GetSiloBuildImpl() const noexcept;
-
-    /**
      * Address: 0x006A7640 (FUN_006A7640, Moho::Unit::SetFocusEntity)
      * Mangled: ?SetFocusEntity@Unit@Moho@@QAEXPAVEntity@2@@Z
      *
@@ -1458,70 +1408,6 @@ namespace moho
     void SetConsumptionActive(bool isActive);
 
     /**
-     * Address: 0x006C3A10 (FUN_006C3A10)
-     *
-     * What it does:
-     * Writes one stunned-state tick lane.
-     */
-    void SetStunnedStateRaw(std::int32_t stunnedState) noexcept;
-
-    /**
-     * Address: 0x006C3A20 (FUN_006C3A20)
-     *
-     * What it does:
-     * Stores one overcharge-paused boolean lane.
-     */
-    void SetOverchargePausedFlag(bool paused) noexcept;
-
-    /**
-     * Address: 0x006C3A30 (FUN_006C3A30)
-     *
-     * What it does:
-     * Returns the overcharge-paused boolean lane.
-     */
-    [[nodiscard]] bool IsOverchargePausedFlag() const noexcept;
-
-    /**
-     * Address: 0x006C3A40 (FUN_006C3A40)
-     *
-     * What it does:
-     * Returns the consumption-active boolean lane.
-     */
-    [[nodiscard]] bool IsConsumptionActiveFlag() const noexcept;
-
-    /**
-     * Address: 0x006C3A50 (FUN_006C3A50)
-     *
-     * What it does:
-     * Returns the valid-target boolean lane.
-     */
-    [[nodiscard]] bool IsValidTargetFlag() const noexcept;
-
-    /**
-     * Address: 0x006C3A60 (FUN_006C3A60)
-     *
-     * What it does:
-     * Stores one valid-target boolean lane.
-     */
-    void SetIsValidTargetFlag(bool validTarget) noexcept;
-
-    /**
-     * Address: 0x006C3A70 (FUN_006C3A70)
-     *
-     * What it does:
-     * Returns the shield-ratio float lane.
-     */
-    [[nodiscard]] float GetShieldRatioRaw() const noexcept;
-
-    /**
-     * Address: 0x006C3A80 (FUN_006C3A80)
-     *
-     * What it does:
-     * Stores one shield-ratio float lane.
-     */
-    void SetShieldRatioRaw(float shieldRatio) noexcept;
-
-    /**
      * Address: 0x006AAA90 (FUN_006AAA90, ?SetProductionActive@Unit@Moho@@QAEX_N@Z)
      *
      * What it does:
@@ -1531,41 +1417,6 @@ namespace moho
     void SetProductionActive(bool isActive);
 
     /**
-     * Address: 0x006AAE20 (FUN_006AAE20, Moho::Unit::GetConsumptionRequest)
-     *
-     * What it does:
-     * Returns the currently requested upkeep economy pair from
-     * `mConsumptionData`.
-     */
-    [[nodiscard]] SEconValue GetConsumptionRequest() const;
-
-    /**
-     * Address: 0x006AAE40 (FUN_006AAE40, Moho::Unit::UpdateResourceProduction)
-     *
-     * What it does:
-     * Stores the current per-tick maintenance production pair in the shared
-     * economy-rate lane.
-     */
-    void UpdateResourceProduction(const SEconValue& resourceProduction);
-
-    /**
-     * Address: 0x006ABC70 (FUN_006ABC70, ?ResetEconValues@Unit@Moho@@QAEXXZ)
-     *
-     * What it does:
-     * Clears the unit's produced and resources-spent economy totals.
-     */
-    Unit* ResetEconValues();
-
-    /**
-     * Address: 0x006A9370 (FUN_006A9370, ?RenderAIDebugInfo@Unit@Moho@@AAEXXZ)
-     *
-     * What it does:
-     * Emits per-unit AI debug stat counters under `AIDebug_<UniqueName>`,
-     * including platoon metadata, idle marker, and active unit-state markers.
-     */
-    void RenderAIDebugInfo();
-
-    /**
      * Address: 0x006AC530 (FUN_006AC530, ?ShowAIDebugInfo@Unit@Moho@@QAEX_N@Z)
      *
      * What it does:
@@ -1573,15 +1424,6 @@ namespace moho
      * owning army stats.
      */
     void ShowAIDebugInfo(bool isEnabled);
-
-    /**
-     * Address: 0x006AC600 (FUN_006AC600, ?DebugShowRaisedPlatforms@Unit@Moho@@QAEXXZ)
-     *
-     * What it does:
-     * When `ShowRaisedPlatforms` sim-convar is enabled, draws one debug quad
-     * for each raised-platform blueprint polygon relative to unit position.
-     */
-    void DebugShowRaisedPlatforms();
 
     /**
      * Address: 0x0062AF70 (FUN_0062AF70, Moho::Unit::DistanceToOccupiedRect)
@@ -1685,7 +1527,7 @@ namespace moho
      * Copies prior/current shared animation poses into variable-data lanes and
      * mirrors them into `AniActor::{mPose,mPriorPose}`.
      */
-    void SetPoses(const boost::shared_ptr<CAniPose>& priorSharedPose, const boost::shared_ptr<CAniPose>& sharedPose);
+    void SetPoses(const std::shared_ptr<CAniPose>& priorSharedPose, const std::shared_ptr<CAniPose>& sharedPose);
 
     /**
      * Address: 0x006A9E50 (FUN_006A9E50, ?CanBuild@Unit@Moho@@QBE_NPBVRUnitBlueprint@2@@Z)
@@ -1754,16 +1596,6 @@ namespace moho
     void SetGuardedUnit(Unit* guarded);
 
     /**
-     * Address: 0x006AA720 (FUN_006AA720, ?RemoveGuardedByUnit@Unit@Moho@@AAEXPAV12@@Z)
-     * Mangled: ?RemoveGuardedByUnit@Unit@Moho@@AAEXPAV12@@Z
-     *
-     * What it does:
-     * Adds one guarding unit into this unit's guarded-by owner list when non-null,
-     * then clears stale guard-formation ownership.
-     */
-    void RemoveGuardedByUnit(Unit* guardedByUnit);
-
-    /**
      * Address: 0x00585B10 (FUN_00585B10, Moho::Unit::GetFocusEntity)
      *
      * What it does:
@@ -1804,15 +1636,6 @@ namespace moho
      */
     [[nodiscard]]
     Unit* GetFerryUnit() const;
-
-    /**
-     * Address: 0x0060DAD0 (FUN_0060DAD0, Moho::Unit::SetAssignedTransport)
-     *
-     * What it does:
-     * Rebinds `AssignedTransportRef` to one transport unit weak-reference
-     * owner lane.
-     */
-    void SetAssignedTransport(Unit* assignedTransport);
 
     /**
      * Address: 0x006A8890 (FUN_006A8890, Moho::Unit::GetTransportFerryBeacon)
@@ -2044,21 +1867,21 @@ namespace moho
      *    and repair lanes publish;
      *  - `mSelectionInheritorId`: the unit an upgrade hands its selection to.
      */
-    SSTIUnitVariableData mUnitVarDat; // 0x0288
-    CUnitMotion* UnitMotion;                             // 0x04B0
-    CUnitCommandQueue* CommandQueue;                     // 0x04B4
-    WeakPtr<Unit> CreatorRef;                             // 0x04B8
-    WeakPtr<Unit> TransportedByRef;                       // 0x04C0
-    WeakPtr<Unit> AssignedTransportRef;                   // 0x04C8
-    WeakPtr<Entity> FocusEntityRef;                         // 0x04D0
-    WeakPtr<Entity> TargetBlipEntityRef;                    // 0x04D8
-    WeakPtr<Unit> GuardedUnitRef;                         // 0x04E0
-    Wm3::Vector3f GuardedPos;                            // 0x04E8
-    char pad_04F4[4];                                    // 0x04F4
+    SSTIUnitVariableData mUnitVarDat;    // 0x0288
+    CUnitMotion* UnitMotion;             // 0x04B0
+    CUnitCommandQueue* CommandQueue;     // 0x04B4
+    WeakPtr<Unit> CreatorRef;            // 0x04B8
+    WeakPtr<Unit> TransportedByRef;      // 0x04C0
+    WeakPtr<Unit> AssignedTransportRef;  // 0x04C8
+    WeakPtr<Entity> FocusEntityRef;      // 0x04D0
+    WeakPtr<Entity> TargetBlipEntityRef; // 0x04D8
+    WeakPtr<Unit> GuardedUnitRef;        // 0x04E0
+    Wm3::Vector3f GuardedPos;            // 0x04E8
+    char pad_04F4[4];                    // 0x04F4
     /// The units guarding this one: an `EntitySetTemplate<Unit>` (the serializer's type), kept in
     /// entity-id order by the set's `Add` 0x0057DDD0 / `Remove` 0x005E8960.
     EntitySetTemplate<Unit> GuardedByList; // 0x04F8
-    IFormationInstance* GuardFormation;                  // 0x0520
+    IFormationInstance* GuardFormation;    // 0x0520
     bool mNeedsKillCleanup;            // 0x0524: tested in Sim::AdvanceBeat, cleared by Unit::KillCleanup (0x006A8790)
     char pad_0525[0x03];               // 0x0525
     std::int32_t mCreationTick;        // 0x0528: serialized runtime creation tick lane
@@ -2077,17 +1900,17 @@ namespace moho
     /// has no caller in the shipped binary (every formation-side reader,
     /// `CAiFormationInstance::CalcFormationSpeed`/`Update`, loads the field
     /// inline), so it anchors on the field rather than on a function.
-    IAiNavigator* AiNavigator;                       // 0x054C
-    IAiSteering* AiSteering;                         // 0x0550
-    IAiBuilder* AiBuilder;                           // 0x0554
-    CAiSiloBuildImpl* AiSiloBuild;                   // 0x0558
-    IAiTransport* AiTransport;                       // 0x055C
-    bool FootprintDown;                              // 0x0560
-    char pad_0561[0x03];                             // 0x0561
-    float TransportLoadFactor;                       // 0x0564
+    IAiNavigator* AiNavigator;     // 0x054C
+    IAiSteering* AiSteering;       // 0x0550
+    IAiBuilder* AiBuilder;         // 0x0554
+    CAiSiloBuildImpl* AiSiloBuild; // 0x0558
+    IAiTransport* AiTransport;     // 0x055C
+    bool FootprintDown;            // 0x0560
+    char pad_0561[0x03];           // 0x0561
+    float TransportLoadFactor;     // 0x0564
     /**
      * Per-unit damage-type armor multiplier lookup (`std::map<std::string,
-     * float>` in the shipped binary; modeled here as `msvc8::map`, the
+     * float>` in the shipped binary; modeled here as `fa::map`, the
      * project's MSVC8-ABI-exact `std::map` reimplementation).
      *
      * Evidence:
@@ -2098,23 +1921,20 @@ namespace moho
      *   this same lane; see their bodies below for the real API call sites
      *   (`find()`/`operator[]`) and `legacy/containers/{Map,RbTree}.h` for
      *   the generic template-internal citations for this instantiation.
-     * - Node layout (48 bytes: 12-byte link triplet, 28-byte `msvc8::string`
+     * - Node layout (48 bytes: 12-byte link triplet, 28-byte `fa::string`
      *   key at +0x0C, `float` value at +0x28, color/isNil at +0x2C/+0x2D)
      *   and container layout (12-byte `{proxy,_Myhead,_Mysize}` triplet)
-     *   match `msvc8::map<msvc8::string,float>` exactly -- see
+     *   match `fa::map<fa::string,float>` exactly -- see
      *   `legacy/containers/Map.h`'s class doc comment for the shared layout
      *   derivation (confirmed independently via `Moho::CCommandDB::commands`).
      */
-    msvc8::map<msvc8::string, float> ArmorMultipliers; // 0x0568
+    fa::map<fa::string, float> ArmorMultipliers;     // 0x0568
     gpg::DList<CEconomyEvent> mEconomyEventListHead; // 0x0574
     std::uint8_t CurrentTerrainType;                 // 0x057C
     bool mDebugAIStates;                             // 0x057D
     char pad_057E[2];                                // 0x057E
     SInfoCache mInfoCache;                           // 0x0580
-    std::int32_t ReservedOgridRectMinX;              // 0x05A8
-    std::int32_t ReservedOgridRectMinZ;              // 0x05AC
-    std::int32_t ReservedOgridRectMaxX;              // 0x05B0
-    std::int32_t ReservedOgridRectMaxZ;              // 0x05B4
+    gpg::Rect2i mReservedOgridRect;                  // 0x05A8, serialized as one Rect2i
     /**
      * Address: 0x006ADE50 (FUN_006ADE50, gpg::fastvector_n2_WeakPtr_Entity::fastvector_n2_WeakPtr_Entity)
      *
@@ -2147,25 +1967,10 @@ namespace moho
   static_assert(offsetof(Unit, PriorityBoost) == 0x0530, "Unit::PriorityBoost offset must be 0x0530");
   static_assert(offsetof(Unit, mConsumptionData) == 0x0534, "Unit::mConsumptionData offset must be 0x0534");
   static_assert(offsetof(Unit, mDebugAIStates) == 0x057D, "Unit::mDebugAIStates offset must be 0x057D");
-  static_assert(
-    offsetof(Unit, ReservedOgridRectMinX) == 0x05A8, "Unit::ReservedOgridRectMinX offset must be 0x05A8"
-  );
-  static_assert(
-    offsetof(Unit, ReservedOgridRectMinZ) == 0x05AC, "Unit::ReservedOgridRectMinZ offset must be 0x05AC"
-  );
-  static_assert(
-    offsetof(Unit, ReservedOgridRectMaxX) == 0x05B0, "Unit::ReservedOgridRectMaxX offset must be 0x05B0"
-  );
-  static_assert(
-    offsetof(Unit, ReservedOgridRectMaxZ) == 0x05B4, "Unit::ReservedOgridRectMaxZ offset must be 0x05B4"
-  );
+  static_assert(offsetof(Unit, mReservedOgridRect) == 0x05A8, "Unit::mReservedOgridRect offset must be 0x05A8");
   static_assert(offsetof(Unit, ArmorMultipliers) == 0x0568, "Unit::ArmorMultipliers offset must be 0x0568");
-  static_assert(
-    sizeof(msvc8::map<msvc8::string, float>) == 0x0C, "Unit::ArmorMultipliers (msvc8::map) size must be 0x0C"
-  );
-  static_assert(
-    offsetof(Unit, TransportLoadFactor) == 0x0564, "Unit::TransportLoadFactor offset must be 0x0564"
-  );
+  static_assert(sizeof(fa::map<fa::string, float>) == 0x0C, "Unit::ArmorMultipliers (fa::map) size must be 0x0C");
+  static_assert(offsetof(Unit, TransportLoadFactor) == 0x0564, "Unit::TransportLoadFactor offset must be 0x0564");
   static_assert(offsetof(Unit, mEconomyEventListHead) == 0x0574, "Unit::mEconomyEventListHead offset must be 0x0574");
   static_assert(offsetof(Unit, mReconBlips) == 0x0670, "Unit::mReconBlips offset must be 0x0670");
   static_assert(offsetof(Unit, GuardFormation) == 0x0520, "Unit::GuardFormation offset must be 0x0520");
@@ -2235,13 +2040,14 @@ namespace moho
   using UnitGetWeapon_LuaFuncDef = ::moho::CScrLuaBinder;
 
   /**
-   * Address: 0x00564660 (FUN_00564660, ?ARMOR_GetArmorDefinations@Moho@@YA?AV?$list@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@PAVLuaState@LuaPlus@@VStrArg@gpg@@@Z)
+   * Address: 0x00564660 (FUN_00564660,
+   * ?ARMOR_GetArmorDefinations@Moho@@YA?AV?$list@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@PAVLuaState@LuaPlus@@VStrArg@gpg@@@Z)
    *
    * What it does:
    * Loads `/lua/armordefinition.lua`, resolves the row that matches
    * `armorTypeName`, and returns all `<damageType multiplier>` string lanes.
    */
-  [[nodiscard]] msvc8::list<msvc8::string> ARMOR_GetArmorDefinations(LuaPlus::LuaState* state, gpg::StrArg armorTypeName);
+  [[nodiscard]] fa::list<fa::string> ARMOR_GetArmorDefinations(LuaPlus::LuaState* state, gpg::StrArg armorTypeName);
 
   /**
    * Address: 0x006C3AB0 (FUN_006C3AB0, cfunc_UnitGetUnitId)

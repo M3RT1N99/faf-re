@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/gal/VertexBuffer.hpp"
 #include "legacy/containers/Map.h"
@@ -50,19 +50,24 @@ namespace moho
    * name's `_Tidy`-then-assign, the category filter's word-vector rebind, and
    * a straight copy of the three colours and two radius pairs. No source line
    * of its own - `mRangeProfiles[name] = profile` is what reaches it.
-   * Address: 0x007EE860 (FUN_007EE860 -- the implicit destructor: the category-word set rebinds to its inline block and the extractor string tidies. Twelve callers, every erase and tidy of the two containers that hold one; callers 0x007EE5A0, 0x007EFD00, 0x007F1490; formerly `ResetRangeRenderProfileTransientState` in RangeRenderer.cpp (RULE ONE), removed 2026-09-11.)
-   * Address: 0x007EE8B0 (FUN_007EE8B0 -- the copy constructor: the string is assigned, the category-word set rebinds through `ResetFrom`, the colours and radii copy field by field. Eight callers; callers 0x007EE5A0, 0x007F3330, 0x007F3430; formerly `CopyRangeRenderProfileTransientState` in RangeRenderer.cpp (RULE ONE), removed 2026-09-11.)
+   * Address: 0x007EE860 (FUN_007EE860 -- the implicit destructor: the category-word set rebinds to its inline block and
+   * the extractor string tidies. Twelve callers, every erase and tidy of the two containers that hold one; callers
+   * 0x007EE5A0, 0x007EFD00, 0x007F1490; formerly `ResetRangeRenderProfileTransientState` in RangeRenderer.cpp (RULE
+   * ONE), removed 2026-09-11.) Address: 0x007EE8B0 (FUN_007EE8B0 -- the copy constructor: the string is assigned, the
+   * category-word set rebinds through `ResetFrom`, the colours and radii copy field by field. Eight callers; callers
+   * 0x007EE5A0, 0x007F3330, 0x007F3430; formerly `CopyRangeRenderProfileTransientState` in RangeRenderer.cpp (RULE
+   * ONE), removed 2026-09-11.)
    */
   struct SRangeRenderProfile
   {
-    msvc8::string mExtractorName;                  // +0x00
-    std::uint32_t mReserved1C = 0u;                // +0x1C
-    EntityCategorySet mCategoryFilter;         // +0x20
-    RangeRingColor mBuildRingColor;                // +0x48
-    RangeRingColor mSelectedRingColor;             // +0x58
-    RangeRingColor mHighlightedRingColor;          // +0x68
-    RangeRingRadiusParams mInnerRingParams;        // +0x78
-    RangeRingRadiusParams mOuterRingParams;        // +0x80
+    fa::string mExtractorName;              // +0x00
+    std::uint32_t mReserved1C = 0u;         // +0x1C
+    EntityCategorySet mCategoryFilter;      // +0x20
+    RangeRingColor mBuildRingColor;         // +0x48
+    RangeRingColor mSelectedRingColor;      // +0x58
+    RangeRingColor mHighlightedRingColor;   // +0x68
+    RangeRingRadiusParams mInnerRingParams; // +0x78
+    RangeRingRadiusParams mOuterRingParams; // +0x80
   };
 
   static_assert(offsetof(SRangeRenderProfile, mExtractorName) == 0x00, "SRangeRenderProfile::mExtractorName");
@@ -70,7 +75,8 @@ namespace moho
   static_assert(offsetof(SRangeRenderProfile, mBuildRingColor) == 0x48, "SRangeRenderProfile::mBuildRingColor");
   static_assert(offsetof(SRangeRenderProfile, mSelectedRingColor) == 0x58, "SRangeRenderProfile::mSelectedRingColor");
   static_assert(
-    offsetof(SRangeRenderProfile, mHighlightedRingColor) == 0x68, "SRangeRenderProfile::mHighlightedRingColor"
+    offsetof(SRangeRenderProfile, mHighlightedRingColor) == 0x68,
+    "SRangeRenderProfile::mHighlightedRingColor"
   );
   static_assert(offsetof(SRangeRenderProfile, mInnerRingParams) == 0x78, "SRangeRenderProfile::mInnerRingParams");
   static_assert(offsetof(SRangeRenderProfile, mOuterRingParams) == 0x80, "SRangeRenderProfile::mOuterRingParams");
@@ -84,14 +90,15 @@ namespace moho
    * `lea edx,[ecx+ecx*2]; shl edx,6`) with the key at `node+0x10` and the
    * profile at `node+0x30`: `_Lbound` (`FUN_007F13A0`) hands `node+0x10` to
    * the key comparison as `this` and reads `_Mysize` at `this+0x14`, which is
-   * the 0x1C `msvc8::string` layout. The value therefore starts four bytes
+   * the 0x1C `fa::string` layout. The value therefore starts four bytes
    * past the end of the key, and the node four past the end of the links -
    * `SRangeRenderProfile` is 8-aligned, because `EntityCategorySet` is.
    */
-  using SRangeRenderProfileMap = msvc8::map<msvc8::string, SRangeRenderProfile>;
+  using SRangeRenderProfileMap = fa::map<fa::string, SRangeRenderProfile>;
   static_assert(sizeof(SRangeRenderProfileMap) == 0x0C, "SRangeRenderProfileMap size must be 0x0C");
   static_assert(
-    sizeof(SRangeRenderProfileMap::value_type) == 0xA8, "SRangeRenderProfileMap::value_type size must be 0xA8"
+    sizeof(SRangeRenderProfileMap::value_type) == 0xA8,
+    "SRangeRenderProfileMap::value_type size must be 0xA8"
   );
 
   /**
@@ -161,7 +168,7 @@ namespace moho
      * Rebuilds the visible-profile vector from category-name keys using the
      * profile map tree.
      */
-    void MoveCategories(const msvc8::vector<msvc8::string>& categories);
+    void MoveCategories(const fa::vector<fa::string>& categories);
 
     /**
      * Address: 0x007EE430 (FUN_007EE430, sub_7EE430)
@@ -172,17 +179,15 @@ namespace moho
     void ResetRenderResources() noexcept;
 
   private:
-
-
   public:
-    SRangeRenderProfileMap mRangeProfiles;                             // +0x04
-    msvc8::vector<SRangeRenderProfile> mVisibleProfiles;              // +0x10
-    std::uint32_t mIndexCount;                                        // +0x20
-    std::uint32_t mVertexCount;                                       // +0x24
-    RenderGeometryBuffers mGeometry;                                  // +0x28
-    std::uint32_t mDynamicRingVertexCount;                            // +0x40
-    boost::shared_ptr<gpg::gal::VertexBuffer> mDynamicVertexBuffer; // +0x44
-    CRenFrame mFrame;                                                 // +0x4C
+    SRangeRenderProfileMap mRangeProfiles;                          // +0x04
+    fa::vector<SRangeRenderProfile> mVisibleProfiles;               // +0x10
+    std::uint32_t mIndexCount;                                      // +0x20
+    std::uint32_t mVertexCount;                                     // +0x24
+    RenderGeometryBuffers mGeometry;                                // +0x28
+    std::uint32_t mDynamicRingVertexCount;                          // +0x40
+    std::shared_ptr<gpg::gal::VertexBuffer> mDynamicVertexBuffer;   // +0x44
+    CRenFrame mFrame;                                               // +0x4C
   };
 
   static_assert(offsetof(RangeRenderer, mRangeProfiles) == 0x04, "RangeRenderer::mRangeProfiles");
@@ -190,9 +195,7 @@ namespace moho
   static_assert(offsetof(RangeRenderer, mIndexCount) == 0x20, "RangeRenderer::mIndexCount");
   static_assert(offsetof(RangeRenderer, mVertexCount) == 0x24, "RangeRenderer::mVertexCount");
   static_assert(offsetof(RangeRenderer, mGeometry) == 0x28, "RangeRenderer::mGeometry");
-  static_assert(
-    offsetof(RangeRenderer, mDynamicRingVertexCount) == 0x40, "RangeRenderer::mDynamicRingVertexCount"
-  );
+  static_assert(offsetof(RangeRenderer, mDynamicRingVertexCount) == 0x40, "RangeRenderer::mDynamicRingVertexCount");
   static_assert(offsetof(RangeRenderer, mDynamicVertexBuffer) == 0x44, "RangeRenderer::mDynamicVertexBuffer");
   static_assert(offsetof(RangeRenderer, mFrame) == 0x4C, "RangeRenderer::mFrame");
   static_assert(sizeof(RangeRenderer) == 0x94, "RangeRenderer size must be 0x94");
@@ -221,7 +224,7 @@ namespace moho
    * The binary appends one entry per successfully extracted candidate using
    * `AppendRangeExtractionPayload` lane behavior.
    */
-  using SRangeExtractionPayloadVector = msvc8::vector<SRangeExtractionPayload>;
+  using SRangeExtractionPayloadVector = fa::vector<SRangeExtractionPayload>;
 
   /**
    * Address: 0x007EF0B0 (FUN_007EF0B0, Moho::func_ExtractRanges)

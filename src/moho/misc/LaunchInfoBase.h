@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "gpg/core/reflection/Reflection.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "legacy/containers/String.h"
 #include "legacy/containers/Vector.h"
 #include "moho/containers/BVIntSet.h"
@@ -24,15 +24,13 @@ namespace moho
 
   struct SLaunchCommandSources
   {
-    msvc8::vector<SSTICommandSource> mSrcs;     // +0x00
-    std::int32_t v4 = 0;                        // +0x10
-    std::int32_t mOriginalSource = -1;          // +0x14
+    fa::vector<SSTICommandSource> mSrcs; // +0x00
+    std::int32_t v4 = 0;                 // +0x10
+    std::int32_t mOriginalSource = -1;   // +0x14
   };
 
   static_assert(sizeof(SLaunchCommandSources) == 0x18, "SLaunchCommandSources size must be 0x18");
-  static_assert(
-    offsetof(SLaunchCommandSources, mSrcs) == 0x00, "SLaunchCommandSources::mSrcs offset must be 0x00"
-  );
+  static_assert(offsetof(SLaunchCommandSources, mSrcs) == 0x00, "SLaunchCommandSources::mSrcs offset must be 0x00");
   static_assert(offsetof(SLaunchCommandSources, v4) == 0x10, "SLaunchCommandSources::v4 offset must be 0x10");
   static_assert(
     offsetof(SLaunchCommandSources, mOriginalSource) == 0x14,
@@ -41,13 +39,19 @@ namespace moho
 
   struct ArmyLaunchInfo
   {
-  /**
-   * What it does:
-   * Nothing: the army's launch info is rebuilt at load, not archived. `gpg::SerSaveLoadHelper<ArmyLaunchInfo>::Deserialize`
-   * 0x005421C0 and `Serialize` 0x005421D0 are a bare `ret`.
-   */
-  void MemberDeserialize(gpg::ReadArchive*) {}
-  void MemberSerialize(gpg::WriteArchive*) const {}
+    /**
+     * What it does:
+     * Nothing: the army's launch info is rebuilt at load, not archived.
+     * `gpg::SerSaveLoadHelper<ArmyLaunchInfo>::Deserialize` 0x005421C0 and `Serialize` 0x005421D0 are a bare `ret`.
+     */
+    void MemberDeserialize(
+      gpg::ReadArchive*
+    )
+    {}
+    void MemberSerialize(
+      gpg::WriteArchive*
+    ) const
+    {}
 
     static gpg::RType* sType;
 
@@ -60,13 +64,11 @@ namespace moho
      */
     ArmyLaunchInfo();
 
-    BVIntSet mUnitSources;                        // +0x00
+    BVIntSet mUnitSources; // +0x00
   };
 
   static_assert(sizeof(ArmyLaunchInfo) == 0x20, "ArmyLaunchInfo size must be 0x20");
-  static_assert(
-    offsetof(ArmyLaunchInfo, mUnitSources) == 0x00, "ArmyLaunchInfo::mUnitSources offset must be 0x00"
-  );
+  static_assert(offsetof(ArmyLaunchInfo, mUnitSources) == 0x00, "ArmyLaunchInfo::mUnitSources offset must be 0x00");
 
   class LaunchInfoNew;
   class LaunchInfoLoad;
@@ -118,38 +120,36 @@ namespace moho
      * - slot 3 is purecall in `LaunchInfoBase` vftable.
      * - `LaunchInfoNew::Create` and `LaunchInfoLoad::Create` override this slot.
      */
-    virtual void Create(boost::SharedPtrRaw<void>& outCreated) = 0;
+    virtual void Create(std::shared_ptr<void>& outCreated) = 0;
 
     [[nodiscard]] static gpg::RType* StaticGetClass();
 
   public:
-    RRuleGameRules* mGameRules;                  // +0x04
-    STIMap* mMap;                                // +0x08
-    msvc8::string mGameMods;                     // +0x0C
-    msvc8::string mScenarioInfo;                 // +0x28
-    msvc8::vector<ArmyLaunchInfo> mArmyLaunchInfo; // +0x44
-    SLaunchCommandSources mCommandSources;       // +0x54
-    msvc8::string mLanguage;                     // +0x6C
-    bool mCheatsEnabled;                         // +0x88
-    std::uint8_t pad_89[3];                      // +0x89
+    RRuleGameRules* mGameRules;                 // +0x04
+    STIMap* mMap;                               // +0x08
+    fa::string mGameMods;                       // +0x0C
+    fa::string mScenarioInfo;                   // +0x28
+    fa::vector<ArmyLaunchInfo> mArmyLaunchInfo; // +0x44
+    SLaunchCommandSources mCommandSources;      // +0x54
+    fa::string mLanguage;                       // +0x6C
+    bool mCheatsEnabled;                        // +0x88
+    std::uint8_t pad_89[3];                     // +0x89
   };
 
   static_assert(offsetof(LaunchInfoBase, mGameRules) == 0x04, "LaunchInfoBase::mGameRules offset must be 0x04");
   static_assert(offsetof(LaunchInfoBase, mMap) == 0x08, "LaunchInfoBase::mMap offset must be 0x08");
   static_assert(offsetof(LaunchInfoBase, mGameMods) == 0x0C, "LaunchInfoBase::mGameMods offset must be 0x0C");
+  static_assert(offsetof(LaunchInfoBase, mScenarioInfo) == 0x28, "LaunchInfoBase::mScenarioInfo offset must be 0x28");
   static_assert(
-    offsetof(LaunchInfoBase, mScenarioInfo) == 0x28, "LaunchInfoBase::mScenarioInfo offset must be 0x28"
+    offsetof(LaunchInfoBase, mArmyLaunchInfo) == 0x44,
+    "LaunchInfoBase::mArmyLaunchInfo offset must be 0x44"
   );
   static_assert(
-    offsetof(LaunchInfoBase, mArmyLaunchInfo) == 0x44, "LaunchInfoBase::mArmyLaunchInfo offset must be 0x44"
-  );
-  static_assert(
-    offsetof(LaunchInfoBase, mCommandSources) == 0x54, "LaunchInfoBase::mCommandSources offset must be 0x54"
+    offsetof(LaunchInfoBase, mCommandSources) == 0x54,
+    "LaunchInfoBase::mCommandSources offset must be 0x54"
   );
   static_assert(offsetof(LaunchInfoBase, mLanguage) == 0x6C, "LaunchInfoBase::mLanguage offset must be 0x6C");
-  static_assert(
-    offsetof(LaunchInfoBase, mCheatsEnabled) == 0x88, "LaunchInfoBase::mCheatsEnabled offset must be 0x88"
-  );
+  static_assert(offsetof(LaunchInfoBase, mCheatsEnabled) == 0x88, "LaunchInfoBase::mCheatsEnabled offset must be 0x88");
   static_assert(sizeof(LaunchInfoBase) == 0x8C, "LaunchInfoBase size must be 0x8C");
 
   class LaunchInfoNew final : public LaunchInfoBase
@@ -176,7 +176,7 @@ namespace moho
     /**
      * Address: 0x00542870 (FUN_00542870)
      */
-    void Create(boost::SharedPtrRaw<void>& outCreated) override;
+    void Create(std::shared_ptr<void>& outCreated) override;
 
     /**
      * Address: 0x00544360 (FUN_00544360, Moho::LaunchInfoNew::MemberDeserialize)
@@ -199,9 +199,9 @@ namespace moho
   public:
     // Borrowed from CWldMap; the session hands the loaded map's prop list
     // straight over and Sim::Setup walks it to spawn each entry.
-    CWldProps* mProps;                           // +0x8C
-    msvc8::vector<msvc8::string> mStrVec;        // +0x90
-    std::int32_t mInitSeed;                      // +0xA0
+    CWldProps* mProps;              // +0x8C
+    fa::vector<fa::string> mStrVec; // +0x90
+    std::int32_t mInitSeed;         // +0xA0
   };
 
   static_assert(offsetof(LaunchInfoNew, mProps) == 0x8C, "LaunchInfoNew::mProps offset must be 0x8C");
@@ -231,22 +231,22 @@ namespace moho
     /**
      * Address: 0x00541FF0 (FUN_00541FF0)
      */
-    void Create(boost::SharedPtrRaw<void>& outCreated) override;
+    void Create(std::shared_ptr<void>& outCreated) override;
 
   public:
-    gpg::ReadArchive* mReadArchive;                          // +0x8C
-    boost::SharedPtrRaw<SSessionSaveData> mLoadSessionData; // +0x90
-    boost::SharedPtrRaw<LaunchInfoBase> mSharedLaunchInfo;  // +0x98
+    gpg::ReadArchive* mReadArchive;                         // +0x8C
+    std::shared_ptr<SSessionSaveData> mLoadSessionData;     // +0x90
+    std::shared_ptr<LaunchInfoBase> mSharedLaunchInfo;      // +0x98
   };
 
+  static_assert(offsetof(LaunchInfoLoad, mReadArchive) == 0x8C, "LaunchInfoLoad::mReadArchive offset must be 0x8C");
   static_assert(
-    offsetof(LaunchInfoLoad, mReadArchive) == 0x8C, "LaunchInfoLoad::mReadArchive offset must be 0x8C"
+    offsetof(LaunchInfoLoad, mLoadSessionData) == 0x90,
+    "LaunchInfoLoad::mLoadSessionData offset must be 0x90"
   );
   static_assert(
-    offsetof(LaunchInfoLoad, mLoadSessionData) == 0x90, "LaunchInfoLoad::mLoadSessionData offset must be 0x90"
-  );
-  static_assert(
-    offsetof(LaunchInfoLoad, mSharedLaunchInfo) == 0x98, "LaunchInfoLoad::mSharedLaunchInfo offset must be 0x98"
+    offsetof(LaunchInfoLoad, mSharedLaunchInfo) == 0x98,
+    "LaunchInfoLoad::mSharedLaunchInfo offset must be 0x98"
   );
   static_assert(sizeof(LaunchInfoLoad) == 0xA0, "LaunchInfoLoad size must be 0xA0");
 
@@ -400,16 +400,13 @@ namespace moho
    * What it does:
    * Appends one `ArmyLaunchInfo` entry to the launch-info army-vector lane.
    * Wraps the compiler-emitted out-of-line specialization of
-   * `msvc8::vector<ArmyLaunchInfo>::push_back(const ArmyLaunchInfo&)` so that
+   * `fa::vector<ArmyLaunchInfo>::push_back(const ArmyLaunchInfo&)` so that
    * the inline-fast-path (capacity available -> in-place copy-construct via
    * `BVIntSet`'s copy ctor) and the slow grow-path (`_Insert_n` reallocation)
    * are both reachable from typed call sites. The entry is copied; the source
    * value remains valid after the call.
    */
-  void AppendArmyLaunchInfo(
-    msvc8::vector<ArmyLaunchInfo>& armyLaunchInfo,
-    const ArmyLaunchInfo& entry
-  );
+  void AppendArmyLaunchInfo(fa::vector<ArmyLaunchInfo>& armyLaunchInfo, const ArmyLaunchInfo& entry);
 
 } // namespace moho
 

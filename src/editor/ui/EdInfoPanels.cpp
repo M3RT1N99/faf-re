@@ -1,0 +1,2558 @@
+// The Info panel (what the open map is) and the Markers panel (its markers as a tree), EdShell's right-hand panels.
+
+#include "editor/tools/EdShaderProfiles.h"
+#include "editor/doc/EdLookMoods.h"
+#include "editor/doc/EdScenarioInfo.h"
+#include "editor/EdShell.h"
+#include "editor/ui/EdControls.h"
+#include "editor/doc/EdLighting.h"
+#include "editor/ui/EdWorkspaces.h"
+#include "editor/EdLuaDebugger.h"
+#include "editor/ui/EdThemeColors.h"
+#include "editor/ui/EdUiScale.h"
+#include "editor/doc/EdAdaptiveTables.h"
+
+#include <algorithm>
+#include <array>
+#include <set>
+#include <chrono>
+#include <functional>
+#include <cctype>
+#include <cstdio>
+#include <map>
+
+#include "editor/EdPlay.h"
+#include "editor/ui/EdCodeEditor.h"
+#include "editor/ui/EdHelp.h"
+#include "moho/terrain/CWldTerrainRes.h"
+#include "moho/sim/SFootprint.h"
+#include "moho/resource/blueprints/RUnitBlueprint.h"
+#include "moho/sim/RRuleGameRules.h"
+#include "editor/tools/EdPathing.h"
+#include "editor/tools/EdSlopeRules.h"
+#include "editor/doc/EdUnits.h"
+#include "editor/tools/EdTerrainChecks.h"
+#include "editor/ui/EdMissionPanel.h"
+#include "gpg/core/utils/Logging.h"
+#include "moho/sim/CWldMap.h"
+#include <cmath>
+#include "editor/doc/EdDocument.h"
+#include "editor/tools/EdMarkers.h"
+#include "imgui.h"
+#include "imgui_internal.h"
+
+namespace faf::editor
+{
+  namespace
+  {
+    constexpr const char* kMapWindow = "Map";
+    constexpr const char* kInfoWindow = "Info";
+    constexpr const char* kMarkersWindow = "Markers";
+
+    /** ARGB (the saves' colours) to ImGui's ABGR. */
+    ImU32 FromArgb(
+      const std::uint32_t argb
+    )
+    {
+      return IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF, 255);
+    }
+
+    /** A rounded label inline with the text, wrapping to the next line when the row is full. */
+    void Chip(
+      const char* const text,
+      const ImU32 fill = ChipU32(),
+      const ImU32 ink = 0
+    )
+    {
+      const ImVec2 padding(7.0f, 2.0f);
+      const ImVec2 size = ImGui::CalcTextSize(text);
+      const ImVec2 box(size.x + padding.x * 2.0f, size.y + padding.y * 2.0f);
+      ImGui::Dummy(box);
+      const ImVec2 min = ImGui::GetItemRectMin();
+      ImDrawList* const draw = ImGui::GetWindowDrawList();
+      draw->AddRectFilled(min, ImVec2(min.x + box.x, min.y + box.y), fill, box.y * 0.5f);
+      draw->AddText(
+        ImVec2(min.x + padding.x, min.y + padding.y), ink != 0 ? ink : ImGui::GetColorU32(ImGuiCol_Text), text
+      );
+    }
+
+    /** The next chip on the same row if it fits, else on the next. */
+    void ChipSpacing(
+      const char* const next
+    )
+    {
+      const float width = ImGui::CalcTextSize(next).x + 14.0f;
+      const float right = ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width;
+      if (right < ImGui::GetCurrentWindow()->WorkRect.Max.x) {
+        ImGui::SameLine();
+      }
+    }
+
+    void Chips(
+      const std::vector<std::string>& texts,
+      const ImU32 fill = ChipU32(),
+      const ImU32 ink = 0
+    )
+    {
+      for (std::size_t i = 0; i < texts.size(); ++i) {
+        if (i > 0) {
+          ChipSpacing(texts[i].c_str());
+        }
+        Chip(texts[i].c_str(), fill, ink);
+      }
+    }
+
+    /** A diamond as the view draws markers. */
+    void Diamond(
+      ImDrawList* const draw,
+      const ImVec2 centre,
+      const float r,
+      const ImU32 color,
+      const bool filled = true
+    )
+    {
+      const ImVec2 points[4] = {
+        {centre.x, centre.y - r}, {centre.x + r, centre.y}, {centre.x, centre.y + r}, {centre.x - r, centre.y}
+      };
+      if (filled) {
+        draw->AddConvexPolyFilled(points, 4, color);
+      } else {
+        draw->AddPolyline(points, 4, color, ImDrawFlags_Closed, 1.5f);
+      }
+    }
+
+    /** An eye (shown) or a struck eye (hidden), as a small button; true when clicked. */
+    bool EyeButton(
+      const char* const id,
+      const bool hidden
+    )
+    {
+      const float size = ImGui::GetFrameHeight();
+      const bool clicked = ImGui::InvisibleButton(id, ImVec2(size, size));
+      const ImVec2 min = ImGui::GetItemRectMin();
+      const ImVec2 c(min.x + size * 0.5f, min.y + size * 0.5f);
+      ImDrawList* const draw = ImGui::GetWindowDrawList();
+      const ImU32 ink =
+        ImGui::GetColorU32(ImGui::IsItemHovered() ? ImGuiCol_Text : (hidden ? ImGuiCol_TextDisabled : ImGuiCol_Text));
+      const float w = size * 0.34f;
+      const float h = size * 0.2f;
+      draw->PathArcTo(ImVec2(c.x, c.y + h * 1.6f), w * 1.25f, -IM_PI * 0.78f, -IM_PI * 0.22f, 10);
+      draw->PathArcTo(ImVec2(c.x, c.y - h * 1.6f), w * 1.25f, IM_PI * 0.22f, IM_PI * 0.78f, 10);
+      draw->PathStroke(ink, ImDrawFlags_Closed, 1.4f);
+      draw->AddCircleFilled(c, h * 0.75f, ink);
+      if (hidden) {
+        draw->AddLine(ImVec2(c.x - w, c.y + w * 0.8f), ImVec2(c.x + w, c.y - w * 0.8f), ink, 1.6f);
+      }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        EdSetTooltip(
+          hidden ? "Hidden in the view (not drawn, not picked). Click to show." : "Shown in the view. Click to hide."
+        );
+      }
+      return clicked;
+    }
+
+    /** "Evergreen2 · grass005" from "/env/evergreen2/layers/evgrass005_albedo.dds". */
+    std::string ReadableLayer(
+      const std::string& path
+    )
+    {
+      std::string biome;
+      const std::size_t env = path.find("/env/");
+      if (env != std::string::npos) {
+        const std::size_t end = path.find('/', env + 5);
+        biome = path.substr(env + 5, end == std::string::npos ? std::string::npos : end - env - 5);
+        if (!biome.empty()) {
+          biome[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(biome[0])));
+        }
+      }
+      const std::string name = LayerTextureName(path);
+      return biome.empty() ? name : biome + "  \xC2\xB7  " + name;
+    }
+
+    std::string FileName(
+      const std::string& path
+    )
+    {
+      const std::size_t slash = path.find_last_of('/');
+      return slash == std::string::npos ? path : path.substr(slash + 1);
+    }
+  } // namespace
+
+  void EdShell::DrawMapInfoFields()
+  {
+    if (!ImGui::TreeNode("Edit map info")) {
+      return;
+    }
+    ImGui::PushID("mapinfo");
+    for (const ScenarioField& field : ScenarioFields()) {
+      ImGui::PushID(field.key);
+      std::string now;
+      const bool has = ReadScenarioField(mDocument.Scenario(), field.key, now);
+      if (std::string(field.key) == "name" || std::string(field.key) == "description") {
+        now = WithoutLoc(now); // (an edit drops the localisation tag: the text as written shows)
+      }
+      // The field shows the scenario's value, or what is being typed.
+      const auto typing = mInfoEdits.find(field.key);
+      std::string& text = typing != mInfoEdits.end() ? typing->second : mInfoEdits[field.key];
+      if (typing == mInfoEdits.end()) {
+        text = has ? now : std::string();
+      }
+      RowLabel(field.label);
+      ImGui::SetNextItemWidth(-1.0f);
+      char buffer[1024];
+      std::snprintf(buffer, sizeof(buffer), "%s", text.c_str());
+      bool edited = false;
+      if (std::string(field.key) == "type") {
+        static const char* const kTypes[] = {"skirmish", "campaign_coop", "campaign"};
+        if (EdBeginCombo("##v", text.empty() ? "(none)" : text.c_str())) {
+          for (const char* type : kTypes) {
+            if (ImGui::Selectable(type, text == type)) {
+              (void)mDocument.SetScenarioField(field.key, type, true);
+            }
+          }
+          ImGui::EndCombo();
+        }
+        mInfoEdits.erase(field.key);
+      } else if (std::string(field.key) == "description") {
+        edited =
+          ImGui::InputTextMultiline("##v", buffer, sizeof(buffer), ImVec2(-1.0f, ImGui::GetTextLineHeight() * 4.0f));
+      } else {
+        const ImGuiInputTextFlags flags = field.text ? 0 : ImGuiInputTextFlags_CharsDecimal;
+        edited = ImGui::InputText("##v", buffer, sizeof(buffer), flags);
+      }
+      if (edited) {
+        text = buffer;
+      }
+      // One undo step when the field is left after typing; until then the scenario keeps its value.
+      if (ImGui::IsItemDeactivatedAfterEdit()) {
+        if (!(text.empty() && !field.text)) {
+          (void)mDocument.SetScenarioField(field.key, text, field.text);
+        }
+        mInfoEdits.erase(field.key);
+      } else if (!ImGui::IsItemActive()) {
+        mInfoEdits.erase(field.key);
+      }
+      ImGui::PopID();
+    }
+    // `starts` (FAF Studio's "armies start on starts"): each army begins at its ARMY_n marker; false lets the
+    // game's script place them (a few campaign-style maps).
+    {
+      std::string starts;
+      const bool has = ReadScenarioField(mDocument.Scenario(), "starts", starts);
+      bool on = !has || starts != "false";
+      RowLabel("Starts");
+      if (ImGui::Checkbox("Armies start on their start markers##starts", &on)) {
+        (void)mDocument.SetScenarioField("starts", on ? "true" : "false", false);
+      }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        EdSetTooltip("ScenarioInfo.starts: each army begins at its ARMY_n marker (on for skirmish maps)");
+      }
+    }
+    // The lobby slots' factions: what each start slot offers in FAF's lobby.
+    {
+      const std::size_t slots =
+        mDocument.Teams().empty() ? mDocument.Armies().size() : mDocument.Teams().front().armies.size();
+      SlotFactions factions = ReadSlotFactions(mDocument.Scenario());
+      ImGui::SeparatorText("Lobby slots' factions");
+      static const char* const kNames[] = {"UEF", "Aeon", "Cybran", "Seraphim"};
+      bool changed = false;
+      if (ImGui::BeginTable("##slotfactions", 5, ImGuiTableFlags_SizingStretchSame)) {
+        for (std::size_t slot = 0; slot < slots; ++slot) {
+          ImGui::PushID(static_cast<int>(slot));
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::Text("Slot %zu", slot + 1);
+          std::vector<std::string> offered =
+            slot < factions.size() && !factions[slot].empty() ? factions[slot] : FactionKeys();
+          for (std::size_t f = 0; f < FactionKeys().size(); ++f) {
+            ImGui::TableNextColumn();
+            bool on = std::find(offered.begin(), offered.end(), FactionKeys()[f]) != offered.end();
+            if (ImGui::Checkbox(kNames[f], &on)) {
+              if (factions.size() < slots) {
+                factions.resize(slots);
+              }
+              std::vector<std::string> next;
+              for (std::size_t k = 0; k < FactionKeys().size(); ++k) {
+                const bool keep =
+                  k == f ? on : std::find(offered.begin(), offered.end(), FactionKeys()[k]) != offered.end();
+                if (keep) {
+                  next.push_back(FactionKeys()[k]);
+                }
+              }
+              factions[slot] = next.empty() ? std::vector<std::string>{FactionKeys()[f]} : next; // at least one
+              changed = true;
+            }
+          }
+          ImGui::PopID();
+        }
+        ImGui::EndTable();
+      }
+      if (changed) {
+        (void)mDocument.SetSlotFactions(factions);
+      }
+    }
+    ImGui::TextDisabled("Each change is an undo step (\"map info\"); Save writes it to the scenario.");
+    ImGui::PopID();
+    ImGui::TreePop();
+  }
+
+  void EdShell::DrawInfoPanel()
+  {
+    // A layout saved before this panel existed has no place for it: it goes beside the Map panel.
+    if (const ImGuiWindow* const map = ImGui::FindWindowByName(Panel(kMapWindow)); map != nullptr && map->DockId != 0) {
+      ImGui::SetNextWindowDockID(map->DockId, ImGuiCond_FirstUseEver);
+    }
+    // A map that starts opening (the Map panel's button, `/open`) brings this tab to the front once, after the
+    // first frames: on those the saved layout picks each dock's front tab and would override it. Not where the
+    // Layers panel shows (Terrain): the layers stay in front there, as the mockup has them.
+    if (!mDocument.Path().empty() && mDocument.Path() != mInfoShownFor && ImGui::GetFrameCount() > 3) {
+      mInfoShownFor = mDocument.Path();
+      mShowInfo = true;
+      if (!mShowLayers) {
+        ImGui::SetNextWindowFocus();
+      }
+    }
+    if (!ImGui::Begin(Panel(kInfoWindow), &mShowInfo)) {
+      ImGui::End();
+      return;
+    }
+    switch (mDocument.GetState()) {
+    case EdDocument::State::Empty:
+      HelpNote("No map open. Double-click one in the Map panel, or pick it and press Open.");
+      ImGui::End();
+      return;
+    case EdDocument::State::Loading:
+      ImGui::Text("Opening %s ...", MapDisplayName(mDocument.Path()).c_str());
+      ImGui::End();
+      return;
+    case EdDocument::State::Failed:
+      ImGui::TextColored(
+        ImVec4(0.95f, 0.45f, 0.40f, 1.0f), "%s did not open", MapDisplayName(mDocument.Path()).c_str()
+      );
+      ImGui::TextWrapped("%s", mDocument.Error().c_str());
+      ImGui::End();
+      return;
+    case EdDocument::State::Open:
+      break;
+    }
+
+    const MapFacts& facts = mDocument.Facts();
+    // The title, larger, and where it comes from.
+    ImGui::PushFont(nullptr, ImGui::GetFontSize() * 1.35f);
+    ImGui::TextWrapped("%s", facts.name.empty() ? MapDisplayName(facts.scenarioPath).c_str() : facts.name.c_str());
+    ImGui::PopFont();
+    if (facts.mapVersion > 0) {
+      ImGui::TextDisabled(
+        "%s  \xC2\xB7  version %d  \xC2\xB7  opened in %.2f s",
+        MapDisplayName(facts.scenarioPath).c_str(),
+        facts.mapVersion,
+        facts.loadSeconds
+      );
+    } else {
+      ImGui::TextDisabled(
+        "%s  \xC2\xB7  opened in %.2f s", MapDisplayName(facts.scenarioPath).c_str(), facts.loadSeconds
+      );
+    }
+    if (!mDocument.Error().empty()) {
+      ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.30f, 1.0f), "%s", mDocument.Error().c_str());
+    }
+    DrawMapInfoFields();
+
+    // What kind of map, as chips.
+    ImGui::Spacing();
+    {
+      std::vector<std::string> chips;
+      char text[96];
+      (void)std::snprintf(text, sizeof(text), "%.0f x %.0f km", facts.sizeX / 51.2, facts.sizeZ / 51.2);
+      chips.emplace_back(text);
+      if (!facts.type.empty()) {
+        chips.push_back(facts.type);
+      }
+      const std::vector<std::string> armies = mDocument.Armies();
+      (void)std::snprintf(text, sizeof(text), "%zu players", armies.size());
+      chips.emplace_back(text);
+      if (facts.water) {
+        (void)std::snprintf(text, sizeof(text), "water at %.1f", static_cast<double>(facts.waterElevation));
+      } else {
+        (void)std::snprintf(text, sizeof(text), "no water");
+      }
+      chips.emplace_back(text);
+      static constexpr const char* kSymmetryNames[] = {
+        "no symmetry",
+        "left-right",
+        "top-bottom",
+        "diagonal \\",
+        "diagonal /",
+        "half turn",
+        "both axes",
+        "both diagonals",
+        "quarter turns",
+        "n-way"
+      };
+      if (facts.symmetry.symmetry == Symmetry::NWay) {
+        (void)std::snprintf(text, sizeof(text), "%d-way turn", facts.symmetry.turns);
+        chips.emplace_back(text);
+      } else {
+        chips.emplace_back(kSymmetryNames[static_cast<int>(facts.symmetry.symmetry)]);
+      }
+      Chips(chips);
+    }
+    if (!facts.description.empty()) {
+      ImGui::Spacing();
+      ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+      ImGui::TextWrapped("%s", facts.description.c_str());
+      ImGui::PopStyleColor();
+    }
+
+    // The counts as cards: the number large, what it counts under it.
+    ImGui::Spacing();
+    {
+      const int markers = static_cast<int>(mDocument.SaveData().Markers().size());
+      const std::array<std::pair<const char*, int>, 4> cards = {
+        {{"props", facts.props},
+         {"decals", facts.decals},
+         {"markers", markers > 0 ? markers : facts.markerCount},
+         {"armies", static_cast<int>(mDocument.Armies().size())}}
+      };
+      const float gap = ImGui::GetStyle().ItemSpacing.x;
+      const int columns = ImGui::GetContentRegionAvail().x > 360.0f ? 4 : 2;
+      const float width =
+        (ImGui::GetContentRegionAvail().x - gap * static_cast<float>(columns - 1)) / static_cast<float>(columns);
+      const float big = ImGui::GetFontSize() * 1.5f;
+      const float height = big + ImGui::GetFontSize() + 14.0f;
+      for (std::size_t i = 0; i < cards.size(); ++i) {
+        if (i % static_cast<std::size_t>(columns) != 0) {
+          ImGui::SameLine();
+        }
+        ImGui::Dummy(ImVec2(width, height));
+        const ImVec2 min = ImGui::GetItemRectMin();
+        ImDrawList* const draw = ImGui::GetWindowDrawList();
+        draw->AddRectFilled(min, ImVec2(min.x + width, min.y + height), SurfaceU32(), 6.0f);
+        draw->AddRect(min, ImVec2(min.x + width, min.y + height), LineU32(), 6.0f);
+        char number[32];
+        (void)std::snprintf(number, sizeof(number), "%d", cards[i].second);
+        draw->AddText(
+          ImGui::GetFont(), big, ImVec2(min.x + 10.0f, min.y + 6.0f), ImGui::GetColorU32(ImGuiCol_Text), number
+        );
+        draw->AddText(
+          ImVec2(min.x + 10.0f, min.y + 8.0f + big), ImGui::GetColorU32(ImGuiCol_TextDisabled), cards[i].first
+        );
+      }
+    }
+
+    // Terrain: shader, height field, and the layers with their thumbnails.
+    ImGui::Spacing();
+    ImGui::SeparatorText("Terrain");
+    ImGui::TextDisabled("Shader");
+    ImGui::SameLine(Em(110.0f));
+    ImGui::TextUnformatted(facts.terrainShader.c_str());
+    ImGui::TextDisabled("Height field");
+    ImGui::SameLine(Em(110.0f));
+    ImGui::Text("%d x %d samples", facts.fieldWidth, facts.fieldHeight);
+    ImGui::Spacing();
+    {
+      static constexpr const char* kSlots[] = {"Lower", "1", "2", "3", "4", "5", "6", "7", "8", "Upper"};
+      EdTextureLibrary& library = mTools.Library();
+      library.Pump(2);
+      const float thumb = ImGui::GetFrameHeight() * 1.5f;
+      int empty = 0;
+      for (std::size_t i = 0; i < facts.layers.size() && i < std::size(kSlots); ++i) {
+        if (facts.layers[i].empty()) {
+          ++empty;
+          continue;
+        }
+        ImGui::PushID(static_cast<int>(i));
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        if (const std::uint64_t image = library.Thumbnail(facts.layers[i]); image != 0U) {
+          ImGui::Image(static_cast<ImTextureID>(image), ImVec2(thumb, thumb));
+        } else {
+          ImGui::Dummy(ImVec2(thumb, thumb));
+          ImGui::GetWindowDrawList()->AddRectFilled(at, ImVec2(at.x + thumb, at.y + thumb), ChipU32(), 3.0f);
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+          EdSetTooltip("%s", facts.layers[i].c_str());
+        }
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::Dummy(ImVec2(0.0f, (thumb - ImGui::GetTextLineHeight() * 2.0f) * 0.25f));
+        ImGui::TextUnformatted(ReadableLayer(facts.layers[i]).c_str());
+        ImGui::TextDisabled(i == 0 ? "lower layer" : (i == 9 ? "upper layer" : "stratum %s"), kSlots[i]);
+        ImGui::EndGroup();
+        ImGui::PopID();
+      }
+      if (empty > 0) {
+        ImGui::TextDisabled("%d empty slot%s", empty, empty == 1 ? "" : "s");
+      }
+    }
+
+    // Armies: the players, then the extra (neutral, civilian) armies dimmer.
+    ImGui::Spacing();
+    ImGui::SeparatorText("Armies");
+    Chips(mDocument.Armies(), IM_COL32(90, 170, 110, 90));
+    if (const std::vector<std::string> extra = mDocument.ExtraArmies(); !extra.empty()) {
+      Chips(extra, ChipU32(), ImGui::GetColorU32(ImGuiCol_TextDisabled));
+    }
+
+    // Markers: the kinds and their counts, with the tree in its own panel.
+    ImGui::Spacing();
+    ImGui::SeparatorText("Markers");
+    {
+      std::array<int, kMarkerGroupCount> counts{};
+      for (const SaveEntry& marker : mDocument.SaveData().Markers()) {
+        ++counts[static_cast<std::size_t>(MarkerGroupOf(marker))];
+      }
+      std::vector<std::string> chips;
+      for (int g = 0; g < kMarkerGroupCount; ++g) {
+        if (counts[static_cast<std::size_t>(g)] > 0) {
+          chips.push_back(
+            std::to_string(counts[static_cast<std::size_t>(g)]) + "  " + MarkerGroupName(static_cast<MarkerGroup>(g))
+          );
+        }
+      }
+      Chips(chips);
+      if (ImGui::SmallButton("Show the Markers panel")) {
+        mShowMarkers = true;
+        mFocusMarkers = true;
+      }
+    }
+
+    // Files: the name, the full path on hover.
+    ImGui::Spacing();
+    ImGui::SeparatorText("Files");
+    for (const std::string* const path : {&facts.scenarioPath, &facts.mapPath, &facts.savePath, &facts.scriptPath}) {
+      if (path->empty()) {
+        continue;
+      }
+      ImGui::TextUnformatted(FileName(*path).c_str());
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        EdSetTooltip("%s", path->c_str());
+      }
+    }
+    ImGui::TextDisabled("in %s", MapDisplayName(facts.scenarioPath).c_str());
+    ImGui::End();
+  }
+
+  void EdShell::DrawMarkersPanel()
+  {
+    // Docked with the Map and Info panels in a layout saved before it existed.
+    if (const ImGuiWindow* const map = ImGui::FindWindowByName(Panel(kMapWindow)); map != nullptr && map->DockId != 0) {
+      ImGui::SetNextWindowDockID(map->DockId, ImGuiCond_FirstUseEver);
+    }
+    if (mFocusMarkers) {
+      mFocusMarkers = false;
+      ImGui::SetNextWindowFocus();
+    }
+    if (!ImGui::Begin(Panel(kMarkersWindow), &mShowMarkers)) {
+      ImGui::End();
+      return;
+    }
+    if (mDocument.GetState() != EdDocument::State::Open) {
+      ImGui::TextDisabled("No map open.");
+      ImGui::End();
+      return;
+    }
+    const std::vector<SaveEntry>& markers = mDocument.SaveData().Markers();
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputTextWithHint("##markerfilter", "Filter by name or type", mMarkerFilter, sizeof(mMarkerFilter));
+
+    DrawChains();
+    DrawAreasSection();
+
+    // Group, then type, then the markers in the save's order.
+    std::array<std::map<std::string, std::vector<std::size_t>>, kMarkerGroupCount> tree;
+    for (std::size_t i = 0; i < markers.size(); ++i) {
+      const std::string type = MarkerTypeOf(markers[i]);
+      if (
+        mMarkerFilter[0] != '\0' && ImStristr(markers[i].name.c_str(), nullptr, mMarkerFilter, nullptr) == nullptr &&
+        ImStristr(type.c_str(), nullptr, mMarkerFilter, nullptr) == nullptr
+      ) {
+        continue;
+      }
+      tree[static_cast<std::size_t>(MarkerGroupOf(markers[i]))][type].push_back(i);
+    }
+    std::vector<std::string> selected;
+    for (const SaveEntry& marker : mTools.MarkerSelection()) {
+      selected.push_back(marker.name);
+    }
+    std::set<std::string>& hidden = mTools.HiddenMarkerTypes();
+    const bool filtering = mMarkerFilter[0] != '\0';
+    const ImGuiIO& io = ImGui::GetIO();
+
+    ImGui::BeginChild("##markertree", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
+    for (int g = 0; g < kMarkerGroupCount; ++g) {
+      const auto& types = tree[static_cast<std::size_t>(g)];
+      if (types.empty()) {
+        continue;
+      }
+      std::size_t count = 0;
+      for (const auto& [type, list] : types) {
+        count += list.size();
+      }
+      const char* const groupName = MarkerGroupName(static_cast<MarkerGroup>(g));
+      ImGui::PushID(g);
+      if (filtering) {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+      }
+      const bool groupOpen = ImGui::TreeNodeEx(
+        "##group",
+        ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_SpanAvailWidth | (g == 0 ? ImGuiTreeNodeFlags_DefaultOpen : 0),
+        "%s",
+        groupName
+      );
+      // The count at the header's right.
+      {
+        char text[16];
+        (void)std::snprintf(text, sizeof(text), "%zu", count);
+        const ImVec2 max = ImGui::GetItemRectMax();
+        const ImVec2 size = ImGui::CalcTextSize(text);
+        ImGui::GetWindowDrawList()->AddText(
+          ImVec2(max.x - size.x - 10.0f, ImGui::GetItemRectMin().y + ImGui::GetStyle().FramePadding.y),
+          ImGui::GetColorU32(ImGuiCol_TextDisabled),
+          text
+        );
+      }
+      if (groupOpen) {
+        for (const auto& [type, list] : types) {
+          ImGui::PushID(type.c_str());
+          const bool typeHidden = hidden.count(type) != 0;
+          // A type row: its eye, its colour, its name and count; open it for the markers.
+          if (EyeButton("##eye", typeHidden)) {
+            if (typeHidden) {
+              hidden.erase(type);
+            } else {
+              hidden.insert(type);
+            }
+          }
+          ImGui::SameLine(0.0f, 2.0f);
+          const ImVec2 swatch = ImGui::GetCursorScreenPos();
+          ImGui::Dummy(ImVec2(ImGui::GetFrameHeight() * 0.7f, ImGui::GetFrameHeight()));
+          Diamond(
+            ImGui::GetWindowDrawList(),
+            ImVec2(swatch.x + ImGui::GetFrameHeight() * 0.3f, swatch.y + ImGui::GetFrameHeight() * 0.5f),
+            ImGui::GetFrameHeight() * 0.22f,
+            FromArgb(MarkerColor(markers[list.front()]))
+          );
+          ImGui::SameLine(0.0f, 2.0f);
+          ImGui::AlignTextToFramePadding();
+          if (filtering) {
+            ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+          }
+          // The save's type, but start positions by what they are.
+          const char* const label = type == "Blank Marker" ? "Start position" : type.c_str();
+          const bool typeOpen = ImGui::TreeNodeEx(
+            "##type",
+            ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow |
+              (types.size() == 1 ? ImGuiTreeNodeFlags_DefaultOpen : 0),
+            "%s  (%zu)",
+            label,
+            list.size()
+          );
+          // A click on the type's name selects all its markers.
+          if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+            std::vector<std::string> names;
+            for (const std::size_t i : list) {
+              names.push_back(markers[i].name);
+            }
+            mTools.AskMarkerSelect(std::move(names), io.KeyCtrl);
+          }
+          if (typeOpen) {
+            for (const std::size_t i : list) {
+              const SaveEntry& marker = markers[i];
+              const bool isSelected = std::find(selected.begin(), selected.end(), marker.name) != selected.end();
+              ImGui::PushID(static_cast<int>(i));
+              const ImVec2 row = ImGui::GetCursorScreenPos();
+              if (
+                ImGui::Selectable(
+                  "##marker", isSelected, ImGuiSelectableFlags_AllowDoubleClick | ImGuiSelectableFlags_SpanAvailWidth
+                )
+              ) {
+                mTools.AskMarkerSelect({marker.name}, io.KeyCtrl);
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                  mTools.AskMarkerFrame(marker.name);
+                }
+              }
+              if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                EdSetTooltip(
+                  "%s\nClick selects (Ctrl adds), double-click goes to it, right-click for more", marker.name.c_str()
+                );
+              }
+              // The row's menu (FAF Studio's list context menus): select, go to, copy the name, delete.
+              if (ImGui::BeginPopupContextItem("##markermenu")) {
+                if (ImGui::MenuItem("Select")) {
+                  mTools.AskMarkerSelect({marker.name}, false);
+                }
+                if (ImGui::MenuItem("Add to the selection")) {
+                  mTools.AskMarkerSelect({marker.name}, true);
+                }
+                if (ImGui::MenuItem("Go to it")) {
+                  mTools.AskMarkerFrame(marker.name);
+                }
+                if (ImGui::MenuItem("Copy its name")) {
+                  ImGui::SetClipboardText(marker.name.c_str());
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Delete", nullptr, false, mCommands != nullptr)) {
+                  mTools.AskMarkerSelect({marker.name}, false);
+                  mDeleteAsked = true;
+                  mDeleteWait = 2;
+                }
+                ImGui::EndPopup();
+              }
+              ImDrawList* const draw = ImGui::GetWindowDrawList();
+              const float line = ImGui::GetTextLineHeight();
+              Diamond(
+                draw,
+                ImVec2(row.x + line * 0.45f, row.y + line * 0.5f),
+                line * 0.28f,
+                FromArgb(MarkerColor(marker)),
+                !typeHidden
+              );
+              draw->AddText(
+                ImVec2(row.x + line * 1.2f, row.y),
+                isSelected ? AccentU32() : ImGui::GetColorU32(ImGuiCol_Text),
+                marker.name.c_str()
+              );
+              float x = 0.0f, y = 0.0f, z = 0.0f;
+              if (MarkerPosition(marker, x, y, z)) {
+                char where[48];
+                (void)std::snprintf(where, sizeof(where), "%.0f, %.0f", static_cast<double>(x), static_cast<double>(z));
+                const float width = ImGui::CalcTextSize(where).x;
+                draw->AddText(
+                  ImVec2(ImGui::GetItemRectMax().x - width - 6.0f, row.y),
+                  ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                  where
+                );
+              }
+              ImGui::PopID();
+            }
+            ImGui::TreePop();
+          }
+          ImGui::PopID();
+        }
+        ImGui::TreePop();
+      }
+      ImGui::PopID();
+    }
+    ImGui::EndChild();
+    ImGui::End();
+  }
+  void EdShell::DrawAreasSection()
+  {
+    if (mDocument.Map() != nullptr) {
+      mTools.DrawAreas(mDocument);
+    }
+  }
+
+  void EdShell::DrawChains()
+  {
+    std::vector<MarkerChain>& chains = mDocument.SaveData().Chains();
+    char header[64];
+    (void)std::snprintf(header, sizeof(header), "Chains (%zu)###chains", chains.size());
+    if (!Section(header, false)) {
+      return;
+    }
+    // Each change is one undo step: the save as it was, the change, then the step.
+    const auto change = [this](const std::function<void(std::vector<MarkerChain>&)>& edit, const char* const what) {
+      EdDocument::SaveSnapshot before = mDocument.SaveDataNow();
+      edit(mDocument.SaveData().Chains());
+      if (before.chains != mDocument.SaveData().Chains()) {
+        mDocument.SaveDataEdited(std::move(before));
+        gpg::Logf("editor: chains: %s (%zu chains)", what, mDocument.SaveData().Chains().size());
+      }
+    };
+    std::vector<std::string> selected;
+    for (const SaveEntry& marker : mTools.MarkerSelection()) {
+      selected.push_back(marker.name);
+    }
+    for (std::size_t c = 0; c < chains.size(); ++c) {
+      ImGui::PushID(static_cast<int>(c));
+      const bool open = ImGui::TreeNodeEx(
+        "##chain", ImGuiTreeNodeFlags_SpanAvailWidth, "%s  (%zu)", chains[c].name.c_str(), chains[c].markers.size()
+      );
+      if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        mTools.AskMarkerSelect(chains[c].markers, ImGui::GetIO().KeyCtrl);
+      }
+      if (open) {
+        for (std::size_t m = 0; m < chains[c].markers.size(); ++m) {
+          ImGui::PushID(static_cast<int>(m));
+          ImGui::Text("%zu  %s", m + 1, chains[c].markers[m].c_str());
+          const float buttons = ImGui::GetFrameHeight() * 3.0f + ImGui::GetStyle().ItemSpacing.x * 2.0f;
+          ImGui::SameLine(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - buttons);
+          ImGui::BeginDisabled(m == 0);
+          if (ImGui::ArrowButton("##up", ImGuiDir_Up)) {
+            change([&](std::vector<MarkerChain>& all) {
+              std::swap(all[c].markers[m], all[c].markers[m - 1]);
+            }, "a marker moved up");
+          }
+          ImGui::EndDisabled();
+          ImGui::SameLine();
+          ImGui::BeginDisabled(m + 1 == chains[c].markers.size());
+          if (ImGui::ArrowButton("##down", ImGuiDir_Down)) {
+            change([&](std::vector<MarkerChain>& all) {
+              std::swap(all[c].markers[m], all[c].markers[m + 1]);
+            }, "a marker moved down");
+          }
+          ImGui::EndDisabled();
+          ImGui::SameLine();
+          if (ImGui::Button("x", ImVec2(ImGui::GetFrameHeight(), 0.0f))) {
+            change([&](std::vector<MarkerChain>& all) {
+              all[c].markers.erase(all[c].markers.begin() + static_cast<std::ptrdiff_t>(m));
+            }, "a marker taken out");
+          }
+          ImGui::PopID();
+          if (c >= chains.size() || m >= chains[c].markers.size()) {
+            break;
+          }
+        }
+        ImGui::BeginDisabled(selected.empty());
+        if (ImGui::SmallButton("Add the selected")) {
+          change([&](std::vector<MarkerChain>& all) {
+            for (const std::string& name : selected) {
+              if (std::find(all[c].markers.begin(), all[c].markers.end(), name) == all[c].markers.end()) {
+                all[c].markers.push_back(name);
+              }
+            }
+          }, "markers added");
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Delete chain")) {
+          change([&](std::vector<MarkerChain>& all) {
+            all.erase(all.begin() + static_cast<std::ptrdiff_t>(c));
+          }, "a chain deleted");
+          ImGui::TreePop();
+          ImGui::PopID();
+          break;
+        }
+        char name[128];
+        (void)std::snprintf(name, sizeof(name), "%s", chains[c].name.c_str());
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::InputText("##rename", name, sizeof(name), ImGuiInputTextFlags_EnterReturnsTrue) && name[0] != '\0') {
+          const std::string wanted = name;
+          const bool taken = std::any_of(chains.begin(), chains.end(), [&](const MarkerChain& other) {
+            return other.name == wanted;
+          });
+          if (!taken) {
+            change([&](std::vector<MarkerChain>& all) {
+              all[c].name = wanted;
+            }, "a chain renamed");
+          }
+        }
+        ImGui::TreePop();
+      }
+      ImGui::PopID();
+    }
+    // A new chain, from the selected markers in their selection order.
+    ImGui::SetNextItemWidth(
+      ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("New chain").x - ImGui::GetStyle().FramePadding.x * 4.0f
+    );
+    ImGui::InputTextWithHint("##newchain", "chain name", mNewChainName, sizeof(mNewChainName));
+    ImGui::SameLine();
+    const std::string wanted = mNewChainName;
+    const bool taken = std::any_of(chains.begin(), chains.end(), [&](const MarkerChain& other) {
+      return other.name == wanted;
+    });
+    ImGui::BeginDisabled(wanted.empty() || taken);
+    if (ImGui::Button("New chain")) {
+      change([&](std::vector<MarkerChain>& all) {
+        all.push_back({wanted, selected});
+      }, "a chain made");
+      mNewChainName[0] = '\0';
+    }
+    ImGui::EndDisabled();
+    HelpNote(
+      "A chain is a route scripts and the AI follow (Naval_Chain_Left on Seton's Clutch). A new one takes the selected "
+      "markers; a click on a chain selects its markers. Renaming or deleting a marker updates the chains."
+    );
+    ImGui::Separator();
+  }
+
+  namespace
+  {
+    float CheckGround(
+      const void* const context,
+      const float x,
+      const float z
+    )
+    {
+      auto* const terrain = const_cast<moho::IWldTerrainRes*>(static_cast<const moho::IWldTerrainRes*>(context));
+      return terrain->GetHeightAt(static_cast<std::int32_t>(std::lround(x)), static_cast<std::int32_t>(std::lround(z)));
+    }
+  } // namespace
+
+  void EdShell::CheckPathing(
+    const MarkerCheckInput& input
+  )
+  {
+    moho::CWldMap* const map = mDocument.Map();
+    const moho::CHeightField* const field =
+      map != nullptr && map->mTerrainRes != nullptr ? map->mTerrainRes->GetHeightField() : nullptr;
+    if (field == nullptr) {
+      return;
+    }
+    // The units' footprints from their blueprints (a T1 tank and a T1 frigate; fallbacks when the rules lack them).
+    const auto footprintOf = [](const char* const unitId, PathFootprint fallback) {
+      const char* from = "a fallback: the rules aren't built yet or lack it";
+      if (moho::RRuleGameRules* const rules = moho::RULE_PeekKept(); rules != nullptr) {
+        moho::RResId id{};
+        id.name.assign(unitId);
+        if (
+          const moho::RUnitBlueprint* const blueprint = rules->GetUnitBlueprint(id);
+          blueprint != nullptr && blueprint->Physics.ResolvedFootprint != nullptr
+        ) {
+          const moho::SFootprint& footprint = *blueprint->Physics.ResolvedFootprint;
+          fallback.caps = static_cast<std::uint8_t>(footprint.mOccupancyCaps);
+          fallback.maxSlope = footprint.mMaxSlope;
+          fallback.minWaterDepth = footprint.mMinWaterDepth;
+          fallback.maxWaterDepth = footprint.mMaxWaterDepth;
+          from = "its blueprint";
+        }
+      }
+      gpg::Logf(
+        "editor: pathing as %s (%s): caps 0x%02x, max slope %.2f, water depth %.2f to %.2f",
+        unitId,
+        from,
+        fallback.caps,
+        static_cast<double>(fallback.maxSlope),
+        static_cast<double>(fallback.minWaterDepth),
+        static_cast<double>(fallback.maxWaterDepth)
+      );
+      return fallback;
+    };
+    const char* const unitId = "uel0201";
+    const char* const shipId = "ues0103";
+    const PathFootprint land = footprintOf(unitId, PathFootprint{0x1, 0.75f, 0.0f, 0.0f});
+    const PathFootprint ship = footprintOf(shipId, PathFootprint{0x8, 0.0f, 1.5f, 0.0f});
+    const int cellsX = field->width - 1;
+    const int cellsZ = field->height - 1;
+    const std::vector<std::uint8_t> cells =
+      PassableCells(field->data, field->width, field->height, input.water, input.waterLevel, land);
+    std::vector<int> areas;
+    const int areaCount = ConnectAreas(cells, cellsX, cellsZ, areas);
+
+    // Each start's land area, and the resources reached in it.
+    struct Start
+    {
+      const SaveEntry* marker;
+      float x;
+      float z;
+      int area;
+      int mass;
+      int hydro;
+    };
+    std::vector<Start> starts;
+    int massTotal = 0;
+    int hydroTotal = 0;
+    for (const SaveEntry& marker : *input.markers) {
+      const std::string type = MarkerTypeOf(marker);
+      float x = 0.0f, y = 0.0f, z = 0.0f;
+      if (!MarkerPosition(marker, x, y, z)) {
+        continue;
+      }
+      if (type == "Blank Marker") {
+        starts.push_back({&marker, x, z, AreaNear(areas, cellsX, cellsZ, x, z, 1), 0, 0});
+      }
+      massTotal += type == "Mass" ? 1 : 0;
+      hydroTotal += type == "Hydrocarbon" ? 1 : 0;
+    }
+    for (const SaveEntry& marker : *input.markers) {
+      const std::string type = MarkerTypeOf(marker);
+      float x = 0.0f, y = 0.0f, z = 0.0f;
+      if ((type != "Mass" && type != "Hydrocarbon") || !MarkerPosition(marker, x, y, z)) {
+        continue;
+      }
+      const int area = AreaNear(areas, cellsX, cellsZ, x, z, 3);
+      for (Start& start : starts) {
+        if (area != 0 && area == start.area) {
+          ++(type == "Mass" ? start.mass : start.hydro);
+        }
+      }
+    }
+    int bestMass = 0;
+    std::vector<int> startAreas;
+    for (const Start& start : starts) {
+      bestMass = std::max(bestMass, start.mass);
+      if (start.area != 0 && std::find(startAreas.begin(), startAreas.end(), start.area) == startAreas.end()) {
+        startAreas.push_back(start.area);
+      }
+    }
+    for (const Start& start : starts) {
+      CheckIssue issue;
+      issue.marker = start.marker->name;
+      issue.x = start.x;
+      issue.z = start.z;
+      if (start.area == 0) {
+        issue.level = CheckIssue::Level::Error;
+        issue.text = std::string("start position is on ground a ") + unitId + " can't stand on";
+        mCheckIssues.push_back(issue);
+        continue;
+      }
+      char text[200];
+      (void)std::snprintf(
+        text,
+        sizeof(text),
+        "reaches %d of %d mass and %d of %d hydrocarbon points by land%s",
+        start.mass,
+        massTotal,
+        start.hydro,
+        hydroTotal,
+        startAreas.size() > 1 ? " (the starts are on more than one land area)" : ""
+      );
+      issue.level = start.mass < bestMass ? CheckIssue::Level::Warning : CheckIssue::Level::Note;
+      issue.text = text;
+      mCheckIssues.push_back(issue);
+    }
+
+    // The terrain checks: steep ground in the base areas, uneven ground under the resources, and the land route
+    // length from the first start to the others on its ground.
+    {
+      const auto t0 = std::chrono::steady_clock::now();
+      field::Grid heights(field->width, field->height, 1.0f, 0.0f, 0.0f);
+      for (std::size_t k = 0; k < heights.v.size(); ++k) {
+        heights.v[k] = static_cast<float>(field->data[k]) / 128.0f;
+      }
+      std::vector<TerrainCheckPoint> points;
+      std::vector<TerrainCheckPoint> resources;
+      for (const Start& start : starts) {
+        points.push_back({start.marker->name, start.x, start.z});
+      }
+      for (const SaveEntry& marker : *input.markers) {
+        const std::string type = MarkerTypeOf(marker);
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        if ((type == "Mass" || type == "Hydrocarbon") && MarkerPosition(marker, x, y, z)) {
+          resources.push_back({marker.name, x, z});
+        }
+      }
+      TerrainCheckSettings settings;
+      settings.limit = land.maxSlope > 0.0f ? land.maxSlope : settings.limit;
+      std::size_t found = 0;
+      for (CheckIssue& issue : CheckTerrainGround(heights, points, resources, settings)) {
+        mCheckIssues.push_back(std::move(issue));
+        ++found;
+      }
+      const float water = input.water ? input.waterLevel : -1e9f;
+      for (CheckIssue& issue : CheckTerrainRoutes(heights, water, points, settings)) {
+        mCheckIssues.push_back(std::move(issue));
+        ++found;
+      }
+      gpg::Logf(
+        "editor: terrain checks: %zu starts, %zu resources, %zu findings in %.0f ms",
+        points.size(),
+        resources.size(),
+        found,
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()
+      );
+    }
+
+    // Naval: the ship water nearest each start (within 64 units), and whether the starts' waters meet.
+    const std::vector<std::uint8_t> shipCells =
+      PassableCells(field->data, field->width, field->height, input.water, input.waterLevel, ship);
+    std::vector<int> shipAreas;
+    const int shipAreaCount = ConnectAreas(shipCells, cellsX, cellsZ, shipAreas);
+    std::vector<int> startWaters;
+    std::vector<int> waterOfStart;
+    for (const Start& start : starts) {
+      const int water = AreaNear(shipAreas, cellsX, cellsZ, start.x, start.z, 64);
+      waterOfStart.push_back(water);
+      if (water != 0 && std::find(startWaters.begin(), startWaters.end(), water) == startWaters.end()) {
+        startWaters.push_back(water);
+      }
+    }
+    const std::size_t withWater =
+      static_cast<std::size_t>(std::count_if(waterOfStart.begin(), waterOfStart.end(), [](const int w) {
+      return w != 0;
+    }));
+    if (withWater > 0) {
+      for (std::size_t i = 0; i < starts.size(); ++i) {
+        CheckIssue issue;
+        issue.marker = starts[i].marker->name;
+        issue.x = starts[i].x;
+        issue.z = starts[i].z;
+        if (waterOfStart[i] == 0) {
+          issue.level = CheckIssue::Level::Warning;
+          issue.text = std::string("no water a ") + shipId + " can use within 64 units, while " +
+            std::to_string(withWater) + " of " + std::to_string(starts.size()) + " starts have some";
+        } else {
+          issue.level = startWaters.size() > 1 ? CheckIssue::Level::Warning : CheckIssue::Level::Note;
+          issue.text = std::string("has water a ") + shipId + " can use within 64 units" +
+            (startWaters.size() > 1
+               ? "; the starts' waters don't all meet (" + std::to_string(startWaters.size()) + " separate)"
+               : ", joined with the other starts'");
+        }
+        mCheckIssues.push_back(issue);
+      }
+    }
+
+    // The overlay: blocks of up to 256 a side, red where the land unit can't go, amber where it can but no start
+    // reaches.
+    const int block = std::max(1, (std::max(cellsX, cellsZ) + 255) / 256);
+    std::vector<EdTools::PathQuad> quads;
+    for (int bz = 0; bz < cellsZ; bz += block) {
+      for (int bx = 0; bx < cellsX; bx += block) {
+        int blocked = 0;
+        int lone = 0;
+        int total = 0;
+        for (int z = bz; z < std::min(bz + block, cellsZ); ++z) {
+          for (int x = bx; x < std::min(bx + block, cellsX); ++x) {
+            const int area =
+              areas[static_cast<std::size_t>(z) * static_cast<std::size_t>(cellsX) + static_cast<std::size_t>(x)];
+            ++total;
+            if (area == 0) {
+              ++blocked;
+            } else if (std::find(startAreas.begin(), startAreas.end(), area) == startAreas.end()) {
+              ++lone;
+            }
+          }
+        }
+        const float x0 = static_cast<float>(bx);
+        const float z0 = static_cast<float>(bz);
+        const float x1 = static_cast<float>(std::min(bx + block, cellsX));
+        const float z1 = static_cast<float>(std::min(bz + block, cellsZ));
+        if (blocked * 2 >= total) {
+          quads.push_back({x0, z0, x1, z1, 0x60FF3020u});
+        } else if (lone * 2 >= total) {
+          quads.push_back({x0, z0, x1, z1, 0x50FFB020u});
+        }
+      }
+    }
+    // Ships: blue where they can go in a start's water, purple where they can go but no start's ships get to.
+    std::vector<EdTools::PathQuad> shipQuads;
+    for (int bz = 0; bz < cellsZ; bz += block) {
+      for (int bx = 0; bx < cellsX; bx += block) {
+        int used = 0;
+        int lone = 0;
+        int total = 0;
+        for (int z = bz; z < std::min(bz + block, cellsZ); ++z) {
+          for (int x = bx; x < std::min(bx + block, cellsX); ++x) {
+            const int area =
+              shipAreas[static_cast<std::size_t>(z) * static_cast<std::size_t>(cellsX) + static_cast<std::size_t>(x)];
+            ++total;
+            if (area == 0) {
+              continue;
+            }
+            ++(std::find(startWaters.begin(), startWaters.end(), area) != startWaters.end() ? used : lone);
+          }
+        }
+        const float x0 = static_cast<float>(bx);
+        const float z0 = static_cast<float>(bz);
+        const float x1 = static_cast<float>(std::min(bx + block, cellsX));
+        const float z1 = static_cast<float>(std::min(bz + block, cellsZ));
+        if (used * 2 >= total) {
+          shipQuads.push_back({x0, z0, x1, z1, 0x503C8CFFu});
+        } else if (lone * 2 >= total) {
+          shipQuads.push_back({x0, z0, x1, z1, 0x50B048E0u});
+        }
+      }
+    }
+    // Hover (land and the water's surface) and amphibious (land and the sea bed) units, as FAF Studio's pathing
+    // shows them: how far each start gets with them, and their overlay layers (a T2 hover tank and an amphibious
+    // tank's footprints from the rules, fallbacks when they lack them).
+    {
+      const char* const hoverId = "uel0203";
+      const char* const amphibiousId = "url0203";
+      const PathFootprint hover = footprintOf(hoverId, PathFootprint{0x9, 0.75f, 0.0f, 0.0f});
+      const PathFootprint amphibious = footprintOf(amphibiousId, PathFootprint{0x3, 0.75f, 0.0f, 25.0f});
+      std::vector<EdTools::PathQuad> layers[2];
+      const PathFootprint* const kinds[2] = {&hover, &amphibious};
+      const char* const names[2] = {"hover", "amphibious"};
+      for (int k = 0; k < 2; ++k) {
+        const std::vector<std::uint8_t> kindCells =
+          PassableCells(field->data, field->width, field->height, input.water, input.waterLevel, *kinds[k]);
+        std::vector<int> kindAreas;
+        const int kindAreaCount = ConnectAreas(kindCells, cellsX, cellsZ, kindAreas);
+        std::vector<int> kindStarts;
+        int reached = 0;
+        for (const Start& start : starts) {
+          const int area = AreaNear(kindAreas, cellsX, cellsZ, start.x, start.z, 1);
+          if (area != 0 && std::find(kindStarts.begin(), kindStarts.end(), area) == kindStarts.end()) {
+            kindStarts.push_back(area);
+          }
+          for (const SaveEntry& marker : *input.markers) {
+            float x = 0.0f, y = 0.0f, z = 0.0f;
+            if (
+              MarkerTypeOf(marker) == "Mass" && MarkerPosition(marker, x, y, z) && area != 0 &&
+              AreaNear(kindAreas, cellsX, cellsZ, x, z, 3) == area
+            ) {
+              ++reached;
+            }
+          }
+        }
+        for (int bz = 0; bz < cellsZ; bz += block) {
+          for (int bx = 0; bx < cellsX; bx += block) {
+            int blocked = 0;
+            int lone = 0;
+            int total = 0;
+            for (int z = bz; z < std::min(bz + block, cellsZ); ++z) {
+              for (int x = bx; x < std::min(bx + block, cellsX); ++x) {
+                const int area = kindAreas
+                  [static_cast<std::size_t>(z) * static_cast<std::size_t>(cellsX) + static_cast<std::size_t>(x)];
+                ++total;
+                if (area == 0) {
+                  ++blocked;
+                } else if (std::find(kindStarts.begin(), kindStarts.end(), area) == kindStarts.end()) {
+                  ++lone;
+                }
+              }
+            }
+            const float x0 = static_cast<float>(bx);
+            const float z0 = static_cast<float>(bz);
+            const float x1 = static_cast<float>(std::min(bx + block, cellsX));
+            const float z1 = static_cast<float>(std::min(bz + block, cellsZ));
+            if (blocked * 2 >= total) {
+              layers[k].push_back({x0, z0, x1, z1, 0x60FF3020u});
+            } else if (lone * 2 >= total) {
+              layers[k].push_back({x0, z0, x1, z1, 0x50FFB020u});
+            }
+          }
+        }
+        gpg::Logf(
+          "editor: pathing: %d %s areas, starts on %zu of them, %d mass points reached from the starts in all",
+          kindAreaCount,
+          names[k],
+          kindStarts.size(),
+          reached
+        );
+        if (kindStarts.size() > 1) {
+          CheckIssue issue;
+          issue.level = CheckIssue::Level::Note;
+          issue.text = std::string("the starts are on ") + std::to_string(kindStarts.size()) + " separate " + names[k] +
+            " areas (a " + (k == 0 ? hoverId : amphibiousId) + " can't reach every start)";
+          mCheckIssues.push_back(issue);
+        }
+      }
+      mTools.SetPathingMore(std::move(layers[0]), std::move(layers[1]));
+    }
+    const std::size_t landBlocks = quads.size();
+    const std::size_t shipBlocks = shipQuads.size();
+    mTools.SetPathing(std::move(quads), std::move(shipQuads));
+    gpg::Logf(
+      "editor: pathing: %d land areas, starts on %zu of them; %d ship areas, %zu starts with ship water in %zu of "
+      "them; %zu land and %zu ship overlay "
+      "blocks of %d cells",
+      areaCount,
+      startAreas.size(),
+      shipAreaCount,
+      withWater,
+      startWaters.size(),
+      landBlocks,
+      shipBlocks,
+      block
+    );
+  }
+
+  void EdShell::AutoRecheck()
+  {
+    if (
+      !mCheckRan || mPlay.Active() || mDocument.GetState() != EdDocument::State::Open ||
+      mCheckedPath != mDocument.Path() || mDocument.EditCount() == mCheckedEdits
+    ) {
+      mRecheckAt = -1.0;
+      return;
+    }
+    const double now = ImGui::GetTime();
+    if (mRecheckAt < 0.0 || mRecheckEdits != mDocument.EditCount()) {
+      // Wait until the edits have rested a second (a run of strokes checks once).
+      mRecheckEdits = mDocument.EditCount();
+      mRecheckAt = now + 1.0;
+      return;
+    }
+    if (now >= mRecheckAt) {
+      mRecheckAt = -1.0;
+      RunCheck();
+    }
+  }
+
+  void EdShell::RunCheck()
+  {
+    mCheckIssues.clear();
+    mCheckRan = true;
+    mCheckedEdits = mDocument.EditCount();
+    mCheckedPath = mDocument.Path();
+    moho::CWldMap* const map = mDocument.Map();
+    if (map == nullptr || map->mTerrainRes == nullptr) {
+      return;
+    }
+    const MapFacts& facts = mDocument.Facts();
+    MarkerCheckInput input;
+    input.markers = &mDocument.SaveData().Markers();
+    if (const std::optional<EdDocument::PlayableRect> area = mDocument.PlayableArea()) {
+      input.playable = std::array<int, 4>{area->x0, area->z0, area->x1, area->z1};
+    }
+    input.water = facts.water;
+    input.waterLevel = facts.waterElevation;
+    input.groundAt = &CheckGround;
+    input.groundContext = map->mTerrainRes;
+    const HeightBrush brush = mTools.CurrentHeightBrush();
+    input.symmetry = brush.symmetry;
+    input.turns = brush.turns;
+    input.width = facts.fieldWidth;
+    input.height = facts.fieldHeight;
+    mCheckIssues = CheckMarkers(input);
+    // The map-wide checks: starts and armies both ways, mass count, the build grid, chains, prop blueprints, names.
+    {
+      MapBasicsInput basics;
+      basics.markers = input.markers;
+      basics.armies = mDocument.Armies();
+      basics.chains = &mDocument.SaveData().Chains();
+      basics.name = facts.name;
+      basics.description = facts.description;
+      if (map->mProps != nullptr && mTools.HasPropBlueprints()) {
+        std::set<std::string> asked;
+        for (const moho::CWldPropEntry& entry : map->mProps->mEntries) {
+          const std::string blueprint = entry.mBlueprintPath.c_str();
+          if (asked.insert(blueprint).second && mTools.PropBlueprintNamed(blueprint).empty()) {
+            basics.missingProps.push_back({blueprint, {entry.mTransform.pos_.x, entry.mTransform.pos_.z}});
+          }
+        }
+      }
+      for (CheckIssue& issue : CheckMapBasics(basics)) {
+        mCheckIssues.push_back(std::move(issue));
+      }
+    }
+    // The mission: missing names, variables read before they are set, a mission that never ends ...
+    if (!mDocument.MissionNow().Empty()) {
+      const LuaCompiles compiles = mDocument.MissionCompiler();
+      for (const MissionProblem& p : CheckMission(mDocument.MissionNow(), MissionFactsOf(mDocument), &compiles)) {
+        CheckIssue issue;
+        issue.level = p.level == 'E' ? CheckIssue::Level::Error
+          : p.level == 'W'           ? CheckIssue::Level::Warning
+                                     : CheckIssue::Level::Note;
+        issue.marker = p.stage > 0 ? "mission stage " + std::to_string(p.stage) : "mission";
+        issue.text = p.text;
+        mCheckIssues.push_back(std::move(issue));
+      }
+      MissionPatch patch = MissionPatch::None;
+      const std::string script = mDocument.ScriptWithMission(false, patch);
+      if (patch == MissionPatch::Detached) {
+        mCheckIssues.push_back(
+          {CheckIssue::Level::Warning,
+           "mission",
+           "the script's mission region was edited by hand: Save leaves it alone (delete the region to "
+           "generate it again)",
+           0.0f,
+           0.0f,
+           std::string(),
+           0}
+        );
+      } else if (
+        const CheckIssue compiled = mDocument.CheckLuaText(script, "_script.lua (with the mission)");
+        !compiled.text.empty()
+      ) {
+        mCheckIssues.push_back(compiled);
+      }
+    }
+    // The props under the same symmetry: each one's partner of its blueprint at its copies, and the reclaim that isn't.
+    if (map->mProps != nullptr && input.symmetry != Symmetry::None) {
+      std::map<std::string, float> massOf;
+      for (const EdDocument::ReclaimRow& row : mDocument.PropReclaim().rows) {
+        std::string key = row.blueprint;
+        std::transform(key.begin(), key.end(), key.begin(), [](const unsigned char c) {
+          return static_cast<char>(std::tolower(c));
+        });
+        massOf[key] = row.mass;
+      }
+      std::vector<PropPoint> props;
+      props.reserve(map->mProps->mEntries.size());
+      for (const moho::CWldPropEntry& entry : map->mProps->mEntries) {
+        PropPoint point;
+        point.blueprint = entry.mBlueprintPath.c_str();
+        std::transform(
+          point.blueprint.begin(), point.blueprint.end(), point.blueprint.begin(), [](const unsigned char c) {
+          return static_cast<char>(std::tolower(c));
+        }
+        );
+        point.x = entry.mTransform.pos_.x;
+        point.z = entry.mTransform.pos_.z;
+        if (const auto found = massOf.find(point.blueprint); found != massOf.end()) {
+          point.mass = found->second;
+        }
+        props.push_back(std::move(point));
+      }
+      for (CheckIssue& issue : CheckPropSymmetry(props, input.symmetry, input.turns, input.width, input.height)) {
+        mCheckIssues.push_back(std::move(issue));
+      }
+    }
+    CheckPathing(input);
+    // The build check: each structure the save places, rated by the sim's flatness rule for its blueprint
+    // (OCCUPY_CheckEdgeFlatness 0x00564F80 for a flattened skirt, else OCCUPY_CheckAreaFlatness 0x005651F0) against
+    // its MaxGroundVariation: ground the game wouldn't let it be built on.
+    if (moho::CWldMap* const map = mDocument.Map(); map != nullptr && map->mTerrainRes != nullptr) {
+      const moho::CHeightField* const field = map->mTerrainRes->GetHeightField();
+      moho::RRuleGameRules* const rules = moho::RULE_PeekKept();
+      if (field != nullptr && rules != nullptr) {
+        const auto word = [field](const int x, const int z) {
+          const int cx = std::clamp(x, 0, field->width - 1);
+          const int cz = std::clamp(z, 0, field->height - 1);
+          return static_cast<int>(field->data[static_cast<std::size_t>(cz) * field->width + cx]);
+        };
+        int rated = 0;
+        int unknown = 0;
+        int mobile = 0;
+        int noFootprint = 0;
+        for (const SaveEntry& army : mDocument.SaveData().Armies()) {
+          UnitGroup group;
+          std::string error;
+          if (!ParseUnitGroup(army.Get("Units"), group, error)) {
+            continue;
+          }
+          std::vector<const SaveUnit*> units;
+          CollectUnits(group, units);
+          for (const SaveUnit* const unit : units) {
+            std::string lower = unit->type;
+            for (char& c : lower) {
+              c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            moho::RResId id{};
+            id.name.assign(lower.c_str());
+            const moho::RUnitBlueprint* const blueprint = rules->GetUnitBlueprint(id);
+            if (blueprint == nullptr) {
+              ++unknown;
+              continue;
+            }
+            if (blueprint->Physics.MotionType != moho::RULEUMT_None) {
+              ++mobile;
+              continue;
+            }
+            // The blueprint's own footprint (the rules the editor keeps don't resolve the sim's pointer).
+            const moho::SFootprint& footprint = blueprint->mFootprint;
+            if (footprint.mSizeX == 0U || footprint.mSizeZ == 0U || blueprint->Physics.MaxGroundVariation <= 0.0f) {
+              ++noFootprint;
+              continue;
+            }
+            const int n = std::max<int>(1, std::max(footprint.mSizeX, footprint.mSizeZ));
+            const int cx = static_cast<int>(std::floor(unit->position[0] - footprint.mSizeX * 0.5f));
+            const int cz = static_cast<int>(std::floor(unit->position[2] - footprint.mSizeZ * 0.5f));
+            const int kind = blueprint->Physics.FlattenSkirt != 0U ? sloperules::kKindRing : sloperules::kKindBuild;
+            const float varies = static_cast<float>(sloperules::CellRating(kind, n, cx, cz, word)) / 128.0f;
+            ++rated;
+            if (varies > blueprint->Physics.MaxGroundVariation + 1e-3f) {
+              CheckIssue issue;
+              issue.level = CheckIssue::Level::Warning;
+              issue.marker = unit->name;
+              char text[240];
+              (void)std::snprintf(
+                text,
+                sizeof(text),
+                "%s (%s): the ground under it varies %.2f; the game builds it where it varies %.2f at most",
+                unit->type.c_str(),
+                army.name.c_str(),
+                static_cast<double>(varies),
+                static_cast<double>(blueprint->Physics.MaxGroundVariation)
+              );
+              issue.text = text;
+              issue.x = unit->position[0];
+              issue.z = unit->position[2];
+              mCheckIssues.push_back(std::move(issue));
+            }
+          }
+        }
+        gpg::Logf(
+          "editor: build check: %d structures rated (%d units move, %d without a footprint or a ground limit, %d "
+          "blueprints the rules haven't got)",
+          rated,
+          mobile,
+          noFootprint,
+          unknown
+        );
+      }
+    }
+    // The scripts' syntax, as the files are now (edits included).
+    for (CheckIssue& issue : mDocument.CheckScripts()) {
+      mCheckIssues.insert(mCheckIssues.begin(), std::move(issue));
+    }
+    // The script's calls of the game's modules against their functions (the mission's generated region among them).
+    for (const EdLuaApiProblem& problem : CheckLuaApiCalls(mDocument.Script())) {
+      CheckIssue issue;
+      issue.level = CheckIssue::Level::Error;
+      issue.text = problem.text;
+      issue.file = "_script.lua";
+      issue.line = problem.line;
+      mCheckIssues.insert(mCheckIssues.begin(), std::move(issue));
+    }
+    std::vector<EdTools::CheckPin> pins;
+    int counts[3] = {0, 0, 0};
+    for (const CheckIssue& issue : mCheckIssues) {
+      if (issue.file.empty()) {
+        pins.push_back({issue.x, issue.z, static_cast<int>(issue.level)});
+      }
+      ++counts[static_cast<int>(issue.level)];
+    }
+    mTools.SetCheckPins(std::move(pins));
+    gpg::Logf("editor: check: %d errors, %d warnings, %d notes", counts[0], counts[1], counts[2]);
+    for (const CheckIssue& issue : mCheckIssues) {
+      if (!issue.file.empty()) {
+        gpg::Logf(
+          "editor: check %s: %s line %d: %s",
+          CheckLevelName(issue.level),
+          issue.file.c_str(),
+          issue.line,
+          issue.text.c_str()
+        );
+      } else {
+        gpg::Logf("editor: check %s: %s: %s", CheckLevelName(issue.level), issue.marker.c_str(), issue.text.c_str());
+      }
+    }
+  }
+
+  void EdShell::DrawCheckPanel()
+  {
+    if (const ImGuiWindow* const map = ImGui::FindWindowByName(Panel(kMapWindow)); map != nullptr && map->DockId != 0) {
+      ImGui::SetNextWindowDockID(map->DockId, ImGuiCond_FirstUseEver);
+    }
+    // A requested run (`/check`) happens whether or not the tab is in front, and brings it there.
+    // ... once the rules are built, so the pathing goes by the units' own footprints.
+    if (mRunCheck && mDocument.GetState() == EdDocument::State::Open && moho::RULE_PeekKept() != nullptr) {
+      mRunCheck = false;
+      RunCheck();
+      ImGui::SetNextWindowFocus();
+    }
+    if (!ImGui::Begin(Panel("Check"), &mShowCheck)) {
+      ImGui::End();
+      return;
+    }
+    if (mDocument.GetState() != EdDocument::State::Open) {
+      ImGui::TextDisabled("No map open.");
+      ImGui::End();
+      return;
+    }
+    // A run belongs to the map it ran on.
+    if (mCheckRan && mCheckedPath != mDocument.Path()) {
+      mCheckRan = false;
+      mCheckIssues.clear();
+      mTools.SetCheckPins({});
+    }
+    if (ImGui::Button("Run the check", ImVec2(-1.0f, 0.0f))) {
+      RunCheck();
+    }
+    // The test run: the map played for a few seconds, its Lua errors collected.
+    ImGui::BeginDisabled(mTestRunStep != 0 || mPlay.Active());
+    if (ImGui::Button(mTestRunStep == 0 ? "Test run" : "Test run: playing...", ImVec2(-1.0f, 0.0f))) {
+      RequestTestRun();
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) {
+      EdSetTooltip(
+        "Plays the map as saved (solo, the Map panel's setup) for 8 s of game time, then stops; the warnings logged "
+        "meanwhile "
+        "join the findings: errors that name the map's folder, warnings from other Lua, the rest as notes. Save first "
+        "to test edits."
+      );
+    }
+    if (!mTestRunSummary.empty()) {
+      ImGui::TextDisabled("%s", mTestRunSummary.c_str());
+    }
+    ImGui::Checkbox("Show pathing", &mTools.ShowPathing());
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+      EdSetTooltip(
+        "After a run. Land: red where a T1 tank (uel0201) can't go (too steep, too deep), amber where it can but no "
+        "start "
+        "reaches. Ships: blue where a T1 frigate (ues0103) can go in a start's water, purple where it can but no "
+        "start's ships get to."
+      );
+    }
+    ImGui::SameLine();
+    ImGui::RadioButton("Land", &mTools.PathingLayer(), 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Ships", &mTools.PathingLayer(), 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Hover", &mTools.PathingLayer(), 2);
+    ImGui::SameLine();
+    ImGui::RadioButton("Amphibious", &mTools.PathingLayer(), 3);
+    HelpNote(
+      "The scripts' syntax (_scenario.lua, _save.lua, _script.lua as edited), then start positions and mass and "
+      "hydrocarbon points: off the playable area, under water, without a partner at their symmetric copies (the Tools "
+      "panel's symmetry), or overlapping; then pathing for a T1 tank: what each start reaches by land."
+    );
+    if (mTestRunDone && !mTestRunIssues.empty()) {
+      // The test run's findings at the top of the list (merged once).
+      for (CheckIssue& issue : mTestRunIssues) {
+        mCheckIssues.insert(mCheckIssues.begin(), std::move(issue));
+      }
+      mTestRunIssues.clear();
+      mTestRunDone = false;
+      mCheckRan = true;
+      mCheckedPath = mDocument.Path();
+    }
+    if (!mCheckRan) {
+      ImGui::End();
+      return;
+    }
+    if (mCheckIssues.empty()) {
+      ImGui::TextColored(ImVec4(0.55f, 0.80f, 0.55f, 1.0f), "Nothing found.");
+      ImGui::End();
+      return;
+    }
+    static const ImVec4 kColors[3] = {
+      ImVec4(0.95f, 0.40f, 0.35f, 1.0f), ImVec4(0.95f, 0.75f, 0.30f, 1.0f), ImVec4(0.55f, 0.70f, 0.95f, 1.0f)
+    };
+    int counts[3] = {0, 0, 0};
+    for (const CheckIssue& issue : mCheckIssues) {
+      ++counts[static_cast<int>(issue.level)];
+    }
+    ImGui::Text("%d errors, %d warnings, %d notes", counts[0], counts[1], counts[2]);
+    {
+      const auto fixable = std::count_if(mCheckIssues.begin(), mCheckIssues.end(), [](const CheckIssue& issue) {
+        return issue.fix != CheckIssue::Fix::None;
+      });
+      if (fixable > 0) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton(("Fix all (" + std::to_string(fixable) + ")").c_str())) {
+          for (const CheckIssue& issue : mCheckIssues) {
+            if (issue.fix != CheckIssue::Fix::None) {
+              mCheckFixes.push_back(issue);
+            }
+          }
+          mCheckIssues.erase(
+            std::remove_if(
+              mCheckIssues.begin(),
+              mCheckIssues.end(),
+              [](const CheckIssue& issue) {
+            return issue.fix != CheckIssue::Fix::None;
+          }
+            ),
+            mCheckIssues.end()
+          );
+        }
+        EdSetItemTooltip("Every marker with a fix moved: pulled inside, or snapped to its build grid");
+      }
+    }
+    ImGui::BeginChild("##checkresults", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders);
+    int fixRow = -1;
+    for (std::size_t i = 0; i < mCheckIssues.size(); ++i) {
+      const CheckIssue& issue = mCheckIssues[i];
+      ImGui::PushID(static_cast<int>(i));
+      const ImVec2 row = ImGui::GetCursorScreenPos();
+      const float line = ImGui::GetTextLineHeight();
+      // The row's fix button sits on top of it and must get its own clicks.
+      ImGui::SetNextItemAllowOverlap();
+      if (ImGui::Selectable("##issue", false, ImGuiSelectableFlags_SpanAvailWidth, ImVec2(0.0f, line * 2.0f + 2.0f))) {
+        GoToIssue(issue);
+      }
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        EdSetTooltip(
+          "%s: %s\n%s\nClick to go to it", CheckLevelName(issue.level), issue.marker.c_str(), issue.text.c_str()
+        );
+      }
+      ImDrawList* const draw = ImGui::GetWindowDrawList();
+      draw->AddCircleFilled(
+        ImVec2(row.x + line * 0.4f, row.y + line * 0.5f),
+        line * 0.28f,
+        ImGui::GetColorU32(kColors[static_cast<int>(issue.level)])
+      );
+      const std::string title = issue.file.empty() ? issue.marker : issue.file + " line " + std::to_string(issue.line);
+      draw->AddText(ImVec2(row.x + line * 1.1f, row.y), ImGui::GetColorU32(ImGuiCol_Text), title.c_str());
+      draw->PushClipRect(row, ImVec2(ImGui::GetItemRectMax().x, row.y + line * 2.0f + 2.0f), true);
+      draw->AddText(
+        ImVec2(row.x + line * 1.1f, row.y + line), ImGui::GetColorU32(ImGuiCol_TextDisabled), issue.text.c_str()
+      );
+      draw->PopClipRect();
+      if (issue.fix != CheckIssue::Fix::None) {
+        // The fix at the row's right end.
+        const ImVec2 after = ImGui::GetCursorScreenPos();
+        const char* const name = CheckFixName(issue.fix);
+        const float width = ImGui::CalcTextSize(name).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        ImGui::SetCursorScreenPos(ImVec2(ImGui::GetItemRectMax().x - width - 4.0f, row.y + 1.0f));
+        if (ImGui::SmallButton(name)) {
+          fixRow = static_cast<int>(i);
+        }
+        ImGui::SetCursorScreenPos(after);
+      }
+      ImGui::PopID();
+    }
+    if (fixRow >= 0) {
+      mCheckFixes.push_back(mCheckIssues[static_cast<std::size_t>(fixRow)]);
+      mCheckIssues.erase(mCheckIssues.begin() + fixRow);
+    }
+    ImGui::EndChild();
+    ImGui::End();
+  }
+
+  void EdShell::DrawScriptPanel()
+  {
+    // A window of its own, large, over the view (user ask 2026-11-11: the script in a separate window with Lua
+    // highlighting); a new window id, so the old docked "Script" panel's place isn't taken back from the layout file.
+    const ImGuiViewport* const viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x * 0.62f, viewport->WorkSize.y * 0.8f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    const bool focusAsked = std::exchange(mFocusScript, false);
+    if (focusAsked) {
+      ImGui::SetNextWindowFocus();
+      ImGui::SetNextWindowCollapsed(false);
+    }
+    if (!ImGui::Begin(Panel("Script Editor###ScriptEditor"), &mShowScript, ImGuiWindowFlags_NoCollapse)) {
+      ImGui::End();
+      return;
+    }
+    if (mDocument.GetState() != EdDocument::State::Open) {
+      ImGui::TextDisabled("No map open.");
+      ImGui::End();
+      return;
+    }
+    // Which file, as tabs: the script, the lobby options (any map may have them), an adaptive map's tables.
+    {
+      const bool tables = mDocument.Adaptive();
+      if (mScriptFile == 2 && !tables) {
+        mScriptFile = 0;
+      }
+      struct Tab
+      {
+        const char* name;
+        const char* help;
+      };
+      static constexpr Tab kTabs[] = {
+        {"_script.lua",
+         "The map's script: what runs when a game starts (the lobby options' groups, the playable area, effects...)."},
+        {"_options.lua",
+         "The lobby's options for this map. The Adaptive tool writes the options its tables need; the others "
+         "(wreckage, reclaim...) are edited here."},
+        {"_tables.lua",
+         "The adaptive tables, which the Adaptive tool writes; the tables it doesn't know (the mapper's own) are "
+         "edited here."},
+      };
+      if (ImGui::BeginTabBar("##files")) {
+        for (int t = 0; t < (tables ? 3 : 2); ++t) {
+          ImGuiTabItemFlags flags =
+            focusAsked && t == mScriptFile ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+          // The tab being edited and not applied shows the unsaved dot.
+          if (t == mScriptFile && mScriptFor == mDocument.Path() + "#" + std::to_string(t)) {
+            const std::string& now = t == 0 ? mDocument.Script()
+              : t == 1                      ? mDocument.OptionsText()
+                                            : mDocument.TablesText();
+            if (mScriptBuffer != now) {
+              flags |= ImGuiTabItemFlags_UnsavedDocument;
+            }
+          }
+          if (ImGui::BeginTabItem(kTabs[t].name, nullptr, flags)) {
+            if (!focusAsked) {
+              mScriptFile = t;
+            }
+            ImGui::EndTabItem();
+          }
+          EdSetItemTooltip("%s", kTabs[t].help);
+        }
+        ImGui::EndTabBar();
+      }
+    }
+    const MapFacts& facts = mDocument.Facts();
+    const std::string& path = mScriptFile == 0 ? facts.scriptPath
+      : mScriptFile == 1                       ? facts.optionsPath
+                                               : facts.tablesPath;
+    const std::string& text = mScriptFile == 0 ? mDocument.Script()
+      : mScriptFile == 1                       ? mDocument.OptionsText()
+                                               : mDocument.TablesText();
+    const std::string fileName = path.empty() ? std::string(mScriptFile == 1 ? "_options.lua" : "_script.lua")
+                                              : path.substr(path.find_last_of('/') + 1);
+    // The panel's copy follows the document until it is edited, and again after Apply or Revert (and on another file).
+    const std::string key = mDocument.Path() + "#" + std::to_string(mScriptFile);
+    const bool edited = mScriptFor == key && mScriptBuffer != text;
+    if (mScriptFor != key) {
+      mScriptFor = key;
+      mScriptBuffer = text;
+      mScriptMessage.clear();
+      mScriptErrorLine = 0;
+    }
+    ImGui::TextDisabled("%s", path.empty() ? "(no such file yet: Apply makes it beside the scenario)" : path.c_str());
+    ImGui::BeginDisabled(!edited);
+    if (ImGui::Button("Apply")) {
+      if (mScriptFile == 0) {
+        EdDocument::SaveSnapshot before = mDocument.SaveDataNow();
+        mDocument.Script() = mScriptBuffer;
+        mDocument.SaveDataEdited(std::move(before));
+      } else if (mScriptFile == 1) {
+        mDocument.SetOptionsText(mScriptBuffer);
+      } else {
+        mDocument.SetTablesText(mScriptBuffer);
+      }
+      mScriptMessage = "applied (one undo step)";
+      gpg::Logf("editor: %s applied, %zu bytes", fileName.c_str(), mScriptBuffer.size());
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Revert")) {
+      mScriptBuffer = text;
+      mScriptMessage.clear();
+      mScriptErrorLine = 0;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Check")) {
+      // The panel's text as it would be applied.
+      const CheckIssue issue = mDocument.CheckLuaText(mScriptBuffer, fileName);
+      mScriptMessage =
+        issue.text.empty() ? std::string("compiles") : "line " + std::to_string(issue.line) + ": " + issue.text;
+      mScriptErrorLine = issue.text.empty() ? 0 : std::max(issue.line, 1);
+      if (mScriptErrorLine > 0) {
+        LuaCodeScrollTo(mScriptErrorLine);
+      }
+      // The tables must also read as the Adaptive tool reads them.
+      if (issue.text.empty() && mScriptFile == 2) {
+        AdaptiveTables tables;
+        std::string error;
+        if (!ParseAdaptiveTables(mScriptBuffer, tables, error)) {
+          mScriptMessage = "compiles, but the Adaptive tool can't read it: " + error;
+        }
+      }
+      gpg::Logf("editor: %s check: %s", fileName.c_str(), mScriptMessage.c_str());
+    }
+    if (!mScriptMessage.empty()) {
+      ImGui::SameLine();
+      ImGui::TextColored(
+        mScriptErrorLine > 0 ? ImVec4(0.95f, 0.45f, 0.40f, 1.0f) : ImVec4(0.55f, 0.80f, 0.55f, 1.0f),
+        "%s",
+        mScriptMessage.c_str()
+      );
+      if (mScriptErrorLine > 0 && ImGui::IsItemClicked()) {
+        LuaCodeScrollTo(mScriptErrorLine);
+      }
+      EdSetItemTooltip("%s", mScriptErrorLine > 0 ? "Click to go to the line (marked red)" : "");
+    }
+    // Checked as you type: compiled again once the typing stops for 0.6 s (and when a file loads), the error line
+    // marked; the likely typos of known functions listed under the code, each with its fix.
+    const double now = ImGui::GetTime();
+    if (
+      const std::size_t hash = std::hash<std::string>{}(mScriptBuffer);
+      hash != mScriptCheckedHash && now - mScriptTypedAt >= 0.6
+    ) {
+      mScriptCheckedHash = hash;
+      const CheckIssue issue = mDocument.CheckLuaText(mScriptBuffer, fileName);
+      mScriptErrorLine = issue.text.empty() ? 0 : std::max(issue.line, 1);
+      mScriptMessage =
+        issue.text.empty() ? std::string("compiles") : "line " + std::to_string(issue.line) + ": " + issue.text;
+      mScriptTypos = LuaTypos(mScriptBuffer);
+    }
+    const std::size_t shownTypos = std::min<std::size_t>(mScriptTypos.size(), 3);
+    const float typosHeight =
+      shownTypos == 0 ? 0.0f : ImGui::GetFrameHeightWithSpacing() * static_cast<float>(shownTypos) + 4.0f;
+    // The debugger's marks: this file's breakpoints (a click on a line's number sets or clears one) and the line a
+    // play is paused at.
+    EdCodeMarks marks;
+    const std::string debugFile = fileName.substr(fileName.find_last_of("/\\") + 1);
+    for (const EdLuaDebugger::Breakpoint& b : EdLuaDebugger::Get().Breakpoints()) {
+      if (SourceIsFile(b.file, debugFile) || SourceIsFile(debugFile, b.file)) {
+        marks.breakpoints.push_back(b.line);
+      }
+    }
+    if (
+      const EdLuaDebugger::Pause pause = EdLuaDebugger::Get().Snapshot();
+      pause.paused && SourceIsFile(debugFile, pause.file)
+    ) {
+      marks.pausedLine = pause.line;
+    }
+    // The code, coloured as Lua, line numbers beside it; the error line marked; completions, signatures and hover
+    // from the engine's annotated functions (doc/EdLuaApi).
+    if (
+      LuaCodeInput(
+        "##script",
+        mScriptBuffer,
+        mScriptErrorLine,
+        std::max(ImGui::GetContentRegionAvail().y - typosHeight, 120.0f),
+        &marks
+      )
+    ) {
+      mScriptTypedAt = now;
+    }
+    if (marks.clickedLine > 0) {
+      EdLuaDebugger::Get().ToggleBreakpoint(debugFile, marks.clickedLine);
+      gpg::Logf("editor: breakpoint %s line %d", debugFile.c_str(), marks.clickedLine);
+    }
+    for (std::size_t i = 0; i < shownTypos; ++i) {
+      const EdLuaTypo typo = mScriptTypos[i];
+      ImGui::PushID(static_cast<int>(i));
+      ImGui::TextColored(
+        ImVec4(0.95f, 0.75f, 0.30f, 1.0f), "Line %d: %s is no known function", typo.line, typo.written.c_str()
+      );
+      ImGui::SameLine();
+      if (ImGui::SmallButton(("Use " + typo.suggestion).c_str())) {
+        if (
+          typo.at + typo.written.size() <= mScriptBuffer.size() &&
+          mScriptBuffer.compare(typo.at, typo.written.size(), typo.written) == 0
+        ) {
+          mScriptBuffer.replace(typo.at, typo.written.size(), typo.suggestion);
+          gpg::Logf(
+            "editor: script: %s replaced by %s on line %d", typo.written.c_str(), typo.suggestion.c_str(), typo.line
+          );
+        }
+        mScriptCheckedHash = 0; // checked again at once
+        mScriptTypedAt = 0.0;
+      }
+      ImGui::SameLine();
+      if (ImGui::SmallButton("Go to")) {
+        LuaCodeScrollTo(typo.line);
+      }
+      ImGui::PopID();
+    }
+    ImGui::End();
+  }
+  void EdShell::DrawSkyEditor()
+  {
+    if (!Section("Sky")) {
+      return;
+    }
+    // As the lighting: the panel's copy follows the map until a control is held; one undo step when it is let go.
+    if (!mSkyEditing) {
+      mSky = mDocument.SkyboxNow();
+    }
+    bool active = false;
+    bool changed = false;
+    bool finished = false;
+    const auto watch = [&](const bool edited) {
+      active = active || ImGui::IsItemActive();
+      changed = changed || edited;
+      finished = finished || ImGui::IsItemDeactivatedAfterEdit();
+    };
+    RowLabel("Horizon");
+    watch(ColourField("##skyhorizon", mSky.horizonColor, false));
+    RowLabel("Zenith");
+    watch(ColourField("##skyzenith", mSky.zenithColor, false));
+    ImGui::SetNextItemWidth(-1.0f);
+    watch(FillDragFloat("##skyscale", &mSky.scale, 5.0f, 10.0f, 20000.0f, "Dome size %.0f"));
+    ImGui::SetNextItemWidth(-1.0f);
+    watch(FillDragFloat("##skyhorizonheight", &mSky.horizonHeight, 0.5f, -2000.0f, 2000.0f, "Horizon height %.1f"));
+    ImGui::SetNextItemWidth(-1.0f);
+    watch(FillDragFloat("##skyzenithheight", &mSky.zenithHeight, 0.5f, 0.0f, 5000.0f, "Zenith height %.1f"));
+    ImGui::SetNextItemWidth(-1.0f);
+    watch(FillDragFloat("##skysubtract", &mSky.subtractHeight, 0.005f, 0.0f, 10.0f, "Lowered by %.3f"));
+    ImGui::SetNextItemWidth(-1.0f);
+    watch(ImGui::DragInt("##skyaround", &mSky.subdivisionsAxis, 0.1f, 3, 64, "%d segments round"));
+    ImGui::SetNextItemWidth(-1.0f);
+    watch(ImGui::DragInt("##skyup", &mSky.subdivisionsHeight, 0.1f, 1, 32, "%d segments up"));
+    ImGui::SetNextItemWidth(-1.0f);
+    watch(FillDragFloat("##skyglow", &mSky.decalGlow, 0.005f, 0.0f, 4.0f, "Planet glow %.3f"));
+    ImGui::SeparatorText("Sky cube and background");
+    {
+      char path[256];
+      (void)std::snprintf(path, sizeof(path), "%s", mSky.skycube.c_str());
+      ImGui::SetNextItemWidth(-1.0f);
+      if (ImGui::InputTextWithHint("##skycube", "sky cube (/textures/environment/....dds)", path, sizeof(path))) {
+        mSky.skycube = path;
+      }
+      watch(ImGui::IsItemDeactivatedAfterEdit());
+      (void)std::snprintf(path, sizeof(path), "%s", mSky.background.c_str());
+      ImGui::SetNextItemWidth(-1.0f);
+      if (
+        ImGui::InputTextWithHint("##skybackground", "background (/textures/environment/....dds)", path, sizeof(path))
+      ) {
+        mSky.background = path;
+      }
+      watch(ImGui::IsItemDeactivatedAfterEdit());
+      ImGui::TextDisabled("The cube the ground and water reflect, and the picture behind the dome.");
+    }
+    ImGui::SeparatorText("Cirrus");
+    RowLabel("Colour");
+    watch(ColourField("##cirruscolour", mSky.cirrusColor, true));
+    ImGui::SetNextItemWidth(-1.0f);
+    watch(FillDragFloat("##cirrusmultiplier", &mSky.cirrusMultiplier, 0.01f, 0.0f, 10.0f, "Strength %.2f"));
+    // The sky's textures, typed or picked (FAF Studio's picker per slot): the planets' atlas and glow, cirrus.
+    {
+      std::string* const slots[3] = {&mSky.albedo, &mSky.glow, &mSky.cirrusTexture};
+      static const char* const kHints[3] = {"planets' atlas texture", "planets' glow atlas", "cirrus texture"};
+      for (int t = 0; t < 3; ++t) {
+        ImGui::PushID(100 + t);
+        char texture[256];
+        (void)std::snprintf(texture, sizeof(texture), "%s", slots[t]->c_str());
+        ImGui::SetNextItemWidth(-Em(70.0f));
+        if (ImGui::InputTextWithHint("##skytexture", kHints[t], texture, sizeof(texture))) {
+          *slots[t] = texture;
+        }
+        watch(ImGui::IsItemDeactivatedAfterEdit());
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...")) {
+          mTools.OpenSkyTexturePick(t);
+        }
+        ImGui::PopID();
+      }
+      mTools.DrawTexturePickerPopup();
+      int which = -1;
+      std::string picked;
+      if (mTools.TakeSkyTexturePick(which, picked)) {
+        *slots[std::clamp(which, 0, 2)] = picked;
+        changed = true;
+        finished = true;
+      }
+    }
+    for (int i = 0; i < 4; ++i) {
+      ImGui::PushID(i);
+      SkyboxCirrusLayer& layer = mSky.cirrus[i];
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextDisabled("Layer %d", i + 1);
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(ImGui::DragFloat2("##frequency", layer.frequency, 0.001f, 0.0f, 10.0f, "frequency %.3f"));
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(FillDragFloat("##speed", &layer.speed, 0.001f, -10.0f, 10.0f, "Speed %.3f"));
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(ImGui::DragFloat2("##direction", layer.direction, 0.01f, -1.0f, 1.0f, "direction %.2f"));
+      ImGui::PopID();
+    }
+    ImGui::SeparatorText("Planets");
+    // Add one where the sun is (FAF Studio's "Add (at the sun)"), or a copy of the last.
+    if (ImGui::SmallButton("Add at the sun")) {
+      const LightingState light = mDocument.LightingNow();
+      SkyboxPlanet planet;
+      const float distance = std::max(100.0f, mSky.scale * 0.9f);
+      for (int c = 0; c < 3; ++c) {
+        planet.position[c] = light.sunDirection[c] * distance;
+      }
+      planet.scale[0] = planet.scale[1] = distance * 0.08f;
+      mSky.planets.push_back(planet);
+      changed = true;
+      finished = true;
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(mSky.planets.empty() || mSky.planets.size() >= 1024);
+    if (ImGui::SmallButton("Duplicate the last")) {
+      SkyboxPlanet copy = mSky.planets.back();
+      copy.position[0] += 10.0f;
+      mSky.planets.push_back(copy);
+      changed = true;
+      finished = true;
+    }
+    ImGui::EndDisabled();
+    int remove = -1;
+    for (std::size_t i = 0; i < mSky.planets.size(); ++i) {
+      ImGui::PushID(static_cast<int>(i));
+      SkyboxPlanet& planet = mSky.planets[i];
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextDisabled("Planet %zu", i + 1);
+      ImGui::SameLine();
+      if (ImGui::SmallButton("Remove")) {
+        remove = static_cast<int>(i);
+      }
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(ImGui::DragFloat3("##position", planet.position, 0.5f, -5000.0f, 5000.0f, "%.1f"));
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(FillDragFloat("##rotation", &planet.rotation, 0.01f, -10.0f, 10.0f, "Turn %.2f"));
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(ImGui::DragFloat2("##scale", planet.scale, 0.1f, 0.0f, 2000.0f, "size %.1f"));
+      // Where it is as angles and a distance, and its cell of the atlas.
+      {
+        const float distance = std::sqrt(
+          planet.position[0] * planet.position[0] + planet.position[1] * planet.position[1] +
+          planet.position[2] * planet.position[2]
+        );
+        float angles[2] = {};
+        const float direction[3] = {planet.position[0], planet.position[1], planet.position[2]};
+        SunAnglesOf(direction, angles[0], angles[1]);
+        float reach = distance;
+        ImGui::SetNextItemWidth(-1.0f);
+        const bool turned = ImGui::DragFloat2("##angles", angles, 0.2f, -180.0f, 180.0f, "%.1f deg");
+        EdSetItemTooltip("Azimuth and elevation, as the sun's");
+        ImGui::SetNextItemWidth(-1.0f);
+        const bool moved = FillDragFloat("##distance", &reach, 1.0f, 1.0f, 10000.0f, "Distance %.0f");
+        if (turned || moved) {
+          float unit[3];
+          SunDirectionOf(angles[0], std::clamp(angles[1], -89.9f, 89.9f), unit);
+          for (int c = 0; c < 3; ++c) {
+            planet.position[c] = unit[c] * reach;
+          }
+        }
+        watch(turned || moved);
+        ImGui::SetNextItemWidth(-1.0f);
+        watch(ImGui::DragFloat4("##uv", planet.uv, 0.005f, 0.0f, 1.0f, "%.3f"));
+        EdSetItemTooltip("Its cell of the atlas: u0, v0, u1, v1");
+      }
+      ImGui::PopID();
+    }
+    if (remove >= 0) {
+      mSky.planets.erase(mSky.planets.begin() + remove);
+      changed = true;
+      finished = true;
+    }
+    if (mSky.planets.empty()) {
+      ImGui::TextDisabled("No planets.");
+    }
+    active = active || ImGui::IsAnyItemActive();
+    if (changed) {
+      if (!mSkyEditing) {
+        mSkyBefore = mDocument.SkyboxNow();
+      }
+      mSkyEditing = true;
+      mDocument.ApplySkybox(mSky);
+    }
+    if (finished || (mSkyEditing && !active)) {
+      mSkyEditing = false;
+      if (!(mSkyBefore == mDocument.SkyboxNow())) {
+        mDocument.SkyboxEdited(mSkyBefore);
+        gpg::Logf(
+          "editor: sky: dome %.0f, horizon %.2f %.2f %.2f, %zu planets",
+          static_cast<double>(mSky.scale),
+          static_cast<double>(mSky.horizonColor[0]),
+          static_cast<double>(mSky.horizonColor[1]),
+          static_cast<double>(mSky.horizonColor[2]),
+          mSky.planets.size()
+        );
+      }
+    }
+  }
+
+  void EdShell::DrawCubes()
+  {
+    if (!Section("Reflection cubes", false)) {
+      return;
+    }
+    // The cube maps the water and units reflect (CWldTerrainRes's environment lookups), each change one undo step.
+    const std::vector<std::pair<std::string, std::string>> cubes = mDocument.CubesNow();
+    std::optional<std::vector<std::pair<std::string, std::string>>> after;
+    bool hasDefault = false;
+    for (std::size_t i = 0; i < cubes.size(); ++i) {
+      ImGui::PushID(static_cast<int>(i));
+      hasDefault = hasDefault || cubes[i].first == "<default>";
+      ImGui::AlignTextToFramePadding();
+      ImGui::TextUnformatted(cubes[i].first.c_str());
+      char path[256];
+      (void)std::snprintf(path, sizeof(path), "%s", cubes[i].second.c_str());
+      const bool removable = cubes[i].first != "<default>";
+      ImGui::SetNextItemWidth(-(removable ? ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x : 0.0f));
+      (void)ImGui::InputText("##cubepath", path, sizeof(path));
+      if (ImGui::IsItemDeactivatedAfterEdit()) {
+        after = cubes;
+        (*after)[i].second = path;
+      }
+      if (removable) {
+        ImGui::SameLine();
+        if (ImGui::Button("x", ImVec2(ImGui::GetFrameHeight(), 0.0f))) {
+          after = cubes;
+          after->erase(after->begin() + static_cast<std::ptrdiff_t>(i));
+        }
+        EdSetItemTooltip("Remove this lookup");
+      }
+      ImGui::PopID();
+    }
+    if (!hasDefault) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.75f, 0.30f, 1.0f));
+      ImGui::TextWrapped("No <default> cube: the game has nothing to reflect for units without their own.");
+      ImGui::PopStyleColor();
+      if (ImGui::Button("Add <default>")) {
+        after = cubes;
+        after->emplace_back("<default>", "/textures/environment/defaultenvcube.dds");
+      }
+    }
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.3f);
+    ImGui::InputTextWithHint("##cubename", "<aeon>", mCubeName, sizeof(mCubeName));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - Em(60.0f));
+    ImGui::InputTextWithHint("##cubenewpath", "/textures/environment/...dds", mCubePath, sizeof(mCubePath));
+    ImGui::SameLine();
+    ImGui::BeginDisabled(mCubeName[0] == '\0' || mCubePath[0] == '\0');
+    if (ImGui::Button("Add", ImVec2(-1.0f, 0.0f))) {
+      after = cubes;
+      // The map's names are in angle brackets (<default>, <aeon>): a bare name gets them.
+      std::string name = mCubeName;
+      if (name.front() != '<') {
+        name = "<" + name + ">";
+      }
+      after->emplace_back(std::move(name), mCubePath);
+      mCubeName[0] = '\0';
+      mCubePath[0] = '\0';
+    }
+    ImGui::EndDisabled();
+    HelpNote(
+      "The cube maps the water and units reflect, by name: <default> for every unit, others by the environment a "
+      "unit's blueprint names. Looks carry them with the sky."
+    );
+    if (after.has_value()) {
+      const EdDocument::LookEnvironment before = mDocument.LookEnvironmentNow();
+      mDocument.ApplyCubes(*after);
+      mDocument.LookApplied(before);
+      gpg::Logf("editor: reflection cubes: %zu now", after->size());
+    }
+  }
+
+  void EdShell::DrawLooks()
+  {
+    if (!Section("Looks")) {
+      return;
+    }
+    // Every map the game lists is a look (its lighting, water and sky, read from its .scmap when first tried), and the
+    // user's own saved ones. A click tries one on the map (no undo step); Apply keeps it as one, Revert takes it off.
+    const auto request = [&](const LookRequest::What what, const std::string& id) {
+      LookRequest ask;
+      ask.what = what;
+      ask.id = id;
+      ask.sections = mLookSections;
+      ask.blend = mLookBlend;
+      ask.name = mLookSaveName;
+      RequestLook(std::move(ask));
+    };
+    // What of a look is taken, and how much.
+    bool retry = false;
+    // The ticks on one row while they fit, wrapping in a narrow panel.
+    bool first = true;
+    const float rightEdge = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+    const auto sectionBox = [&](const char* label, const LookSection bit) {
+      const ImGuiStyle& style = ImGui::GetStyle();
+      const float width = ImGui::GetFrameHeight() + style.ItemInnerSpacing.x + ImGui::CalcTextSize(label).x;
+      if (!first && ImGui::GetItemRectMax().x + style.ItemSpacing.x + width <= rightEdge) {
+        ImGui::SameLine();
+      }
+      first = false;
+      bool on = (mLookSections & bit) != 0u;
+      if (ImGui::Checkbox(label, &on)) {
+        mLookSections = on ? (mLookSections | bit) : (mLookSections & ~static_cast<unsigned>(bit));
+        retry = true;
+      }
+    };
+    sectionBox("Lighting", kLookLighting);
+    sectionBox("Water", kLookWater);
+    sectionBox("Waves", kLookWaves);
+    sectionBox("Sky", kLookSky);
+    ImGui::SetNextItemWidth(-1.0f);
+    if (FillSliderFloat("##lookblend", &mLookBlend, 0.0f, 1.0f, "Blend %.2f")) {
+      retry = true;
+    }
+    EdSetItemTooltip(
+      "How much of the look: 0 keeps the map's own, 1 is the look. Numbers mix; textures switch at 0.5."
+    );
+    ImGui::Checkbox("Try on click", &mLookTryOnClick);
+    if (retry && !mLookTried.empty()) {
+      request(LookRequest::What::Try, mLookTried);
+    }
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputTextWithHint(
+      "##lookfilter", "search looks (maps and your own)", mLightingFromFilter, sizeof(mLightingFromFilter)
+    );
+    std::string filter = mLightingFromFilter;
+    for (char& c : filter) {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    const float swatch = ImGui::GetTextLineHeight();
+    const auto row = [&](const std::string& id, const std::string& title, const std::string& detail) {
+      ImGui::PushID(id.c_str());
+      const ImVec2 at = ImGui::GetCursorScreenPos();
+      const bool chosen = id == mLookChosen || id == mLookTried;
+      if (ImGui::Selectable("##look", chosen, ImGuiSelectableFlags_AllowOverlap)) {
+        mLookChosen = id;
+        if (mLookTryOnClick) {
+          request(LookRequest::What::Try, id);
+        }
+      }
+      // Its colours once read: sky horizon and zenith, sun, water.
+      ImDrawList* const draw = ImGui::GetWindowDrawList();
+      if (const auto known = mLookSwatches.find(id); known != mLookSwatches.end()) {
+        for (int c = 0; c < 4; ++c) {
+          const float* const rgb = known->second.colours[c];
+          const ImU32 colour = ImGui::ColorConvertFloat4ToU32(
+            ImVec4(std::clamp(rgb[0], 0.0f, 1.0f), std::clamp(rgb[1], 0.0f, 1.0f), std::clamp(rgb[2], 0.0f, 1.0f), 1.0f)
+          );
+          const float x = at.x + static_cast<float>(c) * swatch * 0.5f;
+          draw->AddRectFilled(ImVec2(x, at.y + 1.0f), ImVec2(x + swatch * 0.5f, at.y + swatch - 1.0f), colour);
+        }
+      } else {
+        draw->AddRect(ImVec2(at.x, at.y + 1.0f), ImVec2(at.x + swatch * 2.0f, at.y + swatch - 1.0f), LineU32());
+      }
+      draw->AddText(ImVec2(at.x + swatch * 2.0f + Em(6.0f), at.y), ImGui::GetColorU32(ImGuiCol_Text), title.c_str());
+      if (!detail.empty()) {
+        const float width = ImGui::CalcTextSize(detail.c_str()).x;
+        draw->AddText(
+          ImVec2(at.x + ImGui::GetContentRegionAvail().x - width, at.y),
+          ImGui::GetColorU32(ImGuiCol_TextDisabled),
+          detail.c_str()
+        );
+      }
+      ImGui::PopID();
+    };
+    if (
+      ImGui::BeginChild("##looks", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 9.0f), ImGuiChildFlags_Borders)
+    ) {
+      // The shipped moods and biomes (FAF Studio's library), their thumbnails their colours: sky, sun, shade.
+      for (const LookMood& mood : LookMoods()) {
+        std::string key = std::string(mood.name) + " " + mood.group;
+        for (char& c : key) {
+          c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (!filter.empty() && key.find(filter) == std::string::npos) {
+          continue;
+        }
+        const std::string id = std::string("mood:") + mood.id;
+        if (mLookSwatches.find(id) == mLookSwatches.end()) {
+          LookSwatch swatch;
+          for (int c = 0; c < 3; ++c) {
+            swatch.colours[0][c] = mood.fog[c];
+            swatch.colours[1][c] = mood.fog[c] * 0.75f;
+            swatch.colours[2][c] =
+              mood.sun[c] / std::max(1.0f, std::max(mood.sun[0], std::max(mood.sun[1], mood.sun[2])));
+            swatch.colours[3][c] = std::min(1.0f, mood.ambience[c] * 2.0f);
+          }
+          mLookSwatches[id] = swatch;
+        }
+        row(id, mood.name, mood.group);
+      }
+      for (const std::string& name : mMyLooks) {
+        std::string key = name;
+        for (char& c : key) {
+          c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (filter.empty() || key.find(filter) != std::string::npos) {
+          row("mine:" + name, name, "yours");
+        }
+      }
+      const std::vector<std::string>& maps = mPlay.Maps();
+      const std::vector<std::string>& titles = mPlay.Titles();
+      for (std::size_t i = 0; i < maps.size(); ++i) {
+        const std::string folder = MapDisplayName(maps[i]);
+        const std::string title = i < titles.size() && !titles[i].empty() ? titles[i] : folder;
+        std::string key = folder + " " + title;
+        for (char& c : key) {
+          c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (filter.empty() || key.find(filter) != std::string::npos) {
+          row(maps[i], title, folder);
+        }
+      }
+    }
+    ImGui::EndChild();
+    // Apply keeps the one tried (or the one chosen) as one undo step; Revert takes it off.
+    const std::string target = !mLookTried.empty() ? mLookTried : mLookChosen;
+    ImGui::BeginDisabled(target.empty());
+    if (ImGui::Button("Apply")) {
+      request(LookRequest::What::Apply, target);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(mLookTried.empty());
+    if (ImGui::Button("Revert")) {
+      request(LookRequest::What::Revert, mLookTried);
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(mLookChosen.empty() || !mLookTried.empty());
+    if (ImGui::Button("Try")) {
+      request(LookRequest::What::Try, mLookChosen);
+    }
+    ImGui::EndDisabled();
+    if (!mLookStatus.empty()) {
+      ImGui::PushTextWrapPos(0.0f);
+      ImGui::TextUnformatted(mLookStatus.c_str());
+      ImGui::PopTextWrapPos();
+    }
+    // The map's own look saved under a name (FAForeverMapEditor's three files, in the editor's Looks folder).
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+    ImGui::InputTextWithHint("##lookname", "name for this map's look", mLookSaveName, sizeof(mLookSaveName));
+    ImGui::SameLine();
+    ImGui::BeginDisabled(mLookSaveName[0] == '\0' || !mLookTried.empty());
+    if (ImGui::Button("Save look")) {
+      request(LookRequest::What::Save, {});
+    }
+    ImGui::EndDisabled();
+    if (mLookChosen.rfind("mine:", 0) == 0) {
+      ImGui::SameLine();
+      if (ImGui::Button("Delete")) {
+        request(LookRequest::What::Delete, mLookChosen);
+        mLookChosen.clear();
+      }
+    }
+    HelpNote(
+      "A look is a map's lighting, water and sky. A click tries it on this map (no undo step, and a save writes the "
+      "map "
+      "without it); Apply keeps it as one undo step, Revert takes it off. The ticks choose what is taken; Blend mixes "
+      "it "
+      "with the map's own."
+    );
+  }
+
+  void EdShell::DrawLightingPanel()
+  {
+    if (const ImGuiWindow* const map = ImGui::FindWindowByName(Panel(kMapWindow)); map != nullptr && map->DockId != 0) {
+      ImGui::SetNextWindowDockID(map->DockId, ImGuiCond_FirstUseEver);
+    }
+    if (!ImGui::Begin(Panel("Lighting"), &mShowLighting)) {
+      ImGui::End();
+      return;
+    }
+    if (mDocument.GetState() != EdDocument::State::Open) {
+      ImGui::TextDisabled("No map open.");
+      ImGui::End();
+      return;
+    }
+    // The panel's copy follows the map until a control is held; a change is on the map at once, and one undo step
+    // when the drag (or the edit) ends.
+    if (!mLightingEditing) {
+      mLighting = mDocument.LightingNow();
+    }
+    bool active = false;
+    bool changed = false;
+    bool finished = false;
+    const auto watch = [&](const bool edited) {
+      active = active || ImGui::IsItemActive();
+      changed = changed || edited;
+      finished = finished || ImGui::IsItemDeactivatedAfterEdit();
+    };
+    // The sun as the mockup shows it: its direction as an azimuth and an elevation (the vector the map keeps).
+    DrawLooks();
+    float azimuth = 0.0f;
+    float elevation = 0.0f;
+    SunAnglesOf(mLighting.sunDirection, azimuth, elevation);
+    if (Section("Sun")) {
+      ImGui::SetNextItemWidth(-1.0f);
+      const bool turned = FillSliderFloat("##azimuth", &azimuth, -180.0f, 180.0f, "Azimuth %.0f\xC2\xB0");
+      watch(turned);
+      ImGui::SetNextItemWidth(-1.0f);
+      const bool raised = FillSliderFloat("##elevation", &elevation, 0.0f, 90.0f, "Elevation %.0f\xC2\xB0");
+      watch(raised);
+      if (turned || raised) {
+        SunDirectionOf(azimuth, elevation, mLighting.sunDirection);
+        if (mTools.WaterSunFollows()) {
+          // The water keeps the way the light travels: the opposite of the lighting's "towards the sun".
+          if (!mLightingEditing && !mLightingMovedWater) {
+            mLightingWaterBefore = mDocument.WaterNow();
+          }
+          WaterState water = mDocument.WaterNow();
+          for (int i = 0; i < 3; ++i) {
+            water.shader.mSunDirection[i] = -mLighting.sunDirection[i];
+          }
+          mDocument.ApplyWater(water);
+          mLightingMovedWater = true;
+        }
+      }
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(FillDragFloat("##multiplier", &mLighting.multiplier, 0.01f, 0.0f, 4.0f, "Multiplier %.2f"));
+      RowLabel("Sun colour");
+      watch(ColourField("##suncolor", mLighting.sunColor, true));
+    }
+    if (Section("Ambient and shadow")) {
+      RowLabel("Ambient");
+      watch(ColourField("##ambience", mLighting.sunAmbience, true));
+      RowLabel("Shadow fill");
+      watch(ColourField("##shadow", mLighting.shadowFill, true));
+    }
+    if (Section("Specular", false)) {
+      // What the map's shader reads from these numbers: Terrain2xx's splatting takes them as its settings (FAF
+      // Studio shows them so), the others as the specular colour.
+      if (ShaderProfileOf(mTools.ShaderNow()).family == ShaderFamily::Splat) {
+        ImGui::TextDisabled("%s reads these as its splat settings:", mTools.ShaderNow().c_str());
+        static const char* const kSplat[3] = {"Softness %.3f", "Height contrast %.3f", "Rotation %.3f"};
+        static const char* const kIds[3] = {"##splatsoft", "##splatcontrast", "##splatturn"};
+        for (int c = 0; c < 3; ++c) {
+          ImGui::SetNextItemWidth(-1.0f);
+          watch(FillDragFloat(kIds[c], &mLighting.specular[c], 0.005f, 0.0f, 4.0f, kSplat[c]));
+        }
+      } else {
+        float colour[3] = {mLighting.specular[0], mLighting.specular[1], mLighting.specular[2]};
+        RowLabel("Colour");
+        const bool tinted = ColourField("##specular", colour, true);
+        watch(tinted);
+        if (tinted) {
+          mLighting.specular[0] = colour[0];
+          mLighting.specular[1] = colour[1];
+          mLighting.specular[2] = colour[2];
+        }
+      }
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(FillDragFloat("##specularpower", &mLighting.specular[3], 0.01f, 0.0f, 10.0f, "Power %.2f"));
+    }
+    if (Section("Bloom and fog", false)) {
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(FillDragFloat("##bloom", &mLighting.bloom, 0.005f, 0.0f, 1.0f, "Bloom %.3f"));
+      RowLabel("Fog colour");
+      watch(ColourField("##fogcolor", mLighting.fogColor));
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(FillDragFloat("##fogstart", &mLighting.fogStart, 1.0f, -1000.0f, 10000.0f, "Fog start %.0f"));
+      ImGui::SetNextItemWidth(-1.0f);
+      watch(FillDragFloat("##fogend", &mLighting.fogEnd, 1.0f, -1000.0f, 10000.0f, "Fog end %.0f"));
+    }
+    // A colour picker is a popup: its drag is "any item active", not the last item's.
+    active = active || ImGui::IsAnyItemActive();
+    if (changed) {
+      if (!mLightingEditing) {
+        mLightingBefore = mDocument.LightingNow();
+      }
+      mLightingEditing = true;
+      mDocument.ApplyLighting(mLighting);
+    }
+    if (finished || (mLightingEditing && !active)) {
+      mLightingEditing = false;
+      if (mLightingMovedWater) {
+        // The sun turned the water's sun too: one step for both.
+        mLightingMovedWater = false;
+        EdDocument::LookEnvironment before = mDocument.LookEnvironmentNow();
+        before.lighting = mLightingBefore;
+        before.water = mLightingWaterBefore;
+        mDocument.LookApplied(before);
+        const LightingState lit = mDocument.LightingNow();
+        const WaterState wet = mDocument.WaterNow();
+        gpg::Logf(
+          "editor: lighting sun turned with the water's sun: sun %.3f %.3f %.3f, water's %.3f %.3f %.3f (one step: %s)",
+          static_cast<double>(lit.sunDirection[0]),
+          static_cast<double>(lit.sunDirection[1]),
+          static_cast<double>(lit.sunDirection[2]),
+          static_cast<double>(wet.shader.mSunDirection[0]),
+          static_cast<double>(wet.shader.mSunDirection[1]),
+          static_cast<double>(wet.shader.mSunDirection[2]),
+          mDocument.UndoStepName() != nullptr ? mDocument.UndoStepName() : "-"
+        );
+      } else if (!(mLightingBefore == mDocument.LightingNow())) {
+        mDocument.LightingEdited(mLightingBefore);
+        gpg::Logf(
+          "editor: lighting: multiplier %.2f, bloom %.3f, fog %.0f to %.0f",
+          static_cast<double>(mLighting.multiplier),
+          static_cast<double>(mLighting.bloom),
+          static_cast<double>(mLighting.fogStart),
+          static_cast<double>(mLighting.fogEnd)
+        );
+      }
+    }
+    if (Section("Settings file", false)) {
+      if (ImGui::Button("Import .scmlighting...")) {
+        mLightingImport = true;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Export...")) {
+        mLightingExport = true;
+      }
+      HelpNote("FAForeverMapEditor's lighting settings file: the sun, ambience, shadow, specular, bloom and fog.");
+    }
+    DrawSkyEditor();
+    DrawStrategicView();
+    if (ImGui::Button("Import .scmskybox...")) {
+      mSkyboxImport = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Export##sky")) {
+      mSkyboxExport = true;
+    }
+    HelpNote(
+      "FAForeverMapEditor's sky file: the dome, horizon and zenith colours, planets and cirrus. An import is one "
+      "undo step and is saved with the map."
+    );
+    DrawCubes();
+    ImGui::End();
+  }
+
+  void EdShell::DrawStrategicView()
+  {
+    moho::CWldMap* const map = mDocument.Map();
+    if (map == nullptr || map->mTerrainRes == nullptr || !Section("Strategic view", false)) {
+      return;
+    }
+    // The zoomed-out map's look (the engine's cartographic settings on the terrain). The map file doesn't keep them:
+    // the game sets them, so these show how the strategic view looks with other numbers, for this session.
+    moho::IWldTerrainRes& terrain = *map->mTerrainRes;
+    int samples = terrain.GetTopographicSamples();
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::SliderInt("##contours", &samples, 2, 64, "Contour lines %d")) {
+      terrain.SetTopographicSamples(samples);
+    }
+    float offset = terrain.GetImagerElevationOffset();
+    ImGui::SetNextItemWidth(-1.0f);
+    if (FillDragFloat("##imageroffset", &offset, 0.1f, -200.0f, 200.0f, "Imager offset %.1f")) {
+      terrain.SetImagerElevationOffset(offset);
+    }
+    static const char* const kNames[5] = {"Deep water", "Water", "Shallows", "Low ground", "Peaks"};
+    for (int i = 0; i < 5; ++i) {
+      const std::uint32_t argb = terrain.GetHypsometricColor(i);
+      float rgb[3] = {
+        static_cast<float>((argb >> 16) & 0xFFu) / 255.0f,
+        static_cast<float>((argb >> 8) & 0xFFu) / 255.0f,
+        static_cast<float>(argb & 0xFFu) / 255.0f
+      };
+      ImGui::PushID(i);
+      RowLabel(kNames[i]);
+      if (ColourField("##hypso", rgb)) {
+        const auto byte = [](const float v) {
+          return static_cast<std::uint32_t>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f));
+        };
+        terrain.SetHypsometricColor(i, 0xFF000000u | (byte(rgb[0]) << 16) | (byte(rgb[1]) << 8) | byte(rgb[2]));
+      }
+      ImGui::PopID();
+    }
+    HelpNote("Not kept in the map file: the game sets the strategic view's colours itself.");
+  }
+} // namespace faf::editor

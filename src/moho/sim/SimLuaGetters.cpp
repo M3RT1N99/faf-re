@@ -9,7 +9,10 @@ namespace
    * Returns whether `targetArmyIndex` is in one neutral-relation bitset lane.
    * Legacy behavior treats `0xFFFFFFFF` as neutral by default.
    */
-  [[nodiscard]] bool IsArmyMarkedNeutral(const std::uint32_t targetArmyIndex, const moho::BVIntSet& neutralSet) noexcept
+  [[nodiscard]] bool IsArmyMarkedNeutral(
+    const std::uint32_t targetArmyIndex,
+    const moho::BVIntSet& neutralSet
+  ) noexcept
   {
     if (targetArmyIndex == std::numeric_limits<std::uint32_t>::max()) {
       return true;
@@ -74,7 +77,10 @@ namespace
   }
 
   template <typename TEntityLike>
-  int PushEntityScriptObjectOrNil(LuaPlus::LuaState* const state, TEntityLike* const object)
+  int PushEntityScriptObjectOrNil(
+    LuaPlus::LuaState* const state,
+    TEntityLike* const object
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -92,14 +98,17 @@ namespace
   }
 
   template <typename TValue>
-  void LuaPushNumberField(lua_State* const state, const char* const key, const TValue value)
+  void LuaPushNumberField(
+    lua_State* const state,
+    const char* const key,
+    const TValue value
+  )
   {
     lua_pushstring(state, key);
     lua_pushnumber(state, static_cast<lua_Number>(value));
     lua_rawset(state, -3);
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x0075E4E0 (FUN_0075E4E0, cfunc_IsEntity)
@@ -107,7 +116,9 @@ namespace
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_IsEntityL`.
  */
-int moho::cfunc_IsEntity(lua_State* const luaContext)
+int moho::cfunc_IsEntity(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsEntityL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -121,12 +132,7 @@ int moho::cfunc_IsEntity(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_IsEntity_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsEntity",
-    &moho::cfunc_IsEntity,
-    nullptr,
-    "<global>",
-    kIsEntityHelpText
+    SimLuaInitSet(), "IsEntity", &moho::cfunc_IsEntity, nullptr, "<global>", kIsEntityHelpText
   );
   return &binder;
 }
@@ -137,7 +143,9 @@ moho::CScrLuaInitForm* moho::func_IsEntity_LuaFuncDef()
  * What it does:
  * Returns true when arg#1 resolves to an entity userdata object.
  */
-int moho::cfunc_IsEntityL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsEntityL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -159,7 +167,9 @@ int moho::cfunc_IsEntityL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_IsUnitL`.
  */
-int moho::cfunc_IsUnit(lua_State* const luaContext)
+int moho::cfunc_IsUnit(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsUnitL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -172,14 +182,7 @@ int moho::cfunc_IsUnit(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_IsUnit_LuaFuncDef()
 {
-  static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsUnit",
-    &moho::cfunc_IsUnit,
-    nullptr,
-    "<global>",
-    kIsUnitHelpText
-  );
+  static CScrLuaBinder binder(SimLuaInitSet(), "IsUnit", &moho::cfunc_IsUnit, nullptr, "<global>", kIsUnitHelpText);
   return &binder;
 }
 
@@ -189,7 +192,9 @@ moho::CScrLuaInitForm* moho::func_IsUnit_LuaFuncDef()
  * What it does:
  * Returns arg#1 as unit Lua object when the entity is a unit; otherwise nil.
  */
-int moho::cfunc_IsUnitL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsUnitL(
+  LuaPlus::LuaState* const state
+)
 {
   Entity* const entity = ResolveRequiredEntityLuaArg(state, kIsUnitHelpText);
   Unit* const unit = entity ? entity->IsUnit() : nullptr;
@@ -202,7 +207,9 @@ int moho::cfunc_IsUnitL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_IsPropL`.
  */
-int moho::cfunc_IsProp(lua_State* const luaContext)
+int moho::cfunc_IsProp(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsPropL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -215,14 +222,7 @@ int moho::cfunc_IsProp(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_IsProp_LuaFuncDef()
 {
-  static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsProp",
-    &moho::cfunc_IsProp,
-    nullptr,
-    "<global>",
-    kIsPropHelpText
-  );
+  static CScrLuaBinder binder(SimLuaInitSet(), "IsProp", &moho::cfunc_IsProp, nullptr, "<global>", kIsPropHelpText);
   return &binder;
 }
 
@@ -232,7 +232,9 @@ moho::CScrLuaInitForm* moho::func_IsProp_LuaFuncDef()
  * What it does:
  * Returns arg#1 as prop Lua object when the entity is a prop; otherwise nil.
  */
-int moho::cfunc_IsPropL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsPropL(
+  LuaPlus::LuaState* const state
+)
 {
   Entity* const entity = ResolveRequiredEntityLuaArg(state, kIsPropHelpText);
   Prop* const prop = entity ? entity->IsProp() : nullptr;
@@ -245,7 +247,9 @@ int moho::cfunc_IsPropL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_IsBlipL`.
  */
-int moho::cfunc_IsBlip(lua_State* const luaContext)
+int moho::cfunc_IsBlip(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsBlipL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -258,14 +262,7 @@ int moho::cfunc_IsBlip(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_IsBlip_LuaFuncDef()
 {
-  static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsBlip",
-    &moho::cfunc_IsBlip,
-    nullptr,
-    "<global>",
-    kIsBlipHelpText
-  );
+  static CScrLuaBinder binder(SimLuaInitSet(), "IsBlip", &moho::cfunc_IsBlip, nullptr, "<global>", kIsBlipHelpText);
   return &binder;
 }
 
@@ -276,7 +273,9 @@ moho::CScrLuaInitForm* moho::func_IsBlip_LuaFuncDef()
  * Returns arg#1 as recon-blip Lua object when the entity is a blip;
  * otherwise nil.
  */
-int moho::cfunc_IsBlipL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsBlipL(
+  LuaPlus::LuaState* const state
+)
 {
   Entity* const entity = ResolveRequiredEntityLuaArg(state, kIsBlipHelpText);
   ReconBlip* const blip = entity ? entity->IsReconBlip() : nullptr;
@@ -289,7 +288,9 @@ int moho::cfunc_IsBlipL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_IsProjectileL`.
  */
-int moho::cfunc_IsProjectile(lua_State* const luaContext)
+int moho::cfunc_IsProjectile(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsProjectileL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -303,12 +304,7 @@ int moho::cfunc_IsProjectile(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_IsProjectile_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsProjectile",
-    &moho::cfunc_IsProjectile,
-    nullptr,
-    "<global>",
-    kIsProjectileHelpText
+    SimLuaInitSet(), "IsProjectile", &moho::cfunc_IsProjectile, nullptr, "<global>", kIsProjectileHelpText
   );
   return &binder;
 }
@@ -320,7 +316,9 @@ moho::CScrLuaInitForm* moho::func_IsProjectile_LuaFuncDef()
  * Returns arg#1 as projectile Lua object when the entity is a projectile;
  * otherwise nil.
  */
-int moho::cfunc_IsProjectileL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsProjectileL(
+  LuaPlus::LuaState* const state
+)
 {
   Entity* const entity = ResolveRequiredEntityLuaArg(state, kIsProjectileHelpText);
   Projectile* const projectile = entity ? entity->IsProjectile() : nullptr;
@@ -333,7 +331,9 @@ int moho::cfunc_IsProjectileL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback state and forwards to `cfunc_IsCollisionBeamL`.
  */
-int moho::cfunc_IsCollisionBeam(lua_State* const luaContext)
+int moho::cfunc_IsCollisionBeam(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsCollisionBeamL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -347,12 +347,7 @@ int moho::cfunc_IsCollisionBeam(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_IsCollisionBeam_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsCollisionBeam",
-    &moho::cfunc_IsCollisionBeam,
-    nullptr,
-    "<global>",
-    kIsCollisionBeamHelpText
+    SimLuaInitSet(), "IsCollisionBeam", &moho::cfunc_IsCollisionBeam, nullptr, "<global>", kIsCollisionBeamHelpText
   );
   return &binder;
 }
@@ -364,7 +359,9 @@ moho::CScrLuaInitForm* moho::func_IsCollisionBeam_LuaFuncDef()
  * Returns arg#1 as collision-beam Lua object when the entity is a collision
  * beam; otherwise nil.
  */
-int moho::cfunc_IsCollisionBeamL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsCollisionBeamL(
+  LuaPlus::LuaState* const state
+)
 {
   Entity* const entity = ResolveRequiredEntityLuaArg(state, kIsCollisionBeamHelpText);
   CollisionBeamEntity* const collisionBeam = entity ? entity->IsCollisionBeam() : nullptr;
@@ -378,7 +375,9 @@ int moho::cfunc_IsCollisionBeamL(LuaPlus::LuaState* const state)
  * Unwraps Lua callback context and dispatches to
  * `cfunc_GetCurrentCommandSourceL`.
  */
-int moho::cfunc_GetCurrentCommandSource(lua_State* const luaContext)
+int moho::cfunc_GetCurrentCommandSource(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetCurrentCommandSourceL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -410,7 +409,9 @@ moho::CScrLuaInitForm* moho::func_GetCurrentCommandSource_LuaFuncDef()
  * Returns the current command source index as 1-based Lua number, or nil
  * when no source is active.
  */
-int moho::cfunc_GetCurrentCommandSourceL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetCurrentCommandSourceL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kGetCurrentCommandSourceHelpText);
 
@@ -433,7 +434,9 @@ int moho::cfunc_GetCurrentCommandSourceL(LuaPlus::LuaState* const state)
  * What it does:
  * Validates Lua argument count and pushes Sim end-game state.
  */
-int moho::cfunc_IsGameOverL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsGameOverL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -457,7 +460,9 @@ int moho::cfunc_IsGameOverL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_IsGameOverL`.
  */
-int moho::cfunc_IsGameOver(lua_State* const luaContext)
+int moho::cfunc_IsGameOver(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsGameOverL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -468,7 +473,9 @@ int moho::cfunc_IsGameOver(lua_State* const luaContext)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetGameTimeSecondsSimL`.
  */
-int moho::cfunc_GetGameTimeSecondsSim(lua_State* const luaContext)
+int moho::cfunc_GetGameTimeSecondsSim(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetGameTimeSecondsSimL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -498,7 +505,9 @@ moho::CScrLuaInitForm* moho::func_GetGameTimeSecondsSim_LuaFuncDef()
  * What it does:
  * Validates no Lua args and returns simulation time in seconds.
  */
-int moho::cfunc_GetGameTimeSecondsSimL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetGameTimeSecondsSimL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kGetGameTimeSecondsSimHelpText);
 
@@ -514,7 +523,9 @@ int moho::cfunc_GetGameTimeSecondsSimL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetGameTickL`.
  */
-int moho::cfunc_GetGameTick(lua_State* const luaContext)
+int moho::cfunc_GetGameTick(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetGameTickL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -527,8 +538,9 @@ int moho::cfunc_GetGameTick(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_GetGameTick_LuaFuncDef()
 {
-  static CScrLuaBinder
-    binder(SimLuaInitSet(), "GetGameTick", &moho::cfunc_GetGameTick, nullptr, "<global>", kGetGameTickHelpText);
+  static CScrLuaBinder binder(
+    SimLuaInitSet(), "GetGameTick", &moho::cfunc_GetGameTick, nullptr, "<global>", kGetGameTickHelpText
+  );
   return &binder;
 }
 
@@ -538,7 +550,9 @@ moho::CScrLuaInitForm* moho::func_GetGameTick_LuaFuncDef()
  * What it does:
  * Validates no Lua args and returns simulation tick count.
  */
-int moho::cfunc_GetGameTickL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetGameTickL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kGetGameTickHelpText);
 
@@ -555,7 +569,9 @@ int moho::cfunc_GetGameTickL(LuaPlus::LuaState* const state)
  * Unwraps raw Lua callback context and forwards to
  * `cfunc_GetSystemTimeSecondsOnlyForProfileUseL`.
  */
-int moho::cfunc_GetSystemTimeSecondsOnlyForProfileUse(lua_State* const luaContext)
+int moho::cfunc_GetSystemTimeSecondsOnlyForProfileUse(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetSystemTimeSecondsOnlyForProfileUseL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -586,7 +602,9 @@ moho::CScrLuaInitForm* moho::func_GetSystemTimeSecondsOnlyForProfileUse_LuaFuncD
  * What it does:
  * Validates no Lua args and returns system timer elapsed seconds.
  */
-int moho::cfunc_GetSystemTimeSecondsOnlyForProfileUseL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetSystemTimeSecondsOnlyForProfileUseL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kGetSystemTimeSecondsOnlyForProfileUseHelpText);
 
@@ -601,7 +619,9 @@ int moho::cfunc_GetSystemTimeSecondsOnlyForProfileUseL(LuaPlus::LuaState* const 
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetEntitiesInRectL`.
  */
-int moho::cfunc_GetEntitiesInRect(lua_State* const luaContext)
+int moho::cfunc_GetEntitiesInRect(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetEntitiesInRectL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -632,7 +652,9 @@ moho::CScrLuaInitForm* moho::func_GetEntitiesInRect_LuaFuncDef()
  * Reads one rectangle (`rect` or `x0,z0,x1,z1`) and returns a Lua table of
  * entities (unit/prop/projectile/entity) inside the query rectangle.
  */
-int moho::cfunc_GetEntitiesInRectL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetEntitiesInRectL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -642,12 +664,7 @@ int moho::cfunc_GetEntitiesInRectL(LuaPlus::LuaState* const state)
   const int argumentCount = lua_gettop(rawState);
   if (argumentCount < 1 || argumentCount > 4) {
     LuaPlus::LuaState::Error(
-      state,
-      "%s\n  expected between %d and %d args, but got %d",
-      kGetEntitiesInRectHelpText,
-      1,
-      4,
-      argumentCount
+      state, "%s\n  expected between %d and %d args, but got %d", kGetEntitiesInRectHelpText, 1, 4, argumentCount
     );
   }
 
@@ -693,14 +710,10 @@ int moho::cfunc_GetEntitiesInRectL(LuaPlus::LuaState* const state)
   (void)func_Rect2fToInt16(&collisionRect, queryRect);
 
   gpg::core::FastVectorN<CollisionShapeBase*, 20> gatheredSpans{};
-  constexpr EEntityType kEntityMask = static_cast<EEntityType>(
-    ENTITYTYPE_Unit | ENTITYTYPE_Prop | ENTITYTYPE_Projectile | ENTITYTYPE_Entity
-  );
-  const int gatheredCount = oGrid->mEntityOccupationManager.GatherUnmarkedUnitsInRect(
-    gatheredSpans,
-    collisionRect,
-    kEntityMask
-  );
+  constexpr EEntityType kEntityMask =
+    static_cast<EEntityType>(ENTITYTYPE_Unit | ENTITYTYPE_Prop | ENTITYTYPE_Projectile | ENTITYTYPE_Entity);
+  const int gatheredCount =
+    oGrid->mEntityOccupationManager.GatherUnmarkedUnitsInRect(gatheredSpans, collisionRect, kEntityMask);
   if (gatheredCount <= 0) {
     lua_pushnil(rawState);
     (void)lua_gettop(rawState);
@@ -727,7 +740,9 @@ int moho::cfunc_GetEntitiesInRectL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetUnitsInRectL`.
  */
-int moho::cfunc_GetUnitsInRect(lua_State* const luaContext)
+int moho::cfunc_GetUnitsInRect(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetUnitsInRectL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -741,12 +756,7 @@ int moho::cfunc_GetUnitsInRect(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetUnitsInRect_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetUnitsInRect",
-    &moho::cfunc_GetUnitsInRect,
-    nullptr,
-    "<global>",
-    kGetUnitsInRectHelpText
+    SimLuaInitSet(), "GetUnitsInRect", &moho::cfunc_GetUnitsInRect, nullptr, "<global>", kGetUnitsInRectHelpText
   );
   return &binder;
 }
@@ -758,7 +768,9 @@ moho::CScrLuaInitForm* moho::func_GetUnitsInRect_LuaFuncDef()
  * Reads one rectangle (`rect` or `x0,z0,x1,z1`) and returns a Lua table of
  * unit objects inside the query rectangle.
  */
-int moho::cfunc_GetUnitsInRectL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetUnitsInRectL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -768,12 +780,7 @@ int moho::cfunc_GetUnitsInRectL(LuaPlus::LuaState* const state)
   const int argumentCount = lua_gettop(rawState);
   if (argumentCount < 1 || argumentCount > 4) {
     LuaPlus::LuaState::Error(
-      state,
-      "%s\n  expected between %d and %d args, but got %d",
-      kGetUnitsInRectHelpText,
-      1,
-      4,
-      argumentCount
+      state, "%s\n  expected between %d and %d args, but got %d", kGetUnitsInRectHelpText, 1, 4, argumentCount
     );
   }
 
@@ -855,7 +862,9 @@ int moho::cfunc_GetUnitsInRectL(LuaPlus::LuaState* const state)
  * Unwraps raw Lua callback context and forwards to
  * `cfunc_GetReclaimablesInRectL`.
  */
-int moho::cfunc_GetReclaimablesInRect(lua_State* const luaContext)
+int moho::cfunc_GetReclaimablesInRect(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetReclaimablesInRectL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -886,7 +895,9 @@ moho::CScrLuaInitForm* moho::func_GetReclaimablesInRect_LuaFuncDef()
  * Reads one rectangle (`rect` or `x0,z0,x1,z1`) and returns a Lua table of
  * reclaimable entity objects (units/props) inside the query rectangle.
  */
-int moho::cfunc_GetReclaimablesInRectL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetReclaimablesInRectL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -896,12 +907,7 @@ int moho::cfunc_GetReclaimablesInRectL(LuaPlus::LuaState* const state)
   const int argumentCount = lua_gettop(rawState);
   if (argumentCount < 1 || argumentCount > 4) {
     LuaPlus::LuaState::Error(
-      state,
-      "%s\n  expected between %d and %d args, but got %d",
-      kGetReclaimablesInRectHelpText,
-      1,
-      4,
-      argumentCount
+      state, "%s\n  expected between %d and %d args, but got %d", kGetReclaimablesInRectHelpText, 1, 4, argumentCount
     );
   }
 
@@ -948,11 +954,8 @@ int moho::cfunc_GetReclaimablesInRectL(LuaPlus::LuaState* const state)
 
   gpg::core::FastVectorN<CollisionShapeBase*, 20> gatheredSpans{};
   constexpr EEntityType kReclaimableMask = static_cast<EEntityType>(ENTITYTYPE_Unit | ENTITYTYPE_Prop);
-  const int gatheredCount = oGrid->mEntityOccupationManager.GatherUnmarkedUnitsInRect(
-    gatheredSpans,
-    collisionRect,
-    kReclaimableMask
-  );
+  const int gatheredCount =
+    oGrid->mEntityOccupationManager.GatherUnmarkedUnitsInRect(gatheredSpans, collisionRect, kReclaimableMask);
   if (gatheredCount <= 0) {
     lua_pushnil(rawState);
     (void)lua_gettop(rawState);
@@ -985,7 +988,9 @@ int moho::cfunc_GetReclaimablesInRectL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetMapSizeL`.
  */
-int moho::cfunc_GetMapSize(lua_State* const luaContext)
+int moho::cfunc_GetMapSize(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetMapSizeL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -998,8 +1003,9 @@ int moho::cfunc_GetMapSize(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_GetMapSize_LuaFuncDef()
 {
-  static CScrLuaBinder
-    binder(SimLuaInitSet(), "GetMapSize", &moho::cfunc_GetMapSize, nullptr, "<global>", kGetMapSizeHelpText);
+  static CScrLuaBinder binder(
+    SimLuaInitSet(), "GetMapSize", &moho::cfunc_GetMapSize, nullptr, "<global>", kGetMapSizeHelpText
+  );
   return &binder;
 }
 
@@ -1010,7 +1016,9 @@ moho::CScrLuaInitForm* moho::func_GetMapSize_LuaFuncDef()
  * Validates no Lua args and returns map width/height extents in terrain grid
  * coordinates.
  */
-int moho::cfunc_GetMapSizeL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetMapSizeL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kGetMapSizeHelpText);
 
@@ -1033,12 +1041,7 @@ int moho::cfunc_GetMapSizeL(LuaPlus::LuaState* const state)
 moho::CScrLuaInitForm* moho::func_GetTerrainHeight_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetTerrainHeight",
-    &moho::cfunc_GetTerrainHeight,
-    nullptr,
-    "<global>",
-    kGetTerrainHeightHelpText
+    SimLuaInitSet(), "GetTerrainHeight", &moho::cfunc_GetTerrainHeight, nullptr, "<global>", kGetTerrainHeightHelpText
   );
   return &binder;
 }
@@ -1049,7 +1052,9 @@ moho::CScrLuaInitForm* moho::func_GetTerrainHeight_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetTerrainHeightL`.
  */
-int moho::cfunc_GetTerrainHeight(lua_State* const luaContext)
+int moho::cfunc_GetTerrainHeight(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetTerrainHeightL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1060,7 +1065,9 @@ int moho::cfunc_GetTerrainHeight(lua_State* const luaContext)
  * What it does:
  * Reads `(x, z)` and returns terrain elevation sampled from map heightfield.
  */
-int moho::cfunc_GetTerrainHeightL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetTerrainHeightL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1098,12 +1105,7 @@ int moho::cfunc_GetTerrainHeightL(LuaPlus::LuaState* const state)
 moho::CScrLuaInitForm* moho::func_GetSurfaceHeight_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetSurfaceHeight",
-    &moho::cfunc_GetSurfaceHeight,
-    nullptr,
-    "<global>",
-    kGetSurfaceHeightHelpText
+    SimLuaInitSet(), "GetSurfaceHeight", &moho::cfunc_GetSurfaceHeight, nullptr, "<global>", kGetSurfaceHeightHelpText
   );
   return &binder;
 }
@@ -1114,7 +1116,9 @@ moho::CScrLuaInitForm* moho::func_GetSurfaceHeight_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetSurfaceHeightL`.
  */
-int moho::cfunc_GetSurfaceHeight(lua_State* const luaContext)
+int moho::cfunc_GetSurfaceHeight(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetSurfaceHeightL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1126,7 +1130,9 @@ int moho::cfunc_GetSurfaceHeight(lua_State* const luaContext)
  * Reads `(x, z)` and returns max(terrainHeight, waterElevation) when water is
  * enabled, otherwise terrain height.
  */
-int moho::cfunc_GetSurfaceHeightL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetSurfaceHeightL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1152,8 +1158,10 @@ int moho::cfunc_GetSurfaceHeightL(LuaPlus::LuaState* const state)
   CHeightField* const field = map ? map->mHeightField.get() : nullptr;
 
   float surfaceHeight = field ? field->GetElevation(x, z) : 0.0f;
-  if (map && map->mWaterEnabled != 0u && map->mWaterElevation > surfaceHeight) {
-    surfaceHeight = map->mWaterElevation;
+  // Engine addition (water bodies): the level at (x, z); -10000 without water.
+  const float waterHeight = map ? map->GetWaterElevationAt(x, z) : -10000.0f;
+  if (waterHeight > surfaceHeight) {
+    surfaceHeight = waterHeight;
   }
 
   lua_pushnumber(rawState, surfaceHeight);
@@ -1185,7 +1193,9 @@ moho::CScrLuaInitForm* moho::func_GetTerrainTypeOffset_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetTerrainTypeOffsetL`.
  */
-int moho::cfunc_GetTerrainTypeOffset(lua_State* const luaContext)
+int moho::cfunc_GetTerrainTypeOffset(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetTerrainTypeOffsetL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1196,7 +1206,9 @@ int moho::cfunc_GetTerrainTypeOffset(lua_State* const luaContext)
  * What it does:
  * Reads `(x, z)` and returns terrain texture offset value at map position.
  */
-int moho::cfunc_GetTerrainTypeOffsetL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetTerrainTypeOffsetL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1233,12 +1245,7 @@ int moho::cfunc_GetTerrainTypeOffsetL(LuaPlus::LuaState* const state)
 moho::CScrLuaInitForm* moho::func_GetTerrainType_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetTerrainType",
-    &moho::cfunc_GetTerrainType,
-    nullptr,
-    "<global>",
-    kGetTerrainTypeLuaDefHelpText
+    SimLuaInitSet(), "GetTerrainType", &moho::cfunc_GetTerrainType, nullptr, "<global>", kGetTerrainTypeLuaDefHelpText
   );
   return &binder;
 }
@@ -1249,7 +1256,9 @@ moho::CScrLuaInitForm* moho::func_GetTerrainType_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetTerrainTypeL`.
  */
-int moho::cfunc_GetTerrainType(lua_State* const luaContext)
+int moho::cfunc_GetTerrainType(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetTerrainTypeL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1261,7 +1270,9 @@ int moho::cfunc_GetTerrainType(lua_State* const luaContext)
  * Reads `(x, z)` from Lua, queries terrain type from `Sim::mMapData`, and
  * returns the terrain-type Lua table.
  */
-int moho::cfunc_GetTerrainTypeL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetTerrainTypeL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1322,7 +1333,9 @@ moho::CScrLuaInitForm* moho::func_GetUnitBlueprintByName_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetUnitBlueprintByNameL`.
  */
-int moho::cfunc_GetUnitBlueprintByName(lua_State* const luaContext)
+int moho::cfunc_GetUnitBlueprintByName(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetUnitBlueprintByNameL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1334,7 +1347,9 @@ int moho::cfunc_GetUnitBlueprintByName(lua_State* const luaContext)
  * Reads one unit blueprint id string, resolves it via `Sim::mRules`, and
  * returns the blueprint Lua object (or `nil` when unresolved).
  */
-int moho::cfunc_GetUnitBlueprintByNameL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetUnitBlueprintByNameL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1376,7 +1391,10 @@ namespace
    * radius, type)` and returns an array of `{ X1, Z1, X2, Z2, Type, Dist }`
    * (the key spelling of the string block at 0x012938C3) from `resources`.
    */
-  int PushDepositsAroundPoint(lua_State* const luaContext, moho::CSimResources* const resources)
+  int PushDepositsAroundPoint(
+    lua_State* const luaContext,
+    moho::CSimResources* const resources
+  )
   {
     const float x = static_cast<float>(lua_tonumber(luaContext, 1));
     const float z = static_cast<float>(lua_tonumber(luaContext, 2));
@@ -1413,9 +1431,7 @@ namespace
 
     return 1;
   }
-}
-
-
+} // namespace
 
 /**
  * Address: 0x0128B884 (FUN_0128B884, cfunc_GetDepositsAroundPoint)
@@ -1424,14 +1440,16 @@ namespace
  * Reads `(x, z, radius, type)` from Lua and returns an array of deposits:
  * `{ X1, Z1, X2, Z2, Type, Dist }`, from the sim's resources.
  */
-int moho::cfunc_GetDepositsAroundPoint(lua_State* const luaContext)
+int moho::cfunc_GetDepositsAroundPoint(
+  lua_State* const luaContext
+)
 {
   if (!luaContext) {
     return 0;
   }
 
   Sim* const sim = ResolveGlobalSim(luaContext);
-  return PushDepositsAroundPoint(luaContext, sim ? sim->mSimResources.px : nullptr);
+  return PushDepositsAroundPoint(luaContext, sim ? sim->mSimResources.get() : nullptr);
 }
 
 /**
@@ -1443,14 +1461,16 @@ int moho::cfunc_GetDepositsAroundPoint(lua_State* const luaContext)
  * list through the active session's resources, which the UI already uses for
  * extractor snapping, so the user state never touches the sim.
  */
-int moho::cfunc_GetDepositsAroundPointUser(lua_State* const luaContext)
+int moho::cfunc_GetDepositsAroundPointUser(
+  lua_State* const luaContext
+)
 {
   if (!luaContext) {
     return 0;
   }
 
   CWldSession* const session = WLD_GetActiveSession();
-  return PushDepositsAroundPoint(luaContext, session ? session->mSimResources.px : nullptr);
+  return PushDepositsAroundPoint(luaContext, session ? session->mSimResources.get() : nullptr);
 }
 
 /**
@@ -1460,7 +1480,9 @@ int moho::cfunc_GetDepositsAroundPointUser(lua_State* const luaContext)
  * Reads start time from Lua arg #1 and pushes elapsed time in seconds from
  * `QueryPerformanceCounter`.
  */
-int moho::cfunc_GetTimeForProfileSim(lua_State* const luaContext)
+int moho::cfunc_GetTimeForProfileSim(
+  lua_State* const luaContext
+)
 {
   LARGE_INTEGER performanceCount{};
   LARGE_INTEGER frequency{};
@@ -1481,7 +1503,9 @@ int moho::cfunc_GetTimeForProfileSim(lua_State* const luaContext)
  * What it does:
  * Unwraps Lua callback context and dispatches to `cfunc_GetMouseWorldPosL`.
  */
-int moho::cfunc_GetMouseWorldPos(lua_State* const luaContext)
+int moho::cfunc_GetMouseWorldPos(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetMouseWorldPosL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1497,12 +1521,7 @@ int moho::cfunc_GetMouseWorldPos(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetMouseWorldPosSim_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetMouseWorldPos",
-    &moho::cfunc_GetMouseWorldPos,
-    nullptr,
-    "<global>",
-    kGetMouseWorldPosHelpText
+    SimLuaInitSet(), "GetMouseWorldPos", &moho::cfunc_GetMouseWorldPos, nullptr, "<global>", kGetMouseWorldPosHelpText
   );
   return &binder;
 }
@@ -1513,7 +1532,9 @@ moho::CScrLuaInitForm* moho::func_GetMouseWorldPosSim_LuaFuncDef()
  * What it does:
  * Pushes current world-space mouse position as one Lua vector.
  */
-int moho::cfunc_GetMouseWorldPosL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetMouseWorldPosL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1530,7 +1551,8 @@ int moho::cfunc_GetMouseWorldPosL(LuaPlus::LuaState* const state)
     LuaPlus::LuaState::Error(state, kGetMouseWorldPosNoSessionText);
   }
 
-  const LuaPlus::LuaObject worldPositionObject = SCR_ToLua<Wm3::Vector3<float>>(state, session->CursorWorldPos);
+  const LuaPlus::LuaObject worldPositionObject =
+    SCR_ToLua<Wm3::Vector3<float>>(state, session->mCursorInfo.mMouseWorldPos);
   worldPositionObject.PushStack(state);
   return 1;
 }
@@ -1579,7 +1601,9 @@ moho::CScrLuaInitForm* moho::func_GetDepositsAroundPoint_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetArmyBrainL`.
  */
-int moho::cfunc_GetArmyBrain(lua_State* const luaContext)
+int moho::cfunc_GetArmyBrain(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetArmyBrainL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1593,12 +1617,7 @@ int moho::cfunc_GetArmyBrain(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetArmyBrain_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetArmyBrain",
-    &moho::cfunc_GetArmyBrain,
-    nullptr,
-    "<global>",
-    kGetArmyBrainHelpText
+    SimLuaInitSet(), "GetArmyBrain", &moho::cfunc_GetArmyBrain, nullptr, "<global>", kGetArmyBrainHelpText
   );
   return &binder;
 }
@@ -1609,7 +1628,9 @@ moho::CScrLuaInitForm* moho::func_GetArmyBrain_LuaFuncDef()
  * What it does:
  * Resolves one army selector and pushes that army brain Lua object.
  */
-int moho::cfunc_GetArmyBrainL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetArmyBrainL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kGetArmyBrainHelpText);
 
@@ -1630,7 +1651,9 @@ int moho::cfunc_GetArmyBrainL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_IsAllySimL`.
  */
-int moho::cfunc_IsAllySim(lua_State* const luaContext)
+int moho::cfunc_IsAllySim(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsAllySimL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1644,12 +1667,7 @@ int moho::cfunc_IsAllySim(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_IsAllySim_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsAlly",
-    &moho::cfunc_IsAllySim,
-    nullptr,
-    "<global>",
-    kIsAllySimHelpText
+    SimLuaInitSet(), "IsAlly", &moho::cfunc_IsAllySim, nullptr, "<global>", kIsAllySimHelpText
   );
   return &binder;
 }
@@ -1660,7 +1678,9 @@ moho::CScrLuaInitForm* moho::func_IsAllySim_LuaFuncDef()
  * What it does:
  * Reads `(army1, army2)` and returns whether army1 treats army2 as allied.
  */
-int moho::cfunc_IsAllySimL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsAllySimL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1686,7 +1706,9 @@ int moho::cfunc_IsAllySimL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_IsEnemySimL`.
  */
-int moho::cfunc_IsEnemySim(lua_State* const luaContext)
+int moho::cfunc_IsEnemySim(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsEnemySimL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1700,12 +1722,7 @@ int moho::cfunc_IsEnemySim(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_IsEnemySim_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsEnemy",
-    &moho::cfunc_IsEnemySim,
-    nullptr,
-    "<global>",
-    kIsEnemySimHelpText
+    SimLuaInitSet(), "IsEnemy", &moho::cfunc_IsEnemySim, nullptr, "<global>", kIsEnemySimHelpText
   );
   return &binder;
 }
@@ -1716,7 +1733,9 @@ moho::CScrLuaInitForm* moho::func_IsEnemySim_LuaFuncDef()
  * What it does:
  * Reads `(army1, army2)` and returns whether army1 treats army2 as enemy.
  */
-int moho::cfunc_IsEnemySimL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsEnemySimL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1742,7 +1761,9 @@ int moho::cfunc_IsEnemySimL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_IsNeutralSimL`.
  */
-int moho::cfunc_IsNeutralSim(lua_State* const luaContext)
+int moho::cfunc_IsNeutralSim(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsNeutralSimL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1756,12 +1777,7 @@ int moho::cfunc_IsNeutralSim(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_IsNeutralSim_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "IsNeutral",
-    &moho::cfunc_IsNeutralSim,
-    nullptr,
-    "<global>",
-    kIsNeutralSimHelpText
+    SimLuaInitSet(), "IsNeutral", &moho::cfunc_IsNeutralSim, nullptr, "<global>", kIsNeutralSimHelpText
   );
   return &binder;
 }
@@ -1772,7 +1788,9 @@ moho::CScrLuaInitForm* moho::func_IsNeutralSim_LuaFuncDef()
  * What it does:
  * Reads `(army1, army2)` and returns whether army1 treats army2 as neutral.
  */
-int moho::cfunc_IsNeutralSimL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsNeutralSimL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1786,8 +1804,8 @@ int moho::cfunc_IsNeutralSimL(LuaPlus::LuaState* const state)
   const LuaPlus::LuaObject secondArmyObject(LuaPlus::LuaStackObject(state, 2));
   CArmyImpl* const secondArmy = ARMY_FromLuaState(state, secondArmyObject);
 
-  const bool isNeutral = firstArmy != nullptr && secondArmy != nullptr
-    && IsArmyMarkedNeutral(static_cast<std::uint32_t>(secondArmy->mConstDat.mArmyIndex), firstArmy->mVarDat.mNeutrals);
+  const bool isNeutral = firstArmy != nullptr && secondArmy != nullptr &&
+    IsArmyMarkedNeutral(static_cast<std::uint32_t>(secondArmy->mConstDat.mArmyIndex), firstArmy->mVarDat.mNeutrals);
   lua_pushboolean(rawState, isNeutral ? 1 : 0);
   return 1;
 }
@@ -1798,7 +1816,9 @@ int moho::cfunc_IsNeutralSimL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetArmyUnitCostTotalL`.
  */
-int moho::cfunc_GetArmyUnitCostTotal(lua_State* const luaContext)
+int moho::cfunc_GetArmyUnitCostTotal(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetArmyUnitCostTotalL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1829,7 +1849,9 @@ moho::CScrLuaInitForm* moho::func_GetArmyUnitCostTotal_LuaFuncDef()
  * Resolves one army selector and returns the army total unit cost as a Lua
  * number.
  */
-int moho::cfunc_GetArmyUnitCostTotalL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetArmyUnitCostTotalL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kGetArmyUnitCostTotalHelpText);
 
@@ -1845,7 +1867,9 @@ int moho::cfunc_GetArmyUnitCostTotalL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetArmyUnitCapL`.
  */
-int moho::cfunc_GetArmyUnitCap(lua_State* const luaContext)
+int moho::cfunc_GetArmyUnitCap(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetArmyUnitCapL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1859,12 +1883,7 @@ int moho::cfunc_GetArmyUnitCap(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetArmyUnitCap_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetArmyUnitCap",
-    &moho::cfunc_GetArmyUnitCap,
-    nullptr,
-    "<global>",
-    kGetArmyUnitCapHelpText
+    SimLuaInitSet(), "GetArmyUnitCap", &moho::cfunc_GetArmyUnitCap, nullptr, "<global>", kGetArmyUnitCapHelpText
   );
   return &binder;
 }
@@ -1876,7 +1895,9 @@ moho::CScrLuaInitForm* moho::func_GetArmyUnitCap_LuaFuncDef()
  * Resolves one army selector and returns that army's unit-cap value as a Lua
  * number.
  */
-int moho::cfunc_GetArmyUnitCapL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetArmyUnitCapL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kGetArmyUnitCapHelpText);
 
@@ -1911,7 +1932,9 @@ moho::CScrLuaInitForm* moho::func_IsGameOver_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetEntityByIdL`.
  */
-int moho::cfunc_GetEntityById(lua_State* const luaContext)
+int moho::cfunc_GetEntityById(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetEntityByIdL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1925,12 +1948,7 @@ int moho::cfunc_GetEntityById(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetEntityById_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetEntityById",
-    &moho::cfunc_GetEntityById,
-    nullptr,
-    "<global>",
-    kGetEntityByIdHelpText
+    SimLuaInitSet(), "GetEntityById", &moho::cfunc_GetEntityById, nullptr, "<global>", kGetEntityByIdHelpText
   );
   return &binder;
 }
@@ -1942,7 +1960,9 @@ moho::CScrLuaInitForm* moho::func_GetEntityById_LuaFuncDef()
  * Resolves one string entity-id argument and returns matching entity Lua
  * object (or nil).
  */
-int moho::cfunc_GetEntityByIdL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetEntityByIdL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -1977,7 +1997,9 @@ int moho::cfunc_GetEntityByIdL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetUnitByIdSimL`.
  */
-int moho::cfunc_GetUnitByIdSim(lua_State* const luaContext)
+int moho::cfunc_GetUnitByIdSim(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetUnitByIdSimL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -1991,12 +2013,7 @@ int moho::cfunc_GetUnitByIdSim(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetUnitByIdSim_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetUnitById",
-    &moho::cfunc_GetUnitByIdSim,
-    nullptr,
-    "<global>",
-    kGetUnitByIdSimHelpText
+    SimLuaInitSet(), "GetUnitById", &moho::cfunc_GetUnitByIdSim, nullptr, "<global>", kGetUnitByIdSimHelpText
   );
   return &binder;
 }
@@ -2008,7 +2025,9 @@ moho::CScrLuaInitForm* moho::func_GetUnitByIdSim_LuaFuncDef()
  * Resolves one string entity-id argument and returns the matching unit Lua
  * object when that id is a unit (or nil).
  */
-int moho::cfunc_GetUnitByIdSimL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetUnitByIdSimL(
+  LuaPlus::LuaState* const state
+)
 {
   if (!state || !state->m_state) {
     return 0;
@@ -2044,7 +2063,9 @@ int moho::cfunc_GetUnitByIdSimL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_GetFocusArmySimL`.
  */
-int moho::cfunc_GetFocusArmySim(lua_State* const luaContext)
+int moho::cfunc_GetFocusArmySim(
+  lua_State* const luaContext
+)
 {
   return cfunc_GetFocusArmySimL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -2058,12 +2079,7 @@ int moho::cfunc_GetFocusArmySim(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_GetFocusArmySim_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "GetFocusArmy",
-    &moho::cfunc_GetFocusArmySim,
-    nullptr,
-    "<global>",
-    kGetFocusArmySimHelpText
+    SimLuaInitSet(), "GetFocusArmy", &moho::cfunc_GetFocusArmySim, nullptr, "<global>", kGetFocusArmySimHelpText
   );
   return &binder;
 }
@@ -2075,7 +2091,9 @@ moho::CScrLuaInitForm* moho::func_GetFocusArmySim_LuaFuncDef()
  * Validates no Lua args and returns current focused army index (1-based, or
  * `-1` when unset).
  */
-int moho::cfunc_GetFocusArmySimL(LuaPlus::LuaState* const state)
+int moho::cfunc_GetFocusArmySimL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kGetFocusArmySimHelpText);
 
@@ -2095,14 +2113,15 @@ int moho::cfunc_GetFocusArmySimL(LuaPlus::LuaState* const state)
   return 1;
 }
 
-
 /**
  * Address: 0x0075CF90 (FUN_0075CF90, cfunc_HasLocalizedVOSim)
  *
  * What it does:
  * Validates `HasLocalizedVO(language)` argument count on the sim Lua lane.
  */
-int moho::cfunc_HasLocalizedVOSim(lua_State* const luaContext)
+int moho::cfunc_HasLocalizedVOSim(
+  lua_State* const luaContext
+)
 {
   LuaPlus::LuaState* const state = LuaPlus::LuaState::CastState(luaContext);
   moho::SCR_ExpectExactArgs(state, 1, kHasLocalizedVOSimHelpText);
@@ -2118,12 +2137,7 @@ int moho::cfunc_HasLocalizedVOSim(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_HasLocalizedVOSim_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    SimLuaInitSet(),
-    "HasLocalizedVO",
-    &moho::cfunc_HasLocalizedVOSim,
-    nullptr,
-    "<global>",
-    kHasLocalizedVOSimHelpText
+    SimLuaInitSet(), "HasLocalizedVO", &moho::cfunc_HasLocalizedVOSim, nullptr, "<global>", kHasLocalizedVOSimHelpText
   );
   return &binder;
 }

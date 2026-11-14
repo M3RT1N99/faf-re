@@ -64,22 +64,6 @@ namespace
     return CUnitScriptTask::sType;
   }
 
-  /**
-   * Address: 0x00624260 (FUN_00624260)
-   *
-   * What it does:
-   * Upcasts one reflected reference lane to `moho::CUnitScriptTask*`.
-   */
-  [[maybe_unused]] [[nodiscard]] void* TryUpcastCUnitScriptTaskRefObject(gpg::RRef* const sourceRef)
-  {
-    if (!sourceRef) {
-      return nullptr;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(*sourceRef, CachedCUnitScriptTaskType());
-    return upcast.mObj;
-  }
-
   [[nodiscard]] gpg::RType* CachedCScriptObjectType()
   {
     return CScriptObject::StaticGetClass();
@@ -126,7 +110,9 @@ namespace
     return taskClass;
   }
 
-  [[nodiscard]] gpg::RRef MakeCUnitScriptTaskRef(CUnitScriptTask* object)
+  [[nodiscard]] gpg::RRef MakeCUnitScriptTaskRef(
+    CUnitScriptTask* object
+  )
   {
     gpg::RRef ref{};
     ref.mObj = object;
@@ -134,7 +120,9 @@ namespace
     return ref;
   }
 
-  [[nodiscard]] gpg::RRef MakeCUnitCommandRef(CUnitCommand* command)
+  [[nodiscard]] gpg::RRef MakeCUnitCommandRef(
+    CUnitCommand* command
+  )
   {
     gpg::RRef ref{};
     ref.mObj = nullptr;
@@ -151,20 +139,23 @@ namespace
     }
 
     std::int32_t baseOffset = 0;
-    const bool isDerived = dynamicType != nullptr && ref.mType != nullptr && dynamicType->IsDerivedFrom(ref.mType, &baseOffset);
+    const bool isDerived =
+      dynamicType != nullptr && ref.mType != nullptr && dynamicType->IsDerivedFrom(ref.mType, &baseOffset);
     if (!isDerived) {
       ref.mObj = command;
       ref.mType = dynamicType;
       return ref;
     }
 
-    ref.mObj =
-      reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(command) - static_cast<std::uintptr_t>(baseOffset));
+    ref.mObj = gpg::CompleteObject(command, baseOffset);
     ref.mType = dynamicType;
     return ref;
   }
 
-  [[nodiscard]] CUnitCommand* ReadTrackedCUnitCommandPointer(gpg::ReadArchive* archive, const gpg::RRef& ownerRef)
+  [[nodiscard]] CUnitCommand* ReadTrackedCUnitCommandPointer(
+    gpg::ReadArchive* archive,
+    const gpg::RRef& ownerRef
+  )
   {
     const gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(archive, ownerRef);
     if (!tracked.object) {
@@ -180,10 +171,12 @@ namespace
       return static_cast<CUnitCommand*>(upcast.mObj);
     }
 
-    const char* const expected = gpg::RTypeOf<CUnitCommand>() ? gpg::RTypeOf<CUnitCommand>()->GetName() : "CUnitCommand";
+    const char* const expected =
+      gpg::RTypeOf<CUnitCommand>() ? gpg::RTypeOf<CUnitCommand>()->GetName() : "CUnitCommand";
     const char* const actual = source.GetTypeName();
-    const msvc8::string msg = gpg::STR_Printf(
-      "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" instead",
+    const fa::string msg = gpg::STR_Printf(
+      "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
+      "instead",
       expected ? expected : "CUnitCommand",
       actual ? actual : "null"
     );
@@ -196,7 +189,7 @@ gpg::RType* CUnitScriptTask::sType = nullptr;
 CScrLuaMetatableFactory<CUnitScriptTask> CScrLuaMetatableFactory<CUnitScriptTask>::sInstance{};
 
 /**
-  * Alias of FUN_10015880 (non-canonical helper lane).
+ * Alias of FUN_10015880 (non-canonical helper lane).
  *
  * What it does:
  * Stores one metatable-factory index used by `CScrLuaObjectFactory::Get`.
@@ -205,34 +198,21 @@ moho::CScrLuaMetatableFactory<moho::CUnitScriptTask>::CScrLuaMetatableFactory()
   : CScrLuaObjectFactory(CScrLuaObjectFactory::AllocateFactoryObjectIndex())
 {}
 
-moho::CScrLuaMetatableFactory<moho::CUnitScriptTask>&
-moho::CScrLuaMetatableFactory<moho::CUnitScriptTask>::Instance()
+moho::CScrLuaMetatableFactory<moho::CUnitScriptTask>& moho::CScrLuaMetatableFactory<moho::CUnitScriptTask>::Instance()
 {
   return sInstance;
 }
 
 /**
- * Address: 0x006240F0 (FUN_006240F0)
- *
- * What it does:
- * Rebinds the startup metatable-factory index lane for
- * `CScrLuaMetatableFactory<CUnitScriptTask>` and returns that singleton.
- */
-moho::CScrLuaMetatableFactory<moho::CUnitScriptTask>*
-moho::startup_CScrLuaMetatableFactory_CUnitScriptTask_Index()
-{
-  auto& instance = CScrLuaMetatableFactory<CUnitScriptTask>::Instance();
-  instance.SetFactoryObjectIndexForRecovery(CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-  return &instance;
-}
-
-/**
- * Address: 0x00623B50 (FUN_00623B50, ?Create@?$CScrLuaMetatableFactory@VCUnitScriptTask@Moho@@@Moho@@MAE?AVLuaObject@LuaPlus@@PAVLuaState@4@@Z)
+ * Address: 0x00623B50 (FUN_00623B50,
+ * ?Create@?$CScrLuaMetatableFactory@VCUnitScriptTask@Moho@@@Moho@@MAE?AVLuaObject@LuaPlus@@PAVLuaState@4@@Z)
  *
  * What it does:
  * Creates the default metatable used by `CUnitScriptTask` Lua userdata.
  */
-LuaPlus::LuaObject moho::CScrLuaMetatableFactory<moho::CUnitScriptTask>::Create(LuaPlus::LuaState* const state)
+LuaPlus::LuaObject moho::CScrLuaMetatableFactory<moho::CUnitScriptTask>::Create(
+  LuaPlus::LuaState* const state
+)
 {
   return SCR_CreateSimpleMetatable(state);
 }
@@ -253,7 +233,10 @@ CUnitScriptTask::CUnitScriptTask()
 /**
  * Address: 0x006228B0 (FUN_006228B0, dispatch ctor lane)
  */
-CUnitScriptTask::CUnitScriptTask(IAiCommandDispatchImpl* const dispatchTask, const LuaPlus::LuaObject& sourceArgs)
+CUnitScriptTask::CUnitScriptTask(
+  IAiCommandDispatchImpl* const dispatchTask,
+  const LuaPlus::LuaObject& sourceArgs
+)
   : CCommandTask(static_cast<CCommandTask*>(dispatchTask))
   , CScriptObject()
   , Listener<ECommandEvent>()
@@ -289,7 +272,10 @@ CUnitScriptTask::CUnitScriptTask(IAiCommandDispatchImpl* const dispatchTask, con
 /**
  * Address: 0x00622F70 (FUN_00622F70, Moho::CUnitScriptTask::operator new)
  */
-CUnitScriptTask* CUnitScriptTask::Create(IAiCommandDispatchImpl* const dispatchTask, LuaPlus::LuaObject* const sourceArgs)
+CUnitScriptTask* CUnitScriptTask::Create(
+  IAiCommandDispatchImpl* const dispatchTask,
+  LuaPlus::LuaObject* const sourceArgs
+)
 {
   if (sourceArgs != nullptr) {
     return new (std::nothrow) CUnitScriptTask(dispatchTask, *sourceArgs);
@@ -331,7 +317,9 @@ gpg::RRef CUnitScriptTask::GetDerivedObjectRef()
  * Unwraps raw Lua callback context and forwards to
  * `cfunc_CUnitScriptTaskGetUnitL`.
  */
-int moho::cfunc_CUnitScriptTaskGetUnit(lua_State* const luaContext)
+int moho::cfunc_CUnitScriptTaskGetUnit(
+  lua_State* const luaContext
+)
 {
   return cfunc_CUnitScriptTaskGetUnitL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -361,7 +349,9 @@ moho::CScrLuaInitForm* moho::func_CUnitScriptTaskGetUnit_LuaFuncDef()
  * What it does:
  * Resolves one `CUnitScriptTask` and pushes owner-unit Lua userdata.
  */
-int moho::cfunc_CUnitScriptTaskGetUnitL(LuaPlus::LuaState* const state)
+int moho::cfunc_CUnitScriptTaskGetUnitL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kGetUnitHelpText);
 
@@ -378,7 +368,9 @@ int moho::cfunc_CUnitScriptTaskGetUnitL(LuaPlus::LuaState* const state)
  * Unwraps raw Lua callback context and forwards to
  * `cfunc_CUnitScriptTaskSetAIResultL`.
  */
-int moho::cfunc_CUnitScriptTaskSetAIResult(lua_State* const luaContext)
+int moho::cfunc_CUnitScriptTaskSetAIResult(
+  lua_State* const luaContext
+)
 {
   return cfunc_CUnitScriptTaskSetAIResultL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -408,7 +400,9 @@ moho::CScrLuaInitForm* moho::func_CUnitScriptTaskSetAIResult_LuaFuncDef()
  * What it does:
  * Resolves one `CUnitScriptTask` and writes one integer AI-result lane.
  */
-int moho::cfunc_CUnitScriptTaskSetAIResultL(LuaPlus::LuaState* const state)
+int moho::cfunc_CUnitScriptTaskSetAIResultL(
+  LuaPlus::LuaState* const state
+)
 {
   lua_State* const rawState = state->m_state;
   moho::SCR_ExpectExactArgs(state, 2, kSetAIResultHelpText);
@@ -441,7 +435,9 @@ int moho::cfunc_CUnitScriptTaskSetAIResultL(LuaPlus::LuaState* const state)
  * footprint origin offset. Raises a Lua error when the target argument
  * does not resolve to a usable entity/ground target.
  */
-int moho::cfunc_LUnitMoveL(LuaPlus::LuaState* const state)
+int moho::cfunc_LUnitMoveL(
+  LuaPlus::LuaState* const state
+)
 {
   lua_State* const rawState = state->m_state;
   moho::SCR_ExpectExactArgs(state, 2, kLUnitMoveHelpText);
@@ -472,8 +468,8 @@ int moho::cfunc_LUnitMoveL(LuaPlus::LuaState* const state)
   // targets fold the same way as in the shipped engine.
   const float halfFootprintX = static_cast<float>(footprint.mSizeX) * 0.5f;
   const float halfFootprintZ = static_cast<float>(footprint.mSizeZ) * 0.5f;
-  const int originX = static_cast<int>(static_cast<std::int16_t>(msvc8::RoundToInt(targetPos.x - halfFootprintX)));
-  const int originZ = static_cast<int>(static_cast<std::int16_t>(msvc8::RoundToInt(targetPos.z - halfFootprintZ)));
+  const int originX = static_cast<int>(static_cast<std::int16_t>(fa::RoundToInt(targetPos.x - halfFootprintX)));
+  const int originZ = static_cast<int>(static_cast<std::int16_t>(fa::RoundToInt(targetPos.z - halfFootprintZ)));
 
   SNavGoal goal{};
   goal.mPos1 = gpg::Rect2i{originX, originZ, originX + 1, originZ + 1};
@@ -494,7 +490,9 @@ int moho::cfunc_LUnitMoveL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_LUnitMoveL`.
  */
-int moho::cfunc_LUnitMove(lua_State* const luaContext)
+int moho::cfunc_LUnitMove(
+  lua_State* const luaContext
+)
 {
   return cfunc_LUnitMoveL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -515,12 +513,7 @@ int moho::cfunc_LUnitMove(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_LUnitMove_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_SimLuaInitSet(),
-    kLUnitMoveName,
-    &moho::cfunc_LUnitMove,
-    nullptr,
-    kLUnitMoveGroupName,
-    kLUnitMoveHelpText
+    moho::SCR_SimLuaInitSet(), kLUnitMoveName, &moho::cfunc_LUnitMove, nullptr, kLUnitMoveGroupName, kLUnitMoveHelpText
   );
   return &binder;
 }
@@ -539,7 +532,10 @@ namespace
    * ground target it makes a one-cell rect at floor(pos - 0.5) (int16-truncated,
    * matching the binary's word store); otherwise a zero rect.
    */
-  [[nodiscard]] gpg::Rect2i* ComputeTargetGridRect(const moho::CAiTarget* const target, gpg::Rect2i* const out)
+  [[nodiscard]] gpg::Rect2i* ComputeTargetGridRect(
+    const moho::CAiTarget* const target,
+    gpg::Rect2i* const out
+  )
   {
     if (target->targetType == moho::EAiTargetType::AITARGET_Entity) {
       moho::Entity* const entity = target->targetEntity.GetObjectPtr();
@@ -553,8 +549,8 @@ namespace
       // `fld`/`fistp` (round to nearest, ties to even -- not `__ftol`
       // truncation), then read back through `movsx word` so out-of-range
       // ground targets fold to int16 the same way.
-      const auto originX = static_cast<std::int16_t>(msvc8::RoundToInt(target->position.x - 0.5f));
-      const auto originZ = static_cast<std::int16_t>(msvc8::RoundToInt(target->position.z - 0.5f));
+      const auto originX = static_cast<std::int16_t>(fa::RoundToInt(target->position.x - 0.5f));
+      const auto originZ = static_cast<std::int16_t>(fa::RoundToInt(target->position.z - 0.5f));
       out->x0 = originX;
       out->z0 = originZ;
       out->x1 = originX + 1;
@@ -580,7 +576,11 @@ namespace
    * adjusted target cell rect and whose outer rect (`mPos1`) is that rect
    * expanded by `range`, then issues a move via `NewMoveTask`.
    */
-  void IssueMoveToGridRect(const int range, moho::CCommandTask* const task, const gpg::Rect2i* const cellRect)
+  void IssueMoveToGridRect(
+    const int range,
+    moho::CCommandTask* const task,
+    const gpg::Rect2i* const cellRect
+  )
   {
     const moho::SFootprint& footprint = task->mUnit->GetFootprint();
 
@@ -612,7 +612,9 @@ namespace
  * cell rect expanded by `range`. Raises a Lua error when the target argument
  * does not resolve to a usable entity/ground target.
  */
-int moho::cfunc_LUnitMoveNearL(LuaPlus::LuaState* const state)
+int moho::cfunc_LUnitMoveNearL(
+  LuaPlus::LuaState* const state
+)
 {
   lua_State* const rawState = state->m_state;
   moho::SCR_ExpectExactArgs(state, 3, kLUnitMoveNearHelpText);
@@ -657,7 +659,9 @@ int moho::cfunc_LUnitMoveNearL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_LUnitMoveNearL`.
  */
-int moho::cfunc_LUnitMoveNear(lua_State* const luaContext)
+int moho::cfunc_LUnitMoveNear(
+  lua_State* const luaContext
+)
 {
   return cfunc_LUnitMoveNearL(moho::SCR_ResolveBindingState(luaContext));
 }
@@ -695,7 +699,10 @@ namespace moho
 /**
  * Address: 0x00624450 (FUN_00624450, Moho::CUnitScriptTask::MemberDeserialize)
  */
-void CUnitScriptTask::MemberDeserialize(gpg::ReadArchive* const archive, const int version)
+void CUnitScriptTask::MemberDeserialize(
+  gpg::ReadArchive* const archive,
+  const int version
+)
 {
   if (version < 1) {
     throw gpg::SerializationError("unsupported version of CUnitScriptTask");
@@ -718,7 +725,10 @@ void CUnitScriptTask::MemberDeserialize(gpg::ReadArchive* const archive, const i
 /**
  * Address: 0x00624550 (FUN_00624550, Moho::CUnitScriptTask::MemberSerialize)
  */
-void CUnitScriptTask::MemberSerialize(gpg::WriteArchive* const archive, const int version)
+void CUnitScriptTask::MemberSerialize(
+  gpg::WriteArchive* const archive,
+  const int version
+)
 {
   if (version < 1) {
     throw gpg::SerializationError("unsupported version of CUnitScriptTask");
@@ -766,7 +776,9 @@ int CUnitScriptTask::Execute()
  * owner thread's pending frames and staged flag. The tree used to run
  * `Execute()` (the Lua `TaskTick`) here, inside the command's broadcast.
  */
-void CUnitScriptTask::OnEvent(const ECommandEvent)
+void CUnitScriptTask::OnEvent(
+  const ECommandEvent
+)
 {
   mTaskState = TASKSTATE_Preparing;
   if (CTaskThread* const thread = mOwnerThread; thread != nullptr) {
@@ -779,40 +791,7 @@ void CUnitScriptTask::OnEvent(const ECommandEvent)
 
 namespace gpg
 {
-  /**
-   * Address: 0x006240C0 (FUN_006240C0, reflection pair-pack thunk alias)
-   *
-   * What it does:
-   * Builds one `CUnitScriptTask` reflection reference then writes the pair into
-   * caller-provided `RRef` storage.
-   */
-  gpg::RRef* PackCUnitScriptTaskRefPair(
-    moho::CUnitScriptTask* const value,
-    gpg::RRef* const outPair
-  )
-  {
-    gpg::RRef typedRef{};
-    (void)gpg::RRef_CUnitScriptTask(&typedRef, value);
-    *outPair = typedRef;
-    return outPair;
-  }
 
-  /**
-   * Address: 0x006242A0 (FUN_006242A0, gpg::RRef_CUnitScriptTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitScriptTask*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitScriptTask(gpg::RRef* const outRef, moho::CUnitScriptTask* const value)
-  {
-    if (!outRef) {
-      return nullptr;
-    }
-
-    *outRef = gpg::MakeDerivedRef(value, CachedCUnitScriptTaskType());
-    return outRef;
-  }
 } // namespace gpg
 
 namespace

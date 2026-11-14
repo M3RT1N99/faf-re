@@ -7,6 +7,12 @@
 
 #include "gpg/core/algorithms/MD5.h"
 
+namespace LuaPlus
+{
+  class LuaObject;
+  class LuaState;
+} // namespace LuaPlus
+
 namespace moho
 {
   class Sim;
@@ -51,6 +57,11 @@ namespace moho
     // `Unit::GetFormationVector` reads through it. Empty on x86, which has no such list.
     std::vector<std::uint64_t> laneBlocks;
     std::vector<std::uint8_t> laneBytes;
+    // The blocks live storage holds there: the block's address, the storage's size in the binary's class, and what the
+    // block held. They go back to the list when the storage goes.
+    std::vector<std::uint64_t> heldBlocks;
+    std::vector<std::uint64_t> heldSizes;
+    std::vector<std::uint8_t> heldBytes;
   };
 
   /**
@@ -60,10 +71,12 @@ namespace moho
   inline std::atomic<std::int32_t> gSimBeatOrigin{0};
 
   /**
-   * Room for a keyframe packed by `compress2`. x86 links wxWindows' older zlib, which has no
-   * `compressBound` and asks for 0.1% over the size plus 12 bytes; this is above that and above 1.2.3's bound.
+   * Room for a keyframe packed by `compress2`: above zlib 1.2.3's `compressBound` (0.1% over the size
+   * plus 12 bytes), which both architectures link (issue #406).
    */
-  [[nodiscard]] constexpr unsigned long SIM_KeyframePackBound(const unsigned long size) noexcept
+  [[nodiscard]] constexpr unsigned long SIM_KeyframePackBound(
+    const unsigned long size
+  ) noexcept
   {
     return size + (size >> 9) + 64u;
   }
@@ -79,6 +92,9 @@ namespace moho
 
   [[nodiscard]] bool SIM_WriteKeyframeHeader(std::FILE* file, const SSimKeyframeHeader& header);
   [[nodiscard]] bool SIM_ReadKeyframeHeader(std::FILE* file, SSimKeyframeHeader& header);
+
+  /** The compression of the keyframes the replay viewer keeps. */
+  constexpr int kSimKeyframeZstdLevel = 3;
 
   /**
    * Makes the next `Sim::Load` restore a keyframe with this header: exact archive mode (see
@@ -110,4 +126,14 @@ namespace moho
    * collector, kept off since the load began, goes on from the keyframe's counters.
    */
   void SIM_FinishKeyframeRestore(Sim& sim);
+
+  /**
+   * On the session's thread, before its first `OnSync` after a restore: adds to its `Sync` what the sim
+   * publishes once and a loaded game normally sends again from Lua (`OnPostLoad`, lua/SimSync.lua), which
+   * a keyframe skips because that changes the sim: the playable area, unit data, unit enhancements.
+   * Read from the sim's tables at the end of the restore, without allocating in its Lua state.
+   * When `replay`, also the 'started' notify message of each ACU upgrading in the restored sim, which the
+   * sim sent before the keyframe, so the UI's upgrade overlay comes back (FAForever/fa#7373).
+   */
+  void SIM_AddRestoredUiData(LuaPlus::LuaObject& sync, LuaPlus::LuaState* state, bool replay);
 } // namespace moho

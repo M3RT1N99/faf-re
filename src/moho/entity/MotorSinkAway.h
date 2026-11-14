@@ -75,9 +75,8 @@ namespace moho
      * Builds a new `MotorSinkAway` for an archive load and hands it back unowned; its
      * members are loaded over it afterwards.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x00697200 (FUN_00697200, Moho::MotorSinkAway::MemberDeserialize)
@@ -125,15 +124,6 @@ namespace moho
     sizeof(CScrLuaMetatableFactory<MotorSinkAway>) == 0x08,
     "CScrLuaMetatableFactory<MotorSinkAway> size must be 0x8"
   );
-
-  /**
-   * Address: 0x006971D0 (FUN_006971D0)
-   *
-   * What it does:
-   * Rebinds the startup metatable-factory index lane for
-   * `CScrLuaMetatableFactory<MotorSinkAway>` and returns that singleton.
-   */
-  CScrLuaMetatableFactory<MotorSinkAway>* startup_CScrLuaMetatableFactory_MotorSinkAway_Index();
 
   class MotorSinkAwayTypeInfo final : public gpg::RType
   {

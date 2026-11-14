@@ -176,58 +176,8 @@ namespace
   };
 
   static_assert(sizeof(ScaledDirectionLane) == 0x1C, "ScaledDirectionLane size must be 0x1C");
-  static_assert(
-    offsetof(ScaledDirectionLane, direction) == 0x0C, "ScaledDirectionLane::direction offset must be 0x0C"
-  );
+  static_assert(offsetof(ScaledDirectionLane, direction) == 0x0C, "ScaledDirectionLane::direction offset must be 0x0C");
   static_assert(offsetof(ScaledDirectionLane, scale) == 0x18, "ScaledDirectionLane::scale offset must be 0x18");
-
-  /**
-   * Address: 0x00675300 (FUN_00675300)
-   *
-   * What it does:
-   * Computes `out = base + direction * scale` from one packed lane payload.
-   */
-  [[maybe_unused]] [[nodiscard]] Wm3::Vector3f* ComposeScaledDirectionOffsetAdd(
-    Wm3::Vector3f* const out,
-    const ScaledDirectionLane* const lane
-  ) noexcept
-  {
-    GPG_ASSERT(out != nullptr);
-    GPG_ASSERT(lane != nullptr);
-    if (!out || !lane) {
-      return out;
-    }
-
-    const float scale = lane->scale;
-    out->x = lane->base.x + (lane->direction.x * scale);
-    out->y = lane->base.y + (lane->direction.y * scale);
-    out->z = lane->base.z + (lane->direction.z * scale);
-    return out;
-  }
-
-  /**
-   * Address: 0x00675350 (FUN_00675350)
-   *
-   * What it does:
-   * Computes `out = base - direction * scale` from one packed lane payload.
-   */
-  [[maybe_unused]] [[nodiscard]] Wm3::Vector3f* ComposeScaledDirectionOffsetSub(
-    Wm3::Vector3f* const out,
-    const ScaledDirectionLane* const lane
-  ) noexcept
-  {
-    GPG_ASSERT(out != nullptr);
-    GPG_ASSERT(lane != nullptr);
-    if (!out || !lane) {
-      return out;
-    }
-
-    const float scale = lane->scale;
-    out->x = lane->base.x - (lane->direction.x * scale);
-    out->y = lane->base.y - (lane->direction.y * scale);
-    out->z = lane->base.z - (lane->direction.z * scale);
-    return out;
-  }
 
   struct ByteLaneFlagAt18
   {
@@ -236,22 +186,6 @@ namespace
   };
 
   static_assert(offsetof(ByteLaneFlagAt18, flagValue) == 0x18, "ByteLaneFlagAt18::flagValue offset must be 0x18");
-
-  /**
-   * Address: 0x006767F0 (FUN_006767F0)
-   *
-   * What it does:
-   * Returns one raw flag byte from lane `+0x18`.
-   */
-  [[maybe_unused]] [[nodiscard]] std::uint8_t ReadFlagByteAtOffset18(const ByteLaneFlagAt18* const view) noexcept
-  {
-    GPG_ASSERT(view != nullptr);
-    if (!view) {
-      return 0u;
-    }
-
-    return view->flagValue;
-  }
 
   struct PackedHistoryIndexWord
   {
@@ -263,92 +197,15 @@ namespace
     "PackedHistoryIndexWord::packedWord offset must be 0x00"
   );
 
-  inline constexpr std::uint32_t kPackedHistoryIndexShift = 20u;
-  inline constexpr std::uint32_t kPackedHistoryIndexMask = 0xFFu;
-  inline constexpr std::uint32_t kPackedHistoryIndexInvalid = 0xFFu;
-
-  /**
-   * Address: 0x00676AB0 (FUN_00676AB0)
-   *
-   * What it does:
-   * Decodes packed table index bits (`[27:20]`) from one 32-bit lane.
-   */
-  [[nodiscard]] std::uint32_t DecodePackedHistoryIndexByte(const PackedHistoryIndexWord* const packedWord
-  ) noexcept
-  {
-    GPG_ASSERT(packedWord != nullptr);
-    if (!packedWord) {
-      return 0u;
-    }
-
-    return (packedWord->packedWord >> kPackedHistoryIndexShift) & kPackedHistoryIndexMask;
-  }
-
-  /**
-   * Address: 0x00676AE0 (FUN_00676AE0)
-   *
-   * What it does:
-   * Decodes the army index (`[27:20]`) of one entity id and returns that army
-   * from `Sim::mArmiesList`, or null for the 0xFF "no army" sentinel, an empty
-   * list, or an index past its end.
-   *
-   * The owner (`esi`) is the Sim: the body reads a 4-byte-element vector whose
-   * `_Myfirst`/`_Mylast` sit at +0x910/+0x914, i.e. `msvc8::vector<CArmyImpl*>
-   * mArmiesList` at +0x90C behind its proxy word, and it decodes the index the
-   * same way as `CInfluenceMap::ResolveSourceArmy`
-   * (`sim->mArmiesList[(id >> 20) & 0xFF]`).
-   */
-  [[maybe_unused]] [[nodiscard]] moho::CArmyImpl* LookupArmyForEntityId(
-    const moho::Sim* const sim,
-    const std::uint32_t entityId
-  ) noexcept
-  {
-    GPG_ASSERT(sim != nullptr);
-    if (!sim) {
-      return nullptr;
-    }
-
-    const PackedHistoryIndexWord packedWord{entityId};
-    const std::uint32_t armyIndex = DecodePackedHistoryIndexByte(&packedWord);
-    if (armyIndex == kPackedHistoryIndexInvalid) {
-      return nullptr;
-    }
-
-    const msvc8::vector<moho::CArmyImpl*>& armies = sim->mArmiesList;
-    if (armies.begin() == nullptr) {
-      return nullptr;
-    }
-
-    if (armyIndex >= armies.size()) {
-      return nullptr;
-    }
-
-    return armies[armyIndex];
-  }
-
-  /**
-   * Address: 0x00676CC0 (FUN_00676CC0)
-   *
-   * What it does:
-   * Returns entity lane `mLastTickProcessed` (`+0x174`).
-   */
-  [[maybe_unused]] [[nodiscard]] std::uint32_t ReadEntityLastTickProcessed(const moho::Entity* const entity) noexcept
-  {
-    GPG_ASSERT(entity != nullptr);
-    if (!entity) {
-      return 0u;
-    }
-
-    return entity->mLastTickProcessed;
-  }
-
   /**
    * Address: 0x0067F000 (FUN_0067F000, gpg::RType::AddField_VTransform_0x150PendingCoords)
    *
    * What it does:
    * Adds the reflected `VTransform` field named `PendingCoords` at offset `0x150`.
    */
-  gpg::RField* AddPendingCoordsField(gpg::RType* const owner)
+  gpg::RField* AddPendingCoordsField(
+    gpg::RType* const owner
+  )
   {
     GPG_ASSERT(owner != nullptr);
     if (owner == nullptr) {
@@ -397,7 +254,10 @@ namespace
    * What it does:
    * Preserves one legacy no-op callback lane installed by PositionHistory RTTI init.
    */
-  void PositionHistoryTypeInfoNoOpCallback(void* /*self*/) {}
+  void PositionHistoryTypeInfoNoOpCallback(
+    void* /*self*/
+  )
+  {}
 
   /**
    * Address: 0x0067E020 (FUN_0067E020)
@@ -406,7 +266,9 @@ namespace
    * Default-constructs one `PositionHistory` in caller-owned storage and
    * returns typed reflection reference lanes for that storage.
    */
-  [[nodiscard]] gpg::RRef ConstructPositionHistoryRefInPlace(void* const objectStorage)
+  [[nodiscard]] gpg::RRef ConstructPositionHistoryRefInPlace(
+    void* const objectStorage
+  )
   {
     auto* const history = objectStorage ? new (objectStorage) moho::PositionHistory : nullptr;
 
@@ -419,7 +281,9 @@ namespace
   // (0x0067FBA0) rather than repeating the lookup-and-throw. That also restores
   // the binary's diagnostic: it reports the source and target type names, where
   // the local copy raised a bare "type error".
-  [[nodiscard]] moho::PositionHistory* UpcastPositionHistoryOrThrow(const gpg::RRef& source)
+  [[nodiscard]] moho::PositionHistory* UpcastPositionHistoryOrThrow(
+    const gpg::RRef& source
+  )
   {
     return source.TryUpcastPositionHistory();
   }
@@ -450,7 +314,9 @@ namespace
    * reflection reference. Installed as `cpyRefFunc_` on
    * `PositionHistoryTypeInfo`.
    */
-  [[nodiscard]] gpg::RRef CopyPositionHistoryRef(gpg::RRef* const sourceRef)
+  [[nodiscard]] gpg::RRef CopyPositionHistoryRef(
+    gpg::RRef* const sourceRef
+  )
   {
     GPG_ASSERT(sourceRef != nullptr);
     if (sourceRef == nullptr) {
@@ -497,7 +363,9 @@ namespace
     return out;
   }
 
-  void DeletePositionHistoryStorage(void* const objectStorage)
+  void DeletePositionHistoryStorage(
+    void* const objectStorage
+  )
   {
     ::operator delete(objectStorage);
   }
@@ -509,7 +377,9 @@ namespace moho
   /**
    * Address: 0x0067ED40 (FUN_0067ED40, Moho::SEntAttachInfo::MemberDeserialize)
    */
-  void SEntAttachInfo::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SEntAttachInfo::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -529,7 +399,9 @@ namespace moho
   /**
    * Address: 0x0067EDD0 (FUN_0067EDD0, Moho::SEntAttachInfo::MemberSerialize)
    */
-  void SEntAttachInfo::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SEntAttachInfo::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -549,7 +421,9 @@ namespace moho
   /**
    * Address: 0x0067EE60 (FUN_0067EE60, Moho::PositionHistory::MemberDeserialize)
    */
-  void PositionHistory::MemberDeserialize(gpg::ReadArchive* const archive)
+  void PositionHistory::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -568,7 +442,9 @@ namespace moho
   /**
    * Address: 0x0067EED0 (FUN_0067EED0, Moho::PositionHistory::MemberSerialize)
    */
-  void PositionHistory::MemberSerialize(gpg::WriteArchive* const archive) const
+  void PositionHistory::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -636,14 +512,11 @@ namespace moho
    * Clears reflected field/base vector lanes and restores base `RObject`
    * teardown state for one `PositionHistoryTypeInfo` instance.
    */
-  void DestroyPositionHistoryTypeInfoBody(PositionHistoryTypeInfo* const typeInfo) noexcept
+  void DestroyPositionHistoryTypeInfoBody(
+    PositionHistoryTypeInfo* const typeInfo
+  ) noexcept
   {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = {};
-    typeInfo->bases_ = {};
+    gpg::ClearTypeLists(typeInfo);
   }
 
   /**
@@ -670,8 +543,11 @@ namespace moho
     size_ = sizeof(PositionHistory);
     gpg::RType::Init();
     (void)gpg::BindRTypeLifecycleCallbacks(
-      this, &NewPositionHistoryRef, &ConstructPositionHistoryRefInPlace,
-      &DeletePositionHistoryStorage, &PositionHistoryTypeInfoNoOpCallback
+      this,
+      &NewPositionHistoryRef,
+      &ConstructPositionHistoryRefInPlace,
+      &DeletePositionHistoryStorage,
+      &PositionHistoryTypeInfoNoOpCallback
     );
     cpyRefFunc_ = &CopyPositionHistoryRef;
     movRefFunc_ = &ConstructPositionHistoryRefFromSource;
@@ -707,7 +583,9 @@ namespace moho
   /**
    * Address: 0x0067EF40 (FUN_0067EF40, Moho::EntityTypeInfo::AddBase_CScriptObject)
    */
-  void EntityTypeInfo::AddBase_CScriptObjectVariant1(gpg::RType* const typeInfo)
+  void EntityTypeInfo::AddBase_CScriptObjectVariant1(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* const baseType = gpg::CachedLookup<CScriptObject>(gCScriptObjectType);
     GPG_ASSERT(typeInfo != nullptr);
@@ -722,7 +600,9 @@ namespace moho
   /**
    * Address: 0x0067EFA0 (FUN_0067EFA0, Moho::EntityTypeInfo::AddBase_CTask)
    */
-  void EntityTypeInfo::AddBase_CTaskVariant1(gpg::RType* const typeInfo)
+  void EntityTypeInfo::AddBase_CTaskVariant1(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* const baseType = gpg::CachedLookup<CTask>(gCTaskType);
     GPG_ASSERT(typeInfo != nullptr);
@@ -798,9 +678,18 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_SEntAttachInfoTypeInfo_b8ac72, moho::register_SEntAttachInfoTypeInfo)
-GPG_PREREGISTER_INIT(register_PositionHistoryTypeInfo_b8ac72, moho::register_PositionHistoryTypeInfo)
-GPG_PREREGISTER_INIT(register_EntityTypeInfo_b8ac72, moho::register_EntityTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_SEntAttachInfoTypeInfo_b8ac72,
+  moho::register_SEntAttachInfoTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_PositionHistoryTypeInfo_b8ac72,
+  moho::register_PositionHistoryTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_EntityTypeInfo_b8ac72,
+  moho::register_EntityTypeInfo
+)
 
 namespace moho
 {

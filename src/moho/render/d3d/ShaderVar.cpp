@@ -6,7 +6,10 @@
 #include "gpg/gal/Error.hpp"
 #include "gpg/gal/Effect.hpp"
 #include "gpg/gal/EffectVariable.hpp"
+// The Direct3D 9 backend is Windows-only (the Linux client, issue #255).
+#if FAFRE_PLATFORM_WINDOWS
 #include "gpg/gal/backends/d3d9/TextureD3D9.hpp"
+#endif
 #include "moho/misc/ID3DDeviceResources.h"
 #include "moho/render/ID3DRenderTarget.h"
 #include "moho/render/ID3DTextureSheet.h"
@@ -45,6 +48,8 @@ namespace moho
    */
   ShaderVar shaderVarPrimBatcherAlphaMultiplier;
 
+  ShaderVar shaderVarPrimBatcherMsdfPixelRange;
+
   /**
    * Address: 0x00C07480 (FUN_00C07480, dynamic atexit destructor for `shaderVarPrimBatcherTime`)
    *
@@ -75,9 +80,11 @@ namespace moho
 
 namespace
 {
-  [[nodiscard]] moho::CD3DEffect* ResolveOwnerEffect(const moho::ShaderVar& shaderVar) noexcept
+  [[nodiscard]] moho::CD3DEffect* ResolveOwnerEffect(
+    const moho::ShaderVar& shaderVar
+  ) noexcept
   {
-    return reinterpret_cast<moho::CD3DEffect*>(shaderVar.mEffectLink.mLinkLane);
+    return shaderVar.mEffectLink.GetObjectPtr();
   }
 
   /**
@@ -87,27 +94,12 @@ namespace
    * Rebinds one shader-var attached-link lane to a new owner effect, updating
    * intrusive list linkage on both detach and attach paths.
    */
-  moho::ShaderVar& RelinkShaderVarEffect(moho::ShaderVar& shaderVar, moho::CD3DEffect* const effect) noexcept
+  moho::ShaderVar& RelinkShaderVarEffect(
+    moho::ShaderVar& shaderVar,
+    moho::CD3DEffect* const effect
+  ) noexcept
   {
-    moho::CD3DEffect* const currentOwner = ResolveOwnerEffect(shaderVar);
-    if (currentOwner != effect) {
-      if (currentOwner != nullptr) {
-        moho::CD3DEffect::AttachedLink** it = &currentOwner->mAttachedLinks;
-        while (*it != &shaderVar.mEffectLink) {
-          it = &((*it)->mNext);
-        }
-        *it = shaderVar.mEffectLink.mNext;
-      }
-
-      shaderVar.mEffectLink.mLinkLane = reinterpret_cast<moho::CD3DEffect::AttachedLink*>(effect);
-      if (effect != nullptr) {
-        shaderVar.mEffectLink.mNext = effect->mAttachedLinks;
-        effect->mAttachedLinks = &shaderVar.mEffectLink;
-      } else {
-        shaderVar.mEffectLink.mNext = nullptr;
-      }
-    }
-
+    shaderVar.mEffectLink.ResetFromObject(effect);
     return shaderVar;
   }
 
@@ -119,6 +111,7 @@ namespace
       moho::register_ShaderVarPrimBatcherTexture1();
       moho::register_ShaderVarPrimBatcherAlphaMultiplier();
       moho::register_ShaderVarPrimBatcherTime();
+      moho::register_ShaderVarPrimBatcherMsdfPixelRange();
     }
   };
 
@@ -146,7 +139,9 @@ namespace moho
    * effect/effect-variable link state.
    */
   ShaderVar* RegisterShaderVar(
-    const char* const variableName, ShaderVar* const shaderVar, const char* const effectFileName
+    const char* const variableName,
+    ShaderVar* const shaderVar,
+    const char* const effectFileName
   )
   {
     if (shaderVar == nullptr) {
@@ -162,26 +157,8 @@ namespace moho
     shaderVar->mEffectFileName.tidy(true, 0U);
     shaderVar->mEffectFileName.assign_owned(safeEffectFileName);
 
-    shaderVar->mEffectLink.mLinkLane = nullptr;
-    shaderVar->mEffectLink.mNext = nullptr;
+    shaderVar->mEffectLink.ClearLinkState();
     shaderVar->mEffectVariable.reset();
-    return shaderVar;
-  }
-
-  /**
-   * Address: 0x007E9040 (FUN_007E9040, func_register_ShaderVar_5)
-   *
-   * What it does:
-   * Adapts the caller order `(effectFileName, variableName, shaderVar)` to the
-   * canonical shader-var registration lane and returns the same shader-var slot.
-   */
-  ShaderVar* RegisterShaderVarFromEffectFileFirst(
-    const char* const effectFileName,
-    const char* const variableName,
-    ShaderVar* const shaderVar
-  )
-  {
-    RegisterShaderVar(variableName, shaderVar, effectFileName);
     return shaderVar;
   }
 
@@ -250,7 +227,7 @@ namespace moho
       return false;
     }
 
-    boost::shared_ptr<gpg::gal::Effect> baseEffect = effect->GetBaseEffect();
+    std::shared_ptr<gpg::gal::Effect> baseEffect = effect->GetBaseEffect();
     try {
       mEffectVariable = baseEffect->GetVariable(mVariableName.c_str());
     } catch (const gpg::gal::Error&) {
@@ -266,7 +243,9 @@ namespace moho
    * Resolves this shader-var if needed and pushes one optional texture handle
    * into the bound effect-variable lane.
    */
-  ShaderVar* ShaderVar::GetTexture(const boost::shared_ptr<ID3DTextureSheet>& textureSheet)
+  ShaderVar* ShaderVar::GetTexture(
+    const std::shared_ptr<ID3DTextureSheet>& textureSheet
+  )
   {
     if (Exists()) {
       ID3DTextureSheet::TextureHandle textureHandle{};
@@ -296,7 +275,9 @@ namespace moho
    * 0x004912C6 zeroes the same temporary and calls the same slot, so both paths
    * bind, they only differ in what.
    */
-  ShaderVar* ShaderVar::SetRenderTargetTexture(const boost::shared_ptr<ID3DRenderTarget>& renderTarget)
+  ShaderVar* ShaderVar::SetRenderTargetTexture(
+    const std::shared_ptr<ID3DRenderTarget>& renderTarget
+  )
   {
     if (Exists()) {
       ID3DRenderTarget::SurfaceHandle surfaceHandle{};
@@ -316,7 +297,9 @@ namespace moho
    * Guards on `Exists()` and forwards one float value to the bound
    * effect variable.
    */
-  ShaderVar* ShaderVar::SetFloat(const float value)
+  ShaderVar* ShaderVar::SetFloat(
+    const float value
+  )
   {
     if (Exists()) {
       mEffectVariable->SetFloat(value);
@@ -331,7 +314,9 @@ namespace moho
    * Guards on `Exists()` and forwards one 4x4 matrix pointer to the bound
    * effect variable.
    */
-  ShaderVar* ShaderVar::SetMatrix4x4(const gpg::gal::Matrix* const matrix)
+  ShaderVar* ShaderVar::SetMatrix4x4(
+    const gpg::gal::Matrix* const matrix
+  )
   {
     if (Exists()) {
       mEffectVariable->SetMatrix4x4(matrix);
@@ -399,6 +384,11 @@ namespace moho
   void register_ShaderVarPrimBatcherTime()
   {
     RegisterShaderVar("time", &shaderVarPrimBatcherTime, "primbatcher");
+  }
+
+  void register_ShaderVarPrimBatcherMsdfPixelRange()
+  {
+    RegisterShaderVar("MsdfPixelRange", &shaderVarPrimBatcherMsdfPixelRange, "primbatcher");
   }
 
   /**
@@ -472,7 +462,10 @@ namespace moho
   {
     struct FrameGlowCopyAddShaderVarBootstrap
     {
-      FrameGlowCopyAddShaderVarBootstrap() { moho::register_ShaderVarFrameGlowCopyAdd(); }
+      FrameGlowCopyAddShaderVarBootstrap()
+      {
+        moho::register_ShaderVarFrameGlowCopyAdd();
+      }
     };
 
     [[maybe_unused]] FrameGlowCopyAddShaderVarBootstrap gFrameGlowCopyAddShaderVarBootstrap;

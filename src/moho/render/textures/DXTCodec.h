@@ -23,9 +23,8 @@ namespace moho
    * Encodes a 4x4 alpha block into DXT5 alpha payload using caller-provided
    * horizontal and vertical byte strides.
    */
-  [[nodiscard]] std::uint64_t DXT_EncodeAlphaBlock(
-    const std::uint8_t* source, int horizontalStride, int verticalStride
-  );
+  [[nodiscard]] std::uint64_t
+  DXT_EncodeAlphaBlock(const std::uint8_t* source, int horizontalStride, int verticalStride);
 
   /**
    * Address: 0x00404960 (FUN_00404960, Moho::DXT_EncodeGreenBlock)
@@ -48,28 +47,6 @@ namespace moho
   void DXT_DecodeAlphaBlock(std::uint64_t alphaBlock, DXTFormat format, std::uint8_t* outAlpha16);
 
   /**
-   * Address: 0x00404D60 (FUN_00404D60, Moho::DXT_DecodeColorBlock)
-   *
-   * unsigned __int64,Moho::DXTFormat,uint *
-   *
-   * What it does:
-   * Decodes a 4x4 DXT color payload into 16 ARGB pixels.
-   */
-  void DXT_DecodeColorBlock(std::uint64_t colorBlock, DXTFormat format, std::uint32_t* outArgb16);
-
-  /**
-   * Address: 0x00404F80 (FUN_00404F80, Moho::DXT_DecodeBlocksToRGBA)
-   *
-   * unsigned __int64,unsigned __int64,Moho::DXTFormat,uint *
-   *
-   * What it does:
-   * Decodes one DXT block pair (alpha+color) into 16 ARGB pixels.
-   */
-  void DXT_DecodeBlocksToRGBA(
-    std::uint64_t alphaBlock, std::uint64_t colorBlock, DXTFormat format, std::uint32_t* outArgb16
-  );
-
-  /**
    * Address: 0x00404FE0 (FUN_00404FE0, Moho::DXT_GetTexelAlpha)
    *
    * unsigned int,uchar const *,unsigned int,unsigned int
@@ -79,6 +56,9 @@ namespace moho
    * register-based coordinate ordering recovered from the binary.
    */
   [[nodiscard]] std::uint8_t DXT_GetTexelAlpha(
-    std::uint32_t coordA, const std::uint8_t* blocks, std::uint32_t coordB, std::uint32_t blockStrideBytes
+    std::uint32_t coordA,
+    const std::uint8_t* blocks,
+    std::uint32_t coordB,
+    std::uint32_t blockStrideBytes
   );
 } // namespace moho

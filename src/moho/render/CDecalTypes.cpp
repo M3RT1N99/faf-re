@@ -18,92 +18,6 @@
 namespace
 {
 
-  [[nodiscard]] gpg::ReadArchive* ReadReflectedSDecalInfoPayload(
-    gpg::ReadArchive* const archive,
-    void* const payload,
-    const gpg::RRef* const ownerRef = nullptr
-  )
-  {
-    gpg::RRef nullOwner{};
-    archive->Read(gpg::RTypeOf<moho::SDecalInfo>(), payload, ownerRef ? *ownerRef : nullOwner);
-    return archive;
-  }
-
-  [[nodiscard]] gpg::WriteArchive* WriteReflectedSDecalInfoPayload(
-    gpg::WriteArchive* const archive,
-    const void* const payload,
-    const gpg::RRef* const ownerRef = nullptr
-  )
-  {
-    gpg::RRef nullOwner{};
-    archive->Write(gpg::RTypeOf<moho::SDecalInfo>(), payload, ownerRef ? *ownerRef : nullOwner);
-    return archive;
-  }
-
-  /**
-   * Address: 0x0077D9D0 (FUN_0077D9D0)
-   *
-   * What it does:
-   * Deserializes one reflected `SDecalInfo` payload lane and returns the
-   * archive for callback chaining.
-   */
-  [[maybe_unused]] gpg::ReadArchive* DeserializeSDecalInfoReflectedPayloadA(
-    gpg::ReadArchive* const archive,
-    void* const payload,
-    gpg::RRef* const ownerRef
-  )
-  {
-    return ReadReflectedSDecalInfoPayload(archive, payload, ownerRef);
-  }
-
-  /**
-   * Address: 0x0077DA10 (FUN_0077DA10)
-   *
-   * What it does:
-   * Serializes one reflected `SDecalInfo` payload lane and returns the archive
-   * for callback chaining.
-   */
-  [[maybe_unused]] gpg::WriteArchive* SerializeSDecalInfoReflectedPayloadA(
-    gpg::WriteArchive* const archive,
-    const void* const payload,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    return WriteReflectedSDecalInfoPayload(archive, payload, ownerRef);
-  }
-
-  /**
-   * Address: 0x0077DF80 (FUN_0077DF80)
-   *
-   * What it does:
-   * Secondary deserializer entrypoint for one reflected `SDecalInfo` payload
-   * lane.
-   */
-  [[maybe_unused]] void DeserializeSDecalInfoReflectedPayloadB(
-    gpg::ReadArchive* const archive,
-    void* const payload,
-    gpg::RRef* const ownerRef
-  )
-  {
-    (void)ReadReflectedSDecalInfoPayload(archive, payload, ownerRef);
-  }
-
-  /**
-   * Address: 0x0077DFB0 (FUN_0077DFB0)
-   *
-   * What it does:
-   * Secondary serializer entrypoint for one reflected `SDecalInfo` payload
-   * lane.
-   */
-  [[maybe_unused]] void SerializeSDecalInfoReflectedPayloadB(
-    gpg::WriteArchive* const archive,
-    const void* const payload,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    (void)WriteReflectedSDecalInfoPayload(archive, payload, ownerRef);
-  }
-
   /**
    * VFTABLE: 0x00E37368
    *
@@ -140,118 +54,13 @@ namespace
   // destructor (0x00C02820) via `atexit`.
   SDecalInfoSerializer gSDecalInfoSerializer;
 
-  /**
-   * Address: 0x0077E940 (FUN_0077E940)
-   *
-   * What it does:
-   * Assign-copies one `SDecalInfo` lane, including string members and trailing
-   * scalar/object lanes, then returns the destination lane.
-   */
-  [[nodiscard]] moho::SDecalInfo* CopyAssignSDecalInfoLane(
-    moho::SDecalInfo* const destination,
-    const moho::SDecalInfo* const source
-  )
-  {
-    if (destination == nullptr || source == nullptr) {
-      return destination;
-    }
-
-    destination->mPos = source->mPos;
-    destination->mSize = source->mSize;
-    destination->mRot = source->mRot;
-    destination->mTexName1 = source->mTexName1;
-    destination->mTexName2 = source->mTexName2;
-    destination->mIsSplat = source->mIsSplat;
-    destination->mPad5D[0] = source->mPad5D[0];
-    destination->mPad5D[1] = source->mPad5D[1];
-    destination->mPad5D[2] = source->mPad5D[2];
-    destination->mLODParam = source->mLODParam;
-    destination->mStartTick = source->mStartTick;
-    destination->mType = source->mType;
-    destination->mObj = source->mObj;
-    destination->mArmy = source->mArmy;
-    destination->mFidelity = source->mFidelity;
-    return destination;
-  }
-
-  /**
-   * Address: 0x0077E7E0 (FUN_0077E7E0)
-   * Address: 0x0077DA80 (FUN_0077DA80)
-   *
-   * What it does:
-   * Assign-copies one contiguous `[destinationBegin, destinationEnd)` range
-   * from one fixed `SDecalInfo` prototype lane.
-   */
-  [[maybe_unused]] moho::SDecalInfo* CopyAssignSDecalInfoRangeFromPrototype(
-    moho::SDecalInfo* destinationBegin,
-    moho::SDecalInfo* const destinationEnd,
-    const moho::SDecalInfo* const prototype
-  )
-  {
-    while (destinationBegin != destinationEnd) {
-      (void)CopyAssignSDecalInfoLane(destinationBegin, prototype);
-      ++destinationBegin;
-    }
-    return destinationBegin;
-  }
-
-  /**
-   * Address: 0x0077E830 (FUN_0077E830)
-   * Address: 0x0077F340 (FUN_0077F340)
-   * Address: 0x0077DAB0 (FUN_0077DAB0)
-   *
-   * What it does:
-   * Assign-copies one `SDecalInfo` range backward, returning the destination
-   * begin lane after copy-backward completes.
-   */
-  [[maybe_unused]] moho::SDecalInfo* CopyAssignSDecalInfoRangeBackward(
-    const moho::SDecalInfo* sourceEnd,
-    moho::SDecalInfo* destinationEnd,
-    const moho::SDecalInfo* const sourceBegin
-  )
-  {
-    while (sourceEnd != sourceBegin) {
-      --sourceEnd;
-      --destinationEnd;
-      (void)CopyAssignSDecalInfoLane(destinationEnd, sourceEnd);
-    }
-    return destinationEnd;
-  }
-
-  /**
-   * Address: 0x0077F3A0 (FUN_0077F3A0)
-   * Address: 0x0077E8E0 (FUN_0077E8E0, inlined stride-0x90 forward-assign lane)
-   *
-   * What it does:
-   * Assign-copies one `SDecalInfo` forward range and returns one-past the last
-   * assigned destination lane. The binary emits an additional specialized
-   * forward-assign lane at `0x0077E8E0` for `msvc8::vector<SDecalInfo>`'s
-   * operator= reuse path, where the fastcall/register-assignment shape
-   * inlines the stride-`sizeof(SDecalInfo)=0x90` loop over a pre-sized
-   * destination range; semantically identical to this canonical helper, so
-   * this single typed definition services every callsite in the TU.
-   */
-  [[nodiscard]] moho::SDecalInfo* CopyAssignSDecalInfoRangeForward(
-    moho::SDecalInfo* destinationBegin,
-    const moho::SDecalInfo* sourceBegin,
-    const moho::SDecalInfo* sourceEnd
-  )
-  {
-    while (sourceBegin != sourceEnd) {
-      (void)CopyAssignSDecalInfoLane(destinationBegin, sourceBegin);
-      ++destinationBegin;
-      ++sourceBegin;
-    }
-    return destinationBegin;
-  }
-
   // `DestroySDecalInfoRange`/`DestroySDecalInfoRangeThiscallAdapter`
   // (0x00741420)/`ClearSDecalInfoVectorUsedRange` (0x0077E2D0) formerly
   // lived here as free functions with no source-level caller anywhere in
   // `src/**` (`DestroySDecalInfoRangeThiscallAdapter` was
   // `[[maybe_unused]]`; `ClearSDecalInfoVectorUsedRange` was defined but
   // never called at all) -- a RULE ONE per-type duplicate of the canonical
-  // `msvc8::vector<Moho::SDecalInfo>::destroy_range`/`clear` template
+  // `fa::vector<Moho::SDecalInfo>::destroy_range`/`clear` template
   // instantiations. Removed in favor of the real citations on those
   // template members in `legacy/containers/Vector.h`, the same fix already
   // applied once in this exact file for the sibling `uninit_copy_n` adapter
@@ -266,7 +75,7 @@ namespace
  *
  * What it does:
  * Constructs the `gpg::RListType<moho::SDecalInfo>` static, which
- * preregisters it for `typeid(msvc8::list<moho::SDecalInfo>)`, and returns
+ * preregisters it for `typeid(fa::list<moho::SDecalInfo>)`, and returns
  * it.
  *
  * `RListType<SDecalInfo>`, vtable 0x00E373A8:
@@ -290,64 +99,6 @@ namespace moho
   gpg::RType* SDecalInfo::sType = nullptr;
 
   /**
-   * Address: 0x007786B0 (FUN_007786B0)
-   *
-   * What it does:
-   * Constructs one `SDecalInfo` object in preallocated storage and returns the
-   * constructed object lane.
-   */
-  [[maybe_unused]] SDecalInfo* ConstructSDecalInfoInPlace(SDecalInfo* const storage)
-  {
-    if (storage == nullptr) {
-      return nullptr;
-    }
-
-    return ::new (storage) SDecalInfo();
-  }
-
-  [[nodiscard]] SDecalInfo* CopyConstructSDecalInfoIfPresent(
-    SDecalInfo* const destination,
-    const SDecalInfo* const source
-  )
-  {
-    if (source == nullptr) {
-      return nullptr;
-    }
-
-    return ::new (destination) SDecalInfo(*source);
-  }
-
-  /**
-   * Address: 0x0077D360 (FUN_0077D360)
-   *
-   * What it does:
-   * Primary adapter lane for nullable `SDecalInfo` copy-construction into
-   * caller-provided storage.
-   */
-  [[maybe_unused]] [[nodiscard]] SDecalInfo* CopyConstructSDecalInfoIfPresentPrimary(
-    SDecalInfo* const destination,
-    const SDecalInfo* const source
-  )
-  {
-    return CopyConstructSDecalInfoIfPresent(destination, source);
-  }
-
-  /**
-   * Address: 0x0077DCC0 (FUN_0077DCC0)
-   *
-   * What it does:
-   * Secondary adapter lane for nullable `SDecalInfo` copy-construction into
-   * caller-provided storage.
-   */
-  [[maybe_unused]] [[nodiscard]] SDecalInfo* CopyConstructSDecalInfoIfPresentSecondary(
-    SDecalInfo* const destination,
-    const SDecalInfo* const source
-  )
-  {
-    return CopyConstructSDecalInfoIfPresent(destination, source);
-  }
-
-  /**
    * Address: 0x00742360 (FUN_00742360, Moho::SDecalInfo::~SDecalInfo)
    *
    * What it does:
@@ -361,7 +112,7 @@ namespace moho
    *
    * The explicit definition reifies the compiler-synthesized destructor
    * that lives at `0x00742360` in the shipped binary so that the
-   * `msvc8::vector<SDecalInfo>` teardown path (`destroy_range<SDecalInfo>`,
+   * `fa::vector<SDecalInfo>` teardown path (`destroy_range<SDecalInfo>`,
    * `legacy/containers/Vector.h`, address-cited 0x00742090 and siblings)
    * binds to a named, address-annotated symbol rather than an implicit
    * lane.
@@ -402,12 +153,12 @@ namespace moho
     const Wm3::Vec3f& size,
     const Wm3::Vec3f& position,
     const Wm3::Vec3f& rotation,
-    const msvc8::string& textureNamePrimary,
-    const msvc8::string& textureNameSecondary,
+    const fa::string& textureNamePrimary,
+    const fa::string& textureNameSecondary,
     const bool isSplat,
     const float lodParam,
     const std::uint32_t startTick,
-    const msvc8::string& typeName,
+    const fa::string& typeName,
     const std::uint32_t armyIndex,
     const std::uint32_t fidelity
   )
@@ -433,7 +184,9 @@ namespace moho
    * Loads decal position/size/rotation vectors plus texture/type lanes and
    * runtime metadata fields from archive payload.
    */
-  void SDecalInfo::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SDecalInfo::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -474,7 +227,9 @@ namespace moho
    * Saves decal position/size/rotation vectors plus texture/type lanes and
    * runtime metadata fields to archive payload.
    */
-  void SDecalInfo::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SDecalInfo::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -486,12 +241,12 @@ namespace moho
     archive->Write(vector3fType, &mSize, ownerRef);
     archive->Write(vector3fType, &mRot, ownerRef);
 
-    archive->WriteString(const_cast<msvc8::string*>(&mTexName1));
-    archive->WriteString(const_cast<msvc8::string*>(&mTexName2));
+    archive->WriteString(const_cast<fa::string*>(&mTexName1));
+    archive->WriteString(const_cast<fa::string*>(&mTexName2));
     archive->WriteBool(mIsSplat != 0u);
     archive->WriteFloat(mLODParam);
     archive->WriteUInt(mStartTick);
-    archive->WriteString(const_cast<msvc8::string*>(&mType));
+    archive->WriteString(const_cast<fa::string*>(&mType));
     archive->WriteInt(static_cast<int>(mObj));
     archive->WriteInt(static_cast<int>(mArmy));
     archive->WriteInt(static_cast<int>(mFidelity));
@@ -500,4 +255,7 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_RListType_SDecalInfo_874f42, preregister_RListType_SDecalInfo)
+GPG_PREREGISTER_INIT(
+  preregister_RListType_SDecalInfo_874f42,
+  preregister_RListType_SDecalInfo
+)

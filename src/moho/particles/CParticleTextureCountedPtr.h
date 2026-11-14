@@ -35,7 +35,7 @@ namespace moho
   {
   public:
     /**
-       * Address: 0x0065AAD0 (FUN_0065AAD0)
+     * Address: 0x0065AAD0 (FUN_0065AAD0)
      */
     RCountedPtrType();
     /**
@@ -44,13 +44,13 @@ namespace moho
     ~RCountedPtrType() override;
 
     /**
-      * Alias of FUN_0065AAD0 (non-canonical helper lane).
+     * Alias of FUN_0065AAD0 (non-canonical helper lane).
      */
     [[nodiscard]] const char* GetName() const override;
     /**
      * Address: 0x00659C80 (FUN_00659C80, Moho::RCountedPtrType_CParticleTexture::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     /**
      * Address: 0x00659E00 (FUN_00659E00, Moho::RCountedPtrType_CParticleTexture::IsIndexed)
      */
@@ -75,14 +75,17 @@ namespace moho
     /**
      * Address: 0x0065A430 (FUN_0065A430, Moho::RCountedPtrType_CParticleTexture::SerLoad)
      */
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
     /**
      * Address: 0x0065A490 (FUN_0065A490, Moho::RCountedPtrType_CParticleTexture::SerSave)
      */
-    static void SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerSave(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
   };
 
-  static_assert(sizeof(RCountedPtrType<moho::CParticleTexture>) == 0x68, "RCountedPtrType<CParticleTexture> size must be 0x68");
+  static_assert(
+    sizeof(RCountedPtrType<moho::CParticleTexture>) == 0x68,
+    "RCountedPtrType<CParticleTexture> size must be 0x68"
+  );
 
   /**
    * Address: 0x004954E0 (FUN_004954E0, sub_4954E0)
@@ -91,8 +94,8 @@ namespace moho
    * Returns the raw particle-texture pointer lane from one counted-pointer
    * wrapper.
    */
-  [[nodiscard]] CParticleTexture* GetCountedParticleTextureRawPointer(const CountedPtr_CParticleTexture& countedTexture
-  ) noexcept;
+  [[nodiscard]] CParticleTexture*
+  GetCountedParticleTextureRawPointer(const CountedPtr_CParticleTexture& countedTexture) noexcept;
 
   /**
    * Address: 0x004954B0 (FUN_004954B0, sub_4954B0)
@@ -109,13 +112,11 @@ namespace moho
    * Rebinds one counted particle-texture pointer lane while preserving
    * intrusive reference-count semantics.
    */
-  CountedPtr_CParticleTexture* AssignCountedParticleTexturePtr(
-    CountedPtr_CParticleTexture* target,
-    CParticleTexture* texture
-  ) noexcept;
+  CountedPtr_CParticleTexture*
+  AssignCountedParticleTexturePtr(CountedPtr_CParticleTexture* target, CParticleTexture* texture) noexcept;
 
   /**
-    * Alias of FUN_0065AAD0 (non-canonical helper lane).
+   * Alias of FUN_0065AAD0 (non-canonical helper lane).
    */
   gpg::RType* preregister_CountedPtrCParticleTextureType();
 

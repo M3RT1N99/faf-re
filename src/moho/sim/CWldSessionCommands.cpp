@@ -2,8 +2,8 @@
 
 namespace moho
 {
-namespace
-{
+  namespace
+  {
 
     /// `SCommandModeData::mModifiers` bit lanes, unpacked in one block at
     /// 0x0081FD00-0x0081FD24 before the mode switch runs.
@@ -16,8 +16,8 @@ namespace
       /// Turn a plain move order into an aggressive-move order.
       COMMODMOD_AttackMove = 0x4,
     };
-}
-}
+  } // namespace
+} // namespace moho
 
 namespace moho
 {
@@ -26,8 +26,8 @@ namespace moho
   // - 0x010A645E (`UI_SelectAnything`)
   // Recovered as process-global convar-backed toggles used by selection paths.
   bool ui_DebugAltClick = false;
-namespace
-{
+  namespace
+  {
 
     /**
      * Address: 0x0081FD2B..0x0081FD4E (inlined into
@@ -40,7 +40,9 @@ namespace
      * for the session's own cursor), and an entity the session has already
      * orphaned (`mMarkedForDeletion`) counts as "nothing hovered".
      */
-    [[nodiscard]] UserEntity* DecodeHoveredDragEntity(const MouseInfo& cursor) noexcept
+    [[nodiscard]] UserEntity* DecodeHoveredDragEntity(
+      const MouseInfo& cursor
+    ) noexcept
     {
       UserEntity* const entity = cursor.HoveredEntity();
       if (entity == nullptr || entity->mMarkedForDeletion != 0u) {
@@ -49,9 +51,12 @@ namespace
       return entity;
     }
 
-    void RemoveUnitIfPresent(msvc8::vector<UserUnit*>& units, const UserUnit* const unit)
+    void RemoveUnitIfPresent(
+      fa::vector<UserUnit*>& units,
+      const UserUnit* const unit
+    )
     {
-      msvc8::vector<UserUnit*> filteredUnits{};
+      fa::vector<UserUnit*> filteredUnits{};
       filteredUnits.reserve(units.size());
       for (UserUnit* const candidate : units) {
         if (candidate != unit) {
@@ -68,9 +73,11 @@ namespace
      * Returns true when at least one live entity in the current selection is in
      * the `TELEPORTATION` category.
      */
-    [[nodiscard]] bool SelectionContainsTeleportationUnit(WeakSet<UserEntity>& selection)
+    [[nodiscard]] bool SelectionContainsTeleportationUnit(
+      WeakSet<UserEntity>& selection
+    )
     {
-      msvc8::string teleportationCategory("TELEPORTATION");
+      fa::string teleportationCategory("TELEPORTATION");
       for (UserEntity* const entity : selection) {
         if (entity != nullptr && entity->IsInCategory(teleportationCategory)) {
           return true;
@@ -92,7 +99,10 @@ namespace
      * `RULEUCC_Attack` hovered-target arm at 0x0081FEBD - recovered below and
      * calling this by name.
      */
-    [[nodiscard]] bool CanStartCoordinatedAttack(CWldSession& session, const CmdId commandId)
+    [[nodiscard]] bool CanStartCoordinatedAttack(
+      CWldSession& session,
+      const CmdId commandId
+    )
     {
       UserCommandIssueHelper* const helper = FindCommandIssueHelperInSession(&session, commandId);
       if (helper == nullptr) {
@@ -100,8 +110,9 @@ namespace
       }
 
       const EUnitCommandType commandType = ResolveCommandIssueHelperCommandType(*helper);
-      if (commandType != EUnitCommandType::UNITCOMMAND_Attack &&
-          commandType != EUnitCommandType::UNITCOMMAND_FormAttack) {
+      if (
+        commandType != EUnitCommandType::UNITCOMMAND_Attack && commandType != EUnitCommandType::UNITCOMMAND_FormAttack
+      ) {
         return false;
       }
 
@@ -158,15 +169,15 @@ namespace
         return false;
       }
 
-
       const EUnitCommandType commandType = ResolveCommandIssueHelperCommandType(*helper);
-      if (selection.Empty() ||
-          (commandType != EUnitCommandType::UNITCOMMAND_Move &&
-           commandType != EUnitCommandType::UNITCOMMAND_FormMove)) {
+      if (
+        selection.Empty() ||
+        (commandType != EUnitCommandType::UNITCOMMAND_Move && commandType != EUnitCommandType::UNITCOMMAND_FormMove)
+      ) {
         return false;
       }
 
-      const msvc8::string podCategory("POD");
+      const fa::string podCategory("POD");
 
       for (UserEntity* const entity : selection) {
         UserUnit* const userUnit = entity != nullptr ? entity->IsUserUnit() : nullptr;
@@ -179,9 +190,10 @@ namespace
               return false;
             }
 
-            if (GetUserUnitManagerQueueSize(manager) <= 1
-                || GetUserUnitManagerQueueTailHelperRaw(manager) == helper
-                || !UserUnitManagerContainsCommandIssueHelper(manager, helper)) {
+            if (
+              GetUserUnitManagerQueueSize(manager) <= 1 || GetUserUnitManagerQueueTailHelperRaw(manager) == helper ||
+              !UserUnitManagerContainsCommandIssueHelper(manager, helper)
+            ) {
               return false;
             }
 
@@ -215,13 +227,15 @@ namespace
      * selection set still live in a register from the
      * `CanRestartMoveCommandAsPatrol` call immediately before it.
      */
-    void RestartMoveCommandAsPatrol(WeakSet<UserEntity>& selection, UserCommandIssueHelper* const helper)
+    void RestartMoveCommandAsPatrol(
+      WeakSet<UserEntity>& selection,
+      UserCommandIssueHelper* const helper
+    )
     {
       const EUnitCommandType originalCommandType = ResolveCommandIssueHelperCommandType(*helper);
-      const EUnitCommandType restartCommandType =
-        (originalCommandType == EUnitCommandType::UNITCOMMAND_Move)
-          ? EUnitCommandType::UNITCOMMAND_Patrol
-          : EUnitCommandType::UNITCOMMAND_FormPatrol;
+      const EUnitCommandType restartCommandType = (originalCommandType == EUnitCommandType::UNITCOMMAND_Move)
+        ? EUnitCommandType::UNITCOMMAND_Patrol
+        : EUnitCommandType::UNITCOMMAND_FormPatrol;
 
       for (UserEntity* const entity : selection) {
         UserUnit* const userUnit = entity != nullptr ? entity->IsUserUnit() : nullptr;
@@ -275,7 +289,6 @@ namespace
     {
       outAnchor = Wm3::Vector3f::Zero();
 
-
       std::int32_t eligibleCount = 0;
       Wm3::Vector3f anchorOverride = Wm3::Vector3f::Zero();
 
@@ -295,21 +308,27 @@ namespace
               if (!skipPatrolCheck) {
                 UserCommandIssueHelper* lastHelper = GetUserUnitManagerLastQueuedHelper(manager);
                 if (!iunit->IsMobile()) {
-                  if (UserCommandQueue* const factoryManager = userUnit->GetFactoryCommandQueue();
-                      factoryManager != nullptr) {
+                  if (
+                    UserCommandQueue* const factoryManager = userUnit->GetFactoryCommandQueue();
+                    factoryManager != nullptr
+                  ) {
                     lastHelper = GetUserUnitManagerLastQueuedHelper(factoryManager);
                   }
                 }
 
                 if (lastHelper != nullptr) {
                   const EUnitCommandType lastCommandType = ResolveCommandIssueHelperCommandType(*lastHelper);
-                  if (lastCommandType == EUnitCommandType::UNITCOMMAND_Patrol ||
-                      lastCommandType == EUnitCommandType::UNITCOMMAND_FormPatrol) {
+                  if (
+                    lastCommandType == EUnitCommandType::UNITCOMMAND_Patrol ||
+                    lastCommandType == EUnitCommandType::UNITCOMMAND_FormPatrol
+                  ) {
                     return true;
                   }
 
-                  if (const Wm3::Vector3f resolvedAnchor = ResolveCommandGraphAnchorWorldPosition(*lastHelper);
-                      IsValidVector3f(resolvedAnchor)) {
+                  if (
+                    const Wm3::Vector3f resolvedAnchor = ResolveCommandGraphAnchorWorldPosition(*lastHelper);
+                    IsValidVector3f(resolvedAnchor)
+                  ) {
                     anchorOverride = resolvedAnchor;
                   }
                 }
@@ -496,8 +515,7 @@ namespace
       WeakSet<UserEntity>& otherSet
     )
     {
-      const msvc8::string rallyPointCategory("RALLYPOINT");
-
+      const fa::string rallyPointCategory("RALLYPOINT");
 
       for (UserEntity* const entity : source) {
         if (entity->IsInCategory(rallyPointCategory)) {
@@ -538,10 +556,10 @@ namespace
       WeakSet<UserEntity>& landUnitSet
     )
     {
-      const msvc8::string transportationCategory("TRANSPORTATION");
-      const msvc8::string airCategory("AIR");
-      const msvc8::string airStagingCategory("AIRSTAGINGPLATFORM");
-      const msvc8::string landCategory("LAND");
+      const fa::string transportationCategory("TRANSPORTATION");
+      const fa::string airCategory("AIR");
+      const fa::string airStagingCategory("AIRSTAGINGPLATFORM");
+      const fa::string landCategory("LAND");
 
       for (UserEntity* const entity : source) {
         UserUnit* const userUnit = entity != nullptr ? entity->IsUserUnit() : nullptr;
@@ -587,7 +605,7 @@ namespace
       WeakSet<UserEntity>& rebuilderSet
     )
     {
-      const msvc8::string rebuilderCategory("REBUILDER");
+      const fa::string rebuilderCategory("REBUILDER");
 
       for (UserEntity* const entity : source) {
         UserUnit* const userUnit = entity != nullptr ? entity->IsUserUnit() : nullptr;
@@ -634,8 +652,8 @@ namespace
 
         if (userUnit != nullptr) {
           IUnit* const iunit = GetIUnitBridge(userUnit);
-          const bool eligible = iunit != nullptr && iunit->IsMobile() &&
-            userUnit->mUnitVarDat.mFireState == FIRESTATE_ReturnFire;
+          const bool eligible =
+            iunit != nullptr && iunit->IsMobile() && userUnit->mUnitVarDat.mFireState == FIRESTATE_ReturnFire;
 
           if (eligible) {
             (void)aggressiveMoveSet.Add(entity);
@@ -667,7 +685,8 @@ namespace
      *
      */
     [[nodiscard]] bool IsCandidateExcludedByCachedRelation(
-      const UserCommandIssueHelper& helper, UserUnit* const candidateUnit
+      const UserCommandIssueHelper& helper,
+      UserUnit* const candidateUnit
     ) noexcept
     {
       for (std::size_t index = helper.mLocalQueue.size(); index != 0u; --index) {
@@ -687,208 +706,213 @@ namespace
       }
 
       for (const EntId entityId : helper.mVariableData.mEntIds) {
-        if (entityId == candidateUnit->mParams.mEntityId) {
+        if (static_cast<std::uint32_t>(entityId) == candidateUnit->mParams.mEntityId) {
           return true;
         }
       }
       return false;
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x00829B40 (FUN_00829B40, func_ProcessCommandDrag)
-     *
-     * What it does:
-     * The click-and-drag command redirect keystone both `UICommandDragger::
-     * DragMove` and `DragRelease` (UiRuntimeTypes.h/.cpp) funnel into. Looks
-     * the dragged command's live helper up by id; if the mouse position is
-     * invalid or the command isn't found, does nothing. Otherwise updates
-     * (or creates) the command's `mMapAB0` draw-node with the current mouse
-     * position (keyed by the helper's own pointer identity - see
-     * `sub_82C2E0`'s asm), and, for a factory-build command
-     * (`ResolveCommandIssueHelperCommandType == 8`) whose draw node was
-     * already resolved, re-validates build placement via
-     * `USERUNIT_CanBeBuiltAt` and updates the node's visibility flag
-     * (honoring `CWldSession::mShowInvalidBuildPlacementPreview`'s
-     * override). On release, unless the drag just ended over an invalid
-     * build placement, dispatches the new target: when the command already
-     * follows a live cached target entity
-     * (`ResolveCommandTargetEntity`), searches nearby
-     * collected entities for the closest live unit sharing the cached
-     * target's army and not excluded by `IsCandidateExcludedByCachedRelation`,
-     * and issues that entity as the new target; otherwise, for a live
-     * factory-build command, snaps to the blueprint's resolved-footprint
-     * world position; otherwise clamps the raw mouse position to the map's
-     * playable rect and issues that as a `Position` target. All three paths
-     * converge on `Moho::ISSUE_SetCommandTarget`.
-     */
-    void ProcessCommandDrag(
-      const Wm3::Vector3f& mouse, UICommandGraph& graph, const CmdId cmdId, const bool released
-    )
-    {
-      CommandManager* const commandManager = graph.mSession->mCommandManager;
+   *
+   * What it does:
+   * The click-and-drag command redirect keystone both `UICommandDragger::
+   * DragMove` and `DragRelease` (UiRuntimeTypes.h/.cpp) funnel into. Looks
+   * the dragged command's live helper up by id; if the mouse position is
+   * invalid or the command isn't found, does nothing. Otherwise updates
+   * (or creates) the command's `mMapAB0` draw-node with the current mouse
+   * position (keyed by the helper's own pointer identity - see
+   * `sub_82C2E0`'s asm), and, for a factory-build command
+   * (`ResolveCommandIssueHelperCommandType == 8`) whose draw node was
+   * already resolved, re-validates build placement via
+   * `USERUNIT_CanBeBuiltAt` and updates the node's visibility flag
+   * (honoring `CWldSession::mShowInvalidBuildPlacementPreview`'s
+   * override). On release, unless the drag just ended over an invalid
+   * build placement, dispatches the new target: when the command already
+   * follows a live cached target entity
+   * (`ResolveCommandTargetEntity`), searches nearby
+   * collected entities for the closest live unit sharing the cached
+   * target's army and not excluded by `IsCandidateExcludedByCachedRelation`,
+   * and issues that entity as the new target; otherwise, for a live
+   * factory-build command, snaps to the blueprint's resolved-footprint
+   * world position; otherwise clamps the raw mouse position to the map's
+   * playable rect and issues that as a `Position` target. All three paths
+   * converge on `Moho::ISSUE_SetCommandTarget`.
+   */
+  void ProcessCommandDrag(
+    const Wm3::Vector3f& mouse,
+    UICommandGraph& graph,
+    const CmdId cmdId,
+    const bool released
+  )
+  {
+    CommandManager* const commandManager = graph.mSession->mCommandManager;
 
-      UserCommandIssueHelper* helper = nullptr;
-      if (const auto found = commandManager->mCommands.find(cmdId); found != commandManager->mCommands.end()) {
-        helper = found->second;
-      }
-      if (helper == nullptr) {
-        return;
-      }
+    UserCommandIssueHelper* helper = nullptr;
+    if (const auto found = commandManager->mCommands.find(cmdId); found != commandManager->mCommands.end()) {
+      helper = found->second;
+    }
+    if (helper == nullptr) {
+      return;
+    }
 
-      if (!IsValidVector3f(mouse)) {
-        return;
-      }
+    if (!IsValidVector3f(mouse)) {
+      return;
+    }
 
-      // mMapAB0's draw-node hash is keyed by the helper's own pointer
-      // identity, not its command id (0x0082C2E3: sub_82C2E0 dereferences
-      // its "key" arg once via [esi]; this function's own call passes
-      // &result where result held the helper pointer's raw value).
+    // mMapAB0's draw-node hash is keyed by the helper's own pointer
+    // identity, not its command id (0x0082C2E3: sub_82C2E0 dereferences
+    // its "key" arg once via [esi]; this function's own call passes
+    // &result where result held the helper pointer's raw value).
 
-      bool suppressDispatch = false;
-      if (graph.mMapAB0.count(helper) != 0) {
-        UICommandGraph::UICommandGraphDrawNode* const drawNode =
-          &graph.mMapAB0[helper];
+    bool suppressDispatch = false;
+    if (graph.mMapAB0.count(helper) != 0) {
+      UICommandGraph::UICommandGraphDrawNode* const drawNode = &graph.mMapAB0[helper];
 
-        drawNode->mPositionSum = mouse;
-        drawNode->mWeight = 1.0f;
+      drawNode->mPositionSum = mouse;
+      drawNode->mWeight = 1.0f;
 
-        if (drawNode->mHasResolvedPosition != 0 &&
-            ResolveCommandIssueHelperCommandType(*helper) == static_cast<EUnitCommandType>(8)) {
-          if (const REntityBlueprint* const genericBlueprint = helper->mConstantData.blueprint;
-              genericBlueprint != nullptr) {
-            // 0x00829C48..0x00829C4D is a plain virtual dispatch through slot
-            // 5 of the blueprint's own vtable - `REntityBlueprint::
-            // IsUnitBlueprint` - not a reflection upcast.
-            if (const RUnitBlueprint* const unitBlueprint = genericBlueprint->IsUnitBlueprint();
-                unitBlueprint != nullptr) {
-              const float inverseWeight = 1.0f / drawNode->mWeight;
-              const SCoordsVec2 buildCenter{
-                drawNode->mPositionSum.x * inverseWeight, drawNode->mPositionSum.z * inverseWeight
-              };
-              SOccupationResult buildInfo{};
-              const bool canBuild = USERUNIT_CanBeBuiltAt(
-                *graph.mSession, unitBlueprint, buildCenter, false, &buildInfo,
-                reinterpret_cast<const UserCommand*>(helper)
-              );
-              drawNode->mIsVisible = (canBuild || !graph.mSession->mShowInvalidBuildPlacementPreview) ? 1u : 0u;
-            }
+      if (
+        drawNode->mHasResolvedPosition != 0 &&
+        ResolveCommandIssueHelperCommandType(*helper) == static_cast<EUnitCommandType>(8)
+      ) {
+        if (
+          const REntityBlueprint* const genericBlueprint = helper->mConstantData.blueprint; genericBlueprint != nullptr
+        ) {
+          // 0x00829C48..0x00829C4D is a plain virtual dispatch through slot
+          // 5 of the blueprint's own vtable - `REntityBlueprint::
+          // IsUnitBlueprint` - not a reflection upcast.
+          if (
+            const RUnitBlueprint* const unitBlueprint = genericBlueprint->IsUnitBlueprint(); unitBlueprint != nullptr
+          ) {
+            const float inverseWeight = 1.0f / drawNode->mWeight;
+            const SCoordsVec2 buildCenter{
+              drawNode->mPositionSum.x * inverseWeight, drawNode->mPositionSum.z * inverseWeight
+            };
+            SOccupationResult buildInfo{};
+            const bool canBuild =
+              USERUNIT_CanBeBuiltAt(*graph.mSession, unitBlueprint, buildCenter, false, &buildInfo, helper);
+            drawNode->mIsVisible = (canBuild || !graph.mSession->mShowInvalidBuildPlacementPreview) ? 1u : 0u;
           }
         }
+      }
 
-        const bool wasInvalidPlacement = (drawNode->mIsVisible == 0);
-        drawNode->mHasResolvedPosition = released ? 0u : 1u;
-        if (wasInvalidPlacement && released) {
-          suppressDispatch = true;
+      const bool wasInvalidPlacement = (drawNode->mIsVisible == 0);
+      drawNode->mHasResolvedPosition = released ? 0u : 1u;
+      if (wasInvalidPlacement && released) {
+        suppressDispatch = true;
+      }
+    }
+
+    if (!released || suppressDispatch) {
+      return;
+    }
+
+    // The playable-rect clamp runs once, here, ahead of all three dispatch
+    // arms - 0x00829CF4..0x00829D7D sits between the `released` gate and
+    // the cached-target search, and every later read (the distance loop's
+    // `var_200`/`result`, the factory arm's `ToCellPos` input, and the
+    // default arm's position target) is of the clamped vector, never of the
+    // raw mouse. Clamping only inside the default arm let the other two
+    // arms act on an off-map cursor.
+    const STIMap* const map = graph.mSession->mWldMap->mTerrainRes->mMap;
+    Wm3::Vector3f clampedPos = mouse;
+    clampedPos.x = std::clamp(
+      clampedPos.x, static_cast<float>(map->mPlayableRect.x0 + 1), static_cast<float>(map->mPlayableRect.x1 - 1)
+    );
+    clampedPos.z = std::clamp(
+      clampedPos.z, static_cast<float>(map->mPlayableRect.z0 + 1), static_cast<float>(map->mPlayableRect.z1 - 1)
+    );
+
+    if (UserEntity* const cachedTargetEntity = ResolveCommandTargetEntity(*helper); cachedTargetEntity != nullptr) {
+      // Cached-target reacquire: search nearby collected entities for the
+      // closest live unit sharing the cached target's army.
+      gpg::fastvector<UserEntity*> candidates{};
+      auto* const spatialDb = graph.mSession->GetEntitySpatialDbStorage();
+      (void)spatialDb->Collect(candidates, ENTITYTYPE_Unit);
+
+      UserEntity* closest = nullptr;
+      float closestDistanceSq = gpg::pInf;
+      for (UserEntity* const candidate : candidates) {
+        if (candidate == nullptr || candidate->IsBeingBuilt()) {
+          continue;
         }
-      }
 
-      if (!released || suppressDispatch) {
-        return;
-      }
-
-      // The playable-rect clamp runs once, here, ahead of all three dispatch
-      // arms - 0x00829CF4..0x00829D7D sits between the `released` gate and
-      // the cached-target search, and every later read (the distance loop's
-      // `var_200`/`result`, the factory arm's `ToCellPos` input, and the
-      // default arm's position target) is of the clamped vector, never of the
-      // raw mouse. Clamping only inside the default arm let the other two
-      // arms act on an off-map cursor.
-      const STIMap* const map = graph.mSession->mWldMap->mTerrainRes->mMap;
-      Wm3::Vector3f clampedPos = mouse;
-      clampedPos.x = std::clamp(
-        clampedPos.x, static_cast<float>(map->mPlayableRect.x0 + 1), static_cast<float>(map->mPlayableRect.x1 - 1)
-      );
-      clampedPos.z = std::clamp(
-        clampedPos.z, static_cast<float>(map->mPlayableRect.z0 + 1), static_cast<float>(map->mPlayableRect.z1 - 1)
-      );
-
-      if (UserEntity* const cachedTargetEntity = ResolveCommandTargetEntity(*helper);
-          cachedTargetEntity != nullptr) {
-        // Cached-target reacquire: search nearby collected entities for the
-        // closest live unit sharing the cached target's army.
-        gpg::fastvector<UserEntity*> candidates{};
-        auto* const spatialDb = graph.mSession->GetEntitySpatialDbStorage();
-        (void)spatialDb->Collect(candidates, ENTITYTYPE_Unit);
-
-        UserEntity* closest = nullptr;
-        float closestDistanceSq = gpg::pInf;
-        for (UserEntity* const candidate : candidates) {
-          if (candidate == nullptr || candidate->IsBeingBuilt()) {
+        if (UserUnit* const candidateUnit = candidate->IsUserUnit(); candidateUnit != nullptr) {
+          if (IsCandidateExcludedByCachedRelation(*helper, candidateUnit)) {
             continue;
           }
-
-          if (UserUnit* const candidateUnit = candidate->IsUserUnit(); candidateUnit != nullptr) {
-            if (IsCandidateExcludedByCachedRelation(*helper, candidateUnit)) {
-              continue;
-            }
-          }
-
-          if (candidate->mArmy != cachedTargetEntity->mArmy) {
-            continue;
-          }
-
-          const Wm3::Vec3f& candidatePos = candidate->mVariableData.mCurTransform.pos_;
-          const float deltaX = clampedPos.x - candidatePos.x;
-          const float deltaZ = clampedPos.z - candidatePos.z;
-          const float distanceSq = (deltaX * deltaX) + (deltaZ * deltaZ);
-          if (distanceSq < closestDistanceSq) {
-            closestDistanceSq = distanceSq;
-            closest = candidate;
-          }
         }
 
-        if (closest != nullptr) {
-          const UserTarget entityTarget(closest);
-          ISSUE_SetCommandTarget(helper, entityTarget);
+        if (candidate->mArmy != cachedTargetEntity->mArmy) {
+          continue;
         }
-        return;
+
+        const Wm3::Vec3f& candidatePos = candidate->mVariableData.mCurTransform.pos_;
+        const float deltaX = clampedPos.x - candidatePos.x;
+        const float deltaZ = clampedPos.z - candidatePos.z;
+        const float distanceSq = (deltaX * deltaX) + (deltaZ * deltaZ);
+        if (distanceSq < closestDistanceSq) {
+          closestDistanceSq = distanceSq;
+          closest = candidate;
+        }
       }
 
-      const REntityBlueprint* const genericBlueprint = helper->mConstantData.blueprint;
-      if (ResolveCommandIssueHelperCommandType(*helper) == static_cast<EUnitCommandType>(8) &&
-          genericBlueprint != nullptr) {
-        // Factory-build command: re-snap the dropped cursor onto the
-        // blueprint's own footprint grid.
-        //
-        // 0x00829F0D..0x00829F40 copies the sixteen bytes at
-        // `REntityBlueprint+0xD8` - the blueprint's inline `mFootprint` - into
-        // a stack `SFootprint`; there is no reflection upcast and no
-        // `Physics.ResolvedFootprint` indirection anywhere in this arm. The
-        // upcast-and-deref version this replaces dropped the whole drag
-        // silently whenever either step yielded null, so a queued building
-        // could not be moved at all.
-        const SFootprint& footprint = genericBlueprint->mFootprint;
-        const SOCellPos cell = footprint.ToCellPos(clampedPos);
-
-        // 0x00829F5E calls the `(STIMap const*, SOCellPos const&, SFootprint
-        // const&)` overload, which re-centres the origin cell over the *full*
-        // footprint (`cell + size/2`). Passing `1, 1` instead re-centred every
-        // structure as if it were one cell across, displacing the re-issued
-        // build position by `((1 - sizeX) / 2, (1 - sizeZ) / 2)` - i.e. toward
-        // -X/-Z, up and to the left on screen, by a whole cell for a 3-cell
-        // footprint - so the dropped order and its green placement ghost
-        // landed off the structure they belonged to.
-        const Wm3::Vector3f worldPos = COORDS_ToWorldPos(map, cell, footprint);
-
-        UserTarget positionTarget{};
-        positionTarget.targetType = UserTargetType::Position;
-        positionTarget.position = worldPos;
-        ISSUE_SetCommandTarget(helper, positionTarget);
-        return;
+      if (closest != nullptr) {
+        const UserTarget entityTarget(closest);
+        ISSUE_SetCommandTarget(helper, entityTarget);
       }
+      return;
+    }
 
-      // Default: issue the clamped cursor position as a `Position` target.
+    const REntityBlueprint* const genericBlueprint = helper->mConstantData.blueprint;
+    if (
+      ResolveCommandIssueHelperCommandType(*helper) == static_cast<EUnitCommandType>(8) && genericBlueprint != nullptr
+    ) {
+      // Factory-build command: re-snap the dropped cursor onto the
+      // blueprint's own footprint grid.
+      //
+      // 0x00829F0D..0x00829F40 copies the sixteen bytes at
+      // `REntityBlueprint+0xD8` - the blueprint's inline `mFootprint` - into
+      // a stack `SFootprint`; there is no reflection upcast and no
+      // `Physics.ResolvedFootprint` indirection anywhere in this arm. The
+      // upcast-and-deref version this replaces dropped the whole drag
+      // silently whenever either step yielded null, so a queued building
+      // could not be moved at all.
+      const SFootprint& footprint = genericBlueprint->mFootprint;
+      const SOCellPos cell = footprint.ToCellPos(clampedPos);
+
+      // 0x00829F5E calls the `(STIMap const*, SOCellPos const&, SFootprint
+      // const&)` overload, which re-centres the origin cell over the *full*
+      // footprint (`cell + size/2`). Passing `1, 1` instead re-centred every
+      // structure as if it were one cell across, displacing the re-issued
+      // build position by `((1 - sizeX) / 2, (1 - sizeZ) / 2)` - i.e. toward
+      // -X/-Z, up and to the left on screen, by a whole cell for a 3-cell
+      // footprint - so the dropped order and its green placement ghost
+      // landed off the structure they belonged to.
+      const Wm3::Vector3f worldPos = COORDS_ToWorldPos(map, cell, footprint);
+
       UserTarget positionTarget{};
       positionTarget.targetType = UserTargetType::Position;
-      positionTarget.position = clampedPos;
+      positionTarget.position = worldPos;
       ISSUE_SetCommandTarget(helper, positionTarget);
+      return;
     }
-namespace
-{
 
-    [[nodiscard]] ECommandMode DefaultModeFromDrag(const std::int32_t dragWord) noexcept
+    // Default: issue the clamped cursor position as a `Position` target.
+    UserTarget positionTarget{};
+    positionTarget.targetType = UserTargetType::Position;
+    positionTarget.position = clampedPos;
+    ISSUE_SetCommandTarget(helper, positionTarget);
+  }
+  namespace
+  {
+
+    [[nodiscard]] ECommandMode DefaultModeFromDrag(
+      const std::int32_t dragWord
+    ) noexcept
     {
       const std::uint32_t dragMask = static_cast<std::uint32_t>(dragWord) & 0xFF000000u;
       return (dragMask != 0xFF000000u) ? COMMOD_Reclaim : COMMOD_Move;
@@ -917,34 +941,38 @@ namespace
     class CNamedCategory
     {
     public:
-      explicit CNamedCategory(const char* const name) noexcept
+      explicit CNamedCategory(
+        const char* const name
+      ) noexcept
         : mName(name)
       {}
 
-      [[nodiscard]] bool Contains(const UserEntity& entity) const
+      [[nodiscard]] bool Contains(
+        const UserEntity& entity
+      ) const
       {
         if (entity.mSession == nullptr || entity.mParams.mBlueprint == nullptr) {
           return false;
         }
-        const EntityCategoryLookupResolver* const resolver = entity.mSession->GetCategoryLookupResolver();
-        if (resolver == nullptr) {
+        const RRuleGameRules* const rules = entity.mSession->mRules;
+        if (rules == nullptr) {
           return false;
         }
-        if (resolver != mResolver) {
-          mResolver = resolver;
-          mCategory = resolver->GetEntityCategory(mName);
+        if (rules != mRules) {
+          mRules = rules;
+          mCategory = rules->GetEntityCategory(mName);
         }
         if (mCategory == nullptr) {
           return false;
         }
-        const std::uint32_t categoryBitIndex = entity.mParams.mBlueprint->mCategoryBitIndex;
+        const std::uint32_t categoryBitIndex = entity.mParams.mBlueprint->mBlueprintOrdinal;
         const auto wordIt = mCategory->FindWord(categoryBitIndex >> 5u);
         return wordIt != mCategory->WordEnd() && ((*wordIt >> (categoryBitIndex & 0x1Fu)) & 1u) != 0u;
       }
 
     private:
       const char* mName;
-      mutable const EntityCategoryLookupResolver* mResolver = nullptr;
+      mutable const RRuleGameRules* mRules = nullptr;
       mutable const EntityCategorySet* mCategory = nullptr;
     };
 
@@ -960,7 +988,10 @@ namespace
      * checked). Backs the enemy-hover Attack decision in the right-click
      * dispatcher.
      */
-    [[nodiscard]] bool AnySelectedUnitCanAttackHover(UserEntity* const hoverEntity, CWldSession* const session)
+    [[nodiscard]] bool AnySelectedUnitCanAttackHover(
+      UserEntity* const hoverEntity,
+      CWldSession* const session
+    )
     {
       if (hoverEntity == nullptr) {
         return false;
@@ -1003,7 +1034,10 @@ namespace
      * `UserUnit*` by the decompiler but only ever used through UserEntity
      * members, so the recovered parameter is typed as the base `UserEntity*`.
      */
-    [[nodiscard]] bool SelectionHasTransportForTarget(WeakSet<UserEntity>* const selection, UserEntity* const hoverEntity)
+    [[nodiscard]] bool SelectionHasTransportForTarget(
+      WeakSet<UserEntity>* const selection,
+      UserEntity* const hoverEntity
+    )
     {
       if (hoverEntity == nullptr) {
         return false;
@@ -1029,13 +1063,12 @@ namespace
       //   if (IsInCategory(hover,"FERRYBEACON")
       //       || (skip = 1, !IsInCategory(selected,"COMMAND"))) { accept: skip = 0; }
       // so `skip` survives as 1 only when the selected unit IS COMMAND.
-      const bool hoverTakesCommander = hoverEntity->IsInCategory(msvc8::string("CANTRANSPORTCOMMANDER")) ||
-                                       hoverEntity->IsInCategory(msvc8::string("FERRYBEACON"));
+      const bool hoverTakesCommander = hoverEntity->IsInCategory(fa::string("CANTRANSPORTCOMMANDER")) ||
+        hoverEntity->IsInCategory(fa::string("FERRYBEACON"));
       // Group 2: does the hovered entity want air transport?
-      const bool wantsAir = hoverEntity->IsInCategory(msvc8::string("TRANSPORTATION")) ||
-                            hoverEntity->IsInCategory(msvc8::string("TELEPORTATION")) ||
-                            hoverEntity->IsInCategory(msvc8::string("FERRYBEACON"));
-      if (!wantsAir && !hoverEntity->IsInCategory(msvc8::string("AIRSTAGINGPLATFORM"))) {
+      const bool wantsAir = hoverEntity->IsInCategory(fa::string("TRANSPORTATION")) ||
+        hoverEntity->IsInCategory(fa::string("TELEPORTATION")) || hoverEntity->IsInCategory(fa::string("FERRYBEACON"));
+      if (!wantsAir && !hoverEntity->IsInCategory(fa::string("AIRSTAGINGPLATFORM"))) {
         return false; // no selected unit can be accepted
       }
       const CNamedCategory command{"COMMAND"};
@@ -1045,9 +1078,11 @@ namespace
         UserUnit* const transporter = selectedEntity ? selectedEntity->IsUserUnit() : nullptr;
         if (transporter != nullptr) {
           IUnit* const transporterBridge = GetIUnitBridge(transporter);
-          if (transporterBridge != nullptr && !transporterBridge->IsDead() // slot +0x28
-              && !transporter->IsBeingBuilt()                              // v6 vtable slot +0x34
-              && !transporterBridge->DestroyQueued())                      // slot +0x2C
+          if (
+            transporterBridge != nullptr && !transporterBridge->IsDead() // slot +0x28
+            && !transporter->IsBeingBuilt()                              // v6 vtable slot +0x34
+            && !transporterBridge->DestroyQueued()
+          ) // slot +0x2C
           {
             if (!hoverTakesCommander && command.Contains(*transporter)) {
               continue;
@@ -1093,7 +1128,10 @@ namespace
      * AIRSTAGINGPLATFORM) against the hovered unit's air capability. Returns
      * true on the first accepted selected unit.
      */
-    [[nodiscard]] bool HoverTransportAcceptsSelection(WeakSet<UserEntity>* const selection, UserEntity* const hoverEntity)
+    [[nodiscard]] bool HoverTransportAcceptsSelection(
+      WeakSet<UserEntity>* const selection,
+      UserEntity* const hoverEntity
+    )
     {
       if (hoverEntity == nullptr) {
         return false;
@@ -1116,10 +1154,10 @@ namespace
       //
       // Group 1: TELEPORTATION(candidate) or EXPERIMENTAL(hover) skips the candidate, so an
       // experimental hover skips them all.
-      if (reinterpret_cast<const UserEntity*>(hoverUnit)->IsInCategory(msvc8::string("EXPERIMENTAL"))) {
+      if (static_cast<const UserEntity*>(hoverUnit)->IsInCategory(fa::string("EXPERIMENTAL"))) {
         return false;
       }
-      const bool hoverIsCommander = reinterpret_cast<const UserEntity*>(hoverUnit)->IsInCategory(msvc8::string("COMMAND"));
+      const bool hoverIsCommander = static_cast<const UserEntity*>(hoverUnit)->IsInCategory(fa::string("COMMAND"));
       const CNamedCategory teleportation{"TELEPORTATION"};
       const CNamedCategory transportFocus{"TRANSPORTFOCUS"};
       const CNamedCategory canTransportCommander{"CANTRANSPORTCOMMANDER"};
@@ -1128,8 +1166,10 @@ namespace
       const CNamedCategory airStagingPlatform{"AIRSTAGINGPLATFORM"};
 
       for (UserEntity* const candidate : *selection) {
-        if (candidate == nullptr || teleportation.Contains(*candidate) ||
-            candidate->mVariableData.mLayerMask == static_cast<std::uint32_t>(LAYER_Seabed)) {
+        if (
+          candidate == nullptr || teleportation.Contains(*candidate) ||
+          candidate->mVariableData.mLayerMask == static_cast<std::uint32_t>(LAYER_Seabed)
+        ) {
           continue;
         }
         // Group 2: TRANSPORTFOCUS(candidate).
@@ -1170,21 +1210,26 @@ namespace
      * entity's blueprint ordinal against it; `EntityCategory::HasBlueprint`
      * expresses that same membership test.
      */
-    [[nodiscard]] bool AllSelectedAreFactories(WeakSet<UserEntity>* const selection, CWldSession* const session)
+    [[nodiscard]] bool AllSelectedAreFactories(
+      WeakSet<UserEntity>* const selection,
+      CWldSession* const session
+    )
     {
       const EntityCategorySet* const factoryCategory =
         static_cast<RRuleGameRules*>(session->mRules)->GetEntityCategory("FACTORY");
 
       for (UserEntity* const selectedEntity : *selection) {
-        if (selectedEntity == nullptr
-            || !EntityCategory::HasBlueprint(selectedEntity->mParams.mBlueprint, factoryCategory)) {
+        if (
+          selectedEntity == nullptr ||
+          !EntityCategory::HasBlueprint(selectedEntity->mParams.mBlueprint, factoryCategory)
+        ) {
           return false;
         }
       }
 
       return true;
     }
-}
+  } // namespace
 
   /**
    * Address: 0x008B0C80 (FUN_008B0C80)
@@ -1201,7 +1246,10 @@ namespace
    * `UserUnit*` lanes with a tombstone-pruning tree walk, then calls `ISSUE_Command`
    * once per requested count (the command payload is passed by value each call).
    */
-  void ISSUE_IncreaseCommandCount(UserCommandIssueHelper* const helper, const int count)
+  void ISSUE_IncreaseCommandCount(
+    UserCommandIssueHelper* const helper,
+    const int count
+  )
   {
     // Gate: only factory-build commands are re-issued this way (asm 0x008B0CA2).
     if (ResolveCommandIssueHelperCommandType(*helper) != EUnitCommandType::UNITCOMMAND_BuildFactory) {
@@ -1214,7 +1262,7 @@ namespace
     SSTICommandIssueData commandIssueData(EUnitCommandType::UNITCOMMAND_None);
     commandIssueData.mCommandType = EUnitCommandType::UNITCOMMAND_BuildFactory;
     commandIssueData.mIndex = helper->mConstantData.cmd;
-    commandIssueData.mBlueprint = reinterpret_cast<RUnitBlueprint*>(helper->mConstantData.blueprint);
+    commandIssueData.mBlueprint = static_cast<RUnitBlueprint*>(helper->mConstantData.blueprint);
 
     // The command's units: a copy of the helper's cursor set (rebuilt first if
     // dirty, 0x008B43F0; copied through the range constructor 0x00831310),
@@ -1263,9 +1311,8 @@ namespace
   // Sim.cpp. That mismatch is what left this call unresolved -
   // `?...@moho@@YAPAIPAUCommandManager@1@PAI@Z` wanted here against
   // `?...@moho@@YAPAIQAUCommandManager@1@QAI@Z` defined there.
-  [[nodiscard]] std::uint32_t* AllocatePackedCommandIdFromManager(
-    CommandManager* const commandManager, std::uint32_t* const outCommandId
-  ) noexcept;
+  [[nodiscard]] std::uint32_t*
+  AllocatePackedCommandIdFromManager(CommandManager* const commandManager, std::uint32_t* const outCommandId) noexcept;
 
   /**
    * Address: 0x008B00A0 (FUN_008B00A0, func_DecodeEntIdSet)
@@ -1302,7 +1349,9 @@ namespace
    * queued entries unless `clearQueue` forces a reset).
    */
   void ISSUE_FactoryCommand(
-    const gpg::fastvector<UserUnit*>& units, SSTICommandIssueData commandIssueData, const bool clearQueue
+    const gpg::fastvector<UserUnit*>& units,
+    SSTICommandIssueData commandIssueData,
+    const bool clearQueue
   )
   {
     CWldSession* const session = WLD_GetActiveSession();
@@ -1323,7 +1372,9 @@ namespace
       Wm3::Vec3f targetPoint{kInvalidLane, kInvalidLane, kInvalidLane};
 
       if (commandIssueData.mTarget.mType == EAiTargetType::AITARGET_Entity) {
-        if (UserEntity* const targetEntity = session->LookupEntityId(static_cast<EntId>(commandIssueData.mTarget.mEnt))) {
+        if (
+          UserEntity* const targetEntity = session->LookupEntityId(static_cast<EntId>(commandIssueData.mTarget.mEnt))
+        ) {
           targetPoint = targetEntity->mVariableData.mCurTransform.pos_;
         }
       } else {
@@ -1331,8 +1382,10 @@ namespace
       }
 
       const std::int32_t focusArmyIndex = session->FocusArmy;
-      if (IsValidVector3f(targetPoint) && focusArmyIndex >= 0 &&
-          session->userArmies[static_cast<std::size_t>(focusArmyIndex)] != nullptr) {
+      if (
+        IsValidVector3f(targetPoint) && focusArmyIndex >= 0 &&
+        session->userArmies[static_cast<std::size_t>(focusArmyIndex)] != nullptr
+      ) {
         const UserArmy* const focusArmy = session->GetFocusArmy();
         const bool insidePlayableArea =
           focusArmy->mVarDat.mUseWholeMap != 0u || playableMap == nullptr || playableMap->IsPlayable(targetPoint);
@@ -1399,7 +1452,9 @@ namespace
    * overload (CWldSession.cpp).
    */
   void ISSUE_FactoryCommand(
-    const WeakSet<UserEntity>& entities, const SSTICommandIssueData& commandIssueData, const bool clearQueue
+    const WeakSet<UserEntity>& entities,
+    const SSTICommandIssueData& commandIssueData,
+    const bool clearQueue
   )
   {
     gpg::fastvector_n<UserUnit*, 2> selectedUnits{};
@@ -1443,7 +1498,9 @@ namespace
    * `Moho::SCommandModeData::HandleEvent` (FUN_0081FCD0, recovered in this
    * file) from its `RULEUCC_Attack` arm.
    */
-  void ISSUE_RemoveLastCommand(const gpg::fastvector<UserUnit*>& units)
+  void ISSUE_RemoveLastCommand(
+    const gpg::fastvector<UserUnit*>& units
+  )
   {
     const std::int32_t unitCount = static_cast<std::int32_t>(units.Size());
 
@@ -1488,7 +1545,9 @@ namespace
    * (FUN_0081FCD0, recovered in this file), from the `RULEUCC_Attack` arm
    * at 0x0081FDB9 when the event replaces a command the same drag issued.
    */
-  void ISSUE_RemoveLastCommand(WeakSet<UserEntity>& entities)
+  void ISSUE_RemoveLastCommand(
+    WeakSet<UserEntity>& entities
+  )
   {
     gpg::fastvector<UserUnit*> units{};
     units.reserve(entities.Size());
@@ -1533,7 +1592,10 @@ namespace
    * that strips the hovered command from every unit under the cursor. That
    * caller is recovered in moho/ui/UiRuntimeTypes.cpp and calls this by name.
    */
-  void ISSUE_RemoveCommandFromUnitQueue(UserCommandIssueHelper* const command, UserUnit* const unit)
+  void ISSUE_RemoveCommandFromUnitQueue(
+    UserCommandIssueHelper* const command,
+    UserUnit* const unit
+  )
   {
     if (command == nullptr || unit == nullptr) {
       return;
@@ -1586,8 +1648,8 @@ namespace
   {
     return CanRestartMoveCommandAsPatrol(selection, helper);
   }
-namespace
-{
+  namespace
+  {
     /// The `EntId` sentinel every ground-targeted command payload carries
     /// (`mov [target+4], 0F0000000h` at every ground-target site in
     /// `SCommandModeData::HandleEvent`).
@@ -1608,7 +1670,9 @@ namespace
      * source byte for the "this drag is not editing a live command" sentinel
      * (0x0081FEA6 and 0x0082078E), not the whole word.
      */
-    [[nodiscard]] bool HasDraggedCommand(const CommandModeData& commandMode) noexcept
+    [[nodiscard]] bool HasDraggedCommand(
+      const CommandModeData& commandMode
+    ) noexcept
     {
       constexpr std::uint32_t kCommandSourceMask = 0xFF000000u;
       return (static_cast<std::uint32_t>(commandMode.mIsDragged) & kCommandSourceMask) != kCommandSourceMask;
@@ -1620,19 +1684,27 @@ namespace
      * `SMauiMousePos` (the binary just hands `&mMouseScreenPos` over in `ecx`
      * at 0x0081FEDA / 0x00820813).
      */
-    [[nodiscard]] SMauiMousePos ToMauiMousePos(const Wm3::Vector2f& screenPos) noexcept
+    [[nodiscard]] SMauiMousePos ToMauiMousePos(
+      const Wm3::Vector2f& screenPos
+    ) noexcept
     {
       return SMauiMousePos{screenPos.x, screenPos.y};
     }
 
-    void SetEntityTarget(SSTICommandIssueData& data, const UserEntity& target) noexcept
+    void SetEntityTarget(
+      SSTICommandIssueData& data,
+      const UserEntity& target
+    ) noexcept
     {
       data.mTarget.mType = EAiTargetType::AITARGET_Entity;
       data.mTarget.mEntityId = static_cast<std::uint32_t>(target.mParams.mEntityId);
       data.mTarget.mPos = Wm3::Vec3f(0.0f, 0.0f, 0.0f);
     }
 
-    void SetGroundTarget(SSTICommandIssueData& data, const Wm3::Vector3f& worldPos) noexcept
+    void SetGroundTarget(
+      SSTICommandIssueData& data,
+      const Wm3::Vector3f& worldPos
+    ) noexcept
     {
       data.mTarget.mType = EAiTargetType::AITARGET_Ground;
       data.mTarget.mEntityId = kGroundTargetEntityId;
@@ -1645,7 +1717,10 @@ namespace
      * `unk38`/`mOri`/`unk4C` triple `CPlatoon`'s own Form* command builders
      * fill (CPlatoon.cpp).
      */
-    void ApplyFormationLanes(SSTICommandIssueData& data, const CFormation& formation) noexcept
+    void ApplyFormationLanes(
+      SSTICommandIssueData& data,
+      const CFormation& formation
+    ) noexcept
     {
       data.unk38 = formation.mBestFormation;
       data.mOri = formation.mDirection;
@@ -1653,7 +1728,9 @@ namespace
     }
 
     /// The drag formation has settled on a usable script and stopped ticking.
-    [[nodiscard]] bool IsFormationSettled(const CFormation& formation) noexcept
+    [[nodiscard]] bool IsFormationSettled(
+      const CFormation& formation
+    ) noexcept
     {
       return formation.mReady && formation.mTimeLeft == 0.0f;
     }
@@ -1773,7 +1850,7 @@ namespace
       CWldSession& session,
       WeakSet<UserEntity>& selection,
       const bool attackMoveModifier,
-      const bool queueModifier,
+      [[maybe_unused]] const bool queueModifier,
       const bool clearQueue
     )
     {
@@ -1783,12 +1860,10 @@ namespace
       WeakSet<UserEntity> otherUnits;
       SplitSelectionByRallyPointCategory(selection, rallyPointUnits, otherUnits);
 
-      const EUnitCommandType moveCommand = attackMoveModifier
-        ? EUnitCommandType::UNITCOMMAND_AggressiveMove
-        : EUnitCommandType::UNITCOMMAND_Move;
-      const EUnitCommandType formMoveCommand = attackMoveModifier
-        ? EUnitCommandType::UNITCOMMAND_FormAggressiveMove
-        : EUnitCommandType::UNITCOMMAND_FormMove;
+      const EUnitCommandType moveCommand =
+        attackMoveModifier ? EUnitCommandType::UNITCOMMAND_AggressiveMove : EUnitCommandType::UNITCOMMAND_Move;
+      const EUnitCommandType formMoveCommand =
+        attackMoveModifier ? EUnitCommandType::UNITCOMMAND_FormAggressiveMove : EUnitCommandType::UNITCOMMAND_FormMove;
 
       if (!otherUnits.Empty()) {
         const CFormation& formation = *session.mCurFormation;
@@ -1858,13 +1933,12 @@ namespace
       const Wm3::Vector3f& dragWorldPos = commandMode.mMouseDragStart.mMouseWorldPos;
       const EUnitCommandType guardCommand = UnitCommandCapToCommandType(commandMode.mCommandCaps);
 
-      if (UserUnit* const hoveredUnit = hovered != nullptr ? hovered->IsUserUnit() : nullptr;
-          hoveredUnit != nullptr) {
+      if (UserUnit* const hoveredUnit = hovered != nullptr ? hovered->IsUserUnit() : nullptr; hoveredUnit != nullptr) {
         const RUnitBlueprint* const hoveredBlueprint = GetIUnitBridge(hoveredUnit)->GetBlueprint();
 
         bool hoveredIsStructure = false;
         if (hoveredBlueprint != nullptr) {
-          const msvc8::string structureCategory("STRUCTURE");
+          const fa::string structureCategory("STRUCTURE");
           hoveredIsStructure = hovered->IsInCategory(structureCategory);
         }
 
@@ -1876,8 +1950,7 @@ namespace
         WeakSet<UserEntity> nonRebuilders;
         WeakSet<UserEntity> rebuilders;
         SplitSelectionByRebuilderCategory(selection, nonRebuilders, rebuilders);
-        if (hovered != nullptr)
-        {
+        if (hovered != nullptr) {
           nonRebuilders.Remove(hovered);
           rebuilders.Remove(hovered);
         }
@@ -1997,10 +2070,14 @@ namespace
           ISSUE_Command(otherUnits, commandData, clearQueue);
         } else {
           IssueAnchoredThenDragPosition(
-            commandData, session, groupAnchor, dragWorldPos, clearQueue,
+            commandData,
+            session,
+            groupAnchor,
+            dragWorldPos,
+            clearQueue,
             [&otherUnits](const SSTICommandIssueData& data, const bool clear) {
-              ISSUE_Command(otherUnits, data, clear);
-            }
+            ISSUE_Command(otherUnits, data, clear);
+          }
           );
         }
       }
@@ -2011,10 +2088,14 @@ namespace
           ISSUE_FactoryCommand(rallyPointUnits, commandData, clearQueue);
         } else {
           IssueAnchoredThenDragPosition(
-            commandData, session, groupAnchor, dragWorldPos, clearQueue,
+            commandData,
+            session,
+            groupAnchor,
+            dragWorldPos,
+            clearQueue,
             [&rallyPointUnits](const SSTICommandIssueData& data, const bool clear) {
-              ISSUE_FactoryCommand(rallyPointUnits, data, clear);
-            }
+            ISSUE_FactoryCommand(rallyPointUnits, data, clear);
+          }
           );
         }
       }
@@ -2057,10 +2138,14 @@ namespace
       }
 
       IssueAnchoredThenDragPosition(
-        commandData, session, groupAnchor, dragWorldPos, clearQueue,
+        commandData,
+        session,
+        groupAnchor,
+        dragWorldPos,
+        clearQueue,
         [&airTransports](const SSTICommandIssueData& data, const bool clear) {
-          ISSUE_Command(airTransports, data, clear);
-        }
+        ISSUE_Command(airTransports, data, clear);
+      }
       );
     }
 
@@ -2093,22 +2178,17 @@ namespace
     )
     {
       if (hovered != nullptr) {
-        const msvc8::string teleportBeaconCategory("TELEPORTBEACON");
+        const fa::string teleportBeaconCategory("TELEPORTBEACON");
         if (hovered->IsInCategory(teleportBeaconCategory) && SelectionContainsTeleportationUnit(selection)) {
-          IssueOrderAtEntity(
-            selection, EUnitCommandType::UNITCOMMAND_TransportUnloadUnits, *hovered, clearQueue
-          );
+          IssueOrderAtEntity(selection, EUnitCommandType::UNITCOMMAND_TransportUnloadUnits, *hovered, clearQueue);
           return;
         }
       }
 
-      if (UserUnit* const hoveredUnit = hovered != nullptr ? hovered->IsUserUnit() : nullptr;
-          hoveredUnit != nullptr) {
+      if (UserUnit* const hoveredUnit = hovered != nullptr ? hovered->IsUserUnit() : nullptr; hoveredUnit != nullptr) {
         const std::uint32_t hoveredCaps = GetIUnitBridge(hoveredUnit)->GetAttributes().commandCapsMask;
         if ((hoveredCaps & static_cast<std::uint32_t>(RULEUCC_CallTransport)) != 0u) {
-          IssueOrderAtEntity(
-            selection, EUnitCommandType::UNITCOMMAND_TransportReverseLoadUnits, *hovered, clearQueue
-          );
+          IssueOrderAtEntity(selection, EUnitCommandType::UNITCOMMAND_TransportReverseLoadUnits, *hovered, clearQueue);
           return;
         }
       }
@@ -2123,16 +2203,15 @@ namespace
           if (entity->mVariableData.mIsDead == 0u && entity->IsUserUnit() != nullptr) {
             (void)unloadTargets.Add(entity);
 
-            const msvc8::string podCategory("POD");
+            const fa::string podCategory("POD");
             if (!entity->IsInCategory(podCategory)) {
               onlyPods = false;
             }
           }
         }
 
-        const EUnitCommandType unloadCommand = onlyPods
-          ? EUnitCommandType::UNITCOMMAND_Move
-          : EUnitCommandType::UNITCOMMAND_TransportUnloadSpecificUnits;
+        const EUnitCommandType unloadCommand =
+          onlyPods ? EUnitCommandType::UNITCOMMAND_Move : EUnitCommandType::UNITCOMMAND_TransportUnloadSpecificUnits;
         IssueOrderAtGround(unloadTargets, unloadCommand, dragWorldPos, clearQueue);
       } else {
         WeakSet<UserEntity> airTransports;
@@ -2140,9 +2219,7 @@ namespace
         SplitSelectionForFerryCommand(selection, airTransports, landUnits);
 
         if (airTransports.Empty() || landUnits.Empty()) {
-          IssueOrderAtGround(
-            selection, EUnitCommandType::UNITCOMMAND_TransportUnloadUnits, dragWorldPos, clearQueue
-          );
+          IssueOrderAtGround(selection, EUnitCommandType::UNITCOMMAND_TransportUnloadUnits, dragWorldPos, clearQueue);
         } else {
           for (UserEntity* const entity : airTransports) {
             if (entity->mVariableData.mIsDead == 0u && entity->IsUserUnit() != nullptr) {
@@ -2174,9 +2251,9 @@ namespace
       const bool clearQueue
     )
     {
-      const bool hoveredIsAirStaging = hovered.IsInCategory(msvc8::string("AIRSTAGINGPLATFORM"));
-      const bool hoveredIsCarrier = hovered.IsInCategory(msvc8::string("CARRIER"));
-      const bool hoveredIsFerryBeacon = hovered.IsInCategory(msvc8::string("FERRYBEACON"));
+      const bool hoveredIsAirStaging = hovered.IsInCategory(fa::string("AIRSTAGINGPLATFORM"));
+      const bool hoveredIsCarrier = hovered.IsInCategory(fa::string("CARRIER"));
+      const bool hoveredIsFerryBeacon = hovered.IsInCategory(fa::string("FERRYBEACON"));
 
       SSTICommandIssueData commandData(EUnitCommandType::UNITCOMMAND_TransportLoadUnits);
       SetEntityTarget(commandData, hovered);
@@ -2265,7 +2342,11 @@ namespace
      * has queued on that same footprint, which is what makes dragging a
      * queued structure back onto itself cancel it.
      */
-    void DispatchBuildCommandMode(CommandModeData& commandMode, CWldSession& session, const bool clearQueue)
+    void DispatchBuildCommandMode(
+      CommandModeData& commandMode,
+      CWldSession& session,
+      const bool clearQueue
+    )
     {
       WeakSet<UserEntity>& selection = session.mSelection;
       const Wm3::Vector3f& dragWorldPos = commandMode.mMouseDragStart.mMouseWorldPos;
@@ -2274,8 +2355,8 @@ namespace
       if (session.mShowInvalidBuildPlacementPreview) {
         const SCoordsVec2 buildPosition{dragWorldPos.x, dragWorldPos.z};
 
-        const bool withinBuildDistance = commandMode.mMode != COMMOD_BuildAnchored
-          || USERUNIT_WithinBuildDistance(session, buildBlueprint, buildPosition);
+        const bool withinBuildDistance = commandMode.mMode != COMMOD_BuildAnchored ||
+          USERUNIT_WithinBuildDistance(session, buildBlueprint, buildPosition);
 
         bool placeable = false;
         if (withinBuildDistance) {
@@ -2284,9 +2365,11 @@ namespace
         }
 
         if (!placeable) {
-          if (UserCommandIssueHelper* const queuedOrder =
-                FindColocatedQueuedBuildOrder(selection, dragWorldPos, buildBlueprint);
-              queuedOrder != nullptr) {
+          if (
+            UserCommandIssueHelper* const queuedOrder =
+              FindColocatedQueuedBuildOrder(selection, dragWorldPos, buildBlueprint);
+            queuedOrder != nullptr
+          ) {
             ISSUE_DecreaseCommandCount(queuedOrder, 1);
           }
           return;
@@ -2322,141 +2405,133 @@ namespace
       const Wm3::Vector3f& dragWorldPos = commandMode.mMouseDragStart.mMouseWorldPos;
 
       switch (commandMode.mCommandCaps) {
-        case RULEUCC_Move:
+      case RULEUCC_Move:
+        IssueMoveOrderForDrag(commandMode, session, selection, attackMoveModifier, queueModifier, clearQueue);
+        return;
+
+      case RULEUCC_Attack: {
+        // A drag that re-targets the order it already issued withdraws that
+        // order first, so the queue never grows while the cursor moves.
+        if (isDragUpdate) {
+          ISSUE_RemoveLastCommand(selection);
+        }
+
+        if (hovered == nullptr) {
+          IssueAttackMoveToGround(session, selection, dragWorldPos, formationModifier, clearQueue);
+          return;
+        }
+
+        const CFormation& formation = *session.mCurFormation;
+        SSTICommandIssueData commandData(EUnitCommandType::UNITCOMMAND_Attack);
+        ApplyFormationLanes(commandData, formation);
+        if (selection.Size() > 1 && (formationModifier || IsFormationSettled(formation))) {
+          commandData.mCommandType = EUnitCommandType::UNITCOMMAND_FormAttack;
+        }
+        SetEntityTarget(commandData, *hovered);
+
+        // Several players attacking the same target with one drag get the
+        // "coordinated attack" banner and share the dragged order's id.
+        if (
+          isDragUpdate && HasDraggedCommand(commandMode) && CanStartCoordinatedAttack(session, commandMode.mIsDragged)
+        ) {
+          UI_StartCursorText(
+            ToMauiMousePos(commandMode.mMouseDragStart.mMouseScreenPos),
+            "<LOC Engine0011>Coordinated Attack!",
+            kCoordinatedAttackBannerColor,
+            kCursorBannerSeconds,
+            true
+          );
+          commandData.unk04 = commandMode.mIsDragged;
+        }
+
+        ISSUE_Command(selection, commandData, clearQueue);
+        return;
+      }
+
+      case RULEUCC_Guard:
+        // A settled drag formation turns a guard gesture into a formation
+        // move (0x0082013F-0x0082014F).
+        if (IsFormationSettled(*session.mCurFormation)) {
           IssueMoveOrderForDrag(commandMode, session, selection, attackMoveModifier, queueModifier, clearQueue);
           return;
+        }
+        IssueGuardOrderForDrag(commandMode, session, selection, hovered, queueModifier, clearQueue);
+        return;
 
-        case RULEUCC_Attack: {
-          // A drag that re-targets the order it already issued withdraws that
-          // order first, so the queue never grows while the cursor moves.
-          if (isDragUpdate) {
-            ISSUE_RemoveLastCommand(selection);
-          }
+      case RULEUCC_Patrol:
+        IssuePatrolOrderForDrag(commandMode, session, selection, hovered, queueModifier, clearQueue);
+        return;
 
-          if (hovered == nullptr) {
-            IssueAttackMoveToGround(session, selection, dragWorldPos, formationModifier, clearQueue);
-            return;
-          }
+      case RULEUCC_Ferry:
+        IssueFerryOrderForDrag(session, selection, dragWorldPos, clearQueue);
+        return;
 
-          const CFormation& formation = *session.mCurFormation;
-          SSTICommandIssueData commandData(EUnitCommandType::UNITCOMMAND_Attack);
-          ApplyFormationLanes(commandData, formation);
-          if (selection.Size() > 1 && (formationModifier || IsFormationSettled(formation))) {
-            commandData.mCommandType = EUnitCommandType::UNITCOMMAND_FormAttack;
-          }
-          SetEntityTarget(commandData, *hovered);
+      case RULEUCC_Transport:
+        IssueTransportOrderForDrag(session, selection, hovered, dragWorldPos, clearQueue);
+        return;
 
-          // Several players attacking the same target with one drag get the
-          // "coordinated attack" banner and share the dragged order's id.
-          if (isDragUpdate && HasDraggedCommand(commandMode)
-              && CanStartCoordinatedAttack(session, commandMode.mIsDragged)) {
-            UI_StartCursorText(
-              ToMauiMousePos(commandMode.mMouseDragStart.mMouseScreenPos),
-              "<LOC Engine0011>Coordinated Attack!",
-              kCoordinatedAttackBannerColor,
-              kCursorBannerSeconds,
-              true
-            );
-            commandData.unk04 = commandMode.mIsDragged;
-          }
+      case RULEUCC_CallTransport:
+        if (hovered == nullptr) {
+          return;
+        }
+        IssueCallTransportOrderForDrag(selection, *hovered, clearQueue);
+        return;
 
-          ISSUE_Command(selection, commandData, clearQueue);
+      case RULEUCC_Script:
+        IssueScriptCommandForDrag(selection, hovered, dragWorldPos, clearQueue);
+        return;
+
+      case RULEUCC_Reclaim: {
+        if (hovered == nullptr) {
           return;
         }
 
-        case RULEUCC_Guard:
-          // A settled drag formation turns a guard gesture into a formation
-          // move (0x0082013F-0x0082014F).
-          if (IsFormationSettled(*session.mCurFormation)) {
-            IssueMoveOrderForDrag(commandMode, session, selection, attackMoveModifier, queueModifier, clearQueue);
-            return;
-          }
-          IssueGuardOrderForDrag(commandMode, session, selection, hovered, queueModifier, clearQueue);
-          return;
-
-        case RULEUCC_Patrol:
-          IssuePatrolOrderForDrag(commandMode, session, selection, hovered, queueModifier, clearQueue);
-          return;
-
-        case RULEUCC_Ferry:
-          IssueFerryOrderForDrag(session, selection, dragWorldPos, clearQueue);
-          return;
-
-        case RULEUCC_Transport:
-          IssueTransportOrderForDrag(session, selection, hovered, dragWorldPos, clearQueue);
-          return;
-
-        case RULEUCC_CallTransport:
-          if (hovered == nullptr) {
-            return;
-          }
-          IssueCallTransportOrderForDrag(selection, *hovered, clearQueue);
-          return;
-
-        case RULEUCC_Script:
-          IssueScriptCommandForDrag(selection, hovered, dragWorldPos, clearQueue);
-          return;
-
-        case RULEUCC_Reclaim: {
-          if (hovered == nullptr) {
-            return;
-          }
-
-          bool reclaimable = false;
-          {
-            const msvc8::string reclaimableCategory("RECLAIMABLE");
-            reclaimable = hovered->IsInCategory(reclaimableCategory) || hovered->IsBeingBuilt();
-          }
-          if (!reclaimable) {
-            return;
-          }
-
-          IssueOrderAtEntity(
-            selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), *hovered, clearQueue
-          );
+        bool reclaimable = false;
+        {
+          const fa::string reclaimableCategory("RECLAIMABLE");
+          reclaimable = hovered->IsInCategory(reclaimableCategory) || hovered->IsBeingBuilt();
+        }
+        if (!reclaimable) {
           return;
         }
 
-        // Sacrifice is its own emitted block in the binary (0x008217CF) but the
-        // same source shape as the repair/capture/overcharge group below.
-        case RULEUCC_Sacrifice:
-        case RULEUCC_Repair:
-        case RULEUCC_Capture:
-        case RULEUCC_Overcharge:
-          if (hovered == nullptr) {
-            return;
-          }
-          IssueOrderAtEntity(
-            selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), *hovered, clearQueue
-          );
-          return;
+        IssueOrderAtEntity(selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), *hovered, clearQueue);
+        return;
+      }
 
-        case RULEUCC_Nuke:
-        case RULEUCC_Tactical:
-        case RULEUCC_SpecialAction:
-          if (hovered != nullptr) {
-            IssueOrderAtEntity(
-              selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), *hovered, clearQueue
-            );
-          } else {
-            IssueOrderAtGround(
-              selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), dragWorldPos, clearQueue
-            );
-          }
+      // Sacrifice is its own emitted block in the binary (0x008217CF) but the
+      // same source shape as the repair/capture/overcharge group below.
+      case RULEUCC_Sacrifice:
+      case RULEUCC_Repair:
+      case RULEUCC_Capture:
+      case RULEUCC_Overcharge:
+        if (hovered == nullptr) {
           return;
+        }
+        IssueOrderAtEntity(selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), *hovered, clearQueue);
+        return;
 
-        case RULEUCC_Invalid:
-          return;
-
-        default:
+      case RULEUCC_Nuke:
+      case RULEUCC_Tactical:
+      case RULEUCC_SpecialAction:
+        if (hovered != nullptr) {
+          IssueOrderAtEntity(selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), *hovered, clearQueue);
+        } else {
           IssueOrderAtGround(
             selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), dragWorldPos, clearQueue
           );
-          return;
+        }
+        return;
+
+      case RULEUCC_Invalid:
+        return;
+
+      default:
+        IssueOrderAtGround(selection, UnitCommandCapToCommandType(commandMode.mCommandCaps), dragWorldPos, clearQueue);
+        return;
       }
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x0081FCD0 (FUN_0081FCD0, Moho::SCommandModeData::HandleEvent)
@@ -2489,7 +2564,10 @@ namespace
    * queue modifier, so holding shift appends the new order instead of
    * replacing the queue.
    */
-  void CommandModeData::HandleEvent(CWldSession& session, const bool isDragUpdate)
+  void CommandModeData::HandleEvent(
+    CWldSession& session,
+    const bool isDragUpdate
+  )
   {
     const bool queueModifier = (mModifiers & COMMODMOD_Queue) != 0;
     const bool formationModifier = (mModifiers & COMMODMOD_Formation) != 0;
@@ -2499,26 +2577,26 @@ namespace
     UserEntity* const hovered = DecodeHoveredDragEntity(mMouseDragStart);
 
     switch (mMode) {
-      case COMMOD_Order:
-        DispatchOrderCommandMode(
-          *this, session, hovered, isDragUpdate, formationModifier, attackMoveModifier, queueModifier, clearQueue
-        );
-        return;
+    case COMMOD_Order:
+      DispatchOrderCommandMode(
+        *this, session, hovered, isDragUpdate, formationModifier, attackMoveModifier, queueModifier, clearQueue
+      );
+      return;
 
-      case COMMOD_Build:
-      case COMMOD_BuildAnchored:
-        DispatchBuildCommandMode(*this, session, clearQueue);
-        return;
+    case COMMOD_Build:
+    case COMMOD_BuildAnchored:
+      DispatchBuildCommandMode(*this, session, clearQueue);
+      return;
 
-      case COMMOD_Ping:
-      // The jump table at 0x00821F04 routes mode 7 to the same entry as
-      // `COMMOD_Ping`.
-      case COMMOD_CancelCommandMode:
-        UI_EndCommandMode();
-        return;
+    case COMMOD_Ping:
+    // The jump table at 0x00821F04 routes mode 7 to the same entry as
+    // `COMMOD_Ping`.
+    case COMMOD_CancelCommandMode:
+      UI_EndCommandMode();
+      return;
 
-      default:
-        return;
+    default:
+      return;
     }
   }
 
@@ -2577,14 +2655,14 @@ namespace
     ESTITargetType targetType = static_cast<ESTITargetType>(static_cast<std::int32_t>(commandIssueData.mTarget.mType));
     gpg::RRef targetTypeRef{};
     targetTypeRef = gpg::MakeRRef<moho::ESTITargetType>(&targetType);
-    const msvc8::string targetTypeLexical = targetTypeRef.GetLexical();
+    const fa::string targetTypeLexical = targetTypeRef.GetLexical();
     targetTable.SetString("Type", targetTypeLexical.c_str());
 
     if (commandIssueData.mTarget.mType == EAiTargetType::AITARGET_Entity) {
       const EntId targetEntityId = static_cast<EntId>(commandIssueData.mTarget.mEntityId);
       if (CWldSession* const session = WLD_GetActiveSession(); session != nullptr) {
         if (UserEntity* const targetEntity = session->LookupEntityId(targetEntityId); targetEntity != nullptr) {
-          const msvc8::string entityIdLexical = gpg::STR_Printf("%d", static_cast<std::int32_t>(targetEntityId));
+          const fa::string entityIdLexical = gpg::STR_Printf("%d", static_cast<std::int32_t>(targetEntityId));
           targetTable.SetString("EntityId", entityIdLexical.c_str());
 
           const LuaPlus::LuaObject targetPositionObject =
@@ -2608,7 +2686,7 @@ namespace
     EUnitCommandType commandType = commandIssueData.mCommandType;
     gpg::RRef commandTypeRef{};
     commandTypeRef = gpg::MakeRRef<moho::EUnitCommandType>(&commandType);
-    const msvc8::string commandTypeLexical = commandTypeRef.GetLexical();
+    const fa::string commandTypeLexical = commandTypeRef.GetLexical();
     outCommandObject->SetString("CommandType", commandTypeLexical.c_str());
     outCommandObject->SetBoolean("Clear", doClear);
     return outCommandObject;
@@ -2793,7 +2871,9 @@ namespace
   /**
    * Address: 0x00865920 (FUN_00865920, ?ReleaseDrag@CWldSession@Moho@@QAEXW4EMauiEventModifier@2@@Z)
    */
-  void CWldSession::ReleaseDrag(const EMauiEventModifier modifiers)
+  void CWldSession::ReleaseDrag(
+    const EMauiEventModifier modifiers
+  )
   {
     constexpr std::uint32_t kShiftMask = static_cast<std::uint32_t>(MEM_Shift);
     constexpr std::uint32_t kCtrlMask = static_cast<std::uint32_t>(MEM_Ctrl);
@@ -2801,7 +2881,7 @@ namespace
     constexpr std::uint32_t kShiftCtrlMask = kShiftMask | kCtrlMask;
 
     const std::uint32_t modifierBits = static_cast<std::uint32_t>(modifiers);
-    msvc8::vector<UserUnit*> nextSelection{};
+    fa::vector<UserUnit*> nextSelection{};
 
     UserEntity* const hoveredEntity = this->GetHoveredUserEntity();
     UserUnit* const hoveredUnit = hoveredEntity != nullptr ? hoveredEntity->IsUserUnit() : nullptr;
@@ -2823,7 +2903,7 @@ namespace
     }
 
     if ((modifierBits & kCtrlMask) != 0u) {
-      msvc8::vector<UserUnit*> currentSelection{};
+      fa::vector<UserUnit*> currentSelection{};
       GetSelectionUnits(currentSelection);
 
       const IUnit* const hoveredBridge = GetIUnitBridge(hoveredUnit);
@@ -2845,7 +2925,7 @@ namespace
         nextSelection = currentSelection;
       }
 
-      msvc8::vector<UserUnit*> allSessionUnits{};
+      fa::vector<UserUnit*> allSessionUnits{};
       CollectSessionUserUnits(this, allSessionUnits);
       const UserArmy* const focusArmy = GetFocusUserArmy();
       for (UserUnit* const sessionUnit : allSessionUnits) {
@@ -2858,7 +2938,7 @@ namespace
           continue;
         }
 
-        const UserEntity* const sessionEntity = reinterpret_cast<const UserEntity*>(sessionUnit);
+        const UserEntity* const sessionEntity = static_cast<const UserEntity*>(sessionUnit);
         if (sessionEntity == nullptr || sessionEntity->mArmy != focusArmy) {
           continue;
         }
@@ -2891,7 +2971,9 @@ namespace
   /**
    * Address: 0x00865E20 (FUN_00865E20, ?HandleDoubleClickSelection@CWldSession@Moho@@QAEXPAVCameraImpl@2@@Z)
    */
-  void CWldSession::HandleDoubleClickSelection(CameraImpl* const camera)
+  void CWldSession::HandleDoubleClickSelection(
+    CameraImpl* const camera
+  )
   {
     UserEntity* const hoveredEntity = this->GetHoveredUserEntity();
     if (hoveredEntity == nullptr) {
@@ -2917,7 +2999,7 @@ namespace
     }
 
     const RUnitBlueprint* const targetBlueprint = hoveredBridge->GetBlueprint();
-    msvc8::vector<UserUnit*> nextSelection{};
+    fa::vector<UserUnit*> nextSelection{};
     GetSelectionUnits(nextSelection);
 
     auto* const frustumUnits = camera != nullptr ? camera->GetArmyUnitsInFrustum() : nullptr;
@@ -2962,7 +3044,9 @@ namespace
    * ?GetLeftMouseButtonAction@CWldSession@Moho@@QAEAAUCommandModeData@2@PAU32@PBUstruct_MouseInfo@@H@Z)
    */
   CommandModeData* CWldSession::GetLeftMouseButtonAction(
-    CommandModeData* const outMode, const MouseInfo* const mouseInfo, const int modifiers
+    CommandModeData* const outMode,
+    const MouseInfo* const mouseInfo,
+    const int modifiers
   )
   {
     if (!outMode) {
@@ -3015,8 +3099,10 @@ namespace
                 // patrol, move - resolved with mCommandCaps left at
                 // RULEUCC_None and was silently dropped.
                 LuaPlus::LuaObject commandName = moho::SCR_GetLuaTableField(mState, uiMode.mPayload, "name");
-                if (const char* const commandCapsName = commandName ? commandName.GetString() : nullptr;
-                    commandCapsName != nullptr) {
+                if (
+                  const char* const commandCapsName = commandName ? commandName.GetString() : nullptr;
+                  commandCapsName != nullptr
+                ) {
                   gpg::RRef capsRef{};
                   capsRef = gpg::MakeRRef<moho::ERuleBPUnitCommandCaps>(&mode.mCommandCaps);
                   if (capsRef.mType != nullptr) {
@@ -3058,9 +3144,7 @@ namespace
     *outMode = mode;
     return outMode;
   }
-}
-
-
+} // namespace moho
 
 /**
  * Address: 0x0081EC00 (FUN_0081EC00, func_GetRightMouseButtonAction)
@@ -3082,7 +3166,11 @@ namespace
  * definition stays at global scope.
  */
 moho::CommandModeData* func_GetRightMouseButtonAction(
-  moho::CommandModeData* out, moho::MouseInfo* mouseInfo, int modifiers, moho::CWldSession* wldSession)
+  moho::CommandModeData* out,
+  moho::MouseInfo* mouseInfo,
+  int modifiers,
+  moho::CWldSession* wldSession
+)
 {
   using namespace moho;
 
@@ -3123,7 +3211,7 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
   ERuleBPUnitCommandCaps selectionCommandCaps = RULEUCC_None;
   {
     for (UserEntity* const selectedEntity : wldSession->mSelection) {
-      (void)categoryOrdinals.Add(static_cast<unsigned int>(selectedEntity->mParams.mBlueprint->mCategoryBitIndex));
+      (void)categoryOrdinals.Add(static_cast<unsigned int>(selectedEntity->mParams.mBlueprint->mBlueprintOrdinal));
       if (UserUnit* const selectedUnit = selectedEntity->IsUserUnit()) {
         selectionCommandCaps = static_cast<ERuleBPUnitCommandCaps>(
           selectionCommandCaps | GetIUnitBridge(selectedUnit)->GetAttributes().commandCapsMask
@@ -3146,10 +3234,12 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
     CommandManager* const commandManager = wldSession->mCommandManager;
     UserCommandIssueHelper* const helper =
       commandManager != nullptr ? FindCommandIssueHelper(*commandManager, mouseInfo->mIsDragger) : nullptr;
-    if (helper != nullptr
-        && (ResolveCommandIssueHelperCommandType(*helper) == EUnitCommandType::UNITCOMMAND_Attack
-            || ResolveCommandIssueHelperCommandType(*helper) == EUnitCommandType::UNITCOMMAND_FormAttack)
-        && (selectionCommandCaps & RULEUCC_Attack) != 0) {
+    if (
+      helper != nullptr &&
+      (ResolveCommandIssueHelperCommandType(*helper) == EUnitCommandType::UNITCOMMAND_Attack ||
+       ResolveCommandIssueHelperCommandType(*helper) == EUnitCommandType::UNITCOMMAND_FormAttack) &&
+      (selectionCommandCaps & RULEUCC_Attack) != 0
+    ) {
       commandModeData.mMode = COMMOD_Order;
       commandModeData.mCommandCaps = RULEUCC_Attack;
     } else if ((selectionCommandCaps & RULEUCC_Move) != 0) {
@@ -3163,15 +3253,14 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
 
   // --- Hover branch --------------------------------------------------------
   const bool isBeingBuilt = hoverEntity->IsBeingBuilt();
-  const bool isFerryBeacon = hoverEntity->IsInCategory(msvc8::string("FERRYBEACON"));
-  const bool isCampaignGate = hoverEntity->IsInCategory(msvc8::string("CAMPAIGNGATE"));
+  const bool isFerryBeacon = hoverEntity->IsInCategory(fa::string("FERRYBEACON"));
+  const bool isCampaignGate = hoverEntity->IsInCategory(fa::string("CAMPAIGNGATE"));
 
   // Reclaim eligibility: RECLAIMABLE (or under-construction) targets are
   // reclaim-valid; everything else is not.
   bool reclaimTargetValid = true;
   if (hoverEntity->mParams.mBlueprint != nullptr) {
-    const bool reclaimable =
-      hoverEntity->IsInCategory(msvc8::string("RECLAIMABLE")) || hoverEntity->IsBeingBuilt();
+    const bool reclaimable = hoverEntity->IsInCategory(fa::string("RECLAIMABLE")) || hoverEntity->IsBeingBuilt();
     if (!reclaimable) {
       reclaimTargetValid = false;
     }
@@ -3192,8 +3281,7 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
 
   bool isEnemy = false;
   bool isAlly = false;
-  UserArmy* const focusArmy =
-    (wldSession->FocusArmy < 0) ? nullptr : wldSession->userArmies[wldSession->FocusArmy];
+  UserArmy* const focusArmy = (wldSession->FocusArmy < 0) ? nullptr : wldSession->userArmies[wldSession->FocusArmy];
   UserArmy* const hoverArmy = hoverEntity->mArmy;
   if (hoverArmy != nullptr && focusArmy != nullptr) {
     isEnemy = focusArmy->IsEnemy(hoverArmy->mArmyIndex);
@@ -3204,8 +3292,8 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
 
   bool resolved = false;
 
-  if (!(isEnemy && (selectionCommandCaps & RULEUCC_Attack) != 0
-        && AnySelectedUnitCanAttackHover(hoverEntity, wldSession))) {
+  if (!(isEnemy && (selectionCommandCaps & RULEUCC_Attack) != 0 &&
+        AnySelectedUnitCanAttackHover(hoverEntity, wldSession))) {
     // Capture: a non-allied, finished, capturable target with capture-capable
     // selection resolves to Order+Capture.
     if (!isAlly && !isBeingBuilt && mCapturable && (selectionCommandCaps & RULEUCC_Capture) != 0) {
@@ -3218,8 +3306,8 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
     // valid with reclaim-capable selection resolve to Order+Reclaim.
     if (!resolved) {
       const bool reclaimEligible =
-        (isEnemy || hoverArmy == nullptr || hoverEntity->IsInCategory(msvc8::string("RECLAIMFRIENDLY")))
-        && reclaimTargetValid && (selectionCommandCaps & RULEUCC_Reclaim) != 0;
+        (isEnemy || hoverArmy == nullptr || hoverEntity->IsInCategory(fa::string("RECLAIMFRIENDLY"))) &&
+        reclaimTargetValid && (selectionCommandCaps & RULEUCC_Reclaim) != 0;
       if (reclaimEligible) {
         commandModeData.mMode = COMMOD_Order;
         commandModeData.mCommandCaps = RULEUCC_Reclaim;
@@ -3229,14 +3317,18 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
 
     // Transport chains only apply when the hover target belongs to the focus army.
     if (!resolved && hoverArmy == focusArmy) {
-      if ((selectionCommandCaps & RULEUCC_CallTransport) != 0
-          && SelectionHasTransportForTarget(&wldSession->mSelection, hoverEntity)) {
+      if (
+        (selectionCommandCaps & RULEUCC_CallTransport) != 0 &&
+        SelectionHasTransportForTarget(&wldSession->mSelection, hoverEntity)
+      ) {
         commandModeData.mMode = COMMOD_Order;
         commandModeData.mCommandCaps = RULEUCC_CallTransport;
         resolved = true;
-      } else if (hoverUnit != nullptr
-                 && (GetIUnitBridge(hoverUnit)->GetAttributes().commandCapsMask & RULEUCC_CallTransport) != 0
-                 && HoverTransportAcceptsSelection(&wldSession->mSelection, hoverEntity)) {
+      } else if (
+        hoverUnit != nullptr &&
+        (GetIUnitBridge(hoverUnit)->GetAttributes().commandCapsMask & RULEUCC_CallTransport) != 0 &&
+        HoverTransportAcceptsSelection(&wldSession->mSelection, hoverEntity)
+      ) {
         commandModeData.mMode = COMMOD_Order;
         commandModeData.mCommandCaps = RULEUCC_Transport;
         resolved = true;
@@ -3253,8 +3345,7 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
       if (isEnemy) {
         // Attack-capable but nothing in the selection can actually attack the
         // hover -> mark the order invalid (immediate 0x01000000 = RULEUCC_Invalid).
-        if ((selectionCommandCaps & RULEUCC_Attack) != 0
-            && !AnySelectedUnitCanAttackHover(hoverEntity, wldSession)) {
+        if ((selectionCommandCaps & RULEUCC_Attack) != 0 && !AnySelectedUnitCanAttackHover(hoverEntity, wldSession)) {
           commandModeData.mMode = COMMOD_Order;
           commandModeData.mCommandCaps = RULEUCC_Invalid;
           resolved = true;
@@ -3272,9 +3363,10 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
           bool repairUnderConstruction = false;
           if (repairCap != 0 && hoverEntity->IsBeingBuilt()) {
             if (UserUnit* const builtUnit = hoverEntity->IsUserUnit()) {
-              if (GetIUnitBridge(builtUnit)->IsMobile()
-                  || (!hoverEntity->IsInCategory(msvc8::string("FACTORY"))
-                      && !hoverEntity->IsInCategory(msvc8::string("SILO")))) {
+              if (
+                GetIUnitBridge(builtUnit)->IsMobile() ||
+                (!hoverEntity->IsInCategory(fa::string("FACTORY")) && !hoverEntity->IsInCategory(fa::string("SILO")))
+              ) {
                 repairUnderConstruction = true;
               }
             }
@@ -3287,9 +3379,10 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
 
           // Guard: guard-capable selection over a non-campaign-gate hovered unit
           // that is not the first selection member, while a formation is active.
-          if (!resolved && guardCap != 0 && !isCampaignGate && hoverUnit != nullptr
-              && !wldSession->UnitFirstInSelection(hoverUnit)
-              && wldSession->mCurFormation->mTimeLeft > 0.0f) {
+          if (
+            !resolved && guardCap != 0 && !isCampaignGate && hoverUnit != nullptr &&
+            !wldSession->UnitFirstInSelection(hoverUnit) && wldSession->mCurFormation->mTimeLeft > 0.0f
+          ) {
             commandModeData.mMode = COMMOD_Order;
             commandModeData.mCommandCaps = RULEUCC_Guard;
             resolved = true;
@@ -3297,10 +3390,11 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
 
           // Repair (finished target): allied damaged target, or a hovered unit
           // that reports the upgrading unit-state.
-          if (!resolved && repairCap != 0
-              && ((isAlly && hoverEntity->mVariableData.mMaxHealth > hoverEntity->mVariableData.mHealth)
-                  || (hoverUnit != nullptr
-                      && GetIUnitBridge(hoverUnit)->IsUnitState(UNITSTATE_Upgrading)))) {
+          if (
+            !resolved && repairCap != 0 &&
+            ((isAlly && hoverEntity->mVariableData.mMaxHealth > hoverEntity->mVariableData.mHealth) ||
+             (hoverUnit != nullptr && GetIUnitBridge(hoverUnit)->IsUnitState(UNITSTATE_Upgrading)))
+          ) {
             commandModeData.mMode = COMMOD_Order;
             commandModeData.mCommandCaps = RULEUCC_Repair;
             resolved = true;
@@ -3308,10 +3402,11 @@ moho::CommandModeData* func_GetRightMouseButtonAction(
           // else: fall through to the move tail.
         } else {
           // Switched right-click behavior: repair is prioritised over guard.
-          if ((selectionCommandCapsTail & RULEUCC_Repair) != 0
-              && ((isAlly && hoverEntity->mVariableData.mMaxHealth > hoverEntity->mVariableData.mHealth)
-                  || (hoverUnit != nullptr
-                      && GetIUnitBridge(hoverUnit)->IsUnitState(UNITSTATE_Upgrading)))) {
+          if (
+            (selectionCommandCapsTail & RULEUCC_Repair) != 0 &&
+            ((isAlly && hoverEntity->mVariableData.mMaxHealth > hoverEntity->mVariableData.mHealth) ||
+             (hoverUnit != nullptr && GetIUnitBridge(hoverUnit)->IsUnitState(UNITSTATE_Upgrading)))
+          ) {
             commandModeData.mMode = COMMOD_Order;
             commandModeData.mCommandCaps = RULEUCC_Repair;
             resolved = true;

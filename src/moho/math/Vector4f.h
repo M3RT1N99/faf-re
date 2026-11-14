@@ -44,6 +44,7 @@ namespace moho
     float x{}, y{}, z{}, w{};
 
     Vector4f() noexcept = default;
+    Vector4f(const Vector4f&) noexcept = default;
 
     /**
      * Address: 0x0046FAB0 (FUN_0046FAB0, Moho::Vector4f::Vector4f)
@@ -87,8 +88,6 @@ namespace moho
      */
     [[nodiscard]] float Z() const noexcept;
 
-    [[nodiscard]] Vector3f XYZ() const noexcept;
-
     /**
      * Address: 0x0046FB20 (FUN_0046FB20, Moho::Vector4f::operator=)
      *
@@ -123,21 +122,28 @@ namespace moho
     {
       return _mm_loadu_ps(&x);
     }
-    MOHO_FORCEINLINE void store(__m128 v)
+    MOHO_FORCEINLINE void store(
+      __m128 v
+    )
     {
       _mm_storeu_ps(&x, v);
     }
 
     /** Compile-time splat: Lane is template immediate -> valid for _mm_shuffle_ps. */
     template <int Lane>
-    static MOHO_FORCEINLINE __m128 splat(__m128 v)
+    static MOHO_FORCEINLINE __m128 splat(
+      __m128 v
+    )
     {
       static_assert(Lane >= 0 && Lane <= 3, "Lane out of range");
       return _mm_shuffle_ps(v, v, _MM_SHUFFLE(Lane, Lane, Lane, Lane));
     }
 
     /** Runtime splat wrapper: dispatches to compile-time variants (keeps imm8 constant). */
-    static MOHO_FORCEINLINE __m128 splat_lane(__m128 v, int i)
+    static MOHO_FORCEINLINE __m128 splat_lane(
+      __m128 v,
+      int i
+    )
     {
       switch (i & 3) {
       case 0:
@@ -151,9 +157,6 @@ namespace moho
       }
     }
 #endif
-
-    /** Convert a quaternion (x,y,z,w) to Euler XYZ (roll, pitch, yaw), radians. */
-    [[nodiscard]] Angle quaternion_to_euler() const;
   };
 
   static_assert(sizeof(Vector4f) == 0x10, "Vector4f size must be 0x10");
@@ -165,5 +168,5 @@ namespace moho
    * What it does:
    * Formats one `Vector4f` lane set as `x=%f,y=%f,z=%f,w=%f`.
    */
-  [[nodiscard]] msvc8::string ToString(const Vector4f& value);
+  [[nodiscard]] fa::string ToString(const Vector4f& value);
 } // namespace moho

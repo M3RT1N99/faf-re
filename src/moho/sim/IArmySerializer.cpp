@@ -63,7 +63,9 @@ namespace moho
   /**
    * Address: 0x005517A0 (FUN_005517A0, Moho::IArmy::MemberDeserialize)
    */
-  void IArmy::MemberDeserialize(gpg::ReadArchive* const archive)
+  void IArmy::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -84,7 +86,10 @@ namespace moho
   /**
    * Address: 0x00551820 (FUN_00551820, Moho::IArmy::MemberSerialize)
    */
-  void IArmy::MemberSerialize(gpg::WriteArchive* const archive) const{
+  void IArmy::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
+  {
     if (!archive) {
       return;
     }
@@ -108,12 +113,13 @@ namespace moho
    * Resolves alliance relation against `other` using the neutral/ally/enemy
    * relation bitsets, defaulting to neutral.
    */
-  EAlliance IArmy::GetAllianceWith(const IArmy* const other) const
+  EAlliance IArmy::GetAllianceWith(
+    const IArmy* const other
+  ) const
   {
     if (!other) {
       return ALLIANCE_Neutral;
     }
-
 
     if (mConstDat.mArmyIndex == other->mConstDat.mArmyIndex) {
       return ALLIANCE_Ally;
@@ -139,45 +145,15 @@ namespace moho
    * What it does:
    * Returns whether `armyIndex` is present in the enemy relation bitset.
    */
-  bool IArmy::IsEnemy(const std::uint32_t armyIndex) const
+  bool IArmy::IsEnemy(
+    const std::uint32_t armyIndex
+  ) const
   {
     if (armyIndex == std::numeric_limits<std::uint32_t>::max()) {
       return false;
     }
 
     return mVarDat.mEnemies.Contains(armyIndex);
-  }
-
-  /**
-   * Address: 0x00707C40 (FUN_00707C40)
-   */
-  void IArmy::SetPlayerColorBgra(const std::uint32_t playerColorBgra)
-  {
-    mVarDat.mPlayerColorBgra = playerColorBgra;
-  }
-
-  /**
-   * Address: 0x00707C50 (FUN_00707C50)
-   */
-  void IArmy::SetArmyColorBgra(const std::uint32_t armyColorBgra)
-  {
-    mVarDat.mArmyColorBgra = armyColorBgra;
-  }
-
-  /**
-   * Address: 0x00707C60 (FUN_00707C60)
-   */
-  void IArmy::SetFactionIndex(const std::int32_t factionIndex)
-  {
-    mVarDat.mFaction = factionIndex;
-  }
-
-  /**
-   * Address: 0x00707C90 (FUN_00707C90)
-   */
-  void IArmy::SetShowScoreFlag(const bool enabled)
-  {
-    mVarDat.mShowScore = enabled ? 1u : 0u;
   }
 
   /**
@@ -188,25 +164,6 @@ namespace moho
     return mConstDat.mIsCivilian != 0u;
   }
 
-  /**
-   * Address: 0x00707CB0 (FUN_00707CB0)
-   */
-  bool IArmy::IsOutOfGame() const
-  {
-    return mVarDat.mIsOutOfGame != 0u;
-  }
-
-  /**
-   * Address: 0x00707CD0 (FUN_00707CD0)
-   */
-  float IArmy::GetHandicap() const
-  {
-    if (mVarDat.mHandicapValue != 0.0f) {
-      return mVarDat.mHandicapExtra;
-    }
-    return 0.0f;
-  }
-
 } // namespace moho
 
 namespace
@@ -215,7 +172,10 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_SSTIArmyConstantDataTypeInfo_ce637e, moho::preregister_SSTIArmyConstantDataTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_SSTIArmyConstantDataTypeInfo_ce637e,
+  moho::preregister_SSTIArmyConstantDataTypeInfo
+)
 
 namespace moho
 {

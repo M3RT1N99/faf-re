@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/weak_ptr.h"
+#include <memory>
 #include "gpg/core/time/Timer.h"
 #include "INetNATTraversalProvider.h"
 #include "legacy/containers/String.h"
@@ -11,6 +11,7 @@
 #include "NetConstants.h"
 #include "NetMessageRanges.h"
 #include "NetTransportEnums.h"
+#include "platform/Net.h"
 #include "platform/Platform.h"
 
 namespace gpg
@@ -47,7 +48,7 @@ namespace moho
    * @param out
    * @return
    */
-  void ENetworkPlayerStateToStr(ENetworkPlayerState state, msvc8::string& out);
+  void ENetworkPlayerStateToStr(ENetworkPlayerState state, fa::string& out);
 
   struct NetPacketTime
   {
@@ -124,11 +125,13 @@ namespace moho
   struct SSendStampWindow
   {
     /**
-     * Address: 0x0047D290 (FUN_0047D290 -- `SSendStamp::operator=` -- the vector assignment plus the two window lanes; zero callers, unreachable; formerly `CopyStampViewWithWindowMetadata` in moho/net/Common.cpp (RULE ONE), removed 2026-09-10.)
+     * Address: 0x0047D290 (FUN_0047D290 -- `SSendStamp::operator=` -- the vector assignment plus the two window lanes;
+     * zero callers, unreachable; formerly `CopyStampViewWithWindowMetadata` in moho/net/Common.cpp (RULE ONE), removed
+     * 2026-09-10.)
      */
-    msvc8::vector<SSendStamp> items; // contiguous vector of copied stamps
-    uint64_t windowDurationUs{0};    // (endTimeUs - startTimeUs)
-    uint64_t windowEndTimeUs{0};     // end of requested window
+    fa::vector<SSendStamp> items; // contiguous vector of copied stamps
+    uint64_t windowDurationUs{0}; // (endTimeUs - startTimeUs)
+    uint64_t windowEndTimeUs{0};  // end of requested window
 
     /**
      * Address: 0x0047D1D0
@@ -235,7 +238,7 @@ namespace moho
 
   struct SBandwidthUsageSeries
   {
-    msvc8::vector<SBandwidthUsageSample> samples;
+    fa::vector<SBandwidthUsageSample> samples;
 
     /**
      * Address: 0x0047D6E0 (FUN_0047D6E0, GetBandwidthSampleCount)
@@ -299,7 +302,7 @@ namespace moho
    * Shared GPGNet socket decode lane:
    * Reads one uint32 length followed by exact payload bytes.
    */
-  [[nodiscard]] msvc8::string NET_ReadLengthPrefixedArgPayload(gpg::BinaryReader& reader);
+  [[nodiscard]] fa::string NET_ReadLengthPrefixedArgPayload(gpg::BinaryReader& reader);
 
   /**
    * Shared GPGNet socket decode lane:
@@ -313,14 +316,6 @@ namespace moho
   bool NET_Init();
 
   /**
-   * Address: 0x0047F540 (FUN_0047F540, NETMAIL_SendError)
-   *
-   * What it does:
-   * Legacy no-op mail/error reporting hook.
-   */
-  void NETMAIL_SendError(const char* title, const char* message);
-
-  /**
    * Address: 0x0047F990 (FUN_0047F990)
    */
   CHostManager* NET_GetHostManager();
@@ -328,7 +323,7 @@ namespace moho
   /**
    * Address: 0x0047FEE0 (FUN_0047FEE0)
    */
-  msvc8::string NET_GetHostName(u_long address);
+  fa::string NET_GetHostName(u_long address);
 
   /**
    * Address: 0x0047F5F0
@@ -346,17 +341,17 @@ namespace moho
    * What it does:
    * Formats host-order IPv4 as "A.B.C.D".
    */
-  msvc8::string NET_GetDottedOctetFromUInt32(uint32_t number);
+  fa::string NET_GetDottedOctetFromUInt32(uint32_t number);
 
   /**
    * Address: 0x00480200 (FUN_00480200)
    *
-   * msvc8::string
+   * fa::string
    *
    * What it does:
    * Splits dotted IPv4 text by '.' and folds tokens using (acc << 8) | atoi(token).
    */
-  uint32_t NET_GetUInt32FromDottedOcted(const msvc8::string& host);
+  uint32_t NET_GetUInt32FromDottedOcted(const fa::string& host);
 
   /**
    * Address: 0x0047FF10 (FUN_0047FF10)
@@ -380,7 +375,7 @@ namespace moho
   /**
    * Startup-owned protocol name vector backing protocol-list helper lanes.
    */
-  extern msvc8::vector<msvc8::string> sProtocols;
+  extern fa::vector<fa::string> sProtocols;
 
   /**
    * Address: 0x0047EC90 (FUN_0047EC90, NET_GetProtocolName)
@@ -389,21 +384,7 @@ namespace moho
    * Converts `ENetProtocolType` to `"None"`, `"TCP"`, or `"UDP"`, otherwise
    * throws `std::domain_error`.
    */
-  msvc8::string NET_GetProtocolName(ENetProtocolType protocol);
-
-  /**
-   * Address: 0x0047EBF0 (FUN_0047EBF0, NET_MakeConnector)
-   *
-   * What it does:
-   * Creates protocol-specific connector implementation for `port`, using NAT
-   * traversal provider only on UDP.
-   * Unknown/`kNone` protocol values produce a `CNetNullConnector`.
-   */
-  INetConnector* NET_MakeConnector(
-    u_short port,
-    ENetProtocolType protocol,
-    const boost::weak_ptr<INetNATTraversalProvider>& natTraversalProvider
-  );
+  fa::string NET_GetProtocolName(ENetProtocolType protocol);
 
   /**
    * Address: 0x0048BBE0 (FUN_0048BBE0)
@@ -412,7 +393,7 @@ namespace moho
    * Creates a non-blocking UDP connector bound to `port`, or returns null on
    * socket/ioctl/bind/allocation failure.
    */
-  INetConnector* NET_MakeUDPConnector(u_short port, boost::weak_ptr<INetNATTraversalProvider> prov);
+  INetConnector* NET_MakeUDPConnector(u_short port, std::weak_ptr<INetNATTraversalProvider> prov);
 
   /**
    * Address: 0x004849A0 (FUN_004849A0)

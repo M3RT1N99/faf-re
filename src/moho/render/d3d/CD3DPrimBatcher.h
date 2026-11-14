@@ -7,7 +7,7 @@
 #include "gpg/core/containers/Rect2.h"
 #include "gpg/core/containers/FastVector.h"
 #include "legacy/containers/Vector.h"
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "moho/math/VMatrix4.h"
 #include "moho/math/Vector3f.h"
 #include "moho/render/d3d/CD3DFontTypes.h"
@@ -104,10 +104,11 @@ namespace moho
      * What it does:
      * Binds one retained batch texture for subsequent primitive draws.
      */
-    void SetTexture(const boost::shared_ptr<CD3DBatchTexture>& texture);
+    void SetTexture(const std::shared_ptr<CD3DBatchTexture>& texture);
 
     /**
-     * Address: 0x00438870 (FUN_00438870, ?SetTexture@CD3DPrimBatcher@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@@Z)
+     * Address: 0x00438870 (FUN_00438870,
+     * ?SetTexture@CD3DPrimBatcher@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@@Z)
      *
      * What it does:
      * Binds one retained dynamic texture sheet directly (no atlas route),
@@ -116,7 +117,21 @@ namespace moho
      * base interface; the runtime invariant is that the concrete sheet is
      * always a CD3DDynamicTextureSheet (binary stores the derived pointer).
      */
-    void SetTexture(boost::shared_ptr<ID3DTextureSheet> sheet);
+    void SetTexture(std::shared_ptr<ID3DTextureSheet> sheet);
+
+    /** FAF addition: what `SetTexture` bound, so a draw with its own texture can put it back. */
+    struct TextureBinding
+    {
+      std::shared_ptr<CD3DDynamicTextureSheet> mSheet;
+      std::shared_ptr<CD3DBatchTexture> mTexture;
+      float mP1x;
+      float mP1y;
+      float mP2x;
+      float mP2y;
+    };
+
+    [[nodiscard]] TextureBinding GetTextureBinding() const;
+    void SetTextureBinding(const TextureBinding& binding);
 
     /**
      * Address: 0x004389A0 (?DrawQuad@CD3DPrimBatcher@Moho@@QAEXABUVertex@12@000@Z)
@@ -167,46 +182,12 @@ namespace moho
     void DrawQuads(const Vertex* sourceVertices, std::uint32_t quadCount);
 
     /**
-     * Address: 0x00438EF0 (FUN_00438EF0)
-     *
-     * What it does:
-     * Appends one batch of indexed quads.
-     */
-    void DrawIndexedQuads(
-      const Vertex* sourceVertices,
-      std::uint32_t sourceVertexCount,
-      const std::uint16_t* sourceIndices,
-      std::uint32_t quadCount
-    );
-
-    /**
-     * Address: 0x00438F50 (?DrawTri@CD3DPrimBatcher@Moho@@QAEXABUVertex@12@00@Z)
-     *
-     * What it does:
-     * Emits one textured/color triangle from three prebuilt vertices.
-     */
-    void DrawTri(const Vertex& v0, const Vertex& v1, const Vertex& v2);
-
-    /**
      * Address: 0x00439210 (FUN_00439210)
      *
      * What it does:
      * Appends one batch of non-indexed triangles.
      */
     void DrawTriangles(const Vertex* sourceVertices, std::uint32_t triangleCount);
-
-    /**
-     * Address: 0x00439260 (FUN_00439260)
-     *
-     * What it does:
-     * Appends one batch of indexed triangles.
-     */
-    void DrawIndexedTriangles(
-      const Vertex* sourceVertices,
-      std::uint32_t sourceVertexCount,
-      const std::uint16_t* sourceIndices,
-      std::uint32_t triangleCount
-    );
 
     /**
      * Address: 0x00426150 (FUN_00426150, Moho::CD3DPrimBatcher::DrawChar)
@@ -232,56 +213,6 @@ namespace moho
     void DrawLine(const Vertex& start, const Vertex& end);
 
     /**
-     * Address: 0x004394D0 (FUN_004394D0)
-     *
-     * What it does:
-     * Appends one batch of non-indexed lines.
-     */
-    void DrawLines(const Vertex* sourceVertices, std::uint32_t lineCount);
-
-    /**
-     * Address: 0x00439520 (FUN_00439520)
-     *
-     * What it does:
-     * Appends one batch of indexed lines.
-     */
-    void DrawIndexedLines(
-      const Vertex* sourceVertices,
-      std::uint32_t sourceVertexCount,
-      const std::uint16_t* sourceIndices,
-      std::uint32_t lineCount
-    );
-
-    /**
-     * Address: 0x00439580 (?DrawPoint@CD3DPrimBatcher@Moho@@QAEXABUVertex@12@@Z)
-     *
-     * What it does:
-     * Emits one textured/color point vertex and one primitive index entry.
-     */
-    void DrawPoint(const Vertex& vertex);
-
-    /**
-     * Address: 0x004396E0 (FUN_004396E0)
-     *
-     * What it does:
-     * Appends one batch of non-indexed vertex pairs using primitive mode 1.
-     */
-    void DrawMode1PrimitivePairs(const Vertex* sourceVertices, std::uint32_t primitivePairCount);
-
-    /**
-     * Address: 0x00439730 (FUN_00439730)
-     *
-     * What it does:
-     * Appends one batch of indexed vertex pairs using primitive mode 1.
-     */
-    void DrawIndexedMode1PrimitivePairs(
-      const Vertex* sourceVertices,
-      std::uint32_t sourceVertexCount,
-      const std::uint16_t* sourceIndices,
-      std::uint32_t primitivePairCount
-    );
-
-    /**
      * Address: 0x0043A140 (?Flush@CD3DPrimBatcher@Moho@@QAEXXZ)
      *
      * What it does:
@@ -300,43 +231,12 @@ namespace moho
 
   private:
     /**
-     * Address: 0x00439B60 (?AddVert@CD3DPrimBatcher@Moho@@AAEXABUVertex@12@@Z)
-     *
-     * What it does:
-     * Appends one transformed vertex to the queue.
-     */
-    void AddVert(const Vertex& sourceVertex);
-
-    /**
      * Address: 0x00439790 (?AddVerts@CD3DPrimBatcher@Moho@@AAEXPBUVertex@12@II@Z)
      *
      * What it does:
      * Appends transformed vertices and generated primitive indices in capacity-aware chunks.
      */
     void AddVerts(const Vertex* sourceVertices, std::uint32_t primitiveCount, std::uint32_t verticesPerPrimitive);
-
-    /**
-     * Address: 0x0043A060 (?AddIndexedVert@CD3DPrimBatcher@Moho@@AAEGGPBUVertex@12@IAAV?$fastvector@G@gpg@@@Z)
-     *
-     * What it does:
-     * Maps one source vertex index through a remap table, appending transformed vertex data on first use.
-     */
-    std::uint16_t
-      AddIndexedVert(std::uint16_t sourceIndex, const Vertex* sourceVertices, gpg::fastvector<std::uint16_t>& remap);
-
-    /**
-     * Address: 0x00439BD0 (?AddIndexedVerts@CD3DPrimBatcher@Moho@@AAEXPBUVertex@12@IPBGII@Z)
-     *
-     * What it does:
-     * Appends indexed primitives with per-chunk remap cache reset across flush boundaries.
-     */
-    void AddIndexedVerts(
-      const Vertex* sourceVertices,
-      std::uint32_t sourceVertexCount,
-      const std::uint16_t* sourceIndices,
-      std::uint32_t primitiveCount,
-      std::uint32_t verticesPerPrimitive
-    );
 
   public:
     // Offsets proven from the binary:
@@ -351,13 +251,13 @@ namespace moho
     // (`ecx = this + 0x28`) via the `reserve` emissions 0x0043A470/0x0043A6C0,
     // the append lane is `push_back` at 0x0043A5C0, and the empty() probe is
     // 0x0043A570. The proxy dwords are never read by the binary.
-    CD3DTextureBatcher* mTextureBatcher = nullptr;      // +0x00
-    CD3DVertexSheet* mVertexSheets[3]{};                // +0x04
-    std::int32_t mCurVertexSheet = 0;                   // +0x10
-    CD3DIndexSheet* mIndexSheet = nullptr;              // +0x14
-    msvc8::vector<Vertex> mVertices{};                  // +0x18
-    msvc8::vector<std::int16_t> mPrimitives{};          // +0x28
-    std::uint32_t mMode = 0;                            // +0x38
+    CD3DTextureBatcher* mTextureBatcher = nullptr; // +0x00
+    CD3DVertexSheet* mVertexSheets[3]{};           // +0x04
+    std::int32_t mCurVertexSheet = 0;              // +0x10
+    CD3DIndexSheet* mIndexSheet = nullptr;         // +0x14
+    fa::vector<Vertex> mVertices{};                // +0x18
+    fa::vector<std::int16_t> mPrimitives{};        // +0x28
+    std::uint32_t mMode = 0;                       // +0x38
     // Offsets proven from the binary, not from field order:
     //   0x00438870 `cmp [esi+3Ch], ebx` tests the incoming *sheet* pointer, and
     //   0x0043A214 (Flush) `cmp [ebp+3Ch], ebx` / `lea eax, [ebp+3Ch]` hands
@@ -367,19 +267,18 @@ namespace moho
     // Both handles are strong `boost::shared_ptr<T>` lanes: the rebind at
     // 0x004387A5 stores `px` then `lock xadd [pi+4], 1` (add_ref_copy) and
     // releases the old block through 0x004229B0 (sp_counted_base::release).
-    boost::shared_ptr<CD3DDynamicTextureSheet> mDynamicTexSheet{}; // +0x3C
-    boost::shared_ptr<CD3DBatchTexture> mTexture{};                // +0x44
-    float mP2x = 0.0f;                                  // +0x4C
-    float mP2y = 0.0f;                                  // +0x50
-    float mP1x = 1.0f;                                  // +0x54
-    float mP1y = 1.0f;                                  // +0x58
-    VMatrix4 mViewMatrix{};                             // +0x5C
-    VMatrix4 mProjectionMatrix{};                       // +0x9C
-    VMatrix4 mComposite{};                              // +0xDC
-    std::uint8_t mResetComposite = 0;                  // +0x11C
-    std::uint8_t mRebuildComposite = 0;                // +0x11D
-    float mAlphaMultiplier = 1.0f;                     // +0x120
-
+    std::shared_ptr<CD3DDynamicTextureSheet> mDynamicTexSheet{};   // +0x3C
+    std::shared_ptr<CD3DBatchTexture> mTexture{};                  // +0x44
+    float mP2x = 0.0f;                                             // +0x4C
+    float mP2y = 0.0f;                                             // +0x50
+    float mP1x = 1.0f;                                             // +0x54
+    float mP1y = 1.0f;                                             // +0x58
+    VMatrix4 mViewMatrix{};                                        // +0x5C
+    VMatrix4 mProjectionMatrix{};                                  // +0x9C
+    VMatrix4 mComposite{};                                         // +0xDC
+    std::uint8_t mResetComposite = 0;                              // +0x11C
+    std::uint8_t mRebuildComposite = 0;                            // +0x11D
+    float mAlphaMultiplier = 1.0f;                                 // +0x120
   };
 
   static_assert(sizeof(CD3DPrimBatcher) == 0x124, "moho::CD3DPrimBatcher size must be 0x124");
@@ -388,11 +287,11 @@ namespace moho
   static_assert(offsetof(CD3DPrimBatcher::Vertex, mY) == 0x04, "moho::CD3DPrimBatcher::Vertex::mY offset must be 0x04");
   static_assert(offsetof(CD3DPrimBatcher::Vertex, mZ) == 0x08, "moho::CD3DPrimBatcher::Vertex::mZ offset must be 0x08");
   static_assert(
-    offsetof(CD3DPrimBatcher::Vertex, mColor) == 0x0C, "moho::CD3DPrimBatcher::Vertex::mColor offset must be 0x0C"
+    offsetof(CD3DPrimBatcher::Vertex, mColor) == 0x0C,
+    "moho::CD3DPrimBatcher::Vertex::mColor offset must be 0x0C"
   );
   static_assert(offsetof(CD3DPrimBatcher::Vertex, mU) == 0x10, "moho::CD3DPrimBatcher::Vertex::mU offset must be 0x10");
   static_assert(offsetof(CD3DPrimBatcher::Vertex, mV) == 0x14, "moho::CD3DPrimBatcher::Vertex::mV offset must be 0x14");
-
 
   static_assert(
     offsetof(CD3DPrimBatcher, mTextureBatcher) == 0x00,
@@ -410,26 +309,17 @@ namespace moho
     offsetof(CD3DPrimBatcher, mIndexSheet) == 0x14,
     "moho::CD3DPrimBatcher::mIndexSheet offset must be 0x14"
   );
-  static_assert(
-    offsetof(CD3DPrimBatcher, mVertices) == 0x18,
-    "moho::CD3DPrimBatcher::mVertices offset must be 0x18"
-  );
+  static_assert(offsetof(CD3DPrimBatcher, mVertices) == 0x18, "moho::CD3DPrimBatcher::mVertices offset must be 0x18");
   static_assert(
     offsetof(CD3DPrimBatcher, mPrimitives) == 0x28,
     "moho::CD3DPrimBatcher::mPrimitives offset must be 0x28"
   );
-  static_assert(
-    offsetof(CD3DPrimBatcher, mMode) == 0x38,
-    "moho::CD3DPrimBatcher::mMode offset must be 0x38"
-  );
+  static_assert(offsetof(CD3DPrimBatcher, mMode) == 0x38, "moho::CD3DPrimBatcher::mMode offset must be 0x38");
   static_assert(
     offsetof(CD3DPrimBatcher, mDynamicTexSheet) == 0x3C,
     "moho::CD3DPrimBatcher::mDynamicTexSheet offset must be 0x3C"
   );
-  static_assert(
-    offsetof(CD3DPrimBatcher, mTexture) == 0x44,
-    "moho::CD3DPrimBatcher::mTexture offset must be 0x44"
-  );
+  static_assert(offsetof(CD3DPrimBatcher, mTexture) == 0x44, "moho::CD3DPrimBatcher::mTexture offset must be 0x44");
   static_assert(
     offsetof(CD3DPrimBatcher, mViewMatrix) == 0x5C,
     "moho::CD3DPrimBatcher::mViewMatrix offset must be 0x5C"
@@ -438,10 +328,7 @@ namespace moho
     offsetof(CD3DPrimBatcher, mProjectionMatrix) == 0x9C,
     "moho::CD3DPrimBatcher::mProjectionMatrix offset must be 0x9C"
   );
-  static_assert(
-    offsetof(CD3DPrimBatcher, mComposite) == 0xDC,
-    "moho::CD3DPrimBatcher::mComposite offset must be 0xDC"
-  );
+  static_assert(offsetof(CD3DPrimBatcher, mComposite) == 0xDC, "moho::CD3DPrimBatcher::mComposite offset must be 0xDC");
   static_assert(
     offsetof(CD3DPrimBatcher, mResetComposite) == 0x11C,
     "moho::CD3DPrimBatcher::mResetComposite offset must be 0x11C"
@@ -455,7 +342,7 @@ namespace moho
     "moho::CD3DPrimBatcher::mAlphaMultiplier offset must be 0x120"
   );
 
-  /**
+  /*
    * Address: 0x0043A8B0 (FUN_0043A8B0)
    * Mangled: ??1WeakPtr_CD3DBatchTexture@Moho@@QAE@@Z
    *          (the IDB label is the analyst's; the emitted body is the
@@ -471,10 +358,11 @@ namespace moho
    * detaches the control block, then drops one *strong* owner reference from
    * the detached block - disposing the pointee when `use_count_` reaches zero
    * and destroying the block when `weak_count_` follows it to zero.
+   *
+   * Callers call `handle.reset()`.
    */
-  void ResetSharedBatchTextureHandle(boost::shared_ptr<CD3DBatchTexture>& handle) noexcept;
 
-  /**
+  /*
    * Address: 0x0043A860 (FUN_0043A860)
    * Mangled: ??1WeakPtr_CD3DDynamicTextureSheet@Moho@@QAE@@Z
    *          (the IDB label is the analyst's; the emitted body is the
@@ -491,67 +379,9 @@ namespace moho
    * `px`, detaches the control block, then drops one *strong* owner reference
    * from the detached block - disposing the sheet when `use_count_` reaches
    * zero and destroying the block when `weak_count_` follows it to zero.
-   */
-  void ResetSharedDynamicTextureSheetHandle(boost::shared_ptr<CD3DDynamicTextureSheet>& handle) noexcept;
-
-  /**
-   * Address: 0x00453AB0 (?DRAW_WireOval@Moho@@YAXPAVCD3DPrimBatcher@1@ABV?$Vector3@M@Wm3@@11II@Z)
    *
-   * What it does:
-   * Emits one wireframe oval around `center` using two orthogonal axis vectors.
+   * Callers call `handle.reset()`.
    */
-  void DRAW_WireOval(
-    CD3DPrimBatcher* primBatcher,
-    const Vector3f& center,
-    const Vector3f& axisCos,
-    const Vector3f& axisSin,
-    std::uint32_t color,
-    std::uint32_t precision
-  );
-
-  /**
-   * Address: 0x00453ED0 (?DRAW_WireCircle@Moho@@YAXPAVCD3DPrimBatcher@1@ABV?$Vector3@M@Wm3@@1MII@Z)
-   *
-   * What it does:
-   * Builds two tangent basis vectors from `normal` and delegates to `DRAW_WireOval`.
-   */
-  void DRAW_WireCircle(
-    CD3DPrimBatcher* primBatcher,
-    const Vector3f& center,
-    const Vector3f& normal,
-    float radius,
-    std::uint32_t color,
-    std::uint32_t precision
-  );
-
-  /**
-   * Address: 0x004541F0 (?DRAW_WireCoords@Moho@@YAXPAVCD3DPrimBatcher@1@ABV?$Vector3@M@Wm3@@ABV?$Quaternion@M@4@M@Z)
-   *
-   * What it does:
-   * Draws RGB basis axes at `origin` transformed by quaternion orientation.
-   */
-  void DRAW_WireCoords(
-    CD3DPrimBatcher* primBatcher,
-    const Vector3f& origin,
-    const Wm3::Quaternionf& orientation,
-    float axisLength
-  );
-
-  /**
-   * Address: 0x00454430 (?DRAW_WireCoords@Moho@@YAXPAVCD3DPrimBatcher@1@ABUVMatrix4@1@M@Z)
-   *
-   * What it does:
-   * Draws RGB basis axes from one transform matrix row-basis and translation.
-   */
-  void DRAW_WireCoords(CD3DPrimBatcher* primBatcher, const VMatrix4& transform, float axisLength);
-
-  /**
-   * Address: 0x00454680 (?DRAW_WireBox@Moho@@YAXPAVCD3DPrimBatcher@1@ABV?$Box3@M@Wm3@@I@Z)
-   *
-   * What it does:
-   * Emits a wireframe oriented box using the standard 12-edge index pattern.
-   */
-  void DRAW_WireBox(CD3DPrimBatcher* primBatcher, const Wm3::Box3f& box, std::uint32_t color);
 
   /** The two corner rings of a `DRAW_Rect` border, each top-left, top-right, bottom-right, bottom-left. */
   struct DrawRectRing
@@ -568,9 +398,8 @@ namespace moho
    * `heightAxis` into the outer and inner corner rings of a border
    * `borderWidth` wide.
    */
-  [[nodiscard]] DrawRectRing DRAW_RectRing(
-    float borderWidth, const Vector3f& heightAxis, const Vector3f& widthAxis, const Vector3f& topLeft
-  );
+  [[nodiscard]] DrawRectRing
+  DRAW_RectRing(float borderWidth, const Vector3f& heightAxis, const Vector3f& widthAxis, const Vector3f& topLeft);
 
   /**
    * Address: 0x00455480 (?DRAW_Rect@Moho@@YAXPAVCD3DPrimBatcher@1@MABV?$Vector3@M@Wm3@@11IPBVCHeightField@1@M@Z)

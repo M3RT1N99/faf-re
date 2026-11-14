@@ -7,21 +7,6 @@ namespace
 {
   void* gSelectionParamsSentinel = nullptr;
 
-  /**
-   * Address: 0x007FE080 (FUN_007FE080)
-   *
-   * What it does:
-   * Swaps one caller-provided selection-params sentinel lane with the process
-   * global sentinel storage.
-   */
-  [[maybe_unused]] [[nodiscard]] void** SwapSelectionParamsSentinelLane(void** const sentinelSlot) noexcept
-  {
-    void* const previous = gSelectionParamsSentinel;
-    gSelectionParamsSentinel = *sentinelSlot;
-    *sentinelSlot = previous;
-    return sentinelSlot;
-  }
-
   void LoadLuaNumberIfPresent(
     LuaPlus::LuaState* const state,
     const LuaPlus::LuaObject& tableObject,
@@ -85,7 +70,9 @@ namespace moho
    * Imports `/lua/renderselectparams.lua`, reads `RenderSelectParams`, and
    * updates optional selection-bracket render tuning globals.
    */
-  void* LoadLuaSelectionParams(void* const selectionParamsSentinel)
+  void* LoadLuaSelectionParams(
+    void* const selectionParamsSentinel
+  )
   {
     LuaPlus::LuaState* const state = USER_GetLuaState();
     LuaPlus::LuaObject importObject = SCR_ImportLuaModule(state, "/lua/renderselectparams.lua");

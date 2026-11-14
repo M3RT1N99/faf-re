@@ -68,7 +68,7 @@ namespace moho
    * Address: 0x0051A6D0 (FUN_0051A6D0)
    *
    * What it does:
-   * Constructs/preregisters RTTI for `msvc8::vector<RMeshBlueprintLOD>`.
+   * Constructs/preregisters RTTI for `fa::vector<RMeshBlueprintLOD>`.
    */
   [[nodiscard]] gpg::RType* preregister_VectorRMeshBlueprintLODType();
 
@@ -83,4 +83,3 @@ namespace moho
 
   static_assert(sizeof(RMeshBlueprintLODTypeInfo) == 0x64, "RMeshBlueprintLODTypeInfo size must be 0x64");
 } // namespace moho
-

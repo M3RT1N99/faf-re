@@ -9,12 +9,6 @@
 namespace
 {
 
-  [[nodiscard]] gpg::RType* ResolveVector3fType()
-  {
-    static gpg::RType* cached = nullptr;
-    return gpg::CachedLookup<Wm3::Vector3<float>>(cached);
-  }
-
   [[nodiscard]] gpg::RType* ResolveSWorldParticleBlendModeType()
   {
     return gpg::CachedLookup<moho::SWorldParticle::BlendMode>(moho::SWorldParticle::sBlendModeType);
@@ -65,7 +59,9 @@ namespace moho
   /**
    * Address: 0x00490570 (FUN_00490570, Moho::SWorldParticle::MemberDeserialize)
    */
-  void SWorldParticle::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SWorldParticle::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -74,9 +70,9 @@ namespace moho
     const gpg::RRef nullOwner{};
     archive->ReadBool(&mDragEnabled);
     archive->ReadFloat(&mResistance);
-    archive->Read(ResolveVector3fType(), &mPos, nullOwner);
-    archive->Read(ResolveVector3fType(), &mDir, nullOwner);
-    archive->Read(ResolveVector3fType(), &mAccel, nullOwner);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3<float>>(), &mPos, nullOwner);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3<float>>(), &mDir, nullOwner);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3<float>>(), &mAccel, nullOwner);
     archive->ReadFloat(&mInterop);
     archive->ReadFloat(&mLifetime);
     archive->ReadFloat(&mFramerate);
@@ -100,7 +96,9 @@ namespace moho
   /**
    * Address: 0x004907D0 (FUN_004907D0, Moho::SWorldParticle::MemberSerialize)
    */
-  void SWorldParticle::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SWorldParticle::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -109,9 +107,9 @@ namespace moho
     const gpg::RRef nullOwner{};
     archive->WriteBool(mDragEnabled);
     archive->WriteFloat(mResistance);
-    archive->Write(ResolveVector3fType(), &mPos, nullOwner);
-    archive->Write(ResolveVector3fType(), &mDir, nullOwner);
-    archive->Write(ResolveVector3fType(), &mAccel, nullOwner);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3<float>>(), &mPos, nullOwner);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3<float>>(), &mDir, nullOwner);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3<float>>(), &mAccel, nullOwner);
     archive->WriteFloat(mInterop);
     archive->WriteFloat(mLifetime);
     archive->WriteFloat(mFramerate);
@@ -126,7 +124,7 @@ namespace moho
     archive->WriteFloat(mReserved54);
     archive->Write(gpg::RTypeOf<moho::CountedPtr_CParticleTexture>(), &mTexture, nullOwner);
     archive->Write(gpg::RTypeOf<moho::CountedPtr_CParticleTexture>(), &mRampTexture, nullOwner);
-    archive->WriteString(const_cast<msvc8::string*>(&mTypeTag));
+    archive->WriteString(const_cast<fa::string*>(&mTypeTag));
     archive->WriteInt(mArmyIndex);
     archive->Write(ResolveSWorldParticleBlendModeType(), &mBlendMode, nullOwner);
     archive->Write(ResolveSWorldParticleZModeType(), &mZMode, nullOwner);

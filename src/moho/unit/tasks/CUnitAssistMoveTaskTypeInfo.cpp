@@ -21,7 +21,9 @@ namespace
     return sInstance;
   }
 
-  [[nodiscard]] gpg::RRef MakeAssistMoveTaskRef(moho::CUnitAssistMoveTask* const task)
+  [[nodiscard]] gpg::RRef MakeAssistMoveTaskRef(
+    moho::CUnitAssistMoveTask* const task
+  )
   {
     return gpg::RRef{task, gpg::RTypeOf<moho::CUnitAssistMoveTask>()};
   }
@@ -82,7 +84,9 @@ namespace moho
    * What it does:
    * Registers `CCommandTask` as reflection base for `CUnitAssistMoveTask`.
    */
-  void CUnitAssistMoveTaskTypeInfo::AddBase_CCommandTask(gpg::RType* const typeInfo)
+  void CUnitAssistMoveTaskTypeInfo::AddBase_CCommandTask(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<moho::CCommandTask>(typeInfo);
   }
@@ -97,7 +101,7 @@ namespace moho
   gpg::RRef CUnitAssistMoveTaskTypeInfo::NewRef()
   {
     auto* const task = new (std::nothrow) CUnitAssistMoveTask();
-    return MakeAssistMoveTaskRef(reinterpret_cast<CUnitAssistMoveTask*>(task));
+    return MakeAssistMoveTaskRef(static_cast<CUnitAssistMoveTask*>(task));
   }
 
   /**
@@ -107,13 +111,12 @@ namespace moho
    * Placement-constructs one `CUnitAssistMoveTask` in caller storage and
    * returns a typed reflection reference to it.
    */
-  gpg::RRef CUnitAssistMoveTaskTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CUnitAssistMoveTaskTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const task = static_cast<CUnitAssistMoveTask*>(objectStorage);
-    if (task) {
-      new (task) CUnitAssistMoveTask();
-    }
-    return MakeAssistMoveTaskRef(reinterpret_cast<CUnitAssistMoveTask*>(task));
+    auto* const task = gpg::ConstructInStorage<CUnitAssistMoveTask>(objectStorage);
+    return MakeAssistMoveTaskRef(static_cast<CUnitAssistMoveTask*>(task));
   }
 
   /**
@@ -122,7 +125,9 @@ namespace moho
    * What it does:
    * Deletes one heap-owned `CUnitAssistMoveTask`.
    */
-  void CUnitAssistMoveTaskTypeInfo::Delete(void* const objectStorage)
+  void CUnitAssistMoveTaskTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<CUnitAssistMoveTask*>(objectStorage);
   }
@@ -134,13 +139,11 @@ namespace moho
    * Runs in-place destructor for one `CUnitAssistMoveTask` without
    * deallocating storage.
    */
-  void CUnitAssistMoveTaskTypeInfo::Destruct(void* const objectStorage)
+  void CUnitAssistMoveTaskTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
-    auto* const task = static_cast<CUnitAssistMoveTask*>(objectStorage);
-    if (!task) {
-      return;
-    }
-    task->~CUnitAssistMoveTask();
+    gpg::DestructInStorage<CUnitAssistMoveTask>(objectStorage);
   }
 
   /**
@@ -152,7 +155,9 @@ namespace moho
   }
 } // namespace moho
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CUnitAssistMoveTaskTypeInfo_aa59cd, moho::register_CUnitAssistMoveTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CUnitAssistMoveTaskTypeInfo_aa59cd,
+  moho::register_CUnitAssistMoveTaskTypeInfo
+)

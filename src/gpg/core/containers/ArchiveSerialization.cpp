@@ -21,7 +21,7 @@
 #include "moho/sim/RRuleGameRules.h"
 #include "moho/sim/SPhysBody.h"
 #include "moho/sim/SPhysConstants.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/utils/Global.h"
 #include "lua/LuaObject.h"
 #include "lua/LuaPrimitives.h"
@@ -110,40 +110,85 @@ namespace
    */
   template <gpg::RType* (*ResolveType)()>
   /**
-   * Address: 0x0050D190 (FUN_0050D190 -- the reflected `read` callback for `Rect2i`; zero callers, unreachable; formerly `ReadRect2iArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0050D1D0 (FUN_0050D1D0 -- the reflected `read` callback for `ELayer`; zero callers, unreachable; formerly `ReadELayerArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0050D2D0 (FUN_0050D2D0 -- the reflected `read` callback for `Rect2i`; zero callers, unreachable; formerly `ReadRect2iArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0050D330 (FUN_0050D330 -- the reflected `read` callback for `ELayer`; zero callers, unreachable; formerly `ReadELayerArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0064A040 (FUN_0064A040 -- the reflected `read` callback for `EEconResource`; zero callers, unreachable; formerly `ReadEEconResourceArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0064A0C0 (FUN_0064A0C0 -- the reflected `read` callback for `EEconResource`; zero callers, unreachable; formerly `ReadEEconResourceArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00658C20 (FUN_00658C20 -- the reflected `read` callback for `CEffectImpl`; zero callers, unreachable; formerly `ReadCEffectImplArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00658C60 (FUN_00658C60 -- the reflected `read` callback for `SEntAttachInfo`; zero callers, unreachable; formerly `ReadSEntAttachInfoArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00658CA0 (FUN_00658CA0 -- the reflected `read` callback for `SWorldBeam`; zero callers, unreachable; formerly `ReadSWorldBeamArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00688C50 (FUN_00688C50 -- the reflected `read` callback for `IdPool`; zero callers, unreachable; formerly `ReadIdPoolArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689190 (FUN_00689190 -- the reflected `read` callback for `IdPool`; zero callers, unreachable; formerly `ReadIdPoolArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689B40 (FUN_00689B40 -- the reflected `read` callback for `MapUIntIdPool`; zero callers, unreachable; formerly `ReadMapUIntIdPoolArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689B80 (FUN_00689B80 -- the reflected `read` callback for `ListEntityPtr`; zero callers, unreachable; formerly `ReadListEntityPtrArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689C70 (FUN_00689C70 -- the reflected `read` callback for `MapUIntIdPool`; zero callers, unreachable; formerly `ReadMapUIntIdPoolArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689CD0 (FUN_00689CD0 -- the reflected `read` callback for `ListEntityPtr`; zero callers, unreachable; formerly `ReadListEntityPtrArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071DB80 (FUN_0071DB80 -- the reflected `read` callback for `InfluenceMapEntry`; zero callers, unreachable; formerly `ReadInfluenceMapEntryArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071DBE0 (FUN_0071DBE0 -- the reflected `read` callback for `SThreat`; zero callers, unreachable; formerly `ReadSThreatArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071E310 (FUN_0071E310 -- the reflected `read` callback for `MapUIntInfluenceMapEntry`; zero callers, unreachable; formerly `ReadMapUIntInfluenceMapEntryArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071E350 (FUN_0071E350 -- the reflected `read` callback for `VectorSThreat`; zero callers, unreachable; formerly `ReadVectorSThreatArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071EEA0 (FUN_0071EEA0 -- the reflected `read` callback for `MapUIntInfluenceMapEntry`; zero callers, unreachable; formerly `ReadMapUIntInfluenceMapEntryArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071EF00 (FUN_0071EF00 -- the reflected `read` callback for `VectorSThreat`; zero callers, unreachable; formerly `ReadVectorSThreatArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071FAE0 (FUN_0071FAE0 -- the reflected `read` callback for `MapUIntInt`; zero callers, unreachable; formerly `ReadMapUIntIntArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071FB20 (FUN_0071FB20 -- the reflected `read` callback for `VectorInfluenceGrid`; zero callers, unreachable; formerly `ReadVectorInfluenceGridArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071FDE0 (FUN_0071FDE0 -- the reflected `read` callback for `MapUIntInt`; zero callers, unreachable; formerly `ReadMapUIntIntArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071FE40 (FUN_0071FE40 -- the reflected `read` callback for `VectorInfluenceGrid`; zero callers, unreachable; formerly `ReadVectorInfluenceGridArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0072B620 (FUN_0072B620 -- the reflected `read` callback for `ESquadClass`; zero callers, unreachable; formerly `ReadESquadClassArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0072B6A0 (FUN_0072B6A0 -- the reflected `read` callback for `ESquadClass`; zero callers, unreachable; formerly `ReadESquadClassArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x006941E0 (FUN_006941E0 -- the reflected `read` callback for `EntitySetBase` (called with a null owner ref); zero callers, unreachable; formerly `ReadEntitySetBaseArchiveObjectWithNullOwner` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x005592D0 (FUN_005592D0 -- the reflected `read` callback for `EntId` (called with a null owner ref); zero callers, unreachable; formerly `ReadEntIdArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x005596F0 (FUN_005596F0 -- the reflected `read` callback for `EntId` (called with a null owner ref); zero callers, unreachable; formerly `ReadEntIdArchiveObjectLane2` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00763BA0 (FUN_00763BA0 -- the reflected `read` callback for `VectorHPathCell` (called with a null owner ref); zero callers, unreachable; formerly `ReadVectorHPathCellArchiveObjectWithNullOwner` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0077A6D0 (FUN_0077A6D0 -- the cached `RType` lookup those callbacks resolve through; callers ; formerly `ResolveInfluenceMapEntryArchiveAdapterType` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x0050D190 (FUN_0050D190 -- the reflected `read` callback for `Rect2i`; zero callers, unreachable;
+   * formerly `ReadRect2iArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x0050D1D0 (FUN_0050D1D0 -- the reflected `read` callback for `ELayer`; zero callers,
+   * unreachable; formerly `ReadELayerArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x0050D2D0 (FUN_0050D2D0 -- the reflected `read` callback for `Rect2i`; zero callers,
+   * unreachable; formerly `ReadRect2iArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x0050D330 (FUN_0050D330 -- the reflected `read` callback for `ELayer`; zero callers,
+   * unreachable; formerly `ReadELayerArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x0064A040 (FUN_0064A040 -- the reflected `read` callback for `EEconResource`; zero
+   * callers, unreachable; formerly `ReadEEconResourceArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp
+   * (RULE ONE), removed 2026-09-10.) Address: 0x0064A0C0 (FUN_0064A0C0 -- the reflected `read` callback for
+   * `EEconResource`; zero callers, unreachable; formerly `ReadEEconResourceArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x00658C20 (FUN_00658C20 --
+   * the reflected `read` callback for `CEffectImpl`; zero callers, unreachable; formerly
+   * `ReadCEffectImplArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x00658C60 (FUN_00658C60 -- the reflected `read` callback for `SEntAttachInfo`; zero callers, unreachable;
+   * formerly `ReadSEntAttachInfoArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x00658CA0 (FUN_00658CA0 -- the reflected `read` callback for `SWorldBeam`; zero callers,
+   * unreachable; formerly `ReadSWorldBeamArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x00688C50 (FUN_00688C50 -- the reflected `read` callback for `IdPool`; zero callers,
+   * unreachable; formerly `ReadIdPoolArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x00689190 (FUN_00689190 -- the reflected `read` callback for `IdPool`; zero callers,
+   * unreachable; formerly `ReadIdPoolArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x00689B40 (FUN_00689B40 -- the reflected `read` callback for `MapUIntIdPool`; zero
+   * callers, unreachable; formerly `ReadMapUIntIdPoolArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp
+   * (RULE ONE), removed 2026-09-10.) Address: 0x00689B80 (FUN_00689B80 -- the reflected `read` callback for
+   * `ListEntityPtr`; zero callers, unreachable; formerly `ReadListEntityPtrArchiveAdapter` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x00689C70 (FUN_00689C70 --
+   * the reflected `read` callback for `MapUIntIdPool`; zero callers, unreachable; formerly
+   * `ReadMapUIntIdPoolArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x00689CD0 (FUN_00689CD0 -- the reflected `read` callback for `ListEntityPtr`; zero callers,
+   * unreachable; formerly `ReadListEntityPtrArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE
+   * ONE), removed 2026-09-10.) Address: 0x0071DB80 (FUN_0071DB80 -- the reflected `read` callback for
+   * `InfluenceMapEntry`; zero callers, unreachable; formerly `ReadInfluenceMapEntryArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0071DBE0 (FUN_0071DBE0 --
+   * the reflected `read` callback for `SThreat`; zero callers, unreachable; formerly `ReadSThreatArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0071E310 (FUN_0071E310 --
+   * the reflected `read` callback for `MapUIntInfluenceMapEntry`; zero callers, unreachable; formerly
+   * `ReadMapUIntInfluenceMapEntryArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x0071E350 (FUN_0071E350 -- the reflected `read` callback for `VectorSThreat`; zero callers,
+   * unreachable; formerly `ReadVectorSThreatArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x0071EEA0 (FUN_0071EEA0 -- the reflected `read` callback for
+   * `MapUIntInfluenceMapEntry`; zero callers, unreachable; formerly `ReadMapUIntInfluenceMapEntryArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0071EF00 (FUN_0071EF00 --
+   * the reflected `read` callback for `VectorSThreat`; zero callers, unreachable; formerly
+   * `ReadVectorSThreatArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x0071FAE0 (FUN_0071FAE0 -- the reflected `read` callback for `MapUIntInt`; zero callers,
+   * unreachable; formerly `ReadMapUIntIntArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x0071FB20 (FUN_0071FB20 -- the reflected `read` callback for `VectorInfluenceGrid`;
+   * zero callers, unreachable; formerly `ReadVectorInfluenceGridArchiveAdapter` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0071FDE0 (FUN_0071FDE0 --
+   * the reflected `read` callback for `MapUIntInt`; zero callers, unreachable; formerly
+   * `ReadMapUIntIntArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x0071FE40 (FUN_0071FE40 -- the reflected `read` callback for `VectorInfluenceGrid`; zero callers,
+   * unreachable; formerly `ReadVectorInfluenceGridArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp
+   * (RULE ONE), removed 2026-09-10.) Address: 0x0072B620 (FUN_0072B620 -- the reflected `read` callback for
+   * `ESquadClass`; zero callers, unreachable; formerly `ReadESquadClassArchiveAdapter` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0072B6A0 (FUN_0072B6A0 --
+   * the reflected `read` callback for `ESquadClass`; zero callers, unreachable; formerly
+   * `ReadESquadClassArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x006941E0 (FUN_006941E0 -- the reflected `read` callback for `EntitySetBase` (called with a
+   * null owner ref); zero callers, unreachable; formerly `ReadEntitySetBaseArchiveObjectWithNullOwner` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x005592D0 (FUN_005592D0 --
+   * the reflected `read` callback for `EntId` (called with a null owner ref); zero callers, unreachable; formerly
+   * `ReadEntIdArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x005596F0 (FUN_005596F0 -- the reflected `read` callback for `EntId` (called with a null owner ref); zero
+   * callers, unreachable; formerly `ReadEntIdArchiveObjectLane2` in gpg/core/containers/ArchiveSerialization.cpp (RULE
+   * ONE), removed 2026-09-10.) Address: 0x00763BA0 (FUN_00763BA0 -- the reflected `read` callback for `VectorHPathCell`
+   * (called with a null owner ref); zero callers, unreachable; formerly `ReadVectorHPathCellArchiveObjectWithNullOwner`
+   * in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0077A6D0 (FUN_0077A6D0
+   * -- the cached `RType` lookup those callbacks resolve through; callers ; formerly
+   * `ResolveInfluenceMapEntryArchiveAdapterType` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.)
    */
-  gpg::ReadArchive* ReadArchiveObjectOfType(gpg::ReadArchive* const archive, void* const object, const gpg::RRef& ownerRef)
+  gpg::ReadArchive* ReadArchiveObjectOfType(
+    gpg::ReadArchive* const archive,
+    void* const object,
+    const gpg::RRef& ownerRef
+  )
   {
     archive->Read(ResolveType(), object, ownerRef);
     return archive;
@@ -154,39 +199,83 @@ namespace
    */
   template <gpg::RType* (*ResolveType)()>
   /**
-   * Address: 0x0050D210 (FUN_0050D210 -- the reflected `write` callback for `Rect2i`; zero callers, unreachable; formerly `WriteRect2iArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0050D250 (FUN_0050D250 -- the reflected `write` callback for `ELayer`; zero callers, unreachable; formerly `WriteELayerArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0050D300 (FUN_0050D300 -- the reflected `write` callback for `Rect2i`; zero callers, unreachable; formerly `WriteRect2iArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0050D360 (FUN_0050D360 -- the reflected `write` callback for `ELayer`; zero callers, unreachable; formerly `WriteELayerArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0064A080 (FUN_0064A080 -- the reflected `write` callback for `EEconResource`; zero callers, unreachable; formerly `WriteEEconResourceArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0064A0F0 (FUN_0064A0F0 -- the reflected `write` callback for `EEconResource`; zero callers, unreachable; formerly `WriteEEconResourceArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00658CE0 (FUN_00658CE0 -- the reflected `write` callback for `CEffectImpl`; zero callers, unreachable; formerly `WriteCEffectImplArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00658D20 (FUN_00658D20 -- the reflected `write` callback for `SEntAttachInfo`; zero callers, unreachable; formerly `WriteSEntAttachInfoArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00658D60 (FUN_00658D60 -- the reflected `write` callback for `SWorldBeam`; zero callers, unreachable; formerly `WriteSWorldBeamArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00688C90 (FUN_00688C90 -- the reflected `write` callback for `IdPool`; zero callers, unreachable; formerly `WriteIdPoolArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x006891C0 (FUN_006891C0 -- the reflected `write` callback for `IdPool`; zero callers, unreachable; formerly `WriteIdPoolArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689BC0 (FUN_00689BC0 -- the reflected `write` callback for `MapUIntIdPool`; zero callers, unreachable; formerly `WriteMapUIntIdPoolArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689C00 (FUN_00689C00 -- the reflected `write` callback for `ListEntityPtr`; zero callers, unreachable; formerly `WriteListEntityPtrArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689CA0 (FUN_00689CA0 -- the reflected `write` callback for `MapUIntIdPool`; zero callers, unreachable; formerly `WriteMapUIntIdPoolArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00689D00 (FUN_00689D00 -- the reflected `write` callback for `ListEntityPtr`; zero callers, unreachable; formerly `WriteListEntityPtrArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00694220 (FUN_00694220 -- the reflected `write` callback for `EntitySetBase` (called with a null owner ref); zero callers, unreachable; formerly `WriteEntitySetBaseArchiveObjectWithNullOwner` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00559310 (FUN_00559310 -- the reflected `write` callback for `EntId` (called with a null owner ref); zero callers, unreachable; formerly `WriteEntIdArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00559730 (FUN_00559730 -- the reflected `write` callback for `EntId` (called with a null owner ref); zero callers, unreachable; formerly `WriteEntIdArchiveObjectLane2` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071DBB0 (FUN_0071DBB0 -- the reflected `write` callback for `InfluenceMapEntry`; zero callers, unreachable; formerly `WriteInfluenceMapEntryArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071DC10 (FUN_0071DC10 -- the reflected `write` callback for `SThreat`; zero callers, unreachable; formerly `WriteSThreatArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071E390 (FUN_0071E390 -- the reflected `write` callback for `MapUIntInfluenceMapEntry`; zero callers, unreachable; formerly `WriteMapUIntInfluenceMapEntryArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071E3D0 (FUN_0071E3D0 -- the reflected `write` callback for `VectorSThreat`; zero callers, unreachable; formerly `WriteVectorSThreatArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071EED0 (FUN_0071EED0 -- the reflected `write` callback for `MapUIntInfluenceMapEntry`; zero callers, unreachable; formerly `WriteMapUIntInfluenceMapEntryArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071EF30 (FUN_0071EF30 -- the reflected `write` callback for `VectorSThreat`; zero callers, unreachable; formerly `WriteVectorSThreatArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071FB60 (FUN_0071FB60 -- the reflected `write` callback for `MapUIntInt`; zero callers, unreachable; formerly `WriteMapUIntIntArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071FBA0 (FUN_0071FBA0 -- the reflected `write` callback for `VectorInfluenceGrid`; zero callers, unreachable; formerly `WriteVectorInfluenceGridArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071FE10 (FUN_0071FE10 -- the reflected `write` callback for `MapUIntInt`; zero callers, unreachable; formerly `WriteMapUIntIntArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0071FE70 (FUN_0071FE70 -- the reflected `write` callback for `VectorInfluenceGrid`; zero callers, unreachable; formerly `WriteVectorInfluenceGridArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0072B660 (FUN_0072B660 -- the reflected `write` callback for `ESquadClass`; zero callers, unreachable; formerly `WriteESquadClassArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x0072B6D0 (FUN_0072B6D0 -- the reflected `write` callback for `ESquadClass`; zero callers, unreachable; formerly `WriteESquadClassArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
-   * Address: 0x00763BE0 (FUN_00763BE0 -- the reflected `write` callback for `VectorHPathCell` (called with a null owner ref); zero callers, unreachable; formerly `WriteVectorHPathCellArchiveObjectWithNullOwner` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x0050D210 (FUN_0050D210 -- the reflected `write` callback for `Rect2i`; zero callers, unreachable;
+   * formerly `WriteRect2iArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x0050D250 (FUN_0050D250 -- the reflected `write` callback for `ELayer`; zero callers,
+   * unreachable; formerly `WriteELayerArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x0050D300 (FUN_0050D300 -- the reflected `write` callback for `Rect2i`; zero
+   * callers, unreachable; formerly `WriteRect2iArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp
+   * (RULE ONE), removed 2026-09-10.) Address: 0x0050D360 (FUN_0050D360 -- the reflected `write` callback for `ELayer`;
+   * zero callers, unreachable; formerly `WriteELayerArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp
+   * (RULE ONE), removed 2026-09-10.) Address: 0x0064A080 (FUN_0064A080 -- the reflected `write` callback for
+   * `EEconResource`; zero callers, unreachable; formerly `WriteEEconResourceArchiveAdapter` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0064A0F0 (FUN_0064A0F0 --
+   * the reflected `write` callback for `EEconResource`; zero callers, unreachable; formerly
+   * `WriteEEconResourceArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x00658CE0 (FUN_00658CE0 -- the reflected `write` callback for `CEffectImpl`; zero callers,
+   * unreachable; formerly `WriteCEffectImplArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x00658D20 (FUN_00658D20 -- the reflected `write` callback for `SEntAttachInfo`; zero
+   * callers, unreachable; formerly `WriteSEntAttachInfoArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp
+   * (RULE ONE), removed 2026-09-10.) Address: 0x00658D60 (FUN_00658D60 -- the reflected `write` callback for
+   * `SWorldBeam`; zero callers, unreachable; formerly `WriteSWorldBeamArchiveAdapter` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x00688C90 (FUN_00688C90 --
+   * the reflected `write` callback for `IdPool`; zero callers, unreachable; formerly `WriteIdPoolArchiveAdapter` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x006891C0 (FUN_006891C0 --
+   * the reflected `write` callback for `IdPool`; zero callers, unreachable; formerly `WriteIdPoolArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x00689BC0 (FUN_00689BC0 --
+   * the reflected `write` callback for `MapUIntIdPool`; zero callers, unreachable; formerly
+   * `WriteMapUIntIdPoolArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x00689C00 (FUN_00689C00 -- the reflected `write` callback for `ListEntityPtr`; zero callers, unreachable;
+   * formerly `WriteListEntityPtrArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x00689CA0 (FUN_00689CA0 -- the reflected `write` callback for `MapUIntIdPool`; zero callers,
+   * unreachable; formerly `WriteMapUIntIdPoolArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE
+   * ONE), removed 2026-09-10.) Address: 0x00689D00 (FUN_00689D00 -- the reflected `write` callback for `ListEntityPtr`;
+   * zero callers, unreachable; formerly `WriteListEntityPtrArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x00694220 (FUN_00694220 --
+   * the reflected `write` callback for `EntitySetBase` (called with a null owner ref); zero callers, unreachable;
+   * formerly `WriteEntitySetBaseArchiveObjectWithNullOwner` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x00559310 (FUN_00559310 -- the reflected `write` callback for `EntId` (called with a
+   * null owner ref); zero callers, unreachable; formerly `WriteEntIdArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x00559730 (FUN_00559730 --
+   * the reflected `write` callback for `EntId` (called with a null owner ref); zero callers, unreachable; formerly
+   * `WriteEntIdArchiveObjectLane2` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x0071DBB0 (FUN_0071DBB0 -- the reflected `write` callback for `InfluenceMapEntry`; zero callers,
+   * unreachable; formerly `WriteInfluenceMapEntryArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp
+   * (RULE ONE), removed 2026-09-10.) Address: 0x0071DC10 (FUN_0071DC10 -- the reflected `write` callback for `SThreat`;
+   * zero callers, unreachable; formerly `WriteSThreatArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0071E390 (FUN_0071E390 --
+   * the reflected `write` callback for `MapUIntInfluenceMapEntry`; zero callers, unreachable; formerly
+   * `WriteMapUIntInfluenceMapEntryArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x0071E3D0 (FUN_0071E3D0 -- the reflected `write` callback for `VectorSThreat`; zero callers,
+   * unreachable; formerly `WriteVectorSThreatArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE
+   * ONE), removed 2026-09-10.) Address: 0x0071EED0 (FUN_0071EED0 -- the reflected `write` callback for
+   * `MapUIntInfluenceMapEntry`; zero callers, unreachable; formerly `WriteMapUIntInfluenceMapEntryArchiveObjectLane1`
+   * in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0071EF30 (FUN_0071EF30
+   * -- the reflected `write` callback for `VectorSThreat`; zero callers, unreachable; formerly
+   * `WriteVectorSThreatArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x0071FB60 (FUN_0071FB60 -- the reflected `write` callback for `MapUIntInt`; zero callers,
+   * unreachable; formerly `WriteMapUIntIntArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE),
+   * removed 2026-09-10.) Address: 0x0071FBA0 (FUN_0071FBA0 -- the reflected `write` callback for `VectorInfluenceGrid`;
+   * zero callers, unreachable; formerly `WriteVectorInfluenceGridArchiveAdapter` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0071FE10 (FUN_0071FE10 --
+   * the reflected `write` callback for `MapUIntInt`; zero callers, unreachable; formerly
+   * `WriteMapUIntIntArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x0071FE70 (FUN_0071FE70 -- the reflected `write` callback for `VectorInfluenceGrid`; zero
+   * callers, unreachable; formerly `WriteVectorInfluenceGridArchiveObjectLane1` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.) Address: 0x0072B660 (FUN_0072B660 --
+   * the reflected `write` callback for `ESquadClass`; zero callers, unreachable; formerly
+   * `WriteESquadClassArchiveAdapter` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
+   * Address: 0x0072B6D0 (FUN_0072B6D0 -- the reflected `write` callback for `ESquadClass`; zero callers, unreachable;
+   * formerly `WriteESquadClassArchiveObjectLane1` in gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed
+   * 2026-09-10.) Address: 0x00763BE0 (FUN_00763BE0 -- the reflected `write` callback for `VectorHPathCell` (called with
+   * a null owner ref); zero callers, unreachable; formerly `WriteVectorHPathCellArchiveObjectWithNullOwner` in
+   * gpg/core/containers/ArchiveSerialization.cpp (RULE ONE), removed 2026-09-10.)
    */
-  gpg::WriteArchive* WriteArchiveObjectOfType(gpg::WriteArchive* const archive, const void* const object, const gpg::RRef& ownerRef)
+  gpg::WriteArchive* WriteArchiveObjectOfType(
+    gpg::WriteArchive* const archive,
+    const void* const object,
+    const gpg::RRef& ownerRef
+  )
   {
     archive->Write(ResolveType(), object, ownerRef);
     return archive;
@@ -257,7 +346,6 @@ namespace
   };
   static_assert(sizeof(SPathNeighborTypeInfo) == 0x64, "SPathNeighborTypeInfo size must be 0x64");
 
-
   /**
    * Address: 0x0076D360 (FUN_0076D360, preregister_SPathNeighborTypeInfo)
    *
@@ -296,7 +384,7 @@ namespace
    * investigation. It is now fully recovered: raw asm for `Deserialize`
    * (0x00763190) and `Serialize` (0x007631D0) shows both operate through
    * the `std::vector<Moho::HPathCell>` RType (`gpg::LookupRType(typeid(
-   * msvc8::vector<moho::HPathCell>))`, cached), calling `archive->Read/
+   * fa::vector<moho::HPathCell>))`, cached), calling `archive->Read/
    * Write(type, objectPtr, RRef{})` directly on the raw object pointer with
    * NO field-offset adjustment and a *fresh empty* owner ref (the real
    * caller's owner ref is not forwarded) -- so this recovery does not need
@@ -347,7 +435,7 @@ namespace
      * `ownerRef` are unused -- the real body passes a fresh empty `RRef`
      * to the nested archive call rather than forwarding either.
      */
-    static void Deserialize(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void Deserialize(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x007631D0 (FUN_007631D0, Moho::NavPathSerializer::Serialize)
@@ -356,7 +444,7 @@ namespace
      * Writes one `std::vector<HPathCell>` payload directly at `objectPtr`
      * through the reflected vector type, mirroring `Deserialize`.
      */
-    static void Serialize(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void Serialize(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x00763370 (FUN_00763370, gpg::SerSaveLoadHelper_NavPath::Init)
@@ -373,8 +461,14 @@ namespace
     gpg::RType::load_func_t mLoadCallback; // +0x0C
     gpg::RType::save_func_t mSaveCallback; // +0x10
   };
-  static_assert(offsetof(NavPathSerializer, mLoadCallback) == 0x0C, "NavPathSerializer::mLoadCallback offset must be 0x0C");
-  static_assert(offsetof(NavPathSerializer, mSaveCallback) == 0x10, "NavPathSerializer::mSaveCallback offset must be 0x10");
+  static_assert(
+    offsetof(NavPathSerializer, mLoadCallback) == 0x0C,
+    "NavPathSerializer::mLoadCallback offset must be 0x0C"
+  );
+  static_assert(
+    offsetof(NavPathSerializer, mSaveCallback) == 0x10,
+    "NavPathSerializer::mSaveCallback offset must be 0x10"
+  );
   static_assert(sizeof(NavPathSerializer) == 0x14, "NavPathSerializer size must be 0x14");
 
   NavPathSerializer::NavPathSerializer()
@@ -385,21 +479,27 @@ namespace
   NavPathSerializer::~NavPathSerializer() = default;
 
   void NavPathSerializer::Deserialize(
-    gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const
   )
   {
-    gpg::RType* const type = CachedCompatRType<msvc8::vector<moho::HPathCell>>();
+    gpg::RType* const type = CachedCompatRType<fa::vector<moho::HPathCell>>();
     const gpg::RRef emptyOwner{};
-    archive->Read(type, reinterpret_cast<void*>(objectPtr), emptyOwner);
+    archive->Read(type, objectPtr, emptyOwner);
   }
 
   void NavPathSerializer::Serialize(
-    gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const
   )
   {
-    gpg::RType* const type = CachedCompatRType<msvc8::vector<moho::HPathCell>>();
+    gpg::RType* const type = CachedCompatRType<fa::vector<moho::HPathCell>>();
     const gpg::RRef emptyOwner{};
-    archive->Write(type, reinterpret_cast<void*>(objectPtr), emptyOwner);
+    archive->Write(type, objectPtr, emptyOwner);
   }
 
   void NavPathSerializer::Init()
@@ -422,28 +522,14 @@ namespace
    */
   moho::SPathNeighborSerializer gSPathNeighborSerializerHelper;
 
-  [[nodiscard]] gpg::RType* CachedSOffsetInfoType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (sType == nullptr) {
-      sType = gpg::REF_FindTypeNamed("Moho::SOffsetInfo");
-    }
-    return sType;
-  }
-
-  [[nodiscard]] gpg::RType* CachedSAssignedLocInfoType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (sType == nullptr) {
-      sType = gpg::REF_FindTypeNamed("Moho::SAssignedLocInfo");
-    }
-    return sType;
-  }
 } // namespace
 
 // Phase-1 pre-registration: run this descriptor registration ahead of every
 // consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_SPathNeighborTypeInfo_a41c9e, preregister_SPathNeighborTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_SPathNeighborTypeInfo_a41c9e,
+  preregister_SPathNeighborTypeInfo
+)
 
 namespace gpg
 {
@@ -454,75 +540,15 @@ namespace gpg
    * Thin wrapper that materializes a temporary `RRef_Sim` and copies lanes
    * out.
    */
-  gpg::RRef* AssignSimRef(gpg::RRef* const outRef, moho::Sim* const value)
+  gpg::RRef* AssignSimRef(
+    gpg::RRef* const outRef,
+    moho::Sim* const value
+  )
   {
     gpg::RRef tmp{};
     tmp = gpg::MakeRRef<moho::Sim>(value);
     outRef->mObj = tmp.mObj;
     outRef->mType = tmp.mType;
-    return outRef;
-  }
-
-  /**
-   * Address: 0x007742C0 (FUN_007742C0)
-   *
-   * What it does:
-   * Builds one temporary `RRef_CEconomy` and copies its `(mObj,mType)` pair
-   * into caller-owned output storage.
-   */
-  [[maybe_unused]] gpg::RRef* PackRRef_CEconomy(gpg::RRef* const outRef, moho::CEconomy* const value)
-  {
-    if (outRef == nullptr) {
-      return nullptr;
-    }
-
-    gpg::RRef temp{};
-    temp = gpg::MakeRRef<moho::CEconomy>(value);
-    outRef->mObj = temp.mObj;
-    outRef->mType = temp.mType;
-    return outRef;
-  }
-
-  /**
-   * Address: 0x00774390 (FUN_00774390)
-   *
-   * What it does:
-   * Builds one temporary `RRef_CEconStorage` and copies its `(mObj,mType)`
-   * pair into caller-owned output storage.
-   */
-  [[maybe_unused]] gpg::RRef* PackRRef_CEconStorage(gpg::RRef* const outRef, moho::CEconStorage* const value)
-  {
-    if (outRef == nullptr) {
-      return nullptr;
-    }
-
-    gpg::RRef temp{};
-    temp = gpg::MakeRRef<moho::CEconStorage>(value);
-    outRef->mObj = temp.mObj;
-    outRef->mType = temp.mType;
-    return outRef;
-  }
-
-  /**
-   * Address: 0x00778340 (FUN_00778340)
-   *
-   * What it does:
-   * Builds one temporary `RRef_CTextureScroller` and copies its
-   * `(mObj,mType)` pair into caller-owned output storage.
-   */
-  [[maybe_unused]] gpg::RRef* PackRRef_CTextureScroller(
-    gpg::RRef* const outRef,
-    moho::CTextureScroller* const value
-  )
-  {
-    if (outRef == nullptr) {
-      return nullptr;
-    }
-
-    gpg::RRef temp{};
-    temp = gpg::MakeRRef<moho::CTextureScroller>(value);
-    outRef->mObj = temp.mObj;
-    outRef->mType = temp.mType;
     return outRef;
   }
 
@@ -535,7 +561,7 @@ namespace gpg
    */
   void SaveFastVectorUnitWeaponInfo(
     gpg::WriteArchive* const archive,
-    std::intptr_t objectPtr,
+    void* objectPtr,
     int /*version*/,
     gpg::RRef* const ownerRef
   )
@@ -544,8 +570,7 @@ namespace gpg
       return;
     }
 
-    const auto& weapons =
-      *reinterpret_cast<const gpg::core::FastVector<moho::UnitWeaponInfo>*>(objectPtr);
+    const auto& weapons = *static_cast<const gpg::core::FastVector<moho::UnitWeaponInfo>*>(objectPtr);
     SaveContiguousArchiveVectorPayload(
       archive,
       weapons.Data(),
@@ -585,7 +610,7 @@ namespace gpg
    */
   void SaveVectorSPerArmyReconInfo(
     gpg::WriteArchive* const archive,
-    std::intptr_t objectPtr,
+    void* objectPtr,
     int /*version*/,
     gpg::RRef* const ownerRef
   )
@@ -594,11 +619,13 @@ namespace gpg
       return;
     }
 
-    const auto* const storage =
-      reinterpret_cast<const msvc8::vector<moho::SPerArmyReconInfo>*>(objectPtr);
+    const auto* const storage = static_cast<const fa::vector<moho::SPerArmyReconInfo>*>(objectPtr);
     SaveContiguousArchiveVectorPayload(
-      archive, storage->data(), static_cast<unsigned int>(storage->size()),
-      CachedCompatRType<moho::SPerArmyReconInfo>(), ownerRef ? *ownerRef : gpg::RRef{}
+      archive,
+      storage->data(),
+      static_cast<unsigned int>(storage->size()),
+      CachedCompatRType<moho::SPerArmyReconInfo>(),
+      ownerRef ? *ownerRef : gpg::RRef{}
     );
   }
 
@@ -626,18 +653,17 @@ namespace gpg
    */
   void LoadVectorSPerArmyReconInfo(
     gpg::ReadArchive* const archive,
-    std::intptr_t objectPtr,
+    void* objectPtr,
     int /*version*/,
     gpg::RRef* /*ownerRef*/
   )
   {
-    auto* const outVector =
-      reinterpret_cast<msvc8::vector<moho::SPerArmyReconInfo>*>(objectPtr);
+    auto* const outVector = static_cast<fa::vector<moho::SPerArmyReconInfo>*>(objectPtr);
 
     unsigned int count = 0;
     archive->ReadUInt(&count);
 
-    msvc8::vector<moho::SPerArmyReconInfo> loaded;
+    fa::vector<moho::SPerArmyReconInfo> loaded;
     loaded.reserve(count);
 
     if (!moho::SPerArmyReconInfo::sType) {
@@ -658,19 +684,26 @@ namespace gpg
 
 namespace
 {
-  constexpr const char* kSerializationCppPath = "c:\\work\\rts\\main\\code\\src\\libs\\gpgcore\\reflection\\serialization.cpp";
+  constexpr const char* kSerializationCppPath =
+    "c:\\work\\rts\\main\\code\\src\\libs\\gpgcore\\reflection\\serialization.cpp";
 
-  [[noreturn]] void ThrowSerializationError(const char* const message)
+  [[noreturn]] void ThrowSerializationError(
+    const char* const message
+  )
   {
     throw SerializationError(message ? message : "");
   }
 
-  [[noreturn]] void ThrowSerializationError(const msvc8::string& message)
+  [[noreturn]] void ThrowSerializationError(
+    const fa::string& message
+  )
   {
     throw SerializationError(message.c_str());
   }
 
-  const char* SafeTypeName(const RType* const type)
+  const char* SafeTypeName(
+    const RType* const type
+  )
   {
     return type ? type->GetName() : "null";
   }
@@ -685,7 +718,10 @@ namespace
  * reflected object reference, and clears the member-load flag when bit 0 in
  * `flags` is set.
  */
-void gpg::SerConstructResult::SetOwned(const RRef& ref, const unsigned int flags)
+void gpg::SerConstructResult::SetOwned(
+  const RRef& ref,
+  const unsigned int flags
+)
 {
   if (mInfo.state != TrackedPointerState::Reserved) {
     gpg::HandleAssertFailure("mInfo.mState == RESERVED", 196, kSerializationCppPath);
@@ -707,7 +743,10 @@ void gpg::SerConstructResult::SetOwned(const RRef& ref, const unsigned int flags
  * the reflected object reference, and clears the member-load flag when bit 0
  * in `flags` is set.
  */
-void gpg::SerConstructResult::SetUnowned(const RRef& ref, const unsigned int flags)
+void gpg::SerConstructResult::SetUnowned(
+  const RRef& ref,
+  const unsigned int flags
+)
 {
   if (mInfo.state != TrackedPointerState::Reserved) {
     gpg::HandleAssertFailure("mInfo.mState == RESERVED", 204, kSerializationCppPath);
@@ -730,7 +769,10 @@ void gpg::SerConstructResult::SetUnowned(const RRef& ref, const unsigned int fla
  * the reflected object reference lane directly, and clears the member-load
  * flag when bit 0 in `flags` is set.
  */
-void gpg::SerConstructResult::SetShared(const RRef& ref, const unsigned int flags)
+void gpg::SerConstructResult::SetShared(
+  const RRef& ref,
+  const unsigned int flags
+)
 {
   if (mInfo.state != TrackedPointerState::Reserved) {
     gpg::HandleAssertFailure("mInfo.mState == RESERVED", 212, kSerializationCppPath);
@@ -753,7 +795,7 @@ void gpg::SerConstructResult::SetShared(const RRef& ref, const unsigned int flag
  * member-load flag when bit 0 in `flags` is set.
  */
 void gpg::SerConstructResult::SetShared(
-  const boost::shared_ptr<void>& object,
+  const std::shared_ptr<void>& object,
   RType* const type,
   const unsigned int flags
 )
@@ -779,7 +821,9 @@ void gpg::SerConstructResult::SetShared(
  * Transitions one save-construct result lane from `RESERVED` to `OWNED`
  * and clears the write-members flag when bit 0 in `flags` is set.
  */
-void gpg::SerSaveConstructArgsResult::SetOwned(const unsigned int flags)
+void gpg::SerSaveConstructArgsResult::SetOwned(
+  const unsigned int flags
+)
 {
   if (mOwnership != TrackedPointerState::Reserved) {
     gpg::HandleAssertFailure("mOwnership == RESERVED", 402, kSerializationCppPath);
@@ -798,7 +842,9 @@ void gpg::SerSaveConstructArgsResult::SetOwned(const unsigned int flags)
  * Transitions one save-construct result lane from `RESERVED` to `UNOWNED`
  * and clears the write-members flag when bit 0 in `flags` is set.
  */
-void gpg::SerSaveConstructArgsResult::SetUnowned(const unsigned int flags)
+void gpg::SerSaveConstructArgsResult::SetUnowned(
+  const unsigned int flags
+)
 {
   if (mOwnership != TrackedPointerState::Reserved) {
     gpg::HandleAssertFailure("mOwnership == RESERVED", 409, kSerializationCppPath);
@@ -817,7 +863,9 @@ void gpg::SerSaveConstructArgsResult::SetUnowned(const unsigned int flags)
  * Transitions one save-construct result lane from `RESERVED` to `SHARED`
  * and clears the write-members flag when bit 0 in `flags` is set.
  */
-void gpg::SerSaveConstructArgsResult::SetShared(const unsigned int flags)
+void gpg::SerSaveConstructArgsResult::SetShared(
+  const unsigned int flags
+)
 {
   if (mOwnership != TrackedPointerState::Reserved) {
     gpg::HandleAssertFailure("mOwnership == RESERVED", 416, kSerializationCppPath);
@@ -837,7 +885,10 @@ void gpg::SerSaveConstructArgsResult::SetShared(const unsigned int flags)
  * Writes tracked-pointer token payload and serializes newly seen pointees.
  */
 void gpg::WriteRawPointer(
-  WriteArchive* const archive, const RRef& objectRef, const TrackedPointerState state, const RRef& ownerRef
+  WriteArchive* const archive,
+  const RRef& objectRef,
+  const TrackedPointerState state,
+  const RRef& ownerRef
 )
 {
   if (!archive) {
@@ -898,11 +949,7 @@ void gpg::WriteRawPointer(
 
     if (objectType->serSaveConstructArgsFunc_) {
       objectType->serSaveConstructArgsFunc_(
-        archive,
-        objectRef.mObj,
-        objectType->version_,
-        const_cast<RRef*>(&ownerRef),
-        &saveResult
+        archive, objectRef.mObj, objectType->version_, const_cast<RRef*>(&ownerRef), &saveResult
       );
       if (saveResult.mOwnership == TrackedPointerState::Reserved) {
         gpg::HandleAssertFailure("saveConstructArgsResult.mOwnership != RESERVED", 319, kSerializationCppPath);
@@ -924,9 +971,7 @@ void gpg::WriteRawPointer(
         ));
       }
 
-      objectType->serSaveFunc_(
-        archive, reinterpret_cast<std::intptr_t>(objectRef.mObj), objectType->version_, const_cast<RRef*>(&ownerRef)
-      );
+      objectType->serSaveFunc_(archive, objectRef.mObj, objectType->version_, const_cast<RRef*>(&ownerRef));
     }
 
     archive->WriteMarker(static_cast<int>(ArchiveToken::ObjectTerminator));
@@ -962,7 +1007,10 @@ void gpg::WriteRawPointer(
  * What it does:
  * Reads pointer token payload and resolves a tracked pointer reference.
  */
-TrackedPointerInfo& gpg::ReadRawPointer(ReadArchive* const archive, const RRef& ownerRef)
+TrackedPointerInfo& gpg::ReadRawPointer(
+  ReadArchive* const archive,
+  const RRef& ownerRef
+)
 {
   if (!archive) {
     ThrowSerializationError("Error detected in archive: null ReadArchive.");
@@ -1020,12 +1068,7 @@ TrackedPointerInfo& gpg::ReadRawPointer(ReadArchive* const archive, const RRef& 
   SerConstructResult constructResult{};
 
   if (handle.type->serConstructFunc_) {
-    handle.type->serConstructFunc_(
-      archive,
-      handle.version,
-      const_cast<RRef*>(&ownerRef),
-      &constructResult
-    );
+    handle.type->serConstructFunc_(archive, handle.version, const_cast<RRef*>(&ownerRef), &constructResult);
     if (constructResult.mInfo.state == TrackedPointerState::Reserved) {
       gpg::HandleAssertFailure("constructResult.mInfo.mState != RESERVED", 156, kSerializationCppPath);
     }
@@ -1057,18 +1100,12 @@ TrackedPointerInfo& gpg::ReadRawPointer(ReadArchive* const archive, const RRef& 
       ));
     }
 
-    handle.type->serLoadFunc_(
-      archive,
-      reinterpret_cast<std::intptr_t>(constructResult.mInfo.object),
-      handle.version,
-      const_cast<RRef*>(&ownerRef)
-    );
+    handle.type->serLoadFunc_(archive, constructResult.mInfo.object, handle.version, const_cast<RRef*>(&ownerRef));
   }
 
   if (archive->NextMarker() != static_cast<int>(ArchiveToken::ObjectTerminator)) {
     ThrowSerializationError(STR_Printf(
-      "Error detected in archive: data for object of type \"%s\" did not terminate properly.",
-      SafeTypeName(handle.type)
+      "Error detected in archive: data for object of type \"%s\" did not terminate properly.", SafeTypeName(handle.type)
     ));
   }
 
@@ -1077,317 +1114,9 @@ TrackedPointerInfo& gpg::ReadRawPointer(ReadArchive* const archive, const RRef& 
 
 namespace
 {
-  /**
-   * What it does:
-   * Writes `value` as a tracked pointer in `trackedState`, owned by nothing:
-   * `WriteRawPointer` of `MakeRRef<TObject>(value)`.
-   */
-  [[nodiscard]] gpg::RType* ResolveCThrustManipulatorArchiveAdapterType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (sType == nullptr) {
-      sType = gpg::REF_FindTypeNamed("Moho::CThrustManipulator");
-      if (sType == nullptr) {
-        sType = gpg::REF_FindTypeNamed("CThrustManipulator");
-      }
-    }
-    return sType;
-  }
-
-  /**
-   * Address: 0x0050AD20 (FUN_0050AD20)
-   *
-   * What it does:
-   * Forwards one integer lane to `WriteArchive::WriteUByte`.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteUByteArchiveLaneValueFromInt(
-    gpg::WriteArchive* const archive,
-    const int value
-  )
-  {
-    archive->WriteUByte(static_cast<unsigned __int8>(value));
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050AD40 (FUN_0050AD40)
-   *
-   * What it does:
-   * Dereferences one byte lane and forwards it to `WriteArchive::WriteUByte`.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteUByteArchiveLaneValueFromPointer(
-    gpg::WriteArchive* const archive,
-    const unsigned __int8* const value
-  )
-  {
-    archive->WriteUByte(*value);
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050AD60 (FUN_0050AD60)
-   *
-   * What it does:
-   * Forwards one integer lane to `WriteArchive::WriteShort`.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteShortArchiveLaneValueFromInt(
-    gpg::WriteArchive* const archive,
-    const int value
-  )
-  {
-    archive->WriteShort(static_cast<short>(value));
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050AD70 (FUN_0050AD70)
-   *
-   * What it does:
-   * Dereferences one 16-bit lane and forwards it to `WriteArchive::WriteShort`.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteShortArchiveLaneValueFromPointer(
-    gpg::WriteArchive* const archive,
-    const unsigned short* const value
-  )
-  {
-    archive->WriteShort(static_cast<short>(*value));
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050CD30 (FUN_0050CD30)
-   *
-   * What it does:
-   * Writes two consecutive 32-bit lanes through `WriteArchive::WriteInt`.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteInt32PairArchiveLanes(
-    const std::int32_t* const pairValue,
-    gpg::WriteArchive* const archive
-  )
-  {
-    archive->WriteInt(pairValue[0]);
-    archive->WriteInt(pairValue[1]);
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050CD50 (FUN_0050CD50)
-   *
-   * What it does:
-   * Writes two consecutive float lanes through `WriteArchive::WriteFloat`.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteFloatPairArchiveLanes(
-    const float* const pairValue,
-    gpg::WriteArchive* const archive
-  )
-  {
-    archive->WriteFloat(pairValue[0]);
-    archive->WriteFloat(pairValue[1]);
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050CD70 (FUN_0050CD70)
-   *
-   * What it does:
-   * Writes two consecutive 16-bit signed lanes through `WriteArchive::WriteShort`.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteShortPairArchiveLanesFromSignedPointer(
-    const std::int16_t* const pairValue,
-    gpg::WriteArchive* const archive
-  )
-  {
-    archive->WriteShort(pairValue[0]);
-    archive->WriteShort(pairValue[1]);
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050CD90 (FUN_0050CD90)
-   *
-   * What it does:
-   * Writes two consecutive 16-bit unsigned lanes through `WriteArchive::WriteShort`.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteShortPairArchiveLanesFromUnsignedPointer(
-    const unsigned short* const pairValue,
-    gpg::WriteArchive* const archive
-  )
-  {
-    archive->WriteShort(static_cast<short>(pairValue[0]));
-    archive->WriteShort(static_cast<short>(pairValue[1]));
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050D170 (FUN_0050D170)
-   *
-   * What it does:
-   * Writes one signed 16-bit lane and returns the archive lane.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteShortArchiveLaneAndReturnArchive(
-    const std::int16_t value,
-    gpg::WriteArchive* const archive
-  )
-  {
-    archive->WriteShort(value);
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050D180 (FUN_0050D180)
-   *
-   * What it does:
-   * Writes one referenced 16-bit lane and returns the archive lane.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteShortArchiveLaneFromPointerAndReturnArchive(
-    const unsigned short* const value,
-    gpg::WriteArchive* const archive
-  )
-  {
-    archive->WriteShort(static_cast<short>(*value));
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050D290 (FUN_0050D290)
-   *
-   * What it does:
-   * Writes one byte lane through `WriteArchive::WriteUByte` and returns the
-   * archive object for chained callsites.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteUByteArchiveLaneAndReturnArchive(
-    gpg::WriteArchive* const archive,
-    const unsigned __int8 value,
-    const int /*unusedStackLane*/
-  )
-  {
-    archive->WriteUByte(value);
-    return archive;
-  }
-
-  /**
-   * Address: 0x0050D2B0 (FUN_0050D2B0)
-   *
-   * What it does:
-   * Writes one referenced byte lane and returns the archive object for
-   * chained callsites.
-   */
-  [[maybe_unused]] gpg::WriteArchive* WriteUByteArchiveLaneFromPointerAndReturnArchive(
-    gpg::WriteArchive* const archive,
-    const unsigned __int8* const value,
-    const int /*unusedStackLane*/
-  )
-  {
-    archive->WriteUByte(*value);
-    return archive;
-  }
 } // namespace
 namespace
 {
-  /**
-   * Address: 0x0064B4F0 (FUN_0064B4F0)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `CThrustManipulator` and returns the
-   * typed object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::CThrustManipulator* func_CastCThrustManipulator(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, ResolveCThrustManipulatorArchiveAdapterType());
-    return static_cast<moho::CThrustManipulator*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x00652940 (FUN_00652940)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `RDebugOverlay` and returns the typed
-   * object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::RDebugOverlay* func_CastRDebugOverlay(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::RDebugOverlay>());
-    return static_cast<moho::RDebugOverlay*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x006608F0 (FUN_006608F0)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `REmitterBlueprint` and returns the
-   * typed object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::REmitterBlueprint* func_CastREmitterBlueprint(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::REmitterBlueprint>());
-    return static_cast<moho::REmitterBlueprint*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x00672B00 (FUN_00672B00)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `RTrailBlueprint` and returns the typed
-   * object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::RTrailBlueprint* func_CastRTrailBlueprint(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::RTrailBlueprint>());
-    return static_cast<moho::RTrailBlueprint*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x00675F80 (FUN_00675F80)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `CollisionBeamEntity` and returns the
-   * typed object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::CollisionBeamEntity* func_CastCollisionBeamEntity(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::CollisionBeamEntity>());
-    return static_cast<moho::CollisionBeamEntity*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x00675FC0 (FUN_00675FC0)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `ManyToOneListener_ECollisionBeamEvent`
-   * and returns the typed object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::ManyToOneListener_ECollisionBeamEvent*
-  func_CastManyToOneListener_ECollisionBeamEvent(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::ManyToOneListener_ECollisionBeamEvent>());
-    return static_cast<moho::ManyToOneListener_ECollisionBeamEvent*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x0067F0A0 (FUN_0067F0A0)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `RProjectileBlueprint` and returns the
-   * typed object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::RProjectileBlueprint* func_CastRProjectileBlueprint(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::RProjectileBlueprint>());
-    return static_cast<moho::RProjectileBlueprint*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x006898E0 (FUN_006898E0)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `EntitySetBase` and returns the typed
-   * object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::EntitySetBase* func_CastEntitySetBase(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::EntitySetBase>());
-    return static_cast<moho::EntitySetBase*>(upcast.mObj);
-  }
 } // namespace
 namespace
 {
@@ -1449,99 +1178,6 @@ namespace
 namespace
 {
 
-  [[nodiscard]] gpg::RType* ResolveShieldArchiveAdapterType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (sType == nullptr) {
-      sType = gpg::REF_FindTypeNamed("Moho::Shield");
-      if (sType == nullptr) {
-        sType = gpg::LookupRType(typeid(moho::Shield));
-      }
-    }
-    return sType;
-  }
-
-  [[nodiscard]] gpg::RType* ResolveListenerNavPathArchiveAdapterType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (sType == nullptr) {
-      sType = gpg::REF_FindTypeNamed("Moho::Listener<Moho::NavPath const &>");
-      if (sType == nullptr) {
-        sType = gpg::REF_FindTypeNamed("Listener<Moho::NavPath const &>");
-      }
-      if (sType == nullptr) {
-        sType = gpg::REF_FindTypeNamed("Moho::Listener_NavPath");
-      }
-      if (sType == nullptr) {
-        sType = gpg::LookupRType(typeid(moho::Listener<const moho::SNavPath&>));
-      }
-    }
-    return sType;
-  }
-
-  [[nodiscard]] gpg::RType* ResolveIPathTravelerArchiveAdapterType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (sType == nullptr) {
-      sType = gpg::REF_FindTypeNamed("Moho::IPathTraveler");
-      if (sType == nullptr) {
-        sType = gpg::REF_FindTypeNamed("IPathTraveler");
-      }
-      if (sType == nullptr) {
-        sType = gpg::LookupRType(typeid(moho::IPathTraveler));
-      }
-    }
-    return sType;
-  }
-
-  /**
-   * Address: 0x0073AD60 (FUN_0073AD60)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `CDamage` and returns the typed object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::CDamage* func_CastCDamage(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::CDamage>());
-    return static_cast<moho::CDamage*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x00755AC0 (FUN_00755AC0)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `Shield` and returns the typed object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::Shield* func_CastShield(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, ResolveShieldArchiveAdapterType());
-    return static_cast<moho::Shield*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x00764420 (FUN_00764420)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `Listener<NavPath const&>` and returns the typed object pointer when the source is
-   * compatible.
-   */
-  [[nodiscard]] moho::Listener<const moho::SNavPath&>* func_CastListener_NavPath(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, ResolveListenerNavPathArchiveAdapterType());
-    return static_cast<moho::Listener<const moho::SNavPath&>*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x0076AE30 (FUN_0076AE30)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `IPathTraveler` and returns the typed object pointer when the source is compatible.
-   */
-  [[nodiscard]] moho::IPathTraveler* func_CastIPathTraveler(const gpg::RRef& source)
-  {
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, ResolveIPathTravelerArchiveAdapterType());
-    return static_cast<moho::IPathTraveler*>(upcast.mObj);
-  }
 } // namespace
 
 namespace gpg
@@ -1566,12 +1202,18 @@ namespace gpg
    * symbol resolution now reaches the real body.
    */
   void SaveUnownedRawPointerFromManyToOneListener_EProjectileImpactEventIntrusiveHeadLane1(
-    gpg::WriteArchive* archive, std::uint32_t* intrusiveListHeadSlot
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef*
   )
   {
-    ::SaveUnownedRawPointerFromManyToOneListener_EProjectileImpactEventIntrusiveHeadLane1_Impl(
-      archive, reinterpret_cast<const moho::ManyToOneBroadcaster<moho::EProjectileImpactEvent>*>(intrusiveListHeadSlot)
-    );
+    const auto* const broadcaster =
+      static_cast<const moho::ManyToOneBroadcaster<moho::EProjectileImpactEvent>*>(objectPtr);
+    // The object this `serSaveFunc_` receives is the reflected
+    // `ManyToOneBroadcaster<EProjectileImpactEvent>` itself (its RType's `size_` is the 8-byte
+    // broadcaster), not a raw list-head word.
+    ::SaveUnownedRawPointerFromManyToOneListener_EProjectileImpactEventIntrusiveHeadLane1_Impl(archive, broadcaster);
   }
 
   /**
@@ -1591,12 +1233,18 @@ namespace gpg
    * immediately above.
    */
   void SaveUnownedRawPointerFromManyToOneListener_ECollisionBeamEventIntrusiveHeadLane1(
-    gpg::WriteArchive* archive, std::uint32_t* intrusiveListHeadSlot
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef*
   )
   {
-    ::SaveUnownedRawPointerFromManyToOneListener_ECollisionBeamEventIntrusiveHeadLane1_Impl(
-      archive, reinterpret_cast<const moho::ManyToOneBroadcaster<moho::ECollisionBeamEvent>*>(intrusiveListHeadSlot)
-    );
+    const auto* const broadcaster =
+      static_cast<const moho::ManyToOneBroadcaster<moho::ECollisionBeamEvent>*>(objectPtr);
+    // The object this `serSaveFunc_` receives is the reflected
+    // `ManyToOneBroadcaster<ECollisionBeamEvent>` itself (its RType's `size_` is the 8-byte
+    // broadcaster), not a raw list-head word.
+    ::SaveUnownedRawPointerFromManyToOneListener_ECollisionBeamEventIntrusiveHeadLane1_Impl(archive, broadcaster);
   }
 } // namespace gpg
 
@@ -1618,12 +1266,14 @@ namespace gpg
  * polymorphic virtual call (its calling convention has no implicit
  * `this`).
  */
-int LuaSerializeFromString(lua_State* const L)
+int LuaSerializeFromString(
+  lua_State* const L
+)
 {
   std::size_t length = 0;
   const char* const data = luaL_checklstring(L, 1, &length);
 
-  const boost::shared_ptr<std::istream> stream(
+  const std::shared_ptr<std::istream> stream(
     new std::stringstream(std::string(data, length), std::ios_base::in | std::ios_base::out)
   );
 
@@ -1679,7 +1329,9 @@ int LuaSerializeFromString(lua_State* const L)
  * `luaopen_serialize` (0x00923690) hands to `luaL_openlib` - a plain C
  * callback, not a virtual, so there is no implicit `this`.
  */
-int LuaSerializeToString(lua_State* const L)
+int LuaSerializeToString(
+  lua_State* const L
+)
 {
   lua_setgcthreshold(L, 0);
 
@@ -1690,7 +1342,7 @@ int LuaSerializeToString(lua_State* const L)
   // control block owns the whole stringstream, so `buffer` stays valid for
   // the str() read below.
   std::stringstream* const buffer = new std::stringstream(std::ios_base::in | std::ios_base::out);
-  const boost::shared_ptr<std::ostream> stream(buffer);
+  const std::shared_ptr<std::ostream> stream(buffer);
 
   gpg::WriteArchive* const archive = gpg::CreateTextWriteArchive(stream);
 
@@ -1739,7 +1391,10 @@ namespace moho
    * What it does:
    * Reads the cell through its reflected type, then the weight.
    */
-  void SerLoadMembers(gpg::ReadArchive* const archive, SPathNeighbor& neighbor)
+  void SerLoadMembers(
+    gpg::ReadArchive* const archive,
+    SPathNeighbor& neighbor
+  )
   {
     archive->Read(gpg::RTypeOf<HPathCell>(), &neighbor.first, gpg::RRef{});
     archive->ReadFloat(&neighbor.second);
@@ -1751,7 +1406,10 @@ namespace moho
    * What it does:
    * Writes the cell through its reflected type, then the weight.
    */
-  void SerSaveMembers(gpg::WriteArchive* const archive, const SPathNeighbor& neighbor)
+  void SerSaveMembers(
+    gpg::WriteArchive* const archive,
+    const SPathNeighbor& neighbor
+  )
   {
     archive->Write(gpg::RTypeOf<HPathCell>(), &neighbor.first, gpg::RRef{});
     archive->WriteFloat(neighbor.second);

@@ -27,10 +27,10 @@ namespace
   // at node+0x24 (0x007F2FA0 frees exactly those), the extractor pointer sits
   // at node+0x28 (0x007ED9A0 reads it and runs the scalar deleting destructor
   // through it), and the colour/nil pair follows at +0x2C/+0x2D. That is
-  // `pair<const msvc8::string, RangeExtractor*>` -- a raw pointer, so the
+  // `pair<const fa::string, RangeExtractor*>` -- a raw pointer, so the
   // `unique_ptr` this file used to hold was not a container substitution
   // forced by the value type, it was an invented ownership model.
-  using BlueprintExtractorRegistry = msvc8::map<msvc8::string, moho::RangeExtractor*>;
+  using BlueprintExtractorRegistry = fa::map<fa::string, moho::RangeExtractor*>;
 
   [[nodiscard]] BlueprintExtractorRegistry& GetBlueprintExtractorRegistry()
   {
@@ -50,17 +50,21 @@ namespace
       return;
     }
 
-    registry[msvc8::string(blueprintRangeName)] = extractor;
+    registry[fa::string(blueprintRangeName)] = extractor;
   }
 
-  [[nodiscard]] moho::RangeExtractor* CreateWeaponExtractor(const moho::UnitWeaponRangeCategory rangeCategory)
+  [[nodiscard]] moho::RangeExtractor* CreateWeaponExtractor(
+    const moho::UnitWeaponRangeCategory rangeCategory
+  )
   {
     auto* const extractor = new moho::WeaponExtractor();
     extractor->mRangeCategory = static_cast<std::int32_t>(rangeCategory);
     return extractor;
   }
 
-  void PopulateBlueprintExtractors(BlueprintExtractorRegistry& registry)
+  void PopulateBlueprintExtractors(
+    BlueprintExtractorRegistry& registry
+  )
   {
     RegisterExtractor(registry, "AllMilitary", new moho::CombinedMilitaryExtractor());
     RegisterExtractor(registry, "DirectFire", CreateWeaponExtractor(moho::UWRC_DirectFire));
@@ -74,11 +78,6 @@ namespace
     RegisterExtractor(registry, "Sonar", new moho::SonarExtractor());
     RegisterExtractor(registry, "Omni", new moho::OmniExtractor());
     RegisterExtractor(registry, "CounterIntel", new moho::CounterIntelExtractor());
-  }
-
-  [[nodiscard]] BlueprintExtractorRegistry* GetBlueprintExtractorRegistryPointer() noexcept
-  {
-    return &GetBlueprintExtractorRegistry();
   }
 
   /**
@@ -123,54 +122,7 @@ namespace
    * stand-ins these were written over are gone with them (RULE ONE):
    * a vptr fixup has no source line to model an object for.
    */
-  /**
-   * Address: 0x007F1CB0 (FUN_007F1CB0)
-   *
-   * What it does:
-   * Returns the process-global blueprint extractor registry pointer.
-   */
-  [[maybe_unused]] BlueprintExtractorRegistry* GetBlueprintExtractorRegistryPointerLaneA(const int /*unused*/) noexcept
-  {
-    return GetBlueprintExtractorRegistryPointer();
-  }
-
-  /**
-   * Address: 0x007F2CA0 (FUN_007F2CA0)
-   *
-   * What it does:
-   * Secondary lane returning the process-global blueprint extractor registry
-   * pointer.
-   */
-  [[maybe_unused]] BlueprintExtractorRegistry* GetBlueprintExtractorRegistryPointerLaneB(const int /*unused*/) noexcept
-  {
-    return GetBlueprintExtractorRegistryPointer();
-  }
-
-  /**
-   * Address: 0x007F3040 (FUN_007F3040)
-   *
-   * What it does:
-   * Third lane returning the process-global blueprint extractor registry
-   * pointer.
-   */
-  [[maybe_unused]] BlueprintExtractorRegistry* GetBlueprintExtractorRegistryPointerLaneC(const int /*unused*/) noexcept
-  {
-    return GetBlueprintExtractorRegistryPointer();
-  }
-
-  /**
-   * Address: 0x007F32C0 (FUN_007F32C0)
-   *
-   * What it does:
-   * Fourth lane returning the process-global blueprint extractor registry
-   * pointer.
-   */
-  [[maybe_unused]] BlueprintExtractorRegistry* GetBlueprintExtractorRegistryPointerLaneD(const int /*unused*/) noexcept
-  {
-    return GetBlueprintExtractorRegistryPointer();
-  }
-
-}
+} // namespace
 
 namespace moho
 {
@@ -179,7 +131,10 @@ namespace moho
    */
   RangeExtractor::~RangeExtractor() = default;
 
-  float RangeExtractor::ResolvePositiveRadius(const float preferredRadius, const float fallbackRadius) noexcept
+  float RangeExtractor::ResolvePositiveRadius(
+    const float preferredRadius,
+    const float fallbackRadius
+  ) noexcept
   {
     return preferredRadius > 0.0f ? preferredRadius : fallbackRadius;
   }
@@ -222,7 +177,10 @@ namespace moho
     return true;
   }
 
-  bool RangeExtractor::TryGetAssistOverlayRadius(const UserEntity* const userEntity, float* const outRadius) noexcept
+  bool RangeExtractor::TryGetAssistOverlayRadius(
+    const UserEntity* const userEntity,
+    float* const outRadius
+  ) noexcept
   {
     if (!userEntity || !outRadius) {
       return false;
@@ -241,7 +199,7 @@ namespace moho
     // `CombinedMilitaryExtractor::Extract` (0x007EC3E1..0x007EC419) builds the
     // literal "OVERLAYMISC" and asks the entity, not the blueprint, whether it
     // is in that category; only then does it read the radius.
-    if (!userEntity->IsInCategory(msvc8::string("OVERLAYMISC"))) {
+    if (!userEntity->IsInCategory(fa::string("OVERLAYMISC"))) {
       return false;
     }
 
@@ -289,11 +247,11 @@ namespace moho
    * all known extractor instances by blueprint key.
    *
    * Container substitution note: the real binary's tree-erase/clear core
-   * for `sBlueprintExtractors` (FUN_007F1990, a `msvc8::map`-shaped
+   * for `sBlueprintExtractors` (FUN_007F1990, a `fa::map`-shaped
    * `erase(first,last)`/`clear()` walk) is deliberately NOT cited on
    * `registry.clear()` above. `BlueprintExtractorRegistry` holds
    * `std::unique_ptr<moho::RangeExtractor>` values -- a move-only owning
-   * smart pointer this project's binary-layout-focused `msvc8::map` has no
+   * smart pointer this project's binary-layout-focused `fa::map` has no
    * way to model or store -- so the real `std::map` here is an intentional
    * substitution, not a fidelity gap to migrate away.
    */
@@ -306,39 +264,17 @@ namespace moho
   }
 
   /**
-   * Address: 0x007ED9A0 (FUN_007ED9A0, Moho::sBlueprintExtractors::~sBlueprintExtractors)
-   *
-   * What it does:
-   * Destroys the global blueprint range-extractor registry and releases
-   * all registered extractor instances.
-   */
-  void ShutdownBlueprintExtractors()
-  {
-    if (!gBlueprintExtractorsInitialized) {
-      return;
-    }
-
-    BlueprintExtractorRegistry& registry = GetBlueprintExtractorRegistry();
-    // The shipped destructor walks the tree, runs each extractor's scalar
-    // deleting destructor through the pointer at node+0x28, and only then
-    // erases the whole range.
-    for (const auto& entry : registry) {
-      delete entry.second;
-    }
-    registry.clear();
-    gBlueprintExtractorsInitialized = false;
-  }
-
-  /**
    * Address: 0x007EDA40 (FUN_007EDA40)
    *
-   * msvc8::string const &
+   * fa::string const &
    *
    * What it does:
    * Looks up a registered extractor by blueprint range key and returns
    * the associated instance, or `nullptr` when no mapping exists.
    */
-  RangeExtractor* GetRangeExtractor(const msvc8::string& extractorName)
+  RangeExtractor* GetRangeExtractor(
+    const fa::string& extractorName
+  )
   {
     if (!gBlueprintExtractorsInitialized) {
       InitializeBlueprintExtractors();

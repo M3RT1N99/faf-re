@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../gpg/core/utils/BoostUtils.h"
+#include "gpg/core/utils/NonCopyable.h"
 #include "ISessionListener.h"
 #include "SSelectionEvent.h"
 #include "moho/misc/Listener.h"
@@ -53,9 +53,7 @@ namespace moho
    * behaviorally inert; the magic-static + register-after modernization
    * already accepted for `SelectionListener` applies here unchanged.
    */
-  class IdleUnitSelector
-    : public ISessionListener
-    , public Listener<SSelectionEvent>
+  class IdleUnitSelector : public ISessionListener, public Listener<SSelectionEvent>
   {
     // Primary vftable (ISessionListener, 2 entries)
   public:

@@ -1,7 +1,7 @@
 // Engine addition (Android port): platform/posix/Backtrace.h on the unwinder's
 // _Unwind_Backtrace, for every POSIX libc (glibc, bionic before API 33, musl).
 
-#if !defined(_WIN32)
+#if !FAFRE_PLATFORM_WINDOWS
 
 #include "platform/posix/Backtrace.h"
 
@@ -22,7 +22,10 @@ namespace
     int skip;
   };
 
-  _Unwind_Reason_Code CollectFrame(_Unwind_Context* const context, void* const raw)
+  _Unwind_Reason_Code CollectFrame(
+    _Unwind_Context* const context,
+    void* const raw
+  )
   {
     auto* const state = static_cast<BacktraceState*>(raw);
     const std::uintptr_t ip = _Unwind_GetIP(context);
@@ -40,7 +43,11 @@ namespace
     return _URC_NO_REASON;
   }
 
-  void WriteAll(const int fd, const char* const text, const int length)
+  void WriteAll(
+    const int fd,
+    const char* const text,
+    const int length
+  )
   {
     int written = 0;
     while (written < length) {
@@ -53,7 +60,10 @@ namespace
   }
 } // namespace
 
-int platform::posix::Backtrace(void** const frames, const int maxFrames) noexcept
+int platform::posix::Backtrace(
+  void** const frames,
+  const int maxFrames
+) noexcept
 {
   if (frames == nullptr || maxFrames <= 0) {
     return 0;
@@ -65,7 +75,11 @@ int platform::posix::Backtrace(void** const frames, const int maxFrames) noexcep
   return state.count;
 }
 
-void platform::posix::BacktraceSymbolsFd(void* const* const frames, const int count, const int fd) noexcept
+void platform::posix::BacktraceSymbolsFd(
+  void* const* const frames,
+  const int count,
+  const int fd
+) noexcept
 {
   if (frames == nullptr) {
     return;
@@ -76,13 +90,23 @@ void platform::posix::BacktraceSymbolsFd(void* const* const frames, const int co
     Dl_info info{};
     if (::dladdr(frames[index], &info) != 0 && info.dli_fname != nullptr) {
       if (info.dli_sname != nullptr) {
-        const auto offset = reinterpret_cast<std::uintptr_t>(frames[index]) - reinterpret_cast<std::uintptr_t>(info.dli_saddr);
-        length = std::snprintf(line, sizeof(line), "%s(%s+0x%zx)[%p]\n", info.dli_fname, info.dli_sname,
-                               static_cast<std::size_t>(offset), frames[index]);
+        const auto offset =
+          reinterpret_cast<std::uintptr_t>(frames[index]) - reinterpret_cast<std::uintptr_t>(info.dli_saddr);
+        length = std::snprintf(
+          line,
+          sizeof(line),
+          "%s(%s+0x%zx)[%p]\n",
+          info.dli_fname,
+          info.dli_sname,
+          static_cast<std::size_t>(offset),
+          frames[index]
+        );
       } else {
-        const auto offset = reinterpret_cast<std::uintptr_t>(frames[index]) - reinterpret_cast<std::uintptr_t>(info.dli_fbase);
-        length = std::snprintf(line, sizeof(line), "%s(+0x%zx)[%p]\n", info.dli_fname, static_cast<std::size_t>(offset),
-                               frames[index]);
+        const auto offset =
+          reinterpret_cast<std::uintptr_t>(frames[index]) - reinterpret_cast<std::uintptr_t>(info.dli_fbase);
+        length = std::snprintf(
+          line, sizeof(line), "%s(+0x%zx)[%p]\n", info.dli_fname, static_cast<std::size_t>(offset), frames[index]
+        );
       }
     } else {
       length = std::snprintf(line, sizeof(line), "[%p]\n", frames[index]);
@@ -93,4 +117,4 @@ void platform::posix::BacktraceSymbolsFd(void* const* const frames, const int co
   }
 }
 
-#endif // !defined(_WIN32)
+#endif // !FAFRE_PLATFORM_WINDOWS

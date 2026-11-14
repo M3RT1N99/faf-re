@@ -26,12 +26,14 @@ namespace
 
   // Advances a wait-for-ferry task state by one step, matching the binary's
   // `++this->mTaskState` increments seen in FUN_0060FCA0.
-  [[nodiscard]] moho::ETaskState NextTaskState(const moho::ETaskState state) noexcept
+  [[nodiscard]] moho::ETaskState NextTaskState(
+    const moho::ETaskState state
+  ) noexcept
   {
     return static_cast<moho::ETaskState>(static_cast<std::int32_t>(state) + 1);
   }
 
-}
+} // namespace
 
 namespace moho
 {
@@ -146,62 +148,62 @@ namespace moho
     }
 
     switch (mTaskState) {
-      case TASKSTATE_Preparing: {
-        Wm3::Vector3f targetPos = ferryUnit->GetPosition();
+    case TASKSTATE_Preparing: {
+      Wm3::Vector3f targetPos = ferryUnit->GetPosition();
 
-        CArmyImpl* const ownerArmy = mUnit->ArmyRef;
-        const bool useWholeMap = (ownerArmy != nullptr) ? ownerArmy->UseWholeMap() : false;
+      CArmyImpl* const ownerArmy = mUnit->ArmyRef;
+      const bool useWholeMap = (ownerArmy != nullptr) ? ownerArmy->UseWholeMap() : false;
 
-        gpg::Rect2f skirtRect = ferryUnit->GetSkirtRect();
-        (void)mUnit->PrepareMove(0, &targetPos, &skirtRect, useWholeMap);
+      gpg::Rect2f skirtRect = ferryUnit->GetSkirtRect();
+      (void)mUnit->PrepareMove(0, &targetPos, &skirtRect, useWholeMap);
 
-        const SCoordsVec2 reserveCenterXZ{targetPos.x, targetPos.z};
-        gpg::Rect2i reserveRect{};
-        (void)COORDS_ToGridRect(&reserveRect, reserveCenterXZ, mUnit->GetFootprint());
-        mUnit->ReserveOgridRect(reserveRect);
+      const SCoordsVec2 reserveCenterXZ{targetPos.x, targetPos.z};
+      gpg::Rect2i reserveRect{};
+      (void)COORDS_ToGridRect(&reserveRect, reserveCenterXZ, mUnit->GetFootprint());
+      mUnit->ReserveOgridRect(reserveRect);
 
-        const SOCellPos destCell = mUnit->GetFootprint().ToCellPos(targetPos);
-        NewMoveTask(SNavGoal(destCell), mDispatch, 0, nullptr, 0);
+      const SOCellPos destCell = mUnit->GetFootprint().ToCellPos(targetPos);
+      NewMoveTask(SNavGoal(destCell), mDispatch, 0, nullptr, 0);
 
-        mTaskState = NextTaskState(mTaskState);
-        return 1;
-      }
+      mTaskState = NextTaskState(mTaskState);
+      return 1;
+    }
 
-      case TASKSTATE_Waiting: {
-        mUnit->FreeOgridRect();
-        mTaskState = NextTaskState(mTaskState);
-        return 0;
-      }
+    case TASKSTATE_Waiting: {
+      mUnit->FreeOgridRect();
+      mTaskState = NextTaskState(mTaskState);
+      return 0;
+    }
 
-      case TASKSTATE_Starting: {
-        bool shouldStartTransport = false;
-        if (!mUnit->IsUnitState(UNITSTATE_Attached)) {
-          if (Unit* const assignedFerry = mUnit->GetFerryUnit(); assignedFerry != nullptr) {
-            if (assignedFerry->Entity::IsInCategory("TRANSPORTATION")) {
-              shouldStartTransport = true;
-            }
+    case TASKSTATE_Starting: {
+      bool shouldStartTransport = false;
+      if (!mUnit->IsUnitState(UNITSTATE_Attached)) {
+        if (Unit* const assignedFerry = mUnit->GetFerryUnit(); assignedFerry != nullptr) {
+          if (assignedFerry->Entity::IsInCategory("TRANSPORTATION")) {
+            shouldStartTransport = true;
           }
         }
-
-        if (!shouldStartTransport) {
-          return 10;
-        }
-
-        Unit* const assignedFerry = mUnit->GetFerryUnit();
-        NewCallTransportCommand(mDispatch, assignedFerry);
-        mTaskState = NextTaskState(mTaskState);
-        return 1;
       }
 
-      case TASKSTATE_Processing: {
-        if (mUnit->GetTransportedBy() == nullptr) {
-          return -1;
-        }
+      if (!shouldStartTransport) {
         return 10;
       }
 
-      default:
-        return 10;
+      Unit* const assignedFerry = mUnit->GetFerryUnit();
+      NewCallTransportCommand(mDispatch, assignedFerry);
+      mTaskState = NextTaskState(mTaskState);
+      return 1;
+    }
+
+    case TASKSTATE_Processing: {
+      if (mUnit->GetTransportedBy() == nullptr) {
+        return -1;
+      }
+      return 10;
+    }
+
+    default:
+      return 10;
     }
   }
 
@@ -245,18 +247,16 @@ namespace moho
    *   3. `WeakPtr<Unit> mFerryUnit` slot (by reflected type).
    *   4. `SNavGoal mMoveGoal` slot (by reflected type).
    */
-  void CUnitWaitForFerryTask::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CUnitWaitForFerryTask::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (archive == nullptr) {
       return;
     }
 
     const gpg::RRef ownerRef{};
-    archive->Write(
-      gpg::RTypeOf<moho::CCommandTask>(),
-      static_cast<const CCommandTask*>(this),
-      ownerRef
-    );
+    archive->Write(gpg::RTypeOf<moho::CCommandTask>(), static_cast<const CCommandTask*>(this), ownerRef);
 
     gpg::RRef dispatchRef{};
     (void)gpg::RRef_CCommandTask(&dispatchRef, static_cast<CCommandTask*>(mDispatch));
@@ -280,28 +280,29 @@ namespace moho
    *   3. `WeakPtr<Unit> mFerryUnit` slot (by reflected type).
    *   4. `SNavGoal mMoveGoal` slot (by reflected type).
    */
-  void CUnitWaitForFerryTask::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CUnitWaitForFerryTask::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr) {
       return;
     }
 
     const gpg::RRef ownerRef{};
-    archive->Read(
-      gpg::RTypeOf<moho::CCommandTask>(),
-      static_cast<CCommandTask*>(this),
-      ownerRef
-    );
+    archive->Read(gpg::RTypeOf<moho::CCommandTask>(), static_cast<CCommandTask*>(this), ownerRef);
 
     // Dispatch back-pointer arrives as an unowned tracked pointer. Because
     // `IAiCommandDispatchImpl` has `CCommandTask` as its first base, the
     // storage at `&mDispatch` aliases the `CCommandTask*` slot the binary
     // writes into (same address, identity conversion).
     static_assert(
-      offsetof(CUnitWaitForFerryTask, mDispatch) == 0x30,
-      "CUnitWaitForFerryTask::mDispatch offset must be 0x30"
+      offsetof(CUnitWaitForFerryTask, mDispatch) == 0x30, "CUnitWaitForFerryTask::mDispatch offset must be 0x30"
     );
-    archive->ReadPointer(reinterpret_cast<CCommandTask**>(&mDispatch), &ownerRef);
+    {
+      CCommandTask* value = nullptr;
+      archive->ReadPointer(&value, &ownerRef);
+      mDispatch = static_cast<decltype(mDispatch)>(value);
+    }
 
     archive->Read(gpg::RTypeOf<moho::WeakPtr<moho::Unit>>(), &mFerryUnit, ownerRef);
     archive->Read(gpg::RTypeOf<moho::SNavGoal>(), &mMoveGoal, ownerRef);
@@ -311,99 +312,11 @@ namespace moho
 namespace
 {
 
-  /**
-   * Address: 0x0060F990 (FUN_0060F990, Moho::CUnitWaitForFerryTaskSerializer::Deserialize)
-   * Address: 0x00610590 (FUN_00610590, COMDAT/jmp alias)
-   * Address: 0x00610630 (FUN_00610630, COMDAT/jmp alias)
-   *
-   * What it does:
-   * Serializer-load callback registered with the reflected
-   * `Moho::CUnitWaitForFerryTask` type. Forwards the reflected object
-   * pointer into `CUnitWaitForFerryTask::MemberDeserialize` (FUN_00610C60
-   * body); `version` and the owner-ref lane are unused by the member
-   * (mirrors the binary tail-jump).
-   */
-  void DeserializeCUnitWaitForFerryTaskSerializerCallback(
-    gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const task = reinterpret_cast<moho::CUnitWaitForFerryTask*>(objectPtr);
-    if (task == nullptr) {
-      return;
-    }
-    task->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x0060F9A0 (FUN_0060F9A0, Moho::CUnitWaitForFerryTaskSerializer::Serialize)
-   * Address: 0x006105A0 (FUN_006105A0, COMDAT/jmp alias)
-   * Address: 0x00610640 (FUN_00610640, COMDAT/jmp alias)
-   *
-   * What it does:
-   * Serializer-save callback registered with the reflected
-   * `Moho::CUnitWaitForFerryTask` type. Forwards the reflected object
-   * pointer into `CUnitWaitForFerryTask::MemberSerialize` (FUN_00610D30
-   * body); `version` and the owner-ref lane are unused by the member
-   * (mirrors the binary tail-jump).
-   */
-  void SerializeCUnitWaitForFerryTaskSerializerCallback(
-    gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const task = reinterpret_cast<moho::CUnitWaitForFerryTask*>(objectPtr);
-    if (task == nullptr) {
-      return;
-    }
-    task->MemberSerialize(archive);
-  }
-
 } // namespace
 
 namespace gpg
 {
-  /**
-   * Address: 0x00610800 (FUN_00610800, gpg::RRef_CUnitWaitForFerryTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitWaitForFerryTask*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitWaitForFerryTask(gpg::RRef* const outRef, moho::CUnitWaitForFerryTask* const value)
-  {
-    if (!outRef) {
-      return nullptr;
-    }
 
-    *outRef = gpg::MakeDerivedRef(value, gpg::RTypeOf<moho::CUnitWaitForFerryTask>());
-    return outRef;
-  }
-
-  /**
-   * Address: 0x006105E0 (FUN_006105E0)
-   *
-   * What it does:
-   * Wrapper lane that materializes one temporary
-   * `RRef_CUnitWaitForFerryTask` and copies object/type fields into the
-   * destination reference record.
-   */
-  gpg::RRef* AssignCUnitWaitForFerryTaskRef(gpg::RRef* const outRef, moho::CUnitWaitForFerryTask* const value)
-  {
-    if (!outRef) {
-      return nullptr;
-    }
-
-    gpg::RRef temporaryRef{};
-    (void)RRef_CUnitWaitForFerryTask(&temporaryRef, value);
-    outRef->mObj = temporaryRef.mObj;
-    outRef->mType = temporaryRef.mType;
-    return outRef;
-  }
 } // namespace gpg
 
 namespace moho

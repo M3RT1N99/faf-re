@@ -29,21 +29,6 @@ namespace moho
   gpg::RType* SFootprint::sType = nullptr;
 
   /**
-   * Address: 0x0050AEE0 (FUN_0050AEE0)
-   *
-   * What it does:
-   * Returns whether two footprint payload lanes are byte-identical across the
-   * full 0x10-byte `SFootprint` layout.
-   */
-  [[maybe_unused]] [[nodiscard]] bool AreSFootprintBytesEqual(
-    const SFootprint& lhs,
-    const SFootprint& rhs
-  ) noexcept
-  {
-    return std::memcmp(&lhs, &rhs, sizeof(SFootprint)) == 0;
-  }
-
-  /**
    * Address: 0x0050C410 (FUN_0050C410, Moho::SFootprintTypeInfo::SFootprintTypeInfo)
    *
    * What it does:
@@ -94,7 +79,9 @@ namespace moho
    * What it does:
    * Registers reflected lanes for all `SFootprint` members in binary order.
    */
-  void SFootprintTypeInfo::AddFields(gpg::RType* const typeInfo)
+  void SFootprintTypeInfo::AddFields(
+    gpg::RType* const typeInfo
+  )
   {
     GPG_ASSERT(typeInfo != nullptr);
     GPG_ASSERT(!typeInfo->initFinished_);
@@ -112,15 +99,25 @@ namespace moho
    * What it does:
    * Loads the footprint fields in the exact binary archive order.
    */
-  void SFootprint::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SFootprint::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     archive->ReadUByte(&mSizeX);
     archive->ReadUByte(&mSizeZ);
     archive->ReadFloat(&mMaxSlope);
     archive->ReadFloat(&mMinWaterDepth);
-    archive->ReadUByte(reinterpret_cast<unsigned char*>(&mOccupancyCaps));
-    archive->ReadUByte(reinterpret_cast<unsigned char*>(&mFlags));
+    {
+      unsigned char value{};
+      archive->ReadUByte(&value);
+      mOccupancyCaps = static_cast<decltype(mOccupancyCaps)>(value);
+    }
+    {
+      unsigned char value{};
+      archive->ReadUByte(&value);
+      mFlags = static_cast<decltype(mFlags)>(value);
+    }
   }
 
   /**
@@ -129,7 +126,9 @@ namespace moho
    * What it does:
    * Writes the footprint fields in the exact binary archive order.
    */
-  void SFootprint::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SFootprint::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     archive->WriteUByte(mSizeX);
@@ -157,10 +156,12 @@ namespace
 {
 } // namespace
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_SFootprintTypeInfo_d68759, moho::register_SFootprintTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_SFootprintTypeInfo_d68759,
+  moho::register_SFootprintTypeInfo
+)
 
 namespace moho
 {

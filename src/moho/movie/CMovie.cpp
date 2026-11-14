@@ -45,7 +45,7 @@ namespace moho
     constexpr std::int32_t kSofdecStatPlayEnd = 3;
     constexpr std::int32_t kMovieMaxBitsPerSecond = 6000000;
     constexpr std::int32_t kSofdecHeaderProbeBytes = 5000;
-  }
+  } // namespace
 
   /**
    * Address: 0x00873C40 (FUN_00873C40)
@@ -67,26 +67,6 @@ namespace moho
       ::mwPlyDestroy(*slot);
     }
     *slot = replacement;
-  }
-
-  /**
-   * Address: 0x00873C60 (FUN_00873C60)
-   *
-   * What it does:
-   * Destroys one Sofdec playback handle when present and clears the slot.
-   */
-  [[maybe_unused]] void DestroySofdecPlaybackHandleAndClearSlot(
-    MwsfdPlaybackStateSubobj** const slot
-  )
-  {
-    if (slot == nullptr) {
-      return;
-    }
-
-    if (*slot != nullptr) {
-      ::mwPlyDestroy(*slot);
-    }
-    *slot = nullptr;
   }
 
   /**
@@ -154,12 +134,12 @@ namespace moho
     // [0x00873E1A] free movie-name heap buffer (base +0x44).
     mMovieName.tidy(true, 0U);
     // [0x00873E3A] release Sofdec work-buffer shared owner (+0x2C).
-    mWorkbuffer.release();
+    mWorkbuffer.reset();
     // [0x00873E70] release subtitle mem-buffer shared owner (+0x1C).
     mSubtitleBuffer.Reset();
     // [0x00873EA6] release movie texture-sheet shared owner (+0x14). Already
     // null after Dispose(), so this matches the skipped binary block.
-    mTextureSheet.release();
+    mTextureSheet.reset();
 
     // [0x00873EDF-0x00873EF9] is the `Listener<SD3DDeviceEvent const&>` base's
     // `~DListItem`, after this body: a no-op when the conditional unlink
@@ -173,7 +153,9 @@ namespace moho
    * Allocates one `CMovie`, constructs it with constructor-failure cleanup,
    * writes the result into caller output storage, and returns that storage.
    */
-  CMovie** CMovie::AllocateAndConstruct(CMovie** const outMovie)
+  CMovie** CMovie::AllocateAndConstruct(
+    CMovie** const outMovie
+  )
   {
     CMovie* allocatedStorage = static_cast<CMovie*>(::operator new(sizeof(CMovie), std::nothrow));
     CMovie* constructedMovie = nullptr;
@@ -203,14 +185,12 @@ namespace moho
     ID3DDeviceResources* const resources = D3D_GetDevice()->GetResources();
     (void)resources->CreateDynamicTextureSheet2(dynamicSheet, mWidth, mHeight, 2);
 
-    const boost::shared_ptr<ID3DTextureSheet> textureSheet =
-      boost::static_pointer_cast<ID3DTextureSheet>(dynamicSheet);
-    mTextureSheet.assign_retain(boost::SharedPtrRawFromSharedBorrow(textureSheet));
+    mTextureSheet = std::static_pointer_cast<ID3DTextureSheet>(dynamicSheet);
 
     bool textureReady = false;
-    if (mTextureSheet.px != nullptr) {
+    if (mTextureSheet.get() != nullptr) {
       ID3DTextureSheet::TextureHandle textureHandle{};
-      (void)mTextureSheet.px->GetTexture(textureHandle);
+      (void)mTextureSheet->GetTexture(textureHandle);
       textureReady = (textureHandle.get() != nullptr);
     }
 
@@ -231,7 +211,9 @@ namespace moho
    * buffer, creates the player, waits out the prepare status loop, builds the
    * movie texture, allocates the subtitle buffer, and uploads the first frame.
    */
-  bool CMovie::OpenMovie(const char* const path)
+  bool CMovie::OpenMovie(
+    const char* const path
+  )
   {
     gpg::Debugf("OpenMovie %s: %i", path, snd_index);
     if (path == nullptr || *path == '\0') {
@@ -240,7 +222,7 @@ namespace moho
 
     // Resolve the movie path through the process file wait-handle set.
     FWaitHandleSet* const waitSet = FILE_GetWaitHandleSet();
-    msvc8::string resolvedPath{};
+    fa::string resolvedPath{};
     waitSet->mHandle->FindFile(&resolvedPath, path, nullptr);
     if (resolvedPath.empty()) {
       gpg::Warnf("Movie \"%s\" doesn't exist.", path);
@@ -251,7 +233,7 @@ namespace moho
 
     // Open the resolved file and read up to the 5000-byte Sofdec header. The
     // stream is closed as soon as the header is parsed (before the create work).
-    msvc8::auto_ptr<gpg::Stream> movieStream = DISK_OpenFileRead(mMovieName.c_str());
+    fa::auto_ptr<gpg::Stream> movieStream = DISK_OpenFileRead(mMovieName.c_str());
     gpg::Stream* const stream = movieStream.get();
 
     char headerBuffer[5004] = {};
@@ -296,13 +278,13 @@ namespace moho
     }
 
     void* const workBuffer = std::malloc(static_cast<std::size_t>(workSize));
-    mWorkbuffer = boost::SharedPtrRaw<void>::with_deleter(workBuffer, &std::free);
-    createParams.work = mWorkbuffer.px;
-    if (mWorkbuffer.px == nullptr) {
+    mWorkbuffer.reset(workBuffer, &std::free);
+    createParams.work = mWorkbuffer.get();
+    if (mWorkbuffer.get() == nullptr) {
       gpg::Warnf("Failed to get a valid workbuffer for %s", path);
       return false;
     }
-    std::memset(mWorkbuffer.px, 0, static_cast<std::size_t>(createParams.workSize));
+    std::memset(mWorkbuffer.get(), 0, static_cast<std::size_t>(createParams.workSize));
 
     // Create the independent player through its legacy compatibility name.
     MwsfdPlaybackStateSubobj* const created = ::mwPlyCreateSofdec(&createParams);
@@ -325,9 +307,8 @@ namespace moho
 
     // Cache decoded dimensions (height halved for interlaced composition mode).
     mWidth = createParams.maxWidth;
-    mHeight = (::mwPlyFxGetCompoMode(mPly) == kSofdecInterlacedCompoMode)
-      ? (createParams.maxHeight / 2)
-      : createParams.maxHeight;
+    mHeight = (::mwPlyFxGetCompoMode(mPly) == kSofdecInterlacedCompoMode) ? (createParams.maxHeight / 2)
+                                                                          : createParams.maxHeight;
 
     if (!CreateTexture()) {
       gpg::Warnf("CreateTexture failed for movie %s", path);
@@ -375,8 +356,7 @@ namespace moho
     }
 
     mPly = nullptr;
-    mTextureSheet.px = nullptr;
-    mTextureSheet.release();
+    mTextureSheet.reset();
     mPlaybackEnabled = 0;
   }
 
@@ -454,10 +434,7 @@ namespace moho
       MoviePlaybackInfoDebug playbackInfo{};
       (void)::mwPlyGetPlyInf(mPly, reinterpret_cast<std::int32_t*>(&playbackInfo));
       gpg::Debugf(
-        "skip_disp %i, no_supply %i, skip_dec %i",
-        playbackInfo.skipDisp,
-        playbackInfo.noSupply,
-        playbackInfo.skipDec
+        "skip_disp %i, no_supply %i, skip_dec %i", playbackInfo.skipDisp, playbackInfo.noSupply, playbackInfo.skipDec
       );
     }
   }
@@ -469,11 +446,11 @@ namespace moho
    * Copies the movie texture shared-handle pair into caller output storage and
    * increments the shared owner refcount.
    */
-  boost::shared_ptr<ID3DTextureSheet>* CMovie::GetTextureSheetHandle(
-    boost::shared_ptr<ID3DTextureSheet>* const outHandle
+  std::shared_ptr<ID3DTextureSheet>* CMovie::GetTextureSheetHandle(
+    std::shared_ptr<ID3DTextureSheet>* const outHandle
   )
   {
-    (void)boost::AssignSharedPairRetain(outHandle, &mTextureSheet);
+    *outHandle = mTextureSheet;
     return outHandle;
   }
 
@@ -569,7 +546,7 @@ namespace moho
    * Hands out the subtitle string lane itself - `lea eax, [ecx+60h]`, not a
    * copy - which UpdatePlaybackFrame refreshes on every tick.
    */
-  const msvc8::string* CMovie::GetSubtitleText()
+  const fa::string* CMovie::GetSubtitleText()
   {
     return &mSubtitleText;
   }
@@ -589,16 +566,15 @@ namespace moho
       return;
     }
 
-    ID3DTextureSheet* const textureSheet = mTextureSheet.px;
+    ID3DTextureSheet* const textureSheet = mTextureSheet.get();
     std::uint32_t outputPitch = 0;
     void* outputBits = nullptr;
     if (textureSheet->Lock(&outputPitch, &outputBits)) {
       Wm3::Vector3f textureDimensions{};
       (void)textureSheet->GetDimensions(&textureDimensions);
       const std::int32_t textureHeight = static_cast<std::int32_t>(textureDimensions.y);
-      const std::int32_t outputHeight = (::mwPlyFxGetCompoMode(mPly) == kSofdecInterlacedCompoMode)
-        ? (textureHeight / 2)
-        : textureHeight;
+      const std::int32_t outputHeight =
+        (::mwPlyFxGetCompoMode(mPly) == kSofdecInterlacedCompoMode) ? (textureHeight / 2) : textureHeight;
 
       ::mwPlyFxSetOutBufSize(mPly, static_cast<std::int32_t>(outputPitch), outputHeight);
       ::mwPlyFxCnvFrmARGB8888(mPly, &frameInfo, outputBits);
@@ -617,10 +593,12 @@ namespace moho
    * Handles one movie texture lifecycle event lane from the D3D listener path:
    * release-on-exit and rebuild-and-clear-on-init.
    */
-  void CMovie::OnEvent(const SD3DDeviceEvent& event)
+  void CMovie::OnEvent(
+    const SD3DDeviceEvent& event
+  )
   {
     if (event.mEventType == 1u) {
-      mTextureSheet.release();
+      mTextureSheet.reset();
       mFrameAdvanceBlocked = 1;
       return;
     }
@@ -630,16 +608,16 @@ namespace moho
     }
 
     mFrameAdvanceBlocked = 0;
-    if (!CreateTexture() || mTextureSheet.px == nullptr) {
+    if (!CreateTexture() || mTextureSheet.get() == nullptr) {
       return;
     }
 
     Wm3::Vector3f textureDimensions{};
-    (void)mTextureSheet.px->GetDimensions(&textureDimensions);
+    (void)mTextureSheet->GetDimensions(&textureDimensions);
 
     std::uint32_t rowPitchBytes = 0;
     void* rowBits = nullptr;
-    if (!mTextureSheet.px->Lock(&rowPitchBytes, &rowBits)) {
+    if (!mTextureSheet->Lock(&rowPitchBytes, &rowBits)) {
       return;
     }
 
@@ -651,6 +629,6 @@ namespace moho
       --remainingRows;
     }
 
-    (void)mTextureSheet.px->Unlock();
+    (void)mTextureSheet->Unlock();
   }
 } // namespace moho

@@ -2,62 +2,11 @@
 
 namespace
 {
-  /**
-   * Address: 0x00861DC0 (FUN_00861DC0)
-   *
-   * IDA signature:
-   * void* __cdecl sub_861DC0();
-   *
-   * What it does:
-   * Allocates one 3152-byte (0xC50) buffer through VC8's `_Allocate` with the
-   * count folded to the constant (0x008620F0, cited on
-   * `msvc8::detail::allocate_checked`), zeroes the first three dwords and marks
-   * a two-byte initialized / not-yet-flushed flag pair near the end
-   * (`+0xC48 = 1`, `+0xC49 = 0`).
-   *
-   * Reached directly from the CRT static-initializer table (`__xc_a`, depth
-   * 1): the constructor body of a namespace-scope static object with
-   * non-trivial construction. Its address neighbours (0x00861D70, then
-   * 0x00861EB0 in this file) place it in this translation unit; the owning
-   * global is not yet identified from the binary (its callers 0x00860DE0,
-   * 0x008614D0, 0x00861A60 and the `__xc_a` registrar 0x00BE5CF0 are
-   * unrecovered), so it stays a free function until that declaration lands.
-   */
-  [[maybe_unused]] void* AllocateAndTagStaticBootstrapBuffer3152()
-  {
-    void* const buffer = msvc8::detail::allocate_checked<std::uint8_t>(0xC50u);
-    if (buffer != nullptr) {
-      auto* const dwords = static_cast<std::uint32_t*>(buffer);
-      dwords[0] = 0u;
-      dwords[1] = 0u;
-      dwords[2] = 0u;
-
-      auto* const bytes = static_cast<std::uint8_t*>(buffer);
-      bytes[0xC48] = 1u;
-      bytes[0xC49] = 0u;
-    }
-    return buffer;
-  }
-}
+} // namespace
 
 namespace moho
 {
   gpg::RType* SSessionSaveData::sType = nullptr;
-
-  /**
-   * Address: 0x0089AEC0 (FUN_0089AEC0, boost::shared_ptr_SSessionSaveData::shared_ptr_SSessionSaveData)
-   *
-   * What it does:
-   * Constructs one `shared_ptr<SSessionSaveData>` from one raw save-data
-   * pointer lane.
-   */
-  boost::shared_ptr<SSessionSaveData>* ConstructSharedSessionSaveDataFromRaw(
-    boost::shared_ptr<SSessionSaveData>* const outSaveData,
-    SSessionSaveData* const saveData
-  )
-  {
-    return ::new (outSaveData) boost::shared_ptr<SSessionSaveData>(saveData);
-  }
 
   MouseInfo::MouseInfo()
     : mHitValid(0u)
@@ -74,15 +23,16 @@ namespace moho
    * What it does:
    * Copy-constructs cursor info and relinks weak hovered-unit ownership to this instance.
    */
-  MouseInfo::MouseInfo(const MouseInfo& other)
+  MouseInfo::MouseInfo(
+    const MouseInfo& other
+  )
     : mHitValid(other.mHitValid)
     , pad_01{0u, 0u, 0u}
     , mMouseWorldPos(other.mMouseWorldPos)
     , mUnitHover(other.mUnitHover)
     , mIsDragger(other.mIsDragger)
     , mMouseScreenPos(other.mMouseScreenPos)
-  {
-  }
+  {}
 
   /**
    * Address: 0x00893140 (FUN_00893140, ??1UICursorInfo@Moho@@QAE@@Z)
@@ -121,7 +71,9 @@ namespace moho
    * What it does:
    * Assigns cursor info and updates hovered-unit weak-owner chain links.
    */
-  MouseInfo& MouseInfo::operator=(const MouseInfo& other)
+  MouseInfo& MouseInfo::operator=(
+    const MouseInfo& other
+  )
   {
     mHitValid = other.mHitValid;
     mMouseWorldPos = other.mMouseWorldPos;
@@ -136,7 +88,9 @@ namespace moho
     return mUnitHover.GetObjectPtr();
   }
 
-  void MouseInfo::SetHoveredEntity(UserEntity* const entity) noexcept
+  void MouseInfo::SetHoveredEntity(
+    UserEntity* const entity
+  ) noexcept
   {
     mUnitHover.ResetFromObject(entity);
   }
@@ -147,7 +101,9 @@ namespace moho
    * What it does:
    * Copy-constructs command mode state, including both cursor snapshots.
    */
-  CommandModeData::CommandModeData(const CommandModeData& other)
+  CommandModeData::CommandModeData(
+    const CommandModeData& other
+  )
     : mMode(other.mMode)
     , mCommandCaps(other.mCommandCaps)
     , mBlueprint(other.mBlueprint)
@@ -181,7 +137,10 @@ namespace moho
    * mode(cursorInfo, eventData.mModifiers);` declarations in
    * moho/ui/UiRuntimeTypes.cpp are the recovery of both.
    */
-  CommandModeData::CommandModeData(const MouseInfo& mouseInfo, const int modifiers)
+  CommandModeData::CommandModeData(
+    const MouseInfo& mouseInfo,
+    const int modifiers
+  )
     : mMode(COMMOD_None)
     , mCommandCaps(RULEUCC_None)
     , mBlueprint(nullptr)
@@ -214,7 +173,9 @@ namespace moho
    * Assigns command mode state from another value and copies both cursor-info
    * lanes via `MouseInfo::operator=`.
    */
-  CommandModeData& CommandModeData::operator=(const CommandModeData& other)
+  CommandModeData& CommandModeData::operator=(
+    const CommandModeData& other
+  )
   {
     mMode = other.mMode;
     mCommandCaps = other.mCommandCaps;
@@ -226,7 +187,7 @@ namespace moho
     mReserved5C = other.mReserved5C;
     return *this;
   }
-}
+} // namespace moho
 
 namespace gpg
 {
@@ -262,9 +223,9 @@ namespace gpg
      * What it does:
      * Formats inherited lexical text and appends current multimap element count.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
   };
-}
+} // namespace gpg
 
 namespace
 {
@@ -302,7 +263,7 @@ namespace
     if (gEntIdStringMultiMapValueType == nullptr) {
       constexpr const char* kTypeNames[] = {
         "std::string",
-        "msvc8::string",
+        "fa::string",
         "string",
       };
 
@@ -314,7 +275,7 @@ namespace
       }
 
       if (gEntIdStringMultiMapValueType == nullptr) {
-        gEntIdStringMultiMapValueType = gpg::LookupRType(typeid(msvc8::string));
+        gEntIdStringMultiMapValueType = gpg::LookupRType(typeid(fa::string));
       }
     }
 
@@ -339,7 +300,7 @@ namespace
    */
   void DeserializeEntIdStringMultiMap(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
@@ -348,7 +309,7 @@ namespace
       return;
     }
 
-    auto* const destination = reinterpret_cast<EntIdStringMultiMap*>(objectPtr);
+    auto* const destination = static_cast<EntIdStringMultiMap*>(objectPtr);
     unsigned int count = 0u;
     archive->ReadUInt(&count);
 
@@ -359,7 +320,7 @@ namespace
       moho::EntId key = 0;
       archive->Read(entIdType, &key, *ownerRef);
 
-      msvc8::string value{};
+      fa::string value{};
       archive->ReadString(&value);
 
       destination->insert(std::make_pair(key, value));
@@ -375,7 +336,7 @@ namespace
    */
   void SerializeEntIdStringMultiMap(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
@@ -384,7 +345,7 @@ namespace
       return;
     }
 
-    const auto* const source = reinterpret_cast<const EntIdStringMultiMap*>(objectPtr);
+    const auto* const source = static_cast<const EntIdStringMultiMap*>(objectPtr);
     const unsigned int count = source != nullptr ? static_cast<unsigned int>(source->size()) : 0u;
     archive->WriteUInt(count);
     if (source == nullptr) {
@@ -395,12 +356,11 @@ namespace
 
     for (const auto& entry : *source) {
       archive->Write(entIdType, &entry.first, *ownerRef);
-      msvc8::string value = entry.second;
+      fa::string value = entry.second;
       archive->WriteString(&value);
     }
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x00899120 (FUN_00899120, gpg::RMultiMapType_EntId_string::Init)
@@ -427,7 +387,7 @@ void gpg::RMultiMapType_EntId_string::Init()
  */
 const char* gpg::RMultiMapType_EntId_string::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf(
+  static const fa::string sName = gpg::STR_Printf(
     "multimap<%s,%s>", ResolveEntIdTypeForMultiMapName()->GetName(), ResolveStringTypeForMultiMapName()->GetName()
   );
   return sName.c_str();
@@ -439,9 +399,11 @@ const char* gpg::RMultiMapType_EntId_string::GetName() const
  * What it does:
  * Formats inherited lexical text and appends current multimap element count.
  */
-msvc8::string gpg::RMultiMapType_EntId_string::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RMultiMapType_EntId_string::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   // The reflected object is the `EntIdStringMultiMap` this type describes; a
   // private `{proxy, head, size}` view of it read the third word, which is not
   // where that container keeps its count.
@@ -455,7 +417,7 @@ msvc8::string gpg::RMultiMapType_EntId_string::GetLexical(const gpg::RRef& ref) 
  *
  * What it does:
  * Constructs/preregisters RTTI metadata for
- * `std::multimap<moho::EntId,msvc8::string>`.
+ * `std::multimap<moho::EntId,fa::string>`.
  */
 [[nodiscard]] gpg::RType* preregister_RMultiMapType_EntId_string()
 {
@@ -467,7 +429,7 @@ namespace moho
 {
   // 0x00F57A8E holds 0x01 in bin/2025.7.1/ForgedAlliance.exe's .data, so the
   // resource splats are on unless a console command turns them off.
-  bool UI_RenResources = true;              // 0x00F57A8E
+  bool UI_RenResources = true; // 0x00F57A8E
 
   /**
    * Address: 0x00824480 (FUN_00824480, sub_824480)
@@ -475,7 +437,9 @@ namespace moho
    * What it does:
    * See the declaration in UserTarget.h.
    */
-  UserTarget::UserTarget(UserEntity* const entity) noexcept
+  UserTarget::UserTarget(
+    UserEntity* const entity
+  ) noexcept
     : targetType(UserTargetType::Entity)
     , targetEntity(entity)
   {}
@@ -486,34 +450,16 @@ namespace moho
    * What it does:
    * Copy-constructs one build-template entry (position, heading, blueprint id).
    */
-  SBuildTemplateInfo::SBuildTemplateInfo(const SBuildTemplateInfo& other)
+  SBuildTemplateInfo::SBuildTemplateInfo(
+    const SBuildTemplateInfo& other
+  )
     : mPos(other.mPos)
     , mBuildOrder(other.mBuildOrder)
     , mBlueprintId(other.mBlueprintId)
   {}
-namespace
-{
+  namespace
+  {
     // gWldFrameAction: moho/sim/WldSessionState.cpp (WldSessionState.h).
-
-    /**
-     * Address: 0x00869870 (FUN_00869870, session-listener attach dispatch)
-     *
-     * What it does:
-     * Attaches every registered session listener to the current active world
-     * session. The binary calls **vtable slot 0** here -
-     * `(**v4)(v4, Moho::sWldSession)` - which is
-     * `ISessionListener::AttachToSessionListenerLane`, not the detach slot the
-     * teardown pass uses (see `DoTeardownCallbacks`, FUN_008698B0, which takes
-     * `*v4 + 4`).
-     */
-    void DispatchSessionListenerAttach(WldTeardownCallbackVector* const callbacks)
-    {
-      const std::size_t callbackCount = callbacks->size();
-      for (std::size_t i = 0; i < callbackCount; ++i) {
-        ISessionListener* const listener = (*callbacks)[i];
-        listener->AttachToSessionListenerLane(gActiveWldSession);
-      }
-    }
 
     // `RebindAndCopyBuildTemplateBufferInline` (0x00898E50) was the hand-rolled
     // rebind-to-inline + copy-construct pass that duplicated
@@ -525,38 +471,12 @@ namespace
     // copy-construction, matching the binary's hidden-return-slot ABI for
     // returning a non-trivial type by value.
 
-    /**
-     * Address: 0x00823D30 (FUN_00823D30, sub_823D30)
-     *
-     * What it does:
-     * Returns one first-dword lane from one build-template helper payload.
-     */
-    [[nodiscard]] std::uint32_t ReadBuildTemplateHelperLane0(const void* const value) noexcept
-    {
-      if (value == nullptr) {
-        return 0u;
-      }
-      return *static_cast<const std::uint32_t*>(value);
-    }
-
-    /**
-     * Address: 0x00823D40 (FUN_00823D40, sub_823D40)
-     *
-     * What it does:
-     * Returns one second-dword lane from one build-template helper payload.
-     */
-    [[nodiscard]] std::uint32_t ReadBuildTemplateHelperLane4(const void* const value) noexcept
-    {
-      if (value == nullptr) {
-        return 0u;
-      }
-      return *(reinterpret_cast<const std::uint32_t*>(value) + 1);
-    }
-
     constexpr std::uint32_t kBuildPreviewValidColor = 0xD800D800u;
     constexpr std::uint32_t kBuildPreviewInvalidColor = 0xD8D80000u;
 
-    [[nodiscard]] SCoordsVec2 BuildPreviewCoordsFromWorldPosition(const Wm3::Vector3f& worldPosition) noexcept
+    [[nodiscard]] SCoordsVec2 BuildPreviewCoordsFromWorldPosition(
+      const Wm3::Vector3f& worldPosition
+    ) noexcept
     {
       return SCoordsVec2{worldPosition.x, worldPosition.z};
     }
@@ -587,7 +507,8 @@ namespace
      * Wm3::Vector3f const &, Moho::RUnitBlueprint const *, Moho::VTransform &, Moho::CWldSession &, std::uint32_t &
      *
      * IDA signature:
-     * int __userpurge sub_854930@<eax>(float *a1@<eax>, Moho::RUnitBlueprint *a2@<edx>, float *a3@<edi>, int esi0@<esi>, int *a5);
+     * int __userpurge sub_854930@<eax>(float *a1@<eax>, Moho::RUnitBlueprint *a2@<edx>, float *a3@<edi>, int
+     * esi0@<esi>, int *a5);
      *
      * What it does:
      * Evaluates build placement for one template-entry preview position, writes
@@ -646,53 +567,20 @@ namespace
       return &previewTransform;
     }
 
-    [[nodiscard]] bool ContainsEntityPtr(const msvc8::vector<UserEntity*>& entities, const UserEntity* const entity)
-    {
-      return std::find(entities.begin(), entities.end(), entity) != entities.end();
-    }
-
-    void CollectSelectionEntities(const WeakSet<UserEntity>& selection, msvc8::vector<UserEntity*>& outEntities)
-    {
-      outEntities.clear();
-
-      for (UserEntity* const entity : selection) {
-        if (ContainsEntityPtr(outEntities, entity)) {
-          continue;
-        }
-        outEntities.push_back(entity);
-      }
-    }
-
-    [[nodiscard]] bool
-    AreEntitySetsEqual(const msvc8::vector<UserEntity*>& lhs, const msvc8::vector<UserEntity*>& rhs)
-    {
-      if (lhs.size() != rhs.size()) {
-        return false;
-      }
-
-      for (const UserEntity* const entity : lhs) {
-        if (!ContainsEntityPtr(rhs, entity)) {
-          return false;
-        }
-      }
-
-      return true;
-    }
-}
-
+  } // namespace
 
   /**
    * Bridge for the recovered `cfunc_IssueDockCommandL` worker: resolves the world
-   * position of one unit's last-queued command. `QueuedUserCommandRecord` is
-   * the opaque cross-TU name `GetLastQueuedUserCommandAnchor` (UserUnit.cpp)
-   * hands out for that command's `UserCommandIssueHelper`; the handle points at
-   * the helper itself, so this is a pointer conversion, not an offset. Forwards
-   * to `ResolveCommandIssueTargetPosition` (FUN_0081CFD0).
+   * position of one unit's last-queued command (the helper
+   * `GetLastQueuedUserCommandAnchor` returns). Forwards to
+   * `ResolveCommandIssueTargetPosition` (FUN_0081CFD0).
    */
-  Wm3::Vector3f ResolveLastQueuedCommandAnchorPosition(const QueuedUserCommandRecord* const record)
+  Wm3::Vector3f ResolveLastQueuedCommandAnchorPosition(
+    const UserCommandIssueHelper* const record
+  )
   {
     Wm3::Vector3f out{};
-    (void)ResolveCommandIssueTargetPosition(&out, *reinterpret_cast<const UserCommandIssueHelper*>(record));
+    (void)ResolveCommandIssueTargetPosition(&out, *record);
     return out;
   }
 
@@ -705,11 +593,7 @@ namespace
   {
     std::uint32_t previewColor = 0u;
     return ApplyBuildTemplatePlacementPreviewStatus(
-      worldPosition,
-      buildBlueprint,
-      previewTransform,
-      session,
-      previewColor
+      worldPosition, buildBlueprint, previewTransform, session, previewColor
     );
   }
 
@@ -722,11 +606,7 @@ namespace
   {
     std::uint32_t previewColor = 0u;
     (void)ApplyCommandModeBuildPlacementPreviewStatus(
-      commandMode,
-      worldPosition,
-      session,
-      previewTransform,
-      previewColor
+      commandMode, worldPosition, session, previewTransform, previewColor
     );
     return previewColor;
   }
@@ -738,7 +618,10 @@ namespace
    * matching the binary's inline `mEntityMap` in-order scan (entity ids are
    * unique keys, so the collection order equals the binary's iteration order).
    */
-  void GetSessionUserUnits(CWldSession* const session, msvc8::vector<UserUnit*>& outUnits)
+  void GetSessionUserUnits(
+    CWldSession* const session,
+    fa::vector<UserUnit*>& outUnits
+  )
   {
     CollectSessionUserUnits(session, outUnits);
   }
@@ -753,12 +636,14 @@ namespace
    */
   SSessionSaveData::~SSessionSaveData() = default;
 
-}
-
+} // namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_RMultiMapType_EntId_string_933d97, preregister_RMultiMapType_EntId_string)
+GPG_PREREGISTER_INIT(
+  preregister_RMultiMapType_EntId_string_933d97,
+  preregister_RMultiMapType_EntId_string
+)
 namespace moho
 {
   /**
@@ -766,7 +651,11 @@ namespace moho
    * Loads the save-node map. Inlined into
    * `gpg::SerSaveLoadHelper<SSessionSaveData>::Deserialize` 0x00897470.
    */
-  void SSessionSaveData::MemberDeserialize(gpg::ReadArchive* const archive, const int, const gpg::RRef& ownerRef)
+  void SSessionSaveData::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    const int,
+    const gpg::RRef& ownerRef
+  )
   {
     archive->Read(gpg::RTypeOf<moho::SSessionSaveNodeMap>(), &mNodeMap, ownerRef);
   }
@@ -776,7 +665,11 @@ namespace moho
    * Saves the save-node map. Inlined into
    * `gpg::SerSaveLoadHelper<SSessionSaveData>::Serialize` 0x008974B0.
    */
-  void SSessionSaveData::MemberSerialize(gpg::WriteArchive* const archive, const int, const gpg::RRef& ownerRef) const
+  void SSessionSaveData::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    const int,
+    const gpg::RRef& ownerRef
+  ) const
   {
     archive->Write(gpg::RTypeOf<moho::SSessionSaveNodeMap>(), &mNodeMap, ownerRef);
   }
@@ -792,11 +685,10 @@ namespace moho
    */
   struct SSessionSaveDataSerializer : gpg::SerSaveLoadHelper<SSessionSaveData>
   {};
-}
+} // namespace moho
 
 namespace
 {
   // Address: 0x010C51C8 -- process-global `SSessionSaveDataSerializer` singleton.
   moho::SSessionSaveDataSerializer gSSessionSaveDataSerializer;
-}
-
+} // namespace

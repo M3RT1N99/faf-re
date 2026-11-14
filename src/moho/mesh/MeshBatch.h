@@ -1,9 +1,12 @@
 #pragma once
 
+#include <array>
+#include <vector>
+
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/Vector.h"
 
 namespace gpg::gal
@@ -56,8 +59,8 @@ namespace moho
     virtual void Initialize(
       const MeshLOD* lod,
       bool remapToReferenceResource,
-      boost::shared_ptr<RScmResource> referenceResource,
-      boost::shared_ptr<RScmResource> currentResource
+      std::shared_ptr<RScmResource> referenceResource,
+      std::shared_ptr<RScmResource> currentResource
     );
 
     /**
@@ -80,7 +83,7 @@ namespace moho
      * `reflectedOnly` is the reflection pass: when set, `FillBatch` packs only
      * instances whose `MeshInstance::isReflected` flag is still on.
      */
-    virtual void Render(const msvc8::vector<MeshInstance*>& meshInstances, bool reflectedOnly);
+    virtual void Render(const fa::vector<MeshInstance*>& meshInstances, bool reflectedOnly);
 
   protected:
     // Slots 5-9 in MeshBatch vtable (implemented by concrete batchers).
@@ -93,7 +96,7 @@ namespace moho
   public:
     std::uint8_t mUseBoneRemap; // +0x04
     std::uint8_t pad_05_07[0x03]{};
-    boost::shared_ptr<RScmResource> mCurrentResource; // +0x08
+    std::shared_ptr<RScmResource> mCurrentResource;   // +0x08
     std::int32_t mVertexCount;                        // +0x10
     std::int32_t mIndexCount;                         // +0x14
     std::int32_t mTriangleCount;                      // +0x18
@@ -101,12 +104,12 @@ namespace moho
     std::int32_t mAttachCount;                        // +0x20
     std::int32_t mMaxInstancesPerDraw;                // +0x24
     std::int32_t mActiveInstanceBudget;               // +0x28
-    msvc8::vector<std::int32_t> mBoneRemapIndices;    // +0x2C
+    fa::vector<std::int32_t> mBoneRemapIndices;       // +0x2C
     std::uint8_t mUseSecondaryData;                   // +0x3C
     std::uint8_t pad_3D_3F[0x03]{};
-    std::int32_t mParameterAnnotation;                  // +0x40
-    boost::shared_ptr<gpg::gal::VertexFormat> mVertexFormat; // +0x44 the batch's vertex declaration
-    boost::shared_ptr<gpg::gal::IndexBuffer> mIndexBuffer;   // +0x4C the batch's static index buffer
+    std::int32_t mParameterAnnotation;                       // +0x40
+    std::shared_ptr<gpg::gal::VertexFormat> mVertexFormat;   // +0x44 the batch's vertex declaration
+    std::shared_ptr<gpg::gal::IndexBuffer> mIndexBuffer;     // +0x4C the batch's static index buffer
   };
 
   static_assert(offsetof(MeshBatch, mUseBoneRemap) == 0x04, "MeshBatch::mUseBoneRemap offset must be 0x04");
@@ -116,7 +119,8 @@ namespace moho
   static_assert(offsetof(MeshBatch, mAttachCount) == 0x20, "MeshBatch::mAttachCount offset must be 0x20");
   static_assert(offsetof(MeshBatch, mBoneRemapIndices) == 0x2C, "MeshBatch::mBoneRemapIndices offset must be 0x2C");
   static_assert(
-    offsetof(MeshBatch, mParameterAnnotation) == 0x40, "MeshBatch::mParameterAnnotation offset must be 0x40"
+    offsetof(MeshBatch, mParameterAnnotation) == 0x40,
+    "MeshBatch::mParameterAnnotation offset must be 0x40"
   );
   static_assert(offsetof(MeshBatch, mVertexFormat) == 0x44, "MeshBatch::mVertexFormat offset must be 0x44");
   static_assert(offsetof(MeshBatch, mIndexBuffer) == 0x4C, "MeshBatch::mIndexBuffer offset must be 0x4C");
@@ -164,8 +168,8 @@ namespace moho
     HardwareMeshBatch(
       const MeshLOD* lod,
       bool remapToReferenceResource,
-      boost::shared_ptr<RScmResource> referenceResource,
-      boost::shared_ptr<RScmResource> currentResource
+      std::shared_ptr<RScmResource> referenceResource,
+      std::shared_ptr<RScmResource> currentResource
     );
 
     /**
@@ -202,8 +206,8 @@ namespace moho
     void Initialize(
       const MeshLOD* lod,
       bool remapToReferenceResource,
-      boost::shared_ptr<RScmResource> referenceResource,
-      boost::shared_ptr<RScmResource> currentResource
+      std::shared_ptr<RScmResource> referenceResource,
+      std::shared_ptr<RScmResource> currentResource
     ) override;
 
     // --- Concrete backend slot overrides (bodies out of this pass's scope) ---
@@ -241,7 +245,7 @@ namespace moho
     static void BeginBonePalettes();
 
     /** Writes the bones of every posed instance of one skinned bucket. */
-    void PrepareBonePalettes(const msvc8::vector<MeshInstance*>& instances);
+    void PrepareBonePalettes(const fa::vector<MeshInstance*>& instances);
 
     /** Sends the bones written since the last upload to the GPU. */
     static void UploadBonePalettes();
@@ -282,17 +286,33 @@ namespace moho
 
   public:
     // +0x54 static (all-instances) GPU vertex buffer built in Initialize.
-    boost::shared_ptr<gpg::gal::VertexBuffer> mStaticVertexBuffer;
+    std::shared_ptr<gpg::gal::VertexBuffer> mStaticVertexBuffer;
     // +0x5C dynamic (per-instance) GPU vertex buffer grown by PrepareBatch.
     // FAF: stays empty; the records go to the shared instance ring buffer.
-    boost::shared_ptr<gpg::gal::VertexBuffer> mDynamicVertexBuffer;
+    std::shared_ptr<gpg::gal::VertexBuffer> mDynamicVertexBuffer;
     // +0x64 CPU scratch buffer for per-instance vertex staging.
     void* mScratchVertexData = nullptr;
   };
 
-  static_assert(offsetof(HardwareMeshBatch, mStaticVertexBuffer) == 0x54, "HardwareMeshBatch::mStaticVertexBuffer offset must be 0x54");
-  static_assert(offsetof(HardwareMeshBatch, mDynamicVertexBuffer) == 0x5C, "HardwareMeshBatch::mDynamicVertexBuffer offset must be 0x5C");
-  static_assert(offsetof(HardwareMeshBatch, mScratchVertexData) == 0x64, "HardwareMeshBatch::mScratchVertexData offset must be 0x64");
+  static_assert(
+    offsetof(HardwareMeshBatch, mStaticVertexBuffer) == 0x54,
+    "HardwareMeshBatch::mStaticVertexBuffer offset must be 0x54"
+  );
+  static_assert(
+    offsetof(HardwareMeshBatch, mDynamicVertexBuffer) == 0x5C,
+    "HardwareMeshBatch::mDynamicVertexBuffer offset must be 0x5C"
+  );
+  static_assert(
+    offsetof(HardwareMeshBatch, mScratchVertexData) == 0x64,
+    "HardwareMeshBatch::mScratchVertexData offset must be 0x64"
+  );
   static_assert(sizeof(HardwareMeshBatch) == 0x68, "HardwareMeshBatch size must be 0x68");
 
+  class MeshInstance;
+  /** ren_RayTracedShadows: `meshInstance`'s world transform per bone under `batch` (HardwareMeshBatch.cpp). */
+  bool MeshInstanceRayTransforms(
+    const MeshBatch& batch,
+    MeshInstance& meshInstance,
+    std::vector<std::array<float, 12>>& out
+  );
 } // namespace moho

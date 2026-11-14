@@ -38,11 +38,13 @@ namespace moho
     Wm3::Vec3f pos_;    // 0x10
 
     /// Byte copies of both lanes (`Wm3::System::Memcpy` copies bytes too, so NaN payloads survive).
-    void CopyLanesFrom(const VTransform& rhs) noexcept
+    void CopyLanesFrom(
+      const VTransform& rhs
+    ) noexcept
     {
       if (mem_InlineTransformCopy) {
-        std::memcpy(&orient_, &rhs.orient_, sizeof(orient_));
-        std::memcpy(&pos_, &rhs.pos_, sizeof(pos_));
+        std::memcpy(static_cast<void*>(&orient_), &rhs.orient_, sizeof(orient_));
+        std::memcpy(static_cast<void*>(&pos_), &rhs.pos_, sizeof(pos_));
       } else {
         orient_ = rhs.orient_; // the binary's Wm3 assignments
         pos_ = rhs.pos_;
@@ -103,7 +105,9 @@ namespace moho
      * `Wm3::System::Memcpy` (`memcpy_s`), a call per transform copy on the sim's hottest paths. The
      * bytes copied are the same.
      */
-    VTransform(const VTransform& rhs) noexcept
+    VTransform(
+      const VTransform& rhs
+    ) noexcept
     {
       CopyLanesFrom(rhs);
     }
@@ -114,7 +118,9 @@ namespace moho
      * What it does:
      * Copies quaternion + translation lanes from rhs (inline byte copies, as the copy constructor).
      */
-    VTransform& operator=(const VTransform& rhs) noexcept
+    VTransform& operator=(
+      const VTransform& rhs
+    ) noexcept
     {
       CopyLanesFrom(rhs);
       return *this;
@@ -201,7 +207,7 @@ namespace moho
    * What it does:
    * Formats one 3D vector lane as `x=...,y=...,z=...`.
    */
-  [[nodiscard]] msvc8::string ToString(const Wm3::Vec3f& value);
+  [[nodiscard]] fa::string ToString(const Wm3::Vec3f& value);
 
   /**
    * Address: 0x004ECF10 (FUN_004ECF10)
@@ -209,7 +215,7 @@ namespace moho
    * What it does:
    * Formats one quaternion in scalar/vector form (`v=(x,y,z),s=w`).
    */
-  [[nodiscard]] msvc8::string ToString(const Wm3::Quatf& value);
+  [[nodiscard]] fa::string ToString(const Wm3::Quatf& value);
 
   /**
    * Address: 0x004F04E0 (FUN_004F04E0)
@@ -217,7 +223,7 @@ namespace moho
    * What it does:
    * Formats one transform as translation plus quaternion rotation text.
    */
-  [[nodiscard]] msvc8::string ToString(const VTransform& value);
+  [[nodiscard]] fa::string ToString(const VTransform& value);
 
   static_assert(offsetof(VTransform, orient_) == 0x00, "VTransform::orient_ offset must be 0x00");
   static_assert(offsetof(VTransform, pos_) == 0x10, "VTransform::pos_ offset must be 0x10");
@@ -268,7 +274,10 @@ namespace moho
    * transformed plane is `N' = R*N`, `C' = C + Dot(N', p)`.
    */
   template <class T>
-  Wm3::Plane3<T> ApplyTransform(const Wm3::Plane3<T>& plane, const VTransform& transform)
+  Wm3::Plane3<T> ApplyTransform(
+    const Wm3::Plane3<T>& plane,
+    const VTransform& transform
+  )
   {
     static_assert(std::is_floating_point_v<T>, "ApplyTransform requires floating-point T");
 

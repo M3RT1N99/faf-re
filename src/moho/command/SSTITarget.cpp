@@ -48,62 +48,13 @@ namespace
   // Forward declarations: SSTITargetSerializer's constructor below binds
   // these as its load/save callback pointers; their bodies are defined
   // further down in this same anonymous namespace.
-  void DeserializeSSTITargetSerializerCallback(gpg::ReadArchive* archive, std::intptr_t objectPtr, int unusedTag, gpg::RRef* ownerRef);
-  void SerializeSSTITargetSerializerCallback(gpg::WriteArchive* archive, std::intptr_t objectPtr, int unusedTag, gpg::RRef* ownerRef);
-
-  /**
-   * Address: 0x0055B120 (FUN_0055B120, Moho::SSTITargetSerializer::Deserialize)
-   *
-   * What it does:
-   * Reflection load-callback facade for `SSTITarget`. Forwards the
-   * reflected object pointer to `SSTITarget::MemberDeserialize`
-   * (FUN_0055B3A0 body); `version` and the owner-ref lane are unused by the
-   * member (mirrors the binary tail call).
-   */
-  void DeserializeSSTITargetSerializerCallback(
-    gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const target = reinterpret_cast<moho::SSTITarget*>(objectPtr);
-    if (target == nullptr) {
-      return;
-    }
-    target->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x0055B130 (FUN_0055B130, Moho::SSTITargetSerializer::Serialize)
-   *
-   * What it does:
-   * Reflection save-callback facade for `SSTITarget`. Forwards the
-   * reflected object pointer to `SSTITarget::MemberSerialize`
-   * (FUN_0055B460 body); `version` and the owner-ref lane are unused by the
-   * member (mirrors the binary tail call).
-   */
-  void SerializeSSTITargetSerializerCallback(
-    gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    const auto* const target = reinterpret_cast<const moho::SSTITarget*>(objectPtr);
-    if (target == nullptr) {
-      return;
-    }
-    target->MemberSerialize(archive);
-  }
 
   [[nodiscard]] gpg::RType* ResolveTargetType()
   {
     static gpg::RType* sType = nullptr;
     if (sType == nullptr) {
-      sType = gpg::REF_FindFirstTypeNamed(
-        {"ESTITargetType", "Moho::ESTITargetType", "EAiTargetType", "Moho::EAiTargetType"}
-      );
+      sType =
+        gpg::REF_FindFirstTypeNamed({"ESTITargetType", "Moho::ESTITargetType", "EAiTargetType", "Moho::EAiTargetType"});
       if (sType == nullptr) {
         sType = gpg::LookupRType(typeid(moho::EAiTargetType));
       }
@@ -165,7 +116,9 @@ namespace moho
    * Reads target-kind enum, then conditionally deserializes either entity-id
    * payload or ground-position payload.
    */
-  void SSTITarget::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SSTITarget::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr) {
       return;
@@ -198,7 +151,9 @@ namespace moho
    * Writes target-kind enum, then conditionally serializes either entity-id
    * payload or ground-position payload.
    */
-  void SSTITarget::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SSTITarget::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (archive == nullptr) {
       return;
@@ -241,8 +196,14 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_EntIdTypeInfo_dd3051, moho::preregister_EntIdTypeInfo)
-GPG_PREREGISTER_INIT(preregister_SSTITargetTypeInfo_dd3051, moho::preregister_SSTITargetTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_EntIdTypeInfo_dd3051,
+  moho::preregister_EntIdTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  preregister_SSTITargetTypeInfo_dd3051,
+  moho::preregister_SSTITargetTypeInfo
+)
 
 namespace moho
 {

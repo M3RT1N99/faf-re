@@ -41,21 +41,6 @@
 
 using namespace moho;
 
-/**
- * Address: 0x006EC9E0 (FUN_006EC9E0)
- *
- * What it does:
- * Rebinds the startup metatable-factory index lane for
- * `CScrLuaMetatableFactory<CUnitCommand>` and returns that singleton.
- */
-[[maybe_unused]] moho::CScrLuaMetatableFactory<moho::CUnitCommand>*
-startup_CScrLuaMetatableFactory_CUnitCommand_Index()
-{
-  auto& instance = moho::CScrLuaMetatableFactory<moho::CUnitCommand>::Instance();
-  instance.SetFactoryObjectIndexForRecovery(moho::CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-  return &instance;
-}
-
 namespace
 {
 
@@ -65,7 +50,9 @@ namespace
    * performs at 0x006EE5E6. Returns null when the blueprint is not a unit
    * blueprint.
    */
-  [[nodiscard]] const RUnitBlueprint* AsUnitBlueprint(REntityBlueprint* const blueprint)
+  [[nodiscard]] const RUnitBlueprint* AsUnitBlueprint(
+    REntityBlueprint* const blueprint
+  )
   {
     gpg::RRef blueprintRef{};
     blueprintRef = gpg::MakeRRef<moho::REntityBlueprint>(blueprint);
@@ -80,7 +67,10 @@ namespace
    * blueprint that names a seed unit must name *this* unit, otherwise the
    * queued blueprint's own id must be what the current blueprint upgrades to.
    */
-  [[nodiscard]] bool ContinuesUpgradeChain(const RUnitBlueprint& current, const RUnitBlueprint& queued)
+  [[nodiscard]] bool ContinuesUpgradeChain(
+    const RUnitBlueprint& current,
+    const RUnitBlueprint& queued
+  )
   {
     if (!queued.General.SeedUnit.name.empty()) {
       return _stricmp(current.mBlueprintId.c_str(), queued.General.SeedUnit.name.c_str()) == 0;
@@ -126,7 +116,9 @@ namespace
    * widens the buildable set with whatever that upgrade unlocks. Everything
    * else is unlinked from the queue, which is then flagged for refresh.
    */
-  void PruneQueuedCommandsInvalidatedByUpgradeChange(CUnitCommandQueue& queue)
+  void PruneQueuedCommandsInvalidatedByUpgradeChange(
+    CUnitCommandQueue& queue
+  )
   {
     Unit* const unit = queue.mUnit;
     const RUnitBlueprint* blueprint = unit->GetBlueprint();
@@ -135,7 +127,7 @@ namespace
 
     EntityCategorySet reachable = BuildableAfterBecoming(*blueprint, armyBuildable, restrictions);
 
-    msvc8::vector<CUnitCommand*> unreachableCommands{};
+    fa::vector<CUnitCommand*> unreachableCommands{};
 
     for (const WeakPtr<CUnitCommand>& slot : queue.mCommandVec) {
       CUnitCommand* const command = slot.GetObjectPtr();
@@ -182,7 +174,9 @@ namespace
    * Returns cached `CUnitCommand` metatable object from Lua object-factory
    * storage.
    */
-  [[nodiscard]] LuaPlus::LuaObject GetUnitCommandFactory(LuaPlus::LuaState* const state)
+  [[nodiscard]] LuaPlus::LuaObject GetUnitCommandFactory(
+    LuaPlus::LuaState* const state
+  )
   {
     return CScrLuaMetatableFactory<CUnitCommand>::Instance().Get(state);
   }
@@ -201,26 +195,11 @@ namespace
     return sType;
   }
 
-  /**
-   * Address: 0x006EBFA0 (FUN_006EBFA0)
-   *
-   * What it does:
-   * Resolves and caches RTTI for one `Broadcaster<ECommandEvent>` lane.
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::RType* ResolveLegacyBroadcasterCommandEventType()
-  {
-    static gpg::RType* type = nullptr;
-    if (!type) {
-      type = gpg::LookupRType(typeid(Broadcaster<ECommandEvent>));
-    }
-    return type;
-  }
-
   [[nodiscard]] gpg::RType* ResolveWeakPtrCUnitCommandVectorType()
   {
     static gpg::RType* sType = nullptr;
     if (!sType) {
-      sType = gpg::LookupRType(typeid(msvc8::vector<WeakPtr<CUnitCommand>>));
+      sType = gpg::LookupRType(typeid(fa::vector<WeakPtr<CUnitCommand>>));
       if (!sType) {
         sType = register_WeakPtr_CUnitCommand_VectorType_00();
       }
@@ -252,220 +231,16 @@ namespace
     return sType;
   }
 
-  /**
-   * Address: 0x006ED340 (FUN_006ED340)
-   *
-   * What it does:
-   * Loads one reflected `Broadcaster<ECommandEvent>` payload through cached
-   * RTTI lookup and returns the archive pointer for chaining.
-   */
-  gpg::ReadArchive* ReadBroadcasterCommandEventArchiveAndReturnArchive(
-    gpg::ReadArchive* const archive,
-    void* const objectPtr,
-    gpg::RRef* const ownerRef
-  )
-  {
-    if (archive != nullptr) {
-      const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-      if (gpg::RType* const type = ResolveBroadcasterCommandEventType()) {
-        archive->Read(type, objectPtr, owner);
-      }
-    }
-
-    return archive;
-  }
-
-  /**
-   * Address: 0x006ED380 (FUN_006ED380)
-   *
-   * What it does:
-   * Loads one reflected `SSTICommandConstantData` payload through cached RTTI
-   * lookup and returns the archive pointer for chaining.
-   */
-  gpg::ReadArchive* ReadSSTICommandConstantDataArchiveAndReturnArchive(
-    gpg::ReadArchive* const archive,
-    void* const objectPtr,
-    gpg::RRef* const ownerRef
-  )
-  {
-    if (archive != nullptr) {
-      const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-      if (gpg::RType* const type = gpg::RTypeOf<SSTICommandConstantData>()) {
-        archive->Read(type, objectPtr, owner);
-      }
-    }
-
-    return archive;
-  }
-
-  /**
-   * Address: 0x006ED3C0 (FUN_006ED3C0)
-   *
-   * What it does:
-   * Loads one reflected `SSTICommandVariableData` payload through cached RTTI
-   * lookup and returns the archive pointer for chaining.
-   */
-  gpg::ReadArchive* ReadSSTICommandVariableDataArchiveAndReturnArchive(
-    gpg::ReadArchive* const archive,
-    void* const objectPtr,
-    gpg::RRef* const ownerRef
-  )
-  {
-    if (archive != nullptr) {
-      const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-      if (gpg::RType* const type = gpg::RTypeOf<SSTICommandVariableData>()) {
-        archive->Read(type, objectPtr, owner);
-      }
-    }
-
-    return archive;
-  }
-
-  /**
-   * Address: 0x006ED400 (FUN_006ED400)
-   *
-   * What it does:
-   * Loads one reflected `CountedPtr<IFormationInstance>` payload through
-   * cached RTTI lookup and returns the archive pointer for chaining.
-   */
-  gpg::ReadArchive* ReadCountedPtrIFormationInstanceArchiveAndReturnArchive(
-    gpg::ReadArchive* const archive,
-    void* const objectPtr,
-    gpg::RRef* const ownerRef
-  )
-  {
-    if (archive != nullptr) {
-      const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-      if (gpg::RType* const type = ResolveCountedPtrIFormationInstanceType()) {
-        archive->Read(type, objectPtr, owner);
-      }
-    }
-
-    return archive;
-  }
-
-  /**
-   * Address: 0x006ED440 (FUN_006ED440)
-   *
-   * What it does:
-   * Saves one reflected `Broadcaster<ECommandEvent>` payload through cached
-   * RTTI lookup and returns the archive pointer for chaining.
-   */
-  gpg::WriteArchive* WriteBroadcasterCommandEventArchiveAndReturnArchive(
-    gpg::WriteArchive* const archive,
-    void* const objectPtr,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    if (archive != nullptr) {
-      const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-      if (gpg::RType* const type = ResolveBroadcasterCommandEventType()) {
-        archive->Write(type, objectPtr, owner);
-      }
-    }
-
-    return archive;
-  }
-
-  /**
-   * Address: 0x006ED480 (FUN_006ED480)
-   *
-   * What it does:
-   * Saves one reflected `SSTICommandConstantData` payload through cached RTTI
-   * lookup and returns the archive pointer for chaining.
-   */
-  gpg::WriteArchive* WriteSSTICommandConstantDataArchiveAndReturnArchive(
-    gpg::WriteArchive* const archive,
-    void* const objectPtr,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    if (archive != nullptr) {
-      const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-      if (gpg::RType* const type = gpg::RTypeOf<SSTICommandConstantData>()) {
-        archive->Write(type, objectPtr, owner);
-      }
-    }
-
-    return archive;
-  }
-
-  /**
-   * Address: 0x006ED4C0 (FUN_006ED4C0)
-   *
-   * What it does:
-   * Saves one reflected `SSTICommandVariableData` payload through cached RTTI
-   * lookup and returns the archive pointer for chaining.
-   */
-  gpg::WriteArchive* WriteSSTICommandVariableDataArchiveAndReturnArchive(
-    gpg::WriteArchive* const archive,
-    void* const objectPtr,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    if (archive != nullptr) {
-      const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-      if (gpg::RType* const type = gpg::RTypeOf<SSTICommandVariableData>()) {
-        archive->Write(type, objectPtr, owner);
-      }
-    }
-
-    return archive;
-  }
-
-  /**
-   * Address: 0x006ED500 (FUN_006ED500)
-   *
-   * What it does:
-   * Saves one reflected `CountedPtr<IFormationInstance>` payload through
-   * cached RTTI lookup and returns the archive pointer for chaining.
-   */
-  gpg::WriteArchive* WriteCountedPtrIFormationInstanceArchiveAndReturnArchive(
-    gpg::WriteArchive* const archive,
-    void* const objectPtr,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    if (archive != nullptr) {
-      const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-      if (gpg::RType* const type = ResolveCountedPtrIFormationInstanceType()) {
-        archive->Write(type, objectPtr, owner);
-      }
-    }
-
-    return archive;
-  }
-
-  /**
-   * Address: 0x006ED5B0 (FUN_006ED5B0)
-   *
-   * What it does:
-   * Read-callback bridge that loads one reflected `Broadcaster<ECommandEvent>`
-   * payload through cached RTTI lookup.
-   */
-  void ReadBroadcasterCommandEventArchiveCallback(
-    gpg::ReadArchive* const archive,
-    void* const objectPtr,
-    gpg::RRef* const ownerRef
-  )
-  {
-    (void)ReadBroadcasterCommandEventArchiveAndReturnArchive(archive, objectPtr, ownerRef);
-  }
-
-
   // The serializer works on the `Broadcaster` secondary base. That slice sits at
   // +0x34 in the binary layout, which is exactly where the compiler puts it:
   // `CUnitCommand : public CScriptObject, public Broadcaster<ECommandEvent>` and
   // `sizeof(CScriptObject) == 0x34`. So this is a base cast, not pointer
   // arithmetic -- let the compiler compute the adjustment.
-  [[nodiscard]] void* BroadcasterSubobjectPtr(CUnitCommand* const command) noexcept
+  [[nodiscard]] void* BroadcasterSubobjectPtr(
+    CUnitCommand* const command
+  ) noexcept
   {
     return static_cast<Broadcaster<ECommandEvent>*>(command);
-  }
-
-  [[nodiscard]] const void* BroadcasterSubobjectPtr(const CUnitCommand* const command) noexcept
-  {
-    return static_cast<const Broadcaster<ECommandEvent>*>(command);
   }
 
 } // namespace
@@ -535,38 +310,6 @@ namespace
   }
 
   /**
-   * Address: 0x006E7BC0 (FUN_006E7BC0)
-   *
-   * What it does:
-   * Adapter that copies one published-command descriptor lane and returns the
-   * destination pointer.
-   */
-  [[maybe_unused]] SSTICommandConstantData* CopyPublishedCommandDescriptorAdapterPrimary(
-    SSTICommandConstantData* const destination,
-    const SSTICommandConstantData* const source
-  )
-  {
-    CopyPublishedCommandDescriptor(*destination, *source);
-    return destination;
-  }
-
-  /**
-   * Address: 0x006EB470 (FUN_006EB470)
-   *
-   * What it does:
-   * Secondary adapter that copies one published-command descriptor lane and
-   * returns the destination pointer.
-   */
-  [[maybe_unused]] SSTICommandConstantData* CopyPublishedCommandDescriptorAdapterSecondary(
-    SSTICommandConstantData* const destination,
-    const SSTICommandConstantData* const source
-  )
-  {
-    CopyPublishedCommandDescriptor(*destination, *source);
-    return destination;
-  }
-
-  /**
    * Address: 0x006E9360 (FUN_006E9360)
    * Address: 0x006EC380 (FUN_006EC380, inlined uninitialized-fill-with-rollback lane)
    * Address: 0x006EA230 (FUN_006EA230, calling-convention trampoline from the
@@ -577,20 +320,20 @@ namespace
    * Appends one command descriptor record into sync publication output.
    *
    * The binary emits one additional helper at `0x006EC380` which drives
-   * the grow path of `msvc8::vector<SSTICommandConstantData>::push_back`
+   * the grow path of `fa::vector<SSTICommandConstantData>::push_back`
    * / `insert_n`: it runs one uninitialized-fill lane (stride
    * `sizeof(SSTICommandConstantData)=0x3C`) that copy-constructs each
    * descriptor by blitting the first `0x20` trivial bytes (cmd/mFormationScriptIndex/
-   * origin/unk1/blueprint), placement-constructs an empty `msvc8::string`
+   * origin/unk1/blueprint), placement-constructs an empty `fa::string`
    * at `+0x20`, and copy-assigns `unk2` from the source. On partial-fill
    * failure (e.g. string allocation throw), its SEH funclet runs the
    * per-lane string-reset helper (`ResetSSTICommandConstantDataStringLane`
    * at `0x006ECB50`) over the already-constructed prefix before
    * re-raising. The same semantic is preserved here via the typed
-   * `msvc8::vector::push_back` call.
+   * `fa::vector::push_back` call.
    */
   void AppendPublishedCommandDescriptor(
-    msvc8::vector<SSTICommandConstantData>& descriptors,
+    fa::vector<SSTICommandConstantData>& descriptors,
     const SSTICommandConstantData& descriptor
   )
   {
@@ -621,14 +364,16 @@ namespace
    * Appends one published-command packet into sync publication output.
    */
   void AppendPublishedCommandPacket(
-    msvc8::vector<SSyncPublishedCommandPacket>& packets,
+    fa::vector<SSyncPublishedCommandPacket>& packets,
     const SSyncPublishedCommandPacket& packet
   )
   {
     packets.push_back(packet);
   }
 
-  void ReleaseIntrusiveRefcountedObject(CountedObject*& object)
+  void ReleaseIntrusiveRefcountedObject(
+    CountedObject*& object
+  )
   {
     if (!object) {
       return;
@@ -650,26 +395,32 @@ namespace
    * Rebinds one intrusive counted formation pointer slot, releasing previous
    * ownership and add-refing the new pointee when non-null.
    */
-  void AssignFormationInstanceRef(CAiFormationInstance*& slot, CAiFormationInstance* const value) noexcept
+  void AssignFormationInstanceRef(
+    CAiFormationInstance*& slot,
+    CAiFormationInstance* const value
+  ) noexcept
   {
     if (slot == value) {
       return;
     }
 
     if (slot != nullptr) {
-      auto* const previous = reinterpret_cast<CountedObject*>(slot);
+      auto* const previous = static_cast<CountedObject*>(slot);
       (void)previous->ReleaseReference();
     }
 
     slot = value;
 
     if (slot != nullptr) {
-      auto* const current = reinterpret_cast<CountedObject*>(slot);
+      auto* const current = static_cast<CountedObject*>(slot);
       current->AddReference();
     }
   }
 
-  void CopyIssueDataToVariablePayload(const SSTICommandIssueData& issueData, SSTICommandVariableData& variableData)
+  void CopyIssueDataToVariablePayload(
+    const SSTICommandIssueData& issueData,
+    SSTICommandVariableData& variableData
+  )
   {
     variableData = SSTICommandVariableData(issueData);
   }
@@ -706,7 +457,7 @@ CUnitCommand::CUnitCommand()
   mConstDat.origin = Wm3::Quatf{1.0f, 0.0f, 0.0f, 0.0f};
   mConstDat.unk1 = 0.0f;
   mConstDat.blueprint = nullptr;
-  mConstDat.unk2 = msvc8::string{};
+  mConstDat.unk2 = fa::string{};
 
   mVarDat = SSTICommandVariableData{};
 
@@ -724,13 +475,15 @@ CUnitCommand::CUnitCommand()
  * Initializes one command from issue payload lanes, updates sim command
  * digest/counter state, and links coordinating-order relationships.
  */
-CUnitCommand::CUnitCommand(Sim* const sim, const SSTICommandIssueData& issueData)
+CUnitCommand::CUnitCommand(
+  Sim* const sim,
+  const SSTICommandIssueData& issueData
+)
   : CUnitCommand(sim, issueData, issueData.nextCommandId)
-{
-}
+{}
 
 /**
-    * Alias of FUN_006E81B0 (non-canonical helper lane).
+ * Alias of FUN_006E81B0 (non-canonical helper lane).
  *
  * What it does:
  * Initializes one command from issue payload lanes, updates sim command
@@ -744,7 +497,11 @@ CUnitCommand::CUnitCommand(Sim* const sim, const SSTICommandIssueData& issueData
 // `sim->mLuaState`, read as `[sim+8D8h]` at 0x006E8212 -- and then the
 // four-argument `CScriptObject` ctor at 0x006E8238, which is what creates
 // `mLuaObj`.
-CUnitCommand::CUnitCommand(Sim* const sim, const SSTICommandIssueData& issueData, const CmdId resolvedCommandId)
+CUnitCommand::CUnitCommand(
+  Sim* const sim,
+  const SSTICommandIssueData& issueData,
+  const CmdId resolvedCommandId
+)
   : CScriptObject(
       GetUnitCommandFactory(sim != nullptr ? sim->mLuaState : nullptr),
       LuaPlus::LuaObject{},
@@ -801,7 +558,7 @@ CUnitCommand::CUnitCommand(Sim* const sim, const SSTICommandIssueData& issueData
     return;
   }
 
-  const msvc8::vector<WeakPtr<CUnitCommand>> coordinatingPeers = coordinatingCommand->GetCoordinatingOrdersSnapshot();
+  const fa::vector<WeakPtr<CUnitCommand>> coordinatingPeers = coordinatingCommand->GetCoordinatingOrdersSnapshot();
   for (const WeakPtr<CUnitCommand>& peerWeak : coordinatingPeers) {
     CUnitCommand* const peer = peerWeak.GetObjectPtr();
     if (!peer || peer == this) {
@@ -831,12 +588,13 @@ gpg::RRef CUnitCommand::GetDerivedObjectRef()
 }
 
 /**
- * Address: 0x006E7D40 (FUN_006E7D40, ?GetCoordinateWith@CUnitCommand@Moho@@QBE?AV?$vector@V?$WeakPtr@VCUnitCommand@Moho@@@Moho@@V?$allocator@V?$WeakPtr@VCUnitCommand@Moho@@@Moho@@@std@@@std@@XZ)
+ * Address: 0x006E7D40 (FUN_006E7D40,
+ * ?GetCoordinateWith@CUnitCommand@Moho@@QBE?AV?$vector@V?$WeakPtr@VCUnitCommand@Moho@@@Moho@@V?$allocator@V?$WeakPtr@VCUnitCommand@Moho@@@Moho@@@std@@@std@@XZ)
  *
  * What it does:
  * Returns a by-value snapshot of this command's coordinating-order weak links.
  */
-msvc8::vector<WeakPtr<CUnitCommand>> CUnitCommand::GetCoordinatingOrdersSnapshot() const
+fa::vector<WeakPtr<CUnitCommand>> CUnitCommand::GetCoordinatingOrdersSnapshot() const
 {
   return mCoordinatingOrders;
 }
@@ -848,7 +606,12 @@ msvc8::vector<WeakPtr<CUnitCommand>> CUnitCommand::GetCoordinatingOrdersSnapshot
  * Allocates one command object, runs default constructor lanes, and publishes
  * the result as an unowned construct payload.
  */
-void CUnitCommand::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+void CUnitCommand::MemberConstruct(
+  gpg::ReadArchive&,
+  const int,
+  const gpg::RRef&,
+  gpg::SerConstructResult& result
+)
 {
   result.SetUnowned(gpg::MakeRRef(new CUnitCommand()), 0u);
 }
@@ -861,7 +624,10 @@ void CUnitCommand::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef
  * Loads reflected base/object lanes and command payload fields, then maps the
  * serialized unit-set lane into command-runtime unit entries.
  */
-void CUnitCommand::MemberDeserialize(gpg::ReadArchive* const archive, const int version)
+void CUnitCommand::MemberDeserialize(
+  gpg::ReadArchive* const archive,
+  const int version
+)
 {
   if (!archive) {
     return;
@@ -942,7 +708,10 @@ void CUnitCommand::MemberDeserialize(gpg::ReadArchive* const archive, const int 
  * Saves reflected base/object lanes and command payload fields, serializing
  * the command-unit set through legacy `EntitySetTemplate<Unit>` RTTI lanes.
  */
-void CUnitCommand::MemberSerialize(gpg::WriteArchive* const archive, const int version)
+void CUnitCommand::MemberSerialize(
+  gpg::WriteArchive* const archive,
+  const int version
+)
 {
   if (!archive) {
     return;
@@ -1010,7 +779,7 @@ void CUnitCommand::MemberSerialize(gpg::WriteArchive* const archive, const int v
 
 /**
  * Address: 0x006E8B40 (FUN_006E8B40)
- * Address: 0x006E96F0 (FUN_006E96F0, `msvc8::vector<WeakPtr<CUnitCommand>>::insert(pos, value)`
+ * Address: 0x006E96F0 (FUN_006E96F0, `fa::vector<WeakPtr<CUnitCommand>>::insert(pos, value)`
  *   for the `queue` insert below: offset, `_Insert_n` 0x006EA440, `begin() + offset`)
  *
  * What it does:
@@ -1020,7 +789,11 @@ void CUnitCommand::MemberSerialize(gpg::WriteArchive* const archive, const int v
  * A negative index is `index + size() + 1` (0x006E8BAD..0x006E8BBA); nothing
  * clamps it into range.
  */
-void CUnitCommand::AddUnit(Unit* const unit, msvc8::vector<WeakPtr<CUnitCommand>>& queue, const int index)
+void CUnitCommand::AddUnit(
+  Unit* const unit,
+  fa::vector<WeakPtr<CUnitCommand>>& queue,
+  const int index
+)
 {
   if (!unit || unit->IsDead() || unit->DestroyQueued()) {
     return;
@@ -1049,7 +822,9 @@ void CUnitCommand::AddUnit(Unit* const unit, msvc8::vector<WeakPtr<CUnitCommand>
  * Adds one live unit into this command's unit-set and formation lanes without
  * mutating any external command queue.
  */
-void CUnitCommand::AddUnit(Unit* const unit)
+void CUnitCommand::AddUnit(
+  Unit* const unit
+)
 {
   if (!unit || unit->IsDead() || unit->DestroyQueued()) {
     return;
@@ -1077,7 +852,10 @@ void CUnitCommand::AddUnit(Unit* const unit)
  * a miss (0x006E8C9A, 0x006E8CAA):
  * Address: 0x006EC170 (FUN_006EC170, `std::find` over `WeakPtr<CUnitCommand>` for a `CUnitCommand*`)
  */
-void CUnitCommand::RemoveUnit(Unit* const unit, msvc8::vector<WeakPtr<CUnitCommand>>& queue)
+void CUnitCommand::RemoveUnit(
+  Unit* const unit,
+  fa::vector<WeakPtr<CUnitCommand>>& queue
+)
 {
   if (!mUnitSet.Remove(unit)) {
     return;
@@ -1088,7 +866,7 @@ void CUnitCommand::RemoveUnit(Unit* const unit, msvc8::vector<WeakPtr<CUnitComma
   if (mFormationInstance) {
     mFormationInstance->RemoveUnit(unit);
     if (mFormationInstance && mFormationInstance->UnitCount() == 0) {
-      CountedObject* formationObject = reinterpret_cast<CountedObject*>(mFormationInstance);
+      CountedObject* formationObject = static_cast<CountedObject*>(mFormationInstance);
       ReleaseIntrusiveRefcountedObject(formationObject);
       mFormationInstance = nullptr;
     }
@@ -1103,7 +881,9 @@ void CUnitCommand::RemoveUnit(Unit* const unit, msvc8::vector<WeakPtr<CUnitComma
  * What it does:
  * Removes `unit` from this command's unit-set without touching queue links.
  */
-void CUnitCommand::RemoveUnit(Unit* const unit)
+void CUnitCommand::RemoveUnit(
+  Unit* const unit
+)
 {
   if (!mUnitSet.Remove(unit)) {
     return;
@@ -1114,7 +894,7 @@ void CUnitCommand::RemoveUnit(Unit* const unit)
   if (mFormationInstance) {
     mFormationInstance->RemoveUnit(unit);
     if (mFormationInstance && mFormationInstance->UnitCount() == 0) {
-      CountedObject* formationObject = reinterpret_cast<CountedObject*>(mFormationInstance);
+      CountedObject* formationObject = static_cast<CountedObject*>(mFormationInstance);
       ReleaseIntrusiveRefcountedObject(formationObject);
       mFormationInstance = nullptr;
     }
@@ -1128,7 +908,10 @@ void CUnitCommand::RemoveUnit(Unit* const unit)
  * Removes one unit from the active formation lane and releases the formation
  * instance when that lane becomes empty.
  */
-void CUnitCommand::FormRemoveUnit(Unit* const unit, CUnitCommand* const command)
+void CUnitCommand::FormRemoveUnit(
+  Unit* const unit,
+  CUnitCommand* const command
+)
 {
   if (!command) {
     return;
@@ -1144,7 +927,7 @@ void CUnitCommand::FormRemoveUnit(Unit* const unit, CUnitCommand* const command)
     return;
   }
 
-  CountedObject* formationObject = reinterpret_cast<CountedObject*>(formationInstance);
+  CountedObject* formationObject = static_cast<CountedObject*>(formationInstance);
   ReleaseIntrusiveRefcountedObject(formationObject);
   command->mFormationInstance = nullptr;
 }
@@ -1155,7 +938,9 @@ void CUnitCommand::FormRemoveUnit(Unit* const unit, CUnitCommand* const command)
  * What it does:
  * Returns the current focus entity from the target weak-link lane.
  */
-Entity* CUnitCommand::GetFocus(CUnitCommand* const command)
+Entity* CUnitCommand::GetFocus(
+  CUnitCommand* const command
+)
 {
   if (!command) {
     return nullptr;
@@ -1170,7 +955,9 @@ Entity* CUnitCommand::GetFocus(CUnitCommand* const command)
  * What it does:
  * Resolves the focused entity to a live unit pointer when available.
  */
-Unit* CUnitCommand::GetTarget(CUnitCommand* const command)
+Unit* CUnitCommand::GetTarget(
+  CUnitCommand* const command
+)
 {
   Entity* const focus = GetFocus(command);
   return focus ? focus->IsUnit() : nullptr;
@@ -1220,7 +1007,10 @@ bool CUnitCommand::IsDone() const
  * What it does:
  * Returns the active formation instance when `unit` already belongs to it.
  */
-CAiFormationInstance* CUnitCommand::InFormation(Unit* const unit, CUnitCommand* const command)
+CAiFormationInstance* CUnitCommand::InFormation(
+  Unit* const unit,
+  CUnitCommand* const command
+)
 {
   if (!command || !unit) {
     return nullptr;
@@ -1241,7 +1031,11 @@ CAiFormationInstance* CUnitCommand::InFormation(Unit* const unit, CUnitCommand* 
  * Resolves the command position used by formation and non-formation move
  * dispatch paths.
  */
-SOCellPos* CUnitCommand::GetPosition(CUnitCommand* const command, Unit* const unit, SOCellPos* const dest)
+SOCellPos* CUnitCommand::GetPosition(
+  CUnitCommand* const command,
+  Unit* const unit,
+  SOCellPos* const dest
+)
 {
   if (!command || !unit || !dest) {
     return dest;
@@ -1268,12 +1062,14 @@ SOCellPos* CUnitCommand::GetPosition(CUnitCommand* const command, Unit* const un
  * existing formations when appropriate, and creates a new formation instance
  * when the command first needs one.
  */
-void CUnitCommand::Move(Unit* const unit, CUnitCommand* const command)
+void CUnitCommand::Move(
+  Unit* const unit,
+  CUnitCommand* const command
+)
 {
   if (!unit || !command) {
     return;
   }
-
 
   if (command->mUnitSet.mVec.size() <= 1u || command->mConstDat.mFormationScriptIndex < 0) {
     return;
@@ -1342,7 +1138,9 @@ void CUnitCommand::Move(Unit* const unit, CUnitCommand* const command)
  * for republication. Only `UNITCOMMAND_BuildFactory` commands carry a count,
  * so every other command type is ignored outright.
  */
-void CUnitCommand::IncreaseCount(const int amount)
+void CUnitCommand::IncreaseCount(
+  const int amount
+)
 {
   if (amount <= 0 || mVarDat.mCmdType != EUnitCommandType::UNITCOMMAND_BuildFactory) {
     return;
@@ -1374,7 +1172,9 @@ void CUnitCommand::IncreaseCount(const int amount)
  * an upgrade command that also invalidates whatever the rest of that unit's
  * queue assumed about its upgrade chain, so the queue is re-pruned.
  */
-void CUnitCommand::DecreaseCount(const int amount)
+void CUnitCommand::DecreaseCount(
+  const int amount
+)
 {
   // Captured before the teardown below can run: the type is what decides
   // whether the queue needs re-pruning, and callers may free this command.
@@ -1396,7 +1196,7 @@ void CUnitCommand::DecreaseCount(const int amount)
   }
 
   // Iterate a copy: RemoveCommandFromQueue mutates the command's own unit set.
-  msvc8::vector<Entity*> assignedUnits{};
+  fa::vector<Entity*> assignedUnits{};
   assignedUnits.reserve(mUnitSet.mVec.size());
   for (Entity* const entry : mUnitSet.mVec) {
     assignedUnits.push_back(entry);
@@ -1425,7 +1225,9 @@ void CUnitCommand::DecreaseCount(const int amount)
  * command state dirty, recentres the command's formation on the new target
  * (0x006E887D..0x006E88BF), then emits one command-event broadcast.
  */
-void CUnitCommand::SetTarget(const CAiTarget& target)
+void CUnitCommand::SetTarget(
+  const CAiTarget& target
+)
 {
   mTarget = target;
   mTarget.EncodeToSSTITarget(mVarDat.mTarget1);
@@ -1493,7 +1295,7 @@ void CUnitCommand::DestroyInternal()
   mArgs = LuaPlus::LuaObject{};
 
   // +0x148..+0x154: coordinating-order vector storage (8-byte owner-link elements).
-  mCoordinatingOrders = msvc8::vector<WeakPtr<CUnitCommand>>{};
+  mCoordinatingOrders = fa::vector<WeakPtr<CUnitCommand>>{};
 
   // +0x120 is `mTarget`'s entity weak link (`mTarget` at +0x11C, its
   // `targetEntity` at +0x04), unlinked with the 0x0057D490 shape. It was
@@ -1510,8 +1312,8 @@ void CUnitCommand::DestroyInternal()
   // +0x0F8 command unit-set vector payload.
   mUnitSet.mVec = gpg::core::FastVectorN<Entity*, 4>{};
 
-  // +0x0068 legacy msvc8::string payload in constant command data.
-  mConstDat.unk2 = msvc8::string{};
+  // +0x0068 legacy fa::string payload in constant command data.
+  mConstDat.unk2 = fa::string{};
 
   // `mUnitSet`'s list node (+0xF0, unlinked and self-linked at 0x006E8689)
   // and the `Broadcaster` base (+0x34, at 0x006E86E4) are ordinary ring
@@ -1527,7 +1329,10 @@ void CUnitCommand::DestroyInternal()
  * Rebuilds published command-event membership from the live command-unit set
  * and toggles publish state for empty/non-empty results.
  */
-void CUnitCommand::RefreshPublishedCommandEvent(const bool forceRefresh, SSyncData* const syncData)
+void CUnitCommand::RefreshPublishedCommandEvent(
+  const bool forceRefresh,
+  SSyncData* const syncData
+)
 {
   if (!mNeedsUpdate && !forceRefresh) {
     return;
@@ -1622,14 +1427,15 @@ Unit* CUnitCommand::CreateFerryBeacon(
   SUnitConstructionParams params(0, Wm3::Vector3f{x, y, z}, army, blueprint, nullptr, true);
   params.mUseLayerOverride = 1u;
 
-  void* const storage = ::operator new(sizeof(Unit), std::nothrow);
-  Unit* const beacon = (storage != nullptr) ? new (storage) Unit(params) : nullptr;
+  Unit* const beacon = new (std::nothrow) Unit(params);
 
   command.mUnit.Set(beacon);
   return command.mUnit.GetObjectPtr();
 }
 
-void CUnitCommand::CoordinateWith(CUnitCommand* const other)
+void CUnitCommand::CoordinateWith(
+  CUnitCommand* const other
+)
 {
   if (other->mVarDat.mCmdType != mVarDat.mCmdType) {
     return;
@@ -1655,7 +1461,10 @@ void CUnitCommand::CoordinateWith(CUnitCommand* const other)
  * capitalised keys made every such script see nil and skip its order.
  * The blueprint id is written whenever the command has a blueprint.
  */
-void moho::SimGetCommandQueueInsert(LuaPlus::LuaObject& queueArray, CUnitCommand& command)
+void moho::SimGetCommandQueueInsert(
+  LuaPlus::LuaObject& queueArray,
+  CUnitCommand& command
+)
 {
   LuaPlus::LuaObject& row = command.mLuaObj;
   row.SetInteger("commandType", static_cast<std::int32_t>(command.mVarDat.mCmdType));

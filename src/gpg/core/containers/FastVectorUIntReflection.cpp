@@ -32,7 +32,7 @@ namespace gpg
      * Returns base lexical text plus reflected vector size for one
      * `fastvector<float>` instance.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     /**
      * Address: 0x00659B30 (FUN_00659B30, gpg::RFastVectorType_float::IsIndexed)
      *
@@ -99,7 +99,7 @@ namespace gpg
     /**
      * Address: 0x00558CF0 (FUN_00558CF0, gpg::RFastVectorType_SSTIEntityAttachInfo::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x00558D80 (FUN_00558D80, gpg::RFastVectorType_SSTIEntityAttachInfo::IsIndexed)
@@ -159,7 +159,7 @@ namespace gpg
     /**
      * Address: 0x0055CCB0 (FUN_0055CCB0, gpg::RFastVectorType_UnitWeaponInfo::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x0055CD40 (FUN_0055CD40, gpg::RFastVectorType_UnitWeaponInfo::IsIndexed)
@@ -218,7 +218,7 @@ namespace gpg
     /**
      * Address: 0x0056C0E0 (FUN_0056C0E0, gpg::RFastVectorType_SOffsetInfo::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x0056C170 (FUN_0056C170, gpg::RFastVectorType_SOffsetInfo::IsIndexed)
@@ -278,7 +278,7 @@ namespace gpg
     /**
      * Address: 0x0056C300 (FUN_0056C300, gpg::RFastVectorType_SAssignedLocInfo::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x0056C390 (FUN_0056C390, gpg::RFastVectorType_SAssignedLocInfo::IsIndexed)
@@ -312,7 +312,7 @@ namespace gpg
   );
 
   template <>
-  class RFastVectorType<msvc8::string> final : public gpg::RType, public gpg::RIndexed
+  class RFastVectorType<fa::string> final : public gpg::RType, public gpg::RIndexed
   {
   public:
     /**
@@ -326,14 +326,14 @@ namespace gpg
      *
      * What it does:
      * Returns base lexical text plus reflected vector size for one
-     * `fastvector<msvc8::string>` instance.
+     * `fastvector<fa::string>` instance.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     /**
      * Address: 0x0065A1B0 (FUN_0065A1B0, gpg::RFastVectorType_String::IsIndexed)
      *
      * What it does:
-     * Returns this indexed-interface lane for `fastvector<msvc8::string>`
+     * Returns this indexed-interface lane for `fastvector<fa::string>`
      * reflection.
      */
     [[nodiscard]] const gpg::RIndexed* IsIndexed() const override;
@@ -350,7 +350,7 @@ namespace gpg
      *
      * What it does:
      * Builds one reflected element reference for
-     * `fastvector<msvc8::string>[ind]`.
+     * `fastvector<fa::string>[ind]`.
      */
     gpg::RRef SubscriptIndex(void* obj, int ind) const override;
     /**
@@ -358,20 +358,20 @@ namespace gpg
      *
      * What it does:
      * Returns runtime element count for one reflected
-     * `fastvector<msvc8::string>`.
+     * `fastvector<fa::string>`.
      */
     size_t GetCount(void* obj) const override;
     /**
      * Address: 0x0065A1E0 (FUN_0065A1E0, gpg::RFastVectorType_String::SetCount)
      *
      * What it does:
-     * Resizes one reflected `fastvector<msvc8::string>` and default-fills new
+     * Resizes one reflected `fastvector<fa::string>` and default-fills new
      * lanes with empty strings.
      */
     void SetCount(void* obj, int count) const override;
   };
 
-  static_assert(sizeof(RFastVectorType<msvc8::string>) == 0x68, "RFastVectorType<msvc8::string> size must be 0x68");
+  static_assert(sizeof(RFastVectorType<fa::string>) == 0x68, "RFastVectorType<fa::string> size must be 0x68");
 
   template <>
   class RFastVectorType<Wm3::Vector3f> final : public gpg::RType, public gpg::RIndexed
@@ -390,7 +390,7 @@ namespace gpg
      * Returns base lexical text plus reflected vector size for one
      * `fastvector<Wm3::Vector3f>` instance.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     [[nodiscard]] const gpg::RIndexed* IsIndexed() const override;
     void Init() override;
     gpg::RRef SubscriptIndex(void* obj, int ind) const override;
@@ -412,39 +412,19 @@ namespace
 {
 
   /**
-   * Address: 0x00552050 (FUN_00552050)
-   *
-   * What it does:
-   * Writes the invalid `EntId` sentinel word (`0xF0000000`) to output
-   * storage.
-   */
-  [[maybe_unused]] [[nodiscard]] unsigned int* WriteInvalidEntIdSentinelWordLaneA(unsigned int* const outWord) noexcept
-  {
-    *outWord = 0xF0000000u;
-    return outWord;
-  }
-
-  /**
-   * Address: 0x00552080 (FUN_00552080)
-   *
-   * What it does:
-   * Writes the all-bits-set sentinel word (`0xFFFFFFFF`) to output storage.
-   */
-  [[maybe_unused]] [[nodiscard]] unsigned int* WriteAllBitsSetWordLaneA(unsigned int* const outWord) noexcept
-  {
-    *outWord = 0xFFFFFFFFu;
-    return outWord;
-  }
-
-  /**
    * Address: 0x004027F0 (FUN_004027F0)
    *
    * What it does:
    * Reads vector count and serialized uint lanes into reflected fastvector storage.
    */
-  void LoadFastVectorUInt(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef*)
+  void LoadFastVectorUInt(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef*
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -469,9 +449,14 @@ namespace
    * What it does:
    * Writes vector count and serialized uint lanes from reflected fastvector storage.
    */
-  void SaveFastVectorUInt(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef*)
+  void SaveFastVectorUInt(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef*
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -576,7 +561,11 @@ namespace
    * Resizes one runtime `fastvector<float>` lane to `newSize`, truncating or
    * appending `*fillValue` as needed.
    */
-  [[nodiscard]] unsigned int FastVectorFloatResize(const float* fillValue, const unsigned int newSize, void* objectStorage)
+  [[nodiscard]] unsigned int FastVectorFloatResize(
+    const float* fillValue,
+    const unsigned int newSize,
+    void* objectStorage
+  )
   {
     auto& elements = *static_cast<gpg::core::FastVectorInline<float>*>(objectStorage);
     elements.resize(newSize, *fillValue);
@@ -589,9 +578,14 @@ namespace
    * What it does:
    * Loads one reflected `fastvector<float>` payload from archive count + lanes.
    */
-  void LoadFastVectorFloat(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef*)
+  void LoadFastVectorFloat(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef*
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -616,9 +610,14 @@ namespace
    * What it does:
    * Saves one reflected `fastvector<float>` payload as archive count + lanes.
    */
-  void SaveFastVectorFloat(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef*)
+  void SaveFastVectorFloat(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef*
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -633,7 +632,7 @@ namespace
     }
   }
 
-  using FastVectorStringType = gpg::RFastVectorType<msvc8::string>;
+  using FastVectorStringType = gpg::RFastVectorType<fa::string>;
 
   /**
    * Address: 0x00BFBB10 (FUN_00BFBB10, atexit destructor of the FastVectorStringType object)
@@ -644,9 +643,13 @@ namespace
     return &sInstance;
   }
 
-  void FastVectorStringResize(const msvc8::string* fillValue, const unsigned int newSize, void* objectStorage)
+  void FastVectorStringResize(
+    const fa::string* fillValue,
+    const unsigned int newSize,
+    void* objectStorage
+  )
   {
-    auto& elements = *static_cast<gpg::core::FastVectorInline<msvc8::string>*>(objectStorage);
+    auto& elements = *static_cast<gpg::core::FastVectorInline<fa::string>*>(objectStorage);
     elements.resize(newSize, *fillValue);
   }
 
@@ -654,12 +657,17 @@ namespace
    * Address: 0x0065A5E0 (FUN_0065A5E0, gpg::RFastVectorType_String::SerLoad)
    *
    * What it does:
-   * Loads one reflected `fastvector<msvc8::string>` payload from archive count
+   * Loads one reflected `fastvector<fa::string>` payload from archive count
    * + lanes.
    */
-  void LoadFastVectorString(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef*)
+  void LoadFastVectorString(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef*
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -669,10 +677,10 @@ namespace
     unsigned int count = 0;
     archive->ReadUInt(&count);
 
-    const msvc8::string fill{};
+    const fa::string fill{};
     FastVectorStringResize(&fill, count, storage);
 
-    auto& elements = *static_cast<gpg::core::FastVectorInline<msvc8::string>*>(storage);
+    auto& elements = *static_cast<gpg::core::FastVectorInline<fa::string>*>(storage);
     for (unsigned int i = 0; i < count; ++i) {
       archive->ReadString(elements.Data() + (i));
     }
@@ -682,23 +690,28 @@ namespace
    * Address: 0x0065A6A0 (FUN_0065A6A0, gpg::RFastVectorType_String::SerSave)
    *
    * What it does:
-   * Saves one reflected `fastvector<msvc8::string>` payload as archive count +
+   * Saves one reflected `fastvector<fa::string>` payload as archive count +
    * lanes.
    */
-  void SaveFastVectorString(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef*)
+  void SaveFastVectorString(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef*
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
       return;
     }
 
-    const auto& elements = *static_cast<const gpg::core::FastVectorInline<msvc8::string>*>(storage);
+    const auto& elements = *static_cast<const gpg::core::FastVectorInline<fa::string>*>(storage);
     const unsigned int count = elements.Data() ? static_cast<unsigned int>(elements.Size()) : 0u;
     archive->WriteUInt(count);
     for (unsigned int i = 0; i < count; ++i) {
-      archive->WriteString(const_cast<msvc8::string*>(elements.Data() + (i)));
+      archive->WriteString(const_cast<fa::string*>(elements.Data() + (i)));
     }
   }
 
@@ -754,20 +767,29 @@ namespace
    * to `count` -- copy-constructing appended entries from that prototype and
    * destroying trimmed ones -- then tears the prototype down. The prototype is
    * a real object rather than a zeroed blob because `UnitWeaponInfo` owns two
-   * `EntityCategorySet` word vectors and two `msvc8::string` lanes.
+   * `EntityCategorySet` word vectors and two `fa::string` lanes.
    *
    * The retail body reaches the resize through the per-`UnitWeaponInfo`
    * emissions of the shared fastvector resize template (FUN_0055D260 and its
    * copy-assign / relocate lanes); recovered source calls that shared template
    * directly, which is the canonical per-T form for these emissions.
    */
-  void SetFastVectorUnitWeaponInfoCount(void* const vector, const int count)
+  void SetFastVectorUnitWeaponInfoCount(
+    void* const vector,
+    const int count
+  )
   {
     moho::UnitWeaponInfo fill;
-    static_cast<gpg::core::FastVectorInline<moho::UnitWeaponInfo>*>(vector)->resize(static_cast<unsigned int>(count), fill);
+    static_cast<gpg::core::FastVectorInline<moho::UnitWeaponInfo>*>(vector)->resize(
+      static_cast<unsigned int>(count), fill
+    );
   }
 
-  void FastVectorVector3fResize(const Wm3::Vector3f* fillValue, const unsigned int newSize, void* objectStorage)
+  void FastVectorVector3fResize(
+    const Wm3::Vector3f* fillValue,
+    const unsigned int newSize,
+    void* objectStorage
+  )
   {
     auto& elements = *static_cast<gpg::core::FastVectorInline<Wm3::Vector3f>*>(objectStorage);
     elements.resize(newSize, *fillValue);
@@ -781,9 +803,14 @@ namespace
    * resizes backing storage with zeroed fill lanes, then deserializes each
    * element through `ReadArchive::Read`.
    */
-  void LoadFastVectorVector3f(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void LoadFastVectorVector3f(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -814,12 +841,12 @@ namespace
    */
   void LoadFastVectorSSTIEntityAttachInfo(
     gpg::ReadArchive* archive,
-    std::intptr_t objectPtr,
+    void* objectPtr,
     int,
     gpg::RRef* ownerRef
   )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -848,9 +875,14 @@ namespace
    * Writes one reflected `fastvector<Wm3::Vector3f>` payload as archive count
    * plus per-lane `WriteArchive::Write` serialization.
    */
-  void SaveFastVectorVector3f(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void SaveFastVectorVector3f(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -877,12 +909,12 @@ namespace
    */
   void SaveFastVectorSSTIEntityAttachInfo(
     gpg::WriteArchive* archive,
-    std::intptr_t objectPtr,
+    void* objectPtr,
     int,
     gpg::RRef* ownerRef
   )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -915,13 +947,18 @@ namespace
    *
    * The prototype is a real object rather than a zeroed blob because
    * `UnitWeaponInfo` owns two `EntityCategorySet` word vectors and two
-   * `msvc8::string` lanes; the retail body constructs it at 0x0055D4F7 and
+   * `fa::string` lanes; the retail body constructs it at 0x0055D4F7 and
    * destroys it at 0x0055D523, immediately after the resize at 0x0055D50F and
    * before the read loop.
    */
-  void LoadFastVectorUnitWeaponInfo(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void LoadFastVectorUnitWeaponInfo(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -969,7 +1006,11 @@ void gpg::register_RFastVectorType_uint()
  * Resizes reflected dword-array fastvector storage and fills newly appended
  * lanes with `*fillValue`.
  */
-void gpg::FastVectorUIntResize(const unsigned int* fillValue, const unsigned int newSize, void* objectStorage)
+void gpg::FastVectorUIntResize(
+  const unsigned int* fillValue,
+  const unsigned int newSize,
+  void* objectStorage
+)
 {
   auto& elements = *static_cast<gpg::core::FastVectorInline<unsigned int>*>(objectStorage);
   elements.resize(newSize, *fillValue);
@@ -982,7 +1023,11 @@ void gpg::FastVectorUIntResize(const unsigned int* fillValue, const unsigned int
  * Resizes reflected `moho::SOCellPos` fastvector storage and fills newly
  * appended lanes with `*fillValue`.
  */
-void gpg::FastVectorSOCellPosResize(const moho::SOCellPos* fillValue, const unsigned int newSize, void* objectStorage)
+void gpg::FastVectorSOCellPosResize(
+  const moho::SOCellPos* fillValue,
+  const unsigned int newSize,
+  void* objectStorage
+)
 {
   auto& elements = *static_cast<gpg::core::FastVectorInline<moho::SOCellPos>*>(objectStorage);
   elements.resize(newSize, *fillValue);
@@ -1012,16 +1057,18 @@ gpg::RFastVectorType<unsigned int>::~RFastVectorType() = default;
  */
 const char* gpg::RFastVectorType<unsigned int>::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<unsigned int>()->GetName());
+  static const fa::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<unsigned int>()->GetName());
   return sName.c_str();
 }
 
 /**
  * Address: 0x004024E0 (FUN_004024E0)
  */
-msvc8::string gpg::RFastVectorType<unsigned int>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<unsigned int>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -1038,7 +1085,10 @@ const gpg::RIndexed* gpg::RFastVectorType<unsigned int>::IsIndexed() const
  */
 void gpg::RFastVectorType<unsigned int>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<unsigned int>) == 0x10, "gpg::core::FastVectorInline<unsigned int> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<unsigned int>) == 0x10,
+    "gpg::core::FastVectorInline<unsigned int> is 0x10 bytes on x86"
+  );
   size_ = sizeof(gpg::core::FastVectorInline<unsigned int>);
   version_ = 1;
   serLoadFunc_ = &LoadFastVectorUInt;
@@ -1048,7 +1098,10 @@ void gpg::RFastVectorType<unsigned int>::Init()
 /**
  * Address: 0x004025B0 (FUN_004025B0)
  */
-gpg::RRef gpg::RFastVectorType<unsigned int>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<unsigned int>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   GPG_ASSERT(ind >= 0);
   GPG_ASSERT(obj != nullptr);
@@ -1077,7 +1130,9 @@ gpg::RRef gpg::RFastVectorType<unsigned int>::SubscriptIndex(void* obj, const in
 /**
  * Address: 0x00402580 (FUN_00402580)
  */
-size_t gpg::RFastVectorType<unsigned int>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<unsigned int>::GetCount(
+  void* obj
+) const
 {
   if (!obj) {
     return 0u;
@@ -1093,7 +1148,10 @@ size_t gpg::RFastVectorType<unsigned int>::GetCount(void* obj) const
 /**
  * Address: 0x00402590 (FUN_00402590)
  */
-void gpg::RFastVectorType<unsigned int>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<unsigned int>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   GPG_ASSERT(obj != nullptr);
   GPG_ASSERT(count >= 0);
@@ -1106,7 +1164,7 @@ void gpg::RFastVectorType<unsigned int>::SetCount(void* obj, const int count) co
 }
 
 /**
-  * Alias of FUN_0065AA60 (non-canonical helper lane).
+ * Alias of FUN_0065AA60 (non-canonical helper lane).
  *
  * What it does:
  * Constructs and preregisters startup RTTI descriptor for `gpg::fastvector<float>`.
@@ -1144,7 +1202,7 @@ gpg::RFastVectorType<float>::~RFastVectorType() = default;
  */
 const char* gpg::RFastVectorType<float>::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<float>()->GetName());
+  static const fa::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<float>()->GetName());
   return sName.c_str();
 }
 
@@ -1155,9 +1213,11 @@ const char* gpg::RFastVectorType<float>::GetName() const
  * Returns base lexical text plus reflected vector size for one
  * `fastvector<float>` instance.
  */
-msvc8::string gpg::RFastVectorType<float>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<float>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -1181,7 +1241,9 @@ const gpg::RIndexed* gpg::RFastVectorType<float>::IsIndexed() const
  */
 void gpg::RFastVectorType<float>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<float>) == 0x10, "gpg::core::FastVectorInline<float> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<float>) == 0x10, "gpg::core::FastVectorInline<float> is 0x10 bytes on x86"
+  );
   size_ = sizeof(gpg::core::FastVectorInline<float>);
   version_ = 1;
   serLoadFunc_ = &LoadFastVectorFloat;
@@ -1194,7 +1256,10 @@ void gpg::RFastVectorType<float>::Init()
  * What it does:
  * Builds one reflected element reference for `fastvector<float>[ind]`.
  */
-gpg::RRef gpg::RFastVectorType<float>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<float>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   GPG_ASSERT(ind >= 0);
   GPG_ASSERT(obj != nullptr);
@@ -1226,7 +1291,9 @@ gpg::RRef gpg::RFastVectorType<float>::SubscriptIndex(void* obj, const int ind) 
  * What it does:
  * Returns runtime element count for one reflected `fastvector<float>`.
  */
-size_t gpg::RFastVectorType<float>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<float>::GetCount(
+  void* obj
+) const
 {
   if (!obj) {
     return 0u;
@@ -1245,7 +1312,10 @@ size_t gpg::RFastVectorType<float>::GetCount(void* obj) const
  * What it does:
  * Resizes one reflected `fastvector<float>` and zero-fills new lanes.
  */
-void gpg::RFastVectorType<float>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<float>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   GPG_ASSERT(obj != nullptr);
   GPG_ASSERT(count >= 0);
@@ -1310,7 +1380,8 @@ gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::~RFastVectorType() = default;
  */
 const char* gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SSTIEntityAttachInfo>()->GetName());
+  static const fa::string sName =
+    gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SSTIEntityAttachInfo>()->GetName());
   return sName.c_str();
 }
 
@@ -1323,9 +1394,11 @@ const char* gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::GetName() const
  * (`[this+0x64] + 4`, called at 0x00558D3F with `this+0x64`), which is exactly
  * this class's `GetCount`.
  */
-msvc8::string gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -1342,7 +1415,10 @@ const gpg::RIndexed* gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::IsIndexed
  */
 void gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<moho::SSTIEntityAttachInfo>) == 0x10, "gpg::core::FastVectorInline<moho::SSTIEntityAttachInfo> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<moho::SSTIEntityAttachInfo>) == 0x10,
+    "gpg::core::FastVectorInline<moho::SSTIEntityAttachInfo> is 0x10 bytes on x86"
+  );
   size_ = sizeof(gpg::core::FastVectorInline<moho::SSTIEntityAttachInfo>);
   version_ = 1;
   serLoadFunc_ = &LoadFastVectorSSTIEntityAttachInfo;
@@ -1358,7 +1434,10 @@ void gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::Init()
  * (`lea eax, [eax+ecx*4]`-equivalent `4 * a3` at 0x00558DD8); the retail body
  * performs no bounds or null check, so none is added here.
  */
-gpg::RRef gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   auto& elements = *static_cast<gpg::core::FastVectorInline<moho::SSTIEntityAttachInfo>*>(obj);
   gpg::RRef out{};
@@ -1373,7 +1452,9 @@ gpg::RRef gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::SubscriptIndex(void*
  * Returns the lane count as `(end - begin) >> 2` -- a shift rather than a
  * reciprocal multiply, because `sizeof(SSTIEntityAttachInfo)` is 4.
  */
-size_t gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::GetCount(
+  void* obj
+) const
 {
   const auto& elements = *static_cast<const gpg::core::FastVectorInline<moho::SSTIEntityAttachInfo>*>(obj);
   return elements.Size();
@@ -1387,7 +1468,10 @@ size_t gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::GetCount(void* obj) con
  * sentinel (`0F0000000h` at 0x00558DAF) rather than zero -- entity id 0 is a
  * legal id.
  */
-void gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<moho::SSTIEntityAttachInfo>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   moho::SSTIEntityAttachInfo fill{};
   fill.mAttachedEntityId = kInvalidAttachedEntityId;
@@ -1449,7 +1533,7 @@ gpg::RFastVectorType<moho::UnitWeaponInfo>::~RFastVectorType() = default;
  */
 const char* gpg::RFastVectorType<moho::UnitWeaponInfo>::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", CachedUnitWeaponInfoType()->GetName());
+  static const fa::string sName = gpg::STR_Printf("fastvector<%s>", CachedUnitWeaponInfoType()->GetName());
   return sName.c_str();
 }
 
@@ -1462,9 +1546,11 @@ const char* gpg::RFastVectorType<moho::UnitWeaponInfo>::GetName() const
  * with `this+0x64` and `ref.mObj` (0x0055CCF6-0x0055CD00) -- i.e. this class's
  * own `GetCount`.
  */
-msvc8::string gpg::RFastVectorType<moho::UnitWeaponInfo>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<moho::UnitWeaponInfo>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -1481,7 +1567,10 @@ const gpg::RIndexed* gpg::RFastVectorType<moho::UnitWeaponInfo>::IsIndexed() con
  */
 void gpg::RFastVectorType<moho::UnitWeaponInfo>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<moho::UnitWeaponInfo>) == 0x10, "gpg::core::FastVectorInline<moho::UnitWeaponInfo> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<moho::UnitWeaponInfo>) == 0x10,
+    "gpg::core::FastVectorInline<moho::UnitWeaponInfo> is 0x10 bytes on x86"
+  );
   size_ = sizeof(gpg::core::FastVectorInline<moho::UnitWeaponInfo>);
   version_ = 1;
   serLoadFunc_ = &LoadFastVectorUnitWeaponInfo;
@@ -1496,7 +1585,10 @@ void gpg::RFastVectorType<moho::UnitWeaponInfo>::Init()
  * Element stride is 0x98 (`imul eax, 98h` at 0x0055CDE8), matching
  * `sizeof(UnitWeaponInfo)`. The retail body performs no bounds or null check.
  */
-gpg::RRef gpg::RFastVectorType<moho::UnitWeaponInfo>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<moho::UnitWeaponInfo>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   auto& elements = *static_cast<gpg::core::FastVectorInline<moho::UnitWeaponInfo>*>(obj);
   gpg::RRef out{};
@@ -1511,7 +1603,9 @@ gpg::RRef gpg::RFastVectorType<moho::UnitWeaponInfo>::SubscriptIndex(void* obj, 
  * Returns the lane count as `(end - begin) / 0x98`, which the compiler emits as
  * the reciprocal-multiply sequence `imul 6BCA1AF3h; sar edx,6` at 0x0055CD59.
  */
-size_t gpg::RFastVectorType<moho::UnitWeaponInfo>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<moho::UnitWeaponInfo>::GetCount(
+  void* obj
+) const
 {
   const auto& elements = *static_cast<const gpg::core::FastVectorInline<moho::UnitWeaponInfo>*>(obj);
   return elements.Size();
@@ -1520,7 +1614,10 @@ size_t gpg::RFastVectorType<moho::UnitWeaponInfo>::GetCount(void* obj) const
 /**
  * Address: 0x0055CD70 (FUN_0055CD70, gpg::RFastVectorType_UnitWeaponInfo::SetCount)
  */
-void gpg::RFastVectorType<moho::UnitWeaponInfo>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<moho::UnitWeaponInfo>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   SetFastVectorUnitWeaponInfoCount(obj, count);
 }
@@ -1583,7 +1680,7 @@ gpg::RFastVectorType<moho::SOffsetInfo>::~RFastVectorType() = default;
  */
 const char* gpg::RFastVectorType<moho::SOffsetInfo>::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SOffsetInfo>()->GetName());
+  static const fa::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SOffsetInfo>()->GetName());
   return sName.c_str();
 }
 
@@ -1595,9 +1692,11 @@ const char* gpg::RFastVectorType<moho::SOffsetInfo>::GetName() const
  * count by dispatching slot 1 of its own RIndexed sub-object vtable
  * (`[this+0x64] + 4`), matching this class's own `GetCount`.
  */
-msvc8::string gpg::RFastVectorType<moho::SOffsetInfo>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<moho::SOffsetInfo>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -1614,7 +1713,10 @@ const gpg::RIndexed* gpg::RFastVectorType<moho::SOffsetInfo>::IsIndexed() const
  */
 void gpg::RFastVectorType<moho::SOffsetInfo>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<moho::SOffsetInfo>) == 0x10, "gpg::core::FastVectorInline<moho::SOffsetInfo> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<moho::SOffsetInfo>) == 0x10,
+    "gpg::core::FastVectorInline<moho::SOffsetInfo> is 0x10 bytes on x86"
+  );
   size_ = sizeof(gpg::core::FastVectorInline<moho::SOffsetInfo>);
   version_ = 1;
   serLoadFunc_ = &moho::LoadFastVectorSOffsetInfo;
@@ -1629,7 +1731,10 @@ void gpg::RFastVectorType<moho::SOffsetInfo>::Init()
  * Element stride is 0x4C (`imul eax, 4Ch` in the retail body), matching
  * `sizeof(SOffsetInfo)`. The retail body performs no bounds or null check.
  */
-gpg::RRef gpg::RFastVectorType<moho::SOffsetInfo>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<moho::SOffsetInfo>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   auto& elements = *static_cast<gpg::core::FastVectorInline<moho::SOffsetInfo>*>(obj);
   gpg::RRef out{};
@@ -1643,7 +1748,9 @@ gpg::RRef gpg::RFastVectorType<moho::SOffsetInfo>::SubscriptIndex(void* obj, con
  * What it does:
  * Returns the lane count as `(end - begin) / 76`, matching `sizeof(SOffsetInfo)`.
  */
-size_t gpg::RFastVectorType<moho::SOffsetInfo>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<moho::SOffsetInfo>::GetCount(
+  void* obj
+) const
 {
   const auto& elements = *static_cast<const gpg::core::FastVectorInline<moho::SOffsetInfo>*>(obj);
   return elements.Size();
@@ -1652,7 +1759,10 @@ size_t gpg::RFastVectorType<moho::SOffsetInfo>::GetCount(void* obj) const
 /**
  * Address: 0x0056C1A0 (FUN_0056C1A0, gpg::RFastVectorType_SOffsetInfo::SetCount)
  */
-void gpg::RFastVectorType<moho::SOffsetInfo>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<moho::SOffsetInfo>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   moho::SetFastVectorSOffsetInfoCount(obj, count);
 }
@@ -1715,17 +1825,18 @@ gpg::RFastVectorType<moho::SAssignedLocInfo>::~RFastVectorType() = default;
  */
 const char* gpg::RFastVectorType<moho::SAssignedLocInfo>::GetName() const
 {
-  static const msvc8::string sName =
-    gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SAssignedLocInfo>()->GetName());
+  static const fa::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SAssignedLocInfo>()->GetName());
   return sName.c_str();
 }
 
 /**
  * Address: 0x0056C300 (FUN_0056C300, gpg::RFastVectorType_SAssignedLocInfo::GetLexical)
  */
-msvc8::string gpg::RFastVectorType<moho::SAssignedLocInfo>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<moho::SAssignedLocInfo>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -1742,7 +1853,10 @@ const gpg::RIndexed* gpg::RFastVectorType<moho::SAssignedLocInfo>::IsIndexed() c
  */
 void gpg::RFastVectorType<moho::SAssignedLocInfo>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<moho::SAssignedLocInfo>) == 0x10, "gpg::core::FastVectorInline<moho::SAssignedLocInfo> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<moho::SAssignedLocInfo>) == 0x10,
+    "gpg::core::FastVectorInline<moho::SAssignedLocInfo> is 0x10 bytes on x86"
+  );
   size_ = sizeof(gpg::core::FastVectorInline<moho::SAssignedLocInfo>);
   version_ = 1;
   serLoadFunc_ = &moho::LoadFastVectorSAssignedLocInfo;
@@ -1757,7 +1871,10 @@ void gpg::RFastVectorType<moho::SAssignedLocInfo>::Init()
  * Element stride is 0x10 (`shl/lea *16` in the retail body), matching
  * `sizeof(SAssignedLocInfo)`. The retail body performs no bounds or null check.
  */
-gpg::RRef gpg::RFastVectorType<moho::SAssignedLocInfo>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<moho::SAssignedLocInfo>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   auto& elements = *static_cast<gpg::core::FastVectorInline<moho::SAssignedLocInfo>*>(obj);
   gpg::RRef out{};
@@ -1772,7 +1889,9 @@ gpg::RRef gpg::RFastVectorType<moho::SAssignedLocInfo>::SubscriptIndex(void* obj
  * Returns the lane count as `(end - begin) >> 4` -- a shift rather than a
  * reciprocal multiply, because `sizeof(SAssignedLocInfo)` is 16.
  */
-size_t gpg::RFastVectorType<moho::SAssignedLocInfo>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<moho::SAssignedLocInfo>::GetCount(
+  void* obj
+) const
 {
   const auto& elements = *static_cast<const gpg::core::FastVectorInline<moho::SAssignedLocInfo>*>(obj);
   return elements.Size();
@@ -1781,7 +1900,10 @@ size_t gpg::RFastVectorType<moho::SAssignedLocInfo>::GetCount(void* obj) const
 /**
  * Address: 0x0056C3B0 (FUN_0056C3B0, gpg::RFastVectorType_SAssignedLocInfo::SetCount)
  */
-void gpg::RFastVectorType<moho::SAssignedLocInfo>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<moho::SAssignedLocInfo>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   moho::SetFastVectorSAssignedLocInfoCount(obj, count);
 }
@@ -1790,14 +1912,14 @@ void gpg::RFastVectorType<moho::SAssignedLocInfo>::SetCount(void* obj, const int
  * Address: 0x0065ABB0 (FUN_0065ABB0, preregister_FastVectorStringType)
  *
  * What it does:
- * Constructs and preregisters startup RTTI descriptor for `gpg::fastvector<msvc8::string>`.
+ * Constructs and preregisters startup RTTI descriptor for `gpg::fastvector<fa::string>`.
  */
 namespace gpg
 {
   gpg::RType* preregister_FastVectorStringType()
   {
     FastVectorStringType* const type = AcquireFastVectorStringType();
-    gpg::PreRegisterRType(typeid(gpg::fastvector<msvc8::string>), type);
+    gpg::PreRegisterRType(typeid(gpg::fastvector<fa::string>), type);
     return type;
   }
 
@@ -1805,7 +1927,7 @@ namespace gpg
    * Address: 0x00BD4180 (FUN_00BD4180, register_FastVectorStringType)
    *
    * What it does:
-   * Startup wrapper that preregisters `gpg::fastvector<msvc8::string>` and installs
+   * Startup wrapper that preregisters `gpg::fastvector<fa::string>` and installs
    * process-exit teardown through `atexit`.
    */
   void register_FastVectorStringType()
@@ -1814,7 +1936,7 @@ namespace gpg
   }
 } // namespace gpg
 
-gpg::RFastVectorType<msvc8::string>::~RFastVectorType() = default;
+gpg::RFastVectorType<fa::string>::~RFastVectorType() = default;
 
 /**
  * Address: 0x0065A060 (FUN_0065A060, gpg::RFastVectorType_String::GetName)
@@ -1823,9 +1945,9 @@ gpg::RFastVectorType<msvc8::string>::~RFastVectorType() = default;
  * What it does:
  * Builds `fastvector<std::string>` once and returns it.
  */
-const char* gpg::RFastVectorType<msvc8::string>::GetName() const
+const char* gpg::RFastVectorType<fa::string>::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<msvc8::string>()->GetName());
+  static const fa::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<fa::string>()->GetName());
   return sName.c_str();
 }
 
@@ -1834,11 +1956,13 @@ const char* gpg::RFastVectorType<msvc8::string>::GetName() const
  *
  * What it does:
  * Returns base lexical text plus reflected vector size for one
- * `fastvector<msvc8::string>` instance.
+ * `fastvector<fa::string>` instance.
  */
-msvc8::string gpg::RFastVectorType<msvc8::string>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<fa::string>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -1846,10 +1970,10 @@ msvc8::string gpg::RFastVectorType<msvc8::string>::GetLexical(const gpg::RRef& r
  * Address: 0x0065A1B0 (FUN_0065A1B0, gpg::RFastVectorType_String::IsIndexed)
  *
  * What it does:
- * Returns this indexed-interface lane for `fastvector<msvc8::string>`
+ * Returns this indexed-interface lane for `fastvector<fa::string>`
  * reflection.
  */
-const gpg::RIndexed* gpg::RFastVectorType<msvc8::string>::IsIndexed() const
+const gpg::RIndexed* gpg::RFastVectorType<fa::string>::IsIndexed() const
 {
   return this;
 }
@@ -1861,10 +1985,13 @@ const gpg::RIndexed* gpg::RFastVectorType<msvc8::string>::IsIndexed() const
  * Configures reflected element size/version and binds string fastvector
  * serializer callbacks.
  */
-void gpg::RFastVectorType<msvc8::string>::Init()
+void gpg::RFastVectorType<fa::string>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<msvc8::string>) == 0x10, "gpg::core::FastVectorInline<msvc8::string> is 0x10 bytes on x86");
-  size_ = sizeof(gpg::core::FastVectorInline<msvc8::string>);
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<fa::string>) == 0x10,
+    "gpg::core::FastVectorInline<fa::string> is 0x10 bytes on x86"
+  );
+  size_ = sizeof(gpg::core::FastVectorInline<fa::string>);
   version_ = 1;
   serLoadFunc_ = &LoadFastVectorString;
   serSaveFunc_ = &SaveFastVectorString;
@@ -1874,25 +2001,28 @@ void gpg::RFastVectorType<msvc8::string>::Init()
  * Address: 0x0065A250 (FUN_0065A250, gpg::RFastVectorType_String::SubscriptIndex)
  *
  * What it does:
- * Builds one reflected element reference for `fastvector<msvc8::string>[ind]`.
+ * Builds one reflected element reference for `fastvector<fa::string>[ind]`.
  */
-gpg::RRef gpg::RFastVectorType<msvc8::string>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<fa::string>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   GPG_ASSERT(ind >= 0);
   GPG_ASSERT(obj != nullptr);
   if (!obj) {
     gpg::RRef out{};
-    out.mType = gpg::RTypeOf<msvc8::string>();
+    out.mType = gpg::RTypeOf<fa::string>();
     out.mObj = nullptr;
     return out;
   }
 
-  auto& elements = *static_cast<gpg::core::FastVectorInline<msvc8::string>*>(obj);
+  auto& elements = *static_cast<gpg::core::FastVectorInline<fa::string>*>(obj);
   GPG_ASSERT(elements.Data() != nullptr);
   GPG_ASSERT(static_cast<std::size_t>(ind) < GetCount(obj));
 
   gpg::RRef out{};
-  out.mType = gpg::RTypeOf<msvc8::string>();
+  out.mType = gpg::RTypeOf<fa::string>();
   if (ind < 0 || !elements.Data() || static_cast<std::size_t>(ind) >= GetCount(obj)) {
     out.mObj = nullptr;
     return out;
@@ -1907,15 +2037,17 @@ gpg::RRef gpg::RFastVectorType<msvc8::string>::SubscriptIndex(void* obj, const i
  *
  * What it does:
  * Returns runtime element count for one reflected
- * `fastvector<msvc8::string>`.
+ * `fastvector<fa::string>`.
  */
-size_t gpg::RFastVectorType<msvc8::string>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<fa::string>::GetCount(
+  void* obj
+) const
 {
   if (!obj) {
     return 0u;
   }
 
-  const auto& elements = *static_cast<const gpg::core::FastVectorInline<msvc8::string>*>(obj);
+  const auto& elements = *static_cast<const gpg::core::FastVectorInline<fa::string>*>(obj);
   if (!elements.Data()) {
     return 0u;
   }
@@ -1926,10 +2058,13 @@ size_t gpg::RFastVectorType<msvc8::string>::GetCount(void* obj) const
  * Address: 0x0065A1E0 (FUN_0065A1E0, gpg::RFastVectorType_String::SetCount)
  *
  * What it does:
- * Resizes one reflected `fastvector<msvc8::string>` and default-fills new
+ * Resizes one reflected `fastvector<fa::string>` and default-fills new
  * lanes with empty strings.
  */
-void gpg::RFastVectorType<msvc8::string>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<fa::string>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   GPG_ASSERT(obj != nullptr);
   GPG_ASSERT(count >= 0);
@@ -1937,37 +2072,37 @@ void gpg::RFastVectorType<msvc8::string>::SetCount(void* obj, const int count) c
     return;
   }
 
-  const msvc8::string fill{};
+  const fa::string fill{};
   FastVectorStringResize(&fill, static_cast<unsigned int>(count), obj);
 }
 
 namespace gpg
 {
-/**
-  * Alias of FUN_005173B0 (non-canonical helper lane).
- *
- * What it does:
- * Constructs and preregisters startup RTTI descriptor for
- * `gpg::fastvector<Wm3::Vector3<float>>`.
- */
-gpg::RType* preregister_FastVectorVector3fType()
-{
-  FastVectorVector3fType* const type = AcquireFastVectorVector3fType();
-  gpg::PreRegisterRType(typeid(gpg::fastvector<Wm3::Vector3f>), type);
-  return type;
-}
+  /**
+   * Alias of FUN_005173B0 (non-canonical helper lane).
+   *
+   * What it does:
+   * Constructs and preregisters startup RTTI descriptor for
+   * `gpg::fastvector<Wm3::Vector3<float>>`.
+   */
+  gpg::RType* preregister_FastVectorVector3fType()
+  {
+    FastVectorVector3fType* const type = AcquireFastVectorVector3fType();
+    gpg::PreRegisterRType(typeid(gpg::fastvector<Wm3::Vector3f>), type);
+    return type;
+  }
 
-/**
- * Address: 0x00BC84C0 (FUN_00BC84C0, register_FastVectorVector3fType)
- *
- * What it does:
- * Startup wrapper that preregisters `gpg::fastvector<Wm3::Vector3<float>>`
- * and installs process-exit teardown through `atexit`.
- */
-void register_FastVectorVector3fType()
-{
-  (void)preregister_FastVectorVector3fType();
-}
+  /**
+   * Address: 0x00BC84C0 (FUN_00BC84C0, register_FastVectorVector3fType)
+   *
+   * What it does:
+   * Startup wrapper that preregisters `gpg::fastvector<Wm3::Vector3<float>>`
+   * and installs process-exit teardown through `atexit`.
+   */
+  void register_FastVectorVector3fType()
+  {
+    (void)preregister_FastVectorVector3fType();
+  }
 } // namespace gpg
 
 /**
@@ -1984,7 +2119,7 @@ gpg::RFastVectorType<Wm3::Vector3f>::~RFastVectorType() = default;
  */
 const char* gpg::RFastVectorType<Wm3::Vector3f>::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<Wm3::Vector3f>()->GetName());
+  static const fa::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<Wm3::Vector3f>()->GetName());
   return sName.c_str();
 }
 
@@ -1995,9 +2130,11 @@ const char* gpg::RFastVectorType<Wm3::Vector3f>::GetName() const
  * Returns base lexical text plus reflected vector size for one
  * `fastvector<Wm3::Vector3f>` instance.
  */
-msvc8::string gpg::RFastVectorType<Wm3::Vector3f>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<Wm3::Vector3f>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -2010,11 +2147,14 @@ const gpg::RIndexed* gpg::RFastVectorType<Wm3::Vector3f>::IsIndexed() const
 }
 
 /**
-  * Alias of FUN_005173B0 (non-canonical helper lane).
+ * Alias of FUN_005173B0 (non-canonical helper lane).
  */
 void gpg::RFastVectorType<Wm3::Vector3f>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<Wm3::Vector3f>) == 0x10, "gpg::core::FastVectorInline<Wm3::Vector3f> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<Wm3::Vector3f>) == 0x10,
+    "gpg::core::FastVectorInline<Wm3::Vector3f> is 0x10 bytes on x86"
+  );
   size_ = sizeof(gpg::core::FastVectorInline<Wm3::Vector3f>);
   version_ = 1;
   serLoadFunc_ = &LoadFastVectorVector3f;
@@ -2022,9 +2162,12 @@ void gpg::RFastVectorType<Wm3::Vector3f>::Init()
 }
 
 /**
-  * Alias of FUN_005173B0 (non-canonical helper lane).
+ * Alias of FUN_005173B0 (non-canonical helper lane).
  */
-gpg::RRef gpg::RFastVectorType<Wm3::Vector3f>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<Wm3::Vector3f>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   GPG_ASSERT(ind >= 0);
   GPG_ASSERT(obj != nullptr);
@@ -2051,9 +2194,11 @@ gpg::RRef gpg::RFastVectorType<Wm3::Vector3f>::SubscriptIndex(void* obj, const i
 }
 
 /**
-  * Alias of FUN_005173B0 (non-canonical helper lane).
+ * Alias of FUN_005173B0 (non-canonical helper lane).
  */
-size_t gpg::RFastVectorType<Wm3::Vector3f>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<Wm3::Vector3f>::GetCount(
+  void* obj
+) const
 {
   if (!obj) {
     return 0u;
@@ -2073,7 +2218,10 @@ size_t gpg::RFastVectorType<Wm3::Vector3f>::GetCount(void* obj) const
  * Resizes one reflected `fastvector<Wm3::Vector3f>` lane and zero-fills
  * appended elements.
  */
-void gpg::RFastVectorType<Wm3::Vector3f>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<Wm3::Vector3f>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   GPG_ASSERT(obj != nullptr);
   GPG_ASSERT(count >= 0);
@@ -2170,12 +2318,30 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_FastVectorFloatType_86ef6d, gpg::preregister_FastVectorFloatType)
-GPG_PREREGISTER_INIT(register_FastVectorFloatType_86ef6d, gpg::register_FastVectorFloatType)
-GPG_PREREGISTER_INIT(preregister_FastVectorStringType_86ef6d, gpg::preregister_FastVectorStringType)
-GPG_PREREGISTER_INIT(register_FastVectorStringType_86ef6d, gpg::register_FastVectorStringType)
-GPG_PREREGISTER_INIT(preregister_FastVectorVector3fType_86ef6d, gpg::preregister_FastVectorVector3fType)
-GPG_PREREGISTER_INIT(register_FastVectorVector3fType_86ef6d, gpg::register_FastVectorVector3fType)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorFloatType_86ef6d,
+  gpg::preregister_FastVectorFloatType
+)
+GPG_PREREGISTER_INIT(
+  register_FastVectorFloatType_86ef6d,
+  gpg::register_FastVectorFloatType
+)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorStringType_86ef6d,
+  gpg::preregister_FastVectorStringType
+)
+GPG_PREREGISTER_INIT(
+  register_FastVectorStringType_86ef6d,
+  gpg::register_FastVectorStringType
+)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorVector3fType_86ef6d,
+  gpg::preregister_FastVectorVector3fType
+)
+GPG_PREREGISTER_INIT(
+  register_FastVectorVector3fType_86ef6d,
+  gpg::register_FastVectorVector3fType
+)
 GPG_PREREGISTER_INIT(
   preregister_FastVectorSSTIEntityAttachInfoType_86ef6d,
   gpg::preregister_FastVectorSSTIEntityAttachInfoType
@@ -2184,12 +2350,18 @@ GPG_PREREGISTER_INIT(
   register_FastVectorSSTIEntityAttachInfoType_86ef6d,
   gpg::register_FastVectorSSTIEntityAttachInfoType
 )
-GPG_PREREGISTER_INIT(preregister_FastVectorUnitWeaponInfoType_86ef6d, gpg::preregister_FastVectorUnitWeaponInfoType)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorUnitWeaponInfoType_86ef6d,
+  gpg::preregister_FastVectorUnitWeaponInfoType
+)
 GPG_PREREGISTER_INIT(
   register_FastVectorUnitWeaponInfoType_86ef6d,
   gpg::register_FastVectorUnitWeaponInfoType
 )
-GPG_PREREGISTER_INIT(preregister_FastVectorSOffsetInfoType_86ef6d, gpg::preregister_FastVectorSOffsetInfoType)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorSOffsetInfoType_86ef6d,
+  gpg::preregister_FastVectorSOffsetInfoType
+)
 GPG_PREREGISTER_INIT(
   register_FastVectorSOffsetInfoType_86ef6d,
   gpg::register_FastVectorSOffsetInfoType

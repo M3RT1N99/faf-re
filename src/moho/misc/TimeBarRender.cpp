@@ -16,11 +16,10 @@
 #include <mutex>
 #include <vector>
 
-#include "boost/mutex.h"
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/String.h"
 #include "gpg/core/time/Timer.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "legacy/containers/Vector.h"
 #include "moho/math/Vector3f.h"
 #include "moho/render/d3d/CD3DFont.h"
@@ -33,10 +32,13 @@ namespace moho
   extern float ren_FrameTimeSeconds;
 
   namespace
-{
+  {
     struct CaseInsensitiveCStringLess
     {
-      [[nodiscard]] bool operator()(const char* lhs, const char* rhs) const noexcept
+      [[nodiscard]] bool operator()(
+        const char* lhs,
+        const char* rhs
+      ) const noexcept
       {
         if (lhs == rhs) {
           return false;
@@ -69,7 +71,7 @@ namespace moho
      * `node+0x0C`, which is the ordinary 4-aligned shape for an 0x0C
      * `pair<const char*, TimeBarTrackLayout>`.
      */
-    using TimeBarTrackMap = msvc8::map<const char*, TimeBarTrackLayout, CaseInsensitiveCStringLess>;
+    using TimeBarTrackMap = fa::map<const char*, TimeBarTrackLayout, CaseInsensitiveCStringLess>;
 
     void BuildTrackLayout(
       CD3DFont& font,
@@ -88,10 +90,8 @@ namespace moho
         }
 
         const TimeBarTrackMap::iterator insertPos = outTracks.lower_bound(eventView.mRecord->mName);
-        const bool alreadyPresent =
-          insertPos != outTracks.end()
-          && insertPos->first != nullptr
-          && gpg::STR_CompareNoCase(insertPos->first, eventView.mRecord->mName) == 0;
+        const bool alreadyPresent = insertPos != outTracks.end() && insertPos->first != nullptr &&
+          gpg::STR_CompareNoCase(insertPos->first, eventView.mRecord->mName) == 0;
 
         if (!alreadyPresent) {
           (void)outTracks.insert(
@@ -115,7 +115,10 @@ namespace moho
         outMaxLabelWidth = std::max(outMaxLabelWidth, font.GetAdvance(name, -1) + kLabelPadding);
       }
     }
-    [[nodiscard]] std::int64_t CombineCycles(const std::uint32_t lo, const std::uint32_t hi) noexcept
+    [[nodiscard]] std::int64_t CombineCycles(
+      const std::uint32_t lo,
+      const std::uint32_t hi
+    ) noexcept
     {
       const std::uint64_t value = (static_cast<std::uint64_t>(hi) << 32) | lo;
       return static_cast<std::int64_t>(value);
@@ -144,7 +147,10 @@ namespace moho
       }
     }
 
-    void BuildEventViews(const msvc8::vector<STimeBarEventRecord>& events, std::vector<TimeBarEvent>& outEventViews)
+    void BuildEventViews(
+      const fa::vector<STimeBarEventRecord>& events,
+      std::vector<TimeBarEvent>& outEventViews
+    )
     {
       outEventViews.clear();
       outEventViews.reserve(events.size());
@@ -157,7 +163,11 @@ namespace moho
         outEventViews.push_back(view);
       }
     }
-    [[nodiscard]] CD3DPrimBatcher::Vertex MakeVertex(const float x, const float y, const std::uint32_t colorTag)
+    [[nodiscard]] CD3DPrimBatcher::Vertex MakeVertex(
+      const float x,
+      const float y,
+      const std::uint32_t colorTag
+    )
     {
       CD3DPrimBatcher::Vertex vertex{};
       vertex.mX = x;
@@ -208,7 +218,6 @@ namespace moho
   } // namespace
 } // namespace moho
 
-
 namespace moho
 {
   /**
@@ -221,7 +230,11 @@ namespace moho
    * Renders the time-bar panel background, labels, and clipped event timeline segments.
    */
   void TIME_RenderTimeBars(
-    CD3DPrimBatcher* const primBatcher, const float left, const float top, const float width, const float height
+    CD3DPrimBatcher* const primBatcher,
+    const float left,
+    const float top,
+    const float width,
+    const float height
   )
   {
     if (!primBatcher) {
@@ -231,15 +244,14 @@ namespace moho
     const float right = left + width;
     const float bottom = top + height;
 
-    const boost::shared_ptr<CD3DBatchTexture> whiteTexture = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu);
+    const std::shared_ptr<CD3DBatchTexture> whiteTexture = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu);
     primBatcher->SetTexture(whiteTexture);
     DrawPanelRect(*primBatcher, left, top, right, bottom, 0xFFFFFFFFu);
 
-    boost::SharedPtrRaw<CD3DFont> rawFont = CD3DFont::Create(kFontPointSize, kFontFaceName);
-    const boost::shared_ptr<CD3DFont> font = boost::SharedPtrFromRawRetained(rawFont);
-    rawFont.release();
+    const moho::CountedPtr<CD3DFont> fontHandle = CD3DFont::Create(kFontPointSize, kFontFaceName);
+    CD3DFont* const font = fontHandle.tex;
 
-    msvc8::vector<STimeBarEventRecord> events;
+    fa::vector<STimeBarEventRecord> events;
     TIME_CollectTimeBarEvents(events, ren_FrameTimeSeconds);
 
     std::vector<TimeBarEvent> eventViews;
@@ -247,7 +259,7 @@ namespace moho
 
     TimeBarTrackMap tracks;
     float maxLabelWidth = 0.0f;
-    if (font) {
+    if (font != nullptr) {
       BuildTrackLayout(*font, eventViews, top, tracks, maxLabelWidth);
       RenderTrackLabels(*font, *primBatcher, left, maxLabelWidth, tracks);
     }
@@ -297,7 +309,6 @@ namespace moho
 
       DrawPanelLine(*primBatcher, startX, rowY, endX, rowY, eventView.mRecord->mColorTag);
     }
-
 
     // `tracks` goes out of scope here. `~map()` is what the binary runs at
     // this point too, and MSVC emits it; naming it would be a second call.

@@ -43,13 +43,15 @@ namespace
   // ctor: 0x0063C1E0.
   moho::CAniActorSerializer gCAniActorSerializer;
 
-
-
-  [[noreturn]] void ThrowPointerTypeMismatch(const gpg::RRef& source, gpg::RType* const expectedType, const char* fallback)
+  [[noreturn]] void ThrowPointerTypeMismatch(
+    const gpg::RRef& source,
+    gpg::RType* const expectedType,
+    const char* fallback
+  )
   {
     const char* const expected = expectedType ? expectedType->GetName() : fallback;
     const char* const actual = source.GetTypeName();
-    const msvc8::string msg = gpg::STR_Printf(
+    const fa::string msg = gpg::STR_Printf(
       "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
       "instead",
       expected ? expected : fallback,
@@ -59,7 +61,11 @@ namespace
   }
 
   template <typename TObject>
-  TObject* UpcastTrackedPointer(const gpg::TrackedPointerInfo& tracked, gpg::RType* const expectedType, const char* fallback)
+  TObject* UpcastTrackedPointer(
+    const gpg::TrackedPointerInfo& tracked,
+    gpg::RType* const expectedType,
+    const char* fallback
+  )
   {
     gpg::RRef source{};
     source.mObj = tracked.object;
@@ -73,7 +79,10 @@ namespace
     ThrowPointerTypeMismatch(source, expectedType, fallback);
   }
 
-  [[nodiscard]] moho::IAniManipulator* ReadOwnedManipulatorPointer(gpg::ReadArchive* const archive, const gpg::RRef& ownerRef)
+  [[nodiscard]] moho::IAniManipulator* ReadOwnedManipulatorPointer(
+    gpg::ReadArchive* const archive,
+    const gpg::RRef& ownerRef
+  )
   {
     gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(archive, ownerRef);
     if (!tracked.object) {
@@ -98,9 +107,8 @@ namespace
       return nullptr;
     }
 
-    return reinterpret_cast<moho::IAniManipulator*>(
-      reinterpret_cast<std::uintptr_t>(node) - offsetof(moho::IAniManipulator, mActorOrderLink)
-    );
+    return moho::TDatListItem<moho::IAniManipulator, void>::
+      owner_from_member_node<moho::IAniManipulator, &moho::IAniManipulator::mActorOrderLink>(node);
   }
 
   /**
@@ -111,7 +119,9 @@ namespace
    * name wildcard-matches `bonePattern`, then toggles the active-flag bit.
    */
   [[nodiscard]] bool SetManipulatorWatchBoneEnabledByPattern(
-    moho::IAniManipulator* const manipulator, const char* const bonePattern, const bool enabled
+    moho::IAniManipulator* const manipulator,
+    const char* const bonePattern,
+    const bool enabled
   )
   {
     if (!manipulator || !bonePattern) {
@@ -125,7 +135,7 @@ namespace
         continue;
       }
 
-      const boost::shared_ptr<const moho::CAniSkel> skeleton = ownerActor->GetSkeleton();
+      const std::shared_ptr<const moho::CAniSkel> skeleton = ownerActor->GetSkeleton();
       if (!skeleton) {
         continue;
       }
@@ -151,13 +161,17 @@ namespace
     return false;
   }
 
-  [[nodiscard]] bool ManipulatorHasWatchBoneIndex(const moho::IAniManipulator* const manipulator, const int index)
+  [[nodiscard]] bool ManipulatorHasWatchBoneIndex(
+    const moho::IAniManipulator* const manipulator,
+    const int index
+  )
   {
     if (!manipulator) {
       return false;
     }
 
-    for (const moho::SAniManipBinding* binding = manipulator->mWatchBones.begin(); binding != manipulator->mWatchBones.end();
+    for (const moho::SAniManipBinding* binding = manipulator->mWatchBones.begin();
+         binding != manipulator->mWatchBones.end();
          ++binding) {
       if (binding->mBoneIndex == index) {
         return true;
@@ -177,8 +191,10 @@ namespace
    * the bone-name fetch through `CAniPoseBone::GetBoneName()` so the linker
    * keeps the FUN_0063A660 out-of-line emission bound from this call site.
    */
-  [[nodiscard]] bool
-  ManipulatorHasWatchBonePattern(const moho::IAniManipulator* const manipulator, const char* const bonePattern)
+  [[nodiscard]] bool ManipulatorHasWatchBonePattern(
+    const moho::IAniManipulator* const manipulator,
+    const char* const bonePattern
+  )
   {
     if (!manipulator || !bonePattern) {
       return false;
@@ -200,7 +216,8 @@ namespace
       ? static_cast<std::size_t>(poseBonesEnd - poseBonesBegin)
       : 0u;
 
-    for (const moho::SAniManipBinding* binding = manipulator->mWatchBones.begin(); binding != manipulator->mWatchBones.end();
+    for (const moho::SAniManipBinding* binding = manipulator->mWatchBones.begin();
+         binding != manipulator->mWatchBones.end();
          ++binding) {
       const std::uint32_t boneIndex = static_cast<std::uint32_t>(binding->mBoneIndex);
       if (boneIndex >= poseBoneCount) {
@@ -217,13 +234,17 @@ namespace
   }
 
   template <typename TPredicate>
-  void DeleteMatchingManipulators(moho::CAniActor* const actor, TPredicate&& shouldDelete)
+  void DeleteMatchingManipulators(
+    moho::CAniActor* const actor,
+    TPredicate&& shouldDelete
+  )
   {
     if (actor == nullptr) {
       return;
     }
 
-    auto* const listHead = static_cast<moho::TDatListItem<moho::IAniManipulator, void>*>(&actor->mManipulatorsByPrecedence);
+    auto* const listHead =
+      static_cast<moho::TDatListItem<moho::IAniManipulator, void>*>(&actor->mManipulatorsByPrecedence);
     for (auto* node = actor->mManipulatorsByPrecedence.mNext; node != listHead;) {
       auto* const next = node->mNext;
       moho::IAniManipulator* const manipulator = ListNodeToManipulator(node);
@@ -242,7 +263,10 @@ namespace
    * terminator is encountered, unlinking each from any prior list and
    * appending it to the actor's manipulator-by-precedence list.
    */
-  void DeserializeManipulatorList(moho::CAniActor* const actor, gpg::ReadArchive* const archive)
+  void DeserializeManipulatorList(
+    moho::CAniActor* const actor,
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef owner{};
     moho::IAniManipulator* manipulator = ReadOwnedManipulatorPointer(archive, owner);
@@ -262,7 +286,10 @@ namespace
    * Walks the actor's manipulator-by-precedence list and writes each
    * IAniManipulator as an owned typed pointer, then writes a null terminator.
    */
-  void SerializeManipulatorList(const moho::CAniActor* const actor, gpg::WriteArchive* const archive)
+  void SerializeManipulatorList(
+    const moho::CAniActor* const actor,
+    gpg::WriteArchive* const archive
+  )
   {
     const auto* const listHead =
       static_cast<const moho::TDatListItem<moho::IAniManipulator, void>*>(&actor->mManipulatorsByPrecedence);
@@ -275,14 +302,18 @@ namespace
     }
 
     gpg::WriteRawPointer(
-      archive, gpg::MakeTypedRef<moho::IAniManipulator>(nullptr, gpg::RTypeOf<moho::IAniManipulator>()), gpg::TrackedPointerState::Owned, owner
+      archive,
+      gpg::MakeTypedRef<moho::IAniManipulator>(nullptr, gpg::RTypeOf<moho::IAniManipulator>()),
+      gpg::TrackedPointerState::Owned,
+      owner
     );
   }
 
-  void ResetActorListHeadLinks(moho::CAniActor* const actor)
+  void ResetActorListHeadLinks(
+    moho::CAniActor* const actor
+  )
   {
-    auto* const head =
-      static_cast<moho::TDatListItem<moho::IAniManipulator, void>*>(&actor->mManipulatorsByPrecedence);
+    auto* const head = static_cast<moho::TDatListItem<moho::IAniManipulator, void>*>(&actor->mManipulatorsByPrecedence);
     head->ListUnlink();
   }
 
@@ -303,7 +334,10 @@ namespace moho
   /**
    * Address: 0x0063A8F0 (FUN_0063A8F0, ??0CAniActor@Moho@@QAE@ABV?$shared_ptr@VCAniPose@Moho@@@boost@@0@Z)
    */
-  CAniActor::CAniActor(const boost::shared_ptr<CAniPose>& pose, const boost::shared_ptr<CAniPose>& priorPose)
+  CAniActor::CAniActor(
+    const std::shared_ptr<CAniPose>& pose,
+    const std::shared_ptr<CAniPose>& priorPose
+  )
     : mPose(pose)
     , mPriorPose(priorPose)
   {}
@@ -330,7 +364,12 @@ namespace moho
   /**
    * Address: 0x0063B030 (FUN_0063B030, Moho::CAniActor::MemberConstruct)
    */
-  void CAniActor::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CAniActor::MemberConstruct(
+    gpg::ReadArchive&,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     result.SetUnowned(gpg::MakeRRef(new CAniActor()), 0u);
   }
@@ -338,7 +377,9 @@ namespace moho
   /**
    * Address: 0x0063E200 (FUN_0063E200, sub_63E200)
    */
-  void CAniActor::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CAniActor::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -354,48 +395,18 @@ namespace moho
   }
 
   /**
-   * Address: 0x0063CB10 (FUN_0063CB10, serializer load thunk alias)
-   *
-   * What it does:
-   * Tail-forwards one CAniActor deserialize thunk alias into
-   * `CAniActor::MemberDeserialize`.
-   */
-  void DeserializeCAniActorThunkVariantA(moho::CAniActor* const actor, gpg::ReadArchive* const archive)
-  {
-    if (!actor) {
-      return;
-    }
-
-    actor->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x0063D3D0 (FUN_0063D3D0, serializer load thunk alias)
-   *
-   * What it does:
-   * Tail-forwards a second CAniActor deserialize thunk alias into
-   * `CAniActor::MemberDeserialize`.
-   */
-  void DeserializeCAniActorThunkVariantB(moho::CAniActor* const actor, gpg::ReadArchive* const archive)
-  {
-    if (!actor) {
-      return;
-    }
-
-    actor->MemberDeserialize(archive);
-  }
-
-  /**
    * Address: 0x0063E2A0 (FUN_0063E2A0, sub_63E2A0)
    */
-  void CAniActor::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CAniActor::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
     }
 
-    archive->PreCreatedPtr(gpg::MakeRRef(const_cast<boost::shared_ptr<CAniPose>*>(&mPose)));
-    archive->PreCreatedPtr(gpg::MakeRRef(const_cast<boost::shared_ptr<CAniPose>*>(&mPriorPose)));
+    archive->PreCreatedPtr(gpg::MakeRRef(const_cast<std::shared_ptr<CAniPose>*>(&mPose)));
+    archive->PreCreatedPtr(gpg::MakeRRef(const_cast<std::shared_ptr<CAniPose>*>(&mPriorPose)));
 
     archive->WritePointer(mPose.get(), gpg::TrackedPointerState::Shared, gpg::RRef{});
     archive->WritePointer(mPriorPose.get(), gpg::TrackedPointerState::Shared, gpg::RRef{});
@@ -403,41 +414,9 @@ namespace moho
   }
 
   /**
-   * Address: 0x0063CB20 (FUN_0063CB20, serializer save thunk alias)
-   *
-   * What it does:
-   * Tail-forwards one CAniActor serialize thunk alias into
-   * `CAniActor::MemberSerialize`.
-   */
-  void SerializeCAniActorThunkVariantA(const moho::CAniActor* const actor, gpg::WriteArchive* const archive)
-  {
-    if (!actor) {
-      return;
-    }
-
-    actor->MemberSerialize(archive);
-  }
-
-  /**
-   * Address: 0x0063D3E0 (FUN_0063D3E0, serializer save thunk alias)
-   *
-   * What it does:
-   * Tail-forwards a second CAniActor serialize thunk alias into
-   * `CAniActor::MemberSerialize`.
-   */
-  void SerializeCAniActorThunkVariantB(const moho::CAniActor* const actor, gpg::WriteArchive* const archive)
-  {
-    if (!actor) {
-      return;
-    }
-
-    actor->MemberSerialize(archive);
-  }
-
-  /**
    * Address: 0x005E3CF0 (FUN_005E3CF0, ?GetSkeleton@CAniActor@Moho@@QBE?AV?$shared_ptr@$$CBVCAniSkel@Moho@@@boost@@XZ)
    */
-  boost::shared_ptr<const CAniSkel> CAniActor::GetSkeleton() const
+  std::shared_ptr<const CAniSkel> CAniActor::GetSkeleton() const
   {
     POSE_WaitFor(this); // engine addition (sim_ParallelPose)
     return mPose->GetSkeleton();
@@ -449,19 +428,20 @@ namespace moho
    * What it does:
    * Returns one retained shared-ptr handle to this actor's current pose.
    */
-  boost::shared_ptr<CAniPose> CAniActor::GetPoseShared() const
+  std::shared_ptr<CAniPose> CAniActor::GetPoseShared() const
   {
     POSE_WaitFor(this); // engine addition (sim_ParallelPose)
     return mPose;
   }
 
   /**
-   * Address: 0x005BDD70 (FUN_005BDD70, ?GetPriorPoseShared@CAniActor@Moho@@QBE?AV?$shared_ptr@VCAniPose@Moho@@@boost@@XZ)
+   * Address: 0x005BDD70 (FUN_005BDD70,
+   * ?GetPriorPoseShared@CAniActor@Moho@@QBE?AV?$shared_ptr@VCAniPose@Moho@@@boost@@XZ)
    *
    * What it does:
    * Returns one retained shared-ptr handle to this actor's prior pose.
    */
-  boost::shared_ptr<CAniPose> CAniActor::GetPriorPoseShared() const
+  std::shared_ptr<CAniPose> CAniActor::GetPriorPoseShared() const
   {
     POSE_WaitFor(this); // engine addition (sim_ParallelPose)
     return mPriorPose;
@@ -477,7 +457,10 @@ namespace moho
    * Two `shared_ptr` assignments, current pose first; `Unit::SetPoses`
    * (0x006ABB90) calls it.
    */
-  void CAniActor::AssignPoses(const boost::shared_ptr<CAniPose>& pose, const boost::shared_ptr<CAniPose>& priorPose) noexcept
+  void CAniActor::AssignPoses(
+    const std::shared_ptr<CAniPose>& pose,
+    const std::shared_ptr<CAniPose>& priorPose
+  ) noexcept
   {
     mPose = pose;
     mPriorPose = priorPose;
@@ -495,7 +478,9 @@ namespace moho
    * bone transforms under `worldTransform`, then runs every enabled manipulator
    * in precedence order.
    */
-  void CAniActor::UpdateManipulators(const VTransform& worldTransform)
+  void CAniActor::UpdateManipulators(
+    const VTransform& worldTransform
+  )
   {
     // 0x0063AA9C-0x0063AAB5 exchanges both `(px,pi)` pairs with no refcount
     // traffic: last frame's pose becomes the prior pose, and the lane it
@@ -507,7 +492,10 @@ namespace moho
     // control block; the referent this lane held before the swap is released.
     // Engine addition (sim_RecyclePose): when unique, overwrite in-place without heap reallocation.
     // Not an 11-bone pose: the block order of the binary's allocator class depends on these (see SimBlockLane).
-    if (sim_RecyclePose && mPose != nullptr && mPose.unique() && mPose->mBones.size() != CAniPoseBoneArray::kBinaryLaneBones) {
+    if (
+      sim_RecyclePose && mPose != nullptr && mPose.use_count() == 1 &&
+      mPose->mBones.size() != CAniPoseBoneArray::kBinaryLaneBones
+    ) {
       mPose->OverwritePose(*mPriorPose);
     } else {
       mPose.reset(new CAniPose(*mPriorPose));
@@ -550,8 +538,10 @@ namespace moho
         if (hook != nullptr) {
           int index = 0;
           for (const CAniPoseBone& bone : mPose->mBones) {
-            if (static_cast<std::size_t>(index) < before.size()
-                && std::memcmp(&bone.mLocalTransform, &before[index], sizeof(VTransform)) != 0) {
+            if (
+              static_cast<std::size_t>(index) < before.size() &&
+              std::memcmp(&bone.mLocalTransform, &before[index], sizeof(VTransform)) != 0
+            ) {
               hook(mPose.get(), manipulatorClass, index);
             }
             ++index;
@@ -559,11 +549,18 @@ namespace moho
         }
       }
     }
+
+    if (const AniPoseUpdatedHook updated = gAniPoseUpdatedHook; updated != nullptr) {
+      updated(*this);
+    }
   }
 
   AniBoneWriteHook gAniBoneWriteHook = nullptr;
+  AniPoseUpdatedHook gAniPoseUpdatedHook = nullptr;
 
-  void POSE_SetKeepClientHandles(const bool keep) noexcept
+  void POSE_SetKeepClientHandles(
+    const bool keep
+  ) noexcept
   {
     gKeepClientPoseHandles = keep;
   }
@@ -573,13 +570,17 @@ namespace moho
     return gKeepClientPoseHandles;
   }
 
-  bool POSE_HoldClientHandles(const CAniActor& actor) noexcept
+  bool POSE_HoldClientHandles(
+    const CAniActor& actor
+  ) noexcept
   {
-    return gKeepClientPoseHandles
-      || (actor.mPose.get() != nullptr && actor.mPose->mBones.size() == CAniPoseBoneArray::kBinaryLaneBones);
+    return gKeepClientPoseHandles ||
+      (actor.mPose.get() != nullptr && actor.mPose->mBones.size() == CAniPoseBoneArray::kBinaryLaneBones);
   }
 
-  bool CAniActor::AllEnabledManipulators(bool (*const test)(const IAniManipulator& manipulator)) const
+  bool CAniActor::AllEnabledManipulators(
+    bool (*const test)(const IAniManipulator& manipulator)
+  ) const
   {
     auto* const listHead = const_cast<TDatListItem<IAniManipulator, void>*>(
       static_cast<const TDatListItem<IAniManipulator, void>*>(&mManipulatorsByPrecedence)
@@ -600,7 +601,9 @@ namespace moho
    * Resolves one Lua bone selector (index/name/nil) into a validated bone
    * index for this actor's current skeleton.
    */
-  int CAniActor::ResolveBoneIndex(LuaPlus::LuaStackObject& boneArg)
+  int CAniActor::ResolveBoneIndex(
+    LuaPlus::LuaStackObject& boneArg
+  )
   {
     LuaPlus::LuaState* const state = boneArg.m_state;
     lua_State* const rawState = state ? state->m_state : nullptr;
@@ -617,7 +620,7 @@ namespace moho
       const int boneIndex = static_cast<int>(lua_tonumber(rawState, stackIndex));
       bool isInvalid = true;
       if (boneIndex >= -2) {
-        const boost::shared_ptr<const CAniSkel> skeleton = GetSkeleton();
+        const std::shared_ptr<const CAniSkel> skeleton = GetSkeleton();
         const int boneCount = skeleton ? static_cast<int>(skeleton->mBones.size()) : 0;
         isInvalid = boneIndex >= boneCount;
       }
@@ -635,7 +638,7 @@ namespace moho
         boneName = "";
       }
 
-      const boost::shared_ptr<const CAniSkel> skeleton = GetSkeleton();
+      const std::shared_ptr<const CAniSkel> skeleton = GetSkeleton();
       const int boneIndex = skeleton ? skeleton->FindBoneIndex(boneName) : -1;
       if (boneIndex < 0) {
         const LuaPlus::LuaObject boneIdentifier(boneArg);
@@ -648,11 +651,7 @@ namespace moho
       return -1;
     }
 
-    LuaPlus::LuaState::Error(
-      state,
-      "Arg %d: invalid bone identifier; must be string, integer, or nil",
-      stackIndex
-    );
+    LuaPlus::LuaState::Error(state, "Arg %d: invalid bone identifier; must be string, integer, or nil", stackIndex);
     return -1;
   }
 
@@ -663,7 +662,10 @@ namespace moho
    * Enables/disables all manipulator watch-bone bindings that target one
    * exact bone index.
    */
-  void CAniActor::EnableBoneIndex(const bool enabled, const int index)
+  void CAniActor::EnableBoneIndex(
+    const bool enabled,
+    const int index
+  )
   {
     auto* const listHead = static_cast<TDatListItem<IAniManipulator, void>*>(&mManipulatorsByPrecedence);
     for (auto* node = mManipulatorsByPrecedence.mNext; node != listHead; node = node->mNext) {
@@ -695,7 +697,10 @@ namespace moho
    * Enables/disables the first wildcard-matching watch-bone binding per
    * manipulator.
    */
-  void CAniActor::EnableBoneString(const char* const boneName, const bool enabled)
+  void CAniActor::EnableBoneString(
+    const char* const boneName,
+    const bool enabled
+  )
   {
     auto* const listHead = static_cast<TDatListItem<IAniManipulator, void>*>(&mManipulatorsByPrecedence);
     for (auto* node = mManipulatorsByPrecedence.mNext; node != listHead; node = node->mNext) {
@@ -714,7 +719,9 @@ namespace moho
    * What it does:
    * Deletes each manipulator whose watch-bone list contains `index`.
    */
-  void CAniActor::KillManipulatorByBoneIndex(const int index)
+  void CAniActor::KillManipulatorByBoneIndex(
+    const int index
+  )
   {
     DeleteMatchingManipulators(this, [index](const IAniManipulator& manipulator) {
       return ManipulatorHasWatchBoneIndex(&manipulator, index);
@@ -728,7 +735,9 @@ namespace moho
    * Deletes each manipulator that has at least one watch bone whose skeleton
    * name wildcard-matches `bonePattern`.
    */
-  void CAniActor::KillManipulatorsByBonePattern(const char* const bonePattern)
+  void CAniActor::KillManipulatorsByBonePattern(
+    const char* const bonePattern
+  )
   {
     DeleteMatchingManipulators(this, [bonePattern](const IAniManipulator& manipulator) {
       return ManipulatorHasWatchBonePattern(&manipulator, bonePattern);
@@ -742,7 +751,9 @@ namespace moho
    * Deletes the exact manipulator object when found in this actor's precedence
    * list.
    */
-  void CAniActor::KillManipulator(IAniManipulator* const manipulator)
+  void CAniActor::KillManipulator(
+    IAniManipulator* const manipulator
+  )
   {
     if (manipulator == nullptr) {
       return;
@@ -833,7 +844,10 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CAniActorTypeInfo_22c0a4, moho::register_CAniActorTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CAniActorTypeInfo_22c0a4,
+  moho::register_CAniActorTypeInfo
+)
 
 namespace moho
 {

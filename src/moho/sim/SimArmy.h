@@ -64,7 +64,7 @@ namespace moho
     // Address: 0x006FDC20 (FUN_006FDC20)
     virtual const char* GetArmyType() = 0;
     // Address: 0x006FDC40 (FUN_006FDC40)
-    virtual void SetArmyPlans(const msvc8::string& armyPlans) = 0;
+    virtual void SetArmyPlans(const fa::string& armyPlans) = 0;
     // Address: 0x006FDC60 (FUN_006FDC60)
     virtual const char* GetArmyPlans() = 0;
     // Address: 0x006FDC80 (FUN_006FDC80)
@@ -74,7 +74,7 @@ namespace moho
     // Address: 0x006FDCA0 (FUN_006FDCA0)
     virtual CAiReconDBImpl* GetReconDB() = 0;
     // Address: 0x006FDCB0 (FUN_006FDCB0)
-    virtual CSimArmyEconomyInfo* GetEconomy() = 0;
+    virtual CEconomy* GetEconomy() = 0;
     // Address: 0x006FFCB0 (FUN_006FFCB0)
     virtual void GenerateArmyStart() = 0;
     // Address: 0x006FDCC0 (FUN_006FDCC0)
@@ -98,11 +98,11 @@ namespace moho
     // Address: 0x006FDDE0 (FUN_006FDDE0)
     virtual void* GetPathFinder() = 0;
     // Address: 0x006FDDF0 (FUN_006FDDF0)
-    virtual boost::SharedPtrRaw<void>* SetUnknownSharedRef(boost::SharedPtrRaw<void>* value) = 0;
+    virtual std::shared_ptr<void>* SetUnknownSharedRef(std::shared_ptr<void>* value) = 0;
     // Address: 0x006FDE40 (FUN_006FDE40)
-    virtual boost::SharedPtrRaw<void>* GetUnknownSharedRef(boost::SharedPtrRaw<void>* outValue) = 0;
+    virtual std::shared_ptr<void>* GetUnknownSharedRef(std::shared_ptr<void>* outValue) = 0;
     // Address: 0x006FDE70 (FUN_006FDE70)
-    virtual std::uint32_t SetUnknownVectorWithMeta(const SArmyVectorWithMeta* value) = 0;
+    virtual void SetPathPreview(const SArmyPathPreview& preview) = 0;
     // Address: 0x006FDE90 (FUN_006FDE90)
     virtual void GetPlatoonsList(ArmyPool& outPool) = 0;
     // Address: 0x00700410 (FUN_00700410)
@@ -133,7 +133,9 @@ namespace moho
     virtual int GetNumPlatoonWithPlan(const char* planName) = 0;
     // Address: 0x00700A00 (FUN_00700A00)
     virtual int CountUnitsInBoundsXZ(
-      const Wm3::Vector3f& minBounds, const Wm3::Vector3f& maxBounds, const EntitySetTemplate<Unit>& unitSet
+      const Wm3::Vector3f& minBounds,
+      const Wm3::Vector3f& maxBounds,
+      const EntitySetTemplate<Unit>& unitSet
     ) = 0;
     // Address: 0x00700A70 (FUN_00700A70)
     virtual void UpdateAIDebugPlatoonStats(Unit* unit) = 0;
@@ -144,7 +146,7 @@ namespace moho
     // Address: 0x00700EB0 (FUN_00700EB0)
     virtual void* GetUnits(void* outUnits, void* filterBuckets) = 0;
     // Address: 0x006FE090 (FUN_006FE090)
-    virtual msvc8::vector<CArmyImpl*>* GetAlliedArmies(msvc8::vector<CArmyImpl*>* outArmyList) = 0;
+    virtual fa::vector<CArmyImpl*>* GetAlliedArmies(fa::vector<CArmyImpl*>* outArmyList) = 0;
     // Address: 0x006FDD00 (FUN_006FDD00)
     virtual float GetUnitCap() = 0;
     // Address: 0x006FDD10 (FUN_006FDD10)

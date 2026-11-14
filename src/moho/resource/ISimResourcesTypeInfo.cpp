@@ -17,35 +17,6 @@ namespace
     return sInstance;
   }
 
-  /**
-   * Address: 0x00546FE0 (FUN_00546FE0)
-   *
-   * What it does:
-   * Executes one non-deleting `gpg::RType` base-teardown lane for
-   * `ISimResourcesTypeInfo`.
-   */
-  [[maybe_unused]] void cleanup_ISimResourcesTypeInfoRTypeBase(moho::ISimResourcesTypeInfo* const typeInfo) noexcept
-  {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = msvc8::vector<gpg::RField>{};
-    typeInfo->bases_ = msvc8::vector<gpg::RField>{};
-  }
-
-  /**
-   * Address: 0x00547020 (FUN_00547020)
-   *
-   * What it does:
-   * Register-shape adapter that forwards one reflected type lane into
-   * `ISimResourcesTypeInfo` base-registration semantics.
-   */
-  [[maybe_unused]] void AddBaseIResourcesRegistrationThunk(gpg::RType* const typeInfo)
-  {
-    moho::resource_reflection::AddBase(typeInfo, moho::resource_reflection::ResolveIResourcesType());
-  }
-
   struct ISimResourcesTypeInfoStartup
   {
     ISimResourcesTypeInfoStartup()
@@ -96,7 +67,9 @@ namespace moho
   /**
    * Address: 0x005488F0 (FUN_005488F0, Moho::ISimResourcesTypeInfo::AddBase_IResources)
    */
-  void ISimResourcesTypeInfo::AddBase_IResources(gpg::RType* const typeInfo)
+  void ISimResourcesTypeInfo::AddBase_IResources(
+    gpg::RType* const typeInfo
+  )
   {
     moho::resource_reflection::AddBase(typeInfo, moho::resource_reflection::ResolveIResourcesType());
   }
@@ -112,4 +85,7 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_ISimResourcesTypeInfo_415ee2, moho::register_ISimResourcesTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_ISimResourcesTypeInfo_415ee2,
+  moho::register_ISimResourcesTypeInfo
+)

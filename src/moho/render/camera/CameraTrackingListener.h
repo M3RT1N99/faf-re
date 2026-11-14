@@ -16,7 +16,7 @@ namespace moho
    *   (FUN_007AE2B0). The IDA-emitted broadcaster signature is
    *   `?BroadcastEvent@?$Broadcaster@USCameraTracking@Moho@@@Moho@@IAEXUSCameraTracking@2@@Z`,
    *   confirming the event-type name `Moho::SCameraTracking`.
-   * - Two-field POD: a camera name (`msvc8::string`, 28 bytes) and a
+   * - Two-field POD: a camera name (`fa::string`, 28 bytes) and a
    *   transition flag (`bool`, padded to 4 bytes). Total 32 bytes on the stack
    *   for by-value pass; matches the `ret 0x20` cleanup at FUN_008714B0.
    * - Producer call sites in `CameraImpl` always pass `runtime->mName` (the
@@ -30,14 +30,11 @@ namespace moho
    */
   struct SCameraTracking
   {
-    msvc8::string mCameraName{};        // +0x00, 28 bytes
-    std::uint8_t  mTransitionFlag = 0;  // +0x1C, 1 byte (padded to 4 on the stack)
+    fa::string mCameraName{};         // +0x00, 28 bytes
+    std::uint8_t mTransitionFlag = 0; // +0x1C, 1 byte (padded to 4 on the stack)
   };
 
-  static_assert(
-    offsetof(SCameraTracking, mCameraName) == 0x00,
-    "SCameraTracking::mCameraName offset must be 0x00"
-  );
+  static_assert(offsetof(SCameraTracking, mCameraName) == 0x00, "SCameraTracking::mCameraName offset must be 0x00");
   static_assert(
     offsetof(SCameraTracking, mTransitionFlag) == 0x1C,
     "SCameraTracking::mTransitionFlag offset must be 0x1C"
@@ -61,7 +58,7 @@ namespace moho
    * Calling convention for the binary `Receive` symbol: the IDA demangler
    * names the override `?Receive@...` though it overrides
    * `Listener<SCameraTracking>::OnEvent`. The override is by-value-`event`,
-   * but because `SCameraTracking` is a POD of `{ msvc8::string + uint8_t }`,
+   * but because `SCameraTracking` is a POD of `{ fa::string + uint8_t }`,
    * MSVC passes its members member-wise on the stack: 28 bytes of string +
    * 4-byte padded bool = 32-byte `ret 0x20` cleanup. The recovered override
    * is named `OnEvent` to match the engine-wide `Listener<T>` contract.
@@ -93,7 +90,8 @@ namespace moho
 
     /**
      * Address: 0x008714B0 (FUN_008714B0)
-     * Mangled: ?Receive@CameraTrackingListener@Moho@@UAEXV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@_N@Z
+     * Mangled:
+     * ?Receive@CameraTrackingListener@Moho@@UAEXV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@_N@Z
      * Slot: 0 (Listener<SCameraTracking> vtable, single virtual method)
      *
      * IDA signature:

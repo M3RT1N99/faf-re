@@ -83,13 +83,14 @@ namespace moho
     [[nodiscard]] SkyDome& GetSkyDome() override;
 
     /**
-     * Address: 0x008A11C0 (FUN_008A11C0, ?SetSkycube@CWldTerrainRes@Moho@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
+     * Address: 0x008A11C0 (FUN_008A11C0,
+     * ?SetSkycube@CWldTerrainRes@Moho@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
      *
      * What it does:
      * Stores terrain skycube texture path and resolves the corresponding D3D
      * texture resource handle.
      */
-    void SetSkycube(const msvc8::string& texturePath) override;
+    void SetSkycube(const fa::string& texturePath) override;
 
     /**
      * Address: 0x008A12C0 (FUN_008A12C0,
@@ -100,24 +101,26 @@ namespace moho
      * The skycube counterpart of `GetBackgroundFile`: `lea eax, [ecx+980h];
      * retn`, returning the stored path by reference.
      */
-    [[nodiscard]] const msvc8::string& GetSkycubeFile() const override;
+    [[nodiscard]] const fa::string& GetSkycubeFile() const override;
 
     /**
-     * Address: 0x008A12D0 (FUN_008A12D0, ?GetSkycube@CWldTerrainRes@Moho@@UBE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
+     * Address: 0x008A12D0 (FUN_008A12D0,
+     * ?GetSkycube@CWldTerrainRes@Moho@@UBE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
      *
      * What it does:
      * Returns one retained shared texture handle for terrain skycube.
      */
-    [[nodiscard]] boost::shared_ptr<ID3DTextureSheet> GetSkycube() const override;
+    [[nodiscard]] std::shared_ptr<ID3DTextureSheet> GetSkycube() const override;
 
     /**
-     * Address: 0x008A1080 (FUN_008A1080, ?SetBackground@CWldTerrainRes@Moho@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
+     * Address: 0x008A1080 (FUN_008A1080,
+     * ?SetBackground@CWldTerrainRes@Moho@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
      *
      * What it does:
      * Stores terrain background texture path and resolves the corresponding D3D
      * texture resource handle.
      */
-    void SetBackground(const msvc8::string& texturePath) override;
+    void SetBackground(const fa::string& texturePath) override;
 
     /**
      * Address: 0x008A1180 (FUN_008A1180,
@@ -128,47 +131,52 @@ namespace moho
      * Returns the path `SetBackground` stored, by reference. The whole body is
      * `lea eax, [ecx+95Ch]; retn` -- the string itself, not a copy.
      */
-    [[nodiscard]] const msvc8::string& GetBackgroundFile() const override;
+    [[nodiscard]] const fa::string& GetBackgroundFile() const override;
 
     /**
-     * Address: 0x008A1190 (FUN_008A1190, ?GetBackground@CWldTerrainRes@Moho@@UBE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
+     * Address: 0x008A1190 (FUN_008A1190,
+     * ?GetBackground@CWldTerrainRes@Moho@@UBE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
      *
      * What it does:
      * Returns one retained shared texture handle for terrain background.
      */
-    [[nodiscard]] boost::shared_ptr<ID3DTextureSheet> GetBackground() const override;
+    [[nodiscard]] std::shared_ptr<ID3DTextureSheet> GetBackground() const override;
 
     /**
      * Address: 0x008A1300 (FUN_008A1300)
-     * (FUN_008A1300, ?AddEnvLookup@CWldTerrainRes@Moho@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0@Z)
+     * (FUN_008A1300,
+     * ?AddEnvLookup@CWldTerrainRes@Moho@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0@Z)
      *
      * What it does:
      * Resolves one environment texture path and upserts it into the
      * terrain environment-lookup map keyed by environment id.
      */
-    void AddEnvLookup(const msvc8::string& environmentKey, const msvc8::string& texturePath) override;
+    void AddEnvLookup(const fa::string& environmentKey, const fa::string& texturePath) override;
 
     /**
      * Address: 0x008A13F0 (FUN_008A13F0)
-     * (FUN_008A13F0, ?RemoveEnvLookup@CWldTerrainRes@Moho@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
+     * (FUN_008A13F0,
+     * ?RemoveEnvLookup@CWldTerrainRes@Moho@@UAEXABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
      *
      * What it does:
      * Removes one environment-lookup map entry by key when present.
      */
-    void RemoveEnvLookup(const msvc8::string& environmentKey) override;
+    void RemoveEnvLookup(const fa::string& environmentKey) override;
 
     /**
      * Address: 0x008A1430 (FUN_008A1430)
-     * (FUN_008A1430, ?GetEnvLookup@CWldTerrainRes@Moho@@UBE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
+     * (FUN_008A1430,
+     * ?GetEnvLookup@CWldTerrainRes@Moho@@UBE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
      *
      * What it does:
      * Returns one environment texture handle by key, with `<default>` fallback.
      */
-    [[nodiscard]] boost::shared_ptr<ID3DTextureSheet> GetEnvLookup(const msvc8::string& environmentKey) const override;
+    [[nodiscard]] std::shared_ptr<ID3DTextureSheet> GetEnvLookup(const fa::string& environmentKey) const override;
 
     /**
      * Address: 0x008A1500 (FUN_008A1500)
-     * (FUN_008A1500, ?EnumerateEnvLookup@CWldTerrainRes@Moho@@UBEXAAV?$vector@U?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V12@@std@@V?$allocator@U?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V12@@std@@@2@@std@@@Z)
+     * (FUN_008A1500,
+     * ?EnumerateEnvLookup@CWldTerrainRes@Moho@@UBEXAAV?$vector@U?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V12@@std@@V?$allocator@U?$pair@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V12@@std@@@2@@std@@@Z)
      *
      * What it does:
      * Rebuilds caller-provided list with all environment-key/name pairs in map order.
@@ -299,12 +307,13 @@ namespace moho
     void UpdateWaveSystem(const GeomCamera3& camera, float elapsedSeconds, std::int32_t tick) override;
 
     /**
-     * Address: 0x008A5040 (FUN_008A5040, ?GetWaterMap@CWldTerrainRes@Moho@@UBE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
+     * Address: 0x008A5040 (FUN_008A5040,
+     * ?GetWaterMap@CWldTerrainRes@Moho@@UBE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
      *
      * What it does:
      * Returns one retained shared texture handle for the terrain water map.
      */
-    [[nodiscard]] boost::shared_ptr<ID3DTextureSheet> GetWaterMap() const override;
+    [[nodiscard]] std::shared_ptr<ID3DTextureSheet> GetWaterMap() const override;
 
     /**
      * Address: 0x008A50F0 (FUN_008A50F0, ?UpdateWaterMap@CWldTerrainRes@Moho@@UAEXABV?$Rect2@H@gpg@@@Z)
@@ -351,6 +360,14 @@ namespace moho
     void NotifyMapChange(const gpg::Rect2i& rect) override;
 
     /**
+     * Engine addition: as `NotifyMapChange` for each rectangle in order, with one lock and upload
+     * of each normal-map tile for all the rectangles the terrain takes after it is finalized,
+     * instead of one per rectangle. The blocks come out the same: each is encoded from the
+     * heights, which no rectangle changes.
+     */
+    void NotifyMapChanges(const gpg::Rect2i* rects, std::size_t count) override;
+
+    /**
      * Address: 0x008A54B0 (FUN_008A54B0, ?GetDebugDirtyTerrain@CWldTerrainRes@Moho@@EAEPAVBitArray2D@gpg@@XZ)
      *
      * What it does:
@@ -359,12 +376,13 @@ namespace moho
     [[nodiscard]] gpg::BitArray2D* GetDebugDirtyTerrain() override;
 
     /**
-     * Address: 0x008A54C0 (FUN_008A54C0, ?GetDebugDirtyRects@CWldTerrainRes@Moho@@UBEABV?$list@V?$Rect2@H@gpg@@V?$allocator@V?$Rect2@H@gpg@@@std@@@std@@XZ)
+     * Address: 0x008A54C0 (FUN_008A54C0,
+     * ?GetDebugDirtyRects@CWldTerrainRes@Moho@@UBEABV?$list@V?$Rect2@H@gpg@@V?$allocator@V?$Rect2@H@gpg@@@std@@@std@@XZ)
      *
      * What it does:
      * Returns the debug dirty-rectangle list lane.
      */
-    [[nodiscard]] const msvc8::list<gpg::Rect2i>& GetDebugDirtyRects() const override;
+    [[nodiscard]] const fa::list<gpg::Rect2i>& GetDebugDirtyRects() const override;
 
     /**
      * Address: 0x008A5FB0 (FUN_008A5FB0, ?GetNormalMapCount@CWldTerrainRes@Moho@@EAEHXZ)
@@ -591,7 +609,7 @@ namespace moho
      * Writes one playable-map rectangle through the owned terrain map and emits
      * warning text when bounds are invalid.
      */
-    [[nodiscard]] bool SetPlayableMapRect(const VisibilityRect& rect) override;
+    [[nodiscard]] bool SetPlayableMapRect(const gpg::Rect2i& rect) override;
 
     /**
      * Address: 0x0089E710 (FUN_0089E710, ?GetPlayableMapRect@IWldTerrainRes@Moho@@UBE?AV?$Rect2@H@gpg@@XZ)
@@ -600,7 +618,7 @@ namespace moho
      * Copies playable map bounds from terrain-res internal storage into `outRect`
      * and returns `&outRect`.
      */
-    [[nodiscard]] const VisibilityRect* GetPlayableMapRect(VisibilityRect& outRect) const override;
+    [[nodiscard]] const gpg::Rect2i* GetPlayableMapRect(gpg::Rect2i& outRect) const override;
 
     /**
      * Address: 0x008A6DD0 (FUN_008A6DD0, ?IsInPlayableRect@CWldTerrainRes@Moho@@EAE_NABV?$Vector3@M@Wm3@@@Z)
@@ -612,7 +630,8 @@ namespace moho
     [[nodiscard]] bool IsInPlayableRect(const Wm3::Vec3f& worldPos) override;
 
     /**
-     * Address: 0x008A6E20 (FUN_008A6E20, ?SetWaterShaderProperties@CWldTerrainRes@Moho@@EAEXABVCWaterShaderProperties@2@@Z)
+     * Address: 0x008A6E20 (FUN_008A6E20,
+     * ?SetWaterShaderProperties@CWldTerrainRes@Moho@@EAEXABVCWaterShaderProperties@2@@Z)
      *
      * What it does:
      * Copies one water-shader property block into terrain state.
@@ -620,7 +639,8 @@ namespace moho
     void SetWaterShaderProperties(const CWaterShaderProperties& properties) override;
 
     /**
-     * Address: 0x008A6E40 (FUN_008A6E40, ?GetWaterShaderProperties@CWldTerrainRes@Moho@@EAEPAVCWaterShaderProperties@2@XZ)
+     * Address: 0x008A6E40 (FUN_008A6E40,
+     * ?GetWaterShaderProperties@CWldTerrainRes@Moho@@EAEPAVCWaterShaderProperties@2@XZ)
      *
      * What it does:
      * Returns mutable pointer to the owned water-shader property block.
@@ -750,17 +770,14 @@ namespace moho
     void LoadTexturing(gpg::BinaryReader& reader, std::uint32_t version);
 
     /**
-     * Address: 0x008A3FC0 (FUN_008A3FC0, ?LoadLayer@CWldTerrainRes@Moho@@QAEXAAULayer@StratumMaterial@2@AAVBinaryReader@gpg@@@Z)
+     * Address: 0x008A3FC0 (FUN_008A3FC0,
+     * ?LoadLayer@CWldTerrainRes@Moho@@QAEXAAULayer@StratumMaterial@2@AAVBinaryReader@gpg@@@Z)
      *
      * What it does:
      * Deserializes one terrain stratum layer descriptor (path + size) into the
      * provided layer from the map stream.
      */
     void LoadLayer(CStratumMaterial& outLayer, gpg::BinaryReader& reader);
-
-
-
-
 
     /**
      * Address: 0x008A7410 (FUN_008A7410, ?CreateWaterMasks@CWldTerrainRes@Moho@@AAEXHH@Z)
@@ -772,7 +789,8 @@ namespace moho
     void CreateWaterMasks(std::int32_t width, std::int32_t height);
 
     /**
-     * Address: 0x008A5130 (FUN_008A5130, ?UpdateWaterMap@CWldTerrainRes@Moho@@QAEXAAVCBackgroundTaskControl@2@ABV?$Rect2@H@gpg@@@Z)
+     * Address: 0x008A5130 (FUN_008A5130,
+     * ?UpdateWaterMap@CWldTerrainRes@Moho@@QAEXAAVCBackgroundTaskControl@2@ABV?$Rect2@H@gpg@@@Z)
      *
      * What it does:
      * Rebuilds one clipped rectangle of water-map texels and uploads the
@@ -781,24 +799,27 @@ namespace moho
     void UpdateWaterMap(CBackgroundTaskControl& loadControl, const gpg::Rect2i& rect);
 
     /**
-     * Address: 0x008A4CB0 (FUN_008A4CB0, ?UpdateTexture@CWldTerrainRes@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@PAI@Z)
+     * Address: 0x008A4CB0 (FUN_008A4CB0,
+     * ?UpdateTexture@CWldTerrainRes@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@PAI@Z)
      *
      * What it does:
      * Copies a packed RGBA texel buffer row-by-row into one dynamic texture
      * sheet lock.
      */
-    void UpdateTexture(boost::shared_ptr<CD3DDynamicTextureSheet> textureSheet, const std::uint32_t* sourcePixels);
+    void UpdateTexture(std::shared_ptr<CD3DDynamicTextureSheet> textureSheet, const std::uint32_t* sourcePixels);
 
     /**
-     * Address: 0x008A4DA0 (FUN_008A4DA0, ?ClearTexture@CWldTerrainRes@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@@Z)
+     * Address: 0x008A4DA0 (FUN_008A4DA0,
+     * ?ClearTexture@CWldTerrainRes@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@@Z)
      *
      * What it does:
      * Clears one lockable terrain texture sheet to zero over all rows.
      */
-    void ClearTexture(boost::shared_ptr<CD3DDynamicTextureSheet> textureSheet);
+    void ClearTexture(std::shared_ptr<CD3DDynamicTextureSheet> textureSheet);
 
     /**
-     * Address: 0x008A4B90 (FUN_008A4B90, ?UpdateTextureChannel@CWldTerrainRes@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@HHHHIIPBE@Z)
+     * Address: 0x008A4B90 (FUN_008A4B90,
+     * ?UpdateTextureChannel@CWldTerrainRes@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@HHHHIIPBE@Z)
      *
      * What it does:
      * Updates one channel lane in a dynamic RGBA terrain texture from source
@@ -807,7 +828,7 @@ namespace moho
     void UpdateTextureChannel(
       std::int32_t rowStart,
       std::int32_t columnEnd,
-      boost::shared_ptr<CD3DDynamicTextureSheet> textureSheet,
+      std::shared_ptr<CD3DDynamicTextureSheet> textureSheet,
       std::int32_t columnStart,
       std::int32_t rowEnd,
       std::uint32_t channelMask,
@@ -816,14 +837,15 @@ namespace moho
     );
 
     /**
-     * Address: 0x008A4A60 (FUN_008A4A60, ?GetTextureChannel@CWldTerrainRes@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@IIPAE@Z)
+     * Address: 0x008A4A60 (FUN_008A4A60,
+     * ?GetTextureChannel@CWldTerrainRes@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@IIPAE@Z)
      *
      * What it does:
      * Reads one packed channel lane from a locked RGBA terrain texture and
      * writes unpacked bytes to caller-provided destination rows.
      */
     void GetTextureChannel(
-      boost::shared_ptr<CD3DDynamicTextureSheet> textureSheet,
+      std::shared_ptr<CD3DDynamicTextureSheet> textureSheet,
       std::uint32_t channelMask,
       std::uint32_t channelShift,
       std::uint8_t* outChannelData
@@ -867,7 +889,8 @@ namespace moho
     void InitNormalMap(CBackgroundTaskControl& loadControl);
 
     /**
-     * Address: 0x008A5BE0 (FUN_008A5BE0, ?UpdateNormalMap@CWldTerrainRes@Moho@@AAEXAAVCBackgroundTaskControl@2@ABV?$Rect2@H@gpg@@@Z)
+     * Address: 0x008A5BE0 (FUN_008A5BE0,
+     * ?UpdateNormalMap@CWldTerrainRes@Moho@@AAEXAAVCBackgroundTaskControl@2@ABV?$Rect2@H@gpg@@@Z)
      *
      * What it does:
      * Rebuilds one clipped normal-map rectangle across all normal-map tiles and
@@ -875,19 +898,40 @@ namespace moho
      */
     void UpdateNormalMap(CBackgroundTaskControl& loadControl, const gpg::Rect2i& rect);
 
+    /**
+     * Engine addition (`NotifyMapChanges`): `UpdateNormalMap(rect)` for each rectangle, each tile
+     * locked once over the rectangles that reach it. Only the rectangles' blocks are written; the
+     * rest of the locked area keeps its contents on every backend (D3D9 locks without discard,
+     * the others keep the level's CPU copy).
+     */
+    void UpdateNormalMapRects(const gpg::Rect2i* rects, std::size_t count);
+
+    // Pieces of Load (0x008A1700), each reading its part of the map stream in the binary's order.
+    void LoadEnvironmentLookups(gpg::BinaryReader& reader, std::uint32_t version);
+    void LoadLightingAndFog(gpg::BinaryReader& reader);
+    void LoadMapPalette(gpg::BinaryReader& reader, std::uint32_t version);
+    void LoadStratumMasks(
+      gpg::BinaryReader& reader,
+      std::uint32_t version,
+      ID3DDeviceResources* maskResources,
+      CBackgroundTaskControl& loadControl
+    );
+    void LoadWaterMapSheets(gpg::BinaryReader& reader, CBackgroundTaskControl& loadControl);
+    void LoadOrDeriveSkyDome(gpg::BinaryReader& reader, std::uint32_t version);
+
   public:
-    std::uint8_t mBool;                                    // +0x008
-    std::uint8_t mEditMode;                                // +0x009
-    std::uint8_t mUnknown00A_00B[0x02];                    // +0x00A
-    Cartographic mCartographic;                            // +0x00C
-    SkyDome mSkyDome;                                      // +0x0B0 (0x228, 8-aligned)
-    float mLightingMultiplier;                             // +0x2D8
-    Wm3::Vector3f mSunDirection;                           // +0x2DC
-    Wm3::Vector3f mSunAmbience;                            // +0x2E8
-    Wm3::Vector3f mSunColor;                               // +0x2F4
-    Wm3::Vector3f mShadowFillColor;                        // +0x300
-    Vector4f mSpecularColor;                               // +0x30C
-    float mBloom;                                          // +0x31C
+    std::uint8_t mBool;                 // +0x008
+    std::uint8_t mEditMode;             // +0x009
+    std::uint8_t mUnknown00A_00B[0x02]; // +0x00A
+    Cartographic mCartographic;         // +0x00C
+    SkyDome mSkyDome;                   // +0x0B0 (0x228, 8-aligned)
+    float mLightingMultiplier;          // +0x2D8
+    Wm3::Vector3f mSunDirection;        // +0x2DC
+    Wm3::Vector3f mSunAmbience;         // +0x2E8
+    Wm3::Vector3f mSunColor;            // +0x2F4
+    Wm3::Vector3f mShadowFillColor;     // +0x300
+    Vector4f mSpecularColor;            // +0x30C
+    float mBloom;                       // +0x31C
 
     /**
      * The fog block the reflected `SFogInfo` type serializes as one unit, and
@@ -897,71 +941,52 @@ namespace moho
      */
     union
     {
-      SFogInfo mFogInfo;                                   // +0x320
+      SFogInfo mFogInfo; // +0x320
       struct
       {
-        float mFogStartDistance;                           // +0x320
-        float mFogCutoffDistance;                          // +0x324
-        float mFogMinClamp;                                // +0x328
-        float mFogMaxClamp;                                // +0x32C
-        float mFogCurveExponent;                           // +0x330
-        std::int32_t mTopographicSamples;                  // +0x334
-        std::uint32_t mHypsometricColor[5];                // +0x338
-        float mImagerElevationOffset;                      // +0x34C
+        float mFogStartDistance;            // +0x320
+        float mFogCutoffDistance;           // +0x324
+        float mFogMinClamp;                 // +0x328
+        float mFogMaxClamp;                 // +0x32C
+        float mFogCurveExponent;            // +0x330
+        std::int32_t mTopographicSamples;   // +0x334
+        std::uint32_t mHypsometricColor[5]; // +0x338
+        float mImagerElevationOffset;       // +0x34C
       };
     };
 
-    CWaterShaderProperties mWaterShaderProperties;         // +0x350
-    StratumMaterial mStrata;                               // +0x4AC
-    std::uint8_t mUnknown944_947[0x04];                    // +0x944
-    TerrainNormalMapHandleArray mNormalMap;                // +0x948
-    std::int32_t mNormalMapWidth;                          // +0x954
-    std::int32_t mNormalMapHeight;                         // +0x958
-    msvc8::string mBackgroundFile;                         // +0x95C
-    ID3DDeviceResources::TextureResourceHandle mBackgroundTexture; // +0x978
-    msvc8::string mSkycubeFile;                            // +0x980
-    ID3DDeviceResources::TextureResourceHandle mSkycubeTexture;     // +0x99C
-    TerrainEnvironmentLookupMap mEnvLookup;                // +0x9A4
-    TerrainEditWordBuffer mEditWordBuffer;                 // +0x9B0
+    CWaterShaderProperties mWaterShaderProperties;                   // +0x350
+    StratumMaterial mStrata;                                         // +0x4AC
+    std::uint8_t mUnknown944_947[0x04];                              // +0x944
+    TerrainNormalMapHandleArray mNormalMap;                          // +0x948
+    std::int32_t mNormalMapWidth;                                    // +0x954
+    std::int32_t mNormalMapHeight;                                   // +0x958
+    fa::string mBackgroundFile;                                      // +0x95C
+    ID3DDeviceResources::TextureResourceHandle mBackgroundTexture;   // +0x978
+    fa::string mSkycubeFile;                                         // +0x980
+    ID3DDeviceResources::TextureResourceHandle mSkycubeTexture;      // +0x99C
+    TerrainEnvironmentLookupMap mEnvLookup;                          // +0x9A4
+    TerrainEditWordBuffer mEditWordBuffer;                           // +0x9B0
     ID3DDeviceResources::DynamicTextureSheetHandle mWaterMapTexture; // +0x9C0
-    std::uint8_t* mWaterFoam;                              // +0x9C8
-    std::uint8_t* mWaterFlatness;                          // +0x9CC
-    std::uint8_t* mWaterDepthBias;                         // +0x9D0
-    gpg::BitArray2D* mDebugDirtyTerrain;                   // +0x9D4
-    TerrainDirtyRectList mDebugDirtyRects;                 // +0x9D8
-    std::uint8_t mUnknown9E4_9E7[0x04];                    // +0x9E4
-    WaveSystem mWaveSystem;                                // +0x9E8
-    CDecalManager* mDecalManager;                          // +0xC30
-    std::uint8_t mUnknownC34_C37[0x04];                    // +0xC34
-
+    std::uint8_t* mWaterFoam;                                        // +0x9C8
+    std::uint8_t* mWaterFlatness;                                    // +0x9CC
+    std::uint8_t* mWaterDepthBias;                                   // +0x9D0
+    gpg::BitArray2D* mDebugDirtyTerrain;                             // +0x9D4
+    TerrainDirtyRectList mDebugDirtyRects;                           // +0x9D8
+    std::uint8_t mUnknown9E4_9E7[0x04];                              // +0x9E4
+    WaveSystem mWaveSystem;                                          // +0x9E8
+    CDecalManager* mDecalManager;                                    // +0xC30
+    std::uint8_t mUnknownC34_C37[0x04];                              // +0xC34
   };
 
   static_assert(sizeof(IWldTerrainRes) == 0x08, "IWldTerrainRes size must be 0x08");
   static_assert(alignof(CWldTerrainRes) == 8, "CWldTerrainRes must be 8-aligned");
-  static_assert(
-    sizeof(CWldTerrainRes) == 0xC38,
-    "CWldTerrainRes size must be 0xC38"
-  );
-  static_assert(
-    offsetof(IWldTerrainRes, mMap) == 0x004,
-    "IWldTerrainRes::mMap offset must be 0x004"
-  );
-  static_assert(
-    offsetof(CWldTerrainRes, mBool) == 0x008,
-    "CWldTerrainRes::mBool offset must be 0x008"
-  );
-  static_assert(
-    offsetof(CWldTerrainRes, mEditMode) == 0x009,
-    "CWldTerrainRes::mEditMode offset must be 0x009"
-  );
-  static_assert(
-    offsetof(CWldTerrainRes, mCartographic) == 0x00C,
-    "CWldTerrainRes::mCartographic offset must be 0x00C"
-  );
-  static_assert(
-    offsetof(CWldTerrainRes, mSkyDome) == 0x0B0,
-    "CWldTerrainRes::mSkyDome offset must be 0x0B0"
-  );
+  static_assert(sizeof(CWldTerrainRes) == 0xC38, "CWldTerrainRes size must be 0xC38");
+  static_assert(offsetof(IWldTerrainRes, mMap) == 0x004, "IWldTerrainRes::mMap offset must be 0x004");
+  static_assert(offsetof(CWldTerrainRes, mBool) == 0x008, "CWldTerrainRes::mBool offset must be 0x008");
+  static_assert(offsetof(CWldTerrainRes, mEditMode) == 0x009, "CWldTerrainRes::mEditMode offset must be 0x009");
+  static_assert(offsetof(CWldTerrainRes, mCartographic) == 0x00C, "CWldTerrainRes::mCartographic offset must be 0x00C");
+  static_assert(offsetof(CWldTerrainRes, mSkyDome) == 0x0B0, "CWldTerrainRes::mSkyDome offset must be 0x0B0");
   static_assert(
     offsetof(CWldTerrainRes, mLightingMultiplier) == 0x2D8,
     "CWldTerrainRes::mLightingMultiplier offset must be 0x2D8"
@@ -970,14 +995,8 @@ namespace moho
     offsetof(CWldTerrainRes, mSpecularColor) == 0x30C,
     "CWldTerrainRes::mSpecularColor offset must be 0x30C"
   );
-  static_assert(
-    offsetof(CWldTerrainRes, mBloom) == 0x31C,
-    "CWldTerrainRes::mBloom offset must be 0x31C"
-  );
-  static_assert(
-    offsetof(CWldTerrainRes, mFogInfo) == 0x320,
-    "CWldTerrainRes::mFogInfo offset must be 0x320"
-  );
+  static_assert(offsetof(CWldTerrainRes, mBloom) == 0x31C, "CWldTerrainRes::mBloom offset must be 0x31C");
+  static_assert(offsetof(CWldTerrainRes, mFogInfo) == 0x320, "CWldTerrainRes::mFogInfo offset must be 0x320");
   static_assert(
     offsetof(CWldTerrainRes, mTopographicSamples) == 0x334,
     "CWldTerrainRes::mTopographicSamples offset must be 0x334"
@@ -994,14 +1013,8 @@ namespace moho
     offsetof(CWldTerrainRes, mWaterShaderProperties) == 0x350,
     "CWldTerrainRes::mWaterShaderProperties offset must be 0x350"
   );
-  static_assert(
-    offsetof(CWldTerrainRes, mStrata) == 0x4AC,
-    "CWldTerrainRes::mStrata offset must be 0x4AC"
-  );
-  static_assert(
-    offsetof(CWldTerrainRes, mNormalMap) == 0x948,
-    "CWldTerrainRes::mNormalMap offset must be 0x948"
-  );
+  static_assert(offsetof(CWldTerrainRes, mStrata) == 0x4AC, "CWldTerrainRes::mStrata offset must be 0x4AC");
+  static_assert(offsetof(CWldTerrainRes, mNormalMap) == 0x948, "CWldTerrainRes::mNormalMap offset must be 0x948");
   static_assert(
     offsetof(CWldTerrainRes, mNormalMapWidth) == 0x954,
     "CWldTerrainRes::mNormalMapWidth offset must be 0x954"
@@ -1018,18 +1031,12 @@ namespace moho
     offsetof(CWldTerrainRes, mBackgroundTexture) == 0x978,
     "CWldTerrainRes::mBackgroundTexture offset must be 0x978"
   );
-  static_assert(
-    offsetof(CWldTerrainRes, mSkycubeFile) == 0x980,
-    "CWldTerrainRes::mSkycubeFile offset must be 0x980"
-  );
+  static_assert(offsetof(CWldTerrainRes, mSkycubeFile) == 0x980, "CWldTerrainRes::mSkycubeFile offset must be 0x980");
   static_assert(
     offsetof(CWldTerrainRes, mSkycubeTexture) == 0x99C,
     "CWldTerrainRes::mSkycubeTexture offset must be 0x99C"
   );
-  static_assert(
-    offsetof(CWldTerrainRes, mEnvLookup) == 0x9A4,
-    "CWldTerrainRes::mEnvLookup offset must be 0x9A4"
-  );
+  static_assert(offsetof(CWldTerrainRes, mEnvLookup) == 0x9A4, "CWldTerrainRes::mEnvLookup offset must be 0x9A4");
   static_assert(
     offsetof(CWldTerrainRes, mEditWordBuffer) == 0x9B0,
     "CWldTerrainRes::mEditWordBuffer offset must be 0x9B0"
@@ -1038,10 +1045,7 @@ namespace moho
     offsetof(CWldTerrainRes, mWaterMapTexture) == 0x9C0,
     "CWldTerrainRes::mWaterMapTexture offset must be 0x9C0"
   );
-  static_assert(
-    offsetof(CWldTerrainRes, mWaterFoam) == 0x9C8,
-    "CWldTerrainRes::mWaterFoam offset must be 0x9C8"
-  );
+  static_assert(offsetof(CWldTerrainRes, mWaterFoam) == 0x9C8, "CWldTerrainRes::mWaterFoam offset must be 0x9C8");
   static_assert(
     offsetof(CWldTerrainRes, mWaterFlatness) == 0x9CC,
     "CWldTerrainRes::mWaterFlatness offset must be 0x9CC"
@@ -1058,12 +1062,6 @@ namespace moho
     offsetof(CWldTerrainRes, mDebugDirtyRects) == 0x9D8,
     "CWldTerrainRes::mDebugDirtyRects offset must be 0x9D8"
   );
-  static_assert(
-    offsetof(CWldTerrainRes, mWaveSystem) == 0x9E8,
-    "CWldTerrainRes::mWaveSystem offset must be 0x9E8"
-  );
-  static_assert(
-    offsetof(CWldTerrainRes, mDecalManager) == 0xC30,
-    "CWldTerrainRes::mDecalManager offset must be 0xC30"
-  );
+  static_assert(offsetof(CWldTerrainRes, mWaveSystem) == 0x9E8, "CWldTerrainRes::mWaveSystem offset must be 0x9E8");
+  static_assert(offsetof(CWldTerrainRes, mDecalManager) == 0xC30, "CWldTerrainRes::mDecalManager offset must be 0xC30");
 } // namespace moho

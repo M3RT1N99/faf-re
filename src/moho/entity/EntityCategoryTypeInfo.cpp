@@ -18,7 +18,9 @@ namespace
    * Completes startup preregistration for `EntityCategoryTypeInfo` by
    * publishing RTTI for `EntityCategory`.
    */
-  void preregister_EntityCategoryTypeInfoCtorLane(gpg::RType* const typeInfo)
+  void preregister_EntityCategoryTypeInfoCtorLane(
+    gpg::RType* const typeInfo
+  )
   {
     // Register under the type category sets actually are. `EntityCategory` is
     // a holder for static helpers - Add/Sub/Mul/SerLoad/SerSave - and nothing
@@ -28,7 +30,9 @@ namespace
     gpg::PreRegisterRType(typeid(moho::EntityCategorySet), typeInfo);
   }
 
-  [[nodiscard]] moho::EntityCategorySet* TryUpcastEntityCategoryOrThrow(const gpg::RRef& sourceRef)
+  [[nodiscard]] moho::EntityCategorySet* TryUpcastEntityCategoryOrThrow(
+    const gpg::RRef& sourceRef
+  )
   {
     gpg::RType* const entityCategoryType = gpg::RTypeOf<moho::EntityCategorySet>();
     const gpg::RRef upcast = gpg::REF_UpcastPtr(sourceRef, entityCategoryType);
@@ -42,7 +46,9 @@ namespace
     return categorySet;
   }
 
-  [[nodiscard]] gpg::RRef MakeEntityCategoryRef(moho::EntityCategorySet* const categorySet)
+  [[nodiscard]] gpg::RRef MakeEntityCategoryRef(
+    moho::EntityCategorySet* const categorySet
+  )
   {
     gpg::RRef out{};
     out = gpg::MakeRRef<moho::EntityCategorySet>(categorySet);
@@ -56,7 +62,7 @@ namespace
    * Installs the primary reference-lifecycle callbacks for
    * `EntityCategoryTypeInfo` (`NewRef`, `CtrRef`, `Delete`, `Destruct`).
    */
-  [[maybe_unused]] [[nodiscard]] EntityCategoryTypeInfo* ConfigureEntityCategoryTypeRefCallbacksPrimary(
+  [[nodiscard]] EntityCategoryTypeInfo* ConfigureEntityCategoryTypeRefCallbacksPrimary(
     EntityCategoryTypeInfo* const typeInfo
   ) noexcept
   {
@@ -74,7 +80,7 @@ namespace
    * Installs the copy/move reference-lifecycle callbacks for
    * `EntityCategoryTypeInfo` (`CpyRef`, `MovRef`, `Delete`, `Destruct`).
    */
-  [[maybe_unused]] [[nodiscard]] EntityCategoryTypeInfo* ConfigureEntityCategoryTypeRefCallbacksSecondary(
+  [[nodiscard]] EntityCategoryTypeInfo* ConfigureEntityCategoryTypeRefCallbacksSecondary(
     EntityCategoryTypeInfo* const typeInfo
   ) noexcept
   {
@@ -92,7 +98,7 @@ namespace
    * Configures `EntityCategoryTypeInfo` callback lanes, element size/version,
    * and serializer entrypoints for `EntityCategorySet`.
    */
-  [[maybe_unused]] [[nodiscard]] EntityCategoryTypeInfo* ConfigureEntityCategoryTypeInitLanes(
+  [[nodiscard]] EntityCategoryTypeInfo* ConfigureEntityCategoryTypeInitLanes(
     EntityCategoryTypeInfo* const typeInfo
   ) noexcept
   {
@@ -114,7 +120,13 @@ namespace
     return sInstance;
   }
 
-  struct Bootstrap { Bootstrap() { moho::register_EntityCategoryTypeInfoStartup(); } };
+  struct Bootstrap
+  {
+    Bootstrap()
+    {
+      moho::register_EntityCategoryTypeInfoStartup();
+    }
+  };
   Bootstrap gBootstrap;
 } // namespace
 
@@ -134,7 +146,10 @@ EntityCategoryTypeInfo::EntityCategoryTypeInfo()
 EntityCategoryTypeInfo::~EntityCategoryTypeInfo() = default;
 
 /** Address: 0x00555F40 (FUN_00555F40) */
-const char* EntityCategoryTypeInfo::GetName() const { return "EntityCategory"; }
+const char* EntityCategoryTypeInfo::GetName() const
+{
+  return "EntityCategory";
+}
 
 /**
  * Address: 0x00555EF0 (FUN_00555EF0, Moho::EntityCategoryTypeInfo::Init)
@@ -169,7 +184,9 @@ gpg::RRef EntityCategoryTypeInfo::NewRef()
  * Allocates one destination `EntityCategorySet`, copies source universe/start
  * lanes and packed word storage, then returns a typed reflection reference.
  */
-gpg::RRef EntityCategoryTypeInfo::CpyRef(gpg::RRef* const sourceRef)
+gpg::RRef EntityCategoryTypeInfo::CpyRef(
+  gpg::RRef* const sourceRef
+)
 {
   auto* const categorySet = new (std::nothrow) EntityCategorySet();
   if (categorySet != nullptr) {
@@ -188,7 +205,9 @@ gpg::RRef EntityCategoryTypeInfo::CpyRef(gpg::RRef* const sourceRef)
  * What it does:
  * Deletes one heap-owned `EntityCategorySet` through the normal delete path.
  */
-void EntityCategoryTypeInfo::Delete(void* const objectStorage)
+void EntityCategoryTypeInfo::Delete(
+  void* const objectStorage
+)
 {
   delete static_cast<EntityCategorySet*>(objectStorage);
 }
@@ -200,12 +219,11 @@ void EntityCategoryTypeInfo::Delete(void* const objectStorage)
  * Placement-constructs one `EntityCategorySet` in caller-provided storage and
  * returns its typed reflection reference.
  */
-gpg::RRef EntityCategoryTypeInfo::CtrRef(void* const objectStorage)
+gpg::RRef EntityCategoryTypeInfo::CtrRef(
+  void* const objectStorage
+)
 {
-  auto* const categorySet = static_cast<EntityCategorySet*>(objectStorage);
-  if (categorySet) {
-    new (categorySet) EntityCategorySet();
-  }
+  auto* const categorySet = gpg::ConstructInStorage<EntityCategorySet>(objectStorage);
   return MakeEntityCategoryRef(categorySet);
 }
 
@@ -216,7 +234,10 @@ gpg::RRef EntityCategoryTypeInfo::CtrRef(void* const objectStorage)
  * Copies one source `EntityCategorySet` payload into caller-provided storage
  * and returns the typed reflection reference to destination storage.
  */
-gpg::RRef EntityCategoryTypeInfo::MovRef(void* const objectStorage, gpg::RRef* const sourceRef)
+gpg::RRef EntityCategoryTypeInfo::MovRef(
+  void* const objectStorage,
+  gpg::RRef* const sourceRef
+)
 {
   auto* const categorySet = static_cast<EntityCategorySet*>(objectStorage);
   if (categorySet != nullptr) {
@@ -236,7 +257,9 @@ gpg::RRef EntityCategoryTypeInfo::MovRef(void* const objectStorage, gpg::RRef* c
  * Runs one in-place `EntityCategorySet` destructor without freeing backing
  * object storage.
  */
-void EntityCategoryTypeInfo::Destruct(void* const objectStorage)
+void EntityCategoryTypeInfo::Destruct(
+  void* const objectStorage
+)
 {
   if (!objectStorage) {
     return;
@@ -251,7 +274,9 @@ void moho::register_EntityCategoryTypeInfoStartup()
   (void)Acquire();
 }
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_EntityCategoryTypeInfoStartup_e127e8, moho::register_EntityCategoryTypeInfoStartup)
+GPG_PREREGISTER_INIT(
+  register_EntityCategoryTypeInfoStartup_e127e8,
+  moho::register_EntityCategoryTypeInfoStartup
+)

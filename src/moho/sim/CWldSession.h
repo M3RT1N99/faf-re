@@ -2,13 +2,13 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/FastVector.h"
 #include "CArmyImpl.h"
 #include "gpg/core/containers/IntrusiveLink.h"
 #include "moho/misc/WeakPtr.h"
 #include "moho/mesh/SpatialDb.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "legacy/containers/AutoPtr.h"
 #include "legacy/containers/List.h"
 #include "legacy/containers/String.h"
@@ -22,7 +22,7 @@
 #include "moho/sim/ISessionListener.h"
 #include "moho/unit/Broadcaster.h"
 #include "moho/sim/SSTICommandSource.h"
-#include "moho/sim/VisibilityRect.h"
+#include "gpg/core/containers/Rect2.h"
 #include "moho/command/CommandManager.h"
 #include "moho/misc/WeakSet.h"
 #include "moho/sim/WldSessionInfo.h"
@@ -53,9 +53,7 @@ namespace moho
   struct UserTarget;
   // Opaque cross-TU handle to the runtime command-graph anchor-history object
   // (see UserUnit.h). Only used as an incomplete pointer by the dock worker bridge.
-  struct QueuedUserCommandRecord;
   enum EMauiEventModifier : std::uint32_t;
-  class EntityCategoryLookupResolver;
   class LaunchInfoBase;
   class RRuleGameRules;
   class RRuleGameRulesImpl;
@@ -74,9 +72,9 @@ namespace moho
   {
     SBuildTemplateInfo() = default;
 
-    Wm3::Vector3f mPos;         // +0x00
-    std::int32_t mBuildOrder;   // +0x0C
-    msvc8::string mBlueprintId; // +0x10
+    Wm3::Vector3f mPos;       // +0x00
+    std::int32_t mBuildOrder; // +0x0C
+    fa::string mBlueprintId;  // +0x10
 
     /**
      * Address: 0x00823B40 (FUN_00823B40, struct_BuildTemplate::struct_BuildTemplate)
@@ -86,11 +84,16 @@ namespace moho
      * id).
      */
     SBuildTemplateInfo(const SBuildTemplateInfo& other);
+    SBuildTemplateInfo& operator=(const SBuildTemplateInfo&) = default;
   };
   static_assert(sizeof(SBuildTemplateInfo) == 0x2C, "SBuildTemplateInfo size must be 0x2C");
-  static_assert(offsetof(SBuildTemplateInfo, mBuildOrder) == 0x0C, "SBuildTemplateInfo::mBuildOrder offset must be 0x0C");
   static_assert(
-    offsetof(SBuildTemplateInfo, mBlueprintId) == 0x10, "SBuildTemplateInfo::mBlueprintId offset must be 0x10"
+    offsetof(SBuildTemplateInfo, mBuildOrder) == 0x0C,
+    "SBuildTemplateInfo::mBuildOrder offset must be 0x0C"
+  );
+  static_assert(
+    offsetof(SBuildTemplateInfo, mBlueprintId) == 0x10,
+    "SBuildTemplateInfo::mBlueprintId offset must be 0x10"
   );
   struct GeomCamera3;
 
@@ -124,14 +127,14 @@ namespace moho
 
     std::uint8_t mHitValid; // +0x00
     std::uint8_t pad_01[3];
-    Wm3::Vector3f mMouseWorldPos;  // +0x04
+    Wm3::Vector3f mMouseWorldPos; // +0x04
     // Weak reference to the hovered entity: owner slot at +0x10 (points at
     // `UserEntity::mIUnitChainHead`), next-in-owner at +0x14. The copy ctor
     // (0x0081CF00), `Copy` (0x0082B270) and dtor (0x00893140) are this
     // member's link/relink/unlink.
     WeakPtr<UserEntity> mUnitHover; // +0x10
-    std::int32_t mIsDragger;       // +0x18
-    Wm3::Vector2f mMouseScreenPos; // +0x1C
+    std::int32_t mIsDragger;        // +0x18
+    Wm3::Vector2f mMouseScreenPos;  // +0x1C
 
     [[nodiscard]] UserEntity* HoveredEntity() const noexcept;
     void SetHoveredEntity(UserEntity* entity) noexcept;
@@ -264,14 +267,15 @@ namespace moho
 
   static_assert(sizeof(CommandModeData) == 0x60, "CommandModeData size must be 0x60");
   static_assert(
-    offsetof(CommandModeData, mMouseDragStart) == 0x0C, "CommandModeData::mMouseDragStart offset must be 0x0C"
+    offsetof(CommandModeData, mMouseDragStart) == 0x0C,
+    "CommandModeData::mMouseDragStart offset must be 0x0C"
   );
   static_assert(offsetof(CommandModeData, mMouseDragEnd) == 0x30, "CommandModeData::mMouseDragEnd offset must be 0x30");
   static_assert(offsetof(CommandModeData, mModifiers) == 0x54, "CommandModeData::mModifiers offset must be 0x54");
 
   // The binary RTTI names std::multimap<Moho::EntId,std::string>.
   // FUN_008992D0 uses unsigned key comparison (setb at 0x008992F5).
-  using SSessionSaveNodeMap = msvc8::multimap<EntId, msvc8::string, std::less<std::uint32_t>>;
+  using SSessionSaveNodeMap = fa::multimap<EntId, fa::string, std::less<std::uint32_t>>;
   static_assert(sizeof(SSessionSaveNodeMap) == 0x0C, "SSessionSaveNodeMap size must be 0x0C");
 
   struct SSessionSaveData
@@ -295,7 +299,7 @@ namespace moho
     void MemberSerialize(gpg::WriteArchive* archive, int version, const gpg::RRef& ownerRef) const;
 
     /**
-       * Address: 0x00896F00 (FUN_00896F00)
+     * Address: 0x00896F00 (FUN_00896F00)
      *
      * What it does:
      * Initializes save-data RB-tree header node and resets map size.
@@ -303,29 +307,16 @@ namespace moho
     SSessionSaveData();
 
     /**
-       * Address: 0x008971A0 (FUN_008971A0)
+     * Address: 0x008971A0 (FUN_008971A0)
      *
      * What it does:
      * Releases all map nodes and their string payloads.
      */
     ~SSessionSaveData();
-
   };
 
   static_assert(sizeof(SSessionSaveData) == 0x0C, "SSessionSaveData size must be 0x0C");
   static_assert(offsetof(SSessionSaveData, mNodeMap) == 0x00, "SSessionSaveData::mNodeMap offset must be 0x00");
-
-  /**
-   * Address: 0x0089AEC0 (FUN_0089AEC0, boost::shared_ptr_SSessionSaveData::shared_ptr_SSessionSaveData)
-   *
-   * What it does:
-   * Constructs one `shared_ptr<SSessionSaveData>` from one raw save-data
-   * pointer lane.
-   */
-  boost::shared_ptr<SSessionSaveData>* ConstructSharedSessionSaveDataFromRaw(
-    boost::shared_ptr<SSessionSaveData>* outSaveData,
-    SSessionSaveData* saveData
-  );
 
   class CWldSession
   {
@@ -339,9 +330,9 @@ namespace moho
      * and session-info launch data.
      */
     CWldSession(
-      msvc8::auto_ptr<LuaPlus::LuaState>& state,
-      msvc8::auto_ptr<RRuleGameRules>& rules,
-      msvc8::auto_ptr<CWldMap>& wldMap,
+      fa::auto_ptr<LuaPlus::LuaState>& state,
+      fa::auto_ptr<RRuleGameRules>& rules,
+      fa::auto_ptr<CWldMap>& wldMap,
       SWldSessionInfo& sessionInfo
     );
 
@@ -354,12 +345,12 @@ namespace moho
     ~CWldSession();
 
     /**
-      * Alias of FUN_008B9580 (non-canonical helper lane).
+     * Alias of FUN_008B9580 (non-canonical helper lane).
      *
      * What it does:
      * Reads terrain playable-bounds rectangle used by user-entity visibility checks.
      */
-    [[nodiscard]] bool TryGetPlayableMapRect(VisibilityRect& outRect) const;
+    [[nodiscard]] bool TryGetPlayableMapRect(gpg::Rect2i& outRect) const;
 
     /**
      * Address: 0x007F6390 (FUN_007F6390, Moho::CWldSession::GetTickDebugCanvas)
@@ -373,7 +364,7 @@ namespace moho
      * `WRenViewport::Render` (0x007F90D0) calls this once per frame to decide
      * whether there is a tick debug canvas to draw.
      */
-    [[nodiscard]] boost::SharedPtrRaw<CDebugCanvas> GetTickDebugCanvas() const;
+    [[nodiscard]] std::shared_ptr<CDebugCanvas> GetTickDebugCanvas() const;
 
     /**
      * Address: 0x007F63C0 (FUN_007F63C0, Moho::CWldSession::GetBeatDebugCanvas)
@@ -382,7 +373,7 @@ namespace moho
      * Returns a retained shared reference to the beat-scoped debug canvas
      * (`mBeatDebugCanvas`, +0x041C).
      */
-    [[nodiscard]] boost::SharedPtrRaw<CDebugCanvas> GetBeatDebugCanvas() const;
+    [[nodiscard]] std::shared_ptr<CDebugCanvas> GetBeatDebugCanvas() const;
 
     /**
      * Address: 0x007A6360 (FUN_007A6360, ?GetFocusArmy@CWldSession@Moho@@QBEPAVUserArmy@2@XZ)
@@ -401,14 +392,6 @@ namespace moho
      * focused army lane has no live `UserArmy*` owner.
      */
     [[nodiscard]] bool IsObserver() const;
-
-    /**
-     * Address: 0x00896570 (FUN_00896570, ?SetCursorInfo@CWldSession@Moho@@QAEXABUUICursorInfo@2@@Z)
-     *
-     * What it does:
-     * Copies one cursor-info payload into the session cursor-info lane.
-     */
-    void SetCursorInfo(const MouseInfo& cursorInfo);
 
     /**
      * Address: 0x00895FF0 (FUN_00895FF0, ?GetSelection@CWldSession@Moho@@QBEABV?$WeakSet@VUserEntity@Moho@@@2@XZ)
@@ -449,15 +432,6 @@ namespace moho
     [[nodiscard]] UserEntity* GetHoveredUserEntity() const noexcept;
 
     /**
-     * Address: 0x008965C0 (FUN_008965C0, ?BecomeObserver@CWldSession@Moho@@QAEXXZ)
-     *
-     * What it does:
-     * Validates observer focus request (`-1`) and applies it to the active sim
-     * driver when allowed.
-     */
-    void BecomeObserver();
-
-    /**
      * Address context: compatibility wrapper lane used by recovered callsites.
      *
      * What it does:
@@ -476,30 +450,13 @@ namespace moho
     void RequestFocusArmy(int index);
 
     /**
-      * Alias of FUN_008B97C0 (non-canonical helper lane).
-     *
-     * What it does:
-     * Returns typed category resolver interface for `rules`.
-     */
-    [[nodiscard]] EntityCategoryLookupResolver* GetCategoryLookupResolver();
-    [[nodiscard]] const EntityCategoryLookupResolver* GetCategoryLookupResolver() const;
-
-    /**
-      * Alias of FUN_008B85E0 (non-canonical helper lane).
+     * Alias of FUN_008B85E0 (non-canonical helper lane).
      *
      * What it does:
      * Returns storage root used as SpatialDB_MeshInstance owner for user-entity DB entries.
      */
     [[nodiscard]] SpatialDB<UserEntity>* GetEntitySpatialDbStorage();
     [[nodiscard]] const SpatialDB<UserEntity>* GetEntitySpatialDbStorage() const;
-
-    /**
-     * Address: 0x00894120 (FUN_00894120, ?GetTerrainRes@CWldSession@Moho@@QBEPAVIWldTerrainRes@2@XZ)
-     *
-     * What it does:
-     * Returns the world-map terrain resource lane owned by this world session.
-     */
-    [[nodiscard]] IWldTerrainRes* GetTerrainRes() const;
 
     /**
      * Address: 0x00894130 (FUN_00894130, ?GetSTIMap@CWldSession@Moho@@QBEPAVSTIMap@2@XZ)
@@ -599,7 +556,13 @@ namespace moho
      *
      * The parameter is by-value ownership; nothing else may free the packet.
      */
-    void DoBeat(msvc8::auto_ptr<SSyncData> syncData);
+    void DoBeat(fa::auto_ptr<SSyncData> syncData);
+
+    /**
+     * Engine addition (replay timeline): drops everything the last sim published, just before the
+     * opening sync of the sim that replaces it. The map, the rules, the camera and the UI stay.
+     */
+    void ResetForNewReplaySim();
 
 #if FAF_SERVER_MODE
     /**
@@ -630,21 +593,13 @@ namespace moho
     [[nodiscard]] float GetDelayToNextBeat() const;
 
     /**
-     * Address: 0x00895FD0 (FUN_00895FD0, ?GetGameTime@CWldSession@Moho@@QBEMXZ)
-     *
-     * What it does:
-     * Returns total game time in seconds (`(mGameTick + mTimeSinceLastTick) * 0.1`).
-     */
-    [[nodiscard]] float GetGameTime() const;
-
-    /**
      * Address: 0x00896000 (FUN_00896000, ?GetSelectionUnits@CWldSession@Moho@@QBEXAAV?$WeakSet@VUserUnit@Moho@@@2@@Z)
      *
      * What it does:
      * Walks world-session selected-entity weak-set and appends typed `UserUnit*`
      * entries for currently live selected units.
      */
-    void GetSelectionUnits(msvc8::vector<UserUnit*>& outUnits) const;
+    void GetSelectionUnits(fa::vector<UserUnit*>& outUnits) const;
 
     /**
      * Address: 0x00896000 (FUN_00896000, ?GetSelectionUnits@CWldSession@Moho@@QBEXAAV?$WeakSet@VUserUnit@Moho@@@2@@Z)
@@ -666,7 +621,7 @@ namespace moho
      * the stack (head sentinel from the shared 28-byte node allocator, torn
      * down with `operator delete`) and pass it here.
      *
-     * The `msvc8::vector<UserUnit*>&` overload above carries the same address
+     * The `fa::vector<UserUnit*>&` overload above carries the same address
      * and predates this one; several recovered call sites still depend on it
      * (`RangeRenderer.cpp`, `CConCommand.cpp`, `Sim.cpp`). The two are kept
      * side by side deliberately - the divergence is real and wants a separate
@@ -675,13 +630,14 @@ namespace moho
     void GetSelectionUnits(WeakSet<UserUnit>& outUnits) const;
 
     /**
-     * Address: 0x00896090 (FUN_00896090, ?GetValidAttackingUnits@CWldSession@Moho@@QBEXAAV?$WeakSet@VUserUnit@Moho@@@2@@Z)
+     * Address: 0x00896090 (FUN_00896090,
+     * ?GetValidAttackingUnits@CWldSession@Moho@@QBEXAAV?$WeakSet@VUserUnit@Moho@@@2@@Z)
      *
      * What it does:
      * Filters current selection down to units that can attack the hovered
      * target entity and writes unique unit entries to `outUnits`.
      */
-    void GetValidAttackingUnits(msvc8::vector<UserUnit*>& outUnits) const;
+    void GetValidAttackingUnits(fa::vector<UserUnit*>& outUnits) const;
 
     /**
      * Address: 0x00894280 (FUN_00894280, ?LookupEntityId@CWldSession@Moho@@QAEPAVUserEntity@2@VEntId@2@@Z)
@@ -711,7 +667,7 @@ namespace moho
      * updates selection-size bookkeeping, and refreshes sync filter mask B
      * when the selection set changes.
      */
-    void SetSelectionUnits(const msvc8::vector<UserUnit*>& units);
+    void SetSelectionUnits(const fa::vector<UserUnit*>& units);
 
     /**
      * Address: 0x00865830 (FUN_00865830, ?CanSelectUnit@CWldSession@Moho@@QBE_NPAVUserUnit@2@@Z)
@@ -786,13 +742,13 @@ namespace moho
     void SyncPlayableRect(const gpg::Rect2i& playableRect);
 
     /**
-      * Alias of FUN_00896F00 (non-canonical helper lane).
+     * Alias of FUN_00896F00 (non-canonical helper lane).
      * ?GetSaveData@CWldSession@Moho@@QBE?AV?$shared_ptr@USSessionSaveData@Moho@@@boost@@XZ)
      *
      * What it does:
      * Builds a save-data snapshot for current world-session entities.
      */
-    [[nodiscard]] boost::shared_ptr<SSessionSaveData> GetSaveData() const;
+    [[nodiscard]] std::shared_ptr<SSessionSaveData> GetSaveData() const;
 
     /**
      * Address: 0x0087FC90 (FUN_0087FC90,
@@ -897,7 +853,8 @@ namespace moho
      * stack (0x0086EE71..0x0086EE8A). The analyst name carried a world-view
      * pointer and a `CWldMap*` as well; neither is passed.
      */
-    void RenderProjectileIcons(CameraImpl* camera, CD3DPrimBatcher* primBatcher, float tickFraction, float frameSeconds);
+    void
+    RenderProjectileIcons(CameraImpl* camera, CD3DPrimBatcher* primBatcher, float tickFraction, float frameSeconds);
 
     /**
      * Address: 0x00862A80 (FUN_00862A80,
@@ -946,7 +903,8 @@ namespace moho
 
   public:
     /**
-     * Address: 0x00896A40 (FUN_00896A40, ?GetActiveBuildTemplate@CWldSession@Moho@@QBE?AV?$fastvector_n@USBuildTemplateInfo@Moho@@$0BA@@gpg@@AAH0@Z)
+     * Address: 0x00896A40 (FUN_00896A40,
+     * ?GetActiveBuildTemplate@CWldSession@Moho@@QBE?AV?$fastvector_n@USBuildTemplateInfo@Moho@@$0BA@@gpg@@AAH0@Z)
      *
      * What it does:
      * Copies the active build-template buffer into one caller-owned inline
@@ -1020,7 +978,7 @@ namespace moho
      * `CUIWorldView::RenderCommandGraph` (0x0086ECD0) and
      * `UICommandDragger`'s constructor (0x00823FE0).
      */
-    [[nodiscard]] boost::shared_ptr<UICommandGraph> GetCommandGraph(bool allowCreate);
+    [[nodiscard]] std::shared_ptr<UICommandGraph> GetCommandGraph(bool allowCreate);
 
     /**
      * Address: 0x0085AF40 (FUN_0085AF40, sub_85AF40)
@@ -1032,7 +990,8 @@ namespace moho
      * calls it with the session in `ecx` and the camera view, batcher, game tick
      * and tick fraction on the stack (0x0086ED55..0x0086ED72).
      */
-    void RenderCommandGraph(const GeomCamera3& camera, CD3DPrimBatcher* batcher, std::int32_t gameTick, float tickFraction);
+    void
+    RenderCommandGraph(const GeomCamera3& camera, CD3DPrimBatcher* batcher, std::int32_t gameTick, float tickFraction);
 
   private:
     /**
@@ -1045,15 +1004,6 @@ namespace moho
     void ApplyPendingSaveData();
 
     /**
-     * Address: 0x00895DC0 (FUN_00895DC0, ?HandleFogEdge@CWldSession@Moho@@AAEXABV?$Rect2@H@gpg@@HH@Z)
-     *
-     * What it does:
-     * Clears/marks edge-fog rows outside the supplied visible rectangle and
-     * refreshes the backing edge-fog buffer.
-     */
-    void HandleFogEdge(const gpg::Rect2i& visibleRect, int width, int height);
-
-    /**
      * Address: 0x00896670 (FUN_00896670, ?ValidateFocusArmyRequest@CWldSession@Moho@@AAE_NH@Z)
      *
      * What it does:
@@ -1062,6 +1012,18 @@ namespace moho
      */
     [[nodiscard]] bool ValidateFocusArmyRequest(int index);
 
+    // Pieces of DoBeat (0x00894530), each applying its lanes of the beat in the binary's order.
+    void ApplyBeatEffects(const SSyncData& beat, CameraImpl* worldCamera, IWldTerrainRes* terrainRes);
+    void ApplyBeatArmies(const SSyncData& beat);
+    void CreateBeatEntities(const SSyncData& beat);
+    void PublishBeatCommandDescriptors(const SSyncData& beat);
+    void UpdateBeatEntities(const SSyncData& beat);
+    void ApplyBeatCommandPackets(const SSyncData& beat);
+    void HandSyncToUi(const SSyncData& beat);
+    void ReportBeatDesyncs(const SSyncData& beat);
+    void ExitAtTickIfAsked();
+    void TickBeatUnits(const SSyncData& beat);
+    void UpdateOrphansAndVisibility();
 
   public:
     // `SetSelection` (0x00896140) broadcasts with `esi = session`, and the
@@ -1070,19 +1032,19 @@ namespace moho
     Broadcaster<SSelectionEvent> mSelectionBroadcaster; // 0x0000
     Broadcaster<SPauseEvent> mPauseBroadcaster;         // 0x0008
 
-    LuaPlus::LuaState* mState;                              // 0x0010
-    CTaskStage* mCurThread;                                 // 0x0014
-    RRuleGameRulesImpl* mRules;                             // 0x0018
-    CWldMap* mWldMap;                                       // 0x001C
-    boost::shared_ptr<LaunchInfoBase> mLaunchInfo;          // 0x0020
-    msvc8::string mMapName;                                 // 0x0028
+    LuaPlus::LuaState* mState;                     // 0x0010
+    CTaskStage* mCurThread;                        // 0x0014
+    RRuleGameRulesImpl* mRules;                    // 0x0018
+    CWldMap* mWldMap;                              // 0x001C
+    std::shared_ptr<LaunchInfoBase> mLaunchInfo;   // 0x0020
+    fa::string mMapName;                           // 0x0028
     /**
      * Every live `UserEntity` in the session, by entity id. `AddEntity` /
      * `RemoveEntity` / `OrphanEntity` maintain it and `LookupEntityId` reads
      * it.
      *
      * The constructor (0x00893160) buys its head node at 0x008931E1, sets
-     * `_Isnil` at head+0x15 and links the head to itself -- `msvc8::map`'s own
+     * `_Isnil` at head+0x15 and links the head to itself -- `fa::map`'s own
      * constructor -- and `find` (0x00898DC0) compares the key at node+0x0C
      * with `jae`/`jb`, so the key is unsigned and the node is 0x18 bytes with
      * the mapped `UserEntity*` at +0x10.
@@ -1094,7 +1056,7 @@ namespace moho
      * 0x1C-byte nodes of its own to maintain it, and the constructor set the
      * head to null instead of buying one.
      */
-    msvc8::map<std::uint32_t, UserEntity*> mEntities;       // 0x0044
+    fa::map<std::uint32_t, UserEntity*> mEntities; // 0x0044
     /// The session's entity spatial database. The constructor builds it right
     /// after the entity map (0x00501D80 on `this+0x50`) and the destructor
     /// tears it down after the extra-selection set and before the map
@@ -1103,12 +1065,12 @@ namespace moho
     /// It was 0xA0 raw bytes holding this and the extra-selection set, with
     /// the database placement-constructed in and the set reached at a
     /// hard-coded +0x90 -- both x86 sizes.
-    SpatialDB<UserEntity> mEntitySpatialDb;                 // 0x0050
+    SpatialDB<UserEntity> mEntitySpatialDb; // 0x0050
     /// The extra-selection set (`GetExtraSelectList` / `ClearExtraSelectList`,
     /// the units picked out of a transport's cargo panel). Its head sentinel is
     /// built inline at 0x00893214..0x0089323D, right after the spatial db.
-    WeakSet<UserEntity> mExtraSelection;                    // 0x00E0
-    std::uint32_t mPad00EC;                                 // 0x00EC (never written)
+    WeakSet<UserEntity> mExtraSelection; // 0x00E0
+    std::uint32_t mPad00EC;              // 0x00EC (never written)
     /**
      * The active build templates, a `gpg::fastvector_n<SBuildTemplateInfo, 16>`
      * -- confirmed by the mangled names of `GetActiveBuildTemplate` and
@@ -1124,30 +1086,30 @@ namespace moho
      * `FastVectorN` members in FastVector.h.
      */
     gpg::fastvector_n<SBuildTemplateInfo, 16> mBuildTemplates; // 0x00F0
-    float mBuildTemplateArg1;                               // 0x03C0
-    float mBuildTemplateArg2;                               // 0x03C4
+    float mBuildTemplateArg1;                                  // 0x03C0
+    float mBuildTemplateArg2;                                  // 0x03C4
     /// The real recovered type, not the generated skeleton. Declaring the
     /// placeholder here meant `VisionDB::Pool::Pool` (0x0081ACA0) never ran, so
     /// the pool's zone/free-node list sentinels were never allocated and every
     /// consumer that reinterpreted this member as `VisionDB` found a null
     /// `mEntriesHead`. Both types model the same 0x24-byte binary object.
-    VisionDB mVisionDb;                                     // 0x03C8
-    msvc8::vector<UserArmy*> userArmies;                    // 0x03EC
+    VisionDB mVisionDb;               // 0x03C8
+    fa::vector<UserArmy*> userArmies; // 0x03EC
     /// The session-wide command manager. `DoBeat`, the right-click dispatcher
     /// and `UserUnit`'s manager resync all reach its `mCommands` map through
     /// this pointer.
-    CommandManager* mCommandManager;                        // 0x03FC
-    CFormation* mCurFormation;                              // 0x0400
+    CommandManager* mCommandManager; // 0x03FC
+    CFormation* mCurFormation;       // 0x0400
     /// The session's command graph, observed rather than owned: world views
     /// and command drags hold it while they draw or edit it, and it dies when
     /// the last of them lets go. `GetCommandGraph` locks it (0x00898F70) and
     /// re-points it at a graph it creates (0x0089AE50, `weak_count` at +0x08).
-    boost::weak_ptr<UICommandGraph> mCommandGraph;           // 0x0404
-    boost::SharedPtrRaw<void> mUnknownShared40C;            // 0x040C
-    boost::SharedPtrRaw<CDebugCanvas> mDebugCanvas;         // 0x0414
+    std::weak_ptr<UICommandGraph> mCommandGraph; // 0x0404
+    std::shared_ptr<void> mUnknownShared40C;     // 0x040C
+    std::shared_ptr<CDebugCanvas> mDebugCanvas;  // 0x0414
     /// The beat-scoped debug canvas; `DoBeat` re-seats it from the packet.
-    boost::SharedPtrRaw<CDebugCanvas> mBeatDebugCanvas;     // 0x041C
-    boost::SharedPtrRaw<CSimResources> mSimResources;       // 0x0424
+    std::shared_ptr<CDebugCanvas> mBeatDebugCanvas; // 0x041C
+    std::shared_ptr<CSimResources> mSimResources;   // 0x0424
     /// Entities the sim has destroyed that are still playing out their death
     /// on the user side. `OrphanEntity` (0x008941FA) and `DoBeat`'s entity
     /// removal (0x00894C70) both `WeakSet<UserEntity>::Add` (0x007AE1B0) into
@@ -1155,36 +1117,36 @@ namespace moho
     /// A bare 12-byte `WeakSet<UserEntity>`: the visibility set starts right
     /// after it, and the destructor tears the two down as members, 0x438 first
     /// (0x00893D64) then 0x42C.
-    WeakSet<UserEntity> mOrphans;                           // 0x042C
+    WeakSet<UserEntity> mOrphans; // 0x042C
     /// Entities whose visibility must be re-evaluated on the next beat:
     /// `AddToVizUpdate` adds (0x00894215, the same `Add` as above),
     /// `RemoveFromVizUpdate` finds and erases (0x00894238), `DoBeat` calls
     /// `UpdateVisibility` on every live entry (0x0089564A..).
-    WeakSet<UserEntity> mVizUpdates;                        // 0x0438
-    LuaPlus::LuaObject mScenarioInfo;                       // 0x0444
-    std::int32_t mGameTick;                                 // 0x0458
-    std::int32_t mLastBeatWasTick;                          // 0x045C
-    float mTimeSinceLastTick;                               // 0x0460
-    std::uint8_t mSessionPauseStateA;                       // 0x0464
-    std::uint8_t mRequestingPauseState;                     // 0x0465
-    std::uint8_t mRequestingPause;                          // 0x0466
-    std::uint8_t pad_0467[1];                               // 0x0467
-    std::int32_t mPauseRequester;                           // 0x0468
-    std::uint8_t mReplayIsPaused;                           // 0x046C
-    char pad_046D[3];                                       // 0x046D
-    msvc8::vector<SSTICommandSource> cmdSources;            // 0x0470
-    int32_t ourCmdSource;                                   // 0x0480
-    bool IsReplay;                                          // 0x0484
-    bool IsBeingRecorded;                                   // 0x0485
-    bool IsMultiplayer;                                     // 0x0486
-    bool IsObservingAllowed;                                // 0x0487
-    int32_t FocusArmy;                                      // 0x0488
-    uint8_t IsGameOver;                                     // 0x048C
-    char pad_048D[3];                                       // 0x048D
+    WeakSet<UserEntity> mVizUpdates;          // 0x0438
+    LuaPlus::LuaObject mScenarioInfo;         // 0x0444
+    std::int32_t mGameTick;                   // 0x0458
+    std::int32_t mLastBeatWasTick;            // 0x045C
+    float mTimeSinceLastTick;                 // 0x0460
+    std::uint8_t mSessionPauseStateA;         // 0x0464
+    std::uint8_t mRequestingPauseState;       // 0x0465
+    std::uint8_t mRequestingPause;            // 0x0466
+    std::uint8_t pad_0467[1];                 // 0x0467
+    std::int32_t mPauseRequester;             // 0x0468
+    std::uint8_t mReplayIsPaused;             // 0x046C
+    char pad_046D[3];                         // 0x046D
+    fa::vector<SSTICommandSource> cmdSources; // 0x0470
+    int32_t ourCmdSource;                     // 0x0480
+    bool IsReplay;                            // 0x0484
+    bool IsBeingRecorded;                     // 0x0485
+    bool IsMultiplayer;                       // 0x0486
+    bool IsObservingAllowed;                  // 0x0487
+    int32_t FocusArmy;                        // 0x0488
+    uint8_t IsGameOver;                       // 0x048C
+    char pad_048D[3];                         // 0x048D
     /// Per-beat copy of `SSyncData::mSyncExtraUnitData`, the client-side mirror
     /// of `Sim::mSyncSerializeGroup2`'s element type (`moho::SExtraUnitData`,
     /// `Unit.h`). `CWldSession::DoBeat` assigns the whole run over via
-    /// `msvc8::vector<SExtraUnitData>::operator=` (0x00895214, FUN_007530C0,
+    /// `fa::vector<SExtraUnitData>::operator=` (0x00895214, FUN_007530C0,
     /// `.xrefs.txt`-confirmed sole code xref -- `legacy/containers/Vector.h`).
     /// `DrawCommandSplats` (FUN_008515B0, 0x008518A4..0x0085189A) is the
     /// lane's reader: `unitEntityId` is the source unit's `EntId`, `pairs`
@@ -1203,17 +1165,17 @@ namespace moho
     /// `AssignSyncInlineVectors` had zero other citations anywhere in
     /// `src` and are removed; see `Vector.h`'s `FUN_007530C0` citation
     /// for the full evidence chain.
-    msvc8::vector<SExtraUnitData> mSyncExtraUnitData;      // 0x0490
-    WeakSet<UserEntity> mSelection;                         // 0x04A0
+    fa::vector<SExtraUnitData> mSyncExtraUnitData; // 0x0490
+    WeakSet<UserEntity> mSelection;                // 0x04A0
     /// `mSelection`'s live count as of the last `SetSelection` (stored at
     /// 0x00896387); `0x008943E0` compares a rebuilt selection against it.
-    std::uint32_t mSelectionSize;                           // 0x04AC
+    std::uint32_t mSelectionSize; // 0x04AC
     /// These five members are one flattened `MouseInfo` - the cursor snapshot
     /// the session keeps. `FUN_00852C10` hands `this + 0x4B0` straight to
     /// `GetLeftMouseButtonAction(out, const MouseInfo*, int)` at 0x00852C39,
     /// and the bytes line up exactly: `mHitValid`+pad, `mMouseWorldPos`,
     /// `{mUnitHover, mPrevious}`, `mIsDragger` (which is what
-    /// `HighlightCommandId` really is) and `mMouseScreenPos`, ending at
+    /// `mCursorInfo.mIsDragger` really is) and `mMouseScreenPos`, ending at
     /// 0x4B0 + sizeof(MouseInfo) == 0x4D4. Use `CursorInfo()` below rather
     /// than these lanes; folding them into a real member is a separate pass
     /// because 31 call sites still name them individually.
@@ -1224,58 +1186,52 @@ namespace moho
     /// x86 (a `char[8]` stood in for the weak link and was half its x64 size).
     /// The destructor unlinks the hovered-unit weak link as a member, as
     /// 0x00893C7D does (`lea ecx, [ebp+4C0h]`).
-    alignas(MouseInfo) std::uint8_t mCursorWorldState[4];   // 0x04B0
-    Wm3::Vector3f CursorWorldPos;                           // 0x04B4
-    WeakPtr<UserEntity> mCursorUnitHover;                   // 0x04C0
-    int32_t HighlightCommandId;                             // 0x04C8
-    Wm3::Vector2f CursorScreenPos;                          // 0x04CC
-    bool IsCheatsEnabled;                                   // 0x04D4
-    bool mShowInvalidBuildPlacementPreview;                 // 0x04D5
-    char pad_04D6[2];                                       // 0x04D6
-    msvc8::vector<msvc8::string> mOverlayFilters;           // 0x04D8
-    bool DisplayEconomyOverlay;                             // 0x04E8
-    bool mTeamColorMode;                                    // 0x04E9
-    char pad_04EA[2];                                       // 0x04EA
-    gpg::MemBuffer<char> mEdgeFog;                          // 0x04EC
-    boost::shared_ptr<SSessionSaveData> mPendingSaveData;   // 0x04FC
-    char pad_0504[4];                                       // 0x0504
+    MouseInfo mCursorInfo; // 0x04B0 (hit flag, world pos, hovered unit, highlighted command, screen pos)
+    bool IsCheatsEnabled;                                 // 0x04D4
+    bool mShowInvalidBuildPlacementPreview;               // 0x04D5
+    char pad_04D6[2];                                     // 0x04D6
+    fa::vector<fa::string> mOverlayFilters;               // 0x04D8
+    bool DisplayEconomyOverlay;                           // 0x04E8
+    bool mTeamColorMode;                                  // 0x04E9
+    char pad_04EA[2];                                     // 0x04EA
+    gpg::MemBuffer<char> mEdgeFog;                        // 0x04EC
+    std::shared_ptr<SSessionSaveData> mPendingSaveData;   // 0x04FC
+    char pad_0504[4];                                     // 0x0504
   };
 
   static_assert(
-    sizeof(CWldSession) >= 0x500 && sizeof(CWldSession) <= 0x540, "CWldSession size must remain in expected x86 range"
+    sizeof(CWldSession) >= 0x500 && sizeof(CWldSession) <= 0x540,
+    "CWldSession size must remain in expected x86 range"
   );
   static_assert(
-    offsetof(CWldSession, mSelectionBroadcaster) == 0x00, "CWldSession::mSelectionBroadcaster offset must be 0x00"
+    offsetof(CWldSession, mSelectionBroadcaster) == 0x00,
+    "CWldSession::mSelectionBroadcaster offset must be 0x00"
   );
   static_assert(offsetof(CWldSession, mPauseBroadcaster) == 0x08, "CWldSession::mPauseBroadcaster offset must be 0x08");
   static_assert(offsetof(CWldSession, mWldMap) == 0x1C, "CWldSession::mWldMap offset must be 0x1C");
   static_assert(offsetof(CWldSession, mLaunchInfo) == 0x20, "CWldSession::mLaunchInfo offset must be 0x20");
   static_assert(offsetof(CWldSession, mEntities) == 0x44, "CWldSession::mEntities offset must be 0x44");
-  static_assert(sizeof(msvc8::map<std::uint32_t, UserEntity*>) == 0x0C, "entity map size must be 0x0C");
+  static_assert(sizeof(fa::map<std::uint32_t, UserEntity*>) == 0x0C, "entity map size must be 0x0C");
   static_assert(offsetof(CWldSession, mEntitySpatialDb) == 0x50, "CWldSession::mEntitySpatialDb offset must be 0x50");
   static_assert(sizeof(SpatialDB<UserEntity>) == 0x90, "SpatialDB<UserEntity> size must be 0x90");
   static_assert(offsetof(CWldSession, mExtraSelection) == 0xE0, "CWldSession::mExtraSelection offset must be 0xE0");
   static_assert(offsetof(CWldSession, mBuildTemplates) == 0xF0, "CWldSession::mBuildTemplates offset must be 0xF0");
   static_assert(sizeof(CWldSession::mBuildTemplates) == 0x2D0, "CWldSession::mBuildTemplates size must be 0x2D0");
   static_assert(
-    offsetof(CWldSession, mBuildTemplateArg1) == 0x3C0, "CWldSession::mBuildTemplateArg1 offset must be 0x3C0"
+    offsetof(CWldSession, mBuildTemplateArg1) == 0x3C0,
+    "CWldSession::mBuildTemplateArg1 offset must be 0x3C0"
   );
   static_assert(offsetof(CWldSession, mOrphans) == 0x42C, "CWldSession::mOrphans offset must be 0x42C");
   static_assert(offsetof(CWldSession, mVizUpdates) == 0x438, "CWldSession::mVizUpdates offset must be 0x438");
   static_assert(offsetof(CWldSession, mScenarioInfo) == 0x444, "CWldSession::mScenarioInfo offset must be 0x444");
   static_assert(offsetof(CWldSession, mGameTick) == 0x458, "CWldSession::mGameTick offset must be 0x458");
+  static_assert(offsetof(CWldSession, mLastBeatWasTick) == 0x45C, "CWldSession::mLastBeatWasTick offset must be 0x45C");
   static_assert(
-    offsetof(CWldSession, mLastBeatWasTick) == 0x45C, "CWldSession::mLastBeatWasTick offset must be 0x45C"
+    offsetof(CWldSession, mTimeSinceLastTick) == 0x460,
+    "CWldSession::mTimeSinceLastTick offset must be 0x460"
   );
-  static_assert(
-    offsetof(CWldSession, mTimeSinceLastTick) == 0x460, "CWldSession::mTimeSinceLastTick offset must be 0x460"
-  );
-  static_assert(
-    offsetof(CWldSession, mPauseRequester) == 0x468, "CWldSession::mPauseRequester offset must be 0x468"
-  );
-  static_assert(
-    offsetof(CWldSession, mReplayIsPaused) == 0x46C, "CWldSession::mReplayIsPaused offset must be 0x46C"
-  );
+  static_assert(offsetof(CWldSession, mPauseRequester) == 0x468, "CWldSession::mPauseRequester offset must be 0x468");
+  static_assert(offsetof(CWldSession, mReplayIsPaused) == 0x46C, "CWldSession::mReplayIsPaused offset must be 0x46C");
   // FUN_00897220 allocates this with `operator new(0x508u)`. The offset asserts
   // above pin the interior; this pins the end.
   static_assert(sizeof(CWldSession) == 0x508, "CWldSession size must be 0x508");
@@ -1283,28 +1239,12 @@ namespace moho
   static_assert(offsetof(CWldSession, mSelectionSize) == 0x4AC, "CWldSession::mSelectionSize offset must be 0x4AC");
   static_assert(offsetof(CWldSession, mSelection) == 0x4A0, "CWldSession::mSelection offset must be 0x4A0");
   static_assert(
-    offsetof(CWldSession, mCursorWorldState) == 0x4B0, "CWldSession::mCursorWorldState offset must be 0x4B0"
-  );
-  static_assert(offsetof(CWldSession, CursorWorldPos) == 0x4B4, "CWldSession::CursorWorldPos offset must be 0x4B4");
-  static_assert(
-    offsetof(CWldSession, mCursorUnitHover) == 0x4C0, "CWldSession::mCursorUnitHover offset must be 0x4C0"
-  );
-  static_assert(
-    offsetof(CWldSession, HighlightCommandId) == 0x4C8, "CWldSession::HighlightCommandId offset must be 0x4C8"
-  );
-  static_assert(offsetof(CWldSession, CursorScreenPos) == 0x4CC, "CWldSession::CursorScreenPos offset must be 0x4CC");
-  static_assert(
     offsetof(CWldSession, mShowInvalidBuildPlacementPreview) == 0x4D5,
     "CWldSession::mShowInvalidBuildPlacementPreview offset must be 0x4D5"
   );
-  static_assert(
-    offsetof(CWldSession, mOverlayFilters) == 0x4D8, "CWldSession::mOverlayFilters offset must be 0x4D8"
-  );
+  static_assert(offsetof(CWldSession, mOverlayFilters) == 0x4D8, "CWldSession::mOverlayFilters offset must be 0x4D8");
   static_assert(offsetof(CWldSession, mEdgeFog) == 0x4EC, "CWldSession::mEdgeFog offset must be 0x4EC");
-  static_assert(
-    offsetof(CWldSession, mPendingSaveData) == 0x4FC,
-    "CWldSession::mPendingSaveData offset must be 0x4FC"
-  );
+  static_assert(offsetof(CWldSession, mPendingSaveData) == 0x4FC, "CWldSession::mPendingSaveData offset must be 0x4FC");
 
   enum class EWldFrameAction : std::int32_t
   {
@@ -1339,7 +1279,7 @@ namespace moho
   using IWldTeardownCallback = ISessionListener;
   static_assert(sizeof(IWldTeardownCallback) == 0x4, "IWldTeardownCallback size must be 0x4");
 
-  using WldTeardownCallbackVector = msvc8::vector<IWldTeardownCallback*>;
+  using WldTeardownCallbackVector = fa::vector<IWldTeardownCallback*>;
 
   /**
    * Address: 0x0083E150 (FUN_0083E150, func_UserScriptCommandObj)
@@ -1408,11 +1348,8 @@ namespace moho
    * Converts one selected weak-set of user entities into live `UserUnit*`
    * lanes and forwards to the explicit-unit `UI_OnCommandIssued` overload.
    */
-  void UI_OnCommandIssued(
-    const WeakSet<UserEntity>& entities,
-    const SSTICommandIssueData& commandIssueData,
-    bool doClear
-  );
+  void
+  UI_OnCommandIssued(const WeakSet<UserEntity>& entities, const SSTICommandIssueData& commandIssueData, bool doClear);
 
   /**
    * Address: 0x008B0180 (FUN_008B0180,
@@ -1436,7 +1373,8 @@ namespace moho
    * CWldSession.cpp; invoked from `SCommandModeData::HandleEvent`'s
    * rally-point/patrol/ferry arms.
    */
-  void ISSUE_FactoryCommand(const gpg::fastvector<UserUnit*>& units, SSTICommandIssueData commandIssueData, bool clearQueue);
+  void
+  ISSUE_FactoryCommand(const gpg::fastvector<UserUnit*>& units, SSTICommandIssueData commandIssueData, bool clearQueue);
 
   /**
    * Address: 0x008B0B30 (FUN_008B0B30,
@@ -1447,7 +1385,9 @@ namespace moho
    * the selection and forwards to the `fastvector` overload.
    */
   void ISSUE_FactoryCommand(
-    const WeakSet<UserEntity>& entities, const SSTICommandIssueData& commandIssueData, bool clearQueue
+    const WeakSet<UserEntity>& entities,
+    const SSTICommandIssueData& commandIssueData,
+    bool clearQueue
   );
 
   /**
@@ -1522,10 +1462,8 @@ namespace moho
    * `Moho::CUIWorldView::HandleEvent` calls it at 0x008706C6 to decide which of
    * the two command-graph hover banners to raise.
    */
-  [[nodiscard]] bool IsCommandCandidateExcludedByCachedRelation(
-    UserCommandIssueHelper& command,
-    UserUnit* candidateUnit
-  ) noexcept;
+  [[nodiscard]] bool
+  IsCommandCandidateExcludedByCachedRelation(UserCommandIssueHelper& command, UserUnit* candidateUnit) noexcept;
 
   /**
    * Address: 0x0081DD00 (FUN_0081DD00, sub_81DD00)
@@ -1544,10 +1482,8 @@ namespace moho
    * (UiRuntimeTypes.cpp) can call it by name at 0x008707FC, where it gates the
    * "convert moves into patrol" cursor banner.
    */
-  [[nodiscard]] bool CanRestartSelectionMoveCommandAsPatrol(
-    WeakSet<UserEntity>& selection,
-    UserCommandIssueHelper* helper
-  );
+  [[nodiscard]] bool
+  CanRestartSelectionMoveCommandAsPatrol(WeakSet<UserEntity>& selection, UserCommandIssueHelper* helper);
 
   /**
    * Address: 0x008B05E0 (FUN_008B05E0,
@@ -1558,11 +1494,8 @@ namespace moho
    * and forwards to the explicit-unit `ISSUE_Command` overload. Defined in
    * CWldSession.cpp.
    */
-  void ISSUE_Command(
-    const WeakSet<UserEntity>& entities,
-    const SSTICommandIssueData& commandIssueData,
-    bool clearQueue
-  );
+  void
+  ISSUE_Command(const WeakSet<UserEntity>& entities, const SSTICommandIssueData& commandIssueData, bool clearQueue);
 
   /**
    * Address: 0x008B0EE0 (FUN_008B0EE0,
@@ -1600,7 +1533,11 @@ namespace moho
    * "restart as Patrol/FormPatrol" keystone,
    * `RestartMoveCommandAsPatrol`, CWldSession.cpp). Defined in Sim.cpp.
    */
-  void ReissueCommandIssueEntryAsType(UserCommandIssueHelper& helper, CmdId newCmdId, EUnitCommandType newCommandType) noexcept;
+  void ReissueCommandIssueEntryAsType(
+    UserCommandIssueHelper& helper,
+    CmdId newCmdId,
+    EUnitCommandType newCommandType
+  ) noexcept;
 
   /**
    * Address: 0x00829B40 (FUN_00829B40, func_ProcessCommandDrag)
@@ -1640,7 +1577,7 @@ namespace moho
    * Wraps the CWldSession.cpp-local `ResolveCommandIssueTargetPosition`
    * (FUN_0081CFD0).
    */
-  [[nodiscard]] Wm3::Vector3f ResolveLastQueuedCommandAnchorPosition(const QueuedUserCommandRecord* record);
+  [[nodiscard]] Wm3::Vector3f ResolveLastQueuedCommandAnchorPosition(const UserCommandIssueHelper* record);
 
   /**
    * Bridge for `Moho::DrawAllUnitSkirts` (FUN_0085AD80): resolves the world
@@ -1685,7 +1622,7 @@ namespace moho
    * session entity map in id order and appends every live `UserUnit*` into
    * `outUnits`. Wraps the CWldSession.cpp-local `CollectSessionUserUnits`.
    */
-  void GetSessionUserUnits(CWldSession* session, msvc8::vector<UserUnit*>& outUnits);
+  void GetSessionUserUnits(CWldSession* session, fa::vector<UserUnit*>& outUnits);
 
   /**
    * Address context:
@@ -1693,15 +1630,6 @@ namespace moho
    *   `WLD_Frame`.
    */
   [[nodiscard]] EWldFrameAction WLD_GetFrameAction();
-
-  /**
-   * Address: 0x0088BD20 (FUN_0088BD20, ?WLD_SetUIProvider@Moho@@YAXPAVIWldUIProvider@1@@Z)
-   *
-   * What it does:
-   * Replaces the process-global world-UI provider ownership lane, deleting the
-   * previous provider when it differs from the new one.
-   */
-  void WLD_SetUIProvider(IWldUIProvider* provider);
 
   /**
    * Address context:
@@ -1719,14 +1647,6 @@ namespace moho
   [[nodiscard]] bool WLD_Frame(float deltaSeconds);
 
   /**
-   * Address: 0x0088BEA0 (FUN_0088BEA0, ?WLD_RequestEndSession@Moho@@YAXXZ)
-   *
-   * What it does:
-   * Requests world-session exit when frame dispatch is currently active.
-   */
-  void WLD_RequestEndSession();
-
-  /**
    * Address: 0x0088E6D0 (FUN_0088E6D0)
    *
    * What it does:
@@ -1736,7 +1656,7 @@ namespace moho
    * tail call, no null test). Registered by the `gCConFunc_wld_ClientDebugDump`
    * initializer 0x00BE7510 (the address is pushed at 0x00BE7536).
    */
-  void CON_WLD_ClientDebugDump(const msvc8::vector<msvc8::string>& args);
+  void CON_WLD_ClientDebugDump(const fa::vector<fa::string>& args);
 
   /**
    * Address: 0x0088E6F0 (FUN_0088E6F0)
@@ -1745,32 +1665,7 @@ namespace moho
    * Console-command callback that requests world-session exit when frame
    * dispatch is currently active.
    */
-  void CON_WLD_RequestEndSession(const msvc8::vector<msvc8::string>& args);
-
-  /**
-   * Address: 0x0088BE80 (FUN_0088BE80, ?WLD_IsSessionActive@Moho@@YA_NXZ)
-   *
-   * What it does:
-   * Returns whether world-frame dispatch is active (`!= Inactive`).
-   */
-  [[nodiscard]] bool WLD_IsSessionActive();
-
-  /**
-   * Address: 0x0088BE90 (FUN_0088BE90, world-frame playing-state probe)
-   *
-   * What it does:
-   * Returns whether world-frame dispatch is currently in the `Playing` state.
-   */
-  [[nodiscard]] bool WLD_IsSessionPlaying();
-
-  /**
-   * Address: 0x0088BEC0 (FUN_0088BEC0, ?WLD_RequestRestartSession@Moho@@YAXXZ)
-   *
-   * What it does:
-   * Requests world-session recreation when frame dispatch is active and the
-   * active session carries restart launch info.
-   */
-  void WLD_RequestRestartSession();
+  void CON_WLD_RequestEndSession(const fa::vector<fa::string>& args);
 
   /**
    * Address: 0x00869810 (FUN_00869810, func_WldSessionLoader_GetOnTeardownCallbacks)
@@ -1810,35 +1705,28 @@ namespace moho
   void WLD_Teardown();
 
   /**
-   * Address: 0x0088BD40 (FUN_0088BD40, ?WLD_LoadScenarioInfo@Moho@@YA?AVLuaObject@LuaPlus@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PAVLuaState@3@@Z)
+   * Address: 0x0088BD40 (FUN_0088BD40,
+   * ?WLD_LoadScenarioInfo@Moho@@YA?AVLuaObject@LuaPlus@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PAVLuaState@3@@Z)
    *
    * What it does:
    * Executes `dataInit.lua` plus scenario script into one environment table and returns `ScenarioInfo`.
    */
-  [[nodiscard]] LuaPlus::LuaObject WLD_LoadScenarioInfo(const msvc8::string& scenarioFile, LuaPlus::LuaState* state);
+  [[nodiscard]] LuaPlus::LuaObject WLD_LoadScenarioInfo(const fa::string& scenarioFile, LuaPlus::LuaState* state);
 
   /**
-   * Address: 0x00897220 (FUN_00897220, ?WLD_CreateSession@Moho@@YAPAVCWldSession@1@AAV?$auto_ptr@VLuaState@LuaPlus@@@std@@AAV?$auto_ptr@VRRuleGameRules@Moho@@@4@AAV?$auto_ptr@VCWldMap@Moho@@@4@AAUSWldSessionInfo@1@@Z)
+   * Address: 0x00897220 (FUN_00897220,
+   * ?WLD_CreateSession@Moho@@YAPAVCWldSession@1@AAV?$auto_ptr@VLuaState@LuaPlus@@@std@@AAV?$auto_ptr@VRRuleGameRules@Moho@@@4@AAV?$auto_ptr@VCWldMap@Moho@@@4@AAUSWldSessionInfo@1@@Z)
    *
    * What it does:
    * Allocates one world-session object, constructs it from transferred
    * auto_ptr lanes, and updates the global active-session pointer.
    */
   [[nodiscard]] CWldSession* WLD_CreateSession(
-    msvc8::auto_ptr<LuaPlus::LuaState>& state,
-    msvc8::auto_ptr<RRuleGameRules>& gameRules,
-    msvc8::auto_ptr<CWldMap>& wldMap,
+    fa::auto_ptr<LuaPlus::LuaState>& state,
+    fa::auto_ptr<RRuleGameRules>& gameRules,
+    fa::auto_ptr<CWldMap>& wldMap,
     SWldSessionInfo& sessionInfo
   );
-
-  /**
-   * Address: 0x008972A0 (FUN_008972A0, ?WLD_DestroySession@Moho@@YAXXZ)
-   *
-   * What it does:
-   * Destroys the active world-session object when present and clears the
-   * process-global active-session pointer.
-   */
-  void WLD_DestroySession();
 
   /**
    * Address: 0x008972F0 (FUN_008972F0, ?WLD_GetSession@Moho@@YAPAVCWldSession@1@XZ)
@@ -1854,7 +1742,16 @@ namespace moho
    * What it does:
    * Replaces pending world-session bootstrap info and schedules preload.
    */
-  void WLD_BeginSession(msvc8::auto_ptr<SWldSessionInfo> sessionInfo);
+  void WLD_BeginSession(fa::auto_ptr<SWldSessionInfo> sessionInfo);
+
+  /**
+   * Engine addition (`wld_EarlyCommandLineSession`): asks the session loader for the pending
+   * session's map and mods - the request `WLD_DoPreload` makes, which then finds this one - and
+   * starts its load at once, for a session begun before the app's first frame. The load waits before
+   * SessionInit.lua until `WLD_DoPreload` has made the UI frames (`WLD_HoldSessionScripts`), so this
+   * can't be used with `/interlocked`, where the load runs on the calling thread.
+   */
+  void WLD_StartPendingSessionLoad();
 
   /**
    * Address: 0x0088D0B0 (FUN_0088D0B0, ?WLD_GetSimRate@Moho@@YAMXZ)
@@ -1910,15 +1807,6 @@ namespace moho
   void WLD_DecreaseSimRate();
 
   /**
-   * Address: 0x0088D2F0 (FUN_0088D2F0, ?WLD_SetGameSpeed@Moho@@YAXH@Z)
-   *
-   * What it does:
-   * Clamps one requested game-speed lane to `[-10, 10]` and forwards it to the
-   * active client manager when a sim driver is available.
-   */
-  void WLD_SetGameSpeed(int gameSpeed);
-
-  /**
    * Address: 0x0088D330 (FUN_0088D330, ?WLD_GetDriver@Moho@@YAPAVISTIDriver@1@XZ)
    *
    * What it does:
@@ -1932,7 +1820,7 @@ namespace moho
    */
   extern bool UI_SelectAnything;
 
-  extern float UI_StrategicProjectileLOD;  // 0x00F57B20
+  extern float UI_StrategicProjectileLOD; // 0x00F57B20
   // Gates the mass/hydro resource splats CUIWorldView::Render draws through
   // CWldSession::RenderResources (tested at 0x0086EE31). Ships enabled.
   extern bool UI_RenResources;             // 0x00F57A8E
@@ -1973,33 +1861,33 @@ namespace moho
    * binary mangles it (`?ui_LifebarOffset@Moho@@3MA`) - lower-case `b`,
    * unlike the `ui_LifeBar*` colour/cutoff family next to it.
    */
-  extern bool ui_RenderUnitBars;               // 0x00F57B26
-  extern bool ui_RenderIcons;                  // 0x00F57B27
-  extern float ui_lifebarHeight;               // 0x00F57B6C
-  extern float ui_LifebarWidth;                // 0x00F57B70
-  extern float ui_LifebarLOD;                  // 0x00F57B74
-  extern float ui_LifebarOffset;               // 0x00F57B78
-  extern bool ui_NisRenderIcons;               // 0x00F57B7C
-  extern bool ui_RenderCustomNames;            // 0x00F57B7D
-  extern bool ui_RenderSelectionSetNames;      // 0x00F57B7E
-  extern std::uint32_t ui_CustomNameColor;     // 0x00F57B80
-  extern std::int32_t ui_CustomNameFontSize;   // 0x00F57B84
+  extern bool ui_RenderUnitBars;                  // 0x00F57B26
+  extern bool ui_RenderIcons;                     // 0x00F57B27
+  extern float ui_lifebarHeight;                  // 0x00F57B6C
+  extern float ui_LifebarWidth;                   // 0x00F57B70
+  extern float ui_LifebarLOD;                     // 0x00F57B74
+  extern float ui_LifebarOffset;                  // 0x00F57B78
+  extern bool ui_NisRenderIcons;                  // 0x00F57B7C
+  extern bool ui_RenderCustomNames;               // 0x00F57B7D
+  extern bool ui_RenderSelectionSetNames;         // 0x00F57B7E
+  extern std::uint32_t ui_CustomNameColor;        // 0x00F57B80
+  extern std::int32_t ui_CustomNameFontSize;      // 0x00F57B84
   extern std::uint32_t ui_SelectionSetNamesColor; // 0x00F57B88
-  extern float ui_StrategicIconBlinkRate;      // 0x00F57B8C
-  extern float ui_FuelEmptyBlinkRate;          // 0x00F57B90
-  extern float ui_StrategicIconBlinkDuration;  // 0x00F57B94
-  extern std::uint32_t ui_LifeBarGoodColor;    // 0x00F57B98
-  extern std::uint32_t ui_LifeBarMedColor;     // 0x00F57B9C
-  extern std::uint32_t ui_LifeBarBadColor;     // 0x00F57BA0
-  extern float ui_LifeBarGoodCutoff;           // 0x00F57BA4
-  extern float ui_LifeBarBadCutoff;            // 0x00F57BA8
-  extern std::uint32_t ui_FuelBarColor;        // 0x00F57BAC
-  extern std::uint32_t ui_FuelWarningColor;    // 0x00F57BB0
-  extern std::uint32_t ui_ShieldBarColor;      // 0x00F57BB4
-  extern std::uint32_t ui_ProgressBarColor;    // 0x00F57BB8
-  extern msvc8::string ui_CustomNameFont;      // 0x00F5B300
-  extern bool ui_ForceLifbarsOnEnemy;          // 0x010A644A
-  extern bool ui_AlwaysRenderStrategicIcons;   // 0x010A644B
+  extern float ui_StrategicIconBlinkRate;         // 0x00F57B8C
+  extern float ui_FuelEmptyBlinkRate;             // 0x00F57B90
+  extern float ui_StrategicIconBlinkDuration;     // 0x00F57B94
+  extern std::uint32_t ui_LifeBarGoodColor;       // 0x00F57B98
+  extern std::uint32_t ui_LifeBarMedColor;        // 0x00F57B9C
+  extern std::uint32_t ui_LifeBarBadColor;        // 0x00F57BA0
+  extern float ui_LifeBarGoodCutoff;              // 0x00F57BA4
+  extern float ui_LifeBarBadCutoff;               // 0x00F57BA8
+  extern std::uint32_t ui_FuelBarColor;           // 0x00F57BAC
+  extern std::uint32_t ui_FuelWarningColor;       // 0x00F57BB0
+  extern std::uint32_t ui_ShieldBarColor;         // 0x00F57BB4
+  extern std::uint32_t ui_ProgressBarColor;       // 0x00F57BB8
+  extern fa::string ui_CustomNameFont;            // 0x00F5B300
+  extern bool ui_ForceLifbarsOnEnemy;             // 0x010A644A
+  extern bool ui_AlwaysRenderStrategicIcons;      // 0x010A644B
 
   /**
    * Debug toggle gating `UICommandGraph::DrawCommandGraphMesh`'s path-preview
@@ -2007,7 +1895,7 @@ namespace moho
    * zero-filled `.data` tail as `UI_SelectAnything`/`UI_CurGlowTime` with no
    * file-backed initializer, so it ships off.
    */
-  extern bool ui_DrawPathPreview;          // 0x010A6443
+  extern bool ui_DrawPathPreview; // 0x010A6443
 
   /**
    * Switches `DrawPathPreview` between its two source paths: the
@@ -2017,8 +1905,7 @@ namespace moho
    * `ui_DrawPathPreview` above - same zero-filled `.data` tail, same
    * ships-off default (`?ui_PathPreview@Moho@@3_NA` 0x010A6448).
    */
-  extern bool ui_PathPreview;              // 0x010A6448
-
+  extern bool ui_PathPreview; // 0x010A6448
 
   /**
    * Command-waypoint drawing parameters, imported from
@@ -2061,8 +1948,15 @@ namespace moho
    * for the full doc comment.
    */
   void EmitHermiteRibbonSegments(
-    CD3DPrimBatcher& batcher, const Wm3::Vector3f& p0, const Wm3::Vector3f& p1, const Wm3::Vector3f& t0,
-    const Wm3::Vector3f& t1, float width, std::uint32_t color, float uStart, float aspectRatio
+    CD3DPrimBatcher& batcher,
+    const Wm3::Vector3f& p0,
+    const Wm3::Vector3f& p1,
+    const Wm3::Vector3f& t0,
+    const Wm3::Vector3f& t1,
+    float width,
+    std::uint32_t color,
+    float uStart,
+    float aspectRatio
   );
 
   /**
@@ -2082,7 +1976,11 @@ namespace moho
    * Draws the active move-command's path-preview ribbon overlay.
    */
   void DrawPathPreview(
-    UICommandGraph& graph, const GeomCamera3& camera, CD3DPrimBatcher& batcher, std::int32_t tick, float tickFraction
+    UICommandGraph& graph,
+    const GeomCamera3& camera,
+    CD3DPrimBatcher& batcher,
+    std::int32_t tick,
+    float tickFraction
   );
 
   /**
@@ -2107,8 +2005,12 @@ namespace moho
    * the full doc comment.
    */
   void SimplifyPathSpan(
-    const msvc8::vector<Wm3::Vector3f>& points, std::int32_t first, std::int32_t last,
-    msvc8::list<Wm3::Vector3f>& simplified, msvc8::list<Wm3::Vector3f>::iterator insertBefore, float tolerance
+    const fa::vector<Wm3::Vector3f>& points,
+    std::int32_t first,
+    std::int32_t last,
+    fa::list<Wm3::Vector3f>& simplified,
+    fa::list<Wm3::Vector3f>::iterator insertBefore,
+    float tolerance
   );
 
   /**
@@ -2131,7 +2033,9 @@ namespace moho
    * null.
    */
   [[nodiscard]] CmdId ResolveCommandGraphCursorHighlightIfPresent(
-    UICommandGraph* graph, const GeomCamera3& camera, const Wm3::Vector2f& cursorScreenPos
+    UICommandGraph* graph,
+    const GeomCamera3& camera,
+    const Wm3::Vector2f& cursorScreenPos
   );
 
   /**

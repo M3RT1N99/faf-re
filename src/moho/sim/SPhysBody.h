@@ -29,10 +29,10 @@ namespace moho
    */
   struct GroundPenetrationSample
   {
-    float x;                 // +0x00
-    float y;                 // +0x04
-    float z;                 // +0x08
-    float terrainElevation;  // +0x0C
+    float x;                // +0x00
+    float y;                // +0x04
+    float z;                // +0x08
+    float terrainElevation; // +0x0C
   };
   static_assert(sizeof(GroundPenetrationSample) == 0x10, "GroundPenetrationSample size must be 0x10");
 
@@ -46,9 +46,9 @@ namespace moho
    */
   struct SPhysBodyParams
   {
-    float mass;                  // +0x00
-    Wm3::Vec3f inertiaTensor;    // +0x04
-    Wm3::Vec3f collisionOffset;  // +0x10
+    float mass;                 // +0x00
+    Wm3::Vec3f inertiaTensor;   // +0x04
+    Wm3::Vec3f collisionOffset; // +0x10
   };
 
   static_assert(offsetof(SPhysBodyParams, mass) == 0x00, "SPhysBodyParams::mass offset must be 0x00");
@@ -94,9 +94,8 @@ namespace moho
      * archive load, handed back unowned. Inlined into
      * `SerConstructHelper<SPhysBody>::Construct` 0x006981B0.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x006980D0 (FUN_006980D0)
@@ -105,7 +104,10 @@ namespace moho
      * Saves the owning constants unowned.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
 
     /**
@@ -126,14 +128,14 @@ namespace moho
      */
     SPhysBody(SPhysConstants* constants, const SPhysBodyParams& params);
 
-    SPhysConstants* mConstants;       // +0x00
-    float mMass;                      // +0x04
-    Wm3::Vec3f mInvInertiaTensor;     // +0x08
-    Wm3::Vec3f mCollisionOffset;      // +0x14
-    Wm3::Vec3f mPos;                  // +0x20
-    Wm3::Quaternionf mOrientation;    // +0x2C
-    Wm3::Vec3f mVelocity;             // +0x3C
-    Wm3::Vec3f mWorldImpulse;         // +0x48
+    SPhysConstants* mConstants;    // +0x00
+    float mMass;                   // +0x04
+    Wm3::Vec3f mInvInertiaTensor;  // +0x08
+    Wm3::Vec3f mCollisionOffset;   // +0x14
+    Wm3::Vec3f mPos;               // +0x20
+    Wm3::Quaternionf mOrientation; // +0x2C
+    Wm3::Vec3f mVelocity;          // +0x3C
+    Wm3::Vec3f mWorldImpulse;      // +0x48
 
     /**
      * Address: 0x00697E70 (FUN_00697E70, Moho::SPhysBody::GetImpulse)
@@ -184,25 +186,6 @@ namespace moho
      * left-multiplies it onto `mOrientation` (renormalizing in place).
      */
     void IntegrateAngularImpulse(const Wm3::Vec3f& angularImpulse, float dt);
-
-    /**
-     * Address: 0x00698350 (FUN_00698350, sub_698350)
-     *
-     * IDA signature:
-     * int __usercall sub_698350@<eax>(Moho::SPhysBody *a1@<edx>, int edi0@<edi>);
-     *
-     * What it does:
-     * Ground-collision impulse response. For each sample still penetrating
-     * (`sample.y <= sample.terrainElevation`), computes the point velocity
-     * (`mVelocity + Cross(angularVelocity, sample - mPos)`, where
-     * `angularVelocity` comes from `GetImpulse`) and, for points still
-     * moving downward, accumulates a cancelling linear/angular impulse and
-     * the maximum penetration depth. Averages the accumulated impulses
-     * across all downward-moving points, applies them to `mVelocity`/
-     * `mWorldImpulse` (each damped by 0.9), and pushes `mPos.y` up by the
-     * maximum penetration depth.
-     */
-    void ApplyGroundCollisionResponse(const gpg::fastvector_n<GroundPenetrationSample, 8>& samples);
   };
 
   /**

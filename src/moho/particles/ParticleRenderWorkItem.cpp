@@ -11,7 +11,9 @@ namespace moho
    * What it does:
    * Releases interval storage owned by one work-item, then frees the work-item.
    */
-  SParticleRenderWorkItem* DestroyParticleRenderWorkItem(SParticleRenderWorkItem* const workItem)
+  SParticleRenderWorkItem* DestroyParticleRenderWorkItem(
+    SParticleRenderWorkItem* const workItem
+  )
   {
     if (workItem == nullptr) {
       return nullptr;
@@ -30,9 +32,11 @@ namespace moho
    * What it does:
    * Releases interval storage owned by one work-item and resets interval lanes.
    */
-  void ResetParticleRenderWorkItemIntervals(SParticleRenderWorkItem& workItem)
+  void ResetParticleRenderWorkItemIntervals(
+    SParticleRenderWorkItem& workItem
+  )
   {
-    // `msvc8::vector<SParticleRenderInterval>::_Tidy` (cited on Vector.h).
+    // `fa::vector<SParticleRenderInterval>::_Tidy` (cited on Vector.h).
     workItem.mIntervals.tidy();
   }
 
@@ -48,7 +52,7 @@ namespace moho
     void* const particleBuffer
   )
   {
-    ::new (static_cast<void*>(&workItem.mIntervals)) msvc8::vector<SParticleRenderInterval>();
+    ::new (static_cast<void*>(&workItem.mIntervals)) fa::vector<SParticleRenderInterval>();
     workItem.mIntervalCapacityHint = intervalCapacityHint;
     workItem.mParticleBuffer = particleBuffer;
     workItem.mRenderStartIndex = 0U;
@@ -63,7 +67,10 @@ namespace moho
    * Advances interval cursor while intervals are expired for the current frame.
    * Returns true when no active interval remains.
    */
-  bool AdvanceParticleRenderWorkItemCursorToFrame(SParticleRenderWorkItem& workItem, const float frameValue)
+  bool AdvanceParticleRenderWorkItemCursorToFrame(
+    SParticleRenderWorkItem& workItem,
+    const float frameValue
+  )
   {
     const SParticleRenderInterval* interval = workItem.mIntervals.begin() + workItem.mIntervalCursor;
     if (interval == workItem.mIntervals.end()) {
@@ -81,15 +88,4 @@ namespace moho
     return false;
   }
 
-  /**
-   * Address: 0x00494730 (FUN_00494730)
-   *
-   * What it does:
-   * Appends one trail payload to the trailing trail-vector in a trail bucket
-   * entry.
-   */
-  void AppendTrailToBucketEntry(const SWorldTrail& trail, STrailBucketEntry& bucketEntry)
-  {
-    bucketEntry.mTrails.push_back(trail);
-  }
 } // namespace moho

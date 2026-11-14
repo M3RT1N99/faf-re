@@ -14,6 +14,8 @@
 #include "gpg/core/reflection/Reflection.h"
 #include "moho/ai/CAiReconDBImpl.h"
 #include "moho/effects/rendering/CEffectManagerImpl.h"
+#include "moho/effects/rendering/EffectHost.h"
+#include "moho/effects/rendering/EffectTickObserver.h"
 #include "moho/effects/rendering/IEffectManager.h"
 #include "moho/entity/Entity.h"
 #include "moho/math/QuaternionMath.h"
@@ -62,7 +64,9 @@ namespace
    * Reproduces the binary's ceil-of-peak idiom (frndint + underflow correction):
    * `(int)nearbyint(x) + (x > nearbyint(x) ? 1 : 0)`.
    */
-  [[nodiscard]] int CeilByRint(const float value) noexcept
+  [[nodiscard]] int CeilByRint(
+    const float value
+  ) noexcept
   {
     const float rounded = std::nearbyint(value);
     return static_cast<int>(rounded) + (value > rounded ? 1 : 0);
@@ -72,7 +76,9 @@ namespace
    * Round-toward-negative-infinity via the binary's frndint + underflow
    * correction: `(int)nearbyint(x) - (x < nearbyint(x) ? 1 : 0)`.
    */
-  [[nodiscard]] int FloorByRint(const float value) noexcept
+  [[nodiscard]] int FloorByRint(
+    const float value
+  ) noexcept
   {
     const float rounded = std::nearbyint(value);
     return static_cast<int>(rounded) - (value < rounded ? 1 : 0);
@@ -87,7 +93,10 @@ namespace
   // `SEfxCurve` here, and the `[[maybe_unused]]` initializer written over it,
   // are gone.
 
-  [[nodiscard]] float ProjectViewportDepthRow1(const moho::VMatrix4& viewport, const Wm3::Vec3f& point) noexcept
+  [[nodiscard]] float ProjectViewportDepthRow1(
+    const moho::VMatrix4& viewport,
+    const Wm3::Vec3f& point
+  ) noexcept
   {
     return (point.x * viewport.r[1].x) + (point.y * viewport.r[1].y) + (point.z * viewport.r[1].z) + viewport.r[1].w;
   }
@@ -166,8 +175,7 @@ namespace moho
     , mPad6E5{}
     , mLastUpdate(0u)
     , mPos{0.0f, 0.0f, 0.0f}
-  {
-  }
+  {}
 
   /**
    * Address: 0x0065BA80 (FUN_0065BA80, Moho::CEfxEmitter::CEfxEmitter)
@@ -223,10 +231,10 @@ namespace moho
     mCurves.resize(kEmitterCurveCount, defaultCurve);
 
     // Size the effect runtime lanes.
-    mParams.resize(EFFECT_LASTPARAM, 0.0f);   // 26 param floats
+    mParams.resize(EFFECT_LASTPARAM, 0.0f); // 26 param floats
     mParticleTextures.resize(2, nullptr);
     {
-      const msvc8::string emptyString;
+      const fa::string emptyString;
       mStrings.resize(2, emptyString);
     }
 
@@ -331,9 +339,10 @@ namespace moho
     float interp
   )
   {
-    Entity* const attachedEntity = effect->mEntityInfo.GetAttachTargetEntity();
+    // The attached entity: the sim's `Entity`, or a hosted effect's target (EffectHost.h), read the same way.
+    const CEffectFollow attached(*effect, effect->mEntityInfo, false);
 
-    if (attachedEntity == nullptr) {
+    if (!attached) {
       *outMatrix = effect->mMatrix;
       return true;
     }
@@ -343,7 +352,7 @@ namespace moho
     VTransform currentTransform{};
 
     if (tick <= 0) {
-      interp *= attachedEntity->mPendingVelocityScale;
+      interp *= attached.PendingVelocityScale();
       if (interp > 1.0f) {
         interp = 1.0f;
       }
@@ -352,16 +361,16 @@ namespace moho
       // were written lane by lane while the entity spelled its orientation
       // `moho::Vector4f` -- naming (x,y,z,w) over the quaternion's (w,x,y,z)
       // words -- where copying by field name would have rotated all four lanes.
-      currentTransform.orient_ = attachedEntity->mVarDat.mCurTransform.orient_;
-      currentTransform.pos_ = attachedEntity->mVarDat.mCurTransform.pos_;
+      currentTransform.orient_ = attached.Current().orient_;
+      currentTransform.pos_ = attached.Current().pos_;
 
-      previousOrientation = attachedEntity->mPendingTransform.orient_;
-      previousPosition = attachedEntity->mPendingTransform.pos_;
+      previousOrientation = attached.Pending().orient_;
+      previousPosition = attached.Pending().pos_;
     } else {
-      const VTransform& previousHistory = attachedEntity->GetPositionHistory(tick - 1);
+      const VTransform& previousHistory = attached.History(tick - 1);
       previousOrientation = previousHistory.orient_;
       previousPosition = previousHistory.pos_;
-      currentTransform = attachedEntity->GetPositionHistory(tick);
+      currentTransform = attached.History(tick);
     }
 
     Wm3::Quaternionf interpolatedOrientation{};
@@ -376,7 +385,7 @@ namespace moho
 
     const int boneIndex = effect->mEntityInfo.mParentBoneIndex;
     if (boneIndex != -1) {
-      const VTransform boneLocalTransform = attachedEntity->GetBoneLocalTransform(boneIndex);
+      const VTransform boneLocalTransform = attached.BoneLocal(boneIndex);
       VMatrix4 boneLocalMatrix{};
       boneLocalMatrix.Set(boneLocalTransform.orient_, boneLocalTransform.pos_);
 
@@ -405,20 +414,17 @@ namespace moho
     const float startY = start[1];
     const float startZ = start[2];
 
-    const float worldY = ((interpolatedMatrix.r[0].y * startX)
-                        + (interpolatedMatrix.r[1].y * startY)
-                        + (interpolatedMatrix.r[2].y * startZ))
-                      + interpolatedMatrix.r[3].y;
+    const float worldY = ((interpolatedMatrix.r[0].y * startX) + (interpolatedMatrix.r[1].y * startY) +
+                          (interpolatedMatrix.r[2].y * startZ)) +
+      interpolatedMatrix.r[3].y;
 
-    const float worldZ = ((interpolatedMatrix.r[0].z * startX)
-                        + (interpolatedMatrix.r[1].z * startY)
-                        + (interpolatedMatrix.r[2].z * startZ))
-                      + interpolatedMatrix.r[3].z;
+    const float worldZ = ((interpolatedMatrix.r[0].z * startX) + (interpolatedMatrix.r[1].z * startY) +
+                          (interpolatedMatrix.r[2].z * startZ)) +
+      interpolatedMatrix.r[3].z;
 
-    mPos.x = ((interpolatedMatrix.r[0].x * startX)
-            + (interpolatedMatrix.r[1].x * startY)
-            + (interpolatedMatrix.r[2].x * startZ))
-           + interpolatedMatrix.r[3].x;
+    mPos.x = ((interpolatedMatrix.r[0].x * startX) + (interpolatedMatrix.r[1].x * startY) +
+              (interpolatedMatrix.r[2].x * startZ)) +
+      interpolatedMatrix.r[3].x;
     mPos.y = worldY;
     mPos.z = worldZ;
   }
@@ -469,7 +475,10 @@ namespace moho
    * pass: the keys never reached the emitter, so Unit's three curve overrides,
    * the Lua curve setters and the emitter editor all left its curves unchanged.
    */
-  void CEfxEmitter::SetCurveParam(const std::int32_t paramIndex, const SEfxCurve* const curve)
+  void CEfxEmitter::SetCurveParam(
+    const std::int32_t paramIndex,
+    const SEfxCurve* const curve
+  )
   {
     mCurves[static_cast<std::size_t>(paramIndex)] = *curve;
     Invalidate2(paramIndex);
@@ -483,7 +492,9 @@ namespace moho
    * Reached through IEffect slot 10 (+0x28) by the emitter editor's
    * LoadFromEffect (0x006679EE) and cfunc_IEffectResizeEmitterCurveL (0x0066DC20).
    */
-  SEfxCurve* CEfxEmitter::GetCurveParam(const std::int32_t paramIndex)
+  SEfxCurve* CEfxEmitter::GetCurveParam(
+    const std::int32_t paramIndex
+  )
   {
     return &mCurves[static_cast<std::size_t>(paramIndex)];
   }
@@ -491,7 +502,10 @@ namespace moho
   /**
    * Address: 0x0065C390 (FUN_0065C390, Moho::CEfxEmitter::Invalidate1)
    */
-  void CEfxEmitter::Invalidate(const std::int32_t, const std::int32_t)
+  void CEfxEmitter::Invalidate(
+    const std::int32_t,
+    const std::int32_t
+  )
   {
     mValid = false;
   }
@@ -499,7 +513,9 @@ namespace moho
   /**
    * Address: 0x0065C3A0 (FUN_0065C3A0, Moho::CEfxEmitter::Invalidate2)
    */
-  void CEfxEmitter::Invalidate2(const std::int32_t)
+  void CEfxEmitter::Invalidate2(
+    const std::int32_t
+  )
   {
     mValid = false;
   }
@@ -511,7 +527,9 @@ namespace moho
    * Applies depth/frustum visibility checks and focused-army recon probes for
    * one camera.
    */
-  bool CEfxEmitter::CanSeeCam(const GeomCamera3* const camera)
+  bool CEfxEmitter::CanSeeCam(
+    const GeomCamera3* const camera
+  )
   {
     if (!camera) {
       mLastUpdate = 0u;
@@ -531,36 +549,22 @@ namespace moho
       return false;
     }
 
-    Sim* const sim = mManager->GetSim();
-    if (!sim) {
-      return true;
-    }
-
-    CArmyImpl** const armiesBegin = sim->mArmiesList.begin();
-    if (!armiesBegin) {
-      return true;
-    }
-
-    const int focusArmy = sim->mSyncFilter.focusArmy;
-    if (focusArmy < 0 || static_cast<std::size_t>(focusArmy) >= sim->mArmiesList.size()) {
-      return true;
-    }
-
-    CArmyImpl* const army = armiesBegin[focusArmy];
-    if (!army) {
+    // The sim's focus army (its army list, the focus index in it, a non-null army), or a hosted effect's host's
+    // (EffectHost.h). No sim or host, or no focus army: seen.
+    CEffectWorld world(*mManager);
+    if (!world || !world.HasFocusArmy()) {
       return true;
     }
 
     if (mLastUpdate != 0u) {
-      if (((sim->mCurTick - mLastUpdate) % 5u) != 0u) {
+      if (((world.CurTick() - mLastUpdate) % 5u) != 0u) {
         return mVisible;
       }
     } else {
-      mLastUpdate = sim->mCurTick;
+      mLastUpdate = world.CurTick();
     }
 
-    CAiReconDBImpl* const reconDb = army->GetReconDB();
-    mVisible = reconDb->ReconCanDetect(mPos, static_cast<int>(RECON_LOSNow)) != RECON_None;
+    mVisible = world.FocusArmyDetects(mPos);
     return mVisible;
   }
 
@@ -574,10 +578,9 @@ namespace moho
   bool CEfxEmitter::IsVisible()
   {
     if (mParams.start_[EFFECT_EMITIFVISIBLE] > 0.0f) {
-      Sim* const sim = mManager->GetSim();
-      msvc8::vector<GeomCamera3>& cameras = sim->mSyncFilter.geoCams;
-      GeomCamera3* const camerasEnd = cameras.end();
-      GeomCamera3* camera = cameras.begin();
+      const fa::vector<GeomCamera3>& cameras = CEffectWorld(*mManager).Cameras();
+      const GeomCamera3* const camerasEnd = cameras.end();
+      const GeomCamera3* camera = cameras.begin();
 
       if (camera == camerasEnd) {
         ++mLife;
@@ -619,23 +622,27 @@ namespace moho
     IEffectManager* const effectManager = mManager;
     const float* const params = mParams.start_;
 
-    if (params[EFFECT_LIFETIME] >= 0.0f &&
-        (static_cast<float>(static_cast<int>(mLife)) + params[EFFECT_TICKCOUNT]) >= params[EFFECT_LIFETIME]) {
+    if (
+      params[EFFECT_LIFETIME] >= 0.0f &&
+      (static_cast<float>(static_cast<int>(mLife)) + params[EFFECT_TICKCOUNT]) >= params[EFFECT_LIFETIME]
+    ) {
+      EFFECT_Ending(*this, EEffectEnd::Lifetime); // plan WPR.10: null in the game
       effectManager->DestroyEffect(this);
       return true;
     }
 
     if (mNewAttachment != 0u) {
-      const Entity* const attachedEntity = mEntityInfo.GetAttachTargetEntity();
-      if (attachedEntity == nullptr || attachedEntity->DestroyQueuedFlag != 0u) {
+      const CEffectFollow attached(*this, mEntityInfo, false);
+      if (!attached || attached.Dying()) {
+        EFFECT_Ending(*this, EEffectEnd::EntityGone);
         effectManager->DestroyEffect(this);
         return true;
       }
     }
 
     if (mParams.start_[EFFECT_CREATEIFVISIBLE] > 0.0f) {
-      msvc8::vector<GeomCamera3>& cameras = effectManager->GetSim()->mSyncFilter.geoCams;
-      for (GeomCamera3* camera = cameras.begin(); camera != cameras.end(); ++camera) {
+      const fa::vector<GeomCamera3>& cameras = CEffectWorld(*effectManager).Cameras();
+      for (const GeomCamera3* camera = cameras.begin(); camera != cameras.end(); ++camera) {
         if (!CanSeeCam(camera)) {
           continue;
         }
@@ -644,6 +651,7 @@ namespace moho
         return false;
       }
 
+      EFFECT_Ending(*this, EEffectEnd::NotVisible);
       effectManager->DestroyEffect(this);
       return true;
     }
@@ -670,7 +678,9 @@ namespace moho
    * from one read archive lane. The binary's read sequence mirrors the
    * write sequence one-to-one.
    */
-  void CEfxEmitter::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CEfxEmitter::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef nullOwner{};
 
@@ -682,10 +692,18 @@ namespace moho
     (void)archive->ReadPointer(&mBlueprint, &blueprintOwner);
 
     archive->ReadFloat(&mTotalEmissions);
-    archive->ReadInt(reinterpret_cast<int*>(&mLife));
+    {
+      int value{};
+      archive->ReadInt(&value);
+      mLife = static_cast<decltype(mLife)>(value);
+    }
     archive->Read(gpg::RTypeOf<moho::SWorldParticle>(), &mParticle, nullOwner);
     archive->ReadBool(&mValid);
-    archive->ReadInt(reinterpret_cast<int*>(&mZCurveMask));
+    {
+      int value{};
+      archive->ReadInt(&value);
+      mZCurveMask = static_cast<decltype(mZCurveMask)>(value);
+    }
     archive->ReadInt(&mMaxLifetime);
     archive->ReadBool(&mVisible);
     archive->ReadUInt(&mLastUpdate);
@@ -699,7 +717,9 @@ namespace moho
    * Serializes base effect lanes, emitter metadata, blueprint pointer,
    * particle payload, and visibility/lifetime state.
    */
-  void CEfxEmitter::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CEfxEmitter::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     gpg::RRef nullOwner{};
 
@@ -746,8 +766,7 @@ namespace moho
     float lifetimePeak = -gpg::pInf;
     {
       const SEfxCurve& lifetimeCurve = curves[EMITTER_LIFETIME_CURVE];
-      for (const Wm3::Vector3f* key = lifetimeCurve.mKeys.begin();
-           key != lifetimeCurve.mKeys.end(); ++key) {
+      for (const Wm3::Vector3f* key = lifetimeCurve.mKeys.begin(); key != lifetimeCurve.mKeys.end(); ++key) {
         const float sample = (key->z * 0.5f) + key->y;
         if (sample > lifetimePeak) {
           lifetimePeak = sample;
@@ -765,25 +784,28 @@ namespace moho
       mParticle.mResistance = curves[EMITTER_RESISTANCE_CURVE].GetValue(0.0f);
     }
 
-    if ((mZCurveMask & (1u << EMITTER_X_POSITION_CURVE)) != 0u
-        && (mZCurveMask & (1u << EMITTER_Y_POSITION_CURVE)) != 0u
-        && (mZCurveMask & (1u << EMITTER_Z_POSITION_CURVE)) != 0u) {
+    if (
+      (mZCurveMask & (1u << EMITTER_X_POSITION_CURVE)) != 0u &&
+      (mZCurveMask & (1u << EMITTER_Y_POSITION_CURVE)) != 0u && (mZCurveMask & (1u << EMITTER_Z_POSITION_CURVE)) != 0u
+    ) {
       mParticle.mPos.x = curves[EMITTER_X_POSITION_CURVE].GetValue(0.0f) * scale;
       mParticle.mPos.y = curves[EMITTER_Y_POSITION_CURVE].GetValue(0.0f) * scale;
       mParticle.mPos.z = curves[EMITTER_Z_POSITION_CURVE].GetValue(0.0f) * scale;
     }
 
-    if ((mZCurveMask & (1u << EMITTER_X_ACCEL_CURVE)) != 0u
-        && (mZCurveMask & (1u << EMITTER_Y_ACCEL_CURVE)) != 0u
-        && (mZCurveMask & (1u << EMITTER_Z_ACCEL_CURVE)) != 0u) {
+    if (
+      (mZCurveMask & (1u << EMITTER_X_ACCEL_CURVE)) != 0u && (mZCurveMask & (1u << EMITTER_Y_ACCEL_CURVE)) != 0u &&
+      (mZCurveMask & (1u << EMITTER_Z_ACCEL_CURVE)) != 0u
+    ) {
       mParticle.mAccel.x = curves[EMITTER_X_ACCEL_CURVE].GetValue(0.0f) * scale;
       mParticle.mAccel.y = curves[EMITTER_Y_ACCEL_CURVE].GetValue(0.0f) * scale;
       mParticle.mAccel.z = curves[EMITTER_Z_ACCEL_CURVE].GetValue(0.0f) * scale;
     }
 
-    if ((mZCurveMask & (1u << EMITTER_XDIR_CURVE)) != 0u
-        && (mZCurveMask & (1u << EMITTER_YDIR_CURVE)) != 0u
-        && (mZCurveMask & (1u << EMITTER_ZDIR_CURVE)) != 0u) {
+    if (
+      (mZCurveMask & (1u << EMITTER_XDIR_CURVE)) != 0u && (mZCurveMask & (1u << EMITTER_YDIR_CURVE)) != 0u &&
+      (mZCurveMask & (1u << EMITTER_ZDIR_CURVE)) != 0u
+    ) {
       mParticle.mDir.x = curves[EMITTER_XDIR_CURVE].GetValue(0.0f) * scale;
       mParticle.mDir.y = curves[EMITTER_YDIR_CURVE].GetValue(0.0f) * scale;
       mParticle.mDir.z = curves[EMITTER_ZDIR_CURVE].GetValue(0.0f) * scale;
@@ -835,15 +857,13 @@ namespace moho
     }
 
     if ((mZCurveMask & (1u << EMITTER_ROTATION_RATE_CURVE)) != 0u) {
-      mParticle.mRotationCurve =
-        curves[EMITTER_ROTATION_RATE_CURVE].GetValue(0.0f) * 0.017453292f;
+      mParticle.mRotationCurve = curves[EMITTER_ROTATION_RATE_CURVE].GetValue(0.0f) * 0.017453292f;
     }
 
     AssignCountedParticleTexturePtr(&mParticle.mTexture, mParticleTextures.start_[0]);
     AssignCountedParticleTexturePtr(&mParticle.mRampTexture, mParticleTextures.start_[1]);
 
-    mParticle.mBlendMode = static_cast<SWorldParticle::BlendMode>(
-      static_cast<int>(params[EFFECT_BLENDMODE]));
+    mParticle.mBlendMode = static_cast<SWorldParticle::BlendMode>(static_cast<int>(params[EFFECT_BLENDMODE]));
     mValid = true;
   }
 
@@ -859,14 +879,16 @@ namespace moho
    * matrix, water clamp, and random scatter, then pushing each into the sim
    * particle buffer. Returns false if a per-emission InterpolatePosition fails.
    */
-  bool CEfxEmitter::Tick(const std::int32_t tick)
+  bool CEfxEmitter::Tick(
+    const std::int32_t tick
+  )
   {
     float* const paramsBase = mParams.start_;
     const float repeatTime = paramsBase[EFFECT_REPEATTIME];
     const float tickFloat = static_cast<float>(tick);
 
     // 0x0065CE51 and 0x0065CF9D below call the MSVC8 CRT `_CIfmod`.
-    float ratePhase = static_cast<float>(msvc8::fmod(paramsBase[EFFECT_TICKCOUNT] - tickFloat, repeatTime));
+    float ratePhase = static_cast<float>(fa::fmod(paramsBase[EFFECT_TICKCOUNT] - tickFloat, repeatTime));
     if ((ratePhase < 0.0f) != (repeatTime < 0.0f)) {
       ratePhase += repeatTime;
     }
@@ -894,10 +916,10 @@ namespace moho
       return result;
     }
 
-    for (int emitted = 0; ; ++emitted) {
+    for (int emitted = 0;; ++emitted) {
       const float* const params = mParams.start_;
       const float repeat = params[EFFECT_REPEATTIME];
-      float phase = static_cast<float>(msvc8::fmod(params[EFFECT_TICKCOUNT] - tickFloat + emissionCursor, repeat));
+      float phase = static_cast<float>(fa::fmod(params[EFFECT_TICKCOUNT] - tickFloat + emissionCursor, repeat));
       if ((phase < 0.0f) != (repeat < 0.0f)) {
         phase += repeat;
       }
@@ -925,17 +947,18 @@ namespace moho
       const float oy = localOffset.y + p[EFFECT_POSITION_Y];
       const float oz = localOffset.z + p[EFFECT_POSITION_Z];
 
-      const float worldX = (((attachMatrix.r[2].x * oz) + (attachMatrix.r[1].x * oy))
-                          + (attachMatrix.r[0].x * ox)) + attachMatrix.r[3].x;
-      const float worldY = (((attachMatrix.r[2].y * oz) + (attachMatrix.r[1].y * oy))
-                          + (attachMatrix.r[0].y * ox)) + attachMatrix.r[3].y;
-      const float worldZ = (((attachMatrix.r[2].z * oz) + (attachMatrix.r[1].z * oy))
-                          + (attachMatrix.r[0].z * ox)) + attachMatrix.r[3].z;
+      const float worldX =
+        (((attachMatrix.r[2].x * oz) + (attachMatrix.r[1].x * oy)) + (attachMatrix.r[0].x * ox)) + attachMatrix.r[3].x;
+      const float worldY =
+        (((attachMatrix.r[2].y * oz) + (attachMatrix.r[1].y * oy)) + (attachMatrix.r[0].y * ox)) + attachMatrix.r[3].y;
+      const float worldZ =
+        (((attachMatrix.r[2].z * oz) + (attachMatrix.r[1].z * oy)) + (attachMatrix.r[0].z * ox)) + attachMatrix.r[3].z;
 
       float emitY = worldY;
       if (p[EFFECT_SNAPTOWATERLINE] > 0.0f) {
-        STIMap* const map = mManager->GetSim()->mMapData;
-        const float waterElevation = map->mWaterEnabled ? map->mWaterElevation : -10000.0f;
+        // Engine addition (water bodies): the level of the water under the particle. The sim's map, or a hosted
+        // effect's host's (EffectHost.h).
+        const float waterElevation = CEffectWorld(*mManager).WaterElevationAt(worldX, worldZ);
         if (efx_ParticleWaterSurface <= mParams.start_[EFFECT_SORTORDER]) {
           const float above = waterElevation + efx_WaterOffset;
           emitY = (above > worldY) ? above : worldY;
@@ -947,9 +970,9 @@ namespace moho
 
       bool skipEmission = false;
       if (mParams.start_[EFFECT_ONLYEMITONWATER] > 0.0f) {
-        STIMap* const map = mManager->GetSim()->mMapData;
-        const float elevation = map->GetHeightField()->GetElevation(worldX, worldZ);
-        const float waterElevation = map->mWaterEnabled ? map->mWaterElevation : -10000.0f;
+        const CEffectWorld world(*mManager);
+        const float elevation = world.TerrainElevationAt(worldX, worldZ);
+        const float waterElevation = world.WaterElevationAt(worldX, worldZ); // per position (water bodies)
         if (elevation > waterElevation) {
           skipEmission = true;
         } else {
@@ -982,12 +1005,12 @@ namespace moho
 
         float accelY = particle.mAccel.y;
         if (mParams.start_[EFFECT_USE_LOCAL_ACCELERATION] > 0.0f) {
-          accelY = ((particle.mAccel.y * attachMatrix.r[1].y)
-                  + (particle.mAccel.z * attachMatrix.r[2].y)) + (attachMatrix.r[0].y * particle.mAccel.x);
-          const float accelZ = ((particle.mAccel.y * attachMatrix.r[1].z)
-                  + (particle.mAccel.z * attachMatrix.r[2].z)) + (attachMatrix.r[0].z * particle.mAccel.x);
-          particle.mAccel.x = ((particle.mAccel.y * attachMatrix.r[1].x)
-                  + (particle.mAccel.z * attachMatrix.r[2].x)) + (particle.mAccel.x * attachMatrix.r[0].x);
+          accelY = ((particle.mAccel.y * attachMatrix.r[1].y) + (particle.mAccel.z * attachMatrix.r[2].y)) +
+            (attachMatrix.r[0].y * particle.mAccel.x);
+          const float accelZ = ((particle.mAccel.y * attachMatrix.r[1].z) + (particle.mAccel.z * attachMatrix.r[2].z)) +
+            (attachMatrix.r[0].z * particle.mAccel.x);
+          particle.mAccel.x = ((particle.mAccel.y * attachMatrix.r[1].x) + (particle.mAccel.z * attachMatrix.r[2].x)) +
+            (particle.mAccel.x * attachMatrix.r[0].x);
           particle.mAccel.y = accelY;
           particle.mAccel.z = accelZ;
         }
@@ -999,12 +1022,12 @@ namespace moho
           particle.mDir.z = mCurves[EMITTER_ZDIR_CURVE].GetValue(curvePhase) * scale;
         }
         if (mParams.start_[EFFECT_USE_LOCAL_VELOCITY] > 0.0f) {
-          const float dirY = ((particle.mDir.y * attachMatrix.r[1].y)
-                  + (particle.mDir.z * attachMatrix.r[2].y)) + (attachMatrix.r[0].y * particle.mDir.x);
-          const float dirZ = ((particle.mDir.y * attachMatrix.r[1].z)
-                  + (particle.mDir.z * attachMatrix.r[2].z)) + (attachMatrix.r[0].z * particle.mDir.x);
-          particle.mDir.x = ((particle.mDir.y * attachMatrix.r[1].x)
-                  + (particle.mDir.z * attachMatrix.r[2].x)) + (particle.mDir.x * attachMatrix.r[0].x);
+          const float dirY = ((particle.mDir.y * attachMatrix.r[1].y) + (particle.mDir.z * attachMatrix.r[2].y)) +
+            (attachMatrix.r[0].y * particle.mDir.x);
+          const float dirZ = ((particle.mDir.y * attachMatrix.r[1].z) + (particle.mDir.z * attachMatrix.r[2].z)) +
+            (attachMatrix.r[0].z * particle.mDir.x);
+          particle.mDir.x = ((particle.mDir.y * attachMatrix.r[1].x) + (particle.mDir.z * attachMatrix.r[2].x)) +
+            (particle.mDir.x * attachMatrix.r[0].x);
           particle.mDir.y = dirY;
           particle.mDir.z = dirZ;
         }
@@ -1040,7 +1063,7 @@ namespace moho
         if (mParams.start_[EFFECT_ALIGN_TO_BONE] <= 0.0f) {
           particle.mAngle = mCurves[EMITTER_ROTATION_CURVE].GetValue(curvePhase) * 0.017453292f;
         } else {
-          Wm3::Vec3f boneAxis{ attachMatrix.r[2].x, attachMatrix.r[2].y, attachMatrix.r[2].z };
+          Wm3::Vec3f boneAxis{attachMatrix.r[2].x, attachMatrix.r[2].y, attachMatrix.r[2].z};
           if (mParams.start_[EFFECT_FLAT] > 0.0f) {
             (void)Wm3::Vector3f::Normalize(&boneAxis);
             particle.mAngle = std::atan2(-boneAxis.x, boneAxis.z);
@@ -1055,8 +1078,7 @@ namespace moho
           particle.mRotationCurve = mCurves[EMITTER_ROTATION_RATE_CURVE].GetValue(curvePhase) * 0.017453292f;
         }
 
-        Sim* const sim = mManager->GetSim();
-        sim->GetParticleBuffer()->mParticles.push_back(particle);
+        CEffectWorld(*mManager).ParticleBuffer()->mParticles.push_back(particle);
       }
 
       emissionCursor += emissionStep;
@@ -1087,26 +1109,47 @@ namespace moho
       }
       return;
     }
+    // Plan WPR.10 (EffectTickObserver.h): with an observer, the tick's particles and the emitter's place are reported.
+    CEffectTickScope observed(*this);
+    if (observed.Observing()) {
+      VMatrix4 placed{};
+      (void)InterpolatePosition(this, &placed, 0, 0.0f);
+      const float* const p = mParams.start_;
+      observed.SetPosition(
+        (placed.r[0].x * p[EFFECT_POSITION_X]) + (placed.r[1].x * p[EFFECT_POSITION_Y]) +
+          (placed.r[2].x * p[EFFECT_POSITION_Z]) + placed.r[3].x,
+        (placed.r[0].y * p[EFFECT_POSITION_X]) + (placed.r[1].y * p[EFFECT_POSITION_Y]) +
+          (placed.r[2].y * p[EFFECT_POSITION_Z]) + placed.r[3].y,
+        (placed.r[0].z * p[EFFECT_POSITION_X]) + (placed.r[1].z * p[EFFECT_POSITION_Y]) +
+          (placed.r[2].z * p[EFFECT_POSITION_Z]) + placed.r[3].z
+      );
+    }
     const float* const start = mParams.start_;
-    if ((start[EFFECT_EMITIFVISIBLE] > 0.0f || start[EFFECT_CREATEIFVISIBLE] > 0.0f)
-        && (mManager->GetSim()->mCurTick % 3u) == 0u) {
+    if (
+      (start[EFFECT_EMITIFVISIBLE] > 0.0f || start[EFFECT_CREATEIFVISIBLE] > 0.0f) &&
+      (CEffectWorld(*mManager).CurTick() % 3u) == 0u
+    ) {
       VMatrix4 attachMatrix{};
       (void)InterpolatePosition(this, &attachMatrix, 0, 0.0f);
       const float* const p = mParams.start_;
       const float sx = p[EFFECT_POSITION_X];
       const float sy = p[EFFECT_POSITION_Y];
       const float sz = p[EFFECT_POSITION_Z];
-      const float worldY = (((attachMatrix.r[0].y * sx) + (attachMatrix.r[1].y * sy))
-                          + (attachMatrix.r[2].y * sz)) + attachMatrix.r[3].y;
-      const float worldZ = (((attachMatrix.r[0].z * sx) + (attachMatrix.r[1].z * sy))
-                          + (attachMatrix.r[2].z * sz)) + attachMatrix.r[3].z;
-      mPos.x = (((attachMatrix.r[2].x * sz) + (attachMatrix.r[1].x * sy))
-              + (attachMatrix.r[0].x * sx)) + attachMatrix.r[3].x;
+      const float worldY =
+        (((attachMatrix.r[0].y * sx) + (attachMatrix.r[1].y * sy)) + (attachMatrix.r[2].y * sz)) + attachMatrix.r[3].y;
+      const float worldZ =
+        (((attachMatrix.r[0].z * sx) + (attachMatrix.r[1].z * sy)) + (attachMatrix.r[2].z * sz)) + attachMatrix.r[3].z;
+      mPos.x =
+        (((attachMatrix.r[2].x * sz) + (attachMatrix.r[1].x * sy)) + (attachMatrix.r[0].x * sx)) + attachMatrix.r[3].x;
       mPos.y = worldY;
       mPos.z = worldZ;
     }
 
-    if (ProcessLifetime() || !IsVisible()) {
+    if (ProcessLifetime()) {
+      return;
+    }
+    if (!IsVisible()) {
+      observed.SetHidden();
       return;
     }
 
@@ -1133,12 +1176,11 @@ namespace moho
     mLife = 0u;
     (void)Tick(0);
 
-    mParams.start_[EFFECT_TICKCOUNT] =
-      mParams.start_[EFFECT_TICKINCREMENT] + mParams.start_[EFFECT_TICKCOUNT];
+    mParams.start_[EFFECT_TICKCOUNT] = mParams.start_[EFFECT_TICKINCREMENT] + mParams.start_[EFFECT_TICKCOUNT];
 
-    if (dbg_Emitter) {
-      Sim* const sim = mManager->GetSim();
-      CDebugCanvas* const debugCanvas = sim->GetDebugCanvas();
+    CDebugCanvas* const debugCanvas =
+      dbg_Emitter && !EffectTickOnWorker() ? CEffectWorld(*mManager).DebugCanvas() : nullptr;
+    if (debugCanvas != nullptr) {
       VMatrix4 startMatrix{};
       VMatrix4 endMatrix{};
       (void)InterpolatePosition(this, &startMatrix, 0, 0.0f);

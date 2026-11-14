@@ -28,6 +28,11 @@ const (
 	// shim), started and driven as the FAF client does
 	// (docs/LAUNCHER_ADAPTER_CONTRACT.md). Local seats only.
 	ModeContract Mode = "contract"
+	// ModeServer: every game joins one dedicated game server (plan WP12.2):
+	// no peer lobby and no peer links. The server signals the lobby and runs
+	// the only sim; mpemu, as FAF's client and lobby server would, hands each
+	// player its own connection string and nothing else (plan WP2.9).
+	ModeServer Mode = "server"
 )
 
 // LobbyKind selects the lobby Lua the game opens (CreateLobby's init mode).
@@ -125,6 +130,8 @@ type ContractConfig struct {
 	JarBind string `yaml:"jarBind"`
 	// ForceRelay passes --force-relay.
 	ForceRelay bool `yaml:"forceRelay"`
+	// KeepSession: seconds the adapter keeps its links after a running game exits (issue #275).
+	KeepSession int `yaml:"keepSession"`
 	// NoTurn hands out no ICE servers.
 	NoTurn bool `yaml:"noTurn"`
 	// IceServers, when set, are handed out instead of mpemu's own TURN server
@@ -137,6 +144,17 @@ type ContractConfig struct {
 	// "links" when every player is our build, the bridge or the bridge's
 	// retail game, or a game on the jar with jarBind (issue #242).
 	Shaping string `yaml:"shaping"`
+}
+
+// ServerConfig configures ModeServer.
+type ServerConfig struct {
+	// Address is the game server, IPv4 host:port. %VAR% and $VAR expand, so a
+	// scenario names no address itself.
+	Address string `yaml:"address"`
+	// Delivery is how each game gets its connection string: "gpgnet" (default,
+	// JoinServer in place of CreateLobby) or "args" (/connectserver
+	// /servertoken /serveruid on its command line). A player may override it.
+	Delivery string `yaml:"delivery"`
 }
 
 // IceServerConfig is one entry of ContractConfig.IceServers, in the client's
@@ -162,6 +180,11 @@ type PlayerConfig struct {
 	// Agent runs this player on another machine: the name an `mpemu agent`
 	// registered with on the hub. Empty runs it here.
 	Agent string `yaml:"agent"`
+	// ServerToken is this player's admission token for the game server
+	// (ModeServer); %VAR% and $VAR expand. Only this player's game gets it.
+	ServerToken string `yaml:"serverToken"`
+	// ServerDelivery overrides ServerConfig.Delivery for this player.
+	ServerDelivery string `yaml:"serverDelivery"`
 }
 
 // Config is a whole run.
@@ -174,6 +197,7 @@ type Config struct {
 	Game       GameConfig        `yaml:"game"`
 	ICE        ICEConfig         `yaml:"ice"`
 	Contract   ContractConfig    `yaml:"contract"`
+	Server     ServerConfig      `yaml:"server"`
 	Link       relay.Impairment  `yaml:"link"`
 	Players    []PlayerConfig    `yaml:"players"`
 	GameOption map[string]string `yaml:"gameOptions"`
@@ -186,12 +210,16 @@ type Config struct {
 	// Filled by the runner, not the scenario file.
 	HubSecret string `yaml:"-"` // MPEMU_SECRET / -secret-file
 	Advertise string `yaml:"-"` // how other machines reach games on this one
-	RunID     string `yaml:"-"`
-	RunDir    string `yaml:"-"`
-	HTTPAddr  string `yaml:"-"`
-	TurnPort  int    `yaml:"-"`
-	TurnIP    string `yaml:"-"`
-	FAFBinDir string `yaml:"-"`
+	// RelayFollow lets the local relay follow a game whose address changes, as it does
+	// on a hub: a killed seat can come back from another machine, with the other
+	// players still talking to the same relay ports.
+	RelayFollow bool   `yaml:"relayFollow"`
+	RunID       string `yaml:"-"`
+	RunDir      string `yaml:"-"`
+	HTTPAddr    string `yaml:"-"`
+	TurnPort    int    `yaml:"-"`
+	TurnIP      string `yaml:"-"`
+	FAFBinDir   string `yaml:"-"`
 }
 
 // DefaultFAFBin is where the FAF client installs the game data and init files.
@@ -230,6 +258,7 @@ func (c *Config) Normalize() error {
 	c.Contract.Java = ExpandPath(c.Contract.Java)
 	c.Contract.ClientLib = ExpandPath(c.Contract.ClientLib)
 	c.Contract.Adapter = ExpandPath(c.Contract.Adapter)
+	c.Contract.NativeBind = ExpandPath(c.Contract.NativeBind)
 	for i := range c.Contract.ExeArgs {
 		c.Contract.ExeArgs[i] = ExpandPath(c.Contract.ExeArgs[i])
 	}
@@ -239,9 +268,11 @@ func (c *Config) Normalize() error {
 	if c.Contract.ClientLib == "" {
 		c.Contract.ClientLib = `C:\Program Files\FAF Client\lib`
 	}
+	c.Server.Address = ExpandPath(c.Server.Address)
 	for i := range c.Players {
 		c.Players[i].Exe = ExpandPath(c.Players[i].Exe)
 		c.Players[i].Adapter = ExpandPath(c.Players[i].Adapter)
+		c.Players[i].ServerToken = ExpandPath(c.Players[i].ServerToken)
 	}
 	if c.GameID == 0 {
 		c.GameID = 100
@@ -250,9 +281,9 @@ func (c *Config) Normalize() error {
 		c.Mode = ModeDirect
 	}
 	switch c.Mode {
-	case ModeDirect, ModeRelay, ModeICE, ModeContract:
+	case ModeDirect, ModeRelay, ModeICE, ModeContract, ModeServer:
 	default:
-		return fmt.Errorf("mode %q: want direct, relay, ice or contract", c.Mode)
+		return fmt.Errorf("mode %q: want direct, relay, ice, contract or server", c.Mode)
 	}
 	if c.Lobby == "" {
 		c.Lobby = LobbyAuto
@@ -322,7 +353,12 @@ func (c *Config) Normalize() error {
 			p.Team = i + 2 // FAF teams: 1 is "no team"; one team each is FFA
 		}
 	}
-	if c.Lobby == LobbyAuto {
+	if c.Mode == ModeServer {
+		if err := c.normalizeServer(); err != nil {
+			return err
+		}
+	}
+	if c.Lobby == LobbyAuto && c.Mode != ModeServer {
 		// autolobby indexes its connection matrix by start spot, 1..N.
 		spots := map[int]bool{}
 		for _, p := range c.Players {
@@ -334,6 +370,48 @@ func (c *Config) Normalize() error {
 		}
 	}
 	return nil
+}
+
+// normalizeServer checks ModeServer's settings: the server's address, and one
+// token per player, each its own (the engine's rules: 1 to 1024 printable
+// characters, no spaces).
+func (c *Config) normalizeServer() error {
+	if c.Server.Address == "" {
+		return fmt.Errorf("mode server needs server.address (the game server's host:port)")
+	}
+	if c.Server.Delivery == "" {
+		c.Server.Delivery = seat.DeliverGpgNet
+	}
+	tokens := map[string]int{}
+	for i := range c.Players {
+		p := &c.Players[i]
+		if p.ServerDelivery == "" {
+			p.ServerDelivery = c.Server.Delivery
+		}
+		if p.ServerDelivery != seat.DeliverGpgNet && p.ServerDelivery != seat.DeliverArgs {
+			return fmt.Errorf("player %d: server delivery %q: want gpgnet or args", p.UID, p.ServerDelivery)
+		}
+		if !validServerToken(p.ServerToken) {
+			return fmt.Errorf("player %d: mode server needs serverToken, 1 to 1024 printable characters without spaces", p.UID)
+		}
+		if other, dup := tokens[p.ServerToken]; dup {
+			return fmt.Errorf("players %d and %d have the same server token; each player gets its own", other, p.UID)
+		}
+		tokens[p.ServerToken] = p.UID
+	}
+	return nil
+}
+
+func validServerToken(t string) bool {
+	if len(t) == 0 || len(t) > 1024 {
+		return false
+	}
+	for i := 0; i < len(t); i++ {
+		if t[i] <= ' ' || t[i] >= 0x7F {
+			return false
+		}
+	}
+	return true
 }
 
 // allRemote reports whether every player runs on an agent (the director

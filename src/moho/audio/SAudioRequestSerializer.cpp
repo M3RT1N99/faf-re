@@ -21,12 +21,18 @@ namespace moho
   /**
    * Address: 0x004E4D30 (FUN_004E4D30, Moho::SAudioRequest::MemberDeserialize)
    */
-  void SAudioRequest::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SAudioRequest::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     const gpg::RRef ownerRef{};
     archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &position, ownerRef);
-    archive->ReadInt(reinterpret_cast<int*>(&layer));
+    {
+      int value{};
+      archive->ReadInt(&value);
+      layer = static_cast<decltype(layer)>(value);
+    }
     (void)archive->ReadPointer(&params, &ownerRef);
     (void)archive->ReadPointer(&sound, &ownerRef);
   }
@@ -34,7 +40,9 @@ namespace moho
   /**
    * Address: 0x004E4DB0 (FUN_004E4DB0, Moho::SAudioRequest::MemberSerialize)
    */
-  void SAudioRequest::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SAudioRequest::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     const gpg::RRef ownerRef{};

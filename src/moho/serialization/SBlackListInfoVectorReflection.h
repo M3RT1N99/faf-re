@@ -16,7 +16,7 @@ namespace gpg
    * - 0x006DB730 / 0x006DB760 / 0x006DB790
    *
    * What it is:
-   * Reflection/indexing adapter for `msvc8::vector<moho::SBlackListInfo>`.
+   * Reflection/indexing adapter for `fa::vector<moho::SBlackListInfo>`.
    */
   template <>
   class RVectorType<moho::SBlackListInfo> final : public gpg::RType, public gpg::RIndexed
@@ -35,7 +35,7 @@ namespace gpg
     /**
      * Address: 0x006DB690 (FUN_006DB690, gpg::RVectorType_SBlackListInfo::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x006DB720 (FUN_006DB720, gpg::RVectorType_SBlackListInfo::IsIndexed)
@@ -64,7 +64,7 @@ namespace gpg
   };
 
   static_assert(sizeof(RVectorType<moho::SBlackListInfo>) == 0x68, "RVectorType<SBlackListInfo> size must be 0x68");
-  static_assert(sizeof(msvc8::vector<moho::SBlackListInfo>) == 0x10, "msvc8::vector<SBlackListInfo> size must be 0x10");
+  static_assert(sizeof(fa::vector<moho::SBlackListInfo>) == 0x10, "fa::vector<SBlackListInfo> size must be 0x10");
 
   /**
    * Address: 0x006DE830 (FUN_006DE830, gpg::RRef_SBlackListInfo)
@@ -74,13 +74,6 @@ namespace gpg
    */
   gpg::RRef* RRef_SBlackListInfo(gpg::RRef* outRef, moho::SBlackListInfo* value);
 
-  /**
-   * Address: 0x006DDA30 (FUN_006DDA30)
-   *
-   * What it does:
-   * Packs one `RRef_SBlackListInfo` lane into caller-owned output storage.
-   */
-  gpg::RRef* PackRRef_SBlackListInfo(gpg::RRef* outRef, moho::SBlackListInfo* value);
 } // namespace gpg
 
 namespace moho

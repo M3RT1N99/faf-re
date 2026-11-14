@@ -11,19 +11,6 @@ namespace moho
   RDebugOverlayTypeInfo::~RDebugOverlayTypeInfo() = default;
 
   /**
-   * Address: 0x00651AC0 (FUN_00651AC0)
-   *
-   * What it does:
-   * Deleting-destructor thunk lane that forwards into
-   * `RDebugOverlayTypeInfo` non-deleting destructor body.
-   */
-  [[maybe_unused]] RDebugOverlayTypeInfo* DestroyRDebugOverlayTypeInfoThunk(RDebugOverlayTypeInfo* const object)
-  {
-    object->~RDebugOverlayTypeInfo();
-    return object;
-  }
-
-  /**
    * Address: 0x00651A90 (FUN_00651A90, Moho::RDebugOverlayTypeInfo::GetName)
    */
   const char* RDebugOverlayTypeInfo::GetName() const
@@ -45,7 +32,9 @@ namespace moho
   /**
    * Address: 0x00652750 (FUN_00652750, Moho::RDebugOverlayTypeInfo::AddBase_RObject)
    */
-  void RDebugOverlayTypeInfo::AddBase_RObject(gpg::RType* const typeInfo)
+  void RDebugOverlayTypeInfo::AddBase_RObject(
+    gpg::RType* const typeInfo
+  )
   {
     debug_reflection::AddBaseRObject(typeInfo);
   }

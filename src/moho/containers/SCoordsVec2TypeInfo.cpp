@@ -13,22 +13,6 @@
 namespace
 {
 
-  /**
-   * Address: 0x0050BCC0 (FUN_0050BCC0)
-   *
-   * What it does:
-   * Executes one non-deleting `gpg::RType` base-teardown lane for
-   * `SCoordsVec2TypeInfo`.
-   */
-  [[maybe_unused]] void cleanup_SCoordsVec2TypeInfoRTypeBase(moho::SCoordsVec2TypeInfo* const typeInfo) noexcept
-  {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = msvc8::vector<gpg::RField>{};
-    typeInfo->bases_ = msvc8::vector<gpg::RField>{};
-  }
 } // namespace
 
 namespace moho
@@ -79,13 +63,17 @@ namespace moho
     Finish();
   }
 
-  void SCoordsVec2::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SCoordsVec2::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadFloat(&x);
     archive->ReadFloat(&z);
   }
 
-  void SCoordsVec2::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SCoordsVec2::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteFloat(x);
     archive->WriteFloat(z);
@@ -110,7 +98,10 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_SCoordsVec2TypeInfo_ae87f1, moho::register_SCoordsVec2TypeInfo)
+GPG_PREREGISTER_INIT(
+  register_SCoordsVec2TypeInfo_ae87f1,
+  moho::register_SCoordsVec2TypeInfo
+)
 
 namespace moho
 {
@@ -120,10 +111,10 @@ namespace moho
    * Address: 0x00BC7CE0 (FUN_00BC7CE0 -- constructs the global and registers its destructor.)
    * Address: 0x00BF2110 (FUN_00BF2110 -- the global's destructor.)
    * Address: 0x0050BD70 (FUN_0050BD70 -- an unreferenced out-of-line copy of the constructor.)
-   * Address: 0x0050C700 (FUN_0050C700 -- an unreferenced copy of the `gpg::SerSaveLoadHelper<SCoordsVec2>` constructor on the same global.)
-   * Address: 0x0050C730 (FUN_0050C730 -- `Init`.)
-   * Address: 0x0050BD10 (FUN_0050BD10 -- `Deserialize`, `MemberDeserialize` inlined.)
-   * Address: 0x0050BD40 (FUN_0050BD40 -- `Serialize`, `MemberSerialize` inlined.)
+   * Address: 0x0050C700 (FUN_0050C700 -- an unreferenced copy of the `gpg::SerSaveLoadHelper<SCoordsVec2>` constructor
+   * on the same global.) Address: 0x0050C730 (FUN_0050C730 -- `Init`.) Address: 0x0050BD10 (FUN_0050BD10 --
+   * `Deserialize`, `MemberDeserialize` inlined.) Address: 0x0050BD40 (FUN_0050BD40 -- `Serialize`, `MemberSerialize`
+   * inlined.)
    */
   struct SCoordsVec2Serializer : gpg::SerSaveLoadHelper<SCoordsVec2>
   {};

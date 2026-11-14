@@ -1,4 +1,5 @@
 #include "moho/terrain/water/HighFidelityWater.h"
+#include "moho/render/WRenViewport.h"
 
 #include <algorithm>
 #include <cmath>
@@ -16,12 +17,15 @@
 #include "moho/sim/CWldMap.h"
 #include "moho/sim/CWldSession.h"
 #include "moho/terrain/water/CWaterShaderProperties.h"
+#include "moho/terrain/water/WaterBodySurfaces.h"
 #include "moho/terrain/water/WaterShaderVars.h"
 
 namespace
 {
   template <typename T>
-  void DeleteOwned(T*& lane) noexcept
+  void DeleteOwned(
+    T*& lane
+  ) noexcept
   {
     if (lane == nullptr) {
       return;
@@ -63,7 +67,9 @@ namespace moho
       float z;
     };
 
-    [[nodiscard]] WaterExtents2D GetWaterMapExtents(const IWldTerrainRes& terrainResource)
+    [[nodiscard]] WaterExtents2D GetWaterMapExtents(
+      const IWldTerrainRes& terrainResource
+    )
     {
       const CHeightField* const field = terrainResource.mMap->mHeightField.get();
       const float halfWidth = static_cast<float>((field->width - 1) >> 1);
@@ -71,23 +77,23 @@ namespace moho
       return {halfWidth * 2.0f, halfHeight * 2.0f};
     }
 
-    void SetShaderVarMem(ShaderVar& shaderVar, const std::uint32_t floatCount, const float* const values)
+    void SetShaderVarMem(
+      ShaderVar& shaderVar,
+      const std::uint32_t floatCount,
+      const float* const values
+    )
     {
       if (shaderVar.Exists()) {
         shaderVar.mEffectVariable->SetFloatArray(floatCount, values);
       }
     }
 
-    void SetShaderVarRawData(ShaderVar& shaderVar, const void* const data, const std::uint32_t byteCount)
+    void BindTextureShaderVar(
+      ShaderVar& shaderVar,
+      const std::shared_ptr<ID3DTextureSheet>& texture
+    )
     {
-      if (shaderVar.Exists()) {
-        shaderVar.mEffectVariable->SetValue(data, byteCount);
-      }
-    }
-
-    void BindTextureShaderVar(ShaderVar& shaderVar, const boost::shared_ptr<ID3DTextureSheet>& texture)
-    {
-      shaderVar.GetTexture(boost::static_pointer_cast<CD3DDynamicTextureSheet>(texture));
+      shaderVar.GetTexture(std::static_pointer_cast<CD3DDynamicTextureSheet>(texture));
     }
 
     /**
@@ -97,7 +103,7 @@ namespace moho
      * Builds one 128x128 two-lane Fresnel lookup texture from the supplied
      * water shader scalars and returns one retained sheet handle.
      */
-    [[nodiscard]] boost::shared_ptr<CD3DDynamicTextureSheet> BuildFresnelLookupTexture(
+    [[nodiscard]] std::shared_ptr<CD3DDynamicTextureSheet> BuildFresnelLookupTexture(
       const float fresnelBias,
       const float fresnelPower,
       const float sunShininess,
@@ -107,10 +113,7 @@ namespace moho
       ID3DDeviceResources::DynamicTextureSheetHandle lookupTexture{};
       ID3DDeviceResources* const resources = D3D_GetDevice()->GetResources();
       (void)resources->CreateDynamicTextureSheet2(
-        lookupTexture,
-        kFresnelLookupTextureSize,
-        kFresnelLookupTextureSize,
-        kFresnelLookupTextureFormatToken
+        lookupTexture, kFresnelLookupTextureSize, kFresnelLookupTextureSize, kFresnelLookupTextureFormatToken
       );
 
       std::uint32_t pitchBytes = 0U;
@@ -152,7 +155,9 @@ namespace moho
      * Updates the shared `water2` world-to-view and projection matrix lanes
      * from the active camera.
      */
-    void ApplyWater2CameraMatrices(const GeomCamera3& camera)
+    void ApplyWater2CameraMatrices(
+      const GeomCamera3& camera
+    )
     {
       GetWater2WorldToViewShaderVar().SetMatrix4x4(&camera.view);
       GetWater2ProjectionShaderVar().SetMatrix4x4(&camera.projection);
@@ -175,7 +180,9 @@ namespace moho
    * Builds one high-fidelity water quad vertex/index-sheet pair from the
    * current terrain map extents and water elevation.
    */
-  bool HighFidelityWater::InitVerts(IWldTerrainRes* const terrainResource)
+  bool HighFidelityWater::InitVerts(
+    IWldTerrainRes* const terrainResource
+  )
   {
     mTerrainRes = terrainResource;
     STIMap* const terrainMap = terrainResource->mMap;
@@ -242,10 +249,10 @@ namespace moho
    */
   void HighFidelityWater::Destroy()
   {
-    mFresnelLookupTexture.release();
+    mFresnelLookupTexture.reset();
     DeleteOwned(mVertexSheet);
     DeleteOwned(mIndexSheet);
-    mWaterMapTexture.release();
+    mWaterMapTexture.reset();
     mTerrainRes = nullptr;
   }
 
@@ -256,7 +263,9 @@ namespace moho
    * Binds `water2/TWaterLayAlphaMask`, updates camera matrices, binds utility
    * texture C from the terrain resource, and renders the cached water quad.
    */
-  bool HighFidelityWater::RenderWaterLayerAlphaMask(const GeomCamera3* const camera)
+  bool HighFidelityWater::RenderWaterLayerAlphaMask(
+    const GeomCamera3* const camera
+  )
   {
     ApplyWater2CameraMatrices(*camera);
 
@@ -265,11 +274,22 @@ namespace moho
     device->SelectTechnique("TWaterLayAlphaMask");
 
     IWldTerrainRes* const terrainRes = mTerrainRes;
-    boost::shared_ptr<CD3DDynamicTextureSheet> utilityTexture =
-      boost::static_pointer_cast<CD3DDynamicTextureSheet>(terrainRes->GetWaterMap());
+    std::shared_ptr<CD3DDynamicTextureSheet> utilityTexture =
+      std::static_pointer_cast<CD3DDynamicTextureSheet>(terrainRes->GetWaterMap());
     GetWater2UtilityTextureCShaderVar().GetTexture(utilityTexture);
 
     std::int32_t primitiveType = kTriangleListPrimitiveToken;
+    // Engine addition (water bodies): the mask is laid at each water's own level.
+    if (const auto* const levels = WaterBodySurfaces::For(terrainRes); levels != nullptr) {
+      bool drawn = true;
+      for (const WaterBodySurfaces::Level& level : *levels) {
+        GetWater2WaterElevationShaderVar().SetFloat(level.elevation);
+        for (const WaterBodySurfaces::Chunk& chunk : level.chunks) {
+          drawn = device->DrawIndexedSheetPrimitive(chunk.vertices, chunk.indices, &primitiveType) && drawn;
+        }
+      }
+      return drawn;
+    }
     return device->DrawIndexedSheetPrimitive(mVertexSheet, mIndexSheet, &primitiveType);
   }
 
@@ -286,8 +306,8 @@ namespace moho
     const float tickLerp,
     const GeomCamera3* const camera,
     const CWaterShaderProperties* const shaderProperties,
-    const boost::shared_ptr<ID3DRenderTarget>& refractionTexture,
-    const boost::shared_ptr<ID3DRenderTarget>& reflectionTexture
+    const std::shared_ptr<ID3DRenderTarget>& refractionTexture,
+    const std::shared_ptr<ID3DRenderTarget>& reflectionTexture
   )
   {
     CD3DDevice* const device = D3D_GetDevice();
@@ -316,18 +336,15 @@ namespace moho
     GetWater2TimeShaderVar().SetFloat(static_cast<float>(tick) + tickLerp);
 
     const WaterShaderNumericState& shaderState = shaderProperties->mNumericState;
-    if (mCachedFresnelBias != shaderState.mFresnelBias || mCachedFresnelPower != shaderState.mFresnelPower ||
-        mCachedSunShininess != shaderState.mSunShininess ||
-        mCachedSunReflectionAmount != shaderState.mSunReflectionAmount || mFresnelLookupTexture.px == nullptr) {
+    if (
+      mCachedFresnelBias != shaderState.mFresnelBias || mCachedFresnelPower != shaderState.mFresnelPower ||
+      mCachedSunShininess != shaderState.mSunShininess ||
+      mCachedSunReflectionAmount != shaderState.mSunReflectionAmount || mFresnelLookupTexture.get() == nullptr
+    ) {
       const auto fresnelLookupTexture = BuildFresnelLookupTexture(
-        shaderState.mFresnelBias,
-        shaderState.mFresnelPower,
-        shaderState.mSunShininess,
-        shaderState.mSunReflectionAmount
+        shaderState.mFresnelBias, shaderState.mFresnelPower, shaderState.mSunShininess, shaderState.mSunReflectionAmount
       );
-      const boost::shared_ptr<ID3DTextureSheet> fresnelBaseTexture =
-        boost::static_pointer_cast<ID3DTextureSheet>(fresnelLookupTexture);
-      mFresnelLookupTexture.assign_retain(boost::SharedPtrRawFromSharedBorrow(fresnelBaseTexture));
+      mFresnelLookupTexture = std::static_pointer_cast<ID3DTextureSheet>(fresnelLookupTexture);
 
       mCachedFresnelBias = shaderState.mFresnelBias;
       mCachedFresnelPower = shaderState.mFresnelPower;
@@ -335,10 +352,7 @@ namespace moho
       mCachedSunReflectionAmount = shaderState.mSunReflectionAmount;
     }
 
-    BindTextureShaderVar(
-      GetWater2FresnelLookupShaderVar(),
-      boost::SharedPtrFromRawRetained(mFresnelLookupTexture)
-    );
+    BindTextureShaderVar(GetWater2FresnelLookupShaderVar(), mFresnelLookupTexture);
 
     SetShaderVarMem(GetWater2WaterColorShaderVar(), 3U, shaderState.mWaterColor);
     SetShaderVarMem(GetWater2WaterLerpShaderVar(), 2U, shaderState.mWaterLerp);
@@ -364,8 +378,8 @@ namespace moho
     SetShaderVarMem(GetWater2SunColorShaderVar(), 3U, sunColor);
     GetWater2SunGlowShaderVar().SetFloat(shaderState.mSunGlow);
 
-    CWldSession* const activeSession = WLD_GetActiveSession();
-    IWldTerrainRes* const terrainRes = activeSession->mWldMap->mTerrainRes;
+    // 0x00810D6C: `mov eax, [sWldMap]`, the map the renderer draws (a session's, or the map editor's).
+    IWldTerrainRes* const terrainRes = REN_GetTerrainRes();
     const CHeightField* const heightField = terrainRes->mMap->mHeightField.get();
     const float terrainScale[4] = {
       1.0f / static_cast<float>(heightField->width - 1),
@@ -376,6 +390,21 @@ namespace moho
     (void)SetWater2TerrainScaleShaderVarData(terrainScale);
 
     std::int32_t primitiveType = kTriangleListPrimitiveToken;
+    // Engine addition (water bodies): each water at its own level. Only the sea samples the
+    // planar reflection, which is mirrored at the sea; a body samples its own (see ReflectionFor).
+    if (const auto* const levels = WaterBodySurfaces::For(mTerrainRes); levels != nullptr) {
+      bool drawn = true;
+      for (const WaterBodySurfaces::Level& level : *levels) {
+        GetWater2WaterElevationShaderVar().SetFloat(level.elevation);
+        GetWater2ReflectionMapShaderVar().SetRenderTargetTexture(
+          level.sea ? reflectionTexture : WaterBodySurfaces::ReflectionFor(level.elevation)
+        );
+        for (const WaterBodySurfaces::Chunk& chunk : level.chunks) {
+          drawn = device->DrawIndexedSheetPrimitive(chunk.vertices, chunk.indices, &primitiveType) && drawn;
+        }
+      }
+      return drawn;
+    }
     return device->DrawIndexedSheetPrimitive(mVertexSheet, mIndexSheet, &primitiveType);
   }
 

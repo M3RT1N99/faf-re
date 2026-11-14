@@ -1,34 +1,36 @@
 #pragma once
 
+#include "platform/PlatformDefines.h"
+
 // Thin BSD-socket wrapper for faf-netbridge (Winsock on Windows, POSIX
 // elsewhere). Engine addition, not recovered code.
 
 #include <cstdint>
 #include <string>
 
-#ifdef _WIN32
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  ifndef NOMINMAX
-#    define NOMINMAX
-#  endif
-#  include <winsock2.h>
-#  include <ws2tcpip.h>
+#if FAFRE_PLATFORM_WINDOWS
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #else
-#  include <arpa/inet.h>
-#  include <cerrno>
-#  include <fcntl.h>
-#  include <netinet/in.h>
-#  include <netinet/tcp.h>
-#  include <sys/select.h>
-#  include <sys/socket.h>
-#  include <unistd.h>
+#include <arpa/inet.h>
+#include <cerrno>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 namespace faf::netbridge
 {
-#ifdef _WIN32
+#if FAFRE_PLATFORM_WINDOWS
   using SocketHandle = SOCKET;
   constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
 #else
@@ -38,7 +40,7 @@ namespace faf::netbridge
 
   inline bool SocketsInit()
   {
-#ifdef _WIN32
+#if FAFRE_PLATFORM_WINDOWS
     WSADATA data;
     return WSAStartup(MAKEWORD(2, 2), &data) == 0;
 #else
@@ -46,12 +48,14 @@ namespace faf::netbridge
 #endif
   }
 
-  inline void CloseSocket(SocketHandle& s)
+  inline void CloseSocket(
+    SocketHandle& s
+  )
   {
     if (s == kInvalidSocket) {
       return;
     }
-#ifdef _WIN32
+#if FAFRE_PLATFORM_WINDOWS
     closesocket(s);
 #else
     close(s);
@@ -61,16 +65,18 @@ namespace faf::netbridge
 
   inline int LastSocketError()
   {
-#ifdef _WIN32
+#if FAFRE_PLATFORM_WINDOWS
     return WSAGetLastError();
 #else
     return errno;
 #endif
   }
 
-  inline bool WouldBlock(const int err)
+  inline bool WouldBlock(
+    const int err
+  )
   {
-#ifdef _WIN32
+#if FAFRE_PLATFORM_WINDOWS
     return err == WSAEWOULDBLOCK;
 #else
     return err == EWOULDBLOCK || err == EAGAIN;
@@ -79,18 +85,22 @@ namespace faf::netbridge
 
   // On Windows a UDP socket reports WSAECONNRESET after an ICMP port
   // unreachable for an earlier send; that is no reason to stop reading.
-  inline bool IsTransientUdpError(const int err)
+  inline bool IsTransientUdpError(
+    const int err
+  )
   {
-#ifdef _WIN32
+#if FAFRE_PLATFORM_WINDOWS
     return err == WSAECONNRESET || err == WSAEWOULDBLOCK || err == WSAEMSGSIZE;
 #else
     return err == ECONNREFUSED || err == EWOULDBLOCK || err == EAGAIN;
 #endif
   }
 
-  inline void SetNonBlocking(const SocketHandle s)
+  inline void SetNonBlocking(
+    const SocketHandle s
+  )
   {
-#ifdef _WIN32
+#if FAFRE_PLATFORM_WINDOWS
     u_long on = 1;
     ioctlsocket(s, FIONBIO, &on);
 #else
@@ -98,7 +108,10 @@ namespace faf::netbridge
 #endif
   }
 
-  inline sockaddr_in MakeAddress(const char* ip, const std::uint16_t port)
+  inline sockaddr_in MakeAddress(
+    const char* ip,
+    const std::uint16_t port
+  )
   {
     sockaddr_in a{};
     a.sin_family = AF_INET;
@@ -107,7 +120,9 @@ namespace faf::netbridge
     return a;
   }
 
-  inline std::uint16_t LocalPort(const SocketHandle s)
+  inline std::uint16_t LocalPort(
+    const SocketHandle s
+  )
   {
     sockaddr_in a{};
     socklen_t len = sizeof(a);
@@ -118,13 +133,16 @@ namespace faf::netbridge
   }
 
   // A TCP listener on ip:port (port 0: any).
-  inline SocketHandle ListenTcp(const char* ip, const std::uint16_t port)
+  inline SocketHandle ListenTcp(
+    const char* ip,
+    const std::uint16_t port
+  )
   {
     SocketHandle s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s == kInvalidSocket) {
       return s;
     }
-#ifndef _WIN32
+#if !FAFRE_PLATFORM_WINDOWS
     int reuse = 1;
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 #endif
@@ -137,7 +155,10 @@ namespace faf::netbridge
   }
 
   // A UDP socket on ip:port (port 0: any).
-  inline SocketHandle BindUdp(const char* ip, const std::uint16_t port)
+  inline SocketHandle BindUdp(
+    const char* ip,
+    const std::uint16_t port
+  )
   {
     SocketHandle s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (s == kInvalidSocket) {
@@ -148,23 +169,31 @@ namespace faf::netbridge
       CloseSocket(s);
       return kInvalidSocket;
     }
-#ifdef _WIN32
+#if FAFRE_PLATFORM_WINDOWS
     // Don't let an ICMP port unreachable turn into WSAECONNRESET on recvfrom.
     BOOL off = FALSE;
     DWORD bytes = 0;
-    WSAIoctl(s, _WSAIOW(IOC_VENDOR, 12) /* SIO_UDP_CONNRESET */, &off, sizeof(off), nullptr, 0, &bytes, nullptr,
-             nullptr);
+    WSAIoctl(
+      s, _WSAIOW(IOC_VENDOR, 12) /* SIO_UDP_CONNRESET */, &off, sizeof(off), nullptr, 0, &bytes, nullptr, nullptr
+    );
 #endif
     return s;
   }
 
-  inline void SetSocketBuffers(const SocketHandle s, const int bytes)
+  inline void SetSocketBuffers(
+    const SocketHandle s,
+    const int bytes
+  )
   {
     setsockopt(s, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&bytes), sizeof(bytes));
     setsockopt(s, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&bytes), sizeof(bytes));
   }
 
-  inline bool SendAll(const SocketHandle s, const char* data, std::size_t size)
+  inline bool SendAll(
+    const SocketHandle s,
+    const char* data,
+    std::size_t size
+  )
   {
     while (size > 0) {
       const int n = send(s, data, static_cast<int>(size), 0);

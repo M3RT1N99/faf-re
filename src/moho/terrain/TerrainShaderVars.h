@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include <memory>
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "moho/render/d3d/ShaderVar.h"
 
 namespace moho
@@ -126,24 +126,23 @@ namespace moho
     // and its decal/splat draw helpers at 0x008065E0 / 0x00806860 / 0x00806A50 /
     // 0x00806C60). HLSL names verified as exact null-terminated strings in
     // bin/2025.7.1/ForgedAlliance.exe.
-    ShaderVar waterRamp;             // "WaterRamp"
-    ShaderVar waterElevation;        // "WaterElevation"
-    ShaderVar waterElevationDeep;    // "WaterElevationDeep"
-    ShaderVar waterElevationAbyss;   // "WaterElevationAbyss"
-    ShaderVar decalMatrix;           // "DecalMatrix"
-    ShaderVar tangentMatrix;         // "TangentMatrix"
-    ShaderVar decalAlbedoTexture;    // "DecalAlbedoTexture"
-    ShaderVar decalNormalTexture;    // "DecalNormalTexture"
-    ShaderVar decalSpecTexture;      // "DecalSpecTexture"
-    ShaderVar decalAlpha;            // "DecalAlpha"
+    ShaderVar waterRamp;           // "WaterRamp"
+    ShaderVar waterElevation;      // "WaterElevation"
+    ShaderVar waterElevationDeep;  // "WaterElevationDeep"
+    ShaderVar waterElevationAbyss; // "WaterElevationAbyss"
+    ShaderVar decalMatrix;         // "DecalMatrix"
+    ShaderVar tangentMatrix;       // "TangentMatrix"
+    ShaderVar decalAlbedoTexture;  // "DecalAlbedoTexture"
+    ShaderVar decalNormalTexture;  // "DecalNormalTexture"
+    ShaderVar decalSpecTexture;    // "DecalSpecTexture"
+    ShaderVar decalAlpha;          // "DecalAlpha"
 
     TerrainShaderVarSet();
   };
 
   [[nodiscard]] TerrainShaderVarSet& GetTerrainShaderVars();
 
-  void BindTextureShaderVar(ShaderVar& shaderVar, const boost::shared_ptr<ID3DTextureSheet>& textureSheet);
-  void BindTextureShaderVar(ShaderVar& shaderVar, const boost::SharedPtrRaw<RD3DTextureResource>& textureResource);
+  void BindTextureShaderVar(ShaderVar& shaderVar, const std::shared_ptr<ID3DTextureSheet>& textureSheet);
   void SetShaderVarMem(ShaderVar& shaderVar, std::uint32_t floatCount, const float* values);
   void SetShaderVarPtr(ShaderVar& shaderVar, const void* data, std::uint32_t byteCount);
 } // namespace moho

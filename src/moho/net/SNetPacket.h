@@ -80,7 +80,8 @@ namespace moho
     std::uint8_t bytes[kNetPacketMaxPayload]{};
   };
   static_assert(
-    sizeof(SPacketBodyData) == kNetPacketMaxPayload, "SPacketBodyData size should fit 512 - <header>(15) = 497"
+    sizeof(SPacketBodyData) == kNetPacketMaxPayload,
+    "SPacketBodyData size should fit 512 - <header>(15) = 497"
   );
 
   /**
@@ -124,7 +125,9 @@ namespace moho
     /**
      * Set packet type from one-byte wrapper.
      */
-    void SetTypeByte(const PacketTypeByte type) noexcept
+    void SetTypeByte(
+      const PacketTypeByte type
+    ) noexcept
     {
       auto& self = *static_cast<Derived*>(this);
       self.header.mType = static_cast<EPacketType>(type);
@@ -162,7 +165,9 @@ namespace moho
     /**
      * Set total payload length and recompute wire size
      */
-    void SetPayloadSize(std::uint16_t payloadBytes) noexcept
+    void SetPayloadSize(
+      std::uint16_t payloadBytes
+    ) noexcept
     {
       auto& self = *static_cast<Derived*>(this);
       self.header.mPayloadLength = payloadBytes;
@@ -199,7 +204,7 @@ namespace moho
     {
       auto& self = *static_cast<Derived*>(this);
       static_assert(sizeof(T) <= kNetPacketMaxPayload, "Body too large");
-      return reinterpret_cast<T*>(self.data);
+      return static_cast<T*>(self.data);
     }
 
     /**
@@ -210,14 +215,16 @@ namespace moho
     {
       auto& self = *static_cast<const Derived*>(this);
       static_assert(sizeof(T) <= kNetPacketMaxPayload, "Body too large");
-      return reinterpret_cast<const T*>(self.data);
+      return static_cast<const T*>(self.data);
     }
 
     /**
      * Write typed body and set sizes accordingly
      */
     template <PacketBody T>
-    void WriteBody(const T& b) noexcept
+    void WriteBody(
+      const T& b
+    ) noexcept
     {
       auto& self = *static_cast<Derived*>(this);
       static_assert(sizeof(T) <= kNetPacketMaxPayload, "Body too large for packet");
@@ -275,7 +282,7 @@ namespace moho
      * of NAT-traversal packets.
      */
     [[nodiscard]]
-    msvc8::string ToString() const;
+    fa::string ToString() const;
 
     /**
      * Address: 0x00487A30 (FUN_00487A30)
@@ -312,7 +319,7 @@ namespace moho
      */
     Body* GetBody() noexcept
     {
-      return reinterpret_cast<Body*>(data);
+      return static_cast<Body*>(data);
     }
 
     /**
@@ -320,13 +327,15 @@ namespace moho
      */
     const Body& GetBody() const noexcept
     {
-      return *reinterpret_cast<const Body*>(data);
+      return *static_cast<const Body*>(data);
     }
 
     /**
      * Finalize sizes when body is already written
      */
-    SPacketOf& FinalizeSize(const std::uint16_t payloadBytes) noexcept
+    SPacketOf& FinalizeSize(
+      const std::uint16_t payloadBytes
+    ) noexcept
     {
       this->SetPayloadSize(payloadBytes);
       return *this;

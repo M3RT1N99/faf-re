@@ -26,7 +26,8 @@ namespace gpg
   {
   public:
     /**
-     * Address: 0x0059DED0 (FUN_0059DED0, gpg::RFastVectorType_IFormationInstance_P::RFastVectorType_IFormationInstance_P)
+     * Address: 0x0059DED0 (FUN_0059DED0,
+     * gpg::RFastVectorType_IFormationInstance_P::RFastVectorType_IFormationInstance_P)
      *
      * What it does:
      * Constructs and preregisters the reflection descriptor for
@@ -47,7 +48,7 @@ namespace gpg
     /**
      * Address: 0x0059CA40 (FUN_0059CA40, gpg::RFastVectorType_IFormationInstance_P::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x0059CAD0 (FUN_0059CAD0, gpg::RFastVectorType_IFormationInstance_P::IsIndexed)

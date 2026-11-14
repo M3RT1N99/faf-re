@@ -1,5 +1,25 @@
 #include "moho/ui/UiPrivate.h"
+#include "moho/console/CConCommand.h"
 #include "moho/lua/CScrLuaObjectFactory.h"
+
+#if FAFRE_PLATFORM_POSIX
+#include "platform/Window.h"
+#endif
+
+namespace moho
+{
+  bool ren_BuildGhostsPerBeat = true;
+
+  namespace
+  {
+    TConVar<bool> gTConVar_ren_BuildGhostsPerBeat(
+      "ren_BuildGhostsPerBeat",
+      "The ghosts at queued build orders are rebuilt once per sim beat (1, the default), or for each view of each "
+      "frame as in the original (0). Read each frame.",
+      &ren_BuildGhostsPerBeat
+    );
+  } // namespace
+} // namespace moho
 
 namespace
 {
@@ -49,8 +69,7 @@ namespace
     screenPoint.z = 0.0f;
     return screenPoint;
   }
-}
-
+} // namespace
 
 // --- FAF community binary-patch addition: WorldView:SetCustomRender. No
 // `Address:` block -- this method never existed in the original 2007 binary;
@@ -191,7 +210,7 @@ moho::UIBuildDragger::UIBuildDragger(
   , mEnd(0.0f, 0.0f, 0.0f)
 {
   if (mWldSession != nullptr) {
-    mStart = mWldSession->CursorWorldPos;
+    mStart = mWldSession->mCursorInfo.mMouseWorldPos;
   }
 
   mEnd = mStart;
@@ -298,7 +317,6 @@ namespace
   constexpr std::int32_t kBuildPreviewMeshColor = static_cast<std::int32_t>(0xFF00FF00u);
 }
 
-
 /**
  * Address: 0x008529C0 (FUN_008529C0, struct_WorldView_object::struct_WorldView_object)
  *
@@ -315,11 +333,7 @@ moho::CBuildDragPreview::CBuildDragPreview()
   , mUnitPlaceMaterial()
   , mDecal(nullptr)
   , mActiveCommandMode(moho::COMMOD_None)
-  , mStart(
-      gpg::NaN,
-      gpg::NaN,
-      gpg::NaN
-    )
+  , mStart(gpg::NaN, gpg::NaN, gpg::NaN)
   , mEnd(mStart)
   , mPreviewInvalid(false)
   , mQueuedGhostsHidden(false)
@@ -365,13 +379,13 @@ void moho::CBuildDragPreview::ClearBuildPreviewCache()
   }
 }
 
-boost::shared_ptr<moho::MeshInstance> moho::CBuildDragPreview::CreateBuildPreviewMeshInstance(
+std::shared_ptr<moho::MeshInstance> moho::CBuildDragPreview::CreateBuildPreviewMeshInstance(
   moho::RUnitBlueprint* const blueprint
 )
 {
   if (!mUnitPlaceMaterial) {
-    const msvc8::string shaderName("UnitPlace");
-    const msvc8::string emptyTextureName;
+    const fa::string shaderName("UnitPlace");
+    const fa::string emptyTextureName;
     mUnitPlaceMaterial = moho::MeshMaterial::Create(
       shaderName, emptyTextureName, emptyTextureName, emptyTextureName, emptyTextureName, emptyTextureName, nullptr
     );
@@ -389,7 +403,7 @@ boost::shared_ptr<moho::MeshInstance> moho::CBuildDragPreview::CreateBuildPrevie
     false,
     mUnitPlaceMaterial
   );
-  return boost::shared_ptr<moho::MeshInstance>(meshInstance);
+  return std::shared_ptr<moho::MeshInstance>(meshInstance);
 }
 
 /**
@@ -397,17 +411,16 @@ boost::shared_ptr<moho::MeshInstance> moho::CBuildDragPreview::CreateBuildPrevie
  *
  * What it does:
  * Creates one `UnitPlace` build-preview mesh instance for a unit blueprint and
- * appends it to the preview mesh/blueprint caches. The shared-ptr mesh
- * push is routed through the per-T named helper
- * `PushBackMeshInstanceSharedPtrVector` (FUN_00855040) to preserve the
- * MSVC8 `vector<shared_ptr<MeshInstance>>::push_back` symbol shape.
+ * appends it to the preview mesh/blueprint caches. The mesh push is the
+ * binary's `vector<shared_ptr<MeshInstance>>::push_back` emission
+ * (FUN_00855040), a plain `push_back` here.
  */
 void moho::CBuildDragPreview::AppendBuildPreviewMesh(
   moho::RUnitBlueprint* const blueprint
 )
 {
-  boost::shared_ptr<moho::MeshInstance> meshInstance = CreateBuildPreviewMeshInstance(blueprint);
-  moho::PushBackMeshInstanceSharedPtrVector(mMeshes, meshInstance);
+  std::shared_ptr<moho::MeshInstance> meshInstance = CreateBuildPreviewMeshInstance(blueprint);
+  mMeshes.push_back(meshInstance);
   mBlueprints.push_back(blueprint);
 }
 
@@ -423,7 +436,7 @@ void moho::CBuildDragPreview::ReplaceBuildPreviewMesh(
   moho::RUnitBlueprint* const blueprint
 )
 {
-  boost::shared_ptr<moho::MeshInstance> meshInstance = CreateBuildPreviewMeshInstance(blueprint);
+  std::shared_ptr<moho::MeshInstance> meshInstance = CreateBuildPreviewMeshInstance(blueprint);
   mMeshes[index] = meshInstance;
   mBlueprints[index] = blueprint;
 }
@@ -465,8 +478,7 @@ namespace
 
     return false;
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x008534F0 (FUN_008534F0, sub_8534F0)
@@ -477,11 +489,23 @@ namespace
  */
 void moho::CBuildDragPreview::RefreshQueuedBuildGhosts()
 {
+  moho::CWldSession* const session = moho::WLD_GetActiveSession();
+
+  // Engine change: orders reach this map from the sim, once per beat, and walking every army's orders
+  // for each view of each frame was 3 % of a frame in a 12-player game.
+  const std::uint16_t stamp = static_cast<std::uint16_t>(
+    static_cast<std::uint32_t>(session->mGameTick) * 31U +
+    static_cast<std::uint32_t>(session->mCommandManager->mCommands.size())
+  );
+  if (moho::ren_BuildGhostsPerBeat && stamp == mQueuedGhostStamp) {
+    return;
+  }
+  mQueuedGhostStamp = stamp;
+
   // Built from scratch every pass. Whatever stays behind in the map this one
   // displaces belongs to orders that are gone, and dies with it below.
-  msvc8::map<moho::CmdId, boost::shared_ptr<moho::MeshInstance>> refreshed;
+  fa::map<moho::CmdId, std::shared_ptr<moho::MeshInstance>> refreshed;
 
-  moho::CWldSession* const session = moho::WLD_GetActiveSession();
   for (const auto& [commandId, helper] : session->mCommandManager->mCommands) {
     static_cast<void>(commandId);
     if (helper == nullptr) {
@@ -499,7 +523,7 @@ void moho::CBuildDragPreview::RefreshQueuedBuildGhosts()
 
     const moho::CmdId orderId = helper->mConstantData.cmd;
 
-    boost::shared_ptr<moho::MeshInstance> ghost;
+    std::shared_ptr<moho::MeshInstance> ghost;
     if (const auto cached = mPreviewPositions.find(orderId); cached != mPreviewPositions.end()) {
       ghost = cached->second;
       ghost->isHidden = 0;
@@ -523,9 +547,9 @@ void moho::CBuildDragPreview::RefreshQueuedBuildGhosts()
       // reads as the unit it previews, but through the `UnitPlace` shader; the
       // lookup and secondary lanes stay empty.
       const moho::RMeshBlueprintLOD& topLod = *meshBlueprint->mLods.begin();
-      const msvc8::string shaderName("UnitPlace");
-      const msvc8::string emptyTextureName;
-      boost::shared_ptr<moho::MeshMaterial> ghostMaterial = moho::MeshMaterial::Create(
+      const fa::string shaderName("UnitPlace");
+      const fa::string emptyTextureName;
+      std::shared_ptr<moho::MeshMaterial> ghostMaterial = moho::MeshMaterial::Create(
         shaderName,
         topLod.mAlbedoName,
         topLod.mNormalsName,
@@ -565,7 +589,7 @@ void moho::CBuildDragPreview::RefreshQueuedBuildGhosts()
  * Initializes one build-drag stepping lane from start/end world XZ
  * coordinates, deriving normalized per-step deltas and integer step count.
  */
-[[maybe_unused]] static void InitBuildDragStepState(
+static void InitBuildDragStepState(
   SBuildDragStep* const state,
   const float stepLength,
   const float startX,
@@ -635,8 +659,7 @@ namespace
     );
     return sInvalid;
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x00823220 (FUN_00823220, sub_823220)
@@ -880,7 +903,7 @@ void moho::UIBuildDragger::DragRelease(
  * Thin forwarding lane that adapts drag-step initializer arguments and
  * returns the same state pointer.
  */
-[[maybe_unused]] static SBuildDragStep* InitBuildDragStepStateAndReturnState(
+static SBuildDragStep* InitBuildDragStepStateAndReturnState(
   SBuildDragStep* const state,
   const float stepLength,
   const float startX,
@@ -976,7 +999,7 @@ void moho::CBuildDragPreview::UpdateDragPreview()
       ReplaceBuildPreviewMesh(static_cast<std::size_t>(slot), blueprint);
     }
 
-    if (const boost::shared_ptr<moho::MeshInstance>& preview = mMeshes[static_cast<std::size_t>(slot)]; preview) {
+    if (const std::shared_ptr<moho::MeshInstance>& preview = mMeshes[static_cast<std::size_t>(slot)]; preview) {
       preview->color = static_cast<std::int32_t>(previewColor);
       preview->SetStance(stance, stance);
     }
@@ -1010,7 +1033,7 @@ void moho::CBuildDragPreview::UpdateDragPreview()
           stampOrigin.x + entry.mPos.x, stampOrigin.y + entry.mPos.y, stampOrigin.z + entry.mPos.z
         };
 
-        // `RResId` is a bare `msvc8::string` wrapper, which is why the binary
+        // `RResId` is a bare `fa::string` wrapper, which is why the binary
         // hands the canonicalised path buffer straight to the rules lookup.
         moho::RResId blueprintPath;
         (void)gpg::STR_InitFilename(&blueprintPath.name, entry.mBlueprintId.c_str());
@@ -1082,7 +1105,7 @@ void moho::CBuildDragPreview::UpdateDragPreview()
         mBlueprints[static_cast<std::size_t>(slot)] = const_cast<moho::RUnitBlueprint*>(buildBlueprint);
       }
 
-      if (const boost::shared_ptr<moho::MeshInstance>& preview = mMeshes[static_cast<std::size_t>(slot)]; preview) {
+      if (const std::shared_ptr<moho::MeshInstance>& preview = mMeshes[static_cast<std::size_t>(slot)]; preview) {
         preview->color = static_cast<std::int32_t>(previewColor);
         preview->SetStance(stance, stance);
       }
@@ -1108,6 +1131,7 @@ void moho::CBuildDragPreview::UpdateDragPreview()
  * What it does:
  * While scrub mode is active, accumulates mouse delta into scrub lanes,
  * recenters the cursor to scrub anchor, and hides cursor texture state.
+ * Engine addition: POSIX consumes SDL relative motion without recentering.
  */
 static void func_ProcessMouseScrubbing()
 {
@@ -1115,6 +1139,17 @@ static void func_ProcessMouseScrubbing()
     return;
   }
 
+#if FAFRE_PLATFORM_POSIX
+  int deltaX = 0;
+  int deltaY = 0;
+  if (!platform::window::GetRelativeMouseDelta(deltaX, deltaY)) {
+    func_StartMouseScrubbing(false, nullptr);
+    return;
+  }
+  const LONG scrubSign = sInvertMidMouseScrub ? -1 : 1;
+  sMouseScrubDelta.x += scrubSign * deltaX;
+  sMouseScrubDelta.y += scrubSign * deltaY;
+#else
   POINT cursorPoint{};
   ::GetCursorPos(&cursorPoint);
   // The shipped build flips these two accumulations from `add` to `sub` by
@@ -1125,6 +1160,7 @@ static void func_ProcessMouseScrubbing()
   sMouseScrubDelta.y += scrubSign * (cursorPoint.y - sMouseScrubLanded.y);
   ::SetCursorPos(sMouseScrubAnchor.x, sMouseScrubAnchor.y);
   ::GetCursorPos(&sMouseScrubLanded);
+#endif
 
   auto* const cursor = moho::g_UIManager->GetCursor();
   (void)SetCursorShowingAndMarkDirty(cursor, false);
@@ -1140,11 +1176,11 @@ static void func_ProcessMouseScrubbing()
  * site copy-constructs a temporary before the call (0x00870DB5).
  */
 CMiniMapDragger::CMiniMapDragger(
-  msvc8::string cameraName
+  fa::string cameraName
 )
   : moho::IMauiDragger()
 {
-  mCameraName.assign(cameraName, 0, msvc8::string::npos);
+  mCameraName.assign(cameraName, 0, fa::string::npos);
 }
 
 /**
@@ -1441,9 +1477,7 @@ int moho::cfunc_CUIWorldViewIsCartographicL(
 
   LuaPlus::LuaObject worldViewObject(LuaPlus::LuaStackObject(state, 1));
   CUIWorldView* const worldView = SCR_FromLua_CUIWorldView(worldViewObject, state);
-  lua_pushboolean(
-    state->m_state, worldView->CanShake()
-  );
+  lua_pushboolean(state->m_state, worldView->CanShake());
   (void)lua_gettop(state->m_state);
   return 1;
 }
@@ -1762,7 +1796,6 @@ namespace
     "moho.UIWorldView:__init(parent_control, cameraName, depth, isMiniMap, trackCamera)";
 }
 
-
 /**
  * Address: 0x0086E480 (FUN_0086E480, Moho::CUIWorldView::CUIWorldView)
  *
@@ -1780,7 +1813,7 @@ moho::CUIWorldView::CUIWorldView(
   const bool isMiniMap,
   const char* const cameraTrack
 )
-  : CMauiControl(luaObj, parent, msvc8::string("World View"))
+  : CMauiControl(luaObj, parent, fa::string("World View"))
   , mIsMiniMap(isMiniMap)
   , mWorldViewDepth(depth)
   , mWldSession(moho::WLD_GetActiveSession()) // 0x0086E6A8 reads the global sWldSession
@@ -1791,10 +1824,9 @@ moho::CUIWorldView::CUIWorldView(
   // ??_7CUIWorldView@Moho@@6BIRenderWorldView@Moho@@@): the interface base,
   // then this class. Every member is constructed by then, with the values the
   // stores at 0x0086E4F9..0x0086E742 write.
-  SetDebugName(msvc8::string(name));
+  SetDebugName(fa::string(name));
 
-  moho::STIMap* const map =
-    mWldSession->mWldMap->mTerrainRes->mMap;
+  moho::STIMap* const map = mWldSession->mWldMap->mTerrainRes->mMap;
   LuaPlus::LuaState* const activeState = luaObj->GetActiveState();
   moho::RCamManager* const camManager = moho::CAM_GetManager();
   mCamera.reset(camManager->CreateCamera(gpg::StrArg(name), *map, activeState));
@@ -1869,10 +1901,7 @@ gpg::RType* moho::CUIWorldView::GetClass() const
  */
 gpg::RRef moho::CUIWorldView::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }
 
 /**
@@ -1921,7 +1950,7 @@ int moho::cfunc_CUIWorldView__initL(
   LuaPlus::LuaObject parentObject(LuaPlus::LuaStackObject(state, 2));
   CMauiControl* const parent = SCR_FromLua_CMauiControl(parentObject, state);
 
-  msvc8::string trackCamera;
+  fa::string trackCamera;
   bool isMiniMap = false;
 
   if (lua_gettop(state->m_state) == 5) {
@@ -1936,7 +1965,7 @@ int moho::cfunc_CUIWorldView__initL(
     if (trackStr == nullptr) {
       trackArg.TypeError("string");
     }
-    trackCamera = msvc8::string(trackStr, std::strlen(trackStr));
+    trackCamera = fa::string(trackStr, std::strlen(trackStr));
   }
 
   void* const storage = AllocateZeroedUiObject<void>(sizeof(CUIWorldView));
@@ -2165,7 +2194,7 @@ int moho::cfunc_CUIWorldViewGetRightMouseButtonOrderL(
     if (commandMode.mMode == COMMOD_Order) {
       gpg::RRef commandCapRef{};
       commandCapRef = gpg::MakeRRef<moho::ERuleBPUnitCommandCaps>(&commandMode.mCommandCaps);
-      const msvc8::string commandLexical = commandCapRef.GetLexical();
+      const fa::string commandLexical = commandCapRef.GetLexical();
       lua_pushstring(state->m_state, commandLexical.c_str());
       (void)lua_gettop(state->m_state);
       return 1;
@@ -2535,10 +2564,7 @@ void moho::CUIWorldView::DoRender(
     const float width = CScriptLazyVar_float::GetValue(&mWidthLV);
     const float height = CScriptLazyVar_float::GetValue(&mHeightLV);
 
-    if (
-      mCachedViewLeft != left || mCachedViewTop != top ||
-      mCachedViewWidth != width || mCachedViewHeight != height
-    ) {
+    if (mCachedViewLeft != left || mCachedViewTop != top || mCachedViewWidth != width || mCachedViewHeight != height) {
       mCachedViewLeft = left;
       mCachedViewTop = top;
       mCachedViewWidth = width;
@@ -2637,7 +2663,6 @@ void moho::CUIWorldView::UpdateSelection(
     const EEntityType volumeEntityMask =
       (cameraZoom <= 150.0f) ? static_cast<EEntityType>(ENTITYTYPE_Unit | ENTITYTYPE_Prop) : ENTITYTYPE_Unit;
     (void)spatialDb->CollectInVolume(collected, volumeEntityMask, &selectionSolid);
-
 
     float bestDistSq = std::numeric_limits<float>::max();
 
@@ -2784,10 +2809,7 @@ void moho::CUIWorldView::UpdateSelection(
         // redirect (0x0086FDEF `jne 0x0086FE2B`); only a miss tests FACTORY
         // (0x0086FE1D), whose result is the flag. Then 0x0086FE6D re-reads
         // GetAttachmentParent() into the best candidate.
-        if (
-          attachmentParentAsUnit->IsInCategory("TRANSPORTATION") ||
-          attachmentParentAsUnit->IsInCategory("FACTORY")
-        ) {
+        if (attachmentParentAsUnit->IsInCategory("TRANSPORTATION") || attachmentParentAsUnit->IsInCategory("FACTORY")) {
           bestCandidate = attachmentParent;
         }
       }
@@ -2853,7 +2875,7 @@ void moho::CUIWorldView::UpdateSelection(
         // NULL Wm3::Vec3f* (GridPos is not an aggregate), so hovering with a
         // mass-extractor build order dereferenced null in GridPos::GridPos.
         GridPos foundDeposit{};
-        auto* const simResources = mWldSession->mSimResources.px;
+        auto* const simResources = mWldSession->mSimResources.get();
         if (
           simResources != nullptr &&
           simResources->FindClosestDeposit(&searchFrom, &foundDeposit, snapRadius, depositType)
@@ -2963,8 +2985,7 @@ namespace
     formation->mReady = false;
     formation->Reset();
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x00870310 (FUN_00870310, sub_870310)
@@ -3169,6 +3190,10 @@ bool moho::CUIWorldView::HandleEvent(
 
   // --- pointer motion (0x00870963) ---------------------------------------
   if (eventData.mEventType == MET_MouseMotion) {
+#if FAFRE_PLATFORM_POSIX
+    // Consume this SDL event's relative motion before the camera handles it, not next frame.
+    func_ProcessMouseScrubbing();
+#endif
     const bool spaceDragActive =
       MAUI_KeyIsDown(MKEY_SPACE) && (cam_Free || ren_BgLowerBound > mCamera->CameraGetTargetZoom());
 
@@ -3219,7 +3244,8 @@ bool moho::CUIWorldView::HandleEvent(
       auto* const storage = static_cast<CameraDragger*>(::operator new(sizeof(CameraDragger), std::nothrow));
       IMauiDragger* dragger = nullptr;
       if (storage != nullptr) {
-        dragger = new (storage) CameraDragger(mCamera.get(), cursorInfo.mMouseScreenPos, this, &moho::CameraImpl::CameraPan);
+        dragger =
+          new (storage) CameraDragger(mCamera.get(), cursorInfo.mMouseScreenPos, this, &moho::CameraImpl::CameraPan);
       }
       func_PostDragger(GetRootFrame(), dragger, &eventData);
     }
@@ -3336,7 +3362,6 @@ bool moho::CUIWorldView::HandleEvent(
     (void)func_GetRightMouseButtonAction(&rightCommand, &cursorInfo, eventData.mModifiers, mWldSession);
     mCommandData = rightCommand;
 
-
     if (mCommandData.mMode != COMMOD_Order) {
       return false;
     }
@@ -3417,6 +3442,11 @@ void moho::CUIWorldView::Frame(
     }
 
     if (!MAUI_KeyIsDown(MKEY_SPACE)) {
+#if FAFRE_PLATFORM_POSIX
+      if (mCameraRotationActive) {
+        func_StartMouseScrubbing(false, nullptr);
+      }
+#endif
       if (mCameraRotationActive && !cam_Free) {
         mCamera->CameraRevertRotation();
       }
@@ -3436,12 +3466,23 @@ void moho::CUIWorldView::Frame(
         float panX = 0.0f;
         float panY = 0.0f;
 
-        if (ui_ScreenEdgeScrollView) {
+        // Captured camera motion must not also pan at a screen edge.
+        if (ui_ScreenEdgeScrollView && (!FAFRE_PLATFORM_POSIX || sMouseIsScrubbing == 0)) {
           gpg::gal::Device* const device = gpg::gal::Device::GetInstance();
           const gpg::gal::Head& head = device->GetDeviceContext()->GetHead(0u);
-          if (head.mWindowed) {
-            POINT cursorPoint{};
+          // SDL's focus-checked cursor query works in both native window modes.
+          if (FAFRE_PLATFORM_POSIX || head.mWindowed) {
+            POINT cursorPoint{-1, -1};
+#if FAFRE_PLATFORM_POSIX
+            // The head dimensions are client pixels, and Wayland has no desktop cursor position.
+            int cursorX = 0;
+            int cursorY = 0;
+            if (platform::window::GetMousePosition(head.mWindow, cursorX, cursorY)) {
+              cursorPoint = {cursorX, cursorY};
+            }
+#else
             ::GetCursorPos(&cursorPoint);
+#endif
             if (cursorPoint.x == 0) {
               panX = panSpeed;
             }
@@ -3661,7 +3702,6 @@ int moho::cfunc_AddBlinkyBoxL(
 namespace
 {
 
-
   [[nodiscard]] const char* LuaStringOrEmpty(
     const LuaPlus::LuaObject& object
   ) noexcept
@@ -3670,7 +3710,7 @@ namespace
     return value != nullptr ? value : "";
   }
 
-  [[nodiscard]] boost::shared_ptr<moho::RScmResource> ResolveCommandFeedbackModelFromDescriptor(
+  [[nodiscard]] std::shared_ptr<moho::RScmResource> ResolveCommandFeedbackModelFromDescriptor(
     const LuaPlus::LuaObject& meshDescriptor,
     moho::CWldSession* const worldSession,
     float* const outUniformScale
@@ -3689,7 +3729,7 @@ namespace
       return {};
     }
 
-    msvc8::string blueprintId(LuaStringOrEmpty(meshDescriptor.GetByName("BlueprintID")));
+    fa::string blueprintId(LuaStringOrEmpty(meshDescriptor.GetByName("BlueprintID")));
     moho::RResId normalizedBlueprintId{};
     gpg::STR_CopyFilename(&normalizedBlueprintId.name, &blueprintId);
 
@@ -3717,8 +3757,7 @@ namespace
     // arm's front LOD.
     return moho::GetModel(lodBegin->mMeshName.c_str(), nullptr);
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x00857BE0 (FUN_00857BE0, cfunc_AddCommandFeedbackBlipL)
@@ -3748,7 +3787,7 @@ int moho::cfunc_AddCommandFeedbackBlipL(
   const LuaPlus::LuaObject meshDescriptor(LuaPlus::LuaStackObject(state, 1));
 
   float uniformScale = 1.0f;
-  const boost::shared_ptr<RScmResource> modelResource =
+  const std::shared_ptr<RScmResource> modelResource =
     ResolveCommandFeedbackModelFromDescriptor(meshDescriptor, worldSession, &uniformScale);
   if (!modelResource) {
     return 0;
@@ -3756,11 +3795,11 @@ int moho::cfunc_AddCommandFeedbackBlipL(
 
   const Wm3::Vector3f worldPosition = SCR_FromLuaCopy<Wm3::Vector3f>(meshDescriptor.GetByName("Position"));
 
-  const msvc8::string textureName(LuaStringOrEmpty(meshDescriptor.GetByName("TextureName")));
-  const msvc8::string shaderName(LuaStringOrEmpty(meshDescriptor.GetByName("ShaderName")));
-  const msvc8::string emptyTextureName{};
+  const fa::string textureName(LuaStringOrEmpty(meshDescriptor.GetByName("TextureName")));
+  const fa::string shaderName(LuaStringOrEmpty(meshDescriptor.GetByName("ShaderName")));
+  const fa::string emptyTextureName{};
 
-  const boost::shared_ptr<MeshMaterial> material = MeshMaterial::Create(
+  const std::shared_ptr<MeshMaterial> material = MeshMaterial::Create(
     shaderName, textureName, emptyTextureName, emptyTextureName, emptyTextureName, emptyTextureName, nullptr
   );
 
@@ -3773,13 +3812,7 @@ int moho::cfunc_AddCommandFeedbackBlipL(
   // the camera zoomed out.
   MeshInstance* const meshInstance = renderer != nullptr
     ? renderer->CreateMeshInstance(
-        worldSession->mGameTick,
-        -1,
-        modelResource,
-        meshScale,
-        false,
-        material,
-        std::numeric_limits<float>::max()
+        worldSession->mGameTick, -1, modelResource, meshScale, false, material, std::numeric_limits<float>::max()
       )
     : nullptr;
   if (meshInstance == nullptr) {
@@ -3892,6 +3925,9 @@ void CameraDragger::DragMove(
   const moho::SMauiEventData* const eventData
 )
 {
+#if FAFRE_PLATFORM_POSIX
+  func_ProcessMouseScrubbing();
+#endif
   if (moho::ui_DisableCursorFixing) {
     const Wm3::Vector2f currentMousePos(eventData->mMousePos.x, eventData->mMousePos.y);
     const Wm3::Vector2f dragDelta(currentMousePos.x - mPos.x, currentMousePos.y - mPos.y);

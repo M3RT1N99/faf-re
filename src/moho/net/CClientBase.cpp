@@ -17,6 +17,8 @@
 #include "gpg/core/utils/Logging.h"
 #include "IClientMgrUIInterface.h"
 #include "moho/misc/DiagnosticBudget.h"
+#include "moho/net/NetConVars.h"
+#include "moho/net/PeerFeatures.h"
 using namespace moho;
 
 namespace
@@ -50,20 +52,6 @@ namespace
   }
 
   /**
-   * Address: 0x00540A70 (FUN_00540A70)
-   *
-   * What it does:
-   * Reads one 32-bit integer value from a `BinaryReader` lane and returns it
-   * by value.
-   */
-  [[maybe_unused]] int ReadClientMessageInt32Raw(gpg::BinaryReader* const reader)
-  {
-    int value = 0;
-    reader->Read(reinterpret_cast<char*>(&value), sizeof(value));
-    return value;
-  }
-
-  /**
    * Engine addition, not in the binary: the fewest payload bytes each message
    * `Process` (and `UpdateState`, for the two command-stream ops it reads)
    * parses with `ReadExact` needs. The binary read them unchecked, so a
@@ -71,7 +59,9 @@ namespace
    * connection's dispatch on the issue thread and terminated the process.
    * Every message the engine writes is at least this long.
    */
-  [[nodiscard]] std::size_t MinimumPayloadBytes(const uint8_t msgType) noexcept
+  [[nodiscard]] std::size_t MinimumPayloadBytes(
+    const uint8_t msgType
+  ) noexcept
   {
     switch (msgType) {
     case static_cast<uint8_t>(ECmdStreamOp::CMDST_Advance):
@@ -105,7 +95,10 @@ namespace
  * What it does:
  * Initializes one eject-request record from requester and beat fields.
  */
-SEjectRequest::SEjectRequest(const CClientBase* const requester, const int afterBeat)
+SEjectRequest::SEjectRequest(
+  const CClientBase* const requester,
+  const int afterBeat
+)
   : mRequester(requester)
   , mAfterBeat(afterBeat)
 {}
@@ -141,17 +134,6 @@ bool CClientBase::IsReady() const
 }
 
 /**
- * Address: 0x0053B920 (FUN_0053B920)
- *
- * What it does:
- * Returns the raw sim-rate lane tracked by this client.
- */
-int32_t CClientBase::GetSimRateRaw() const
-{
-  return mSimRate;
-}
-
-/**
  * Address: 0x0053BE50 (FUN_0053BE50, Moho::CClientBase::~CClientBase)
  * Address: 0x0053BE30 (FUN_0053BE30, dtor thunk)
  *
@@ -174,7 +156,7 @@ void CClientBase::Debug()
   gpg::Logf("      mNickname=\"%s\"", mNickname.c_str());
   gpg::Logf("      mIndex=%d", mIndex);
 
-  msvc8::string validSources;
+  fa::string validSources;
   for (auto value = mValidCommandSources.GetNext(std::numeric_limits<unsigned>::max());
        value < mValidCommandSources.Max();
        value = mValidCommandSources.GetNext(value)) {
@@ -192,7 +174,7 @@ void CClientBase::Debug()
   gpg::Logf("      mDispatchedBeat=%d", mDispatchedBeat);
   gpg::Logf("      mAvailableBeatRemote=%d", mAvailableBeatRemote);
 
-  msvc8::string ackList;
+  fa::string ackList;
   for (size_t i = 0; i < mLatestAckReceived.size(); ++i) {
     if (!ackList.empty()) {
       ackList = ackList + ",";
@@ -230,22 +212,25 @@ void CClientBase::Debug()
  * comma-joined from `mSubobj`; the trailing millisecond field is appended only
  * when `mType != Nothing`.
  */
-msvc8::string& moho::FormatBottleneckLabel(const SClientBottleneckInfo& info, msvc8::string& out)
+fa::string& moho::FormatBottleneckLabel(
+  const SClientBottleneckInfo& info,
+  fa::string& out
+)
 {
   // Type token (switch on mType, 0..3) -> assignment (0x0053B703..0x0053B71F).
   switch (info.mType) {
-    case SClientBottleneckInfo::Nothing:
-      out = "nothing";
-      break;
-    case SClientBottleneckInfo::Readiness:
-      out = "readiness";
-      break;
-    case SClientBottleneckInfo::Data:
-      out = "data";
-      break;
-    case SClientBottleneckInfo::Ack:
-      out = "ack";
-      break;
+  case SClientBottleneckInfo::Nothing:
+    out = "nothing";
+    break;
+  case SClientBottleneckInfo::Readiness:
+    out = "readiness";
+    break;
+  case SClientBottleneckInfo::Data:
+    out = "data";
+    break;
+  case SClientBottleneckInfo::Ack:
+    out = "ack";
+    break;
   }
 
   // " %u" of mVal (0x0053B724..0x0053B744). Binary passes the raw dword as
@@ -292,7 +277,9 @@ msvc8::string& moho::FormatBottleneckLabel(const SClientBottleneckInfo& info, ms
  * Handles client-control/lifecycle message ids (`50..57`, `202`, `203`),
  * updates ACK/beat/eject state, and appends non-client traffic into `mPipe`.
  */
-void CClientBase::Process(CMessage& msg)
+void CClientBase::Process(
+  CMessage& msg
+)
 {
   CMessageStream stream(msg, CMessageStream::Access::kReadOnly);
   gpg::BinaryReader reader(&stream);
@@ -336,7 +323,7 @@ void CClientBase::Process(CMessage& msg)
         // Engine addition: the stream's hash at this boundary, after the
         // binary's two fields.
         const CommandStreamCheck::AckDigest digest = streamCheck->NoteBoundary(mIndex, mQueuedBeat);
-        ackStream.Write(reinterpret_cast<const char*>(digest.data()), digest.size());
+        ackStream.Write(digest.data(), digest.size());
         if (streamCheck->HasFindings()) {
           mManager->NoteDivergentOrders();
         }
@@ -400,12 +387,20 @@ void CClientBase::Process(CMessage& msg)
     // Engine addition: the hash this client reports for that stream, when it
     // sent one (the shipped engine does not). Our own acks describe our own
     // copy, so there is nothing to compare.
+    // Issue #285: with announcements on (net_PeerFeatures), a report counts only from a
+    // peer that announced OrderStreamCheck; reports before its announcement are skipped.
+    // Off, the message's size says it, as before. The bytes sent don't change either way.
     CommandStreamCheck* const streamCheck = mManager->mStreamCheck.get();
-    if (streamCheck != nullptr && this != mManager->mLocalClient &&
-        static_cast<std::size_t>(msg.GetMessageSize()) >=
-          sizeof(uint8_t) + sizeof(int32_t) + CommandStreamCheck::kAckDigestBytes) {
+    const bool reportAnnounced = net_PeerFeatures == 0 ||
+      (mManager->mPeerFeatures != nullptr &&
+       mManager->mPeerFeatures->PeerSupports(mIndex, EPeerFeature::OrderStreamCheck));
+    if (
+      streamCheck != nullptr && this != mManager->mLocalClient && reportAnnounced &&
+      static_cast<std::size_t>(msg.GetMessageSize()) >=
+        sizeof(uint8_t) + sizeof(int32_t) + CommandStreamCheck::kAckDigestBytes
+    ) {
       CommandStreamCheck::AckDigest digest{};
-      reader.Read(reinterpret_cast<char*>(digest.data()), digest.size());
+      reader.Read(digest.data(), digest.size());
       streamCheck->NoteReport(mIndex, ackClientIndex, static_cast<uint32_t>(ackBeat), digest);
       if (streamCheck->HasFindings()) {
         mManager->NoteDivergentOrders();
@@ -520,7 +515,10 @@ void CClientBase::Process(CMessage& msg)
  * on edi with ebx (`this`) as the requester. 0x0053F4B3/0x0053F4B4 push
  * `this` then the target, so the hook receives (target, requester).
  */
-void CClientBase::HandleIncomingEjectRequest(const uint8_t targetClientIndex, const int32_t afterBeat)
+void CClientBase::HandleIncomingEjectRequest(
+  const uint8_t targetClientIndex,
+  const int32_t afterBeat
+)
 {
   if (targetClientIndex < mManager->mClients.size()) {
     CClientBase* const target = mManager->mClients[targetClientIndex];
@@ -547,7 +545,10 @@ void CClientBase::HandleIncomingEjectRequest(const uint8_t targetClientIndex, co
  * Applies inbound adjustable-speed arbitration. Newer clocks win; ties are
  * broken by lower requester index.
  */
-void CClientBase::ApplyIncomingGameSpeedRequest(const int32_t speedClock, int32_t requestedSimRate)
+void CClientBase::ApplyIncomingGameSpeedRequest(
+  const int32_t speedClock,
+  int32_t requestedSimRate
+)
 {
   // Engine addition, not in the binary: the request is held to the range the
   // speed controls can produce (`WLD_DecreaseSimRate` stops at -10,
@@ -555,9 +556,11 @@ void CClientBase::ApplyIncomingGameSpeedRequest(const int32_t speedClock, int32_
   // `GetSimRateRequested`, whose 10^(rate/10) froze the display clock.
   requestedSimRate = std::clamp(requestedSimRate, -10, 50);
 
-  if ((mManager->mGameSpeedClock < speedClock) ||
-      ((mManager->mGameSpeedClock == speedClock) &&
-       (static_cast<uint32_t>(mIndex) < static_cast<uint32_t>(mManager->mGameSpeedRequester)))) {
+  if (
+    (mManager->mGameSpeedClock < speedClock) ||
+    ((mManager->mGameSpeedClock == speedClock) &&
+     (static_cast<uint32_t>(mIndex) < static_cast<uint32_t>(mManager->mGameSpeedRequester)))
+  ) {
     mManager->mGameSpeedClock = speedClock;
     mManager->mGameSpeedRequester = mIndex;
     mManager->mGameSpeed = requestedSimRate;
@@ -620,7 +623,9 @@ void CClientBase::ApplyIncomingGameSpeedRequest(const int32_t speedClock, int32_
  * falls straight through to the write).
  */
 void CClientBase::UpdateState(
-  const int beat, CommandSourceId* const lastEmittedSource, gpg::PipeStream* const outPipe
+  const int beat,
+  CommandSourceId* const lastEmittedSource,
+  gpg::PipeStream* const outPipe
 )
 {
   static constexpr uint32_t kInvalidCommandSource = 0xFFu;
@@ -830,7 +835,7 @@ bool CClientBase::NoEjectionPending()
 /**
  * Address: 0x0053CA60 (FUN_0053CA60)
  */
-const msvc8::vector<int32_t>* CClientBase::GetLatestAcksVector()
+const fa::vector<int32_t>* CClientBase::GetLatestAcksVector()
 {
   std::scoped_lock lock(mManager->mLock);
   return &mLatestAckReceived;
@@ -839,7 +844,9 @@ const msvc8::vector<int32_t>* CClientBase::GetLatestAcksVector()
 /**
  * Address: 0x0053CA90 (FUN_0053CA90)
  */
-void CClientBase::GetLatestBeatDispatchedRemote(uint32_t& out)
+void CClientBase::GetLatestBeatDispatchedRemote(
+  uint32_t& out
+)
 {
   std::scoped_lock lock(mManager->mLock);
   out = static_cast<uint32_t>(mLatestBeatDispatchedRemote);
@@ -848,7 +855,9 @@ void CClientBase::GetLatestBeatDispatchedRemote(uint32_t& out)
 /**
  * Address: 0x0053CAD0 (FUN_0053CAD0)
  */
-void CClientBase::GetAvailableBeatRemote(uint32_t& out)
+void CClientBase::GetAvailableBeatRemote(
+  uint32_t& out
+)
 {
   std::scoped_lock lock(mManager->mLock);
   out = mAvailableBeatRemote;
@@ -857,7 +866,9 @@ void CClientBase::GetAvailableBeatRemote(uint32_t& out)
 /**
  * Address: 0x0053C9A0 (FUN_0053C9A0)
  */
-void CClientBase::ReceiveChat(gpg::MemBuffer<const char> data)
+void CClientBase::ReceiveChat(
+  gpg::MemBuffer<const char> data
+)
 {
   CMessage msg(EClientMsg::CLIMSG_ReceiveChat);
   msg.Append(data, data.Size());
@@ -867,7 +878,9 @@ void CClientBase::ReceiveChat(gpg::MemBuffer<const char> data)
 /**
  * Address: 0x0053CA20 (FUN_0053CA20)
  */
-void CClientBase::GetQueuedBeat(uint32_t& out)
+void CClientBase::GetQueuedBeat(
+  uint32_t& out
+)
 {
   std::scoped_lock lock(mManager->mLock);
   out = mQueuedBeat;
@@ -892,7 +905,9 @@ void CClientBase::Eject()
 /**
  * Address: 0x0053CC60 (FUN_0053CC60)
  */
-void CClientBase::CollectEjecters(msvc8::vector<const CClientBase*>& out)
+void CClientBase::CollectEjecters(
+  fa::vector<const CClientBase*>& out
+)
 {
   std::scoped_lock lock(mManager->mLock);
 
@@ -947,7 +962,10 @@ CClientBase::CClientBase(
 /**
  * Address: 0x0053CBB0 (FUN_0053CBB0)
  */
-void CClientBase::AddOrUpdateEjectRequest(const CClientBase* requester, const int afterBeat)
+void CClientBase::AddOrUpdateEjectRequest(
+  const CClientBase* requester,
+  const int afterBeat
+)
 {
   for (SEjectRequest& request : mEjectRequests) {
     if (request.mRequester == requester) {
@@ -964,7 +982,9 @@ void CClientBase::AddOrUpdateEjectRequest(const CClientBase* requester, const in
 /**
  * Address: 0x0053CC20 (FUN_0053CC20)
  */
-void CClientBase::GetMostExpiredEjectRequest(int& outBeat) const
+void CClientBase::GetMostExpiredEjectRequest(
+  int& outBeat
+) const
 {
   outBeat = static_cast<int>(mQueuedBeat);
   for (const SEjectRequest& request : mEjectRequests) {
@@ -977,7 +997,9 @@ void CClientBase::GetMostExpiredEjectRequest(int& outBeat) const
 /**
  * Address: 0x0053CD50 (FUN_0053CD50)
  */
-void CClientBase::RemoveEjectRequestsByRequester(const CClientBase* requester)
+void CClientBase::RemoveEjectRequestsByRequester(
+  const CClientBase* requester
+)
 {
   if (mEjectRequests.empty()) {
     return;
@@ -995,7 +1017,9 @@ void CClientBase::RemoveEjectRequestsByRequester(const CClientBase* requester)
 /**
  * Address: 0x0053C3E0 (FUN_0053C3E0)
  */
-bool CClientBase::IsReadyForBeat(const int beat) const
+bool CClientBase::IsReadyForBeat(
+  const int beat
+) const
 {
   if (mEjected || mEjectPending || mManager == nullptr) {
     return true;
@@ -1037,7 +1061,10 @@ bool CClientBase::IsReadyForBeat(const int beat) const
  * the local client included. Then drops the requests this client authored
  * against others, since it will never report again.
  */
-void CClientBase::ProcessEject(CClientManagerImpl* manager, const uint32_t beat) const
+void CClientBase::ProcessEject(
+  CClientManagerImpl* manager,
+  const uint32_t beat
+) const
 {
   CMessage msg(EClientMsg::CLIMSG_Eject);
   CMessageStream s(msg, CMessageStream::Access::kReadWrite);

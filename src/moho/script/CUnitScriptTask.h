@@ -122,10 +122,10 @@ namespace moho
   public:
     static gpg::RType* sType;
 
-    CUnitCommand* mSourceCommand;      // +0x70
-    LuaPlus::LuaObject mSourceLuaObj;  // +0x74
-    LuaPlus::LuaObject mTaskClassLua;  // +0x88
-    msvc8::string mTaskScriptPath;     // +0x9C
+    CUnitCommand* mSourceCommand;     // +0x70
+    LuaPlus::LuaObject mSourceLuaObj; // +0x74
+    LuaPlus::LuaObject mTaskClassLua; // +0x88
+    fa::string mTaskScriptPath;       // +0x9C
   };
 
   /**
@@ -140,7 +140,8 @@ namespace moho
 
   protected:
     /**
-     * Address: 0x00623B50 (FUN_00623B50, ?Create@?$CScrLuaMetatableFactory@VCUnitScriptTask@Moho@@@Moho@@MAE?AVLuaObject@LuaPlus@@PAVLuaState@4@@Z)
+     * Address: 0x00623B50 (FUN_00623B50,
+     * ?Create@?$CScrLuaMetatableFactory@VCUnitScriptTask@Moho@@@Moho@@MAE?AVLuaObject@LuaPlus@@PAVLuaState@4@@Z)
      *
      * What it does:
      * Builds the metatable object used for `CUnitScriptTask` Lua userdata.
@@ -156,15 +157,6 @@ namespace moho
     sizeof(CScrLuaMetatableFactory<CUnitScriptTask>) == 0x8,
     "CScrLuaMetatableFactory<CUnitScriptTask> size must be 0x8"
   );
-
-  /**
-   * Address: 0x006240F0 (FUN_006240F0)
-   *
-   * What it does:
-   * Rebinds the startup metatable-factory index lane for
-   * `CScrLuaMetatableFactory<CUnitScriptTask>` and returns that singleton.
-   */
-  CScrLuaMetatableFactory<CUnitScriptTask>* startup_CScrLuaMetatableFactory_CUnitScriptTask_Index();
 
   /**
    * Address: 0x006233C0 (FUN_006233C0, cfunc_CUnitScriptTaskGetUnit)
@@ -270,23 +262,17 @@ namespace moho
 
   static_assert(sizeof(CUnitScriptTask) == 0xB8, "CUnitScriptTask size must be 0xB8");
   static_assert(
-    offsetof(CUnitScriptTask, mSourceCommand) == 0x70, "CUnitScriptTask::mSourceCommand offset must be 0x70"
+    offsetof(CUnitScriptTask, mSourceCommand) == 0x70,
+    "CUnitScriptTask::mSourceCommand offset must be 0x70"
   );
   static_assert(offsetof(CUnitScriptTask, mSourceLuaObj) == 0x74, "CUnitScriptTask::mSourceLuaObj offset must be 0x74");
   static_assert(offsetof(CUnitScriptTask, mTaskClassLua) == 0x88, "CUnitScriptTask::mTaskClassLua offset must be 0x88");
   static_assert(
-    offsetof(CUnitScriptTask, mTaskScriptPath) == 0x9C, "CUnitScriptTask::mTaskScriptPath offset must be 0x9C"
+    offsetof(CUnitScriptTask, mTaskScriptPath) == 0x9C,
+    "CUnitScriptTask::mTaskScriptPath offset must be 0x9C"
   );
 } // namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x006242A0 (FUN_006242A0, gpg::RRef_CUnitScriptTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitScriptTask*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitScriptTask(gpg::RRef* outRef, moho::CUnitScriptTask* value);
 } // namespace gpg

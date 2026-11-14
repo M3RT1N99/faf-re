@@ -8,7 +8,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/gal/PipelineState.hpp"
 #include "platform/Platform.h"
 
@@ -37,7 +37,12 @@ namespace gpg::gal
     void EndTechnique();
 
     void SetColorWriteMask(bool writeColor, bool writeAlpha) noexcept;
-    void SetWireframe(bool enabled) noexcept { mWireframe = enabled; }
+    void SetWireframe(
+      bool enabled
+    ) noexcept
+    {
+      mWireframe = enabled;
+    }
 
     /**
      * Lays the colour-write mask and wireframe fill over the state an effect

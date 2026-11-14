@@ -9,6 +9,8 @@
 #include "gpg/core/utils/Global.h"
 #include "moho/ai/CAiReconDBImpl.h"
 #include "moho/effects/rendering/CEffectImpl.h"
+#include "moho/effects/rendering/EffectHost.h"
+#include "moho/effects/rendering/EffectTickObserver.h"
 #include "moho/effects/rendering/IEffectManager.h"
 #include "moho/entity/Entity.h"
 #include "moho/math/QuaternionMath.h"
@@ -22,10 +24,10 @@
 #include "Wm3Sphere3.h"
 
 #include "moho/particles/SParticleBuffer.h"
+#include "moho/effects/rendering/CEffectManagerImpl.h"
 #include "moho/sim/CDebugCanvas.h"
 #include "moho/ui/SDebugLine.h"
 #include "gpg/core/reflection/Reflection.h"
-
 
 namespace moho
 {
@@ -37,7 +39,9 @@ namespace moho
 namespace
 {
   template <typename TType>
-  [[nodiscard]] gpg::RType* ResolveCachedType(gpg::RType*& cached)
+  [[nodiscard]] gpg::RType* ResolveCachedType(
+    gpg::RType*& cached
+  )
   {
     if (!cached) {
       cached = gpg::LookupRType(typeid(TType));
@@ -47,12 +51,18 @@ namespace
     return cached;
   }
 
-  [[nodiscard]] float ProjectViewportDepthRow1(const moho::VMatrix4& viewport, const Wm3::Vec3f& point) noexcept
+  [[nodiscard]] float ProjectViewportDepthRow1(
+    const moho::VMatrix4& viewport,
+    const Wm3::Vec3f& point
+  ) noexcept
   {
     return (point.x * viewport.r[1].x) + (point.y * viewport.r[1].y) + (point.z * viewport.r[1].z) + viewport.r[1].w;
   }
 
-  [[nodiscard]] Wm3::Sphere3f MakeSphere(const Wm3::Vec3f& center, const float radius) noexcept
+  [[nodiscard]] Wm3::Sphere3f MakeSphere(
+    const Wm3::Vec3f& center,
+    const float radius
+  ) noexcept
   {
     Wm3::Sphere3f sphere{};
     sphere.Center = center;
@@ -60,7 +70,10 @@ namespace
     return sphere;
   }
 
-  [[nodiscard]] Wm3::Vec3f Midpoint(const Wm3::Vec3f& a, const Wm3::Vec3f& b) noexcept
+  [[nodiscard]] Wm3::Vec3f Midpoint(
+    const Wm3::Vec3f& a,
+    const Wm3::Vec3f& b
+  ) noexcept
   {
     return {
       (a.x + b.x) * 0.5f,
@@ -69,7 +82,10 @@ namespace
     };
   }
 
-  [[nodiscard]] Wm3::Sphere3f BuildSegmentMidpointSphere(const Wm3::Vec3f& start, const Wm3::Vec3f& end) noexcept
+  [[nodiscard]] Wm3::Sphere3f BuildSegmentMidpointSphere(
+    const Wm3::Vec3f& start,
+    const Wm3::Vec3f& end
+  ) noexcept
   {
     const Wm3::Vec3f center = Midpoint(start, end);
     const float dx = end.x - center.x;
@@ -78,50 +94,36 @@ namespace
     return MakeSphere(center, std::sqrt((dx * dx) + (dy * dy) + (dz * dz)));
   }
 
-  [[nodiscard]] moho::CArmyImpl* ResolveFocusArmy(moho::Sim* const sim) noexcept
+  [[nodiscard]] bool IsAttachmentInvalid(
+    const moho::CEffectFollow& attached
+  )
   {
-    if (!sim) {
-      return nullptr;
-    }
-
-    moho::CArmyImpl** const armiesBegin = sim->mArmiesList.begin();
-    if (!armiesBegin) {
-      return nullptr;
-    }
-
-    const int focusArmyIndex = sim->mSyncFilter.focusArmy;
-    if (focusArmyIndex < 0 || static_cast<std::size_t>(focusArmyIndex) >= sim->mArmiesList.size()) {
-      return nullptr;
-    }
-
-    return armiesBegin[focusArmyIndex];
+    return !attached || attached.Dying();
   }
 
-  [[nodiscard]] moho::Entity* ResolveAttachEntity(const moho::SEntAttachInfo& attachInfo) noexcept
-  {
-    return attachInfo.GetAttachTargetEntity();
-  }
-
-  [[nodiscard]] bool IsAttachmentInvalid(const moho::Entity* const entity) noexcept
-  {
-    return entity == nullptr || entity->DestroyQueuedFlag != 0u;
-  }
-
-  [[nodiscard]] Wm3::Vec3f FetchVectorParam(moho::CEfxBeam& beam, const std::int32_t paramIndex)
+  [[nodiscard]] Wm3::Vec3f FetchVectorParam(
+    moho::CEfxBeam& beam,
+    const std::int32_t paramIndex
+  )
   {
     Wm3::Vec3f value{};
     beam.GetVectorParam(&value, paramIndex);
     return value;
   }
 
-  [[nodiscard]] Wm3::Vec3f ApplyPoint(const moho::VTransform& transform, const Wm3::Vec3f& point)
+  [[nodiscard]] Wm3::Vec3f ApplyPoint(
+    const moho::VTransform& transform,
+    const Wm3::Vec3f& point
+  )
   {
     Wm3::Vec3f out{};
     transform.Apply(point, &out);
     return out;
   }
 
-  void SetIdentityTransform(moho::VTransform& transform) noexcept
+  void SetIdentityTransform(
+    moho::VTransform& transform
+  ) noexcept
   {
     transform.orient_.w = 1.0f;
     transform.orient_.x = 0.0f;
@@ -132,23 +134,6 @@ namespace
     transform.pos_.z = 0.0f;
   }
 
-  /**
-   * Address: 0x00658EC0 (FUN_00658EC0)
-   *
-   * What it does:
-   * Returns cached reflected type metadata for `SEntAttachInfo`, resolving it
-   * through RTTI lookup on first use.
-   */
-  [[nodiscard]] gpg::RType* CachedSEntAttachInfoType()
-  {
-    gpg::RType* type = moho::SEntAttachInfo::sType;
-    if (!type) {
-      type = gpg::LookupRType(typeid(moho::SEntAttachInfo));
-      moho::SEntAttachInfo::sType = type;
-    }
-
-    return type;
-  }
 } // namespace
 
 namespace moho
@@ -163,7 +148,9 @@ namespace moho
    * resolving and caching the `CEffectImpl` reflection type on first use.
    */
   void ReadCEfxBeamBaseEffectImplAdapter(
-    gpg::ReadArchive* const archive, void* const object, const gpg::RRef& owner
+    gpg::ReadArchive* const archive,
+    void* const object,
+    const gpg::RRef& owner
   )
   {
     gpg::RType* type = CEffectImpl::sType;
@@ -182,7 +169,9 @@ namespace moho
    * resolving and caching the `CEffectImpl` reflection type on first use.
    */
   void WriteCEfxBeamBaseEffectImplAdapter(
-    gpg::WriteArchive* const archive, const void* const object, const gpg::RRef& owner
+    gpg::WriteArchive* const archive,
+    const void* const object,
+    const gpg::RRef& owner
   )
   {
     gpg::RType* type = CEffectImpl::sType;
@@ -201,10 +190,12 @@ namespace moho
    * resolving and caching the attach-info reflection type on first use.
    */
   void ReadCEfxBeamAttachInfoAdapter(
-    gpg::ReadArchive* const archive, void* const object, const gpg::RRef& owner
+    gpg::ReadArchive* const archive,
+    void* const object,
+    const gpg::RRef& owner
   )
   {
-    archive->Read(CachedSEntAttachInfoType(), object, owner);
+    archive->Read(gpg::CachedLookup<moho::SEntAttachInfo>(moho::SEntAttachInfo::sType), object, owner);
   }
 
   /**
@@ -215,10 +206,12 @@ namespace moho
    * resolving and caching the attach-info reflection type on first use.
    */
   void WriteCEfxBeamAttachInfoAdapter(
-    gpg::WriteArchive* const archive, const void* const object, const gpg::RRef& owner
+    gpg::WriteArchive* const archive,
+    const void* const object,
+    const gpg::RRef& owner
   )
   {
-    archive->Write(CachedSEntAttachInfoType(), object, owner);
+    archive->Write(gpg::CachedLookup<moho::SEntAttachInfo>(moho::SEntAttachInfo::sType), object, owner);
   }
 
   /**
@@ -229,7 +222,9 @@ namespace moho
    * caching the beam-payload reflection type on first use.
    */
   void ReadCEfxBeamWorldBeamAdapter(
-    gpg::ReadArchive* const archive, void* const object, const gpg::RRef& owner
+    gpg::ReadArchive* const archive,
+    void* const object,
+    const gpg::RRef& owner
   )
   {
     gpg::RType* type = SWorldBeam::sType;
@@ -248,7 +243,9 @@ namespace moho
    * caching the beam-payload reflection type on first use.
    */
   void WriteCEfxBeamWorldBeamAdapter(
-    gpg::WriteArchive* const archive, const void* const object, const gpg::RRef& owner
+    gpg::WriteArchive* const archive,
+    const void* const object,
+    const gpg::RRef& owner
   )
   {
     gpg::RType* type = SWorldBeam::sType;
@@ -288,7 +285,10 @@ namespace moho
    * texture-scale lane), the shared start/end colour, the beam texture, thickness
    * (from width), UV shift and repeat rate, and the blend mode -- then Reset().
    */
-  CEfxBeam::CEfxBeam(CEffectManagerImpl* const manager, const SCreateBeamParams& params)
+  CEfxBeam::CEfxBeam(
+    CEffectManagerImpl* const manager,
+    const SCreateBeamParams& params
+  )
     : CEffectImpl(manager, params.mAttachArmyIndex)
     , mBlendMode(0)
     , mVisible(false)
@@ -303,7 +303,7 @@ namespace moho
     mParams.resize(BEAM_LASTPARAM, 0.0f);
     mParticleTextures.resize(2, nullptr);
     {
-      const msvc8::string emptyString;
+      const fa::string emptyString;
       mStrings.resize(2, emptyString);
     }
 
@@ -362,7 +362,7 @@ namespace moho
     mParams.resize(BEAM_LASTPARAM, 0.0f);
     mParticleTextures.resize(2, nullptr);
     {
-      const msvc8::string emptyString;
+      const fa::string emptyString;
       mStrings.resize(2, emptyString);
     }
 
@@ -396,7 +396,9 @@ namespace moho
   /**
    * Address: 0x00658A10 (FUN_00658A10, Moho::CEfxBeam::MemberDeserialize)
    */
-  void CEfxBeam::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CEfxBeam::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -415,7 +417,9 @@ namespace moho
   /**
    * Address: 0x00658B10 (FUN_00658B10, Moho::CEfxBeam::MemberSerialize)
    */
-  void CEfxBeam::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CEfxBeam::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -438,7 +442,9 @@ namespace moho
    * Performs frustum/depth rejection for beam endpoints and resolves focused
    * army LOS visibility through recon DB probes.
    */
-  bool CEfxBeam::CanSeeCam(const GeomCamera3* const camera)
+  bool CEfxBeam::CanSeeCam(
+    const GeomCamera3* const camera
+  )
   {
     const float maxDepth = mParams.start_[20];
 
@@ -455,8 +461,10 @@ namespace moho
         }
       }
 
-      if (!camera->solid2.Intersects(MakeSphere(mBeam.mStart, 15.0f))
-          && !camera->solid2.Intersects(MakeSphere(mBeam.mEnd, 15.0f))) {
+      if (
+        !camera->solid2.Intersects(MakeSphere(mBeam.mStart, 15.0f)) &&
+        !camera->solid2.Intersects(MakeSphere(mBeam.mEnd, 15.0f))
+      ) {
         mLastUpdate = 0u;
         return false;
       }
@@ -483,24 +491,23 @@ namespace moho
       }
     }
 
-    Sim* const sim = mManager->GetSim();
-    CArmyImpl* const focusArmy = ResolveFocusArmy(sim);
-    if (!focusArmy) {
+    // The sim's focus army, or a hosted beam's host's (EffectHost.h). No sim or host, or no focus army: seen.
+    CEffectWorld world(*mManager);
+    if (!world || !world.HasFocusArmy()) {
       return true;
     }
 
     if (mLastUpdate != 0u) {
-      const std::uint32_t tickDelta = sim->mCurTick - mLastUpdate;
+      const std::uint32_t tickDelta = world.CurTick() - mLastUpdate;
       if ((tickDelta % 5u) != 0u) {
         return mVisible;
       }
     } else {
-      mLastUpdate = sim->mCurTick;
+      mLastUpdate = world.CurTick();
     }
 
-    CAiReconDBImpl* const reconDb = focusArmy->GetReconDB();
-    const bool startVisible = reconDb->ReconCanDetect(mBeam.mCurStart.pos_, static_cast<int>(RECON_LOSNow)) != RECON_None;
-    mVisible = startVisible || reconDb->BeamIsVisible(mBeam);
+    const bool startVisible = world.FocusArmyDetects(mBeam.mCurStart.pos_);
+    mVisible = startVisible || world.FocusArmySeesBeam(mBeam);
 
     return mVisible;
   }
@@ -549,19 +556,21 @@ namespace moho
   bool CEfxBeam::Update()
   {
     if (mNewAttachment) {
-      Entity* const sourceEntity = ResolveAttachEntity(mEntityInfo);
+      // The sim's entities, or a hosted beam's targets (EffectHost.h), read the same way.
+      const CEffectFollow sourceEntity(*this, mEntityInfo, false);
       if (IsAttachmentInvalid(sourceEntity)) {
+        EFFECT_Ending(*this, EEffectEnd::EntityGone); // plan WPR.10: null in the game
         mManager->DestroyEffect(this);
         return false;
       }
 
-      Entity* const endEntity = ResolveAttachEntity(mEnd);
-      if (endEntity == nullptr) {
+      const CEffectFollow endEntity(*this, mEnd, true);
+      if (!endEntity) {
         mBeam.mFromStart = false;
         // Effects tick before AdvanceCoords: retain current/pending samples.
         // SWorldBeam's legacy mLast* names denote the second (pending) sample.
-        mBeam.mCurStart = sourceEntity->mVarDat.mCurTransform;
-        mBeam.mLastStart = sourceEntity->mPendingTransform;
+        mBeam.mCurStart = sourceEntity.Current();
+        mBeam.mLastStart = sourceEntity.Pending();
         mBeam.mStart = FetchVectorParam(*this, 0);
 
         const float beamLength = GetFloatParam(6);
@@ -575,10 +584,10 @@ namespace moho
         // `mVelocityScale` is a different field at +0x00D4, so the beam was
         // interpolating between its two endpoint transforms with a scalar that
         // has nothing to do with them.
-        mBeam.mLastInterpolation = sourceEntity->mPendingVelocityScale;
+        mBeam.mLastInterpolation = sourceEntity.PendingVelocityScale();
 
         if (mEntityInfo.mParentBoneIndex != -1) {
-          const VTransform sourceBoneTransform = sourceEntity->GetBoneLocalTransform(mEntityInfo.mParentBoneIndex);
+          const VTransform sourceBoneTransform = sourceEntity.BoneLocal(mEntityInfo.mParentBoneIndex);
           mBeam.mStart = ApplyPoint(sourceBoneTransform, mBeam.mStart);
           mBeam.mEnd = ApplyPoint(sourceBoneTransform, mBeam.mEnd);
         }
@@ -589,26 +598,25 @@ namespace moho
         mBeam.mFromStart = true;
         // Effects tick before AdvanceCoords: retain current/pending samples.
         // SWorldBeam's legacy mLast* names denote the second (pending) sample.
-        mBeam.mCurStart = sourceEntity->mVarDat.mCurTransform;
-        mBeam.mLastStart = sourceEntity->mPendingTransform;
-        mBeam.mCurEnd = endEntity->mVarDat.mCurTransform;
-        mBeam.mLastEnd = endEntity->mPendingTransform;
+        mBeam.mCurStart = sourceEntity.Current();
+        mBeam.mLastStart = sourceEntity.Pending();
+        mBeam.mCurEnd = endEntity.Current();
+        mBeam.mLastEnd = endEntity.Pending();
 
-        const VTransform sourceBoneTransform = sourceEntity->GetBoneLocalTransform(mEntityInfo.mParentBoneIndex);
+        const VTransform sourceBoneTransform = sourceEntity.BoneLocal(mEntityInfo.mParentBoneIndex);
         const Wm3::Vec3f localStart = FetchVectorParam(*this, 0);
         mBeam.mStart = ApplyPoint(sourceBoneTransform, localStart);
 
-        const VTransform endBoneTransform = endEntity->GetBoneLocalTransform(mEnd.mParentBoneIndex);
+        const VTransform endBoneTransform = endEntity.BoneLocal(mEnd.mParentBoneIndex);
         const Wm3::Vec3f localEnd = FetchVectorParam(*this, 3);
         mBeam.mEnd = ApplyPoint(endBoneTransform, localEnd);
 
-        mBeam.mLastInterpolation = sourceEntity->mPendingVelocityScale;
+        mBeam.mLastInterpolation = sourceEntity.PendingVelocityScale();
       }
 
       if (mIsNew) {
-        Entity* const classificationEntity = ResolveAttachEntity(mEntityInfo);
-        if (classificationEntity != nullptr && !classificationEntity->IsCollisionBeam() &&
-            !classificationEntity->IsProjectile() && !classificationEntity->IsUnit()) {
+        // The source again (it is the one checked above: nothing between detaches it).
+        if (!sourceEntity.UpdatesBeams()) {
           mIsNew = false;
           return true;
         }
@@ -646,71 +654,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x006585D0 (FUN_006585D0, serializer load thunk alias)
-   *
-   * What it does:
-   * Tail-forwards one CEfxBeam deserialize thunk alias into
-   * `CEfxBeam::MemberDeserialize`.
-   */
-  void DeserializeCEfxBeamThunkVariantA(CEfxBeam* const object, gpg::ReadArchive* const archive)
-  {
-    if (!object) {
-      return;
-    }
-
-    object->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x00658780 (FUN_00658780, serializer load thunk alias)
-   *
-   * What it does:
-   * Tail-forwards a second CEfxBeam deserialize thunk alias into
-   * `CEfxBeam::MemberDeserialize`.
-   */
-  void DeserializeCEfxBeamThunkVariantB(CEfxBeam* const object, gpg::ReadArchive* const archive)
-  {
-    if (!object) {
-      return;
-    }
-
-    object->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x006585E0 (FUN_006585E0, serializer save thunk alias)
-   * Address: 0x0085ED60 (FUN_0085ED60)
-   *
-   * What it does:
-   * Tail-forwards one CEfxBeam serialize thunk alias into
-   * `CEfxBeam::MemberSerialize`.
-   */
-  void SerializeCEfxBeamThunkVariantA(const CEfxBeam* const object, gpg::WriteArchive* const archive)
-  {
-    if (!object) {
-      return;
-    }
-
-    object->MemberSerialize(archive);
-  }
-
-  /**
-   * Address: 0x00658790 (FUN_00658790, serializer save thunk alias)
-   *
-   * What it does:
-   * Tail-forwards a second CEfxBeam serialize thunk alias into
-   * `CEfxBeam::MemberSerialize`.
-   */
-  void SerializeCEfxBeamThunkVariantB(const CEfxBeam* const object, gpg::WriteArchive* const archive)
-  {
-    if (!object) {
-      return;
-    }
-
-    object->MemberSerialize(archive);
-  }
-
-  /**
    * What it does:
    * Returns the cached reflection descriptor for `CEfxBeam`.
    */
@@ -734,6 +677,7 @@ namespace moho
    */
   void CEfxBeam::OnTick()
   {
+    const CEffectTickScope observed(*this); // plan WPR.10 (EffectTickObserver.h): the tick's beam, with an observer
     // Established (non-newly-attached) beams age one tick; when their lifetime
     // reaches zero after the decrement, the beam is destroyed instead of ticked.
     if (!mNewAttachment) {
@@ -741,6 +685,7 @@ namespace moho
       if (lifetime > 0.0f) {
         SetFloatParam(BEAM_LIFETIME, lifetime - 1.0f);
         if (GetFloatParam(BEAM_LIFETIME) <= 0.0f) {
+          EFFECT_Ending(*this, EEffectEnd::Lifetime);
           mManager->DestroyEffect(this);
           return;
         }
@@ -753,20 +698,25 @@ namespace moho
       return;
     }
 
-    Sim* const sim = mManager->GetSim();
-    const msvc8::vector<GeomCamera3>& cameras = sim->mSyncFilter.geoCams;
+    // The sim's cameras and particle buffer, or a hosted beam's host's (EffectHost.h).
+    const CEffectWorld world(*mManager);
+    const fa::vector<GeomCamera3>& cameras = world.Cameras();
     for (std::size_t cameraIndex = 0; cameraIndex < cameras.size(); ++cameraIndex) {
       if (CanSeeCam(&cameras[cameraIndex])) {
-        sim->GetParticleBuffer()->mBeams.push_back(mBeam);
+        world.ParticleBuffer()->mBeams.push_back(mBeam);
         break;
       }
     }
 
-    if (!dbg_EfxBeams) {
+    // Engine change: not from a sim worker (EffectTickOnWorker, CEffectManagerImpl.h).
+    if (!dbg_EfxBeams || EffectTickOnWorker()) {
       return;
     }
 
-    CDebugCanvas* const debugCanvas = sim->GetDebugCanvas();
+    CDebugCanvas* const debugCanvas = world.DebugCanvas();
+    if (debugCanvas == nullptr) {
+      return; // a hosted beam: the debug lines are the sim's
+    }
     constexpr auto kDebugColor0 = static_cast<std::int32_t>(0xFF0000FFu);
     constexpr auto kDebugColor1 = static_cast<std::int32_t>(0xFFFF0000u);
 

@@ -7,7 +7,7 @@
 # linker in this order.
 #
 # Paths are relative to src/. ${FAF_DEPENDENCIES_DIR} is the dependencies/
-# tree (FX11 and the boost.thread sources compile into the engine directly).
+# tree (FX11's sources compile into the engine directly).
 
 set(FAF_ENGINE_SOURCES
   gpg/core/algorithms/Cluster.cpp
@@ -17,7 +17,6 @@ set(FAF_ENGINE_SOURCES
   gpg/core/containers/ArchiveSerialization.cpp
   moho/misc/CrtRuntimeExportedHelpers.cpp
   moho/misc/RuntimeTuningGlobals.cpp
-  moho/misc/DName.cpp
   moho/misc/StringUtils.cpp
   moho/misc/ID3DDeviceResources.cpp
   gpg/core/reflection/voidTypeInfo.cpp
@@ -26,7 +25,6 @@ set(FAF_ENGINE_SOURCES
   gpg/core/reflection/RFloatType.cpp
   gpg/core/reflection/RStringType.cpp
   moho/command/SSTICommandIssueData.cpp
-  moho/render/d3d/D3DResUnreachableStubs.cpp
   gpg/core/reflection/RTypeTypeInfo.cpp
   gpg/core/reflection/RObjectTypeInfo.cpp
   gpg/gal/backends/d3d9/D3D9BaseClasses.cpp
@@ -54,6 +52,8 @@ set(FAF_ENGINE_SOURCES
   legacy/exceptions/StdExcept.cpp
   legacy/math/Libm.cpp
   legacy/math/X87Math.cpp
+  legacy/thread/Condition.cpp
+  legacy/thread/Mutex.cpp
   lua/LuaAssertion.cpp
   gpg/gal/backends/d3d10/HardwareVertexFormatterD3D10.cpp
   gpg/gal/backends/d3d10/Float16HardwareVertexFormatterD3D10.cpp
@@ -87,6 +87,8 @@ set(FAF_ENGINE_SOURCES
   gpg/gal/effects/EffectParameters.cpp
   gpg/gal/effects/EffectRuntime.cpp
   gpg/gal/backends/common/ImageCodec.cpp
+  gpg/gal/backends/common/ImageCodecDirectXTex.cpp
+  gpg/core/utils/EmbeddedFiles.cpp
   gpg/gal/backends/common/LockShadow.cpp
   gpg/gal/backends/common/RuntimeInfo.cpp
   gpg/gal/backends/common/WindowsCursor.cpp
@@ -94,14 +96,19 @@ set(FAF_ENGINE_SOURCES
   gpg/gal/backends/d3d12/ResourcesD3D12.cpp
   gpg/gal/backends/d3d12/DeviceD3D12.cpp
   gpg/gal/backends/d3d12/GpuDrivenD3D12.cpp
+  gpg/gal/backends/d3d12/RayTracingD3D12.cpp
   gpg/gal/backends/d3d12/PipelineCacheD3D12.cpp
   gpg/gal/effects/SpirvReflect.cpp
   gpg/gal/backends/vulkan/VulkanLoader.cpp
   gpg/gal/backends/vulkan/VulkanSurface.cpp
   gpg/gal/backends/vulkan/VulkanCore.cpp
+  gpg/gal/backends/vulkan/VulkanMemoryAllocator.cpp
   gpg/gal/backends/vulkan/ResourcesVulkan.cpp
   gpg/gal/backends/vulkan/DeviceVulkan.cpp
   gpg/gal/backends/vulkan/GpuDrivenVulkan.cpp
+  gpg/gal/backends/vulkan/RayTracingVulkan.cpp
+  gpg/gal/backends/vulkan/PipelineCacheVulkan.cpp
+  gpg/gal/PipelineDiskCache.cpp
   gpg/gal/backends/dxgi/DxgiFactory.cpp
   gpg/gal/backends/dxgi/DxgiSwapChain.cpp
   ${FAF_DEPENDENCIES_DIR}/FX11/d3dxGlobal.cpp
@@ -118,6 +125,7 @@ set(FAF_ENGINE_SOURCES
   lua/LuaDump.cpp
   lua/LuaError.cpp
   lua/LuaObject.cpp
+  lua/LuaIncrementalGc.cpp
   lua/LuaParser.cpp
   lua/LuaObjectTypeInfo.cpp
   lua/LuaRuntimeTypeInfo.cpp
@@ -134,20 +142,20 @@ set(FAF_ENGINE_SOURCES
   gpg/core/containers/ReadArchive.cpp
   gpg/core/containers/String.cpp
   gpg/core/containers/WriteArchive.cpp
-  gpg/core/random/Random.cpp
   gpg/core/reflection/BadRefCast.cpp
   gpg/core/time/Timer.cpp
-  gpg/core/utils/BoostWrappers.cpp
+  gpg/core/utils/SharedPtrUtils.cpp
   moho/audio/CSimSoundManagerSerializer.cpp
-  moho/misc/ScrPauseEvent.cpp
   moho/misc/PausedThread.cpp
-  moho/app/WxAppWindows.cpp
+  moho/app/AppWindows.cpp
   moho/app/WD3DViewport.cpp
   moho/app/WWinLogWindow.cpp
   moho/app/WSupComFrame.cpp
   moho/app/CBloomRenderer.cpp
   moho/app/WRenViewport.cpp
-  moho/app/WxUrl.cpp
+  moho/app/NetworkPanel.cpp
+  moho/app/NetworkTray.cpp
+  moho/app/AllowedUrl.cpp
   moho/containers/BVIntSetSerializer.cpp
   moho/containers/BVIntSetTypeInfo.cpp
   moho/containers/BVSet.cpp
@@ -186,7 +194,6 @@ set(FAF_ENGINE_SOURCES
   moho/misc/TimeBarRender.cpp
   moho/misc/StartupHelpers.cpp
   moho/app/StartupClientHelpers.cpp
-  moho/misc/StrSafeRuntime.cpp
   moho/misc/IConOutputHandler.cpp
   moho/misc/MiscellaneousExtractor.cpp
   moho/misc/OmniExtractor.cpp
@@ -197,6 +204,11 @@ set(FAF_ENGINE_SOURCES
   moho/lua/SCR_ToLua.cpp
   moho/animation/CAnimTexture.cpp
   moho/render/d3d/CD3DFont.cpp
+  moho/render/font/MsdfFontCook.cpp
+  moho/render/font/MsdfFontCheck.cpp
+  moho/render/font/MsdfFontGpuCook.cpp
+  moho/render/font/MsdfFontRegistry.cpp
+  moho/render/font/MsdfTextGpuRenderer.cpp
   moho/render/d3d/CD3DEffectTechnique.cpp
   moho/render/d3d/CD3DDeviceResources.cpp
   moho/render/d3d/CD3DPrimBatcher.cpp
@@ -223,6 +235,7 @@ set(FAF_ENGINE_SOURCES
   moho/render/textures/SBatchTextureDataFactory.cpp
   moho/misc/FileWaitHandleSet.cpp
   moho/net/Common.cpp
+  platform/windows/NetWindows.cpp
   moho/net/NetConVars.cpp
   moho/net/NetPeerTransport.cpp
   moho/net/NetlinkPeers.cpp
@@ -299,10 +312,10 @@ set(FAF_ENGINE_SOURCES
   moho/misc/ScrFileCtrl.cpp
   moho/misc/ScrSourceCtrl.cpp
   moho/misc/ScrWatch.cpp
-  moho/misc/TreeData.cpp
   moho/misc/ScrWatchCtrl.cpp
   moho/script/CScriptObject.cpp
   moho/lua/CScrLuaObjectFactory.cpp
+  moho/lua/ScriptChunkCache.cpp
   moho/ai/AirPlatformExtractor.cpp
   moho/task/CLuaTask.cpp
   moho/script/CScriptEvent.cpp
@@ -316,6 +329,7 @@ set(FAF_ENGINE_SOURCES
   moho/terrain/TerrainDynamicTextureHelpers.cpp
   moho/terrain/TerrainFactory.cpp
   moho/terrain/TerrainShaderVars.cpp
+  moho/terrain/TerrainTessellation.cpp
   moho/terrain/water/CWaterShaderProperties.cpp
   moho/terrain/water/HighFidelityWater.cpp
   moho/terrain/water/LowFidelityWater.cpp
@@ -323,11 +337,13 @@ set(FAF_ENGINE_SOURCES
   moho/terrain/water/WaterShaderVars.cpp
   moho/terrain/water/WaveSystem.cpp
   moho/terrain/water/Shoreline.cpp
+  moho/terrain/water/WaterBodySurfaces.cpp
   moho/ui/CUIWorldView.cpp
   moho/ui/CUIManager.cpp
   moho/lua/SCR_Math.cpp
   moho/lua/SCR_String.cpp
   moho/audio/AudioEngine.cpp
+  moho/audio/AudioOutputWatch.cpp
   moho/audio/AudioReflectionHelpers.cpp
   moho/audio/SParamKeyTypeInfo.cpp
   moho/audio/SParamKeySerializer.cpp
@@ -462,6 +478,8 @@ set(FAF_ENGINE_SOURCES
   moho/command/SSTICommandVariableData.cpp
   moho/entity/EntityCategoryTypeInfo.cpp
   moho/entity/CTextureScroller.cpp
+  moho/entity/FixedSlabPool.cpp
+  moho/entity/EntityMemoryManager.cpp
   moho/entity/Entity.cpp
   moho/entity/EntityLuaFunctions.cpp
   moho/command/SSTITarget.cpp
@@ -723,6 +741,8 @@ set(FAF_ENGINE_SOURCES
   moho/effects/rendering/IEffect.cpp
   moho/effects/rendering/CEfxEmitterTypeInfo.cpp
   moho/effects/rendering/CEffectManagerImpl.cpp
+  moho/effects/rendering/EffectHost.cpp
+  moho/effects/rendering/CHostedEffectManager.cpp
   moho/effects/rendering/SEfxCurve.cpp
   moho/effects/rendering/CEffectManagerImplTypeInfo.cpp
   moho/render/CDecalBuffer.cpp
@@ -746,6 +766,7 @@ set(FAF_ENGINE_SOURCES
   moho/projectile/ProjectileStartupRegistrations.cpp
   moho/entity/Prop.cpp
   moho/entity/EntityDb.cpp
+  moho/entity/EntityPool.cpp
   moho/entity/Motor.cpp
   moho/entity/EntityLuaFunctionThunks.cpp
   moho/entity/REntityBlueprint.cpp
@@ -758,7 +779,6 @@ set(FAF_ENGINE_SOURCES
   moho/math/Vector3f.cpp
   moho/misc/CZipFile.cpp
   moho/misc/ScrDebugWindow.cpp
-  moho/misc/ScrGotoDialog.cpp
   moho/render/Clutter.cpp
   moho/render/ID3DDepthStencil.cpp
   moho/render/ID3DIndexSheet.cpp
@@ -828,6 +848,8 @@ set(FAF_ENGINE_SOURCES
   moho/sim/SConditionTriggerReflection.cpp
   moho/sim/SConditionTriggerTypes.cpp
   moho/sim/STIMap.cpp
+  moho/sim/WaterBodies.cpp
+  moho/sim/STIMapWaterBodies.cpp
   moho/sim/CArmyStatItemTypeInfo.cpp
   moho/sim/CArmyStats.cpp
   moho/app/SnapshotDirectoryDialog.cpp
@@ -902,7 +924,15 @@ set(FAF_ENGINE_SOURCES
   moho/render/CDecalBufferTypeInfo.cpp
   moho/render/CWldTerrainDecal.cpp
   moho/render/CDecalHandleTypeInfo.cpp
+  moho/render/AmbientOcclusionRenderer.cpp
+  moho/render/Atmosphere.cpp
+  moho/render/BounceLight.cpp
+  moho/render/DynamicLights.cpp
+  moho/render/TemporalAA.cpp
   moho/render/BoundaryRenderer.cpp
+  moho/render/FxaaRenderer.cpp
+  moho/render/PostRenderer.cpp
+  moho/render/WideBloomRenderer.cpp
   moho/render/BoxRenderer.cpp
   moho/render/CRenFrame.cpp
   moho/render/CDecalTypes.cpp
@@ -929,7 +959,7 @@ set(FAF_ENGINE_SOURCES
   moho/ui/CUIMapPreview.cpp
   moho/ui/CLuaWldUIProvider.cpp
   moho/ui/UiKeyMapping.cpp
-  moho/ui/CMauiWxEventMapper.cpp
+  moho/ui/CMauiEventMapper.cpp
   moho/ui/CScriptLazyVar.cpp
   moho/ui/UiFactoryQueue.cpp
   moho/unit/core/IUnit.cpp
@@ -1000,6 +1030,7 @@ set(FAF_ENGINE_SOURCES
   moho/render/ProjectileIconRenderer.cpp
   moho/render/GpuPathSettings.cpp
   moho/render/RenderInfo.cpp
+  moho/render/RayScene.cpp
   moho/render/Shadow.cpp
   moho/render/SelectionBracketParams.cpp
   moho/render/SelectionBracketRenderer.cpp
@@ -1032,8 +1063,10 @@ set(FAF_ENGINE_SOURCES
   moho/net/CLocalClient.cpp
   moho/net/CClientManagerImpl.cpp
   moho/net/CNullClient.cpp
+  moho/net/CRejoinFeed.cpp
   moho/net/CReplayClient.cpp
   moho/net/PeerFeatures.cpp
+  moho/net/RejoinKey.cpp
   moho/serialization/SSavedGameArmyInfoVectorReflection.cpp
   gpg/core/reflection/SerializationError.cpp
   gpg/core/streams/BinaryReader.cpp
@@ -1048,6 +1081,7 @@ set(FAF_ENGINE_SOURCES
   moho/sim/CWldSessionCore.cpp
   moho/sim/CWldSessionCommands.cpp
   moho/sim/WldSessionControl.cpp
+  moho/sim/ReplayTimeline.cpp
   moho/sim/WldSessionState.cpp
   moho/sim/WldScenarioInfo.cpp
   moho/sim/BlueprintLoaderContext.cpp
@@ -1060,10 +1094,11 @@ set(FAF_ENGINE_SOURCES
   moho/audio/SofdecRuntime.cpp
   moho/movie/sfd/SfdHeaderInfo.cpp
   moho/app/CScApp.cpp
+  moho/app/ServerLobbyUi.cpp
   moho/app/UserWorkerPool.cpp
   moho/app/CWaitHandleSet.cpp
   moho/app/IWinApp.cpp
-  moho/app/WEmitterWx.cpp
+  moho/app/WEmitterEditor.cpp
   moho/app/FrameDumpCommands.cpp
   moho/app/ResolutionCommands.cpp
   moho/app/WinMain.cpp
@@ -1072,18 +1107,7 @@ set(FAF_ENGINE_SOURCES
   moho/sim/IdPool.cpp
   gpg/core/utils/Global.cpp
   gpg/core/utils/Logging.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/barrier.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/condition.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/exceptions.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/mutex.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/once.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/recursive_mutex.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/thread.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/tss_hooks.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/tss_dll.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/tss_pe.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/tss.cpp
-  ${FAF_DEPENDENCIES_DIR}/boost_1_34_1/libs/thread/src/xtime.cpp
+  gpg/core/utils/LocalCache.cpp
   gpg/gal/ContextInterfaces.cpp
   gpg/gal/Device.cpp
   gpg/gal/RenderProfiler.cpp
@@ -1092,7 +1116,7 @@ set(FAF_ENGINE_SOURCES
   gpg/gal/GalBaseClasses.cpp
   gpg/gal/D3DErrorToString.cpp
   gpg/gal/D3DErrorToWideString.cpp
-  gpg/gal/Matrix.cpp
+  gpg/gal/MatrixPortable.cpp
   gpg/gal/MeshFormatter.cpp
   gpg/gal/MeshVertex.cpp
   gpg/gal/StateCache.cpp
@@ -1102,4 +1126,11 @@ set(FAF_ENGINE_SOURCES
   moho/movie/sfd/FfmpegSfdDecoder.cpp
   moho/movie/sfd/DirectSoundMovieSink.cpp
   moho/movie/sfd/SfdMetadata.cpp
+  moho/core/MemoryPool.cpp
+  # The application shell over SDL3 (issues #407, #412): client only (sim_sources.cmake).
+  platform/shell/Shell.cpp
+  platform/sdl/WindowSdl.cpp
+  platform/sdl/ToolWindow.cpp
+  platform/sdl/TestInput.cpp
+  platform/windows/WindowSdlWindows.cpp
 )

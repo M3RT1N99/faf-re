@@ -78,28 +78,15 @@ namespace
 
   constexpr std::uint64_t kMaxStreamPosition = 0x7FFFFFFFULL;
 
-  using SharedByteDeleter = void(__cdecl*)(void*);
-
-  /**
+  /*
    * Address: 0x0094E2F0 (FUN_0094E2F0, boost::shared_ptr_char_P_void_P::shared_ptr_char_P_void_P)
    *
    * What it does:
    * Constructs one `boost::shared_ptr<char>` from raw pointer + deleter,
    * preserving `sp_enable_shared_from_this` setup done by Boost internals.
+   *
+   * `AllocMemBuffer` constructs `std::shared_ptr<char>(buff, &std::free)` itself.
    */
-  boost::shared_ptr<char>* ConstructSharedByteOwnerWithDeleter(
-    boost::shared_ptr<char>* const outOwner,
-    char* const pointer,
-    const SharedByteDeleter deleter
-  )
-  {
-    if (outOwner == nullptr) {
-      return nullptr;
-    }
-
-    *outOwner = boost::shared_ptr<char>(pointer, deleter);
-    return outOwner;
-  }
 } // namespace
 
 /**
@@ -146,9 +133,15 @@ MemBufferCharConstTypeInfo::MemBufferCharConstTypeInfo()
   gpg::PreRegisterRType(typeid(MemBuffer<const char>), this);
 }
 
+/**
+ * Address: 0x0094E820 (`mov eax, 0xD48A88 ; "gpg::MemBuffer<char const>"`)
+ *
+ * Retail's spelling, so its saves load; saves from builds that said `gpg::MemBuffer<const char>` are read through
+ * `REF_CurrentTypeName`.
+ */
 const char* MemBufferCharConstTypeInfo::GetName() const
 {
-  return "gpg::MemBuffer<const char>";
+  return "gpg::MemBuffer<char const>";
 }
 
 /**
@@ -207,45 +200,7 @@ namespace
   };
 
   MemBufferTypeInfoBootstrap gMemBufferTypeInfoBootstrap;
-}
-
-/**
- * Address: 0x0094E8A0 (FUN_0094E8A0, MemBufferCharTypeInfo deleting-dtor thunk)
- *
- * What it does:
- * Tears down one `MemBufferCharTypeInfo` descriptor via `gpg::RType` base
- * teardown and conditionally frees storage when `deleteFlag & 1`.
- */
-[[maybe_unused]] gpg::RType* DestroyMemBufferCharTypeInfoDeleting(
-  MemBufferCharTypeInfo* const typeInfo,
-  const unsigned char deleteFlag
-)
-{
-  typeInfo->gpg::RType::~RType();
-  if ((deleteFlag & 1u) != 0u) {
-    ::operator delete(static_cast<void*>(typeInfo));
-  }
-  return typeInfo;
-}
-
-/**
- * Address: 0x0094E900 (FUN_0094E900, MemBufferCharConstTypeInfo deleting-dtor thunk)
- *
- * What it does:
- * Tears down one `MemBufferCharConstTypeInfo` descriptor via `gpg::RType` base
- * teardown and conditionally frees storage when `deleteFlag & 1`.
- */
-[[maybe_unused]] gpg::RType* DestroyMemBufferCharConstTypeInfoDeleting(
-  MemBufferCharConstTypeInfo* const typeInfo,
-  const unsigned char deleteFlag
-)
-{
-  typeInfo->gpg::RType::~RType();
-  if ((deleteFlag & 1u) != 0u) {
-    ::operator delete(static_cast<void*>(typeInfo));
-  }
-  return typeInfo;
-}
+} // namespace
 
 /**
  * Address: 0x0094E320 (FUN_0094E320)
@@ -262,8 +217,7 @@ MemBuffer<char> gpg::AllocMemBuffer(
     std::memset(buff, 0, size);
   }
 
-  boost::shared_ptr<char> ptr;
-  (void)ConstructSharedByteOwnerWithDeleter(&ptr, buff, static_cast<SharedByteDeleter>(&std::free));
+  const std::shared_ptr<char> ptr(buff, &std::free);
   char* const end = (buff == nullptr) ? nullptr : (buff + size);
   return MemBuffer<char>(ptr, buff, end);
 }

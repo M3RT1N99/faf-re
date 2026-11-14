@@ -24,10 +24,11 @@ namespace
   gpg::RType* gQueueBaseType = nullptr;
   gpg::RType* gQueueWeakCommandVectorType = nullptr;
   gpg::RType* gQueueCommandTypeEnumType = nullptr;
-  gpg::RType* gQueueUnitType = nullptr;
 
   template <class TObject>
-  [[nodiscard]] gpg::RType* ResolveCachedType(gpg::RType*& cache)
+  [[nodiscard]] gpg::RType* ResolveCachedType(
+    gpg::RType*& cache
+  )
   {
     if (cache == nullptr) {
       cache = gpg::LookupRType(typeid(TObject));
@@ -37,7 +38,10 @@ namespace
   }
 
   template <class TObject>
-  [[nodiscard]] TObject* ReadTrackedPointerAs(gpg::ReadArchive& archive, gpg::RType*& cache)
+  [[nodiscard]] TObject* ReadTrackedPointerAs(
+    gpg::ReadArchive& archive,
+    gpg::RType*& cache
+  )
   {
     const gpg::TrackedPointerInfo tracked = gpg::ReadRawPointer(&archive, gpg::RRef{});
     if (tracked.object == nullptr) {
@@ -51,15 +55,9 @@ namespace
     return static_cast<TObject*>(upcast.mObj);
   }
 
-  [[nodiscard]] gpg::RRef MakeQueueRef(CUnitCommandQueue* const queue)
-  {
-    gpg::RRef out{};
-    out.mObj = queue;
-    out.mType = CUnitCommandQueue::StaticGetClass();
-    return out;
-  }
-
-  [[nodiscard]] bool ShouldMarkOwnerSyncStateForQueueHead(const CUnitCommandQueue& queue)
+  [[nodiscard]] bool ShouldMarkOwnerSyncStateForQueueHead(
+    const CUnitCommandQueue& queue
+  )
   {
     if (queue.mCommandVec.empty()) {
       return false;
@@ -89,12 +87,17 @@ namespace
     }
   }
 
-  void EmitQueueEvent(CUnitCommandQueue& queue, const EUnitCommandQueueStatus event)
+  void EmitQueueEvent(
+    CUnitCommandQueue& queue,
+    const EUnitCommandQueueStatus event
+  )
   {
     queue.BroadcastEvent(event);
   }
 
-  void MarkOwningUnitSyncDirty(Unit* const unit)
+  void MarkOwningUnitSyncDirty(
+    Unit* const unit
+  )
   {
     if (!unit) {
       return;
@@ -112,7 +115,9 @@ gpg::RType* CUnitCommandQueue::sType = nullptr;
  * What it does:
  * Initializes queue owner pointer, command lanes, and queue-head state.
  */
-CUnitCommandQueue::CUnitCommandQueue(Unit* const unit)
+CUnitCommandQueue::CUnitCommandQueue(
+  Unit* const unit
+)
   : mUnit(unit)
   , mCommandVec()
   , mCommandType(EUnitCommandType::UNITCOMMAND_None)
@@ -138,7 +143,10 @@ CUnitCommandQueue::~CUnitCommandQueue()
  * Address: 0x006EE9C0 (FUN_006EE9C0)
  */
 void CUnitCommandQueue::MemberSaveConstructArgs(
-  gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+  gpg::WriteArchive& archive,
+  const int,
+  const gpg::RRef&,
+  gpg::SerSaveConstructArgsResult& result
 )
 {
   archive.WritePointer(mUnit, gpg::TrackedPointerState::Unowned, gpg::RRef{});
@@ -149,7 +157,10 @@ void CUnitCommandQueue::MemberSaveConstructArgs(
  * Address: 0x006EEAC0 (FUN_006EEAC0)
  */
 void CUnitCommandQueue::MemberConstruct(
-  gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result
+  gpg::ReadArchive& archive,
+  const int,
+  const gpg::RRef&,
+  gpg::SerConstructResult& result
 )
 {
   Unit* unit = nullptr;
@@ -164,11 +175,19 @@ void CUnitCommandQueue::MemberConstruct(
  * What it does:
  * Loads queue base/vector/type lanes and marks UI refresh state dirty.
  */
-void CUnitCommandQueue::MemberDeserialize(gpg::ReadArchive* const archive)
+void CUnitCommandQueue::MemberDeserialize(
+  gpg::ReadArchive* const archive
+)
 {
   gpg::RRef ownerRef{};
-  archive->Read(ResolveCachedType<Broadcaster<EUnitCommandQueueStatus>>(gQueueBaseType), static_cast<Broadcaster<EUnitCommandQueueStatus>*>(this), ownerRef);
-  archive->Read(ResolveCachedType<msvc8::vector<WeakPtr<CUnitCommand>>>(gQueueWeakCommandVectorType), &mCommandVec, ownerRef);
+  archive->Read(
+    ResolveCachedType<Broadcaster<EUnitCommandQueueStatus>>(gQueueBaseType),
+    static_cast<Broadcaster<EUnitCommandQueueStatus>*>(this),
+    ownerRef
+  );
+  archive->Read(
+    ResolveCachedType<fa::vector<WeakPtr<CUnitCommand>>>(gQueueWeakCommandVectorType), &mCommandVec, ownerRef
+  );
   archive->Read(ResolveCachedType<EUnitCommandType>(gQueueCommandTypeEnumType), &mCommandType, ownerRef);
 
   unsigned int decodedCounter = 0u;
@@ -183,17 +202,25 @@ void CUnitCommandQueue::MemberDeserialize(gpg::ReadArchive* const archive)
  * What it does:
  * Saves queue base/vector/type lanes and queue local counter lane.
  */
-void CUnitCommandQueue::MemberSerialize(gpg::WriteArchive* const archive) const
+void CUnitCommandQueue::MemberSerialize(
+  gpg::WriteArchive* const archive
+) const
 {
   gpg::RRef ownerRef{};
-  archive->Write(ResolveCachedType<Broadcaster<EUnitCommandQueueStatus>>(gQueueBaseType), static_cast<const Broadcaster<EUnitCommandQueueStatus>*>(this), ownerRef);
-  archive->Write(ResolveCachedType<msvc8::vector<WeakPtr<CUnitCommand>>>(gQueueWeakCommandVectorType), &mCommandVec, ownerRef);
+  archive->Write(
+    ResolveCachedType<Broadcaster<EUnitCommandQueueStatus>>(gQueueBaseType),
+    static_cast<const Broadcaster<EUnitCommandQueueStatus>*>(this),
+    ownerRef
+  );
+  archive->Write(
+    ResolveCachedType<fa::vector<WeakPtr<CUnitCommand>>>(gQueueWeakCommandVectorType), &mCommandVec, ownerRef
+  );
   archive->Write(ResolveCachedType<EUnitCommandType>(gQueueCommandTypeEnumType), &mCommandType, ownerRef);
   archive->WriteUInt(static_cast<unsigned int>(unk0));
 }
 
 /**
-  * Alias of FUN_006EDAA0 (non-canonical helper lane).
+ * Alias of FUN_006EDAA0 (non-canonical helper lane).
  *
  * What it does:
  * Resolves/refetches reflection descriptor for CUnitCommandQueue.
@@ -209,7 +236,9 @@ gpg::RType* CUnitCommandQueue::StaticGetClass()
  * What it does:
  * Finds the first queued command with the requested command id.
  */
-int CUnitCommandQueue::FindCommandIndex(const CmdId cmdId) const
+int CUnitCommandQueue::FindCommandIndex(
+  const CmdId cmdId
+) const
 {
   for (std::size_t i = 0; i < mCommandVec.size(); ++i) {
     const CUnitCommand* const command = mCommandVec[i].GetObjectPtr();
@@ -272,7 +301,9 @@ CUnitCommand* CUnitCommandQueue::GetLastCommand()
  * What it does:
  * Returns one queued command by index when that slot is valid.
  */
-CUnitCommand* CUnitCommandQueue::GetCommandInQueue(const unsigned int index) const
+CUnitCommand* CUnitCommandQueue::GetCommandInQueue(
+  const unsigned int index
+) const
 {
   const std::size_t queueIndex = static_cast<std::size_t>(index);
   if (queueIndex >= mCommandVec.size()) {
@@ -300,7 +331,10 @@ bool CUnitCommandQueue::Finished() const
  * Inserts one command into this queue at `index`, updates command digest lanes,
  * marks refresh state, and emits inserted-event.
  */
-void CUnitCommandQueue::InsertCommandToQueue(CUnitCommand* const command, const int index)
+void CUnitCommandQueue::InsertCommandToQueue(
+  CUnitCommand* const command,
+  const int index
+)
 {
   if (!command || !mUnit) {
     return;
@@ -331,20 +365,23 @@ void CUnitCommandQueue::InsertCommandToQueue(CUnitCommand* const command, const 
  * Selects insertion lane for one command (including patrol-chain ordering)
  * and forwards into `InsertCommandToQueue`.
  */
-void CUnitCommandQueue::AddCommandToQueue(CUnitCommand* const command)
+void CUnitCommandQueue::AddCommandToQueue(
+  CUnitCommand* const command
+)
 {
   const int queueSize = static_cast<int>(mCommandVec.size());
   int insertIndex = queueSize;
 
   if (
-    command != nullptr && queueSize > 1
-    && (command->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_Patrol
-        || command->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_FormPatrol)
+    command != nullptr && queueSize > 1 &&
+    (command->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_Patrol ||
+     command->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_FormPatrol)
   ) {
     const CUnitCommand* const head = GetCurrentCommand();
     if (
-      head != nullptr && (head->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_Patrol
-                          || head->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_FormPatrol)
+      head != nullptr &&
+      (head->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_Patrol ||
+       head->mVarDat.mCmdType == EUnitCommandType::UNITCOMMAND_FormPatrol)
     ) {
       int minSerialIndex = 0;
       std::uint32_t minSerial = std::numeric_limits<std::uint32_t>::max();
@@ -413,7 +450,9 @@ bool CUnitCommandQueue::NeedsUIRefresh()
  * What it does:
  * Finds and removes a queued command by pointer identity.
  */
-bool CUnitCommandQueue::RemoveCommandFromQueue(const CUnitCommand* command)
+bool CUnitCommandQueue::RemoveCommandFromQueue(
+  const CUnitCommand* command
+)
 {
   for (std::size_t i = 0; i < mCommandVec.size(); ++i) {
     if (mCommandVec[i].GetObjectPtr() == command) {
@@ -435,7 +474,9 @@ bool CUnitCommandQueue::RemoveCommandFromQueue(const CUnitCommand* command)
  * command then takes itself out of the queue through `RemoveUnit`; the
  * binary has no separate path for an empty slot (0x006EDF3D..0x006EDF4E).
  */
-bool CUnitCommandQueue::RemoveCommandFromQueue(const unsigned int index)
+bool CUnitCommandQueue::RemoveCommandFromQueue(
+  const unsigned int index
+)
 {
   if (index == 0u) {
     if (NeedsUIRefresh()) {
@@ -483,7 +524,9 @@ void CUnitCommandQueue::MoveFirstCommandToBackOfQueue()
  * Finds one queue entry matching the selected command-object identity, moves
  * it to queue tail, and emits one reorder event.
  */
-bool CUnitCommandQueue::MoveCommandToBackOfQueue(const unsigned int index)
+bool CUnitCommandQueue::MoveCommandToBackOfQueue(
+  const unsigned int index
+)
 {
   const std::size_t queueSize = mCommandVec.size();
   const std::size_t requestedIndex = static_cast<std::size_t>(index);
@@ -512,7 +555,9 @@ bool CUnitCommandQueue::MoveCommandToBackOfQueue(const unsigned int index)
  * What it does:
  * Finds the first queued slot matching `command` and moves that entry to tail.
  */
-bool CUnitCommandQueue::MoveCommandToBackOfQueue(const CUnitCommand* const command)
+bool CUnitCommandQueue::MoveCommandToBackOfQueue(
+  const CUnitCommand* const command
+)
 {
   for (std::size_t i = 0; i < mCommandVec.size(); ++i) {
     if (mCommandVec[i].GetObjectPtr() == command) {
@@ -551,58 +596,6 @@ void CUnitCommandQueue::ClearCommandQueue()
 }
 
 /**
- * Address: 0x006EE360 (FUN_006EE360, ?AbortActiveTask@CUnitCommandQueue@Moho@@QAEXXZ)
- *
- * What it does:
- * Marks queue refresh state and emits one needs-refresh event.
- */
-void CUnitCommandQueue::AbortActiveTask()
-{
-  if (NeedsUIRefresh()) {
-    MarkOwningUnitSyncDirty(mUnit);
-  }
-
-  mNeedsRefresh = true;
-  EmitQueueEvent(*this, EUnitCommandQueueStatus::UCQS_NeedsRefresh);
-}
-
-/**
- * Address: 0x006EE3C0 (FUN_006EE3C0, ?SetCommandCount@CUnitCommandQueue@Moho@@QAEXII@Z)
- *
- * What it does:
- * Sets queued-command count data for one slot, marks command dirty state, and
- * applies zero-count head/removal transitions.
- */
-void CUnitCommandQueue::SetCommandCount(const unsigned int index, const unsigned int count)
-{
-  CUnitCommand* const command = GetCommandInQueue(index);
-  if (!command) {
-    mNeedsRefresh = true;
-    return;
-  }
-
-  command->mVarDat.mCount = static_cast<std::int32_t>(count);
-  command->mNeedsUpdate = true;
-
-  if (index == 0u) {
-    if (count == 0u) {
-      AbortActiveTask();
-    }
-    mNeedsRefresh = true;
-    return;
-  }
-
-  if (count == 0u) {
-    CUnitCommandQueue* const ownerQueue = (mUnit != nullptr) ? mUnit->CommandQueue : this;
-    if (ownerQueue != nullptr) {
-      (void)ownerQueue->RemoveCommandFromQueue(index);
-    }
-  }
-
-  mNeedsRefresh = true;
-}
-
-/**
  * Address: 0x006EE430 (FUN_006EE430)
  *
  * IDA signature:
@@ -616,7 +609,9 @@ void CUnitCommandQueue::SetCommandCount(const unsigned int index, const unsigned
  * without a null test. Caller: `CUnitGuardTask::ResolveGuardCommandSourceUnit`
  * (0x00611D14).
  */
-int CUnitCommandQueue::CountFactoryBuildCommands(int& totalBuildCount) const
+int CUnitCommandQueue::CountFactoryBuildCommands(
+  int& totalBuildCount
+) const
 {
   int factoryBuildCommands = 0;
   for (const WeakPtr<CUnitCommand>& entry : mCommandVec) {
@@ -636,7 +631,10 @@ int CUnitCommandQueue::CountFactoryBuildCommands(int& totalBuildCount) const
  * Rebinds one queued command target from `targetEntity` and marks this queue
  * refresh lane dirty.
  */
-void CUnitCommandQueue::SetCommandTarget(const unsigned int index, Entity* const targetEntity)
+void CUnitCommandQueue::SetCommandTarget(
+  const unsigned int index,
+  Entity* const targetEntity
+)
 {
   if (targetEntity == nullptr || targetEntity->mVarDat.mIsDead != 0u) {
     return;
@@ -651,15 +649,4 @@ void CUnitCommandQueue::SetCommandTarget(const unsigned int index, Entity* const
   (void)targetPayload.UpdateTarget(targetEntity);
   command->SetTarget(targetPayload);
   mNeedsRefresh = true;
-}
-
-/**
- * Address: 0x006A4DD0 (FUN_006A4DD0)
- *
- * What it does:
- * Returns whether this queue has a pending refresh lane.
- */
-bool CUnitCommandQueue::IsRefreshPending() const
-{
-  return mNeedsRefresh;
 }

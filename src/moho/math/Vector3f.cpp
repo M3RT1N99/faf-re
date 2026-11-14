@@ -16,7 +16,9 @@ namespace moho
    * calls; mirrored here as `!std::isnan(...)` to preserve the exact
    * "reject NaN, accept infinities" semantic of the original.
    */
-  [[nodiscard]] bool IsValidVector3f(const Wm3::Vector3f& value) noexcept
+  [[nodiscard]] bool IsValidVector3f(
+    const Wm3::Vector3f& value
+  ) noexcept
   {
     return !std::isnan(value.x) && !std::isnan(value.y) && !std::isnan(value.z);
   }
@@ -28,7 +30,10 @@ namespace moho
    * Writes `source / |source|` into `dest`, or zero when the length is not
    * positive; the reciprocal is formed once and multiplied into each lane.
    */
-  Wm3::Vector3f* NormalizeVectorInto(Wm3::Vector3f* const dest, const Wm3::Vector3f& source) noexcept
+  Wm3::Vector3f* NormalizeVectorInto(
+    Wm3::Vector3f* const dest,
+    const Wm3::Vector3f& source
+  ) noexcept
   {
     const float length = std::sqrt((source.x * source.x) + (source.y * source.y) + (source.z * source.z));
     if (length > 0.0f) {
@@ -54,7 +59,10 @@ namespace moho
    * (0x005D1ECF..0x005D1EEC); `ScaleVectorByMaxLengthX87` reproduces that
    * rounding chain so lockstep paths match the shipped binary bit for bit.
    */
-  [[nodiscard]] bool VecLimitLengthTo(Wm3::Vector3f* const vector, const float maxLength) noexcept
+  [[nodiscard]] bool VecLimitLengthTo(
+    Wm3::Vector3f* const vector,
+    const float maxLength
+  ) noexcept
   {
     if (vector == nullptr) {
       return false;
@@ -65,7 +73,7 @@ namespace moho
       return false;
     }
 
-    msvc8::ScaleVectorByMaxLengthX87(vector->x, vector->y, vector->z, maxLength);
+    fa::ScaleVectorByMaxLengthX87(vector->x, vector->y, vector->z, maxLength);
     return true;
   }
 
@@ -76,7 +84,9 @@ namespace moho
    * Returns true when the vector squared-length is within `0.001f` of unit
    * length.
    */
-  bool IsUnitLengthVector3f(const Wm3::Vector3f& value) noexcept
+  bool IsUnitLengthVector3f(
+    const Wm3::Vector3f& value
+  ) noexcept
   {
     const float squaredLength = (value.x * value.x) + (value.y * value.y) + (value.z * value.z);
     return std::fabs(squaredLength - 1.0f) <= 0.001f;
@@ -88,7 +98,10 @@ namespace moho
    * What it does:
    * Returns squared Euclidean 3D distance between two Vector3f points.
    */
-  float DistanceSquared3D(const Wm3::Vector3f& from, const Wm3::Vector3f& to) noexcept
+  float DistanceSquared3D(
+    const Wm3::Vector3f& from,
+    const Wm3::Vector3f& to
+  ) noexcept
   {
     const float dx = to.x - from.x;
     const float dy = to.y - from.y;
@@ -98,28 +111,15 @@ namespace moho
   }
 
   /**
-   * Address: 0x004CCB40 (FUN_004CCB40)
-   *
-   * What it does:
-   * Writes two consecutive Vector3f lanes from the shared zero-vector payload
-   * and returns the destination pair base pointer.
-   */
-  [[maybe_unused]] Wm3::Vector3f* InitializeZeroVector3fPair(Wm3::Vector3f* const destinationPair) noexcept
-  {
-    static const Wm3::Vector3f kZeroVector{0.0f, 0.0f, 0.0f};
-    destinationPair[0] = kZeroVector;
-    destinationPair[1] = kZeroVector;
-    return destinationPair;
-  }
-
-  /**
    * Address: 0x005382E0 (FUN_005382E0, Moho::VEC_LargestAxis)
    *
    * What it does:
    * Returns the axis index (`0=x`, `1=y`, `2=z`) of the component
    * with greatest absolute magnitude.
    */
-  int VEC_LargestAxis(const Wm3::Vector3f& value) noexcept
+  int VEC_LargestAxis(
+    const Wm3::Vector3f& value
+  ) noexcept
   {
     const bool yDominatesX = std::fabs(value.y) > std::fabs(value.x);
     const int dominantAxis = yDominatesX ? 1 : 0;
@@ -140,9 +140,11 @@ namespace moho
    * Returns the planar heading angle in radians for one vector using
    * `atan2(x, z)`.
    */
-  float VEC_HeadingFromXZ(const Wm3::Vector3f* const value) noexcept
+  float VEC_HeadingFromXZ(
+    const Wm3::Vector3f* const value
+  ) noexcept
   {
-    return msvc8::atan2(value->x, value->z);
+    return fa::atan2(value->x, value->z);
   }
 
   /**
@@ -153,7 +155,10 @@ namespace moho
    * length. Returns false when the source vector has no positive squared
    * length.
    */
-  [[nodiscard]] bool VecSetLength(Wm3::Vector3f* const vector, const float targetLength)
+  [[nodiscard]] bool VecSetLength(
+    Wm3::Vector3f* const vector,
+    const float targetLength
+  )
   {
     const float x = vector->x;
     const float lengthSq = (x * x) + (vector->y * vector->y) + (vector->z * vector->z);
@@ -165,7 +170,7 @@ namespace moho
     // 0x005B1CCF..0x005B1CF7: `targetLength / sqrt(lengthSq)` stays on the
     // x87 stack (extended exponent) across the three multiplies; a float
     // scale overflowed / went denormal for far-apart magnitudes (difffuzz).
-    msvc8::ScaleVectorToLengthX87(&vector->x, &vector->x, lengthSq, targetLength);
+    fa::ScaleVectorToLengthX87(&vector->x, &vector->x, lengthSq, targetLength);
     return true;
   }
 
@@ -223,7 +228,7 @@ namespace moho
     // length and the fsqrt all stay on the x87 stack (extended exponent). In
     // float the ratio overflowed for a short source and returned infinities
     // where the engine returns a vector of the target's length (difffuzz).
-    msvc8::ScaleVectorToLengthOfX87(&destination->x, &sourceVector->x, &targetLengthVector->x, sourceLengthSq);
+    fa::ScaleVectorToLengthOfX87(&destination->x, &sourceVector->x, &targetLengthVector->x, sourceLengthSq);
     return destination;
   }
 
@@ -313,14 +318,18 @@ namespace moho
    * What it does:
    * Converts one axis+roll pair into quaternion lanes.
    */
-  Wm3::Quatf* EulerRollToQuat(const Wm3::Vector3f* const axis, Wm3::Quatf* const outQuaternion, const float roll)
+  Wm3::Quatf* EulerRollToQuat(
+    const Wm3::Vector3f* const axis,
+    Wm3::Quatf* const outQuaternion,
+    const float roll
+  )
   {
     const float halfRoll = roll * 0.5f;
-    const float sinHalfRoll = msvc8::sinf(halfRoll);
-    outQuaternion->w = msvc8::cosf(halfRoll);
+    const float sinHalfRoll = fa::sinf(halfRoll);
+    outQuaternion->w = fa::cosf(halfRoll);
     // 0x0057077E..0x00570796: `axis * sin` multiplies on the x87 stack, one
     // float store per lane (differs from SSE only for a denormal product).
-    msvc8::ScaleVectorX87(&outQuaternion->x, &axis->x, sinHalfRoll);
+    fa::ScaleVectorX87(&outQuaternion->x, &axis->x, sinHalfRoll);
     return outQuaternion;
   }
 } // namespace moho

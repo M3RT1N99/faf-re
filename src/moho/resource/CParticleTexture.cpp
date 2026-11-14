@@ -12,7 +12,9 @@ namespace moho
   /**
    * Address: 0x0048EC60 (FUN_0048EC60, Moho::CParticleTexture::CParticleTexture)
    */
-  CParticleTexture::CParticleTexture(const char* const texturePath)
+  CParticleTexture::CParticleTexture(
+    const char* const texturePath
+  )
     : CountedObject()
     , mTexturePath()
     , mTextureResource()
@@ -34,15 +36,23 @@ namespace moho
 
 namespace moho
 {
-  void CParticleTexture::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CParticleTexture::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
-    msvc8::string path;
+    fa::string path;
     archive.ReadString(&path);
     result.SetUnowned(gpg::MakeRRef(new CParticleTexture(path.c_str())), 1u);
   }
 
   void CParticleTexture::MemberSaveConstructArgs(
-    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+    gpg::WriteArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerSaveConstructArgsResult& result
   )
   {
     archive.WriteString(&mTexturePath);

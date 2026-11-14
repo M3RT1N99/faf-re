@@ -29,7 +29,7 @@ namespace gpg
     /**
      * Address: 0x00547580 (FUN_00547580, gpg::RVectorType_ResourceDeposit::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const RRef& ref) const override;
 
     /**
      * Address: 0x00547610 (FUN_00547610, gpg::RVectorType_ResourceDeposit::IsIndexed)
@@ -44,12 +44,12 @@ namespace gpg
     /**
      * Address: 0x00547950 (FUN_00547950, gpg::RVectorType_ResourceDeposit::SerLoad)
      */
-    static void SerLoad(ReadArchive* archive, std::intptr_t objectPtr, int version, RRef* ownerRef);
+    static void SerLoad(ReadArchive* archive, void* objectPtr, int version, RRef* ownerRef);
 
     /**
      * Address: 0x00547A50 (FUN_00547A50, gpg::RVectorType_ResourceDeposit::SerSave)
      */
-    static void SerSave(WriteArchive* archive, std::intptr_t objectPtr, int version, RRef* ownerRef);
+    static void SerSave(WriteArchive* archive, void* objectPtr, int version, RRef* ownerRef);
 
     /**
      * Address: 0x00547690 (FUN_00547690, gpg::RVectorType_ResourceDeposit::SubscriptIndex)
@@ -77,9 +77,8 @@ namespace moho
    *
    * What it does:
    * Constructs/preregisters RTTI metadata for
-   * `msvc8::vector<moho::ResourceDeposit>`.
+   * `fa::vector<moho::ResourceDeposit>`.
    */
   [[nodiscard]] gpg::RType* preregister_VectorResourceDepositType();
   void register_VectorResourceDepositType();
 } // namespace moho
-

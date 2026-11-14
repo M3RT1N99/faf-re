@@ -9,6 +9,7 @@
 // directly after Sim.cpp: its bootstrap below registers these forms in the
 // order Sim.cpp's did, so the user init set keeps its order.
 #include "moho/sim/Sim.h"
+#include "moho/sim/ReplayTimeline.h"
 #include "legacy/math/X87Math.h"
 #include "gpg/core/algorithms/MD5.h"
 #include "gpg/core/utils/Global.h"
@@ -72,12 +73,8 @@
 #include "moho/audio/CSimSoundManager.h"
 #include "moho/audio/CSndParams.h"
 #include "moho/audio/HSound.h"
-#include "platform/WxWidgets.h"
-#include <wx/app.h>
-#include <wx/dialog.h>
-#include <wx/sizer.h>
-#include <wx/treectrl.h>
-#include <wx/treelistctrl.h>
+#include "platform/shell/Shell.h"
+#include "platform/shell/app.h"
 #include "moho/command/CCommandDb.h"
 #include "moho/command/CommandIssueHelper.h"
 #include "moho/sim/BuildQueueCommandDecrement.h"
@@ -157,7 +154,7 @@
 #include "moho/sim/SOCellPos.h"
 #include "moho/sim/EAllianceTypeInfo.h"
 #include "moho/sim/CEconStorage.h"
-#include "moho/sim/CSimArmyEconomyInfo.h"
+#include "moho/sim/CEconomy.h"
 #include "moho/sim/SPhysConstants.h"
 #include "moho/sim/PathPreviewFinder.h"
 #include "moho/sim/SpecialFileType.h"
@@ -184,10 +181,8 @@
 #include "gpg/core/reflection/StaticInitPhase.h"
 #include "lua/LuaCrashDump.h"
 
-
 using namespace moho;
 namespace
 {
   constexpr const char* kNoSessionStartedText = "No session started.";
 }
-

@@ -33,7 +33,7 @@ namespace moho
      * onto the input window. Returns the new head's index, or -1 without an
      * input window.
      */
-    virtual int AddFrame(wxWindow* inputWindow, wxWindow* eventHostWindow) = 0;
+    virtual int AddFrame(ShellWindow* inputWindow, ShellWindow* eventHostWindow) = 0;
 
     /**
      * Address: 0x0084CC50 (FUN_0084CC50)
@@ -148,7 +148,7 @@ namespace moho
 
   struct UICommandModeData
   {
-    msvc8::string mMode;          // +0x00
+    fa::string mMode;              // +0x00
     LuaPlus::LuaObject mPayload{}; // +0x1C
 
     /**
@@ -178,9 +178,7 @@ namespace moho
   };
 
   static_assert(sizeof(UICommandModeData) == 0x30, "moho::UICommandModeData size must be 0x30");
-  static_assert(
-    offsetof(UICommandModeData, mPayload) == 0x1C, "moho::UICommandModeData::mPayload offset must be 0x1C"
-  );
+  static_assert(offsetof(UICommandModeData, mPayload) == 0x1C, "moho::UICommandModeData::mPayload offset must be 0x1C");
 
   /**
    * Address: 0x0084C5E0 (FUN_0084C5E0)
@@ -211,22 +209,6 @@ namespace moho
   [[nodiscard]] CUIManager* GetUiManagerGlobalLaneA() noexcept;
 
   /**
-   * Address: 0x0084C960 (FUN_0084C960)
-   *
-   * What it does:
-   * Secondary lane returning the global UI-manager singleton pointer.
-   */
-  [[nodiscard]] CUIManager* GetUiManagerGlobalLaneB() noexcept;
-
-  /**
-   * Address: 0x0083CE10 (FUN_0083CE10)
-   *
-   * What it does:
-   * Forces UI state to lobby-mode.
-   */
-  void ForceUiStateLobbyMode();
-
-  /**
    * Address: 0x0083D140 (FUN_0083D140, ?UI_StartFrontEnd@Moho@@YA_NXZ)
    *
    * What it does:
@@ -253,7 +235,11 @@ namespace moho
    */
   [[nodiscard]]
   bool UI_StartHostLobbyUI(
-    const char* protocol, int port, const char* playerName, const char* gameName, const char* mapName
+    const char* protocol,
+    int port,
+    const char* playerName,
+    const char* gameName,
+    const char* mapName
   );
 
   /**
@@ -275,6 +261,14 @@ namespace moho
   [[nodiscard]] bool UI_StartGameUI(LuaPlus::LuaState* state);
 
   /**
+   * Engine addition (the map editor, src/editor): called by `UI_StartGameUI` with the state the UI was
+   * just bound to, before `uimain.lua`'s `StartGameUI` runs in it. A session calls `UI_StartGameUI`
+   * twice: in the front end's state for the loading dialog, then in the session's own state at the
+   * first sync. The editor installs its loading view there. Null in the game.
+   */
+  extern void (*gUIBeforeStartGameUI)(LuaPlus::LuaState* state);
+
+  /**
    * Address: 0x0083D340 (FUN_0083D340, Moho::ShowEscapeDialog)
    *
    * What it does:
@@ -290,6 +284,12 @@ namespace moho
    * Lua state.
    */
   [[nodiscard]] bool UI_UpdateDisconnectDialogCallback();
+
+  /// Engine addition (issue #275): the screen of a client started with /rejoin, before it has a session.
+  [[nodiscard]] bool UI_StartRejoinScreen();
+
+  /// Engine addition (issue #275): `/lua/ui/uimain.lua:UpdateRejoinScreen(stage, progress)`.
+  void UI_UpdateRejoinScreen(const char* stage, float progress);
 
   /**
    * Address: 0x0083DDA0 (FUN_0083DDA0, ?UI_GetCommandMode@Moho@@YA?AUUICommandModeData@1@XZ)
@@ -335,11 +335,12 @@ namespace moho
   );
 
   /**
-   * Address: 0x0083D500 (FUN_0083D500, ?UI_ShowDesyncDialog@Moho@@YAXHABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z)
+   * Address: 0x0083D500 (FUN_0083D500,
+   * ?UI_ShowDesyncDialog@Moho@@YAXHABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z)
    *
    * What it does:
    * Builds one Lua table from desync payload strings and invokes
    * `/lua/ui/uimain.lua:ShowDesyncDialog(sessionTick, payloadTable)`.
    */
-  void UI_ShowDesyncDialog(int sessionTick, const msvc8::vector<msvc8::string>& payloadLines);
+  void UI_ShowDesyncDialog(int sessionTick, const fa::vector<fa::string>& payloadLines);
 } // namespace moho

@@ -15,7 +15,7 @@ namespace moho
 } // namespace moho
 
 /**
-  * Alias of FUN_10015880 (non-canonical helper lane).
+ * Alias of FUN_10015880 (non-canonical helper lane).
  *
  * What it does:
  * Stores one metatable-factory index used by `CScrLuaObjectFactory::Get`.
@@ -35,7 +35,9 @@ moho::CScrLuaMetatableFactory<moho::HSound>& moho::CScrLuaMetatableFactory<moho:
  * What it does:
  * Builds one simple metatable table for `HSound` userdata lanes.
  */
-LuaPlus::LuaObject moho::CScrLuaMetatableFactory<moho::HSound>::Create(LuaPlus::LuaState* const state)
+LuaPlus::LuaObject moho::CScrLuaMetatableFactory<moho::HSound>::Create(
+  LuaPlus::LuaState* const state
+)
 {
   return SCR_CreateSimpleMetatable(state);
 }
@@ -49,7 +51,9 @@ namespace moho
    * Initializes one script-visible sound-handle object and binds the
    * owner `CSndParams` context used for loop-state checks.
    */
-  HSound::HSound(CSndParams* const ownerParams)
+  HSound::HSound(
+    CSndParams* const ownerParams
+  )
     : CScriptEvent()
     , mSimLoopLink()
     , mLoopCue(nullptr)
@@ -65,7 +69,9 @@ namespace moho
    * Unlinks the handle from active loop-lists, tears down base script/event
    * state, and optionally releases object storage.
    */
-  HSound* HSound::Destroy(const std::uint8_t flags)
+  HSound* HSound::Destroy(
+    const std::uint8_t flags
+  )
   {
     mSimLoopLink.ListUnlink();
 
@@ -78,25 +84,15 @@ namespace moho
   }
 
   /**
-   * Address: 0x004E68F0 (FUN_004E68F0)
-   *
-   * What it does:
-   * Forwards one deleting-lane call from the `CScriptObject`-view vtable of
-   * `HSound` into the canonical `HSound::Destroy` implementation.
-   */
-  [[maybe_unused]] HSound* HSoundDestroyScriptObjectSlot(HSound* const self, const std::uint8_t flags)
-  {
-    return self != nullptr ? self->Destroy(flags) : nullptr;
-  }
-
-
-  /**
    * Address: 0x004E4E60 (FUN_004E4E60, func_CreateLuaHSound)
    *
    * What it does:
    * Obtains cached `HSound` metatable object from Lua object-factory storage.
    */
-  LuaPlus::LuaObject* func_CreateLuaHSound(LuaPlus::LuaObject* const object, LuaPlus::LuaState* const state)
+  LuaPlus::LuaObject* func_CreateLuaHSound(
+    LuaPlus::LuaObject* const object,
+    LuaPlus::LuaState* const state
+  )
   {
     *object = CScrLuaMetatableFactory<HSound>::Instance().Get(state);
     return object;
@@ -109,7 +105,10 @@ namespace moho
    * Constructs Lua object lanes and binds this `HSound` instance into script
    * userdata/object state.
    */
-void func_CreateLuaHSoundObject(LuaPlus::LuaState* const state, HSound* const sound)
+  void func_CreateLuaHSoundObject(
+    LuaPlus::LuaState* const state,
+    HSound* const sound
+  )
   {
     if (state == nullptr || sound == nullptr) {
       return;
@@ -123,41 +122,4 @@ void func_CreateLuaHSoundObject(LuaPlus::LuaState* const state, HSound* const so
     sound->CreateLuaObject(klass, arg1, arg2, arg3);
   }
 
-  /**
-   * Address: 0x004E6690 (FUN_004E6690)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `CSndParams` and returns the typed
-   * object pointer when the source is compatible.
-   */
-  [[nodiscard]] CSndParams* CastCSndParamsFromRRef(const gpg::RRef& source)
-  {
-    gpg::RType* type = CSndParams::sType;
-    if (type == nullptr) {
-      type = gpg::LookupRType(typeid(CSndParams));
-      CSndParams::sType = type;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, type);
-    return static_cast<CSndParams*>(upcast.mObj);
-  }
-
-  /**
-   * Address: 0x004E66E0 (FUN_004E66E0)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `HSound` and returns the typed object
-   * pointer when the source is compatible.
-   */
-  [[nodiscard]] HSound* CastHSoundFromRRef(const gpg::RRef& source)
-  {
-    gpg::RType* type = HSound::sType;
-    if (type == nullptr) {
-      type = gpg::LookupRType(typeid(HSound));
-      HSound::sType = type;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, type);
-    return static_cast<HSound*>(upcast.mObj);
-  }
 } // namespace moho

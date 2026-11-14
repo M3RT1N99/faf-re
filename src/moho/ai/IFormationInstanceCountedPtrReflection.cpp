@@ -46,7 +46,9 @@ namespace
   // FUN_00570F10 duplicate was an unwired [[maybe_unused]] orphan; removed
   // in favor of the single canonical, actually-called citation.
 
-  void EnsureIFormationInstanceTypeCacheInitialized(IFormationInstanceTypeCache& cache)
+  void EnsureIFormationInstanceTypeCacheInitialized(
+    IFormationInstanceTypeCache& cache
+  )
   {
     if ((cache.mGuard & kTypeCacheInitMask) != 0u) {
       return;
@@ -59,17 +61,24 @@ namespace
     }
   }
 
-  [[nodiscard]] bool TypeInfosMatch(const std::type_info* const lhs, const std::type_info* const rhs)
+  [[nodiscard]] bool TypeInfosMatch(
+    const std::type_info* const lhs,
+    const std::type_info* const rhs
+  )
   {
     return lhs == rhs || (lhs != nullptr && rhs != nullptr && (*lhs == *rhs));
   }
 
-  [[nodiscard]] moho::IFormationInstance* const* AsSlot(void* obj) noexcept
+  [[nodiscard]] moho::IFormationInstance* const* AsSlot(
+    void* obj
+  ) noexcept
   {
-    return reinterpret_cast<moho::IFormationInstance**>(obj);
+    return static_cast<moho::IFormationInstance**>(obj);
   }
 
-  [[nodiscard]] gpg::RRef MakeIFormationInstanceRef(moho::IFormationInstance* value)
+  [[nodiscard]] gpg::RRef MakeIFormationInstanceRef(
+    moho::IFormationInstance* value
+  )
   {
     gpg::RRef out{};
     gpg::RRef_IFormationInstance(&out, value);
@@ -107,7 +116,10 @@ namespace gpg
    * Builds a reflected reference for `IFormationInstance*` and normalizes the
    * object pointer to the runtime-derived base lane.
    */
-  RRef* RRef_IFormationInstance(RRef* const out, moho::IFormationInstance* const value)
+  RRef* RRef_IFormationInstance(
+    RRef* const out,
+    moho::IFormationInstance* const value
+  )
   {
     GPG_ASSERT(out != nullptr);
 
@@ -162,8 +174,7 @@ namespace gpg
     }
 
     out->mType = dynamicType;
-    out->mObj =
-      reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(value) - static_cast<std::uintptr_t>(baseOffset));
+    out->mObj = gpg::CompleteObject(value, baseOffset);
     return out;
   }
 } // namespace gpg
@@ -266,9 +277,7 @@ namespace moho
 
     const gpg::RRef ownerRef{};
     archive->Read(
-      gpg::RTypeOf<FormationStatusBroadcaster>(),
-      static_cast<FormationStatusBroadcaster*>(object),
-      ownerRef
+      gpg::RTypeOf<FormationStatusBroadcaster>(), static_cast<FormationStatusBroadcaster*>(object), ownerRef
     );
   }
 
@@ -291,9 +300,7 @@ namespace moho
 
     const gpg::RRef ownerRef{};
     archive->Write(
-      gpg::RTypeOf<FormationStatusBroadcaster>(),
-      static_cast<const FormationStatusBroadcaster*>(object),
-      ownerRef
+      gpg::RTypeOf<FormationStatusBroadcaster>(), static_cast<const FormationStatusBroadcaster*>(object), ownerRef
     );
   }
 
@@ -326,22 +333,25 @@ namespace moho
    */
   const char* RCountedPtrType<moho::IFormationInstance>::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("CountedPtr<%s>", gpg::RTypeOf<moho::IFormationInstance>()->GetName());
+    static const fa::string sName =
+      gpg::STR_Printf("CountedPtr<%s>", gpg::RTypeOf<moho::IFormationInstance>()->GetName());
     return sName.c_str();
   }
 
   /**
    * Address: 0x006E9E40 (FUN_006E9E40, Moho::RCountedPtrType<Moho::IFormationInstance>::GetLexical)
    */
-  msvc8::string RCountedPtrType<moho::IFormationInstance>::GetLexical(const gpg::RRef& ref) const
+  fa::string RCountedPtrType<moho::IFormationInstance>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
     auto* const slot = AsSlot(ref.mObj);
     if (!slot || !*slot) {
-      return msvc8::string("NULL");
+      return fa::string("NULL");
     }
 
     const gpg::RRef instanceRef = MakeIFormationInstanceRef(*slot);
-    const msvc8::string inner = instanceRef.GetLexical();
+    const fa::string inner = instanceRef.GetLexical();
     return gpg::STR_Printf("[%s]", inner.c_str());
   }
 
@@ -375,7 +385,10 @@ namespace moho
   /**
    * Address: 0x006E9FF0 (FUN_006E9FF0, Moho::RCountedPtrType<Moho::IFormationInstance>::SubscriptIndex)
    */
-  gpg::RRef RCountedPtrType<moho::IFormationInstance>::SubscriptIndex(void* obj, int ind) const
+  gpg::RRef RCountedPtrType<moho::IFormationInstance>::SubscriptIndex(
+    void* obj,
+    int ind
+  ) const
   {
     (void)ind;
     auto* const slot = AsSlot(obj);
@@ -385,7 +398,9 @@ namespace moho
   /**
    * Address: 0x006E9FE0 (FUN_006E9FE0, Moho::RCountedPtrType<Moho::IFormationInstance>::GetCount)
    */
-  size_t RCountedPtrType<moho::IFormationInstance>::GetCount(void* obj) const
+  size_t RCountedPtrType<moho::IFormationInstance>::GetCount(
+    void* obj
+  ) const
   {
     auto* const slot = AsSlot(obj);
     return (slot && *slot) ? 1u : 0u;
@@ -408,12 +423,12 @@ namespace moho
    */
   void RCountedPtrType<moho::IFormationInstance>::SerLoad(
     gpg::ReadArchive* archive,
-    std::intptr_t objectPtr,
+    void* objectPtr,
     int,
     gpg::RRef* ownerRef
   )
   {
-    auto* const slot = reinterpret_cast<moho::IFormationInstance**>(objectPtr);
+    auto* const slot = static_cast<moho::IFormationInstance**>(objectPtr);
     if (!slot) {
       return;
     }
@@ -439,12 +454,12 @@ namespace moho
    */
   void RCountedPtrType<moho::IFormationInstance>::SerSave(
     gpg::WriteArchive* archive,
-    std::intptr_t objectPtr,
+    void* objectPtr,
     int,
     gpg::RRef* ownerRef
   )
   {
-    auto* const slot = reinterpret_cast<moho::IFormationInstance**>(objectPtr);
+    auto* const slot = static_cast<moho::IFormationInstance**>(objectPtr);
     const gpg::RRef objectRef = MakeIFormationInstanceRef(slot ? *slot : nullptr);
     const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
     gpg::WriteRawPointer(archive, objectRef, gpg::TrackedPointerState::Shared, owner);
@@ -474,4 +489,7 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(PreregisterIFormationInstancePointerType_096ddf, moho::PreregisterIFormationInstancePointerType)
+GPG_PREREGISTER_INIT(
+  PreregisterIFormationInstancePointerType_096ddf,
+  moho::PreregisterIFormationInstancePointerType
+)

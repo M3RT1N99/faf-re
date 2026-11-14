@@ -1,11 +1,7 @@
-// `DUMP_PromptFilename` (0x007F5500) opens a `wxDirDialog`, so this translation
-// unit pulls in the wx dialog family. wx has to be included first: it needs to
-// own the `windows.h` inclusion so that `wx/msw/winundef.h` can drop the
-// `CreateDialog`/`GetClassInfo` macros before the wx class declarations are
-// parsed.
-#include "platform/WxWidgets.h"
+// `DUMP_PromptFilename` (0x007F5500) asks for a folder: the system's folder picker through the
+// window system (platform::window::PickFolder, issue #411).
+#include "platform/Window.h"
 #include "platform/X87Precision.h"
-#include <wx/dirdlg.h>
 
 #include "moho/app/FrameDumpCommands.h"
 
@@ -78,33 +74,27 @@ namespace moho
    * (0x007F5530..0x007F5563). On acceptance the picked path is converted back
    * to UTF-8 and stored (0x007F56D9..0x007F5705).
    *
-   * wx leaves the x87 control word on its own setting, so the 24-bit precision
-   * the sim runs at is restored right after the dialog closes
-   * (`_controlfp(_PC_24, _MCW_PC)` at 0x007F5745).
+   * The binary's picker was a modal wxDirDialog ("Dump frames to"), which left
+   * the x87 control word on its own setting, so the 24-bit precision the sim
+   * runs at is restored right after the dialog closes (`_controlfp(_PC_24,
+   * _MCW_PC)` at 0x007F5745). Without a window system nothing is asked.
    */
   bool DUMP_PromptFilename()
   {
-    msvc8::string defaultDirectory;
-    defaultDirectory.assign(dump_frameDumpName, 0, msvc8::string::npos);
+    fa::string defaultDirectory;
+    defaultDirectory.assign(dump_frameDumpName, 0, fa::string::npos);
 
     if (defaultDirectory.empty()) {
       defaultDirectory.assign(
-        gpg::STR_Printf("%s/Desktop/SC_CAPTURE", std::getenv("USERPROFILE")), 0, msvc8::string::npos
+        gpg::STR_Printf("%s/Desktop/SC_CAPTURE", std::getenv("USERPROFILE")), 0, fa::string::npos
       );
     }
 
     bool accepted = false;
 
-    wxDirDialog directoryDialog(
-      nullptr,
-      wxT("Dump frames to"),
-      gpg::STR_Utf8ToWide(defaultDirectory.c_str()).c_str(),
-      wxDD_NEW_DIR_BUTTON
-    );
-    if (directoryDialog.ShowModal() == wxID_OK) {
-      dump_frameDumpName.assign(
-        gpg::STR_WideToUtf8(directoryDialog.GetPath().c_str()), 0, msvc8::string::npos
-      );
+    std::string folder = defaultDirectory.c_str();
+    if (platform::window::PickFolder("Dump frames to", folder)) {
+      dump_frameDumpName.assign(folder.c_str(), 0, fa::string::npos);
       accepted = true;
     }
 
@@ -124,13 +114,13 @@ namespace moho
    *
    * The binary reads no command arguments here.
    */
-  void DUMP_Frames(const msvc8::vector<msvc8::string>& /*args*/)
+  void DUMP_Frames(
+    const fa::vector<fa::string>& /*args*/
+  )
   {
     if (dump_frameRate != 0) {
       dump_frameRate = 0;
-      CON_Printf(
-        "Frame dumping to '%s' stopped at frame %d", dump_frameDumpName.c_str(), dump_outputFrameNumber
-      );
+      CON_Printf("Frame dumping to '%s' stopped at frame %d", dump_frameDumpName.c_str(), dump_outputFrameNumber);
       return;
     }
 
@@ -156,14 +146,16 @@ namespace moho
    * The `.` test is the binary's `compare(0, size, ".", 1)` at 0x007F589F,
    * which is simply "this token is not exactly a dot".
    */
-  void DUMP_Frame(const msvc8::vector<msvc8::string>& args)
+  void DUMP_Frame(
+    const fa::vector<fa::string>& args
+  )
   {
 
     if (args.size() == 2u) {
-      const msvc8::string& directoryToken = *ConCommandArg(args, 1);
+      const fa::string& directoryToken = *ConCommandArg(args, 1);
 
       if (directoryToken.view() != ".") {
-        dump_frameDumpName.assign(directoryToken, 0, msvc8::string::npos);
+        dump_frameDumpName.assign(directoryToken, 0, fa::string::npos);
       } else if (dump_frameDumpName.empty()) {
         dump_frameRate = DUMP_PromptFilename() ? 1 : 0;
         if (dump_frameRate == 0) {
@@ -176,7 +168,7 @@ namespace moho
 
       dump_frameRate = 1;
     } else {
-      dump_frameDumpName.assign(USER_GetScreenshotDir(), 0, msvc8::string::npos);
+      dump_frameDumpName.assign(USER_GetScreenshotDir(), 0, fa::string::npos);
       dump_frameRate = 1;
     }
 

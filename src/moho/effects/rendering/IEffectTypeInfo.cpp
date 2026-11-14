@@ -60,19 +60,17 @@ namespace moho
    * IDA signature:
    * void __stdcall sub_771340(gpg::RType *a1);
    */
-  void IEffectTypeInfo::AddBase_CScriptObject(gpg::RType* const typeInfo)
+  void IEffectTypeInfo::AddBase_CScriptObject(
+    gpg::RType* const typeInfo
+  )
   {
-    gpg::RType* const baseType = CScriptObject::StaticGetClass();
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, CScriptObject::StaticGetClass());
   }
 } // namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_IEffectTypeInfo_a0fdce, moho::preregister_IEffectTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_IEffectTypeInfo_a0fdce,
+  moho::preregister_IEffectTypeInfo
+)

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/gal/CursorContext.hpp"
 #include "moho/render/d3d/CD3DDeviceResources.h"
 #include "moho/unit/Broadcaster.h"
@@ -11,11 +11,6 @@
 
 struct tagRECT;
 using RECT = tagRECT;
-
-namespace boost::detail
-{
-  class sp_counted_base;
-} // namespace boost::detail
 
 namespace gpg::gal
 {
@@ -53,10 +48,7 @@ namespace moho
     std::int32_t endVertex = -1;      // +0x0C last referenced vertex; NumVertices = end - start + 1
   };
 
-  static_assert(
-    sizeof(SD3DVertexRange) == 0x10,
-    "SD3DVertexRange size must be 0x10"
-  );
+  static_assert(sizeof(SD3DVertexRange) == 0x10, "SD3DVertexRange size must be 0x10");
 
   /**
    * What it does:
@@ -69,10 +61,7 @@ namespace moho
     std::int32_t indexCount = 0;     // +0x08
   };
 
-  static_assert(
-    sizeof(SD3DIndexRange) == 0x0C,
-    "SD3DIndexRange size must be 0x0C"
-  );
+  static_assert(sizeof(SD3DIndexRange) == 0x0C, "SD3DIndexRange size must be 0x0C");
 
   /**
    * VFTABLE: 0x00E02214
@@ -221,7 +210,7 @@ namespace moho
      * Updates cursor hotspot/source state and forwards one cursor-context payload
      * to the active GAL backend.
      */
-    virtual bool SetCursor(int hotspotX, int hotspotY, boost::shared_ptr<ID3DTextureSheet> cursorTexture);
+    virtual bool SetCursor(int hotspotX, int hotspotY, std::shared_ptr<ID3DTextureSheet> cursorTexture);
 
     /**
      * Address: 0x0042EB00 (FUN_0042EB00)
@@ -275,16 +264,16 @@ namespace moho
      * Slot: 14
      * Demangled: Moho::CD3DDevice::Func9
      *
-     * boost::shared_ptr<moho::CD3DDynamicTextureSheet> &,moho::ID3DTextureSheet *,boost::detail::sp_counted_base *,int,bool
+     * boost::shared_ptr<moho::CD3DDynamicTextureSheet> &,boost::shared_ptr<moho::ID3DTextureSheet>,int,bool
+     * (the by-value source arrives as its two words and is released by the callee)
      *
      * What it does:
      * Creates one dynamic texture sheet from source texture dimensions, copies
      * source texture pixels into the destination sheet, and returns retained ownership.
      */
-    virtual boost::shared_ptr<CD3DDynamicTextureSheet>& CreateDynamicTextureSheetFromSource(
-      boost::shared_ptr<CD3DDynamicTextureSheet>& outSheet,
-      ID3DTextureSheet* sourceTextureSheet,
-      boost::detail::sp_counted_base* sourceSheetGuard,
+    virtual std::shared_ptr<CD3DDynamicTextureSheet>& CreateDynamicTextureSheetFromSource(
+      std::shared_ptr<CD3DDynamicTextureSheet>& outSheet,
+      std::shared_ptr<ID3DTextureSheet> sourceTextureSheet,
       int format,
       bool archiveMode
     );
@@ -300,9 +289,8 @@ namespace moho
      * Binds one vertex/index sheet pair, iterates active effect passes, and
      * submits one indexed draw context with zero start/base offsets.
      */
-    virtual bool DrawIndexedSheetPrimitive(
-      ID3DVertexSheet* vertexSheet, ID3DIndexSheet* indexSheet, std::int32_t* primitiveType
-    );
+    virtual bool
+    DrawIndexedSheetPrimitive(ID3DVertexSheet* vertexSheet, ID3DIndexSheet* indexSheet, std::int32_t* primitiveType);
 
     /**
      * Address: 0x0042FA10 (FUN_0042FA10)
@@ -332,9 +320,7 @@ namespace moho
      * Submits one non-indexed primitive draw from caller-provided vertex-sheet
      * view.
      */
-    virtual bool DrawPrimitiveList(
-      const SD3DVertexRange* vertexSheetView, std::int32_t* primitiveType
-    );
+    virtual bool DrawPrimitiveList(const SD3DVertexRange* vertexSheetView, std::int32_t* primitiveType);
 
     /**
      * Address: 0x0042FCF0 (FUN_0042FCF0)
@@ -398,8 +384,7 @@ namespace moho
      * What it does:
      * Copies one retained render-target writer lock from indexed device storage.
      */
-    virtual boost::shared_ptr<ID3DRenderTarget>&
-      GetWriterLock1(boost::shared_ptr<ID3DRenderTarget>& outLock, int index);
+    virtual std::shared_ptr<ID3DRenderTarget>& GetWriterLock1(std::shared_ptr<ID3DRenderTarget>& outLock, int index);
 
     /**
      * Address: 0x0042EEB0 (FUN_0042EEB0)
@@ -411,8 +396,7 @@ namespace moho
      * What it does:
      * Copies one retained depth-stencil writer lock from indexed device storage.
      */
-    virtual boost::shared_ptr<ID3DDepthStencil>&
-      GetWriterLock2(boost::shared_ptr<ID3DDepthStencil>& outLock, int index);
+    virtual std::shared_ptr<ID3DDepthStencil>& GetWriterLock2(std::shared_ptr<ID3DDepthStencil>& outLock, int index);
 
     /**
      * Address: 0x0042EEE0 (FUN_0042EEE0)
@@ -424,7 +408,7 @@ namespace moho
      * What it does:
      * Copies one retained generic shared handle from device runtime state lane #1.
      */
-    virtual boost::shared_ptr<void>& Func16(boost::shared_ptr<void>& outHandle);
+    virtual std::shared_ptr<void>& Func16(std::shared_ptr<void>& outHandle);
 
     /**
      * Address: 0x0042EF10 (FUN_0042EF10)
@@ -436,7 +420,7 @@ namespace moho
      * What it does:
      * Copies one retained generic shared handle from device runtime state lane #2.
      */
-    virtual boost::shared_ptr<void>& Func17(boost::shared_ptr<void>& outHandle);
+    virtual std::shared_ptr<void>& Func17(std::shared_ptr<void>& outHandle);
 
     /**
      * Address: 0x0042EF40 (FUN_0042EF40)
@@ -447,7 +431,7 @@ namespace moho
      * Copies the device's own render-target wrapper handle (+0x244), the
      * `CD3DRenderTarget` that `SetRenViewport` allocates (0x0042DFC8).
      */
-    virtual boost::shared_ptr<CD3DRenderTarget>& GetRenderTarget(boost::shared_ptr<CD3DRenderTarget>& outTarget);
+    virtual std::shared_ptr<CD3DRenderTarget>& GetRenderTarget(std::shared_ptr<CD3DRenderTarget>& outTarget);
 
     /**
      * Address: 0x0042EF70 (FUN_0042EF70)
@@ -459,8 +443,7 @@ namespace moho
      * What it does:
      * Copies the active depth-stencil shared handle from device state.
      */
-    virtual boost::shared_ptr<CD3DDepthStencil>&
-      GetDepthStencil(boost::shared_ptr<CD3DDepthStencil>& outDepthStencil);
+    virtual std::shared_ptr<CD3DDepthStencil>& GetDepthStencil(std::shared_ptr<CD3DDepthStencil>& outDepthStencil);
 
     /**
      * Address: 0x0042F0C0 (FUN_0042F0C0)
@@ -668,9 +651,7 @@ namespace moho
      * What it does:
      * Forwards sheet handles to `UpdateSurface` with default whole-surface rectangles.
      */
-    virtual void UpdateSurface2(
-      CD3DDynamicTextureSheet** sourceSheet, CD3DDynamicTextureSheet** destinationSheet
-    );
+    virtual void UpdateSurface2(CD3DDynamicTextureSheet** sourceSheet, CD3DDynamicTextureSheet** destinationSheet);
 
     /**
      * Address: 0x0042FDA0 (FUN_0042FDA0)
@@ -700,9 +681,7 @@ namespace moho
      * Dereferences render-target pointer lanes and forwards to `SetViewRect`
      * with default whole-surface rectangles.
      */
-    virtual void SetViewRect2(
-      ID3DRenderTarget** sourceRenderTarget, ID3DRenderTarget** destinationRenderTarget
-    );
+    virtual void SetViewRect2(ID3DRenderTarget** sourceRenderTarget, ID3DRenderTarget** destinationRenderTarget);
 
     /**
      * Address: 0x0042FEB0 (FUN_0042FEB0)
@@ -733,9 +712,8 @@ namespace moho
      * Dereferences source/destination lanes and forwards to
      * `SetViewRenderTarget`.
      */
-    virtual void SetViewRenderTarget2(
-      ID3DRenderTarget** sourceRenderTarget, ID3DTextureSheet** destinationTextureSheet
-    );
+    virtual void
+    SetViewRenderTarget2(ID3DRenderTarget** sourceRenderTarget, ID3DTextureSheet** destinationTextureSheet);
 
     /**
      * Address: 0x0042FFC0 (FUN_0042FFC0)
@@ -748,9 +726,7 @@ namespace moho
      * Copies one source render-target surface into one destination texture-sheet
      * via backend `CreateRenderTarget`.
      */
-    virtual void SetViewRenderTarget(
-      ID3DRenderTarget* sourceRenderTarget, ID3DTextureSheet* destinationTextureSheet
-    );
+    virtual void SetViewRenderTarget(ID3DRenderTarget* sourceRenderTarget, ID3DTextureSheet* destinationTextureSheet);
 
     /**
      * Address: 0x004300D0
@@ -815,69 +791,75 @@ namespace moho
 
   public:
     /// Whether `Paint` should clear instead of rendering the viewport. +0x0C
-    std::uint8_t mClearEnabled;                 // +0x0C
+    std::uint8_t mClearEnabled; // +0x0C
     /// Set once a context bind (`SetRenViewport`/`InitContext`) succeeded. +0x0D
-    std::uint8_t mInitialized;                  // +0x0D
+    std::uint8_t mInitialized; // +0x0D
     /// Padding reserved by the binary (ctor/dtor never touch it). +0x0E
-    std::uint8_t mReserved0E[0x02];             // +0x0E
+    std::uint8_t mReserved0E[0x02]; // +0x0E
     /// The viewport bound by `SetRenViewport`; `Paint` renders through it. +0x10
-    WRenViewport* mViewport;                    // +0x10
+    WRenViewport* mViewport; // +0x10
     /// Last state handed to `ShowCursor`. +0x14
-    std::uint8_t mShowingCursor;                // +0x14
+    std::uint8_t mShowingCursor; // +0x14
     /// Cleared by `SetRenViewport` once a real viewport owns the background. +0x15
-    std::uint8_t mDrawViewportBackground;       // +0x15
+    std::uint8_t mDrawViewportBackground; // +0x15
     /// Copy of `d3d_ForceSoftwareVP || d3d_ForceDirect3DDebugEnabled`. +0x16
-    std::uint8_t mSoftwareVP;                   // +0x16
+    std::uint8_t mSoftwareVP; // +0x16
     /// Copy of `d3d_ForceDirect3DDebugEnabled`. +0x17
-    std::uint8_t mDirectDebug;                  // +0x17
+    std::uint8_t mDirectDebug; // +0x17
     /// Guard so `BeginScene`/`EndScene` run at most once per scene. +0x18
-    std::uint8_t mSceneStarted;                 // +0x18
+    std::uint8_t mSceneStarted; // +0x18
     /// Padding reserved by the binary (ctor/dtor never touch it). +0x19
-    std::uint8_t mReserved19[0x03];             // +0x19
+    std::uint8_t mReserved19[0x03]; // +0x19
     /// Embedded resource owner; `GetResources` is `lea eax,[ecx+0x1C]`. +0x1C
-    CD3DDeviceResources mResources;             // +0x1C
+    CD3DDeviceResources mResources; // +0x1C
     /// Render-target writer locks, one per head (`GetWriterLock1`). +0x214
-    boost::shared_ptr<ID3DRenderTarget> mRenderTargetLocks[2];  // +0x214
+    std::shared_ptr<ID3DRenderTarget> mRenderTargetLocks[2]; // +0x214
     /// Depth-stencil writer locks, one per head (`GetWriterLock2`). +0x224
-    boost::shared_ptr<ID3DDepthStencil> mDepthStencilLocks[2];  // +0x224
+    std::shared_ptr<ID3DDepthStencil> mDepthStencilLocks[2]; // +0x224
     /// Retained generic handle lanes mirrored by `Func16`/`Func17`. +0x234
-    boost::shared_ptr<void> mWriterLockContext1;                // +0x234
-    boost::shared_ptr<void> mWriterLockContext2;                // +0x23C
+    std::shared_ptr<void> mWriterLockContext1; // +0x234
+    std::shared_ptr<void> mWriterLockContext2; // +0x23C
     /// The device's own default render target/depth stencil (`SetRenViewport`). +0x244
-    boost::shared_ptr<CD3DRenderTarget> mRenderTarget;          // +0x244
-    boost::shared_ptr<CD3DDepthStencil> mDepthStencil;          // +0x24C
+    std::shared_ptr<CD3DRenderTarget> mRenderTarget; // +0x244
+    std::shared_ptr<CD3DDepthStencil> mDepthStencil; // +0x24C
     /// Effect selected by `SetCurEffect`; null-checks gate technique passes. +0x254
-    CD3DEffect* mCurEffect;                                     // +0x254
+    CD3DEffect* mCurEffect; // +0x254
     /// Hotspot + texture of the hardware cursor (`SetCursor`/`InitContext`). +0x258
-    gpg::gal::CursorContext mCursorContext;                     // +0x258
-
+    gpg::gal::CursorContext mCursorContext; // +0x258
   };
-    static_assert(offsetof(CD3DDevice, mClearEnabled) == 0x0C, "CD3DDevice::mClearEnabled offset must be 0x0C");
-    static_assert(offsetof(CD3DDevice, mInitialized) == 0x0D, "CD3DDevice::mInitialized offset must be 0x0D");
-    static_assert(offsetof(CD3DDevice, mViewport) == 0x10, "CD3DDevice::mViewport offset must be 0x10");
-    static_assert(offsetof(CD3DDevice, mShowingCursor) == 0x14, "CD3DDevice::mShowingCursor offset must be 0x14");
-    static_assert(offsetof(CD3DDevice, mDrawViewportBackground) == 0x15, "CD3DDevice::mDrawViewportBackground offset must be 0x15");
-    static_assert(offsetof(CD3DDevice, mSoftwareVP) == 0x16, "CD3DDevice::mSoftwareVP offset must be 0x16");
-    static_assert(offsetof(CD3DDevice, mDirectDebug) == 0x17, "CD3DDevice::mDirectDebug offset must be 0x17");
-    static_assert(offsetof(CD3DDevice, mSceneStarted) == 0x18, "CD3DDevice::mSceneStarted offset must be 0x18");
-    static_assert(offsetof(CD3DDevice, mResources) == 0x1C, "CD3DDevice::mResources offset must be 0x1C");
-    static_assert(offsetof(CD3DDevice, mRenderTargetLocks) == 0x214, "CD3DDevice::mRenderTargetLocks offset must be 0x214");
-    static_assert(offsetof(CD3DDevice, mDepthStencilLocks) == 0x224, "CD3DDevice::mDepthStencilLocks offset must be 0x224");
-    static_assert(offsetof(CD3DDevice, mWriterLockContext1) == 0x234, "CD3DDevice::mWriterLockContext1 offset must be 0x234");
-    static_assert(offsetof(CD3DDevice, mWriterLockContext2) == 0x23C, "CD3DDevice::mWriterLockContext2 offset must be 0x23C");
-    static_assert(offsetof(CD3DDevice, mRenderTarget) == 0x244, "CD3DDevice::mRenderTarget offset must be 0x244");
-    static_assert(offsetof(CD3DDevice, mDepthStencil) == 0x24C, "CD3DDevice::mDepthStencil offset must be 0x24C");
-    static_assert(offsetof(CD3DDevice, mCurEffect) == 0x254, "CD3DDevice::mCurEffect offset must be 0x254");
-    static_assert(offsetof(CD3DDevice, mCursorContext) == 0x258, "CD3DDevice::mCursorContext offset must be 0x258");
-    static_assert(sizeof(CD3DDevice) == 0x26C, "CD3DDevice size must be 0x26C");
-
-  /**
-   * Address: 0x00430900 (FUN_00430900, ?D3D_Init@Moho@@YA_NXZ)
-   *
-   * What it does:
-   * Runs render bootstrap initialization and reports success.
-   */
-  bool D3D_Init();
+  static_assert(offsetof(CD3DDevice, mClearEnabled) == 0x0C, "CD3DDevice::mClearEnabled offset must be 0x0C");
+  static_assert(offsetof(CD3DDevice, mInitialized) == 0x0D, "CD3DDevice::mInitialized offset must be 0x0D");
+  static_assert(offsetof(CD3DDevice, mViewport) == 0x10, "CD3DDevice::mViewport offset must be 0x10");
+  static_assert(offsetof(CD3DDevice, mShowingCursor) == 0x14, "CD3DDevice::mShowingCursor offset must be 0x14");
+  static_assert(
+    offsetof(CD3DDevice, mDrawViewportBackground) == 0x15,
+    "CD3DDevice::mDrawViewportBackground offset must be 0x15"
+  );
+  static_assert(offsetof(CD3DDevice, mSoftwareVP) == 0x16, "CD3DDevice::mSoftwareVP offset must be 0x16");
+  static_assert(offsetof(CD3DDevice, mDirectDebug) == 0x17, "CD3DDevice::mDirectDebug offset must be 0x17");
+  static_assert(offsetof(CD3DDevice, mSceneStarted) == 0x18, "CD3DDevice::mSceneStarted offset must be 0x18");
+  static_assert(offsetof(CD3DDevice, mResources) == 0x1C, "CD3DDevice::mResources offset must be 0x1C");
+  static_assert(
+    offsetof(CD3DDevice, mRenderTargetLocks) == 0x214,
+    "CD3DDevice::mRenderTargetLocks offset must be 0x214"
+  );
+  static_assert(
+    offsetof(CD3DDevice, mDepthStencilLocks) == 0x224,
+    "CD3DDevice::mDepthStencilLocks offset must be 0x224"
+  );
+  static_assert(
+    offsetof(CD3DDevice, mWriterLockContext1) == 0x234,
+    "CD3DDevice::mWriterLockContext1 offset must be 0x234"
+  );
+  static_assert(
+    offsetof(CD3DDevice, mWriterLockContext2) == 0x23C,
+    "CD3DDevice::mWriterLockContext2 offset must be 0x23C"
+  );
+  static_assert(offsetof(CD3DDevice, mRenderTarget) == 0x244, "CD3DDevice::mRenderTarget offset must be 0x244");
+  static_assert(offsetof(CD3DDevice, mDepthStencil) == 0x24C, "CD3DDevice::mDepthStencil offset must be 0x24C");
+  static_assert(offsetof(CD3DDevice, mCurEffect) == 0x254, "CD3DDevice::mCurEffect offset must be 0x254");
+  static_assert(offsetof(CD3DDevice, mCursorContext) == 0x258, "CD3DDevice::mCursorContext offset must be 0x258");
+  static_assert(sizeof(CD3DDevice) == 0x26C, "CD3DDevice size must be 0x26C");
 
   /**
    * Address: 0x00430910 (FUN_00430910, ?D3D_Exit@Moho@@YAXXZ)
@@ -903,6 +885,21 @@ namespace moho
    * Returns the global D3D device owner used by startup/render paths.
    */
   CD3DDevice* D3D_GetDevice();
+
+  /**
+   * Engine addition: `ren_DirectPaint`. CD3DDevice::Refresh invalidates the window and the frame draws
+   * in the WM_PAINT that follows: the window library's event tables, BeginPaint, EndPaint and a window DC, 6 % of an
+   * uncapped frame and none of it used by a device that draws through a swap chain. With this on,
+   * Refresh only marks the frame and the main loop draws it where the message would have come. Paint
+   * messages from Windows (a window uncovered, a capture tool) still go through OnPaint.
+   */
+  extern bool ren_DirectPaint;
+
+  /** A frame is waiting for D3D_RunDirectPaint, so the main loop must not wait for messages. */
+  [[nodiscard]] bool D3D_IsDirectPaintPending() noexcept;
+
+  /** Draws the frame Refresh marked, if any. Returns whether it did. */
+  bool D3D_RunDirectPaint();
 
   /**
    * Address: 0x004305F0 (FUN_004305F0, ?REN_Init@Moho@@YAXXZ)

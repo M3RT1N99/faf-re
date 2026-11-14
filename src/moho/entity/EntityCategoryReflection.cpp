@@ -26,8 +26,10 @@ namespace
 {
   constexpr const char* kEntityCategoryLuaClassName = "EntityCategory";
   constexpr const char* kEntityCategoryAddHelpText = "Generate a category list that is the sum of both categories";
-  constexpr const char* kEntityCategorySubHelpText = "Generate a category list of units that is of cat1 but not of cat2";
-  constexpr const char* kEntityCategoryMulHelpText = "Generate a category list that is an intersection of cat1 and cat2";
+  constexpr const char* kEntityCategorySubHelpText =
+    "Generate a category list of units that is of cat1 but not of cat2";
+  constexpr const char* kEntityCategoryMulHelpText =
+    "Generate a category list that is an intersection of cat1 and cat2";
   constexpr const char* kEntityCategoryEmptyHelpText = "Test for an empty category";
   constexpr const char* kSecondsPerTickHelpText = "SecondsPerTick() - Return how many seconds in a tick";
   constexpr const char* kEntityCategoryGetUnitListHelpText = "Get a list of units blueprint names from a category";
@@ -48,7 +50,9 @@ namespace
     }
 
   protected:
-    LuaPlus::LuaObject Create(LuaPlus::LuaState* const state) override
+    LuaPlus::LuaObject Create(
+      LuaPlus::LuaState* const state
+    ) override
     {
       return moho::SCR_CreateSimpleMetatable(state);
     }
@@ -59,20 +63,6 @@ namespace
     {}
   };
   static_assert(sizeof(EntityCategoryLuaMetatableFactory) == 0x8, "EntityCategoryLuaMetatableFactory size must be 0x8");
-
-  /**
-   * Address: 0x00537070 (FUN_00537070)
-   *
-   * What it does:
-   * Rebinds the startup metatable-factory index lane for the entity-category
-   * Lua metatable factory singleton and returns that singleton.
-   */
-  [[maybe_unused]] EntityCategoryLuaMetatableFactory* startup_EntityCategoryLuaMetatableFactory_Index()
-  {
-    auto& instance = EntityCategoryLuaMetatableFactory::Instance();
-    instance.SetFactoryObjectIndexForRecovery(moho::CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-    return &instance;
-  }
 
   /**
    * Address: 0x00BC8F70 (FUN_00BC8F70, register_EntityCategoryLuaMetatableFactoryIndexStartup)
@@ -88,7 +78,9 @@ namespace
     return index;
   }
 
-  [[nodiscard]] moho::RRuleGameRulesImpl* ResolveCategoryRules(const moho::EntityCategorySet& categorySet) noexcept
+  [[nodiscard]] moho::RRuleGameRulesImpl* ResolveCategoryRules(
+    const moho::EntityCategorySet& categorySet
+  ) noexcept
   {
     return static_cast<moho::RRuleGameRulesImpl*>(categorySet.mUniverse.mRules);
   }
@@ -135,7 +127,9 @@ namespace
    * Upcasts one reflected reference to `EntityCategorySet*` and throws
    * `BadRefCast` with source/target type names on mismatch.
    */
-  [[nodiscard]] moho::EntityCategorySet* TryUpcastEntityCategoryOrThrow(const gpg::RRef& source)
+  [[nodiscard]] moho::EntityCategorySet* TryUpcastEntityCategoryOrThrow(
+    const gpg::RRef& source
+  )
   {
     gpg::RType* const entityCategoryType = gpg::RTypeOf<moho::EntityCategorySet>();
     const gpg::RRef upcast = gpg::REF_UpcastPtr(source, entityCategoryType);
@@ -170,7 +164,7 @@ namespace
   EntityCategoryHelperRegistration gEntityCategoryHelperRegistration;
 } // namespace
 
-  namespace moho
+namespace moho
 {
   gpg::RType* EntityCategoryHelper::sType = nullptr;
 
@@ -189,37 +183,11 @@ namespace
   }
 
   /**
-   * Address: 0x0052CBD0 (FUN_0052CBD0, Moho::EntityCategory::end)
-   *
-   * What it does:
-   * Builds one past-end legacy category iterator payload from category set
-   * storage (`firstWordIndex + wordCount`, then `* 32`).
-   */
-  EntityCategoryIterator*
-  BuildEntityCategoryEndIterator(EntityCategoryIterator* const out, EntityCategorySet* const categorySet) noexcept
-  {
-    if (out == nullptr || categorySet == nullptr) {
-      return out;
-    }
-
-    BVIntSet* const bits = &categorySet->mBits;
-
-    std::size_t wordCount = 0u;
-    if (bits->mWords.start_ != nullptr && bits->mWords.end_ != nullptr && bits->mWords.end_ >= bits->mWords.start_) {
-      wordCount = static_cast<std::size_t>(bits->mWords.end_ - bits->mWords.start_);
-    }
-
-    const std::uint32_t endWordIndex = bits->mFirstWordIndex + static_cast<std::uint32_t>(wordCount);
-    out->mRules = categorySet->mUniverse.mRules;
-    out->mSet = bits;
-    out->mCurBit = static_cast<std::int32_t>(endWordIndex << 5u);
-    return out;
-  }
-
-  /**
    * Address: 0x005575E0 (FUN_005575E0, func_GetCObj_EntityCategory)
    */
-  EntityCategorySet* func_GetCObj_EntityCategory(const LuaPlus::LuaObject& valueObject)
+  EntityCategorySet* func_GetCObj_EntityCategory(
+    const LuaPlus::LuaObject& valueObject
+  )
   {
     LuaPlus::LuaObject payload(valueObject);
     if (payload.IsTable()) {
@@ -233,8 +201,11 @@ namespace
   /**
    * Address: 0x00533150 (FUN_00533150, func_NewEntityCategory)
    */
-  LuaPlus::LuaObject*
-    func_NewEntityCategory(LuaPlus::LuaState* const state, LuaPlus::LuaObject* const out, EntityCategorySet* const value)
+  LuaPlus::LuaObject* func_NewEntityCategory(
+    LuaPlus::LuaState* const state,
+    LuaPlus::LuaObject* const out,
+    EntityCategorySet* const value
+  )
   {
     LuaPlus::LuaObject metatable = EntityCategoryLuaMetatableFactory::Instance().Get(state);
     gpg::RRef categoryRef{};
@@ -286,7 +257,10 @@ namespace
    * Iterates each source category ordinal and ORs the corresponding
    * `RBlueprint::mBlueprintOrdinal` bit into `out`.
    */
-  EntityCategorySet* EntityCategory::Add(EntityCategorySet* const out, const EntityCategorySet* const source)
+  EntityCategorySet* EntityCategory::Add(
+    EntityCategorySet* const out,
+    const EntityCategorySet* const source
+  )
   {
     const unsigned int endOrdinalExclusive = source->mBits.Max();
     const unsigned int firstOrdinal = source->mBits.GetNext(std::numeric_limits<unsigned int>::max());
@@ -302,16 +276,22 @@ namespace
    * Returns whether one blueprint category-bit index is present in the given
    * category-set bitfield.
    */
-  bool EntityCategory::HasBlueprint(const REntityBlueprint* const blueprint, const EntityCategorySet* const categorySet)
+  bool EntityCategory::HasBlueprint(
+    const REntityBlueprint* const blueprint,
+    const EntityCategorySet* const categorySet
+  )
   {
-    return blueprint != nullptr && categorySet != nullptr && categorySet->mBits.Contains(blueprint->mCategoryBitIndex);
+    return blueprint != nullptr && categorySet != nullptr && categorySet->mBits.Contains(blueprint->mBlueprintOrdinal);
   }
 
   /**
    * Address: 0x00557710 (FUN_00557710, Moho::EntityCategory::Sub)
    */
-  EntityCategorySet*
-    EntityCategory::Sub(EntityCategorySet* const out, const EntityCategorySet* const lhs, const EntityCategorySet* const rhs)
+  EntityCategorySet* EntityCategory::Sub(
+    EntityCategorySet* const out,
+    const EntityCategorySet* const lhs,
+    const EntityCategorySet* const rhs
+  )
   {
     out->mUniverse = lhs->mUniverse;
     BVIntSet subtractionBits{};
@@ -323,8 +303,11 @@ namespace
   /**
    * Address: 0x005577B0 (FUN_005577B0, Moho::EntityCategory::Mul)
    */
-  EntityCategorySet*
-    EntityCategory::Mul(EntityCategorySet* const out, const EntityCategorySet* const lhs, const EntityCategorySet* const rhs)
+  EntityCategorySet* EntityCategory::Mul(
+    EntityCategorySet* const out,
+    const EntityCategorySet* const lhs,
+    const EntityCategorySet* const rhs
+  )
   {
     out->mUniverse = lhs->mUniverse;
     BVIntSet intersectionBits{};
@@ -336,7 +319,9 @@ namespace
   /**
    * Address: 0x005556B0 (FUN_005556B0, cfunc_EntityCategory__add)
    */
-  int cfunc_EntityCategory__add(lua_State* const luaContext)
+  int cfunc_EntityCategory__add(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityCategory__addL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -344,7 +329,9 @@ namespace
   /**
    * Address: 0x00555730 (FUN_00555730, cfunc_EntityCategory__addL)
    */
-  int cfunc_EntityCategory__addL(LuaPlus::LuaState* const state)
+  int cfunc_EntityCategory__addL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kEntityCategoryAddHelpText);
 
@@ -390,7 +377,9 @@ namespace
   /**
    * Address: 0x00555840 (FUN_00555840, cfunc_EntityCategory__sub)
    */
-  int cfunc_EntityCategory__sub(lua_State* const luaContext)
+  int cfunc_EntityCategory__sub(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityCategory__subL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -398,7 +387,9 @@ namespace
   /**
    * Address: 0x005558C0 (FUN_005558C0, cfunc_EntityCategory__subL)
    */
-  int cfunc_EntityCategory__subL(LuaPlus::LuaState* const state)
+  int cfunc_EntityCategory__subL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kEntityCategorySubHelpText);
 
@@ -444,7 +435,9 @@ namespace
   /**
    * Address: 0x005559D0 (FUN_005559D0, cfunc_EntityCategory__mul)
    */
-  int cfunc_EntityCategory__mul(lua_State* const luaContext)
+  int cfunc_EntityCategory__mul(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityCategory__mulL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -452,7 +445,9 @@ namespace
   /**
    * Address: 0x00555A50 (FUN_00555A50, cfunc_EntityCategory__mulL)
    */
-  int cfunc_EntityCategory__mulL(LuaPlus::LuaState* const state)
+  int cfunc_EntityCategory__mulL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kEntityCategoryMulHelpText);
 
@@ -502,7 +497,9 @@ namespace
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_EntityCategoryEmptyL`.
    */
-  int cfunc_EntityCategoryEmpty(lua_State* const luaContext)
+  int cfunc_EntityCategoryEmpty(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityCategoryEmptyL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -513,7 +510,9 @@ namespace
    * What it does:
    * Returns whether one entity-category set has no selected category bits.
    */
-  int cfunc_EntityCategoryEmptyL(LuaPlus::LuaState* const state)
+  int cfunc_EntityCategoryEmptyL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kEntityCategoryEmptyHelpText);
 
@@ -562,7 +561,9 @@ namespace
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_SecondsPerTickL`.
    */
-  int cfunc_SecondsPerTick(lua_State* const luaContext)
+  int cfunc_SecondsPerTick(
+    lua_State* const luaContext
+  )
   {
     return cfunc_SecondsPerTickL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -573,7 +574,9 @@ namespace
    * What it does:
    * Pushes the fixed simulation step duration (`0.1` seconds).
    */
-  int cfunc_SecondsPerTickL(LuaPlus::LuaState* const state)
+  int cfunc_SecondsPerTickL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 0, kSecondsPerTickHelpText);
 
@@ -622,7 +625,9 @@ namespace
    * Unwraps the raw Lua callback context (`lua_State`) into its owning
    * `LuaState` wrapper and forwards to the typed worker.
    */
-  int cfunc_EntityCategoryGetUnitList(lua_State* const luaContext)
+  int cfunc_EntityCategoryGetUnitList(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityCategoryGetUnitListL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -641,7 +646,9 @@ namespace
    * blueprint id string into a freshly created Lua array. Pushes and returns
    * that array (one Lua result).
    */
-  int cfunc_EntityCategoryGetUnitListL(LuaPlus::LuaState* const state)
+  int cfunc_EntityCategoryGetUnitListL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kEntityCategoryGetUnitListHelpText);
 
@@ -703,9 +710,14 @@ namespace
   /**
    * Address: 0x005567F0 (FUN_005567F0, Moho::EntityCategory::SerSave)
    */
-  void EntityCategory::SerSave(gpg::WriteArchive* archive, const std::intptr_t objectPtr, const int, gpg::RRef* ownerRef)
+  void EntityCategory::SerSave(
+    gpg::WriteArchive* archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const set = reinterpret_cast<EntityCategorySet*>(objectPtr);
+    auto* const set = static_cast<EntityCategorySet*>(objectPtr);
     GPG_ASSERT(set != nullptr);
     if (!set) {
       return;
@@ -721,9 +733,14 @@ namespace
   /**
    * Address: 0x00556870 (FUN_00556870, Moho::EntityCategory::SerLoad)
    */
-  void EntityCategory::SerLoad(gpg::ReadArchive* archive, const std::intptr_t objectPtr, const int, gpg::RRef* ownerRef)
+  void EntityCategory::SerLoad(
+    gpg::ReadArchive* archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const set = reinterpret_cast<EntityCategorySet*>(objectPtr);
+    auto* const set = static_cast<EntityCategorySet*>(objectPtr);
     GPG_ASSERT(set != nullptr);
     if (!set) {
       return;
@@ -769,14 +786,18 @@ namespace
   }
 
   /** Inlined block from FUN_0052B860. */
-  void EntityCategoryHelper::MemberDeserialize(gpg::ReadArchive* const archive)
+  void EntityCategoryHelper::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef ownerRef{};
     archive->ReadPointer(&mRules, &ownerRef);
   }
 
   /** Inlined block from FUN_0052B890. */
-  void EntityCategoryHelper::MemberSerialize(gpg::WriteArchive* const archive) const
+  void EntityCategoryHelper::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WritePointer(mRules, gpg::TrackedPointerState::Unowned, gpg::RRef{});
   }
@@ -793,7 +814,10 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_EntityCategoryHelperTypeInfoStartup_887a87, moho::register_EntityCategoryHelperTypeInfoStartup)
+GPG_PREREGISTER_INIT(
+  register_EntityCategoryHelperTypeInfoStartup_887a87,
+  moho::register_EntityCategoryHelperTypeInfoStartup
+)
 
 namespace
 {

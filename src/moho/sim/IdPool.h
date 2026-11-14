@@ -14,21 +14,9 @@ namespace gpg
 
 namespace moho
 {
-  struct SimSubRes3
-  {
-    // Copied by 0x00403CB0 into SimSubRes2 history ring.
-    int32_t mValue; // +0x00
-    int32_t mReserved04;
-    gpg::core::FastVectorN<int32_t, 2> mValues; // +0x08
-  };
-  static_assert(offsetof(SimSubRes3, mValue) == 0x00, "SimSubRes3::mValue offset must be 0x00");
-  static_assert(offsetof(SimSubRes3, mReserved04) == 0x04, "SimSubRes3::mReserved04 offset must be 0x04");
-  static_assert(offsetof(SimSubRes3, mValues) == 0x08, "SimSubRes3::mValues offset must be 0x08");
-  static_assert(sizeof(SimSubRes3) == 0x20, "SimSubRes3 size must be 0x20");
-
   struct SimSubRes2
   {
-    SimSubRes3 mData[100]; // +0x0000..+0x0C7F
+    BVIntSet mData[100];   // +0x0000..+0x0C7F
     int32_t mStart;        // +0x0C80
     int32_t mEnd;          // +0x0C84
 
@@ -71,6 +59,11 @@ namespace moho
      * `IdPool`'s implicit copy constructor (0x00686DF0), which inlines it.
      */
     SimSubRes2& operator=(const SimSubRes2& other);
+
+    // Spelled out because operator= above is user-provided; both stay what the
+    // compiler generated (`IdPool`'s implicit copy relies on this one).
+    SimSubRes2() = default;
+    SimSubRes2(const SimSubRes2&) = default;
   };
   static_assert(offsetof(SimSubRes2, mData) == 0x0000, "SimSubRes2::mData offset must be 0x0000");
   static_assert(offsetof(SimSubRes2, mStart) == 0x0C80, "SimSubRes2::mStart offset must be 0x0C80");
@@ -81,7 +74,7 @@ namespace moho
    * `IdPool` is 8-byte aligned in the shipped binary, through `mReleasedLows`'
    * words (an 8-aligned `gpg::fastvector_n`). Evidence, converging from four
    * independent sites:
-   *   - `EntityDB::mIdPoolTree`'s node (`msvc8::map<std::uint32_t, IdPool>`,
+   *   - `EntityDB::mIdPoolTree`'s node (`fa::map<std::uint32_t, IdPool>`,
    *     `EntityDb.h`) places `IdPool` at node+0x18, one 4-byte word after the
    *     node's `key`+0x10..0x14 -- i.e. a forced pad word between key and
    *     payload that only 8-byte alignment on the payload explains

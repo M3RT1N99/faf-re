@@ -2,16 +2,16 @@
 
 #include <cstddef>
 
-#include "platform/WxWidgets.h"
+#include "platform/shell/Shell.h"
 
-#include <wx/event.h>
-#include <wx/window.h>
+#include "platform/shell/event.h"
+#include "platform/shell/window.h"
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/String.h"
 
-class wxBitmap;
-class wxDC;
+class ShellBitmap;
+class SHELL_DC;
 
 namespace moho
 {
@@ -31,7 +31,7 @@ namespace moho
    * sizeof 0x128: wxWindow is 0x124, and the one member this class adds sits
    * right after it.
    */
-  class WD3DViewport : public wxWindow
+  class WD3DViewport : public ShellWindow
   {
   public:
     /**
@@ -44,7 +44,7 @@ namespace moho
      * argument is not used - the binary pushes wxDefaultPosition (0x00F33E00)
      * whatever the caller passes.
      */
-    WD3DViewport(wxWindow* parent, gpg::StrArg title, const wxPoint& position, const wxSize& size);
+    WD3DViewport(ShellWindow* parent, gpg::StrArg title, const ShellPoint& position, const ShellSize& size);
 
     /**
      * Address: 0x0042BA90 (FUN_0042BA90)
@@ -102,7 +102,7 @@ namespace moho
      * What it does:
      * Returns an empty sheet. Slot 135.
      */
-    virtual boost::shared_ptr<ID3DTextureSheet> GetPreviewImage();
+    virtual std::shared_ptr<ID3DTextureSheet> GetPreviewImage();
 
     /**
      * Address: 0x0042BB50 (FUN_0042BB50)
@@ -114,14 +114,13 @@ namespace moho
     virtual CD3DPrimBatcher* GetPrimBatcher() const;
 
     /**
-     * Address: 0x00430B90 (FUN_00430B90)
-     * Mangled: ?MSWWindowProc@WD3DViewport@Moho@@UAEJIIJ@Z
-     *
-     * What it does:
-     * Answers WM_SETCURSOR over the client area itself, handing the cursor to
-     * the D3D device; every other message goes to `wxWindow::MSWWindowProc`.
+     * Engine addition (issue #407): hands the retail window procedure's work
+     * (WD3DViewport::MSWWindowProc, 0x00430B90: the cursor over the client
+     * area, the network panel's key and mouse) to platform/Window.h's cursor
+     * request and event filter. The side mouse buttons arrive as key presses
+     * from the window system itself.
      */
-    long MSWWindowProc(WXUINT message, WXWPARAM wParam, WXLPARAM lParam) override;
+    static void InstallWindowHooks();
 
     /**
      * Address: 0x00430AC0 (FUN_00430AC0)
@@ -132,7 +131,14 @@ namespace moho
      * then either lets the D3D device present, dropping the background image,
      * or paints the background itself while there is no device yet.
      */
-    void OnPaint(wxPaintEvent& event);
+    void OnPaint(ShellPaintEvent& event);
+
+    /**
+     * Engine addition (`ren_DirectPaint`): what OnPaint does once the device is ready, with no
+     * message and no PaintDC. Only for a frame the device asked for, as nothing validates the
+     * update region here.
+     */
+    void PaintWithoutMessage();
 
     /**
      * Address: 0x00430B70 (FUN_00430B70)
@@ -141,7 +147,7 @@ namespace moho
      * Paints the background on WM_ERASEBKGND until the device is presenting;
      * after that, erasing underneath it would only flicker.
      */
-    void OnEraseBackground(wxEraseEvent& event);
+    void OnEraseBackground(ShellEraseEvent& event);
 
   private:
     /**
@@ -152,22 +158,24 @@ namespace moho
      * Fills the DC's extent with wxBLACK_BRUSH, then selects wxNullBrush back.
      * The body never touches `this` - the binary passes the DC in esi.
      */
-    void DrawBackgroundImage(wxDC& dc);
+    void DrawBackgroundImage(SHELL_DC& dc);
 
   public:
     // +0x124. Owned: the destructor deletes it, and OnPaint deletes and clears
     // it once the device is presenting (load, store 0, then the virtual
-    // deleting destructor - slot 1, which makes it a wxObject). The binary
+    // deleting destructor - slot 1, which makes it a Object). The binary
     // only ever stores 0 here; the type is inferred from DrawBackgroundImage's
     // name, which is what would have drawn it.
-    wxBitmap* mBackgroundImage;
+    ShellBitmap* mBackgroundImage;
 
     DECLARE_EVENT_TABLE()
   };
 
-  static_assert(sizeof(wxWindow) == 0x124, "wxWindow size must be 0x124");
+  // The retail base was the 2.4.2 window library's wxWindow (destructor 0x0096BF40), 0x124 bytes; ShellWindow keeps
+  // that size in the retail-layout build (platform/shell/window.h).
+  static_assert(sizeof(ShellWindow) == 0x124, "ShellWindow size must be 0x124 (the retail window base)");
   static_assert(
-    offsetof(WD3DViewport, mBackgroundImage) == 0x124, "moho::WD3DViewport::mBackgroundImage offset must be 0x124"
+    offsetof(WD3DViewport, mBackgroundImage) == 0x124,
+    "moho::WD3DViewport::mBackgroundImage offset must be 0x124"
   );
-  static_assert(sizeof(WD3DViewport) == 0x128, "moho::WD3DViewport size must be 0x128");
 } // namespace moho

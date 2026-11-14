@@ -10,16 +10,6 @@
 
 namespace
 {
-  [[nodiscard]] gpg::RType* CachedVector3fType()
-  {
-    static gpg::RType* cached = nullptr;
-    if (!cached) {
-      cached = gpg::LookupRType(typeid(Wm3::Vec3f));
-    }
-
-    GPG_ASSERT(cached != nullptr);
-    return cached;
-  }
 } // namespace
 
 namespace moho
@@ -29,7 +19,9 @@ namespace moho
   /**
    * Address: 0x00699C10 (FUN_00699C10, Moho::SPhysConstants::MemberDeserialize)
    */
-  void SPhysConstants::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SPhysConstants::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -37,13 +29,15 @@ namespace moho
     }
 
     const gpg::RRef nullOwner{};
-    archive->Read(CachedVector3fType(), &mGravity, nullOwner);
+    archive->Read(gpg::RTypeOf<Wm3::Vec3f>(), &mGravity, nullOwner);
   }
 
   /**
    * Address: 0x00699C50 (FUN_00699C50, Moho::SPhysConstants::MemberSerialize)
    */
-  void SPhysConstants::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SPhysConstants::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -51,7 +45,7 @@ namespace moho
     }
 
     const gpg::RRef nullOwner{};
-    archive->Write(CachedVector3fType(), &mGravity, nullOwner);
+    archive->Write(gpg::RTypeOf<Wm3::Vec3f>(), &mGravity, nullOwner);
   }
 } // namespace moho
 

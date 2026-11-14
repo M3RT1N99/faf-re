@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/String.h"
 #include "legacy/containers/Vector.h"
 #include "moho/misc/WeakObject.h"
@@ -82,7 +82,7 @@ namespace moho
      * What it does:
      * Returns a retained shared-pointer view of the explored recon grid.
      */
-    [[nodiscard]] boost::shared_ptr<CIntelGrid> GetExploredReconGrid() const;
+    [[nodiscard]] std::shared_ptr<CIntelGrid> GetExploredReconGrid() const;
 
     /**
      * Address: 0x008B14F0 (FUN_008B14F0, Moho::UserArmy::GetFogReconGrid)
@@ -90,7 +90,7 @@ namespace moho
      * What it does:
      * Returns a retained shared-pointer view of the fog recon grid.
      */
-    [[nodiscard]] boost::shared_ptr<CIntelGrid> GetFogReconGrid() const;
+    [[nodiscard]] std::shared_ptr<CIntelGrid> GetFogReconGrid() const;
 
     /**
      * Address: 0x005BD630 (FUN_005BD630, Moho::IArmy::IsAlly)
@@ -128,14 +128,14 @@ namespace moho
      * Address: 0x008B2500 (FUN_008B2500)
      *
      * IDA signature:
-     * msvc8::vector<WeakPtr<UserUnit>> *__usercall sub_8B2500@<eax>(
-     *     Moho::UserArmy *this@<ecx>, msvc8::vector<WeakPtr<UserUnit>> *out@<esi>);
+     * fa::vector<WeakPtr<UserUnit>> *__usercall sub_8B2500@<eax>(
+     *     Moho::UserArmy *this@<ecx>, fa::vector<WeakPtr<UserUnit>> *out@<esi>);
      *
      * What it does:
      * Returns a copy of `mAvatars` (the vector copy constructor, 0x008B2640).
      * `cfunc_GetArmyAvatarsL` (0x008BCD48) walks the copy.
      */
-    [[nodiscard]] msvc8::vector<WeakPtr<UserUnit>> GetAvatars() const;
+    [[nodiscard]] fa::vector<WeakPtr<UserUnit>> GetAvatars() const;
 
     /**
      * Address: 0x008B2550 (FUN_008B2550)
@@ -171,13 +171,17 @@ namespace moho
      * Weak references to an army link into `mWeakRefs`, a member rather than a
      * base, so the army names it for `WeakPtr<UserArmy>`.
      */
-    [[nodiscard]] static WeakObject* WeakLinkHeadOf(UserArmy* const army) noexcept
+    [[nodiscard]] static WeakObject* WeakLinkHeadOf(
+      UserArmy* const army
+    ) noexcept
     {
       return army != nullptr ? &army->mWeakRefs : nullptr;
     }
 
     /** The army whose `mWeakRefs` is `head`: the member-to-owner step (`head - 0x1E0` on x86). */
-    [[nodiscard]] static UserArmy* FromWeakLinkHead(WeakObject* const head) noexcept
+    [[nodiscard]] static UserArmy* FromWeakLinkHead(
+      WeakObject* const head
+    ) noexcept
     {
       return head != nullptr
         ? reinterpret_cast<UserArmy*>(reinterpret_cast<std::byte*>(head) - offsetof(UserArmy, mWeakRefs))
@@ -190,7 +194,7 @@ namespace moho
 
     /// Quick-select avatars: units whose blueprint `QuickSelectPriority` is
     /// positive register here from `UserUnit::UserUnit` (FUN_008B2300).
-    msvc8::vector<WeakPtr<UserUnit>> mAvatars; // 0x1E8
+    fa::vector<WeakPtr<UserUnit>> mAvatars; // 0x1E8
 
     /// Idle-engineer registry, populated from `UserUnit::Tick` (FUN_008B2520)
     /// and read by `GetIdleEngineers` (FUN_008BCEF0).
@@ -211,7 +215,7 @@ namespace moho
    */
   [[nodiscard]] UserArmy* USER_ResolveArmyFromLuaState(LuaPlus::LuaState* state, const LuaPlus::LuaObject& armyObject);
 
-  static_assert(sizeof(boost::shared_ptr<CIntelGrid>) == 0x08, "shared_ptr<CIntelGrid> size must be 0x08");
+  static_assert(sizeof(std::shared_ptr<CIntelGrid>) == 0x08, "shared_ptr<CIntelGrid> size must be 0x08");
   // The constant-data payload is the base subobject; its own field offsets are
   // asserted in SSTIArmyConstantData.h.
   static_assert(sizeof(SSTIArmyConstantData) == 0x80, "UserArmy constant-data base must occupy 0x00..0x80");
@@ -221,15 +225,20 @@ namespace moho
     "UserArmy::mVarDat.mAllies offset must be 0xE0"
   );
   static_assert(
-    offsetof(UserArmy, mVarDat) + offsetof(SSTIArmyVariableData, mAllies) + offsetof(BVIntSet, mReservedMetaWord) == 0xE4,
+    offsetof(UserArmy, mVarDat) + offsetof(SSTIArmyVariableData, mAllies) + offsetof(BVIntSet, mReservedMetaWord) ==
+      0xE4,
     "UserArmy::mVarDat.mAllies.mReservedMetaWord offset must be 0xE4"
   );
   static_assert(
-    offsetof(UserArmy, mVarDat) + offsetof(SSTIArmyVariableData, mAllies) + offsetof(BVIntSet, mWords) + offsetof(decltype(BVIntSet::mWords), start_) == 0xE8,
+    offsetof(UserArmy, mVarDat) + offsetof(SSTIArmyVariableData, mAllies) + offsetof(BVIntSet, mWords) +
+        offsetof(decltype(BVIntSet::mWords), start_) ==
+      0xE8,
     "UserArmy::mVarDat.mAllies word start offset must be 0xE8"
   );
   static_assert(
-    offsetof(UserArmy, mVarDat) + offsetof(SSTIArmyVariableData, mAllies) + offsetof(BVIntSet, mWords) + offsetof(decltype(BVIntSet::mWords), end_) == 0xEC,
+    offsetof(UserArmy, mVarDat) + offsetof(SSTIArmyVariableData, mAllies) + offsetof(BVIntSet, mWords) +
+        offsetof(decltype(BVIntSet::mWords), end_) ==
+      0xEC,
     "UserArmy::mVarDat.mAllies word end offset must be 0xEC"
   );
   static_assert(offsetof(UserArmy, mWeakRefs) == 0x1E0, "UserArmy::mWeakRefs offset must be 0x1E0");

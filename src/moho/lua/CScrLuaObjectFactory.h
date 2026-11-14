@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "gpg/core/containers/String.h"
@@ -58,16 +59,6 @@ namespace moho
   );
 
   /**
-   * Address: 0x004D2380 (FUN_004D2380, ?SCR_ExpectArgs@Moho@@YAXPAVLuaState@LuaPlus@@HHPBD@Z)
-   *
-   * What it does:
-   * Validates Lua argument count in `[minArgs, maxArgs]` (or `>= minArgs`
-   * when `maxArgs == -1`) and raises LuaState::Error with `helpText` on
-   * mismatch.
-   */
-  void SCR_ExpectArgs(LuaPlus::LuaState* state, int maxArgs, int minArgs, const char* helpText);
-
-  /**
    * Engine addition: the exact-count check the binary inlines into its Lua
    * bindings. SCR_ExpectArgs isn't the same check, its message says "between".
    *
@@ -78,22 +69,13 @@ namespace moho
   void SCR_ExpectExactArgs(LuaPlus::LuaState* state, int expectedArgs, const char* helpText);
 
   /**
-   * Address: 0x004D2F70 (FUN_004D2F70, ?SCR_ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVLuaObject@LuaPlus@@@Z)
+   * Address: 0x004D2F70 (FUN_004D2F70,
+   * ?SCR_ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVLuaObject@LuaPlus@@@Z)
    *
    * What it does:
-   * Serializes one Lua object with SCR byte-stream encoding and returns the raw encoded bytes as `msvc8::string`.
+   * Serializes one Lua object with SCR byte-stream encoding and returns the raw encoded bytes as `fa::string`.
    */
-  [[nodiscard]] msvc8::string SCR_ToString(const LuaPlus::LuaObject& object);
-
-  /**
-   * Address: 0x004D31D0 (FUN_004D31D0, ?SCR_ToBool@Moho@@YA_NABVLuaObject@LuaPlus@@@Z)
-   *
-   * What it does:
-   * Converts one Lua object to bool using Moho script semantics:
-   * numeric non-zero is true; case-insensitive string `"true"`, `"on"`, or
-   * `"yes"` is true; every other value is false.
-   */
-  [[nodiscard]] bool SCR_ToBool(const LuaPlus::LuaObject& object);
+  [[nodiscard]] fa::string SCR_ToString(const LuaPlus::LuaObject& object);
 
   /**
    * Address: 0x004D26D0 (FUN_004D26D0, ?SCR_Copy@Moho@@YA?AVLuaObject@LuaPlus@@ABV23@PAVLuaState@3@@Z)
@@ -123,13 +105,14 @@ namespace moho
   };
 
   /**
-   * Address: 0x004D23D0 (FUN_004D23D0, ?SCR_QuoteLuaString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@VStrArg@gpg@@@Z)
+   * Address: 0x004D23D0 (FUN_004D23D0,
+   * ?SCR_QuoteLuaString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@VStrArg@gpg@@@Z)
    *
    * What it does:
    * Returns a Lua-quoted/escaped string literal choosing `'` or `"` based on
    * source contents and escaping control/non-printable bytes.
    */
-  [[nodiscard]] msvc8::string SCR_QuoteLuaString(gpg::StrArg text);
+  [[nodiscard]] fa::string SCR_QuoteLuaString(gpg::StrArg text);
 
   /**
    * Address: 0x004CF0B0 (FUN_004CF0B0, ?SCR_RObjectToLuaMerge@Moho@@YAXABVRRef@gpg@@AAVLuaObject@LuaPlus@@@Z)
@@ -142,22 +125,14 @@ namespace moho
   void SCR_RObjectToLuaMerge(const gpg::RRef& source, LuaPlus::LuaObject& destination);
 
   /**
-   * Address: 0x004CF4A0 (FUN_004CF4A0, ?SCR_RObjectToLua@Moho@@...)
-   *
-   * What it does:
-   * Builds one Lua object initialized as `nil` and merges a reflected source
-   * reference into it.
-   */
-  [[nodiscard]] LuaPlus::LuaObject SCR_RObjectToLua(const gpg::RRef& source, LuaPlus::LuaState* state);
-
-  /**
    * Address: 0x004CF510 (FUN_004CF510, ?SCR_LuaBuildObject@Moho@@YA_NVLuaObject@LuaPlus@@ABVRRef@gpg@@_N@Z)
    *
    * What it does:
    * Recursively applies one Lua value/table into a reflected destination reference,
    * handling lexical, indexed, enum-flag, and named-field paths with warning logs.
    */
-  [[nodiscard]] bool SCR_LuaBuildObject(LuaPlus::LuaObject valueObject, const gpg::RRef& destination, bool ignoreMissingFields);
+  [[nodiscard]] bool
+  SCR_LuaBuildObject(LuaPlus::LuaObject valueObject, const gpg::RRef& destination, bool ignoreMissingFields);
 
   /**
    * Address: 0x004D2550 (FUN_004D2550, ?SCR_GetEnum@Moho@@YAXPAVLuaState@LuaPlus@@VStrArg@gpg@@AAVRRef@5@@Z)
@@ -181,7 +156,8 @@ namespace moho
    * Address: 0x004CE020 (FUN_004CE020, ?SCR_LuaDoFile@Moho@@YA_NPAVLuaState@LuaPlus@@VStrArg@gpg@@PAVLuaObject@3@@Z)
    *
    * IDA signature:
-   * bool __usercall Moho::SCR_LuaDoFile@<al>(LuaPlus::LuaState *state@<edi>, const char *filename, LuaPlus::LuaObject *env);
+   * bool __usercall Moho::SCR_LuaDoFile@<al>(LuaPlus::LuaState *state@<edi>, const char *filename, LuaPlus::LuaObject
+   * *env);
    *
    * What it does:
    * Memory-maps one Lua source file, runs it through `lua_load` with the
@@ -198,7 +174,8 @@ namespace moho
    * Executes one resolved script file through `func_LuaDoScript`, restores the
    * caller's Lua stack top, and reports exceptions with file-context warnings.
    */
-  [[nodiscard]] bool SCR_LuaDoScript(LuaPlus::LuaState* state, gpg::StrArg scriptPath, LuaPlus::LuaObject* outEnvironment);
+  [[nodiscard]] bool
+  SCR_LuaDoScript(LuaPlus::LuaState* state, gpg::StrArg scriptPath, LuaPlus::LuaObject* outEnvironment);
 
   /**
    * Address: 0x004CECD0 (FUN_004CECD0, Moho::SCR_LuaDoFileConcat)
@@ -207,11 +184,7 @@ namespace moho
    * Concatenates and executes one ordered Lua file list as a single chunk,
    * optionally setting one table environment before execution.
    */
-  void SCR_LuaDoFileConcat(
-    LuaPlus::LuaState* state,
-    LuaPlus::LuaObject* outEnvironment,
-    msvc8::vector<msvc8::string> files
-  );
+  void SCR_LuaDoFileConcat(LuaPlus::LuaState* state, LuaPlus::LuaObject* outEnvironment, fa::vector<fa::string> files);
 
   /**
    * Address: 0x004CE2C0 (FUN_004CE2C0, func_LuaDoScript)
@@ -234,7 +207,7 @@ namespace moho
   {
   public:
     /**
-      * Alias of FUN_10015880 (non-canonical helper lane).
+     * Alias of FUN_10015880 (non-canonical helper lane).
      *
      * What it does:
      * Initializes the base factory and assigns a unique cached object index.
@@ -275,7 +248,9 @@ namespace moho
      * Recovery helper:
      * Overrides the cached factory index lane on an already-materialized factory object.
      */
-    void SetFactoryObjectIndexForRecovery(const int32_t factoryObjectIndex) noexcept
+    void SetFactoryObjectIndexForRecovery(
+      const int32_t factoryObjectIndex
+    ) noexcept
     {
       mFactoryObjectIndex = factoryObjectIndex;
     }
@@ -289,6 +264,20 @@ namespace moho
      * creating/storing a new entry when the indexed slot is nil.
      */
     LuaPlus::LuaObject Get(LuaPlus::LuaState* state);
+
+    /**
+     * Engine addition, not in the binary: after a saved game's Lua state is loaded into `state`, points the slot of
+     * every class factory that a `Core` or `Sim` class binder publishes (`moho.IEffect`) at the table the save holds
+     * under that name, and drops the other slots so they are built again on first use.
+     *
+     * The slots are numbered in the order factories are constructed at startup, and the save keeps the numbers of
+     * the exe that wrote it. This engine's order is not retail's, so after a retail save loaded, a new emitter got
+     * another class's metatable. Nothing changes when every published slot already matches, as for a save from this
+     * same build.
+     *
+     * Returns how many slots were pointed at their table, or 0 when nothing changed.
+     */
+    static std::size_t RebindLoadedFactoryObjects(LuaPlus::LuaState* state);
 
   protected:
     virtual LuaPlus::LuaObject Create(LuaPlus::LuaState* state) = 0;
@@ -330,7 +319,9 @@ namespace moho
      * `CScrLuaMetatableFactory<CAimManipulator>::Create` at 0x00632C40, which
      * is byte-identical apart from that displacement.
      */
-    LuaPlus::LuaObject Create(LuaPlus::LuaState* state) override
+    LuaPlus::LuaObject Create(
+      LuaPlus::LuaState* state
+    ) override
     {
       return SCR_CreateSimpleMetatable(state);
     }
@@ -368,6 +359,24 @@ namespace moho
     CScrLuaMetatableFactory() = default;
   };
 
+  /**
+   * Engine addition: a `func_Create*Object` function: the factory's metatable into `object`, unless null.
+   * Instantiated in the file that calls it, where `T`'s factory specialization is visible.
+   */
+  template <class T>
+  LuaPlus::LuaObject* SCR_WriteMetatable(
+    LuaPlus::LuaObject* const object,
+    LuaPlus::LuaState* const state
+  )
+  {
+    if (object == nullptr) {
+      return nullptr;
+    }
+
+    *object = CScrLuaMetatableFactory<T>::Instance().Get(state);
+    return object;
+  }
+
   template <>
   class CScrLuaMetatableFactory<CScriptObject*> final : public CScrLuaObjectFactory
   {
@@ -395,15 +404,8 @@ namespace moho
     static CScrLuaMetatableFactory sInstance;
   };
   static_assert(
-    sizeof(CScrLuaMetatableFactory<CScriptObject*>) == 0x8, "CScrLuaMetatableFactory<CScriptObject*> must be 0x8"
+    sizeof(CScrLuaMetatableFactory<CScriptObject*>) == 0x8,
+    "CScrLuaMetatableFactory<CScriptObject*> must be 0x8"
   );
 
-  /**
-   * Address: 0x00BC60D0 (FUN_00BC60D0)
-   *
-   * What it does:
-   * Allocates the next Lua metatable-factory object index and stores it in the
-   * recovered `CScrLuaMetatableFactory<CScriptObject*>` startup index lane.
-   */
-  int register_CScrLuaMetatableFactory_CScriptObject_Index();
 } // namespace moho

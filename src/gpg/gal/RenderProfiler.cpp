@@ -23,7 +23,9 @@ namespace gpg::gal
       return now.QuadPart;
     }
 
-    [[nodiscard]] double TicksToMilliseconds(const std::int64_t ticks) noexcept
+    [[nodiscard]] double TicksToMilliseconds(
+      const std::int64_t ticks
+    ) noexcept
     {
       static const double sFrequency = [] {
         LARGE_INTEGER frequency{};
@@ -50,7 +52,9 @@ namespace gpg::gal
     return std::max(0, std::atoi(text));
   }
 
-  std::uint32_t RenderProfiler::Region(const char* const name) noexcept
+  std::uint32_t RenderProfiler::Region(
+    const char* const name
+  ) noexcept
   {
     for (std::uint32_t index = 0U; index < mRegionCount; ++index) {
       if (mRegions[index].name == name || std::strcmp(mRegions[index].name, name) == 0) {
@@ -64,12 +68,9 @@ namespace gpg::gal
     return mRegionCount++;
   }
 
-  const char* RenderProfiler::RegionName(const std::uint32_t region) const noexcept
-  {
-    return region < mRegionCount ? mRegions[region].name : "";
-  }
-
-  void RenderProfiler::BeginRegion(const std::uint32_t region) noexcept
+  void RenderProfiler::BeginRegion(
+    const std::uint32_t region
+  ) noexcept
   {
     RegionTotals& totals = mRegions[region];
     // A region re-entered from inside itself is timed once, outermost.
@@ -85,7 +86,9 @@ namespace gpg::gal
     }
   }
 
-  void RenderProfiler::EndRegion(const std::uint32_t region) noexcept
+  void RenderProfiler::EndRegion(
+    const std::uint32_t region
+  ) noexcept
   {
     RegionTotals& totals = mRegions[region];
     if (totals.depth == 0U || --totals.depth != 0U) {
@@ -98,12 +101,16 @@ namespace gpg::gal
     // The tally restarts when a frame's statistics are taken; a region open
     // across that counts from zero.
     const DrawStatistics& pending = PendingDrawStatistics();
-    totals.draws += pending.drawCalls >= totals.drawsAtStart ? pending.drawCalls - totals.drawsAtStart : pending.drawCalls;
+    totals.draws +=
+      pending.drawCalls >= totals.drawsAtStart ? pending.drawCalls - totals.drawsAtStart : pending.drawCalls;
     totals.uploadBytes +=
       pending.uploadBytes >= totals.uploadAtStart ? pending.uploadBytes - totals.uploadAtStart : pending.uploadBytes;
   }
 
-  void RenderProfiler::AddGpuTime(const std::uint32_t region, const double milliseconds) noexcept
+  void RenderProfiler::AddGpuTime(
+    const std::uint32_t region,
+    const double milliseconds
+  ) noexcept
   {
     if (region < mRegionCount) {
       mRegions[region].gpuMilliseconds += milliseconds;
@@ -112,7 +119,9 @@ namespace gpg::gal
   }
 
   void RenderProfiler::AddGpuPipelineStatistics(
-    const std::uint32_t region, const std::uint64_t pixelInvocations, const std::uint64_t primitives
+    const std::uint32_t region,
+    const std::uint64_t pixelInvocations,
+    const std::uint64_t primitives
   ) noexcept
   {
     if (region < mRegionCount) {
@@ -132,13 +141,17 @@ namespace gpg::gal
     return sEnabled;
   }
 
-  void RenderProfiler::AddGpuFrameTime(const double milliseconds) noexcept
+  void RenderProfiler::AddGpuFrameTime(
+    const double milliseconds
+  ) noexcept
   {
     mGpuFrameMilliseconds += milliseconds;
     ++mGpuFrames;
   }
 
-  void RenderProfiler::EndFrame(const DrawStatistics& frame) noexcept
+  void RenderProfiler::EndFrame(
+    const DrawStatistics& frame
+  ) noexcept
   {
     FAF_PROFILE_FRAME_DEFAULT();
     const std::int64_t now = NowTicks();
@@ -152,6 +165,10 @@ namespace gpg::gal
     if (mFrames == 0U) {
       mIntervalStartTicks = NowTicks();
     }
+    if (mFrames != 0U) {
+      // The first frame of an interval also holds the time the last one's log took.
+      mFrameWalls.push_back(static_cast<float>(mSummary.lastFrameWallMilliseconds));
+    }
     mUploadBytes += frame.uploadBytes;
     mStateChanges += frame.stateChanges;
     mDrawCalls += frame.drawCalls;
@@ -163,11 +180,36 @@ namespace gpg::gal
     const double frames = static_cast<double>(mFrames);
     const double wallMilliseconds = TicksToMilliseconds(NowTicks() - mIntervalStartTicks);
     gpg::Logf(
-      "Render profile over %u frames: %.2f ms/frame wall, GPU %.2f ms/frame, %.1f draws, %.1f state changes, %.1f KB uploaded per frame",
-      mFrames, wallMilliseconds / frames, mGpuFrames != 0U ? mGpuFrameMilliseconds / static_cast<double>(mGpuFrames) : 0.0,
-      static_cast<double>(mDrawCalls) / frames, static_cast<double>(mStateChanges) / frames,
+      "Render profile over %u frames: %.2f ms/frame wall, GPU %.2f ms/frame, %.1f draws, %.1f state changes, %.1f KB "
+      "uploaded per frame",
+      mFrames,
+      wallMilliseconds / frames,
+      mGpuFrames != 0U ? mGpuFrameMilliseconds / static_cast<double>(mGpuFrames) : 0.0,
+      static_cast<double>(mDrawCalls) / frames,
+      static_cast<double>(mStateChanges) / frames,
       static_cast<double>(mUploadBytes) / frames / 1024.0
     );
+    // Lag spikes: the slowest frames of the interval, which the mean hides.
+    if (!mFrameWalls.empty()) {
+      std::sort(mFrameWalls.begin(), mFrameWalls.end());
+      const std::size_t count = mFrameWalls.size();
+      const auto at = [&](const double share) {
+        return static_cast<double>(
+          mFrameWalls[std::min(count - 1U, static_cast<std::size_t>(share * static_cast<double>(count)))]
+        );
+      };
+      const auto over =
+        static_cast<std::size_t>(mFrameWalls.end() - std::upper_bound(mFrameWalls.begin(), mFrameWalls.end(), 33.4f));
+      gpg::Logf(
+        "  frame wall p50 %.2f ms, p99 %.2f ms, max %.2f ms, %zu of %zu frames over 33.4 ms",
+        at(0.5),
+        at(0.99),
+        static_cast<double>(mFrameWalls.back()),
+        over,
+        count
+      );
+      mFrameWalls.clear();
+    }
     mSummary.intervalFrames = mFrames;
     mSummary.intervalGpuMilliseconds = mGpuFrames != 0U ? mGpuFrameMilliseconds / static_cast<double>(mGpuFrames) : 0.0;
     mSummary.intervalCpuMilliseconds = 0.0;
@@ -181,17 +223,23 @@ namespace gpg::gal
         // frames they cover: one sample set per call.
         const double gpuPerCall = totals.gpuSamples != 0U ? totals.gpuMilliseconds / totals.gpuSamples : 0.0;
         gpg::Logf(
-          "  pass %-22s %6.2f calls  CPU %7.3f ms  GPU %7.3f ms per frame, %7.1f draws, %8.1f KB", totals.name,
-          static_cast<double>(totals.calls) / frames, TicksToMilliseconds(totals.cpuTicks) / frames,
-          gpuPerCall * static_cast<double>(totals.calls) / frames, static_cast<double>(totals.draws) / frames,
+          "  pass %-22s %6.2f calls  CPU %7.3f ms  GPU %7.3f ms per frame, %7.1f draws, %8.1f KB",
+          totals.name,
+          static_cast<double>(totals.calls) / frames,
+          TicksToMilliseconds(totals.cpuTicks) / frames,
+          gpuPerCall * static_cast<double>(totals.calls) / frames,
+          static_cast<double>(totals.draws) / frames,
           static_cast<double>(totals.uploadBytes) / frames / 1024.0
         );
         if (totals.statisticsSamples != 0U) {
           // Averaged over the calls measured, then per frame like the GPU time.
-          const double perCall = static_cast<double>(totals.calls) / frames / static_cast<double>(totals.statisticsSamples);
+          const double perCall =
+            static_cast<double>(totals.calls) / frames / static_cast<double>(totals.statisticsSamples);
           gpg::Logf(
-            "    pixels %-20s %10.3f Mpix  %10.1f kprims per frame", totals.name,
-            static_cast<double>(totals.pixels) * perCall / 1.0e6, static_cast<double>(totals.primitives) * perCall / 1.0e3
+            "    pixels %-20s %10.3f Mpix  %10.1f kprims per frame",
+            totals.name,
+            static_cast<double>(totals.pixels) * perCall / 1.0e6,
+            static_cast<double>(totals.primitives) * perCall / 1.0e3
           );
         }
       }

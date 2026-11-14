@@ -28,7 +28,11 @@ namespace
     return &sInstance;
   }
 
-  void AddBaseByTypeInfo(gpg::RType* typeInfo, const std::type_info& baseTypeInfo, const std::int32_t baseOffset)
+  void AddBaseByTypeInfo(
+    gpg::RType* typeInfo,
+    const std::type_info& baseTypeInfo,
+    const std::int32_t baseOffset
+  )
   {
     gpg::RType* baseType = nullptr;
     try {
@@ -41,13 +45,7 @@ namespace
       return;
     }
 
-    gpg::RField field{};
-    field.mName = baseType->GetName();
-    field.mType = baseType;
-    field.mOffset = baseOffset;
-    field.mFlags = 0;
-    field.mDesc = nullptr;
-    typeInfo->AddBase(field);
+    gpg::AddReflectedBaseType(typeInfo, baseType, baseOffset);
   }
 
   /**
@@ -57,7 +55,7 @@ namespace
    * Binds allocation/construction/destruction callback lanes for one
    * `CAiPathFinderTypeInfo` descriptor.
    */
-  [[maybe_unused]] [[nodiscard]] CAiPathFinderTypeInfo* BindCAiPathFinderTypeInfoCallbacks(
+  [[nodiscard]] CAiPathFinderTypeInfo* BindCAiPathFinderTypeInfoCallbacks(
     CAiPathFinderTypeInfo* const typeInfo
   ) noexcept
   {
@@ -91,7 +89,7 @@ namespace
    *
    * What it does:
    * Constructs the `gpg::RListType<gpg::Rect2i>` static, which preregisters
-   * it for `typeid(msvc8::list<gpg::Rect2i>)`, and returns it.
+   * it for `typeid(fa::list<gpg::Rect2i>)`, and returns it.
    *
    * `RListType<Rect2<int>>`, vtable 0x00E1C36C:
    *
@@ -150,9 +148,11 @@ gpg::RRef CAiPathFinderTypeInfo::NewRef()
  * What it does:
  * Deletes one heap-owned `CAiPathFinder` object.
  */
-void CAiPathFinderTypeInfo::Delete(void* const objectStorage)
+void CAiPathFinderTypeInfo::Delete(
+  void* const objectStorage
+)
 {
-  delete static_cast<CAiPathFinder*>(objectStorage);
+  GPG_NONVIRTUAL_DESTROY(delete static_cast<CAiPathFinder*>(objectStorage));
 }
 
 /**
@@ -162,12 +162,11 @@ void CAiPathFinderTypeInfo::Delete(void* const objectStorage)
  * Placement-constructs one `CAiPathFinder` object in caller-provided storage,
  * then returns its typed reflection reference.
  */
-gpg::RRef CAiPathFinderTypeInfo::CtrRef(void* const objectStorage)
+gpg::RRef CAiPathFinderTypeInfo::CtrRef(
+  void* const objectStorage
+)
 {
-  auto* const pathFinder = static_cast<CAiPathFinder*>(objectStorage);
-  if (pathFinder != nullptr) {
-    new (pathFinder) CAiPathFinder();
-  }
+  auto* const pathFinder = gpg::ConstructInStorage<CAiPathFinder>(objectStorage);
 
   gpg::RRef out{};
   out = gpg::MakeRRef<moho::CAiPathFinder>(pathFinder);
@@ -181,12 +180,11 @@ gpg::RRef CAiPathFinderTypeInfo::CtrRef(void* const objectStorage)
  * Runs in-place destructor for one `CAiPathFinder` object without freeing
  * storage.
  */
-void CAiPathFinderTypeInfo::Destruct(void* const objectStorage)
+void CAiPathFinderTypeInfo::Destruct(
+  void* const objectStorage
+)
 {
-  auto* const pathFinder = static_cast<CAiPathFinder*>(objectStorage);
-  if (pathFinder != nullptr) {
-    pathFinder->~CAiPathFinder();
-  }
+  gpg::DestructInStorage<CAiPathFinder>(objectStorage);
 }
 
 /**
@@ -195,7 +193,9 @@ void CAiPathFinderTypeInfo::Destruct(void* const objectStorage)
  * What it does:
  * Registers `IPathTraveler` as a reflected base at offset 0.
  */
-void CAiPathFinderTypeInfo::AddBase_IPathTraveler(gpg::RType* const typeInfo)
+void CAiPathFinderTypeInfo::AddBase_IPathTraveler(
+  gpg::RType* const typeInfo
+)
 {
   AddBaseByTypeInfo(typeInfo, typeid(IPathTraveler), 0x00);
 }
@@ -207,9 +207,15 @@ void CAiPathFinderTypeInfo::AddBase_IPathTraveler(gpg::RType* const typeInfo)
  * Registers the NavPath broadcaster as a reflected base at offset 0x0C - the
  * path finder's second base, after IPathTraveler at 0.
  */
-void CAiPathFinderTypeInfo::Addbase_Broadcaster_NavPath(gpg::RType* const typeInfo)
+void CAiPathFinderTypeInfo::Addbase_Broadcaster_NavPath(
+  gpg::RType* const typeInfo
+)
 {
-  AddBaseByTypeInfo(typeInfo, typeid(Broadcaster<const SNavPath&>), gpg::BaseSubobjectOffset<CAiPathFinder, Broadcaster<const SNavPath&>>());
+  AddBaseByTypeInfo(
+    typeInfo,
+    typeid(Broadcaster<const SNavPath&>),
+    gpg::BaseSubobjectOffset<CAiPathFinder, Broadcaster<const SNavPath&>>()
+  );
 }
 
 /**
@@ -264,10 +270,18 @@ namespace
   [[maybe_unused]] CAiPathFinderTypeInfoBootstrap gCAiPathFinderTypeInfoBootstrap;
 } // namespace
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CAiPathFinderTypeInfo_ef9477, moho::register_CAiPathFinderTypeInfo)
-GPG_PREREGISTER_INIT(register_Rect2iListTypeInfo_ef9477, moho::register_Rect2iListTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CAiPathFinderTypeInfo_ef9477,
+  moho::register_CAiPathFinderTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_Rect2iListTypeInfo_ef9477,
+  moho::register_Rect2iListTypeInfo
+)
 
-GPG_PREREGISTER_INIT(AcquireCAiPathFinderTypeInfo_ef9477, AcquireCAiPathFinderTypeInfo)
+GPG_PREREGISTER_INIT(
+  AcquireCAiPathFinderTypeInfo_ef9477,
+  AcquireCAiPathFinderTypeInfo
+)

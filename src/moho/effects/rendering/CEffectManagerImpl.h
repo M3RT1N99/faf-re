@@ -24,6 +24,14 @@ namespace moho
   void EFFECT_SetLifetimeOnly(bool lifetimeOnly) noexcept;
   [[nodiscard]] bool EFFECT_LifetimeOnly() noexcept;
 
+  struct REffectBlueprint;
+
+  /**
+   * Engine addition (server mode, plan WP9.3): whether the creates keep an effect of `blueprint` at this machine's
+   * `graphics_Fidelity` (its Low/Med/HighFidelity flags); a null blueprint always. The check every create ends with.
+   */
+  [[nodiscard]] bool EFFECT_EnabledAtFidelity(const REffectBlueprint* blueprint) noexcept;
+
   class CEffectManagerImpl : public IEffectManager
   {
   public:
@@ -64,9 +72,8 @@ namespace moho
      * its members are loaded over it afterwards.
      * Inlined into `SerConstructHelper<CEffectManagerImpl>::Construct` 0x0066BB40.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x0066BA60 (FUN_0066BA60)
@@ -75,7 +82,10 @@ namespace moho
      * Saves `GetSim()` unowned for `MemberConstruct` to read back.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
 
     /**
@@ -186,8 +196,8 @@ namespace moho
      */
     void CreateLightParticle(
       Wm3::Vector3<float> position,
-      const msvc8::string& texturePrimary,
-      const msvc8::string& textureSecondary,
+      const fa::string& texturePrimary,
+      const fa::string& textureSecondary,
       float size,
       float lifetime,
       int armyIndex
@@ -244,14 +254,15 @@ namespace moho
     ) override;
 
   public:
-    Sim* mSim;                              // +0x04
-    TDatList<IEffect, void> mActiveEffects;   // +0x08
+    Sim* mSim;                                 // +0x04
+    TDatList<IEffect, void> mActiveEffects;    // +0x08
     TDatList<IEffect, void> mDestroyedEffects; // +0x10
   };
 
   static_assert(offsetof(CEffectManagerImpl, mSim) == 0x04, "CEffectManagerImpl::mSim offset must be 0x04");
   static_assert(
-    offsetof(CEffectManagerImpl, mActiveEffects) == 0x08, "CEffectManagerImpl::mActiveEffects offset must be 0x08"
+    offsetof(CEffectManagerImpl, mActiveEffects) == 0x08,
+    "CEffectManagerImpl::mActiveEffects offset must be 0x08"
   );
   static_assert(
     offsetof(CEffectManagerImpl, mDestroyedEffects) == 0x10,
@@ -270,4 +281,13 @@ namespace moho
    * thread is running, or null outside one. `Sim::GetParticleBuffer` returns it when set.
    */
   [[nodiscard]] SParticleBuffer* EffectTickChunkParticleBuffer() noexcept;
+
+  /**
+   * Engine addition (`sim_ParallelEffects`): true while this thread ticks a chunk of effects on a sim worker.
+   * `TickParallel` falls back to the serial walk while a `dbg_` effect switch is on, but reads them once per tick:
+   * a switch turned on from the UI thread mid-tick reached the workers, and several of them then pushed into the
+   * sim's one debug-line vector at once (a write past its end in a coverage run, 2026-11-12). The debug drawing
+   * skips such a tick; the next one is serial and draws.
+   */
+  [[nodiscard]] bool EffectTickOnWorker() noexcept;
 } // namespace moho

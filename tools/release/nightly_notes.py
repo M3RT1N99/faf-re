@@ -1,18 +1,27 @@
-"""Writes a nightly pre-release's notes: the parity run it passed, every commit since the previous
+"""Writes a nightly release's notes: the parity run it passed, every commit since the previous
 nightly (or release), how to install it, and the zips' checksums.
 
-usage: TAG=... SHA=... PREVIOUS=... [PARITY_RUN=... PARITY_URL=...] nightly_notes.py --out notes.md
+usage: TAG=... SHA=... PREVIOUS=... [PARITY_RUN=... PARITY_URL=... NOTE=...] nightly_notes.py --out notes.md
+           [--player-notes player-notes.md]
+
+--player-notes also writes the short notes for players that FAF Develop's changelog shows (issue #323):
+each `Player-Note:` trailer of the commits since the previous nightly or release, one line per note.
+`Player-Note: none` marks a change players won't notice and is left out (CONTRIBUTING.md, "Player notes").
 
 Reads git history, zips/SHA256SUMS.txt and, when the parity run's report was downloaded, report/report.json.
 """
 import argparse
 import json
 import os
+import re
 import subprocess
 
 REPO = "https://github.com/Draiget/faf-re"
 # GitHub refuses a release body over 125,000 characters.
 MAX_CHANGES = 100_000
+# `Player-Note:` values that say the change has no note
+NO_NOTE = {"none", "-", "no", "n/a"}
+PLAYER_NOTE_RE = re.compile(r"^\s*Player-Note:[ \t]*(.*)$", re.IGNORECASE)
 
 
 def changes(previous, sha):
@@ -22,25 +31,57 @@ def changes(previous, sha):
     return log.splitlines()
 
 
+def player_notes(previous, sha):
+    """The `Player-Note:` lines of the commits in previous..sha, oldest first, as Markdown list lines. Read anywhere in
+    the message, not only as trailers: a squash merge puts each commit's message one after another, so a note can end
+    up mid-message."""
+    log = subprocess.run(["git", "log", "--no-merges", "--reverse", "--format=%B%x00", "%s..%s" % (previous, sha)],
+                         capture_output=True, text=True, encoding="utf-8", check=True).stdout
+    notes = []
+    for message in log.split("\0"):
+        for line in message.splitlines():
+            m = PLAYER_NOTE_RE.match(line)
+            if m and m.group(1).strip() and m.group(1).strip().lower().rstrip(".") not in NO_NOTE:
+                notes.append(m.group(1).strip())
+    return ["- " + note for note in notes]
+
+
+def write_player_notes(path, tag, previous, sha):
+    notes = player_notes(previous, sha)
+    lines = ["## faf-re %s" % tag, ""] + (notes or ["No player-facing changes since %s." % previous]) + [""]
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines))
+    print("%d player notes since %s" % (len(notes), previous))
+
+
 def parity_line():
     run, url = os.environ.get("PARITY_RUN"), os.environ.get("PARITY_URL")
     if not run:
         return "Built by hand: no parity run is tied to this build."
-    text = "Passed the [nightly replay parity](%s)" % url
+    new = []
+    counts = {}
     if os.path.isfile("report/report.json"):
         with open("report/report.json", encoding="utf-8") as f:
-            counts = json.load(f)["counts"]
-        shown = [(counts.get(k, 0), k) for k in ("pass", "expected-desync", "expected-crash", "not-run")]
+            report = json.load(f)
+        counts, new = report["counts"], report.get("regressions", [])
+    text = ("**Built despite new failures in** the [nightly replay parity](%s)" if new else "Passed the [nightly replay parity](%s)") % url
+    if counts:
+        shown = [(counts.get(k, 0), k) for k in ("pass", "desync", "crash", "expected-desync", "expected-crash", "not-run")]
         text += " on Linux x64: " + ", ".join("%d %s" % (n, k.replace("expected-", "expected ")) for n, k in shown if n)
-        text += ". What is expected is [listed with why](%s/blob/%s/tools/parity-data/expected/3835.json)" % (REPO, os.environ["SHA"])
+        if new:
+            text += ". New failures: " + ", ".join(str(i) for i in new)
+        text += ". What is expected is [listed with why](%s/tree/%s/tools/parity-data/expected), one file per game version" % (REPO, os.environ["SHA"])
     return text + "."
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--player-notes", help="also write the notes for players to this file")
     args = parser.parse_args()
     tag, sha, previous = os.environ["TAG"], os.environ["SHA"], os.environ["PREVIOUS"]
+    if args.player_notes:
+        write_player_notes(args.player_notes, tag, previous, sha)
 
     commits = changes(previous, sha)
     shown, size = [], 0
@@ -52,9 +93,9 @@ def main():
     with open("zips/SHA256SUMS.txt", encoding="utf-8") as f:
         sums = f.read().strip()
 
-    lines = ["A nightly build of master at [`%s`](%s/commit/%s). It has had no testing beyond the checks below: "
-             "use a [release](%s/releases/latest) unless you want the newest changes." % (sha[:7], REPO, sha, REPO), "",
-             parity_line(), "",
+    lines = ["A nightly build of master at [`%s`](%s/commit/%s). It has had no testing beyond the checks below."
+             % (sha[:7], REPO, sha), "",
+             parity_line(), ""] + ([os.environ["NOTE"], ""] if os.environ.get("NOTE") else []) + [
              "## Changes since %s (%d)" % (previous, len(commits)), ""]
     lines += shown or ["No commits."]
     if len(shown) < len(commits):
@@ -63,6 +104,8 @@ def main():
               "## Install", "",
               "- **x64:** extract `faf-engine-%s-x64.zip` into the folder you run the x64 engine from. `INSTALL.txt` inside lists the steps." % tag,
               "- **x86:** extract `faf-engine-%s-x86.zip` into FAF's `bin` folder." % tag,
+              "- **Linux x64 (native, Vulkan; glibc 2.34 or newer: Ubuntu 22.04, Debian 12, Mint 21, RHEL 9 and newer):** extract `faf-engine-%s-linux-x64.tar.gz` into a folder of its own and start `./faf-launch`, which finds Forged Alliance and FAF's game data. `INSTALL.txt` inside lists the steps; it plays with the rebuilt engine on Windows or Linux, not with the original exe." % tag,
+              "- `main_x64.exe` and `main.exe` are the same exes on their own, for updating an install that already has the rest of the zip.",
               "- The `.pdb` files are optional, but crash reports are much more useful with them. Crash reports are written next to the exe as `faf_crash_<date>.txt`; please attach them with your log.",
               "", "SHA-256:", "", "```", sums, "```", ""]
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:

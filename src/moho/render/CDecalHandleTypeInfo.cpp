@@ -32,12 +32,11 @@ namespace
   /**
    * Address: 0x0077C890 (FUN_0077C890)
    */
-  gpg::RRef CtrRef_CDecalHandle(void* const objectStorage)
+  gpg::RRef CtrRef_CDecalHandle(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<moho::CDecalHandle*>(objectStorage);
-    if (object != nullptr) {
-      new (object) moho::CDecalHandle();
-    }
+    auto* const object = gpg::ConstructInStorage<moho::CDecalHandle>(objectStorage);
 
     gpg::RRef out{};
     out.mObj = object;
@@ -48,7 +47,9 @@ namespace
   /**
    * Address: 0x0077C870 (FUN_0077C870)
    */
-  void Delete_CDecalHandle(void* const objectStorage)
+  void Delete_CDecalHandle(
+    void* const objectStorage
+  )
   {
     delete static_cast<moho::CDecalHandle*>(objectStorage);
   }
@@ -56,12 +57,11 @@ namespace
   /**
    * Address: 0x0077C900 (FUN_0077C900)
    */
-  void Dtr_CDecalHandle(void* const objectStorage)
+  void Dtr_CDecalHandle(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<moho::CDecalHandle*>(objectStorage);
-    if (object != nullptr) {
-      object->~CDecalHandle();
-    }
+    gpg::DestructInStorage<moho::CDecalHandle>(objectStorage);
   }
 
   /**
@@ -71,7 +71,7 @@ namespace
    * Binds `CDecalHandle` new/construct/delete/destruct callback lanes into
    * the reflected type callback slots.
    */
-  [[maybe_unused]] moho::CDecalHandleTypeInfo* BindDecalHandleTypeCallbackSlots(
+  moho::CDecalHandleTypeInfo* BindDecalHandleTypeCallbackSlots(
     moho::CDecalHandleTypeInfo* const typeInfo
   )
   {
@@ -142,19 +142,17 @@ namespace moho
   /**
    * Address: 0x0077D8B0 (FUN_0077D8B0, Moho::CDecalHandleTypeInfo::AddBase_CScriptObject)
    */
-  void CDecalHandleTypeInfo::AddBase_CScriptObject(gpg::RType* const typeInfo)
+  void CDecalHandleTypeInfo::AddBase_CScriptObject(
+    gpg::RType* const typeInfo
+  )
   {
-    gpg::RType* const baseType = CScriptObject::StaticGetClass();
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, CScriptObject::StaticGetClass());
   }
 } // namespace moho
 
 // Phase-1 pre-registration: run this descriptor registration ahead of every
 // consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CDecalHandleTypeInfo, moho::register_CDecalHandleTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CDecalHandleTypeInfo,
+  moho::register_CDecalHandleTypeInfo
+)

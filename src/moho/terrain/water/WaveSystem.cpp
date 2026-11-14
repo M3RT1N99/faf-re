@@ -26,9 +26,11 @@ namespace
   constexpr std::int32_t kWaveSpatialRoutingMask = 0x800;
   constexpr float kWaveDefaultDissolveCutoff = 0.0f;
   constexpr float kWaveBoundsHalfHeight = 0.1f;
-  constexpr float kPi = 3.1415925f;
+  [[maybe_unused]] constexpr float kPi = 3.1415925f;
 
-  void ReleaseParticleTextureRef(moho::CParticleTexture*& texture) noexcept
+  void ReleaseParticleTextureRef(
+    moho::CParticleTexture*& texture
+  ) noexcept
   {
     if (texture == nullptr) {
       return;
@@ -38,7 +40,10 @@ namespace
     texture = nullptr;
   }
 
-  void AssignParticleTextureRef(moho::CParticleTexture*& slot, moho::CParticleTexture* const newTexture) noexcept
+  void AssignParticleTextureRef(
+    moho::CParticleTexture*& slot,
+    moho::CParticleTexture* const newTexture
+  ) noexcept
   {
     if (slot == newTexture) {
       return;
@@ -58,69 +63,14 @@ namespace
    * Invokes scalar deleting destructor semantics for each non-null generator
    * pointer in one half-open range.
    */
-  void DestroyWaveGeneratorRange(moho::WaveGenerator* const* const begin, moho::WaveGenerator* const* const end)
+  void DestroyWaveGeneratorRange(
+    moho::WaveGenerator* const* const begin,
+    moho::WaveGenerator* const* const end
+  )
   {
     for (moho::WaveGenerator* const* it = begin; it != end; ++it) {
       delete *it;
     }
-  }
-
-  /**
-   * Address: 0x00887BB0 (FUN_00887BB0)
-   *
-   * What it does:
-   * Runs one deleting-destructor thunk for `WaveGenerator`, forwarding through
-   * non-deleting `WaveGenerator::~WaveGenerator` and optional storage release.
-   */
-  [[nodiscard]] moho::WaveGenerator* DestroyWaveGeneratorDeleting(
-    moho::WaveGenerator* const generator,
-    const unsigned char deleteFlag
-  )
-  {
-    generator->~WaveGenerator();
-    if ((deleteFlag & 1u) != 0u) {
-      ::operator delete(static_cast<void*>(generator));
-    }
-    return generator;
-  }
-
-  /**
-   * Address: 0x0088ACB0 (FUN_0088ACB0, sub_88ACB0)
-   *
-   * What it does:
-   * Search-and-compact lane that walks a `WaveGenerator**` range and shifts
-   * elements left to remove every occurrence of `target`. Records the new
-   * compacted-end pointer through `outEnd`. The binary emits this body
-   * out-of-line; wiring it through the named helper preserves the per-T
-   * shape used by `WaveSystem::RemoveAndDeleteGenerator`.
-   */
-  [[nodiscard]] moho::WaveGenerator*** CompactWaveGeneratorPointerRangeWithoutTarget(
-    moho::WaveGenerator*** const outEnd,
-    moho::WaveGenerator** begin,
-    moho::WaveGenerator** const end,
-    moho::WaveGenerator* const target
-  ) noexcept
-  {
-    moho::WaveGenerator** cursor = begin;
-    while (cursor != end && *cursor != target) {
-      ++cursor;
-    }
-
-    if (cursor == end) {
-      *outEnd = cursor;
-      return outEnd;
-    }
-
-    moho::WaveGenerator** write = cursor;
-    for (moho::WaveGenerator** read = cursor + 1; read != end; ++read) {
-      if (*read != target) {
-        *write = *read;
-        ++write;
-      }
-    }
-
-    *outEnd = write;
-    return outEnd;
   }
 
   /**
@@ -206,7 +156,7 @@ namespace
       newCapacity = requiredSize;
     }
 
-    Generator* const newBuffer = msvc8::detail::allocate_checked<Generator>(newCapacity);
+    Generator* const newBuffer = fa::detail::allocate_checked<Generator>(newCapacity);
 
     const std::size_t prefixCount = static_cast<std::size_t>(pos - start);
     if (prefixCount != 0u) {
@@ -241,7 +191,9 @@ namespace moho
    * Default-initializes every scalar lane via the member initializers, then
    * delegates to `PopulateFromLua` for the real field population.
    */
-  WaveParameters::WaveParameters(LuaPlus::LuaObject& source)
+  WaveParameters::WaveParameters(
+    LuaPlus::LuaObject& source
+  )
   {
     PopulateFromLua(source);
   }
@@ -253,8 +205,8 @@ namespace moho
    * Builds one preset directly from typed engine values.
    */
   WaveParameters::WaveParameters(
-    const msvc8::string& texturePath,
-    const msvc8::string& rampPath,
+    const fa::string& texturePath,
+    const fa::string& rampPath,
     const Wm3::Vec3f& position,
     const float period,
     const float periodVariance,
@@ -286,8 +238,7 @@ namespace moho
     , mFrameRate(frameRate)
     , mFrameRateVariance(frameRateVariance)
     , mStripCount(stripCount)
-  {
-  }
+  {}
 
   /**
    * Address: 0x00886FB0 (FUN_00886FB0, complete-object destructor)
@@ -314,7 +265,9 @@ namespace moho
    * Matches the binary's field-by-field shape exactly, including which
    * lanes get an `IsNil` guard and which do not.
    */
-  void WaveParameters::PopulateFromLua(LuaPlus::LuaObject& source)
+  void WaveParameters::PopulateFromLua(
+    LuaPlus::LuaObject& source
+  )
   {
     mTexturePath = source["texture"].GetString();
     mRampPath = source["ramp"].GetString();
@@ -354,7 +307,9 @@ namespace moho
    * Default-initializes `mName`/`mPreview`/`mWaves` via the member
    * initializers, then delegates to `LoadParametersFromLua`.
    */
-  WavePattern::WavePattern(LuaPlus::LuaObject& source)
+  WavePattern::WavePattern(
+    LuaPlus::LuaObject& source
+  )
   {
     LoadParametersFromLua(source);
   }
@@ -365,7 +320,7 @@ namespace moho
    *
    * What it does:
    * Tidies `mPreview` then `mName`. `mWaves` (the last-declared member) is
-   * torn down automatically by `msvc8::vector<WaveParameters>::~vector()`,
+   * torn down automatically by `fa::vector<WaveParameters>::~vector()`,
    * which is the recovered body of `FUN_0088A150` -- per-element destruction
    * dispatches through `WaveParameters`'s own vtable slot 0 (see
    * `legacy/containers/Vector.h`'s `destroy_range`), matching the binary's
@@ -387,12 +342,14 @@ namespace moho
    * present in the binary because this helper is written generically), reads
    * `name`/`preview`, then appends one `WaveParameters` per entry of the
    * `parameters` array table. Each append is the binary's
-   * `msvc8::vector<WaveParameters>::push_back` (`FUN_00889C90`, cited on
+   * `fa::vector<WaveParameters>::push_back` (`FUN_00889C90`, cited on
    * `legacy/containers/Vector.h`'s `push_back` for this 136-byte polymorphic
    * element): the fast path copy-constructs directly into spare capacity,
    * the capacity-full path reallocates through `insert(end(), value)`.
    */
-  void WavePattern::LoadParametersFromLua(LuaPlus::LuaObject& source)
+  void WavePattern::LoadParametersFromLua(
+    LuaPlus::LuaObject& source
+  )
   {
     mWaves.clear();
 
@@ -412,7 +369,10 @@ namespace moho
    * Reads texture paths and wave-emission scalar payload from one binary
    * reader lane, then refreshes runtime-dependent state.
    */
-  void WaveGenerator::LoadSerializedState(gpg::BinaryReader& reader, const std::int32_t formatVersion)
+  void WaveGenerator::LoadSerializedState(
+    gpg::BinaryReader& reader,
+    const std::int32_t formatVersion
+  )
   {
     reader.ReadString(&mPrimaryTexturePath);
     reader.ReadString(&mRampTexturePath);
@@ -456,9 +416,8 @@ namespace moho
   void WaveGenerator::RebuildSpatialBounds()
   {
     const float sampledLifetime = static_cast<float>(MathGlobalRandomRange(mMinLifetime, mMaxLifetime));
-    const float speedMagnitude = std::sqrt(
-      (mDirection.x * mDirection.x) + (mDirection.y * mDirection.y) + (mDirection.z * mDirection.z)
-    );
+    const float speedMagnitude =
+      std::sqrt((mDirection.x * mDirection.x) + (mDirection.y * mDirection.y) + (mDirection.z * mDirection.z));
     const float dominantSize = std::max(mBeginSize, mEndSize);
     const float radius = (speedMagnitude * sampledLifetime) + (dominantSize * 0.5f);
 
@@ -568,8 +527,8 @@ namespace moho
    */
   WaveGenerator::WaveGenerator(
     SpatialDB<WaveGenerator>* const spatialStorage,
-    const msvc8::string& primaryTexturePath,
-    const msvc8::string& rampTexturePath,
+    const fa::string& primaryTexturePath,
+    const fa::string& rampTexturePath,
     const Wm3::Vec3f& position,
     const float angle,
     const Wm3::Vec3f& direction,
@@ -635,7 +594,9 @@ namespace moho
    * Stores texture paths and wave-emission scalar lanes in binary stream
    * order used by terrain save/load.
    */
-  void WaveGenerator::Save(gpg::BinaryWriter& writer) const
+  void WaveGenerator::Save(
+    gpg::BinaryWriter& writer
+  ) const
   {
     writer.WriteString(mPrimaryTexturePath);
     writer.WriteString(mRampTexturePath);
@@ -670,8 +631,7 @@ namespace moho
     , mReserved98(0)
     , mWaveGenerators()
     , mGeneratorCache()
-  {
-  }
+  {}
 
   /**
    * Address: 0x00888D50 (FUN_00888D50, ??1WaveSystem@Moho@@UAE@XZ)
@@ -751,7 +711,9 @@ namespace moho
    * What it does:
    * Writes generator count and each wave-generator payload in save order.
    */
-  void WaveSystem::Save(gpg::BinaryWriter& writer) const
+  void WaveSystem::Save(
+    gpg::BinaryWriter& writer
+  ) const
   {
     const std::int32_t generatorCount = static_cast<std::int32_t>(mWaveGenerators.size());
     writer.Write(generatorCount);
@@ -759,84 +721,6 @@ namespace moho
     for (WaveGenerator* const generator : mWaveGenerators) {
       generator->Save(writer);
     }
-  }
-
-  /**
-   * Address: 0x00888E10 (FUN_00888E10, sub_888E10)
-   *
-   * What it does:
-   * Allocates and appends one runtime wave generator from explicit parameter
-   * lanes and returns the stored generator pointer.
-   */
-  WaveGenerator* WaveSystem::CreateWaveGenerator(
-    const msvc8::string& primaryTexturePath,
-    const msvc8::string& rampTexturePath,
-    const Wm3::Vec3f& position,
-    const float angle,
-    const Wm3::Vec3f& direction,
-    const Wm3::Vector2f& lifetimeRange,
-    const Wm3::Vector2f& updateIntervalRange,
-    const Wm3::Vector2f& sizeRange,
-    const float rampValueScale,
-    const Wm3::Vector2f& framerateRange,
-    const float textureSelectionRange
-  )
-  {
-    WaveGenerator* const generator = new (std::nothrow) WaveGenerator(
-      &mSpatialMeshInstance,
-      primaryTexturePath,
-      rampTexturePath,
-      position,
-      angle,
-      direction,
-      lifetimeRange,
-      updateIntervalRange,
-      sizeRange,
-      rampValueScale,
-      framerateRange,
-      textureSelectionRange
-    );
-
-    // Binary path appends even on allocation failure (stores nullptr).
-    mWaveGenerators.push_back(generator);
-    return generator;
-  }
-
-  /**
-   * Address: 0x00888F20 (FUN_00888F20, sub_888F20)
-   *
-   * What it does:
-   * Removes all cached references to `generator` from active wave-generator
-   * storage and runs one deleting-destructor lane for that generator.
-   */
-  WaveGenerator* WaveSystem::RemoveAndDeleteGenerator(WaveGenerator* const generator)
-  {
-    WaveGenerator** const previousEnd = mWaveGenerators.end_;
-    WaveGenerator** compactedEnd = previousEnd;
-
-    // Inlined block from FUN_0088ACB0 (`sub_88ACB0`).
-    (void)CompactWaveGeneratorPointerRangeWithoutTarget(
-      &compactedEnd,
-      mWaveGenerators.start_,
-      previousEnd,
-      generator
-    );
-
-    if (compactedEnd != previousEnd) {
-      const std::ptrdiff_t trailingCount = static_cast<std::ptrdiff_t>(mWaveGenerators.end_ - previousEnd);
-      WaveGenerator** updatedEnd = compactedEnd + trailingCount;
-      if (trailingCount > 0) {
-        std::memmove(
-          compactedEnd,
-          previousEnd,
-          static_cast<std::size_t>(trailingCount) * sizeof(WaveGenerator*)
-        );
-      }
-      mWaveGenerators.end_ = updatedEnd;
-    }
-
-    delete generator;
-    return generator;
   }
 
   /**
@@ -852,7 +736,9 @@ namespace moho
    * random stream (texture selection under `math_GlobalRandomMutex`), appends the
    * particle to `sWorldParticles`, then reschedules the next emission time.
    */
-  void WaveGenerator::Update(double time)
+  void WaveGenerator::Update(
+    double time
+  )
   {
     if (time - mCurrentTime <= mUpdateInterval) {
       return;
@@ -882,11 +768,12 @@ namespace moho
       static_cast<std::uint32_t>(static_cast<std::int64_t>(mTextureSelectionRange));
     std::uint32_t randomSample = 0u;
     {
-      boost::mutex::scoped_lock randomLock(math_GlobalRandomMutex);
+      std::lock_guard<std::mutex> randomLock(math_GlobalRandomMutex);
       randomSample = math_GlobalRandomStream.twister.NextUInt32();
     }
     const std::uint32_t scaledSelection = static_cast<std::uint32_t>(
-      (static_cast<std::uint64_t>(textureSelectionScale) * static_cast<std::uint64_t>(randomSample)) >> 32);
+      (static_cast<std::uint64_t>(textureSelectionScale) * static_cast<std::uint64_t>(randomSample)) >> 32
+    );
     particle.mTextureSelection =
       static_cast<float>(static_cast<double>(scaledSelection) * static_cast<double>(particle.mValue3));
     particle.mRampSelection = 0.0f;
@@ -910,7 +797,11 @@ namespace moho
    * from the spatial DB; then advances each cached generator's emission at the
    * current system time.
    */
-  void WaveSystem::Update(const GeomCamera3& camera, const float elapsedSeconds, const std::int32_t tick)
+  void WaveSystem::Update(
+    const GeomCamera3& camera,
+    const float elapsedSeconds,
+    const std::int32_t tick
+  )
   {
     if (mWaveGenerators.empty() || elapsedSeconds > 200.0f) {
       return;
@@ -931,9 +822,8 @@ namespace moho
       // instead and copy the results in.
       gpg::fastvector<WaveGenerator*> collectedInView{};
       mSpatialMeshInstance.CollectInView(
-        const_cast<GeomCamera3*>(&camera),
-        collectedInView,
-        static_cast<EEntityType>(ENTITYTYPE_Entity));
+        const_cast<GeomCamera3*>(&camera), collectedInView, static_cast<EEntityType>(ENTITYTYPE_Entity)
+      );
 
       mGeneratorCache.clear();
       for (WaveGenerator* const generator : collectedInView) {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/PlatformDefines.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -8,8 +10,8 @@
 #include "moho/task/CTaskThread.h"
 
 struct _EXCEPTION_POINTERS;
-class wxWindow;
-class wxString;
+class ShellWindow;
+class ShellString;
 
 namespace moho
 {
@@ -21,11 +23,11 @@ namespace moho
     // +0x00
     std::uintptr_t addr;
     // +0x04
-    msvc8::string symbol;
+    fa::string symbol;
     // +0x20
     std::uintptr_t symDis;
     // +0x24
-    msvc8::string filename;
+    fa::string filename;
     // +0x40
     std::uint32_t lineNum;
     // +0x44
@@ -36,10 +38,10 @@ namespace moho
      * Formats one resolved symbol line as:
      * `symbol + symDis bytes (file(lineNum) + lineDis bytes)`.
      */
-    [[nodiscard]] msvc8::string FormatResolvedLine() const;
+    [[nodiscard]] fa::string FormatResolvedLine() const;
   };
 
-#if defined(_WIN64)
+#if FAFRE_PLATFORM_WINDOWS && defined(_M_X64)
   static_assert(offsetof(SPlatSymbolInfo, addr) == 0x00, "SPlatSymbolInfo::addr offset must be 0x00");
   static_assert(offsetof(SPlatSymbolInfo, symbol) == 0x08, "SPlatSymbolInfo::symbol offset must be 0x08");
   static_assert(offsetof(SPlatSymbolInfo, symDis) == 0x28, "SPlatSymbolInfo::symDis offset must be 0x28");
@@ -111,28 +113,12 @@ namespace moho
   void WIN_AppRequestExit();
 
   /**
-   * Address: 0x004F2410 (FUN_004F2410, ?WIN_GetCurrentApp@Moho@@YAPAVIWinApp@1@XZ)
-   *
-   * What it does:
-   * Returns the process-global active `IWinApp` owner pointer.
-   */
-  IWinApp* WIN_GetCurrentApp();
-
-  /**
-   * Address: 0x004F25B0 (FUN_004F25B0, ?WIN_GetMainWindow@Moho@@YAPAVwxWindow@@XZ)
-   *
-   * What it does:
-   * Returns the process-global main-window owner pointer.
-   */
-  wxWindow* WIN_GetMainWindow();
-
-  /**
    * Address: 0x004F25C0 (FUN_004F25C0, ?WIN_SetMainWindow@Moho@@YAXPAVwxWindow@@@Z)
    *
    * What it does:
    * Updates the process-global main-window owner pointer.
    */
-  void WIN_SetMainWindow(wxWindow* mainWindow);
+  void WIN_SetMainWindow(ShellWindow* mainWindow);
 
   /**
    * Address: 0x004A2150 (FUN_004A2150)
@@ -208,7 +194,7 @@ namespace moho
    * Returns UTF-8 text containing recent log-history lines for crash/report
    * output flows.
    */
-  msvc8::string LOG_GetRecentLines(std::uint32_t maxLines);
+  fa::string LOG_GetRecentLines(std::uint32_t maxLines);
 
   /**
    * Address: 0x004A22B0 (FUN_004A22B0)
@@ -237,46 +223,7 @@ namespace moho
    * What it does:
    * Formats callstack entries from `[firstFrame, endFrame)` into text lines.
    */
-  msvc8::string PLAT_FormatCallstack(std::int32_t firstFrame, std::int32_t endFrame, const std::uintptr_t* frames);
-
-  /**
-   * Address: 0x004A25D0 (FUN_004A25D0)
-   * Mangled:
-   * ?PLAT_UnDecorateSymbolName@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PBD_N@Z
-   *
-   * What it does:
-   * Converts one decorated symbol into undecorated text under the shared
-   * symbol-handler mutex, with optional underscore-stripping mode.
-   */
-  msvc8::string PLAT_UnDecorateSymbolName(const char* name, bool stripLeadingUnderscore);
-
-  /**
-   * Address: 0x004A1F10 (FUN_004A1F10)
-   *
-   * What it does:
-   * Writes one registry value at `keyPath` using raw byte payload and explicit
-   * registry value type.
-   */
-  bool PLAT_SetRegistryValue(
-    const char* keyPath, const std::uint8_t* data, std::uint32_t dataSize, std::uint32_t valueType
-  );
-
-  /**
-   * Address: 0x004A2F60 (FUN_004A2F60)
-   *
-   * What it does:
-   * Writes one 32-bit DWORD registry value.
-   */
-  bool PLAT_SetRegistryValueDword(const char* keyPath, std::uint32_t value);
-
-  /**
-   * Address: 0x004A2F80 (FUN_004A2F80)
-   *
-   * What it does:
-   * Writes one zero-terminated string registry value; null input writes an
-   * empty string payload.
-   */
-  bool PLAT_SetRegistryValueString(const char* value, const char* keyPath);
+  fa::string PLAT_FormatCallstack(std::int32_t firstFrame, std::int32_t endFrame, const std::uintptr_t* frames);
 
   /**
    * Address: 0x004A2D40 (FUN_004A2D40)
@@ -296,7 +243,7 @@ namespace moho
    * Reads UTF-16 clipboard text from `CF_UNICODETEXT`, converts it to UTF-8,
    * and returns empty text when clipboard ownership/data is unavailable.
    */
-  msvc8::string WIN_GetClipboardText();
+  fa::string WIN_GetClipboardText();
 
   /**
    * Address: 0x004F2800 (FUN_004F2800, ?WIN_OkBox@Moho@@YAXVStrArg@gpg@@0@Z)
@@ -319,7 +266,7 @@ namespace moho
 
   /**
    * Engine addition (dedicated-server plan WPL.4): ends the client's main loop
-   * (`wxTheApp->ExitMainLoop()` when there is an application object), for
+   * (`TheApp->ExitMainLoop()` when there is an application object), for
    * simulation-side callers such as the core Lua set's EndLoggingStats.
    * WinApp.cpp sets it during static initialisation; defined in
    * moho/misc/WinPlatform.cpp. Without a client it is null and nothing exits.
@@ -330,7 +277,7 @@ namespace moho
   /**
    * Engine addition (dedicated-server plan WPL.4): dispatches the client's
    * pending window events, then runs idle processing until it asks for no
-   * more (wxTheApp's Pending/Dispatch/ProcessIdle), for
+   * more (TheApp's Pending/Dispatch/ProcessIdle), for
    * CSimDriver::PerformNextEvent. WinApp.cpp sets it during static
    * initialisation; defined in moho/misc/WinPlatform.cpp. Without a client it
    * is null and there is nothing to pump.
@@ -350,15 +297,6 @@ namespace moho
   extern AppPumpStepHook sAppPumpStep;
 
   /**
-   * Address: 0x004F2900 (FUN_004F2900, ?WIN_YesNoBox@Moho@@YA_NVStrArg@gpg@@0@Z)
-   *
-   * What it does:
-   * Displays a UTF-8 yes/no message box and returns true only when the user
-   * picks `IDYES`.
-   */
-  bool WIN_YesNoBox(gpg::StrArg caption, gpg::StrArg text);
-
-  /**
    * Address: 0x004F2A00 (FUN_004F2A00)
    * Mangled:
    * ?WIN_GetLastError@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ
@@ -366,22 +304,7 @@ namespace moho
    * What it does:
    * Converts current `GetLastError()` value into readable UTF-8 text.
    */
-  msvc8::string WIN_GetLastError();
-
-  /**
-   * Address: 0x004F1190 (FUN_004F1190)
-   * Mangled: ?WIN_ShowCrashDialog@Moho@@YAXPBD0PAU_EXCEPTION_POINTERS@@H@Z
-   *
-   * What it does:
-   * Builds crash-details text (program, args, callstack, recent log lines) and
-   * displays the crash dialog UI/fallback prompt.
-   */
-  void WIN_ShowCrashDialog(
-    std::int32_t skipCallstackFrames,
-    _EXCEPTION_POINTERS* exceptionInfo,
-    gpg::StrArg caption,
-    gpg::StrArg summaryText
-  );
+  fa::string WIN_GetLastError();
 
   /**
    * Address: 0x004F2730 (FUN_004F2730)
@@ -400,14 +323,6 @@ namespace moho
    * Destroys all managed dialog/frame windows and unlinks their registry slots.
    */
   void WINX_Exit();
-
-  /**
-   * Address: 0x004F3B60 (FUN_004F3B60, ?WINX_Printf@Moho@@YA?AVwxString@@PBDZZ)
-   *
-   * What it does:
-   * Formats one UTF-8 vararg string and returns it as a (UTF-16) wxString.
-   */
-  wxString WINX_Printf(const char* format, ...);
 
   /**
    * Address: 0x004F3CE0 (FUN_004F3CE0)
@@ -452,6 +367,5 @@ namespace moho
    * Re-initializes the shared wakeup timer baseline used by the main loop.
    */
   void register_startTime();
-
 
 } // namespace moho

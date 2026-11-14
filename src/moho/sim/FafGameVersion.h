@@ -19,7 +19,7 @@ namespace moho
    */
   inline constexpr int kFafGameVersionOldestSupported = 3835;
   /// The newest game version whose engine patches this engine carries.
-  inline constexpr int kFafGameVersionLatest = 3840;
+  inline constexpr int kFafGameVersionLatest = 3841;
 
   /**
    * Simulation behaviour that FA-Binary-Patches changed after game version 3835. Each entry is on
@@ -32,8 +32,15 @@ namespace moho
     ProjectileImpactBelowZero = 2,  ///< #154: a projectile below height 0 impacts (3840)
     RefuelUndockAboveMaxHealth = 3, ///< #169: aircraft undock when health >= max health (3840)
     ShieldRepair = 4,               ///< #175: shield repair scales with resources, and needs the shield on (3840)
-    Count = 5,
+    ProjectileMapEdgeCollision = 5, ///< #180: terrain extends past the map edge; replaces #154 (3841)
+    /// Engine feature, not an FA-Binary-Patches one: a map's `ScenarioInfo.WaterBodies` add water levels
+    /// besides its sea (.plans/water-levels/PLAN.md). In no release yet: on only by `sim_FixWaterBodies`.
+    WaterBodies = 6,
+    Count = 7,
   };
+
+  /// `SFafSimFixInfo::mFirstGameVersion` of a fix no FAF release carries yet: on only by its switch.
+  inline constexpr int kFafGameVersionUnreleased = 0x7FFFFFFF;
 
   /// Fixes active in the current session, one bit per `EFafSimFix`; set by `FAF_BeginSession`.
   extern std::uint32_t gFafSessionSimFixes;
@@ -42,7 +49,9 @@ namespace moho
    * Whether one FA-Binary-Patches simulation fix applies to the current session. Constant for the
    * whole session, so every client and every replay run of one game takes the same branch.
    */
-  [[nodiscard]] inline bool FAF_IsSimFixActive(const EFafSimFix fix) noexcept
+  [[nodiscard]] inline bool FAF_IsSimFixActive(
+    const EFafSimFix fix
+  ) noexcept
   {
     return (gFafSessionSimFixes & (1u << static_cast<std::uint32_t>(fix))) != 0u;
   }

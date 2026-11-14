@@ -71,15 +71,21 @@ def objects(arguments):
             yield argument
 
 
+def spelled(function):
+    """A demangled name with the closing brackets of nested templates together: binutils'
+    demangler writes them apart ("> >", as the allowlist does), LLVM's (the NDK's) together."""
+    return re.sub(r">\s+(?=>)", ">", function)
+
+
 def main():
-    allowed = load_allowlist(sys.argv[1])
+    allowed = {(symbol, spelled(function)) for symbol, function in load_allowlist(sys.argv[1])}
     unexpected = []
     paths = list(objects(sys.argv[2:]))
     for obj in paths:
         for symbol, function in sorted(calls(obj)):
             if function.startswith("_GLOBAL__sub_I_") and symbol in ("sin", "cos"):
                 continue
-            if (symbol, function) not in allowed:
+            if (symbol, spelled(function)) not in allowed:
                 unexpected.append(f"{symbol} {function}    ({obj})")
     if unexpected:
         print("libm gate: transcendental calls not in tests/linux/libm_allowlist.txt:")

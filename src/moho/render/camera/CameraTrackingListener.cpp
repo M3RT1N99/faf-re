@@ -30,7 +30,7 @@ namespace moho
    *   padded one-byte transition flag.
    * - The binary builds a `std::string` temporary and calls
    *   `std::string::assign(&temp, &event.mCameraName, 0, 0xFFFFFFFF)` before
-   *   handing it to `LuaFunction::Call_StringBool`. Because `msvc8::string`
+   *   handing it to `LuaFunction::Call_StringBool`. Because `fa::string`
    *   is the MSVC8 `std::string` ABI layout, we recover this as a single
    *   `to_std()` copy producing the same content + same lifetime semantics.
    * - The SEH frame in the original wraps just the Lua call; we mirror that
@@ -39,11 +39,13 @@ namespace moho
    *   broadcaster splice loop unmodified, matching the original control flow.
    * - The original binary frees the by-value `mCameraName` heap buffer at
    *   the function epilogue with `operator delete` when `_Myres >= 0x10`.
-   *   `msvc8::string` is intentionally trivial (no destructor) in this SDK
+   *   `fa::string` is intentionally trivial (no destructor) in this SDK
    *   because the engine retains ownership through the broadcaster lane,
    *   so no explicit free is needed in the recovered form.
    */
-  void CameraTrackingListener::OnEvent(SCameraTracking event)
+  void CameraTrackingListener::OnEvent(
+    SCameraTracking event
+  )
   {
     CWldSession* const activeSession = WLD_GetSession();
     if (activeSession == nullptr) {
@@ -134,7 +136,9 @@ namespace moho
    * the self-link reset, then the four-store insert ahead of the camera's
    * ring at `camera+0x04`. The camera is not null-checked.
    */
-  void func_SetWorldCamera(CameraImpl* const camera)
+  void func_SetWorldCamera(
+    CameraImpl* const camera
+  )
   {
     camera->AddListener(&GlobalCameraTrackingListener());
   }

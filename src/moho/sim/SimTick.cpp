@@ -1,4 +1,5 @@
 #include "moho/sim/SimPrivate2.h"
+#include "moho/sim/SimEditorHook.h"
 
 namespace
 {
@@ -7,12 +8,12 @@ namespace
   struct SReconOverlap
   {
     Sim* mSim = nullptr;
-    std::size_t mEnd = 0;  // armies [0, mEnd) are being refreshed
+    std::size_t mEnd = 0; // armies [0, mEnd) are being refreshed
     bool mPending = false;
     std::uint64_t mStarted = 0;
     std::uint64_t mEndedEarly = 0;
   } sReconOverlap;
-}
+} // namespace
 
 namespace
 {
@@ -31,7 +32,10 @@ namespace
    * its `MD5UpdateBatch`; the bytes handed to `Update` are unchanged.
    */
   template <class TChecksumSink>
-  void UpdateChecksumWithNullableCString(TChecksumSink& context, const char* const text)
+  void UpdateChecksumWithNullableCString(
+    TChecksumSink& context,
+    const char* const text
+  )
   {
     if (text != nullptr) {
       context.Update(text, std::strlen(text) + 1u);
@@ -49,7 +53,10 @@ namespace
     return &moho::DebugLuaHook;
   }
 
-  void RulesUpdateLuaState(RRuleGameRules* rules, LuaPlus::LuaState* luaState)
+  void RulesUpdateLuaState(
+    RRuleGameRules* rules,
+    LuaPlus::LuaState* luaState
+  )
   {
     if (!rules) {
       return;
@@ -58,7 +65,9 @@ namespace
     rules->UpdateLuaState(luaState);
   }
 
-  void TickTaskStage(CTaskStage* stage)
+  void TickTaskStage(
+    CTaskStage* stage
+  )
   {
     if (!stage) {
       return;
@@ -67,7 +76,10 @@ namespace
     stage->UserFrame();
   }
 
-  void UpdatePaths(PathTables* pathTables, const int budget)
+  void UpdatePaths(
+    PathTables* pathTables,
+    const int budget
+  )
   {
     if (!pathTables) {
       return;
@@ -77,7 +89,9 @@ namespace
     pathTables->UpdateBackground(&pathBudget);
   }
 
-  void TickEffectManager(CEffectManagerImpl* effectManager)
+  void TickEffectManager(
+    CEffectManagerImpl* effectManager
+  )
   {
     if (!effectManager) {
       return;
@@ -86,7 +100,9 @@ namespace
     effectManager->Tick();
   }
 
-  void PurgeDestroyedEffects(CEffectManagerImpl* effectManager)
+  void PurgeDestroyedEffects(
+    CEffectManagerImpl* effectManager
+  )
   {
     if (!effectManager) {
       return;
@@ -95,7 +111,9 @@ namespace
     effectManager->PurgeDestroyedEffects();
   }
 
-  void UpdateFormationDb(CAiFormationDBImpl* formationDb)
+  void UpdateFormationDb(
+    CAiFormationDBImpl* formationDb
+  )
   {
     if (!formationDb) {
       return;
@@ -112,7 +130,9 @@ namespace
    * another entity or anything the shared halves write, so the result is the serial loop's.
    * Returns false (nothing done) when the serial loop should run.
    */
-  bool AdvanceCoordsParallel(Sim& sim)
+  bool AdvanceCoordsParallel(
+    Sim& sim
+  )
   {
     constexpr std::size_t kMinParallelEntities = 256u;
     constexpr std::size_t kGrain = 64u;
@@ -156,7 +176,9 @@ namespace
    * and writes only the unit's own block, which only the unit's own SyncInterface reads, and the
    * walk's own refresh then finds nothing left to do. So the packet is the serial one.
    */
-  void RefreshUnitSyncBlocksParallel(std::vector<Unit*>& units)
+  void RefreshUnitSyncBlocksParallel(
+    std::vector<Unit*>& units
+  )
   {
     constexpr std::size_t kMinParallelUnits = 128u;
     constexpr std::size_t kGrain = 32u;
@@ -166,8 +188,8 @@ namespace
     // The pose handles each refresh replaces, dropped below on this thread in unit order.
     struct SReleasedPoses
     {
-      boost::shared_ptr<CAniPose> mPose;
-      boost::shared_ptr<CAniPose> mPriorPose;
+      std::shared_ptr<CAniPose> mPose;
+      std::shared_ptr<CAniPose> mPriorPose;
     };
     static std::vector<SReleasedPoses> sReleased;
     if (sReleased.size() < units.size()) {
@@ -184,21 +206,29 @@ namespace
     }
   }
 
-  void CleanupDecals(CDecalBuffer* decalBuffer)
+  void CleanupDecals(
+    CDecalBuffer* decalBuffer
+  )
   {
     if (decalBuffer) {
       decalBuffer->CleanupTick();
     }
   }
 
-  void TickDebugOverlay(RDebugOverlay* overlay, Sim* sim)
+  void TickDebugOverlay(
+    RDebugOverlay* overlay,
+    Sim* sim
+  )
   {
     if (!overlay || !sim) {
       return;
     }
     overlay->Tick(sim);
   }
-  void AppendLegacyStringToStd(std::string& out, const msvc8::string& value)
+  void AppendLegacyStringToStd(
+    std::string& out,
+    const fa::string& value
+  )
   {
     out.append(value.c_str(), value.size());
   }
@@ -213,7 +243,9 @@ namespace
    * which is the interlocked compare-exchange loop on `mPrimaryValueBits`
    * (+0x24) the binary open-codes here.
    */
-  void StoreSyncEntityCountStat(const std::int32_t syncedEntityCount)
+  void StoreSyncEntityCountStat(
+    const std::int32_t syncedEntityCount
+  )
   {
     static moho::StatItem* sEngineStatSyncEntityCount = nullptr;
     if (sEngineStatSyncEntityCount == nullptr) {
@@ -229,8 +261,7 @@ namespace
       (void)sEngineStatSyncEntityCount->SetInt(&syncedEntityCount);
     }
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x007474B0 (FUN_007474B0)
@@ -242,7 +273,10 @@ namespace
  * Partial lift. Keeps filter-transfer behavior and minimal beat packet publication
  * so CSimDriver queue/event flow stays consistent while full body recovery is pending.
  */
-void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
+void Sim::Sync(
+  const SSyncFilter& filter,
+  SSyncData*& outSyncData
+)
 {
   // 0x007474EC..0x00747506: the focus army is compared BEFORE the incoming
   // filter is adopted - `a3a[0] = mFocusArmy != v4` reads the old value off
@@ -315,7 +349,7 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
 
   // 0x00747700..0x00747724: the camera-shake requests the beat accumulated,
   // swapped over like the lanes below. `Sim::mSyncCamShake` (Sim+0x09C8) was
-  // declared `msvc8::vector<void*> mSyncSerializeGroup1` and had no users at
+  // declared `fa::vector<void*> mSyncSerializeGroup1` and had no users at
   // all; the `ShakeCamera` Lua binding reached the same storage through a
   // `reinterpret_cast<the deleted owner-overlay*>(sim)` whose
   // `pad_0000[0x09C8]` pinned the offset. Both sides are `SCamShakeParams` now.
@@ -324,7 +358,7 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   // 0x00747740..0x00747782: the map rectangles flattened this beat.
   // `[ebx+9FCh/0A00h/0A04h]` is `mCachedMapRects` (Sim+0x09F8) against
   // `[eax+234h/238h/23Ch]`, `SSyncData::mPlayableRectUpdates` (+0x230); both
-  // are already `msvc8::vector<gpg::Rect2i>`. `FlattenMapRect` pushes each
+  // are already `fa::vector<gpg::Rect2i>`. `FlattenMapRect` pushes each
   // clamped rect into this vector and into `mLoadedMapRects`, and only this
   // one is drained -- the loaded run is the cumulative record that stays.
   mCachedMapRects.swap(outSyncData->mPlayableRectUpdates);
@@ -332,7 +366,7 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   // 0x007480A4..0x007480EC: the beat's accumulated print lines.
   // `[esi+0A1Ch/0A20h/0A24h]` is `mPrintField` (Sim+0x0A18) against
   // `[eax+288h/28Ch/290h]`, `SSyncData::mPrintField` (+0x284); both are
-  // `msvc8::vector<msvc8::string>`. `Sim::Printf` appends into the sim side
+  // `fa::vector<fa::string>`. `Sim::Printf` appends into the sim side
   // every time sim script writes a line, and nothing was carrying them across.
   mPrintField.swap(outSyncData->mPrintField);
 
@@ -348,8 +382,8 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   // script draws into. `AdvanceBeat` rolls it into `mDebugCanvas2` and clears
   // slot 1, so slot 2 holds the finished beat. The crossing is what the binary
   // does; the packet-side field names are recovered guesses and are left alone.
-  outSyncData->mTickDebugCanvas.reset_from_owner(mDebugCanvas2);
-  outSyncData->mBeatDebugCanvas.reset_from_owner(mDebugCanvas1);
+  outSyncData->mTickDebugCanvas = mDebugCanvas2;
+  outSyncData->mBeatDebugCanvas = mDebugCanvas1;
 
   mSyncSerializeGroup0.swap(outSyncData->mFollowCameras);
 
@@ -367,7 +401,6 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   mAllyUpgradeNotifications.swap(outSyncData->mAllyUpgradeNotifications);
   mPendingPoseCopies.swap(outSyncData->mPoseUpdates);
 
-
   // 0x00747635..0x0074764C: hand the beat's queued audio requests to the
   // packet and reset the sim-side queue back to its inline storage. Without
   // this the packet's audio lane stayed empty for every beat, so nothing the
@@ -375,7 +408,6 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   if (mSoundManager != nullptr) {
     mSoundManager->DrainRequests(outSyncData->mAudioRequests);
   }
-
 
   // 0x00747A54: the army roster is published exactly once, on the first sync.
   // `CWldSession::DoBeat` turns each entry into a `UserArmy` and files it by
@@ -508,10 +540,11 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
     std::string armyStatsXml;
     armyStatsXml.append("<?xml version=\"1.0\" ?>\n");
     armyStatsXml.append(
-      "<GameStats xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n"
+      "<GameStats xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "
+      "xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n"
     );
 
-    const msvc8::string armyIndent("  ");
+    const fa::string armyIndent("  ");
     for (auto it = mArmiesList.begin(); it != mArmiesList.end(); ++it) {
       CArmyImpl* const army = *it;
       CArmyStats* const armyStats = army->GetArmyStats();
@@ -544,6 +577,15 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   if (mCommandDB != nullptr) {
     mCommandDB->PublishSyncData(outSyncData, focusArmyChanged);
   }
+#if FAF_SERVER_MODE
+  // Engine addition (plan WP5.14): a server's views take the beat's command records from here. Only read.
+  {
+    const std::lock_guard<std::mutex> commandsLock(sSyncObserverLock);
+    if (sSyncObserver != nullptr) {
+      sSyncObserver->OnCommandsPublished(*this, *outSyncData);
+    }
+  }
+#endif
 
   // 0x00747B23 onward: republish the per-beat state Lua reads off the global
   // `Sync` table. lua/SimSync.lua consumes these every beat; nothing wrote
@@ -690,16 +732,16 @@ void Sim::Sync(const SSyncFilter& filter, SSyncData*& outSyncData)
   // The terrain the client renders. `sub_743180` in the decompile is the
   // shared_ptr copy the compiler materialises for the assignment's right-hand
   // side; the body after it is the inlined `operator=`. `DoBeat` feeds this
-  // straight to `terrainRes->SyncTerrain(beat.mTerrainUpdate.px)`, so leaving
+  // straight to `terrainRes->SyncTerrain(beat.mTerrainUpdate.get())`, so leaving
   // it unset handed the terrain renderer a null height field every beat.
   if (mMapData != nullptr) {
-    outSyncData->mTerrainUpdate.reset_from_owner(mMapData->mHeightField);
+    outSyncData->mTerrainUpdate = mMapData->mHeightField;
   }
 
   // The decompiled body here is the inlined `shared_ptr::operator=` -- copy the
   // pointer, add a reference to the incoming control block, release the
-  // outgoing one. `reset_from` is that mechanic on the wrapper itself.
-  outSyncData->mSimResources.reset_from(mSimResources);
+  // outgoing one, which is boost::shared_ptr's assignment here.
+  outSyncData->mSimResources = mSimResources;
 
   // 0x0074820E..0x00748310: close this beat's checksum. On a checksum beat
   // (the same `sim_ChecksumPeriod` test `AdvanceBeat` used to feed `mContext`)
@@ -745,7 +787,9 @@ namespace
   class MD5UpdateBatch
   {
   public:
-    explicit MD5UpdateBatch(gpg::MD5Context& context) noexcept
+    explicit MD5UpdateBatch(
+      gpg::MD5Context& context
+    ) noexcept
       : mContext(context)
     {}
 
@@ -757,7 +801,10 @@ namespace
       Flush();
     }
 
-    void Update(const void* const data, const std::size_t size)
+    void Update(
+      const void* const data,
+      const std::size_t size
+    )
     {
       if (!sim_ChecksumBatching) {
         Flush();
@@ -790,8 +837,7 @@ namespace
     std::size_t mUsed = 0u;
     std::array<std::uint8_t, 1024> mBytes;
   };
-}
-
+} // namespace
 
 /**
  * Address: 0x0074A640 (FUN_0074A640, sub_74A640)
@@ -815,7 +861,7 @@ void Sim::UpdateChecksum()
       return;
     }
 
-    const msvc8::string digestText = mContext.Digest().ToString();
+    const fa::string digestText = mContext.Digest().ToString();
     Logf("      %s\n", digestText.c_str());
   };
 
@@ -826,7 +872,7 @@ void Sim::UpdateChecksum()
     CArmyImpl* const army = *it;
     Logf("  \"%s\" [%s]\n", army->mConstDat.mPlayerName.raw_data_unsafe(), army->mConstDat.mArmyName.raw_data_unsafe());
 
-    const SEconTotals& economy = army->GetEconomy()->economy;
+    const SEconTotals& economy = army->GetEconomy()->mTotals;
     mContext.Update(&economy, sizeof(economy));
     if (stateTap != nullptr) {
       const std::int32_t armyIndex = army->mConstDat.mArmyIndex;
@@ -890,8 +936,8 @@ void Sim::UpdateChecksum()
 
     entityChecksum.Update(&entity->mVarDat.mCurTransform.orient_, 0x1Cu);
     if (syncLog) {
-      const float* const pos = reinterpret_cast<const float*>(&entity->mVarDat.mCurTransform.pos_);
-      const float* const rot = reinterpret_cast<const float*>(&entity->mVarDat.mCurTransform.orient_);
+      const Wm3::Vec3f& pos = entity->mVarDat.mCurTransform.pos_;
+      const Wm3::Quatf& rot = entity->mVarDat.mCurTransform.orient_;
       Logf(
         "    pos: <%7.2f,%7.2f,%7.2f> [0x%08x 0x%08x 0x%08x]\n",
         pos[0],
@@ -977,23 +1023,6 @@ bool Sim::IsSyncLogOn() const noexcept
   return recorder != nullptr && recorder->IsRecording();
 }
 
-/**
- * Address: 0x00748600 (FUN_00748600, ?GetBeatChecksum@Sim@Moho@@QBE_NVCSeqNo@2@AAUMD5Digest@gpg@@@Z)
- *
- * What it does:
- * Copies one retained beat checksum out of the 128-entry rolling ring when
- * the requested beat is still available.
- */
-bool Sim::GetBeatChecksum(gpg::MD5Digest* const outChecksum, const CSeqNo beat) const
-{
-  const int delta = static_cast<int>(beat) - static_cast<int>(mCurBeat);
-  if (delta + 128 < 0 || delta >= 0) {
-    return false;
-  }
-
-  *outChecksum = mSimHashes[static_cast<std::uint32_t>(beat) & 0x7Fu];
-  return true;
-}
 namespace
 {
   // Engine addition, not in the binary: the recon phase of AdvanceBeat on CSimWorkerPool.
@@ -1004,7 +1033,11 @@ namespace
 
   /// Refreshes the recon DBs of armies [begin, end) on the pool, then applies their deferred
   /// handle assignments on this thread in army order, exactly where the serial loop would have.
-  void RefreshReconArmyRange(Sim& sim, const std::size_t begin, const std::size_t end)
+  void RefreshReconArmyRange(
+    Sim& sim,
+    const std::size_t begin,
+    const std::size_t end
+  )
   {
     if (begin >= end) {
       return;
@@ -1047,7 +1080,9 @@ namespace
   /// The heavy tick's Lua is about to call `function` (null: collect garbage). The Lua libraries
   /// touch only Lua values and ReconBlip:GetSource only reads the blip, so those calls keep the
   /// overlap; anything else may reach what the refreshes read, so they finish first.
-  void ReconOverlapGate(const LuaCFunctionPtr function)
+  void ReconOverlapGate(
+    const LuaCFunctionPtr function
+  )
   {
     if (function != nullptr && (function == &cfunc_ReconBlipGetSource || LUA_IsLibraryCFunction(function))) {
       return;
@@ -1068,7 +1103,9 @@ namespace
   ///
   /// sim_ReconQueryCache: the same job also computes its main loop's unit queries ahead (chunks
   /// after the armies), and the gate stops serving them the same way.
-  void RunReconPhaseParallel(Sim& sim)
+  void RunReconPhaseParallel(
+    Sim& sim
+  )
   {
     const std::size_t armyCount = sim.mArmiesList.size();
     const std::size_t reconTickIndex = static_cast<std::size_t>(sim.mCurTick) % armyCount;
@@ -1080,21 +1117,19 @@ namespace
       sReconOverlap.mSim = &sim;
       sReconOverlap.mEnd = reconTickIndex;
       const bool running = CSimWorkerPool::Get().StartAsync(
-        reconTickIndex + queryChunks, 1u,
-        [](void* const context, const std::size_t first, const std::size_t last) {
-          Sim& owner = *static_cast<Sim*>(context);
-          for (std::size_t i = first; i < last; ++i) {
-            if (i >= sReconOverlap.mEnd) {
-              RECON_FillQueryCache(i - sReconOverlap.mEnd, i - sReconOverlap.mEnd + 1u);
-              continue;
-            }
-            CArmyImpl* const army = owner.mArmiesList[i];
-            if (CAiReconDBImpl* const reconDb = army ? army->GetReconDB() : nullptr; reconDb != nullptr) {
-              reconDb->RefreshDeferringHandles(sReconRefreshFixups[i]);
-            }
+        reconTickIndex + queryChunks, 1u, [](void* const context, const std::size_t first, const std::size_t last) {
+        Sim& owner = *static_cast<Sim*>(context);
+        for (std::size_t i = first; i < last; ++i) {
+          if (i >= sReconOverlap.mEnd) {
+            RECON_FillQueryCache(i - sReconOverlap.mEnd, i - sReconOverlap.mEnd + 1u);
+            continue;
           }
-        },
-        &sim
+          CArmyImpl* const army = owner.mArmiesList[i];
+          if (CAiReconDBImpl* const reconDb = army ? army->GetReconDB() : nullptr; reconDb != nullptr) {
+            reconDb->RefreshDeferringHandles(sReconRefreshFixups[i]);
+          }
+        }
+      }, &sim
       );
       sReconOverlap.mPending = true;
       if (running) {
@@ -1116,8 +1151,7 @@ namespace
         {
           try {
             FinishReconOverlap();
-          } catch (...) {
-          }
+          } catch (...) {}
         }
       } finishOnExit;
       heavyDb->ReconTick(static_cast<int>(armyCount));
@@ -1130,9 +1164,10 @@ namespace
     }
     RefreshReconArmyRange(sim, reconTickIndex + 1u, armyCount);
   }
-}
+} // namespace
 
-
+// Engine addition (moho/sim/SimEditorHook.h): the map editor's per-beat hook, never set in the game.
+std::atomic<moho::SimBeforeBeatHook> moho::gSimBeforeBeat{nullptr};
 
 /**
  * Address: 0x00749F40 (FUN_00749F40)
@@ -1151,9 +1186,17 @@ namespace
  * Partial high-fidelity lift. Core beat staging is restored, with one
  * additional sync-filter packing pass still tracked for follow-up evidence.
  */
-void Sim::AdvanceBeat(const int amt)
+void Sim::AdvanceBeat(
+  const int amt
+)
 {
   (void)amt; // Binary implementation does not consume this parameter at 0x00749F40.
+
+  // Engine addition: the map editor's edits into its solo play, between beats (null in the game). Read once: the
+  // editor may clear it from its own thread at any time.
+  if (const SimBeforeBeatHook beforeBeat = gSimBeforeBeat.load(std::memory_order_acquire); beforeBeat != nullptr) {
+    beforeBeat(*this);
+  }
 
   Logf("********** beat %u **********\n", mCurBeat);
   {
@@ -1205,7 +1248,8 @@ void Sim::AdvanceBeat(const int amt)
         TickTaskStage(&mTaskStageB);
       }
       {
-        FAF_PROFILE_ZONE_NAMED("Sim::DiskWatcherStage");
+        // The sim Lua state's m_taskStage is this stage (Sim::Setup), so its Lua threads run here too.
+        FAF_PROFILE_ZONE_NAMED("Sim::LuaThreadsAndDiskWatcher");
         TickTaskStage(&mDiskWatcherTaskStage);
       }
       {
@@ -1216,33 +1260,39 @@ void Sim::AdvanceBeat(const int amt)
     }
     {
       FAF_PROFILE_ZONE_NAMED("Sim::Recon");
-      RefreshBlips();
+      {
+        FAF_PROFILE_ZONE_NAMED("Recon::RefreshBlips");
+        RefreshBlips();
+      }
 
-    if (!mArmiesList.empty() && sim_ParallelRecon && mArmiesList.size() <= kMaxParallelReconArmies &&
-        CSimWorkerPool::ParallelEnabled()) {
-      RunReconPhaseParallel(*this);
-    } else if (!mArmiesList.empty()) {
-      const std::size_t armyCount = mArmiesList.size();
-      const std::size_t reconTickIndex = static_cast<std::size_t>(mCurTick) % armyCount;
-      for (std::size_t i = 0; i < armyCount; ++i) {
-        CArmyImpl* army = mArmiesList[i];
-        if (!army) {
-          continue;
-        }
+      if (
+        !mArmiesList.empty() && sim_ParallelRecon && mArmiesList.size() <= kMaxParallelReconArmies &&
+        CSimWorkerPool::ParallelEnabled()
+      ) {
+        FAF_PROFILE_ZONE_NAMED("Recon::Parallel");
+        RunReconPhaseParallel(*this);
+      } else if (!mArmiesList.empty()) {
+        FAF_PROFILE_ZONE_NAMED("Recon::Serial");
+        const std::size_t armyCount = mArmiesList.size();
+        const std::size_t reconTickIndex = static_cast<std::size_t>(mCurTick) % armyCount;
+        for (std::size_t i = 0; i < armyCount; ++i) {
+          CArmyImpl* army = mArmiesList[i];
+          if (!army) {
+            continue;
+          }
 
-        CAiReconDBImpl* reconDb = army->GetReconDB();
-        if (!reconDb) {
-          continue;
-        }
+          CAiReconDBImpl* reconDb = army->GetReconDB();
+          if (!reconDb) {
+            continue;
+          }
 
-        if (i == reconTickIndex) {
-          reconDb->ReconTick(static_cast<int>(armyCount));
-        } else {
-          reconDb->ReconRefresh();
+          if (i == reconTickIndex) {
+            reconDb->ReconTick(static_cast<int>(armyCount));
+          } else {
+            reconDb->ReconRefresh();
+          }
         }
       }
-    }
-
     }
 
     {
@@ -1274,7 +1324,7 @@ void Sim::AdvanceBeat(const int amt)
 
     // Sync-filter extra-data packing pass. Every id in the outgoing sync
     // filter that still resolves to a live unit contributes one record.
-    // `push_back(SExtraUnitData())` is `msvc8::vector<SExtraUnitData>::
+    // `push_back(SExtraUnitData())` is `fa::vector<SExtraUnitData>::
     // push_back` (FUN_0074C160, Vector.h) -- the `.asm`-confirmed shape:
     // the record is copy-constructed in (default `pairs`, zero tag) and
     // then filled in place through the returned `back()` reference, so its
@@ -1333,6 +1383,8 @@ void Sim::AdvanceBeat(const int amt)
   }
 
   if (mLuaState && mLuaState->m_state && (mCurTick % 70u) == 0u) {
+    // The sim stays on the shipped 70-tick full cycle while the incremental
+    // collector is being brought up for the user VM.
     FAF_PROFILE_ZONE_NAMED("Sim::LuaGC");
     lua_setgcthreshold(mLuaState->m_state, 0);
   }

@@ -24,7 +24,9 @@ namespace
     return sInstance;
   }
 
-  [[nodiscard]] gpg::RRef MakeCUnitTeleportTaskRef(moho::CUnitTeleportTask* const object)
+  [[nodiscard]] gpg::RRef MakeCUnitTeleportTaskRef(
+    moho::CUnitTeleportTask* const object
+  )
   {
     gpg::RRef ref{};
     ref = gpg::MakeRRef<moho::CUnitTeleportTask>(object);
@@ -49,11 +51,14 @@ namespace moho
   CUnitTeleportTaskTypeInfo::~CUnitTeleportTaskTypeInfo() = default;
 
   /**
-   * Address: 0x0060A950 (FUN_0060A950)
+   * Address: 0x0060A950 (FUN_0060A950: `mov eax, ... ; "CUnitTeleportTask"`)
+   *
+   * Retail's name, without a namespace, so its saves load; saves from builds that said `moho::CUnitTeleportTask` are
+   * read through `REF_CurrentTypeName`.
    */
   const char* CUnitTeleportTaskTypeInfo::GetName() const
   {
-    return "moho::CUnitTeleportTask";
+    return "CUnitTeleportTask";
   }
 
   /**
@@ -77,7 +82,9 @@ namespace moho
   /**
    * Address: 0x0060C510 (FUN_0060C510, Moho::CUnitTeleportTaskTypeInfo::AddBase_CCommandTask)
    */
-  void __stdcall CUnitTeleportTaskTypeInfo::AddBase_CCommandTask(gpg::RType* const typeInfo)
+  void __stdcall CUnitTeleportTaskTypeInfo::AddBase_CCommandTask(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<moho::CCommandTask>(typeInfo);
   }
@@ -98,19 +105,20 @@ namespace moho
    * Placement-constructs one teleport-task runtime lane in caller storage and
    * returns typed reflection reference.
    */
-  gpg::RRef CUnitTeleportTaskTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CUnitTeleportTaskTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<moho::CUnitTeleportTask*>(objectStorage);
-    if (object) {
-      new (object) moho::CUnitTeleportTask();
-    }
+    auto* const object = gpg::ConstructInStorage<moho::CUnitTeleportTask>(objectStorage);
     return MakeCUnitTeleportTaskRef(object);
   }
 
   /**
    * Address: 0x0060BFF0 (FUN_0060BFF0, Moho::CUnitTeleportTaskTypeInfo::Delete)
    */
-  void CUnitTeleportTaskTypeInfo::Delete(void* const objectStorage)
+  void CUnitTeleportTaskTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<moho::CUnitTeleportTask*>(objectStorage);
   }
@@ -118,7 +126,9 @@ namespace moho
   /**
    * Address: 0x0060C0A0 (FUN_0060C0A0, Moho::CUnitTeleportTaskTypeInfo::Destruct)
    */
-  void CUnitTeleportTaskTypeInfo::Destruct(void* const objectStorage)
+  void CUnitTeleportTaskTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CUnitTeleportTask*>(objectStorage);
     if (!object) {
@@ -137,7 +147,9 @@ namespace moho
   }
 } // namespace moho
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CUnitTeleportTaskTypeInfo_1b405b, moho::register_CUnitTeleportTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CUnitTeleportTaskTypeInfo_1b405b,
+  moho::register_CUnitTeleportTaskTypeInfo
+)

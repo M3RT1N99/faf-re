@@ -1,6 +1,5 @@
 #pragma once
-#include "boost/condition.h"
-#include "boost/mutex.h"
+#include "legacy/thread/Condition.h"
 #include <cstddef>
 #include <cstdint>
 #include "platform/Platform.h"
@@ -72,28 +71,28 @@ namespace moho
     void RemoveHandle(HANDLE handle);
 
     /**
-       * Address: 0x004145E0 (FUN_004145E0)
+     * Address: 0x004145E0 (FUN_004145E0)
      *
      * Wait for either a registered handle or window messages.
      */
     void MsgWaitEx(DWORD timeoutMs);
 
     /**
-      * Alias of FUN_004145E0 (non-canonical helper lane).
+     * Alias of FUN_004145E0 (non-canonical helper lane).
      *
      * Compatibility wrapper retained while callsites migrate to MsgWaitEx naming.
      */
     void Wait(DWORD timeoutMs);
 
   public:
-    boost::mutex lock;
+    fa::mutex lock;
     CWaitHandle handleSet;
     // +0x18 in FA layout: incremented while MsgWaitForMultipleObjectsEx is active.
     std::int32_t activeWaiters;
-    boost::condition objectSender;
+    fa::condition objectSender;
     // +0x34 in FA layout: number of AddHandle/RemoveHandle mutators in-flight.
     std::int32_t mutatorCount;
-    boost::condition objectReceiver;
+    fa::condition objectReceiver;
   };
 
 #if defined(MOHO_ABI_MSVC8_COMPAT)

@@ -13,7 +13,7 @@ namespace gpg
   class RType;
   class ReadArchive;
   class WriteArchive;
-}
+} // namespace gpg
 
 namespace moho
 {
@@ -72,10 +72,8 @@ namespace moho
      * Allocates one ferry-task object and forwards dispatch-position context
      * into in-place construction.
      */
-    [[nodiscard]] static CUnitFerryTask* CreateFromDispatch(
-      IAiCommandDispatchImpl* dispatch,
-      const Wm3::Vector3f& ferryPosition
-    );
+    [[nodiscard]] static CUnitFerryTask*
+    CreateFromDispatch(IAiCommandDispatchImpl* dispatch, const Wm3::Vector3f& ferryPosition);
 
     /**
      * Address: 0x0060F7E0 (FUN_0060F7E0, Moho::CUnitFerryTask::operator new)
@@ -144,7 +142,7 @@ namespace moho
      * queue of an army TRANSPORTATION unit currently ferrying to the same
      * beacon. An empty route source leaves the own-queue copy in place.
      */
-    void GetUnitCommands(msvc8::vector<WeakPtr<CUnitCommand>>& outCommands);
+    void GetUnitCommands(fa::vector<WeakPtr<CUnitCommand>>& outCommands);
 
     /**
      * Address: 0x0060F400 (FUN_0060F400, Moho::CUnitFerryTask::TaskTick)
@@ -265,23 +263,20 @@ namespace moho
     // transport ferrying to the same beacon) instead of the owner queue.
     // Asm evidence: byte tests `[this+38h]` at 0x0060E6F6 / 0x0060EBDB /
     // 0x0060F40F.
-    bool mFollowsExistingRoute;        // 0x38
-    std::uint8_t mPadding39[3];        // 0x39
-    Wm3::Vector3f mPos;                // 0x3C
+    bool mFollowsExistingRoute; // 0x38
+    std::uint8_t mPadding39[3]; // 0x39
+    Wm3::Vector3f mPos;         // 0x3C
     // 0x48: the unit the ferry command targeted; when
     // `mFollowsExistingRoute` is set its command queue defines the route
     // (asm: dword loads `[this+48h]` at 0x0060EBFB / 0x0060F421-0x0060F456).
-    WeakPtr<Unit> mRouteUnit;          // 0x48
-    WeakPtr<Unit> mFerryUnit;          // 0x50
-    WeakPtr<Unit> mBeacon;             // 0x58
+    WeakPtr<Unit> mRouteUnit; // 0x48
+    WeakPtr<Unit> mFerryUnit; // 0x50
+    WeakPtr<Unit> mBeacon;    // 0x58
   };
 
   static_assert(sizeof(CUnitFerryTask) == 0x60, "CUnitFerryTask size must be 0x60");
   static_assert(offsetof(CUnitFerryTask, mDispatch) == 0x30, "CUnitFerryTask::mDispatch offset must be 0x30");
-  static_assert(
-    offsetof(CUnitFerryTask, mCommandIndex) == 0x34,
-    "CUnitFerryTask::mCommandIndex offset must be 0x34"
-  );
+  static_assert(offsetof(CUnitFerryTask, mCommandIndex) == 0x34, "CUnitFerryTask::mCommandIndex offset must be 0x34");
   static_assert(
     offsetof(CUnitFerryTask, mFollowsExistingRoute) == 0x38,
     "CUnitFerryTask::mFollowsExistingRoute offset must be 0x38"
@@ -294,21 +289,5 @@ namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x00610650 (FUN_00610650, gpg::RRef_CUnitFerryTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitFerryTask*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitFerryTask(gpg::RRef* outRef, moho::CUnitFerryTask* value);
 
-  /**
-   * Address: 0x006105B0 (FUN_006105B0)
-   *
-   * What it does:
-   * Wrapper lane that materializes one temporary `RRef_CUnitFerryTask` and
-   * copies object/type fields into the destination reference record.
-   */
-  gpg::RRef* AssignCUnitFerryTaskRef(gpg::RRef* outRef, moho::CUnitFerryTask* value);
 } // namespace gpg

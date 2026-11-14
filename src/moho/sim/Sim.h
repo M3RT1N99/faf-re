@@ -66,7 +66,7 @@ namespace moho
     /** Sim Lua's `SetFocusArmy`, which on a server moves the current view and not the sim's filter. */
     virtual void SetFocusFromLua(std::int32_t army) = 0;
     /** A print line from sim Lua: true if it went to a player, and stays out of the packet. */
-    virtual bool Print(const msvc8::string& line) = 0;
+    virtual bool Print(const fa::string& line) = 0;
     /** The beat's `Sync` table, written and not yet emptied. */
     virtual void OnSyncTable(Sim& sim, LuaPlus::LuaObject& syncTable, const SSyncData& packet) = 0;
   };
@@ -86,13 +86,39 @@ namespace moho
      * (`mRequestRefreshUI`, 0x0067A10B) after copying it; an observer that rebuilds another
      * view's packet reads it here.
      */
-    virtual void OnEntityWillSync(Entity& entity) { (void)entity; }
+    virtual void OnEntityWillSync(
+      Entity& entity
+    )
+    {
+      (void)entity;
+    }
 
     /** An entity the walk just synced (its `Sync` has run): the beat's dirty run, or every entity on a focus change. */
-    virtual void OnEntitySynced(Entity& entity) { (void)entity; }
+    virtual void OnEntitySynced(
+      Entity& entity
+    )
+    {
+      (void)entity;
+    }
 
     /** The walk is done and the beat's packet holds every entity record it will carry. */
-    virtual void OnSyncWalkDone(Sim& sim, const SSyncData& packet)
+    virtual void OnSyncWalkDone(
+      Sim& sim,
+      const SSyncData& packet
+    )
+    {
+      (void)sim;
+      (void)packet;
+    }
+
+    /**
+     * Plan WP5.14: `CCommandDB::PublishSyncData` has run, so the beat's packet holds its command records (descriptors,
+     * packets, removals, releases). After `OnSyncWalkDone`, on every beat, before the `Sync` table is written.
+     */
+    virtual void OnCommandsPublished(
+      Sim& sim,
+      const SSyncData& packet
+    )
     {
       (void)sim;
       (void)packet;
@@ -140,22 +166,10 @@ namespace moho
   struct RUnitBlueprint;
   class CScrLuaInitForm;
   // Full definition lives in moho/render/camera/CameraImpl.h; only used here
-  // as the element type of a msvc8::vector<T> member (SimDriver.h forward-
+  // as the element type of a fa::vector<T> member (SimDriver.h forward-
   // declares it the same way for SSyncData::mFollowCameras).
   struct SCamFollowParams;
   struct SCamShakeParams;
-
-  /**
-   * Address: 0x007538C0 (FUN_007538C0, boost::shared_ptr_SParticleBuffer::shared_ptr_SParticleBuffer)
-   *
-   * What it does:
-   * Constructs one `shared_ptr<SParticleBuffer>` from one raw particle-buffer
-   * pointer lane.
-   */
-  boost::shared_ptr<SParticleBuffer>* ConstructSharedParticleBufferFromRaw(
-    boost::shared_ptr<SParticleBuffer>* outBuffer,
-    SParticleBuffer* buffer
-  );
 
   /**
    * Address: 0x006F14D0 (FUN_006F14D0, Moho::UNIT_IssueFactoryCommand)
@@ -254,8 +268,13 @@ namespace moho
      *
      * Virtual in the binary (`??1Sim@Moho@@UAE@XZ`); `ICommandSink` does not yet
      * declare a virtual destructor in this model, so `override` cannot be used.
+     * The `virtual` is what gives it its vtable slot, so it stays though the class
+     * is final.
      */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunnecessary-virtual-specifier"
     virtual ~Sim();
+#pragma clang diagnostic pop
 
     /**
      * Address: 0x0062DA50 (FUN_0062DA50, ?LocationIsFree@Sim@Moho@@SA_NPAV12@PAVUnit@2@PAV?$Rect2@H@gpg@@D@Z)
@@ -313,15 +332,6 @@ namespace moho
      * records desync details on mismatch, and clears the cached desync log list.
      */
     void VerifyChecksum(const gpg::MD5Digest&, CSeqNo) override;
-
-    /**
-     * Address: 0x00748600 (FUN_00748600, ?GetBeatChecksum@Sim@Moho@@QBE_NVCSeqNo@2@AAUMD5Digest@gpg@@@Z)
-     *
-     * What it does:
-     * Copies one retained beat checksum out of the 128-entry rolling ring when
-     * the requested beat is still available.
-     */
-    bool GetBeatChecksum(gpg::MD5Digest* outChecksum, CSeqNo beat) const;
 
     /**
      * Address: 0x00748960 (FUN_00748960)
@@ -407,7 +417,9 @@ namespace moho
      * emits one shared command through the factory-dispatch lane.
      */
     void IssueFactoryCommand(
-      const BVSet<EntId, EntIdUniverse>&, const SSTICommandIssueData& commandIssueData, bool
+      const BVSet<EntId, EntIdUniverse>&,
+      const SSTICommandIssueData& commandIssueData,
+      bool
     ) override;
 
     /**
@@ -446,7 +458,8 @@ namespace moho
     void ExecuteLuaInSim(const char*, const LuaPlus::LuaObject&) override;
 
     /**
-     * Address: 0x00749B60 (FUN_00749B60, ?LuaSimCallback@Sim@Moho@@UAEXPBDABVLuaObject@LuaPlus@@ABV?$BVSet@HUEntIdUniverse@Moho@@@2@@Z)
+     * Address: 0x00749B60 (FUN_00749B60,
+     * ?LuaSimCallback@Sim@Moho@@UAEXPBDABVLuaObject@LuaPlus@@ABV?$BVSet@HUEntIdUniverse@Moho@@@2@@Z)
      *
      * What it does:
      * Imports `/lua/SimCallbacks.lua` and invokes `DoCallback(name,args,units)`
@@ -891,7 +904,7 @@ namespace moho
     /**
      * Address: 0x00699D20 (FUN_00699D20, Moho::Sim::sim_Gravity)
      *
-     * Moho::Sim *, std::vector<msvc8::string> *
+     * Moho::Sim *, std::vector<fa::string> *
      *
      * What it does:
      * Prints the current gravity value, or parses a new scalar and writes it
@@ -1142,8 +1155,8 @@ namespace moho
      * iteration index equals `mSyncFilter.focusArmy`.
      */
     void CreateArmies(
-      const msvc8::vector<ArmyLaunchInfo>& launchInfo,
-      const msvc8::vector<LuaPlus::LuaObject>& armySetupObjects,
+      const fa::vector<ArmyLaunchInfo>& launchInfo,
+      const fa::vector<LuaPlus::LuaObject>& armySetupObjects,
       const LuaPlus::LuaObject& scenarioInfoOptions
     );
 
@@ -1358,7 +1371,7 @@ namespace moho
     void UpdateChecksum();
 
     /**
-      * Alias of FUN_00754C60 (non-canonical helper lane).
+     * Alias of FUN_00754C60 (non-canonical helper lane).
      *
      * What it does:
      * Core Sim load-serialization routine used by Sim serializer callback.
@@ -1449,8 +1462,8 @@ namespace moho
 
     // CArmyImpl binary methods read several Sim internals directly (same pattern as retail layout codepaths).
     friend class CArmyImpl;
-    friend void SimSerializerLoadThunk(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef*);
-    friend void SimSerializerSaveThunk(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef*);
+    friend void SimSerializerLoadThunk(gpg::ReadArchive* archive, void* objectPtr, int, gpg::RRef*);
+    friend void SimSerializerSaveThunk(gpg::WriteArchive* archive, void* objectPtr, int, gpg::RRef*);
 
   public:
     static gpg::RType* sType;
@@ -1512,7 +1525,7 @@ namespace moho
      * `Load` (saved game); throws `std::runtime_error` for an unknown launch-info
      * subclass.
      */
-    [[nodiscard]] static Sim* Create(const boost::SharedPtrRaw<LaunchInfoBase>& launchInfo);
+    [[nodiscard]] static Sim* Create(const std::shared_ptr<LaunchInfoBase>& launchInfo);
 
     /**
      * Address: 0x0074B120 (FUN_0074B120, ?FlattenMapRect@Sim@Moho@@QAEXABV?$Rect2@H@gpg@@M@Z)
@@ -1530,21 +1543,21 @@ namespace moho
      */
     void FlattenMapRect(const gpg::Rect2i& rect, float elevation);
 
-    msvc8::string mLogFilePrefix;
+    fa::string mLogFilePrefix;
     std::FILE* mLog;
-    msvc8::string mDesyncLogLine;
-    msvc8::list<msvc8::string> mDesyncLogLines;
+    fa::string mDesyncLogLine;
+    fa::list<fa::string> mDesyncLogLines;
     bool mIsDesyncFree; // 0x4C
 
     gpg::MD5Context mContext;
     gpg::MD5Digest mSimHashes[128];
-    msvc8::vector<SDesyncInfo> mDesyncs;
+    fa::vector<SDesyncInfo> mDesyncs;
     CEffectManagerImpl* mEffectManager; // 0x08C0
     CSimSoundManager* mSoundManager;    // 0x08C4
     RRuleGameRules* mRules;             // 0x08C8
     STIMap* mMapData;                   // 0x08CC
 
-    boost::SharedPtrRaw<CSimResources> mSimResources; // 0x08D0..0x08D7 (px, pi)
+    std::shared_ptr<CSimResources> mSimResources; // 0x08D0..0x08D7 (px, pi)
     LuaPlus::LuaState* mLuaState;
     bool mGameEnded;
     bool mGameOver;
@@ -1553,36 +1566,36 @@ namespace moho
     bool mAdvancedThisTick; // 0x8E5
     bool mCheatsEnabled;    // 0x8E6
     bool mReserved8E7;
-    msvc8::vector<int> mCheaters;
+    fa::vector<int> mCheaters;
     uint32_t mCurBeat; // 0x08F8
     // +0x08FC in binary: set in AdvanceBeat, cleared in Sync.
     // Acts as a "processed this beat" latch rather than beat counter state.
     bool mDidProcess;
-    uint32_t mCurTick;                                // 0x0900
-    CRandomStream* mRngState;                         // 0x0904
-    COGrid* mOGrid;                                   // 0x0908
-    msvc8::vector<CArmyImpl*> mArmiesList;            // 0x090C
-    msvc8::vector<SSTICommandSource> mCommandSources; // 0x091C
-    int32_t mCurCommandSource;                        // 0x092C
+    uint32_t mCurTick;                             // 0x0900
+    CRandomStream* mRngState;                      // 0x0904
+    COGrid* mOGrid;                                // 0x0908
+    fa::vector<CArmyImpl*> mArmiesList;            // 0x090C
+    fa::vector<SSTICommandSource> mCommandSources; // 0x091C
+    int32_t mCurCommandSource;                     // 0x092C
     CTaskStage mTaskStageA;
     CTaskStage mDiskWatcherTaskStage;
     CTaskStage mTaskStageB;
     /// The canvas sim script draws into. `GetDebugCanvas` (FUN_00746720) is
     /// `add edi, 96Ch` plus a lazy `new CDebugCanvas`, which pins this offset
     /// exactly; `AdvanceBeat` then rolls it into the slot below and clears it.
-    boost::shared_ptr<CDebugCanvas> mDebugCanvas1;  // 0x096C
+    std::shared_ptr<CDebugCanvas> mDebugCanvas1; // 0x096C
     /// The finished canvas from the previous beat roll.
-    boost::shared_ptr<CDebugCanvas> mDebugCanvas2;  // 0x0974
+    std::shared_ptr<CDebugCanvas> mDebugCanvas2; // 0x0974
     PathTables* mPathTables;
     CAiFormationDBImpl* mFormationDB; // 0x0980
-    EntityDB* mEntityDB;             // 0x0984
+    EntityDB* mEntityDB;              // 0x0984
     CCommandDB* mCommandDB;           // 0x0988
     uint32_t mReserved98C;
     uint32_t mReserved990;
-    boost::shared_ptr<SParticleBuffer> mParticleBuffer;
+    std::shared_ptr<SParticleBuffer> mParticleBuffer;
     CDecalBuffer* mDecalBuffer;
     gpg::DList<RDebugOverlay> mDebugOverlays;
-    msvc8::vector<CSimConVarInstanceBase*> mSimVars;
+    fa::vector<CSimConVarInstanceBase*> mSimVars;
     /// Queued camera-follow-transition records: one per constructed
     /// projectile whose blueprint sets `Display.CameraFollowsProjectile`
     /// (`Moho::Projectile::Projectile`, FUN_0069AFE0, asm
@@ -1598,30 +1611,30 @@ namespace moho
     /// `mCurrentEntityId`/`mTargetEntityId`/`mTargetTimeLeft` in that same
     /// order -- the beat-copy site that drains this lane into
     /// `mFollowCameras` is not yet recovered.
-    msvc8::vector<SCamFollowParams> mSyncSerializeGroup0; // 0x09B8
+    fa::vector<SCamFollowParams> mSyncSerializeGroup0; // 0x09B8
     /// Per-beat camera-shake requests, queued by the `ShakeCamera` Lua binding
     /// (`Entity.cpp`, FUN_00692700) and drained into
     /// `SSyncData::mCamShakeParams` (+0x1F0) by `Sim::Sync`'s swap. Was
-    /// declared `msvc8::vector<void*> mSyncSerializeGroup1` with no users at
+    /// declared `fa::vector<void*> mSyncSerializeGroup1` with no users at
     /// all, while `Entity.cpp` reached the same storage through a
     /// `reinterpret_cast<the deleted owner-overlay*>(sim)` whose
     /// `pad_0000[0x09C8]` pinned this exact offset.
-    msvc8::vector<SCamShakeParams> mSyncCamShake; // 0x09C8
-    msvc8::vector<SUpgradeNotifyPair> mAllyUpgradeNotifications; // 0x9D8 (was mSyncSerializeGroup3)
-    msvc8::vector<SPendingPoseCopy> mPendingPoseCopies; // 0x9E8 (was mSyncSerializeGroup4)
-    // 0x09F8 / 0x0A08: accumulated map-rect lists (each an msvc8::vector<gpg::Rect2i>,
+    fa::vector<SCamShakeParams> mSyncCamShake;                // 0x09C8
+    fa::vector<SUpgradeNotifyPair> mAllyUpgradeNotifications; // 0x9D8 (was mSyncSerializeGroup3)
+    fa::vector<SPendingPoseCopy> mPendingPoseCopies;          // 0x9E8 (was mSyncSerializeGroup4)
+    // 0x09F8 / 0x0A08: accumulated map-rect lists (each an fa::vector<gpg::Rect2i>,
     // 0x10 bytes: proxy/first/last/end). FlattenMapRect (FUN_0074B120) push_back's the
     // clamped flatten rect into both; the Sim map-data serializer (FUN_00745120) streams
     // them element-wise (see the deleted SimSerMapData overlay). Same 0x10 size as a bare Rect2i,
     // so downstream offsets are unaffected.
-    msvc8::vector<gpg::Rect2i> mCachedMapRects; // 0x09F8
-    msvc8::vector<gpg::Rect2i> mLoadedMapRects; // 0x0A08
-    msvc8::vector<msvc8::string> mPrintField;
+    fa::vector<gpg::Rect2i> mCachedMapRects; // 0x09F8
+    fa::vector<gpg::Rect2i> mLoadedMapRects; // 0x0A08
+    fa::vector<fa::string> mPrintField;
     /// Per-beat extra-unit-data records packed by `Sim::AdvanceBeat`'s
     /// sync-filter pass. The element is `SExtraUnitData` (0x20), not a
     /// pointer: the emission strides `add ebx, 20h` over this vector at
     /// Sim+0x0A28 (0x00749F40, around 0x0074A363).
-    msvc8::vector<SExtraUnitData> mSyncSerializeGroup2; // 0x0A28
+    fa::vector<SExtraUnitData> mSyncSerializeGroup2; // 0x0A28
     /**
      * Address: 0x0062FBF0 (FUN_0062FBF0 -- `mov eax, [eax+0xA38]; ret`, the
      *   out-of-line emission of this field's inline getter. 0x0A28 + 0x10
@@ -1634,8 +1647,8 @@ namespace moho
      *   (RULE ONE), removed 2026-09-22.)
      */
     SPhysConstants* mPhysConstants; // 0x0A38
-    msvc8::list<Shield*> mShields;
-    msvc8::deque<void*> mDeletionQueue;
+    fa::list<Shield*> mShields;
+    fa::deque<void*> mDeletionQueue;
     // 0x0A5C..0x0A63 intrusive list head (`mPrev` @ 0x0A5C, `mNext` @ 0x0A60).
     TDatList<Entity, EntityDirtyList> mCoordEntities;
     bool mRequestXMLArmyStatsSubmit; // 0x0A64
@@ -1645,9 +1658,9 @@ namespace moho
     // 0x0A6D..0x0A6F: padding (int32 alignment)
     // Sync packing reservation counters captured from the previous frame.
     // Used by helper calls from Sim::Sync (0x00560A00 / 0x00560940).
-    SSyncSizes mSyncSizes; // 0x0A70: the last packet's lane sizes, reserved on the next one
-    int32_t mSyncReserveUnused;    // 0x0A84 (observed initialized, not yet referenced)
-    SSyncFilter mSyncFilter;       // 0x0A88..0x0AF7
+    SSyncSizes mSyncSizes;      // 0x0A70: the last packet's lane sizes, reserved on the next one
+    int32_t mSyncReserveUnused; // 0x0A84 (observed initialized, not yet referenced)
+    SSyncFilter mSyncFilter;    // 0x0A88..0x0AF7
   };
 
   /**
@@ -2643,7 +2656,7 @@ namespace moho
    *
    * What it does:
    * Publishes the global Lua binder definition for `EntityCategoryCount`.
-  */
+   */
   CScrLuaInitForm* func_EntityCategoryCount_LuaFuncDef();
 
   /**
@@ -6369,22 +6382,6 @@ namespace moho
   CScrLuaInitForm* register_RegisterEmitterBlueprint_LuaFuncDef();
 
   /**
-   * Address: 0x00BC8EB0 (FUN_00BC8EB0, j_func_RegisterBeamBlueprint_LuaFuncDef)
-   *
-   * What it does:
-   * Startup thunk that forwards registration to `func_RegisterBeamBlueprint_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_RegisterBeamBlueprint_LuaFuncDef();
-
-  /**
-   * Address: 0x00BC8EC0 (FUN_00BC8EC0, j_func_BlueprintLoaderUpdateProgress_LuaFuncDef)
-   *
-   * What it does:
-   * Startup thunk that forwards registration to `func_BlueprintLoaderUpdateProgress_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_BlueprintLoaderUpdateProgress_LuaFuncDef();
-
-  /**
    * Address: 0x0074B110 (FUN_0074B110, ?SIM_FromLuaState@Moho@@YAPAVSim@1@PAVLuaState@LuaPlus@@@Z)
    *
    * What it does:
@@ -7318,7 +7315,7 @@ namespace moho
    * What it does:
    * Enables steering debug overlay rendering during `CAiSteeringImpl::Execute`.
    */
-  extern std::uint8_t ren_Steering;
+  extern bool ren_Steering;
 
   /**
    * Address: 0x010A63D6 (?sim_ShowDamage@Moho@@3_NA)
@@ -7432,7 +7429,8 @@ namespace moho
   static_assert(offsetof(Sim, mIsDesyncFree) == 0x4C, "Sim::mIsDesyncFree offset must be 0x4C");
   static_assert(offsetof(Sim, mCoordEntities) == 0x0A5C, "Sim::mCoordEntities offset must be 0x0A5C");
   static_assert(
-    offsetof(Sim, mRequestXMLArmyStatsSubmit) == 0x0A64, "Sim::mRequestXMLArmyStatsSubmit offset must be 0x0A64"
+    offsetof(Sim, mRequestXMLArmyStatsSubmit) == 0x0A64,
+    "Sim::mRequestXMLArmyStatsSubmit offset must be 0x0A64"
   );
   static_assert(offsetof(Sim, mSyncArmy) == 0x0A68, "Sim::mSyncArmy offset must be 0x0A68");
   static_assert(offsetof(Sim, mDidSync) == 0x0A6C, "Sim::mDidSync offset must be 0x0A6C");
@@ -7447,4 +7445,26 @@ namespace moho
   static_assert(offsetof(Sim, mSyncSerializeGroup0) == 0x09B8, "Sim::mSyncSerializeGroup0 offset must be 0x09B8");
   static_assert(sizeof(Sim) == 0xAF8, "Sim size must be 0xAF8");
 #endif
+
+  /**
+   * Engine addition: starts building the sim's Lua state for `rules` on a helper thread - a fresh
+   * state with the core and sim bindings and the rules' blueprints exported into it, the part of
+   * `Sim::Sim` that needs nothing but the rules. The session loader calls it once the session's
+   * own export is done, so the copy runs while the loader finishes, or before that export when it
+   * starts the sim early (`wld_StartSimEarly`); `Sim::Sim` then takes the state instead of building
+   * it. Replaces a state prepared for other rules.
+   */
+  void SIM_PrepareLuaState(RRuleGameRules* rules);
+
+  /**
+   * Engine addition (`wld_StartSimEarly`): waits until the state `SIM_PrepareLuaState` started is
+   * built, so the session loader's own export, which takes the rules' lock, comes after the sim's.
+   */
+  void SIM_FinishPreparingLuaState();
+
+  /**
+   * Engine addition: drops a state `SIM_PrepareLuaState` built for `rules` that no sim took; the
+   * rules' destructor calls it, while the export binding the state holds is still valid.
+   */
+  void SIM_DiscardPreparedLuaState(const RRuleGameRules* rules);
 } // namespace moho

@@ -15,14 +15,16 @@ namespace moho
   /**
    * Address: 0x00447DD0 (FUN_00447DD0, Moho::SBatchTextureDataFactory::LoadImpl)
    */
-  boost::shared_ptr<SBatchTextureData> SBatchTextureDataFactory::LoadImpl(const gpg::StrArg path)
+  std::shared_ptr<SBatchTextureData> SBatchTextureDataFactory::LoadImpl(
+    const gpg::StrArg path
+  )
   {
     if (path == nullptr || !gpg::gal::Device::IsReady()) {
       return {};
     }
 
     const gpg::MemBuffer<const char> mappedFile = DISK_MemoryMapFile(path);
-    boost::shared_ptr<SBatchTextureData> decodedData(new SBatchTextureData());
+    std::shared_ptr<SBatchTextureData> decodedData(new SBatchTextureData());
 
     gpg::MemBuffer<char> decodedBlocks;
     gpg::gal::Device* const device = gpg::gal::Device::GetInstance();

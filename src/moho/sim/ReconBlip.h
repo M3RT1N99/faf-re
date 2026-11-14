@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "legacy/containers/String.h"
 #include "legacy/containers/Vector.h"
 #include "moho/entity/Entity.h"
@@ -44,22 +44,22 @@ namespace moho
    */
   struct SPerArmyReconInfo
   {
-    std::uint8_t mNeedsFlush;                   // +0x00
-    std::uint8_t pad_01_03[0x03];               // +0x01
-    std::uint32_t mReconFlags;                  // +0x04
+    std::uint8_t mNeedsFlush;     // +0x00
+    std::uint8_t pad_01_03[0x03]; // +0x01
+    std::uint32_t mReconFlags;    // +0x04
     union
     {
-      const RMeshBlueprint* mMeshTypeClassId;   // +0x08
-      RMeshBlueprint* mStiMesh;                 // +0x08
+      const RMeshBlueprint* mMeshTypeClassId; // +0x08
+      RMeshBlueprint* mStiMesh;               // +0x08
     };
-    boost::shared_ptr<RScmResource> mMesh;      // +0x0C
-    boost::shared_ptr<CAniPose> mPriorPose;     // +0x14
-    boost::shared_ptr<CAniPose> mPose;          // +0x1C
-    float mHealth;                              // +0x24
-    float mMaxHealth;                           // +0x28
-    float mFractionComplete;                    // +0x2C
-    std::uint8_t mMaybeDead;                    // +0x30
-    std::uint8_t pad_31_33[0x03];               // +0x31
+    std::shared_ptr<RScmResource> mMesh;    // +0x0C
+    std::shared_ptr<CAniPose> mPriorPose;   // +0x14
+    std::shared_ptr<CAniPose> mPose;        // +0x1C
+    float mHealth;                          // +0x24
+    float mMaxHealth;                       // +0x28
+    float mFractionComplete;                // +0x2C
+    std::uint8_t mMaybeDead;                // +0x30
+    std::uint8_t pad_31_33[0x03];           // +0x31
 
     /**
      * Address: 0x005C4F50 (FUN_005C4F50, Moho::SPerArmyReconInfo::~SPerArmyReconInfo)
@@ -111,7 +111,8 @@ namespace moho
   static_assert(offsetof(SPerArmyReconInfo, mNeedsFlush) == 0x00, "SPerArmyReconInfo::mNeedsFlush offset must be 0x00");
   static_assert(offsetof(SPerArmyReconInfo, mReconFlags) == 0x04, "SPerArmyReconInfo::mReconFlags offset must be 0x04");
   static_assert(
-    offsetof(SPerArmyReconInfo, mMeshTypeClassId) == 0x08, "SPerArmyReconInfo::mMeshTypeClassId offset must be 0x08"
+    offsetof(SPerArmyReconInfo, mMeshTypeClassId) == 0x08,
+    "SPerArmyReconInfo::mMeshTypeClassId offset must be 0x08"
   );
   static_assert(offsetof(SPerArmyReconInfo, mStiMesh) == 0x08, "SPerArmyReconInfo::mStiMesh offset must be 0x08");
   static_assert(offsetof(SPerArmyReconInfo, mMesh) == 0x0C, "SPerArmyReconInfo::mMesh offset must be 0x0C");
@@ -137,11 +138,11 @@ namespace moho
    */
   struct SReconBlipUnitConstData
   {
-    std::uint8_t mBuildStateTag = 0;                    // +0x00
-    std::uint8_t mPad01[3] = {};                        // +0x01
-    boost::shared_ptr<Stats<StatItem>> mStatsRoot{};    // +0x04
-    std::uint8_t mFake = 0;                             // +0x0C
-    std::uint8_t mPad0D[3] = {};                        // +0x0D
+    std::uint8_t mBuildStateTag = 0;                 // +0x00
+    std::uint8_t mPad01[3] = {};                     // +0x01
+    std::shared_ptr<Stats<StatItem>> mStatsRoot{};   // +0x04
+    std::uint8_t mFake = 0;                          // +0x0C
+    std::uint8_t mPad0D[3] = {};                     // +0x0D
   };
 
   static_assert(sizeof(SReconBlipUnitConstData) == 0x10, "SReconBlipUnitConstData size must be 0x10");
@@ -149,9 +150,7 @@ namespace moho
     offsetof(SReconBlipUnitConstData, mStatsRoot) == 0x04,
     "SReconBlipUnitConstData::mStatsRoot offset must be 0x04"
   );
-  static_assert(
-    offsetof(SReconBlipUnitConstData, mFake) == 0x0C, "SReconBlipUnitConstData::mFake offset must be 0x0C"
-  );
+  static_assert(offsetof(SReconBlipUnitConstData, mFake) == 0x0C, "SReconBlipUnitConstData::mFake offset must be 0x0C");
 
   /**
    * VFTABLE: 0x00E1D824
@@ -236,9 +235,8 @@ namespace moho
      * Reads serializer construct args (`Sim*`), allocates one `ReconBlip`, and
      * returns it as an unowned construct result.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x005BEE90 (FUN_005BEE90)
@@ -310,54 +308,6 @@ namespace moho
     [[nodiscard]] Unit* GetCreator() const noexcept;
 
     /**
-     * Address: 0x005BDEA0 (FUN_005BDEA0, Moho::ReconBlip::DeleteWhenStale)
-     *
-     * What it does:
-     * Returns the stale-delete policy flag for this blip.
-     */
-    [[nodiscard]] bool DeleteWhenStale() const;
-
-    /**
-     * Address: 0x005BDEB0 (FUN_005BDEB0, Moho::ReconBlip::IsJam)
-     *
-     * What it does:
-     * Returns the per-blip jam/fake marker lane stored in unit-const data.
-     */
-    [[nodiscard]] bool IsJam() const;
-
-    /**
-     * Address: 0x005BDEC0 (FUN_005BDEC0, Moho::ReconBlip::GetReconInfo)
-     *
-     * What it does:
-     * Returns the mutable per-army recon lane selected by direct army index.
-     */
-    [[nodiscard]] SPerArmyReconInfo* GetReconInfo(std::int32_t armyIndex);
-
-    /**
-     * Address: 0x005BDED0 (FUN_005BDED0, Moho::ReconBlip::GetReconInfo)
-     *
-     * What it does:
-     * Returns the mutable per-army recon lane selected by `army` index.
-     */
-    [[nodiscard]] SPerArmyReconInfo* GetReconInfo(SimArmy* army);
-
-    /**
-     * Address: 0x005BDEE0 (FUN_005BDEE0, Moho::ReconBlip::GetReconInfo)
-     *
-     * What it does:
-     * Returns the const per-army recon lane selected by direct army index.
-     */
-    [[nodiscard]] const SPerArmyReconInfo* GetReconInfo(std::int32_t armyIndex) const;
-
-    /**
-     * Address: 0x005BDEF0 (FUN_005BDEF0, Moho::ReconBlip::GetReconInfo)
-     *
-     * What it does:
-     * Returns the const per-army recon lane selected by `army` index.
-     */
-    [[nodiscard]] const SPerArmyReconInfo* GetReconInfo(SimArmy* army) const;
-
-    /**
      * Address: 0x005BDF00 (FUN_005BDF00, Moho::ReconBlip::GetFlags)
      *
      * What it does:
@@ -372,69 +322,6 @@ namespace moho
      * Returns one army-local recon bitmask by owning army object.
      */
     [[nodiscard]] EReconFlags GetFlags(CArmyImpl* army) const;
-
-    /**
-     * Address: 0x005BDF30 (FUN_005BDF30, Moho::ReconBlip::IsKnownFake)
-     *
-     * What it does:
-     * Returns whether this blip is marked `RECON_KnownFake` for the queried
-     * army lane.
-     */
-    [[nodiscard]] bool IsKnownFake(CArmyImpl* army) const;
-
-    /**
-     * Address: 0x005BDF50 (FUN_005BDF50, Moho::ReconBlip::IsOnRadar)
-     *
-     * What it does:
-     * Returns whether this blip is currently radar-visible for the queried army
-     * lane.
-     */
-    [[nodiscard]] bool IsOnRadar(CArmyImpl* army) const;
-
-    /**
-     * Address: 0x005BDF70 (FUN_005BDF70, Moho::ReconBlip::IsOnSonar)
-     *
-     * What it does:
-     * Returns whether this blip is currently sonar-visible for the queried army
-     * lane.
-     */
-    [[nodiscard]] bool IsOnSonar(CArmyImpl* army) const;
-
-    /**
-     * Address: 0x005BDF90 (FUN_005BDF90, Moho::ReconBlip::IsOnOmni)
-     *
-     * What it does:
-     * Returns whether this blip is currently omni-visible for the queried army
-     * lane.
-     */
-    [[nodiscard]] bool IsOnOmni(CArmyImpl* army) const;
-
-    /**
-     * Address: 0x005BDFB0 (FUN_005BDFB0, Moho::ReconBlip::IsSeenEver)
-     *
-     * What it does:
-     * Returns whether this blip has ever been seen (`RECON_LOSEver`) by the
-     * queried army lane.
-     */
-    [[nodiscard]] bool IsSeenEver(CArmyImpl* army) const;
-
-    /**
-     * Address: 0x005BDFD0 (FUN_005BDFD0, Moho::ReconBlip::IsSeenNow)
-     *
-     * What it does:
-     * Returns whether this blip is currently seen (`RECON_LOSNow`) by the
-     * queried army lane.
-     */
-    [[nodiscard]] bool IsSeenNow(CArmyImpl* army) const;
-
-    /**
-     * Address: 0x005BDFF0 (FUN_005BDFF0, Moho::ReconBlip::IsMaybeDead)
-     *
-     * What it does:
-     * Returns whether this blip is marked `RECON_MaybeDead` for the queried
-     * army lane.
-     */
-    [[nodiscard]] bool IsMaybeDead(CArmyImpl* army) const;
 
     /**
      * Address: 0x005BF5F0 (FUN_005BF5F0, Moho::ReconBlip::GetTargetPoint)
@@ -483,17 +370,31 @@ namespace moho
 
     [[nodiscard]] Unit* GetSourceUnit() const noexcept;
     [[nodiscard]] bool IsFake() const noexcept;
-    [[nodiscard]] SPerArmyReconInfo* GetPerArmyReconInfo(std::int32_t armyIndex) noexcept;
-    [[nodiscard]] const SPerArmyReconInfo* GetPerArmyReconInfo(std::int32_t armyIndex) const noexcept;
+    [[nodiscard]] SPerArmyReconInfo* GetPerArmyReconInfo(
+      const std::int32_t armyIndex
+    ) noexcept
+    {
+      return const_cast<SPerArmyReconInfo*>(static_cast<const ReconBlip*>(this)->GetPerArmyReconInfo(armyIndex));
+    }
+    [[nodiscard]] const SPerArmyReconInfo* GetPerArmyReconInfo(
+      const std::int32_t armyIndex
+    ) const noexcept
+    {
+      if (armyIndex < 0 || mReconDat.begin() == nullptr || mReconDat.end() == nullptr) {
+        return nullptr;
+      }
+      const std::ptrdiff_t count = mReconDat.end() - mReconDat.begin();
+      return armyIndex < count ? mReconDat.begin() + armyIndex : nullptr;
+    }
 
   public:
-    WeakPtr<Unit> mCreator;                   // +0x270
-    std::uint8_t mDeleteWhenStale;            // +0x278
-    std::uint8_t mPad279[0x03];               // +0x279
-    Wm3::Vec3f mJamOffset;                    // +0x27C
-    SReconBlipUnitConstData mUnitConstDat;    // +0x288
-    SSTIUnitVariableData mUnitVarDat;         // +0x298
-    msvc8::vector<SPerArmyReconInfo> mReconDat; // +0x4C0
+    WeakPtr<Unit> mCreator;                  // +0x270
+    std::uint8_t mDeleteWhenStale;           // +0x278
+    std::uint8_t mPad279[0x03];              // +0x279
+    Wm3::Vec3f mJamOffset;                   // +0x27C
+    SReconBlipUnitConstData mUnitConstDat;   // +0x288
+    SSTIUnitVariableData mUnitVarDat;        // +0x298
+    fa::vector<SPerArmyReconInfo> mReconDat; // +0x4C0
   };
 
   static_assert(offsetof(ReconBlip, mCreator) == 0x270, "ReconBlip::mCreator offset must be 0x270");

@@ -12,28 +12,6 @@ namespace
 {
   bool gCTaskThreadTypeInfoPreregistered = false;
 
-  [[nodiscard]] gpg::RRef MakeTaskThreadRef(moho::CTaskThread* const thread)
-  {
-    gpg::RRef out{};
-    out.mObj = thread;
-    out.mType = gpg::RTypeOf<moho::CTaskThread>();
-    return out;
-  }
-
-  /**
-   * Address: 0x00409420 (FUN_00409420, sub_409420)
-   *
-   * What it does:
-   * Unlinks thread from current intrusive list, relinks it into owning stage
-   * main-thread list, and clears staged flag.
-   */
-  [[maybe_unused]] moho::CTaskThread* RelinkThreadToPrimaryStageList(moho::CTaskThread* const thread)
-  {
-    thread->ListLinkBefore(&thread->mStage->mThreads);
-    thread->mStaged = false;
-    return thread;
-  }
-
   /**
    * Address: 0x00BEE340 (FUN_00BEE340, atexit destructor of the CTaskThreadTypeInfo object)
    */
@@ -97,7 +75,16 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CTaskThreadTypeInfo_6a4218, moho::register_CTaskThreadTypeInfo)
-GPG_PREREGISTER_INIT(register_CTaskStageTypeInfo_6a4218, moho::register_CTaskStageTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CTaskThreadTypeInfo_6a4218,
+  moho::register_CTaskThreadTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_CTaskStageTypeInfo_6a4218,
+  moho::register_CTaskStageTypeInfo
+)
 
-GPG_PREREGISTER_INIT(InitializeCTaskThreadTypeInfoStorage_6a4218, InitializeCTaskThreadTypeInfoStorage)
+GPG_PREREGISTER_INIT(
+  InitializeCTaskThreadTypeInfoStorage_6a4218,
+  InitializeCTaskThreadTypeInfoStorage
+)

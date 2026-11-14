@@ -24,7 +24,7 @@ namespace
   constexpr int kTransientLookupAssertLine = 1238;
   constexpr const char* kUnreachableAssertSourcePath = "c:\\work\\rts\\main\\code\\src\\user\\RenTerrain.cpp";
 
-  using DynamicSheetHandle = boost::shared_ptr<moho::CD3DDynamicTextureSheet>;
+  using DynamicSheetHandle = std::shared_ptr<moho::CD3DDynamicTextureSheet>;
 
   enum class LookupTextureCreationLane : std::uint8_t
   {
@@ -32,15 +32,17 @@ namespace
     Transient
   };
 
-  void FillCubicBlendLookupTexture(moho::CD3DDynamicTextureSheet* const sheet, const int assertLine)
+  void FillCubicBlendLookupTexture(
+    moho::CD3DDynamicTextureSheet* const sheet,
+    const int assertLine
+  )
   {
     std::uint32_t pitchBytes = 0;
     void* mappedBits = nullptr;
     if (!sheet->Lock(&pitchBytes, &mappedBits)) {
       gpg::HandleAssertFailure(kUnreachableAssertText, assertLine, kUnreachableAssertSourcePath);
       // Binary path traps immediately after assert; keep this lane non-returning.
-      for (;;) {
-      }
+      for (;;) {}
     }
 
     (void)pitchBytes;
@@ -124,12 +126,9 @@ namespace moho
    * cubic-blend lookup table into 128 RGBA texels, unlocks the sheet, and
    * returns retained ownership.
    */
-  boost::shared_ptr<CD3DDynamicTextureSheet> CreateTerrainCubicBlendLookupTexture()
+  std::shared_ptr<CD3DDynamicTextureSheet> CreateTerrainCubicBlendLookupTexture()
   {
-    return CreateTerrainCubicBlendLookupTextureImpl(
-      LookupTextureCreationLane::Tracked,
-      kTrackedLookupAssertLine
-    );
+    return CreateTerrainCubicBlendLookupTextureImpl(LookupTextureCreationLane::Tracked, kTrackedLookupAssertLine);
   }
 
   /**
@@ -140,11 +139,8 @@ namespace moho
    * non-tracked resource lane, writes the cubic-blend lookup table into 128
    * RGBA texels, unlocks the sheet, and returns retained ownership.
    */
-  boost::shared_ptr<CD3DDynamicTextureSheet> CreateTerrainCubicBlendLookupTextureTransient()
+  std::shared_ptr<CD3DDynamicTextureSheet> CreateTerrainCubicBlendLookupTextureTransient()
   {
-    return CreateTerrainCubicBlendLookupTextureImpl(
-      LookupTextureCreationLane::Transient,
-      kTransientLookupAssertLine
-    );
+    return CreateTerrainCubicBlendLookupTextureImpl(LookupTextureCreationLane::Transient, kTransientLookupAssertLine);
   }
 } // namespace moho

@@ -9,14 +9,16 @@
 
 namespace
 {
-  using WeakProviderPtr = boost::weak_ptr<moho::INetNATTraversalProvider>;
+  using WeakProviderPtr = std::weak_ptr<moho::INetNATTraversalProvider>;
 
   [[nodiscard]] gpg::RType* CachedProviderType()
   {
     return moho::INetNATTraversalProvider::StaticGetClass();
   }
 
-  [[nodiscard]] gpg::RRef MakeWeakProviderRef(WeakProviderPtr* weakProvider)
+  [[nodiscard]] gpg::RRef MakeWeakProviderRef(
+    WeakProviderPtr* weakProvider
+  )
   {
     gpg::RRef out{};
     out.mObj = weakProvider;
@@ -31,7 +33,9 @@ namespace
    * Upcasts generic reflection reference to weak-pointer storage or throws on
    * type mismatch.
    */
-  [[nodiscard]] WeakProviderPtr* TryUpcastWeakProviderOrThrow(const gpg::RRef& source)
+  [[nodiscard]] WeakProviderPtr* TryUpcastWeakProviderOrThrow(
+    const gpg::RRef& source
+  )
   {
     const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<WeakProviderPtr>());
     if (!upcast.mObj) {
@@ -47,7 +51,9 @@ namespace
    * Builds reflected object reference for NAT traversal provider pointer and
    * preserves most-derived complete-object pointer semantics.
    */
-  [[nodiscard]] gpg::RRef MakeProviderRef(moho::INetNATTraversalProvider* provider)
+  [[nodiscard]] gpg::RRef MakeProviderRef(
+    moho::INetNATTraversalProvider* provider
+  )
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -72,8 +78,7 @@ namespace
       return out;
     }
 
-    out.mObj =
-      reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(provider) - static_cast<std::uintptr_t>(baseOffset));
+    out.mObj = gpg::CompleteObject(provider, baseOffset);
     out.mType = dynamicType;
     return out;
   }
@@ -89,7 +94,9 @@ namespace
   /**
    * Address: 0x00481F20 (FUN_00481F20)
    */
-  gpg::RRef CopyWeakProviderRef(gpg::RRef* sourceRef)
+  gpg::RRef CopyWeakProviderRef(
+    gpg::RRef* sourceRef
+  )
   {
     auto* const weakProvider = new WeakProviderPtr{};
     if (sourceRef) {
@@ -101,7 +108,9 @@ namespace
   /**
    * Address: 0x00481FC0 (FUN_00481FC0)
    */
-  void DeleteWeakProvider(void* storage)
+  void DeleteWeakProvider(
+    void* storage
+  )
   {
     delete static_cast<WeakProviderPtr*>(storage);
   }
@@ -109,7 +118,9 @@ namespace
   /**
    * Address: 0x00481FF0 (FUN_00481FF0)
    */
-  gpg::RRef CtorWeakProviderRef(void* storage)
+  gpg::RRef CtorWeakProviderRef(
+    void* storage
+  )
   {
     auto* const weakProvider = static_cast<WeakProviderPtr*>(storage);
     if (weakProvider) {
@@ -121,7 +132,10 @@ namespace
   /**
    * Address: 0x00482030 (FUN_00482030)
    */
-  gpg::RRef MoveWeakProviderRef(void* storage, gpg::RRef* sourceRef)
+  gpg::RRef MoveWeakProviderRef(
+    void* storage,
+    gpg::RRef* sourceRef
+  )
   {
     auto* const weakProvider = static_cast<WeakProviderPtr*>(storage);
     if (weakProvider) {
@@ -136,7 +150,9 @@ namespace
   /**
    * Address: 0x004820C0 (FUN_004820C0)
    */
-  void DtrWeakProvider(void* storage)
+  void DtrWeakProvider(
+    void* storage
+  )
   {
     auto* const weakProvider = static_cast<WeakProviderPtr*>(storage);
     if (weakProvider) {
@@ -174,7 +190,8 @@ gpg::RType* gpg::ResolveWeakPtrINetNATTraversalProviderType()
  */
 gpg::RRef* gpg::RRef_weak_ptr_INetNATTraversalProvider(
   gpg::RRef* const out,
-  boost::weak_ptr<moho::INetNATTraversalProvider>* const provider)
+  std::weak_ptr<moho::INetNATTraversalProvider>* const provider
+)
 {
   if (!out) {
     return nullptr;
@@ -194,31 +211,35 @@ gpg::RWeakPointerType<moho::INetNATTraversalProvider>::~RWeakPointerType() = def
  */
 const char* gpg::RWeakPointerType<moho::INetNATTraversalProvider>::GetName() const
 {
-    static const msvc8::string sName = gpg::STR_Printf("boost::weak_ptr<%s>", CachedProviderType()->GetName());
-    return sName.c_str();
+  // Engine change (#422): retail named it `boost::weak_ptr<...>`; REF_FindTypeNamed still resolves that name (see
+  // RSharedPointerType::GetName).
+  static const fa::string sName = gpg::STR_Printf("weak_ptr<%s>", CachedProviderType()->GetName());
+  return sName.c_str();
 }
 
 /**
  * Address: 0x00481AE0 (FUN_00481AE0)
  */
-msvc8::string gpg::RWeakPointerType<moho::INetNATTraversalProvider>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RWeakPointerType<moho::INetNATTraversalProvider>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
   auto* const weakProvider = static_cast<const WeakProviderPtr*>(ref.mObj);
   if (!weakProvider) {
-    return msvc8::string("NULL");
+    return fa::string("NULL");
   }
 
-  const boost::shared_ptr<moho::INetNATTraversalProvider> locked = weakProvider->lock();
+  const std::shared_ptr<moho::INetNATTraversalProvider> locked = weakProvider->lock();
   if (!locked) {
-    return msvc8::string("NULL");
+    return fa::string("NULL");
   }
 
   const gpg::RRef providerRef = MakeProviderRef(locked.get());
   if (!providerRef.mObj) {
-    return msvc8::string("NULL");
+    return fa::string("NULL");
   }
 
-  const msvc8::string inner = providerRef.GetLexical();
+  const fa::string inner = providerRef.GetLexical();
   return gpg::STR_Printf("[%s]", inner.c_str());
 }
 
@@ -227,8 +248,11 @@ msvc8::string gpg::RWeakPointerType<moho::INetNATTraversalProvider>::GetLexical(
  */
 void gpg::RWeakPointerType<moho::INetNATTraversalProvider>::Init()
 {
-  static_assert(sizeof(boost::weak_ptr<moho::INetNATTraversalProvider>) == 0x08, "boost::weak_ptr<moho::INetNATTraversalProvider> is 0x08 bytes on x86");
-  size_ = sizeof(boost::weak_ptr<moho::INetNATTraversalProvider>);
+  static_assert(
+    sizeof(std::weak_ptr<moho::INetNATTraversalProvider>) == 0x08,
+    "boost::weak_ptr<moho::INetNATTraversalProvider> is 0x08 bytes on x86"
+  );
+  size_ = sizeof(std::weak_ptr<moho::INetNATTraversalProvider>);
   newRefFunc_ = &NewWeakProviderRef;
   cpyRefFunc_ = &CopyWeakProviderRef;
   deleteFunc_ = &DeleteWeakProvider;
@@ -236,4 +260,3 @@ void gpg::RWeakPointerType<moho::INetNATTraversalProvider>::Init()
   movRefFunc_ = &MoveWeakProviderRef;
   dtrFunc_ = &DtrWeakProvider;
 }
-

@@ -8,25 +8,36 @@
 
 set(FAF_REMOTE_SOURCES
   remote/FrameBuilder.cpp
+  remote/PoseTracker.cpp
   remote/UnderlayPaths.cpp
   remote/ContentTables.cpp
+  remote/ContentCheck.cpp
+  remote/SeatRoster.cpp
   remote/VisibilityOracle.cpp
   remote/SpatialOracle.cpp
   remote/BeatChangeSet.cpp
   remote/ViewPackets.cpp
   remote/ViewFrames.cpp
+  remote/ViewLanes.cpp
   remote/SyncRouting.cpp
+  remote/ViewAudit.cpp
   remote/ViewIdMap.cpp
+  remote/ViewJobs.cpp
   remote/InboundIds.cpp
+  remote/ServerClient.cpp
   remote/FrameWindow.cpp
   remote/ArmyRecords.cpp
+  remote/CommandRecords.cpp
   remote/wire/ArmyLane.cpp
   remote/wire/LuaSyncLane.cpp
   remote/wire/BitStream.cpp
+  remote/wire/CommandLane.cpp
+  remote/wire/EffectLane.cpp
   remote/wire/EntityFrame.cpp
   remote/wire/IntelGridDelta.cpp
   remote/wire/NameTable.cpp
   remote/wire/OrdinalTable.cpp
+  remote/wire/PoseLane.cpp
   remote/wire/Quantize.cpp
   remote/wire/Roster.cpp
   remote/wire/SessionTables.cpp
@@ -36,6 +47,13 @@ set(FAF_REMOTE_SOURCES
 
 set(FAF_REMOTE_CLIENT_SOURCES
   remote/client/BeatClock.cpp
+  remote/client/BeatSynthesis.cpp
+  remote/client/CommandLaneApplier.cpp
+  remote/client/DisplayModel.cpp
+  remote/client/InterpBuffer.cpp
+  remote/client/EffectBlueprint.cpp
+  remote/client/EffectHosting.cpp
+  remote/client/EffectLaneApplier.cpp
   remote/client/GridSnapshots.cpp
   remote/client/LoopbackCommands.cpp
   remote/client/LoopbackLink.cpp
@@ -43,6 +61,10 @@ set(FAF_REMOTE_CLIENT_SOURCES
   remote/client/RemoteClientManager.cpp
   remote/client/RemoteSimDriver.cpp
   remote/client/ServerConnect.cpp
+  remote/client/ServerRelayConnector.cpp
   remote/client/SessionSummary.cpp
   remote/client/SyncRebuilder.cpp
+  remote/client/ViewMerge.cpp
+  remote/client/ServerViewClient.cpp
+  remote/client/NetworkSimDriver.cpp
 )

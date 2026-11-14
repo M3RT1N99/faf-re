@@ -5,7 +5,7 @@
 
 #include "Wm3Vector3.h"
 
-namespace msvc8
+namespace fa
 {
   struct string;
 }
@@ -29,10 +29,12 @@ namespace moho
   };
 
   static_assert(
-    offsetof(SRangeExtractionPayload, centerX) == 0x00, "SRangeExtractionPayload::centerX offset must be 0x00"
+    offsetof(SRangeExtractionPayload, centerX) == 0x00,
+    "SRangeExtractionPayload::centerX offset must be 0x00"
   );
   static_assert(
-    offsetof(SRangeExtractionPayload, centerZ) == 0x04, "SRangeExtractionPayload::centerZ offset must be 0x04"
+    offsetof(SRangeExtractionPayload, centerZ) == 0x04,
+    "SRangeExtractionPayload::centerZ offset must be 0x04"
   );
   static_assert(
     offsetof(SRangeExtractionPayload, innerRadius) == 0x08,
@@ -123,15 +125,6 @@ namespace moho
   void InitializeBlueprintExtractors();
 
   /**
-   * Address: 0x007ED9A0 (FUN_007ED9A0, Moho::sBlueprintExtractors::~sBlueprintExtractors)
-   *
-   * What it does:
-   * Destroys the global blueprint range-extractor registry and releases
-   * all registered extractor instances.
-   */
-  void ShutdownBlueprintExtractors();
-
-  /**
    * Address: 0x007EDA40 (FUN_007EDA40)
    *
    * std::string const &
@@ -140,7 +133,7 @@ namespace moho
    * Looks up a registered extractor by blueprint range key and returns
    * the associated instance, or `nullptr` when no mapping exists.
    */
-  [[nodiscard]] RangeExtractor* GetRangeExtractor(const msvc8::string& extractorName);
+  [[nodiscard]] RangeExtractor* GetRangeExtractor(const fa::string& extractorName);
 
 #if defined(_M_IX86)
   static_assert(sizeof(RangeExtractor) == 0x04, "RangeExtractor size must be 0x04");

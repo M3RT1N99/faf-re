@@ -15,7 +15,7 @@ namespace moho
      * What it does:
      * Deserializes one `WeakPtr<UnitWeapon>` payload from a tracked pointer lane.
      */
-    static void Deserialize(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void Deserialize(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x00675250 (FUN_00675250, Moho::WeakPtr_UnitWeapon::Serialize)
@@ -23,7 +23,7 @@ namespace moho
      * What it does:
      * Serializes one `WeakPtr<UnitWeapon>` payload as an unowned tracked pointer.
      */
-    static void Serialize(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void Serialize(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
   };
 
   template <class T>
@@ -41,7 +41,7 @@ namespace moho
     /**
      * Address: 0x00674C70 (FUN_00674C70, Moho::RWeakPtrType_UnitWeapon::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x00674E00 (FUN_00674E00, Moho::RWeakPtrType_UnitWeapon::IsIndexed)
@@ -87,4 +87,3 @@ namespace moho
    */
   void register_WeakPtr_UnitWeapon_Type();
 } // namespace moho
-

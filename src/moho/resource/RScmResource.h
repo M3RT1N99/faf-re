@@ -1,8 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/String.h"
 #include "legacy/containers/String.h"
 #include "Wm3AxisAlignedBox3.h"
@@ -27,7 +28,7 @@ namespace moho
   struct SScmFile;
   class CAniSkel;
 
-  class RScmResource : public boost::enable_shared_from_this<RScmResource>
+  class RScmResource : public std::enable_shared_from_this<RScmResource>
   {
   public:
     /**
@@ -35,9 +36,8 @@ namespace moho
      * Reads the model path and hands back the shared model for it (`GetModel`).
      * Inlined into `SerConstructHelper<RScmResource>::Construct` 0x005390C0.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x00538F70 (FUN_00538F70)
@@ -46,7 +46,10 @@ namespace moho
      * Saves the model's name as a mounted path.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
 
     static gpg::RType* sType;
@@ -59,7 +62,7 @@ namespace moho
      * Binds one SCM data-owner lane + resource path and computes cached
      * bounds/size from embedded bone-bounds samples.
      */
-    RScmResource(gpg::StrArg resourcePath, const boost::shared_ptr<const SScmFile>& scmFile);
+    RScmResource(gpg::StrArg resourcePath, const std::shared_ptr<const SScmFile>& scmFile);
 
     /**
      * Address: 0x00539FB0 (FUN_00539FB0)
@@ -73,7 +76,7 @@ namespace moho
      * Address: 0x00538DB0 (FUN_00538DB0,
      * ?GetSkeleton@RScmResource@Moho@@QAE?AV?$shared_ptr@$$CBVCAniSkel@Moho@@@boost@@XZ)
      */
-    [[nodiscard]] boost::shared_ptr<const CAniSkel> GetSkeleton();
+    [[nodiscard]] std::shared_ptr<const CAniSkel> GetSkeleton();
 
     /**
      * Engine addition (plan WPR.35): whether models keep their vertices and indices after they
@@ -90,11 +93,15 @@ namespace moho
     void DropGeometry();
 
   public:
-    msvc8::string mName;                   // +0x08
-    boost::shared_ptr<const SScmFile> mFile; // +0x24
-    CAniSkel* mSkeleton;                   // +0x2C
-    Wm3::AxisAlignedBox3f mBounds;         // +0x30
-    float mSize;                           // +0x48
+    fa::string mName;                        // +0x08
+    std::shared_ptr<const SScmFile> mFile;   // +0x24
+    // Engine addition: atomic so the lazy build below can claim it for one
+    // thread. `std::atomic<T*>` has the same size and alignment as `T*` on
+    // every target this builds for, so the +0x2C offset and the 0x4C size
+    // are unchanged.
+    std::atomic<CAniSkel*> mSkeleton; // +0x2C
+    Wm3::AxisAlignedBox3f mBounds;    // +0x30
+    float mSize;                      // +0x48
   };
 
   static_assert(offsetof(RScmResource, mName) == 0x08, "RScmResource::mName offset must be 0x08");
@@ -119,7 +126,7 @@ namespace moho
    * as a live owning handle. Yields an empty pointer when the path is empty,
    * unmounted, or the lookup resolved to a dead handle.
    */
-  [[nodiscard]] boost::shared_ptr<RScmResource> GetModel(gpg::StrArg path, CResourceWatcher* resourceWatcher);
+  [[nodiscard]] std::shared_ptr<RScmResource> GetModel(gpg::StrArg path, CResourceWatcher* resourceWatcher);
 
   /**
    * Address: 0x00BC91A0 (FUN_00BC91A0)
@@ -129,16 +136,14 @@ namespace moho
    */
   void register_RScmResourceModelPrefetchType();
 
-  /**
+  /*
    * Address: 0x00539EC0 (FUN_00539EC0, ??4shared_ptr_RScmResource@boost@@QAE@@Z,
    * boost::shared_ptr_RScmResource::operator=)
    *
    * What it does:
    * Constructs one `shared_ptr<RScmResource>` from one raw resource lane,
    * including `enable_shared_from_this` ownership binding.
+   *
+   * `CScmResourceFactory::LoadImpl` (ResourceFactory.cpp) constructs the shared_ptr itself.
    */
-  boost::shared_ptr<RScmResource>* ConstructSharedRScmResourceFromRaw(
-    boost::shared_ptr<RScmResource>* outResource,
-    RScmResource* resource
-  );
 } // namespace moho

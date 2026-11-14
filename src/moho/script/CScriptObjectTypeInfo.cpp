@@ -19,20 +19,16 @@ namespace
    * What it does:
    * Adds gpg::RObject as a reflected base with zero subobject offset.
    */
-  void AddBase_RObject(gpg::RType* const typeInfo)
+  void AddBase_RObject(
+    gpg::RType* const typeInfo
+  )
   {
     static gpg::RType* rObjectType = nullptr;
     if (rObjectType == nullptr) {
       rObjectType = gpg::LookupRType(typeid(gpg::RObject));
     }
 
-    gpg::RField baseField{};
-    baseField.mName = rObjectType->GetName();
-    baseField.mType = rObjectType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, rObjectType);
   }
 
   struct CScriptObjectTypeInfoBootstrap
@@ -96,7 +92,9 @@ namespace moho
   }
 } // namespace moho
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CScriptObjectTypeInfo_f1a664, moho::register_CScriptObjectTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CScriptObjectTypeInfo_f1a664,
+  moho::register_CScriptObjectTypeInfo
+)

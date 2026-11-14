@@ -1,4 +1,5 @@
 #include "moho/ai/AITarget_LuaFuncDef.h"
+#include "moho/lua/LuaVector3.h"
 
 #include "moho/ai/CAiTarget.h"
 #include "moho/lua/CScrLuaBinder.h"
@@ -10,21 +11,6 @@ namespace
   constexpr const char* kAITargetLuaHelpText = "Create a target object";
   constexpr const char* kLuaExpectedBetweenArgsWarning = "%s\n  expected between %d and %d args, but got %d";
 
-  [[nodiscard]] Wm3::Vec3f ReadVector3FromLuaObject(const LuaPlus::LuaObject& object) noexcept
-  {
-    Wm3::Vec3f out = Wm3::Vec3f::Zero();
-    if (!object.IsTable()) {
-      return out;
-    }
-
-    const LuaPlus::LuaObject xObject = object[1];
-    const LuaPlus::LuaObject yObject = object[2];
-    const LuaPlus::LuaObject zObject = object[3];
-    out.x = static_cast<float>(xObject.GetNumber());
-    out.y = static_cast<float>(yObject.GetNumber());
-    out.z = static_cast<float>(zObject.GetNumber());
-    return out;
-  }
 } // namespace
 
 namespace moho
@@ -46,7 +32,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_AITargetL`.
    */
-  int cfunc_AITarget(lua_State* const luaContext)
+  int cfunc_AITarget(
+    lua_State* const luaContext
+  )
   {
     return cfunc_AITargetL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -58,7 +46,9 @@ namespace moho
    * Builds one `CAiTarget` from optional Lua arg#1 (`Entity` object or
    * position table) and returns the Lua target object payload.
    */
-  int cfunc_AITargetL(LuaPlus::LuaState* const state)
+  int cfunc_AITargetL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -103,12 +93,7 @@ namespace moho
   void func_AITarget_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_CoreLuaInitSet(),
-      "AITarget",
-      &cfunc_AITarget,
-      nullptr,
-      "<global>",
-      kAITargetLuaHelpText
+      moho::SCR_CoreLuaInitSet(), "AITarget", &cfunc_AITarget, nullptr, "<global>", kAITargetLuaHelpText
     );
     (void)binder;
   }

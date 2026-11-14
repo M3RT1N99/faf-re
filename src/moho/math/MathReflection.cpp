@@ -33,7 +33,9 @@ namespace
    * Appends one canonical `"x"/"y"/"z"` float-field trio to the current
    * reflection type at offsets `0/4/8` and returns the `z` field handle.
    */
-  [[maybe_unused]] gpg::RField* RegisterXyzFloatReflectionFields(gpg::RType* const typeInfo)
+  gpg::RField* RegisterXyzFloatReflectionFields(
+    gpg::RType* const typeInfo
+  )
   {
     GPG_ASSERT(typeInfo != nullptr);
     if (typeInfo == nullptr) {
@@ -52,7 +54,9 @@ namespace
    * Appends one canonical `"x"/"y"` float-field pair to the current
    * reflection type at offsets `0/4` and returns the `y` field handle.
    */
-  [[maybe_unused]] gpg::RField* RegisterXyFloatReflectionFields(gpg::RType* const typeInfo)
+  gpg::RField* RegisterXyFloatReflectionFields(
+    gpg::RType* const typeInfo
+  )
   {
     GPG_ASSERT(typeInfo != nullptr);
     if (typeInfo == nullptr) {
@@ -70,14 +74,13 @@ namespace
    * Compares two 3D points component-wise and returns true when all axis deltas
    * are within one `0.001f` absolute threshold.
    */
-  [[nodiscard]] bool PointsAreSimilarWithinEpsilon(
+  [[nodiscard, maybe_unused]] bool PointsAreSimilarWithinEpsilon(
     const Wm3::Vector3f& lhs,
     const Wm3::Vector3f& rhs
   ) noexcept
   {
     constexpr float kAxisTolerance = 0.001f;
-    return std::fabs(lhs.x - rhs.x) <= kAxisTolerance &&
-      std::fabs(lhs.y - rhs.y) <= kAxisTolerance &&
+    return std::fabs(lhs.x - rhs.x) <= kAxisTolerance && std::fabs(lhs.y - rhs.y) <= kAxisTolerance &&
       std::fabs(lhs.z - rhs.z) <= kAxisTolerance;
   }
 } // namespace
@@ -100,7 +103,7 @@ namespace moho
    * Address: 0x00BC32E0 (FUN_00BC32E0, dynamic initializer for `math_GlobalRandomMutex`)
    * Address: 0x00BEE680 (FUN_00BEE680, dynamic atexit destructor for `math_GlobalRandomMutex`)
    */
-  boost::mutex math_GlobalRandomMutex;
+  std::mutex math_GlobalRandomMutex;
 
   VMatrix4 VMatrix4::NaN{};
 
@@ -111,9 +114,11 @@ namespace moho
    * Returns one process-global random sample in `[0, scale)` using the
    * shared MT stream.
    */
-  double MathGlobalRandomUnitScaled(const float scale)
+  double MathGlobalRandomUnitScaled(
+    const float scale
+  )
   {
-    boost::mutex::scoped_lock randomLock(math_GlobalRandomMutex);
+    std::lock_guard<std::mutex> randomLock(math_GlobalRandomMutex);
     const float unit = CMersenneTwister::ToUnitFloat(math_GlobalRandomStream.twister.NextUInt32());
     return static_cast<double>(unit * scale);
   }
@@ -127,7 +132,7 @@ namespace moho
    */
   double MathGlobalRandomUnitSafe()
   {
-    boost::mutex::scoped_lock randomLock(math_GlobalRandomMutex);
+    std::lock_guard<std::mutex> randomLock(math_GlobalRandomMutex);
     const float unit = CMersenneTwister::ToUnitFloat(math_GlobalRandomStream.twister.NextUInt32());
     return static_cast<double>(unit);
   }
@@ -139,9 +144,12 @@ namespace moho
    * Returns one process-global random sample in `[minValue, maxValue)` using
    * the shared MT stream.
    */
-  double MathGlobalRandomRange(const float minValue, const float maxValue)
+  double MathGlobalRandomRange(
+    const float minValue,
+    const float maxValue
+  )
   {
-    boost::mutex::scoped_lock randomLock(math_GlobalRandomMutex);
+    std::lock_guard<std::mutex> randomLock(math_GlobalRandomMutex);
     const float unit = CMersenneTwister::ToUnitFloat(math_GlobalRandomStream.twister.NextUInt32());
     return static_cast<double>(minValue + (maxValue - minValue) * unit);
   }
@@ -152,18 +160,20 @@ namespace moho
    * What it does:
    * Converts Euler roll/pitch/yaw lanes into one quaternion orientation.
    */
-  Wm3::Quaternionf EulerToQuaternion(const VEulers3& orientation)
+  Wm3::Quaternionf EulerToQuaternion(
+    const VEulers3& orientation
+  )
   {
     const float halfRoll = orientation.r * 0.5f;
     const float halfPitch = orientation.p * 0.5f;
     const float halfYaw = orientation.y * 0.5f;
 
-    const float rollCos = msvc8::cos(halfRoll);
-    const float rollSin = msvc8::sin(halfRoll);
-    const float pitchCos = msvc8::cos(halfPitch);
-    const float pitchSin = msvc8::sin(halfPitch);
-    const float yawCos = msvc8::cos(halfYaw);
-    const float yawSin = msvc8::sin(halfYaw);
+    const float rollCos = fa::cos(halfRoll);
+    const float rollSin = fa::sin(halfRoll);
+    const float pitchCos = fa::cos(halfPitch);
+    const float pitchSin = fa::sin(halfPitch);
+    const float yawCos = fa::cos(halfYaw);
+    const float yawSin = fa::sin(halfYaw);
 
     // 0x004EB5EF..0x004EB711 composes yaw about Y, pitch about X,
     // then roll about Z. Preserve the two quaternion products instead of
@@ -180,7 +190,9 @@ namespace moho
    * What it does:
    * Expands quaternion lanes into a 3x3 orthonormal basis.
    */
-  VAxes3::VAxes3(const Wm3::Quaternionf& orientation)
+  VAxes3::VAxes3(
+    const Wm3::Quaternionf& orientation
+  )
   {
     // The three rows of the rotation matrix the quaternion denotes - exactly
     // `VMatrix4::Set`'s rotation block (0x004EE980), r[0]->vX, r[1]->vY,
@@ -198,7 +210,7 @@ namespace moho
     const float xx = twoX * orientation.x;
     const float yy = twoY * orientation.y;
     const float zz = twoZ * orientation.z;
-    const float wx = twoW * orientation.x;
+    const float xw = twoW * orientation.x;
     const float wy = twoW * orientation.y;
     const float wz = twoW * orientation.z;
     // 0x004EC5D5..0x004EC611 doubles the later lane of each mixed product, as
@@ -214,10 +226,10 @@ namespace moho
 
     vY.x = xy - wz;
     vY.y = 1.0f - (zz + xx);
-    vY.z = yz + wx;
+    vY.z = yz + xw;
 
     vZ.x = wy + xz;
-    vZ.y = yz - wx;
+    vZ.y = yz - xw;
     vZ.z = 1.0f - (yy + xx);
   }
 
@@ -228,10 +240,11 @@ namespace moho
    * Converts roll/pitch/yaw Euler lanes to quaternion and then expands that
    * quaternion into one orthonormal basis matrix.
    */
-  VAxes3::VAxes3(const VEulers3& orientation)
+  VAxes3::VAxes3(
+    const VEulers3& orientation
+  )
     : VAxes3(EulerToQuaternion(orientation))
-  {
-  }
+  {}
 
   /**
    * Address: 0x004EC720 (FUN_004EC720, ?OrthoNormalize@VAxes3@Moho@@QAEXXZ)
@@ -259,54 +272,24 @@ namespace moho
     vY.z = (vZ.x * vX.y) - (vZ.y * vX.x);
   }
 
-  /**
-   * Address: 0x004EC850 (FUN_004EC850, ?IsNormal@VAxes3@Moho@@QBE_NXZ)
-   * Mangled: ?IsNormal@VAxes3@Moho@@QBE_NXZ
-   *
-   * What it does:
-   * Checks that all three basis lanes are unit-length and verifies `vX`
-   * matches the reconstructed `vZ x vY` lane within epsilon.
-   */
-  bool VAxes3::IsNormal() const
-  {
-    constexpr float kUnitLengthEpsilon = 0.001f;
-    const auto squaredLength = [](const Wm3::Vector3f& axis) {
-      return (axis.x * axis.x) + (axis.y * axis.y) + (axis.z * axis.z);
-    };
-
-    if (std::fabs(squaredLength(vX) - 1.0f) > kUnitLengthEpsilon) {
-      return false;
-    }
-    if (std::fabs(squaredLength(vY) - 1.0f) > kUnitLengthEpsilon) {
-      return false;
-    }
-    if (std::fabs(squaredLength(vZ) - 1.0f) > kUnitLengthEpsilon) {
-      return false;
-    }
-
-    const Wm3::Vector3f reconstructedVX{
-      (vZ.z * vY.y) - (vZ.y * vY.z),
-      (vZ.x * vY.z) - (vY.x * vZ.z),
-      (vY.x * vZ.y) - (vZ.x * vY.y),
-    };
-    return PointsAreSimilarWithinEpsilon(vX, reconstructedVX);
-  }
-
-  msvc8::string ToString(const Wm3::Vector3f& value);
+  fa::string ToString(const Wm3::Vector3f& value);
 
   /**
-   * Address: 0x004ED000 (FUN_004ED000, ?ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVVAxes3@1@@Z)
-   * Mangled: ?ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVVAxes3@1@@Z
+   * Address: 0x004ED000 (FUN_004ED000,
+   * ?ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVVAxes3@1@@Z) Mangled:
+   * ?ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVVAxes3@1@@Z
    *
    * What it does:
    * Formats one basis as `X=(...) Y=(...) Z=(...)` using the existing vector
    * lane formatter.
    */
-  msvc8::string ToString(const VAxes3& value)
+  fa::string ToString(
+    const VAxes3& value
+  )
   {
-    const msvc8::string zText = ToString(value.vZ);
-    const msvc8::string yText = ToString(value.vY);
-    const msvc8::string xText = ToString(value.vX);
+    const fa::string zText = ToString(value.vZ);
+    const fa::string yText = ToString(value.vY);
+    const fa::string xText = ToString(value.vX);
     return gpg::STR_Printf("X=(%s) Y=(%s) Z=(%s)", xText.c_str(), yText.c_str(), zText.c_str());
   }
 
@@ -332,21 +315,6 @@ namespace moho
     }
 
     return sIdentity;
-  }
-
-  /**
-   * Address: 0x004E9FA0 (FUN_004E9FA0)
-   *
-   * What it does:
-   * Stores one 32-bit lane into caller output storage.
-   */
-  [[maybe_unused]] std::uint32_t* WriteDwordLane9FA0(
-    std::uint32_t* const outLane,
-    const std::uint32_t value
-  ) noexcept
-  {
-    *outLane = value;
-    return outLane;
   }
 
   /**
@@ -679,7 +647,11 @@ namespace moho
    * vector, normalizing forward first and falling back to the binary's
    * alternate right-axis lane when the cross product collapses.
    */
-  void VEC_LookAt(const Wm3::Vector3f& up, const Wm3::Vector3f& forwardInput, VAxes3* const axes)
+  void VEC_LookAt(
+    const Wm3::Vector3f& up,
+    const Wm3::Vector3f& forwardInput,
+    VAxes3* const axes
+  )
   {
     const float forwardLengthSq =
       (forwardInput.x * forwardInput.x) + (forwardInput.y * forwardInput.y) + (forwardInput.z * forwardInput.z);
@@ -744,47 +716,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x0050B650 (FUN_0050B650, ?COORDS_LookAt@Moho@@YAXABV?$Vector3@M@Wm3@@PAVVAxes3@1@@Z)
-   *
-   * What it does:
-   * Builds look-at axes using world-up `(0,1,0)` and the supplied forward
-   * direction.
-   */
-  void COORDS_LookAt(const Wm3::Vector3f& forward, VAxes3* const axes)
-  {
-    const Wm3::Vector3f worldUp{0.0f, 1.0f, 0.0f};
-    VEC_LookAt(worldUp, forward, axes);
-  }
-
-  /**
-   * Address: 0x0050B680 (FUN_0050B680, ?COORDS_LookAtXZ@Moho@@YAXABV?$Vector3@M@Wm3@@PAVVAxes3@1@@Z)
-   *
-   * What it does:
-   * Builds an XZ-plane-aligned basis from one direction vector without
-   * normalizing the projected axes.
-   */
-  VAxes3* COORDS_LookAtXZ(VAxes3* const outAxes, const Wm3::Vector3f& direction)
-  {
-    const float lengthSq = (direction.x * direction.x) + (direction.y * direction.y) + (direction.z * direction.z);
-    if (lengthSq <= 0.0f) {
-      return outAxes;
-    }
-
-    outAxes->vX.x = direction.z;
-    outAxes->vX.y = 0.0f;
-    outAxes->vX.z = -direction.x;
-
-    outAxes->vY.x = 0.0f;
-    outAxes->vY.y = 1.0f;
-    outAxes->vY.z = 0.0f;
-
-    outAxes->vZ.x = direction.x;
-    outAxes->vZ.y = 0.0f;
-    outAxes->vZ.z = direction.z;
-    return outAxes;
-  }
-
-  /**
    * Address: 0x004F00E0 (FUN_004F00E0, Moho::VMatrix4TypeInfo::VMatrix4TypeInfo)
    */
   VMatrix4TypeInfo::VMatrix4TypeInfo()
@@ -819,7 +750,9 @@ namespace moho
   /**
    * Address: 0x004F0390 (FUN_004F0390, Moho::VMatrix4::MemberDeserialize)
    */
-  void VMatrix4::MemberDeserialize(gpg::ReadArchive* const archive)
+  void VMatrix4::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (archive == nullptr) {
@@ -837,7 +770,9 @@ namespace moho
   /**
    * Address: 0x004F03D0 (FUN_004F03D0, Moho::VMatrix4::MemberSerialize)
    */
-  void VMatrix4::MemberSerialize(gpg::WriteArchive* const archive) const
+  void VMatrix4::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (archive == nullptr) {
@@ -850,83 +785,6 @@ namespace moho
         archive->WriteFloat(rowData[col]);
       }
     }
-  }
-
-  /**
-   * Address: 0x004ED8B0 (FUN_004ED8B0)
-   *
-   * What it does:
-   * Initializes one 3-float vector lane from three scalar source lanes.
-   */
-  [[maybe_unused]] Wm3::Vector3f* InitializeVector3fFromScalarLanes(
-    Wm3::Vector3f* const outVector,
-    const float* const xLane,
-    const float* const yLane,
-    const float* const zLane
-  ) noexcept
-  {
-    outVector->x = *xLane;
-    outVector->y = *yLane;
-    outVector->z = *zLane;
-    return outVector;
-  }
-
-  /**
-   * Address: 0x004ED930 (FUN_004ED930)
-   *
-   * What it does:
-   * Returns one float-lane pointer offset by `index`.
-   */
-  [[maybe_unused]] float* OffsetFloatLanePointer(
-    float* const baseLane,
-    const std::int32_t index
-  ) noexcept
-  {
-    return baseLane + index;
-  }
-
-  /**
-   * Address: 0x004EE300 (FUN_004EE300)
-   *
-   * What it does:
-   * Builds one 4x4 matrix from four row lanes in register-order mapping
-   * (`row0=edi`, `row1=esi`, `row2=edx`, `row3=ecx`).
-   */
-  [[maybe_unused]] VMatrix4* BuildVMatrix4FromRegisterRowLanesA(
-    const Vector4f* const laneEdxRow2,
-    const Vector4f* const laneEcxRow3,
-    const Vector4f* const laneEdiRow0,
-    const Vector4f* const laneEsiRow1,
-    VMatrix4* const outMatrix
-  ) noexcept
-  {
-    outMatrix->r[0] = *laneEdiRow0;
-    outMatrix->r[1] = *laneEsiRow1;
-    outMatrix->r[2] = *laneEdxRow2;
-    outMatrix->r[3] = *laneEcxRow3;
-    return outMatrix;
-  }
-
-  /**
-   * Address: 0x004EE4D0 (FUN_004EE4D0)
-   *
-   * What it does:
-   * Duplicate lane for building one 4x4 matrix from four row lanes in the
-   * same register-order mapping as `FUN_004EE300`.
-   */
-  [[maybe_unused]] VMatrix4* BuildVMatrix4FromRegisterRowLanesB(
-    const Vector4f* const laneEdxRow2,
-    const Vector4f* const laneEcxRow3,
-    const Vector4f* const laneEdiRow0,
-    const Vector4f* const laneEsiRow1,
-    VMatrix4* const outMatrix
-  ) noexcept
-  {
-    outMatrix->r[0] = *laneEdiRow0;
-    outMatrix->r[1] = *laneEsiRow1;
-    outMatrix->r[2] = *laneEdxRow2;
-    outMatrix->r[3] = *laneEcxRow3;
-    return outMatrix;
   }
 
   /**
@@ -943,8 +801,8 @@ namespace moho
    * function**, which is what fixes `.w` as the scalar lane. Stores:
    *
    *   [eax+00] 1-(zz+yy)  [eax+04] wz+xy    [eax+08] xz-wy    [eax+0C] 0
-   *   [eax+10] xy-wz      [eax+14] 1-(zz+xx)[eax+18] yz+wx    [eax+1C] 0
-   *   [eax+20] wy+xz      [eax+24] yz-wx    [eax+28] 1-(yy+xx)[eax+2C] 0
+   *   [eax+10] xy-wz      [eax+14] 1-(zz+xx)[eax+18] yz+xw    [eax+1C] 0
+   *   [eax+20] wy+xz      [eax+24] yz-xw    [eax+28] 1-(yy+xx)[eax+2C] 0
    *   [eax+30..38] vec    [eax+3C] 1.0
    *
    * This is exactly the transpose of `Moho::QuatToMatrix` (0x00452FD0) - the
@@ -956,7 +814,10 @@ namespace moho
    * Float addition does not associate, so the diagonal sums keep the binary's
    * operand order (`zz+yy`, `zz+xx`, `yy+xx`), as do the off-diagonal pairs.
    */
-  void VMatrix4::Set(const Wm3::Quaternionf& quat, const Wm3::Vector3f& vec)
+  void VMatrix4::Set(
+    const Wm3::Quaternionf& quat,
+    const Wm3::Vector3f& vec
+  )
   {
     const float twoX = quat.x * 2.0f;
     const float twoY = quat.y * 2.0f;
@@ -969,7 +830,7 @@ namespace moho
     const float xy2 = twoY * quat.x;
     const float xz2 = twoZ * quat.x;
     const float yz2 = twoZ * quat.y;
-    const float wx2 = twoW * quat.x;
+    const float xw2 = twoW * quat.x;
     const float wy2 = twoW * quat.y;
     const float wz2 = twoW * quat.z;
 
@@ -979,10 +840,10 @@ namespace moho
     r[0].w = 0.0f;
     r[1].x = xy2 - wz2;
     r[1].y = 1.0f - (zz2 + xx2);
-    r[1].z = yz2 + wx2;
+    r[1].z = yz2 + xw2;
     r[1].w = 0.0f;
     r[2].x = wy2 + xz2;
-    r[2].y = yz2 - wx2;
+    r[2].y = yz2 - xw2;
     r[2].z = 1.0f - (yy2 + xx2);
     r[2].w = 0.0f;
     r[3].x = vec.x;
@@ -992,63 +853,17 @@ namespace moho
   }
 
   /**
-   * Address: 0x00658EE0 (FUN_00658EE0)
-   *
-   * What it does:
-   * Copies the canonical identity matrix lane into `out` and returns it.
-   */
-  [[maybe_unused]] VMatrix4* CopyVMatrix4IdentityLane(VMatrix4* const out)
-  {
-    if (out == nullptr) {
-      return nullptr;
-    }
-
-    static const VMatrix4 kIdentity = VMatrix4::Identity();
-    *out = kIdentity;
-    return out;
-  }
-
-  /**
-   * Address: 0x004EE6B0 (FUN_004EE6B0)
-   *
-   * What it does:
-   * Lazily snapshots `VMatrix4::NaN` into one process-global matrix lane and
-   * returns that cached lane.
-   */
-  [[maybe_unused]] VMatrix4* AccessVMatrix4NaNCache()
-  {
-    static bool sInitialized = false;
-    static VMatrix4 sNaNCache{};
-
-    if (!sInitialized) {
-      sInitialized = true;
-      sNaNCache = VMatrix4::NaN;
-    }
-
-    return &sNaNCache;
-  }
-
-  /**
-   * Address: 0x004EE6E0 (FUN_004EE6E0, ?VEC_Mul@Moho@@YA?AUVMatrix4@1@ABU21@0@Z)
-   *
-   * What it does:
-   * Returns one matrix product using the binary's `rhs * lhs` call order.
-   */
-  VMatrix4 VEC_Mul(const VMatrix4& lhs, const VMatrix4& rhs)
-  {
-    VMatrix4 result{};
-    (void)gpg::gal::Math::mul(&result, &rhs, &lhs);
-    return result;
-  }
-
-  /**
    * Address: 0x004EE710 (FUN_004EE710, ?VEC_Mul4x3@Moho@@YAXAAUVMatrix4@1@ABU21@1@Z)
    *
    * What it does:
    * Computes one affine 4x3 matrix composition (`rhs * lhs`) and writes x/y/z
    * lanes for all rows into `out`.
    */
-  void VEC_Mul4x3(const VMatrix4& lhs, VMatrix4& out, const VMatrix4& rhs)
+  void VEC_Mul4x3(
+    const VMatrix4& lhs,
+    VMatrix4& out,
+    const VMatrix4& rhs
+  )
   {
     const float lhs00 = lhs.r[0].x;
     const float lhs01 = lhs.r[0].y;
@@ -1078,97 +893,6 @@ namespace moho
     out.r[3].x = ((rhs.r[3].z * lhs20) + (rhs.r[3].y * lhs10) + (rhs.r[3].x * lhs00)) + lhs30;
     out.r[3].y = ((rhs.r[3].z * lhs21) + (rhs.r[3].y * lhs11) + (rhs.r[3].x * lhs01)) + lhs31;
     out.r[3].z = ((rhs.r[3].z * lhs22) + (rhs.r[3].y * lhs12) + (rhs.r[3].x * lhs02)) + lhs32;
-  }
-
-  /**
-   * Address: 0x004EEC10 (FUN_004EEC10, ?LoadInverse@VMatrix4@Moho@@QAEXXZ)
-   *
-   * What it does:
-   * Replaces this matrix with its full inverse.
-   */
-  void VMatrix4::LoadInverse()
-  {
-    VMatrix4 inverse{};
-    (void)gpg::gal::Math::invert(&inverse, this);
-    *this = inverse;
-  }
-
-  /**
-   * Address: 0x004EEC40 (FUN_004EEC40, ?LoadInverse4x3@VMatrix4@Moho@@QAEXXZ)
-   *
-   * What it does:
-   * Replaces this matrix with the inverse lane used by 4x3 call sites.
-   */
-  void VMatrix4::LoadInverse4x3()
-  {
-    VMatrix4 inverse{};
-    (void)gpg::gal::Math::invert(&inverse, this);
-    *this = inverse;
-  }
-
-  /**
-   * Address: 0x004EEC70 (FUN_004EEC70, ?LoadInverseRigid@VMatrix4@Moho@@QAEXXZ)
-   *
-   * What it does:
-   * Replaces this matrix with the inverse lane used by rigid-transform paths.
-   */
-  void VMatrix4::LoadInverseRigid()
-  {
-    VMatrix4 inverse{};
-    (void)gpg::gal::Math::invert(&inverse, this);
-    *this = inverse;
-  }
-
-  /**
-   * Address: 0x004EECA0 (FUN_004EECA0, ?LoadTranslate@VMatrix4@Moho@@QAEXMMM@Z)
-   *
-   * What it does:
-   * Overwrites this matrix with one translation matrix.
-   */
-  void VMatrix4::LoadTranslate(const float x, const float y, const float z)
-  {
-    (void)gpg::gal::Math::translation(this, x, y, z);
-  }
-
-  /**
-   * Address: 0x004EECD0 (FUN_004EECD0, ?LoadScale@VMatrix4@Moho@@QAEXMMM@Z)
-   *
-   * What it does:
-   * Overwrites this matrix with one non-uniform scale matrix.
-   */
-  void VMatrix4::LoadScale(const float x, const float y, const float z)
-  {
-    (void)gpg::gal::Math::scaling(this, x, y, z);
-  }
-
-  /**
-   * Address: 0x004EED60 (FUN_004EED60, ?LoadRotate@VMatrix4@Moho@@QAEXABV?$Vector3@M@Wm3@@M@Z)
-   *
-   * What it does:
-   * Overwrites this matrix with one axis-angle rotation matrix.
-   */
-  void VMatrix4::LoadRotate(const Wm3::Vector3f& axis, const float angleRadians)
-  {
-    // Preserve the binary's by-value axis staging before calling the D3DX lane.
-    const Wm3::Vector3f axisCopy{axis.x, axis.y, axis.z};
-    (void)gpg::gal::Math::rotationAxis(this, &axisCopy, angleRadians);
-  }
-
-  /**
-   * Address: 0x004EEDA0 (FUN_004EEDA0, ?LoadRotate@VMatrix4@Moho@@QAEXABV?$Quaternion@M@Wm3@@@Z)
-   *
-   * What it does:
-   * Overwrites this matrix with one quaternion rotation matrix.
-   */
-  void VMatrix4::LoadRotate(const Wm3::Quaternionf& rotation)
-  {
-    // Wm3 lane is `w,x,y,z`; D3DX lane expects contiguous `x,y,z,w`.
-    Wm3::Quaternionf d3dRotation{};
-    d3dRotation.w = rotation.x;
-    d3dRotation.x = rotation.y;
-    d3dRotation.y = rotation.z;
-    d3dRotation.z = rotation.w;
-    (void)gpg::gal::Math::rotationQuaternion(this, &d3dRotation);
   }
 
   /**
@@ -1309,16 +1033,46 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_AxisAlignedBox3fTypeInfo_e3917f, moho::register_AxisAlignedBox3fTypeInfo)
-GPG_PREREGISTER_INIT(register_Vector2iTypeInfo_e3917f, moho::register_Vector2iTypeInfo)
-GPG_PREREGISTER_INIT(register_Vector3iTypeInfo_e3917f, moho::register_Vector3iTypeInfo)
-GPG_PREREGISTER_INIT(register_Vector2fTypeInfo_e3917f, moho::register_Vector2fTypeInfo)
-GPG_PREREGISTER_INIT(register_Vector3fTypeInfo_e3917f, moho::register_Vector3fTypeInfo)
-GPG_PREREGISTER_INIT(register_Vector4fTypeInfo_e3917f, moho::register_Vector4fTypeInfo)
-GPG_PREREGISTER_INIT(register_QuaternionfTypeInfo_e3917f, moho::register_QuaternionfTypeInfo)
-GPG_PREREGISTER_INIT(register_VEulers3TypeInfo_e3917f, moho::register_VEulers3TypeInfo)
-GPG_PREREGISTER_INIT(register_VAxes3TypeInfo_e3917f, moho::register_VAxes3TypeInfo)
-GPG_PREREGISTER_INIT(register_VMatrix4TypeInfo_e3917f, moho::register_VMatrix4TypeInfo)
+GPG_PREREGISTER_INIT(
+  register_AxisAlignedBox3fTypeInfo_e3917f,
+  moho::register_AxisAlignedBox3fTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_Vector2iTypeInfo_e3917f,
+  moho::register_Vector2iTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_Vector3iTypeInfo_e3917f,
+  moho::register_Vector3iTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_Vector2fTypeInfo_e3917f,
+  moho::register_Vector2fTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_Vector3fTypeInfo_e3917f,
+  moho::register_Vector3fTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_Vector4fTypeInfo_e3917f,
+  moho::register_Vector4fTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_QuaternionfTypeInfo_e3917f,
+  moho::register_QuaternionfTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_VEulers3TypeInfo_e3917f,
+  moho::register_VEulers3TypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_VAxes3TypeInfo_e3917f,
+  moho::register_VAxes3TypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_VMatrix4TypeInfo_e3917f,
+  moho::register_VMatrix4TypeInfo
+)
 
 namespace moho
 {
@@ -1348,10 +1102,12 @@ namespace moho
   /**
    * Address: 0x004EE050 (FUN_004EE050, Moho::VAxes3Serializer::Deserialize)
    */
-  void VAxes3::MemberDeserialize(gpg::ReadArchive* const archive)
+  void VAxes3::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
-    if (archive == nullptr || this == nullptr) {
+    if (archive == nullptr || static_cast<const void*>(this) == nullptr) {
       return;
     }
 
@@ -1364,10 +1120,12 @@ namespace moho
   /**
    * Address: 0x004EE100 (FUN_004EE100, Moho::VAxes3Serializer::Serialize)
    */
-  void VAxes3::MemberSerialize(gpg::WriteArchive* const archive)
+  void VAxes3::MemberSerialize(
+    gpg::WriteArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
-    if (archive == nullptr || this == nullptr) {
+    if (archive == nullptr || static_cast<const void*>(this) == nullptr) {
       return;
     }
 
@@ -1408,7 +1166,9 @@ namespace Wm3
    * Reads `x`, `y`. Inlined into `gpg::SerSaveLoadHelper<Wm3::Vector2i>::Deserialize` 0x004EA370.
    */
   template <>
-  void IVector2<int>::MemberDeserialize(gpg::ReadArchive* const archive)
+  void IVector2<int>::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadInt(&x);
     archive->ReadInt(&y);
@@ -1419,7 +1179,9 @@ namespace Wm3
    * Writes `x`, `y`. Inlined into `gpg::SerSaveLoadHelper<Wm3::Vector2i>::Serialize` 0x004EA3A0.
    */
   template <>
-  void IVector2<int>::MemberSerialize(gpg::WriteArchive* const archive) const
+  void IVector2<int>::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteInt(x);
     archive->WriteInt(y);
@@ -1430,7 +1192,9 @@ namespace Wm3
    * Reads `x`, `y`, `z`. Inlined into `gpg::SerSaveLoadHelper<Wm3::Vector3i>::Deserialize` 0x004EA650.
    */
   template <>
-  void IVector3<int>::MemberDeserialize(gpg::ReadArchive* const archive)
+  void IVector3<int>::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadInt(&x);
     archive->ReadInt(&y);
@@ -1442,7 +1206,9 @@ namespace Wm3
    * Writes `x`, `y`, `z`. Inlined into `gpg::SerSaveLoadHelper<Wm3::Vector3i>::Serialize` 0x004EA690.
    */
   template <>
-  void IVector3<int>::MemberSerialize(gpg::WriteArchive* const archive) const
+  void IVector3<int>::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteInt(x);
     archive->WriteInt(y);
@@ -1454,7 +1220,9 @@ namespace Wm3
    * Reads `x`, `y`. Inlined into `gpg::SerSaveLoadHelper<Wm3::Vector2f>::Deserialize` 0x004EA930.
    */
   template <>
-  void Vector2<float>::MemberDeserialize(gpg::ReadArchive* const archive)
+  void Vector2<float>::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadFloat(&x);
     archive->ReadFloat(&y);
@@ -1465,7 +1233,9 @@ namespace Wm3
    * Writes `x`, `y`. Inlined into `gpg::SerSaveLoadHelper<Wm3::Vector2f>::Serialize` 0x004EA960.
    */
   template <>
-  void Vector2<float>::MemberSerialize(gpg::WriteArchive* const archive) const
+  void Vector2<float>::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteFloat(x);
     archive->WriteFloat(y);
@@ -1476,7 +1246,9 @@ namespace Wm3
    * Reads `x`, `y`, `z`. Inlined into `gpg::SerSaveLoadHelper<Wm3::Vector3f>::Deserialize` 0x004EAC20.
    */
   template <>
-  void Vector3<float>::MemberDeserialize(gpg::ReadArchive* const archive)
+  void Vector3<float>::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadFloat(&x);
     archive->ReadFloat(&y);
@@ -1488,7 +1260,9 @@ namespace Wm3
    * Writes `x`, `y`, `z`. Inlined into `gpg::SerSaveLoadHelper<Wm3::Vector3f>::Serialize` 0x004EAC60.
    */
   template <>
-  void Vector3<float>::MemberSerialize(gpg::WriteArchive* const archive) const
+  void Vector3<float>::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteFloat(x);
     archive->WriteFloat(y);
@@ -1501,7 +1275,9 @@ namespace Wm3
    * `gpg::SerSaveLoadHelper<Wm3::Quaternionf>::Deserialize` 0x004EB2D0.
    */
   template <>
-  void Quaternion<float>::MemberDeserialize(gpg::ReadArchive* const archive)
+  void Quaternion<float>::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadFloat(&x);
     archive->ReadFloat(&y);
@@ -1515,7 +1291,9 @@ namespace Wm3
    * `gpg::SerSaveLoadHelper<Wm3::Quaternionf>::Serialize` 0x004EB310.
    */
   template <>
-  void Quaternion<float>::MemberSerialize(gpg::WriteArchive* const archive) const
+  void Quaternion<float>::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteFloat(x);
     archive->WriteFloat(y);
@@ -1526,7 +1304,9 @@ namespace Wm3
 
 namespace moho
 {
-  void Vector4f::MemberDeserialize(gpg::ReadArchive* const archive)
+  void Vector4f::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadFloat(&x);
     archive->ReadFloat(&y);
@@ -1534,7 +1314,9 @@ namespace moho
     archive->ReadFloat(&w);
   }
 
-  void Vector4f::MemberSerialize(gpg::WriteArchive* const archive) const
+  void Vector4f::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteFloat(x);
     archive->WriteFloat(y);
@@ -1542,14 +1324,18 @@ namespace moho
     archive->WriteFloat(w);
   }
 
-  void VEulers3::MemberDeserialize(gpg::ReadArchive* const archive)
+  void VEulers3::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadFloat(&r);
     archive->ReadFloat(&p);
     archive->ReadFloat(&y);
   }
 
-  void VEulers3::MemberSerialize(gpg::WriteArchive* const archive) const
+  void VEulers3::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteFloat(r);
     archive->WriteFloat(p);
@@ -1566,7 +1352,9 @@ namespace Wm3
    * Loads `Min` and `Max` vector lanes in archive order.
    */
   template <>
-  void AxisAlignedBox3<float>::MemberDeserialize(gpg::ReadArchive* const archive)
+  void AxisAlignedBox3<float>::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     archive->ReadFloat(&Min.x);
     archive->ReadFloat(&Min.y);
@@ -1583,7 +1371,9 @@ namespace Wm3
    * Stores `Min` and `Max` vector lanes in archive order.
    */
   template <>
-  void AxisAlignedBox3<float>::MemberSerialize(gpg::WriteArchive* const archive) const
+  void AxisAlignedBox3<float>::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteFloat(Min.x);
     archive->WriteFloat(Min.y);

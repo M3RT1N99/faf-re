@@ -62,7 +62,6 @@ namespace moho
   class EntitySetTemplate;
   class Sim;
 
-
   [[nodiscard]] CUnitCommand* IssueCommandToSelectedUnits(
     Sim* sim,
     EntitySetTemplate<Unit>& selectedUnits,
@@ -128,14 +127,16 @@ namespace
   // sibling Lua build callbacks). Mirrors the static string lane at the
   // 0x006EF580 "Invalid count" error site.
   constexpr const char* kLuaInvalidCountWarning = "Invalid count in %s; expected a number but got a %s";
-  constexpr const char* kIssueMoveOffFactoryInvalidTargetError = "IssueMoveOffFactory: Passed in an invalid target point.";
+  constexpr const char* kIssueMoveOffFactoryInvalidTargetError =
+    "IssueMoveOffFactory: Passed in an invalid target point.";
   constexpr const char* kIssueMoveInvalidTargetError = "IssueMove: Passed in an invalid target point.";
   constexpr const char* kIssueFormMoveInvalidTargetError = "IssueFormMove: Passed in an invalid target point.";
   // Binary string lane for FUN_006F3140 uses the same text as move-off-factory.
   constexpr const char* kIssueGuardInvalidTargetError = "IssueMoveOffFactory: Passed in an invalid target point.";
   constexpr const char* kIssuePatrolInvalidTargetError = "IssuePatrol: Passed in an invalid target point.";
   constexpr const char* kIssueFerryInvalidTargetError = "IssueFerry: Passed in an invalid target point.";
-  constexpr const char* kIssueAggressiveMoveInvalidTargetError = "IssueAggressiveMove: Passed in an invalid target point.";
+  constexpr const char* kIssueAggressiveMoveInvalidTargetError =
+    "IssueAggressiveMove: Passed in an invalid target point.";
   constexpr const char* kIssueFormAggressiveMoveInvalidTargetError =
     "IssueFormAggressiveMove: Passed in an invalid target point.";
   constexpr const char* kIssueFormAttackInvalidTargetError = "IssueFormAttack: Passed in an invalid target point.";
@@ -148,11 +149,12 @@ namespace
   constexpr std::int32_t kGroundTargetEntitySentinel = -0x10000000;
   constexpr const char* kIssueBuildMobileName = "IssueBuildMobile";
   constexpr const char* kInvalidCellListError = "Invalid list of cells in %s; expected a table but got a %s";
-  constexpr const char* kInvalidCellError =
-    "Invalid cell in %s; expected a two element table but got a %s";
+  constexpr const char* kInvalidCellError = "Invalid cell in %s; expected a two element table but got a %s";
 
-
-  [[nodiscard]] moho::Unit* GetUnitOptionalForIssue(const LuaPlus::LuaObject& unitObject, LuaPlus::LuaState* state)
+  [[nodiscard]] moho::Unit* GetUnitOptionalForIssue(
+    const LuaPlus::LuaObject& unitObject,
+    LuaPlus::LuaState* state
+  )
   {
     moho::CScriptObject** const scriptObjectSlot = moho::SCR_ScriptObjectSlot(unitObject);
     if (!scriptObjectSlot) {
@@ -266,16 +268,6 @@ namespace
     return static_cast<int>(lua_tonumber(rawState, countObject.m_stackIndex));
   }
 
-
-
-
-
-
-
-
-
-
-
   /**
    * Address: 0x006EEDB0 (FUN_006EEDB0, func_Filter_FactoryUnitsByCommandCap)
    *
@@ -333,9 +325,8 @@ namespace
   {
     outUnits.Clear();
 
-    constexpr std::uint32_t kMoveGuardPatrolMask = static_cast<std::uint32_t>(moho::RULEUCC_Move)
-                                                    | static_cast<std::uint32_t>(moho::RULEUCC_Guard)
-                                                    | static_cast<std::uint32_t>(moho::RULEUCC_Patrol);
+    constexpr std::uint32_t kMoveGuardPatrolMask = static_cast<std::uint32_t>(moho::RULEUCC_Move) |
+      static_cast<std::uint32_t>(moho::RULEUCC_Guard) | static_cast<std::uint32_t>(moho::RULEUCC_Patrol);
     constexpr std::uint32_t kFerryMask = static_cast<std::uint32_t>(moho::RULEUCC_Ferry);
 
     const std::uint32_t requestedMask = static_cast<std::uint32_t>(requiredCaps);
@@ -570,8 +561,10 @@ namespace
     // `IssueAttack({unit}, unit:GetPosition())`) died on GetString() of a nil
     // `Type` field instead of issuing the order.
     target.SetTarget(state, helpText, LuaPlus::LuaStackObject(state, 2));
-    if (requireValidTargetVector
-        && (!moho::IsValidVector3f(target.position) || target.targetType == moho::EAiTargetType::AITARGET_None)) {
+    if (
+      requireValidTargetVector &&
+      (!moho::IsValidVector3f(target.position) || target.targetType == moho::EAiTargetType::AITARGET_None)
+    ) {
       LuaPlus::LuaState::Error(state, invalidTargetError);
     }
 
@@ -756,17 +749,6 @@ namespace moho
   );
 
   /**
-   * Address: 0x00BD9350 (FUN_00BD9350, j_func_IsCommandDone_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IsCommandDone_LuaFuncDef` to `func_IsCommandDone_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IsCommandDone_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IsCommandDone_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9360 (FUN_00BD9360, register_IssueClearCommands_LuaFuncDef)
    *
    * What it does:
@@ -786,17 +768,6 @@ namespace moho
   CScrLuaInitForm* register_IssueStop_LuaFuncDef()
   {
     return ForwardCommandLuaRegistrationThunk<&func_IssueStop_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9380 (FUN_00BD9380, j_func_IssuePause_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssuePause_LuaFuncDef` to `func_IssuePause_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssuePause_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssuePause_LuaFuncDef>();
   }
 
   /**
@@ -844,28 +815,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD93D0 (FUN_00BD93D0, j_func_IssueMove_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueMove_LuaFuncDef` to `func_IssueMove_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueMove_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueMove_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD93E0 (FUN_00BD93E0, j_func_IssueMoveOffFactory_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueMoveOffFactory_LuaFuncDef` to `func_IssueMoveOffFactory_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueMoveOffFactory_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueMoveOffFactory_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD93F0 (FUN_00BD93F0, register_IssueFormMove_LuaFuncDef)
    *
    * What it does:
@@ -877,28 +826,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD9400 (FUN_00BD9400, j_func_IssueGuard_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueGuard_LuaFuncDef` to `func_IssueGuard_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueGuard_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueGuard_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9410 (FUN_00BD9410, j_func_IssueFactoryAssist_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueFactoryAssist_LuaFuncDef` to `func_IssueFactoryAssist_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueFactoryAssist_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueFactoryAssist_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9420 (FUN_00BD9420, register_IssueAttack_LuaFuncDef)
    *
    * What it does:
@@ -907,17 +834,6 @@ namespace moho
   CScrLuaInitForm* register_IssueAttack_LuaFuncDef()
   {
     return ForwardCommandLuaRegistrationThunk<&func_IssueAttack_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9430 (FUN_00BD9430, j_func_CoordinateAttacks_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_CoordinateAttacks_LuaFuncDef` to `func_CoordinateAttacks_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_CoordinateAttacks_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_CoordinateAttacks_LuaFuncDef>();
   }
 
   /**
@@ -976,17 +892,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD9490 (FUN_00BD9490, j_func_IssueTeleport_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueTeleport_LuaFuncDef` to `func_IssueTeleport_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueTeleport_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueTeleport_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD94A0 (FUN_00BD94A0, register_IssuePatrol_LuaFuncDef)
    *
    * What it does:
@@ -1009,17 +914,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD94C0 (FUN_00BD94C0, j_func_IssueAggressiveMove_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueAggressiveMove_LuaFuncDef` to `func_IssueAggressiveMove_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueAggressiveMove_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueAggressiveMove_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD94D0 (FUN_00BD94D0, register_IssueFormAggressiveMove_LuaFuncDef)
    *
    * What it does:
@@ -1039,17 +933,6 @@ namespace moho
   CScrLuaInitForm* register_IssueFerry_LuaFuncDef()
   {
     return ForwardCommandLuaRegistrationThunk<&func_IssueFerry_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD94F0 (FUN_00BD94F0, j_func_IssueBuildMobile_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueBuildMobile_LuaFuncDef` to `func_IssueBuildMobile_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueBuildMobile_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueBuildMobile_LuaFuncDef>();
   }
 
   /**
@@ -1108,17 +991,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD9550 (FUN_00BD9550, j_func_IssueCapture_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueCapture_LuaFuncDef` to `func_IssueCapture_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueCapture_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueCapture_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9560 (FUN_00BD9560, register_IssueKillSelf_LuaFuncDef)
    *
    * What it does:
@@ -1138,17 +1010,6 @@ namespace moho
   CScrLuaInitForm* register_IssueDestroySelf_LuaFuncDef()
   {
     return ForwardCommandLuaRegistrationThunk<&func_IssueDestroySelf_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9580 (FUN_00BD9580, j_func_IssueTransportLoad_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueTransportLoad_LuaFuncDef` to `func_IssueTransportLoad_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueTransportLoad_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueTransportLoad_LuaFuncDef>();
   }
 
   /**
@@ -1174,17 +1035,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD95B0 (FUN_00BD95B0, j_func_IssueTransportUnloadSpecific_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IssueTransportUnloadSpecific_LuaFuncDef` to `func_IssueTransportUnloadSpecific_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IssueTransportUnloadSpecific_LuaFuncDef()
-  {
-    return ForwardCommandLuaRegistrationThunk<&func_IssueTransportUnloadSpecific_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD95C0 (FUN_00BD95C0, register_IssueBuildFactory_LuaFuncDef)
    *
    * What it does:
@@ -1195,14 +1045,15 @@ namespace moho
     return ForwardCommandLuaRegistrationThunk<&func_IssueBuildFactory_LuaFuncDef>();
   }
 
-
   /**
    * Address: 0x006F17B0 (FUN_006F17B0, cfunc_IsCommandDone)
    *
    * What it does:
    * Unwraps raw Lua callback context and forwards to `cfunc_IsCommandDoneL`.
    */
-  int cfunc_IsCommandDone(lua_State* const luaContext)
+  int cfunc_IsCommandDone(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IsCommandDoneL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1214,7 +1065,9 @@ namespace moho
    * Checks one optional command handle and returns true when the command is
    * null/expired.
    */
-  int cfunc_IsCommandDoneL(LuaPlus::LuaState* const state)
+  int cfunc_IsCommandDoneL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -1235,7 +1088,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_IssueClearCommandsL`.
    */
-  int cfunc_IssueClearCommands(lua_State* const luaContext)
+  int cfunc_IssueClearCommands(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueClearCommandsL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1247,7 +1102,9 @@ namespace moho
    * Clears command queues for one unit-table argument and stops active attacker
    * state per unit.
    */
-  int cfunc_IssueClearCommandsL(LuaPlus::LuaState* const state)
+  int cfunc_IssueClearCommandsL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -1282,7 +1139,9 @@ namespace moho
    * What it does:
    * Unwraps raw Lua callback context and forwards to `cfunc_IssueStopL`.
    */
-  int cfunc_IssueStop(lua_State* const luaContext)
+  int cfunc_IssueStop(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueStopL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1293,7 +1152,9 @@ namespace moho
    * What it does:
    * Unwraps raw Lua callback context and forwards to `cfunc_IssuePauseL`.
    */
-  int cfunc_IssuePause(lua_State* const luaContext)
+  int cfunc_IssuePause(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssuePauseL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1305,7 +1166,9 @@ namespace moho
    * Resolves one unit-list argument and issues one `UNITCOMMAND_Stop` command
    * through the active sim command sink.
    */
-  int cfunc_IssueStopL(LuaPlus::LuaState* const state)
+  int cfunc_IssueStopL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -1330,7 +1193,9 @@ namespace moho
    * Resolves one unit-list argument and issues one `UNITCOMMAND_Pause`
    * command through the active sim command sink.
    */
-  int cfunc_IssuePauseL(LuaPlus::LuaState* const state)
+  int cfunc_IssuePauseL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -1348,23 +1213,15 @@ namespace moho
     return 0;
   }
 
+  namespace
+  {
+
+  } // namespace
 
   namespace
   {
 
-
-
   } // namespace
-
-
-  namespace
-  {
-
-
-
-
-  } // namespace
-
 
   /**
    * Address: 0x006F17D0 (FUN_006F17D0, func_IsCommandDone_LuaFuncDef)
@@ -1413,12 +1270,7 @@ namespace moho
   CScrLuaInitForm* func_IssueStop_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      kIssueStopName,
-      &moho::cfunc_IssueStop,
-      nullptr,
-      "<global>",
-      kIssueStopHelpText
+      moho::SCR_SimLuaInitSet(), kIssueStopName, &moho::cfunc_IssueStop, nullptr, "<global>", kIssueStopHelpText
     );
     return &binder;
   }
@@ -1432,12 +1284,7 @@ namespace moho
   CScrLuaInitForm* func_IssuePause_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      kIssuePauseName,
-      &moho::cfunc_IssuePause,
-      nullptr,
-      "<global>",
-      kIssuePauseHelpText
+      moho::SCR_SimLuaInitSet(), kIssuePauseName, &moho::cfunc_IssuePause, nullptr, "<global>", kIssuePauseHelpText
     );
     return &binder;
   }
@@ -1470,12 +1317,7 @@ namespace moho
   CScrLuaInitForm* func_IssueDive_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      kIssueDiveName,
-      &moho::cfunc_IssueDive,
-      nullptr,
-      "<global>",
-      kIssueDiveHelpText
+      moho::SCR_SimLuaInitSet(), kIssueDiveName, &moho::cfunc_IssueDive, nullptr, "<global>", kIssueDiveHelpText
     );
     return &binder;
   }
@@ -1527,12 +1369,7 @@ namespace moho
   CScrLuaInitForm* func_IssueMove_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueMove",
-      &moho::cfunc_IssueMove,
-      nullptr,
-      "<global>",
-      "IssueMove"
+      moho::SCR_SimLuaInitSet(), "IssueMove", &moho::cfunc_IssueMove, nullptr, "<global>", "IssueMove"
     );
     return &binder;
   }
@@ -1565,12 +1402,7 @@ namespace moho
   CScrLuaInitForm* func_IssueFormMove_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueFormMove",
-      &moho::cfunc_IssueFormMove,
-      nullptr,
-      "<global>",
-      "IssueFormMove"
+      moho::SCR_SimLuaInitSet(), "IssueFormMove", &moho::cfunc_IssueFormMove, nullptr, "<global>", "IssueFormMove"
     );
     return &binder;
   }
@@ -1584,12 +1416,7 @@ namespace moho
   CScrLuaInitForm* func_IssueGuard_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueGuard",
-      &moho::cfunc_IssueGuard,
-      nullptr,
-      "<global>",
-      "IssueGuard"
+      moho::SCR_SimLuaInitSet(), "IssueGuard", &moho::cfunc_IssueGuard, nullptr, "<global>", "IssueGuard"
     );
     return &binder;
   }
@@ -1622,12 +1449,7 @@ namespace moho
   CScrLuaInitForm* func_IssueAttack_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueAttack",
-      &moho::cfunc_IssueAttack,
-      nullptr,
-      "<global>",
-      "IssueAttack"
+      moho::SCR_SimLuaInitSet(), "IssueAttack", &moho::cfunc_IssueAttack, nullptr, "<global>", "IssueAttack"
     );
     return &binder;
   }
@@ -1641,12 +1463,7 @@ namespace moho
   CScrLuaInitForm* func_IssueFormAttack_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueFormAttack",
-      &moho::cfunc_IssueFormAttack,
-      nullptr,
-      "<global>",
-      "IssueFormAttack"
+      moho::SCR_SimLuaInitSet(), "IssueFormAttack", &moho::cfunc_IssueFormAttack, nullptr, "<global>", "IssueFormAttack"
     );
     return &binder;
   }
@@ -1698,12 +1515,7 @@ namespace moho
   CScrLuaInitForm* func_IssueNuke_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueNuke",
-      &moho::cfunc_IssueNuke,
-      nullptr,
-      "<global>",
-      "IssueNuke"
+      moho::SCR_SimLuaInitSet(), "IssueNuke", &moho::cfunc_IssueNuke, nullptr, "<global>", "IssueNuke"
     );
     return &binder;
   }
@@ -1717,12 +1529,7 @@ namespace moho
   CScrLuaInitForm* func_IssueTactical_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueTactical",
-      &moho::cfunc_IssueTactical,
-      nullptr,
-      "<global>",
-      "IssueTactical"
+      moho::SCR_SimLuaInitSet(), "IssueTactical", &moho::cfunc_IssueTactical, nullptr, "<global>", "IssueTactical"
     );
     return &binder;
   }
@@ -1736,12 +1543,7 @@ namespace moho
   CScrLuaInitForm* func_IssueTeleport_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueTeleport",
-      &moho::cfunc_IssueTeleport,
-      nullptr,
-      "<global>",
-      "IssueTeleport"
+      moho::SCR_SimLuaInitSet(), "IssueTeleport", &moho::cfunc_IssueTeleport, nullptr, "<global>", "IssueTeleport"
     );
     return &binder;
   }
@@ -1755,12 +1557,7 @@ namespace moho
   CScrLuaInitForm* func_IssuePatrol_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssuePatrol",
-      &moho::cfunc_IssuePatrol,
-      nullptr,
-      "<global>",
-      "IssuePatrol"
+      moho::SCR_SimLuaInitSet(), "IssuePatrol", &moho::cfunc_IssuePatrol, nullptr, "<global>", "IssuePatrol"
     );
     return &binder;
   }
@@ -1774,12 +1571,7 @@ namespace moho
   CScrLuaInitForm* func_IssueFormPatrol_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueFormPatrol",
-      &moho::cfunc_IssueFormPatrol,
-      nullptr,
-      "<global>",
-      "IssueFormPatrol"
+      moho::SCR_SimLuaInitSet(), "IssueFormPatrol", &moho::cfunc_IssueFormPatrol, nullptr, "<global>", "IssueFormPatrol"
     );
     return &binder;
   }
@@ -1831,12 +1623,7 @@ namespace moho
   CScrLuaInitForm* func_IssueFerry_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueFerry",
-      &moho::cfunc_IssueFerry,
-      nullptr,
-      "<global>",
-      "IssueFerry"
+      moho::SCR_SimLuaInitSet(), "IssueFerry", &moho::cfunc_IssueFerry, nullptr, "<global>", "IssueFerry"
     );
     return &binder;
   }
@@ -1869,12 +1656,7 @@ namespace moho
   CScrLuaInitForm* func_IssueRepair_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueRepair",
-      &moho::cfunc_IssueRepair,
-      nullptr,
-      "<global>",
-      "IssueRepair"
+      moho::SCR_SimLuaInitSet(), "IssueRepair", &moho::cfunc_IssueRepair, nullptr, "<global>", "IssueRepair"
     );
     return &binder;
   }
@@ -1888,12 +1670,7 @@ namespace moho
   CScrLuaInitForm* func_IssueSacrifice_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueSacrifice",
-      &moho::cfunc_IssueSacrifice,
-      nullptr,
-      "<global>",
-      "IssueSacrifice"
+      moho::SCR_SimLuaInitSet(), "IssueSacrifice", &moho::cfunc_IssueSacrifice, nullptr, "<global>", "IssueSacrifice"
     );
     return &binder;
   }
@@ -1907,12 +1684,7 @@ namespace moho
   CScrLuaInitForm* func_IssueUpgrade_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueUpgrade",
-      &moho::cfunc_IssueUpgrade,
-      nullptr,
-      "<global>",
-      "IssueUpgrade"
+      moho::SCR_SimLuaInitSet(), "IssueUpgrade", &moho::cfunc_IssueUpgrade, nullptr, "<global>", "IssueUpgrade"
     );
     return &binder;
   }
@@ -1926,12 +1698,7 @@ namespace moho
   CScrLuaInitForm* func_IssueScript_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueScript",
-      &moho::cfunc_IssueScript,
-      nullptr,
-      "<global>",
-      "IssueScript"
+      moho::SCR_SimLuaInitSet(), "IssueScript", &moho::cfunc_IssueScript, nullptr, "<global>", "IssueScript"
     );
     return &binder;
   }
@@ -1945,12 +1712,7 @@ namespace moho
   CScrLuaInitForm* func_IssueReclaim_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueReclaim",
-      &moho::cfunc_IssueReclaim,
-      nullptr,
-      "<global>",
-      "IssueReclaim"
+      moho::SCR_SimLuaInitSet(), "IssueReclaim", &moho::cfunc_IssueReclaim, nullptr, "<global>", "IssueReclaim"
     );
     return &binder;
   }
@@ -1964,12 +1726,7 @@ namespace moho
   CScrLuaInitForm* func_IssueCapture_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueCapture",
-      &moho::cfunc_IssueCapture,
-      nullptr,
-      "<global>",
-      "IssueCapture"
+      moho::SCR_SimLuaInitSet(), "IssueCapture", &moho::cfunc_IssueCapture, nullptr, "<global>", "IssueCapture"
     );
     return &binder;
   }
@@ -1983,12 +1740,7 @@ namespace moho
   CScrLuaInitForm* func_IssueKillSelf_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      "IssueKillSelf",
-      &moho::cfunc_IssueKillSelf,
-      nullptr,
-      "<global>",
-      "IssueKillSelf"
+      moho::SCR_SimLuaInitSet(), "IssueKillSelf", &moho::cfunc_IssueKillSelf, nullptr, "<global>", "IssueKillSelf"
     );
     return &binder;
   }
@@ -2114,7 +1866,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_IssueClearFactoryCommandsL`.
    */
-  int cfunc_IssueClearFactoryCommands(lua_State* const luaContext)
+  int cfunc_IssueClearFactoryCommands(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueClearFactoryCommandsL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2126,7 +1880,9 @@ namespace moho
    * Parses one unit-list argument, filters dead/destroyed entries, and clears
    * each resolved unit's factory command queue.
    */
-  int cfunc_IssueClearFactoryCommandsL(LuaPlus::LuaState* const state)
+  int cfunc_IssueClearFactoryCommandsL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kIssueClearFactoryCommandsHelpText);
 
@@ -2150,7 +1906,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueMoveOffFactoryL`.
    */
-  int cfunc_IssueMoveOffFactory(lua_State* const luaContext)
+  int cfunc_IssueMoveOffFactory(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueMoveOffFactoryL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2162,7 +1920,9 @@ namespace moho
    * Parses one unit list and one target argument, issues a move command to the
    * filtered selection, and marks the command as move-off-factory when issued.
    */
-  int cfunc_IssueMoveOffFactoryL(LuaPlus::LuaState* const state)
+  int cfunc_IssueMoveOffFactoryL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2229,7 +1989,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueFormMoveL`.
    */
-  int cfunc_IssueFormMove(lua_State* const luaContext)
+  int cfunc_IssueFormMove(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueFormMoveL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2242,7 +2004,9 @@ namespace moho
    * formation-script/orientation payload lanes, and issues one
    * `UNITCOMMAND_FormMove`.
    */
-  int cfunc_IssueFormMoveL(LuaPlus::LuaState* const state)
+  int cfunc_IssueFormMoveL(
+    LuaPlus::LuaState* const state
+  )
   {
     return IssueFormCommandWithFormation(
       state,
@@ -2260,12 +2024,14 @@ namespace moho
    * Resolves command objects from arg#1 table and links every command pair for
    * coordinated execution.
    */
-  int cfunc_CoordinateAttacksL(LuaPlus::LuaState* const state)
+  int cfunc_CoordinateAttacksL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kCoordinateAttacksHelpText);
 
     const LuaPlus::LuaObject commandListObject(LuaPlus::LuaStackObject(state, 1));
-    msvc8::vector<CUnitCommand*> commands{};
+    fa::vector<CUnitCommand*> commands{};
     if (commandListObject.IsTable()) {
       const int commandCount = commandListObject.GetCount();
       for (int commandIndex = 1; commandIndex <= commandCount; ++commandIndex) {
@@ -2296,7 +2062,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_CoordinateAttacksL`.
    */
-  int cfunc_CoordinateAttacks(lua_State* const luaContext)
+  int cfunc_CoordinateAttacks(
+    lua_State* const luaContext
+  )
   {
     return cfunc_CoordinateAttacksL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2326,7 +2094,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueSiloBuildTacticalL`.
    */
-  int cfunc_IssueSiloBuildTactical(lua_State* const luaContext)
+  int cfunc_IssueSiloBuildTactical(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueSiloBuildTacticalL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2338,7 +2108,9 @@ namespace moho
    * Parses one unit-list argument, filters dead/destroyed entries, and queues
    * tactical silo ammo build on each resolved unit with a silo-build lane.
    */
-  int cfunc_IssueSiloBuildTacticalL(LuaPlus::LuaState* const state)
+  int cfunc_IssueSiloBuildTacticalL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kIssueSiloBuildTacticalHelpText);
 
@@ -2362,7 +2134,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueSiloBuildNukeL`.
    */
-  int cfunc_IssueSiloBuildNuke(lua_State* const luaContext)
+  int cfunc_IssueSiloBuildNuke(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueSiloBuildNukeL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2374,7 +2148,9 @@ namespace moho
    * Parses one unit-list argument, filters dead/destroyed entries, and queues
    * nuke silo ammo build on each resolved unit with a silo-build lane.
    */
-  int cfunc_IssueSiloBuildNukeL(LuaPlus::LuaState* const state)
+  int cfunc_IssueSiloBuildNukeL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kIssueSiloBuildNukeHelpText);
 
@@ -2398,7 +2174,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueTacticalL`.
    */
-  int cfunc_IssueTactical(lua_State* const luaContext)
+  int cfunc_IssueTactical(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueTacticalL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2410,7 +2188,9 @@ namespace moho
    * Parses `(unitList, target)`, filters tactical-capable units, resolves the
    * target payload, and queues `UNITCOMMAND_Tactical` on the selection.
    */
-  int cfunc_IssueTacticalL(LuaPlus::LuaState* const state)
+  int cfunc_IssueTacticalL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2447,7 +2227,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueNukeL`.
    */
-  int cfunc_IssueNuke(lua_State* const luaContext)
+  int cfunc_IssueNuke(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueNukeL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2459,7 +2241,9 @@ namespace moho
    * Parses `(unitList, target)`, filters nuke-capable units, resolves the
    * target payload, and queues `UNITCOMMAND_Nuke` on the selection.
    */
-  int cfunc_IssueNukeL(LuaPlus::LuaState* const state)
+  int cfunc_IssueNukeL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2496,7 +2280,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueTeleportL`.
    */
-  int cfunc_IssueTeleport(lua_State* const luaContext)
+  int cfunc_IssueTeleport(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueTeleportL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2508,7 +2294,9 @@ namespace moho
    * Parses `(unitList, target)`, filters teleport-capable units, resolves the
    * target payload, and queues `UNITCOMMAND_Teleport` on the selection.
    */
-  int cfunc_IssueTeleportL(LuaPlus::LuaState* const state)
+  int cfunc_IssueTeleportL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2545,7 +2333,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueMoveL`.
    */
-  int cfunc_IssueMove(lua_State* const luaContext)
+  int cfunc_IssueMove(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueMoveL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2558,7 +2348,9 @@ namespace moho
    * target point, issues `UNITCOMMAND_Move`, and returns the created Lua
    * command object (or `nil` when no command is issued).
    */
-  int cfunc_IssueMoveL(LuaPlus::LuaState* const state)
+  int cfunc_IssueMoveL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2608,7 +2400,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueDiveL`.
    */
-  int cfunc_IssueDive(lua_State* const luaContext)
+  int cfunc_IssueDive(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueDiveL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2621,7 +2415,9 @@ namespace moho
    * units (no capability filter), returning the created Lua command object or
    * `nil` when no command is issued.
    */
-  int cfunc_IssueDiveL(LuaPlus::LuaState* const state)
+  int cfunc_IssueDiveL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2658,7 +2454,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueFactoryAssistL`.
    */
-  int cfunc_IssueFactoryAssist(lua_State* const luaContext)
+  int cfunc_IssueFactoryAssist(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueFactoryAssistL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2671,7 +2469,9 @@ namespace moho
    * resolves the assist target entity, and queues `UNITCOMMAND_Guard` on the
    * filtered factories.
    */
-  int cfunc_IssueFactoryAssistL(LuaPlus::LuaState* const state)
+  int cfunc_IssueFactoryAssistL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2685,8 +2485,7 @@ namespace moho
     CollectLiveUnitsFromLuaTable(sourceUnits, state, unitListArg, kIssueFactoryAssistHelpText);
 
     EntitySetTemplate<Unit> selectedFactories{};
-    if (!FilterFactoryUnitsByCommandCap(
-          sourceUnits, selectedFactories, static_cast<std::uint32_t>(RULEUCC_Guard))) {
+    if (!FilterFactoryUnitsByCommandCap(sourceUnits, selectedFactories, static_cast<std::uint32_t>(RULEUCC_Guard))) {
       return 0;
     }
 
@@ -2709,7 +2508,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueTransportUnloadL`.
    */
-  int cfunc_IssueTransportUnload(lua_State* const luaContext)
+  int cfunc_IssueTransportUnload(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueTransportUnloadL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2722,7 +2523,9 @@ namespace moho
    * target to a ground-gun position, and queues `UNITCOMMAND_TransportUnloadUnits`
    * on the selection.
    */
-  int cfunc_IssueTransportUnloadL(LuaPlus::LuaState* const state)
+  int cfunc_IssueTransportUnloadL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2762,7 +2565,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueTeleportToBeaconL`.
    */
-  int cfunc_IssueTeleportToBeacon(lua_State* const luaContext)
+  int cfunc_IssueTeleportToBeacon(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueTeleportToBeaconL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2775,7 +2580,9 @@ namespace moho
    * target payload, and queues `UNITCOMMAND_TransportUnloadUnits` on the
    * selection.
    */
-  int cfunc_IssueTeleportToBeaconL(LuaPlus::LuaState* const state)
+  int cfunc_IssueTeleportToBeaconL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2813,7 +2620,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_IssueFactoryRallyPointL`.
    */
-  int cfunc_IssueFactoryRallyPoint(lua_State* const luaContext)
+  int cfunc_IssueFactoryRallyPoint(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueFactoryRallyPointL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2825,7 +2634,9 @@ namespace moho
    * Parses `(unitList, target)`, filters factory-rally-capable units, issues
    * one factory command, and returns the created Lua command object on success.
    */
-  int cfunc_IssueFactoryRallyPointL(LuaPlus::LuaState* const state)
+  int cfunc_IssueFactoryRallyPointL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2839,8 +2650,7 @@ namespace moho
     CollectLiveUnitsFromLuaTable(sourceUnits, state, unitListArg, kIssueFactoryRallyPointHelpText);
 
     EntitySetTemplate<Unit> selectedFactories{};
-    if (!FilterFactoryUnitsByCommandCap(
-          sourceUnits, selectedFactories, static_cast<std::uint32_t>(RULEUCC_Move))) {
+    if (!FilterFactoryUnitsByCommandCap(sourceUnits, selectedFactories, static_cast<std::uint32_t>(RULEUCC_Move))) {
       return 0;
     }
 
@@ -2875,7 +2685,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueGuardL`.
    */
-  int cfunc_IssueGuard(lua_State* const luaContext)
+  int cfunc_IssueGuard(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueGuardL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2887,7 +2699,9 @@ namespace moho
    * Parses `(unitList, target)`, validates guard-capable units, and queues
    * `UNITCOMMAND_Guard` on selected units.
    */
-  int cfunc_IssueGuardL(LuaPlus::LuaState* const state)
+  int cfunc_IssueGuardL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -2934,7 +2748,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueAttackL`.
    */
-  int cfunc_IssueAttack(lua_State* const luaContext)
+  int cfunc_IssueAttack(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueAttackL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2946,7 +2762,9 @@ namespace moho
    * Parses `(unitList, target)`, filters attack-capable units, and returns the
    * issued command object or `nil` when command creation fails.
    */
-  int cfunc_IssueAttackL(LuaPlus::LuaState* const state)
+  int cfunc_IssueAttackL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3000,7 +2818,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueFormAttackL`.
    */
-  int cfunc_IssueFormAttack(lua_State* const luaContext)
+  int cfunc_IssueFormAttack(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueFormAttackL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3013,7 +2833,9 @@ namespace moho
    * formation-script/orientation payload lanes, and issues one
    * `UNITCOMMAND_FormAttack`.
    */
-  int cfunc_IssueFormAttackL(LuaPlus::LuaState* const state)
+  int cfunc_IssueFormAttackL(
+    LuaPlus::LuaState* const state
+  )
   {
     return IssueFormCommandWithFormationNoResult(
       state,
@@ -3031,7 +2853,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssuePatrolL`.
    */
-  int cfunc_IssuePatrol(lua_State* const luaContext)
+  int cfunc_IssuePatrol(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssuePatrolL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3043,7 +2867,9 @@ namespace moho
    * Parses `(unitList, target)`, validates patrol-capable units and target,
    * and queues `UNITCOMMAND_Patrol`.
    */
-  int cfunc_IssuePatrolL(LuaPlus::LuaState* const state)
+  int cfunc_IssuePatrolL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3090,7 +2916,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueFormPatrolL`.
    */
-  int cfunc_IssueFormPatrol(lua_State* const luaContext)
+  int cfunc_IssueFormPatrol(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueFormPatrolL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3103,7 +2931,9 @@ namespace moho
    * formation-script/orientation payload lanes, and issues one
    * `UNITCOMMAND_FormPatrol`.
    */
-  int cfunc_IssueFormPatrolL(LuaPlus::LuaState* const state)
+  int cfunc_IssueFormPatrolL(
+    LuaPlus::LuaState* const state
+  )
   {
     return IssueFormCommandWithFormationNoResult(
       state,
@@ -3121,7 +2951,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueFerryL`.
    */
-  int cfunc_IssueFerry(lua_State* const luaContext)
+  int cfunc_IssueFerry(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueFerryL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3133,7 +2965,9 @@ namespace moho
    * Parses `(unitList, target)`, validates ferry-capable units and target,
    * and queues `UNITCOMMAND_Ferry`.
    */
-  int cfunc_IssueFerryL(LuaPlus::LuaState* const state)
+  int cfunc_IssueFerryL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3186,9 +3020,12 @@ namespace moho
    * (x = element[1], z = element[2]). Raises the binary's Lua errors when the
    * argument is not a table, or any element is not a two-element table.
    */
-  [[nodiscard]] msvc8::vector<SOCellPos> func_GetCells(LuaPlus::LuaState* const state, LuaPlus::LuaStackObject cellListArg)
+  [[nodiscard]] fa::vector<SOCellPos> func_GetCells(
+    LuaPlus::LuaState* const state,
+    LuaPlus::LuaStackObject cellListArg
+  )
   {
-    msvc8::vector<SOCellPos> cells{};
+    fa::vector<SOCellPos> cells{};
 
     lua_State* const rawState = cellListArg.m_state->m_state;
     if (lua_type(rawState, cellListArg.m_stackIndex) != LUA_TTABLE) {
@@ -3203,7 +3040,7 @@ namespace moho
 
       if (!cellObject.IsTable() || cellObject.GetCount() != 2) {
         if (cellObject.IsTable()) {
-          const msvc8::string describe = gpg::STR_Printf("%d element table", cellObject.GetCount());
+          const fa::string describe = gpg::STR_Printf("%d element table", cellObject.GetCount());
           LuaPlus::LuaState::Error(state, kInvalidCellError, kIssueBuildMobileName, describe.c_str());
         } else {
           const LuaPlus::LuaObject listObject(cellListArg);
@@ -3241,7 +3078,9 @@ namespace moho
    * SimHooks.lua wraps this as `IssueBuildMobile` (false) and
    * `IssueBuildAllMobile` (true).
    */
-  int cfunc_IssueBuildMobileL(LuaPlus::LuaState* const state)
+  int cfunc_IssueBuildMobileL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 5, kIssueBuildMobileName);
@@ -3262,7 +3101,7 @@ namespace moho
       ResolveUnitBlueprintFromLuaArgument(state, LuaPlus::LuaStackObject(state, 3), kIssueBuildMobileName);
 
     // arg4: cell list.
-    const msvc8::vector<SOCellPos> cells = func_GetCells(state, LuaPlus::LuaStackObject(state, 4));
+    const fa::vector<SOCellPos> cells = func_GetCells(state, LuaPlus::LuaStackObject(state, 4));
 
     if (blueprint == nullptr) {
       return 0;
@@ -3270,11 +3109,7 @@ namespace moho
 
     // NaN sentinel: a real closest unit's squared distance always beats an
     // invalid sentinel via IsValidVector3f. Matches the binary's invalid_vec.
-    static const Wm3::Vector3f kInvalidVec(
-      gpg::NaN,
-      gpg::NaN,
-      gpg::NaN
-    );
+    static const Wm3::Vector3f kInvalidVec(gpg::NaN, gpg::NaN, gpg::NaN);
 
     Unit* closestUnit = nullptr;
     Wm3::Vector3f closestDelta = kInvalidVec;
@@ -3290,8 +3125,9 @@ namespace moho
       const float closestDistSq =
         (closestDelta.z * closestDelta.z + closestDelta.y * closestDelta.y) + closestDelta.x * closestDelta.x;
 
-      if (buildable && IsValidVector3f(unitPos)
-          && (!IsValidVector3f(closestDelta) || candidateDistSq < closestDistSq)) {
+      if (
+        buildable && IsValidVector3f(unitPos) && (!IsValidVector3f(closestDelta) || candidateDistSq < closestDistSq)
+      ) {
         closestDelta = Wm3::Vector3f(dx, dy, dz);
         closestUnit = candidate;
       }
@@ -3332,7 +3168,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueBuildMobileL`.
    */
-  int cfunc_IssueBuildMobile(lua_State* const luaContext)
+  int cfunc_IssueBuildMobile(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueBuildMobileL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3346,7 +3184,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueOverChargeL`.
    */
-  int cfunc_IssueOverCharge(lua_State* const luaContext)
+  int cfunc_IssueOverCharge(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueOverChargeL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3367,7 +3207,9 @@ namespace moho
    * RULEUCC_Overcharge)` + `SCR_FromLua_Entity` + `CAiTarget::UpdateTarget`
    * + `SSTITarget::FromAiTarget` + `UNIT_IssueCommand` sequence.
    */
-  int cfunc_IssueOverChargeL(LuaPlus::LuaState* const state)
+  int cfunc_IssueOverChargeL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3410,7 +3252,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueRepairL`.
    */
-  int cfunc_IssueRepair(lua_State* const luaContext)
+  int cfunc_IssueRepair(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueRepairL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3427,7 +3271,9 @@ namespace moho
    * try to repair itself). If any workers remain, queues `UNITCOMMAND_Repair`
    * targeting that entity through the shared dispatch shape.
    */
-  int cfunc_IssueRepairL(LuaPlus::LuaState* const state)
+  int cfunc_IssueRepairL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3478,7 +3324,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueScriptL`.
    */
-  int cfunc_IssueScript(lua_State* const luaContext)
+  int cfunc_IssueScript(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueScriptL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3497,7 +3345,9 @@ namespace moho
    * dispatch shape used by `IssueCommandToSelectedUnits`
    * (`UNIT_IssueCommand`) with `clearQueue=false`.
    */
-  int cfunc_IssueScriptL(LuaPlus::LuaState* const state)
+  int cfunc_IssueScriptL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3536,7 +3386,9 @@ namespace moho
    * [eax+0x44]; jmp cfunc_IssueReclaimL`) which the modern engine expresses
    * through `SCR_ResolveBindingState`.
    */
-  int cfunc_IssueReclaim(lua_State* const luaContext)
+  int cfunc_IssueReclaim(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueReclaimL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3561,7 +3413,9 @@ namespace moho
    * Remove` + `CAiTarget::UpdateTarget` + `SSTITarget::FromAiTarget` +
    * `UNIT_IssueCommand` sequence.
    */
-  int cfunc_IssueReclaimL(LuaPlus::LuaState* const state)
+  int cfunc_IssueReclaimL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3614,7 +3468,9 @@ namespace moho
    * [eax+0x44]; jmp cfunc_IssueCaptureL`) which the modern engine expresses
    * through `SCR_ResolveBindingState`.
    */
-  int cfunc_IssueCapture(lua_State* const luaContext)
+  int cfunc_IssueCapture(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueCaptureL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3640,7 +3496,9 @@ namespace moho
    * `UNIT_IssueCommand` sequence shared with the sibling Reclaim callback
    * at FUN_006F69D0.
    */
-  int cfunc_IssueCaptureL(LuaPlus::LuaState* const state)
+  int cfunc_IssueCaptureL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3690,7 +3548,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueSacrificeL`.
    */
-  int cfunc_IssueSacrifice(lua_State* const luaContext)
+  int cfunc_IssueSacrifice(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueSacrificeL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3716,7 +3576,9 @@ namespace moho
    * sibling Capture/Reclaim callbacks (which issue unconditionally), Sacrifice
    * gates the entire dispatch behind a non-empty post-removal worker set.
    */
-  int cfunc_IssueSacrificeL(LuaPlus::LuaState* const state)
+  int cfunc_IssueSacrificeL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3767,7 +3629,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueKillSelfL`.
    */
-  int cfunc_IssueKillSelf(lua_State* const luaContext)
+  int cfunc_IssueKillSelf(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueKillSelfL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3783,7 +3647,9 @@ namespace moho
    * command through the active sim command sink, mirroring the shared
    * `IssueSimpleUnitCommand` shape used by `IssueStop`/`IssuePause`.
    */
-  int cfunc_IssueKillSelfL(LuaPlus::LuaState* const state)
+  int cfunc_IssueKillSelfL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3810,7 +3676,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueDestroySelfL`.
    */
-  int cfunc_IssueDestroySelf(lua_State* const luaContext)
+  int cfunc_IssueDestroySelf(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueDestroySelfL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3827,7 +3695,9 @@ namespace moho
    * `IssueSimpleUnitCommand` shape used by `IssueStop` / `IssuePause` /
    * `IssueKillSelf`.
    */
-  int cfunc_IssueDestroySelfL(LuaPlus::LuaState* const state)
+  int cfunc_IssueDestroySelfL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3854,7 +3724,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueUpgradeL`.
    */
-  int cfunc_IssueUpgrade(lua_State* const luaContext)
+  int cfunc_IssueUpgrade(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueUpgradeL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3875,7 +3747,9 @@ namespace moho
    * (offset +0x50) — the offset the binary writes via
    * `mov [eax+50h], esi` after `SSTICommandIssueData::SSTICommandIssueData`.
    */
-  int cfunc_IssueUpgradeL(LuaPlus::LuaState* const state)
+  int cfunc_IssueUpgradeL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3915,7 +3789,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueBuildFactoryL`.
    */
-  int cfunc_IssueBuildFactory(lua_State* const luaContext)
+  int cfunc_IssueBuildFactory(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueBuildFactoryL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3939,7 +3815,9 @@ namespace moho
    * is coerced through `ResolveBuildCountArgument` (recovered shape of
    * `sub_6EF580`).
    */
-  int cfunc_IssueBuildFactoryL(LuaPlus::LuaState* const state)
+  int cfunc_IssueBuildFactoryL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -3984,7 +3862,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueAggressiveMoveL`.
    */
-  int cfunc_IssueAggressiveMove(lua_State* const luaContext)
+  int cfunc_IssueAggressiveMove(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueAggressiveMoveL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3996,7 +3876,9 @@ namespace moho
    * Parses one unit list and one target argument, then issues one aggressive
    * move command to the filtered selection.
    */
-  int cfunc_IssueAggressiveMoveL(LuaPlus::LuaState* const state)
+  int cfunc_IssueAggressiveMoveL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -4059,7 +3941,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_IssueFormAggressiveMoveL`.
    */
-  int cfunc_IssueFormAggressiveMove(lua_State* const luaContext)
+  int cfunc_IssueFormAggressiveMove(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueFormAggressiveMoveL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -4072,7 +3956,9 @@ namespace moho
    * formation-script/orientation payload lanes, and issues one
    * `UNITCOMMAND_FormAggressiveMove`.
    */
-  int cfunc_IssueFormAggressiveMoveL(LuaPlus::LuaState* const state)
+  int cfunc_IssueFormAggressiveMoveL(
+    LuaPlus::LuaState* const state
+  )
   {
     return IssueFormCommandWithFormation(
       state,
@@ -4089,7 +3975,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_IssueTransportLoadL`.
    */
-  int cfunc_IssueTransportLoad(lua_State* const luaContext)
+  int cfunc_IssueTransportLoad(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueTransportLoadL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -4101,7 +3989,9 @@ namespace moho
    * Builds one transport-load command set from selected units + transport
    * carrier, then issues `UNITCOMMAND_TransportLoadUnits`.
    */
-  int cfunc_IssueTransportLoadL(LuaPlus::LuaState* const state)
+  int cfunc_IssueTransportLoadL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -4123,8 +4013,10 @@ namespace moho
     // (`TransportedByRef`, 0x006F736C) raises the Lua error instead.
     EntitySetTemplate<Unit> commandUnits{};
     for (Unit* const unit : sourceUnits) {
-      if (unit->mAttachInfo.mAttachTargetWeak.GetObjectPtr() != nullptr
-          || unit->TransportedByRef.GetObjectPtr() != nullptr) {
+      if (
+        unit->mAttachInfo.mAttachTargetWeak.GetObjectPtr() != nullptr ||
+        unit->TransportedByRef.GetObjectPtr() != nullptr
+      ) {
         LuaPlus::LuaState::Error(state, kIssueTransportLoadAttachedError);
       } else {
         (void)commandUnits.Add(unit);
@@ -4155,7 +4047,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_IssueTransportUnloadSpecificL`.
    */
-  int cfunc_IssueTransportUnloadSpecific(lua_State* const luaContext)
+  int cfunc_IssueTransportUnloadSpecific(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IssueTransportUnloadSpecificL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -4167,7 +4061,9 @@ namespace moho
    * Filters transport cargo by category and issues
    * `UNITCOMMAND_TransportUnloadSpecificUnits` toward one target point.
    */
-  int cfunc_IssueTransportUnloadSpecificL(LuaPlus::LuaState* const state)
+  int cfunc_IssueTransportUnloadSpecificL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (state == nullptr || state->m_state == nullptr) {
       return 0;
@@ -4249,7 +4145,7 @@ namespace moho
           continue;
         }
 
-        if (!categorySet->Bits().Contains(blueprint->mCategoryBitIndex)) {
+        if (!categorySet->Bits().Contains(blueprint->mBlueprintOrdinal)) {
           continue;
         }
 

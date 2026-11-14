@@ -18,7 +18,7 @@ namespace
     constexpr const char* kIncorrectGameObjectTypeError =
       "Incorrect type of game object.  (Did you call with '.' instead of ':'?)";
 
-    moho::CScriptObject** const scriptObjectSlot = ExtractScriptObjectSlotFromLuaObject(object);
+    moho::CScriptObject** const scriptObjectSlot = moho::SCR_ScriptObjectSlot(object);
     if (!scriptObjectSlot) {
       luaL_error(state ? state->GetActiveCState() : nullptr, kExpectedGameObjectError);
       return nullptr;
@@ -46,9 +46,9 @@ namespace
    * What it does:
    * Assigns one retained frame owner into one weak self-owner lane.
    */
-  [[maybe_unused]] boost::weak_ptr<moho::CMauiFrame>* AssignFrameWeakSelfFromSharedOwner(
-    const boost::shared_ptr<moho::CMauiFrame>& owner,
-    boost::weak_ptr<moho::CMauiFrame>* const destination
+  std::weak_ptr<moho::CMauiFrame>* AssignFrameWeakSelfFromSharedOwner(
+    const std::shared_ptr<moho::CMauiFrame>& owner,
+    std::weak_ptr<moho::CMauiFrame>* const destination
   )
   {
     if (destination == nullptr) {
@@ -58,7 +58,7 @@ namespace
     *destination = owner;
     return destination;
   }
-}
+} // namespace
 
 gpg::RType* moho::CMauiFrame::sType = nullptr;
 
@@ -349,14 +349,14 @@ moho::CMauiFrame::CMauiFrame(
   // to hold and write through it. The binary zeroes the two words outright
   // (`this->mPtr.px = 0; this->mPtr.pn.pi_ = 0` at 0x00796360), which is the
   // same thing a placement-construct emits.
-  new (&mSelfWeak) boost::weak_ptr<CMauiFrame>{};
+  new (&mSelfWeak) std::weak_ptr<CMauiFrame>{};
 
   auto* const deletedListHead = static_cast<CMauiControlListNode*>(&mDeletedControlList);
   mDeletedControlList.mNext = deletedListHead;
   mDeletedControlList.mPrev = deletedListHead;
 
   mTargetHead = 0;
-  mEventHandler = new CMauiWxEventMapper(this);
+  mEventHandler = new CMauiEventMapper(this);
 
   mNeedsFrameUpdate = true;
   mRootFrame = this;
@@ -380,7 +380,7 @@ moho::CMauiFrame::~CMauiFrame()
     mEventHandler = nullptr;
   }
 
-  mSelfWeak = boost::weak_ptr<CMauiFrame>{};
+  mSelfWeak = std::weak_ptr<CMauiFrame>{};
 }
 
 /**
@@ -400,8 +400,7 @@ void moho::CMauiFrame::PurgeDeleted()
     return;
   }
 
-  auto* const deletedListHead =
-    static_cast<CMauiControlListNode*>(&mDeletedControlList);
+  auto* const deletedListHead = static_cast<CMauiControlListNode*>(&mDeletedControlList);
   while (deletedListHead->mNext != deletedListHead) {
     CMauiControlListNode* const deletedNode = deletedListHead->mPrev;
     deletedNode->ListUnlink();
@@ -423,27 +422,12 @@ float moho::CMauiFrame::GetTopmostDepth()
   float topmostDepth = gpg::nInf;
   for (CMauiControl* controlCursor = DepthFirstSuccessor(this); controlCursor != nullptr;
        controlCursor = controlCursor->DepthFirstSuccessor(this)) {
-    const float controlDepth =
-      CScriptLazyVar_float::GetValue(&controlCursor->mDepthLV);
+    const float controlDepth = CScriptLazyVar_float::GetValue(&controlCursor->mDepthLV);
     if (topmostDepth <= controlDepth) {
       topmostDepth = controlDepth;
     }
   }
   return topmostDepth;
-}
-
-/**
- * Address: 0x007966F0 (FUN_007966F0, ?DumpGraph@CMauiFrame@Moho@@QAEXXZ)
- *
- * What it does:
- * Walks this frame subtree depth-first and invokes `Dump()` on each control.
- */
-void moho::CMauiFrame::DumpGraph()
-{
-  for (CMauiControl* controlCursor = this; controlCursor != nullptr;
-       controlCursor = controlCursor->DepthFirstSuccessor(this)) {
-    controlCursor->Dump();
-  }
 }
 
 /**
@@ -455,9 +439,7 @@ void moho::CMauiFrame::DumpGraph()
 void moho::CMauiFrame::Dump()
 {
   CMauiControl::Dump();
-  gpg::Logf(
-    "Root Frame, head=%p\n", static_cast<const void*>(mEventHandler)
-  );
+  gpg::Logf("Root Frame, head=%p\n", static_cast<const void*>(mEventHandler));
 }
 
 /**
@@ -499,7 +481,7 @@ void moho::CMauiFrame::Frame(
 
   // Pin this frame's shared owner for the duration of the tick so descendants
   // cannot tear down the root while they're still iterating.
-  boost::shared_ptr<CMauiFrame> selfLock(mSelfWeak);
+  std::shared_ptr<CMauiFrame> selfLock(mSelfWeak);
 
   static int sProbeCalls = 0;
   static int sProbeBudget = 0;
@@ -536,7 +518,7 @@ void moho::CMauiFrame::Frame(
       int dumped = 0;
       for (CMauiControl* cursor = DepthFirstSuccessor(this); cursor != nullptr && dumped < 40;
            cursor = cursor->DepthFirstSuccessor(this)) {
-        const msvc8::string name = cursor->GetDebugName();
+        const fa::string name = cursor->GetDebugName();
         char line[224];
         sprintf_s(
           line,
@@ -586,11 +568,11 @@ void moho::CMauiFrame::Frame(
  * Imports `/lua/maui/frame.lua`, calls `Frame()`, converts the return payload
  * to `CMauiFrame*`, and initializes the frame's weak self-owner lane.
  */
-boost::shared_ptr<moho::CMauiFrame> moho::CMauiFrame::Create(
+std::shared_ptr<moho::CMauiFrame> moho::CMauiFrame::Create(
   LuaPlus::LuaState* const state
 )
 {
-  boost::shared_ptr<CMauiFrame> outFrame{};
+  std::shared_ptr<CMauiFrame> outFrame{};
   if (state == nullptr || state->m_state == nullptr) {
     return outFrame;
   }
@@ -618,7 +600,7 @@ boost::shared_ptr<moho::CMauiFrame> moho::CMauiFrame::Create(
   LuaPlus::LuaObject frameLuaObject(state, -1);
   CMauiFrame* const frame = ResolveFrameFromLuaObjectOrError(frameLuaObject, state);
   if (frame != nullptr) {
-    outFrame = boost::shared_ptr<CMauiFrame>(frame);
+    outFrame = std::shared_ptr<CMauiFrame>(frame);
     (void)AssignFrameWeakSelfFromSharedOwner(outFrame, &frame->mSelfWeak);
   }
 
@@ -669,8 +651,5 @@ gpg::RType* moho::CMauiFrame::GetClass() const
  */
 gpg::RRef moho::CMauiFrame::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }

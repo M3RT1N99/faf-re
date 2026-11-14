@@ -65,7 +65,7 @@ namespace gpg
     /**
      * Address: 0x00761A90 (FUN_00761A90, gpg::RFastVectorType_SAudioRequest::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x00761B20 (FUN_00761B20, gpg::RFastVectorType_SAudioRequest::IsIndexed)
@@ -121,7 +121,12 @@ namespace
    * runtime view, and deserializes each element in place (forwarding the
    * caller's owner reference). Bound as `serLoadFunc_`.
    */
-  void LoadFastVectorSAudioRequest(gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef)
+  void LoadFastVectorSAudioRequest(
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
@@ -130,7 +135,7 @@ namespace
     unsigned int count = 0;
     archive->ReadUInt(&count);
 
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::SAudioRequest>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::SAudioRequest>*>(objectPtr);
     moho::SAudioRequest fill{};
     vec.resize(static_cast<std::size_t>(count), fill);
 
@@ -148,13 +153,18 @@ namespace
    * Writes the element count then serializes each `SAudioRequest` in place
    * (forwarding the caller's owner reference). Bound as `serSaveFunc_`.
    */
-  void SaveFastVectorSAudioRequest(gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef)
+  void SaveFastVectorSAudioRequest(
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
     }
 
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::SAudioRequest>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::SAudioRequest>*>(objectPtr);
     const unsigned int count = static_cast<unsigned int>(vec.size());
     archive->WriteUInt(count);
 
@@ -199,7 +209,7 @@ namespace gpg
    */
   const char* RFastVectorType<moho::SAudioRequest>::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SAudioRequest>()->GetName());
+    static const fa::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SAudioRequest>()->GetName());
     return sName.c_str();
   }
 
@@ -209,9 +219,11 @@ namespace gpg
    * What it does:
    * Renders `"<base RType lexical>, size=<count>"`.
    */
-  msvc8::string RFastVectorType<moho::SAudioRequest>::GetLexical(const gpg::RRef& ref) const
+  fa::string RFastVectorType<moho::SAudioRequest>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -235,7 +247,10 @@ namespace gpg
    */
   void RFastVectorType<moho::SAudioRequest>::Init()
   {
-    static_assert(sizeof(gpg::core::FastVectorInline<moho::SAudioRequest>) == 0x10, "gpg::core::FastVectorInline<moho::SAudioRequest> is 0x10 bytes on x86");
+    static_assert(
+      sizeof(gpg::core::FastVectorInline<moho::SAudioRequest>) == 0x10,
+      "gpg::core::FastVectorInline<moho::SAudioRequest> is 0x10 bytes on x86"
+    );
     size_ = sizeof(gpg::core::FastVectorInline<moho::SAudioRequest>);
     version_ = 1;
     serLoadFunc_ = &LoadFastVectorSAudioRequest;
@@ -249,7 +264,10 @@ namespace gpg
    * Wraps `&vec[ind]` (a `moho::SAudioRequest*` slot inside the FastVector
    * storage) as one `gpg::RRef_SAudioRequest` reference.
    */
-  gpg::RRef RFastVectorType<moho::SAudioRequest>::SubscriptIndex(void* const obj, const int ind) const
+  gpg::RRef RFastVectorType<moho::SAudioRequest>::SubscriptIndex(
+    void* const obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
     out = gpg::MakeRRef<moho::SAudioRequest>(nullptr);
@@ -272,7 +290,9 @@ namespace gpg
    * What it does:
    * Returns the element count (`(end - begin) / 28`), or 0 when unallocated.
    */
-  size_t RFastVectorType<moho::SAudioRequest>::GetCount(void* const obj) const
+  size_t RFastVectorType<moho::SAudioRequest>::GetCount(
+    void* const obj
+  ) const
   {
     if (!obj) {
       return 0u;
@@ -293,7 +313,10 @@ namespace gpg
    * Resizes the underlying `fastvector<SAudioRequest>` storage to `count`,
    * zero-filling any growth.
    */
-  void RFastVectorType<moho::SAudioRequest>::SetCount(void* const obj, const int count) const
+  void RFastVectorType<moho::SAudioRequest>::SetCount(
+    void* const obj,
+    const int count
+  ) const
   {
     if (!obj || count < 0) {
       return;
@@ -315,4 +338,7 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_FastVectorSAudioRequestType_9ff453, moho::register_FastVectorSAudioRequestType)
+GPG_PREREGISTER_INIT(
+  register_FastVectorSAudioRequestType_9ff453,
+  moho::register_FastVectorSAudioRequestType
+)

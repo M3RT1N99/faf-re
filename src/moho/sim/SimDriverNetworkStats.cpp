@@ -19,11 +19,8 @@
 #include <new>
 #include <vector>
 
-#include "boost/function.hpp"
-#include <boost/bind.hpp>
-#include <boost/ptr_container/exception.hpp>
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/diagnostics/BuildInfo.h"
-#include "gpg/core/utils/BoostWrappers.h"
 #include "moho/render/camera/CameraImpl.h"
 #include "moho/app/WinApp.h"
 #include "moho/net/CClientBase.h"
@@ -47,6 +44,7 @@
 #include "moho/unit/core/Unit.h"
 #include "moho/misc/LaunchInfoBase.h"
 #include "Sim.h"
+#include "legacy/thread/Mutex.h"
 
 using namespace moho;
 
@@ -70,7 +68,6 @@ namespace
   }
 } // namespace
 
-
 /**
  * Address: 0x0073DFE0 (FUN_0073DFE0), ISTIDriver slot 39
  *
@@ -89,10 +86,14 @@ namespace
  * entirely under the driver lock.
  */
 void CSimDriver::DrawNetworkStatsPanel(
-  CD3DPrimBatcher* batcher, const float anchorX, const float anchorY, const float scaleX, const float scaleY
+  CD3DPrimBatcher* batcher,
+  const float anchorX,
+  const float anchorY,
+  const float scaleX,
+  const float scaleY
 )
 {
-  boost::mutex::scoped_lock lock(mLock); // 0x0073E014 do_lock / 0x0073F40D unlock
+  fa::mutex::scoped_lock lock(mLock); // 0x0073E014 do_lock / 0x0073F40D unlock
 
   // Courier New font handle (0x0073E042). Held as a raw retained handle;
   // released explicitly at function exit (0x0073F3D3 releases the CountedPtr).
@@ -102,24 +103,24 @@ void CSimDriver::DrawNetworkStatsPanel(
   // from the font, so the whole panel scales with it. Pass 10 to go back to
   // retail's size.
   const int fontPoints = std::max(1, static_cast<int>(std::lround(10.0f * CurrentUiScale())));
-  boost::SharedPtrRaw<CD3DFont> rawFont = CD3DFont::Create(fontPoints, "Courier New");
-  CD3DFont* const font = rawFont.px;
+  moho::CountedPtr<CD3DFont> fontHandle = CD3DFont::Create(fontPoints, "Courier New");
+  CD3DFont* const font = fontHandle.tex;
 
   const std::size_t numClients = mClientManager->NumberOfClients(); // 0x0073E057 (mgr slot 6)
 
   // ---- Table columns: index, nickname, ping, maxsp, data, behind, avail, then
   // one ack column per client (0x0073E078: numClients + 7 inner vectors).
   constexpr std::size_t kFirstAckColumn = 7;
-  msvc8::vector<msvc8::vector<msvc8::string>> columns(numClients + kFirstAckColumn);
+  fa::vector<fa::vector<fa::string>> columns(numClients + kFirstAckColumn);
 
   // Header row (0x0073E098..0x0073E28F).
-  columns[0].push_back(msvc8::string(""));        // 0x0073E098 index header (empty)
-  columns[1].push_back(msvc8::string(""));        // 0x0073E0FA nickname header (empty)
-  columns[2].push_back(msvc8::string(" ping"));   // 0x0073E14B
-  columns[3].push_back(msvc8::string(" maxsp"));  // 0x0073E19C
-  columns[4].push_back(msvc8::string(" data"));   // 0x0073E1ED
-  columns[5].push_back(msvc8::string(" behind")); // 0x0073E23E
-  columns[6].push_back(msvc8::string(" avail"));  // 0x0073E28F
+  columns[0].push_back(fa::string(""));        // 0x0073E098 index header (empty)
+  columns[1].push_back(fa::string(""));        // 0x0073E0FA nickname header (empty)
+  columns[2].push_back(fa::string(" ping"));   // 0x0073E14B
+  columns[3].push_back(fa::string(" maxsp"));  // 0x0073E19C
+  columns[4].push_back(fa::string(" data"));   // 0x0073E1ED
+  columns[5].push_back(fa::string(" behind")); // 0x0073E23E
+  columns[6].push_back(fa::string(" avail"));  // 0x0073E28F
 
   // Each ack column is headed by the index of the client whose data it
   // counts (0x0073E2E8..0x0073E357: " %3d" into columns[7 + i]).
@@ -144,7 +145,7 @@ void CSimDriver::DrawNetworkStatsPanel(
       // Ejection pending: every remaining column, the ack columns included,
       // gets an empty cell so the rows stay aligned (0x0073E929..0x0073E9AB).
       for (std::size_t c = 2; c < columns.size(); ++c) {
-        columns[c].push_back(msvc8::string("")); // 0x0073E96D
+        columns[c].push_back(fa::string("")); // 0x0073E96D
       }
       continue;
     }
@@ -153,7 +154,7 @@ void CSimDriver::DrawNetworkStatsPanel(
     client->GetLatestBeatDispatchedRemote(remoteDispatchedBeat); // 0x0073E3F2 (client slot 5)
     const int remoteDispatched = static_cast<int>(remoteDispatchedBeat);
 
-    const float ping = client->GetStatusMetricA();          // 0x0073E3FB (client slot 2)
+    const float ping = client->GetStatusMetricA();           // 0x0073E3FB (client slot 2)
     columns[2].push_back(gpg::STR_Printf(" %7.3fms", ping)); // 0x0073E40D
 
     columns[3].push_back(gpg::STR_Printf(" %+3d", client->GetSimRate())); // 0x0073E455 (client slot 12)
@@ -169,58 +170,63 @@ void CSimDriver::DrawNetworkStatsPanel(
     // avail: beats the client has available but not yet dispatched.
     std::uint32_t availableBeatRemote = 0;
     client->GetAvailableBeatRemote(availableBeatRemote); // 0x0073E531 (client slot 6)
-    columns[6].push_back(gpg::STR_Printf(" %3d", static_cast<int>(availableBeatRemote) - remoteDispatched)); // 0x0073E535
+    columns[6].push_back(
+      gpg::STR_Printf(" %3d", static_cast<int>(availableBeatRemote) - remoteDispatched)
+    ); // 0x0073E535
 
     // One ack cell per client j: how far this client has acked j's data past
     // its own dispatch. A client being ejected gets a blank cell
     // (0x0073E5A1 GetClient(j), 0x0073E5AA NoEjectionPending, 0x0073E600).
-    const msvc8::vector<int32_t>* const acks = client->GetLatestAcksVector(); // 0x0073E57F (client slot 4)
+    const fa::vector<int32_t>* const acks = client->GetLatestAcksVector(); // 0x0073E57F (client slot 4)
     for (std::size_t j = 0; j < numClients; ++j) {
-      msvc8::vector<msvc8::string>& ackColumn = columns[kFirstAckColumn + j];
+      fa::vector<fa::string>& ackColumn = columns[kFirstAckColumn + j];
       if (mClientManager->GetClient(static_cast<int>(j))->NoEjectionPending()) {
         ackColumn.push_back(gpg::STR_Printf(" %3d", (*acks)[j] - remoteDispatched)); // 0x0073E5C0
       } else {
-        ackColumn.push_back(msvc8::string("")); // 0x0073E620
+        ackColumn.push_back(fa::string("")); // 0x0073E620
       }
     }
   }
 
   // ---- Summary block: 4 lines (0x0073E687..0x0073E876).
-  msvc8::vector<msvc8::string> summary;
+  fa::vector<fa::string> summary;
 
   // Engine addition (issue #215): the exe's build as the first line, so F11 (FAF's
   // connectivity screen turns this panel on) tells which build each player runs.
-  summary.push_back(msvc8::string(gpg::diag::BuildLabel()));
+  summary.push_back(fa::string(gpg::diag::BuildLabel()));
 
   {
     int availableBeat = 0;
     mClientManager->GetAvailableBeat(availableBeat); // 0x0073E6BA (mgr slot 21)
 
-    const int inflight = (mNextIssueBeat - 1) - availableBeat;   // 0x0073E6D1..0x0073E6D8
-    const int available = availableBeat - (mDispatchBeat - 1);   // 0x0073E6BC..0x0073E6CF
-    const int queued = static_cast<int>(mSyncDataQueue.Size());  // 0x0073E6C6 (mSyncDataQueue._Mysize @ CSimDriver+0xA0)
+    const int inflight = (mNextIssueBeat - 1) - availableBeat;  // 0x0073E6D1..0x0073E6D8
+    const int available = availableBeat - (mDispatchBeat - 1);  // 0x0073E6BC..0x0073E6CF
+    const int queued = static_cast<int>(mSyncDataQueue.Size()); // 0x0073E6C6 (mSyncDataQueue._Mysize @ CSimDriver+0xA0)
     summary.push_back(
-      gpg::STR_Printf("inflight: %d, available: %d, queued: %d", inflight, available, queued)); // 0x0073E6EB
+      gpg::STR_Printf("inflight: %d, available: %d, queued: %d", inflight, available, queued)
+    ); // 0x0073E6EB
   }
 
   {
     const float medianDispatchMs = mSimSpeedSamples.Median(); // 0x0073E731 (NetSpeeds::Median, no args)
-    summary.push_back(gpg::STR_Printf(
-      "sim time: %.3f, max speed=%+d", static_cast<double>(medianDispatchMs), mCurrentSimRate)); // 0x0073E74E
+    summary.push_back(
+      gpg::STR_Printf("sim time: %.3f, max speed=%+d", static_cast<double>(medianDispatchMs), mCurrentSimRate)
+    ); // 0x0073E74E
   }
 
   {
     const int desiredSpeed = mClientManager->GetSimRateRequested(); // 0x0073E79E (mgr slot 15)
     const int actualSpeed = mClientManager->GetSimRate();           // 0x0073E792 (mgr slot 14)
     summary.push_back(
-      gpg::STR_Printf("desired speed: %+d, actual speed: %+d", desiredSpeed, actualSpeed)); // 0x0073E7AB
+      gpg::STR_Printf("desired speed: %+d, actual speed: %+d", desiredSpeed, actualSpeed)
+    ); // 0x0073E7AB
   }
 
   {
     const SClientBottleneckInfo bottleneck = mClientManager->GetBottleneckInfo(); // 0x0073E7EB (mgr slot 24)
-    msvc8::string bottleneckLabel;
-    FormatBottleneckLabel(bottleneck, bottleneckLabel);                 // 0x0073E80F (FUN_0053B6B0)
-    summary.push_back(msvc8::string("bottleneck: ") + bottleneckLabel); // 0x0073E859 operator+
+    fa::string bottleneckLabel;
+    FormatBottleneckLabel(bottleneck, bottleneckLabel);              // 0x0073E80F (FUN_0053B6B0)
+    summary.push_back(fa::string("bottleneck: ") + bottleneckLabel); // 0x0073E859 operator+
   }
 
   // ---- Per-column max-advance measurement (0x0073E9BC..0x0073EB2F).
@@ -231,7 +237,7 @@ void CSimDriver::DrawNetworkStatsPanel(
   // Running total table width, seeded with 6.0 (flt_E4F71C @0x0073E90E).
   float totalWidth = 6.0f;
   for (std::size_t c = 0; c < columns.size(); ++c) { // trip = columns.size() (0x0073E9B0)
-    for (const msvc8::string& cell : columns[c]) {
+    for (const fa::string& cell : columns[c]) {
       const float advance = font->GetAdvance(cell.c_str(), -1); // 0x0073EA68
       colWidths[c] = std::max(colWidths[c], advance);           // 0x0073EA75..0x0073EA7F
     }
@@ -242,33 +248,36 @@ void CSimDriver::DrawNetworkStatsPanel(
   // frame overwrites that stack slot with the panel-bottom coordinate before it is
   // ever consumed -- so the result is dead. Preserved 1:1 (0x0073EAB6..0x0073EB2F,
   // slot reused at 0x0073EC10). Latent 2007 debug-HUD quirk.
+  // [DELIBERATE-FIX] The panel uses it: the build line (issue #215) is longer than a
+  // small game's table and would run past the backdrop. The 3.0 is the left margin; add
+  // it again for the right one.
   float summaryMax = 0.0f;
-  for (const msvc8::string& line : summary) {
+  for (const fa::string& line : summary) {
     const float advance = font->GetAdvance(line.c_str(), -1) + 3.0f; // 0x0073EB06/0x0073EB0B (flt_E4F718 == 3.0)
     summaryMax = std::max(summaryMax, advance);                      // 0x0073EB13..0x0073EB1A
   }
-  (void)summaryMax; // dead in retail (overwritten by rectBottom before use)
+  totalWidth = std::max(totalWidth, summaryMax + 3.0f);
 
   // ---- Backdrop rectangle geometry (0x0073EB2F..0x0073EC10).
-  const int rowCount = static_cast<int>(columns[0].size());       // 0x0073EB2F..0x0073EB57
-  const int summaryLineCount = static_cast<int>(summary.size());  // 0x0073EB59..0x0073EB80
-  const int totalTextRows = rowCount + summaryLineCount;          // 0x0073EB82
+  const int rowCount = static_cast<int>(columns[0].size());      // 0x0073EB2F..0x0073EB57
+  const int summaryLineCount = static_cast<int>(summary.size()); // 0x0073EB59..0x0073EB80
+  const int totalTextRows = rowCount + summaryLineCount;         // 0x0073EB82
 
   // Panel pixel height = mHeight*rows + mExternalLeading*(rows-1) + 6.0
   // (0x0073EB84..0x0073EBC4; the unsigned->float fixups are ordinary casts).
-  const float tableHeight = font->mHeight * static_cast<float>(totalTextRows)
-                            + font->mExternalLeading * static_cast<float>(totalTextRows - 1) + 6.0f;
+  const float tableHeight = font->mHeight * static_cast<float>(totalTextRows) +
+    font->mExternalLeading * static_cast<float>(totalTextRows - 1) + 6.0f;
 
   // Panel corners (floor() on the scaled extents). 0x0073EBC8..0x0073EC10.
-  const float rectLeft = anchorX - std::floor(totalWidth * scaleX);  // 0x0073EBCC..0x0073EBD7
-  const float rectRight = rectLeft + totalWidth;                     // 0x0073EBDE..0x0073EBE2
-  const float rectTop = anchorY - std::floor(tableHeight * scaleY);  // 0x0073EBED..0x0073EBF8
-  const float rectBottom = rectTop + tableHeight;                    // 0x0073EC0C..0x0073EC10
+  const float rectLeft = anchorX - std::floor(totalWidth * scaleX); // 0x0073EBCC..0x0073EBD7
+  const float rectRight = rectLeft + totalWidth;                    // 0x0073EBDE..0x0073EBE2
+  const float rectTop = anchorY - std::floor(tableHeight * scaleY); // 0x0073EBED..0x0073EBF8
+  const float rectBottom = rectTop + tableHeight;                   // 0x0073EC0C..0x0073EC10
 
   // ---- Backdrop quad (semi-transparent black over a white texture). 0x0073EC14..0x0073ED81.
   {
-    const boost::shared_ptr<CD3DBatchTexture> whiteTex = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu); // 0x0073EC14
-    batcher->SetTexture(whiteTex);                                                                       // 0x0073EC29
+    const std::shared_ptr<CD3DBatchTexture> whiteTex = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu);   // 0x0073EC14
+    batcher->SetTexture(whiteTex);                                                                      // 0x0073EC29
 
     constexpr std::uint32_t kBackdropColor = 0x80000000u; // 0x0073EC85
     const CD3DPrimBatcher::Vertex topLeft{rectLeft, rectTop, 0.0f, kBackdropColor, 0.0f, 0.0f};
@@ -301,13 +310,14 @@ void CSimDriver::DrawNetworkStatsPanel(
   // table continues BELOW it from the same running Y (retail preserves the pen
   // Y across both loops; 0x0073EED0 clears only the row/column counters).
   const float rowStep = font->mExternalLeading + font->mHeight; // 0x0073EEAC / 0x0073F088
-  float penY = rectTop + font->mAscent + 3.0f; // 0x0073ED86..0x0073EDB6 (mAscent @ CD3DFont+0x14)
+  float penY = rectTop + font->mAscent + 3.0f;                  // 0x0073ED86..0x0073EDB6 (mAscent @ CD3DFont+0x14)
 
   // Summary lines, left-anchored at rectLeft+3 (loop over var_DC). 0x0073EDAD..0x0073EED0.
-  for (const msvc8::string& line : summary) {
+  for (const fa::string& line : summary) {
     const Vector3f origin{rectLeft + 3.0f, penY, 0.0f}; // 0x0073EE28..0x0073EE6E
     (void)font->Render(
-      line.c_str(), batcher, origin, xAxis, yAxis, kTextColor, kGlyphScale, kNoMaxAdvance); // 0x0073EEA7
+      line.c_str(), batcher, origin, xAxis, yAxis, kTextColor, kGlyphScale, kNoMaxAdvance
+    );               // 0x0073EEA7
     penY += rowStep; // 0x0073EEAC..0x0073EEC5
   }
 
@@ -320,11 +330,11 @@ void CSimDriver::DrawNetworkStatsPanel(
   for (std::size_t row = 0; row < tableRowCount; ++row) {
     float cellX = rectLeft + 3.0f; // running X base, reset per row (0x0073EF22..0x0073EF44)
     for (std::size_t c = 0; c < columns.size(); ++c) {
-      const msvc8::vector<msvc8::string>& column = columns[c];
+      const fa::vector<fa::string>& column = columns[c];
       // The retail grid is rectangular (all data columns carry one row per
       // client); shorter columns simply contribute an empty cell for the tail
       // rows rather than reading past their storage.
-      const msvc8::string cell = (row < column.size()) ? column[row] : msvc8::string();
+      const fa::string cell = (row < column.size()) ? column[row] : fa::string();
 
       float originX;
       if (c < 2) {
@@ -338,7 +348,8 @@ void CSimDriver::DrawNetworkStatsPanel(
 
       const Vector3f origin{originX, penY, 0.0f}; // 0x0073F009..0x0073F01B
       (void)font->Render(
-        cell.c_str(), batcher, origin, xAxis, yAxis, kTextColor, kGlyphScale, kNoMaxAdvance); // 0x0073F056
+        cell.c_str(), batcher, origin, xAxis, yAxis, kTextColor, kGlyphScale, kNoMaxAdvance
+      ); // 0x0073F056
 
       cellX += colWidths[c]; // running X += column width (0x0073F05F..0x0073F064)
     }
@@ -347,8 +358,8 @@ void CSimDriver::DrawNetworkStatsPanel(
 
   // ---- Border rectangle: 4 white edges over a white texture. 0x0073F0B2..0x0073F365.
   {
-    const boost::shared_ptr<CD3DBatchTexture> whiteTex = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu); // 0x0073F0BE
-    batcher->SetTexture(whiteTex);                                                                       // 0x0073F0D3
+    const std::shared_ptr<CD3DBatchTexture> whiteTex = CD3DBatchTexture::FromSolidColor(0xFFFFFFFFu);   // 0x0073F0BE
+    batcher->SetTexture(whiteTex);                                                                      // 0x0073F0D3
 
     constexpr std::uint32_t kBorderColor = 0xFFFFFFFFu; // esi == 0xFFFFFFFF (0x0073F0B2)
     const CD3DPrimBatcher::Vertex tl{rectLeft, rectTop, 0.0f, kBorderColor, 0.0f, 0.0f};
@@ -363,13 +374,16 @@ void CSimDriver::DrawNetworkStatsPanel(
   }
 
   // Release the retained font handle (0x0073F3D3..0x0073F3F9).
-  rawFont.release();
 }
 
 namespace
 {
   void DrawSimDriverNetworkStats(
-    CSimDriver& driver, CD3DPrimBatcher* const batcher, const float anchorX, const float anchorY, const float scaleX,
+    CSimDriver& driver,
+    CD3DPrimBatcher* const batcher,
+    const float anchorX,
+    const float anchorY,
+    const float scaleX,
     const float scaleY
   )
   {

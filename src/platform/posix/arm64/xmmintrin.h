@@ -37,7 +37,9 @@ namespace platform::posix::arm64
     return value;
   }
 
-  inline void WriteFpcr(const uint64_t value) noexcept
+  inline void WriteFpcr(
+    const uint64_t value
+  ) noexcept
   {
     __asm__ __volatile__("msr fpcr, %0" : : "r"(value));
   }
@@ -49,7 +51,9 @@ namespace platform::posix::arm64
     return value;
   }
 
-  inline void WriteFpsr(const uint64_t value) noexcept
+  inline void WriteFpsr(
+    const uint64_t value
+  ) noexcept
   {
     __asm__ __volatile__("msr fpsr, %0" : : "r"(value));
   }
@@ -79,7 +83,10 @@ namespace platform::posix::arm64
   inline constexpr unsigned kRcFromRMode[4] = {0u, 2u, 1u, 3u};
 
   /// The MXCSR an x86 thread would have with these FPCR and FPSR.
-  inline unsigned int MxcsrFromFpcr(const uint64_t fpcr, const uint64_t fpsr) noexcept
+  inline unsigned int MxcsrFromFpcr(
+    const uint64_t fpcr,
+    const uint64_t fpsr
+  ) noexcept
   {
     unsigned int csr = 0;
     for (const ExceptionBits bits : kExceptions) {
@@ -98,13 +105,17 @@ namespace platform::posix::arm64
   }
 } // namespace platform::posix::arm64
 
-static inline unsigned int _mm_getcsr(void) noexcept
+static inline unsigned int _mm_getcsr(
+  void
+) noexcept
 {
   using namespace platform::posix::arm64;
   return MxcsrFromFpcr(ReadFpcr(), ReadFpsr());
 }
 
-static inline void _mm_setcsr(const unsigned int csr) noexcept
+static inline void _mm_setcsr(
+  const unsigned int csr
+) noexcept
 {
   using namespace platform::posix::arm64;
   uint64_t fpcr = ReadFpcr();
@@ -121,7 +132,10 @@ static inline void _mm_setcsr(const unsigned int csr) noexcept
   WriteFpsr(fpsr);
 }
 
-static inline void _mm_prefetch(const char* const address, const int hint) noexcept
+static inline void _mm_prefetch(
+  const char* const address,
+  const int hint
+) noexcept
 {
   // __builtin_prefetch needs a constant locality; the hints are constants at every call.
   switch (hint) {
@@ -141,7 +155,9 @@ static inline void _mm_prefetch(const char* const address, const int hint) noexc
 }
 
 /// The spin-wait hint (x86 `pause`): AArch64 `yield`.
-static inline void _mm_pause(void) noexcept
+static inline void _mm_pause(
+  void
+) noexcept
 {
   __asm__ __volatile__("yield");
 }

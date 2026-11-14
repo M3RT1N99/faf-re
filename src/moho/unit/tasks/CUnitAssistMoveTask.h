@@ -123,14 +123,17 @@ namespace moho
   public:
     static gpg::RType* sType;
 
-    CCommandTask* mDispatchTask;                  // 0x30
-    SNavGoal mMoveGoal;                           // 0x34
-    Wm3::Vector3f mMoveGoalWorldPosition;         // 0x58
-    std::uint8_t mHasPathFindingPickupCandidate;  // 0x64
-    std::uint8_t mPad65_67[3];                    // 0x65
+    CCommandTask* mDispatchTask;                 // 0x30
+    SNavGoal mMoveGoal;                          // 0x34
+    Wm3::Vector3f mMoveGoalWorldPosition;        // 0x58
+    std::uint8_t mHasPathFindingPickupCandidate; // 0x64
+    std::uint8_t mPad65_67[3];                   // 0x65
   };
 
-  static_assert(offsetof(CUnitAssistMoveTask, mDispatchTask) == 0x30, "CUnitAssistMoveTask::mDispatchTask offset must be 0x30");
+  static_assert(
+    offsetof(CUnitAssistMoveTask, mDispatchTask) == 0x30,
+    "CUnitAssistMoveTask::mDispatchTask offset must be 0x30"
+  );
   static_assert(offsetof(CUnitAssistMoveTask, mMoveGoal) == 0x34, "CUnitAssistMoveTask::mMoveGoal offset must be 0x34");
   static_assert(
     offsetof(CUnitAssistMoveTask, mMoveGoalWorldPosition) == 0x58,
@@ -145,12 +148,4 @@ namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x005F1D80 (FUN_005F1D80, gpg::RRef_CUnitAssistMoveTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitAssistMoveTask*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitAssistMoveTask(gpg::RRef* outRef, moho::CUnitAssistMoveTask* value);
 } // namespace gpg

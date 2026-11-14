@@ -15,17 +15,7 @@
 #include "legacy/containers/Set.h"
 #include "legacy/containers/String.h"
 #include "Wm3Vector3.h"
-#include "boost/scoped_ptr.h"
-
-namespace boost
-{
-  struct SharedCountPair;
-}
-
-namespace boost::detail
-{
-  class sp_counted_base;
-}
+#include <memory>
 
 namespace moho
 {
@@ -41,9 +31,15 @@ namespace moho
   using AudioNotificationDesc = ::XACT_NOTIFICATION_DESCRIPTION;
   using AudioNotification = ::XACT_NOTIFICATION;
   static_assert(sizeof(AudioNotificationDesc) == 6 + 5 * sizeof(void*), "XACT notification descriptor size mismatch");
-  static_assert(offsetof(AudioNotificationDesc, pWaveBank) == 2 + sizeof(void*), "XACT wave-bank field offset mismatch");
+  static_assert(
+    offsetof(AudioNotificationDesc, pWaveBank) == 2 + sizeof(void*),
+    "XACT wave-bank field offset mismatch"
+  );
   static_assert(sizeof(AudioNotification) == 9 + 5 * sizeof(void*), "XACT notification size mismatch");
-  static_assert(offsetof(AudioNotification, waveBank) == 5 + sizeof(void*), "XACT notification payload offset mismatch");
+  static_assert(
+    offsetof(AudioNotification, waveBank) == 5 + sizeof(void*),
+    "XACT notification payload offset mismatch"
+  );
 
   // XACT 2.5's runtime parameters end at pRendererID. The June 2010 SDK's
   // XACT_RUNTIME_PARAMETERS adds two XAudio2 pointers, so it cannot replace
@@ -60,22 +56,14 @@ namespace moho
     PWSTR pRendererID;
   };
   static_assert(sizeof(AudioRuntimeParams) == (sizeof(void*) == 4 ? 0x24 : 0x40), "AudioRuntimeParams size mismatch");
-  static_assert(offsetof(AudioRuntimeParams, fnNotificationCallback) == offsetof(XACT_RUNTIME_PARAMETERS, fnNotificationCallback), "XACT runtime callback offset mismatch");
-  static_assert(offsetof(AudioRuntimeParams, pRendererID) == offsetof(XACT_RUNTIME_PARAMETERS, pRendererID), "XACT runtime renderer offset mismatch");
-
-  /**
-   * Address: 0x004DE650 (FUN_004DE650, ??0WeakPtr_AudioEngine@Moho@@QAE@@Z)
-   * Mangled: ??0WeakPtr_AudioEngine@Moho@@QAE@@Z
-   *
-   * What it does:
-   * Rebinds one audio-engine weak/shared pair from a source shared pair by
-   * copying the pointee lane, retaining the incoming control lane, and
-   * weak-releasing any previously bound control lane.
-   */
-  boost::SharedCountPair* AssignWeakAudioEnginePairFromShared(
-    boost::SharedCountPair* outWeakPair,
-    const boost::SharedCountPair* sourceSharedPair
-  ) noexcept;
+  static_assert(
+    offsetof(AudioRuntimeParams, fnNotificationCallback) == offsetof(XACT_RUNTIME_PARAMETERS, fnNotificationCallback),
+    "XACT runtime callback offset mismatch"
+  );
+  static_assert(
+    offsetof(AudioRuntimeParams, pRendererID) == offsetof(XACT_RUNTIME_PARAMETERS, pRendererID),
+    "XACT runtime renderer offset mismatch"
+  );
 
   class IXACTSoundBank
   {
@@ -140,7 +128,9 @@ namespace moho
      * VTable slot 8 (+0x20).
      */
     virtual std::int32_t __stdcall SetMatrixCoefficients(
-      std::uint32_t srcChannelCount, std::uint32_t dstChannelCount, const float* matrixCoefficients
+      std::uint32_t srcChannelCount,
+      std::uint32_t dstChannelCount,
+      const float* matrixCoefficients
     ) = 0;
 
     /**
@@ -181,11 +171,11 @@ namespace moho
     virtual std::uint32_t __stdcall Release() = 0;                                         // +0x08
     virtual std::int32_t __stdcall GetRendererCount(std::uint16_t* outRendererCount) = 0;  // +0x0C
     virtual std::int32_t __stdcall
-    GetRendererDetails(std::uint16_t rendererIndex, void* outRendererDetails) = 0;       // +0x10
-    virtual std::int32_t __stdcall GetFinalMixFormat(void* outWaveFormatExtensible) = 0; // +0x14
+    GetRendererDetails(std::uint16_t rendererIndex, void* outRendererDetails) = 0;          // +0x10
+    virtual std::int32_t __stdcall GetFinalMixFormat(void* outWaveFormatExtensible) = 0;    // +0x14
     virtual std::int32_t __stdcall Initialize(const AudioRuntimeParams* runtimeParams) = 0; // +0x18
-    virtual void __stdcall ShutDown() = 0;                                               // +0x1C
-    virtual std::int32_t __stdcall DoWork() = 0;                                         // +0x20
+    virtual void __stdcall ShutDown() = 0;                                                  // +0x1C
+    virtual std::int32_t __stdcall DoWork() = 0;                                            // +0x20
     virtual std::int32_t __stdcall CreateSoundBank(
       const void* data,
       std::int32_t sizeBytes,
@@ -231,7 +221,7 @@ namespace moho
       std::uint32_t playOffset,
       std::uint8_t loopCount,
       void** outWave
-    ) = 0;                                                                                   // +0x38
+    ) = 0;                                                                                                    // +0x38
     virtual std::int32_t __stdcall RegisterNotification(const AudioNotificationDesc* notificationDesc) = 0;   // +0x3C
     virtual std::int32_t __stdcall UnRegisterNotification(const AudioNotificationDesc* notificationDesc) = 0; // +0x40
 
@@ -261,10 +251,10 @@ namespace moho
     virtual std::int32_t __stdcall GetGlobalVariable(std::uint16_t variableIndex, float* outValue) = 0; // +0x5C
   };
 
-  // `{proxy, first, last, end}` at 0x10 is `msvc8::vector<void*>` itself: the
+  // `{proxy, first, last, end}` at 0x10 is `fa::vector<void*>` itself: the
   // bank and handle vectors hold opaque loader/handle pointers that the engine
   // destroys through their own vtables before the storage is freed.
-  using AudioPointerVectorStorage = msvc8::vector<void*>;
+  using AudioPointerVectorStorage = fa::vector<void*>;
 
   static_assert(sizeof(AudioPointerVectorStorage) == 0x10, "AudioPointerVectorStorage size must be 0x10");
 
@@ -321,20 +311,6 @@ namespace moho
     float mDopplerScaler;        // +0x60
   };
 
-  struct AudioEngineRef
-  {
-    AudioEngine* mEngine;                     // +0x00
-    boost::detail::sp_counted_base* mControl; // +0x04
-  };
-
-  struct AudioEngineRefVector
-  {
-    void* mAllocatorCookie;   // +0x00
-    AudioEngineRef* mStart;   // +0x04
-    AudioEngineRef* mFinish;  // +0x08
-    AudioEngineRef* mCapacity; // +0x0C
-  };
-
   struct SoundConfiguration
   {
     /**
@@ -351,16 +327,22 @@ namespace moho
      */
     SoundConfiguration() noexcept;
 
-    gpg::time::Timer mTime;            // +0x00
-    AudioEngineRefVector mEngines;     // +0x08
+    gpg::time::Timer mTime;                     // +0x00
+    /// Address: 0x004DE470 (FUN_004DE470 -- the element destroy range), 0x004DDFE0 (FUN_004DDFE0 -- the
+    /// checked element-array allocation), 0x004DD210 (FUN_004DD210 -- iterator offset), 0x004D9230 (FUN_004D9230 --
+    /// an element copy), 0x004DC3B0 (FUN_004DC3B0 -- `insert`), 0x004DB1D0 (FUN_004DB1D0 -- the `push_back` in
+    /// `AudioEngine::Create`) and 0x004DB240 (FUN_004DB240 -- `erase`) are this vector's
+    /// `fa::vector<boost::shared_ptr<AudioEngine>>` members; formerly hand-written over an `AudioEngineRef`
+    /// `{engine, control block}` pair in AudioEngine.cpp.
+    fa::vector<std::shared_ptr<AudioEngine>> mEngines; // +0x08
     gpg::MemBuffer<char> mGlobalSettingsBuffer; // +0x18
-    std::uint8_t mNoSound;             // +0x28
-    std::uint8_t mReserved29[0x03];    // +0x29
-    std::uint32_t mSpeakerConfiguration; // +0x2C
-    void* mAudioModule;         // +0x30 (`HMODULE`)
-    AudioRuntimeParams mRuntimeParams; // +0x34
-    std::uint8_t mAudition;            // +0x58
-    std::uint8_t mReserved59[0x07];    // +0x59
+    std::uint8_t mNoSound;                      // +0x28
+    std::uint8_t mReserved29[0x03];             // +0x29
+    std::uint32_t mSpeakerConfiguration;        // +0x2C
+    void* mAudioModule;                         // +0x30 (`HMODULE`)
+    AudioRuntimeParams mRuntimeParams;          // +0x34
+    std::uint8_t mAudition;                     // +0x58
+    std::uint8_t mReserved59[0x07];             // +0x59
 
     /**
      * Address: 0x004D9250 (FUN_004D9250, ??1struct_SoundConfig@@QAE@@Z)
@@ -404,24 +386,24 @@ namespace moho
     /**
      * Set of currently-paused category names.
      *
-     * Real `msvc8::set<msvc8::string>` instantiation (`rb_tree<rb_set_traits<
-     * msvc8::string, Less>>`; `value_type == msvc8::string`, no separate
+     * Real `fa::set<fa::string>` instantiation (`rb_tree<rb_set_traits<
+     * fa::string, Less>>`; `value_type == fa::string`, no separate
      * mapped value -- see `Set.h`). Was previously modelled as a hand-rolled,
      * hand-walked `AudioMapStorage`/`AudioMap1CategoryNode` tree whose insert
      * path had no rebalancing step at all -- see RbTree.h's
      * `insert_unique`/`insert_at` citations for this instantiation and
      * `.memory/project_audiomap1_missing_rebalance_bug.md`.
      */
-    msvc8::set<msvc8::string> mPausedCategoryNames; // +0x28
-    IXACTEngine* mInstance;             // +0x34
-    Audio3DListener mListener;          // +0x38
+    fa::set<fa::string> mPausedCategoryNames; // +0x28
+    IXACTEngine* mInstance;                   // +0x34
+    Audio3DListener mListener;                // +0x38
 
     /**
      * Per-category volume overrides, defaulting a category to full volume
      * (`1.0f`) the first time it is touched by either `AudioEngine::
      * SetVolume` or `AudioEngine::GetVolume`.
      *
-     * Real `msvc8::map<std::uint16_t, float>` instantiation (`rb_tree<
+     * Real `fa::map<std::uint16_t, float>` instantiation (`rb_tree<
      * rb_map_traits<std::uint16_t, float, Less>>`; key = XACT category id,
      * mapped value = volume scalar -- see `Map.h`). Was previously modelled
      * as a hand-rolled, hand-walked `AudioMapStorage`/`AudioCategoryVolumeNode`
@@ -429,11 +411,11 @@ namespace moho
      * `insert_hint`/`insert_at`/`insert_unique` citations for this
      * instantiation and `.memory/project_handrolled_rbtrees_are_the_wall.md`.
      */
-    msvc8::map<std::uint16_t, float> mCategoryVolumes; // +0x6C
-    float mGlobalCategoryVolume;        // +0x78
-    Audio3DDspSettings mSettings;       // +0x7C
-    Audio3DEmitter mEmitter;            // +0xAC
-    std::uint8_t mAudioHandle[0x14];    // +0x110
+    fa::map<std::uint16_t, float> mCategoryVolumes; // +0x6C
+    float mGlobalCategoryVolume;                    // +0x78
+    Audio3DDspSettings mSettings;                   // +0x7C
+    Audio3DEmitter mEmitter;                        // +0xAC
+    std::uint8_t mAudioHandle[0x14];                // +0x110
   };
 
   static_assert(sizeof(IXACTCue) == sizeof(void*), "IXACTCue interface size must be pointer-sized");
@@ -444,8 +426,6 @@ namespace moho
   static_assert(sizeof(Audio3DListener) == 0x34, "Audio3DListener size must be 0x34");
   static_assert(sizeof(Audio3DDspSettings) == 0x30, "Audio3DDspSettings size must be 0x30");
   static_assert(sizeof(Audio3DEmitter) == 0x64, "Audio3DEmitter size must be 0x64");
-  static_assert(sizeof(AudioEngineRef) == 0x08, "AudioEngineRef size must be 0x08");
-  static_assert(sizeof(AudioEngineRefVector) == 0x10, "AudioEngineRefVector size must be 0x10");
   static_assert(offsetof(SoundConfiguration, mTime) == 0x00, "SoundConfiguration::mTime offset must be 0x00");
   static_assert(offsetof(SoundConfiguration, mEngines) == 0x08, "SoundConfiguration::mEngines offset must be 0x08");
   static_assert(
@@ -516,7 +496,8 @@ namespace moho
     explicit AudioEngine(gpg::StrArg voicePath);
 
     /**
-     * Address: 0x004D9340 (FUN_004D9340, ?Create@AudioEngine@Moho@@SA?AV?$shared_ptr@VAudioEngine@Moho@@@boost@@VStrArg@gpg@@@Z)
+     * Address: 0x004D9340 (FUN_004D9340,
+     * ?Create@AudioEngine@Moho@@SA?AV?$shared_ptr@VAudioEngine@Moho@@@boost@@VStrArg@gpg@@@Z)
      *
      * gpg::StrArg voicePath
      *
@@ -524,7 +505,7 @@ namespace moho
      * Ensures global sound-configuration ownership is available, creates an
      * `AudioEngine` instance, and registers it into the global engine lane.
      */
-    [[nodiscard]] static boost::shared_ptr<AudioEngine> Create(gpg::StrArg voicePath);
+    [[nodiscard]] static std::shared_ptr<AudioEngine> Create(gpg::StrArg voicePath);
 
     /**
      * Address: 0x004D9760 (FUN_004D9760)
@@ -583,17 +564,6 @@ namespace moho
      * category tracking map on success.
      */
     void SetPaused(gpg::StrArg category, bool paused);
-
-    /**
-     * Address: 0x004D9EC0 (FUN_004D9EC0, ?GetPaused@AudioEngine@Moho@@QAE_NVStrArg@gpg@@@Z)
-     *
-     * gpg::StrArg category
-     *
-     * What it does:
-     * Returns whether one category name is currently tracked in the paused
-     * category map.
-     */
-    [[nodiscard]] bool GetPaused(gpg::StrArg category);
 
     /**
      * Address: 0x004D9F50 (FUN_004D9F50, ?StopAllSounds@AudioEngine@Moho@@QAEXVStrArg@gpg@@@Z)
@@ -676,7 +646,7 @@ namespace moho
     [[nodiscard]] bool IsStopped(IXACTCue* cue) const;
   };
 
-  extern boost::scoped_ptr<SoundConfiguration> sSoundConfiguration;
+  extern std::unique_ptr<SoundConfiguration> sSoundConfiguration;
 
   /**
    * Address: 0x004D9140 (FUN_004D9140, ?SND_FindEngine@Moho@@...)
@@ -687,7 +657,7 @@ namespace moho
    * Finds one loaded `AudioEngine` that owns a bank matching the supplied
    * bank name.
    */
-  boost::shared_ptr<AudioEngine> SND_FindEngine(gpg::StrArg bankName);
+  std::shared_ptr<AudioEngine> SND_FindEngine(gpg::StrArg bankName);
 
   /**
    * Address: 0x004D9040 (FUN_004D9040, ?SND_GetGlobalVarIndex@Moho@@...)
@@ -727,7 +697,7 @@ namespace moho
    * What it does:
    * Returns the registered name for one global sound variable id.
    */
-  msvc8::string SND_GetVariableName(int variableId);
+  fa::string SND_GetVariableName(int variableId);
 
   /**
    * Address: 0x004D8810 (FUN_004D8810, func_HandleSoundEvent)
@@ -761,15 +731,6 @@ namespace moho
   void SND_Shutdown();
 
   /**
-   * Address: 0x004D8F10 (FUN_004D8F10, ?SND_Enabled@Moho@@YA_NXZ)
-   *
-   * What it does:
-   * Returns true when sound configuration has at least one loaded engine and
-   * no global no-sound override is active.
-   */
-  bool SND_Enabled();
-
-  /**
    * Address: 0x004D8F40 (FUN_004D8F40, ?SND_Frame@Moho@@YAXXZ)
    *
    * What it does:
@@ -788,13 +749,44 @@ namespace moho
   void SND_FrameExtraDoWorkTick();
 
   /**
+   * Engine addition, not in the shipped binary: when Windows' default sound output changed, or the
+   * output in use is gone, rebuilds every audio engine on the current default output and brings
+   * back the sounds that were playing. Retail XACT keeps playing on the device it opened at
+   * startup, and stays silent once that device is unplugged. Call it on the main thread, once a
+   * frame, before `SND_Frame`. Does nothing on other systems.
+   */
+  void SND_RecoverOutput();
+
+  /**
    * Address: 0x004D8FC0 (FUN_004D8FC0, ?SND_Mute@Moho@@YAX_N@Z)
    *
    * What it does:
    * Stores/restores per-engine "Global" category volume while applying
-   * process-wide mute transitions.
+   * process-wide mute transitions. Engine change: it is the minimized window's
+   * reason (kSndMuteMinimized) of SND_MuteFor, so it and the editor's own reason
+   * don't save each other's zero as the volume to restore.
    */
   void SND_Mute(bool doMute);
+
+  /** Engine addition: why the sound is muted; it is while any reason holds. */
+  constexpr std::uint32_t kSndMuteMinimized = 1u << 0;
+  /** The map editor: its window isn't the one in front. */
+  constexpr std::uint32_t kSndMuteUnfocused = 1u << 1;
+
+  /**
+   * Engine addition: sets or clears one mute reason. The "Global" volume is saved
+   * and silenced when the first reason starts, and given back when the last one ends.
+   */
+  void SND_MuteFor(std::uint32_t reason, bool doMute);
+
+  /** Engine addition: the mute reasons holding now (0: sound on); `SND_MuteFor` keeps them. */
+  [[nodiscard]] std::uint32_t SND_MuteReasons();
+
+  /**
+   * Engine addition: how many times `SND_MuteFor` has changed the engines' muted state (save-and-silence or give
+   * back), for tests: muting twice for two reasons must not save the first one's zero.
+   */
+  [[nodiscard]] std::uint32_t SND_MuteTransitions();
 
   static_assert(sizeof(AudioEngine) == sizeof(void*), "AudioEngine size must be pointer-sized");
 } // namespace moho

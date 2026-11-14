@@ -14,6 +14,7 @@
 #include "moho/sim/CWldMap.h"
 #include "moho/sim/STIMap.h"
 #include "moho/terrain/water/CWaterShaderProperties.h"
+#include "moho/terrain/water/WaterBodySurfaces.h"
 #include "moho/terrain/water/WaterShaderVars.h"
 
 namespace moho
@@ -42,7 +43,9 @@ namespace moho
       float z;
     };
 
-    [[nodiscard]] WaterExtents2D GetWaterMapExtents(const IWldTerrainRes& terrainResource)
+    [[nodiscard]] WaterExtents2D GetWaterMapExtents(
+      const IWldTerrainRes& terrainResource
+    )
     {
       const CHeightField* const field = terrainResource.mMap->mHeightField.get();
       const float halfWidth = static_cast<float>((field->width - 1) >> 1);
@@ -50,16 +53,23 @@ namespace moho
       return {halfWidth * 2.0f, halfHeight * 2.0f};
     }
 
-    void SetShaderVarMem(ShaderVar& shaderVar, const std::uint32_t floatCount, const float* const values)
+    void SetShaderVarMem(
+      ShaderVar& shaderVar,
+      const std::uint32_t floatCount,
+      const float* const values
+    )
     {
       if (shaderVar.Exists()) {
         shaderVar.mEffectVariable->SetFloatArray(floatCount, values);
       }
     }
 
-    void BindTextureShaderVar(ShaderVar& shaderVar, const boost::shared_ptr<ID3DTextureSheet>& texture)
+    void BindTextureShaderVar(
+      ShaderVar& shaderVar,
+      const std::shared_ptr<ID3DTextureSheet>& texture
+    )
     {
-      shaderVar.GetTexture(boost::static_pointer_cast<CD3DDynamicTextureSheet>(texture));
+      shaderVar.GetTexture(std::static_pointer_cast<CD3DDynamicTextureSheet>(texture));
     }
   } // namespace
 
@@ -92,7 +102,9 @@ namespace moho
    * Rebuilds one low-fidelity water quad vertex/index-sheet pair from the
    * current terrain map dimensions and water elevation.
    */
-  bool LowFidelityWater::InitVerts(IWldTerrainRes* const terrainRes)
+  bool LowFidelityWater::InitVerts(
+    IWldTerrainRes* const terrainRes
+  )
   {
     CD3DDevice* const device = D3D_GetDevice();
     ID3DDeviceResources* const resources = device->GetResources();
@@ -174,7 +186,9 @@ namespace moho
    * What it does:
    * No-op water alpha-mask lane retained for low-fidelity slot parity.
    */
-  bool LowFidelityWater::RenderWaterLayerAlphaMask(const GeomCamera3* const /*camera*/)
+  bool LowFidelityWater::RenderWaterLayerAlphaMask(
+    const GeomCamera3* const /*camera*/
+  )
   {
     return true;
   }
@@ -192,8 +206,8 @@ namespace moho
     const float tickLerp,
     const GeomCamera3* const camera,
     const CWaterShaderProperties* const shaderProperties,
-    const boost::shared_ptr<ID3DRenderTarget>& refractionTexture,
-    const boost::shared_ptr<ID3DRenderTarget>& reflectionTexture
+    const std::shared_ptr<ID3DRenderTarget>& refractionTexture,
+    const std::shared_ptr<ID3DRenderTarget>& reflectionTexture
   )
   {
     (void)refractionTexture;
@@ -249,6 +263,17 @@ namespace moho
     BindTextureShaderVar(GetWater2UtilityTextureCShaderVar(), terrainRes->GetWaterMap());
 
     std::int32_t primitiveType = 4;
+    // Engine addition (water bodies): each water at its own level.
+    if (const auto* const levels = WaterBodySurfaces::For(terrainRes); levels != nullptr) {
+      bool drawn = true;
+      for (const WaterBodySurfaces::Level& level : *levels) {
+        GetWater2WaterElevationShaderVar().SetFloat(level.elevation);
+        for (const WaterBodySurfaces::Chunk& chunk : level.chunks) {
+          drawn = device->DrawIndexedSheetPrimitive(chunk.vertices, chunk.indices, &primitiveType) && drawn;
+        }
+      }
+      return drawn;
+    }
     return device->DrawIndexedSheetPrimitive(mVertexSheet, mIndexSheet, &primitiveType);
   }
 } // namespace moho

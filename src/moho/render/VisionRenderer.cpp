@@ -44,8 +44,8 @@ namespace
 {
   constexpr std::uint32_t kVisionSegmentCount = 45u;
   constexpr std::uint32_t kVisionVertexCount = (kVisionSegmentCount * 2u) + 2u; // 92
-  constexpr std::uint32_t kVisionIndexCount = kVisionSegmentCount * 12u;         // 540
-  constexpr float kVisionAngleStep = 0.13962634f;                                 // 2*pi/45
+  constexpr std::uint32_t kVisionIndexCount = kVisionSegmentCount * 12u;        // 540
+  constexpr float kVisionAngleStep = 0.13962634f;                               // 2*pi/45
 
   /**
    * Capacity, in whole `Wm3::Circle2f` instances, of the dynamic per-instance
@@ -112,9 +112,8 @@ namespace
 
     renderer.mInstanceRingCursor = circleCount;
     outBaseInstance = 0u;
-    outMapped = static_cast<Wm3::Circle2f*>(
-      renderer.mVertexBuffer2->Lock(0u, kCircleStride * circleCount, kVisionRingWrapLock)
-    );
+    outMapped =
+      static_cast<Wm3::Circle2f*>(renderer.mVertexBuffer2->Lock(0u, kCircleStride * circleCount, kVisionRingWrapLock));
     return outMapped != nullptr;
   }
 
@@ -153,7 +152,8 @@ namespace
     [[nodiscard]] std::int32_t CountVisible(const Wm3::Box2f& box, float interpolant) const;
 
     /** Stencils the prepared emitters as CastVision does. */
-    void Cast(moho::VisionRenderer& renderer, const moho::GeomCamera3& camera, const Wm3::Box2f& box, float interpolant);
+    void
+    Cast(moho::VisionRenderer& renderer, const moho::GeomCamera3& camera, const Wm3::Box2f& box, float interpolant);
 
   private:
     [[nodiscard]] bool RefreshCylinder(moho::VisionRenderer& renderer);
@@ -171,8 +171,8 @@ namespace
 
     gpg::gal::Device* mDevice = nullptr;
     bool mSupported = false;
-    boost::shared_ptr<gpg::gal::GpuProgram> mProgram;
-    boost::shared_ptr<gpg::gal::GpuBuffer> mCylinder;
+    std::shared_ptr<gpg::gal::GpuProgram> mProgram;
+    std::shared_ptr<gpg::gal::GpuBuffer> mCylinder;
     const gpg::gal::VertexBuffer* mCylinderSource = nullptr;
     const moho::VisionDB* mEmitterSource = nullptr;
     std::uint64_t mEmitterVersion = ~0ull;
@@ -180,7 +180,7 @@ namespace
     gpg::gal::GpuBuffer* mEmitterBuffer = nullptr;
     moho::GpuArrayStream mEmitterStream{"VisionEmitters", sizeof(moho::VisionDB::EmitterCircles)};
   };
-}
+} // namespace
 
 namespace moho
 {
@@ -189,10 +189,11 @@ namespace moho
   TConVar<int> gTConVar_ren_GpuFog(
     "ren_GpuFog",
     "Stencil the fog-of-war vision circles with one instanced draw from a persistent GPU buffer instead "
-    "of the vision effect. -1 (auto, the default) turns it on where the backend has verified this path, 1 wherever it can, 0 never.",
+    "of the vision effect. -1 (auto, the default) turns it on where the backend has verified this path, 1 wherever it "
+    "can, 0 never.",
     &ren_GpuFog
   );
-}
+} // namespace moho
 
 namespace
 {
@@ -237,11 +238,15 @@ namespace
         desc.stencil.writeMask = 0xFFU;
         desc.stencil.reference = 0U;
         desc.stencil.front = {
-          gpg::gal::GpuStencilOp::Keep, gpg::gal::GpuStencilOp::Increment, gpg::gal::GpuStencilOp::Keep,
+          gpg::gal::GpuStencilOp::Keep,
+          gpg::gal::GpuStencilOp::Increment,
+          gpg::gal::GpuStencilOp::Keep,
           gpg::gal::GpuCompare::Always
         };
         desc.stencil.back = {
-          gpg::gal::GpuStencilOp::Keep, gpg::gal::GpuStencilOp::Decrement, gpg::gal::GpuStencilOp::Keep,
+          gpg::gal::GpuStencilOp::Keep,
+          gpg::gal::GpuStencilOp::Decrement,
+          gpg::gal::GpuStencilOp::Keep,
           gpg::gal::GpuCompare::Always
         };
         mProgram = device->CreateGpuProgram(desc);
@@ -251,7 +256,9 @@ namespace
     return mSupported;
   }
 
-  bool GpuVisionCaster::RefreshCylinder(moho::VisionRenderer& renderer)
+  bool GpuVisionCaster::RefreshCylinder(
+    moho::VisionRenderer& renderer
+  )
   {
     gpg::gal::VertexBuffer* const source = renderer.mGeometry.mVertexBuffer.get();
     if (source == nullptr) {
@@ -280,7 +287,10 @@ namespace
     return mCylinder != nullptr;
   }
 
-  bool GpuVisionCaster::Prepare(moho::VisionRenderer& renderer, const moho::VisionDB& db)
+  bool GpuVisionCaster::Prepare(
+    moho::VisionRenderer& renderer,
+    const moho::VisionDB& db
+  )
   {
     if (!RefreshCylinder(renderer) || renderer.mGeometry.mIndexBuffer == nullptr) {
       return false;
@@ -295,7 +305,10 @@ namespace
     return mEmitterBuffer != nullptr;
   }
 
-  std::int32_t GpuVisionCaster::CountVisible(const Wm3::Box2f& box, const float interpolant) const
+  std::int32_t GpuVisionCaster::CountVisible(
+    const Wm3::Box2f& box,
+    const float interpolant
+  ) const
   {
     const auto countRange = [&](const std::size_t begin, const std::size_t end) {
       std::int32_t visible = 0;
@@ -335,7 +348,10 @@ namespace
   }
 
   void GpuVisionCaster::Cast(
-    moho::VisionRenderer& renderer, const moho::GeomCamera3& camera, const Wm3::Box2f& box, const float interpolant
+    moho::VisionRenderer& renderer,
+    const moho::GeomCamera3& camera,
+    const Wm3::Box2f& box,
+    const float interpolant
   )
   {
     if (mEmitters.empty()) {
@@ -361,6 +377,11 @@ namespace
     call.instanceCount = static_cast<std::uint32_t>(mEmitters.size());
     mDevice->DrawGpuProgram(call);
   }
+} // namespace
+
+bool moho::REN_PrepareGpuVisionCaster()
+{
+  return GpuVisionCaster::Get().IsActive();
 }
 
 namespace moho
@@ -376,7 +397,7 @@ namespace moho
    * Resolves one `"vision"` D3D effect from device resources and returns its
    * base GAL effect handle.
    */
-  boost::shared_ptr<gpg::gal::Effect> AcquireVisionBaseEffect()
+  std::shared_ptr<gpg::gal::Effect> AcquireVisionBaseEffect()
   {
     ID3DDeviceResources* const resources = D3D_GetDevice()->GetResources();
     CD3DEffect* const effect = resources->FindEffect("vision");
@@ -456,9 +477,8 @@ namespace moho
     mGeometry.mIndexBuffer = device->CreateIndexBuffer(&indexBufferContext);
 
     if (mGeometry.mVertexBuffer) {
-      float* const vertexData = static_cast<float*>(
-        mGeometry.mVertexBuffer->Lock(0u, 0u, static_cast<gpg::gal::MohoD3DLockFlags>(0))
-      );
+      float* const vertexData =
+        static_cast<float*>(mGeometry.mVertexBuffer->Lock(0u, 0u, static_cast<gpg::gal::MohoD3DLockFlags>(0)));
       if (vertexData) {
         for (std::uint32_t i = 0; i < kVisionSegmentCount; ++i) {
           const float angle = static_cast<float>(i) * kVisionAngleStep;
@@ -498,9 +518,7 @@ namespace moho
     }
 
     if (mGeometry.mIndexBuffer) {
-      std::int16_t* const indexData = mGeometry.mIndexBuffer->Lock(
-        0u, 0u, static_cast<gpg::gal::MohoD3DLockFlags>(0)
-      );
+      std::int16_t* const indexData = mGeometry.mIndexBuffer->Lock(0u, 0u, static_cast<gpg::gal::MohoD3DLockFlags>(0));
       if (indexData) {
         std::uint32_t outIndex = 0u;
 
@@ -568,7 +586,10 @@ namespace moho
      * solids and recomputed only when the solid's planes or the height field change (most frames
      * the camera has not moved). The walk is the most expensive step of the fog pass.
      */
-    [[nodiscard]] Wm3::AxisAlignedBox3f TerrainFootprintOf(const CHeightField& field, const CGeomSolid3& solid)
+    [[nodiscard]] Wm3::AxisAlignedBox3f TerrainFootprintOf(
+      const CHeightField& field,
+      const CGeomSolid3& solid
+    )
     {
       if (!ren_CacheFogFootprint) {
         return field.ConvexIntersection(solid);
@@ -585,8 +606,11 @@ namespace moho
       const std::uint64_t revision = HeightFieldRevision();
       const std::size_t planeCount = solid.planes_.size();
       for (const Entry& entry : sEntries) {
-        if (entry.mField == &field && entry.mRevision == revision && entry.mPlanes.size() == planeCount &&
-            (planeCount == 0U || std::memcmp(entry.mPlanes.data(), &*solid.planes_.begin(), planeCount * sizeof(Wm3::Plane3f)) == 0)) {
+        if (
+          entry.mField == &field && entry.mRevision == revision && entry.mPlanes.size() == planeCount &&
+          (planeCount == 0U ||
+           std::memcmp(entry.mPlanes.data(), &*solid.planes_.begin(), planeCount * sizeof(Wm3::Plane3f)) == 0)
+        ) {
           return entry.mFootprint;
         }
       }
@@ -611,8 +635,8 @@ namespace moho
     auto* const device = gpg::gal::Device::GetInstance();
     const gpg::gal::Head& head = device->GetDeviceContext()->GetHead(headIndex);
 
-    const boost::shared_ptr<gpg::gal::Effect> effect = AcquireVisionBaseEffect();
-    const boost::shared_ptr<gpg::gal::EffectTechnique> technique = effect->GetTechnique("CastVision");
+    const std::shared_ptr<gpg::gal::Effect> effect = AcquireVisionBaseEffect();
+    const std::shared_ptr<gpg::gal::EffectTechnique> technique = effect->GetTechnique("CastVision");
 
     VisionDB& visionDb = session.mVisionDb;
     const CHeightField* const heightField = session.GetSTIMap()->mHeightField.get();
@@ -656,8 +680,8 @@ namespace moho
 
     device->Clear(false, false, true, 0xFFFFFFFFu, 1.0f, 0);
 
-    const boost::shared_ptr<gpg::gal::EffectVariable> viewMatrix = effect->GetVariable("viewMatrix");
-    const boost::shared_ptr<gpg::gal::EffectVariable> projMatrix = effect->GetVariable("projMatrix");
+    const std::shared_ptr<gpg::gal::EffectVariable> viewMatrix = effect->GetVariable("viewMatrix");
+    const std::shared_ptr<gpg::gal::EffectVariable> projMatrix = effect->GetVariable("projMatrix");
     viewMatrix->SetMatrix4x4(&camera.view);
     projMatrix->SetMatrix4x4(&camera.projection);
 
@@ -691,9 +715,7 @@ namespace moho
 
       Wm3::Circle2f* mappedInstances = nullptr;
       std::uint32_t baseInstance = 0u;
-      if (LockVisionInstanceRange(
-            renderer, static_cast<std::uint32_t>(batchSize), mappedInstances, baseInstance
-          )) {
+      if (LockVisionInstanceRange(renderer, static_cast<std::uint32_t>(batchSize), mappedInstances, baseInstance)) {
         // Raw GPU upload: circle instance blob into the mapped instances buffer.
         std::copy_n(visibleCircles.begin() + emitted, static_cast<std::size_t>(batchSize), mappedInstances);
         static_cast<void>(renderer.mVertexBuffer2->Unlock());

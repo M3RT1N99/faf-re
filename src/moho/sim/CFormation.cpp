@@ -33,7 +33,9 @@ namespace
    * Walks one weak-selection set, classifies live units by movement layer, and
    * returns formation-type lane `0` (surface), `1` (air), or `2` (mixed).
    */
-  std::int32_t DetermineSelectionFormationType(moho::WeakSet<moho::UserUnit>& selection)
+  std::int32_t DetermineSelectionFormationType(
+    moho::WeakSet<moho::UserUnit>& selection
+  )
   {
     constexpr std::int32_t kFormationTypeSurface = 0;
     constexpr std::int32_t kFormationTypeAir = 1;
@@ -122,9 +124,9 @@ namespace moho
     mReady = false;
     mType = 2;
 
-    std::memset(&mStart, 0, sizeof(mStart));
-    std::memset(&mFinish, 0, sizeof(mFinish));
-    std::memset(&mMousePos, 0, sizeof(mMousePos));
+    std::memset(static_cast<void*>(&mStart), 0, sizeof(mStart));
+    std::memset(static_cast<void*>(&mFinish), 0, sizeof(mFinish));
+    std::memset(static_cast<void*>(&mMousePos), 0, sizeof(mMousePos));
 
     mNumFormationScripts = 0;
     mDirection = Wm3::Quaternionf(/*w*/ 0.0f, /*x*/ 0.0f, /*y*/ 0.0f, /*z*/ 1.0f);
@@ -147,7 +149,10 @@ namespace moho
    * and pushes it into the live formation instance via SetOrientation, unless
    * the UI reports NIS mode (in which case the formation is reset).
    */
-  void CFormation::UpdateOrientation(const Wm3::Vector3f& mouseWorldPos, CFormation* const formation)
+  void CFormation::UpdateOrientation(
+    const Wm3::Vector3f& mouseWorldPos,
+    CFormation* const formation
+  )
   {
     if (!formation->mReady || formation->mCurInstance == nullptr) {
       return;
@@ -188,9 +193,7 @@ namespace moho
     formation->mMousePos = mouseWorldPos;
 
     const Wm3::Vector3f directionVector(
-      mouseWorldPos.x - formation->mFinish.x,
-      0.0f,
-      mouseWorldPos.z - formation->mFinish.z
+      mouseWorldPos.x - formation->mFinish.x, 0.0f, mouseWorldPos.z - formation->mFinish.z
     );
     formation->mDirection = COORDS_Orient(directionVector);
 
@@ -218,7 +221,7 @@ namespace moho
       Wm3::Vector3f unitPosition(0.0f, 0.0f, 0.0f);
       bool haveQueuedPosition = false;
       if (useLastQueuedDestination && unit != nullptr) {
-        if (const QueuedUserCommandRecord* const anchor = GetLastQueuedUserCommandAnchor(unit); anchor != nullptr) {
+        if (const UserCommandIssueHelper* const anchor = GetLastQueuedUserCommandAnchor(unit); anchor != nullptr) {
           const Wm3::Vector3f queuedPosition = ResolveLastQueuedCommandAnchorPosition(anchor);
           if (IsValidVector3f(queuedPosition)) {
             unitPosition = queuedPosition;

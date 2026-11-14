@@ -18,12 +18,10 @@ namespace
 {
   constexpr float kTerrainHeightWordScale = 1.0f / 128.0f;
 
-  constexpr const char* kSerializationSourcePath =
-    "c:\\work\\rts\\main\\code\\src\\libs\\gpgcore/reflection/serialization.h";
-  constexpr int kSerializationLoadLine = 84;
-  constexpr int kSerializationSaveLine = 87;
-
-  [[nodiscard]] int ClampTerrainSampleIndex(const int value, const int maxInclusive) noexcept
+  [[nodiscard]] int ClampTerrainSampleIndex(
+    const int value,
+    const int maxInclusive
+  ) noexcept
   {
     // Preserve binary clamp order: upper clamp first, then clamp to zero.
     int clamped = value;
@@ -37,7 +35,10 @@ namespace
   }
 
   void ExtendBoundsWithTerrainCorner(
-    Wm3::AxisAlignedBox3f& bounds, const moho::CHeightField& field, const int worldX, const int worldZ
+    Wm3::AxisAlignedBox3f& bounds,
+    const moho::CHeightField& field,
+    const int worldX,
+    const int worldZ
   ) noexcept
   {
     const int sampleX = ClampTerrainSampleIndex(worldX, field.width - 1);
@@ -52,23 +53,6 @@ namespace
     bounds.Max.x = std::max(bounds.Max.x, pointX);
     bounds.Max.y = std::max(bounds.Max.y, terrainY);
     bounds.Max.z = std::max(bounds.Max.z, pointZ);
-  }
-
-  /**
-   * Address: 0x00545CC0 (FUN_00545CC0)
-   *
-   * What it does:
-   * Executes one non-deleting `gpg::RType` base-teardown lane for
-   * `ResourceDepositTypeInfo`.
-   */
-  [[maybe_unused]] void cleanup_ResourceDepositTypeInfoRTypeBase(moho::ResourceDepositTypeInfo* const typeInfo) noexcept
-  {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = msvc8::vector<gpg::RField>{};
-    typeInfo->bases_ = msvc8::vector<gpg::RField>{};
   }
 
   [[nodiscard]] moho::ResourceDepositTypeInfo& AcquireResourceDepositTypeInfo()
@@ -99,7 +83,9 @@ namespace moho
    * Loads one reflected `ResourceDeposit` payload from an archive by reading
    * the footprint rectangle first, then the resource-type lane at +0x10.
    */
-  void ResourceDeposit::MemberDeserialize(gpg::ReadArchive* const archive)
+  void ResourceDeposit::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef ownerRef{};
     archive->Read(gpg::RTypeOf<gpg::Rect2i>(), this, ownerRef);
@@ -114,7 +100,9 @@ namespace moho
    * the footprint rectangle lane first and the resource-type lane at +0x10
    * second.
    */
-  void ResourceDeposit::MemberSerialize(gpg::WriteArchive* const archive)
+  void ResourceDeposit::MemberSerialize(
+    gpg::WriteArchive* const archive
+  )
   {
     const gpg::RRef footprintOwnerRef{};
     archive->Write(gpg::RTypeOf<gpg::Rect2i>(), this, footprintOwnerRef);
@@ -132,7 +120,10 @@ namespace moho
    * Samples terrain heights at the deposit rectangle corners, builds a world-space
    * AABB, and tests it against the clipping solid.
    */
-  bool ResourceDeposit::Intersects(const CGeomSolid3& solid, const CHeightField& field) const
+  bool ResourceDeposit::Intersects(
+    const CGeomSolid3& solid,
+    const CHeightField& field
+  ) const
   {
     Wm3::AxisAlignedBox3f bounds{
       {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max()},
@@ -189,7 +180,10 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_ResourceDepositTypeInfo_91baf4, moho::register_ResourceDepositTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_ResourceDepositTypeInfo_91baf4,
+  moho::register_ResourceDepositTypeInfo
+)
 
 namespace moho
 {

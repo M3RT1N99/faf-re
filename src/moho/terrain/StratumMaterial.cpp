@@ -9,8 +9,9 @@
 namespace
 {
 
-
-  [[nodiscard]] moho::CStratumMaterial& AssignTextureDefaults(moho::CStratumMaterial& material) noexcept
+  [[nodiscard]] moho::CStratumMaterial& AssignTextureDefaults(
+    moho::CStratumMaterial& material
+  ) noexcept
   {
     material.mPath.clear();
     material.mScaleX = 1.0f;
@@ -22,7 +23,11 @@ namespace
     return material;
   }
 
-  void SetTexturePathAndSize(moho::CStratumMaterial& material, const char* const path, const float size) noexcept
+  void SetTexturePathAndSize(
+    moho::CStratumMaterial& material,
+    const char* const path,
+    const float size
+  ) noexcept
   {
     material.mPath.assign(path != nullptr ? path : "");
     material.mSize = size;
@@ -40,7 +45,7 @@ namespace moho
    */
   CStratumMaterial::~CStratumMaterial()
   {
-    mTextureSheet.release();
+    mTextureSheet.reset();
     mPath.tidy();
   }
 
@@ -50,17 +55,17 @@ namespace moho
    * What it does:
    * Retains the source texture-sheet handle and deep-copies the layer path.
    */
-  CStratumMaterial::CStratumMaterial(const CStratumMaterial& source)
+  CStratumMaterial::CStratumMaterial(
+    const CStratumMaterial& source
+  )
     : mPath(source.mPath)
     , mScaleX(source.mScaleX)
     , mScaleY(source.mScaleY)
     , v3(source.v3)
     , v4(source.v4)
-    , mTextureSheet{}
+    , mTextureSheet(source.mTextureSheet)
     , mSize(source.mSize)
-  {
-    mTextureSheet.assign_retain(source.mTextureSheet);
-  }
+  {}
 
   /**
    * Address: 0x0089F4E0 (FUN_0089F4E0, Moho::CStratumMaterial::SetSize)
@@ -69,19 +74,20 @@ namespace moho
    * Loads the backing terrain texture when needed and derives layer scale from
    * the provided map bounds.
    */
-  void CStratumMaterial::SetSize(const Wm3::Vector2f& maxSize, CStratumMaterial& material)
+  void CStratumMaterial::SetSize(
+    const Wm3::Vector2f& maxSize,
+    CStratumMaterial& material
+  )
   {
-    if (material.mTextureSheet.px == nullptr && !material.mPath.empty()) {
+    if (material.mTextureSheet.get() == nullptr && !material.mPath.empty()) {
       if (CD3DDevice* const device = D3D_GetDevice(); device != nullptr) {
         if (ID3DDeviceResources* const resources = device->GetResources(); resources != nullptr) {
-          boost::shared_ptr<RD3DTextureResource> textureResource{};
-          resources->GetTexture(textureResource, material.mPath.c_str(), 0, true);
-          material.mTextureSheet.assign_retain(boost::SharedPtrRawFromSharedBorrow(textureResource));
+          resources->GetTexture(material.mTextureSheet, material.mPath.c_str(), 0, true);
         }
       }
     }
 
-    if (material.mTextureSheet.px != nullptr) {
+    if (material.mTextureSheet.get() != nullptr) {
       const float invSize = 1.0f / material.mSize;
       material.mScaleX = maxSize.x * invSize;
       material.mScaleY = maxSize.y * invSize;
@@ -156,15 +162,17 @@ namespace moho
    * Copies the shader name, shared mask handles, and each layer descriptor
    * while retaining shared texture ownership.
    */
-  StratumMaterial::StratumMaterial(const StratumMaterial& source)
+  StratumMaterial::StratumMaterial(
+    const StratumMaterial& source
+  )
     : byte0(source.byte0)
     , byte1(source.byte1)
     , pad02_03{0, 0}
     , mShaderName(source.mShaderName)
     , mStratumMaskWidth(source.mStratumMaskWidth)
     , mStratumMaskHeight(source.mStratumMaskHeight)
-    , mStratumMask0{}
-    , mStratumMask1{}
+    , mStratumMask0(source.mStratumMask0)
+    , mStratumMask1(source.mStratumMask1)
     , mLowerAlbedoTexture(source.mLowerAlbedoTexture)
     , mStratum0AlbedoTexture(source.mStratum0AlbedoTexture)
     , mStratum1AlbedoTexture(source.mStratum1AlbedoTexture)
@@ -185,10 +193,7 @@ namespace moho
     , mStratum6NormalTexture(source.mStratum6NormalTexture)
     , mStratum7NormalTexture(source.mStratum7NormalTexture)
     , mUpperNormalTexture(source.mUpperNormalTexture)
-  {
-    mStratumMask0.assign_retain(source.mStratumMask0);
-    mStratumMask1.assign_retain(source.mStratumMask1);
-  }
+  {}
 
   /**
    * Address: 0x008A74F0 (FUN_008A74F0, Moho::StratumMaterial::~StratumMaterial)
@@ -199,8 +204,8 @@ namespace moho
    */
   StratumMaterial::~StratumMaterial()
   {
-    mStratumMask1.release();
-    mStratumMask0.release();
+    mStratumMask1.reset();
+    mStratumMask0.reset();
     mShaderName.tidy();
   }
 
@@ -210,7 +215,9 @@ namespace moho
    * What it does:
    * Applies world-map dimensions to every non-empty terrain layer.
    */
-  void StratumMaterial::SetSizeTo(IWldTerrainRes* const terrainRes)
+  void StratumMaterial::SetSizeTo(
+    IWldTerrainRes* const terrainRes
+  )
   {
     if (terrainRes == nullptr) {
       return;

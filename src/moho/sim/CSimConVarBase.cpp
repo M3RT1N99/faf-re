@@ -11,17 +11,7 @@ namespace
 {
   std::uint32_t gSimConVarIndexCounter = 0u;
 
-  /**
-   * Address: 0x00743210 (FUN_00743210)
-   *
-   * What it does:
-   * Returns the current process-global sim-convar index counter lane.
-   */
-  [[maybe_unused]] [[nodiscard]] std::uint32_t GetSimConVarIndexCounterValue() noexcept
-  {
-    return gSimConVarIndexCounter;
-  }
-}
+} // namespace
 
 /**
  * Address: 0x00743210 (FUN_00743210, sub_743210)
@@ -41,11 +31,13 @@ std::uint32_t moho::GetSimConVarIndexCounter() noexcept
  * Initializes one convar definition lane, assigns a unique global convar
  * index, and binds the `CSimConVarBase` vftable.
  */
-CSimConVarBase::CSimConVarBase(const bool allowWithoutCheats, const char* const name)
+CSimConVarBase::CSimConVarBase(
+  const bool allowWithoutCheats,
+  const char* const name
+)
   : CSimConCommand(allowWithoutCheats, name)
   , mIndex(AllocateSimConVarIndex())
-{
-}
+{}
 
 /**
  * Address: 0x00734820 (FUN_00734820, sub_734820)
@@ -108,11 +100,14 @@ CSimConVarInstanceBase* moho::TSimConVar<bool>::CreateInstance()
  * bool payload lane.
  */
 template <>
-moho::TSimConVar<bool>::TSimConVar(const bool allowWithoutCheats, const char* const name, const bool& defaultValue)
+moho::TSimConVar<bool>::TSimConVar(
+  const bool allowWithoutCheats,
+  const char* const name,
+  const bool& defaultValue
+)
   : CSimConVarBase(allowWithoutCheats, name)
   , mDefaultValue(defaultValue)
-{
-}
+{}
 
 /**
  * Address: 0x005D3CE0 (FUN_005D3CE0, Moho::TSimConVar_float::NewInstance)
@@ -146,14 +141,14 @@ CSimConVarInstanceBase* moho::TSimConVar<float>::CreateInstance()
  * CSimConVarInstanceBase.cpp).
  */
 template <>
-CSimConVarInstanceBase* moho::TSimConVar<msvc8::string>::CreateInstance()
+CSimConVarInstanceBase* moho::TSimConVar<fa::string>::CreateInstance()
 {
-  auto* const raw = ::operator new(sizeof(TSimConVarInstance<msvc8::string>), std::nothrow);
+  auto* const raw = ::operator new(sizeof(TSimConVarInstance<fa::string>), std::nothrow);
   if (!raw) {
     return nullptr;
   }
 
-  return ConstructTSimConVarInstanceString(static_cast<TSimConVarInstance<msvc8::string>*>(raw), mName, mDefaultValue);
+  return ConstructTSimConVarInstanceString(static_cast<TSimConVarInstance<fa::string>*>(raw), mName, mDefaultValue);
 }
 
 std::uint32_t CSimConVarBase::AllocateSimConVarIndex() noexcept

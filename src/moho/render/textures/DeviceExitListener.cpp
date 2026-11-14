@@ -21,7 +21,7 @@ namespace moho
    * pointer is already in .bss); the destructor deletes a listener still
    * alive at exit without clearing the slot, which is `~scoped_ptr`.
    */
-  boost::scoped_ptr<DeviceExitListener> sDeviceExitListener;
+  std::unique_ptr<DeviceExitListener> sDeviceExitListener;
 
   /**
    * Address: 0x004472B0 (FUN_004472B0, Moho::DeviceExitListener::DeviceExitListener)
@@ -53,7 +53,9 @@ namespace moho
    * On device-exit events, drops cached texture-sheet handles for all tracked
    * batch textures and destroys the global listener instance.
    */
-  void DeviceExitListener::OnEvent(const SD3DDeviceEvent& event)
+  void DeviceExitListener::OnEvent(
+    const SD3DDeviceEvent& event
+  )
   {
     if (event.mEventType != kDeviceEventTypeExit || !event.mShouldReleaseTextures) {
       return;

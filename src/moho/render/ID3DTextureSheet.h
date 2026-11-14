@@ -2,35 +2,21 @@
 
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "platform/Platform.h"
 #include "Wm3Vector2.h"
 #include "Wm3Vector3.h"
 
-#if defined(_WIN32)
+// On Linux, the POSIX stand-ins (platform/posix/win32): <d3d9types.h> declares D3DLOCKED_RECT
+// and <Windows.h> RECT.
 #include <d3d9types.h>
-#else
-struct RECT
-{
-  long left;
-  long top;
-  long right;
-  long bottom;
-};
-
-struct D3DLOCKED_RECT
-{
-  int Pitch;
-  void* pBits;
-};
-#endif
 
 namespace gpg
 {
   class BinaryReader;
   class RType;
   class Stream;
-}
+} // namespace gpg
 
 namespace gpg::gal
 {
@@ -42,7 +28,7 @@ namespace moho
   class ID3DTextureSheet
   {
   public:
-    using TextureHandle = boost::shared_ptr<gpg::gal::Texture>;
+    using TextureHandle = std::shared_ptr<gpg::gal::Texture>;
     static gpg::RType* sType;
 
     /**

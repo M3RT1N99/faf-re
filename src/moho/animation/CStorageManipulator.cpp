@@ -15,7 +15,7 @@
 #include "moho/script/CScriptEvent.h"
 #include "moho/script/CScriptObject.h"
 #include "moho/sim/CArmyImpl.h"
-#include "moho/sim/CSimArmyEconomyInfo.h"
+#include "moho/sim/CEconomy.h"
 #include "moho/sim/Sim.h"
 #include "moho/task/CTaskEvent.h"
 #include "moho/unit/core/Unit.h"
@@ -43,8 +43,10 @@ namespace
     moho::IAniManipulator* const manipulator
   ) noexcept
   {
-    if (manipulator == nullptr || manipulator->mOwnerActor == nullptr ||
-        manipulator->mWatchBones.begin() == manipulator->mWatchBones.end()) {
+    if (
+      manipulator == nullptr || manipulator->mOwnerActor == nullptr ||
+      manipulator->mWatchBones.begin() == manipulator->mWatchBones.end()
+    ) {
       return nullptr;
     }
 
@@ -62,7 +64,10 @@ namespace
     return &pose->mBones.begin()[boneIndex];
   }
 
-  void ApplyStorageOffsetToWatchedBone(moho::CAniPoseBone* const watchedBone, const Wm3::Vector3f& localOffset)
+  void ApplyStorageOffsetToWatchedBone(
+    moho::CAniPoseBone* const watchedBone,
+    const Wm3::Vector3f& localOffset
+  )
   {
     if (watchedBone == nullptr) {
       return;
@@ -114,10 +119,7 @@ namespace moho
   struct CStorageManipulatorSerializer : gpg::SerSaveLoadHelper<CStorageManipulator>
   {};
 
-  LuaPlus::LuaObject* func_CreateLuaCStorageManipulator(
-    LuaPlus::LuaObject* object,
-    LuaPlus::LuaState* state
-  );
+  LuaPlus::LuaObject* func_CreateLuaCStorageManipulator(LuaPlus::LuaObject* object, LuaPlus::LuaState* state);
 
   /**
    * Address: 0x006498C0 (FUN_006498C0)
@@ -162,8 +164,7 @@ namespace moho
     , mMin(0.0f, 0.0f, 0.0f)
     , mCur(0.0f, 0.0f, 0.0f)
     , mResourceType(ECON_ENERGY)
-  {
-  }
+  {}
 
   /**
    * Address: 0x00649060 (FUN_00649060, Moho::CStorageManipulator::CStorageManipulator)
@@ -224,7 +225,9 @@ namespace moho
    * max-offset and the `max*` args (stack 7-9) as the min-offset; this inversion
    * is preserved 1:1.
    */
-  int cfunc_CreateStorageManipL(LuaPlus::LuaState* const state)
+  int cfunc_CreateStorageManipL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     const int argumentCount = lua_gettop(rawState);
@@ -310,7 +313,9 @@ namespace moho
   // See the note on `cfunc_CreateThrustController`: a top-level `const` on this
   // pointer parameter changes the decorated name to `QAUlua_State@@`, which the
   // declaration in `ManipulatorLuaFunctionThunks.cpp` cannot resolve.
-  int cfunc_CreateStorageManip(lua_State* luaContext)
+  int cfunc_CreateStorageManip(
+    lua_State* luaContext
+  )
   {
     return cfunc_CreateStorageManipL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -332,8 +337,7 @@ namespace moho
    */
   bool CStorageManipulator::ManipulatorUpdate()
   {
-    if (mWatchBones.begin() == mWatchBones.end() ||
-        (mWatchBones.begin()->mFlags & kWatchBoneActiveFlag) == 0u) {
+    if (mWatchBones.begin() == mWatchBones.end() || (mWatchBones.begin()->mFlags & kWatchBoneActiveFlag) == 0u) {
       return false;
     }
 
@@ -353,18 +357,19 @@ namespace moho
     float storageRatio = 0.0f;
     if (jobInputs != nullptr) {
       if (jobInputs->mHasEconomy) {
-        const double maxStorage = (mResourceType == ECON_MASS) ? jobInputs->mMaxStorageMass : jobInputs->mMaxStorageEnergy;
+        const double maxStorage =
+          (mResourceType == ECON_MASS) ? jobInputs->mMaxStorageMass : jobInputs->mMaxStorageEnergy;
         if (maxStorage > 0.0) {
           const float storedValue = (mResourceType == ECON_MASS) ? jobInputs->mStoredMass : jobInputs->mStoredEnergy;
           storageRatio = storedValue / static_cast<float>(maxStorage);
         }
       }
     } else if (CArmyImpl* const army = mUnit->ArmyRef; army != nullptr) {
-      if (CSimArmyEconomyInfo* const economyInfo = army->GetEconomy(); economyInfo != nullptr) {
-        const double maxStorage = economyInfo->economy.MaxStorageOf(mResourceType);
+      if (CEconomy* const economyInfo = army->GetEconomy(); economyInfo != nullptr) {
+        const double maxStorage = economyInfo->mTotals.MaxStorageOf(mResourceType);
         if (maxStorage > 0.0) {
           const float storedValue =
-            (mResourceType == ECON_MASS) ? economyInfo->economy.mStored.MASS : economyInfo->economy.mStored.ENERGY;
+            (mResourceType == ECON_MASS) ? economyInfo->mTotals.mStored.MASS : economyInfo->mTotals.mStored.ENERGY;
           storageRatio = storedValue / static_cast<float>(maxStorage);
         }
       }
@@ -391,20 +396,16 @@ namespace moho
    * Adds `IAniManipulator` as a zero-offset base record on one
    * `CStorageManipulator` type descriptor.
    */
-  void AddBaseIAniManipulatorToCStorageManipulatorTypeInfo(gpg::RType* const typeInfo)
+  void AddBaseIAniManipulatorToCStorageManipulatorTypeInfo(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* const baseType = IAniManipulator::StaticGetClass();
     if (!baseType) {
       return;
     }
 
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, baseType);
   }
 
   /**
@@ -434,7 +435,7 @@ namespace moho
      * Address: 0x00648E60 (FUN_00648E60, Moho::CStorageManipulatorTypeInfo::dtr)
      *
      * What it does:
-     * Frees the `RType` base's two `msvc8::vector<RField>` storage lanes and
+     * Frees the `RType` base's two `fa::vector<RField>` storage lanes and
      * restores the `gpg::RObject` vftable. Defaulted in source: the
      * compiler-generated `~RType()` reproduces this behavior, matching every
      * other manipulator TypeInfo dtor in this family.
@@ -534,7 +535,9 @@ namespace moho
   /**
    * Address: 0x00649A60 (FUN_00649A60, Moho::CStorageManipulatorTypeInfo::CtrRef)
    */
-  gpg::RRef CStorageManipulatorTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CStorageManipulatorTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
     // MSVC8 compiles `new (p) T` to `if (p) T::T(p)`, yielding null otherwise;
     // that is the `test esi, esi` / `je` around the constructor call at
@@ -551,7 +554,9 @@ namespace moho
   /**
    * Address: 0x00649A40 (FUN_00649A40, Moho::CStorageManipulatorTypeInfo::Delete)
    */
-  void CStorageManipulatorTypeInfo::Delete(void* const objectStorage)
+  void CStorageManipulatorTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<CStorageManipulator*>(objectStorage);
   }
@@ -559,7 +564,9 @@ namespace moho
   /**
    * Address: 0x00649AD0 (FUN_00649AD0, Moho::CStorageManipulatorTypeInfo::Destruct)
    */
-  void CStorageManipulatorTypeInfo::Destruct(void* const objectStorage)
+  void CStorageManipulatorTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     static_cast<CStorageManipulator*>(objectStorage)->~CStorageManipulator();
   }
@@ -635,7 +642,9 @@ namespace moho
    * which is exactly what the pair of `Wm3::Vector3f` <-> runtime-view
    * converters this file used to carry stood in the way of.
    */
-  void CStorageManipulator::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CStorageManipulator::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (archive == nullptr) {
       return;
@@ -668,7 +677,9 @@ namespace moho
    * read passes a fresh zeroed owner `RRef`, exactly as the binary rebuilds
    * the temporary before every call.
    */
-  void CStorageManipulator::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CStorageManipulator::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr) {
       return;
@@ -695,8 +706,10 @@ namespace moho
    * Writes the `CStorageManipulator` metatable Lua object into `object` and
    * returns the same destination pointer.
    */
-  LuaPlus::LuaObject*
-  func_CreateLuaCStorageManipulator(LuaPlus::LuaObject* const object, LuaPlus::LuaState* const state)
+  LuaPlus::LuaObject* func_CreateLuaCStorageManipulator(
+    LuaPlus::LuaObject* const object,
+    LuaPlus::LuaState* const state
+  )
   {
     *object = CScrLuaMetatableFactory<CStorageManipulator>::Instance().Get(state);
     return object;
@@ -731,4 +744,7 @@ namespace
 
 // Phase-1 pre-registration: run this descriptor registration ahead of every
 // consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CStorageManipulatorTypeInfo_7d3a2f, moho::register_CStorageManipulatorTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CStorageManipulatorTypeInfo_7d3a2f,
+  moho::register_CStorageManipulatorTypeInfo
+)

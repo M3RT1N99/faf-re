@@ -20,12 +20,6 @@
 
 namespace
 {
-  constexpr const char* kSerializationSourcePath =
-    "c:\\work\\rts\\main\\code\\src\\libs\\gpgcore/reflection/serialization.h";
-  constexpr int kSerializationLoadLine = 84;
-  constexpr int kSerializationSaveLine = 87;
-
-
   /**
    * Address: 0x00BF1770 (FUN_00BF1770, atexit destructor of the VTransformTypeInfo object)
    */
@@ -47,7 +41,10 @@ namespace moho
    * What it does:
    * Initializes orientation and translation lanes in binary storage order.
    */
-  VTransform::VTransform(const Wm3::Vec3f& position, const Wm3::Quatf& orientation) noexcept
+  VTransform::VTransform(
+    const Wm3::Vec3f& position,
+    const Wm3::Quatf& orientation
+  ) noexcept
     : orient_(orientation)
     , pos_(position)
   {}
@@ -66,7 +63,9 @@ namespace moho
    * runs the standard trace/max-diagonal quaternion decomposition, then copies
    * the translation lane (last row .xyz) verbatim into pos_.
    */
-  VTransform::VTransform(const VMatrix4& matrix) noexcept
+  VTransform::VTransform(
+    const VMatrix4& matrix
+  ) noexcept
   {
     // Lift the 3x3 rotation block out of the row-major matrix.
     const float m[3][3] = {
@@ -150,7 +149,9 @@ namespace moho
    * plain `memcmp`s -- WildMagic's own `operator!=`. The earlier recovery
    * compared with a 1e-5 tolerance, so sub-epsilon moves read as unchanged.
    */
-  bool VTransform::Compare(const VTransform& rhs) const noexcept
+  bool VTransform::Compare(
+    const VTransform& rhs
+  ) const noexcept
   {
     return pos_ != rhs.pos_ || orient_ != rhs.orient_;
   }
@@ -217,7 +218,10 @@ namespace moho
    * `.x`-is-scalar-vs-`.w`-is-scalar convention mismatch as `Inverse()`
    * above (`orient_` is always `VMatrix4::Set`-convention here).
    */
-  Wm3::Vec3f* VTransform::Apply(const Wm3::Vec3f& source, Wm3::Vec3f* const outPoint) const noexcept
+  Wm3::Vec3f* VTransform::Apply(
+    const Wm3::Vec3f& source,
+    Wm3::Vec3f* const outPoint
+  ) const noexcept
   {
     if (outPoint == nullptr) {
       return nullptr;
@@ -271,7 +275,10 @@ namespace moho
    * `lhs.pos_` by `rhs.orient_` through `Moho::MultQuadVec` (0x00549D73..
    * 0x00549D7C) and adds `rhs.pos_` (0x00549D81..0x00549D99).
    */
-  VTransform VTransform::Compose(const VTransform& lhs, const VTransform& rhs) noexcept
+  VTransform VTransform::Compose(
+    const VTransform& lhs,
+    const VTransform& rhs
+  ) noexcept
   {
     VTransform out{};
 
@@ -302,7 +309,10 @@ namespace moho
    * Initializes an identity fallback transform, then reads one full
    * transform payload from a binary reader into caller storage.
    */
-  VTransform* VTransform::Load(gpg::BinaryReader* const reader, VTransform* const outTransform)
+  VTransform* VTransform::Load(
+    gpg::BinaryReader* const reader,
+    VTransform* const outTransform
+  )
   {
     outTransform->orient_.w = 1.0f;
     outTransform->orient_.x = 0.0f;
@@ -312,7 +322,7 @@ namespace moho
     outTransform->pos_.y = 0.0f;
     outTransform->pos_.z = 0.0f;
 
-    reader->Read(reinterpret_cast<char*>(outTransform), sizeof(VTransform));
+    reader->Read(outTransform, sizeof(VTransform));
     return outTransform;
   }
 
@@ -322,7 +332,9 @@ namespace moho
    * What it does:
    * Formats one 3D vector lane as `x=...,y=...,z=...`.
    */
-  msvc8::string ToString(const Wm3::Vec3f& value)
+  fa::string ToString(
+    const Wm3::Vec3f& value
+  )
   {
     return gpg::STR_Printf("x=%f,y=%f,z=%f", value.x, value.y, value.z);
   }
@@ -333,10 +345,12 @@ namespace moho
    * What it does:
    * Formats one quaternion in scalar/vector form (`v=(x,y,z),s=w`).
    */
-  msvc8::string ToString(const Wm3::Quatf& value)
+  fa::string ToString(
+    const Wm3::Quatf& value
+  )
   {
     const Wm3::Vec3f vectorLane{value.x, value.y, value.z};
-    const msvc8::string vectorText = ToString(vectorLane);
+    const fa::string vectorText = ToString(vectorLane);
     return gpg::STR_Printf("v=(%s),s=%f", vectorText.c_str(), value.w);
   }
 
@@ -346,10 +360,12 @@ namespace moho
    * What it does:
    * Formats one transform as translation plus quaternion rotation text.
    */
-  msvc8::string ToString(const VTransform& value)
+  fa::string ToString(
+    const VTransform& value
+  )
   {
-    const msvc8::string rotationText = ToString(value.orient_);
-    const msvc8::string translationText = ToString(value.pos_);
+    const fa::string rotationText = ToString(value.orient_);
+    const fa::string translationText = ToString(value.pos_);
     return gpg::STR_Printf("t=%s, r={%s}", translationText.c_str(), rotationText.c_str());
   }
 
@@ -393,7 +409,9 @@ namespace moho
   /**
    * Address: 0x004F0970 (FUN_004F0970, Moho::VTransform::MemberDeserialize)
    */
-  void VTransform::MemberDeserialize(gpg::ReadArchive* const archive)
+  void VTransform::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     const gpg::RRef ownerRef{};
@@ -404,7 +422,9 @@ namespace moho
   /**
    * Address: 0x004F09E0 (FUN_004F09E0, Moho::VTransform::MemberSerialize)
    */
-  void VTransform::MemberSerialize(gpg::WriteArchive* const archive) const
+  void VTransform::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     const gpg::RRef ownerRef{};
@@ -436,10 +456,12 @@ namespace
   [[maybe_unused]] VTransformBootstrap gVTransformBootstrap;
 } // namespace
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_VTransformTypeInfo_2fd396, moho::register_VTransformTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_VTransformTypeInfo_2fd396,
+  moho::register_VTransformTypeInfo
+)
 
 namespace moho
 {

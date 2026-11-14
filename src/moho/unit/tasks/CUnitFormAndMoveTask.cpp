@@ -105,8 +105,10 @@ namespace moho
     mTaskState = TASKSTATE_Waiting;
 
     if (mUnit->IsUnitState(UNITSTATE_Immobile)) {
-      if (const RUnitBlueprint* const blueprint = mUnit->GetBlueprint();
-          blueprint != nullptr && blueprint->AI.NeedUnpack && mUnit->AiAttacker != nullptr) {
+      if (
+        const RUnitBlueprint* const blueprint = mUnit->GetBlueprint();
+        blueprint != nullptr && blueprint->AI.NeedUnpack && mUnit->AiAttacker != nullptr
+      ) {
         CAiTarget stopTarget{};
         stopTarget.targetPoint = -1;
         stopTarget.targetIsMobile = false;
@@ -167,7 +169,10 @@ namespace moho
    */
   int CUnitFormAndMoveTask::Execute()
   {
-    if (mFormationArrivalSatisfied != 0u || mFormation == nullptr || mUnit == nullptr || mUnit->mInfoCache.mHasFormationSpeedData) {
+    if (
+      mFormationArrivalSatisfied != 0u || mFormation == nullptr || mUnit == nullptr ||
+      mUnit->mInfoCache.mHasFormationSpeedData
+    ) {
       return -1;
     }
 
@@ -181,7 +186,9 @@ namespace moho
    * Deserializes base command-task state, weak formation pointer lane, and
    * the arrival-satisfied flag for one form-move task.
    */
-  void CUnitFormAndMoveTask::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CUnitFormAndMoveTask::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -206,52 +213,24 @@ namespace moho
    * Serializes base command-task state, weak formation pointer lane, and the
    * arrival-satisfied flag for one form-move task.
    */
-  void CUnitFormAndMoveTask::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CUnitFormAndMoveTask::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
     }
 
     const gpg::RRef owner{};
-    archive->Write(gpg::RTypeOf<moho::CCommandTask>(), const_cast<CCommandTask*>(static_cast<const CCommandTask*>(this)), owner);
+    archive->Write(
+      gpg::RTypeOf<moho::CCommandTask>(), const_cast<CCommandTask*>(static_cast<const CCommandTask*>(this)), owner
+    );
 
     gpg::RRef formationRef{};
     gpg::RRef_IFormationInstance(&formationRef, mFormation);
     gpg::WriteRawPointer(archive, formationRef, gpg::TrackedPointerState::Unowned, owner);
 
     archive->WriteBool(mFormationArrivalSatisfied != 0u);
-  }
-
-  /**
-   * Address: 0x0061A340 (FUN_0061A340)
-   *
-   * What it does:
-   * Thin alias lane that forwards one `(task, archive)` pair into
-   * `CUnitFormAndMoveTask::MemberSerialize`.
-   */
-  [[maybe_unused]] void CUnitFormAndMoveTaskMemberSerializeAliasThunk(
-    const CUnitFormAndMoveTask* const task,
-    gpg::WriteArchive* const archive
-  )
-  {
-    if (task != nullptr) {
-      task->MemberSerialize(archive);
-    }
-  }
-
-  /**
-   * Address: 0x0061A3E0 (FUN_0061A3E0)
-   *
-   * What it does:
-   * Thin alias lane that forwards one `(task, archive)` pair into
-   * `CUnitFormAndMoveTask::MemberSerialize`.
-   */
-  void CUnitFormAndMoveTaskMemberSerializeAlias(
-    const CUnitFormAndMoveTask* const task,
-    gpg::WriteArchive* const archive
-  )
-  {
-    task->MemberSerialize(archive);
   }
 
   /**
@@ -263,7 +242,9 @@ namespace moho
    * Applies navigator event state transitions and resumes owner thread
    * processing.
    */
-  void CUnitFormAndMoveTask::OnEvent(const EAiNavigatorEvent event)
+  void CUnitFormAndMoveTask::OnEvent(
+    const EAiNavigatorEvent event
+  )
   {
     // 0x0061969F / 0x00619694: the result goes to the parent's slot through
     // `mDispatchResult` (`[ecx-0Ch]` from the listener subobject = this+0x28),
@@ -286,7 +267,9 @@ namespace moho
    * Re-applies current formation-adjusted navigator goal when command
    * dispatch payload changes.
    */
-  void CUnitFormAndMoveTask::OnEvent(const ECommandEvent)
+  void CUnitFormAndMoveTask::OnEvent(
+    const ECommandEvent
+  )
   {
     ApplyFormationGoalFromCurrentUnit();
   }
@@ -300,7 +283,9 @@ namespace moho
    * Handles formation status transitions by refreshing current formation goal
    * or marking form-move completion when the unit reaches valid formation lane.
    */
-  void CUnitFormAndMoveTask::OnEvent(const EFormationdStatus status)
+  void CUnitFormAndMoveTask::OnEvent(
+    const EFormationdStatus status
+  )
   {
     if (status == FORMATIONSTATUS_FormationUpdated) {
       ApplyFormationGoalFromCurrentUnit();
@@ -399,11 +384,8 @@ namespace moho
    *    correction as above, formerly `CUnitFormAndMoveTaskMemberSerializeThunk`.)
    */
   class CUnitFormAndMoveTaskSerializer : public gpg::SerSaveLoadHelper<CUnitFormAndMoveTask>
-  {
-  };
-  static_assert(
-    sizeof(CUnitFormAndMoveTaskSerializer) == 0x14, "CUnitFormAndMoveTaskSerializer size must be 0x14"
-  );
+  {};
+  static_assert(sizeof(CUnitFormAndMoveTaskSerializer) == 0x14, "CUnitFormAndMoveTaskSerializer size must be 0x14");
 } // namespace moho
 
 namespace
@@ -420,42 +402,5 @@ namespace
 
 namespace gpg
 {
-  /**
-   * Address: 0x0061A5A0 (FUN_0061A5A0, gpg::RRef_CUnitFormAndMoveTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for
-   * `moho::CUnitFormAndMoveTask*`, preserving dynamic-derived ownership and
-   * base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitFormAndMoveTask(gpg::RRef* const outRef, moho::CUnitFormAndMoveTask* const value)
-  {
-    if (!outRef) {
-      return nullptr;
-    }
 
-    *outRef = gpg::MakeDerivedRef(value, gpg::RTypeOf<moho::CUnitFormAndMoveTask>());
-    return outRef;
-  }
-
-  /**
-   * Address: 0x0061A380 (FUN_0061A380)
-   *
-   * What it does:
-   * Wrapper lane that materializes one temporary
-   * `RRef_CUnitFormAndMoveTask` and copies object/type fields into the
-   * destination reference record.
-   */
-  gpg::RRef* AssignCUnitFormAndMoveTaskRef(gpg::RRef* const outRef, moho::CUnitFormAndMoveTask* const value)
-  {
-    if (!outRef) {
-      return nullptr;
-    }
-
-    gpg::RRef temporaryRef{};
-    (void)RRef_CUnitFormAndMoveTask(&temporaryRef, value);
-    outRef->mObj = temporaryRef.mObj;
-    outRef->mType = temporaryRef.mType;
-    return outRef;
-  }
 } // namespace gpg

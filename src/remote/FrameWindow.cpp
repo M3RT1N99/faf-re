@@ -16,7 +16,9 @@ namespace faf::remote
     return &mFrames.front();
   }
 
-  void CServerFrameWindow::Sent(const wire::SViewFrame& frame)
+  void CServerFrameWindow::Sent(
+    const wire::SViewFrame& frame
+  )
   {
     if (mSentAny && Baseline() == nullptr) {
       ++mFullFrames;
@@ -30,7 +32,9 @@ namespace faf::remote
     }
   }
 
-  void CServerFrameWindow::Ack(const std::uint32_t frameId)
+  void CServerFrameWindow::Ack(
+    const std::uint32_t frameId
+  )
   {
     if (mAcked != wire::kNoBaseline && frameId <= mAcked) {
       return; // late or repeated: frame ids only grow
@@ -46,7 +50,9 @@ namespace faf::remote
   }
 
   bool CClientFrameWindow::Decode(
-    const std::span<const std::uint8_t> bytes, const wire::SFrameCodec& codec, wire::SViewFrame& out
+    const std::span<const std::uint8_t> bytes,
+    const wire::SFrameCodec& codec,
+    wire::SViewFrame& out
   )
   {
     const std::uint32_t baselineId = wire::PeekFrameBaseline(bytes);
@@ -66,10 +72,18 @@ namespace faf::remote
       return false;
     }
     out = decoded;
+    if (baseline == nullptr && !mFrames.empty() && decoded.frameId <= mFrames.back().frameId) {
+      // A whole frame whose id restarts replaces all the client held (plan WP13.6: a player moved to the observer view
+      // gets that view's frames, which start at 1). One whose id goes on leaves the older frames: the server sends
+      // whole frames until an acknowledgement comes back, then encodes against the frame acknowledged, which arrived
+      // before the whole frames that followed it.
+      mFrames.clear();
+    }
     // Kept in id order: a frame that arrives late still goes before newer ones.
     const auto at = std::upper_bound(
-      mFrames.begin(), mFrames.end(), decoded.frameId,
-      [](const std::uint32_t id, const wire::SViewFrame& frame) { return id < frame.frameId; }
+      mFrames.begin(), mFrames.end(), decoded.frameId, [](const std::uint32_t id, const wire::SViewFrame& frame) {
+      return id < frame.frameId;
+    }
     );
     mFrames.insert(at, std::move(decoded));
     while (mFrames.size() > kMaxFrames) {

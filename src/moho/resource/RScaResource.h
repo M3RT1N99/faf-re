@@ -1,10 +1,12 @@
 #pragma once
 
+#include "Wm3Vector3.h"
+#include "Wm3Quaternion.h"
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
-#include "boost/weak_ptr.h"
+#include <memory>
+#include <memory>
 #include "gpg/core/reflection/Reflection.h"
 #include "gpg/core/streams/MemBufferStream.h"
 #include "legacy/containers/String.h"
@@ -38,21 +40,21 @@ namespace moho
 
   struct SScaHeader
   {
-    std::uint32_t magic;           // +0x00
-    std::uint32_t version;         // +0x04
-    std::uint32_t boneCount;       // +0x08
-    std::uint32_t field_0C;        // +0x0C
-    std::uint32_t keysPerBone;     // +0x10
-    std::uint32_t field_14;        // +0x14
-    std::uint32_t field_18;        // +0x18
-    std::uint32_t animDataOffset;  // +0x1C
+    std::uint32_t magic;          // +0x00
+    std::uint32_t version;        // +0x04
+    std::uint32_t boneCount;      // +0x08
+    std::uint32_t field_0C;       // +0x0C
+    std::uint32_t keysPerBone;    // +0x10
+    std::uint32_t field_14;       // +0x14
+    std::uint32_t field_18;       // +0x18
+    std::uint32_t animDataOffset; // +0x1C
   };
 
-  static_assert(offsetof(SScaHeader, version)        == 0x04);
-  static_assert(offsetof(SScaHeader, boneCount)      == 0x08);
-  static_assert(offsetof(SScaHeader, keysPerBone)    == 0x10);
+  static_assert(offsetof(SScaHeader, version) == 0x04);
+  static_assert(offsetof(SScaHeader, boneCount) == 0x08);
+  static_assert(offsetof(SScaHeader, keysPerBone) == 0x10);
   static_assert(offsetof(SScaHeader, animDataOffset) == 0x1C);
-  static_assert(sizeof(SScaHeader)                   == 0x20);
+  static_assert(sizeof(SScaHeader) == 0x20);
 
   // ============================================================================
   // SCA animation key record (28 bytes per key)
@@ -64,8 +66,8 @@ namespace moho
 
   struct SScaAnimKey
   {
-    float position[3];    // +0x00: x, y, z
-    float rotation[4];    // +0x0C: quaternion components
+    Wm3::Vector3f position; // +0x00
+    Wm3::Quatf rotation;    // +0x0C (w, x, y, z)
   };
 
   static_assert(sizeof(SScaAnimKey) == 0x1C);
@@ -78,8 +80,8 @@ namespace moho
 
   struct SScaAnimDataHeader
   {
-    float field_00[3];     // +0x00
-    float rotation[4];     // +0x0C: quaternion subject to same fixup as keys
+    float field_00[3]; // +0x00
+    float rotation[4]; // +0x0C: quaternion subject to same fixup as keys
   };
 
   static_assert(sizeof(SScaAnimDataHeader) == 0x1C);
@@ -92,7 +94,7 @@ namespace moho
    * Holds one loaded SCA (SupCom Animation) file in memory.
    *
    * Binary evidence from LoadScaFile (0x0053A4D0):
-   *   - mFilename at +0x00 (msvc8::string, ctor call at `ecx = edi`)
+   *   - mFilename at +0x00 (fa::string, ctor call at `ecx = edi`)
    *   - mMem at +0x1C (MemBuffer<char>, operator= call at `lea ecx, [edi+1Ch]`)
    *   - mStart at +0x2C (char*, raw pointer into loaded data)
    *   - mEnd at +0x30 (char*, pointer to animation data section)
@@ -106,9 +108,8 @@ namespace moho
      * (`GetScaResource`). Inlined into `SerConstructHelper<RScaResource>::Construct`
      * 0x0053A8C0.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x0053A770 (FUN_0053A770)
@@ -117,7 +118,10 @@ namespace moho
      * Saves the resource's file name as a mounted path.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
 
     static gpg::RType* sType;
@@ -153,7 +157,7 @@ namespace moho
      * What it does:
      * Compiler-emitted defaulted destructor body. Releases the held
      * `MemBuffer<char>` shared-count control lane at +0x20 and tears down
-     * the embedded `msvc8::string mFilename` (freeing the heap buffer
+     * the embedded `fa::string mFilename` (freeing the heap buffer
      * when the string is not in SSO mode and zeroing the SSO marker).
      * The trailing `mStart`/`mEnd` raw pointers do not need destruction.
      * Invoked from `boost::detail::sp_counted_impl_p<RScaResource>::dispose`
@@ -163,17 +167,17 @@ namespace moho
     ~RScaResource() noexcept = default;
 
   public:
-    msvc8::string mFilename{};          // +0x00
-    gpg::MemBuffer<char> mMem{};        // +0x1C
-    char* mStart = nullptr;             // +0x2C
-    char* mEnd = nullptr;               // +0x30
+    fa::string mFilename{};      // +0x00
+    gpg::MemBuffer<char> mMem{}; // +0x1C
+    char* mStart = nullptr;      // +0x2C
+    char* mEnd = nullptr;        // +0x30
   };
 
   static_assert(offsetof(RScaResource, mFilename) == 0x00);
-  static_assert(offsetof(RScaResource, mMem)      == 0x1C);
-  static_assert(offsetof(RScaResource, mStart)    == 0x2C);
-  static_assert(offsetof(RScaResource, mEnd)      == 0x30);
-  static_assert(sizeof(RScaResource)              == 0x34);
+  static_assert(offsetof(RScaResource, mMem) == 0x1C);
+  static_assert(offsetof(RScaResource, mStart) == 0x2C);
+  static_assert(offsetof(RScaResource, mEnd) == 0x30);
+  static_assert(sizeof(RScaResource) == 0x34);
 
   /**
    * Resource-factory singleton that materializes one `RScaResource` per SCA path.
@@ -182,7 +186,6 @@ namespace moho
   class CScaResourceFactory final : public ResourceFactory<RScaResource>
   {
   public:
-
     /**
      * Address: 0x0053A9E0 (FUN_0053A9E0, Moho::CScaResourceFactory::CScaResourceFactory)
      *
@@ -203,7 +206,7 @@ namespace moho
      * Default-constructs an `RScaResource`, parses the SCA file via
      * `LoadScaFile`, and returns nothing on failure.
      */
-    boost::shared_ptr<RScaResource> LoadImpl(gpg::StrArg path) override;
+    std::shared_ptr<RScaResource> LoadImpl(gpg::StrArg path) override;
   };
 
   /**
@@ -213,7 +216,7 @@ namespace moho
    * Returns the animation at `path` through the resource manager, as an
    * owning handle (empty when it cannot be loaded).
    */
-  [[nodiscard]] boost::shared_ptr<RScaResource> GetScaResource(gpg::StrArg path);
+  [[nodiscard]] std::shared_ptr<RScaResource> GetScaResource(gpg::StrArg path);
 
   /**
    * Address: 0x00BC9280 (FUN_00BC9280)

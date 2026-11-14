@@ -18,7 +18,12 @@
 
 namespace gpg
 {
-  void SaveBroadcasterListenerChainEUnitCommandQueueStatus(WriteArchive* archive, std::intptr_t objectPtr);
+  void SaveBroadcasterListenerChainEUnitCommandQueueStatus(
+    WriteArchive* archive,
+    void* objectPtr,
+    int version,
+    RRef* ownerRef
+  );
 } // namespace gpg
 
 namespace
@@ -35,7 +40,6 @@ namespace
     return gpg::RTypeOf<moho::ECommandEvent>();
   }
 
-
   class RBroadcasterRType_ECommandEvent final : public gpg::RType
   {
   public:
@@ -49,7 +53,7 @@ namespace
      * listener pointers until a null sentinel and relinking each listener node
      * into the broadcaster ring.
      */
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x006EA810 (FUN_006EA810, Moho::RBroadcasterRType_ECommandEvent::SerSave)
@@ -59,7 +63,7 @@ namespace
      * each linked listener pointer as `UNOWNED` and terminating with one null
      * pointer record.
      */
-    static void SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerSave(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x006E97D0 (FUN_006E97D0, Moho::RBroadcasterRType_ECommandEvent::GetName)
@@ -71,7 +75,7 @@ namespace
      */
     [[nodiscard]] const char* GetName() const override
     {
-      static const msvc8::string sName =
+      static const fa::string sName =
         gpg::STR_Printf("Broadcaster<%s>", ResolveECommandEventTypeCachePrimary()->GetName());
       return sName.c_str();
     }
@@ -97,7 +101,7 @@ namespace
      * reading listener pointers until a null sentinel and relinking each
      * listener node into the broadcaster ring.
      */
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x006F92F0 (FUN_006F92F0, Moho::RBroadcasterRType_EUnitCommandQueueStatus::dtr)
@@ -118,7 +122,7 @@ namespace
      */
     [[nodiscard]] const char* GetName() const override
     {
-      static const msvc8::string sName =
+      static const fa::string sName =
         gpg::STR_Printf("Broadcaster<%s>", gpg::RTypeOf<moho::EUnitCommandQueueStatus>()->GetName());
       return sName.c_str();
     }
@@ -135,9 +139,7 @@ namespace
       size_ = sizeof(moho::Broadcaster<moho::EUnitCommandQueueStatus>);
       version_ = 1;
       serLoadFunc_ = &RBroadcasterRType_EUnitCommandQueueStatus::SerLoad;
-      serSaveFunc_ = reinterpret_cast<gpg::RType::save_func_t>(
-        &gpg::SaveBroadcasterListenerChainEUnitCommandQueueStatus
-      );
+      serSaveFunc_ = &gpg::SaveBroadcasterListenerChainEUnitCommandQueueStatus;
     }
   };
 
@@ -183,7 +185,7 @@ namespace
      */
     [[nodiscard]] const char* GetName() const override
     {
-      static const msvc8::string sName =
+      static const fa::string sName =
         gpg::STR_Printf("Listener<%s>", gpg::RTypeOf<moho::EUnitCommandQueueStatus>()->GetName());
       return sName.c_str();
     }
@@ -203,16 +205,11 @@ namespace
    * `RBroadcasterRType_ECommandEvent` instance while preserving outer storage
    * ownership.
    */
-  [[maybe_unused]] void DestroyBroadcasterCommandEventRTypeBody(
+  void DestroyBroadcasterCommandEventRTypeBody(
     RBroadcasterRType_ECommandEvent* const typeInfo
   ) noexcept
   {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = {};
-    typeInfo->bases_ = {};
+    gpg::ClearTypeLists(typeInfo);
   }
 
   RBroadcasterRType_ECommandEvent::~RBroadcasterRType_ECommandEvent()
@@ -283,14 +280,12 @@ namespace
    */
   void RBroadcasterRType_ECommandEvent::SerLoad(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
   {
-    auto* const broadcaster = reinterpret_cast<moho::Broadcaster<moho::ECommandEvent>*>(
-      objectPtr
-    );
+    auto* const broadcaster = static_cast<moho::Broadcaster<moho::ECommandEvent>*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(broadcaster != nullptr);
     if (!archive || !broadcaster) {
@@ -314,14 +309,12 @@ namespace
    */
   void RBroadcasterRType_ECommandEvent::SerSave(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const
   )
   {
-    auto* const broadcaster = reinterpret_cast<moho::Broadcaster<moho::ECommandEvent>*>(
-      objectPtr
-    );
+    auto* const broadcaster = static_cast<moho::Broadcaster<moho::ECommandEvent>*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(broadcaster != nullptr);
     if (!archive || !broadcaster) {
@@ -331,7 +324,9 @@ namespace
     const gpg::RRef nullOwner{};
 
     for (moho::Listener<moho::ECommandEvent>* const listener : broadcaster->mListeners.owners()) {
-      archive->WritePointer<moho::Listener<moho::ECommandEvent>>(listener, gpg::TrackedPointerState::Unowned, nullOwner);
+      archive->WritePointer<moho::Listener<moho::ECommandEvent>>(
+        listener, gpg::TrackedPointerState::Unowned, nullOwner
+      );
     }
 
     archive->WritePointer<moho::Listener<moho::ECommandEvent>>(nullptr, gpg::TrackedPointerState::Unowned, nullOwner);
@@ -347,14 +342,12 @@ namespace
    */
   void RBroadcasterRType_EUnitCommandQueueStatus::SerLoad(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
   {
-    auto* const broadcaster = reinterpret_cast<moho::Broadcaster<moho::EUnitCommandQueueStatus>*>(
-      objectPtr
-    );
+    auto* const broadcaster = static_cast<moho::Broadcaster<moho::EUnitCommandQueueStatus>*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(broadcaster != nullptr);
     if (!archive || !broadcaster) {
@@ -379,8 +372,7 @@ namespace
    */
   const char* RListenerRType_ECommandEvent::GetName() const
   {
-    static const msvc8::string sName =
-      gpg::STR_Printf("Listener<%s>", ResolveECommandEventTypeCachePrimary()->GetName());
+    static const fa::string sName = gpg::STR_Printf("Listener<%s>", ResolveECommandEventTypeCachePrimary()->GetName());
     return sName.c_str();
   }
 } // namespace
@@ -454,27 +446,6 @@ namespace moho
     return &type;
   }
 
-  /**
-   * Address: 0x00BD95D0 (FUN_00BD95D0, sub_BD95D0)
-   *
-   * What it does:
-   * Runs broadcaster status-type registration.
-   */
-  void register_Broadcaster_EUnitCommandQueueStatus_RTypeStartup()
-  {
-    (void)register_Broadcaster_EUnitCommandQueueStatus_RType();
-  }
-
-  /**
-   * Address: 0x00BD95F0 (FUN_00BD95F0, sub_BD95F0)
-   *
-   * What it does:
-   * Runs listener status-type registration.
-   */
-  void register_Listener_EUnitCommandQueueStatus_RTypeStartup()
-  {
-    (void)register_Listener_EUnitCommandQueueStatus_RType();
-  }
 } // namespace moho
 
 namespace gpg
@@ -494,11 +465,14 @@ namespace gpg
    * why it takes two arguments rather than the full four-argument save
    * signature.
    */
-  void SaveBroadcasterListenerChainEUnitCommandQueueStatus(WriteArchive* const archive, const std::intptr_t objectPtr)
+  void SaveBroadcasterListenerChainEUnitCommandQueueStatus(
+    WriteArchive* const archive,
+    void* objectPtr,
+    int,
+    RRef*
+  )
   {
-    auto* const broadcaster = reinterpret_cast<moho::Broadcaster<moho::EUnitCommandQueueStatus>*>(
-      objectPtr
-    );
+    auto* const broadcaster = static_cast<moho::Broadcaster<moho::EUnitCommandQueueStatus>*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(broadcaster != nullptr);
     if (!archive || !broadcaster) {
@@ -508,16 +482,32 @@ namespace gpg
     const gpg::RRef nullOwner{};
 
     for (moho::Listener<moho::EUnitCommandQueueStatus>* const listener : broadcaster->mListeners.owners()) {
-      archive->WritePointer<moho::Listener<moho::EUnitCommandQueueStatus>>(listener, gpg::TrackedPointerState::Unowned, nullOwner);
+      archive->WritePointer<moho::Listener<moho::EUnitCommandQueueStatus>>(
+        listener, gpg::TrackedPointerState::Unowned, nullOwner
+      );
     }
 
-    archive->WritePointer<moho::Listener<moho::EUnitCommandQueueStatus>>(nullptr, gpg::TrackedPointerState::Unowned, nullOwner);
+    archive->WritePointer<moho::Listener<moho::EUnitCommandQueueStatus>>(
+      nullptr, gpg::TrackedPointerState::Unowned, nullOwner
+    );
   }
 } // namespace gpg
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_Broadcaster_ECommandEvent_RType_566e21, moho::register_Broadcaster_ECommandEvent_RType)
-GPG_PREREGISTER_INIT(register_Listener_ECommandEvent_RType_566e21, moho::register_Listener_ECommandEvent_RType)
-GPG_PREREGISTER_INIT(register_Broadcaster_EUnitCommandQueueStatus_RType_566e21, moho::register_Broadcaster_EUnitCommandQueueStatus_RType)
-GPG_PREREGISTER_INIT(register_Listener_EUnitCommandQueueStatus_RType_566e21, moho::register_Listener_EUnitCommandQueueStatus_RType)
+GPG_PREREGISTER_INIT(
+  register_Broadcaster_ECommandEvent_RType_566e21,
+  moho::register_Broadcaster_ECommandEvent_RType
+)
+GPG_PREREGISTER_INIT(
+  register_Listener_ECommandEvent_RType_566e21,
+  moho::register_Listener_ECommandEvent_RType
+)
+GPG_PREREGISTER_INIT(
+  register_Broadcaster_EUnitCommandQueueStatus_RType_566e21,
+  moho::register_Broadcaster_EUnitCommandQueueStatus_RType
+)
+GPG_PREREGISTER_INIT(
+  register_Listener_EUnitCommandQueueStatus_RType_566e21,
+  moho::register_Listener_EUnitCommandQueueStatus_RType
+)

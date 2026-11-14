@@ -13,7 +13,7 @@ namespace gpg
   class RRef;
   class RType;
   class WriteArchive;
-}
+} // namespace gpg
 
 namespace moho
 {
@@ -26,7 +26,6 @@ namespace moho
   class CUnitWaitForFerryTask : public CCommandTask
   {
   public:
-
     /**
      * Address: 0x0061037A-0x0061039B, inlined into
      * `CUnitWaitForFerryTaskTypeInfo::NewRef` (0x00610340) and its `CtrRef`
@@ -92,11 +91,8 @@ namespace moho
      * Allocates one wait-for-ferry task object and forwards constructor
      * arguments into in-place construction.
      */
-    [[nodiscard]] static CUnitWaitForFerryTask* Create(
-      IAiCommandDispatchImpl* dispatch,
-      const SNavGoal& moveGoal,
-      Unit* ferryUnit
-    );
+    [[nodiscard]] static CUnitWaitForFerryTask*
+    Create(IAiCommandDispatchImpl* dispatch, const SNavGoal& moveGoal, Unit* ferryUnit);
 
     /**
      * Address: 0x00610D30 (FUN_00610D30, Moho::CUnitWaitForFerryTaskSerializer::Serialize body)
@@ -138,34 +134,20 @@ namespace moho
 
   static_assert(sizeof(CUnitWaitForFerryTask) == 0x60, "CUnitWaitForFerryTask size must be 0x60");
   static_assert(
-    offsetof(CUnitWaitForFerryTask, mDispatch) == 0x30, "CUnitWaitForFerryTask::mDispatch offset must be 0x30"
+    offsetof(CUnitWaitForFerryTask, mDispatch) == 0x30,
+    "CUnitWaitForFerryTask::mDispatch offset must be 0x30"
   );
   static_assert(
-    offsetof(CUnitWaitForFerryTask, mFerryUnit) == 0x34, "CUnitWaitForFerryTask::mFerryUnit offset must be 0x34"
+    offsetof(CUnitWaitForFerryTask, mFerryUnit) == 0x34,
+    "CUnitWaitForFerryTask::mFerryUnit offset must be 0x34"
   );
   static_assert(
-    offsetof(CUnitWaitForFerryTask, mMoveGoal) == 0x3C, "CUnitWaitForFerryTask::mMoveGoal offset must be 0x3C"
+    offsetof(CUnitWaitForFerryTask, mMoveGoal) == 0x3C,
+    "CUnitWaitForFerryTask::mMoveGoal offset must be 0x3C"
   );
 } // namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x00610800 (FUN_00610800, gpg::RRef_CUnitWaitForFerryTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitWaitForFerryTask*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitWaitForFerryTask(gpg::RRef* outRef, moho::CUnitWaitForFerryTask* value);
 
-  /**
-   * Address: 0x006105E0 (FUN_006105E0)
-   *
-   * What it does:
-   * Wrapper lane that materializes one temporary
-   * `RRef_CUnitWaitForFerryTask` and copies object/type fields into the
-   * destination reference record.
-   */
-  gpg::RRef* AssignCUnitWaitForFerryTaskRef(gpg::RRef* outRef, moho::CUnitWaitForFerryTask* value);
 } // namespace gpg

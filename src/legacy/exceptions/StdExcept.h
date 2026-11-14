@@ -3,9 +3,9 @@
 #include <cstddef>
 #include <exception>
 
-#include "legacy/containers/String.h" // msvc8::string
+#include "legacy/containers/String.h" // fa::string
 
-namespace msvc8
+namespace fa
 {
   /**
    * MSVC8's `std::exception`, the root of every exception the binary throws.
@@ -48,7 +48,7 @@ namespace msvc8
     ~exception() override;
   };
 
-  static_assert(sizeof(exception) == 0x0C, "msvc8::exception size must be 0x0C");
+  static_assert(sizeof(exception) == 0x0C, "fa::exception size must be 0x0C");
 
   /**
    * The message-carrying layer of MSVC8's `<stdexcept>`, which unlike the
@@ -98,11 +98,12 @@ namespace msvc8
      * empty-string initialization followed by `string::assign(m, 0, npos)`,
      * which is what MSVC emits for a `string` member-initializer.
      */
-    explicit message_exception(const string& message) noexcept
+    explicit message_exception(
+      const string& message
+    ) noexcept
       : exception()
       , mStr(message)
-    {
-    }
+    {}
 
     ~message_exception() override = default;
 
@@ -123,12 +124,10 @@ namespace msvc8
   /// Tags that give each instantiation its own type and vtable, matching the
   /// two classes MSVC8 declares separately.
   struct logic_error_tag
-  {
-  };
+  {};
 
   struct runtime_error_tag
-  {
-  };
+  {};
 
   using logic_error = message_exception<logic_error_tag>;
   using runtime_error = message_exception<runtime_error_tag>;
@@ -136,10 +135,12 @@ namespace msvc8
   // mStr is the only member, so the sizes pin it to +0x0C between them -
   // the displacement both constructors use (`lea ecx, [esi+0xCh]`). An
   // offsetof would say it more directly but cannot reach a private member.
-  static_assert(sizeof(runtime_error) == sizeof(exception) + sizeof(string),
-                "msvc8::runtime_error must be its base plus exactly one string");
-  static_assert(sizeof(runtime_error) == 0x28, "msvc8::runtime_error size must be 0x28");
-  static_assert(sizeof(logic_error) == 0x28, "msvc8::logic_error size must be 0x28");
+  static_assert(
+    sizeof(runtime_error) == sizeof(exception) + sizeof(string),
+    "fa::runtime_error must be its base plus exactly one string"
+  );
+  static_assert(sizeof(runtime_error) == 0x28, "fa::runtime_error size must be 0x28");
+  static_assert(sizeof(logic_error) == 0x28, "fa::logic_error size must be 0x28");
 
   // The six leaves MSVC8 derives from these two - length_error, out_of_range,
   // invalid_argument and domain_error from logic_error, range_error and
@@ -147,4 +148,4 @@ namespace msvc8
   // are not declared here because nothing has been migrated onto them yet;
   // src still throws the modern std:: ones at ~140 sites, and moving
   // those is its own pass.
-} // namespace msvc8
+} // namespace fa

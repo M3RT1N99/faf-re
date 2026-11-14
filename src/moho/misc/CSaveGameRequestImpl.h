@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <stdexcept>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/String.h"
 #include "lua/LuaObject.h"
 #include "legacy/containers/String.h"
@@ -61,10 +61,10 @@ namespace moho
      */
     ~SaveLoadError() noexcept override;
 
-    [[nodiscard]] const msvc8::string& GetRawMessage() const noexcept;
+    [[nodiscard]] const fa::string& GetRawMessage() const noexcept;
 
   private:
-    msvc8::string mRawMessage;
+    fa::string mRawMessage;
   };
 
   /**
@@ -114,13 +114,13 @@ namespace moho
     ~CSaveGameRequestImpl();
 
   private:
-    msvc8::string mSavePath;                    // +0x04
-    msvc8::string mSessionName;                 // +0x20
-    LuaPlus::LuaObject mCompletionCallback;     // +0x3C
-    boost::shared_ptr<std::FILE> mFile;         // +0x50
-    gpg::WriteArchive* mArchive = nullptr;      // +0x58
+    fa::string mSavePath;                   // +0x04
+    fa::string mSessionName;                // +0x20
+    LuaPlus::LuaObject mCompletionCallback; // +0x3C
+    std::shared_ptr<std::FILE> mFile;       // +0x50
+    gpg::WriteArchive* mArchive = nullptr;  // +0x58
   };
 
-  static_assert(sizeof(boost::shared_ptr<std::FILE>) == 0x8, "shared_ptr<FILE> size must be 0x8");
+  static_assert(sizeof(std::shared_ptr<std::FILE>) == 0x8, "shared_ptr<FILE> size must be 0x8");
   static_assert(sizeof(CSaveGameRequestImpl) == 0x5C, "CSaveGameRequestImpl size must be 0x5C");
 } // namespace moho

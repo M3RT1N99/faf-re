@@ -79,6 +79,9 @@ type Config struct {
 	// Native runs the game with no adapter, linking every peer itself
 	// (native.go, issue #274).
 	Native *Native `json:"native,omitempty"`
+	// Server puts the game on a dedicated game server instead of a peer lobby
+	// (server.go, plan WP12.2): this seat's connection string only.
+	Server *ServerJoin `json:"server,omitempty"`
 }
 
 // CheckNoFullscreen refuses a fullscreen request anywhere on a command line.
@@ -132,6 +135,16 @@ type Seat struct {
 	adapterC chan struct{}
 	once     sync.Once
 	contract *contractLink
+	bridge   *jarBridge
+
+	// Native mode: what the lobby server said about the peers, and whether the
+	// next game to connect is one coming back (native.go).
+	nativePeers     []gpgnet.Message
+	nativeReturning bool
+
+	// What the game announced to its launcher (PeerFeatures, server.go).
+	features      uint64
+	featuresKnown bool
 }
 
 // New validates cfg and opens the seat's GPGNet endpoint and lobby port.
@@ -155,6 +168,9 @@ func New(cfg Config, job *procs.Job, sink func(journal.Record)) (*Seat, error) {
 				s.once.Do(func() { close(s.adapterC) })
 			}
 			s.emit(journal.Record{Kind: journal.GpgConnect, UID: uid, Text: remote})
+			if cfg.Native != nil {
+				s.nativeOnConnected()
+			}
 		},
 		Message: s.onMessage,
 		Disconnected: func(err error) {
@@ -325,6 +341,7 @@ func (c Config) GameArgs(gpgPort int) []string {
 		"/nobugreport",
 		"/gpgnet", fmt.Sprintf("127.0.0.1:%d", gpgPort),
 		"/log", filepath.Join(c.RunDir, fmt.Sprintf("game-%d.log", c.UID)),
+		"/rejoinkeyfile", filepath.Join(c.RunDir, fmt.Sprintf("rejoin-%d.key", c.UID)),
 		// Always windowed: display preferences alone are not trusted to keep
 		// an instance off the whole screen.
 		"/windowed", strconv.Itoa(c.Window.Width), strconv.Itoa(c.Window.Height),
@@ -371,6 +388,9 @@ func (c Config) GameArgs(gpgPort int) []string {
 	if c.Native != nil {
 		args = append(args, c.Native.nativeArgs()...)
 	}
+	if c.Server != nil {
+		args = append(args, c.Server.args(c.UID)...)
+	}
 	// faf-re sends desync telemetry to its public server by default; test games stay off it
 	// unless the scenario configures telemetry itself.
 	if !hasArg(c.Args, "/telemetry") {
@@ -403,6 +423,7 @@ func (s *Seat) startGame(gpgPort int) error {
 	}
 	args := c.GameArgs(gpgPort)
 	cmdline := procs.CommandLine(c.Exe, args)
+	shownCmdline := procs.CommandLine(c.Exe, RedactArgs(args)) // the journal never holds a server token
 
 	// Always leave a way to start the same instance by hand.
 	script := fmt.Sprintf("@echo off\r`ncd /d \"%s\"\r`n%s\r`n", dir, cmdline)
@@ -415,7 +436,7 @@ func (s *Seat) startGame(gpgPort int) error {
 		s.external = true
 		s.mu.Unlock()
 		s.emit(journal.Record{Kind: journal.ProcExternal, UID: uid, Text: "waiting for a game started by hand",
-			Data: map[string]any{"exe": c.Exe, "dir": dir, "args": procs.Arguments(args)}})
+			Data: map[string]any{"exe": c.Exe, "dir": dir, "args": procs.Arguments(RedactArgs(args))}})
 		fmt.Printf("`n== player %d (%s): start the game yourself ==`n   working dir : %s`n   command     : %s`n   VS args     : %s`n`n",
 			uid, c.Name, dir, cmdline, procs.Arguments(args))
 		return nil
@@ -429,7 +450,80 @@ func (s *Seat) startGame(gpgPort int) error {
 	s.game = proc
 	s.mu.Unlock()
 	s.emit(journal.Record{Kind: journal.ProcStart, UID: uid, Text: "game",
-		Data: map[string]any{"pid": proc.Pid(), "cmd": cmdline, "dir": dir}})
+		Data: map[string]any{"pid": proc.Pid(), "cmd": shownCmdline, "dir": dir}})
+	go s.watchExit(proc, "game")
+	return nil
+}
+
+// RejoinElsewhere starts nothing here: it writes what a client on another machine
+// needs to take this seat back, to rejoin-<uid>.txt in the run folder, as the peers
+// list, the source, then the path of the seat's key. Whoever runs that client copies
+// the key there, as a player's own machine would hold it.
+func (s *Seat) RejoinElsewhere(peers string, source int) error {
+	c := s.cfg
+	key := filepath.Join(c.RunDir, fmt.Sprintf("rejoin-%d.key", c.UID))
+	text := fmt.Sprintf("%s\n%d\n%s\n", peers, source, key)
+	return os.WriteFile(filepath.Join(c.RunDir, fmt.Sprintf("rejoin-%d.txt", c.UID)), []byte(text), 0o644)
+}
+
+// Rejoin starts the game again as a client taking its seat back (issue #275): it
+// links to the peers from this seat's lobby port and gets the game's recording
+// from them. It gets no GPGNet endpoint, as the launcher's part ended when the
+// game launched.
+//
+// keyOf, when above 0, starts it with that player's key instead of its own: the test
+// that a player who is not this seat's gets nothing.
+func (s *Seat) Rejoin(peers string, source, keyOf int, launcher bool) error {
+	c, uid := s.cfg, s.cfg.UID
+	dir := c.Dir
+	if dir == "" {
+		dir = filepath.Dir(c.Exe)
+	}
+	var args []string
+	gpgPort := s.endpoint.Port()
+	if c.Contract != nil {
+		gpgPort = s.adapterPort
+		if s.bridge != nil {
+			gpgPort = s.bridge.ln.Addr().(*net.TCPAddr).Port
+		}
+	}
+	base := c.GameArgs(gpgPort)
+	for i := 0; i < len(base); i++ {
+		switch base[i] {
+		case "/gpgnet":
+			if launcher {
+				break
+			}
+			i++
+			continue
+		case "/log":
+			args = append(args, "/log", filepath.Join(c.RunDir, fmt.Sprintf("game-%d-rejoin.log", uid)))
+			i++
+			continue
+		case "/savereplay":
+			args = append(args, "/savereplay", filepath.Join(c.RunDir, fmt.Sprintf("replay-%d-rejoin", uid)))
+			i++
+			continue
+		case "/rejoinkeyfile":
+			if keyOf > 0 {
+				args = append(args, "/rejoinkeyfile", filepath.Join(c.RunDir, fmt.Sprintf("rejoin-%d.key", keyOf)))
+				i++
+				continue
+			}
+		}
+		args = append(args, base[i])
+	}
+	args = append(args, "/rejoin", peers, strconv.Itoa(source), strconv.Itoa(s.lobbyPort))
+
+	proc, err := procs.Start(procs.Spec{Name: fmt.Sprintf("game-%d-rejoin", uid), Exe: c.Exe, Dir: dir, Args: args}, s.job)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.game = proc
+	s.mu.Unlock()
+	s.emit(journal.Record{Kind: journal.ProcStart, UID: uid, Text: "game (rejoin)",
+		Data: map[string]any{"pid": proc.Pid(), "cmd": procs.CommandLine(c.Exe, args), "dir": dir}})
 	go s.watchExit(proc, "game")
 	return nil
 }
@@ -444,11 +538,16 @@ func (s *Seat) watchExit(proc *procs.Process, what string) {
 func (s *Seat) onMessage(m gpgnet.Message) {
 	uid := s.cfg.UID
 	s.emit(journal.Record{Kind: journal.GpgIn, UID: uid, Command: m.Command, Args: m.Args})
+	s.noteFeatures(m)
 	if s.cfg.Native != nil {
 		s.nativeIncoming(m)
 		if m.Command == "GameState" && m.Str(0) == "Idle" {
 			s.nativeIceServers()
 		}
+	}
+	if m.Command == "GameState" && m.Str(0) == "Idle" && s.cfg.Server != nil && s.cfg.Server.Delivery != DeliverArgs {
+		s.joinServer() // in CreateLobby's place (plan WP12.2)
+		return
 	}
 	if m.Command == "GameState" && m.Str(0) == "Idle" && s.cfg.Contract == nil {
 		mode := 0
@@ -467,6 +566,7 @@ func (s *Seat) onMessage(m gpgnet.Message) {
 func (s *Seat) Send(m gpgnet.Message) error {
 	if s.cfg.Native != nil {
 		m = s.nativeOutgoing(m)
+		s.nativeRemember(m)
 	}
 	if s.cfg.Native == nil && (m.Command == "JoinGame" || m.Command == "ConnectToPeer") && len(m.Args) > 0 {
 		if addr, ok := m.Args[0].(string); ok {
@@ -480,7 +580,7 @@ func (s *Seat) Send(m gpgnet.Message) error {
 		}
 	}
 	err := s.endpoint.Send(m)
-	rec := journal.Record{Kind: journal.GpgOut, UID: s.cfg.UID, Command: m.Command, Args: m.Args}
+	rec := journal.Record{Kind: journal.GpgOut, UID: s.cfg.UID, Command: m.Command, Args: recordArgs(m)}
 	if err != nil {
 		rec.Text = "send failed: " + err.Error()
 	}
@@ -495,6 +595,10 @@ func (s *Seat) Kill() {
 	s.mu.Unlock()
 	if game != nil {
 		game.Kill()
+	}
+	// A game's crash leaves an adapter that was asked to keep its session: that is what it is for.
+	if s.cfg.Contract != nil && s.cfg.Contract.KeepSession > 0 {
+		return
 	}
 	if adapter != nil {
 		adapter.Kill()

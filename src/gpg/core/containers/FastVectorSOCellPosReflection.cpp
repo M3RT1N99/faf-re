@@ -40,9 +40,14 @@ namespace
    * same compiled body `SetCount` and `Moho::CDecoder::DecodeCells` dispatch
    * through.
    */
-  void LoadFastVectorSOCellPos(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void LoadFastVectorSOCellPos(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -70,9 +75,14 @@ namespace
    * Writes one reflected `fastvector<Moho::SOCellPos>` payload as archive
    * count plus per-lane reflected `SOCellPos` serialization.
    */
-  void SaveFastVectorSOCellPos(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void SaveFastVectorSOCellPos(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const storage = reinterpret_cast<void*>(objectPtr);
+    auto* const storage = objectPtr;
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -150,16 +160,18 @@ gpg::RFastVectorType<moho::SOCellPos>::~RFastVectorType() = default;
  */
 const char* gpg::RFastVectorType<moho::SOCellPos>::GetName() const
 {
-  static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", CachedSOCellPosType()->GetName());
+  static const fa::string sName = gpg::STR_Printf("fastvector<%s>", CachedSOCellPosType()->GetName());
   return sName.c_str();
 }
 
 /**
  * Address: 0x00553110 (FUN_00553110, gpg::RFastVectorType_SOCellPos::GetLexical)
  */
-msvc8::string gpg::RFastVectorType<moho::SOCellPos>::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RFastVectorType<moho::SOCellPos>::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -176,7 +188,10 @@ const gpg::RIndexed* gpg::RFastVectorType<moho::SOCellPos>::IsIndexed() const
  */
 void gpg::RFastVectorType<moho::SOCellPos>::Init()
 {
-  static_assert(sizeof(gpg::core::FastVectorInline<moho::SOCellPos>) == 0x10, "gpg::core::FastVectorInline<moho::SOCellPos> is 0x10 bytes on x86");
+  static_assert(
+    sizeof(gpg::core::FastVectorInline<moho::SOCellPos>) == 0x10,
+    "gpg::core::FastVectorInline<moho::SOCellPos> is 0x10 bytes on x86"
+  );
   size_ = sizeof(gpg::core::FastVectorInline<moho::SOCellPos>);
   version_ = 1;
   serLoadFunc_ = &LoadFastVectorSOCellPos;
@@ -192,7 +207,10 @@ void gpg::RFastVectorType<moho::SOCellPos>::Init()
  * bounds/null check before indexing (matching the `EntId` sibling), so this
  * is left unconditional to match.
  */
-gpg::RRef gpg::RFastVectorType<moho::SOCellPos>::SubscriptIndex(void* obj, const int ind) const
+gpg::RRef gpg::RFastVectorType<moho::SOCellPos>::SubscriptIndex(
+  void* obj,
+  const int ind
+) const
 {
   auto& cells = *static_cast<gpg::core::FastVectorInline<moho::SOCellPos>*>(obj);
   gpg::RRef out{};
@@ -203,7 +221,9 @@ gpg::RRef gpg::RFastVectorType<moho::SOCellPos>::SubscriptIndex(void* obj, const
 /**
  * Address: 0x005531B0 (FUN_005531B0, gpg::RFastVectorType_SOCellPos::GetCount)
  */
-size_t gpg::RFastVectorType<moho::SOCellPos>::GetCount(void* obj) const
+size_t gpg::RFastVectorType<moho::SOCellPos>::GetCount(
+  void* obj
+) const
 {
   const auto& cells = *static_cast<const gpg::core::FastVectorInline<moho::SOCellPos>*>(obj);
   return cells.Size();
@@ -212,7 +232,10 @@ size_t gpg::RFastVectorType<moho::SOCellPos>::GetCount(void* obj) const
 /**
  * Address: 0x005531C0 (FUN_005531C0, gpg::RFastVectorType_SOCellPos::SetCount)
  */
-void gpg::RFastVectorType<moho::SOCellPos>::SetCount(void* obj, const int count) const
+void gpg::RFastVectorType<moho::SOCellPos>::SetCount(
+  void* obj,
+  const int count
+) const
 {
   constexpr moho::SOCellPos fill{-32768, -32768};
   gpg::FastVectorSOCellPosResize(&fill, static_cast<unsigned int>(count), obj);

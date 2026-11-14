@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <vector>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "moho/collision/CColPrimitiveBox3f.h"
 #include "moho/entity/REntityBlueprint.h"
 #include "moho/entity/UserEntity.h"
@@ -132,7 +132,7 @@ namespace
     moho::CD3DPrimBatcher& batcher,
     const moho::GeomCamera3& camera,
     const float interpolationAlpha,
-    const boost::shared_ptr<moho::CD3DBatchTexture>& texture
+    const std::shared_ptr<moho::CD3DBatchTexture>& texture
   )
   {
     moho::SelectionBracketGpuRenderer& renderer = moho::SelectionBracketGpuRenderer::Get();
@@ -161,7 +161,8 @@ namespace
     sBuilt[0] = moho::BuildSelectionBracketGeometry(sEntities[0], &camera, interpolationAlpha, sInstances[0]) ? 1U : 0U;
     const auto buildRange = [&](const std::size_t begin, const std::size_t end) {
       for (std::size_t i = std::max<std::size_t>(begin, 1u); i < end; ++i) {
-        sBuilt[i] = moho::BuildSelectionBracketGeometry(sEntities[i], &camera, interpolationAlpha, sInstances[i]) ? 1U : 0U;
+        sBuilt[i] =
+          moho::BuildSelectionBracketGeometry(sEntities[i], &camera, interpolationAlpha, sInstances[i]) ? 1U : 0U;
       }
     };
     constexpr std::size_t kParallelBracketMin = 256u;
@@ -180,7 +181,11 @@ namespace
       }
     }
     return renderer.Draw(
-      batcher, &camera, texture, moho::ren_SelectColor, std::span<const moho::SelectionBracketInstance>(sInstances.data(), kept)
+      batcher,
+      &camera,
+      texture,
+      moho::ren_SelectColor,
+      std::span<const moho::SelectionBracketInstance>(sInstances.data(), kept)
     );
   }
 
@@ -202,8 +207,7 @@ namespace
       return;
     }
 
-    const boost::shared_ptr<moho::CD3DBatchTexture> bracketTexture =
-      entity->GetSelectionBracketTexture(viewingArmy);
+    const std::shared_ptr<moho::CD3DBatchTexture> bracketTexture = entity->GetSelectionBracketTexture(viewingArmy);
     if (!bracketTexture) {
       return;
     }
@@ -218,7 +222,10 @@ namespace
    * whenever the running cycle time passes the current phase's length, and the
    * overshoot is carried into the next phase rather than discarded.
    */
-  [[nodiscard]] bool AdvanceBlinkyBoxCycle(moho::BlinkyBox& box, const float elapsedSeconds) noexcept
+  [[nodiscard]] bool AdvanceBlinkyBoxCycle(
+    moho::BlinkyBox& box,
+    const float elapsedSeconds
+  ) noexcept
   {
     const bool wasOff = box.mIsOn == 0u;
 
@@ -240,7 +247,9 @@ namespace
    * (0x007FD679..0x007FD6BC). When it does, the hover pass is skipped so the
    * two bracket layers do not stack.
    */
-  [[nodiscard]] bool IsEntityBlinking(const moho::UserEntity* const entity) noexcept
+  [[nodiscard]] bool IsEntityBlinking(
+    const moho::UserEntity* const entity
+  ) noexcept
   {
     for (const auto* node = moho::sBlinkyBoxes.mNext; node != &moho::sBlinkyBoxes; node = node->mNext) {
       const auto* const box = static_cast<const moho::BlinkyBox*>(node);
@@ -315,17 +324,17 @@ namespace moho
         selectionSizeZ = blueprint->mSelectionSizeZ * ren_UnitSelectionScale;
       }
 
-      if (blueprint->mSelectionCenterOffsetX != 0.0f || blueprint->mSelectionCenterOffsetY != 0.0f
-          || blueprint->mSelectionCenterOffsetZ != 0.0f) {
+      if (
+        blueprint->mSelectionCenterOffsetX != 0.0f || blueprint->mSelectionCenterOffsetY != 0.0f ||
+        blueprint->mSelectionCenterOffsetZ != 0.0f
+      ) {
         // 0x007FC998..0x007FCB3C: the binary inlines the quaternion-to-matrix
         // expansion here instead of calling the shared helper it uses four
         // times below, but the algebra is the same `MultQuadVec` rotation of
         // the blueprint offset into the entity's interpolated orientation.
         const VTransform interpolated = constEntity.GetInterpolatedTransform(interpolationAlpha);
         const Wm3::Vector3f blueprintOffset{
-          blueprint->mSelectionCenterOffsetX,
-          blueprint->mSelectionCenterOffsetY,
-          blueprint->mSelectionCenterOffsetZ
+          blueprint->mSelectionCenterOffsetX, blueprint->mSelectionCenterOffsetY, blueprint->mSelectionCenterOffsetZ
         };
         (void)MultQuadVec(&selectionCenterOffset, &blueprintOffset, &interpolated.orient_);
       }
@@ -356,8 +365,8 @@ namespace moho
     selectionBox.Extent[1] = 0.0f;
     selectionBox.Extent[2] = selectionSizeZ;
     selectionBox.Center.x = selectionBox.Center.x + selectionCenterOffset.x;
-    selectionBox.Center.y = constEntity.GetInterpolatedTransform(interpolationAlpha).pos_.y
-      + ren_SelectionHeightFudge + selectionCenterOffset.y;
+    selectionBox.Center.y = constEntity.GetInterpolatedTransform(interpolationAlpha).pos_.y + ren_SelectionHeightFudge +
+      selectionCenterOffset.y;
     selectionBox.Center.z = selectionBox.Center.z + selectionCenterOffset.z;
 
     Wm3::Vector3f boxVertices[8]{};
@@ -465,7 +474,7 @@ namespace moho
     // 0x007FD4E5..0x007FD4FC: the shared-texture pass runs whenever *either*
     // set still holds a live entry.
     if (!session->mSelection.Empty() || !sSelectionBrackets.Empty()) {
-      const boost::shared_ptr<CD3DBatchTexture> playerBrackets =
+      const std::shared_ptr<CD3DBatchTexture> playerBrackets =
         CD3DBatchTexture::FromFile(kSelectionBracketTexturePath, 1u);
 
       (void)batcher->Setup(kSelectionBracketTechnique);
@@ -484,8 +493,10 @@ namespace moho
     // of the selection.
     UserEntity* const hoveredEntity = session->GetHoveredUserEntity();
     if (!IsEntityBlinking(hoveredEntity) && hoveredEntity != nullptr) {
-      if (session->mSelection.Find(hoveredEntity) == session->mSelection.end() && hoveredEntity->IsUserUnit() != nullptr) {
-        const boost::shared_ptr<CD3DBatchTexture> bracketTexture =
+      if (
+        session->mSelection.Find(hoveredEntity) == session->mSelection.end() && hoveredEntity->IsUserUnit() != nullptr
+      ) {
+        const std::shared_ptr<CD3DBatchTexture> bracketTexture =
           hoveredEntity->GetSelectionBracketTexture(session->GetFocusArmy());
 
         if (bracketTexture) {

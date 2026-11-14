@@ -73,7 +73,7 @@ namespace gpg
     ~RFastVectorType() override;
 
     [[nodiscard]] const char* GetName() const override;
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     [[nodiscard]] const gpg::RIndexed* IsIndexed() const override;
     void Init() override;
     /**
@@ -132,30 +132,7 @@ namespace
     moho::SAniManipBinding* capacityEnd = nullptr;
     moho::SAniManipBinding* inlineStorage = nullptr;
   };
-  static_assert(
-    sizeof(SAniManipBindingInline) == 0x10,
-    "SAniManipBindingInline size must be 0x10"
-  );
-
-  /**
-   * Address: 0x0063C780 (FUN_0063C780)
-   *
-   * What it does:
-   * Initializes one inline fastvector-style runtime view where `begin=end` at
-   * the inline storage base and capacity spans two `SAniManipBinding` lanes.
-   */
-  [[maybe_unused]] SAniManipBindingInline*
-  InitializeSAniManipBindingInlineView(
-    SAniManipBindingInline* const outView,
-    moho::SAniManipBinding* const inlineStorageBase
-  ) noexcept
-  {
-    outView->begin = inlineStorageBase;
-    outView->end = inlineStorageBase;
-    outView->capacityEnd = inlineStorageBase + 2;
-    outView->inlineStorage = inlineStorageBase;
-    return outView;
-  }
+  static_assert(sizeof(SAniManipBindingInline) == 0x10, "SAniManipBindingInline size must be 0x10");
 
   /**
    * Address: 0x0063C7A0 (FUN_0063C7A0, gpg::RFastVectorType_SAniManipBinding::SerLoad)
@@ -163,7 +140,12 @@ namespace
    * What it does:
    * Loads a `fastvector<SAniManipBinding>` runtime view and deserializes each element.
    */
-  void LoadFastVectorSAniManipBinding(gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef)
+  void LoadFastVectorSAniManipBinding(
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
@@ -172,7 +154,7 @@ namespace
     unsigned int count = 0;
     archive->ReadUInt(&count);
 
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::SAniManipBinding>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::SAniManipBinding>*>(objectPtr);
     moho::SAniManipBinding fill{};
     vec.resize(static_cast<std::size_t>(count), fill);
 
@@ -189,13 +171,18 @@ namespace
    * What it does:
    * Saves a `fastvector<SAniManipBinding>` runtime view and serializes each element.
    */
-  void SaveFastVectorSAniManipBinding(gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef)
+  void SaveFastVectorSAniManipBinding(
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
     }
 
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::SAniManipBinding>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::SAniManipBinding>*>(objectPtr);
     const unsigned int count = static_cast<unsigned int>(vec.size());
     archive->WriteUInt(count);
 
@@ -269,16 +256,19 @@ namespace gpg
    */
   const char* RFastVectorType<moho::SAniManipBinding>::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SAniManipBinding>()->GetName());
+    static const fa::string sName =
+      gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::SAniManipBinding>()->GetName());
     return sName.c_str();
   }
 
   /**
    * Address: 0x0063C3E0 (FUN_0063C3E0, gpg::RFastVectorType_SAniManipBinding::GetLexical)
    */
-  msvc8::string RFastVectorType<moho::SAniManipBinding>::GetLexical(const gpg::RRef& ref) const
+  fa::string RFastVectorType<moho::SAniManipBinding>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -295,7 +285,10 @@ namespace gpg
    */
   void RFastVectorType<moho::SAniManipBinding>::Init()
   {
-    static_assert(sizeof(gpg::core::FastVectorInline<moho::SAniManipBinding>) == 0x10, "gpg::core::FastVectorInline<moho::SAniManipBinding> is 0x10 bytes on x86");
+    static_assert(
+      sizeof(gpg::core::FastVectorInline<moho::SAniManipBinding>) == 0x10,
+      "gpg::core::FastVectorInline<moho::SAniManipBinding> is 0x10 bytes on x86"
+    );
     size_ = sizeof(gpg::core::FastVectorInline<moho::SAniManipBinding>);
     version_ = 1;
     serLoadFunc_ = &LoadFastVectorSAniManipBinding;
@@ -307,7 +300,10 @@ namespace gpg
    * What it does:
    * Returns a reflected reference to one animation binding.
    */
-  gpg::RRef RFastVectorType<moho::SAniManipBinding>::SubscriptIndex(void* obj, const int ind) const
+  gpg::RRef RFastVectorType<moho::SAniManipBinding>::SubscriptIndex(
+    void* obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
     out.mType = gpg::RTypeOf<moho::SAniManipBinding>();
@@ -330,7 +326,9 @@ namespace gpg
    * What it does:
    * Returns the number of live animation bindings.
    */
-  size_t RFastVectorType<moho::SAniManipBinding>::GetCount(void* obj) const
+  size_t RFastVectorType<moho::SAniManipBinding>::GetCount(
+    void* obj
+  ) const
   {
     if (!obj) {
       return 0u;
@@ -349,7 +347,10 @@ namespace gpg
    * What it does:
    * Resizes animation bindings while preserving inline storage ownership.
    */
-  void RFastVectorType<moho::SAniManipBinding>::SetCount(void* obj, const int count) const
+  void RFastVectorType<moho::SAniManipBinding>::SetCount(
+    void* obj,
+    const int count
+  ) const
   {
     if (!obj || count < 0) {
       return;
@@ -398,9 +399,18 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_SAniManipBindingTypeInfo_c664d9, moho::preregister_SAniManipBindingTypeInfo)
-GPG_PREREGISTER_INIT(preregister_FastVectorSAniManipBindingType_c664d9, moho::preregister_FastVectorSAniManipBindingType)
-GPG_PREREGISTER_INIT(register_FastVectorSAniManipBindingType_c664d9, moho::register_FastVectorSAniManipBindingType)
+GPG_PREREGISTER_INIT(
+  preregister_SAniManipBindingTypeInfo_c664d9,
+  moho::preregister_SAniManipBindingTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorSAniManipBindingType_c664d9,
+  moho::preregister_FastVectorSAniManipBindingType
+)
+GPG_PREREGISTER_INIT(
+  register_FastVectorSAniManipBindingType_c664d9,
+  moho::register_FastVectorSAniManipBindingType
+)
 
 namespace moho
 {
@@ -416,7 +426,11 @@ namespace moho
    * loading a pre-version-2 archive, also drains and discards a legacy
    * `CAniPose*` pointer slot that older snapshots wrote ahead of the fields.
    */
-  void SAniManipBinding::MemberDeserialize(gpg::ReadArchive* const archive, const int version, const gpg::RRef&)
+  void SAniManipBinding::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    const int version,
+    const gpg::RRef&
+  )
   {
     if (version < 2) {
       moho::CAniPose* discardedAniPose = nullptr;
@@ -431,8 +445,7 @@ namespace moho
     archive->ReadShort(&highFlags);
 
     const std::uint32_t combined =
-      static_cast<std::uint32_t>(lowFlags)
-      | (static_cast<std::uint32_t>(static_cast<std::uint16_t>(highFlags)) << 16);
+      static_cast<std::uint32_t>(lowFlags) | (static_cast<std::uint32_t>(static_cast<std::uint16_t>(highFlags)) << 16);
     mFlags = static_cast<std::int32_t>(combined);
   }
 
@@ -443,7 +456,11 @@ namespace moho
    * Serializes one `SAniManipBinding`, preserving the version-1 raw-pointer
    * compatibility lane when older archive versions are requested.
    */
-  void SAniManipBinding::MemberSerialize(gpg::WriteArchive* const archive, const int version, const gpg::RRef&) const
+  void SAniManipBinding::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    const int version,
+    const gpg::RRef&
+  ) const
   {
     if (version < 2) {
       const gpg::RRef nullRef{};

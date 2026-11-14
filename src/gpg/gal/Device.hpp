@@ -2,13 +2,14 @@
 
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
-#include "boost/weak_ptr.h"
+#include <memory>
+#include <memory>
 #include "gpg/core/streams/MemBufferStream.h"
 #include "gpg/gal/D3D9Utils.h"
 #include "gpg/gal/GpuDriven.h"
 #include "gpg/gal/Matrix.h"
 #include "gpg/gal/OutputContext.hpp"
+#include "gpg/gal/RayTracing.h"
 #include "gpg/gal/Texture.hpp"
 #include "legacy/containers/String.h"
 #include "legacy/containers/Vector.h"
@@ -51,17 +52,17 @@ namespace gpg::gal
    */
   struct DeviceRuntimeInfo
   {
-    msvc8::string api;            // "D3D9", "D3D11", "D3D12", "Vulkan"
-    msvc8::string adapter;        // adapter description
-    msvc8::string driverVersion;  // when the API exposes it
-    msvc8::string featureLevel;   // "11_1", "SM3", Vulkan API version ...
+    fa::string api;           // "D3D9", "D3D11", "D3D12", "Vulkan"
+    fa::string adapter;       // adapter description
+    fa::string driverVersion; // when the API exposes it
+    fa::string featureLevel;  // "11_1", "SM3", Vulkan API version ...
     std::uint32_t vendorId = 0, deviceId = 0;
-    std::uint64_t dedicatedVideoMemory = 0;   // bytes
+    std::uint64_t dedicatedVideoMemory = 0; // bytes
     std::uint64_t sharedSystemMemory = 0;
-    std::uint64_t localBudget = 0, localUsage = 0;        // DXGI QueryVideoMemoryInfo / VK_EXT_memory_budget
+    std::uint64_t localBudget = 0, localUsage = 0; // DXGI QueryVideoMemoryInfo / VK_EXT_memory_budget
     std::uint64_t nonLocalBudget = 0, nonLocalUsage = 0;
     std::uint64_t availableTextureMemory = 0; // D3D9 GetAvailableTextureMem
-    msvc8::string swapChain;      // e.g. "1280x720 flip-discard 3 buffers, tearing"
+    fa::string swapChain;                     // e.g. "1280x720 flip-discard 3 buffers, tearing"
     bool vsync = false;
     std::uint32_t gpuDrivenFeatures = 0;
   };
@@ -181,7 +182,7 @@ namespace gpg::gal
      * code that calls it walks the result at a 12-byte stride (0x008D2305). The
      * shipped D3D10 body is empty (0x008F86F0, `ret 8`); FAF fills it.
      */
-    virtual void GetModesForAdapter(msvc8::vector<HeadAdapterMode>& outModes, int adapterIndex) = 0;
+    virtual void GetModesForAdapter(fa::vector<HeadAdapterMode>& outModes, int adapterIndex) = 0;
     /**
      * Slot: 7 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -212,7 +213,7 @@ namespace gpg::gal
      * Returns the device's pipeline state (its fixed-function and default
      * render state). `EffectD3D9::OnReset` reaches it through this slot.
      */
-    virtual boost::shared_ptr<PipelineState> GetPipelineState() = 0;
+    virtual std::shared_ptr<PipelineState> GetPipelineState() = 0;
     /**
      * Address: 0x00A82547
      * Slot: 9
@@ -223,7 +224,7 @@ namespace gpg::gal
      * (0x0093F5B0) forwards its own return slot to it, so the backend
      * constructs straight into the caller's `shared_ptr`.
      */
-    virtual boost::shared_ptr<Effect> CreateEffect(const EffectContext& context) = 0;
+    virtual std::shared_ptr<Effect> CreateEffect(const EffectContext& context) = 0;
     /**
      * Slot: 10 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -232,30 +233,28 @@ namespace gpg::gal
      * texture of a given size and format). `Texture::Create` (0x008E7C50)
      * dispatches it.
      */
-    virtual boost::shared_ptr<Texture> CreateTexture(const TextureContext* context) = 0;
+    virtual std::shared_ptr<Texture> CreateTexture(const TextureContext* context) = 0;
     /**
      * Slot: 11 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
      * What it does:
      * Creates one colour render target described by `context`.
      */
-    virtual boost::shared_ptr<RenderTarget> CreateRenderTarget(const RenderTargetContext* context) = 0;
+    virtual std::shared_ptr<RenderTarget> CreateRenderTarget(const RenderTargetContext* context) = 0;
     /**
      * Slot: 12 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
      * What it does:
      * Creates one six-face cube render target described by `context`.
      */
-    virtual boost::shared_ptr<CubeRenderTarget> CreateCubeRenderTarget(const CubeRenderTargetContext* context) = 0;
+    virtual std::shared_ptr<CubeRenderTarget> CreateCubeRenderTarget(const CubeRenderTargetContext* context) = 0;
     /**
      * Slot: 13 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
      * What it does:
      * Creates one depth/stencil target described by `context`.
      */
-    virtual boost::shared_ptr<DepthStencilTarget> CreateDepthStencilTarget(
-      const DepthStencilTargetContext* context
-    ) = 0;
+    virtual std::shared_ptr<DepthStencilTarget> CreateDepthStencilTarget(const DepthStencilTargetContext* context) = 0;
     /**
      * Slot: 14 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -264,31 +263,29 @@ namespace gpg::gal
      * hardware vertex formatters dispatch it as `[vtbl+0x38]` on the active
      * device (0x0094565C).
      */
-    virtual boost::shared_ptr<VertexFormat> CreateVertexFormat(std::uint32_t formatCode) = 0;
+    virtual std::shared_ptr<VertexFormat> CreateVertexFormat(std::uint32_t formatCode) = 0;
     /**
      * Slot: 15 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
      * What it does:
      * Creates one vertex buffer described by `context`.
      */
-    virtual boost::shared_ptr<VertexBuffer> CreateVertexBuffer(const VertexBufferContext* context) = 0;
+    virtual std::shared_ptr<VertexBuffer> CreateVertexBuffer(const VertexBufferContext* context) = 0;
     /**
      * Slot: 16 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
      * What it does:
      * Creates one index buffer described by `context`.
      */
-    virtual boost::shared_ptr<IndexBuffer> CreateIndexBuffer(const IndexBufferContext* context) = 0;
+    virtual std::shared_ptr<IndexBuffer> CreateIndexBuffer(const IndexBufferContext* context) = 0;
     /**
      * Slot: 17 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
      * What it does:
      * Reads one colour target back into a texture.
      */
-    virtual void GetRenderTargetData(
-      const boost::shared_ptr<RenderTarget>& source,
-      const boost::shared_ptr<Texture>& destination
-    ) = 0;
+    virtual void
+    GetRenderTargetData(const std::shared_ptr<RenderTarget>& source, const std::shared_ptr<Texture>& destination) = 0;
     /**
      * Slot: 18 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -299,8 +296,8 @@ namespace gpg::gal
      * `GetSurface` calls returned.
      */
     virtual void StretchRect(
-      const boost::shared_ptr<RenderTarget>& source,
-      const boost::shared_ptr<RenderTarget>& destination,
+      const std::shared_ptr<RenderTarget>& source,
+      const std::shared_ptr<RenderTarget>& destination,
       const RECT* sourceRect,
       const RECT* destinationRect
     ) = 0;
@@ -312,8 +309,8 @@ namespace gpg::gal
      * mean the whole surface.
      */
     virtual void UpdateSurface(
-      const boost::shared_ptr<Texture>& source,
-      const boost::shared_ptr<Texture>& destination,
+      const std::shared_ptr<Texture>& source,
+      const std::shared_ptr<Texture>& destination,
       const RECT* sourceRect,
       const RECT* destinationRect
     ) = 0;
@@ -323,10 +320,8 @@ namespace gpg::gal
      * What it does:
      * Writes one cube render target to `filePath` as a DDS file.
      */
-    virtual void SaveCubeRenderTarget(
-      const boost::shared_ptr<CubeRenderTarget>& cubeTarget,
-      const msvc8::string& filePath
-    ) = 0;
+    virtual void
+    SaveCubeRenderTarget(const std::shared_ptr<CubeRenderTarget>& cubeTarget, const fa::string& filePath) = 0;
     /**
      * Slot: 21 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -334,11 +329,8 @@ namespace gpg::gal
      * Writes one colour target's surface to `filePath` in image format
      * `fileFormat`.
      */
-    virtual void SaveRenderTarget(
-      const boost::shared_ptr<RenderTarget>& renderTarget,
-      const msvc8::string& filePath,
-      int fileFormat
-    ) = 0;
+    virtual void
+    SaveRenderTarget(const std::shared_ptr<RenderTarget>& renderTarget, const fa::string& filePath, int fileFormat) = 0;
     /**
      * Slot: 22 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -347,8 +339,8 @@ namespace gpg::gal
      * when it is non-null and to `filePath` otherwise.
      */
     virtual void SaveTexture(
-      const boost::shared_ptr<Texture>& texture,
-      const msvc8::string& filePath,
+      const std::shared_ptr<Texture>& texture,
+      const fa::string& filePath,
       int fileFormat,
       gpg::MemBuffer<char>* outBuffer
     ) = 0;
@@ -377,10 +369,8 @@ namespace gpg::gal
      * it unimplemented (0x008E9B40, 0x008FA260), and nothing in reach calls it,
      * so the handle types are not known.
      */
-    virtual boost::weak_ptr<void>* Func7(
-      boost::weak_ptr<void>* outWeakHandle,
-      boost::shared_ptr<void> temporarySharedHandle
-    ) = 0;
+    virtual std::weak_ptr<void>*
+    Func7(std::weak_ptr<void>* outWeakHandle, std::shared_ptr<void> temporarySharedHandle) = 0;
     /**
      * Slot: 26 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -499,14 +489,8 @@ namespace gpg::gal
      * What it does:
      * Clears the bound target, depth and stencil.
      */
-    virtual void Clear(
-        bool clearTarget,
-        bool clearZbuffer,
-        bool clearStencil,
-        std::uint32_t color,
-        float depth,
-        int stencil
-    ) = 0;
+    virtual void
+    Clear(bool clearTarget, bool clearZbuffer, bool clearStencil, std::uint32_t color, float depth, int stencil) = 0;
     /**
      * Slot: 39 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -522,7 +506,7 @@ namespace gpg::gal
      * What it does:
      * Binds `vertexFormat` as the vertex declaration for the next draws.
      */
-    virtual void SetVertexDeclaration(boost::shared_ptr<VertexFormat> vertexFormat) = 0;
+    virtual void SetVertexDeclaration(std::shared_ptr<VertexFormat> vertexFormat) = 0;
     /**
      * Slot: 41 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224)
      *
@@ -534,7 +518,7 @@ namespace gpg::gal
      */
     virtual void SetVertexBuffer(
       std::uint32_t streamSlot,
-      boost::shared_ptr<VertexBuffer> vertexBuffer,
+      std::shared_ptr<VertexBuffer> vertexBuffer,
       int streamFrequencyToken,
       int startVertex
     ) = 0;
@@ -544,7 +528,7 @@ namespace gpg::gal
      * What it does:
      * Binds `indexBuffer` as the index source for the next indexed draws.
      */
-    virtual void SetBufferIndices(boost::shared_ptr<IndexBuffer> indexBuffer) = 0;
+    virtual void SetBufferIndices(std::shared_ptr<IndexBuffer> indexBuffer) = 0;
     /**
      * Slot: 43 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224;
      * DeviceD3D9 overrides it at the same index)
@@ -552,13 +536,7 @@ namespace gpg::gal
      * What it does:
      * Sets the fixed-function fog parameters.
      */
-    virtual void SetFogState(
-        bool enable,
-        const Matrix* projection,
-        float fogStart,
-        float fogEnd,
-        int fogColor
-    ) = 0;
+    virtual void SetFogState(bool enable, const Matrix* projection, float fogStart, float fogEnd, int fogColor) = 0;
     /**
      * Slot: 44 (pure in ??_7Device@gal@gpg@@6B@ at 0x00D42224;
      * DeviceD3D9 overrides it at the same index)
@@ -621,11 +599,11 @@ namespace gpg::gal
     /** The `GpuDrivenPath` bits this backend has passed parity on (auto turns those on); 0 here. */
     [[nodiscard]] virtual std::uint32_t GetGpuDrivenVerified() const;
     /** A buffer shaders read (and, with `shaderWrite`, compute shaders write); empty here. */
-    virtual boost::shared_ptr<GpuBuffer> CreateGpuBuffer(const GpuBufferDesc& desc);
+    virtual std::shared_ptr<GpuBuffer> CreateGpuBuffer(const GpuBufferDesc& desc);
     /** Overwrites elements [firstElement, firstElement + count) of `buffer` from `data`. */
     virtual void UpdateGpuBuffer(GpuBuffer& buffer, std::uint32_t firstElement, std::uint32_t count, const void* data);
     /** Compiles an engine-owned HLSL program; empty here and on a compile error. */
-    virtual boost::shared_ptr<GpuProgram> CreateGpuProgram(const GpuProgramDesc& desc);
+    virtual std::shared_ptr<GpuProgram> CreateGpuProgram(const GpuProgramDesc& desc);
     /** One vertex-pulling draw (GpuDrivenFeature::kGpuFeatureVertexPulling); no-op here. */
     virtual void DrawGpuProgram(const GpuDrawCall& call);
     /** One compute dispatch (GpuDrivenFeature::kGpuFeatureCompute); no-op here. */
@@ -668,6 +646,39 @@ namespace gpg::gal
     virtual void ReleaseBufferCopy(VertexBuffer& buffer);
     virtual void ReleaseBufferCopy(IndexBuffer& buffer);
 
+    /**
+     * Engine addition: draws of this dynamic buffer only read what its latest locks wrote, so a
+     * backend renaming it needs to copy only those bytes. Nothing here.
+     */
+    virtual void CopyLockedRangeOnly(VertexBuffer& buffer);
+    virtual void CopyLockedRangeOnly(IndexBuffer& buffer);
+
+    /**
+     * Engine addition (ren_CopyWrittenOnly): draws of this dynamic buffer only read bytes written since
+     * its last discard lock, which may be several frames old, so a backend needing a fresh copy for a new
+     * recording copies only those. Nothing here.
+     */
+    virtual void CopyWrittenOnly(VertexBuffer& buffer);
+
+    /**
+     * Engine addition (ren_RayTracedShadows, RayTracing.h; GpuDrivenFeature::kGpuFeatureRayQuery): builds the
+     * ray-tracing structure of one piece of geometry and returns its handle, or 0 (here, and when it fails).
+     */
+    virtual RayGeometryId CreateRayGeometry(const RayGeometryDesc& desc);
+    /** Frees a piece once no frame in flight still reads it; nothing here. */
+    virtual void DestroyRayGeometry(RayGeometryId geometry);
+    /**
+     * The placed pieces the next draws trace against, replacing the last list; `count` 0 empties the scene.
+     * False when the scene could not be built (out of memory): the draws then have no scene to trace.
+     * Nothing here (false).
+     */
+    virtual bool SetRayInstances(
+      const RayInstance* instances,
+      std::uint32_t count,
+      const std::shared_ptr<Texture>* textures = nullptr,
+      std::uint32_t textureCount = 0U
+    );
+
   protected:
     OutputContext outputContext_{}; // +0x04 the bound targets (`ClearTarget` / `GetContext`)
   };
@@ -686,4 +697,3 @@ namespace gpg::gal
    */
   [[nodiscard]] bool SupportsVertexTextureFormat(std::uint32_t textureFormat);
 } // namespace gpg::gal
-

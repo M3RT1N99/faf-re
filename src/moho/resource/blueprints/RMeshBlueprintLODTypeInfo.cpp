@@ -14,7 +14,7 @@
 namespace
 {
   using TypeInfo = moho::RMeshBlueprintLODTypeInfo;
-  using LODVector = msvc8::vector<moho::RMeshBlueprintLOD>;
+  using LODVector = fa::vector<moho::RMeshBlueprintLOD>;
 
   class VectorTypeInfo final : public gpg::RType, public gpg::RIndexed
   {
@@ -30,13 +30,13 @@ namespace
      *
      * What it does:
      * Returns base lexical text plus reflected vector size for one
-     * `msvc8::vector<moho::RMeshBlueprintLOD>` instance.
+     * `fa::vector<moho::RMeshBlueprintLOD>` instance.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     [[nodiscard]] const gpg::RIndexed* IsIndexed() const override;
     void Init() override;
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
-    static void SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerSave(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
     gpg::RRef SubscriptIndex(void* obj, int ind) const override;
     size_t GetCount(void* obj) const override;
     void SetCount(void* obj, int count) const override;
@@ -51,7 +51,10 @@ namespace
    * Builds one `gpg::RRef` lane for an `RMeshBlueprintLOD*` and writes it
    * into caller-provided storage.
    */
-  [[nodiscard]] gpg::RRef* BuildMeshBlueprintLodRef(gpg::RRef* const out, moho::RMeshBlueprintLOD* const object)
+  [[nodiscard]] gpg::RRef* BuildMeshBlueprintLodRef(
+    gpg::RRef* const out,
+    moho::RMeshBlueprintLOD* const object
+  )
   {
     GPG_ASSERT(out != nullptr);
     if (!out) {
@@ -72,11 +75,11 @@ namespace
    *
    * What it does:
    * Builds and caches lexical reflection name `vector<element>` for
-   * `msvc8::vector<moho::RMeshBlueprintLOD>`.
+   * `fa::vector<moho::RMeshBlueprintLOD>`.
    */
   const char* VectorTypeInfo::GetName() const
   {
-    static msvc8::string cachedName{};
+    static fa::string cachedName{};
     if (cachedName.empty()) {
       const gpg::RType* const elementType = gpg::RTypeOf<moho::RMeshBlueprintLOD>();
       const char* const elementName = elementType ? elementType->GetName() : "RMeshBlueprintLOD";
@@ -90,11 +93,13 @@ namespace
    *
    * What it does:
    * Returns base lexical text plus reflected vector size for one
-   * `msvc8::vector<moho::RMeshBlueprintLOD>` instance.
+   * `fa::vector<moho::RMeshBlueprintLOD>` instance.
    */
-  msvc8::string VectorTypeInfo::GetLexical(const gpg::RRef& ref) const
+  fa::string VectorTypeInfo::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -111,10 +116,7 @@ namespace
     serSaveFunc_ = &VectorTypeInfo::SerSave;
   }
 
-  void AppendLoadedMeshBlueprintLod(
-    LODVector& storage,
-    const moho::RMeshBlueprintLOD& element
-  );
+  void AppendLoadedMeshBlueprintLod(LODVector& storage, const moho::RMeshBlueprintLOD& element);
 
   /**
    * Address: 0x005198F0 (FUN_005198F0)
@@ -147,9 +149,14 @@ namespace
    * Deserializes one `vector<RMeshBlueprintLOD>` payload and replaces destination
    * storage in one assignment.
    */
-  void VectorTypeInfo::SerLoad(gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const)
+  void VectorTypeInfo::SerLoad(
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const
+  )
   {
-    auto* const storage = reinterpret_cast<LODVector*>(objectPtr);
+    auto* const storage = static_cast<LODVector*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -202,12 +209,12 @@ namespace
    */
   void VectorTypeInfo::SerSave(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
   {
-    const auto* const storage = reinterpret_cast<const LODVector*>(objectPtr);
+    const auto* const storage = static_cast<const LODVector*>(objectPtr);
     GPG_ASSERT(archive != nullptr);
     GPG_ASSERT(storage != nullptr);
     if (!archive || !storage) {
@@ -232,7 +239,10 @@ namespace
     }
   }
 
-  gpg::RRef VectorTypeInfo::SubscriptIndex(void* const obj, const int ind) const
+  gpg::RRef VectorTypeInfo::SubscriptIndex(
+    void* const obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
     out.mType = gpg::RTypeOf<moho::RMeshBlueprintLOD>();
@@ -247,7 +257,9 @@ namespace
     return out;
   }
 
-  size_t VectorTypeInfo::GetCount(void* const obj) const
+  size_t VectorTypeInfo::GetCount(
+    void* const obj
+  ) const
   {
     const auto* const storage = static_cast<const LODVector*>(obj);
     return storage ? storage->size() : 0u;
@@ -256,7 +268,10 @@ namespace
   /**
    * Address: 0x005193D0 (FUN_005193D0, gpg::RVectorType_RMeshBlueprintLOD::SetCount)
    */
-  void VectorTypeInfo::SetCount(void* const obj, const int count) const
+  void VectorTypeInfo::SetCount(
+    void* const obj,
+    const int count
+  ) const
   {
     if (obj == nullptr || count < 0) {
       return;
@@ -323,19 +338,49 @@ namespace moho
    * What it does:
    * Publishes reflected LOD field metadata with version/descriptions.
    */
-  void RMeshBlueprintLODTypeInfo::AddFields(gpg::RType* const typeInfo)
+  void RMeshBlueprintLODTypeInfo::AddFields(
+    gpg::RType* const typeInfo
+  )
   {
-    typeInfo->AddField<msvc8::string>("MeshName", offsetof(RMeshBlueprintLOD, mMeshName), 3, "Name of mesh to use for this LOD");
-    typeInfo->AddField<msvc8::string>("AlbedoName", offsetof(RMeshBlueprintLOD, mAlbedoName), 3, "Name of the albedo to use for this LOD");
-    typeInfo->AddField<msvc8::string>("NormalsName", offsetof(RMeshBlueprintLOD, mNormalsName), 3, "Name of the normal map to use for this LOD");
-    typeInfo->AddField<msvc8::string>("SpecularName", offsetof(RMeshBlueprintLOD, mSpecularName), 3, "Name of the specular map to use for this LOD");
-    typeInfo->AddField<msvc8::string>("LookupName", offsetof(RMeshBlueprintLOD, mLookupName), 3, "Name of the lookup map to use for this LOD");
-    typeInfo->AddField<msvc8::string>("SecondaryName", offsetof(RMeshBlueprintLOD, mSecondaryName), 3, "Name of the secondary map to use for this LOD");
-    typeInfo->AddField<msvc8::string>("ShaderName", offsetof(RMeshBlueprintLOD, mShaderName), 3, "Name of the shader group to use for this LOD");
-    typeInfo->AddField<float>("LODCutoff", offsetof(RMeshBlueprintLOD, mLodCutoff), 3, "Zoom level at which this guy starts fading out");
-    typeInfo->AddField<bool>("Scrolling", offsetof(RMeshBlueprintLOD, mScrolling), 3, "True if this requires texture scrolling in the shader");
-    typeInfo->AddField<bool>("Occlude", offsetof(RMeshBlueprintLOD, mOcclude), 3, "True if this may occlude other meshes (for silhouette generation)");
-    typeInfo->AddField<bool>("Silhouette", offsetof(RMeshBlueprintLOD, mSilhouette), 3, "True if this can generate a silhouette if blocked by an occluder");
+    typeInfo->AddField<fa::string>(
+      "MeshName", offsetof(RMeshBlueprintLOD, mMeshName), 3, "Name of mesh to use for this LOD"
+    );
+    typeInfo->AddField<fa::string>(
+      "AlbedoName", offsetof(RMeshBlueprintLOD, mAlbedoName), 3, "Name of the albedo to use for this LOD"
+    );
+    typeInfo->AddField<fa::string>(
+      "NormalsName", offsetof(RMeshBlueprintLOD, mNormalsName), 3, "Name of the normal map to use for this LOD"
+    );
+    typeInfo->AddField<fa::string>(
+      "SpecularName", offsetof(RMeshBlueprintLOD, mSpecularName), 3, "Name of the specular map to use for this LOD"
+    );
+    typeInfo->AddField<fa::string>(
+      "LookupName", offsetof(RMeshBlueprintLOD, mLookupName), 3, "Name of the lookup map to use for this LOD"
+    );
+    typeInfo->AddField<fa::string>(
+      "SecondaryName", offsetof(RMeshBlueprintLOD, mSecondaryName), 3, "Name of the secondary map to use for this LOD"
+    );
+    typeInfo->AddField<fa::string>(
+      "ShaderName", offsetof(RMeshBlueprintLOD, mShaderName), 3, "Name of the shader group to use for this LOD"
+    );
+    typeInfo->AddField<float>(
+      "LODCutoff", offsetof(RMeshBlueprintLOD, mLodCutoff), 3, "Zoom level at which this guy starts fading out"
+    );
+    typeInfo->AddField<bool>(
+      "Scrolling", offsetof(RMeshBlueprintLOD, mScrolling), 3, "True if this requires texture scrolling in the shader"
+    );
+    typeInfo->AddField<bool>(
+      "Occlude",
+      offsetof(RMeshBlueprintLOD, mOcclude),
+      3,
+      "True if this may occlude other meshes (for silhouette generation)"
+    );
+    typeInfo->AddField<bool>(
+      "Silhouette",
+      offsetof(RMeshBlueprintLOD, mSilhouette),
+      3,
+      "True if this can generate a silhouette if blocked by an occluder"
+    );
   }
 
   /**
@@ -369,12 +414,12 @@ namespace moho
    * Address: 0x0051A6D0 (FUN_0051A6D0)
    *
    * What it does:
-   * Constructs/preregisters RTTI for `msvc8::vector<RMeshBlueprintLOD>`.
+   * Constructs/preregisters RTTI for `fa::vector<RMeshBlueprintLOD>`.
    */
   gpg::RType* preregister_VectorRMeshBlueprintLODType()
   {
     auto* const typeInfo = &AcquireRMeshBlueprintLODVectorType();
-    gpg::PreRegisterRType(typeid(msvc8::vector<RMeshBlueprintLOD>), typeInfo);
+    gpg::PreRegisterRType(typeid(fa::vector<RMeshBlueprintLOD>), typeInfo);
     return typeInfo;
   }
 
@@ -393,7 +438,16 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_RMeshBlueprintLODTypeInfo_8ee506, moho::register_RMeshBlueprintLODTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_RMeshBlueprintLODTypeInfo_8ee506,
+  moho::register_RMeshBlueprintLODTypeInfo
+)
 
-GPG_PREREGISTER_INIT(preregister_VectorRMeshBlueprintLODType_8ee506, moho::preregister_VectorRMeshBlueprintLODType)
-GPG_PREREGISTER_INIT(register_VectorRMeshBlueprintLODType_8ee506, moho::register_VectorRMeshBlueprintLODType)
+GPG_PREREGISTER_INIT(
+  preregister_VectorRMeshBlueprintLODType_8ee506,
+  moho::preregister_VectorRMeshBlueprintLODType
+)
+GPG_PREREGISTER_INIT(
+  register_VectorRMeshBlueprintLODType_8ee506,
+  moho::register_VectorRMeshBlueprintLODType
+)

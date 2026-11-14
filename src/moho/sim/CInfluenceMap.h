@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -53,7 +54,7 @@ namespace moho
    * the `cfunc_CAiBrainGetThreatsAroundPositionL` Lua worker (FUN_00590C80).
    *
    * The binary builds each record on the stack as `{worldX, 0.0f, worldZ,
-   * threat}` and pushes it onto a `msvc8::vector<SPositionThreat>` (16-byte
+   * threat}` and pushes it onto a `fa::vector<SPositionThreat>` (16-byte
    * stride, `push_back` = FUN_00718A40). The `y` lane is written as `0.0f` and
    * is unused by the worker, which reads only `x` (+0x00), `z` (+0x08), and
    * `threat` (+0x0C).
@@ -77,20 +78,23 @@ namespace moho
     // tables index type 2 -> +0x04, 3 -> +0x08, 5 -> +0x10, 6 -> +0x14, and
     // Update (0x00716776..0x0071682A) writes every structure into +0x04,
     // non-mex structures also into +0x08, land units into +0x10, fliers +0x14.
-    float overallInfluence;            // +0x00
-    float influenceStructures;         // +0x04
-    float influenceStructuresNotMex;   // +0x08
-    float navalInfluence;              // +0x0C
-    float landInfluence;               // +0x10
-    float airInfluence;                // +0x14
-    float experimentalInfluence;       // +0x18
-    float commanderInfluence;          // +0x1C
-    float artilleryInfluence;          // +0x20
-    float antiAirInfluence;            // +0x24
-    float antiSurfaceInfluence;        // +0x28
-    float antiSubInfluence;            // +0x2C
-    float economyInfluence;            // +0x30
-    float unknownInfluence;            // +0x34
+    float overallInfluence;          // +0x00
+    float influenceStructures;       // +0x04
+    float influenceStructuresNotMex; // +0x08
+    float navalInfluence;            // +0x0C
+    float landInfluence;             // +0x10
+    float airInfluence;              // +0x14
+    float experimentalInfluence;     // +0x18
+    float commanderInfluence;        // +0x1C
+    float artilleryInfluence;        // +0x20
+    float antiAirInfluence;          // +0x24
+    float antiSurfaceInfluence;      // +0x28
+    float antiSubInfluence;          // +0x2C
+    float economyInfluence;          // +0x30
+    float unknownInfluence;          // +0x34
+
+    /** The fourteen fields in declaration order, for the archive (0x00717AF0 / 0x00717B00). */
+    [[nodiscard]] std::array<float*, 14> Fields() noexcept;
 
     void Clear() noexcept;
     void RecomputeOverall() noexcept;
@@ -129,7 +133,8 @@ namespace moho
    * Copies one contiguous `SThreat` source range `[sourceBegin, sourceEnd)`
    * into destination storage and returns one-past the last destination slot.
    */
-  SThreat* CopySThreatRangeNullable(SThreat* destination, const SThreat* sourceBegin, const SThreat* sourceEnd) noexcept;
+  SThreat*
+  CopySThreatRangeNullable(SThreat* destination, const SThreat* sourceBegin, const SThreat* sourceEnd) noexcept;
 
   struct InfluenceMapEntry
   {
@@ -152,16 +157,16 @@ namespace moho
     static gpg::RType* sType;
     [[nodiscard]] static gpg::RType* StaticGetClass();
 
-    std::uint32_t entityId;              // +0x00
-    CArmyImpl* sourceArmy;               // +0x04
-    Wm3::Vec3f lastPosition;             // +0x08
+    std::uint32_t entityId;                // +0x00
+    CArmyImpl* sourceArmy;                 // +0x04
+    Wm3::Vec3f lastPosition;               // +0x08
     const RUnitBlueprint* sourceBlueprint; // +0x14
-    std::int32_t sourceLayer;            // +0x18
-    std::uint8_t isDetailed;             // +0x1C
-    std::uint8_t pad_1D_1F[0x03];        // +0x1D
-    float threatStrength;                // +0x20
-    float threatDecay;                   // +0x24
-    std::int32_t decayTicks;             // +0x28
+    std::int32_t sourceLayer;              // +0x18
+    std::uint8_t isDetailed;               // +0x1C
+    std::uint8_t pad_1D_1F[0x03];          // +0x1D
+    float threatStrength;                  // +0x20
+    float threatDecay;                     // +0x24
+    std::int32_t decayTicks;               // +0x28
   };
 
   class InfluenceGrid
@@ -240,10 +245,10 @@ namespace moho
     [[nodiscard]] bool RemoveEntry(std::uint32_t entityId);
 
   public:
-    msvc8::map<std::uint32_t, InfluenceMapEntry> entries; // +0x00
-    msvc8::vector<SThreat> threats;                               // +0x0C
-    SThreat threat;                                               // +0x1C
-    SThreat decay;                                                // +0x54
+    fa::map<std::uint32_t, InfluenceMapEntry> entries; // +0x00
+    fa::vector<SThreat> threats;                       // +0x0C
+    SThreat threat;                                    // +0x1C
+    SThreat decay;                                     // +0x54
   };
 
   class CInfluenceMap
@@ -292,9 +297,8 @@ namespace moho
      * Builds a new `CInfluenceMap` for an archive load and hands it back unowned; its
      * members are loaded over it afterwards.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x007163A0 (FUN_007163A0, ??1CInfluenceMap@Moho@@QAE@Z)
@@ -313,7 +317,8 @@ namespace moho
     [[nodiscard]] std::int32_t VectorToCoords(const Wm3::Vec3f& pos) const;
 
     /**
-     * Address: 0x00715F30 (FUN_00715F30, ?UpdateBlipPosition@CInfluenceMap@Moho@@QAEXHABV?$Vector3@M@Wm3@@PBVRUnitBlueprint@2@@Z)
+     * Address: 0x00715F30 (FUN_00715F30,
+     * ?UpdateBlipPosition@CInfluenceMap@Moho@@QAEXHABV?$Vector3@M@Wm3@@PBVRUnitBlueprint@2@@Z)
      *
      * What it does:
      * Updates one blip's influence-entry cell, refreshing strength/position when
@@ -328,35 +333,40 @@ namespace moho
      * Sums threat over a square neighborhood around `(x, z)` with optional
      * playable-rect restriction.
      */
-    [[nodiscard]] float
-    GetThreatRect(int x, int z, int radius, bool onMap, EThreatType threatType, int army) const;
+    [[nodiscard]] float GetThreatRect(int x, int z, int radius, bool onMap, EThreatType threatType, int army) const;
 
     /**
-     * Address: 0x00716E60 (FUN_00716E60, ?GetThreatBetweenPositions@CInfluenceMap@Moho@@QBEMABV?$Vector3@M@Wm3@@0_W4EThreatType@2@H@Z)
+     * Address: 0x00716E60 (FUN_00716E60,
+     * ?GetThreatBetweenPositions@CInfluenceMap@Moho@@QBEMABV?$Vector3@M@Wm3@@0_W4EThreatType@2@H@Z)
      *
      * What it does:
      * Samples threat along a grid-aligned path between two world positions.
      */
     [[nodiscard]] float GetThreatBetweenPositions(
-      const Wm3::Vec3f& pos1, const Wm3::Vec3f& pos2, bool ring, EThreatType threatType, int armyIndex
+      const Wm3::Vec3f& pos1,
+      const Wm3::Vec3f& pos2,
+      bool ring,
+      EThreatType threatType,
+      int armyIndex
     ) const;
 
     /**
-     * Address: 0x007171D0 (FUN_007171D0, ?GetThreatsAroundPosition@CInfluenceMap@Moho@@QBE?AV?$vector@USPositionThreat@Moho@@V?$allocator@USPositionThreat@Moho@@@std@@@std@@ABV?$Vector3@M@Wm3@@HH_NW4EThreatType@2@H@Z)
+     * Address: 0x007171D0 (FUN_007171D0,
+     * ?GetThreatsAroundPosition@CInfluenceMap@Moho@@QBE?AV?$vector@USPositionThreat@Moho@@V?$allocator@USPositionThreat@Moho@@@std@@@std@@ABV?$Vector3@M@Wm3@@HH_NW4EThreatType@2@H@Z)
      *
      * What it does:
      * Fills `out` with one `SPositionThreat` record per grid cell within `ring`
      * whose per-type threat is strictly positive, then returns `&out`.
      *
      * NOTE: signature corrected from the mis-recovered `LuaObject*` form. The
-     * binary fills a `msvc8::vector<SPositionThreat>` (element built as
+     * binary fills a `fa::vector<SPositionThreat>` (element built as
      * `{worldX, 0.0f, worldZ, threat}`, pushed via FUN_00718A40); it does NOT
      * build a Lua table. The only caller,
      * `cfunc_CAiBrainGetThreatsAroundPositionL` (FUN_00590C80), builds the Lua
      * table from that vector.
      */
-    msvc8::vector<SPositionThreat>* GetThreatsAroundPosition(
-      msvc8::vector<SPositionThreat>& out,
+    fa::vector<SPositionThreat>* GetThreatsAroundPosition(
+      fa::vector<SPositionThreat>& out,
       const Wm3::Vec3f& pos,
       int ring,
       bool restrictToPlayable,
@@ -373,7 +383,8 @@ namespace moho
     void Update();
 
     /**
-     * Address: 0x00716B00 (FUN_00716B00, ?AssignThreatAtPosition@CInfluenceMap@Moho@@QAEXABV?$Vector3@M@Wm3@@W4EThreatType@2@MM@Z)
+     * Address: 0x00716B00 (FUN_00716B00,
+     * ?AssignThreatAtPosition@CInfluenceMap@Moho@@QAEXABV?$Vector3@M@Wm3@@W4EThreatType@2@MM@Z)
      *
      * What it does:
      * Adds `assignedThreat` to the per-type threat lane of the cell
@@ -391,7 +402,8 @@ namespace moho
     );
 
     /**
-     * Address: 0x00716FC0 (FUN_00716FC0, ?GetHighestThreatPosition@CInfluenceMap@Moho@@QBE?AV?$Vector3@M@Wm3@@AAMHHW4EThreatType@2@H@Z)
+     * Address: 0x00716FC0 (FUN_00716FC0,
+     * ?GetHighestThreatPosition@CInfluenceMap@Moho@@QBE?AV?$Vector3@M@Wm3@@AAMHHW4EThreatType@2@H@Z)
      *
      * What it does:
      * Scans the influence grid (optionally restricted to the playable
@@ -410,7 +422,7 @@ namespace moho
     );
 
   private:
-    using BlipCellMap = msvc8::map<std::uint32_t, std::int32_t>;
+    using BlipCellMap = fa::map<std::uint32_t, std::int32_t>;
 
     [[nodiscard]] CArmyImpl* ResolveSourceArmy(std::uint32_t blipId) const;
     [[nodiscard]] const std::int32_t* FindBlipCell(std::uint32_t blipId) const;
@@ -451,13 +463,13 @@ namespace moho
      */
     void RemoveEntry(std::uint32_t blipId);
 
-    CArmyImpl* mArmy;                     // +0x00
-    std::int32_t mTotal;                  // +0x04
-    std::int32_t mWidth;                  // +0x08
-    std::int32_t mHeight;                 // +0x0C
-    std::int32_t mGridSize;               // +0x10
-    BlipCellMap mBlipCells;               // +0x14
-    msvc8::vector<InfluenceGrid> mMapEntries; // +0x20
+    CArmyImpl* mArmy;                      // +0x00
+    std::int32_t mTotal;                   // +0x04
+    std::int32_t mWidth;                   // +0x08
+    std::int32_t mHeight;                  // +0x0C
+    std::int32_t mGridSize;                // +0x10
+    BlipCellMap mBlipCells;                // +0x14
+    fa::vector<InfluenceGrid> mMapEntries; // +0x20
   };
 
   static_assert(sizeof(SThreat) == 0x38, "SThreat size must be 0x38");

@@ -1,4 +1,5 @@
 #include "CScApp.h"
+#include "moho/sim/ReplayTimeline.h"
 #include "gpg/core/profiling/Profiler.h"
 
 #include <Windows.h>
@@ -23,10 +24,16 @@
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/DeviceContext.hpp"
 #include "gpg/gal/Error.hpp"
+#if FAFRE_PLATFORM_WINDOWS // the Direct3D 12 backend: Windows only (issue #255)
+#include "gpg/gal/backends/d3d12/DeviceD3D12.h"
+#endif
 #include "moho/audio/AudioEngine.h"
+#include "moho/lua/ScriptChunkCache.h"
+#include "moho/render/d3d/CD3DFont.h"
 #include "moho/console/CConCommand.h"
 #include "moho/audio/IUserSoundManager.h"
 #include "moho/audio/SofdecRuntime.h"
+#include "lua/LuaIncrementalGc.h"
 #include "moho/lua/CScrLuaObjectFactory.h"
 #include "moho/misc/ScrDebugHooks.h"
 #include "moho/misc/SessionStartup.h"
@@ -34,8 +41,10 @@
 #include "moho/misc/StatItem.h"
 #include "moho/misc/Stats.h"
 #include "moho/sim/DesyncTelemetry.h"
+#include "moho/sim/SimWorkerPool.h"
 #include "moho/misc/TimeBar.h"
 #include "moho/misc/CDiskWatch.h"
+#include "moho/net/CRejoinFeed.h"
 #include "moho/net/CGpgNetInterface.h"
 #include "moho/net/Common.h"
 #include "moho/app/CWaitHandleSet.h"
@@ -54,6 +63,7 @@
 #if FAF_SERVER_MODE
 #include "remote/client/OracleGolden.h"
 #include "remote/client/ServerConnect.h"
+#include "moho/app/ServerLobbyUi.h"
 #endif
 
 namespace gpg
@@ -64,6 +74,8 @@ namespace gpg
 
 namespace
 {
+  void PrepareDeviceEarly(); // engine addition (ren_PrepareDeviceEarly), below
+
   constexpr std::uintptr_t kAddressSpaceQueryLimit = 0x80000000u;
   constexpr double kAddressSpaceQueryIntervalSeconds = 3.0;
 
@@ -84,7 +96,10 @@ namespace
   bool sAddressSpaceMonitorEnabled = false;
   gpg::time::Timer sAddressSpaceMonitorTimer{};
 
-  void AccumulateClamped(std::uint32_t& counter, const SIZE_T increment)
+  void AccumulateClamped(
+    std::uint32_t& counter,
+    const SIZE_T increment
+  )
   {
     const std::uint32_t maxValue = (std::numeric_limits<std::uint32_t>::max)();
     const std::uint32_t remaining = maxValue - counter;
@@ -92,7 +107,10 @@ namespace
     counter += clamped;
   }
 
-  void EnsureEngineStringStatItem(moho::StatItem*& slot, const char* const statPath)
+  void EnsureEngineStringStatItem(
+    moho::StatItem*& slot,
+    const char* const statPath
+  )
   {
     if (slot != nullptr) {
       return;
@@ -109,7 +127,10 @@ namespace
     }
   }
 
-  void EnsureEngineIntStatItem(moho::StatItem*& slot, const char* const statPath)
+  void EnsureEngineIntStatItem(
+    moho::StatItem*& slot,
+    const char* const statPath
+  )
   {
     if (slot != nullptr) {
       return;
@@ -132,7 +153,9 @@ namespace
    * What it does:
    * Formats byte counts as `B/K/M/G` with precision rules based on magnitude.
    */
-  [[nodiscard]] msvc8::string FormatByteSize(const std::size_t valueBytes)
+  [[nodiscard]] fa::string FormatByteSize(
+    const std::size_t valueBytes
+  )
   {
     // x86: `std::size_t`/`std::intptr_t` are the binary's `unsigned int`/`int`,
     // including its signed view of counts above 2 GB. x64 keeps 64 bits, so a
@@ -161,7 +184,9 @@ namespace
   }
 
   void PublishEngineStringStat(
-    moho::StatItem*& slot, const char* const statPath, const std::size_t valueBytes
+    moho::StatItem*& slot,
+    const char* const statPath,
+    const std::size_t valueBytes
   )
   {
     EnsureEngineStringStatItem(slot, statPath);
@@ -172,7 +197,11 @@ namespace
     slot->SetValue(FormatByteSize(valueBytes));
   }
 
-  void PublishEngineIntStat(moho::StatItem*& slot, const char* const statPath, const std::int32_t value)
+  void PublishEngineIntStat(
+    moho::StatItem*& slot,
+    const char* const statPath,
+    const std::int32_t value
+  )
   {
     EnsureEngineIntStatItem(slot, statPath);
     if (slot == nullptr) {
@@ -214,39 +243,31 @@ namespace
       }
 
       switch (memoryInfo.State) {
-        case MEM_COMMIT:
-          AccumulateClamped(committedBytes, memoryInfo.RegionSize);
-          break;
-        case MEM_RESERVE:
-          AccumulateClamped(reservedBytes, memoryInfo.RegionSize);
-          break;
-        case MEM_FREE:
-          AccumulateClamped(freeBytes, memoryInfo.RegionSize);
-          break;
-        default:
-          break;
+      case MEM_COMMIT:
+        AccumulateClamped(committedBytes, memoryInfo.RegionSize);
+        break;
+      case MEM_RESERVE:
+        AccumulateClamped(reservedBytes, memoryInfo.RegionSize);
+        break;
+      case MEM_FREE:
+        AccumulateClamped(freeBytes, memoryInfo.RegionSize);
+        break;
+      default:
+        break;
       }
 
       cursor += static_cast<std::uintptr_t>(memoryInfo.RegionSize);
     }
 
-    PublishEngineStringStat(
-      sEngineStatHeapAddressSpaceCommit, "Heap_Address Space_Commit", committedBytes
-    );
-    PublishEngineStringStat(
-      sEngineStatHeapAddressSpaceReserve, "Heap_Address Space_Reserve", reservedBytes
-    );
+    PublishEngineStringStat(sEngineStatHeapAddressSpaceCommit, "Heap_Address Space_Commit", committedBytes);
+    PublishEngineStringStat(sEngineStatHeapAddressSpaceReserve, "Heap_Address Space_Reserve", reservedBytes);
     PublishEngineStringStat(sEngineStatHeapAddressSpaceFree, "Heap_Address Space_Free", freeBytes);
-    PublishEngineIntStat(
-      sEngineStatHeapAddressSpaceRegions, "Heap_Address Space_Regions", regionCount
-    );
-    PublishEngineIntStat(
-      sEngineStatHeapAddressSpaceAllocations, "Heap_Address Space_Allocations", allocationCount
-    );
+    PublishEngineIntStat(sEngineStatHeapAddressSpaceRegions, "Heap_Address Space_Regions", regionCount);
+    PublishEngineIntStat(sEngineStatHeapAddressSpaceAllocations, "Heap_Address Space_Allocations", allocationCount);
   }
 
   /**
-    * Alias of FUN_008D1470 (non-canonical helper lane).
+   * Alias of FUN_008D1470 (non-canonical helper lane).
    *
    * What it does:
    * Pulls allocator counters and publishes the six heap stat strings used by UI stats.
@@ -259,13 +280,9 @@ namespace
     PublishEngineStringStat(sEngineStatHeapReserved, "Heap_Reserved", heapStats.reserved);
     PublishEngineStringStat(sEngineStatHeapCommitted, "Heap_Committed", heapStats.committed);
     PublishEngineStringStat(sEngineStatHeapTotal, "Heap_Total", heapStats.total);
-    PublishEngineStringStat(
-      sEngineStatHeapInSmallBlocks, "Heap_InSmallBlocks", heapStats.inSmallBlocks
-    );
+    PublishEngineStringStat(sEngineStatHeapInSmallBlocks, "Heap_InSmallBlocks", heapStats.inSmallBlocks);
     PublishEngineStringStat(sEngineStatHeapInUse, "Heap_InUse", heapStats.inUse);
-    PublishEngineStringStat(
-      sEngineStatHeapTotalCheck, "Heap_TotalCheck", heapStats.inSmallBlocks + heapStats.inUse
-    );
+    PublishEngineStringStat(sEngineStatHeapTotalCheck, "Heap_TotalCheck", heapStats.inSmallBlocks + heapStats.inUse);
   }
 
   void UpdateAddressSpaceMonitor()
@@ -289,7 +306,7 @@ namespace
 
   [[nodiscard]] float TryReadFixedFrameDeltaSeconds()
   {
-    msvc8::vector<msvc8::string> framerateArgs;
+    fa::vector<fa::string> framerateArgs;
     if (!moho::CFG_GetArgOption("/framerate", 1, &framerateArgs) || framerateArgs.empty()) {
       return -1.0f;
     }
@@ -307,7 +324,9 @@ namespace
     return 1.0f / rate;
   }
 
-  void SetFrontEndReplayFilename(const msvc8::string& replayPath)
+  void SetFrontEndReplayFilename(
+    const fa::string& replayPath
+  )
   {
     LuaPlus::LuaState* const state = moho::USER_GetLuaState();
     if (state == nullptr) {
@@ -328,9 +347,38 @@ namespace
     frontEndData.SetString("replay_filename", replayPath.c_str());
   }
 
-  [[nodiscard]] msvc8::string ResolveLoadPath(gpg::StrArg requestedPath)
+  /// Case-insensitive console command name comparison, matching the console's
+  /// own command lookup.
+  [[nodiscard]] bool IsCommandName(
+    const std::string& token,
+    const char* name
+  )
   {
-    msvc8::string loadPath;
+    if (name == nullptr) {
+      return false;
+    }
+
+    const std::size_t nameLength = std::strlen(name);
+    if (token.size() != nameLength) {
+      return false;
+    }
+
+    for (std::size_t index = 0; index < nameLength; ++index) {
+      const unsigned char left = static_cast<unsigned char>(token[index]);
+      const unsigned char right = static_cast<unsigned char>(name[index]);
+      if (std::tolower(left) != std::tolower(right)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  [[nodiscard]] fa::string ResolveLoadPath(
+    gpg::StrArg requestedPath
+  )
+  {
+    fa::string loadPath;
     loadPath.assign_owned(requestedPath != nullptr ? requestedPath : "");
     if (loadPath.empty()) {
       return loadPath;
@@ -344,6 +392,328 @@ namespace
   }
 
   /**
+   * Engine addition: what the command-line bootstrap does before it picks a session - the
+   * telemetry flags and switch defaults (issue #218), before `/con name=value;name2=value2` runs
+   * its console commands (so a launcher can set user-side console variables, e.g.
+   * `/con sim_ReplayLead=0`), then `sys_ThreadPlacement` (`/threadplacement N`) for the main
+   * thread; the sim, issue and worker threads place themselves as they start. Once, from
+   * whichever of `StartCommandLineSessionEarly` and `InitializeSessionFromCommandLine` runs first.
+   */
+  void RunCommandLinePrologue()
+  {
+    static bool sDone = false;
+    if (sDone) {
+      return;
+    }
+    sDone = true;
+
+    moho::TELEMETRY_Startup();
+
+    fa::vector<fa::string> args;
+    if (moho::CFG_GetArgOption("/con", 1, &args) && !args.empty()) {
+      std::string commands = args[0].c_str();
+      std::replace(commands.begin(), commands.end(), '=', ' ');
+      std::size_t begin = 0;
+      while (begin <= commands.size()) {
+        const std::size_t end = std::min(commands.find(';', begin), commands.size());
+        if (end > begin) {
+          moho::CON_Execute(commands.substr(begin, end - begin).c_str());
+        }
+        begin = end + 1;
+      }
+    }
+
+    moho::PlaceCurrentThread(moho::EThreadRole::Main);
+  }
+
+  /**
+   * Engine addition: applies the startup-only `lua_IncrementalGC` convar from
+   * `/con` before the UI VMs are created.
+   *
+   * `RunCommandLinePrologue` already runs every `/con` command, but only later:
+   * the front-end UI root is built by `USER_GetLuaState()` in `CScApp::Init`,
+   * which runs before either caller of the prologue. The collector role of a
+   * Lua VM is fixed when the VM is created, so the `lua_IncrementalGC` segment
+   * is executed here as well, ahead of that root. The later prologue pass runs
+   * it again, which is harmless: the convar just takes the same value.
+   *
+   * The parsing mirrors the prologue: `=` becomes a space, `;` separates the
+   * segments. Only a segment whose first token is the convar name is executed
+   * (compared case-insensitively, like the console command lookup itself).
+   */
+  void ApplyEarlyLuaIncrementalGcCommand()
+  {
+    fa::vector<fa::string> args;
+
+    if (moho::CFG_GetArgOption("/con", 1, &args) && !args.empty()) {
+      std::string commands = args[0].c_str();
+      std::replace(commands.begin(), commands.end(), '=', ' ');
+      std::size_t begin = 0;
+      while (begin <= commands.size()) {
+        const std::size_t end = std::min(commands.find(';', begin), commands.size());
+        if (end > begin) {
+          const std::string segment = commands.substr(begin, end - begin);
+
+          std::size_t tokenBegin = 0;
+          while (tokenBegin < segment.size() && (segment[tokenBegin] == ' ' || segment[tokenBegin] == '\t')) {
+            ++tokenBegin;
+          }
+          std::size_t tokenEnd = segment.find_first_of(" \t", tokenBegin);
+          const std::string token = segment.substr(tokenBegin, tokenEnd - tokenBegin);
+
+          // ren_VulkanScaledPresent is read when the device makes its head targets (CreateDevice, after this):
+          // the prologue's pass would be too late for it too. ren_TerrainTessellation is read when the terrain
+          // effect loads, ren_RayTracedShadows -1 when the device is made.
+          if (
+            IsCommandName(token, "lua_IncrementalGC") || IsCommandName(token, "ren_VulkanScaledPresent") ||
+            IsCommandName(token, "ren_TerrainTessellation") || IsCommandName(token, "ren_RayTracedShadows")
+          ) {
+            moho::CON_Execute(segment.c_str());
+          }
+        }
+        begin = end + 1;
+      }
+      args.clear();
+    }
+
+    // The convar is bound to the configured value; copy it into the live
+    // runtime flag, which the UI VMs read when they are created.
+    moho::CaptureIncrementalGcStartupSetting();
+  }
+
+  bool wld_EarlyCommandLineSession = true;
+  moho::TConVar<bool> gTConVar_wld_EarlyCommandLineSession(
+    "wld_EarlyCommandLineSession",
+    "Begin a /map (or /scenario) or /replay session, and its load, right after userInit.lua while the window, the "
+    "graphics "
+    "device and the user interface are set up (1, the default), or after the app's first frame as the binary does "
+    "(0). Read at startup: /noearlysession sets 0, as does wld_EarlyCommandLineSession=0 in /con.",
+    &wld_EarlyCommandLineSession
+  );
+
+  bool gEarlyCommandLineSession = false; // the /map session began in CScApp::Init
+
+  /**
+   * Engine addition (`wld_EarlyCommandLineSession`): the `/map` (or else `/replay`) branch of the
+   * command-line bootstrap, run from `CScApp::Init` once userInit.lua and the profile are in place, and the
+   * session's load requested at once (`WLD_StartPendingSessionLoad`), so the rules and the map load
+   * while the app creates its window, device and user interface instead of after its first frame.
+   * `/con` is applied first, as it is before the `/map` branch otherwise. Not with `/debug`, whose
+   * hook goes on before the session's scripts run, nor with `/interlocked`, whose load would run on
+   * this thread and wait for UI frames only this thread can make, nor in a server-mode build, where
+   * `/connectserver` decides first. A failed setup is left to the first frame, which tries again.
+   */
+  void StartCommandLineSessionEarly()
+  {
+#if !FAF_SERVER_MODE
+    if (moho::CFG_GetArgOption("/noearlysession", 0, nullptr)) {
+      wld_EarlyCommandLineSession = false;
+    }
+    fa::vector<fa::string> mapArgs;
+    fa::vector<fa::string> replayArgs;
+    const bool map = moho::CFG_GetArgOption("/scenario", 1, &mapArgs) || moho::CFG_GetArgOption("/map", 1, &mapArgs);
+    const bool replay = !map && moho::CFG_GetArgOption("/replay", 1, &replayArgs);
+    if (
+      !wld_EarlyCommandLineSession || moho::CFG_GetArgOption("/debug", 0, nullptr) ||
+      moho::CFG_GetArgOption("/interlocked", 0, nullptr) || (map ? mapArgs.empty() : !replay || replayArgs.empty())
+    ) {
+      return;
+    }
+    RunCommandLinePrologue();
+    if (!wld_EarlyCommandLineSession) {
+      return;
+    }
+    if (map) {
+      const fa::string mapScenario = moho::FindMapScenario(mapArgs[0].c_str());
+      if (!moho::StartCommandLineSession(mapScenario.c_str(), false)) {
+        return;
+      }
+    } else {
+      // The /replay branch of InitializeSessionFromCommandLine; a replay it refuses is left to it.
+      SetFrontEndReplayFilename(replayArgs[0]);
+      fa::string failureReason;
+      fa::auto_ptr<moho::SWldSessionInfo> sessionInfo =
+        moho::REPLAY_SetupViewerSession(replayArgs[0].c_str(), &failureReason);
+      if (sessionInfo.get() == nullptr) {
+        return;
+      }
+      moho::WLD_BeginSession(sessionInfo);
+    }
+    gEarlyCommandLineSession = true;
+    moho::WLD_StartPendingSessionLoad();
+#endif
+  }
+
+  /**
+   * Part of InitializeSessionFromCommandLine (0x008CE3D0), `/rejoin <host> <port> <seat>`: take a seat back in a
+   * running game (engine addition, issue #275). Every path ends startup handling; the caller returns after it.
+   */
+  void StartRejoinFromCommandLine(
+    fa::vector<fa::string>& args
+  )
+  {
+    fa::string failureReason;
+    if (
+      moho::REJOIN_BeginSetup(
+        args[0].c_str(),
+        std::atoi(args[1].c_str()),
+        static_cast<unsigned short>(std::atoi(args[2].c_str())),
+        &failureReason
+      )
+    ) {
+      // The launcher, if there is one, still wants this game's results.
+      if (moho::CFG_GetArgOption("/gpgnet", 1, &args) && !args.empty()) {
+        u_long address = 0;
+        u_short port = 0;
+        if (moho::NET_GetAddrInfo(args[0].c_str(), 0, true, address, port) && port != 0) {
+          try {
+            moho::GPGNET_Attach(address, port);
+          } catch (const std::exception& exception) {
+            gpg::Warnf("REJOIN: can't reach the launcher: %s", exception.what());
+          }
+        }
+      }
+      (void)moho::UI_StartRejoinScreen();
+      return;
+    }
+    gpg::Warnf("REJOIN: refused: %s", failureReason.c_str());
+    moho::WIN_OkBox("Ack!", gpg::STR_Printf("Unable to rejoin the game.\n\n%s", failureReason.c_str()).c_str());
+    (void)moho::UI_StartSplashScreens();
+  }
+
+  /**
+   * Part of InitializeSessionFromCommandLine (0x008CE3D0), `/replay <file>`: open the replay viewer, or say why the
+   * replay was refused. Every path ends startup handling; the caller returns after it.
+   */
+  void StartReplayFromCommandLine(
+    fa::vector<fa::string>& args
+  )
+  {
+    if (gEarlyCommandLineSession) {
+      return; // engine addition (wld_EarlyCommandLineSession): begun in CScApp::Init
+    }
+    if (!args.empty()) {
+      SetFrontEndReplayFilename(args[0]);
+      fa::string failureReason;
+      fa::auto_ptr<moho::SWldSessionInfo> sessionInfo =
+        moho::REPLAY_SetupViewerSession(args[0].c_str(), &failureReason);
+      if (sessionInfo.get() != nullptr) {
+        moho::WLD_BeginSession(sessionInfo);
+        return;
+      }
+
+      // Engine addition: the second line says why the replay was refused.
+      const fa::string message = failureReason.empty()
+        ? gpg::STR_Printf("Unable to load game replay from %s", args[0].c_str())
+        : gpg::STR_Printf("Unable to load game replay from %s\n\n%s", args[0].c_str(), failureReason.c_str());
+      moho::WIN_OkBox("Ack!", message.c_str());
+    } else {
+      gpg::Warnf("InitializeSession: /replay specified without a replay path.");
+    }
+    (void)moho::UI_StartSplashScreens();
+  }
+
+  /**
+   * Part of InitializeSessionFromCommandLine (0x008CE3D0), `/load <save>`: start a single-player session from a saved
+   * game. Every path ends startup handling; the caller returns after it.
+   */
+  void LoadSavedGameFromCommandLine(
+    fa::vector<fa::string>& args
+  )
+  {
+    if (!args.empty()) {
+      const fa::string loadPath = ResolveLoadPath(args[0].c_str());
+      try {
+        moho::CSavedGame savedGame(loadPath.c_str());
+        fa::auto_ptr<moho::SWldSessionInfo> sessionInfo = savedGame.CreateSinglePlayerSessionInfo();
+        if (sessionInfo.get() != nullptr) {
+          moho::WLD_BeginSession(sessionInfo);
+          return;
+        }
+
+        const fa::string message = gpg::STR_Printf("Unable to load saved game from %s", loadPath.c_str());
+        moho::WIN_OkBox("Ack!", message.c_str());
+      } catch (const std::exception& exception) {
+        const fa::string message =
+          gpg::STR_Printf("Failed to load saved game from \"%s\":\n%s", loadPath.c_str(), exception.what());
+        moho::WIN_OkBox("Ack!", message.c_str());
+      } catch (...) {
+        const fa::string message = gpg::STR_Printf("Failed to load saved game from \"%s\".", loadPath.c_str());
+        moho::WIN_OkBox("Ack!", message.c_str());
+      }
+    } else {
+      gpg::Warnf("InitializeSession: /load specified without a save path.");
+    }
+    (void)moho::UI_StartSplashScreens();
+  }
+
+  /**
+   * Part of InitializeSessionFromCommandLine (0x008CE3D0), `/gpgnet <host:port>`: attach to the FAF client and start
+   * its lobby UI. Every path ends startup handling; the caller returns after it.
+   */
+  void StartGpgNetFromCommandLine(
+    fa::vector<fa::string>& args
+  )
+  {
+    const fa::string endpoint = args[0];
+    u_long address = 0;
+    u_short port = 0;
+    if (!moho::NET_GetAddrInfo(endpoint.c_str(), 0, true, address, port) || port == 0) {
+      const fa::string message =
+        gpg::STR_Printf("Invalid address:port for connecting to the gpg.net client: \"%s\".", endpoint.c_str());
+      moho::WIN_OkBox("Ack!", message.c_str());
+      if (gShellApp != nullptr) {
+        gShellApp->ExitMainLoop();
+      }
+      return;
+    }
+
+    try {
+      moho::GPGNET_Attach(address, port);
+    } catch (const std::exception& exception) {
+      const fa::string message =
+        gpg::STR_Printf("Unable to connect to gpgnet endpoint \"%s\":\n%s", endpoint.c_str(), exception.what());
+      moho::WIN_OkBox("Ack!", message.c_str());
+      if (gShellApp != nullptr) {
+        gShellApp->ExitMainLoop();
+      }
+      return;
+    }
+
+    LuaPlus::LuaState* const state = moho::USER_GetLuaState();
+    moho::IUIManager* const uiManager = moho::UI_GetManager();
+    if (state == nullptr || uiManager == nullptr || !uiManager->SetNewLuaState(state)) {
+      moho::WIN_OkBox("Ack!", "UI_GetManager()->SetNewLuaState(state) failed!");
+      if (gShellApp != nullptr) {
+        gShellApp->ExitMainLoop();
+      }
+      return;
+    }
+
+    try {
+      const LuaPlus::LuaObject gpgNetModule = moho::SCR_ImportLuaModule(state, "/lua/multiplayer/gpgnet.lua");
+      const LuaPlus::LuaObject createUi = moho::SCR_GetLuaTableField(state, gpgNetModule, "CreateUI");
+      if (createUi.IsNil()) {
+        throw std::runtime_error("Missing CreateUI entrypoint in /lua/multiplayer/gpgnet.lua");
+      }
+
+      LuaPlus::LuaFunction<void> createUiFn(createUi);
+      createUiFn();
+    } catch (const std::exception& exception) {
+      const fa::string message = gpg::STR_Printf("Unable to start gpgnet UI:\n%s", exception.what());
+      moho::WIN_OkBox("Ack!", message.c_str());
+      if (gShellApp != nullptr) {
+        gShellApp->ExitMainLoop();
+      }
+    } catch (...) {
+      moho::WIN_OkBox("Ack!", "Unable to start gpgnet UI.");
+      if (gShellApp != nullptr) {
+        gShellApp->ExitMainLoop();
+      }
+    }
+  }
+
+  /**
    * Address: 0x008CE3D0 (FUN_008CE3D0, func_InitializeSession)
    *
    * What it does:
@@ -352,7 +722,7 @@ namespace
    */
   void InitializeSessionFromCommandLine()
   {
-    msvc8::vector<msvc8::string> args;
+    fa::vector<fa::string> args;
 
     if (moho::CFG_GetArgOption("/debug", 0, nullptr)) {
       moho::SCR_CreateDebugWindow();
@@ -366,28 +736,7 @@ namespace
       moho::CON_Execute("WIN_ShowLogDialog true");
     }
 
-    // Engine addition (issue #218): telemetry flags and the switch defaults, before /con changes them.
-    moho::TELEMETRY_Startup();
-
-    // Engine addition: `/con name=value;name2=value2` runs console commands at startup, so a
-    // launcher can set user-side console variables (e.g. `/con sim_ReplayLead=0`).
-    if (moho::CFG_GetArgOption("/con", 1, &args) && !args.empty()) {
-      std::string commands = args[0].c_str();
-      std::replace(commands.begin(), commands.end(), '=', ' ');
-      std::size_t begin = 0;
-      while (begin <= commands.size()) {
-        const std::size_t end = std::min(commands.find(';', begin), commands.size());
-        if (end > begin) {
-          moho::CON_Execute(commands.substr(begin, end - begin).c_str());
-        }
-        begin = end + 1;
-      }
-      args.clear();
-    }
-
-    // Engine addition: `sys_ThreadPlacement` (`/threadplacement N`) for the main thread; the sim,
-    // issue and worker threads place themselves as they start.
-    moho::PlaceCurrentThread(moho::EThreadRole::Main);
+    RunCommandLinePrologue();
 
 #if FAF_SERVER_MODE
     // Engine addition, server mode: `/oraclegolden <file>`, the visibility oracle's golden test
@@ -396,22 +745,41 @@ namespace
 
     // Engine addition, server mode: `/connectserver` takes over startup. Without it, every
     // path below runs as before.
-    switch (faf::remote::StartServerSessionFromCommandLine()) {
+    // The server's lobby signals make the lobby, as GPGNet's commands would (lobby Lua unchanged).
+    switch (faf::remote::StartServerSessionFromCommandLine(&moho::SERVERLOBBY_Start)) {
     case faf::remote::EServerSessionStart::NotRequested:
       break;
     case faf::remote::EServerSessionStart::Started:
+      // Plan WP12.2: a launcher that started the game with /gpgnet too keeps it as its channel (states, results);
+      // its lobby and link commands are ignored (ServerLobbyUi.h).
+      if (moho::CFG_GetArgOption("/gpgnet", 1, &args) && !args.empty()) {
+        u_long address = 0;
+        u_short port = 0;
+        if (moho::NET_GetAddrInfo(args[0].c_str(), 0, true, address, port) && port != 0) {
+          try {
+            moho::GPGNET_Attach(address, port);
+          } catch (const std::exception& exception) {
+            gpg::Warnf("Server session: can't reach the launcher: %s", exception.what());
+          }
+        } else {
+          gpg::Warnf("Server session: invalid launcher address \"%s\".", args[0].c_str());
+        }
+      }
       return;
     case faf::remote::EServerSessionStart::Failed:
-      if (wxTheApp != nullptr) {
-        wxTheApp->ExitMainLoop();
+      if (gShellApp != nullptr) {
+        gShellApp->ExitMainLoop();
       }
       return;
     }
 #endif
 
     if (moho::CFG_GetArgOption("/scenario", 1, &args) || moho::CFG_GetArgOption("/map", 1, &args)) {
+      if (gEarlyCommandLineSession) {
+        return; // engine addition (wld_EarlyCommandLineSession): begun in CScApp::Init
+      }
       if (!args.empty()) {
-        const msvc8::string mapScenario = moho::FindMapScenario(args[0].c_str());
+        const fa::string mapScenario = moho::FindMapScenario(args[0].c_str());
         if (moho::StartCommandLineSession(mapScenario.c_str(), false)) {
           return;
         }
@@ -421,64 +789,27 @@ namespace
       return;
     }
 
-    if (moho::CFG_GetArgOption("/replay", 1, &args)) {
-      if (!args.empty()) {
-        SetFrontEndReplayFilename(args[0]);
-        msvc8::string failureReason;
-        msvc8::auto_ptr<moho::SWldSessionInfo> sessionInfo =
-          moho::VCR_SetupReplaySession(args[0].c_str(), &failureReason);
-        if (sessionInfo.get() != nullptr) {
-          moho::WLD_BeginSession(sessionInfo);
-          return;
-        }
+    // Engine addition (issue #275): take a seat back in a running game. Without
+    // the option, every path below runs as before.
+    if (moho::CFG_GetArgOption("/rejoin", 3, &args) && args.size() >= 3) {
+      StartRejoinFromCommandLine(args);
+      return;
+    }
 
-        // Engine addition: the second line says why the replay was refused.
-        const msvc8::string message =
-          failureReason.empty()
-            ? gpg::STR_Printf("Unable to load game replay from %s", args[0].c_str())
-            : gpg::STR_Printf("Unable to load game replay from %s\n\n%s", args[0].c_str(), failureReason.c_str());
-        moho::WIN_OkBox("Ack!", message.c_str());
-      } else {
-        gpg::Warnf("InitializeSession: /replay specified without a replay path.");
-      }
-      (void)moho::UI_StartSplashScreens();
+    if (moho::CFG_GetArgOption("/replay", 1, &args)) {
+      StartReplayFromCommandLine(args);
       return;
     }
 
     if (moho::CFG_GetArgOption("/load", 1, &args)) {
-      if (!args.empty()) {
-        const msvc8::string loadPath = ResolveLoadPath(args[0].c_str());
-        try {
-          moho::CSavedGame savedGame(loadPath.c_str());
-          msvc8::auto_ptr<moho::SWldSessionInfo> sessionInfo = savedGame.CreateSinglePlayerSessionInfo();
-          if (sessionInfo.get() != nullptr) {
-            moho::WLD_BeginSession(sessionInfo);
-            return;
-          }
-
-          const msvc8::string message = gpg::STR_Printf("Unable to load saved game from %s", loadPath.c_str());
-          moho::WIN_OkBox("Ack!", message.c_str());
-        } catch (const std::exception& exception) {
-          const msvc8::string message =
-            gpg::STR_Printf("Failed to load saved game from \"%s\":\n%s", loadPath.c_str(), exception.what());
-          moho::WIN_OkBox("Ack!", message.c_str());
-        } catch (...) {
-          const msvc8::string message = gpg::STR_Printf("Failed to load saved game from \"%s\".", loadPath.c_str());
-          moho::WIN_OkBox("Ack!", message.c_str());
-        }
-      } else {
-        gpg::Warnf("InitializeSession: /load specified without a save path.");
-      }
-      (void)moho::UI_StartSplashScreens();
+      LoadSavedGameFromCommandLine(args);
       return;
     }
 
     if (moho::CFG_GetArgOption("/hostgame", 5, &args) && args.size() == 5) {
-      const msvc8::string mapScenario = moho::FindMapScenario(args[4].c_str());
+      const fa::string mapScenario = moho::FindMapScenario(args[4].c_str());
       const int hostPort = std::atoi(args[1].c_str());
-      (void)moho::UI_StartHostLobbyUI(
-        args[0].c_str(), hostPort, args[2].c_str(), args[3].c_str(), mapScenario.c_str()
-      );
+      (void)moho::UI_StartHostLobbyUI(args[0].c_str(), hostPort, args[2].c_str(), args[3].c_str(), mapScenario.c_str());
       return;
     }
 
@@ -488,7 +819,7 @@ namespace
     }
 
     if (moho::CFG_GetArgOption("/perf", 0, nullptr)) {
-      const msvc8::string mapScenario = moho::FindMapScenario("PerfTest");
+      const fa::string mapScenario = moho::FindMapScenario("PerfTest");
       if (moho::StartCommandLineSession(mapScenario.c_str(), true)) {
         return;
       }
@@ -498,63 +829,7 @@ namespace
     }
 
     if (moho::CFG_GetArgOption("/gpgnet", 1, &args) && !args.empty()) {
-      const msvc8::string endpoint = args[0];
-      u_long address = 0;
-      u_short port = 0;
-      if (!moho::NET_GetAddrInfo(endpoint.c_str(), 0, true, address, port) || port == 0) {
-        const msvc8::string message =
-          gpg::STR_Printf("Invalid address:port for connecting to the gpg.net client: \"%s\".", endpoint.c_str());
-        moho::WIN_OkBox("Ack!", message.c_str());
-        if (wxTheApp != nullptr) {
-          wxTheApp->ExitMainLoop();
-        }
-        return;
-      }
-
-      try {
-        moho::GPGNET_Attach(address, port);
-      } catch (const std::exception& exception) {
-        const msvc8::string message =
-          gpg::STR_Printf("Unable to connect to gpgnet endpoint \"%s\":\n%s", endpoint.c_str(), exception.what());
-        moho::WIN_OkBox("Ack!", message.c_str());
-        if (wxTheApp != nullptr) {
-          wxTheApp->ExitMainLoop();
-        }
-        return;
-      }
-
-      LuaPlus::LuaState* const state = moho::USER_GetLuaState();
-      moho::IUIManager* const uiManager = moho::UI_GetManager();
-      if (state == nullptr || uiManager == nullptr || !uiManager->SetNewLuaState(state)) {
-        moho::WIN_OkBox("Ack!", "UI_GetManager()->SetNewLuaState(state) failed!");
-        if (wxTheApp != nullptr) {
-          wxTheApp->ExitMainLoop();
-        }
-        return;
-      }
-
-      try {
-        const LuaPlus::LuaObject gpgNetModule = moho::SCR_ImportLuaModule(state, "/lua/multiplayer/gpgnet.lua");
-        const LuaPlus::LuaObject createUi = moho::SCR_GetLuaTableField(state, gpgNetModule, "CreateUI");
-        if (createUi.IsNil()) {
-          throw std::runtime_error("Missing CreateUI entrypoint in /lua/multiplayer/gpgnet.lua");
-        }
-
-        LuaPlus::LuaFunction<void> createUiFn(createUi);
-        createUiFn();
-      } catch (const std::exception& exception) {
-        const msvc8::string message = gpg::STR_Printf("Unable to start gpgnet UI:\n%s", exception.what());
-        moho::WIN_OkBox("Ack!", message.c_str());
-        if (wxTheApp != nullptr) {
-          wxTheApp->ExitMainLoop();
-        }
-      } catch (...) {
-        moho::WIN_OkBox("Ack!", "Unable to start gpgnet UI.");
-        if (wxTheApp != nullptr) {
-          wxTheApp->ExitMainLoop();
-        }
-      }
-
+      StartGpgNetFromCommandLine(args);
       return;
     }
 
@@ -564,17 +839,21 @@ namespace
   constexpr std::int32_t kFullscreenFrameStyle = 0x200800;
   constexpr std::int32_t kWindowedFrameStyle = 0x20400E40;
 
-  [[nodiscard]] bool IsPositiveIntegerArg(const msvc8::string& text)
+  [[nodiscard]] bool IsPositiveIntegerArg(
+    const fa::string& text
+  )
   {
     return std::atoi(text.c_str()) > 0;
   }
 
-  [[nodiscard]] std::int32_t ParseIntegerArg(const msvc8::string& text)
+  [[nodiscard]] std::int32_t ParseIntegerArg(
+    const fa::string& text
+  )
   {
     return static_cast<std::int32_t>(std::atoi(text.c_str()));
   }
 
-  [[nodiscard]] msvc8::string BuildSplashImagePath()
+  [[nodiscard]] fa::string BuildSplashImagePath()
   {
     std::filesystem::path launchDirectory = moho::DISK_GetLaunchDirectory();
     if (launchDirectory.empty()) {
@@ -594,12 +873,15 @@ namespace
       splashPath = canonicalSplashPath;
     }
 
-    msvc8::string splashPathUtf8;
+    fa::string splashPathUtf8;
     splashPathUtf8.assign_owned(splashPath.generic_string());
     return splashPathUtf8;
   }
 
-  [[nodiscard]] std::uint32_t ClampAtLeast(const std::uint32_t floorValue, const std::int32_t parsed)
+  [[nodiscard]] std::uint32_t ClampAtLeast(
+    const std::uint32_t floorValue,
+    const std::int32_t parsed
+  )
   {
     return static_cast<std::uint32_t>((std::max)(floorValue, static_cast<std::uint32_t>((std::max)(0, parsed))));
   }
@@ -612,25 +894,25 @@ namespace
    * two positive integers (`width,height`) or four positive integers
    * (`w0,h0,w1,h1`).
    */
-  [[nodiscard]] bool TryGetWindowOptionArgs(msvc8::vector<msvc8::string>* const outArgs)
+  [[nodiscard]] bool TryGetWindowOptionArgs(
+    fa::vector<fa::string>* const outArgs
+  )
   {
-    if (moho::CFG_GetArgOptionComposedAliases(
-          moho::CFG_GetDualOptionAliases(),
-          moho::CFG_GetHeadOptionAliases(),
-          2,
-          outArgs
-        )) {
+    if (
+      moho::CFG_GetArgOptionComposedAliases(
+        moho::CFG_GetDualOptionAliases(), moho::CFG_GetHeadOptionAliases(), 2, outArgs
+      )
+    ) {
       return outArgs->size() == 2 && IsPositiveIntegerArg((*outArgs)[0]) && IsPositiveIntegerArg((*outArgs)[1]);
     }
 
-    if (moho::CFG_GetArgOptionComposedAliases(
-          moho::CFG_GetDualOptionAliases(),
-          moho::CFG_GetHeadOptionAliases(),
-          4,
-          outArgs
-        )) {
+    if (
+      moho::CFG_GetArgOptionComposedAliases(
+        moho::CFG_GetDualOptionAliases(), moho::CFG_GetHeadOptionAliases(), 4, outArgs
+      )
+    ) {
       return outArgs->size() == 4 && IsPositiveIntegerArg((*outArgs)[0]) && IsPositiveIntegerArg((*outArgs)[1]) &&
-             IsPositiveIntegerArg((*outArgs)[2]) && IsPositiveIntegerArg((*outArgs)[3]);
+        IsPositiveIntegerArg((*outArgs)[2]) && IsPositiveIntegerArg((*outArgs)[3]);
     }
 
     return false;
@@ -643,7 +925,9 @@ namespace
    * Validates fullscreen command-line option arguments as two positive
    * integer dimensions.
    */
-  [[nodiscard]] bool TryGetFullscreenOptionArgs(msvc8::vector<msvc8::string>* const outArgs)
+  [[nodiscard]] bool TryGetFullscreenOptionArgs(
+    fa::vector<fa::string>* const outArgs
+  )
   {
     if (!moho::CFG_GetArgOptionAliases(moho::CFG_GetFullscreenOptionAliases(), 2, outArgs)) {
       return false;
@@ -659,7 +943,9 @@ namespace
    * Validates windowed command-line option arguments as two positive
    * integer dimensions.
    */
-  [[nodiscard]] bool TryGetWindowedOptionArgs(msvc8::vector<msvc8::string>* const outArgs)
+  [[nodiscard]] bool TryGetWindowedOptionArgs(
+    fa::vector<fa::string>* const outArgs
+  )
   {
     // 0x008D02DB-0x008D0331: `/windowed` has to be present with two positive
     // integer dimensions, and there is no fallback of any kind - every other
@@ -672,18 +958,20 @@ namespace
     // size - the whole presented image was then stretched from 1024x768 to
     // the real client area, which is what made the UI look magnified and
     // blurry next to an unscaled mouse cursor.
-    return moho::CFG_GetArgOptionAliases(moho::CFG_GetWindowedOptionAliases(), 2, outArgs)
-      && outArgs->size() == 2
-      && IsPositiveIntegerArg((*outArgs)[0])
-      && IsPositiveIntegerArg((*outArgs)[1]);
+    return moho::CFG_GetArgOptionAliases(moho::CFG_GetWindowedOptionAliases(), 2, outArgs) && outArgs->size() == 2 &&
+      IsPositiveIntegerArg((*outArgs)[0]) && IsPositiveIntegerArg((*outArgs)[1]);
   }
 
-  [[nodiscard]] bool IsDisabledAdapterToken(const msvc8::string& value)
+  [[nodiscard]] bool IsDisabledAdapterToken(
+    const fa::string& value
+  )
   {
     return value.equals_no_case("disabled");
   }
 
-  [[nodiscard]] bool IsWindowedAdapterToken(const msvc8::string& value)
+  [[nodiscard]] bool IsWindowedAdapterToken(
+    const fa::string& value
+  )
   {
     return value.equals_no_case("windowed");
   }
@@ -698,7 +986,11 @@ namespace
    * y of 5978 came back as 1440 on a 2560x1440 monitor - technically clamped,
    * entirely invisible - which read as the engine having drawn nothing.
    */
-  void ClampPositionToMonitor(wxPoint* const inOutPosition, const std::uint32_t width, const std::uint32_t height)
+  void ClampPositionToMonitor(
+    ShellPoint* const inOutPosition,
+    const std::uint32_t width,
+    const std::uint32_t height
+  )
   {
     if (inOutPosition == nullptr) {
       return;
@@ -726,13 +1018,18 @@ namespace
     inOutPosition->y = static_cast<std::int32_t>(clampedY);
   }
 
-  void ApplyPackedAntiAliasing(gpg::gal::Head& head, const std::int32_t packedAntiAliasing)
+  void ApplyPackedAntiAliasing(
+    gpg::gal::Head& head,
+    const std::int32_t packedAntiAliasing
+  )
   {
     head.antialiasingHigh = static_cast<std::uint32_t>(packedAntiAliasing >> 5);
     head.antialiasingLow = static_cast<std::uint32_t>(packedAntiAliasing & 0x1F);
   }
 
-  void DestroyFrameWindow(WSupComFrame*& frameWindow)
+  void DestroyFrameWindow(
+    WSupComFrame*& frameWindow
+  )
   {
     if (frameWindow == nullptr) {
       return;
@@ -750,15 +1047,16 @@ namespace
    * `Local\\FullScreenPresentationModeInfo` shared memory for
    * fullscreen-presentation compatibility paths.
    */
-  void PublishWindowedPresentationBounds(HWND const windowHandle)
+  void PublishWindowedPresentationBounds(
+    HWND const windowHandle
+  )
   {
+#if !FAFRE_PLATFORM_WINDOWS
+    // Windows' fullscreen-presentation shared memory; nothing reads it elsewhere (issue #255).
+    (void)windowHandle;
+#else
     HANDLE const mapping = ::CreateFileMappingW(
-      INVALID_HANDLE_VALUE,
-      nullptr,
-      PAGE_READWRITE,
-      0,
-      sizeof(RECT),
-      L"Local\\FullScreenPresentationModeInfo"
+      INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(RECT), L"Local\\FullScreenPresentationModeInfo"
     );
     if (mapping == nullptr) {
       return;
@@ -771,6 +1069,7 @@ namespace
 
     ::GetWindowRect(windowHandle, windowRect);
     (void)::UnmapViewOfFile(windowRect);
+#endif
   }
 
   /**
@@ -780,8 +1079,15 @@ namespace
    * Appends one Lua debugger lane to the main window system menu:
    * separator, one placeholder entry, and one `Open Lua Debugger` command.
    */
-  [[nodiscard]] BOOL AppendLuaDebuggerSystemMenu(HWND const windowHandle)
+  [[nodiscard]] BOOL AppendLuaDebuggerSystemMenu(
+    HWND const windowHandle
+  )
   {
+#if !FAFRE_PLATFORM_WINDOWS
+    // No window system menu, and the Lua debugger is a window-library window (issue #260).
+    (void)windowHandle;
+    return FALSE;
+#else
     HMENU const systemMenu = ::GetSystemMenu(windowHandle, FALSE);
     if (systemMenu == nullptr) {
       return FALSE;
@@ -790,6 +1096,7 @@ namespace
     (void)::AppendMenuW(systemMenu, MF_SEPARATOR, 0u, nullptr);
     (void)::AppendMenuW(systemMenu, MF_STRING, 1u, L"New Item");
     return ::AppendMenuW(systemMenu, MF_STRING, 2u, L"Open Lua Debugger");
+#endif
   }
 
   /**
@@ -800,7 +1107,9 @@ namespace
    * primary/secondary adapter settings, fidelity settings, shadow quality,
    * and anti-aliasing.
    */
-  void ConfigureStartupGraphicsOptionGroups(const bool secondarySetupMode)
+  void ConfigureStartupGraphicsOptionGroups(
+    const bool secondarySetupMode
+  )
   {
     moho::SetupPrimaryAdapterSettings();
     moho::SetupSecondaryAdapterSettings(secondarySetupMode);
@@ -841,7 +1150,9 @@ void CScApp::RollingFrameRates::Reset()
  * Writes one frame-time sample to the ring, advances start when full,
  * advances end, and returns the div carry from old_end+1.
  */
-std::int32_t CScApp::RollingFrameRates::Push(const float deltaSeconds)
+std::int32_t CScApp::RollingFrameRates::Push(
+  const float deltaSeconds
+)
 {
   const std::int32_t oldEnd = end;
   const std::int32_t next = (oldEnd + 1) % 10;
@@ -853,23 +1164,6 @@ std::int32_t CScApp::RollingFrameRates::Push(const float deltaSeconds)
 
   end = next;
   return (oldEnd + 1) / 10;
-}
-
-/**
- * Address: 0x008D1CF0 (FUN_008D1CF0)
- *
- * What it does:
- * Thin thunk lane that forwards one rolling-frame-rate object into the
- * canonical reset routine.
- */
-[[maybe_unused]] CScApp::RollingFrameRates* CScAppRollingFrameRatesResetThunk(
-  CScApp::RollingFrameRates* const history
-) noexcept
-{
-  if (history != nullptr) {
-    history->Reset();
-  }
-  return history;
 }
 
 /**
@@ -956,6 +1250,15 @@ namespace
     "clock rushes the next ticks to repay it.",
     &wld_FrameClockOpening
   );
+
+  // Engine addition, debugging aid: tags the frame sampler's stack dump (FrameSampler.h).
+  moho::TConVar<int> gTConVar_dbg_FrameSamplerPhase(
+    "dbg_FrameSamplerPhase",
+    "With FAF_FRAME_SAMPLER and FAF_FRAME_SAMPLER_DUMP set: samples taken while this is not 0 are counted by whole "
+    "call "
+    "stack and written to <dump>.<phase>.folded when it changes.",
+    &gpg::diag::dbg_FrameSamplerPhase
+  );
 } // namespace
 
 /**
@@ -1020,7 +1323,7 @@ bool CScApp::Init()
   (void)SetSse2Mode(moho::CFG_GetArgOption("/sse2", 0, nullptr) ? 1 : 0);
 
   if (moho::CFG_GetArgOption("/splash", 0, nullptr)) {
-    const msvc8::string splashImagePath = BuildSplashImagePath();
+    const fa::string splashImagePath = BuildSplashImagePath();
     moho::WINX_InitSplash(splashImagePath.c_str());
   }
 
@@ -1028,12 +1331,23 @@ bool CScApp::Init()
     return false;
   }
 
-  msvc8::vector<msvc8::string> preferenceArgs;
+  // Engine addition: `lua_IncrementalGC` is a startup-only switch - the
+  // collector role of a Lua VM is fixed when the VM is created. Apply the
+  // `/con lua_IncrementalGC=...` value here, before USER_GetLuaState() builds
+  // the front-end UI root, and copy it into the live runtime flag.
+  ApplyEarlyLuaIncrementalGcCommand();
+
+  fa::vector<fa::string> preferenceArgs;
   if (moho::CFG_GetArgOption("/prefs", 1, &preferenceArgs) && !preferenceArgs.empty()) {
     moho::USER_LoadPreferences(preferenceArgs[0]);
   } else {
-    moho::USER_LoadPreferences(msvc8::string("Game.prefs"));
+    moho::USER_LoadPreferences(fa::string("Game.prefs"));
   }
+
+  // Engine addition (res_UiScriptChunkCache): the user interface's scripts from compiled chunks.
+  moho::SCR_BeginUiScriptChunkCache();
+  // Engine addition (snd_CreateEarly): the audio engine comes up alongside the device below.
+  moho::USER_StartSoundEarly();
 
   // The user-side Lua bootstrap, which the binary runs here: after
   // USER_LoadPreferences ("SCMain AppInit 2") and before OpenDocuments and
@@ -1046,14 +1360,17 @@ bool CScApp::Init()
   // with the real Lua one. Run it any later and those early imports get the
   // stub: SCR_Import hands back a boolean and the callers fail with
   // "index expected but got boolean".
-  moho::SCR_LuaDoScript(moho::USER_GetLuaState(), "/lua/userInit.lua", nullptr);
+  (void)moho::SCR_LuaDoScript(moho::USER_GetLuaState(), "/lua/userInit.lua", nullptr);
 
   moho::USER_EnsureDocumentDirectories();
 
-  msvc8::vector<msvc8::string> profileArgs;
+  fa::vector<fa::string> profileArgs;
   if (moho::CFG_GetArgOption("/profile", 1, &profileArgs) && !profileArgs.empty()) {
     moho::USER_SetCurrentProfile(profileArgs[0]);
   }
+
+  PrepareDeviceEarly(); // engine addition (ren_PrepareDeviceEarly): the graphics_api option needs userInit.lua
+  StartCommandLineSessionEarly(); // engine addition (wld_EarlyCommandLineSession)
 
   // The binary calls this and discards the result, then guards a single-
   // instance check on it: CreateMutexA("SupComMutex") and, on
@@ -1071,7 +1388,11 @@ bool CScApp::Init()
   moho::REN_Init();
 
   moho::UI_Init();
-  if (!CreateDevice()) {
+  const bool deviceCreated = CreateDevice();
+  // Engine addition (wld_EarlyCommandLineSession): an early load's unit icons may use the device now,
+  // or find there is none, as a load that starts after this does.
+  moho::WLD_HoldDeviceUse(false);
+  if (!deviceCreated) {
     return false;
   }
 
@@ -1090,9 +1411,9 @@ bool CScApp::Init()
   if (context->GetHeadCount() > 0) {
     const gpg::gal::Head& primaryHead = context->GetHead(0);
     if (primaryHead.mWindowed && primaryHead.mHandle != nullptr) {
-      PublishWindowedPresentationBounds(reinterpret_cast<HWND>(primaryHead.mHandle));
+      PublishWindowedPresentationBounds(static_cast<HWND>(primaryHead.mHandle));
     } else if (!primaryHead.mWindowed && primaryHead.mHandle != nullptr && moho::USER_DebugFacilitiesEnabled()) {
-      (void)AppendLuaDebuggerSystemMenu(reinterpret_cast<HWND>(primaryHead.mHandle));
+      (void)AppendLuaDebuggerSystemMenu(static_cast<HWND>(primaryHead.mHandle));
     }
   }
 
@@ -1100,12 +1421,12 @@ bool CScApp::Init()
   // the tail of CreateDevice, where this tree used to call it. CreateDevice
   // (0x008D0370) ends at func_SetupBasicMovieManager and never calls this.
   moho::OPTIONS_Apply();
+  moho::USER_FinishSoundEarly();
 
   // Single windowed head only: optionally pin the cursor to the client area.
   if (context->GetHeadCount() == 1 && context->GetHead(0).mWindowed) {
     if (moho::OPTIONS_GetInt("lock_fullscreen_cursor_to_window") == 1) {
-      const auto frameHandle =
-        reinterpret_cast<HWND>(static_cast<std::uintptr_t>(supcomFrame->GetHandle()));
+      const auto frameHandle = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(supcomFrame->GetHandle()));
       RECT windowRect{};
       if (::GetWindowRect(frameHandle, &windowRect)) {
         ::ClipCursor(&windowRect);
@@ -1127,6 +1448,19 @@ bool CScApp::Init()
  * frame updates, one-time session bootstrap, and minimized wait-handle/timer
  * routing.
  */
+namespace
+{
+  bool sc_FrameTimeCarry = true;
+  float sFrameCapCarryMs = 0.0f;
+
+  moho::TConVar<bool> gTConVar_sc_FrameTimeCarry(
+    "sc_FrameTimeCarry",
+    "A frame that sc_FrameTimeClamp released late gives that time back to the next frame (1, the default), so the "
+    "cap is held on average, or doesn't (0). Read each frame.",
+    &sc_FrameTimeCarry
+  );
+} // namespace
+
 void CScApp::Main()
 {
   FAF_PROFILE_ZONE_NAMED("AppFrame");
@@ -1153,11 +1487,15 @@ void CScApp::Main()
       frameSeconds = fixedFrameSeconds;
     } else {
       float elapsed = curTime.ElapsedMilliseconds();
-      if (moho::sc_FrameTimeClamp > elapsed)
-      {
-        moho::WIN_SetWakeupTimer(moho::sc_FrameTimeClamp - elapsed);
+      // Engine change (sc_FrameTimeCarry): a wait ends late, as it sleeps in whole milliseconds, and
+      // each frame's clock starts over. The next frame gets that time back, or a 4 ms cap holds 215 FPS
+      // with frames to spare. At most half the cap, so a long frame isn't followed by a burst.
+      const float shortestFrame = moho::sc_FrameTimeClamp - sFrameCapCarryMs;
+      if (shortestFrame > elapsed) {
+        moho::WIN_SetWakeupTimer(shortestFrame - elapsed);
         return;
       }
+      sFrameCapCarryMs = sc_FrameTimeCarry ? std::min(elapsed - shortestFrame, moho::sc_FrameTimeClamp * 0.5f) : 0.0f;
       frameSeconds = static_cast<float>(elapsed * 0.001);
     }
 
@@ -1178,29 +1516,66 @@ void CScApp::Main()
   // FAF FA-Binary-Patches (hooks/GetFPS.cpp): StoreFPS keeps the frame time it
   // finds being pushed here (0x008D1A85) as OnRenderWorld's `delta`.
   moho::UI_SetRenderWorldFrameSeconds(frameSeconds);
-  moho::SND_Frame();
+  // Engine addition (replay timeline): a fast-forward spends its frames on the sim, with the world neither drawn nor
+  // heard.
+  const bool fastForwarding = moho::gReplayFastForward.load(std::memory_order_relaxed);
+  if (!fastForwarding) {
+    // Engine addition: back on the new output when Windows' default sound output changed.
+    moho::SND_RecoverOutput();
+    moho::SND_Frame();
+  }
   moho::DISK_UpdateWatcher();
 
   float smoothedFrameSeconds = fixedFrameSeconds > 0.0f ? fixedFrameSeconds : framerates.Median();
   if (realTimeClock) {
     smoothedFrameSeconds = wld_FrameClock == 2 ? frameSeconds : framerates.Mean();
   }
-  if (!moho::WLD_Frame(smoothedFrameSeconds) && wxTheApp != nullptr) {
-    wxTheApp->ExitMainLoop();
+  // Engine addition (issue #275): false outside a client started with /rejoin.
+  if (moho::REJOIN_SetupPending()) {
+    fa::string failureReason;
+    bool failed = false;
+    fa::auto_ptr<moho::SWldSessionInfo> sessionInfo = moho::REJOIN_PollSetup(&failureReason, &failed);
+    if (sessionInfo.get() != nullptr) {
+      moho::UI_UpdateRejoinScreen("", -1.0f);
+      moho::WLD_BeginSession(sessionInfo);
+    } else if (failed) {
+      gpg::Warnf("REJOIN: refused: %s", failureReason.c_str());
+      moho::UI_UpdateRejoinScreen("", -1.0f);
+      moho::WIN_OkBox("Ack!", gpg::STR_Printf("Unable to rejoin the game.\n\n%s", failureReason.c_str()).c_str());
+      (void)moho::UI_StartSplashScreens();
+    } else {
+      const float progress = moho::REJOIN_SetupProgress();
+      moho::UI_UpdateRejoinScreen(progress >= 0.0f ? "transfer" : "connecting", progress);
+    }
+  }
+
+  if (!moho::WLD_Frame(smoothedFrameSeconds) && gShellApp != nullptr) {
+    gShellApp->ExitMainLoop();
   }
 
   moho::CWldSession* const activeSession = moho::WLD_GetActiveSession();
-  const std::int32_t gameTick = activeSession != nullptr ? activeSession->mGameTick : 0;
-  const float simDeltaSeconds = activeSession != nullptr ? activeSession->mTimeSinceLastTick : 0.0f;
-  moho::CAM_GetManager()->Frame(simDeltaSeconds, frameSeconds);
+  std::int32_t gameTick = activeSession != nullptr ? activeSession->mGameTick : 0;
+  float simDeltaSeconds = activeSession != nullptr ? activeSession->mTimeSinceLastTick : 0.0f;
+  // Engine addition (moho::gAppIdleClock): the editor's clock between sessions, in ticks and the fraction of one.
+  static double idleTicks = 0.0;
+  if (activeSession == nullptr && moho::gAppIdleClock) {
+    idleTicks += static_cast<double>(frameSeconds) * 10.0;
+    gameTick = static_cast<std::int32_t>(idleTicks);
+    simDeltaSeconds = static_cast<float>(idleTicks - static_cast<double>(gameTick));
+  }
+  if (!fastForwarding) {
+    moho::CAM_GetManager()->Frame(simDeltaSeconds, frameSeconds);
+  }
   if (moho::sUserStage != nullptr) {
     FAF_PROFILE_ZONE_NAMED("UserStage");
     moho::sUserStage->UserFrame();
   }
   ::ADXM_ExecMain();
-  moho::REN_Frame(gameTick, simDeltaSeconds, frameSeconds);
-  if (moho::IUserSoundManager* const userSound = moho::USER_GetSound(); userSound != nullptr) {
-    userSound->Frame(simDeltaSeconds, frameSeconds);
+  if (!fastForwarding) {
+    moho::REN_Frame(gameTick, simDeltaSeconds, frameSeconds);
+    if (moho::IUserSoundManager* const userSound = moho::USER_GetSound(); userSound != nullptr) {
+      userSound->Frame(simDeltaSeconds, frameSeconds);
+    }
   }
 
   if (moho::IUIManager* const uiManager = moho::UI_GetManager()) {
@@ -1229,8 +1604,11 @@ void CScApp::Main()
   }
 
   moho::UI_ProcessIdleGC();
+  moho::REN_SaveGlyphCache(false);          // engine addition (ren_GlyphCache)
+  moho::SCR_FlushUiScriptChunkCache(false); // engine addition (res_UiScriptChunkCache)
 
   if (initialized == 0) {
+    moho::gSimDefaultWorkers = 4; // engine addition, see its declaration
     InitializeSessionFromCommandLine();
     initialized = 1;
   }
@@ -1269,6 +1647,8 @@ void CScApp::Destroy()
     gpg::Warnf("unable to reset screensaver");
   }
 
+  moho::REN_SaveGlyphCache(true);          // engine addition (ren_GlyphCache)
+  moho::SCR_FlushUiScriptChunkCache(true); // engine addition (res_UiScriptChunkCache)
   moho::WLD_Teardown();
   moho::GPGNET_Shutdown();
   moho::UI_Exit();
@@ -1297,36 +1677,40 @@ namespace
    * Engine addition: short name of a gal device API for the window title, or null for the
    * original Direct3D 9 path (whose title stays the retail one).
    */
-  [[nodiscard]] const char* DeviceApiTitleName(const gpg::gal::DeviceApi api) noexcept
+  [[nodiscard]] const char* DeviceApiTitleName(
+    const gpg::gal::DeviceApi api
+  ) noexcept
   {
     switch (api) {
-      case gpg::gal::DeviceApi::Direct3D10:
-        return "D3D10";
-      case gpg::gal::DeviceApi::Direct3D11:
-        return "D3D11";
-      case gpg::gal::DeviceApi::Direct3D12:
-        return "D3D12";
-      case gpg::gal::DeviceApi::Vulkan:
-        return "Vulkan";
-      default:
-        return nullptr;
+    case gpg::gal::DeviceApi::Direct3D10:
+      return "D3D10";
+    case gpg::gal::DeviceApi::Direct3D11:
+      return "D3D11";
+    case gpg::gal::DeviceApi::Direct3D12:
+      return "D3D12";
+    case gpg::gal::DeviceApi::Vulkan:
+      return "Vulkan";
+    default:
+      return nullptr;
     }
   }
 
   /** FAF addition: a gal device API's name for the log. */
-  [[nodiscard]] const char* DeviceApiLogName(const gpg::gal::DeviceApi api) noexcept
+  [[nodiscard]] const char* DeviceApiLogName(
+    const gpg::gal::DeviceApi api
+  ) noexcept
   {
     switch (api) {
-      case gpg::gal::DeviceApi::Direct3D10:
-        return "Direct3D 10";
-      case gpg::gal::DeviceApi::Direct3D11:
-        return "Direct3D 11";
-      case gpg::gal::DeviceApi::Direct3D12:
-        return "Direct3D 12";
-      case gpg::gal::DeviceApi::Vulkan:
-        return "Vulkan";
-      default:
-        return "Direct3D 9";
+    case gpg::gal::DeviceApi::Direct3D10:
+      return "Direct3D 10";
+    case gpg::gal::DeviceApi::Direct3D11:
+      return "Direct3D 11";
+    case gpg::gal::DeviceApi::Direct3D12:
+      return "Direct3D 12";
+    case gpg::gal::DeviceApi::Vulkan:
+      return "Vulkan";
+    default:
+      return "Direct3D 9";
     }
   }
 
@@ -1341,29 +1725,46 @@ namespace
    * Vulkan, then Direct3D 11, then Direct3D 9 (the 32-bit build: Direct3D 11
    * first).
    */
-  [[nodiscard]] std::vector<gpg::gal::DeviceApi> RendererAttemptOrder()
+  [[nodiscard]] std::vector<gpg::gal::DeviceApi> RendererAttemptOrder(
+    const bool logChoice = true
+  )
   {
     using gpg::gal::DeviceApi;
+    // Engine addition (the map editor, moho::gAppRenderers): its own renderers, and only those.
+    if (!moho::gAppRenderers.empty()) {
+      return moho::gAppRenderers;
+    }
     const auto explicitApi = [](const DeviceApi api) {
-      return (api == DeviceApi::Direct3D9) ? std::vector<DeviceApi>{api} : std::vector<DeviceApi>{api, DeviceApi::Direct3D9};
+      return (api == DeviceApi::Direct3D9) ? std::vector<DeviceApi>{api}
+                                           : std::vector<DeviceApi>{api, DeviceApi::Direct3D9};
     };
     if (moho::CFG_GetArgOption("/D3D10", 0, nullptr)) {
       return {DeviceApi::Direct3D10};
     }
     static constexpr std::pair<const char*, DeviceApi> kSwitches[] = {
-      {"/d3d9", DeviceApi::Direct3D9}, {"/d3d11", DeviceApi::Direct3D11}, {"/d3d12", DeviceApi::Direct3D12}, {"/vulkan", DeviceApi::Vulkan},
+      {"/d3d9", DeviceApi::Direct3D9},
+      {"/d3d11", DeviceApi::Direct3D11},
+      {"/d3d12", DeviceApi::Direct3D12},
+      {"/vulkan", DeviceApi::Vulkan},
     };
     for (const auto& [name, api] : kSwitches) {
       if (moho::CFG_GetArgOption(name, 0, nullptr)) {
-        gpg::Logf("renderer: %s from the command line", DeviceApiLogName(api));
+        if (logChoice) {
+          gpg::Logf("renderer: %s from the command line", DeviceApiLogName(api));
+        }
         return explicitApi(api);
       }
     }
 
-    const msvc8::string option = moho::OPTIONS_GetString("graphics_api");
-    gpg::Logf("graphics_api option: %s", option.empty() ? "(unset)" : option.c_str());
+    const fa::string option = moho::OPTIONS_GetString("graphics_api");
+    if (logChoice) {
+      gpg::Logf("graphics_api option: %s", option.empty() ? "(unset)" : option.c_str());
+    }
     static constexpr std::pair<const char*, DeviceApi> kOptions[] = {
-      {"d3d9", DeviceApi::Direct3D9}, {"d3d11", DeviceApi::Direct3D11}, {"d3d12", DeviceApi::Direct3D12}, {"vulkan", DeviceApi::Vulkan},
+      {"d3d9", DeviceApi::Direct3D9},
+      {"d3d11", DeviceApi::Direct3D11},
+      {"d3d12", DeviceApi::Direct3D12},
+      {"vulkan", DeviceApi::Vulkan},
     };
     for (const auto& [name, api] : kOptions) {
       if (option == name) {
@@ -1381,14 +1782,42 @@ namespace
 #endif
   }
 
+  bool ren_PrepareDeviceEarly = true;
+  moho::TConVar<bool> gTConVar_ren_PrepareDeviceEarly(
+    "ren_PrepareDeviceEarly",
+    "Create the Direct3D 12 device on a helper thread once userInit.lua has run, while the fonts, the user "
+    "interface and the window are set up (1, the default), or when the window is created (0). Read at startup: "
+    "/nodeviceearly sets 0.",
+    &ren_PrepareDeviceEarly
+  );
+
+  /**
+   * Engine addition (`ren_PrepareDeviceEarly`): when Direct3D 12 is the first renderer CreateDevice
+   * will try, its device starts being created now (`gpg::gal::D3D12_PrepareDeviceEarly`).
+   */
+  void PrepareDeviceEarly()
+  {
+    if (moho::CFG_GetArgOption("/nodeviceearly", 0, nullptr)) {
+      ren_PrepareDeviceEarly = false;
+    }
+#if FAFRE_PLATFORM_WINDOWS
+    if (ren_PrepareDeviceEarly && RendererAttemptOrder(false).front() == gpg::gal::DeviceApi::Direct3D12) {
+      gpg::gal::D3D12_PrepareDeviceEarly();
+    }
+#endif
+  }
+
   /**
    * Engine addition: appends the renderer actually created (when it isn't Direct3D 9) and the
    * `/title <label>` command-line label to the top-level window's title, e.g.
    * "Forged Alliance [D3D11] replay-26935800", so side-by-side test windows can be told apart.
    */
-  void ApplyWindowTitleDetails(const msvc8::string& baseTitle, const gpg::gal::DeviceContext& context)
+  void ApplyWindowTitleDetails(
+    const fa::string& baseTitle,
+    const gpg::gal::DeviceContext& context
+  )
   {
-    msvc8::vector<msvc8::string> labelArgs;
+    fa::vector<fa::string> labelArgs;
     const bool hasLabel = moho::CFG_GetArgOption("/title", 1, &labelArgs) && !labelArgs.empty();
     const char* const apiName = DeviceApiTitleName(context.mDeviceType);
     if ((!hasLabel && apiName == nullptr) || moho::sMainWindow == nullptr) {
@@ -1409,6 +1838,97 @@ namespace
     const HWND windowHandle = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(moho::sMainWindow->GetHandle()));
     if (const HWND topLevel = windowHandle != nullptr ? ::GetAncestor(windowHandle, GA_ROOT) : nullptr) {
       ::SetWindowTextA(topLevel, title.c_str());
+    }
+  }
+  /**
+   * Part of CScApp::CreateDevice (0x008D0370): the heads and their sizes, from `/window`,
+   * `/fullscreen` or `/windowed` on the command line, else from the adapter options.
+   */
+  void SetUpHeads(
+    gpg::gal::DeviceContext& context,
+    gpg::gal::Head& primaryHead,
+    fa::vector<fa::string>& options,
+    moho::IUserPrefs* const preferences,
+    bool& windowedByCommandLine,
+    bool& secondarySetupMode
+  )
+  {
+    if (TryGetWindowOptionArgs(&options)) {
+      context.AddHead(gpg::gal::Head{});
+      gpg::gal::Head& secondaryHead = context.GetHead(1);
+
+      primaryHead.mWindowed = true;
+      secondaryHead.mWindowed = true;
+      primaryHead.mWidth = ClampAtLeast(moho::wnd_DefaultCreateWidth, ParseIntegerArg(options[0]));
+      primaryHead.mHeight = ClampAtLeast(moho::wnd_DefaultCreateHeight, ParseIntegerArg(options[1]));
+
+      if (options.size() == 4) {
+        secondaryHead.mWidth = ClampAtLeast(moho::wnd_DefaultCreateWidth, ParseIntegerArg(options[2]));
+        secondaryHead.mHeight = ClampAtLeast(moho::wnd_DefaultCreateHeight, ParseIntegerArg(options[3]));
+      } else {
+        secondaryHead.mWidth = primaryHead.mWidth;
+        secondaryHead.mHeight = primaryHead.mHeight;
+      }
+
+      moho::sAdapterNotCLOverridden = 0;
+    } else if (TryGetFullscreenOptionArgs(&options)) {
+      primaryHead.mWindowed = true;
+      primaryHead.mWidth = ClampAtLeast(moho::wnd_DefaultCreateWidth, ParseIntegerArg(options[0]));
+      primaryHead.mHeight = ClampAtLeast(moho::wnd_DefaultCreateHeight, ParseIntegerArg(options[1]));
+      moho::sAdapterNotCLOverridden = 0;
+    } else if (TryGetWindowedOptionArgs(&options)) {
+      primaryHead.mWindowed = false;
+      primaryHead.mWidth = ClampAtLeast(moho::wnd_MinCmdLineWidth, ParseIntegerArg(options[0]));
+      primaryHead.mHeight = ClampAtLeast(moho::wnd_MinCmdLineHeight, ParseIntegerArg(options[1]));
+      moho::sAdapterNotCLOverridden = 0;
+      windowedByCommandLine = true;
+      secondarySetupMode = true;
+    } else {
+      secondarySetupMode = true;
+
+      const fa::string secondaryAdapter = moho::OPTIONS_GetString("secondary_adapter");
+      const fa::string primaryAdapter = moho::OPTIONS_GetString("primary_adapter");
+
+      if (!IsDisabledAdapterToken(secondaryAdapter) && !IsWindowedAdapterToken(primaryAdapter)) {
+        context.AddHead(gpg::gal::Head{});
+        gpg::gal::Head& secondaryHead = context.GetHead(1);
+        primaryHead.mWindowed = true;
+        secondaryHead.mWindowed = true;
+
+        moho::ResolutionTriple primaryResolution{};
+        if (moho::CFG_ParseResolutionTriple(primaryAdapter.c_str(), &primaryResolution)) {
+          primaryHead.mWidth = static_cast<std::uint32_t>(primaryResolution.width);
+          primaryHead.mHeight = static_cast<std::uint32_t>(primaryResolution.height);
+          primaryHead.framesPerSecond = static_cast<std::uint32_t>(primaryResolution.framesPerSecond);
+        }
+
+        moho::ResolutionTriple secondaryResolution{};
+        if (moho::CFG_ParseResolutionTriple(secondaryAdapter.c_str(), &secondaryResolution)) {
+          secondaryHead.mWidth = static_cast<std::uint32_t>(secondaryResolution.width);
+          secondaryHead.mHeight = static_cast<std::uint32_t>(secondaryResolution.height);
+          secondaryHead.framesPerSecond = static_cast<std::uint32_t>(secondaryResolution.framesPerSecond);
+        }
+      } else if (!IsWindowedAdapterToken(primaryAdapter)) {
+        moho::ResolutionTriple primaryResolution{};
+        if (moho::CFG_ParseResolutionTriple(primaryAdapter.c_str(), &primaryResolution)) {
+          primaryHead.mWindowed = true;
+          primaryHead.mWidth = static_cast<std::uint32_t>(primaryResolution.width);
+          primaryHead.mHeight = static_cast<std::uint32_t>(primaryResolution.height);
+          primaryHead.framesPerSecond = static_cast<std::uint32_t>(primaryResolution.framesPerSecond);
+        }
+      } else {
+        primaryHead.mWindowed = false;
+        const fa::string widthKey("Windows.Main.width");
+        const fa::string heightKey("Windows.Main.height");
+        primaryHead.mWidth = static_cast<std::uint32_t>(
+          preferences != nullptr ? preferences->GetInteger(widthKey, moho::wnd_DefaultCreateWidth)
+                                 : moho::wnd_DefaultCreateWidth
+        );
+        primaryHead.mHeight = static_cast<std::uint32_t>(
+          preferences != nullptr ? preferences->GetInteger(heightKey, moho::wnd_DefaultCreateHeight)
+                                 : moho::wnd_DefaultCreateHeight
+        );
+      }
     }
   }
 } // namespace
@@ -1434,8 +1954,8 @@ bool CScApp::CreateDevice()
   moho::sDeviceLock = true;
   DeviceLockGuard lockGuard{};
 
-  msvc8::string title("Forged Alliance");
-  msvc8::vector<msvc8::string> options;
+  fa::string title("Forged Alliance");
+  fa::vector<fa::string> options;
   moho::IUserPrefs* const preferences = moho::USER_GetPreferences();
 
   // FAF addition: the renderers to try, in order (RendererAttemptOrder). The
@@ -1455,93 +1975,24 @@ bool CScApp::CreateDevice()
   primaryHead.mHeight = static_cast<std::uint32_t>(moho::wnd_DefaultCreateHeight);
   primaryHead.framesPerSecond = 60;
 
-  wxPoint position = wxDefaultPosition;
+  ShellPoint position = kShellDefaultPosition;
   bool windowedByCommandLine = false;
   bool secondarySetupMode = false;
 
-  if (TryGetWindowOptionArgs(&options)) {
-    context.AddHead(gpg::gal::Head{});
-    gpg::gal::Head& secondaryHead = context.GetHead(1);
-
-    primaryHead.mWindowed = true;
-    secondaryHead.mWindowed = true;
-    primaryHead.mWidth = ClampAtLeast(moho::wnd_DefaultCreateWidth, ParseIntegerArg(options[0]));
-    primaryHead.mHeight = ClampAtLeast(moho::wnd_DefaultCreateHeight, ParseIntegerArg(options[1]));
-
-    if (options.size() == 4) {
-      secondaryHead.mWidth = ClampAtLeast(moho::wnd_DefaultCreateWidth, ParseIntegerArg(options[2]));
-      secondaryHead.mHeight = ClampAtLeast(moho::wnd_DefaultCreateHeight, ParseIntegerArg(options[3]));
-    } else {
-      secondaryHead.mWidth = primaryHead.mWidth;
-      secondaryHead.mHeight = primaryHead.mHeight;
-    }
-
-    moho::sAdapterNotCLOverridden = 0;
-  } else if (TryGetFullscreenOptionArgs(&options)) {
-    primaryHead.mWindowed = true;
-    primaryHead.mWidth = ClampAtLeast(moho::wnd_DefaultCreateWidth, ParseIntegerArg(options[0]));
-    primaryHead.mHeight = ClampAtLeast(moho::wnd_DefaultCreateHeight, ParseIntegerArg(options[1]));
-    moho::sAdapterNotCLOverridden = 0;
-  } else if (TryGetWindowedOptionArgs(&options)) {
+  // Engine addition (moho::gAppWindowed): the map editor is always one window. `mWindowed` is the
+  // full-screen flag (CreateAppFrame picks the frame style from it), so false makes a window.
+  if (moho::gAppWindowed) {
     primaryHead.mWindowed = false;
-    primaryHead.mWidth = ClampAtLeast(moho::wnd_MinCmdLineWidth, ParseIntegerArg(options[0]));
-    primaryHead.mHeight = ClampAtLeast(moho::wnd_MinCmdLineHeight, ParseIntegerArg(options[1]));
-    moho::sAdapterNotCLOverridden = 0;
-    windowedByCommandLine = true;
-    secondarySetupMode = true;
+    primaryHead.mWidth = static_cast<std::uint32_t>(std::max(moho::wnd_DefaultCreateWidth, 1600));
+    primaryHead.mHeight = static_cast<std::uint32_t>(std::max(moho::wnd_DefaultCreateHeight, 1000));
   } else {
-    secondarySetupMode = true;
-
-    const msvc8::string secondaryAdapter = moho::OPTIONS_GetString("secondary_adapter");
-    const msvc8::string primaryAdapter = moho::OPTIONS_GetString("primary_adapter");
-
-    if (!IsDisabledAdapterToken(secondaryAdapter) && !IsWindowedAdapterToken(primaryAdapter)) {
-      context.AddHead(gpg::gal::Head{});
-      gpg::gal::Head& secondaryHead = context.GetHead(1);
-      primaryHead.mWindowed = true;
-      secondaryHead.mWindowed = true;
-
-      moho::ResolutionTriple primaryResolution{};
-      if (moho::CFG_ParseResolutionTriple(primaryAdapter.c_str(), &primaryResolution)) {
-        primaryHead.mWidth = static_cast<std::uint32_t>(primaryResolution.width);
-        primaryHead.mHeight = static_cast<std::uint32_t>(primaryResolution.height);
-        primaryHead.framesPerSecond = static_cast<std::uint32_t>(primaryResolution.framesPerSecond);
-      }
-
-      moho::ResolutionTriple secondaryResolution{};
-      if (moho::CFG_ParseResolutionTriple(secondaryAdapter.c_str(), &secondaryResolution)) {
-        secondaryHead.mWidth = static_cast<std::uint32_t>(secondaryResolution.width);
-        secondaryHead.mHeight = static_cast<std::uint32_t>(secondaryResolution.height);
-        secondaryHead.framesPerSecond = static_cast<std::uint32_t>(secondaryResolution.framesPerSecond);
-      }
-    } else if (!IsWindowedAdapterToken(primaryAdapter)) {
-      moho::ResolutionTriple primaryResolution{};
-      if (moho::CFG_ParseResolutionTriple(primaryAdapter.c_str(), &primaryResolution)) {
-        primaryHead.mWindowed = true;
-        primaryHead.mWidth = static_cast<std::uint32_t>(primaryResolution.width);
-        primaryHead.mHeight = static_cast<std::uint32_t>(primaryResolution.height);
-        primaryHead.framesPerSecond = static_cast<std::uint32_t>(primaryResolution.framesPerSecond);
-      }
-    } else {
-      primaryHead.mWindowed = false;
-      const msvc8::string widthKey("Windows.Main.width");
-      const msvc8::string heightKey("Windows.Main.height");
-      primaryHead.mWidth = static_cast<std::uint32_t>(
-        preferences != nullptr
-          ? preferences->GetInteger(widthKey, moho::wnd_DefaultCreateWidth)
-          : moho::wnd_DefaultCreateWidth
-      );
-      primaryHead.mHeight = static_cast<std::uint32_t>(
-        preferences != nullptr
-          ? preferences->GetInteger(heightKey, moho::wnd_DefaultCreateHeight)
-          : moho::wnd_DefaultCreateHeight
-      );
-    }
+    SetUpHeads(context, primaryHead, options, preferences, windowedByCommandLine, secondarySetupMode);
   }
 
-  if (context.GetHeadCount() == 1 &&
-      moho::CFG_GetArgOptionAliases(moho::CFG_GetAdapterOptionAliases(), 1, &options) &&
-      !options.empty()) {
+  if (
+    context.GetHeadCount() == 1 && moho::CFG_GetArgOptionAliases(moho::CFG_GetAdapterOptionAliases(), 1, &options) &&
+    !options.empty()
+  ) {
     context.mAdapter = ParseIntegerArg(options[0]);
   }
 
@@ -1550,17 +2001,18 @@ bool CScApp::CreateDevice()
     moho::sAdapterNotCLOverridden = 0;
   }
 
-  const bool maximizeFromPrefs = preferences != nullptr
-                                 && preferences->GetBoolean(msvc8::string("Windows.Main.maximized"), false);
-  const bool maximized = !windowedByCommandLine && !primaryHead.mWindowed && (hasMaximizeOption || maximizeFromPrefs);
+  const bool maximizeFromPrefs =
+    preferences != nullptr && preferences->GetBoolean(fa::string("Windows.Main.maximized"), false);
+  const bool maximized = moho::gAppWindowed ||
+    (!windowedByCommandLine && !primaryHead.mWindowed && (hasMaximizeOption || maximizeFromPrefs));
 
   if (!primaryHead.mWindowed) {
     if (moho::CFG_GetArgOption("/position", 2, &options) && options.size() >= 2) {
       position.x = ParseIntegerArg(options[0]);
       position.y = ParseIntegerArg(options[1]);
     } else if (preferences != nullptr) {
-      position.x = preferences->GetInteger(msvc8::string("Windows.Main.x"), position.x);
-      position.y = preferences->GetInteger(msvc8::string("Windows.Main.y"), position.y);
+      position.x = preferences->GetInteger(fa::string("Windows.Main.x"), position.x);
+      position.y = preferences->GetInteger(fa::string("Windows.Main.y"), position.y);
     }
 
     ClampPositionToMonitor(&position, primaryHead.mWidth, primaryHead.mHeight);
@@ -1590,15 +2042,24 @@ bool CScApp::CreateDevice()
     }
     created = CreateAppFrame(title, maximized, position, context);
     if (!created && attempt + 1U < rendererAttempts.size()) {
-      gpg::Warnf("%s is unavailable; falling back to %s", DeviceApiLogName(api), DeviceApiLogName(rendererAttempts[attempt + 1U]));
+      gpg::Warnf(
+        "%s is unavailable; falling back to %s", DeviceApiLogName(api), DeviceApiLogName(rendererAttempts[attempt + 1U])
+      );
     }
   }
   if (!created) {
     moho::d3d_WindowsCursor = useD3D10;
   }
 
+  // Engine addition (moho::gAppRenderers): the map editor has no Direct3D 9 or 10 fallback.
+  if (!created && !moho::gAppRenderers.empty()) {
+    return false;
+  }
+
   if (!created) {
-    gpg::gal::DeviceContext fallbackContext(useD3D10 ? gpg::gal::DeviceApi::Direct3D10 : gpg::gal::DeviceApi::Direct3D9);
+    gpg::gal::DeviceContext fallbackContext(
+      useD3D10 ? gpg::gal::DeviceApi::Direct3D10 : gpg::gal::DeviceApi::Direct3D9
+    );
     context = fallbackContext;
 
     gpg::gal::Head fallbackHead{};
@@ -1633,9 +2094,9 @@ bool CScApp::CreateDevice()
  * bootstrap handoff for the startup render path.
  */
 bool CScApp::CreateAppFrame(
-  const msvc8::string& title,
+  const fa::string& title,
   const bool maximized,
-  const wxPoint& position,
+  const ShellPoint& position,
   gpg::gal::DeviceContext& context
 )
 {
@@ -1646,8 +2107,7 @@ bool CScApp::CreateAppFrame(
     moho::WIN_SetMainWindow(nullptr);
 
     // 0x008CFD00: idle until wx has nothing left to delete.
-    while (wxTheApp->ProcessIdle()) {
-    }
+    while (gShellApp->ProcessIdle()) {}
 
     if (reason != nullptr && reason[0] != '\0') {
       gpg::Warnf("GAL Exception: %s", reason);
@@ -1659,7 +2119,7 @@ bool CScApp::CreateAppFrame(
     gpg::gal::Head& primaryHead = context.GetHead(0);
     const std::int32_t frameStyle = primaryHead.mWindowed ? kFullscreenFrameStyle : kWindowedFrameStyle;
 
-    const wxSize primarySize{
+    const ShellSize primarySize{
       static_cast<std::int32_t>(primaryHead.mWidth),
       static_cast<std::int32_t>(primaryHead.mHeight),
     };
@@ -1679,9 +2139,7 @@ bool CScApp::CreateAppFrame(
         int appliedHeight = 0;
         supcomFrame->GetClientSize(&appliedWidth, &appliedHeight);
         if (appliedWidth != primarySize.x || appliedHeight != primarySize.y) {
-          gpg::Warnf(
-            "Unable to set requested size %i,%i. Results are undefined.", primarySize.x, primarySize.y
-          );
+          gpg::Warnf("Unable to set requested size %i,%i. Results are undefined.", primarySize.x, primarySize.y);
         }
       }
 
@@ -1707,16 +2165,15 @@ bool CScApp::CreateAppFrame(
 
     const Wm3::Vector2i viewportSize{clientWidth, clientHeight};
     const bool hasSecondHead = context.GetHeadCount() > 1;
-    moho::WD3DViewport* const viewport = moho::REN_CreateGameViewport(
-      moho::sMainWindow, title.c_str(), viewportSize, hasSecondHead
-    );
+    moho::WD3DViewport* const viewport =
+      moho::REN_CreateGameViewport(moho::sMainWindow, title.c_str(), viewportSize, hasSecondHead);
 
     primaryHead.mHandle = reinterpret_cast<void*>(static_cast<std::uintptr_t>(viewport->GetParent()->GetHandle()));
     primaryHead.mWindow = reinterpret_cast<void*>(static_cast<std::uintptr_t>(viewport->GetHandle()));
 
     if (hasSecondHead) {
       gpg::gal::Head& secondaryHead = context.GetHead(1);
-      const wxSize secondarySize{
+      const ShellSize secondarySize{
         static_cast<std::int32_t>(secondaryHead.mWidth),
         static_cast<std::int32_t>(secondaryHead.mHeight),
       };
@@ -1728,13 +2185,18 @@ bool CScApp::CreateAppFrame(
     }
 
     // A stack wxPaintEvent handed straight to the handler (0x008CFB95).
-    wxPaintEvent paintEvent;
+    ShellPaintEvent paintEvent;
     viewport->OnPaint(paintEvent);
 
     moho::CD3DDevice* const device = moho::D3D_GetDevice();
     device->Clear2(true);
 
     context.mValidate = !moho::CFG_GetArgOption("/novalidate", 0, nullptr);
+    // Engine addition (moho::gAppBeforeDeviceCreate): the map editor adds its panels' head here. The game's
+    // viewport already has its head count, so it draws head 0 alone.
+    if (moho::gAppBeforeDeviceCreate != nullptr) {
+      moho::gAppBeforeDeviceCreate(context, primaryHead.mHandle);
+    }
     gpg::gal::Device::Create(&context);
 
     device->SetRenViewport(static_cast<moho::WRenViewport*>(viewport));
@@ -1800,3 +2262,13 @@ bool CScApp::AppDoSuppressWindowsKeys() const
 
   return supcomFrame->IsApplicationActive();
 }
+
+// Engine addition (the map editor, src/editor): empty in the game. CScApp.h says what it does.
+std::vector<gpg::gal::DeviceApi> moho::gAppRenderers;
+
+// Engine addition (the map editor, src/editor): false in the game. CScApp.h says what it does.
+bool moho::gAppWindowed = false;
+bool moho::gAppIdleClock = false;
+
+// Engine addition (the map editor, src/editor): null in the game. CScApp.h says what it does.
+void (*moho::gAppBeforeDeviceCreate)(gpg::gal::DeviceContext& context, void* frameWindow) = nullptr;

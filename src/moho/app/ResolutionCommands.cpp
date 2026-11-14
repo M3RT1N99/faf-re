@@ -6,14 +6,16 @@
 #include <cstdlib>
 
 #include "gpg/gal/Device.hpp"
+#include "gpg/core/utils/Logging.h"
 #include "gpg/gal/DeviceContext.hpp"
-#include "moho/app/WxRuntimeTypes.h"
+#include "moho/app/CScApp.h"
+#include "moho/app/AppRuntimeTypes.h"
 #include "moho/console/CConCommand.h"
 #include "moho/console/CConFunc.h"
 #include "moho/misc/StartupHelpers.h"
 #include "moho/render/d3d/CD3DDevice.h"
 #include "moho/render/WRenViewport.h"
-#include <wx/toplevel.h>
+#include "platform/shell/toplevel.h"
 
 namespace
 {
@@ -30,7 +32,11 @@ namespace
    * Address: 0x00BE9480 (FUN_00BE9480, dynamic initializer for `gCConFunc_SC_PrimaryAdapter`)
    * Address: 0x00C08D30 (FUN_00C08D30, dynamic atexit destructor for `gCConFunc_SC_PrimaryAdapter`)
    */
-  moho::CConFunc gCConFunc_SC_PrimaryAdapter("SC_PrimaryAdapter", kConsoleStartupSCPrimaryAdapterDescription, &moho::SC_PrimaryAdapter);
+  moho::CConFunc gCConFunc_SC_PrimaryAdapter(
+    "SC_PrimaryAdapter",
+    kConsoleStartupSCPrimaryAdapterDescription,
+    &moho::SC_PrimaryAdapter
+  );
 
   /// 0x00E00779 (the same shared empty-string literal `SC_PrimaryAdapter`
   /// uses), the `.data` initializer of `Moho::CConFunc_SC_VerticalSync`
@@ -41,7 +47,8 @@ namespace
    * Address: 0x00BE9580 (FUN_00BE9580, dynamic initializer for `gCConFunc_SC_VerticalSync`)
    * Address: 0x00C08DF0 (FUN_00C08DF0, dynamic atexit destructor for `gCConFunc_SC_VerticalSync`)
    */
-  moho::CConFunc gCConFunc_SC_VerticalSync("SC_VerticalSync", kConsoleStartupSCVerticalSyncDescription, &moho::SC_VerticalSync);
+  moho::CConFunc
+    gCConFunc_SC_VerticalSync("SC_VerticalSync", kConsoleStartupSCVerticalSyncDescription, &moho::SC_VerticalSync);
 
   /// 0x00E4F1E0, the `.data` initializer of `Moho::CConFunc_SC_ToggleCursorClip`
   /// (+0x08), read directly from the shipped PE.
@@ -52,7 +59,11 @@ namespace
    * Address: 0x00BE96C0 (FUN_00BE96C0, dynamic initializer for `gCConFunc_SC_ToggleCursorClip`)
    * Address: 0x00C08EE0 (FUN_00C08EE0, dynamic atexit destructor for `gCConFunc_SC_ToggleCursorClip`)
    */
-  moho::CConFunc gCConFunc_SC_ToggleCursorClip("SC_ToggleCursorClip", kConsoleStartupSCToggleCursorClipDescription, &moho::SC_ToggleCursorClip);
+  moho::CConFunc gCConFunc_SC_ToggleCursorClip(
+    "SC_ToggleCursorClip",
+    kConsoleStartupSCToggleCursorClipDescription,
+    &moho::SC_ToggleCursorClip
+  );
 
   /// 0x00E00779 (the same shared empty-string literal `SC_PrimaryAdapter`
   /// uses), the `.data` initializer of `Moho::CConFunc_SC_SecondaryAdapter`
@@ -63,7 +74,11 @@ namespace
    * Address: 0x00BE94C0 (FUN_00BE94C0, dynamic initializer for `gCConFunc_SC_SecondaryAdapter`)
    * Address: 0x00C08D60 (FUN_00C08D60, dynamic atexit destructor for `gCConFunc_SC_SecondaryAdapter`)
    */
-  moho::CConFunc gCConFunc_SC_SecondaryAdapter("SC_SecondaryAdapter", kConsoleStartupSCSecondaryAdapterDescription, &moho::SC_SecondaryAdapter);
+  moho::CConFunc gCConFunc_SC_SecondaryAdapter(
+    "SC_SecondaryAdapter",
+    kConsoleStartupSCSecondaryAdapterDescription,
+    &moho::SC_SecondaryAdapter
+  );
 
   /// Style bits observed at the "argument is literally `windowed`" branch's
   /// `SetWindowStyleFlag` call site (0x008D35DB): decodes to
@@ -84,8 +99,17 @@ namespace
 
 namespace moho
 {
-  void SC_PrimaryAdapter(const msvc8::vector<msvc8::string>& args)
+  void SC_PrimaryAdapter(
+    const fa::vector<fa::string>& args
+  )
   {
+    // Engine addition (moho::gAppWindowed): the map editor keeps its own window; the game's display
+    // option (Options, Video, primary adapter) would make it a borderless or fixed-size frame.
+    if (gAppWindowed) {
+      gpg::Logf("SC_PrimaryAdapter: the map editor keeps its window");
+      return;
+    }
+
     gpg::gal::Device* const deviceInstance = gpg::gal::Device::GetInstance();
     CD3DDevice* const device = D3D_GetDevice();
 
@@ -99,15 +123,15 @@ namespace moho
 
     sDeviceLock = true;
 
-    const msvc8::string* const valueToken = ConCommandArg(args, 1);
+    const fa::string* const valueToken = ConCommandArg(args, 1);
 
     // `overridden` is a sentinel meaning some other path already applied an
     // explicit resolution override; this invocation is then a no-op beyond
     // the device-lock toggle.
     if (args.size() == 2u && valueToken != nullptr && valueToken->view() != "overridden") {
       // The main window is the SupCom frame: slot 131 below is
-      // wxTopLevelWindowMSW::Maximize, not a viewport hook.
-      wxTopLevelWindow* const mainWindow = static_cast<wxTopLevelWindow*>(sMainWindow);
+      // TopLevelWindowMSW::Maximize, not a viewport hook.
+      ShellTopLevelWindow* const mainWindow = static_cast<ShellTopLevelWindow*>(sMainWindow);
 
       // 0x008D35AA-0x008D35B4: `head.mWindowed` is set from the *inverse* of
       // the "argument equals `windowed`" test, and it is reused with that
@@ -139,11 +163,11 @@ namespace moho
         mainWindow->SetWindowStyleFlag(kBorderedAdapterStyle);
 
         IUserPrefs* const preferences = USER_GetPreferences();
-        head.mWidth = static_cast<std::uint32_t>(preferences->GetInteger(
-          msvc8::string(kPreviousWidthPrefKey), static_cast<std::int32_t>(wnd_DefaultCreateWidth)
-        ));
+        head.mWidth = static_cast<std::uint32_t>(
+          preferences->GetInteger(fa::string(kPreviousWidthPrefKey), static_cast<std::int32_t>(wnd_DefaultCreateWidth))
+        );
         head.mHeight = static_cast<std::uint32_t>(preferences->GetInteger(
-          msvc8::string(kPreviousHeightPrefKey), static_cast<std::int32_t>(wnd_DefaultCreateHeight)
+          fa::string(kPreviousHeightPrefKey), static_cast<std::int32_t>(wnd_DefaultCreateHeight)
         ));
         head.framesPerSecond = 0;
 
@@ -154,14 +178,13 @@ namespace moho
       mainWindow->SetClientSize(static_cast<int>(head.mWidth), static_cast<int>(head.mHeight));
       mainWindow->Refresh(true, nullptr);
       ren_Viewport->SetSize(
-        -1, -1, static_cast<int>(head.mWidth), static_cast<int>(head.mHeight), wxSIZE_USE_EXISTING
+        -1, -1, static_cast<int>(head.mWidth), static_cast<int>(head.mHeight), SHELL_SIZE_USE_EXISTING
       );
 
       device->Clear();
       (void)device->InitContext(&deviceContext);
 
-      if (deviceContext.GetHeadCount() == 1 && head.mWindowed
-          && OPTIONS_GetInt(kLockFullscreenCursorOptionKey) == 1) {
+      if (deviceContext.GetHeadCount() == 1 && head.mWindowed && OPTIONS_GetInt(kLockFullscreenCursorOptionKey) == 1) {
         const HWND windowHandle = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(mainWindow->GetHandle()));
         RECT windowRect{};
         ::GetWindowRect(windowHandle, &windowRect);
@@ -186,7 +209,9 @@ namespace moho
    * the binary before the initial `GetDeviceContext()` dereference, matching
    * what this recovery keeps.
    */
-  void SC_VerticalSync(const msvc8::vector<msvc8::string>& args)
+  void SC_VerticalSync(
+    const fa::vector<fa::string>& args
+  )
   {
     gpg::gal::Device* const deviceInstance = gpg::gal::Device::GetInstance();
     CD3DDevice* const device = D3D_GetDevice();
@@ -213,13 +238,15 @@ namespace moho
    * "0"`; equal releases the clip, anything else attempts to clip to the
    * primary window's rect under the guards described in the header.
    */
-  void SC_ToggleCursorClip(const msvc8::vector<msvc8::string>& args)
+  void SC_ToggleCursorClip(
+    const fa::vector<fa::string>& args
+  )
   {
     if (args.size() > 2u) {
       return;
     }
 
-    const msvc8::string* const modeToken = ConCommandArg(args, 1u);
+    const fa::string* const modeToken = ConCommandArg(args, 1u);
     if (modeToken != nullptr && modeToken->view() == "0") {
       ::ClipCursor(nullptr);
       return;
@@ -255,13 +282,15 @@ namespace moho
    * `args[1].compare(0, args[1].size(), "true", 4) == 0`, i.e. `*args[1] ==
    * "true"`.
    */
-  void SC_SecondaryAdapter(const msvc8::vector<msvc8::string>& args)
+  void SC_SecondaryAdapter(
+    const fa::vector<fa::string>& args
+  )
   {
     if (args.size() != 2u) {
       return;
     }
 
-    const msvc8::string* const modeToken = ConCommandArg(args, 1u);
+    const fa::string* const modeToken = ConCommandArg(args, 1u);
     const bool adapterNotCommandLineOverridden = modeToken != nullptr && modeToken->view() == "true";
     SetupSecondaryAdapterSettings(adapterNotCommandLineOverridden);
   }

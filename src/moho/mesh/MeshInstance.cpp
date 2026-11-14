@@ -1,31 +1,16 @@
 #include "moho/mesh/MeshPrivate.h"
 
+#include <algorithm>
+#include <cstring>
+
+#include "moho/console/CConCommand.h"
+
 namespace moho
 {
 
   [[nodiscard]] float REN_GetSimDeltaSeconds();
 
-  /**
-   * Address: 0x007E6CE0 (FUN_007E6CE0)
-   *
-   * What it does:
-   * Refreshes interpolation state and copies `MeshInstance::curPose` into one
-   * shared-pose out lane while retaining the copied control block.
-   */
-  boost::shared_ptr<CAniPose>* CaptureMeshInstanceCurrentPose(
-    boost::shared_ptr<CAniPose>* const outPose,
-    MeshInstance* const meshInstance
-  )
-  {
-    if (outPose == nullptr || meshInstance == nullptr) {
-      return outPose;
-    }
-
-    meshInstance->UpdateInterpolatedFields();
-    *outPose = meshInstance->curPose;
-    return outPose;
-  }
-}
+} // namespace moho
 
 namespace
 {
@@ -34,22 +19,33 @@ namespace
     return std::numeric_limits<float>::quiet_NaN();
   }
 
-  [[nodiscard]] bool FloatEqual(const float lhs, const float rhs) noexcept
+  [[nodiscard]] bool FloatEqual(
+    const float lhs,
+    const float rhs
+  ) noexcept
   {
     return lhs == rhs;
   }
 
-  [[nodiscard]] bool Vec3EqualExact(const Wm3::Vec3f& lhs, const Wm3::Vec3f& rhs) noexcept
+  [[nodiscard]] bool Vec3EqualExact(
+    const Wm3::Vec3f& lhs,
+    const Wm3::Vec3f& rhs
+  ) noexcept
   {
     return FloatEqual(lhs.x, rhs.x) && FloatEqual(lhs.y, rhs.y) && FloatEqual(lhs.z, rhs.z);
   }
 
-  [[nodiscard]] bool QuatEqualExact(const Wm3::Quatf& lhs, const Wm3::Quatf& rhs) noexcept
+  [[nodiscard]] bool QuatEqualExact(
+    const Wm3::Quatf& lhs,
+    const Wm3::Quatf& rhs
+  ) noexcept
   {
     return FloatEqual(lhs.w, rhs.w) && FloatEqual(lhs.x, rhs.x) && FloatEqual(lhs.y, rhs.y) && FloatEqual(lhs.z, rhs.z);
   }
 
-  [[nodiscard]] float Clamp01(const float value) noexcept
+  [[nodiscard]] float Clamp01(
+    const float value
+  ) noexcept
   {
     return std::clamp(value, 0.0f, 1.0f);
   }
@@ -169,19 +165,21 @@ namespace
     return transform;
   }
 
-  [[nodiscard]] boost::shared_ptr<const moho::CAniSkel>
-  ResolveInitialPoseSkeleton(const boost::shared_ptr<moho::Mesh>& mesh, const bool isStaticPose)
+  [[nodiscard]] std::shared_ptr<const moho::CAniSkel> ResolveInitialPoseSkeleton(
+    const std::shared_ptr<moho::Mesh>& mesh,
+    const bool isStaticPose
+  )
   {
     if (!isStaticPose || !mesh) {
       return moho::CAniSkel::GetDefaultSkeleton();
     }
 
-    const boost::shared_ptr<moho::RScmResource> resource = mesh->GetResource(0);
+    const std::shared_ptr<moho::RScmResource> resource = mesh->GetResource(0);
     if (!resource) {
       return moho::CAniSkel::GetDefaultSkeleton();
     }
 
-    const boost::shared_ptr<const moho::CAniSkel> skeleton = resource->GetSkeleton();
+    const std::shared_ptr<const moho::CAniSkel> skeleton = resource->GetSkeleton();
     if (skeleton) {
       return skeleton;
     }
@@ -189,7 +187,9 @@ namespace
     return moho::CAniSkel::GetDefaultSkeleton();
   }
 
-  [[nodiscard]] float ComputeSpatialDissolveCutoff(const boost::shared_ptr<moho::Mesh>& mesh)
+  [[nodiscard]] float ComputeSpatialDissolveCutoff(
+    const std::shared_ptr<moho::Mesh>& mesh
+  )
   {
     if (!mesh) {
       return -1.0f;
@@ -208,7 +208,7 @@ namespace
 
     return lastLod->cutoff + moho::ren_MeshDissolve;
   }
-}
+} // namespace
 
 namespace moho
 {
@@ -239,7 +239,7 @@ namespace moho
     const std::int32_t gameTickArg,
     const std::int32_t colorArg,
     const bool isStaticPoseArg,
-    const boost::shared_ptr<Mesh> meshArg
+    const std::shared_ptr<Mesh> meshArg
   )
     : TDatListItem<MeshInstance, void>()
     , db()
@@ -262,7 +262,7 @@ namespace moho
     , hasStanceUpdatePending(1)
     , isStaticPose(static_cast<std::uint8_t>(isStaticPoseArg ? 1 : 0))
     , isLocked(0)
-    , pad_A7(0)
+    , poseStill(0)
     , startPose()
     , endPose()
     , curPose()
@@ -295,7 +295,7 @@ namespace moho
   {
     sphere.Center = {NanValue(), NanValue(), NanValue()};
     sphere.Radius = NanValue();
-    const boost::shared_ptr<const CAniSkel> skeleton = ResolveInitialPoseSkeleton(meshArg, isStaticPoseArg);
+    const std::shared_ptr<const CAniSkel> skeleton = ResolveInitialPoseSkeleton(meshArg, isStaticPoseArg);
     curPose.reset(new CAniPose(skeleton, 1.0f));
 
     db.Register(spatialDbStorage, this, kMeshSpatialDbRoutingMask);
@@ -320,7 +320,7 @@ namespace moho
   /**
    * Address: 0x007DADD0 (FUN_007DADD0, ?GetMesh@MeshInstance@Moho@@QBE?AV?$shared_ptr@VMesh@Moho@@@boost@@XZ)
    */
-  boost::shared_ptr<Mesh> MeshInstance::GetMesh() const
+  std::shared_ptr<Mesh> MeshInstance::GetMesh() const
   {
     return mesh;
   }
@@ -331,63 +331,11 @@ namespace moho
    * What it does:
    * Stores one per-instance hidden/cull visibility flag.
    */
-  void MeshInstance::Cull(const bool hidden)
+  void MeshInstance::Cull(
+    const bool hidden
+  )
   {
     isHidden = hidden ? 1u : 0u;
-  }
-
-  /**
-   * Address: 0x007DE6D0 (FUN_007DE6D0, ?Reflect@MeshInstance@Moho@@QAEX_N@Z)
-   *
-   * What it does:
-   * Clears one per-instance reflection-visibility flag.
-   */
-  void MeshInstance::Reflect([[maybe_unused]] const bool reflected)
-  {
-    isReflected = 0u;
-  }
-
-  /**
-   * Address: 0x007DE880 (FUN_007DE880, ?SetParameter@MeshInstance@Moho@@QAEXW4PARAM@MeshMaterial@2@M@Z)
-   *
-   * What it does:
-   * Writes one shader parameter lane selected by `MeshMaterial::PARAM`.
-   */
-  void MeshInstance::SetParameter(const MeshMaterial::PARAM parameter, const float value)
-  {
-    switch (parameter) {
-    case MeshMaterial::PARAM_GENERIC:
-      parameters = value;
-      break;
-    case MeshMaterial::PARAM_FRACTION_COMPLETE:
-      fractionCompleteParameter = value;
-      break;
-    case MeshMaterial::PARAM_FRACTION_HEALTH:
-      fractionHealthParameter = value;
-      break;
-    case MeshMaterial::PARAM_LIFETIME:
-      lifetimeParameter = value;
-      break;
-    case MeshMaterial::PARAM_AUXILIARY:
-      auxiliaryParameter = value;
-      break;
-    default:
-      break;
-    }
-  }
-
-  /**
-   * Address: 0x007DE850 (FUN_007DE850, ?SetInterpolantScale@MeshInstance@Moho@@QAEXM@Z)
-   *
-   * What it does:
-   * Stores one per-instance interpolation scale and invalidates cached
-   * interpolant lane for refresh.
-   */
-  void MeshInstance::SetInterpolantScale(const float interpolantScale)
-  {
-    uniformScale = interpolantScale;
-    frameCounter = sFrameCounter;
-    currInterpolant = -1.0f;
   }
 
   /**
@@ -396,7 +344,9 @@ namespace moho
    * What it does:
    * Stores one per-instance render scale vector.
    */
-  void MeshInstance::SetScale(const Wm3::Vec3f& scaleArg)
+  void MeshInstance::SetScale(
+    const Wm3::Vec3f& scaleArg
+  )
   {
     scale = scaleArg;
   }
@@ -407,21 +357,11 @@ namespace moho
    * What it does:
    * Stores one packed per-instance color value.
    */
-  void MeshInstance::SetColor(const std::uint32_t colorArg)
+  void MeshInstance::SetColor(
+    const std::uint32_t colorArg
+  )
   {
     color = static_cast<std::int32_t>(colorArg);
-  }
-
-  /**
-   * Address: 0x007DE900 (FUN_007DE900, ?SetScroll@MeshInstance@Moho@@QAEXABV?$Vector2@M@Wm3@@0@Z)
-   *
-   * What it does:
-   * Stores two texture-scroll vector lanes for this mesh instance.
-   */
-  void MeshInstance::SetScroll(const Wm3::Vec2f& scroll1Arg, const Wm3::Vec2f& scroll2Arg)
-  {
-    scroll1 = scroll1Arg;
-    scroll2 = scroll2Arg;
   }
 
   /**
@@ -444,7 +384,9 @@ namespace moho
    * What it does:
    * Clamps and stores dissolve value in `[0.0f, 1.0f]`.
    */
-  void MeshInstance::SetDissolve(const float dissolveAmount)
+  void MeshInstance::SetDissolve(
+    const float dissolveAmount
+  )
   {
     float clampedValue = 1.0f;
     if (dissolveAmount < 1.0f) {
@@ -465,7 +407,10 @@ namespace moho
    * Applies start/end stance transforms, flags interpolation refresh, and
    * marks stance/bounds state dirty when transform data changed.
    */
-  void MeshInstance::SetStance(const VTransform& startTransformArg, const VTransform& endTransformArg)
+  void MeshInstance::SetStance(
+    const VTransform& startTransformArg,
+    const VTransform& endTransformArg
+  )
   {
     // Same republish as the pose overload, at 0x007DEA0B..0x007DEA1A.
     if (ApplyStance(startTransformArg, endTransformArg)) {
@@ -473,7 +418,10 @@ namespace moho
     }
   }
 
-  bool MeshInstance::ApplyStance(const VTransform& startTransformArg, const VTransform& endTransformArg)
+  bool MeshInstance::ApplyStance(
+    const VTransform& startTransformArg,
+    const VTransform& endTransformArg
+  )
   {
     const bool changed = !Vec3EqualExact(endTransform.pos_, endTransformArg.pos_) ||
       !QuatEqualExact(endTransform.orient_, endTransformArg.orient_) ||
@@ -505,7 +453,9 @@ namespace moho
    * Toggles static-pose lock state; when locking, snapshots `curPose` into
    * `endPose`, and when unlocking, invalidates interpolation cache lanes.
    */
-  void MeshInstance::LockPose(const bool lockPose)
+  void MeshInstance::LockPose(
+    const bool lockPose
+  )
   {
     const std::uint8_t lockValue = lockPose ? 1u : 0u;
     if (isLocked == lockValue) {
@@ -523,6 +473,7 @@ namespace moho
 
     frameCounter = sFrameCounter;
     currInterpolant = -1.0f;
+    poseStill = 0;
   }
 
   /**
@@ -537,8 +488,8 @@ namespace moho
     const VTransform& startTransformArg,
     const VTransform& endTransformArg,
     const bool forceRefresh,
-    boost::shared_ptr<CAniPose> startPoseArg,
-    boost::shared_ptr<CAniPose> endPoseArg
+    std::shared_ptr<CAniPose> startPoseArg,
+    std::shared_ptr<CAniPose> endPoseArg
   )
   {
     // Republish the swept bounds into this instance's spatial-db entry
@@ -556,8 +507,8 @@ namespace moho
     const VTransform& startTransformArg,
     const VTransform& endTransformArg,
     const bool forceRefresh,
-    const boost::shared_ptr<CAniPose>& startPoseArg,
-    const boost::shared_ptr<CAniPose>& endPoseArg
+    const std::shared_ptr<CAniPose>& startPoseArg,
+    const std::shared_ptr<CAniPose>& endPoseArg
   )
   {
     if (isStaticPose == 0) {
@@ -570,6 +521,7 @@ namespace moho
     frameCounter = sFrameCounter;
     currInterpolant = -1.0f;
     hasStanceUpdatePending = 1;
+    poseStill = 0;
 
     const bool changed = !Vec3EqualExact(endTransform.pos_, endTransformArg.pos_) ||
       !QuatEqualExact(endTransform.orient_, endTransformArg.orient_) ||
@@ -584,6 +536,52 @@ namespace moho
     boundsValid = 1;
     return true;
   }
+
+  bool ren_MeshPoseStill = true;
+  namespace
+  {
+    TConVar<bool> gTConVar_ren_MeshPoseStill(
+      "ren_MeshPoseStill",
+      "A unit's pose is blended once while its start and end poses match (1, the default), or each frame (0). Read "
+      "when a "
+      "pose is blended.",
+      &ren_MeshPoseStill
+    );
+
+    /// Whether blending the two poses gives the same result at any interpolant.
+    [[nodiscard]] bool PosesMatch(
+      const CAniPose& first,
+      const CAniPose& second,
+      const std::int32_t bones
+    )
+    {
+      if (&first == &second) {
+        return true;
+      }
+      if (
+        first.mMaxOffset != second.mMaxOffset ||
+        std::memcmp(&first.mLocalTransform, &second.mLocalTransform, sizeof(VTransform)) != 0
+      ) {
+        return false;
+      }
+      const std::int32_t count = std::min({
+        static_cast<std::int32_t>(first.mBones.end() - first.mBones.begin()),
+        static_cast<std::int32_t>(second.mBones.end() - second.mBones.begin()),
+        bones,
+      });
+      for (std::int32_t index = 0; index < count; ++index) {
+        const CAniPoseBone& a = first.mBones.begin()[index];
+        const CAniPoseBone& b = second.mBones.begin()[index];
+        if (
+          a.mCompositeIsLocal != b.mCompositeIsLocal || a.mVisible != b.mVisible ||
+          std::memcmp(&a.mLocalTransform, &b.mLocalTransform, sizeof(VTransform)) != 0
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+  } // namespace
 
   /**
    * Address: 0x007DEC80 (FUN_007DEC80, ?UpdateInterpolatedFields@MeshInstance@Moho@@ABEXXZ)
@@ -604,8 +602,7 @@ namespace moho
     // interpolationStateFresh untouched, so the second half is what lets a
     // fresh stance be picked up even on a call where sCurrentInterpolant
     // already happens to equal that reset sentinel.
-    if (sCurrentInterpolant == currInterpolant ||
-        (frameCounter == sFrameCounter && interpolationStateFresh != 0u)) {
+    if (sCurrentInterpolant == currInterpolant || (frameCounter == sFrameCounter && interpolationStateFresh != 0u)) {
       return;
     }
 
@@ -633,7 +630,7 @@ namespace moho
     // and never cleared, so this should never actually be empty on a live
     // instance. Guarded anyway, matching GetSweptAlignedBox's own established
     // pattern in this class.
-    const boost::shared_ptr<RScmResource> resource = mesh ? mesh->GetResource(0) : boost::shared_ptr<RScmResource>{};
+    const std::shared_ptr<RScmResource> resource = mesh ? mesh->GetResource(0) : std::shared_ptr<RScmResource>{};
     if (!resource) {
       return;
     }
@@ -644,10 +641,18 @@ namespace moho
     // instance's live animation state. Only static-pose (real unit)
     // instances that are not locked carry start/end pose handles (see
     // MeshInstance::SetStance's pose-carrying overload).
-    if (isStaticPose != 0u && isLocked == 0u) {
-      curPose->InterpolatePose(
-        interpolation, startPose.get(), endPose.get(), static_cast<std::int32_t>(resource->mFile->mSkinBoneCount)
-      );
+    //
+    // Engine change (ren_MeshPoseStill): a unit that stands still gets two matching poses from the sim, and
+    // blending those gives the same pose every frame. One blend per stance is enough, which also keeps the
+    // bones' composite transforms from being rebuilt. The sim never writes a pose it has published.
+    // Engine addition, server mode: a server session's client gets no poses until the pose lane (plan WP8.3), so a
+    // unit's start and end pose can be null; it keeps the pose it has.
+    if (
+      isStaticPose != 0u && isLocked == 0u && (poseStill == 0u || !ren_MeshPoseStill) && startPose && endPose && curPose
+    ) {
+      const std::int32_t skinBoneCount = static_cast<std::int32_t>(resource->mFile->mSkinBoneCount);
+      curPose->InterpolatePose(interpolation, startPose.get(), endPose.get(), skinBoneCount);
+      poseStill = (ren_MeshPoseStill && PosesMatch(*startPose, *endPose, skinBoneCount)) ? 1u : 0u;
     }
 
     float maxScale = scale.x;
@@ -681,9 +686,14 @@ namespace moho
     // matching MeshInstance::GetSweptAlignedBox's already-correct pattern.
     const Wm3::AxisAlignedBox3f scaledLocalBounds = ScaleLocalMeshBounds(scale, resource->mBounds);
     BuildOrientedBoxFromLocalAabb(
-      curOrientation, interpolatedPosition,
-      scaledLocalBounds.Min.x, scaledLocalBounds.Min.y, scaledLocalBounds.Min.z,
-      scaledLocalBounds.Max.x, scaledLocalBounds.Max.y, scaledLocalBounds.Max.z,
+      curOrientation,
+      interpolatedPosition,
+      scaledLocalBounds.Min.x,
+      scaledLocalBounds.Min.y,
+      scaledLocalBounds.Min.z,
+      scaledLocalBounds.Max.x,
+      scaledLocalBounds.Max.y,
+      scaledLocalBounds.Max.z,
       box
     );
 
@@ -711,22 +721,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x007DE730 (FUN_007DE730, ?GetDebugBoneCount@MeshInstance@Moho@@QBEHXZ)
-   *
-   * What it does:
-   * Returns zero for dynamic meshes; static meshes report SCM bone count.
-   */
-  std::int32_t MeshInstance::GetDebugBoneCount() const
-  {
-    if (isStaticPose == 0u) {
-      return 0;
-    }
-
-    const boost::shared_ptr<RScmResource> resource = mesh->GetResource(0);
-    return static_cast<std::int32_t>(resource->mFile->mBoneTotalCount);
-  }
-
-  /**
    * Address: 0x007DE7A0 (FUN_007DE7A0,
    * ?ComputeDebugPose@MeshInstance@Moho@@QAE?AV?$shared_ptr@VCAniPose@Moho@@@boost@@XZ)
    * Mangled: ?ComputeDebugPose@MeshInstance@Moho@@QAE?AV?$shared_ptr@VCAniPose@Moho@@@boost@@XZ
@@ -747,13 +741,13 @@ namespace moho
    * inlines the control-block `use_count` bump; the typed return here
    * preserves the same semantics.
    */
-  boost::shared_ptr<CAniPose> MeshInstance::ComputeDebugPose()
+  std::shared_ptr<CAniPose> MeshInstance::ComputeDebugPose()
   {
     if (isStaticPose == 0u || isLocked != 0u) {
-      return boost::shared_ptr<CAniPose>{};
+      return std::shared_ptr<CAniPose>{};
     }
 
-    const boost::shared_ptr<RScmResource> resource = mesh->GetResource(0);
+    const std::shared_ptr<RScmResource> resource = mesh->GetResource(0);
     const std::int32_t boneCount = static_cast<std::int32_t>(resource->mFile->mBoneTotalCount);
 
     curPose->InterpolatePose(currInterpolant, startPose.get(), endPose.get(), boneCount);
@@ -772,7 +766,8 @@ namespace moho
   {
     MeshInstance& self = *const_cast<MeshInstance*>(this);
     if (self.boundsValid != 0u) {
-      const boost::shared_ptr<RScmResource> resource = self.mesh ? self.mesh->GetResource(0) : boost::shared_ptr<RScmResource>{};
+      const std::shared_ptr<RScmResource> resource =
+        self.mesh ? self.mesh->GetResource(0) : std::shared_ptr<RScmResource>{};
       if (resource) {
         const Wm3::AxisAlignedBox3f scaledLocalBounds = ScaleLocalMeshBounds(self.scale, resource->mBounds);
 
@@ -829,5 +824,4 @@ namespace moho
     result.Max.z = self.renderMaxZ;
     return result;
   }
-}
-
+} // namespace moho

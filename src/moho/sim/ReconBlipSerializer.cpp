@@ -11,25 +11,7 @@
 
 namespace
 {
-  gpg::RType* gReconBlipType = nullptr;
   gpg::RType* gWeakPtrUnitType = nullptr;
-
-  /**
-   * Address: 0x005C90A0 (FUN_005C90A0)
-   *
-   * What it does:
-   * Fills one reflected object reference from a `ReconBlip*` lane.
-   */
-  [[maybe_unused]] gpg::RRef* FillReconBlipObjectRef(gpg::RRef* const outRef, moho::ReconBlip* const object)
-  {
-    if (!outRef) {
-      return nullptr;
-    }
-
-    outRef->mObj = object;
-    outRef->mType = object ? gpg::CachedLookup<moho::ReconBlip>(gReconBlipType) : nullptr;
-    return outRef;
-  }
 
   [[nodiscard]] gpg::RType* ResolveWeakPtrUnitType()
   {
@@ -40,14 +22,6 @@ namespace
       }
     }
     return gWeakPtrUnitType;
-  }
-
-  [[nodiscard]] gpg::RType* ResolvePerArmyReconInfoType()
-  {
-    if (!moho::SPerArmyReconInfo::sType) {
-      moho::SPerArmyReconInfo::sType = gpg::LookupRType(typeid(moho::SPerArmyReconInfo));
-    }
-    return moho::SPerArmyReconInfo::sType;
   }
 
   // Addresses 0x005C90D0/0x005CAF90 (deserialize "ThunkA"/"ThunkB" pair) and
@@ -75,17 +49,23 @@ namespace moho
    * What it does:
    * Deserializes `ReconBlip` reflected member lanes in binary order.
    */
-  void ReconBlip::MemberDeserialize(gpg::ReadArchive* const archive)
+  void ReconBlip::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef ownerRef{};
 
     archive->Read(gpg::RTypeOf<moho::Entity>(), static_cast<moho::Entity*>(this), ownerRef);
     archive->Read(ResolveWeakPtrUnitType(), &mCreator, ownerRef);
-    archive->ReadBool(reinterpret_cast<bool*>(&mDeleteWhenStale));
+    {
+      bool value{};
+      archive->ReadBool(&value);
+      mDeleteWhenStale = static_cast<decltype(mDeleteWhenStale)>(value);
+    }
     archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mJamOffset, ownerRef);
     archive->Read(gpg::RTypeOf<moho::SSTIUnitConstantData>(), &mUnitConstDat, ownerRef);
     archive->Read(gpg::RTypeOf<moho::SSTIUnitVariableData>(), &mUnitVarDat, ownerRef);
-    archive->Read(gpg::RTypeOf<msvc8::vector<moho::SPerArmyReconInfo>>(), &mReconDat, ownerRef);
+    archive->Read(gpg::RTypeOf<fa::vector<moho::SPerArmyReconInfo>>(), &mReconDat, ownerRef);
   }
 
   /**
@@ -94,7 +74,9 @@ namespace moho
    * What it does:
    * Serializes `ReconBlip` reflected member lanes in binary order.
    */
-  void ReconBlip::MemberSerialize(gpg::WriteArchive* const archive) const
+  void ReconBlip::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     const gpg::RRef ownerRef{};
 
@@ -104,7 +86,7 @@ namespace moho
     archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mJamOffset, ownerRef);
     archive->Write(gpg::RTypeOf<moho::SSTIUnitConstantData>(), &mUnitConstDat, ownerRef);
     archive->Write(gpg::RTypeOf<moho::SSTIUnitVariableData>(), &mUnitVarDat, ownerRef);
-    archive->Write(gpg::RTypeOf<msvc8::vector<moho::SPerArmyReconInfo>>(), &mReconDat, ownerRef);
+    archive->Write(gpg::RTypeOf<fa::vector<moho::SPerArmyReconInfo>>(), &mReconDat, ownerRef);
   }
 } // namespace moho
 

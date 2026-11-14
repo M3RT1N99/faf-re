@@ -1,6 +1,6 @@
 # Engine addition (dedicated-server plan WPR.12): headless's imports, checked after every
 # link. headless links only the simulation, which must not reach for UI, graphics or audio
-# code; a DLL outside the list below (USER32, GDI32, D3D*, DSOUND, XAudio, wx's comctl32,
+# code; a DLL outside the list below (USER32, GDI32, D3D*, DSOUND, XAudio, the window library's comctl32,
 # ...) or a COM call beyond starting COM (XACT is created through COM, which the linker
 # cannot show) fails the build and names what was imported.
 #
@@ -15,7 +15,13 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-set(_allowed_dlls kernel32.dll advapi32.dll ole32.dll shell32.dll shlwapi.dll ws2_32.dll dbghelp.dll)
+#
+# api-ms-win-core-synch-l1-2-0.dll is kernel32's WaitOnAddress/WakeByAddress* API set, not UI.
+# From MSVC Build Tools 14.50 (Visual Studio 2026) the STL links synchronization.lib for
+# its wait/notify functions, so a headless built with it imports this DLL; 14.44 and older
+# reached WaitOnAddress through the STL's own __std_atomic_wait_* functions instead.
+set(_allowed_dlls kernel32.dll advapi32.dll ole32.dll shell32.dll shlwapi.dll ws2_32.dll dbghelp.dll
+  api-ms-win-core-synch-l1-2-0.dll)
 if(TRACY)
   list(APPEND _allowed_dlls user32.dll secur32.dll)
 endif()

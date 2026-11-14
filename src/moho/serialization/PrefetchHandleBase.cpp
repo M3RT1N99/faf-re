@@ -43,7 +43,6 @@ namespace
   static_assert(sizeof(moho::CPrefetchSet) == 0x10, "moho::CPrefetchSet size must be 0x10");
 #endif
 
-
   /**
    * Address: 0x004A71B0 (FUN_004A71B0, Moho::CPrefetchset::NewRef)
    *
@@ -52,7 +51,7 @@ namespace
    */
   [[nodiscard]] gpg::RRef NewPrefetchSetRef()
   {
-    // msvc8::vector's default constructor already null-initialises all three
+    // fa::vector's default constructor already null-initialises all three
     // lanes; the binary's explicit zeroing here IS that constructor inlined.
     moho::CPrefetchSet* const object = new (std::nothrow) moho::CPrefetchSet();
     return gpg::RRef(object, gpg::RTypeOf<moho::CPrefetchSet>());
@@ -65,11 +64,13 @@ namespace
    * Constructs one CPrefetchSet in caller-provided storage and returns the
    * reflected object reference.
    */
-  [[nodiscard]] gpg::RRef ConstructPrefetchSetRef(void* const objectStorage)
+  [[nodiscard]] gpg::RRef ConstructPrefetchSetRef(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CPrefetchSet*>(objectStorage);
     if (object != nullptr) {
-      // Placement-new runs msvc8::vector's default constructor, which is what
+      // Placement-new runs fa::vector's default constructor, which is what
       // the binary's explicit lane zeroing right after it is.
       new (object) moho::CPrefetchSet();
     }
@@ -85,14 +86,16 @@ namespace
    * VC8 `_Tidy()`: one element sweep, one deallocate, empty triple
    * (FUN_004A89A0 is that sweep's out-of-line body).
    */
-  void DeletePrefetchSet(void* const objectStorage)
+  void DeletePrefetchSet(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CPrefetchSet*>(objectStorage);
     if (object == nullptr) {
       return;
     }
 
-    object->mHandles = msvc8::vector<moho::PrefetchHandleBase>{};
+    object->mHandles = fa::vector<moho::PrefetchHandleBase>{};
 
     ::operator delete(object);
   }
@@ -105,14 +108,16 @@ namespace
    * without deleting the owning CPrefetchSet storage. As above, the
    * empty-vector assignment is the single `_Tidy()` the binary performed.
    */
-  void DestructPrefetchSet(void* const objectStorage)
+  void DestructPrefetchSet(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CPrefetchSet*>(objectStorage);
     if (object == nullptr) {
       return;
     }
 
-    object->mHandles = msvc8::vector<moho::PrefetchHandleBase>{};
+    object->mHandles = fa::vector<moho::PrefetchHandleBase>{};
   }
 
   /**
@@ -122,7 +127,9 @@ namespace
    * Assigns CPrefetchSet lifecycle callback lanes in one reflected type
    * descriptor.
    */
-  gpg::RType* BindCPrefetchSetLifecycleCallbacks(gpg::RType* const typeInfo)
+  gpg::RType* BindCPrefetchSetLifecycleCallbacks(
+    gpg::RType* const typeInfo
+  )
   {
     if (!typeInfo) {
       return nullptr;
@@ -244,12 +251,16 @@ namespace moho
   }
 
   /**
-   * Address: 0x004ABF30 (FUN_004ABF30, ?RES_PrefetchResource@Moho@@YA?AVPrefetchHandleBase@1@VStrArg@gpg@@PBVRType@4@@Z)
+   * Address: 0x004ABF30 (FUN_004ABF30,
+   * ?RES_PrefetchResource@Moho@@YA?AVPrefetchHandleBase@1@VStrArg@gpg@@PBVRType@4@@Z)
    *
    * What it does:
    * `ResourceManager::PrefetchResource` on the singleton.
    */
-  PrefetchHandleBase RES_PrefetchResource(const gpg::StrArg resourcePath, const gpg::RType* const type)
+  PrefetchHandleBase RES_PrefetchResource(
+    const gpg::StrArg resourcePath,
+    const gpg::RType* const type
+  )
   {
     return RES_GetResourceManager()->PrefetchResource(resourcePath, type);
   }
@@ -261,7 +272,10 @@ namespace moho
    * Registers one textual prefetch kind key to the reflected type used for
    * prefetch payload creation.
    */
-  void RES_RegisterPrefetchType(const gpg::StrArg key, gpg::RType* const type)
+  void RES_RegisterPrefetchType(
+    const gpg::StrArg key,
+    gpg::RType* const type
+  )
   {
     if (key == nullptr || key[0] == '\0' || type == nullptr) {
       return;
@@ -275,7 +289,9 @@ namespace moho
     (*typeMap)[std::string(key)] = type;
   }
 
-  gpg::RType* RES_FindPrefetchType(const gpg::StrArg key)
+  gpg::RType* RES_FindPrefetchType(
+    const gpg::StrArg key
+  )
   {
     if (key == nullptr || key[0] == '\0') {
       return nullptr;
@@ -308,14 +324,16 @@ namespace moho
   /**
    * Address: 0x004AF0B0 (FUN_004AF0B0, Moho::PrefetchHandleBase::MemberDeserialize)
    */
-  void PrefetchHandleBase::MemberDeserialize(gpg::ReadArchive* archive)
+  void PrefetchHandleBase::MemberDeserialize(
+    gpg::ReadArchive* archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
       return;
     }
 
-    msvc8::string resourcePath{};
+    fa::string resourcePath{};
     archive->ReadString(&resourcePath);
 
     const gpg::TypeHandle typeHandle = archive->ReadTypeHandle();
@@ -323,7 +341,9 @@ namespace moho
     *this = RES_PrefetchResource(resourcePath.c_str(), typeHandle.type);
   }
 
-  void PrefetchHandleBase::MemberSerialize(gpg::WriteArchive* const archive) const
+  void PrefetchHandleBase::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     archive->WriteString(&mPtr->mRecord->mId.name);
     archive->WriteRefCounts(mPtr->mRecord->mType);
@@ -332,28 +352,25 @@ namespace moho
   /**
    * Address: 0x004ABE00 (FUN_004ABE00, Moho::PrefetchHandleBase::GetName)
    */
-  const msvc8::string& PrefetchHandleBase::GetName() const
+  const fa::string& PrefetchHandleBase::GetName() const
   {
     GPG_ASSERT(mPtr.get() != nullptr && mPtr->mRecord != nullptr);
     return mPtr->mRecord->mId.name;
   }
 
-  /**
-   * Address: 0x004ABE10 (FUN_004ABE10, Moho::PrefetchHandleBase::GetResourceRType)
-   */
-  gpg::RType* PrefetchHandleBase::GetResourceRType() const
-  {
-    GPG_ASSERT(mPtr.get() != nullptr && mPtr->mRecord != nullptr);
-    return const_cast<gpg::RType*>(mPtr->mRecord->mType);
-  }
 } // namespace moho
-
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_PrefetchHandleBaseTypeInfo_dee002, moho::register_PrefetchHandleBaseTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_PrefetchHandleBaseTypeInfo_dee002,
+  moho::register_PrefetchHandleBaseTypeInfo
+)
 
-GPG_PREREGISTER_INIT(EnsurePrefetchSetTypeRegistered_dee002, EnsurePrefetchSetTypeRegistered)
+GPG_PREREGISTER_INIT(
+  EnsurePrefetchSetTypeRegistered_dee002,
+  EnsurePrefetchSetTypeRegistered
+)
 
 namespace moho
 {

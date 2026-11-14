@@ -11,7 +11,8 @@ under this run's (a run that finishes what the earlier one had no time for). --e
 that are not bugs of this engine ({"<id>": {"verdict": "desync", "note": "..."}}): such a replay's
 verdict becomes expected-desync and it stays out of the desync count; exit code 1 when a replay
 desynced, crashed, stopped early, ran out of time, could not be got ready or got no result from its
-shard, and is not listed there with that verdict.
+shard, and is not listed there with that verdict. With --no-fail the exit code is 0 either way: the
+report is the result, and report.json's `regressions` says what is new.
 """
 import argparse
 import glob
@@ -67,6 +68,7 @@ def main():
     parser.add_argument("--after", help="the earlier run's results (plan.py --after): merged under this run's")
     parser.add_argument("--out", required=True)
     parser.add_argument("--title", default="Replay parity")
+    parser.add_argument("--no-fail", action="store_true", help="exit 0 even with new failures; report.json lists them")
     args = parser.parse_args()
 
     with open(args.plan, encoding="utf-8") as f:
@@ -145,8 +147,9 @@ def main():
     live = [r for r in results.values() if r.get("live_desyncs")]
     if live:
         lines += ["## Live game split, these pass (%d)" % len(live), "",
-                  "The live players recorded different checksums at one beat and the sim equals the larger side or, "
-                  "when they tie, one of them. No build can match both, so this is not a desync.", ""]
+                  "The live players recorded different checksums at one beat and the sim's equals one of them, "
+                  "on the larger side or the smaller. No build can match both, so this is not a desync. The sim's "
+                  "side is still checked for the rest of the game; the listed players are not.", ""]
         lines += ["- %d: %s" % (r["id"], ", ".join("%s at beat %d" % (d["client"], d["beat"]) for d in r["live_desyncs"]))
                   for r in sorted(live, key=lambda r: r["id"])] + [""]
     passed = sorted((r for r in results.values() if r["verdict"] == "pass" and r.get("wall_s")), key=lambda r: r["id"])
@@ -193,6 +196,10 @@ def main():
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
             f.write(text)
     print(text)
+    if args.no_fail:
+        if regressions:
+            print("::warning::%d new failures: %s" % (len(regressions), ", ".join(str(r["id"]) for r in regressions[:20])))
+        return 0
     return 1 if regressions else 0
 
 

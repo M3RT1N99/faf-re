@@ -18,7 +18,9 @@ extern "C" int global_compat_flag = 1;
  * Enables/disables the SSE2 runtime lane by masking with the startup
  * compatibility flag, then publishes and returns the resulting mode value.
  */
-extern "C" int __cdecl SetSse2Mode(const int enableSse2)
+extern "C" int __cdecl SetSse2Mode(
+  const int enableSse2
+)
 {
   const int mode = (enableSse2 != 0) ? global_compat_flag : 0;
   global_mode_sse2 = mode;
@@ -44,7 +46,12 @@ extern "C" float __cdecl msvc8_x87_sin_times_cos(float sinArg, float cosArg);
 extern "C" float __cdecl msvc8_x87_sin_of_product_times(float a, float b, float factor);
 extern "C" float __cdecl msvc8_x87_twister_word_in_range(float lower, float upper, std::uint32_t word);
 extern "C" void __cdecl msvc8_x87_slerp_spherical_blend(
-  float* outLanes, const float* q1Lanes, const float* rhsLanes, float angle, float oneMinusT, float t
+  float* outLanes,
+  const float* q1Lanes,
+  const float* rhsLanes,
+  float angle,
+  float oneMinusT,
+  float t
 );
 extern "C" float __cdecl msvc8_x87_intrinsic_exp(float x);
 extern "C" float __cdecl msvc8_x87_intrinsic_ln(float x);
@@ -52,24 +59,27 @@ extern "C" float __cdecl msvc8_x87_intrinsic_log10(float x);
 extern "C" float __cdecl msvc8_x87_intrinsic_ln_quotient(float x, double base);
 extern "C" float __cdecl msvc8_x87_scaled_ln_quotient(float numerator, float denominator, float scale);
 extern "C" float __cdecl msvc8_x87_cos_times_cos(float firstArg, float secondArg);
-extern "C" float __cdecl msvc8_x87_bilinear_height(float h00, float h01, float h10, float h11, float fracX, float fracZ);
-extern "C" float __cdecl msvc8_x87_subtract_bilinear_height(
-  float top, float h00, float h01, float h10, float h11, float fracX, float fracZ
-);
+extern "C" float __cdecl
+msvc8_x87_bilinear_height(float h00, float h01, float h10, float h11, float fracX, float fracZ);
+extern "C" float __cdecl
+msvc8_x87_subtract_bilinear_height(float top, float h00, float h01, float h10, float h11, float fracX, float fracZ);
 extern "C" std::int32_t __cdecl msvc8_x87_round_to_int(float value);
-extern "C" void __cdecl msvc8_x87_scale_vector_max_length(float* x, float* y, float* z, float maxLength, float lengthSq);
-extern "C" void __cdecl msvc8_x87_scale_vector_to_length(
-  float* destLanes, const float* sourceLanes, float lengthSq, float length
-);
+extern "C" void __cdecl
+msvc8_x87_scale_vector_max_length(float* x, float* y, float* z, float maxLength, float lengthSq);
+extern "C" void __cdecl
+msvc8_x87_scale_vector_to_length(float* destLanes, const float* sourceLanes, float lengthSq, float length);
 extern "C" void __cdecl msvc8_x87_scale_vector(float* destLanes, const float* sourceLanes, float scale);
 extern "C" float __cdecl msvc8_x87_box_radius_on_axis(const float* boxLanes, const float* axisLanes);
 extern "C" void __cdecl msvc8_x87_scale_vector_to_length_of(
-  float* destLanes, const float* sourceLanes, const float* targetLanes, float sourceLengthSq
+  float* destLanes,
+  const float* sourceLanes,
+  const float* targetLanes,
+  float sourceLengthSq
 );
 extern "C" float __cdecl msvc8_x87_vector_length_zyx(const float* lanes);
 #endif
 
-namespace msvc8
+namespace fa
 {
   namespace
   {
@@ -91,7 +101,9 @@ namespace msvc8
      * word's low byte at 0x7F. The game clears `global_mode_sse2` through
      * _set_SSE2_enable(0), so in game every entry takes its x87 body.
      */
-    [[nodiscard]] bool TakesSse2Lane(const unsigned int controlWord) noexcept
+    [[nodiscard]] bool TakesSse2Lane(
+      const unsigned int controlWord
+    ) noexcept
     {
       return global_mode_sse2 != 0 && (_mm_getcsr() & 0x1F80u) == 0x1F80u && (controlWord & 0x7Fu) == 0x7Fu;
     }
@@ -113,7 +125,10 @@ namespace msvc8
      * float). The exact product is `product + residual`; `fma` recovers the
      * part the double multiply rounded off.
      */
-    [[nodiscard]] float RoundExactProductToFloat(const double a, const double b) noexcept
+    [[nodiscard]] float RoundExactProductToFloat(
+      const double a,
+      const double b
+    ) noexcept
     {
       const double product = a * b;
       if (std::isnan(product) && !std::isnan(a) && !std::isnan(b)) {
@@ -142,7 +157,10 @@ namespace msvc8
      * rounds to a 24-bit mantissa with the extended exponent range, then the
      * store rounds once more if that lands below FLT_MIN.
      */
-    [[nodiscard]] float RoundProductX87(const double a, const double b) noexcept
+    [[nodiscard]] float RoundProductX87(
+      const double a,
+      const double b
+    ) noexcept
     {
       const double product = a * b;
       if (product != 0.0 && std::fabs(product) < 0x1p-126) {
@@ -155,7 +173,9 @@ namespace msvc8
     }
   } // namespace
 
-  std::int32_t RoundToInt(const float value) noexcept
+  std::int32_t RoundToInt(
+    const float value
+  ) noexcept
   {
 #if defined(_M_IX86)
     std::int32_t result;
@@ -169,7 +189,9 @@ namespace msvc8
 #endif
   }
 
-  std::int32_t FloorToIntX87(const float value) noexcept
+  std::int32_t FloorToIntX87(
+    const float value
+  ) noexcept
   {
     const float nearest = std::nearbyint(value);
     const auto whole = static_cast<std::uint32_t>(RoundToInt(nearest));
@@ -177,7 +199,9 @@ namespace msvc8
     return static_cast<std::int32_t>(whole - borrow);
   }
 
-  std::int32_t CeilToIntX87(const float value) noexcept
+  std::int32_t CeilToIntX87(
+    const float value
+  ) noexcept
   {
     const float nearest = std::nearbyint(value);
     const auto whole = static_cast<std::uint32_t>(RoundToInt(nearest));
@@ -185,7 +209,12 @@ namespace msvc8
     return static_cast<std::int32_t>(whole + carry);
   }
 
-  void ScaleVectorByMaxLengthX87(float& x, float& y, float& z, const float maxLength) noexcept
+  void ScaleVectorByMaxLengthX87(
+    float& x,
+    float& y,
+    float& z,
+    const float maxLength
+  ) noexcept
   {
     // FUN_005D1E70 shape: squared length formed from the float components,
     // then `fld lenSq; fsqrt; fdivr maxLength` keeps the scale in extended
@@ -225,7 +254,10 @@ namespace msvc8
   }
 
   void ScaleVectorToLengthX87(
-    float* const destLanes, const float* const sourceLanes, const float lengthSq, const float targetLength
+    float* const destLanes,
+    const float* const sourceLanes,
+    const float lengthSq,
+    const float targetLength
   ) noexcept
   {
 #if defined(_M_IX86)
@@ -251,7 +283,11 @@ namespace msvc8
 #endif
   }
 
-  void ScaleVectorX87(float* const destLanes, const float* const sourceLanes, const float scale) noexcept
+  void ScaleVectorX87(
+    float* const destLanes,
+    const float* const sourceLanes,
+    const float scale
+  ) noexcept
   {
 #if defined(_M_IX86)
     __asm {
@@ -272,7 +308,10 @@ namespace msvc8
 #endif
   }
 
-  float BoxRadiusOnAxisX87(const float* const boxLanes, const float* const axisLanes) noexcept
+  float BoxRadiusOnAxisX87(
+    const float* const boxLanes,
+    const float* const axisLanes
+  ) noexcept
   {
 #if defined(_M_IX86)
     float radius;
@@ -325,7 +364,10 @@ namespace msvc8
 #endif
   }
 
-  double fmod(const double x, const double y) noexcept
+  double fmod(
+    const double x,
+    const double y
+  ) noexcept
   {
     // _CIfmod (0x00A8E06A -> 0x00AA83B0 table dispatch) answers a zero
     // dividend with +0; the host CRT returns the dividend's -0.
@@ -353,7 +395,10 @@ namespace msvc8
   /**
    * Address: 0x00A8DA05 (frexp)
    */
-  double frexp(const double x, int* const exponent) noexcept
+  double frexp(
+    const double x,
+    int* const exponent
+  ) noexcept
   {
     if (!std::isfinite(x)) {
       // 0x00A8DA5A `or dword ptr [edi], -1`, then _except1 hands back the
@@ -370,17 +415,26 @@ namespace msvc8
     return std::frexp(x, exponent);
   }
 
-  float MultiplyX87(const float a, const float b) noexcept
+  float MultiplyX87(
+    const float a,
+    const float b
+  ) noexcept
   {
     return RoundProductX87(static_cast<double>(a), static_cast<double>(b));
   }
 
-  float MultiplyIntegerX87(const std::int32_t integer, const float factor) noexcept
+  float MultiplyIntegerX87(
+    const std::int32_t integer,
+    const float factor
+  ) noexcept
   {
     return RoundProductX87(static_cast<double>(integer), static_cast<double>(factor));
   }
 
-  double HalfSumX87(const float a, const float b) noexcept
+  double HalfSumX87(
+    const float a,
+    const float b
+  ) noexcept
   {
     // `fadd` rounds the sum to a 24-bit mantissa without the float exponent
     // limits, and `fmul 0.5` is exact. A sum below 2^-125 is a multiple of
@@ -393,13 +447,19 @@ namespace msvc8
     return static_cast<double>(static_cast<float>(half));
   }
 
-  float HalfAbsDifferenceX87(const float minuend, const float subtrahend) noexcept
+  float HalfAbsDifferenceX87(
+    const float minuend,
+    const float subtrahend
+  ) noexcept
   {
     return static_cast<float>(std::fabs(static_cast<double>(minuend) - static_cast<double>(subtrahend)) * 0.5);
   }
 
   void ScaleVectorToLengthOfX87(
-    float* const destLanes, const float* const sourceLanes, const float* const targetLanes, const float sourceLengthSq
+    float* const destLanes,
+    const float* const sourceLanes,
+    const float* const targetLanes,
+    const float sourceLengthSq
   ) noexcept
   {
 #if defined(_M_IX86)
@@ -433,7 +493,14 @@ namespace msvc8
 #endif
   }
 
-  float BilinearHeight(const float h00, const float h01, const float h10, const float h11, const float fracX, const float fracZ) noexcept
+  float BilinearHeight(
+    const float h00,
+    const float h01,
+    const float h10,
+    const float h11,
+    const float fracX,
+    const float fracZ
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -466,7 +533,12 @@ namespace msvc8
   }
 
   float SubtractBilinearHeight(
-    const float top, const float h00, const float h01, const float h10, const float h11, const float fracX,
+    const float top,
+    const float h00,
+    const float h01,
+    const float h10,
+    const float h11,
+    const float fracX,
     const float fracZ
   ) noexcept
   {
@@ -499,14 +571,21 @@ namespace msvc8
 #endif
   }
 
-  float MulTwisterWord(const float factor, const std::uint32_t word) noexcept
+  float MulTwisterWord(
+    const float factor,
+    const std::uint32_t word
+  ) noexcept
   {
     const double wordValue =
       word < 0x80000000u ? static_cast<double>(word) : static_cast<double>(static_cast<float>(word));
     return RoundExactProductToFloat(static_cast<double>(factor), wordValue);
   }
 
-  float TwisterWordInRange(const float lower, const float upper, const std::uint32_t twisterWord) noexcept
+  float TwisterWordInRange(
+    const float lower,
+    const float upper,
+    const std::uint32_t twisterWord
+  ) noexcept
   {
 #if defined(_M_IX86)
     // 0x0051B5C6..0x0051B5EA: `fild` the word as signed and add 2^32 back
@@ -542,7 +621,9 @@ namespace msvc8
   /**
    * Address: 0x005734E0 (sinf; `fld [esp+4]; fsin; ret`)
    */
-  float sinf(const float x) noexcept
+  float sinf(
+    const float x
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -560,7 +641,9 @@ namespace msvc8
   /**
    * Address: 0x005734D0 (cosf; `fld [esp+4]; fcos; ret`)
    */
-  float cosf(const float x) noexcept
+  float cosf(
+    const float x
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -575,14 +658,16 @@ namespace msvc8
 #endif
   }
 
-  float tanf(const float x) noexcept
+  float tanf(
+    const float x
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
     __asm {
       fld x
-      fptan          // pushes tan(x), then 1.0
-      fstp st(0)     // drop the 1.0
+      fptan // pushes tan(x), then 1.0
+      fstp st(0) // drop the 1.0
       fstp result
     }
     return result;
@@ -594,14 +679,17 @@ namespace msvc8
   /**
    * Address: 0x004E9DF0 (float atan2; `fld y; fld x; fpatan`)
    */
-  float atan2f(const float y, const float x) noexcept
+  float atan2f(
+    const float y,
+    const float x
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
     __asm {
       fld y
       fld x
-      fpatan         // atan(st1 / st0) with the quadrant of (x, y)
+      fpatan // atan(st1 / st0) with the quadrant of (x, y)
       fstp result
     }
     return result;
@@ -610,12 +698,19 @@ namespace msvc8
 #endif
   }
 
-  float atanf(const float x) noexcept
+  float atanf(
+    const float x
+  ) noexcept
   {
     return atan2f(x, 1.0f);
   }
 
-  float Atan2Difference(const float firstY, const float firstX, const float secondY, const float secondX) noexcept
+  float Atan2Difference(
+    const float firstY,
+    const float firstX,
+    const float secondY,
+    const float secondX
+  ) noexcept
   {
 #if defined(_M_IX86)
     const float firstAngle = atan2f(firstY, firstX);
@@ -635,7 +730,11 @@ namespace msvc8
 #endif
   }
 
-  float Atan2Plus(const float y, const float x, const float addend) noexcept
+  float Atan2Plus(
+    const float y,
+    const float x,
+    const float addend
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -652,7 +751,10 @@ namespace msvc8
 #endif
   }
 
-  float SinTimesCos(const float sinArg, const float cosArg) noexcept
+  float SinTimesCos(
+    const float sinArg,
+    const float cosArg
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -672,7 +774,11 @@ namespace msvc8
 #endif
   }
 
-  float SinOfProductTimes(const float a, const float b, const float factor) noexcept
+  float SinOfProductTimes(
+    const float a,
+    const float b,
+    const float factor
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -690,8 +796,12 @@ namespace msvc8
   }
 
   void SlerpSphericalBlend(
-    float* const outLanes, const float* const q1Lanes, const float* const rhsLanes, const float angle,
-    const float oneMinusT, const float t
+    float* const outLanes,
+    const float* const q1Lanes,
+    const float* const rhsLanes,
+    const float angle,
+    const float oneMinusT,
+    const float t
   ) noexcept
   {
 #if defined(_M_IX86)
@@ -744,7 +854,9 @@ namespace msvc8
 #endif
   }
 
-  float IntrinsicExp(const float x) noexcept
+  float IntrinsicExp(
+    const float x
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -769,7 +881,9 @@ namespace msvc8
 #endif
   }
 
-  float IntrinsicLn(const float x) noexcept
+  float IntrinsicLn(
+    const float x
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -786,7 +900,9 @@ namespace msvc8
 #endif
   }
 
-  float IntrinsicLog10(const float x) noexcept
+  float IntrinsicLog10(
+    const float x
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -803,7 +919,10 @@ namespace msvc8
 #endif
   }
 
-  float IntrinsicLnQuotient(const float x, const double base) noexcept
+  float IntrinsicLnQuotient(
+    const float x,
+    const double base
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -825,7 +944,11 @@ namespace msvc8
 #endif
   }
 
-  float ScaledLnQuotient(const float numerator, const float denominator, const float scale) noexcept
+  float ScaledLnQuotient(
+    const float numerator,
+    const float denominator,
+    const float scale
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -844,7 +967,10 @@ namespace msvc8
 #endif
   }
 
-  float CosTimesCos(const float firstArg, const float secondArg) noexcept
+  float CosTimesCos(
+    const float firstArg,
+    const float secondArg
+  ) noexcept
   {
 #if defined(_M_IX86)
     float result;
@@ -862,23 +988,29 @@ namespace msvc8
 #endif
   }
 
-  float asinf(const float x) noexcept
+  float asinf(
+    const float x
+  ) noexcept
   {
     // Engine addition (plan WPL.11): the domain errors' NaN as on Windows x64 (DomainErrorNaN);
     // in the domain a double asin, as the binary's asinf called the CRT's: the engine's
-    // (msvc8::libm, equal to the Windows x64 UCRT's for every float), not the host's.
+    // (fa::libm, equal to the Windows x64 UCRT's for every float), not the host's.
     if (!std::isnan(x) && !(x >= -1.0f && x <= 1.0f)) {
       return static_cast<float>(DomainErrorNaN());
     }
     return static_cast<float>(libm::asin(static_cast<double>(x)));
   }
 
-  float acosf(const float x) noexcept
+  float acosf(
+    const float x
+  ) noexcept
   {
     return static_cast<float>(acos(static_cast<double>(x)));
   }
 
-  double acos(const double x) noexcept
+  double acos(
+    const double x
+  ) noexcept
   {
     // Engine addition (plan WPL.11): |x| > 1 and the infinities are a domain error.
     if (!std::isnan(x) && !(x >= -1.0 && x <= 1.0)) {
@@ -913,7 +1045,9 @@ namespace msvc8
   /**
    * Address: 0x00A8DE20 (_CIasin)
    */
-  double asin(const double x) noexcept
+  double asin(
+    const double x
+  ) noexcept
   {
     const unsigned int controlWord = CurrentControlWord();
     // NaN, infinities and |x| > 1 take the CRT's errno lane. Engine addition (plan WPL.11):
@@ -957,7 +1091,10 @@ namespace msvc8
   // frndint/f2xm1/fscale, under (caller CW & precision) | 0x7F.
   static double PowPositiveBase(unsigned int controlWord, double x, double y) noexcept;
 
-  double pow(const double x, const double y) noexcept
+  double pow(
+    const double x,
+    const double y
+  ) noexcept
   {
     const unsigned int controlWord = CurrentControlWord();
     if (TakesSse2Lane(controlWord)) {
@@ -981,7 +1118,11 @@ namespace msvc8
     return PowPositiveBase(controlWord, x, y);
   }
 
-  static double PowPositiveBase(const unsigned int controlWord, const double x, const double y) noexcept
+  static double PowPositiveBase(
+    [[maybe_unused]] const unsigned int controlWord,
+    const double x,
+    const double y
+  ) noexcept
   {
 #if defined(_M_IX86)
     double result;
@@ -1013,18 +1154,25 @@ namespace msvc8
   }
 
   // expf and logf: a double exp/log rounded once, as the x86 CRT's float overloads do; the
-  // engine's (msvc8::libm, plan WPL.11), equal to the Windows x64 UCRT's for every float.
-  float expf(const float x) noexcept
+  // engine's (fa::libm, plan WPL.11), equal to the Windows x64 UCRT's for every float.
+  float expf(
+    const float x
+  ) noexcept
   {
     return static_cast<float>(libm::exp(static_cast<double>(x)));
   }
 
-  float logf(const float x) noexcept
+  float logf(
+    const float x
+  ) noexcept
   {
     return static_cast<float>(libm::log(static_cast<double>(x)));
   }
 
-  float powf(const float x, const float y) noexcept
+  float powf(
+    const float x,
+    const float y
+  ) noexcept
   {
     const double result = std::pow(static_cast<double>(x), static_cast<double>(y));
     if (std::isnan(result) && !std::isnan(x) && !std::isnan(y)) {
@@ -1035,7 +1183,9 @@ namespace msvc8
     return static_cast<float>(result);
   }
 
-  float VectorLengthZYXX87(const float* const lanes) noexcept
+  float VectorLengthZYXX87(
+    const float* const lanes
+  ) noexcept
   {
 #if defined(_M_IX86)
     // `length` is a MASM operator, so the result slot is `vectorLength`.
@@ -1059,4 +1209,4 @@ namespace msvc8
     return msvc8_x87_vector_length_zyx(lanes);
 #endif
   }
-} // namespace msvc8
+} // namespace fa

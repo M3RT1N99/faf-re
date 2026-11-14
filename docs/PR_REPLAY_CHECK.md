@@ -2,16 +2,45 @@
 
 Replays to play back before opening a pull request that can change what the sim does, and how to read the result. The pull request template asks for the replay IDs you played and what each one did; using the replays below means every PR is checked against the same games and results can be compared across PRs.
 
-Every replay here is from the [retail parity set](RETAIL_REPLAY_PARITY.md): it plays back on master with every recorded checksum matching, so a mismatch on your branch comes from your change. All of them were recorded on FAF game version 3835.
+Every replay here plays back on master with every recorded checksum matching, so a mismatch on your branch comes from your change. The sets are FAF game version 3840's, the version FAF plays now, picked from [Replay parity](../.github/workflows/replay-parity.yml) run 42771586614 (every one played to game over, on a map the CI caches hold). Game version 3835's sets are kept below: [tests/replay_sets](../tests/replay_sets/README.md) holds the original game's call hashes recorded on its core replays, and the replay check still plays those for it.
 
 ## Which replays
 
-- **Core set:** required for any PR that touches sim code, replay playback or the network layer. Eight games, 2 to 12 players, the built-in AI and two M28AI versions.
+- **Every PR that changes more than documentation and CI:** at least 3 different core-set replays on x64 and 3 on x86, one row per replay and architecture in the PR's Testing table. The `PR sim impact` check counts them ([What every pull request needs](../CONTRIBUTING.md#what-every-pull-request-needs)).
+- **Core set:** required in full, on x64 and on x86, for any PR that touches sim code, replay playback or the network layer. Eight games, 2 to 12 players, the built-in AI and two M28AI versions.
 - **Extended set:** the core set plus ten longer or larger games. Run it as well for changes to pathfinding, formations, x87 math helpers, engine functions the AI scripts call, and sim worker threading, where past divergences only showed up late in long games ([Where divergences came from](RETAIL_REPLAY_PARITY.md#where-divergences-came-from)).
 - **Performance switches:** play the core set with the switch on and with it off. Both runs must match ([Switches](SWITCHES.md)).
 - **Server mode:** for a server-mode build, also run the [focus gate](FOCUS_GATE.md) on the core set: the sim must give the same game whichever army it builds its view for.
 
 ### Core set
+
+| Replay | Map | Players | Length | M28AI |
+|---|---|---|---|---|
+| 28016454 | Rotun | 2 | 13 min | |
+| 28063699 | The Dark Heart | 2 | 14 min | |
+| 28070914 | Astro Crater Battles 4x4 Rich XL | 8 | 20 min | |
+| 28059028 | Adaptive Hilly Plateau | 4 | 21 min | |
+| 28058778 | Dual Gap Adaptive | 12 | 25 min | |
+| 28038031 | Astro Crater Battles | 6 | 28 min | |
+| 28013263 | Astro Crater Battles 4x4 Rich Huge | 2, with the built-in AI | 32 min | |
+| 28041625 | Serenity Reef 5v5 | 3 + M28AI | 35 min | v328 |
+
+### Extended set (in addition to the core set)
+
+| Replay | Map | Players | Length | M28AI |
+|---|---|---|---|---|
+| 28035761 | Astro Crater Battles 4x4 Rich Huge | 8 | 28 min | |
+| 28004977 | Seton's Clutch | 8 | 29 min | |
+| 28012666 | Seton's Clutch | 6 | 31 min | |
+| 28094872 | Dual Gap Adaptive | 12 | 35 min | |
+| 28011154 | Dual Gap Adaptive | 12 | 35 min | |
+| 28005584 | SCMP_021 | 2, with the built-in AI | 47 min | |
+| 28052742 | SCMP_026 | 2 | 48 min | |
+| 28072694 | Azalea Gardens | 2 | 48 min | |
+| 28010105 | SCMP_022 | 2 + M28AI | 44 min | v327 |
+| 28072023 | Seton's Clutch | 4, with the built-in AI | 70 min | |
+
+### Game version 3835's core set (tests/replay_sets)
 
 | Replay | Map | Players | Length | M28AI |
 |---|---|---|---|---|
@@ -24,7 +53,7 @@ Every replay here is from the [retail parity set](RETAIL_REPLAY_PARITY.md): it p
 | 26989770 | High Noon | 1 vs AI | 33 min | |
 | 26897073 | Dual Gap | 12 | 34 min | |
 
-### Extended set (in addition to the core set)
+### Game version 3835's extended set
 
 | Replay | Map | Players | Length | M28AI |
 |---|---|---|---|---|
@@ -43,7 +72,7 @@ Every replay here is from the [retail parity set](RETAIL_REPLAY_PARITY.md): it p
 
 ## Playing a replay
 
-1. **Build** your branch, for example `.\build.ps1` (x64 Release, copied to `C:\ProgramData\FAForever\bin_x64\main_x64.exe`).
+1. **Build** your branch for both architectures: `.\build.ps1 -Arch both -Name main_test` copies the x64 build to `C:\ProgramData\FAForever\bin_x64\main_test.exe` and the x86 build to `C:\ProgramData\FAForever\bin\main_test_x86.exe`. Play each replay with both.
 2. **Download and convert** the replay. The engine reads `.scfareplay`; the vault serves `.fafreplay`:
 
    ```bash
@@ -51,14 +80,14 @@ Every replay here is from the [retail parity set](RETAIL_REPLAY_PARITY.md): it p
    python scripts/perf/convert_replay.py 26902315.fafreplay 26902315.scfareplay
    ```
 
-3. **Game data.** The installed game data must be game version 3835 (`lua/version.lua` in `gamedata/lua.nx2`); the engine refuses a replay recorded on another version. Custom maps must be in your vault's `maps` folder, and an M28AI replay needs exactly the M28AI version in the table in `mods/M28AI`: any other version desyncs within minutes and looks like an engine bug.
+3. **Game data.** The installed game data must be the game version the replay was recorded on (`lua/version.lua` in `gamedata/lua.nx2`): 3840 for the sets above, 3835 for the 3835 sets; the engine refuses a replay recorded on another version. Custom maps must be in your vault's `maps` folder, and an M28AI replay needs exactly the M28AI version in the table in `mods/M28AI`: any other version desyncs within minutes and looks like an engine bug.
 4. **Run** it from the build's own folder:
 
    ```
-   main_x64.exe /init init.lua /nobugreport /replay C:\full\path\26902315.scfareplay /replayid 26902315 /nosound /windowed 1280 720 /log game.log
+   main_test.exe /init init.lua /nobugreport /replay C:\full\path\26902315.scfareplay /replayid 26902315 /nosound /windowed 1280 720 /log game.log
    ```
 
-   Press numpad `+` a few times once the game starts so the sim runs flat out. Add `/simworkers 8` to test the threaded sim. Replays without a game-over event stop on their last frame; close the game once the game time stops moving. More options: [scripts/perf/README.md](../scripts/perf/README.md#playing-a-replay-on-the-rebuilt-engine).
+   For x86, run `main_test_x86.exe` from the `bin` folder the same way. Press numpad `+` a few times once the game starts so the sim runs flat out. Add `/simworkers 8` to test the threaded sim. Replays without a game-over event stop on their last frame; close the game once the game time stops moving. More options: [scripts/perf/README.md](../scripts/perf/README.md#playing-a-replay-on-the-rebuilt-engine).
 
 ## Reading the result
 
@@ -72,4 +101,4 @@ Checksum for beat 3400 mismatched: <md5> (sim) != <md5> (<player>).
 - **One or more lines:** report "first mismatch at beat N" with the beat of the first line, and keep the log. The parity doc explains how a divergence is narrowed down to one beat.
 - **Crash or hang:** report it with the last game time the log shows.
 
-In the PR, fill one row of the testing table per replay: ID, arch (x64 or x86), `sim_Workers` (0, or the value you passed), renderer and result.
+In the PR, fill one row of the testing table per replay and architecture: ID, arch (`x64` or `x86`, as the check reads it), `sim_Workers` (0, or the value you passed), renderer and result.

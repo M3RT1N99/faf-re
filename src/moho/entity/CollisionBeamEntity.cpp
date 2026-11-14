@@ -1,4 +1,5 @@
 #include "moho/entity/CollisionBeamEntity.h"
+#include "moho/effects/rendering/EffectOps.h"
 
 #include <cstdint>
 #include <string>
@@ -7,6 +8,7 @@
 #include "gpg/core/utils/Global.h"
 #include "moho/ai/CAiAttackerImpl.h"
 #include "moho/effects/rendering/IEffect.h"
+#include "moho/effects/rendering/CEffectManagerImpl.h"
 #include "moho/effects/rendering/IEffectManager.h"
 #include "moho/effects/rendering/IEffectWeakPtrReflection.h"
 #include "moho/entity/EntityDb.h"
@@ -37,7 +39,9 @@ namespace
   gpg::RType* gCollisionBeamEntityBaseTypeCache = nullptr;
 
   template <typename T>
-  [[nodiscard]] gpg::RType* ResolveSerializerType(gpg::RType*& cache)
+  [[nodiscard]] gpg::RType* ResolveSerializerType(
+    gpg::RType*& cache
+  )
   {
     if (cache == nullptr) {
       cache = gpg::LookupRType(typeid(T));
@@ -46,7 +50,9 @@ namespace
     return cache;
   }
 
-  [[nodiscard]] std::uint32_t ResolveCollisionBeamDebugColor(const bool enabled) noexcept
+  [[nodiscard]] std::uint32_t ResolveCollisionBeamDebugColor(
+    const bool enabled
+  ) noexcept
   {
     return enabled ? kCollisionBeamDebugColorEnabled : kCollisionBeamDebugColorDisabled;
   }
@@ -64,7 +70,9 @@ namespace
   //
   // `orientation.Rotate()` below is WildMagic's own scalar-first rotate, so it
   // agrees with `Moho::MultQuadVec` on the same input; either spelling works.
-  [[nodiscard]] Wm3::Box3f BuildCollisionBeamDebugBox(const moho::CollisionBeamEntity& entity)
+  [[nodiscard]] Wm3::Box3f BuildCollisionBeamDebugBox(
+    const moho::CollisionBeamEntity& entity
+  )
   {
     const Wm3::Quaternionf& orientation = entity.mVarDat.mCurTransform.orient_;
 
@@ -75,22 +83,29 @@ namespace
     return Wm3::Box3f(entity.mVarDat.mCurTransform.pos_, axisX, axisY, axisZ, extents);
   }
 
-  [[nodiscard]] std::uint32_t BuildCollisionBeamFamilySourceBits(const moho::UnitWeapon* const launcherWeapon) noexcept
+  [[nodiscard]] std::uint32_t BuildCollisionBeamFamilySourceBits(
+    const moho::UnitWeapon* const launcherWeapon
+  ) noexcept
   {
     std::int32_t sourceWord = -1;
     if (launcherWeapon != nullptr && launcherWeapon->mUnit != nullptr && launcherWeapon->mUnit->ArmyRef != nullptr) {
       sourceWord = launcherWeapon->mUnit->ArmyRef->mConstDat.mArmyIndex;
     }
 
-    const std::uint32_t packedFamilySourceWord = static_cast<std::uint32_t>(sourceWord | kCollisionBeamFamilySourceBaseWord);
+    const std::uint32_t packedFamilySourceWord =
+      static_cast<std::uint32_t>(sourceWord | kCollisionBeamFamilySourceBaseWord);
     return packedFamilySourceWord << kEntityIdFamilySourceShift;
   }
 
-  [[nodiscard]] moho::EntId ReserveCollisionBeamEntityId(const moho::UnitWeapon* const launcherWeapon) noexcept
+  [[nodiscard]] moho::EntId ReserveCollisionBeamEntityId(
+    const moho::UnitWeapon* const launcherWeapon
+  ) noexcept
   {
     moho::Sim* const ownerSim = launcherWeapon != nullptr ? launcherWeapon->mSim : nullptr;
     if (ownerSim != nullptr && ownerSim->mEntityDB != nullptr) {
-      return static_cast<moho::EntId>(ownerSim->mEntityDB->DoReserveId(BuildCollisionBeamFamilySourceBits(launcherWeapon)));
+      return static_cast<moho::EntId>(
+        ownerSim->mEntityDB->DoReserveId(BuildCollisionBeamFamilySourceBits(launcherWeapon))
+      );
     }
 
     return static_cast<moho::EntId>(BuildCollisionBeamFamilySourceBits(nullptr) | 1u);
@@ -131,7 +146,10 @@ namespace moho
   /**
    * Address: 0x00672F80 (FUN_00672F80, Moho::CollisionBeamEntity::CollisionBeamEntity)
    */
-  CollisionBeamEntity::CollisionBeamEntity(const LuaPlus::LuaObject& specObject, UnitWeapon* const launcherWeapon)
+  CollisionBeamEntity::CollisionBeamEntity(
+    const LuaPlus::LuaObject& specObject,
+    UnitWeapon* const launcherWeapon
+  )
     : Entity(launcherWeapon != nullptr ? launcherWeapon->mSim : nullptr, kCollisionBeamCollisionBucketFlags)
     , mListener{}
     , mSerializedBeamState(0.0f)
@@ -146,7 +164,9 @@ namespace moho
     , mPad29C_29F{0u, 0u, 0u, 0u}
   {
     ListUnlink();
-    StandardInit(launcherWeapon != nullptr ? launcherWeapon->mSim : nullptr, ReserveCollisionBeamEntityId(launcherWeapon));
+    StandardInit(
+      launcherWeapon != nullptr ? launcherWeapon->mSim : nullptr, ReserveCollisionBeamEntityId(launcherWeapon)
+    );
 
     mLauncher.ResetFromObject(launcherWeapon);
 
@@ -157,7 +177,9 @@ namespace moho
   /**
    * Address: 0x00672DD0 (FUN_00672DD0, Moho::CollisionBeamEntity::CollisionBeamEntity)
    */
-  CollisionBeamEntity::CollisionBeamEntity(Sim* const ownerSim)
+  CollisionBeamEntity::CollisionBeamEntity(
+    Sim* const ownerSim
+  )
     : Entity(ownerSim, kCollisionBeamCollisionBucketFlags)
     , mListener{}
     , mSerializedBeamState(0.0f)
@@ -170,8 +192,7 @@ namespace moho
     , mPad296_297{0u, 0u}
     , mCollisionCheckTickCounter(0)
     , mPad29C_29F{0u, 0u, 0u, 0u}
-  {
-  }
+  {}
 
   /**
    * Address: 0x00672EC0 (FUN_00672EC0, Moho::CollisionBeamEntity destructor body)
@@ -187,34 +208,11 @@ namespace moho
   }
 
   /**
-   * Address: 0x00672C30 (FUN_00672C30, Moho::CollisionBeamEntity::SetEfxBeam)
-   */
-  void CollisionBeamEntity::SetEfxBeam(IEffect* const beamEmitter, const bool checkCollision)
-  {
-    (void)RelinkWeakPtrIEffect(&mEffect, beamEmitter);
-
-    if (mLauncher.GetObjectPtr() != nullptr && checkCollision) {
-      CheckCollision();
-    }
-  }
-
-  /**
-   * Address: 0x00672C60 (FUN_00672C60, Moho::CollisionBeamEntity::SetCollisionCheckInterval)
-   */
-  void CollisionBeamEntity::SetCollisionCheckInterval(const std::int32_t intervalTicks)
-  {
-    mCollisionCheckInterval = intervalTicks;
-  }
-
-  /**
    * Address: 0x00672C00 (FUN_00672C00, Moho::CollisionBeamEntity::GetDerivedObjectRef)
    */
   gpg::RRef CollisionBeamEntity::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -223,29 +221,6 @@ namespace moho
   CollisionBeamEntity* CollisionBeamEntity::IsCollisionBeam()
   {
     return this;
-  }
-
-  /**
-   * Address: 0x00672C70 (FUN_00672C70, Moho::CollisionBeamEntity::GetLauncher)
-   * Mangled: ?GetLauncher@CollisionBeamEntity@Moho@@QBEPAVEntity@2@XZ
-   *
-   * What it does:
-   * Resolves launcher weak-link ownership and returns launcher unit as its
-   * `Entity` base pointer when available.
-   */
-  Entity* CollisionBeamEntity::GetLauncher() const
-  {
-    UnitWeapon* const launcherWeapon = mLauncher.GetObjectPtr();
-    if (launcherWeapon == nullptr) {
-      return nullptr;
-    }
-
-    Unit* const launcherUnit = launcherWeapon->mUnit;
-    if (launcherUnit == nullptr) {
-      return nullptr;
-    }
-
-    return static_cast<Entity*>(launcherUnit);
   }
 
   /**
@@ -263,7 +238,9 @@ namespace moho
    * Returns the current entity world transform and, for non-zero bone indices,
    * offsets translation by `mLastBeamLength` along the transform's local +Z axis.
    */
-  VTransform CollisionBeamEntity::GetBoneWorldTransform(const int boneIndex) const
+  VTransform CollisionBeamEntity::GetBoneWorldTransform(
+    const int boneIndex
+  ) const
   {
     // The whole transform, word for word. The orientation used to be copied
     // lane by lane against `moho::Vector4f`'s (x,y,z,w) names over the
@@ -291,7 +268,9 @@ namespace moho
   /**
    * Address: 0x006731A0 (FUN_006731A0, Moho::CollisionBeamEntity::GetBoneLocalTransform)
    */
-  VTransform CollisionBeamEntity::GetBoneLocalTransform(const int boneIndex) const
+  VTransform CollisionBeamEntity::GetBoneLocalTransform(
+    const int boneIndex
+  ) const
   {
     VTransform result{};
     result.orient_.w = 1.0f;
@@ -312,7 +291,9 @@ namespace moho
   /**
    * Address: 0x006731F0 (FUN_006731F0, Moho::CollisionBeamEntity::EnableCollisionCheck)
    */
-  void CollisionBeamEntity::EnableCollisionCheck(const bool enabled)
+  void CollisionBeamEntity::EnableCollisionCheck(
+    const bool enabled
+  )
   {
     mEnabled = static_cast<std::uint8_t>(enabled ? 1u : 0u);
     if (!enabled) {
@@ -344,17 +325,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x006732C0 (FUN_006732C0, ?IsEnabled@CollisionBeamEntity@Moho@@QBE_NXZ)
-   *
-   * What it does:
-   * Returns whether collision-check processing is currently enabled.
-   */
-  bool CollisionBeamEntity::IsEnabled() const
-  {
-    return mEnabled != 0u;
-  }
-
-  /**
    * Address: 0x006732D0 (FUN_006732D0, Moho::CollisionBeamEntity::CheckCollision)
    * Mangled: ?CheckCollision@CollisionBeamEntity@Moho@@IAEXXZ
    *
@@ -379,14 +349,12 @@ namespace moho
     // that slot minus 0x04; the bare offset value is the empty-chain sentinel and
     // decays to null under the same subtraction (0x006733F0: `lea ecx,[eax-4]`
     // followed by `test ecx,ecx / jz`).
-    if (ManyToOneListener_ECollisionBeamEvent* const listener = mListener.GetListener();
-        listener != nullptr) {
+    if (ManyToOneListener_ECollisionBeamEvent* const listener = mListener.GetListener(); listener != nullptr) {
       Entity* const hitEntity = beam.mEntity.GetObjectPtr();
       ECollisionBeamEvent eventCode;
       if (beam.mTarget.ImpactDidHitEntity(hitEntity, beam.mImpactType)) {
         eventCode = CollisionBeamEvent_HitTarget;
-      } else if (hitEntity != nullptr
-                 && (static_cast<std::uint32_t>(hitEntity->id_) & 0xF0000000u) == 0x40000000u) {
+      } else if (hitEntity != nullptr && (static_cast<std::uint32_t>(hitEntity->id_) & 0xF0000000u) == 0x40000000u) {
         eventCode = CollisionBeamEvent_Irrelavent;
       } else {
         eventCode = CollisionBeamEvent_MissTarget;
@@ -420,6 +388,10 @@ namespace moho
 
     if (IEffect* const beamEffect = mEffect.GetObjectPtr(); beamEffect != nullptr) {
       constexpr std::int32_t kBeamLengthParam = 6;
+      moho::EFFECT_Op(
+        moho::EEffectOp::SetFloat,
+        {.effect = beamEffect, .param = kBeamLengthParam, .values = &beam.mBeamLength, .valueCount = 1}
+      ); // plan WP9.1
       beamEffect->SetFloatParam(kBeamLengthParam, beam.mBeamLength);
     }
 
@@ -486,7 +458,7 @@ namespace moho
     Entity::OnDestroy();
 
     if (IEffect* const activeEffect = mEffect.GetObjectPtr(); activeEffect != nullptr) {
-      reinterpret_cast<IEffectManager*>(SimulationRef->mEffectManager)->DestroyEffect(activeEffect);
+      SimulationRef->mEffectManager->DestroyEffect(activeEffect);
       mEffect.UnlinkFromOwnerChain();
     }
   }
@@ -494,7 +466,12 @@ namespace moho
   /**
    * Address: 0x00673A50 (FUN_00673A50, Moho::CollisionBeamEntity::MemberConstruct)
    */
-  void CollisionBeamEntity::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CollisionBeamEntity::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     Sim* sim = nullptr;
     const gpg::RRef owner{};
@@ -505,7 +482,9 @@ namespace moho
   /**
    * Address: 0x006762F0 (FUN_006762F0, Moho::CollisionBeamEntity::MemberDeserialize)
    */
-  void CollisionBeamEntity::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CollisionBeamEntity::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef ownerRef{};
 
@@ -540,7 +519,9 @@ namespace moho
   /**
    * Address: 0x00676450 (FUN_00676450, Moho::CollisionBeamEntity::MemberSerialize)
    */
-  void CollisionBeamEntity::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CollisionBeamEntity::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     const gpg::RRef ownerRef{};
 

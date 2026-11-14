@@ -8,7 +8,9 @@
 
 namespace
 {
-  [[nodiscard]] gpg::RRef MakeTypedRef(moho::RDebugNavPath* const object)
+  [[nodiscard]] gpg::RRef MakeTypedRef(
+    moho::RDebugNavPath* const object
+  )
   {
     gpg::RRef out{};
     out.mObj = object;
@@ -25,7 +27,9 @@ namespace
    * What it does:
    * Registers one debug-overlay descriptor pair for navigator-path rendering.
    */
-  void RegisterRDebugNavPathOverlayClass(moho::RDebugOverlayClass* const typeInfo)
+  void RegisterRDebugNavPathOverlayClass(
+    moho::RDebugOverlayClass* const typeInfo
+  )
   {
     typeInfo->RegisterOverlayClass("Display the navigator paths", "NavPath");
   }
@@ -80,19 +84,20 @@ namespace moho
   /**
    * Address: 0x00650D00 (FUN_00650D00, Moho::RDebugNavPathTypeInfo::CtrRef)
    */
-  gpg::RRef RDebugNavPathTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef RDebugNavPathTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<RDebugNavPath*>(objectStorage);
-    if (object != nullptr) {
-      new (object) RDebugNavPath();
-    }
+    auto* const object = gpg::ConstructInStorage<RDebugNavPath>(objectStorage);
     return MakeTypedRef(object);
   }
 
   /**
    * Address: 0x00650CE0 (FUN_00650CE0, Moho::RDebugNavPathTypeInfo::Delete)
    */
-  void RDebugNavPathTypeInfo::Delete(void* const objectStorage)
+  void RDebugNavPathTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<RDebugNavPath*>(objectStorage);
     delete object;
@@ -101,18 +106,19 @@ namespace moho
   /**
    * Address: 0x00650D40 (FUN_00650D40, Moho::RDebugNavPathTypeInfo::Destruct)
    */
-  void RDebugNavPathTypeInfo::Destruct(void* const objectStorage)
+  void RDebugNavPathTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<RDebugNavPath*>(objectStorage);
-    if (object != nullptr) {
-      object->~RDebugNavPath();
-    }
+    gpg::DestructInStorage<RDebugNavPath>(objectStorage);
   }
 
   /**
    * Address: 0x00651050 (FUN_00651050, Moho::RDebugNavPathTypeInfo::AddBase_RDebugOverlay)
    */
-  void RDebugNavPathTypeInfo::AddBase_RDebugOverlay(gpg::RType* const typeInfo)
+  void RDebugNavPathTypeInfo::AddBase_RDebugOverlay(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<moho::RDebugOverlay>(typeInfo);
   }

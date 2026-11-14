@@ -151,7 +151,7 @@ func New(cfg Config, j *journal.Journal) (*Launcher, error) {
 	case cfg.Mode == ModeRelay && l.hub == nil:
 		// The relay listens where the games are: a socket bound to 127.0.0.1
 		// cannot send to -advertise's address (WSAEADDRNOTAVAIL).
-		l.relay = relay.New(j, relay.Options{Default: cfg.Link, ListenIP: net.ParseIP(localHost)})
+		l.relay = relay.New(j, relay.Options{Default: cfg.Link, ListenIP: net.ParseIP(localHost), Latch: cfg.RelayFollow})
 	case cfg.Mode == ModeContract:
 		if l.hub != nil {
 			job.Close()
@@ -173,7 +173,7 @@ func New(cfg Config, j *journal.Journal) (*Launcher, error) {
 			j.Note(journal.Note, 0, "link steps shape every netlink link's sends: "+l.shapingFile, nil)
 		}
 		if !cfg.Contract.NoTurn {
-			l.turn, err = turnsrv.Start(turnsrv.Config{Port: cfg.TurnPort, PublicIP: cfg.TurnIP}, j)
+			l.turn, err = turnsrv.Start(turnConfig(cfg), j)
 			if err != nil {
 				job.Close()
 				return nil, err
@@ -182,7 +182,7 @@ func New(cfg Config, j *journal.Journal) (*Launcher, error) {
 		}
 	case cfg.Mode == ModeICE && l.hub == nil:
 		if !cfg.ICE.NoTurn {
-			l.turn, err = turnsrv.Start(turnsrv.Config{Port: cfg.TurnPort, PublicIP: cfg.TurnIP}, j)
+			l.turn, err = turnsrv.Start(turnConfig(cfg), j)
 			if err != nil {
 				job.Close()
 				return nil, err
@@ -378,6 +378,12 @@ func (l *Launcher) seatConfig(p *Player) seat.Config {
 			sc.Contract = l.contractFor(pc)
 		}
 	}
+	if c.Mode == ModeServer {
+		// Plan WP2.9: this player's connection string, never another's. The
+		// server's lobby signals pick the lobby script, not /players.
+		sc.AutoLobby = false
+		sc.Server = &seat.ServerJoin{Address: c.Server.Address, Token: pc.ServerToken, Delivery: pc.ServerDelivery}
+	}
 	if c.Mode == ModeICE {
 		sc.ICE = &seat.ICE{Adapter: c.ICE.Adapter, GameID: c.GameID,
 			ForceRelay: c.ICE.ForceRelay, LogLevel: c.ICE.LogLevel}
@@ -417,7 +423,7 @@ func (l *Launcher) contractFor(pc PlayerConfig) *seat.Contract {
 		a.Exe = choice
 		a.Extra = c.ExeArgs
 	}
-	sc := &seat.Contract{Adapter: a, GameID: l.cfg.GameID, Bus: l.contractBus, JarBind: jarBind}
+	sc := &seat.Contract{Adapter: a, GameID: l.cfg.GameID, Bus: l.contractBus, JarBind: jarBind, KeepSession: c.KeepSession}
 	if len(c.IceServers) > 0 {
 		sc.IceServers = []map[string]any{}
 		for _, s := range c.IceServers {
@@ -496,8 +502,8 @@ func (l *Launcher) onLeave(p *Player) {
 	l.mu.Lock()
 	closed := l.closed
 	l.mu.Unlock()
-	if closed || l.cfg.Leave == LeaveNever {
-		return
+	if closed || l.cfg.Leave == LeaveNever || l.cfg.Mode == ModeServer {
+		return // in ModeServer the game server tells the others
 	}
 	if l.cfg.Leave == LeaveInLobby && l.anyLaunched() {
 		return
@@ -637,8 +643,15 @@ func (l *Launcher) addr(viewer, target *Player) (string, error) {
 	}
 }
 
+// errServerSignals refuses lobby steps in ModeServer: the game server signals
+// the lobby (who hosts, who joins) itself.
+var errServerSignals = errors.New("mode server: the game server signals the lobby; scenarios have no host or join steps")
+
 // HostGame makes uid the host once its game is in the lobby.
 func (l *Launcher) HostGame(ctx context.Context, uid int) error {
+	if l.cfg.Mode == ModeServer {
+		return errServerSignals
+	}
 	p, err := l.Player(uid)
 	if err != nil {
 		return err
@@ -661,6 +674,9 @@ func (l *Launcher) HostGame(ctx context.Context, uid int) error {
 // JoinGame connects uid to the host and to every player already in, in the
 // order the FAF lobby server uses.
 func (l *Launcher) JoinGame(ctx context.Context, uid int) error {
+	if l.cfg.Mode == ModeServer {
+		return errServerSignals
+	}
 	host := l.Host()
 	if host == 0 {
 		return errors.New("join before anyone hosts")
@@ -735,6 +751,58 @@ func (l *Launcher) Kill(uid int) error {
 	return nil
 }
 
+// RejoinPeer is a player still in the game, for Rejoin.
+type RejoinPeer struct {
+	UID    int
+	Source int
+}
+
+// Rejoin starts player uid's game again to take its seat back. It links to every
+// peer and gets the game's recording from the first. Seats on this machine only.
+func (l *Launcher) Rejoin(uid, source, keyOf int, launcher bool, remote bool, peers []RejoinPeer) error {
+	p, err := l.Player(uid)
+	if err != nil {
+		return err
+	}
+	local, ok := p.seat.(*seat.Seat)
+	if !ok {
+		return fmt.Errorf("player %d: rejoin needs a seat on this machine", uid)
+	}
+	if len(peers) == 0 {
+		return fmt.Errorf("player %d: rejoin names no peers", uid)
+	}
+	if local.IsNative() {
+		list := make([]string, 0, len(peers))
+		for _, entry := range peers {
+			list = append(list, fmt.Sprintf("%d=%d", entry.UID, entry.Source))
+		}
+		return local.RejoinNative(strings.Join(list, ","), source, keyOf)
+	}
+	if l.cfg.Mode == ModeContract {
+		sources := make(map[int]int, len(peers))
+		for _, entry := range peers {
+			sources[entry.UID] = entry.Source
+		}
+		return local.RejoinViaAdapter(context.Background(), sources, source)
+	}
+	list := make([]string, 0, len(peers))
+	for _, entry := range peers {
+		peer, err := l.Player(entry.UID)
+		if err != nil {
+			return err
+		}
+		endpoint, err := l.addr(p, peer)
+		if err != nil {
+			return err
+		}
+		list = append(list, fmt.Sprintf("%s=%d", endpoint, entry.Source))
+	}
+	if remote {
+		return local.RejoinElsewhere(strings.Join(list, ","), source)
+	}
+	return local.Rejoin(strings.Join(list, ","), source, keyOf, launcher)
+}
+
 // PlayerSnapshot is one row of Snapshot.
 type PlayerSnapshot struct {
 	UID    int    `json:"uid"`
@@ -797,4 +865,15 @@ func (l *Launcher) closeServices() {
 	if l.turn != nil {
 		_ = l.turn.Close()
 	}
+}
+
+// turnConfig is the local TURN server for cfg: it announces cfg.TurnIP, and listens (relay sockets included) on it
+// when that is a loopback address, so a run that keeps everything on 127.0.0.1 works on a host that turns a socket
+// bound to every interface into one bound to its LAN address (mpemu selftest -bindip).
+func turnConfig(cfg Config) turnsrv.Config {
+	c := turnsrv.Config{Port: cfg.TurnPort, PublicIP: cfg.TurnIP}
+	if ip := net.ParseIP(cfg.TurnIP); ip != nil && ip.IsLoopback() {
+		c.ListenIP = cfg.TurnIP
+	}
+	return c
 }

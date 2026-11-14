@@ -47,7 +47,7 @@ namespace gpg
     /**
      * Address: 0x00626C60 (FUN_00626C60, gpg::RVectorType_SPickUpInfo::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const RRef& ref) const override;
 
     /**
      * Address: 0x00626CF0 (FUN_00626CF0, gpg::RVectorType_SPickUpInfo::IsIndexed)
@@ -62,12 +62,12 @@ namespace gpg
     /**
      * Address: 0x006270E0 (FUN_006270E0, gpg::RVectorType_SPickUpInfo::SerLoad)
      */
-    static void SerLoad(ReadArchive* archive, std::intptr_t objectPtr, int version, RRef* ownerRef);
+    static void SerLoad(ReadArchive* archive, void* objectPtr, int version, RRef* ownerRef);
 
     /**
      * Address: 0x00627240 (FUN_00627240, gpg::RVectorType_SPickUpInfo::SerSave)
      */
-    static void SerSave(WriteArchive* archive, std::intptr_t objectPtr, int version, RRef* ownerRef);
+    static void SerSave(WriteArchive* archive, void* objectPtr, int version, RRef* ownerRef);
 
     /**
      * Address: 0x00626D60 (FUN_00626D60, gpg::RVectorType_SPickUpInfo::SubscriptIndex)

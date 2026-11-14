@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/core/containers/String.h"
 #include "legacy/containers/Set.h"
@@ -46,7 +46,7 @@ namespace moho
   // The tracked-entity set the shipped record carries at +0x18: an 0x0C head
   // over an 0x14 node holding the entity id at node+0x0C with the colour and
   // nil pair at +0x10/+0x11.
-  using TrackedEntitySet = msvc8::set<std::int32_t>;
+  using TrackedEntitySet = fa::set<std::int32_t>;
 
   static_assert(sizeof(TrackedEntitySet) == 0x0C, "TrackedEntitySet size must be 0x0C");
 
@@ -112,10 +112,11 @@ namespace moho
     "SoundHandleRecord::mTrackedEntities offset must be 0x18"
   );
   static_assert(
-    offsetof(SoundHandleRecord, mPlayingSeconds) == 0x24, "SoundHandleRecord::mPlayingSeconds offset must be 0x24"
+    offsetof(SoundHandleRecord, mPlayingSeconds) == 0x24,
+    "SoundHandleRecord::mPlayingSeconds offset must be 0x24"
   );
 
-  static_assert(sizeof(msvc8::set<IXACTCue*>) == 0x0C, "msvc8::set<IXACTCue*> size must be 0x0C");
+  static_assert(sizeof(fa::set<IXACTCue*>) == 0x0C, "fa::set<IXACTCue*> size must be 0x0C");
 
   /**
    * VFTABLE: 0x00E4C444
@@ -199,16 +200,16 @@ namespace moho
      * Address: 0x008AAC50 (FUN_008AAC50)
      * Slot: 3
      *
-     * msvc8::string const&, msvc8::string const&
+     * fa::string const&, fa::string const&
      *
      * IDA signature:
-     * void __thiscall Moho::CUserSoundManager::Play(Moho::CUserSoundManager *this, msvc8::string const& bankName,
-     * msvc8::string const& cueName);
+     * void __thiscall Moho::CUserSoundManager::Play(Moho::CUserSoundManager *this, fa::string const& bankName,
+     * fa::string const& cueName);
      *
      * What it does:
      * Resolves/plays a one-shot cue by bank+cue string names.
      */
-    void Play(const msvc8::string& bankName, const msvc8::string& cueName) override;
+    void Play(const fa::string& bankName, const fa::string& cueName) override;
 
     /**
      * Address: 0x008AAE00 (FUN_008AAE00)
@@ -376,17 +377,6 @@ namespace moho
     [[nodiscard]] bool StopRPCEntityLoop(SoundHandleRecord* record);
 
     /**
-     * Address: 0x008ABCB0 (FUN_008ABCB0)
-     *
-     * Moho::SoundHandleRecord*, bool destroy
-     *
-     * What it does:
-     * Routes one entity-loop stop request to either stop-only or
-     * stop-and-destroy behavior.
-     */
-    void StopEntityLoop(SoundHandleRecord* record, bool destroy);
-
-    /**
      * Address: 0x008AB670 (FUN_008AB670)
      *
      * float deltaSeconds
@@ -419,20 +409,20 @@ namespace moho
     SoundHandleIdPool mLoopHandleIdPool;                     // +0x118
     gpg::fastvector_n<SoundHandleRecord, 256> mSoundHandles; // +0x140
 
-    msvc8::set<IXACTCue*> mPendingDestroyCues; // +0x2950
-    WeakPtr<UserArmy> mListenerArmy;           // +0x295C (the army whose recon filters positional sounds)
-    TDatList<HSound, void> mActiveLoops;       // +0x2964
+    fa::set<IXACTCue*> mPendingDestroyCues; // +0x2950
+    WeakPtr<UserArmy> mListenerArmy;        // +0x295C (the army whose recon filters positional sounds)
+    TDatList<HSound, void> mActiveLoops;    // +0x2964
 
-    boost::shared_ptr<AudioEngine> mAmbientEngine;  // +0x296C
-    boost::shared_ptr<AudioEngine> mTutorialEngine; // +0x2974
-    boost::shared_ptr<AudioEngine> mVoiceEngine;    // +0x297C
+    std::shared_ptr<AudioEngine> mAmbientEngine;  // +0x296C
+    std::shared_ptr<AudioEngine> mTutorialEngine; // +0x2974
+    std::shared_ptr<AudioEngine> mVoiceEngine;    // +0x297C
 
     CSndVar mCameraDistanceVar;         // +0x2984
     CSndVar mZoomPercentVar;            // +0x29A4
     float mCurrentCameraDistanceMetric; // +0x29C4
     std::uint8_t mWorldSoundsEnabled;   // +0x29C8
     std::uint8_t mReserved29C9[0x03];   // +0x29C9
-    msvc8::string mLanguageTag;         // +0x29CC
+    fa::string mLanguageTag;            // +0x29CC
 
     CSndVar mDuckLengthVar;            // +0x29E8
     CSndVar mDuckVar;                  // +0x2A08
@@ -443,13 +433,16 @@ namespace moho
   };
 
   static_assert(
-    offsetof(CUserSoundManager, mRecentOneShotKeys) == 0x08, "CUserSoundManager::mRecentOneShotKeys offset must be 0x08"
+    offsetof(CUserSoundManager, mRecentOneShotKeys) == 0x08,
+    "CUserSoundManager::mRecentOneShotKeys offset must be 0x08"
   );
   static_assert(
-    offsetof(CUserSoundManager, mLoopHandleIdPool) == 0x118, "CUserSoundManager::mLoopHandleIdPool offset must be 0x118"
+    offsetof(CUserSoundManager, mLoopHandleIdPool) == 0x118,
+    "CUserSoundManager::mLoopHandleIdPool offset must be 0x118"
   );
   static_assert(
-    offsetof(CUserSoundManager, mSoundHandles) == 0x140, "CUserSoundManager::mSoundHandles offset must be 0x140"
+    offsetof(CUserSoundManager, mSoundHandles) == 0x140,
+    "CUserSoundManager::mSoundHandles offset must be 0x140"
   );
   static_assert(
     offsetof(CUserSoundManager, mPendingDestroyCues) == 0x2950,
@@ -460,27 +453,32 @@ namespace moho
     "CUserSoundManager::mListenerArmy offset must be 0x295C"
   );
   static_assert(
-    offsetof(CUserSoundManager, mActiveLoops) == 0x2964, "CUserSoundManager::mActiveLoops offset must be 0x2964"
+    offsetof(CUserSoundManager, mActiveLoops) == 0x2964,
+    "CUserSoundManager::mActiveLoops offset must be 0x2964"
   );
   static_assert(
-    offsetof(CUserSoundManager, mVoiceEngine) == 0x297C, "CUserSoundManager::mVoiceEngine offset must be 0x297C"
+    offsetof(CUserSoundManager, mVoiceEngine) == 0x297C,
+    "CUserSoundManager::mVoiceEngine offset must be 0x297C"
   );
   static_assert(
     offsetof(CUserSoundManager, mCameraDistanceVar) == 0x2984,
     "CUserSoundManager::mCameraDistanceVar offset must be 0x2984"
   );
   static_assert(
-    offsetof(CUserSoundManager, mZoomPercentVar) == 0x29A4, "CUserSoundManager::mZoomPercentVar offset must be 0x29A4"
+    offsetof(CUserSoundManager, mZoomPercentVar) == 0x29A4,
+    "CUserSoundManager::mZoomPercentVar offset must be 0x29A4"
   );
   static_assert(
     offsetof(CUserSoundManager, mCurrentCameraDistanceMetric) == 0x29C4,
     "CUserSoundManager::mCurrentCameraDistanceMetric offset must be 0x29C4"
   );
   static_assert(
-    offsetof(CUserSoundManager, mLanguageTag) == 0x29CC, "CUserSoundManager::mLanguageTag offset must be 0x29CC"
+    offsetof(CUserSoundManager, mLanguageTag) == 0x29CC,
+    "CUserSoundManager::mLanguageTag offset must be 0x29CC"
   );
   static_assert(
-    offsetof(CUserSoundManager, mDuckLengthVar) == 0x29E8, "CUserSoundManager::mDuckLengthVar offset must be 0x29E8"
+    offsetof(CUserSoundManager, mDuckLengthVar) == 0x29E8,
+    "CUserSoundManager::mDuckLengthVar offset must be 0x29E8"
   );
   static_assert(offsetof(CUserSoundManager, mDuckVar) == 0x2A08, "CUserSoundManager::mDuckVar offset must be 0x2A08");
   static_assert(offsetof(CUserSoundManager, mDuckMode) == 0x2A28, "CUserSoundManager::mDuckMode offset must be 0x2A28");

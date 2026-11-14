@@ -7,7 +7,7 @@ namespace
   constexpr const char* kCMauiHistogramSetDataHelpText = "SetData(dataTable)";
   constexpr const char* kInternalCreateHistogramHelpText =
     "InternalCreateHistogram(luaobj,parent) -- For internal use by CreateHistogram()";
-}
+} // namespace
 
 gpg::RType* moho::CMauiHistogram::sType = nullptr;
 
@@ -325,8 +325,5 @@ gpg::RType* moho::CMauiHistogram::GetClass() const
  */
 gpg::RRef moho::CMauiHistogram::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }

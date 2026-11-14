@@ -12,7 +12,9 @@ namespace moho
 namespace
 {
 
-  [[nodiscard]] CollisionDBRect COORDS_OgridRectToCollisionRect(const gpg::Rect2i& ogridRect) noexcept
+  [[nodiscard]] CollisionDBRect COORDS_OgridRectToCollisionRect(
+    const gpg::Rect2i& ogridRect
+  ) noexcept
   {
     // Address: 0x004FCAA0 (FUN_004FCAA0)
     const std::int32_t xPos = std::clamp(ogridRect.x0 >> 2, 0, 0xFFFF);
@@ -26,15 +28,19 @@ namespace
 
     const std::int32_t maxXSpan = 0xFFFF - static_cast<std::int32_t>(collisionRect.mStartX);
     const std::int32_t maxZSpan = 0xFFFF - static_cast<std::int32_t>(collisionRect.mStartZ);
-    const std::int32_t xSpan = std::clamp(xEnd - static_cast<std::int32_t>(collisionRect.mStartX), std::int32_t{1}, maxXSpan);
-    const std::int32_t zSpan = std::clamp(zEnd - static_cast<std::int32_t>(collisionRect.mStartZ), std::int32_t{1}, maxZSpan);
+    const std::int32_t xSpan =
+      std::clamp(xEnd - static_cast<std::int32_t>(collisionRect.mStartX), std::int32_t{1}, maxXSpan);
+    const std::int32_t zSpan =
+      std::clamp(zEnd - static_cast<std::int32_t>(collisionRect.mStartZ), std::int32_t{1}, maxZSpan);
 
     collisionRect.mWidth = static_cast<std::uint16_t>(xSpan);
     collisionRect.mHeight = static_cast<std::uint16_t>(zSpan);
     return collisionRect;
   }
 
-  [[nodiscard]] bool IsCollisionRectEquivalentToZero(const gpg::Rect2i& ogridRect) noexcept
+  [[maybe_unused]] [[nodiscard]] bool IsCollisionRectEquivalentToZero(
+    const gpg::Rect2i& ogridRect
+  ) noexcept
   {
     const gpg::Rect2i zeroRect{};
     const CollisionDBRect currentCollisionRect = COORDS_OgridRectToCollisionRect(ogridRect);
@@ -43,33 +49,19 @@ namespace
   }
 
   /**
-   * Address: 0x006A4BF0 (FUN_006A4BF0)
-   *
-   * What it does:
-   * Copies this unit's reserved O-grid rectangle bounds into one `Rect2i`.
-   */
-  [[nodiscard]] gpg::Rect2i GetReservedOgridRect(const Unit& unit) noexcept
-  {
-    return {
-      unit.ReservedOgridRectMinX,
-      unit.ReservedOgridRectMinZ,
-      unit.ReservedOgridRectMaxX,
-      unit.ReservedOgridRectMaxZ,
-    };
-  }
-
-  /**
    * Address: 0x00565980 (FUN_00565980)
    *
    * What it does:
    * Returns the larger of the footprint X/Z side lengths.
    */
-  [[nodiscard]] std::uint8_t FootprintMaxSide(const SFootprint& footprint) noexcept
+  [[maybe_unused]] [[nodiscard]] std::uint8_t FootprintMaxSide(
+    const SFootprint& footprint
+  ) noexcept
   {
     return (footprint.mSizeX > footprint.mSizeZ) ? footprint.mSizeX : footprint.mSizeZ;
   }
 
-  [[nodiscard]] bool IsMeleeCandidateCellNavigable(
+  [[maybe_unused]] [[nodiscard]] bool IsMeleeCandidateCellNavigable(
     Unit& moveUnit,
     Unit* const ignoreUnit,
     const SFootprint& moverFootprint,
@@ -104,5 +96,4 @@ namespace
     SOCellPos moveCell = candidateCell;
     return COORDS_CanMoveAt(&moveCell, &ogrid, &moveUnit, true, ignoreUnit);
   }
-}
-
+} // namespace

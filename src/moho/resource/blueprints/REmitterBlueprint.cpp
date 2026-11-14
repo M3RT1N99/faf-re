@@ -17,8 +17,6 @@ namespace moho
   gpg::RType* REmitterBlueprintCurve::sType = nullptr;
   gpg::RType* REmitterBlueprint::sType = nullptr;
 
-
-
   /**
    * Address: 0x00514B30 (FUN_00514B30)
    * Mangled: ?GetClass@REmitterCurveKey@Moho@@UBEPAVRType@gpg@@XZ
@@ -43,10 +41,7 @@ namespace moho
    */
   gpg::RRef REmitterCurveKey::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -89,10 +84,7 @@ namespace moho
    */
   gpg::RRef REmitterBlueprintCurve::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -116,7 +108,7 @@ namespace moho
    * What it does:
    * Default-constructs an emitter blueprint. The base `REffectBlueprint` ctor
    * runs first to install the `RObject` vftable, clear `mOwnerRules`, and
-   * default-construct `BlueprintId` (empty SSO `msvc8::string`); the 21
+   * default-construct `BlueprintId` (empty SSO `fa::string`); the 21
    * `REmitterBlueprintCurve` subobjects each install their `RObject` vftable
    * and zero their key-storage triplets via the curve's default ctor; finally
    * the in-class field initializers set the fidelity flags, emitter behavior
@@ -173,10 +165,7 @@ namespace moho
    */
   gpg::RRef REmitterBlueprint::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -193,12 +182,17 @@ namespace moho
 
 namespace moho
 {
-  void REmitterBlueprint::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void REmitterBlueprint::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     RRuleGameRules* rules = nullptr;
     const gpg::RRef owner{};
     archive.ReadPointer(&rules, &owner);
-    msvc8::string id;
+    fa::string id;
     archive.ReadString(&id);
     RResId resId{};
     gpg::STR_CopyFilename(&resId.name, &id);
@@ -209,7 +203,10 @@ namespace moho
    * Address: 0x0050FD60 (FUN_0050FD60)
    */
   void REmitterBlueprint::MemberSaveConstructArgs(
-    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+    gpg::WriteArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerSaveConstructArgsResult& result
   )
   {
     archive.WritePointer(mOwnerRules, gpg::TrackedPointerState::Unowned, gpg::RRef{});

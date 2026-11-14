@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/scoped_ptr.h"
+#include <memory>
 #include "gpg/core/containers/DList.h"
 #include "moho/misc/Listener.h"
 
@@ -13,9 +13,9 @@ namespace moho
 
   struct SD3DDeviceEvent
   {
-    std::uint32_t mEventType;       // +0x00
-    bool mShouldReleaseTextures;    // +0x04
-    std::uint8_t mPad05[0x03];      // +0x05
+    std::uint32_t mEventType;    // +0x00
+    bool mShouldReleaseTextures; // +0x04
+    std::uint8_t mPad05[0x03];   // +0x05
   };
 
   static_assert(sizeof(SD3DDeviceEvent) == 0x08, "SD3DDeviceEvent size must be 0x08");
@@ -26,7 +26,9 @@ namespace moho
    *
    * RTTI: `Listener<SD3DDeviceEvent const&>` at +0x00 (its node at +0x04).
    */
-  class DeviceExitListener : public Listener<const SD3DDeviceEvent&>
+  // `final`: nothing derives from it, and sDeviceExitListener (std::unique_ptr) deletes it without a virtual
+  // destructor, as the binary's boost::scoped_ptr did.
+  class DeviceExitListener final : public Listener<const SD3DDeviceEvent&>
   {
   public:
     /**
@@ -70,5 +72,5 @@ namespace moho
    * Every write is `scoped_ptr::reset`: the new pointer is stored before the
    * old listener is deleted (0x00447404, 0x00447399).
    */
-  extern boost::scoped_ptr<DeviceExitListener> sDeviceExitListener;
+  extern std::unique_ptr<DeviceExitListener> sDeviceExitListener;
 } // namespace moho

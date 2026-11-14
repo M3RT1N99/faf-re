@@ -5,9 +5,10 @@
 #include "legacy/containers/Map.h"
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/String.h"
 #include "legacy/containers/Vector.h"
+#include "moho/misc/WeakObject.h"
 
 namespace gpg::gal
 {
@@ -20,15 +21,21 @@ namespace moho
   class CD3DDevice;
   class ID3DTextureSheet;
 
-  class CD3DEffect
+  /**
+   * Engine addition, set by the map editor before the device loads its effects: FAF's `mesh.fx` gets the editor's
+   * outline techniques appended (`EditorOutline`, `EditorOutlineAlpha`: the model's front faces pushed out along their
+   * normals by a share of their distance to the camera, in the instance's colour, over everything; `EditorPropOver`:
+   * the prop drawn again over the shell's middle, so a rim stays). Off in the game.
+   */
+  extern bool ren_EditorMeshOutline;
+
+  /**
+   * The weak-reference head at +0x00 is `ShaderVar::mEffectLink`'s chain: an
+   * effect going away clears every shader var still bound to it.
+   */
+  class CD3DEffect : public WeakObject
   {
   public:
-    struct AttachedLink
-    {
-      AttachedLink* mLinkLane; // +0x00
-      AttachedLink* mNext;     // +0x04
-    };
-
     template <typename NodeT>
     struct TreeMap
     {
@@ -40,20 +47,26 @@ namespace moho
     class Technique
     {
     public:
-      class Implementation
+      class Implementation final
       {
       public:
         // The two annotation trees. Node geometry names both element types:
         // the integer node is 0x30 with the colour byte at +0x2C, so its value
-        // is `pair<const msvc8::string, std::int32_t>` (the key's `_Bx` at
+        // is `pair<const fa::string, std::int32_t>` (the key's `_Bx` at
         // node+0x10, the int at node+0x28 -- 0x0042BDC0 reads exactly that);
         // the string node is 0x48 with the colour at +0x44, so its value is
-        // `pair<const msvc8::string, msvc8::string>`.
-        using IntAnnotationTree = msvc8::map<msvc8::string, std::int32_t>;
-        using StringAnnotationTree = msvc8::map<msvc8::string, msvc8::string>;
+        // `pair<const fa::string, fa::string>`.
+        using IntAnnotationTree = fa::map<fa::string, std::int32_t>;
+        using StringAnnotationTree = fa::map<fa::string, fa::string>;
 
-        static_assert(sizeof(IntAnnotationTree) == 0x0C, "CD3DEffect::Technique::Implementation::IntAnnotationTree size must be 0x0C");
-        static_assert(sizeof(StringAnnotationTree) == 0x0C, "CD3DEffect::Technique::Implementation::StringAnnotationTree size must be 0x0C");
+        static_assert(
+          sizeof(IntAnnotationTree) == 0x0C,
+          "CD3DEffect::Technique::Implementation::IntAnnotationTree size must be 0x0C"
+        );
+        static_assert(
+          sizeof(StringAnnotationTree) == 0x0C,
+          "CD3DEffect::Technique::Implementation::StringAnnotationTree size must be 0x0C"
+        );
 
         /**
          * Address: 0x0042BB80 (FUN_0042BB80)
@@ -71,7 +84,7 @@ namespace moho
          * What it does:
          * Initializes one implementation lane and copies one lane-name string.
          */
-        explicit Implementation(const msvc8::string& implementationName);
+        explicit Implementation(const fa::string& implementationName);
 
         /**
          * Address: 0x0042BCB0 (FUN_0042BCB0)
@@ -97,7 +110,7 @@ namespace moho
          * What it does:
          * Looks up one integer annotation by key and writes the found value.
          */
-        [[nodiscard]] bool TryGetIntegerAnnotation(const msvc8::string& annotationName, std::int32_t* outValue) const;
+        [[nodiscard]] bool TryGetIntegerAnnotation(const fa::string& annotationName, std::int32_t* outValue) const;
 
         /**
          * Address: 0x0042BE00 (FUN_0042BE00)
@@ -105,12 +118,16 @@ namespace moho
          * What it does:
          * Looks up one string annotation by key and copies the stored value.
          */
-        [[nodiscard]] bool TryGetStringAnnotation(const msvc8::string& annotationName, msvc8::string* outValue) const;
+        [[nodiscard]] bool TryGetStringAnnotation(const fa::string& annotationName, fa::string* outValue) const;
 
+        // The `virtual` is what gives the class the vtable the binary's layout has.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunnecessary-virtual-specifier"
         virtual void UnknownVirtualSlot();
+#pragma clang diagnostic pop
 
       public:
-        msvc8::string mName;                     // +0x04
+        fa::string mName;                        // +0x04
         IntAnnotationTree mIntegerAnnotations;   // +0x20
         StringAnnotationTree mStringAnnotations; // +0x2C
       };
@@ -124,9 +141,18 @@ namespace moho
       //   mov [esi+30h], eax / mov [esi+34h], ebx        string tree head, size
       // The 0x38 stride is corroborated by the lane arithmetic in 0x0042BF40,
       // 0x0042C650 and 0x0042D290.
-      static_assert(offsetof(Implementation, mName) == 0x04, "CD3DEffect::Technique::Implementation::mName offset must be 0x04");
-      static_assert(offsetof(Implementation, mIntegerAnnotations) == 0x20, "CD3DEffect::Technique::Implementation::mIntegerAnnotations offset must be 0x20");
-      static_assert(offsetof(Implementation, mStringAnnotations) == 0x2C, "CD3DEffect::Technique::Implementation::mStringAnnotations offset must be 0x2C");
+      static_assert(
+        offsetof(Implementation, mName) == 0x04,
+        "CD3DEffect::Technique::Implementation::mName offset must be 0x04"
+      );
+      static_assert(
+        offsetof(Implementation, mIntegerAnnotations) == 0x20,
+        "CD3DEffect::Technique::Implementation::mIntegerAnnotations offset must be 0x20"
+      );
+      static_assert(
+        offsetof(Implementation, mStringAnnotations) == 0x2C,
+        "CD3DEffect::Technique::Implementation::mStringAnnotations offset must be 0x2C"
+      );
       static_assert(sizeof(Implementation) == 0x38, "CD3DEffect::Technique::Implementation size must be 0x38");
 
       /**
@@ -136,7 +162,7 @@ namespace moho
        * What it does:
        * Initializes one technique with name text and three implementation lanes.
        */
-      explicit Technique(const msvc8::string& techniqueName);
+      explicit Technique(const fa::string& techniqueName);
 
       /**
        * Address: 0x0042BEC0 (FUN_0042BEC0)
@@ -156,12 +182,9 @@ namespace moho
        */
       void FinalizeMissingImplementations();
 
-      [[nodiscard]] Implementation* GetImplementationLanes() noexcept;
-      [[nodiscard]] const Implementation* GetImplementationLanes() const noexcept;
-
     public:
-      msvc8::string mName; // +0x04
-      alignas(Implementation) std::uint8_t mImplementationStorage[sizeof(Implementation) * 3]; // +0x20
+      fa::string mName;                                                                        // +0x04
+      Implementation mImplementations[3]; // +0x20, one per fidelity
     };
 
     /**
@@ -178,17 +201,19 @@ namespace moho
      */
     struct TechniqueNameLess
     {
-      [[nodiscard]] bool operator()(const Technique& lhs, const Technique& rhs) const
+      [[nodiscard]] bool operator()(
+        const Technique& lhs,
+        const Technique& rhs
+      ) const
       {
         return lhs.mName < rhs.mName;
       }
     };
 
-    using TechniqueSet = msvc8::set<Technique, TechniqueNameLess>;
+    using TechniqueSet = fa::set<Technique, TechniqueNameLess>;
 
     static_assert(sizeof(TechniqueSet) == 0x0C, "CD3DEffect::TechniqueSet size must be 0x0C");
     static_assert(sizeof(Technique) == 0xC8, "CD3DEffect::Technique size must be 0xC8");
-
 
     /**
      * Address: 0x0042C430 (FUN_0042C430)
@@ -218,7 +243,7 @@ namespace moho
      * Console command handler that forwards one integer sample count to the
      * active D3D device anti-aliasing slot.
      */
-    static void CON_d3d_AntiAliasingSamples(const msvc8::vector<msvc8::string>& args);
+    static void CON_d3d_AntiAliasingSamples(const fa::vector<fa::string>& args);
 
     /**
      * Address: 0x0042C650 (FUN_0042C650, ?InitEffectFromFile@CD3DEffect@Moho@@QAE_NPBD@Z)
@@ -230,12 +255,13 @@ namespace moho
     [[nodiscard]] bool InitEffectFromFile(const char* effectFilePath);
 
     /**
-     * Address: 0x0042DB30 (FUN_0042DB30, ?EnumerateValidTechniques@CD3DEffect@Moho@@QAEXAAV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z)
+     * Address: 0x0042DB30 (FUN_0042DB30,
+     * ?EnumerateValidTechniques@CD3DEffect@Moho@@QAEXAAV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z)
      *
      * What it does:
      * Queries the current effect for all valid techniques and appends their names.
      */
-    void EnumerateValidTechniques(msvc8::vector<msvc8::string>& outTechniqueNames);
+    void EnumerateValidTechniques(fa::vector<fa::string>& outTechniqueNames);
 
     /**
      * Address: 0x00431C60 (FUN_00431C60)
@@ -257,101 +283,108 @@ namespace moho
 
     /**
      * Address: 0x0042D580 (FUN_0042D580)
-     * Mangled: ?GetImplAnnotation@CD3DEffect@Moho@@AAE_NAAHABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@1@Z
+     * Mangled:
+     * ?GetImplAnnotation@CD3DEffect@Moho@@AAE_NAAHABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@1@Z
      *
      * What it does:
      * Reads one integer annotation from one implementation technique lane.
      */
-    [[nodiscard]] bool GetImplAnnotation(
-      std::int32_t* outValue,
-      const msvc8::string& implementationName,
-      const msvc8::string& annotationName
-    );
+    [[nodiscard]] bool
+    GetImplAnnotation(std::int32_t* outValue, const fa::string& implementationName, const fa::string& annotationName);
 
     /**
      * Address: 0x0042D640 (FUN_0042D640)
-     * Mangled: ?GetIntegerAnnotation@CD3DEffect@Moho@@QAEHABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0H@Z
+     * Mangled:
+     * ?GetIntegerAnnotation@CD3DEffect@Moho@@QAEHABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@0H@Z
      *
      * What it does:
      * Returns one integer annotation for the selected technique/fidelity lane,
      * resolving from implementation annotation when cache is missing.
      */
-    [[nodiscard]] std::int32_t GetIntegerAnnotation(
-      const msvc8::string& techniqueName,
-      const msvc8::string& annotationName,
-      std::int32_t defaultValue
-    );
+    [[nodiscard]] std::int32_t
+    GetIntegerAnnotation(const fa::string& techniqueName, const fa::string& annotationName, std::int32_t defaultValue);
 
     /**
      * Address: 0x0042D780 (FUN_0042D780)
-     * Mangled: ?GetImplAnnotation@CD3DEffect@Moho@@AAE_NAAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV34@1@Z
+     * Mangled:
+     * ?GetImplAnnotation@CD3DEffect@Moho@@AAE_NAAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV34@1@Z
      *
      * What it does:
      * Reads one string annotation from one implementation technique lane.
      */
-    [[nodiscard]] bool GetImplAnnotation(
-      msvc8::string* outValue,
-      const msvc8::string& implementationName,
-      const msvc8::string& annotationName
-    );
+    [[nodiscard]] bool
+    GetImplAnnotation(fa::string* outValue, const fa::string& implementationName, const fa::string& annotationName);
 
     /**
      * Address: 0x0042D840 (FUN_0042D840)
-     * Mangled: ?GetStringAnnotation@CD3DEffect@Moho@@QAE?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV34@00@Z
+     * Mangled:
+     * ?GetStringAnnotation@CD3DEffect@Moho@@QAE?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV34@00@Z
      *
      * What it does:
      * Returns one string annotation for the selected technique/fidelity lane,
      * resolving from implementation annotation when cache is missing.
      */
-    [[nodiscard]] msvc8::string GetStringAnnotation(
-      const msvc8::string& techniqueName,
-      const msvc8::string& annotationName,
-      const msvc8::string& defaultValue
+    [[nodiscard]] fa::string GetStringAnnotation(
+      const fa::string& techniqueName,
+      const fa::string& annotationName,
+      const fa::string& defaultValue
     );
 
     /**
-     * Address: 0x00437E90 (FUN_00437E90, ?GetBaseEffect@CD3DEffect@Moho@@QAE?AV?$shared_ptr@VEffect@gal@gpg@@@boost@@XZ)
+     * Address: 0x00437E90 (FUN_00437E90,
+     * ?GetBaseEffect@CD3DEffect@Moho@@QAE?AV?$shared_ptr@VEffect@gal@gpg@@@boost@@XZ)
      *
      * What it does:
      * Returns a new reference to the gal effect.
      */
-    [[nodiscard]] boost::shared_ptr<gpg::gal::Effect> GetBaseEffect();
+    [[nodiscard]] std::shared_ptr<gpg::gal::Effect> GetBaseEffect();
 
     /**
-     * Address: 0x0042DA30 (FUN_0042DA30, ?SetTexture@CD3DEffect@Moho@@QAEXPBDV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@@Z)
+     * Address: 0x0042DA30 (FUN_0042DA30,
+     * ?SetTexture@CD3DEffect@Moho@@QAEXPBDV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@@Z)
      *
      * What it does:
      * Resolves one effect variable by name and binds one texture handle (or
      * clears the slot when texture is null).
      */
-    void SetTexture(const char* variableName, boost::shared_ptr<ID3DTextureSheet> texture);
+    void SetTexture(const char* variableName, std::shared_ptr<ID3DTextureSheet> texture);
 
   public:
-    AttachedLink* mAttachedLinks; // +0x00
-    TechniqueSet mTechniques;     // +0x04
-    msvc8::string mName;          // +0x10
-    msvc8::string mFile;          // +0x2C
-    boost::shared_ptr<gpg::gal::Effect> mEffect;                    // +0x48
-    boost::shared_ptr<gpg::gal::EffectTechnique> mCurrentTechnique; // +0x50
+    TechniqueSet mTechniques;                                       // +0x04
+    fa::string mName;                                               // +0x10
+    fa::string mFile;                                               // +0x2C
+    std::shared_ptr<gpg::gal::Effect> mEffect;                      // +0x48
+    std::shared_ptr<gpg::gal::EffectTechnique> mCurrentTechnique;   // +0x50
   };
 
-  static_assert(offsetof(CD3DEffect::Technique::Implementation, mName) == 0x04, "CD3DEffect::Technique::Implementation::mName offset must be 0x04");
-  static_assert(offsetof(CD3DEffect::Technique::Implementation, mIntegerAnnotations) == 0x20, "CD3DEffect::Technique::Implementation::mIntegerAnnotations offset must be 0x20");
-  static_assert(offsetof(CD3DEffect::Technique::Implementation, mStringAnnotations) == 0x2C, "CD3DEffect::Technique::Implementation::mStringAnnotations offset must be 0x2C");
-  static_assert(sizeof(CD3DEffect::Technique::Implementation) == 0x38, "CD3DEffect::Technique::Implementation size must be 0x38");
+  static_assert(
+    offsetof(CD3DEffect::Technique::Implementation, mName) == 0x04,
+    "CD3DEffect::Technique::Implementation::mName offset must be 0x04"
+  );
+  static_assert(
+    offsetof(CD3DEffect::Technique::Implementation, mIntegerAnnotations) == 0x20,
+    "CD3DEffect::Technique::Implementation::mIntegerAnnotations offset must be 0x20"
+  );
+  static_assert(
+    offsetof(CD3DEffect::Technique::Implementation, mStringAnnotations) == 0x2C,
+    "CD3DEffect::Technique::Implementation::mStringAnnotations offset must be 0x2C"
+  );
+  static_assert(
+    sizeof(CD3DEffect::Technique::Implementation) == 0x38,
+    "CD3DEffect::Technique::Implementation size must be 0x38"
+  );
 
   static_assert(offsetof(CD3DEffect::Technique, mName) == 0x04, "CD3DEffect::Technique::mName offset must be 0x04");
-  static_assert(offsetof(CD3DEffect::Technique, mImplementationStorage) == 0x20, "CD3DEffect::Technique::mImplementationStorage offset must be 0x20");
+  static_assert(
+    offsetof(CD3DEffect::Technique, mImplementations) == 0x20,
+    "CD3DEffect::Technique::mImplementations offset must be 0x20"
+  );
   static_assert(sizeof(CD3DEffect::Technique) == 0xC8, "CD3DEffect::Technique size must be 0xC8");
 
-  static_assert(offsetof(CD3DEffect, mAttachedLinks) == 0x00, "CD3DEffect::mAttachedLinks offset must be 0x00");
   static_assert(offsetof(CD3DEffect, mTechniques) == 0x04, "CD3DEffect::mTechniques offset must be 0x04");
   static_assert(offsetof(CD3DEffect, mName) == 0x10, "CD3DEffect::mName offset must be 0x10");
   static_assert(offsetof(CD3DEffect, mFile) == 0x2C, "CD3DEffect::mFile offset must be 0x2C");
   static_assert(offsetof(CD3DEffect, mEffect) == 0x48, "CD3DEffect::mEffect offset must be 0x48");
-  static_assert(
-    offsetof(CD3DEffect, mCurrentTechnique) == 0x50,
-    "CD3DEffect::mCurrentTechnique offset must be 0x50"
-  );
+  static_assert(offsetof(CD3DEffect, mCurrentTechnique) == 0x50, "CD3DEffect::mCurrentTechnique offset must be 0x50");
   static_assert(sizeof(CD3DEffect) == 0x58, "CD3DEffect size must be 0x58");
 } // namespace moho

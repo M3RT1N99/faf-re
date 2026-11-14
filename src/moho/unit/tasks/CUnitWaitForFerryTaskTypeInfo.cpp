@@ -24,7 +24,9 @@ namespace
     return sInstance;
   }
 
-  [[nodiscard]] gpg::RRef MakeCUnitWaitForFerryTaskRef(moho::CUnitWaitForFerryTask* const object)
+  [[nodiscard]] gpg::RRef MakeCUnitWaitForFerryTaskRef(
+    moho::CUnitWaitForFerryTask* const object
+  )
   {
     return gpg::RRef{object, gpg::RTypeOf<moho::CUnitWaitForFerryTask>()};
   }
@@ -47,11 +49,14 @@ namespace moho
   CUnitWaitForFerryTaskTypeInfo::~CUnitWaitForFerryTaskTypeInfo() = default;
 
   /**
-   * Address: 0x0060F8D0 (FUN_0060F8D0)
+   * Address: 0x0060F8D0 (FUN_0060F8D0: `mov eax, ... ; "CUnitWaitForFerryTask"`)
+   *
+   * Retail's name, without a namespace, so its saves load; saves from builds that said `moho::CUnitWaitForFerryTask`
+   * are read through `REF_CurrentTypeName`.
    */
   const char* CUnitWaitForFerryTaskTypeInfo::GetName() const
   {
-    return "moho::CUnitWaitForFerryTask";
+    return "CUnitWaitForFerryTask";
   }
 
   /**
@@ -75,7 +80,9 @@ namespace moho
   /**
    * Address: 0x00610530 (FUN_00610530, Moho::CUnitWaitForFerryTaskTypeInfo::AddBase_CCommandTask)
    */
-  void __stdcall CUnitWaitForFerryTaskTypeInfo::AddBase_CCommandTask(gpg::RType* const typeInfo)
+  void __stdcall CUnitWaitForFerryTaskTypeInfo::AddBase_CCommandTask(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<moho::CCommandTask>(typeInfo);
   }
@@ -96,19 +103,20 @@ namespace moho
    * Placement-constructs one wait-for-ferry task runtime lane in caller
    * storage and returns typed reflection reference.
    */
-  gpg::RRef CUnitWaitForFerryTaskTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CUnitWaitForFerryTaskTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<moho::CUnitWaitForFerryTask*>(objectStorage);
-    if (object) {
-      new (object) moho::CUnitWaitForFerryTask();
-    }
+    auto* const object = gpg::ConstructInStorage<moho::CUnitWaitForFerryTask>(objectStorage);
     return MakeCUnitWaitForFerryTaskRef(object);
   }
 
   /**
    * Address: 0x006103E0 (FUN_006103E0, Moho::CUnitWaitForFerryTaskTypeInfo::Delete)
    */
-  void CUnitWaitForFerryTaskTypeInfo::Delete(void* const objectStorage)
+  void CUnitWaitForFerryTaskTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<moho::CUnitWaitForFerryTask*>(objectStorage);
   }
@@ -116,7 +124,9 @@ namespace moho
   /**
    * Address: 0x006104A0 (FUN_006104A0, Moho::CUnitWaitForFerryTaskTypeInfo::Destruct)
    */
-  void CUnitWaitForFerryTaskTypeInfo::Destruct(void* const objectStorage)
+  void CUnitWaitForFerryTaskTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CUnitWaitForFerryTask*>(objectStorage);
     if (!object) {
@@ -135,8 +145,9 @@ namespace moho
   }
 } // namespace moho
 
-
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CUnitWaitForFerryTaskTypeInfo_a0b296, moho::register_CUnitWaitForFerryTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CUnitWaitForFerryTaskTypeInfo_a0b296,
+  moho::register_CUnitWaitForFerryTaskTypeInfo
+)

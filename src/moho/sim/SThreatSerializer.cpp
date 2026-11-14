@@ -1,5 +1,6 @@
 #include "moho/sim/SThreatSerializer.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -13,15 +14,16 @@ namespace moho
    * What it does:
    * Reads one 14-float `SThreat` record from archive.
    */
-  void SThreat::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SThreat::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr) {
       return;
     }
 
-    float* const lanes = reinterpret_cast<float*>(this);
-    for (std::size_t i = 0; i < 14u; ++i) {
-      archive->ReadFloat(&lanes[i]);
+    for (float* const field : Fields()) {
+      archive->ReadFloat(field);
     }
   }
 
@@ -31,16 +33,37 @@ namespace moho
    * What it does:
    * Writes one 14-float `SThreat` record to archive.
    */
-  void SThreat::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SThreat::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (archive == nullptr) {
       return;
     }
 
-    const float* const lanes = reinterpret_cast<const float*>(this);
-    for (std::size_t i = 0; i < 14u; ++i) {
-      archive->WriteFloat(lanes[i]);
+    for (const float* const field : const_cast<SThreat*>(this)->Fields()) {
+      archive->WriteFloat(*field);
     }
+  }
+
+  std::array<float*, 14> SThreat::Fields() noexcept
+  {
+    return {
+      &overallInfluence,
+      &influenceStructures,
+      &influenceStructuresNotMex,
+      &navalInfluence,
+      &landInfluence,
+      &airInfluence,
+      &experimentalInfluence,
+      &commanderInfluence,
+      &artilleryInfluence,
+      &antiAirInfluence,
+      &antiSurfaceInfluence,
+      &antiSubInfluence,
+      &economyInfluence,
+      &unknownInfluence,
+    };
   }
 } // namespace moho
 

@@ -5,7 +5,7 @@
 #include <map>
 #include <vector>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/core/containers/String.h"
 #include "legacy/containers/Map.h"
@@ -61,52 +61,6 @@ namespace moho
   };
 
   /**
-   * Address: 0x007E5150 (FUN_007E5150, boost::shared_ptr_MeshMaterial::shared_ptr_MeshMaterial)
-   *
-   * What it does:
-   * Constructs one `shared_ptr<MeshMaterial>` from one raw material pointer
-   * lane.
-   */
-  boost::shared_ptr<MeshMaterial>* ConstructSharedMeshMaterialFromRaw(
-    boost::shared_ptr<MeshMaterial>* outMaterial,
-    MeshMaterial* material
-  );
-
-  /**
-   * Address: 0x007E5420 (FUN_007E5420, boost::shared_ptr_Mesh::shared_ptr_Mesh)
-   *
-   * What it does:
-   * Constructs one `shared_ptr<Mesh>` from one raw mesh pointer lane.
-   */
-  boost::shared_ptr<Mesh>* ConstructSharedMeshFromRaw(
-    boost::shared_ptr<Mesh>* outMesh,
-    Mesh* mesh
-  );
-
-  /**
-   * Address: 0x007E6280 (FUN_007E6280, boost::shared_ptr_MeshBatch::shared_ptr_MeshBatch)
-   *
-   * What it does:
-   * Constructs one `shared_ptr<MeshBatch>` from one raw batch pointer lane.
-   */
-  boost::shared_ptr<MeshBatch>* ConstructSharedMeshBatchFromRaw(
-    boost::shared_ptr<MeshBatch>* outBatch,
-    MeshBatch* batch
-  );
-
-  /**
-   * Address: 0x007E6CE0 (FUN_007E6CE0)
-   *
-   * What it does:
-   * Refreshes interpolation state and copies `MeshInstance::curPose` into
-   * `outPose`, retaining the shared control lane.
-   */
-  boost::shared_ptr<CAniPose>* CaptureMeshInstanceCurrentPose(
-    boost::shared_ptr<CAniPose>* outPose,
-    MeshInstance* meshInstance
-  );
-
-  /**
    * Address: 0x007E6D20 (FUN_007E6D20, sub_7E6D20)
    *
    * What it does:
@@ -115,7 +69,6 @@ namespace moho
    * `HardwareMeshBatch::FillBatch`'s two per-instance staging writes.
    */
   VMatrix4* CopyTransform4x4(VMatrix4* destination, const VMatrix4& source);
-
 
   class MeshMaterial
   {
@@ -157,7 +110,8 @@ namespace moho
      * What it does:
      * Builds one material from one mesh LOD blueprint descriptor.
      */
-    static boost::shared_ptr<MeshMaterial> Create(const RMeshBlueprintLOD& blueprintLod, CResourceWatcher* resourceWatcher);
+    static std::shared_ptr<MeshMaterial>
+    Create(const RMeshBlueprintLOD& blueprintLod, CResourceWatcher* resourceWatcher);
 
     /**
      * Address: 0x007DC1B0 (FUN_007DC1B0,
@@ -166,13 +120,13 @@ namespace moho
      * What it does:
      * Creates one mesh material and resolves per-texture sheet handles from paths.
      */
-    static boost::shared_ptr<MeshMaterial> Create(
-      const msvc8::string& shaderName,
-      const msvc8::string& albedoName,
-      const msvc8::string& normalsName,
-      const msvc8::string& specularName,
-      const msvc8::string& lookupName,
-      const msvc8::string& secondaryName,
+    static std::shared_ptr<MeshMaterial> Create(
+      const fa::string& shaderName,
+      const fa::string& albedoName,
+      const fa::string& normalsName,
+      const fa::string& specularName,
+      const fa::string& lookupName,
+      const fa::string& secondaryName,
       CResourceWatcher* resourceWatcher
     );
 
@@ -186,23 +140,23 @@ namespace moho
     // type that both producers and the `ShaderVar::GetTexture` consumer accept
     // is their shared `ID3DTextureSheet` base, which sits at offset 0 in each,
     // so the raw pointer stored is the same word the binary stores.
-    msvc8::string mShaderAnnotation;                      // +0x04
-    boost::shared_ptr<ID3DTextureSheet> mAlbedoSheet;      // +0x20
-    boost::shared_ptr<ID3DTextureSheet> mNormalsSheet;     // +0x28
-    boost::shared_ptr<ID3DTextureSheet> mSpecularSheet;    // +0x30
-    boost::shared_ptr<ID3DTextureSheet> mLookupSheet;      // +0x38
-    boost::shared_ptr<ID3DTextureSheet> mSecondarySheet;   // +0x40
-    boost::shared_ptr<ID3DTextureSheet> mEnvironmentSheet; // +0x48
-    std::int32_t mShaderIndex;                            // +0x50
+    fa::string mShaderAnnotation;                          // +0x04
+    std::shared_ptr<ID3DTextureSheet> mAlbedoSheet;        // +0x20
+    std::shared_ptr<ID3DTextureSheet> mNormalsSheet;       // +0x28
+    std::shared_ptr<ID3DTextureSheet> mSpecularSheet;      // +0x30
+    std::shared_ptr<ID3DTextureSheet> mLookupSheet;        // +0x38
+    std::shared_ptr<ID3DTextureSheet> mSecondarySheet;     // +0x40
+    std::shared_ptr<ID3DTextureSheet> mEnvironmentSheet;   // +0x48
+    std::int32_t mShaderIndex;                             // +0x50
     // The two technique names the cartographic and depth passes resolve from
     // `mShaderAnnotation` the first time they reach this material
     // (`"cartographicTechnique"` in RenderCartographic 0x007DFF30,
     // `"depthTechnique"` in RenderDepth 0x007E03B0), each with the byte that
     // records it was looked up -- an empty name is a valid, cached answer.
-    msvc8::string mCartographicTechnique;                 // +0x54
-    msvc8::string mDepthTechnique;                        // +0x70
-    bool mCartographicTechniqueResolved;                  // +0x8C
-    bool mDepthTechniqueResolved;                         // +0x8D
+    fa::string mCartographicTechnique;   // +0x54
+    fa::string mDepthTechnique;          // +0x70
+    bool mCartographicTechniqueResolved; // +0x8C
+    bool mDepthTechniqueResolved;        // +0x8D
     std::uint8_t mPad8E_8F[0x02]{};
   };
 
@@ -228,8 +182,8 @@ namespace moho
      */
     MeshLOD(
       const RMeshBlueprintLOD& blueprintLod,
-      boost::shared_ptr<RScmResource> previousResource,
-      boost::shared_ptr<MeshMaterial> material,
+      std::shared_ptr<RScmResource> previousResource,
+      std::shared_ptr<MeshMaterial> material,
       CResourceWatcher* ownerWatcher
     );
 
@@ -241,7 +195,7 @@ namespace moho
      * Initializes one runtime LOD from pre-resolved resource/material shared
      * pointers without blueprint-load side effects.
      */
-    MeshLOD(boost::shared_ptr<RScmResource> resource, boost::shared_ptr<MeshMaterial> material);
+    MeshLOD(std::shared_ptr<RScmResource> resource, std::shared_ptr<MeshMaterial> material);
 
     /**
      * Address: 0x007DCD60 (FUN_007DCD60, ??1MeshLOD@Moho@@UAE@XZ)
@@ -256,8 +210,8 @@ namespace moho
      */
     void Load(
       const RMeshBlueprintLOD& blueprintLod,
-      boost::shared_ptr<RScmResource> previousResource,
-      boost::shared_ptr<MeshMaterial> material,
+      std::shared_ptr<RScmResource> previousResource,
+      std::shared_ptr<MeshMaterial> material,
       CResourceWatcher* ownerWatcher
     );
 
@@ -291,7 +245,7 @@ namespace moho
      * runtime instancing is enabled — then returns a retained copy of the cached
      * handle. When instancing is unavailable the cached handle is left null.
      */
-    boost::shared_ptr<MeshBatch>& GetStaticBatch(boost::shared_ptr<MeshBatch>& outBatch);
+    std::shared_ptr<MeshBatch>& GetStaticBatch(std::shared_ptr<MeshBatch>& outBatch);
 
     /**
      * Address: 0x007DD420 (FUN_007DD420,
@@ -306,7 +260,7 @@ namespace moho
      * first use, then returns a retained copy of the cached handle. Identical to
      * GetStaticBatch except it enables the reference-resource bone remap.
      */
-    boost::shared_ptr<MeshBatch>& GetSkinnedBatch(boost::shared_ptr<MeshBatch>& outBatch);
+    std::shared_ptr<MeshBatch>& GetSkinnedBatch(std::shared_ptr<MeshBatch>& outBatch);
 
     /**
      * Address: 0x007DD5D0 (FUN_007DD5D0, ?SetCutoff@MeshLOD@Moho@@QAEXM@Z)
@@ -321,15 +275,15 @@ namespace moho
     std::uint8_t pad_05_07[0x03]{};
     float cutoff;                                     // +0x08
     MeshMaterial mat;                                 // +0x0C
-    boost::shared_ptr<RScmResource> previousResource; // +0x9C
-    boost::shared_ptr<RScmResource> res;              // +0xA4
+    std::shared_ptr<RScmResource> previousResource;   // +0x9C
+    std::shared_ptr<RScmResource> res;                // +0xA4
     std::uint8_t scrolling;                           // +0xAC
     std::uint8_t occlude;                             // +0xAD
     std::uint8_t silhouette;                          // +0xAE
     std::uint8_t pad_AF{};
-    boost::shared_ptr<RMeshBlueprintLOD> lodBlueprintCopy; // +0xB0
-    boost::shared_ptr<MeshBatch> staticBatch;              // +0xB8
-    boost::shared_ptr<MeshBatch> dynamicBatch;             // +0xC0
+    std::shared_ptr<RMeshBlueprintLOD> lodBlueprintCopy; // +0xB0
+    std::shared_ptr<MeshBatch> staticBatch;              // +0xB8
+    std::shared_ptr<MeshBatch> dynamicBatch;             // +0xC0
   };
 
   class Mesh : public CResourceWatcher
@@ -348,7 +302,7 @@ namespace moho
      * Address: 0x007DD680 (FUN_007DD680,
      * ??0Mesh@Moho@@QAE@PBVRMeshBlueprint@1@V?$shared_ptr@VMeshMaterial@Moho@@@boost@@@Z)
      */
-    Mesh(const RMeshBlueprint* blueprint, boost::shared_ptr<MeshMaterial> material);
+    Mesh(const RMeshBlueprint* blueprint, std::shared_ptr<MeshMaterial> material);
 
     /**
      * Address: 0x007DD750 (FUN_007DD750,
@@ -357,7 +311,7 @@ namespace moho
      * What it does:
      * Initializes a mesh with one pre-resolved resource/material LOD lane.
      */
-    Mesh(boost::shared_ptr<RScmResource> resource, boost::shared_ptr<MeshMaterial> material);
+    Mesh(std::shared_ptr<RScmResource> resource, std::shared_ptr<MeshMaterial> material);
 
     /**
      * Address: 0x007DD880 (FUN_007DD880, ??1Mesh@Moho@@UAE@XZ)
@@ -373,7 +327,7 @@ namespace moho
      * Address: 0x007DDB50 (FUN_007DDB50,
      * ?Load@Mesh@Moho@@AAEXPBVRMeshBlueprint@2@V?$shared_ptr@VMeshMaterial@Moho@@@boost@@@Z)
      */
-    void Load(const RMeshBlueprint* blueprint, boost::shared_ptr<MeshMaterial> material);
+    void Load(const RMeshBlueprint* blueprint, std::shared_ptr<MeshMaterial> material);
 
     /**
      * Address: 0x007DDAC0 (FUN_007DDAC0)
@@ -420,7 +374,7 @@ namespace moho
      * Address: 0x007DDC50 (FUN_007DDC50,
      * ?CreateLOD@Mesh@Moho@@AAEPAVMeshLOD@2@ABVRMeshBlueprintLOD@2@V?$shared_ptr@VMeshMaterial@Moho@@@boost@@@Z)
      */
-    MeshLOD* CreateLOD(const RMeshBlueprintLOD& blueprintLod, boost::shared_ptr<MeshMaterial> material);
+    MeshLOD* CreateLOD(const RMeshBlueprintLOD& blueprintLod, std::shared_ptr<MeshMaterial> material);
 
     /**
      * Address: 0x007DDE50 (FUN_007DDE50,
@@ -429,19 +383,19 @@ namespace moho
      * What it does:
      * Adds one direct resource/material-backed mesh LOD entry.
      */
-    MeshLOD* CreateLOD(boost::shared_ptr<RScmResource> resource, boost::shared_ptr<MeshMaterial> material);
+    MeshLOD* CreateLOD(std::shared_ptr<RScmResource> resource, std::shared_ptr<MeshMaterial> material);
 
     /**
      * Address: 0x007DD950 (FUN_007DD950, ?GetResource@Mesh@Moho@@QBE?AV?$shared_ptr@VRScmResource@Moho@@@boost@@H@Z)
      */
-    [[nodiscard]] boost::shared_ptr<RScmResource> GetResource(std::int32_t lodIndex) const;
+    [[nodiscard]] std::shared_ptr<RScmResource> GetResource(std::int32_t lodIndex) const;
 
   public:
-    const RMeshBlueprint* bp;                  // +0x20
-    boost::shared_ptr<MeshMaterial> material;  // +0x24
-    std::uint32_t unk2C;                       // +0x2C
-    msvc8::vector<MeshLOD*> lods;              // +0x30
-    std::uint32_t unk3C;                       // +0x3C
+    const RMeshBlueprint* bp;                 // +0x20
+    std::shared_ptr<MeshMaterial> material;   // +0x24
+    std::uint32_t unk2C;                      // +0x2C
+    fa::vector<MeshLOD*> lods;                // +0x30
+    std::uint32_t unk3C;                      // +0x3C
   };
 
   class MeshKey
@@ -451,7 +405,7 @@ namespace moho
      * Address: 0x007DAF00 (FUN_007DAF00,
      * ??0MeshKey@Moho@@QAE@PBVRMeshBlueprint@1@V?$shared_ptr@VMeshMaterial@Moho@@@boost@@@Z)
      */
-    MeshKey(const RMeshBlueprint* blueprint, boost::shared_ptr<MeshMaterial> meshMaterial);
+    MeshKey(const RMeshBlueprint* blueprint, std::shared_ptr<MeshMaterial> meshMaterial);
 
     /**
      * Address: 0x007DF6E0 (FUN_007DF6E0, copy ctor)
@@ -483,18 +437,21 @@ namespace moho
 
   public:
     const RMeshBlueprint* blueprint;              // +0x04
-    boost::shared_ptr<MeshMaterial> meshMaterial; // +0x08
+    std::shared_ptr<MeshMaterial> meshMaterial;   // +0x08
   };
 
   /**
-   * Comparator for `MeshRendererMeshCacheTree`'s `msvc8::map` instantiation.
+   * Comparator for `MeshRendererMeshCacheTree`'s `fa::map` instantiation.
    * Stateless, so the tree's empty-base optimisation of the comparator
-   * (`msvc8::detail::rb_compare_carrier`) still applies, matching
+   * (`fa::detail::rb_compare_carrier`) still applies, matching
    * `MeshBatchKeyLess` (`MeshBatchKey.h`) for the sibling batch-bucket tree.
    */
   struct MeshKeyLess
   {
-    [[nodiscard]] bool operator()(const MeshKey& lhs, const MeshKey& rhs) const noexcept
+    [[nodiscard]] bool operator()(
+      const MeshKey& lhs,
+      const MeshKey& rhs
+    ) const noexcept
     {
       return lhs.LessThan(rhs);
     }
@@ -520,7 +477,7 @@ namespace moho
       std::int32_t gameTick,
       std::int32_t color,
       bool isStaticPose,
-      boost::shared_ptr<Mesh> mesh
+      std::shared_ptr<Mesh> mesh
     );
 
     /**
@@ -537,7 +494,7 @@ namespace moho
     /**
      * Address: 0x007DADD0 (FUN_007DADD0, ?GetMesh@MeshInstance@Moho@@QBE?AV?$shared_ptr@VMesh@Moho@@@boost@@XZ)
      */
-    [[nodiscard]] boost::shared_ptr<Mesh> GetMesh() const;
+    [[nodiscard]] std::shared_ptr<Mesh> GetMesh() const;
 
     /**
      * Address: 0x007DE6A0 (FUN_007DE6A0, ?SetCurrentInterpolant@MeshInstance@Moho@@SAXM@Z)
@@ -557,31 +514,6 @@ namespace moho
     void Cull(bool hidden);
 
     /**
-     * Address: 0x007DE6D0 (FUN_007DE6D0, ?Reflect@MeshInstance@Moho@@QAEX_N@Z)
-     *
-     * What it does:
-     * Clears one per-instance reflection-visibility flag.
-     */
-    void Reflect(bool reflected);
-
-    /**
-     * Address: 0x007DE880 (FUN_007DE880, ?SetParameter@MeshInstance@Moho@@QAEXW4PARAM@MeshMaterial@2@M@Z)
-     *
-     * What it does:
-     * Writes one shader parameter lane selected by `MeshMaterial::PARAM`.
-     */
-    void SetParameter(MeshMaterial::PARAM parameter, float value);
-
-    /**
-     * Address: 0x007DE850 (FUN_007DE850, ?SetInterpolantScale@MeshInstance@Moho@@QAEXM@Z)
-     *
-     * What it does:
-     * Stores one per-instance interpolation scale and invalidates cached
-     * interpolant lane for refresh.
-     */
-    void SetInterpolantScale(float interpolantScale);
-
-    /**
      * Address: 0x007DE8C0 (FUN_007DE8C0, ?SetScale@MeshInstance@Moho@@QAEXABV?$Vector3@M@Wm3@@@Z)
      *
      * What it does:
@@ -596,14 +528,6 @@ namespace moho
      * Stores one packed per-instance color value.
      */
     void SetColor(std::uint32_t color);
-
-    /**
-     * Address: 0x007DE900 (FUN_007DE900, ?SetScroll@MeshInstance@Moho@@QAEXABV?$Vector2@M@Wm3@@0@Z)
-     *
-     * What it does:
-     * Stores two texture-scroll vector lanes for this mesh instance.
-     */
-    void SetScroll(const Wm3::Vec2f& scroll1, const Wm3::Vec2f& scroll2);
 
     /**
      * Address: 0x007DF140 (FUN_007DF140, ?ResetBatches@MeshInstance@Moho@@QAEXXZ)
@@ -652,8 +576,8 @@ namespace moho
       const VTransform& startTransform,
       const VTransform& endTransform,
       bool forceRefresh,
-      boost::shared_ptr<CAniPose> startPoseArg,
-      boost::shared_ptr<CAniPose> endPoseArg
+      std::shared_ptr<CAniPose> startPoseArg,
+      std::shared_ptr<CAniPose> endPoseArg
     );
 
     /**
@@ -667,8 +591,8 @@ namespace moho
       const VTransform& startTransform,
       const VTransform& endTransform,
       bool forceRefresh,
-      const boost::shared_ptr<CAniPose>& startPoseArg,
-      const boost::shared_ptr<CAniPose>& endPoseArg
+      const std::shared_ptr<CAniPose>& startPoseArg,
+      const std::shared_ptr<CAniPose>& endPoseArg
     );
 
     /// Engine addition: `SetStance`'s last step - republish the swept stance bounds into `db`.
@@ -686,6 +610,14 @@ namespace moho
      */
     void UpdateInterpolatedFields();
 
+    /// Engine addition: whether UpdateInterpolatedFields would do work now (its early-out test, inverted).
+    [[nodiscard]] bool InterpolatedFieldsStale() const noexcept
+    {
+      return !(
+        sCurrentInterpolant == currInterpolant || (frameCounter == sFrameCounter && interpolationStateFresh != 0u)
+      );
+    }
+
     /**
      * Address: 0x007DAE20 (FUN_007DAE20, Moho::MeshInstance::GetInterpolatedPos)
      *
@@ -693,14 +625,6 @@ namespace moho
      * Refreshes interpolation state and returns current interpolated position.
      */
     [[nodiscard]] Wm3::Vec3f GetInterpolatedPos() const;
-
-    /**
-     * Address: 0x007DE730 (FUN_007DE730, ?GetDebugBoneCount@MeshInstance@Moho@@QBEHXZ)
-     *
-     * What it does:
-     * Returns debug skeleton bone count for static-pose meshes.
-     */
-    [[nodiscard]] std::int32_t GetDebugBoneCount() const;
 
     /**
      * Address: 0x007DE7A0 (FUN_007DE7A0,
@@ -717,7 +641,7 @@ namespace moho
      * reference. Otherwise (non-static or locked) returns an empty
      * shared handle.
      */
-    [[nodiscard]] boost::shared_ptr<CAniPose> ComputeDebugPose();
+    [[nodiscard]] std::shared_ptr<CAniPose> ComputeDebugPose();
 
     /**
      * Address: 0x007DEFC0 (FUN_007DEFC0,
@@ -731,13 +655,13 @@ namespace moho
 
   public:
     // +0x04..+0x0B: the TDatListItem<MeshInstance, void> base.
-    SpatialDBEntry<MeshInstance> db; // +0x0C
-    boost::shared_ptr<Mesh> mesh; // +0x14
-    std::int32_t color;           // +0x1C
-    float meshColor;              // +0x20
+    SpatialDBEntry<MeshInstance> db;     // +0x0C
+    std::shared_ptr<Mesh> mesh;          // +0x14
+    std::int32_t color;                  // +0x1C
+    float meshColor;                     // +0x20
     const GeomCamera3* visibilityCamera; // +0x24, null or the camera that owns this clutter
-    std::uint8_t isHidden;        // +0x28
-    std::uint8_t isReflected;     // +0x29
+    std::uint8_t isHidden;               // +0x28
+    std::uint8_t isReflected;            // +0x29
     std::uint8_t pad_2A_2B[0x02]{};
     std::int32_t gameTick;               // +0x2C
     float uniformScale;                  // +0x30
@@ -751,10 +675,12 @@ namespace moho
     std::uint8_t hasStanceUpdatePending; // +0xA4
     std::uint8_t isStaticPose;           // +0xA5
     std::uint8_t isLocked;               // +0xA6
-    std::uint8_t pad_A7{};
-    boost::shared_ptr<CAniPose> startPose; // +0xA8
-    boost::shared_ptr<CAniPose> endPose;   // +0xB0
-    boost::shared_ptr<CAniPose> curPose;   // +0xB8
+    // Engine addition in the padding (ren_MeshPoseStill): curPose already holds startPose and endPose,
+    // which match, so blending them again would give the same pose.
+    std::uint8_t poseStill{};              // +0xA7
+    std::shared_ptr<CAniPose> startPose;   // +0xA8
+    std::shared_ptr<CAniPose> endPose;     // +0xB0
+    std::shared_ptr<CAniPose> curPose;     // +0xB8
     float dissolve;                        // +0xC0
     float parameters;                      // +0xC4
     float fractionCompleteParameter;       // +0xC8
@@ -771,8 +697,8 @@ namespace moho
      * the "already refreshed this frame" half of `UpdateInterpolatedFields`'
      * guard would never fire across half of each 256-frame wrap.
      */
-    std::uint8_t frameCounter;             // +0xD8
-    std::uint8_t interpolationStateFresh;  // +0xD9
+    std::uint8_t frameCounter;            // +0xD8
+    std::uint8_t interpolationStateFresh; // +0xD9
     std::uint8_t pad_DA_DB[0x02]{};
     float currInterpolant;    // +0xDC
     Wm3::Sphere3f sphere;     // +0xE0
@@ -809,7 +735,7 @@ namespace moho
    * `weak_ptr<Mesh>::lock()` - a real owning `shared_ptr` member would
    * never need that check.
    *
-   * Routed through the canonical `msvc8::map<K,T,Less>` (`legacy/containers/
+   * Routed through the canonical `fa::map<K,T,Less>` (`legacy/containers/
    * Map.h`/`RbTree.h`) rather than a hand-rolled tree: this instantiation's
    * `buy_node`/`buy_head`/`insert_unique`/`insert_at`/`link_and_rebalance`/
    * `rb_decrement`/`lower_bound_node`/`find_node`/`~rb_tree()` members are
@@ -817,11 +743,11 @@ namespace moho
    * `0x007E6090`, `0x007E4770`, `0x007E2B50`, `0x007E5B20`, `0x007E5DF0`,
    * `0x007E60F0`, `0x007E6050`, `0x007E5C00`, `0x007DF2D0`) -- this is the
    * same node/head layout (12-byte `{proxy, head, size}` header, EBO'd
-   * comparator) every other real `msvc8::map`/`msvc8::set` instantiation in
+   * comparator) every other real `fa::map`/`fa::set` instantiation in
    * this codebase already uses, matching `MeshBatchBucketTree`
    * (`MeshBatchKey.h`), this file's own sibling batch-bucket tree.
    */
-  using MeshRendererMeshCacheTree = msvc8::map<MeshKey, boost::weak_ptr<Mesh>, MeshKeyLess>;
+  using MeshRendererMeshCacheTree = fa::map<MeshKey, std::weak_ptr<Mesh>, MeshKeyLess>;
 
   /**
    * Process-wide mesh-render shader-constant lane. The binary holds each of
@@ -853,15 +779,15 @@ namespace moho
     ShaderVar shadowFill;         // "shadowFill"          @0x010BEA60
     ShaderVar surfaceElevation;   // "surfaceElevation"    @0x010BECE8
     ShaderVar abyssElevation;     // "abyssElevation"      @0x010BE6B8
-    ShaderVar minimumElevation;   // "minimumElevation"    @0x010BED78 (register_ShaderVarMeshMinimumElevation 0x00BE0780)
-    ShaderVar maximumElevation;   // "maximumElevation"    @0x010BE9D0 (register_ShaderVarMeshMaximumElevation 0x00BE07A0)
-    ShaderVar waterRamp;          // "waterRamp"           @0x010BE988
-    ShaderVar shadowsEnabled;     // "shadowsEnabled"      @0x010BEE08
-    ShaderVar shadowMatrix;       // "shadowMatrix"        @0x010BEA18
-    ShaderVar shadowTexture;      // "shadowTexture"       @0x010BED30
-    ShaderVar shadowBias;         // "shadowBias"          @0x010BEB80
-    ShaderVar shadowSize;         // "shadowSize"          @0x010BE790
-    ShaderVar shadowBlur;         // "shadowBlur"          @0x010BEAF0
+    ShaderVar minimumElevation; // "minimumElevation"    @0x010BED78 (register_ShaderVarMeshMinimumElevation 0x00BE0780)
+    ShaderVar maximumElevation; // "maximumElevation"    @0x010BE9D0 (register_ShaderVarMeshMaximumElevation 0x00BE07A0)
+    ShaderVar waterRamp;        // "waterRamp"           @0x010BE988
+    ShaderVar shadowsEnabled;   // "shadowsEnabled"      @0x010BEE08
+    ShaderVar shadowMatrix;     // "shadowMatrix"        @0x010BEA18
+    ShaderVar shadowTexture;    // "shadowTexture"       @0x010BED30
+    ShaderVar shadowBias;       // "shadowBias"          @0x010BEB80
+    ShaderVar shadowSize;       // "shadowSize"          @0x010BE790
+    ShaderVar shadowBlur;       // "shadowBlur"          @0x010BEAF0
 
     MeshShaderVarSet();
   };
@@ -895,13 +821,13 @@ namespace moho
    * reserve helpers (0x007E9130 / 0x007E96A0).
    */
   /**
-   * Layout-identical to `msvc8::vector<SkinPaletteEntry>` (`myProxy_@+0x00`,
+   * Layout-identical to `fa::vector<SkinPaletteEntry>` (`myProxy_@+0x00`,
    * `first_@+0x04`, `last_@+0x08`, `end_@+0x0C`) -- not a bespoke type. What
    * looked like an unused leading "reserved header" word is the vector's own
    * debug-proxy slot, which the binary never reads and the game's builds
    * leave out (legacy/containers/Layout.h).
    */
-  struct MeshShaderPaletteBuffer : msvc8::vector<SkinPaletteEntry>
+  struct MeshShaderPaletteBuffer : fa::vector<SkinPaletteEntry>
   {
     /// Max bone count the skinning palette is reserved to (0x50 entries).
     static constexpr std::uint32_t kPaletteCapacity = 0x50;
@@ -938,25 +864,6 @@ namespace moho
   {
     MeshShaderPaletteBuffer mPalette; // +0x48
   };
-
-  /**
-   * Address: 0x007E96A0 (FUN_007E96A0, sub_7E96A0)
-   *
-   * IDA signature:
-   * float* __usercall sub_7E96A0@<eax>(float* dest@<eax>, float* first@<ecx>,
-   *                                    float* last@<esi>);
-   *
-   * What it does:
-   * Uninitialized-move relocation for palette entries: copies each 16-byte
-   * `SkinPaletteEntry` in `[first, last)` into `dest`, four floats at a time, and
-   * returns the one-past-end destination pointer. Used by the palette grow path
-   * when the backing storage is reallocated.
-   */
-  SkinPaletteEntry* RelocatePaletteEntries(
-    SkinPaletteEntry* dest,
-    SkinPaletteEntry* first,
-    SkinPaletteEntry* last
-  );
 
   /**
    * Address: 0x007E9050 (FUN_007E9050, register_MeshShaderVar)
@@ -1009,11 +916,91 @@ namespace moho
   static_assert(sizeof(SkinPaletteEntry) == 0x10, "SkinPaletteEntry size must be 0x10");
   static_assert(sizeof(MeshShaderPaletteBuffer) == 0x10, "MeshShaderPaletteBuffer size must be 0x10");
   static_assert(
-    sizeof(MeshShaderPaletteBuffer) == sizeof(msvc8::vector<SkinPaletteEntry>),
-    "MeshShaderPaletteBuffer must add no state beyond msvc8::vector<SkinPaletteEntry>"
+    sizeof(MeshShaderPaletteBuffer) == sizeof(fa::vector<SkinPaletteEntry>),
+    "MeshShaderPaletteBuffer must add no state beyond fa::vector<SkinPaletteEntry>"
   );
   static_assert(offsetof(MeshShaderPaletteVar, mPalette) == 0x48, "MeshShaderPaletteVar::mPalette offset must be 0x48");
   static_assert(sizeof(MeshShaderPaletteVar) == 0x58, "MeshShaderPaletteVar size must be 0x58");
+
+  /**
+   * Engine addition (water bodies, .plans/water-levels/PLAN.md): with `set`, mirrored mesh passes
+   * (`MeshRenderer::Render` with flags 2) reflect at `elevation` instead of the sea, for a lake's
+   * reflection; without, at the sea as in the binary.
+   */
+  void MESH_SetMirrorElevation(bool set, float elevation) noexcept;
+
+  /**
+   * Engine addition (ren_ShadowCasterCull): the part of the world the shadow map shades this frame, the
+   * view frustum cut at the shadow distance (planes with outward normals, `n.x - constant > 0` outside)
+   * and the lowest terrain in it. While `active`, MeshRenderer::Batch drops a mesh whose bounding
+   * sphere, moved along the light down to that terrain, stays outside one of the planes: its shadow
+   * can't fall on anything in view. `margin` widens every sphere so the blur and the filter around a
+   * shadow's edge still see the casters just outside.
+   */
+  struct ShadowCasterRegion
+  {
+    static constexpr std::uint32_t kMaxPlanes = 8U;
+    bool active = false;
+    std::uint32_t planeCount = 0U;
+    float planes[kMaxPlanes][4]{}; // normal x, y, z, constant
+    float light[3]{};              // the direction the light travels, unit length, pointing down
+    float floorY = 0.0f;
+    float margin = 0.0f;
+
+    [[nodiscard]] bool MayShadow(
+      const Wm3::Sphere3f& sphere
+    ) const noexcept
+    {
+      if (light[1] > -0.05f) {
+        return true; // a light this low reaches far; keep every caster
+      }
+      const float radius = sphere.Radius + margin;
+      const float drop = sphere.Center.y + radius - floorY;
+      const float reach = (drop > 0.0f ? drop : 0.0f) / -light[1];
+      for (std::uint32_t index = 0U; index < planeCount; ++index) {
+        const float* const plane = planes[index];
+        const float distance =
+          plane[0] * sphere.Center.x + plane[1] * sphere.Center.y + plane[2] * sphere.Center.z - plane[3];
+        const float along = plane[0] * light[0] + plane[1] * light[1] + plane[2] * light[2];
+        const float nearest = distance + (along < 0.0f ? reach * along : 0.0f);
+        if (nearest > radius) {
+          return false;
+        }
+      }
+      return true;
+    }
+  };
+
+  /// Set by Shadow::RenderShadowMap around its mesh batches; inactive otherwise.
+  extern ShadowCasterRegion gShadowCasterRegion;
+
+  /**
+   * FAF addition (ren_RayTracedShadows, render/RayScene.cpp): true while the shadow pass leaves materials whose
+   * depth technique is plain "Depth" out of the map, because rays shadow them.
+   */
+  extern bool gMeshDepthSkipsTraced;
+  /**
+   * FAF addition (ren_RayAlphaShadows): true while the shadow pass also leaves the alpha-tested materials ("DepthClip",
+   * "UndulatingDepthClip": trees) out of the map, because rays shadow them too.
+   */
+  extern bool gMeshDepthSkipsAlpha;
+  /**
+   * FAF addition: the material takes part in the depth pass with the plain "Depth" technique (opaque) and is not a
+   * unit under construction (MeshMaterialUnderConstruction).
+   */
+  bool MeshMaterialTraced(MeshMaterial& material);
+  /** FAF addition: a build shader (UEFBuild, CybranBuild, AeonBuild, SeraphimBuild...): a unit under construction. */
+  bool MeshMaterialUnderConstruction(const MeshMaterial& material);
+  /** FAF addition: the material's depth technique cuts it out by its albedo's alpha ("DepthClip",
+   * "UndulatingDepthClip"). */
+  bool MeshMaterialAlphaTraced(MeshMaterial& material);
+
+  /**
+   * The colour MeshRenderer::RenderThumbnail clears its target to: retail's opaque black (0xFF000000, FUN_007E11C0)
+   * unless the map editor sets another for one render (a unit icon drawn on black and on white keys its background
+   * out). The game never changes it.
+   */
+  extern std::uint32_t ren_ThumbnailClearColor;
 
   class MeshRenderer
   {
@@ -1069,7 +1056,7 @@ namespace moho
       const RMeshBlueprint* blueprint,
       const Wm3::Vec3f& scale,
       bool isStaticPose,
-      boost::shared_ptr<MeshMaterial> material
+      std::shared_ptr<MeshMaterial> material
     );
 
     /**
@@ -1081,7 +1068,7 @@ namespace moho
       std::int32_t color,
       const Wm3::Vec3f& scale,
       bool isStaticPose,
-      boost::shared_ptr<Mesh> mesh
+      std::shared_ptr<Mesh> mesh
     );
 
     /**
@@ -1096,10 +1083,10 @@ namespace moho
     MeshInstance* CreateMeshInstance(
       std::int32_t gameTick,
       std::int32_t color,
-      boost::shared_ptr<RScmResource> resource,
+      std::shared_ptr<RScmResource> resource,
       const Wm3::Vec3f& scale,
       bool isStaticPose,
-      boost::shared_ptr<MeshMaterial> material,
+      std::shared_ptr<MeshMaterial> material,
       float lodCutoff
     );
 
@@ -1152,6 +1139,29 @@ namespace moho
      */
     void Batch(std::int32_t gameTick, float deltaFrame, const GeomCamera3& camera, const Vector4f& fadePlane);
 
+    /// Engine addition (ren_ShadowTileReuse): one bucket of a saved batch.
+    struct SavedBucket
+    {
+      MeshBatchKey key;
+      std::vector<MeshInstance*> instances;
+    };
+
+    /// Engine addition (ren_ShadowTileReuse): copies the non-empty buckets of `meshes`.
+    void SaveBatch(std::vector<SavedBucket>& out) const;
+
+    /**
+     * Engine addition (ren_ShadowTileReuse): what Batch gives for `camera` when an earlier Batch of the
+     * same frame used a camera volume holding all of `camera`'s and the same fade plane. Every gate in
+     * Batch but the last sphere test is the same for both, so the saved buckets filtered by that test
+     * (and the clutter's camera) are the same instances, without a second spatial query or LOD walk.
+     */
+    void BatchFromSaved(
+      std::int32_t gameTick,
+      float deltaFrame,
+      const GeomCamera3& camera,
+      const std::vector<SavedBucket>& saved
+    );
+
     /**
      * Address: 0x007E11C0 (FUN_007E11C0,
      * ?RenderThumbnail@MeshRenderer@Moho@@QAEXABVGeomCamera3@2@PAVMeshInstance@2@PAVID3DRenderTarget@2@PAVID3DDepthStencil@2@@Z)
@@ -1203,16 +1213,12 @@ namespace moho
      * Renders every mesh instance in the cache with skeleton-debug overlays
      * and a shared prim batcher state.
      */
-    void RenderSkeletons(CD3DPrimBatcher* debugBatcher, CDebugCanvas* debugCanvas, const GeomCamera3& camera, bool showBoneNames);
-
-    /**
-     * Address: 0x007E2290 (FUN_007E2290, Moho::MeshRenderer::RenderSkeleton)
-     *
-     * What it does:
-     * Draws one mesh instance's skeleton debug pose, optional bone names, and
-     * wireframe bounds.
-     */
-    void RenderSkeleton(CD3DPrimBatcher* debugBatcher, CDebugCanvas* debugCanvas, MeshInstance* meshInstance, bool showBoneNames);
+    void RenderSkeletons(
+      CD3DPrimBatcher* debugBatcher,
+      CDebugCanvas* debugCanvas,
+      const GeomCamera3& camera,
+      bool showBoneNames
+    );
 
     /**
      * Address: 0x007DFF30 (FUN_007DFF30,
@@ -1248,12 +1254,7 @@ namespace moho
      * Draws one batch map of mesh instances with the active material shader
      * state and optional shadow lane.
      */
-    void Render(
-      std::int32_t meshFlags,
-      const GeomCamera3& camera,
-      Shadow* shadow,
-      MeshBatchBucketTree& meshMap
-    );
+    void Render(std::int32_t meshFlags, const GeomCamera3& camera, Shadow* shadow, MeshBatchBucketTree& meshMap);
 
     /**
      * FAF addition, not in the shipped binary.
@@ -1280,18 +1281,22 @@ namespace moho
      * is what the fog was set up with, null when it is off.
      */
     static void SetDistanceFog(
-      bool enabled, const gpg::gal::Matrix* projection, float fogStart, float fogEnd, std::uint32_t fogColor
+      bool enabled,
+      const gpg::gal::Matrix* projection,
+      float fogStart,
+      float fogEnd,
+      std::uint32_t fogColor
     );
 
     /**
      * Address: 0x007E5280 (FUN_007E5280,
      * ?FindOrCreateMesh@MeshRenderer@Moho@@QAE?AV?$shared_ptr@VMesh@Moho@@@boost@@PBVRMeshBlueprint@2@V?$shared_ptr@VMeshMaterial@Moho@@@3@@Z)
      */
-    [[nodiscard]] boost::shared_ptr<Mesh>
-    FindOrCreateMesh(const RMeshBlueprint* blueprint, boost::shared_ptr<MeshMaterial> material);
+    [[nodiscard]] std::shared_ptr<Mesh>
+    FindOrCreateMesh(const RMeshBlueprint* blueprint, std::shared_ptr<MeshMaterial> material);
 
-    MeshEnvironment meshEnvironment;                            // +0x04
-    MeshRendererMeshCacheTree meshCacheTree;                    // +0x60
+    MeshEnvironment meshEnvironment;         // +0x04
+    MeshRendererMeshCacheTree meshCacheTree; // +0x60
     // Global/shared texture lanes loaded by LoadGlobalTextures (0x007E1720).
     // The binary stores the raw `boost::shared_ptr<RD3DTextureResource>` handle
     // returned by `ID3DDeviceResources::GetTexture` directly into each lane
@@ -1299,15 +1304,15 @@ namespace moho
     // extracted at bind time when ConfigureShader passes these resources to the
     // mesh texture shader-vars. They are the owning resource handles, not the
     // extracted `TextureD3D9`, so the lane type is `RD3DTextureResource`.
-    boost::shared_ptr<RD3DTextureResource> dissolveTex;          // +0x6C
-    boost::shared_ptr<RD3DTextureResource> meshEnvironmentTex;   // +0x74
-    boost::shared_ptr<RD3DTextureResource> anisotropiclookupTex; // +0x7C
-    boost::shared_ptr<RD3DTextureResource> insectlookupTex;      // +0x84
-    TDatList<MeshInstance, void> instances;                          // +0x8C
-    std::int32_t instanceListSize;                                   // +0x94
-    float deltaFrame;                                                // +0x98
-    std::uint32_t instanceListStateFlags;                            // +0x9C
-    MeshBatchBucketTree meshes;                                      // +0xA0
+    std::shared_ptr<RD3DTextureResource> dissolveTex;            // +0x6C
+    std::shared_ptr<RD3DTextureResource> meshEnvironmentTex;     // +0x74
+    std::shared_ptr<RD3DTextureResource> anisotropiclookupTex;   // +0x7C
+    std::shared_ptr<RD3DTextureResource> insectlookupTex;        // +0x84
+    TDatList<MeshInstance, void> instances;                      // +0x8C
+    std::int32_t instanceListSize;                               // +0x94
+    float deltaFrame;                                            // +0x98
+    std::uint32_t instanceListStateFlags;                        // +0x9C
+    MeshBatchBucketTree meshes;                                  // +0xA0
     /**
      * The renderer's own spatial database, 0x90 bytes inline.
      *
@@ -1319,13 +1324,14 @@ namespace moho
      * end of the singleton and the first world-view frame faulted walking from
      * a null `shardBegin` to a garbage `shardEnd`.
      */
-    SpatialDB<MeshInstance> meshSpatialDb;                           // +0xAC
+    SpatialDB<MeshInstance> meshSpatialDb; // +0xAC
   };
 
   static_assert(sizeof(SpatialDB<MeshInstance>) == 0x90, "SpatialDB size must be 0x90");
   static_assert(sizeof(SpatialDBEntry<MeshInstance>) == 0x08, "SpatialDBEntry size must be 0x08");
   static_assert(
-    offsetof(MeshMaterial, mShaderAnnotation) == 0x04, "MeshMaterial::mShaderAnnotation offset must be 0x04"
+    offsetof(MeshMaterial, mShaderAnnotation) == 0x04,
+    "MeshMaterial::mShaderAnnotation offset must be 0x04"
   );
   static_assert(offsetof(MeshMaterial, mAlbedoSheet) == 0x20, "MeshMaterial::mAlbedoSheet offset must be 0x20");
   static_assert(offsetof(MeshMaterial, mNormalsSheet) == 0x28, "MeshMaterial::mNormalsSheet offset must be 0x28");
@@ -1333,13 +1339,23 @@ namespace moho
   static_assert(offsetof(MeshMaterial, mLookupSheet) == 0x38, "MeshMaterial::mLookupSheet offset must be 0x38");
   static_assert(offsetof(MeshMaterial, mSecondarySheet) == 0x40, "MeshMaterial::mSecondarySheet offset must be 0x40");
   static_assert(
-    offsetof(MeshMaterial, mEnvironmentSheet) == 0x48, "MeshMaterial::mEnvironmentSheet offset must be 0x48"
+    offsetof(MeshMaterial, mEnvironmentSheet) == 0x48,
+    "MeshMaterial::mEnvironmentSheet offset must be 0x48"
   );
   static_assert(offsetof(MeshMaterial, mShaderIndex) == 0x50, "MeshMaterial::mShaderIndex offset must be 0x50");
-  static_assert(offsetof(MeshMaterial, mCartographicTechnique) == 0x54, "MeshMaterial::mCartographicTechnique offset must be 0x54");
+  static_assert(
+    offsetof(MeshMaterial, mCartographicTechnique) == 0x54,
+    "MeshMaterial::mCartographicTechnique offset must be 0x54"
+  );
   static_assert(offsetof(MeshMaterial, mDepthTechnique) == 0x70, "MeshMaterial::mDepthTechnique offset must be 0x70");
-  static_assert(offsetof(MeshMaterial, mCartographicTechniqueResolved) == 0x8C, "MeshMaterial::mCartographicTechniqueResolved offset must be 0x8C");
-  static_assert(offsetof(MeshMaterial, mDepthTechniqueResolved) == 0x8D, "MeshMaterial::mDepthTechniqueResolved offset must be 0x8D");
+  static_assert(
+    offsetof(MeshMaterial, mCartographicTechniqueResolved) == 0x8C,
+    "MeshMaterial::mCartographicTechniqueResolved offset must be 0x8C"
+  );
+  static_assert(
+    offsetof(MeshMaterial, mDepthTechniqueResolved) == 0x8D,
+    "MeshMaterial::mDepthTechniqueResolved offset must be 0x8D"
+  );
   static_assert(sizeof(MeshMaterial) == 0x90, "MeshMaterial size must be 0x90");
 
   static_assert(offsetof(MeshLOD, useDissolve) == 0x04, "MeshLOD::useDissolve offset must be 0x04");
@@ -1368,21 +1384,23 @@ namespace moho
   static_assert(offsetof(MeshInstance, isHidden) == 0x28, "MeshInstance::isHidden offset must be 0x28");
   static_assert(offsetof(MeshInstance, isReflected) == 0x29, "MeshInstance::isReflected offset must be 0x29");
   static_assert(
-    offsetof(MeshInstance, hasStanceUpdatePending) == 0xA4, "MeshInstance::hasStanceUpdatePending offset must be 0xA4"
+    offsetof(MeshInstance, hasStanceUpdatePending) == 0xA4,
+    "MeshInstance::hasStanceUpdatePending offset must be 0xA4"
   );
   static_assert(offsetof(MeshInstance, startPose) == 0xA8, "MeshInstance::startPose offset must be 0xA8");
   static_assert(offsetof(MeshInstance, curPose) == 0xB8, "MeshInstance::curPose offset must be 0xB8");
   static_assert(
-    offsetof(MeshInstance, interpolationStateFresh) == 0xD9, "MeshInstance::interpolationStateFresh offset must be 0xD9"
+    offsetof(MeshInstance, interpolationStateFresh) == 0xD9,
+    "MeshInstance::interpolationStateFresh offset must be 0xD9"
   );
   static_assert(offsetof(MeshInstance, sphere) == 0xE0, "MeshInstance::sphere offset must be 0xE0");
   static_assert(offsetof(MeshInstance, box) == 0x108, "MeshInstance::box offset must be 0x108");
   static_assert(sizeof(MeshInstance) == 0x160, "MeshInstance size must be 0x160");
   static_assert(sizeof(TDatList<MeshInstance, void>) == 0x08, "TDatList<MeshInstance, void> size must be 0x08");
 
-  // MeshRendererMeshCacheTree is msvc8::map<MeshKey, boost::weak_ptr<Mesh>,
+  // MeshRendererMeshCacheTree is fa::map<MeshKey, boost::weak_ptr<Mesh>,
   // MeshKeyLess> -- the 12-byte {proxy, head, size} header this size guards
-  // is shared by every msvc8::map/msvc8::set instantiation regardless of
+  // is shared by every fa::map/fa::set instantiation regardless of
   // K/V/Less (comparator EBO'd away), already spot-checked generically in
   // Map.h (`static_assert(sizeof(map<void*, void*>) == 0x0C, ...)`). Only
   // the overall size needs re-asserting here, to guard MeshRenderer's own
@@ -1393,17 +1411,20 @@ namespace moho
   static_assert(offsetof(MeshRenderer, meshCacheTree) == 0x60, "MeshRenderer::meshCacheTree offset must be 0x60");
   static_assert(offsetof(MeshRenderer, dissolveTex) == 0x6C, "MeshRenderer::dissolveTex offset must be 0x6C");
   static_assert(
-    offsetof(MeshRenderer, meshEnvironmentTex) == 0x74, "MeshRenderer::meshEnvironmentTex offset must be 0x74"
+    offsetof(MeshRenderer, meshEnvironmentTex) == 0x74,
+    "MeshRenderer::meshEnvironmentTex offset must be 0x74"
   );
   static_assert(
-    offsetof(MeshRenderer, anisotropiclookupTex) == 0x7C, "MeshRenderer::anisotropiclookupTex offset must be 0x7C"
+    offsetof(MeshRenderer, anisotropiclookupTex) == 0x7C,
+    "MeshRenderer::anisotropiclookupTex offset must be 0x7C"
   );
   static_assert(offsetof(MeshRenderer, insectlookupTex) == 0x84, "MeshRenderer::insectlookupTex offset must be 0x84");
   static_assert(offsetof(MeshRenderer, instances) == 0x8C, "MeshRenderer::instances offset must be 0x8C");
   static_assert(offsetof(MeshRenderer, instanceListSize) == 0x94, "MeshRenderer::instanceListSize offset must be 0x94");
   static_assert(offsetof(MeshRenderer, deltaFrame) == 0x98, "MeshRenderer::deltaFrame offset must be 0x98");
   static_assert(
-    offsetof(MeshRenderer, instanceListStateFlags) == 0x9C, "MeshRenderer::instanceListStateFlags offset must be 0x9C"
+    offsetof(MeshRenderer, instanceListStateFlags) == 0x9C,
+    "MeshRenderer::instanceListStateFlags offset must be 0x9C"
   );
   static_assert(offsetof(MeshRenderer, meshes) == 0xA0, "MeshRenderer::meshes offset must be 0xA0");
   static_assert(offsetof(MeshRenderer, meshSpatialDb) == 0xAC, "MeshRenderer::meshSpatialDb offset must be 0xAC");
@@ -1440,8 +1461,9 @@ namespace moho
    * copy of boost's own internals.
    */
   void ConstructSharedMeshWithCacheEvictingDeleter(
-    boost::shared_ptr<Mesh>& out,
+    std::shared_ptr<Mesh>& out,
     Mesh* raw,
     MeshRendererMeshCacheTree& tree,
-    const MeshKey& key);
+    const MeshKey& key
+  );
 } // namespace moho

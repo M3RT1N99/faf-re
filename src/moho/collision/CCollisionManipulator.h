@@ -24,8 +24,8 @@ namespace moho
   {
   public:
     /**
-       * Address: 0x00638770 (FUN_00638770)
-       * Address: 0x00638830 (FUN_00638830)
+     * Address: 0x00638770 (FUN_00638770)
+     * Address: 0x00638830 (FUN_00638830)
      *
      * What it does:
      * Constructs default collision-manipulator state used by RTTI allocation paths.
@@ -116,8 +116,6 @@ namespace moho
      */
     int WatchBone(int boneIndex);
 
-    [[nodiscard]] Unit* GetOwnerUnit() const noexcept;
-
     /**
      * Address: 0x00638F00 (FUN_00638F00, gpg::SerSaveLoadHelper<Moho::CCollisionManipulator>::Deserialize thunk target)
      *
@@ -141,7 +139,7 @@ namespace moho
   public:
     static gpg::RType* sType;
 
-    Unit* mOwnerUnit;                   // +0x80
+    Unit* mOwnerUnit; // +0x80
     /**
      * Address: 0x006378B0 (FUN_006378B0 -- clears this flag and then walks
      *   `IAniManipulator::mWatchBones` masking `mFlags & 0xFFFEFFFF`, i.e.
@@ -151,7 +149,7 @@ namespace moho
      *   a deleted overlay in
      *   moho/animation/IAniManipulator.cpp (RULE ONE), removed 2026-09-22.)
      */
-    bool mCollisionCallbacksEnabled;    // +0x84
+    bool mCollisionCallbacksEnabled; // +0x84
     /**
      * Address: 0x006378E0 (FUN_006378E0 -- the one-line store behind
      *   `SetTerrainCollisionCheckEnabled` above; formerly `SetRuntimeFlag85`.
@@ -285,7 +283,8 @@ namespace moho
   };
 
   static_assert(
-    offsetof(CCollisionManipulator, mOwnerUnit) == 0x80, "CCollisionManipulator::mOwnerUnit offset must be 0x80"
+    offsetof(CCollisionManipulator, mOwnerUnit) == 0x80,
+    "CCollisionManipulator::mOwnerUnit offset must be 0x80"
   );
   static_assert(
     offsetof(CCollisionManipulator, mCollisionCallbacksEnabled) == 0x84,
@@ -300,15 +299,6 @@ namespace moho
     sizeof(CScrLuaMetatableFactory<CCollisionManipulator>) == 0x8,
     "CScrLuaMetatableFactory<CCollisionManipulator> size must be 0x8"
   );
-  /**
-   * Address: 0x00638BF0 (FUN_00638BF0)
-   *
-   * What it does:
-   * Rebinds the startup metatable-factory index lane for
-   * `CScrLuaMetatableFactory<CCollisionManipulator>` and returns that
-   * singleton.
-   */
-  CScrLuaMetatableFactory<CCollisionManipulator>* startup_CScrLuaMetatableFactory_CCollisionManipulator_Index();
 
   static_assert(sizeof(CCollisionManipulatorSerializer) == 0x14, "CCollisionManipulatorSerializer size must be 0x14");
   static_assert(sizeof(CCollisionManipulatorTypeInfo) == 0x64, "CCollisionManipulatorTypeInfo size must be 0x64");
@@ -410,13 +400,4 @@ namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x00638D50 (FUN_00638D50, gpg::RRef_CCollisionManipulator)
-   *
-   * What it does:
-   * Builds one typed reflection reference for
-   * `moho::CCollisionManipulator*`, preserving dynamic-derived ownership and
-   * base-offset adjustment.
-   */
-  gpg::RRef* RRef_CCollisionManipulator(gpg::RRef* outRef, moho::CCollisionManipulator* value);
 } // namespace gpg

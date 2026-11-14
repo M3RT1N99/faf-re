@@ -23,7 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include "boost/shared_ptr.h"
+#include <memory>
 
 struct lua_State;
 
@@ -43,8 +43,6 @@ namespace moho
   // Opaque cross-TU handle to the runtime user command-issue helper / command-graph
   // anchor-history object (same binary object surfaced under two names). Used only as
   // an incomplete pointer by the IssueDockCommand worker.
-  struct QueuedUserCommandRecord;
-  struct UserCommand;
   class UserUnitWeapon;
   class IUnit;
   class CWldSession;
@@ -62,10 +60,7 @@ namespace moho
    * VFTABLE: 0x00E4D93C
    * COL:  0x00E9F48C
    */
-  class MOHO_EMPTY_BASES UserUnit
-    : public UserEntity
-    , public IUnit
-    , public CScriptObject
+  class MOHO_EMPTY_BASES UserUnit : public UserEntity, public IUnit, public CScriptObject
   {
   public:
     /**
@@ -429,9 +424,11 @@ namespace moho
      * Demangled: moho::UserUnit::GetCustomName
      *
      * What it does:
-     * Returns the in-object custom-name storage anchor at offset +0x1DC.
+     * Returns the unit's custom-name string (`lea eax, [ecx+1DCh]`): callers
+     * read it as an `fa::string` (size at +0x14, SSO buffer or heap pointer
+     * off +0x04 in 0x0085E0A0 and in `UI_ShowRenameDialog` 0x00835830).
      */
-    virtual char* GetCustomName();
+    virtual const fa::string& GetCustomName();
 
     /**
      * Address: 0x008BF060 (FUN_008BF060)
@@ -588,7 +585,7 @@ namespace moho
 
     /// The create packet's constant data, copied wholesale by the constructor
     /// at 0x008BF4B4..0x008BF4E1. Same 0x10-byte layout the sim publishes.
-    SCreateUnitConstantData mUnitConstDat;               // 0x0184
+    SCreateUnitConstantData mUnitConstDat; // 0x0184
     /// Zeroed by the constructor at 0x008BF590, just before the replicated
     /// variable-data payload is constructed.
     std::uint8_t mReserved0194{}; // 0x0194
@@ -609,13 +606,13 @@ namespace moho
     /// `UpdateUnitData` re-points it whenever the replicated id changes.
     /// `mUnitVarDat.mCreator` resolved to a live entity and held weakly;
     /// `UpdateUnitData` re-points it whenever the replicated id changes.
-    WeakPtr<UserEntity> mCreator;                        // 0x03C0
-    UserCommandQueue* mManager;        // 0x03C8
-    UserCommandQueue* mFactoryManager; // 0x03CC
-    msvc8::set<msvc8::string> mSelectionSets; // 0x03D0
-    bool mQueueEmptyCached;          // 0x03DC
-    bool mIsEngineer; // 0x03DD
-    bool mIsFactory;  // 0x03DE
+    WeakPtr<UserEntity> mCreator;       // 0x03C0
+    UserCommandQueue* mManager;         // 0x03C8
+    UserCommandQueue* mFactoryManager;  // 0x03CC
+    fa::set<fa::string> mSelectionSets; // 0x03D0
+    bool mQueueEmptyCached;             // 0x03DC
+    bool mIsEngineer;                   // 0x03DD
+    bool mIsFactory;                    // 0x03DE
     std::uint8_t pad_03DF_03E0[0x03E0 - 0x03DF]{};
     std::uint32_t mIntelStateFlags; // 0x03E0
     std::uint8_t pad_03E4_03E8[0x3E8 - 0x03E4]{};
@@ -625,24 +622,15 @@ namespace moho
   // `IUnit` and `CScriptObject` are real bases. If one of those three ever
   // changes size the asserts below are what catches it.
   static_assert(sizeof(UserUnit) == 0x3E8, "UserUnit size must be 0x3E8");
-  static_assert(
-    sizeof(UserEntity) == 0x148, "UserUnit's primary base must occupy 0x000..0x148"
-  );
+  static_assert(sizeof(UserEntity) == 0x148, "UserUnit's primary base must occupy 0x000..0x148");
   static_assert(offsetof(UserUnit, mUnitVarDat) == 0x0198, "UserUnit::mUnitVarDat offset must be 0x0198");
   static_assert(offsetof(UserUnit, mUnitConstDat) == 0x0184, "UserUnit::mUnitConstDat offset must be 0x0184");
   static_assert(offsetof(UserUnit, mCreator) == 0x03C0, "UserUnit::mCreator offset must be 0x03C0");
-  static_assert(
-    offsetof(UserUnit, mManager) == 0x03C8, "UserUnit::mManager offset must be 0x03C8"
-  );
-  static_assert(
-    offsetof(UserUnit, mFactoryManager) == 0x03CC,
-    "UserUnit::mFactoryManager offset must be 0x03CC"
-  );
+  static_assert(offsetof(UserUnit, mManager) == 0x03C8, "UserUnit::mManager offset must be 0x03C8");
+  static_assert(offsetof(UserUnit, mFactoryManager) == 0x03CC, "UserUnit::mFactoryManager offset must be 0x03CC");
   static_assert(offsetof(UserUnit, mSelectionSets) == 0x03D0, "UserUnit::mSelectionSets offset must be 0x03D0");
   static_assert(offsetof(UserUnit, mQueueEmptyCached) == 0x03DC, "UserUnit::mQueueEmptyCached offset must be 0x03DC");
-  static_assert(
-    offsetof(UserUnit, mIsEngineer) == 0x03DD, "UserUnit::mIsEngineer offset must be 0x03DD"
-  );
+  static_assert(offsetof(UserUnit, mIsEngineer) == 0x03DD, "UserUnit::mIsEngineer offset must be 0x03DD");
   static_assert(offsetof(UserUnit, mIsFactory) == 0x03DE, "UserUnit::mIsFactory offset must be 0x03DE");
   static_assert(offsetof(UserUnit, mIntelStateFlags) == 0x03E0, "UserUnit::mIntelStateFlags offset must be 0x03E0");
 
@@ -863,22 +851,17 @@ namespace moho
    * Rebuilds/resolves one user-unit command queue and returns whether it
    * currently contains the supplied command-issue helper.
    */
-  [[nodiscard]] bool UserUnitManagerContainsCommandIssueHelper(
-    UserCommandQueue* manager,
-    const UserCommandIssueHelper* helper
-  ) noexcept;
+  [[nodiscard]] bool
+  UserUnitManagerContainsCommandIssueHelper(UserCommandQueue* manager, const UserCommandIssueHelper* helper) noexcept;
 
-  [[nodiscard]] UserCommandIssueHelper*
-    FindCommandIssueHelperInSession(CWldSession* session, CmdId commandId) noexcept;
+  [[nodiscard]] UserCommandIssueHelper* FindCommandIssueHelperInSession(CWldSession* session, CmdId commandId) noexcept;
 
-  [[nodiscard]] EUnitCommandType
-    ResolveCommandIssueHelperCommandType(const UserCommandIssueHelper& helper) noexcept;
+  [[nodiscard]] EUnitCommandType ResolveCommandIssueHelperCommandType(const UserCommandIssueHelper& helper) noexcept;
 
   // Exposes the file-local func_GetEntitiesUnderCursor (FUN_008B43F0) to the
   // other TUs that walk a command's units: rebuilds the helper's cursor set
   // when dirty and returns it.
-  [[nodiscard]] WeakSet<UserUnit>*
-    ResolveCommandIssueCursorEntities(UserCommandIssueHelper& helper) noexcept;
+  [[nodiscard]] WeakSet<UserUnit>* ResolveCommandIssueCursorEntities(UserCommandIssueHelper& helper) noexcept;
 
   /**
    * Address: 0x008BED50 (FUN_008BED50, sub_8BED50)
@@ -944,7 +927,8 @@ namespace moho
    * `primaryLinks`. `AddCommandQueueToCommandGraph` (CWldSession.cpp) did
    * exactly that and so never saw a single queued order.
    */
-  [[nodiscard]] gpg::fastvector_n<WeakPtr<UserCommandIssueHelper>, 2>* GetUserUnitManagerQueueLinks(UserCommandQueue* manager) noexcept;
+  [[nodiscard]] gpg::fastvector_n<WeakPtr<UserCommandIssueHelper>, 2>*
+  GetUserUnitManagerQueueLinks(UserCommandQueue* manager) noexcept;
 
   /**
    * Address: 0x008B6E60 (FUN_008B6E60, struct_UserUnitManager::reset)
@@ -1028,9 +1012,8 @@ namespace moho
    * `commandType`. Used to confirm a unit's whole queued order run is
    * homogeneous before allowing an in-place drag restart.
    */
-  [[nodiscard]] bool UserUnitManagerQueueHasUniformCommandType(
-    UserCommandQueue* manager, EUnitCommandType commandType
-  ) noexcept;
+  [[nodiscard]] bool
+  UserUnitManagerQueueHasUniformCommandType(UserCommandQueue* manager, EUnitCommandType commandType) noexcept;
 
   /**
    * Address: 0x0081DEF0 inlines this scan.
@@ -1102,7 +1085,9 @@ namespace moho
    * downstream) is outside this function's own body.
    */
   void RecordUnitManagerCommandHelperRemoval(
-    UserCommandIssueHelper* helper, UserCommandQueue* manager, std::int32_t tag
+    UserCommandIssueHelper* helper,
+    UserCommandQueue* manager,
+    std::int32_t tag
   ) noexcept;
 
   /**
@@ -1112,16 +1097,8 @@ namespace moho
   using UserUnitGetMissileInfo_LuaFuncDef = ::moho::CScrLuaBinder;
 
   /**
-   * Address: 0x008C1430 (FUN_008C1430, ?USERUNIT_CanOccupy@Moho@@YA_NAAVCWldSession@1@ABUSFootprint@1@AAUSOCellPos@1@@Z)
-   *
-   * What it does:
-   * Validates one build footprint origin against map bounds and rejects
-   * placement when it strictly overlaps a visible non-mobile unit footprint.
-   */
-  bool USERUNIT_CanOccupy(CWldSession& session, const SFootprint& footprint, SOCellPos& position);
-
-  /**
-   * Address: 0x008C1880 (FUN_008C1880, ?USERUNIT_CanBeBuiltAt@Moho@@YA_NAAVCWldSession@1@PBVRUnitBlueprint@1@ABUSCoordsVec2@1@_NPAUSBuildInfo@1@PBVUserCommand@1@@Z)
+   * Address: 0x008C1880 (FUN_008C1880,
+   * ?USERUNIT_CanBeBuiltAt@Moho@@YA_NAAVCWldSession@1@PBVRUnitBlueprint@1@ABUSCoordsVec2@1@_NPAUSBuildInfo@1@PBVUserCommand@1@@Z)
    *
    * What it does:
    * Runs world-space placement validation, then rejects when nearby visible
@@ -1134,11 +1111,12 @@ namespace moho
     const SCoordsVec2& buildPosition,
     bool allowCommandOverlap,
     SOccupationResult* buildInfo,
-    const UserCommand* ignoredCommand
+    const UserCommandIssueHelper* ignoredCommand
   );
 
   /**
-   * Address: 0x008C1BC0 (FUN_008C1BC0, ?USERUNIT_CanBeBuiltAt@Moho@@YA_NAAVCWldSession@1@PBVRUnitBlueprint@1@ABUSOCellPos@1@_NPAUSBuildInfo@1@@Z)
+   * Address: 0x008C1BC0 (FUN_008C1BC0,
+   * ?USERUNIT_CanBeBuiltAt@Moho@@YA_NAAVCWldSession@1@PBVRUnitBlueprint@1@ABUSOCellPos@1@_NPAUSBuildInfo@1@@Z)
    *
    * What it does:
    * Converts one cell-origin placement probe into world-space center
@@ -1153,7 +1131,8 @@ namespace moho
   );
 
   /**
-   * Address: 0x008C1610 (FUN_008C1610, ?USERUNIT_WithinBuildDistance@Moho@@YA_NAAVCWldSession@1@PBVRUnitBlueprint@1@ABUSCoordsVec2@1@@Z)
+   * Address: 0x008C1610 (FUN_008C1610,
+   * ?USERUNIT_WithinBuildDistance@Moho@@YA_NAAVCWldSession@1@PBVRUnitBlueprint@1@ABUSCoordsVec2@1@@Z)
    *
    * What it does:
    * Checks whether all currently selected user units are within each unit's
@@ -1161,19 +1140,9 @@ namespace moho
    * candidate blueprint footprint.
    */
   bool USERUNIT_WithinBuildDistance(
-    CWldSession& session, const RUnitBlueprint* buildBlueprint, const SCoordsVec2& buildPosition
-  );
-
-  /**
-   * Address: 0x008C1C30 (FUN_008C1C30, ?USERUNIT_GetBounds@Moho@@YA?AV?$AxisAlignedBox3@M@Wm3@@PBVRUnitBlueprint@1@ABV?$Vector3@M@3@@Z)
-   *
-   * What it does:
-   * Builds one world-space unit bounds AABB from blueprint collision/skirt
-   * lanes and one world position sample.
-   */
-  [[nodiscard]] Wm3::AxisAlignedBox3f USERUNIT_GetBounds(
-    const RUnitBlueprint* unitBlueprint,
-    const Wm3::Vector3f& worldPosition
+    CWldSession& session,
+    const RUnitBlueprint* buildBlueprint,
+    const SCoordsVec2& buildPosition
   );
 
   /**
@@ -1201,7 +1170,7 @@ namespace moho
    * `RUnitBlueprint`). `out` is a real `std::list<T>` in the binary --
    * see the definition in UserUnit.cpp for the node-buy/`_Incsize` evidence.
    */
-  void CollectUpgradeCommandTargetBlueprints(UserUnit* unit, msvc8::list<const RUnitBlueprint*>& out);
+  void CollectUpgradeCommandTargetBlueprints(UserUnit* unit, fa::list<const RUnitBlueprint*>& out);
 
   /**
    * Bridge for the recovered `cfunc_IssueDockCommandL` worker (FUN_00840A70):
@@ -1214,10 +1183,11 @@ namespace moho
   /**
    * Bridge for the recovered `cfunc_IssueDockCommandL` worker: resolves one
    * unit's most recent queued command-issue helper (via `GetCommandQueue` +
-   * FUN_008B7320) as an opaque cross-TU anchor-history handle, or `nullptr` when
-   * the unit has no queued command.
+   * FUN_008B7320), or `nullptr` when the unit has no queued command. The
+   * binary's name for the helper type is `Moho::UserCommand`
+   * (`?ISSUE_DecreaseCommandCount@Moho@@YAXPAVUserCommand@1@H@Z`, 0x008B0EB0).
    */
-  [[nodiscard]] const QueuedUserCommandRecord* GetLastQueuedUserCommandAnchor(const UserUnit* unit) noexcept;
+  [[nodiscard]] const UserCommandIssueHelper* GetLastQueuedUserCommandAnchor(const UserUnit* unit) noexcept;
 
   /**
    * Address: 0x008C2010 (FUN_008C2010, cfunc_UserUnitCanAttackTarget)

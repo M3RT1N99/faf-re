@@ -17,7 +17,6 @@ namespace moho
 
 namespace
 {
-  constexpr float kNoWaterElevation = -10000.0f;
   constexpr std::uint32_t kLayerMaskLandOrSeabed = 0x03u;
   constexpr std::uint32_t kLayerMaskSub = 0x04u;
   constexpr std::uint32_t kLayerMaskWater = 0x08u;
@@ -118,7 +117,10 @@ UserUnit* IUnit::IsUserUnit()
  * Computes spawn elevation using layer flags and UnitAttributes::spawnElevationOffset.
  */
 float IUnit::CalcSpawnElevation(
-  const STIMap* map, const ELayer layer, const VTransform transform, const UnitAttributes& attributes
+  const STIMap* map,
+  const ELayer layer,
+  const VTransform transform,
+  const UnitAttributes& attributes
 )
 {
   const std::uint32_t layerMask = static_cast<std::uint32_t>(layer);
@@ -128,11 +130,11 @@ float IUnit::CalcSpawnElevation(
   }
 
   if ((layerMask & kLayerMaskWater) != 0u) {
-    return map->IsWaterEnabled() ? map->GetWaterElevation() : kNoWaterElevation;
+    return map->GetWaterElevationAt(transform.pos_.x, transform.pos_.z); // engine addition: per position
   }
 
   if ((layerMask & kLayerMaskSub) != 0u) {
-    const float waterSurface = map->IsWaterEnabled() ? map->GetWaterElevation() : kNoWaterElevation;
+    const float waterSurface = map->GetWaterElevationAt(transform.pos_.x, transform.pos_.z); // engine addition
     return attributes.spawnElevationOffset + waterSurface;
   }
 
@@ -145,22 +147,4 @@ float IUnit::CalcSpawnElevation(
 
 namespace moho
 {
-  /**
-   * Address: 0x00541F40 (FUN_00541F40)
-   *
-   * What it does:
-   * Upcasts one reflected reference to `IUnit` and returns the typed object
-   * pointer when the source is compatible.
-   */
-  [[nodiscard]] IUnit* CastIUnitFromRRef(const gpg::RRef& source)
-  {
-    gpg::RType* type = IUnit::sType;
-    if (type == nullptr) {
-      type = gpg::LookupRType(typeid(IUnit));
-      IUnit::sType = type;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(source, type);
-    return static_cast<IUnit*>(upcast.mObj);
-  }
 } // namespace moho

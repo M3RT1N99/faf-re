@@ -25,10 +25,13 @@ namespace moho
    * `mName`. The binary empty-initializes the SSO string and assigns the full
    * source name (`assign(name, 0, npos)`).
    */
-  CAniResourceSkel::CAniResourceSkel(const msvc8::string& name, const boost::shared_ptr<const SScmFile>& file)
+  CAniResourceSkel::CAniResourceSkel(
+    const fa::string& name,
+    const std::shared_ptr<const SScmFile>& file
+  )
     : CAniSkel(file)
   {
-    mName.assign(name, 0, msvc8::string::npos);
+    mName.assign(name, 0, fa::string::npos);
   }
 
   /**
@@ -42,12 +45,17 @@ namespace moho
 
 namespace moho
 {
-  void CAniResourceSkel::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CAniResourceSkel::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
-    msvc8::string path;
+    fa::string path;
     archive.ReadString(&path);
-    boost::shared_ptr<const CAniSkel> skeleton;
-    if (const boost::shared_ptr<RScmResource> model = GetModel(path.c_str(), nullptr)) {
+    std::shared_ptr<const CAniSkel> skeleton;
+    if (const std::shared_ptr<RScmResource> model = GetModel(path.c_str(), nullptr)) {
       skeleton = model->GetSkeleton();
     }
     result.SetShared(skeleton, 1u);
@@ -57,10 +65,13 @@ namespace moho
    * Address: 0x00538770 (FUN_00538770)
    */
   void CAniResourceSkel::MemberSaveConstructArgs(
-    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+    gpg::WriteArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerSaveConstructArgsResult& result
   )
   {
-    msvc8::string mountedPath;
+    fa::string mountedPath;
     (void)FILE_ToMountedPath(&mountedPath, mName.c_str());
     archive.WriteString(&mountedPath);
     result.SetShared(1u);

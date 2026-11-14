@@ -15,20 +15,16 @@ namespace
    * What it does:
    * Registers CScriptObject as reflected base at zero offset.
    */
-  void AddBase_CScriptObject(gpg::RType* const typeInfo)
+  void AddBase_CScriptObject(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* baseType = CScriptObject::StaticGetClass();
     if (!baseType) {
       baseType = gpg::LookupRType(typeid(CScriptObject));
     }
 
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, baseType);
   }
 } // namespace
 
@@ -71,4 +67,7 @@ void ScriptedDecalTypeInfo::Init()
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_ScriptedDecalTypeInfo_3ff0a1, preregister_ScriptedDecalTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_ScriptedDecalTypeInfo_3ff0a1,
+  preregister_ScriptedDecalTypeInfo
+)

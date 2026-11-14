@@ -3,17 +3,12 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/weak_ptr.h"
+#include <memory>
 #include "gpg/core/containers/FastVector.h"
 #include "moho/render/camera/VTransform.h"
 #include "moho/terrain/TerrainCommon.h"
 #include "moho/terrain/splat/CWldSplat.h"
 #include "moho/terrain/water/WaterSurface.h"
-
-namespace boost::detail
-{
-  class sp_counted_base;
-}
 
 namespace gpg::gal
 {
@@ -125,8 +120,9 @@ namespace moho
     void DrawWaterTerrain(
       std::int32_t tick,
       float tickLerp,
-      boost::shared_ptr<ID3DRenderTarget> refractionTexture,
-      boost::shared_ptr<ID3DRenderTarget> reflectionTexture) override;
+      std::shared_ptr<ID3DRenderTarget> refractionTexture,
+      std::shared_ptr<ID3DRenderTarget> reflectionTexture
+    ) override;
 
     void DrawTerrainSkirt() override;
 
@@ -177,10 +173,7 @@ namespace moho
      * Releases one retained shared-control lane passed by the render caller and
      * leaves terrain draw behavior as an empty hook for this fidelity path.
      */
-    void DrawTerrain(
-      boost::shared_ptr<CD3DDynamicTextureSheet> overlayTexture,
-      const msvc8::string* techniqueName
-    ) override;
+    void DrawTerrain(std::shared_ptr<CD3DDynamicTextureSheet> overlayTexture, const fa::string* techniqueName) override;
 
     /**
      * Address: 0x00809D70 (FUN_00809D70, Moho::LowFidelityTerrain::DrawDirtyTerrain)
@@ -228,7 +221,7 @@ namespace moho
     bool DrawNormals(
       std::int32_t gameTick,
       float deltaSeconds,
-      const boost::shared_ptr<ID3DRenderTarget>& terrainNormalTexture,
+      const std::shared_ptr<ID3DRenderTarget>& terrainNormalTexture,
       Shadow* shadowContext
     ) override;
 
@@ -285,16 +278,16 @@ namespace moho
       std::int32_t forceRegenerate
     ) override;
 
-    IWldTerrainRes* mTerrainResource = nullptr;           // +0x0C
-    CTesselator* mTesselator = nullptr;                             // +0x10
-    CD3DVertexSheet* mTerrainVertexSheet = nullptr;                 // +0x14
-    CD3DIndexSheet* mTerrainIndexSheet = nullptr;                   // +0x18
-    GeomCamera3* mCamera = nullptr;                                 // +0x1C
-    std::uint32_t mSkirtStartIndex = 0u;                            // +0x20
-    std::uint32_t mUnknown24 = 0u;                                  // +0x24
-    std::uint32_t mSkirtEndIndex = 0u;                              // +0x28
-    std::int32_t mSkirtEndVertex = 0;                               // +0x2C
-    std::int32_t mSkirtBaseVertex = 0;                              // +0x30
+    IWldTerrainRes* mTerrainResource = nullptr;     // +0x0C
+    CTesselator* mTesselator = nullptr;             // +0x10
+    CD3DVertexSheet* mTerrainVertexSheet = nullptr; // +0x14
+    CD3DIndexSheet* mTerrainIndexSheet = nullptr;   // +0x18
+    GeomCamera3* mCamera = nullptr;                 // +0x1C
+    std::uint32_t mSkirtStartIndex = 0u;            // +0x20
+    std::uint32_t mTerrainEndVertex = 0u;           // +0x24
+    std::uint32_t mSkirtEndIndex = 0u;              // +0x28
+    std::int32_t mSkirtEndVertex = 0;               // +0x2C
+    std::int32_t mSkirtBaseVertex = 0;              // +0x30
     /**
      * Cached copy of `mCamera->tranform`, refreshed unconditionally every
      * call to the still-unrecovered vtable slot 5 ("Func3",
@@ -318,13 +311,23 @@ namespace moho
      * always-1.0-default float) plus six `mUnknownXX` floats - that
      * guess is now superseded by this confirmed single typed field.
      */
-    VTransform mCachedCameraTransform;                              // +0x34
+    VTransform mCachedCameraTransform;                                       // +0x34
     gpg::core::FastVectorN<TerrainDecalDrawCommand, 500> mDecalDrawCommands; // +0x50
-    gpg::core::FastVectorN<CWldSplat::SplatVertex, 1000> mSplatVertices; // +0x2F40
-    CD3DVertexSheet* mDynamicVertexSheet = nullptr;                 // +0x9CB0
-    CD3DIndexSheet* mDynamicIndexSheet = nullptr;                   // +0x9CB4
+    gpg::core::FastVectorN<CWldSplat::SplatVertex, 1000> mSplatVertices;     // +0x2F40
+    CD3DVertexSheet* mDynamicVertexSheet = nullptr;                          // +0x9CB0
+    CD3DIndexSheet* mDynamicIndexSheet = nullptr;                            // +0x9CB4
 
   private:
+    /**
+     * Address: 0x00807F50 (FUN_00807F50, low-fidelity indexed draw helper)
+     *
+     * What it does:
+     * Draws the prebuilt terrain batch from `mTerrainIndexSheet` and
+     * `mTerrainVertexSheet`. The terrain's indices end where the skirt's start,
+     * so `mSkirtStartIndex` is also its index count.
+     */
+    void DrawTriangles();
+
     /**
      * Address: 0x008094B0 (FUN_008094B0, sub_8094B0)
      *
@@ -360,8 +363,14 @@ namespace moho
     void DrawSplatComposite();
   };
 
-  static_assert(offsetof(LowFidelityTerrain, mTerrainResource) == 0x0C, "LowFidelityTerrain::mTerrainResource offset must be 0x0C");
-  static_assert(offsetof(LowFidelityTerrain, mTesselator) == 0x10, "LowFidelityTerrain::mTesselator offset must be 0x10");
+  static_assert(
+    offsetof(LowFidelityTerrain, mTerrainResource) == 0x0C,
+    "LowFidelityTerrain::mTerrainResource offset must be 0x0C"
+  );
+  static_assert(
+    offsetof(LowFidelityTerrain, mTesselator) == 0x10,
+    "LowFidelityTerrain::mTesselator offset must be 0x10"
+  );
   static_assert(
     offsetof(LowFidelityTerrain, mCachedCameraTransform) == 0x34,
     "LowFidelityTerrain::mCachedCameraTransform offset must be 0x34"

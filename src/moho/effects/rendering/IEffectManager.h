@@ -15,6 +15,7 @@ namespace gpg
 
 namespace moho
 {
+  class CHostedEffectManager;
   class Entity;
   class IEffect;
   struct RBeamBlueprint;
@@ -29,11 +30,17 @@ namespace moho
   struct SCreateBeamTransform
   {
     std::array<float, 4> mOrientation; // +0x00
-    Wm3::Vector3<float> mPosition; // +0x10
+    Wm3::Vector3<float> mPosition;     // +0x10
   };
 
-  static_assert(offsetof(SCreateBeamTransform, mOrientation) == 0x00, "SCreateBeamTransform::mOrientation offset must be 0x00");
-  static_assert(offsetof(SCreateBeamTransform, mPosition) == 0x10, "SCreateBeamTransform::mPosition offset must be 0x10");
+  static_assert(
+    offsetof(SCreateBeamTransform, mOrientation) == 0x00,
+    "SCreateBeamTransform::mOrientation offset must be 0x00"
+  );
+  static_assert(
+    offsetof(SCreateBeamTransform, mPosition) == 0x10,
+    "SCreateBeamTransform::mPosition offset must be 0x10"
+  );
   static_assert(sizeof(SCreateBeamTransform) == 0x1C, "SCreateBeamTransform size must be 0x1C");
 
   /**
@@ -56,20 +63,23 @@ namespace moho
      */
     SCreateBeamParams();
 
-    Entity* mAttachEntity;                 // +0x00
-    std::int32_t mAttachBoneIndex;         // +0x04
-    std::int32_t mAttachArmyIndex;         // +0x08
-    Wm3::Vector3<float> mStart;            // +0x0C
-    Wm3::Vector3<float> mEnd;              // +0x18
-    float mLifetime;                       // +0x24
-    float mWidth;                          // +0x28
-    float mTextureScale;                   // +0x2C
-    msvc8::string mTexture;                // +0x30
-    SCreateBeamTransform mSpawnTransform;  // +0x4C
-    std::int32_t mBlendMode;               // +0x68
+    Entity* mAttachEntity;                // +0x00
+    std::int32_t mAttachBoneIndex;        // +0x04
+    std::int32_t mAttachArmyIndex;        // +0x08
+    Wm3::Vector3<float> mStart;           // +0x0C
+    Wm3::Vector3<float> mEnd;             // +0x18
+    float mLifetime;                      // +0x24
+    float mWidth;                         // +0x28
+    float mTextureScale;                  // +0x2C
+    fa::string mTexture;                  // +0x30
+    SCreateBeamTransform mSpawnTransform; // +0x4C
+    std::int32_t mBlendMode;              // +0x68
   };
 
-  static_assert(offsetof(SCreateBeamParams, mAttachEntity) == 0x00, "SCreateBeamParams::mAttachEntity offset must be 0x00");
+  static_assert(
+    offsetof(SCreateBeamParams, mAttachEntity) == 0x00,
+    "SCreateBeamParams::mAttachEntity offset must be 0x00"
+  );
   static_assert(
     offsetof(SCreateBeamParams, mAttachBoneIndex) == 0x04,
     "SCreateBeamParams::mAttachBoneIndex offset must be 0x04"
@@ -135,8 +145,7 @@ namespace moho
     /**
      * Address: 0x0065E390 (FUN_0065E390, Moho::CEffectManagerImpl::CreateAttachedEmitter)
      */
-    virtual IEffect*
-    CreateAttachedEmitter(Entity* entity, int boneIndex, const char* blueprintName, int armyIndex) = 0;
+    virtual IEffect* CreateAttachedEmitter(Entity* entity, int boneIndex, const char* blueprintName, int armyIndex) = 0;
 
     /**
      * Address: 0x0065E520 (FUN_0065E520, Moho::CEffectManagerImpl::CreateEmitterAtBone)
@@ -199,8 +208,8 @@ namespace moho
      */
     virtual void CreateLightParticle(
       Wm3::Vector3<float> position,
-      const msvc8::string& texturePrimary,
-      const msvc8::string& textureSecondary,
+      const fa::string& texturePrimary,
+      const fa::string& textureSecondary,
       float size,
       float lifetime,
       int armyIndex
@@ -220,6 +229,13 @@ namespace moho
      * Address: 0x0066B570 (FUN_0066B570, Moho::CEffectManagerImpl::PurgeDestroyedEffects)
      */
     virtual void PurgeDestroyedEffects() = 0;
+
+    /**
+     * Engine addition (server mode, plan WP9.3), not in the binary, after its slots: the manager that hosts effects
+     * outside a `Sim` (the server-mode client, moho/effects/rendering/CHostedEffectManager.h), or null for the sim's.
+     * The effect classes read their world through it when `GetSim()` is null (EffectHost.h).
+     */
+    [[nodiscard]] virtual const CHostedEffectManager* AsHosted() const noexcept;
   };
 
   static_assert(sizeof(IEffectManager) == 0x4, "IEffectManager size must be 0x4");

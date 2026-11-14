@@ -21,9 +21,9 @@ using namespace moho;
  * Formats packet state as `l=<size> <type>`, appends sequence header fields for
  * non-NAT frames, and dumps first bytes for NAT-traversal packets.
  */
-msvc8::string SNetPacket::ToString() const
+fa::string SNetPacket::ToString() const
 {
-  msvc8::string packetState;
+  fa::string packetState;
   NetPacketTypeToStr(header.mType, packetState);
 
   // Prefix: "l=<size> <state>"
@@ -77,13 +77,16 @@ msvc8::string SNetPacket::ToString() const
  * What it does:
  * Logs packet age, size, resend count, type and sequence/payload header fields.
  */
-void SNetPacket::LogPacket(const char* dirType, const int64_t receiveOrSentTime) const
+void SNetPacket::LogPacket(
+  const char* dirType,
+  const int64_t receiveOrSentTime
+) const
 {
   gpg::Logf("      %s %7dusec ago:", dirType, static_cast<int64_t>(receiveOrSentTime - mSentTime));
   gpg::Logf("        length=%d bytes", mSize);
   gpg::Logf("        resend count=%d", mResendCount);
 
-  msvc8::string buf;
+  fa::string buf;
   if (header.mType >= PT_NumTypes) {
     buf = gpg::STR_Printf("?[%d)", static_cast<uint8_t>(header.mType));
   } else {

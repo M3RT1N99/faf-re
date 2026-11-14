@@ -28,7 +28,10 @@ namespace
 namespace moho::debug_reflection
 {
 
-  gpg::RRef MakeRef(void* object, gpg::RType* const typeInfo)
+  gpg::RRef MakeRef(
+    void* object,
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RRef out{};
     out.mObj = object;
@@ -36,32 +39,35 @@ namespace moho::debug_reflection
     return out;
   }
 
-  void AddBase(gpg::RType* const owner, gpg::RType* const baseType)
+  void AddBase(
+    gpg::RType* const owner,
+    gpg::RType* const baseType
+  )
   {
     if (owner == nullptr || baseType == nullptr) {
       return;
     }
 
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    owner->AddBase(baseField);
+    gpg::AddReflectedBaseType(owner, baseType);
   }
 
-  void AddBaseRDebugOverlay(gpg::RType* const owner)
+  void AddBaseRDebugOverlay(
+    gpg::RType* const owner
+  )
   {
     AddBase(owner, CachedRDebugOverlayType());
   }
 
-  void AddBaseRType(gpg::RType* const owner)
+  void AddBaseRType(
+    gpg::RType* const owner
+  )
   {
     AddBase(owner, CachedRTypeType());
   }
 
-  void AddBaseRObject(gpg::RType* const owner)
+  void AddBaseRObject(
+    gpg::RType* const owner
+  )
   {
     AddBase(owner, CachedRObjectType());
   }
@@ -73,7 +79,9 @@ namespace moho::debug_reflection
    * Registers `moho::CScriptObject` as a reflected base of `owner`, naming the
    * base field after the base type.
    */
-  void AddBaseCScriptObject(gpg::RType* const owner)
+  void AddBaseCScriptObject(
+    gpg::RType* const owner
+  )
   {
     AddBase(owner, moho::CScriptObject::StaticGetClass());
   }

@@ -10,22 +10,28 @@
 //  - fadd, fsub, fmul, fdiv, fsqrt to the precision-control width (24 bits in every routine
 //    that computes: SET_PC24), with the extended exponent range, so nothing overflows or goes
 //    denormal at float limits before the store;
-//  - fsin, fcos, fptan, fpatan, fyl2x, f2xm1 to 64 bits (precision control does not apply to
-//    them);
-//  - fld, fabs, fchs, fscale and frndint exactly; fstp to the memory format, once.
+//  - fld, fabs, fchs, fscale and frndint exactly; fstp to the memory format, once; fistp under
+//    the rounding field.
+//
+// So every arithmetic instruction gives the x87's bits. The transcendental ones (fsin, fcos,
+// fptan, fpatan, fyl2x, f2xm1; precision control does not apply to them) take the C library's
+// binary128 function (bionic's is FreeBSD's ld128 msun, about one ulp at 113 bits) rounded to
+// the nearest 64-bit value. No x87 computes that: each CPU rounds its own internal result to 64
+// bits, within about one 64-bit ulp of the true value, so the two can differ in the last of the
+// 64 bits, as Intel's and AMD's x87 differ from each other there (tests/math_dump's
+// cpu_variants.txt). Every routine but acos and asin rounds that value to 24 bits or to float
+// before anything uses it, so the difference reaches its result only when the value lies within
+// one 64-bit ulp of a rounding boundary. msvc8_x87_acos and msvc8_x87_asin store fpatan's value
+// to a double, whose last bit it can change; every sim caller rounds that double to float
+// (fa::acosf, Lua's math.acos and math.asin with LUA_NUMBER float, the slerp angle), where the
+// two doubles give the same float unless one lies on a float rounding boundary. A caller that
+// kept the double would see the difference.
 //
 // binary128 arithmetic is software on every CPU, and the collision test's box radius alone made
 // a game's simulation several times slower with it. So the routines without a transcendental
 // instruction compute in double when their inputs and results are finite, which gives the same
 // bits by construction (see "The routines that only compute, in double" below); binary128 is
 // left for NaNs, infinities and the transcendental routines.
-//
-// The transcendental results come from the C library's binary128 functions (bionic and glibc
-// both carry FreeBSD's ld128 msun, about one ulp at 113 bits), rounded to the nearest 64-bit
-// value. The x87 rounds its own internal result instead, within one 64-bit ulp of the true
-// value, so the two can differ in the last of the 64 bits; every routine rounds that value to
-// 24 bits or to float before anything uses it, which turns such a difference into a different
-// result only within 2^-63 of a rounding boundary. (Intel and AMD differ there too.)
 //
 // fsin, fcos and fptan first reduce their argument by multiples of pi/2 taken from the x87's
 // own pi, which is pi truncated to 66 bits (Intel SDM: 0.C90FDAA22168C234C h * 2^2). The
@@ -36,9 +42,13 @@
 // signaling NaN makes it quiet, while a memory operand of an arithmetic instruction (fmul
 // dword ptr [..]) reaches it signaling, so the routines below load each input the way their
 // assembly does (Load or Memory). An instruction with a signaling and a quiet NaN gives the
-// quiet one; with two of a kind, the larger significand; one NaN comes out quiet. An invalid
-// operation (inf - inf, 0 * inf, 0 / 0, the square root or logarithm of a negative number)
-// gives the indefinite, the negative quiet NaN, not AArch64's positive one.
+// quiet one; with two of a kind, the larger significand, and with equal significands the
+// positive NaN, whichever register holds it; one NaN comes out quiet. The positive NaN is what
+// Intel's x87 gives, measured on a Core Ultra 7 265KF: the SDM leaves equal significands open,
+// and AMD's APM (vol. 1, table 6-7, note 4) calls the result of two with opposite signs
+// undefined (X87SoftCheck.cpp asks the x87 it runs on). An invalid operation (inf - inf,
+// 0 * inf, 0 / 0, the square root or logarithm of a negative number) gives the indefinite, the
+// negative quiet NaN, not AArch64's positive one.
 //
 // The rounding-control field is round to nearest on every simulation thread (FpEnvPosix.cpp,
 // and nothing in the engine changes it), and the routines here round to nearest. fistp is the
@@ -46,7 +56,8 @@
 //
 // tests/sim_math checks every routine against golden values from the x87 (windows-x64), and
 // tests/sim_math/X87SoftCheck.cpp against X87Math64.S on Android x86_64, which has both an x87
-// unit and a binary128 long double.
+// unit and a binary128 long double: edge cases and seeded random inputs for every routine, and
+// every float input of the routines that take one float.
 
 #include <bit>
 #include <cfloat>
@@ -58,8 +69,8 @@
 #error "legacy/math/X87MathSoft.cpp needs a binary128 long double (AArch64, Android x86_64)"
 #endif
 
-// The comparison test compiles this file again with every routine renamed, to run it next to
-// X87Math64.S in one program.
+// The comparison test (tests/sim_math/X87SoftCheck.cpp) compiles this file again with every
+// routine renamed, to run it next to X87Math64.S in one program.
 #if !defined(FAF_X87_SOFT_NAME)
 #define FAF_X87_SOFT_NAME(name) name
 #endif
@@ -90,30 +101,40 @@ namespace
 
   // --- Loads and rounding ----------------------------------------------------------------------
 
-  [[nodiscard]] bool IsSignaling(const Reg value) noexcept
+  [[nodiscard]] bool IsSignaling(
+    const Reg value
+  ) noexcept
   {
     return std::isnan(value) && (std::bit_cast<U128>(value) & kQuietBit) == 0;
   }
 
-  [[nodiscard]] Reg Quiet(const Reg value) noexcept
+  [[nodiscard]] Reg Quiet(
+    const Reg value
+  ) noexcept
   {
     return std::isnan(value) ? std::bit_cast<Reg>(std::bit_cast<U128>(value) | kQuietBit) : value;
   }
 
   /// A float memory operand of an arithmetic instruction: exact, a signaling NaN still
   /// signaling (the binary128 conversion keeps the quiet bit as it is).
-  [[nodiscard]] Reg Memory(const float value) noexcept
+  [[nodiscard]] Reg Memory(
+    const float value
+  ) noexcept
   {
     return static_cast<Reg>(value);
   }
 
   /// fld dword / qword: exact; a signaling NaN becomes quiet.
-  [[nodiscard]] Reg Load(const float value) noexcept
+  [[nodiscard]] Reg Load(
+    const float value
+  ) noexcept
   {
     return Quiet(static_cast<Reg>(value));
   }
 
-  [[nodiscard]] Reg Load(const double value) noexcept
+  [[nodiscard]] Reg Load(
+    const double value
+  ) noexcept
   {
     return Quiet(static_cast<Reg>(value));
   }
@@ -124,7 +145,11 @@ namespace
    * the sign of `residual` matters, and only when `value` lies exactly halfway between two
    * `bits`-bit numbers: anywhere else, the exact result is on the same side.
    */
-  [[nodiscard]] Reg RoundToBits(const Reg value, const Reg residual, const int bits) noexcept
+  [[nodiscard]] Reg RoundToBits(
+    const Reg value,
+    const Reg residual,
+    const int bits
+  ) noexcept
   {
     U128 raw = std::bit_cast<U128>(value);
     const unsigned int exponentField = static_cast<unsigned int>(raw >> 112) & 0x7FFFu;
@@ -147,17 +172,24 @@ namespace
     return std::bit_cast<Reg>(raw);
   }
 
-  [[nodiscard]] Reg Round64(const Reg value) noexcept
+  [[nodiscard]] Reg Round64(
+    const Reg value
+  ) noexcept
   {
     return RoundToBits(value, 0.0L, kExtendedBits);
   }
 
   /**
    * The result of an instruction with NaN operands: of a signaling and a quiet one, the quiet
-   * one; of two of a kind, the one with the larger significand; quiet in every case. The
-   * indefinite when neither operand was a NaN (an invalid operation).
+   * one; of two of a kind, the one with the larger significand, and of two with the same
+   * significand the positive one, whichever register holds it (Intel's x87, measured; AMD's APM
+   * leaves it undefined, see the file comment); quiet in every case. The indefinite when neither
+   * operand was a NaN (an invalid operation).
    */
-  [[nodiscard]] Reg NaNResult(const Reg a, const Reg b) noexcept
+  [[nodiscard]] Reg NaNResult(
+    const Reg a,
+    const Reg b
+  ) noexcept
   {
     if (std::isnan(a) && std::isnan(b)) {
       if (IsSignaling(a) != IsSignaling(b)) {
@@ -165,7 +197,10 @@ namespace
       }
       const U128 significandA = std::bit_cast<U128>(a) & kSignificandMask;
       const U128 significandB = std::bit_cast<U128>(b) & kSignificandMask;
-      return Quiet(significandA >= significandB ? a : b);
+      if (significandA != significandB) {
+        return Quiet(significandA > significandB ? a : b);
+      }
+      return Quiet(std::signbit(a) ? b : a);
     }
     if (std::isnan(a)) {
       return Quiet(a);
@@ -178,7 +213,11 @@ namespace
 
   // --- Arithmetic under precision control (`bits`) -------------------------------------------
 
-  [[nodiscard]] Reg Add(const Reg a, const Reg b, const int bits = kPc24Bits) noexcept
+  [[nodiscard]] Reg Add(
+    const Reg a,
+    const Reg b,
+    const int bits = kPc24Bits
+  ) noexcept
   {
     const Reg sum = a + b;
     if (std::isnan(sum)) {
@@ -194,7 +233,11 @@ namespace
   }
 
   /// a - b (a NaN operand passes through unnegated).
-  [[nodiscard]] Reg Sub(const Reg a, const Reg b, const int bits = kPc24Bits) noexcept
+  [[nodiscard]] Reg Sub(
+    const Reg a,
+    const Reg b,
+    const int bits = kPc24Bits
+  ) noexcept
   {
     if (std::isnan(a) || std::isnan(b)) {
       return NaNResult(a, b);
@@ -202,7 +245,11 @@ namespace
     return Add(a, -b, bits);
   }
 
-  [[nodiscard]] Reg Mul(const Reg a, const Reg b, const int bits = kPc24Bits) noexcept
+  [[nodiscard]] Reg Mul(
+    const Reg a,
+    const Reg b,
+    const int bits = kPc24Bits
+  ) noexcept
   {
     const Reg product = a * b;
     if (std::isnan(product)) {
@@ -214,7 +261,11 @@ namespace
     return RoundToBits(product, std::fma(a, b, -product), bits);
   }
 
-  [[nodiscard]] Reg Div(const Reg a, const Reg b, const int bits = kPc24Bits) noexcept
+  [[nodiscard]] Reg Div(
+    const Reg a,
+    const Reg b,
+    const int bits = kPc24Bits
+  ) noexcept
   {
     const Reg quotient = a / b;
     if (std::isnan(quotient)) {
@@ -228,7 +279,10 @@ namespace
     return RoundToBits(quotient, remainder / b, bits);
   }
 
-  [[nodiscard]] Reg Sqrt(const Reg a, const int bits = kPc24Bits) noexcept
+  [[nodiscard]] Reg Sqrt(
+    const Reg a,
+    const int bits = kPc24Bits
+  ) noexcept
   {
     if (std::isnan(a)) {
       return a;
@@ -252,9 +306,11 @@ namespace
 
   /// The x87's pi/2 (pi truncated to 66 bits, halved) in two parts, 0x1921FB544 * 2^-32 and
   /// 0x85A308D3 * 2^-65, short enough that their products with any quotient below 2^63 are
-  /// exact in binary128.
-  const Reg kX87HalfPiHigh = std::ldexp(static_cast<Reg>(0x1921FB544ull), -32);
-  const Reg kX87HalfPiLow = std::ldexp(static_cast<Reg>(0x85A308D3ull), -65);
+  /// exact in binary128. This file's constants are literals: static constructors in other files
+  /// call these routines (fa::sinf in CollisionBeamStartupRegistrations.cpp), and a constant
+  /// computed at run time could still be zero then.
+  constexpr Reg kX87HalfPiHigh = 0x1921FB544p-32L;
+  constexpr Reg kX87HalfPiLow = 0x85A308D3p-65L;
 
   struct SReducedAngle
   {
@@ -267,7 +323,9 @@ namespace
    * (it needs at most about 96 bits), and so is subtracting k * low, so the remainder is the
    * exact one for that pi.
    */
-  [[nodiscard]] SReducedAngle ReduceByX87HalfPi(const Reg x) noexcept
+  [[nodiscard]] SReducedAngle ReduceByX87HalfPi(
+    const Reg x
+  ) noexcept
   {
     const Reg k = nearbyintl(x / (kX87HalfPiHigh + kX87HalfPiLow));
     if (k == 0) {
@@ -278,7 +336,10 @@ namespace
   }
 
   /// sin(remainder + quadrant * pi/2). C library calls.
-  [[nodiscard, gnu::noinline]] Reg SineOfQuadrant(const Reg remainder, const unsigned int quadrant) noexcept
+  [[nodiscard, gnu::noinline]] Reg SineOfQuadrant(
+    const Reg remainder,
+    const unsigned int quadrant
+  ) noexcept
   {
     switch (quadrant & 3u) {
     case 0:
@@ -293,14 +354,19 @@ namespace
   }
 
   /// tan(remainder + quadrant * pi/2). C library call.
-  [[nodiscard, gnu::noinline]] Reg TangentOfQuadrant(const Reg remainder, const unsigned int quadrant) noexcept
+  [[nodiscard, gnu::noinline]] Reg TangentOfQuadrant(
+    const Reg remainder,
+    const unsigned int quadrant
+  ) noexcept
   {
     const Reg tangent = tanl(remainder);
     return (quadrant & 1u) == 0 ? tangent : -1.0L / tangent;
   }
 
   /// fsin. An operand of magnitude 2^63 or more is left as it is (C2 set; no routine checks it).
-  [[nodiscard]] Reg Fsin(const Reg x) noexcept
+  [[nodiscard]] Reg Fsin(
+    const Reg x
+  ) noexcept
   {
     if (std::isnan(x)) {
       return x;
@@ -316,7 +382,9 @@ namespace
   }
 
   /// fcos, as fsin: cos(x) = sin(x + pi/2).
-  [[nodiscard]] Reg Fcos(const Reg x) noexcept
+  [[nodiscard]] Reg Fcos(
+    const Reg x
+  ) noexcept
   {
     if (std::isnan(x)) {
       return x;
@@ -334,7 +402,9 @@ namespace
   /// fptan's tan(x) (the 1.0 it pushes after it is dropped by every routine). Out of range
   /// (|x| >= 2^63) it pushes nothing, the drop pops x, and the store underflows the stack: the
   /// indefinite.
-  [[nodiscard]] Reg Fptan(const Reg x) noexcept
+  [[nodiscard]] Reg Fptan(
+    const Reg x
+  ) noexcept
   {
     if (std::isnan(x)) {
       return x;
@@ -347,7 +417,10 @@ namespace
   }
 
   /// fpatan: atan(st1 / st0) in the quadrant of (st0, st1), here atan2(y, x). C library call.
-  [[nodiscard, gnu::noinline]] Reg Fpatan(const Reg y, const Reg x) noexcept
+  [[nodiscard, gnu::noinline]] Reg Fpatan(
+    const Reg y,
+    const Reg x
+  ) noexcept
   {
     if (std::isnan(y) || std::isnan(x)) {
       return NaNResult(y, x);
@@ -357,7 +430,10 @@ namespace
 
   /// fyl2x: st1 * log2(st0), here y * log2(x). Its invalid cases (x < 0, 0 * log2 of 0 or
   /// infinity, infinity * log2(1)) give the indefinite. C library call.
-  [[nodiscard, gnu::noinline]] Reg Fyl2x(const Reg x, const Reg y) noexcept
+  [[nodiscard, gnu::noinline]] Reg Fyl2x(
+    const Reg x,
+    const Reg y
+  ) noexcept
   {
     if (std::isnan(x) || std::isnan(y)) {
       return NaNResult(x, y);
@@ -373,7 +449,9 @@ namespace
   }
 
   /// f2xm1: 2^x - 1, for |x| <= 1 (every routine passes |x| <= 0.5). C library call.
-  [[nodiscard, gnu::noinline]] Reg F2xm1(const Reg x) noexcept
+  [[nodiscard, gnu::noinline]] Reg F2xm1(
+    const Reg x
+  ) noexcept
   {
     constexpr Reg kLn2 = 0.6931471805599453094172321214581765680755L;
     if (std::isnan(x) || x == 0) {
@@ -383,13 +461,18 @@ namespace
   }
 
   /// frndint under the thread's rounding field (always round to nearest here).
-  [[nodiscard]] Reg Frndint(const Reg x) noexcept
+  [[nodiscard]] Reg Frndint(
+    const Reg x
+  ) noexcept
   {
     return nearbyintl(x);
   }
 
   /// fscale: st0 * 2^trunc(st1), exact.
-  [[nodiscard]] Reg Fscale(const Reg value, const Reg scale) noexcept
+  [[nodiscard]] Reg Fscale(
+    const Reg value,
+    const Reg scale
+  ) noexcept
   {
     if (std::isnan(value) || std::isnan(scale)) {
       return NaNResult(value, scale);
@@ -400,27 +483,33 @@ namespace
   }
 
   // fldl2e, fldln2, fldlg2 under round to nearest: the x87's 64-bit constants.
-  const Reg kFldl2e = std::ldexp(static_cast<Reg>(0xB8AA3B295C17F0BCull), -63);
-  const Reg kFldln2 = std::ldexp(static_cast<Reg>(0xB17217F7D1CF79ACull), -64);
-  const Reg kFldlg2 = std::ldexp(static_cast<Reg>(0x9A209A84FBCFF799ull), -65);
+  constexpr Reg kFldl2e = 0xB8AA3B295C17F0BCp-63L;
+  constexpr Reg kFldln2 = 0xB17217F7D1CF79ACp-64L;
+  constexpr Reg kFldlg2 = 0x9A209A84FBCFF799p-65L;
 
   // --- Stores ----------------------------------------------------------------------------------
 
   /// fstp dword: one rounding to float, with float's range (denormals, overflow to infinity).
-  [[nodiscard]] float StoreFloat(const Reg value) noexcept
+  [[nodiscard]] float StoreFloat(
+    const Reg value
+  ) noexcept
   {
     return static_cast<float>(value);
   }
 
   /// fstp qword.
-  [[nodiscard]] double StoreDouble(const Reg value) noexcept
+  [[nodiscard]] double StoreDouble(
+    const Reg value
+  ) noexcept
   {
     return static_cast<double>(value);
   }
 
   /// fistp dword of a float under the thread's rounding field: the integer indefinite
   /// 0x80000000 for NaN and for a result outside int32. A float is exact in double.
-  [[nodiscard]] std::int32_t StoreInt32(const double value) noexcept
+  [[nodiscard]] std::int32_t StoreInt32(
+    const double value
+  ) noexcept
   {
     if (std::isnan(value)) {
       return INT32_MIN;
@@ -458,7 +547,9 @@ namespace
   // or an infinity anywhere goes to the binary128 path, which follows the x87's NaN rules.
 
   /// `value` (finite, zero or normal) rounded to 24 significant bits, to nearest even.
-  [[nodiscard]] inline double Round24(const double value) noexcept
+  [[nodiscard]] inline double Round24(
+    const double value
+  ) noexcept
   {
     std::uint64_t raw = std::bit_cast<std::uint64_t>(value);
     if ((raw & 0x7FF0000000000000ull) == 0) {
@@ -473,7 +564,10 @@ namespace
     return std::bit_cast<double>(raw);
   }
 
-  [[nodiscard]] inline double Mul24(const double a, const double b) noexcept
+  [[nodiscard]] inline double Mul24(
+    const double a,
+    const double b
+  ) noexcept
   {
     return Round24(a * b);
   }
@@ -484,7 +578,10 @@ namespace
    * land on one, so the double product decides alone but there, where the sign of the exact rest
    * (fma) does.
    */
-  [[nodiscard]] inline double MulWide24(const double a, const double b) noexcept
+  [[nodiscard]] inline double MulWide24(
+    const double a,
+    const double b
+  ) noexcept
   {
     const double product = a * b;
     std::uint64_t raw = std::bit_cast<std::uint64_t>(product);
@@ -505,28 +602,41 @@ namespace
     return std::bit_cast<double>(raw);
   }
 
-  [[nodiscard]] inline double Add24(const double a, const double b) noexcept
+  [[nodiscard]] inline double Add24(
+    const double a,
+    const double b
+  ) noexcept
   {
     return Round24(a + b);
   }
 
-  [[nodiscard]] inline double Sub24(const double a, const double b) noexcept
+  [[nodiscard]] inline double Sub24(
+    const double a,
+    const double b
+  ) noexcept
   {
     return Round24(a - b);
   }
 
-  [[nodiscard]] inline double Div24(const double a, const double b) noexcept
+  [[nodiscard]] inline double Div24(
+    const double a,
+    const double b
+  ) noexcept
   {
     return Round24(a / b);
   }
 
-  [[nodiscard]] inline double Sqrt24(const double a) noexcept
+  [[nodiscard]] inline double Sqrt24(
+    const double a
+  ) noexcept
   {
     return Round24(std::sqrt(a));
   }
 
   template <class... Values>
-  [[nodiscard]] inline bool AllFinite(const Values... values) noexcept
+  [[nodiscard]] inline bool AllFinite(
+    const Values... values
+  ) noexcept
   {
     return (std::isfinite(values) && ...);
   }
@@ -649,11 +759,6 @@ extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_sin_times_cos)(const float sinArg, 
   const Reg cosine = Fcos(Load(cosArg));
   const Reg sine = Fsin(Load(sinArg));
   return StoreFloat(Mul(cosine, sine));
-}
-
-extern "C" float FAF_X87_SOFT_NAME(msvc8_x87_sin_times)(const float sinArg, const float factor)
-{
-  return StoreFloat(Mul(Fsin(Load(sinArg)), Memory(factor)));
 }
 
 // fld a; fmul b; fsin; fmul factor.
@@ -808,7 +913,11 @@ extern "C" void FAF_X87_SOFT_NAME(msvc8_x87_scale_vector_to_length_of)(
   float* const destLanes, const float* const sourceLanes, const float* const targetLanes, const float sourceLengthSq
 )
 {
-  if (AllFinite(targetLanes[0], targetLanes[1], targetLanes[2], sourceLengthSq, sourceLanes[0], sourceLanes[1], sourceLanes[2])) {
+  if (
+    AllFinite(
+      targetLanes[0], targetLanes[1], targetLanes[2], sourceLengthSq, sourceLanes[0], sourceLanes[1], sourceLanes[2]
+    )
+  ) {
     const double x = targetLanes[0];
     const double y = targetLanes[1];
     const double z = targetLanes[2];

@@ -36,6 +36,11 @@ namespace gpg::gal::effects
   {
     Vertex,
     Pixel,
+    // Engine addition (tessellation, Direct3D 12 and Vulkan): a pass that names a
+    // hull and a domain function draws its triangles as 3-point patches. Both are
+    // plain functions; GenerateModernHlsl writes the attributed entry points.
+    Hull,
+    Domain,
   };
 
   enum class TextureDimension : std::uint8_t
@@ -78,10 +83,10 @@ namespace gpg::gal::effects
   /** Where one parameter lives in $Globals (row-major packing, -Zpr). */
   struct ConstantSlot
   {
-    std::uint32_t parameter = 0;     // index into EffectDescription::parameters
-    std::uint32_t offset = 0;        // bytes from the start of $Globals
-    std::uint32_t size = 0;          // bytes the shader reads
-    std::uint32_t elementStride = 0; // bytes between array elements
+    std::uint32_t parameter = 0;         // index into EffectDescription::parameters
+    std::uint32_t offset = 0;            // bytes from the start of $Globals
+    std::uint32_t size = 0;              // bytes the shader reads
+    std::uint32_t elementStride = 0;     // bytes between array elements
     std::vector<ConstantMember> members; // struct parameters only
   };
 

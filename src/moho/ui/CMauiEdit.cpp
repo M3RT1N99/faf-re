@@ -71,53 +71,12 @@ namespace
     }
   }
   /**
-   * Address: 0x0078DC60 (FUN_0078DC60)
-   *
-   * What it does:
-   * Returns CMauiEdit background-visible lane.
-   */
-  [[maybe_unused]] bool ReadEditBackgroundVisibleLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mBackgroundVisible;
-  }
-
-  /**
-   * Address: 0x0078ECC0 (FUN_0078ECC0)
-   *
-   * What it does:
-   * Stores edit drop-shadow enable lane.
-   */
-  [[maybe_unused]] CMauiEdit* WriteEditDropShadowLane(
-    CMauiEdit* const edit,
-    const bool enabled
-  ) noexcept
-  {
-    edit->mDropShadow = enabled;
-    return edit;
-  }
-
-  /**
-   * Address: 0x0078ECD0 (FUN_0078ECD0)
-   *
-   * What it does:
-   * Returns edit max-char limit lane.
-   */
-  [[maybe_unused]] std::int32_t ReadEditMaxCharsLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mMaxChars;
-  }
-
-  /**
    * Address: 0x0078ED10 (FUN_0078ED10)
    *
    * What it does:
    * Reads edit-bound font height lane (`0.0f` when font is missing).
    */
-  [[maybe_unused]] float ReadEditFontHeightLane(
+  float ReadEditFontHeightLane(
     const CMauiEdit* const edit
   ) noexcept
   {
@@ -126,68 +85,12 @@ namespace
   }
 
   /**
-   * Address: 0x0078ED30 (FUN_0078ED30)
-   *
-   * What it does:
-   * Stores edit foreground color lane.
-   */
-  [[maybe_unused]] CMauiEdit* WriteEditForegroundColorLane(
-    CMauiEdit* const edit,
-    const std::uint32_t color
-  ) noexcept
-  {
-    edit->mForegroundColor = color;
-    return edit;
-  }
-
-  /**
-   * Address: 0x0078ED40 (FUN_0078ED40)
-   *
-   * What it does:
-   * Returns edit foreground color lane.
-   */
-  [[maybe_unused]] std::uint32_t ReadEditForegroundColorLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mForegroundColor;
-  }
-
-  /**
-   * Address: 0x0078ED50 (FUN_0078ED50)
-   *
-   * What it does:
-   * Stores edit background-visible lane.
-   */
-  [[maybe_unused]] CMauiEdit* WriteEditBackgroundVisibleLane(
-    CMauiEdit* const edit,
-    const bool visible
-  ) noexcept
-  {
-    edit->mBackgroundVisible = visible;
-    return edit;
-  }
-
-  /**
-   * Address: 0x0078ED60 (FUN_0078ED60)
-   *
-   * What it does:
-   * Returns edit background-visible lane.
-   */
-  [[maybe_unused]] bool ReadEditBackgroundVisibleLaneAlias(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mBackgroundVisible;
-  }
-
-  /**
    * Address: 0x0078ED70 (FUN_0078ED70)
    *
    * What it does:
    * Enables background rendering and stores edit background color lane.
    */
-  [[maybe_unused]] CMauiEdit* EnableEditBackgroundAndWriteColor(
+  CMauiEdit* EnableEditBackgroundAndWriteColor(
     CMauiEdit* const edit,
     const std::uint32_t color
   ) noexcept
@@ -198,148 +101,12 @@ namespace
   }
 
   /**
-   * Address: 0x0078ED80 (FUN_0078ED80)
-   *
-   * What it does:
-   * Returns edit background color lane.
-   */
-  [[maybe_unused]] std::uint32_t ReadEditBackgroundColorLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mBackgroundColor;
-  }
-
-  /**
-   * Address: 0x0078ED90 (FUN_0078ED90)
-   *
-   * What it does:
-   * Stores edit highlight-foreground color lane.
-   */
-  [[maybe_unused]] CMauiEdit* WriteEditHighlightForegroundColorLane(
-    CMauiEdit* const edit,
-    const std::uint32_t color
-  ) noexcept
-  {
-    edit->mHighlightForegroundColor = color;
-    return edit;
-  }
-
-  /**
-   * Address: 0x0078EDA0 (FUN_0078EDA0)
-   *
-   * What it does:
-   * Returns edit highlight-foreground color lane.
-   */
-  [[maybe_unused]] std::uint32_t ReadEditHighlightForegroundColorLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mHighlightForegroundColor;
-  }
-
-  /**
-   * Address: 0x0078EDB0 (FUN_0078EDB0)
-   *
-   * What it does:
-   * Stores edit highlight-background color lane.
-   */
-  [[maybe_unused]] CMauiEdit* WriteEditHighlightBackgroundColorLane(
-    CMauiEdit* const edit,
-    const std::uint32_t color
-  ) noexcept
-  {
-    edit->mHighlightBackgroundColor = color;
-    return edit;
-  }
-
-  /**
-   * Address: 0x0078EDC0 (FUN_0078EDC0)
-   *
-   * What it does:
-   * Returns edit highlight-background color lane.
-   */
-  [[maybe_unused]] std::uint32_t ReadEditHighlightBackgroundColorLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mHighlightBackgroundColor;
-  }
-
-  /**
-   * Address: 0x0078EE00 (FUN_0078EE00)
-   *
-   * What it does:
-   * Returns edit caret-position lane.
-   */
-  [[maybe_unused]] std::int32_t ReadEditCaretPositionLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mCaretPosition;
-  }
-
-  /**
-   * Address: 0x0078EE10 (FUN_0078EE10)
-   *
-   * What it does:
-   * Stores edit caret-visible lane.
-   */
-  [[maybe_unused]] CMauiEdit* WriteEditCaretVisibleLane(
-    CMauiEdit* const edit,
-    const bool visible
-  ) noexcept
-  {
-    edit->mCaretVisible = visible;
-    return edit;
-  }
-
-  /**
-   * Address: 0x0078EE20 (FUN_0078EE20)
-   *
-   * What it does:
-   * Returns edit caret-visible lane.
-   */
-  [[maybe_unused]] bool ReadEditCaretVisibleLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mCaretVisible;
-  }
-
-  /**
-   * Address: 0x0078EE40 (FUN_0078EE40)
-   *
-   * What it does:
-   * Returns edit caret color lane.
-   */
-  [[maybe_unused]] std::uint32_t ReadEditCaretColorLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mCaretColor;
-  }
-
-  /**
-   * Address: 0x0078EE50 (FUN_0078EE50)
-   *
-   * What it does:
-   * Returns edit input-enabled lane.
-   */
-  [[maybe_unused]] bool ReadEditInputEnabledLane(
-    const CMauiEdit* const edit
-  ) noexcept
-  {
-    return edit->mIsEnabled;
-  }
-
-  /**
    * Address: 0x0078EE70 (FUN_0078EE70)
    *
    * What it does:
    * Returns whether selection start/end lanes differ.
    */
-  [[maybe_unused]] bool HasEditSelectionRange(
+  bool HasEditSelectionRange(
     const CMauiEdit* const edit
   ) noexcept
   {
@@ -353,7 +120,7 @@ namespace
    * Writes edit input/caret-enabled lanes; when disabling, also abandons
    * keyboard focus through virtual dispatch path.
    */
-  [[maybe_unused]] bool WriteEditInputEnabledAndCaretVisible(
+  bool WriteEditInputEnabledAndCaretVisible(
     moho::CMauiEdit* const edit,
     const bool enabled
   )
@@ -506,7 +273,7 @@ namespace
   }
 
   void CopyUtf8TextToClipboard(
-    const msvc8::string& text
+    const fa::string& text
   )
   {
     const std::wstring wideText = gpg::STR_Utf8ToWide(text.c_str());
@@ -524,7 +291,6 @@ namespace
     CopyUtf8TextToClipboard(edit->GetSelection());
   }
 
-
   /**
    * Address: 0x0078F620 (FUN_0078F620, Moho::CMauiEdit::ApplyFontAndRefreshClip)
    *
@@ -534,19 +300,18 @@ namespace
    */
   void ApplyEditFontAndRefreshClip(
     CMauiEdit* const edit,
-    const boost::SharedPtrRaw<CD3DFont>& requestedFont
+    const moho::CountedPtr<CD3DFont>& requestedFont
   )
   {
     if (!edit) {
       return;
     }
 
-    if (requestedFont.px != nullptr) {
-      AssignIntrusiveFont(edit->mFont, requestedFont.px);
+    if (requestedFont.tex != nullptr) {
+      AssignIntrusiveFont(edit->mFont, requestedFont.tex);
     } else {
-      boost::SharedPtrRaw<CD3DFont> defaultFont = CD3DFont::Create(14, "Courier New");
-      AssignIntrusiveFont(edit->mFont, defaultFont.px);
-      defaultFont.release();
+      moho::CountedPtr<CD3DFont> defaultFont = CD3DFont::Create(14, "Courier New");
+      AssignIntrusiveFont(edit->mFont, defaultFont.tex);
     }
 
     SetEditClipOffsetLeft(edit, edit->mClipOffset);
@@ -562,7 +327,7 @@ namespace
     const std::uint32_t vertexColor
   )
   {
-    const boost::shared_ptr<moho::CD3DBatchTexture> texture = moho::CD3DBatchTexture::FromSolidColor(textureColor);
+    const std::shared_ptr<moho::CD3DBatchTexture> texture = moho::CD3DBatchTexture::FromSolidColor(textureColor);
     primBatcher->SetTexture(texture);
 
     const moho::CD3DPrimBatcher::Vertex topLeft = MakeBorderVertex(left, top, vertexColor, 0.0f, 0.0f);
@@ -575,7 +340,7 @@ namespace
   void RenderEditTextAt(
     moho::CMauiEdit* const edit,
     moho::CD3DPrimBatcher* const primBatcher,
-    const msvc8::string& text,
+    const fa::string& text,
     const float x,
     const float y,
     const std::uint32_t color
@@ -599,7 +364,7 @@ namespace
   float RenderEditTextRun(
     moho::CMauiEdit* const edit,
     moho::CD3DPrimBatcher* const primBatcher,
-    const msvc8::string& text,
+    const fa::string& text,
     const float x,
     const float baselineY,
     const std::uint32_t color
@@ -612,7 +377,7 @@ namespace
     RenderEditTextAt(edit, primBatcher, text, x, baselineY, color);
     return advance;
   }
-}
+} // namespace
 
 gpg::RType* moho::CMauiEdit::sType = nullptr;
 
@@ -676,8 +441,8 @@ int moho::cfunc_CMauiEditSetNewFontL(
   }
   const int pointSize = static_cast<int>(lua_tonumber(state->m_state, 3));
 
-  boost::SharedPtrRaw<CD3DFont> createdFont = CD3DFont::Create(pointSize, familyName);
-  if (createdFont.px != nullptr) {
+  moho::CountedPtr<CD3DFont> createdFont = CD3DFont::Create(pointSize, familyName);
+  if (createdFont.tex != nullptr) {
     ApplyEditFontAndRefreshClip(edit, createdFont);
     lua_settop(state->m_state, 1);
   } else {
@@ -685,7 +450,6 @@ int moho::cfunc_CMauiEditSetNewFontL(
     (void)lua_gettop(state->m_state);
   }
 
-  createdFont.release();
   return 1;
 }
 
@@ -738,7 +502,7 @@ int moho::cfunc_CMauiEditSetNewForegroundColorL(
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
   LuaPlus::LuaObject colorObject(LuaPlus::LuaStackObject(state, 2));
-  (void)WriteEditForegroundColorLane(edit, SCR_DecodeColor(state, colorObject));
+  edit->mForegroundColor = SCR_DecodeColor(state, colorObject);
 
   lua_settop(state->m_state, 1);
   return 1;
@@ -792,8 +556,7 @@ int moho::cfunc_CMauiEditGetForegroundColorL(
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
-  LuaPlus::LuaObject colorObject =
-    SCR_EncodeColor(state, ReadEditForegroundColorLane(edit));
+  LuaPlus::LuaObject colorObject = SCR_EncodeColor(state, edit->mForegroundColor);
   colorObject.PushStack(state);
   return 1;
 }
@@ -904,8 +667,7 @@ int moho::cfunc_CMauiEditGetBackgroundColorL(
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
-  LuaPlus::LuaObject colorObject =
-    SCR_EncodeColor(state, ReadEditBackgroundColorLane(edit));
+  LuaPlus::LuaObject colorObject = SCR_EncodeColor(state, edit->mBackgroundColor);
   colorObject.PushStack(state);
   return 1;
 }
@@ -960,7 +722,7 @@ int moho::cfunc_CMauiEditShowBackgroundL(
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
   LuaPlus::LuaStackObject visibleArg(state, 2);
-  (void)WriteEditBackgroundVisibleLane(edit, visibleArg.GetBoolean());
+  edit->mBackgroundVisible = visibleArg.GetBoolean();
 
   lua_settop(state->m_state, 1);
   return 1;
@@ -1014,7 +776,7 @@ int moho::cfunc_CMauiEditIsBackgroundVisibleL(
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
-  lua_pushboolean(state->m_state, ReadEditBackgroundVisibleLaneAlias(edit));
+  lua_pushboolean(state->m_state, edit->mBackgroundVisible);
   (void)lua_gettop(state->m_state);
   return 1;
 }
@@ -1125,7 +887,7 @@ int moho::cfunc_CMauiEditSetTextL(
     text = "";
   }
 
-  edit->SetText(msvc8::string(text));
+  edit->SetText(fa::string(text));
   lua_settop(state->m_state, 1);
   return 1;
 }
@@ -1176,7 +938,7 @@ int moho::cfunc_CMauiEditGetTextL(
 
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
-  const msvc8::string text = edit->GetText();
+  const fa::string text = edit->GetText();
   lua_pushstring(state->m_state, text.c_str());
   (void)lua_gettop(state->m_state);
   return 1;
@@ -1287,7 +1049,7 @@ int moho::cfunc_CMauiEditGetCaretPositionL(
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
-  lua_pushnumber(state->m_state, static_cast<float>(ReadEditCaretPositionLane(edit)));
+  lua_pushnumber(state->m_state, static_cast<float>(edit->mCaretPosition));
   (void)lua_gettop(state->m_state);
   return 1;
 }
@@ -1340,7 +1102,7 @@ int moho::cfunc_CMauiEditShowCaretL(
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
   LuaPlus::LuaStackObject visibleArg(state, 2);
-  (void)WriteEditCaretVisibleLane(edit, visibleArg.GetBoolean());
+  edit->mCaretVisible = visibleArg.GetBoolean();
   lua_settop(state->m_state, 1);
   return 1;
 }
@@ -1391,7 +1153,7 @@ int moho::cfunc_CMauiEditIsCaretVisibleL(
 
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
-  lua_pushboolean(state->m_state, ReadEditCaretVisibleLane(edit));
+  lua_pushboolean(state->m_state, edit->mCaretVisible);
   (void)lua_gettop(state->m_state);
   return 1;
 }
@@ -1434,7 +1196,7 @@ moho::CScrLuaInitForm* moho::func_CMauiEditSetNewCaretColor_LuaFuncDef()
  * What it does:
  * Masks one caret color lane to RGB24 and stores it in edit runtime state.
  */
-[[maybe_unused]] static std::uint32_t func_SetEditCaretColorRgb24(
+static std::uint32_t func_SetEditCaretColorRgb24(
   moho::CMauiEdit* const edit,
   const std::uint32_t color
 ) noexcept
@@ -1513,7 +1275,7 @@ int moho::cfunc_CMauiEditGetCaretColorL(
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
-  LuaPlus::LuaObject colorObject = SCR_EncodeColor(state, ReadEditCaretColorLane(edit));
+  LuaPlus::LuaObject colorObject = SCR_EncodeColor(state, edit->mCaretColor);
   colorObject.PushStack(state);
   return 1;
 }
@@ -1691,7 +1453,7 @@ int moho::cfunc_CMauiEditGetMaxCharsL(
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
-  lua_pushnumber(state->m_state, static_cast<float>(ReadEditMaxCharsLane(edit)));
+  lua_pushnumber(state->m_state, static_cast<float>(edit->mMaxChars));
   (void)lua_gettop(state->m_state);
   return 1;
 }
@@ -1742,7 +1504,7 @@ int moho::cfunc_CMauiEditIsEnabledL(
 
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
-  lua_pushboolean(state->m_state, ReadEditInputEnabledLane(edit));
+  lua_pushboolean(state->m_state, edit->mIsEnabled);
   (void)lua_gettop(state->m_state);
   return 1;
 }
@@ -1901,9 +1663,7 @@ int moho::cfunc_CMauiEditSetNewHighlightForegroundColorL(
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
   LuaPlus::LuaObject colorObject(LuaPlus::LuaStackObject(state, 2));
-  (void)WriteEditHighlightForegroundColorLane(
-    edit, SCR_DecodeColor(state, colorObject)
-  );
+  edit->mHighlightForegroundColor = SCR_DecodeColor(state, colorObject);
   lua_settop(state->m_state, 1);
   return 1;
 }
@@ -1956,8 +1716,7 @@ int moho::cfunc_CMauiEditGetHighlightForegroundColorL(
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
-  LuaPlus::LuaObject colorObject =
-    SCR_EncodeColor(state, ReadEditHighlightForegroundColorLane(edit));
+  LuaPlus::LuaObject colorObject = SCR_EncodeColor(state, edit->mHighlightForegroundColor);
   colorObject.PushStack(state);
   return 1;
 }
@@ -2012,9 +1771,7 @@ int moho::cfunc_CMauiEditSetNewHighlightBackgroundColorL(
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
   LuaPlus::LuaObject colorObject(LuaPlus::LuaStackObject(state, 2));
-  (void)WriteEditHighlightBackgroundColorLane(
-    edit, SCR_DecodeColor(state, colorObject)
-  );
+  edit->mHighlightBackgroundColor = SCR_DecodeColor(state, colorObject);
   lua_settop(state->m_state, 1);
   return 1;
 }
@@ -2067,8 +1824,7 @@ int moho::cfunc_CMauiEditGetHighlightBackgroundColorL(
   LuaPlus::LuaObject editObject(LuaPlus::LuaStackObject(state, 1));
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
-  LuaPlus::LuaObject colorObject =
-    SCR_EncodeColor(state, ReadEditHighlightBackgroundColorLane(edit));
+  LuaPlus::LuaObject colorObject = SCR_EncodeColor(state, edit->mHighlightBackgroundColor);
   colorObject.PushStack(state);
   return 1;
 }
@@ -2284,7 +2040,7 @@ int moho::cfunc_CMauiEditSetDropShadowL(
   CMauiEdit* const edit = SCR_FromLua_CMauiEdit(editObject, state);
 
   LuaPlus::LuaStackObject dropShadowArg(state, 2);
-  (void)WriteEditDropShadowLane(edit, dropShadowArg.GetBoolean());
+  edit->mDropShadow = dropShadowArg.GetBoolean();
   lua_settop(state->m_state, 1);
   return 1;
 }
@@ -2467,9 +2223,8 @@ moho::CMauiEdit::CMauiEdit(
   // ApplyEditFontAndRefreshClip -> release(). The .c's middle `0.0f` argument to
   // sub_78F620 is the elided requested-clip-offset lane already handled inside
   // ApplyEditFontAndRefreshClip (FUN_0078F620).
-  boost::SharedPtrRaw<CD3DFont> defaultFont = CD3DFont::Create(14, "Courier New");
+  moho::CountedPtr<CD3DFont> defaultFont = CD3DFont::Create(14, "Courier New");
   ApplyEditFontAndRefreshClip(this, defaultFont);
-  defaultFont.release();
 
   mNeedsFrameUpdate = true;
 }
@@ -2567,7 +2322,7 @@ void moho::CMauiEdit::DoRender(
   }
 
   if (firstRunEnd > clipStart) {
-    const msvc8::string runText = gpg::STR_Utf8SubString(mText.c_str(), clipStart, firstRunEnd - clipStart);
+    const fa::string runText = gpg::STR_Utf8SubString(mText.c_str(), clipStart, firstRunEnd - clipStart);
     penX += RenderEditTextRun(this, primBatcher, runText, penX, baselineY, mForegroundColor);
   }
 
@@ -2582,24 +2337,14 @@ void moho::CMauiEdit::DoRender(
   }
 
   if (selectedEnd > selectedStart) {
-    const msvc8::string runText =
-      gpg::STR_Utf8SubString(mText.c_str(), selectedStart, selectedEnd - selectedStart);
+    const fa::string runText = gpg::STR_Utf8SubString(mText.c_str(), selectedStart, selectedEnd - selectedStart);
     const float runAdvance = font->GetAdvance(runText.c_str(), 0);
 
     if (mBackgroundVisible) {
-      DrawSolidColorQuad(
-        primBatcher,
-        mHighlightBackgroundColor,
-        penX,
-        top,
-        penX + runAdvance,
-        bottom,
-        mVertexAlpha
-      );
+      DrawSolidColorQuad(primBatcher, mHighlightBackgroundColor, penX, top, penX + runAdvance, bottom, mVertexAlpha);
     }
 
-    penX +=
-      RenderEditTextRun(this, primBatcher, runText, penX, baselineY, mHighlightForegroundColor);
+    penX += RenderEditTextRun(this, primBatcher, runText, penX, baselineY, mHighlightForegroundColor);
   }
 
   int suffixStart = mSelectionEnd;
@@ -2608,7 +2353,7 @@ void moho::CMauiEdit::DoRender(
   }
 
   if (clipEnd > suffixStart) {
-    const msvc8::string runText = gpg::STR_Utf8SubString(mText.c_str(), suffixStart, clipEnd - suffixStart);
+    const fa::string runText = gpg::STR_Utf8SubString(mText.c_str(), suffixStart, clipEnd - suffixStart);
     (void)RenderEditTextRun(this, primBatcher, runText, penX, baselineY, mForegroundColor);
   }
 
@@ -2621,8 +2366,7 @@ void moho::CMauiEdit::DoRender(
     return;
   }
 
-  const msvc8::string caretPrefix =
-    gpg::STR_Utf8SubString(mText.c_str(), clipStart, caretPosition - clipStart);
+  const fa::string caretPrefix = gpg::STR_Utf8SubString(mText.c_str(), clipStart, caretPosition - clipStart);
   const float caretX = left + font->GetAdvance(caretPrefix.c_str(), 0);
   const float caretBottom = top + font->mAscent + font->mDescent;
   const std::uint32_t caretColor = mCaretColor | (mCaretCycleCurrentAlpha << 24u);
@@ -2662,7 +2406,7 @@ bool moho::CMauiEdit::HandleEvent(
  */
 void moho::CMauiEdit::AbandonKeyboardFocus()
 {
-  (void)WriteEditCaretVisibleLane(this, false);
+  this->mCaretVisible = false;
   if (Maui_CurrentFocusControl.GetObjectPtr() == this) {
     MAUI_SetKeyboardFocus(nullptr, true);
   }
@@ -2687,9 +2431,9 @@ void moho::CMauiEdit::LosingKeyboardFocus()
  * What it does:
  * Returns the currently selected UTF-8 substring from the edit text lane.
  */
-msvc8::string moho::CMauiEdit::GetSelection()
+fa::string moho::CMauiEdit::GetSelection()
 {
-  msvc8::string selectionText{};
+  fa::string selectionText{};
 
   const int selectionStart = mSelectionStart;
   const int selectionEnd = mSelectionEnd;
@@ -2708,9 +2452,7 @@ msvc8::string moho::CMauiEdit::GetSelection()
  */
 bool moho::CMauiEdit::EnterPressed()
 {
-  return RunScriptStringBool(
-    "OnEnterPressed", std::string(mText.c_str())
-  );
+  return RunScriptStringBool("OnEnterPressed", std::string(mText.c_str()));
 }
 
 /**
@@ -2721,9 +2463,7 @@ bool moho::CMauiEdit::EnterPressed()
  */
 bool moho::CMauiEdit::EscPressed()
 {
-  return RunScriptStringBool(
-    "OnEscPressed", std::string(mText.c_str())
-  );
+  return RunScriptStringBool("OnEscPressed", std::string(mText.c_str()));
 }
 
 /**
@@ -2761,11 +2501,11 @@ void moho::CMauiEdit::InsertChar(
  * max-char lane), then emits `OnTextChanged` when callback guard allows.
  */
 void moho::CMauiEdit::ReplaceSelection(
-  const msvc8::string& replacementText
+  const fa::string& replacementText
 )
 {
 
-  msvc8::string insertText{};
+  fa::string insertText{};
   const int replacementLength = gpg::STR_Utf8Len(replacementText.c_str());
   const int currentLength = gpg::STR_Utf8Len(mText.c_str());
   if ((currentLength + replacementLength) <= mMaxChars) {
@@ -2780,7 +2520,7 @@ void moho::CMauiEdit::ReplaceSelection(
   }
 
   DeleteSelection(false);
-  const msvc8::string oldText = mText;
+  const fa::string oldText = mText;
 
   if (insertText.size() != 0u) {
     const int caretPosition = mCaretPosition;
@@ -2822,8 +2562,7 @@ void moho::CMauiEdit::NonTextKeyPressed(
   SMauiEventData* const eventData
 )
 {
-  LuaPlus::LuaState* const activeState =
-    mLuaObj.GetActiveState();
+  LuaPlus::LuaState* const activeState = mLuaObj.GetActiveState();
   LuaPlus::LuaObject eventObject{};
   const LuaPlus::LuaObject* const createdEvent = CreateLuaEventObject(eventData, &eventObject, activeState);
   RunScriptIntObject("OnNonTextKeyPressed", keyCode, *createdEvent);
@@ -2844,7 +2583,7 @@ void moho::CMauiEdit::DeleteSelection(
     return;
   }
 
-  const msvc8::string oldText = mText;
+  const fa::string oldText = mText;
   const int textLength = gpg::STR_Utf8Len(mText.c_str());
   if (mSelectionEnd > textLength) {
     mSelectionEnd = textLength;
@@ -2877,7 +2616,7 @@ void moho::CMauiEdit::DeleteSelection(
  * What it does:
  * Returns one copy of the current edit text lane.
  */
-msvc8::string moho::CMauiEdit::GetText()
+fa::string moho::CMauiEdit::GetText()
 {
   return mText;
 }
@@ -2893,7 +2632,7 @@ void moho::CMauiEdit::DeleteCharAtCaret(
   const bool deleteToRight
 )
 {
-  const msvc8::string oldText = mText;
+  const fa::string oldText = mText;
 
   if (mSelectionStart != mSelectionEnd) {
     DeleteSelection(false);
@@ -2993,20 +2732,6 @@ void moho::CMauiEdit::MoveCaretLeft(
 }
 
 /**
- * Address: 0x00791270 (FUN_00791270, Moho::CMauiEdit::MoveCaretRight)
- *
- * What it does:
- * Moves caret right by `amount` UTF-8 characters through `SetCaretPosition`.
- */
-void moho::CMauiEdit::MoveCaretRight(
-  const int amount
-)
-{
-  const int caretPosition = mCaretPosition;
-  SetCaretPosition(caretPosition + amount);
-}
-
-/**
  * Address: 0x00791290 (FUN_00791290, Moho::CMauiEdit::MoveSelectionLeft)
  *
  * What it does:
@@ -3102,8 +2827,7 @@ void moho::CMauiEdit::HandleClickEvent(
   }
 
   const float localMouseX = eventData->mMousePos.x - CScriptLazyVar_float::GetValue(&mLeftLV);
-  msvc8::string clippedText =
-    gpg::STR_Utf8SubString(mText.c_str(), mClipOffset, mClipLength);
+  fa::string clippedText = gpg::STR_Utf8SubString(mText.c_str(), mClipOffset, mClipLength);
   const int nearestCharacterIndex = mFont->GetNearestCharacterIndex(clippedText.c_str(), localMouseX);
 
   if (eventData->mEventType == MET_ButtonPress) {
@@ -3139,7 +2863,7 @@ void moho::CMauiEdit::DragMove(
 )
 {
   const float localMouseX = eventData->mMousePos.x - CScriptLazyVar_float::GetValue(&mLeftLV);
-  msvc8::string clippedText = gpg::STR_Utf8SubString(mText.c_str(), mClipOffset, mClipLength);
+  fa::string clippedText = gpg::STR_Utf8SubString(mText.c_str(), mClipOffset, mClipLength);
   const int caretIndex = mFont->GetNearestCharacterIndex(clippedText.c_str(), localMouseX) + mClipOffset;
 
   const int dragStart = mDragStart;
@@ -3214,7 +2938,7 @@ void moho::CMauiEdit::HandleKeyEvent(
     }
 
     [[maybe_unused]] bool isSpecial = false;
-    const int translatedKeyCode = wxCharCodeWXToMSW(keyCode, &isSpecial);
+    const int translatedKeyCode = ShellKeyToVirtualKey(keyCode, &isSpecial);
     NonTextKeyPressed(translatedKeyCode, eventData);
   };
 
@@ -3237,8 +2961,7 @@ void moho::CMauiEdit::HandleKeyEvent(
     case MKEY_LEFT:
       if ((eventData->mModifiers & MEM_Shift) != 0u) {
         if ((eventData->mModifiers & MEM_Ctrl) != 0u) {
-          const int moveAmount =
-            mCaretPosition - gpg::STR_GetWordStartIndex(mText, mCaretPosition);
+          const int moveAmount = mCaretPosition - gpg::STR_GetWordStartIndex(mText, mCaretPosition);
           if (moveAmount != 0) {
             MoveSelectionLeft(moveAmount);
           }
@@ -3325,8 +3048,7 @@ void moho::CMauiEdit::HandleKeyEvent(
     }
 
     {
-      const int moveAmount =
-        mCaretPosition - gpg::STR_GetWordStartIndex(mText, mCaretPosition);
+      const int moveAmount = mCaretPosition - gpg::STR_GetWordStartIndex(mText, mCaretPosition);
       if (moveAmount != 0) {
         MoveSelectionLeft(moveAmount);
       }
@@ -3364,8 +3086,7 @@ void moho::CMauiEdit::HandleKeyEvent(
     }
 
     if ((eventData->mModifiers & MEM_Ctrl) != 0u) {
-      const int moveAmount =
-        gpg::STR_GetNextWordStartIndex(mText, mCaretPosition) - mCaretPosition;
+      const int moveAmount = gpg::STR_GetNextWordStartIndex(mText, mCaretPosition) - mCaretPosition;
       if (moveAmount != 0) {
         MoveSelectionRight(moveAmount);
       }
@@ -3397,10 +3118,8 @@ void moho::CMauiEdit::DragRelease(
   const float left = CScriptLazyVar_float::GetValue(&mLeftLV);
   const float releaseX = eventData->mMousePos.x - left;
 
-  msvc8::string clippedText =
-    gpg::STR_Utf8SubString(mText.c_str(), mClipOffset, mClipLength);
-  const int releaseCaret =
-    mFont->GetNearestCharacterIndex(clippedText.c_str(), releaseX) + mClipOffset;
+  fa::string clippedText = gpg::STR_Utf8SubString(mText.c_str(), mClipOffset, mClipLength);
+  const int releaseCaret = mFont->GetNearestCharacterIndex(clippedText.c_str(), releaseX) + mClipOffset;
 
   if (releaseCaret == mDragStart) {
     mSelectionStart = 0;
@@ -3417,8 +3136,8 @@ void moho::CMauiEdit::DragRelease(
  * (runtime_error, handler 0x0079505C).
  */
 void moho::CMauiEdit::TextChanged(
-  const msvc8::string& newText,
-  const msvc8::string& oldText
+  const fa::string& newText,
+  const fa::string& oldText
 )
 {
   (void)RunScript("OnTextChanged", newText.c_str(), oldText.c_str());
@@ -3432,10 +3151,10 @@ void moho::CMauiEdit::TextChanged(
  * state, and emits `OnTextChanged` callback when reentrancy guard allows.
  */
 void moho::CMauiEdit::SetText(
-  const msvc8::string& text
+  const fa::string& text
 )
 {
-  const msvc8::string previousText = mText;
+  const fa::string previousText = mText;
 
   mText = gpg::STR_Utf8SubString(text.c_str(), 0, mMaxChars);
   mCaretPosition = gpg::STR_Utf8Len(mText.c_str());
@@ -3459,7 +3178,7 @@ void moho::CMauiEdit::SetText(
  */
 void moho::CMauiEdit::ClearText()
 {
-  const msvc8::string previousText = mText;
+  const fa::string previousText = mText;
 
   mText.clear();
   mCaretPosition = 0;
@@ -3506,7 +3225,7 @@ void moho::CMauiEdit::Dump()
   CMauiControl::Dump();
   gpg::Logf("CMauiEdit");
 
-  const char* const showBackground = ReadEditBackgroundVisibleLane(this) ? "true" : "false";
+  const char* const showBackground = this->mBackgroundVisible ? "true" : "false";
   gpg::Logf(
     "FG Color = %#08X BG Color = %#08X HLFG Color = %#08X HLBG Color = %#08X Show BG = %s MaxChars = %d",
     mForegroundColor,
@@ -3542,8 +3261,5 @@ gpg::RType* moho::CMauiEdit::GetClass() const
  */
 gpg::RRef moho::CMauiEdit::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }

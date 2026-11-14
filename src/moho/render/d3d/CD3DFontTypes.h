@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "moho/render/textures/CD3DBatchTexture.h"
 
 namespace moho
@@ -17,7 +17,7 @@ namespace moho
    */
   struct CD3DFontCharInfo
   {
-    boost::shared_ptr<CD3DBatchTexture> mTex; // +0x00
+    std::shared_ptr<CD3DBatchTexture> mTex;   // +0x00
     float mV2 = 0.0f;                         // +0x08
     float mV3 = 0.0f;                         // +0x0C
     float mV4 = 0.0f;                         // +0x10
@@ -33,7 +33,5 @@ namespace moho
   static_assert(offsetof(CD3DFontCharInfo, mV3) == 0x0C, "moho::CD3DFontCharInfo::mV3 offset must be 0x0C");
   static_assert(offsetof(CD3DFontCharInfo, mV4) == 0x10, "moho::CD3DFontCharInfo::mV4 offset must be 0x10");
   static_assert(offsetof(CD3DFontCharInfo, mV5) == 0x14, "moho::CD3DFontCharInfo::mV5 offset must be 0x14");
-  static_assert(
-    offsetof(CD3DFontCharInfo, mAdvance) == 0x18, "moho::CD3DFontCharInfo::mAdvance offset must be 0x18"
-  );
+  static_assert(offsetof(CD3DFontCharInfo, mAdvance) == 0x18, "moho::CD3DFontCharInfo::mAdvance offset must be 0x18");
 } // namespace moho

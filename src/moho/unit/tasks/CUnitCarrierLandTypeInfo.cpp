@@ -33,7 +33,9 @@ namespace
     return sInstance;
   }
 
-  [[nodiscard]] gpg::RRef MakeCUnitCarrierLandRef(moho::CUnitCarrierLand* const object)
+  [[nodiscard]] gpg::RRef MakeCUnitCarrierLandRef(
+    moho::CUnitCarrierLand* const object
+  )
   {
     gpg::RRef ref{};
     ref = gpg::MakeRRef<moho::CUnitCarrierLand>(object);
@@ -86,7 +88,9 @@ namespace moho
   /**
    * Address: 0x00607EA0 (FUN_00607EA0, Moho::CUnitCarrierLandTypeInfo::AddBase_CCommandTask)
    */
-  void __stdcall CUnitCarrierLandTypeInfo::AddBase_CCommandTask(gpg::RType* const typeInfo)
+  void __stdcall CUnitCarrierLandTypeInfo::AddBase_CCommandTask(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<moho::CCommandTask>(typeInfo);
   }
@@ -107,19 +111,20 @@ namespace moho
    * Placement-constructs one carrier-land task runtime lane in caller storage
    * and returns typed reflection reference.
    */
-  gpg::RRef CUnitCarrierLandTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CUnitCarrierLandTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<moho::CUnitCarrierLand*>(objectStorage);
-    if (object) {
-      new (object) moho::CUnitCarrierLand();
-    }
+    auto* const object = gpg::ConstructInStorage<moho::CUnitCarrierLand>(objectStorage);
     return MakeCUnitCarrierLandRef(object);
   }
 
   /**
    * Address: 0x00607C10 (FUN_00607C10, Moho::CUnitCarrierLandTypeInfo::Delete)
    */
-  void CUnitCarrierLandTypeInfo::Delete(void* const objectStorage)
+  void CUnitCarrierLandTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<moho::CUnitCarrierLand*>(objectStorage);
   }
@@ -127,7 +132,9 @@ namespace moho
   /**
    * Address: 0x00607CF0 (FUN_00607CF0, Moho::CUnitCarrierLandTypeInfo::Destruct)
    */
-  void CUnitCarrierLandTypeInfo::Destruct(void* const objectStorage)
+  void CUnitCarrierLandTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CUnitCarrierLand*>(objectStorage);
     if (!object) {
@@ -144,7 +151,9 @@ namespace moho
    * Deserializes base command-task state, target transport weak pointer, and
    * carrier-landing reservation payload lanes.
    */
-  void CUnitCarrierLand::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CUnitCarrierLand::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -168,7 +177,9 @@ namespace moho
    * Serializes base command-task state, target transport weak pointer, and
    * carrier-landing reservation payload lanes.
    */
-  void CUnitCarrierLand::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CUnitCarrierLand::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -231,21 +242,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00608050 (FUN_00608050)
-   *
-   * What it does:
-   * Preserves one jump-thunk deserialize adapter lane that tail-forwards into
-   * `CUnitCarrierLand::MemberDeserialize`.
-   */
-  [[maybe_unused]] void CUnitCarrierLandMemberDeserializeAdapterLaneB(
-    CUnitCarrierLand* const task,
-    gpg::ReadArchive* const archive
-  )
-  {
-    task->MemberDeserialize(archive);
-  }
-
-  /**
    * Address: 0x00BD0260 (FUN_00BD0260, register_CUnitCarrierLandTypeInfo)
    */
   void register_CUnitCarrierLandTypeInfo()
@@ -257,58 +253,14 @@ namespace moho
 namespace
 {
 
-  /**
-   * Address: 0x00606CD0 (FUN_00606CD0, Moho::CUnitCarrierLandSerializer::Deserialize)
-   *
-   * What it does:
-   * Reflection load-callback facade for `CUnitCarrierLand`. Forwards the
-   * reflected object pointer to `CUnitCarrierLand::MemberDeserialize`;
-   * `version` and the owner-ref lane are unused by the member (mirrors the
-   * binary tail call).
-   */
-  void DeserializeCUnitCarrierLandSerializerCallback(
-    gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const task = reinterpret_cast<moho::CUnitCarrierLand*>(objectPtr);
-    if (task == nullptr) {
-      return;
-    }
-    task->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x00606CE0 (FUN_00606CE0, Moho::CUnitCarrierLandSerializer::Serialize)
-   *
-   * What it does:
-   * Reflection save-callback facade for `CUnitCarrierLand`. Forwards the
-   * reflected object pointer to `CUnitCarrierLand::MemberSerialize`;
-   * `version` and the owner-ref lane are unused by the member (mirrors the
-   * binary tail call).
-   */
-  void SerializeCUnitCarrierLandSerializerCallback(
-    gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef* const
-  )
-  {
-    auto* const task = reinterpret_cast<moho::CUnitCarrierLand*>(objectPtr);
-    if (task == nullptr) {
-      return;
-    }
-    task->MemberSerialize(archive);
-  }
-
 } // namespace
-
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CUnitCarrierLandTypeInfo_f5d39f, moho::register_CUnitCarrierLandTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CUnitCarrierLandTypeInfo_f5d39f,
+  moho::register_CUnitCarrierLandTypeInfo
+)
 
 namespace moho
 {

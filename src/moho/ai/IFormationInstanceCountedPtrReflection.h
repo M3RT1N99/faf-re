@@ -17,7 +17,7 @@ namespace gpg
    * runtime-derived owner type and adjusting the base subobject pointer.
    */
   RRef* RRef_IFormationInstance(RRef* out, moho::IFormationInstance* value);
-}
+} // namespace gpg
 
 namespace moho
 {
@@ -56,7 +56,7 @@ namespace moho
      * Address: 0x006E9E40 (FUN_006E9E40, Moho::RCountedPtrType<Moho::IFormationInstance>::GetLexical)
      * Slot: 4
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x006E9FC0 (FUN_006E9FC0, Moho::RCountedPtrType<Moho::IFormationInstance>::IsIndexed)
@@ -95,16 +95,19 @@ namespace moho
      * Address: 0x006EAAC0 (FUN_006EAAC0, Moho::RCountedPtrType<Moho::IFormationInstance>::SerLoad)
      * Slot: 11
      */
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x006EAB10 (FUN_006EAB10, Moho::RCountedPtrType<Moho::IFormationInstance>::SerSave)
      * Slot: 12
      */
-    static void SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerSave(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
   };
 
-  static_assert(sizeof(RCountedPtrType<moho::IFormationInstance>) == 0x68, "RCountedPtrType<IFormationInstance> size must be 0x68");
+  static_assert(
+    sizeof(RCountedPtrType<moho::IFormationInstance>) == 0x68,
+    "RCountedPtrType<IFormationInstance> size must be 0x68"
+  );
 
   /**
    * Address: 0x00BD9030 (FUN_00BD9030, register_IFormationInstanceCountedPtrReflection)

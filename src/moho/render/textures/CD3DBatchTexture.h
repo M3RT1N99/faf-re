@@ -3,8 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/mutex.h"
-#include "boost/shared_ptr.h"
+#include <mutex>
+#include <memory>
 #include "gpg/core/containers/DList.h"
 #include "gpg/core/containers/String.h"
 #include "Wm3Vector2.h"
@@ -29,8 +29,8 @@ namespace moho
     friend class CD3DTextureBatcher;
 
   public:
-    using TextureSheetHandle = boost::shared_ptr<ID3DTextureSheet>;
-    using DynamicTextureSheetHandle = boost::shared_ptr<CD3DDynamicTextureSheet>;
+    using TextureSheetHandle = std::shared_ptr<ID3DTextureSheet>;
+    using DynamicTextureSheetHandle = std::shared_ptr<CD3DDynamicTextureSheet>;
 
     /**
      * Address: 0x00447170 (FUN_00447170, deleting-thunk lane)
@@ -52,7 +52,7 @@ namespace moho
      * pixels through `BuildTextureData`, and returns UV scale/border factors.
      */
     TextureSheetHandle&
-      GetTextureSheet(TextureSheetHandle& outTextureSheet, Wm3::Vector2f& outUvScale, Wm3::Vector2f& outUvBorder);
+    GetTextureSheet(TextureSheetHandle& outTextureSheet, Wm3::Vector2f& outUvScale, Wm3::Vector2f& outUvBorder);
 
     /**
      * Address: 0x00447120 (FUN_00447120)
@@ -71,12 +71,13 @@ namespace moho
     [[nodiscard]] std::uint32_t GetBorder() const;
 
     /**
-     * Address: 0x004478C0 (?FromSolidColor@CD3DBatchTexture@Moho@@SA?AV?$shared_ptr@VCD3DBatchTexture@Moho@@@boost@@I@Z)
+     * Address: 0x004478C0
+     * (?FromSolidColor@CD3DBatchTexture@Moho@@SA?AV?$shared_ptr@VCD3DBatchTexture@Moho@@@boost@@I@Z)
      *
      * What it does:
      * Returns one cached solid-color batch texture, creating it on first use.
      */
-    [[nodiscard]] static boost::shared_ptr<CD3DBatchTexture> FromSolidColor(std::uint32_t rgba);
+    [[nodiscard]] static std::shared_ptr<CD3DBatchTexture> FromSolidColor(std::uint32_t rgba);
 
     /**
      * Address: 0x004486F0 (FUN_004486F0, Moho::CD3DBatchTexture::FromFile)
@@ -87,7 +88,7 @@ namespace moho
      * Loads one file-backed batch texture by cache key `(filename,border)`,
      * reusing retained file-texture instances when available.
      */
-    [[nodiscard]] static boost::shared_ptr<CD3DBatchTexture> FromFile(gpg::StrArg filename, std::uint32_t border);
+    [[nodiscard]] static std::shared_ptr<CD3DBatchTexture> FromFile(gpg::StrArg filename, std::uint32_t border);
 
     /**
      * Address: 0x00448270 (FUN_00448270, Moho::CD3DBatchTexture::FromDXT5)
@@ -98,8 +99,8 @@ namespace moho
      * Wraps caller-provided DXT5 block bytes into one `CD3DRawBatchTexture`
      * instance with zero border.
      */
-    [[nodiscard]] static boost::shared_ptr<CD3DBatchTexture>
-      FromDXT5(std::uint32_t width, std::uint32_t height, const void* dxt5Blocks, std::uint32_t sourcePitchBytes);
+    [[nodiscard]] static std::shared_ptr<CD3DBatchTexture>
+    FromDXT5(std::uint32_t width, std::uint32_t height, const void* dxt5Blocks, std::uint32_t sourcePitchBytes);
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -158,7 +159,7 @@ namespace moho
    */
   void register_sResourceLock();
 
-  extern boost::mutex sResourceLock;
+  extern std::recursive_mutex sResourceLock;
 
   /**
    * Engine addition (dedicated-server plan WPL.4): CD3DBatchTexture::FromFile for
@@ -167,12 +168,15 @@ namespace moho
    * initialisation; defined in moho/entity/REntityBlueprint.cpp. Without a client it
    * is null and the simulation holds no texture.
    */
-  using BatchTextureFromFileHook = boost::shared_ptr<CD3DBatchTexture> (*)(gpg::StrArg filename, std::uint32_t border);
+  using BatchTextureFromFileHook = std::shared_ptr<CD3DBatchTexture> (*)(gpg::StrArg filename, std::uint32_t border);
   extern BatchTextureFromFileHook sBatchTextureFromFile;
 
   static_assert(offsetof(CD3DBatchTexture, mWidth) == 0x0C, "CD3DBatchTexture::mWidth offset must be 0x0C");
   static_assert(offsetof(CD3DBatchTexture, mHeight) == 0x10, "CD3DBatchTexture::mHeight offset must be 0x10");
   static_assert(offsetof(CD3DBatchTexture, mBorder) == 0x14, "CD3DBatchTexture::mBorder offset must be 0x14");
-  static_assert(offsetof(CD3DBatchTexture, mTextureSheet) == 0x18, "CD3DBatchTexture::mTextureSheet offset must be 0x18");
+  static_assert(
+    offsetof(CD3DBatchTexture, mTextureSheet) == 0x18,
+    "CD3DBatchTexture::mTextureSheet offset must be 0x18"
+  );
   static_assert(sizeof(CD3DBatchTexture) == 0x20, "CD3DBatchTexture size must be 0x20");
 } // namespace moho

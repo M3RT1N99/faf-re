@@ -35,9 +35,7 @@ namespace
       Finish();
     }
   };
-  static_assert(
-    sizeof(SPerArmyReconInfoTypeInfo) == 0x64, "SPerArmyReconInfoTypeInfo size must be 0x64"
-  );
+  static_assert(sizeof(SPerArmyReconInfoTypeInfo) == 0x64, "SPerArmyReconInfoTypeInfo size must be 0x64");
 
   [[nodiscard]] gpg::RType* ResolveSPerArmyReconInfoType()
   {
@@ -67,9 +65,11 @@ namespace
      * What it does:
      * Formats vector lexical text and appends the runtime per-army recon count.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override
+    [[nodiscard]] fa::string GetLexical(
+      const gpg::RRef& ref
+    ) const override
     {
-      const msvc8::string base = gpg::RType::GetLexical(ref);
+      const fa::string base = gpg::RType::GetLexical(ref);
       return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
     }
 
@@ -82,7 +82,7 @@ namespace
      * Address: 0x005C3EF0 (FUN_005C3EF0, gpg::RVectorType_SPerArmyReconInfo::Init)
      *
      * What it does:
-     * Records the element byte-size (16 = `sizeof(msvc8::vector<
+     * Records the element byte-size (16 = `sizeof(fa::vector<
      * moho::SPerArmyReconInfo>)`), version 1, and installs the element
      * (de)serialize callbacks (`serSaveFunc_ = &gpg::SaveVectorSPerArmyReconInfo`,
      * `serLoadFunc_ = &gpg::LoadVectorSPerArmyReconInfo`) -- mirrors
@@ -90,15 +90,18 @@ namespace
      */
     void Init() override
     {
-      size_ = sizeof(msvc8::vector<moho::SPerArmyReconInfo>);
+      size_ = sizeof(fa::vector<moho::SPerArmyReconInfo>);
       version_ = 1;
       serSaveFunc_ = &gpg::SaveVectorSPerArmyReconInfo;
       serLoadFunc_ = &gpg::LoadVectorSPerArmyReconInfo;
     }
 
-    gpg::RRef SubscriptIndex(void* const obj, const int ind) const override
+    gpg::RRef SubscriptIndex(
+      void* const obj,
+      const int ind
+    ) const override
     {
-      auto* const storage = static_cast<msvc8::vector<moho::SPerArmyReconInfo>*>(obj);
+      auto* const storage = static_cast<fa::vector<moho::SPerArmyReconInfo>*>(obj);
 
       gpg::RRef out{};
       out.mObj = nullptr;
@@ -111,15 +114,20 @@ namespace
       return out;
     }
 
-    size_t GetCount(void* const obj) const override
+    size_t GetCount(
+      void* const obj
+    ) const override
     {
-      const auto* const storage = static_cast<const msvc8::vector<moho::SPerArmyReconInfo>*>(obj);
+      const auto* const storage = static_cast<const fa::vector<moho::SPerArmyReconInfo>*>(obj);
       return storage ? storage->size() : 0u;
     }
 
-    void SetCount(void* const obj, const int count) const override
+    void SetCount(
+      void* const obj,
+      const int count
+    ) const override
     {
-      auto* const storage = static_cast<msvc8::vector<moho::SPerArmyReconInfo>*>(obj);
+      auto* const storage = static_cast<fa::vector<moho::SPerArmyReconInfo>*>(obj);
       GPG_ASSERT(storage != nullptr);
       GPG_ASSERT(count >= 0);
       if (!storage || count < 0) {
@@ -130,9 +138,7 @@ namespace
       storage->resize(static_cast<std::size_t>(count), zeroFill);
     }
   };
-  static_assert(
-    sizeof(SPerArmyReconInfoVectorType) == 0x68, "SPerArmyReconInfoVectorType size must be 0x68"
-  );
+  static_assert(sizeof(SPerArmyReconInfoVectorType) == 0x68, "SPerArmyReconInfoVectorType size must be 0x68");
 
   using moho::ReconBlipTypeInfo;
 
@@ -172,7 +178,7 @@ namespace
    */
   const char* SPerArmyReconInfoVectorType::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("vector<%s>", ResolveSPerArmyReconInfoType()->GetName());
+    static const fa::string sName = gpg::STR_Printf("vector<%s>", ResolveSPerArmyReconInfoType()->GetName());
     return sName.c_str();
   }
 
@@ -226,20 +232,16 @@ namespace moho
   /**
    * Address: 0x005C9010 (FUN_005C9010)
    */
-  void ReconBlipTypeInfo::AddBase_Entity(gpg::RType* const typeInfo)
+  void ReconBlipTypeInfo::AddBase_Entity(
+    gpg::RType* const typeInfo
+  )
   {
     static gpg::RType* cachedEntityType = nullptr;
     if (!cachedEntityType) {
       cachedEntityType = gpg::LookupRType(typeid(Entity));
     }
 
-    gpg::RField baseField{};
-    baseField.mName = cachedEntityType->GetName();
-    baseField.mType = cachedEntityType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, cachedEntityType);
   }
 
   /**
@@ -283,12 +285,12 @@ namespace moho
    *
    * What it does:
    * Constructs/preregisters reflection metadata for
-   * `msvc8::vector<SPerArmyReconInfo>`.
+   * `fa::vector<SPerArmyReconInfo>`.
    */
   gpg::RType* preregister_RVectorType_SPerArmyReconInfo()
   {
     auto* const type = AcquireSPerArmyReconInfoVectorType();
-    gpg::PreRegisterRType(typeid(msvc8::vector<SPerArmyReconInfo>), type);
+    gpg::PreRegisterRType(typeid(fa::vector<SPerArmyReconInfo>), type);
     return type;
   }
 
@@ -307,8 +309,20 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_ReconBlipTypeInfo_3acb48, moho::register_ReconBlipTypeInfo)
-GPG_PREREGISTER_INIT(register_SPerArmyReconInfoTypeInfo_3acb48, moho::register_SPerArmyReconInfoTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_ReconBlipTypeInfo_3acb48,
+  moho::register_ReconBlipTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_SPerArmyReconInfoTypeInfo_3acb48,
+  moho::register_SPerArmyReconInfoTypeInfo
+)
 
-GPG_PREREGISTER_INIT(preregister_SPerArmyReconInfoTypeInfo_3acb48, moho::preregister_SPerArmyReconInfoTypeInfo)
-GPG_PREREGISTER_INIT(preregister_RVectorType_SPerArmyReconInfo_3acb48, moho::preregister_RVectorType_SPerArmyReconInfo)
+GPG_PREREGISTER_INIT(
+  preregister_SPerArmyReconInfoTypeInfo_3acb48,
+  moho::preregister_SPerArmyReconInfoTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  preregister_RVectorType_SPerArmyReconInfo_3acb48,
+  moho::preregister_RVectorType_SPerArmyReconInfo
+)

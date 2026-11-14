@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "../../boost/shared_ptr.h"
+#include <memory>
 #include "../../legacy/containers/String.h"
 #include "gpg/core/reflection/Reflection.h"
 
@@ -11,7 +11,7 @@ namespace gpg
 {
   class ReadArchive;
   class WriteArchive;
-}
+} // namespace gpg
 
 namespace moho
 {
@@ -77,19 +77,19 @@ namespace moho
      */
     void MemberDeserialize(gpg::ReadArchive* archive);
 
-    std::int32_t mArmyIndex;                          // +0x00
-    msvc8::string mArmyName;                          // +0x04
-    msvc8::string mPlayerName;                        // +0x20
-    std::uint8_t mIsCivilian;                         // +0x3C
-    std::uint8_t mPad3D[3];                           // +0x3D
-    boost::shared_ptr<CIntelGrid> mVisionReconGrid;  // +0x40
-    boost::shared_ptr<CIntelGrid> mWaterReconGrid;   // +0x48
-    boost::shared_ptr<CIntelGrid> mRadarReconGrid;   // +0x50
-    boost::shared_ptr<CIntelGrid> mSonarReconGrid;   // +0x58
-    boost::shared_ptr<CIntelGrid> mOmniReconGrid;    // +0x60
-    boost::shared_ptr<CIntelGrid> mRciReconGrid;     // +0x68
-    boost::shared_ptr<CIntelGrid> mSciReconGrid;     // +0x70
-    boost::shared_ptr<CIntelGrid> mVciReconGrid;     // +0x78
+    std::int32_t mArmyIndex;                        // +0x00
+    fa::string mArmyName;                           // +0x04
+    fa::string mPlayerName;                         // +0x20
+    std::uint8_t mIsCivilian;                       // +0x3C
+    std::uint8_t mPad3D[3];                         // +0x3D
+    std::shared_ptr<CIntelGrid> mVisionReconGrid;   // +0x40
+    std::shared_ptr<CIntelGrid> mWaterReconGrid;    // +0x48
+    std::shared_ptr<CIntelGrid> mRadarReconGrid;    // +0x50
+    std::shared_ptr<CIntelGrid> mSonarReconGrid;    // +0x58
+    std::shared_ptr<CIntelGrid> mOmniReconGrid;     // +0x60
+    std::shared_ptr<CIntelGrid> mRciReconGrid;      // +0x68
+    std::shared_ptr<CIntelGrid> mSciReconGrid;      // +0x70
+    std::shared_ptr<CIntelGrid> mVciReconGrid;      // +0x78
   };
 
   /**
@@ -103,22 +103,26 @@ namespace moho
    */
   SSTIArmyConstantData* AssignArmyConstantData(const SSTIArmyConstantData& source, SSTIArmyConstantData* destination);
 
-  static_assert(sizeof(boost::shared_ptr<CIntelGrid>) == 0x08, "shared_ptr<CIntelGrid> size must be 0x08");
+  static_assert(sizeof(std::shared_ptr<CIntelGrid>) == 0x08, "shared_ptr<CIntelGrid> size must be 0x08");
   static_assert(
-    offsetof(SSTIArmyConstantData, mArmyName) == 0x04, "SSTIArmyConstantData::mArmyName offset must be 0x04"
+    offsetof(SSTIArmyConstantData, mArmyName) == 0x04,
+    "SSTIArmyConstantData::mArmyName offset must be 0x04"
   );
   static_assert(
-    offsetof(SSTIArmyConstantData, mPlayerName) == 0x20, "SSTIArmyConstantData::mPlayerName offset must be 0x20"
+    offsetof(SSTIArmyConstantData, mPlayerName) == 0x20,
+    "SSTIArmyConstantData::mPlayerName offset must be 0x20"
   );
   static_assert(
-    offsetof(SSTIArmyConstantData, mIsCivilian) == 0x3C, "SSTIArmyConstantData::mIsCivilian offset must be 0x3C"
+    offsetof(SSTIArmyConstantData, mIsCivilian) == 0x3C,
+    "SSTIArmyConstantData::mIsCivilian offset must be 0x3C"
   );
   static_assert(
     offsetof(SSTIArmyConstantData, mVisionReconGrid) == 0x40,
     "SSTIArmyConstantData::mVisionReconGrid offset must be 0x40"
   );
   static_assert(
-    offsetof(SSTIArmyConstantData, mVciReconGrid) == 0x78, "SSTIArmyConstantData::mVciReconGrid offset must be 0x78"
+    offsetof(SSTIArmyConstantData, mVciReconGrid) == 0x78,
+    "SSTIArmyConstantData::mVciReconGrid offset must be 0x78"
   );
   static_assert(sizeof(SSTIArmyConstantData) == 0x80, "SSTIArmyConstantData size must be 0x80");
 
@@ -158,7 +162,7 @@ namespace moho
      * What it does:
      * Reads the raw `EntId` value directly through the archive.
      */
-    static void Deserialize(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void Deserialize(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x00557F10 (FUN_00557F10, Moho::EntIdSerializer::Serialize)
@@ -166,7 +170,7 @@ namespace moho
      * What it does:
      * Writes the raw `EntId` value directly through the archive.
      */
-    static void Serialize(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void Serialize(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x005589E0 (FUN_005589E0, shared Init() body -- also serves

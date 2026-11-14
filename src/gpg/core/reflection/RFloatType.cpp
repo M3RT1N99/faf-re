@@ -16,7 +16,9 @@
  * Parses the incoming null-terminated string using the recovered CRT `atof`
  * lane and returns the parsed value.
  */
-extern "C" double __cdecl EngineAtofForward(const char* text)
+extern "C" double __cdecl EngineAtofForward(
+  const char* text
+)
 {
   return std::atof(text != nullptr ? text : "0");
 }
@@ -34,11 +36,13 @@ extern "C" double __cdecl EngineAtofForward(const char* text)
  * value at `ref.mObj` using `sprintf("%f", ...)` into the buffer, then trims
  * the string to the actual printed character count before returning.
  */
-msvc8::string RFloatType::GetLexical(const gpg::RRef& ref) const
+fa::string RFloatType::GetLexical(
+  const gpg::RRef& ref
+) const
 {
   const float value = *static_cast<const float*>(ref.mObj);
 
-  msvc8::string result;
+  fa::string result;
   result.resize(30, '\0');
 
   const int n = std::sprintf(result.raw_data_mut_unsafe(), "%f", value);
@@ -55,7 +59,10 @@ msvc8::string RFloatType::GetLexical(const gpg::RRef& ref) const
  * Parses the null-terminated string `str` as a double via `atof`, stores the
  * result as a `float` at `*static_cast<float*>(ref.mObj)`, and returns `true`.
  */
-bool RFloatType::SetLexical(const gpg::RRef& ref, const char* const str) const
+bool RFloatType::SetLexical(
+  const gpg::RRef& ref,
+  const char* const str
+) const
 {
   *static_cast<float*>(ref.mObj) = static_cast<float>(EngineAtofForward(str));
   return true;
@@ -115,9 +122,15 @@ namespace
     return sInstance;
   }
 
-  struct Bootstrap { Bootstrap() { register_floatTypeInfoStartup(); } };
+  struct Bootstrap
+  {
+    Bootstrap()
+    {
+      register_floatTypeInfoStartup();
+    }
+  };
   Bootstrap gBootstrap;
-}
+} // namespace
 
 /**
  * Address: 0x00BE9940 (register_floatTypeInfo)
@@ -132,7 +145,9 @@ void register_floatTypeInfoStartup()
   (void)Acquire();
 }
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_floatTypeInfoStartup_f1479a, register_floatTypeInfoStartup)
+GPG_PREREGISTER_INIT(
+  register_floatTypeInfoStartup_f1479a,
+  register_floatTypeInfoStartup
+)

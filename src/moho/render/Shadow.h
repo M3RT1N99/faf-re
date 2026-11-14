@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 #include "moho/render/camera/GeomCamera3.h"
 
@@ -138,9 +138,7 @@ namespace moho
      * variable can sample it. The binary increments `use_count_` (control
      * block +0x04), i.e. a strong reference, not a weak one.
      */
-    boost::shared_ptr<CD3DRenderTarget>& GetShadowMap(
-      boost::shared_ptr<CD3DRenderTarget>& outShadowMap
-    ) const;
+    std::shared_ptr<CD3DRenderTarget>& GetShadowMap(std::shared_ptr<CD3DRenderTarget>& outShadowMap) const;
 
     /**
      * Address: 0x007FEE70 (FUN_007FEE70)
@@ -152,43 +150,43 @@ namespace moho
      * The texture the terrain lighting passes sample: the second blur target
      * when blur is on, otherwise the raw shadow map, as a retained copy.
      */
-    [[nodiscard]] boost::shared_ptr<CD3DRenderTarget> GetShadowTexture() const;
+    [[nodiscard]] std::shared_ptr<CD3DRenderTarget> GetShadowTexture() const;
 
   public:
     // +0x04 is the hole MSVC leaves after the vfptr of an 8-aligned class
     // (see the class comment): the constructor never writes it.
-    std::int32_t mShadowFidelity;                         // +0x08
-    bool mShadowBlurEnabled;                              // +0x0C
-    std::uint8_t mPadding0D_0F[0x03];                     // +0x0D
-    std::int32_t mShadowSize;                             // +0x10
+    std::int32_t mShadowFidelity;     // +0x08
+    bool mShadowBlurEnabled;          // +0x0C
+    std::uint8_t mPadding0D_0F[0x03]; // +0x0D
+    std::int32_t mShadowSize;         // +0x10
 
     // Set to 1 by the light/camera setup (0x007FE940) immediately after
     // GeomCamera3::Init succeeds, and cleared at its entry. The render pass
     // (0x007FEEA0) branches on it: set means draw the shadow map, clear means
     // only clear the targets for this frame.
-    bool mShadowCameraValid;                              // +0x14
-    std::uint8_t mPadding15_17[0x03];                     // +0x15
+    bool mShadowCameraValid;          // +0x14
+    std::uint8_t mPadding15_17[0x03]; // +0x15
 
-    GeomCamera3 mCamera;                                  // +0x18
+    GeomCamera3 mCamera; // +0x18
 
     // Drawn into by the render pass and sampled by the mesh/terrain shaders
     // through GetShadowMap.
-    boost::shared_ptr<CD3DRenderTarget> mShadowMap;       // +0x2E0
+    std::shared_ptr<CD3DRenderTarget> mShadowMap; // +0x2E0
 
     // Blur ping-pong targets; only allocated when mShadowBlurEnabled.
-    boost::shared_ptr<CD3DRenderTarget> mBlurTargetA;     // +0x2E8
-    boost::shared_ptr<CD3DRenderTarget> mBlurTargetB;     // +0x2F0
+    std::shared_ptr<CD3DRenderTarget> mBlurTargetA; // +0x2E8
+    std::shared_ptr<CD3DRenderTarget> mBlurTargetB; // +0x2F0
 
-    boost::shared_ptr<CD3DDepthStencil> mDepthStencil;    // +0x2F8
+    std::shared_ptr<CD3DDepthStencil> mDepthStencil; // +0x2F8
 
     // Unit quad the blur passes draw; built once by Init.
-    boost::shared_ptr<ID3DVertexSheet> mQuadVertexSheet;  // +0x300
+    std::shared_ptr<ID3DVertexSheet> mQuadVertexSheet; // +0x300
 
     // Two further reference-counted slots. The constructor null-clears them and
     // the reset helper releases them exactly like the five above, so they are
     // handles of the same shape - but no function in this binary reads or
     // writes either one, so their pointee type cannot be named yet.
-    boost::shared_ptr<void> mUnreferencedResources[2];    // +0x308, +0x310
+    std::shared_ptr<void> mUnreferencedResources[2]; // +0x308, +0x310
   };
 
   static_assert(offsetof(Shadow, mShadowFidelity) == 0x08, "Shadow::mShadowFidelity offset must be 0x08");
@@ -207,4 +205,18 @@ namespace moho
   );
   static_assert(sizeof(Shadow) == 0x318, "Shadow size must be 0x318");
   static_assert(alignof(Shadow) == 8, "Shadow must be 8-aligned");
+
+  /**
+   * Engine addition (`ren_ShadowCascades`): the shadow textures' width in texels. With cascades on it is
+   * the 2x2 atlas of `mShadowSize` tiles (gpg/gal/effects/ShadowCascades.h), otherwise `mShadowSize`.
+   * The blur passes step one texel of this.
+   */
+  [[nodiscard]] int ShadowTextureSize(const Shadow& shadow);
+
+  /**
+   * Engine addition (`ren_ShadowCascades`): texels across the whole-view shadow map, the space the
+   * effects' shadow coordinates are in: its atlas tile's viewport with cascades on, otherwise
+   * `mShadowSize`. mesh.fx's filter steps one texel of this.
+   */
+  [[nodiscard]] int ShadowMapTexels(const Shadow& shadow);
 } // namespace moho

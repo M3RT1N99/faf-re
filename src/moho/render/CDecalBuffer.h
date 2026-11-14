@@ -32,8 +32,8 @@ namespace moho
    * at +0x1C/+0x1D. The inner node is 0x14: links 0x0C, the handle pointer at
    * +0x0C, colour and nil at +0x10/+0x11.
    */
-  using CDecalBucketSet = msvc8::set<CDecalHandle*>;
-  using CDecalStartTickMapStorage = msvc8::map<std::uint32_t, CDecalBucketSet>;
+  using CDecalBucketSet = fa::set<CDecalHandle*>;
+  using CDecalStartTickMapStorage = fa::map<std::uint32_t, CDecalBucketSet>;
   static_assert(sizeof(CDecalStartTickMapStorage) == 0x0C, "CDecalStartTickMapStorage size must be 0x0C");
 
   class CDecalBuffer
@@ -66,7 +66,7 @@ namespace moho
 
   public:
     /**
-       * Address: 0x00779170 (FUN_00779170)
+     * Address: 0x00779170 (FUN_00779170)
      *
      * What it does:
      * Initializes decal runtime storage (id pool, handle list, start-tick buckets).
@@ -74,7 +74,7 @@ namespace moho
     CDecalBuffer();
 
     /**
-       * Address: 0x00779170 (FUN_00779170)
+     * Address: 0x00779170 (FUN_00779170)
      *
      * What it does:
      * Initializes decal runtime storage bound to a Sim owner.
@@ -137,7 +137,7 @@ namespace moho
      * Swaps runtime storage pointers for both decal publish vectors:
      * visible decals and pending hide object-id lanes.
      */
-    void SwapVectors(msvc8::vector<SDecalInfo>* addDecals, msvc8::vector<std::uint32_t>* removeDecals);
+    void SwapVectors(fa::vector<SDecalInfo>* addDecals, fa::vector<std::uint32_t>* removeDecals);
 
   private:
     /**
@@ -164,27 +164,30 @@ namespace moho
     static void ProjectDecalToBoundsXZ(const SDecalInfo& info, Wm3::Vec2f& outMax, Wm3::Vec2f& outMin);
 
   public:
-    Sim* mSim;                                          // +0x0000
-    std::uint32_t mReserved04;                          // +0x0004
-    IdPool mPool;                                       // +0x0008
-    CDecalHandleList mHandleListHead;                   // +0x0CB8
-    CDecalStartTickMapStorage mStartTickBuckets;        // +0x0CC0
-    msvc8::vector<SDecalInfo> mVisibleDecals;           // +0x0CCC
-    msvc8::vector<std::uint32_t> mPendingHideObjectIds; // +0x0CDC
-    std::uint32_t mPendingHideObjectIdsAux;             // +0x0CEC
+    Sim* mSim;                                       // +0x0000
+    std::uint32_t mReserved04;                       // +0x0004
+    IdPool mPool;                                    // +0x0008
+    CDecalHandleList mHandleListHead;                // +0x0CB8
+    CDecalStartTickMapStorage mStartTickBuckets;     // +0x0CC0
+    fa::vector<SDecalInfo> mVisibleDecals;           // +0x0CCC
+    fa::vector<std::uint32_t> mPendingHideObjectIds; // +0x0CDC
+    std::uint32_t mPendingHideObjectIdsAux;          // +0x0CEC
   };
 
   static_assert(offsetof(CDecalBuffer, mSim) == 0x0000, "CDecalBuffer::mSim offset must be 0x0000");
   static_assert(offsetof(CDecalBuffer, mPool) == 0x0008, "CDecalBuffer::mPool offset must be 0x0008");
   static_assert(
-    offsetof(CDecalBuffer, mHandleListHead) == 0x0CB8, "CDecalBuffer::mHandleListHead offset must be 0x0CB8"
+    offsetof(CDecalBuffer, mHandleListHead) == 0x0CB8,
+    "CDecalBuffer::mHandleListHead offset must be 0x0CB8"
   );
   static_assert(
-    offsetof(CDecalBuffer, mStartTickBuckets) == 0x0CC0, "CDecalBuffer::mStartTickBuckets offset must be 0x0CC0"
+    offsetof(CDecalBuffer, mStartTickBuckets) == 0x0CC0,
+    "CDecalBuffer::mStartTickBuckets offset must be 0x0CC0"
   );
   static_assert(offsetof(CDecalBuffer, mVisibleDecals) == 0x0CCC, "CDecalBuffer::mVisibleDecals offset must be 0x0CCC");
   static_assert(
-    offsetof(CDecalBuffer, mPendingHideObjectIds) == 0x0CDC, "CDecalBuffer::mPendingHideObjectIds offset must be 0x0CDC"
+    offsetof(CDecalBuffer, mPendingHideObjectIds) == 0x0CDC,
+    "CDecalBuffer::mPendingHideObjectIds offset must be 0x0CDC"
   );
   static_assert(
     offsetof(CDecalBuffer, mPendingHideObjectIdsAux) == 0x0CEC,

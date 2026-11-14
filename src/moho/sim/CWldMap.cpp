@@ -58,7 +58,6 @@ namespace
   static_assert(offsetof(SWorldMapFileHeader, mVersion) == 0x04, "SWorldMapFileHeader::mVersion offset must be 0x04");
   static_assert(sizeof(SWorldMapFileHeader) == 0x08, "SWorldMapFileHeader size must be 0x08");
 
-
   struct TerrainNormalEncodeBlock
   {
     std::uint8_t mNormalX[16]{};
@@ -67,68 +66,15 @@ namespace
   static_assert(sizeof(TerrainNormalEncodeBlock) == 0x20, "TerrainNormalEncodeBlock size must be 0x20");
 
   /**
-   * Adopt a device-resources texture-sheet handle into the water-map slot.
-   *
-   * The binary (FUN_008A1700, water-map block) copies the returned handle's
-   * `(sheet, count.pi_)` pair straight into `mWaterMapTexture`, reinterpreting
-   * the `RD3DTextureResource*` payload as the same `CD3DDynamicTextureSheet`
-   * object (they are the one DDS sheet, only modelled under two names). This
-   * helper performs that identical refcount-preserving raw copy through the
-   * SharedPtrRaw machinery so no open `{px,pi}` arithmetic leaks into Load.
-   */
-  void AdoptWaterMapSheetFromResource(
-    boost::shared_ptr<moho::CD3DDynamicTextureSheet>& waterMap,
-    const moho::ID3DDeviceResources::TextureResourceHandle& sheet
-  ) noexcept
-  {
-    const boost::SharedPtrRaw<moho::RD3DTextureResource> sourceBorrow =
-      boost::SharedPtrRawFromSharedBorrow(sheet);
-
-    boost::SharedPtrRaw<moho::CD3DDynamicTextureSheet> reinterpreted{};
-    reinterpreted.px = reinterpret_cast<moho::CD3DDynamicTextureSheet*>(sourceBorrow.px);
-    reinterpreted.pi = sourceBorrow.pi;
-
-    waterMap = boost::SharedPtrFromRawRetained(reinterpreted);
-  }
-
-
-  void AdoptDynamicSheetAsStratumMask(
-    boost::SharedPtrRaw<moho::RD3DTextureResource>& mask,
-    const boost::shared_ptr<moho::CD3DDynamicTextureSheet>& sheet
-  ) noexcept
-  {
-    const boost::SharedPtrRaw<moho::CD3DDynamicTextureSheet> borrow =
-      boost::SharedPtrRawFromSharedBorrow(sheet);
-
-    boost::SharedPtrRaw<moho::RD3DTextureResource> reinterpreted{};
-    reinterpreted.px = reinterpret_cast<moho::RD3DTextureResource*>(borrow.px);
-    reinterpreted.pi = borrow.pi;
-    mask.assign_retain(reinterpreted);
-  }
-
-
-  /**
-   * Address: 0x008915F0 (FUN_008915F0, sub_8915F0)
-   *
-   * What it does:
-   * Writes two contiguous 32-bit lanes to a binary writer in one 8-byte
-   * payload.
-   */
-  void WriteBinaryWriterPairU32(gpg::BinaryWriter& writer, const std::uint32_t first, const std::uint32_t second)
-  {
-    const std::uint32_t pair[2]{first, second};
-    writer.Write(reinterpret_cast<const char*>(pair), sizeof(pair));
-  }
-
-
-  /**
    * Address: 0x00891620 (FUN_00891620, sub_891620)
    *
    * What it does:
    * Destroys one owned preview chunk pointer and frees its allocation when
    * the pointer is non-null.
    */
-  void DestroyPreviewChunk(moho::RWldMapPreviewChunk* const chunk) noexcept
+  void DestroyPreviewChunk(
+    moho::RWldMapPreviewChunk* const chunk
+  ) noexcept
   {
     if (chunk == nullptr) {
       return;
@@ -136,22 +82,6 @@ namespace
 
     chunk->~RWldMapPreviewChunk();
     operator delete(chunk);
-  }
-
-  /**
-   * Address: 0x00891680 (FUN_00891680)
-   *
-   * What it does:
-   * Runs one `RWldMapPreviewChunk` teardown+free deleting path and returns the
-   * original pointer lane.
-   */
-  [[maybe_unused]] moho::RWldMapPreviewChunk* DeletePreviewChunkAndReturn(
-    moho::RWldMapPreviewChunk* const chunk
-  ) noexcept
-  {
-    chunk->~RWldMapPreviewChunk();
-    operator delete(chunk);
-    return chunk;
   }
 
   /**
@@ -174,194 +104,11 @@ namespace
     }
   }
 
-  void DestroyWldProps(moho::CWldProps* const props) noexcept
+  void DestroyWldProps(
+    moho::CWldProps* const props
+  ) noexcept
   {
     delete props;
-  }
-
-  /**
-   * Address: 0x008914C0 (FUN_008914C0)
-   *
-   * What it does:
-   * Replaces one owned `CWldProps*` slot and destroys the previous object when
-   * non-null.
-   */
-  [[maybe_unused]] moho::CWldProps** ReplaceOwnedWldPropsSlot(
-    moho::CWldProps** const slot,
-    moho::CWldProps* const replacement
-  ) noexcept
-  {
-    moho::CWldProps* const previous = *slot;
-    *slot = replacement;
-    delete previous;
-    return slot;
-  }
-
-  /**
-   * Address: 0x00891650 (FUN_00891650)
-   *
-   * What it does:
-   * Destroys one `CWldProps` owner lane when present and returns the original
-   * pointer value.
-   */
-  [[maybe_unused]] moho::CWldProps* DestroyWldPropsIfPresent(moho::CWldProps* const props) noexcept
-  {
-    delete props;
-    return props;
-  }
-
-  /**
-   * Address: 0x008915C0 (FUN_008915C0)
-   *
-   * What it does:
-   * Jump-only adapter lane that forwards directly to global `operator delete`.
-   */
-  [[maybe_unused]] void DeleteRawPointerLaneA(void* const pointer) noexcept
-  {
-    ::operator delete(pointer);
-  }
-
-  /**
-   * Address: 0x008915D0 (FUN_008915D0)
-   *
-   * What it does:
-   * Reads one little-endian signed 16-bit lane from a binary stream.
-   */
-  [[maybe_unused]] std::int16_t ReadSigned16Lane(gpg::BinaryReader* const reader)
-  {
-    std::int16_t value = 0;
-    reader->Read(reinterpret_cast<char*>(&value), sizeof(value));
-    return value;
-  }
-
-  /**
-   * Address: 0x00891770 (FUN_00891770)
-   *
-   * What it does:
-   * Clears one legacy string lane to empty state and returns zero.
-   */
-  [[maybe_unused]] int ClearLegacyStringAndReturnZero(msvc8::string* const value) noexcept
-  {
-    value->tidy(true, 0U);
-    return 0;
-  }
-
-  /**
-   * Address: 0x008917A0 (FUN_008917A0)
-   *
-   * What it does:
-   * Clears one legacy string lane to empty state and returns the same pointer.
-   */
-  [[maybe_unused]] msvc8::string* ClearLegacyStringAndReturnSelf(msvc8::string* const value) noexcept
-  {
-    value->tidy(true, 0U);
-    return value;
-  }
-
-  /**
-   * Address: 0x00891D10 (FUN_00891D10)
-   *
-   * What it does:
-   * Copy-assigns one world-prop entry lane (path string + packed transform).
-   */
-  [[maybe_unused]] moho::CWldPropEntry* CopyWldPropEntryLane(
-    moho::CWldPropEntry* const destination,
-    const moho::CWldPropEntry* const source
-  )
-  {
-    destination->mBlueprintPath.assign(source->mBlueprintPath, 0u, msvc8::string::npos);
-    destination->mTransform = source->mTransform;
-    return destination;
-  }
-
-  /**
-   * Address: 0x008513A0 (FUN_008513A0)
-   *
-   * What it does:
-   * Runs `CWldMap` non-deleting destructor logic, then frees the heap storage
-   * block that owns that map instance.
-   */
-  [[maybe_unused]] moho::CWldMap* DestroyAndDeleteWldMap(moho::CWldMap* const map) noexcept
-  {
-    if (map != nullptr) {
-      map->~CWldMap();
-      ::operator delete(static_cast<void*>(map));
-    }
-    return map;
-  }
-
-  /**
-   * Address: 0x00886610 (FUN_00886610, sub_886610)
-   *
-   * What it does:
-   * Transfers one CWldMap ownership lane from source auto_ptr slot into target
-   * slot, deleting the previous target object when ownership changes.
-   */
-  [[maybe_unused]] moho::CWldMap** TransferAutoPtrCWldMapOwnership(
-    moho::CWldMap** const sourceSlot,
-    moho::CWldMap** const targetSlot
-  ) noexcept
-  {
-    moho::CWldMap* const transferred = *sourceSlot;
-    *sourceSlot = nullptr;
-
-    moho::CWldMap* const targetValue = *targetSlot;
-    if (transferred != targetValue && targetValue != nullptr) {
-      (void)DestroyAndDeleteWldMap(targetValue);
-    }
-
-    *targetSlot = transferred;
-    return targetSlot;
-  }
-
-  /**
-   * Address: 0x0088E720 (FUN_0088E720, sub_88E720)
-   *
-   * What it does:
-   * Transfers one STIMap ownership lane from source auto_ptr slot into target
-   * slot, deleting the previous target map when ownership changes.
-   */
-  [[maybe_unused]] moho::STIMap** TransferAutoPtrSTIMapOwnership(
-    moho::STIMap** const sourceSlot,
-    moho::STIMap** const targetSlot
-  ) noexcept
-  {
-    moho::STIMap* const transferred = *sourceSlot;
-    *sourceSlot = nullptr;
-
-    moho::STIMap* const targetValue = *targetSlot;
-    if (transferred != targetValue && targetValue != nullptr) {
-      targetValue->~STIMap();
-      operator delete(targetValue);
-    }
-
-    *targetSlot = transferred;
-    return targetSlot;
-  }
-
-  /**
-   * Address: 0x00886500 (FUN_00886500, sub_886500)
-   *
-   * What it does:
-   * Transfers one LuaState ownership lane from source auto_ptr slot into
-   * target slot, deleting the previous target state when ownership changes.
-   */
-  [[maybe_unused]] LuaPlus::LuaState** TransferAutoPtrLuaStateOwnership(
-    LuaPlus::LuaState** const sourceSlot,
-    LuaPlus::LuaState** const targetSlot
-  ) noexcept
-  {
-    LuaPlus::LuaState* const transferred = *sourceSlot;
-    *sourceSlot = nullptr;
-
-    LuaPlus::LuaState* const targetValue = *targetSlot;
-    if (transferred != targetValue && targetValue != nullptr) {
-      targetValue->~LuaState();
-      operator delete(targetValue);
-    }
-
-    *targetSlot = transferred;
-    return targetSlot;
   }
 
   /**
@@ -384,15 +131,20 @@ namespace
    * Packs one blueprint path plus seven transform lanes into a prop-entry
    * storage record.
    */
-  moho::CWldPropEntry*
-  PackWldPropEntry(moho::CWldPropEntry& outEntry, const moho::VTransform& transform, const msvc8::string& path)
+  moho::CWldPropEntry* PackWldPropEntry(
+    moho::CWldPropEntry& outEntry,
+    const moho::VTransform& transform,
+    const fa::string& path
+  )
   {
     outEntry.mBlueprintPath.assign_owned(path.c_str());
     outEntry.mTransform = transform;
     return &outEntry;
   }
 
-  void TickLoadingProgress(moho::CBackgroundTaskControl& loadControl)
+  void TickLoadingProgress(
+    moho::CBackgroundTaskControl& loadControl
+  )
   {
     if (loadControl.mHandle != nullptr) {
       loadControl.mHandle->UpdateLoadingProgress();
@@ -430,9 +182,11 @@ namespace moho
    * Callsite evidence (per CLAUDE.md callsite verification rule):
    *  - code xref from Moho::CUIMapPreview::SetTextureFromMap (FUN_008509A0) at 0x00850A25
    */
-  msvc8::auto_ptr<CWldMap> WLD_LoadMapPreview(gpg::StrArg mapPath)
+  fa::auto_ptr<CWldMap> WLD_LoadMapPreview(
+    gpg::StrArg mapPath
+  )
   {
-    msvc8::auto_ptr<CWldMap> map(new CWldMap());
+    fa::auto_ptr<CWldMap> map(new CWldMap());
 
     CBackgroundTaskControl loadControl{};
     (void)map->MapLoad(mapPath, nullptr, true, loadControl);
@@ -443,7 +197,6 @@ namespace moho
 
     return map;
   }
-
 
   /**
    * Address: 0x008A7B90 (FUN_008A7B90, ?WLD_CreateTerrainRes@Moho@@YAPAVIWldTerrainRes@1@XZ)
@@ -477,7 +230,10 @@ namespace moho
    * normalized quaternion lane, and stores packed 7-float transform data for
    * each entry.
    */
-  bool CWldProps::Load(gpg::BinaryReader& reader, CBackgroundTaskControl& loadControl)
+  bool CWldProps::Load(
+    gpg::BinaryReader& reader,
+    CBackgroundTaskControl& loadControl
+  )
   {
     (void)loadControl;
 
@@ -487,7 +243,7 @@ namespace moho
     mEntries.resize(entryCount, MakeDefaultWldPropEntry());
 
     for (std::uint32_t index = 0; index < entryCount; ++index) {
-      msvc8::string blueprintPath;
+      fa::string blueprintPath;
       blueprintPath.tidy(false, 0U);
       reader.ReadString(&blueprintPath);
 
@@ -515,8 +271,9 @@ namespace moho
       // This map-loader normalization sums z/y/x/w, unlike the shared
       // NormalizeQuatInPlace path. Keep the original rounding order.
       const float magnitude = std::sqrt(
-        ((orientation.z * orientation.z + orientation.y * orientation.y) + orientation.x * orientation.x)
-        + orientation.w * orientation.w);
+        ((orientation.z * orientation.z + orientation.y * orientation.y) + orientation.x * orientation.x) +
+        orientation.w * orientation.w
+      );
       if (magnitude > kQuaternionNormalizeEpsilon) {
         const float inverseMagnitude = 1.0f / magnitude;
         orientation.w *= inverseMagnitude;
@@ -540,7 +297,9 @@ namespace moho
    * Saves all prop entries as blueprint path + position + rotation matrix
    * lanes in the world-map binary format.
    */
-  bool CWldProps::Save(gpg::BinaryWriter& writer) const
+  bool CWldProps::Save(
+    gpg::BinaryWriter& writer
+  ) const
   {
     const auto propCount = static_cast<std::int32_t>(mEntries.size());
     writer.Write(propCount);
@@ -597,7 +356,9 @@ namespace moho
    * display name into this chunk.
    */
   RWldMapPreviewChunk::RWldMapPreviewChunk(
-    boost::shared_ptr<ID3DTextureSheet> textureSheet, const Wm3::Vector2f& previewSize, const char* const previewName
+    std::shared_ptr<ID3DTextureSheet> textureSheet,
+    const Wm3::Vector2f& previewSize,
+    const char* const previewName
   )
     : mPreviewTexture(textureSheet)
     , mPreviewSize(previewSize)
@@ -619,36 +380,15 @@ namespace moho
   }
 
   /**
-   * Address: 0x00890480 (FUN_00890480, ?GetTextureSheet@RWldMapPreviewChunk@Moho@@QAE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
+   * Address: 0x00890480 (FUN_00890480,
+   * ?GetTextureSheet@RWldMapPreviewChunk@Moho@@QAE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
    *
    * What it does:
    * Returns one retained shared texture-sheet handle for this preview chunk.
    */
-  boost::shared_ptr<ID3DTextureSheet> RWldMapPreviewChunk::GetTextureSheet()
+  std::shared_ptr<ID3DTextureSheet> RWldMapPreviewChunk::GetTextureSheet()
   {
     return mPreviewTexture;
-  }
-
-  /**
-   * Address: 0x008904A0 (FUN_008904A0, ?GetTerrainDim@RWldMapPreviewChunk@Moho@@QBE?AV?$Vector2@M@Wm3@@XZ)
-   *
-   * What it does:
-   * Returns stored preview terrain dimensions.
-   */
-  Wm3::Vector2f RWldMapPreviewChunk::GetTerrainDim() const
-  {
-    return mPreviewSize;
-  }
-
-  /**
-   * Address: 0x008904B0 (FUN_008904B0, ?GetDescription@RWldMapPreviewChunk@Moho@@QBEPBDXZ)
-   *
-   * What it does:
-   * Returns preview description text buffer pointer.
-   */
-  const char* RWldMapPreviewChunk::GetDescription() const
-  {
-    return mPreviewName.c_str();
   }
 
   /**
@@ -659,7 +399,10 @@ namespace moho
    * Loads optional preview metadata header (version/size/name), then loads the
    * remaining preview texture payload and resolves runtime texture ownership.
    */
-  bool RWldMapPreviewChunk::Load(gpg::BinaryReader& reader, CBackgroundTaskControl& loadControl)
+  bool RWldMapPreviewChunk::Load(
+    gpg::BinaryReader& reader,
+    CBackgroundTaskControl& loadControl
+  )
   {
     constexpr std::uint32_t kPreviewHeaderMagic = 0xBEEFFEEDU;
 
@@ -686,7 +429,7 @@ namespace moho
           previewNameWide.push_back(static_cast<wchar_t>(wideChar));
         }
 
-        const msvc8::string previewNameUtf8 = gpg::STR_WideToUtf8(previewNameWide.c_str());
+        const fa::string previewNameUtf8 = gpg::STR_WideToUtf8(previewNameWide.c_str());
         mPreviewName.assign_owned(previewNameUtf8.c_str());
 
         std::uint32_t metadataEntryCount = 0U;
@@ -747,7 +490,6 @@ namespace moho
 
   PreviewTextureLoadHook sPreviewTextureLoad = nullptr;
 
-
   /**
    * What it does: see the header - resolves the active map's heightfield
    * through the terrain runtime view's `mMap` lane.
@@ -775,7 +517,6 @@ namespace moho
     return mMap->mWaterElevation;
   }
 
-
   /**
    * Address: 0x00811210 (FUN_00811210, Moho::CWldTerrainRes::GetHeightAt)
    *
@@ -783,12 +524,14 @@ namespace moho
    * Returns one clamped terrain height sample converted into world-space
    * height units (`heightWord * 1/128`).
    */
-  float IWldTerrainRes::GetHeightAt(const std::int32_t x, const std::int32_t z) const
+  float IWldTerrainRes::GetHeightAt(
+    const std::int32_t x,
+    const std::int32_t z
+  ) const
   {
     const CHeightField* const field = mMap->mHeightField.get();
     return static_cast<float>(field->GetHeightAt(x, z)) * 0.0078125f;
   }
-
 
   /**
    * Address: 0x008A74D0 (FUN_008A74D0, IWldTerrainRes ctor lane)
@@ -812,6 +555,15 @@ namespace moho
     delete mMap;
   }
 
+  void IWldTerrainRes::NotifyMapChanges(
+    const gpg::Rect2i* const rects,
+    const std::size_t count
+  )
+  {
+    for (std::size_t i = 0; i < count; ++i) {
+      NotifyMapChange(rects[i]);
+    }
+  }
 
   /**
    * Address: 0x008A0A20 (FUN_008A0A20, ??0struct_Env@@QAE@@Z)
@@ -821,8 +573,8 @@ namespace moho
    * handle in one terrain environment entry object.
    */
   TerrainEnvironmentLookupEntry::TerrainEnvironmentLookupEntry(
-    const msvc8::string& environmentName,
-    boost::shared_ptr<RD3DTextureResource> texture
+    const fa::string& environmentName,
+    std::shared_ptr<RD3DTextureResource> texture
   )
   {
     mEnvironmentName.assign(environmentName, 0u, 0xFFFFFFFFu);
@@ -881,7 +633,11 @@ namespace moho
    * fresh, empty prop set. The terrain `Reset` result is discarded and the
    * function unconditionally reports success (`0x00890D8E: mov al, 1`).
    */
-  bool CWldMap::MapNew(const std::int32_t width, const std::int32_t height, LuaPlus::LuaState* const state)
+  bool CWldMap::MapNew(
+    const std::int32_t width,
+    const std::int32_t height,
+    LuaPlus::LuaState* const state
+  )
   {
     Reset();
 
@@ -922,7 +678,7 @@ namespace moho
   {
     Reset();
 
-    msvc8::string resolvedPath;
+    fa::string resolvedPath;
     resolvedPath.tidy(false, 0U);
     const char* openPath = mapName != nullptr ? mapName : "";
 
@@ -932,7 +688,7 @@ namespace moho
       openPath = resolvedPath.c_str();
     }
 
-    msvc8::auto_ptr<gpg::Stream> stream = DISK_OpenFileRead(openPath);
+    fa::auto_ptr<gpg::Stream> stream = DISK_OpenFileRead(openPath);
     if (!stream.get()) {
       return false;
     }
@@ -979,21 +735,4 @@ namespace moho
     return true;
   }
 
-
-  /**
-   * Address: 0x00891250 (FUN_00891250, ?MapSetPreview@CWldMap@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@ABV?$Vector2@M@Wm3@@PBD@Z)
-   *
-   * What it does:
-   * Replaces the owned preview chunk with one built from the provided
-   * texture/size/name lane and destroys any previous chunk.
-   */
-  void CWldMap::MapSetPreview(
-    boost::shared_ptr<ID3DTextureSheet> textureSheet,
-    const Wm3::Vector2f& previewSize,
-    const char* const previewName
-  )
-  {
-    auto* const newChunk = new (std::nothrow) RWldMapPreviewChunk(textureSheet, previewSize, previewName);
-    ReplaceOwnedPreviewChunk(&mMapPreviewChunk, newChunk);
-  }
 } // namespace moho

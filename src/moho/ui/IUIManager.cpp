@@ -19,55 +19,6 @@ moho::CUIManager* moho::g_UIManager = nullptr;
 
 namespace
 {
-  /**
-   * Address: 0x0084C790 (FUN_0084C790, sub_84C790)
-   *
-   * What it does:
-   * Converts one normalized UI point (`[0..1]` per lane) into head-pixel
-   * coordinates using active D3D head dimensions.
-   */
-  [[maybe_unused]] float* ScaleNormalizedUiPointToHeadPixels(
-    const float* const normalizedPoint,
-    float* const outPixelPoint,
-    const int headIndex
-  )
-  {
-    moho::CD3DDevice* const widthDevice = moho::D3D_GetDevice();
-    moho::CD3DDevice* const heightDevice = moho::D3D_GetDevice();
-    const float headWidth = static_cast<float>(static_cast<unsigned int>(widthDevice->GetHeadWidth(headIndex)));
-    const float headHeight = static_cast<float>(static_cast<unsigned int>(heightDevice->GetHeadHeight(headIndex)));
-
-    outPixelPoint[0] = normalizedPoint[0] * headWidth;
-    outPixelPoint[1] = normalizedPoint[1] * headHeight;
-    return outPixelPoint;
-  }
-
-  /**
-   * Address: 0x0084C800 (FUN_0084C800, sub_84C800)
-   *
-   * What it does:
-   * Converts one head-pixel UI point into normalized (`[0..1]`) coordinates
-   * using active D3D head dimensions.
-   */
-  [[maybe_unused]] float* ScaleHeadPixelsToNormalizedUiPoint(
-    const float* const pixelPoint,
-    float* const outNormalizedPoint,
-    const int headIndex
-  )
-  {
-    moho::CD3DDevice* const widthDevice = moho::D3D_GetDevice();
-    moho::CD3DDevice* const heightDevice = moho::D3D_GetDevice();
-    const float headWidth = static_cast<float>(static_cast<unsigned int>(widthDevice->GetHeadWidth(headIndex)));
-    const float headHeight = static_cast<float>(static_cast<unsigned int>(heightDevice->GetHeadHeight(headIndex)));
-
-    outNormalizedPoint[0] = pixelPoint[0] / headWidth;
-    outNormalizedPoint[1] = pixelPoint[1] / headHeight;
-    return outNormalizedPoint;
-  }
-
-  std::uint32_t gUiRuntimeScratchLaneA = 0u;
-  std::uint32_t gUiRuntimeScratchLaneB = 0u;
-
   template <typename TCall>
   bool StartUIMainEntryWithState(
     LuaPlus::LuaState* const state,
@@ -114,13 +65,14 @@ namespace
   }
 
   template <typename TCall>
-  bool StartUIMainEntry(const moho::EUIState stateValue, const char* const entryPointName, TCall&& callEntryPoint)
+  bool StartUIMainEntry(
+    const moho::EUIState stateValue,
+    const char* const entryPointName,
+    TCall&& callEntryPoint
+  )
   {
     return StartUIMainEntryWithState(
-      moho::USER_GetLuaState(),
-      stateValue,
-      entryPointName,
-      static_cast<TCall&&>(callEntryPoint)
+      moho::USER_GetLuaState(), stateValue, entryPointName, static_cast<TCall&&>(callEntryPoint)
     );
   }
 } // namespace
@@ -187,18 +139,7 @@ moho::IUIManager* moho::UI_GetManager()
  * What it does:
  * Returns the global UI-manager singleton lane.
  */
-[[maybe_unused]] moho::CUIManager* moho::GetUiManagerGlobalLaneA() noexcept
-{
-  return g_UIManager;
-}
-
-/**
- * Address: 0x0084C960 (FUN_0084C960)
- *
- * What it does:
- * Secondary lane returning the global UI-manager singleton pointer.
- */
-[[maybe_unused]] moho::CUIManager* moho::GetUiManagerGlobalLaneB() noexcept
+moho::CUIManager* moho::GetUiManagerGlobalLaneA() noexcept
 {
   return g_UIManager;
 }
@@ -218,11 +159,12 @@ moho::UICommandModeData::UICommandModeData() = default;
  * What it does:
  * Copy-constructs command-mode name and payload Lua-object lanes.
  */
-moho::UICommandModeData::UICommandModeData(const UICommandModeData& other)
+moho::UICommandModeData::UICommandModeData(
+  const UICommandModeData& other
+)
   : mMode(other.mMode)
   , mPayload(other.mPayload)
-{
-}
+{}
 
 /**
  * Address: 0x0081F700 (FUN_0081F700, ??1UICommandModeData@Moho@@QAE@XZ)
@@ -261,24 +203,17 @@ bool moho::UI_StartSplashScreens()
 }
 
 /**
- * Address: 0x0083CE10 (FUN_0083CE10)
- *
- * What it does:
- * Forces UI state to lobby-mode.
- */
-[[maybe_unused]] void moho::ForceUiStateLobbyMode()
-{
-  sUIState = UIS_lobby;
-}
-
-/**
  * Address: 0x0083E9A0 (FUN_0083E9A0, sub_83E9A0)
  *
  * What it does:
  * When UI state is `UIS_game`, builds one modifiers table and invokes
  * `/lua/ui/game/chat.lua:ActivateChat(modifiers)`.
  */
-void moho::UI_ActivateChat(const bool shiftDown, const bool ctrlDown, const bool altDown)
+void moho::UI_ActivateChat(
+  const bool shiftDown,
+  const bool ctrlDown,
+  const bool altDown
+)
 {
   if (sUIState != UIS_game || g_UIManager == nullptr || g_UIManager->mLuaState == nullptr) {
     return;
@@ -323,7 +258,10 @@ void moho::UI_ActivateChat(const bool shiftDown, const bool ctrlDown, const bool
  * ReceiveChat `boost::bind` chain's manager RTTI -- see the declaration in
  * `UiRuntimeTypes.h` for the full citation and the `gpg::StrArg` gap note.
  */
-void moho::func_ReceiveChat(const msvc8::string& senderName, const gpg::MemBuffer<const char>& data)
+void moho::func_ReceiveChat(
+  const fa::string& senderName,
+  const gpg::MemBuffer<const char>& data
+)
 {
   if (g_UIManager == nullptr || g_UIManager->mLuaState == nullptr) {
     return;
@@ -385,14 +323,14 @@ bool moho::UI_StartHostLobbyUI(
     UIS_lobby,
     "StartHostLobbyUI",
     [protocol, port, playerName, gameName, mapName](const LuaPlus::LuaFunction<void>& entryPointFn) {
-      entryPointFn(
-        protocol != nullptr ? protocol : "",
-        port,
-        playerName != nullptr ? playerName : "",
-        gameName != nullptr ? gameName : "",
-        mapName != nullptr ? mapName : ""
-      );
-    }
+    entryPointFn(
+      protocol != nullptr ? protocol : "",
+      port,
+      playerName != nullptr ? playerName : "",
+      gameName != nullptr ? gameName : "",
+      mapName != nullptr ? mapName : ""
+    );
+  }
   );
 }
 
@@ -404,19 +342,17 @@ bool moho::UI_StartHostLobbyUI(
  * `/lua/ui/uimain.lua:StartJoinLobbyUI(...)`.
  */
 bool moho::UI_StartJoinLobbyUI(
-  const char* const protocol, const char* const endpoint, const char* const playerName
+  const char* const protocol,
+  const char* const endpoint,
+  const char* const playerName
 )
 {
   return StartUIMainEntry(
-    UIS_lobby,
-    "StartJoinLobbyUI",
-    [protocol, endpoint, playerName](const LuaPlus::LuaFunction<void>& entryPointFn) {
-      entryPointFn(
-        protocol != nullptr ? protocol : "",
-        endpoint != nullptr ? endpoint : "",
-        playerName != nullptr ? playerName : ""
-      );
-    }
+    UIS_lobby, "StartJoinLobbyUI", [protocol, endpoint, playerName](const LuaPlus::LuaFunction<void>& entryPointFn) {
+    entryPointFn(
+      protocol != nullptr ? protocol : "", endpoint != nullptr ? endpoint : "", playerName != nullptr ? playerName : ""
+    );
+  }
   );
 }
 
@@ -427,11 +363,20 @@ bool moho::UI_StartJoinLobbyUI(
  * Rebinds UI to the provided Lua state and runs
  * `/lua/ui/uimain.lua:StartGameUI()`.
  */
-bool moho::UI_StartGameUI(LuaPlus::LuaState* const state)
+void (*moho::gUIBeforeStartGameUI)(LuaPlus::LuaState* state) = nullptr; // engine addition, IUIManager.h
+
+bool moho::UI_StartGameUI(
+  LuaPlus::LuaState* const state
+)
 {
-  return StartUIMainEntryWithState(state, UIS_game, "StartGameUI", [](const LuaPlus::LuaFunction<void>& entryPointFn) {
+  return StartUIMainEntryWithState(
+    state, UIS_game, "StartGameUI", [state](const LuaPlus::LuaFunction<void>& entryPointFn) {
+    if (gUIBeforeStartGameUI != nullptr) {
+      gUIBeforeStartGameUI(state);
+    }
     entryPointFn();
-  });
+  }
+  );
 }
 
 /**
@@ -441,7 +386,9 @@ bool moho::UI_StartGameUI(LuaPlus::LuaState* const state)
  * Imports `uimain.lua`, resolves `ShowEscapeDialog`, and dispatches one bool
  * argument to the Lua callback.
  */
-bool moho::ShowEscapeDialog(const bool showDialog)
+bool moho::ShowEscapeDialog(
+  const bool showDialog
+)
 {
   CUIManager* const manager = g_UIManager;
   LuaPlus::LuaState* const state = manager != nullptr ? manager->mLuaState : nullptr;
@@ -457,7 +404,7 @@ bool moho::ShowEscapeDialog(const bool showDialog)
     LuaPlus::LuaFunction<bool> showEscapeDialogFn(showEscapeDialogObj);
     (void)showEscapeDialogFn(showDialog);
     return true;
-  } catch (const msvc8::runtime_error& error) {
+  } catch (const fa::runtime_error& error) {
     gpg::Warnf("Error running '/lua/ui/uimain.lua:ShowEscapeDialog': %s", error.what());
   }
   return false;
@@ -486,7 +433,7 @@ bool moho::UI_UpdateDisconnectDialogCallback()
     LuaPlus::LuaFunction<void> updateDisconnectDialogFn(updateDisconnectDialogObj);
     updateDisconnectDialogFn();
     return true;
-  } catch (const msvc8::runtime_error& error) {
+  } catch (const fa::runtime_error& error) {
     gpg::Warnf("Error running '/lua/ui/uimain.lua:UpdateDisconnectDialog': %s", error.what());
   }
   return false;
@@ -506,7 +453,9 @@ bool moho::UI_UpdateDisconnectDialogCallback()
  * second element is a table, it is captured as the payload. Missing fields
  * leave the corresponding default-constructed lane untouched.
  */
-void moho::UI_GetCommandMode(UICommandModeData& outCommandModeData)
+void moho::UI_GetCommandMode(
+  UICommandModeData& outCommandModeData
+)
 {
   outCommandModeData.mMode.clear();
   outCommandModeData.mPayload = LuaPlus::LuaObject{};
@@ -539,7 +488,7 @@ void moho::UI_GetCommandMode(UICommandModeData& outCommandModeData)
     if (payloadField.IsTable()) {
       outCommandModeData.mPayload = payloadField;
     }
-  } catch (const msvc8::runtime_error& error) {
+  } catch (const fa::runtime_error& error) {
     gpg::Warnf("Error running '/lua/ui/game/commandmode.lua:GetCommandMode': %s", error.what());
   }
 }
@@ -550,7 +499,9 @@ void moho::UI_GetCommandMode(UICommandModeData& outCommandModeData)
  * What it does:
  * Invokes `/lua/ui/game/commandmode.lua:StartCommandMode(modeName, payload)`.
  */
-void moho::UI_StartCommandMode(const UICommandModeData& commandModeData)
+void moho::UI_StartCommandMode(
+  const UICommandModeData& commandModeData
+)
 {
   CUIManager* const manager = g_UIManager;
   LuaPlus::LuaState* const state = manager != nullptr ? manager->mLuaState : nullptr;
@@ -627,17 +578,11 @@ void moho::UI_StartCursorText(
     LuaPlus::LuaFunction<void> startCursorTextFn(startCursorTextObj);
     const LuaPlus::LuaObject encodedColor = SCR_EncodeColor(state, colorValue);
     startCursorTextFn(
-      screenPos.x,
-      screenPos.y,
-      text != nullptr ? text : "",
-      encodedColor,
-      durationSeconds,
-      anchorToCursor
+      screenPos.x, screenPos.y, text != nullptr ? text : "", encodedColor, durationSeconds, anchorToCursor
     );
   } catch (const std::exception& exception) {
     gpg::Warnf(
-      "Error running '/lua/ui/uimain.lua:StartCursorText':\n%s",
-      exception.what() != nullptr ? exception.what() : ""
+      "Error running '/lua/ui/uimain.lua:StartCursorText':\n%s", exception.what() != nullptr ? exception.what() : ""
     );
   } catch (...) {
     gpg::Warnf("Error running '/lua/ui/uimain.lua:StartCursorText'.");
@@ -645,13 +590,17 @@ void moho::UI_StartCursorText(
 }
 
 /**
- * Address: 0x0083D500 (FUN_0083D500, ?UI_ShowDesyncDialog@Moho@@YAXHABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z)
+ * Address: 0x0083D500 (FUN_0083D500,
+ * ?UI_ShowDesyncDialog@Moho@@YAXHABV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z)
  *
  * What it does:
  * Builds one Lua table from desync payload strings and invokes
  * `/lua/ui/uimain.lua:ShowDesyncDialog(sessionTick, payloadTable)`.
  */
-void moho::UI_ShowDesyncDialog(const int sessionTick, const msvc8::vector<msvc8::string>& payloadLines)
+void moho::UI_ShowDesyncDialog(
+  const int sessionTick,
+  const fa::vector<fa::string>& payloadLines
+)
 {
   try {
     CUIManager* const manager = g_UIManager;
@@ -663,11 +612,11 @@ void moho::UI_ShowDesyncDialog(const int sessionTick, const msvc8::vector<msvc8:
     LuaPlus::LuaObject payloadTable;
     payloadTable.AssignNewTable(state, 0, 0);
 
-    const msvc8::string* const begin = payloadLines.begin();
-    const msvc8::string* const end = payloadLines.end();
+    const fa::string* const begin = payloadLines.begin();
+    const fa::string* const end = payloadLines.end();
     if (begin != nullptr && end != nullptr) {
       int payloadIndex = 1;
-      for (const msvc8::string* it = begin; it != end; ++it, ++payloadIndex) {
+      for (const fa::string* it = begin; it != end; ++it, ++payloadIndex) {
         payloadTable.SetString(payloadIndex, it->c_str() != nullptr ? it->c_str() : "");
       }
     }
@@ -682,8 +631,35 @@ void moho::UI_ShowDesyncDialog(const int sessionTick, const msvc8::vector<msvc8:
     showDesyncDialogFn(sessionTick, payloadTable);
   } catch (const std::exception& exception) {
     gpg::Warnf(
-      "Error running '/lua/ui/uimain.lua:ShowDesyncDialog': %s",
-      exception.what() != nullptr ? exception.what() : ""
+      "Error running '/lua/ui/uimain.lua:ShowDesyncDialog': %s", exception.what() != nullptr ? exception.what() : ""
     );
+  }
+}
+
+bool moho::UI_StartRejoinScreen()
+{
+  return StartUIMainEntry(UIS_splash, "StartRejoinScreen", [](const LuaPlus::LuaFunction<void>& entryPointFn) {
+    entryPointFn();
+  });
+}
+
+void moho::UI_UpdateRejoinScreen(
+  const char* const stage,
+  const float progress
+)
+{
+  CUIManager* const manager = g_UIManager;
+  LuaPlus::LuaState* const state = manager != nullptr ? manager->mLuaState : nullptr;
+  if (state == nullptr) {
+    return;
+  }
+
+  try {
+    const LuaPlus::LuaObject uiMainModule = SCR_Import(state, "/lua/ui/uimain.lua");
+    const LuaPlus::LuaObject updateRejoinScreenObj = uiMainModule["UpdateRejoinScreen"];
+    LuaPlus::LuaFunction<void> updateRejoinScreenFn(updateRejoinScreenObj);
+    updateRejoinScreenFn(stage, progress);
+  } catch (const fa::runtime_error& error) {
+    gpg::Warnf("Error running '/lua/ui/uimain.lua:UpdateRejoinScreen': %s", error.what());
   }
 }

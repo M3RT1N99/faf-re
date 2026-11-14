@@ -34,10 +34,10 @@ namespace moho
   struct DiscoveredGameRecord
   {
     ENetProtocolType mProtocol{ENetProtocolType::kNone}; // +0x00
-    std::uint32_t mHostAddress{0};    // +0x04
-    std::uint16_t mHostPort{0};       // +0x08
-    std::uint16_t mPad0A{0};          // +0x0A
-    float mLastReplyTimeSeconds{0.0f}; // +0x0C
+    std::uint32_t mHostAddress{0};                       // +0x04
+    std::uint16_t mHostPort{0};                          // +0x08
+    std::uint16_t mPad0A{0};                             // +0x0A
+    float mLastReplyTimeSeconds{0.0f};                   // +0x0C
   };
   static_assert(offsetof(DiscoveredGameRecord, mHostAddress) == 0x04, "DiscoveredGameRecord::mHostAddress offset");
   static_assert(offsetof(DiscoveredGameRecord, mHostPort) == 0x08, "DiscoveredGameRecord::mHostPort offset");
@@ -117,7 +117,7 @@ namespace moho
      * dispatcher -- capacity-available fast path copy-constructs in place
      * and bumps the end pointer; capacity-exhausted path calls the generic
      * `_Insert_n` growth-and-insert core (FUN_007C9CD0, ~1.5x growth) -- i.e.
-     * exactly `msvc8::vector<T>::push_back`'s own two-branch shape. Recovered
+     * exactly `fa::vector<T>::push_back`'s own two-branch shape. Recovered
      * as `mGames.push_back(newRecord)`, not hand-duplicated growth math.
      */
     void AddDiscoveredGame(const DiscoveredGameRecord& newRecord);
@@ -127,13 +127,13 @@ namespace moho
     // CTask (0x18 / 0x1C on x86) so the x64 build, where CTask is larger, does
     // not overrun the members that follow.
     alignas(CTask) std::uint8_t mPullTaskStorage[sizeof(CTask)]{}; // +0x38
-    std::uint8_t mUnknown50_53[0x04]{};              // +0x50
-    alignas(CTask) std::uint8_t
-      mPushTaskStorage[(sizeof(CTask) + sizeof(std::int32_t) + alignof(CTask) - 1) / alignof(CTask) * alignof(CTask)]{}; // +0x54
+    std::uint8_t mUnknown50_53[0x04]{};                            // +0x50
+    alignas(CTask) std::uint8_t mPushTaskStorage
+      [(sizeof(CTask) + sizeof(std::int32_t) + alignof(CTask) - 1) / alignof(CTask) * alignof(CTask)]{}; // +0x54
 
     /**
      * Discovered-game storage. Bare 3-pointer, 12-byte instantiation
-     * (`HasDebugProxy=false`, see `msvc8::vector`'s class doc in Vector.h) --
+     * (`HasDebugProxy=false`, see `fa::vector`'s class doc in Vector.h) --
      * the ctor (0x007BF650), destructor (0x007BF7F0), and the destructor's
      * EH-unwind cleanup funclet (0x007C8720) each touch exactly 3
      * consecutive pointer-sized slots at +0x70/+0x74/+0x78, never a 4th, and
@@ -141,21 +141,18 @@ namespace moho
      * with no room for a reserved debug-iterator lane. `mUnknown7C` is that
      * unrelated alignment gap, not part of this vector.
      */
-    msvc8::vector<DiscoveredGameRecord, false> mGames; // +0x70 (0x70 begin, 0x74 end, 0x78 capacityEnd)
-    std::uint8_t mUnknown7C[0x04]{};                  // +0x7C
-    gpg::time::Timer mTimer;                          // +0x80
-    float mNextDiscoveryBroadcastTimeSeconds{0.0f};   // +0x88
-    INetDatagramSocket* mDatagramSocket{nullptr};     // +0x8C
+    fa::vector<DiscoveredGameRecord, false> mGames; // +0x70 (0x70 begin, 0x74 end, 0x78 capacityEnd)
+    std::uint8_t mUnknown7C[0x04]{};                // +0x7C
+    gpg::time::Timer mTimer;                        // +0x80
+    float mNextDiscoveryBroadcastTimeSeconds{0.0f}; // +0x88
+    INetDatagramSocket* mDatagramSocket{nullptr};   // +0x8C
   };
 
   static_assert(
     offsetof(CDiscoveryService, mPullTaskStorage) == 0x38,
     "CDiscoveryService::mPullTaskStorage must be +0x38"
   );
-  static_assert(
-    offsetof(CDiscoveryService, mUnknown50_53) == 0x50,
-    "CDiscoveryService::mUnknown50_53 must be +0x50"
-  );
+  static_assert(offsetof(CDiscoveryService, mUnknown50_53) == 0x50, "CDiscoveryService::mUnknown50_53 must be +0x50");
   static_assert(
     offsetof(CDiscoveryService, mPushTaskStorage) == 0x54,
     "CDiscoveryService::mPushTaskStorage must be +0x54"
@@ -171,7 +168,10 @@ namespace moho
     offsetof(CDiscoveryService, mNextDiscoveryBroadcastTimeSeconds) == 0x88,
     "CDiscoveryService::mNextDiscoveryBroadcastTimeSeconds must be +0x88"
   );
-  static_assert(offsetof(CDiscoveryService, mDatagramSocket) == 0x8C, "CDiscoveryService::mDatagramSocket must be +0x8C");
+  static_assert(
+    offsetof(CDiscoveryService, mDatagramSocket) == 0x8C,
+    "CDiscoveryService::mDatagramSocket must be +0x8C"
+  );
   static_assert(sizeof(CDiscoveryService) == 0x90, "CDiscoveryService size must be 0x90");
 
   /**

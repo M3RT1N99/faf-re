@@ -11,6 +11,7 @@
 #include "gpg/core/streams/BinaryReader.h"
 #include "gpg/core/streams/BinaryWriter.h"
 #include "legacy/algorithms/Sort.h"
+#include "moho/console/CConCommand.h"
 #include "moho/entity/UserEntity.h"
 #include "moho/misc/StartupHelpers.h"
 #include "moho/render/CDecalGroup.h"
@@ -21,14 +22,32 @@
 #include "moho/sim/CWldMap.h"
 #include "moho/sim/STIMap.h"
 
+namespace moho
+{
+  bool ren_SplatAtlasFix = true;
+}
+
 namespace
 {
+  moho::TConVar<bool> gTConVar_ren_SplatAtlasFix(
+    "ren_SplatAtlasFix",
+    "Terrain splats (tread and scorch marks) use a 2048x2048 texture atlas that is cleared and refilled when a frame's "
+    "splats do not fit, and a splat without a place is not drawn (1, the default); or retail's 1024x1024 atlas that is "
+    "never cleared, where splats of a texture that found no room show other textures (0). The size is read when a "
+    "map's "
+    "terrain is created, the rest each frame.",
+    &moho::ren_SplatAtlasFix
+  );
 
+  constexpr std::int32_t kSplatAtlasSize = 2048;
+  constexpr std::int32_t kRetailSplatAtlasSize = 1024;
 
   /// True when a decal texture reference already names an absolute location -
   /// a UNC share, a drive-qualified path, or a rooted one - and so must be used
   /// exactly as the sim spelled it.
-  [[nodiscard]] bool IsAbsoluteTextureReference(const char* const path) noexcept
+  [[nodiscard]] bool IsAbsoluteTextureReference(
+    const char* const path
+  ) noexcept
   {
     if (path == nullptr || *path == '\0') {
       return false;
@@ -51,15 +70,18 @@ namespace
    * empty, which is how the decal path tells "leave this slot alone" apart from
    * "load this texture".
    */
-  [[nodiscard]] msvc8::string ResolveDecalTexturePath(const msvc8::string& texture, const bool isSplat)
+  [[nodiscard]] fa::string ResolveDecalTexturePath(
+    const fa::string& texture,
+    const bool isSplat
+  )
   {
-    msvc8::string resolved;
+    fa::string resolved;
     if (texture.empty()) {
       return resolved;
     }
 
     if (IsAbsoluteTextureReference(texture.c_str())) {
-      resolved.assign(texture, 0, msvc8::string::npos);
+      resolved.assign(texture, 0, fa::string::npos);
       return resolved;
     }
 
@@ -72,7 +94,10 @@ namespace
 
   /// The transform lanes every incoming decal record carries, in the order the
   /// binary writes them (0x008787AA..0x008787E5).
-  void ApplyDecalRecordTransform(moho::CWldTerrainDecal& decal, const moho::SDecalInfo& record) noexcept
+  void ApplyDecalRecordTransform(
+    moho::CWldTerrainDecal& decal,
+    const moho::SDecalInfo& record
+  ) noexcept
   {
     decal.mScale = record.mSize;
     decal.mPosition = record.mPos;
@@ -111,8 +136,10 @@ namespace
    * Removes one active decal from groups/vector/lookup lanes, deletes the
    * decal, reindexes remaining entries, and returns the next vector slot.
    */
-  [[nodiscard]] moho::CWldTerrainDecal**
-  RemoveDecalFromManagerAndReturnNextSlot(moho::CDecalManager& manager, moho::CWldTerrainDecal* const decal)
+  [[nodiscard]] moho::CWldTerrainDecal** RemoveDecalFromManagerAndReturnNextSlot(
+    moho::CDecalManager& manager,
+    moho::CWldTerrainDecal* const decal
+  )
   {
     if (decal == nullptr) {
       return nullptr;
@@ -120,12 +147,7 @@ namespace
 
     auto& groups = manager.mDecalGroups;
     std::int32_t removedDecalIndexLane = 0;
-    (void)DispatchRemoveDecalIndexToGroupRange(
-      &removedDecalIndexLane,
-      groups.begin(),
-      groups.end(),
-      decal->mIndex
-    );
+    (void)DispatchRemoveDecalIndexToGroupRange(&removedDecalIndexLane, groups.begin(), groups.end(), decal->mIndex);
     (void)manager.mDecalGroupLookupByDecalIndex.erase(static_cast<std::uint32_t>(decal->mIndex));
 
     auto& decals = manager.mDecals;
@@ -151,7 +173,10 @@ namespace
     return next;
   }
 
-  [[nodiscard]] float MoveAlphaTowardZero(const float value, const float step) noexcept
+  [[nodiscard]] float MoveAlphaTowardZero(
+    const float value,
+    const float step
+  ) noexcept
   {
     float upperCandidate = value + step;
     if (upperCandidate > 0.0f) {
@@ -168,7 +193,7 @@ namespace
 
   /**
    * Address: 0x0087E850 (FUN_0087E850), 0x0087E5B0 (FUN_0087E5B0),
-   * 0x0087E5F0 (FUN_0087E5F0) -- `msvc8::sort<UserEntity*, Compare>`'s
+   * 0x0087E5F0 (FUN_0087E5F0) -- `fa::sort<UserEntity*, Compare>`'s
    * `adjust_heap`/`make_heap`/`sort_heap` heapsort-fallback instantiation.
    * Cited in full on `legacy/algorithms/Sort.h`'s canonical templates.
    *
@@ -178,23 +203,25 @@ namespace
    * by each entity's spatial-db registration id
    * (`UserEntity::mSpatialDbEntry.mNode`, an unsigned compare at node
    * offset `+0x14`) rather than by pointer identity, so this has to be
-   * `msvc8::sort` with an explicit comparator, not a bare `std::sort` on the
+   * `fa::sort` with an explicit comparator, not a bare `std::sort` on the
    * pointers themselves.
    */
-  [[nodiscard]] std::int32_t SortDecalDrawOrder(gpg::fastvector<moho::CWldTerrainDecal*>& entities)
+  [[nodiscard]] std::int32_t SortDecalDrawOrder(
+    gpg::fastvector<moho::CWldTerrainDecal*>& entities
+  )
   {
     if (entities.size() > 1u) {
-      msvc8::sort(
+      fa::sort(
         entities.begin(),
         entities.end(),
         [](const moho::CWldTerrainDecal* const lhs, const moho::CWldTerrainDecal* const rhs) noexcept {
-          // The binary compares one dword unsigned at +0x14. On these objects
-          // that is mVecIndex, the decal's slot in the manager's vector -- not
-          // a spatial-db node. Reading it through UserEntity* landed on the
-          // same offset by coincidence, since UserEntity::mSpatialDbEntry.mNode
-          // is also +0x14.
-          return lhs->mVecIndex < rhs->mVecIndex;
-        }
+        // The binary compares one dword unsigned at +0x14. On these objects
+        // that is mVecIndex, the decal's slot in the manager's vector -- not
+        // a spatial-db node. Reading it through UserEntity* landed on the
+        // same offset by coincidence, since UserEntity::mSpatialDbEntry.mNode
+        // is also +0x14.
+        return lhs->mVecIndex < rhs->mVecIndex;
+      }
       );
     }
 
@@ -223,7 +250,9 @@ namespace moho
    * Initializes decal vectors, keyed lookup sentinels, and embedded spatial
    * db storage for the owning terrain map.
    */
-  CDecalManager::CDecalManager(IWldTerrainRes* const terrainRes)
+  CDecalManager::CDecalManager(
+    IWldTerrainRes* const terrainRes
+  )
     : IDecalManager()
     , mDecalCount(0u)
     , mNumDecals(0u)
@@ -239,12 +268,12 @@ namespace moho
     , mPad111_113{0u, 0u, 0u}
   {
     // The two lookup maps' sentinel heads are bought by their own default
-    // `msvc8::map` constructor in the member-init list above -- the binary's
+    // `fa::map` constructor in the member-init list above -- the binary's
     // matching `buy_head()`-inlined self-link (isNil=1, left=parent=right=
     // self, size_=0) runs as part of ordinary member construction, not as a
     // separate call. A prior pass called this out explicitly as
     // `InitializeLookupTree(...)`; that helper duplicated
-    // `msvc8::map<K,V>`'s own default constructor and is deleted.
+    // `fa::map<K,V>`'s own default constructor and is deleted.
     if (mWldTerrain == nullptr) {
       return;
     }
@@ -272,7 +301,9 @@ namespace moho
    * it. The placement-new form re-emits the matching operator delete on ctor throw,
    * reproducing the binary's SEH cleanup funclet.
    */
-  CDecalManager* CDecalManager::Create(IWldTerrainRes* const terrainRes)
+  CDecalManager* CDecalManager::Create(
+    IWldTerrainRes* const terrainRes
+  )
   {
     void* const storage = ::operator new(sizeof(CDecalManager)); // 0x114 on x86
     if (storage == nullptr) {
@@ -297,7 +328,7 @@ namespace moho
    * by-instruction: the buffer/header resets at 0x00877BF3-0x00877C97 read
    * and zero exactly those five members' fields in that order). That is now
    * automatic C++ member-destruction once all five are real typed
-   * `msvc8::vector<T>`/`msvc8::map<K,V>` members, so no explicit call is
+   * `fa::vector<T>`/`fa::map<K,V>` members, so no explicit call is
    * written here -- writing one would just re-run the same teardown twice.
    * A prior pass modelled this half as two explicit
    * `ResetDecalLookupTreePrimary`/`Secondary` calls citing 0x00878D30/
@@ -335,7 +366,9 @@ namespace moho
    * Looks up one decal-index key in `mDecalGroupLookupByDecalIndex` and
    * returns the registered decal, or `nullptr` when the key is absent.
    */
-  CWldTerrainDecal* CDecalManager::FindDecalByIndex(const std::uint32_t decalIndex) const
+  CWldTerrainDecal* CDecalManager::FindDecalByIndex(
+    const std::uint32_t decalIndex
+  ) const
   {
     CWldTerrainDecal* const* const found = mDecalGroupLookupByDecalIndex.try_get(decalIndex);
     return found != nullptr ? *found : nullptr;
@@ -356,7 +389,9 @@ namespace moho
    *
    * What it does: see the header -- unchecked indexed access.
    */
-  CWldTerrainDecal* CDecalManager::GetDecal(const std::int32_t index) const
+  CWldTerrainDecal* CDecalManager::GetDecal(
+    const std::int32_t index
+  ) const
   {
     return mDecals[static_cast<std::size_t>(index)];
   }
@@ -373,7 +408,9 @@ namespace moho
    * handing it `this`, the decal, and the address of its own argument slot as
    * that worker's out parameter, then discards the result.
    */
-  void CDecalManager::DestroyDecal(CWldTerrainDecal* const decal)
+  void CDecalManager::DestroyDecal(
+    CWldTerrainDecal* const decal
+  )
   {
     (void)RemoveDecalFromManagerAndReturnNextSlot(*this, decal);
   }
@@ -385,7 +422,9 @@ namespace moho
    * Looks up one group-index key in `mDecalGroupLookupBySplatIndex` and
    * returns the registered group, or `nullptr` when the key is absent.
    */
-  CDecalGroup* CDecalManager::FindGroupBySplatIndex(const std::uint32_t splatIndex) const
+  CDecalGroup* CDecalManager::FindGroupBySplatIndex(
+    const std::uint32_t splatIndex
+  ) const
   {
     CDecalGroup* const* const found = mDecalGroupLookupBySplatIndex.try_get(splatIndex);
     return found != nullptr ? *found : nullptr;
@@ -406,7 +445,9 @@ namespace moho
    *
    * What it does: see the header -- unchecked indexed access.
    */
-  CDecalGroup* CDecalManager::GetDecalGroup(const std::int32_t index) const
+  CDecalGroup* CDecalManager::GetDecalGroup(
+    const std::int32_t index
+  ) const
   {
     return mDecalGroups[static_cast<std::size_t>(index)];
   }
@@ -426,7 +467,9 @@ namespace moho
    *
    * What it does: see the header -- unchecked indexed access.
    */
-  CWldSplat* CDecalManager::GetSplat(const std::int32_t index) const
+  CWldSplat* CDecalManager::GetSplat(
+    const std::int32_t index
+  ) const
   {
     return mSplats[static_cast<std::size_t>(index)];
   }
@@ -448,14 +491,16 @@ namespace moho
    * lanes across, and settle the cutoff LOD - taking the record's when it is
    * positive and asking the decal to compute one otherwise.
    */
-  void CDecalManager::AddDecals(const msvc8::vector<SDecalInfo>& decals)
+  void CDecalManager::AddDecals(
+    const fa::vector<SDecalInfo>& decals
+  )
   {
     for (const SDecalInfo* record = decals.begin(); record != decals.end(); ++record) {
       const bool isSplat = record->mIsSplat != 0u;
 
       // Both name lanes are resolved up front, exactly as the binary does, so a
       // record dropped by the type lookup below still pays for the expansion.
-      const msvc8::string resolvedNames[2] = {
+      const fa::string resolvedNames[2] = {
         ResolveDecalTexturePath(record->mTexName1, isSplat),
         ResolveDecalTexturePath(record->mTexName2, isSplat),
       };
@@ -504,7 +549,9 @@ namespace moho
    * Scans all active decals for each requested runtime handle and marks
    * matching decals for deferred removal.
    */
-  void CDecalManager::RemoveDecals(const msvc8::vector<std::uint32_t>& decalHandles)
+  void CDecalManager::RemoveDecals(
+    const fa::vector<std::uint32_t>& decalHandles
+  )
   {
     for (const std::uint32_t handle : decalHandles) {
       for (CWldTerrainDecal* const decal : mDecals) {
@@ -538,7 +585,9 @@ namespace moho
    * Finds one decal in `mDecals`, moves it to the front while preserving
    * relative order of earlier entries, then reindexes the decal lane.
    */
-  void CDecalManager::MoveDecalToFront(CWldTerrainDecal* const decal)
+  void CDecalManager::MoveDecalToFront(
+    CWldTerrainDecal* const decal
+  )
   {
     auto* found = std::find(mDecals.begin(), mDecals.end(), decal);
     if (found == mDecals.end()) {
@@ -557,7 +606,9 @@ namespace moho
    * Finds one decal in `mDecals`, swaps it with the next entry when it is
    * not the last element, then reindexes when the decal exists.
    */
-  void CDecalManager::MoveDecalTowardBack(CWldTerrainDecal* const decal)
+  void CDecalManager::MoveDecalTowardBack(
+    CWldTerrainDecal* const decal
+  )
   {
     auto* const found = std::find(mDecals.begin(), mDecals.end(), decal);
     if (found == mDecals.end()) {
@@ -579,7 +630,9 @@ namespace moho
    * Finds one decal in `mDecals`, swaps it with the previous entry when it
    * is not the first element, then reindexes when a swap is applied.
    */
-  void CDecalManager::MoveDecalTowardFront(CWldTerrainDecal* const decal)
+  void CDecalManager::MoveDecalTowardFront(
+    CWldTerrainDecal* const decal
+  )
   {
     auto* const found = std::find(mDecals.begin(), mDecals.end(), decal);
     if (found != mDecals.end() && found != mDecals.begin()) {
@@ -595,7 +648,9 @@ namespace moho
    * Allocates one terrain decal for the requested runtime index, marks the
    * manager dirty, and forwards to `LoadDecal`.
    */
-  CWldTerrainDecal* CDecalManager::NewDecal(const std::int32_t decalIndex)
+  CWldTerrainDecal* CDecalManager::NewDecal(
+    const std::int32_t decalIndex
+  )
   {
     CWldTerrainDecal* const decal = new CWldTerrainDecal(&mSpatialDb, mWldTerrain);
     decal->mIndex = decalIndex;
@@ -610,7 +665,9 @@ namespace moho
    * Loads one existing decal (or allocates a new one), appends it to active
    * manager storage, and updates the decal-index lookup lane.
    */
-  CWldTerrainDecal* CDecalManager::LoadDecal(CWldTerrainDecal* decal)
+  CWldTerrainDecal* CDecalManager::LoadDecal(
+    CWldTerrainDecal* decal
+  )
   {
     CWldTerrainDecal* loaded = decal;
     if (loaded == nullptr) {
@@ -636,7 +693,9 @@ namespace moho
    * Removes one decal-group mapping, erases the group from manager storage,
    * then deletes the group object.
    */
-  std::int32_t CDecalManager::DestroyDecalGroup(CDecalGroup* group)
+  std::int32_t CDecalManager::DestroyDecalGroup(
+    CDecalGroup* group
+  )
   {
     if (group == nullptr) {
       return 0;
@@ -662,7 +721,9 @@ namespace moho
    * Moves one existing decal pointer to the end of the active decal vector
    * and reindexes after the move.
    */
-  void CDecalManager::AddSplat(CWldTerrainDecal* const decal)
+  void CDecalManager::AddSplat(
+    CWldTerrainDecal* const decal
+  )
   {
     auto* const found = std::find(mDecals.begin(), mDecals.end(), decal);
     if (found == mDecals.end()) {
@@ -681,7 +742,9 @@ namespace moho
    * Fades scheduled decals/splats toward zero alpha and erases fully faded
    * entries from manager storage.
    */
-  void CDecalManager::ProcessRemovals(const std::int32_t tick)
+  void CDecalManager::ProcessRemovals(
+    const std::int32_t tick
+  )
   {
     auto* decalIt = mDecals.begin();
     while (decalIt != mDecals.end()) {
@@ -710,6 +773,17 @@ namespace moho
 
       ++splatIt;
     }
+  }
+
+  void CDecalManager::RemoveAllDecals()
+  {
+    while (!mDecals.empty()) {
+      (void)RemoveDecalFromManagerAndReturnNextSlot(*this, mDecals.end()[-1]);
+    }
+    for (CWldSplat* const splat : mSplats) {
+      delete splat;
+    }
+    mSplats.clear();
   }
 
   /**
@@ -795,10 +869,16 @@ namespace moho
    * Seeds the splat's base decal state and leaves the batch-texture lane
    * empty until a name is assigned.
    */
-  CWldSplat::CWldSplat(SpatialDB<CWldTerrainDecal>* const spatialDbOwner, IWldTerrainRes* const terrainRes)
+  CWldSplat::CWldSplat(
+    SpatialDB<CWldTerrainDecal>* const spatialDbOwner,
+    IWldTerrainRes* const terrainRes
+  )
     : CWldTerrainDecal(spatialDbOwner, terrainRes)
+    , mSplatVertices{}
     , mTex()
   {
+    // Engine fix: retail (0x0089DF70) leaves the four vertices unset, so a splat whose texture never
+    // got an atlas place drew with whatever texture coordinates its memory held.
     // 0x0089DFE2..0x0089DFF8: after the base registered this entry as a decal
     // (0x800), the splat re-runs the spatial entry constructor with 0x200.
     // That is what keeps splats out of the albedo decal pass (which collects
@@ -823,7 +903,10 @@ namespace moho
    * Stores the splat name, resolves the texture from disk when non-empty,
    * and keeps the previous texture lane intact when the name is empty.
    */
-  void CWldSplat::SetName(const msvc8::string& name, const int slot)
+  void CWldSplat::SetName(
+    const fa::string& name,
+    const int slot
+  )
   {
     (void)slot;
 
@@ -882,32 +965,51 @@ namespace moho
    * Adds the retained batch texture to the atlas and writes the returned UV
    * rectangle into the splat quad.
    */
-  void CWldSplat::UpdateBatchTexture(CD3DTextureBatcher* const batcher)
+  bool CWldSplat::UpdateBatchTexture(
+    CD3DTextureBatcher* const batcher
+  )
   {
-    if (mTex) {
-      const gpg::Rect2f* const uvRect = batcher->AddTexture(mTex);
-      if (uvRect != nullptr) {
-        mSplatVertices[0].mTexCoord.x = uvRect->x0;
-        mSplatVertices[0].mTexCoord.y = uvRect->z0;
-        mSplatVertices[1].mTexCoord.x = uvRect->x1;
-        mSplatVertices[1].mTexCoord.y = uvRect->z0;
-        mSplatVertices[2].mTexCoord.x = uvRect->x1;
-        mSplatVertices[2].mTexCoord.y = uvRect->z1;
-        mSplatVertices[3].mTexCoord.x = uvRect->x0;
-        mSplatVertices[3].mTexCoord.y = uvRect->z1;
-      }
+    if (!mTex) {
+      return false;
     }
+    const gpg::Rect2f* const uvRect = batcher->AddTexture(mTex);
+    if (uvRect == nullptr) {
+      return false;
+    }
+    mSplatVertices[0].mTexCoord.x = uvRect->x0;
+    mSplatVertices[0].mTexCoord.y = uvRect->z0;
+    mSplatVertices[1].mTexCoord.x = uvRect->x1;
+    mSplatVertices[1].mTexCoord.y = uvRect->z0;
+    mSplatVertices[2].mTexCoord.x = uvRect->x1;
+    mSplatVertices[2].mTexCoord.y = uvRect->z1;
+    mSplatVertices[3].mTexCoord.x = uvRect->x0;
+    mSplatVertices[3].mTexCoord.y = uvRect->z1;
+    return true;
   }
 
-  /**
-   * Address: 0x0089E2B0 (FUN_0089E2B0, Moho::CWldSplat::GetSplatVertices)
-   *
-   * What it does:
-   * Returns the first vertex lane for the splat quad.
-   */
-  CWldSplat::SplatVertex* CWldSplat::GetSplatVertices() noexcept
+  CWldSplat::AtlasMiss CWldSplat::OnAtlasResult(
+    const bool placed,
+    const bool mayRestart
+  ) const noexcept
   {
-    return mSplatVertices;
+    if (placed || !ren_SplatAtlasFix) {
+      return AtlasMiss::Draw;
+    }
+    // Without a texture there is nothing to make room for.
+    return (mayRestart && mTex) ? AtlasMiss::Restart : AtlasMiss::Skip;
+  }
+
+  CD3DTextureBatcher* REN_NewSplatTextureBatcher()
+  {
+    const std::int32_t size = ren_SplatAtlasFix ? kSplatAtlasSize : kRetailSplatAtlasSize;
+    return new CD3DTextureBatcher(size, size);
+  }
+
+  void REN_ResetSplatTextureBatcher(
+    CD3DTextureBatcher* const batcher
+  )
+  {
+    batcher->Reset();
   }
 
   /**
@@ -935,7 +1037,7 @@ namespace moho
   bool CDecalManager::NewSplatAt(
     const Wm3::Vec3f& position,
     const EWldTerrainDecalType type,
-    const msvc8::string& name
+    const fa::string& name
   )
   {
     CWldSplat* const splat = NewSplat();
@@ -959,7 +1061,9 @@ namespace moho
    * Writes manager decal counts, serializes active decals, then serializes
    * all decal groups to the binary writer.
    */
-  void CDecalManager::Save(gpg::BinaryWriter& writer)
+  void CDecalManager::Save(
+    gpg::BinaryWriter& writer
+  )
   {
     writer.Write(mDecalCount);
     writer.Write(mNumDecals);
@@ -996,7 +1100,9 @@ namespace moho
    * then appends the group to mDecalGroups and registers its index in the
    * splat-index lookup lane. Returns the group.
    */
-  CDecalGroup* CDecalManager::LoadDecalGroup(CDecalGroup* group)
+  CDecalGroup* CDecalManager::LoadDecalGroup(
+    CDecalGroup* group
+  )
   {
     if (group == nullptr) {
       group = new CDecalGroup(static_cast<std::int32_t>(mNumDecals));
@@ -1109,7 +1215,9 @@ namespace moho
    * Reads one entry out of the decal-area decile histogram RebuildLodHistogram
    * fills in, clamping the index to the ten entries the table actually holds.
    */
-  float CDecalManager::GetLodThreshold(const std::int32_t lodIndex) const
+  float CDecalManager::GetLodThreshold(
+    const std::int32_t lodIndex
+  ) const
   {
     constexpr std::int32_t kLastLodIndex = 9;
     const std::int32_t clamped = std::clamp(lodIndex, 0, kLastLodIndex);
@@ -1126,13 +1234,16 @@ namespace moho
    * LoadDecalGroup); reindexes every decal's mVecIndex, then rebuilds the LOD
    * histogram.
    */
-  void CDecalManager::Load(gpg::BinaryReader& reader, const unsigned int version)
+  void CDecalManager::Load(
+    gpg::BinaryReader& reader,
+    const unsigned int version
+  )
   {
-    reader.Read(reinterpret_cast<char*>(&mDecalCount), sizeof(mDecalCount));
-    reader.Read(reinterpret_cast<char*>(&mNumDecals), sizeof(mNumDecals));
+    reader.Read(&mDecalCount, sizeof(mDecalCount));
+    reader.Read(&mNumDecals, sizeof(mNumDecals));
 
     std::uint32_t decalCount = 0;
-    reader.Read(reinterpret_cast<char*>(&decalCount), sizeof(decalCount));
+    reader.Read(&decalCount, sizeof(decalCount));
     for (; decalCount != 0u; --decalCount) {
       auto* const decal = new CWldTerrainDecal(&mSpatialDb, mWldTerrain);
       decal->DecalLoad(reader);
@@ -1140,7 +1251,7 @@ namespace moho
     }
 
     std::uint32_t groupCount = 0;
-    reader.Read(reinterpret_cast<char*>(&groupCount), sizeof(groupCount));
+    reader.Read(&groupCount, sizeof(groupCount));
     for (; groupCount != 0u; --groupCount) {
       auto* const group = new CDecalGroup(0);
       group->ReadFromStream(reader, static_cast<int>(version));

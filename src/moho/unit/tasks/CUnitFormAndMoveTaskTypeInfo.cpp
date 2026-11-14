@@ -24,18 +24,18 @@ namespace
     return sInstance;
   }
 
-  void AddBaseField(gpg::RType* const typeInfo, gpg::RType* const baseType, const std::int32_t offset)
+  void AddBaseField(
+    gpg::RType* const typeInfo,
+    gpg::RType* const baseType,
+    const std::int32_t offset
+  )
   {
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = offset;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, baseType, offset);
   }
 
-  [[nodiscard]] gpg::RRef MakeFormAndMoveTaskRef(moho::CUnitFormAndMoveTask* const task)
+  [[nodiscard]] gpg::RRef MakeFormAndMoveTaskRef(
+    moho::CUnitFormAndMoveTask* const task
+  )
   {
     return gpg::RRef{task, gpg::RTypeOf<moho::CUnitFormAndMoveTask>()};
   }
@@ -47,7 +47,9 @@ namespace
    * Assigns allocator and placement-constructor callback lanes to this type
    * descriptor.
    */
-  void AssignCtorCallbacks(TypeInfo& typeInfo)
+  void AssignCtorCallbacks(
+    TypeInfo& typeInfo
+  )
   {
     typeInfo.newRefFunc_ = &moho::CUnitFormAndMoveTaskTypeInfo::NewRef;
     typeInfo.ctorRefFunc_ = &moho::CUnitFormAndMoveTaskTypeInfo::CtrRef;
@@ -60,7 +62,9 @@ namespace
    * Assigns delete and in-place-destruct callback lanes to this type
    * descriptor.
    */
-  void AssignDtorCallbacks(TypeInfo& typeInfo)
+  void AssignDtorCallbacks(
+    TypeInfo& typeInfo
+  )
   {
     typeInfo.deleteFunc_ = &moho::CUnitFormAndMoveTaskTypeInfo::Delete;
     typeInfo.dtrFunc_ = &moho::CUnitFormAndMoveTaskTypeInfo::Destruct;
@@ -73,7 +77,9 @@ namespace
    * Assigns all lifecycle callback lanes (`NewRef`, `CtrRef`, `Delete`,
    * `Destruct`) on this type descriptor.
    */
-  void AssignAllLifecycleCallbacks(TypeInfo& typeInfo)
+  void AssignAllLifecycleCallbacks(
+    TypeInfo& typeInfo
+  )
   {
     AssignCtorCallbacks(typeInfo);
     AssignDtorCallbacks(typeInfo);
@@ -136,7 +142,9 @@ namespace moho
    * What it does:
    * Registers `CCommandTask` as the reflected primary base.
    */
-  void CUnitFormAndMoveTaskTypeInfo::AddBase_CCommandTask(gpg::RType* const typeInfo)
+  void CUnitFormAndMoveTaskTypeInfo::AddBase_CCommandTask(
+    gpg::RType* const typeInfo
+  )
   {
     AddBaseField(typeInfo, gpg::RTypeOf<moho::CCommandTask>(), 0x00);
   }
@@ -148,9 +156,15 @@ namespace moho
    * Registers `Listener<EAiNavigatorEvent>` as reflected secondary base at
    * offset `0x34`.
    */
-  void CUnitFormAndMoveTaskTypeInfo::AddBase_Listener_EAiNavigatorEvent(gpg::RType* const typeInfo)
+  void CUnitFormAndMoveTaskTypeInfo::AddBase_Listener_EAiNavigatorEvent(
+    gpg::RType* const typeInfo
+  )
   {
-    AddBaseField(typeInfo, gpg::RTypeOf<moho::Listener<moho::EAiNavigatorEvent>>(), gpg::BaseSubobjectOffset<CUnitFormAndMoveTask, Listener<EAiNavigatorEvent>>());
+    AddBaseField(
+      typeInfo,
+      gpg::RTypeOf<moho::Listener<moho::EAiNavigatorEvent>>(),
+      gpg::BaseSubobjectOffset<CUnitFormAndMoveTask, Listener<EAiNavigatorEvent>>()
+    );
   }
 
   /**
@@ -160,9 +174,15 @@ namespace moho
    * Registers `Listener<EFormationdStatus>` as reflected secondary base at
    * offset `0x44`.
    */
-  void CUnitFormAndMoveTaskTypeInfo::AddBase_Listener_EFormationdStatus(gpg::RType* const typeInfo)
+  void CUnitFormAndMoveTaskTypeInfo::AddBase_Listener_EFormationdStatus(
+    gpg::RType* const typeInfo
+  )
   {
-    AddBaseField(typeInfo, gpg::RTypeOf<moho::Listener<moho::EFormationdStatus>>(), gpg::BaseSubobjectOffset<CUnitFormAndMoveTask, Listener<EFormationdStatus>>());
+    AddBaseField(
+      typeInfo,
+      gpg::RTypeOf<moho::Listener<moho::EFormationdStatus>>(),
+      gpg::BaseSubobjectOffset<CUnitFormAndMoveTask, Listener<EFormationdStatus>>()
+    );
   }
 
   /**
@@ -172,9 +192,15 @@ namespace moho
    * Registers `Listener<ECommandEvent>` as reflected secondary base at
    * offset `0x54`.
    */
-  void CUnitFormAndMoveTaskTypeInfo::AddBase_Listener_ECommandEvent(gpg::RType* const typeInfo)
+  void CUnitFormAndMoveTaskTypeInfo::AddBase_Listener_ECommandEvent(
+    gpg::RType* const typeInfo
+  )
   {
-    AddBaseField(typeInfo, gpg::RTypeOf<moho::Listener<moho::ECommandEvent>>(), gpg::BaseSubobjectOffset<CUnitFormAndMoveTask, Listener<ECommandEvent>>());
+    AddBaseField(
+      typeInfo,
+      gpg::RTypeOf<moho::Listener<moho::ECommandEvent>>(),
+      gpg::BaseSubobjectOffset<CUnitFormAndMoveTask, Listener<ECommandEvent>>()
+    );
   }
 
   /**
@@ -196,12 +222,11 @@ namespace moho
    * Placement-constructs one `CUnitFormAndMoveTask` in caller storage and
    * returns a typed reflection ref.
    */
-  gpg::RRef CUnitFormAndMoveTaskTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CUnitFormAndMoveTaskTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const task = static_cast<CUnitFormAndMoveTask*>(objectStorage);
-    if (task) {
-      new (task) CUnitFormAndMoveTask();
-    }
+    auto* const task = gpg::ConstructInStorage<CUnitFormAndMoveTask>(objectStorage);
     return MakeFormAndMoveTaskRef(task);
   }
 
@@ -211,7 +236,9 @@ namespace moho
    * What it does:
    * Deletes one heap-owned `CUnitFormAndMoveTask`.
    */
-  void CUnitFormAndMoveTaskTypeInfo::Delete(void* const objectStorage)
+  void CUnitFormAndMoveTaskTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<CUnitFormAndMoveTask*>(objectStorage);
   }
@@ -223,7 +250,9 @@ namespace moho
    * Runs in-place destructor for one `CUnitFormAndMoveTask` without
    * deallocating storage.
    */
-  void CUnitFormAndMoveTaskTypeInfo::Destruct(void* const objectStorage)
+  void CUnitFormAndMoveTaskTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     auto* const task = static_cast<CUnitFormAndMoveTask*>(objectStorage);
     if (!task) {
@@ -245,7 +274,9 @@ namespace moho
   }
 } // namespace moho
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CUnitFormAndMoveTaskTypeInfo_13bafd, moho::register_CUnitFormAndMoveTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CUnitFormAndMoveTaskTypeInfo_13bafd,
+  moho::register_CUnitFormAndMoveTaskTypeInfo
+)

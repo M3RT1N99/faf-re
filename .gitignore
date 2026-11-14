@@ -23,7 +23,6 @@ dumps/
 out/
 output/
 dependencies/LuaPlus_Build1081/**/*
-dependencies/boost_1_34_1/**/*
 dependencies/wxWindows-2.4.2/**/*
 # Renderer toolchains fetched locally (docs/RENDERER_BACKENDS.md).
 dependencies/dxc/
@@ -33,6 +32,12 @@ dependencies/usrsctp/
 dependencies/plog/
 dependencies/mbedtls/
 dependencies/slang/
+dependencies/zstd/
+dependencies/freetype/
+dependencies/msdfgen/
+dependencies/googletest/
+dependencies/DirectXTex/
+dependencies/imgui/
 dependencies/*.7z
 *.7z
 *.pdb
@@ -84,3 +89,8 @@ tools/tracy/
 
 # Built tools (go build in tools/, e.g. fakegame.exe); no exe is tracked.
 *.exe
+
+# Local secrets (S3 keys and the like); never commit.
+.env/
+# The Boost 1.34.1 download older checkouts still have (the engine no longer uses it).
+dependencies/boost_1_34_1/**/*

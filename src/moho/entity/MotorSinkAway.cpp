@@ -48,17 +48,6 @@ namespace
     return moho::MotorSinkAway::sType;
   }
 
-  /**
-   * Address: 0x00696C10 (FUN_00696C10)
-   *
-   * What it does:
-   * Secondary duplicated RTTI-resolve lane for `MotorSinkAway`.
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::RType* CachedMotorSinkAwayTypeVariantB()
-  {
-    return CachedMotorSinkAwayType();
-  }
-
   [[nodiscard]] gpg::RType* CachedMotorType()
   {
     if (!moho::Motor::sType) {
@@ -80,86 +69,13 @@ namespace
   }
 
   /**
-   * Address: 0x006962A0 (FUN_006962A0)
-   *
-   * What it does:
-   * Deserializes one `Motor` object lane through archive owner context and
-   * returns the archive instance.
-   */
-  gpg::ReadArchive* ReadMotorArchiveAdapter(gpg::ReadArchive* const archive, void* const object, gpg::RRef* const ownerRef)
-  {
-    archive->Read(CachedMotorType(), object, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x006962E0 (FUN_006962E0)
-   *
-   * What it does:
-   * Serializes one `Motor` object lane through archive owner context and
-   * returns the archive instance.
-   */
-  gpg::WriteArchive* WriteMotorArchiveAdapter(
-    gpg::WriteArchive* const archive,
-    void** const objectSlot,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    archive->Write(CachedMotorType(), objectSlot, *ownerRef);
-    return archive;
-  }
-
-  /**
-   * Address: 0x00696320 (FUN_00696320)
-   *
-   * What it does:
-   * Deserializes one `Motor` object lane through archive owner context.
-   */
-  void ReadMotorArchiveObjectLane1(gpg::ReadArchive* const archive, void* const object, gpg::RRef* const ownerRef)
-  {
-    archive->Read(CachedMotorType(), object, *ownerRef);
-  }
-
-  /**
-   * Address: 0x00696350 (FUN_00696350)
-   *
-   * What it does:
-   * Serializes one `Motor` object lane through archive owner context.
-   */
-  void WriteMotorArchiveObjectLane1(
-    gpg::WriteArchive* const archive,
-    void** const objectSlot,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    archive->Write(CachedMotorType(), objectSlot, *ownerRef);
-  }
-
-  /**
    * Address: 0x00696E70 (FUN_00696E70, Lua factory lookup thunk)
    */
-  [[nodiscard]] LuaPlus::LuaObject GetMotorSinkAwayLuaFactoryObject(LuaPlus::LuaState* const state)
-  {
-    return moho::CScrLuaMetatableFactory<moho::MotorSinkAway>::Instance().Get(state);
-  }
-
-  /**
-   * Address: 0x00696F80 (FUN_00696F80)
-   *
-   * What it does:
-   * Builds one temporary `RRef_MotorSinkAway` and copies its `(mObj,mType)`
-   * pair into caller-owned output storage.
-   */
-  [[maybe_unused]] gpg::RRef* PackRRef_MotorSinkAway(
-    gpg::RRef* const out,
-    moho::MotorSinkAway* const value
+  [[nodiscard]] LuaPlus::LuaObject GetMotorSinkAwayLuaFactoryObject(
+    LuaPlus::LuaState* const state
   )
   {
-    gpg::RRef ref{};
-    (void)gpg::RRef_MotorSinkAway(&ref, value);
-    out->mObj = ref.mObj;
-    out->mType = ref.mType;
-    return out;
+    return moho::CScrLuaMetatableFactory<moho::MotorSinkAway>::Instance().Get(state);
   }
 
 } // namespace
@@ -175,23 +91,11 @@ namespace moho
   }
 
   /**
-   * Address: 0x006971D0 (FUN_006971D0)
-   *
-   * What it does:
-   * Rebinds the startup metatable-factory index lane for
-   * `CScrLuaMetatableFactory<MotorSinkAway>` and returns that singleton.
-   */
-  CScrLuaMetatableFactory<MotorSinkAway>* startup_CScrLuaMetatableFactory_MotorSinkAway_Index()
-  {
-    auto& instance = CScrLuaMetatableFactory<MotorSinkAway>::Instance();
-    instance.SetFactoryObjectIndexForRecovery(CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-    return &instance;
-  }
-
-  /**
    * Address: 0x00696FD0 (FUN_00696FD0, Moho::CScrLuaMetatableFactory<Moho::MotorSinkAway>::Create)
    */
-  LuaPlus::LuaObject CScrLuaMetatableFactory<MotorSinkAway>::Create(LuaPlus::LuaState* const state)
+  LuaPlus::LuaObject CScrLuaMetatableFactory<MotorSinkAway>::Create(
+    LuaPlus::LuaState* const state
+  )
   {
     return SCR_CreateSimpleMetatable(state);
   }
@@ -203,26 +107,30 @@ namespace moho
     : Motor()
     , CScriptObject()
     , mSinkDeltaY(0.0f)
-  {
-  }
+  {}
 
   /**
    * Address: 0x006963F0 (FUN_006963F0, Lua ctor lane)
    */
-  MotorSinkAway::MotorSinkAway(LuaPlus::LuaState* const state, const float sinkDeltaY)
+  MotorSinkAway::MotorSinkAway(
+    LuaPlus::LuaState* const state,
+    const float sinkDeltaY
+  )
     : Motor()
-    , CScriptObject(GetMotorSinkAwayLuaFactoryObject(state), LuaPlus::LuaObject{}, LuaPlus::LuaObject{}, LuaPlus::LuaObject{})
+    , CScriptObject(
+        GetMotorSinkAwayLuaFactoryObject(state),
+        LuaPlus::LuaObject{},
+        LuaPlus::LuaObject{},
+        LuaPlus::LuaObject{}
+      )
     , mSinkDeltaY(sinkDeltaY)
-  {
-  }
+  {}
 
   /**
    * Address: 0x00696580 (FUN_00696580, deleting-thunk chain)
    * Address: 0x006965A0 (FUN_006965A0, non-deleting body)
    */
-  MotorSinkAway::~MotorSinkAway()
-  {
-  }
+  MotorSinkAway::~MotorSinkAway() {}
 
   /**
    * Address: 0x006963B0 (FUN_006963B0, Moho::MotorSinkAway::GetClass)
@@ -237,10 +145,7 @@ namespace moho
    */
   gpg::RRef MotorSinkAway::GetDerivedObjectRef()
   {
-    gpg::RRef ref{};
-    ref.mObj = this;
-    ref.mType = GetClass();
-    return ref;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -251,7 +156,9 @@ namespace moho
    * along Y each tick, preserving orientation and X/Z, then submits it as the
    * pending transform (used for destroyed units settling under the surface).
    */
-  void MotorSinkAway::Update(Entity* const entity)
+  void MotorSinkAway::Update(
+    Entity* const entity
+  )
   {
     VTransform tran = entity->GetTransformWm3();
     tran.pos_.y = (mSinkDeltaY * 0.1f) + tran.pos_.y;
@@ -274,14 +181,11 @@ namespace moho
    * Clears reflected base/field vector lanes for one `MotorSinkAwayTypeInfo`
    * instance while preserving outer storage ownership.
    */
-  void DestroyMotorSinkAwayTypeInfoBody(MotorSinkAwayTypeInfo* const typeInfo) noexcept
+  void DestroyMotorSinkAwayTypeInfoBody(
+    MotorSinkAwayTypeInfo* const typeInfo
+  ) noexcept
   {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = {};
-    typeInfo->bases_ = {};
+    gpg::ClearTypeLists(typeInfo);
   }
 
   /**
@@ -303,32 +207,24 @@ namespace moho
   /**
    * Address: 0x00696E90 (FUN_00696E90, Moho::MotorSinkAwayTypeInfo::AddBase_CScriptObject)
    */
-  void MotorSinkAwayTypeInfo::AddBase_CScriptObject(gpg::RType* const typeInfo)
+  void MotorSinkAwayTypeInfo::AddBase_CScriptObject(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* const baseType = CachedCScriptObjectType();
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = gpg::RType::BaseSubobjectOffset<MotorSinkAway, CScriptObject>();
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, baseType, gpg::BaseSubobjectOffset<MotorSinkAway, CScriptObject>());
   }
 
   /**
    * Address: 0x00696EF0 (FUN_00696EF0, Moho::MotorSinkAwayTypeInfo::AddBase_Motor)
    * Address: 0x00696740 (FUN_00696740, add-base thunk lane)
    */
-  void MotorSinkAwayTypeInfo::AddBase_Motor(gpg::RType* const typeInfo)
+  void MotorSinkAwayTypeInfo::AddBase_Motor(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* const baseType = CachedMotorType();
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, baseType);
   }
 
   /**
@@ -346,7 +242,9 @@ namespace moho
   /**
    * Address: 0x00697200 (FUN_00697200, Moho::MotorSinkAway::MemberDeserialize)
    */
-  void MotorSinkAway::MemberDeserialize(gpg::ReadArchive* const archive)
+  void MotorSinkAway::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -361,7 +259,9 @@ namespace moho
   /**
    * Address: 0x00697290 (FUN_00697290, Moho::MotorSinkAway::MemberSerialize)
    */
-  void MotorSinkAway::MemberSerialize(gpg::WriteArchive* const archive) const
+  void MotorSinkAway::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -426,14 +326,12 @@ namespace gpg
    * resolves the most-derived RType, asserts derivation, and stores
    * `{value - baseOffset, dynamicType}`.
    */
-  gpg::RRef* RRef_MotorSinkAway(gpg::RRef* const out, moho::MotorSinkAway* const value)
+  gpg::RRef* RRef_MotorSinkAway(
+    gpg::RRef* const out,
+    moho::MotorSinkAway* const value
+  )
   {
-    if (!out) {
-      return nullptr;
-    }
-
-    *out = gpg::MakeDerivedRef(value, CachedMotorSinkAwayType());
-    return out;
+    return gpg::WriteDerivedRef(out, value, &CachedMotorSinkAwayType);
   }
 } // namespace gpg
 
@@ -454,14 +352,22 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_MotorSinkAwayTypeInfo_905beb, moho::register_MotorSinkAwayTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_MotorSinkAwayTypeInfo_905beb,
+  moho::register_MotorSinkAwayTypeInfo
+)
 
 namespace moho
 {
   /**
    * Address: 0x006967F0 (FUN_006967F0)
    */
-  void MotorSinkAway::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void MotorSinkAway::MemberConstruct(
+    gpg::ReadArchive&,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     result.SetUnowned(gpg::MakeRRef(new MotorSinkAway()), 0u);
   }

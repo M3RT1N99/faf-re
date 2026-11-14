@@ -107,7 +107,10 @@ namespace moho
     return shaderVars;
   }
 
-  void BindTextureShaderVar(ShaderVar& shaderVar, const boost::shared_ptr<ID3DTextureSheet>& textureSheet)
+  void BindTextureShaderVar(
+    ShaderVar& shaderVar,
+    const std::shared_ptr<ID3DTextureSheet>& textureSheet
+  )
   {
     // The sheet binder resolves the texture off the sheet's own vtable and
     // pushes it into the effect variable, which is exactly what this used to do
@@ -115,23 +118,22 @@ namespace moho
     shaderVar.GetTexture(textureSheet);
   }
 
-  void BindTextureShaderVar(
+  void SetShaderVarMem(
     ShaderVar& shaderVar,
-    const boost::SharedPtrRaw<RD3DTextureResource>& textureResource
+    const std::uint32_t floatCount,
+    const float* const values
   )
-  {
-    const boost::shared_ptr<RD3DTextureResource> retainedTexture = boost::SharedPtrFromRawRetained(textureResource);
-    BindTextureShaderVar(shaderVar, boost::static_pointer_cast<ID3DTextureSheet>(retainedTexture));
-  }
-
-  void SetShaderVarMem(ShaderVar& shaderVar, const std::uint32_t floatCount, const float* const values)
   {
     if (shaderVar.Exists()) {
       shaderVar.mEffectVariable->SetFloatArray(floatCount, values);
     }
   }
 
-  void SetShaderVarPtr(ShaderVar& shaderVar, const void* const data, const std::uint32_t byteCount)
+  void SetShaderVarPtr(
+    ShaderVar& shaderVar,
+    const void* const data,
+    const std::uint32_t byteCount
+  )
   {
     if (shaderVar.Exists()) {
       shaderVar.mEffectVariable->SetValue(data, byteCount);

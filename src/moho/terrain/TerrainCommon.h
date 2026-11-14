@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/String.h"
 
 namespace moho
@@ -32,12 +32,12 @@ namespace moho
    */
   struct TerrainDecalDrawCommand
   {
-    std::int32_t startIndex;   // +0x00 -> SD3DIndexRange::startIndex
-    std::int32_t indexCount;   // +0x04 -> SD3DIndexRange::indexCount
-    std::int32_t startVertex;  // +0x08 -> SD3DVertexRange::startVertex (min referenced vertex)
-    std::int32_t endVertex;    // +0x0C -> SD3DVertexRange::endVertex
-    float alpha;               // +0x10 -> DecalAlpha shader-var value
-    CWldTerrainDecal* decal;   // +0x14 -> owning decal (textures + matrices)
+    std::int32_t startIndex;  // +0x00 -> SD3DIndexRange::startIndex
+    std::int32_t indexCount;  // +0x04 -> SD3DIndexRange::indexCount
+    std::int32_t startVertex; // +0x08 -> SD3DVertexRange::startVertex (min referenced vertex)
+    std::int32_t endVertex;   // +0x0C -> SD3DVertexRange::endVertex
+    float alpha;              // +0x10 -> DecalAlpha shader-var value
+    CWldTerrainDecal* decal;  // +0x14 -> owning decal (textures + matrices)
   };
   static_assert(sizeof(TerrainDecalDrawCommand) == 0x18, "TerrainDecalDrawCommand size must be 0x18");
 
@@ -190,7 +190,8 @@ namespace moho
       GeomCamera3* camera,
       const std::int32_t* viewportBlock,
       bool minimapPass,
-      std::int32_t forceRegenerate) = 0;
+      std::int32_t forceRegenerate
+    ) = 0;
 
     /**
      * Primary vtable slot 6.
@@ -232,8 +233,9 @@ namespace moho
     virtual bool DrawNormals(
       std::int32_t gameTick,
       float deltaSeconds,
-      const boost::shared_ptr<ID3DRenderTarget>& terrainNormalTexture,
-      Shadow* shadowContext) = 0;
+      const std::shared_ptr<ID3DRenderTarget>& terrainNormalTexture,
+      Shadow* shadowContext
+    ) = 0;
 
     /**
      * Primary vtable slot 9.
@@ -276,8 +278,9 @@ namespace moho
     virtual void DrawWaterTerrain(
       std::int32_t tick,
       float tickLerp,
-      boost::shared_ptr<ID3DRenderTarget> refractionTexture,
-      boost::shared_ptr<ID3DRenderTarget> reflectionTexture) = 0;
+      std::shared_ptr<ID3DRenderTarget> refractionTexture,
+      std::shared_ptr<ID3DRenderTarget> reflectionTexture
+    ) = 0;
 
     /**
      * Primary vtable slot 12.
@@ -312,9 +315,8 @@ namespace moho
      * raw words go by. The same 12 argument bytes are the same two parameters
      * in all three classes.
      */
-    virtual void DrawTerrain(
-      boost::shared_ptr<CD3DDynamicTextureSheet> overlayTexture,
-      const msvc8::string* techniqueName) = 0;
+    virtual void
+    DrawTerrain(std::shared_ptr<CD3DDynamicTextureSheet> overlayTexture, const fa::string* techniqueName) = 0;
 
     /**
      * Primary vtable slot 14.
@@ -336,9 +338,16 @@ namespace moho
      */
     virtual void DrawDirtyTerrain(CD3DPrimBatcher* batcher) = 0;
 
-    boost::shared_ptr<RD3DTextureResource> mDecalMask{}; // +0x04
+    std::shared_ptr<RD3DTextureResource> mDecalMask{}; // +0x04
   };
 
   static_assert(offsetof(TerrainCommon, mDecalMask) == 0x04, "TerrainCommon::mDecalMask offset must be 0x04");
   static_assert(sizeof(TerrainCommon) == 0x0C, "TerrainCommon size must be 0x0C");
+  /**
+   * Engine addition, not in the shipped binary: whether the heights moved since `terrain` last asked
+   * (HeightFieldRevision), the first ask answering yes. The binary's UpdateRenderContext takes edit mode
+   * (IsInEditMode, the editor) as "the heights may have changed" and rebuilds the mesh and the decal list
+   * every frame (3 ms a frame on a 20 km map); this lets it rebuild only when they did.
+   */
+  [[nodiscard]] bool TerrainHeightsMoved(const void* terrain);
 } // namespace moho

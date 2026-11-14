@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "moho/entity/EntityPositionWatchEntry.h"
 
 namespace gpg
@@ -44,7 +44,7 @@ namespace moho
      * Initializes intel-position handle state and retains one shared reference
      * to the bound intel-grid owner.
      */
-    CIntelPosHandle(std::uint32_t radius, const boost::SharedPtrRaw<CIntelGrid>& intelGrid);
+    CIntelPosHandle(std::uint32_t radius, const std::shared_ptr<CIntelGrid>& intelGrid);
 
     /**
      * Address: 0x0076D860 (FUN_0076D860, Moho::CIntelPosHandle::~CIntelPosHandle)
@@ -74,15 +74,6 @@ namespace moho
     std::int32_t UpdatePos(std::int32_t curTick, const Wm3::Vec3f& newPos);
 
     /**
-     * Address: 0x0076F280 (FUN_0076F280)
-     *
-     * What it does:
-     * Updates visualized position immediately when enabled (or writes raw
-     * position when disabled), then stores `curTick` as last-update tick.
-     */
-    void UpdatePosImmediate(std::int32_t curTick, const Wm3::Vec3f& newPos);
-
-    /**
      * Address: 0x0076D980 (FUN_0076D980, Moho::CIntelPosHandle::ChangeRadius)
      *
      * What it does:
@@ -98,9 +89,8 @@ namespace moho
      * Builds a new `CIntelPosHandle` for an archive load and hands it back unowned; its
      * members are loaded over it afterwards.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x00770000 (FUN_00770000, Moho::CIntelPosHandle::MemberDeserialize)
@@ -158,7 +148,7 @@ namespace moho
      */
     void Destroy(int shouldDelete) override;
 
-    boost::SharedPtrRaw<CIntelGrid> mGrid; // +0x1C (px, pi)
+    std::shared_ptr<CIntelGrid> mGrid; // +0x1C (px, pi)
   };
 
 #if defined(_M_IX86)

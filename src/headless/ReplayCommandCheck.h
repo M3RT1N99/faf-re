@@ -55,16 +55,16 @@ namespace faf::headless
     void OnMessage(const moho::CMessage& message);
 
     std::unique_ptr<LuaPlus::LuaState> mLuaState; // the decoder's own, apart from the sim's
-    msvc8::auto_ptr<gpg::Stream> mNoRecording;
-    std::vector<std::vector<char>> mCaptured;     // what the marshaller sent for one message
+    fa::auto_ptr<gpg::Stream> mNoRecording;
+    std::vector<std::vector<char>> mCaptured; // what the marshaller sent for one message
     faf::remote::client::CRemoteClientManager mCapture;
     std::unique_ptr<moho::CMarshaller> mMarshaller;
     std::unique_ptr<moho::CDecoder> mDecoder;
     bool mInside = false;
     std::uint64_t mMessages = 0;
     std::uint64_t mIdentical = 0;
-    std::array<std::uint64_t, 256> mDiffering{};  // by opcode
-    std::array<std::uint64_t, 256> mMissing{};    // decoded to no message (a dropped command)
+    std::array<std::uint64_t, 256> mDiffering{};    // by opcode
+    std::array<std::uint64_t, 256> mMissing{};      // decoded to no message (a dropped command)
     std::array<std::uint64_t, 256> mKeyOrderOnly{}; // a Lua table's pairs in another order only
     std::array<std::uint64_t, 256> mSeen{};
   };

@@ -231,7 +231,7 @@ namespace gpg
      * What it does:
      * Writes string bytes including trailing NUL through inline-buffer fast path or virtual write fallback.
      */
-    void Write(const msvc8::string& str);
+    void Write(const fa::string& str);
 
     /**
      * Address: 0x0043D130 (FUN_0043D130)
@@ -241,7 +241,7 @@ namespace gpg
      * What it does:
      * Writes one byte span through inline-buffer fast path or virtual write fallback.
      */
-    void Write(const char* buf, size_t size);
+    void Write(const void* buf, size_t size);
 
     /**
      * Address: 0x004CCD80 (FUN_004CCD80)
@@ -267,10 +267,11 @@ namespace gpg
      * Endianness: bytes are emitted as-is (little-endian on x86).
      */
     template <class T>
-    std::enable_if_t<std::is_trivially_copyable_v<T> && !std::is_pointer_v<T> && !std::is_enum_v<T>, void>
-    Write(const T& value)
+    std::enable_if_t<std::is_trivially_copyable_v<T> && !std::is_pointer_v<T> && !std::is_enum_v<T>, void> Write(
+      const T& value
+    )
     {
-      Write(reinterpret_cast<const char*>(&value), sizeof(T));
+      Write(&value, sizeof(T));
     }
 
     /**
@@ -279,11 +280,13 @@ namespace gpg
      * Write enum by its underlying integral type.
      */
     template <class E>
-    std::enable_if_t<std::is_enum_v<E>, void> Write(const E value)
+    std::enable_if_t<std::is_enum_v<E>, void> Write(
+      const E value
+    )
     {
       using U = std::underlying_type_t<E>;
       U tmp = static_cast<U>(value);
-      Write(reinterpret_cast<const char*>(&tmp), sizeof(U));
+      Write(&tmp, sizeof(U));
     }
 
     /**
@@ -292,9 +295,11 @@ namespace gpg
      * Write fixed-size C array (e.g., byte blobs).
      */
     template <class T, std::size_t N>
-    std::enable_if_t<std::is_trivially_copyable_v<T>, void> Write(const T (&arr)[N])
+    std::enable_if_t<std::is_trivially_copyable_v<T>, void> Write(
+      const T (&arr)[N]
+    )
     {
-      Write(reinterpret_cast<const char*>(arr), sizeof(arr));
+      Write(arr, sizeof(arr));
     }
 
     /**
@@ -318,7 +323,7 @@ namespace gpg
      * What it does:
      * Reads one byte span from inline read window or virtual read fallback.
      */
-    size_t Read(char* buf, size_t size);
+    size_t Read(void* buf, size_t size);
 
     /**
      * Address: 0x004CCC10 (FUN_004CCC10)
@@ -350,7 +355,9 @@ namespace gpg
      * NOTE: Inlined
      * @param vec
      */
-    void Write(const core::FastVector<char>& vec)
+    void Write(
+      const core::FastVector<char>& vec
+    )
     {
       Write(vec.start_, vec.Size());
     }
@@ -414,7 +421,7 @@ namespace gpg
      * Address: 0x009070B0 (FUN_009070B0)
      *
      * IDA signature:
-     * msvc8::string *__thiscall TextReader::ReadLine(TextReader *this@<ecx>, msvc8::string *result);
+     * fa::string *__thiscall TextReader::ReadLine(TextReader *this@<ecx>, fa::string *result);
      *
      * What it does:
      * Accumulates bytes up to and including the line terminator and returns
@@ -425,7 +432,7 @@ namespace gpg
      * hidden result pointer MSVC passes as the stack argument, which is why
      * the binary ends `ret 4`.
      */
-    [[nodiscard]] msvc8::string ReadLine();
+    [[nodiscard]] fa::string ReadLine();
 
   private:
     Stream* mStream{};
@@ -481,9 +488,9 @@ namespace gpg
      * Address: 0x00957210 (FUN_00957210)
      *
      * What it does:
-     * Writes one msvc8::string payload through WriteChar normalization.
+     * Writes one fa::string payload through WriteChar normalization.
      */
-    void WriteString(const msvc8::string& value);
+    void WriteString(const fa::string& value);
 
     /**
      * Address: 0x00957250 (FUN_00957250)

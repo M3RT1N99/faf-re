@@ -32,7 +32,9 @@ namespace
    * the instantiation's own static, which is what the rest of the broadcaster
    * reflection paths read; a function-local cache leaves those reading null.
    */
-  void AddBaseBroadcasterToIAiTransportTypeInfo(gpg::RType* const typeInfo)
+  void AddBaseBroadcasterToIAiTransportTypeInfo(
+    gpg::RType* const typeInfo
+  )
   {
     using BroadcasterEvent = Broadcaster<EAiTransportEvent>;
     if (BroadcasterEvent::sType == nullptr) {
@@ -44,13 +46,7 @@ namespace
       return;
     }
 
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = gpg::BaseSubobjectOffset<IAiTransport, BroadcasterEvent>();
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, baseType, gpg::BaseSubobjectOffset<IAiTransport, BroadcasterEvent>());
   }
 } // namespace
 
@@ -106,4 +102,7 @@ void moho::register_IAiTransportTypeInfo()
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_IAiTransportTypeInfo_a7ca8a, moho::register_IAiTransportTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_IAiTransportTypeInfo_a7ca8a,
+  moho::register_IAiTransportTypeInfo
+)

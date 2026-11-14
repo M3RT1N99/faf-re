@@ -111,12 +111,12 @@ namespace
    */
   void DeserializeSSTIEntityConstantDataSerializerCallback(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const
   )
   {
-    auto* const data = reinterpret_cast<moho::SSTIEntityConstantData*>(objectPtr);
+    auto* const data = static_cast<moho::SSTIEntityConstantData*>(objectPtr);
     if (data == nullptr) {
       return;
     }
@@ -135,12 +135,12 @@ namespace
    */
   void SerializeSSTIEntityConstantDataSerializerCallback(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const
   )
   {
-    const auto* const data = reinterpret_cast<const moho::SSTIEntityConstantData*>(objectPtr);
+    const auto* const data = static_cast<const moho::SSTIEntityConstantData*>(objectPtr);
     if (data == nullptr) {
       return;
     }
@@ -175,7 +175,10 @@ namespace
    * What it does:
    * Deserializes one reflected `EntId` value lane using lazy type lookup.
    */
-  void DeserializeEntIdField(void* const valueStorage, gpg::ReadArchive* const archive)
+  void DeserializeEntIdField(
+    void* const valueStorage,
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr || valueStorage == nullptr) {
       return;
@@ -193,7 +196,10 @@ namespace
    * What it does:
    * Serializes one reflected `EntId` value lane using lazy type lookup.
    */
-  void SerializeEntIdField(const void* const valueStorage, gpg::WriteArchive* const archive)
+  void SerializeEntIdField(
+    const void* const valueStorage,
+    gpg::WriteArchive* const archive
+  )
   {
     if (archive == nullptr || valueStorage == nullptr) {
       return;
@@ -227,7 +233,9 @@ namespace moho
    * What it does:
    * Deserializes entity id, unowned entity-blueprint pointer, and creation tick.
    */
-  void SSTIEntityConstantData::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SSTIEntityConstantData::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr) {
       return;
@@ -246,7 +254,9 @@ namespace moho
    * What it does:
    * Serializes entity id, unowned entity-blueprint pointer, and creation tick.
    */
-  void SSTIEntityConstantData::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SSTIEntityConstantData::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (archive == nullptr) {
       return;
@@ -284,4 +294,7 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_SSTIEntityConstantDataTypeInfo_f23d45, moho::preregister_SSTIEntityConstantDataTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_SSTIEntityConstantDataTypeInfo_f23d45,
+  moho::preregister_SSTIEntityConstantDataTypeInfo
+)

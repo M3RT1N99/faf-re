@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/String.h"
 #include "moho/animation/CAniSkel.h"
 
@@ -32,9 +32,8 @@ namespace moho
      * Reads the model path and hands back the skeleton of that model, shared.
      * Inlined into `SerConstructHelper<CAniResourceSkel>::Construct` 0x005388C0.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x00538770 (FUN_00538770)
@@ -43,7 +42,10 @@ namespace moho
      * Saves the model name as a mounted path.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
 
     static gpg::RType* sType;
@@ -61,7 +63,7 @@ namespace moho
      * installs the `CAniResourceSkel` vtable, and copies the resource name into
      * `mName`.
      */
-    CAniResourceSkel(const msvc8::string& name, const boost::shared_ptr<const SScmFile>& file);
+    CAniResourceSkel(const fa::string& name, const std::shared_ptr<const SScmFile>& file);
 
     /**
      * Address: 0x00538500 (FUN_00538500, Moho::CAniResourceSkel::dtr thunk/body)
@@ -70,7 +72,7 @@ namespace moho
     ~CAniResourceSkel() override;
 
   public:
-    msvc8::string mName; // +0x2C
+    fa::string mName; // +0x2C
   };
 
   static_assert(offsetof(CAniResourceSkel, mName) == 0x2C, "CAniResourceSkel::mName offset must be 0x2C");

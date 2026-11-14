@@ -7,8 +7,7 @@ namespace
     "PostDragger(originFrame, keycode, dragger)\n"
     "Make 'dragger' the active dragger from a particular frame. You can pass nil to cancel the current dragger.";
   constexpr const char* kPostDraggerInvalidKeyError = "Invalid key specified. Must be LBUTTON or RBUTTON or MBUTTON";
-}
-
+} // namespace
 
 /**
  * Address: 0x0078DE50 (FUN_0078DE50, Moho::CMauiLuaDragger::CMauiLuaDragger)
@@ -37,8 +36,7 @@ namespace
   constexpr std::int32_t kMauiLButtonCode = 301;
   constexpr std::int32_t kMauiRButtonCode = 302;
   constexpr std::int32_t kMauiMButtonCode = 304;
-}
-
+} // namespace
 
 gpg::RType* moho::CMauiLuaDragger::sType = nullptr;
 
@@ -73,10 +71,7 @@ gpg::RType* moho::CMauiLuaDragger::GetClass() const
  */
 gpg::RRef moho::CMauiLuaDragger::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }
 
 /**
@@ -175,7 +170,7 @@ namespace
     constexpr const char* kIncorrectGameObjectTypeError =
       "Incorrect type of game object.  (Did you call with '.' instead of ':'?)";
 
-    moho::CScriptObject** const scriptObjectSlot = ExtractScriptObjectSlotFromLuaObject(object);
+    moho::CScriptObject** const scriptObjectSlot = moho::SCR_ScriptObjectSlot(object);
     if (scriptObjectSlot == nullptr) {
       luaL_error(state ? state->GetActiveCState() : nullptr, kExpectedGameObjectError);
       return nullptr;
@@ -201,8 +196,7 @@ namespace
 
     return static_cast<moho::CMauiLuaDragger*>(upcast.mObj);
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x0078DB50 (slot +0x04 of ??_7IMauiDragger@Moho@@6B@, VA 0x00E38DC0)
@@ -435,11 +429,22 @@ void func_OnCommandDragEnd(
 
 // Rows 0x00F5A488: EVT_MOUSE_EVENTS is the thirteen mouse rows, all bound to
 // OnMouseMove (0x007A4970), in the order that macro lists them.
-BEGIN_EVENT_TABLE(moho::CMauiWxEventMapper, wxEvtHandler)
-  EVT_MOUSE_EVENTS(moho::CMauiWxEventMapper::OnMouseMove)
-  EVT_KEY_UP(moho::CMauiWxEventMapper::OnKeyUp)
-  EVT_KEY_DOWN(moho::CMauiWxEventMapper::OnKeyDown)
-  EVT_CHAR(moho::CMauiWxEventMapper::OnChar)
+BEGIN_EVENT_TABLE(
+  moho::CMauiEventMapper,
+  ShellEvtHandler
+)
+EVT_MOUSE_EVENTS(
+  moho::CMauiEventMapper::OnMouseMove
+)
+EVT_KEY_UP(
+  moho::CMauiEventMapper::OnKeyUp
+)
+EVT_KEY_DOWN(
+  moho::CMauiEventMapper::OnKeyDown
+)
+EVT_CHAR(
+  moho::CMauiEventMapper::OnChar
+)
 END_EVENT_TABLE()
 
 /**
@@ -477,7 +482,7 @@ moho::CScrLuaInitForm* moho::func_PostDragger_LuaFuncDef()
  * Initializes one `SMauiEventData` lane to the default unknown-event state
  * used by dragger posting paths.
  */
-[[maybe_unused]] static moho::SMauiEventData* func_InitUnknownMauiEventData(
+static moho::SMauiEventData* func_InitUnknownMauiEventData(
   moho::SMauiEventData* const eventData
 ) noexcept
 {
@@ -527,9 +532,10 @@ int moho::cfunc_PostDraggerL(
       keyCodeName = "";
     }
 
-    gpg::RRef keyCodeEnumRef{};
-    keyCodeEnumRef = gpg::MakeRRef<moho::EMauiKeyCode>(reinterpret_cast<EMauiKeyCode*>(&keyCode));
+    EMauiKeyCode keyCodeEnum{};
+    gpg::RRef keyCodeEnumRef = gpg::MakeRRef<moho::EMauiKeyCode>(&keyCodeEnum);
     SCR_GetEnum(state, keyCodeName, keyCodeEnumRef);
+    keyCode = static_cast<std::int32_t>(keyCodeEnum);
   }
 
   keyCode = NormalizePostDraggerKeycode(keyCode);

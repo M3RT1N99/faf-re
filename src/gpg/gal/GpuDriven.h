@@ -32,6 +32,7 @@
 namespace gpg::gal
 {
   class IndexBuffer;
+  class RenderTarget;
   class Texture;
 
   /** Capability bits of `Device::GetGpuDrivenFeatures()`. */
@@ -47,7 +48,17 @@ namespace gpg::gal
     kGpuFeatureTimestamps = 1U << 3U,
     /// `Device::CopyVertexBufferRegion` copies on the GPU.
     kGpuFeatureBufferCopy = 1U << 4U,
+    /// Effect passes with hull and domain shaders draw (engine addition, ren_TerrainTessellation).
+    kGpuFeatureTessellation = 1U << 5U,
+    /** Inline ray queries in pixel and compute shaders against `SetRayInstances`' scene (RayTracing.h). */
+    kGpuFeatureRayQuery = 1U << 6U,
   };
+
+  /**
+   * PCI vendor id of NVIDIA, the only GPUs `kGpuPathMsdfCook` has run on (issue #309). AMD and Intel adapters keep
+   * the CPU font cook until it has been checked there.
+   */
+  constexpr std::uint32_t kPciVendorNvidia = 0x10DEU;
 
   /**
    * The engine's GPU-driven render paths, as `Device::GetGpuDrivenVerified()`
@@ -67,6 +78,8 @@ namespace gpg::gal
     kGpuPathProjectileIcons = 1U << 5U, ///< `ren_GpuProjectileIcons`
     kGpuPathWorldShapes = 1U << 6U,     ///< `ren_GpuShapes`
     kGpuPathRanges = 1U << 7U,          ///< `ren_GpuRanges`
+    kGpuPathMsdfText = 1U << 8U,        ///< `ren_GpuText`
+    kGpuPathMsdfCook = 1U << 9U,        ///< `ren_GpuFontCook`; checked on NVIDIA only, so listed for its adapters alone
   };
 
   enum class GpuBufferKind : std::uint8_t
@@ -84,21 +97,26 @@ namespace gpg::gal
     std::uint32_t stride = 0U;   ///< bytes per element, a multiple of 4
     std::uint32_t capacity = 0U; ///< elements
     GpuBufferKind kind = GpuBufferKind::Structured;
-    bool shaderWrite = false;    ///< a compute shader writes it (u0..u1)
+    bool shaderWrite = false; ///< a compute shader writes it (u0..u1)
   };
 
   /** One GPU buffer. Contents persist until overwritten by `UpdateGpuBuffer` or a compute shader. */
   class GpuBuffer
   {
   public:
-    explicit GpuBuffer(const GpuBufferDesc& desc) noexcept
+    explicit GpuBuffer(
+      const GpuBufferDesc& desc
+    ) noexcept
       : mDesc(desc)
     {}
     virtual ~GpuBuffer() = default;
     GpuBuffer(const GpuBuffer&) = delete;
     GpuBuffer& operator=(const GpuBuffer&) = delete;
 
-    [[nodiscard]] const GpuBufferDesc& Desc() const noexcept { return mDesc; }
+    [[nodiscard]] const GpuBufferDesc& Desc() const noexcept
+    {
+      return mDesc;
+    }
 
   protected:
     GpuBufferDesc mDesc;
@@ -109,6 +127,8 @@ namespace gpg::gal
     Opaque,
     AlphaBlend, ///< src * srcAlpha + dst * (1 - srcAlpha)
     Additive,   ///< src * srcAlpha + dst
+    Multiply,   ///< src * dst in colour; mask alpha off, it takes src
+    Brighten,   ///< src * dst + dst in colour: the colour times (1 + src), past the target's 0..1 output clamp
   };
 
   enum class GpuCompare : std::uint8_t
@@ -166,7 +186,7 @@ namespace gpg::gal
     const char* name = "";
     const char* source = nullptr;
     std::size_t sourceBytes = 0U;
-    const char* vertexEntry = nullptr;  ///< with `pixelEntry`: a draw program
+    const char* vertexEntry = nullptr; ///< with `pixelEntry`: a draw program
     const char* pixelEntry = nullptr;
     const char* computeEntry = nullptr; ///< alone: a compute program
     GpuBlend blend = GpuBlend::Opaque;
@@ -174,7 +194,7 @@ namespace gpg::gal
     bool depthTest = false;              ///< `depthFunc` against the bound depth target
     bool depthWrite = false;
     GpuCompare depthFunc = GpuCompare::LessEqual;
-    bool depthClip = true;               ///< clip to the near/far planes, as D3D9 always does
+    bool depthClip = true; ///< clip to the near/far planes, as D3D9 always does
     GpuStencil stencil{};
     /// Keep the depth-stencil state already bound instead of the four fields above: the program
     /// stands in for an effect pass that sets none of its own. D3D12/Vulkan, which bake depth into
@@ -201,11 +221,18 @@ namespace gpg::gal
 
   struct GpuBindings
   {
-    const void* constants = nullptr; ///< b0, copied at the call
-    std::uint32_t constantBytes = 0U; ///< a multiple of 16, at most `kGpuMaxConstantBytes`
-    GpuBuffer* readBuffers[kGpuMaxReadBuffers]{};   ///< t0..t3
-    Texture* textures[kGpuMaxTextures]{};           ///< t4..t5
+    const void* constants = nullptr;              ///< b0, copied at the call
+    std::uint32_t constantBytes = 0U;             ///< a multiple of 16, at most `kGpuMaxConstantBytes`
+    GpuBuffer* readBuffers[kGpuMaxReadBuffers]{}; ///< t0..t3
+    Texture* textures[kGpuMaxTextures]{};         ///< t4..t5
+    /// t4..t5 where `textures` leaves the slot empty: a colour target's current buffer, read as a
+    /// texture (Direct3D 12 and Vulkan). It must not be the target the call draws into.
+    RenderTarget* targets[kGpuMaxTextures]{};
     GpuBuffer* writeBuffers[kGpuMaxWriteBuffers]{}; ///< u0..u1, compute only
+    /// t6 (Vulkan binding 10): the depth target bound when the call runs, as `Texture2D<float>`.
+    /// Direct3D 12 and Vulkan create their head depth targets readable; anywhere else t6 reads 0.
+    /// For dispatches: a draw would read the target it also writes.
+    bool readBoundDepth = false;
   };
 
   /**

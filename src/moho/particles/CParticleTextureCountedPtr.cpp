@@ -34,7 +34,7 @@ namespace gpg
      * Returns base lexical text plus reflected vector size for one
      * `fastvector<CountedPtr<CParticleTexture>>` instance.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     /**
      * Address: 0x00659FB0 (FUN_00659FB0, gpg::RFastVectorType_CountedPtr_CParticleTexture::IsIndexed)
      *
@@ -111,7 +111,9 @@ namespace
     return moho::resource_reflection::ResolveCParticleTextureType();
   }
 
-  [[nodiscard]] gpg::RRef MakeCParticleTextureRef(moho::CParticleTexture* const value)
+  [[nodiscard]] gpg::RRef MakeCParticleTextureRef(
+    moho::CParticleTexture* const value
+  )
   {
     gpg::RRef out{};
     gpg::RRef_CParticleTexture(&out, value);
@@ -121,9 +123,14 @@ namespace
     return out;
   }
 
-  void LoadCountedPtrCParticleTexture(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void LoadCountedPtrCParticleTexture(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const counted = reinterpret_cast<moho::CountedPtr_CParticleTexture*>(objectPtr);
+    auto* const counted = static_cast<moho::CountedPtr_CParticleTexture*>(objectPtr);
     if (!counted || !archive) {
       return;
     }
@@ -133,9 +140,14 @@ namespace
     (void)moho::AssignCountedParticleTexturePtr(counted, texture);
   }
 
-  void SaveCountedPtrCParticleTexture(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void SaveCountedPtrCParticleTexture(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
-    auto* const counted = reinterpret_cast<moho::CountedPtr_CParticleTexture*>(objectPtr);
+    auto* const counted = static_cast<moho::CountedPtr_CParticleTexture*>(objectPtr);
     if (!counted || !archive) {
       return;
     }
@@ -152,13 +164,18 @@ namespace
    * Loads one reflected `fastvector<CountedPtr<CParticleTexture>>` payload
    * from archive count + lanes.
    */
-  void LoadFastVectorCountedPtrCParticleTexture(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void LoadFastVectorCountedPtrCParticleTexture(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
     }
 
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture>*>(objectPtr);
 
     unsigned int count = 0;
     archive->ReadUInt(&count);
@@ -183,13 +200,18 @@ namespace
    * Saves one reflected `fastvector<CountedPtr<CParticleTexture>>` payload as
    * archive count + lanes.
    */
-  void SaveFastVectorCountedPtrCParticleTexture(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void SaveFastVectorCountedPtrCParticleTexture(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
     }
 
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture>*>(objectPtr);
     const unsigned int count = static_cast<unsigned int>(vec.size());
     archive->WriteUInt(count);
 
@@ -211,28 +233,11 @@ namespace moho
    * Returns the raw particle-texture pointer lane from one counted-pointer
    * wrapper.
    */
-  CParticleTexture* GetCountedParticleTextureRawPointer(const CountedPtr_CParticleTexture& countedTexture) noexcept
-  {
-    return countedTexture.tex;
-  }
-
-  /**
-   * Address: 0x006576F0 (FUN_006576F0)
-   *
-   * What it does:
-   * Initializes one counted particle-texture pointer lane to null and returns
-   * the same storage lane.
-   */
-  [[maybe_unused]] CountedPtr_CParticleTexture* ConstructCountedParticleTexturePtrNull(
-    CountedPtr_CParticleTexture* const countedTexture
+  CParticleTexture* GetCountedParticleTextureRawPointer(
+    const CountedPtr_CParticleTexture& countedTexture
   ) noexcept
   {
-    if (countedTexture == nullptr) {
-      return nullptr;
-    }
-
-    countedTexture->tex = nullptr;
-    return countedTexture;
+    return countedTexture.tex;
   }
 
   /**
@@ -241,7 +246,9 @@ namespace moho
    * What it does:
    * Releases one counted particle-texture pointer lane and clears it.
    */
-  void ResetCountedParticleTexturePtr(CountedPtr_CParticleTexture& countedTexture) noexcept
+  void ResetCountedParticleTexturePtr(
+    CountedPtr_CParticleTexture& countedTexture
+  ) noexcept
   {
     if (countedTexture.tex != nullptr) {
       (void)countedTexture.tex->ReleaseReferenceAtomic();
@@ -309,7 +316,7 @@ namespace moho
    */
   const char* RCountedPtrType<moho::CParticleTexture>::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("CountedPtr<%s>", CachedCParticleTextureType()->GetName());
+    static const fa::string sName = gpg::STR_Printf("CountedPtr<%s>", CachedCParticleTextureType()->GetName());
     return sName.c_str();
   }
 
@@ -320,15 +327,17 @@ namespace moho
    * Returns `"NULL"` for empty counted pointers; otherwise returns bracketed
    * pointee lexical text for the texture object.
    */
-  msvc8::string RCountedPtrType<moho::CParticleTexture>::GetLexical(const gpg::RRef& ref) const
+  fa::string RCountedPtrType<moho::CParticleTexture>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    auto* const counted = reinterpret_cast<const moho::CountedPtr_CParticleTexture*>(ref.mObj);
+    auto* const counted = static_cast<const moho::CountedPtr_CParticleTexture*>(ref.mObj);
     if (!counted || !counted->tex) {
-      return msvc8::string("NULL");
+      return fa::string("NULL");
     }
 
     const gpg::RRef textureRef = MakeCParticleTextureRef(counted->tex);
-    const msvc8::string inner = textureRef.GetLexical();
+    const fa::string inner = textureRef.GetLexical();
     return gpg::STR_Printf("[%s]", inner.c_str());
   }
 
@@ -375,9 +384,12 @@ namespace moho
    * What it does:
    * Builds one reflected pointer reference to the counted texture lane.
    */
-  gpg::RRef RCountedPtrType<moho::CParticleTexture>::SubscriptIndex(void* obj, const int) const
+  gpg::RRef RCountedPtrType<moho::CParticleTexture>::SubscriptIndex(
+    void* obj,
+    const int
+  ) const
   {
-    auto* const counted = reinterpret_cast<moho::CountedPtr_CParticleTexture*>(obj);
+    auto* const counted = static_cast<moho::CountedPtr_CParticleTexture*>(obj);
     return MakeCParticleTextureRef(counted ? counted->tex : nullptr);
   }
 
@@ -387,9 +399,11 @@ namespace moho
    * What it does:
    * Returns `1` when counted pointer stores a texture; otherwise returns `0`.
    */
-  size_t RCountedPtrType<moho::CParticleTexture>::GetCount(void* obj) const
+  size_t RCountedPtrType<moho::CParticleTexture>::GetCount(
+    void* obj
+  ) const
   {
-    auto* const counted = reinterpret_cast<moho::CountedPtr_CParticleTexture*>(obj);
+    auto* const counted = static_cast<moho::CountedPtr_CParticleTexture*>(obj);
     return (counted && counted->tex) ? 1u : 0u;
   }
 
@@ -399,7 +413,12 @@ namespace moho
    * What it does:
    * Loads one counted-pointer texture lane through shared-pointer archive path.
    */
-  void RCountedPtrType<moho::CParticleTexture>::SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void RCountedPtrType<moho::CParticleTexture>::SerLoad(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
     LoadCountedPtrCParticleTexture(archive, objectPtr, 0, ownerRef);
   }
@@ -410,13 +429,18 @@ namespace moho
    * What it does:
    * Saves one counted-pointer texture lane through shared-pointer archive path.
    */
-  void RCountedPtrType<moho::CParticleTexture>::SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void RCountedPtrType<moho::CParticleTexture>::SerSave(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
     SaveCountedPtrCParticleTexture(archive, objectPtr, 0, ownerRef);
   }
 
   /**
-    * Alias of FUN_0065AAD0 (non-canonical helper lane).
+   * Alias of FUN_0065AAD0 (non-canonical helper lane).
    *
    * What it does:
    * Constructs/preregisters RTTI metadata for `CountedPtr<CParticleTexture>`.
@@ -486,7 +510,7 @@ namespace gpg
    */
   const char* RFastVectorType<moho::CountedPtr_CParticleTexture>::GetName() const
   {
-    static const msvc8::string sName =
+    static const fa::string sName =
       gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::CountedPtr_CParticleTexture>()->GetName());
     return sName.c_str();
   }
@@ -498,9 +522,11 @@ namespace gpg
    * Returns base lexical text plus reflected vector size for one
    * `fastvector<CountedPtr<CParticleTexture>>` instance.
    */
-  msvc8::string RFastVectorType<moho::CountedPtr_CParticleTexture>::GetLexical(const gpg::RRef& ref) const
+  fa::string RFastVectorType<moho::CountedPtr_CParticleTexture>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -525,7 +551,10 @@ namespace gpg
    */
   void RFastVectorType<moho::CountedPtr_CParticleTexture>::Init()
   {
-    static_assert(sizeof(gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture>) == 0x10, "gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture> is 0x10 bytes on x86");
+    static_assert(
+      sizeof(gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture>) == 0x10,
+      "gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture> is 0x10 bytes on x86"
+    );
     size_ = sizeof(gpg::core::FastVectorInline<moho::CountedPtr_CParticleTexture>);
     version_ = 1;
     serLoadFunc_ = &LoadFastVectorCountedPtrCParticleTexture;
@@ -539,7 +568,10 @@ namespace gpg
    * Builds one reflected element reference for
    * `fastvector<CountedPtr<CParticleTexture>>[ind]`.
    */
-  gpg::RRef RFastVectorType<moho::CountedPtr_CParticleTexture>::SubscriptIndex(void* obj, const int ind) const
+  gpg::RRef RFastVectorType<moho::CountedPtr_CParticleTexture>::SubscriptIndex(
+    void* obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
     out.mType = gpg::RTypeOf<moho::CountedPtr_CParticleTexture>();
@@ -564,7 +596,9 @@ namespace gpg
    * Returns runtime element count for one reflected
    * `fastvector<CountedPtr<CParticleTexture>>`.
    */
-  size_t RFastVectorType<moho::CountedPtr_CParticleTexture>::GetCount(void* obj) const
+  size_t RFastVectorType<moho::CountedPtr_CParticleTexture>::GetCount(
+    void* obj
+  ) const
   {
     if (!obj) {
       return 0u;
@@ -585,7 +619,10 @@ namespace gpg
    * Resizes one reflected `fastvector<CountedPtr<CParticleTexture>>` and
    * default-fills new lanes.
    */
-  void RFastVectorType<moho::CountedPtr_CParticleTexture>::SetCount(void* obj, const int count) const
+  void RFastVectorType<moho::CountedPtr_CParticleTexture>::SetCount(
+    void* obj,
+    const int count
+  ) const
   {
     if (!obj || count < 0) {
       return;
@@ -614,7 +651,19 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_CountedPtrCParticleTextureType_d01659, moho::preregister_CountedPtrCParticleTextureType)
-GPG_PREREGISTER_INIT(register_CountedPtrCParticleTextureType_d01659, moho::register_CountedPtrCParticleTextureType)
-GPG_PREREGISTER_INIT(preregister_FastVectorCountedPtrCParticleTextureType_d01659, moho::preregister_FastVectorCountedPtrCParticleTextureType)
-GPG_PREREGISTER_INIT(register_FastVectorCountedPtrCParticleTextureType_d01659, moho::register_FastVectorCountedPtrCParticleTextureType)
+GPG_PREREGISTER_INIT(
+  preregister_CountedPtrCParticleTextureType_d01659,
+  moho::preregister_CountedPtrCParticleTextureType
+)
+GPG_PREREGISTER_INIT(
+  register_CountedPtrCParticleTextureType_d01659,
+  moho::register_CountedPtrCParticleTextureType
+)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorCountedPtrCParticleTextureType_d01659,
+  moho::preregister_FastVectorCountedPtrCParticleTextureType
+)
+GPG_PREREGISTER_INIT(
+  register_FastVectorCountedPtrCParticleTextureType_d01659,
+  moho::register_FastVectorCountedPtrCParticleTextureType
+)

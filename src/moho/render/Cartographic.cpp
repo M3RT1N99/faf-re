@@ -1,5 +1,7 @@
 #include "moho/render/Cartographic.h"
 
+#include "gpg/gal/HalfFloat.h"
+
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -10,7 +12,10 @@
 #include <optional>
 #include <stdexcept>
 
+// The Direct3D 9 backend is Windows-only (the Linux client, issue #255).
+#if FAFRE_PLATFORM_WINDOWS
 #include <d3d9.h>
+#endif
 
 #include "legacy/containers/Vector.h"
 #include "platform/BinaryObjectBytes.h"
@@ -25,10 +30,16 @@
 #include "gpg/gal/EffectTechnique.hpp"
 #include "gpg/gal/EffectVariable.hpp"
 #include "gpg/gal/IndexBuffer.hpp"
+// The Direct3D 9 backend is Windows-only (the Linux client, issue #255).
+#if FAFRE_PLATFORM_WINDOWS
 #include "gpg/gal/backends/d3d9/TextureD3D9.hpp"
+#endif
 #include "gpg/gal/VertexBuffer.hpp"
 #include "gpg/gal/VertexFormat.hpp"
+// The Direct3D 9 backend is Windows-only (the Linux client, issue #255).
+#if FAFRE_PLATFORM_WINDOWS
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
+#endif
 #include "gpg/gal/DeviceContext.hpp"
 #include "gpg/gal/Head.hpp"
 #include "gpg/gal/OutputContext.hpp"
@@ -40,6 +51,7 @@
 #include "gpg/gal/RenderProfiler.h"
 #include "moho/render/BoundaryRenderer.h"
 #include "moho/render/IRenderWorldView.h"
+#include "moho/terrain/water/WaterBodySurfaces.h"
 #include "moho/render/RangeRenderer.h"
 #include "moho/render/SelectionBracketRenderer.h"
 #include "moho/render/VisionRenderer.h"
@@ -70,7 +82,9 @@ namespace
    * Allocates one or more fixed-size cartographic runtime nodes and raises
    * `std::bad_alloc` when multiplication overflows the 32-bit lane.
    */
-  [[nodiscard]] void* AllocateCartographicNodeStorage(const std::uint32_t count)
+  [[nodiscard]] void* AllocateCartographicNodeStorage(
+    const std::uint32_t count
+  )
   {
     if (count != 0u && (std::numeric_limits<std::uint32_t>::max() / count) < kCartographicNodeStorageSize) {
       throw std::bad_alloc();
@@ -94,38 +108,15 @@ namespace
     return sentinel;
   }
 
-  [[nodiscard]] moho::CartographicDecalBatch* CopyConstructCartographicDecalBatchIfPresent(
-    moho::CartographicDecalBatch* const destination,
-    const moho::CartographicDecalBatch* const source
-  )
-  {
-    if (source == nullptr) {
-      return nullptr;
-    }
-
-    return ::new (destination) moho::CartographicDecalBatch(*source);
-  }
-
-  /**
-   * Address: 0x007D3F40 (FUN_007D3F40)
-   *
-   * What it does:
-   * Adapter lane for nullable `CartographicDecalBatch` copy-construction into
-   * caller-provided storage.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::CartographicDecalBatch* CopyConstructCartographicDecalBatchIfPresentAdapter(
-    moho::CartographicDecalBatch* const destination,
-    const moho::CartographicDecalBatch* const source
-  )
-  {
-    return CopyConstructCartographicDecalBatchIfPresent(destination, source);
-  }
-
   constexpr std::array<float, 8> kCartographicQuadVertices{
-    -1.0f, 1.0f,
-    -1.0f, -1.0f,
-    1.0f, 1.0f,
-    1.0f, -1.0f,
+    -1.0f,
+    1.0f,
+    -1.0f,
+    -1.0f,
+    1.0f,
+    1.0f,
+    1.0f,
+    -1.0f,
   };
 
   constexpr std::array<std::uint32_t, 3> kCartographicQuadIndexWords{
@@ -147,7 +138,7 @@ namespace
    * its gal effect -- the same body as `Cartographic::GetEffect` (0x007D1E50),
    * emitted a second time for the decal renderer (called at 0x007D5126).
    */
-  [[nodiscard]] boost::shared_ptr<gpg::gal::Effect> GetCartographicEffect()
+  [[nodiscard]] std::shared_ptr<gpg::gal::Effect> GetCartographicEffect()
   {
     moho::CD3DDevice* const device = moho::D3D_GetDevice();
     moho::ID3DDeviceResources* const resources = device->GetResources();
@@ -162,7 +153,9 @@ namespace
    * Clears one cartographic decal intrusive-list payload lane, relinks the
    * sentinel to itself, and deletes all detached nodes.
    */
-  void ClearCartographicDecalList(moho::CartographicDecalList* const list) noexcept
+  void ClearCartographicDecalList(
+    moho::CartographicDecalList* const list
+  ) noexcept
   {
     if (list == nullptr || list->mDecalSentinel == nullptr) {
       return;
@@ -183,7 +176,9 @@ namespace
     }
   }
 
-  [[nodiscard]] void* AllocateCartographicDecalNodeStorage(const std::uint32_t count)
+  [[nodiscard]] void* AllocateCartographicDecalNodeStorage(
+    const std::uint32_t count
+  )
   {
     if (count != 0u && (std::numeric_limits<std::uint32_t>::max() / count) < kCartographicDecalNodeStorageSize) {
       throw std::bad_alloc();
@@ -202,8 +197,7 @@ namespace
    */
   [[nodiscard]] moho::CartographicDecalNode* CreateCartographicDecalSentinelNode()
   {
-    auto* const sentinel =
-      msvc8::detail::allocate_checked<moho::CartographicDecalNode>(1u);
+    auto* const sentinel = fa::detail::allocate_checked<moho::CartographicDecalNode>(1u);
     sentinel->mNext = sentinel;
     sentinel->mPrev = sentinel;
     return sentinel;
@@ -276,8 +270,7 @@ namespace
   )
   {
     moho::CartographicDecalNode* const sentinel = destination.mDecalSentinel;
-    moho::CartographicDecalNode* const node =
-      CreateCartographicDecalNodeBefore(sentinel, sentinel->mPrev, decal);
+    moho::CartographicDecalNode* const node = CreateCartographicDecalNodeBefore(sentinel, sentinel->mPrev, decal);
     sentinel->mPrev = node;
     node->mPrev->mNext = node;
     ++destination.mDecalCount;
@@ -332,7 +325,8 @@ namespace
   void CopyCartographicDecalNodesIntoSentinel(
     moho::CartographicDecalList& destination,
     const moho::CartographicDecalNode* const sourceFirst,
-    const moho::CartographicDecalNode* const sourceSentinel)
+    const moho::CartographicDecalNode* const sourceSentinel
+  )
   {
     // The binary brackets this loop in a C++ EH scope (SEH_7D4550): on throw the
     // funclet at 0x007D45AC erases exactly as many nodes off the destination
@@ -341,8 +335,7 @@ namespace
     // and empty when FUN_007D4230 evaluates it.
     std::size_t appended = 0;
     try {
-      for (const moho::CartographicDecalNode* sourceNode = sourceFirst;
-           sourceNode != sourceSentinel;
+      for (const moho::CartographicDecalNode* sourceNode = sourceFirst; sourceNode != sourceSentinel;
            sourceNode = sourceNode->mNext) {
         AppendCartographicDecalListNodeBeforeSentinel(destination, sourceNode->mDecal);
         ++appended;
@@ -377,8 +370,7 @@ namespace
     try {
       const moho::CartographicDecalNode* const sourceSentinel = source.mDecalSentinel;
       if (sourceSentinel != nullptr) {
-        CopyCartographicDecalNodesIntoSentinel(
-          destination, sourceSentinel->mNext, sourceSentinel);
+        CopyCartographicDecalNodesIntoSentinel(destination, sourceSentinel->mNext, sourceSentinel);
       }
     } catch (...) {
       ClearCartographicDecalList(&destination);
@@ -395,7 +387,9 @@ namespace
    * Clears the cartographic decal-batch intrusive list, relinks the sentinel
    * to itself, destroys every batch node, and resets the owner count.
    */
-  void ClearCartographicBatchList(moho::Cartographic& owner) noexcept
+  void ClearCartographicBatchList(
+    moho::Cartographic& owner
+  ) noexcept
   {
     moho::CartographicListNode* const sentinel = owner.mListSentinel;
     if (sentinel == nullptr) {
@@ -532,47 +526,11 @@ namespace
    * consolidation pass can lift all four into one owning accessor.
    */
 
-
-  [[nodiscard]] moho::STIMap& CartographicTerrainMap(const moho::IWldTerrainRes& terrain) noexcept
+  [[nodiscard]] moho::STIMap& CartographicTerrainMap(
+    const moho::IWldTerrainRes& terrain
+  ) noexcept
   {
     return *terrain.mMap;
-  }
-
-  /**
-   * Packs one IEEE-754 binary32 value into a binary16 word.
-   *
-   * The shipped elevation-texture fill loop converts each sampled height with
-   * `D3DXFloat32To16Array` (direct call at 0x007D2759). D3DX is an external
-   * runtime and this tree only reaches it through
-   * `gpg::gal::InvokeD3DXFloat32To16Array`, which lives in an anonymous
-   * namespace inside `D3D9Interfaces.cpp` and is therefore not linkable from
-   * another translation unit. This helper reproduces the same conversion
-   * (round-to-nearest, denormal-preserving, saturating to +/-Inf) that the
-   * D3D9 backend falls back to when the D3DX export is unavailable.
-   */
-  [[nodiscard]] std::uint16_t PackFloat32AsHalfFloat(const float value) noexcept
-  {
-    const std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
-
-    const std::uint32_t sign = (bits >> 16U) & 0x8000U;
-    const std::int32_t exponent = static_cast<std::int32_t>((bits >> 23U) & 0xFFU) - 127 + 15;
-    std::uint32_t mantissa = bits & 0x007FFFFFU;
-
-    if (exponent <= 0) {
-      if (exponent < -10) {
-        return static_cast<std::uint16_t>(sign);
-      }
-      mantissa = (mantissa | 0x00800000U) >> static_cast<std::uint32_t>(1 - exponent);
-      return static_cast<std::uint16_t>(sign | ((mantissa + 0x00001000U) >> 13U));
-    }
-
-    if (exponent >= 31) {
-      return static_cast<std::uint16_t>(sign | 0x7C00U);
-    }
-
-    return static_cast<std::uint16_t>(
-      sign | (static_cast<std::uint32_t>(exponent) << 10U) | ((mantissa + 0x00001000U) >> 13U)
-    );
   }
 
   /**
@@ -600,8 +558,7 @@ namespace
     for (unsigned int channelShift = 0U; channelShift < 32U; channelShift += 8U) {
       const auto fromChannel = static_cast<std::int32_t>((from >> channelShift) & 0xFFU);
       const auto toChannel = static_cast<std::int32_t>((to >> channelShift) & 0xFFU);
-      const float channel =
-        (static_cast<float>(toChannel - fromChannel) * weight) + static_cast<float>(fromChannel);
+      const float channel = (static_cast<float>(toChannel - fromChannel) * weight) + static_cast<float>(fromChannel);
       const auto packedChannel = static_cast<std::uint32_t>(static_cast<std::int32_t>(channel)) & 0xFFU;
       blended |= packedChannel << channelShift;
     }
@@ -640,17 +597,22 @@ namespace
   ) noexcept
   {
     constexpr std::array<float, 9> kKernelWeights{
-      0.0f, 1.0f, 0.0f,
-      1.0f, 3.0f, 1.0f,
-      0.0f, 1.0f, 0.0f,
+      0.0f,
+      1.0f,
+      0.0f,
+      1.0f,
+      3.0f,
+      1.0f,
+      0.0f,
+      1.0f,
+      0.0f,
     };
     constexpr float kKernelNormalize = 0.142857149f; // dword_E4F8B4
 
     const std::int32_t clampedX = std::max(0, std::min(x - 1, field.width - 1));
     const std::int32_t clampedZ = std::max(0, std::min(z - 1, field.height - 1));
     const std::uint16_t heightWord = field.data[(clampedZ * field.width) + clampedX];
-    const float normalizedHeight =
-      (static_cast<float>(heightWord) * kCartographicHeightWordScale) - baseline;
+    const float normalizedHeight = (static_cast<float>(heightWord) * kCartographicHeightWordScale) - baseline;
 
     float weightedHeight = 0.0f;
     for (const float weight : kKernelWeights) {
@@ -668,7 +630,9 @@ namespace
    * 0x007D26C1, 0x007D28BE and 0x007D2B5A; lifting it keeps the zeroed
    * whole-surface RECT out of the three fill loops.
    */
-  [[nodiscard]] void* LockWholeCartographicTexture(gpg::gal::Texture& texture)
+  [[nodiscard]] void* LockWholeCartographicTexture(
+    gpg::gal::Texture& texture
+  )
   {
     const RECT wholeSurface{};
     return texture.Lock(0, wholeSurface, 0).bits;
@@ -740,8 +704,10 @@ namespace
    * Corner order and constants come straight from the shipped stores at
    * 0x007D3648..0x007D36F9.
    */
-  [[nodiscard]] std::array<float, kCartographicFrameVertexFloatCount>
-  BuildCartographicFrameQuad(const float frameWidth, const float frameHeight)
+  [[nodiscard]] std::array<float, kCartographicFrameVertexFloatCount> BuildCartographicFrameQuad(
+    const float frameWidth,
+    const float frameHeight
+  )
   {
     const float left = kCartographicScreenQuadOrigin;
     const float bottom = kCartographicScreenQuadOrigin;
@@ -752,10 +718,8 @@ namespace
     constexpr float zero = kCartographicScreenQuadZero;
 
     return {
-      left,  top,    one, one, zero, one,
-      left,  bottom, one, one, zero, zero,
-      right, top,    one, one, one,  one,
-      right, bottom, one, one, one,  zero,
+      left,  top, one, one, zero, one, left,  bottom, one, one, zero, zero,
+      right, top, one, one, one,  one, right, bottom, one, one, one,  zero,
     };
   }
 
@@ -808,7 +772,7 @@ namespace moho
    * there is no owning header for it yet. Called by `Cartographic::Render` at
    * 0x007D1BE0 with the head index in `ecx`.
    */
-  void REN_DebugStuff(boost::shared_ptr<CD3DPrimBatcher> batcher, int head);
+  void REN_DebugStuff(std::shared_ptr<CD3DPrimBatcher> batcher, int head);
 
   /**
    * Address: 0x007D4A00 (FUN_007D4A00, sub_7D4A00)
@@ -816,7 +780,7 @@ namespace moho
    * What it does:
    * Initializes one cartographic decal payload object and installs the
    * decal runtime vtable lane.
-  */
+   */
   CartographicDecal::CartographicDecal() = default;
 
   /**
@@ -829,17 +793,19 @@ namespace moho
    * Copy-constructs one cartographic decal batch, retaining shared render
    * handles and deep-copying the intrusive decal payload list.
    */
-  CartographicDecalBatch::CartographicDecalBatch(const CartographicDecalBatch& other)
-    : mTechniqueName(),
-      mTexturePath(),
-      mDecalTexture(other.mDecalTexture),
-      mVertexFormat(other.mVertexFormat),
-      mQuadVertexBuffer(other.mQuadVertexBuffer),
-      mInstanceVertexBuffer(other.mInstanceVertexBuffer),
-      mIndexBuffer(other.mIndexBuffer),
-      mNeedsVertexUpload(other.mNeedsVertexUpload),
-      mPadding65_67{},
-      mDecals{}
+  CartographicDecalBatch::CartographicDecalBatch(
+    const CartographicDecalBatch& other
+  )
+    : mTechniqueName()
+    , mTexturePath()
+    , mDecalTexture(other.mDecalTexture)
+    , mVertexFormat(other.mVertexFormat)
+    , mQuadVertexBuffer(other.mQuadVertexBuffer)
+    , mInstanceVertexBuffer(other.mInstanceVertexBuffer)
+    , mIndexBuffer(other.mIndexBuffer)
+    , mNeedsVertexUpload(other.mNeedsVertexUpload)
+    , mPadding65_67{}
+    , mDecals{}
   {
     mTechniqueName.reset_and_assign(other.mTechniqueName);
     mTexturePath.reset_and_assign(other.mTexturePath);
@@ -868,7 +834,7 @@ namespace moho
    * Address: 0x007D4B50 (FUN_007D4B50) is the compiler's out-of-line
    * emission of this constructor's member-initializer-list prologue
    * (`: mTechniqueName(), mTexturePath(), mDecalTexture(), ...,
-   * mDecals{}` below) -- sets the vtable, resets both `msvc8::string`
+   * mDecals{}` below) -- sets the vtable, resets both `fa::string`
    * lanes to empty SSO state, nulls the five `shared_ptr` resource
    * handles, sets `mNeedsVertexUpload = true`, and self-links the decal
    * list sentinel via `sub_7D4300` (already-recovered list-init helper),
@@ -878,19 +844,21 @@ namespace moho
    * an implicit copy constructor.
    */
   CartographicDecalBatch::CartographicDecalBatch(
-    const std::uint32_t version, gpg::BinaryReader& reader)
-    : mTechniqueName(),
-      mTexturePath(),
-      mDecalTexture(),
-      mVertexFormat(),
-      mQuadVertexBuffer(),
-      mInstanceVertexBuffer(),
-      mIndexBuffer(),
-      mNeedsVertexUpload(true),
-      mPadding65_67{},
-      mDecals{}
+    const std::uint32_t version,
+    gpg::BinaryReader& reader
+  )
+    : mTechniqueName()
+    , mTexturePath()
+    , mDecalTexture()
+    , mVertexFormat()
+    , mQuadVertexBuffer()
+    , mInstanceVertexBuffer()
+    , mIndexBuffer()
+    , mNeedsVertexUpload(true)
+    , mPadding65_67{}
+    , mDecals{}
   {
-    // The member-init list above already places both msvc8::string
+    // The member-init list above already places both fa::string
     // lanes in empty-SSO state (mySize=0, myRes=15, bx.buf[0]='\0'),
     // matching the binary's explicit field writes. Initialize the
     // intrusive decal-list sentinel before forwarding into Read; the
@@ -1079,7 +1047,10 @@ namespace moho
    * Builds one copied decal-batch node from source storage, then increments
    * owner count with legacy list overflow guard before relinking list heads.
    */
-  std::int32_t InsertCartographicDecalBatchCopy(const CartographicDecalBatch& sourceBatch, Cartographic& owner)
+  std::int32_t InsertCartographicDecalBatchCopy(
+    const CartographicDecalBatch& sourceBatch,
+    Cartographic& owner
+  )
   {
     CartographicListNode* const sentinel = owner.mListSentinel;
     CartographicListNode* const node = CreateCartographicBatchNode(sentinel, sentinel->mPrev, sourceBatch);
@@ -1107,7 +1078,9 @@ namespace moho
    * Writes the batch-count lane first, then serializes each intrusive
    * cartographic decal-batch node through its runtime payload view.
    */
-  void Cartographic::WriteDecals(gpg::BinaryWriter& writer)
+  void Cartographic::WriteDecals(
+    gpg::BinaryWriter& writer
+  )
   {
     writer.Write(mBatchCount);
 
@@ -1153,12 +1126,14 @@ namespace moho
    *        nearest-reachable layer in the chain.
    */
   void Cartographic::ReadDecals(
-    const std::uint32_t version, gpg::BinaryReader& reader)
+    const std::uint32_t version,
+    gpg::BinaryReader& reader
+  )
   {
     ClearCartographicBatchList(*this);
 
     std::int32_t batchCount = 0;
-    reader.Read(reinterpret_cast<char*>(&batchCount), sizeof(batchCount));
+    reader.Read(&batchCount, sizeof(batchCount));
 
     while (batchCount > 0) {
       CartographicDecalBatch localBatch(version, reader);
@@ -1174,8 +1149,10 @@ namespace moho
    * What it does:
    * Writes batch header lanes, emits one decal-count dword, then serializes
    * each decal payload from the intrusive entry list.
-  */
-  void CartographicDecalBatch::Write(gpg::BinaryWriter& writer)
+   */
+  void CartographicDecalBatch::Write(
+    gpg::BinaryWriter& writer
+  )
   {
     writer.WriteString(mTechniqueName);
     writer.WriteString(mTexturePath);
@@ -1199,9 +1176,9 @@ namespace moho
    * Deserializes one batch payload from `reader` at the given map
    * version. The wire format is:
    *
-   *   - msvc8::string mTechniqueName  (NUL-terminated; absent in
+   *   - fa::string mTechniqueName  (NUL-terminated; absent in
    *     legacy versions below 0x3C where the field defaults to "Decal")
-   *   - msvc8::string mTexturePath    (NUL-terminated)
+   *   - fa::string mTexturePath    (NUL-terminated)
    *   - int32         decalCount
    *   - for each decal:
    *       - 8 bytes: mVertexData[0..1]
@@ -1228,12 +1205,14 @@ namespace moho
    *        chain's top remains orphan until that lands).
    */
   void CartographicDecalBatch::Read(
-    const std::uint32_t version, gpg::BinaryReader& reader)
+    const std::uint32_t version,
+    gpg::BinaryReader& reader
+  )
   {
     Shutdown();
 
     // 1. Technique name (defaulted to "Decal" for legacy maps).
-    msvc8::string techniqueName{};
+    fa::string techniqueName{};
     if (version < 0x3Cu) {
       techniqueName.assign("Decal", 5u);
     } else {
@@ -1242,13 +1221,13 @@ namespace moho
     mTechniqueName.assign(techniqueName, 0u, ~0u);
 
     // 2. Texture resource path.
-    msvc8::string texturePath{};
+    fa::string texturePath{};
     reader.ReadString(&texturePath);
     mTexturePath.assign(texturePath, 0u, ~0u);
 
     // 3. Decal payload count.
     std::int32_t decalCount = 0;
-    reader.Read(reinterpret_cast<char*>(&decalCount), sizeof(decalCount));
+    reader.Read(&decalCount, sizeof(decalCount));
 
     // 4. Per-decal nine-float instance payload. The binary splits the
     //    36 bytes into 8 + 4 + 8 + 8 + 8 byte reads with the middle
@@ -1259,15 +1238,15 @@ namespace moho
     for (std::int32_t remaining = decalCount; remaining > 0; --remaining) {
       CartographicDecal decal{};
 
-      reader.Read(reinterpret_cast<char*>(&decal.mVertexData[0]), 8u);
+      reader.Read(&decal.mVertexData[0], 8u);
 
       float lane2 = 0.0f;
-      reader.Read(reinterpret_cast<char*>(&lane2), 4u);
+      reader.Read(&lane2, 4u);
       decal.mVertexData[2] = lane2;
 
-      reader.Read(reinterpret_cast<char*>(&decal.mVertexData[3]), 8u);
-      reader.Read(reinterpret_cast<char*>(&decal.mVertexData[5]), 8u);
-      reader.Read(reinterpret_cast<char*>(&decal.mVertexData[7]), 8u);
+      reader.Read(&decal.mVertexData[3], 8u);
+      reader.Read(&decal.mVertexData[5], 8u);
+      reader.Read(&decal.mVertexData[7], 8u);
 
       AppendCartographicDecalListNodeBeforeSentinel(mDecals, decal);
     }
@@ -1288,7 +1267,7 @@ namespace moho
 
     auto* const device = gpg::gal::Device::GetInstance();
 
-    boost::shared_ptr<gpg::gal::VertexFormat> vertexFormat;
+    std::shared_ptr<gpg::gal::VertexFormat> vertexFormat;
     vertexFormat = device->CreateVertexFormat(kCartographicVertexFormatToken);
     mVertexFormat = vertexFormat;
 
@@ -1298,7 +1277,7 @@ namespace moho
     quadVertexContext.vertexCount_ = kCartographicQuadVertexCount;
     quadVertexContext.stride_ = static_cast<std::uint32_t>(sizeof(float) * 2U);
 
-    boost::shared_ptr<gpg::gal::VertexBuffer> quadVertexBuffer;
+    std::shared_ptr<gpg::gal::VertexBuffer> quadVertexBuffer;
     quadVertexBuffer = device->CreateVertexBuffer(&quadVertexContext);
     mQuadVertexBuffer = quadVertexBuffer;
 
@@ -1313,7 +1292,7 @@ namespace moho
     instanceVertexContext.vertexCount_ = kCartographicMaxDecalInstances;
     instanceVertexContext.stride_ = static_cast<std::uint32_t>(sizeof(float) * kCartographicInstanceFloatCount);
 
-    boost::shared_ptr<gpg::gal::VertexBuffer> instanceVertexBuffer;
+    std::shared_ptr<gpg::gal::VertexBuffer> instanceVertexBuffer;
     instanceVertexBuffer = device->CreateVertexBuffer(&instanceVertexContext);
     mInstanceVertexBuffer = instanceVertexBuffer;
 
@@ -1322,13 +1301,12 @@ namespace moho
     indexContext.format_ = 1U;
     indexContext.size_ = kCartographicQuadIndexCount;
 
-    boost::shared_ptr<gpg::gal::IndexBuffer> indexBuffer;
+    std::shared_ptr<gpg::gal::IndexBuffer> indexBuffer;
     indexBuffer = device->CreateIndexBuffer(&indexContext);
     mIndexBuffer = indexBuffer;
 
-    auto* const indexWords = reinterpret_cast<std::uint32_t*>(
-      mIndexBuffer->Lock(0U, 0U, gpg::gal::MohoD3DLockFlags::None)
-    );
+    auto* const indexWords =
+      reinterpret_cast<std::uint32_t*>(mIndexBuffer->Lock(0U, 0U, gpg::gal::MohoD3DLockFlags::None));
     // Raw GPU upload: static quad index blob into the locked buffer.
     std::copy(kCartographicQuadIndexWords.begin(), kCartographicQuadIndexWords.end(), indexWords);
     (void)mIndexBuffer->Unlock();
@@ -1390,7 +1368,9 @@ namespace moho
    * dirty decal instance vertices, binds the cartographic effect, and draws
    * one instanced quad pass for each technique pass.
    */
-  void CartographicDecalBatch::Render(const GeomCamera3& camera)
+  void CartographicDecalBatch::Render(
+    const GeomCamera3& camera
+  )
   {
     InitializeRenderResources();
     const std::int32_t decalCount = mDecals.mDecalCount;
@@ -1403,8 +1383,8 @@ namespace moho
     UploadDecalVerticesIfDirty();
 
     auto* const device = gpg::gal::Device::GetInstance();
-    boost::shared_ptr<gpg::gal::Effect> effect = GetCartographicEffect();
-    boost::shared_ptr<gpg::gal::EffectTechnique> technique = effect->GetTechnique(mTechniqueName.c_str());
+    std::shared_ptr<gpg::gal::Effect> effect = GetCartographicEffect();
+    std::shared_ptr<gpg::gal::EffectTechnique> technique = effect->GetTechnique(mTechniqueName.c_str());
 
     device->SetVertexDeclaration(mVertexFormat);
     device->SetVertexBuffer(0U, mQuadVertexBuffer, decalCount, 0);
@@ -1419,11 +1399,7 @@ namespace moho
     for (unsigned int passIndex = 0; passIndex < passCount; ++passIndex) {
       technique->BeginPass(static_cast<int>(passIndex));
       gpg::gal::DrawIndexedContext drawContext(
-        gpg::gal::DrawContext::TOPOLOGY_TRIANGLELIST,
-        kCartographicQuadVertexCount,
-        kCartographicQuadIndexCount,
-        0,
-        0
+        gpg::gal::DrawContext::TOPOLOGY_TRIANGLELIST, kCartographicQuadVertexCount, kCartographicQuadIndexCount, 0, 0
       );
       (void)device->DrawIndexedPrimitive(&drawContext);
       technique->EndPass();
@@ -1437,7 +1413,7 @@ namespace moho
    * What it does:
    * Returns the gal effect of the device resources' `"cartographic"` effect.
    */
-  boost::shared_ptr<gpg::gal::Effect> Cartographic::GetEffect()
+  std::shared_ptr<gpg::gal::Effect> Cartographic::GetEffect()
   {
     return D3D_GetDevice()->GetResources()->FindEffect("cartographic")->GetBaseEffect();
   }
@@ -1450,7 +1426,11 @@ namespace moho
    * Forwards one cartographic particle pass to `sWorldParticles::RenderEffects`
    * with fixed flags `(renderWaterSurface=0, suppressTLight=1)`.
    */
-  void Cartographic::RenderParticles(const std::int32_t tick, const float frameAlpha, const GeomCamera3& camera)
+  void Cartographic::RenderParticles(
+    const std::int32_t tick,
+    const float frameAlpha,
+    const GeomCamera3& camera
+  )
   {
     (void)moho::sWorldParticles.RenderEffects(const_cast<GeomCamera3*>(&camera), 0, 1, tick, frameAlpha);
   }
@@ -1471,7 +1451,7 @@ namespace moho
   {
     auto* const device = gpg::gal::Device::GetInstance();
 
-    boost::shared_ptr<gpg::gal::VertexFormat> frameVertexFormat;
+    std::shared_ptr<gpg::gal::VertexFormat> frameVertexFormat;
     frameVertexFormat = device->CreateVertexFormat(kCartographicFrameVertexFormatToken);
     mFrameVertexFormat = frameVertexFormat;
 
@@ -1482,17 +1462,15 @@ namespace moho
       kCartographicBufferUsageDynamic
     );
 
-    boost::shared_ptr<gpg::gal::VertexBuffer> frameVertexBuffer;
+    std::shared_ptr<gpg::gal::VertexBuffer> frameVertexBuffer;
     frameVertexBuffer = device->CreateVertexBuffer(&frameVertexContext);
     mFrameVertexBuffer = frameVertexBuffer;
 
     gpg::gal::IndexBufferContext quadIndexContext(
-      kCartographicQuadIndexCount,
-      kCartographicIndexFormat16Bit,
-      kCartographicBufferUsageStatic
+      kCartographicQuadIndexCount, kCartographicIndexFormat16Bit, kCartographicBufferUsageStatic
     );
 
-    boost::shared_ptr<gpg::gal::IndexBuffer> quadIndexBuffer;
+    std::shared_ptr<gpg::gal::IndexBuffer> quadIndexBuffer;
     quadIndexBuffer = device->CreateIndexBuffer(&quadIndexContext);
     mQuadIndexBuffer = quadIndexBuffer;
 
@@ -1534,9 +1512,8 @@ namespace moho
     const std::int32_t topographicSamples
   )
   {
-    const std::int32_t bandCount = std::clamp(
-      topographicSamples, kCartographicMinTopographicBands, kCartographicMaxTopographicBands
-    );
+    const std::int32_t bandCount =
+      std::clamp(topographicSamples, kCartographicMinTopographicBands, kCartographicMaxTopographicBands);
 
     auto* const device = gpg::gal::Device::GetInstance();
 
@@ -1550,10 +1527,8 @@ namespace moho
     const float normalizedWater = (mWaterElevation - mElevMinimum) * inverseElevationSpan;
     const float normalizedDefault = (mDefaultElevation - mElevMinimum) * inverseElevationSpan;
 
-    const float sampleStepX =
-      static_cast<float>(heightField.width - 1) / static_cast<float>(gridWidth - 1);
-    const float sampleStepZ =
-      static_cast<float>(heightField.height - 1) / static_cast<float>(gridHeight - 1);
+    const float sampleStepX = static_cast<float>(heightField.width - 1) / static_cast<float>(gridWidth - 1);
+    const float sampleStepZ = static_cast<float>(heightField.height - 1) / static_cast<float>(gridHeight - 1);
 
     // 1. Half-float elevation map at cartographic grid resolution.
     {
@@ -1573,10 +1548,10 @@ namespace moho
         std::uint16_t* texel = rowCursor;
         for (std::int32_t x = 0; x < gridWidth; ++x) {
           const auto sampleX = static_cast<std::int32_t>(static_cast<float>(x) * sampleStepX);
-          const float elevation = SampleCartographicHeightKernel(
-            heightField, sampleX, sampleZ, mElevMinimum, inverseElevationSpan
-          );
-          *texel = PackFloat32AsHalfFloat(elevation);
+          const float elevation =
+            SampleCartographicHeightKernel(heightField, sampleX, sampleZ, mElevMinimum, inverseElevationSpan);
+          // The binary converts with D3DXFloat32To16Array (direct call at 0x007D2759).
+          *texel = gpg::gal::FloatToHalf(elevation);
           texel += kCartographicElevationTexelWordStride;
         }
         rowCursor += kCartographicElevationTexelWordStride * gridWidth;
@@ -1596,16 +1571,13 @@ namespace moho
 
       mHypsometricTexture = device->CreateTexture(&hypsometricContext);
 
-      auto* const rampTexels =
-        static_cast<std::int32_t*>(LockWholeCartographicTexture(*mHypsometricTexture));
+      auto* const rampTexels = static_cast<std::int32_t*>(LockWholeCartographicTexture(*mHypsometricTexture));
       for (std::int32_t texelIndex = 0; texelIndex < kCartographicRampTexelCount; ++texelIndex) {
         const float normalized = static_cast<float>(texelIndex) * kCartographicInverseRampRange;
 
         if (!mHasElevationBounds) {
           rampTexels[texelIndex] = BlendPackedColor(
-            mHypsometricColors[3],
-            mHypsometricColors[4],
-            (normalized - normalizedSurface) / (1.0f - normalizedSurface)
+            mHypsometricColors[3], mHypsometricColors[4], (normalized - normalizedSurface) / (1.0f - normalizedSurface)
           );
         } else if (normalizedDefault >= normalized) {
           rampTexels[texelIndex] = mHypsometricColors[0];
@@ -1615,9 +1587,7 @@ namespace moho
           rampTexels[texelIndex] = mHypsometricColors[2];
         } else {
           rampTexels[texelIndex] = BlendPackedColor(
-            mHypsometricColors[3],
-            mHypsometricColors[4],
-            (normalized - normalizedSurface) / (1.0f - normalizedSurface)
+            mHypsometricColors[3], mHypsometricColors[4], (normalized - normalizedSurface) / (1.0f - normalizedSurface)
           );
         }
       }
@@ -1633,8 +1603,7 @@ namespace moho
     std::array<float, static_cast<std::size_t>(kCartographicMaxTopographicBands) + 1U> bandCeilings{};
     bandCeilings[0] = bandStep + normalizedWater;
     for (std::int32_t band = 1; band < bandCount; ++band) {
-      bandCeilings[static_cast<std::size_t>(band)] =
-        bandCeilings[static_cast<std::size_t>(band) - 1U] + bandStep;
+      bandCeilings[static_cast<std::size_t>(band)] = bandCeilings[static_cast<std::size_t>(band) - 1U] + bandStep;
     }
 
     {
@@ -1648,8 +1617,7 @@ namespace moho
 
       mTopographicTexture = device->CreateTexture(&topographicContext);
 
-      auto* const rampTexels =
-        static_cast<std::uint8_t*>(LockWholeCartographicTexture(*mTopographicTexture));
+      auto* const rampTexels = static_cast<std::uint8_t*>(LockWholeCartographicTexture(*mTopographicTexture));
       for (std::int32_t texelIndex = 0; texelIndex < kCartographicRampTexelCount; ++texelIndex) {
         const float normalized = static_cast<float>(texelIndex) * kCartographicInverseRampRange;
 
@@ -1663,18 +1631,28 @@ namespace moho
           ++band;
         }
 
-        const float shade =
-          (((bandCeilings[static_cast<std::size_t>(band)] - normalizedWater) / landSpan)
-           * kCartographicContourShadeScale)
-          + kCartographicContourShadeBias;
+        const float shade = (((bandCeilings[static_cast<std::size_t>(band)] - normalizedWater) / landSpan) *
+                             kCartographicContourShadeScale) +
+          kCartographicContourShadeBias;
         rampTexels[texelIndex] = static_cast<std::uint8_t>(std::clamp(
-          static_cast<std::int32_t>(shade),
-          kCartographicContourShadeMinimum,
-          kCartographicContourShadeMaximum
+          static_cast<std::int32_t>(shade), kCartographicContourShadeMinimum, kCartographicContourShadeMaximum
         ));
       }
       (void)mTopographicTexture->Unlock(0);
     }
+  }
+
+  namespace
+  {
+    /// Engine addition: `WaterBodiesGeneration` of the map the textures were last built for.
+    std::uint32_t sCartographicWaterBodies = 0;
+  } // namespace
+
+  bool CartographicWaterBodiesStale(
+    const STIMap& map
+  ) noexcept
+  {
+    return WaterBodiesGeneration(map) != sCartographicWaterBodies;
   }
 
   /**
@@ -1746,10 +1724,8 @@ namespace moho
     // the outer one has passed, so the sentinel is unreachable in practice -
     // it is spelled out here because the shipped code does select it.
     mHasElevationBounds = map.mWaterEnabled != 0U;
-    const float waterSurfaceElevation =
-      map.mWaterEnabled != 0U ? map.mWaterElevation : kCartographicNoWaterElevation;
-    const float waterDeepElevation =
-      map.mWaterEnabled != 0U ? map.mWaterElevationDeep : kCartographicNoWaterElevation;
+    const float waterSurfaceElevation = map.mWaterEnabled != 0U ? map.mWaterElevation : kCartographicNoWaterElevation;
+    const float waterDeepElevation = map.mWaterEnabled != 0U ? map.mWaterElevationDeep : kCartographicNoWaterElevation;
 
     mSurfaceElevation = mHasElevationBounds ? waterSurfaceElevation : tierBox.Min.y;
     mWaterElevation = mHasElevationBounds ? waterDeepElevation : tierBox.Min.y;
@@ -1763,23 +1739,78 @@ namespace moho
 
     InitializeTerrainTextures(heightField, gridWidth, gridHeight, topographicSamples);
 
-    boost::shared_ptr<gpg::gal::VertexFormat> terrainVertexFormat;
+    // Engine addition (water bodies, .plans/water-levels/PLAN.md): the ramp colours water by
+    // elevation below the sea, so a vertex of a body shows the depth below its own level as that
+    // depth below the sea (scaled from the body's deep range to the sea's), and a vertex of a dry
+    // body shows as the lowest land. Needs a sea, which gives the ramp its water colours.
+    if (map.HasWaterBodies() && mHasElevationBounds && mElevTexture) {
+      const float elevationSpan = mElevMaximum - mElevMinimum;
+      const float inverseSpan = elevationSpan > 0.0f ? 1.0f / elevationSpan : 1.0f;
+      const float seaRange = mSurfaceElevation - mWaterElevation;
+      const float stepX = static_cast<float>(heightField.width - 1) / static_cast<float>(gridWidth - 1);
+      const float stepZ = static_cast<float>(heightField.height - 1) / static_cast<float>(gridHeight - 1);
+      const CWaterBodies& bodies = *map.mWaterBodies;
+
+      auto* rowCursor = static_cast<std::uint16_t*>(LockWholeCartographicTexture(*mElevTexture));
+      for (std::int32_t z = 0; z < gridHeight; ++z) {
+        // The sample InitializeTerrainTextures' kernel reads for this texel.
+        const std::int32_t vz =
+          std::clamp(static_cast<std::int32_t>(static_cast<float>(z) * stepZ) - 1, 0, heightField.height - 1);
+        std::uint16_t* texel = rowCursor;
+        for (std::int32_t x = 0; x < gridWidth; ++x, texel += kCartographicElevationTexelWordStride) {
+          const std::int32_t vx =
+            std::clamp(static_cast<std::int32_t>(static_cast<float>(x) * stepX) - 1, 0, heightField.width - 1);
+          const std::uint8_t number = bodies.BodyOfVertex(vx, vz);
+          if (number == 0u) {
+            continue;
+          }
+          const SWaterBody& body = bodies.Body(number);
+          const float terrain =
+            static_cast<float>(heightField.data[(vz * heightField.width) + vx]) * kCartographicHeightWordScale;
+          float shown;
+          if (body.elevation == kWaterBodyNoWater) {
+            shown = std::max(terrain, mSurfaceElevation + 0.01f * elevationSpan);
+          } else {
+            const float below = body.elevation - terrain;
+            const float bodyRange = body.elevation - body.deep;
+            shown = mSurfaceElevation - ((bodyRange > 0.0f && seaRange > 0.0f) ? below * seaRange / bodyRange : below);
+          }
+          *texel = gpg::gal::FloatToHalf((shown - mElevMinimum) * inverseSpan);
+        }
+        rowCursor += kCartographicElevationTexelWordStride * gridWidth;
+      }
+      (void)mElevTexture->Unlock(0);
+    }
+    sCartographicWaterBodies = WaterBodiesGeneration(map);
+
+    std::shared_ptr<gpg::gal::VertexFormat> terrainVertexFormat;
     terrainVertexFormat = device->CreateVertexFormat(kCartographicTerrainVertexFormatToken);
     mTerrainVertexFormat = terrainVertexFormat;
 
     // The ground quad lives in heightfield sample space with the elevation
     // carried as a raw height word, so it is 4 x int16 per corner.
-    const auto elevationWord = static_cast<std::int16_t>(
-      static_cast<std::int32_t>(mSurfaceElevation * kCartographicHeightWordsPerUnit)
-    );
+    const auto elevationWord =
+      static_cast<std::int16_t>(static_cast<std::int32_t>(mSurfaceElevation * kCartographicHeightWordsPerUnit));
     const auto cornerX = static_cast<std::int16_t>(sampleSpanX);
     const auto cornerZ = static_cast<std::int16_t>(sampleSpanZ);
 
     const std::array<std::int16_t, 16> terrainQuadVertices{
-      0, elevationWord, cornerZ, 1,
-      0, elevationWord, 0, 1,
-      cornerX, elevationWord, cornerZ, 1,
-      cornerX, elevationWord, 0, 1,
+      0,
+      elevationWord,
+      cornerZ,
+      1,
+      0,
+      elevationWord,
+      0,
+      1,
+      cornerX,
+      elevationWord,
+      cornerZ,
+      1,
+      cornerX,
+      elevationWord,
+      0,
+      1,
     };
 
     gpg::gal::VertexBufferContext terrainVertexContext(
@@ -1789,13 +1820,12 @@ namespace moho
       kCartographicBufferUsageStatic
     );
 
-    boost::shared_ptr<gpg::gal::VertexBuffer> terrainVertexBuffer;
+    std::shared_ptr<gpg::gal::VertexBuffer> terrainVertexBuffer;
     terrainVertexBuffer = device->CreateVertexBuffer(&terrainVertexContext);
     mTerrainVertexBuffer = terrainVertexBuffer;
 
-    void* const vertexData = mTerrainVertexBuffer->Lock(
-      0U, sizeof(terrainQuadVertices), gpg::gal::MohoD3DLockFlags::None
-    );
+    void* const vertexData =
+      mTerrainVertexBuffer->Lock(0U, sizeof(terrainQuadVertices), gpg::gal::MohoD3DLockFlags::None);
     // Raw GPU upload: terrain quad vertex blob into the locked buffer.
     std::copy(terrainQuadVertices.begin(), terrainQuadVertices.end(), static_cast<std::int16_t*>(vertexData));
     (void)mTerrainVertexBuffer->Unlock();
@@ -1885,8 +1915,8 @@ namespace moho
     ID3DDeviceResources* const resources = device->GetResources();
     CD3DEffect* const meshEffect = resources->FindEffect("mesh");
 
-    const boost::shared_ptr<gpg::gal::Effect> meshBaseEffect = meshEffect->GetBaseEffect();
-    const boost::shared_ptr<gpg::gal::EffectVariable> hypsometricTextureVar =
+    const std::shared_ptr<gpg::gal::Effect> meshBaseEffect = meshEffect->GetBaseEffect();
+    const std::shared_ptr<gpg::gal::EffectVariable> hypsometricTextureVar =
       meshBaseEffect->GetVariable("hypsometricTexture");
     hypsometricTextureVar->SetTexture(mHypsometricTexture);
 
@@ -1894,13 +1924,7 @@ namespace moho
 
     MeshRenderer* const meshRenderer = MeshRenderer::GetInstance();
     meshRenderer->Batch(gameTick, deltaFrame, camera, camera.viewport.r[1]);
-    meshRenderer->RenderCartographic(
-      mSurfaceElevation,
-      mElevMinimum,
-      mElevMaximum,
-      camera,
-      meshRenderer->meshes
-    );
+    meshRenderer->RenderCartographic(mSurfaceElevation, mElevMinimum, mElevMaximum, camera, meshRenderer->meshes);
   }
 
   /**
@@ -1923,43 +1947,32 @@ namespace moho
    * shipped call site (0x007D19E6..0x007D19EF pushes nothing; the body is a
    * bare `retn`) nor read by the shipped body, so it stays unread here too.
    */
-  void Cartographic::RenderTerrainStage0(const GeomCamera3& camera, [[maybe_unused]] const bool mirrored)
+  void Cartographic::RenderTerrainStage0(
+    const GeomCamera3& camera,
+    [[maybe_unused]] const bool mirrored
+  )
   {
     auto* const device = gpg::gal::Device::GetInstance();
-    device->Clear(
-      true,
-      true,
-      true,
-      kCartographicFrameClearColor,
-      kCartographicClearDepth,
-      kCartographicClearStencil
-    );
+    device->Clear(true, true, true, kCartographicFrameClearColor, kCartographicClearDepth, kCartographicClearStencil);
 
-    const boost::shared_ptr<gpg::gal::Effect> effect = GetEffect();
+    const std::shared_ptr<gpg::gal::Effect> effect = GetEffect();
     gpg::gal::Effect& cartographicEffect = *effect;
 
-    const boost::shared_ptr<gpg::gal::EffectTechnique> technique =
-      cartographicEffect.GetTechnique("Terrain_Stage0");
+    const std::shared_ptr<gpg::gal::EffectTechnique> technique = cartographicEffect.GetTechnique("Terrain_Stage0");
 
-    const boost::shared_ptr<gpg::gal::EffectVariable> viewMatrixVar =
-      cartographicEffect.GetVariable("viewMatrix");
-    const boost::shared_ptr<gpg::gal::EffectVariable> projMatrixVar =
-      cartographicEffect.GetVariable("projMatrix");
-    const boost::shared_ptr<gpg::gal::EffectVariable> gridSizeCoeffVar =
-      cartographicEffect.GetVariable("gridSizeCoeff");
-    const boost::shared_ptr<gpg::gal::EffectVariable> terrainSizeCoeffVar =
+    const std::shared_ptr<gpg::gal::EffectVariable> viewMatrixVar = cartographicEffect.GetVariable("viewMatrix");
+    const std::shared_ptr<gpg::gal::EffectVariable> projMatrixVar = cartographicEffect.GetVariable("projMatrix");
+    const std::shared_ptr<gpg::gal::EffectVariable> gridSizeCoeffVar = cartographicEffect.GetVariable("gridSizeCoeff");
+    const std::shared_ptr<gpg::gal::EffectVariable> terrainSizeCoeffVar =
       cartographicEffect.GetVariable("terrainSizeCoeff");
-    const boost::shared_ptr<gpg::gal::EffectVariable> terrainHeightScaleVar =
+    const std::shared_ptr<gpg::gal::EffectVariable> terrainHeightScaleVar =
       cartographicEffect.GetVariable("terrainHeightScale");
-    const boost::shared_ptr<gpg::gal::EffectVariable> elevMaximumVar =
-      cartographicEffect.GetVariable("elevMaximum");
-    const boost::shared_ptr<gpg::gal::EffectVariable> elevMinimumVar =
-      cartographicEffect.GetVariable("elevMinimum");
-    const boost::shared_ptr<gpg::gal::EffectVariable> elevTextureVar =
-      cartographicEffect.GetVariable("elevTexture");
-    const boost::shared_ptr<gpg::gal::EffectVariable> hypsometricTextureVar =
+    const std::shared_ptr<gpg::gal::EffectVariable> elevMaximumVar = cartographicEffect.GetVariable("elevMaximum");
+    const std::shared_ptr<gpg::gal::EffectVariable> elevMinimumVar = cartographicEffect.GetVariable("elevMinimum");
+    const std::shared_ptr<gpg::gal::EffectVariable> elevTextureVar = cartographicEffect.GetVariable("elevTexture");
+    const std::shared_ptr<gpg::gal::EffectVariable> hypsometricTextureVar =
       cartographicEffect.GetVariable("hypsometricTexture");
-    const boost::shared_ptr<gpg::gal::EffectVariable> topographicTextureVar =
+    const std::shared_ptr<gpg::gal::EffectVariable> topographicTextureVar =
       cartographicEffect.GetVariable("topographicTexture");
 
     viewMatrixVar->SetMatrix4x4(&camera.view);
@@ -1982,11 +1995,7 @@ namespace moho
     for (unsigned int passIndex = 0; passIndex < passCount; ++passIndex) {
       technique->BeginPass(static_cast<int>(passIndex));
       gpg::gal::DrawIndexedContext drawContext(
-        gpg::gal::DrawContext::TOPOLOGY_TRIANGLELIST,
-        kCartographicQuadVertexCount,
-        kCartographicQuadIndexCount,
-        0,
-        0
+        gpg::gal::DrawContext::TOPOLOGY_TRIANGLELIST, kCartographicQuadVertexCount, kCartographicQuadIndexCount, 0, 0
       );
       (void)device->DrawIndexedPrimitive(&drawContext);
       technique->EndPass();
@@ -2017,7 +2026,7 @@ namespace moho
    */
   void Cartographic::RenderTerrainStage1(
     const std::int32_t headIndex,
-    const boost::shared_ptr<gpg::gal::RenderTarget> colorTarget
+    const std::shared_ptr<gpg::gal::RenderTarget> colorTarget
   )
   {
     auto* const device = gpg::gal::Device::GetInstance();
@@ -2026,14 +2035,7 @@ namespace moho
     const gpg::gal::RenderTargetContext& headTarget =
       *device->GetHeadOutputContext(static_cast<unsigned int>(headIndex))->surface->GetContext();
 
-    device->Clear(
-      true,
-      true,
-      true,
-      kCartographicFrameClearColor,
-      kCartographicClearDepth,
-      kCartographicClearStencil
-    );
+    device->Clear(true, true, true, kCartographicFrameClearColor, kCartographicClearDepth, kCartographicClearStencil);
 
     const auto frameWidth = static_cast<float>(static_cast<std::int32_t>(headTarget.width_));
     const auto frameHeight = static_cast<float>(static_cast<std::int32_t>(headTarget.height_));
@@ -2041,24 +2043,19 @@ namespace moho
     const std::array<float, kCartographicFrameVertexFloatCount> frameQuad =
       BuildCartographicFrameQuad(frameWidth, frameHeight);
 
-    void* const vertexData = mFrameVertexBuffer->Lock(
-      0U, kCartographicFrameVertexByteSize, gpg::gal::MohoD3DLockFlags::Discard
-    );
+    void* const vertexData =
+      mFrameVertexBuffer->Lock(0U, kCartographicFrameVertexByteSize, gpg::gal::MohoD3DLockFlags::Discard);
     // Raw GPU upload: frame quad vertex blob into the locked buffer.
     std::copy(frameQuad.begin(), frameQuad.end(), static_cast<float*>(vertexData));
     (void)mFrameVertexBuffer->Unlock();
 
-    const boost::shared_ptr<gpg::gal::Effect> effect = GetEffect();
+    const std::shared_ptr<gpg::gal::Effect> effect = GetEffect();
     gpg::gal::Effect& cartographicEffect = *effect;
 
-    const boost::shared_ptr<gpg::gal::EffectTechnique> technique =
-      cartographicEffect.GetTechnique("Terrain_Stage1");
-    const boost::shared_ptr<gpg::gal::EffectVariable> frameWidthVar =
-      cartographicEffect.GetVariable("frameWidth");
-    const boost::shared_ptr<gpg::gal::EffectVariable> frameHeightVar =
-      cartographicEffect.GetVariable("frameHeight");
-    const boost::shared_ptr<gpg::gal::EffectVariable> frameTextureVar =
-      cartographicEffect.GetVariable("frameTexture");
+    const std::shared_ptr<gpg::gal::EffectTechnique> technique = cartographicEffect.GetTechnique("Terrain_Stage1");
+    const std::shared_ptr<gpg::gal::EffectVariable> frameWidthVar = cartographicEffect.GetVariable("frameWidth");
+    const std::shared_ptr<gpg::gal::EffectVariable> frameHeightVar = cartographicEffect.GetVariable("frameHeight");
+    const std::shared_ptr<gpg::gal::EffectVariable> frameTextureVar = cartographicEffect.GetVariable("frameTexture");
 
     device->SetVertexDeclaration(mFrameVertexFormat);
     device->SetVertexBuffer(0U, mFrameVertexBuffer, 1, 0);
@@ -2072,11 +2069,7 @@ namespace moho
     for (unsigned int passIndex = 0; passIndex < passCount; ++passIndex) {
       technique->BeginPass(static_cast<int>(passIndex));
       gpg::gal::DrawIndexedContext drawContext(
-        gpg::gal::DrawContext::TOPOLOGY_TRIANGLELIST,
-        kCartographicQuadVertexCount,
-        kCartographicQuadIndexCount,
-        0,
-        0
+        gpg::gal::DrawContext::TOPOLOGY_TRIANGLELIST, kCartographicQuadVertexCount, kCartographicQuadIndexCount, 0, 0
       );
       (void)device->DrawIndexedPrimitive(&drawContext);
       technique->EndPass();
@@ -2152,9 +2145,9 @@ namespace moho
     RangeRenderer* const rangeRenderer,
     VisionRenderer* const visionRenderer,
     BoundaryRenderer* const boundaryRenderer,
-    const boost::shared_ptr<gpg::gal::RenderTarget> colorTarget,
-    const boost::shared_ptr<gpg::gal::DepthStencilTarget> depthStencilTarget,
-    const boost::shared_ptr<CD3DPrimBatcher> primBatcher
+    const std::shared_ptr<gpg::gal::RenderTarget> colorTarget,
+    const std::shared_ptr<gpg::gal::DepthStencilTarget> depthStencilTarget,
+    const std::shared_ptr<CD3DPrimBatcher> primBatcher
   )
   {
     const bool previousAlwaysRenderStrategicIcons = ui_AlwaysRenderStrategicIcons;
@@ -2180,12 +2173,8 @@ namespace moho
       static_cast<std::int32_t>(cameraView.viewport.r[3].w)
     );
 
-    const D3DVIEWPORT9 fullHeadViewport = MakeCartographicViewport(
-      0,
-      0,
-      static_cast<std::int32_t>(head.mWidth),
-      static_cast<std::int32_t>(head.mHeight)
-    );
+    const D3DVIEWPORT9 fullHeadViewport =
+      MakeCartographicViewport(0, 0, static_cast<std::int32_t>(head.mWidth), static_cast<std::int32_t>(head.mHeight));
 
     // The shipped body destroys this output context as soon as ClearTarget
     // returns (EH state 3 -> 2 at 0x007D19C8), so it is a full-expression
@@ -2271,14 +2260,7 @@ namespace moho
       RenUI(session, &cameraView, primBatcher.get(), deltaFrame, 0.0f);
     }
 
-    device->Clear(
-      false,
-      true,
-      true,
-      kCartographicHeadClearColor,
-      kCartographicClearDepth,
-      kCartographicClearStencil
-    );
+    device->Clear(false, true, true, kCartographicHeadClearColor, kCartographicClearDepth, kCartographicClearStencil);
 
     // 0x007D1BB2 dispatches `IRenderWorldView` slot 0 (`mov ecx, ebx` /
     // `call edx` off `[[ebx]]`). The four argument dwords are laid down at

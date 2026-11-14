@@ -21,7 +21,7 @@ namespace moho
     static gpg::RType* sPointerType;
 
     /**
-      * Alias of FUN_007788B0 (non-canonical helper lane).
+     * Alias of FUN_007788B0 (non-canonical helper lane).
      *
      * What it does:
      * Returns cached reflection descriptor for `CDecalHandle`.
@@ -53,49 +53,7 @@ namespace moho
      * Binds one script-visible decal-handle object, copies decal payload, and
      * seeds per-handle visibility/runtime tick lanes.
      */
-    CDecalHandle(
-      LuaPlus::LuaState* state,
-      std::uint32_t objectId,
-      const SDecalInfo& info,
-      std::uint32_t createdAtTick
-    );
-
-    /**
-     * Address: 0x00778AD0 (FUN_00778AD0)
-     *
-     * What it does:
-     * Tests whether one army-index visibility bit is set in
-     * `mArmyVisibilityFlags`.
-     */
-    [[nodiscard]]
-    bool IsArmyVisibleForIndex(std::uint8_t armyIndex) const noexcept;
-
-    /**
-     * Address: 0x00778AF0 (FUN_00778AF0)
-     *
-     * What it does:
-     * Sets one army-index visibility bit in `mArmyVisibilityFlags` and
-     * returns this handle.
-     */
-    CDecalHandle* SetArmyVisibleForIndex(std::uint8_t armyIndex) noexcept;
-
-    /**
-     * Address: 0x00778B00 (FUN_00778B00)
-     *
-     * What it does:
-     * Returns the handle creation tick lane.
-     */
-    [[nodiscard]]
-    std::uint32_t GetCreatedAtTickValue() const noexcept;
-
-    /**
-     * Address: 0x00778B10 (FUN_00778B10)
-     *
-     * What it does:
-     * Returns true when the focus-visibility flag lane is non-zero.
-     */
-    [[nodiscard]]
-    bool IsVisibleInFocusFlagSet() const noexcept;
+    CDecalHandle(LuaPlus::LuaState* state, std::uint32_t objectId, const SDecalInfo& info, std::uint32_t createdAtTick);
 
     /**
      * Address: 0x0077F1E0 (FUN_0077F1E0, Moho::CDecalHandle::MemberDeserialize)
@@ -116,7 +74,7 @@ namespace moho
     void MemberSerialize(gpg::WriteArchive* archive) const;
 
     /**
-      * Alias of FUN_007788B0 (non-canonical helper lane).
+     * Alias of FUN_007788B0 (non-canonical helper lane).
      * Slot: 0
      */
     [[nodiscard]]
@@ -142,12 +100,12 @@ namespace moho
     static const CDecalHandle* FromListNode(const CDecalHandleListNode* node) noexcept;
 
   public:
-    CDecalHandleListNode mListNode;       // +0x34
-    SDecalInfo mInfo;                     // +0x3C
-    std::uint32_t mArmyVisibilityFlags;   // +0xCC
-    std::uint8_t mVisibleInFocus;         // +0xD0
+    CDecalHandleListNode mListNode;     // +0x34
+    SDecalInfo mInfo;                   // +0x3C
+    std::uint32_t mArmyVisibilityFlags; // +0xCC
+    std::uint8_t mVisibleInFocus;       // +0xD0
     std::uint8_t mPadD1[0x03];
-    std::uint32_t mCreatedAtTick;         // +0xD4
+    std::uint32_t mCreatedAtTick; // +0xD4
   };
 
   template <>
@@ -187,7 +145,8 @@ namespace moho
   static_assert(offsetof(CDecalHandle, mListNode) == 0x34, "CDecalHandle::mListNode offset must be 0x34");
   static_assert(offsetof(CDecalHandle, mInfo) == 0x3C, "CDecalHandle::mInfo offset must be 0x3C");
   static_assert(
-    offsetof(CDecalHandle, mArmyVisibilityFlags) == 0xCC, "CDecalHandle::mArmyVisibilityFlags offset must be 0xCC"
+    offsetof(CDecalHandle, mArmyVisibilityFlags) == 0xCC,
+    "CDecalHandle::mArmyVisibilityFlags offset must be 0xCC"
   );
   static_assert(offsetof(CDecalHandle, mVisibleInFocus) == 0xD0, "CDecalHandle::mVisibleInFocus offset must be 0xD0");
   static_assert(offsetof(CDecalHandle, mCreatedAtTick) == 0xD4, "CDecalHandle::mCreatedAtTick offset must be 0xD4");

@@ -14,12 +14,13 @@
 #include "gpg/core/containers/WriteArchive.h"
 #include "gpg/core/reflection/Reflection.h"
 #include "gpg/core/reflection/SerializationError.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/utils/Global.h"
 #include "moho/audio/CSndParams.h"
 #include "moho/command/SSTITarget.h"
 #include "moho/entity/Entity.h"
 #include "moho/entity/EntityId.h"
+#include "moho/sim/FafGameVersion.h"
 #include "moho/resource/blueprints/RMeshBlueprint.h"
 #include "moho/resource/RScmResource.h"
 #include "gpg/core/reflection/StaticInitPhase.h"
@@ -125,9 +126,7 @@ namespace
     offsetof(EntityAttributesSerializerHelper, mSaveCallback) == 0x10,
     "EntityAttributesSerializerHelper::mSaveCallback offset must be 0x10"
   );
-  static_assert(
-    sizeof(EntityAttributesSerializerHelper) == 0x14, "EntityAttributesSerializerHelper size must be 0x14"
-  );
+  static_assert(sizeof(EntityAttributesSerializerHelper) == 0x14, "EntityAttributesSerializerHelper size must be 0x14");
 
   EntityAttributesSerializerHelper gEntityAttributesSerializer;
 
@@ -229,13 +228,13 @@ namespace
    */
   void DeserializeSSTIEntityAttachInfoSerializerCallback(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef*
   )
   {
     const gpg::RRef entIdRef{};
-    archive->Read(CachedEntIdType(), reinterpret_cast<void*>(objectPtr), entIdRef);
+    archive->Read(CachedEntIdType(), objectPtr, entIdRef);
   }
 
   /**
@@ -247,13 +246,13 @@ namespace
    */
   void SerializeSSTIEntityAttachInfoSerializerCallback(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef*
   )
   {
     const gpg::RRef entIdRef{};
-    archive->Write(CachedEntIdType(), reinterpret_cast<const void*>(objectPtr), entIdRef);
+    archive->Write(CachedEntIdType(), static_cast<const void*>(objectPtr), entIdRef);
   }
 
   /**
@@ -272,22 +271,22 @@ namespace
 
   void DeserializeEntityAttributesSerializerCallback(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef*
   )
   {
-    reinterpret_cast<moho::EntityAttributes*>(objectPtr)->MemberDeserialize(archive);
+    static_cast<moho::EntityAttributes*>(objectPtr)->MemberDeserialize(archive);
   }
 
   void SerializeEntityAttributesSerializerCallback(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef*
   )
   {
-    reinterpret_cast<const moho::EntityAttributes*>(objectPtr)->MemberSerialize(archive);
+    static_cast<const moho::EntityAttributes*>(objectPtr)->MemberSerialize(archive);
   }
 
   /**
@@ -304,61 +303,6 @@ namespace
    */
   EntityAttributesSerializerHelper::~EntityAttributesSerializerHelper() = default;
 
-  void DeserializeSSTIEntityVariableDataSerializerCallback(
-    gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef*
-  )
-  {
-    auto* const object = reinterpret_cast<moho::SSTIEntityVariableData*>(objectPtr);
-    if (archive == nullptr || object == nullptr) {
-      return;
-    }
-
-    object->MemberDeserialize(archive, 2);
-  }
-
-  void SerializeSSTIEntityVariableDataSerializerCallback(
-    gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
-    const int,
-    gpg::RRef*
-  )
-  {
-    auto* const object = reinterpret_cast<moho::SSTIEntityVariableData*>(objectPtr);
-    if (archive == nullptr || object == nullptr) {
-      return;
-    }
-
-    object->MemberSerialize(archive, 2);
-  }
-
-
-  [[nodiscard]] gpg::RType* ResolveRScmResourceType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (!sType) {
-      sType = gpg::REF_FindFirstTypeNamed({"RScmResource", "Moho::RScmResource"});
-      if (!sType) {
-        sType = gpg::LookupRType(typeid(moho::RScmResource));
-      }
-    }
-    return sType;
-  }
-
-  [[nodiscard]] gpg::RType* ResolveRMeshBlueprintType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (!sType) {
-      sType = gpg::REF_FindFirstTypeNamed({"RMeshBlueprint", "Moho::RMeshBlueprint"});
-      if (!sType) {
-        sType = gpg::LookupRType(typeid(moho::RMeshBlueprint));
-      }
-    }
-    return sType;
-  }
-
   [[nodiscard]] gpg::RType* ResolveEntIdType()
   {
     static gpg::RType* sType = nullptr;
@@ -373,18 +317,6 @@ namespace
   [[nodiscard]] gpg::RType* ResolveAttachInfoVectorType()
   {
     return gpg::RTypeOf<gpg::fastvector<moho::SSTIEntityAttachInfo>>();
-  }
-
-  [[nodiscard]] gpg::RType* ResolveCSndParamsType()
-  {
-    static gpg::RType* sType = nullptr;
-    if (!sType) {
-      sType = gpg::REF_FindFirstTypeNamed({"CSndParams", "Moho::CSndParams"});
-      if (!sType) {
-        sType = gpg::LookupRType(typeid(moho::CSndParams));
-      }
-    }
-    return sType;
   }
 
   [[nodiscard]] gpg::RType* ResolveVisibilityModeType()
@@ -424,7 +356,10 @@ namespace
   }
 
   template <typename TObject>
-  [[nodiscard]] gpg::RRef MakeObjectRef(TObject* const object, gpg::RType* const type)
+  [[nodiscard]] gpg::RRef MakeObjectRef(
+    TObject* const object,
+    gpg::RType* const type
+  )
   {
     gpg::RRef ref{};
     ref.mObj = object;
@@ -432,7 +367,10 @@ namespace
     return ref;
   }
 
-  void ReadBoolByte(gpg::ReadArchive* const archive, std::uint8_t& value)
+  void ReadBoolByte(
+    gpg::ReadArchive* const archive,
+    std::uint8_t& value
+  )
   {
     bool loaded = false;
     archive->ReadBool(&loaded);
@@ -484,7 +422,9 @@ namespace moho
    *
    * What it does: see header.
    */
-  SSTIEntityVariableData::SSTIEntityVariableData(const SSTIEntityVariableData& rhs)
+  SSTIEntityVariableData::SSTIEntityVariableData(
+    const SSTIEntityVariableData& rhs
+  )
     : mScmResource(rhs.mScmResource)
     , mMeshBlueprint(rhs.mMeshBlueprint)
     , mScale(rhs.mScale)
@@ -523,7 +463,9 @@ namespace moho
   /**
    * Address: 0x0067A3E0 (FUN_0067A3E0, ??4SSTIEntityVariableData@Moho@@QAEAAU01@ABU01@@Z)
    */
-  SSTIEntityVariableData& SSTIEntityVariableData::operator=(const SSTIEntityVariableData& rhs)
+  SSTIEntityVariableData& SSTIEntityVariableData::operator=(
+    const SSTIEntityVariableData& rhs
+  )
   {
     if (this == &rhs) {
       return *this;
@@ -565,7 +507,9 @@ namespace moho
   /**
    * Address: 0x00560150 (FUN_00560150, Moho::SSTIEntityVariableData::cpy)
    */
-  SSTIEntityVariableData* SSTIEntityVariableData::cpy(SSTIEntityVariableData* const destination) const
+  SSTIEntityVariableData* SSTIEntityVariableData::cpy(
+    SSTIEntityVariableData* const destination
+  ) const
   {
     if (destination == nullptr) {
       return nullptr;
@@ -602,6 +546,23 @@ namespace moho
     return destination;
   }
 
+  namespace
+  {
+    /// The first FAF game version whose exe carries FA-Binary-Patches #134 (the alt-footprint flags as an int).
+    constexpr int kFafGameVersionFootprintWord = 3840;
+
+    /**
+     * Whether the alt-footprint flags go into the archive as an int (FA-Binary-Patches #134) rather than the one bool
+     * byte the 3835 exe reads and writes (0x00559DAE / 0x0055A11D, vtable slot 0x38): sessions of game version 3840
+     * and later, and keyframes, which only this build reads back.
+     */
+    [[nodiscard]] bool UsesFootprintWord()
+    {
+      return gSimExactArchive.load(std::memory_order_relaxed) ||
+        FAF_GetSessionGameVersion() >= kFafGameVersionFootprintWord;
+    }
+  } // namespace
+
   /**
    * Address: 0x00559B00 (FUN_00559B00, Moho::SSTIEntityVariableData::MemberDeserialize)
    *
@@ -609,7 +570,10 @@ namespace moho
    * Deserializes the version-2 reflected payload in the same field order used
    * by `MemberSerialize` and rejects older serializer versions.
    */
-  void SSTIEntityVariableData::MemberDeserialize(gpg::ReadArchive* const archive, const int version)
+  void SSTIEntityVariableData::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    const int version
+  )
   {
     if (version < 2) {
       throw gpg::SerializationError("Unsupported version.");
@@ -665,17 +629,24 @@ namespace moho
     GPG_ASSERT(layerType != nullptr);
     archive->Read(layerType, &mLayerMask, ownerRef);
 
-    // FAF FA-Binary-Patches #134 (Serialize add patched entity var dat fields):
-    // the footprint flags are one `int` (0x00559DAE `ReadBool` -> `ReadInt`),
-    // read over the whole 0xA4..0xA7 word -- the alt-footprint byte, FAF's
-    // forced-alt-footprint byte and the two pad bytes, low byte first.
-    int footprintFlags = 0;
-    archive->ReadInt(&footprintFlags);
-    const auto footprintWord = static_cast<std::uint32_t>(footprintFlags);
-    mUsingAltFootprint = static_cast<std::uint8_t>(footprintWord);
-    mUsingAltFootprintSecondary = static_cast<std::uint8_t>(footprintWord >> 8);
-    pad_00A6_00A7[0] = static_cast<std::uint8_t>(footprintWord >> 16);
-    pad_00A6_00A7[1] = static_cast<std::uint8_t>(footprintWord >> 24);
+    if (UsesFootprintWord()) {
+      // FAF FA-Binary-Patches #134 (Serialize add patched entity var dat fields, game version 3840):
+      // the footprint flags are one `int` (0x00559DAE `ReadBool` -> `ReadInt`),
+      // read over the whole 0xA4..0xA7 word -- the alt-footprint byte, FAF's
+      // forced-alt-footprint byte and the two pad bytes, low byte first.
+      int footprintFlags = 0;
+      archive->ReadInt(&footprintFlags);
+      const auto footprintWord = static_cast<std::uint32_t>(footprintFlags);
+      mUsingAltFootprint = static_cast<std::uint8_t>(footprintWord);
+      mUsingAltFootprintSecondary = static_cast<std::uint8_t>(footprintWord >> 8);
+      pad_00A6_00A7[0] = static_cast<std::uint8_t>(footprintWord >> 16);
+      pad_00A6_00A7[1] = static_cast<std::uint8_t>(footprintWord >> 24);
+    } else {
+      // Game version 3835: the alt-footprint byte alone, as a bool (0x00559DAE).
+      bool usingAltFootprint = false;
+      archive->ReadBool(&usingAltFootprint);
+      mUsingAltFootprint = usingAltFootprint ? 1u : 0u;
+    }
 
     gpg::RType* const attributesType = ResolveEntityAttributesType();
     GPG_ASSERT(attributesType != nullptr);
@@ -685,7 +656,10 @@ namespace moho
   /**
    * Address: 0x00559E00 (FUN_00559E00, Moho::SSTIEntityVariableData::MemberSerialize)
    */
-  void SSTIEntityVariableData::MemberSerialize(gpg::WriteArchive* const archive, const int version)
+  void SSTIEntityVariableData::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    const int version
+  )
   {
     if (version < 2) {
       throw gpg::SerializationError("Unsupported version.");
@@ -701,9 +675,13 @@ namespace moho
     // typed builders (0x00559E34 `RRef_RScmResource`, 0x00559E5F
     // `RRef_RMeshBlueprint`, and `RRef_CSndParams` for the two sound lanes
     // below), so this does too.
-    archive->WritePointer<moho::RScmResource>(const_cast<RScmResource*>(mScmResource.get()), gpg::TrackedPointerState::Shared, ownerRef);
+    archive->WritePointer<moho::RScmResource>(
+      const_cast<RScmResource*>(mScmResource.get()), gpg::TrackedPointerState::Shared, ownerRef
+    );
 
-    archive->WritePointer<moho::RMeshBlueprint>(const_cast<RMeshBlueprint*>(mMeshBlueprint), gpg::TrackedPointerState::Unowned, ownerRef);
+    archive->WritePointer<moho::RMeshBlueprint>(
+      const_cast<RMeshBlueprint*>(mMeshBlueprint), gpg::TrackedPointerState::Unowned, ownerRef
+    );
 
     gpg::RType* const vector3Type = gpg::RTypeOf<Wm3::Vec3f>();
     GPG_ASSERT(vector3Type != nullptr);
@@ -748,30 +726,23 @@ namespace moho
     GPG_ASSERT(layerType != nullptr);
     archive->Write(layerType, &mLayerMask, ownerRef);
 
-    // FAF FA-Binary-Patches #134 (Serialize add patched entity var dat fields):
+    // FAF FA-Binary-Patches #134 (Serialize add patched entity var dat fields, game version 3840):
     // written with `WriteInt` (0x0055A11D) instead of `WriteBool`. The patch
     // only swapped the call, so the value is still the zero-extended
     // alt-footprint byte (`movzx ecx, byte ptr [edi+0A4h]`).
     if (gSimExactArchive.load(std::memory_order_relaxed)) {
       // Engine addition (replay keyframes): the second byte too; the patched save above loses it.
       archive->WriteInt(static_cast<int>(mUsingAltFootprint) | (static_cast<int>(mUsingAltFootprintSecondary) << 8));
-    } else {
+    } else if (UsesFootprintWord()) {
       archive->WriteInt(static_cast<int>(mUsingAltFootprint));
+    } else {
+      // Game version 3835: one bool byte, as that exe writes it (0x0055A11D, `WriteBool`).
+      archive->WriteBool(mUsingAltFootprint != 0u);
     }
 
     gpg::RType* const attributesType = ResolveEntityAttributesType();
     GPG_ASSERT(attributesType != nullptr);
     archive->Write(attributesType, &mIntelAttributes, ownerRef);
-  }
-
-  std::uint32_t SSTIEntityVariableData::GetVisibilityGridMask() const noexcept
-  {
-    return mLayerMask;
-  }
-
-  void SSTIEntityVariableData::SetVisibilityGridMask(const std::uint32_t gridMask) noexcept
-  {
-    mLayerMask = static_cast<ELayer>(gridMask);
   }
 
   bool SSTIEntityVariableData::UsesUnderwaterReconGrid() const noexcept
@@ -849,9 +820,18 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_SSTIEntityAttachInfoTypeInfo_a1a5ff, moho::preregister_SSTIEntityAttachInfoTypeInfo)
-GPG_PREREGISTER_INIT(preregister_EntityAttributesTypeInfo_a1a5ff, moho::preregister_EntityAttributesTypeInfo)
-GPG_PREREGISTER_INIT(preregister_SSTIEntityVariableDataTypeInfo_a1a5ff, moho::preregister_SSTIEntityVariableDataTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_SSTIEntityAttachInfoTypeInfo_a1a5ff,
+  moho::preregister_SSTIEntityAttachInfoTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  preregister_EntityAttributesTypeInfo_a1a5ff,
+  moho::preregister_EntityAttributesTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  preregister_SSTIEntityVariableDataTypeInfo_a1a5ff,
+  moho::preregister_SSTIEntityVariableDataTypeInfo
+)
 
 namespace moho
 {

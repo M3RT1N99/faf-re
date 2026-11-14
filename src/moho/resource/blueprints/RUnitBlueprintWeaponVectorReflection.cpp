@@ -11,14 +11,14 @@
 
 namespace
 {
-  using WeaponVector = msvc8::vector<moho::RUnitBlueprintWeapon>;
+  using WeaponVector = fa::vector<moho::RUnitBlueprintWeapon>;
 
   /**
-   * Address: 0x00524590 (FUN_00524590, msvc8::vector<RUnitBlueprintWeapon>::push_back)
+   * Address: 0x00524590 (FUN_00524590, fa::vector<RUnitBlueprintWeapon>::push_back)
    *
    * What it does:
    * Per-T canonical-template-helper binding for the engine-instantiated
-   * `msvc8::vector<RUnitBlueprintWeapon>::push_back(const&)` fast/slow-path
+   * `fa::vector<RUnitBlueprintWeapon>::push_back(const&)` fast/slow-path
    * body (388-byte element stride: sizeof(RUnitBlueprintWeapon) == 0x184).
    * Rewires the inline `loaded.push_back(element);` site in
    * `RVectorType_RUnitBlueprintWeapon::SerLoad` (FUN_00523D50) through an
@@ -27,7 +27,8 @@ namespace
    */
   void PushBackRUnitBlueprintWeaponVector(
     WeaponVector& destination,
-    const moho::RUnitBlueprintWeapon& value)
+    const moho::RUnitBlueprintWeapon& value
+  )
   {
     destination.push_back(value);
   }
@@ -55,68 +56,16 @@ namespace
    * Ensures one `vector<RUnitBlueprintWeapon>` has capacity for `count`
    * elements before deserialization fills it.
    */
-  void EnsureWeaponVectorCapacity(WeaponVector& storage, const std::size_t count)
+  void EnsureWeaponVectorCapacity(
+    WeaponVector& storage,
+    const std::size_t count
+  )
   {
     if (count <= storage.capacity()) {
       return;
     }
 
     storage.reserve(count);
-  }
-
-  /**
-   * Address: 0x00527680 (FUN_00527680, Moho::RUnitBlueprintWeapon::operator=)
-   *
-   * IDA signature:
-   * int __usercall sub_527680@<eax>(int a1@<eax>, int a2@<esi>);
-   *
-   * What it does:
-   * Per-field copy-assignment body for one 0x184-byte
-   * `Moho::RUnitBlueprintWeapon` element. Copies the owner pointer and weapon
-   * index, then string-assigns each of the five embedded `msvc8::string`
-   * lanes (`Label`, `DisplayName`, `DamageType`, `TargetRestrictOnlyAllow`,
-   * `TargetRestrictDisallow`, `UIMinRangeVisualId`, `UIMaxRangeVisualId`) and
-   * mirrors the scalar/flag/float gameplay-field block.
-   *
-   * Per-T named free helper: the canonical bind site for the engine-instantiated
-   * `RUnitBlueprintWeapon::operator=` body. Callers must invoke this helper by
-   * explicit name (not inline `*dst = *src` syntax) so the linker keeps the
-   * out-of-line symbol matching the binary address.
-   */
-  moho::RUnitBlueprintWeapon& CopyAssignRUnitBlueprintWeapon(
-    moho::RUnitBlueprintWeapon& destination,
-    const moho::RUnitBlueprintWeapon& source
-  )
-  {
-    destination = source;
-    return destination;
-  }
-
-  /**
-   * Address: 0x00526170 (FUN_00526170)
-   *
-   * What it does:
-   * Copy-assigns one contiguous `RUnitBlueprintWeapon` destination range from
-   * source lanes and returns the advanced source cursor. Routes each per-element
-   * copy through `CopyAssignRUnitBlueprintWeapon` (FUN_00527680) by name so the
-   * out-of-line copy-assignment symbol stays bound.
-   */
-  const moho::RUnitBlueprintWeapon* CopyAssignUnitBlueprintWeaponRange(
-    moho::RUnitBlueprintWeapon* destinationBegin,
-    moho::RUnitBlueprintWeapon* destinationEnd,
-    const moho::RUnitBlueprintWeapon* sourceBegin
-  )
-  {
-    moho::RUnitBlueprintWeapon* destinationCursor = destinationBegin;
-    const moho::RUnitBlueprintWeapon* sourceCursor = sourceBegin;
-
-    while (destinationCursor != destinationEnd) {
-      (void)CopyAssignRUnitBlueprintWeapon(*destinationCursor, *sourceCursor);
-      ++destinationCursor;
-      ++sourceCursor;
-    }
-
-    return sourceCursor;
   }
 
   /**
@@ -171,7 +120,7 @@ namespace
    * void __stdcall __noreturn sub_524AD0(_DWORD *a1, int a2, unsigned int a3);
    *
    * What it does:
-   * Engine-instantiated body of `msvc8::vector<RUnitBlueprintWeapon>::_Insert_n`
+   * Engine-instantiated body of `fa::vector<RUnitBlueprintWeapon>::_Insert_n`
    * (insert N default-constructed elements at `insertAt`). The binary:
    *   - Default-constructs one `RUnitBlueprintWeapon` template value on the
    *     stack (FUN_00524E50 copy-ctor is also dispatched from here for the
@@ -233,8 +182,7 @@ namespace
   {
     const std::size_t currentCount = storage.size();
     if (currentCount < requestedCount) {
-      InsertDefaultRUnitBlueprintWeapons(
-        storage, storage.end(), requestedCount - currentCount);
+      InsertDefaultRUnitBlueprintWeapons(storage, storage.end(), requestedCount - currentCount);
       return requestedCount;
     }
 
@@ -242,8 +190,7 @@ namespace
       if (!storage.empty()) {
         moho::RUnitBlueprintWeapon* const eraseBegin = storage.begin() + requestedCount;
         moho::RUnitBlueprintWeapon* outIterator = nullptr;
-        (void)DestroyUnitBlueprintWeaponTailAndReturnIterator(
-          storage, &outIterator, eraseBegin, storage.end());
+        (void)DestroyUnitBlueprintWeaponTailAndReturnIterator(storage, &outIterator, eraseBegin, storage.end());
       }
     }
 
@@ -263,12 +210,12 @@ gpg::RVectorType_RUnitBlueprintWeapon::~RVectorType_RUnitBlueprintWeapon() = def
  *
  * What it does:
  * Builds and caches lexical reflection name `vector<element>` for
- * `msvc8::vector<moho::RUnitBlueprintWeapon>`.
+ * `fa::vector<moho::RUnitBlueprintWeapon>`.
  */
 const char* gpg::RVectorType_RUnitBlueprintWeapon::GetName() const
 {
-    static const msvc8::string sName = gpg::STR_Printf("vector<%s>", gpg::RTypeOf<moho::RUnitBlueprintWeapon>()->GetName());
-    return sName.c_str();
+  static const fa::string sName = gpg::STR_Printf("vector<%s>", gpg::RTypeOf<moho::RUnitBlueprintWeapon>()->GetName());
+  return sName.c_str();
 }
 
 /**
@@ -276,11 +223,13 @@ const char* gpg::RVectorType_RUnitBlueprintWeapon::GetName() const
  *
  * What it does:
  * Returns base lexical text plus reflected vector size for one
- * `msvc8::vector<moho::RUnitBlueprintWeapon>` instance.
+ * `fa::vector<moho::RUnitBlueprintWeapon>` instance.
  */
-msvc8::string gpg::RVectorType_RUnitBlueprintWeapon::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RVectorType_RUnitBlueprintWeapon::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -315,7 +264,7 @@ void gpg::RVectorType_RUnitBlueprintWeapon::Init()
  */
 void gpg::RVectorType_RUnitBlueprintWeapon::SerLoad(
   gpg::ReadArchive* const archive,
-  const std::intptr_t objectPtr,
+  void* const objectPtr,
   const int,
   gpg::RRef* const
 )
@@ -324,7 +273,7 @@ void gpg::RVectorType_RUnitBlueprintWeapon::SerLoad(
     return;
   }
 
-  auto* const storage = reinterpret_cast<WeaponVector*>(objectPtr);
+  auto* const storage = static_cast<WeaponVector*>(objectPtr);
   unsigned int count = 0u;
   archive->ReadUInt(&count);
 
@@ -359,7 +308,7 @@ void gpg::RVectorType_RUnitBlueprintWeapon::SerLoad(
  */
 void gpg::RVectorType_RUnitBlueprintWeapon::SerSave(
   gpg::WriteArchive* const archive,
-  const std::intptr_t objectPtr,
+  void* const objectPtr,
   const int,
   gpg::RRef* const ownerRef
 )
@@ -368,7 +317,7 @@ void gpg::RVectorType_RUnitBlueprintWeapon::SerSave(
     return;
   }
 
-  const auto* const storage = reinterpret_cast<const WeaponVector*>(objectPtr);
+  const auto* const storage = static_cast<const WeaponVector*>(objectPtr);
   const unsigned int count = storage ? static_cast<unsigned int>(storage->size()) : 0u;
   archive->WriteUInt(count);
 
@@ -391,7 +340,10 @@ void gpg::RVectorType_RUnitBlueprintWeapon::SerSave(
 /**
  * Address: 0x00523650 (FUN_00523650, gpg::RVectorType_RUnitBlueprintWeapon::SubscriptIndex)
  */
-gpg::RRef gpg::RVectorType_RUnitBlueprintWeapon::SubscriptIndex(void* const obj, const int ind) const
+gpg::RRef gpg::RVectorType_RUnitBlueprintWeapon::SubscriptIndex(
+  void* const obj,
+  const int ind
+) const
 {
   gpg::RRef out{};
   out.mType = gpg::RTypeOf<moho::RUnitBlueprintWeapon>();
@@ -409,7 +361,9 @@ gpg::RRef gpg::RVectorType_RUnitBlueprintWeapon::SubscriptIndex(void* const obj,
 /**
  * Address: 0x005235F0 (FUN_005235F0, gpg::RVectorType_RUnitBlueprintWeapon::GetCount)
  */
-size_t gpg::RVectorType_RUnitBlueprintWeapon::GetCount(void* const obj) const
+size_t gpg::RVectorType_RUnitBlueprintWeapon::GetCount(
+  void* const obj
+) const
 {
   const auto* const storage = static_cast<const WeaponVector*>(obj);
   return storage ? storage->size() : 0u;
@@ -418,7 +372,10 @@ size_t gpg::RVectorType_RUnitBlueprintWeapon::GetCount(void* const obj) const
 /**
  * Address: 0x00523620 (FUN_00523620, gpg::RVectorType_RUnitBlueprintWeapon::SetCount)
  */
-void gpg::RVectorType_RUnitBlueprintWeapon::SetCount(void* const obj, const int count) const
+void gpg::RVectorType_RUnitBlueprintWeapon::SetCount(
+  void* const obj,
+  const int count
+) const
 {
   if (!obj || count < 0) {
     return;
@@ -450,5 +407,11 @@ void moho::register_VectorRUnitBlueprintWeaponType()
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_VectorRUnitBlueprintWeaponType_8f3a7d, moho::preregister_VectorRUnitBlueprintWeaponType)
-GPG_PREREGISTER_INIT(register_VectorRUnitBlueprintWeaponType_8f3a7d, moho::register_VectorRUnitBlueprintWeaponType)
+GPG_PREREGISTER_INIT(
+  preregister_VectorRUnitBlueprintWeaponType_8f3a7d,
+  moho::preregister_VectorRUnitBlueprintWeaponType
+)
+GPG_PREREGISTER_INIT(
+  register_VectorRUnitBlueprintWeaponType_8f3a7d,
+  moho::register_VectorRUnitBlueprintWeaponType
+)

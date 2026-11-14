@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/PlatformDefines.h"
+
 // Engine addition (dedicated-server plan WPL.17): Lua's number text as the Windows C runtime
 // writes and reads it, on every platform.
 //
@@ -24,9 +26,13 @@
 namespace lua
 {
   /// sprintf(out, form, value) for one floating conversion, with Windows' NaN text.
-  inline int FormatNumberLikeWindowsCrt(char* const out, const char* const form, const double value)
+  inline int FormatNumberLikeWindowsCrt(
+    char* const out,
+    const char* const form,
+    const double value
+  )
   {
-#if !defined(_WIN32)
+#if !FAFRE_PLATFORM_WINDOWS
     std::uint64_t bits = 0;
     std::memcpy(&bits, &value, sizeof(bits));
     if (bits == 0xFFF8000000000000ull) {
@@ -57,9 +63,12 @@ namespace lua
   }
 
   /// strtod(text, end), with Windows' NaN spellings and values.
-  inline double ParseNumberLikeWindowsCrt(const char* const text, char** const end)
+  inline double ParseNumberLikeWindowsCrt(
+    const char* const text,
+    char** const end
+  )
   {
-#if !defined(_WIN32)
+#if !FAFRE_PLATFORM_WINDOWS
     const char* cursor = text;
     while (*cursor == ' ' || (*cursor >= '\t' && *cursor <= '\r')) {
       ++cursor;
@@ -69,14 +78,16 @@ namespace lua
       negative = *cursor == '-';
       ++cursor;
     }
-    const auto lower = [](const char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c; };
+    const auto lower = [](const char c) {
+      return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+    };
     if (lower(cursor[0]) == 'n' && lower(cursor[1]) == 'a' && lower(cursor[2]) == 'n') {
       cursor += 3;
       std::uint64_t bits = 0x7FFFFFFFFFFFFFFFull;
       if (*cursor == '(') {
         const char* close = cursor + 1;
-        while ((*close >= '0' && *close <= '9') || (*close >= 'a' && *close <= 'z') || (*close >= 'A' && *close <= 'Z') ||
-               *close == '_') {
+        while ((*close >= '0' && *close <= '9') || (*close >= 'a' && *close <= 'z') ||
+               (*close >= 'A' && *close <= 'Z') || *close == '_') {
           ++close;
         }
         if (*close == ')') {

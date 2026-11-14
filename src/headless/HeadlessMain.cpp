@@ -7,7 +7,7 @@
 // out every window, device, audio and UI step.
 
 #include <Windows.h>
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
 #include <objbase.h>
 #else
 #include <csignal>
@@ -35,8 +35,13 @@
 #include "moho/sim/CWldSessionLoaderImpl.h"
 #include "platform/X87Precision.h"
 #include "headless/ReplayLaunchCheck.h"
+#include "headless/HeadlessMain.h"
 #include "headless/ReplayRunner.h"
 #include "moho/animation/CAniActor.h"
+#if FAF_SERVER_MODE
+#include "remote/SyncRouting.h"
+#include "remote/ViewAudit.h"
+#endif
 
 namespace
 {
@@ -58,7 +63,9 @@ namespace
   extern "C" int __llvm_profile_write_file(void);
 #endif
 
-  [[noreturn]] void EndProcess(const int exitCode)
+  [[noreturn]] void EndProcess(
+    const int exitCode
+  )
   {
     // Every output stream: stdout, stderr and the --disk-trace file.
     std::fflush(nullptr);
@@ -69,21 +76,27 @@ namespace
 #endif
     // The sim and loader threads are still running; nothing after the verdict is observed,
     // so the process ends here instead of tearing them down.
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
     ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(exitCode));
 #endif
     std::_Exit(exitCode);
   }
 
-  void ReplayDieHandler(const char* const message)
+  void ReplayDieHandler(
+    const char* const message
+  )
   {
     std::printf("[%s] FATAL %s\n", gLabel.c_str(), message != nullptr ? message : "engine Die()");
-    std::printf("[%s] VERDICT ended=False mismatches=%d crash=True\n", gLabel.c_str(), faf::headless::ChecksumMismatchCount());
+    std::printf(
+      "[%s] VERDICT ended=False mismatches=%d crash=True\n", gLabel.c_str(), faf::headless::ChecksumMismatchCount()
+    );
     EndProcess(kExitCrash);
   }
 
-#if defined(_WIN32)
-  LONG WINAPI ReplayCrashFilter(EXCEPTION_POINTERS* const info)
+#if FAFRE_PLATFORM_WINDOWS
+  LONG WINAPI ReplayCrashFilter(
+    EXCEPTION_POINTERS* const info
+  )
   {
     const EXCEPTION_RECORD* const record = info != nullptr ? info->ExceptionRecord : nullptr;
     std::printf(
@@ -92,12 +105,18 @@ namespace
       record != nullptr ? record->ExceptionCode : 0ul,
       record != nullptr ? record->ExceptionAddress : nullptr
     );
-    std::printf("[%s] VERDICT ended=False mismatches=%d crash=True\n", gLabel.c_str(), faf::headless::ChecksumMismatchCount());
+    std::printf(
+      "[%s] VERDICT ended=False mismatches=%d crash=True\n", gLabel.c_str(), faf::headless::ChecksumMismatchCount()
+    );
     EndProcess(kExitCrash);
   }
 #else
   /// The POSIX counterpart of the crash filter: a fatal signal is reported as a crash.
-  void ReplayCrashSignal(const int signalNumber, siginfo_t* const info, void*)
+  void ReplayCrashSignal(
+    const int signalNumber,
+    siginfo_t* const info,
+    void*
+  )
   {
     std::printf(
       "[%s] CRASH signal %d at %p\n", gLabel.c_str(), signalNumber, info != nullptr ? info->si_addr : nullptr
@@ -105,7 +124,9 @@ namespace
     std::fflush(stdout);
     void* frames[64];
     platform::posix::BacktraceSymbolsFd(frames, platform::posix::Backtrace(frames, 64), 1);
-    std::printf("[%s] VERDICT ended=False mismatches=%d crash=True\n", gLabel.c_str(), faf::headless::ChecksumMismatchCount());
+    std::printf(
+      "[%s] VERDICT ended=False mismatches=%d crash=True\n", gLabel.c_str(), faf::headless::ChecksumMismatchCount()
+    );
     EndProcess(kExitCrash);
   }
 #endif
@@ -118,14 +139,20 @@ namespace
       : moho::IWinApp("SupCom", "SupremeCommander")
     {}
 
-    bool Init() override { return AppInitCommonServices(); }
+    bool Init() override
+    {
+      return AppInitCommonServices();
+    }
     void Main() override {}
     void Destroy() override {}
   };
 
-  [[nodiscard]] bool ReadOption(const char* const name, std::string& value)
+  [[nodiscard]] bool ReadOption(
+    const char* const name,
+    std::string& value
+  )
   {
-    msvc8::vector<msvc8::string> args;
+    fa::vector<fa::string> args;
     if (!moho::CFG_GetArgOption(name, 1, &args) || args.empty()) {
       return false;
     }
@@ -133,7 +160,11 @@ namespace
     return true;
   }
 
-  [[nodiscard]] bool ReadIntOption(const char* const name, int& value, bool& bad)
+  [[nodiscard]] bool ReadIntOption(
+    const char* const name,
+    int& value,
+    bool& bad
+  )
   {
     std::string text;
     if (!ReadOption(name, text)) {
@@ -157,15 +188,26 @@ namespace
       "  --digests <file>          write \"beat md5\" for every checksummed beat\n"
       "  --sync-keys <file>        write every top-level Lua Sync key seen, with beat counts\n"
       "  --sync-dump <file>        write each beat's Lua Sync bytes (tools/sync-routing/compare.py)\n"
+      "  --sync-allies <file>      write each army's allies on the first beat and when they change\n"
+      "                            (tools/sync-routing/policy_gen.py)\n"
       "  --lua-routing-dump <pre>  with --lua-routing: each view's Sync bytes, to <pre>_<view>.bin\n"
       "  --lua-move-view <b:v:a>   with --lua-routing: at beat b, view v moves to army a\n"
       "  --lua-resync <b:v>        with --lua-routing: at beat b, view v gets a reconnect's resync\n"
       "  --focus-switch <b:a>      at beat b, the sim's focus moves to army a, as a lockstep client's does\n"
       "  --state-digests <file>    write \"beat digest\" of what the sim published, every beat\n"
+      "  --bot-obs <file>          with --focus: that army's view (fog of war as its UI shows it) and its player's\n"
+      "                            commands, one JSON line per sample (bot training data; docs/SWITCHES.md lists the\n"
+      "                            switches it can't be combined with)\n"
+      "  --bot-obs-every <beats>   with --bot-obs: one sample every <beats> (default 10, one second of game time)\n"
       "  --fpu-report              at beat 1, every thread's x87 control word and MXCSR (sampled)\n"
-      "  --keyframe-every <beats>  save the sim between beats every <beats>, as a saved game; size, zlib size, md5, time\n"
+      "  --keyframe-every <beats>  save the sim between beats every <beats>, as a saved game; size, zlib size, md5, "
+      "time\n"
+      "  --keyframe-first <beat>   with --keyframe-every: the first save at this beat instead of at <beats>\n"
       "  --keyframe-dir <dir>      where the keyframe files go (default: keyframes)\n"
       "  --keyframe-keep           keep the keyframe files after measuring them\n"
+      "  --keyframe-prepare        for the replay viewer: files get their names when complete, nothing is measured\n"
+      "  --keyframe-quiet          with --keyframe-prepare: compressed as they are saved, named by their tick; the "
+      "init file can't raise the priority\n"
       "  --resume-from <file>      continue the replay from one of its keyframes instead of its start\n"
       "  --seek <beat,beat,...>    with --keyframe-every: move to each beat in turn inside this process, by ending\n"
       "                            the session and restoring the newest keyframe before it, then play to the end;\n"
@@ -173,13 +215,24 @@ namespace
       "  --bone-stats <file>      write changed bones per beat (CSV) and per blueprint (<file>.blueprints.csv)\n"
       "  --lane-sizes <file>      write per-beat element counts and bytes of every sync lane (CSV)\n"
       "  --blueprint-order <file> write every blueprint by ordinal, in the rules' load order\n"
-      "  --lua-pairs <file>       write the sim Lua globals' and moho class tables' pairs() order, before BeginSession\n"
+      "  --lua-pairs <file>       write the sim Lua globals' and moho class tables' pairs() order, before "
+      "BeginSession\n"
       "  --wire-stats <file>      run the wire format's entities lane on every beat (CSV; server-mode build)\n"
       "  --loopback [--loopback-dr <steps> [--loopback-turns <units>]]  every packet through the wire format and the\n"
       "                            client's rebuild; dead reckoning in 1/64-unit steps, turns in 1/65536 turns\n"
       "                            (server-mode build)\n"
       "  --command-check           every command decoded and marshalled again as a client sends it, compared\n"
       "                            (server-mode build)\n"
+      "  --seats                   the commands through the game server's seats, one per command source\n"
+      "                            (server-mode build)\n"
+      "  --seats-listen <ip:port>  with --seats, Linux: and each seat's view over UDP to whoever joins as it, uid\n"
+      "                            the source's index, token seat-<uid> (--view-pipeline: its threads)\n"
+      "  --target-audit            with --seats-listen: how many recorded targets a server's view wouldn't have held\n"
+      "  --pose-budget-kbps <n>    with --seats-listen or --view-bench: each view's pose lane within n KB/s, as the\n"
+      "                            server's (plan WP8.2)\n"
+      "  --pose-check              with --seats-listen: each view's pose lane applied to a copy of its client's "
+      "poses,\n"
+      "                            every unit it isn't owed compared with the server's (plan WP8.2)\n"
       "  --oracle-check            the visibility oracle for the --focus army against what the sim publishes,\n"
       "                            every entity and beat (server-mode build)\n"
       "  --oracle-digests <file>  with --oracle-check: per beat, the oracle's answers for every army (unfocused)\n"
@@ -202,20 +255,63 @@ namespace
       "  --view-bench <file>       unfocused: only the server's view work per beat (views with their own ids, every\n"
       "                            lane encoded for every client), timed (CSV: build, send and beat ms, entities,\n"
       "                            bytes; server-mode build; not with the checks above)\n"
-      "  --keep-client-data        keep what only a client reads: model vertices and indices, the session's and the rules' blueprint tables, files read from archives, what effects draw, the pose handles kept for a client\n"
+      "  --keep-client-data        keep what only a client reads: model vertices and indices, the session's and the "
+      "rules' blueprint tables, files read from archives, what effects draw, the pose handles kept for a client\n"
       "  --view-bench-check        with --view-bench: every view's kept frame is compared with one built whole\n"
-      "  --lua-routing             with --view-bench: the Lua lane too: each player's Sync routed (remote/SyncRouting.h)\n"
+      "  --lua-routing             with --view-bench: the Lua lane too: each player's Sync routed "
+      "(remote/SyncRouting.h)\n"
+      "  --view-pipeline <n>       with --view-bench: n threads finish the views while the sim goes on (default 0: it "
+      "waits)\n"
+      "  --view-teams              with --view-pipeline: one view per team and each player's own units\n"
+      "  --view-tables             with --view-bench: the session tables as a server keeps them (sounds, names, unit\n"
+      "                            stats, deposits and terrain edits), each beat's record written\n"
+      "  --stats-every <beats>     with --view-tables: each unit's stats read every <beats> beats (default 4)\n"
+      "  --view-poses              with --view-bench: each view's pose lane (the units' bones) as a server sends it\n"
+      "  --view-effects            with --view-bench: each view's effects lane routed and with every op, compared\n"
+      "  --effect-dump <prefix>    with --view-effects --view-poses --keep-client-data --focus <army>: each effect of\n"
+      "                            that army, lockstep against its server-mode client hosting its view's lane\n"
+      "                            (<prefix>.lockstep.csv, .client.csv, .join.txt)\n"
+      "  --pose-dump <prefix>      with --view-poses --keep-client-data --focus <army> (serial views): every unit "
+      "that\n"
+      "                            army sees, drawn by lockstep and by its server-mode client applying its view's "
+      "pose\n"
+      "                            lane, bone by bone (<prefix>.beats.csv, .worst.csv, .summary.txt)\n"
+      "  --pose-camera <x,z,half>  with --view-bench --focus <army>: that army's client reports a top-down camera "
+      "over\n"
+      "                            this square (the pose budget's order; --pose-dump also compares the units in it)\n"
+      "  --effect-dump-centred     with --effect-dump: the effect curves' random spread held at its centre in both\n"
+      "                            runtimes, so each emitter's counts compare one for one\n"
+      "  --view-commands           with --view-bench: each view's command-records lane as a server sends it, read "
+      "back\n"
+      "  --command-dump <file>     with --view-commands (serial views): per beat and unit, an army's command queues "
+      "as\n"
+      "                            its client holds them: with --focus <army> lockstep's, unfocused with\n"
+      "                            --command-dump-army <army> its server-mode client's; two runs compare line for "
+      "line\n"
+      "  --view-dump <file>       with --view-bench: what each player's client holds every 2000 beats, to compare two "
+      "runs\n"
       "  --parallel-views          with --view-frames or --view-bench: the views are built on the sim's workers\n"
       "  --cpus <list>             run on these CPUs only, for example 8-15 or 0,2,4,6; a CPU set from taskset or a\n"
       "                            container counts too, and FAF's init scripts cannot change it\n"
+      "  --sync-policy <file>      with --lua-routing: route each Sync key by this policy file instead of the\n"
+      "                            compiled table (tools/sync-routing/policy_gen.py writes them)\n"
       "  --spy                     with --view-bench --lua-routing: every Lua key each view receives checked;\n"
       "                            with --view-frames: every view's decoded frame checked against the oracle and\n"
       "                            for names of entities its client does not hold\n"
+      "  --view-audit              with --view-bench: srv_ViewAudit 1, the server's own audit of every view's Lua\n"
+      "                            keys and ids, command records and army records (counted as failures)\n"
       "  --inbound-check           with --view-ids: every command sent again in its army's view ids and translated\n"
       "                            back as the server would; it must marshal to the same bytes\n"
       "  --launch-check           rebuild the header's launch with BuildLaunchInfo and compare (plays nothing)\n"
       "  --disk-trace <file>       write every file the engine finds, reads or maps and every directory listing\n"
-      "  --path-spelling <file>    Linux: write each path found on disk only by ignoring case, as asked and as on disk\n"
+      "  --path-spelling <file>    Linux: write each path found on disk only by ignoring case, as asked and as on "
+      "disk\n"
+      "  --rejoin-source <n>       play as this command source of a live game, every other client fed from the\n"
+      "                            replay (needs --focus on its army); the rehearsal of a rejoin\n"
+      "  --rejoin-beat <n>         with --rejoin-source: the driver issues this client's beats after this one\n"
+      "  --rejoin-peers <list>     no replay: take seat --rejoin-source back in a running game from these peers,\n"
+      "                            written address:port=source,...; needs the seat's key (/rejoinkeyfile)\n"
+      "  --rejoin-port <n>         with --rejoin-peers: this client's game port\n"
       "  --checksum-period <n>     sim_ChecksumPeriod for this run (default: the game's, 50)\n"
       "  --lead <n>                beats the sim may run ahead (sim_ReplayLead, default 10)\n"
       "  --pace <ms>               one beat per this many ms, as a live game plays (100 is speed 0); time a late\n"
@@ -230,7 +326,7 @@ namespace
   /** `/con name=value;name2=value2`, as `InitializeSessionFromCommandLine` runs it. */
   void RunStartupConsoleCommands()
   {
-    msvc8::vector<msvc8::string> args;
+    fa::vector<fa::string> args;
     if (!moho::CFG_GetArgOption("/con", 1, &args) || args.empty()) {
       return;
     }
@@ -247,11 +343,14 @@ namespace
   }
 } // namespace
 
-int main(int argc, char** argv)
+int HEADLESS_Main(
+  int argc,
+  char** argv
+)
 {
   (void)argc;
   (void)argv;
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
   ::SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
   ::SetUnhandledExceptionFilter(&ReplayCrashFilter);
 #else
@@ -271,41 +370,60 @@ int main(int argc, char** argv)
   bool bad = false;
   (void)ReadOption("--label", gLabel);
   options.label = gLabel;
-  if (!ReadOption("--replay", options.replayPath) || !moho::CFG_GetArgOption("/init", 1, nullptr)) {
+  const bool liveRejoin = ReadOption("--rejoin-peers", options.rejoinPeers);
+  if ((!ReadOption("--replay", options.replayPath) && !liveRejoin) || !moho::CFG_GetArgOption("/init", 1, nullptr)) {
     PrintUsage();
     return kExitBadInput;
   }
   (void)ReadIntOption("--focus", options.focusArmy, bad);
+  (void)ReadIntOption("--rejoin-source", options.rejoinSource, bad);
+  (void)ReadIntOption("--rejoin-port", options.rejoinPort, bad);
+  (void)ReadIntOption("--rejoin-beat", options.rejoinBeat, bad);
   (void)ReadOption("--digests", options.digestPath);
+  (void)ReadOption("--effect-ops", options.effectOpsPath);       // plan WP9.1
+  (void)ReadOption("--effect-record", options.effectRecordPath); // plan WP9.1
   (void)ReadOption("--sync-keys", options.syncKeysPath);
   (void)ReadOption("--sync-dump", options.syncDumpPath);
+  (void)ReadOption("--sync-allies", options.syncAlliesPath);
   (void)ReadOption("--lua-routing-dump", options.luaRoutingDump);
   std::string beatStep;
-  if (ReadOption("--lua-move-view", beatStep)
-      && std::sscanf(beatStep.c_str(), "%d:%d:%d", &options.luaMoveBeat, &options.luaMoveView, &options.luaMoveArmy) != 3) {
+  if (
+    ReadOption("--lua-move-view", beatStep) &&
+    std::sscanf(beatStep.c_str(), "%d:%d:%d", &options.luaMoveBeat, &options.luaMoveView, &options.luaMoveArmy) != 3
+  ) {
     bad = true;
   }
-  if (ReadOption("--lua-resync", beatStep)
-      && std::sscanf(beatStep.c_str(), "%d:%d", &options.luaResyncBeat, &options.luaResyncView) != 2) {
+  if (
+    ReadOption("--lua-resync", beatStep) &&
+    std::sscanf(beatStep.c_str(), "%d:%d", &options.luaResyncBeat, &options.luaResyncView) != 2
+  ) {
     bad = true;
   }
-  if (ReadOption("--focus-switch", beatStep)
-      && std::sscanf(beatStep.c_str(), "%d:%d", &options.focusSwitchBeat, &options.focusSwitchArmy) != 2) {
+  if (
+    ReadOption("--focus-switch", beatStep) &&
+    std::sscanf(beatStep.c_str(), "%d:%d", &options.focusSwitchBeat, &options.focusSwitchArmy) != 2
+  ) {
     bad = true;
   }
   (void)ReadOption("--sync-writers", options.syncWritersPath);
   (void)ReadOption("--wire-stats", options.wireStatsPath);
   (void)ReadOption("--state-digests", options.stateDigestPath);
+  (void)ReadOption("--bot-obs", options.botObsPath);
+  if (ReadIntOption("--bot-obs-every", options.botObsEvery, bad) && options.botObsEvery < 1) {
+    bad = true;
+  }
   (void)ReadOption("--lane-sizes", options.laneSizesPath);
   (void)ReadOption("--blueprint-order", options.blueprintOrderPath);
   (void)ReadOption("--lua-pairs", options.luaPairsPath);
   (void)ReadOption("--bone-stats", options.boneStatsPath);
   options.fpuReport = moho::CFG_GetArgOption("--fpu-report", 0, nullptr);
   (void)ReadIntOption("--keyframe-every", options.keyframeEvery, bad);
+  (void)ReadIntOption("--keyframe-first", options.keyframeFirst, bad);
   if (!ReadOption("--keyframe-dir", options.keyframeDir)) {
     options.keyframeDir = "keyframes";
   }
   options.keyframeKeep = moho::CFG_GetArgOption("--keyframe-keep", 0, nullptr);
+  options.keyframePrepare = moho::CFG_GetArgOption("--keyframe-prepare", 0, nullptr);
   (void)ReadOption("--resume-from", options.resumeFrom);
   std::vector<int> seekPlan;
   {
@@ -321,13 +439,18 @@ int main(int argc, char** argv)
   }
   options.loopback = moho::CFG_GetArgOption("--loopback", 0, nullptr);
   options.commandCheck = moho::CFG_GetArgOption("--command-check", 0, nullptr);
+  options.seats = moho::CFG_GetArgOption("--seats", 0, nullptr);
+  (void)ReadOption("--seats-listen", options.seatsListen);
+  (void)ReadIntOption("--pose-budget-kbps", options.poseBudgetKbps, bad);
+  options.poseCheck = moho::CFG_GetArgOption("--pose-check", 0, nullptr);
+  options.targetAudit = moho::CFG_GetArgOption("--target-audit", 0, nullptr);
   options.oracleCheck = moho::CFG_GetArgOption("--oracle-check", 0, nullptr);
   if (ReadOption("--oracle-digests", options.oracleDigestsPath)) {
     options.oracleCheck = true;
   }
   options.changeSetCheck = moho::CFG_GetArgOption("--changeset-check", 0, nullptr);
   {
-    msvc8::vector<msvc8::string> viewArgs;
+    fa::vector<fa::string> viewArgs;
     if (moho::CFG_GetArgOption("--view-packets", 2, &viewArgs) && viewArgs.size() == 2) {
       options.viewPacketsArmy = std::atoi(viewArgs[0].c_str());
       options.viewPacketsPath = viewArgs[1].c_str();
@@ -337,8 +460,10 @@ int main(int argc, char** argv)
   (void)ReadOption("--view-frames", options.viewFramesPath);
   (void)ReadOption("--view-bench", options.viewBenchPath);
   options.viewIds = moho::CFG_GetArgOption("--view-ids", 0, nullptr);
-  if (ReadIntOption("--view-loss", options.viewLossPercent, bad)
-      && (options.viewLossPercent < 0 || options.viewLossPercent > 100)) {
+  if (
+    ReadIntOption("--view-loss", options.viewLossPercent, bad) &&
+    (options.viewLossPercent < 0 || options.viewLossPercent > 100)
+  ) {
     bad = true;
   }
   if (ReadIntOption("--view-ack-delay", options.viewAckDelay, bad) && options.viewAckDelay < 0) {
@@ -346,6 +471,32 @@ int main(int argc, char** argv)
   }
   options.luaRouting = moho::CFG_GetArgOption("--lua-routing", 0, nullptr);
   options.parallelViews = moho::CFG_GetArgOption("--parallel-views", 0, nullptr);
+  options.viewTeams = moho::CFG_GetArgOption("--view-teams", 0, nullptr);
+  options.viewTables = moho::CFG_GetArgOption("--view-tables", 0, nullptr);
+  options.viewPoses = moho::CFG_GetArgOption("--view-poses", 0, nullptr);
+  options.viewEffects = moho::CFG_GetArgOption("--view-effects", 0, nullptr);
+  (void)ReadOption("--effect-dump", options.effectDumpPath); // plan WP9.5
+  options.effectDumpCentred = moho::CFG_GetArgOption("--effect-dump-centred", 0, nullptr);
+  (void)ReadOption("--pose-dump", options.poseDumpPath); // plan WP8.4
+  options.viewCommands = moho::CFG_GetArgOption("--view-commands", 0, nullptr); // plan WP5.14
+  (void)ReadOption("--command-dump", options.commandDumpPath);
+  (void)ReadIntOption("--command-dump-army", options.commandDumpArmy, bad);
+  if (std::string camera; ReadOption("--pose-camera", camera)) {
+    if (
+      std::sscanf(camera.c_str(), "%f,%f,%f", &options.poseCameraX, &options.poseCameraZ, &options.poseCameraHalf) !=
+        3 ||
+      options.poseCameraHalf <= 0.0f
+    ) {
+      bad = true;
+    }
+  }
+  if (std::string statsEvery; ReadOption("--stats-every", statsEvery)) {
+    options.statsEvery = std::atoi(statsEvery.c_str());
+  }
+  (void)ReadOption("--view-dump", options.viewDumpPath);
+  if (ReadIntOption("--view-pipeline", options.viewPipelineThreads, bad) && options.viewPipelineThreads < 0) {
+    bad = true;
+  }
   {
     std::string cpuList;
     if (ReadOption("--cpus", cpuList) && !moho::AssignProcessCpus(cpuList.c_str())) {
@@ -356,23 +507,47 @@ int main(int argc, char** argv)
       DWORD_PTR processMask = 0;
       DWORD_PTR systemMask = 0;
       (void)::GetProcessAffinityMask(::GetCurrentProcess(), &processMask, &systemMask);
-      std::printf("[%s] assigned CPU mask %llx of %llx; scripts cannot change it\n", gLabel.c_str(),
-        static_cast<unsigned long long>(processMask), static_cast<unsigned long long>(systemMask));
+      std::printf(
+        "[%s] assigned CPU mask %llx of %llx; scripts cannot change it\n",
+        gLabel.c_str(),
+        static_cast<unsigned long long>(processMask),
+        static_cast<unsigned long long>(systemMask)
+      );
     }
   }
   options.viewBenchCheck = moho::CFG_GetArgOption("--view-bench-check", 0, nullptr);
   options.keepClientData = moho::CFG_GetArgOption("--keep-client-data", 0, nullptr);
   options.spy = moho::CFG_GetArgOption("--spy", 0, nullptr);
   options.inboundCheck = moho::CFG_GetArgOption("--inbound-check", 0, nullptr);
+  // --bot-obs: one army's view from the game's first beat, with the decoder's one message observer to itself.
+  // --command-check, --inbound-check and --target-audit use that observer too, and --seats adds decoders of its own
+  // on other threads; --focus-switch hands the view to another army; --resume-from, --seek and a rejoin start in
+  // the middle of the game.
+  if (
+    !options.botObsPath.empty() &&
+    (options.focusArmy < 0 || options.commandCheck || options.inboundCheck || options.targetAudit || options.seats ||
+     !options.seatsListen.empty() || options.focusSwitchBeat >= 0 || !options.resumeFrom.empty() || !seekPlan.empty() ||
+     options.rejoinSource >= 0 || liveRejoin)
+  ) {
+    std::printf(
+      "[%s] --bot-obs needs --focus on an army, and not --command-check, --inbound-check, --target-audit, --seats, "
+      "--focus-switch, --resume-from, --seek or a rejoin\n",
+      gLabel.c_str()
+    );
+    bad = true;
+  }
   if (options.inboundCheck && (!options.viewIds || options.commandCheck)) {
     std::printf("[%s] --inbound-check needs --view-frames and --view-ids, and not --command-check\n", gLabel.c_str());
     bad = true;
   }
-  if ((options.oracleCheck ? 1 : 0) + (options.changeSetCheck ? 1 : 0) + (options.viewPacketsPath.empty() ? 0 : 1)
-        + (options.viewFramesPath.empty() ? 0 : 1) + (options.viewBenchPath.empty() ? 0 : 1) + (options.loopback ? 1 : 0)
-      > 1) {
+  if (
+    (options.oracleCheck ? 1 : 0) + (options.changeSetCheck ? 1 : 0) + (options.viewPacketsPath.empty() ? 0 : 1) +
+      (options.viewFramesPath.empty() ? 0 : 1) + (options.viewBenchPath.empty() ? 0 : 1) + (options.loopback ? 1 : 0) >
+    1
+  ) {
     std::printf(
-      "[%s] --oracle-check, --changeset-check, --view-packets, --view-frames, --view-bench and --loopback (its grid copies) all "
+      "[%s] --oracle-check, --changeset-check, --view-packets, --view-frames, --view-bench and --loopback (its grid "
+      "copies) all "
       "observe the sync walk: one at a time\n",
       gLabel.c_str()
     );
@@ -384,8 +559,10 @@ int main(int argc, char** argv)
   (void)ReadIntOption("--lead", options.replayLead, bad);
   (void)ReadIntOption("--pace", options.paceMs, bad);
   (void)ReadIntOption("--timeout", options.timeoutMinutes, bad);
-  if (ReadIntOption("--view-packets-entries-every", options.viewPacketsEntriesEvery, bad)
-      && options.viewPacketsEntriesEvery < 1) {
+  if (
+    ReadIntOption("--view-packets-entries-every", options.viewPacketsEntriesEvery, bad) &&
+    options.viewPacketsEntriesEvery < 1
+  ) {
     bad = true;
   }
   if (bad) {
@@ -394,17 +571,41 @@ int main(int argc, char** argv)
   }
 #if !FAF_SERVER_MODE
   // The wire format and the remote client (src/remote) are built only with FAF_SERVER_MODE.
-  if (!options.wireStatsPath.empty() || options.loopback || options.commandCheck || options.oracleCheck
-      || options.changeSetCheck || !options.viewPacketsPath.empty() || !options.viewFramesPath.empty()
-      || !options.viewBenchPath.empty()) {
+  if (
+    !options.wireStatsPath.empty() || options.loopback || options.commandCheck || options.seats ||
+    options.oracleCheck || options.changeSetCheck || !options.viewPacketsPath.empty() ||
+    !options.viewFramesPath.empty() || !options.viewBenchPath.empty()
+  ) {
     std::printf(
-      "[%s] --wire-stats, --loopback, --command-check, --oracle-check, --changeset-check, --view-packets, --view-frames and "
+      "[%s] --wire-stats, --loopback, --command-check, --seats, --oracle-check, --changeset-check, --view-packets, "
+      "--view-frames and "
       "--view-bench need a "
       "server-mode build "
       "(FAF_SERVER_MODE, the *-server presets)\n",
       gLabel.c_str()
     );
     return kExitBadInput;
+  }
+#else
+  // `--sync-policy <file>`: the Lua routing answers from a policy file (tools/sync-routing/policy_gen.py) instead of
+  // the compiled table, so a generated policy runs through the spy without a rebuild.
+  if (std::string policyPath; ReadOption("--sync-policy", policyPath)) {
+    std::string error;
+    if (!faf::remote::UseSyncPolicyFile(policyPath, error)) {
+      std::printf("[%s] --sync-policy: %s\n", gLabel.c_str(), error.c_str());
+      return kExitBadInput;
+    }
+    std::printf(
+      "[%s] sync policy %s: %zu keys, FAF game version %s\n",
+      gLabel.c_str(),
+      policyPath.c_str(),
+      faf::remote::SyncKeyRoutes().size(),
+      faf::remote::SyncPolicyGameVersionsText().c_str()
+    );
+  }
+  // `--view-audit` (plan WP6.9): `srv_ViewAudit 1`, as `/con srv_ViewAudit=1` sets it, for the views a run builds.
+  if (moho::CFG_GetArgOption("--view-audit", 0, nullptr)) {
+    faf::remote::SetViewAuditSwitch(true);
   }
 #endif
   std::printf("[%s] replay %s\n", gLabel.c_str(), options.replayPath.c_str());
@@ -420,7 +621,7 @@ int main(int argc, char** argv)
     }
     moho::DISK_SetAccessTrace(diskTrace);
   }
-#if !defined(_WIN32)
+#if !FAFRE_PLATFORM_WINDOWS
   std::string pathSpellingPath;
   if (ReadOption("--path-spelling", pathSpellingPath)) {
     std::FILE* const pathSpelling = std::fopen(pathSpellingPath.c_str(), "w");
@@ -445,9 +646,9 @@ int main(int argc, char** argv)
   // `WinMain` / `CScApp::CScApp`.
   moho::APP_InitializeIdentity();
 
-  // `WIN_AppExecute` builds wx's application object here; headless links only the
-  // simulation and has no wx.
-#if defined(_WIN32)
+  // `WIN_AppExecute` builds the window library's application object here; headless links only the
+  // simulation and has no window shell.
+#if FAFRE_PLATFORM_WINDOWS
   (void)::CoInitialize(nullptr);
 #endif
   moho::PLAT_Init();
@@ -459,11 +660,11 @@ int main(int argc, char** argv)
     std::printf("[%s] VERDICT ended=False mismatches=0 crash=True\n", gLabel.c_str());
     EndProcess(kExitCrash);
   }
-  msvc8::vector<msvc8::string> preferenceArgs;
+  fa::vector<fa::string> preferenceArgs;
   if (moho::CFG_GetArgOption("/prefs", 1, &preferenceArgs) && !preferenceArgs.empty()) {
     moho::USER_LoadPreferences(preferenceArgs[0]);
   } else {
-    moho::USER_LoadPreferences(msvc8::string("Game.prefs"));
+    moho::USER_LoadPreferences(fa::string("Game.prefs"));
   }
   // The game runs /lua/userInit.lua in the user Lua state here; headless has no user state
   // (headless/ReplayLuaState.h).
@@ -535,6 +736,9 @@ int main(int argc, char** argv)
   if (!result.boneSummary.empty()) {
     std::printf("[%s] %s\n", label, result.boneSummary.c_str());
   }
+  if (!result.botObsSummary.empty()) {
+    std::printf("[%s] %s\n", label, result.botObsSummary.c_str());
+  }
   if (!result.keyframeSummary.empty()) {
     std::printf("[%s] %s\n", label, result.keyframeSummary.c_str());
   }
@@ -582,10 +786,12 @@ int main(int argc, char** argv)
     exitCode = kExitBadInput;
   } else if (result.crashed) {
     exitCode = kExitCrash;
-  } else if ((recordedChecksumsComparable && result.mismatches > 0) || result.loopbackFailures > 0
-             || result.commandFailures > 0 || result.oracleFailures > 0 || result.inboundFailures > 0
-             || result.changeSetFailures > 0 || result.viewFramesFailures > 0 || result.viewBenchFailures > 0
-             || result.keyframeFailures > 0) {
+  } else if (
+    (recordedChecksumsComparable && result.mismatches > 0) || result.loopbackFailures > 0 ||
+    result.commandFailures > 0 || result.oracleFailures > 0 || result.inboundFailures > 0 ||
+    result.changeSetFailures > 0 || result.viewFramesFailures > 0 || result.viewBenchFailures > 0 ||
+    result.keyframeFailures > 0
+  ) {
     exitCode = kExitMismatch;
   } else if (!result.gameOver) {
     exitCode = kExitIncomplete;

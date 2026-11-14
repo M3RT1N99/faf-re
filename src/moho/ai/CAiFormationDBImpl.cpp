@@ -26,7 +26,9 @@ using namespace moho;
 namespace
 {
 
-  [[nodiscard]] gpg::RRef MakeSimRef(Sim* sim)
+  [[nodiscard]] gpg::RRef MakeSimRef(
+    Sim* sim
+  )
   {
     gpg::RRef out{};
     gpg::RType* const staticType = gpg::RTypeOf<Sim>();
@@ -46,12 +48,15 @@ namespace
       return out;
     }
 
-    out.mObj = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(sim) - static_cast<std::uintptr_t>(baseOffset));
+    out.mObj = gpg::CompleteObject(sim, baseOffset);
     out.mType = dynamicType;
     return out;
   }
 
-  [[nodiscard]] Sim* ReadPointerSim(gpg::ReadArchive* const archive, const gpg::RRef& ownerRef)
+  [[nodiscard]] Sim* ReadPointerSim(
+    gpg::ReadArchive* const archive,
+    const gpg::RRef& ownerRef
+  )
   {
     const gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(archive, ownerRef);
     if (!tracked.object) {
@@ -73,7 +78,7 @@ namespace
 
     const char* const expected = expectedType->GetName();
     const char* const actual = source.GetTypeName();
-    const msvc8::string message = gpg::STR_Printf(
+    const fa::string message = gpg::STR_Printf(
       "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
       "instead",
       expected ? expected : "Sim",
@@ -82,7 +87,11 @@ namespace
     throw gpg::SerializationError(message.c_str());
   }
 
-  void WritePointerSim(gpg::WriteArchive* const archive, Sim* const sim, const gpg::RRef& ownerRef)
+  void WritePointerSim(
+    gpg::WriteArchive* const archive,
+    Sim* const sim,
+    const gpg::RRef& ownerRef
+  )
   {
     const gpg::RRef objectRef = MakeSimRef(sim);
     gpg::WriteRawPointer(archive, objectRef, gpg::TrackedPointerState::Unowned, ownerRef);
@@ -109,7 +118,9 @@ namespace
   };
   constexpr const char* kPickBestTravelFormationIndexName = "PickBestTravelFormationIndex";
 
-  [[nodiscard]] int ToFormationBucketIndex(const EFormationType type)
+  [[nodiscard]] int ToFormationBucketIndex(
+    const EFormationType type
+  )
   {
     const int bucket = static_cast<int>(type);
     if (bucket < 0 || bucket >= kFormationBucketCount) {
@@ -117,39 +128,6 @@ namespace
     }
     return bucket;
   }
-
-  /**
-   * Orphan: no caller found anywhere in src, and this function has no
-   * `Address:` citation of its own (no evidence it corresponds to a distinct
-   * compiled function in the binary). The six real, address-cited
-   * `FORMATION_*` entry points below (`FORMATION_GetNumScripts`,
-   * `FORMATION_GetScriptName`, `FORMATION_GetScriptIndex`,
-   * `FORMATION_PickTravelFormation`, `FORMATION_PickBestFormation`,
-   * `FORMATION_RunScript`) each independently import `/lua/formations.lua`
-   * and resolve a bucket/table, but none matches this function's exact
-   * shape: they use `module.GetByName(...)`/`SCR_Import`, not
-   * `SCR_GetLuaTableField`, and each has its own distinct warning-message
-   * behavior on failure (`ResolveFormationBucket` fails silently). Redirecting
-   * any of them to call this instead would risk changing that
-   * binary-observed behavior without evidence, so none were touched.
-   */
-  [[maybe_unused]] [[nodiscard]] LuaPlus::LuaObject ResolveFormationBucket(LuaPlus::LuaState* state, const EFormationType formationType)
-  {
-    LuaPlus::LuaObject module = SCR_ImportLuaModule(state, kFormationModulePath);
-    if (!module || !module.IsTable()) {
-      return {};
-    }
-
-    const char* const bucketName = kFormationBuckets[ToFormationBucketIndex(formationType)];
-    LuaPlus::LuaObject bucket = SCR_GetLuaTableField(state, module, bucketName);
-    if (!bucket.IsTable()) {
-      return {};
-    }
-
-    return bucket;
-  }
-
-
 
   /**
    * Address: 0x0062EE40 (FUN_0062EE40)
@@ -161,7 +139,9 @@ namespace
    * `GetBlueprint` on it without a null test; a null entry is counted as
    * non-air here rather than faulting.
    */
-  [[nodiscard]] int ResolveFormationBucketTypeFromUnitSet(const moho::EntitySetTemplate<moho::Unit>* const unitSet)
+  [[nodiscard]] int ResolveFormationBucketTypeFromUnitSet(
+    const moho::EntitySetTemplate<moho::Unit>* const unitSet
+  )
   {
     if (unitSet == nullptr) {
       return 0;
@@ -202,9 +182,12 @@ namespace
  * Loads `/lua/formations.lua`, resolves the selected formation bucket table,
  * and returns the number of scripts in that bucket.
  */
-unsigned int moho::FORMATION_GetNumScripts(LuaPlus::LuaState* const state, const EFormationType formationType)
+unsigned int moho::FORMATION_GetNumScripts(
+  LuaPlus::LuaState* const state,
+  const EFormationType formationType
+)
 {
-  msvc8::string bucketName{kFormationBuckets[ToFormationBucketIndex(formationType)]};
+  fa::string bucketName{kFormationBuckets[ToFormationBucketIndex(formationType)]};
 
   LuaPlus::LuaObject module = SCR_ImportLuaModule(state, kFormationModulePath);
   if (module.IsNil()) {
@@ -238,7 +221,7 @@ const char* moho::FORMATION_GetScriptName(
     return nullptr;
   }
 
-  msvc8::string bucketName{kFormationBuckets[ToFormationBucketIndex(formationType)]};
+  fa::string bucketName{kFormationBuckets[ToFormationBucketIndex(formationType)]};
 
   LuaPlus::LuaObject module = SCR_ImportLuaModule(state, kFormationModulePath);
   if (module.IsNil()) {
@@ -259,7 +242,8 @@ const char* moho::FORMATION_GetScriptName(
 }
 
 /**
- * Address: 0x00575DB0 (FUN_00575DB0, ?FORMATION_GetScriptIndex@Moho@@YAHPAVLuaState@LuaPlus@@VStrArg@gpg@@W4EFormationType@1@@Z)
+ * Address: 0x00575DB0 (FUN_00575DB0,
+ * ?FORMATION_GetScriptIndex@Moho@@YAHPAVLuaState@LuaPlus@@VStrArg@gpg@@W4EFormationType@1@@Z)
  *
  * What it does:
  * Loads `/lua/formations.lua`, resolves the selected formation bucket table,
@@ -272,7 +256,7 @@ int moho::FORMATION_GetScriptIndex(
   const EFormationType formationType
 )
 {
-  msvc8::string bucketName{kFormationBuckets[ToFormationBucketIndex(formationType)]};
+  fa::string bucketName{kFormationBuckets[ToFormationBucketIndex(formationType)]};
 
   LuaPlus::LuaObject module = SCR_ImportLuaModule(state, kFormationModulePath);
   if (module.IsNil()) {
@@ -303,7 +287,8 @@ int moho::FORMATION_GetScriptIndex(
 }
 
 /**
- * Address: 0x00576010 (FUN_00576010, ?FORMATION_PickTravelFormation@Moho@@YAHPAVLuaState@LuaPlus@@W4EFormationType@1@M@Z)
+ * Address: 0x00576010 (FUN_00576010,
+ * ?FORMATION_PickTravelFormation@Moho@@YAHPAVLuaState@LuaPlus@@W4EFormationType@1@M@Z)
  *
  * IDA signature:
  * int __usercall Moho::FORMATION_PickTravelFormation@<eax>(
@@ -552,8 +537,7 @@ CAiFormationDBImpl::CAiFormationDBImpl() noexcept
   : IAiFormationDB()
   , mSim(nullptr)
   , mFormInstances()
-{
-}
+{}
 
 /**
  * Address: 0x0059BFE0 (FUN_0059BFE0, non-deleting dtor body)
@@ -573,7 +557,9 @@ CAiFormationDBImpl::~CAiFormationDBImpl()
  * What it does:
  * Reads serialized formation DB members from archive lanes.
  */
-void CAiFormationDBImpl::MemberDeserialize(gpg::ReadArchive* const archive)
+void CAiFormationDBImpl::MemberDeserialize(
+  gpg::ReadArchive* const archive
+)
 {
   gpg::RRef owner{};
   mSim = ReadPointerSim(archive, owner);
@@ -589,7 +575,9 @@ void CAiFormationDBImpl::MemberDeserialize(gpg::ReadArchive* const archive)
  * What it does:
  * Writes serialized formation DB members to archive lanes.
  */
-void CAiFormationDBImpl::MemberSerialize(gpg::WriteArchive* const archive) const
+void CAiFormationDBImpl::MemberSerialize(
+  gpg::WriteArchive* const archive
+) const
 {
   gpg::RRef owner{};
   WritePointerSim(archive, mSim, owner);
@@ -597,38 +585,6 @@ void CAiFormationDBImpl::MemberSerialize(gpg::WriteArchive* const archive) const
   gpg::RType* const vectorType = gpg::RTypeOf<gpg::fastvector<IFormationInstance*>>();
   gpg::RRef vectorOwner{};
   archive->Write(vectorType, &mFormInstances, vectorOwner);
-}
-
-/**
- * Address: 0x0059DBF0 (FUN_0059DBF0)
- *
- * What it does:
- * Serializer bridge thunk that forwards to `CAiFormationDBImpl::MemberSerialize`.
- */
-[[maybe_unused]] void CAiFormationDbMemberSerializeBridgeA(
-  const CAiFormationDBImpl* const formationDb,
-  gpg::WriteArchive* const archive
-)
-{
-  if (formationDb != nullptr) {
-    formationDb->MemberSerialize(archive);
-  }
-}
-
-/**
- * Address: 0x0059E030 (FUN_0059E030)
- *
- * What it does:
- * Serializer bridge thunk that forwards to `CAiFormationDBImpl::MemberSerialize`.
- */
-[[maybe_unused]] void CAiFormationDbMemberSerializeBridgeB(
-  const CAiFormationDBImpl* const formationDb,
-  gpg::WriteArchive* const archive
-)
-{
-  if (formationDb != nullptr) {
-    formationDb->MemberSerialize(archive);
-  }
 }
 
 /**
@@ -644,7 +600,9 @@ void CAiFormationDBImpl::Update()
 /**
  * Address: 0x0059C060 (FUN_0059C060)
  */
-void CAiFormationDBImpl::RemoveFormation(CAiFormationInstance* const formation)
+void CAiFormationDBImpl::RemoveFormation(
+  CAiFormationInstance* const formation
+)
 {
   CAiFormationInstance** begin = mFormInstances.begin();
   CAiFormationInstance** end = mFormInstances.end();
@@ -666,35 +624,33 @@ void CAiFormationDBImpl::RemoveFormation(CAiFormationInstance* const formation)
 /**
  * Address: 0x0059C0C0 (FUN_0059C0C0)
  */
-const char* CAiFormationDBImpl::GetScriptName(const int scriptIndex, const EntitySetTemplate<Unit>* const unitSet)
+const char* CAiFormationDBImpl::GetScriptName(
+  const int scriptIndex,
+  const EntitySetTemplate<Unit>* const unitSet
+)
 {
   if (!mSim) {
     return nullptr;
   }
 
   const int resolvedBucket = ResolveFormationBucketTypeFromUnitSet(unitSet);
-  return FORMATION_GetScriptName(
-    mSim->GetLuaState(),
-    scriptIndex,
-    static_cast<EFormationType>(resolvedBucket)
-  );
+  return FORMATION_GetScriptName(mSim->GetLuaState(), scriptIndex, static_cast<EFormationType>(resolvedBucket));
 }
 
 /**
  * Address: 0x0059C0F0 (FUN_0059C0F0)
  */
-int CAiFormationDBImpl::GetScriptIndex(const gpg::StrArg scriptName, const EntitySetTemplate<Unit>* const unitSet)
+int CAiFormationDBImpl::GetScriptIndex(
+  const gpg::StrArg scriptName,
+  const EntitySetTemplate<Unit>* const unitSet
+)
 {
   if (!mSim) {
     return 0;
   }
 
   const int resolvedBucket = ResolveFormationBucketTypeFromUnitSet(unitSet);
-  return FORMATION_GetScriptIndex(
-    mSim->GetLuaState(),
-    scriptName,
-    static_cast<EFormationType>(resolvedBucket)
-  );
+  return FORMATION_GetScriptIndex(mSim->GetLuaState(), scriptName, static_cast<EFormationType>(resolvedBucket));
 }
 
 /**

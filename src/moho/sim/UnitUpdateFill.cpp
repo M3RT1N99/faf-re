@@ -9,6 +9,14 @@
 
 namespace moho
 {
+  bool sim_SyncFillsOneDispatch = true;
+  TConVar<bool> gTConVar_sim_SyncFillsOneDispatch(
+    "sim_SyncFillsOneDispatch",
+    "With sim_ParallelSync, unit-update and entity-update record copies go to the workers in one "
+    "dispatch instead of one after the other (same packet).",
+    &sim_SyncFillsOneDispatch
+  );
+
   namespace
   {
     /// One deferred record: where it is, and what completes it.
@@ -17,7 +25,7 @@ namespace moho
       std::size_t mIndex;                  // into SSyncData::mUnitUpdates
       const SSTIUnitVariableData* mSource; // the payload passed to the queue call
       SUnitUpdateOverrides mOverrides;
-      bool mHeapDeferred;                  // sim_ParallelSyncHeap: the allocating half too
+      bool mHeapDeferred; // sim_ParallelSyncHeap: the allocating half too
     };
 
     // Static, so recording a fill never allocates (that would shift the sim heap). A packet with
@@ -33,7 +41,7 @@ namespace moho
       std::size_t mIndex;                    // into SSyncData::mEntityUpdates
       const SSTIEntityVariableData* mSource; // the payload passed to the queue call
       std::uint8_t mRequestRefreshUI;        // the source's value when queued
-      bool mHasScrollOverride;              // endpoints captured in the queued record
+      bool mHasScrollOverride;               // endpoints captured in the queued record
       const SPerArmyReconInfo* mReconOverrides;
     };
     SEntityUpdateFill sEntityUpdateFills[kMaxUnitUpdateFills];
@@ -45,10 +53,14 @@ namespace moho
     constexpr std::size_t kUnitUpdateFillGrain = 128;
   } // namespace
 
-  CUnitUpdateFills::CUnitUpdateFills(SSyncData* const syncData)
+  CUnitUpdateFills::CUnitUpdateFills(
+    SSyncData* const syncData
+  )
   {
-    if (syncData == nullptr || sActiveUnitUpdateFills != nullptr || !sim_ParallelSync ||
-        !CSimWorkerPool::ParallelEnabled()) {
+    if (
+      syncData == nullptr || sActiveUnitUpdateFills != nullptr || !sim_ParallelSync ||
+      !CSimWorkerPool::ParallelEnabled()
+    ) {
       return;
     }
     mSyncData = syncData;
@@ -80,21 +92,45 @@ namespace moho
     sActiveUnitUpdateFills = nullptr;
     sActiveSyncData = nullptr;
     const std::size_t count = sUnitUpdateFillCount;
-    CSimWorkerPool::Get().ParallelFor(
-      count, kUnitUpdateFillGrain, [this](const std::size_t begin, const std::size_t end) { FillRange(begin, end); }
-    );
     const std::size_t entityCount = sEntityUpdateFillCount;
+    if (sim_SyncFillsOneDispatch) {
+      // Unit fills first, then entity fills, as one index range. They write different record
+      // vectors and only read their sources, so a chunk may hold the end of one and the start of
+      // the other.
+      CSimWorkerPool::Get().ParallelFor(
+        count + entityCount, kUnitUpdateFillGrain, [this, count](const std::size_t begin, const std::size_t end) {
+        if (begin < count) {
+          FillRange(begin, end < count ? end : count);
+        }
+        if (end > count) {
+          FillEntityRange(begin > count ? begin - count : 0u, end - count);
+        }
+      }
+      );
+      sUnitUpdateFillCount = 0;
+      sEntityUpdateFillCount = 0;
+      mSyncData = nullptr;
+      return;
+    }
+    CSimWorkerPool::Get().ParallelFor(
+      count, kUnitUpdateFillGrain, [this](const std::size_t begin, const std::size_t end) {
+      FillRange(begin, end);
+    }
+    );
     CSimWorkerPool::Get().ParallelFor(
       entityCount, kUnitUpdateFillGrain, [this](const std::size_t begin, const std::size_t end) {
-        FillEntityRange(begin, end);
-      }
+      FillEntityRange(begin, end);
+    }
     );
     sUnitUpdateFillCount = 0;
     sEntityUpdateFillCount = 0;
     mSyncData = nullptr;
   }
 
-  void CUnitUpdateFills::FillRange(const std::size_t begin, const std::size_t end) const
+  void CUnitUpdateFills::FillRange(
+    const std::size_t begin,
+    const std::size_t end
+  ) const
   {
     for (std::size_t i = begin; i < end; ++i) {
       const SUnitUpdateFill& fill = sUnitUpdateFills[i];
@@ -141,7 +177,10 @@ namespace moho
     return &entry;
   }
 
-  void CUnitUpdateFills::FillEntityRange(const std::size_t begin, const std::size_t end) const
+  void CUnitUpdateFills::FillEntityRange(
+    const std::size_t begin,
+    const std::size_t end
+  ) const
   {
     for (std::size_t i = begin; i < end; ++i) {
       const SEntityUpdateFill& fill = sEntityUpdateFills[i];
@@ -170,11 +209,15 @@ namespace moho
   }
 
   SEntityVariableUpdateEntry* QueueEntityVariableUpdateDeferred(
-    SSyncData* const syncData, const EntId entityId, const SSTIEntityVariableData& variableData
+    SSyncData* const syncData,
+    const EntId entityId,
+    const SSTIEntityVariableData& variableData
   )
   {
-    if (!sim_ParallelEntitySync || syncData == nullptr || syncData != sActiveSyncData ||
-        sEntityUpdateFillCount == kMaxUnitUpdateFills) {
+    if (
+      !sim_ParallelEntitySync || syncData == nullptr || syncData != sActiveSyncData ||
+      sEntityUpdateFillCount == kMaxUnitUpdateFills
+    ) {
       return nullptr;
     }
 
@@ -189,7 +232,10 @@ namespace moho
     return &entry;
   }
 
-  void OverrideEntityUpdateScroll(SSyncData* const syncData, const SSTIEntityVariableData& source)
+  void OverrideEntityUpdateScroll(
+    SSyncData* const syncData,
+    const SSTIEntityVariableData& source
+  )
   {
     if (syncData == nullptr || syncData->mEntityUpdates.empty()) {
       return;
@@ -205,7 +251,10 @@ namespace moho
     }
   }
 
-  bool OverrideDeferredEntityUpdateFromRecon(SSyncData* const syncData, const SPerArmyReconInfo* const reconInfo)
+  bool OverrideDeferredEntityUpdateFromRecon(
+    SSyncData* const syncData,
+    const SPerArmyReconInfo* const reconInfo
+  )
   {
     if (syncData == nullptr || syncData != sActiveSyncData || sEntityUpdateFillCount == 0u) {
       return false;
@@ -217,6 +266,13 @@ namespace moho
     last.mReconOverrides = reconInfo;
     return true;
   }
+
+  bool sim_SyncInPlace = true;
+  TConVar<bool> gTConVar_sim_SyncInPlace(
+    "sim_SyncInPlace",
+    "The serial unit-update queue builds each record in place, not from a default copy (same packet).",
+    &sim_SyncInPlace
+  );
 
   bool sim_ParallelSyncHeap = true;
   TConVar<bool> gTConVar_sim_ParallelSyncHeap(

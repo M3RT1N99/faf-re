@@ -30,7 +30,7 @@ namespace
     ~CAiBuilderRebuildMapTypeInfo() override = default;
 
     [[nodiscard]] const char* GetName() const override;
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     void Init() override;
   };
 
@@ -61,12 +61,16 @@ namespace
    * Registers `IAiBuilder` as one reflected base lane for `CAiBuilderImpl` at
    * offset `+0x00`.
    */
-  void AddIAiBuilderBaseToCAiBuilderImplType(gpg::RType* const typeInfo)
+  void AddIAiBuilderBaseToCAiBuilderImplType(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<IAiBuilder>(typeInfo);
   }
 
-  [[nodiscard]] gpg::RRef MakeBlueprintObjectRef(const RUnitBlueprint* const blueprint)
+  [[nodiscard]] gpg::RRef MakeBlueprintObjectRef(
+    const RUnitBlueprint* const blueprint
+  )
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -86,16 +90,14 @@ namespace
     std::int32_t baseOffset = 0;
     const bool derived =
       dynamicType != nullptr && out.mType != nullptr && dynamicType->IsDerivedFrom(out.mType, &baseOffset);
-    out.mObj = derived
-      ? reinterpret_cast<void*>(
-          reinterpret_cast<std::uintptr_t>(mutableBlueprint) - static_cast<std::uintptr_t>(baseOffset)
-        )
-      : static_cast<void*>(mutableBlueprint);
+    out.mObj = derived ? gpg::CompleteObject(mutableBlueprint, baseOffset) : static_cast<void*>(mutableBlueprint);
     out.mType = dynamicType ? dynamicType : out.mType;
     return out;
   }
 
-  [[nodiscard]] const RUnitBlueprint* DecodeTrackedBlueprintPointer(const gpg::TrackedPointerInfo& tracked)
+  [[nodiscard]] const RUnitBlueprint* DecodeTrackedBlueprintPointer(
+    const gpg::TrackedPointerInfo& tracked
+  )
   {
     if (!tracked.object) {
       return nullptr;
@@ -117,7 +119,7 @@ namespace
 
     const char* const expected = expectedType->GetName();
     const char* const actual = source.GetTypeName();
-    const msvc8::string message = gpg::STR_Printf(
+    const fa::string message = gpg::STR_Printf(
       "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
       "instead",
       expected ? expected : "RUnitBlueprint",
@@ -135,7 +137,7 @@ namespace
    */
   void DeserializeBuilderRebuildMap(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
@@ -144,9 +146,7 @@ namespace
       return;
     }
 
-    auto* const map = reinterpret_cast<SBuilderRebuildMap*>(
-      objectPtr
-    );
+    auto* const map = static_cast<SBuilderRebuildMap*>(objectPtr);
 
     unsigned int count = 0u;
     archive->ReadUInt(&count);
@@ -170,7 +170,7 @@ namespace
    */
   void SerializeBuilderRebuildMap(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const ownerRef
   )
@@ -179,9 +179,7 @@ namespace
       return;
     }
 
-    const auto* const map = reinterpret_cast<const SBuilderRebuildMap*>(
-      objectPtr
-    );
+    const auto* const map = static_cast<const SBuilderRebuildMap*>(objectPtr);
     const unsigned int count = map ? static_cast<unsigned int>(map->size()) : 0u;
     archive->WriteUInt(count);
 
@@ -244,7 +242,7 @@ void CAiBuilderImplTypeInfo::Init()
  */
 const char* CAiBuilderRebuildMapTypeInfo::GetName() const
 {
-  static const msvc8::string sName =
+  static const fa::string sName =
     gpg::STR_Printf("map<%s,%s>", gpg::RTypeOf<unsigned int>()->GetName(), RUnitBlueprint::GetPointerType()->GetName());
   return sName.c_str();
 }
@@ -252,9 +250,11 @@ const char* CAiBuilderRebuildMapTypeInfo::GetName() const
 /**
  * Address: 0x005A0590 (FUN_005A0590, gpg::RMapType_uint_RUnitBlueprintP::GetLexical)
  */
-msvc8::string CAiBuilderRebuildMapTypeInfo::GetLexical(const gpg::RRef& ref) const
+fa::string CAiBuilderRebuildMapTypeInfo::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string lexical = gpg::RType::GetLexical(ref);
+  const fa::string lexical = gpg::RType::GetLexical(ref);
   const auto* const map = static_cast<const SBuilderRebuildMap*>(ref.mObj);
   const unsigned int count = map ? static_cast<unsigned int>(map->size()) : 0u;
   return gpg::STR_Printf("%s, size=%d", lexical.c_str(), static_cast<int>(count));
@@ -324,7 +324,16 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CAiBuilderImplTypeInfo_a07870, moho::register_CAiBuilderImplTypeInfo)
-GPG_PREREGISTER_INIT(register_CAiBuilderRebuildMapTypeInfo_a07870, moho::register_CAiBuilderRebuildMapTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CAiBuilderImplTypeInfo_a07870,
+  moho::register_CAiBuilderImplTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_CAiBuilderRebuildMapTypeInfo_a07870,
+  moho::register_CAiBuilderRebuildMapTypeInfo
+)
 
-GPG_PREREGISTER_INIT(preregister_CAiBuilderRebuildMapTypeInfo_a07870, moho::preregister_CAiBuilderRebuildMapTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_CAiBuilderRebuildMapTypeInfo_a07870,
+  moho::preregister_CAiBuilderRebuildMapTypeInfo
+)

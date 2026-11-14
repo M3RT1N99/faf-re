@@ -8,22 +8,22 @@ namespace LuaPlus
 {
   class LuaObject;
   class LuaState;
-}
+} // namespace LuaPlus
 
 namespace moho
 {
   class CScrLuaInitForm;
 
   /**
-   * Address: 0x004D3110 (FUN_004D3110, ?SCR_FromString@Moho@@YA?AVLuaObject@LuaPlus@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PAVLuaState@3@@Z)
+   * Address: 0x004D3110 (FUN_004D3110,
+   * ?SCR_FromString@Moho@@YA?AVLuaObject@LuaPlus@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PAVLuaState@3@@Z)
    *
    * What it does:
    * Wraps a contiguous std::string payload in an in-memory MemBufferStream and
    * deserializes one tagged Lua value out of it through SCR_FromByteStream.
    * Returns the populated LuaObject by output parameter (RVO slot).
    */
-  LuaPlus::LuaObject* SCR_FromString(
-      LuaPlus::LuaObject* outObject, const msvc8::string& source, LuaPlus::LuaState* state);
+  LuaPlus::LuaObject* SCR_FromString(LuaPlus::LuaObject* outObject, const fa::string& source, LuaPlus::LuaState* state);
 
   /**
    * Address: 0x004D3D30 (FUN_004D3D30, Moho::GetEngineVersion)
@@ -31,7 +31,7 @@ namespace moho
    * What it does:
    * Builds the fixed engine version string used by Lua and console callbacks.
    */
-  [[nodiscard]] msvc8::string GetEngineVersion();
+  [[nodiscard]] fa::string GetEngineVersion();
 
   /**
    * Address: 0x004D3470 (FUN_004D3470, cfunc_STR_xtoi)

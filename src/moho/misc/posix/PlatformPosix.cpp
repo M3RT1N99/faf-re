@@ -5,7 +5,7 @@
 // Call stacks come from backtrace(3) and are symbolised with dladdr(3); a message box is a
 // line on stderr; the error-report attachments are kept as on Windows but nothing sends them.
 
-#if !defined(_WIN32)
+#if !FAFRE_PLATFORM_WINDOWS
 
 #include "moho/app/WinApp.h"
 
@@ -40,7 +40,9 @@ void moho::PLAT_Init() {}
 
 void moho::PLAT_Exit() {}
 
-void moho::PLAT_InitErrorReportOutputDir(const wchar_t* const outputDir)
+void moho::PLAT_InitErrorReportOutputDir(
+  const wchar_t* const outputDir
+)
 {
   const std::lock_guard<std::mutex> lock(gReportFilesLock);
   gReportOutputDir = outputDir != nullptr ? outputDir : L"";
@@ -49,7 +51,9 @@ void moho::PLAT_InitErrorReportOutputDir(const wchar_t* const outputDir)
   }
 }
 
-void moho::PLAT_RegisterFileForErrorReport(const wchar_t* const file)
+void moho::PLAT_RegisterFileForErrorReport(
+  const wchar_t* const file
+)
 {
   if (file == nullptr || file[0] == L'\0') {
     return;
@@ -69,7 +73,11 @@ std::wstring moho::PLAT_GetErrorReportOutputDir()
   return gReportOutputDir;
 }
 
-std::uint32_t moho::PLAT_GetCallStack(void* const contextRecord, const std::uint32_t maxFrames, std::uintptr_t* const outFrames)
+std::uint32_t moho::PLAT_GetCallStack(
+  void* const contextRecord,
+  const std::uint32_t maxFrames,
+  std::uintptr_t* const outFrames
+)
 {
   // Only the calling thread's own stack: a fault context's stack is the signal handler's.
   (void)contextRecord;
@@ -86,7 +94,10 @@ std::uint32_t moho::PLAT_GetCallStack(void* const contextRecord, const std::uint
   return written;
 }
 
-bool moho::PLAT_GetSymbolInfo(const std::uintptr_t address, SPlatSymbolInfo* const outInfo)
+bool moho::PLAT_GetSymbolInfo(
+  const std::uintptr_t address,
+  SPlatSymbolInfo* const outInfo
+)
 {
   if (outInfo == nullptr) {
     return false;
@@ -107,14 +118,20 @@ bool moho::PLAT_GetSymbolInfo(const std::uintptr_t address, SPlatSymbolInfo* con
   return true;
 }
 
-msvc8::string moho::SPlatSymbolInfo::FormatResolvedLine() const
+fa::string moho::SPlatSymbolInfo::FormatResolvedLine() const
 {
-  return gpg::STR_Printf("%s + %zu bytes (%s(%u) + %u bytes)", symbol.c_str(), symDis, filename.c_str(), lineNum, lineDis);
+  return gpg::STR_Printf(
+    "%s + %zu bytes (%s(%u) + %u bytes)", symbol.c_str(), symDis, filename.c_str(), lineNum, lineDis
+  );
 }
 
-msvc8::string moho::PLAT_FormatCallstack(std::int32_t firstFrame, const std::int32_t endFrame, const std::uintptr_t* const frames)
+fa::string moho::PLAT_FormatCallstack(
+  std::int32_t firstFrame,
+  const std::int32_t endFrame,
+  const std::uintptr_t* const frames
+)
 {
-  msvc8::string formatted;
+  fa::string formatted;
   formatted.assign_owned("");
   if (frames == nullptr || firstFrame >= endFrame) {
     return formatted;
@@ -130,7 +147,7 @@ msvc8::string moho::PLAT_FormatCallstack(std::int32_t firstFrame, const std::int
       assembled.append(symbolInfo.FormatResolvedLine().c_str());
       assembled.append("\r\n");
     } else {
-      const msvc8::string line =
+      const fa::string line =
         gpg::STR_Printf("\tUnknown symbol (address %p)\r\n", reinterpret_cast<const void*>(frames[frameIndex]));
       assembled.append(line.c_str());
     }
@@ -139,29 +156,17 @@ msvc8::string moho::PLAT_FormatCallstack(std::int32_t firstFrame, const std::int
   return formatted;
 }
 
-msvc8::string moho::PLAT_UnDecorateSymbolName(const char* const name, const bool stripLeadingUnderscore)
-{
-  (void)stripLeadingUnderscore;
-  msvc8::string result;
-  if (name == nullptr) {
-    result.assign_owned("");
-    return result;
-  }
-  int status = 0;
-  char* const demangled = abi::__cxa_demangle(name, nullptr, nullptr, &status);
-  result.assign_owned(status == 0 && demangled != nullptr ? demangled : name);
-  std::free(demangled);
-  return result;
-}
-
-msvc8::string moho::WIN_GetLastError()
+fa::string moho::WIN_GetLastError()
 {
   const DWORD errorCode = ::GetLastError();
   // The shim's error codes are Win32 numbers for the common cases and errno values otherwise.
   return gpg::STR_Printf("error %u (%s)", static_cast<unsigned>(errorCode), std::strerror(static_cast<int>(errorCode)));
 }
 
-void moho::WIN_OkBox(const gpg::StrArg caption, const gpg::StrArg text)
+void moho::WIN_OkBox(
+  const gpg::StrArg caption,
+  const gpg::StrArg text
+)
 {
   std::fprintf(stderr, "[%s] %s\n", caption != nullptr ? caption : "", text != nullptr ? text : "");
   std::fflush(stderr);

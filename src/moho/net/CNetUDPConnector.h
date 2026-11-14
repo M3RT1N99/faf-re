@@ -2,8 +2,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/recursive_mutex.h"
-#include "boost/weak_ptr.h"
+#include "legacy/thread/Mutex.h"
+#include <memory>
 #include "CNetUDPConnection.h"
 #include "Common.h"
 #include "gpg/core/time/Timer.h"
@@ -93,7 +93,7 @@ namespace moho
      * Initializes connector runtime state, starts worker `Entry` thread, and
      * registers NAT traversal callback with provider.
      */
-    CNetUDPConnector(SOCKET sock, boost::weak_ptr<INetNATTraversalProvider>& prov);
+    CNetUDPConnector(platform::net::Socket sock, std::weak_ptr<INetNATTraversalProvider>& prov);
 
     /**
      * In binary this does:
@@ -182,7 +182,7 @@ namespace moho
     void Pull() override;
 
     /**
-      * Alias of FUN_0048B7F0 (non-canonical helper lane).
+     * Alias of FUN_0048B7F0 (non-canonical helper lane).
      * Address: 0x0048B7F0 (FUN_0048B7F0, Moho::CNetUDPConnector::Push)
      * Slot: 9
      * Demangled: Moho::CNetUDPConnector::Push
@@ -324,7 +324,7 @@ namespace moho
     void Entry();
 
     /**
-      * Alias of FUN_0048AC40 (non-canonical helper lane).
+     * Alias of FUN_0048AC40 (non-canonical helper lane).
      */
     int32_t SendData();
 
@@ -340,10 +340,10 @@ namespace moho
     // +0x00  vptr(INetConnector)
     // +0x04  vptr(INetNATTraversalHandler)
 
-    boost::recursive_mutex lock_;
-    SOCKET socket_{INVALID_SOCKET};
+    fa::recursive_mutex lock_;
+    platform::net::Socket socket_{platform::net::kInvalidSocket};
     HANDLE event_{nullptr};
-    boost::weak_ptr<INetNATTraversalProvider> mNatTraversalProvider;
+    std::weak_ptr<INetNATTraversalProvider> mNatTraversalProvider;
     gpg::DList<CNetUDPConnection> mConnections;
     TDatList<SNetPacket, void> mPacketList;
     uint32_t mPacketPoolSize{0};
@@ -356,8 +356,8 @@ namespace moho
     bool mClosed{false};
     bool mIsPulling{false};
     // Outbound NAT traversal queue and inbound NAT traversal queue.
-    msvc8::deque<SReceivePacket> mOutboundPackets;
-    msvc8::deque<SReceivePacket> mInboundTraversalPackets;
+    fa::deque<SReceivePacket> mOutboundPackets;
+    fa::deque<SReceivePacket> mInboundTraversalPackets;
     // Optional externally provided wake event for select-style polling.
     HANDLE mSelectedEvent{nullptr};
     // Rolling send/recv stamp window for diagnostics/snapshot APIs.

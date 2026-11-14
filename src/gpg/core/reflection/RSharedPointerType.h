@@ -2,7 +2,7 @@
 
 #include <typeinfo>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/String.h"
 #include "gpg/core/reflection/Reflection.h"
 
@@ -55,7 +55,7 @@ namespace gpg
   template <class T>
   struct RSharedPointerType : RType, RIndexed
   {
-    using pointer_type = boost::shared_ptr<T>;
+    using pointer_type = std::shared_ptr<T>;
 
     RSharedPointerType()
     {
@@ -64,11 +64,15 @@ namespace gpg
 
     /**
      * What it does:
-     * `boost::shared_ptr<` + the pointee type's name + `>`, formatted once.
+     * `shared_ptr<` + the pointee type's name + `>`, formatted once: the type name saved games carry.
+     *
+     * Engine change (#422): retail named it `boost::shared_ptr<...>`, the library it used. Saves written by the
+     * retail game and by earlier builds carry that name, and `REF_FindTypeNamed` still resolves it
+     * (`REF_CurrentTypeName`), so they keep loading; saves written now don't load in those builds.
      */
     [[nodiscard]] const char* GetName() const override
     {
-      static const msvc8::string sName = STR_Printf("boost::shared_ptr<%s>", RTypeOf<T>()->GetName());
+      static const fa::string sName = STR_Printf("shared_ptr<%s>", RTypeOf<T>()->GetName());
       return sName.c_str();
     }
 
@@ -77,13 +81,15 @@ namespace gpg
      * `NULL` for an empty pointer, otherwise the pointee's lexical text in
      * brackets.
      */
-    [[nodiscard]] msvc8::string GetLexical(const RRef& ref) const override
+    [[nodiscard]] fa::string GetLexical(
+      const RRef& ref
+    ) const override
     {
       const pointer_type& pointer = *static_cast<const pointer_type*>(ref.mObj);
       if (!pointer) {
-        return msvc8::string("NULL");
+        return fa::string("NULL");
       }
-      const msvc8::string pointee = RTypeOf<T>()->GetLexical(MakeRRef(pointer.get()));
+      const fa::string pointee = RTypeOf<T>()->GetLexical(MakeRRef(pointer.get()));
       return STR_Printf("[%s]", pointee.c_str());
     }
 
@@ -106,7 +112,10 @@ namespace gpg
      * What it does:
      * The pointee as element 0; any other index trips the assert.
      */
-    [[nodiscard]] RRef SubscriptIndex(void* const obj, const int ind) const override
+    [[nodiscard]] RRef SubscriptIndex(
+      void* const obj,
+      const int ind
+    ) const override
     {
       if (ind != 0) {
         HandleAssertFailure("index == 0", 65, detail::kReflectSharedPtrHeaderPath);
@@ -118,7 +127,9 @@ namespace gpg
      * What it does:
      * One element while the pointer is set.
      */
-    [[nodiscard]] size_t GetCount(void* const obj) const override
+    [[nodiscard]] size_t GetCount(
+      void* const obj
+    ) const override
     {
       return static_cast<pointer_type*>(obj)->get() != nullptr ? 1u : 0u;
     }

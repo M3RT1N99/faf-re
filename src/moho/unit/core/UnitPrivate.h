@@ -85,7 +85,7 @@
 #include "moho/sim/CArmyStats.h"
 #include "moho/sim/CPlatoon.h"
 #include "moho/sim/CEconStorage.h"
-#include "moho/sim/CSimArmyEconomyInfo.h"
+#include "moho/sim/CEconomy.h"
 #include "moho/sim/CSimConVarInstanceBase.h"
 #include "moho/sim/COGrid.h"
 #include "moho/sim/CDebugCanvas.h"
@@ -117,7 +117,6 @@
 #include "moho/unit/core/UserUnit.h"
 
 #include "gpg/core/reflection/StaticInitPhase.h"
-
 
 using namespace moho;
 namespace moho
@@ -616,13 +615,13 @@ namespace moho
    * Resolves one unit stat path and returns the stat node as a Lua table.
    */
   int cfunc_UnitGetStatL(LuaPlus::LuaState* state);
-}
+} // namespace moho
 
 namespace
 {
   constexpr const char* kUnitOnAssignedFocusEntityScript = "OnAssignedFocusEntity";
 
-  [[nodiscard]] bool IsMeleeCandidateCellNavigable(
+  [[maybe_unused]] [[nodiscard]] bool IsMeleeCandidateCellNavigable(
     Unit& moveUnit,
     Unit* ignoreUnit,
     const SFootprint& moverFootprint,
@@ -631,8 +630,7 @@ namespace
     const STIMap& mapData,
     const SOCellPos& candidateCell
   );
-}
-
+} // namespace
 
 [[noreturn]] void EngineThrowContainerTooLong(const char* message);
 namespace moho
@@ -640,5 +638,4 @@ namespace moho
   extern bool sim_DeferBlipUnlinks;
   extern bool sim_ParallelBlipFlush;
   extern int sim_DeferBlipUnlinksTicks;
-}
-
+} // namespace moho

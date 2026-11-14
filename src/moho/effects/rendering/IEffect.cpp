@@ -49,11 +49,28 @@ namespace moho
      * caller-provided slot; returning it by value keeps that slot the
      * constructor's argument temporary, which is what 0x00658FE1 passes.
      */
-    [[nodiscard]] LuaPlus::LuaObject IEffectMetatable(LuaPlus::LuaState* const state)
+    [[nodiscard]] LuaPlus::LuaObject IEffectMetatable(
+      LuaPlus::LuaState* const state
+    )
     {
       LuaPlus::LuaObject metatable;
+      if (state == nullptr) {
+        return metatable; // a hosted effect (no sim): no script object (CScriptObject::CreateLuaObject makes none)
+      }
       (void)func_CreateLuaIEffect(&metatable, state);
       return metatable;
+    }
+
+    /**
+     * The sim's Lua state, which the binary reads without a check. Engine addition (server mode, plan WP9.3): a
+     * manager hosted outside a sim (CHostedEffectManager.h) has none.
+     */
+    [[nodiscard]] LuaPlus::LuaState* EffectLuaState(
+      const CEffectManagerImpl* const manager
+    )
+    {
+      Sim* const sim = manager->GetSim();
+      return sim != nullptr ? sim->mLuaState : nullptr;
     }
   } // namespace
 
@@ -66,9 +83,15 @@ namespace moho
    * for that sim's Lua state, and chains into `CScriptObject`. The binary
    * checks neither the manager nor the sim for null.
    */
-  IEffect::IEffect(CEffectManagerImpl* const manager, const int scriptObjectToken)
+  IEffect::IEffect(
+    CEffectManagerImpl* const manager,
+    const int scriptObjectToken
+  )
     : CScriptObject(
-        IEffectMetatable(manager->GetSim()->mLuaState), LuaPlus::LuaObject{}, LuaPlus::LuaObject{}, LuaPlus::LuaObject{}
+        IEffectMetatable(EffectLuaState(manager)),
+        LuaPlus::LuaObject{},
+        LuaPlus::LuaObject{},
+        LuaPlus::LuaObject{}
       )
     , mManager(manager)
     , mScriptObjectToken(scriptObjectToken)
@@ -100,10 +123,7 @@ namespace moho
    */
   gpg::RRef IEffect::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -123,13 +143,18 @@ namespace moho
   /**
    * Address: 0x00654270 (FUN_00654270, Moho::IEffect::OnInit)
    */
-  void IEffect::OnInit(const std::int32_t, const char*)
+  void IEffect::OnInit(
+    const std::int32_t,
+    const char*
+  )
   {}
 
   /**
    * Address: 0x00654280 (FUN_00654280, Moho::IEffect::GetStringParam)
    */
-  msvc8::string* IEffect::GetStringParam(const std::int32_t)
+  fa::string* IEffect::GetStringParam(
+    const std::int32_t
+  )
   {
     return nullptr;
   }
@@ -137,7 +162,10 @@ namespace moho
   /**
    * Address: 0x00654290 (FUN_00654290, Moho::IEffect::GetTextureParam)
    */
-  CParticleTexture** IEffect::GetTextureParam(CParticleTexture** const outTexture, const std::int32_t)
+  CParticleTexture** IEffect::GetTextureParam(
+    CParticleTexture** const outTexture,
+    const std::int32_t
+  )
   {
     *outTexture = nullptr;
     return outTexture;
@@ -146,7 +174,9 @@ namespace moho
   /**
    * Address: 0x006542A0 (FUN_006542A0, Moho::IEffect::GetFloatParam)
    */
-  float IEffect::GetFloatParam(const std::int32_t)
+  float IEffect::GetFloatParam(
+    const std::int32_t
+  )
   {
     return 0.0f;
   }
@@ -154,7 +184,10 @@ namespace moho
   /**
    * Address: 0x006542B0 (FUN_006542B0, Moho::IEffect::GetVectorParam)
    */
-  Wm3::Vector3f* IEffect::GetVectorParam(Wm3::Vector3f* const outValue, const std::int32_t)
+  Wm3::Vector3f* IEffect::GetVectorParam(
+    Wm3::Vector3f* const outValue,
+    const std::int32_t
+  )
   {
     *outValue = Wm3::Vector3f::Zero();
     return outValue;
@@ -163,7 +196,10 @@ namespace moho
   /**
    * Address: 0x006542E0 (FUN_006542E0, Moho::IEffect::GetQuatParam)
    */
-  Vector4f* IEffect::GetQuatParam(Vector4f* const outValue, const std::int32_t)
+  Vector4f* IEffect::GetQuatParam(
+    Vector4f* const outValue,
+    const std::int32_t
+  )
   {
     outValue->x = 0.0f;
     outValue->y = 0.0f;
@@ -175,7 +211,9 @@ namespace moho
   /**
    * Address: 0x00654350 (FUN_00654350, Moho::IEffect::GetCurveParam)
    */
-  SEfxCurve* IEffect::GetCurveParam(const std::int32_t)
+  SEfxCurve* IEffect::GetCurveParam(
+    const std::int32_t
+  )
   {
     return nullptr;
   }
@@ -183,37 +221,55 @@ namespace moho
   /**
    * Address: 0x00654370 (FUN_00654370, Moho::IEffect::SetVectorParam)
    */
-  void IEffect::SetVectorParam(const std::int32_t, const Wm3::Vector3f*)
+  void IEffect::SetVectorParam(
+    const std::int32_t,
+    const Wm3::Vector3f*
+  )
   {}
 
   /**
    * Address: 0x00654360 (FUN_00654360, Moho::IEffect::SetFloatParam)
    */
-  void IEffect::SetFloatParam(const std::int32_t, const float)
+  void IEffect::SetFloatParam(
+    const std::int32_t,
+    const float
+  )
   {}
 
   /**
    * Address: 0x00654380 (FUN_00654380, Moho::IEffect::SetNParam)
    */
-  void IEffect::SetNParam(const std::int32_t, const float*, const std::int32_t)
+  void IEffect::SetNParam(
+    const std::int32_t,
+    const float*,
+    const std::int32_t
+  )
   {}
 
   /**
    * Address: 0x00654390 (FUN_00654390, Moho::IEffect::SetCurveParam)
    */
-  void IEffect::SetCurveParam(const std::int32_t, const SEfxCurve*)
+  void IEffect::SetCurveParam(
+    const std::int32_t,
+    const SEfxCurve*
+  )
   {}
 
   /**
    * Address: 0x006543A0 (FUN_006543A0, Moho::IEffect::SetEntity)
    */
-  void IEffect::SetEntity(Entity*)
+  void IEffect::SetEntity(
+    Entity*
+  )
   {}
 
   /**
    * Address: 0x006543B0 (FUN_006543B0, Moho::IEffect::SetBone)
    */
-  void IEffect::SetBone(Entity*, const std::int32_t)
+  void IEffect::SetBone(
+    Entity*,
+    const std::int32_t
+  )
   {}
 
   /**
@@ -223,6 +279,5 @@ namespace moho
    * Nothing. `CEffectImpl` inherits this slot unchanged: its vtable holds the
    * same 0x006543C0.
    */
-  void IEffect::OnTick()
-  {}
+  void IEffect::OnTick() {}
 } // namespace moho

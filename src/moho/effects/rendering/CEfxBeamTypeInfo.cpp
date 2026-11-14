@@ -22,7 +22,9 @@ namespace
     return &sInstance;
   }
 
-  [[nodiscard]] gpg::RRef MakeCEfxBeamRef(moho::CEfxBeam* const object)
+  [[nodiscard]] gpg::RRef MakeCEfxBeamRef(
+    moho::CEfxBeam* const object
+  )
   {
     gpg::RRef out{};
     out.mObj = object;
@@ -63,11 +65,7 @@ namespace moho
   {
     size_ = sizeof(CEfxBeam);
     (void)gpg::BindRTypeLifecycleCallbacks(
-      this,
-      &CEfxBeamTypeInfo::NewRef,
-      &CEfxBeamTypeInfo::CtrRef,
-      &CEfxBeamTypeInfo::Delete,
-      &CEfxBeamTypeInfo::Destruct
+      this, &CEfxBeamTypeInfo::NewRef, &CEfxBeamTypeInfo::CtrRef, &CEfxBeamTypeInfo::Delete, &CEfxBeamTypeInfo::Destruct
     );
     gpg::RType::Init();
     AddBase_CEffectImpl(this);
@@ -85,19 +83,20 @@ namespace moho
   /**
    * Address: 0x006583C0 (FUN_006583C0, Moho::CEfxBeamTypeInfo::CtrRef)
    */
-  gpg::RRef CEfxBeamTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CEfxBeamTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<CEfxBeam*>(objectStorage);
-    if (object) {
-      new (object) CEfxBeam();
-    }
+    auto* const object = gpg::ConstructInStorage<CEfxBeam>(objectStorage);
     return MakeCEfxBeamRef(object);
   }
 
   /**
    * Address: 0x006583A0 (FUN_006583A0, Moho::CEfxBeamTypeInfo::Delete)
    */
-  void CEfxBeamTypeInfo::Delete(void* const objectStorage)
+  void CEfxBeamTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<CEfxBeam*>(objectStorage);
   }
@@ -105,27 +104,21 @@ namespace moho
   /**
    * Address: 0x00658430 (FUN_00658430, Moho::CEfxBeamTypeInfo::Destruct)
    */
-  void CEfxBeamTypeInfo::Destruct(void* const objectStorage)
+  void CEfxBeamTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<CEfxBeam*>(objectStorage);
-    if (object) {
-      object->~CEfxBeam();
-    }
+    gpg::DestructInStorage<CEfxBeam>(objectStorage);
   }
 
   /**
    * Address: 0x00658570 (FUN_00658570, Moho::CEfxBeamTypeInfo::AddBase_CEffectImpl)
    */
-  void CEfxBeamTypeInfo::AddBase_CEffectImpl(gpg::RType* const typeInfo)
+  void CEfxBeamTypeInfo::AddBase_CEffectImpl(
+    gpg::RType* const typeInfo
+  )
   {
-    gpg::RType* const baseType = CEffectImpl::StaticGetClass();
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, CEffectImpl::StaticGetClass());
   }
 
   /**
@@ -160,4 +153,7 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CEfxBeamTypeInfo_00_20cb21, moho::register_CEfxBeamTypeInfo_00)
+GPG_PREREGISTER_INIT(
+  register_CEfxBeamTypeInfo_00_20cb21,
+  moho::register_CEfxBeamTypeInfo_00
+)

@@ -3,8 +3,6 @@
 #include <cstring>
 #include <new>
 
-#include <boost/detail/sp_counted_impl.hpp>
-
 #include "CAniDefaultSkel.h"
 #include "gpg/core/containers/String.h"
 #include "gpg/core/utils/Global.h"
@@ -22,7 +20,7 @@ namespace
   /**
    * Ordering of `CAniSkel::mBoneNameToIndex`: by bone name (`strcmp`), then
    * by bone index. Stateless, so the binary inlines it at every comparison
-   * of the `msvc8::sort` instantiation in `CAniSkel::CAniSkel` and pushes a
+   * of the `fa::sort` instantiation in `CAniSkel::CAniSkel` and pushes a
    * dead null predicate argument through the sort family.
    */
   [[nodiscard]] bool BoneNameIndexLess(
@@ -51,42 +49,65 @@ namespace
    */
   struct SScmBoneRecord
   {
-    float mBasisRow0[4];        // +0x00 (row 0: x,y,z used, w padding)
-    float mBasisRow1[4];        // +0x10 (row 1)
-    float mBasisRow2[4];        // +0x20 (row 2)
-    float mRestPositionX;       // +0x30
-    float mRestPositionY;       // +0x34
-    float mRestPositionZ;       // +0x38
-    float mPad3C;               // +0x3C
-    float mLocalPositionX;      // +0x40 (bone position in parent space)
-    float mLocalPositionY;      // +0x44
-    float mLocalPositionZ;      // +0x48
-    float mLocalRotationW;      // +0x4C (bone rotation in parent space, w,x,y,z)
-    float mLocalRotationX;      // +0x50
-    float mLocalRotationY;      // +0x54
-    float mLocalRotationZ;      // +0x58
-    std::uint8_t mUnknown5C[4]; // +0x5C
+    float mBasisRow0[4];           // +0x00 (row 0: x,y,z used, w padding)
+    float mBasisRow1[4];           // +0x10 (row 1)
+    float mBasisRow2[4];           // +0x20 (row 2)
+    float mRestPositionX;          // +0x30
+    float mRestPositionY;          // +0x34
+    float mRestPositionZ;          // +0x38
+    float mPad3C;                  // +0x3C
+    float mLocalPositionX;         // +0x40 (bone position in parent space)
+    float mLocalPositionY;         // +0x44
+    float mLocalPositionZ;         // +0x48
+    float mLocalRotationW;         // +0x4C (bone rotation in parent space, w,x,y,z)
+    float mLocalRotationX;         // +0x50
+    float mLocalRotationY;         // +0x54
+    float mLocalRotationZ;         // +0x58
+    std::uint8_t mUnknown5C[4];    // +0x5C
     std::int32_t mParentBoneIndex; // +0x60
-    std::uint8_t mUnknown64[8]; // +0x64
+    std::uint8_t mUnknown64[8];    // +0x64
   };
 
   static_assert(offsetof(SScmBoneRecord, mBasisRow0) == 0x00, "SScmBoneRecord::mBasisRow0 offset must be 0x00");
   static_assert(offsetof(SScmBoneRecord, mBasisRow1) == 0x10, "SScmBoneRecord::mBasisRow1 offset must be 0x10");
   static_assert(offsetof(SScmBoneRecord, mBasisRow2) == 0x20, "SScmBoneRecord::mBasisRow2 offset must be 0x20");
   static_assert(offsetof(SScmBoneRecord, mRestPositionX) == 0x30, "SScmBoneRecord::mRestPositionX offset must be 0x30");
-  static_assert(offsetof(SScmBoneRecord, mLocalPositionX) == 0x40, "SScmBoneRecord::mLocalPositionX offset must be 0x40");
-  static_assert(offsetof(SScmBoneRecord, mLocalPositionY) == 0x44, "SScmBoneRecord::mLocalPositionY offset must be 0x44");
-  static_assert(offsetof(SScmBoneRecord, mLocalPositionZ) == 0x48, "SScmBoneRecord::mLocalPositionZ offset must be 0x48");
-  static_assert(offsetof(SScmBoneRecord, mLocalRotationW) == 0x4C, "SScmBoneRecord::mLocalRotationW offset must be 0x4C");
-  static_assert(offsetof(SScmBoneRecord, mLocalRotationZ) == 0x58, "SScmBoneRecord::mLocalRotationZ offset must be 0x58");
-  static_assert(offsetof(SScmBoneRecord, mParentBoneIndex) == 0x60, "SScmBoneRecord::mParentBoneIndex offset must be 0x60");
+  static_assert(
+    offsetof(SScmBoneRecord, mLocalPositionX) == 0x40,
+    "SScmBoneRecord::mLocalPositionX offset must be 0x40"
+  );
+  static_assert(
+    offsetof(SScmBoneRecord, mLocalPositionY) == 0x44,
+    "SScmBoneRecord::mLocalPositionY offset must be 0x44"
+  );
+  static_assert(
+    offsetof(SScmBoneRecord, mLocalPositionZ) == 0x48,
+    "SScmBoneRecord::mLocalPositionZ offset must be 0x48"
+  );
+  static_assert(
+    offsetof(SScmBoneRecord, mLocalRotationW) == 0x4C,
+    "SScmBoneRecord::mLocalRotationW offset must be 0x4C"
+  );
+  static_assert(
+    offsetof(SScmBoneRecord, mLocalRotationZ) == 0x58,
+    "SScmBoneRecord::mLocalRotationZ offset must be 0x58"
+  );
+  static_assert(
+    offsetof(SScmBoneRecord, mParentBoneIndex) == 0x60,
+    "SScmBoneRecord::mParentBoneIndex offset must be 0x60"
+  );
   static_assert(sizeof(SScmBoneRecord) == 0x6C, "SScmBoneRecord size must be 0x6C");
 
-  void DefaultAniSkelNoDelete(void*) noexcept {}
+  void DefaultAniSkelNoDelete(
+    void*
+  ) noexcept
+  {}
 
   struct NoDeleteAniSkel
   {
-    void operator()(const moho::CAniSkel* const skeleton) const noexcept
+    void operator()(
+      const moho::CAniSkel* const skeleton
+    ) const noexcept
     {
       DefaultAniSkelNoDelete(const_cast<moho::CAniSkel*>(skeleton));
     }
@@ -105,20 +126,18 @@ namespace
    * Builds the shared-pointer control lane for the process-global default
    * animation skeleton and binds the no-delete deleter.
    */
-  boost::shared_ptr<const moho::CAniSkel>* BuildDefaultAniSkelSharedPtr(
-    boost::shared_ptr<const moho::CAniSkel>* const outShared
+  std::shared_ptr<const moho::CAniSkel>* BuildDefaultAniSkelSharedPtr(
+    std::shared_ptr<const moho::CAniSkel>* const outShared
   )
   {
     if (outShared != nullptr) {
-      *outShared = boost::shared_ptr<const moho::CAniSkel>(
-        static_cast<const moho::CAniSkel*>(&DefaultAniSkelSingleton()),
-        NoDeleteAniSkel{}
+      *outShared = std::shared_ptr<const moho::CAniSkel>(
+        static_cast<const moho::CAniSkel*>(&DefaultAniSkelSingleton()), NoDeleteAniSkel{}
       );
     }
 
     return outShared;
   }
-
 
 } // namespace
 
@@ -144,14 +163,16 @@ namespace moho
    * sorted (strcmp primary key, ascending index tie-break) so `FindBoneIndex`
    * can binary-search it, and per-bone bounds are rebuilt.
    */
-  CAniSkel::CAniSkel(const boost::shared_ptr<const SScmFile>& file)
+  CAniSkel::CAniSkel(
+    const std::shared_ptr<const SScmFile>& file
+  )
     : mFile(file)
   {
     const SScmFile& scmFile = *file;
     const std::uint32_t boneCount = scmFile.mBoneTotalCount;
 
     // Gather one name pointer per bone from the file's name string block.
-    msvc8::vector<const char*> boneNamePointers{};
+    fa::vector<const char*> boneNamePointers{};
     moho::scm_file::FillBoneNamePointers(scmFile, boneNamePointers);
 
     mBones.resize(boneCount);
@@ -208,8 +229,8 @@ namespace moho
     // `_Rotate` (0x005502C0), `make_heap`/`sort_heap` (0x0054F990/
     // 0x0054F9E0) and `_Adjust_heap`/`_Push_heap` (0x0054FD90/0x005501E0).
     // The call seeds the recursion budget with the element count, which is
-    // `msvc8::sort`'s own `sort_impl(first, last, last - first, comp)` entry.
-    msvc8::sort(mBoneNameToIndex.begin(), mBoneNameToIndex.end(), BoneNameIndexLess);
+    // `fa::sort`'s own `sort_impl(first, last, last - first, comp)` entry.
+    fa::sort(mBoneNameToIndex.begin(), mBoneNameToIndex.end(), BoneNameIndexLess);
 
     UpdateBoneBounds();
   }
@@ -234,7 +255,9 @@ namespace moho
    * What it does:
    * Returns a bone pointer for a valid index, otherwise null.
    */
-  const SAniSkelBone* CAniSkel::GetBone(const std::uint32_t boneIndex) const
+  const SAniSkelBone* CAniSkel::GetBone(
+    const std::uint32_t boneIndex
+  ) const
   {
     const SAniSkelBone* const begin = mBones.begin();
     if (!begin) {
@@ -259,7 +282,7 @@ namespace moho
    */
   void CAniSkel::CollectChildBoneIndices(
     const std::int32_t parentBoneIndex,
-    msvc8::vector<std::int32_t>& outIndices
+    fa::vector<std::int32_t>& outIndices
   ) const
   {
     outIndices.clear();
@@ -288,7 +311,9 @@ namespace moho
    * What it does:
    * Binary-searches the sorted bone-name table and returns index or `-1`.
    */
-  std::int32_t CAniSkel::FindBoneIndex(const char* const boneName) const
+  std::int32_t CAniSkel::FindBoneIndex(
+    const char* const boneName
+  ) const
   {
     if (!boneName) {
       return -1;
@@ -327,9 +352,9 @@ namespace moho
    * What it does:
    * Returns a shared pointer to process-global default skeleton storage.
    */
-  boost::shared_ptr<const CAniSkel> CAniSkel::GetDefaultSkeleton()
+  std::shared_ptr<const CAniSkel> CAniSkel::GetDefaultSkeleton()
   {
-    boost::shared_ptr<const CAniSkel> result{};
+    std::shared_ptr<const CAniSkel> result{};
     (void)BuildDefaultAniSkelSharedPtr(&result);
     return result;
   }
@@ -348,7 +373,9 @@ namespace moho
    * convention mismatch as the other `orient_`-consuming sites (this bone
    * transform's quaternion is always in `VMatrix4::Set`'s convention).
    */
-  void CAniSkel::RebindFile(const boost::shared_ptr<const SScmFile>& file)
+  void CAniSkel::RebindFile(
+    const std::shared_ptr<const SScmFile>& file
+  )
   {
     const char* const oldBase = reinterpret_cast<const char*>(mFile.get());
     const char* const newBase = reinterpret_cast<const char*>(file.get());

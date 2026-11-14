@@ -3,9 +3,11 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -31,7 +33,11 @@ namespace
   constexpr std::uint16_t kZipDataDescriptorFlag = 0x0008u;
 
   [[nodiscard]] bool ReadWholeZipDirectory(
-    gpg::Stream& stream, std::uint32_t directoryOffset, std::uint32_t directorySize, std::uint32_t entryCount, std::vector<char>& outBytes
+    gpg::Stream& stream,
+    std::uint32_t directoryOffset,
+    std::uint32_t directorySize,
+    std::uint32_t entryCount,
+    std::vector<char>& outBytes
   );
 
 #pragma pack(push, 1)
@@ -74,7 +80,11 @@ namespace
    * exactly as the entry-by-entry parse would walk them. On false the stream is back at its start.
    */
   bool ReadWholeZipDirectory(
-    gpg::Stream& stream, const std::uint32_t directoryOffset, const std::uint32_t directorySize, const std::uint32_t entryCount, std::vector<char>& outBytes
+    gpg::Stream& stream,
+    const std::uint32_t directoryOffset,
+    const std::uint32_t directorySize,
+    const std::uint32_t entryCount,
+    std::vector<char>& outBytes
   )
   {
     static const bool disabled = moho::CFG_GetArgOption("/nozipbulk", 0u, nullptr);
@@ -96,18 +106,21 @@ namespace
     }
     if (!walks) {
       outBytes.clear();
-      (void)stream.VirtSeek(gpg::Stream::ModeReceive, gpg::Stream::OriginBegin, static_cast<std::int64_t>(directoryOffset));
+      (void)stream.VirtSeek(
+        gpg::Stream::ModeReceive, gpg::Stream::OriginBegin, static_cast<std::int64_t>(directoryOffset)
+      );
     }
     return walks;
   }
-
 
   static_assert(sizeof(SZipCentralDirectoryFileHeader) == 0x2E, "SZipCentralDirectoryFileHeader size must be 0x2E");
   static_assert(sizeof(SZipEndOfCentralDirectoryRecord) == 0x16, "SZipEndOfCentralDirectoryRecord size must be 0x16");
 
   struct ZipFileEntrySharedDeleter
   {
-    void operator()(moho::CZipFileEntry* const entry) const noexcept
+    void operator()(
+      moho::CZipFileEntry* const entry
+    ) const noexcept
     {
       if (entry != nullptr) {
         entry->mName.tidy(true, 0U);
@@ -116,11 +129,7 @@ namespace
     }
   };
 
-  [[nodiscard]]
-  [[nodiscard]]
-  [[nodiscard]]
-  [[nodiscard]]
-  [[nodiscard]]
+  [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]]
   /**
    * Address: 0x0046D960 (FUN_0046D960, std::map_string_uint::find)
    *
@@ -128,10 +137,10 @@ namespace
    * Finds one canonical zip-entry name in the name-index map and returns the
    * map head sentinel when no exact match exists.
    */
-  [[nodiscard]]
-  [[nodiscard]]
+  [[nodiscard]] [[nodiscard]]
   bool FindEndOfCentralDirectoryOffset(
-    const std::vector<char>& tailBytes, std::size_t* const outOffsetInTail
+    const std::vector<char>& tailBytes,
+    std::size_t* const outOffsetInTail
   )
   {
     if (outOffsetInTail == nullptr || tailBytes.size() < sizeof(std::uint32_t)) {
@@ -139,10 +148,12 @@ namespace
     }
 
     for (std::size_t offset = tailBytes.size() - sizeof(std::uint32_t);; --offset) {
-      if (static_cast<unsigned char>(tailBytes[offset + 0]) == 0x50 &&
-          static_cast<unsigned char>(tailBytes[offset + 1]) == 0x4B &&
-          static_cast<unsigned char>(tailBytes[offset + 2]) == 0x05 &&
-          static_cast<unsigned char>(tailBytes[offset + 3]) == 0x06) {
+      if (
+        static_cast<unsigned char>(tailBytes[offset + 0]) == 0x50 &&
+        static_cast<unsigned char>(tailBytes[offset + 1]) == 0x4B &&
+        static_cast<unsigned char>(tailBytes[offset + 2]) == 0x05 &&
+        static_cast<unsigned char>(tailBytes[offset + 3]) == 0x06
+      ) {
         *outOffsetInTail = offset;
         return true;
       }
@@ -156,7 +167,10 @@ namespace
   }
 
   [[nodiscard]]
-  gpg::MemBuffer<const char> MakeConstMemBuffer(const boost::shared_ptr<const char>& sharedData, const std::size_t byteCount)
+  gpg::MemBuffer<const char> MakeConstMemBuffer(
+    const std::shared_ptr<const char>& sharedData,
+    const std::size_t byteCount
+  )
   {
     if (!sharedData) {
       return {};
@@ -166,12 +180,12 @@ namespace
   }
 
   [[nodiscard]]
-  std::unique_ptr<gpg::Stream> OpenZipBackingStream(const msvc8::string& zipPath)
+  std::unique_ptr<gpg::Stream> OpenZipBackingStream(
+    const fa::string& zipPath
+  )
   {
     try {
-      return std::make_unique<gpg::FileStream>(
-        zipPath.c_str(), gpg::Stream::ModeReceive, 0x0Bu, 0x1000
-      );
+      return std::make_unique<gpg::FileStream>(zipPath.c_str(), gpg::Stream::ModeReceive, 0x0Bu, 0x1000);
     } catch (...) {
       return {};
     }
@@ -187,51 +201,58 @@ namespace
    * entry, caching the payload offset for later reads.
    */
   [[nodiscard]]
-  bool ReadZipDirectory(gpg::Stream& stream, moho::CZipFileEntry& entry)
+  bool ReadZipDirectory(
+    gpg::Stream& stream,
+    moho::CZipFileEntry& entry
+  )
   {
     if (entry.mLocalHeaderOffset == kInvalidZipOffset) {
       return false;
     }
 
-    if (entry.mCachedDataOffset >= 0) {
+    if (entry.mCachedDataOffset != -1) {
       (void)stream.Seek(
-        gpg::Stream::OriginBegin, static_cast<std::int64_t>(entry.mCachedDataOffset)
+        gpg::Stream::OriginBegin, static_cast<std::int64_t>(static_cast<std::uint32_t>(entry.mCachedDataOffset))
       );
       return true;
     }
 
-    (void)stream.Seek(
-      gpg::Stream::OriginBegin, static_cast<std::int64_t>(entry.mLocalHeaderOffset)
-    );
+    (void)stream.Seek(gpg::Stream::OriginBegin, static_cast<std::int64_t>(entry.mLocalHeaderOffset));
 
     moho::SZipLocalFileHeader localHeader{};
-    const std::size_t signatureRead = stream.Read(
-      reinterpret_cast<char*>(&localHeader.mSignature), sizeof(localHeader.mSignature)
-    );
+    const std::size_t signatureRead = stream.Read(&localHeader.mSignature, sizeof(localHeader.mSignature));
     if (signatureRead != sizeof(localHeader.mSignature) || localHeader.mSignature != kZipLocalFileHeaderMagic) {
       entry.mLocalHeaderOffset = kInvalidZipOffset;
       return false;
     }
 
-    const std::size_t tailRead = stream.Read(
-      reinterpret_cast<char*>(&localHeader.mVersionNeeded),
-      sizeof(localHeader) - sizeof(localHeader.mSignature)
-    );
+    const std::size_t tailRead =
+      stream.Read(&localHeader.mVersionNeeded, sizeof(localHeader) - sizeof(localHeader.mSignature));
     if (tailRead != sizeof(localHeader) - sizeof(localHeader.mSignature)) {
       entry.mLocalHeaderOffset = kInvalidZipOffset;
       return false;
     }
 
     const std::uint64_t skipSize = static_cast<std::uint64_t>(localHeader.mFileNameLength) +
-                                   static_cast<std::uint64_t>(localHeader.mExtraFieldLength);
+      static_cast<std::uint64_t>(localHeader.mExtraFieldLength);
     const std::uint64_t dataOffset = stream.Seek(gpg::Stream::OriginCurr, static_cast<std::int64_t>(skipSize));
-    if (dataOffset > static_cast<std::uint64_t>(std::numeric_limits<std::int32_t>::max())) {
-      entry.mLocalHeaderOffset = kInvalidZipOffset;
-      return false;
+    // The cached lane stores the original 32-bit offset bits; -1 is reserved
+    // for an uncached value. Values outside that range stay uncached.
+    if (dataOffset < static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())) {
+      const std::uint32_t cachedOffset = static_cast<std::uint32_t>(dataOffset);
+      entry.mCachedDataOffset = std::bit_cast<std::int32_t>(cachedOffset);
     }
-
-    entry.mCachedDataOffset = static_cast<std::int32_t>(dataOffset);
     return true;
+  }
+
+  // Engine addition: the lock ReadEntry holds for one entry, one of a fixed set chosen by the
+  // entry's address (the archive object keeps the binary's layout, with no room for one per entry).
+  [[nodiscard]] std::mutex& EntryLock(
+    const void* const entry
+  )
+  {
+    static std::mutex locks[64];
+    return locks[(reinterpret_cast<std::uintptr_t>(entry) >> 4U) % 64U];
   }
 } // namespace
 
@@ -246,11 +267,12 @@ namespace moho
    * Opens one zip archive path, parses central-directory metadata, and builds
    * entry-index lookup state used by the runtime read APIs.
    */
-  CZipFile::CZipFile(const gpg::StrArg sourcePath)
+  CZipFile::CZipFile(
+    const gpg::StrArg sourcePath
+  )
   {
     const char* const archivePath = sourcePath != nullptr ? sourcePath : "";
     mPath.assign_owned(archivePath);
-
 
     std::unique_ptr<gpg::Stream> zipStream = OpenZipBackingStream(mPath);
     if (zipStream == nullptr) {
@@ -276,12 +298,9 @@ namespace moho
       return;
     }
 
-    const std::uint64_t endOfCentralDirectoryAbsoluteOffset =
-      tailStartOffset + endOfCentralDirectoryOffsetInTail;
+    const std::uint64_t endOfCentralDirectoryAbsoluteOffset = tailStartOffset + endOfCentralDirectoryOffsetInTail;
     (void)zipStream->VirtSeek(
-      gpg::Stream::ModeReceive,
-      gpg::Stream::OriginBegin,
-      static_cast<std::int64_t>(endOfCentralDirectoryAbsoluteOffset)
+      gpg::Stream::ModeReceive, gpg::Stream::OriginBegin, static_cast<std::int64_t>(endOfCentralDirectoryAbsoluteOffset)
     );
 
     gpg::BinaryReader reader(zipStream.get());
@@ -313,8 +332,11 @@ namespace moho
     // goes the original way, entry by entry (also with /nozipbulk).
     std::vector<char> directoryBytes;
     const bool directoryRead = ReadWholeZipDirectory(
-      *zipStream, endOfCentralDirectory.mCentralDirectoryOffset, endOfCentralDirectory.mCentralDirectorySize,
-      endOfCentralDirectory.mTotalEntries, directoryBytes
+      *zipStream,
+      endOfCentralDirectory.mCentralDirectoryOffset,
+      endOfCentralDirectory.mCentralDirectorySize,
+      endOfCentralDirectory.mTotalEntries,
+      directoryBytes
     );
     std::size_t directoryCursor = 0U;
 
@@ -332,7 +354,7 @@ namespace moho
         break;
       }
 
-      boost::shared_ptr<CZipFileEntry> parsedEntry(new CZipFileEntry(), ZipFileEntrySharedDeleter{});
+      std::shared_ptr<CZipFileEntry> parsedEntry(new CZipFileEntry(), ZipFileEntrySharedDeleter{});
       parsedEntry->mGeneralPurposeFlags = directoryHeader.mGeneralPurposeFlags;
       parsedEntry->mCompressionMethod = directoryHeader.mCompressionMethod;
       parsedEntry->mDosDate = directoryHeader.mDosDate;
@@ -343,20 +365,20 @@ namespace moho
       parsedEntry->mCachedDataOffset = -1;
 
       if (directoryRead) {
-        parsedEntry->mName.assign_owned(std::string_view(directoryBytes.data() + directoryCursor, directoryHeader.mFileNameLength));
+        parsedEntry->mName.assign_owned(
+          std::string_view(directoryBytes.data() + directoryCursor, directoryHeader.mFileNameLength)
+        );
         directoryCursor += directoryHeader.mFileNameLength;
       } else if (directoryHeader.mFileNameLength != 0) {
         std::vector<char> fileNameBytes(directoryHeader.mFileNameLength);
         reader.ReadExactArray(fileNameBytes.data(), fileNameBytes.size());
-        parsedEntry->mName.assign_owned(
-          std::string_view(fileNameBytes.data(), fileNameBytes.size())
-        );
+        parsedEntry->mName.assign_owned(std::string_view(fileNameBytes.data(), fileNameBytes.size()));
       } else {
         parsedEntry->mName.clear();
       }
 
       const std::size_t trailingSkipSize = static_cast<std::size_t>(directoryHeader.mExtraFieldLength) +
-                                           static_cast<std::size_t>(directoryHeader.mFileCommentLength);
+        static_cast<std::size_t>(directoryHeader.mFileCommentLength);
       if (directoryRead) {
         directoryCursor += trailingSkipSize;
       } else if (trailingSkipSize != 0) {
@@ -374,7 +396,7 @@ namespace moho
         continue;
       }
 
-      const std::uint32_t newEntryIndex = static_cast<std::uint32_t>(mEntries.size());
+      [[maybe_unused]] const std::uint32_t newEntryIndex = static_cast<std::uint32_t>(mEntries.size());
       SZipFileCachedEntry cachedEntry{};
       cachedEntry.mEntry = parsedEntry;
       mEntries.push_back(cachedEntry);
@@ -397,7 +419,9 @@ namespace moho
    * Sorts the entries' indices by name. As with the binary's map, the first entry of a name wins and
    * the others are logged.
    */
-  void CZipFile::BuildEntryIndex(const char* const archivePath)
+  void CZipFile::BuildEntryIndex(
+    const char* const archivePath
+  )
   {
     std::vector<std::uint32_t> sorted(mEntries.size());
     for (std::size_t index = 0; index < sorted.size(); ++index) {
@@ -410,7 +434,7 @@ namespace moho
 
     mEntryByCanonicalPath.reserve(sorted.size());
     for (const std::uint32_t entryIndex : sorted) {
-      const msvc8::string& name = mEntries[entryIndex].mEntry->mName;
+      const fa::string& name = mEntries[entryIndex].mEntry->mName;
       if (!mEntryByCanonicalPath.empty() && !less(mEntries[mEntryByCanonicalPath.back()].mEntry->mName, name)) {
         gpg::Logf("%s: duplicate entries for %s.", archivePath, name.c_str());
         continue;
@@ -430,12 +454,15 @@ namespace moho
   {
     // `mEntryByCanonicalPath`'s teardown is its destructor, which MSVC emits for
     // the member; only the two lanes with no destructor of their own are here.
-    mEntries = msvc8::vector<SZipFileCachedEntry>();
+    mEntries = fa::vector<SZipFileCachedEntry>();
     mPath.tidy(true, 0U);
   }
 
   [[nodiscard]]
-  SZipFileCachedEntry& CZipFile::GetCachedEntryOrThrow(const std::uint32_t entryIndex, const char* const message) const
+  SZipFileCachedEntry& CZipFile::GetCachedEntryOrThrow(
+    const std::uint32_t entryIndex,
+    const char* const message
+  ) const
   {
     if (entryIndex >= mEntries.size()) {
       throw std::range_error(message != nullptr ? message : "CZipFile entry index out of range");
@@ -445,7 +472,10 @@ namespace moho
   }
 
   [[nodiscard]]
-  const CZipFileEntry& CZipFile::GetEntryOrThrow(const std::uint32_t entryIndex, const char* const message) const
+  const CZipFileEntry& CZipFile::GetEntryOrThrow(
+    const std::uint32_t entryIndex,
+    const char* const message
+  ) const
   {
     const SZipFileCachedEntry& cachedEntry = GetCachedEntryOrThrow(entryIndex, message);
     if (!cachedEntry.mEntry) {
@@ -461,7 +491,9 @@ namespace moho
    * What it does:
    * Resolves one canonical zip entry name to entry index, or returns `0xFFFFFFFF`.
    */
-  std::uint32_t CZipFile::FindFile(const msvc8::string& canonicalPath) const
+  std::uint32_t CZipFile::FindFile(
+    const fa::string& canonicalPath
+  ) const
   {
 #if FAF_RETAIL_LAYOUT
     const SZipFileNameIndexMap::const_iterator matched = mEntryByCanonicalPath.find(canonicalPath);
@@ -472,7 +504,9 @@ namespace moho
       mEntryByCanonicalPath.begin(),
       mEntryByCanonicalPath.end(),
       canonicalPath,
-      [&](const std::uint32_t entryIndex, const msvc8::string& name) { return less(mEntries[entryIndex].mEntry->mName, name); }
+      [&](const std::uint32_t entryIndex, const fa::string& name) {
+      return less(mEntries[entryIndex].mEntry->mName, name);
+    }
     );
     if (matched == mEntryByCanonicalPath.end() || less(canonicalPath, mEntries[*matched].mEntry->mName)) {
       return kInvalidEntryIndex;
@@ -487,11 +521,13 @@ namespace moho
    * What it does:
    * Opens one zip entry by canonical path as a memory-backed read stream.
    */
-  msvc8::auto_ptr<gpg::Stream> CZipFile::OpenFile(const msvc8::string& canonicalPath) const
+  fa::auto_ptr<gpg::Stream> CZipFile::OpenFile(
+    const fa::string& canonicalPath
+  ) const
   {
     const std::uint32_t entryIndex = FindFile(canonicalPath);
     if (entryIndex == kInvalidEntryIndex) {
-      return msvc8::auto_ptr<gpg::Stream>();
+      return fa::auto_ptr<gpg::Stream>();
     }
 
     return OpenEntry(entryIndex);
@@ -503,7 +539,9 @@ namespace moho
    * What it does:
    * Reads one zip entry by canonical path into immutable shared-memory bytes.
    */
-  gpg::MemBuffer<const char> CZipFile::ReadFile(const msvc8::string& canonicalPath) const
+  gpg::MemBuffer<const char> CZipFile::ReadFile(
+    const fa::string& canonicalPath
+  ) const
   {
     const std::uint32_t entryIndex = FindFile(canonicalPath);
     if (entryIndex == kInvalidEntryIndex) {
@@ -519,7 +557,9 @@ namespace moho
    * What it does:
    * Reads one zip entry by canonical path and returns a mutable byte copy.
    */
-  gpg::MemBuffer<char> CZipFile::CopyFile(const msvc8::string& canonicalPath) const
+  gpg::MemBuffer<char> CZipFile::CopyFile(
+    const fa::string& canonicalPath
+  ) const
   {
     const std::uint32_t entryIndex = FindFile(canonicalPath);
     if (entryIndex == kInvalidEntryIndex) {
@@ -535,7 +575,9 @@ namespace moho
    * What it does:
    * Returns the canonical zip-entry name for one validated entry index.
    */
-  const msvc8::string& CZipFile::GetEntryName(const std::uint32_t entryIndex) const
+  const fa::string& CZipFile::GetEntryName(
+    const std::uint32_t entryIndex
+  ) const
   {
     return GetEntryOrThrow(entryIndex, "Out of bound access in CZipFile::GetEntryName()").mName;
   }
@@ -546,7 +588,9 @@ namespace moho
    * What it does:
    * Returns uncompressed byte size for one validated zip entry.
    */
-  std::uint32_t CZipFile::GetEntrySize(const std::uint32_t entryIndex) const
+  std::uint32_t CZipFile::GetEntrySize(
+    const std::uint32_t entryIndex
+  ) const
   {
     return GetEntryOrThrow(entryIndex, "Out of bound access in CZipFile::GetEntrySize()").mUncompressedSize;
   }
@@ -557,7 +601,9 @@ namespace moho
    * What it does:
    * Converts the entry DOS date/time pair into Win32 FILETIME.
    */
-  FILETIME CZipFile::GetEntryLastModTime(const std::uint32_t entryIndex) const
+  FILETIME CZipFile::GetEntryLastModTime(
+    const std::uint32_t entryIndex
+  ) const
   {
     const CZipFileEntry& entry = GetEntryOrThrow(entryIndex, "Out of bounds access in CZipFile::GetEntryName()");
     FILETIME fileTime{};
@@ -571,18 +617,18 @@ namespace moho
    * What it does:
    * Opens one zip entry by index as a memory-backed read stream.
    */
-  msvc8::auto_ptr<gpg::Stream> CZipFile::OpenEntry(const std::uint32_t entryIndex) const
+  fa::auto_ptr<gpg::Stream> CZipFile::OpenEntry(
+    const std::uint32_t entryIndex
+  ) const
   {
     (void)GetEntryOrThrow(entryIndex, "Out of bound access in CZipFile::OpenEntry()");
 
     const gpg::MemBuffer<const char> entryBytes = ReadEntry(entryIndex);
     if (entryBytes.data() == nullptr) {
-      return msvc8::auto_ptr<gpg::Stream>();
+      return fa::auto_ptr<gpg::Stream>();
     }
 
-    return msvc8::auto_ptr<gpg::Stream>(
-      new gpg::MemBufferStream(entryBytes, static_cast<unsigned int>(-1))
-    );
+    return fa::auto_ptr<gpg::Stream>(new gpg::MemBufferStream(entryBytes, static_cast<unsigned int>(-1)));
   }
 
   namespace
@@ -619,7 +665,9 @@ namespace moho
     thread_local std::vector<KeptArchive>* tKeptArchives = nullptr;
 
     /** This thread's open stream for `zipPath`, opened on first use; null outside a read scope. */
-    [[nodiscard]] gpg::Stream* KeptArchiveStream(const msvc8::string& zipPath)
+    [[nodiscard]] gpg::Stream* KeptArchiveStream(
+      const fa::string& zipPath
+    )
     {
       if (tKeptArchives == nullptr) {
         return nullptr;
@@ -656,7 +704,9 @@ namespace moho
     }
   }
 
-  void CZipFile::SetKeepEntryData(const bool keep) noexcept
+  void CZipFile::SetKeepEntryData(
+    const bool keep
+  ) noexcept
   {
     gKeepEntryData = keep;
   }
@@ -668,16 +718,21 @@ namespace moho
    * Reads one zip entry by index, inflating method-8 entries when needed, and
    * caches immutable bytes for later reads.
    */
-  gpg::MemBuffer<const char> CZipFile::ReadEntry(const std::uint32_t entryIndex) const
+  gpg::MemBuffer<const char> CZipFile::ReadEntry(
+    const std::uint32_t entryIndex
+  ) const
   {
-    SZipFileCachedEntry& cachedEntry = GetCachedEntryOrThrow(
-      entryIndex, "Out of bound access in CZipFile::ReadEntry()"
-    );
+    SZipFileCachedEntry& cachedEntry =
+      GetCachedEntryOrThrow(entryIndex, "Out of bound access in CZipFile::ReadEntry()");
     if (!cachedEntry.mEntry) {
       throw std::range_error("Out of bound access in CZipFile::ReadEntry()");
     }
 
     CZipFileEntry& entry = *cachedEntry.mEntry.get();
+    // Engine addition: an entry is read and cached by one thread at a time; a second reader waits
+    // and takes the cached bytes. The binary filled the cache unguarded, which two threads reading
+    // one entry (the session loader and the main thread) would race on.
+    const std::lock_guard<std::mutex> entryGuard(EntryLock(&cachedEntry));
     if (cachedEntry.mData) {
       return MakeConstMemBuffer(cachedEntry.mData, static_cast<std::size_t>(entry.mUncompressedSize));
     }
@@ -697,9 +752,7 @@ namespace moho
     }
 
     if (entry.mCompressionMethod == kZipCompressionStored) {
-      gpg::MemBuffer<char> uncompressedBytes = gpg::AllocMemBuffer(
-        static_cast<std::size_t>(entry.mUncompressedSize)
-      );
+      gpg::MemBuffer<char> uncompressedBytes = gpg::AllocMemBuffer(static_cast<std::size_t>(entry.mUncompressedSize));
       if (entry.mUncompressedSize != 0 && uncompressedBytes.data() == nullptr) {
         return {};
       }
@@ -716,20 +769,16 @@ namespace moho
     }
 
     if (entry.mCompressionMethod == kZipCompressionDeflated) {
-      // zlib wants to read one byte past a raw deflate stream before it will
-      // call that stream finished. The engine linked zlib 1.2.3, which copes
-      // with input ending exactly on the last compressed byte. This build ends
-      // up on the zlib 1.1.4 bundled inside wxWindows - the Win32 link resolves
-      // `zlib.lib` out of dependencies\wxWindows-2.4.2\lib because the tree
-      // carries no 32-bit 1.2.3 - and 1.1.4 answers Z_BUF_ERROR after producing
-      // every byte of correct output, on whichever entries happen to end on an
-      // unlucky bit boundary. One spare byte satisfies both versions: a valid
-      // raw stream stops at its own end-of-stream marker and never reads it.
+      // One spare byte after the compressed data. zlib 1.2.3, which both
+      // architectures link (issue #406), copes with input ending exactly on the
+      // last compressed byte; zlib 1.1.4, which x86 linked from the 2.4.2 window library
+      // before, answered Z_BUF_ERROR on entries ending on an unlucky bit
+      // boundary. The byte stays: a valid raw stream stops at its own
+      // end-of-stream marker and never reads it, so it costs nothing.
       constexpr std::size_t kInflateLookaheadSlack = 1u;
 
-      gpg::MemBuffer<char> compressedBytes = gpg::AllocMemBuffer(
-        static_cast<std::size_t>(entry.mCompressedSize) + kInflateLookaheadSlack
-      );
+      gpg::MemBuffer<char> compressedBytes =
+        gpg::AllocMemBuffer(static_cast<std::size_t>(entry.mCompressedSize) + kInflateLookaheadSlack);
       if (compressedBytes.data() == nullptr) {
         return {};
       }
@@ -739,9 +788,7 @@ namespace moho
       }
       compressedBytes.data()[entry.mCompressedSize] = '\0';
 
-      gpg::MemBuffer<char> uncompressedBytes = gpg::AllocMemBuffer(
-        static_cast<std::size_t>(entry.mUncompressedSize)
-      );
+      gpg::MemBuffer<char> uncompressedBytes = gpg::AllocMemBuffer(static_cast<std::size_t>(entry.mUncompressedSize));
       if (entry.mUncompressedSize != 0 && uncompressedBytes.data() == nullptr) {
         return {};
       }
@@ -787,7 +834,9 @@ namespace moho
    * What it does:
    * Reads one zip entry by index and returns a mutable byte copy.
    */
-  gpg::MemBuffer<char> CZipFile::CopyEntry(const std::uint32_t entryIndex) const
+  gpg::MemBuffer<char> CZipFile::CopyEntry(
+    const std::uint32_t entryIndex
+  ) const
   {
     const gpg::MemBuffer<const char> sourceBytes = ReadEntry(entryIndex);
     const std::size_t sourceSize = sourceBytes.Size();

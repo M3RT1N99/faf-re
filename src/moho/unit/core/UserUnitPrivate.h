@@ -55,7 +55,6 @@
 #include "moho/unit/core/UnitAttributes.h"
 #include "moho/vision/VisionDB.h"
 
-
 using namespace moho;
 namespace moho
 {
@@ -74,15 +73,20 @@ namespace moho
     static CScrLuaMetatableFactory sInstance;
   };
 
-  static_assert(sizeof(CScrLuaMetatableFactory<UserUnit>) == 0x08, "CScrLuaMetatableFactory<UserUnit> size must be 0x08");
-}
+  static_assert(
+    sizeof(CScrLuaMetatableFactory<UserUnit>) == 0x08,
+    "CScrLuaMetatableFactory<UserUnit> size must be 0x08"
+  );
+} // namespace moho
 
 namespace
 {
 
-  [[nodiscard]] gpg::fastvector_n<WeakPtr<UserCommandIssueHelper>, 2>* RebuildAndGetUserUnitManagerQueue(UserCommandQueue* managerPtr) noexcept;
+  [[nodiscard]] gpg::fastvector_n<WeakPtr<UserCommandIssueHelper>, 2>*
+  RebuildAndGetUserUnitManagerQueue(UserCommandQueue* managerPtr) noexcept;
 
-  [[nodiscard]] const gpg::fastvector_n<WeakPtr<UserCommandIssueHelper>, 2>* ResolveUserCommandQueueRange(
+  [[maybe_unused]] [[nodiscard]] const gpg::fastvector_n<WeakPtr<UserCommandIssueHelper>, 2>*
+  ResolveUserCommandQueueRange(
     const UserCommandQueue* const queue
   ) noexcept
   {
@@ -101,7 +105,7 @@ namespace
    * Resolves one command-manager queue view and returns the most recent
    * non-null helper entry, scanning backward from the logical tail.
    */
-  [[nodiscard]] UserCommandIssueHelper* GetLastQueuedUserCommandHelper(
+  [[maybe_unused]] [[nodiscard]] UserCommandIssueHelper* GetLastQueuedUserCommandHelper(
     UserCommandQueue* const managerPtr
   ) noexcept
   {
@@ -116,7 +120,7 @@ namespace
 
   /**
    * No standalone address: this call site invokes real
-   * `msvc8::map<CmdId, UserCommandIssueHelper*>::find` on
+   * `fa::map<CmdId, UserCommandIssueHelper*>::find` on
    * `CommandManager::mCommands`, whose compiled internals
    * (`find_node`/`lower_bound_node`, e.g. FUN_008B6160 and siblings) are
    * already cited on `RbTree.h`'s shared `rb_tree<Traits>` template from
@@ -126,8 +130,10 @@ namespace
    *
    * This file now calls `mCommands` directly, same as `Sim.cpp` does.
    */
-  [[nodiscard]] UserCommandIssueHelper*
-  FindSessionCommandIssueHelperById(CWldSession* const session, const CmdId commandId) noexcept
+  [[nodiscard]] UserCommandIssueHelper* FindSessionCommandIssueHelperById(
+    CWldSession* const session,
+    const CmdId commandId
+  ) noexcept
   {
     if (session == nullptr || session->mCommandManager == nullptr) {
       return nullptr;
@@ -252,7 +258,11 @@ namespace
    * resolved run is then invalidated back onto its inline storage and marked
    * dirty so the next reader rebuilds it.
    */
-  void ResyncUserCommandQueueLinks(UserCommandQueue* const queue, const CmdId* const idBegin, const CmdId* const idEnd)
+  [[maybe_unused]] void ResyncUserCommandQueueLinks(
+    UserCommandQueue* const queue,
+    const CmdId* const idBegin,
+    const CmdId* const idEnd
+  )
   {
     if (queue == nullptr) {
       return;
@@ -286,16 +296,20 @@ namespace
   }
 
   [[nodiscard]] UserEntity* FindSessionEntityById(CWldSession* session, std::int32_t entityId) noexcept;
-  [[nodiscard]] Wm3::Vector3<float>
-  ResolvePositionFromRawTarget(const SSTITarget& target, CWldSession* const session) noexcept
+  [[nodiscard]] Wm3::Vector3<float> ResolvePositionFromRawTarget(
+    const SSTITarget& target,
+    CWldSession* const session
+  ) noexcept
   {
     if (target.mType == EAiTargetType::AITARGET_Ground) {
       return target.mPos;
     }
 
     if (target.mType == EAiTargetType::AITARGET_Entity) {
-      if (UserEntity* const targetEntity = FindSessionEntityById(session, static_cast<std::int32_t>(target.mEntityId));
-          targetEntity != nullptr) {
+      if (
+        UserEntity* const targetEntity = FindSessionEntityById(session, static_cast<std::int32_t>(target.mEntityId));
+        targetEntity != nullptr
+      ) {
         return targetEntity->mVariableData.mCurTransform.pos_;
       }
     }
@@ -303,10 +317,12 @@ namespace
     return InvalidCommandQueuePosition();
   }
 
-  [[nodiscard]] const UserCommandIssueLocalEvent*
-  FindLatestIssueEvent(const UserCommandIssueHelper& helper, const ECommandIssueEvent type) noexcept
+  [[nodiscard]] const UserCommandIssueLocalEvent* FindLatestIssueEvent(
+    const UserCommandIssueHelper& helper,
+    const ECommandIssueEvent type
+  ) noexcept
   {
-    const msvc8::deque<UserCommandIssueLocalEvent>& events = helper.mLocalQueue;
+    const fa::deque<UserCommandIssueLocalEvent>& events = helper.mLocalQueue;
     for (std::size_t index = events.size(); index != 0u; --index) {
       const UserCommandIssueLocalEvent& event = events[index - 1u];
       if (event.mType == type) {
@@ -325,21 +341,29 @@ namespace
    * recent explicit command-type override; otherwise returns helper baseline
    * command type.
    */
-  [[nodiscard]] EUnitCommandType ResolveHelperCommandType(const UserCommandIssueHelper& helper) noexcept
+  [[nodiscard]] EUnitCommandType ResolveHelperCommandType(
+    const UserCommandIssueHelper& helper
+  ) noexcept
   {
-    if (const UserCommandIssueLocalEvent* const event = FindLatestIssueEvent(helper, ECommandIssueEvent::SetCommandType);
-        event != nullptr) {
+    if (
+      const UserCommandIssueLocalEvent* const event = FindLatestIssueEvent(helper, ECommandIssueEvent::SetCommandType);
+      event != nullptr
+    ) {
       return event->mCommandType;
     }
 
     return helper.mVariableData.mCmdType;
   }
 
-  [[nodiscard]] Wm3::Vector3<float>
-  ResolveHelperTargetPosition(const UserCommandIssueHelper& helper, CWldSession* const session) noexcept
+  [[maybe_unused]] [[nodiscard]] Wm3::Vector3<float> ResolveHelperTargetPosition(
+    const UserCommandIssueHelper& helper,
+    CWldSession* const session
+  ) noexcept
   {
-    if (const UserCommandIssueLocalEvent* const event = FindLatestIssueEvent(helper, ECommandIssueEvent::SetTarget);
-        event != nullptr) {
+    if (
+      const UserCommandIssueLocalEvent* const event = FindLatestIssueEvent(helper, ECommandIssueEvent::SetTarget);
+      event != nullptr
+    ) {
       return ResolvePositionFromTarget(event->mTarget);
     }
 
@@ -353,10 +377,12 @@ namespace
    * Resolves one effective queued-build count from helper baseline count and
    * queued increase/decrease issue events.
    */
-  [[nodiscard]] std::int32_t ResolveHelperBuildCount(const UserCommandIssueHelper& helper) noexcept
+  [[maybe_unused]] [[nodiscard]] std::int32_t ResolveHelperBuildCount(
+    const UserCommandIssueHelper& helper
+  ) noexcept
   {
     std::int32_t count = helper.mVariableData.mCount;
-    const msvc8::deque<UserCommandIssueLocalEvent>& events = helper.mLocalQueue;
+    const fa::deque<UserCommandIssueLocalEvent>& events = helper.mLocalQueue;
     for (std::size_t index = 0; index != events.size(); ++index) {
       const UserCommandIssueLocalEvent& event = events[index];
       if (event.mType == ECommandIssueEvent::DecreaseCount) {
@@ -380,7 +406,10 @@ namespace
     return count;
   }
 
-  [[nodiscard]] UserEntity* FindSessionEntityById(CWldSession* const session, const std::int32_t entityId) noexcept
+  [[nodiscard]] UserEntity* FindSessionEntityById(
+    CWldSession* const session,
+    const std::int32_t entityId
+  ) noexcept
   {
     if (session == nullptr) {
       return nullptr;
@@ -396,12 +425,11 @@ namespace
    * Resolves the reflected `UserUnit` type once into the static the binary
    * caches at 0x010C77AC.
    */
-  [[nodiscard]] gpg::RType* CachedUserUnitType()
+  [[maybe_unused]] [[nodiscard]] gpg::RType* CachedUserUnitType()
   {
     if (UserUnit::sType == nullptr) {
       UserUnit::sType = gpg::LookupRType(typeid(UserUnit));
     }
     return UserUnit::sType;
   }
-}
-
+} // namespace

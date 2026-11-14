@@ -1,15 +1,14 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 
-#include "boost/condition.h"
-#include "boost/recursive_mutex.h"
-#include "boost/scoped_ptr.h"
-#include "boost/shared_ptr.h"
-#include "boost/thread.h"
-#include "boost/xtime.h"
+#include "legacy/thread/Condition.h"
+#include "legacy/thread/Thread.h"
+#include <memory>
+#include <memory>
 #include "gpg/core/containers/String.h"
 #include "legacy/containers/Deque.h"
 #include "legacy/containers/Map.h"
@@ -44,9 +43,9 @@ namespace moho
      */
     ResourceWatch(gpg::StrArg path, CResourceWatcher* watcher);
 
-    msvc8::string mPath;          // +0x08
-    CResourceWatcher* mWatcher;   // +0x24 (cleared when the watcher dies mid-notification)
-    bool mNotifying;              // +0x28 (set while `OnDiskWatchEvent` holds this node)
+    fa::string mPath;           // +0x08
+    CResourceWatcher* mWatcher; // +0x24 (cleared when the watcher dies mid-notification)
+    bool mNotifying;            // +0x28 (set while `OnDiskWatchEvent` holds this node)
   };
 
   static_assert(offsetof(ResourceWatch, mPath) == 0x08, "ResourceWatch::mPath offset must be 0x08");
@@ -79,14 +78,14 @@ namespace moho
     ResourceRecord(const ResourceRecord& other);
     ResourceRecord& operator=(const ResourceRecord&) = delete;
 
-    RResId mId;                                   // +0x00
-    const gpg::RType* mType;                      // +0x1C
-    bool mLoading;                                // +0x20
-    bool mReloadPending;                          // +0x21 (the file changed while it was loading)
-    boost::weak_ptr<void> mResource;              // +0x24
-    bool mLoadFailed;                             // +0x2C
-    boost::weak_ptr<PrefetchData> mPrefetch;      // +0x30
-    TDatList<ResourceWatch, void> mWatches;       // +0x38
+    RResId mId;                              // +0x00
+    const gpg::RType* mType;                 // +0x1C
+    bool mLoading;                           // +0x20
+    bool mReloadPending;                     // +0x21 (the file changed while it was loading)
+    std::weak_ptr<void> mResource;           // +0x24
+    bool mLoadFailed;                        // +0x2C
+    std::weak_ptr<PrefetchData> mPrefetch;   // +0x30
+    TDatList<ResourceWatch, void> mWatches;  // +0x38
   };
 
   static_assert(offsetof(ResourceRecord, mType) == 0x1C, "ResourceRecord::mType offset must be 0x1C");
@@ -106,7 +105,10 @@ namespace moho
    */
   struct ResourceRecordLess
   {
-    [[nodiscard]] bool operator()(const ResourceRecord& lhs, const ResourceRecord& rhs) const noexcept
+    [[nodiscard]] bool operator()(
+      const ResourceRecord& lhs,
+      const ResourceRecord& rhs
+    ) const noexcept
     {
       const int compare = _stricmp(lhs.mId.name.c_str(), rhs.mId.name.c_str());
       return compare < 0 || (compare == 0 && lhs.mType < rhs.mType);
@@ -116,7 +118,7 @@ namespace moho
   // The node is 0x50 with the colour byte at +0x4C: the record itself is the
   // element (0x004AD790 reads the candidate's name through value+0x04/+0x18
   // and its type through value+0x1C).
-  using ResourceRecordSet = msvc8::set<ResourceRecord, ResourceRecordLess>;
+  using ResourceRecordSet = fa::set<ResourceRecord, ResourceRecordLess>;
 
   /**
    * VFTABLE: 0x00E07604
@@ -215,23 +217,18 @@ namespace moho
      * Address: 0x004AAC20 (FUN_004AAC20, func_CreatePrefetchData)
      * Address: 0x004AF050 (FUN_004AF050 -- `boost::bind(&ResourceManager::PrefetchThread,
      *   this)`: the `bind_t` built from the member pointer, its `this` adjustment and the
-     *   manager; formerly `StoreThreeDwordLanes_004AF050` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
-     * Address: 0x004AF070 (FUN_004AF070 -- `boost::function0<void>`'s constructor from that
-     *   `bind_t`, the argument `boost::thread` takes; formerly
-     *   `InitializePrefetchThreadCallable_004AF070`.)
-     * Address: 0x004AF810 (FUN_004AF810 -- its `assign_to`: installs the static invoker/manager
-     *   pair (0x010C7B08) on first use and stores the functor in place; formerly
-     *   `AssignPrefetchThreadCallableVtable_004AF810`.)
-     * Address: 0x004AFB20 (FUN_004AFB20 -- the in-buffer placement of the functor; formerly
-     *   `BuildPrefetchThreadCallablePayload_004AFB20`.)
-     * Address: 0x004AFDE0 (FUN_004AFDE0 -- the invoker: calls the bound member through its
-     *   adjusted `this`; formerly `InvokePrefetchThreadCallable_004AFDE0`.)
-     * Address: 0x004AFDF0 (FUN_004AFDF0 -- the functor manager (clone, destroy, type check,
-     *   type query); formerly `ManagePrefetchThreadCallable_004AFDF0`.)
-     * Address: 0x004AFB00 (FUN_004AFB00 -- an unreferenced register-shape install of that static
-     *   pair; formerly `InitializePrefetchThreadCallableVtableGlobal_004AFB00`.)
-     * Address: 0x004AFC30 (FUN_004AFC30 -- a second such install; unreferenced.)
-     * Address: 0x004AFD20 (FUN_004AFD20 -- a third such install; unreferenced.)
+     *   manager; formerly `StoreThreeDwordLanes_004AF050` in moho/resource/ResourceManager.cpp (RULE ONE), removed
+     * 2026-09-30.) Address: 0x004AF070 (FUN_004AF070 -- `boost::function0<void>`'s constructor from that `bind_t`, the
+     * argument `boost::thread` takes; formerly `InitializePrefetchThreadCallable_004AF070`.) Address: 0x004AF810
+     * (FUN_004AF810 -- its `assign_to`: installs the static invoker/manager pair (0x010C7B08) on first use and stores
+     * the functor in place; formerly `AssignPrefetchThreadCallableVtable_004AF810`.) Address: 0x004AFB20 (FUN_004AFB20
+     * -- the in-buffer placement of the functor; formerly `BuildPrefetchThreadCallablePayload_004AFB20`.) Address:
+     * 0x004AFDE0 (FUN_004AFDE0 -- the invoker: calls the bound member through its adjusted `this`; formerly
+     * `InvokePrefetchThreadCallable_004AFDE0`.) Address: 0x004AFDF0 (FUN_004AFDF0 -- the functor manager (clone,
+     * destroy, type check, type query); formerly `ManagePrefetchThreadCallable_004AFDF0`.) Address: 0x004AFB00
+     * (FUN_004AFB00 -- an unreferenced register-shape install of that static pair; formerly
+     * `InitializePrefetchThreadCallableVtableGlobal_004AFB00`.) Address: 0x004AFC30 (FUN_004AFC30 -- a second such
+     * install; unreferenced.) Address: 0x004AFD20 (FUN_004AFD20 -- a third such install; unreferenced.)
      *
      * What it does:
      * Returns the record's prefetch handle for `path`, creating it when there
@@ -247,14 +244,16 @@ namespace moho
      * Resolves `path` (VFS paths through the mounted file system), finds or
      * makes its record, registers `watcher` for changes to it, and loads it.
      */
-    [[nodiscard]] boost::shared_ptr<void> GetResource(gpg::StrArg path, CResourceWatcher* watcher, const gpg::RType* type);
+    [[nodiscard]] std::shared_ptr<void>
+    GetResource(gpg::StrArg path, CResourceWatcher* watcher, const gpg::RType* type);
 
   private:
     /**
      * Address: 0x004AB180 (FUN_004AB180, func_PrefetchThread)
      * Address: 0x004AEF30 (FUN_004AEF30 -- `boost::condition::wait<recursive_mutex::scoped_lock>`,
      *   out of line for the wait on `mLoadFinished` (0x004AB2A3); `lock_error` unless the lock
-     *   is held; formerly `WaitConditionWithScopedRecursiveLock_004AEF30` in moho/resource/ResourceManager.cpp (RULE ONE), removed 2026-09-30.)
+     *   is held; formerly `WaitConditionWithScopedRecursiveLock_004AEF30` in moho/resource/ResourceManager.cpp (RULE
+     * ONE), removed 2026-09-30.)
      *
      * What it does:
      * The prefetch worker: while the manager runs, takes queued prefetches
@@ -272,23 +271,26 @@ namespace moho
      * and it has not failed before. The lock is dropped around the factory
      * call; a file change during the load makes it load again.
      */
-    [[nodiscard]] boost::shared_ptr<void> LoadRecord(ResourceRecord& record, boost::recursive_mutex::scoped_lock& lock);
+    [[nodiscard]] std::shared_ptr<void> LoadRecord(ResourceRecord& record, fa::recursive_mutex::scoped_lock& lock);
 
-    mutable boost::recursive_mutex mLock;                                     // +0x30
-    msvc8::vector<ResourceFactoryBase*> mPendingFactories;                    // +0x3C
-    msvc8::map<const gpg::RType*, ResourceFactoryBase*> mFactories;           // +0x4C
-    bool mRunning;                                                            // +0x58
-    int mLoadsInProgress;                                                     // +0x5C
-    boost::xtime mLastLoadTime;                                               // +0x60
-    ResourceRecordSet mRecords;                                               // +0x70
-    msvc8::deque<boost::weak_ptr<PrefetchData>> mPrefetchQueue;               // +0x7C
-    boost::condition mPrefetchQueued;                                         // +0x90
-    boost::condition mLoadFinished;                                           // +0xA8
-    boost::scoped_ptr<boost::thread> mPrefetchThread;                         // +0xC0
+    mutable fa::recursive_mutex mLock;                           // +0x30
+    fa::vector<ResourceFactoryBase*> mPendingFactories;          // +0x3C
+    fa::map<const gpg::RType*, ResourceFactoryBase*> mFactories; // +0x4C
+    bool mRunning;                                               // +0x58
+    int mLoadsInProgress;                                        // +0x5C
+    // The binary's `boost::xtime` (UTC seconds and nanoseconds, 16 bytes); a steady clock here, so a change of the
+    // system time doesn't stall or rush the prefetcher.
+    std::chrono::steady_clock::time_point mLastLoadTime;         // +0x60
+    std::uint8_t pad_0068_006F[8]{};                             // the rest of the binary's xtime
+    ResourceRecordSet mRecords;                                  // +0x70
+    fa::deque<std::weak_ptr<PrefetchData>> mPrefetchQueue;       // +0x7C
+    fa::condition mPrefetchQueued;                               // +0x90
+    fa::condition mLoadFinished;                                 // +0xA8
+    std::unique_ptr<fa::thread> mPrefetchThread;                 // +0xC0
   };
 
-  // The members end at 0xC4; `boost::xtime`'s 64-bit `sec` makes the class
-  // 8-aligned, which rounds it to 0xC8.
+  // The members end at 0xC4; `boost::xtime`'s 64-bit `sec` (the time point's
+  // 64-bit count here) makes the class 8-aligned, which rounds it to 0xC8.
   static_assert(sizeof(ResourceManager) == 0xC8, "ResourceManager size must be 0xC8");
 
   /**
@@ -310,15 +312,15 @@ namespace moho
   [[nodiscard]] ResourceManager* RES_GetResourceManager();
 
   /**
-   * Address: 0x004ABEE0 (FUN_004ABEE0, ?RES_GetResource@Moho@@YA?AV?$shared_ptr@X@boost@@VStrArg@gpg@@PAVCResourceWatcher@1@PBVRType@5@@Z)
+   * Address: 0x004ABEE0 (FUN_004ABEE0,
+   * ?RES_GetResource@Moho@@YA?AV?$shared_ptr@X@boost@@VStrArg@gpg@@PAVCResourceWatcher@1@PBVRType@5@@Z)
    *
    * What it does:
    * `ResourceManager::GetResource` on the singleton; the result owns the
    * resource. Callers `static_pointer_cast` it to the type they asked for.
    */
-  [[nodiscard]] boost::shared_ptr<void> RES_GetResource(
-    gpg::StrArg path, CResourceWatcher* resourceWatcher, const gpg::RType* resourceType
-  );
+  [[nodiscard]] std::shared_ptr<void>
+  RES_GetResource(gpg::StrArg path, CResourceWatcher* resourceWatcher, const gpg::RType* resourceType);
 
   /**
    * Address: 0x004ABE80 (FUN_004ABE80)

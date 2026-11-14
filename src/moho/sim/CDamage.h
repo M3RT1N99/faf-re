@@ -80,7 +80,7 @@ namespace moho
     float mMaxRadius;             // +0x4C
     Wm3::Vec3f mOrigin;           // +0x50
     float mAmount;                // +0x5C
-    msvc8::string mType;          // +0x60
+    fa::string mType;             // +0x60
     std::uint8_t mDamageFriendly; // +0x7C
     std::uint8_t mDamageNeutral;  // +0x7D
     std::uint8_t mDamageSelf;     // +0x7E
@@ -150,7 +150,6 @@ namespace moho
      * Publishes `CDamage` reflected field lanes in binary order.
      */
     static void AddFields(gpg::RType* typeInfo);
-
   };
 
   static_assert(sizeof(CDamageTypeInfo) == 0x64, "CDamageTypeInfo size must be 0x64");
@@ -259,12 +258,4 @@ namespace moho
 
   static_assert(sizeof(CScrLuaMetatableFactory<CDamage>) == 0x8, "CScrLuaMetatableFactory<CDamage> size must be 0x8");
 
-  /**
-   * Address: 0x0073AA90 (FUN_0073AA90)
-   *
-   * What it does:
-   * Rebinds the startup metatable-factory index lane for
-   * `CScrLuaMetatableFactory<CDamage>` and returns that singleton.
-   */
-  CScrLuaMetatableFactory<CDamage>* startup_CScrLuaMetatableFactory_CDamage_Index();
 } // namespace moho

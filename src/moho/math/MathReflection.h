@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-#include "boost/mutex.h"
+#include <mutex>
 #include "gpg/core/containers/String.h"
 #include "gpg/core/reflection/Reflection.h"
 #include "moho/math/VMatrix4.h"
@@ -23,7 +23,7 @@ namespace moho
   using Quaternionf = Wm3::Quaternionf;
 
   // Process-wide mutex used by math/random helper lanes.
-  extern boost::mutex math_GlobalRandomMutex;
+  extern std::mutex math_GlobalRandomMutex;
   // Process-wide random stream used by math helper lanes.
   extern CRandomStream math_GlobalRandomStream;
 
@@ -128,16 +128,6 @@ namespace moho
      */
     void OrthoNormalize();
 
-    /**
-     * Address: 0x004EC850 (FUN_004EC850, ?IsNormal@VAxes3@Moho@@QBE_NXZ)
-     * Mangled: ?IsNormal@VAxes3@Moho@@QBE_NXZ
-     *
-     * What it does:
-     * Verifies all basis lanes are unit-length and confirms `vX` matches the
-     * reconstructed `vZ x vY` lane within epsilon.
-     */
-    [[nodiscard]] bool IsNormal() const;
-
     Wm3::Vector3f vX; // +0x00
     Wm3::Vector3f vY; // +0x0C
     Wm3::Vector3f vZ; // +0x18
@@ -158,16 +148,15 @@ namespace moho
   [[nodiscard]] const VAxes3& Identity<VAxes3>();
 
   /**
-   * Address: 0x004ED000 (FUN_004ED000, ?ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVVAxes3@1@@Z)
-   * Mangled: ?ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVVAxes3@1@@Z
+   * Address: 0x004ED000 (FUN_004ED000,
+   * ?ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVVAxes3@1@@Z) Mangled:
+   * ?ToString@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVVAxes3@1@@Z
    *
    * What it does:
    * Formats one `VAxes3` basis as `X=(...) Y=(...) Z=(...)` by reusing the
    * vector-lane string formatter.
    */
-  [[nodiscard]] msvc8::string ToString(const VAxes3& value);
-
-
+  [[nodiscard]] fa::string ToString(const VAxes3& value);
 
   class AxisAlignedBox3fTypeInfo final : public gpg::RType
   {
@@ -394,24 +383,6 @@ namespace moho
    * product collapses.
    */
   void VEC_LookAt(const Wm3::Vector3f& up, const Wm3::Vector3f& forward, VAxes3* axes);
-
-  /**
-   * Address: 0x0050B650 (FUN_0050B650, ?COORDS_LookAt@Moho@@YAXABV?$Vector3@M@Wm3@@PAVVAxes3@1@@Z)
-   *
-   * What it does:
-   * Builds look-at axes using world-up `(0,1,0)` and the supplied forward
-   * direction.
-   */
-  void COORDS_LookAt(const Wm3::Vector3f& forward, VAxes3* axes);
-
-  /**
-   * Address: 0x0050B680 (FUN_0050B680, ?COORDS_LookAtXZ@Moho@@YAXABV?$Vector3@M@Wm3@@PAVVAxes3@1@@Z)
-   *
-   * What it does:
-   * Builds an XZ-plane-aligned basis from one direction vector without
-   * normalizing the projected axes.
-   */
-  VAxes3* COORDS_LookAtXZ(VAxes3* outAxes, const Wm3::Vector3f& direction);
 
   class VMatrix4TypeInfo final : public gpg::RType
   {

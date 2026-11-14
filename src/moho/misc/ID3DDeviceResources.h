@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 
 namespace gpg
 {
@@ -33,11 +33,11 @@ namespace moho
   class ID3DDeviceResources
   {
   public:
-    using RenderTargetHandle = boost::shared_ptr<CD3DRenderTarget>;
-    using DepthStencilHandle = boost::shared_ptr<CD3DDepthStencil>;
-    using DynamicTextureSheetHandle = boost::shared_ptr<CD3DDynamicTextureSheet>;
-    using TextureResourceHandle = boost::shared_ptr<RD3DTextureResource>;
-    using PrefetchDataHandle = boost::shared_ptr<PrefetchData>;
+    using RenderTargetHandle = std::shared_ptr<CD3DRenderTarget>;
+    using DepthStencilHandle = std::shared_ptr<CD3DDepthStencil>;
+    using DynamicTextureSheetHandle = std::shared_ptr<CD3DDynamicTextureSheet>;
+    using TextureResourceHandle = std::shared_ptr<RD3DTextureResource>;
+    using PrefetchDataHandle = std::shared_ptr<PrefetchData>;
 
     /**
      * Address: 0x00440630 (FUN_00440630, sub_440630)
@@ -70,7 +70,7 @@ namespace moho
      * Creates one render-target wrapper from width/height/format.
      */
     virtual RenderTargetHandle&
-      CreateRenderTarget(RenderTargetHandle& outTarget, int width, int height, int format) = 0;
+    CreateRenderTarget(RenderTargetHandle& outTarget, int width, int height, int format) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -78,8 +78,7 @@ namespace moho
      * What it does:
      * Preserves one legacy render-target creation lane using a context payload.
      */
-    virtual RenderTargetHandle&
-      Func3(RenderTargetHandle& outTarget, const gpg::gal::RenderTargetContext& context) = 0;
+    virtual RenderTargetHandle& Func3(RenderTargetHandle& outTarget, const gpg::gal::RenderTargetContext& context) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -88,7 +87,7 @@ namespace moho
      * Creates one depth-stencil wrapper from width/height/format.
      */
     virtual DepthStencilHandle&
-      CreateDepthStencil(DepthStencilHandle& outDepthStencil, int width, int height, int format) = 0;
+    CreateDepthStencil(DepthStencilHandle& outDepthStencil, int width, int height, int format) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -105,7 +104,7 @@ namespace moho
      * Creates one new vertex-sheet wrapper with internally owned streams.
      */
     virtual CD3DVertexSheet*
-      NewVertexSheet(std::uint32_t streamUsageToken, int streamFrequencyToken, CD3DVertexFormat* vertexFormat) = 0;
+    NewVertexSheet(std::uint32_t streamUsageToken, int streamFrequencyToken, CD3DVertexFormat* vertexFormat) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -122,7 +121,7 @@ namespace moho
      * Creates one vertex-stream wrapper from requested format stride lanes.
      */
     virtual CD3DVertexStream*
-      Func5(std::uint32_t width, int formatToken, int strideBytes, CD3DVertexFormat* vertexFormat) = 0;
+    Func5(std::uint32_t width, int formatToken, int strideBytes, CD3DVertexFormat* vertexFormat) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -175,7 +174,7 @@ namespace moho
      * Creates one texture resource from in-memory sheet payload.
      */
     virtual TextureResourceHandle&
-      GetTextureSheet(TextureResourceHandle& outTexture, const char* location, void* data, std::size_t size) = 0;
+    GetTextureSheet(TextureResourceHandle& outTexture, const char* location, void* data, std::size_t size) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -184,7 +183,7 @@ namespace moho
      * Creates one dynamic texture sheet and links it into dynamic-sheet list lane.
      */
     virtual DynamicTextureSheetHandle&
-      CreateDynamicTextureSheet2(DynamicTextureSheetHandle& outSheet, int width, int height, int format) = 0;
+    CreateDynamicTextureSheet2(DynamicTextureSheetHandle& outSheet, int width, int height, int format) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -193,7 +192,7 @@ namespace moho
      * Creates one dynamic texture sheet with default usage lane.
      */
     virtual DynamicTextureSheetHandle&
-      NewDynamicTextureSheet(DynamicTextureSheetHandle& outSheet, int width, int height, int format) = 0;
+    NewDynamicTextureSheet(DynamicTextureSheetHandle& outSheet, int width, int height, int format) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -202,7 +201,7 @@ namespace moho
      * Creates one dynamic texture sheet in archive-mode lane.
      */
     virtual DynamicTextureSheetHandle&
-      CreateDynamicTextureSheet(DynamicTextureSheetHandle& outSheet, int width, int height, int format) = 0;
+    CreateDynamicTextureSheet(DynamicTextureSheetHandle& outSheet, int width, int height, int format) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)
@@ -210,9 +209,8 @@ namespace moho
      * What it does:
      * Accepts a named shader source and dynamic sheet for shader-based filling.
      */
-    virtual bool FillDynamicTexture(
-      const char* shaderName, const char* shaderSource, DynamicTextureSheetHandle sheet
-    ) = 0;
+    virtual bool
+    FillDynamicTexture(const char* shaderName, const char* shaderSource, DynamicTextureSheetHandle sheet) = 0;
 
     /**
      * Address: 0x00A82547 (_purecall slot)

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <utility>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/AutoPtr.h"
 #include "legacy/containers/List.h"
 #include "legacy/containers/String.h"
@@ -12,7 +12,7 @@
 #include "legacy/containers/Map.h"
 #include "moho/misc/ID3DDeviceResources.h"
 #include "moho/render/camera/VTransform.h"
-#include "moho/sim/VisibilityRect.h"
+#include "gpg/core/containers/Rect2.h"
 #include "Wm3AxisAlignedBox3.h"
 #include "Wm3Vector2.h"
 #include "Wm3Vector3.h"
@@ -54,8 +54,8 @@ namespace moho
 
   struct CWldPropEntry
   {
-    msvc8::string mBlueprintPath; // +0x00
-    VTransform mTransform;        // +0x1C
+    fa::string mBlueprintPath; // +0x00
+    VTransform mTransform;     // +0x1C
   };
   static_assert(offsetof(CWldPropEntry, mBlueprintPath) == 0x00, "CWldPropEntry::mBlueprintPath offset must be 0x00");
   static_assert(offsetof(CWldPropEntry, mTransform) == 0x1C, "CWldPropEntry::mTransform offset must be 0x1C");
@@ -91,7 +91,7 @@ namespace moho
      * `0xFFFFFFFF / 0x38` for this element. 0x008916A0 tidies it and frees
      * the object: `delete props`.
      */
-    msvc8::vector<CWldPropEntry> mEntries; // +0x00
+    fa::vector<CWldPropEntry> mEntries; // +0x00
   };
   static_assert(sizeof(CWldProps) == 0x10, "CWldProps size must be 0x10");
 
@@ -113,7 +113,7 @@ namespace moho
    * (`mMapPreviewChunk == nullptr`), tears the map down and returns an empty
    * auto_ptr.
    */
-  [[nodiscard]] msvc8::auto_ptr<CWldMap> WLD_LoadMapPreview(gpg::StrArg mapPath);
+  [[nodiscard]] fa::auto_ptr<CWldMap> WLD_LoadMapPreview(gpg::StrArg mapPath);
 
   /**
    * Address: 0x008A7B90 (FUN_008A7B90, ?WLD_CreateTerrainRes@Moho@@YAPAVIWldTerrainRes@1@XZ)
@@ -138,7 +138,7 @@ namespace moho
    * texture when `payloadSize` is 0. moho/terrain/CWldTerrainRes.cpp sets it during
    * static initialisation; without a client a preview loads with no texture.
    */
-  using PreviewTextureLoadHook = boost::shared_ptr<ID3DTextureSheet> (*)(char* payload, std::size_t payloadSize);
+  using PreviewTextureLoadHook = std::shared_ptr<ID3DTextureSheet> (*)(char* payload, std::size_t payloadSize);
   extern PreviewTextureLoadHook sPreviewTextureLoad;
 
   /**
@@ -170,7 +170,9 @@ namespace moho
      * display name into this chunk.
      */
     RWldMapPreviewChunk(
-      boost::shared_ptr<ID3DTextureSheet> textureSheet, const Wm3::Vector2f& previewSize, const char* previewName
+      std::shared_ptr<ID3DTextureSheet> textureSheet,
+      const Wm3::Vector2f& previewSize,
+      const char* previewName
     );
 
     /**
@@ -182,28 +184,13 @@ namespace moho
     ~RWldMapPreviewChunk();
 
     /**
-     * Address: 0x00890480 (FUN_00890480, ?GetTextureSheet@RWldMapPreviewChunk@Moho@@QAE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
+     * Address: 0x00890480 (FUN_00890480,
+     * ?GetTextureSheet@RWldMapPreviewChunk@Moho@@QAE?AV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@XZ)
      *
      * What it does:
      * Returns one retained shared texture-sheet handle for this preview chunk.
      */
-    [[nodiscard]] boost::shared_ptr<ID3DTextureSheet> GetTextureSheet();
-
-    /**
-     * Address: 0x008904A0 (FUN_008904A0, ?GetTerrainDim@RWldMapPreviewChunk@Moho@@QBE?AV?$Vector2@M@Wm3@@XZ)
-     *
-     * What it does:
-     * Returns stored preview terrain dimensions.
-     */
-    [[nodiscard]] Wm3::Vector2f GetTerrainDim() const;
-
-    /**
-     * Address: 0x008904B0 (FUN_008904B0, ?GetDescription@RWldMapPreviewChunk@Moho@@QBEPBDXZ)
-     *
-     * What it does:
-     * Returns preview description text buffer pointer.
-     */
-    [[nodiscard]] const char* GetDescription() const;
+    [[nodiscard]] std::shared_ptr<ID3DTextureSheet> GetTextureSheet();
 
     /**
      * Address: 0x008904C0 (FUN_008904C0,
@@ -233,28 +220,32 @@ namespace moho
      */
     [[nodiscard]] bool Save(gpg::BinaryWriter& writer);
 
-    boost::shared_ptr<ID3DTextureSheet> mPreviewTexture; // +0x00
+    std::shared_ptr<ID3DTextureSheet> mPreviewTexture;   // +0x00
     Wm3::Vector2f mPreviewSize;                          // +0x08
-    msvc8::string mPreviewName;                          // +0x10
+    fa::string mPreviewName;                             // +0x10
   };
   static_assert(
-    sizeof(boost::shared_ptr<ID3DTextureSheet>) == 0x08, "boost::shared_ptr<ID3DTextureSheet> size must be 0x08"
+    sizeof(std::shared_ptr<ID3DTextureSheet>) == 0x08,
+    "boost::shared_ptr<ID3DTextureSheet> size must be 0x08"
   );
   static_assert(
-    offsetof(RWldMapPreviewChunk, mPreviewTexture) == 0x00, "RWldMapPreviewChunk::mPreviewTexture offset must be 0x00"
+    offsetof(RWldMapPreviewChunk, mPreviewTexture) == 0x00,
+    "RWldMapPreviewChunk::mPreviewTexture offset must be 0x00"
   );
   static_assert(
-    offsetof(RWldMapPreviewChunk, mPreviewSize) == 0x08, "RWldMapPreviewChunk::mPreviewSize offset must be 0x08"
+    offsetof(RWldMapPreviewChunk, mPreviewSize) == 0x08,
+    "RWldMapPreviewChunk::mPreviewSize offset must be 0x08"
   );
   static_assert(
-    offsetof(RWldMapPreviewChunk, mPreviewName) == 0x10, "RWldMapPreviewChunk::mPreviewName offset must be 0x10"
+    offsetof(RWldMapPreviewChunk, mPreviewName) == 0x10,
+    "RWldMapPreviewChunk::mPreviewName offset must be 0x10"
   );
   static_assert(sizeof(RWldMapPreviewChunk) == 0x2C, "RWldMapPreviewChunk size must be 0x2C");
 
   struct TerrainEnvironmentLookupEntry
   {
     /**
-     * Address: 0x008A7C80 (FUN_008A7C80, `msvc8::map<msvc8::string,
+     * Address: 0x008A7C80 (FUN_008A7C80, `fa::map<fa::string,
      * TerrainEnvironmentLookupEntry>::operator[]` -- inlined default-value
      * construction on the lower-bound-miss path, before the fresh slot is
      * handed to `insert_hint`)
@@ -274,13 +265,10 @@ namespace moho
      * Stores one environment lookup name and one resolved terrain texture
      * resource handle.
      */
-    TerrainEnvironmentLookupEntry(
-      const msvc8::string& environmentName,
-      boost::shared_ptr<RD3DTextureResource> texture
-    );
+    TerrainEnvironmentLookupEntry(const fa::string& environmentName, std::shared_ptr<RD3DTextureResource> texture);
 
-    msvc8::string mEnvironmentName;                  // +0x00
-    boost::shared_ptr<RD3DTextureResource> mTexture; // +0x1C
+    fa::string mEnvironmentName;                     // +0x00
+    std::shared_ptr<RD3DTextureResource> mTexture;   // +0x1C
   };
   static_assert(
     offsetof(TerrainEnvironmentLookupEntry, mEnvironmentName) == 0x00,
@@ -294,16 +282,16 @@ namespace moho
 
   /**
    * Address: 0x004CD320 (FUN_004CD320, compiler-generated
-   * `std::pair<msvc8::string,msvc8::string>::~pair()`)
+   * `std::pair<fa::string,fa::string>::~pair()`)
    *
    * What it does:
    * Implicit pair destructor, member-destroyed in reverse declaration order:
-   * tears down `second` (the `msvc8::string` at offset +0x1C, fields at
+   * tears down `second` (the `fa::string` at offset +0x1C, fields at
    * +0x34/+0x20/+0x30 relative to the pair) then `first` (offset +0x00,
    * fields at +0x18/+0x04/+0x14) -- releasing each string's heap buffer when
    * its capacity is >= 0x10 (the SSO threshold) and resetting it to the
    * empty-SSO state (`_Myres=0xF, _Mysize=0, buffer[0]=0`), matching the
-   * inline-expanded form of `msvc8::string::tidy()` (FUN_00402740) applied
+   * inline-expanded form of `fa::string::tidy()` (FUN_00402740) applied
    * twice. No 2007 source line wrote this body -- it is the compiler's
    * implicit destructor for the pair, triggered wherever a
    * `TerrainEnvironmentLookupPair` is destroyed, e.g.
@@ -313,60 +301,60 @@ namespace moho
    */
   /**
    * The per-tile normal-map sheets at +0x948 of the terrain resource: an
-   * `msvc8::vector` of texture handles whose emissions (`_Tidy`, `size`,
+   * `fa::vector` of texture handles whose emissions (`_Tidy`, `size`,
    * `capacity`, `reserve`, `_Copy_opt`, `erase`, `resize`) are cited on the
    * Vector.h members. The release build strips the debug proxy for this lane,
    * so the triple is 0x0C and the second template argument is `false`.
    */
-  using TerrainNormalMapHandleArray = msvc8::vector<boost::shared_ptr<CD3DDynamicTextureSheet>, false>;
+  using TerrainNormalMapHandleArray = fa::vector<std::shared_ptr<CD3DDynamicTextureSheet>, false>;
   static_assert(sizeof(TerrainNormalMapHandleArray) == 0x0C, "TerrainNormalMapHandleArray size must be 0x0C");
 
   /**
    * The environment-lookup cache at +0x9A4: a `std::map<std::string, entry>`
    * in the shipped binary, modeled with this project's ABI-matching
-   * `msvc8::map` so the 12-byte header and 0x50-byte node stay where the
+   * `fa::map` so the 12-byte header and 0x50-byte node stay where the
    * terrain resource needs them. Every tree mechanic (lower-bound search,
-   * hinted insert, erase, in-order increment) is `msvc8::map`'s own
+   * hinted insert, erase, in-order increment) is `fa::map`'s own
    * address-cited template member rather than a per-field reimplementation.
    */
-  using TerrainEnvironmentLookupMap = msvc8::map<msvc8::string, TerrainEnvironmentLookupEntry>;
+  using TerrainEnvironmentLookupMap = fa::map<fa::string, TerrainEnvironmentLookupEntry>;
   static_assert(sizeof(TerrainEnvironmentLookupMap) == 0x0C, "TerrainEnvironmentLookupMap size must be 0x0C");
 
   /**
    * The edit-mode word buffer at +0x9B0: the `{proxy, begin, end, capacity}`
    * storage of a VC8 `std::vector<bool>`, which this tree models as
-   * `msvc8::detail::vector_bool_storage`.
+   * `fa::detail::vector_bool_storage`.
    */
-  using TerrainEditWordBuffer = msvc8::detail::vector_bool_storage;
+  using TerrainEditWordBuffer = fa::detail::vector_bool_storage;
   static_assert(sizeof(TerrainEditWordBuffer) == 0x10, "TerrainEditWordBuffer size must be 0x10");
 
   /**
    * The debug dirty-rect list at +0x9D8. `{proxy, head, size}` with
-   * `{next, prev, value}` nodes is a VC8 `std::list`, i.e. `msvc8::list`:
+   * `{next, prev, value}` nodes is a VC8 `std::list`, i.e. `fa::list`:
    * a 0x0C header and 0x18 nodes for a 0x10-byte `gpg::Rect2i`.
    */
-  using TerrainDirtyRectList = msvc8::list<gpg::Rect2i>;
+  using TerrainDirtyRectList = fa::list<gpg::Rect2i>;
   static_assert(sizeof(TerrainDirtyRectList) == 0x0C, "TerrainDirtyRectList size must be 0x0C");
 
-  using TerrainEnvironmentLookupPair = std::pair<msvc8::string, msvc8::string>;
-  using TerrainEnvironmentLookupPairs = msvc8::vector<TerrainEnvironmentLookupPair>;
+  using TerrainEnvironmentLookupPair = std::pair<fa::string, fa::string>;
+  using TerrainEnvironmentLookupPairs = fa::vector<TerrainEnvironmentLookupPair>;
   static_assert(sizeof(TerrainEnvironmentLookupPair) == 0x38, "TerrainEnvironmentLookupPair size must be 0x38");
 
   struct SNormalMapInfo
   {
-    float mXResolution;                                    // +0x00
-    float mYResolution;                                    // +0x04
-    float mScaleBiasX;                                     // +0x08
-    float mScaleBiasY;                                     // +0x0C
-    float mOffsetScaleX;                                   // +0x10
-    float mOffsetScaleY;                                   // +0x14
-    float mOffsetScaleZ;                                   // +0x18
-    float mOffsetScaleW;                                   // +0x1C
-    boost::shared_ptr<CD3DDynamicTextureSheet> mTexture; // +0x20
-    float mTileOriginX;                                    // +0x28
-    float mTileOriginY;                                    // +0x2C
-    float mWidth;                                          // +0x30
-    float mHeight;                                         // +0x34
+    float mXResolution;                                  // +0x00
+    float mYResolution;                                  // +0x04
+    float mScaleBiasX;                                   // +0x08
+    float mScaleBiasY;                                   // +0x0C
+    float mOffsetScaleX;                                 // +0x10
+    float mOffsetScaleY;                                 // +0x14
+    float mOffsetScaleZ;                                 // +0x18
+    float mOffsetScaleW;                                 // +0x1C
+    std::shared_ptr<CD3DDynamicTextureSheet> mTexture;   // +0x20
+    float mTileOriginX;                                  // +0x28
+    float mTileOriginY;                                  // +0x2C
+    float mWidth;                                        // +0x30
+    float mHeight;                                       // +0x34
   };
   static_assert(offsetof(SNormalMapInfo, mXResolution) == 0x00, "SNormalMapInfo::mXResolution offset must be 0x00");
   static_assert(offsetof(SNormalMapInfo, mYResolution) == 0x04, "SNormalMapInfo::mYResolution offset must be 0x04");
@@ -383,18 +371,22 @@ namespace moho
   static_assert(offsetof(SNormalMapInfo, mHeight) == 0x34, "SNormalMapInfo::mHeight offset must be 0x34");
   static_assert(sizeof(SNormalMapInfo) == 0x38, "SNormalMapInfo size must be 0x38");
 
+  /**
+   * The map's distance fog. WRenViewport::FogOn (0x007F8A30) reads +0x00..+0x08 times 255 as the colour's red, green
+   * and blue, and +0x0C and +0x10 (plus the viewport's offset) as where the fog starts and where it is full.
+   */
   struct SFogInfo
   {
-    float mStartDistance;                  // +0x00
-    float mCutoffDistance;                 // +0x04
-    float mMinClamp;                       // +0x08
-    float mMaxClamp;                       // +0x0C
-    float mCurveExponent;                  // +0x10
-    std::uint8_t mUnknown14_2F[0x1C]{};    // +0x14
+    float mColorR;                      // +0x00
+    float mColorG;                      // +0x04
+    float mColorB;                      // +0x08
+    float mStart;                       // +0x0C
+    float mEnd;                         // +0x10
+    std::uint8_t mUnknown14_2F[0x1C]{}; // +0x14
   };
   static_assert(sizeof(SFogInfo) == 0x30, "SFogInfo size must be 0x30");
-  static_assert(offsetof(SFogInfo, mStartDistance) == 0x00, "SFogInfo::mStartDistance offset must be 0x00");
-  static_assert(offsetof(SFogInfo, mCurveExponent) == 0x10, "SFogInfo::mCurveExponent offset must be 0x10");
+  static_assert(offsetof(SFogInfo, mColorR) == 0x00, "SFogInfo::mColorR offset must be 0x00");
+  static_assert(offsetof(SFogInfo, mEnd) == 0x10, "SFogInfo::mEnd offset must be 0x10");
 
   /**
    * Chart dimensions handed by value into `CWldTerrainRes::Reset`
@@ -441,15 +433,15 @@ namespace moho
     [[nodiscard]] virtual Cartographic& GetCartographic() = 0;
     [[nodiscard]] virtual const SkyDome& GetSkyDome() const = 0;
     [[nodiscard]] virtual SkyDome& GetSkyDome() = 0;
-    virtual void SetSkycube(const msvc8::string& texturePath) = 0;
-    [[nodiscard]] virtual const msvc8::string& GetSkycubeFile() const = 0;
-    [[nodiscard]] virtual boost::shared_ptr<ID3DTextureSheet> GetSkycube() const = 0;
-    virtual void SetBackground(const msvc8::string& texturePath) = 0;
-    [[nodiscard]] virtual const msvc8::string& GetBackgroundFile() const = 0;
-    [[nodiscard]] virtual boost::shared_ptr<ID3DTextureSheet> GetBackground() const = 0;
-    virtual void AddEnvLookup(const msvc8::string& environmentKey, const msvc8::string& texturePath) = 0;
-    virtual void RemoveEnvLookup(const msvc8::string& environmentKey) = 0;
-    [[nodiscard]] virtual boost::shared_ptr<ID3DTextureSheet> GetEnvLookup(const msvc8::string& environmentKey) const = 0;
+    virtual void SetSkycube(const fa::string& texturePath) = 0;
+    [[nodiscard]] virtual const fa::string& GetSkycubeFile() const = 0;
+    [[nodiscard]] virtual std::shared_ptr<ID3DTextureSheet> GetSkycube() const = 0;
+    virtual void SetBackground(const fa::string& texturePath) = 0;
+    [[nodiscard]] virtual const fa::string& GetBackgroundFile() const = 0;
+    [[nodiscard]] virtual std::shared_ptr<ID3DTextureSheet> GetBackground() const = 0;
+    virtual void AddEnvLookup(const fa::string& environmentKey, const fa::string& texturePath) = 0;
+    virtual void RemoveEnvLookup(const fa::string& environmentKey) = 0;
+    [[nodiscard]] virtual std::shared_ptr<ID3DTextureSheet> GetEnvLookup(const fa::string& environmentKey) const = 0;
     virtual void EnumerateEnvLookup(TerrainEnvironmentLookupPairs& outPairs) const = 0;
     virtual void ClearEnvLookup() = 0;
     virtual void SetTopographicSamples(std::int32_t sampleCount) = 0;
@@ -463,14 +455,14 @@ namespace moho
     [[nodiscard]] virtual StratumMaterial& GetStratumMaterial() = 0;
     [[nodiscard]] virtual WaveSystem* GetWaveSystem() = 0;
     virtual void UpdateWaveSystem(const GeomCamera3& camera, float elapsedSeconds, std::int32_t tick) = 0;
-    [[nodiscard]] virtual boost::shared_ptr<ID3DTextureSheet> GetWaterMap() const = 0;
+    [[nodiscard]] virtual std::shared_ptr<ID3DTextureSheet> GetWaterMap() const = 0;
     virtual void UpdateWaterMap(const gpg::Rect2i& rect) = 0;
     virtual void UpdateWaterMap() = 0;
     [[nodiscard]] virtual Wm3::Vector2f GetWaterMapSize() const = 0;
     virtual void UpdateNormalMap(const gpg::Rect2i& rect) = 0;
     virtual void NotifyMapChange(const gpg::Rect2i& rect) = 0;
     [[nodiscard]] virtual gpg::BitArray2D* GetDebugDirtyTerrain() = 0;
-    [[nodiscard]] virtual const msvc8::list<gpg::Rect2i>& GetDebugDirtyRects() const = 0;
+    [[nodiscard]] virtual const fa::list<gpg::Rect2i>& GetDebugDirtyRects() const = 0;
     [[nodiscard]] virtual std::int32_t GetNormalMapCount() = 0;
     [[nodiscard]] virtual SNormalMapInfo GetNormalMapInfo(std::int32_t index) const = 0;
     virtual void UpdateStratumMask(
@@ -503,8 +495,8 @@ namespace moho
     virtual void SetWaterElevation(float elevation) = 0;
     virtual void SetWaterElevationDeep(float elevation) = 0;
     virtual void SetWaterElevationAbyss(float elevation) = 0;
-    [[nodiscard]] virtual bool SetPlayableMapRect(const VisibilityRect& rect) = 0;
-    [[nodiscard]] virtual const VisibilityRect* GetPlayableMapRect(VisibilityRect& outRect) const = 0;
+    [[nodiscard]] virtual bool SetPlayableMapRect(const gpg::Rect2i& rect) = 0;
+    [[nodiscard]] virtual const gpg::Rect2i* GetPlayableMapRect(gpg::Rect2i& outRect) const = 0;
     [[nodiscard]] virtual bool IsInPlayableRect(const Wm3::Vec3f& worldPos) = 0;
     virtual void SetWaterShaderProperties(const CWaterShaderProperties& properties) = 0;
     [[nodiscard]] virtual CWaterShaderProperties* GetWaterShaderProperties() = 0;
@@ -520,6 +512,15 @@ namespace moho
     virtual bool Save(gpg::BinaryWriter& writer) = 0;
     [[nodiscard]] virtual bool Finalize() = 0;
     [[nodiscard]] virtual IDecalManager* GetDecalManager() = 0;
+
+    /**
+     * Engine addition, after the binary's 76 slots: the map changes of one sim beat
+     * (`SSyncData::mPlayableRectUpdates`, the rectangles `FlattenMapRect` flattened), with the result
+     * of calling `NotifyMapChange` for each in order, which is what this default does.
+     * `CWldTerrainRes` updates each normal-map tile once for all of them: a map whose start flattens
+     * thousands of building skirts (SCMP_021: 3584) otherwise uploads a tile per skirt.
+     */
+    virtual void NotifyMapChanges(const gpg::Rect2i* rects, std::size_t count);
 
   protected:
     /**
@@ -570,7 +571,7 @@ namespace moho
      * - the cartographic view, the splat and clutter passes, the map imager,
      * the console's map queries - follows it straight into `STIMap`.
      */
-    STIMap* mMap;                                          // +0x004
+    STIMap* mMap; // +0x004
   };
 
   /**
@@ -609,32 +610,6 @@ namespace moho
      */
     [[nodiscard]]
     bool MapLoad(gpg::StrArg mapName, LuaPlus::LuaState* state, bool previewOnly, CBackgroundTaskControl& loadControl);
-
-    /**
-     * Address: 0x00891030 (FUN_00891030, ?MapSave@CWldMap@Moho@@QAE_NVStrArg@gpg@@@Z)
-     *
-     * IDA signature:
-     * bool __thiscall Moho::CWldMap::MapSave(Moho::CWldMap *this, gpg::StrArg mapName);
-     *
-     * What it does:
-     * Resolves `mapName` to a writable on-disk path through the virtual file
-     * system (mounted directory prefix + `\` + base name), opens it for
-     * writing, emits the `Map\x1A` / version-2 file header, then saves the
-     * preview chunk, the terrain resource and the prop set through the same
-     * `gpg::BinaryWriter`. Returns false when any owned map resource is missing
-     * or the destination stream cannot be opened.
-     */
-    [[nodiscard]] bool MapSave(gpg::StrArg mapName);
-
-    /**
-     * Address: 0x00891250 (FUN_00891250, ?MapSetPreview@CWldMap@Moho@@QAEXV?$shared_ptr@VID3DTextureSheet@Moho@@@boost@@ABV?$Vector2@M@Wm3@@PBD@Z)
-     *
-     * What it does:
-     * Replaces the owned preview chunk with one built from the provided
-     * texture/size/name lane and destroys any previous chunk.
-     */
-    void
-    MapSetPreview(boost::shared_ptr<ID3DTextureSheet> textureSheet, const Wm3::Vector2f& previewSize, const char* previewName);
 
   private:
     /**

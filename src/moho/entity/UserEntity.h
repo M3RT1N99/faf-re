@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/String.h"
 #include "moho/audio/CSndParams.h"
 #include "moho/containers/TDatList.h"
@@ -26,6 +26,12 @@ namespace moho
   class UserArmy;
   class CSndParams;
   struct REntityBlueprint;
+
+  /**
+   * Not in the binary (the game never sets it): the map editor's "Game units" off. While set, a unit's mesh stays
+   * hidden whatever its visibility mode. Drawing only: nothing the sim reads.
+   */
+  extern bool ed_HideUserUnits;
 
   class UserEntity : public WeakObject
   {
@@ -239,16 +245,7 @@ namespace moho
      * Selects UI selection-bracket texture lane from alliance relation and unit
      * intel-state flags.
      */
-    [[nodiscard]] boost::shared_ptr<CD3DBatchTexture> GetSelectionBracketTexture(const UserArmy* viewingArmy) const;
-
-    /**
-     * Address: 0x0085B050 (FUN_0085B050, Moho::WeakPtr_CD3DBatchTexture::WeakPtr_CD3DBatchTexture)
-     *
-     * What it does:
-     * Returns one retained strategic-underlay texture shared owner lane from
-     * this entity variable-data payload.
-     */
-    [[nodiscard]] boost::shared_ptr<CD3DBatchTexture> GetStrategicUnderlayTexture() const;
+    [[nodiscard]] std::shared_ptr<CD3DBatchTexture> GetSelectionBracketTexture(const UserArmy* viewingArmy) const;
 
     /**
      * Address: 0x008B97C0 (FUN_008B97C0,
@@ -257,7 +254,7 @@ namespace moho
      * What it does:
      * Resolves category bitset and tests membership for this entity category id.
      */
-    [[nodiscard]] bool IsInCategory(const msvc8::string& category) const;
+    [[nodiscard]] bool IsInCategory(const fa::string& category) const;
 
     /**
      * Address: 0x008B8CF0 (FUN_008B8CF0, ?GetInterpolatedTransform@UserEntity@Moho@@QBE?AVVTransform@2@M@Z)
@@ -269,15 +266,6 @@ namespace moho
     [[nodiscard]] VTransform GetInterpolatedTransform(float interpolationAlpha) const;
 
     /**
-     * Address: 0x008B8E40 (FUN_008B8E40, UserEntity interpolated scroll lane)
-     *
-     * What it does:
-     * Computes one interpolated `(u,v)` texture-scroll pair by blending the
-     * two variable-data scroll lanes using clamped impact-weighted alpha.
-     */
-    UserEntity* GetInterpolatedScroll(float* outScrollV, float* outScrollU, float interpolationAlpha);
-
-    /**
      * Address: 0x007EC2F0 (FUN_007EC2F0, ?GetInterpolatedPosition@UserEntity@Moho@@QBE?AV?$Vector3@M@Wm3@@M@Z)
      *
      * What it does:
@@ -287,23 +275,13 @@ namespace moho
     [[nodiscard]] Wm3::Vec3f GetInterpolatedPosition(float interpolationAlpha) const;
 
     /**
-     * Address: 0x008B9740 (FUN_008B9740, ?GetRenderSphere@UserEntity@Moho@@QBE?AV?$Sphere3@M@Wm3@@M@Z)
-     *
-     * What it does:
-     * Returns current render-oriented bounds; uses mesh interpolated box when
-     * a mesh instance exists, otherwise synthesizes a unit-half-extent box from
-     * interpolated entity transform/orientation.
-     */
-    [[nodiscard]] Wm3::Box3f GetRenderSphere(float interpolationAlpha) const;
-
-    /**
      * Address: 0x008B8BC0 (FUN_008B8BC0, ?SetPose@UserEntity@Moho@@QAEXABV?$shared_ptr@VCAniPose@Moho@@@boost@@@Z)
      *
      * What it does:
      * Applies one shared animation pose to both runtime pose lanes, ensures
      * static-pose mesh stance mode, and refreshes spatial-db bounds.
      */
-    void SetPose(const boost::shared_ptr<CAniPose>& pose);
+    void SetPose(const std::shared_ptr<CAniPose>& pose);
 
     /**
      * Address: 0x00838030 (FUN_00838030, ?GetAttachmentParent@UserEntity@Moho@@QAEPAV12@XZ)
@@ -316,16 +294,16 @@ namespace moho
     [[nodiscard]] UserEntity* GetAttachmentParent();
 
   public:
-    CWldSession* mSession;                        // 0x0C
+    CWldSession* mSession; // 0x0C
     /// The entity's registration in the session's mesh spatial database. The
     /// constructor registers it at 0x008B8721 against `CWldSession + 0x50`
     /// (`SpatialDB_MeshInstance::Register`, 0x00501A80) with the category
     /// routing mask, and `~SpatialDB_MeshInstance` (0x00501BC0) unregisters it
     /// as an ordinary member destructor at 0x008B888D.
-    SpatialDBEntry<UserEntity> mSpatialDbEntry;   // 0x10
+    SpatialDBEntry<UserEntity> mSpatialDbEntry; // 0x10
     VisionDB::Handle* mVisionHandle;            // 0x18
-    boost::shared_ptr<CAniPose> mPosePrimary;   // 0x1C
-    boost::shared_ptr<CAniPose> mPoseSecondary; // 0x24
+    std::shared_ptr<CAniPose> mPosePrimary;     // 0x1C
+    std::shared_ptr<CAniPose> mPoseSecondary;   // 0x24
     MeshInstance* mMeshInstance;                // 0x2C
     /**
      * The entity's own ambient sound loop, stored inline rather than behind a
@@ -342,15 +320,15 @@ namespace moho
      * constructor seeds `mLoopIndex` at +0x34 with -1, and `UpdateEntityData`
      * refreshes `mParams` at +0x38 from the replicated ambient sound.
      */
-    HSndEntityLoop mAmbientLoop;                // 0x30
-    HSndEntityLoop* mRumbleLoopHandle;          // 0x3C
-    std::int32_t mLastFocusDamageGameTick;      // 0x40
-    SCreateEntityParams mParams;                // 0x44
-    SSTIEntityVariableData mVariableData;       // 0x50
-    UserArmy* mArmy;                // 0x120
-    VTransform mTransform;          // 0x124
-    float mLastInterpAmt;           // 0x140
-    std::uint8_t mHasInitialUpdate; // 0x144
+    HSndEntityLoop mAmbientLoop;           // 0x30
+    HSndEntityLoop* mRumbleLoopHandle;     // 0x3C
+    std::int32_t mLastFocusDamageGameTick; // 0x40
+    SCreateEntityParams mParams;           // 0x44
+    SSTIEntityVariableData mVariableData;  // 0x50
+    UserArmy* mArmy;                       // 0x120
+    VTransform mTransform;                 // 0x124
+    float mLastInterpAmt;                  // 0x140
+    std::uint8_t mHasInitialUpdate;        // 0x144
     /// Set by `CWldSession::OrphanEntity` (0x008941ED) when the sim is done
     /// with the entity but the client still has it on screen.
     std::uint8_t mMarkedForDeletion; // 0x145
@@ -378,11 +356,10 @@ namespace moho
     offsetof(UserEntity, mAmbientLoop) + offsetof(HSndEntityLoop, mParams) == 0x38,
     "UserEntity::mAmbientLoop.mParams must land at 0x38"
   );
+  static_assert(offsetof(UserEntity, mRumbleLoopHandle) == 0x3C, "UserEntity::mRumbleLoopHandle offset must be 0x3C");
   static_assert(
-    offsetof(UserEntity, mRumbleLoopHandle) == 0x3C, "UserEntity::mRumbleLoopHandle offset must be 0x3C"
-  );
-  static_assert(
-    offsetof(UserEntity, mLastFocusDamageGameTick) == 0x40, "UserEntity::mLastFocusDamageGameTick offset must be 0x40"
+    offsetof(UserEntity, mLastFocusDamageGameTick) == 0x40,
+    "UserEntity::mLastFocusDamageGameTick offset must be 0x40"
   );
   static_assert(offsetof(UserEntity, mParams) == 0x44, "UserEntity::mParams offset must be 0x44");
   static_assert(offsetof(UserEntity, mVariableData) == 0x50, "UserEntity::mVariableData offset must be 0x50");
@@ -390,5 +367,8 @@ namespace moho
   static_assert(offsetof(UserEntity, mTransform) == 0x124, "UserEntity::mTransform offset must be 0x124");
   static_assert(offsetof(UserEntity, mLastInterpAmt) == 0x140, "UserEntity::mLastInterpAmt offset must be 0x140");
   static_assert(offsetof(UserEntity, mHasInitialUpdate) == 0x144, "UserEntity::mHasInitialUpdate offset must be 0x144");
-  static_assert(offsetof(UserEntity, mMarkedForDeletion) == 0x145, "UserEntity::mMarkedForDeletion offset must be 0x145");
+  static_assert(
+    offsetof(UserEntity, mMarkedForDeletion) == 0x145,
+    "UserEntity::mMarkedForDeletion offset must be 0x145"
+  );
 } // namespace moho

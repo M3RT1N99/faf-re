@@ -18,40 +18,10 @@ namespace
 {
   constexpr int kHistoryCapacity = 100;
 
-  static_assert(
-    offsetof(SimSubRes3, mValue) == offsetof(BVIntSet, mFirstWordIndex), "SimSubRes3/BVIntSet offset mismatch"
-  );
-  static_assert(
-    offsetof(SimSubRes3, mReserved04) == offsetof(BVIntSet, mReservedMetaWord), "SimSubRes3/BVIntSet offset mismatch"
-  );
-  static_assert(offsetof(SimSubRes3, mValues) == offsetof(BVIntSet, mWords), "SimSubRes3/BVIntSet offset mismatch");
-  static_assert(sizeof(SimSubRes3) == sizeof(BVIntSet), "SimSubRes3/BVIntSet size mismatch");
-
   [[nodiscard]] const gpg::RRef& NullOwnerRef()
   {
     static const gpg::RRef kNullOwner{nullptr, nullptr};
     return kNullOwner;
-  }
-
-  [[nodiscard]] BVIntSet& AsBitSet(SimSubRes3& slot) noexcept
-  {
-    return *reinterpret_cast<BVIntSet*>(&slot);
-  }
-
-  [[nodiscard]] const BVIntSet& AsBitSet(const SimSubRes3& slot) noexcept
-  {
-    return *reinterpret_cast<const BVIntSet*>(&slot);
-  }
-
-  [[nodiscard]] gpg::RType* CachedBVIntSetType()
-  {
-    gpg::RType* type = BVIntSet::sType;
-    if (!type) {
-      type = gpg::LookupRType(typeid(BVIntSet));
-      BVIntSet::sType = type;
-    }
-    GPG_ASSERT(type != nullptr);
-    return type;
   }
 
   /**
@@ -61,43 +31,15 @@ namespace
    * Returns `{set, value}` when `value` is currently set; otherwise advances to
    * the next set bit and returns that index pair.
    */
-  [[nodiscard]] BVIntSetIndex ResolveExistingOrNextIndex(BVIntSet& set, unsigned int value)
+  [[nodiscard]] BVIntSetIndex ResolveExistingOrNextIndex(
+    BVIntSet& set,
+    unsigned int value
+  )
   {
     if (!set.Contains(value)) {
       value = set.GetNext(value);
     }
     return MakeBVIntSetIndex(&set, value);
-  }
-
-  /**
-   * Address: 0x00686DF0 (FUN_00686DF0, copy_IdPool_payload_for_map_lanes)
-   *
-   * What it does:
-   * Copies one `IdPool` payload into destination storage, including the
-   * released-id bitset and recycle-history ring snapshots.
-   */
-  [[maybe_unused]] moho::IdPool* CopyIdPoolPayloadForMapLanes(
-    const moho::IdPool* const source,
-    moho::IdPool* const destination
-  )
-  {
-    if (source == nullptr || destination == nullptr) {
-      return destination;
-    }
-
-    if (source == destination) {
-      return destination;
-    }
-
-    destination->mNextLowId = source->mNextLowId;
-    destination->mReleasedLows.mFirstWordIndex = source->mReleasedLows.mFirstWordIndex;
-    destination->mReleasedLows.mWords.ResetFrom(source->mReleasedLows.mWords);
-
-    destination->mSubRes2.mStart = 0;
-    destination->mSubRes2.mEnd = 0;
-    destination->mSubRes2 = source->mSubRes2;
-
-    return destination;
   }
 
   struct IdPoolMapLaneCopy
@@ -107,61 +49,8 @@ namespace
     moho::IdPool mPayload; // +0x08
   };
   static_assert(offsetof(IdPoolMapLaneCopy, mKey) == 0x00, "IdPoolMapLaneCopy::mKey offset must be 0x00");
-  static_assert(
-    offsetof(IdPoolMapLaneCopy, mPayload) == 0x08, "IdPoolMapLaneCopy::mPayload offset must be 0x08"
-  );
+  static_assert(offsetof(IdPoolMapLaneCopy, mPayload) == 0x08, "IdPoolMapLaneCopy::mPayload offset must be 0x08");
 
-  /**
-   * Address: 0x00686D10 (FUN_00686D10)
-   *
-   * What it does:
-   * Copies one map-lane key dword and then clones the associated IdPool payload
-   * into destination storage.
-   */
-  [[maybe_unused]] IdPoolMapLaneCopy* CopyIdPoolMapLaneEntryForMapLanes(
-    const std::uint32_t* const sourceKey,
-    IdPoolMapLaneCopy* const destination,
-    const moho::IdPool* const sourcePayload
-  )
-  {
-    destination->mKey = *sourceKey;
-    (void)CopyIdPoolPayloadForMapLanes(sourcePayload, &destination->mPayload);
-    return destination;
-  }
-
-  /**
-   * Address: 0x00688A10 (FUN_00688A10)
-   *
-   * What it does:
-   * Copies one packed map-lane key/payload entry into destination storage.
-   */
-  [[maybe_unused]] IdPoolMapLaneCopy* CopyPackedIdPoolMapLaneEntryForMapLanes(
-    const IdPoolMapLaneCopy* const source,
-    IdPoolMapLaneCopy* const destination
-  )
-  {
-    destination->mKey = source->mKey;
-    (void)CopyIdPoolPayloadForMapLanes(&source->mPayload, &destination->mPayload);
-    return destination;
-  }
-
-  /**
-   * Address: 0x00686E60 (FUN_00686E60)
-   *
-   * What it does:
-   * Clears destination ring indices and repopulates history snapshots using the
-   * shared IdPool ring-copy behavior.
-   */
-  [[maybe_unused]] moho::SimSubRes2* ResetAndCopyIdPoolHistoryRingForMapLanes(
-    moho::SimSubRes2* const destination,
-    const moho::SimSubRes2* const source
-  )
-  {
-    destination->mStart = 0;
-    destination->mEnd = 0;
-    *destination = *source;
-    return destination;
-  }
 } // namespace
 
 /**
@@ -170,9 +59,11 @@ namespace
  * What it does:
  * Copies one BVIntSet snapshot into the tail slot and advances `mEnd` modulo 100.
  */
-void SimSubRes2::PushSnapshot(const BVIntSet& snapshot)
+void SimSubRes2::PushSnapshot(
+  const BVIntSet& snapshot
+)
 {
-  BVIntSet& destination = AsBitSet(mData[mEnd]);
+  BVIntSet& destination = mData[mEnd];
   destination.mFirstWordIndex = snapshot.mFirstWordIndex;
   destination.mWords.ResetFrom(snapshot.mWords);
   mEnd = (mEnd + 1) % kHistoryCapacity;
@@ -186,7 +77,7 @@ void SimSubRes2::PushSnapshot(const BVIntSet& snapshot)
  */
 void SimSubRes2::PopOldest()
 {
-  mData[mStart].mValues.ResetStorageToInline();
+  mData[mStart].mWords.ResetStorageToInline();
   mStart = (mStart + 1) % kHistoryCapacity;
 }
 
@@ -220,12 +111,14 @@ void SimSubRes2::Reset()
  * EntityDb's address range because `IdPool`'s implicit copy (0x00686DF0,
  * the `map<uint, IdPool>` node build) is its first user.
  */
-SimSubRes2& SimSubRes2::operator=(const SimSubRes2& other)
+SimSubRes2& SimSubRes2::operator=(
+  const SimSubRes2& other
+)
 {
   if (this != &other) {
     Reset();
     for (int index = other.mStart; index != other.mEnd; index = (index + 1) % kHistoryCapacity) {
-      PushSnapshot(AsBitSet(other.mData[index]));
+      PushSnapshot(other.mData[index]);
     }
   }
   return *this;
@@ -253,10 +146,12 @@ IdPool::IdPool()
  * What it does:
  * Queues one released low-id bit into the current recycle-history tail bucket.
  */
-BVIntSetAddResult IdPool::QueueReleasedLowId(const unsigned int lowId)
+BVIntSetAddResult IdPool::QueueReleasedLowId(
+  const unsigned int lowId
+)
 {
   const int bucketIndex = (mSubRes2.mEnd + (kHistoryCapacity - 1)) % kHistoryCapacity;
-  return AsBitSet(mSubRes2.mData[bucketIndex]).Add(lowId);
+  return mSubRes2.mData[bucketIndex].Add(lowId);
 }
 
 /**
@@ -275,7 +170,7 @@ void IdPool::Update()
 
   const int nextEnd = (mSubRes2.mEnd + 1) % kHistoryCapacity;
   if (nextEnd == mSubRes2.mStart) {
-    BVIntSet& oldestSet = AsBitSet(mSubRes2.mData[mSubRes2.mStart]);
+    BVIntSet& oldestSet = mSubRes2.mData[mSubRes2.mStart];
     if (!oldestSet.mWords.Empty()) {
       const unsigned int lower = oldestSet.GetNext(std::numeric_limits<unsigned int>::max());
       const unsigned int upper = oldestSet.Max();
@@ -307,13 +202,15 @@ void IdPool::Update()
  * What it does:
  * Reads the next low-id cursor and released-id set from archive.
  */
-void IdPool::MemberDeserialize(gpg::ReadArchive* const archive)
+void IdPool::MemberDeserialize(
+  gpg::ReadArchive* const archive
+)
 {
   std::uint32_t nextLowId = 0;
   archive->ReadUInt(&nextLowId);
   mNextLowId = static_cast<std::int32_t>(nextLowId);
 
-  archive->Read(CachedBVIntSetType(), &mReleasedLows, NullOwnerRef());
+  archive->Read(gpg::CachedLookup<BVIntSet>(BVIntSet::sType), &mReleasedLows, NullOwnerRef());
 
   // Engine addition (replay keyframes): the recycle ring as it was, see MemberSerialize.
   if (gSimExactArchive.load(std::memory_order_relaxed)) {
@@ -322,7 +219,7 @@ void IdPool::MemberDeserialize(gpg::ReadArchive* const archive)
     mSubRes2.Reset();
     for (std::uint32_t slot = 0; slot < slots; ++slot) {
       BVIntSet snapshot{};
-      archive->Read(CachedBVIntSetType(), &snapshot, NullOwnerRef());
+      archive->Read(gpg::CachedLookup<BVIntSet>(BVIntSet::sType), &snapshot, NullOwnerRef());
       mSubRes2.PushSnapshot(snapshot);
     }
   }
@@ -334,14 +231,16 @@ void IdPool::MemberDeserialize(gpg::ReadArchive* const archive)
  * What it does:
  * Compacts the released-id set with the recycle ring and writes it to archive.
  */
-void IdPool::MemberSerialize(gpg::WriteArchive* const archive) const
+void IdPool::MemberSerialize(
+  gpg::WriteArchive* const archive
+) const
 {
   // Engine addition (replay keyframes): a retail save hands every id the ring still holds back to
   // the free set, so after a load they are reused up to 100 beats sooner than in the game that
   // saved. A keyframe keeps the cursor, the free set and the ring exactly.
   if (gSimExactArchive.load(std::memory_order_relaxed)) {
     archive->WriteInt(mNextLowId);
-    archive->Write(CachedBVIntSetType(), &mReleasedLows, NullOwnerRef());
+    archive->Write(gpg::CachedLookup<BVIntSet>(BVIntSet::sType), &mReleasedLows, NullOwnerRef());
 
     std::uint32_t slots = 0;
     for (int index = mSubRes2.mStart; index != mSubRes2.mEnd; index = (index + 1) % kHistoryCapacity) {
@@ -349,8 +248,8 @@ void IdPool::MemberSerialize(gpg::WriteArchive* const archive) const
     }
     archive->WriteUInt(slots);
     for (int index = mSubRes2.mStart; index != mSubRes2.mEnd; index = (index + 1) % kHistoryCapacity) {
-      BVIntSet snapshot = AsBitSet(mSubRes2.mData[index]);
-      archive->Write(CachedBVIntSetType(), &snapshot, NullOwnerRef());
+      BVIntSet snapshot = mSubRes2.mData[index];
+      archive->Write(gpg::CachedLookup<BVIntSet>(BVIntSet::sType), &snapshot, NullOwnerRef());
     }
     return;
   }
@@ -358,7 +257,7 @@ void IdPool::MemberSerialize(gpg::WriteArchive* const archive) const
   BVIntSet compactedReleased = mReleasedLows;
 
   for (int index = mSubRes2.mStart; index != mSubRes2.mEnd; index = (index + 1) % kHistoryCapacity) {
-    const BVIntSet& slot = AsBitSet(mSubRes2.mData[index]);
+    const BVIntSet& slot = mSubRes2.mData[index];
     const unsigned int slotMax = slot.Max();
     const unsigned int firstReleased = slot.GetNext(std::numeric_limits<unsigned int>::max());
     compactedReleased.AddFrom(&slot, firstReleased, slotMax);
@@ -379,7 +278,7 @@ void IdPool::MemberSerialize(gpg::WriteArchive* const archive) const
   compactedReleased.ClearRange(lower, upper);
 
   archive->WriteInt(static_cast<int>(nextLowId));
-  archive->Write(CachedBVIntSetType(), &compactedReleased, NullOwnerRef());
+  archive->Write(gpg::CachedLookup<BVIntSet>(BVIntSet::sType), &compactedReleased, NullOwnerRef());
 }
 
 namespace moho

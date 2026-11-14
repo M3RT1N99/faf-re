@@ -7,7 +7,7 @@
 
 #include "gpg/core/containers/ArchiveSerialization.h"
 #include "gpg/core/reflection/SerializationError.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/utils/Global.h"
 #include "moho/misc/Stats.h"
 #include "moho/unit/core/Unit.h"
@@ -48,42 +48,11 @@ namespace
     return gpg::RRef{};
   }
 
-  [[nodiscard]] gpg::RRef MakeStatsStatItemRef(moho::Stats<moho::StatItem>* const value)
-  {
-    return gpg::RRef(value, gpg::RTypeOf<moho::Stats<moho::StatItem>>());
-  }
-
-  /**
-   * Address: 0x005CAD60 (FUN_005CAD60, func_InitStatItemParent)
-   *
-   * What it does:
-   * Initializes one boost shared-control lane for `Stats<StatItem>` ownership.
-   */
-  void InitializeStatsRootSharedControl(
-    boost::detail::sp_counted_base*& outControl,
-    moho::Stats<moho::StatItem>* const statsRoot
+  [[nodiscard]] gpg::RRef MakeStatsStatItemRef(
+    moho::Stats<moho::StatItem>* const value
   )
   {
-    outControl = nullptr;
-    if (statsRoot != nullptr) {
-      outControl = new boost::detail::sp_counted_impl_p<moho::Stats<moho::StatItem>>(statsRoot);
-    }
-  }
-
-  /**
-   * Address: 0x005CC860 (FUN_005CC860, destroy_Stats_StatItem_if_present)
-   *
-   * What it does:
-   * Runs one `Stats_StatItem` destructor and frees storage when the incoming
-   * pointer lane is non-null.
-   */
-  void DestroyStatsStatItemIfPresent(moho::Stats_StatItem* const statItem) noexcept
-  {
-    if (statItem == nullptr) {
-      return;
-    }
-
-    delete statItem;
+    return gpg::RRef(value, gpg::RTypeOf<moho::Stats<moho::StatItem>>());
   }
 
 } // namespace
@@ -120,25 +89,21 @@ namespace moho
     , mFake(0u)
     , pad_0D{0u, 0u, 0u}
   {
-    auto* const allocation = static_cast<moho::Stats<moho::StatItem>*>(
-      ::operator new(sizeof(moho::Stats<moho::StatItem>), std::nothrow)
-    );
+    auto* const allocation =
+      static_cast<moho::Stats<moho::StatItem>*>(::operator new(sizeof(moho::Stats<moho::StatItem>), std::nothrow));
     moho::Stats<moho::StatItem>* statsRoot = nullptr;
     if (allocation != nullptr) {
       statsRoot = new (allocation) moho::Stats<moho::StatItem>();
     }
 
-    boost::SharedPtrRaw<moho::Stats<moho::StatItem>> statsRootRaw{};
-    statsRootRaw.px = statsRoot;
-    try {
-      InitializeStatsRootSharedControl(statsRootRaw.pi, statsRoot);
-    } catch (...) {
-      delete statsRoot;
-      throw;
-    }
-
-    mStatsRoot = boost::SharedPtrFromRawRetained(statsRootRaw);
-    statsRootRaw.release();
+    // Address: 0x005CAD60 (FUN_005CAD60, func_InitStatItemParent -- the `shared_count` half of this
+    // `shared_ptr<Stats<StatItem>>` construction: a new 0x10-byte `sp_counted_impl_p<Stats<StatItem>>` holding the
+    // root, made whether or not the root is null (0x005CAD81..0x005CADB0 store it without a test), deleting the root
+    // if that allocation throws; formerly `InitializeStatsRootSharedControl` here.) The deleter is that plain
+    // `delete` of the exact type, written here so the non-virtual-destructor warning is silenced where the delete is.
+    mStatsRoot.reset(statsRoot, [](moho::Stats<moho::StatItem>* const root) {
+      GPG_NONVIRTUAL_DESTROY(delete root);
+    });
   }
 
   /**
@@ -148,7 +113,10 @@ namespace moho
    * Loads build-state tag, stats root shared-pointer lane, and fake flag from
    * archive payload.
    */
-  void SSTIUnitConstantData::MemberDeserialize(gpg::ReadArchive* const archive, const int version)
+  void SSTIUnitConstantData::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    const int version
+  )
   {
     if (version < 1) {
       throw gpg::SerializationError("unsupported version.");
@@ -173,7 +141,10 @@ namespace moho
    * Saves build-state tag, stats root shared-pointer lane, and fake flag to
    * archive payload.
    */
-  void SSTIUnitConstantData::MemberSerialize(gpg::WriteArchive* const archive, const int version) const
+  void SSTIUnitConstantData::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    const int version
+  ) const
   {
     if (version < 1) {
       throw gpg::SerializationError("unsupported version.");
@@ -181,10 +152,7 @@ namespace moho
 
     archive->WriteBool(mBuildStateTag != 0u);
     gpg::WriteRawPointer(
-      archive,
-      MakeStatsStatItemRef(mStatsRoot.get()),
-      gpg::TrackedPointerState::Shared,
-      NullOwnerRef()
+      archive, MakeStatsStatItemRef(mStatsRoot.get()), gpg::TrackedPointerState::Shared, NullOwnerRef()
     );
     archive->WriteBool(mFake != 0u);
   }
@@ -193,7 +161,10 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_SSTIUnitConstantDataTypeInfo_f5d847, moho::preregister_SSTIUnitConstantDataTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_SSTIUnitConstantDataTypeInfo_f5d847,
+  moho::preregister_SSTIUnitConstantDataTypeInfo
+)
 
 namespace moho
 {

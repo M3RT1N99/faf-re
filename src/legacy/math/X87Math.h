@@ -6,14 +6,14 @@
 
 /**
  * The CRT's SSE2 math lane (`_set_SSE2_enable`, FUN_00A8ECD3 func_SetSSE2):
- * CScApp turns it off unless /sse2 is given, so the `_CI*` entries msvc8::acos,
+ * CScApp turns it off unless /sse2 is given, so the `_CI*` entries fa::acos,
  * asin and pow reproduce take their x87 bodies. Defined in X87Math.cpp next to
  * the helpers that read it.
  */
 extern "C" int global_mode_sse2;
 extern "C" int __cdecl SetSse2Mode(int enableSse2);
 
-namespace msvc8
+namespace fa
 {
   /**
    * Inlined block from FUN_006BDEE0: float-to-cell conversion uses the
@@ -46,7 +46,9 @@ namespace msvc8
    * out-of-range one is undefined in C++ (a saturating target gives another
    * result; plan WPL.19). Inline: the Lua table code calls it per number key.
    */
-  [[nodiscard]] inline std::int32_t TruncateToInt(const float value) noexcept
+  [[nodiscard]] inline std::int32_t TruncateToInt(
+    const float value
+  ) noexcept
   {
     constexpr float kInt32Bound = 2147483648.0f;
     if (!(value > -kInt32Bound - 1.0f && value < kInt32Bound)) {
@@ -61,7 +63,9 @@ namespace msvc8
    * lowering saturates +inf and values from 2^63 up to 0x7FFFFFFFFFFFFFFF
    * (faf_math_dump against retail, plan WPR.21).
    */
-  [[nodiscard]] inline std::int64_t TruncateToInt64(const float value) noexcept
+  [[nodiscard]] inline std::int64_t TruncateToInt64(
+    const float value
+  ) noexcept
   {
     constexpr float kInt64Bound = 9223372036854775808.0f;
     if (!(value >= -kInt64Bound && value < kInt64Bound)) {
@@ -204,7 +208,12 @@ namespace msvc8
    * against |t| ~ 100) overflowed the ratio and returned infinities where the
    * engine returns a vector of length |t|.
    */
-  void ScaleVectorToLengthOfX87(float* destLanes, const float* sourceLanes, const float* targetLanes, float sourceLengthSq) noexcept;
+  void ScaleVectorToLengthOfX87(
+    float* destLanes,
+    const float* sourceLanes,
+    const float* targetLanes,
+    float sourceLengthSq
+  ) noexcept;
 
   // Terrain interpolation uses the simulation's 24-bit x87 arithmetic.
   // Inlined block from FUN_0044FB90; preserve the original operation order.
@@ -214,9 +223,8 @@ namespace msvc8
   // binary's GetElevation returns it in st0 and CHeightField::GetNormal
   // subtracts it there (0x0069A6DA `fsubr`), so a height in the float
   // denormal range keeps its 24-bit mantissa until the difference is stored.
-  [[nodiscard]] float SubtractBilinearHeight(
-    float top, float h00, float h01, float h10, float h11, float fracX, float fracZ
-  ) noexcept;
+  [[nodiscard]] float
+  SubtractBilinearHeight(float top, float h00, float h01, float h10, float h11, float fracX, float fracZ) noexcept;
 
   /**
    * Single-precision transcendentals as the 2007 toolchain produced them.
@@ -264,7 +272,12 @@ namespace msvc8
    * retail on denormal-range `t` and lanes (difffuzz).
    */
   void SlerpSphericalBlend(
-    float* outLanes, const float* q1Lanes, const float* rhsLanes, float angle, float oneMinusT, float t
+    float* outLanes,
+    const float* q1Lanes,
+    const float* rhsLanes,
+    float angle,
+    float oneMinusT,
+    float t
   ) noexcept;
 
   /**
@@ -303,7 +316,7 @@ namespace msvc8
    * functions go through a double routine and round once, which is what the
    * x86 CRT's own float overloads do; x64's CRT has separate float
    * implementations that disagree with them. asinf, expf and logf use the
-   * engine's double routines (msvc8::libm, plan WPL.11), equal after the
+   * engine's double routines (fa::libm, plan WPL.11), equal after the
    * rounding to the Windows x64 UCRT's for every float; powf still uses the
    * host's (its only caller is the sim driver's wall-clock pacing).
    */
@@ -340,16 +353,68 @@ namespace msvc8
    * (double, mixed or integral arguments) forwards to `std::` unchanged.
    * The explicit double acos/asin overloads also preserve legacy CRT dispatch.
    */
-  [[nodiscard]] inline float sin(const float x) noexcept { return sinf(x); }
-  [[nodiscard]] inline float cos(const float x) noexcept { return cosf(x); }
-  [[nodiscard]] inline float tan(const float x) noexcept { return tanf(x); }
-  [[nodiscard]] inline float atan(const float x) noexcept { return atanf(x); }
-  [[nodiscard]] inline float asin(const float x) noexcept { return asinf(x); }
-  [[nodiscard]] inline float acos(const float x) noexcept { return acosf(x); }
-  [[nodiscard]] inline float exp(const float x) noexcept { return expf(x); }
-  [[nodiscard]] inline float log(const float x) noexcept { return logf(x); }
-  [[nodiscard]] inline float atan2(const float y, const float x) noexcept { return atan2f(y, x); }
-  [[nodiscard]] inline float pow(const float x, const float y) noexcept { return powf(x, y); }
+  [[nodiscard]] inline float sin(
+    const float x
+  ) noexcept
+  {
+    return sinf(x);
+  }
+  [[nodiscard]] inline float cos(
+    const float x
+  ) noexcept
+  {
+    return cosf(x);
+  }
+  [[nodiscard]] inline float tan(
+    const float x
+  ) noexcept
+  {
+    return tanf(x);
+  }
+  [[nodiscard]] inline float atan(
+    const float x
+  ) noexcept
+  {
+    return atanf(x);
+  }
+  [[nodiscard]] inline float asin(
+    const float x
+  ) noexcept
+  {
+    return asinf(x);
+  }
+  [[nodiscard]] inline float acos(
+    const float x
+  ) noexcept
+  {
+    return acosf(x);
+  }
+  [[nodiscard]] inline float exp(
+    const float x
+  ) noexcept
+  {
+    return expf(x);
+  }
+  [[nodiscard]] inline float log(
+    const float x
+  ) noexcept
+  {
+    return logf(x);
+  }
+  [[nodiscard]] inline float atan2(
+    const float y,
+    const float x
+  ) noexcept
+  {
+    return atan2f(y, x);
+  }
+  [[nodiscard]] inline float pow(
+    const float x,
+    const float y
+  ) noexcept
+  {
+    return powf(x, y);
+  }
 
   /**
    * `sqrt((z*z + y*y) + x*x)` of `lanes` with the squares, the sum and the
@@ -386,4 +451,4 @@ namespace msvc8
   float atan2(Y y, X x) = delete;
   template <class B, class E, std::enable_if_t<!(std::is_same_v<B, float> && std::is_same_v<E, float>), int> = 0>
   float pow(B base, E exponent) = delete;
-} // namespace msvc8
+} // namespace fa

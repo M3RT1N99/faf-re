@@ -1,7 +1,7 @@
 ﻿#pragma once
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/core/reflection/Reflection.h"
-#include "gpg/core/utils/BoostUtils.h"
+#include "gpg/core/utils/NonCopyable.h"
 #include "lua/LuaObject.h"
 #include "moho/containers/TDatList.h"
 #include "moho/misc/InstanceCounter.h"
@@ -24,10 +24,11 @@ namespace moho
   class Unit;
   class UnitWeapon;
 
-  class MOHO_EMPTY_BASES CScriptObject : public gpg::RObject,
-                                         public WeakObject,
-                                         public boost::noncopyable_::noncopyable,
-                                         public InstanceCounter<CScriptObject>
+  class MOHO_EMPTY_BASES CScriptObject :
+    public gpg::RObject,
+    public WeakObject,
+    public gpg::NonCopyable,
+    public InstanceCounter<CScriptObject>
   {
     // Legacy MSVC8 ABI places empty-base storage ahead of first data member.
     // With __declspec(empty_bases) this storage is removed, so add +4 only
@@ -89,13 +90,16 @@ namespace moho
      * Address: 0x4C70A0
      * VFTable SLOT: 3
      */
-    virtual msvc8::string GetErrorDescription();
+    virtual fa::string GetErrorDescription();
 
     /**
      * Address: 0x004C70D0
      */
     void CreateLuaObject(
-      const LuaPlus::LuaObject&, const LuaPlus::LuaObject&, const LuaPlus::LuaObject&, const LuaPlus::LuaObject&
+      const LuaPlus::LuaObject&,
+      const LuaPlus::LuaObject&,
+      const LuaPlus::LuaObject&,
+      const LuaPlus::LuaObject&
     );
 
     /**
@@ -212,7 +216,7 @@ namespace moho
     void CallbackStr(const char* callback, const char** arg0, const char** arg1);
 
     /**
-       * Address: 0x006B0940 (FUN_006B0940)
+     * Address: 0x006B0940 (FUN_006B0940)
      *
      * Calls script callback with a single integer argument.
      */
@@ -246,7 +250,10 @@ namespace moho
      * slot; a callback that destroyed the object clears it.
      */
     template <class... Ts>
-    LuaPlus::LuaObject RunScript(const char* name, Ts... args)
+    LuaPlus::LuaObject RunScript(
+      const char* name,
+      Ts... args
+    )
     {
       const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -283,22 +290,6 @@ namespace moho
      * Invokes one script callback with `(self, intValue)` when present.
      */
     void RunScriptInt(const char* scriptName, int intValue);
-
-    /**
-     * Address: 0x005D0540 (FUN_005D0540, Moho::CScriptObject::RunScript_Obj_Num)
-     *
-     * What it does:
-     * Invokes one script callback with `(self)` and returns numeric result.
-     */
-    [[nodiscard]] float RunScriptObjNum(const char* scriptName);
-
-    /**
-     * Address: 0x005D06B0 (FUN_005D06B0, Moho::CScriptObject::RunScript_Weap)
-     *
-     * What it does:
-     * Invokes one script callback with `(self, weapon)` when present.
-     */
-    void RunScriptWeapon(const char* scriptName, UnitWeapon* weapon);
 
     /**
      * Address: 0x005EC1C0 (FUN_005EC1C0, Moho::CScriptObject::RunScript_Obj)
@@ -541,7 +532,8 @@ namespace moho
      * returns the numeric absorption contribution from script.
      */
     [[nodiscard]]
-    float RunScriptOnGetDamageAbsorption(const WeakPtr<Entity>& sourceLink, float amount, const std::string& damageType);
+    float
+    RunScriptOnGetDamageAbsorption(const WeakPtr<Entity>& sourceLink, float amount, const std::string& damageType);
 
     /**
      * Address: 0x0073A4F0 (FUN_0073A4F0, Moho::CScriptObject::RunScript_EntityOnDamage)
@@ -657,13 +649,6 @@ namespace moho
      * @param name
      */
     void RunScriptObj(LuaPlus::LuaObject& out, const char* name);
-
-    /**
-     * Address: 0x00675CF0
-     */
-    void LuaInvoke3_DiscardReturn(
-      LuaPlus::LuaObject& func, LuaPlus::LuaObject& selfObj, const char* stringArg, LuaPlus::LuaObject& payloadObj
-    );
 
   public:
     LuaPlus::LuaObject cObject; // +0x0C (size 0x14)

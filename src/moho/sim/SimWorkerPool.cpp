@@ -23,6 +23,8 @@
 
 namespace moho
 {
+  int gSimDefaultWorkers = 0;
+
   namespace
   {
     // MXCSR bits 0-5 are sticky exception *flags* (status, not control); a job inherits only the
@@ -46,18 +48,21 @@ namespace moho
       return std::max(1u, std::thread::hardware_concurrency());
     }
 
-    /// `/simworkers N` on the command line, otherwise 0: serial until a parallel phase is asked for.
+    /// `/simworkers N` on the command line, otherwise the exe's default, leaving two CPUs for the main and sim threads.
     [[nodiscard]] int CommandLineWorkerCount()
     {
-      msvc8::vector<msvc8::string> args;
+      fa::vector<fa::string> args;
       if (CFG_GetArgOption("/simworkers", 1u, &args) && !args.empty()) {
         return static_cast<int>(std::max(0L, std::strtol(args[0].c_str(), nullptr, 10)));
       }
-      return 0;
+      const unsigned int cpus = UsableCpuCount();
+      return cpus > 2u ? std::min(gSimDefaultWorkers, static_cast<int>(cpus - 2u)) : 0;
     }
 
     /// Clamps a requested worker count to [0, min(usable CPUs, kMaxWorkers)].
-    [[nodiscard]] unsigned int ClampWorkerCount(const int requested)
+    [[nodiscard]] unsigned int ClampWorkerCount(
+      const int requested
+    )
     {
       if (requested <= 0) {
         return 0u;
@@ -105,7 +110,7 @@ namespace moho
     SFpuControlState state{};
 #if defined(_M_IX86)
     std::uint16_t controlWord = 0;
-    __asm fnstcw controlWord
+    __asm { fnstcw controlWord }
     state.mX87ControlWord = controlWord;
 #endif
     state.mMxcsr = _mm_getcsr() & kMxcsrControlMask;
@@ -116,7 +121,7 @@ namespace moho
   {
 #if defined(_M_IX86)
     std::uint16_t controlWord = static_cast<std::uint16_t>(mX87ControlWord);
-    __asm fldcw controlWord
+    __asm { fldcw controlWord }
 #endif
     _mm_setcsr((_mm_getcsr() & ~kMxcsrControlMask) | (mMxcsr & kMxcsrControlMask));
   }
@@ -191,7 +196,10 @@ namespace moho
       }
     }
 
-    void WorkerMain(const unsigned int index, std::uint64_t seenGeneration)
+    void WorkerMain(
+      const unsigned int index,
+      std::uint64_t seenGeneration
+    )
     {
       tIsSimWorkerThread = true;
       char name[32];
@@ -205,7 +213,9 @@ namespace moho
         SFpuControlState jobFpu{};
         {
           std::unique_lock<std::mutex> lock(mutex);
-          wake.wait(lock, [&] { return stopping || generation != seenGeneration; });
+          wake.wait(lock, [&] {
+            return stopping || generation != seenGeneration;
+          });
           if (stopping) {
             return;
           }
@@ -238,7 +248,9 @@ namespace moho
         startGeneration = generation;
       }
       for (unsigned int index = 0; index < workerCount; ++index) {
-        threads.emplace_back([this, index, startGeneration] { WorkerMain(index, startGeneration); });
+        threads.emplace_back([this, index, startGeneration] {
+          WorkerMain(index, startGeneration);
+        });
       }
       gpg::Logf("SimWorkerPool: started %u worker threads", workerCount);
     }
@@ -293,7 +305,12 @@ namespace moho
     return mImpl->workerCount;
   }
 
-  void CSimWorkerPool::Run(const std::size_t count, std::size_t grain, const RangeFunction fn, void* const context)
+  void CSimWorkerPool::Run(
+    const std::size_t count,
+    std::size_t grain,
+    const RangeFunction fn,
+    void* const context
+  )
   {
     if (count == 0u || fn == nullptr) {
       return;
@@ -337,7 +354,9 @@ namespace moho
       std::unique_lock<std::mutex> lock(impl.mutex);
       // A worker that woke late for the previous job may still be registered. Let it leave before
       // the job fields are overwritten.
-      impl.done.wait(lock, [&] { return impl.activeWorkers == 0u; });
+      impl.done.wait(lock, [&] {
+        return impl.activeWorkers == 0u;
+      });
 
       impl.fn = fn;
       impl.context = context;
@@ -376,7 +395,12 @@ namespace moho
     }
   }
 
-  bool CSimWorkerPool::StartAsync(const std::size_t count, std::size_t grain, const RangeFunction fn, void* const context)
+  bool CSimWorkerPool::StartAsync(
+    const std::size_t count,
+    std::size_t grain,
+    const RangeFunction fn,
+    void* const context
+  )
   {
     if (count == 0u || fn == nullptr) {
       return false;
@@ -386,8 +410,10 @@ namespace moho
     }
 
     Impl& impl = *mImpl;
-    if (impl.asyncPending || IsSimWorkerThread() || tIsDispatchingSimJob || impl.workerCount == 0u ||
-        count <= grain || ClampWorkerCount(sim_Workers) != impl.workerCount) {
+    if (
+      impl.asyncPending || IsSimWorkerThread() || tIsDispatchingSimJob || impl.workerCount == 0u || count <= grain ||
+      ClampWorkerCount(sim_Workers) != impl.workerCount
+    ) {
       // Serial: the chunks run now, which is where the serial phase would run them.
       for (std::size_t begin = 0; begin < count; begin += grain) {
         fn(context, begin, std::min(count, begin + grain));
@@ -401,7 +427,9 @@ namespace moho
     }
     {
       std::unique_lock<std::mutex> lock(impl.mutex);
-      impl.done.wait(lock, [&] { return impl.activeWorkers == 0u; });
+      impl.done.wait(lock, [&] {
+        return impl.activeWorkers == 0u;
+      });
 
       impl.fn = fn;
       impl.context = context;

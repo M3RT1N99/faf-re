@@ -39,15 +39,19 @@ namespace moho
     int sim_FixProjectileImpactBelowZero = -1;
     int sim_FixRefuelUndockAboveMaxHealth = -1;
     int sim_FixShieldRepair = -1;
+    int sim_FixProjectileMapEdgeCollision = -1;
+    int sim_FixWaterBodies = -1;
 
     TConVar<int> gTConVar_sim_FixAimLeadOncePerTick(
       "sim_FixAimLeadOncePerTick",
-      "FA-Binary-Patches #143: no velocity lead on a target that already moved this tick (-1 game version, 0 off, 1 on).",
+      "FA-Binary-Patches #143: no velocity lead on a target that already moved this tick (-1 game version, 0 off, 1 "
+      "on).",
       &sim_FixAimLeadOncePerTick
     );
     TConVar<int> gTConVar_sim_FixTargetPointCollisionCentre(
       "sim_FixTargetPointCollisionCentre",
-      "FA-Binary-Patches #145/#157: aim at the collision centre of a unit without target bones (-1 game version, 0 off, 1 on).",
+      "FA-Binary-Patches #145/#157: aim at the collision centre of a unit without target bones (-1 game version, 0 "
+      "off, 1 on).",
       &sim_FixTargetPointCollisionCentre
     );
     TConVar<int> gTConVar_sim_FixProjectileImpactBelowZero(
@@ -66,23 +70,42 @@ namespace moho
       "version, 0 off, 1 on).",
       &sim_FixShieldRepair
     );
+    TConVar<int> gTConVar_sim_FixProjectileMapEdgeCollision(
+      "sim_FixProjectileMapEdgeCollision",
+      "FA-Binary-Patches #180: a surface-colliding projectile outside the map hits the terrain extended from the "
+      "nearest map edge, instead of #154's impact below height 0 (-1 game version, from 3841; 0 off, 1 on).",
+      &sim_FixProjectileMapEdgeCollision
+    );
+    TConVar<int> gTConVar_sim_FixWaterBodies(
+      "sim_FixWaterBodies",
+      "Water bodies: a map's ScenarioInfo.WaterBodies add water levels besides its sea (-1 game version: no release "
+      "has it yet, 0 off, 1 on). Every player of a game must use the same value.",
+      &sim_FixWaterBodies
+    );
 
     struct SFafSimFixInfo
     {
-      const char* mName;       ///< console variable
-      int mFirstGameVersion;   ///< first FAF game version whose exe carries the fix
-      const int* mSwitch;      ///< -1 / 0 / 1
+      const char* mName;     ///< console variable
+      int mFirstGameVersion; ///< first FAF game version whose exe carries the fix
+      const int* mSwitch;    ///< -1 / 0 / 1
     };
 
     // Game versions from the FAForever/fa changelogs: 3836 (2026-05-16) shipped #143, #145 and
     // #157; 3840 (2026-10-20) shipped every engine patch merged since, #154, #169 and #175 among
-    // them. 3837..3839 changed only Lua.
+    // them. 3837..3839 changed only Lua. 3841 (2026-11-13) shipped #180, the one engine patch
+    // merged after 3840's exe. Without it, 3841 replays 28115815 and 28115876 give the checksum of
+    // the one client that desynced live (beat 2400, beat 6050); with it, the other eleven
+    // players' checksum. A patch no release carries yet
+    // gets kFafGameVersionUnreleased; when a release ships it, put that game version here and
+    // raise kFafGameVersionLatest.
     const std::array<SFafSimFixInfo, static_cast<std::size_t>(EFafSimFix::Count)> kFafSimFixes{{
       {"sim_FixAimLeadOncePerTick", 3836, &sim_FixAimLeadOncePerTick},
       {"sim_FixTargetPointCollisionCentre", 3836, &sim_FixTargetPointCollisionCentre},
       {"sim_FixProjectileImpactBelowZero", 3840, &sim_FixProjectileImpactBelowZero},
       {"sim_FixRefuelUndockAboveMaxHealth", 3840, &sim_FixRefuelUndockAboveMaxHealth},
       {"sim_FixShieldRepair", 3840, &sim_FixShieldRepair},
+      {"sim_FixProjectileMapEdgeCollision", 3841, &sim_FixProjectileMapEdgeCollision},
+      {"sim_FixWaterBodies", kFafGameVersionUnreleased, &sim_FixWaterBodies},
     }};
 
     int sSessionGameVersion = kFafGameVersionLatest;
@@ -94,12 +117,16 @@ namespace moho
     return sSessionGameVersion;
   }
 
-  void FAF_SetReplayGameVersion(const int gameVersion) noexcept
+  void FAF_SetReplayGameVersion(
+    const int gameVersion
+  ) noexcept
   {
     sReplayGameVersion = gameVersion;
   }
 
-  int FAF_ParseLuaVersionFile(const std::string_view text) noexcept
+  int FAF_ParseLuaVersionFile(
+    const std::string_view text
+  ) noexcept
   {
     constexpr std::string_view kKey = "local Version";
     for (std::size_t at = text.find(kKey); at != std::string_view::npos; at = text.find(kKey, at + 1)) {
@@ -131,7 +158,7 @@ namespace moho
 
   int FAF_GetGameDataVersion()
   {
-    msvc8::string diskPath{};
+    fa::string diskPath{};
     if (CVirtualFileSystem* const vfs = DISK_GetVFS(); vfs != nullptr) {
       (void)vfs->FindFile(&diskPath, "/lua/version.lua", nullptr);
     }
@@ -148,7 +175,9 @@ namespace moho
     return kFafGameVersionOldestSupported;
   }
 
-  void FAF_BeginSession(const bool isReplay)
+  void FAF_BeginSession(
+    const bool isReplay
+  )
   {
     int gameVersion = 0;
     const char* source = "replay";
@@ -200,7 +229,9 @@ namespace moho
     );
   }
 
-  int FAF_ParseReplayGameVersion(std::string_view header) noexcept
+  int FAF_ParseReplayGameVersion(
+    std::string_view header
+  ) noexcept
   {
     constexpr std::string_view kPrefix = "Supreme Commander v1.50.";
     if (header.substr(0, kPrefix.size()) != kPrefix) {

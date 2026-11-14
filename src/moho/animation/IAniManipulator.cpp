@@ -51,7 +51,6 @@ namespace
     "may result in the bone's position snapping.";
   constexpr const char* kIAniManipulatorDestroyHelpText = "Manipulator:Destroy() -- destroy a manipulator.";
 
-
   /**
    * Cubic arccos approximation shared by the foot-plant leg solve.
    *
@@ -62,10 +61,11 @@ namespace
    * `.rdata`: 1.5707288 (0x00E4F76C), 0.21211439 (0x00E4F770), 0.074261002
    * (0x00E4F774) and -0.018729299 (0x00E4F778).
    */
-  [[nodiscard]] float ApproximateFootPlantAcos(const float value) noexcept
+  [[nodiscard]] float ApproximateFootPlantAcos(
+    const float value
+  ) noexcept
   {
-    const float polynomial =
-      value * (((value * -0.018729299f) + 0.074261002f) * value - 0.21211439f) + 1.5707288f;
+    const float polynomial = value * (((value * -0.018729299f) + 0.074261002f) * value - 0.21211439f) + 1.5707288f;
     return std::sqrt(1.0f - value) * polynomial;
   }
 
@@ -76,15 +76,16 @@ namespace
    * Evaluates the foot-plant solve's fast arcsine: half pi minus the
    * polynomial arccos approximation of one normalized input scalar.
    */
-  [[nodiscard]] float ApproximateFootPlantAcosLane(const float value) noexcept
+  [[nodiscard]] float ApproximateFootPlantAcosLane(
+    const float value
+  ) noexcept
   {
     // 0x0050CD23: `fsubr [0x00FB7914]`, the half-pi float.
     return moho::kHalfPi - ApproximateFootPlantAcos(value);
   }
 
-  moho::IAniManipulator* ManipulatorFromActorOrderLinkSlot(
-    moho::TDatListItem<moho::IAniManipulator, void>* const* linkSlot
-  ) noexcept;
+  moho::IAniManipulator*
+  ManipulatorFromActorOrderLinkSlot(moho::TDatListItem<moho::IAniManipulator, void>* const* linkSlot) noexcept;
 
   /**
    * Address: 0x0063C0E0 (FUN_0063C0E0)
@@ -102,12 +103,13 @@ namespace
       return nullptr;
     }
 
-    return reinterpret_cast<moho::IAniManipulator*>(
-      reinterpret_cast<std::uintptr_t>(link) - offsetof(moho::IAniManipulator, mActorOrderLink)
-    );
+    return moho::TDatListItem<moho::IAniManipulator, void>::
+      owner_from_member_node<moho::IAniManipulator, &moho::IAniManipulator::mActorOrderLink>(link);
   }
 
-  [[nodiscard]] gpg::RRef BuildFootPlantManipulatorRef(moho::CFootPlantManipulator* const object)
+  [[nodiscard]] gpg::RRef BuildFootPlantManipulatorRef(
+    moho::CFootPlantManipulator* const object
+  )
   {
     gpg::RRef out{};
     gpg::RRef_CFootPlantManipulator(&out, object);
@@ -126,7 +128,9 @@ namespace
    * preserving derived runtime type and base-adjusted object lane when the
    * actual RTTI type descriptor differs from `CBoneEntityManipulator::sType`.
    */
-  [[nodiscard]] gpg::RRef BuildBoneEntityManipulatorRef(moho::CBoneEntityManipulator* const object)
+  [[nodiscard]] gpg::RRef BuildBoneEntityManipulatorRef(
+    moho::CBoneEntityManipulator* const object
+  )
   {
     static gpg::RType* sStaticType = nullptr;
     if (sStaticType == nullptr) {
@@ -148,11 +152,8 @@ namespace
     }
 
     int baseOffset = 0;
-    if (runtimeType != nullptr && sStaticType != nullptr
-        && runtimeType->IsDerivedFrom(sStaticType, &baseOffset)) {
-      out.mObj = reinterpret_cast<void*>(
-        reinterpret_cast<std::uintptr_t>(object) - static_cast<std::uintptr_t>(baseOffset)
-      );
+    if (runtimeType != nullptr && sStaticType != nullptr && runtimeType->IsDerivedFrom(sStaticType, &baseOffset)) {
+      out.mObj = gpg::CompleteObject(object, baseOffset);
       out.mType = runtimeType;
       return out;
     }
@@ -181,7 +182,9 @@ namespace
    * Placement-constructs one `CBoneEntityManipulator` in caller storage and
    * returns the typed reflected reference.
    */
-  [[nodiscard]] gpg::RRef ConstructBoneEntityManipulatorRefCallback(void* const storage)
+  [[nodiscard]] gpg::RRef ConstructBoneEntityManipulatorRefCallback(
+    void* const storage
+  )
   {
     moho::CBoneEntityManipulator* object = nullptr;
     if (storage != nullptr) {
@@ -197,7 +200,9 @@ namespace
    * Deletes a heap-allocated `CBoneEntityManipulator` through the reflected
    * delete callback slot; wired via `typeInfo->deleteFunc_` below.
    */
-  void DeleteBoneEntityManipulatorCallback(void* const object)
+  void DeleteBoneEntityManipulatorCallback(
+    void* const object
+  )
   {
     if (object != nullptr) {
       delete static_cast<moho::CBoneEntityManipulator*>(object);
@@ -212,7 +217,9 @@ namespace
    * destruct callback slot, without freeing storage; wired via
    * `typeInfo->dtrFunc_` below.
    */
-  void DestructBoneEntityManipulatorCallback(void* const object)
+  void DestructBoneEntityManipulatorCallback(
+    void* const object
+  )
   {
     if (object != nullptr) {
       static_cast<moho::CBoneEntityManipulator*>(object)->~CBoneEntityManipulator();
@@ -231,16 +238,11 @@ namespace
    * mechanic, so it is recovered once and shared by both `Init` overrides
    * below rather than duplicated per type.
    */
-  void AddIAniManipulatorBase(gpg::RType* const typeInfo)
+  void AddIAniManipulatorBase(
+    gpg::RType* const typeInfo
+  )
   {
-    gpg::RType* const baseType = moho::IAniManipulator::StaticGetClass();
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, moho::IAniManipulator::StaticGetClass());
   }
 
   [[nodiscard]] gpg::RRef CreateFootPlantManipulatorRefCallback();
@@ -255,7 +257,9 @@ namespace
    * Initializes reflected lifecycle callbacks for `CBoneEntityManipulator`,
    * adds `IAniManipulator` as base RTTI, then finalizes the type descriptor.
    */
-  gpg::RType* InitBoneEntityManipulatorTypeInfo(gpg::RType* const typeInfo)
+  gpg::RType* InitBoneEntityManipulatorTypeInfo(
+    gpg::RType* const typeInfo
+  )
   {
     if (typeInfo == nullptr) {
       return nullptr;
@@ -279,7 +283,9 @@ namespace
    * Initializes reflected lifecycle callbacks for `CFootPlantManipulator`,
    * adds `IAniManipulator` as base RTTI, then finalizes the type descriptor.
    */
-  gpg::RType* InitFootPlantManipulatorTypeInfo(gpg::RType* const typeInfo)
+  gpg::RType* InitFootPlantManipulatorTypeInfo(
+    gpg::RType* const typeInfo
+  )
   {
     if (typeInfo == nullptr) {
       return nullptr;
@@ -315,7 +321,9 @@ namespace
    * Placement-constructs one `CFootPlantManipulator` in caller storage and
    * returns the typed reflected reference.
    */
-  [[nodiscard]] gpg::RRef ConstructFootPlantManipulatorRefCallback(void* const storage)
+  [[nodiscard]] gpg::RRef ConstructFootPlantManipulatorRefCallback(
+    void* const storage
+  )
   {
     moho::CFootPlantManipulator* object = nullptr;
     if (storage != nullptr) {
@@ -331,7 +339,9 @@ namespace
    * Deletes a heap-allocated `CFootPlantManipulator` through the reflected
    * delete callback slot; wired via `typeInfo->deleteFunc_` below.
    */
-  void DeleteFootPlantManipulatorCallback(void* const object)
+  void DeleteFootPlantManipulatorCallback(
+    void* const object
+  )
   {
     if (object != nullptr) {
       delete static_cast<moho::CFootPlantManipulator*>(object);
@@ -346,7 +356,9 @@ namespace
    * destruct callback slot, without freeing storage; wired via
    * `typeInfo->dtrFunc_` below.
    */
-  void DestructFootPlantManipulatorCallback(void* const object)
+  void DestructFootPlantManipulatorCallback(
+    void* const object
+  )
   {
     if (object != nullptr) {
       static_cast<moho::CFootPlantManipulator*>(object)->~CFootPlantManipulator();
@@ -378,7 +390,10 @@ namespace
    * Inserts `manipulator` into CAniActor's intrusive order list sorted by
    * ascending `mPrecedence`.
    */
-  void RegisterWithOwnerActorOrderList(moho::CAniActor* const ownerActor, moho::IAniManipulator* const manipulator)
+  void RegisterWithOwnerActorOrderList(
+    moho::CAniActor* const ownerActor,
+    moho::IAniManipulator* const manipulator
+  )
   {
     auto* const listHead =
       static_cast<moho::TDatListItem<moho::IAniManipulator, void>*>(&ownerActor->mManipulatorsByPrecedence);
@@ -426,7 +441,9 @@ namespace
    * static is the cache every other `CScriptEvent` reflection path reads, so
    * skipping the store leaves them resolving null.
    */
-  void AddCScriptEventBase(gpg::RType* const typeInfo)
+  void AddCScriptEventBase(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBaseViaSlot<moho::CScriptEvent>(typeInfo);
   }
@@ -506,7 +523,10 @@ namespace
   }
 
   template <typename TObject>
-  [[nodiscard]] TObject* ReadUnownedPointer(gpg::ReadArchive* const archive, gpg::RType* const expectedType)
+  [[nodiscard]] TObject* ReadUnownedPointer(
+    gpg::ReadArchive* const archive,
+    gpg::RType* const expectedType
+  )
   {
     const gpg::TrackedPointerInfo tracked = gpg::ReadRawPointer(archive, gpg::RRef{});
     if (!tracked.object) {
@@ -521,7 +541,11 @@ namespace
   }
 
   template <typename TObject>
-  void WriteUnownedPointer(gpg::WriteArchive* const archive, TObject* const object, gpg::RType* const expectedType)
+  void WriteUnownedPointer(
+    gpg::WriteArchive* const archive,
+    TObject* const object,
+    gpg::RType* const expectedType
+  )
   {
     gpg::RRef objectRef{};
     objectRef.mObj = object;
@@ -535,7 +559,10 @@ namespace
    * What it does:
    * Loads IAniManipulator base serialization fields into an existing object.
    */
-  void DeserializeIAniManipulatorState(moho::IAniManipulator* const object, gpg::ReadArchive* const archive)
+  void DeserializeIAniManipulatorState(
+    moho::IAniManipulator* const object,
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive || !object) {
       return;
@@ -556,7 +583,10 @@ namespace
    * What it does:
    * Saves IAniManipulator base serialization fields from an existing object.
    */
-  void SerializeIAniManipulatorState(const moho::IAniManipulator* const object, gpg::WriteArchive* const archive)
+  void SerializeIAniManipulatorState(
+    const moho::IAniManipulator* const object,
+    gpg::WriteArchive* const archive
+  )
   {
     if (!archive || !object) {
       return;
@@ -705,7 +735,11 @@ namespace moho
   /**
    * Address: 0x0063B640 (FUN_0063B640, ??0IAniManipulator@Moho@@QAE@PAVSim@1@PAVCAniActor@1@H@Z)
    */
-  IAniManipulator::IAniManipulator(Sim* const sim, CAniActor* const ownerActor, const int precedence)
+  IAniManipulator::IAniManipulator(
+    Sim* const sim,
+    CAniActor* const ownerActor,
+    const int precedence
+  )
     : mOwnerActor(ownerActor)
     , mOwnerSim(sim)
     , mPrecedence(precedence)
@@ -722,7 +756,9 @@ namespace moho
   /**
    * Address: 0x0063E380 (FUN_0063E380, gpg::SerSaveLoadHelper<Moho::IAniManipulator>::Deserialize thunk target)
    */
-  void IAniManipulator::MemberDeserialize(gpg::ReadArchive* const archive)
+  void IAniManipulator::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     DeserializeIAniManipulatorState(this, archive);
   }
@@ -730,7 +766,9 @@ namespace moho
   /**
    * Address: 0x0063E450 (FUN_0063E450, gpg::SerSaveLoadHelper<Moho::IAniManipulator>::Serialize thunk target)
    */
-  void IAniManipulator::MemberSerialize(gpg::WriteArchive* const archive) const
+  void IAniManipulator::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     SerializeIAniManipulatorState(this, archive);
   }
@@ -747,8 +785,7 @@ namespace moho
     , mStraightLegs(false)
     , mMaxFootFall(0.0f)
     , mHalfLegSpan(0.0f)
-  {
-  }
+  {}
 
   /**
    * Address: 0x00639380 (FUN_00639380, ??0CFootPlantManipulator@Moho@@QAE@@Z)
@@ -769,8 +806,12 @@ namespace moho
    * actor pose's foot/hip composite-transform vertical separation.
    */
   CFootPlantManipulator::CFootPlantManipulator(
-    Unit* const unit, const int footBoneIndex, const int kneeBoneIndex, const int hipBoneIndex,
-    const bool straightLegs, const float maxFootFall
+    Unit* const unit,
+    const int footBoneIndex,
+    const int kneeBoneIndex,
+    const int hipBoneIndex,
+    const bool straightLegs,
+    const float maxFootFall
   )
     : IAniManipulator(unit->SimulationRef, unit->AniActor, 0)
     , mGoalUnit(unit)
@@ -808,17 +849,13 @@ namespace moho
       CAniPose* const pose = actor->mPose.get();
       const std::size_t boneCount = pose->mBones.end() - pose->mBones.begin();
       const SAniManipBinding* const watchBegin = mWatchBones.begin();
-      const std::uint32_t footIndex = watchBegin != nullptr
-        ? static_cast<std::uint32_t>(watchBegin[0].mBoneIndex)
-        : std::numeric_limits<std::uint32_t>::max();
-      const std::uint32_t hipIndex = watchBegin != nullptr
-        ? static_cast<std::uint32_t>(watchBegin[2].mBoneIndex)
-        : std::numeric_limits<std::uint32_t>::max();
+      const std::uint32_t footIndex = watchBegin != nullptr ? static_cast<std::uint32_t>(watchBegin[0].mBoneIndex)
+                                                            : std::numeric_limits<std::uint32_t>::max();
+      const std::uint32_t hipIndex = watchBegin != nullptr ? static_cast<std::uint32_t>(watchBegin[2].mBoneIndex)
+                                                           : std::numeric_limits<std::uint32_t>::max();
 
-      const CAniPoseBone* const footBone =
-        footIndex < boneCount ? &pose->mBones.begin()[footIndex] : nullptr;
-      const CAniPoseBone* const hipBone =
-        hipIndex < boneCount ? &pose->mBones.begin()[hipIndex] : nullptr;
+      const CAniPoseBone* const footBone = footIndex < boneCount ? &pose->mBones.begin()[footIndex] : nullptr;
+      const CAniPoseBone* const hipBone = hipIndex < boneCount ? &pose->mBones.begin()[hipIndex] : nullptr;
 
       if (footBone != nullptr && hipBone != nullptr) {
         const float footY = footBone->GetCompositeTransform().pos_.y;
@@ -831,7 +868,9 @@ namespace moho
   /**
    * Address: 0x0063A460 (FUN_0063A460, gpg::SerSaveLoadHelper<Moho::CFootPlantManipulator>::Deserialize thunk target)
    */
-  void CFootPlantManipulator::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CFootPlantManipulator::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     DeserializeCFootPlantManipulatorState(this, archive);
   }
@@ -839,7 +878,9 @@ namespace moho
   /**
    * Address: 0x0063A540 (FUN_0063A540, gpg::SerSaveLoadHelper<Moho::CFootPlantManipulator>::Serialize thunk target)
    */
-  void CFootPlantManipulator::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CFootPlantManipulator::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     SerializeCFootPlantManipulatorState(this, archive);
   }
@@ -856,7 +897,10 @@ namespace moho
      * when the index is past the packed bone array. Mirrors the binary's
      * unsigned index-vs-count guard performed before every watched-bone write.
      */
-    [[nodiscard]] CAniPoseBone* ResolvePoseBoneByIndex(CAniPose* const pose, const std::int32_t boneIndex) noexcept
+    [[nodiscard]] CAniPoseBone* ResolvePoseBoneByIndex(
+      CAniPose* const pose,
+      const std::int32_t boneIndex
+    ) noexcept
     {
       if (pose == nullptr) {
         return nullptr;
@@ -883,7 +927,8 @@ namespace moho
      * here to preserve NaN/Inf propagation exactly.
      */
     [[nodiscard]] float ForwardDotIgnoringVertical(
-      const Wm3::Vector3f& forwardAxis, const Wm3::Vector3f& delta
+      const Wm3::Vector3f& forwardAxis,
+      const Wm3::Vector3f& delta
     ) noexcept
     {
       return ((forwardAxis.z * delta.z) + (forwardAxis.x * delta.x)) + (delta.y * 0.0f);
@@ -899,8 +944,7 @@ namespace moho
     , mTargetEntity()
     , mReferenceBoneIndex(0)
     , mPivot(0.0f, 0.0f, 0.0f)
-  {
-  }
+  {}
 
   /**
    * Address: 0x00634460 (FUN_00634460, ??0CBoneEntityManipulator@Moho@@QAE@PAVEntity@1@PAVUnit@1@HHH@Z_0)
@@ -918,8 +962,11 @@ namespace moho
    * flags the watched pose bone to skip the next interpolation step.
    */
   CBoneEntityManipulator::CBoneEntityManipulator(
-    Entity* const targetEntity, Unit* const goalUnit,
-    const int watchedBoneIndex, const int referenceBoneIndex, const bool markSkipInterp
+    Entity* const targetEntity,
+    Unit* const goalUnit,
+    const int watchedBoneIndex,
+    const int referenceBoneIndex,
+    const bool markSkipInterp
   )
     : IAniManipulator(goalUnit->SimulationRef, goalUnit->AniActor, 0)
     , mGoalUnit(goalUnit)
@@ -945,9 +992,11 @@ namespace moho
     (void)ManipulatorUpdate();
 
     if (markSkipInterp) {
-      if (CAniPoseBone* const watchedBone =
-            ResolvePoseBoneByIndex(mOwnerActor->mPose.get(), mWatchBones.begin()->mBoneIndex);
-          watchedBone != nullptr) {
+      if (
+        CAniPoseBone* const watchedBone =
+          ResolvePoseBoneByIndex(mOwnerActor->mPose.get(), mWatchBones.begin()->mBoneIndex);
+        watchedBone != nullptr
+      ) {
         watchedBone->mSkipNextInterp = 1;
       }
     }
@@ -1019,12 +1068,10 @@ namespace moho
 
     // 0x00639786-0x006397EA: when the goal unit rides a raised platform, that
     // platform unit's occupied-rect distance is added to the sampled terrain.
-    Unit* const raisedPlatform = goalUnit->UnitMotion != nullptr
-      ? goalUnit->UnitMotion->mRaisedPlatformUnit.GetObjectPtr()
-      : nullptr;
+    Unit* const raisedPlatform =
+      goalUnit->UnitMotion != nullptr ? goalUnit->UnitMotion->mRaisedPlatformUnit.GetObjectPtr() : nullptr;
 
-    float targetGroundY =
-      goalUnit->SimulationRef->mMapData->mHeightField->GetElevation(footPos.x, footPos.z);
+    float targetGroundY = goalUnit->SimulationRef->mMapData->mHeightField->GetElevation(footPos.x, footPos.z);
     if (raisedPlatform != nullptr) {
       targetGroundY = raisedPlatform->DistanceToOccupiedRect(&footPos) + targetGroundY;
     }
@@ -1044,16 +1091,14 @@ namespace moho
 
     // ---- hip/knee swing ---------------------------------------------------
     const Wm3::Vector3f hipToKnee{kneePos.x - hipPos.x, kneePos.y - hipPos.y, kneePos.z - hipPos.z};
-    const float hipToKneeLength = std::sqrt(
-      ((hipToKnee.z * hipToKnee.z) + (hipToKnee.y * hipToKnee.y)) + (hipToKnee.x * hipToKnee.x)
-    );
+    const float hipToKneeLength =
+      std::sqrt(((hipToKnee.z * hipToKnee.z) + (hipToKnee.y * hipToKnee.y)) + (hipToKnee.x * hipToKnee.x));
     const float hipToKneeDrop = std::fabs(hipPos.y - kneePos.y);
     const float invHipToKneeLength = 1.0f / hipToKneeLength;
 
     const float currentThighPitch = ApproximateFootPlantAcos(invHipToKneeLength * hipToKneeDrop);
-    const float desiredThighPitch = ApproximateFootPlantAcos(
-      invHipToKneeLength * std::min(hipToKneeLength, hipToKneeDrop - halfFootCorrection)
-    );
+    const float desiredThighPitch =
+      ApproximateFootPlantAcos(invHipToKneeLength * std::min(hipToKneeLength, hipToKneeDrop - halfFootCorrection));
     const float thighRoll = desiredThighPitch - currentThighPitch;
 
     const Wm3::Vector3f rollAxis{1.0f, 0.0f, 0.0f};
@@ -1076,12 +1121,10 @@ namespace moho
 
     // 0x00639AAE-0x00639AC0: fold the knee forward only when the foot leads the
     // hip forward axis and the manipulator was not built with straight legs.
-    const bool foldKneeForward =
-      ForwardDotIgnoringVertical(hipAxes.vZ, kneeToFoot) > 0.0f && !mStraightLegs;
+    const bool foldKneeForward = ForwardDotIgnoringVertical(hipAxes.vZ, kneeToFoot) > 0.0f && !mStraightLegs;
 
-    const float kneeToFootLength = std::sqrt(
-      ((kneeToFoot.z * kneeToFoot.z) + (kneeToFoot.y * kneeToFoot.y)) + (kneeToFoot.x * kneeToFoot.x)
-    );
+    const float kneeToFootLength =
+      std::sqrt(((kneeToFoot.z * kneeToFoot.z) + (kneeToFoot.y * kneeToFoot.y)) + (kneeToFoot.x * kneeToFoot.x));
     const float kneeToFootDrop = std::fabs(swungKneePos.y - swungFootPos.y);
     const float invKneeToFootLength = 1.0f / kneeToFootLength;
 
@@ -1089,12 +1132,10 @@ namespace moho
     const float desiredShinInput =
       invKneeToFootLength * std::min(kneeToFootLength, kneeToFootDrop - halfFootCorrection);
 
-    const float currentShinPitch = foldKneeForward
-      ? ApproximateFootPlantAcos(currentShinInput)
-      : ApproximateFootPlantAcosLane(currentShinInput);
-    const float desiredShinPitch = foldKneeForward
-      ? ApproximateFootPlantAcos(desiredShinInput)
-      : ApproximateFootPlantAcosLane(desiredShinInput);
+    const float currentShinPitch =
+      foldKneeForward ? ApproximateFootPlantAcos(currentShinInput) : ApproximateFootPlantAcosLane(currentShinInput);
+    const float desiredShinPitch =
+      foldKneeForward ? ApproximateFootPlantAcos(desiredShinInput) : ApproximateFootPlantAcosLane(desiredShinInput);
 
     // 0x00639BF8/0x00639C22 negate through `-0.0f` rather than a unary minus,
     // which keeps the sign of a zero-valued roll identical to the binary.
@@ -1159,8 +1200,7 @@ namespace moho
         pose->mMaxOffset = displacement;
       }
 
-      if (CAniPoseBone* const bone = ResolvePoseBoneByIndex(pose, mWatchBones.begin()->mBoneIndex);
-          bone != nullptr) {
+      if (CAniPoseBone* const bone = ResolvePoseBoneByIndex(pose, mWatchBones.begin()->mBoneIndex); bone != nullptr) {
         bone->mCompositeIsLocal = 1;
         bone->mPose->MarkBoneDirty(bone->mIdx);
 
@@ -1169,8 +1209,7 @@ namespace moho
         bone->mPose->MarkBoneDirty(bone->mIdx);
       }
     } else {
-      if (CAniPoseBone* const bone = ResolvePoseBoneByIndex(pose, mWatchBones.begin()->mBoneIndex);
-          bone != nullptr) {
+      if (CAniPoseBone* const bone = ResolvePoseBoneByIndex(pose, mWatchBones.begin()->mBoneIndex); bone != nullptr) {
         bone->mLocalTransform.orient_ = Wm3::Quatf(1.0f, 0.0f, 0.0f, 0.0f);
         bone->mLocalTransform.pos_ = Wm3::Vec3f(0.0f, -10000.0f, 0.0f);
         bone->mPose->MarkBoneDirty(bone->mIdx);
@@ -1193,14 +1232,13 @@ namespace moho
    */
   void CBoneEntityManipulator::InitPivotFromBoneBounds()
   {
-    const boost::shared_ptr<const CAniSkel> skeleton = mOwnerActor->GetSkeleton();
+    const std::shared_ptr<const CAniSkel> skeleton = mOwnerActor->GetSkeleton();
     const CAniSkel* const skel = skeleton.get();
     if (skel == nullptr) {
       return;
     }
 
-    const SAniSkelBone* const bone =
-      skel->GetBone(static_cast<std::uint32_t>(mWatchBones.begin()->mBoneIndex));
+    const SAniSkelBone* const bone = skel->GetBone(static_cast<std::uint32_t>(mWatchBones.begin()->mBoneIndex));
     if (bone == nullptr) {
       return;
     }
@@ -1217,7 +1255,9 @@ namespace moho
    * Loads `IAniManipulator` base state, goal/target weak-pointer lanes,
    * reference-bone index, and pivot vector.
    */
-  void CBoneEntityManipulator::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CBoneEntityManipulator::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -1238,7 +1278,9 @@ namespace moho
    * Saves `IAniManipulator` base state, goal/target weak-pointer lanes,
    * reference-bone index, and pivot vector.
    */
-  void CBoneEntityManipulator::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CBoneEntityManipulator::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -1246,28 +1288,16 @@ namespace moho
 
     const gpg::RRef owner{};
     archive->Write(
-      gpg::RTypeOf<moho::IAniManipulator>(), const_cast<moho::IAniManipulator*>(static_cast<const moho::IAniManipulator*>(this)), owner
+      gpg::RTypeOf<moho::IAniManipulator>(),
+      const_cast<moho::IAniManipulator*>(static_cast<const moho::IAniManipulator*>(this)),
+      owner
     );
     archive->Write(CachedWeakPtrUnitType(), const_cast<moho::WeakPtr<moho::Unit>*>(&mGoalUnit), owner);
-    archive->Write(gpg::RTypeOf<moho::WeakPtr<moho::Entity>>(), const_cast<moho::WeakPtr<moho::Entity>*>(&mTargetEntity), owner);
+    archive->Write(
+      gpg::RTypeOf<moho::WeakPtr<moho::Entity>>(), const_cast<moho::WeakPtr<moho::Entity>*>(&mTargetEntity), owner
+    );
     archive->WriteInt(mReferenceBoneIndex);
     archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), const_cast<Wm3::Vector3f*>(&mPivot), owner);
-  }
-
-  /**
-   * Address: 0x00639F50 (FUN_00639F50)
-   *
-   * What it does:
-   * Installs CFootPlantManipulator creation/destruction callback lanes into
-   * the reflected type descriptor.
-   */
-  gpg::RType* InstallFootPlantManipulatorTypeCallbacks(gpg::RType* const typeInfo)
-  {
-    typeInfo->newRefFunc_ = &CreateFootPlantManipulatorRefCallback;
-    typeInfo->ctorRefFunc_ = &ConstructFootPlantManipulatorRefCallback;
-    typeInfo->deleteFunc_ = &DeleteFootPlantManipulatorCallback;
-    typeInfo->dtrFunc_ = &DestructFootPlantManipulatorCallback;
-    return typeInfo;
   }
 
   /**
@@ -1306,7 +1336,9 @@ namespace moho
   /**
    * Address: 0x0063B6D0 (FUN_0063B6D0, ?AddWatchBone@IAniManipulator@Moho@@QAEHH@Z)
    */
-  int IAniManipulator::AddWatchBone(const int boneIndex)
+  int IAniManipulator::AddWatchBone(
+    const int boneIndex
+  )
   {
     SAniManipBinding watchBone{};
     watchBone.mBoneIndex = boneIndex;
@@ -1322,7 +1354,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_IAniManipulatorSetPrecedenceL`.
    */
-  int cfunc_IAniManipulatorSetPrecedence(lua_State* const luaContext)
+  int cfunc_IAniManipulatorSetPrecedence(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IAniManipulatorSetPrecedenceL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1353,7 +1387,9 @@ namespace moho
    * Reads `(manipulator, precedence)`, updates manipulator precedence, and
    * reinserts it into the owning actor precedence list.
    */
-  int cfunc_IAniManipulatorSetPrecedenceL(LuaPlus::LuaState* const state)
+  int cfunc_IAniManipulatorSetPrecedenceL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -1385,7 +1421,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_IAniManipulatorEnableL`.
    */
-  int cfunc_IAniManipulatorEnable(lua_State* const luaContext)
+  int cfunc_IAniManipulatorEnable(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IAniManipulatorEnableL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1416,7 +1454,9 @@ namespace moho
    * Validates `IAniManipulator:Enable()`, resolves one manipulator, and marks
    * it enabled.
    */
-  int cfunc_IAniManipulatorEnableL(LuaPlus::LuaState* const state)
+  int cfunc_IAniManipulatorEnableL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -1440,7 +1480,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_IAniManipulatorDisableL`.
    */
-  int cfunc_IAniManipulatorDisable(lua_State* const luaContext)
+  int cfunc_IAniManipulatorDisable(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IAniManipulatorDisableL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1471,7 +1513,9 @@ namespace moho
    * Validates `IAniManipulator:Disable()`, resolves one manipulator, and marks
    * it disabled.
    */
-  int cfunc_IAniManipulatorDisableL(LuaPlus::LuaState* const state)
+  int cfunc_IAniManipulatorDisableL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -1495,7 +1539,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_IAniManipulatorDestroyL`.
    */
-  int cfunc_IAniManipulatorDestroy(lua_State* const luaContext)
+  int cfunc_IAniManipulatorDestroy(
+    lua_State* const luaContext
+  )
   {
     return cfunc_IAniManipulatorDestroyL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1526,7 +1572,9 @@ namespace moho
    * Validates `IAniManipulator:Destroy()`, resolves one optional manipulator
    * pointer, and destroys the object when still alive.
    */
-  int cfunc_IAniManipulatorDestroyL(LuaPlus::LuaState* const state)
+  int cfunc_IAniManipulatorDestroyL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -1727,10 +1775,22 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_IAniManipulatorTypeInfo_00_80a9e7, moho::register_IAniManipulatorTypeInfo_00)
-GPG_PREREGISTER_INIT(PreregisterIAniManipulatorPointerType_80a9e7, moho::PreregisterIAniManipulatorPointerType)
-GPG_PREREGISTER_INIT(register_CBoneEntityManipulatorTypeInfo_5c2e91, moho::register_CBoneEntityManipulatorTypeInfo)
-GPG_PREREGISTER_INIT(register_CFootPlantManipulatorTypeInfo_5c2e91, moho::register_CFootPlantManipulatorTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_IAniManipulatorTypeInfo_00_80a9e7,
+  moho::register_IAniManipulatorTypeInfo_00
+)
+GPG_PREREGISTER_INIT(
+  PreregisterIAniManipulatorPointerType_80a9e7,
+  moho::PreregisterIAniManipulatorPointerType
+)
+GPG_PREREGISTER_INIT(
+  register_CBoneEntityManipulatorTypeInfo_5c2e91,
+  moho::register_CBoneEntityManipulatorTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_CFootPlantManipulatorTypeInfo_5c2e91,
+  moho::register_CFootPlantManipulatorTypeInfo
+)
 
 namespace
 {

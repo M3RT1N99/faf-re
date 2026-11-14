@@ -65,7 +65,12 @@ namespace
    * What it does:
    * Deserializes one `fastvector<CAniPoseBone>` count and element payload lanes.
    */
-  void LoadFastVectorCAniPoseBone(gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef)
+  void LoadFastVectorCAniPoseBone(
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
@@ -74,9 +79,8 @@ namespace
     unsigned int count = 0;
     archive->ReadUInt(&count);
 
-    // The array's own resize: on x64 an array of 11 bones goes back to SimBlockLane when freed, so it
-    // has to come from there too. A smaller block on that list overruns the next projectile.
-    auto& vec = *reinterpret_cast<moho::CAniPoseBoneArray*>(objectPtr);
+    // The array's own resize: on x64 an array of 11 bones is a block of SimBlockLane's size, freed as one.
+    auto& vec = *static_cast<moho::CAniPoseBoneArray*>(objectPtr);
     const moho::CAniPoseBone fill = MakeDefaultCAniPoseBone();
     vec.resize(static_cast<std::size_t>(count), fill);
 
@@ -97,13 +101,18 @@ namespace
    * What it does:
    * Serializes one `fastvector<CAniPoseBone>` count and element payload lanes.
    */
-  void SaveFastVectorCAniPoseBone(gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef)
+  void SaveFastVectorCAniPoseBone(
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
     }
 
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::CAniPoseBone>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::CAniPoseBone>*>(objectPtr);
     const unsigned int count = static_cast<unsigned int>(vec.size());
     archive->WriteUInt(count);
 
@@ -166,23 +175,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x0054E310 (FUN_0054E310)
-   *
-   * What it does:
-   * Executes one non-deleting `gpg::RType` base-teardown lane for
-   * `CAniPoseBoneTypeInfo`.
-   */
-  [[maybe_unused]] void cleanup_CAniPoseBoneTypeInfoRTypeBase(CAniPoseBoneTypeInfo* const typeInfo) noexcept
-  {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = msvc8::vector<gpg::RField>{};
-    typeInfo->bases_ = msvc8::vector<gpg::RField>{};
-  }
-
-  /**
    * Address: 0x00BC99A0 (FUN_00BC99A0, register_CAniPoseBoneTypeInfo)
    */
   void register_CAniPoseBoneTypeInfo()
@@ -225,16 +217,18 @@ namespace gpg
    */
   const char* RFastVectorType<moho::CAniPoseBone>::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::CAniPoseBone>()->GetName());
+    static const fa::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::CAniPoseBone>()->GetName());
     return sName.c_str();
   }
 
   /**
    * Address: 0x0054C740 (FUN_0054C740, gpg::RFastVectorType_CAniPoseBone::GetLexical)
    */
-  msvc8::string RFastVectorType<moho::CAniPoseBone>::GetLexical(const gpg::RRef& ref) const
+  fa::string RFastVectorType<moho::CAniPoseBone>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -251,7 +245,10 @@ namespace gpg
    */
   void RFastVectorType<moho::CAniPoseBone>::Init()
   {
-    static_assert(sizeof(gpg::core::FastVectorInline<moho::CAniPoseBone>) == 0x10, "gpg::core::FastVectorInline<moho::CAniPoseBone> is 0x10 bytes on x86");
+    static_assert(
+      sizeof(gpg::core::FastVectorInline<moho::CAniPoseBone>) == 0x10,
+      "gpg::core::FastVectorInline<moho::CAniPoseBone> is 0x10 bytes on x86"
+    );
     size_ = sizeof(gpg::core::FastVectorInline<moho::CAniPoseBone>);
     version_ = 1;
     serLoadFunc_ = &LoadFastVectorCAniPoseBone;
@@ -261,7 +258,10 @@ namespace gpg
   /**
    * Address: 0x0054C880 (FUN_0054C880, gpg::RFastVectorType_CAniPoseBone::SubscriptIndex)
    */
-  gpg::RRef RFastVectorType<moho::CAniPoseBone>::SubscriptIndex(void* const obj, const int ind) const
+  gpg::RRef RFastVectorType<moho::CAniPoseBone>::SubscriptIndex(
+    void* const obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -283,7 +283,9 @@ namespace gpg
   /**
    * Address: 0x0054C7E0 (FUN_0054C7E0, gpg::RFastVectorType_CAniPoseBone::GetCount)
    */
-  size_t RFastVectorType<moho::CAniPoseBone>::GetCount(void* const obj) const
+  size_t RFastVectorType<moho::CAniPoseBone>::GetCount(
+    void* const obj
+  ) const
   {
     if (!obj) {
       return 0u;
@@ -299,7 +301,10 @@ namespace gpg
   /**
    * Address: 0x0054C800 (FUN_0054C800, gpg::RFastVectorType_CAniPoseBone::SetCount)
    */
-  void RFastVectorType<moho::CAniPoseBone>::SetCount(void* const obj, const int count) const
+  void RFastVectorType<moho::CAniPoseBone>::SetCount(
+    void* const obj,
+    const int count
+  ) const
   {
     if (!obj || count < 0) {
       return;
@@ -313,6 +318,15 @@ namespace gpg
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_CAniPoseBoneTypeInfo_af44d4, moho::preregister_CAniPoseBoneTypeInfo)
-GPG_PREREGISTER_INIT(preregister_FastVectorCAniPoseBoneType_af44d4, moho::preregister_FastVectorCAniPoseBoneType)
-GPG_PREREGISTER_INIT(register_FastVectorCAniPoseBoneType_af44d4, moho::register_FastVectorCAniPoseBoneType)
+GPG_PREREGISTER_INIT(
+  preregister_CAniPoseBoneTypeInfo_af44d4,
+  moho::preregister_CAniPoseBoneTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorCAniPoseBoneType_af44d4,
+  moho::preregister_FastVectorCAniPoseBoneType
+)
+GPG_PREREGISTER_INIT(
+  register_FastVectorCAniPoseBoneType_af44d4,
+  moho::register_FastVectorCAniPoseBoneType
+)

@@ -36,7 +36,7 @@ namespace moho
     explicit CUnitCommandQueue(Unit* unit);
 
     /**
-       * Address: 0x006A4D40 (FUN_006A4D40)
+     * Address: 0x006A4D40 (FUN_006A4D40)
      *
      * What it does:
      * Clears queued commands, releases weak-command storage, and unlinks the
@@ -64,12 +64,8 @@ namespace moho
      * What it does:
      * Reads the owning unit and builds a queue on it for an archive load.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive,
-      int version,
-      const gpg::RRef& ownerRef,
-      gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x006F9690 (FUN_006F9690, sub_6F9690)
@@ -88,7 +84,7 @@ namespace moho
     void MemberSerialize(gpg::WriteArchive* archive) const;
 
     /**
-      * Alias of FUN_006EDAA0 (non-canonical helper lane).
+     * Alias of FUN_006EDAA0 (non-canonical helper lane).
      *
      * What it does:
      * Resolves/refetches reflection descriptor for CUnitCommandQueue.
@@ -209,31 +205,13 @@ namespace moho
     bool RemoveCommandFromQueue(unsigned int index);
 
     /**
-       * Address: 0x006EE2D0 (FUN_006EE2D0)
+     * Address: 0x006EE2D0 (FUN_006EE2D0)
      *
      * What it does:
      * Clears queued commands in reverse order and marks owner sync state dirty
      * for specific head command families.
      */
     void ClearCommandQueue();
-
-    /**
-     * Address: 0x006EE360 (FUN_006EE360, ?AbortActiveTask@CUnitCommandQueue@Moho@@QAEXXZ)
-     *
-     * What it does:
-     * Marks queue refresh state and emits one needs-refresh event for active
-     * command abort transitions.
-     */
-    void AbortActiveTask();
-
-    /**
-     * Address: 0x006EE3C0 (FUN_006EE3C0, ?SetCommandCount@CUnitCommandQueue@Moho@@QAEXII@Z)
-     *
-     * What it does:
-     * Sets one queued command count lane, updates command dirty flag state,
-     * and applies queue-head/queue-removal transitions when count is zero.
-     */
-    void SetCommandCount(unsigned int index, unsigned int count);
 
     /**
      * Address: 0x006EE430 (FUN_006EE430)
@@ -256,14 +234,6 @@ namespace moho
      */
     void SetCommandTarget(unsigned int index, Entity* targetEntity);
 
-    /**
-     * Address: 0x006A4DD0 (FUN_006A4DD0)
-     *
-     * What it does:
-     * Returns whether this queue has a pending refresh lane.
-     */
-    [[nodiscard]] bool IsRefreshPending() const;
-
   private:
     /**
      * Address: 0x006EE260 (FUN_006EE260, ?NeedsUIRefresh@CUnitCommandQueue@Moho@@AAE_NXZ)
@@ -278,7 +248,7 @@ namespace moho
     static gpg::RType* sType;
 
     Unit* mUnit;
-    msvc8::vector<WeakPtr<CUnitCommand>> mCommandVec;
+    fa::vector<WeakPtr<CUnitCommand>> mCommandVec;
     EUnitCommandType mCommandType; // mirrors queue head command family
     int32_t unk0;
     bool mNeedsRefresh;
@@ -288,11 +258,13 @@ namespace moho
   static_assert(offsetof(CUnitCommandQueue, mUnit) == 0x08, "CUnitCommandQueue::mUnit offset must be 0x08");
   static_assert(offsetof(CUnitCommandQueue, mCommandVec) == 0x0C, "CUnitCommandQueue::mCommandVec offset must be 0x0C");
   static_assert(
-    offsetof(CUnitCommandQueue, mCommandType) == 0x1C, "CUnitCommandQueue::mCommandType offset must be 0x1C"
+    offsetof(CUnitCommandQueue, mCommandType) == 0x1C,
+    "CUnitCommandQueue::mCommandType offset must be 0x1C"
   );
   static_assert(offsetof(CUnitCommandQueue, unk0) == 0x20, "CUnitCommandQueue::unk0 offset must be 0x20");
   static_assert(
-    offsetof(CUnitCommandQueue, mNeedsRefresh) == 0x24, "CUnitCommandQueue::mNeedsRefresh offset must be 0x24"
+    offsetof(CUnitCommandQueue, mNeedsRefresh) == 0x24,
+    "CUnitCommandQueue::mNeedsRefresh offset must be 0x24"
   );
   static_assert(sizeof(CUnitCommandQueue) == 0x28, "CUnitCommandQueue size must be 0x28");
 } // namespace moho

@@ -36,7 +36,7 @@ namespace moho
     MedFidelity = 1u;
     LowFidelity = 1u;
 
-    TextureName = msvc8::string{};
+    TextureName = fa::string{};
     StartColor = Vector4f(1.0f, 1.0f, 1.0f, 0.0f);
     EndColor = Vector4f(1.0f, 1.0f, 1.0f, 0.0f);
 
@@ -85,10 +85,7 @@ namespace moho
    */
   gpg::RRef RBeamBlueprint::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -105,12 +102,17 @@ namespace moho
 
 namespace moho
 {
-  void RBeamBlueprint::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void RBeamBlueprint::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     RRuleGameRules* rules = nullptr;
     const gpg::RRef owner{};
     archive.ReadPointer(&rules, &owner);
-    msvc8::string id;
+    fa::string id;
     archive.ReadString(&id);
     RResId resId{};
     gpg::STR_CopyFilename(&resId.name, &id);
@@ -121,7 +123,10 @@ namespace moho
    * Address: 0x00510260 (FUN_00510260)
    */
   void RBeamBlueprint::MemberSaveConstructArgs(
-    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+    gpg::WriteArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerSaveConstructArgsResult& result
   )
   {
     archive.WritePointer(mOwnerRules, gpg::TrackedPointerState::Unowned, gpg::RRef{});

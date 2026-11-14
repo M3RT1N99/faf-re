@@ -2,6 +2,7 @@
 #include "moho/script/CScriptObject.h"
 #include "CScriptObject.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <exception>
 #include <string>
@@ -48,12 +49,16 @@ namespace
     "doscript(script, [env]) -- run another script. The environment table, if given, will be used for the script's "
     "global variables.";
 
-  [[nodiscard]] LuaPlus::LuaState* ResolveBindingState(lua_State* const luaContext) noexcept
+  [[nodiscard]] LuaPlus::LuaState* ResolveBindingState(
+    lua_State* const luaContext
+  ) noexcept
   {
     return luaContext ? luaContext->stateUserData : nullptr;
   }
 
-  LuaPlus::LuaObject GetScriptObjectMetatable(LuaPlus::LuaState* state)
+  LuaPlus::LuaObject GetScriptObjectMetatable(
+    LuaPlus::LuaState* state
+  )
   {
     return CScrLuaMetatableFactory<CScriptObject*>::Instance().Get(state);
   }
@@ -66,7 +71,10 @@ namespace
    * applies `CScrLuaMetatableFactory<CScriptObject*>` metatable.
    */
   [[nodiscard]]
-  LuaPlus::LuaObject CreateLuaScriptObject(LuaPlus::LuaState* const state, CScriptObject** const objectSlot)
+  LuaPlus::LuaObject CreateLuaScriptObject(
+    LuaPlus::LuaState* const state,
+    CScriptObject** const objectSlot
+  )
   {
     LuaPlus::LuaObject out;
     if (!state || !objectSlot) {
@@ -88,28 +96,11 @@ namespace
    * nil and `false` are false -- `0`, strings and tables are true.
    * `LuaObject::operator bool` (0x00907440) applies the same rule.
    */
-  [[nodiscard]] bool LuaValueToBool(const LuaPlus::LuaObject& value) noexcept
+  [[nodiscard]] bool LuaValueToBool(
+    const LuaPlus::LuaObject& value
+  ) noexcept
   {
     return static_cast<bool>(value);
-  }
-
-  [[nodiscard]] float LuaValueToFloat(const LuaPlus::LuaObject& value) noexcept
-  {
-    LuaPlus::LuaState* const state = value.GetActiveState();
-    if (!state) {
-      return 0.0f;
-    }
-
-    lua_State* const lstate = state->GetCState();
-    if (!lstate) {
-      return 0.0f;
-    }
-
-    const int stackTop = lua_gettop(lstate);
-    const_cast<LuaPlus::LuaObject&>(value).PushStack(lstate);
-    const float out = static_cast<float>(lua_tonumber(lstate, -1));
-    lua_settop(lstate, stackTop);
-    return out;
   }
 
   /**
@@ -130,7 +121,9 @@ namespace
    * beam and its ambient loop were never cleaned up and hung on the reclaimer
    * for the rest of the game.
    */
-  [[nodiscard]] LuaPlus::LuaObject MakeNilLuaObject(const LuaPlus::LuaObject& stateOwner)
+  [[nodiscard]] LuaPlus::LuaObject MakeNilLuaObject(
+    const LuaPlus::LuaObject& stateOwner
+  )
   {
     LuaPlus::LuaObject nilObject;
     if (LuaPlus::LuaState* const state = stateOwner.GetActiveState(); state != nullptr) {
@@ -140,7 +133,8 @@ namespace
   }
 
   [[nodiscard]] LuaPlus::LuaObject ResolveUnitLuaObjectFromWeakLink(
-    const WeakPtr<Unit>& unitLink, const LuaPlus::LuaObject& selfObject
+    const WeakPtr<Unit>& unitLink,
+    const LuaPlus::LuaObject& selfObject
   )
   {
     Unit* const unit = unitLink.GetObjectPtr();
@@ -156,7 +150,8 @@ namespace
   }
 
   [[nodiscard]] LuaPlus::LuaObject ResolveEntityLuaObjectFromWeakLink(
-    const WeakPtr<Entity>& entityLink, const LuaPlus::LuaObject& selfObject
+    const WeakPtr<Entity>& entityLink,
+    const LuaPlus::LuaObject& selfObject
   )
   {
     const Entity* const entity = entityLink.GetObjectPtr();
@@ -181,12 +176,36 @@ namespace
     return scriptObject->mLuaObj;
   }
 
+  // Restore the entry top after normal return or the VM's supported exception unwind.
+  // Use the raw state: a running coroutine need not own a LuaState wrapper.
+  struct CallbackLuaStackScope
+  {
+    explicit CallbackLuaStackScope(
+      lua_State* const stateIn
+    )
+      : state(stateIn)
+      , top(lua_gettop(stateIn))
+    {}
+
+    ~CallbackLuaStackScope()
+    {
+      lua_settop(state, top);
+    }
+
+    CallbackLuaStackScope(const CallbackLuaStackScope&) = delete;
+    CallbackLuaStackScope& operator=(const CallbackLuaStackScope&) = delete;
+
+    lua_State* state;
+    int top;
+  };
+
   struct WeakEntityUnlinkScope
   {
-    explicit WeakEntityUnlinkScope(WeakPtr<Entity>& linkRef)
+    explicit WeakEntityUnlinkScope(
+      WeakPtr<Entity>& linkRef
+    )
       : link(linkRef)
-    {
-    }
+    {}
 
     ~WeakEntityUnlinkScope()
     {
@@ -220,7 +239,7 @@ namespace
     WeakEntityUnlinkScope unlinkScope(weakSource);
 
     lua_State* const activeState = function.GetActiveCState();
-    const int savedTop = lua_gettop(activeState);
+    const CallbackLuaStackScope stackScope(activeState);
 
     function.PushStack(activeState);
     selfObject.PushStack(activeState);
@@ -241,9 +260,7 @@ namespace
     lua_pushlstring(activeState, damageType.c_str(), static_cast<size_t>(damageType.size()));
     lua_call(activeState, 4, 1);
 
-    const float result = static_cast<float>(lua_tonumber(activeState, -1));
-    lua_settop(activeState, savedTop);
-    return result;
+    return static_cast<float>(lua_tonumber(activeState, -1));
   }
 
   /**
@@ -265,7 +282,7 @@ namespace
     WeakEntityUnlinkScope unlinkScope(weakSource);
 
     lua_State* const activeState = function.GetActiveCState();
-    const int savedTop = lua_gettop(activeState);
+    const CallbackLuaStackScope stackScope(activeState);
 
     function.PushStack(activeState);
     selfObject.PushStack(activeState);
@@ -286,7 +303,6 @@ namespace
     payloadObject.PushStack(activeState);
     lua_pushlstring(activeState, damageType.c_str(), static_cast<size_t>(damageType.size()));
     lua_call(activeState, 5, 1);
-    lua_settop(activeState, savedTop);
   }
 
   /**
@@ -332,7 +348,10 @@ namespace
    * What it does:
    * Prints one concat-produced line to the console output stream.
    */
-  void EmitConcatLineToConsole(LuaPlus::LuaState* const state, const char* const line)
+  void EmitConcatLineToConsole(
+    LuaPlus::LuaState* const state,
+    const char* const line
+  )
   {
     (void)state;
     moho::CON_Printf("%s", line ? line : "");
@@ -347,7 +366,9 @@ namespace
    * Resolves the global `tostring` callable for one Lua state and validates
    * it is invokable.
    */
-  [[nodiscard]] LuaPlus::LuaObject ResolveToStringGlobalCallable(LuaPlus::LuaState* const state)
+  [[nodiscard]] LuaPlus::LuaObject ResolveToStringGlobalCallable(
+    LuaPlus::LuaState* const state
+  )
   {
     LuaPlus::LuaObject out{};
     if (state == nullptr) {
@@ -363,25 +384,15 @@ namespace
   }
 
   /**
-   * Address: 0x004CD970 (FUN_004CD970)
-   *
-   * What it does:
-   * Direct-state adapter lane that forwards to `SCR_ConcatArgsAndCall` with
-   * tab delimiter and console output sink.
-   */
-  [[maybe_unused]] int EmitConcatArgsToConsoleDirect(LuaPlus::LuaState* const state)
-  {
-    moho::SCR_ConcatArgsAndCall(state, '\t', &EmitConcatLineToConsole);
-    return 0;
-  }
-
-  /**
    * Address: 0x004CD990 (FUN_004CD990)
    *
    * What it does:
    * Emits one concat-produced line through info-severity logging.
    */
-  void EmitConcatLineToLogf(LuaPlus::LuaState* const state, const char* const line)
+  void EmitConcatLineToLogf(
+    LuaPlus::LuaState* const state,
+    const char* const line
+  )
   {
     (void)state;
     gpg::Logf("%s", line ? line : "");
@@ -393,7 +404,10 @@ namespace
    * What it does:
    * Emits one concat-produced line through warn-severity logging.
    */
-  void EmitConcatLineToWarnf(LuaPlus::LuaState* const state, const char* const line)
+  void EmitConcatLineToWarnf(
+    LuaPlus::LuaState* const state,
+    const char* const line
+  )
   {
     (void)state;
     gpg::Warnf("%s", line ? line : "");
@@ -405,7 +419,10 @@ namespace
    * What it does:
    * Emits one concat-produced line through debug-severity logging.
    */
-  void EmitConcatLineToDebugf(LuaPlus::LuaState* const state, const char* const line)
+  void EmitConcatLineToDebugf(
+    LuaPlus::LuaState* const state,
+    const char* const line
+  )
   {
     (void)state;
     gpg::Debugf("%s", line ? line : "");
@@ -418,75 +435,14 @@ namespace
    * Emits the `OnCharPressed` script-warning lane for one caught C++ exception
    * during `CScriptObject::RunScriptOnCharPressed`.
    */
-  [[maybe_unused]] void LogOnCharPressedExceptionWarning(
+  void LogOnCharPressedExceptionWarning(
     const WeakPtr<CScriptObject>& weakGuard,
     const std::exception& exceptionObject
   )
   {
     if (CScriptObject* const warningOwner = weakGuard.GetObjectPtr(); warningOwner != nullptr) {
-      warningOwner->LogScriptWarning(
-        warningOwner,
-        "OnCharPressed",
-        exceptionObject.what()
-      );
+      warningOwner->LogScriptWarning(warningOwner, "OnCharPressed", exceptionObject.what());
     }
-  }
-
-  /**
-   * Address: 0x004C7C30 (FUN_004C7C30)
-   *
-   * IDA signature:
-   * _DWORD *__thiscall sub_4C7C30(_DWORD *this);
-   *
-   * What it does:
-   * Unlinks one `CScriptObject_base` node from the active-invocation
-   * singly-linked chain used by every `CScriptObject::RunScript*` /
-   * `Call` variant (54 call sites). During a script invocation the
-   * caller installs its local stack-cell address into the object's
-   * `mNextPtr` field and stores the previous chain pointer inside that
-   * stack cell; on exit this helper walks the chain starting at
-   * `this->mNextPtr`, locates the slot whose stored back-pointer equals
-   * `this`, and replaces it with the saved predecessor pointer held in
-   * the companion slot at `this[1]`. This is the compiler-outlined form
-   * of the inline unlink loop that appears in
-   * `CScriptObject::Call` (FUN_00581930) and its 53 siblings.
-   */
-  [[maybe_unused]] void** UnlinkActiveScriptInvocationChainNode(void** const chainNode) noexcept
-  {
-    void** cursor = static_cast<void**>(chainNode[0]);
-    if (chainNode[0] != nullptr) {
-      while (*cursor != static_cast<void*>(chainNode)) {
-        cursor = reinterpret_cast<void**>(reinterpret_cast<char*>(*cursor) + sizeof(void*));
-      }
-      *cursor = chainNode[1];
-    }
-    return cursor;
-  }
-
-  /**
-   * Address: 0x004C8360 (FUN_004C8360)
-   * Address: 0x004C8390 (FUN_004C8390)
-   *
-   * What it does:
-   * Copy-assigns one source `LuaObject` range `[sourceBegin, sourceEnd)`
-   * so the copied block ends at `destinationEnd`, walking both ranges
-   * backward one 20-byte element at a time and invoking
-   * `LuaPlus::LuaObject::operator=`. Emitted twice by the compiler for
-   * the two distinct inlining lanes inside
-   * `LuaObjectFastVector::InsertAt` / `GrowInsert`.
-   */
-  [[maybe_unused]] LuaPlus::LuaObject* CopyAssignLuaObjectRangeBackward(
-    LuaPlus::LuaObject* destinationEnd,
-    const LuaPlus::LuaObject* sourceBegin,
-    const LuaPlus::LuaObject* sourceEnd
-  )
-  {
-    while (sourceEnd != sourceBegin) {
-      --sourceEnd;
-      --destinationEnd;
-      *destinationEnd = *sourceEnd;
-    }
-    return destinationEnd;
   }
 
 } // namespace
@@ -538,23 +494,6 @@ CScriptObject::~CScriptObject()
   }
 }
 
-/**
- * Address: 0x007B5D00 (FUN_007B5D00)
- *
- * What it does:
- * Tail-forwards one `CScriptObject` instance pointer into the canonical
- * destructor body.
- */
-[[maybe_unused]] CScriptObject* DestroyScriptObjectThunk(
-  CScriptObject* const object
-)
-{
-  if (object != nullptr) {
-    object->~CScriptObject();
-  }
-  return object;
-}
-
 gpg::RType* CScriptObject::StaticGetClass()
 {
   if (!sType) {
@@ -579,7 +518,9 @@ gpg::RType* CScriptObject::GetPointerType()
 /**
  * Address: 0x004C8DC0 (FUN_004C8DC0, Moho::CScriptObject::MemberDeserialize)
  */
-void CScriptObject::MemberDeserialize(gpg::ReadArchive* const archive)
+void CScriptObject::MemberDeserialize(
+  gpg::ReadArchive* const archive
+)
 {
   gpg::RRef ownerRef{};
   gpg::RType* luaObjectType = gpg::RTypeOf<LuaPlus::LuaObject>();
@@ -592,7 +533,9 @@ void CScriptObject::MemberDeserialize(gpg::ReadArchive* const archive)
 /**
  * Address: 0x004C8E40 (FUN_004C8E40, Moho::CScriptObject::MemberSerialize)
  */
-void CScriptObject::MemberSerialize(gpg::WriteArchive* const archive)
+void CScriptObject::MemberSerialize(
+  gpg::WriteArchive* const archive
+)
 {
   gpg::RRef ownerRef{};
   gpg::RType* luaObjectType = gpg::RTypeOf<LuaPlus::LuaObject>();
@@ -609,9 +552,9 @@ void CScriptObject::MemberSerialize(gpg::WriteArchive* const archive)
  * Default `where` text for script-error warnings: `CScriptObject at %08x`
  * (format at 0x00E091C4) of `this` -- lower-case, zero-padded hex, not `%p`.
  */
-msvc8::string CScriptObject::GetErrorDescription()
+fa::string CScriptObject::GetErrorDescription()
 {
-  return gpg::STR_Printf("CScriptObject at %08x", reinterpret_cast<std::uintptr_t>(this));
+  return gpg::STR_Printf("CScriptObject at %p", static_cast<const void*>(this));
 }
 
 /**
@@ -684,7 +627,9 @@ void CScriptObject::CreateLuaObject(
 /**
  * Address: 0x004C72D0
  */
-void CScriptObject::SetLuaObject(const LuaPlus::LuaObject& obj)
+void CScriptObject::SetLuaObject(
+  const LuaPlus::LuaObject& obj
+)
 {
   // The object's own bound state, not `GetActiveState()`. 0x004C72D0 opens with
   // a plain field read of the argument's state pointer and bails on null
@@ -710,10 +655,14 @@ void CScriptObject::SetLuaObject(const LuaPlus::LuaObject& obj)
 /**
  * Address: 0x004C7410
  */
-void CScriptObject::LogScriptWarning(CScriptObject* obj, const char* which, const char* message)
+void CScriptObject::LogScriptWarning(
+  CScriptObject* obj,
+  const char* which,
+  const char* message
+)
 {
   const char* where = "<deleted object>";
-  msvc8::string description;
+  fa::string description;
   if (obj) {
     description = obj->GetErrorDescription();
     where = description.c_str();
@@ -735,11 +684,16 @@ void CScriptObject::LogScriptWarning(CScriptObject* obj, const char* which, cons
  * detached slot there rather than a dangling pointer, which is exactly what
  * 0x0060C41C's argument is reading.
  */
-bool CScriptObject::RunScriptBool(const char* const name, const LuaPlus::LuaObject& arg)
+bool CScriptObject::RunScriptBool(
+  const char* const name,
+  const LuaPlus::LuaObject& arg
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
-  const auto resolveWarningTarget = [&weakGuard]() -> CScriptObject* { return weakGuard.GetObjectPtr(); };
+  const auto resolveWarningTarget = [&weakGuard]() -> CScriptObject* {
+    return weakGuard.GetObjectPtr();
+  };
 
   LuaPlus::LuaObject script;
   FindScript(&script, name);
@@ -751,9 +705,7 @@ bool CScriptObject::RunScriptBool(const char* const name, const LuaPlus::LuaObje
     LuaPlus::LuaFunction<bool> callback(script);
     return callback(mLuaObj, arg);
   } catch (const std::exception& exception) {
-    LogScriptWarning(
-      resolveWarningTarget(), name ? name : "<unknown>", exception.what() ? exception.what() : ""
-    );
+    LogScriptWarning(resolveWarningTarget(), name ? name : "<unknown>", exception.what() ? exception.what() : "");
   } catch (...) {
     LogScriptWarning(resolveWarningTarget(), name ? name : "<unknown>", "unknown exception");
   }
@@ -764,7 +716,10 @@ bool CScriptObject::RunScriptBool(const char* const name, const LuaPlus::LuaObje
 /**
  * Address: 0x004C74B0
  */
-LuaPlus::LuaObject CScriptObject::FindScript(LuaPlus::LuaObject* dest, const char* name)
+LuaPlus::LuaObject CScriptObject::FindScript(
+  LuaPlus::LuaObject* dest,
+  const char* name
+)
 {
   if (!dest) {
     return {};
@@ -882,7 +837,9 @@ int CScriptObject::TaskTick()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_IsDestroyedL`.
  */
-int moho::cfunc_IsDestroyed(lua_State* const luaContext)
+int moho::cfunc_IsDestroyed(
+  lua_State* const luaContext
+)
 {
   return cfunc_IsDestroyedL(ResolveBindingState(luaContext));
 }
@@ -896,12 +853,7 @@ int moho::cfunc_IsDestroyed(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_IsDestroyed_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_CoreLuaInitSet(),
-    kIsDestroyedName,
-    &moho::cfunc_IsDestroyed,
-    nullptr,
-    "<global>",
-    kIsDestroyedHelpText
+    moho::SCR_CoreLuaInitSet(), kIsDestroyedName, &moho::cfunc_IsDestroyed, nullptr, "<global>", kIsDestroyedHelpText
   );
   return &binder;
 }
@@ -912,7 +864,9 @@ moho::CScrLuaInitForm* moho::func_IsDestroyed_LuaFuncDef()
  * What it does:
  * Returns whether one Lua `_c_object` payload is missing or already nulled.
  */
-int moho::cfunc_IsDestroyedL(LuaPlus::LuaState* const state)
+int moho::cfunc_IsDestroyedL(
+  LuaPlus::LuaState* const state
+)
 {
   lua_State* const rawState = state->m_state;
   moho::SCR_ExpectExactArgs(state, 1, kIsDestroyedHelpText);
@@ -1003,7 +957,9 @@ void moho::SCR_ConcatArgsAndCall(
  * What it does:
  * Unwraps raw Lua callback context and emits concatenated args to console.
  */
-int moho::cfunc_printUser(lua_State* const luaContext)
+int moho::cfunc_printUser(
+  lua_State* const luaContext
+)
 {
   SCR_ConcatArgsAndCall(ResolveBindingState(luaContext), '\t', &EmitConcatLineToConsole);
   return 0;
@@ -1017,8 +973,9 @@ int moho::cfunc_printUser(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_printUser_LuaFuncDef()
 {
-  static CScrLuaBinder
-    binder(moho::SCR_UserLuaInitSet(), kPrintUserName, &moho::cfunc_printUser, nullptr, "<global>", kPrintUserHelpText);
+  static CScrLuaBinder binder(
+    moho::SCR_UserLuaInitSet(), kPrintUserName, &moho::cfunc_printUser, nullptr, "<global>", kPrintUserHelpText
+  );
   return &binder;
 }
 
@@ -1028,7 +985,9 @@ moho::CScrLuaInitForm* moho::func_printUser_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and emits concatenated args to `gpg::Logf`.
  */
-int moho::cfunc_LOG(lua_State* const luaContext)
+int moho::cfunc_LOG(
+  lua_State* const luaContext
+)
 {
   SCR_ConcatArgsAndCall(ResolveBindingState(luaContext), 0u, &EmitConcatLineToLogf);
   return 0;
@@ -1042,7 +1001,9 @@ int moho::cfunc_LOG(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_LOG_LuaFuncDef()
 {
-  static CScrLuaBinder binder(moho::SCR_CoreLuaInitSet(), kLogName, &moho::cfunc_LOG, nullptr, "<global>", kLogHelpText);
+  static CScrLuaBinder binder(
+    moho::SCR_CoreLuaInitSet(), kLogName, &moho::cfunc_LOG, nullptr, "<global>", kLogHelpText
+  );
   return &binder;
 }
 
@@ -1052,7 +1013,9 @@ moho::CScrLuaInitForm* moho::func_LOG_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and emits concatenated args to `gpg::Warnf`.
  */
-int moho::cfunc_WARN(lua_State* const luaContext)
+int moho::cfunc_WARN(
+  lua_State* const luaContext
+)
 {
   SCR_ConcatArgsAndCall(ResolveBindingState(luaContext), 0u, &EmitConcatLineToWarnf);
   return 0;
@@ -1066,7 +1029,9 @@ int moho::cfunc_WARN(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_WARN_LuaFuncDef()
 {
-  static CScrLuaBinder binder(moho::SCR_CoreLuaInitSet(), kWarnName, &moho::cfunc_WARN, nullptr, "<global>", kWarnHelpText);
+  static CScrLuaBinder binder(
+    moho::SCR_CoreLuaInitSet(), kWarnName, &moho::cfunc_WARN, nullptr, "<global>", kWarnHelpText
+  );
   return &binder;
 }
 
@@ -1076,7 +1041,9 @@ moho::CScrLuaInitForm* moho::func_WARN_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and emits concatenated args to `gpg::Debugf`.
  */
-int moho::cfunc_SPEW(lua_State* const luaContext)
+int moho::cfunc_SPEW(
+  lua_State* const luaContext
+)
 {
   SCR_ConcatArgsAndCall(ResolveBindingState(luaContext), 0u, &EmitConcatLineToDebugf);
   return 0;
@@ -1090,7 +1057,9 @@ int moho::cfunc_SPEW(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_SPEW_LuaFuncDef()
 {
-  static CScrLuaBinder binder(moho::SCR_CoreLuaInitSet(), kSpewName, &moho::cfunc_SPEW, nullptr, "<global>", kSpewHelpText);
+  static CScrLuaBinder binder(
+    moho::SCR_CoreLuaInitSet(), kSpewName, &moho::cfunc_SPEW, nullptr, "<global>", kSpewHelpText
+  );
   return &binder;
 }
 
@@ -1100,7 +1069,9 @@ moho::CScrLuaInitForm* moho::func_SPEW_LuaFuncDef()
  * What it does:
  * Unwraps raw Lua callback context and forwards to `cfunc_doscriptL`.
  */
-int moho::cfunc_doscript(lua_State* const luaContext)
+int moho::cfunc_doscript(
+  lua_State* const luaContext
+)
 {
   return cfunc_doscriptL(ResolveBindingState(luaContext));
 }
@@ -1113,8 +1084,9 @@ int moho::cfunc_doscript(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_doscript_LuaFuncDef()
 {
-  static CScrLuaBinder
-    binder(moho::SCR_CoreLuaInitSet(), kDoscriptName, &moho::cfunc_doscript, nullptr, "<global>", kDoscriptHelpText);
+  static CScrLuaBinder binder(
+    moho::SCR_CoreLuaInitSet(), kDoscriptName, &moho::cfunc_doscript, nullptr, "<global>", kDoscriptHelpText
+  );
   return &binder;
 }
 
@@ -1124,18 +1096,15 @@ moho::CScrLuaInitForm* moho::func_doscript_LuaFuncDef()
  * What it does:
  * Validates `(script, [envTable])`, then dispatches to `func_LuaDoScript`.
  */
-int moho::cfunc_doscriptL(LuaPlus::LuaState* const state)
+int moho::cfunc_doscriptL(
+  LuaPlus::LuaState* const state
+)
 {
   lua_State* const rawState = state->m_state;
   const int argumentCount = lua_gettop(rawState);
   if (argumentCount < 1 || argumentCount > 2) {
     LuaPlus::LuaState::Error(
-      state,
-      "%s\n  expected between %d and %d args, but got %d",
-      kDoscriptHelpText,
-      1,
-      2,
-      argumentCount
+      state, "%s\n  expected between %d and %d args, but got %d", kDoscriptHelpText, 1, 2, argumentCount
     );
   }
 
@@ -1252,11 +1221,12 @@ namespace
   const ScriptObjectLuaFunctionBootstrap gScriptObjectLuaFunctionBootstrap{};
 } // namespace
 
-
 /**
  * Address: 0x00581AA0
  */
-void CScriptObject::CallbackStr(const char* callback)
+void CScriptObject::CallbackStr(
+  const char* callback
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1292,7 +1262,10 @@ void CScriptObject::CallbackStr(const char* callback)
 /**
  * Address: 0x005FCFE0
  */
-void CScriptObject::CallbackStr(const char* callback, const char** arg0)
+void CScriptObject::CallbackStr(
+  const char* callback,
+  const char** arg0
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1329,7 +1302,11 @@ void CScriptObject::CallbackStr(const char* callback, const char** arg0)
 /**
  * Address: 0x0067F450
  */
-void CScriptObject::CallbackStr(const char* callback, const char** arg0, const char** arg1)
+void CScriptObject::CallbackStr(
+  const char* callback,
+  const char** arg0,
+  const char** arg1
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1367,7 +1344,10 @@ void CScriptObject::CallbackStr(const char* callback, const char** arg0, const c
 /**
  * Address: 0x006B0940
  */
-void CScriptObject::CallbackInt(const char* callback, const int value)
+void CScriptObject::CallbackInt(
+  const char* callback,
+  const int value
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1404,7 +1384,11 @@ void CScriptObject::CallbackInt(const char* callback, const int value)
 /**
  * Address: 0x006753A0
  */
-void CScriptObject::LuaPCall(const char* scriptName, const char* const* args, LuaPlus::LuaObject* obj)
+void CScriptObject::LuaPCall(
+  const char* scriptName,
+  const char* const* args,
+  LuaPlus::LuaObject* obj
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1442,7 +1426,10 @@ void CScriptObject::LuaPCall(const char* scriptName, const char* const* args, Lu
 /**
  * Address: 0x005C9480 (FUN_005C9480, Moho::CScriptObject::RunScript_Int)
  */
-void CScriptObject::RunScriptInt(const char* const scriptName, const int intValue)
+void CScriptObject::RunScriptInt(
+  const char* const scriptName,
+  const int intValue
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1463,58 +1450,12 @@ void CScriptObject::RunScriptInt(const char* const scriptName, const int intValu
 }
 
 /**
- * Address: 0x005D0540 (FUN_005D0540, Moho::CScriptObject::RunScript_Obj_Num)
- */
-float CScriptObject::RunScriptObjNum(const char* const scriptName)
-{
-  const WeakPtr<CScriptObject> weakGuard(this);
-
-  LuaPlus::LuaObject script;
-  FindScript(&script, scriptName);
-  if (!script) {
-    return 0.0f;
-  }
-
-  try {
-    LuaPlus::LuaFunction<LuaPlus::LuaObject> fn{script};
-    const LuaPlus::LuaObject result = fn(mLuaObj);
-    return LuaValueToFloat(result);
-  } catch (const std::exception& ex) {
-    LogScriptWarning(weakGuard.GetObjectPtr(), scriptName ? scriptName : "<unknown>", ex.what());
-  } catch (...) {
-    LogScriptWarning(weakGuard.GetObjectPtr(), scriptName ? scriptName : "<unknown>", "unknown exception");
-  }
-
-  return 0.0f;
-}
-
-/**
- * Address: 0x005D06B0 (FUN_005D06B0, Moho::CScriptObject::RunScript_Weap)
- */
-void CScriptObject::RunScriptWeapon(const char* const scriptName, UnitWeapon* const weapon)
-{
-  const WeakPtr<CScriptObject> weakGuard(this);
-
-  LuaPlus::LuaObject script;
-  FindScript(&script, scriptName);
-  if (!script) {
-    return;
-  }
-
-  try {
-    LuaPlus::LuaFunction<void> fn{script};
-    fn(mLuaObj, weapon);
-  } catch (const std::exception& ex) {
-    LogScriptWarning(weakGuard.GetObjectPtr(), scriptName ? scriptName : "<unknown>", ex.what());
-  } catch (...) {
-    LogScriptWarning(weakGuard.GetObjectPtr(), scriptName ? scriptName : "<unknown>", "unknown exception");
-  }
-}
-
-/**
  * Address: 0x005EC1C0 (FUN_005EC1C0, Moho::CScriptObject::RunScript_Obj)
  */
-void CScriptObject::RunScriptUnit(const char* const scriptName, Unit* const unit)
+void CScriptObject::RunScriptUnit(
+  const char* const scriptName,
+  Unit* const unit
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1537,7 +1478,9 @@ void CScriptObject::RunScriptUnit(const char* const scriptName, Unit* const unit
 /**
  * Address: 0x005F48A0 (FUN_005F48A0, Moho::CScriptObject::RunScript_Bool)
  */
-bool CScriptObject::RunScriptBool(const char* const scriptName)
+bool CScriptObject::RunScriptBool(
+  const char* const scriptName
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1568,7 +1511,9 @@ bool CScriptObject::RunScriptBool(const char* const scriptName)
  * FuncInfo 0x00ED959C), reported through LogScriptWarning, and the value
  * reads as 0 (funclet 0x005FCB2D, continuation `xorps xmm0, xmm0`).
  */
-float CScriptObject::GetLuaValue(const char* const key) const
+float CScriptObject::GetLuaValue(
+  const char* const key
+) const
 {
   try {
     lua_State* const lstate = mLuaObj.GetActiveState()->GetCState();
@@ -1591,7 +1536,10 @@ float CScriptObject::GetLuaValue(const char* const key) const
  * Writes `self[key] = value`; a Lua error is caught (lua_RuntimeError,
  * FuncInfo 0x00ED9534) and reported through LogScriptWarning.
  */
-void CScriptObject::SetLuaValue(const char* const key, const float value)
+void CScriptObject::SetLuaValue(
+  const char* const key,
+  const float value
+)
 {
   try {
     (void)mLuaObj.GetActiveState();
@@ -1604,7 +1552,10 @@ void CScriptObject::SetLuaValue(const char* const key, const float value)
 /**
  * Address: 0x005FD1C0 (FUN_005FD1C0, Moho::CScriptObject::RunScript_Weakunit)
  */
-void CScriptObject::RunScriptWeakUnit(const char* const scriptName, const WeakPtr<Unit>& unitLink)
+void CScriptObject::RunScriptWeakUnit(
+  const char* const scriptName,
+  const WeakPtr<Unit>& unitLink
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1628,7 +1579,10 @@ void CScriptObject::RunScriptWeakUnit(const char* const scriptName, const WeakPt
 /**
  * Address: 0x00605600 (FUN_00605600, Moho::CScriptObject::RunScript_Weakent)
  */
-void CScriptObject::RunScriptWeakEntity(const char* const scriptName, const WeakPtr<Entity>& entityLink)
+void CScriptObject::RunScriptWeakEntity(
+  const char* const scriptName,
+  const WeakPtr<Entity>& entityLink
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1652,7 +1606,10 @@ void CScriptObject::RunScriptWeakEntity(const char* const scriptName, const Weak
 /**
  * Address: 0x00633070 (FUN_00633070, Moho::CScriptObject::Call_Str)
  */
-void CScriptObject::CallString(const char* const scriptName, const std::string& stringValue)
+void CScriptObject::CallString(
+  const char* const scriptName,
+  const std::string& stringValue
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1723,7 +1680,10 @@ namespace
    * way out.
    */
   void CallLuaFunctionObjectStringUnit(
-    const LuaPlus::LuaFunction<void>& fn, LuaPlus::LuaObject self, const char* const text, Unit* const unit
+    const LuaPlus::LuaFunction<void>& fn,
+    LuaPlus::LuaObject self,
+    const char* const text,
+    Unit* const unit
   )
   {
     lua_State* const state = fn.GetActiveCState();
@@ -1756,7 +1716,11 @@ namespace
  * pointer at the call site (a bone name slot and a stored-unit slot); the
  * recovered API dereferences those at the caller.
  */
-void CScriptObject::RunScriptStringUnit(const char* const scriptName, const char* const text, Unit* const unit)
+void CScriptObject::RunScriptStringUnit(
+  const char* const scriptName,
+  const char* const text,
+  Unit* const unit
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1779,7 +1743,10 @@ void CScriptObject::RunScriptStringUnit(const char* const scriptName, const char
 /**
  * Address: 0x0067F180 (FUN_0067F180, Moho::CScriptObject::RunScript_Ent)
  */
-void CScriptObject::RunScriptEntity(const char* const scriptName, Entity* const entityArg)
+void CScriptObject::RunScriptEntity(
+  const char* const scriptName,
+  Entity* const entityArg
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1805,7 +1772,11 @@ void CScriptObject::RunScriptEntity(const char* const scriptName, Entity* const 
 /**
  * Address: 0x0067F2E0 (FUN_0067F2E0, Moho::CScriptObject::RunScript_Num2)
  */
-void CScriptObject::RunScriptNum2(const char* const scriptName, const float a, const float b)
+void CScriptObject::RunScriptNum2(
+  const char* const scriptName,
+  const float a,
+  const float b
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1828,7 +1799,10 @@ void CScriptObject::RunScriptNum2(const char* const scriptName, const float a, c
 /**
  * Address: 0x0069F550 (FUN_0069F550, Moho::CScriptObject::RunScriptBool)
  */
-void CScriptObject::RunScriptWithBool(const char* const scriptName, const bool value)
+void CScriptObject::RunScriptWithBool(
+  const char* const scriptName,
+  const bool value
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1878,7 +1852,10 @@ void CScriptObject::RunScriptObjectString(
 /**
  * Address: 0x0078A870 (FUN_0078A870, Moho::CScriptObject::RunScript_Num)
  */
-void CScriptObject::RunScriptNum(const char* const scriptName, const float value)
+void CScriptObject::RunScriptNum(
+  const char* const scriptName,
+  const float value
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1901,7 +1878,11 @@ void CScriptObject::RunScriptNum(const char* const scriptName, const float value
 /**
  * Address: 0x0078AB70 (FUN_0078AB70, Moho::CScriptObject::RunScript_StrNum)
  */
-void CScriptObject::RunScriptStringNum(const char* const scriptName, const char* const text, const float value)
+void CScriptObject::RunScriptStringNum(
+  const char* const scriptName,
+  const char* const text,
+  const float value
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1924,7 +1905,10 @@ void CScriptObject::RunScriptStringNum(const char* const scriptName, const char*
 /**
  * Address: 0x007950D0 (FUN_007950D0, Moho::CScriptObject::RunScript_String)
  */
-bool CScriptObject::RunScriptStringBool(const char* const scriptName, const std::string& value)
+bool CScriptObject::RunScriptStringBool(
+  const char* const scriptName,
+  const std::string& value
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -1978,7 +1962,9 @@ void CScriptObject::RunScriptIntObject(
 /**
  * Address: 0x007953D0 (FUN_007953D0, Moho::CScriptObject::RunScript_OnCharPressed)
  */
-bool CScriptObject::RunScriptOnCharPressed(const int keyCode)
+bool CScriptObject::RunScriptOnCharPressed(
+  const int keyCode
+)
 {
   constexpr const char* kOnCharPressed = "OnCharPressed";
 
@@ -2014,7 +2000,9 @@ void CScriptObject::OnSpawnPreBuiltUnits()
 /**
  * Address: 0x00620760 (FUN_00620760, Moho::CScriptObject::RunScript_CreateWreckageProp)
  */
-LuaPlus::LuaObject CScriptObject::RunScriptCreateWreckageProp(const float reclaimFraction)
+LuaPlus::LuaObject CScriptObject::RunScriptCreateWreckageProp(
+  const float reclaimFraction
+)
 {
   constexpr const char* kCreateWreckageProp = "CreateWreckageProp";
 
@@ -2041,7 +2029,10 @@ LuaPlus::LuaObject CScriptObject::RunScriptCreateWreckageProp(const float reclai
 /**
  * Address: 0x006B0660 (FUN_006B0660, Moho::CScriptObject::RunScript_OnAdjacentTo)
  */
-void CScriptObject::RunScriptOnAdjacentTo(Unit* const sourceUnit, Unit* const adjacentUnit)
+void CScriptObject::RunScriptOnAdjacentTo(
+  Unit* const sourceUnit,
+  Unit* const adjacentUnit
+)
 {
   constexpr const char* kOnAdjacentTo = "OnAdjacentTo";
 
@@ -2066,7 +2057,9 @@ void CScriptObject::RunScriptOnAdjacentTo(Unit* const sourceUnit, Unit* const ad
 /**
  * Address: 0x006DD430 (FUN_006DD430, Moho::CScriptObject::GetWeaponClass)
  */
-LuaPlus::LuaObject CScriptObject::GetWeaponClass(const LuaPlus::LuaObject& weaponBlueprintClass)
+LuaPlus::LuaObject CScriptObject::GetWeaponClass(
+  const LuaPlus::LuaObject& weaponBlueprintClass
+)
 {
   constexpr const char* kGetWeaponClass = "GetWeaponClass";
 
@@ -2093,7 +2086,10 @@ LuaPlus::LuaObject CScriptObject::GetWeaponClass(const LuaPlus::LuaObject& weapo
 /**
  * Address: 0x005EBED0 (FUN_005EBED0, Moho::CScriptObject::RunScript_Unit_Bool)
  */
-bool CScriptObject::RunScriptUnitBool(const char* const scriptName, Unit* const unitArg)
+bool CScriptObject::RunScriptUnitBool(
+  const char* const scriptName,
+  Unit* const unitArg
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -2119,7 +2115,10 @@ bool CScriptObject::RunScriptUnitBool(const char* const scriptName, Unit* const 
 /**
  * Address: 0x00581930
  */
-void CScriptObject::LuaCall(const char* fileName, LuaPlus::LuaObject* obj)
+void CScriptObject::LuaCall(
+  const char* fileName,
+  LuaPlus::LuaObject* obj
+)
 {
   const WeakPtr<CScriptObject> weakGuard(this);
 
@@ -2156,7 +2155,11 @@ void CScriptObject::LuaCall(const char* fileName, LuaPlus::LuaObject* obj)
 /**
  * Address: 0x005EC040 (FUN_005EC040, Moho::CScriptObject::RunScript_UnitOnDamage)
  */
-void CScriptObject::RunScriptUnitOnDamage(Unit* const sourceUnit, const int amount, const bool canTakeDamageFlag)
+void CScriptObject::RunScriptUnitOnDamage(
+  Unit* const sourceUnit,
+  const int amount,
+  const bool canTakeDamageFlag
+)
 {
   constexpr const char* kOnDamage = "OnDamage";
 
@@ -2184,7 +2187,10 @@ void CScriptObject::RunScriptUnitOnDamage(Unit* const sourceUnit, const int amou
  * What it does:
  * Invokes script callback `OnStopBuild(self, reason, unitObject)` when present.
  */
-void CScriptObject::OnStopBuild(const WeakPtr<Unit>& unitLink, const std::string& reason)
+void CScriptObject::OnStopBuild(
+  const WeakPtr<Unit>& unitLink,
+  const std::string& reason
+)
 {
   constexpr const char* kOnStopBuild = "OnStopBuild";
 
@@ -2219,7 +2225,10 @@ void CScriptObject::OnStopBuild(const WeakPtr<Unit>& unitLink, const std::string
  * What it does:
  * Invokes `OnStartBuild(self, focusUnit, buildAction)` callback when present.
  */
-void CScriptObject::RunScriptOnStartBuild(Unit* const focusUnit, const std::string& buildAction)
+void CScriptObject::RunScriptOnStartBuild(
+  Unit* const focusUnit,
+  const std::string& buildAction
+)
 {
   constexpr const char* kOnStartBuild = "OnStartBuild";
 
@@ -2467,7 +2476,10 @@ void CScriptObject::RunScriptOnBeingBuiltProgress(
  * The call helper at 0x00603080 pushes self, the weak-linked unit's Lua
  * object (nil when the link is dead) and then the bone number.
  */
-void CScriptObject::StartTransportBeamUp(const WeakPtr<Unit>& sourceUnitLink, const int attachBone)
+void CScriptObject::StartTransportBeamUp(
+  const WeakPtr<Unit>& sourceUnitLink,
+  const int attachBone
+)
 {
   constexpr const char* kOnStartTransportBeamUp = "OnStartTransportBeamUp";
 
@@ -2528,7 +2540,11 @@ void CScriptObject::RunScriptOnTeleportUnit(
  * What it does:
  * Invokes `OnKilled(self, sourceEntity, reason, value)` callback for unit-owned scripts.
  */
-void CScriptObject::RunScriptUnitOnKilled(Entity* const sourceEntity, const char* const reason, const float value)
+void CScriptObject::RunScriptUnitOnKilled(
+  Entity* const sourceEntity,
+  const char* const reason,
+  const float value
+)
 {
   constexpr const char* kOnKilled = "OnKilled";
 
@@ -2587,7 +2603,10 @@ void CScriptObject::RunScriptOnTerrainTypeChange(
  * What it does:
  * Invokes `OnStopBeingBuilt(self, sourceUnit, layerName)` callback when present.
  */
-void CScriptObject::RunScriptOnStopBeingBuilt(const WeakPtr<Unit>& sourceUnitLink, const char* const layerName)
+void CScriptObject::RunScriptOnStopBeingBuilt(
+  const WeakPtr<Unit>& sourceUnitLink,
+  const char* const layerName
+)
 {
   constexpr const char* kOnStopBeingBuilt = "OnStopBeingBuilt";
 
@@ -2616,7 +2635,9 @@ void CScriptObject::RunScriptOnStopBeingBuilt(const WeakPtr<Unit>& sourceUnitLin
  * What it does:
  * Invokes `OnCollisionCheckWeapon(self, weapon)` and returns Lua-bool result.
  */
-bool CScriptObject::RunScriptOnCollisionCheckWeapon(UnitWeapon* const weapon)
+bool CScriptObject::RunScriptOnCollisionCheckWeapon(
+  UnitWeapon* const weapon
+)
 {
   constexpr const char* kOnCollisionCheckWeapon = "OnCollisionCheckWeapon";
 
@@ -2648,7 +2669,11 @@ bool CScriptObject::RunScriptOnCollisionCheckWeapon(UnitWeapon* const weapon)
  * Invokes `OnKilled(self, instigator, reason, value)` for a prop's script.
  * FUN_006FAE50 pushes the instigator's script object (`entity+20h`), or nil.
  */
-void CScriptObject::RunScriptPropOnKilled(Entity* const instigator, const char* const reason, const float value)
+void CScriptObject::RunScriptPropOnKilled(
+  Entity* const instigator,
+  const char* const reason,
+  const float value
+)
 {
   constexpr const char* kOnKilled = "OnKilled";
 
@@ -2675,7 +2700,10 @@ void CScriptObject::RunScriptPropOnKilled(Entity* const instigator, const char* 
 /**
  * Address: 0x007CB940
  */
-void CScriptObject::RunScriptObj(LuaPlus::LuaObject& out, const char* name)
+void CScriptObject::RunScriptObj(
+  LuaPlus::LuaObject& out,
+  const char* name
+)
 {
   out = LuaPlus::LuaObject{};
 
@@ -2695,30 +2723,6 @@ void CScriptObject::RunScriptObj(LuaPlus::LuaObject& out, const char* name)
   if (!returns.Empty()) {
     out = returns[0];
   }
-}
-
-/**
- * Address: 0x00675CF0
- */
-void CScriptObject::LuaInvoke3_DiscardReturn(
-  LuaPlus::LuaObject& func, LuaPlus::LuaObject& selfObj, const char* stringArg, LuaPlus::LuaObject& payloadObj
-)
-{
-  LuaPlus::LuaState* state = func.GetActiveState();
-  if (!state) {
-    return;
-  }
-
-  lua_State* lstate = state->GetCState();
-  const int stackTop = lua_gettop(lstate);
-
-  func.PushStack(lstate);
-  selfObj.PushStack(lstate);
-  lua_pushstring(lstate, stringArg ? stringArg : "");
-  payloadObj.PushStack(lstate);
-
-  lua_call(lstate, 3, 1);
-  lua_settop(lstate, stackTop);
 }
 
 namespace moho
@@ -2742,7 +2746,9 @@ namespace
   moho::CScriptObjectSerializer gCScriptObjectSerializer;
 } // namespace
 
-moho::CScriptObject** moho::SCR_ScriptObjectSlot(const LuaPlus::LuaObject& object)
+moho::CScriptObject** moho::SCR_ScriptObjectSlot(
+  const LuaPlus::LuaObject& object
+)
 {
   LuaPlus::LuaObject payload(object);
   if (payload.IsTable()) {

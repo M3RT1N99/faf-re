@@ -8,7 +8,10 @@
 #include "moho/sim/BuildQueueCommandDecrement.h"
 #include "platform/BinaryObjectBytes.h"
 
-#include <boost/bind.hpp>
+#if FAFRE_PLATFORM_POSIX
+#include "platform/Window.h"
+#endif
+
 #include <Windows.h>
 
 #include <algorithm>
@@ -34,7 +37,7 @@
 #include "gpg/core/containers/BitArray2D.h"
 #include "gpg/core/containers/Rect2.h"
 #include "gpg/core/reflection/Reflection.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/utils/Logging.h"
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/DeviceContext.hpp"
@@ -43,7 +46,7 @@
 #include "lua/LuaAssertion.h"
 #include "lua/LuaTableIterator.h"
 #include "moho/app/WinApp.h"
-#include "moho/app/WxRuntimeTypes.h"
+#include "moho/app/AppRuntimeTypes.h"
 #include "moho/client/Localization.h"
 #include "moho/collision/CGeomSolid3.h"
 #include "moho/command/CommandIssueHelper.h"
@@ -152,13 +155,12 @@ namespace
     std::memset(storage, 0, byteSize);
     return static_cast<T*>(storage);
   }
-}
+} // namespace
 
 namespace moho
 {
   bool WIN_CopyToClipboard(const wchar_t* text);
 }
-
 
 moho::CommandModeData* func_GetRightMouseButtonAction(
   moho::CommandModeData* commandData,
@@ -571,7 +573,7 @@ namespace moho
   int cfunc_IsKeyDownL(LuaPlus::LuaState* state);
   int cfunc_KeycodeMauiToMSWL(LuaPlus::LuaState* state);
   int cfunc_KeycodeMSWToMauiL(LuaPlus::LuaState* state);
-}
+} // namespace moho
 
 namespace
 {
@@ -580,17 +582,18 @@ namespace
   using moho::CMauiEdit;
   using moho::CScriptLazyVar_float;
 
-  moho::CMauiBitmap*
-  SetBitmapAlphaHitTestEnabled(moho::CMauiBitmap* bitmap, bool enabled) noexcept;
-  moho::CMauiBitmap* SetBitmapTiledEnabled(moho::CMauiBitmap* bitmap, bool enabled) noexcept;
-  moho::CMauiBitmap* SetBitmapLoopEnabled(moho::CMauiBitmap* bitmap, bool enabled) noexcept;
-  std::int32_t ReadBitmapCurrentFrame(const moho::CMauiBitmap* bitmap) noexcept;
-  std::int32_t CountBitmapFramePatternEntries(const moho::CMauiBitmap* bitmap) noexcept;
-  std::uint32_t EnableBitmapAnimationIfMultipleTextures(moho::CMauiBitmap* bitmap) noexcept;
+  [[maybe_unused]] moho::CMauiBitmap* SetBitmapAlphaHitTestEnabled(moho::CMauiBitmap* bitmap, bool enabled) noexcept;
+  [[maybe_unused]] moho::CMauiBitmap* SetBitmapTiledEnabled(moho::CMauiBitmap* bitmap, bool enabled) noexcept;
+  [[maybe_unused]] moho::CMauiBitmap* SetBitmapLoopEnabled(moho::CMauiBitmap* bitmap, bool enabled) noexcept;
+  [[maybe_unused]] std::int32_t ReadBitmapCurrentFrame(const moho::CMauiBitmap* bitmap) noexcept;
+  [[maybe_unused]] std::int32_t CountBitmapFramePatternEntries(const moho::CMauiBitmap* bitmap) noexcept;
+  [[maybe_unused]] std::uint32_t EnableBitmapAnimationIfMultipleTextures(moho::CMauiBitmap* bitmap) noexcept;
 
   /// The state a control's layout lazy vars are created in: the control's
   /// Lua object's, or none.
-  [[nodiscard]] LuaPlus::LuaState* LuaStateOf(const LuaPlus::LuaObject* const luaObject) noexcept
+  [[maybe_unused]] [[nodiscard]] LuaPlus::LuaState* LuaStateOf(
+    const LuaPlus::LuaObject* const luaObject
+  ) noexcept
   {
     return luaObject != nullptr ? luaObject->m_state : nullptr;
   }
@@ -598,14 +601,14 @@ namespace
   constexpr const char* kLuaExpectedArgsWarning = "%s\n  expected %d args, but got %d";
 
   using UiKeyMask = std::uint32_t;
-  using UiKeyActionMapBase = msvc8::map<UiKeyMask, msvc8::string>;
-  using UiKeyRepeatMap = msvc8::map<UiKeyMask, bool>;
+  using UiKeyActionMapBase = fa::map<UiKeyMask, fa::string>;
+  using UiKeyRepeatMap = fa::map<UiKeyMask, bool>;
 
   /**
-   * Owns the legacy action map while compensating for `msvc8::string`'s
+   * Owns the legacy action map while compensating for `fa::string`'s
    * intentionally destructor-less compatibility wrapper. The shipped map
    * destroys each mapped string before freeing its node; this same-size owner
-   * performs that release before delegating node destruction to `msvc8::map`.
+   * performs that release before delegating node destruction to `fa::map`.
    */
   class UiKeyActionMap final : public UiKeyActionMapBase
   {
@@ -650,7 +653,7 @@ namespace
   static_assert(sizeof(UiKeyActionMap) == 0x0C, "UI key action map size must be 0x0C");
   static_assert(sizeof(UiKeyRepeatMap) == 0x0C, "UI key repeat map size must be 0x0C");
 
-  [[nodiscard]] LuaPlus::LuaState* ResolveUiManagerLuaState() noexcept
+  [[maybe_unused]] [[nodiscard]] LuaPlus::LuaState* ResolveUiManagerLuaState() noexcept
   {
     return moho::g_UIManager->mLuaState;
   }
@@ -683,7 +686,7 @@ namespace
   using CMauiControlListNode = moho::TDatListItem<moho::CMauiControl, void>;
 
   /// The control one node of a parent's `mChildrenList` is the base of.
-  [[nodiscard]] moho::CMauiControl* ControlFromParentListNode(
+  [[maybe_unused]] [[nodiscard]] moho::CMauiControl* ControlFromParentListNode(
     CMauiControlListNode* node
   ) noexcept
   {
@@ -693,7 +696,7 @@ namespace
     return static_cast<moho::CMauiControl*>(node);
   }
 
-  [[nodiscard]] const moho::CMauiControl* ControlFromParentListNode(
+  [[maybe_unused]] [[nodiscard]] const moho::CMauiControl* ControlFromParentListNode(
     const CMauiControlListNode* node
   ) noexcept
   {
@@ -721,7 +724,7 @@ namespace
     return cursor;
   }
 
-  [[nodiscard]] LuaPlus::LuaState* ResolveBindingState(
+  [[maybe_unused]] [[nodiscard]] LuaPlus::LuaState* ResolveBindingState(
     lua_State* const luaContext
   ) noexcept
   {
@@ -820,10 +823,10 @@ namespace
      */
     void OnCurrentDraggerReplaced() override;
 
-    moho::CameraImpl* mCamera = nullptr;     // +0x08
-    Wm3::Vector2f mPos{};                    // +0x0C
+    moho::CameraImpl* mCamera = nullptr; // +0x08
+    Wm3::Vector2f mPos{};                // +0x0C
     // Neither the constructor nor any of the four slots reads or writes it.
-    std::uint32_t mUnknown14 = 0;            // +0x14
+    std::uint32_t mUnknown14 = 0; // +0x14
     /**
      * The one delta handler ever stored here is `&CameraImpl::CameraPan`
      * (`CUIWorldView::HandleEvent`'s middle-button press). It is virtual, so
@@ -832,7 +835,7 @@ namespace
      * `CameraDraggerPanCamera`, a stand-in free function taking the camera as
      * an explicit argument.
      */
-    CameraDragDeltaFn mDragDelta = nullptr;  // +0x18 code, +0x1C this adjustment
+    CameraDragDeltaFn mDragDelta = nullptr; // +0x18 code, +0x1C this adjustment
   };
 
   static_assert(offsetof(CameraDragger, mCamera) == 0x8, "CameraDragger::mCamera offset must be 0x8");
@@ -870,7 +873,7 @@ namespace
      * Initializes one minimap dragger and copies its camera-name lane from the
      * incoming string payload.
      */
-    explicit CMiniMapDragger(msvc8::string cameraName);
+    explicit CMiniMapDragger(fa::string cameraName);
 
     /**
      * Address: 0x0086E430 (FUN_0086E430, Moho::CMiniMapDragger::~CMiniMapDragger)
@@ -905,7 +908,7 @@ namespace
      */
     void OnCurrentDraggerReplaced() override;
 
-    msvc8::string mCameraName{}; // +0x08
+    fa::string mCameraName{}; // +0x08
   };
 
   static_assert(offsetof(CMiniMapDragger, mCameraName) == 0x8, "CMiniMapDragger::mCameraName offset must be 0x8");
@@ -913,36 +916,35 @@ namespace
   constexpr std::int32_t kPostDraggerLeftButton = 1;
   constexpr std::int32_t kPostDraggerMiddleButton = 2;
   constexpr std::int32_t kPostDraggerRightButton = 3;
-}
+} // namespace
 
+/// The dragger that owns the mouse until it is released or replaced. A
+/// weak link, so a dragger that deletes itself drops out of it.
+// Address: 0x0078E540 (FUN_0078E540 -- this global's constructor emitted
+// out of line: both words zeroed, `this` returned.)
+// Address: 0x0078E560 (FUN_0078E560 -- its destructor, `~WeakPtr`; ICF twin
+// 0x00C02D50 is the copy the exit list runs. Formerly the uncalled statics
+// `func_ResetCurrentDraggerLink` / `func_UnlinkCurrentDraggerLink`, removed
+// 2026-09-30.)
+extern moho::WeakPtr<IMauiDragger> sCurrentDragger;
+extern std::int32_t sCurrentDraggerKeycode;
+extern std::uint8_t sMouseIsCaptured;
+extern std::uint8_t sMouseIsScrubbing;
+extern POINT sMouseMoveStart;
+extern POINT sMouseScrubDelta;
+extern bool sInvertMidMouseScrub;
+extern POINT sMouseScrubAnchor;
+// Engine addition, not in the binary: where the latest
+// SetCursorPos(sMouseScrubAnchor) actually put the cursor, re-read after
+// every warp. Under DPI scaling, or when the anchor falls outside the
+// window's ClipCursor rect, the cursor lands elsewhere, and not always on
+// the same spot; measuring against the requested anchor counted that gap as
+// mouse motion on every warp (a tiny drag spun the camera by hundreds of
+// pixels). Where the warp lands exactly, this equals the anchor and nothing
+// changes.
+extern POINT sMouseScrubLanded;
 
-  /// The dragger that owns the mouse until it is released or replaced. A
-  /// weak link, so a dragger that deletes itself drops out of it.
-  // Address: 0x0078E540 (FUN_0078E540 -- this global's constructor emitted
-  // out of line: both words zeroed, `this` returned.)
-  // Address: 0x0078E560 (FUN_0078E560 -- its destructor, `~WeakPtr`; ICF twin
-  // 0x00C02D50 is the copy the exit list runs. Formerly the uncalled statics
-  // `func_ResetCurrentDraggerLink` / `func_UnlinkCurrentDraggerLink`, removed
-  // 2026-09-30.)
-  extern moho::WeakPtr<IMauiDragger> sCurrentDragger;
-  extern std::int32_t sCurrentDraggerKeycode;
-  extern std::uint8_t sMouseIsCaptured;
-  extern std::uint8_t sMouseIsScrubbing;
-  extern POINT sMouseMoveStart;
-  extern POINT sMouseScrubDelta;
-  extern bool sInvertMidMouseScrub;
-  extern POINT sMouseScrubAnchor;
-  // Engine addition, not in the binary: where the latest
-  // SetCursorPos(sMouseScrubAnchor) actually put the cursor, re-read after
-  // every warp. Under DPI scaling, or when the anchor falls outside the
-  // window's ClipCursor rect, the cursor lands elsewhere, and not always on
-  // the same spot; measuring against the requested anchor counted that gap as
-  // mouse motion on every warp (a tiny drag spun the camera by hundreds of
-  // pixels). Where the warp lands exactly, this equals the anchor and nothing
-  // changes.
-  extern POINT sMouseScrubLanded;
-
-  extern msvc8::vector<moho::WeakPtr<moho::CMauiControl>> sInputCapture;
+extern fa::vector<moho::WeakPtr<moho::CMauiControl>> sInputCapture;
 namespace
 {
 
@@ -973,7 +975,6 @@ namespace
     (void)sInputCapture.erase(sInputCapture.begin() + static_cast<std::ptrdiff_t>(index));
   }
 
-
   /**
    * Address: 0x007A4720 (FUN_007A4720, sub_7A4720)
    *
@@ -989,7 +990,7 @@ namespace
     // slot high. That order is kept. Where the binary would then erase one
     // past the end (two stale entries at the very top) and walk its copy loop
     // off the buffer, RemoveInputCaptureAt's bounds check stops it instead.
-    msvc8::vector<std::int32_t> staleIndices;
+    fa::vector<std::int32_t> staleIndices;
     const std::int32_t count = static_cast<std::int32_t>(sInputCapture.size());
     for (std::int32_t index = 0; index < count; ++index) {
       if (sInputCapture[static_cast<std::size_t>(index)].GetObjectPtr() == nullptr) {
@@ -1009,55 +1010,13 @@ namespace
    * Returns the top control currently in the global input-capture stack
    * after compacting stale weak-pointer entries.
    */
-  [[nodiscard]] moho::CMauiControl* ResolveTopInputCaptureControl() noexcept
+  [[maybe_unused]] [[nodiscard]] moho::CMauiControl* ResolveTopInputCaptureControl() noexcept
   {
     if (sInputCapture.empty()) {
       return nullptr;
     }
     CompactInputCaptureStack();
     return sInputCapture.empty() ? nullptr : sInputCapture.back().GetObjectPtr();
-  }
-
-  gpg::RType* CachedCScriptObjectPointerType()
-  {
-    static gpg::RType* cached = nullptr;
-    if (!cached) {
-      cached = gpg::LookupRType(typeid(moho::CScriptObject*));
-    }
-    return cached;
-  }
-
-  gpg::RRef ExtractUserDataRef(
-    const LuaPlus::LuaObject& userDataObject
-  )
-  {
-    if (!userDataObject.IsUserData()) {
-      return gpg::RRef{};
-    }
-
-    return userDataObject.GetUserData();
-  }
-
-  moho::CScriptObject** ExtractScriptObjectSlotFromLuaObject(
-    const LuaPlus::LuaObject& object
-  )
-  {
-    LuaPlus::LuaObject payload(object);
-    if (payload.IsTable()) {
-      payload = moho::SCR_GetLuaTableField(payload.GetActiveState(), payload, "_c_object");
-    }
-
-    if (!payload.IsUserData()) {
-      return nullptr;
-    }
-
-    const gpg::RRef userDataRef = ExtractUserDataRef(payload);
-    if (!userDataRef.mObj) {
-      return nullptr;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(userDataRef, CachedCScriptObjectPointerType());
-    return static_cast<moho::CScriptObject**>(upcast.mObj);
   }
 
   /**
@@ -1067,7 +1026,7 @@ namespace
    * Applies x87-style nearby-int rounding and adjusts down by one when the
    * original value sits below the rounded lane.
    */
-  [[nodiscard]] int FloorFrndintAdjustDown(
+  [[maybe_unused]] [[nodiscard]] int FloorFrndintAdjustDown(
     const float value
   ) noexcept
   {
@@ -1096,7 +1055,7 @@ namespace
     font = nullptr;
   }
 
-  void AssignIntrusiveFont(
+  [[maybe_unused]] void AssignIntrusiveFont(
     CD3DFont*& destination,
     CD3DFont* const source
   ) noexcept
@@ -1112,7 +1071,7 @@ namespace
     }
   }
 
-  [[nodiscard]] moho::CD3DPrimBatcher::Vertex MakeBorderVertex(
+  [[maybe_unused]] [[nodiscard]] moho::CD3DPrimBatcher::Vertex MakeBorderVertex(
     const float x,
     const float y,
     const std::uint32_t color,
@@ -1129,8 +1088,7 @@ namespace
     vertex.mV = v;
     return vertex;
   }
-}
-
+} // namespace
 
 // Forward declaration: defined later in this file (address 0x00823F00,
 // see its own doc comment there). UICommandDragger::DragRelease below is
@@ -1140,7 +1098,7 @@ void func_OnCommandDragEnd(moho::SMauiEventData* eventData, std::int32_t command
 // Forward declaration: defined later in this file (address 0x00823E40, see its
 // own doc comment there). The UICommandDragger constructor below is its only
 // caller in the binary (call site 0x00824037).
-static void func_OnCommandDragBegin(LuaPlus::LuaState* state);
+[[maybe_unused]] static void func_OnCommandDragBegin(LuaPlus::LuaState* state);
 
 struct SBuildDragStep
 {
@@ -1152,10 +1110,7 @@ struct SBuildDragStep
 };
 
 static_assert(sizeof(SBuildDragStep) == 0x14, "SBuildDragStep size must be 0x14");
-static_assert(
-  offsetof(SBuildDragStep, mStepCount) == 0x10,
-  "SBuildDragStep::mStepCount offset must be 0x10"
-);
+static_assert(offsetof(SBuildDragStep, mStepCount) == 0x10, "SBuildDragStep::mStepCount offset must be 0x10");
 
 /**
  * Address: 0x0078DDC0 (FUN_0078DDC0, sub_78DDC0)
@@ -1199,8 +1154,9 @@ static IMauiDragger* func_GetCurrentDragger2()
  * Toggles mouse-scrub mode, updates cursor visibility/default state, and when
  * enabling scrub mode recenters the cursor to the control midpoint inside the
  * active UI head rectangle.
+ * Engine addition: POSIX uses continuous SDL relative motion instead of cursor warps.
  */
-static void func_StartMouseScrubbing(
+[[maybe_unused]] static void func_StartMouseScrubbing(
   const bool doStart,
   moho::CMauiControl* const control
 )
@@ -1209,11 +1165,20 @@ static void func_StartMouseScrubbing(
     return;
   }
 
+#if FAFRE_PLATFORM_POSIX
+  if (!platform::window::SetRelativeMouseMode(doStart)) {
+    return;
+  }
+#endif
   sMouseIsScrubbing = static_cast<std::uint8_t>(doStart);
 
   auto* const cursor = moho::g_UIManager->GetCursor();
   (void)SetCursorShowingAndMarkDirty(cursor, !doStart);
 
+#if FAFRE_PLATFORM_POSIX
+  (void)control;
+  sMouseScrubDelta = {};
+#else
   if (!doStart) {
     ::SetCursorPos(sMouseMoveStart.x, sMouseMoveStart.y);
     return;
@@ -1230,7 +1195,7 @@ static void func_StartMouseScrubbing(
 
   HWND secondHeadWindow = nullptr;
   if (static_cast<unsigned int>(context->GetHeadCount()) > 1u) {
-    secondHeadWindow = reinterpret_cast<HWND>(context->GetHead(1u).mWindow);
+    secondHeadWindow = static_cast<HWND>(context->GetHead(1u).mWindow);
   }
 
   RECT viewportRect{};
@@ -1256,6 +1221,7 @@ static void func_StartMouseScrubbing(
   sMouseScrubAnchor.y = scrubY;
   ::SetCursorPos(sMouseScrubAnchor.x, sMouseScrubAnchor.y);
   ::GetCursorPos(&sMouseScrubLanded);
+#endif
 }
 
 /**
@@ -1280,7 +1246,7 @@ static moho::WeakPtr<IMauiDragger>* func_SetCurDragger(
  */
 static std::uint8_t func_SetMouseCapture(
   const bool shouldCapture,
-  moho::CMauiWxEventMapper* const eventMapper
+  moho::CMauiEventMapper* const eventMapper
 )
 {
   std::uint8_t result = sMouseIsCaptured;
@@ -1290,7 +1256,8 @@ static std::uint8_t func_SetMouseCapture(
       sMouseIsCaptured = 0;
     }
     if (shouldCapture) {
-      const HWND capturedWindow = ::SetCapture(reinterpret_cast<HWND>(static_cast<std::uintptr_t>(eventMapper->mWindow->GetHWND())));
+      const HWND capturedWindow =
+        ::SetCapture(reinterpret_cast<HWND>(static_cast<std::uintptr_t>(eventMapper->mWindow->GetHWND())));
       result = static_cast<std::uint8_t>(reinterpret_cast<std::uintptr_t>(capturedWindow));
       sMouseIsCaptured = 1;
     }
@@ -1305,7 +1272,7 @@ static std::uint8_t func_SetMouseCapture(
  * Switches active dragger ownership, updates Win32 mouse-capture state, and
  * records the keycode lane used by the current dragger.
  */
-static void func_PostDragger(
+[[maybe_unused]] static void func_PostDragger(
   moho::CMauiFrame* const originFrame,
   IMauiDragger* const dragger,
   const moho::SMauiEventData* const eventData
@@ -1332,22 +1299,21 @@ static void func_PostDragger(
     sCurrentDraggerKeycode = eventData->mKeyCode;
   }
 }
-  /**
-   * Depth of MAUI event dispatch currently on the stack. `PurgeDeleted` skips
-   * the delete while this is non-zero, so a control cannot be freed underneath
-   * an event walk that still holds a pointer to it. Single-threaded: every
-   * dispatch runs on the wx message loop.
-   */
-  extern int gMauiEventDispatchDepth;
+/**
+ * Depth of MAUI event dispatch currently on the stack. `PurgeDeleted` skips
+ * the delete while this is non-zero, so a control cannot be freed underneath
+ * an event walk that still holds a pointer to it. Single-threaded: every
+ * dispatch runs on the window-library message loop.
+ */
+extern int gMauiEventDispatchDepth;
 namespace
 {
 
-  [[nodiscard]] bool MauiEventDispatchInProgress() noexcept
+  [[maybe_unused]] [[nodiscard]] bool MauiEventDispatchInProgress() noexcept
   {
     return gMauiEventDispatchDepth > 0;
   }
-}
-
+} // namespace
 
 namespace ui_detail
 {
@@ -1371,13 +1337,9 @@ namespace ui_detail
     offsetof(SCommandFeedbackBlip, mDuration) == 0x04,
     "SCommandFeedbackBlip::mDuration offset must be 0x04"
   );
-  static_assert(
-    offsetof(SCommandFeedbackBlip, mCurTime) == 0x08,
-    "SCommandFeedbackBlip::mCurTime offset must be 0x08"
-  );
+  static_assert(offsetof(SCommandFeedbackBlip, mCurTime) == 0x08, "SCommandFeedbackBlip::mCurTime offset must be 0x08");
   static_assert(sizeof(SCommandFeedbackBlip) == 0x0C, "SCommandFeedbackBlip size must be 0x0C");
-}
+} // namespace ui_detail
 using namespace ui_detail;
 
-
-  extern msvc8::list<SCommandFeedbackBlip> sCommandFeedbackBlips;
+extern fa::list<SCommandFeedbackBlip> sCommandFeedbackBlips;

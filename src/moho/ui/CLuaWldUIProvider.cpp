@@ -33,7 +33,7 @@ namespace
     constexpr const char* kIncorrectGameObjectTypeError =
       "Incorrect type of game object.  (Did you call with '.' instead of ':'?)";
 
-    moho::CScriptObject** const scriptObjectSlot = ExtractScriptObjectSlotFromLuaObject(object);
+    moho::CScriptObject** const scriptObjectSlot = moho::SCR_ScriptObjectSlot(object);
     if (scriptObjectSlot == nullptr) {
       luaL_error(state ? state->GetActiveCState() : nullptr, kExpectedGameObjectError);
       return nullptr;
@@ -59,8 +59,7 @@ namespace
 
     return static_cast<moho::CLuaWldUIProvider*>(upcast.mObj);
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x0086A530 (??0CLuaWldUIProvider@Moho@@QAE@@Z, Moho::CLuaWldUIProvider::CLuaWldUIProvider)
@@ -276,10 +275,7 @@ gpg::RType* moho::CLuaWldUIProvider::GetClass() const
  */
 gpg::RRef moho::CLuaWldUIProvider::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }
 
 /**
@@ -313,7 +309,7 @@ void moho::CLuaWldUIProvider::CreateGameInterface(
       }
 
       const char* const texturePath = iter.m_valueObj.GetString();
-      boost::shared_ptr<PrefetchData> handle{};
+      std::shared_ptr<PrefetchData> handle{};
       resources->LoadPrefetchData(handle, texturePath);
       mPrefetchData.push_back(handle);
     }

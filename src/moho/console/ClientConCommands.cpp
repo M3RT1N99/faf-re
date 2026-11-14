@@ -7,6 +7,8 @@
 // after CConCommand.cpp.
 
 #include "moho/console/CConCommand.h"
+#include "moho/entity/UserEntityMeshBox.h"
+#include "moho/console/ConCommandJoin.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -34,9 +36,9 @@
 #include "moho/animation/CAniSkel.h"
 #include "legacy/containers/Map.h"
 #include "legacy/containers/Set.h"
-#include "moho/app/WEmitterWx.h"
+#include "moho/app/WEmitterEditor.h"
 #include "moho/app/WinApp.h"
-#include "moho/app/WxRuntimeTypes.h"
+#include "moho/app/AppRuntimeTypes.h"
 #include "moho/audio/CUserSoundManager.h"
 #include "moho/audio/IUserSoundManager.h"
 #include "moho/client/Localization.h"
@@ -96,253 +98,7 @@ using namespace moho;
 // Engine addition: helpers shared with the file these functions came from.
 namespace
 {
-  /**
-   * Address: 0x00866020 (FUN_00866020, sub_866020)
-   *
-   * Moho::CWldSession *, int
-   *
-   * What it does:
-   * Core of `UI_ExpandCurrentSelection`. Collects every unit in the
-   * session's spatial DB, and for each one that is alive, selectable, and
-   * not in the "WALL" category, checks whether the *current* selection
-   * already contains a unit sharing the same blueprint; if so (and the
-   * candidate is not mid-upgrade - `IUnit::IsUnitState(UNITSTATE_
-   * BeingUpgraded)`, vtable-confirmed via `UserUnit::UserUnit`'s ctor write
-   * of `??_7UserUnit@Moho@@6BIUnit@Moho@@@` at 0x008BF53D), adds it to a
-   * working copy of the selection that starts seeded with the current
-   * selection's own members (both `originalSelection` and
-   * `expandedSelection` below are independent copies of `session->mSelection`
-   * - the binary constructs two, not one, matching `sub_822210`'s citation
-   * as the `WeakEntitySetUserEntity` copy constructor's underlying clone
-   * step). Commits the expanded selection via `CWldSession::SetSelection`.
-   *
-   * The `camera` parameter is only ever null-checked, never dereferenced -
-   * preserved as a real parameter rather than reduced to a bool, since the
-   * binary's caller (`UI_ExpandCurrentSelection` below) always resolves and
-   * passes a real `CameraImpl*` for this exact null-check gate.
-   */
-  void ExpandCurrentSelection(moho::CWldSession* const session, const moho::CameraImpl* const camera)
-  {
-    if (camera == nullptr) {
-      return;
-    }
-
-    gpg::fastvector<moho::UserEntity*> collected{};
-    auto* const spatialDb = session->GetEntitySpatialDbStorage();
-    (void)spatialDb->Collect(collected, moho::ENTITYTYPE_Unit);
-
-    moho::WeakSet<moho::UserEntity> originalSelection(session->mSelection);
-    moho::WeakSet<moho::UserEntity> expandedSelection(session->mSelection);
-
-    const msvc8::string wallCategory("WALL");
-
-    for (moho::UserEntity* const candidateEntity : collected) {
-      moho::UserUnit* const candidate = candidateEntity->IsUserUnit();
-      if (candidate == nullptr || candidate->IsDead() || !session->CanSelectUnit(candidate)) {
-        continue;
-      }
-      if (candidate->IsInCategory(wallCategory)) {
-        continue;
-      }
-
-      bool sharesBlueprintWithSelection = false;
-      for (const moho::UserEntity* const selectedEntity : originalSelection) {
-        if (selectedEntity->mParams.mBlueprint == candidate->mParams.mBlueprint) {
-          sharesBlueprintWithSelection = true;
-          break;
-        }
-      }
-
-      if (sharesBlueprintWithSelection && !candidate->IsUnitState(moho::UNITSTATE_BeingUpgraded)) {
-        (void)expandedSelection.Add(candidate);
-      }
-    }
-
-    session->SetSelection(expandedSelection);
-  }
   // ---- UISelectionByCategory support (FUN_008662B0) ----
-
-  [[nodiscard]] const Wm3::Box3f* SelectionEntityMeshBox(moho::UserEntity* const entity)
-  {
-    moho::MeshInstance* const meshInstance = (entity != nullptr) ? entity->mMeshInstance : nullptr;
-    if (meshInstance != nullptr) {
-      meshInstance->UpdateInterpolatedFields();
-      return &meshInstance->box;
-    }
-    return &moho::Invalid<Wm3::Box3f>();
-  }
-
-  /**
-   * Address: 0x00866970 (FUN_00866970, sub_866970)
-   *
-   * char*
-   *
-   * What it does:
-   * `UI_ExpandCurrentSelection` console command. Resolves the world camera
-   * and dispatches `ExpandCurrentSelection` above. Prints localized "no
-   * session" feedback when no session is active.
-   *
-   * Registrar: FUN_00BE61C0 (`__xc_a` lane), data-xref
-   * `dword_F5B524 = offset sub_866970` is the callsite evidence. Name is
-   * read from the PE `.data` initializer of `stru_F5B518`
-   * ("UI_ExpandCurrentSelection").
-   */
-  void UI_ExpandCurrentSelection(const msvc8::vector<msvc8::string>& args)
-  {
-    (void)args;
-
-    moho::CWldSession* const session = moho::WLD_GetActiveSession();
-    if (session == nullptr) {
-      const msvc8::string noSessionText = moho::Loc(moho::USER_GetLuaState(), "<LOC _No_session>");
-      moho::CON_Printf(noSessionText.c_str());
-      return;
-    }
-
-    moho::RCamManager* const cameraManager = moho::CAM_GetManager();
-    moho::CameraImpl* const camera = cameraManager->GetCamera("WorldCamera");
-
-    ExpandCurrentSelection(session, camera);
-  }
-  /**
-   * Address: 0x008662B0 (FUN_008662B0, sub_8662B0, SelectUnitsByCategory)
-   *
-   * What it does:
-   * Core of UISelectionByCategory. Gathers candidate units (camera frustum or the
-   * spatial DB), filters by selectability / focus-army ownership / optional idle /
-   * category (+ optional engineer/command exclusion), then either replaces or
-   * extends the world selection. Optionally frames the result with the camera.
-   */
-  void SelectUnitsByCategory(
-    moho::CWldSession* const session,
-    moho::CameraImpl* const camera,
-    const char* const categoryExpr,
-    const bool addToSelection,        // a4
-    const bool inViewFrustum,         // a5
-    const bool nearestToMouse,        // a6
-    const bool mustBeIdle,            // a7
-    const bool doCameraTarget,        // a8
-    const bool excludeEngineerCommand // a9
-  )
-  {
-    // ---- Gather candidate entities ----
-    gpg::fastvector<moho::UserEntity*> gathered{};
-    if (inViewFrustum && camera != nullptr) {
-      for (const moho::WeakPtr<moho::UserEntity>& ref : *camera->GetArmyUnitsInFrustum()) {
-        if (moho::UserEntity* const entity = ref.GetObjectPtr(); entity != nullptr) {
-          gathered.push_back(entity);
-        }
-      }
-    } else {
-      auto* const spatialDb = session->GetEntitySpatialDbStorage();
-      (void)spatialDb->Collect(gathered, moho::ENTITYTYPE_Unit);
-    }
-
-    // Parse the category expression once (RRuleGameRules slot 23).
-    const moho::EntityCategorySet parsedCategory = session->mRules->ParseEntityCategory(categoryExpr);
-
-    // Result set: start empty, optionally seed with the current selection
-    // (`operator=`, its `_Copy` 0x00867B20).
-    moho::WeakSet<moho::UserEntity> resultSet;
-    if (addToSelection) {
-      resultSet = session->mSelection;
-    }
-
-    // ---- Per-candidate filter ----
-    const moho::UserArmy* const focusArmy = session->GetFocusArmy();
-
-    moho::UserEntity* nearestEntity = nullptr;
-    float nearestDistance = gpg::pInf;
-
-    for (moho::UserEntity* const candidate : gathered) {
-      moho::UserUnit* const unit = candidate->IsUserUnit();
-      if (unit == nullptr) {
-        continue;
-      }
-
-      // Selectable AND (owned by focus army OR cheat-select).
-      if (!unit->IsSelectable()) {
-        continue;
-      }
-      const bool ownedByFocusArmy = (focusArmy == candidate->mArmy);
-      if (!ownedByFocusArmy && !(moho::UI_SelectAnything && session->IsCheatsEnabled)) {
-        continue;
-      }
-
-      // Optional idle filter: not busy AND no queued commands.
-      if (mustBeIdle) {
-        if (unit->mUnitVarDat.mIsBusy) {
-          continue;
-        }
-        if (moho::GetUserUnitManagerQueueSize(unit->mManager) != 0) {
-          continue;
-        }
-      }
-
-      // Category test (open-coded bitset in the binary -> EntityCategory::HasBlueprint).
-      const moho::IUnit* const iunit = moho::GetIUnitBridge(unit);
-      if (!moho::EntityCategory::HasBlueprint(iunit->GetBlueprint(), &parsedCategory)) {
-        continue;
-      }
-
-      // Optional engineer/command exclusion (a9).
-      if (excludeEngineerCommand) {
-        const msvc8::string engineerCategory("ENGINEER");
-        const msvc8::string commandCategory("COMMAND");
-        if (candidate->IsInCategory(engineerCategory) || candidate->IsInCategory(commandCategory)) {
-          continue;
-        }
-      }
-
-      if (nearestToMouse) {
-        // Keep only the single unit nearest the cursor world position.
-        const Wm3::Vec3f& unitPos = iunit->GetPosition();
-        const float dx = unitPos.x - session->CursorWorldPos.x;
-        const float dy = unitPos.y - session->CursorWorldPos.y;
-        const float dz = unitPos.z - session->CursorWorldPos.z;
-        const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (nearestDistance > distance) {
-          nearestEntity = candidate;
-          nearestDistance = distance;
-        }
-      } else if (!iunit->IsUnitState(moho::UNITSTATE_BeingUpgraded)) {
-        // Add every passing unit (skip units mid-upgrade).
-        (void)resultSet.Add(candidate);
-      }
-    }
-
-    if (nearestToMouse && nearestEntity != nullptr) {
-      (void)resultSet.Add(nearestEntity);
-    }
-
-    // ---- Optional camera framing of the result ----
-    if (!resultSet.Empty() && doCameraTarget && camera != nullptr) {
-      if (mustBeIdle) {
-        moho::IdleUnitSelector::CycleCameraFocus(resultSet, camera);
-      } else if (resultSet.Size() == 1) {
-        camera->TargetEntityBox(*resultSet.begin(), 0.0f);
-      } else {
-        // Combined AABB over all selected entities, then frame it.
-        Wm3::AxisAlignedBox3f combined = moho::Empty<Wm3::AxisAlignedBox3f>();
-        for (moho::UserEntity* const entity : resultSet) {
-          const Wm3::Box3f orientedBox(*SelectionEntityMeshBox(entity));
-          Wm3::AxisAlignedBox3f entityBox{};
-          entityBox = moho::AxisAlignedBoundsFromBox(orientedBox);
-
-          if (entityBox.Min.x <= combined.Min.x) { combined.Min.x = entityBox.Min.x; }
-          if (entityBox.Min.y <= combined.Min.y) { combined.Min.y = entityBox.Min.y; }
-          if (entityBox.Min.z <= combined.Min.z) { combined.Min.z = entityBox.Min.z; }
-          if (entityBox.Max.x >  combined.Max.x) { combined.Max.x = entityBox.Max.x; }
-          if (entityBox.Max.y >  combined.Max.y) { combined.Max.y = entityBox.Max.y; }
-          if (entityBox.Max.z >  combined.Max.z) { combined.Max.z = entityBox.Max.z; }
-        }
-
-        camera->TargetBox(combined, 0.0f);
-        camera->TargetNothing();
-      }
-    }
-
-    session->SetSelection(resultSet);
-  }
 
   constexpr const char* kConsoleStartupShowArmyStatsDescription = "Show engine statistics";
   constexpr const char* kConsoleStartupShowStatsDescription = "Show engine statistics";
@@ -366,7 +122,8 @@ namespace
   constexpr const char* kConsoleStartupDoSimCommandDescription = "do a sim command.";
   constexpr const char* kConsoleStartupPathDebugDescription = "Debug the path finder";
   constexpr const char* kConsoleStartupSkipUIChecksDescription = "Don't perform any command validation in UI";
-  constexpr const char* kConsoleStartupUIDumpControlsUnderCursorDescription = "Dumps all controls under the cursor to the debug log";
+  constexpr const char* kConsoleStartupUIDumpControlsUnderCursorDescription =
+    "Dumps all controls under the cursor to the debug log";
   constexpr const char* kConsoleStartupWLDGameSpeedDescription = "Set a new game speed";
   constexpr const char* kConsoleStartupWLDRestartBeatDescription = "Restart rendering the current beat.";
   constexpr const char* kConsoleStartupWLDSingleStepDescription = "Single-step the sim one tick.";
@@ -375,47 +132,22 @@ namespace
   constexpr const char* kPathDebuggerLoadErrorText = "failed to load \"/lua/debug/pathdebugger.lua\" module";
   constexpr const char* kPathDebuggerModulePath = "/lua/debug/pathdebugger.lua";
 
-  [[nodiscard]] IUnit* ResolveIUnitBridge(UserUnit* const userUnit) noexcept
+  [[nodiscard]] IUnit* ResolveIUnitBridge(
+    UserUnit* const userUnit
+  ) noexcept
   {
     return userUnit ? static_cast<IUnit*>(userUnit) : nullptr;
   }
 
-  /**
-   * Address: 0x0047BB90 (FUN_0047BB90, func_AppendStrings)
-   *
-   * What it does:
-   * Resets output string, appends first string in `[begin,end)`, then appends
-   * `separator` + each subsequent item.
-   */
-  [[nodiscard]]
-  msvc8::string AppendJoinedStringRange(
-    const msvc8::string* const begin, const msvc8::string* const end, const char* separator
-  )
-  {
-    std::string joined;
-    if (separator == nullptr) {
-      separator = "";
-    }
-
-    if (begin != nullptr && end != nullptr && begin < end) {
-      joined.append(begin->view());
-      for (const msvc8::string* cursor = begin + 1; cursor < end; ++cursor) {
-        joined.append(separator);
-        joined.append(cursor->view());
-      }
-    }
-
-    msvc8::string out;
-    out.assign_owned(joined);
-    return out;
-  }
   /**
    * Returns the bitwise `commandCapsMask` flag (UnitAttributes +0x60) for one
    * recovered user-unit selection entry, or 0 when the entity is not a
    * user-unit. Walks the typed `IUnit` bridge subobject the binary stores at
    * `userUnit + 0x148`.
    */
-  [[nodiscard]] std::uint32_t GetUserUnitCommandCapsMask(moho::UserUnit* const userUnit) noexcept
+  [[nodiscard]] std::uint32_t GetUserUnitCommandCapsMask(
+    moho::UserUnit* const userUnit
+  ) noexcept
   {
     moho::IUnit* const iunit = ResolveIUnitBridge(userUnit);
     if (iunit == nullptr) {
@@ -432,9 +164,11 @@ namespace
     char* begin;
     char* end;
   };
-  void PrintLocalizedConsoleLine(const char* const locToken)
+  void PrintLocalizedConsoleLine(
+    const char* const locToken
+  )
   {
-    const msvc8::string localizedText = Loc(USER_GetLuaState(), locToken != nullptr ? locToken : "");
+    const fa::string localizedText = Loc(USER_GetLuaState(), locToken != nullptr ? locToken : "");
     CON_Printf("%s", localizedText.c_str());
   }
   /**
@@ -444,7 +178,9 @@ namespace
    * Imports `/lua/ui/game/rename.lua` and invokes
    * `ShowRenameDialog(currentName)` while in `UIS_game`.
    */
-  void ShowRenameDialogLua(const char* const currentName)
+  void ShowRenameDialogLua(
+    const char* const currentName
+  )
   {
     if (sUIState != UIS_game) {
       return;
@@ -462,14 +198,13 @@ namespace
       LuaPlus::LuaFunction<void> showRenameDialogFn(showRenameDialogObject);
       showRenameDialogFn(currentName != nullptr ? currentName : "");
     } catch (const std::exception& exception) {
-      gpg::Warnf(
-        "Error running '/lua/ui/game/rename.lua: %s",
-        exception.what() != nullptr ? exception.what() : ""
-      );
+      gpg::Warnf("Error running '/lua/ui/game/rename.lua: %s", exception.what() != nullptr ? exception.what() : "");
     }
   }
   [[nodiscard]]
-  const char* TokenDataOrEmpty(const msvc8::string* token) noexcept
+  const char* TokenDataOrEmpty(
+    const fa::string* token
+  ) noexcept
   {
     return token != nullptr ? token->c_str() : "";
   }
@@ -482,7 +217,9 @@ namespace
    * create-unit cursor point and returns `-1`, `0`, or `1`.
    */
   [[nodiscard]]
-  int cmp_LastMouseScreenPos(const Wm3::Vector2f& mouseScreenPos) noexcept
+  int cmp_LastMouseScreenPos(
+    const Wm3::Vector2f& mouseScreenPos
+  ) noexcept
   {
     const int rawCompare = std::memcmp(&mouseScreenPos, &lastMouseScreenPos, sizeof(Wm3::Vector2f));
     if (rawCompare > 0) {
@@ -502,7 +239,11 @@ namespace
    * Returns the original output begin and the advanced output cursor.
    */
   [[nodiscard]]
-  LowercasedCopyResult CopyLowercasedRange(char* outputBegin, const char* inputBegin, const char* inputEnd) noexcept
+  LowercasedCopyResult CopyLowercasedRange(
+    char* outputBegin,
+    const char* inputBegin,
+    const char* inputEnd
+  ) noexcept
   {
     char* outputCursor = outputBegin;
     for (const char* inputCursor = inputBegin; inputCursor != inputEnd; ++inputCursor) {
@@ -512,21 +253,23 @@ namespace
     return {outputBegin, outputCursor};
   }
   /**
-   * `UserUnit::GetCustomName` (vtable slot +0x60) hands back the address of the
-   * unit's in-object custom-name storage; the recovered declaration types that
-   * anchor as `char*`, but the binary reads it as an `msvc8::string` (it tests
-   * `+0x14` for the size and picks the SSO buffer or heap pointer off `+0x04`).
-   * Recover the string the engine actually reads through.
+   * `UserUnit::GetCustomName` (vtable slot +0x60): the unit's custom-name
+   * `fa::string` (the binary tests `+0x14` for the size and picks the SSO
+   * buffer or heap pointer off `+0x04`).
    */
-  [[nodiscard]] const msvc8::string& CustomNameStorage(UserUnit* const userUnit) noexcept
+  [[nodiscard]] const fa::string& CustomNameStorage(
+    UserUnit* const userUnit
+  ) noexcept
   {
-    return *reinterpret_cast<const msvc8::string*>(userUnit->GetCustomName());
+    return userUnit->GetCustomName();
   }
   /**
    * The first live selected entity, or `nullptr` when none is left: `begin()`
    * from the leftmost node. Both `UI_TrackUnit` and `RenameUnit` open with it.
    */
-  [[nodiscard]] moho::UserEntity* FirstLiveSelectedEntity(const moho::WeakSet<moho::UserEntity>& selection)
+  [[nodiscard]] moho::UserEntity* FirstLiveSelectedEntity(
+    const moho::WeakSet<moho::UserEntity>& selection
+  )
   {
     const auto first = selection.begin();
     return first != selection.end() ? *first : nullptr;
@@ -539,7 +282,9 @@ namespace
    * test the set against its head sentinel and once more to read the surviving
    * node's weak owner-link slot back into an entity pointer.
    */
-  [[nodiscard]] moho::UserEntity* FirstLiveSelectedUserEntity(const moho::WeakSet<moho::UserEntity>& selection)
+  [[nodiscard]] moho::UserEntity* FirstLiveSelectedUserEntity(
+    const moho::WeakSet<moho::UserEntity>& selection
+  )
   {
     if (selection.Empty()) {
       return nullptr;
@@ -547,7 +292,10 @@ namespace
     return *selection.begin();
   }
   [[nodiscard]]
-  msvc8::string JoinConCommandTokens(const msvc8::vector<msvc8::string>& args, const std::size_t firstTokenIndex)
+  fa::string JoinConCommandTokens(
+    const fa::vector<fa::string>& args,
+    const std::size_t firstTokenIndex
+  )
   {
     const std::size_t count = args.size();
     if (firstTokenIndex >= count) {
@@ -571,12 +319,10 @@ namespace
   constexpr const char* kConsoleStartupConD3DAntiAliasingSamplesDescription = "";
   constexpr const char* kConsoleStartupConDebugGenerateBuildTemplateDescription =
     "debug generate and enable build templates from the current selection.";
-  constexpr const char* kConsoleStartupConDumpPreloadedTexturesDescription =
-    "Dump debug texture info";
+  constexpr const char* kConsoleStartupConDumpPreloadedTexturesDescription = "Dump debug texture info";
   /// 0x00F59EDC, the `.data` initializer of `Moho::CConFunc_EFX_CreateEmitterWindow`.
   constexpr const char* kConsoleStartupConEfxCreateEmitterWindowDescription = "Create emitter control window";
-  constexpr const char* kConsoleStartupConExecutePasteBufferDescription =
-    "Execute paste buffer in clipboard.";
+  constexpr const char* kConsoleStartupConExecutePasteBufferDescription = "Execute paste buffer in clipboard.";
   constexpr const char* kConsoleStartupConExitDescription = "Exit the application.";
   constexpr const char* kConsoleStartupConInBindKeyDescription =
     "Specify a key combo and a console command, binds console command to key";
@@ -590,18 +336,17 @@ namespace
   constexpr const char* kConsoleStartupConLotsOfPropsDescription =
     "spawn 100 props all over the map 2nd Arg = name of prop";
   constexpr const char* kConsoleStartupConLuaDescription = "Run a bit of lua code.";
-  constexpr const char* kConsoleStartupConMeshRebatchDescription =
-    "Override mesh batch settings";
+  constexpr const char* kConsoleStartupConMeshRebatchDescription = "Override mesh batch settings";
   constexpr const char* kConsoleStartupConProcessInfoPairDescription =
     "set the assist mode flag for the selected units.";
   constexpr const char* kConsoleStartupConRenMipSkipLevelsDescription = "";
-  constexpr const char* kConsoleStartupConStartCommandModeDescription =
-    "Set the UI context for some commands.";
+  constexpr const char* kConsoleStartupConStartCommandModeDescription = "Set the UI context for some commands.";
   constexpr const char* kConsoleStartupConUiResetViewDescription = "Reset a named camera to the default view";
   constexpr const char* kConsoleStartupConWinShowLogDialogDescription = "Explicit show/hide log dialog box";
   constexpr const char* kConsoleStartupConWinToggleLogDialogDescription = "Show/hide log dialog box";
-  constexpr const char* kConsoleStartupConWxInputBoxDescription = "Text the WWxInputBox dialog.";
-  constexpr const char* kConsoleStartupD3DForceDirect3DDebugDescription = "Disable shader optimization and allow D3D debugging.";
+  constexpr const char* kConsoleStartupConInputBoxDescription = "Test the input box dialog.";
+  constexpr const char* kConsoleStartupD3DForceDirect3DDebugDescription =
+    "Disable shader optimization and allow D3D debugging.";
   constexpr const char* kConsoleStartupD3DForceSoftwareVPDescription = "Force D3d to do vertex processing in software.";
   constexpr const char* kConsoleStartupD3DNoPureDeviceDescription = "Use a non-pure D3D hardware device.";
   constexpr const char* kConsoleStartupD3DUseRefRastDescription = "Force D3d to do rasterization in software.";
@@ -615,83 +360,116 @@ namespace
   constexpr const char* kConsoleStartupQuitDescription = "Quit the session.";
   constexpr const char* kConsoleStartupRenBgLowerBoundDescription = "";
   constexpr const char* kConsoleStartupRenBloomBlurKernelScaleDescription = "Amount to scale blurred amount by.";
-  constexpr const char* kConsoleStartupRenBloomGlowCopyScaleDescription = "Scale when copying glowing stuff to glow buffer before blur";
+  constexpr const char* kConsoleStartupRenBloomGlowCopyScaleDescription =
+    "Scale when copying glowing stuff to glow buffer before blur";
   constexpr const char* kConsoleStartupRenClutterRadiusDescription = "";
   constexpr const char* kConsoleStartupRenMapBorderAddDescription = "Add a mesh to the map border list";
   constexpr const char* kConsoleStartupRenMapBorderClearDescription = "Clear all map border meshes";
   constexpr const char* kConsoleStartupRenMeshDissolveCutoffDescription = "";
   constexpr const char* kConsoleStartupRenMeshDissolveDescription = "Fade mesh alpha from 1.0 to 0.0";
-  constexpr const char* kConsoleStartupRenMeshSkinnedDescription = "toggle rendering of meshes which have and use skeletons";
-  constexpr const char* kConsoleStartupRenMeshStaticDescription = "toggle rendering of meshes which do not have or ignore skeletons";
+  constexpr const char* kConsoleStartupRenMeshSkinnedDescription =
+    "toggle rendering of meshes which have and use skeletons";
+  constexpr const char* kConsoleStartupRenMeshStaticDescription =
+    "toggle rendering of meshes which do not have or ignore skeletons";
   constexpr const char* kConsoleStartupRenSelectBoxesDescription = "Toggle selection box rendering";
-  constexpr const char* kConsoleStartupRenSelectBracketMinPixelSizeDescription = "Minimum selection bracket thickness in pixels.";
+  constexpr const char* kConsoleStartupRenSelectBracketMinPixelSizeDescription =
+    "Minimum selection bracket thickness in pixels.";
   constexpr const char* kConsoleStartupRenSelectBracketSizeDescription = "Default selection bracket thickness";
   constexpr const char* kConsoleStartupRenSelectColorDescription = "What color do we want the selection box?";
-  constexpr const char* kConsoleStartupRenSelectionHeightFudgeDescription = "How far off the ground selection boxes are fudged";
-  constexpr const char* kConsoleStartupRenSelectionSizeFudgeDescription = "How much selection box extents are fudged (multiplier)";
+  constexpr const char* kConsoleStartupRenSelectionHeightFudgeDescription =
+    "How far off the ground selection boxes are fudged";
+  constexpr const char* kConsoleStartupRenSelectionSizeFudgeDescription =
+    "How much selection box extents are fudged (multiplier)";
   constexpr const char* kConsoleStartupRenShadowBiasDescription = "Constant shadow bias";
   constexpr const char* kConsoleStartupRenShorelineCutoffDescription = "Shoreline LOD cutoff";
   constexpr const char* kConsoleStartupRenShorelineDescription = "Render shoreline";
   constexpr const char* kConsoleStartupRenShowSkeletonsDescription = "Show mesh skeletons";
-  constexpr const char* kConsoleStartupRenUnitSelectionScaleDescription = "How much unit selection box extents are scaled (multiplier)";
-  constexpr const char* kConsoleStartupSCCreateEntityDialogDescription = "Create object editing box for the primary selected unit";
+  constexpr const char* kConsoleStartupRenUnitSelectionScaleDescription =
+    "How much unit selection box extents are scaled (multiplier)";
+  constexpr const char* kConsoleStartupSCCreateEntityDialogDescription =
+    "Create object editing box for the primary selected unit";
   constexpr const char* kConsoleStartupSetFocusArmyDescription = "Pass in army index or -1";
   constexpr const char* kConsoleStartupShadowFidelityDescription = "current shadow fidelity setting";
   constexpr const char* kConsoleStartupShadowFidelitySupportedDescription = "maximum shadow fidelity supported";
   constexpr const char* kConsoleStartupTeleportSelectedUnitsDescription = "teleport selected units.";
   constexpr const char* kConsoleStartupTimestampDescription = "Dump out EXE timestamp";
-  constexpr const char* kConsoleStartupUiAlwaysRenderStrategicIconsDescription = "When true, strategic icons always render, even when zoomed in";
-  constexpr const char* kConsoleStartupUIApplySelectionSetDescription = "Takes a selection set name and applies the selection";
-  constexpr const char* kConsoleStartupUiArrowKeysScrollViewDescription = "Toggle if the arrow keys scroll the main view";
+  constexpr const char* kConsoleStartupUiAlwaysRenderStrategicIconsDescription =
+    "When true, strategic icons always render, even when zoomed in";
+  constexpr const char* kConsoleStartupUIApplySelectionSetDescription =
+    "Takes a selection set name and applies the selection";
+  constexpr const char* kConsoleStartupUiArrowKeysScrollViewDescription =
+    "Toggle if the arrow keys scroll the main view";
   constexpr const char* kConsoleStartupUiCommandGraphMaxNodeUnitsDescription = "Limits the size of the waypoints";
-  constexpr const char* kConsoleStartupUICreateHead1MapDescription = "Destroys anything on head 1 and shows a full screen map in its place";
+  constexpr const char* kConsoleStartupUICreateHead1MapDescription =
+    "Destroys anything on head 1 and shows a full screen map in its place";
   constexpr const char* kConsoleStartupUiCurveSegmentsDescription = "How many segments to subdivide curves into";
-  constexpr const char* kConsoleStartupUiCurveSmoothnessDescription = "How big to make curves when drawing command previews";
+  constexpr const char* kConsoleStartupUiCurveSmoothnessDescription =
+    "How big to make curves when drawing command previews";
   constexpr const char* kConsoleStartupUiCustomNameColorDescription = "Color of the custom name display";
   constexpr const char* kConsoleStartupUiCustomNameFontDescription = "Font family name of the custom name display";
   constexpr const char* kConsoleStartupUiCustomNameFontSizeDescription = "Point size of the custom name display";
   constexpr const char* kConsoleStartupUiDebugAltClickDescription = "Enable ALT+Click debug command to switch armies";
-  constexpr const char* kConsoleStartupUiDisableCursorFixingDescription = "Allows you to toggle the cursor fixing functionality that is used for the mouse-controlled camera spinning/scrolling";
+  constexpr const char* kConsoleStartupUiDisableCursorFixingDescription =
+    "Allows you to toggle the cursor fixing functionality that is used for the mouse-controlled camera "
+    "spinning/scrolling";
   constexpr const char* kConsoleStartupUiDragSelect2DDescription = "Use a 2D (screen-space) drag-selection box";
   constexpr const char* kConsoleStartupUiDrawPathPreviewDescription = "Turns on/off the arrow line";
-  constexpr const char* kConsoleStartupUIDumpControlsDescription = "Dumps information about all controls to current log target.";
-  constexpr const char* kConsoleStartupUiExtractSnapToleranceDescription = "Sets the extraction unit 'snap-to' tolerance (in meters) for building.  Increase this to make it easier to auto-snap to extraction sites.";
-  constexpr const char* kConsoleStartupUiFootprintMinThicknessDescription = "Mimimum render size for the footprint outline.";
+  constexpr const char* kConsoleStartupUIDumpControlsDescription =
+    "Dumps information about all controls to current log target.";
+  constexpr const char* kConsoleStartupUiExtractSnapToleranceDescription =
+    "Sets the extraction unit 'snap-to' tolerance (in meters) for building.  Increase this to make it easier to "
+    "auto-snap to extraction sites.";
+  constexpr const char* kConsoleStartupUiFootprintMinThicknessDescription =
+    "Mimimum render size for the footprint outline.";
   constexpr const char* kConsoleStartupUiForceLifbarsOnEnemyDescription = "force lifebars on for enemy units";
   constexpr const char* kConsoleStartupUIForceWeaponsToYellowDescription = "Force all minimap weapon fire to yellow";
   constexpr const char* kConsoleStartupUiFuelBarColorDescription = "The color of the secondary Fuel bar";
   constexpr const char* kConsoleStartupUiFuelEmptyBlinkRateDescription = "Blink timer scale for empty fuel";
   constexpr const char* kConsoleStartupUiFuelWarningColorDescription = "The color of the feul warning flash";
-  constexpr const char* kConsoleStartupUiKeyboardPanAccelerateMultiplierDescription = "How much faster the camera pans when accelerated";
+  constexpr const char* kConsoleStartupUiKeyboardPanAccelerateMultiplierDescription =
+    "How much faster the camera pans when accelerated";
   constexpr const char* kConsoleStartupUiKeyboardPanSpeedDescription = "How fast arrow keys pans camera";
-  constexpr const char* kConsoleStartupUiKeyboardRotateAccelerateMultiplierDescription = "How much faster the camera rotates when accelerated";
+  constexpr const char* kConsoleStartupUiKeyboardRotateAccelerateMultiplierDescription =
+    "How much faster the camera rotates when accelerated";
   constexpr const char* kConsoleStartupUiKeyboardRotateSpeedDescription = "How fast ins/del rotate camera";
-  constexpr const char* kConsoleStartupUiLifeBarBadColorDescription = "The color of the lifebar when there is poor health";
-  constexpr const char* kConsoleStartupUiLifeBarBadCutoffDescription = "The percent of health where the life bar changes from bad to medium";
-  constexpr const char* kConsoleStartupUiLifeBarGoodColorDescription = "The color of the lifebar when there is good health";
-  constexpr const char* kConsoleStartupUiLifeBarGoodCutoffDescription = "The percent of health where the life bar changes from medium to good";
+  constexpr const char* kConsoleStartupUiLifeBarBadColorDescription =
+    "The color of the lifebar when there is poor health";
+  constexpr const char* kConsoleStartupUiLifeBarBadCutoffDescription =
+    "The percent of health where the life bar changes from bad to medium";
+  constexpr const char* kConsoleStartupUiLifeBarGoodColorDescription =
+    "The color of the lifebar when there is good health";
+  constexpr const char* kConsoleStartupUiLifeBarGoodCutoffDescription =
+    "The percent of health where the life bar changes from medium to good";
   constexpr const char* kConsoleStartupUiLifebarHeightDescription = "height of health/fuel bar in ogrids";
   constexpr const char* kConsoleStartupUiLifebarLODDescription = "LOD Cutoff for health bars";
-  constexpr const char* kConsoleStartupUiLifeBarMedColorDescription = "The color of the lifebar when there is medium health";
+  constexpr const char* kConsoleStartupUiLifeBarMedColorDescription =
+    "The color of the lifebar when there is medium health";
   constexpr const char* kConsoleStartupUiLifebarOffsetDescription = "Y Offset in ogrids of all lifebars";
   constexpr const char* kConsoleStartupUiLifebarWidthDescription = "width of health/fuel bar in ogrids";
   constexpr const char* kConsoleStartupUILuaDescription = "Run lua code in the appropriate UI lua state.";
-  constexpr const char* kConsoleStartupUIMakeSelectionSetDescription = "Takes a name, and makes a named selection set from the current selection";
-  constexpr const char* kConsoleStartupUiMaxExtractSnapPixelsDescription = "Allows us to put a pixel cap on the snap tolerance (in case we are zoomed in close.";
+  constexpr const char* kConsoleStartupUIMakeSelectionSetDescription =
+    "Takes a name, and makes a named selection set from the current selection";
+  constexpr const char* kConsoleStartupUiMaxExtractSnapPixelsDescription =
+    "Allows us to put a pixel cap on the snap tolerance (in case we are zoomed in close.";
   constexpr const char* kConsoleStartupUiMaxTextLODDescription = "LOD level that timer text dissapears";
   constexpr const char* kConsoleStartupUiMaxWaypointSizeDescription = "Set the maximum pixel size of a waypoint";
-  constexpr const char* kConsoleStartupUiMinExtractSnapPixelsDescription = "Allows us to put a pixel cap on the snap tolerance (in case we are zoomed out relatively far.";
+  constexpr const char* kConsoleStartupUiMinExtractSnapPixelsDescription =
+    "Allows us to put a pixel cap on the snap tolerance (in case we are zoomed out relatively far.";
   constexpr const char* kConsoleStartupUiMinWaypointSizeDescription = "Set the minimum pixel size of a waypoint";
-  constexpr const char* kConsoleStartupUiNisRenderIconsDescription = "nis toggle for strat icons, also removes pause and diabled icons";
+  constexpr const char* kConsoleStartupUiNisRenderIconsDescription =
+    "nis toggle for strat icons, also removes pause and diabled icons";
   constexpr const char* kConsoleStartupUiPathPreviewDescription = "Turns on/off the pathfinding preview line";
   constexpr const char* kConsoleStartupUiPathSmoothnessDescription = "How big to make curves when drawing path preview";
-  constexpr const char* kConsoleStartupUiProgressBarColorDescription = "The color of the secondary Construction Progress bar";
-  constexpr const char* kConsoleStartupUIQuitDescription = "Drives quit behavior of the game depending on the state of the UI";
+  constexpr const char* kConsoleStartupUiProgressBarColorDescription =
+    "The color of the secondary Construction Progress bar";
+  constexpr const char* kConsoleStartupUIQuitDescription =
+    "Drives quit behavior of the game depending on the state of the UI";
   constexpr const char* kConsoleStartupUiRenderCustomNamesDescription = "toggle custom name display";
   constexpr const char* kConsoleStartupUiRenderIconsDescription = "toggle strategic icons on/off";
   constexpr const char* kConsoleStartupUiRenderSelectionSetNamesDescription = "toggle selection set names on/off";
   constexpr const char* kConsoleStartupUiRenderUnitBarsDescription = "render unit life/fuel bars?";
-  constexpr const char* kConsoleStartupUIRenProectileTrailWidthDescription = "The half width, in pixels, of the projectile trail";
+  constexpr const char* kConsoleStartupUIRenProectileTrailWidthDescription =
+    "The half width, in pixels, of the projectile trail";
   // Unlike every other description string in this block, the two raw string
   // pointers this convar's registrar (0x00BE5BF0) carries in its own .data
   // image resolve into an unbacked/zero-filled region of .rdata rather than
@@ -704,31 +482,44 @@ namespace
   // ("Gates the whole arc pass", ProjectileArcRenderer.h) and this file's own
   // "toggle X on/off" phrasing convention, not byte-verified.
   constexpr const char* kConsoleStartupUIRenProjectileArcsDescription = "toggle projectile trails on/off";
-  constexpr const char* kConsoleStartupUIRenProjectileArcsSampleIntervalDescription = "How often the position is updated for the projectile trail";
+  constexpr const char* kConsoleStartupUIRenProjectileArcsSampleIntervalDescription =
+    "How often the position is updated for the projectile trail";
   constexpr const char* kConsoleStartupUIRenProjectileGlowDescription = "Toggle projectile icon glow";
   constexpr const char* kConsoleStartupUIRenProjectileGlowMaxDescription = "Maximum glow alpha on projecile icon";
   constexpr const char* kConsoleStartupUIRenProjectileGlowMinDescription = "Minimum glow alpha on projectile icon";
-  constexpr const char* kConsoleStartupUIRenProjectileGlowPeriodDescription = "The period in which the projectile icon glow will pulse from min to max to min";
+  constexpr const char* kConsoleStartupUIRenProjectileGlowPeriodDescription =
+    "The period in which the projectile icon glow will pulse from min to max to min";
   constexpr const char* kConsoleStartupUIRenProjectileIconsDescription = "toggle projectile icons on/off";
   constexpr const char* kConsoleStartupUIRenProjectileTrailColorDescription = "ARGB value of the projectile trail";
   constexpr const char* kConsoleStartupUIRenResourcesDescription = "toggle resource icons on/off";
-  constexpr const char* kConsoleStartupUIResourceLODCutoffDescription = "When to draw icons instead of resource deposit textures";
+  constexpr const char* kConsoleStartupUIResourceLODCutoffDescription =
+    "When to draw icons instead of resource deposit textures";
   constexpr const char* kConsoleStartupUIRotateLayoutDescription = "Cycles through all available layouts";
   constexpr const char* kConsoleStartupUIRotateSkinDescription = "Cycles through all available skins";
-  constexpr const char* kConsoleStartupUiScreenEdgeScrollViewDescription = "Toggle if the mouse on the sides of the main window will scroll the view (fullscreen only)";
+  constexpr const char* kConsoleStartupUiScreenEdgeScrollViewDescription =
+    "Toggle if the mouse on the sides of the main window will scroll the view (fullscreen only)";
   constexpr const char* kConsoleStartupUISelectAnythingDescription = "Debug to allow UI to select anything";
   constexpr const char* kConsoleStartupUiSelectionSetNamesColorDescription = "Color of the selection set names";
-  constexpr const char* kConsoleStartupUiSelectToleranceDescription = "Sets the unit click tolerance (in pixels) for selection.  Increase this to make units have a larger selection box.";
+  constexpr const char* kConsoleStartupUiSelectToleranceDescription =
+    "Sets the unit click tolerance (in pixels) for selection.  Increase this to make units have a larger selection "
+    "box.";
   constexpr const char* kConsoleStartupUISetSkinDescription = "Sets a new skin";
   constexpr const char* kConsoleStartupUiShieldBarColorDescription = "The color of the secondary Shield bar";
   constexpr const char* kConsoleStartupUIShowRenameDialogDescription = "Display the rename unit dialog during a game";
-  constexpr const char* kConsoleStartupUiStrategicIconBlinkDurationDescription = "How long to blink icon when unit is damage";
-  constexpr const char* kConsoleStartupUiStrategicIconBlinkRateDescription = "Blink timer scale for strategic icons on damage";
-  constexpr const char* kConsoleStartupUIStrategicProjectileLODDescription = "At what LODMetric do we draw projectile pixels on strategic view";
-  constexpr const char* kConsoleStartupUIToggleGamePanelsDescription = "Hide/show the UI panels in game, and expands the world view to fill the screen when panels are hidden.";
-  constexpr const char* kConsoleStartupUiWaypointLineScaleDescription = "Scale applied to the calculated waypoint line size";
-  constexpr const char* kConsoleStartupUiWindowedAlwaysShowsCursorDescription = "Always show cursor in windowed mode, regardless of show/hide";
-  constexpr const char* kConsoleStartupWldClientDebugDumpDescription = "Dump out debug info about the network connections";
+  constexpr const char* kConsoleStartupUiStrategicIconBlinkDurationDescription =
+    "How long to blink icon when unit is damage";
+  constexpr const char* kConsoleStartupUiStrategicIconBlinkRateDescription =
+    "Blink timer scale for strategic icons on damage";
+  constexpr const char* kConsoleStartupUIStrategicProjectileLODDescription =
+    "At what LODMetric do we draw projectile pixels on strategic view";
+  constexpr const char* kConsoleStartupUIToggleGamePanelsDescription =
+    "Hide/show the UI panels in game, and expands the world view to fill the screen when panels are hidden.";
+  constexpr const char* kConsoleStartupUiWaypointLineScaleDescription =
+    "Scale applied to the calculated waypoint line size";
+  constexpr const char* kConsoleStartupUiWindowedAlwaysShowsCursorDescription =
+    "Always show cursor in windowed mode, regardless of show/hide";
+  constexpr const char* kConsoleStartupWldClientDebugDumpDescription =
+    "Dump out debug info about the network connections";
   constexpr const char* kConsoleStartupWLDDecreaseSimRateDescription = "Decrease the game speed.";
   constexpr const char* kConsoleStartupWLDIncreaseSimRateDescription = "Increase the game speed.";
   constexpr const char* kConsoleStartupWLDResetSimRateDescription = "Increase the game speed.";
@@ -756,17 +547,20 @@ namespace
     "USAGE: UI_ApplySelectionSet [name] - apply a named selections et";
   constexpr const char* kUIMakeSelectionSetUsageText =
     "USAGE: UI_MakeSelectionSet [name] - create a named selection set based on the current selection";
-  constexpr const char* kUIRenameSelectionRequiredLocToken =
-    "<LOC Engine0024>You must have a unit selected to rename.";
+  constexpr const char* kUIRenameSelectionRequiredLocToken = "<LOC Engine0024>You must have a unit selected to rename.";
   constexpr const char* kUIRenameSingleSelectionLocToken =
     "<LOC Engine0025>You may only name one unit at a time, please limit your selection to one unit.";
   [[nodiscard]]
-  float ParseFloatToken(const msvc8::string* token) noexcept
+  float ParseFloatToken(
+    const fa::string* token
+  ) noexcept
   {
     return static_cast<float>(std::atof(TokenDataOrEmpty(token)));
   }
   [[nodiscard]]
-  int ParseIntToken(const msvc8::string* token) noexcept
+  int ParseIntToken(
+    const fa::string* token
+  ) noexcept
   {
     return std::atoi(TokenDataOrEmpty(token));
   }
@@ -780,9 +574,11 @@ namespace
    * because the bucket boundaries (and therefore the spawn pattern) differ from
    * `%`.
    */
-  [[nodiscard]] std::uint32_t RandomIndexBelowExtent(const std::uint32_t extent)
+  [[nodiscard]] std::uint32_t RandomIndexBelowExtent(
+    const std::uint32_t extent
+  )
   {
-    boost::mutex::scoped_lock randomLock(math_GlobalRandomMutex);
+    std::lock_guard<std::mutex> randomLock(math_GlobalRandomMutex);
     const std::uint64_t sample = math_GlobalRandomStream.twister.NextUInt32();
     return static_cast<std::uint32_t>((sample * static_cast<std::uint64_t>(extent)) >> 32);
   }
@@ -792,7 +588,9 @@ namespace
    * terrain-owned `STIMap`); the recovered `IWldTerrainRes` types that lane as
    * `mMap`, which is the same word.
    */
-  [[nodiscard]] const STIMap* ResolveSessionTerrainMap(const CWldSession* const session) noexcept
+  [[nodiscard]] const STIMap* ResolveSessionTerrainMap(
+    const CWldSession* const session
+  ) noexcept
   {
     return session->mWldMap->mTerrainRes->mMap;
   }
@@ -803,7 +601,8 @@ namespace
    * the selection has at least one such unit.
    */
   [[nodiscard]] bool SelectionHasUnitWithCommandCap(
-    const moho::WeakSet<moho::UserEntity>& selection, const std::uint32_t requiredCapsMask
+    const moho::WeakSet<moho::UserEntity>& selection,
+    const std::uint32_t requiredCapsMask
   )
   {
     for (moho::UserEntity* const entity : selection) {
@@ -816,12 +615,14 @@ namespace
     return false;
   }
   [[nodiscard]]
-  bool TokenEq(const msvc8::string* token, const std::string_view text) noexcept
+  bool TokenEq(
+    const fa::string* token,
+    const std::string_view text
+  ) noexcept
   {
     return token != nullptr && token->view() == text;
   }
 } // namespace
-
 
 /**
  * Address: 0x008C6740 (FUN_008C6740, Moho::Con_LUA)
@@ -830,13 +631,15 @@ namespace
  * Joins command tokens from index 1 into one Lua chunk, echoes it to console,
  * and executes it in the user Lua state.
  */
-void moho::CON_LUA(const msvc8::vector<msvc8::string>& args)
+void moho::CON_LUA(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() < 2u) {
     return;
   }
 
-  const msvc8::string scriptText = JoinConCommandTokens(args, 1u);
+  const fa::string scriptText = JoinConCommandTokens(args, 1u);
   CON_Printf("%s", scriptText.c_str());
   (void)SCR_LuaDoString(scriptText.c_str(), USER_GetLuaState());
 }
@@ -848,14 +651,16 @@ void moho::CON_LUA(const msvc8::vector<msvc8::string>& args)
  * Parses `cam_SetLOD <cameraName> <lodScale>` and applies the parsed LOD
  * scale to the named camera view lane.
  */
-void moho::CAM_SetLOD(const msvc8::vector<msvc8::string>& args)
+void moho::CAM_SetLOD(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() < 3u) {
     return;
   }
 
-  const msvc8::string* const cameraName = ConCommandArg(args, 1u);
-  const msvc8::string* const lodScaleToken = ConCommandArg(args, 2u);
+  const fa::string* const cameraName = ConCommandArg(args, 1u);
+  const fa::string* const lodScaleToken = ConCommandArg(args, 2u);
   if (cameraName == nullptr || lodScaleToken == nullptr) {
     return;
   }
@@ -877,7 +682,9 @@ void moho::CAM_SetLOD(const msvc8::vector<msvc8::string>& args)
  * Logs active world-camera target position, heading/far-pitch orientation,
  * and target zoom.
  */
-void moho::CON_DumpCamera(const msvc8::vector<msvc8::string>& args)
+void moho::CON_DumpCamera(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -889,7 +696,7 @@ void moho::CON_DumpCamera(const msvc8::vector<msvc8::string>& args)
 
   gpg::Logf("Camera:");
 
-  const msvc8::string targetPositionText = moho::ToString(camera->mTargetLocation);
+  const fa::string targetPositionText = moho::ToString(camera->mTargetLocation);
   gpg::Logf("  TargetPos: %s", targetPositionText.c_str());
   gpg::Logf("  Orientation: %f, %f, 0.0", camera->mHeading, camera->mFarPitch);
   gpg::Logf("  Zoom: %f", camera->mTargetZoom);
@@ -902,7 +709,9 @@ void moho::CON_DumpCamera(const msvc8::vector<msvc8::string>& args)
  * Imports `uiutil.lua` and invokes `SetCurrentSkin(name)` when a second
  * command token is present.
  */
-void moho::CON_UI_SetSkin(const msvc8::vector<msvc8::string>& args)
+void moho::CON_UI_SetSkin(
+  const fa::vector<fa::string>& args
+)
 {
   CUIManager* const uiManager = static_cast<CUIManager*>(UI_GetManager());
   LuaPlus::LuaState* const state = uiManager != nullptr ? uiManager->mLuaState : nullptr;
@@ -918,7 +727,7 @@ void moho::CON_UI_SetSkin(const msvc8::vector<msvc8::string>& args)
   LuaPlus::LuaObject setCurrentSkinObject = uiUtilModule["SetCurrentSkin"];
   LuaPlus::LuaFunction<void> setCurrentSkin(setCurrentSkinObject);
 
-  const msvc8::string* const skinToken = ConCommandArg(args, 1);
+  const fa::string* const skinToken = ConCommandArg(args, 1);
   setCurrentSkin(skinToken != nullptr ? skinToken->c_str() : "");
 }
 
@@ -929,7 +738,9 @@ void moho::CON_UI_SetSkin(const msvc8::vector<msvc8::string>& args)
  * Imports `uiutil.lua` and invokes `RotateSkin(direction)` where `direction`
  * defaults to `"+"` when no argument token is provided.
  */
-void moho::UI_RotateSkin(const msvc8::vector<msvc8::string>& args)
+void moho::UI_RotateSkin(
+  const fa::vector<fa::string>& args
+)
 {
   CUIManager* const uiManager = static_cast<CUIManager*>(UI_GetManager());
   LuaPlus::LuaState* const state = uiManager != nullptr ? uiManager->mLuaState : nullptr;
@@ -941,8 +752,8 @@ void moho::UI_RotateSkin(const msvc8::vector<msvc8::string>& args)
   LuaPlus::LuaObject rotateSkinObject = uiUtilModule["RotateSkin"];
   LuaPlus::LuaFunction<void> rotateSkin(rotateSkinObject);
 
-  msvc8::string direction("+");
-  if (const msvc8::string* const argDirection = ConCommandArg(args, 1); argDirection != nullptr) {
+  fa::string direction("+");
+  if (const fa::string* const argDirection = ConCommandArg(args, 1); argDirection != nullptr) {
     direction.assign_owned(argDirection->c_str());
   }
 
@@ -956,7 +767,9 @@ void moho::UI_RotateSkin(const msvc8::vector<msvc8::string>& args)
  * Imports `uiutil.lua` and invokes `RotateLayout(direction)` where
  * `direction` defaults to `"+"` when no argument token is provided.
  */
-void moho::UI_RotateLayout(const msvc8::vector<msvc8::string>& args)
+void moho::UI_RotateLayout(
+  const fa::vector<fa::string>& args
+)
 {
   CUIManager* const uiManager = static_cast<CUIManager*>(UI_GetManager());
   LuaPlus::LuaState* const state = uiManager != nullptr ? uiManager->mLuaState : nullptr;
@@ -968,8 +781,8 @@ void moho::UI_RotateLayout(const msvc8::vector<msvc8::string>& args)
   LuaPlus::LuaObject rotateLayoutObject = uiUtilModule["RotateLayout"];
   LuaPlus::LuaFunction<void> rotateLayout(rotateLayoutObject);
 
-  msvc8::string direction("+");
-  if (const msvc8::string* const argDirection = ConCommandArg(args, 1); argDirection != nullptr) {
+  fa::string direction("+");
+  if (const fa::string* const argDirection = ConCommandArg(args, 1); argDirection != nullptr) {
     direction.assign_owned(argDirection->c_str());
   }
 
@@ -982,7 +795,9 @@ void moho::UI_RotateLayout(const msvc8::vector<msvc8::string>& args)
  * What it does:
  * Imports `gamemain.lua` and invokes `HideGameUI()` with no arguments.
  */
-void moho::CON_UI_ToggleGamePanels(const msvc8::vector<msvc8::string>& args)
+void moho::CON_UI_ToggleGamePanels(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -1005,10 +820,12 @@ void moho::CON_UI_ToggleGamePanels(const msvc8::vector<msvc8::string>& args)
  * Validates one selection-set name argument and calls
  * `/lua/ui/game/selection.lua:AddCurrentSelectionSet(name)`.
  */
-void moho::UI_MakeSelectionSet(const msvc8::vector<msvc8::string>& args)
+void moho::UI_MakeSelectionSet(
+  const fa::vector<fa::string>& args
+)
 {
   if (WLD_GetActiveSession() == nullptr) {
-    const msvc8::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
+    const fa::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
     CON_Printf("%s", noSessionText.c_str());
     return;
   }
@@ -1028,7 +845,7 @@ void moho::UI_MakeSelectionSet(const msvc8::vector<msvc8::string>& args)
   LuaPlus::LuaObject addCurrentSelectionSet = selectionModule["AddCurrentSelectionSet"];
   LuaPlus::LuaFunction<void> addCurrentSelectionSetFn(addCurrentSelectionSet);
 
-  const msvc8::string* const setName = ConCommandArg(args, 1);
+  const fa::string* const setName = ConCommandArg(args, 1);
   addCurrentSelectionSetFn(setName != nullptr ? setName->c_str() : "");
 }
 
@@ -1039,10 +856,12 @@ void moho::UI_MakeSelectionSet(const msvc8::vector<msvc8::string>& args)
  * Validates one selection-set name argument and calls
  * `/lua/ui/game/selection.lua:ApplySelectionSet(name)`.
  */
-void moho::UI_ApplySelectionSet(const msvc8::vector<msvc8::string>& args)
+void moho::UI_ApplySelectionSet(
+  const fa::vector<fa::string>& args
+)
 {
   if (WLD_GetActiveSession() == nullptr) {
-    const msvc8::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
+    const fa::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
     CON_Printf("%s", noSessionText.c_str());
     return;
   }
@@ -1062,8 +881,8 @@ void moho::UI_ApplySelectionSet(const msvc8::vector<msvc8::string>& args)
   LuaPlus::LuaObject applySelectionSet = selectionModule["ApplySelectionSet"];
   LuaPlus::LuaFunction<void> applySelectionSetFn(applySelectionSet);
 
-  msvc8::string selectionSetName;
-  if (const msvc8::string* const setName = ConCommandArg(args, 1); setName != nullptr) {
+  fa::string selectionSetName;
+  if (const fa::string* const setName = ConCommandArg(args, 1); setName != nullptr) {
     selectionSetName.assign_owned(setName->c_str());
   }
   applySelectionSetFn(selectionSetName.c_str());
@@ -1079,11 +898,13 @@ void moho::UI_ApplySelectionSet(const msvc8::vector<msvc8::string>& args)
  * selection afterward; the other three do not (matches the binary's own
  * asymmetry - not a recovery oversight).
  */
-void moho::CON_IssueCommand(const msvc8::vector<msvc8::string>& args)
+void moho::CON_IssueCommand(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
-    const msvc8::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
+    const fa::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
     CON_Printf("%s", noSessionText.c_str());
     return;
   }
@@ -1092,7 +913,7 @@ void moho::CON_IssueCommand(const msvc8::vector<msvc8::string>& args)
     return;
   }
 
-  const msvc8::string* const subCommand = ConCommandArg(args, 1);
+  const fa::string* const subCommand = ConCommandArg(args, 1);
   const char* const subCommandText = subCommand != nullptr ? subCommand->c_str() : "";
 
   if (_stricmp(subCommandText, "Stop") == 0) {
@@ -1130,7 +951,9 @@ void moho::CON_IssueCommand(const msvc8::vector<msvc8::string>& args)
  * What it does:
  * Imports `multihead.lua` and invokes `CreateSecondView()`.
  */
-void moho::CON_UI_CreateHead1Map(const msvc8::vector<msvc8::string>& args)
+void moho::CON_UI_CreateHead1Map(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -1152,7 +975,9 @@ void moho::CON_UI_CreateHead1Map(const msvc8::vector<msvc8::string>& args)
  * What it does:
  * Shows the escape dialog through UI main callback lane.
  */
-void moho::UI_Quit(const msvc8::vector<msvc8::string>& args)
+void moho::UI_Quit(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
   (void)ShowEscapeDialog(false);
@@ -1165,7 +990,9 @@ void moho::UI_Quit(const msvc8::vector<msvc8::string>& args)
  * Resolves each camera-name token from argument index 1 onward and resets
  * each camera that exists in the current camera manager.
  */
-void moho::UI_ResetView(const msvc8::vector<msvc8::string>& args)
+void moho::UI_ResetView(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() <= 1u) {
     return;
@@ -1177,7 +1004,7 @@ void moho::UI_ResetView(const msvc8::vector<msvc8::string>& args)
   }
 
   for (std::size_t index = 1u; index < args.size(); ++index) {
-    const msvc8::string* const cameraName = ConCommandArg(args, index);
+    const fa::string* const cameraName = ConCommandArg(args, index);
     if (cameraName == nullptr) {
       continue;
     }
@@ -1196,7 +1023,9 @@ void moho::UI_ResetView(const msvc8::vector<msvc8::string>& args)
  * Parses one focus-army index argument and requests focus update on active
  * world session; otherwise prints syntax/no-session feedback.
  */
-void moho::SetFocusArmy(const msvc8::vector<msvc8::string>& args)
+void moho::SetFocusArmy(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() == 2u) {
     CWldSession* const session = WLD_GetActiveSession();
@@ -1205,12 +1034,12 @@ void moho::SetFocusArmy(const msvc8::vector<msvc8::string>& args)
       return;
     }
 
-    const msvc8::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
+    const fa::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
     CON_Printf("%s", noSessionText.c_str());
     return;
   }
 
-  const msvc8::string* const commandNameToken = ConCommandArg(args, 0);
+  const fa::string* const commandNameToken = ConCommandArg(args, 0);
   const char* const commandName = commandNameToken != nullptr ? commandNameToken->c_str() : "SetFocusArmy";
   CON_Printf("syntax: %s <zero based army index or -1>", commandName);
 }
@@ -1222,13 +1051,15 @@ void moho::SetFocusArmy(const msvc8::vector<msvc8::string>& args)
  * Joins command tokens from index 1 and executes the Lua text in the active
  * UI manager state.
  */
-void moho::UI_Lua(const msvc8::vector<msvc8::string>& args)
+void moho::UI_Lua(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() < 2u) {
     return;
   }
 
-  const msvc8::string scriptText = JoinConCommandTokens(args, 1u);
+  const fa::string scriptText = JoinConCommandTokens(args, 1u);
   CUIManager* const uiManager = static_cast<CUIManager*>(UI_GetManager());
   if (uiManager != nullptr && uiManager->mLuaState != nullptr) {
     (void)SCR_LuaDoString(scriptText.c_str(), uiManager->mLuaState);
@@ -1261,7 +1092,7 @@ void moho::UI_ShowRenameDialog()
     return;
   }
 
-  msvc8::vector<UserUnit*> selectedUnits;
+  fa::vector<UserUnit*> selectedUnits;
   session->GetSelectionUnits(selectedUnits);
 
   UserUnit* const selectedUnit = selectedUnits.size() != 0u ? selectedUnits[0] : nullptr;
@@ -1270,7 +1101,7 @@ void moho::UI_ShowRenameDialog()
     return;
   }
 
-  // `GetCustomName` hands back the address of the unit's `msvc8::string`
+  // `GetCustomName` hands back the address of the unit's `fa::string`
   // storage, which the binary copies into a temporary before handing it to the
   // dialog helper; taking it as a `char*` directly would push the string
   // object's own bytes into Lua.
@@ -1283,7 +1114,9 @@ void moho::UI_ShowRenameDialog()
  * What it does:
  * Walks each root UI frame and logs every control via depth-first traversal.
  */
-void moho::UI_DumpControls(const msvc8::vector<msvc8::string>& args)
+void moho::UI_DumpControls(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -1319,10 +1152,8 @@ void moho::WIN_ToggleLogDialog()
     dialog = sLogWindowTarget.dialog;
   }
 
-  // `wxWindowBase::IsShown()` is inline, so 0x004F3C45 reads the flag directly:
-  // `movzx edx, byte [ecx+0xCC] / shr dl, 1 / not dl / and edx, 1` -- bit 1 of
-  // the state bitfield, which wx 2.4.2 packs as `m_autoLayout:1, m_isShown:1,
-  // m_isEnabled:1, ...`. `Show` is the virtual at `[vptr+0x7C]`.
+  // 0x004F3C45 read the shown flag straight from the window (bit 1 of wx 2.4.2's state bitfield)
+  // and called `Show` through the vtable.
   dialog->Show(!dialog->IsShown());
 }
 
@@ -1333,13 +1164,15 @@ void moho::WIN_ToggleLogDialog()
  * Parses one boolean visibility token (`"true"` => show, otherwise hide),
  * ensures the log-window runtime exists, and forwards the visibility toggle.
  */
-void moho::WIN_ShowLogDialog(const msvc8::vector<msvc8::string>& args)
+void moho::WIN_ShowLogDialog(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() < 2u) {
     return;
   }
 
-  const msvc8::string* const showToken = ConCommandArg(args, 1u);
+  const fa::string* const showToken = ConCommandArg(args, 1u);
   if (showToken == nullptr) {
     return;
   }
@@ -1364,7 +1197,7 @@ void moho::WIN_ShowLogDialog(const msvc8::vector<msvc8::string>& args)
  */
 void moho::CON_ExecutePasteBuffer()
 {
-  const msvc8::string clipboardText = WIN_GetClipboardText();
+  const fa::string clipboardText = WIN_GetClipboardText();
 
   LuaPlus::LuaState* state = USER_GetLuaState();
   if (CWldSession* const session = WLD_GetActiveSession(); session != nullptr) {
@@ -1381,13 +1214,15 @@ void moho::CON_ExecutePasteBuffer()
  * Opens Lua create-unit dialog at current cursor screen coordinates, or prints
  * localized no-session text when no world session is active.
  */
-void moho::CON_PopupCreateUnitMenu(const msvc8::vector<msvc8::string>& args)
+void moho::CON_PopupCreateUnitMenu(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
-    const msvc8::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
+    const fa::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
     CON_Printf("%s", noSessionText.c_str());
     return;
   }
@@ -1400,7 +1235,7 @@ void moho::CON_PopupCreateUnitMenu(const msvc8::vector<msvc8::string>& args)
 
   LuaPlus::LuaObject createDialogObject = moduleObject["CreateDialog"];
   LuaPlus::LuaFunction<> createDialogFunction(createDialogObject);
-  createDialogFunction(session->CursorScreenPos.x, session->CursorScreenPos.y);
+  createDialogFunction(session->mCursorInfo.mMouseScreenPos.x, session->mCursorInfo.mMouseScreenPos.y);
 }
 
 /**
@@ -1411,16 +1246,18 @@ void moho::CON_PopupCreateUnitMenu(const msvc8::vector<msvc8::string>& args)
  * placeholder path), lowercases it, and dispatches prop creation at active
  * world-session cursor position.
  */
-void moho::CON_CreateProp(const msvc8::vector<msvc8::string>& args)
+void moho::CON_CreateProp(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
-    const msvc8::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
+    const fa::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
     CON_Printf(noSessionText.c_str());
     return;
   }
 
-  const msvc8::string* const blueprintToken = ConCommandArg(args, 1u);
+  const fa::string* const blueprintToken = ConCommandArg(args, 1u);
 
   const char* const blueprintPath =
     blueprintToken != nullptr ? blueprintToken->c_str() : "/props/rplaceholder/rplaceholder_prop";
@@ -1430,7 +1267,7 @@ void moho::CON_CreateProp(const msvc8::vector<msvc8::string>& args)
     character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
   }
 
-  WLD_GetDriver()->CreateProp(normalizedBlueprintPath.c_str(), session->CursorWorldPos);
+  WLD_GetDriver()->CreateProp(normalizedBlueprintPath.c_str(), session->mCursorInfo.mMouseWorldPos);
 }
 
 /**
@@ -1449,7 +1286,9 @@ void moho::CON_CreateProp(const msvc8::vector<msvc8::string>& args)
  * and asks the sim driver to spawn the unit. An unresolvable blueprint id plays
  * the UI error cue instead.
  */
-void moho::CON_CreateUnit(const msvc8::vector<msvc8::string>& args)
+void moho::CON_CreateUnit(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
@@ -1462,7 +1301,7 @@ void moho::CON_CreateUnit(const msvc8::vector<msvc8::string>& args)
     return;
   }
 
-  SCoordsVec2 spawnPos{session->CursorWorldPos.x, session->CursorWorldPos.z};
+  SCoordsVec2 spawnPos{session->mCursorInfo.mMouseWorldPos.x, session->mCursorInfo.mMouseWorldPos.z};
 
   // The binary gates the explicit-screen-point path on `tokenCount >= 4` while
   // reading tokens 3 *and* 4, so a four-token invocation reads one past the
@@ -1505,7 +1344,7 @@ void moho::CON_CreateUnit(const msvc8::vector<msvc8::string>& args)
     return;
   }
 
-  msvc8::string requestedBlueprint;
+  fa::string requestedBlueprint;
   requestedBlueprint.assign_owned(TokenDataOrEmpty(ConCommandArg(args, 1u)));
 
   RResId requestedBlueprintId{};
@@ -1515,7 +1354,7 @@ void moho::CON_CreateUnit(const msvc8::vector<msvc8::string>& args)
   requestedBlueprintId.name.clear();
 
   if (blueprint == nullptr) {
-    USER_GetSound()->Play(msvc8::string(kCreateUnitErrorSoundCue), msvc8::string(kCreateUnitErrorSoundBank));
+    USER_GetSound()->Play(fa::string(kCreateUnitErrorSoundCue), fa::string(kCreateUnitErrorSoundBank));
     return;
   }
 
@@ -1526,8 +1365,9 @@ void moho::CON_CreateUnit(const msvc8::vector<msvc8::string>& args)
   RResId spawnBlueprintId{};
   (void)gpg::STR_CopyFilename(&spawnBlueprintId.name, &blueprint->mBlueprintId);
 
-  WLD_GetDriver()
-    ->CreateUnit(static_cast<std::uint32_t>(spawnArmy->mArmyIndex), spawnBlueprintId, gridSnappedPos, 0.0f);
+  WLD_GetDriver()->CreateUnit(
+    static_cast<std::uint32_t>(spawnArmy->mArmyIndex), spawnBlueprintId, gridSnappedPos, 0.0f
+  );
 
   spawnBlueprintId.name.clear();
 }
@@ -1544,7 +1384,9 @@ void moho::CON_CreateUnit(const msvc8::vector<msvc8::string>& args)
  * cells, sampling terrain elevation at each cell center and lifting the spawn to
  * the water plane where the map's water sits above the terrain.
  */
-void moho::CON_LotsOfProps(const msvc8::vector<msvc8::string>& args)
+void moho::CON_LotsOfProps(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
@@ -1552,8 +1394,7 @@ void moho::CON_LotsOfProps(const msvc8::vector<msvc8::string>& args)
     return;
   }
 
-
-  msvc8::string propBlueprintPath;
+  fa::string propBlueprintPath;
   if (args.size() >= 2u) {
     propBlueprintPath.assign_owned(TokenDataOrEmpty(ConCommandArg(args, 1u)));
 
@@ -1602,7 +1443,9 @@ void moho::CON_LotsOfProps(const msvc8::vector<msvc8::string>& args)
  * death sequence. Prints localized "no session" feedback when no world session
  * is active.
  */
-void moho::CON_KillSelectedUnits(const msvc8::vector<msvc8::string>& args)
+void moho::CON_KillSelectedUnits(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -1625,7 +1468,9 @@ void moho::CON_KillSelectedUnits(const msvc8::vector<msvc8::string>& args)
  * than killing them. Prints localized "no session" feedback when no world
  * session is active.
  */
-void moho::CON_DestroySelectedUnits(const msvc8::vector<msvc8::string>& args)
+void moho::CON_DestroySelectedUnits(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -1656,7 +1501,9 @@ void moho::CON_DestroySelectedUnits(const msvc8::vector<msvc8::string>& args)
  * so this uses the established wrapper for consistency with every sibling
  * command in this file.
  */
-void moho::CON_CopySelectedUnitsToClipboard(const msvc8::vector<msvc8::string>& args)
+void moho::CON_CopySelectedUnitsToClipboard(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -1686,7 +1533,7 @@ void moho::CON_CopySelectedUnitsToClipboard(const msvc8::vector<msvc8::string>& 
   // Second pass: for every selected user-unit, append one
   // `CreateUnitAtMouse` line encoding its position/yaw relative to the
   // centroid, its blueprint id, and its owning army index.
-  msvc8::string commandScript;
+  fa::string commandScript;
   {
     for (UserEntity* const entity : selection) {
       {
@@ -1697,16 +1544,16 @@ void moho::CON_CopySelectedUnitsToClipboard(const msvc8::vector<msvc8::string>& 
 
           // Standard yaw-from-quaternion extraction (Y-up ground plane):
           // atan2(2*(w*y + x*z), 1 - 2*(x^2 + y^2)).
-          const float sinYaw = 2.0f
-            * (transform.orient_.w * transform.orient_.y + transform.orient_.z * transform.orient_.x);
-          const float cosYaw = 1.0f
-            - 2.0f * (transform.orient_.y * transform.orient_.y + transform.orient_.x * transform.orient_.x);
+          const float sinYaw =
+            2.0f * (transform.orient_.w * transform.orient_.y + transform.orient_.z * transform.orient_.x);
+          const float cosYaw =
+            1.0f - 2.0f * (transform.orient_.y * transform.orient_.y + transform.orient_.x * transform.orient_.x);
           const float yaw = std::atan2(sinYaw, cosYaw);
 
           const UserArmy* const army = unit->mArmy;
           const RUnitBlueprint* const blueprint = unit->GetBlueprint();
 
-          const msvc8::string commandLine = gpg::STR_Printf(
+          const fa::string commandLine = gpg::STR_Printf(
             "   CreateUnitAtMouse('%s', %d, %7.2f, %7.2f, %8.5f)\n",
             blueprint->mBlueprintId.c_str(),
             army->mArmyIndex,
@@ -1737,7 +1584,9 @@ void moho::CON_CopySelectedUnitsToClipboard(const msvc8::vector<msvc8::string>& 
  * before honouring an info pair. Prints localized "no session" feedback when no
  * world session is active, and silently ignores short argument vectors.
  */
-void moho::CON_ProcessInfoPair(const msvc8::vector<msvc8::string>& args)
+void moho::CON_ProcessInfoPair(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
@@ -1751,7 +1600,7 @@ void moho::CON_ProcessInfoPair(const msvc8::vector<msvc8::string>& args)
 
   const UserArmy* const focusArmy = session->GetFocusArmy();
 
-  msvc8::vector<UserUnit*> selectedUnits;
+  fa::vector<UserUnit*> selectedUnits;
   session->GetSelectionUnits(selectedUnits);
 
   const char* const infoKey = TokenDataOrEmpty(ConCommandArg(args, 1u));
@@ -1763,11 +1612,7 @@ void moho::CON_ProcessInfoPair(const msvc8::vector<msvc8::string>& args)
       continue;
     }
 
-    WLD_GetDriver()->ProcessInfoPair(
-      entityView->mParams.mEntityId,
-      infoKey,
-      infoValue
-    );
+    WLD_GetDriver()->ProcessInfoPair(entityView->mParams.mEntityId, infoKey, infoValue);
   }
 }
 
@@ -1784,7 +1629,9 @@ void moho::CON_ProcessInfoPair(const msvc8::vector<msvc8::string>& args)
  * otherwise it starts tracking the whole selection at the camera's current
  * target zoom with a zero-second transition.
  */
-void moho::UI_TrackUnit(const msvc8::vector<msvc8::string>& args)
+void moho::UI_TrackUnit(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
@@ -1834,7 +1681,9 @@ void moho::UI_TrackUnit(const msvc8::vector<msvc8::string>& args)
  * info pair through the sim driver. Requires exactly one selected user-unit and
  * prints the matching localized rejection otherwise.
  */
-void moho::RenameUnit(const msvc8::vector<msvc8::string>& args)
+void moho::RenameUnit(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
@@ -1861,7 +1710,7 @@ void moho::RenameUnit(const msvc8::vector<msvc8::string>& args)
   }
 
   if (args.size() == 1u) {
-    const msvc8::string& currentName = CustomNameStorage(selectedUnit);
+    const fa::string& currentName = CustomNameStorage(selectedUnit);
     if (currentName.empty()) {
       PrintLocalizedConsoleLine(kRenameUnitNoCustomNameLocToken);
       return;
@@ -1873,20 +1722,17 @@ void moho::RenameUnit(const msvc8::vector<msvc8::string>& args)
 
   // The binary appends `token + " "` for every remaining token and then trims,
   // which leaves exactly the single-space join the shared helper produces.
-  const msvc8::string joinedName = JoinConCommandTokens(args, 1u);
-  const msvc8::string customName = gpg::STR_TrimWhitespace(joinedName.c_str());
+  const fa::string joinedName = JoinConCommandTokens(args, 1u);
+  const fa::string customName = gpg::STR_TrimWhitespace(joinedName.c_str());
 
   UserEntity* const entityView = selectedUnit;
-  WLD_GetDriver()->ProcessInfoPair(
-    entityView->mParams.mEntityId,
-    kRenameUnitInfoKey,
-    customName.c_str()
-  );
+  WLD_GetDriver()->ProcessInfoPair(entityView->mParams.mEntityId, kRenameUnitInfoKey, customName.c_str());
 }
 
 /**
  * Address: 0x008338A0 (FUN_008338A0, Moho::CON_StartCommandMode)
- * Mangled: ?CON_StartCommandMode@Moho@@YAXAAV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z
+ * Mangled:
+ * ?CON_StartCommandMode@Moho@@YAXAAV?$vector@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@V?$allocator@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@2@@std@@@Z
  *
  * IDA signature:
  * void __cdecl Moho::CON_StartCommandMode(int commandArgs);
@@ -1906,7 +1752,9 @@ void moho::RenameUnit(const msvc8::vector<msvc8::string>& args)
  *     `UI_StartCommandMode` with the new mode data when a matching unit is
  *     found.
  */
-void moho::CON_StartCommandMode(const msvc8::vector<msvc8::string>& args)
+void moho::CON_StartCommandMode(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
@@ -1929,8 +1777,8 @@ void moho::CON_StartCommandMode(const msvc8::vector<msvc8::string>& args)
   // below. Feeding the mode token to `SetLexical` leaves the caps mask at
   // zero, the selection scan then matches nothing and the command mode never
   // starts -- which is every order hotkey silently doing nothing.
-  const msvc8::string* const modeToken = ConCommandArg(args, 1u);
-  const msvc8::string* const nameToken = ConCommandArg(args, 2u);
+  const fa::string* const modeToken = ConCommandArg(args, 1u);
+  const fa::string* const nameToken = ConCommandArg(args, 2u);
   if (modeToken == nullptr || nameToken == nullptr) {
     return;
   }
@@ -1983,7 +1831,7 @@ void moho::CON_StartCommandMode(const msvc8::vector<msvc8::string>& args)
  * Invokes `CWldSession::GenerateBuildTemplates()` on the global active
  * session when it is present, then returns 0.
  */
-[[maybe_unused]] int GenerateBuildTemplatesOnGlobalSessionIfPresent()
+int GenerateBuildTemplatesOnGlobalSessionIfPresent()
 {
   if (moho::CWldSession* const activeSession = moho::WLD_GetActiveSession(); activeSession != nullptr) {
     activeSession->GenerateBuildTemplates();
@@ -1998,7 +1846,9 @@ void moho::CON_StartCommandMode(const msvc8::vector<msvc8::string>& args)
  * Generates build templates from current selection when a world session is
  * active; otherwise prints localized "no session" feedback.
  */
-void moho::CON_DebugGenerateBuildTemplateFromSelection(const msvc8::vector<msvc8::string>& args)
+void moho::CON_DebugGenerateBuildTemplateFromSelection(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2018,13 +1868,15 @@ void moho::CON_DebugGenerateBuildTemplateFromSelection(const msvc8::vector<msvc8
  * Teleports currently selected units owned by the focused army to cursor world
  * position, preserving orientation and applying spawn-elevation correction.
  */
-void moho::CON_TeleportSelectedUnits(const msvc8::vector<msvc8::string>& args)
+void moho::CON_TeleportSelectedUnits(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
-    const msvc8::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
+    const fa::string noSessionText = Loc(USER_GetLuaState(), kNoSessionLocToken);
     CON_Printf(noSessionText.c_str());
     return;
   }
@@ -2040,7 +1892,7 @@ void moho::CON_TeleportSelectedUnits(const msvc8::vector<msvc8::string>& args)
   const STIMap* const terrainMap = ResolveSessionTerrainMap(session);
   ISTIDriver* const simDriver = WLD_GetDriver();
 
-  msvc8::vector<UserUnit*> selectedUnits;
+  fa::vector<UserUnit*> selectedUnits;
   session->GetSelectionUnits(selectedUnits);
 
   for (UserUnit* const userUnit : selectedUnits) {
@@ -2051,12 +1903,9 @@ void moho::CON_TeleportSelectedUnits(const msvc8::vector<msvc8::string>& args)
 
     IUnit* const iunit = ResolveIUnitBridge(userUnit);
     VTransform destination = entityView->mVariableData.mCurTransform;
-    destination.pos_ = session->CursorWorldPos;
+    destination.pos_ = session->mCursorInfo.mMouseWorldPos;
     destination.pos_.y = IUnit::CalcSpawnElevation(
-      terrainMap,
-      static_cast<ELayer>(entityView->mVariableData.mLayerMask),
-      destination,
-      iunit->GetAttributes()
+      terrainMap, static_cast<ELayer>(entityView->mVariableData.mLayerMask), destination, iunit->GetAttributes()
     );
 
     simDriver->WarpEntity(static_cast<EntId>(entityView->mParams.mEntityId), destination);
@@ -2079,7 +1928,9 @@ void moho::CON_TeleportSelectedUnits(const msvc8::vector<msvc8::string>& args)
  * ("WLD_SingleStep" / "Single-step the sim one tick.") read from the PE
  * `.data` initializers of `stru_F5B734`/`dword_F5B740`.
  */
-void moho::WLD_SingleStep(const msvc8::vector<msvc8::string>& args)
+void moho::WLD_SingleStep(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2107,7 +1958,9 @@ void moho::WLD_SingleStep(const msvc8::vector<msvc8::string>& args)
  * / "Set a new game speed") read from the PE `.data` initializers of
  * `stru_F5B744`/`dword_F5B750`.
  */
-void moho::WLD_GameSpeed(const msvc8::vector<msvc8::string>& args)
+void moho::WLD_GameSpeed(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() != 2u) {
     CON_Printf("WLD_GameSpeed <int> - set current game speed");
@@ -2119,7 +1972,7 @@ void moho::WLD_GameSpeed(const msvc8::vector<msvc8::string>& args)
     return;
   }
 
-  const msvc8::string* const rateToken = ConCommandArg(args, 1u);
+  const fa::string* const rateToken = ConCommandArg(args, 1u);
   int requestedSpeed = static_cast<int>(std::atof(TokenDataOrEmpty(rateToken)));
   if (requestedSpeed > 50) {
     requestedSpeed = 50;
@@ -2155,7 +2008,7 @@ void moho::WLD_GameSpeed(const msvc8::vector<msvc8::string>& args)
  * esp-relative trace of the call site cross-checked against the callee's
  * own prologue (`Moho::CSimDriver::ExecuteDebugCommand`, FUN_0073D1B0,
  * SimDriver.cpp): `command` is `CON_UnparseCommand`'s result c_str(),
- * `worldPos` is `session->CursorWorldPos`, `focusArmy` is
+ * `worldPos` is `session->mCursorInfo.mMouseWorldPos`, `focusArmy` is
  * `session->FocusArmy`, and `entities` is a `BVSet<EntId, EntIdUniverse>`
  * built from the current selection's entity IDs. The raw call site also
  * passes a 5th, undocumented hidden out-pointer that the already-recovered
@@ -2166,7 +2019,9 @@ void moho::WLD_GameSpeed(const msvc8::vector<msvc8::string>& args)
  * `dword_F5B760 = offset sub_88E440` is the callsite evidence. Name is read
  * from the PE `.data` initializer of `stru_F5B754` ("DoSimCommand").
  */
-void moho::DoSimCommand(const msvc8::vector<msvc8::string>& args)
+void moho::DoSimCommand(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() <= 1u) {
     CON_Printf("usage: DoSimCommand command args...");
@@ -2182,29 +2037,29 @@ void moho::DoSimCommand(const msvc8::vector<msvc8::string>& args)
   CWldSession* const session = WLD_GetActiveSession();
 
   BVSet<EntId, EntIdUniverse> entities{};
-  msvc8::vector<msvc8::string> remainingArgs;
+  fa::vector<fa::string> remainingArgs;
   Wm3::Vector3f worldPos{};
   std::uint32_t focusArmy = 0u;
 
   if (session != nullptr) {
-    msvc8::vector<UserUnit*> selectedUnits;
+    fa::vector<UserUnit*> selectedUnits;
     session->GetSelectionUnits(selectedUnits);
     for (UserUnit* const userUnit : selectedUnits) {
       UserEntity* const entityView = userUnit;
       (void)entities.Bits().Add(entityView->mParams.mEntityId);
     }
 
-    worldPos = session->CursorWorldPos;
+    worldPos = session->mCursorInfo.mMouseWorldPos;
     focusArmy = static_cast<std::uint32_t>(session->FocusArmy);
   }
 
   for (std::size_t index = 1u; index < args.size(); ++index) {
-    if (const msvc8::string* const token = ConCommandArg(args, index); token != nullptr) {
+    if (const fa::string* const token = ConCommandArg(args, index); token != nullptr) {
       remainingArgs.push_back(*token);
     }
   }
 
-  const msvc8::string unparsedCommand = CON_UnparseCommand(remainingArgs);
+  const fa::string unparsedCommand = CON_UnparseCommand(remainingArgs);
   (void)simDriver->ExecuteDebugCommand(unparsedCommand.c_str(), worldPos, focusArmy, entities);
 }
 
@@ -2215,7 +2070,9 @@ void moho::DoSimCommand(const msvc8::vector<msvc8::string>& args)
  * Parses one `ren_MipSkipLevels` value argument and applies clamped
  * non-negative mip-skip state to active D3D device resources.
  */
-void moho::CON_ren_MipSkipLevels(const msvc8::vector<msvc8::string>& args)
+void moho::CON_ren_MipSkipLevels(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() != 2u) {
     return;
@@ -2242,7 +2099,9 @@ void moho::CON_ren_MipSkipLevels(const msvc8::vector<msvc8::string>& args)
  * Opens `PreloadedTextures.txt`, asks active D3D resources to dump preloaded
  * texture state into it, then closes the stream.
  */
-void moho::CON_DumpPreloadedTextures(const msvc8::vector<msvc8::string>& args)
+void moho::CON_DumpPreloadedTextures(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2268,7 +2127,9 @@ void moho::CON_DumpPreloadedTextures(const msvc8::vector<msvc8::string>& args)
  * `mesh_Rebatch <allowInstancing> <allowFloat16>` console command - see the
  * declaration.
  */
-void moho::CON_mesh_Rebatch(const msvc8::vector<msvc8::string>& args)
+void moho::CON_mesh_Rebatch(
+  const fa::vector<fa::string>& args
+)
 {
   if (args.size() != 3u) {
     CON_Printf("usage: mesh_Rebatch [allowInstancing] [allowFloat16]");
@@ -2296,27 +2157,24 @@ void moho::CON_mesh_Rebatch(const msvc8::vector<msvc8::string>& args)
  * other combination opens the free-standing editor at the same cursor world
  * position.
  */
-void moho::EFX_CreateEmitterWindow(const msvc8::vector<msvc8::string>& args)
+void moho::EFX_CreateEmitterWindow(
+  const fa::vector<fa::string>& args
+)
 {
-  // The editor is held through a weak pointer for the Show call; the
-  // WeakPtr<WWinManagedFrame> Set emission is 0x0066A2A0.
-  WeakPtr<WWinManagedFrame> editor;
-
   // 0x00669EDF: the binary loads the active-session global and dereferences it
   // straight away - this command is only reachable from an in-session console.
+  // It held the editor through a WeakPtr for the Show call (0x0066A2A0); the
+  // editor owns itself now (issue #414).
   CWldSession& session = *WLD_GetActiveSession();
 
-  const Wm3::Vector3f spawnPosition = session.CursorWorldPos;
+  const Wm3::Vector3f spawnPosition = session.mCursorInfo.mMouseWorldPos;
   UserEntity* const attachEntity = FirstLiveSelectedUserEntity(session.mSelection);
 
-  editor.Set(
-    args.size() > 1u && attachEntity != nullptr
-      ? new WEmitterWx(attachEntity, spawnPosition, ConCommandArg(args, 1u)->c_str())
-      : new WEmitterWx(nullptr, spawnPosition, nullptr)
-  );
-  editor.GetObjectPtr()->Show(true);
+  WEmitterEditor* const editor = args.size() > 1u && attachEntity != nullptr
+    ? new WEmitterEditor(attachEntity, spawnPosition, ConCommandArg(args, 1u)->c_str())
+    : new WEmitterEditor(nullptr, spawnPosition, nullptr);
+  editor->Show(true);
 }
-
 
 /**
  * Address: 0x00835AA0 (FUN_00835AA0, Moho::UI_DumpControlsUnderCursor)
@@ -2325,7 +2183,9 @@ void moho::EFX_CreateEmitterWindow(const msvc8::vector<msvc8::string>& args)
  * Dispatches `DumpControlsUnderMouse()` on the active UI manager when one is
  * available.
  */
-void moho::UI_DumpControlsUnderCursor(const msvc8::vector<msvc8::string>& args)
+void moho::UI_DumpControlsUnderCursor(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2342,7 +2202,9 @@ void moho::UI_DumpControlsUnderCursor(const msvc8::vector<msvc8::string>& args)
  * Imports path debugger UI module and toggles between `CreateUI` and
  * `DestroyUI` based on persisted enable state.
  */
-void moho::CON_PathDebug(const msvc8::vector<msvc8::string>& args)
+void moho::CON_PathDebug(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2381,7 +2243,9 @@ void moho::CON_PathDebug(const msvc8::vector<msvc8::string>& args)
  * is no active session; silently does nothing when the session has no
  * terrain resource or decal manager.
  */
-void moho::CON_AddSplat(const msvc8::vector<msvc8::string>& args)
+void moho::CON_AddSplat(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
@@ -2389,12 +2253,12 @@ void moho::CON_AddSplat(const msvc8::vector<msvc8::string>& args)
     return;
   }
 
-  msvc8::string texturePath = "/env/common/splats/tank_treads_albedo.dds";
+  fa::string texturePath = "/env/common/splats/tank_treads_albedo.dds";
 
   const std::size_t tokenCount = args.size();
   for (std::size_t i = 1u; i < tokenCount; ++i) {
-    if (const msvc8::string* const token = ConCommandArg(args, i); token != nullptr && *token == "texture") {
-      if (const msvc8::string* const path = ConCommandArg(args, i + 1u); path != nullptr) {
+    if (const fa::string* const token = ConCommandArg(args, i); token != nullptr && *token == "texture") {
+      if (const fa::string* const path = ConCommandArg(args, i + 1u); path != nullptr) {
         texturePath = *path;
       }
     }
@@ -2408,7 +2272,7 @@ void moho::CON_AddSplat(const msvc8::vector<msvc8::string>& args)
   // Dispatched straight off the interface, as the binary does: `NewSplatAt` is
   // slot 17 of ??_7IDecalManager@Moho@@6B@, reached at +0x44.
   if (IDecalManager* const decalManager = terrainRes->GetDecalManager(); decalManager != nullptr) {
-    (void)decalManager->NewSplatAt(session->CursorWorldPos, WldTerrainDecalType_Albedo, texturePath);
+    (void)decalManager->NewSplatAt(session->mCursorInfo.mMouseWorldPos, WldTerrainDecalType_Albedo, texturePath);
   }
 }
 
@@ -2419,7 +2283,9 @@ void moho::CON_AddSplat(const msvc8::vector<msvc8::string>& args)
  * Clears build-template state when a world session is active; otherwise prints
  * localized "no session" feedback.
  */
-void moho::CON_DebugClearBuildTemplates(const msvc8::vector<msvc8::string>& args)
+void moho::CON_DebugClearBuildTemplates(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2448,7 +2314,9 @@ void moho::CON_DebugClearBuildTemplates(const msvc8::vector<msvc8::string>& args
  * command validation in UI") are the struct's `.data` initializers, read
  * directly from the shipped PE.
  */
-void moho::SkipUIChecks(const msvc8::vector<msvc8::string>& args)
+void moho::SkipUIChecks(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2475,7 +2343,9 @@ void moho::SkipUIChecks(const msvc8::vector<msvc8::string>& args)
  * / "Restart rendering the current beat.") read from the PE `.data`
  * initializers of `stru_F5B7B4`/`dword_F5B7C0`.
  */
-void moho::WLD_RestartBeat(const msvc8::vector<msvc8::string>& args)
+void moho::WLD_RestartBeat(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2487,7 +2357,6 @@ void moho::WLD_RestartBeat(const msvc8::vector<msvc8::string>& args)
 
   session->mTimeSinceLastTick = 0.0f;
 }
-
 
 /**
  * Address: 0x008976D0 (FUN_008976D0, sub_8976D0)
@@ -2501,7 +2370,9 @@ void moho::WLD_RestartBeat(const msvc8::vector<msvc8::string>& args)
  * / "Advance the sim one beat.") read from the PE `.data` initializers of
  * `stru_F5B7C4`/`dword_F5B7D0`.
  */
-void moho::WLD_AdvanceBeat(const msvc8::vector<msvc8::string>& args)
+void moho::WLD_AdvanceBeat(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2523,7 +2394,7 @@ void moho::WLD_AdvanceBeat(const msvc8::vector<msvc8::string>& args)
  * `FindUnit term...`. Lowercases every argument after the command name into
  * a scratch term list, then walks the active session's rules' unit
  * blueprint map (`RRuleGameRulesImpl::GetUnitBlueprints`, an ordinary
- * `msvc8::map<msvc8::string, void*>` - iterated in place, matching the
+ * `fa::map<fa::string, void*>` - iterated in place, matching the
  * no-defensive-copy idiom `InitializeArmyUnitCategorySets` in
  * CArmyImpl.cpp already established for this exact container). A blueprint
  * matches when every lowercased term is a substring of its (also
@@ -2538,7 +2409,9 @@ void moho::WLD_AdvanceBeat(const msvc8::vector<msvc8::string>& args)
  * from the PE `.data` initializer of `stru_F5BEA0` ("FindUnit"); the
  * description string sits in the same struct.
  */
-void moho::CON_FindUnit(const msvc8::vector<msvc8::string>& args)
+void moho::CON_FindUnit(
+  const fa::vector<fa::string>& args
+)
 {
   CWldSession* const session = WLD_GetActiveSession();
   if (session == nullptr) {
@@ -2549,7 +2422,7 @@ void moho::CON_FindUnit(const msvc8::vector<msvc8::string>& args)
     return;
   }
 
-  msvc8::vector<msvc8::string> searchTermsLower;
+  fa::vector<fa::string> searchTermsLower;
   for (std::size_t index = 1u; index < args.size(); ++index) {
     searchTermsLower.push_back(gpg::STR_ToLower(TokenDataOrEmpty(ConCommandArg(args, index))));
   }
@@ -2562,12 +2435,11 @@ void moho::CON_FindUnit(const msvc8::vector<msvc8::string>& args)
       continue;
     }
 
-    const msvc8::string nameLower = gpg::STR_ToLower(unitBlueprint->Display.DisplayName.c_str());
-    const bool allTermsMatch = std::all_of(
-      searchTermsLower.begin(),
-      searchTermsLower.end(),
-      [&nameLower](const msvc8::string& term) { return std::strstr(nameLower.c_str(), term.c_str()) != nullptr; }
-    );
+    const fa::string nameLower = gpg::STR_ToLower(unitBlueprint->Display.DisplayName.c_str());
+    const bool allTermsMatch =
+      std::all_of(searchTermsLower.begin(), searchTermsLower.end(), [&nameLower](const fa::string& term) {
+      return std::strstr(nameLower.c_str(), term.c_str()) != nullptr;
+    });
 
     if (allTermsMatch) {
       CON_Printf("%s - %s", blueprintId.c_str(), unitBlueprint->Display.DisplayName.c_str());
@@ -2577,11 +2449,11 @@ void moho::CON_FindUnit(const msvc8::vector<msvc8::string>& args)
 
   CON_Printf("%d units matching", matchCount);
 
-  // `msvc8::string` has no destructor by design (String.h); release each
+  // `fa::string` has no destructor by design (String.h); release each
   // term's owned heap buffer explicitly, matching the established
   // `.tidy(true, 0u)` cleanup idiom (REntityBlueprintTypeInfo.cpp,
   // LaunchInfoBase.cpp) rather than leaking non-SSO search terms.
-  for (msvc8::string& term : searchTermsLower) {
+  for (fa::string& term : searchTermsLower) {
     term.tidy(true, 0u);
   }
 }
@@ -2601,7 +2473,9 @@ void moho::CON_FindUnit(const msvc8::vector<msvc8::string>& args)
  * `dword_F5BEDC = offset sub_8D4150` is the callsite evidence. Name is read
  * from the PE `.data` initializer of `stru_F5BED0` ("SC_LuaDebugger").
  */
-void moho::SC_LuaDebugger(const msvc8::vector<msvc8::string>& args)
+void moho::SC_LuaDebugger(
+  const fa::vector<fa::string>& args
+)
 {
   (void)args;
 
@@ -2639,11 +2513,7 @@ namespace moho
    * Address: 0x00BE66A0 (FUN_00BE66A0, dynamic initializer for `gTConVar_cam_Free`)
    * Address: 0x00C077B0 (FUN_00C077B0, dynamic atexit destructor for `gTConVar_cam_Free`)
    */
-  TConVar<bool> gTConVar_cam_Free(
-    "cam_Free",
-    kConsoleStartupCamFreeDescription,
-    &moho::cam_Free
-  );
+  TConVar<bool> gTConVar_cam_Free("cam_Free", kConsoleStartupCamFreeDescription, &moho::cam_Free);
 
   extern int dump_outputFrameNumber;
 
@@ -2723,11 +2593,8 @@ namespace moho
    * Address: 0x00BE8E60 (FUN_00BE8E60, dynamic initializer for `gTConVar_wnd_MinDragWidth`)
    * Address: 0x00C08B50 (FUN_00C08B50, dynamic atexit destructor for `gTConVar_wnd_MinDragWidth`)
    */
-  TConVar<int> gTConVar_wnd_MinDragWidth(
-    "wnd_MinDragWidth",
-    kConsoleStartupWndMinDragWidthDescription,
-    &moho::wnd_MinDragWidth
-  );
+  TConVar<int>
+    gTConVar_wnd_MinDragWidth("wnd_MinDragWidth", kConsoleStartupWndMinDragWidthDescription, &moho::wnd_MinDragWidth);
 
   extern float UI_RenProectileTrailWidth;
 
@@ -2769,7 +2636,7 @@ namespace moho
 
   extern unsigned int ui_CustomNameColor;
 
-  extern msvc8::string ui_CustomNameFont;
+  extern fa::string ui_CustomNameFont;
 
   extern int ui_CustomNameFontSize;
 
@@ -2958,11 +2825,8 @@ namespace moho
    * Address: 0x00BE5FD0 (FUN_00BE5FD0, dynamic initializer for `gTConVar_UI_RenResources`)
    * Address: 0x00C07420 (FUN_00C07420, dynamic atexit destructor for `gTConVar_UI_RenResources`)
    */
-  TConVar<bool> gTConVar_UI_RenResources(
-    "UI_RenResources",
-    kConsoleStartupUIRenResourcesDescription,
-    &moho::UI_RenResources
-  );
+  TConVar<bool>
+    gTConVar_UI_RenResources("UI_RenResources", kConsoleStartupUIRenResourcesDescription, &moho::UI_RenResources);
 
   /**
    * Address: 0x00BE6010 (FUN_00BE6010, dynamic initializer for `gTConVar_UI_ResourceLODCutoff`)
@@ -3038,11 +2902,8 @@ namespace moho
    * Address: 0x00BE3BC0 (FUN_00BE3BC0, dynamic initializer for `gTConVar_ui_CurveSegments`)
    * Address: 0x00C05E70 (FUN_00C05E70, dynamic atexit destructor for `gTConVar_ui_CurveSegments`)
    */
-  TConVar<int> gTConVar_ui_CurveSegments(
-    "ui_CurveSegments",
-    kConsoleStartupUiCurveSegmentsDescription,
-    &moho::ui_CurveSegments
-  );
+  TConVar<int>
+    gTConVar_ui_CurveSegments("ui_CurveSegments", kConsoleStartupUiCurveSegmentsDescription, &moho::ui_CurveSegments);
 
   /**
    * Address: 0x00BE3C00 (FUN_00BE3C00, dynamic initializer for `gTConVar_ui_CurveSmoothness`)
@@ -3068,7 +2929,7 @@ namespace moho
    * Address: 0x00BE5740 (FUN_00BE5740, dynamic initializer for `gTConVar_ui_CustomNameFont`)
    * Address: 0x00C06E10 (FUN_00C06E10, dynamic atexit destructor for `gTConVar_ui_CustomNameFont`)
    */
-  TConVar<msvc8::string> gTConVar_ui_CustomNameFont(
+  TConVar<fa::string> gTConVar_ui_CustomNameFont(
     "ui_CutsomNameFont",
     kConsoleStartupUiCustomNameFontDescription,
     &moho::ui_CustomNameFont
@@ -3088,11 +2949,8 @@ namespace moho
    * Address: 0x00BE60E0 (FUN_00BE60E0, dynamic initializer for `gTConVar_ui_DebugAltClick`)
    * Address: 0x00C074B0 (FUN_00C074B0, dynamic atexit destructor for `gTConVar_ui_DebugAltClick`)
    */
-  TConVar<bool> gTConVar_ui_DebugAltClick(
-    "ui_DebugAltClick",
-    kConsoleStartupUiDebugAltClickDescription,
-    &moho::ui_DebugAltClick
-  );
+  TConVar<bool>
+    gTConVar_ui_DebugAltClick("ui_DebugAltClick", kConsoleStartupUiDebugAltClickDescription, &moho::ui_DebugAltClick);
 
   /**
    * Address: 0x00BE67E0 (FUN_00BE67E0, dynamic initializer for `gTConVar_ui_DisableCursorFixing`)
@@ -3108,11 +2966,8 @@ namespace moho
    * Address: 0x00BE6120 (FUN_00BE6120, dynamic initializer for `gTConVar_ui_DragSelect2D`)
    * Address: 0x00C074E0 (FUN_00C074E0, dynamic atexit destructor for `gTConVar_ui_DragSelect2D`)
    */
-  TConVar<bool> gTConVar_ui_DragSelect2D(
-    "ui_DragSelect2D",
-    kConsoleStartupUiDragSelect2DDescription,
-    &moho::ui_DragSelect2D
-  );
+  TConVar<bool>
+    gTConVar_ui_DragSelect2D("ui_DragSelect2D", kConsoleStartupUiDragSelect2DDescription, &moho::ui_DragSelect2D);
 
   /**
    * Address: 0x00BE3D80 (FUN_00BE3D80, dynamic initializer for `gTConVar_ui_DrawPathPreview`)
@@ -3158,11 +3013,8 @@ namespace moho
    * Address: 0x00BE5A00 (FUN_00BE5A00, dynamic initializer for `gTConVar_ui_FuelBarColor`)
    * Address: 0x00C07020 (FUN_00C07020, dynamic atexit destructor for `gTConVar_ui_FuelBarColor`)
    */
-  TConVar<unsigned int> gTConVar_ui_FuelBarColor(
-    "ui_FuelBarColor",
-    kConsoleStartupUiFuelBarColorDescription,
-    &moho::ui_FuelBarColor
-  );
+  TConVar<unsigned int>
+    gTConVar_ui_FuelBarColor("ui_FuelBarColor", kConsoleStartupUiFuelBarColorDescription, &moho::ui_FuelBarColor);
 
   /**
    * Address: 0x00BE5840 (FUN_00BE5840, dynamic initializer for `gTConVar_ui_FuelEmptyBlinkRate`)
@@ -3278,31 +3130,21 @@ namespace moho
    * Address: 0x00BE54E0 (FUN_00BE54E0, dynamic initializer for `gTConVar_ui_LifebarLOD`)
    * Address: 0x00C06C30 (FUN_00C06C30, dynamic atexit destructor for `gTConVar_ui_LifebarLOD`)
    */
-  TConVar<float> gTConVar_ui_LifebarLOD(
-    "ui_LifebarLOD",
-    kConsoleStartupUiLifebarLODDescription,
-    &moho::ui_LifebarLOD
-  );
+  TConVar<float> gTConVar_ui_LifebarLOD("ui_LifebarLOD", kConsoleStartupUiLifebarLODDescription, &moho::ui_LifebarLOD);
 
   /**
    * Address: 0x00BE5520 (FUN_00BE5520, dynamic initializer for `gTConVar_ui_LifebarOffset`)
    * Address: 0x00C06C60 (FUN_00C06C60, dynamic atexit destructor for `gTConVar_ui_LifebarOffset`)
    */
-  TConVar<float> gTConVar_ui_LifebarOffset(
-    "ui_LifebarOffset",
-    kConsoleStartupUiLifebarOffsetDescription,
-    &moho::ui_LifebarOffset
-  );
+  TConVar<float>
+    gTConVar_ui_LifebarOffset("ui_LifebarOffset", kConsoleStartupUiLifebarOffsetDescription, &moho::ui_LifebarOffset);
 
   /**
    * Address: 0x00BE54A0 (FUN_00BE54A0, dynamic initializer for `gTConVar_ui_LifebarWidth`)
    * Address: 0x00C06C00 (FUN_00C06C00, dynamic atexit destructor for `gTConVar_ui_LifebarWidth`)
    */
-  TConVar<float> gTConVar_ui_LifebarWidth(
-    "ui_LifebarWidth",
-    kConsoleStartupUiLifebarWidthDescription,
-    &moho::ui_LifebarWidth
-  );
+  TConVar<float>
+    gTConVar_ui_LifebarWidth("ui_LifebarWidth", kConsoleStartupUiLifebarWidthDescription, &moho::ui_LifebarWidth);
 
   /**
    * Address: 0x00BE68A0 (FUN_00BE68A0, dynamic initializer for `gTConVar_ui_MaxExtractSnapPixels`)
@@ -3318,11 +3160,7 @@ namespace moho
    * Address: 0x00BE3C80 (FUN_00BE3C80, dynamic initializer for `gTConVar_ui_MaxTextLOD`)
    * Address: 0x00C05F00 (FUN_00C05F00, dynamic atexit destructor for `gTConVar_ui_MaxTextLOD`)
    */
-  TConVar<float> gTConVar_ui_MaxTextLOD(
-    "ui_MaxTextLOD",
-    kConsoleStartupUiMaxTextLODDescription,
-    &moho::ui_MaxTextLOD
-  );
+  TConVar<float> gTConVar_ui_MaxTextLOD("ui_MaxTextLOD", kConsoleStartupUiMaxTextLODDescription, &moho::ui_MaxTextLOD);
 
   /**
    * Address: 0x00BE3D40 (FUN_00BE3D40, dynamic initializer for `gTConVar_ui_MaxWaypointSize`)
@@ -3368,11 +3206,8 @@ namespace moho
    * Address: 0x00BE3DC0 (FUN_00BE3DC0, dynamic initializer for `gTConVar_ui_PathPreview`)
    * Address: 0x00C05FF0 (FUN_00C05FF0, dynamic atexit destructor for `gTConVar_ui_PathPreview`)
    */
-  TConVar<bool> gTConVar_ui_PathPreview(
-    "ui_PathPreview",
-    kConsoleStartupUiPathPreviewDescription,
-    &moho::ui_PathPreview
-  );
+  TConVar<bool>
+    gTConVar_ui_PathPreview("ui_PathPreview", kConsoleStartupUiPathPreviewDescription, &moho::ui_PathPreview);
 
   /**
    * Address: 0x00BE3C40 (FUN_00BE3C40, dynamic initializer for `gTConVar_ui_PathSmoothness`)
@@ -3408,11 +3243,8 @@ namespace moho
    * Address: 0x00BE55E0 (FUN_00BE55E0, dynamic initializer for `gTConVar_ui_RenderIcons`)
    * Address: 0x00C06CF0 (FUN_00C06CF0, dynamic atexit destructor for `gTConVar_ui_RenderIcons`)
    */
-  TConVar<bool> gTConVar_ui_RenderIcons(
-    "ui_RenderIcons",
-    kConsoleStartupUiRenderIconsDescription,
-    &moho::ui_RenderIcons
-  );
+  TConVar<bool>
+    gTConVar_ui_RenderIcons("ui_RenderIcons", kConsoleStartupUiRenderIconsDescription, &moho::ui_RenderIcons);
 
   /**
    * Address: 0x00BE5780 (FUN_00BE5780, dynamic initializer for `gTConVar_ui_RenderSelectionSetNames`)
@@ -3518,11 +3350,8 @@ namespace moho
    * Address: 0x00BE5460 (FUN_00BE5460, dynamic initializer for `gTConVar_ui_lifebarHeight`)
    * Address: 0x00C06BD0 (FUN_00C06BD0, dynamic atexit destructor for `gTConVar_ui_lifebarHeight`)
    */
-  TConVar<float> gTConVar_ui_lifebarHeight(
-    "ui_lifebarHeight",
-    kConsoleStartupUiLifebarHeightDescription,
-    &moho::ui_lifebarHeight
-  );
+  TConVar<float>
+    gTConVar_ui_lifebarHeight("ui_lifebarHeight", kConsoleStartupUiLifebarHeightDescription, &moho::ui_lifebarHeight);
 
   extern float ren_BgLowerBound;
 
@@ -3562,11 +3391,8 @@ namespace moho
    * Address: 0x00BE68E0 (FUN_00BE68E0, dynamic initializer for `gTConVar_ren_BgLowerBound`)
    * Address: 0x00C07960 (FUN_00C07960, dynamic atexit destructor for `gTConVar_ren_BgLowerBound`)
    */
-  TConVar<float> gTConVar_ren_BgLowerBound(
-    "ren_BgLowerBound",
-    kConsoleStartupRenBgLowerBoundDescription,
-    &moho::ren_BgLowerBound
-  );
+  TConVar<float>
+    gTConVar_ren_BgLowerBound("ren_BgLowerBound", kConsoleStartupRenBgLowerBoundDescription, &moho::ren_BgLowerBound);
 
   /**
    * Address: 0x00BE1040 (FUN_00BE1040, dynamic initializer for `gTConVar_ren_BloomBlurKernelScale`)
@@ -3602,11 +3428,8 @@ namespace moho
    * Address: 0x00BE03A0 (FUN_00BE03A0, dynamic initializer for `gTConVar_ren_MeshDissolve`)
    * Address: 0x00C03B90 (FUN_00C03B90, dynamic atexit destructor for `gTConVar_ren_MeshDissolve`)
    */
-  TConVar<float> gTConVar_ren_MeshDissolve(
-    "ren_MeshDissolve",
-    kConsoleStartupRenMeshDissolveDescription,
-    &moho::ren_MeshDissolve
-  );
+  TConVar<float>
+    gTConVar_ren_MeshDissolve("ren_MeshDissolve", kConsoleStartupRenMeshDissolveDescription, &moho::ren_MeshDissolve);
 
   /**
    * Address: 0x00BE03E0 (FUN_00BE03E0, dynamic initializer for `gTConVar_ren_MeshDissolveCutoff`)
@@ -3622,31 +3445,22 @@ namespace moho
    * Address: 0x00BE0320 (FUN_00BE0320, dynamic initializer for `gTConVar_ren_MeshSkinned`)
    * Address: 0x00C03B30 (FUN_00C03B30, dynamic atexit destructor for `gTConVar_ren_MeshSkinned`)
    */
-  TConVar<bool> gTConVar_ren_MeshSkinned(
-    "ren_MeshSkinned",
-    kConsoleStartupRenMeshSkinnedDescription,
-    &moho::ren_MeshSkinned
-  );
+  TConVar<bool>
+    gTConVar_ren_MeshSkinned("ren_MeshSkinned", kConsoleStartupRenMeshSkinnedDescription, &moho::ren_MeshSkinned);
 
   /**
    * Address: 0x00BE0360 (FUN_00BE0360, dynamic initializer for `gTConVar_ren_MeshStatic`)
    * Address: 0x00C03B60 (FUN_00C03B60, dynamic atexit destructor for `gTConVar_ren_MeshStatic`)
    */
-  TConVar<bool> gTConVar_ren_MeshStatic(
-    "ren_MeshStatic",
-    kConsoleStartupRenMeshStaticDescription,
-    &moho::ren_MeshStatic
-  );
+  TConVar<bool>
+    gTConVar_ren_MeshStatic("ren_MeshStatic", kConsoleStartupRenMeshStaticDescription, &moho::ren_MeshStatic);
 
   /**
    * Address: 0x00BE1E40 (FUN_00BE1E40, dynamic initializer for `gTConVar_ren_SelectBoxes`)
    * Address: 0x00C04C80 (FUN_00C04C80, dynamic atexit destructor for `gTConVar_ren_SelectBoxes`)
    */
-  TConVar<bool> gTConVar_ren_SelectBoxes(
-    "ren_SelectBoxes",
-    kConsoleStartupRenSelectBoxesDescription,
-    &moho::ren_SelectBoxes
-  );
+  TConVar<bool>
+    gTConVar_ren_SelectBoxes("ren_SelectBoxes", kConsoleStartupRenSelectBoxesDescription, &moho::ren_SelectBoxes);
 
   /**
    * Address: 0x00BE1D80 (FUN_00BE1D80, dynamic initializer for `gTConVar_ren_SelectBracketMinPixelSize`)
@@ -3672,11 +3486,8 @@ namespace moho
    * Address: 0x00BE1E00 (FUN_00BE1E00, dynamic initializer for `gTConVar_ren_SelectColor`)
    * Address: 0x00C04C50 (FUN_00C04C50, dynamic atexit destructor for `gTConVar_ren_SelectColor`)
    */
-  TConVar<unsigned int> gTConVar_ren_SelectColor(
-    "ren_SelectColor",
-    kConsoleStartupRenSelectColorDescription,
-    &moho::ren_SelectColor
-  );
+  TConVar<unsigned int>
+    gTConVar_ren_SelectColor("ren_SelectColor", kConsoleStartupRenSelectColorDescription, &moho::ren_SelectColor);
 
   /**
    * Address: 0x00BE1D00 (FUN_00BE1D00, dynamic initializer for `gTConVar_ren_SelectionHeightFudge`)
@@ -3702,11 +3513,7 @@ namespace moho
    * Address: 0x00BE37B0 (FUN_00BE37B0, dynamic initializer for `gTConVar_ren_Shoreline`)
    * Address: 0x00C05CF0 (FUN_00C05CF0, dynamic atexit destructor for `gTConVar_ren_Shoreline`)
    */
-  TConVar<bool> gTConVar_ren_Shoreline(
-    "ren_Shoreline",
-    kConsoleStartupRenShorelineDescription,
-    &moho::ren_Shoreline
-  );
+  TConVar<bool> gTConVar_ren_Shoreline("ren_Shoreline", kConsoleStartupRenShorelineDescription, &moho::ren_Shoreline);
 
   /**
    * Address: 0x00BE37F0 (FUN_00BE37F0, dynamic initializer for `gTConVar_ren_ShorelineCutoff`)
@@ -3744,13 +3551,21 @@ namespace moho
    * Address: 0x00BDFA80 (FUN_00BDFA80, dynamic initializer for `gCConFunc_PopupCreateUnitMenu`)
    * Address: 0x00C037A0 (FUN_00C037A0, dynamic atexit destructor for `gCConFunc_PopupCreateUnitMenu`)
    */
-  CConFunc gCConFunc_PopupCreateUnitMenu("PopupCreateUnitMenu", kConsoleStartupPopupCreateUnitMenuDescription, &moho::CON_PopupCreateUnitMenu);
+  CConFunc gCConFunc_PopupCreateUnitMenu(
+    "PopupCreateUnitMenu",
+    kConsoleStartupPopupCreateUnitMenuDescription,
+    &moho::CON_PopupCreateUnitMenu
+  );
 
   /**
    * Address: 0x00BE4130 (FUN_00BE4130, dynamic initializer for `gCConFunc_TeleportSelectedUnits`)
    * Address: 0x00C06250 (FUN_00C06250, dynamic atexit destructor for `gCConFunc_TeleportSelectedUnits`)
    */
-  CConFunc gCConFunc_TeleportSelectedUnits("TeleportSelectedUnits", kConsoleStartupTeleportSelectedUnitsDescription, &moho::CON_TeleportSelectedUnits);
+  CConFunc gCConFunc_TeleportSelectedUnits(
+    "TeleportSelectedUnits",
+    kConsoleStartupTeleportSelectedUnitsDescription,
+    &moho::CON_TeleportSelectedUnits
+  );
 
   /**
    * Address: 0x00BE43F0 (FUN_00BE43F0, dynamic initializer for `gCConFunc_SetFocusArmy`)
@@ -3774,13 +3589,18 @@ namespace moho
    * Address: 0x00BE4270 (FUN_00BE4270, dynamic initializer for `gCConFunc_UI_RotateLayout`)
    * Address: 0x00C06340 (FUN_00C06340, dynamic atexit destructor for `gCConFunc_UI_RotateLayout`)
    */
-  CConFunc gCConFunc_UI_RotateLayout("UI_RotateLayout", kConsoleStartupUIRotateLayoutDescription, &moho::UI_RotateLayout);
+  CConFunc
+    gCConFunc_UI_RotateLayout("UI_RotateLayout", kConsoleStartupUIRotateLayoutDescription, &moho::UI_RotateLayout);
 
   /**
    * Address: 0x00BE42F0 (FUN_00BE42F0, dynamic initializer for `gCConFunc_UI_ToggleGamePanels`)
    * Address: 0x00C063A0 (FUN_00C063A0, dynamic atexit destructor for `gCConFunc_UI_ToggleGamePanels`)
    */
-  CConFunc gCConFunc_UI_ToggleGamePanels("UI_ToggleGamePanels", kConsoleStartupUIToggleGamePanelsDescription, &moho::CON_UI_ToggleGamePanels);
+  CConFunc gCConFunc_UI_ToggleGamePanels(
+    "UI_ToggleGamePanels",
+    kConsoleStartupUIToggleGamePanelsDescription,
+    &moho::CON_UI_ToggleGamePanels
+  );
 
   /**
    * Address: 0x00BE42B0 (FUN_00BE42B0, dynamic initializer for `gCConFunc_UI_Quit`)
@@ -3792,19 +3612,31 @@ namespace moho
    * Address: 0x00BE4330 (FUN_00BE4330, dynamic initializer for `gCConFunc_UI_MakeSelectionSet`)
    * Address: 0x00C063D0 (FUN_00C063D0, dynamic atexit destructor for `gCConFunc_UI_MakeSelectionSet`)
    */
-  CConFunc gCConFunc_UI_MakeSelectionSet("UI_MakeSelectionSet", kConsoleStartupUIMakeSelectionSetDescription, &moho::UI_MakeSelectionSet);
+  CConFunc gCConFunc_UI_MakeSelectionSet(
+    "UI_MakeSelectionSet",
+    kConsoleStartupUIMakeSelectionSetDescription,
+    &moho::UI_MakeSelectionSet
+  );
 
   /**
    * Address: 0x00BE4370 (FUN_00BE4370, dynamic initializer for `gCConFunc_UI_ApplySelectionSet`)
    * Address: 0x00C06400 (FUN_00C06400, dynamic atexit destructor for `gCConFunc_UI_ApplySelectionSet`)
    */
-  CConFunc gCConFunc_UI_ApplySelectionSet("UI_ApplySelectionSet", kConsoleStartupUIApplySelectionSetDescription, &moho::UI_ApplySelectionSet);
+  CConFunc gCConFunc_UI_ApplySelectionSet(
+    "UI_ApplySelectionSet",
+    kConsoleStartupUIApplySelectionSetDescription,
+    &moho::UI_ApplySelectionSet
+  );
 
   /**
    * Address: 0x00BE43B0 (FUN_00BE43B0, dynamic initializer for `gCConFunc_UI_CreateHead1Map`)
    * Address: 0x00C06430 (FUN_00C06430, dynamic atexit destructor for `gCConFunc_UI_CreateHead1Map`)
    */
-  CConFunc gCConFunc_UI_CreateHead1Map("UI_CreateHead1Map", kConsoleStartupUICreateHead1MapDescription, &moho::CON_UI_CreateHead1Map);
+  CConFunc gCConFunc_UI_CreateHead1Map(
+    "UI_CreateHead1Map",
+    kConsoleStartupUICreateHead1MapDescription,
+    &moho::CON_UI_CreateHead1Map
+  );
 
   /**
    * Address: 0x00BE44B0 (FUN_00BE44B0, dynamic initializer for `gCConFunc_UI_Lua`)
@@ -3816,49 +3648,81 @@ namespace moho
    * Address: 0x00BE4530 (FUN_00BE4530, dynamic initializer for `gCConFunc_UI_ShowRenameDialog`)
    * Address: 0x00C06550 (FUN_00C06550, dynamic atexit destructor for `gCConFunc_UI_ShowRenameDialog`)
    */
-  CConFunc gCConFunc_UI_ShowRenameDialog("UI_ShowRenameDialog", kConsoleStartupUIShowRenameDialogDescription, reinterpret_cast<CConFunc::Callback>(&moho::UI_ShowRenameDialog));
+  CConFunc gCConFunc_UI_ShowRenameDialog(
+    "UI_ShowRenameDialog",
+    kConsoleStartupUIShowRenameDialogDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::UI_ShowRenameDialog();
+    }
+  );
 
   /**
    * Address: 0x00BE4570 (FUN_00BE4570, dynamic initializer for `gCConFunc_UI_DumpControls`)
    * Address: 0x00C06580 (FUN_00C06580, dynamic atexit destructor for `gCConFunc_UI_DumpControls`)
    */
-  CConFunc gCConFunc_UI_DumpControls("UI_DumpControls", kConsoleStartupUIDumpControlsDescription, &moho::UI_DumpControls);
+  CConFunc
+    gCConFunc_UI_DumpControls("UI_DumpControls", kConsoleStartupUIDumpControlsDescription, &moho::UI_DumpControls);
 
   /**
    * Address: 0x00BE7F70 (FUN_00BE7F70, dynamic initializer for `gCConFunc_DumpActiveLoops`)
    * Address: 0x00C085D0 (FUN_00C085D0, dynamic atexit destructor for `gCConFunc_DumpActiveLoops`)
    */
-  CConFunc gCConFunc_DumpActiveLoops("DumpActiveLoops", kConsoleStartupDumpActiveLoopsDescription, reinterpret_cast<CConFunc::Callback>(&moho::Con_DumpActiveLoops));
+  CConFunc gCConFunc_DumpActiveLoops(
+    "DumpActiveLoops",
+    kConsoleStartupDumpActiveLoopsDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::Con_DumpActiveLoops();
+    }
+  );
 
   /**
    * Address: 0x00BE1B90 (FUN_00BE1B90, dynamic initializer for `gCConFunc_ren_MapBorderAdd`)
    * Address: 0x00C04AB0 (FUN_00C04AB0, dynamic atexit destructor for `gCConFunc_ren_MapBorderAdd`)
    */
-  CConFunc gCConFunc_ren_MapBorderAdd("ren_MapBorderAdd", kConsoleStartupRenMapBorderAddDescription, &moho::REN_MapBorderAdd);
+  CConFunc
+    gCConFunc_ren_MapBorderAdd("ren_MapBorderAdd", kConsoleStartupRenMapBorderAddDescription, &moho::REN_MapBorderAdd);
 
   /**
    * Address: 0x00BE1BD0 (FUN_00BE1BD0, dynamic initializer for `gCConFunc_ren_MapBorderClear`)
    * Address: 0x00C04AE0 (FUN_00C04AE0, dynamic atexit destructor for `gCConFunc_ren_MapBorderClear`)
    */
-  CConFunc gCConFunc_ren_MapBorderClear("ren_MapBorderClear", kConsoleStartupRenMapBorderClearDescription, &moho::REN_MapBorderClear);
+  CConFunc gCConFunc_ren_MapBorderClear(
+    "ren_MapBorderClear",
+    kConsoleStartupRenMapBorderClearDescription,
+    &moho::REN_MapBorderClear
+  );
 
   /**
    * Address: 0x00BE1B50 (FUN_00BE1B50, dynamic initializer for `gCConFunc_ren_ShowSkeletons`)
    * Address: 0x00C04A80 (FUN_00C04A80, dynamic atexit destructor for `gCConFunc_ren_ShowSkeletons`)
    */
-  CConFunc gCConFunc_ren_ShowSkeletons("ren_ShowSkeletons", kConsoleStartupRenShowSkeletonsDescription, reinterpret_cast<CConFunc::Callback>(&moho::REN_ShowSkeletons));
+  CConFunc gCConFunc_ren_ShowSkeletons(
+    "ren_ShowSkeletons",
+    kConsoleStartupRenShowSkeletonsDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::REN_ShowSkeletons();
+    }
+  );
 
   /**
    * Address: 0x00BE9600 (FUN_00BE9600, dynamic initializer for `gCConFunc_timestamp`)
    * Address: 0x00C08E50 (FUN_00C08E50, dynamic atexit destructor for `gCConFunc_timestamp`)
    */
-  CConFunc gCConFunc_timestamp("timestamp", kConsoleStartupTimestampDescription, reinterpret_cast<CConFunc::Callback>(&moho::PrintExecutableTimestampToConsole));
+  CConFunc gCConFunc_timestamp("timestamp", kConsoleStartupTimestampDescription, [](const fa::vector<fa::string>&) {
+    moho::PrintExecutableTimestampToConsole();
+  });
 
   /**
    * Address: 0x00BE9640 (FUN_00BE9640, dynamic initializer for `gCConFunc_SC_CreateEntityDialog`)
    * Address: 0x00C08E80 (FUN_00C08E80, dynamic atexit destructor for `gCConFunc_SC_CreateEntityDialog`)
    */
-  CConFunc gCConFunc_SC_CreateEntityDialog("SC_CreateEntityDialog", kConsoleStartupSCCreateEntityDialogDescription, reinterpret_cast<CConFunc::Callback>(&moho::funcl_SC_CreateEntityDialog));
+  CConFunc gCConFunc_SC_CreateEntityDialog(
+    "SC_CreateEntityDialog",
+    kConsoleStartupSCCreateEntityDialogDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::funcl_SC_CreateEntityDialog();
+    }
+  );
 
   /**
    * Address: 0x00BE7550 (FUN_00BE7550, dynamic initializer for `gCConFunc_quit`)
@@ -3870,25 +3734,47 @@ namespace moho
    * Address: 0x00BE7370 (FUN_00BE7370, dynamic initializer for `gCConFunc_WLD_IncreaseSimRate`)
    * Address: 0x00C07F60 (FUN_00C07F60, dynamic atexit destructor for `gCConFunc_WLD_IncreaseSimRate`)
    */
-  CConFunc gCConFunc_WLD_IncreaseSimRate("WLD_IncreaseSimRate", kConsoleStartupWLDIncreaseSimRateDescription, reinterpret_cast<CConFunc::Callback>(&moho::WLD_IncreaseSimRate));
+  CConFunc gCConFunc_WLD_IncreaseSimRate(
+    "WLD_IncreaseSimRate",
+    kConsoleStartupWLDIncreaseSimRateDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::WLD_IncreaseSimRate();
+    }
+  );
 
   /**
    * Address: 0x00BE73F0 (FUN_00BE73F0, dynamic initializer for `gCConFunc_WLD_DecreaseSimRate`)
    * Address: 0x00C07FC0 (FUN_00C07FC0, dynamic atexit destructor for `gCConFunc_WLD_DecreaseSimRate`)
    */
-  CConFunc gCConFunc_WLD_DecreaseSimRate("WLD_DecreaseSimRate", kConsoleStartupWLDDecreaseSimRateDescription, reinterpret_cast<CConFunc::Callback>(&moho::WLD_DecreaseSimRate));
+  CConFunc gCConFunc_WLD_DecreaseSimRate(
+    "WLD_DecreaseSimRate",
+    kConsoleStartupWLDDecreaseSimRateDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::WLD_DecreaseSimRate();
+    }
+  );
 
   /**
    * Address: 0x00BE73B0 (FUN_00BE73B0, dynamic initializer for `gCConFunc_WLD_ResetSimRate`)
    * Address: 0x00C07F90 (FUN_00C07F90, dynamic atexit destructor for `gCConFunc_WLD_ResetSimRate`)
    */
-  CConFunc gCConFunc_WLD_ResetSimRate("WLD_ResetSimRate", kConsoleStartupWLDResetSimRateDescription, reinterpret_cast<CConFunc::Callback>(&moho::WLD_ResetSimRate));
+  CConFunc gCConFunc_WLD_ResetSimRate(
+    "WLD_ResetSimRate",
+    kConsoleStartupWLDResetSimRateDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::WLD_ResetSimRate();
+    }
+  );
 
   /**
    * Address: 0x00BE7510 (FUN_00BE7510, dynamic initializer for `gCConFunc_wld_ClientDebugDump`)
    * Address: 0x00C08080 (FUN_00C08080, dynamic atexit destructor for `gCConFunc_wld_ClientDebugDump`)
    */
-  CConFunc gCConFunc_wld_ClientDebugDump("wld_ClientDebugDump", kConsoleStartupWldClientDebugDumpDescription, &moho::CON_WLD_ClientDebugDump);
+  CConFunc gCConFunc_wld_ClientDebugDump(
+    "wld_ClientDebugDump",
+    kConsoleStartupWldClientDebugDumpDescription,
+    &moho::CON_WLD_ClientDebugDump
+  );
 
   extern float ren_ShadowBias;
 
@@ -3896,11 +3782,8 @@ namespace moho
    * Address: 0x00BE1F60 (FUN_00BE1F60, dynamic initializer for `gTConVar_ren_ShadowBias`)
    * Address: 0x00C04D50 (FUN_00C04D50, dynamic atexit destructor for `gTConVar_ren_ShadowBias`)
    */
-  TConVar<float> gTConVar_ren_ShadowBias(
-    "ren_ShadowBias",
-    kConsoleStartupRenShadowBiasDescription,
-    &moho::ren_ShadowBias
-  );
+  TConVar<float>
+    gTConVar_ren_ShadowBias("ren_ShadowBias", kConsoleStartupRenShadowBiasDescription, &moho::ren_ShadowBias);
 
   /**
    * Address: 0x00BDFB90 (FUN_00BDFB90, dynamic initializer for `gCConFunc_PathDebug`)
@@ -3912,7 +3795,11 @@ namespace moho
    * Address: 0x00BE45B0 (FUN_00BE45B0, dynamic initializer for `gCConFunc_UI_DumpControlsUnderCursor`)
    * Address: 0x00C065B0 (FUN_00C065B0, dynamic atexit destructor for `gCConFunc_UI_DumpControlsUnderCursor`)
    */
-  CConFunc gCConFunc_UI_DumpControlsUnderCursor("UI_DumpControlsUnderCursor", kConsoleStartupUIDumpControlsUnderCursorDescription, &moho::UI_DumpControlsUnderCursor);
+  CConFunc gCConFunc_UI_DumpControlsUnderCursor(
+    "UI_DumpControlsUnderCursor",
+    kConsoleStartupUIDumpControlsUnderCursorDescription,
+    &moho::UI_DumpControlsUnderCursor
+  );
 
 } // namespace moho
 
@@ -3928,7 +3815,13 @@ namespace
    * Address: 0x00BDF9D0 (FUN_00BDF9D0, dynamic initializer for `gCConFunc_ExecutePasteBuffer`)
    * Address: 0x00C03750 (FUN_00C03750, dynamic atexit destructor for `gCConFunc_ExecutePasteBuffer`)
    */
-  CConFunc gCConFunc_ExecutePasteBuffer("ExecutePasteBuffer", kConsoleStartupConExecutePasteBufferDescription, reinterpret_cast<CConFunc::Callback>(&moho::CON_ExecutePasteBuffer));
+  CConFunc gCConFunc_ExecutePasteBuffer(
+    "ExecutePasteBuffer",
+    kConsoleStartupConExecutePasteBufferDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::CON_ExecutePasteBuffer();
+    }
+  );
 
   /**
    * Address: 0x00BDF780 (FUN_00BDF780, dynamic initializer for `gCConFunc_UI_ResetView`)
@@ -3946,7 +3839,11 @@ namespace
    * Address: 0x00BE4890 (FUN_00BE4890, dynamic initializer for `gCConFunc_IN_DumpKeyBindings`)
    * Address: 0x00C06790 (FUN_00C06790, dynamic atexit destructor for `gCConFunc_IN_DumpKeyBindings`)
    */
-  CConFunc gCConFunc_IN_DumpKeyBindings("IN_DumpKeyBindings", kConsoleStartupConInDumpKeyBindingsDescription, &moho::IN_DumpKeyBindings);
+  CConFunc gCConFunc_IN_DumpKeyBindings(
+    "IN_DumpKeyBindings",
+    kConsoleStartupConInDumpKeyBindingsDescription,
+    &moho::IN_DumpKeyBindings
+  );
 
   /**
    * Address: 0x00BE48D0 (FUN_00BE48D0, dynamic initializer for `gCConFunc_IN_SetKeyName`)
@@ -3958,37 +3855,59 @@ namespace
    * Address: 0x00BE4910 (FUN_00BE4910, dynamic initializer for `gCConFunc_IN_DumpKeyNames`)
    * Address: 0x00C067F0 (FUN_00C067F0, dynamic atexit destructor for `gCConFunc_IN_DumpKeyNames`)
    */
-  CConFunc gCConFunc_IN_DumpKeyNames("IN_DumpKeyNames", kConsoleStartupConInDumpKeyNamesDescription, &moho::IN_DumpKeyNames);
+  CConFunc
+    gCConFunc_IN_DumpKeyNames("IN_DumpKeyNames", kConsoleStartupConInDumpKeyNamesDescription, &moho::IN_DumpKeyNames);
 
   /**
    * Address: 0x00BC3F40 (FUN_00BC3F40, dynamic initializer for `gCConFunc_d3d_AntiAliasingSamples`)
    * Address: 0x00BEF0E0 (FUN_00BEF0E0, dynamic atexit destructor for `gCConFunc_d3d_AntiAliasingSamples`)
    */
-  CConFunc gCConFunc_d3d_AntiAliasingSamples("d3d_AntiAliasingSamples", kConsoleStartupConD3DAntiAliasingSamplesDescription, &CD3DEffect::CON_d3d_AntiAliasingSamples);
+  CConFunc gCConFunc_d3d_AntiAliasingSamples(
+    "d3d_AntiAliasingSamples",
+    kConsoleStartupConD3DAntiAliasingSamplesDescription,
+    &CD3DEffect::CON_d3d_AntiAliasingSamples
+  );
 
   /**
    * Address: 0x00BC4150 (FUN_00BC4150, dynamic initializer for `gCConFunc_ren_MipSkipLevels`)
    * Address: 0x00BEF1F0 (FUN_00BEF1F0, dynamic atexit destructor for `gCConFunc_ren_MipSkipLevels`)
    */
-  CConFunc gCConFunc_ren_MipSkipLevels("ren_MipSkipLevels", kConsoleStartupConRenMipSkipLevelsDescription, &CON_ren_MipSkipLevels);
+  CConFunc gCConFunc_ren_MipSkipLevels(
+    "ren_MipSkipLevels",
+    kConsoleStartupConRenMipSkipLevelsDescription,
+    &CON_ren_MipSkipLevels
+  );
 
   /**
    * Address: 0x00BC4190 (FUN_00BC4190, dynamic initializer for `gCConFunc_DumpPreloadedTextures`)
    * Address: 0x00BEF220 (FUN_00BEF220, dynamic atexit destructor for `gCConFunc_DumpPreloadedTextures`)
    */
-  CConFunc gCConFunc_DumpPreloadedTextures("DumpPreloadedTextures", kConsoleStartupConDumpPreloadedTexturesDescription, &CON_DumpPreloadedTextures);
+  CConFunc gCConFunc_DumpPreloadedTextures(
+    "DumpPreloadedTextures",
+    kConsoleStartupConDumpPreloadedTexturesDescription,
+    &CON_DumpPreloadedTextures
+  );
 
   /**
    * Address: 0x00BE3FF0 (FUN_00BE3FF0, dynamic initializer for `gCConFunc_StartCommandMode`)
    * Address: 0x00C06160 (FUN_00C06160, dynamic atexit destructor for `gCConFunc_StartCommandMode`)
    */
-  CConFunc gCConFunc_StartCommandMode("StartCommandMode", kConsoleStartupConStartCommandModeDescription, &CON_StartCommandMode);
+  CConFunc gCConFunc_StartCommandMode(
+    "StartCommandMode",
+    kConsoleStartupConStartCommandModeDescription,
+    &CON_StartCommandMode
+  );
 
   /**
    * Address: 0x00BE40B0 (FUN_00BE40B0, dynamic initializer for `gCConFunc_DebugGenerateBuildTemplateFromSelection`)
-   * Address: 0x00C061F0 (FUN_00C061F0, dynamic atexit destructor for `gCConFunc_DebugGenerateBuildTemplateFromSelection`)
+   * Address: 0x00C061F0 (FUN_00C061F0, dynamic atexit destructor for
+   * `gCConFunc_DebugGenerateBuildTemplateFromSelection`)
    */
-  CConFunc gCConFunc_DebugGenerateBuildTemplateFromSelection("DebugGenerateBuildTemplateFromSelection", kConsoleStartupConDebugGenerateBuildTemplateDescription, &CON_DebugGenerateBuildTemplateFromSelection);
+  CConFunc gCConFunc_DebugGenerateBuildTemplateFromSelection(
+    "DebugGenerateBuildTemplateFromSelection",
+    kConsoleStartupConDebugGenerateBuildTemplateDescription,
+    &CON_DebugGenerateBuildTemplateFromSelection
+  );
 
   /**
    * Address: 0x00BE3F70 (FUN_00BE3F70, dynamic initializer for `gCConFunc_CreateProp`)
@@ -4012,13 +3931,18 @@ namespace
    * Address: 0x00BDF990 (FUN_00BDF990, dynamic initializer for `gCConFunc_CopySelectedUnitsToClipboard`)
    * Address: 0x00C03720 (FUN_00C03720, dynamic atexit destructor for `gCConFunc_CopySelectedUnitsToClipboard`)
    */
-  CConFunc gCConFunc_CopySelectedUnitsToClipboard("CopySelectedUnitsToClipboard", kConsoleStartupConCopySelectedUnitsToClipboardDescription, &CON_CopySelectedUnitsToClipboard);
+  CConFunc gCConFunc_CopySelectedUnitsToClipboard(
+    "CopySelectedUnitsToClipboard",
+    kConsoleStartupConCopySelectedUnitsToClipboardDescription,
+    &CON_CopySelectedUnitsToClipboard
+  );
 
   /**
    * Address: 0x00BE4170 (FUN_00BE4170, dynamic initializer for `gCConFunc_ProcessInfoPair`)
    * Address: 0x00C06280 (FUN_00C06280, dynamic atexit destructor for `gCConFunc_ProcessInfoPair`)
    */
-  CConFunc gCConFunc_ProcessInfoPair("ProcessInfoPair", kConsoleStartupConProcessInfoPairDescription, &CON_ProcessInfoPair);
+  CConFunc
+    gCConFunc_ProcessInfoPair("ProcessInfoPair", kConsoleStartupConProcessInfoPairDescription, &CON_ProcessInfoPair);
 
   /**
    * Address: 0x00BE3FB0 (FUN_00BE3FB0, dynamic initializer for `gCConFunc_IssueCommand`)
@@ -4036,31 +3960,49 @@ namespace
    * Address: 0x00BD44C0 (FUN_00BD44C0, dynamic initializer for `gCConFunc_EFX_CreateEmitterWindow`)
    * Address: 0x00BFBF50 (FUN_00BFBF50, dynamic atexit destructor for `gCConFunc_EFX_CreateEmitterWindow`)
    */
-  CConFunc gCConFunc_EFX_CreateEmitterWindow("EFX_CreateEmitterWindow", kConsoleStartupConEfxCreateEmitterWindowDescription, &moho::EFX_CreateEmitterWindow);
+  CConFunc gCConFunc_EFX_CreateEmitterWindow(
+    "EFX_CreateEmitterWindow",
+    kConsoleStartupConEfxCreateEmitterWindowDescription,
+    &moho::EFX_CreateEmitterWindow
+  );
 
   /**
    * Address: 0x00BC7270 (FUN_00BC7270, dynamic initializer for `gCConFunc_exit`)
    * Address: 0x00BF1880 (FUN_00BF1880, dynamic atexit destructor for `gCConFunc_exit`)
    */
-  CConFunc gCConFunc_exit("exit", kConsoleStartupConExitDescription, reinterpret_cast<CConFunc::Callback>(&WIN_AppRequestExit));
+  CConFunc gCConFunc_exit("exit", kConsoleStartupConExitDescription, [](const fa::vector<fa::string>&) {
+    WIN_AppRequestExit();
+  });
 
   /**
    * Address: 0x00BC7360 (FUN_00BC7360, dynamic initializer for `gCConFunc_WIN_ToggleLogDialog`)
    * Address: 0x00BF18E0 (FUN_00BF18E0, dynamic atexit destructor for `gCConFunc_WIN_ToggleLogDialog`)
    */
-  CConFunc gCConFunc_WIN_ToggleLogDialog("WIN_ToggleLogDialog", kConsoleStartupConWinToggleLogDialogDescription, reinterpret_cast<CConFunc::Callback>(&WIN_ToggleLogDialog));
+  CConFunc gCConFunc_WIN_ToggleLogDialog(
+    "WIN_ToggleLogDialog",
+    kConsoleStartupConWinToggleLogDialogDescription,
+    [](const fa::vector<fa::string>&) {
+      WIN_ToggleLogDialog();
+    }
+  );
 
   /**
    * Address: 0x00BC73A0 (FUN_00BC73A0, dynamic initializer for `gCConFunc_WIN_ShowLogDialog`)
    * Address: 0x00BF1910 (FUN_00BF1910, dynamic atexit destructor for `gCConFunc_WIN_ShowLogDialog`)
    */
-  CConFunc gCConFunc_WIN_ShowLogDialog("WIN_ShowLogDialog", kConsoleStartupConWinShowLogDialogDescription, reinterpret_cast<CConFunc::Callback>(&WIN_ShowLogDialog));
+  CConFunc gCConFunc_WIN_ShowLogDialog(
+    "WIN_ShowLogDialog",
+    kConsoleStartupConWinShowLogDialogDescription,
+    (&WIN_ShowLogDialog)
+  );
 
   /**
    * Address: 0x00BC73F0 (FUN_00BC73F0, dynamic initializer for `gCConFunc_WxInputBox`)
    * Address: 0x00BF1960 (FUN_00BF1960, dynamic atexit destructor for `gCConFunc_WxInputBox`)
+   *
+   * The binary's command is `WxInputBox`; it is `InputBox` since the box left wxWindows (issue #415).
    */
-  CConFunc gCConFunc_WxInputBox("WxInputBox", kConsoleStartupConWxInputBoxDescription, reinterpret_cast<CConFunc::Callback>(&CON_WxInputBox));
+  CConFunc gCConFunc_InputBox("InputBox", kConsoleStartupConInputBoxDescription, (&CON_InputBox));
 
   /**
    * Address: 0x00BC3D00 (FUN_00BC3D00, dynamic initializer for `gTConVar_graphics_Fidelity`)
@@ -4086,11 +4028,8 @@ namespace
    * Address: 0x00BC3D80 (FUN_00BC3D80, dynamic initializer for `gTConVar_shadow_Fidelity`)
    * Address: 0x00BEEF90 (FUN_00BEEF90, dynamic atexit destructor for `gTConVar_shadow_Fidelity`)
    */
-  TConVar<int> gTConVar_shadow_Fidelity(
-    "shadow_Fidelity",
-    kConsoleStartupShadowFidelityDescription,
-    &moho::shadow_Fidelity
-  );
+  TConVar<int>
+    gTConVar_shadow_Fidelity("shadow_Fidelity", kConsoleStartupShadowFidelityDescription, &moho::shadow_Fidelity);
 
   /**
    * Address: 0x00BC3DC0 (FUN_00BC3DC0, dynamic initializer for `gTConVar_shadow_FidelitySupported`)
@@ -4106,11 +4045,8 @@ namespace
    * Address: 0x00BC3E00 (FUN_00BC3E00, dynamic initializer for `gTConVar_d3d_UseRefRast`)
    * Address: 0x00BEEFF0 (FUN_00BEEFF0, dynamic atexit destructor for `gTConVar_d3d_UseRefRast`)
    */
-  TConVar<bool> gTConVar_d3d_UseRefRast(
-    "d3d_UseRefRast",
-    kConsoleStartupD3DUseRefRastDescription,
-    &moho::d3d_UseRefRast
-  );
+  TConVar<bool>
+    gTConVar_d3d_UseRefRast("d3d_UseRefRast", kConsoleStartupD3DUseRefRastDescription, &moho::d3d_UseRefRast);
 
   /**
    * Address: 0x00BC3E40 (FUN_00BC3E40, dynamic initializer for `gTConVar_d3d_ForceSoftwareVP`)
@@ -4126,11 +4062,8 @@ namespace
    * Address: 0x00BC3E80 (FUN_00BC3E80, dynamic initializer for `gTConVar_d3d_NoPureDevice`)
    * Address: 0x00BEF050 (FUN_00BEF050, dynamic atexit destructor for `gTConVar_d3d_NoPureDevice`)
    */
-  TConVar<bool> gTConVar_d3d_NoPureDevice(
-    "d3d_NoPureDevice",
-    kConsoleStartupD3DNoPureDeviceDescription,
-    &moho::d3d_NoPureDevice
-  );
+  TConVar<bool>
+    gTConVar_d3d_NoPureDevice("d3d_NoPureDevice", kConsoleStartupD3DNoPureDeviceDescription, &moho::d3d_NoPureDevice);
 
   /**
    * Address: 0x00BC3EC0 (FUN_00BC3EC0, dynamic initializer for `gTConVar_d3d_ForceDirect3DDebugEnabled`)
@@ -4160,19 +4093,31 @@ namespace
    * Address: 0x00BE40F0 (FUN_00BE40F0, dynamic initializer for `gCConFunc_DebugClearBuildTemplates`)
    * Address: 0x00C06220 (FUN_00C06220, dynamic atexit destructor for `gCConFunc_DebugClearBuildTemplates`)
    */
-  CConFunc gCConFunc_DebugClearBuildTemplates("DebugClearBuildTemplates", kConsoleStartupConDebugClearBuildTemplatesDescription, &CON_DebugClearBuildTemplates);
+  CConFunc gCConFunc_DebugClearBuildTemplates(
+    "DebugClearBuildTemplates",
+    kConsoleStartupConDebugClearBuildTemplatesDescription,
+    &CON_DebugClearBuildTemplates
+  );
 
   /**
    * Address: 0x00BE4030 (FUN_00BE4030, dynamic initializer for `gCConFunc_KillSelectedUnits`)
    * Address: 0x00C06190 (FUN_00C06190, dynamic atexit destructor for `gCConFunc_KillSelectedUnits`)
    */
-  CConFunc gCConFunc_KillSelectedUnits("KillSelectedUnits", kConsoleStartupConKillSelectedUnitsDescription, &CON_KillSelectedUnits);
+  CConFunc gCConFunc_KillSelectedUnits(
+    "KillSelectedUnits",
+    kConsoleStartupConKillSelectedUnitsDescription,
+    &CON_KillSelectedUnits
+  );
 
   /**
    * Address: 0x00BE4070 (FUN_00BE4070, dynamic initializer for `gCConFunc_DestroySelectedUnits`)
    * Address: 0x00C061C0 (FUN_00C061C0, dynamic atexit destructor for `gCConFunc_DestroySelectedUnits`)
    */
-  CConFunc gCConFunc_DestroySelectedUnits("DestroySelectedUnits", kConsoleStartupConDestroySelectedUnitsDescription, &CON_DestroySelectedUnits);
+  CConFunc gCConFunc_DestroySelectedUnits(
+    "DestroySelectedUnits",
+    kConsoleStartupConDestroySelectedUnitsDescription,
+    &CON_DestroySelectedUnits
+  );
 
   /**
    * Address: 0x00BE7CE0 (FUN_00BE7CE0, dynamic initializer for `gCConFunc_AddSplat`)
@@ -4202,7 +4147,8 @@ namespace
    * Address: 0x00BE7810 (FUN_00BE7810, dynamic initializer for `gCConFunc_WLD_RestartBeat`)
    * Address: 0x00C08280 (FUN_00C08280, dynamic atexit destructor for `gCConFunc_WLD_RestartBeat`)
    */
-  CConFunc gCConFunc_WLD_RestartBeat("WLD_RestartBeat", kConsoleStartupWLDRestartBeatDescription, &moho::WLD_RestartBeat);
+  CConFunc
+    gCConFunc_WLD_RestartBeat("WLD_RestartBeat", kConsoleStartupWLDRestartBeatDescription, &moho::WLD_RestartBeat);
 
   /**
    * Address: 0x00BE7430 (FUN_00BE7430, dynamic initializer for `gCConFunc_WLD_SingleStep`)
@@ -4230,7 +4176,8 @@ namespace
    * Address: 0x00BE7850 (FUN_00BE7850, dynamic initializer for `gCConFunc_WLD_AdvanceBeat`)
    * Address: 0x00C082B0 (FUN_00C082B0, dynamic atexit destructor for `gCConFunc_WLD_AdvanceBeat`)
    */
-  CConFunc gCConFunc_WLD_AdvanceBeat("WLD_AdvanceBeat", kConsoleStartupWLDAdvanceBeatDescription, &moho::WLD_AdvanceBeat);
+  CConFunc
+    gCConFunc_WLD_AdvanceBeat("WLD_AdvanceBeat", kConsoleStartupWLDAdvanceBeatDescription, &moho::WLD_AdvanceBeat);
 
   /**
    * Address: 0x00BE95C0 (FUN_00BE95C0, dynamic initializer for `gCConFunc_FindUnit`)
@@ -4275,9 +4222,9 @@ namespace
    * loop already builds).
    */
   void PrintAniSkeletonBoneHierarchy(
-    const msvc8::set<const moho::SAniSkelBone*>& children,
+    const fa::set<const moho::SAniSkelBone*>& children,
     const std::uint32_t indent,
-    msvc8::map<const moho::SAniSkelBone*, msvc8::set<const moho::SAniSkelBone*>>& dedupTree
+    fa::map<const moho::SAniSkelBone*, fa::set<const moho::SAniSkelBone*>>& dedupTree
   )
   {
     for (const moho::SAniSkelBone* const bone : children) {
@@ -4287,12 +4234,12 @@ namespace
       const int rawPadWidth = 50 - static_cast<int>(nameLength) - static_cast<int>(indent);
       const std::size_t namePadWidth = static_cast<std::size_t>(rawPadWidth > 2 ? rawPadWidth : 2);
 
-      msvc8::string indentPad;
+      fa::string indentPad;
       (void)indentPad.assign(static_cast<std::size_t>(indent), ' ');
-      msvc8::string namePad;
+      fa::string namePad;
       (void)namePad.assign(namePadWidth, ' ');
 
-      const msvc8::string line = gpg::STR_Printf(
+      const fa::string line = gpg::STR_Printf(
         "%s%s%sp=<%5.2f,%5.2f,%5.2f> q=<%5.2f,%5.2f,%5.2f,%5.2f>",
         indentPad.c_str(),
         bone->mBoneName,
@@ -4374,11 +4321,11 @@ namespace moho
     // keeping the shared_ptr alive across the walk below.
     const CAniSkel* skel;
     {
-      const boost::shared_ptr<const CAniSkel> skelHandle = pose->GetSkeleton();
+      const std::shared_ptr<const CAniSkel> skelHandle = pose->GetSkeleton();
       skel = skelHandle.get();
     }
 
-    msvc8::map<const SAniSkelBone*, msvc8::set<const SAniSkelBone*>> dedupTree;
+    fa::map<const SAniSkelBone*, fa::set<const SAniSkelBone*>> dedupTree;
     for (const SAniSkelBone& bone : skel->mBones) {
       const SAniSkelBone* const parentBone = skel->GetBone(static_cast<std::uint32_t>(bone.mParentBoneIndex));
       (void)dedupTree[parentBone].insert(&bone);
@@ -4397,7 +4344,13 @@ namespace
    * Address: 0x00BDF8D0 (FUN_00BDF8D0, dynamic initializer for `gCConFunc_ANI_DumpSkeleton`)
    * Address: 0x00C036D0 (FUN_00C036D0, dynamic atexit destructor for `gCConFunc_ANI_DumpSkeleton`)
    */
-  CConFunc gCConFunc_ANI_DumpSkeleton("ANI_DumpSkeleton", kConsoleStartupConAniDumpSkeletonDescription, reinterpret_cast<CConFunc::Callback>(&moho::ANI_DumpSkeleton));
+  CConFunc gCConFunc_ANI_DumpSkeleton(
+    "ANI_DumpSkeleton",
+    kConsoleStartupConAniDumpSkeletonDescription,
+    [](const fa::vector<fa::string>&) {
+      moho::ANI_DumpSkeleton();
+    }
+  );
 } // namespace
 
 namespace moho
@@ -4405,7 +4358,9 @@ namespace moho
   /**
    * Address: 0x00834F90 (FUN_00834F90, Moho::ShowStats)
    */
-  void ShowStats(const msvc8::vector<msvc8::string>& args)
+  void ShowStats(
+    const fa::vector<fa::string>& args
+  )
   {
     CUIManager* const uiManager = g_UIManager;
     if (!uiManager || uiManager->mFrames.Empty() || !uiManager->mFrames[0]) {
@@ -4418,10 +4373,10 @@ namespace moho
       LuaPlus::LuaState::Error(state, "failed to load \"/lua/debug/EngineStats.lua\" module");
     }
 
-    msvc8::string mode = "all";
+    fa::string mode = "all";
     if (args.size() > 1u) {
-      if (const msvc8::string* const requestedMode = ConCommandArg(args, 1u); requestedMode != nullptr) {
-        mode.assign(*requestedMode, 0, msvc8::string::npos);
+      if (const fa::string* const requestedMode = ConCommandArg(args, 1u); requestedMode != nullptr) {
+        mode.assign(*requestedMode, 0, fa::string::npos);
       }
     }
 
@@ -4433,7 +4388,9 @@ namespace moho
   /**
    * Address: 0x00835160 (FUN_00835160, Moho::ShowArmyStats)
    */
-  void ShowArmyStats(const msvc8::vector<msvc8::string>& args)
+  void ShowArmyStats(
+    const fa::vector<fa::string>& args
+  )
   {
     CUIManager* const uiManager = g_UIManager;
     if (!uiManager || uiManager->mFrames.Empty() || !uiManager->mFrames[0]) {
@@ -4458,15 +4415,15 @@ namespace moho
 
     int armyIndex = static_cast<int>(focusArmy->mArmyIndex);
     if (args.size() > 1u) {
-      if (const msvc8::string* const requestedArmy = ConCommandArg(args, 1u); requestedArmy != nullptr) {
+      if (const fa::string* const requestedArmy = ConCommandArg(args, 1u); requestedArmy != nullptr) {
         armyIndex = std::atoi(requestedArmy->c_str());
       }
     }
 
-    msvc8::string mode = "all";
+    fa::string mode = "all";
     if (args.size() > 2u) {
-      if (const msvc8::string* const requestedMode = ConCommandArg(args, 2u); requestedMode != nullptr) {
-        mode.assign(*requestedMode, 0, msvc8::string::npos);
+      if (const fa::string* const requestedMode = ConCommandArg(args, 2u); requestedMode != nullptr) {
+        mode.assign(*requestedMode, 0, fa::string::npos);
       }
     }
 

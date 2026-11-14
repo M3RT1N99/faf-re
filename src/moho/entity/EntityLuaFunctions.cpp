@@ -6,7 +6,7 @@ namespace
   // _c_CreateEntity global Lua factory (name/help preserved from FUN_006922D0).
   constexpr const char* kCreateEntityName = "_c_CreateEntity";
   constexpr const char* kCreateEntityHelpText = "_c_CreateEntity(spec)";
-}
+} // namespace
 
 namespace
 {
@@ -64,14 +64,16 @@ namespace
   constexpr const char* kEntityFallDownName = "FallDown";
   constexpr const char* kEntitySinkAwayName = "SinkAway";
   constexpr const char* kEntitySetCollisionShapeHelpText =
-    "Entity:SetCollisionShape(['Box'|'Sphere'|'None'], centerX, Y, Z, size) -- size is radius for sphere, x,y,z extent for box";
+    "Entity:SetCollisionShape(['Box'|'Sphere'|'None'], centerX, Y, Z, size) -- size is radius for sphere, x,y,z extent "
+    "for box";
   constexpr const char* kEntityAddLocalImpulseHelpText = "AddLocalImpulse(self, Ix, Iy, Iz, Px, Py, Pz)";
   constexpr const char* kEntityAddWorldImpulseHelpText = "AddWorldImpulse(self, Ix, Iy, Iz, Px, Py, Pz)";
   constexpr const char* kEntityReachedMaxShootersHelpText = "ReachedMaxShooters()";
   constexpr const char* kEntityGetOrientationHelpText = "Entity:GetOrientation()";
   constexpr const char* kEntityGetHeadingHelpText = "Entity:GetHeading()";
   constexpr const char* kEntitySetMeshHelpText = "Entity:SetMesh(meshBp, bool keepActor): Change mesh on the fly";
-  constexpr const char* kEntityGetScaleHelpText = "Entity:GetScale() -> sx,sy,sz -- return current draw scale of this entity";
+  constexpr const char* kEntityGetScaleHelpText =
+    "Entity:GetScale() -> sx,sy,sz -- return current draw scale of this entity";
   constexpr const char* kEntitySetScaleHelpText = "Entity:SetScale(s) or Entity:SetScale(sx,sy,sz)";
   constexpr const char* kEntityAddManualScrollerHelpText = "Entity:AddManualScroller(scrollSpeed1, scrollSpeed2)";
   constexpr const char* kEntityAddThreadScrollerHelpText = "Entity:AddThreadScroller(sideDist, scrollMult)";
@@ -135,7 +137,10 @@ namespace
     "    duration - length of time to shake for, in seconds";
   constexpr const char* kEntityLuaClassName = "Entity";
 
-  [[nodiscard]] float ReadLuaNumberArgument(LuaPlus::LuaState* const state, const int stackIndex)
+  [[nodiscard]] float ReadLuaNumberArgument(
+    LuaPlus::LuaState* const state,
+    const int stackIndex
+  )
   {
     LuaPlus::LuaStackObject arg(state, stackIndex);
     if (lua_type(state->m_state, stackIndex) != LUA_TNUMBER) {
@@ -144,19 +149,26 @@ namespace
     return static_cast<float>(lua_tonumber(state->m_state, stackIndex));
   }
 
-  void AddStatCounter(StatItem* const statItem, const long delta) noexcept
+  void AddStatCounter(
+    StatItem* const statItem,
+    const long delta
+  ) noexcept
   {
     if (!statItem) {
       return;
     }
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
     statItem->AddPrimaryBits(delta);
 #else
     statItem->mPrimaryValueBits += static_cast<std::int32_t>(delta);
 #endif
   }
 
-  void AccumulateArmyRealtimeStat(CArmyImpl* const army, const msvc8::string& statPath, const long delta)
+  void AccumulateArmyRealtimeStat(
+    CArmyImpl* const army,
+    const fa::string& statPath,
+    const long delta
+  )
   {
     if (army == nullptr || statPath.empty()) {
       return;
@@ -176,7 +188,10 @@ namespace
     AddStatCounter(statItem, delta);
   }
 
-  void UpdateEntityKillRealtimeStats(Entity* const victim, Entity* const instigator)
+  void UpdateEntityKillRealtimeStats(
+    Entity* const victim,
+    Entity* const instigator
+  )
   {
     if (victim == nullptr || instigator == nullptr) {
       return;
@@ -185,14 +200,14 @@ namespace
     // 0x00692080 / 0x00692181 (cfunc_EntityKillL): each lane is gated on that
     // entity's own `RealtimeStatsEnabled` byte (+0x1F8) before its ArmyRef.
     if (victim->IsRealtimeStatsEnabled() && victim->ArmyRef != nullptr) {
-      msvc8::string statPath = msvc8::string(kEntityRealtimeStatsPrefix) + victim->GetUniqueName();
+      fa::string statPath = fa::string(kEntityRealtimeStatsPrefix) + victim->GetUniqueName();
       statPath += gpg::STR_Printf("_KilledBy_Army%d_", instigator->GetArmyIndex()); // 0x006920E6: 0-based
       statPath += ResolveEntityBlueprintId(instigator);
       AccumulateArmyRealtimeStat(victim->ArmyRef, statPath, 1L);
     }
 
     if (instigator->IsRealtimeStatsEnabled() && instigator->ArmyRef != nullptr) {
-      msvc8::string statPath = msvc8::string(kEntityRealtimeStatsPrefix) + instigator->GetUniqueName();
+      fa::string statPath = fa::string(kEntityRealtimeStatsPrefix) + instigator->GetUniqueName();
       statPath += gpg::STR_Printf("_Kills_Army%d_", victim->GetArmyIndex()); // 0x006921E6: 0-based
       statPath += ResolveEntityBlueprintId(victim);
       AccumulateArmyRealtimeStat(instigator->ArmyRef, statPath, 1L);
@@ -278,11 +293,7 @@ namespace
   ) noexcept
   {
     if (random == nullptr) {
-      return Wm3::Vector3f{
-        blueprint.Physics.PositionX,
-        blueprint.Physics.PositionY,
-        blueprint.Physics.PositionZ
-      };
+      return Wm3::Vector3f{blueprint.Physics.PositionX, blueprint.Physics.PositionY, blueprint.Physics.PositionZ};
     }
 
     return SampleProjectileSpawnOffset(*random, blueprint);
@@ -299,7 +310,9 @@ namespace
    *   y = (z*y - x*w) * 2
    *   z = 1 - (y*y + x*x) * 2
    */
-  [[nodiscard]] Wm3::Vector3f ResolveBoneForwardVector(const moho::VTransform& transform) noexcept
+  [[nodiscard]] Wm3::Vector3f ResolveBoneForwardVector(
+    const moho::VTransform& transform
+  ) noexcept
   {
     const float qw = transform.orient_.w;
     const float qx = transform.orient_.x;
@@ -329,12 +342,17 @@ namespace
    * What it does:
    * Appends one camera-shake request to the sim sync camera-shake queue.
    */
-  void func_ShakeCamera(msvc8::vector<moho::SCamShakeParams>& shakeQueue, const moho::SCamShakeParams& request)
+  void func_ShakeCamera(
+    fa::vector<moho::SCamShakeParams>& shakeQueue,
+    const moho::SCamShakeParams& request
+  )
   {
     shakeQueue.push_back(request);
   }
 
-  [[nodiscard]] gpg::RRef MakeVisibilityModeRef(moho::EVisibilityMode* const visibilityMode)
+  [[nodiscard]] gpg::RRef MakeVisibilityModeRef(
+    moho::EVisibilityMode* const visibilityMode
+  )
   {
     gpg::RRef enumRef{};
     if (visibilityMode == nullptr) {
@@ -389,7 +407,9 @@ namespace
     bool skipBallistic;
   };
 
-  [[nodiscard]] EntityDetachAllArgs DecodeEntityDetachAllArgs(LuaPlus::LuaState* const state)
+  [[nodiscard]] EntityDetachAllArgs DecodeEntityDetachAllArgs(
+    LuaPlus::LuaState* const state
+  )
   {
     EntityDetachAllArgs args{};
     args.entity = nullptr;
@@ -399,7 +419,9 @@ namespace
     lua_State* const rawState = state->m_state;
     const int argumentCount = lua_gettop(rawState);
     if (argumentCount < 2 || argumentCount > 3) {
-      LuaPlus::LuaState::Error(state, "%s\n  expected between %d and %d args, but got %d", kEntityDetachAllHelpText, 2, 3, argumentCount);
+      LuaPlus::LuaState::Error(
+        state, "%s\n  expected between %d and %d args, but got %d", kEntityDetachAllHelpText, 2, 3, argumentCount
+      );
     }
 
     lua_settop(rawState, 3);
@@ -426,26 +448,27 @@ namespace
       return {};
     }
 
-    const auto* const baseBlueprint = reinterpret_cast<const moho::RBlueprint*>(blueprint);
-    return baseBlueprint->GetLuaBlueprint(state);
+    return blueprint->GetLuaBlueprint(state);
   }
 
-  [[nodiscard]] const char* ResolveEntityBlueprintName(const moho::Entity* entity) noexcept
+  [[nodiscard]] const char* ResolveEntityBlueprintName(
+    const moho::Entity* entity
+  ) noexcept
   {
     if (!entity || !entity->BluePrint) {
       return "";
     }
 
     const moho::REntityBlueprint* const blueprint = entity->BluePrint;
-    if (!blueprint->mBlueprintLabel.empty()) {
-      return blueprint->mBlueprintLabel.c_str();
+    if (!blueprint->mDescription.empty()) {
+      return blueprint->mDescription.c_str();
     }
     if (!blueprint->mBlueprintId.empty()) {
       return blueprint->mBlueprintId.c_str();
     }
     return "";
   }
-}
+} // namespace
 
 namespace moho
 {
@@ -456,7 +479,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityCreateProjectileL`.
    */
-  int cfunc_EntityCreateProjectile(lua_State* const luaContext)
+  int cfunc_EntityCreateProjectile(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityCreateProjectileL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -488,7 +513,9 @@ namespace moho
    * Spawns one projectile from `(entity, projectileBlueprint[, offset][,dir])`
    * and returns the spawned projectile Lua object.
    */
-  int cfunc_EntityCreateProjectileL(LuaPlus::LuaState* const state)
+  int cfunc_EntityCreateProjectileL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -571,19 +598,10 @@ namespace moho
     launchTransform.pos_.z = sourceTransform.pos_.z + launchOffset.z;
 
     const CAiTarget target = MakeDefaultProjectileTarget();
-    const msvc8::string damageTypeName("Normal");
+    const fa::string damageTypeName("Normal");
 
     Projectile* const projectile = PROJ_Create(
-      sim,
-      projectileBlueprint,
-      entity->ArmyRef,
-      entity,
-      launchTransform,
-      0.0f,
-      0.0f,
-      damageTypeName,
-      target,
-      true
+      sim, projectileBlueprint, entity->ArmyRef, entity, launchTransform, 0.0f, 0.0f, damageTypeName, target, true
     );
     projectile->mLuaObj.PushStack(state);
     return 1;
@@ -596,7 +614,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntityCreateProjectileAtBoneL`.
    */
-  int cfunc_EntityCreateProjectileAtBone(lua_State* const luaContext)
+  int cfunc_EntityCreateProjectileAtBone(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityCreateProjectileAtBoneL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -628,7 +648,9 @@ namespace moho
    * Spawns one projectile from a resolved entity bone, applies randomized
    * launch speed, and returns the spawned projectile Lua object.
    */
-  int cfunc_EntityCreateProjectileAtBoneL(LuaPlus::LuaState* const state)
+  int cfunc_EntityCreateProjectileAtBoneL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -648,12 +670,12 @@ namespace moho
     }
 
     // STR_InitFilename + GetProjectileBlueprint, remembered per name (sim_BlueprintNameCache).
-    RProjectileBlueprint* const projectileBlueprint =
-      (entity && entity->SimulationRef && entity->SimulationRef->mRules)
-        ? RULE_FindProjectileBlueprintByName(entity->SimulationRef->mRules, projectileBlueprintName)
-        : nullptr;
+    RProjectileBlueprint* const projectileBlueprint = (entity && entity->SimulationRef && entity->SimulationRef->mRules)
+      ? RULE_FindProjectileBlueprintByName(entity->SimulationRef->mRules, projectileBlueprintName)
+      : nullptr;
     if (!projectileBlueprint) {
-      const msvc8::string message = gpg::STR_Printf("CreateProjectileAtBone: Invalid blueprint %s", projectileBlueprintName);
+      const fa::string message =
+        gpg::STR_Printf("CreateProjectileAtBone: Invalid blueprint %s", projectileBlueprintName);
       lua_pushstring(rawState, message.c_str());
       (void)lua_gettop(rawState);
       lua_error(rawState);
@@ -677,7 +699,7 @@ namespace moho
     const float launchSpeed = projectileBlueprint->GetRandomInitialSpeed(random);
 
     const CAiTarget target = MakeDefaultProjectileTarget();
-    const msvc8::string damageTypeName("Normal");
+    const fa::string damageTypeName("Normal");
 
     Projectile* const projectile = PROJ_Create(
       entity->SimulationRef,
@@ -705,7 +727,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityShakeCameraL`.
    */
-  int cfunc_EntityShakeCamera(lua_State* const luaContext)
+  int cfunc_EntityShakeCamera(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityShakeCameraL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -736,7 +760,9 @@ namespace moho
    * Resolves `(entity, radius, max, min, duration)` and enqueues one camera
    * shake request centered on the entity world position.
    */
-  int cfunc_EntityShakeCameraL(LuaPlus::LuaState* const state)
+  int cfunc_EntityShakeCameraL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -819,7 +845,9 @@ namespace moho
    * heap-constructs one Entity bound to arg 1's Lua object, and pushes the new
    * entity's Lua userdata.
    */
-  int cfunc__c_CreateEntityL(LuaPlus::LuaState* const state)
+  int cfunc__c_CreateEntityL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kCreateEntityHelpText);
@@ -853,14 +881,11 @@ namespace moho
       }
     }
 
-    // The binary allocates raw storage, constructs in place, then pushes the owned
-    // Lua object; keep the explicit new/ctor split for 1:1 behavior.
-    auto* const storage = static_cast<Entity*>(::operator new(sizeof(Entity)));
     const LuaPlus::LuaObject entityLuaObject(specObject);
     const EntId reservedId = static_cast<EntId>(
       sim->mEntityDB->DoReserveId((static_cast<std::uint32_t>(armyIndex) | 0x500u) << moho::kEntityIdSourceShift)
     );
-    Entity* const created = new (storage) Entity(entityLuaObject, sim, reservedId);
+    Entity* const created = new Entity(entityLuaObject, sim, reservedId);
 
     created->mLuaObj.PushStack(state);
     return 1;
@@ -875,7 +900,9 @@ namespace moho
    * What it does:
    * Unwraps the raw Lua callback context and forwards to `cfunc__c_CreateEntityL`.
    */
-  int cfunc__c_CreateEntity(lua_State* const luaContext)
+  int cfunc__c_CreateEntity(
+    lua_State* const luaContext
+  )
   {
     return cfunc__c_CreateEntityL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -889,12 +916,7 @@ namespace moho
   CScrLuaInitForm* func__c_CreateEntity_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      kCreateEntityName,
-      &cfunc__c_CreateEntity,
-      nullptr,
-      "<global>",
-      kCreateEntityHelpText
+      moho::SCR_SimLuaInitSet(), kCreateEntityName, &cfunc__c_CreateEntity, nullptr, "<global>", kCreateEntityHelpText
     );
     return &binder;
   }
@@ -905,7 +927,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_GetBlueprintSimL`.
    */
-  int cfunc_GetBlueprintSim(lua_State* const luaContext)
+  int cfunc_GetBlueprintSim(
+    lua_State* const luaContext
+  )
   {
     return cfunc_GetBlueprintSimL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -916,7 +940,9 @@ namespace moho
    * What it does:
    * Resolves one entity arg and pushes that entity blueprint Lua table.
    */
-  int cfunc_GetBlueprintSimL(LuaPlus::LuaState* const state)
+  int cfunc_GetBlueprintSimL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kGetBlueprintSimHelpText);
@@ -957,7 +983,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetAIBrainL`.
    */
-  int cfunc_EntityGetAIBrain(lua_State* const luaContext)
+  int cfunc_EntityGetAIBrain(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetAIBrainL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -968,7 +996,9 @@ namespace moho
    * What it does:
    * Resolves one entity and returns owning army brain Lua object when present.
    */
-  int cfunc_EntityGetAIBrainL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetAIBrainL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetAIBrainHelpText);
@@ -1025,7 +1055,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetBlueprintL`.
    */
-  int cfunc_EntityGetBlueprint(lua_State* const luaContext)
+  int cfunc_EntityGetBlueprint(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetBlueprintL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1036,7 +1068,9 @@ namespace moho
    * What it does:
    * Resolves one optional entity and pushes its blueprint Lua table or nil.
    */
-  int cfunc_EntityGetBlueprintL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetBlueprintL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetBlueprintHelpText);
@@ -1077,7 +1111,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetArmyL`.
    */
-  int cfunc_EntityGetArmy(lua_State* const luaContext)
+  int cfunc_EntityGetArmy(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetArmyL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1088,7 +1124,9 @@ namespace moho
    * What it does:
    * Returns one-based army index for this entity, or `-1` when unowned.
    */
-  int cfunc_EntityGetArmyL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetArmyL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetArmyHelpText);
@@ -1133,7 +1171,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetBoneDirectionL`.
    */
-  int cfunc_EntityGetBoneDirection(lua_State* const luaContext)
+  int cfunc_EntityGetBoneDirection(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetBoneDirectionL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1149,7 +1189,9 @@ namespace moho
    * WildMagic, `.w`-scalar `ToMat3()`) this replaces -- `boneTransform.
    * orient_` is always this engine's scalar-first convention.
    */
-  int cfunc_EntityGetBoneDirectionL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetBoneDirectionL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kEntityGetBoneDirectionHelpText);
@@ -1196,7 +1238,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityIsValidBoneL`.
    */
-  int cfunc_EntityIsValidBone(lua_State* const luaContext)
+  int cfunc_EntityIsValidBone(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityIsValidBoneL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1207,7 +1251,9 @@ namespace moho
    * What it does:
    * Validates one bone identifier (name/index) and returns boolean validity.
    */
-  int cfunc_EntityIsValidBoneL(LuaPlus::LuaState* const state)
+  int cfunc_EntityIsValidBoneL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     const int argumentCount = lua_gettop(rawState);
@@ -1275,7 +1321,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetBoneCountL`.
    */
-  int cfunc_EntityGetBoneCount(lua_State* const luaContext)
+  int cfunc_EntityGetBoneCount(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetBoneCountL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1286,7 +1334,9 @@ namespace moho
    * What it does:
    * Resolves one entity arg and pushes skeleton bone count.
    */
-  int cfunc_EntityGetBoneCountL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetBoneCountL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetBoneCountHelpText);
@@ -1322,7 +1372,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetBoneNameL`.
    */
-  int cfunc_EntityGetBoneName(lua_State* const luaContext)
+  int cfunc_EntityGetBoneName(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetBoneNameL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1333,7 +1385,9 @@ namespace moho
    * What it does:
    * Resolves one bone index and pushes its name or nil.
    */
-  int cfunc_EntityGetBoneNameL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetBoneNameL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kEntityGetBoneNameHelpText);
@@ -1382,7 +1436,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityRequestRefreshUIL`.
    */
-  int cfunc_EntityRequestRefreshUI(lua_State* const luaContext)
+  int cfunc_EntityRequestRefreshUI(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityRequestRefreshUIL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1393,7 +1449,9 @@ namespace moho
    * What it does:
    * Resolves one entity and marks it dirty for downstream UI refresh.
    */
-  int cfunc_EntityRequestRefreshUIL(LuaPlus::LuaState* const state)
+  int cfunc_EntityRequestRefreshUIL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kEntityRequestRefreshUIHelpText);
 
@@ -1428,7 +1486,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityAttachBoneToL`.
    */
-  int cfunc_EntityAttachBoneTo(lua_State* const luaContext)
+  int cfunc_EntityAttachBoneTo(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityAttachBoneToL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1458,7 +1518,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetParentOffsetL`.
    */
-  int cfunc_EntitySetParentOffset(lua_State* const luaContext)
+  int cfunc_EntitySetParentOffset(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetParentOffsetL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1469,7 +1531,9 @@ namespace moho
    * What it does:
    * Rewrites relative attach position/orientation for an already-attached child.
    */
-  int cfunc_EntitySetParentOffsetL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetParentOffsetL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kEntitySetParentOffsetHelpText);
 
@@ -1513,7 +1577,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityDetachFromL`.
    */
-  int cfunc_EntityDetachFrom(lua_State* const luaContext)
+  int cfunc_EntityDetachFrom(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityDetachFromL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1524,7 +1590,9 @@ namespace moho
    * What it does:
    * Detaches this entity from its current parent and pushes success boolean.
    */
-  int cfunc_EntityDetachFromL(LuaPlus::LuaState* const state)
+  int cfunc_EntityDetachFromL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     const int argumentCount = lua_gettop(rawState);
@@ -1579,7 +1647,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetParentL`.
    */
-  int cfunc_EntityGetParent(lua_State* const luaContext)
+  int cfunc_EntityGetParent(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetParentL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1590,7 +1660,9 @@ namespace moho
    * What it does:
    * Pushes attached parent entity Lua object, or `self` when detached.
    */
-  int cfunc_EntityGetParentL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetParentL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetParentHelpText);
 
@@ -1631,7 +1703,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntityGetCollisionExtentsL`.
    */
-  int cfunc_EntityGetCollisionExtents(lua_State* const luaContext)
+  int cfunc_EntityGetCollisionExtents(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetCollisionExtentsL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1661,7 +1735,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityPlaySoundL`.
    */
-  int cfunc_EntityPlaySound(lua_State* const luaContext)
+  int cfunc_EntityPlaySound(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityPlaySoundL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1672,7 +1748,9 @@ namespace moho
    * What it does:
    * Resolves `(entity, soundParams)` and queues one entity-bound sound request.
    */
-  int cfunc_EntityPlaySoundL(LuaPlus::LuaState* const state)
+  int cfunc_EntityPlaySoundL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kEntityPlaySoundHelpText);
@@ -1717,7 +1795,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetAmbientSoundL`.
    */
-  int cfunc_EntitySetAmbientSound(lua_State* const luaContext)
+  int cfunc_EntitySetAmbientSound(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetAmbientSoundL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1729,7 +1809,9 @@ namespace moho
    * Resolves optional detail/rumble sound params and updates entity ambient
    * sound lanes.
    */
-  int cfunc_EntitySetAmbientSoundL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetAmbientSoundL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 3, kEntitySetAmbientSoundHelpText);
@@ -1779,7 +1861,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetFractionCompleteL`.
    */
-  int cfunc_EntityGetFractionComplete(lua_State* const luaContext)
+  int cfunc_EntityGetFractionComplete(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetFractionCompleteL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1790,7 +1874,9 @@ namespace moho
    * What it does:
    * Resolves `self` and returns current build fraction as one Lua number.
    */
-  int cfunc_EntityGetFractionCompleteL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetFractionCompleteL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetFractionCompleteHelpText);
@@ -1826,7 +1912,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityAdjustHealthL`.
    */
-  int cfunc_EntityAdjustHealth(lua_State* const luaContext)
+  int cfunc_EntityAdjustHealth(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityAdjustHealthL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1838,7 +1926,9 @@ namespace moho
    * Resolves `(entity, [instigator], delta)`, logs the delta, and applies one
    * `Entity::AdjustHealth` dispatch.
    */
-  int cfunc_EntityAdjustHealthL(LuaPlus::LuaState* const state)
+  int cfunc_EntityAdjustHealthL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 3, kEntityAdjustHealthHelpText);
@@ -1888,7 +1978,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetHealthL`.
    */
-  int cfunc_EntityGetHealth(lua_State* const luaContext)
+  int cfunc_EntityGetHealth(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetHealthL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1899,7 +1991,9 @@ namespace moho
    * What it does:
    * Resolves `self` and returns current entity health as one Lua number.
    */
-  int cfunc_EntityGetHealthL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetHealthL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetHealthHelpText);
@@ -1935,7 +2029,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetMaxHealthL`.
    */
-  int cfunc_EntityGetMaxHealth(lua_State* const luaContext)
+  int cfunc_EntityGetMaxHealth(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetMaxHealthL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1946,7 +2042,9 @@ namespace moho
    * What it does:
    * Resolves `self` and returns current entity max-health as one Lua number.
    */
-  int cfunc_EntityGetMaxHealthL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetMaxHealthL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetMaxHealthHelpText);
@@ -1982,7 +2080,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetHealthL`.
    */
-  int cfunc_EntitySetHealth(lua_State* const luaContext)
+  int cfunc_EntitySetHealth(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetHealthL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1994,7 +2094,9 @@ namespace moho
    * Resolves `(entity, [instigator], health)` and applies delta through one
    * `Entity::AdjustHealth` call.
    */
-  int cfunc_EntitySetHealthL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetHealthL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 3, kEntitySetHealthHelpText);
@@ -2042,7 +2144,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetMaxHealthL`.
    */
-  int cfunc_EntitySetMaxHealth(lua_State* const luaContext)
+  int cfunc_EntitySetMaxHealth(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetMaxHealthL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2053,7 +2157,9 @@ namespace moho
    * What it does:
    * Resolves `(entity, maxhealth)` and writes one new max-health value.
    */
-  int cfunc_EntitySetMaxHealthL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetMaxHealthL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kEntitySetMaxHealthHelpText);
@@ -2095,7 +2201,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntitySetVizToFocusPlayerL`.
    */
-  int cfunc_EntitySetVizToFocusPlayer(lua_State* const luaContext)
+  int cfunc_EntitySetVizToFocusPlayer(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetVizToFocusPlayerL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2107,7 +2215,9 @@ namespace moho
    * Resolves `(entity, visibilityMode)` and applies
    * `Entity::SetVizToFocusPlayer`.
    */
-  int cfunc_EntitySetVizToFocusPlayerL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetVizToFocusPlayerL(
+    LuaPlus::LuaState* const state
+  )
   {
     const EntityVisibilityArgs args = DecodeEntityVisibilityArgs(state, kEntitySetVizToFocusPlayerHelpText);
     args.entity->SetVizToFocusPlayer(args.mode);
@@ -2140,7 +2250,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntitySetVizToEnemiesL`.
    */
-  int cfunc_EntitySetVizToEnemies(lua_State* const luaContext)
+  int cfunc_EntitySetVizToEnemies(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetVizToEnemiesL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2151,7 +2263,9 @@ namespace moho
    * What it does:
    * Resolves `(entity, visibilityMode)` and applies `Entity::SetVizToEnemies`.
    */
-  int cfunc_EntitySetVizToEnemiesL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetVizToEnemiesL(
+    LuaPlus::LuaState* const state
+  )
   {
     const EntityVisibilityArgs args = DecodeEntityVisibilityArgs(state, kEntitySetVizToEnemiesHelpText);
     args.entity->SetVizToEnemies(args.mode);
@@ -2183,7 +2297,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetVizToAlliesL`.
    */
-  int cfunc_EntitySetVizToAllies(lua_State* const luaContext)
+  int cfunc_EntitySetVizToAllies(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetVizToAlliesL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2194,7 +2310,9 @@ namespace moho
    * What it does:
    * Resolves `(entity, visibilityMode)` and applies `Entity::SetVizToAllies`.
    */
-  int cfunc_EntitySetVizToAlliesL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetVizToAlliesL(
+    LuaPlus::LuaState* const state
+  )
   {
     const EntityVisibilityArgs args = DecodeEntityVisibilityArgs(state, kEntitySetVizToAlliesHelpText);
     args.entity->SetVizToAllies(args.mode);
@@ -2227,7 +2345,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntitySetVizToNeutralsL`.
    */
-  int cfunc_EntitySetVizToNeutrals(lua_State* const luaContext)
+  int cfunc_EntitySetVizToNeutrals(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetVizToNeutralsL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2238,7 +2358,9 @@ namespace moho
    * What it does:
    * Resolves `(entity, visibilityMode)` and applies `Entity::SetVizToNeutrals`.
    */
-  int cfunc_EntitySetVizToNeutralsL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetVizToNeutralsL(
+    LuaPlus::LuaState* const state
+  )
   {
     const EntityVisibilityArgs args = DecodeEntityVisibilityArgs(state, kEntitySetVizToNeutralsHelpText);
     args.entity->SetVizToNeutrals(args.mode);
@@ -2270,7 +2392,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetEntityIdL`.
    */
-  int cfunc_EntityGetEntityId(lua_State* const luaContext)
+  int cfunc_EntityGetEntityId(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetEntityIdL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2281,14 +2405,16 @@ namespace moho
    * What it does:
    * Resolves `self` and pushes the numeric entity id as a Lua string.
    */
-  int cfunc_EntityGetEntityIdL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetEntityIdL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetEntityIdHelpText);
 
     const LuaPlus::LuaObject entityObject(LuaPlus::LuaStackObject(state, 1));
     Entity* const entity = SCR_FromLua_Entity(entityObject, state);
-    const msvc8::string entityIdText = gpg::STR_Printf("%d", static_cast<int>(entity->id_));
+    const fa::string entityIdText = gpg::STR_Printf("%d", static_cast<int>(entity->id_));
     lua_pushstring(rawState, entityIdText.c_str());
     return 1;
   }
@@ -2318,7 +2444,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityDetachAllL`.
    */
-  int cfunc_EntityDetachAll(lua_State* const luaContext)
+  int cfunc_EntityDetachAll(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityDetachAllL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2329,10 +2457,12 @@ namespace moho
    * What it does:
    * Detaches every child attached on one parent-bone lane and returns `self`.
    */
-  int cfunc_EntityDetachAllL(LuaPlus::LuaState* const state)
+  int cfunc_EntityDetachAllL(
+    LuaPlus::LuaState* const state
+  )
   {
     const EntityDetachAllArgs args = DecodeEntityDetachAllArgs(state);
-    const msvc8::vector<Entity*> attachedSnapshot(args.entity->GetAttachedEntities());
+    const fa::vector<Entity*> attachedSnapshot(args.entity->GetAttachedEntities());
 
     for (Entity* const attached : attachedSnapshot) {
       if (attached == nullptr || attached->mAttachInfo.mParentBoneIndex != args.parentBoneIndex) {
@@ -2353,7 +2483,9 @@ namespace moho
    * parent entities with bone indices, and dispatches one typed `AttachTo`
    * operation.
    */
-  int cfunc_EntityAttachBoneToL(LuaPlus::LuaState* const state)
+  int cfunc_EntityAttachBoneToL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 4, kEntityAttachBoneToHelpText);
 
@@ -2407,7 +2539,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetCollisionShapeL`.
    */
-  int cfunc_EntitySetCollisionShape(lua_State* const luaContext)
+  int cfunc_EntitySetCollisionShape(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetCollisionShapeL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2418,12 +2552,21 @@ namespace moho
    * What it does:
    * Applies collision-shape runtime override (`None`/`Box`/`Sphere`) from Lua args.
    */
-  int cfunc_EntitySetCollisionShapeL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetCollisionShapeL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     const int argumentCount = lua_gettop(rawState);
     if (argumentCount < 2 || argumentCount > 8) {
-      LuaPlus::LuaState::Error(state, "%s\n  expected between %d and %d args, but got %d", kEntitySetCollisionShapeHelpText, 2, 8, argumentCount);
+      LuaPlus::LuaState::Error(
+        state,
+        "%s\n  expected between %d and %d args, but got %d",
+        kEntitySetCollisionShapeHelpText,
+        2,
+        8,
+        argumentCount
+      );
     }
 
     const LuaPlus::LuaObject entityObject(LuaPlus::LuaStackObject(state, 1));
@@ -2437,7 +2580,9 @@ namespace moho
 
     ECollisionShape shape = COLSHAPE_None;
     if (!TryParseCollisionShapeName(shapeName, &shape)) {
-      LuaPlus::LuaState::Error(state, "Unknown shape type %s; should be None, Box, or Sphere", shapeName ? shapeName : "");
+      LuaPlus::LuaState::Error(
+        state, "Unknown shape type %s; should be None, Box, or Sphere", shapeName ? shapeName : ""
+      );
     }
 
     if (shape == COLSHAPE_None) {
@@ -2498,7 +2643,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntityReachedMaxShootersL`.
    */
-  int cfunc_EntityReachedMaxShooters(lua_State* const luaContext)
+  int cfunc_EntityReachedMaxShooters(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityReachedMaxShootersL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2509,7 +2656,9 @@ namespace moho
    * What it does:
    * Returns whether the current shooter count has reached the blueprint cap.
    */
-  int cfunc_EntityReachedMaxShootersL(LuaPlus::LuaState* const state)
+  int cfunc_EntityReachedMaxShootersL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityReachedMaxShootersHelpText);
@@ -2548,7 +2697,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetOrientationL`.
    */
-  int cfunc_EntityGetOrientation(lua_State* const luaContext)
+  int cfunc_EntityGetOrientation(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetOrientationL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2559,7 +2710,9 @@ namespace moho
    * What it does:
    * Pushes the entity world orientation quaternion as one Lua object.
    */
-  int cfunc_EntityGetOrientationL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetOrientationL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetOrientationHelpText);
 
@@ -2598,7 +2751,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetHeadingL`.
    */
-  int cfunc_EntityGetHeading(lua_State* const luaContext)
+  int cfunc_EntityGetHeading(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetHeadingL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2609,7 +2764,9 @@ namespace moho
    * What it does:
    * Computes one yaw heading from the entity world orientation quaternion.
    */
-  int cfunc_EntityGetHeadingL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetHeadingL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetHeadingHelpText);
@@ -2625,7 +2782,7 @@ namespace moho
     const Wm3::Quatf& orientation = entity->mVarDat.mCurTransform.orient_;
     const float numerator = ((orientation.z * orientation.x) + (orientation.w * orientation.y)) * 2.0f;
     const float denominator = 1.0f - (((orientation.y * orientation.y) + (orientation.x * orientation.x)) * 2.0f);
-    const float heading = msvc8::atan2f(numerator, denominator);
+    const float heading = fa::atan2f(numerator, denominator);
     lua_pushnumber(rawState, heading);
     return 1;
   }
@@ -2655,7 +2812,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityGetScaleL`.
    */
-  int cfunc_EntityGetScale(lua_State* const luaContext)
+  int cfunc_EntityGetScale(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityGetScaleL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2666,7 +2825,9 @@ namespace moho
    * What it does:
    * Pushes the current draw scale as `(sx, sy, sz)`.
    */
-  int cfunc_EntityGetScaleL(LuaPlus::LuaState* const state)
+  int cfunc_EntityGetScaleL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityGetScaleHelpText);
@@ -2706,7 +2867,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityAddLocalImpulseL`.
    */
-  int cfunc_EntityAddLocalImpulse(lua_State* const luaContext)
+  int cfunc_EntityAddLocalImpulse(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityAddLocalImpulseL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2727,7 +2890,9 @@ namespace moho
    * top of that, never applied `mCollisionOffset` at all -- a second,
    * independent divergence from `SPhysBody::AddLocalImpulse`'s real behavior.
    */
-  int cfunc_EntityAddLocalImpulseL(LuaPlus::LuaState* const state)
+  int cfunc_EntityAddLocalImpulseL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 7, kEntityAddLocalImpulseHelpText);
 
@@ -2779,7 +2944,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityAddWorldImpulseL`.
    */
-  int cfunc_EntityAddWorldImpulse(lua_State* const luaContext)
+  int cfunc_EntityAddWorldImpulse(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityAddWorldImpulseL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2791,7 +2958,9 @@ namespace moho
    * Applies one world-space impulse at one world-space point to entity physics
    * body state when present.
    */
-  int cfunc_EntityAddWorldImpulseL(LuaPlus::LuaState* const state)
+  int cfunc_EntityAddWorldImpulseL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 7, kEntityAddWorldImpulseHelpText);
 
@@ -2837,7 +3006,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetMeshL`.
    */
-  int cfunc_EntitySetMesh(lua_State* const luaContext)
+  int cfunc_EntitySetMesh(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetMeshL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2848,12 +3019,16 @@ namespace moho
    * What it does:
    * Resolves mesh id + keep-actor flag and dispatches to `Entity::SetMesh`.
    */
-  int cfunc_EntitySetMeshL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetMeshL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     const int argumentCount = lua_gettop(rawState);
     if (argumentCount < 2 || argumentCount > 3) {
-      LuaPlus::LuaState::Error(state, "%s\n  expected between %d and %d args, but got %d", kEntitySetMeshHelpText, 2, 3, argumentCount);
+      LuaPlus::LuaState::Error(
+        state, "%s\n  expected between %d and %d args, but got %d", kEntitySetMeshHelpText, 2, 3, argumentCount
+      );
     }
 
     lua_settop(rawState, 3);
@@ -2868,20 +3043,20 @@ namespace moho
       meshName = "";
     }
 
-    const msvc8::string meshResourcePath(meshName);
+    const fa::string meshResourcePath(meshName);
     const std::string meshPathStd = meshResourcePath.to_std();
     if (meshPathStd.find("<none>") == std::string::npos) {
       const bool keepActor = LuaPlus::LuaStackObject(state, 3).GetBoolean();
       const bool allowExplicitPlaceholder = !keepActor;
 
-      msvc8::string normalizedPath;
+      fa::string normalizedPath;
       gpg::STR_CopyFilename(&normalizedPath, &meshResourcePath);
 
       RResId meshResourceId{};
       meshResourceId.name = normalizedPath;
       entity->SetMesh(meshResourceId, nullptr, allowExplicitPlaceholder);
 
-      if (!meshResourcePath.empty() && !boost::HasSharedResource(entity->mVarDat.mScmResource)) {
+      if (!meshResourcePath.empty() && entity->mVarDat.mScmResource.get() == nullptr) {
         LuaPlus::LuaState::Error(state, "SetMesh failed with %s", meshResourcePath.raw_data_unsafe());
       }
     }
@@ -2914,7 +3089,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetScaleL`.
    */
-  int cfunc_EntitySetScale(lua_State* const luaContext)
+  int cfunc_EntitySetScale(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetScaleL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2925,15 +3102,15 @@ namespace moho
    * What it does:
    * Applies non-uniform draw scale override and returns `self`.
    */
-  int cfunc_EntitySetScaleL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetScaleL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     const int argumentCount = lua_gettop(rawState);
     if (argumentCount != 2 && argumentCount != 4) {
       LuaPlus::LuaState::Error(
-        state,
-        "Wrong number of arguments to Entity:SetScale, expected 2 or 4 but got %d",
-        argumentCount
+        state, "Wrong number of arguments to Entity:SetScale, expected 2 or 4 but got %d", argumentCount
       );
     }
 
@@ -3006,7 +3183,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntityAddManualScrollerL`.
    */
-  int cfunc_EntityAddManualScroller(lua_State* const luaContext)
+  int cfunc_EntityAddManualScroller(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityAddManualScrollerL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3018,7 +3197,9 @@ namespace moho
    * Installs one manual texture-scroller definition on the entity and keeps
    * Lua stack shape compatible with original callback lane.
    */
-  int cfunc_EntityAddManualScrollerL(LuaPlus::LuaState* const state)
+  int cfunc_EntityAddManualScrollerL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 3, kEntityAddManualScrollerHelpText);
 
@@ -3059,7 +3240,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntityAddThreadScrollerL`.
    */
-  int cfunc_EntityAddThreadScroller(lua_State* const luaContext)
+  int cfunc_EntityAddThreadScroller(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityAddThreadScrollerL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3070,7 +3253,9 @@ namespace moho
    * What it does:
    * Installs one threaded texture-scroller definition on the entity.
    */
-  int cfunc_EntityAddThreadScrollerL(LuaPlus::LuaState* const state)
+  int cfunc_EntityAddThreadScrollerL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 3, kEntityAddThreadScrollerHelpText);
 
@@ -3111,7 +3296,9 @@ namespace moho
    * Unwraps Lua callback context and forwards to
    * `cfunc_EntityAddPingPongScrollerL`.
    */
-  int cfunc_EntityAddPingPongScroller(lua_State* const luaContext)
+  int cfunc_EntityAddPingPongScroller(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityAddPingPongScrollerL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3122,7 +3309,9 @@ namespace moho
    * What it does:
    * Installs one ping-pong texture-scroller definition on the entity.
    */
-  int cfunc_EntityAddPingPongScrollerL(LuaPlus::LuaState* const state)
+  int cfunc_EntityAddPingPongScrollerL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 9, kEntityAddPingPongScrollerHelpText);
 
@@ -3168,7 +3357,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityRemoveScrollerL`.
    */
-  int cfunc_EntityRemoveScroller(lua_State* const luaContext)
+  int cfunc_EntityRemoveScroller(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityRemoveScrollerL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3179,7 +3370,9 @@ namespace moho
    * What it does:
    * Replaces entity scroller state with one neutral/no-op definition.
    */
-  int cfunc_EntityRemoveScrollerL(LuaPlus::LuaState* const state)
+  int cfunc_EntityRemoveScrollerL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kEntityRemoveScrollerHelpText);
 
@@ -3214,7 +3407,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityDestroyL`.
    */
-  int cfunc_EntityDestroy(lua_State* const luaContext)
+  int cfunc_EntityDestroy(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityDestroyL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3226,7 +3421,9 @@ namespace moho
    * Resolves optional entity arg, logs script-side destroy request, and queues
    * entity destruction when present.
    */
-  int cfunc_EntityDestroyL(LuaPlus::LuaState* const state)
+  int cfunc_EntityDestroyL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kEntityDestroyHelpText);
 
@@ -3236,7 +3433,9 @@ namespace moho
     Entity* const entity = SCR_FromLua_EntityOpt(entityObject);
     if (entity != nullptr) {
       if (entity->SimulationRef != nullptr) {
-        entity->SimulationRef->Logf("Entity:Destroy() called from script, id=0x%08x.\n", static_cast<unsigned int>(entity->id_));
+        entity->SimulationRef->Logf(
+          "Entity:Destroy() called from script, id=0x%08x.\n", static_cast<unsigned int>(entity->id_)
+        );
       }
       entity->Destroy();
     }
@@ -3269,7 +3468,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityBeenDestroyedL`.
    */
-  int cfunc_EntityBeenDestroyed(lua_State* const luaContext)
+  int cfunc_EntityBeenDestroyed(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityBeenDestroyedL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3280,7 +3481,9 @@ namespace moho
    * What it does:
    * Returns `true` when the entity handle is nil/invalid or destroy-queued.
    */
-  int cfunc_EntityBeenDestroyedL(LuaPlus::LuaState* const state)
+  int cfunc_EntityBeenDestroyedL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kEntityBeenDestroyedHelpText);
@@ -3299,7 +3502,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityKillL`.
    */
-  int cfunc_EntityKill(lua_State* const luaContext)
+  int cfunc_EntityKill(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityKillL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3331,18 +3536,15 @@ namespace moho
    * Resolves `(self, [instigator], [killType], [excessDamageRatio])`,
    * dispatches `Entity::Kill`, and updates realtime kill stat lanes.
    */
-  int cfunc_EntityKillL(LuaPlus::LuaState* const state)
+  int cfunc_EntityKillL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     const int argumentCount = lua_gettop(rawState);
     if (argumentCount < 1 || argumentCount > 4) {
       LuaPlus::LuaState::Error(
-        state,
-        "%s\n  expected between %d and %d args, but got %d",
-        kEntityKillHelpText,
-        1,
-        4,
-        argumentCount
+        state, "%s\n  expected between %d and %d args, but got %d", kEntityKillHelpText, 1, 4, argumentCount
       );
     }
 
@@ -3431,7 +3633,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySetDrawScaleL`.
    */
-  int cfunc_EntitySetDrawScale(lua_State* const luaContext)
+  int cfunc_EntitySetDrawScale(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySetDrawScaleL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3443,7 +3647,9 @@ namespace moho
    * Resolves `(entity, size)`, updates uniform draw scale, and requeues the
    * entity in the sim coord-update list.
    */
-  int cfunc_EntitySetDrawScaleL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySetDrawScaleL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -3472,7 +3678,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntityFallDownL`.
    */
-  int cfunc_EntityFallDown(lua_State* const luaContext)
+  int cfunc_EntityFallDown(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityFallDownL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3484,7 +3692,9 @@ namespace moho
    * Reads one entity argument, creates one `MotorFallDown` motor bound to the
    * Lua state, sets it on the entity, and returns the motor Lua object.
    */
-  int cfunc_EntityFallDownL(LuaPlus::LuaState* const state)
+  int cfunc_EntityFallDownL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -3498,7 +3708,7 @@ namespace moho
     MotorFallDown* const motor = new MotorFallDown(state);
     motor->mLuaObj.PushStack(state);
 
-    msvc8::auto_ptr<Motor> motorOwnership(motor);
+    fa::auto_ptr<Motor> motorOwnership(motor);
     entity->SetMotor(motorOwnership);
     return 1;
   }
@@ -3528,7 +3738,9 @@ namespace moho
    * What it does:
    * Unwraps Lua callback context and forwards to `cfunc_EntitySinkAwayL`.
    */
-  int cfunc_EntitySinkAway(lua_State* const luaContext)
+  int cfunc_EntitySinkAway(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntitySinkAwayL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3541,7 +3753,9 @@ namespace moho
    * Lua state and sink velocity, sets it on the entity, and returns the motor
    * Lua object.
    */
-  int cfunc_EntitySinkAwayL(LuaPlus::LuaState* const state)
+  int cfunc_EntitySinkAwayL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -3562,7 +3776,7 @@ namespace moho
     MotorSinkAway* const motor = new MotorSinkAway(state, sinkDeltaY);
     motor->mLuaObj.PushStack(state);
 
-    msvc8::auto_ptr<Motor> motorOwnership(motor);
+    fa::auto_ptr<Motor> motorOwnership(motor);
     entity->SetMotor(motorOwnership);
     return 1;
   }
@@ -3595,7 +3809,9 @@ namespace moho
    * What it does:
    * Unwraps the Lua callback context and forwards to `cfunc_EntityPushOverL`.
    */
-  int cfunc_EntityPushOver(lua_State* const luaContext)
+  int cfunc_EntityPushOver(
+    lua_State* const luaContext
+  )
   {
     return cfunc_EntityPushOverL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -3622,7 +3838,9 @@ namespace moho
    * the generic `Wm3::Quaternionf::Multiply` (`.w`-scalar on both operands),
    * which produced a wrong composite once `tiltDelta` was mislabelled.
    */
-  int cfunc_EntityPushOverL(LuaPlus::LuaState* const state)
+  int cfunc_EntityPushOverL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 5, kEntityPushOverHelpText);
@@ -3722,5 +3940,4 @@ namespace moho
     );
     return &binder;
   }
-}
-
+} // namespace moho

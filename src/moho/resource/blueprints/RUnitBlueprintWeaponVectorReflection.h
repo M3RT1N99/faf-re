@@ -29,7 +29,7 @@ namespace gpg
     /**
      * Address: 0x00523550 (FUN_00523550, gpg::RVectorType_RUnitBlueprintWeapon::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const RRef& ref) const override;
 
     /**
      * Address: 0x005235E0 (FUN_005235E0, gpg::RVectorType_RUnitBlueprintWeapon::IsIndexed)
@@ -44,12 +44,12 @@ namespace gpg
     /**
      * Address: 0x00523D50 (FUN_00523D50, gpg::RVectorType_RUnitBlueprintWeapon::SerLoad)
      */
-    static void SerLoad(ReadArchive* archive, std::intptr_t objectPtr, int version, RRef* ownerRef);
+    static void SerLoad(ReadArchive* archive, void* objectPtr, int version, RRef* ownerRef);
 
     /**
      * Address: 0x00523E80 (FUN_00523E80, gpg::RVectorType_RUnitBlueprintWeapon::SerSave)
      */
-    static void SerSave(WriteArchive* archive, std::intptr_t objectPtr, int version, RRef* ownerRef);
+    static void SerSave(WriteArchive* archive, void* objectPtr, int version, RRef* ownerRef);
 
     /**
      * Address: 0x00523650 (FUN_00523650, gpg::RVectorType_RUnitBlueprintWeapon::SubscriptIndex)
@@ -83,4 +83,3 @@ namespace moho
    */
   void register_VectorRUnitBlueprintWeaponType();
 } // namespace moho
-

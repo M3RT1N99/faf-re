@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <type_traits>
 
-#include "boost/mutex.h"
+#include "legacy/thread/Mutex.h"
 #include "gpg/core/containers/FastVector.h"
 #include "IResources.h"
 #include "ISimResources.h"
@@ -75,12 +75,12 @@ namespace moho
     /**
      * Address: 0x00545FC0 (FUN_00545FC0, Moho::CSimResources::GetDeposits1)
      */
-    const msvc8::vector<ResourceDeposit>& GetDeposits() const override;
+    const fa::vector<ResourceDeposit>& GetDeposits() const override;
 
     /**
      * Address: 0x00545FB0 (FUN_00545FB0, Moho::CSimResources::GetDeposits2)
      */
-    msvc8::vector<ResourceDeposit>& GetDeposits() override;
+    fa::vector<ResourceDeposit>& GetDeposits() override;
 
     /**
      * Address: 0x00546060 (FUN_00546060, Moho::CSimResources::IsDepositAt)
@@ -96,7 +96,10 @@ namespace moho
      * Address: 0x00546470 (FUN_00546470, Moho::CSimResources::DepositCollides)
      */
     void DepositCollides(
-      CGeomSolid3* solid, CHeightField* field, gpg::fastvector<ResourceDeposit>* outDeposits, EDepositType type
+      CGeomSolid3* solid,
+      CHeightField* field,
+      gpg::fastvector<ResourceDeposit>* outDeposits,
+      EDepositType type
     ) override;
 
     /**
@@ -128,12 +131,16 @@ namespace moho
      * distance as `sqrt(dx*dx + dz*dz)`.
      */
     void GetDepositsAroundPoint(
-      float x, float z, float radius, EDepositType type, gpg::fastvector<ResourceDepositDistance>* outDeposits
+      float x,
+      float z,
+      float radius,
+      EDepositType type,
+      gpg::fastvector<ResourceDepositDistance>* outDeposits
     ) const;
 
   public:
-    boost::mutex lock_;                       // +0x04
-    msvc8::vector<ResourceDeposit> deposits_; // +0x0C
+    fa::mutex lock_;                       // +0x04
+    fa::vector<ResourceDeposit> deposits_; // +0x0C
   };
 
   static_assert(std::is_polymorphic<ISimResources>::value, "ISimResources must remain polymorphic");

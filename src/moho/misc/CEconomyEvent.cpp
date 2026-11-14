@@ -1,4 +1,5 @@
 #include "moho/misc/CEconomyEvent.h"
+#include "moho/misc/EconomyRequestRelease.h"
 #include "moho/lua/CScrLuaInitForm.h"
 #include "gpg/core/reflection/Reflection.h"
 
@@ -19,7 +20,7 @@
 #include "moho/lua/CScrLuaObjectFactory.h"
 #include "moho/entity/Entity.h"
 #include "moho/sim/CArmyImpl.h"
-#include "moho/sim/CSimArmyEconomyInfo.h"
+#include "moho/sim/CEconomy.h"
 #include "moho/sim/CEconomy.h"
 #include "moho/sim/Sim.h"
 #include "moho/unit/core/Unit.h"
@@ -47,23 +48,11 @@ namespace
    * What it does:
    * Resolves LuaPlus wrapper state from native Lua callback context.
    */
-  [[nodiscard]] LuaPlus::LuaState* ResolveBindingState(lua_State* const luaContext) noexcept
+  [[nodiscard]] LuaPlus::LuaState* ResolveBindingState(
+    lua_State* const luaContext
+  ) noexcept
   {
     return luaContext ? luaContext->stateUserData : nullptr;
-  }
-
-  /**
-   * Address: 0x006ADF70 (FUN_006ADF70)
-   *
-   * What it does:
-   * Resolves and caches RTTI for one `CEconomyEvent` lane.
-   */
-  [[nodiscard]] gpg::RType* CachedCEconomyEventType()
-  {
-    if (!moho::CEconomyEvent::sType) {
-      moho::CEconomyEvent::sType = gpg::LookupRType(typeid(moho::CEconomyEvent));
-    }
-    return moho::CEconomyEvent::sType;
   }
 
   [[nodiscard]] gpg::RType* CachedCScriptObjectPointerType()
@@ -86,8 +75,6 @@ namespace
     bool initialized;
     TypeInfoRTypePair entries[3];
   };
-
-  thread_local TypeInfoCache3 gCEconRequestRRefCache{false, {}};
 
   template <typename TObject>
   [[nodiscard]] gpg::RRef* BuildTypedRefWithCache(
@@ -162,18 +149,15 @@ namespace
       return outRef;
     }
 
-    outRef->mObj =
-      reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(value) - static_cast<std::uintptr_t>(baseOffset));
+    outRef->mObj = gpg::CompleteObject(value, baseOffset);
     outRef->mType = runtimeType;
     return outRef;
   }
 
-  void IntrusiveUnlink(moho::TDatListItem<void, void>& node)
-  {
-    node.ListUnlink();
-  }
-
-  void IntrusiveLinkBefore(moho::TDatListItem<void, void>& node, moho::TDatListItem<void, void>& listHead)
+  void IntrusiveLinkBefore(
+    moho::TDatListItem<void, void>& node,
+    moho::TDatListItem<void, void>& listHead
+  )
   {
     node.ListLinkBefore(&listHead);
   }
@@ -185,7 +169,9 @@ namespace
    * Registers `CScriptEvent` as one reflected base lane for `CEconomyEvent`
    * at offset `+0x00`.
    */
-  void AddCScriptEventBaseToCEconomyEventType(gpg::RType* typeInfo)
+  void AddCScriptEventBaseToCEconomyEventType(
+    gpg::RType* typeInfo
+  )
   {
     gpg::RType* const baseType = gpg::RTypeOf<moho::CScriptEvent>();
     gpg::RField baseField(baseType->GetName(), baseType, 0, 0, nullptr);
@@ -207,7 +193,9 @@ namespace
    * whatever the allocator left, so every upcast failed and each caller reported
    * "Expected a game object" for a perfectly good object.
    */
-  [[nodiscard]] gpg::RRef ExtractUserDataSlotRef(const LuaPlus::LuaObject& userDataObject)
+  [[nodiscard]] gpg::RRef ExtractUserDataSlotRef(
+    const LuaPlus::LuaObject& userDataObject
+  )
   {
     if (!userDataObject.IsUserData()) {
       return gpg::RRef{};
@@ -216,7 +204,9 @@ namespace
     return userDataObject.GetUserData();
   }
 
-  [[nodiscard]] moho::CScriptObject** GetScriptObjectSlotFromLuaObject(const LuaPlus::LuaObject& object)
+  [[nodiscard]] moho::CScriptObject** GetScriptObjectSlotFromLuaObject(
+    const LuaPlus::LuaObject& object
+  )
   {
     LuaPlus::LuaObject payload(object);
     if (payload.IsTable()) {
@@ -232,7 +222,10 @@ namespace
     return static_cast<moho::CScriptObject**>(upcast.mObj);
   }
 
-  [[noreturn]] void RaiseLuaError(LuaPlus::LuaState* state, const char* text)
+  [[noreturn]] void RaiseLuaError(
+    LuaPlus::LuaState* state,
+    const char* text
+  )
   {
     lua_State* activeState = state ? state->GetActiveCState() : nullptr;
     if (!activeState && state) {
@@ -243,8 +236,11 @@ namespace
   }
 
   template <typename TObject>
-  [[nodiscard]] TObject*
-  ResolveTypedGameObject(const LuaPlus::LuaObject& object, LuaPlus::LuaState* state, gpg::RType* expectedType)
+  [[nodiscard]] TObject* ResolveTypedGameObject(
+    const LuaPlus::LuaObject& object,
+    LuaPlus::LuaState* state,
+    gpg::RType* expectedType
+  )
   {
     moho::CScriptObject** const slot = GetScriptObjectSlotFromLuaObject(object);
     if (!slot) {
@@ -265,14 +261,21 @@ namespace
     return static_cast<TObject*>(upcast.mObj);
   }
 
-  [[nodiscard]] moho::Unit* ResolveUnitFromLuaObject(const LuaPlus::LuaObject& object, LuaPlus::LuaState* state)
+  [[nodiscard]] moho::Unit* ResolveUnitFromLuaObject(
+    const LuaPlus::LuaObject& object,
+    LuaPlus::LuaState* state
+  )
   {
     (void)state;
     return moho::SCR_FromLua_Unit(object);
   }
 
   void RaiseLuaArgCountError(
-    LuaPlus::LuaState* state, const char* helpName, const int expectedMin, const int expectedMax, const int actual
+    LuaPlus::LuaState* state,
+    const char* helpName,
+    const int expectedMin,
+    const int expectedMax,
+    const int actual
   )
   {
     luaL_error(
@@ -285,7 +288,12 @@ namespace
     );
   }
 
-  void RaiseLuaArgCountError(LuaPlus::LuaState* state, const char* helpName, const int expected, const int actual)
+  void RaiseLuaArgCountError(
+    LuaPlus::LuaState* state,
+    const char* helpName,
+    const int expected,
+    const int actual
+  )
   {
     luaL_error(
       state->GetActiveCState(),
@@ -296,7 +304,10 @@ namespace
     );
   }
 
-  [[nodiscard]] float ReadLuaNumberOrError(LuaPlus::LuaState* state, const int index)
+  [[nodiscard]] float ReadLuaNumberOrError(
+    LuaPlus::LuaState* state,
+    const int index
+  )
   {
     lua_State* const lstate = state->m_state;
     if (lua_type(lstate, index) != LUA_TNUMBER) {
@@ -313,7 +324,9 @@ namespace
    * Returns cached `CEconomyEvent` metatable object from Lua object-factory
    * storage.
    */
-  [[nodiscard]] LuaPlus::LuaObject GetEconomyEventFactory(LuaPlus::LuaState* state)
+  [[nodiscard]] LuaPlus::LuaObject GetEconomyEventFactory(
+    LuaPlus::LuaState* state
+  )
   {
     if (!state) {
       return {};
@@ -328,7 +341,9 @@ namespace
    * Destroys and frees a heap-backed `LuaPlus::LuaObject` when the
    * CEconomyEvent tick callback cleanup lane owns one.
    */
-  void DestroyHeapLuaObjectCleanupLane(LuaPlus::LuaObject*& cleanupLaneObject)
+  void DestroyHeapLuaObjectCleanupLane(
+    LuaPlus::LuaObject*& cleanupLaneObject
+  )
   {
     LuaPlus::LuaObject* const object = cleanupLaneObject;
     if (!object) {
@@ -339,37 +354,12 @@ namespace
     operator delete(object);
   }
 
-  void ClearUnitRequestedRates(moho::Unit* unit)
+  void ClearUnitRequestedRates(
+    moho::Unit* unit
+  )
   {
     unit->mUnitVarDat.mMaintainenceCost.ENERGY = 0.0f;
     unit->mUnitVarDat.mMaintainenceCost.MASS = 0.0f;
-  }
-
-  /**
-   * Address: 0x00773740 (FUN_00773740, sub_773740)
-   */
-  [[nodiscard]] moho::SEconValue TakeGrantedResourcesAndReset(moho::CEconRequest* request)
-  {
-    moho::SEconValue out{};
-    out.energy = request->mGranted.energy;
-    out.mass = request->mGranted.mass;
-    request->mGranted.energy = 0.0f;
-    request->mGranted.mass = 0.0f;
-    return out;
-  }
-
-  /**
-   * Address: 0x005CFA20 (sub_5CFA20)
-   */
-  void DestroyEconomyRequestPointer(moho::CEconRequest*& request)
-  {
-    if (!request) {
-      return;
-    }
-
-    IntrusiveUnlink(request->mNode);
-    delete request;
-    request = nullptr;
   }
 
 } // namespace
@@ -383,14 +373,6 @@ namespace
  */
 namespace gpg
 {
-  [[maybe_unused]] gpg::RRef* AssignCEconRequestRef(gpg::RRef* const out, moho::CEconRequest* const value)
-  {
-    gpg::RRef tmp{};
-    tmp = gpg::MakeRRef<moho::CEconRequest>(value);
-    out->mObj = tmp.mObj;
-    out->mType = tmp.mType;
-    return out;
-  }
 } // namespace gpg
 
 namespace moho
@@ -464,7 +446,10 @@ namespace moho
    * Initializes one economy-request node with requested-per-second values,
    * clears granted lanes, and links into the economy consumption list head.
    */
-  CEconRequest::CEconRequest(const SEconValue& perSecond, CEconomy* const economy)
+  CEconRequest::CEconRequest(
+    const SEconValue& perSecond,
+    CEconomy* const economy
+  )
     : mNode()
     , mRequested(perSecond)
     , mGranted{}
@@ -495,7 +480,9 @@ namespace moho
    * What it does:
    * Deserializes requested and granted economy-value lanes.
    */
-  void CEconRequest::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CEconRequest::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr) {
       return;
@@ -515,7 +502,9 @@ namespace moho
    * What it does:
    * Serializes requested and granted economy-value lanes.
    */
-  void CEconRequest::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CEconRequest::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (archive == nullptr) {
       return;
@@ -594,13 +583,13 @@ moho::CEconomyEvent::CEconomyEvent(
   mRequestedPerTick.mass = requestedMass * scale;
 
   auto* const army = entity->ArmyRef;
-  CSimArmyEconomyInfo* const economyInfo = army->GetEconomy();
+  CEconomy* const economyInfo = army->GetEconomy();
 
   mRequest = new CEconRequest{};
   mRequest->mRequested = mRequestedPerTick;
   mRequest->mGranted.energy = 0.0f;
   mRequest->mGranted.mass = 0.0f;
-  IntrusiveLinkBefore(mRequest->mNode, economyInfo->registrationNode);
+  IntrusiveLinkBefore(mRequest->mNode, economyInfo->mConsumptionData);
 }
 
 /**
@@ -632,7 +621,7 @@ moho::CEconomyEvent::~CEconomyEvent()
  */
 gpg::RType* moho::CEconomyEvent::GetClass() const
 {
-  return CachedCEconomyEventType();
+  return gpg::CachedLookup<moho::CEconomyEvent>(moho::CEconomyEvent::sType);
 }
 
 /**
@@ -640,7 +629,7 @@ gpg::RType* moho::CEconomyEvent::GetClass() const
  */
 gpg::RRef moho::CEconomyEvent::GetDerivedObjectRef()
 {
-  return gpg::MakeTypedRef(this, CachedCEconomyEventType());
+  return gpg::MakeTypedRef(this, gpg::CachedLookup<moho::CEconomyEvent>(moho::CEconomyEvent::sType));
 }
 
 /**
@@ -667,7 +656,7 @@ void moho::CEconomyEvent::ProcessTick()
         try {
           const float progress = 1.0f - static_cast<float>(mRemainingTicks) / static_cast<float>(mTotalTicks);
           progressCallback.Call_ObjectNum(mUnit->GetLuaObject(), progress);
-        } catch (const msvc8::runtime_error& error) {
+        } catch (const fa::runtime_error& error) {
           gpg::Warnf("Error executing progress function: %s", error.what());
         }
       }
@@ -690,7 +679,7 @@ bool moho::CEconomyEvent::IsDone() const noexcept
 }
 
 /**
-  * Alias of FUN_1001FDE0 (non-canonical helper lane).
+ * Alias of FUN_1001FDE0 (non-canonical helper lane).
  */
 moho::CScrLuaMetatableFactory<moho::CEconomyEvent>::CScrLuaMetatableFactory()
   : CScrLuaObjectFactory(CScrLuaObjectFactory::AllocateFactoryObjectIndex())
@@ -704,7 +693,9 @@ moho::CScrLuaMetatableFactory<moho::CEconomyEvent>& moho::CScrLuaMetatableFactor
 /**
  * Address: 0x00775B80 (FUN_00775B80)
  */
-LuaPlus::LuaObject moho::CScrLuaMetatableFactory<moho::CEconomyEvent>::Create(LuaPlus::LuaState* const state)
+LuaPlus::LuaObject moho::CScrLuaMetatableFactory<moho::CEconomyEvent>::Create(
+  LuaPlus::LuaState* const state
+)
 {
   return SCR_CreateSimpleMetatable(state);
 }
@@ -738,9 +729,11 @@ void moho::CEconomyEventTypeInfo::Init()
 }
 
 /**
-  * Alias of FUN_00775630 (non-canonical helper lane).
+ * Alias of FUN_00775630 (non-canonical helper lane).
  */
-int moho::cfunc_CreateEconomyEvent(lua_State* const luaContext)
+int moho::cfunc_CreateEconomyEvent(
+  lua_State* const luaContext
+)
 {
   auto* const state = ResolveBindingState(luaContext);
   return cfunc_CreateEconomyEventL(state);
@@ -768,7 +761,9 @@ moho::CScrLuaInitForm* moho::func_CreateEconomyEvent_LuaFuncDef()
 /**
  * Address: 0x007756B0 (FUN_007756B0, cfunc_CreateEconomyEventL)
  */
-int moho::cfunc_CreateEconomyEventL(LuaPlus::LuaState* const state)
+int moho::cfunc_CreateEconomyEventL(
+  LuaPlus::LuaState* const state
+)
 {
   const int argCount = lua_gettop(state->m_state);
   if (argCount < 4 || argCount > 5) {
@@ -793,9 +788,11 @@ int moho::cfunc_CreateEconomyEventL(LuaPlus::LuaState* const state)
 }
 
 /**
-  * Alias of FUN_00775910 (non-canonical helper lane).
+ * Alias of FUN_00775910 (non-canonical helper lane).
  */
-int moho::cfunc_RemoveEconomyEvent(lua_State* const luaContext)
+int moho::cfunc_RemoveEconomyEvent(
+  lua_State* const luaContext
+)
 {
   auto* const state = ResolveBindingState(luaContext);
   return cfunc_RemoveEconomyEventL(state);
@@ -823,7 +820,9 @@ moho::CScrLuaInitForm* moho::func_RemoveEconomyEvent_LuaFuncDef()
 /**
  * Address: 0x00775990 (FUN_00775990, cfunc_RemoveEconomyEventL)
  */
-int moho::cfunc_RemoveEconomyEventL(LuaPlus::LuaState* const state)
+int moho::cfunc_RemoveEconomyEventL(
+  LuaPlus::LuaState* const state
+)
 {
   const int argCount = lua_gettop(state->m_state);
   if (argCount != 2) {
@@ -837,9 +836,11 @@ int moho::cfunc_RemoveEconomyEventL(LuaPlus::LuaState* const state)
 }
 
 /**
-  * Alias of FUN_00775A40 (non-canonical helper lane).
+ * Alias of FUN_00775A40 (non-canonical helper lane).
  */
-int moho::cfunc_EconomyEventIsDone(lua_State* const luaContext)
+int moho::cfunc_EconomyEventIsDone(
+  lua_State* const luaContext
+)
 {
   auto* const state = ResolveBindingState(luaContext);
   return cfunc_EconomyEventIsDoneL(state);
@@ -867,7 +868,9 @@ moho::CScrLuaInitForm* moho::func_EconomyEventIsDone_LuaFuncDef()
 /**
  * Address: 0x00775AC0 (FUN_00775AC0, cfunc_EconomyEventIsDoneL)
  */
-int moho::cfunc_EconomyEventIsDoneL(LuaPlus::LuaState* const state)
+int moho::cfunc_EconomyEventIsDoneL(
+  LuaPlus::LuaState* const state
+)
 {
   const int argCount = lua_gettop(state->m_state);
   if (argCount != 1) {
@@ -883,15 +886,26 @@ int moho::cfunc_EconomyEventIsDoneL(LuaPlus::LuaState* const state)
 /**
  * Address: 0x00775EC0 (FUN_00775EC0, func_GetCEconomyEvent)
  */
-moho::CEconomyEvent* moho::func_GetCEconomyEvent(const LuaPlus::LuaObject& object, LuaPlus::LuaState* const state)
+moho::CEconomyEvent* moho::func_GetCEconomyEvent(
+  const LuaPlus::LuaObject& object,
+  LuaPlus::LuaState* const state
+)
 {
-  return ResolveTypedGameObject<CEconomyEvent>(object, state, CachedCEconomyEventType());
+  return ResolveTypedGameObject<CEconomyEvent>(
+    object, state, gpg::CachedLookup<moho::CEconomyEvent>(moho::CEconomyEvent::sType)
+  );
 }
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(PreregisterCEconomyEventPointerType_bf228f, moho::PreregisterCEconomyEventPointerType)
-GPG_PREREGISTER_INIT(preregister_CEconomyEventTypeInfo_bf228f, moho::preregister_CEconomyEventTypeInfo)
+GPG_PREREGISTER_INIT(
+  PreregisterCEconomyEventPointerType_bf228f,
+  moho::PreregisterCEconomyEventPointerType
+)
+GPG_PREREGISTER_INIT(
+  preregister_CEconomyEventTypeInfo_bf228f,
+  moho::preregister_CEconomyEventTypeInfo
+)
 
 namespace
 {
@@ -936,7 +950,12 @@ namespace moho
   /**
    * Address: 0x007754E0 (FUN_007754E0)
    */
-  void CEconomyEvent::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CEconomyEvent::MemberConstruct(
+    gpg::ReadArchive&,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     result.SetUnowned(gpg::MakeRRef(new CEconomyEvent()), 0u);
   }
@@ -944,7 +963,9 @@ namespace moho
   /**
    * Address: 0x00776010 (FUN_00776010)
    */
-  void CEconomyEvent::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CEconomyEvent::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef owner{};
     archive->Read(gpg::RTypeOf<CScriptEvent>(), static_cast<CScriptEvent*>(this), owner);
@@ -965,7 +986,9 @@ namespace moho
   /**
    * Address: 0x00776140 (FUN_00776140)
    */
-  void CEconomyEvent::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CEconomyEvent::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     const gpg::RRef owner{};
     archive->Write(gpg::RTypeOf<CScriptEvent>(), static_cast<const CScriptEvent*>(this), owner);

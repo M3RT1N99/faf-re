@@ -22,7 +22,7 @@ namespace
    * exactly matches the probe string; otherwise stores `end`.
    */
   const char*** MeshBatchFindMatchingNameCursor(
-    const msvc8::string* const probeName,
+    const fa::string* const probeName,
     const char*** const outCursor,
     const char** begin,
     const char** const end
@@ -105,8 +105,8 @@ namespace moho
   void MeshBatch::Initialize(
     const MeshLOD* const lod,
     const bool remapToReferenceResource,
-    const boost::shared_ptr<RScmResource> referenceResource,
-    const boost::shared_ptr<RScmResource> currentResource
+    const std::shared_ptr<RScmResource> referenceResource,
+    const std::shared_ptr<RScmResource> currentResource
   )
   {
     mUseBoneRemap = static_cast<std::uint8_t>(remapToReferenceResource ? 1u : 0u);
@@ -147,7 +147,9 @@ namespace moho
       if (mMaxInstancesPerDraw == 0 && !HardwareMeshBatch::UsesBoneTexture()) {
         gpg::Warnf(
           "Mesh \"%s\" has %d skinned bones but the GPU skinning palette holds %d; it will not be drawn.",
-          currentResource->mName.c_str(), mBoneCount, kPaletteSlots
+          currentResource->mName.c_str(),
+          mBoneCount,
+          kPaletteSlots
         );
       }
 
@@ -157,8 +159,8 @@ namespace moho
           mBoneRemapIndices.begin()[static_cast<std::size_t>(boneIndex)] = boneIndex;
         }
       } else {
-        msvc8::vector<const char*> meshBoneNames;
-        msvc8::vector<const char*> referenceBoneNames;
+        fa::vector<const char*> meshBoneNames;
+        fa::vector<const char*> referenceBoneNames;
         scm_file::FillBoneNamePointers(mesh, meshBoneNames);
         scm_file::FillBoneNamePointers(*reference->mFile, referenceBoneNames);
 
@@ -167,7 +169,7 @@ namespace moho
 
         for (std::int32_t boneIndex = 0; boneIndex < mBoneCount; ++boneIndex) {
           const char* const boneName = meshBoneNames.begin()[static_cast<std::size_t>(boneIndex)];
-          const msvc8::string probeName(boneName, std::strlen(boneName));
+          const fa::string probeName(boneName, std::strlen(boneName));
 
           const char** match = referenceEnd;
           MeshBatchFindMatchingNameCursor(&probeName, &match, referenceBegin, referenceEnd);
@@ -207,8 +209,7 @@ namespace moho
     // default literal, so the default is taken as 0 - the same value the
     // sibling "renderStage" lookup in Mesh.cpp passes.
     CD3DEffect* const meshEffect = resources->FindEffect("mesh");
-    mParameterAnnotation =
-      meshEffect->GetIntegerAnnotation(lod->mat.mShaderAnnotation, msvc8::string("parameter"), 0);
+    mParameterAnnotation = meshEffect->GetIntegerAnnotation(lod->mat.mShaderAnnotation, fa::string("parameter"), 0);
   }
 
   /**
@@ -234,7 +235,10 @@ namespace moho
    * What it does:
    * Dispatches instance rendering in derived-defined batch slices.
    */
-  void MeshBatch::Render(const msvc8::vector<MeshInstance*>& meshInstances, const bool reflectedOnly)
+  void MeshBatch::Render(
+    const fa::vector<MeshInstance*>& meshInstances,
+    const bool reflectedOnly
+  )
   {
     MeshInstance** const begin = meshInstances.begin();
     MeshInstance** const end = meshInstances.end();

@@ -1,11 +1,12 @@
 #include "moho/resource/ResourceManager.h"
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 
 #include <Windows.h>
 
-#include "boost/bind.hpp"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/utils/Global.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/console/CConCommand.h"
@@ -14,31 +15,31 @@
 #include "moho/resource/CResourceWatcher.h"
 #include "moho/resource/ResourceFactory.h"
 #include "moho/serialization/PrefetchHandleBase.h"
+#include <mutex>
+#include "legacy/thread/Mutex.h"
+#include "legacy/thread/Thread.h"
 
 namespace moho
 {
-  bool res_EnablePrefetching = true;     // 0x00F58027
-  int res_PrefetcherActivityDelay = 3;   // 0x00F58DA4, seconds
-  int res_AfterPrefetchDelay = 250;      // 0x00F58DA8, milliseconds
-  bool res_SpewLoadSpam = false;         // 0x010A6394
+  bool res_EnablePrefetching = true;   // 0x00F58027
+  int res_PrefetcherActivityDelay = 3; // 0x00F58DA4, seconds
+  int res_AfterPrefetchDelay = 250;    // 0x00F58DA8, milliseconds
+  bool res_SpewLoadSpam = false;       // 0x010A6394
 } // namespace moho
 
 namespace
 {
-  // `boost::TIME_UTC`. Spelled by value: C11's `TIME_UTC` macro (also 1) is
-  // back in force once boost/thread/xtime.hpp restores it, and hides boost's
-  // enumerator everywhere outside that header.
-  constexpr int kClockUtc = 1;
-
-  moho::ResourceManager* sResourceManager = nullptr; // 0x010A6398
-  boost::once_flag sResourceManagerOnce = BOOST_ONCE_INIT; // 0x010A639C
+  moho::ResourceManager* sResourceManager = nullptr;       // 0x010A6398
+  std::once_flag sResourceManagerOnce;                     // 0x010A639C
 
   /**
    * Address: 0x00BC5AC0 (FUN_00BC5AC0, dynamic initializer for `gTConVar_res_SpewLoadSpam`)
    * Address: 0x00BF04F0 (FUN_00BF04F0, dynamic atexit destructor for `gTConVar_res_SpewLoadSpam`)
    */
   moho::TConVar<bool> gTConVar_res_SpewLoadSpam(
-    "res_SpewLoadSpam", "If true, spew spam with each resource load.", &moho::res_SpewLoadSpam
+    "res_SpewLoadSpam",
+    "If true, spew spam with each resource load.",
+    &moho::res_SpewLoadSpam
   );
 
   /**
@@ -46,7 +47,9 @@ namespace
    * Address: 0x00BF0520 (FUN_00BF0520, dynamic atexit destructor for `gTConVar_res_EnablePrefetching`)
    */
   moho::TConVar<bool> gTConVar_res_EnablePrefetching(
-    "res_EnablePrefetching", "If true, enable prefetching.", &moho::res_EnablePrefetching
+    "res_EnablePrefetching",
+    "If true, enable prefetching.",
+    &moho::res_EnablePrefetching
   );
 
   /**
@@ -65,17 +68,20 @@ namespace
    */
   moho::TConVar<int> gTConVar_res_AfterPrefetchDelay(
     "res_AfterPrefetchDelay",
-    "Number of milliseconds to nap after prefetching something.  So the prefetcher thread doesn't bog us down too much.",
+    "Number of milliseconds to nap after prefetching something.  So the prefetcher thread doesn't bog us down too "
+    "much.",
     &moho::res_AfterPrefetchDelay
   );
 
   /**
    * MSVC8's `std::set<T>::iterator` was mutable -- the const-element rule came
    * with C++11 -- and the shipped code updates a record in place through it.
-   * `msvc8::set` follows the modern rule, so those writes go through this one
+   * `fa::set` follows the modern rule, so those writes go through this one
    * accessor; the two ordering fields are never touched.
    */
-  [[nodiscard]] moho::ResourceRecord& Record(const moho::ResourceRecordSet::iterator it) noexcept
+  [[nodiscard]] moho::ResourceRecord& Record(
+    const moho::ResourceRecordSet::iterator it
+  ) noexcept
   {
     return const_cast<moho::ResourceRecord&>(*it);
   }
@@ -85,7 +91,9 @@ namespace
    * starting with a single `/` (a relative name, or `//host/...`) is used as
    * given.
    */
-  [[nodiscard]] bool IsLiteralName(const char* const path) noexcept
+  [[nodiscard]] bool IsLiteralName(
+    const char* const path
+  ) noexcept
   {
     return path != nullptr && path[0] != '\0' && (path[0] != '/' || path[1] == '/');
   }
@@ -93,9 +101,11 @@ namespace
   /**
    * Where the mounted file system puts `path`; empty when it has no such file.
    */
-  [[nodiscard]] msvc8::string FindMountedFile(const char* const path)
+  [[nodiscard]] fa::string FindMountedFile(
+    const char* const path
+  )
   {
-    msvc8::string found;
+    fa::string found;
     (void)moho::FILE_GetWaitHandleSet()->mHandle->FindFile(&found, path, nullptr);
     return found;
   }
@@ -103,10 +113,13 @@ namespace
   /**
    * Sleeps until `until` with the manager unlocked.
    */
-  void SleepUnlocked(boost::recursive_mutex::scoped_lock& lock, const boost::xtime& until)
+  void SleepUnlocked(
+    fa::recursive_mutex::scoped_lock& lock,
+    const std::chrono::steady_clock::time_point until
+  )
   {
     lock.unlock();
-    boost::thread::sleep(until);
+    std::this_thread::sleep_until(until);
     lock.lock();
   }
 } // namespace
@@ -116,7 +129,10 @@ namespace moho
   /**
    * Address: 0x004A99C0 (FUN_004A99C0)
    */
-  ResourceWatch::ResourceWatch(const gpg::StrArg path, CResourceWatcher* const watcher)
+  ResourceWatch::ResourceWatch(
+    const gpg::StrArg path,
+    CResourceWatcher* const watcher
+  )
     : mPath(path)
     , mWatcher(watcher)
     , mNotifying(false)
@@ -125,8 +141,11 @@ namespace moho
   /**
    * Address: 0x004A9A40 (FUN_004A9A40)
    */
-  ResourceRecord::ResourceRecord(const gpg::StrArg name, const gpg::RType* const type)
-    : mId{msvc8::string(name)}
+  ResourceRecord::ResourceRecord(
+    const gpg::StrArg name,
+    const gpg::RType* const type
+  )
+    : mId{fa::string(name)}
     , mType(type)
     , mLoading(false)
     , mReloadPending(false)
@@ -136,7 +155,9 @@ namespace moho
   /**
    * Address: 0x004A9AA0 (FUN_004A9AA0)
    */
-  ResourceRecord::ResourceRecord(const ResourceRecord& other)
+  ResourceRecord::ResourceRecord(
+    const ResourceRecord& other
+  )
     : mId(other.mId)
     , mType(other.mType)
     , mLoading(false)
@@ -152,7 +173,7 @@ namespace moho
     , mRunning(false)
     , mLoadsInProgress(0)
   {
-    boost::xtime_get(&mLastLoadTime, kClockUtc);
+    mLastLoadTime = std::chrono::steady_clock::now();
     DISK_AddWatchListener(this);
   }
 
@@ -167,7 +188,9 @@ namespace moho
    * What it does:
    * Takes every event: the records decide what a path means.
    */
-  bool ResourceManager::FilterEvent(const SDiskWatchEvent&)
+  bool ResourceManager::FilterEvent(
+    const SDiskWatchEvent&
+  )
   {
     return true;
   }
@@ -182,9 +205,11 @@ namespace moho
    * A watch whose watcher died during its own callback is freed here, since
    * `DetachWatcher` left it for this loop.
    */
-  void ResourceManager::OnDiskWatchEvent(const SDiskWatchEvent& event)
+  void ResourceManager::OnDiskWatchEvent(
+    const SDiskWatchEvent& event
+  )
   {
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
 
     const ResourceRecordSet::iterator first = mRecords.lower_bound(ResourceRecord(event.mPath.c_str(), nullptr));
     const ResourceRecordSet::iterator last = mRecords.upper_bound(
@@ -203,7 +228,7 @@ namespace moho
       record.mResource.reset();
       record.mLoadFailed = false;
 
-      const boost::shared_ptr<PrefetchData> prefetch = boost::LockWeak(record.mPrefetch);
+      const std::shared_ptr<PrefetchData> prefetch = record.mPrefetch.lock();
       if (prefetch) {
         prefetch->mPrefetchData.reset();
         prefetch->mResource.reset();
@@ -230,7 +255,7 @@ namespace moho
    */
   void ResourceManager::ActivatePendingFactories()
   {
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
     mRunning = true;
     for (ResourceFactoryBase* const factory : mPendingFactories) {
       factory->Init();
@@ -246,9 +271,11 @@ namespace moho
    * Before the manager starts, a factory waits in the pending list; after, it
    * registers under its resource type straight away.
    */
-  void ResourceManager::AttachFactory(ResourceFactoryBase* const factory)
+  void ResourceManager::AttachFactory(
+    ResourceFactoryBase* const factory
+  )
   {
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
     if (mRunning) {
       mFactories.insert(std::make_pair(factory->mResourceType, factory));
     } else {
@@ -259,9 +286,11 @@ namespace moho
   /**
    * Address: 0x004A9FC0 (FUN_004A9FC0)
    */
-  void ResourceManager::DetachFactory(ResourceFactoryBase* const factory)
+  void ResourceManager::DetachFactory(
+    ResourceFactoryBase* const factory
+  )
   {
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
 
     const auto registered = mFactories.find(factory->mResourceType);
     if (registered != mFactories.end()) {
@@ -277,7 +306,9 @@ namespace moho
   /**
    * Address: 0x004AB600 (FUN_004AB600)
    */
-  ResourceFactoryBase* ResourceManager::FindFactory(const gpg::RType* const type)
+  ResourceFactoryBase* ResourceManager::FindFactory(
+    const gpg::RType* const type
+  )
   {
     return mFactories.find(type)->second;
   }
@@ -285,9 +316,11 @@ namespace moho
   /**
    * Address: 0x004AB620 (FUN_004AB620, func_ManageWatchedResources)
    */
-  void ResourceManager::DetachWatcher(CResourceWatcher* const watcher)
+  void ResourceManager::DetachWatcher(
+    CResourceWatcher* const watcher
+  )
   {
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
     for (ResourceWatch* const watch : watcher->mWatches) {
       if (watch->mNotifying) {
         watch->mWatcher = nullptr;
@@ -303,7 +336,7 @@ namespace moho
    */
   void ResourceManager::ShutdownBackgroundThread()
   {
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
     mRunning = false;
     if (mPrefetchThread) {
       mPrefetchQueued.notify_all();
@@ -331,13 +364,10 @@ namespace moho
     gpg::SetThreadName(0xFFFFFFFFu, "Prefetcher thread.");
     (void)::SetThreadPriority(::GetCurrentThread(), THREAD_PRIORITY_IDLE);
 
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
     while (mRunning) {
       if (!res_EnablePrefetching) {
-        boost::xtime until;
-        boost::xtime_get(&until, kClockUtc);
-        until.sec += 10;
-        SleepUnlocked(lock, until);
+        SleepUnlocked(lock, std::chrono::steady_clock::now() + std::chrono::seconds(10));
         continue;
       }
 
@@ -351,16 +381,13 @@ namespace moho
         continue;
       }
 
-      boost::xtime now;
-      boost::xtime_get(&now, kClockUtc);
-      boost::xtime quietUntil = mLastLoadTime;
-      quietUntil.sec += res_PrefetcherActivityDelay;
-      if (boost::xtime_cmp(now, quietUntil) < 0) {
+      const auto quietUntil = mLastLoadTime + std::chrono::seconds(res_PrefetcherActivityDelay);
+      if (std::chrono::steady_clock::now() < quietUntil) {
         SleepUnlocked(lock, quietUntil);
         continue;
       }
 
-      const boost::shared_ptr<PrefetchData> prefetch = boost::LockWeak(mPrefetchQueue.front());
+      const std::shared_ptr<PrefetchData> prefetch = mPrefetchQueue.front().lock();
       mPrefetchQueue.pop_front();
       if (!prefetch) {
         continue;
@@ -371,7 +398,7 @@ namespace moho
         continue;
       }
 
-      prefetch->mResource = boost::LockWeak(record->mResource);
+      prefetch->mResource = record->mResource.lock();
       if (prefetch->mResource) {
         continue;
       }
@@ -392,43 +419,41 @@ namespace moho
       mLoadFinished.notify_all();
       record->mLoading = false;
 
-      boost::xtime napUntil;
-      boost::xtime_get(&napUntil, kClockUtc);
-      napUntil.nsec += res_AfterPrefetchDelay * 1000000;
-      while (napUntil.nsec >= 1000000000) {
-        napUntil.nsec -= 1000000000;
-        ++napUntil.sec;
-      }
-      SleepUnlocked(lock, napUntil);
+      SleepUnlocked(lock, std::chrono::steady_clock::now() + std::chrono::milliseconds(res_AfterPrefetchDelay));
     }
   }
 
   /**
    * Address: 0x004AAC20 (FUN_004AAC20, func_CreatePrefetchData)
    */
-  PrefetchHandleBase ResourceManager::PrefetchResource(const gpg::StrArg path, const gpg::RType* const type)
+  PrefetchHandleBase ResourceManager::PrefetchResource(
+    const gpg::StrArg path,
+    const gpg::RType* const type
+  )
   {
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
 
-    const msvc8::string name = IsLiteralName(path) ? msvc8::string(path) : FindMountedFile(path);
+    const fa::string name = IsLiteralName(path) ? fa::string(path) : FindMountedFile(path);
     if (name.empty()) {
       return PrefetchHandleBase();
     }
 
     ResourceRecord& record = Record(mRecords.insert(ResourceRecord(name.c_str(), type)).first);
 
-    boost::shared_ptr<PrefetchData> prefetch = boost::LockWeak(record.mPrefetch);
+    std::shared_ptr<PrefetchData> prefetch = record.mPrefetch.lock();
     if (!prefetch) {
-      prefetch = boost::shared_ptr<PrefetchData>(new PrefetchData(&record));
+      prefetch = std::shared_ptr<PrefetchData>(new PrefetchData(&record));
       record.mPrefetch = prefetch;
     }
 
-    if (const boost::shared_ptr<void> resource = boost::LockWeak(record.mResource); !resource) {
+    if (const std::shared_ptr<void> resource = record.mResource.lock(); !resource) {
       mPrefetchQueue.push_back(prefetch);
       if (mPrefetchThread) {
         mPrefetchQueued.notify_all();
       } else {
-        mPrefetchThread.reset(new boost::thread(boost::bind(&ResourceManager::PrefetchThread, this)));
+        mPrefetchThread.reset(new fa::thread([this]() {
+          PrefetchThread();
+        }));
       }
     }
 
@@ -445,23 +470,25 @@ namespace moho
    * for loads as nothing. A watcher is registered once per record, under the
    * path the caller gave.
    */
-  boost::shared_ptr<void> ResourceManager::GetResource(
-    const gpg::StrArg path, CResourceWatcher* const watcher, const gpg::RType* const type
+  std::shared_ptr<void> ResourceManager::GetResource(
+    const gpg::StrArg path,
+    CResourceWatcher* const watcher,
+    const gpg::RType* const type
   )
   {
-    boost::recursive_mutex::scoped_lock lock(mLock);
+    fa::recursive_mutex::scoped_lock lock(mLock);
 
-    msvc8::string name;
+    fa::string name;
     if (IsLiteralName(path)) {
       name = path;
     } else if (path != nullptr && path[0] == '/' && path[1] != ':' && path[1] != '/') {
       name = FindMountedFile(path);
       if (name.empty()) {
-        return boost::shared_ptr<void>();
+        return std::shared_ptr<void>();
       }
     } else {
       gpg::Warnf("GetResource: Invalid name \"%s\"", path);
-      return boost::shared_ptr<void>();
+      return std::shared_ptr<void>();
     }
 
     ResourceRecord& record = Record(mRecords.insert(ResourceRecord(name.c_str(), type)).first);
@@ -487,14 +514,17 @@ namespace moho
   /**
    * Address: 0x004AA690 (FUN_004AA690)
    */
-  boost::shared_ptr<void> ResourceManager::LoadRecord(ResourceRecord& record, boost::recursive_mutex::scoped_lock& lock)
+  std::shared_ptr<void> ResourceManager::LoadRecord(
+    ResourceRecord& record,
+    fa::recursive_mutex::scoped_lock& lock
+  )
   {
-    const boost::shared_ptr<PrefetchData> prefetch = boost::LockWeak(record.mPrefetch);
+    const std::shared_ptr<PrefetchData> prefetch = record.mPrefetch.lock();
     while (record.mLoading) {
       mLoadFinished.wait(lock);
     }
 
-    boost::shared_ptr<void> resource = boost::LockWeak(record.mResource);
+    std::shared_ptr<void> resource = record.mResource.lock();
     if (resource || record.mLoadFailed) {
       return resource;
     }
@@ -508,7 +538,8 @@ namespace moho
         if (res_SpewLoadSpam) {
           gpg::Debugf("Finishing %s resource prefetched from %s", record.mType->GetName(), record.mId.name.c_str());
         }
-        resource = factory->LoadFrom(record.mId.name.c_str(), record.mType, prefetch->mPrefetchData, factory->mPrefetchType);
+        resource =
+          factory->LoadFrom(record.mId.name.c_str(), record.mType, prefetch->mPrefetchData, factory->mPrefetchType);
         prefetch->mPrefetchData.reset();
       } else {
         if (res_SpewLoadSpam) {
@@ -527,13 +558,13 @@ namespace moho
       record.mReloadPending = false;
     }
 
-    boost::AssignWeakFromShared(record.mResource, resource);
+    record.mResource = resource;
     if (!resource) {
       record.mLoadFailed = true;
     }
     record.mLoading = false;
     --mLoadsInProgress;
-    boost::xtime_get(&mLastLoadTime, kClockUtc);
+    mLastLoadTime = std::chrono::steady_clock::now();
     mLoadFinished.notify_all();
     return resource;
   }
@@ -551,16 +582,19 @@ namespace moho
   ResourceManager* RES_GetResourceManager()
   {
     if (sResourceManager == nullptr) {
-      boost::call_once(&RES_EnsureResourceManager, sResourceManagerOnce);
+      std::call_once(sResourceManagerOnce, &RES_EnsureResourceManager);
     }
     return sResourceManager;
   }
 
   /**
-   * Address: 0x004ABEE0 (FUN_004ABEE0, ?RES_GetResource@Moho@@YA?AV?$shared_ptr@X@boost@@VStrArg@gpg@@PAVCResourceWatcher@1@PBVRType@5@@Z)
+   * Address: 0x004ABEE0 (FUN_004ABEE0,
+   * ?RES_GetResource@Moho@@YA?AV?$shared_ptr@X@boost@@VStrArg@gpg@@PAVCResourceWatcher@1@PBVRType@5@@Z)
    */
-  boost::shared_ptr<void> RES_GetResource(
-    const gpg::StrArg path, CResourceWatcher* const resourceWatcher, const gpg::RType* const resourceType
+  std::shared_ptr<void> RES_GetResource(
+    const gpg::StrArg path,
+    CResourceWatcher* const resourceWatcher,
+    const gpg::RType* const resourceType
   )
   {
     return RES_GetResourceManager()->GetResource(path, resourceWatcher, resourceType);

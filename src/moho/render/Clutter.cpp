@@ -15,7 +15,7 @@
 #include "moho/sim/STIMap.h"
 
 #include <algorithm>
-#include <boost/mutex.h>
+#include <mutex>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -24,99 +24,6 @@
 
 namespace
 {
-
-
-  struct DestroyInstanceVtableTag
-  {
-    virtual ~DestroyInstanceVtableTag() = default;
-  };
-
-
-  struct SurfaceVtableResetTag
-  {
-    virtual ~SurfaceVtableResetTag() = default;
-  };
-
-  struct SeedVtableResetTag
-  {
-    virtual ~SeedVtableResetTag() = default;
-  };
-
-  struct DestroyInstanceLane
-  {
-    void* vtable;
-    moho::MeshRenderer* instance;
-  };
-
-
-
-
-
-  DestroyInstanceVtableTag gDestroyInstanceVtableTag{};
-  SurfaceVtableResetTag gSurfaceVtableResetTag{};
-  SeedVtableResetTag gSeedVtableResetTag{};
-
-  // FUN_007D5EE0 (Region ctor, store at 0x7D5EE6) and FUN_007D5F20 (dtor,
-  // store at 0x7D5F3D) write this fixed .data address into the region's
-  // vtable slot; no code in the binary ever reads through it - it is a
-  // reset/poison sentinel, so it is recovered as the plain constant it is.
-  void* const kRegionVtableResetSentinel = reinterpret_cast<void*>(0x00E3F04C);
-
-  [[nodiscard]] void* DestroyInstanceVtableToken()
-  {
-    return *reinterpret_cast<void**>(&gDestroyInstanceVtableTag);
-  }
-
-
-
-
-  /**
-   * Address: 0x007D9820 (FUN_007D9820)
-   *
-   * What it does:
-   * Initializes one destroy-instance lane from another lane's payload while
-   * restoring the destroy-instance vtable token.
-   */
-  [[maybe_unused]] DestroyInstanceLane* InitializeDestroyInstanceLaneFromSource(
-    DestroyInstanceLane* const outLane,
-    const DestroyInstanceLane* const sourceLane
-  ) noexcept
-  {
-    if (outLane == nullptr) {
-      return nullptr;
-    }
-
-    outLane->vtable = DestroyInstanceVtableToken();
-    outLane->instance = sourceLane != nullptr ? sourceLane->instance : nullptr;
-    return outLane;
-  }
-
-
-  /**
-   * Address: 0x007D5EA0 (FUN_007D5EA0)
-   *
-   * What it does:
-   * Resets one destroy-instance helper lane to the `DestroyInstance` vtable.
-   */
-  void ResetDestroyInstanceLaneVtable(DestroyInstanceLane* const lane) noexcept
-  {
-    if (lane == nullptr) {
-      return;
-    }
-
-    lane->vtable = DestroyInstanceVtableToken();
-  }
-
-  [[nodiscard]] void* SurfaceVtableResetToken()
-  {
-    return *reinterpret_cast<void**>(&gSurfaceVtableResetTag);
-  }
-
-  [[nodiscard]] void* SeedVtableResetToken()
-  {
-    return *reinterpret_cast<void**>(&gSeedVtableResetTag);
-  }
-
   [[nodiscard]] moho::RRuleGameRules* GetActiveRules() noexcept
   {
     const moho::CWldSession* const session = moho::WLD_GetActiveSession();
@@ -135,7 +42,7 @@ namespace
 
   [[nodiscard]] float NextGlobalRandomSignedUnit()
   {
-    boost::mutex::scoped_lock randomLock(moho::math_GlobalRandomMutex);
+    std::lock_guard<std::mutex> randomLock(moho::math_GlobalRandomMutex);
     const std::uint32_t randomWord = moho::math_GlobalRandomStream.twister.NextUInt32();
     constexpr double kInvTwoTo31 = 4.656612873077392578125e-10;
     return static_cast<float>(static_cast<double>(randomWord) * kInvTwoTo31 - 1.0);
@@ -143,18 +50,22 @@ namespace
 
   [[nodiscard]] float NextGlobalRandomUnit()
   {
-    boost::mutex::scoped_lock randomLock(moho::math_GlobalRandomMutex);
+    std::lock_guard<std::mutex> randomLock(moho::math_GlobalRandomMutex);
     const std::uint32_t randomWord = moho::math_GlobalRandomStream.twister.NextUInt32();
     constexpr double kInvTwoTo32 = 2.3283064365386962890625e-10;
     return static_cast<float>(static_cast<double>(randomWord) * kInvTwoTo32);
   }
 
-  [[nodiscard]] int AlignDownToEven(const int value) noexcept
+  [[nodiscard]] int AlignDownToEven(
+    const int value
+  ) noexcept
   {
     return (value % 2 != 0) ? (value - 1) : value;
   }
 
-  [[nodiscard]] int AlignUpToEven(const int value) noexcept
+  [[nodiscard]] int AlignUpToEven(
+    const int value
+  ) noexcept
   {
     return (value % 2 != 0) ? (value + 1) : value;
   }
@@ -171,9 +82,8 @@ namespace
 
     const int clampedX = std::clamp(x, 0, heightField.width - 1);
     const int clampedZ = std::clamp(z, 0, heightField.height - 1);
-    const std::size_t sampleIndex =
-      static_cast<std::size_t>(clampedZ) * static_cast<std::size_t>(heightField.width)
-      + static_cast<std::size_t>(clampedX);
+    const std::size_t sampleIndex = static_cast<std::size_t>(clampedZ) * static_cast<std::size_t>(heightField.width) +
+      static_cast<std::size_t>(clampedX);
 
     constexpr float kHeightWordScale = 0.0078125f;
     return static_cast<float>(heightField.data[sampleIndex]) * kHeightWordScale;
@@ -220,96 +130,8 @@ namespace
     }
 
     const std::size_t terrainIndex =
-      static_cast<std::size_t>(z) * static_cast<std::size_t>(map.mTerrainType.width)
-      + static_cast<std::size_t>(x);
+      static_cast<std::size_t>(z) * static_cast<std::size_t>(map.mTerrainType.width) + static_cast<std::size_t>(x);
     return map.mTerrainType.data[terrainIndex];
-  }
-
-  /**
-   * Address: 0x007D9390 (FUN_007D9390)
-   */
-  void ApplyDestroyInstanceToRegionPayloads(
-    moho::ClutterPayloadList& payloads,
-    DestroyInstanceLane& destroyLane,
-    moho::MeshRenderer* const instance
-  )
-  {
-    for (void* const entry : payloads) {
-      auto* const payload = static_cast<moho::ClutterRegionMapPayloadHeader*>(entry);
-      payload->vtable->destroy(payload, 1);
-    }
-
-    destroyLane.instance = instance;
-    ResetDestroyInstanceLaneVtable(&destroyLane);
-  }
-
-
-  [[nodiscard]] moho::ClutterRegion* AllocateRegionPoolBlock()
-  {
-    constexpr std::uint32_t kRegionPoolCount = 128u;
-
-    auto* const rawStorage = static_cast<std::uint8_t*>(
-      ::operator new(sizeof(std::uint32_t) + sizeof(moho::ClutterRegion) * kRegionPoolCount)
-    );
-    *reinterpret_cast<std::uint32_t*>(rawStorage) = kRegionPoolCount;
-
-    auto* const regionBase =
-      reinterpret_cast<moho::ClutterRegion*>(rawStorage + sizeof(std::uint32_t));
-    std::uint32_t constructedCount = 0u;
-
-    try {
-      for (; constructedCount < kRegionPoolCount; ++constructedCount) {
-        ::new (static_cast<void*>(regionBase + constructedCount)) moho::ClutterRegion();
-      }
-    } catch (...) {
-      while (constructedCount > 0u) {
-        --constructedCount;
-        regionBase[constructedCount].~ClutterRegion();
-      }
-      ::operator delete(rawStorage);
-      throw;
-    }
-
-    return regionBase;
-  }
-
-  /**
-   * Address: 0x007D60C0 (FUN_007D60C0)
-   */
-  void ResetClutterSeedVtable(moho::ClutterSurfaceElement* const seed)
-  {
-    seed->vtable = reinterpret_cast<moho::ClutterSurfaceElementVTable*>(SeedVtableResetToken());
-  }
-
-  /**
-   * Address: 0x007D5FE0 (FUN_007D5FE0)
-   */
-  moho::ClutterSurfaceElement* InitializeClutterSeedFromBlueprintPath(
-    moho::ClutterSurfaceElement* const seed,
-    const float selectionWeight,
-    const msvc8::string& meshBlueprintId
-  )
-  {
-    ResetClutterSeedVtable(seed);
-    seed->selectionWeight = selectionWeight;
-    seed->uniformScale = 1.0f;
-    seed->meshBlueprint = nullptr;
-
-    moho::RRuleGameRules* const rules = GetActiveRules();
-    if (!rules) {
-      return seed;
-    }
-
-    msvc8::string normalizedPath{};
-    gpg::STR_CopyFilename(&normalizedPath, &meshBlueprintId);
-    moho::RPropBlueprint* const propBlueprint = rules->GetPropBlueprint(normalizedPath);
-    if (!propBlueprint) {
-      return seed;
-    }
-
-    seed->uniformScale = propBlueprint->Display.UniformScale;
-    seed->meshBlueprint = rules->GetMeshBlueprint(propBlueprint->Display.MeshBlueprint);
-    return seed;
   }
 
   /**
@@ -317,7 +139,7 @@ namespace
    *
    * What it does:
    * Appends one seed to a surface's seed vector, growing capacity 1.5x when
-   * full. `Moho::Clutter::Surface::mSeeds` is `msvc8::vector<
+   * full. `Moho::Clutter::Surface::mSeeds` is `fa::vector<
    * ClutterSurfaceElement>` (`Clutter.h`) -- this call is the natural
    * source-level `insert(pos, value)` the compiler folded to `count=1` at
    * `FUN_007D8620`/`FUN_007D9620` (cited on the canonical
@@ -341,150 +163,47 @@ namespace moho
 {
   float ren_ClutterRadius = 50.0f; // 0x00F57F34 (shipped .data)
 
-  /**
-   * Address: 0x007D7E00 (FUN_007D7E00, inlined into the tail-destroy loop of
-   * `msvc8::vector<ClutterSurfaceElement>::erase(first,last)` --
-   * `legacy/containers/Vector.h`)
-   * Address: 0x007D7EB0 (FUN_007D7EB0, ??1Surface@Clutter@Moho@@QAE@@Z,
-   * inlined into `Surface::~Surface`'s own `mSeeds` teardown sweep, below)
-   * Address: 0x007D7920 (unnamed 22-byte register-convention fragment --
-   * see the `erase(first,last)` citation in `Vector.h` for detail)
-   *
-   * What it does:
-   * Dispatches through the element's own "poisoned" vtable slot 0 with a
-   * delete-flag of 0. No source line calls this by name at any of the
-   * addresses above -- each is the compiler inlining this one-statement
-   * method (and the destructor that forwards to it, below) at its own call
-   * site. Reduces to a runtime no-op: every live element's `vtable` is set
-   * exactly once, via `ResetClutterSeedVtable`, to `SeedVtableResetToken()`,
-   * and `SeedVtableResetTag`'s destructor is defaulted with the delete flag
-   * skipping `operator delete` -- but the call itself is real and is part of
-   * the type's actual destructor, so it must happen for binary-exact
-   * fidelity.
-   */
-  void ClutterSurfaceElement::DestroyInPlace()
+  ClutterSurfaceElement::ClutterSurfaceElement(
+    const float selectionWeight,
+    const fa::string& meshBlueprintId
+  )
+    : selectionWeight(selectionWeight)
   {
-    vtable->destroy(this, 0);
-  }
+    RRuleGameRules* const rules = GetActiveRules();
+    if (!rules) {
+      return;
+    }
 
-  /**
-   * The real destructor's body is exactly `DestroyInPlace()` above -- MSVC
-   * inlines a one-statement destructor at each call site rather than
-   * emitting a standalone symbol, so there is no separate address to cite
-   * beyond the ones already on `DestroyInPlace()`. Declaring this as a real
-   * (non-trivial) destructor, instead of leaving the type implicitly
-   * trivial, is what makes `msvc8::vector<ClutterSurfaceElement>`'s
-   * existing, unmodified `destroy_range`/`erase`/`clear`/`tidy` machinery
-   * (`Vector.h`) emit the per-element call `FUN_007D7E00` and `FUN_007D7EB0`
-   * both show -- previously the struct was (wrongly) trivially destructible
-   * and that machinery's `if constexpr (!is_trivially_destructible_v<T>)`
-   * guard silently skipped the call.
-   */
-  ClutterSurfaceElement::~ClutterSurfaceElement()
-  {
-    DestroyInPlace();
-  }
+    fa::string normalizedPath{};
+    gpg::STR_CopyFilename(&normalizedPath, &meshBlueprintId);
+    RPropBlueprint* const propBlueprint = rules->GetPropBlueprint(normalizedPath);
+    if (!propBlueprint) {
+      return;
+    }
 
-  /**
-   * Address: 0x007D94B0 (FUN_007D94B0, inlined into the tail-shift step of
-   * `msvc8::vector<ClutterSurfaceElement>::erase(first,last)` --
-   * `legacy/containers/Vector.h`)
-   *
-   * What it does:
-   * Copies the three payload fields (`selectionWeight`, `uniformScale`,
-   * `meshBlueprint`) from `rhs` and deliberately leaves `vtable` untouched.
-   * Every live element's `vtable` already holds the same
-   * `SeedVtableResetToken()` value (`ResetClutterSeedVtable` sets it once;
-   * it never changes for the life of the slot), so the original source
-   * skips re-copying it on every shift-assign during an erase. Declaring
-   * this explicitly (instead of leaving the implicit memberwise copy) is
-   * what makes `erase(first,last)`'s per-element
-   * `first[i] = std::move(last[i])` shift loop produce this exact 3-field
-   * copy instead of copying all four fields -- a user-declared destructor
-   * alone already routes `erase` into that loop (it makes the type
-   * non-trivially-copyable), but without this operator the loop would fall
-   * back to the implicit, all-4-field copy-assignment.
-   */
-  ClutterSurfaceElement& ClutterSurfaceElement::operator=(const ClutterSurfaceElement& rhs)
-  {
-    selectionWeight = rhs.selectionWeight;
-    uniformScale = rhs.uniformScale;
-    meshBlueprint = rhs.meshBlueprint;
-    return *this;
+    uniformScale = propBlueprint->Display.UniformScale;
+    meshBlueprint = rules->GetMeshBlueprint(propBlueprint->Display.MeshBlueprint);
   }
 
   /**
    * Address: 0x007D5EE0 (FUN_007D5EE0, ??0Region@Clutter@Moho@@QAE@@Z)
    *
    * What it does:
-   * Initializes region links and key coordinates, then allocates one empty
-   * region-map list sentinel.
+   * Clears the region links and marks the key coordinates unset.
    */
   ClutterRegion::ClutterRegion()
-  {
-    vtable = kRegionVtableResetSentinel;
-    mNext = nullptr;
-    mPrev = nullptr;
-    mX = -1;
-    mZ = -1;
-  }
+    : mNext(nullptr)
+    , mPrev(nullptr)
+    , mX(-1)
+    , mZ(-1)
+  {}
 
   /**
    * Address: 0x007D5F20 (FUN_007D5F20, ??1Region@Clutter@Moho@@QAE@@Z)
-   *
-   * What it does:
-   * Resets region runtime links/payloads, clears map-node list storage, then
-   * releases the map-list sentinel allocation.
    */
   ClutterRegion::~ClutterRegion()
   {
-    vtable = kRegionVtableResetSentinel;
-    (void)ResetState();
-  }
-
-  /**
-   * Address: 0x007D5CF0 (FUN_007D5CF0, ??0Surface@Clutter@Moho@@QAE@@Z)
-   *
-   * What it does:
-   * Resets the vtable to the poison/reset token and zeroes `density`.
-   * `mSeeds` default-constructs itself via member init (empty, no
-   * allocation) -- matches the real binary exactly: `Clutter::Clutter`
-   * (`FUN_007D60D0`) constructs the 256-entry `mSurfaces` array through the
-   * compiler-emitted `` `eh vector constructor iterator' `` helper calling
-   * this constructor, rather than an explicit hand-written per-entry loop.
-   */
-  ClutterSurfaceEntry::ClutterSurfaceEntry()
-    : vtable(SurfaceVtableResetToken())
-    , density(0)
-  {
-  }
-
-  /**
-   * Address: 0x007D5D10 (FUN_007D5D10)
-   * Address: 0x007D7EB0 (FUN_007D7EB0, ??1Surface@Clutter@Moho@@QAE@@Z)
-   *
-   * What it does:
-   * Resets the vtable to the poison/reset token; `mSeeds` destroys its live
-   * elements and releases its buffer through its own destructor. Confirmed
-   * against `FUN_007D7EB0`'s raw disassembly: an inline sweep calling each
-   * element's own vtable-slot-0 dispatch, then `operator delete` on the
-   * buffer, then zeroing `{first_,last_,end_}` (`myProxy_` deliberately left
-   * alone) -- exactly `ClutterSurfaceElement::~ClutterSurfaceElement()`
-   * (which forwards to `DestroyInPlace()`) run per live element by
-   * `msvc8::vector<ClutterSurfaceElement>`'s own `tidy()`-shaped teardown
-   * (`Vector.h`), which reduces to a runtime no-op per element since
-   * `ClutterSurfaceElement`'s poisoned vtable resets to
-   * `SeedVtableResetTag`'s trivial defaulted destructor -- see
-   * `ResetClutterSeedVtable`/`SeedVtableResetToken` above, and
-   * `ClutterSurfaceElement::DestroyInPlace`'s own citation (`Clutter.h`) for
-   * the full evidence chain. Reached via `Clutter::~Clutter`
-   * (`FUN_007D61E0`)'s compiler-emitted
-   * `` `eh vector destructor iterator' `` teardown of `mSurfaces`, rather
-   * than an explicit hand-written per-entry loop.
-   */
-  ClutterSurfaceEntry::~ClutterSurfaceEntry()
-  {
-    vtable = SurfaceVtableResetToken();
+    ResetState();
   }
 
   /**
@@ -492,7 +211,6 @@ namespace moho
    */
   Clutter::Clutter()
   {
-
 
     // mSurfaces[256] (moho::ClutterSurfaceEntry, real ctor above) is
     // default-constructed automatically here, matching the real binary's
@@ -514,14 +232,10 @@ namespace moho
   {
     Shutdown();
 
-
-
     // mSurfaces[256] (moho::ClutterSurfaceEntry, real dtor above) is
     // destroyed automatically as part of this destructor's implicit member
     // teardown, matching the real binary's `` `eh vector destructor
     // iterator' `` call in `~Clutter`.
-
-
   }
 
   /**
@@ -531,7 +245,9 @@ namespace moho
    * Runs one clutter update frame by culling stale regions first, then
    * generating new visible region clutter from terrain data.
    */
-  void Clutter::Update(const GeomCamera3* const camera)
+  void Clutter::Update(
+    const GeomCamera3* const camera
+  )
   {
     UpdateCurrent(camera);
     GenerateNew(camera);
@@ -544,7 +260,10 @@ namespace moho
    * Returns whether one region AABB is close enough to the camera and inside
    * the camera frustum-solid lane.
    */
-  bool Clutter::IsVisible(const GeomCamera3* const camera, const Wm3::AxisAlignedBox3f& regionBox)
+  bool Clutter::IsVisible(
+    const GeomCamera3* const camera,
+    const Wm3::AxisAlignedBox3f& regionBox
+  )
   {
     const float centerX = (regionBox.Min.x + regionBox.Max.x) * 0.5f;
     const float centerY = (regionBox.Min.y + regionBox.Max.y) * 0.5f;
@@ -568,7 +287,10 @@ namespace moho
    * Returns visibility state for one clutter region by delegating to AABB
    * visibility test using the region's box lane.
    */
-  bool Clutter::IsVisible(const GeomCamera3* const camera, const ClutterRegion* const region)
+  bool Clutter::IsVisible(
+    const GeomCamera3* const camera,
+    const ClutterRegion* const region
+  )
   {
     return region != nullptr && IsVisible(camera, region->mBox);
   }
@@ -580,7 +302,9 @@ namespace moho
    * Walks the active-region chain and destroys regions that are outside clutter
    * distance radius or no longer intersect the camera frustum solid.
    */
-  void Clutter::UpdateCurrent(const GeomCamera3* const camera)
+  void Clutter::UpdateCurrent(
+    const GeomCamera3* const camera
+  )
   {
     ClutterRegion* currentRegion = mCurRegion;
     while (currentRegion != nullptr) {
@@ -600,7 +324,9 @@ namespace moho
    * Scans 2x2 terrain tiles around the camera clutter radius, creates missing
    * visible regions, and populates each region from four sampled terrain types.
    */
-  void Clutter::GenerateNew(const GeomCamera3* const camera)
+  void Clutter::GenerateNew(
+    const GeomCamera3* const camera
+  )
   {
     (void)MeshRenderer::GetInstance();
 
@@ -656,22 +382,18 @@ namespace moho
         const std::uint8_t terrain10 = GetTerrainTypeAtOrDefault(*terrainMap, x + 1, z);
         const std::uint8_t terrain11 = GetTerrainTypeAtOrDefault(*terrainMap, x + 1, z + 1);
 
-        const float density00 = static_cast<float>(
-                                  (terrain00 == terrain01) + (terrain00 == terrain10) + (terrain00 == terrain11) + 1
-                                )
-                              * 0.25f;
-        const float density01 = static_cast<float>(
-                                  (terrain01 == terrain00) + (terrain01 == terrain10) + (terrain01 == terrain11) + 1
-                                )
-                              * 0.25f;
-        const float density10 = static_cast<float>(
-                                  (terrain10 == terrain00) + (terrain10 == terrain01) + (terrain10 == terrain11) + 1
-                                )
-                              * 0.25f;
-        const float density11 = static_cast<float>(
-                                  (terrain11 == terrain00) + (terrain11 == terrain01) + (terrain11 == terrain10) + 1
-                                )
-                              * 0.25f;
+        const float density00 =
+          static_cast<float>((terrain00 == terrain01) + (terrain00 == terrain10) + (terrain00 == terrain11) + 1) *
+          0.25f;
+        const float density01 =
+          static_cast<float>((terrain01 == terrain00) + (terrain01 == terrain10) + (terrain01 == terrain11) + 1) *
+          0.25f;
+        const float density10 =
+          static_cast<float>((terrain10 == terrain00) + (terrain10 == terrain01) + (terrain10 == terrain11) + 1) *
+          0.25f;
+        const float density11 =
+          static_cast<float>((terrain11 == terrain00) + (terrain11 == terrain01) + (terrain11 == terrain10) + 1) *
+          0.25f;
 
         PopulateRegionClutter(camera, *heightField, region, density00, GetSurface(terrain00));
         PopulateRegionClutter(camera, *heightField, region, density01, GetSurface(terrain01));
@@ -682,78 +404,46 @@ namespace moho
   }
 
   /**
-   * Address: 0x007D7050 (FUN_007D7050, ?UpdateRegion@Clutter@Moho@@AAEXPBVGeomCamera3@2@PAVRegion@12@@Z)
-   *
-   * What it does:
-   * Binds each mesh instance in the region to the supplied camera.
-   */
-  void Clutter::UpdateRegion(const GeomCamera3* const camera, ClutterRegion* const region)
-  {
-    for (void* const entry : region->mMap) {
-      static_cast<MeshInstance*>(entry)->visibilityCamera = camera;
-    }
-  }
-
-  /**
    * Address: 0x007D64D0 (FUN_007D64D0, ?IsCluttered@Clutter@Moho@@AAE_NHH@Z)
    *
    * What it does:
    * Probes the region-key RB-tree for one exact `(x,z)` key match.
    */
-  bool Clutter::IsCluttered(const int x, const int z)
+  bool Clutter::IsCluttered(
+    const int x,
+    const int z
+  )
   {
     return mKeys.find(ClutterRegionKey(x, z)) != mKeys.end();
   }
 
   /**
-   * Address: 0x007D9400 (FUN_007D9400)
-   */
-  std::uint8_t ReleaseRegionListPayloads(
-    ClutterRegionList& poolBlocks,
-    const std::uint8_t passthrough
-  )
-  {
-    for (ClutterRegion* const block : poolBlocks) {
-      auto* const payload = reinterpret_cast<ClutterPayloadHeader*>(block);
-      if (!payload) {
-        continue;
-      }
-
-      auto* const refLane = reinterpret_cast<std::uint32_t*>(payload) - 1;
-      if (*refLane != 0u) {
-        payload->vtable->destroy(payload, 3);
-      } else {
-        ::operator delete[](refLane);
-      }
-    }
-
-    return passthrough;
-  }
-
-  /**
    * Address: 0x007D5F80 (FUN_007D5F80)
+   * Address: 0x007D9390 (FUN_007D9390) - the delete loop over `mMap`, each
+   *   instance through its virtual scalar deleting destructor (slot 0, flag 1).
    */
-  ClutterPayloadList* ClutterRegion::ResetState()
+  void ClutterRegion::ResetState()
   {
     mPrev = nullptr;
     mNext = nullptr;
     mZ = -1;
     mX = -1;
 
-    DestroyInstanceLane destroyLane{};
-    ResetDestroyInstanceLaneVtable(&destroyLane);
-    destroyLane.instance = nullptr;
-
-    MeshRenderer* const meshRenderer = MeshRenderer::GetInstance();
-    ApplyDestroyInstanceToRegionPayloads(mMap, destroyLane, meshRenderer);
+    // The binary fetches the mesh renderer here (it creates the singleton on
+    // first use) before deleting the instances it made.
+    (void)MeshRenderer::GetInstance();
+    for (MeshInstance* const instance : mMap) {
+      delete instance;
+    }
     mMap.clear();
-    return &mMap;
   }
 
   /**
    * Address: 0x007D7150 (FUN_007D7150, ?GetSurface@Clutter@Moho@@AAEABVSurface@12@E@Z)
    */
-  const ClutterSurfaceEntry& Clutter::GetSurface(const std::uint8_t terrainType)
+  const ClutterSurfaceEntry& Clutter::GetSurface(
+    const std::uint8_t terrainType
+  )
   {
     if (mBuffer[terrainType] != 0u) {
       return mSurfaces[terrainType];
@@ -789,18 +479,16 @@ namespace moho
       const char* const meshBlueprintPath = seedObject[2].GetString();
       const float selectionWeight = static_cast<float>(seedObject[1].GetNumber());
 
-      msvc8::string meshBlueprintId(meshBlueprintPath ? meshBlueprintPath : "");
-      ClutterSurfaceElement seed{};
-      (void)InitializeClutterSeedFromBlueprintPath(&seed, selectionWeight, meshBlueprintId);
-      (void)AppendSurfaceSeed(&surface, seed);
-      ResetClutterSeedVtable(&seed);
+      fa::string meshBlueprintId(meshBlueprintPath ? meshBlueprintPath : "");
+      (void)AppendSurfaceSeed(&surface, ClutterSurfaceElement(selectionWeight, meshBlueprintId));
     }
 
     return surface;
   }
 
   /**
-   * Address: 0x007D7430 (FUN_007D7430, ?ClutterRegion@Clutter@Moho@@AAEXPBVGeomCamera3@2@ABVCHeightField@2@PAVRegion@12@MABVSurface@12@@Z)
+   * Address: 0x007D7430 (FUN_007D7430,
+   * ?ClutterRegion@Clutter@Moho@@AAEXPBVGeomCamera3@2@ABVCHeightField@2@PAVRegion@12@MABVSurface@12@@Z)
    */
   void Clutter::PopulateRegionClutter(
     const GeomCamera3* const camera,
@@ -877,7 +565,9 @@ namespace moho
    * Detaches one region node from the active doubly-linked chain and updates
    * `mCurRegion` when it points at the removed node.
    */
-  void Clutter::UnlinkRegion(ClutterRegion* const region)
+  void Clutter::UnlinkRegion(
+    ClutterRegion* const region
+  )
   {
     if (mCurRegion == region) {
       mCurRegion = region->mNext;
@@ -901,12 +591,16 @@ namespace moho
    * recycled region, links it as current, writes coordinates/bounds, and
    * inserts the corresponding key into the region-key tree.
    */
-  ClutterRegion* Clutter::CreateRegion(const int x, const int z, const Wm3::AxisAlignedBox3f& box)
+  ClutterRegion* Clutter::CreateRegion(
+    const int x,
+    const int z,
+    const Wm3::AxisAlignedBox3f& box
+  )
   {
     constexpr std::uint32_t kRegionPoolCount = 128u;
 
     if (mList2.empty()) {
-      ClutterRegion* const regionPool = AllocateRegionPoolBlock();
+      ClutterRegion* const regionPool = new ClutterRegion[kRegionPoolCount];
       mList1.push_back(regionPool);
 
       for (std::uint32_t index = 0; index < kRegionPoolCount; ++index) {
@@ -940,13 +634,15 @@ namespace moho
   /**
    * Address: 0x007D7080 (FUN_007D7080, ?DestroyRegion@Clutter@Moho@@AAEXPAVRegion@12@@Z)
    */
-  void Clutter::DestroyRegion(ClutterRegion* const region)
+  void Clutter::DestroyRegion(
+    ClutterRegion* const region
+  )
   {
     (void)mKeys.erase(ClutterRegionKey(*region));
 
     UnlinkRegion(region);
 
-    (void)region->ResetState();
+    region->ResetState();
 
     mList2.push_back(region);
   }
@@ -990,7 +686,7 @@ namespace moho
       // Address: 0x007D7E00 (FUN_007D7E00, called at 0x007D6300 as
       // `sub_7D7E00(&mSeeds, &scratchOut, mSeeds.first_, mSeeds.last_)` once
       // per loop iteration -- i.e. `erase(begin(),end())`, exactly `clear()`.
-      // `msvc8::vector<ClutterSurfaceElement>::erase(first,last)`
+      // `fa::vector<ClutterSurfaceElement>::erase(first,last)`
       // (`Vector.h`) already models this byte-for-byte; see that member's
       // Doxygen citation for the full shape/evidence, including the second,
       // unnamed call site and why `ClutterSurfaceElement` needed its own
@@ -1000,13 +696,15 @@ namespace moho
 
     mList2.clear();
 
-    // Each entry is a 128-region pool block; release the blocks before the
-    // nodes that point at them.
-    (void)ReleaseRegionListPayloads(mList1, 0);
+    // Each entry is a 128-region pool block (0x007D9400: `delete[]` through
+    // vtable slot 0 with flag 3); free the blocks before the nodes that
+    // point at them.
+    for (ClutterRegion* const block : mList1) {
+      delete[] block;
+    }
     mList1.clear();
   }
 } // namespace moho
-
 
 namespace moho
 {
@@ -1016,9 +714,10 @@ namespace moho
    * What it does:
    * Builds one region key from a live region's grid coordinates.
    */
-  ClutterRegionKey::ClutterRegionKey(const ClutterRegion& region) noexcept
+  ClutterRegionKey::ClutterRegionKey(
+    const ClutterRegion& region
+  ) noexcept
     : mX(region.mX)
     , mZ(region.mZ)
-  {
-  }
+  {}
 } // namespace moho

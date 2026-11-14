@@ -27,7 +27,9 @@ namespace
    * Packs one `ScrDiskWatcherTask*` into reflection lanes, preserving dynamic
    * owner type when the pointer references a derived runtime type.
    */
-  [[nodiscard]] gpg::RRef MakeScrDiskWatcherTaskRefImpl(ScrDiskWatcherTask* task)
+  [[nodiscard]] gpg::RRef MakeScrDiskWatcherTaskRefImpl(
+    ScrDiskWatcherTask* task
+  )
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -52,9 +54,7 @@ namespace
       return out;
     }
 
-    out.mObj = reinterpret_cast<void*>(
-      reinterpret_cast<std::uintptr_t>(task) - static_cast<std::uintptr_t>(baseOffset)
-    );
+    out.mObj = gpg::CompleteObject(task, baseOffset);
     out.mType = dynamicType;
     return out;
   }
@@ -66,7 +66,10 @@ namespace
    * Stores one reflected `ScrDiskWatcherTask` reference into caller-provided
    * output storage.
    */
-  gpg::RRef* StoreScrDiskWatcherTaskRef(ScrDiskWatcherTask* task, gpg::RRef* outRef)
+  gpg::RRef* StoreScrDiskWatcherTaskRef(
+    ScrDiskWatcherTask* task,
+    gpg::RRef* outRef
+  )
   {
     if (outRef == nullptr) {
       return nullptr;
@@ -101,7 +104,10 @@ namespace
    * first assigns the source to the output, and that assign frees the buffer
    * it is reading, so every `__diskwatch` callback got an empty path.
    */
-  void ResolvePathForLua(const SDiskWatchEvent& event, msvc8::string& normalizedPath)
+  void ResolvePathForLua(
+    const SDiskWatchEvent& event,
+    fa::string& normalizedPath
+  )
   {
     (void)FILE_ToMountedPath(&normalizedPath, event.mPath.c_str());
   }
@@ -112,7 +118,11 @@ namespace
    * What it does:
    * Calls Lua callback with `(path, actionCode)` and restores stack top.
    */
-  void LuaCallStrInt(const LuaPlus::LuaObject& callback, const msvc8::string& path, const int actionCode)
+  void LuaCallStrInt(
+    const LuaPlus::LuaObject& callback,
+    const fa::string& path,
+    const int actionCode
+  )
   {
     lua_State* const activeState = callback.GetActiveCState();
     const int savedTop = lua_gettop(activeState);
@@ -151,7 +161,9 @@ gpg::RType* ScrDiskWatcherTask::sType = nullptr;
 /**
  * Address: 0x004C0B60 (FUN_004C0B60, ??0ScrDiskWatcher@Moho@@QAE@@Z)
  */
-ScrDiskWatcherTask::ScrDiskWatcherTask(LuaPlus::LuaState* const luaState)
+ScrDiskWatcherTask::ScrDiskWatcherTask(
+  LuaPlus::LuaState* const luaState
+)
   : CTask(nullptr, false)
   , mReserved18(0)
   , mLuaState(luaState)
@@ -164,9 +176,7 @@ ScrDiskWatcherTask::ScrDiskWatcherTask(LuaPlus::LuaState* const luaState)
  * Address: 0x004C0C20 (FUN_004C0C20, scalar deleting thunk)
  * Address: 0x004C0C40 (FUN_004C0C40, non-deleting body)
  */
-ScrDiskWatcherTask::~ScrDiskWatcherTask()
-{
-}
+ScrDiskWatcherTask::~ScrDiskWatcherTask() {}
 
 /**
  * Address: 0x004C0CB0 (FUN_004C0CB0, ?Execute@ScrDiskWatcherTask@Moho@@UAEHXZ)
@@ -182,11 +192,11 @@ int ScrDiskWatcherTask::Execute()
     return 1;
   }
 
-  msvc8::vector<SDiskWatchEvent> pendingEvents;
+  fa::vector<SDiskWatchEvent> pendingEvents;
   mListener.CopyAndClearPendingChanges(pendingEvents);
 
   for (const SDiskWatchEvent& event : pendingEvents) {
-    msvc8::string normalizedPath;
+    fa::string normalizedPath;
     ResolvePathForLua(event, normalizedPath);
 
     LuaPlus::LuaTableIterator iter(&watchCallbacks, 1);
@@ -224,7 +234,10 @@ int ScrDiskWatcherTask::Execute()
 }
 
 void ScrDiskWatcherTask::MemberSaveConstructArgs(
-  gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+  gpg::WriteArchive& archive,
+  const int,
+  const gpg::RRef&,
+  gpg::SerSaveConstructArgsResult& result
 )
 {
   archive.WritePointer(mLuaState, gpg::TrackedPointerState::Unowned, gpg::RRef{});
@@ -232,7 +245,10 @@ void ScrDiskWatcherTask::MemberSaveConstructArgs(
 }
 
 void ScrDiskWatcherTask::MemberConstruct(
-  gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result
+  gpg::ReadArchive& archive,
+  const int,
+  const gpg::RRef&,
+  gpg::SerConstructResult& result
 )
 {
   // 0x004C0ACE: the owner is an empty reference on the stack.
@@ -261,7 +277,9 @@ const char* ScrDiskWatcherTaskTypeInfo::GetName() const
 /**
  * Address: 0x004C1150 (FUN_004C1150, Moho::ScrDiskWatcherTaskTypeInfo::AddBase_CTask)
  */
-void ScrDiskWatcherTaskTypeInfo::AddBase_CTask(gpg::RType* const typeInfo)
+void ScrDiskWatcherTaskTypeInfo::AddBase_CTask(
+  gpg::RType* const typeInfo
+)
 {
   gpg::RType* taskType = CTask::sType;
   if (!taskType) {
@@ -269,13 +287,7 @@ void ScrDiskWatcherTaskTypeInfo::AddBase_CTask(gpg::RType* const typeInfo)
     CTask::sType = taskType;
   }
 
-  gpg::RField baseField{};
-  baseField.mName = taskType->GetName();
-  baseField.mType = taskType;
-  baseField.mOffset = 0;
-  baseField.mFlags = 0;
-  baseField.mDesc = nullptr;
-  typeInfo->AddBase(baseField);
+  gpg::AddReflectedBaseType(typeInfo, taskType);
 }
 
 /**
@@ -291,9 +303,15 @@ void ScrDiskWatcherTaskTypeInfo::Init()
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_ScrDiskWatcherTaskTypeInfo_1d07fe, moho::register_ScrDiskWatcherTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_ScrDiskWatcherTaskTypeInfo_1d07fe,
+  moho::register_ScrDiskWatcherTaskTypeInfo
+)
 
-GPG_PREREGISTER_INIT(RegisterScrDiskWatcherTaskTypeInfo_1d07fe, RegisterScrDiskWatcherTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  RegisterScrDiskWatcherTaskTypeInfo_1d07fe,
+  RegisterScrDiskWatcherTaskTypeInfo
+)
 
 namespace moho
 {

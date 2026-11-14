@@ -11,7 +11,9 @@ namespace
    * What it does:
    * Registers one debug-overlay descriptor pair for weapon-range rendering.
    */
-  void RegisterRDebugWeaponsOverlayClass(moho::RDebugOverlayClass* const typeInfo)
+  void RegisterRDebugWeaponsOverlayClass(
+    moho::RDebugOverlayClass* const typeInfo
+  )
   {
     typeInfo->RegisterOverlayClass("Display weapon ranges", "Weapons");
   }
@@ -23,19 +25,6 @@ namespace moho
    * Address: 0x00652DC0 (FUN_00652DC0, Moho::RDebugWeaponsTypeInfo::dtr)
    */
   RDebugWeaponsTypeInfo::~RDebugWeaponsTypeInfo() = default;
-
-  /**
-   * Address: 0x00652DE0 (FUN_00652DE0)
-   *
-   * What it does:
-   * Deleting-destructor thunk lane that forwards into
-   * `RDebugOverlayClass` non-deleting destructor body.
-   */
-  [[maybe_unused]] RDebugOverlayClass* DestroyRDebugWeaponsTypeInfoThunk(RDebugOverlayClass* const object)
-  {
-    object->~RDebugOverlayClass();
-    return object;
-  }
 
   /**
    * Address: 0x00652DB0 (FUN_00652DB0, Moho::RDebugWeaponsTypeInfo::GetName)
@@ -78,7 +67,9 @@ namespace moho
   /**
    * Address: 0x00653710 (FUN_00653710, Moho::RDebugWeaponsTypeInfo::CtrRef)
    */
-  gpg::RRef RDebugWeaponsTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef RDebugWeaponsTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
     return debug_reflection::CtrRef<RDebugWeapons>(objectStorage, RDebugWeapons::sType);
   }
@@ -86,7 +77,9 @@ namespace moho
   /**
    * Address: 0x006536F0 (FUN_006536F0, Moho::RDebugWeaponsTypeInfo::Delete)
    */
-  void RDebugWeaponsTypeInfo::Delete(void* const objectStorage)
+  void RDebugWeaponsTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     debug_reflection::Delete<RDebugWeapons>(objectStorage);
   }
@@ -94,7 +87,9 @@ namespace moho
   /**
    * Address: 0x00653750 (FUN_00653750, Moho::RDebugWeaponsTypeInfo::Destruct)
    */
-  void RDebugWeaponsTypeInfo::Destruct(void* const objectStorage)
+  void RDebugWeaponsTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     debug_reflection::Destruct<RDebugWeapons>(objectStorage);
   }
@@ -102,7 +97,9 @@ namespace moho
   /**
    * Address: 0x00653960 (FUN_00653960, Moho::RDebugWeapons::AddBase_RDebugOverlay)
    */
-  void RDebugWeaponsTypeInfo::AddBase_RDebugOverlay(gpg::RType* const typeInfo)
+  void RDebugWeaponsTypeInfo::AddBase_RDebugOverlay(
+    gpg::RType* const typeInfo
+  )
   {
     debug_reflection::AddBaseRDebugOverlay(typeInfo);
   }

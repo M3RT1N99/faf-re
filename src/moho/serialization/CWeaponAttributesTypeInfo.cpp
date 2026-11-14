@@ -60,14 +60,11 @@ namespace moho
    * `CWeaponAttributesTypeInfo` instance while preserving outer storage
    * ownership.
    */
-  void DestroyCWeaponAttributesTypeInfoBody(CWeaponAttributesTypeInfo* const typeInfo) noexcept
+  void DestroyCWeaponAttributesTypeInfoBody(
+    CWeaponAttributesTypeInfo* const typeInfo
+  ) noexcept
   {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = {};
-    typeInfo->bases_ = {};
+    gpg::ClearTypeLists(typeInfo);
   }
 
   /**
@@ -103,4 +100,7 @@ namespace moho
 // alongside moho::CWeaponAttributesSerializer's own dynamic initializer (see
 // CWeaponAttributesSerializer.cpp) - the gpg::LookupRType consumer that
 // depends on it. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_CWeaponAttributesTypeInfo_bd87b0, moho::preregister_CWeaponAttributesTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_CWeaponAttributesTypeInfo_bd87b0,
+  moho::preregister_CWeaponAttributesTypeInfo
+)

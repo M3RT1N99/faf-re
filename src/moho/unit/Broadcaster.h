@@ -55,7 +55,9 @@ namespace moho
      * Moves `listener` to the back of this broadcaster's ring, unlinking it
      * from any ring it is on first.
      */
-    void AddListener(listener_type* const listener) noexcept
+    void AddListener(
+      listener_type* const listener
+    ) noexcept
     {
       mListeners.push_back(listener);
     }
@@ -117,7 +119,9 @@ namespace moho
      * a self-linked node; the binary emits both sequences, which is what pins
      * the source to this pair of calls rather than one splice.
      */
-    void BroadcastEvent(TEvent event)
+    void BroadcastEvent(
+      TEvent event
+    )
     {
       gpg::DList<listener_type> pending;
       mListeners.move_nodes_to(pending);
@@ -156,14 +160,6 @@ namespace moho
   gpg::RType* register_Listener_EUnitCommandQueueStatus_RType();
 
   /**
-   * Address: 0x00BD95D0 (FUN_00BD95D0, sub_BD95D0)
-   *
-   * What it does:
-   * Runs broadcaster status-type registration.
-   */
-  void register_Broadcaster_EUnitCommandQueueStatus_RTypeStartup();
-
-  /**
    * Address: 0x006EBDF0 (FUN_006EBDF0, sub_6EBDF0)
    *
    * What it does:
@@ -189,11 +185,4 @@ namespace moho
    */
   void register_Broadcaster_ECommandEvent_RTypeStartup();
 
-  /**
-   * Address: 0x00BD95F0 (FUN_00BD95F0, sub_BD95F0)
-   *
-   * What it does:
-   * Runs listener status-type registration.
-   */
-  void register_Listener_EUnitCommandQueueStatus_RTypeStartup();
 } // namespace moho

@@ -10,14 +10,22 @@
 
 #include "gpg/core/containers/String.h"
 #include "gpg/core/reflection/Reflection.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/utils/Global.h"
 #include "gpg/core/utils/Logging.h"
+// The Direct3D 9 backend is Windows-only (the Linux client, issue #255).
+#if FAFRE_PLATFORM_WINDOWS
 #include "gpg/gal/backends/d3d9/DeviceD3D9.hpp"
+#endif
 #include "gpg/gal/Effect.hpp"
 #include "gpg/gal/RenderTarget.hpp"
+#include "gpg/gal/VertexFormat.hpp"
+#include "gpg/gal/Device.hpp"
+// The Direct3D 9 backend is Windows-only (the Linux client, issue #255).
+#if FAFRE_PLATFORM_WINDOWS
 #include "gpg/gal/backends/d3d9/TextureD3D9.hpp"
 #include "gpg/gal/backends/d3d9/VertexFormatD3D9.hpp"
+#endif
 #include "moho/misc/FileWaitHandleSet.h"
 #include "moho/misc/StartupHelpers.h"
 #include "moho/render/ID3DRenderTarget.h"
@@ -50,19 +58,6 @@ namespace moho
       (void)resource_reflection::ResolveRD3DTextureResourceType();
     }
 
-    /**
-     * Address: 0x00443800 (FUN_00443800)
-     *
-     * What it does:
-     * Resolves RD3D texture RTTI on demand and registers the prefetch type key
-     * used by the D3D texture resource pipeline.
-     */
-    void RegisterTexturePrefetchType()
-    {
-      gpg::RType* const textureType = resource_reflection::ResolveRD3DTextureResourceType();
-      RES_RegisterPrefetchType("d3d_textures", textureType);
-    }
-
     CD3DTextureResourceFactory* GetTextureFactory()
     {
       return &gTextureResourceFactory;
@@ -74,7 +69,10 @@ namespace moho
      * What it does:
      * Returns true when one effect's source file path equals the requested path.
      */
-    [[nodiscard]] bool EffectFilePathMatches(const CD3DEffect* const effect, const msvc8::string& path)
+    [[nodiscard]] bool EffectFilePathMatches(
+      const CD3DEffect* const effect,
+      const fa::string& path
+    )
     {
       return effect != nullptr && effect->mFile == path;
     }
@@ -110,7 +108,7 @@ namespace moho
     )
     {
       gpg::RType* const resourceType = resource_reflection::ResolveRD3DTextureResourceType();
-      outTexture = boost::static_pointer_cast<RD3DTextureResource>(
+      outTexture = std::static_pointer_cast<RD3DTextureResource>(
         RES_GetResource(path != nullptr ? path : "", resourceWatcher, resourceType)
       );
       return outTexture;
@@ -151,10 +149,7 @@ namespace moho
 
       const PrefetchHandleBase handle = RES_PrefetchResource(path, RD3DTextureResource::sType);
       if (!handle.mPtr) {
-        const msvc8::string errorText = gpg::STR_Printf(
-          "Prefetch couldn't find file %s",
-          path != nullptr ? path : ""
-        );
+        const fa::string errorText = gpg::STR_Printf("Prefetch couldn't find file %s", path != nullptr ? path : "");
         throw std::runtime_error(errorText.c_str());
       }
 
@@ -173,7 +168,7 @@ namespace moho
       CD3DEffect*** const outIteratorSlot,
       CD3DEffect** const begin,
       CD3DEffect** const end,
-      const msvc8::string& path
+      const fa::string& path
     )
     {
       CD3DEffect** it = begin;
@@ -199,10 +194,10 @@ namespace moho
       CD3DEffect*** const outIteratorSlot,
       CD3DEffect** const begin,
       CD3DEffect** const end,
-      msvc8::string path
+      fa::string path
     )
     {
-      msvc8::string localPath(path);
+      fa::string localPath(path);
       return FindEffectPathIteratorCore(outIteratorSlot, begin, end, localPath);
     }
 
@@ -245,7 +240,9 @@ namespace moho
    * What it does:
    * Stores one global mip-skip level and reloads all tracked texture resources.
    */
-  void CD3DDeviceResources::SetSkipMipLevels(const int mipSkipLevels)
+  void CD3DDeviceResources::SetSkipMipLevels(
+    const int mipSkipLevels
+  )
   {
     mMipSkipLevels = mipSkipLevels;
 
@@ -271,8 +268,7 @@ namespace moho
    * What it does:
    * Creates one render-target wrapper and links it into the render-target lane.
    */
-  CD3DDeviceResources::RenderTargetHandle&
-  CD3DDeviceResources::CreateRenderTarget(
+  CD3DDeviceResources::RenderTargetHandle& CD3DDeviceResources::CreateRenderTarget(
     RenderTargetHandle& outTarget,
     const int width,
     const int height,
@@ -298,17 +294,13 @@ namespace moho
    * What it does:
    * Compatibility lane that forwards context payload into `CreateRenderTarget`.
    */
-  CD3DDeviceResources::RenderTargetHandle&
-  CD3DDeviceResources::Func3(
+  CD3DDeviceResources::RenderTargetHandle& CD3DDeviceResources::Func3(
     RenderTargetHandle& outTarget,
     const gpg::gal::RenderTargetContext& context
   )
   {
     return CreateRenderTarget(
-      outTarget,
-      static_cast<int>(context.width_),
-      static_cast<int>(context.height_),
-      static_cast<int>(context.format_)
+      outTarget, static_cast<int>(context.width_), static_cast<int>(context.height_), static_cast<int>(context.format_)
     );
   }
 
@@ -318,8 +310,7 @@ namespace moho
    * What it does:
    * Creates one depth-stencil wrapper and links it into depth-stencil lane.
    */
-  CD3DDeviceResources::DepthStencilHandle&
-  CD3DDeviceResources::CreateDepthStencil(
+  CD3DDeviceResources::DepthStencilHandle& CD3DDeviceResources::CreateDepthStencil(
     DepthStencilHandle& outDepthStencil,
     const int width,
     const int height,
@@ -345,7 +336,9 @@ namespace moho
    * What it does:
    * Returns cached vertex format by token or creates/stores one on miss.
    */
-  CD3DVertexFormat* CD3DDeviceResources::GetVertexFormat(const int formatToken)
+  CD3DVertexFormat* CD3DDeviceResources::GetVertexFormat(
+    const int formatToken
+  )
   {
     const auto desiredFormat = static_cast<std::uint32_t>(formatToken);
     for (CD3DVertexFormat* const vertexFormat : mVertexFormats) {
@@ -402,10 +395,7 @@ namespace moho
     }
 
     CD3DVertexStream* const vertexStream = new CD3DVertexStream(
-      mDevice,
-      static_cast<std::uint32_t>(streamWidth),
-      streamStrideToken,
-      dynamicUsageToken != 0u
+      mDevice, static_cast<std::uint32_t>(streamWidth), streamStrideToken, dynamicUsageToken != 0u
     );
     vertexStream->CreateBuffer();
     return vertexStream;
@@ -437,7 +427,10 @@ namespace moho
    * What it does:
    * Creates one index-sheet wrapper and links it into static/dynamic lane.
    */
-  CD3DIndexSheet* CD3DDeviceResources::CreateIndexSheet(const bool dynamicUsage, const int size)
+  CD3DIndexSheet* CD3DDeviceResources::CreateIndexSheet(
+    const bool dynamicUsage,
+    const int size
+  )
   {
     CD3DIndexSheet* const indexSheet = new CD3DIndexSheet(mDevice, static_cast<std::uint32_t>(size), dynamicUsage);
     if (indexSheet == nullptr) {
@@ -479,8 +472,10 @@ namespace moho
    * What it does:
    * Resolves one prefetch payload for a texture path.
    */
-  CD3DDeviceResources::PrefetchDataHandle&
-  CD3DDeviceResources::LoadPrefetchData(PrefetchDataHandle& outPrefetchData, const char* const path)
+  CD3DDeviceResources::PrefetchDataHandle& CD3DDeviceResources::LoadPrefetchData(
+    PrefetchDataHandle& outPrefetchData,
+    const char* const path
+  )
   {
     return RES_LoadPrefetchData(outPrefetchData, path);
   }
@@ -491,8 +486,10 @@ namespace moho
    * What it does:
    * Legacy texture-load lane that performs fallback loading and list relink.
    */
-  CD3DDeviceResources::TextureResourceHandle&
-  CD3DDeviceResources::Func7(TextureResourceHandle& outTexture, const char* const path)
+  CD3DDeviceResources::TextureResourceHandle& CD3DDeviceResources::Func7(
+    TextureResourceHandle& outTexture,
+    const char* const path
+  )
   {
     if (CD3DTextureResourceFactory* const textureFactory = GetTextureFactory(); textureFactory != nullptr) {
       LoadD3DTextureResourceFromFactory(outTexture, path, textureFactory);
@@ -515,8 +512,7 @@ namespace moho
    * What it does:
    * Creates one in-memory texture resource wrapper from location+blob payload.
    */
-  CD3DDeviceResources::TextureResourceHandle&
-  CD3DDeviceResources::GetTextureSheet(
+  CD3DDeviceResources::TextureResourceHandle& CD3DDeviceResources::GetTextureSheet(
     TextureResourceHandle& outTexture,
     const char* const location,
     void* const data,
@@ -621,7 +617,9 @@ namespace moho
    * leaves the texture unchanged and releases its copied strong handle.
    */
   bool CD3DDeviceResources::FillDynamicTexture(
-    const char* const shaderName, const char* const shaderSource, DynamicTextureSheetHandle sheet
+    const char* const shaderName,
+    const char* const shaderSource,
+    DynamicTextureSheetHandle sheet
   )
   {
     (void)shaderName;
@@ -655,20 +653,14 @@ namespace moho
       sheet->GetTexture(texture);
       const gpg::gal::TextureContext* const textureContext = texture->GetContext();
       needsReplacement =
-        textureContext->width_ != sourceContext.width_ ||
-        textureContext->height_ != sourceContext.height_;
+        textureContext->width_ != sourceContext.width_ || textureContext->height_ != sourceContext.height_;
     }
 
     if (needsReplacement) {
       CD3DDynamicTextureSheet* const replacementSheet = new CD3DDynamicTextureSheet(
-        mDevice,
-        false,
-        sourceContext.width_,
-        sourceContext.height_,
-        kTextureFormatRenderTarget,
-        false
+        mDevice, false, sourceContext.width_, sourceContext.height_, kTextureFormatRenderTarget, false
       );
-      (void)boost::ResetSharedFromRaw(&currentSheet, replacementSheet);
+      currentSheet.reset(replacementSheet);
       sheet = currentSheet.get();
       if (sheet != nullptr) {
         sheet->mContext.usage_ = kTextureUsageRenderTargetCopy;
@@ -689,7 +681,7 @@ namespace moho
       }
     }
 
-    (void)boost::CopySharedRetain(&outSheet, currentSheet);
+    outSheet = currentSheet;
     return outSheet;
   }
 
@@ -699,13 +691,15 @@ namespace moho
    * What it does:
    * Finds one compiled effect by exact name.
    */
-  CD3DEffect* CD3DDeviceResources::FindEffect(const char* const effectName)
+  CD3DEffect* CD3DDeviceResources::FindEffect(
+    const char* const effectName
+  )
   {
     if (effectName == nullptr) {
       return nullptr;
     }
 
-    const msvc8::string query(effectName);
+    const fa::string query(effectName);
     for (CD3DEffect* const effect : mEffects) {
       if (effect != nullptr && effect->mName == query) {
         return effect;
@@ -721,11 +715,14 @@ namespace moho
    * What it does:
    * Reacts to watched file changes by hot-reloading effect/texture resources.
    */
-  void CD3DDeviceResources::OnDiskWatchEvent(const SDiskWatchEvent& event)
+  void CD3DDeviceResources::OnDiskWatchEvent(
+    const SDiskWatchEvent& event
+  )
   {
-    if (event.mActionCode != kDiskActionAdded &&
-        event.mActionCode != kDiskActionModified &&
-        event.mActionCode != kDiskActionRenamedNewName) {
+    if (
+      event.mActionCode != kDiskActionAdded && event.mActionCode != kDiskActionModified &&
+      event.mActionCode != kDiskActionRenamedNewName
+    ) {
       return;
     }
 
@@ -752,7 +749,9 @@ namespace moho
    * Rebuilds one effect from disk for hot-reload and replaces the previous
    * effect object in the active effect vector.
    */
-  void CD3DDeviceResources::ReloadEffectFile(const msvc8::string& effectPath)
+  void CD3DDeviceResources::ReloadEffectFile(
+    const fa::string& effectPath
+  )
   {
     CD3DEffect** matchedEffect = mEffects.end();
     FindEffectPathIterator(&matchedEffect, mEffects.begin(), mEffects.end(), effectPath);
@@ -799,23 +798,20 @@ namespace moho
       gpg::Die("Unable to load FX files at local store [/effects/*.fx]");
     }
 
-    msvc8::vector<msvc8::string> effectPaths{};
+    fa::vector<fa::string> effectPaths{};
     waitHandleSet->mHandle->EnumerateFiles(kEffectsDirectory, kEffectsPattern, true, &effectPaths);
     if (effectPaths.empty()) {
       gpg::Die("Unable to load FX files at local store [/effects/*.fx]");
     }
 
-    for (const msvc8::string& effectPath : effectPaths) {
+    for (const fa::string& effectPath : effectPaths) {
       CD3DEffect* const effect = new CD3DEffect();
 
-      msvc8::string mountedPath{};
+      fa::string mountedPath{};
       waitHandleSet->mHandle->FindFile(&mountedPath, effectPath.c_str(), nullptr);
       if (!effect->InitEffectFromFile(mountedPath.c_str())) {
         delete effect;
-        gpg::Die(
-          "CD3DDeviceResources::DevResInitResources: Unable to load effect file %s",
-          effectPath.c_str()
-        );
+        gpg::Die("CD3DDeviceResources::DevResInitResources: Unable to load effect file %s", effectPath.c_str());
       }
 
       gpg::Logf("Compiled shader: %s", effectPath.c_str());
@@ -831,7 +827,9 @@ namespace moho
    * What it does:
    * Writes preloaded texture byte usage lines plus one total summary line.
    */
-  void CD3DDeviceResources::DumpPreloadedTextures(gpg::Stream* const stream)
+  void CD3DDeviceResources::DumpPreloadedTextures(
+    gpg::Stream* const stream
+  )
   {
     if (stream == nullptr) {
       return;
@@ -840,22 +838,17 @@ namespace moho
     int totalBytes = 0;
 
     for (auto* textureResource : mTextureList.owners_member<RD3DTextureResource, &RD3DTextureResource::mResources>()) {
-      const int byteCount =
-        static_cast<int>(textureResource->mContext.DataSizeBytes());
+      const int byteCount = static_cast<int>(textureResource->mContext.DataSizeBytes());
       if (byteCount == 0) {
         continue;
       }
 
-      const msvc8::string line = gpg::STR_Printf(
-        "%12i: %s\n",
-        byteCount,
-        textureResource->mContext.location_.c_str()
-      );
+      const fa::string line = gpg::STR_Printf("%12i: %s\n", byteCount, textureResource->mContext.location_.c_str());
       stream->Write(line.c_str(), line.size());
       totalBytes += byteCount;
     }
 
-    const msvc8::string summary = gpg::STR_Printf("\nTOTAL: %i\n", totalBytes);
+    const fa::string summary = gpg::STR_Printf("\nTOTAL: %i\n", totalBytes);
     stream->Write(summary.c_str(), summary.size());
   }
 
@@ -865,7 +858,9 @@ namespace moho
    * What it does:
    * Binds owning device pointer used by resource creation lanes.
    */
-  void CD3DDeviceResources::SetDevice(CD3DDevice* const device)
+  void CD3DDeviceResources::SetDevice(
+    CD3DDevice* const device
+  )
   {
     mDevice = device;
   }
@@ -882,7 +877,9 @@ namespace moho
    * effects (`devInit`) or tells each loaded effect the device was reset.
    * The binary ignores every create call's result.
    */
-  void CD3DDeviceResources::InitResources(const bool devInit)
+  void CD3DDeviceResources::InitResources(
+    const bool devInit
+  )
   {
     for (auto* vertexSheet : mVertexSheet2.mLink.owners_member<CD3DVertexSheet, &CD3DVertexSheet::mLink>()) {
       vertexSheet->CreateOwnedStreamBuffers();
@@ -923,7 +920,7 @@ namespace moho
   void CD3DDeviceResources::ClearCachedVertexFormats()
   {
     for (CD3DVertexFormat* const vertexFormat : mVertexFormats) {
-      delete vertexFormat;
+      GPG_NONVIRTUAL_DESTROY(delete vertexFormat);
     }
     mVertexFormats.clear();
   }
@@ -934,7 +931,9 @@ namespace moho
    * What it does:
    * Moves one vertex-sheet node into the static/dynamic ownership lane.
    */
-  void CD3DDeviceResources::LinkVertexSheet(CD3DVertexSheet* const vertexSheet)
+  void CD3DDeviceResources::LinkVertexSheet(
+    CD3DVertexSheet* const vertexSheet
+  )
   {
     if (vertexSheet == nullptr) {
       return;
@@ -951,19 +950,22 @@ namespace moho
    * What it does:
    * Moves one index-sheet node into the static/dynamic ownership lane.
    */
-  void CD3DDeviceResources::LinkIndexSheet(CD3DIndexSheet* const indexSheet)
+  void CD3DDeviceResources::LinkIndexSheet(
+    CD3DIndexSheet* const indexSheet
+  )
   {
     if (indexSheet == nullptr) {
       return;
     }
 
-    TDatListItem<CD3DIndexSheet, void>* const listHead = indexSheet->mContext.type_ != kIndexContextTypeStatic
-      ? &mIndexSheet2.mLink
-      : &mIndexSheet1.mLink;
+    TDatListItem<CD3DIndexSheet, void>* const listHead =
+      indexSheet->mContext.type_ != kIndexContextTypeStatic ? &mIndexSheet2.mLink : &mIndexSheet1.mLink;
     indexSheet->mLink.ListLinkAfter(listHead);
   }
 
-  void CD3DDeviceResources::TrackTextureResource(RD3DTextureResource* const textureResource)
+  void CD3DDeviceResources::TrackTextureResource(
+    RD3DTextureResource* const textureResource
+  )
   {
     if (textureResource == nullptr) {
       return;

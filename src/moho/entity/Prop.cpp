@@ -55,7 +55,9 @@ namespace
   gpg::RType* gEntitySerializationType = nullptr;
 
   template <typename T>
-  [[nodiscard]] gpg::RType* ResolveSerializedType(gpg::RType*& cache)
+  [[nodiscard]] gpg::RType* ResolveSerializedType(
+    gpg::RType*& cache
+  )
   {
     if (cache == nullptr) {
       cache = gpg::LookupRType(typeid(T));
@@ -75,9 +77,8 @@ namespace moho
   int cfunc_PropAddBoundedPropL(LuaPlus::LuaState* state);
   int cfunc_SplitProp(lua_State* luaContext);
   int cfunc_SplitPropL(LuaPlus::LuaState* state);
-  void SplitPropIntoBoneChildren(
-    Entity* original, const RPropBlueprint* childBlueprint, gpg::fastvector_n<Prop*, 20>* out
-  );
+  void
+  SplitPropIntoBoneChildren(Entity* original, const RPropBlueprint* childBlueprint, gpg::fastvector_n<Prop*, 20>* out);
   int cfunc_CreatePropHPR(lua_State* luaContext);
   int cfunc_CreatePropHPRL(LuaPlus::LuaState* state);
 
@@ -89,7 +90,9 @@ namespace moho
   /**
    * Address: 0x00680010 (FUN_00680010, Moho::CScrLuaMetatableFactory<Moho::Prop>::Create)
    */
-  LuaPlus::LuaObject CScrLuaMetatableFactory<Prop>::Create(LuaPlus::LuaState* const state)
+  LuaPlus::LuaObject CScrLuaMetatableFactory<Prop>::Create(
+    LuaPlus::LuaState* const state
+  )
   {
     return SCR_CreateSimpleMetatable(state);
   }
@@ -100,14 +103,12 @@ namespace moho
    * What it does:
    * Returns cached `Prop` metatable object from Lua object-factory storage.
    */
-  LuaPlus::LuaObject* func_GetPropFactory(LuaPlus::LuaObject* const object, LuaPlus::LuaState* const state)
+  LuaPlus::LuaObject* func_GetPropFactory(
+    LuaPlus::LuaObject* const object,
+    LuaPlus::LuaState* const state
+  )
   {
-    if (object == nullptr) {
-      return nullptr;
-    }
-
-    *object = CScrLuaMetatableFactory<Prop>::Instance().Get(state);
-    return object;
+    return SCR_WriteMetatable<Prop>(object, state);
   }
 
   /**
@@ -149,7 +150,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_PropAddBoundedPropL`.
    */
-  int cfunc_PropAddBoundedProp(lua_State* const luaContext)
+  int cfunc_PropAddBoundedProp(
+    lua_State* const luaContext
+  )
   {
     return cfunc_PropAddBoundedPropL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -161,7 +164,9 @@ namespace moho
    * Resolves `(prop, priority)`, writes bounded-priority/tick lanes on the
    * prop, and inserts it into `EntityDB::AddBoundedProp`.
    */
-  int cfunc_PropAddBoundedPropL(LuaPlus::LuaState* const state)
+  int cfunc_PropAddBoundedPropL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kPropAddBoundedPropHelpText);
@@ -175,7 +180,7 @@ namespace moho
     }
 
     const float priorityValue = static_cast<float>(lua_tonumber(rawState, 2));
-    prop->mPriorityInfo.mPriority = msvc8::CeilToIntX87(priorityValue); // 0x006FD093..0x006FD0A6
+    prop->mPriorityInfo.mPriority = fa::CeilToIntX87(priorityValue); // 0x006FD093..0x006FD0A6
 
     Sim* const sim = prop->SimulationRef;
     prop->mPriorityInfo.mBoundedTick = static_cast<std::int32_t>(sim->mCurTick);
@@ -192,12 +197,7 @@ namespace moho
   CScrLuaInitForm* func_SplitProp_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      kSplitPropName,
-      &cfunc_SplitProp,
-      nullptr,
-      "<global>",
-      kSplitPropHelpText
+      moho::SCR_SimLuaInitSet(), kSplitPropName, &cfunc_SplitProp, nullptr, "<global>", kSplitPropHelpText
     );
     return &binder;
   }
@@ -208,7 +208,9 @@ namespace moho
    * What it does:
    * Unwraps the raw Lua callback context and forwards to `cfunc_SplitPropL`.
    */
-  int cfunc_SplitProp(lua_State* const luaContext)
+  int cfunc_SplitProp(
+    lua_State* const luaContext
+  )
   {
     return cfunc_SplitPropL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -222,7 +224,9 @@ namespace moho
    * `SplitPropIntoBoneChildren`, pushes each created child's Lua userdata, and
    * returns the child count.
    */
-  int cfunc_SplitPropL(LuaPlus::LuaState* const state)
+  int cfunc_SplitPropL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kSplitPropHelpText);
@@ -236,7 +240,7 @@ namespace moho
       blueprintArg.TypeError("string");
     }
 
-    msvc8::string blueprintFilename;
+    fa::string blueprintFilename;
     (void)gpg::STR_InitFilename(&blueprintFilename, blueprintName);
     const RPropBlueprint* const childBlueprint = prop->SimulationRef->mRules->GetPropBlueprint(blueprintFilename);
 
@@ -264,12 +268,7 @@ namespace moho
   CScrLuaInitForm* func_CreatePropHPR_LuaFuncDef()
   {
     static CScrLuaBinder binder(
-      moho::SCR_SimLuaInitSet(),
-      kCreatePropHPRName,
-      &cfunc_CreatePropHPR,
-      nullptr,
-      "<global>",
-      kCreatePropHPRHelpText
+      moho::SCR_SimLuaInitSet(), kCreatePropHPRName, &cfunc_CreatePropHPR, nullptr, "<global>", kCreatePropHPRHelpText
     );
     return &binder;
   }
@@ -280,7 +279,9 @@ namespace moho
    * What it does:
    * Unwraps the raw Lua callback context and forwards to `cfunc_CreatePropHPRL`.
    */
-  int cfunc_CreatePropHPR(lua_State* const luaContext)
+  int cfunc_CreatePropHPR(
+    lua_State* const luaContext
+  )
   {
     return cfunc_CreatePropHPRL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -296,7 +297,9 @@ namespace moho
    * rotation quaternion, spawns the prop at `{position, orientation}`, and pushes
    * the created prop's Lua userdata.
    */
-  int cfunc_CreatePropHPRL(LuaPlus::LuaState* const state)
+  int cfunc_CreatePropHPRL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 7, kCreatePropHPRHelpText);
@@ -308,7 +311,7 @@ namespace moho
     if (blueprintName == nullptr) {
       blueprintArg.TypeError("string");
     }
-    const msvc8::string blueprintId(blueprintName, std::strlen(blueprintName));
+    const fa::string blueprintId(blueprintName, std::strlen(blueprintName));
 
     // Position (args 2,3,4) and Euler angles (args 5,6,7); validated in the
     // binary's order (4, 3, 2, then 5, 6, 7).
@@ -376,7 +379,9 @@ namespace moho
    * Initializes Prop for serializer construction lanes by using Entity's
    * non-blueprint constructor and applying Prop reclaim defaults.
    */
-  Prop::Prop(Sim* sim)
+  Prop::Prop(
+    Sim* sim
+  )
     : Entity(sim, kPropCollisionBucketFlags)
     , mReclaimMass(0.0f)
     , mReclaimEnergy(0.0f)
@@ -394,7 +399,11 @@ namespace moho
    * Constructs Prop from blueprint/transform, initializes layer+mesh+reclaim
    * state, and registers reclaim occupancy area when needed.
    */
-  Prop::Prop(Sim* sim, const RPropBlueprint* blueprint, const VTransform& transform)
+  Prop::Prop(
+    Sim* sim,
+    const RPropBlueprint* blueprint,
+    const VTransform& transform
+  )
     : Entity(
         static_cast<REntityBlueprint*>(const_cast<RPropBlueprint*>(blueprint)),
         sim,
@@ -454,8 +463,10 @@ namespace moho
       mTracksReclaimArea = true;
 
       if (sim && sim->mOGrid) {
-        const int originX = static_cast<int>(std::lrintf(transform.pos_.x - static_cast<float>(blueprint->mFootprint.mSizeX) * 0.5f));
-        const int originZ = static_cast<int>(std::lrintf(transform.pos_.z - static_cast<float>(blueprint->mFootprint.mSizeZ) * 0.5f));
+        const int originX =
+          static_cast<int>(std::lrintf(transform.pos_.x - static_cast<float>(blueprint->mFootprint.mSizeX) * 0.5f));
+        const int originZ =
+          static_cast<int>(std::lrintf(transform.pos_.z - static_cast<float>(blueprint->mFootprint.mSizeZ) * 0.5f));
 
         const SOCellPos origin{static_cast<std::int16_t>(originX), static_cast<std::int16_t>(originZ)};
         sim->mOGrid->ExecuteOccupy(origin, blueprint->mFootprint);
@@ -491,8 +502,12 @@ namespace moho
       const SFootprint& footprint = blueprint->mFootprint;
 
       const SOCellPos origin{
-        static_cast<std::int16_t>(std::lrintf(mVarDat.mCurTransform.pos_.x - static_cast<float>(footprint.mSizeX) * 0.5f)),
-        static_cast<std::int16_t>(std::lrintf(mVarDat.mCurTransform.pos_.z - static_cast<float>(footprint.mSizeZ) * 0.5f)),
+        static_cast<std::int16_t>(
+          std::lrintf(mVarDat.mCurTransform.pos_.x - static_cast<float>(footprint.mSizeX) * 0.5f)
+        ),
+        static_cast<std::int16_t>(
+          std::lrintf(mVarDat.mCurTransform.pos_.z - static_cast<float>(footprint.mSizeZ) * 0.5f)
+        ),
       };
       SimulationRef->mOGrid->ReleaseOccupy(origin, footprint);
     }
@@ -509,7 +524,11 @@ namespace moho
    * What it does:
    * Allocates Prop and dispatches to Prop ctor path.
    */
-  Prop* Prop::CreateFromBlueprintResolved(Sim* sim, const RPropBlueprint* blueprint, const VTransform& transform)
+  Prop* Prop::CreateFromBlueprintResolved(
+    Sim* sim,
+    const RPropBlueprint* blueprint,
+    const VTransform& transform
+  )
   {
     if (!sim || !blueprint) {
       return nullptr;
@@ -529,13 +548,17 @@ namespace moho
    * resolves the RPropBlueprint through the game rules, and creates the prop at
    * the given transform. A blueprint the rules do not know yields no prop.
    */
-  Prop* PROP_Create(Sim* const sim, const VTransform& transform, const char* const blueprintId)
+  Prop* PROP_Create(
+    Sim* const sim,
+    const VTransform& transform,
+    const char* const blueprintId
+  )
   {
     if (sim == nullptr || sim->mRules == nullptr || blueprintId == nullptr) {
       return nullptr;
     }
 
-    msvc8::string normalizedBlueprintId;
+    fa::string normalizedBlueprintId;
     normalizedBlueprintId.assign_owned(blueprintId);
     gpg::STR_NormalizeFilenameLowerSlash(normalizedBlueprintId);
 
@@ -568,7 +591,7 @@ namespace moho
   {
     constexpr float kQ = 0.70710677f; // sqrt(2)/2; fixed 90-degree rotation lane.
 
-    const boost::shared_ptr<RScmResource> meshResource = original->GetMesh();
+    const std::shared_ptr<RScmResource> meshResource = original->GetMesh();
     if (!meshResource) {
       return;
     }
@@ -577,7 +600,7 @@ namespace moho
     {
       // Binary grabs the raw skeleton pointer then drops the shared owner; the
       // mesh resource keeps the skeleton alive for the loop.
-      const boost::shared_ptr<const CAniSkel> handle = meshResource->GetSkeleton();
+      const std::shared_ptr<const CAniSkel> handle = meshResource->GetSkeleton();
       sourceSkeleton = handle.get();
     }
     if (sourceSkeleton == nullptr) {
@@ -622,20 +645,20 @@ namespace moho
       const VTransform composed = VTransform::Compose(invTransform, original->GetTransformWm3());
       Prop* const child = Prop::CreateFromBlueprintResolved(original->SimulationRef, childBlueprint, composed);
 
-      if (const boost::shared_ptr<RScmResource> childMeshResource = child->GetMesh()) {
+      if (const std::shared_ptr<RScmResource> childMeshResource = child->GetMesh()) {
         const RScmResource* const childMesh = childMeshResource.get();
 
         // Per-axis child scale = source-bone-bounds extent / child-mesh-box extent.
         Wm3::Vector3f childScale{};
-        childScale.x = ((bone.mBoundsMaxX - bone.mBoundsMinX) * scaleX) /
-          (childMesh->mBounds.Max.x - childMesh->mBounds.Min.x);
-        childScale.y = (scaleY * (bone.mBoundsMaxY - bone.mBoundsMinY)) /
-          (childMesh->mBounds.Max.y - childMesh->mBounds.Min.y);
-        childScale.z = (scaleZ * (bone.mBoundsMaxZ - bone.mBoundsMinZ)) /
-          (childMesh->mBounds.Max.z - childMesh->mBounds.Min.z);
+        childScale.x =
+          ((bone.mBoundsMaxX - bone.mBoundsMinX) * scaleX) / (childMesh->mBounds.Max.x - childMesh->mBounds.Min.x);
+        childScale.y =
+          (scaleY * (bone.mBoundsMaxY - bone.mBoundsMinY)) / (childMesh->mBounds.Max.y - childMesh->mBounds.Min.y);
+        childScale.z =
+          (scaleZ * (bone.mBoundsMaxZ - bone.mBoundsMinZ)) / (childMesh->mBounds.Max.z - childMesh->mBounds.Min.z);
 
         {
-          const boost::shared_ptr<const CAniSkel> childHandle = childMeshResource->GetSkeleton();
+          const std::shared_ptr<const CAniSkel> childHandle = childMeshResource->GetSkeleton();
           const CAniSkel* const childSkeleton = childHandle.get();
           if (childSkeleton != nullptr && childSkeleton->mBones.begin() != childSkeleton->mBones.end()) {
             const SAniSkelBone* const rootBone = childSkeleton->GetBone(0);
@@ -690,10 +713,7 @@ namespace moho
    */
   gpg::RRef Prop::GetDerivedObjectRef()
   {
-    gpg::RRef ref{};
-    ref.mObj = this;
-    ref.mType = GetClass();
-    return ref;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -721,7 +741,9 @@ namespace moho
    * it. Finally, when the current transform equals the previous transform, it
    * unlinks the coord-list node.
    */
-  void Prop::Sync(SSyncData* syncData)
+  void Prop::Sync(
+    SSyncData* syncData
+  )
   {
     if (mOnDestroyDispatched != 0u) {
       if (mInterfaceCreated != 0u) {
@@ -742,10 +764,13 @@ namespace moho
       SyncInterface(syncData);
     }
 
-    const bool samePosition =
-      mVarDat.mCurTransform.pos_.x == mVarDat.mLastTransform.pos_.x && mVarDat.mCurTransform.pos_.y == mVarDat.mLastTransform.pos_.y && mVarDat.mCurTransform.pos_.z == mVarDat.mLastTransform.pos_.z;
-    const bool sameOrientation = mVarDat.mCurTransform.orient_.x == mVarDat.mLastTransform.orient_.x && mVarDat.mCurTransform.orient_.y == mVarDat.mLastTransform.orient_.y &&
-      mVarDat.mCurTransform.orient_.z == mVarDat.mLastTransform.orient_.z && mVarDat.mCurTransform.orient_.w == mVarDat.mLastTransform.orient_.w;
+    const bool samePosition = mVarDat.mCurTransform.pos_.x == mVarDat.mLastTransform.pos_.x &&
+      mVarDat.mCurTransform.pos_.y == mVarDat.mLastTransform.pos_.y &&
+      mVarDat.mCurTransform.pos_.z == mVarDat.mLastTransform.pos_.z;
+    const bool sameOrientation = mVarDat.mCurTransform.orient_.x == mVarDat.mLastTransform.orient_.x &&
+      mVarDat.mCurTransform.orient_.y == mVarDat.mLastTransform.orient_.y &&
+      mVarDat.mCurTransform.orient_.z == mVarDat.mLastTransform.orient_.z &&
+      mVarDat.mCurTransform.orient_.w == mVarDat.mLastTransform.orient_.w;
     if (samePosition && sameOrientation) {
       ListUnlink();
     }
@@ -760,7 +785,7 @@ namespace moho
       return 1.0f;
     }
 
-    const auto* const blueprint = reinterpret_cast<const RPropBlueprint*>(BluePrint);
+    const auto* const blueprint = static_cast<const RPropBlueprint*>(BluePrint);
     return blueprint->Display.UniformScale;
   }
 
@@ -775,7 +800,9 @@ namespace moho
   /**
    * Address: 0x006FA180 (FUN_006FA180)
    */
-  float Prop::Materialize(const float reclaimDelta)
+  float Prop::Materialize(
+    const float reclaimDelta
+  )
   {
     if (reclaimDelta == 0.0f) {
       return 0.0f;
@@ -831,7 +858,11 @@ namespace moho
   /**
    * Address: 0x006FA150 (FUN_006FA150)
    */
-  void Prop::Kill(Entity* killer, gpg::StrArg reason, const float overkillRatio)
+  void Prop::Kill(
+    Entity* killer,
+    gpg::StrArg reason,
+    const float overkillRatio
+  )
   {
     // 0x006FA164: a prop does not take the Entity kill path; it hands the
     // kill straight to its script's OnKilled (RunScript_PropOnKilled), which
@@ -846,7 +877,10 @@ namespace moho
    * What it does:
    * Loads Prop reclaim and priority state after deserializing Entity base lanes.
    */
-  void Prop::MemberDeserialize(gpg::ReadArchive* const archive, const int version)
+  void Prop::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    const int version
+  )
   {
     if (archive == nullptr) {
       return;
@@ -875,7 +909,10 @@ namespace moho
    * What it does:
    * Saves Prop reclaim and priority state after serializing Entity base lanes.
    */
-  void Prop::MemberSerialize(gpg::WriteArchive* const archive, const int version) const
+  void Prop::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    const int version
+  ) const
   {
     if (archive == nullptr) {
       return;
@@ -947,7 +984,12 @@ namespace moho
   /**
    * Address: 0x006FA6B0 (FUN_006FA6B0)
    */
-  void Prop::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void Prop::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     Sim* sim = nullptr;
     const gpg::RRef owner{};

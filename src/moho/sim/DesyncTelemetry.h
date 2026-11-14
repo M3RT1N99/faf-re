@@ -22,11 +22,11 @@ namespace moho
   inline constexpr const char kTelemetryDefaultHost[] = "fafre-metrics.draiget.dev";
 
   /// Collector base URL, `http://host:port` or `https://host` (`/telemetryendpoint URL`).
-  extern msvc8::string telemetry_Endpoint;
+  extern fa::string telemetry_Endpoint;
 
   /// Ingest token sent as `Authorization: Bearer <token>` when set (`/telemetrytoken T`). The
   /// default ships with every build, so it only keeps casual junk out; reading needs another one.
-  extern msvc8::string telemetry_Token;
+  extern fa::string telemetry_Token;
 
   /**
    * Where the recorder's dump goes, as a `.tar.gz` POSTed to this URL as given
@@ -34,7 +34,7 @@ namespace moho
    * Unlike the records, the dump holds player names and the sync log; the token and user folder
    * names are masked (`TELEMETRY_Scrub`).
    */
-  extern msvc8::string telemetry_DumpEndpoint;
+  extern fa::string telemetry_DumpEndpoint;
 
   /// One log record's attributes, built as OTLP JSON (`{"key": ..., "value": {...}}` items).
   class CTelemetryAttributes
@@ -85,7 +85,12 @@ namespace moho
    * the network. On failure the record stays in the outbox and is retried with the next record
    * and at the next start, at most three attempts in all.
    */
-  void TELEMETRY_Send(const char* eventName, int severityNumber, const char* severityText, const CTelemetryAttributes& attributes);
+  void TELEMETRY_Send(
+    const char* eventName,
+    int severityNumber,
+    const char* severityText,
+    const CTelemetryAttributes& attributes
+  );
 
   /**
    * Waits up to `timeoutMs` until every queued record had its attempt, so the game-end record is

@@ -78,7 +78,7 @@ namespace
    *
    * What it does:
    * Constructs the `gpg::RListType<ESiloType>` static, which preregisters it
-   * for `typeid(msvc8::list<ESiloType>)`, and returns it.
+   * for `typeid(fa::list<ESiloType>)`, and returns it.
    *
    * `RListType<ESiloType>`, vtable 0x00E1DDA4:
    *
@@ -141,7 +141,9 @@ const char* CAiSiloBuildImplTypeInfo::GetName() const
  * What it does:
  * Registers `IAiSiloBuild` as this type's reflected base at offset 0.
  */
-void CAiSiloBuildImplTypeInfo::AddBase_IAiSiloBuild(gpg::RType* const typeInfo)
+void CAiSiloBuildImplTypeInfo::AddBase_IAiSiloBuild(
+  gpg::RType* const typeInfo
+)
 {
   gpg::AddBaseIfPresent(typeInfo, gpg::RTypeOf<IAiSiloBuild>(), 0);
 }
@@ -184,7 +186,7 @@ void moho::register_CAiSiloBuildImplTypeInfo()
  * Address: 0x00BCE190 (FUN_00BCE190, register_ESiloTypeListTypeInfo)
  *
  * What it does:
- * Registers reflected `msvc8::list<ESiloType>` type-info.
+ * Registers reflected `fa::list<ESiloType>` type-info.
  */
 void moho::register_ESiloTypeListTypeInfo()
 {
@@ -208,12 +210,26 @@ namespace
   [[maybe_unused]] CAiSiloBuildTypeInfoBootstrap gCAiSiloBuildTypeInfoBootstrap;
 } // namespace
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_SSiloBuildInfoTypeInfo_cefa38, moho::register_SSiloBuildInfoTypeInfo)
-GPG_PREREGISTER_INIT(register_CAiSiloBuildImplTypeInfo_cefa38, moho::register_CAiSiloBuildImplTypeInfo)
-GPG_PREREGISTER_INIT(register_ESiloTypeListTypeInfo_cefa38, moho::register_ESiloTypeListTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_SSiloBuildInfoTypeInfo_cefa38,
+  moho::register_SSiloBuildInfoTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_CAiSiloBuildImplTypeInfo_cefa38,
+  moho::register_CAiSiloBuildImplTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_ESiloTypeListTypeInfo_cefa38,
+  moho::register_ESiloTypeListTypeInfo
+)
 
-GPG_PREREGISTER_INIT(AcquireSSiloBuildInfoTypeInfo_cefa38, AcquireSSiloBuildInfoTypeInfo)
-GPG_PREREGISTER_INIT(AcquireCAiSiloBuildImplTypeInfo_cefa38, AcquireCAiSiloBuildImplTypeInfo)
+GPG_PREREGISTER_INIT(
+  AcquireSSiloBuildInfoTypeInfo_cefa38,
+  AcquireSSiloBuildInfoTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  AcquireCAiSiloBuildImplTypeInfo_cefa38,
+  AcquireCAiSiloBuildImplTypeInfo
+)

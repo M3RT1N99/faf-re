@@ -24,7 +24,10 @@ namespace moho
    * Links `mUnit` at the head of `unit`'s weak chain and stores the squared
    * distance.
    */
-  SPickUpInfo::SPickUpInfo(Unit* const unit, const float distanceSquared) noexcept
+  SPickUpInfo::SPickUpInfo(
+    Unit* const unit,
+    const float distanceSquared
+  ) noexcept
     : mUnit(unit)
     , mDistanceSq(distanceSquared)
   {}
@@ -40,7 +43,9 @@ namespace moho
    * What it does:
    * Deserializes one pickup entry by reading weak-unit lane then distance.
    */
-  void SPickUpInfo::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SPickUpInfo::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -63,7 +68,9 @@ namespace moho
    * What it does:
    * Serializes one pickup entry by writing weak-unit lane then distance.
    */
-  void SPickUpInfo::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SPickUpInfo::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -84,25 +91,6 @@ namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x00628090 (FUN_00628090)
-   *
-   * What it does:
-   * Wrapper lane that materializes one temporary `RRef_SPickUpInfo` and
-   * copies object/type fields into the destination reference record.
-   */
-  gpg::RRef* AssignSPickUpInfoRef(gpg::RRef* const outRef, moho::SPickUpInfo* const value)
-  {
-    if (!outRef) {
-      return nullptr;
-    }
-
-    gpg::RRef temporaryRef{};
-    (void)gpg::RRef_SPickUpInfo(&temporaryRef, value);
-    outRef->mObj = temporaryRef.mObj;
-    outRef->mType = temporaryRef.mType;
-    return outRef;
-  }
 } // namespace gpg
 
 namespace moho

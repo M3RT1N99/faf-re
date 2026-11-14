@@ -80,14 +80,6 @@ namespace moho
       const Wm3::Vector3f& buildDirection
     );
 
-    /**
-     * Address: 0x00605CD0 (FUN_00605CD0)
-     *
-     * What it does:
-     * Stores one blueprint pointer lane and returns this task.
-     */
-    CUnitMobileBuildTask* SetBlueprint(const RUnitBlueprint* blueprint) noexcept;
-
     // Address: cached RTTI lane read/written by
     // `CUnitMobileBuildTaskSerializer::Init` (0x005FBBA0); see
     // `moho/unit/tasks/CUnitMobileBuildTaskSerializer.cpp`.
@@ -200,37 +192,44 @@ namespace moho
 
   static_assert(sizeof(CUnitMobileBuildTask) == 0xE8, "CUnitMobileBuildTask size must be 0xE8");
   static_assert(
-    offsetof(CUnitMobileBuildTask, mBuildHelper) == 0x40, "CUnitMobileBuildTask::mBuildHelper offset must be 0x40"
+    offsetof(CUnitMobileBuildTask, mBuildHelper) == 0x40,
+    "CUnitMobileBuildTask::mBuildHelper offset must be 0x40"
   );
   static_assert(offsetof(CUnitMobileBuildTask, mCommand) == 0x84, "CUnitMobileBuildTask::mCommand offset must be 0x84");
   static_assert(
-    offsetof(CUnitMobileBuildTask, mBlueprint) == 0x88, "CUnitMobileBuildTask::mBlueprint offset must be 0x88"
+    offsetof(CUnitMobileBuildTask, mBlueprint) == 0x88,
+    "CUnitMobileBuildTask::mBlueprint offset must be 0x88"
   );
   static_assert(
-    offsetof(CUnitMobileBuildTask, mBuildPosition) == 0x8C, "CUnitMobileBuildTask::mBuildPosition offset must be 0x8C"
+    offsetof(CUnitMobileBuildTask, mBuildPosition) == 0x8C,
+    "CUnitMobileBuildTask::mBuildPosition offset must be 0x8C"
   );
   static_assert(
     offsetof(CUnitMobileBuildTask, mBuildOrientation) == 0x98,
     "CUnitMobileBuildTask::mBuildOrientation offset must be 0x98"
   );
   static_assert(
-    offsetof(CUnitMobileBuildTask, mBuildDirection) == 0xA8, "CUnitMobileBuildTask::mBuildDirection offset must be 0xA8"
+    offsetof(CUnitMobileBuildTask, mBuildDirection) == 0xA8,
+    "CUnitMobileBuildTask::mBuildDirection offset must be 0xA8"
   );
   static_assert(
     offsetof(CUnitMobileBuildTask, mPlacementRetryCount) == 0xB4,
     "CUnitMobileBuildTask::mPlacementRetryCount offset must be 0xB4"
   );
   static_assert(
-    offsetof(CUnitMobileBuildTask, mBuildUnit) == 0xB8, "CUnitMobileBuildTask::mBuildUnit offset must be 0xB8"
+    offsetof(CUnitMobileBuildTask, mBuildUnit) == 0xB8,
+    "CUnitMobileBuildTask::mBuildUnit offset must be 0xB8"
   );
   static_assert(
     offsetof(CUnitMobileBuildTask, mPendingBuildEntity) == 0xC0,
     "CUnitMobileBuildTask::mPendingBuildEntity offset must be 0xC0"
   );
   static_assert(
-    offsetof(CUnitMobileBuildTask, mBuildRect) == 0xC8, "CUnitMobileBuildTask::mBuildRect offset must be 0xC8"
+    offsetof(CUnitMobileBuildTask, mBuildRect) == 0xC8,
+    "CUnitMobileBuildTask::mBuildRect offset must be 0xC8"
   );
   static_assert(
-    offsetof(CUnitMobileBuildTask, mBuildSkirt) == 0xD8, "CUnitMobileBuildTask::mBuildSkirt offset must be 0xD8"
+    offsetof(CUnitMobileBuildTask, mBuildSkirt) == 0xD8,
+    "CUnitMobileBuildTask::mBuildSkirt offset must be 0xD8"
   );
 } // namespace moho

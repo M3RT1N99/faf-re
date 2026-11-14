@@ -11,6 +11,8 @@
 #include "moho/ai/CAiReconDBImpl.h"
 #include "moho/effects/rendering/CEfxEmitter.h"
 #include "moho/effects/rendering/CEffectManagerImpl.h"
+#include "moho/effects/rendering/EffectHost.h"
+#include "moho/effects/rendering/EffectTickObserver.h"
 #include "moho/effects/rendering/IEffectManager.h"
 #include "moho/entity/Entity.h"
 #include "moho/render/ETrailParam.h"
@@ -44,7 +46,10 @@ namespace
   // (mirrors the binary's sEngineStat_Render_ActiveEmitters_1 global).
   moho::StatItem* sEngineStatRenderActiveEmitters = nullptr;
 
-  [[nodiscard]] float ProjectViewportDepthRow1(const moho::VMatrix4& viewport, const Wm3::Vec3f& point) noexcept
+  [[nodiscard]] float ProjectViewportDepthRow1(
+    const moho::VMatrix4& viewport,
+    const Wm3::Vec3f& point
+  ) noexcept
   {
     return (point.x * viewport.r[1].x) + (point.y * viewport.r[1].y) + (point.z * viewport.r[1].z) + viewport.r[1].w;
   }
@@ -71,18 +76,15 @@ namespace
 
     const float* const start = emitter->mParams.start_;
     Wm3::Vec3f trailPosition{};
-    trailPosition.x = ((interpolatedMatrix.r[0].x * start[0])
-                     + (interpolatedMatrix.r[1].x * start[1])
-                     + (interpolatedMatrix.r[2].x * start[2]))
-                    + interpolatedMatrix.r[3].x;
-    trailPosition.y = ((interpolatedMatrix.r[0].y * start[0])
-                     + (interpolatedMatrix.r[1].y * start[1])
-                     + (interpolatedMatrix.r[2].y * start[2]))
-                    + interpolatedMatrix.r[3].y;
-    trailPosition.z = ((interpolatedMatrix.r[0].z * start[0])
-                     + (interpolatedMatrix.r[1].z * start[1])
-                     + (interpolatedMatrix.r[2].z * start[2]))
-                    + interpolatedMatrix.r[3].z;
+    trailPosition.x = ((interpolatedMatrix.r[0].x * start[0]) + (interpolatedMatrix.r[1].x * start[1]) +
+                       (interpolatedMatrix.r[2].x * start[2])) +
+      interpolatedMatrix.r[3].x;
+    trailPosition.y = ((interpolatedMatrix.r[0].y * start[0]) + (interpolatedMatrix.r[1].y * start[1]) +
+                       (interpolatedMatrix.r[2].y * start[2])) +
+      interpolatedMatrix.r[3].y;
+    trailPosition.z = ((interpolatedMatrix.r[0].z * start[0]) + (interpolatedMatrix.r[1].z * start[1]) +
+                       (interpolatedMatrix.r[2].z * start[2])) +
+      interpolatedMatrix.r[3].z;
 
     return ProjectViewportDepthRow1(camera->viewport, trailPosition) <= lodCutoff;
   }
@@ -171,7 +173,7 @@ namespace moho
     mParams.resize(TRAIL_LASTPARAM, 0.0f);
     mParticleTextures.resize(2, nullptr);
     {
-      const msvc8::string emptyString;
+      const fa::string emptyString;
       mStrings.resize(2, emptyString);
     }
 
@@ -190,7 +192,10 @@ namespace moho
    * What it does:
    * No-op invalidation lane used by the trail-emitter vtable.
    */
-  void CEfxTrailEmitter::Invalidate(const std::int32_t, const std::int32_t)
+  void CEfxTrailEmitter::Invalidate(
+    const std::int32_t,
+    const std::int32_t
+  )
   {}
 
   /**
@@ -200,7 +205,9 @@ namespace moho
    * Applies trail LOD/frustum checks and focused-army recon visibility probe
    * for one camera.
    */
-  bool CEfxTrailEmitter::CanSeeCam(const GeomCamera3* const camera)
+  bool CEfxTrailEmitter::CanSeeCam(
+    const GeomCamera3* const camera
+  )
   {
     VMatrix4 interpolatedMatrix{};
     (void)CEfxEmitter::InterpolatePosition(this, &interpolatedMatrix, 0, 0.0f);
@@ -211,55 +218,43 @@ namespace moho
     const float startZ = start[2];
 
     Wm3::Vec3f trailPosition{};
-    trailPosition.x = ((interpolatedMatrix.r[0].x * startX)
-                     + (interpolatedMatrix.r[1].x * startY)
-                     + (interpolatedMatrix.r[2].x * startZ))
-                    + interpolatedMatrix.r[3].x;
-    trailPosition.y = ((interpolatedMatrix.r[0].y * startX)
-                     + (interpolatedMatrix.r[1].y * startY)
-                     + (interpolatedMatrix.r[2].y * startZ))
-                    + interpolatedMatrix.r[3].y;
-    trailPosition.z = ((interpolatedMatrix.r[0].z * startX)
-                     + (interpolatedMatrix.r[1].z * startY)
-                     + (interpolatedMatrix.r[2].z * startZ))
-                    + interpolatedMatrix.r[3].z;
+    trailPosition.x = ((interpolatedMatrix.r[0].x * startX) + (interpolatedMatrix.r[1].x * startY) +
+                       (interpolatedMatrix.r[2].x * startZ)) +
+      interpolatedMatrix.r[3].x;
+    trailPosition.y = ((interpolatedMatrix.r[0].y * startX) + (interpolatedMatrix.r[1].y * startY) +
+                       (interpolatedMatrix.r[2].y * startZ)) +
+      interpolatedMatrix.r[3].y;
+    trailPosition.z = ((interpolatedMatrix.r[0].z * startX) + (interpolatedMatrix.r[1].z * startY) +
+                       (interpolatedMatrix.r[2].z * startZ)) +
+      interpolatedMatrix.r[3].z;
 
     const float lodCutoff = mTrailBlueprint->LODCutoff;
     Wm3::Sphere3f trailSphere{};
     trailSphere.Center = trailPosition;
     trailSphere.Radius = 5.0f;
-    if ((lodCutoff > 0.0f && ProjectViewportDepthRow1(camera->viewport, trailPosition) > lodCutoff)
-        || !camera->solid2.Intersects(trailSphere)) {
+    if (
+      (lodCutoff > 0.0f && ProjectViewportDepthRow1(camera->viewport, trailPosition) > lodCutoff) ||
+      !camera->solid2.Intersects(trailSphere)
+    ) {
       mLastUpdate = 0u;
       return false;
     }
 
-    Sim* const sim = mManager->GetSim();
-    CArmyImpl** const armiesBegin = sim->mArmiesList.begin();
-    const int focusArmy = sim->mSyncFilter.focusArmy;
-    if (!armiesBegin) {
-      return true;
-    }
-
-    if (focusArmy < 0 || static_cast<std::size_t>(focusArmy) >= sim->mArmiesList.size()) {
-      return true;
-    }
-
-    CArmyImpl* const army = armiesBegin[focusArmy];
-    if (!army) {
+    // The sim's focus army, or a hosted effect's host's (EffectHost.h). None: seen.
+    CEffectWorld world(*mManager);
+    if (!world.HasFocusArmy()) {
       return true;
     }
 
     if (mLastUpdate != 0u) {
-      if (((sim->mCurTick - mLastUpdate) % 5u) != 0u) {
+      if (((world.CurTick() - mLastUpdate) % 5u) != 0u) {
         return mVisible;
       }
     } else {
-      mLastUpdate = sim->mCurTick;
+      mLastUpdate = world.CurTick();
     }
 
-    CAiReconDBImpl* const reconDb = army->GetReconDB();
-    mVisible = reconDb->ReconCanDetect(trailPosition, static_cast<int>(RECON_LOSNow)) != RECON_None;
+    mVisible = world.FocusArmyDetects(trailPosition);
     return mVisible;
   }
 
@@ -274,6 +269,7 @@ namespace moho
   {
     const float lifetime = mParams.start_[TRAIL_LIFETIME];
     if (!(lifetime < 0.0f || (static_cast<float>(mTrailLength) + mTotalTicks) < lifetime)) {
+      EFFECT_Ending(*this, EEffectEnd::Lifetime); // plan WPR.10: null in the game
       mManager->DestroyEffect(this);
       return true;
     }
@@ -282,11 +278,12 @@ namespace moho
       return false;
     }
 
-    const Entity* const attachedEntity = mEntityInfo.GetAttachTargetEntity();
-    if (attachedEntity != nullptr && attachedEntity->DestroyQueuedFlag == 0u) {
+    const CEffectFollow attached(*this, mEntityInfo, false);
+    if (attached && !attached.Dying()) {
       return false;
     }
 
+    EFFECT_Ending(*this, EEffectEnd::EntityGone);
     mManager->DestroyEffect(this);
     return true;
   }
@@ -306,7 +303,9 @@ namespace moho
    * (0x190, 0x194, 0x198, 0x19C, 0x1A0, 0x1A4, 0x1B0, 0x1B1, 0x1B4), not
    * just pattern-matched from the write side.
    */
-  void CEfxTrailEmitter::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CEfxTrailEmitter::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -333,7 +332,9 @@ namespace moho
    * Serializes trail-emitter payload after base `CEffectImpl` state:
    * blueprint pointer, timing lanes, one Vector3 lane, and live flags.
    */
-  void CEfxTrailEmitter::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CEfxTrailEmitter::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -374,12 +375,10 @@ namespace moho
       return true;
     }
 
-    Sim* const sim = mManager->GetSim();
-    const msvc8::vector<GeomCamera3>& cameras = sim->mSyncFilter.geoCams;
+    const fa::vector<GeomCamera3>& cameras = CEffectWorld(*mManager).Cameras();
 
     for (const GeomCamera3& camera : cameras) {
-      if (CanSeeCam(&camera)
-          && !(mNewAttachment && !TrailEmitterPassesLodCutoffForCamera(&camera, this))) {
+      if (CanSeeCam(&camera) && !(mNewAttachment && !TrailEmitterPassesLodCutoffForCamera(&camera, this))) {
         return true;
       }
     }
@@ -403,15 +402,17 @@ namespace moho
    * segment direction, updates the running trail length/position, retains the
    * repeat and ramp textures, and (when dbg_Trail is set) draws a debug line.
    */
-  void CEfxTrailEmitter::Tick(const std::int32_t tick)
+  void CEfxTrailEmitter::Tick(
+    const std::int32_t tick
+  )
   {
     // interpScale: 1.0, or 1 / (attached entity pending-velocity scale) on the
     // final (tick == 0) sub-frame when an entity is attached.
     float interpScale = 1.0f;
     if (tick == 0) {
-      Entity* const attachedEntity = mEntityInfo.GetAttachTargetEntity();
-      if (attachedEntity != nullptr) {
-        interpScale = 1.0f / attachedEntity->mPendingVelocityScale;
+      const CEffectFollow attached(*this, mEntityInfo, false);
+      if (attached) {
+        interpScale = 1.0f / attached.PendingVelocityScale();
       }
     }
 
@@ -427,12 +428,18 @@ namespace moho
 
     // Trail-start point transformed through each interpolated matrix. Keep the
     // exact parenthesized add ordering the binary emits.
-    const float curX = (((curMatrix.r[1].x * sy) + (curMatrix.r[2].x * sz)) + (curMatrix.r[0].x * sx)) + curMatrix.r[3].x;
-    const float prevX = (((prevMatrix.r[1].x * sy) + (prevMatrix.r[2].x * sz)) + (prevMatrix.r[0].x * sx)) + prevMatrix.r[3].x;
-    const float prevY = (((prevMatrix.r[0].y * sx) + (prevMatrix.r[2].y * sz)) + (prevMatrix.r[1].y * sy)) + prevMatrix.r[3].y;
-    const float prevZ = (((prevMatrix.r[0].z * sx) + (prevMatrix.r[1].z * sy)) + (prevMatrix.r[2].z * sz)) + prevMatrix.r[3].z;
-    const float curY = (((curMatrix.r[0].y * sx) + (curMatrix.r[1].y * sy)) + (curMatrix.r[2].y * sz)) + curMatrix.r[3].y;
-    const float curZ = (((curMatrix.r[0].z * sx) + (curMatrix.r[1].z * sy)) + (curMatrix.r[2].z * sz)) + curMatrix.r[3].z;
+    const float curX =
+      (((curMatrix.r[1].x * sy) + (curMatrix.r[2].x * sz)) + (curMatrix.r[0].x * sx)) + curMatrix.r[3].x;
+    const float prevX =
+      (((prevMatrix.r[1].x * sy) + (prevMatrix.r[2].x * sz)) + (prevMatrix.r[0].x * sx)) + prevMatrix.r[3].x;
+    const float prevY =
+      (((prevMatrix.r[0].y * sx) + (prevMatrix.r[2].y * sz)) + (prevMatrix.r[1].y * sy)) + prevMatrix.r[3].y;
+    const float prevZ =
+      (((prevMatrix.r[0].z * sx) + (prevMatrix.r[1].z * sy)) + (prevMatrix.r[2].z * sz)) + prevMatrix.r[3].z;
+    const float curY =
+      (((curMatrix.r[0].y * sx) + (curMatrix.r[1].y * sy)) + (curMatrix.r[2].y * sz)) + curMatrix.r[3].y;
+    const float curZ =
+      (((curMatrix.r[0].z * sx) + (curMatrix.r[1].z * sy)) + (curMatrix.r[2].z * sz)) + curMatrix.r[3].z;
 
     Wm3::Vector3f direction{};
     direction.x = curX - prevX;
@@ -483,12 +490,12 @@ namespace moho
     trail.mBlendMode = bp->BlendMode;
     mLife = life + 1.0f;
 
-    Sim* const sim = mManager->GetSim();
-    SParticleBuffer* const particleBuffer = sim->GetParticleBuffer();
+    const CEffectWorld world(*mManager);
+    SParticleBuffer* const particleBuffer = world.ParticleBuffer();
     particleBuffer->mTrails.push_back(trail);
 
-    if (dbg_Trail) {
-      CDebugCanvas* const debugCanvas = sim->GetDebugCanvas();
+    CDebugCanvas* const debugCanvas = dbg_Trail && !EffectTickOnWorker() ? world.DebugCanvas() : nullptr;
+    if (debugCanvas != nullptr) {
       SDebugLine line{};
       line.p0.x = direction.y;
       line.p0.y = direction.x;
@@ -524,7 +531,23 @@ namespace moho
       }
       return;
     }
-    if (ProcessLifetime() || !CalculateVisible()) {
+    CEffectTickScope observed(*this); // plan WPR.10 (EffectTickObserver.h): the tick's segments, with an observer
+    if (observed.Observing()) {
+      // Where `CanSeeCam` tests it: the attachment at tick 0 on the start lane.
+      VMatrix4 placed{};
+      (void)CEfxEmitter::InterpolatePosition(this, &placed, 0, 0.0f);
+      const float* const p = mParams.start_;
+      observed.SetPosition(
+        (placed.r[0].x * p[0]) + (placed.r[1].x * p[1]) + (placed.r[2].x * p[2]) + placed.r[3].x,
+        (placed.r[0].y * p[0]) + (placed.r[1].y * p[1]) + (placed.r[2].y * p[2]) + placed.r[3].y,
+        (placed.r[0].z * p[0]) + (placed.r[1].z * p[1]) + (placed.r[2].z * p[2]) + placed.r[3].z
+      );
+    }
+    if (ProcessLifetime()) {
+      return;
+    }
+    if (!CalculateVisible()) {
+      observed.SetHidden();
       return;
     }
 
@@ -605,11 +628,8 @@ namespace moho
    *    `CEfxTrailEmitter::MemberSerialize` at 0x00672820.
    */
   class CEfxTrailEmitterSerializer : public gpg::SerSaveLoadHelper<CEfxTrailEmitter>
-  {
-  };
-  static_assert(
-    sizeof(CEfxTrailEmitterSerializer) == 0x14, "CEfxTrailEmitterSerializer size must be 0x14"
-  );
+  {};
+  static_assert(sizeof(CEfxTrailEmitterSerializer) == 0x14, "CEfxTrailEmitterSerializer size must be 0x14");
 } // namespace moho
 
 namespace

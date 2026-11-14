@@ -16,23 +16,6 @@ namespace
     return sInstance;
   }
 
-  /**
-   * Address: 0x00546E20 (FUN_00546E20)
-   *
-   * What it does:
-   * Executes one non-deleting `gpg::RType` base-teardown lane for
-   * `IResourcesTypeInfo`.
-   */
-  [[maybe_unused]] void cleanup_IResourcesTypeInfoRTypeBase(moho::IResourcesTypeInfo* const typeInfo) noexcept
-  {
-    if (typeInfo == nullptr) {
-      return;
-    }
-
-    typeInfo->fields_ = msvc8::vector<gpg::RField>{};
-    typeInfo->bases_ = msvc8::vector<gpg::RField>{};
-  }
-
   struct IResourcesTypeInfoStartup
   {
     IResourcesTypeInfoStartup()
@@ -89,4 +72,7 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_IResourcesTypeInfo_80c926, moho::register_IResourcesTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_IResourcesTypeInfo_80c926,
+  moho::register_IResourcesTypeInfo
+)

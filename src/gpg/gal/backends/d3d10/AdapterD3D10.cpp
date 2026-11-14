@@ -2,8 +2,8 @@
 
 namespace gpg::gal
 {
-namespace
-{
+  namespace
+  {
 
     constexpr DXGI_FORMAT kAdapterProbeFormats[8] = {
       static_cast<DXGI_FORMAT>(10),
@@ -38,8 +38,7 @@ namespace
       }
       return entry;
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x008F7AC0 (FUN_008F7AC0)
@@ -50,7 +49,9 @@ namespace
    * Initializes one adapter wrapper from one DXGI adapter pointer and captures
    * the adapter descriptor payload.
    */
-  AdapterD3D10::AdapterD3D10(IDXGIAdapter* const dxgiAdapter)
+  AdapterD3D10::AdapterD3D10(
+    IDXGIAdapter* const dxgiAdapter
+  )
     : dxgiAdapter_(dxgiAdapter)
     , description_()
     , modes_()
@@ -67,7 +68,9 @@ namespace
    * Copy-constructs one adapter wrapper by cloning descriptor payload and
    * deep-copying cached mode vectors from `other`.
    */
-  AdapterD3D10::AdapterD3D10(const AdapterD3D10& other)
+  AdapterD3D10::AdapterD3D10(
+    const AdapterD3D10& other
+  )
     : dxgiAdapter_(other.dxgiAdapter_)
     , description_(other.description_)
     , modes_(other.modes_)
@@ -80,7 +83,9 @@ namespace
    * Copy-assigns adapter pointer/descriptor lanes and deep-copies the cached
    * mode-vector lane from `other`.
    */
-  AdapterD3D10& AdapterD3D10::operator=(const AdapterD3D10& other)
+  AdapterD3D10& AdapterD3D10::operator=(
+    const AdapterD3D10& other
+  )
   {
     dxgiAdapter_ = other.dxgiAdapter_;
     description_ = other.description_;
@@ -129,7 +134,7 @@ namespace
             modeEntry.modes_.push_back(scratch[modeIndex]);
           }
         }
-        ::operator delete[](scratch);
+        ::operator delete(scratch); // allocated with ::operator new above; retail frees it with 0x00957A60
       }
 
       modes_.push_back(modeEntry);
@@ -143,14 +148,17 @@ namespace
    *
    * What it does:
    * Owns the scalar-deleting destructor path for adapter wrappers and tears
-   * down retained adapter-mode heap storage.
+   * down retained adapter-mode heap storage. Like the plain destructor
+   * (0x008F7B30) it releases no COM pointer: copies share the adapter and
+   * output pointers without AddRef (0x008FF450), so only
+   * DeviceD3D10::Shutdown releases them (0x008F6230, called from 0x009001B0
+   * alone). Releasing here freed the adapter through SetupDXGIDevice's stack
+   * copy and crashed /D3D10 at startup.
    */
   AdapterD3D10::~AdapterD3D10()
   {
-    ReleaseAdapterOutputAndDeviceRefs(this);
     // Each entry's inner mode vector goes with the outer one; both are real
     // containers, so `modes_ = {}` is the whole teardown (0x008F76C0).
-    modes_ = msvc8::vector<AdapterModeD3D10>{};
+    modes_ = fa::vector<AdapterModeD3D10>{};
   }
-}
-
+} // namespace gpg::gal

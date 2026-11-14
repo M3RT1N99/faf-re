@@ -16,12 +16,16 @@ namespace
   // Dispatches to the reflection layer's own `CAniPose` upcast (0x0054E230)
   // rather than repeating the lookup-and-throw: the binary emits that function
   // and CpyRef/MovRef are its only two callers.
-  [[nodiscard]] CAniPose* TryUpcastCAniPoseOrThrow(const gpg::RRef& sourceRef)
+  [[nodiscard]] CAniPose* TryUpcastCAniPoseOrThrow(
+    const gpg::RRef& sourceRef
+  )
   {
     return sourceRef.TryUpcastCAniPose();
   }
 
-  [[nodiscard]] gpg::RRef MakePoseRef(CAniPose* const pose)
+  [[nodiscard]] gpg::RRef MakePoseRef(
+    CAniPose* const pose
+  )
   {
     gpg::RRef out{};
     out = gpg::MakeRRef<moho::CAniPose>(pose);
@@ -35,7 +39,9 @@ namespace
    * Installs all six `CAniPose` reflection reference lifecycle callbacks on one
    * `RType` lane.
    */
-  [[maybe_unused]] [[nodiscard]] gpg::RType* InstallPoseTypeInfoAllRefCallbacks(gpg::RType* const result)
+  [[nodiscard]] gpg::RType* InstallPoseTypeInfoAllRefCallbacks(
+    gpg::RType* const result
+  )
   {
     result->newRefFunc_ = &CAniPoseTypeInfo::NewRef;
     result->ctorRefFunc_ = &CAniPoseTypeInfo::CtrRef;
@@ -46,39 +52,9 @@ namespace
     return result;
   }
 
-  /**
-   * Address: 0x0054C5A0 (FUN_0054C5A0)
-   *
-   * What it does:
-   * Installs new/construct/delete/destruct callback lanes for one `CAniPose`
-   * reflection type descriptor.
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::RType* InstallPoseTypeInfoCreateDeleteRefCallbacks(gpg::RType* const result)
-  {
-    result->newRefFunc_ = &CAniPoseTypeInfo::NewRef;
-    result->ctorRefFunc_ = &CAniPoseTypeInfo::CtrRef;
-    result->deleteFunc_ = &CAniPoseTypeInfo::Delete;
-    result->dtrFunc_ = &CAniPoseTypeInfo::Destruct;
-    return result;
-  }
-
-  /**
-   * Address: 0x0054C5C0 (FUN_0054C5C0)
-   *
-   * What it does:
-   * Installs copy/move/delete/destruct callback lanes for one `CAniPose`
-   * reflection type descriptor.
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::RType* InstallPoseTypeInfoCopyMoveDeleteRefCallbacks(gpg::RType* const result)
-  {
-    result->cpyRefFunc_ = &CAniPoseTypeInfo::CpyRef;
-    result->movRefFunc_ = &CAniPoseTypeInfo::MovRef;
-    result->deleteFunc_ = &CAniPoseTypeInfo::Delete;
-    result->dtrFunc_ = &CAniPoseTypeInfo::Destruct;
-    return result;
-  }
-
-  void InitializeDefaultPoseStorage(CAniPose& pose)
+  void InitializeDefaultPoseStorage(
+    CAniPose& pose
+  )
   {
     // Both callers hand this raw, unconstructed storage -- `NewRef` straight
     // off `operator new`, `CtrRef` from the reflection layer's own buffer -- so
@@ -89,7 +65,7 @@ namespace
     // `shared_count::operator=`, which releases the garbage control block those
     // bytes decode to. Constructing in place reproduces the binary's empty
     // {px, pi_} pair without touching it.
-    ::new (static_cast<void*>(&pose.mSkeleton)) boost::shared_ptr<const CAniSkel>();
+    ::new (static_cast<void*>(&pose.mSkeleton)) std::shared_ptr<const CAniSkel>();
     pose.mScale = 1.0f;
 
     pose.mLocalTransform.orient_.w = 1.0f;
@@ -191,7 +167,9 @@ gpg::RRef CAniPoseTypeInfo::NewRef()
  * Allocates one destination `CAniPose`, copy-constructs it from the source
  * reference, and returns the typed reflection reference.
  */
-gpg::RRef CAniPoseTypeInfo::CpyRef(gpg::RRef* const sourceRef)
+gpg::RRef CAniPoseTypeInfo::CpyRef(
+  gpg::RRef* const sourceRef
+)
 {
   auto* const pose = static_cast<CAniPose*>(::operator new(sizeof(CAniPose), std::nothrow));
   if (pose) {
@@ -208,7 +186,9 @@ gpg::RRef CAniPoseTypeInfo::CpyRef(gpg::RRef* const sourceRef)
  * What it does:
  * Destroys and frees one heap-owned `CAniPose`.
  */
-void CAniPoseTypeInfo::Delete(void* const objectStorage)
+void CAniPoseTypeInfo::Delete(
+  void* const objectStorage
+)
 {
   delete static_cast<CAniPose*>(objectStorage);
 }
@@ -220,7 +200,9 @@ void CAniPoseTypeInfo::Delete(void* const objectStorage)
  * Placement-initializes one `CAniPose` in caller-provided storage and returns
  * its typed reflection reference.
  */
-gpg::RRef CAniPoseTypeInfo::CtrRef(void* const objectStorage)
+gpg::RRef CAniPoseTypeInfo::CtrRef(
+  void* const objectStorage
+)
 {
   auto* const pose = static_cast<CAniPose*>(objectStorage);
   if (pose) {
@@ -237,7 +219,10 @@ gpg::RRef CAniPoseTypeInfo::CtrRef(void* const objectStorage)
  * Placement-copy-constructs one `CAniPose` in caller-provided storage from the
  * source reflection reference.
  */
-gpg::RRef CAniPoseTypeInfo::MovRef(void* const objectStorage, gpg::RRef* const sourceRef)
+gpg::RRef CAniPoseTypeInfo::MovRef(
+  void* const objectStorage,
+  gpg::RRef* const sourceRef
+)
 {
   auto* const pose = static_cast<CAniPose*>(objectStorage);
   if (pose) {
@@ -254,7 +239,9 @@ gpg::RRef CAniPoseTypeInfo::MovRef(void* const objectStorage, gpg::RRef* const s
  * What it does:
  * Runs the `CAniPose` destructor in place without freeing storage.
  */
-void CAniPoseTypeInfo::Destruct(void* const objectStorage)
+void CAniPoseTypeInfo::Destruct(
+  void* const objectStorage
+)
 {
   if (!objectStorage) {
     return;
@@ -271,7 +258,9 @@ void moho::register_CAniPoseTypeInfoStartup()
   (void)AcquireCAniPoseTypeInfo();
 }
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CAniPoseTypeInfoStartup_e9036b, moho::register_CAniPoseTypeInfoStartup)
+GPG_PREREGISTER_INIT(
+  register_CAniPoseTypeInfoStartup_e9036b,
+  moho::register_CAniPoseTypeInfoStartup
+)

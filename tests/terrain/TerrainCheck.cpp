@@ -9,21 +9,22 @@
 // payload ends in the stream, the map data the simulation copies (heightfield, terrain-type
 // grid, water) and the props read after it.
 //
-// Usage: faf_terrain_check --maps <list> /init <init.lua> [/log <file>]
+// Usage: faf_terrain_check --maps <list> /init <init.lua> [/log <file>] [gtest flags]
 //
-// Prints one `TERRAINCHECK same` or `TERRAINCHECK DIFF <what>` line per map and
-// `TERRAINCHECK maps= differences=`. Exit 0 when nothing differs, 1 when something does,
-// 2 on bad arguments, 3 on a fatal error.
+// Each map is checked under SCOPED_TRACE(path), and one `TERRAINCHECK same` or
+// `TERRAINCHECK DIFF <what>` line per map is printed. Without --maps the test is skipped.
+// Exit 0 when every check passes, 1 when one fails, 3 on a fatal engine error.
 
 #include <Windows.h>
 #include <objbase.h>
+
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <memory>
-#include <sstream>
 #include <string>
 
 #include "gpg/core/containers/String.h"
@@ -42,9 +43,6 @@
 
 namespace
 {
-  constexpr int kExitSame = 0;
-  constexpr int kExitDifferent = 1;
-  constexpr int kExitBadInput = 2;
   constexpr int kExitFatal = 3;
 
   constexpr std::uint32_t kWorldMapFileMagic = 0x1A70614DU; // CWldMap::MapLoad's
@@ -65,14 +63,11 @@ namespace
     std::string props;        // every prop's blueprint path and transform
   };
 
-  struct STerrainCheckResult
-  {
-    int maps = 0;
-    int differences = 0;
-    std::string report; // one line per map, then a summary line
-  };
-
-  void AppendBytes(std::string& out, const void* const data, const std::size_t size)
+  void AppendBytes(
+    std::string& out,
+    const void* const data,
+    const std::size_t size
+  )
   {
     out.append(static_cast<const char*>(data), size);
   }
@@ -81,7 +76,10 @@ namespace
    * CWldMap::MapLoad's reads (magic, version, preview chunk, terrain, props) into the
    * terrain resource `terrainRes` takes; the preview is read without its texture.
    */
-  SLoadedMap LoadMap(const std::string& path, moho::IWldTerrainRes* const terrainRes)
+  SLoadedMap LoadMap(
+    const std::string& path,
+    moho::IWldTerrainRes* const terrainRes
+  )
   {
     SLoadedMap result{};
     std::unique_ptr<moho::IWldTerrainRes> owner(terrainRes);
@@ -90,7 +88,7 @@ namespace
       return result;
     }
 
-    msvc8::auto_ptr<gpg::Stream> stream = moho::DISK_OpenFileRead(path.c_str());
+    fa::auto_ptr<gpg::Stream> stream = moho::DISK_OpenFileRead(path.c_str());
     if (!stream.get()) {
       result.error = "cannot open";
       return result;
@@ -156,67 +154,11 @@ namespace
     return result;
   }
 
-  /** Every map in `list`, through the client's and the headless terrain resource. */
-  STerrainCheckResult RunTerrainCheck(std::ifstream& list)
-  {
-    STerrainCheckResult result{};
-    std::ostringstream report;
-    std::string path;
-    while (std::getline(list, path)) {
-      while (!path.empty() && (path.back() == '\r' || path.back() == ' ')) {
-        path.pop_back();
-      }
-      if (path.empty()) {
-        continue;
-      }
-      ++result.maps;
+  std::string gMapList; // --maps
 
-      const SLoadedMap client = LoadMap(path, moho::sTerrainResFactory());
-      const SLoadedMap headless = LoadMap(path, moho::WLD_CreateHeadlessTerrainRes());
-
-      std::string verdict;
-      if (!client.loaded || !headless.loaded) {
-        verdict = "LOADFAIL client=" + (client.loaded ? std::string("ok") : client.error) +
-                  " headless=" + (headless.loaded ? std::string("ok") : headless.error);
-        if (client.loaded != headless.loaded || client.error != headless.error) {
-          ++result.differences;
-        }
-      } else {
-        std::string diffs;
-        if (client.terrainEnd != headless.terrainEnd) diffs += " terrain-end";
-        if (client.propsEnd != headless.propsEnd) diffs += " props-end";
-        if (client.width != headless.width || client.height != headless.height) diffs += " size";
-        if (client.heights != headless.heights) diffs += " heights";
-        if (client.terrainTypes != headless.terrainTypes) diffs += " terrain-types";
-        if (client.water != headless.water) diffs += " water";
-        if (client.props != headless.props) diffs += " props";
-        if (diffs.empty()) {
-          verdict = "same";
-        } else {
-          verdict = "DIFF" + diffs;
-          ++result.differences;
-        }
-      }
-
-      char sizes[96];
-      std::snprintf(
-        sizes,
-        sizeof(sizes),
-        " %ux%u terrain-end=%llu/%llu",
-        client.width,
-        client.height,
-        static_cast<unsigned long long>(client.terrainEnd),
-        static_cast<unsigned long long>(headless.terrainEnd)
-      );
-      report << "TERRAINCHECK " << verdict << sizes << " " << path << "\n";
-    }
-
-    report << "TERRAINCHECK maps=" << result.maps << " differences=" << result.differences;
-    result.report = report.str();
-    return result;
-  }
-
-  [[noreturn]] void EndProcess(const int exitCode)
+  [[noreturn]] void EndProcess(
+    const int exitCode
+  )
   {
     std::fflush(stdout);
     std::fflush(stderr);
@@ -225,7 +167,9 @@ namespace
     std::_Exit(exitCode);
   }
 
-  void TerrainCheckDieHandler(const char* const message)
+  void TerrainCheckDieHandler(
+    const char* const message
+  )
   {
     std::printf("TERRAINCHECK FATAL %s\n", message != nullptr ? message : "engine Die()");
     EndProcess(kExitFatal);
@@ -239,46 +183,118 @@ namespace
       : moho::IWinApp("SupCom", "SupremeCommander")
     {}
 
-    bool Init() override { return AppInitCommonServices(); }
+    bool Init() override
+    {
+      return AppInitCommonServices();
+    }
     void Main() override {}
     void Destroy() override {}
   };
 } // namespace
 
-int main()
+// Every map in the list, through the client's and the headless terrain resource.
+TEST(
+  TerrainCheck,
+  ClientAndHeadlessLoadTheSame
+)
 {
+  if (gMapList.empty()) {
+    GTEST_SKIP() << "needs --maps <list> /init <init.lua> and the game data";
+  }
+  ASSERT_NE(moho::sTerrainResFactory, nullptr) << "no client terrain resource linked";
+  std::ifstream list(gMapList);
+  ASSERT_TRUE(list) << "cannot read " << gMapList;
+
+  int maps = 0;
+  int differences = 0;
+  std::string path;
+  while (std::getline(list, path)) {
+    while (!path.empty() && (path.back() == '\r' || path.back() == ' ')) {
+      path.pop_back();
+    }
+    if (path.empty()) {
+      continue;
+    }
+    ++maps;
+    SCOPED_TRACE(path);
+
+    const SLoadedMap client = LoadMap(path, moho::sTerrainResFactory());
+    const SLoadedMap headless = LoadMap(path, moho::WLD_CreateHeadlessTerrainRes());
+
+    std::string verdict;
+    if (!client.loaded || !headless.loaded) {
+      // A map neither resource can read is the same result both ways.
+      EXPECT_EQ(client.loaded, headless.loaded);
+      EXPECT_EQ(client.error, headless.error);
+      if (client.loaded != headless.loaded || client.error != headless.error) {
+        ++differences;
+      }
+      verdict = "LOADFAIL client=" + (client.loaded ? std::string("ok") : client.error) +
+        " headless=" + (headless.loaded ? std::string("ok") : headless.error);
+    } else {
+      // The parts compared as bytes, named; gtest would print megabytes of heightfield.
+      std::string diffs;
+      if (client.terrainEnd != headless.terrainEnd)
+        diffs += " terrain-end";
+      if (client.propsEnd != headless.propsEnd)
+        diffs += " props-end";
+      if (client.width != headless.width || client.height != headless.height)
+        diffs += " size";
+      if (client.heights != headless.heights)
+        diffs += " heights";
+      if (client.terrainTypes != headless.terrainTypes)
+        diffs += " terrain-types";
+      if (client.water != headless.water)
+        diffs += " water";
+      if (client.props != headless.props)
+        diffs += " props";
+      EXPECT_EQ(diffs, "") << "parts that differ between the client and the headless load";
+      verdict = diffs.empty() ? "same" : "DIFF" + diffs;
+      differences += diffs.empty() ? 0 : 1;
+    }
+    std::printf(
+      "TERRAINCHECK %s %ux%u terrain-end=%llu/%llu %s\n",
+      verdict.c_str(),
+      client.width,
+      client.height,
+      static_cast<unsigned long long>(client.terrainEnd),
+      static_cast<unsigned long long>(headless.terrainEnd),
+      path.c_str()
+    );
+  }
+  std::printf("TERRAINCHECK maps=%d differences=%d\n", maps, differences);
+  EXPECT_GT(maps, 0) << "the list names no map";
+}
+
+int main(
+  int argc,
+  char** argv
+)
+{
+  ::testing::InitGoogleTest(&argc, argv);
   ::SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
   gpg::SetDieHandler(&TerrainCheckDieHandler);
 
-  msvc8::vector<msvc8::string> mapsArgs;
-  if (!moho::CFG_GetArgOption("--maps", 1, &mapsArgs) || mapsArgs.empty() || !moho::CFG_GetArgOption("/init", 1, nullptr)) {
-    std::printf("usage: faf_terrain_check --maps <list> /init <init.lua> [/log <file>]\n");
-    return kExitBadInput;
-  }
-  const std::string listPath = mapsArgs[0].c_str();
-  std::ifstream list(listPath);
-  if (!list) {
-    std::printf("TERRAINCHECK error: cannot read %s\n", listPath.c_str());
-    return kExitBadInput;
-  }
-  if (moho::sTerrainResFactory == nullptr) {
-    std::printf("TERRAINCHECK error: no client terrain resource linked\n");
-    return kExitFatal;
+  fa::vector<fa::string> mapsArgs;
+  if (moho::CFG_GetArgOption("--maps", 1, &mapsArgs) && !mapsArgs.empty()) {
+    if (!moho::CFG_GetArgOption("/init", 1, nullptr)) {
+      std::printf("usage: faf_terrain_check --maps <list> /init <init.lua> [/log <file>]\n");
+      return 2;
+    }
+    gMapList = mapsArgs[0].c_str();
+
+    // The game's startup up to its data paths, as headless runs it (replay/ReplayMain.cpp).
+    moho::APP_InitializeIdentity();
+    (void)::CoInitialize(nullptr);
+    moho::PLAT_Init();
+    static TerrainCheckApp app;
+    if (!app.Init()) {
+      std::printf("TERRAINCHECK FATAL app init\n");
+      EndProcess(kExitFatal);
+    }
+    platform::SetX87PrecisionControl(_PC_24);
+    moho::PlaceCurrentThread(moho::EThreadRole::Main);
   }
 
-  // The game's startup up to its data paths, as headless runs it (replay/ReplayMain.cpp).
-  moho::APP_InitializeIdentity();
-  (void)::CoInitialize(nullptr);
-  moho::PLAT_Init();
-  TerrainCheckApp app;
-  if (!app.Init()) {
-    std::printf("TERRAINCHECK FATAL app init\n");
-    EndProcess(kExitFatal);
-  }
-  platform::SetX87PrecisionControl(_PC_24);
-  moho::PlaceCurrentThread(moho::EThreadRole::Main);
-
-  const STerrainCheckResult check = RunTerrainCheck(list);
-  std::printf("%s\n", check.report.c_str());
-  EndProcess(check.differences == 0 ? kExitSame : kExitDifferent);
+  EndProcess(RUN_ALL_TESTS());
 }

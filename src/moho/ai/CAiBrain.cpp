@@ -34,7 +34,10 @@ namespace
    * the binary's per-row payload by `sub_5837F0`'s cleanup shape (the row
    * vector's `_Destroy_range`, cited on Vector.h).
    */
-  void MarkGridCellEnemyPresence(SAttackVectorGridRow& row, const bool hasEnemyUnits)
+  void MarkGridCellEnemyPresence(
+    SAttackVectorGridRow& row,
+    const bool hasEnemyUnits
+  )
   {
     const auto cellIndex = static_cast<std::uint32_t>(row.mNextColumn);
     const std::uint32_t wordIndex = cellIndex >> 5;
@@ -55,7 +58,10 @@ namespace
    * word) reads as empty, matching the binary's zero-filled tail-word
    * semantics.
    */
-  [[nodiscard]] bool GridCellHasEnemyPresence(const SAttackVectorGridRow& row, const std::int32_t column)
+  [[nodiscard]] bool GridCellHasEnemyPresence(
+    const SAttackVectorGridRow& row,
+    const std::int32_t column
+  )
   {
     if (column < 0) {
       return false;
@@ -75,7 +81,9 @@ namespace
    * A `UnitBuilderSubsystemView` of 0x554 pad bytes plus a `void*` used to
    * stand in for it here.
    */
-  [[nodiscard]] bool UnitHasBuilderSubsystem(const Unit* const unit) noexcept
+  [[nodiscard]] bool UnitHasBuilderSubsystem(
+    const Unit* const unit
+  ) noexcept
   {
     return unit != nullptr && unit->AiBuilder != nullptr;
   }
@@ -96,7 +104,10 @@ namespace
    * against `brain->mSim`. Returns false when the builder/blueprint gate fails.
    */
   [[nodiscard]] bool IssueBuildFactoryCommands(
-    Unit* const builder, const int count, RUnitBlueprint* const blueprint, CAiBrain* const brain
+    Unit* const builder,
+    const int count,
+    RUnitBlueprint* const blueprint,
+    CAiBrain* const brain
   )
   {
     if (!UnitHasBuilderSubsystem(builder) || blueprint == nullptr) {
@@ -115,7 +126,10 @@ namespace
     return true;
   }
 
-  void SubtractCategoryWordRange(EntityCategorySet& lhs, const EntityCategorySet& rhs)
+  void SubtractCategoryWordRange(
+    EntityCategorySet& lhs,
+    const EntityCategorySet& rhs
+  )
   {
     const std::size_t lhsCount = lhs.WordCount();
     const std::size_t rhsCount = rhs.WordCount();
@@ -142,7 +156,7 @@ namespace
       lhsWords[lhsIndex] &= ~rhsWords[rhsIndex];
     }
   }
-}
+} // namespace
 
 namespace moho
 {
@@ -153,7 +167,9 @@ namespace moho
    * Samples the map height field at an 8x8 grid step and returns the ratio
    * of sampled cells where water elevation is above sampled terrain elevation.
    */
-  float CalculateMapWaterRatio(const moho::STIMap& map)
+  float CalculateMapWaterRatio(
+    const moho::STIMap& map
+  )
   {
     const moho::CHeightField* const heightField = map.mHeightField.get();
     const int mapWidth = heightField->width;
@@ -162,7 +178,6 @@ namespace moho
     int widthBucketCount = static_cast<int>((static_cast<std::uint32_t>(mapWidth - 1) >> 3) - 1u);
     int heightBucketCount = static_cast<int>((static_cast<std::uint32_t>(mapHeight - 1) >> 3) - 1u);
 
-    const float waterElevation = (map.mWaterEnabled != 0u) ? map.mWaterElevation : -10000.0f;
     constexpr float kHeightToWorldScale = 0.0078125f;
     constexpr float kSampleUnit = 1.0f;
 
@@ -189,6 +204,11 @@ namespace moho
       return static_cast<float>(heightValue) * kHeightToWorldScale;
     };
 
+    // Engine addition (water bodies): each sample under its own water level.
+    auto UnderWater = [&](const int x, const int z) noexcept -> bool {
+      return map.GetWaterElevationAtVertex(ClampX(x), ClampZ(z)) > SampleElevation(x, z);
+    };
+
     float underwaterSampleCount = 0.0f;
     float totalSampleCount = 0.0f;
 
@@ -203,22 +223,22 @@ namespace moho
 
           int sampleZ = 24;
           while (zBlockLoopCount != 0) {
-            if (waterElevation > SampleElevation(sampleX, sampleZ - 16)) {
+            if (UnderWater(sampleX, sampleZ - 16)) {
               underwaterSampleCount += kSampleUnit;
             }
             totalSampleCount += kSampleUnit;
 
-            if (waterElevation > SampleElevation(sampleX, sampleZ - 8)) {
+            if (UnderWater(sampleX, sampleZ - 8)) {
               underwaterSampleCount += kSampleUnit;
             }
             totalSampleCount += kSampleUnit;
 
-            if (waterElevation > SampleElevation(sampleX, sampleZ)) {
+            if (UnderWater(sampleX, sampleZ)) {
               underwaterSampleCount += kSampleUnit;
             }
             totalSampleCount += kSampleUnit;
 
-            if (waterElevation > SampleElevation(sampleX, sampleZ + 8)) {
+            if (UnderWater(sampleX, sampleZ + 8)) {
               underwaterSampleCount += kSampleUnit;
             }
             totalSampleCount += kSampleUnit;
@@ -232,7 +252,7 @@ namespace moho
           int sampleZ = zBlockBase * 8;
           int zTailCount = heightBucketCount - zBlockBase;
           while (zTailCount != 0) {
-            if (waterElevation > SampleElevation(sampleX, sampleZ)) {
+            if (UnderWater(sampleX, sampleZ)) {
               underwaterSampleCount += kSampleUnit;
             }
             totalSampleCount += kSampleUnit;
@@ -248,7 +268,7 @@ namespace moho
 
     return underwaterSampleCount / totalSampleCount;
   }
-}
+} // namespace moho
 
 namespace
 {
@@ -259,7 +279,9 @@ namespace
    * Returns one cached `CAiBrain` metatable object from
    * `CScrLuaMetatableFactory<CAiBrain>`.
    */
-  [[nodiscard]] LuaPlus::LuaObject CreateCAiBrainLuaObject(LuaPlus::LuaState* const state)
+  [[nodiscard]] LuaPlus::LuaObject CreateCAiBrainLuaObject(
+    LuaPlus::LuaState* const state
+  )
   {
     return CScrLuaMetatableFactory<CAiBrain>::Instance().Get(state);
   }
@@ -272,7 +294,9 @@ namespace
    * present; otherwise logs one warning and falls back to the native
    * `CAiBrain` metatable factory object.
    */
-  [[nodiscard]] LuaPlus::LuaObject LoadAiBrainFactoryObject(LuaPlus::LuaState* const state)
+  [[nodiscard]] LuaPlus::LuaObject LoadAiBrainFactoryObject(
+    LuaPlus::LuaState* const state
+  )
   {
     LuaPlus::LuaObject moduleObj = SCR_ImportLuaModule(state, kAiBrainModulePath);
     if (moduleObj) {
@@ -291,7 +315,7 @@ namespace
    *
    * What it does:
    * Drops one reservation out of both owner weak-link chains and then erases it
-   * from the map, returning a cursor on the following element. `msvc8::map`
+   * from the map, returning a cursor on the following element. `fa::map`
    * frees the node itself; the two intrusive lanes have to leave their owners'
    * chains first or the owner keeps a link into freed storage.
    */
@@ -314,7 +338,9 @@ namespace
    * RbTree.h) owns the node walk itself, so only the unlink half is written
    * out here. Reached from `CAiBrain::~CAiBrain` (FUN_0057A1E0) below.
    */
-  void DestroyBuildStructureMap(SBuildStructurePositionMap& map) noexcept
+  void DestroyBuildStructureMap(
+    SBuildStructurePositionMap& map
+  ) noexcept
   {
     for (auto& entry : map) {
       UnlinkBuildReservation(entry.second);
@@ -379,24 +405,11 @@ namespace
     return type;
   }
 
-  /**
-   * Address: 0x00579570 (FUN_00579570)
-   *
-   * What it does:
-   * Resolves and caches the reflected runtime type for `CAiBrain`.
-   */
-  [[nodiscard]] gpg::RType* ResolveCAiBrainTypeCachePrimary()
-  {
-    gpg::RType* type = moho::CAiBrain::sType;
-    if (!type) {
-      type = gpg::LookupRType(typeid(moho::CAiBrain));
-      moho::CAiBrain::sType = type;
-    }
-    return type;
-  }
-
   template <class TObject>
-  [[nodiscard]] gpg::RRef MakePointerRef(TObject* const object, gpg::RType* const type)
+  [[nodiscard]] gpg::RRef MakePointerRef(
+    TObject* const object,
+    gpg::RType* const type
+  )
   {
     gpg::RRef out{};
     out.mObj = object;
@@ -404,7 +417,10 @@ namespace
     return out;
   }
 
-  void ReplaceOwnedTaskStage(CTaskStage*& field, CTaskStage* const replacement)
+  void ReplaceOwnedTaskStage(
+    CTaskStage*& field,
+    CTaskStage* const replacement
+  )
   {
     CTaskStage* const previous = field;
     field = replacement;
@@ -420,7 +436,7 @@ namespace
   };
 
   [[maybe_unused]] CAiBrainStartupBootstrap gCAiBrainStartupBootstrap;
-}
+} // namespace
 
 namespace moho
 {
@@ -481,7 +497,9 @@ namespace moho
 
     for (const CollisionResult& hit : gatheredEntities) {
       Entity* const candidateEntity = hit.sourceEntity;
-      if (candidateEntity == nullptr || candidateEntity->mVarDat.mIsDead != 0u || candidateEntity->DestroyQueuedFlag != 0u) {
+      if (
+        candidateEntity == nullptr || candidateEntity->mVarDat.mIsDead != 0u || candidateEntity->DestroyQueuedFlag != 0u
+      ) {
         continue;
       }
 
@@ -528,7 +546,8 @@ namespace moho
     const EntityCategorySet* const categorySet,
     const Wm3::Vector3f& position,
     const float dist,
-    const EAlliance alliance)
+    const EAlliance alliance
+  )
   {
     int matchCount = 0;
 
@@ -539,7 +558,9 @@ namespace moho
 
     for (const CollisionResult& hit : gatheredEntities) {
       Entity* const candidateEntity = hit.sourceEntity;
-      if (candidateEntity == nullptr || candidateEntity->mVarDat.mIsDead != 0u || candidateEntity->DestroyQueuedFlag != 0u) {
+      if (
+        candidateEntity == nullptr || candidateEntity->mVarDat.mIsDead != 0u || candidateEntity->DestroyQueuedFlag != 0u
+      ) {
         continue;
       }
 
@@ -567,8 +588,8 @@ namespace moho
 
     return matchCount;
   }
-namespace
-{
+  namespace
+  {
     /**
      * Footprint-size multiplier (`ds:dword_DFF31C == 10.0`) that scales a
      * candidate's footprint extent into the LeastDefended threat-scan radius.
@@ -592,7 +613,9 @@ namespace
      * `BuildCostMass + BuildCostEnergy`). Mirrors the binary's `[bp+0x4EC] +
      * [bp+0x4E8]` value read used to rank candidates by economic worth.
      */
-    [[nodiscard]] float UnitBuildValue(const RUnitBlueprint* const blueprint) noexcept
+    [[nodiscard]] float UnitBuildValue(
+      const RUnitBlueprint* const blueprint
+    ) noexcept
     {
       if (blueprint == nullptr) {
         return 0.0f;
@@ -605,7 +628,10 @@ namespace
      * `(dz*dz + dy*dy) + dx*dx` -- the order of the Closest/Furthest lanes
      * (0x0057B81A..0x0057B839, 0x0057C53D..0x0057C562, 0x0057C586..0x0057C5BF).
      */
-    [[nodiscard]] float DistanceSquared(const Wm3::Vector3f& a, const Wm3::Vector3f& b) noexcept
+    [[nodiscard]] float DistanceSquared(
+      const Wm3::Vector3f& a,
+      const Wm3::Vector3f& b
+    ) noexcept
     {
       const float dx = a.x - b.x;
       const float dy = a.y - b.y;
@@ -617,15 +643,17 @@ namespace
      * Squared XYZ distance summed x-first as `(dx*dx + dy*dy) + dz*dz` -- the
      * order of the HighestValue tie-break (0x0057C776..0x0057C7EE).
      */
-    [[nodiscard]] float DistanceSquaredXFirst(const Wm3::Vector3f& a, const Wm3::Vector3f& b) noexcept
+    [[nodiscard]] float DistanceSquaredXFirst(
+      const Wm3::Vector3f& a,
+      const Wm3::Vector3f& b
+    ) noexcept
     {
       const float dx = a.x - b.x;
       const float dy = a.y - b.y;
       const float dz = a.z - b.z;
       return ((dx * dx) + (dy * dy)) + (dz * dz);
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x0057B620 (FUN_0057B620, sub_57B620)
@@ -655,7 +683,8 @@ namespace
     const ECompareType compareType,
     const EAlliance alliance,
     const EntityCategorySet* const category,
-    const Wm3::Vector3f& referencePosition)
+    const Wm3::Vector3f& referencePosition
+  )
   {
     // The one candidate set this function scores (`[esp+0x24]`).
     EntitySetTemplate<Unit> allyCandidates{};
@@ -701,66 +730,65 @@ namespace
       }
 
       switch (compareType) {
-        case COMPARE_Closest: {
-          const float score = DistanceSquared(candidate->GetPositionWm3(), referencePosition);
-          if (score < bestScore || bestScore < 0.0f) {
-            bestCandidate = candidate;
-            bestScore = score;
-          }
-          break;
+      case COMPARE_Closest: {
+        const float score = DistanceSquared(candidate->GetPositionWm3(), referencePosition);
+        if (score < bestScore || bestScore < 0.0f) {
+          bestCandidate = candidate;
+          bestScore = score;
         }
-        case COMPARE_Furthest: {
-          const float score = DistanceSquared(candidate->GetPositionWm3(), referencePosition);
-          if (score > bestScore || bestScore < 0.0f) {
-            bestCandidate = candidate;
-            bestScore = score;
-          }
-          break;
+        break;
+      }
+      case COMPARE_Furthest: {
+        const float score = DistanceSquared(candidate->GetPositionWm3(), referencePosition);
+        if (score > bestScore || bestScore < 0.0f) {
+          bestCandidate = candidate;
+          bestScore = score;
         }
-        case COMPARE_HighestValue: {
-          const float score = UnitBuildValue(candidateBlueprint);
-          if (score > bestScore || bestScore < 0.0f) {
-            bestCandidate = candidate;
-            bestScore = score;
-          }
-          break;
+        break;
+      }
+      case COMPARE_HighestValue: {
+        const float score = UnitBuildValue(candidateBlueprint);
+        if (score > bestScore || bestScore < 0.0f) {
+          bestCandidate = candidate;
+          bestScore = score;
         }
-        case COMPARE_LeastDefended: {
-          float nearbyDefenseValue = 0.0f;
+        break;
+      }
+      case COMPARE_LeastDefended: {
+        float nearbyDefenseValue = 0.0f;
 
-          const SFootprint& footprint = candidate->GetFootprint();
-          const std::uint8_t footprintExtent = std::max(footprint.mSizeX, footprint.mSizeZ);
-          const float scanRadius = static_cast<float>(footprintExtent) * kLeastDefendedFootprintRadiusScale;
-          const Wm3::Vector3f& candidatePos = candidate->GetPositionWm3();
+        const SFootprint& footprint = candidate->GetFootprint();
+        const std::uint8_t footprintExtent = std::max(footprint.mSizeX, footprint.mSizeZ);
+        const float scanRadius = static_cast<float>(footprintExtent) * kLeastDefendedFootprintRadiusScale;
+        const Wm3::Vector3f& candidatePos = candidate->GetPositionWm3();
 
-          // The binary re-derives the scoring brain from the candidate's own
-          // army (`[candidate+0x154]` -> army vtable slot GetArmyBrain), so the
-          // surrounding-defense scan is run from that army's perspective.
-          CAiBrain* const candidateBrain =
-            (candidate->ArmyRef != nullptr) ? candidate->ArmyRef->GetArmyBrain() : nullptr;
+        // The binary re-derives the scoring brain from the candidate's own
+        // army (`[candidate+0x154]` -> army vtable slot GetArmyBrain), so the
+        // surrounding-defense scan is run from that army's perspective.
+        CAiBrain* const candidateBrain = (candidate->ArmyRef != nullptr) ? candidate->ArmyRef->GetArmyBrain() : nullptr;
 
-          EntitySetTemplate<Unit> nearbyDefenders{};
-          CollectUnitsAroundPointFiltered(
-            candidateBrain, &nearbyDefenders, category, candidatePos, scanRadius, ALLIANCE_Ally
-          );
+        EntitySetTemplate<Unit> nearbyDefenders{};
+        CollectUnitsAroundPointFiltered(
+          candidateBrain, &nearbyDefenders, category, candidatePos, scanRadius, ALLIANCE_Ally
+        );
 
-          for (Entity* const defenderEntity : nearbyDefenders.mVec) {
-            Unit* const defenderUnit = defenderEntity ? defenderEntity->IsUnit() : nullptr;
-            const RUnitBlueprint* const defenderBlueprint =
-              (defenderUnit != nullptr) ? defenderUnit->GetBlueprint() : nullptr;
-            if (defenderBlueprint != nullptr && !defenderBlueprint->Weapons.WeaponBlueprints.empty()) {
-              nearbyDefenseValue += UnitBuildValue(defenderBlueprint);
-            }
+        for (Entity* const defenderEntity : nearbyDefenders.mVec) {
+          Unit* const defenderUnit = defenderEntity ? defenderEntity->IsUnit() : nullptr;
+          const RUnitBlueprint* const defenderBlueprint =
+            (defenderUnit != nullptr) ? defenderUnit->GetBlueprint() : nullptr;
+          if (defenderBlueprint != nullptr && !defenderBlueprint->Weapons.WeaponBlueprints.empty()) {
+            nearbyDefenseValue += UnitBuildValue(defenderBlueprint);
           }
-
-          if (bestScore > nearbyDefenseValue || bestScore < 0.0f) {
-            bestCandidate = candidate;
-            bestScore = nearbyDefenseValue;
-          }
-          break;
         }
-        default:
-          break;
+
+        if (bestScore > nearbyDefenseValue || bestScore < 0.0f) {
+          bestCandidate = candidate;
+          bestScore = nearbyDefenseValue;
+        }
+        break;
+      }
+      default:
+        break;
       }
     }
 
@@ -782,7 +810,8 @@ namespace
     const ECompareType compareType,
     const EntityCategorySet* const category,
     const char* const scoreScript,
-    const char* const scoreFunc)
+    const char* const scoreFunc
+  )
   {
     // Winning attack vector kept as an SPointVector (point=origin, vector=direction).
     const Wm3::Vector3f zeroVector = Wm3::Vector3f::Zero();
@@ -801,8 +830,10 @@ namespace
 
     // Early-out guards -> zero result: no current enemy, no matching squad, or
     // an empty squad unit set.
-    if (mCurrentEnemy == nullptr || matchingSquad == nullptr ||
-        matchingSquad->mUnits.mVec.begin() == matchingSquad->mUnits.mVec.end()) {
+    if (
+      mCurrentEnemy == nullptr || matchingSquad == nullptr ||
+      matchingSquad->mUnits.mVec.begin() == matchingSquad->mUnits.mVec.end()
+    ) {
       outResult->point = bestVector.point;
       outResult->vector = bestVector.vector;
       return outResult;
@@ -817,7 +848,7 @@ namespace
         LuaPlus::LuaState* const luaState = mSim->GetLuaState();
         LuaPlus::LuaObject scoreModule = SCR_Import(luaState, scoreScript);
         scorerFunctionObject = scoreModule[scoreFunc];
-      } catch (const msvc8::runtime_error& error) {
+      } catch (const fa::runtime_error& error) {
         gpg::Warnf(kAiBrainPickBestAttackVectorLoadCallbackError, error.what());
       }
     }
@@ -841,112 +872,105 @@ namespace
       if (scoreFunc != nullptr) {
         try {
           LuaPlus::LuaFunction scorer(scorerFunctionObject);
-          const bool approved = scorer.Call_Num4_bool(
-            squadCenter.x, squadCenter.z, candidatePoint.x, candidatePoint.z
-          );
+          const bool approved = scorer.Call_Num4_bool(squadCenter.x, squadCenter.z, candidatePoint.x, candidatePoint.z);
           if (!approved) {
             continue;
           }
-        } catch (const msvc8::runtime_error& error) {
+        } catch (const fa::runtime_error& error) {
           gpg::Warnf(kAiBrainPickBestAttackVectorRunCallbackError, error.what());
         }
       }
 
       switch (compareType) {
-        case COMPARE_Closest: {
-          // 0x0057C53D / 0x0057C586: squared distances summed z-first.
-          float score;
-          if (category->Empty()) {
-            score = DistanceSquared(candidatePoint, squadCenter);
+      case COMPARE_Closest: {
+        // 0x0057C53D / 0x0057C586: squared distances summed z-first.
+        float score;
+        if (category->Empty()) {
+          score = DistanceSquared(candidatePoint, squadCenter);
+        } else {
+          Entity* const bestEntity =
+            CollectAttackCandidateEntities(this, COMPARE_Closest, alliance, category, squadCenter);
+          score = (bestEntity != nullptr) ? DistanceSquared(candidatePoint, bestEntity->GetPositionWm3()) : gpg::pInf;
+        }
+        if (bestScore > score || bestScore < 0.0f) {
+          // `SPointVector::operator=` (0x0057C9F0, the compiler-generated copy).
+          bestVector = attackVector;
+          bestScore = score;
+        }
+        break;
+      }
+      case COMPARE_Furthest: {
+        // 0x0057C60F / 0x0057C658: squared distances summed z-first.
+        float score;
+        if (category->Empty()) {
+          score = DistanceSquared(candidatePoint, squadCenter);
+        } else {
+          Entity* const bestEntity =
+            CollectAttackCandidateEntities(this, COMPARE_Furthest, alliance, category, squadCenter);
+          score = (bestEntity != nullptr) ? DistanceSquared(candidatePoint, bestEntity->GetPositionWm3()) : gpg::pInf;
+        }
+        if (score > bestScore || bestScore < 0.0f) {
+          // `SPointVector::operator=` (0x0057C9F0, the compiler-generated copy).
+          bestVector = attackVector;
+          bestScore = score;
+        }
+        break;
+      }
+      case COMPARE_HighestValue: {
+        // 0x0057C6D6..0x0057C6FC: gather around the CANDIDATE point with
+        // radius 32.0 (`flt_E4F92C`), not around the squad centre.
+        EntitySetTemplate<Unit> nearbyUnits{};
+        CollectUnitsAroundPointFiltered(
+          this, &nearbyUnits, category, candidatePoint, kLeastDefendedScanRadius, alliance
+        );
+
+        float score = 0.0f;
+        for (Entity* const nearbyEntity : nearbyUnits.mVec) {
+          Unit* const nearbyUnit = nearbyEntity ? nearbyEntity->IsUnit() : nullptr;
+          score += UnitBuildValue(nearbyUnit != nullptr ? nearbyUnit->GetBlueprint() : nullptr);
+        }
+
+        // 0x0057C758..0x0057C7F5: enter when `score >= best` (ordered) or
+        // `best < 0`; then keep unless `score == best`, in which case the
+        // tie-break prefers the candidate point closer to the squad centre
+        // than the kept vector's origin.
+        bool keep = false;
+        if (score >= bestScore || bestScore < 0.0f) {
+          if (score != bestScore) {
+            keep = true;
           } else {
-            Entity* const bestEntity =
-              CollectAttackCandidateEntities(this, COMPARE_Closest, alliance, category, squadCenter);
-            score = (bestEntity != nullptr)
-                      ? DistanceSquared(candidatePoint, bestEntity->GetPositionWm3())
-                      : gpg::pInf;
+            const float keptOriginDist = DistanceSquaredXFirst(bestVector.point, squadCenter);
+            const float candidateDist = DistanceSquaredXFirst(candidatePoint, squadCenter);
+            keep = keptOriginDist > candidateDist;
           }
-          if (bestScore > score || bestScore < 0.0f) {
-            // `SPointVector::operator=` (0x0057C9F0, the compiler-generated copy).
-            bestVector = attackVector;
-            bestScore = score;
-          }
-          break;
         }
-        case COMPARE_Furthest: {
-          // 0x0057C60F / 0x0057C658: squared distances summed z-first.
-          float score;
-          if (category->Empty()) {
-            score = DistanceSquared(candidatePoint, squadCenter);
-          } else {
-            Entity* const bestEntity =
-              CollectAttackCandidateEntities(this, COMPARE_Furthest, alliance, category, squadCenter);
-            score = (bestEntity != nullptr)
-                      ? DistanceSquared(candidatePoint, bestEntity->GetPositionWm3())
-                      : gpg::pInf;
-          }
-          if (score > bestScore || bestScore < 0.0f) {
-            // `SPointVector::operator=` (0x0057C9F0, the compiler-generated copy).
-            bestVector = attackVector;
-            bestScore = score;
-          }
-          break;
+        if (keep) {
+          // `SPointVector::operator=` (0x0057C9F0, the compiler-generated copy).
+          bestVector = attackVector;
+          bestScore = score;
         }
-        case COMPARE_HighestValue: {
-          // 0x0057C6D6..0x0057C6FC: gather around the CANDIDATE point with
-          // radius 32.0 (`flt_E4F92C`), not around the squad centre.
-          EntitySetTemplate<Unit> nearbyUnits{};
-          CollectUnitsAroundPointFiltered(
-            this, &nearbyUnits, category, candidatePoint, kLeastDefendedScanRadius, alliance
-          );
+        break;
+      }
+      case COMPARE_LeastDefended: {
+        // 0x0057C826..0x0057C844: gather around the CANDIDATE point, radius 32.0.
+        EntitySetTemplate<Unit> nearbyUnits{};
+        CollectUnitsAroundPointFiltered(
+          this, &nearbyUnits, category, candidatePoint, kLeastDefendedScanRadius, alliance
+        );
 
-          float score = 0.0f;
-          for (Entity* const nearbyEntity : nearbyUnits.mVec) {
-            Unit* const nearbyUnit = nearbyEntity ? nearbyEntity->IsUnit() : nullptr;
-            score += UnitBuildValue(nearbyUnit != nullptr ? nearbyUnit->GetBlueprint() : nullptr);
-          }
+        const float score = static_cast<float>((nearbyUnits.mVec.end() - nearbyUnits.mVec.begin()));
 
-          // 0x0057C758..0x0057C7F5: enter when `score >= best` (ordered) or
-          // `best < 0`; then keep unless `score == best`, in which case the
-          // tie-break prefers the candidate point closer to the squad centre
-          // than the kept vector's origin.
-          bool keep = false;
-          if (score >= bestScore || bestScore < 0.0f) {
-            if (score != bestScore) {
-              keep = true;
-            } else {
-              const float keptOriginDist = DistanceSquaredXFirst(bestVector.point, squadCenter);
-              const float candidateDist = DistanceSquaredXFirst(candidatePoint, squadCenter);
-              keep = keptOriginDist > candidateDist;
-            }
-          }
-          if (keep) {
-            // `SPointVector::operator=` (0x0057C9F0, the compiler-generated copy).
-            bestVector = attackVector;
-            bestScore = score;
-          }
-          break;
+        // 0x0057C85D..0x0057C893: take the smallest NON-ZERO count -- replace
+        // when `count > 0` and (`best > count` or `best == 0`), or when `best < 0`.
+        if (((bestScore > score || bestScore == 0.0f) && score > 0.0f) || bestScore < 0.0f) {
+          // `SPointVector::operator=` (0x0057C9F0, the compiler-generated copy).
+          bestVector = attackVector;
+          bestScore = score;
         }
-        case COMPARE_LeastDefended: {
-          // 0x0057C826..0x0057C844: gather around the CANDIDATE point, radius 32.0.
-          EntitySetTemplate<Unit> nearbyUnits{};
-          CollectUnitsAroundPointFiltered(
-            this, &nearbyUnits, category, candidatePoint, kLeastDefendedScanRadius, alliance
-          );
-
-          const float score =
-            static_cast<float>((nearbyUnits.mVec.end() - nearbyUnits.mVec.begin()));
-
-          // 0x0057C85D..0x0057C893: take the smallest NON-ZERO count -- replace
-          // when `count > 0` and (`best > count` or `best == 0`), or when `best < 0`.
-          if (((bestScore > score || bestScore == 0.0f) && score > 0.0f) || bestScore < 0.0f) {
-            // `SPointVector::operator=` (0x0057C9F0, the compiler-generated copy).
-            bestVector = attackVector;
-            bestScore = score;
-          }
-          break;
-        }
-        default:
-          break;
+        break;
+      }
+      default:
+        break;
       }
     }
 
@@ -966,8 +990,7 @@ namespace
     outResult->vector = bestVector.vector;
     return outResult;
   }
-}
-
+} // namespace moho
 
 gpg::RType* CAiBrain::sType = nullptr;
 
@@ -994,7 +1017,9 @@ CAiBrain::CAiBrain()
 /**
  * Address: 0x00579F80 (FUN_00579F80, army ctor)
  */
-CAiBrain::CAiBrain(CArmyImpl* const army)
+CAiBrain::CAiBrain(
+  CArmyImpl* const army
+)
   : CAiBrain()
 {
   mArmy = army;
@@ -1049,7 +1074,7 @@ void CAiBrain::Initialize()
  */
 gpg::RType* CAiBrain::GetClass() const
 {
-  return ResolveCAiBrainTypeCachePrimary();
+  return gpg::CachedLookup<moho::CAiBrain>(moho::CAiBrain::sType);
 }
 
 /**
@@ -1057,10 +1082,7 @@ gpg::RType* CAiBrain::GetClass() const
  */
 gpg::RRef CAiBrain::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }
 
 /**
@@ -1070,7 +1092,9 @@ gpg::RRef CAiBrain::GetDerivedObjectRef()
  * Loads CAiBrain runtime lanes from archive storage, replacing owned
  * personality/task-stage pointers with freshly deserialized instances.
  */
-void CAiBrain::MemberDeserialize(gpg::ReadArchive* const archive)
+void CAiBrain::MemberDeserialize(
+  gpg::ReadArchive* const archive
+)
 {
   if (!archive) {
     return;
@@ -1083,8 +1107,16 @@ void CAiBrain::MemberDeserialize(gpg::ReadArchive* const archive)
     archive->Read(scriptObjectType, static_cast<CScriptObject*>(this), owner);
   }
 
-  (void)archive->ReadPointer(reinterpret_cast<moho::SimArmy**>(&mArmy), &owner);
-  (void)archive->ReadPointer(reinterpret_cast<moho::SimArmy**>(&mCurrentEnemy), &owner);
+  {
+    moho::SimArmy* value = nullptr;
+    (void)archive->ReadPointer(&value, &owner);
+    mArmy = static_cast<decltype(mArmy)>(value);
+  }
+  {
+    moho::SimArmy* value = nullptr;
+    (void)archive->ReadPointer(&value, &owner);
+    mCurrentEnemy = static_cast<decltype(mCurrentEnemy)>(value);
+  }
 
   CAiPersonality* loadedPersonality = nullptr;
   (void)archive->ReadPointerOwned(&loadedPersonality, &owner);
@@ -1134,7 +1166,9 @@ void CAiBrain::MemberDeserialize(gpg::ReadArchive* const archive)
  * Saves CAiBrain runtime lanes to archive storage, preserving original
  * tracked-pointer ownership states for each pointer field.
  */
-void CAiBrain::MemberSerialize(gpg::WriteArchive* const archive) const
+void CAiBrain::MemberSerialize(
+  gpg::WriteArchive* const archive
+) const
 {
   if (!archive) {
     return;
@@ -1153,7 +1187,7 @@ void CAiBrain::MemberSerialize(gpg::WriteArchive* const archive) const
 
   archive->WritePointer<moho::CAiPersonality>(mPersonality, gpg::TrackedPointerState::Owned, owner);
 
-  archive->WriteString(const_cast<msvc8::string*>(&mCurrentPlan));
+  archive->WriteString(const_cast<fa::string*>(&mCurrentPlan));
 
   gpg::RType* const attackVectorType = CachedAttackVectorType();
   GPG_ASSERT(attackVectorType != nullptr);
@@ -1174,8 +1208,8 @@ void CAiBrain::MemberSerialize(gpg::WriteArchive* const archive) const
 
   gpg::RType* const taskStageType = CachedTaskStageType();
   GPG_ASSERT(
-    taskStageType != nullptr
-    || (mAiThreadStage == nullptr && mAttackerThreadStage == nullptr && mReservedThreadStage == nullptr)
+    taskStageType != nullptr ||
+    (mAiThreadStage == nullptr && mAttackerThreadStage == nullptr && mReservedThreadStage == nullptr)
   );
 
   gpg::RRef aiThreadStageRef = MakePointerRef(mAiThreadStage, taskStageType);
@@ -1233,7 +1267,11 @@ CAiBrain::~CAiBrain()
  * Resolves a unit blueprint id through active sim rules and tests whether
  * `builder` can construct that blueprint under current build restrictions.
  */
-bool CAiBrain::CanBuildUnit(const char* const blueprintId, CAiBrain* const brain, Unit* const builder)
+bool CAiBrain::CanBuildUnit(
+  const char* const blueprintId,
+  CAiBrain* const brain,
+  Unit* const builder
+)
 {
   RResId lookupId{};
   gpg::STR_InitFilename(&lookupId.name, blueprintId);
@@ -1250,7 +1288,12 @@ bool CAiBrain::CanBuildUnit(const char* const blueprintId, CAiBrain* const brain
  * a real blueprint, delegates to `IssueBuildFactoryCommands` (0x0057B0C0) which
  * validates the builder lane and emits `UNITCOMMAND_BuildFactory` `count` times.
  */
-bool CAiBrain::BuildUnit(const char* const blueprintId, CAiBrain* const brain, Unit* const builder, const int count)
+bool CAiBrain::BuildUnit(
+  const char* const blueprintId,
+  CAiBrain* const brain,
+  Unit* const builder,
+  const int count
+)
 {
   RResId lookupId{};
   gpg::STR_InitFilename(&lookupId.name, blueprintId);
@@ -1306,7 +1349,7 @@ void CAiBrain::ProcessAttackVectors()
 
   // One growable per-row bitset, one bit per column: bit set means the
   // enemy has at least one unit inside that grid cell.
-  msvc8::vector<SAttackVectorGridRow> grid;
+  fa::vector<SAttackVectorGridRow> grid;
 
   float cellZ = halfCell;
   for (std::int32_t row = 0; row < rowCount; ++row, cellZ += static_cast<float>(kAiDebugGridStep)) {
@@ -1376,7 +1419,9 @@ void CAiBrain::ProcessAttackVectors()
  * Draws terrain debug grid lines and attack-vector markers to the active
  * simulation debug canvas.
  */
-CAiBrain* CAiBrain::DrawDebug(CAiBrain* const brain)
+CAiBrain* CAiBrain::DrawDebug(
+  CAiBrain* const brain
+)
 {
   CDebugCanvas* const debugCanvas = brain->mSim->GetDebugCanvas();
   CHeightField* const heightField = brain->mSim->mMapData->mHeightField.get();
@@ -1432,11 +1477,7 @@ CAiBrain* CAiBrain::DrawDebug(CAiBrain* const brain)
   const Wm3::Vector3f upAxis{0.0f, 1.0f, 0.0f};
   for (const SPointVector& attackVector : brain->mAttackVectors) {
     debugCanvas->AddWireCircle(
-      upAxis,
-      attackVector.point,
-      kAiDebugAttackRingRadius,
-      kAiDebugAttackRingDepth,
-      kAiDebugAttackRingPrecision
+      upAxis, attackVector.point, kAiDebugAttackRingRadius, kAiDebugAttackRingDepth, kAiDebugAttackRingPrecision
     );
 
     SDebugLine line{};
@@ -1534,10 +1575,12 @@ EntitySetTemplate<Unit>* CAiBrain::GetAvailableFactories(
  * must not grow.
  */
 moho::Unit* moho::FindAvailableFactory(
-  const msvc8::vector<Unit*>& candidateList, const char* const blueprintId, CAiBrain* const brain
+  const fa::vector<Unit*>& candidateList,
+  const char* const blueprintId,
+  CAiBrain* const brain
 )
 {
-  msvc8::vector<Unit*> candidates(candidateList);
+  fa::vector<Unit*> candidates(candidateList);
 
   // Resolve target blueprint once (by normalized filename).
   RResId blueprintResId{};
@@ -1710,8 +1753,7 @@ bool moho::CAiBrain::CanBuildStructureAt(
         continue;
       }
       if (alliance != ALLIANCE_None) {
-        const IArmy* const unitArmy =
-          (unit->ArmyRef != nullptr) ? static_cast<const IArmy*>(unit->ArmyRef) : nullptr;
+        const IArmy* const unitArmy = (unit->ArmyRef != nullptr) ? static_cast<const IArmy*>(unit->ArmyRef) : nullptr;
         if (mArmy->GetAllianceWith(unitArmy) == alliance) {
           continue;
         }
@@ -1777,7 +1819,9 @@ bool moho::CAiBrain::CanBuildStructureAt(
  * Iterates the brain's structure (non-mobile) army units, sums their world
  * positions, and writes the average into `outPosition`.
  */
-Wm3::Vec3f* moho::CAiBrain::CenterOfArmy(Wm3::Vec3f* const outPosition)
+Wm3::Vec3f* moho::CAiBrain::CenterOfArmy(
+  Wm3::Vec3f* const outPosition
+)
 {
   outPosition->x = 0.0f;
   outPosition->y = 0.0f;
@@ -1826,7 +1870,10 @@ Wm3::Vec3f* moho::CAiBrain::CenterOfArmy(Wm3::Vec3f* const outPosition)
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_BuildReserveMapTypeInfo_f3fc29, preregister_BuildReserveMapTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_BuildReserveMapTypeInfo_f3fc29,
+  preregister_BuildReserveMapTypeInfo
+)
 
 namespace
 {
@@ -1924,7 +1971,12 @@ namespace moho
   /**
    * Address: 0x00579D00 (FUN_00579D00)
    */
-  void CAiBrain::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CAiBrain::MemberConstruct(
+    gpg::ReadArchive&,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     result.SetUnowned(gpg::MakeRRef(new CAiBrain()), 0u);
   }
@@ -1940,13 +1992,13 @@ namespace moho
    */
   struct CAiBrainConstruct : gpg::SerConstructHelper<CAiBrain>
   {};
-}
+} // namespace moho
 
 namespace
 {
   // Address: 0x010AD510 -- process-global `CAiBrainConstruct` singleton.
   moho::CAiBrainConstruct gCAiBrainConstruct;
-}
+} // namespace
 
 namespace moho
 {
@@ -1963,11 +2015,10 @@ namespace moho
    */
   struct CAiBrainSerializer : gpg::SerSaveLoadHelper<CAiBrain>
   {};
-}
+} // namespace moho
 
 namespace
 {
   // Address: 0x010AD79C -- process-global `CAiBrainSerializer` singleton.
   moho::CAiBrainSerializer gCAiBrainSerializer;
-}
-
+} // namespace

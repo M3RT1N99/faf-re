@@ -64,10 +64,14 @@ namespace
    * straight into `movss xmm2, [edi+0x24]`). The null returns here stop short
    * of that read; every other branch is the binary's.
    */
-  [[nodiscard]] moho::CAniPoseBone* ResolveWatchedThrustBone(moho::IAniManipulator* const manipulator) noexcept
+  [[nodiscard]] moho::CAniPoseBone* ResolveWatchedThrustBone(
+    moho::IAniManipulator* const manipulator
+  ) noexcept
   {
-    if (manipulator == nullptr || manipulator->mOwnerActor == nullptr ||
-        manipulator->mWatchBones.begin() == manipulator->mWatchBones.end()) {
+    if (
+      manipulator == nullptr || manipulator->mOwnerActor == nullptr ||
+      manipulator->mWatchBones.begin() == manipulator->mWatchBones.end()
+    ) {
       return nullptr;
     }
 
@@ -113,7 +117,11 @@ namespace moho
   /**
    * Address: 0x0064A4A0 (FUN_0064A4A0, ??0CThrustManipulator@Moho@@QAE@@Z)
    */
-  CThrustManipulator::CThrustManipulator(const char* const label, Unit* const unit, const int thrustBoneIndex)
+  CThrustManipulator::CThrustManipulator(
+    const char* const label,
+    Unit* const unit,
+    const int thrustBoneIndex
+  )
     : IAniManipulator(unit->SimulationRef, unit->AniActor, 0)
     , mUnit(unit)
     , mLabel(label)
@@ -155,10 +163,7 @@ namespace moho
    */
   gpg::RRef CThrustManipulator::GetDerivedObjectRef()
   {
-    gpg::RRef ref{};
-    ref.mObj = this;
-    ref.mType = GetClass();
-    return ref;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -251,7 +256,9 @@ namespace moho
   /**
    * Address: 0x0064B6E0 (FUN_0064B6E0, Moho::CThrustManipulator::MemberDeserialize)
    */
-  void CThrustManipulator::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CThrustManipulator::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr) {
       return;
@@ -274,7 +281,9 @@ namespace moho
   /**
    * Address: 0x0064B890 (FUN_0064B890, Moho::CThrustManipulator::MemberSerialize)
    */
-  void CThrustManipulator::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CThrustManipulator::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (archive == nullptr) {
       return;
@@ -283,7 +292,7 @@ namespace moho
     const gpg::RRef owner{};
     archive->Write(IAniManipulator::StaticGetClass(), this, owner);
     archive->Write(gpg::RTypeOf<moho::WeakPtr<moho::Unit>>(), &mUnit, owner);
-    archive->WriteString(const_cast<msvc8::string*>(&mLabel));
+    archive->WriteString(const_cast<fa::string*>(&mLabel));
     archive->WriteInt(mThrustBoneIndex);
     archive->WriteBool(mThrusting);
     archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mCapMin, owner);
@@ -329,20 +338,16 @@ namespace moho
    * type, resolving the base descriptor through the cached RTTI lookup on first
    * use. Called from `CThrustManipulatorTypeInfo::Init` (0x0064A230).
    */
-  void AddBaseIAniManipulatorToCThrustManipulatorTypeInfo(gpg::RType* const typeInfo)
+  void AddBaseIAniManipulatorToCThrustManipulatorTypeInfo(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::RType* const baseType = IAniManipulator::StaticGetClass();
     if (baseType == nullptr) {
       return;
     }
 
-    gpg::RField baseField{};
-    baseField.mName = baseType->GetName();
-    baseField.mType = baseType;
-    baseField.mOffset = 0;
-    baseField.mFlags = 0;
-    baseField.mDesc = nullptr;
-    typeInfo->AddBase(baseField);
+    gpg::AddReflectedBaseType(typeInfo, baseType);
   }
 
   /**
@@ -357,7 +362,9 @@ namespace moho
    * thrust manipulator bound to that unit, and pushes the manipulator's Lua
    * userdata as the return value.
    */
-  int cfunc_CreateThrustControllerL(LuaPlus::LuaState* const state)
+  int cfunc_CreateThrustControllerL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 3, "CreateThrustController(unit, label, thrustBone)");
@@ -404,7 +411,9 @@ namespace moho
   // `const` form emitted a symbol that `ManipulatorLuaFunctionThunks.cpp`'s
   // own `int cfunc_CreateThrustController(lua_State*)` declaration could never
   // resolve against.
-  int cfunc_CreateThrustController(lua_State* luaContext)
+  int cfunc_CreateThrustController(
+    lua_State* luaContext
+  )
   {
     return cfunc_CreateThrustControllerL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -431,7 +440,7 @@ namespace moho
      * Address: 0x0064A280 (FUN_0064A280, Moho::CThrustManipulatorTypeInfo::dtr)
      *
      * What it does:
-     * Frees the `RType` base's two `msvc8::vector<RField>` storage lanes and
+     * Frees the `RType` base's two `fa::vector<RField>` storage lanes and
      * restores the `gpg::RObject` vftable. Defaulted in source: the
      * compiler-generated `~RType()` reproduces this behavior, matching every
      * other manipulator TypeInfo dtor in this family.
@@ -522,7 +531,9 @@ namespace moho
   /**
    * Address: 0x0064B280 (FUN_0064B280, Moho::CThrustManipulatorTypeInfo::CtrRef)
    */
-  gpg::RRef CThrustManipulatorTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CThrustManipulatorTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
     CThrustManipulator* const manipulator =
       objectStorage ? std::construct_at(static_cast<CThrustManipulator*>(objectStorage)) : nullptr;
@@ -535,7 +546,9 @@ namespace moho
   /**
    * Address: 0x0064B260 (FUN_0064B260, Moho::CThrustManipulatorTypeInfo::Delete)
    */
-  void CThrustManipulatorTypeInfo::Delete(void* const objectStorage)
+  void CThrustManipulatorTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<CThrustManipulator*>(objectStorage);
   }
@@ -543,7 +556,9 @@ namespace moho
   /**
    * Address: 0x0064B2F0 (FUN_0064B2F0, Moho::CThrustManipulatorTypeInfo::Destruct)
    */
-  void CThrustManipulatorTypeInfo::Destruct(void* const objectStorage)
+  void CThrustManipulatorTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     static_cast<CThrustManipulator*>(objectStorage)->~CThrustManipulator();
   }
@@ -605,4 +620,7 @@ namespace moho
 
 // Phase-1 pre-registration: run this descriptor registration ahead of every
 // consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CThrustManipulatorTypeInfo_9f14be, moho::register_CThrustManipulatorTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CThrustManipulatorTypeInfo_9f14be,
+  moho::register_CThrustManipulatorTypeInfo
+)

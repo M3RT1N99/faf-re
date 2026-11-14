@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "moho/entity/REntityBlueprint.h"
 #include "moho/entity/UserEntity.h"
 #include "moho/mesh/Mesh.h"
@@ -97,7 +97,7 @@ namespace moho
 
       // The icon is loaded but never bound: this is a residency check, and a
       // projectile whose icon will not load aborts the whole pass (0x0086035E).
-      const boost::shared_ptr<CD3DBatchTexture> icon =
+      const std::shared_ptr<CD3DBatchTexture> icon =
         CD3DBatchTexture::FromFile(blueprint->mStrategicIconName.c_str(), 0u);
       if (!icon) {
         break;
@@ -111,8 +111,7 @@ namespace moho
       // 0x0086044B: `movss xmm1, [ebp+14h]`, the fraction the world view hands
       // down, is the interpolant.
       const VTransform transform = entity->GetInterpolatedTransform(tickFraction);
-      const bool visible =
-        meshBlueprint->mIconFadeInZoom <= camera->viewport.ProjectViewportDepthRow1(transform.pos_);
+      const bool visible = meshBlueprint->mIconFadeInZoom <= camera->viewport.ProjectViewportDepthRow1(transform.pos_);
 
       const auto key = static_cast<std::int32_t>(entity->mParams.mEntityId);
       const ProjectileArcTable::iterator existing = arcTable.find(key);
@@ -142,7 +141,7 @@ namespace moho
     primBatcher->Flush();
     (void)primBatcher->Setup("TAlphaBlendLinearSampleNoDepth");
 
-    const boost::shared_ptr<CD3DBatchTexture> trailTexture =
+    const std::shared_ptr<CD3DBatchTexture> trailTexture =
       CD3DBatchTexture::FromSolidColor(static_cast<std::uint32_t>(UI_RenProjectileTrailColor));
     primBatcher->SetTexture(trailTexture);
 
@@ -167,13 +166,10 @@ namespace moho
           std::int32_t index = 0;
           do {
             const Wm3::Vector3f& from = samples[index];
-            const Wm3::Vector3f& to =
-              (index == sampleCount - 2) ? track.mLatestPosition : samples[index + 1];
+            const Wm3::Vector3f& to = (index == sampleCount - 2) ? track.mLatestPosition : samples[index + 1];
 
-            const Wm3::Vector2f fromScreen =
-              camera->Project(from, 0.0f, viewportWidth, viewportHeight, 0.0f);
-            const Wm3::Vector2f toScreen =
-              camera->Project(to, 0.0f, viewportWidth, viewportHeight, 0.0f);
+            const Wm3::Vector2f fromScreen = camera->Project(from, 0.0f, viewportWidth, viewportHeight, 0.0f);
+            const Wm3::Vector2f toScreen = camera->Project(to, 0.0f, viewportWidth, viewportHeight, 0.0f);
 
             const float x0 = std::floor(fromScreen.x);
             const float y0 = std::floor(fromScreen.y);

@@ -1,7 +1,7 @@
 #include "moho/debug/RDebugRadar.h"
 
 #include "moho/debug/RDebugOverlayReflectionHelpers.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "moho/ai/IAiReconDB.h"
 #include "moho/collision/CGeomSolid3.h"
 #include "moho/render/camera/GeomCamera3.h"
@@ -51,7 +51,7 @@ namespace
    */
   struct ReconCoverageDecalPass
   {
-    boost::SharedPtrRaw<moho::CIntelGrid> grid{}; // +0x00 {px, pi}
+    std::shared_ptr<moho::CIntelGrid> grid{};     // +0x00 {px, pi}
     std::uint32_t color = 0u;                     // +0x08
 
     /**
@@ -68,9 +68,12 @@ namespace
      * `CIntelGrid::IsVisible(const Wm3::Vector2i&)` (0x005BE180) spells them.
      * Zero callers: every use site inlined it and the linker kept the COMDAT.
      */
-    [[nodiscard]] std::int8_t CoverageAt(const std::uint32_t cellX, const std::uint32_t cellZ) const noexcept
+    [[nodiscard]] std::int8_t CoverageAt(
+      const std::uint32_t cellX,
+      const std::uint32_t cellZ
+    ) const noexcept
     {
-      const moho::CIntelGrid* const intelGrid = grid.px;
+      const moho::CIntelGrid* const intelGrid = grid.get();
       if (cellX >= intelGrid->mWidth || cellZ >= intelGrid->mHeight) {
         return 0;
       }
@@ -87,7 +90,10 @@ namespace
      * `[pass+8]` color load -- which is how the color's offset in the stack
      * block is known.
      */
-    [[nodiscard]] std::uint32_t ColorAt(const std::uint32_t cellX, const std::uint32_t cellZ) const noexcept
+    [[nodiscard]] std::uint32_t ColorAt(
+      const std::uint32_t cellX,
+      const std::uint32_t cellZ
+    ) const noexcept
     {
       return CoverageAt(cellX, cellZ) != 0 ? color : 0u;
     }
@@ -118,7 +124,7 @@ namespace
     moho::CDebugCanvas* const canvas
   ) noexcept
   {
-    const int cellSize = static_cast<int>(pass.grid.px->mGridSize);
+    const int cellSize = static_cast<int>(pass.grid.get()->mGridSize);
 
     // Whole-field cell range in grid units (ceil-divide the far edges).
     const int cellX0 = static_cast<int>(hf->width) / cellSize;
@@ -133,8 +139,7 @@ namespace
       for (int cellZ = cellZ0; cellZ < cellZ1; ++cellZ) {
         const int worldZ = cellSize * cellZ;
 
-        const std::uint32_t color =
-          pass.ColorAt(static_cast<std::uint32_t>(cellX), static_cast<std::uint32_t>(cellZ));
+        const std::uint32_t color = pass.ColorAt(static_cast<std::uint32_t>(cellX), static_cast<std::uint32_t>(cellZ));
         if ((color & 0xFF000000u) == 0u) {
           continue;
         }
@@ -163,21 +168,21 @@ namespace
    * FUN_0064DFE0).
    */
   void DrawReconGrid(
-    boost::SharedPtrRaw<moho::CIntelGrid> (moho::IAiReconDB::*accessor)() const,
+    std::shared_ptr<moho::CIntelGrid> (moho::IAiReconDB::*accessor)() const,
     const moho::IAiReconDB* const reconDB,
     const std::uint32_t color,
     const moho::CHeightField* const hf,
     moho::CDebugCanvas* const canvas
   ) noexcept
   {
-    boost::SharedPtrRaw<moho::CIntelGrid> grid = (reconDB->*accessor)();
-    if (grid.px != nullptr) {
+    std::shared_ptr<moho::CIntelGrid> grid = (reconDB->*accessor)();
+    if (grid.get() != nullptr) {
       ReconCoverageDecalPass pass{};
       pass.grid = grid;
       pass.color = color;
       DrawReconCoverageDecalQuads(pass, hf, canvas);
     }
-    grid.release();
+    grid.reset();
   }
 
   /**
@@ -249,17 +254,17 @@ namespace
     // Leaf block: draw each recon-coverage grid as colored decal quads.
     // Vision and water are only drawn when their grid handle is live.
     {
-      boost::SharedPtrRaw<moho::CIntelGrid> visionGrid = reconDB->ReconGetVisionGrid();
-      const bool visionLive = visionGrid.px != nullptr;
-      visionGrid.release();
+      std::shared_ptr<moho::CIntelGrid> visionGrid = reconDB->ReconGetVisionGrid();
+      const bool visionLive = visionGrid.get() != nullptr;
+      visionGrid.reset();
       if (visionLive) {
         DrawReconGrid(&moho::IAiReconDB::ReconGetVisionGrid, reconDB, kVisionGridColor, hf, canvas);
       }
     }
     {
-      boost::SharedPtrRaw<moho::CIntelGrid> waterGrid = reconDB->ReconGetWaterGrid();
-      const bool waterLive = waterGrid.px != nullptr;
-      waterGrid.release();
+      std::shared_ptr<moho::CIntelGrid> waterGrid = reconDB->ReconGetWaterGrid();
+      const bool waterLive = waterGrid.get() != nullptr;
+      waterGrid.reset();
       if (waterLive) {
         DrawReconGrid(&moho::IAiReconDB::ReconGetWaterGrid, reconDB, kWaterGridColor, hf, canvas);
       }
@@ -271,28 +276,6 @@ namespace
     DrawReconGrid(&moho::IAiReconDB::ReconGetRCIGrid, reconDB, kRciGridColor, hf, canvas);
     DrawReconGrid(&moho::IAiReconDB::ReconGetSCIGrid, reconDB, kSciGridColor, hf, canvas);
     DrawReconGrid(&moho::IAiReconDB::ReconGetVCIGrid, reconDB, kVciGridColor, hf, canvas);
-  }
-
-  /**
-   * Address: 0x0064D860 (FUN_0064D860)
-   * Address: 0x0064E290 (FUN_0064E290 -- the second emission of this same
-   * inline cache, differing only in the relative displacement of its one
-   * `call gpg::LookupRType`, which is why `/OPT:ICF` could not fold the two.
-   * Formerly transcribed a second time as
-   * `ResolveRDebugRadarTypeCacheSecondary`, `[[maybe_unused]]` with zero
-   * callers.)
-   *
-   * What it does:
-   * Resolves and caches the reflected runtime type for `RDebugRadar`.
-   */
-  [[nodiscard]] gpg::RType* ResolveRDebugRadarTypeCachePrimary()
-  {
-    gpg::RType* type = moho::RDebugRadar::sType;
-    if (!type) {
-      type = gpg::LookupRType(typeid(moho::RDebugRadar));
-      moho::RDebugRadar::sType = type;
-    }
-    return type;
   }
 
 } // namespace
@@ -315,7 +298,7 @@ namespace moho
    */
   gpg::RType* RDebugRadar::GetClass() const
   {
-    return ResolveRDebugRadarTypeCachePrimary();
+    return gpg::CachedLookup<moho::RDebugRadar>(moho::RDebugRadar::sType);
   }
 
   /**
@@ -344,7 +327,9 @@ namespace moho
    * dimensions), rasterizing each block's recon-coverage grids that survive
    * frustum culling.
    */
-  void RDebugRadar::Tick(Sim* const sim)
+  void RDebugRadar::Tick(
+    Sim* const sim
+  )
   {
     if (sim == nullptr || sim->mMapData == nullptr) {
       return;

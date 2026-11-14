@@ -30,7 +30,7 @@ namespace
   {
     return moho::DISK_GetLaunchDir();
   }
-}
+} // namespace
 
 /**
  * Address: 0x008CD360 (FUN_008CD360)
@@ -41,7 +41,10 @@ namespace
  * What it does:
  * Initializes app identity strings used by startup/logging flows.
  */
-IWinApp::IWinApp(const gpg::StrArg shortNameArg, const gpg::StrArg longNameArg)
+IWinApp::IWinApp(
+  const gpg::StrArg shortNameArg,
+  const gpg::StrArg longNameArg
+)
 {
   const char* const shortNameText = shortNameArg ? shortNameArg : "";
   const char* const longNameText = longNameArg ? longNameArg : "";
@@ -64,22 +67,6 @@ IWinApp::~IWinApp()
 }
 
 /**
- * Address: 0x008CD480 (FUN_008CD480)
- *
- * What it does:
- * Runs one deleting-destructor thunk for `IWinApp`, forwarding through
- * non-deleting teardown and optional storage release.
- */
-[[nodiscard]] IWinApp* DestroyIWinAppDeleting(IWinApp* const app, const unsigned char deleteFlag)
-{
-  app->~IWinApp();
-  if ((deleteFlag & 1u) != 0u) {
-    ::operator delete(static_cast<void*>(app));
-  }
-  return app;
-}
-
-/**
  * Address: 0x008CD460 (FUN_008CD460)
  * Mangled: ?AppGetHelpText@IWinApp@Moho@@UAE_NAAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@_N@Z
  *
@@ -89,7 +76,10 @@ IWinApp::~IWinApp()
  * Default command-line help text provider.
  * FA retail default is a false/nullsub return.
  */
-bool IWinApp::AppGetHelpText(msvc8::string& outHelpText, const bool shortMode)
+bool IWinApp::AppGetHelpText(
+  fa::string& outHelpText,
+  const bool shortMode
+)
 {
   (void)shortMode;
   outHelpText.assign_owned("");
@@ -113,9 +103,9 @@ bool IWinApp::AppInitCommonServices()
   THREAD_InitInvoke();
   gpg::EnableLogHistory(100);
 
-  msvc8::vector<msvc8::string> logArgs;
+  fa::vector<fa::string> logArgs;
   if (CFG_GetArgOption("/log", 1, &logArgs) && !logArgs.empty()) {
-    const msvc8::string logFileName = FILE_SuggestedExt(logArgs[0].c_str(), "sclog");
+    const fa::string logFileName = FILE_SuggestedExt(logArgs[0].c_str(), "sclog");
     // This construction is the real source-level trigger for a chain of
     // Dinkumware iostream/CRT internals, none of which need a hand-written
     // body -- they're satisfied automatically once this expression compiles:
@@ -160,7 +150,7 @@ bool IWinApp::AppInitCommonServices()
   RES_ActivatePendingFactories();
 
   const std::filesystem::path launchDirectory = ResolveLaunchDirectory();
-  const msvc8::string dataPathScriptName("SupComDataPath.lua");
+  const fa::string dataPathScriptName("SupComDataPath.lua");
   if (!DISK_SetupDataAndSearchPaths(dataPathScriptName, launchDirectory)) {
     gpg::Die("Failed to setup initial search path.");
   }

@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 
 namespace gpg::gal
 {
@@ -36,13 +36,16 @@ namespace moho
     /** Forgets the GPU copy (a new device). */
     void Reset() noexcept;
 
-    [[nodiscard]] gpg::gal::GpuBuffer* Buffer() const noexcept { return mBuffer.get(); }
+    [[nodiscard]] gpg::gal::GpuBuffer* Buffer() const noexcept
+    {
+      return mBuffer.get();
+    }
 
   private:
     const char* mName;
     std::uint32_t mStride;
     std::uint32_t mBlockBytes;
-    boost::shared_ptr<gpg::gal::GpuBuffer> mBuffer;
+    std::shared_ptr<gpg::gal::GpuBuffer> mBuffer;
     std::vector<std::uint8_t> mUploaded; // what mBuffer holds
   };
 } // namespace moho

@@ -7,7 +7,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include "boost/function.h"
+#include <functional>
 #include "Wm3AxisAlignedBox3.h"
 #include <winsock2.h>
 #include <Windows.h>
@@ -31,15 +31,6 @@ namespace moho
   void THREAD_InitInvoke();
 
   /**
-   * Address: 0x00413AB0 (FUN_00413AB0)
-   *
-   * What it does:
-   * Returns true when called from the thread captured by
-   * `THREAD_InitInvoke()`.
-   */
-  bool THREAD_IsMainThread();
-
-  /**
    * Address: 0x00413AD0 (FUN_00413AD0)
    *
    * What it does:
@@ -55,18 +46,7 @@ namespace moho
    * What it does:
    * Clones one callback and queues it as an APC to the resolved target thread.
    */
-  void THREAD_InvokeAsync(boost::function<void(), std::allocator<void>> fn, uint32_t threadId);
-
-  /**
-   * Address: 0x00413C50 (FUN_00413C50)
-   *
-   * boost::function<void(),std::allocator<void>>,uint32_t
-   *
-   * What it does:
-   * Queues one callback as APC and blocks until the callback signals
-   * completion.
-   */
-  void THREAD_InvokeWait(boost::function<void(), std::allocator<void>> fn, uint32_t threadId);
+  void THREAD_InvokeAsync(std::function<void()> fn, uint32_t threadId);
 
   /**
    * Address: 0x004141A0 (FUN_004141A0)
@@ -78,68 +58,20 @@ namespace moho
   void THREAD_SetAffinity(bool preferLowest) noexcept;
 
   /**
-   * Small payload that will live in a 32-byte box.
-   * Must fit into 32 bytes to mimic the observed allocation size.
+   * What THREAD_InvokeAsync queues: the callback, in one allocation. The binary queues an 8-byte pair of a 32-byte
+   * `boost::function` box and a waiter that only a synchronous invoke sets; nothing in the engine invokes
+   * synchronously.
    */
   struct InvokePayload
   {
-    boost::function<void()> fn;
-  };
-  static_assert(sizeof(InvokePayload) <= 32, "InvokePayload must fit into 32 bytes (box size)");
-
-  /**
-   * Minimal wait context mirroring sub_104DB6C0/7F0/790 trio.
-   */
-  struct WaitCtx
-  {
-    HANDLE evt{nullptr};
-
-    /**
-     * Initialize context (asm passes '2'; ignored here, kept for parity).
-     */
-    void begin(int /*mode*/) noexcept
-    {
-      // Auto-reset, initially non-signaled
-      evt = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    }
-
-    /**
-     * Alertable wait until signaled by the APC side.
-     */
-    void block() noexcept
-    {
-      if (!evt)
-        return;
-      ::WaitForSingleObjectEx(evt, INFINITE, TRUE);
-    }
-
-    /**
-     * Signal completion from APC.
-     */
-    void signal() noexcept
-    {
-      if (evt)
-        ::SetEvent(evt);
-    }
-
-    /**
-     * Cleanup.
-     */
-    void end() noexcept
-    {
-      if (evt) {
-        ::CloseHandle(evt);
-        evt = nullptr;
-      }
-    }
+    std::function<void()> fn;
   };
 
   /**
    * Address: 0x00413AE0 (FUN_00413AE0)
    *
    * What it does:
-   * APC thunk that runs one queued callback payload, signals optional waiting
-   * context, and releases heap payload storage.
+   * APC thunk that runs one queued callback payload and frees it.
    */
   VOID CALLBACK pfnAPC(ULONG_PTR dwData);
 

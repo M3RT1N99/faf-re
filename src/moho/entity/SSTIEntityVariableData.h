@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/FastVector.h"
 #include "gpg/core/reflection/Reflection.h"
 #include "moho/entity/EntityAttributes.h"
@@ -32,7 +32,6 @@ namespace moho
     std::uint32_t mTickCreated = 0;               // 0x08
   };
   static_assert(sizeof(SCreateEntityParams) == 0x0C, "SCreateEntityParams size must be 0x0C");
-
 
   /**
    * Attachment entity-id record for `Moho::SSTIEntityAttachInfo`, used by
@@ -116,7 +115,7 @@ namespace moho
      * `mAuxValueVector` has one inline element, so copying only its pointer
      * lanes would make the copy alias the source's storage: its heap buffer when
      * dynamic, or pointing into the source object itself when inline. That is
-     * live in `msvc8::vector<SEntityVariableUpdateEntry>::insert`, whose
+     * live in `fa::vector<SEntityVariableUpdateEntry>::insert`, whose
      * `uninit_move_n` copy-constructs each element into the newly grown buffer
      * and then runs `destroy_range` over the old one -- so the old element's
      * destructor freed the buffer the new, live element had just aliased.
@@ -161,11 +160,9 @@ namespace moho
      */
     void MemberSerialize(gpg::WriteArchive* archive, int version);
 
-    [[nodiscard]] std::uint32_t GetVisibilityGridMask() const noexcept;
-    void SetVisibilityGridMask(std::uint32_t gridMask) noexcept;
     [[nodiscard]] bool UsesUnderwaterReconGrid() const noexcept;
 
-    boost::shared_ptr<RScmResource> mScmResource; // 0x00
+    std::shared_ptr<RScmResource> mScmResource;   // 0x00
     const RMeshBlueprint* mMeshBlueprint;         // 0x08
     Wm3::Vec3f mScale;                            // 0x0C
     float mHealth;                                // 0x18
@@ -174,12 +171,12 @@ namespace moho
     std::uint8_t mIsDead;                         // 0x21
     std::uint8_t mRequestRefreshUI;               // 0x22
     /** Set by `Entity::Kill` so the client can tell a kill from an ordinary death. */
-    std::uint8_t mDestroyedByKill;                // 0x23
-    VTransform mCurTransform;                     // 0x24
-    VTransform mLastTransform;                    // 0x40
-    float mCurImpactValue;                        // 0x5C
-    float mFractionComplete;                      // 0x60
-    std::uint32_t mAttachmentParentRef;           // 0x64
+    std::uint8_t mDestroyedByKill;                              // 0x23
+    VTransform mCurTransform;                                   // 0x24
+    VTransform mLastTransform;                                  // 0x40
+    float mCurImpactValue;                                      // 0x5C
+    float mFractionComplete;                                    // 0x60
+    std::uint32_t mAttachmentParentRef;                         // 0x64
     gpg::fastvector_n<SSTIEntityAttachInfo, 1> mAuxValueVector; // 0x68, one inline attachment id
     /**
      * Texture-scroll UV at the start and at the end of the beat.
@@ -187,10 +184,10 @@ namespace moho
      * `start + (end - start) * alpha`, which is why every `Entity` mutator
      * shifts the end lane into the start lane before writing a new end.
      */
-    Wm3::Vector2f mScrollBeatStart;               // 0x80
-    Wm3::Vector2f mScrollBeatEnd;                 // 0x88
-    CSndParams* mAmbientSound;                    // 0x90
-    CSndParams* mRumbleSound;                     // 0x94
+    Wm3::Vector2f mScrollBeatStart; // 0x80
+    Wm3::Vector2f mScrollBeatEnd;   // 0x88
+    CSndParams* mAmbientSound;      // 0x90
+    CSndParams* mRumbleSound;       // 0x94
     // FUN_00558760 names this lane as "mNotVisibility"; semantics are still
     // being refined but this is a visibility-suppression byte.
     std::uint8_t mVisibilityHidden; // 0x98
@@ -200,7 +197,7 @@ namespace moho
     std::uint8_t mUsingAltFootprint;           // 0xA4
     std::uint8_t mUsingAltFootprintSecondary;  // 0xA5
     std::uint8_t pad_00A6_00A7[0x02];
-    boost::shared_ptr<CD3DBatchTexture> mUnderlayTexture; // 0xA8
+    std::shared_ptr<CD3DBatchTexture> mUnderlayTexture;   // 0xA8
     EntityAttributes mIntelAttributes;                    // 0xB0
   };
 
@@ -269,7 +266,8 @@ namespace moho
     "Entity attachment vector size must be 0x18"
   );
   static_assert(
-    offsetof(SSTIEntityVariableData, mScmResource) == 0x00, "SSTIEntityVariableData::mScmResource offset must be 0x00"
+    offsetof(SSTIEntityVariableData, mScmResource) == 0x00,
+    "SSTIEntityVariableData::mScmResource offset must be 0x00"
   );
   static_assert(
     offsetof(SSTIEntityVariableData, mMeshBlueprint) == 0x08,
@@ -277,16 +275,20 @@ namespace moho
   );
   static_assert(offsetof(SSTIEntityVariableData, mScale) == 0x0C, "SSTIEntityVariableData::mScale offset must be 0x0C");
   static_assert(
-    offsetof(SSTIEntityVariableData, mHealth) == 0x18, "SSTIEntityVariableData::mHealth offset must be 0x18"
+    offsetof(SSTIEntityVariableData, mHealth) == 0x18,
+    "SSTIEntityVariableData::mHealth offset must be 0x18"
   );
   static_assert(
-    offsetof(SSTIEntityVariableData, mMaxHealth) == 0x1C, "SSTIEntityVariableData::mMaxHealth offset must be 0x1C"
+    offsetof(SSTIEntityVariableData, mMaxHealth) == 0x1C,
+    "SSTIEntityVariableData::mMaxHealth offset must be 0x1C"
   );
   static_assert(
-    offsetof(SSTIEntityVariableData, mIsBeingBuilt) == 0x20, "SSTIEntityVariableData::mIsBeingBuilt offset must be 0x20"
+    offsetof(SSTIEntityVariableData, mIsBeingBuilt) == 0x20,
+    "SSTIEntityVariableData::mIsBeingBuilt offset must be 0x20"
   );
   static_assert(
-    offsetof(SSTIEntityVariableData, mIsDead) == 0x21, "SSTIEntityVariableData::mIsDead offset must be 0x21"
+    offsetof(SSTIEntityVariableData, mIsDead) == 0x21,
+    "SSTIEntityVariableData::mIsDead offset must be 0x21"
   );
   static_assert(
     offsetof(SSTIEntityVariableData, mRequestRefreshUI) == 0x22,
@@ -297,7 +299,8 @@ namespace moho
     "SSTIEntityVariableData::mDestroyedByKill offset must be 0x23"
   );
   static_assert(
-    offsetof(SSTIEntityVariableData, mCurTransform) == 0x24, "SSTIEntityVariableData::mCurTransform offset must be 0x24"
+    offsetof(SSTIEntityVariableData, mCurTransform) == 0x24,
+    "SSTIEntityVariableData::mCurTransform offset must be 0x24"
   );
   static_assert(
     offsetof(SSTIEntityVariableData, mLastTransform) == 0x40,
@@ -328,10 +331,12 @@ namespace moho
     "SSTIEntityVariableData::mScrollBeatEnd offset must be 0x88"
   );
   static_assert(
-    offsetof(SSTIEntityVariableData, mAmbientSound) == 0x90, "SSTIEntityVariableData::mAmbientSound offset must be 0x90"
+    offsetof(SSTIEntityVariableData, mAmbientSound) == 0x90,
+    "SSTIEntityVariableData::mAmbientSound offset must be 0x90"
   );
   static_assert(
-    offsetof(SSTIEntityVariableData, mRumbleSound) == 0x94, "SSTIEntityVariableData::mRumbleSound offset must be 0x94"
+    offsetof(SSTIEntityVariableData, mRumbleSound) == 0x94,
+    "SSTIEntityVariableData::mRumbleSound offset must be 0x94"
   );
   static_assert(
     offsetof(SSTIEntityVariableData, mVisibilityHidden) == 0x98,
@@ -342,7 +347,8 @@ namespace moho
     "SSTIEntityVariableData::mVisibilityMode offset must be 0x9C"
   );
   static_assert(
-    offsetof(SSTIEntityVariableData, mLayerMask) == 0xA0, "SSTIEntityVariableData::mLayerMask offset must be 0xA0"
+    offsetof(SSTIEntityVariableData, mLayerMask) == 0xA0,
+    "SSTIEntityVariableData::mLayerMask offset must be 0xA0"
   );
   static_assert(
     offsetof(SSTIEntityVariableData, mUsingAltFootprint) == 0xA4,

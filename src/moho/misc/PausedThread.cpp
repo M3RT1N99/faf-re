@@ -24,7 +24,10 @@ namespace moho
  * Captures current thread id, stores Lua state/debug-frame pointers, and allocates one
  * auto-reset resume event.
  */
-moho::PausedMainThread::PausedMainThread(LuaPlus::LuaState* const luaState, lua_Debug* const debugFrame)
+moho::PausedMainThread::PausedMainThread(
+  LuaPlus::LuaState* const luaState,
+  lua_Debug* const debugFrame
+)
   : mResumeEvent(nullptr)
   , mThreadId(::GetCurrentThreadId())
   , mLuaState(luaState)
@@ -80,7 +83,7 @@ std::uintptr_t moho::PausedMainThread::WaitUntilResumedAndDelete()
 {
   bool processIdle = true;
   while (::WaitForSingleObject(static_cast<HANDLE>(mResumeEvent), 0) != WAIT_OBJECT_0) {
-    // Engine addition (plan WPL.4): the wx pump is the client's (WinApp.h
+    // Engine addition (plan WPL.4): the window-library pump is the client's (WinApp.h
     // sAppPumpStep).
     if (sAppPumpStep != nullptr && sAppPumpStep(processIdle)) {
       processIdle = true;
@@ -111,7 +114,9 @@ bool moho::PausedMainThread::Resume()
  * resume event.
  */
 moho::PausedChildThread::PausedChildThread(
-  const std::uint32_t pausedThreadId, LuaPlus::LuaState* const luaState, lua_Debug* const debugFrame
+  const std::uint32_t pausedThreadId,
+  LuaPlus::LuaState* const luaState,
+  lua_Debug* const debugFrame
 )
   : mResumeEvent(nullptr)
   , mThreadId(pausedThreadId)

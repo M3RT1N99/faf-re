@@ -1,6 +1,6 @@
 #pragma once
 
-#include "boost/weak_ptr.h"
+#include <memory>
 #include "gpg/core/reflection/Reflection.h"
 #include "moho/net/INetNATTraversalProvider.h"
 
@@ -33,7 +33,7 @@ namespace gpg
     /**
      * Address: 0x00481AE0 (FUN_00481AE0)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x00481AA0 (FUN_00481AA0)
@@ -57,7 +57,5 @@ namespace gpg
    * and the cached `boost::weak_ptr<...>` `RType*` in `out->mType`. Lazily
    * resolves the cached `RType` on first call.
    */
-  RRef* RRef_weak_ptr_INetNATTraversalProvider(
-    RRef* out,
-    boost::weak_ptr<moho::INetNATTraversalProvider>* provider);
+  RRef* RRef_weak_ptr_INetNATTraversalProvider(RRef* out, std::weak_ptr<moho::INetNATTraversalProvider>* provider);
 } // namespace gpg

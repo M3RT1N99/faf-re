@@ -27,11 +27,12 @@ namespace moho
   class INetConnector;
   class INetConnection;
 
-  class MOHO_EMPTY_BASES CLobby : public CScriptObject,
-                                  public IMessageReceiver,
-                                  public INetDatagramHandler,
-                                  public CPushTask<CLobby>,
-                                  public CPullTask<CLobby>
+  class MOHO_EMPTY_BASES CLobby :
+    public CScriptObject,
+    public IMessageReceiver,
+    public INetDatagramHandler,
+    public CPushTask<CLobby>,
+    public CPullTask<CLobby>
   {
   public:
     /**
@@ -81,7 +82,7 @@ namespace moho
     /**
      * Address: 0x004C70A0
      */
-    msvc8::string GetErrorDescription() override;
+    fa::string GetErrorDescription() override;
 
     /**
      * Address: 0x007C62F0
@@ -189,7 +190,7 @@ namespace moho
      * @param uid
      * @return
      */
-    msvc8::string MakeValidPlayerName(msvc8::string joiningName, int32_t uid);
+    fa::string MakeValidPlayerName(fa::string joiningName, int32_t uid);
 
     /**
      * Address: 0x007C7FA0
@@ -211,7 +212,9 @@ namespace moho
      * @param hostPeerUidBuf
      */
     void ProcessConnectionToHostEstablished(
-      const char** localPeerUidBuf, const char** newLocalNameBuf, const char** hostPeerUidBuf
+      const char** localPeerUidBuf,
+      const char** newLocalNameBuf,
+      const char** hostPeerUidBuf
     );
 
     /**
@@ -236,7 +239,7 @@ namespace moho
      * @param name
      * @param uid
      */
-    void ConnectToPeer(u_long address, u_short port, const msvc8::string& name, int32_t uid);
+    void ConnectToPeer(u_long address, u_short port, const fa::string& name, int32_t uid);
 
     /**
      * Address: 0x007C7790
@@ -337,7 +340,10 @@ namespace moho
      * Resolves or creates the per-owner command source id entry.
      */
     uint32_t AssignCommandSource(
-      int timeouts, int32_t ownerId, msvc8::vector<SSTICommandSource>& commandSources, uint32_t& sourceId
+      int timeouts,
+      int32_t ownerId,
+      fa::vector<SSTICommandSource>& commandSources,
+      uint32_t& sourceId
     );
 
   private:
@@ -345,19 +351,19 @@ namespace moho
     SPeer* FindPeerByUid(int32_t uid);
 
   public:
-    INetConnector* connector{nullptr};           // 0x78
-    int32_t maxConnections{0};                   // 0x7C
-    HANDLE event{nullptr};                       // 0x80
-    bool joinedLobby{false};                     // 0x84
-    INetConnection* peerConnection{nullptr};     // 0x88
-    bool mHasNAT{false};                         // 0x8C
-    msvc8::string playerName;                    // 0x90
-    int32_t localUid{-1};                        // 0xAC
-    TDatList<SPeer, void> peers;                 // 0xB0
-    bool peersDirty{false};                      // 0xB8
-    int32_t mNextId{0};                          // 0xBC
-    msvc8::auto_ptr<INetDatagramSocket> mSocket; // 0xC0
-    int32_t hostedTime{0};                       // 0xC4
+    INetConnector* connector{nullptr};        // 0x78
+    int32_t maxConnections{0};                // 0x7C
+    HANDLE event{nullptr};                    // 0x80
+    bool joinedLobby{false};                  // 0x84
+    INetConnection* peerConnection{nullptr};  // 0x88
+    bool mHasNAT{false};                      // 0x8C
+    fa::string playerName;                    // 0x90
+    int32_t localUid{-1};                     // 0xAC
+    TDatList<SPeer, void> peers;              // 0xB0
+    bool peersDirty{false};                   // 0xB8
+    int32_t mNextId{0};                       // 0xBC
+    fa::auto_ptr<INetDatagramSocket> mSocket; // 0xC0
+    int32_t hostedTime{0};                    // 0xC4
 
     // Engine addition, not in the binary: who in the lobby runs our engine.
     std::unique_ptr<CLobbyPeerFeatures> mPeerFeatures;
@@ -369,9 +375,15 @@ namespace moho
    * Engine addition (issue #215): whether a lobby object exists, i.e. the lobby
    * screen is up or a game is being launched from it. Counted by CLobby's
    * constructor and destructor, outside the class, whose layout is the binary's.
-   * Read by the lobby build label (WxRuntimeTypes.cpp).
+   * Read by the lobby build label (AppWindows.cpp).
    */
   [[nodiscard]] bool LOBBY_IsActive() noexcept;
+
+  /**
+   * Engine addition, server mode (plan WP2.8): the server has launched the match: the server session's lobby, if one
+   * is open, ends as a launched lobby does (its script's `GameLaunched`, which closes its screen and destroys it).
+   */
+  void LOBBY_ServerSessionLaunched();
   static_assert(sizeof(CPushTask<CLobby>) == 0x1C, "CPushTask<CLobby> size must be 0x1C");
   static_assert(sizeof(CPullTask<CLobby>) == 0x18, "CPullTask<CLobby> size must be 0x18");
   static_assert(offsetof(CLobby, connector) == 0x78, "connector offset");
@@ -594,13 +606,6 @@ namespace moho
    * Address: 0x007C2CE0 (FUN_007C2CE0, cfunc_CLobbyGetPeerL)
    */
   int cfunc_CLobbyGetPeerL(LuaPlus::LuaState* state);
-
-  /**
-   * Engine addition, not in the binary: `CLobby:GetPeerStyle(uid)`.
-   */
-  int cfunc_CLobbyGetPeerStyle(lua_State* luaContext);
-  CScrLuaInitForm* func_CLobbyGetPeerStyle_LuaFuncDef();
-  int cfunc_CLobbyGetPeerStyleL(LuaPlus::LuaState* state);
 
   /**
    * Address: 0x007C2DF0 (FUN_007C2DF0, cfunc_CLobbyGetLocalPlayerName)

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -25,7 +27,10 @@ namespace gpg::gal::d3d12
     void Open(ID3D12Device* device, const std::string& directory);
     void Close() noexcept;
 
-    [[nodiscard]] bool IsOpen() const noexcept { return mLibrary != nullptr; }
+    [[nodiscard]] bool IsOpen() const noexcept
+    {
+      return mLibrary != nullptr;
+    }
 
     /** A stored pipeline for `key` whose description is `desc`, or null. */
     [[nodiscard]] Microsoft::WRL::ComPtr<ID3D12PipelineState>
@@ -40,7 +45,7 @@ namespace gpg::gal::d3d12
     static constexpr std::uint32_t kSaveEvery = 64;
     static constexpr std::uint64_t kQuietSeconds = 5;
 
-    void Save(bool inBackground);
+    void Save(bool inBackground) noexcept;
 
     Microsoft::WRL::ComPtr<ID3D12PipelineLibrary> mLibrary;
     std::vector<std::uint8_t> mBlob; // the loaded library's backing store; must outlive mLibrary
@@ -49,5 +54,7 @@ namespace gpg::gal::d3d12
     std::uint32_t mStored = 0;
     std::uint32_t mUnsaved = 0;
     std::uint64_t mLastStoreTick = 0; // GetTickCount64 of the last Store
+    std::mutex mMutex; // the counters below; Load and Store also run on the pipeline workers (ren_AsyncPipelines)
+    std::atomic<bool> mSaving{false}; // one save at a time, serialized outside mMutex
   };
 } // namespace gpg::gal::d3d12

@@ -2,8 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/Vector.h"
 #include "moho/mesh/Mesh.h"
 
@@ -29,6 +30,15 @@ namespace moho
    * Dissolve-cutoff value propagated into generated shoreline spatial-db cells.
    */
   extern float ren_ShorelineCutoff;
+
+  /// Engine addition (water bodies): vertices `[firstVertex, firstVertex + vertexCount)` of the
+  /// shoreline sheet whose water is at `level`.
+  struct SShorelineLevelRun
+  {
+    float level;
+    std::int32_t firstVertex;
+    std::int32_t vertexCount;
+  };
 
   /**
    * Terrain-water shoreline runtime owner.
@@ -101,14 +111,21 @@ namespace moho
      */
     void Update(const GeomCamera3& camera);
 
+    /**
+     * Engine addition (water bodies, .plans/water-levels/PLAN.md): the vertices the last
+     * `Update` wrote, grouped by the level of their water, in sheet order. Null when the map has
+     * no bodies: then every vertex is at the map's one level, as in the binary.
+     */
+    [[nodiscard]] const std::vector<SShorelineLevelRun>* LevelRuns() const;
+
   public:
     // The shoreline owns the database its cells register into: 0x90 bytes at
     // +0x04, which lands mCells exactly on +0x94. It used to be an 8-byte
     // handle plus an opaque mUnknown0C_93[0x88] tail.
-    SpatialDB<ShoreCell> mSpatialDb;                             // +0x04
-    msvc8::vector<boost::shared_ptr<ShoreCell>> mCells;          // +0x94
-    boost::shared_ptr<ID3DVertexSheet> mVertexSheet;             // +0xA4
-    std::int32_t mShorelineTris;                                 // +0xAC
+    SpatialDB<ShoreCell> mSpatialDb;                 // +0x04
+    fa::vector<std::shared_ptr<ShoreCell>> mCells;   // +0x94
+    std::shared_ptr<ID3DVertexSheet> mVertexSheet;   // +0xA4
+    std::int32_t mShorelineTris;                     // +0xAC
   };
 
   static_assert(offsetof(Shoreline, mSpatialDb) == 0x04, "Shoreline::mSpatialDb offset must be 0x04");

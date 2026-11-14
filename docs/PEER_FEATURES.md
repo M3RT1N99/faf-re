@@ -27,12 +27,18 @@ Feature traffic for the lobby goes in this message with a first byte other than 
 
 | Feature | Bit | Announced when | What it means |
 |---|---|---|---|
-| `OrderStreamCheck` | 0 | `net_CheckOrderStreams` was on as the game began | This client's acks carry `CommandStreamCheck`'s hash after their fields |
+| `OrderStreamCheck` | 0 | `net_CheckOrderStreams` was on as the game began | This client's acks carry `CommandStreamCheck`'s hash after their fields. With `net_PeerFeatures` on, a peer's hash is compared only once it announced this; off, the ack's size says it, as before |
 | `SkewCorrection` | 1 | `wld_SkewCorrection` was on as the game began | This client's display clock keeps to real time; the correction only runs when every player announces this |
 | `FastAck` | 2 | `net_FastRetransmit` was on as the game began | This client acknowledges within `net_FastAckDelay`, which the shared start takes off that peer's ping |
 | `SignedStyle` | 3 | In the lobby, when this client has a valid style key | This client answers a style challenge |
+| `Rejoin` | 4 | `net_RejoinAccept` is on | A client that restarts can take its seat back (#275). With any client that didn't announce it, a lost link behaves as in the original game |
+| `ServerSession` | 5 | Always, in a build with server mode (`FAF_SERVER_MODE`) | This client can play a game whose only sim runs on a game server (`/connectserver`, a launcher's `JoinServer`). It is announced to a launcher too, see below |
 
-`SignedStyle` is announced only in the lobby. A player who announces it can prove a style with a key: the other player sends a random challenge (kind 1), and the answer (kind 2) is the colour with a signature over both players' ids, the challenge and the colour (`src/remote/net/StyleProof.h`). The engine keeps only the public key. The key file is `peer_style.key` beside the exe, or `/peerstylekey <file>`: the seed in hex, then the colour as `rrggbb`. A proven colour shows on the player's name in the lobby through `CLobby:GetPeerStyle` and the hook `data/fafengine/lua/ui/lobby/lobby.lua`.
+`SignedStyle` is announced only in the lobby. A player who announces it can prove a style with a key: the other player sends a random challenge (kind 1), and the answer (kind 2) is the colour with a signature over both players' ids, the challenge and the colour (`src/remote/net/StyleProof.h`). The engine keeps only the public key. The key file is `peer_style.key` beside the exe, or `/peerstylekey <file>`: the seed in hex, then the colour as `rrggbb`. A proven colour shows on the player's name in the lobby: the engine wraps the lobby script's `SetSlotInfo` (`CLobbyPeerFeatures::InstallSlotStyles`), with no script file of its own.
+
+## To the launcher
+
+A launcher can't see the game links, so it asks: started with `/gpgnetfeatures`, the game sends GPGNet `PeerFeatures <mask> <build>` right after it connects, before its first `GameState`. The mask is the announcement's, as decimal text (GPGNet's numbers are 32-bit); only the features a build has whatever the session's switches are in it, today `ServerSession`. A launcher reads bit 5 before it answers the game's `Idle` with `JoinServer` instead of `CreateLobby` ([LAUNCHER_ADAPTER_CONTRACT.md](LAUNCHER_ADAPTER_CONTRACT.md#10-games-on-a-game-server)). Without the switch nothing is sent, and a retail game ignores the switch, so it never answers.
 
 ## Adding a feature
 
@@ -50,14 +56,16 @@ All integers are little-endian.
 
 | Bytes | Field | Meaning |
 |---|---|---|
-| 1 | kind | 0: announcement. Other values are feature traffic, and a client that doesn't know one ignores it |
+| 1 | kind | 0: announcement. Other values are feature traffic (1 to 8: rejoin), and a client that doesn't know one ignores it |
 | 1 | format | 1 |
 | 8 | mask | One bit per `EPeerFeature`. A bit this build doesn't know is ignored |
 | rest | build | Short commit hash, NUL-terminated. A later format adds its fields after this |
 
 ## Retail clients
 
-A retail client gets one small message per game from each of our clients that has the switch on. From reading the binary: `CNetClient`'s constructor registers the client range up to 60 (`0x0053BBE2` pushes `0x3C`), and `CClientBase::Process` logs `CClientBase::Queue(): Ignoring message type 58` (`0x0053C2E0`) and returns. `net_PeerFeatures` is off by default until the compatibility matrix (#242) has passed with it.
+A retail client gets one small message per game from each of our clients that has the switch on. From reading the binary: `CNetClient`'s constructor registers the client range up to 60 (`0x0053BBE2` pushes `0x3C`), and `CClientBase::Process` logs `CClientBase::Queue(): Ignoring message type 58` (`0x0053C2E0`) and returns. Retail logging that line, once per announcing peer, was confirmed in the compatibility games below.
+
+The compatibility games (#285) put the shipped game, our x86 and our x64 in one game with the switch on for ours, once on direct links (`tools/scenarios/3p-peer-features-matrix.yaml`) and once behind FAF's Java adapter (`3p-peer-features-matrix-adapter.yaml`). Both passed on 2026-11-07 at `0ccf4a8ec`: each of ours listed the other's features and compared only the other's order stream reports, retail logged the ignored message once per peer of ours, nothing desynced, and every player's replay played with matching checksums. `net_PeerFeatures` still stays off by default: the features that need it (rejoin, its order checks) are off by default too, and with it off a retail peer gets no extra message at all. A launcher that runs the game's own links turns it on together with rejoin ([LAUNCHER_NATIVE_NETWORK.md](LAUNCHER_NATIVE_NETWORK.md#when-the-game-crashes-in-a-match)).
 
 In the lobby a retail client gets one small message from each of our clients. From reading the binary: the jump table at `0x007C6454` sends type 112 to `LOBBY: Ignoring unrecognized lobby message` (`0x007C6412`), which logs and returns. It never announces, so it gets nothing more.
 

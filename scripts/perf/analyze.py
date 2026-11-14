@@ -35,10 +35,10 @@ GC = ("luaC_collectgarbage", "mark", "propagatemarks", "traversetable", "sweepli
       "traverseproto", "traverseclosure", "traversestack", "freeobj", "luaF_freeproto", "luaH_free")
 
 WHAT = [
-    ("idle wait (beat/vsync)", lambda n, p: n in ("boost::detail::condition_impl::do_wait", "gpg::gal::DeviceD3D9::Present")),
+    ("idle wait (beat/vsync)", lambda n, p: n in ("boost::detail::condition_impl::do_wait", "fa::condition::wait", "gpg::gal::DeviceD3D9::Present")),
     ("Lua GC", lambda n, p: n in GC),
     ("allocator", lambda n, p: n in ("malloc_0", "free", "operatornew", "realloc_0", "AllocateSmallBlocksAmount",
-                                     "msvc8::detail::allocate_checked", "operator delete", "operatordelete")
+                                     "fa::detail::allocate_checked", "operator delete", "operatordelete")
      ),
     ("Lua VM + LuaPlus", lambda n, p: p.startswith("src/lua/") or n.startswith(("lua", "LuaPlus::"))),
     ("spatial query (COGrid)", lambda n, p: any(s in n for s in ("COGrid::", "EntityOccupationManager", "GatherUnmarked",
@@ -115,7 +115,7 @@ for (t, c), v in chains.items():
     names = [nm(f) for f in c]
     paths = [pth(f) for f in c]
     what = None
-    if names[0].startswith("mod:") and len(names) > 1 and names[1] in ("boost::detail::condition_impl::do_wait", "gpg::gal::DeviceD3D9::Present"):
+    if names[0].startswith("mod:") and len(names) > 1 and names[1] in ("boost::detail::condition_impl::do_wait", "fa::condition::wait", "gpg::gal::DeviceD3D9::Present"):
         what = "idle wait (beat/vsync)"
     elif names[0].startswith("mod:") and len(names) > 1 and names[1] in ("malloc_0", "free", "operatornew", "realloc_0", "AllocateSmallBlocksAmount", "ReleaseHeapRecord"):
         what = "allocator"

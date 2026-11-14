@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/String.h"
 #include "gpg/core/reflection/Reflection.h"
 
@@ -32,13 +32,15 @@ namespace moho
   class PrefetchData
   {
   public:
-    explicit PrefetchData(ResourceRecord* const record) noexcept
+    explicit PrefetchData(
+      ResourceRecord* const record
+    ) noexcept
       : mRecord(record)
     {}
 
-    ResourceRecord* mRecord;                  // +0x00
-    boost::shared_ptr<void> mPrefetchData;    // +0x04 (`ResourceFactoryBase::Preload`'s result)
-    boost::shared_ptr<void> mResource;        // +0x0C
+    ResourceRecord* mRecord;               // +0x00
+    std::shared_ptr<void> mPrefetchData;   // +0x04 (`ResourceFactoryBase::Preload`'s result)
+    std::shared_ptr<void> mResource;       // +0x0C
   };
   static_assert(offsetof(PrefetchData, mRecord) == 0x00, "PrefetchData::mRecord offset must be 0x00");
   static_assert(offsetof(PrefetchData, mPrefetchData) == 0x04, "PrefetchData::mPrefetchData offset must be 0x04");
@@ -46,7 +48,8 @@ namespace moho
   static_assert(sizeof(PrefetchData) == 0x14, "PrefetchData size must be 0x14");
 
   /**
-   * Address: 0x004ABF30 (FUN_004ABF30, ?RES_PrefetchResource@Moho@@YA?AVPrefetchHandleBase@1@VStrArg@gpg@@PBVRType@4@@Z)
+   * Address: 0x004ABF30 (FUN_004ABF30,
+   * ?RES_PrefetchResource@Moho@@YA?AVPrefetchHandleBase@1@VStrArg@gpg@@PBVRType@4@@Z)
    *
    * What it does:
    * `ResourceManager::PrefetchResource` on the singleton.
@@ -102,7 +105,9 @@ namespace moho
      * `CD3DDeviceResources::LoadPrefetchData` (0x0044156B) build their results
      * through it.
      */
-    explicit PrefetchHandleBase(const boost::shared_ptr<PrefetchData> data)
+    explicit PrefetchHandleBase(
+      const std::shared_ptr<PrefetchData> data
+    )
       : mPtr(data)
     {}
 
@@ -129,18 +134,10 @@ namespace moho
      * What it does:
      * Returns the prefetch payload path lane for this handle.
      */
-    [[nodiscard]] const msvc8::string& GetName() const;
-
-    /**
-     * Address: 0x004ABE10 (FUN_004ABE10, Moho::PrefetchHandleBase::GetResourceRType)
-     *
-     * What it does:
-     * Returns the prefetch payload reflected resource type lane.
-     */
-    [[nodiscard]] gpg::RType* GetResourceRType() const;
+    [[nodiscard]] const fa::string& GetName() const;
 
   public:
-    boost::shared_ptr<PrefetchData> mPtr; // +0x00
+    std::shared_ptr<PrefetchData> mPtr; // +0x00
   };
 
   static_assert(offsetof(PrefetchHandleBase, mPtr) == 0x00, "PrefetchHandleBase::mPtr offset must be 0x00");

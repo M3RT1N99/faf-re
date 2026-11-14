@@ -20,9 +20,7 @@ namespace moho
 {
   namespace
   {
-    constexpr std::array<float, 8> kParticleQuadVertexLane{
-      -1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f
-    };
+    constexpr std::array<float, 8> kParticleQuadVertexLane{-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f};
 
     constexpr std::array<std::uint32_t, 3> kParticleQuadIndexLane{
       0x00010000u,
@@ -114,14 +112,18 @@ namespace moho
    * What it does:
    * Ensures particle GPU resources exist, then locks instance data from start.
    */
-  ParticleBuffer::Instanced* ParticleBuffer::Lock(const int count)
+  ParticleBuffer::Instanced* ParticleBuffer::Lock(
+    const int count
+  )
   {
     if (!Initialize()) {
       return nullptr;
     }
 
     const int byteCount = count * static_cast<int>(sizeof(Instanced));
-    return static_cast<Instanced*>(mInstanceVertexBuffer->Lock(0U, static_cast<unsigned int>(byteCount), gpg::gal::MohoD3DLockFlags::Discard));
+    return static_cast<Instanced*>(
+      mInstanceVertexBuffer->Lock(0U, static_cast<unsigned int>(byteCount), gpg::gal::MohoD3DLockFlags::Discard)
+    );
   }
 
   /**
@@ -131,7 +133,10 @@ namespace moho
    * What it does:
    * Ensures particle GPU resources exist, then locks one instance-data subrange.
    */
-  ParticleBuffer::Instanced* ParticleBuffer::Lock(const int start, const int count)
+  ParticleBuffer::Instanced* ParticleBuffer::Lock(
+    const int start,
+    const int count
+  )
   {
     if (!Initialize()) {
       return nullptr;
@@ -166,7 +171,10 @@ namespace moho
    * What it does:
    * Binds particle instance/quad buffers and renders one instanced-pass chain.
    */
-  void ParticleBuffer::Render(const int count, const int startIndex)
+  void ParticleBuffer::Render(
+    const int count,
+    const int startIndex
+  )
   {
     if (count <= 0 || !Initialize()) {
       return;
@@ -205,7 +213,9 @@ namespace moho
   }
 
   void ParticleBuffer::RenderInstances(
-    const boost::shared_ptr<gpg::gal::VertexBuffer>& instances, const int count, const int startIndex
+    const std::shared_ptr<gpg::gal::VertexBuffer>& instances,
+    const int count,
+    const int startIndex
   )
   {
     if (count <= 0 || instances == nullptr || !Initialize()) {
@@ -256,7 +266,7 @@ namespace moho
 
     auto* const device = deviceBase;
 
-    boost::shared_ptr<gpg::gal::VertexFormat> vertexFormat;
+    std::shared_ptr<gpg::gal::VertexFormat> vertexFormat;
     vertexFormat = device->CreateVertexFormat(19U);
     mVertexFormat = vertexFormat;
 
@@ -266,14 +276,17 @@ namespace moho
     quadVertexContext.vertexCount_ = 4U;
     quadVertexContext.stride_ = 8U;
 
-    boost::shared_ptr<gpg::gal::VertexBuffer> quadVertexBuffer;
+    std::shared_ptr<gpg::gal::VertexBuffer> quadVertexBuffer;
     quadVertexBuffer = device->CreateVertexBuffer(&quadVertexContext);
     mQuadVertexBuffer = quadVertexBuffer;
 
-    void* const quadVertexData =
-      mQuadVertexBuffer->Lock(0U, 0U, gpg::gal::MohoD3DLockFlags::None);
+    void* const quadVertexData = mQuadVertexBuffer->Lock(0U, 0U, gpg::gal::MohoD3DLockFlags::None);
     // Raw GPU upload: static particle quad vertex blob into the locked buffer.
-    std::copy(kParticleQuadVertexLane.begin(), kParticleQuadVertexLane.end(), static_cast<decltype(kParticleQuadVertexLane)::value_type*>(quadVertexData));
+    std::copy(
+      kParticleQuadVertexLane.begin(),
+      kParticleQuadVertexLane.end(),
+      static_cast<decltype(kParticleQuadVertexLane)::value_type*>(quadVertexData)
+    );
     (void)mQuadVertexBuffer->Unlock();
 
     gpg::gal::VertexBufferContext instanceVertexContext{};
@@ -282,22 +295,26 @@ namespace moho
     instanceVertexContext.vertexCount_ = static_cast<unsigned int>(mMaxParticles);
     instanceVertexContext.stride_ = sizeof(Instanced);
 
-    boost::shared_ptr<gpg::gal::VertexBuffer> instanceVertexBuffer;
+    std::shared_ptr<gpg::gal::VertexBuffer> instanceVertexBuffer;
     instanceVertexBuffer = device->CreateVertexBuffer(&instanceVertexContext);
     mInstanceVertexBuffer = instanceVertexBuffer;
+    // Engine change (ren_CopyWrittenOnly): each particle is written once at its birth, after the last
+    // Lock(count) discard, and every draw reads ranges written since; a new recording copies only those.
+    if (instanceVertexBuffer) {
+      device->CopyWrittenOnly(*instanceVertexBuffer);
+    }
 
     gpg::gal::IndexBufferContext indexContext{};
     indexContext.type_ = 1U;
     indexContext.format_ = 1U;
     indexContext.size_ = 6U;
 
-    boost::shared_ptr<gpg::gal::IndexBuffer> indexBuffer;
+    std::shared_ptr<gpg::gal::IndexBuffer> indexBuffer;
     indexBuffer = device->CreateIndexBuffer(&indexContext);
     mQuadIndexBuffer = indexBuffer;
 
-    auto* const indexWords = reinterpret_cast<std::uint32_t*>(
-      mQuadIndexBuffer->Lock(0U, 0U, gpg::gal::MohoD3DLockFlags::None)
-    );
+    auto* const indexWords =
+      reinterpret_cast<std::uint32_t*>(mQuadIndexBuffer->Lock(0U, 0U, gpg::gal::MohoD3DLockFlags::None));
     indexWords[0] = kParticleQuadIndexLane[0];
     indexWords[1] = kParticleQuadIndexLane[1];
     indexWords[2] = kParticleQuadIndexLane[2];

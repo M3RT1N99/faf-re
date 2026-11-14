@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/String.h"
 
 namespace moho
@@ -35,7 +35,7 @@ namespace moho
      * What it does:
      * Assigns the frame pass render-target texture into the primary texture lane.
      */
-    void SetTexture(unsigned int textureSlot, boost::shared_ptr<ID3DRenderTarget> texture);
+    void SetTexture(unsigned int textureSlot, std::shared_ptr<ID3DRenderTarget> texture);
 
     /**
      * Address: 0x007F5DA0 (FUN_007F5DA0, Moho::CRenFrame::InitTransformedVerts)
@@ -56,14 +56,14 @@ namespace moho
     void ResetTransientResources() noexcept;
 
   public:
-    msvc8::string mName;                   // +0x00
-    ID3DVertexSheet* mVertexSheet = nullptr; // +0x1C
-    float mWidth = 0.0f;                   // +0x20
-    float mHeight = 0.0f;                  // +0x24
-    boost::shared_ptr<ID3DRenderTarget> mFrameTexture1; // +0x28
-    boost::shared_ptr<ID3DRenderTarget> mFrameTexture2; // +0x30
-    boost::shared_ptr<ID3DRenderTarget> mFrameTexture3; // +0x38
-    boost::shared_ptr<ID3DRenderTarget> mFrameTexture4; // +0x40
+    fa::string mName;                                   // +0x00
+    ID3DVertexSheet* mVertexSheet = nullptr;            // +0x1C
+    float mWidth = 0.0f;                                // +0x20
+    float mHeight = 0.0f;                               // +0x24
+    std::shared_ptr<ID3DRenderTarget> mFrameTexture1;   // +0x28
+    std::shared_ptr<ID3DRenderTarget> mFrameTexture2;   // +0x30
+    std::shared_ptr<ID3DRenderTarget> mFrameTexture3;   // +0x38
+    std::shared_ptr<ID3DRenderTarget> mFrameTexture4;   // +0x40
   };
 
   static_assert(offsetof(CRenFrame, mName) == 0x00, "CRenFrame::mName offset must be 0x00");

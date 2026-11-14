@@ -15,7 +15,7 @@ namespace
    * What it does:
    * Stores active cursor hotspot `(x,y)` lanes.
    */
-  [[maybe_unused]] CMauiCursor* SetCursorHotspotXY(
+  CMauiCursor* SetCursorHotspotXY(
     CMauiCursor* const cursor,
     const std::int32_t hotspotX,
     const std::int32_t hotspotY
@@ -32,7 +32,7 @@ namespace
    * What it does:
    * Stores default cursor hotspot `(x,y)` lanes.
    */
-  [[maybe_unused]] CMauiCursor* SetCursorDefaultHotspotXY(
+  CMauiCursor* SetCursorDefaultHotspotXY(
     CMauiCursor* const cursor,
     const std::int32_t hotspotX,
     const std::int32_t hotspotY
@@ -41,75 +41,6 @@ namespace
     cursor->mDefaultHotspotX = hotspotX;
     cursor->mDefaultHotspotY = hotspotY;
     return cursor;
-  }
-
-  moho::StatItem* gCameraCursorPositionStat = nullptr;
-  moho::StatItem* gCameraCursorElevationStat = nullptr;
-  moho::StatItem* gCameraCursorOCellStat = nullptr;
-  moho::StatItem* gCameraCursorLodMetricStat = nullptr;
-  moho::StatItem* gCameraFocusDistanceStat = nullptr;
-  moho::StatItem* gMinimapCursorLodMetricStat = nullptr;
-  moho::StatItem* gMinimapFocusDistanceStat = nullptr;
-
-  [[nodiscard]] moho::StatItem* EnsureEngineStringStat(
-    moho::StatItem*& slot,
-    const char* const statPath
-  )
-  {
-    if (slot == nullptr) {
-      slot = moho::GetEngineStats()->GetItem_0(statPath);
-      (void)slot->Release(0);
-    }
-    return slot;
-  }
-
-  [[nodiscard]] moho::StatItem* EnsureEngineFloatStat(
-    moho::StatItem*& slot,
-    const char* const statPath
-  )
-  {
-    if (slot == nullptr) {
-      slot = moho::GetEngineStats()->GetItem3(statPath);
-      (void)slot->Release(0);
-    }
-    return slot;
-  }
-
-  void StoreEngineFloatStat(
-    moho::StatItem*& slot,
-    const char* const statPath,
-    const float value
-  )
-  {
-    moho::StatItem* const item = EnsureEngineFloatStat(slot, statPath);
-    item->StorePrimaryBits(std::bit_cast<std::int32_t>(value));
-  }
-
-  [[nodiscard]] float SampleCursorTerrainElevation(
-    const moho::CUIWorldView& worldView,
-    const Wm3::Vec3f& cursorWorldPosition
-  )
-  {
-    const auto* const map =
-      worldView.mWldSession->mWldMap->mTerrainRes->mMap;
-    return map->mHeightField->GetElevation(cursorWorldPosition.x, cursorWorldPosition.z);
-  }
-
-  void StoreCursorLodAndFocusStats(
-    moho::CameraImpl& camera,
-    const Wm3::Vec3f& cursorWorldPosition,
-    moho::StatItem*& lodStat,
-    const char* const lodStatPath,
-    moho::StatItem*& focusStat,
-    const char* const focusStatPath
-  )
-  {
-    StoreEngineFloatStat(lodStat, lodStatPath, camera.LODMetric(cursorWorldPosition));
-
-    const float targetZoom = camera.CameraGetTargetZoom();
-    const Wm3::Vec3f& offsetBefore = camera.CameraGetOffset();
-    const float focusDistance = std::fabs((offsetBefore.y + targetZoom) - camera.CameraGetOffset().y);
-    StoreEngineFloatStat(focusStat, focusStatPath, focusDistance);
   }
 
   [[nodiscard]] moho::CMauiCursor* ResolveCursorFromLuaObjectOrError(
@@ -122,7 +53,7 @@ namespace
     constexpr const char* kIncorrectGameObjectTypeError =
       "Incorrect type of game object.  (Did you call with '.' instead of ':'?)";
 
-    moho::CScriptObject** const scriptObjectSlot = ExtractScriptObjectSlotFromLuaObject(object);
+    moho::CScriptObject** const scriptObjectSlot = moho::SCR_ScriptObjectSlot(object);
     if (!scriptObjectSlot) {
       luaL_error(state ? state->GetActiveCState() : nullptr, kExpectedGameObjectError);
       return nullptr;
@@ -154,7 +85,7 @@ namespace
     }
     cursor->SetDefaultTexture(texturePath);
   }
-}
+} // namespace
 
 gpg::RType* moho::CMauiCursor::sType = nullptr;
 
@@ -206,10 +137,7 @@ gpg::RType* moho::CMauiCursor::GetClass() const
  */
 gpg::RRef moho::CMauiCursor::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }
 
 /**
@@ -237,7 +165,12 @@ int moho::cfunc__c_CreateCursor(
 moho::CScrLuaInitForm* moho::func__c_CreateCursor_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), kCreateCursorName, &moho::cfunc__c_CreateCursor, nullptr, "<global>", kCreateCursorHelpText
+    moho::SCR_UserLuaInitSet(),
+    kCreateCursorName,
+    &moho::cfunc__c_CreateCursor,
+    nullptr,
+    "<global>",
+    kCreateCursorHelpText
   );
   return &binder;
 }
@@ -632,59 +565,6 @@ int moho::cfunc_CMauiCursorShowL(
   CMauiCursor* const cursor = ResolveCursorFromLuaObjectOrError(cursorObject, state);
   (void)SetCursorShowingAndMarkDirty(cursor, true);
   return 0;
-}
-
-/**
- * Address: 0x0086F090 (FUN_0086F090)
- *
- * What it does:
- * Publishes world-camera/minimap cursor telemetry into engine stats: cursor
- * position text, terrain elevation, occupancy-cell text, camera LOD metric,
- * and focus distance.
- */
-void moho::UIWorldViewUpdateCursorEngineStats(
-  CUIWorldView* const worldView,
-  const Wm3::Vec3f& cursorWorldPosition
-)
-{
-  moho::CameraImpl* const camera = worldView->mCamera.get();
-
-  if (_stricmp(camera->CameraGetName(), "WorldCamera") == 0) {
-    const msvc8::string positionText =
-      gpg::STR_Printf("x=%.2f,y=%.2f,z=%.2f", cursorWorldPosition.x, cursorWorldPosition.y, cursorWorldPosition.z);
-    EnsureEngineStringStat(gCameraCursorPositionStat, "Camera_Cursor_Position")->SetValue(positionText);
-
-    StoreEngineFloatStat(
-      gCameraCursorElevationStat,
-      "Camera_Cursor_Elevation",
-      SampleCursorTerrainElevation(*worldView, cursorWorldPosition)
-    );
-
-    const auto cellX = static_cast<std::int16_t>(static_cast<int>(cursorWorldPosition.x - 0.5f));
-    const auto cellZ = static_cast<std::int16_t>(static_cast<int>(cursorWorldPosition.z - 0.5f));
-    const msvc8::string cellText = gpg::STR_Printf("x=%i,z=%i", cellX, cellZ);
-    EnsureEngineStringStat(gCameraCursorOCellStat, "Camera_Cursor_OCell")->SetValue(cellText);
-
-    StoreCursorLodAndFocusStats(
-      *camera,
-      cursorWorldPosition,
-      gCameraCursorLodMetricStat,
-      "Camera_Cursor_LODMetric",
-      gCameraFocusDistanceStat,
-      "Camera_FocusDistance"
-    );
-  }
-
-  if (_stricmp(camera->CameraGetName(), "MiniMap") == 0) {
-    StoreCursorLodAndFocusStats(
-      *camera,
-      cursorWorldPosition,
-      gMinimapCursorLodMetricStat,
-      "Minimap_Cursor_LODMetric",
-      gMinimapFocusDistanceStat,
-      "Minimap_FocusDistance"
-    );
-  }
 }
 
 /**

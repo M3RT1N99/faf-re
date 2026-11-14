@@ -61,7 +61,7 @@ import urllib.request
 import zipfile
 
 from replayfile import (HL_ENDED_RE, HL_LOADED_RE, HL_PROGRESS_RE, HL_SUMMARY_RE, HL_TROUBLE_RE,
-                        HL_VERDICT_RE, MISMATCH_RE, decode_fafreplay, header_summary,
+                        HL_VERDICT_RE, MISMATCH_RE, decode_fafreplay, extract_map, has_scenario, header_summary,
                         live_client_desync, replay_beats, replay_body_info, replay_checksums)
 
 
@@ -80,9 +80,14 @@ LEGACY_VAULT = os.path.join(REPO, "tmp", "Supreme Commander Forged Alliance")
 UA = {"User-Agent": "faf-re-replay-parity/1.0"}
 
 # docs/PR_REPLAY_CHECK.md: core set first, extended set next, everything else after.
-CORE_SET = [26902315, 26930624, 26943656, 26883423, 26881085, 26928211, 26989770, 26897073]
+# One list for every game version: a run keeps the ids its version's corpus holds (plan.py). Game version 3835's first
+# (docs/PR_REPLAY_CHECK.md), then 3840's, picked from replay parity run 42771586614 (all pass, played to game over).
+CORE_SET = [26902315, 26930624, 26943656, 26883423, 26881085, 26928211, 26989770, 26897073,
+            28016454, 28063699, 28059028, 28070914, 28058778, 28038031, 28013263, 28041625]
 EXTENDED_SET = [26975290, 26953273, 27034831, 26917867, 26876279, 26935800, 26898759,
-                27004084, 26915859, 26905122]
+                27004084, 26915859, 26905122,
+                28035761, 28004977, 28012666, 28094872, 28011154, 28052742, 28072694, 28005584, 28072023,
+                28010105]
 
 DEFAULT_CONFIG = {
     # What plays the replays: "headless", the console replay player (headless_x64.exe: the
@@ -330,10 +335,11 @@ def map_dirs(cfg):
 
 
 def known_maps(cfg):
+    """A folder without a scenario file doesn't count, as the engine skips it: it is fetched again."""
     names = set()
     for d in map_dirs(cfg):
         try:
-            names.update(n.lower() for n in os.listdir(d))
+            names.update(n.lower() for n in os.listdir(d) if has_scenario(os.path.join(d, n)))
         except OSError:
             pass
     return names
@@ -354,11 +360,11 @@ def ensure_map(folder, cfg, maps):
         return False, "map %s: HTTP %d" % (folder, exc.code)
     except Exception as exc:
         return False, "map %s: %s" % (folder, exc)
-    with zipfile.ZipFile(zpath) as z:
-        tops = {n.split("/")[0] for n in z.namelist() if n.strip("/")}
-        z.extractall(vault_maps)
-    if folder not in {t.lower() for t in tops} and len(tops) == 1:
-        os.rename(os.path.join(vault_maps, tops.pop()), os.path.join(vault_maps, folder))
+    try:
+        extract_map(zpath, vault_maps, folder)
+    except (zipfile.BadZipFile, ValueError) as exc:
+        os.remove(zpath)  # so the next try downloads it again
+        return False, "map %s: %s" % (folder, exc)
     maps.add(folder)
     return True, None
 
@@ -930,9 +936,8 @@ class Game:
                 self.notes.append(line.strip()[:200])
 
     def live_client_desync(self, beat, sim, theirs):
-        """True when the mismatch is the live game's, not ours: at that beat at least as many
-        of the recorded clients agree with the sim as with the one that differs (26946725: nine
-        clients and the sim on one checksum at beat 6700, Paulosan alone on another)."""
+        """True when the mismatch is the live game's, not ours: at that beat the sim's checksum
+        equals one a live player recorded (replayfile.live_client_desync)."""
         if self.recorded is None:
             try:
                 self.recorded = replay_checksums(open(pool_path(self.id, "scfareplay"), "rb").read())

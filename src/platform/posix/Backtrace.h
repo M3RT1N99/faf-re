@@ -5,7 +5,7 @@
 // bionic declares it only from Android 13 (API 33) and musl not at all, so these walk the
 // stack with the unwinder's _Unwind_Backtrace, which every C++ runtime with exceptions has.
 
-#if !defined(_WIN32)
+#if !FAFRE_PLATFORM_WINDOWS
 
 namespace platform::posix
 {
@@ -22,4 +22,4 @@ namespace platform::posix
   void BacktraceSymbolsFd(void* const* frames, int count, int fd) noexcept;
 } // namespace platform::posix
 
-#endif // !defined(_WIN32)
+#endif // !FAFRE_PLATFORM_WINDOWS

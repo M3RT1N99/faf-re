@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 
 namespace moho
 {
@@ -64,21 +64,6 @@ namespace moho
      */
     void Init();
 
-    /**
-     * Address: 0x008144C0 (FUN_008144C0, Moho::Silhouette::dtr)
-     * Mangled: ??_GSilhouette@Moho@@UAEPAXI@Z
-     * Slot: 0 (vftable slot 0 -- scalar deleting destructor thunk)
-     *
-     * IDA signature:
-     * void* __thiscall Moho::Silhouette::dtr(Silhouette* this, char deleteFlags);
-     *
-     * What it does:
-     * Runs the virtual destructor and conditionally frees backing memory with
-     * `operator delete` when the low flag bit is set. Standard MSVC8 scalar
-     * deleting destructor thunk at vftable slot 0.
-     */
-    void* ScalarDeletingDestructor(std::uint8_t deleteFlags);
-
   public:
     // The quad itself. `Init` assigns through boost::shared_ptr's operator=,
     // which IDA names `boost::shared_ptr_ID3DVertexSheet::operator=` - that
@@ -92,13 +77,10 @@ namespace moho
      */
     void Render(const GeomCamera3& camera, std::int32_t renderTargetIndex);
 
-    boost::shared_ptr<ID3DVertexSheet> mQuadVertexSheet; // +0x04..+0x0B
+    std::shared_ptr<ID3DVertexSheet> mQuadVertexSheet; // +0x04..+0x0B
   };
 
-  static_assert(
-    offsetof(Silhouette, mQuadVertexSheet) == 0x04,
-    "Silhouette::mQuadVertexSheet offset must be 0x04"
-  );
+  static_assert(offsetof(Silhouette, mQuadVertexSheet) == 0x04, "Silhouette::mQuadVertexSheet offset must be 0x04");
   // sizeof(Silhouette) is at least 0x0C (vftable + shared_ptr{px, pi_}); the
   // ABI-exact total size depends on trailing fields that are still under
   // recovery in the render-viewport subsystem, so no hard size_assert here.

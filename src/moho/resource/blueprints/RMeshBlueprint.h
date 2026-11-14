@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/reflection/Reflection.h"
 #include "legacy/containers/Vector.h"
 #include "moho/resource/blueprints/RBlueprint.h"
@@ -30,18 +30,18 @@ namespace moho
    */
   struct RMeshBlueprintLOD
   {
-    msvc8::string mMeshName;      // +0x00
-    msvc8::string mAlbedoName;    // +0x1C
-    msvc8::string mNormalsName;   // +0x38
-    msvc8::string mSpecularName;  // +0x54
-    msvc8::string mLookupName;    // +0x70
-    msvc8::string mSecondaryName; // +0x8C
-    msvc8::string mShaderName;    // +0xA8
-    float mLodCutoff{1000.0f};    // +0xC4
-    std::uint8_t mScrolling{0};   // +0xC8
-    std::uint8_t mOcclude{0};     // +0xC9
-    std::uint8_t mSilhouette{0};  // +0xCA
-    std::uint8_t mPadCB{0};       // +0xCB
+    fa::string mMeshName;        // +0x00
+    fa::string mAlbedoName;      // +0x1C
+    fa::string mNormalsName;     // +0x38
+    fa::string mSpecularName;    // +0x54
+    fa::string mLookupName;      // +0x70
+    fa::string mSecondaryName;   // +0x8C
+    fa::string mShaderName;      // +0xA8
+    float mLodCutoff{1000.0f};   // +0xC4
+    std::uint8_t mScrolling{0};  // +0xC8
+    std::uint8_t mOcclude{0};    // +0xC9
+    std::uint8_t mSilhouette{0}; // +0xCA
+    std::uint8_t mPadCB{0};      // +0xCB
 
     /**
      * Address: 0x005183D0 (FUN_005183D0)
@@ -75,7 +75,7 @@ namespace moho
      *
      * Declared out of line so the emitted symbol matches the binary's; every
      * LOD destruction, including each element of
-     * `msvc8::vector<RMeshBlueprintLOD>`, goes through it.
+     * `fa::vector<RMeshBlueprintLOD>`, goes through it.
      */
     ~RMeshBlueprintLOD();
 
@@ -87,7 +87,7 @@ namespace moho
      * int __usercall sub_51B080@<eax>(int a1@<edi>, int a2@<esi>);
      *
      * What it does:
-     * Copy-assigns every LOD field in-place: 7 `msvc8::string` lanes via
+     * Copy-assigns every LOD field in-place: 7 `fa::string` lanes via
      * `std::string::assign(src, 0, npos)`, the `mLodCutoff` float, and the
      * three `{mScrolling, mOcclude, mSilhouette}` byte flags. Returns `this`
      * as the call result to match the VC8 operator= ABI.
@@ -103,7 +103,7 @@ namespace moho
      * fallback naming rules (`_lod%d.scm`, `_albedo.dds`, `_normalsTS.dds`,
      * `_SpecTeam.dds`, `_lookup.dds`).
      */
-    void Init(const msvc8::string& sourcePath, std::uint32_t lodIndex);
+    void Init(const fa::string& sourcePath, std::uint32_t lodIndex);
   };
 
   /**
@@ -122,9 +122,8 @@ namespace moho
      * own `RMeshBlueprint` (owned by the rules, so the archive may not delete it).
      * Inlined into `SerConstructHelper<RMeshBlueprint>::Construct` 0x005190A0.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x00518FC0 (FUN_00518FC0)
@@ -134,15 +133,18 @@ namespace moho
      * `MemberConstruct` to look the blueprint up by.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
 
-    msvc8::vector<RMeshBlueprintLOD> mLods; // +0x60
-    float mIconFadeInZoom{0.0f};            // +0x70
-    float mSortOrder{0.0f};                 // +0x74
-    float mUniformScale{1.0f};              // +0x78
-    std::uint8_t mStraddleWater{0};         // +0x7C
-    std::uint8_t mPad7D[3]{0, 0, 0};        // +0x7D
+    fa::vector<RMeshBlueprintLOD> mLods; // +0x60
+    float mIconFadeInZoom{0.0f};         // +0x70
+    float mSortOrder{0.0f};              // +0x74
+    float mUniformScale{1.0f};           // +0x78
+    std::uint8_t mStraddleWater{0};      // +0x7C
+    std::uint8_t mPad7D[3]{0, 0, 0};     // +0x7D
     static gpg::RType* sType;
 
     /**
@@ -213,21 +215,24 @@ namespace moho
      * shared lock. Returns an empty `boost::shared_ptr<RScmResource>` when
      * no LOD has a mesh name or none resolves to a live resource.
      */
-    [[nodiscard]] boost::shared_ptr<RScmResource> GetMesh() const;
+    [[nodiscard]] std::shared_ptr<RScmResource> GetMesh() const;
   };
 
   static_assert(sizeof(RMeshBlueprintLOD) == 0xCC, "RMeshBlueprintLOD size must be 0xCC");
   static_assert(offsetof(RMeshBlueprintLOD, mMeshName) == 0x00, "RMeshBlueprintLOD::mMeshName offset must be 0x00");
   static_assert(offsetof(RMeshBlueprintLOD, mAlbedoName) == 0x1C, "RMeshBlueprintLOD::mAlbedoName offset must be 0x1C");
   static_assert(
-    offsetof(RMeshBlueprintLOD, mNormalsName) == 0x38, "RMeshBlueprintLOD::mNormalsName offset must be 0x38"
+    offsetof(RMeshBlueprintLOD, mNormalsName) == 0x38,
+    "RMeshBlueprintLOD::mNormalsName offset must be 0x38"
   );
   static_assert(
-    offsetof(RMeshBlueprintLOD, mSpecularName) == 0x54, "RMeshBlueprintLOD::mSpecularName offset must be 0x54"
+    offsetof(RMeshBlueprintLOD, mSpecularName) == 0x54,
+    "RMeshBlueprintLOD::mSpecularName offset must be 0x54"
   );
   static_assert(offsetof(RMeshBlueprintLOD, mLookupName) == 0x70, "RMeshBlueprintLOD::mLookupName offset must be 0x70");
   static_assert(
-    offsetof(RMeshBlueprintLOD, mSecondaryName) == 0x8C, "RMeshBlueprintLOD::mSecondaryName offset must be 0x8C"
+    offsetof(RMeshBlueprintLOD, mSecondaryName) == 0x8C,
+    "RMeshBlueprintLOD::mSecondaryName offset must be 0x8C"
   );
   static_assert(offsetof(RMeshBlueprintLOD, mShaderName) == 0xA8, "RMeshBlueprintLOD::mShaderName offset must be 0xA8");
   static_assert(offsetof(RMeshBlueprintLOD, mLodCutoff) == 0xC4, "RMeshBlueprintLOD::mLodCutoff offset must be 0xC4");
@@ -237,7 +242,8 @@ namespace moho
 
   static_assert(offsetof(RMeshBlueprint, mLods) == 0x60, "RMeshBlueprint::mLods offset must be 0x60");
   static_assert(
-    offsetof(RMeshBlueprint, mIconFadeInZoom) == 0x70, "RMeshBlueprint::mIconFadeInZoom offset must be 0x70"
+    offsetof(RMeshBlueprint, mIconFadeInZoom) == 0x70,
+    "RMeshBlueprint::mIconFadeInZoom offset must be 0x70"
   );
   static_assert(offsetof(RMeshBlueprint, mSortOrder) == 0x74, "RMeshBlueprint::mSortOrder offset must be 0x74");
   static_assert(offsetof(RMeshBlueprint, mUniformScale) == 0x78, "RMeshBlueprint::mUniformScale offset must be 0x78");

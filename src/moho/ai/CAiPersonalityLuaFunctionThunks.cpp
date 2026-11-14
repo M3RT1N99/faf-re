@@ -9,9 +9,6 @@
 
 namespace
 {
-  moho::CScrLuaInitForm* gRecoveredSimLuaInitFormPrev_AiPersonalityStartup = nullptr;
-  moho::CScrLuaInitForm* gRecoveredSimLuaInitFormAnchor_AiPersonalityStartup = nullptr;
-
   template <moho::CScrLuaInitForm* (*Target)()>
   [[nodiscard]] moho::CScrLuaInitForm* ForwardAiPersonalityLuaThunk() noexcept
   {
@@ -78,7 +75,11 @@ namespace moho
   CScrLuaInitForm* register_sim_SimInits_mForms_aiPersonalityStartupAnchor()
   {
     static CScrLuaClassBinder binder(
-      moho::SCR_SimLuaInitSet(), "moho.aipersonality_methods", &CScrLuaMetatableFactory<CAiPersonality>::Instance(), "CAiPersonality", ""
+      moho::SCR_SimLuaInitSet(),
+      "moho.aipersonality_methods",
+      &CScrLuaMetatableFactory<CAiPersonality>::Instance(),
+      "CAiPersonality",
+      ""
     );
     return &binder;
   }

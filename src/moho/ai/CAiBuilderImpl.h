@@ -27,11 +27,11 @@ namespace moho
    * The rebuild queue: encoded cell position (`x * 10000 + z`) -> the blueprint
    * to rebuild there.
    *
-   * IDA types the emissions `msvc8::map<uint, RUnitBlueprint*>`; the node is
+   * IDA types the emissions `fa::map<uint, RUnitBlueprint*>`; the node is
    * 0x18 with the key at `node+0x0C`, the blueprint at `node+0x10` and
    * colour/nil at `+0x14`/`+0x15`.
    */
-  using SBuilderRebuildMap = msvc8::map<std::uint32_t, const RUnitBlueprint*>;
+  using SBuilderRebuildMap = fa::map<std::uint32_t, const RUnitBlueprint*>;
 
   /**
    * VFTABLE: 0x00E1B73C
@@ -65,9 +65,8 @@ namespace moho
      * Builds a new `CAiBuilderImpl` for an archive load and hands it back unowned; its
      * members are loaded over it afterwards.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x005A2460 (FUN_005A2460, Moho::CAiBuilderImpl::MemberDeserialize)
@@ -143,7 +142,7 @@ namespace moho
      * VFTable SLOT: 8
      */
     [[nodiscard]]
-    msvc8::vector<WeakPtr<CUnitCommand>>& BuilderGetFactoryCommandQueue() override;
+    fa::vector<WeakPtr<CUnitCommand>>& BuilderGetFactoryCommandQueue() override;
 
     /**
      * Address: 0x0059F480 (FUN_0059F480)
@@ -252,26 +251,18 @@ namespace moho
   public:
     static gpg::RType* sType;
 
-    Unit* mOwnerUnit;                                       // +0x04
-    std::uint8_t mIsFactory;                                // +0x08
-    std::uint8_t mIsOnTarget;                               // +0x09
-    std::uint8_t mFactoryQueueDirty;                        // +0x0A
-    std::uint8_t mPad0B;                                    // +0x0B
-    Wm3::Vector3f mAimTarget;                               // +0x0C
-    SBuilderRebuildMap mRebuildStructures;                  // +0x18
-    msvc8::vector<WeakPtr<CUnitCommand>> mFactoryCommands;  // +0x24
+    Unit* mOwnerUnit;                                   // +0x04
+    std::uint8_t mIsFactory;                            // +0x08
+    std::uint8_t mIsOnTarget;                           // +0x09
+    std::uint8_t mFactoryQueueDirty;                    // +0x0A
+    std::uint8_t mPad0B;                                // +0x0B
+    Wm3::Vector3f mAimTarget;                           // +0x0C
+    SBuilderRebuildMap mRebuildStructures;              // +0x18
+    fa::vector<WeakPtr<CUnitCommand>> mFactoryCommands; // +0x24
   };
 
-
-
-
-
   static_assert(sizeof(SBuilderRebuildMap) == 0x0C, "SBuilderRebuildMap size must be 0x0C");
-  static_assert(
-    sizeof(SBuilderRebuildMap::value_type) == 0x08, "SBuilderRebuildMap::value_type size must be 0x08"
-  );
-
-
+  static_assert(sizeof(SBuilderRebuildMap::value_type) == 0x08, "SBuilderRebuildMap::value_type size must be 0x08");
 
   static_assert(sizeof(CAiBuilderImpl) == 0x34, "CAiBuilderImpl size must be 0x34");
   static_assert(offsetof(CAiBuilderImpl, mOwnerUnit) == 0x04, "CAiBuilderImpl::mOwnerUnit offset must be 0x04");

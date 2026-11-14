@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "gpg/core/containers/String.h"
+#include "legacy/algorithms/Sort.h"
 #include "lua/LuaTableIterator.h"
 #include "moho/containers/BVIntSet.h"
 #include "moho/lua/CScrLuaObjectFactory.h"
@@ -37,7 +38,9 @@ namespace moho
     };
     static_assert(sizeof(LaunchPlayerOptionEntry) == 0x18, "LaunchPlayerOptionEntry size must be 0x18");
 
-    [[nodiscard]] std::int32_t ParseOwnerId(const LuaPlus::LuaObject& ownerIdObject)
+    [[nodiscard]] std::int32_t ParseOwnerId(
+      const LuaPlus::LuaObject& ownerIdObject
+    )
     {
       const char* const ownerIdStr = ownerIdObject.GetString();
       return std::atoi(ownerIdStr ? ownerIdStr : "");
@@ -45,15 +48,64 @@ namespace moho
 
   } // namespace
 
+  SLaunchSpeed ReadLaunchSpeed(
+    const LuaPlus::LuaObject& gameOptions
+  )
+  {
+    SLaunchSpeed launchSpeed{};
+    const LuaPlus::LuaObject gameSpeedObject = gameOptions["GameSpeed"];
+    if (gameSpeedObject.IsString()) {
+      const char* const gameSpeedName = gameSpeedObject.GetString();
+      if (gameSpeedName != nullptr) {
+        if (_stricmp(gameSpeedName, "fast") == 0) {
+          launchSpeed.speed = 4;
+        } else if (_stricmp(gameSpeedName, "adjustable") == 0) {
+          launchSpeed.adjustable = true;
+        }
+      }
+    }
+    return launchSpeed;
+  }
+
+  LuaPlus::LuaObject ILaunchParticipants::DefaultPlayerOptions(
+    LuaPlus::LuaState* const state
+  )
+  {
+    return RULE_GetDefaultPlayerOptions(state);
+  }
+
+  LuaPlus::LuaObject CLaunchRoster::DefaultPlayerOptions(
+    LuaPlus::LuaState* const state
+  )
+  {
+    LuaPlus::LuaObject options;
+    options.AssignNewTable(state, 0, 10u);
+    options.SetInteger("Team", 1);
+    options.SetInteger("PlayerColor", 1);
+    options.SetInteger("ArmyColor", 1);
+    options.SetInteger("StartSpot", 1);
+    options.SetBoolean("Ready", false);
+    options.SetInteger("Faction", 5); // `table.getn(Factions) + 1`, the lobby's "random"
+    options.SetString("PlayerName", "player");
+    options.SetString("AIPersonality", "");
+    options.SetBoolean("Human", true);
+    options.SetBoolean("Civilian", false);
+    return options;
+  }
+
   CLaunchRoster::CLaunchRoster(
-    const std::int32_t localUid, msvc8::string localName, std::vector<SLaunchClient> remotes
+    const std::int32_t localUid,
+    fa::string localName,
+    std::vector<SLaunchClient> remotes
   )
     : mLocalUid(localUid)
     , mLocalName(std::move(localName))
     , mRemotes(std::move(remotes))
   {}
 
-  SLaunchClient* CLaunchRoster::Find(const std::int32_t uid) noexcept
+  SLaunchClient* CLaunchRoster::Find(
+    const std::int32_t uid
+  ) noexcept
   {
     for (SLaunchClient& client : mRemotes) {
       if (client.uid == uid) {
@@ -64,7 +116,10 @@ namespace moho
   }
 
   void CLaunchRoster::AssignClientIndex(
-    std::int32_t& clientIndex, const std::int32_t ownerId, const char* const name, std::int32_t& localIndex
+    std::int32_t& clientIndex,
+    const std::int32_t ownerId,
+    const char* const name,
+    std::int32_t& localIndex
   )
   {
     // As `CLobby::AssignClientIndex` (0x007C4E80).
@@ -78,7 +133,7 @@ namespace moho
     if (client == nullptr) {
       SLaunchClient created{};
       created.uid = ownerId;
-      created.name = msvc8::string(name != nullptr ? name : "");
+      created.name = fa::string(name != nullptr ? name : "");
       mRemotes.push_back(created);
       client = &mRemotes.back();
     }
@@ -88,7 +143,9 @@ namespace moho
   }
 
   std::uint32_t CLaunchRoster::AssignCommandSource(
-    const std::int32_t timeouts, const std::int32_t ownerId, msvc8::vector<SSTICommandSource>& commandSources,
+    const std::int32_t timeouts,
+    const std::int32_t ownerId,
+    fa::vector<SSTICommandSource>& commandSources,
     std::uint32_t& localSource
   )
   {
@@ -114,7 +171,10 @@ namespace moho
   }
 
   SLaunchBuild BuildLaunchInfo(
-    const LuaPlus::LuaObject& dat, ILaunchParticipants& participants, const std::int32_t seed, const bool isMultiplayer,
+    const LuaPlus::LuaObject& dat,
+    ILaunchParticipants& participants,
+    const std::int32_t seed,
+    const bool isMultiplayer,
     LuaPlus::LuaState* const state
   )
   {
@@ -123,7 +183,7 @@ namespace moho
 
     const LuaPlus::LuaObject scenarioFileObject = gameOptions["ScenarioFile"];
     const char* const scenarioFileText = scenarioFileObject.GetString();
-    const msvc8::string scenarioFile{scenarioFileText ? scenarioFileText : ""};
+    const fa::string scenarioFile{scenarioFileText ? scenarioFileText : ""};
 
     LuaPlus::LuaObject scenarioInfo = WLD_LoadScenarioInfo(scenarioFile, state);
     if (scenarioInfo.IsNil()) {
@@ -132,7 +192,7 @@ namespace moho
     }
     scenarioInfo.SetObject("Options", gameOptions);
 
-    boost::shared_ptr<LaunchInfoNew> launchInfo(new LaunchInfoNew());
+    std::shared_ptr<LaunchInfoNew> launchInfo(new LaunchInfoNew());
     launchInfo->mGameMods = SCR_ToString(dat["GameMods"]);
     launchInfo->mScenarioInfo = SCR_ToString(scenarioInfo);
     launchInfo->mInitSeed = seed;
@@ -151,7 +211,7 @@ namespace moho
       return build;
     }
 
-    msvc8::vector<msvc8::string> ffaArmies;
+    fa::vector<fa::string> ffaArmies;
     {
       LuaPlus::LuaTableIterator teamIt(&teamsConfig, 1);
       while (!teamIt.m_isDone) {
@@ -165,7 +225,7 @@ namespace moho
             LuaPlus::LuaObject armyNameObject = armyIt.GetValue();
             const char* const armyName = armyNameObject.GetString();
             if (armyName != nullptr) {
-              ffaArmies.push_back(msvc8::string(armyName));
+              ffaArmies.push_back(fa::string(armyName));
             }
             armyIt.Next();
           }
@@ -175,7 +235,7 @@ namespace moho
       }
     }
 
-    msvc8::vector<LaunchPlayerOptionEntry> playerOptions;
+    fa::vector<LaunchPlayerOptionEntry> playerOptions;
     LuaPlus::LuaObject playerOptionsTable = dat["PlayerOptions"];
     if (!playerOptionsTable.IsNil()) {
       LuaPlus::LuaTableIterator optionIt(&playerOptionsTable, 1);
@@ -201,9 +261,15 @@ namespace moho
     }
 
     if (!playerOptions.empty()) {
-      std::sort(
-        playerOptions.begin(), playerOptions.end(),
-        [](const LaunchPlayerOptionEntry& lhs, const LaunchPlayerOptionEntry& rhs) { return lhs.mSlotIndex < rhs.mSlotIndex; }
+      // The retail MSVC8 sort (legacy/algorithms/Sort.h), not the host library's: slots that tie (a
+      // non-integral or non-numeric PlayerOptions key gives slot -1) keep the same order on every
+      // platform, and the players and command sources are built in this order.
+      fa::sort(
+        playerOptions.data(),
+        playerOptions.data() + playerOptions.size(),
+        [](const LaunchPlayerOptionEntry& lhs, const LaunchPlayerOptionEntry& rhs) {
+        return lhs.mSlotIndex < rhs.mSlotIndex;
+      }
       );
     }
 
@@ -220,7 +286,7 @@ namespace moho
     }
 
     if (playerOptions.empty()) {
-      LuaPlus::LuaObject defaultOptions = RULE_GetDefaultPlayerOptions(state);
+      LuaPlus::LuaObject defaultOptions = participants.DefaultPlayerOptions(state);
       defaultOptions.SetString("PlayerName", "default");
       defaultOptions.SetString("ArmyName", "default");
       defaultOptions.SetBoolean("Human", false);
@@ -238,10 +304,10 @@ namespace moho
         LuaPlus::LuaObject extraArmiesObject = scenarioInfo.Lookup("Configurations.standard.customprops.ExtraArmies");
         if (extraArmiesObject.IsString()) {
           const char* const extraArmiesText = extraArmiesObject.GetString();
-          msvc8::vector<msvc8::string> extraArmies;
+          fa::vector<fa::string> extraArmies;
           gpg::STR_GetTokens(extraArmiesText ? extraArmiesText : "", " ", extraArmies);
-          for (const msvc8::string& extraArmyName : extraArmies) {
-            LuaPlus::LuaObject civilianOptions = RULE_GetDefaultPlayerOptions(state);
+          for (const fa::string& extraArmyName : extraArmies) {
+            LuaPlus::LuaObject civilianOptions = participants.DefaultPlayerOptions(state);
             civilianOptions.SetString("PlayerName", "civilian");
             civilianOptions.SetString("ArmyName", extraArmyName.c_str());
             civilianOptions.SetBoolean("Civilian", true);
@@ -274,7 +340,9 @@ namespace moho
 
         const LuaPlus::LuaObject playerNameObject = option["PlayerName"];
         const char* const optionPlayerName = playerNameObject.GetString();
-        participants.AssignClientIndex(clientIndex, ownerId, optionPlayerName ? optionPlayerName : "", localClientIndex);
+        participants.AssignClientIndex(
+          clientIndex, ownerId, optionPlayerName ? optionPlayerName : "", localClientIndex
+        );
 
         const std::uint32_t sourceId =
           participants.AssignCommandSource(timeouts, ownerId, launchInfo->mCommandSources.mSrcs, localSourceId);
@@ -299,7 +367,9 @@ namespace moho
       participants.AssignClientIndex(clientIndex, ownerId, observerName ? observerName : "", localClientIndex);
 
       const std::int32_t observerTimeouts = isMultiplayer ? 0 : -1;
-      (void)participants.AssignCommandSource(observerTimeouts, ownerId, launchInfo->mCommandSources.mSrcs, localSourceId);
+      (void)participants.AssignCommandSource(
+        observerTimeouts, ownerId, launchInfo->mCommandSources.mSrcs, localSourceId
+      );
       observerIt.Next();
     }
 

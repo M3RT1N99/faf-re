@@ -40,13 +40,13 @@ namespace moho
     explicit CommandManager(std::uint32_t sourceId);
 
     /// Recycling pool the manager draws command ids from.
-    IdPool mIdPool;              // +0x0000
+    IdPool mIdPool; // +0x0000
     /// Command-source byte; ids whose source matches are recycled locally.
-    std::uint8_t mSourceId;      // +0x0CB0
+    std::uint8_t mSourceId; // +0x0CB0
     std::uint8_t pad_0CB1_0CB4[0x03];
 
     /// Live commands by id. Entries are owned by the manager.
-    msvc8::map<CmdId, UserCommandIssueHelper*> mCommands; // +0x0CB4
+    fa::map<CmdId, UserCommandIssueHelper*> mCommands; // +0x0CB4
   };
 
   static_assert(offsetof(CommandManager, mSourceId) == 0x0CB0, "CommandManager::mSourceId offset must be 0x0CB0");
@@ -75,7 +75,7 @@ namespace moho
    * Deletes the command-issue helper for each supplied id and recycles the ids
    * that belong to this manager's source byte.
    */
-  void DeleteCommandIssueHelpers(CommandManager& commandManager, const msvc8::vector<CmdId>& commandIds) noexcept;
+  void DeleteCommandIssueHelpers(CommandManager& commandManager, const fa::vector<CmdId>& commandIds) noexcept;
 
   /**
    * Address: 0x008B5CF0 (FUN_008B5CF0)

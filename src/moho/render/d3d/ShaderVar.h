@@ -3,8 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
-#include "boost/weak_ptr.h"
+#include <memory>
+#include <memory>
 #include "legacy/containers/String.h"
 #include "gpg/gal/Matrix.h"
 #include "moho/render/d3d/CD3DEffectTechnique.h"
@@ -56,7 +56,7 @@ namespace moho
      * spells the argument as a CD3DDynamicTextureSheet handle, which is its
      * usual concrete-type guess at a virtual call.
      */
-    ShaderVar* GetTexture(const boost::shared_ptr<ID3DTextureSheet>& textureSheet);
+    ShaderVar* GetTexture(const std::shared_ptr<ID3DTextureSheet>& textureSheet);
 
     /**
      * Address: 0x00491280 (FUN_00491280)
@@ -81,7 +81,7 @@ namespace moho
      * shared_ptr<ID3DRenderTarget>, so D3DX received a render target where it
      * expected a texture and faulted inside SetTexture.
      */
-    ShaderVar* SetRenderTargetTexture(const boost::shared_ptr<ID3DRenderTarget>& renderTarget);
+    ShaderVar* SetRenderTargetTexture(const std::shared_ptr<ID3DRenderTarget>& renderTarget);
 
     /**
      * Address: 0x004380D0 (FUN_004380D0, struct_ShaderVar::SetFloat)
@@ -102,10 +102,10 @@ namespace moho
     ShaderVar* SetMatrix4x4(const gpg::gal::Matrix* matrix);
 
   public:
-    msvc8::string mVariableName{};                             // +0x00
-    msvc8::string mEffectFileName{};                           // +0x1C
-    CD3DEffect::AttachedLink mEffectLink{};                    // +0x38
-    boost::shared_ptr<gpg::gal::EffectVariable> mEffectVariable{}; // +0x40
+    fa::string mVariableName{};                                    // +0x00
+    fa::string mEffectFileName{};                                  // +0x1C
+    WeakPtr<CD3DEffect> mEffectLink{};                             // +0x38
+    std::shared_ptr<gpg::gal::EffectVariable> mEffectVariable{};   // +0x40
   };
 
   static_assert(offsetof(ShaderVar, mVariableName) == 0x00, "moho::ShaderVar::mVariableName offset must be 0x00");
@@ -122,20 +122,6 @@ namespace moho
    * effect/effect-variable link state.
    */
   ShaderVar* RegisterShaderVar(const char* variableName, ShaderVar* shaderVar, const char* effectFileName);
-
-  /**
-   * Address: 0x007E9040 (FUN_007E9040, func_register_ShaderVar_5)
-   *
-   * What it does:
-   * Forwards one `(effectFileName, variableName, shaderVar)` call-shape to
-   * `RegisterShaderVar(variableName, shaderVar, effectFileName)` and returns
-   * the shader-var slot.
-   */
-  ShaderVar* RegisterShaderVarFromEffectFileFirst(
-    const char* effectFileName,
-    const char* variableName,
-    ShaderVar* shaderVar
-  );
 
   /**
    * Address: 0x00BEF140 (FUN_00BEF140, dynamic atexit destructor for `shaderVarPrimBatcherCompositeMatrix`)
@@ -168,6 +154,15 @@ namespace moho
    * The prim-batcher `time` shader-var.
    */
   extern ShaderVar shaderVarPrimBatcherTime;
+
+  /**
+   * FAF addition, not in the shipped binary (issue #307).
+   *
+   * What it does:
+   * Screen pixels covered by an MSDF atlas's distance range at the text's size. The variable is in
+   * the technique the engine appends to `primbatcher.fx`, so it's absent when that failed to compile.
+   */
+  extern ShaderVar shaderVarPrimBatcherMsdfPixelRange;
 
   /**
    * Address: 0x00C056A0 (FUN_00C056A0, dynamic atexit destructor for `shaderVarTerrainHeightScale`)
@@ -222,6 +217,9 @@ namespace moho
    * `.rdata` string).
    */
   void register_ShaderVarPrimBatcherTime();
+
+  /** FAF addition (issue #307): registers `MsdfPixelRange`. */
+  void register_ShaderVarPrimBatcherMsdfPixelRange();
 
   /**
    * Address: 0x00BE2F70 (FUN_00BE2F70, register_ShaderVarTerrainHeightScale)

@@ -19,11 +19,11 @@ namespace moho
   /**
    * Recovered form-and-move command task.
    */
-  class CUnitFormAndMoveTask
-    : public CCommandTask
-    , public Listener<EAiNavigatorEvent>
-    , public Listener<EFormationdStatus>
-    , public Listener<ECommandEvent>
+  class CUnitFormAndMoveTask :
+    public CCommandTask,
+    public Listener<EAiNavigatorEvent>,
+    public Listener<EFormationdStatus>,
+    public Listener<ECommandEvent>
   {
   public:
     static gpg::RType* sType;
@@ -61,10 +61,8 @@ namespace moho
      * Allocates one form-move task when formation and dispatch navigator lanes
      * are valid, then forwards into constructor logic.
      */
-    [[nodiscard]] static CUnitFormAndMoveTask* Create(
-      CAiFormationInstance* formation,
-      IAiCommandDispatchImpl* dispatchTask
-    );
+    [[nodiscard]] static CUnitFormAndMoveTask*
+    Create(CAiFormationInstance* formation, IAiCommandDispatchImpl* dispatchTask);
 
     /**
      * Address: 0x00619650 (FUN_00619650, Moho::CUnitFormAndMoveTask::TaskTick)
@@ -131,47 +129,24 @@ namespace moho
     void ResumeOwnerThreadNow();
 
   public:
-    CAiFormationInstance* mFormation; // 0x60
+    CAiFormationInstance* mFormation;        // 0x60
     std::uint8_t mFormationArrivalSatisfied; // 0x64
-    std::uint8_t mPad0065_0068[3]; // 0x65
+    std::uint8_t mPad0065_0068[3];           // 0x65
   };
 
   static_assert(sizeof(CUnitFormAndMoveTask) == 0x68, "CUnitFormAndMoveTask size must be 0x68");
-  static_assert(offsetof(CUnitFormAndMoveTask, mFormation) == 0x60, "CUnitFormAndMoveTask::mFormation offset must be 0x60");
+  static_assert(
+    offsetof(CUnitFormAndMoveTask, mFormation) == 0x60,
+    "CUnitFormAndMoveTask::mFormation offset must be 0x60"
+  );
   static_assert(
     offsetof(CUnitFormAndMoveTask, mFormationArrivalSatisfied) == 0x64,
     "CUnitFormAndMoveTask::mFormationArrivalSatisfied offset must be 0x64"
   );
 
-  /**
-   * Address: 0x0061A3E0 (FUN_0061A3E0)
-   *
-   * What it does:
-   * Thin alias lane that forwards one `(task, archive)` pair into
-   * `CUnitFormAndMoveTask::MemberSerialize`.
-   */
-  void CUnitFormAndMoveTaskMemberSerializeAlias(const CUnitFormAndMoveTask* task, gpg::WriteArchive* archive);
 } // namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x0061A5A0 (FUN_0061A5A0, gpg::RRef_CUnitFormAndMoveTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for
-   * `moho::CUnitFormAndMoveTask*`, preserving dynamic-derived ownership and
-   * base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitFormAndMoveTask(gpg::RRef* outRef, moho::CUnitFormAndMoveTask* value);
 
-  /**
-   * Address: 0x0061A380 (FUN_0061A380)
-   *
-   * What it does:
-   * Wrapper lane that materializes one temporary
-   * `RRef_CUnitFormAndMoveTask` and copies object/type fields into the
-   * destination reference record.
-   */
-  gpg::RRef* AssignCUnitFormAndMoveTaskRef(gpg::RRef* outRef, moho::CUnitFormAndMoveTask* value);
 } // namespace gpg

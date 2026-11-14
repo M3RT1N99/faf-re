@@ -1,5 +1,7 @@
 #include "moho/ui/UiPrivate.h"
 
+#include "lua/LuaIncrementalGc.h"
+
 namespace moho
 {
 }
@@ -63,203 +65,38 @@ namespace
   constexpr const char* kFlushEventsHelpText = "FlushEvents() -- flush mouse/keyboard events";
   constexpr const char* kClearCurrentFactoryForQueueDisplayHelpText = "ClearCurrentFactoryForQueueDisplay()";
 
-  /**
-   * Address: 0x0078C730 (FUN_0078C730)
-   *
-   * What it does:
-   * Backward-copies one dword range `[sourceBegin, sourceEnd)` into destination
-   * ending at `destinationEnd` and stores resulting begin pointer to output.
-   */
-  [[maybe_unused]] std::uint32_t** CopyDwordRangeBackwardToEnd(
-    std::uint32_t** const outBeginSlot,
-    const std::uint32_t* sourceEnd,
-    const std::uint32_t* const sourceBegin,
-    std::uint32_t* destinationEnd
-  ) noexcept
-  {
-    if (sourceEnd != sourceBegin) {
-      do {
-        --sourceEnd;
-        --destinationEnd;
-        *destinationEnd = *sourceEnd;
-      } while (sourceEnd != sourceBegin);
-    }
+} // namespace
 
-    *outBeginSlot = destinationEnd;
-    return outBeginSlot;
-  }
+/// The dragger that owns the mouse until it is released or replaced. A
+/// weak link, so a dragger that deletes itself drops out of it.
+// Address: 0x0078E540 (FUN_0078E540 -- this global's constructor emitted
+// out of line: both words zeroed, `this` returned.)
+// Address: 0x0078E560 (FUN_0078E560 -- its destructor, `~WeakPtr`; ICF twin
+// 0x00C02D50 is the copy the exit list runs. Formerly the uncalled statics
+// `func_ResetCurrentDraggerLink` / `func_UnlinkCurrentDraggerLink`, removed
+// 2026-09-30.)
+moho::WeakPtr<IMauiDragger> sCurrentDragger{};
+std::int32_t sCurrentDraggerKeycode = 0;
+std::uint8_t sMouseIsCaptured = 0;
+std::uint8_t sMouseIsScrubbing = 0;
+POINT sMouseMoveStart{};
+POINT sMouseScrubDelta{};
+bool sInvertMidMouseScrub = false;
+POINT sMouseScrubAnchor{};
+// Engine addition, not in the binary: where the latest
+// SetCursorPos(sMouseScrubAnchor) actually put the cursor, re-read after
+// every warp. Under DPI scaling, or when the anchor falls outside the
+// window's ClipCursor rect, the cursor lands elsewhere, and not always on
+// the same spot; measuring against the requested anchor counted that gap as
+// mouse motion on every warp (a tiny drag spun the camera by hundreds of
+// pixels). Where the warp lands exactly, this equals the anchor and nothing
+// changes.
+POINT sMouseScrubLanded{};
 
-  /**
-   * Address: 0x0078C760 (FUN_0078C760)
-   *
-   * What it does:
-   * Secondary entrypoint for backward dword-range copy into destination tail.
-   */
-  [[maybe_unused]] std::uint32_t** CopyDwordRangeBackwardToEndAlias(
-    std::uint32_t** const outBeginSlot,
-    const std::uint32_t* const sourceBegin,
-    const std::uint32_t* sourceEnd,
-    std::uint32_t* destinationEnd
-  ) noexcept
-  {
-    return CopyDwordRangeBackwardToEnd(outBeginSlot, sourceEnd, sourceBegin, destinationEnd);
-  }
-
-  /**
-   * Address: 0x0078C790 (FUN_0078C790)
-   *
-   * What it does:
-   * Forward-copies one dword range `[sourceBegin, sourceEnd)` and stores
-   * one-past-end destination pointer in output.
-   */
-  [[maybe_unused]] std::uint32_t** CopyDwordRangeForwardToEnd(
-    std::uint32_t** const outEndSlot,
-    const std::uint32_t* sourceBegin,
-    const std::uint32_t* const sourceEnd,
-    std::uint32_t* destinationBegin
-  ) noexcept
-  {
-    while (sourceBegin != sourceEnd) {
-      *destinationBegin = *sourceBegin;
-      ++sourceBegin;
-      ++destinationBegin;
-    }
-
-    *outEndSlot = destinationBegin;
-    return outEndSlot;
-  }
-
-  /**
-   * Address: 0x0078C7C0 (FUN_0078C7C0)
-   *
-   * What it does:
-   * Conditionally stores one source dword into destination when destination
-   * storage is present.
-   */
-  [[maybe_unused]] std::uint32_t* CopyDwordIfDestinationPresent(
-    std::uint32_t* const destination,
-    const std::uint32_t* const source
-  ) noexcept
-  {
-    if (destination != nullptr) {
-      *destination = *source;
-    }
-    return destination;
-  }
-
-  /**
-   * Address: 0x0078C8F0 (FUN_0078C8F0)
-   *
-   * What it does:
-   * Advances one packed byte-address lane by `4 * dwordCount`.
-   */
-  [[maybe_unused]] std::uint32_t* AdvancePackedAddressByDwordCount(
-    std::uint32_t* const packedAddressLane,
-    const std::int32_t dwordCount
-  ) noexcept
-  {
-    *packedAddressLane += static_cast<std::uint32_t>(4 * dwordCount);
-    return packedAddressLane;
-  }
-}
-
-
-  /// The dragger that owns the mouse until it is released or replaced. A
-  /// weak link, so a dragger that deletes itself drops out of it.
-  // Address: 0x0078E540 (FUN_0078E540 -- this global's constructor emitted
-  // out of line: both words zeroed, `this` returned.)
-  // Address: 0x0078E560 (FUN_0078E560 -- its destructor, `~WeakPtr`; ICF twin
-  // 0x00C02D50 is the copy the exit list runs. Formerly the uncalled statics
-  // `func_ResetCurrentDraggerLink` / `func_UnlinkCurrentDraggerLink`, removed
-  // 2026-09-30.)
-  moho::WeakPtr<IMauiDragger> sCurrentDragger{};
-  std::int32_t sCurrentDraggerKeycode = 0;
-  std::uint8_t sMouseIsCaptured = 0;
-  std::uint8_t sMouseIsScrubbing = 0;
-  POINT sMouseMoveStart{};
-  POINT sMouseScrubDelta{};
-  bool sInvertMidMouseScrub = false;
-  POINT sMouseScrubAnchor{};
-  // Engine addition, not in the binary: where the latest
-  // SetCursorPos(sMouseScrubAnchor) actually put the cursor, re-read after
-  // every warp. Under DPI scaling, or when the anchor falls outside the
-  // window's ClipCursor rect, the cursor lands elsewhere, and not always on
-  // the same spot; measuring against the requested anchor counted that gap as
-  // mouse motion on every warp (a tiny drag spun the camera by hundreds of
-  // pixels). Where the warp lands exactly, this equals the anchor and nothing
-  // changes.
-  POINT sMouseScrubLanded{};
-
-  msvc8::vector<moho::WeakPtr<moho::CMauiControl>> sInputCapture;
+fa::vector<moho::WeakPtr<moho::CMauiControl>> sInputCapture;
 namespace
 {
 
-  /**
-   * Address: 0x007A59E0 (FUN_007A59E0)
-   *
-   * What it does:
-   * Returns the process-global input-capture vector storage, ignoring one
-   * stdcall argument lane.
-   */
-  [[nodiscard]] msvc8::vector<moho::WeakPtr<moho::CMauiControl>>* ResolveInputCaptureStorageWithArg(
-    const std::int32_t /*ignoredArg*/
-  ) noexcept
-  {
-    return &sInputCapture;
-  }
-
-  /**
-   * Address: 0x007A5DA0 (FUN_007A5DA0)
-   *
-   * What it does:
-   * Returns the process-global input-capture vector storage.
-   */
-  [[maybe_unused]] [[nodiscard]] msvc8::vector<moho::WeakPtr<moho::CMauiControl>>* ResolveInputCaptureStorage() noexcept
-  {
-    return ResolveInputCaptureStorageWithArg(0);
-  }
-
-  /**
-   * Address: 0x007A5680 (FUN_007A5680)
-   *
-   * What it does:
-   * Stores the current global input-capture begin lane into `outBegin`.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::WeakPtr<moho::CMauiControl>** StoreInputCaptureBeginLane(
-    moho::WeakPtr<moho::CMauiControl>** const outBegin
-  ) noexcept
-  {
-    *outBegin = sInputCapture.begin();
-    return outBegin;
-  }
-
-  /**
-   * Address: 0x007A5690 (FUN_007A5690)
-   *
-   * What it does:
-   * Stores the current global input-capture end lane into `outEnd`.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::WeakPtr<moho::CMauiControl>** StoreInputCaptureEndLane(
-    moho::WeakPtr<moho::CMauiControl>** const outEnd
-  ) noexcept
-  {
-    *outEnd = sInputCapture.end();
-    return outEnd;
-  }
-
-  /**
-   * Address: 0x007A56F0 (FUN_007A56F0)
-   *
-   * What it does:
-   * Returns one indexed weak-control lane from the global input-capture
-   * vector storage.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::WeakPtr<moho::CMauiControl>* ResolveInputCaptureLaneAt(
-    const std::size_t index
-  ) noexcept
-  {
-    return sInputCapture.begin() + static_cast<std::ptrdiff_t>(index);
-  }
   /**
    * Address: 0x00794DB0 (FUN_00794DB0)
    *
@@ -268,15 +105,14 @@ namespace
    * character from `characterSet`.
    */
   [[maybe_unused, nodiscard]] std::size_t FindFirstOfCharacterSet(
-    const msvc8::string& text,
-    const msvc8::string& characterSet,
+    const fa::string& text,
+    const fa::string& characterSet,
     const std::size_t startPos
   ) noexcept
   {
     return text.view().find_first_of(characterSet.view(), startPos);
   }
-}
-
+} // namespace
 
 // `moho::sUIState` is defined in gpg/core/reflection/Reflection.cpp (sim side).
 bool moho::cam_Free = false;
@@ -315,18 +151,16 @@ bool moho::MAUI_KeyIsDown(
   const EMauiKeyCode keyCode
 )
 {
-  if (!gpg::gal::WindowIsForeground()) {
-    return false;
-  }
-
   if (Maui_CurrentFocusControl.GetObjectPtr() != nullptr && Maui_ControlHasFocus) {
     return false;
   }
 
   bool isSpecial = false;
-  const int virtualKey = wxCharCodeWXToMSW(static_cast<int>(keyCode), &isSpecial);
+  const int virtualKey = ShellKeyToVirtualKey(static_cast<int>(keyCode), &isSpecial);
   (void)isSpecial;
-  return ::GetKeyState(virtualKey) < 0;
+  // Engine change: the same answer with the costly check last. GetForegroundWindow enters the kernel,
+  // the world view asks for Shift each frame, and the key is rarely down.
+  return ::GetKeyState(virtualKey) < 0 && gpg::gal::WindowIsForeground();
 }
 
 moho::CScrLuaMetatableFactory<moho::CUIWorldView> moho::CScrLuaMetatableFactory<moho::CUIWorldView>::sInstance{};
@@ -418,21 +252,6 @@ moho::CScrLuaMetatableFactory<moho::CMauiControl>& moho::CScrLuaMetatableFactory
 }
 
 /**
- * Address: 0x00783EA0 (FUN_00783EA0)
- *
- * What it does:
- * Rebinds the startup metatable-factory index lane for
- * `CScrLuaMetatableFactory<CMauiControl>` and returns that singleton.
- */
-[[maybe_unused]] static moho::CScrLuaMetatableFactory<moho::CMauiControl>*
-startup_CScrLuaMetatableFactory_CMauiControl_Index()
-{
-  auto& instance = moho::CScrLuaMetatableFactory<moho::CMauiControl>::Instance();
-  instance.SetFactoryObjectIndexForRecovery(moho::CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-  return &instance;
-}
-
-/**
  * Address: 0x00783070 (FUN_00783070, Moho::CScrLuaMetatableFactory<Moho::CMauiControl>::Create)
  *
  * What it does:
@@ -452,21 +271,6 @@ moho::CScrLuaMetatableFactory<moho::CMauiBorder>::CScrLuaMetatableFactory()
 moho::CScrLuaMetatableFactory<moho::CMauiBorder>& moho::CScrLuaMetatableFactory<moho::CMauiBorder>::Instance()
 {
   return sInstance;
-}
-
-/**
- * Address: 0x007862E0 (FUN_007862E0)
- *
- * What it does:
- * Rebinds the startup metatable-factory index lane for
- * `CScrLuaMetatableFactory<CMauiBorder>` and returns that singleton.
- */
-[[maybe_unused]] static moho::CScrLuaMetatableFactory<moho::CMauiBorder>*
-startup_CScrLuaMetatableFactory_CMauiBorder_Index()
-{
-  auto& instance = moho::CScrLuaMetatableFactory<moho::CMauiBorder>::Instance();
-  instance.SetFactoryObjectIndexForRecovery(moho::CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-  return &instance;
 }
 
 /**
@@ -492,21 +296,6 @@ moho::CScrLuaMetatableFactory<moho::CMauiBitmap>& moho::CScrLuaMetatableFactory<
 }
 
 /**
- * Address: 0x00783E70 (FUN_00783E70)
- *
- * What it does:
- * Rebinds the startup metatable-factory index lane for
- * `CScrLuaMetatableFactory<CMauiBitmap>` and returns that singleton.
- */
-[[maybe_unused]] static moho::CScrLuaMetatableFactory<moho::CMauiBitmap>*
-startup_CScrLuaMetatableFactory_CMauiBitmap_Index()
-{
-  auto& instance = moho::CScrLuaMetatableFactory<moho::CMauiBitmap>::Instance();
-  instance.SetFactoryObjectIndexForRecovery(moho::CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-  return &instance;
-}
-
-/**
  * Address: 0x00783040 (FUN_00783040, Moho::CScrLuaMetatableFactory<Moho::CMauiBitmap>::Create)
  *
  * What it does:
@@ -526,21 +315,6 @@ moho::CScrLuaMetatableFactory<moho::CMauiCursor>::CScrLuaMetatableFactory()
 moho::CScrLuaMetatableFactory<moho::CMauiCursor>& moho::CScrLuaMetatableFactory<moho::CMauiCursor>::Instance()
 {
   return sInstance;
-}
-
-/**
- * Address: 0x0078DAA0 (FUN_0078DAA0)
- *
- * What it does:
- * Rebinds the startup metatable-factory index lane for
- * `CScrLuaMetatableFactory<CMauiCursor>` and returns that singleton.
- */
-[[maybe_unused]] static moho::CScrLuaMetatableFactory<moho::CMauiCursor>*
-startup_CScrLuaMetatableFactory_CMauiCursor_Index()
-{
-  auto& instance = moho::CScrLuaMetatableFactory<moho::CMauiCursor>::Instance();
-  instance.SetFactoryObjectIndexForRecovery(moho::CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-  return &instance;
 }
 
 /**
@@ -566,21 +340,6 @@ moho::CScrLuaMetatableFactory<moho::CMauiLuaDragger>& moho::CScrLuaMetatableFact
 }
 
 /**
- * Address: 0x0078EAF0 (FUN_0078EAF0)
- *
- * What it does:
- * Rebinds the startup metatable-factory index lane for
- * `CScrLuaMetatableFactory<CMauiLuaDragger>` and returns that singleton.
- */
-[[maybe_unused]] static moho::CScrLuaMetatableFactory<moho::CMauiLuaDragger>*
-startup_CScrLuaMetatableFactory_CMauiLuaDragger_Index()
-{
-  auto& instance = moho::CScrLuaMetatableFactory<moho::CMauiLuaDragger>::Instance();
-  instance.SetFactoryObjectIndexForRecovery(moho::CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-  return &instance;
-}
-
-/**
  * Address: 0x0078E660 (FUN_0078E660, Moho::CScrLuaMetatableFactory<Moho::CMauiLuaDragger>::Create)
  *
  * What it does:
@@ -600,21 +359,6 @@ moho::CScrLuaMetatableFactory<moho::CMauiEdit>::CScrLuaMetatableFactory()
 moho::CScrLuaMetatableFactory<moho::CMauiEdit>& moho::CScrLuaMetatableFactory<moho::CMauiEdit>::Instance()
 {
   return sInstance;
-}
-
-/**
- * Address: 0x00795610 (FUN_00795610)
- *
- * What it does:
- * Rebinds the startup metatable-factory index lane for
- * `CScrLuaMetatableFactory<CMauiEdit>` and returns that singleton.
- */
-[[maybe_unused]] static moho::CScrLuaMetatableFactory<moho::CMauiEdit>*
-startup_CScrLuaMetatableFactory_CMauiEdit_Index()
-{
-  auto& instance = moho::CScrLuaMetatableFactory<moho::CMauiEdit>::Instance();
-  instance.SetFactoryObjectIndexForRecovery(moho::CScrLuaObjectFactory::AllocateFactoryObjectIndex());
-  return &instance;
 }
 
 /**
@@ -758,52 +502,7 @@ namespace
   };
 
   UiLuaFactoryIndexStartup gUiLuaFactoryIndexStartup;
-}
-
-
-/**
- * Address: 0x0077F670 (FUN_0077F670)
- *
- * What it does:
- * Writes `0.0` into Lua table lane `1` for one lazy-var object lane.
- */
-[[maybe_unused]] void ResetLazyVarObjectLaneToZero(
-  LuaPlus::LuaObject* const lazyVarObject
-)
-{
-  if (lazyVarObject != nullptr) {
-    lazyVarObject->SetNumber(1, 0.0);
-  }
-}
-
-/**
- * Address: 0x00782E60 (FUN_00782E60)
- *
- * What it does:
- * Adapter lane that resolves and returns one `CScriptLazyVar_float` value.
- */
-[[maybe_unused]] float EvaluateLazyVarFloatValueAdapter(
-  const moho::CScriptLazyVar_float* const value
-) noexcept
-{
-  return moho::CScriptLazyVar_float::GetValue(value);
-}
-
-/**
- * Address: 0x00782E70 (FUN_00782E70)
- *
- * What it does:
- * Adapter lane that sets one `CScriptLazyVar_float` value and returns the
- * same lazy-var lane pointer.
- */
-[[maybe_unused]] moho::CScriptLazyVar_float* SetLazyVarFloatValueAdapter(
-  moho::CScriptLazyVar_float* const value,
-  const float next
-) noexcept
-{
-  moho::CScriptLazyVar_float::SetValue(value, next);
-  return value;
-}
+} // namespace
 
 /**
  * Address: 0x007822C0 (FUN_007822C0, cfunc_CMauiBitMapGetNumFrames)
@@ -858,77 +557,21 @@ int moho::cfunc_CMauiBitMapGetNumFramesL(
   return 1;
 }
 
-/**
- * Address: 0x00855040 (FUN_00855040, msvc8::vector<boost::shared_ptr<MeshInstance>>::push_back)
+/*
+ * Address: 0x00855040 (FUN_00855040, fa::vector<boost::shared_ptr<MeshInstance>>::push_back)
  *
  * What it does:
  * Per-T canonical-template-helper binding for the engine-instantiated
- * `msvc8::vector<boost::shared_ptr<MeshInstance>>::push_back(const&)`
+ * `fa::vector<boost::shared_ptr<MeshInstance>>::push_back(const&)`
  * fast/slow-path body (8-byte element stride: shared_ptr `(px, pi)` pair).
  *
  * Wires `AppendBuildPreviewMesh` from the inline
  * `mMeshes.push_back(meshInstance);` form to an explicit-name invocation
  * so the MSVC8 per-T template emission symbol shape is preserved even
  * when the modern compiler would inline the natural push_back call.
- */
-void moho::PushBackMeshInstanceSharedPtrVector(
-  msvc8::vector<boost::shared_ptr<moho::MeshInstance>>& destination,
-  const boost::shared_ptr<moho::MeshInstance>& value
-)
-{
-  destination.push_back(value);
-}
-
-/**
- * Address: 0x0086DDF0 (FUN_0086DDF0, sub_86DDF0)
  *
- * What it does:
- * Clears the global mouse-scrub active flag and returns its storage address.
+ * The caller calls `mMeshes.push_back(meshInstance)`.
  */
-[[maybe_unused]] static std::uint8_t* func_ResetMouseScrubStateFlag()
-{
-  sMouseIsScrubbing = 0;
-  return &sMouseIsScrubbing;
-}
-
-/**
- * Address: 0x0086DE00 (FUN_0086DE00, sub_86DE00)
- *
- * What it does:
- * Converts integer mouse-scrub delta lanes to float XY output.
- */
-[[maybe_unused]] static float* func_GetMouseScrubDelta(
-  float* const outDelta
-)
-{
-  outDelta[0] = static_cast<float>(sMouseScrubDelta.x);
-  outDelta[1] = static_cast<float>(sMouseScrubDelta.y);
-  return outDelta;
-}
-
-/**
- * Address: 0x0086DE20 (FUN_0086DE20, sub_86DE20)
- *
- * What it does:
- * Returns whether mouse-scrub mode is currently active.
- */
-[[maybe_unused]] static std::uint8_t func_IsMouseScrubbingActive()
-{
-  return sMouseIsScrubbing;
-}
-
-/**
- * Address: 0x0086DFE0 (FUN_0086DFE0, sub_86DFE0)
- *
- * What it does:
- * Clears accumulated integer mouse-scrub deltas and returns zero.
- */
-[[maybe_unused]] static int func_ResetMouseScrubDelta()
-{
-  sMouseScrubDelta.x = 0;
-  sMouseScrubDelta.y = 0;
-  return 0;
-}
 
 void moho::UI_SetInvertMidMouseScrub(
   const bool invert
@@ -936,13 +579,13 @@ void moho::UI_SetInvertMidMouseScrub(
 {
   sInvertMidMouseScrub = invert;
 }
-  /**
-   * Depth of MAUI event dispatch currently on the stack. `PurgeDeleted` skips
-   * the delete while this is non-zero, so a control cannot be freed underneath
-   * an event walk that still holds a pointer to it. Single-threaded: every
-   * dispatch runs on the wx message loop.
-   */
-  int gMauiEventDispatchDepth = 0;
+/**
+ * Depth of MAUI event dispatch currently on the stack. `PurgeDeleted` skips
+ * the delete while this is non-zero, so a control cannot be freed underneath
+ * an event walk that still holds a pointer to it. Single-threaded: every
+ * dispatch runs on the window-library message loop.
+ */
+int gMauiEventDispatchDepth = 0;
 
 bool moho::MAUI_EventDispatchInProgress() noexcept
 {
@@ -1077,7 +720,12 @@ int moho::cfunc_SetFrontEndData(
 moho::CScrLuaInitForm* moho::func_SetFrontEndData_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "SetFrontEndData", &moho::cfunc_SetFrontEndData, nullptr, "<global>", kSetFrontEndDataHelpText
+    moho::SCR_UserLuaInitSet(),
+    "SetFrontEndData",
+    &moho::cfunc_SetFrontEndData,
+    nullptr,
+    "<global>",
+    kSetFrontEndDataHelpText
   );
   return &binder;
 }
@@ -1279,7 +927,7 @@ namespace moho
    * window's two topmost pushed event handlers - the frame's
    * CMauiWxEventMapper and the CUIKeyHandler behind it.
    *
-   * The saved-handler storage is a real `msvc8::vector<msvc8::vector<
+   * The saved-handler storage is a real `fa::vector<fa::vector<
    * wxEvtHandler*>>` (one dynamically-grown inner vector per window),
    * not a fixed 2-slot pair -- the raw decompile shows a capacity-checked
    * append-or-grow sequence per `PopEventHandler()` result
@@ -1288,7 +936,7 @@ namespace moho
    * `resize()`-d to `mInputWindows.size()` up front (`FUN_0084E8A0`),
    * growing/shrinking through `FUN_0084EE20`/`FUN_0084EDB0`; the "move
    * existing 16-byte inner-vector elements into the new buffer" step
-   * (`FUN_0084F820`/`FUN_0084F8A0`) calls `msvc8::vector<wxEvtHandler*>::
+   * (`FUN_0084F820`/`FUN_0084F8A0`) calls `fa::vector<wxEvtHandler*>::
    * operator=` per element, cited as `FUN_0084FF80` on that template
    * member in `Vector.h`. (`FUN_0084E8A0`/`FUN_0084EE20`/`FUN_0084EDB0`/
    * `FUN_0084F8A0` are not yet independently address-annotated -- their
@@ -1310,29 +958,28 @@ namespace moho
    */
   void SuspendInputWindowEventHandlersAndFlushQueue()
   {
-    msvc8::vector<msvc8::vector<wxEvtHandler*>> suspended;
+    fa::vector<fa::vector<ShellEvtHandler*>> suspended;
     suspended.resize(g_UIManager->mInputWindows.size());
 
     std::size_t index = 0;
-    for (wxWindow* const inputWindow : g_UIManager->mInputWindows) {
+    for (ShellWindow* const inputWindow : g_UIManager->mInputWindows) {
       suspended[index].push_back(inputWindow->PopEventHandler(false));
       suspended[index].push_back(inputWindow->PopEventHandler(false));
       ++index;
     }
 
-    while (wxTheApp->Pending()) {
-      wxTheApp->Dispatch();
+    while (gShellApp->Pending()) {
+      gShellApp->Dispatch();
     }
 
     index = 0;
-    for (wxWindow* const inputWindow : g_UIManager->mInputWindows) {
+    for (ShellWindow* const inputWindow : g_UIManager->mInputWindows) {
       inputWindow->PushEventHandler(suspended[index][1]);
       inputWindow->PushEventHandler(suspended[index][0]);
       ++index;
     }
   }
-}
-
+} // namespace moho
 
 /**
  * Address: 0x0084E0F0 (FUN_0084E0F0, func_FlushEvents)
@@ -1519,7 +1166,7 @@ namespace
    * What it does:
    * Returns frame count from one bitmap frame-pattern vector lane.
    */
-  [[maybe_unused]] std::int32_t CountBitmapFramePatternEntries(
+  std::int32_t CountBitmapFramePatternEntries(
     const moho::CMauiBitmap* const bitmap
   ) noexcept
   {
@@ -1529,8 +1176,7 @@ namespace
     }
     return static_cast<std::int32_t>(bitmap->mFrames.end() - frameStart);
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x00795BD0 (FUN_00795BD0, func_CreateLuaEvent)
@@ -1608,7 +1254,9 @@ LuaPlus::LuaState* moho::USER_GetLuaState()
     return state;
   }
 
-  static LuaPlus::LuaState sLuaState(LuaPlus::LuaState::LIB_BASE);
+  static LuaPlus::LuaState sLuaState(
+    LuaPlus::LuaState::LIB_BASE, static_cast<int>(moho::lua_incremental::ELuaVmRole::FrontendUi)
+  );
   static CTaskStage sStage;
 
   sUserStage = &sStage;
@@ -1619,7 +1267,7 @@ LuaPlus::LuaState* moho::USER_GetLuaState()
     lua_sethook(gUserLuaState->m_state, &DebugLuaHook, 4, 0);
   }
 
-  gUserLuaState->m_luaTask = reinterpret_cast<CLuaTask*>(sUserStage);
+  gUserLuaState->m_taskStage = sUserStage;
 
   ScrDiskWatcherTask* const diskWatcherTask = new (std::nothrow) ScrDiskWatcherTask(gUserLuaState);
   AttachTaskToStage(diskWatcherTask, sUserStage, true);
@@ -1678,13 +1326,6 @@ void moho::MAUI_ToggleConsole()
     callbackFunction();
   }
   );
-}
-
-void moho::MAUI_ReleaseCursor(
-  CMauiCursor* const cursor
-)
-{
-  (void)cursor;
 }
 
 /**
@@ -1773,7 +1414,12 @@ int moho::cfunc_AnyInputCapture(
 moho::CScrLuaInitForm* moho::func_AnyInputCapture_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_UserLuaInitSet(), "AnyInputCapture", &moho::cfunc_AnyInputCapture, nullptr, "<global>", kAnyInputCaptureHelpText
+    moho::SCR_UserLuaInitSet(),
+    "AnyInputCapture",
+    &moho::cfunc_AnyInputCapture,
+    nullptr,
+    "<global>",
+    kAnyInputCaptureHelpText
   );
   return &binder;
 }
@@ -1809,28 +1455,7 @@ moho::WeakPtr<moho::UserUnit> moho::sCurrentBuildFactory{};
 namespace
 {
 
-  /**
-   * Address: 0x00836E60 (FUN_00836E60, sub_836E60)
-   *
-   * IDA signature:
-   * int __thiscall sub_836E60(gpg::fastvector_BuildQueueItem *this);
-   *
-   * What it does:
-   * Element count of one 0x30-stride queue lane, short-circuiting to zero when
-   * `_Myfirst` is null instead of dividing a null-based difference.
-   */
-  [[nodiscard]] std::uint32_t FactoryQueueItemCount(
-    const FactoryQueueItem* const begin,
-    const FactoryQueueItem* const end
-  ) noexcept
-  {
-    if (begin == nullptr) {
-      return 0u;
-    }
-    return static_cast<std::uint32_t>(end - begin);
-  }
-}
-
+} // namespace
 
 void moho::CurrentBuildQueueItemCommands(
   const int oneBasedQueueIndex,
@@ -1848,7 +1473,7 @@ void moho::CurrentBuildQueueItemCommands(
     return;
   }
 
-  const msvc8::vector<moho::CmdId>& commands = currentLanes[static_cast<std::size_t>(itemIndex)].commands;
+  const fa::vector<moho::CmdId>& commands = currentLanes[static_cast<std::size_t>(itemIndex)].commands;
   *outBegin = commands.begin();
   *outEnd = commands.end();
 }
@@ -1894,7 +1519,6 @@ namespace moho
   WeakSet<UserEntity> sSelectionBrackets;
 }
 
-
 /**
  * Address: 0x007FD9F0 (FUN_007FD9F0, func_PushBlinkyBox)
  *
@@ -1922,21 +1546,7 @@ void moho::func_PushBlinkyBox(
   blinkyBox->ListLinkBefore(&moho::sBlinkyBoxes);
 }
 
-/**
- * Address: 0x007FDA90 (FUN_007FDA90)
- *
- * What it does:
- * Adds one user-unit lane into the global selection-bracket weak-set and
- * returns the raw register lane value from WeakSet_UserEntity::Add.
- */
-void moho::func_AddSelectionBracketUserUnit(
-  UserUnit* const unit
-)
-{
-  (void)sSelectionBrackets.Add(unit);
-}
-
-  msvc8::list<SCommandFeedbackBlip> sCommandFeedbackBlips;
+fa::list<SCommandFeedbackBlip> sCommandFeedbackBlips;
 namespace
 {
 
@@ -1951,8 +1561,7 @@ namespace
     delete meshInstance;
     meshInstance = nullptr;
   }
-}
-
+} // namespace
 
 /**
  * Address: 0x008586C0 (FUN_008586C0, Moho::RemoveCommandFeedbackBlips)
@@ -1969,7 +1578,7 @@ void moho::RemoveCommandFeedbackBlips(
 {
   (void)unused;
 
-  for (msvc8::list<SCommandFeedbackBlip>::iterator it = sCommandFeedbackBlips.begin();
+  for (fa::list<SCommandFeedbackBlip>::iterator it = sCommandFeedbackBlips.begin();
        it != sCommandFeedbackBlips.end();) {
     if (it->mCurTime < it->mDuration) {
       ++it;
@@ -1993,8 +1602,7 @@ void moho::UI_UpdateCommandFeedbackBlips(
 {
   (void)moho::MeshRenderer::GetInstance();
 
-  for (msvc8::list<SCommandFeedbackBlip>::iterator it = sCommandFeedbackBlips.begin();
-       it != sCommandFeedbackBlips.end();
+  for (fa::list<SCommandFeedbackBlip>::iterator it = sCommandFeedbackBlips.begin(); it != sCommandFeedbackBlips.end();
        ++it) {
     SCommandFeedbackBlip& blip = *it;
     const float updatedTime = blip.mCurTime + deltaSeconds;
@@ -2009,14 +1617,21 @@ void moho::UI_UpdateCommandFeedbackBlips(
 void moho::UI_DumpCurrentInputCapture() {}
 
 // Rows 0x00F5B150.
-BEGIN_EVENT_TABLE(moho::CUIKeyHandler, wxEvtHandler)
-  EVT_KEY_UP(moho::CUIKeyHandler::OnKeyUp)
-  EVT_KEY_DOWN(moho::CUIKeyHandler::OnKeyDown)
+BEGIN_EVENT_TABLE(
+  moho::CUIKeyHandler,
+  ShellEvtHandler
+)
+EVT_KEY_UP(
+  moho::CUIKeyHandler::OnKeyUp
+)
+EVT_KEY_DOWN(
+  moho::CUIKeyHandler::OnKeyDown
+)
 END_EVENT_TABLE()
 
 namespace moho
 {
-  msvc8::string in_keyNames[256]{};
+  fa::string in_keyNames[256]{};
 } // namespace moho
 
 /**
@@ -2116,55 +1731,6 @@ const moho::VMatrix4& moho::UI_IdentityMatrix()
 }
 namespace
 {
-  /**
-   * Address: 0x00858440 (FUN_00858440)
-   *
-   * What it does:
-   * Returns the global command-feedback blip-list lane.
-   */
-  [[maybe_unused]] [[nodiscard]] msvc8::list<SCommandFeedbackBlip>* GetCommandFeedbackBlipsLaneA(
-    const int /*unused*/
-  ) noexcept
-  {
-    return &sCommandFeedbackBlips;
-  }
-
-  /**
-   * Address: 0x008585C0 (FUN_008585C0)
-   *
-   * What it does:
-   * Secondary entrypoint returning the command-feedback blip-list lane.
-   */
-  [[maybe_unused]] [[nodiscard]] msvc8::list<SCommandFeedbackBlip>* GetCommandFeedbackBlipsLaneB(
-    const int /*unused*/
-  ) noexcept
-  {
-    return &sCommandFeedbackBlips;
-  }
-
-  /**
-   * Address: 0x00858670 (FUN_00858670)
-   *
-   * What it does:
-   * Third entrypoint returning the command-feedback blip-list lane.
-   */
-  [[maybe_unused]] [[nodiscard]] msvc8::list<SCommandFeedbackBlip>* GetCommandFeedbackBlipsLaneC(
-    const int /*unused*/
-  ) noexcept
-  {
-    return &sCommandFeedbackBlips;
-  }
-
-  /**
-   * Address: 0x008587A0 (FUN_008587A0)
-   *
-   * What it does:
-   * Fourth entrypoint returning the command-feedback blip-list lane.
-   */
-  [[maybe_unused]] [[nodiscard]] msvc8::list<SCommandFeedbackBlip>* GetCommandFeedbackBlipsLaneD() noexcept
-  {
-    return &sCommandFeedbackBlips;
-  }
   /**
    * Drives this file's Lua binder registrations.
    *
@@ -2975,6 +2541,9 @@ namespace
       (void)::moho::func_CMauiTextSetCenteredVertically_LuaFuncDef();
       (void)::moho::func_CMauiTextGetStringAdvance_LuaFuncDef();
       (void)::moho::func_CMauiTextSetNewClipToWidth_LuaFuncDef();
+      (void)::moho::func_CMauiTextSetTextScale_LuaFuncDef();
+      (void)::moho::func_CMauiTextGetTextScale_LuaFuncDef();
+      (void)::moho::func_LoadFont_LuaFuncDef();
       (void)::moho::func_SetFrontEndData_LuaFuncDef();
       (void)::moho::func_GetFrontEndData_LuaFuncDef();
       (void)::moho::func_GetCursor_LuaFuncDef();
@@ -3034,12 +2603,12 @@ namespace
   };
 
   const UiLuaFuncDefStartup gUiLuaFuncDefStartup{};
-}
+} // namespace
 
 namespace moho
 {
-namespace
-{
+  namespace
+  {
     // 0x00E4F6E4: the "no water plane" sentinel elevation the skirt lift falls
     // back to when the map has water disabled - low enough that the max() below
     // always picks the terrain instead.
@@ -3052,8 +2621,7 @@ namespace
     // 0x00E4F84C: the outline's world thickness at unit view depth; divided by
     // the point's post-projection W to keep the on-screen width constant.
     constexpr float kSkirtThicknessAtUnitDepth = 0.15000001f;
-}
-
+  } // namespace
 
   /**
    * Address: 0x0085ABD0 (FUN_0085ABD0, Moho::DrawUnitSkirt)
@@ -3087,7 +2655,10 @@ namespace
     const gpg::Rect2f skirt = blueprint->GetSkirtRect(groundPosition);
 
     const STIMap* const map = session->GetSTIMap();
-    const float waterElevation = map->mWaterEnabled != 0 ? map->mWaterElevation : kNoWaterElevation;
+    // Engine addition (water bodies): the level of the water under the skirt.
+    const float waterElevation = map->HasWaterBodies()
+      ? map->GetWaterElevationAt(position.x, position.z)
+      : (map->mWaterEnabled != 0 ? map->mWaterElevation : kNoWaterElevation);
 
     float skirtY = position.y;
     if (heightField != nullptr) {
@@ -3178,7 +2749,7 @@ namespace
 
     batcher->Flush();
   }
-}
+} // namespace moho
 
 /**
  * Address: 0x0086A350 (FUN_0086A350, ??0IWldUIProvider@Moho@@QAE@XZ)
@@ -3279,7 +2850,7 @@ moho::CMauiHistogram::~CMauiHistogram() = default;
  *
  * What it does:
  * Tears down the provider in reverse construction order. The member
- * `mPrefetchData` (an `msvc8::vector<boost::shared_ptr<PrefetchData>>`) is
+ * `mPrefetchData` (an `fa::vector<boost::shared_ptr<PrefetchData>>`) is
  * destroyed first — its inlined destructor releases each cached shared handle
  * (refcount drop + weak-dispose through the boost detail vtable) and frees the
  * element buffer, matching `sub_4A89A0` + `operator delete` in the binary.

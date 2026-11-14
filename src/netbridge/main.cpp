@@ -14,7 +14,10 @@
 
 #include <cstdlib>
 
-int main(int argc, char** argv)
+int main(
+  int argc,
+  char** argv
+)
 {
   using namespace faf::netbridge;
   BridgeOptions options = ParseBridgeArgs(argc, argv);
@@ -31,6 +34,9 @@ int main(int argc, char** argv)
   }
   if (const char* redundancy = std::getenv("FAF_NETBRIDGE_REDUNDANCY"); redundancy != nullptr) {
     options.redundancy = std::atoi(redundancy); // issue #240, for runs through the launch shim
+  }
+  if (const char* encrypt = std::getenv("FAF_NETBRIDGE_ENCRYPT"); encrypt != nullptr && *encrypt == '0') {
+    options.encrypt = false; // issue #289, for runs through the launch shim
   }
   if (options.logPath.empty()) {
     if (const char* dir = std::getenv("LOG_DIR"); dir != nullptr && *dir != '\0') {

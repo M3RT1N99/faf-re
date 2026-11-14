@@ -8,7 +8,7 @@ namespace gpg
   class RType;
   class ReadArchive;
   class WriteArchive;
-}
+} // namespace gpg
 
 namespace moho
 {
@@ -35,7 +35,9 @@ namespace moho
      * and CEfxTrailEmitter.cpp each carry an identical file-private copy of;
      * those three should migrate onto this member.
      */
-    [[nodiscard]] float ProjectViewportDepthRow1(const Wm3::Vector3f& point) const noexcept
+    [[nodiscard]] float ProjectViewportDepthRow1(
+      const Wm3::Vector3f& point
+    ) const noexcept
     {
       return (point.x * r[1].x) + (point.y * r[1].y) + (point.z * r[1].z) + r[1].w;
     }
@@ -47,7 +49,9 @@ namespace moho
      * (0x008282B0, 0x008288D0) both divide a style size/width by this to
      * keep on-screen size roughly constant with distance.
      */
-    [[nodiscard]] float ProjectViewportWidthRow2(const Wm3::Vector3f& point) const noexcept
+    [[nodiscard]] float ProjectViewportWidthRow2(
+      const Wm3::Vector3f& point
+    ) const noexcept
     {
       return (point.x * r[2].x) + (point.y * r[2].y) + (point.z * r[2].z) + r[2].w;
     }
@@ -77,62 +81,6 @@ namespace moho
      */
     void Set(const Wm3::Quaternionf& quat, const Wm3::Vector3f& vec);
 
-    /**
-     * Address: 0x004EEC10 (FUN_004EEC10, ?LoadInverse@VMatrix4@Moho@@QAEXXZ)
-     *
-     * What it does:
-     * Replaces this matrix with its full inverse.
-     */
-    void LoadInverse();
-
-    /**
-     * Address: 0x004EEC40 (FUN_004EEC40, ?LoadInverse4x3@VMatrix4@Moho@@QAEXXZ)
-     *
-     * What it does:
-     * Replaces this matrix with the inverse lane used by 4x3 call sites.
-     */
-    void LoadInverse4x3();
-
-    /**
-     * Address: 0x004EEC70 (FUN_004EEC70, ?LoadInverseRigid@VMatrix4@Moho@@QAEXXZ)
-     *
-     * What it does:
-     * Replaces this matrix with the inverse lane used by rigid-transform paths.
-     */
-    void LoadInverseRigid();
-
-    /**
-     * Address: 0x004EECA0 (FUN_004EECA0, ?LoadTranslate@VMatrix4@Moho@@QAEXMMM@Z)
-     *
-     * What it does:
-     * Overwrites this matrix with one translation matrix.
-     */
-    void LoadTranslate(float x, float y, float z);
-
-    /**
-     * Address: 0x004EECD0 (FUN_004EECD0, ?LoadScale@VMatrix4@Moho@@QAEXMMM@Z)
-     *
-     * What it does:
-     * Overwrites this matrix with one non-uniform scale matrix.
-     */
-    void LoadScale(float x, float y, float z);
-
-    /**
-     * Address: 0x004EED60 (FUN_004EED60, ?LoadRotate@VMatrix4@Moho@@QAEXABV?$Vector3@M@Wm3@@M@Z)
-     *
-     * What it does:
-     * Overwrites this matrix with one axis-angle rotation matrix.
-     */
-    void LoadRotate(const Wm3::Vector3f& axis, float angleRadians);
-
-    /**
-     * Address: 0x004EEDA0 (FUN_004EEDA0, ?LoadRotate@VMatrix4@Moho@@QAEXABV?$Quaternion@M@Wm3@@@Z)
-     *
-     * What it does:
-     * Overwrites this matrix with one quaternion rotation matrix.
-     */
-    void LoadRotate(const Wm3::Quaternionf& rotation);
-
     /** Identity. */
     static VMatrix4 Identity()
     {
@@ -155,7 +103,11 @@ namespace moho
     static const VMatrix4 sIdentity;
 
     /** Set translation (last row). */
-    void SetTranslation(float tx, float ty, float tz)
+    void SetTranslation(
+      float tx,
+      float ty,
+      float tz
+    )
     {
       r[3] = {tx, ty, tz, 1.0f};
     }
@@ -170,7 +122,9 @@ namespace moho
 #if MOHO_USE_SSE2
     /** Compile-time splat: Lane is template immediate for _mm_shuffle_ps. */
     template <int Lane>
-    static MOHO_FORCEINLINE __m128 splat(__m128 v)
+    static MOHO_FORCEINLINE __m128 splat(
+      __m128 v
+    )
     {
       static_assert(Lane >= 0 && Lane <= 3, "Lane out of range");
       return _mm_shuffle_ps(v, v, _MM_SHUFFLE(Lane, Lane, Lane, Lane));
@@ -180,7 +134,10 @@ namespace moho
     /**
      * Row-vector multiply: v_row * M.
      */
-    friend Vector4f operator*(const Vector4f& vRow, const VMatrix4& M)
+    friend Vector4f operator*(
+      const Vector4f& vRow,
+      const VMatrix4& M
+    )
     {
 #if MOHO_USE_SSE2
       const __m128 a = _mm_loadu_ps(&vRow.x);
@@ -210,7 +167,10 @@ namespace moho
     /**
      * Matrix multiply under row-vector convention: R = A * B (apply A then B).
      */
-    static VMatrix4 Multiply(const VMatrix4& A, const VMatrix4& B)
+    static VMatrix4 Multiply(
+      const VMatrix4& A,
+      const VMatrix4& B
+    )
     {
       VMatrix4 r{};
 #if MOHO_USE_SSE2
@@ -242,7 +202,9 @@ namespace moho
     /**
      * Transpose (useful if you prefer column-vector code paths somewhere).
      */
-    static VMatrix4 Transpose(const VMatrix4& M)
+    static VMatrix4 Transpose(
+      const VMatrix4& M
+    )
     {
       VMatrix4 T{};
 #if MOHO_USE_SSE2
@@ -267,7 +229,9 @@ namespace moho
     /**
      * Inverse for rigid transform (rotation+translation only, row-vector convention).
      */
-    static VMatrix4 InverseRigid(const VMatrix4& M)
+    static VMatrix4 InverseRigid(
+      const VMatrix4& M
+    )
     {
       VMatrix4 r{};
       // Transpose 3x3 rotation block (top-left), zero the last column.
@@ -288,14 +252,6 @@ namespace moho
 
   static_assert(sizeof(VMatrix4) == 0x40, "VMatrix4 size must be 0x40");
   static_assert(alignof(VMatrix4) == 0x4, "VMatrix4 alignment must be 4");
-
-  /**
-   * Address: 0x004EE6E0 (FUN_004EE6E0, ?VEC_Mul@Moho@@YA?AUVMatrix4@1@ABU21@0@Z)
-   *
-   * What it does:
-   * Returns one matrix product using the binary's argument order lane.
-   */
-  [[nodiscard]] VMatrix4 VEC_Mul(const VMatrix4& lhs, const VMatrix4& rhs);
 
   /**
    * Address: 0x004EE710 (FUN_004EE710, ?VEC_Mul4x3@Moho@@YAXAAUVMatrix4@1@ABU21@1@Z)

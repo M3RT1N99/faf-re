@@ -9,7 +9,9 @@ namespace faf::remote::client
 {
   namespace
   {
-    [[nodiscard]] moho::BVIntSet SourcesOf(const wire::SRosterEntry& entry)
+    [[nodiscard]] moho::BVIntSet SourcesOf(
+      const wire::SRosterEntry& entry
+    )
     {
       moho::BVIntSet sources{};
       for (const std::uint8_t source : entry.sources) {
@@ -18,16 +20,27 @@ namespace faf::remote::client
       return sources;
     }
 
-    [[nodiscard]] std::uint32_t FirstSource(const wire::SRosterEntry& entry) noexcept
+    [[nodiscard]] std::uint32_t FirstSource(
+      const wire::SRosterEntry& entry
+    ) noexcept
     {
       return entry.sources.empty() ? 0xFFu : entry.sources.front();
     }
   } // namespace
 
-  CRosterClient::CRosterClient(CRemoteClientManager& manager, const wire::SRosterEntry& entry, ChatRelay relay)
+  CRosterClient::CRosterClient(
+    CRemoteClientManager& manager,
+    const wire::SRosterEntry& entry,
+    ChatRelay relay
+  )
     : moho::CClientBase(
-        entry.index, &manager, entry.name.c_str(), entry.ownerId,
-        [](moho::BVIntSet&& sources) -> moho::BVIntSet& { return sources; }(SourcesOf(entry)), // copied by the base,
+        entry.index,
+        &manager,
+        entry.name.c_str(),
+        entry.ownerId,
+        [](moho::BVIntSet&& sources) -> moho::BVIntSet& {
+          return sources;
+        }(SourcesOf(entry)), // copied by the base,
         FirstSource(entry)
       )
     , mOwner(manager)
@@ -37,10 +50,12 @@ namespace faf::remote::client
     mSimRate = entry.simRate;
   }
 
-  void CRosterClient::Update(const wire::SRosterEntry& entry)
+  void CRosterClient::Update(
+    const wire::SRosterEntry& entry
+  )
   {
     if (entry.name != mEntry.name) {
-      mNickname = msvc8::string(entry.name.c_str());
+      mNickname = fa::string(entry.name.c_str());
     }
     mOwnerId = entry.ownerId;
     if (entry.sources != mEntry.sources) {
@@ -66,7 +81,9 @@ namespace faf::remote::client
     return mEntry.connected;
   }
 
-  void CRosterClient::CollectEjecters(msvc8::vector<const moho::CClientBase*>& out)
+  void CRosterClient::CollectEjecters(
+    fa::vector<const moho::CClientBase*>& out
+  )
   {
     for (const std::uint8_t index : mEntry.ejectedBy) {
       if (const CRosterClient* const ejecter = mOwner.RosterClient(index); ejecter != nullptr) {
@@ -80,18 +97,24 @@ namespace faf::remote::client
     return mEntry.simRate;
   }
 
-  void CRosterClient::Process(moho::CMessage&)
-  {
-  }
+  void CRosterClient::Process(
+    moho::CMessage&
+  )
+  {}
 
-  void CRosterClient::ReceiveChat(const gpg::MemBuffer<const char> data)
+  void CRosterClient::ReceiveChat(
+    const gpg::MemBuffer<const char> data
+  )
   {
     if (mRelay) {
       mRelay(mEntry.index, data);
     }
   }
 
-  CRemoteClientManager::CRemoteClientManager(CommandHandler onCommand, moho::IClientManager* const standIn)
+  CRemoteClientManager::CRemoteClientManager(
+    CommandHandler onCommand,
+    moho::IClientManager* const standIn
+  )
     : moho::CClientManagerImpl(0u, nullptr, 0, false)
     , mOnCommand(std::move(onCommand))
     , mStandIn(standIn)
@@ -99,7 +122,10 @@ namespace faf::remote::client
 
   CRemoteClientManager::~CRemoteClientManager() = default;
 
-  void CRemoteClientManager::ApplyRoster(const wire::SRoster& roster, CRosterClient::ChatRelay relay)
+  void CRemoteClientManager::ApplyRoster(
+    const wire::SRoster& roster,
+    CRosterClient::ChatRelay relay
+  )
   {
     std::vector<bool> listed(mRoster.size(), false);
     for (const wire::SRosterEntry& entry : roster.entries) {
@@ -110,6 +136,9 @@ namespace faf::remote::client
       std::unique_ptr<CRosterClient>& client = mRoster[entry.index];
       if (client) {
         client->Update(entry);
+        if (relay) {
+          client->SetRelay(relay); // one made before the server's roster (the session's own) had none
+        }
       } else {
         client = std::make_unique<CRosterClient>(*this, entry, relay);
       }
@@ -126,12 +155,24 @@ namespace faf::remote::client
     mHaveRoster = true;
   }
 
-  CRosterClient* CRemoteClientManager::RosterClient(const int index) const noexcept
+  std::size_t CRemoteClientManager::RosterCount() const noexcept
+  {
+    return static_cast<std::size_t>(std::count_if(mRoster.begin(), mRoster.end(), [](const auto& client) {
+      return client != nullptr;
+    }));
+  }
+
+  CRosterClient* CRemoteClientManager::RosterClient(
+    const int index
+  ) const noexcept
   {
     return index >= 0 && static_cast<std::size_t>(index) < mRoster.size() ? mRoster[index].get() : nullptr;
   }
 
-  wire::SRoster ReadRoster(moho::IClientManager& manager, const int localIndex)
+  wire::SRoster ReadRoster(
+    moho::IClientManager& manager,
+    const int localIndex
+  )
   {
     wire::SRoster roster{};
     roster.localIndex = localIndex;
@@ -158,7 +199,7 @@ namespace faf::remote::client
       entry.ping = client->GetStatusMetricA();
       entry.quiet = client->GetStatusMetricB();
       entry.connected = client->NoEjectionPending();
-      msvc8::vector<const moho::CClientBase*> ejecters;
+      fa::vector<const moho::CClientBase*> ejecters;
       client->CollectEjecters(ejecters);
       for (const moho::CClientBase* const ejecter : ejecters) {
         entry.ejectedBy.push_back(static_cast<std::uint8_t>(ejecter->GetIndex()));
@@ -168,44 +209,91 @@ namespace faf::remote::client
     return roster;
   }
 
-  void CRemoteClientManager::ProcessClients(moho::CMessage& message)
+  void CRemoteClientManager::ProcessClients(
+    moho::CMessage& message
+  )
   {
     if (mOnCommand) {
       mOnCommand(message);
     }
   }
 
-  // Everything else: the stand-in's answer, or with none that of a client manager without peers.
+  // Everything else: the stand-in's answer, or with none (a server session, WP11.4) that of a client with no peers:
+  // the base class's peer loops would wait forever with no clients (`DoBeat`), write past its empty client table
+  // (`CreateLocalClient`) or send peer messages through `ProcessClients`, which here goes to the server.
+
+  moho::IClient* CRemoteClientManager::AddRosterEntry(
+    const char* const name,
+    const int idx,
+    const int32_t ownerId,
+    const unsigned int sourceId,
+    const bool local
+  )
+  {
+    if (idx < 0 || static_cast<std::size_t>(idx) >= wire::SRoster::kMaxEntries) {
+      return nullptr;
+    }
+    wire::SRoster roster{};
+    roster.localIndex = local ? idx : mLocalIndex;
+    for (const std::unique_ptr<CRosterClient>& client : mRoster) {
+      if (client) {
+        roster.entries.push_back(client->Entry());
+      }
+    }
+    wire::SRosterEntry entry{};
+    entry.index = static_cast<std::uint8_t>(idx);
+    entry.name = name != nullptr ? name : "";
+    if (entry.name.size() > wire::SRosterEntry::kMaxNameBytes) {
+      entry.name.resize(wire::SRosterEntry::kMaxNameBytes);
+    }
+    entry.ownerId = ownerId;
+    entry.sources.push_back(static_cast<std::uint8_t>(sourceId));
+    entry.connected = true;
+    roster.entries.push_back(std::move(entry));
+    ApplyRoster(roster, {});
+    return RosterClient(idx);
+  }
 
   moho::IClient* CRemoteClientManager::CreateLocalClient(
-    const char* const name, const int idx, const int32_t ownerId, const unsigned int sourceId
+    const char* const name,
+    const int idx,
+    const int32_t ownerId,
+    const unsigned int sourceId
   )
   {
     return mStandIn != nullptr ? mStandIn->CreateLocalClient(name, idx, ownerId, sourceId)
-                               : CClientManagerImpl::CreateLocalClient(name, idx, ownerId, sourceId);
+                               : AddRosterEntry(name, idx, ownerId, sourceId, true);
   }
 
   moho::IClient* CRemoteClientManager::CreateNetClient(
-    const char* const name, const int idx, const int32_t ownerId, const unsigned int sourceId,
+    const char* const name,
+    const int idx,
+    const int32_t ownerId,
+    const unsigned int sourceId,
     moho::INetConnection* const connection
   )
   {
     return mStandIn != nullptr ? mStandIn->CreateNetClient(name, idx, ownerId, sourceId, connection)
-                               : CClientManagerImpl::CreateNetClient(name, idx, ownerId, sourceId, connection);
+                               : AddRosterEntry(name, idx, ownerId, sourceId, false);
   }
 
-  moho::IClient* CRemoteClientManager::CreateReplayClient(gpg::Stream** const stream, moho::BVIntSet* const sources)
+  moho::IClient* CRemoteClientManager::CreateReplayClient(
+    gpg::Stream** const stream,
+    moho::BVIntSet* const sources
+  )
   {
-    return mStandIn != nullptr ? mStandIn->CreateReplayClient(stream, sources)
-                               : CClientManagerImpl::CreateReplayClient(stream, sources);
+    return mStandIn != nullptr ? mStandIn->CreateReplayClient(stream, sources) : nullptr;
   }
 
   moho::IClient* CRemoteClientManager::CreateNullClient(
-    const char* const name, const int idx, const int32_t ownerId, const unsigned int sourceId
+    const char* const name,
+    const int idx,
+    const int32_t ownerId,
+    const unsigned int sourceId
   )
   {
     return mStandIn != nullptr ? mStandIn->CreateNullClient(name, idx, ownerId, sourceId)
-                               : CClientManagerImpl::CreateNullClient(name, idx, ownerId, sourceId);
+                               : AddRosterEntry(name, idx, ownerId, sourceId, false);
   }
 
   moho::INetConnector* CRemoteClientManager::GetConnector()
@@ -223,7 +311,9 @@ namespace faf::remote::client
     return mStandIn != nullptr ? mStandIn->NumberOfClients() : CClientManagerImpl::NumberOfClients();
   }
 
-  moho::IClient* CRemoteClientManager::GetClient(const int idx)
+  moho::IClient* CRemoteClientManager::GetClient(
+    const int idx
+  )
   {
     if (mHaveRoster) {
       return RosterClient(idx);
@@ -231,7 +321,9 @@ namespace faf::remote::client
     return mStandIn != nullptr ? mStandIn->GetClient(idx) : CClientManagerImpl::GetClient(idx);
   }
 
-  moho::IClient* CRemoteClientManager::GetClientWithData(const int32_t ownerId)
+  moho::IClient* CRemoteClientManager::GetClientWithData(
+    const int32_t ownerId
+  )
   {
     if (mHaveRoster) {
       for (const std::unique_ptr<CRosterClient>& client : mRoster) {
@@ -252,7 +344,9 @@ namespace faf::remote::client
     return mStandIn != nullptr ? mStandIn->GetLocalClient() : CClientManagerImpl::GetLocalClient();
   }
 
-  void CRemoteClientManager::SetUIInterface(moho::IClientMgrUIInterface* const uiInterface)
+  void CRemoteClientManager::SetUIInterface(
+    moho::IClientMgrUIInterface* const uiInterface
+  )
   {
     if (mStandIn != nullptr) {
       mStandIn->SetUIInterface(uiInterface);
@@ -265,23 +359,25 @@ namespace faf::remote::client
   {
     if (mStandIn != nullptr) {
       mStandIn->Cleanup();
-    } else {
-      CClientManagerImpl::Cleanup();
+    } else if (!std::exchange(mReady, true) && mOnLoaded) {
+      mOnLoaded(); // the server's start barrier: it starts when every player has loaded
     }
   }
 
   bool CRemoteClientManager::IsEveryoneReady()
   {
-    return mStandIn != nullptr ? mStandIn->IsEveryoneReady() : CClientManagerImpl::IsEveryoneReady();
+    // A server session: the server holds the game until everyone has loaded, so this side is ready once it has.
+    return mStandIn != nullptr ? mStandIn->IsEveryoneReady() : mReady;
   }
 
-  void CRemoteClientManager::SetSimRate(const int rate)
+  void CRemoteClientManager::SetSimRate(
+    const int rate
+  )
   {
     if (mStandIn != nullptr) {
       mStandIn->SetSimRate(rate);
-    } else {
-      CClientManagerImpl::SetSimRate(rate);
     }
+    // A server session: the server sets the rate (game speed requests are a later plan item).
   }
 
   int CRemoteClientManager::GetSimRate()
@@ -297,12 +393,12 @@ namespace faf::remote::client
     return mStandIn != nullptr ? mStandIn->GetSimRateRequested() : CClientManagerImpl::GetSimRateRequested();
   }
 
-  void CRemoteClientManager::BroadcastIntParam(const int value)
+  void CRemoteClientManager::BroadcastIntParam(
+    const int value
+  )
   {
     if (mStandIn != nullptr) {
       mStandIn->BroadcastIntParam(value);
-    } else {
-      CClientManagerImpl::BroadcastIntParam(value);
     }
   }
 
@@ -310,12 +406,12 @@ namespace faf::remote::client
   {
     if (mStandIn != nullptr) {
       mStandIn->DoBeat();
-    } else {
-      CClientManagerImpl::DoBeat();
     }
   }
 
-  void CRemoteClientManager::SelectEvent(const HANDLE ev)
+  void CRemoteClientManager::SelectEvent(
+    const HANDLE ev
+  )
   {
     if (mStandIn != nullptr) {
       mStandIn->SelectEvent(ev);
@@ -324,7 +420,9 @@ namespace faf::remote::client
     }
   }
 
-  void CRemoteClientManager::GetPartiallyQueuedBeat(int& out)
+  void CRemoteClientManager::GetPartiallyQueuedBeat(
+    int& out
+  )
   {
     if (mStandIn != nullptr) {
       mStandIn->GetPartiallyQueuedBeat(out);
@@ -333,7 +431,9 @@ namespace faf::remote::client
     }
   }
 
-  void CRemoteClientManager::GetAvailableBeat(int& out)
+  void CRemoteClientManager::GetAvailableBeat(
+    int& out
+  )
   {
     if (mStandIn != nullptr) {
       mStandIn->GetAvailableBeat(out);
@@ -342,7 +442,9 @@ namespace faf::remote::client
     }
   }
 
-  void CRemoteClientManager::UpdateStates(const int beat)
+  void CRemoteClientManager::UpdateStates(
+    const int beat
+  )
   {
     if (mStandIn != nullptr) {
       mStandIn->UpdateStates(beat);
@@ -351,7 +453,9 @@ namespace faf::remote::client
     }
   }
 
-  moho::SSendStampWindow CRemoteClientManager::GetBetween(const int since)
+  moho::SSendStampWindow CRemoteClientManager::GetBetween(
+    const int since
+  )
   {
     return mStandIn != nullptr ? mStandIn->GetBetween(since) : CClientManagerImpl::GetBetween(since);
   }

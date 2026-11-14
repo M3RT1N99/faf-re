@@ -32,7 +32,10 @@ namespace moho
    * Runs base entity-blueprint construction with `(owner, resId)` and
    * restores prop blueprint display/defense/economy defaults.
    */
-  RPropBlueprint::RPropBlueprint(RRuleGameRules* const owner, const RResId& resId)
+  RPropBlueprint::RPropBlueprint(
+    RRuleGameRules* const owner,
+    const RResId& resId
+  )
     : REntityBlueprint(owner, resId)
     , Display()
     , Defense()
@@ -90,10 +93,7 @@ namespace moho
    */
   gpg::RRef RPropBlueprint::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -108,7 +108,7 @@ namespace moho
   {
     REntityBlueprint::OnInitBlueprint();
 
-    msvc8::string completedMeshPath = RES_CompletePath(Display.MeshBlueprint.name.c_str(), mSource.c_str());
+    fa::string completedMeshPath = RES_CompletePath(Display.MeshBlueprint.name.c_str(), mSource.c_str());
     gpg::STR_NormalizeFilenameLowerSlash(completedMeshPath);
     Display.MeshBlueprint.name.assign_owned(completedMeshPath.view());
   }
@@ -116,12 +116,17 @@ namespace moho
 
 namespace moho
 {
-  void RPropBlueprint::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void RPropBlueprint::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     RRuleGameRules* rules = nullptr;
     const gpg::RRef owner{};
     archive.ReadPointer(&rules, &owner);
-    msvc8::string id;
+    fa::string id;
     archive.ReadString(&id);
     RResId resId{};
     gpg::STR_CopyFilename(&resId.name, &id);
@@ -132,7 +137,10 @@ namespace moho
    * Address: 0x0051DBB0 (FUN_0051DBB0)
    */
   void RPropBlueprint::MemberSaveConstructArgs(
-    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+    gpg::WriteArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerSaveConstructArgsResult& result
   )
   {
     archive.WritePointer(mOwner, gpg::TrackedPointerState::Unowned, gpg::RRef{});

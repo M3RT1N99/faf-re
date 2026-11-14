@@ -1,4 +1,5 @@
 #include "moho/effects/rendering/SEfxCurve.h"
+#include "moho/effects/rendering/EffectTickObserver.h"
 
 #include <cstddef>
 #include <limits>
@@ -32,7 +33,7 @@ namespace gpg
     /**
      * Address: 0x0065EF80 (FUN_0065EF80, gpg::RFastVectorType_SEfxCurve::GetLexical)
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     /**
      * Address: 0x0065F010 (FUN_0065F010, gpg::RFastVectorType_SEfxCurve::IsIndexed)
@@ -68,12 +69,12 @@ namespace gpg
     /**
      * Address: 0x0065F450 (FUN_0065F450, gpg::RFastVectorType_SEfxCurve::SerLoad)
      */
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x0065F540 (FUN_0065F540, gpg::RFastVectorType_SEfxCurve::SerSave)
      */
-    static void SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerSave(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
   };
 
   static_assert(sizeof(RFastVectorType<moho::SEfxCurve>) == 0x68, "RFastVectorType<SEfxCurve> size must be 0x68");
@@ -108,10 +109,13 @@ namespace gpg
    * fill, then deserializes each element with the archived owner reference.
    */
   void RFastVectorType<moho::SEfxCurve>::SerLoad(
-    gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int /*version*/, gpg::RRef* const ownerRef
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    const int /*version*/,
+    gpg::RRef* const ownerRef
   )
   {
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::SEfxCurve>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::SEfxCurve>*>(objectPtr);
 
     unsigned int count = 0;
     archive->ReadUInt(&count);
@@ -132,10 +136,13 @@ namespace gpg
    * Writes current vector length, then serializes each `SEfxCurve` element.
    */
   void RFastVectorType<moho::SEfxCurve>::SerSave(
-    gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int /*version*/, gpg::RRef* const ownerRef
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    const int /*version*/,
+    gpg::RRef* const ownerRef
   )
   {
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::SEfxCurve>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::SEfxCurve>*>(objectPtr);
     const unsigned int count = static_cast<unsigned int>(vec.size());
     archive->WriteUInt(count);
 
@@ -154,7 +161,7 @@ namespace gpg
    */
   const char* RFastVectorType<moho::SEfxCurve>::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", CachedSEfxCurveType()->GetName());
+    static const fa::string sName = gpg::STR_Printf("fastvector<%s>", CachedSEfxCurveType()->GetName());
     return sName.c_str();
   }
 
@@ -164,9 +171,11 @@ namespace gpg
    * What it does:
    * Appends `size=<count>` to the base reflection lexical dump string.
    */
-  msvc8::string RFastVectorType<moho::SEfxCurve>::GetLexical(const gpg::RRef& ref) const
+  fa::string RFastVectorType<moho::SEfxCurve>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -189,7 +198,10 @@ namespace gpg
    */
   void RFastVectorType<moho::SEfxCurve>::Init()
   {
-    static_assert(sizeof(gpg::core::FastVectorInline<moho::SEfxCurve>) == 0x10, "gpg::core::FastVectorInline<moho::SEfxCurve> is 0x10 bytes on x86");
+    static_assert(
+      sizeof(gpg::core::FastVectorInline<moho::SEfxCurve>) == 0x10,
+      "gpg::core::FastVectorInline<moho::SEfxCurve> is 0x10 bytes on x86"
+    );
     size_ = sizeof(gpg::core::FastVectorInline<moho::SEfxCurve>);
     version_ = 1;
     serLoadFunc_ = &RFastVectorType<moho::SEfxCurve>::SerLoad;
@@ -202,7 +214,10 @@ namespace gpg
    * What it does:
    * Returns reflected element reference for index `ind` in raw vector storage.
    */
-  gpg::RRef RFastVectorType<moho::SEfxCurve>::SubscriptIndex(void* obj, const int ind) const
+  gpg::RRef RFastVectorType<moho::SEfxCurve>::SubscriptIndex(
+    void* obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
     auto& vec = *static_cast<gpg::core::FastVectorInline<moho::SEfxCurve>*>(obj);
@@ -216,7 +231,9 @@ namespace gpg
    * What it does:
    * Returns number of `SEfxCurve` elements in raw fastvector storage.
    */
-  size_t RFastVectorType<moho::SEfxCurve>::GetCount(void* obj) const
+  size_t RFastVectorType<moho::SEfxCurve>::GetCount(
+    void* obj
+  ) const
   {
     return static_cast<const gpg::fastvector<moho::SEfxCurve>*>(obj)->size();
   }
@@ -227,7 +244,10 @@ namespace gpg
    * What it does:
    * Resizes raw fastvector storage to `count`, default-constructing fill values.
    */
-  void RFastVectorType<moho::SEfxCurve>::SetCount(void* obj, const int count) const
+  void RFastVectorType<moho::SEfxCurve>::SetCount(
+    void* obj,
+    const int count
+  ) const
   {
     auto& vec = *static_cast<gpg::core::FastVectorInline<moho::SEfxCurve>*>(obj);
     const moho::SEfxCurve fill{};
@@ -257,7 +277,10 @@ namespace moho
    * `mKeys.end()` when the curve has no keys, so callers can use the result
    * directly as the "no selection" sentinel.
    */
-  Wm3::Vector3f* FindNearestCurveKey(SEfxCurve& curve, const Wm3::Vector2f& point)
+  Wm3::Vector3f* FindNearestCurveKey(
+    SEfxCurve& curve,
+    const Wm3::Vector2f& point
+  )
   {
     Wm3::Vector3f* const keysEnd = curve.mKeys.end();
     Wm3::Vector3f* nearest = keysEnd;
@@ -314,7 +337,9 @@ namespace moho
    * translation unit after moving a key (`WCurveEditor::MoveSelectedKeyTo`,
    * FUN_006614B0, calls this at 0x006615A0).
    */
-  void RecomputeEmitterCurveYBounds(SEfxCurve& curve)
+  void RecomputeEmitterCurveYBounds(
+    SEfxCurve& curve
+  )
   {
     curve.mBoundsMin.y = gpg::pInf;
     curve.mBoundsMax.y = -gpg::pInf;
@@ -329,7 +354,9 @@ namespace moho
     }
   }
 
-  SEfxCurve::SEfxCurve(const SEfxCurve& other)
+  SEfxCurve::SEfxCurve(
+    const SEfxCurve& other
+  )
     : mBoundsMin(other.mBoundsMin)
     , mBoundsMax(other.mBoundsMax)
     , mKeys()
@@ -337,7 +364,9 @@ namespace moho
     mKeys.ResetFrom(other.mKeys);
   }
 
-  SEfxCurve& SEfxCurve::operator=(const SEfxCurve& other)
+  SEfxCurve& SEfxCurve::operator=(
+    const SEfxCurve& other
+  )
   {
     if (this == &other) {
       return *this;
@@ -356,7 +385,9 @@ namespace moho
    * Evaluates one interpolated curve sample at `interp` and applies per-key
    * random spread (Z lane) through the process-global random helper.
    */
-  float SEfxCurve::GetValue(const float interp) const
+  float SEfxCurve::GetValue(
+    const float interp
+  ) const
   {
     const Wm3::Vector3f* const keysBegin = mKeys.begin();
     const Wm3::Vector3f* const keysEnd = mKeys.end();
@@ -365,7 +396,9 @@ namespace moho
     }
 
     const auto RandomizedValue = [](const float center, const float spread) {
-      const double randomUnit = moho::MathGlobalRandomUnitSafe();
+      // Plan WPR.10: headless's `--effect-dump-centred` holds the spread at its centre (EffectTickObserver.h); false
+      // in the game, which draws as before.
+      const double randomUnit = gEffectCurveSpreadCentred ? 0.5 : moho::MathGlobalRandomUnitSafe();
       return static_cast<float>((randomUnit - 0.5) * spread + center);
     };
 
@@ -398,7 +431,11 @@ namespace moho
    * Rescales the curve key X lanes to a new X range, updates stored X bounds,
    * then recomputes Y min/max bounds from all retained keys.
    */
-  SEfxCurve* RescaleEmitterCurveXRange(SEfxCurve* const curve, const float minX, const float maxX)
+  SEfxCurve* RescaleEmitterCurveXRange(
+    SEfxCurve* const curve,
+    const float minX,
+    const float maxX
+  )
   {
     if (curve == nullptr) {
       return nullptr;
@@ -422,7 +459,10 @@ namespace moho
    * Inserts one key into ascending-X order and refreshes Y bounds from all
    * retained keys.
    */
-  void InsertEmitterCurveKey(SEfxCurve& curve, const Wm3::Vector3f& key)
+  void InsertEmitterCurveKey(
+    SEfxCurve& curve,
+    const Wm3::Vector3f& key
+  )
   {
     Wm3::Vector3f* insertPosition = curve.mKeys.begin();
     while (insertPosition != curve.mKeys.end() && insertPosition->x <= key.x) {
@@ -440,7 +480,10 @@ namespace moho
    * Clears runtime key storage, imports all blueprint keys in ascending-X
    * order, and assigns default bounds/key when source keys are empty.
    */
-  void BuildEmitterCurveFromBlueprint(SEfxCurve& destination, const REmitterBlueprintCurve& source)
+  void BuildEmitterCurveFromBlueprint(
+    SEfxCurve& destination,
+    const REmitterBlueprintCurve& source
+  )
   {
     destination.mKeys.ResetStorageToInline();
 
@@ -470,46 +513,14 @@ namespace moho
   }
 
   /**
-   * Address: 0x00514D40 (FUN_00514D40, Moho::SEfxCurveSerializer::Deserialize)
-   */
-  void SEfxCurve::DeserializeFromArchive(
-    gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int /*version*/, gpg::RRef* const /*ownerRef*/
-  )
-  {
-    auto* const curve = reinterpret_cast<SEfxCurve*>(objectPtr);
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(curve != nullptr);
-    if (!archive || !curve) {
-      return;
-    }
-
-    curve->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x00514D50 (FUN_00514D50, Moho::SEfxCurveSerializer::Serialize)
-   */
-  void SEfxCurve::SerializeToArchive(
-    gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int /*version*/, gpg::RRef* const /*ownerRef*/
-  )
-  {
-    const auto* const curve = reinterpret_cast<const SEfxCurve*>(objectPtr);
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(curve != nullptr);
-    if (!archive || !curve) {
-      return;
-    }
-
-    curve->MemberSerialize(archive);
-  }
-
-  /**
    * Address: 0x00516D20 (FUN_00516D20, Moho::SEfxCurve::MemberDeserialize)
    *
    * IDA signature:
    * void __usercall func_ReadArchive_SEfxCurve(Moho::SEfxCurve *a1@<eax>, gpg::ReadArchive *a2@<ebx>);
    */
-  void SEfxCurve::MemberDeserialize(gpg::ReadArchive* const archive)
+  void SEfxCurve::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -531,7 +542,9 @@ namespace moho
    * IDA signature:
    * void __usercall Moho::SEfxCurve::MemberSerialize(Moho::SEfxCurve *a1@<eax>, BinaryWriteArchive *a2@<ebx>);
    */
-  void SEfxCurve::MemberSerialize(gpg::WriteArchive* const archive) const
+  void SEfxCurve::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -587,8 +600,14 @@ namespace
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_FastVectorSEfxCurveType_a4fe50, moho::preregister_FastVectorSEfxCurveType)
-GPG_PREREGISTER_INIT(register_FastVectorSEfxCurveType_a4fe50, moho::register_FastVectorSEfxCurveType)
+GPG_PREREGISTER_INIT(
+  preregister_FastVectorSEfxCurveType_a4fe50,
+  moho::preregister_FastVectorSEfxCurveType
+)
+GPG_PREREGISTER_INIT(
+  register_FastVectorSEfxCurveType_a4fe50,
+  moho::register_FastVectorSEfxCurveType
+)
 
 namespace moho
 {

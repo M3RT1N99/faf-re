@@ -13,12 +13,17 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <deque>
 #include <exception>
 #include <limits>
 #include <map>
 #include <random>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "gpg/core/containers/FlatGenerationMap.h"
 #include "moho/command/SSTICommandIssueData.h"
@@ -26,6 +31,8 @@
 #include "lua/LuaObject.h"
 #include "remote/FrameWindow.h"
 #include "remote/InboundIds.h"
+#include "remote/SeatRoster.h"
+#include "remote/net/GameLinks.h"
 #include "remote/ViewIdMap.h"
 // The command headers bring in <windows.h>, whose `near` and `far` macros the tests below use as names.
 #undef near
@@ -36,10 +43,14 @@
 #include "remote/wire/IntelGridDelta.h"
 #include "remote/wire/LuaSyncLane.h"
 #include "remote/wire/OrdinalTable.h"
+#include "remote/wire/PoseLane.h"
 #include "remote/wire/NameTable.h"
 #include "remote/wire/Quantize.h"
 #include "remote/wire/Roster.h"
 #include "remote/wire/SessionTables.h"
+#include "remote/client/ServerLaneMeter.h"
+#include "remote/client/ServerViewClient.h"
+#include "remote/net/Datagram.h"
 #include "remote/wire/SoundTable.h"
 #include "remote/wire/WireVersion.h"
 
@@ -49,41 +60,9 @@ namespace
 {
   // --- Harness (as tests/net) ------------------------------------------------------------
 
-  int gFailures = 0;
-  int gChecks = 0;
-
-#define CHECK(cond)                                                                \
-  do {                                                                             \
-    ++gChecks;                                                                     \
-    if (!(cond)) {                                                                 \
-      ++gFailures;                                                                 \
-      std::printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                \
-    }                                                                              \
-  } while (0)
-
-  struct TestCase
-  {
-    const char* name;
-    void (*body)();
-  };
-
-  void RunTest(const TestCase& test)
-  {
-    const int failuresBefore = gFailures;
-    try {
-      test.body();
-    } catch (const std::exception& e) {
-      ++gFailures;
-      std::printf("  FAIL %s: exception escaped: %s\n", test.name, e.what());
-    } catch (...) {
-      ++gFailures;
-      std::printf("  FAIL %s: non-std exception escaped\n", test.name);
-    }
-    std::printf("%s %s\n", gFailures == failuresBefore ? "ok  " : "FAIL", test.name);
-    std::fflush(stdout);
-  }
-
-  [[nodiscard]] std::vector<std::uint8_t> Bytes(const BitWriter& writer)
+  [[nodiscard]] std::vector<std::uint8_t> Bytes(
+    const BitWriter& writer
+  )
   {
     const auto bytes = writer.Bytes();
     return {bytes.begin(), bytes.end()};
@@ -102,47 +81,50 @@ namespace
     for (const std::uint32_t v : varints) {
       writer.WriteVarUint(v);
     }
-    const float floats[] = {0.0f, -0.0f, 1.5f, -3.25e-20f, std::numeric_limits<float>::infinity(),
-                            std::bit_cast<float>(0x7FC12345u)};
+    const float floats[] = {
+      0.0f, -0.0f, 1.5f, -3.25e-20f, std::numeric_limits<float>::infinity(), std::bit_cast<float>(0x7FC12345u)
+    };
     for (const float f : floats) {
       writer.WriteFloatExact(f);
     }
     writer.WriteBool(true);
 
     const std::vector<std::uint8_t> bytes = Bytes(writer);
-    CHECK(bytes.size() == (writer.BitCount() + 7u) / 8u);
+    EXPECT_EQ(bytes.size(), (writer.BitCount() + 7u) / 8u);
     BitReader reader(bytes);
     for (int bits = 0; bits <= 32; ++bits) {
       const std::uint32_t value = bits == 32 ? 0xA5C3F00Fu : (0xA5C3F00Fu & ((1u << bits) - 1u));
-      CHECK(reader.ReadBits(bits) == value);
+      EXPECT_EQ(reader.ReadBits(bits), value);
     }
     for (const std::uint32_t v : varints) {
-      CHECK(reader.ReadVarUint() == v);
+      EXPECT_EQ(reader.ReadVarUint(), v);
     }
     for (const float f : floats) {
-      CHECK(std::bit_cast<std::uint32_t>(reader.ReadFloatExact()) == std::bit_cast<std::uint32_t>(f));
+      EXPECT_TRUE(std::bit_cast<std::uint32_t>(reader.ReadFloatExact()) == std::bit_cast<std::uint32_t>(f));
     }
-    CHECK(reader.ReadBool());
-    CHECK(reader.Ok());
+    EXPECT_TRUE(reader.ReadBool());
+    EXPECT_TRUE(reader.Ok());
   }
 
   void TestBitStreamOverrun()
   {
     const std::uint8_t one[] = {0xFFu};
     BitReader reader(one);
-    CHECK(reader.ReadBits(8) == 0xFFu);
-    CHECK(reader.Ok());
-    CHECK(reader.ReadBits(1) == 0u);
-    CHECK(!reader.Ok());
-    CHECK(reader.ReadBits(4) == 0u); // stays failed
-    CHECK(reader.BitsLeft() == 0u);
+    EXPECT_EQ(reader.ReadBits(8), 0xFFu);
+    EXPECT_TRUE(reader.Ok());
+    EXPECT_EQ(reader.ReadBits(1), 0u);
+    EXPECT_FALSE(reader.Ok());
+    EXPECT_EQ(reader.ReadBits(4), 0u); // stays failed
+    EXPECT_EQ(reader.BitsLeft(), 0u);
 
     BitReader badWidth(one);
-    CHECK(badWidth.ReadBits(33) == 0u && !badWidth.Ok());
+    EXPECT_TRUE(badWidth.ReadBits(33) == 0u && !badWidth.Ok());
   }
 
   /** The bit-at-a-time writer the wire format was defined with: the byte-wise one must match it. */
-  [[nodiscard]] std::vector<std::uint8_t> ReferenceWrite(const std::vector<std::pair<std::uint32_t, int>>& writes)
+  [[nodiscard]] std::vector<std::uint8_t> ReferenceWrite(
+    const std::vector<std::pair<std::uint32_t, int>>& writes
+  )
   {
     std::vector<std::uint8_t> bytes;
     std::size_t bitCount = 0;
@@ -174,13 +156,13 @@ namespace
         writer.WriteBits(value, bits);
       }
       const std::vector<std::uint8_t> bytes = Bytes(writer);
-      CHECK(bytes == ReferenceWrite(writes));
+      EXPECT_EQ(bytes, ReferenceWrite(writes));
       BitReader reader(bytes);
       for (const auto& [value, bits] : writes) {
         const std::uint32_t expected = bits == 32 ? value : (value & ((1u << bits) - 1u));
-        CHECK(reader.ReadBits(bits) == expected);
+        EXPECT_EQ(reader.ReadBits(bits), expected);
       }
-      CHECK(reader.Ok());
+      EXPECT_TRUE(reader.Ok());
     }
   }
 
@@ -189,21 +171,21 @@ namespace
     const std::uint8_t sixGroups[] = {0x80u, 0x80u, 0x80u, 0x80u, 0x80u, 0x00u};
     BitReader a(sixGroups);
     (void)a.ReadVarUint();
-    CHECK(!a.Ok());
+    EXPECT_FALSE(a.Ok());
 
     const std::uint8_t wideFifth[] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0x1Fu}; // 5th group > 4 bits
     BitReader b(wideFifth);
     (void)b.ReadVarUint();
-    CHECK(!b.Ok());
+    EXPECT_FALSE(b.Ok());
 
     const std::uint8_t maxValue[] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0x0Fu};
     BitReader c(maxValue);
-    CHECK(c.ReadVarUint() == 0xFFFFFFFFu && c.Ok());
+    EXPECT_TRUE(c.ReadVarUint() == 0xFFFFFFFFu && c.Ok());
 
     const std::uint8_t truncated[] = {0x80u, 0x80u};
     BitReader d(truncated);
     (void)d.ReadVarUint();
-    CHECK(!d.Ok());
+    EXPECT_FALSE(d.Ok());
   }
 
   // --- Quantisation -----------------------------------------------------------------------
@@ -215,27 +197,27 @@ namespace
       const float back = axis.Decode(axis.Encode(v));
       // Down to the step: never above the value, less than a step below it, and in the same
       // whole unit, so an intel grid cell (whole units) holds both.
-      CHECK(back <= v + 1e-4f && v - back < axis.step + 1e-4f);
-      CHECK(std::floor(back) == std::floor(v));
+      EXPECT_TRUE(back <= v + 1e-4f && v - back < axis.step + 1e-4f);
+      EXPECT_EQ(std::floor(back), std::floor(v));
     }
-    CHECK(std::floor(axis.Decode(axis.Encode(241.99553f))) == 241.0f); // the #103 case
-    CHECK(axis.Encode(-1.0e9f) == 0u);
-    CHECK(axis.Encode(1.0e9f) == axis.MaxQuantized());
-    CHECK(axis.Encode(std::numeric_limits<float>::quiet_NaN()) == 0u);
-    CHECK(axis.Encode(std::numeric_limits<float>::infinity()) == axis.MaxQuantized());
-    CHECK(axis.Decode(0xFFFFFFFFu) == axis.Decode(axis.MaxQuantized()));
+    EXPECT_EQ(std::floor(axis.Decode(axis.Encode(241.99553f))), 241.0f); // the #103 case
+    EXPECT_EQ(axis.Encode(-1.0e9f), 0u);
+    EXPECT_EQ(axis.Encode(1.0e9f), axis.MaxQuantized());
+    EXPECT_TRUE(axis.Encode(std::numeric_limits<float>::quiet_NaN()) == 0u);
+    EXPECT_TRUE(axis.Encode(std::numeric_limits<float>::infinity()) == axis.MaxQuantized());
+    EXPECT_EQ(axis.Decode(0xFFFFFFFFu), axis.Decode(axis.MaxQuantized()));
   }
 
   void TestPositionQuantizerForMap()
   {
     // 5 km (256), 20 km (1024) and 81 km (4096) maps plus 256 units of margin each side.
-    CHECK(SPositionQuantizer::ForMap(256.0f, 256.0f).x.bits == 16);
-    CHECK(SPositionQuantizer::ForMap(1024.0f, 1024.0f).x.bits == 17);
-    CHECK(SPositionQuantizer::ForMap(4096.0f, 4096.0f).x.bits == 19);
+    EXPECT_EQ(SPositionQuantizer::ForMap(256.0f, 256.0f).x.bits, 16);
+    EXPECT_EQ(SPositionQuantizer::ForMap(1024.0f, 1024.0f).x.bits, 17);
+    EXPECT_EQ(SPositionQuantizer::ForMap(4096.0f, 4096.0f).x.bits, 19);
     const SPositionQuantizer q = SPositionQuantizer::ForMap(4096.0f, 1024.0f);
-    CHECK(q.x.bits == 19 && q.z.bits == 17 && q.y.bits == 16);
-    CHECK(q.x.Decode(q.x.Encode(4096.0f + 255.0f)) > 4096.0f + 254.9f);
-    CHECK(q.x.Decode(q.x.Encode(-255.0f)) < -254.9f);
+    EXPECT_TRUE(q.x.bits == 19 && q.z.bits == 17 && q.y.bits == 16);
+    EXPECT_TRUE(q.x.Decode(q.x.Encode(4096.0f + 255.0f)) > 4096.0f + 254.9f);
+    EXPECT_TRUE(q.x.Decode(q.x.Encode(-255.0f)) < -254.9f);
   }
 
   void TestQuaternionPacking()
@@ -259,22 +241,24 @@ namespace
     }
     // 10 bits over [-0.707, 0.707]: half a step is 0.00069 on the three sent components; the
     // rebuilt one can be off by a little more.
-    CHECK(worst < 0.004f);
+    EXPECT_TRUE(worst < 0.004f);
     // Yaw-only rotations: detected, quantised to 1/65536 turn, and back within half a step.
     for (int i = 0; i < 4096; ++i) {
       const double yaw = 6.283185307179586 * (i + 0.37) / 4096.0;
-      const std::array<float, 4> q{0.0f, static_cast<float>(std::sin(yaw / 2)), 0.0f, static_cast<float>(std::cos(yaw / 2))};
-      CHECK(IsYawOnly(q));
+      const std::array<float, 4> q{
+        0.0f, static_cast<float>(std::sin(yaw / 2)), 0.0f, static_cast<float>(std::cos(yaw / 2))
+      };
+      EXPECT_TRUE(IsYawOnly(q));
       const std::array<float, 4> back = YawToQuaternion(QuantizeYaw(q));
       const float dot = std::fabs(q[1] * back[1] + q[3] * back[3]);
-      CHECK(dot > 0.99999f);
+      EXPECT_TRUE(dot > 0.99999f);
     }
-    CHECK(!IsYawOnly({0.1f, 0.7f, 0.0f, 0.7f}));
-    CHECK(QuantizeYaw({0.0f, 0.0f, 0.0f, 1.0f}) == 0u);
-    CHECK(QuantizeYaw({0.0f, 0.0f, 0.0f, -1.0f}) == 0u); // -q is the same rotation (a full turn)
+    EXPECT_FALSE(IsYawOnly({0.1f, 0.7f, 0.0f, 0.7f}));
+    EXPECT_EQ(QuantizeYaw({0.0f, 0.0f, 0.0f, 1.0f}), 0u);
+    EXPECT_EQ(QuantizeYaw({0.0f, 0.0f, 0.0f, -1.0f}), 0u); // -q is the same rotation (a full turn)
     const std::array<float, 4> identity{0.0f, 0.0f, 0.0f, 1.0f};
     const std::array<float, 4> back = UnpackQuaternion(PackQuaternion(identity));
-    CHECK(std::fabs(back[3] - 1.0f) < 1e-3f);
+    EXPECT_TRUE(std::fabs(back[3] - 1.0f) < 1e-3f);
   }
 
   // --- Content ordinals -------------------------------------------------------------------
@@ -285,30 +269,30 @@ namespace
     const std::vector<std::string> b{"dra0202", "xsl0402", "urb0101", "UEL0001"};
     const COrdinalTable ta = COrdinalTable::Build(a);
     const COrdinalTable tb = COrdinalTable::Build(b);
-    CHECK(ta.Size() == 4u);
-    CHECK(ta.Hash() == tb.Hash());
+    EXPECT_EQ(ta.Size(), 4u);
+    EXPECT_EQ(ta.Hash(), tb.Hash());
     for (std::uint32_t i = 0; i < ta.Size(); ++i) {
-      CHECK(ta.Name(i) == tb.Name(i));
-      CHECK(ta.Ordinal(ta.Name(i)) == i);
+      EXPECT_EQ(ta.Name(i), tb.Name(i));
+      EXPECT_EQ(ta.Ordinal(ta.Name(i)), i);
     }
-    CHECK(ta.Ordinal("URB0101") == ta.Ordinal("urb0101"));
-    CHECK(ta.Ordinal("ual0001") == COrdinalTable::kNone);
-    CHECK(ta.Name(99u).empty());
+    EXPECT_EQ(ta.Ordinal("URB0101"), ta.Ordinal("urb0101"));
+    EXPECT_EQ(ta.Ordinal("ual0001"), COrdinalTable::kNone);
+    EXPECT_TRUE(ta.Name(99u).empty());
 
     const std::vector<std::string> c{"dra0202", "xsl0402", "urb0101", "uel0002"};
-    CHECK(COrdinalTable::Build(c).Hash() != ta.Hash());
+    EXPECT_TRUE(COrdinalTable::Build(c).Hash() != ta.Hash());
     const std::vector<std::string> d{"dra0202", "xsl0402", "urb0101"};
-    CHECK(COrdinalTable::Build(d).Hash() != ta.Hash());
+    EXPECT_TRUE(COrdinalTable::Build(d).Hash() != ta.Hash());
     // A different split of the same characters must not collide.
     const std::vector<std::string> e{"ab", "c"};
     const std::vector<std::string> f{"a", "bc"};
-    CHECK(COrdinalTable::Build(e).Hash() != COrdinalTable::Build(f).Hash());
+    EXPECT_TRUE(COrdinalTable::Build(e).Hash() != COrdinalTable::Build(f).Hash());
 
     SContentTables one{ta, tb, ta};
     SContentTables two{ta, ta, tb};
-    CHECK(one.Hash() == two.Hash()); // ta and tb are the same content
+    EXPECT_EQ(one.Hash(), two.Hash()); // ta and tb are the same content
     SContentTables three{ta, COrdinalTable::Build(c), ta};
-    CHECK(three.Hash() != one.Hash());
+    EXPECT_TRUE(three.Hash() != one.Hash());
   }
 
   // --- Handshake versions -----------------------------------------------------------------
@@ -322,32 +306,32 @@ namespace
     const std::vector<std::uint8_t> bytes = Bytes(writer);
     BitReader reader(bytes);
     const auto decoded = SWireHello::Decode(reader);
-    CHECK(decoded.has_value());
-    CHECK(decoded && decoded->protocolVersion == kProtocolVersion);
-    CHECK(decoded && decoded->laneVersions == kLaneVersions);
-    CHECK(decoded && decoded->contentHash == local.contentHash);
-    CHECK(decoded && !WireIncompatibility(local, *decoded).has_value());
+    EXPECT_TRUE(decoded.has_value());
+    EXPECT_TRUE(decoded && decoded->protocolVersion == kProtocolVersion);
+    EXPECT_TRUE(decoded && decoded->laneVersions == kLaneVersions);
+    EXPECT_TRUE(decoded && decoded->contentHash == local.contentHash);
+    EXPECT_TRUE(decoded && !WireIncompatibility(local, *decoded).has_value());
 
     for (std::size_t length = 0; length < bytes.size(); ++length) {
       BitReader truncated(std::span<const std::uint8_t>(bytes.data(), length));
-      CHECK(!SWireHello::Decode(truncated).has_value());
+      EXPECT_FALSE(SWireHello::Decode(truncated).has_value());
     }
 
     std::vector<std::uint8_t> badMagic = bytes;
     badMagic[0] ^= 0x01u;
     BitReader badReader(badMagic);
-    CHECK(!SWireHello::Decode(badReader).has_value());
+    EXPECT_FALSE(SWireHello::Decode(badReader).has_value());
 
     SWireHello other = local;
     other.protocolVersion = kProtocolVersion + 1;
-    CHECK(WireIncompatibility(local, other).has_value());
+    EXPECT_TRUE(WireIncompatibility(local, other).has_value());
     other = local;
     other.laneVersions[static_cast<std::size_t>(ELane::LuaSync)] = 99;
     const auto why = WireIncompatibility(local, other);
-    CHECK(why.has_value() && why->find("lua sync") != std::string::npos);
+    EXPECT_TRUE(why.has_value() && why->find("lua sync") != std::string::npos);
     other = local;
     other.contentHash ^= 1u;
-    CHECK(WireIncompatibility(local, other).has_value());
+    EXPECT_TRUE(WireIncompatibility(local, other).has_value());
 
     // A newer build with more lanes: the known lanes decode, the extra ones are dropped.
     BitWriter newer;
@@ -362,7 +346,7 @@ namespace
     const std::vector<std::uint8_t> newerBytes = Bytes(newer);
     BitReader newerReader(newerBytes);
     const auto fromNewer = SWireHello::Decode(newerReader);
-    CHECK(fromNewer.has_value() && fromNewer->laneVersions == kLaneVersions);
+    EXPECT_TRUE(fromNewer.has_value() && fromNewer->laneVersions == kLaneVersions);
 
     // A hello claiming a huge lane count is refused before reading it.
     BitWriter hostile;
@@ -371,7 +355,7 @@ namespace
     hostile.WriteVarUint(0xFFFFFFFFu);
     const std::vector<std::uint8_t> hostileBytes = Bytes(hostile);
     BitReader hostileReader(hostileBytes);
-    CHECK(!SWireHello::Decode(hostileReader).has_value());
+    EXPECT_FALSE(SWireHello::Decode(hostileReader).has_value());
   }
 
   // --- View frames ------------------------------------------------------------------------
@@ -382,7 +366,10 @@ namespace
   class CFrameGenerator
   {
   public:
-    explicit CFrameGenerator(const std::uint32_t seed, const bool deadReckoning = false)
+    explicit CFrameGenerator(
+      const std::uint32_t seed,
+      const bool deadReckoning = false
+    )
       : mRng(seed)
       , mDeadReckoning(deadReckoning)
     {}
@@ -416,9 +403,19 @@ namespace
     }
 
   private:
-    bool Chance(const double p) { return std::uniform_real_distribution<double>(0.0, 1.0)(mRng) < p; }
+    bool Chance(
+      const double p
+    )
+    {
+      return std::uniform_real_distribution<double>(0.0, 1.0)(mRng) < p;
+    }
 
-    std::uint32_t Axis(const SAxisQuantizer& axis) { return mRng() % (axis.MaxQuantized() + 1u); }
+    std::uint32_t Axis(
+      const SAxisQuantizer& axis
+    )
+    {
+      return mRng() % (axis.MaxQuantized() + 1u);
+    }
 
     float RandomFloat()
     {
@@ -434,7 +431,9 @@ namespace
       }
     }
 
-    SEntityRecord RandomRecord(const std::uint32_t id)
+    SEntityRecord RandomRecord(
+      const std::uint32_t id
+    )
     {
       SEntityRecord record{};
       record.id = id;
@@ -497,10 +496,15 @@ namespace
       return record;
     }
 
-    void RandomAppearance(SAppearance& look, const std::uint32_t fields)
+    void RandomAppearance(
+      SAppearance& look,
+      const std::uint32_t fields
+    )
     {
-      if ((fields & 1u) != 0u) look.mesh = mRng() % 4u == 0u ? COrdinalTable::kNone : mRng() % 3000u;
-      if ((fields & 2u) != 0u) look.scale = {RandomFloat(), RandomFloat(), RandomFloat()};
+      if ((fields & 1u) != 0u)
+        look.mesh = mRng() % 4u == 0u ? COrdinalTable::kNone : mRng() % 3000u;
+      if ((fields & 2u) != 0u)
+        look.scale = {RandomFloat(), RandomFloat(), RandomFloat()};
       if ((fields & 4u) != 0u) {
         look.attachParent = mRng() % 2u == 0u ? SAppearance::kNoAttachParent : static_cast<std::uint32_t>(mRng());
         look.attachments.resize(mRng() % 4u == 0u ? mRng() % (SAppearance::kMaxAttachments + 1u) : 0u);
@@ -508,9 +512,12 @@ namespace
           id = static_cast<std::uint32_t>(mRng());
         }
       }
-      if ((fields & 8u) != 0u) look.visualFlags = static_cast<std::uint8_t>(mRng() & 0x1Fu);
-      if ((fields & 16u) != 0u) look.impact = RandomFloat();
-      if ((fields & 32u) != 0u) look.scroll = {RandomFloat(), RandomFloat(), RandomFloat(), RandomFloat()};
+      if ((fields & 8u) != 0u)
+        look.visualFlags = static_cast<std::uint8_t>(mRng() & 0x1Fu);
+      if ((fields & 16u) != 0u)
+        look.impact = RandomFloat();
+      if ((fields & 32u) != 0u)
+        look.scroll = {RandomFloat(), RandomFloat(), RandomFloat(), RandomFloat()};
       if ((fields & 64u) != 0u) {
         for (std::uint32_t& radius : look.intel) {
           radius = mRng() % 2u == 0u ? 0u : static_cast<std::uint32_t>(mRng());
@@ -520,15 +527,20 @@ namespace
         look.ambientSound = mRng() % 3u == 0u ? COrdinalTable::kNone : mRng() % 500u;
         look.rumbleSound = mRng() % 3u == 0u ? COrdinalTable::kNone : mRng() % 500u;
       }
-      if ((fields & 256u) != 0u) look.underlay = mRng() % 3u == 0u ? COrdinalTable::kNone : mRng() % 50u;
+      if ((fields & 256u) != 0u)
+        look.underlay = mRng() % 3u == 0u ? COrdinalTable::kNone : mRng() % 50u;
     }
 
-    void Mutate(SEntityRecord& record)
+    void Mutate(
+      SEntityRecord& record
+    )
     {
       const SEntityRecord fresh = RandomRecord(record.id);
       const std::uint32_t fields = mRng() & 0xFFFFu;
-      if ((fields & kFieldBlueprint) != 0u) record.blueprint = fresh.blueprint;
-      if ((fields & kFieldArmy) != 0u) record.army = fresh.army;
+      if ((fields & kFieldBlueprint) != 0u)
+        record.blueprint = fresh.blueprint;
+      if ((fields & kFieldArmy) != 0u)
+        record.army = fresh.army;
       if ((fields & kFieldPosition) != 0u) {
         record.position = fresh.position;
         record.velocity = fresh.velocity;
@@ -538,16 +550,30 @@ namespace
         record.farPosition = fresh.farPosition;
         record.farValue = fresh.farValue;
       }
-      if ((fields & kFieldOrientation) != 0u) {
+      if ((fields & kFieldOrientation) != 0u && !record.yawOnly && !fresh.yawOnly && mRng() % 2u == 0u) {
+        // Entities 13: a full rotation's small step (same largest component), at times to a component's ends.
+        std::uint32_t packed = record.orientation & 3u;
+        for (int i = 0; i < 3; ++i) {
+          const int shift = 2 + i * 10;
+          const auto was = static_cast<std::int32_t>((record.orientation >> shift) & 0x3FFu);
+          const std::int32_t now = std::clamp(was + static_cast<std::int32_t>(mRng() % 41u) - 20, 0, 1023);
+          packed |= static_cast<std::uint32_t>(mRng() % 16u == 0u ? (mRng() % 2u == 0u ? 0 : 1023) : now) << shift;
+        }
+        record.orientation = packed;
+      } else if ((fields & kFieldOrientation) != 0u) {
         record.orientation = fresh.orientation;
         record.yawOnly = fresh.yawOnly;
         record.yawRate = fresh.yawRate;
         record.orientationBeat = fresh.orientationBeat;
       }
-      if ((fields & kFieldHealth) != 0u) record.health = fresh.health;
-      if ((fields & kFieldMaxHealth) != 0u) record.maxHealth = fresh.maxHealth;
-      if ((fields & kFieldFraction) != 0u) record.fractionComplete = fresh.fractionComplete;
-      if ((fields & kFieldFlags) != 0u) record.flags = fresh.flags;
+      if ((fields & kFieldHealth) != 0u)
+        record.health = fresh.health;
+      if ((fields & kFieldMaxHealth) != 0u)
+        record.maxHealth = fresh.maxHealth;
+      if ((fields & kFieldFraction) != 0u)
+        record.fractionComplete = fresh.fractionComplete;
+      if ((fields & kFieldFlags) != 0u)
+        record.flags = fresh.flags;
       if (mRng() % 4u == 0u) {
         RandomAppearance(record.appearance, mRng());
       }
@@ -559,21 +585,38 @@ namespace
       if (record.isUnit) {
         SUnitFields& unit = record.unit;
         const SUnitFields source = fresh.isUnit ? fresh.unit : RandomRecordUnit();
-        if ((fields & kFieldUnitFuel) != 0u) unit.fuelRatio = source.fuelRatio;
-        if ((fields & kFieldUnitShield) != 0u) unit.shieldRatio = source.shieldRatio;
-        if ((fields & kFieldUnitWork) != 0u) unit.workProgress = source.workProgress;
-        if ((fields & kFieldUnitStates) != 0u) unit.unitStates = source.unitStates;
-        if ((fields & kFieldUnitScriptBits) != 0u) unit.scriptBits = source.scriptBits;
-        if ((fields & kFieldUnitSilos) != 0u) unit.siloCounts = source.siloCounts;
-        if ((fields & kFieldUnitFlags) != 0u) unit.unitFlags = source.unitFlags;
-        if (mRng() % 5u == 0u) unit.stats = source.stats;
+        if ((fields & kFieldUnitFuel) != 0u)
+          unit.fuelRatio = source.fuelRatio;
+        if ((fields & kFieldUnitShield) != 0u)
+          unit.shieldRatio = source.shieldRatio;
+        if ((fields & kFieldUnitWork) != 0u)
+          unit.workProgress = source.workProgress;
+        if ((fields & kFieldUnitStates) != 0u)
+          unit.unitStates = source.unitStates;
+        if ((fields & kFieldUnitScriptBits) != 0u)
+          unit.scriptBits = source.scriptBits;
+        if ((fields & kFieldUnitSilos) != 0u)
+          unit.siloCounts = source.siloCounts;
+        if ((fields & kFieldUnitFlags) != 0u)
+          unit.unitFlags = source.unitFlags;
+        if (mRng() % 5u == 0u)
+          unit.stats = source.stats;
         if (mRng() % 4u == 0u) {
           const SUnitDetail fresh = RandomDetail();
           switch (mRng() % 4u) {
-          case 0: unit.detail.Edit().commands = fresh.commands; break;
-          case 1: unit.detail.Edit().weapons = fresh.weapons; break;
-          case 2: unit.detail.Edit().attributes = fresh.attributes; break;
-          default: unit.detail.Edit().focusUnit = fresh.focusUnit; unit.detail.Edit().economy = fresh.economy; break;
+          case 0:
+            unit.detail.Edit().commands = fresh.commands;
+            break;
+          case 1:
+            unit.detail.Edit().weapons = fresh.weapons;
+            break;
+          case 2:
+            unit.detail.Edit().attributes = fresh.attributes;
+            break;
+          default:
+            unit.detail.Edit().focusUnit = fresh.focusUnit;
+            unit.detail.Edit().economy = fresh.economy;
+            break;
           }
         }
       }
@@ -682,17 +725,21 @@ namespace
   const SFrameCodec kDeadReckoningCodec{SPositionQuantizer::ForMap(1024.0f, 1024.0f), 1u << 12, true, 0, true, true};
 
   [[nodiscard]] std::vector<std::uint8_t> Encode(
-    const SViewFrame& frame, const SViewFrame* baseline, const SFrameCodec& codec = kCodec
+    const SViewFrame& frame,
+    const SViewFrame* baseline,
+    const SFrameCodec& codec = kCodec
   )
   {
     BitWriter writer;
     const bool encoded = EncodeFrame(frame, baseline, codec, writer);
-    CHECK(encoded);
+    EXPECT_TRUE(encoded);
     return Bytes(writer);
   }
 
   [[nodiscard]] bool Decode(
-    const std::vector<std::uint8_t>& bytes, const SViewFrame* baseline, SViewFrame& out,
+    const std::vector<std::uint8_t>& bytes,
+    const SViewFrame* baseline,
+    SViewFrame& out,
     const SFrameCodec& codec = kCodec
   )
   {
@@ -701,7 +748,11 @@ namespace
   }
 
   /** What the client does with consecutive decoded frames (WPR.38). */
-  [[nodiscard]] SViewFrame ApplyDelta(const SViewFrame& before, const SFrameDelta& delta, const SViewFrame& header)
+  [[nodiscard]] SViewFrame ApplyDelta(
+    const SViewFrame& before,
+    const SFrameDelta& delta,
+    const SViewFrame& header
+  )
   {
     std::vector<SEntityRecord> world = before.entities;
     std::erase_if(world, [&](const SEntityRecord& r) {
@@ -715,7 +766,9 @@ namespace
       }
     }
     world.insert(world.end(), delta.created.begin(), delta.created.end());
-    std::sort(world.begin(), world.end(), [](const SEntityRecord& x, const SEntityRecord& y) { return x.id < y.id; });
+    std::sort(world.begin(), world.end(), [](const SEntityRecord& x, const SEntityRecord& y) {
+      return x.id < y.id;
+    });
     SViewFrame frame = header;
     frame.entities = std::move(world);
     return frame;
@@ -728,22 +781,22 @@ namespace
       std::vector<SViewFrame> history;
       for (int step = 0; step < 120; ++step) {
         const SViewFrame frame = generator.Next();
-        CHECK(frame.IsWellFormed());
+        EXPECT_TRUE(frame.IsWellFormed());
 
         SViewFrame full{};
-        CHECK(Decode(Encode(frame, nullptr), nullptr, full) && full == frame);
+        EXPECT_TRUE(Decode(Encode(frame, nullptr), nullptr, full) && full == frame);
 
         // Against the previous frame and against older ones (an older acknowledged baseline).
         for (std::size_t back = 1; back <= 5 && back <= history.size(); back += 2) {
           const SViewFrame& baseline = history[history.size() - back];
           SViewFrame decoded{};
-          CHECK(Decode(Encode(frame, &baseline), &baseline, decoded) && decoded == frame);
+          EXPECT_TRUE(Decode(Encode(frame, &baseline), &baseline, decoded) && decoded == frame);
         }
 
         // The client's world follows the frame-to-frame difference.
         if (!history.empty()) {
           const SViewFrame& previous = history.back();
-          CHECK(ApplyDelta(previous, ComputeFrameDelta(&previous, frame), frame) == frame);
+          EXPECT_EQ(ApplyDelta(previous, ComputeFrameDelta(&previous, frame), frame), frame);
         }
         history.push_back(frame);
       }
@@ -758,13 +811,15 @@ namespace
       for (int step = 0; step < 120; ++step) {
         const SViewFrame frame = generator.Next();
         SViewFrame full{};
-        CHECK(Decode(Encode(frame, nullptr, kDeadReckoningCodec), nullptr, full, kDeadReckoningCodec) && full == frame);
+        EXPECT_TRUE(
+          Decode(Encode(frame, nullptr, kDeadReckoningCodec), nullptr, full, kDeadReckoningCodec) && full == frame
+        );
         for (std::size_t back = 1; back <= 5 && back <= history.size(); back += 2) {
           const SViewFrame& baseline = history[history.size() - back];
           SViewFrame decoded{};
-          CHECK(
-            Decode(Encode(frame, &baseline, kDeadReckoningCodec), &baseline, decoded, kDeadReckoningCodec)
-            && decoded == frame
+          EXPECT_TRUE(
+            Decode(Encode(frame, &baseline, kDeadReckoningCodec), &baseline, decoded, kDeadReckoningCodec) &&
+            decoded == frame
           );
         }
         history.push_back(frame);
@@ -778,18 +833,18 @@ namespace
     moving.entities.resize(1);
     moving.entities[0].velocity = {1, 0, 0};
     BitWriter writer;
-    CHECK(!EncodeFrame(moving, nullptr, kCodec, writer));
-    CHECK(EncodeFrame(moving, nullptr, kDeadReckoningCodec, writer));
+    EXPECT_FALSE(EncodeFrame(moving, nullptr, kCodec, writer));
+    EXPECT_TRUE(EncodeFrame(moving, nullptr, kDeadReckoningCodec, writer));
     SViewFrame future = moving;
     future.entities[0].anchorBeat = 51;
     BitWriter futureWriter;
-    CHECK(!EncodeFrame(future, nullptr, kDeadReckoningCodec, futureWriter));
+    EXPECT_FALSE(EncodeFrame(future, nullptr, kDeadReckoningCodec, futureWriter));
     SViewFrame falling{};
     falling.beat = 50;
     falling.entities.resize(1);
     falling.entities[0].verticalAcceleration = -3;
     BitWriter fallingWriter;
-    CHECK(!EncodeFrame(falling, nullptr, kCodec, fallingWriter));
+    EXPECT_FALSE(EncodeFrame(falling, nullptr, kCodec, fallingWriter));
     // A turn rate needs orientation reckoning and a yaw-only record; its anchor not in the future.
     SViewFrame turning{};
     turning.beat = 50;
@@ -798,16 +853,16 @@ namespace
     turning.entities[0].yawRate = 40;
     turning.entities[0].orientationBeat = 49;
     BitWriter turningWriter;
-    CHECK(!EncodeFrame(turning, nullptr, kCodec, turningWriter));
-    CHECK(EncodeFrame(turning, nullptr, kDeadReckoningCodec, turningWriter));
+    EXPECT_FALSE(EncodeFrame(turning, nullptr, kCodec, turningWriter));
+    EXPECT_TRUE(EncodeFrame(turning, nullptr, kDeadReckoningCodec, turningWriter));
     SViewFrame tumbling = turning;
     tumbling.entities[0].yawOnly = false;
     BitWriter tumblingWriter;
-    CHECK(!EncodeFrame(tumbling, nullptr, kDeadReckoningCodec, tumblingWriter));
+    EXPECT_FALSE(EncodeFrame(tumbling, nullptr, kDeadReckoningCodec, tumblingWriter));
     SViewFrame early = turning;
     early.entities[0].orientationBeat = 51;
     BitWriter earlyWriter;
-    CHECK(!EncodeFrame(early, nullptr, kDeadReckoningCodec, earlyWriter));
+    EXPECT_FALSE(EncodeFrame(early, nullptr, kDeadReckoningCodec, earlyWriter));
   }
 
   void TestDeadReckoningRules()
@@ -819,8 +874,10 @@ namespace
     sent.position = {1000, 500, 1000};
     sent.anchorBeat = 0;
     QuantizedPosition previous = sent.position;
-    const auto apply = [&](SEntityRecord& record, const QuantizedPosition& last, const QuantizedPosition& now,
-                           const std::uint32_t beat) {
+    const auto apply =
+      [&](
+        SEntityRecord& record, const QuantizedPosition& last, const QuantizedPosition& now, const std::uint32_t beat
+      ) {
       const QuantizedPosition pair[2] = {last, now};
       return ApplyDeadReckoning(record, pair, beat, scheme, codec);
     };
@@ -830,21 +887,21 @@ namespace
     for (std::uint32_t beat = 1; beat <= 20; ++beat) {
       const QuantizedPosition actual{1000 + 5 * beat, 500, 1000};
       anchors += apply(sent, previous, actual, beat) ? 1 : 0;
-      CHECK(PredictPosition(sent, beat, codec) == actual);
+      EXPECT_EQ(PredictPosition(sent, beat, codec), actual);
       previous = actual;
     }
-    CHECK(anchors == 1);
-    CHECK(sent.velocity == (std::array<std::int32_t, 3>{5, 0, 0}) && sent.anchorBeat == 1u);
+    EXPECT_EQ(anchors, 1);
+    EXPECT_TRUE(sent.velocity == (std::array<std::int32_t, 3>{5, 0, 0}) && sent.anchorBeat == 1u);
 
     // Stops: the prediction runs ahead, the next beat re-anchors with zero velocity.
     const QuantizedPosition stopped{1100, 500, 1000};
-    CHECK(apply(sent, previous, stopped, 21));
-    CHECK(sent.velocity == (std::array<std::int32_t, 3>{0, 0, 0}) && sent.position == stopped);
-    CHECK(!apply(sent, stopped, stopped, 22));
+    EXPECT_TRUE(apply(sent, previous, stopped, 21));
+    EXPECT_TRUE(sent.velocity == (std::array<std::int32_t, 3>{0, 0, 0}) && sent.position == stopped);
+    EXPECT_FALSE(apply(sent, stopped, stopped, 22));
 
     // Small drift within the tolerance does not re-anchor.
     const QuantizedPosition drift{1102, 498, 1001};
-    CHECK(!apply(sent, stopped, drift, 23));
+    EXPECT_FALSE(apply(sent, stopped, drift, 23));
 
     // WP7.8: a speed between whole steps (0.3 units a beat, 19.2 steps), fitted over 8 beats in
     // 1/16 steps, re-anchors far less often than the last beat's whole-step motion.
@@ -852,7 +909,8 @@ namespace
     fine.velocityFractionBits = 4;
     const auto quantised = [](const double x, const double y, const double z) {
       return QuantizedPosition{
-        static_cast<std::uint32_t>(std::lround(x)), static_cast<std::uint32_t>(std::lround(y)),
+        static_cast<std::uint32_t>(std::lround(x)),
+        static_cast<std::uint32_t>(std::lround(y)),
         static_cast<std::uint32_t>(std::lround(z))
       };
     };
@@ -865,25 +923,31 @@ namespace
         history.push_back(path(beat));
         const std::size_t keep = std::min<std::size_t>(history.size(), kReckoningHistory);
         count += ApplyDeadReckoning(
-                   record, std::span<const QuantizedPosition>(history.data() + history.size() - keep, keep), beat, use,
+                   record,
+                   std::span<const QuantizedPosition>(history.data() + history.size() - keep, keep),
+                   beat,
+                   use,
                    useCodec
                  )
-                 ? 1
-                 : 0;
+          ? 1
+          : 0;
         const QuantizedPosition shown = PredictPosition(record, beat, useCodec);
         for (int axis = 0; axis < 3; ++axis) {
-          const std::int64_t error = static_cast<std::int64_t>(shown[axis]) - static_cast<std::int64_t>(history.back()[axis]);
-          CHECK(error <= use.tolerance && -error <= use.tolerance);
+          const std::int64_t error =
+            static_cast<std::int64_t>(shown[axis]) - static_cast<std::int64_t>(history.back()[axis]);
+          EXPECT_TRUE(error <= use.tolerance && -error <= use.tolerance);
         }
       }
       return count;
     };
-    const auto cruise = [&](const std::uint32_t beat) { return quantised(1000.0 + 19.2 * beat, 500.0, 2000.0 - 7.7 * beat); };
+    const auto cruise = [&](const std::uint32_t beat) {
+      return quantised(1000.0 + 19.2 * beat, 500.0, 2000.0 - 7.7 * beat);
+    };
     SReckoningScheme fitted = scheme;
     fitted.window = 8;
     const int wholeSteps = anchorsOver(scheme, codec, cruise);
     const int subSteps = anchorsOver(fitted, fine, cruise);
-    CHECK(subSteps * 4 < wholeSteps);
+    EXPECT_TRUE(subSteps * 4 < wholeSteps);
     std::printf("  dead reckoning anchors over 200 beats: whole %d, fitted %d\n", wholeSteps, subSteps);
 
     // A ballistic arc (gravity on the vertical axis): the bent fit holds it, a straight one not.
@@ -893,33 +957,40 @@ namespace
     };
     SReckoningScheme bent = fitted;
     bent.verticalAcceleration = true;
-    const int straightArc = anchorsOver(fitted, fine, [&](const std::uint32_t beat) { return arc(beat % 90u); });
-    const int bentArc = anchorsOver(bent, fine, [&](const std::uint32_t beat) { return arc(beat % 90u); });
+    const int straightArc = anchorsOver(fitted, fine, [&](const std::uint32_t beat) {
+      return arc(beat % 90u);
+    });
+    const int bentArc = anchorsOver(bent, fine, [&](const std::uint32_t beat) {
+      return arc(beat % 90u);
+    });
     std::printf("  ballistic arc anchors: straight %d, bent %d\n", straightArc, bentArc);
-    CHECK(bentArc * 4 < straightArc);
+    EXPECT_TRUE(bentArc * 4 < straightArc);
 
     // Sub-step predictions round half up, the same on every axis and direction.
     SEntityRecord back{};
     back.position = {5000, 5000, 5000};
     back.velocity = {-24, 24, 0}; // 1.5 steps a beat
-    CHECK(PredictPosition(back, 1, fine) == (QuantizedPosition{4999, 5002, 5000}));
-    CHECK(PredictPosition(back, 2, fine) == (QuantizedPosition{4997, 5003, 5000}));
+    EXPECT_EQ(PredictPosition(back, 1, fine), (QuantizedPosition{4999, 5002, 5000}));
+    EXPECT_EQ(PredictPosition(back, 2, fine), (QuantizedPosition{4997, 5003, 5000}));
     back.verticalAcceleration = -16; // a step a beat squared: 1.5 t - t^2 / 2
-    CHECK(PredictPosition(back, 4, fine) == (QuantizedPosition{4994, 4998, 5000}));
+    EXPECT_EQ(PredictPosition(back, 4, fine), (QuantizedPosition{4994, 4998, 5000}));
 
     // Predictions clamp to the axes.
     SEntityRecord edge{};
     edge.position = {3, 0, codec.position.z.MaxQuantized() - 1};
     edge.velocity = {-10, -10, 10};
     const QuantizedPosition clamped = PredictPosition(edge, 5, codec);
-    CHECK(clamped[0] == 0u && clamped[1] == 0u && clamped[2] == codec.position.z.MaxQuantized());
+    EXPECT_TRUE(clamped[0] == 0u && clamped[1] == 0u && clamped[2] == codec.position.z.MaxQuantized());
 
     // Ground following: a unit crossing a hill (height sin(x / 20) * 8) at a steady speed. Its
     // height is anything but linear, so a straight fit re-anchors over and over; following the
     // terrain it re-anchors about as often as on flat ground.
     struct SHill final : IGroundHeight
     {
-      [[nodiscard]] float HeightAt(const float x, const float) const noexcept override
+      [[nodiscard]] float HeightAt(
+        const float x,
+        const float
+      ) const noexcept override
       {
         return 20.0f + 8.0f * std::sin(x / 20.0f);
       }
@@ -939,7 +1010,7 @@ namespace
     const int straightHill = anchorsOver(fitted, onHill, overHill);
     const int groundHill = anchorsOver(ground, onHill, overHill);
     std::printf("  hill anchors over 200 beats: straight %d, following the ground %d\n", straightHill, groundHill);
-    CHECK(groundHill * 3 < straightHill);
+    EXPECT_TRUE(groundHill * 3 < straightHill);
 
     // Orientation: a steady turn of 100.3 yaw units a beat through the wrap at a full turn, held
     // within 64 units (0.35 degrees) by a fitted rate; re-anchored far less than every beat.
@@ -957,17 +1028,18 @@ namespace
       actual.orientation = static_cast<std::uint32_t>(std::lround(65000.0 + 100.3 * beat)) & 0xFFFFu;
       yaws.push_back(actual.orientation);
       const std::size_t keep = std::min<std::size_t>(yaws.size(), kReckoningHistory);
-      turnAnchors += ApplyOrientationReckoning(
-                       turner, actual, std::span<const std::uint32_t>(yaws.data() + yaws.size() - keep, keep), beat, turns,
-                       fine
-                     )
-                     ? 1
-                     : 0;
-      const auto error = static_cast<std::int16_t>(static_cast<std::uint16_t>(actual.orientation - PredictYaw(turner, beat, fine)));
-      CHECK(error <= 64 && error >= -64);
+      turnAnchors +=
+        ApplyOrientationReckoning(
+          turner, actual, std::span<const std::uint32_t>(yaws.data() + yaws.size() - keep, keep), beat, turns, fine
+        )
+        ? 1
+        : 0;
+      const auto error =
+        static_cast<std::int16_t>(static_cast<std::uint16_t>(actual.orientation - PredictYaw(turner, beat, fine)));
+      EXPECT_TRUE(error <= 64 && error >= -64);
     }
     std::printf("  turn anchors over 200 beats: %d\n", turnAnchors);
-    CHECK(turnAnchors <= 10);
+    EXPECT_TRUE(turnAnchors <= 10);
 
     // A quaternion is held while within the tolerance and sent again past it; a change between
     // yaw-only and not is always sent.
@@ -978,14 +1050,16 @@ namespace
     SEntityRecord far = tilted;
     far.orientation = PackQuaternion({0.2f, 0.0f, 0.0f, 0.9798f});
     SEntityRecord held = tilted;
-    CHECK(!ApplyOrientationReckoning(held, near, {}, 5, turns, fine) && held.orientation == tilted.orientation);
-    CHECK(ApplyOrientationReckoning(held, far, {}, 6, turns, fine) && held.orientation == far.orientation);
+    EXPECT_TRUE(!ApplyOrientationReckoning(held, near, {}, 5, turns, fine) && held.orientation == tilted.orientation);
+    EXPECT_TRUE(ApplyOrientationReckoning(held, far, {}, 6, turns, fine) && held.orientation == far.orientation);
     SEntityRecord flat{};
     flat.yawOnly = true;
     flat.orientation = 1000;
     const std::uint32_t flatYaw[1] = {1000};
-    CHECK(ApplyOrientationReckoning(held, flat, flatYaw, 7, turns, fine) && held.yawOnly && held.yawRate == 0
-          && held.orientationBeat == 7u);
+    EXPECT_TRUE(
+      ApplyOrientationReckoning(held, flat, flatYaw, 7, turns, fine) && held.yawOnly && held.yawRate == 0 &&
+      held.orientationBeat == 7u
+    );
   }
 
   void TestGridDeltaInPlace()
@@ -1008,6 +1082,18 @@ namespace
         const std::size_t at = rng() % 2u == 0u ? rng() % count : (rng() % (count / 64u + 1u)) * 64u % count;
         now[at] = static_cast<std::int8_t>(rng() % 3u == 0u ? 0u : 1 + rng() % 100u);
       }
+      if (round % 3 == 1) {
+        // A stretch that all comes into or goes out of sight (long flipped runs), counts of any sign.
+        const std::size_t from = rng() % count;
+        const std::size_t to = std::min(count, from + rng() % 300u);
+        const bool seen = rng() % 2u == 0u;
+        for (std::size_t at = from; at < to; ++at) {
+          now[at] = seen ? static_cast<std::int8_t>(
+                             rng() % 2u == 0u ? -1 - static_cast<int>(rng() % 120u) : 1 + static_cast<int>(rng() % 120u)
+                           )
+                         : std::int8_t{0};
+        }
+      }
       SGridBits current = before;
       before.cells.resize(count);
       current.cells.resize(count);
@@ -1016,12 +1102,61 @@ namespace
         current.cells[i] = now[i] != 0 ? 1u : 0u;
       }
       BitWriter expected;
-      CHECK(EncodeGridDelta(current, &before, expected));
+      EXPECT_TRUE(EncodeGridDelta(current, &before, expected));
+      // The encoder keeps what the client holds as bits, 64 cells a word.
+      const auto bitsOf = [count](const std::vector<std::int8_t>& cells) {
+        std::vector<std::uint64_t> words(GridSeenWords(count), 0u);
+        for (std::size_t i = 0; i < count; ++i) {
+          words[i / 64u] |= std::uint64_t{cells[i] != 0 ? 1u : 0u} << (i % 64u);
+        }
+        return words;
+      };
+      std::vector<std::uint64_t> seen = bitsOf(held);
       BitWriter actual;
-      EncodeGridDeltaInPlace(before.width, before.height, now.data(), held.data(), actual);
-      CHECK(actual.BitCount() == expected.BitCount());
-      CHECK(std::equal(actual.Bytes().begin(), actual.Bytes().end(), expected.Bytes().begin(), expected.Bytes().end()));
-      CHECK(held == now);
+      EncodeGridDeltaInPlace(before.width, before.height, now.data(), seen.data(), actual);
+      EXPECT_EQ(actual.BitCount(), expected.BitCount());
+      EXPECT_TRUE(
+        std::equal(actual.Bytes().begin(), actual.Bytes().end(), expected.Bytes().begin(), expected.Bytes().end())
+      );
+      EXPECT_EQ(seen, bitsOf(now));
+
+      // Reading only the chunks flagged as changed (128 cells each here): every chunk with a changed
+      // cell flagged, some unchanged ones too; the same bits, and every flag cleared. Then a grid read
+      // whole with no flag set (a `seen` just reset).
+      constexpr std::uint32_t kChunk = 128u;
+      std::vector<std::uint8_t> flags((count + kChunk - 1u) / kChunk, 0u);
+      for (std::size_t i = 0; i < count; ++i) {
+        if ((held[i] != 0) != (now[i] != 0) || held[i] != now[i] || rng() % 50u == 0u) {
+          flags[i / kChunk] = 1u;
+        }
+      }
+      std::vector<std::uint64_t> chunkSeen = bitsOf(held);
+      BitWriter chunked;
+      EncodeGridDeltaInPlace(
+        before.width, before.height, now.data(), chunkSeen.data(), chunked, flags.data(), kChunk, false
+      );
+      EXPECT_EQ(chunked.BitCount(), expected.BitCount());
+      EXPECT_TRUE(
+        std::equal(chunked.Bytes().begin(), chunked.Bytes().end(), expected.Bytes().begin(), expected.Bytes().end())
+      );
+      EXPECT_EQ(chunkSeen, bitsOf(now));
+      EXPECT_TRUE(std::all_of(flags.begin(), flags.end(), [](const std::uint8_t flag) {
+        return flag == 0u;
+      }));
+      SGridBits empty = current;
+      std::fill(empty.cells.begin(), empty.cells.end(), std::uint8_t{0});
+      BitWriter wholeExpected;
+      EXPECT_TRUE(EncodeGridDelta(current, &empty, wholeExpected));
+      std::vector<std::uint64_t> fresh(GridSeenWords(count), 0u);
+      BitWriter whole;
+      EncodeGridDeltaInPlace(before.width, before.height, now.data(), fresh.data(), whole, flags.data(), kChunk, true);
+      EXPECT_EQ(whole.BitCount(), wholeExpected.BitCount());
+      EXPECT_TRUE(
+        std::equal(
+          whole.Bytes().begin(), whole.Bytes().end(), wholeExpected.Bytes().begin(), wholeExpected.Bytes().end()
+        )
+      );
+      EXPECT_EQ(fresh, bitsOf(now));
     }
   }
 
@@ -1031,14 +1166,14 @@ namespace
     const std::vector<std::string> prints = {"first line", "", "third"};
     BitWriter writer;
     writer.WriteBits(5u, 3); // not on a byte edge
-    CHECK(EncodeLuaSyncLane(table, prints, writer));
+    EXPECT_TRUE(EncodeLuaSyncLane(table, prints, writer));
     BitReader reader(writer.Bytes());
-    CHECK(reader.ReadBits(3) == 5u);
+    EXPECT_EQ(reader.ReadBits(3), 5u);
     std::vector<std::uint8_t> decodedTable;
     std::vector<std::string> decodedPrints;
-    CHECK(DecodeLuaSyncLane(reader, decodedTable, decodedPrints));
-    CHECK(decodedTable == table);
-    CHECK(decodedPrints == prints);
+    EXPECT_TRUE(DecodeLuaSyncLane(reader, decodedTable, decodedPrints));
+    EXPECT_EQ(decodedTable, table);
+    EXPECT_EQ(decodedPrints, prints);
 
     // A size past what's there fails the reader and allocates nothing for it.
     BitWriter hostile;
@@ -1046,13 +1181,13 @@ namespace
     BitReader hostileReader(hostile.Bytes());
     std::vector<std::uint8_t> hostileTable;
     std::vector<std::string> hostilePrints;
-    CHECK(!DecodeLuaSyncLane(hostileReader, hostileTable, hostilePrints));
-    CHECK(hostileTable.empty());
-    CHECK(!hostileReader.Ok());
+    EXPECT_FALSE(DecodeLuaSyncLane(hostileReader, hostileTable, hostilePrints));
+    EXPECT_TRUE(hostileTable.empty());
+    EXPECT_FALSE(hostileReader.Ok());
 
     BitWriter tooLong;
     const std::vector<std::string> longLine = {std::string(kMaxLuaSyncLineBytes + 1u, 'x')};
-    CHECK(!EncodeLuaSyncLane({}, longLine, tooLong));
+    EXPECT_FALSE(EncodeLuaSyncLane({}, longLine, tooLong));
   }
 
   void TestBitWriterAppend()
@@ -1084,7 +1219,7 @@ namespace
         grids.push_back(std::move(slot));
       }
       BitWriter whole;
-      CHECK(EncodeGridLane(grids, before, whole));
+      EXPECT_TRUE(EncodeGridLane(grids, before, whole));
       BitWriter parts;
       parts.WriteVarUint(static_cast<std::uint32_t>(grids.size()));
       for (const SGridSlot& slot : grids) {
@@ -1092,22 +1227,22 @@ namespace
           return other.army == slot.army && other.kind == slot.kind;
         });
         BitWriter part;
-        CHECK(EncodeGridSlot(slot, held != before.end() ? &held->bits : nullptr, part));
+        EXPECT_TRUE(EncodeGridSlot(slot, held != before.end() ? &held->bits : nullptr, part));
         parts.Append(part);
       }
-      CHECK(parts.BitCount() == whole.BitCount());
-      CHECK(std::equal(parts.Bytes().begin(), parts.Bytes().end(), whole.Bytes().begin(), whole.Bytes().end()));
+      EXPECT_EQ(parts.BitCount(), whole.BitCount());
+      EXPECT_TRUE(std::equal(parts.Bytes().begin(), parts.Bytes().end(), whole.Bytes().begin(), whole.Bytes().end()));
     }
     BitWriter none;
     BitWriter some;
     some.WriteBits(5u, 3);
     some.Append(none);
-    CHECK(some.BitCount() == 3u);
+    EXPECT_EQ(some.BitCount(), 3u);
     none.Append(some);
-    CHECK(none.BitCount() == 3u);
+    EXPECT_EQ(none.BitCount(), 3u);
     none.Clear();
-    CHECK(none.BitCount() == 0u);
-    CHECK(none.Bytes().empty());
+    EXPECT_EQ(none.BitCount(), 0u);
+    EXPECT_TRUE(none.Bytes().empty());
   }
 
   void TestBlipUpdateHash()
@@ -1124,8 +1259,8 @@ namespace
     detail.weapons[0].secondary.words = {5};
     detail.attributes.restriction.words = {6};
     const std::uint64_t base = HashBlipUpdate(record, detail);
-    CHECK(base != 0u);
-    CHECK(base == HashBlipUpdate(record, detail));
+    EXPECT_TRUE(base != 0u);
+    EXPECT_EQ(base, HashBlipUpdate(record, detail));
     int field = 0;
     const auto changes = [&](auto&& change) {
       SEntityRecord r = record;
@@ -1134,75 +1269,206 @@ namespace
       ++field;
       if (HashBlipUpdate(r, d) == base) {
         std::printf("field %d doesn't move the hash\n", field);
-        CHECK(false);
+        EXPECT_TRUE(false);
       }
     };
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.mesh = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.scale[2] = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.attachParent = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.attachments[0] = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.attachments.push_back(0); });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.impact = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.scroll[3] = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.visualFlags = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.intel[7] = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.ambientSound = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.rumbleSound = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.appearance.underlay = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.position[2] = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.farPosition = true; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.farValue[2] = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.yawOnly = true; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.orientation = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.health = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.health = -0.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.maxHealth = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.fractionComplete = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.flags = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.unit.fuelRatio = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.unit.shieldRatio = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.unit.workProgress = 7.0f; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.unit.unitStates = std::uint64_t{1} << 40u; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.unit.scriptBits = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.unit.siloCounts[3] = 7; });
-    changes([](SEntityRecord& r, SUnitDetail&) { r.unit.unitFlags = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.creator = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.creationTick = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.stunTicks = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.jobType = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.fireState = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.siloMaxStorage[0] = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.siloMaxStorage[1] = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.selectionInheritor = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.customName = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.focusUnit = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.guardedUnit = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.targetBlip = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.didRefresh = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.reconFlags = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.economy[5] = 7.0f; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.commands[0] = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.buildQueue[0] = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].targets.firstWord = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].targets.words[0] = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].secondary.words[0] = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].layer = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].minRadius = 7.0f; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].maxRadius = 7.0f; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].effectiveRadius = 7.0f; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].minRangeVisual = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons[0].maxRangeVisual = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.weapons.push_back(SUnitWeapon{}); });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.attributes.blueprint = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.attributes.reserved04 = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.attributes.restriction.words[0] = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.attributes.scalars[11] = 7.0f; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.attributes.commandCaps = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.attributes.toggleCaps = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.attributes.flags[3] = 7; });
-    changes([](SEntityRecord&, SUnitDetail& d) { d.attributes.reserved6C = 7; });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.mesh = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.scale[2] = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.attachParent = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.attachments[0] = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.attachments.push_back(0);
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.impact = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.scroll[3] = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.visualFlags = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.intel[7] = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.ambientSound = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.rumbleSound = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.appearance.underlay = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.position[2] = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.farPosition = true;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.farValue[2] = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.yawOnly = true;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.orientation = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.health = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.health = -0.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.maxHealth = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.fractionComplete = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.flags = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.unit.fuelRatio = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.unit.shieldRatio = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.unit.workProgress = 7.0f;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.unit.unitStates = std::uint64_t{1} << 40u;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.unit.scriptBits = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.unit.siloCounts[3] = 7;
+    });
+    changes([](SEntityRecord& r, SUnitDetail&) {
+      r.unit.unitFlags = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.creator = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.creationTick = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.stunTicks = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.jobType = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.fireState = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.siloMaxStorage[0] = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.siloMaxStorage[1] = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.selectionInheritor = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.customName = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.focusUnit = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.guardedUnit = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.targetBlip = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.didRefresh = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.reconFlags = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.economy[5] = 7.0f;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.commands[0] = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.buildQueue[0] = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].targets.firstWord = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].targets.words[0] = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].secondary.words[0] = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].layer = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].minRadius = 7.0f;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].maxRadius = 7.0f;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].effectiveRadius = 7.0f;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].minRangeVisual = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons[0].maxRangeVisual = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.weapons.push_back(SUnitWeapon{});
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.attributes.blueprint = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.attributes.reserved04 = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.attributes.restriction.words[0] = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.attributes.scalars[11] = 7.0f;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.attributes.commandCaps = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.attributes.toggleCaps = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.attributes.flags[3] = 7;
+    });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.attributes.reserved6C = 7;
+    });
     // A value moved between two neighbours is another update.
-    changes([](SEntityRecord&, SUnitDetail& d) { d.commands = {}; d.buildQueue = {1, 2}; });
+    changes([](SEntityRecord&, SUnitDetail& d) {
+      d.commands = {};
+      d.buildQueue = {1, 2};
+    });
   }
 
   void TestFrameAppearance()
@@ -1213,7 +1479,7 @@ namespace
     plain.frameId = 1;
     plain.entities.resize(1);
     plain.entities[0].id = 7;
-    CHECK(CreationFields(plain.entities[0]) == (kEntityFields | kFieldKind));
+    EXPECT_EQ(CreationFields(plain.entities[0]), (kEntityFields | kFieldKind));
     const std::vector<std::uint8_t> plainBytes = Encode(plain, nullptr);
 
     SViewFrame dressed = plain;
@@ -1229,42 +1495,204 @@ namespace
     look.ambientSound = 0;
     look.rumbleSound = 7;
     look.underlay = 3;
-    CHECK(CreationFields(dressed.entities[0]) == (kEntityFields | kFieldKind | kAppearanceFields));
+    EXPECT_EQ(CreationFields(dressed.entities[0]), (kEntityFields | kFieldKind | kAppearanceFields));
     const std::vector<std::uint8_t> dressedBytes = Encode(dressed, nullptr);
-    CHECK(dressedBytes.size() > plainBytes.size() + 40u);
+    EXPECT_TRUE(dressedBytes.size() > plainBytes.size() + 40u);
     SViewFrame decoded{};
-    CHECK(Decode(dressedBytes, nullptr, decoded) && decoded == dressed);
+    EXPECT_TRUE(Decode(dressedBytes, nullptr, decoded) && decoded == dressed);
 
     // A change of one appearance field sends that field alone.
     SViewFrame moved = dressed;
     moved.frameId = 2;
     moved.entities[0].appearance.scale[0] = 3.0f;
-    CHECK(ChangedFields(dressed.entities[0], moved.entities[0]) == kFieldScale);
+    EXPECT_EQ(ChangedFields(dressed.entities[0], moved.entities[0]), kFieldScale);
     const std::vector<std::uint8_t> movedBytes = Encode(moved, &dressed);
-    CHECK(Decode(movedBytes, &dressed, decoded) && decoded == moved);
+    EXPECT_TRUE(Decode(movedBytes, &dressed, decoded) && decoded == moved);
 
     // A texture scroll that shifts (new start = old end) costs one bit and the end; any other
     // change of the scroll sends all four floats.
     SViewFrame shifted = moved;
     shifted.frameId = 3;
-    shifted.entities[0].appearance.scroll = {moved.entities[0].appearance.scroll[2], moved.entities[0].appearance.scroll[3], 5.0f, 6.0f};
+    shifted.entities[0].appearance.scroll = {
+      moved.entities[0].appearance.scroll[2], moved.entities[0].appearance.scroll[3], 5.0f, 6.0f
+    };
     SViewFrame jumped = moved;
     jumped.frameId = 3;
     jumped.entities[0].appearance.scroll = {7.0f, 8.0f, 5.0f, 6.0f};
     const std::vector<std::uint8_t> shiftedBytes = Encode(shifted, &moved);
     const std::vector<std::uint8_t> jumpedBytes = Encode(jumped, &moved);
-    CHECK(shiftedBytes.size() + 8u == jumpedBytes.size());
-    CHECK(Decode(shiftedBytes, &moved, decoded) && decoded == shifted);
-    CHECK(Decode(jumpedBytes, &moved, decoded) && decoded == jumped);
+    EXPECT_EQ(shiftedBytes.size() + 8u, jumpedBytes.size());
+    EXPECT_TRUE(Decode(shiftedBytes, &moved, decoded) && decoded == shifted);
+    EXPECT_TRUE(Decode(jumpedBytes, &moved, decoded) && decoded == jumped);
+
+    // Entities 11: a changed position, and a changed yaw, go as their step from the baseline's record when that
+    // is shorter; a jump goes whole. Both read back exactly, a turn across 0 too.
+    SViewFrame placed = shifted;
+    placed.frameId = 4;
+    placed.entities[0].position = {40000u, 3000u, 50000u};
+    placed.entities[0].yawOnly = true;
+    placed.entities[0].orientation = 1000u;
+    EXPECT_TRUE(Decode(Encode(placed, &shifted), &shifted, decoded) && decoded == placed);
+    SViewFrame stepped = placed;
+    stepped.frameId = 5;
+    stepped.entities[0].position = {40019u, 2998u, 49990u};
+    stepped.entities[0].orientation = 990u;
+    SViewFrame leapt = placed;
+    leapt.frameId = 5;
+    leapt.entities[0].position = {1000u, 60000u, 90000u};
+    leapt.entities[0].orientation = 41000u;
+    const std::vector<std::uint8_t> steppedBytes = Encode(stepped, &placed);
+    const std::vector<std::uint8_t> leaptBytes = Encode(leapt, &placed);
+    EXPECT_TRUE(steppedBytes.size() + 4u <= leaptBytes.size());
+    EXPECT_TRUE(Decode(steppedBytes, &placed, decoded) && decoded == stepped);
+    EXPECT_TRUE(Decode(leaptBytes, &placed, decoded) && decoded == leapt);
+    SViewFrame wrapped = stepped;
+    wrapped.frameId = 6;
+    wrapped.entities[0].orientation = 65530u;
+    SViewFrame nearZero = stepped;
+    nearZero.frameId = 6;
+    nearZero.entities[0].orientation = 3u;
+    EXPECT_TRUE(Decode(Encode(nearZero, &stepped), &stepped, decoded) && decoded == nearZero);
+    EXPECT_TRUE(Decode(Encode(wrapped, &nearZero), &nearZero, decoded) && decoded == wrapped);
+    EXPECT_TRUE(
+      PositionFieldBits(stepped.entities[0], &placed.entities[0], kCodec) <
+      PositionFieldBits(stepped.entities[0], nullptr, kCodec)
+    );
+
+    // Entities 13 (#312): a full rotation goes as its packed components' steps from the baseline's when both are
+    // full, share their largest component and the steps are shorter; a change of largest component, or a step to a
+    // component's ends, still reads back exactly.
+    {
+      const auto pack =
+        [](const std::uint32_t largest, const std::uint32_t a, const std::uint32_t b, const std::uint32_t c) {
+        return largest | (a << 2u) | (b << 12u) | (c << 22u);
+      };
+      SViewFrame tilted = wrapped;
+      tilted.frameId = 7;
+      tilted.entities[0].yawOnly = false;
+      tilted.entities[0].orientation = pack(3u, 500u, 20u, 1000u);
+      EXPECT_TRUE(Decode(Encode(tilted, &wrapped), &wrapped, decoded) && decoded == tilted);
+      SViewFrame rocked = tilted;
+      rocked.frameId = 8;
+      rocked.entities[0].orientation = pack(3u, 503u, 17u, 1023u);
+      SViewFrame flipped = tilted;
+      flipped.frameId = 8;
+      flipped.entities[0].orientation = pack(1u, 503u, 17u, 1001u);
+      SViewFrame ends = tilted;
+      ends.frameId = 8;
+      ends.entities[0].orientation = pack(3u, 0u, 0u, 1023u);
+      const std::vector<std::uint8_t> rockedBytes = Encode(rocked, &tilted);
+      const std::vector<std::uint8_t> flippedBytes = Encode(flipped, &tilted);
+      EXPECT_TRUE(rockedBytes.size() + 2u <= flippedBytes.size());
+      EXPECT_TRUE(Decode(rockedBytes, &tilted, decoded) && decoded == rocked);
+      EXPECT_TRUE(Decode(flippedBytes, &tilted, decoded) && decoded == flipped);
+      EXPECT_TRUE(Decode(Encode(ends, &tilted), &tilted, decoded) && decoded == ends);
+      EXPECT_TRUE(
+        OrientationFieldBits(rocked.entities[0], &tilted.entities[0]) <
+        OrientationFieldBits(flipped.entities[0], &tilted.entities[0])
+      );
+      EXPECT_EQ(OrientationFieldBits(flipped.entities[0], &tilted.entities[0]), 2 + 32);
+      EXPECT_EQ(OrientationFieldBits(tilted.entities[0], &wrapped.entities[0]), 1 + 32);
+    }
+
+    // Entities 12: a change's id gap and mask (CChangeHeaders). Alone: ids close and far apart (to
+    // the top of the range), masks from a pool of 40 (more than the 15 kept), repeats; what `Bits`
+    // counts is what `Write` writes, and every id and mask reads back.
+    {
+      std::mt19937 rng(0x12u);
+      for (int round = 0; round < 50; ++round) {
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> headers;
+        std::uint64_t id = rng() % 3u == 0u ? 0u : rng();
+        std::uint32_t pool[40];
+        for (std::uint32_t& mask : pool) {
+          mask = (rng() | 1u) & kAllFields;
+        }
+        while (id <= 0xFFFFFFFFull && headers.size() < 400u) {
+          const std::uint32_t fields = rng() % 2u == 0u && !headers.empty() ? headers.back().second : pool[rng() % 40u];
+          headers.emplace_back(static_cast<std::uint32_t>(id), fields);
+          const std::uint32_t kind = rng() % 10u;
+          id += 1u + (kind < 7u ? rng() % 4u : kind < 9u ? rng() % 5000u : rng());
+        }
+        if (round == 0 && (headers.empty() || headers.back().first != 0xFFFFFFFFu)) {
+          headers.emplace_back(0xFFFFFFFFu, kAllFields); // the largest id, after any gap
+        }
+        BitWriter writer;
+        CChangeHeaders write;
+        CChangeHeaders count;
+        std::size_t counted = 0;
+        for (const auto& [headerId, fields] : headers) {
+          write.Write(writer, headerId, fields);
+          counted += static_cast<std::size_t>(count.Bits(headerId, fields));
+        }
+        EXPECT_EQ(counted, writer.BitCount());
+        const std::vector<std::uint8_t> bytes = Bytes(writer);
+        BitReader reader(bytes);
+        CChangeHeaders read;
+        bool same = true;
+        for (const auto& [headerId, fields] : headers) {
+          std::uint32_t readId = 0;
+          std::uint32_t readFields = 0;
+          same = same && read.Read(reader, readId, readFields) && readId == headerId && readFields == fields;
+        }
+        EXPECT_TRUE(same);
+      }
+      // A place no mask has taken yet is refused, as is a gap past the top of the range.
+      BitWriter badPlace;
+      badPlace.WriteVarUint(5u);
+      badPlace.WriteBits(0b00100u, 5); // place 3 (order-0 code 00100) with no masks yet
+      const std::vector<std::uint8_t> badPlaceBytes = Bytes(badPlace);
+      BitReader badPlaceReader(badPlaceBytes);
+      CChangeHeaders badPlaceHeaders;
+      std::uint32_t unusedId = 0;
+      std::uint32_t unusedFields = 0;
+      EXPECT_FALSE(badPlaceHeaders.Read(badPlaceReader, unusedId, unusedFields));
+    }
+    // In frames: 40 entities, each frame changing them in 63 different field combinations, so a frame
+    // holds more masks than are kept; each frame reads back exactly against the one before.
+    {
+      SViewFrame previous = placed;
+      previous.frameId = 30;
+      previous.entities.clear();
+      std::uint32_t nextId = 3;
+      for (int i = 0; i < 40; ++i) {
+        SEntityRecord record = placed.entities[0];
+        record.id = nextId;
+        nextId += i % 5 == 4 ? 70000u : 1u + static_cast<std::uint32_t>(i % 3);
+        previous.entities.push_back(record);
+      }
+      for (std::uint32_t round = 1; round <= 6; ++round) {
+        SViewFrame next = previous;
+        next.frameId = previous.frameId + 1u;
+        for (std::size_t i = 0; i < next.entities.size(); ++i) {
+          const std::uint32_t combination = (static_cast<std::uint32_t>(i) * 5u + round * 11u) % 63u + 1u;
+          SEntityRecord& record = next.entities[i];
+          if ((combination & 1u) != 0u)
+            record.position[0] += 3u;
+          if ((combination & 2u) != 0u)
+            record.orientation += 7u;
+          if ((combination & 4u) != 0u)
+            record.health += 1.0f;
+          if ((combination & 8u) != 0u)
+            record.maxHealth += 2.0f;
+          if ((combination & 16u) != 0u)
+            record.fractionComplete = record.fractionComplete > 0.5f ? 0.25f : 0.75f;
+          if ((combination & 32u) != 0u)
+            record.flags ^= 1u;
+        }
+        EXPECT_TRUE(Decode(Encode(next, &previous), &previous, decoded) && decoded == next);
+        previous = next;
+      }
+    }
 
     // A creation mask without the basic fields, or with unit fields for a non-unit, is refused.
-    for (const std::uint32_t mask : {std::uint32_t{kFieldKind}, kEntityFields | kFieldKind | kFieldUnitFuel, kAllFields + 1u}) {
+    for (const std::uint32_t mask :
+         {std::uint32_t{kFieldKind}, kEntityFields | kFieldKind | kFieldUnitFuel, kAllFields + 1u}) {
       BitWriter writer;
       writer.WriteBits(kLaneVersions[static_cast<std::size_t>(ELane::Entities)], 16);
       writer.WriteBits(1u, 32);
       writer.WriteBits(kNoBaseline, 32);
       writer.WriteBits(0u, 32);
-      writer.WriteVarUint(0u); // sim rate
+      writer.WriteVarUint(0u);  // sim rate
       writer.WriteBits(0u, 32); // server clock
       writer.WriteVarUint(0u);
       writer.WriteVarUint(1u);
@@ -1274,15 +1702,15 @@ namespace
       for (int i = 0; i < 40; ++i) {
         writer.WriteBits(0u, 32);
       }
-      CHECK(!Decode(Bytes(writer), nullptr, decoded));
+      EXPECT_FALSE(Decode(Bytes(writer), nullptr, decoded));
     }
 
     // Too many attachments are refused.
     SViewFrame crowded = plain;
     crowded.entities[0].appearance.attachments.resize(SAppearance::kMaxAttachments + 1u);
     BitWriter crowdedWriter;
-    CHECK(EncodeFrame(crowded, nullptr, kCodec, crowdedWriter));
-    CHECK(!Decode(Bytes(crowdedWriter), nullptr, decoded));
+    EXPECT_TRUE(EncodeFrame(crowded, nullptr, kCodec, crowdedWriter));
+    EXPECT_FALSE(Decode(Bytes(crowdedWriter), nullptr, decoded));
   }
 
   void TestFrameUnchangedIsSmall()
@@ -1295,17 +1723,17 @@ namespace
     SViewFrame same = frame;
     same.frameId += 1;
     const std::vector<std::uint8_t> bytes = Encode(same, &frame);
-    CHECK(bytes.size() == 2u + 4u + 4u + 4u + 1u + 4u + 3u); // header (with the beat stamps) and three empty sections
+    EXPECT_EQ(bytes.size(), 2u + 4u + 4u + 4u + 1u + 4u + 3u); // header (with the beat stamps) and three empty sections
     SViewFrame decoded{};
-    CHECK(Decode(bytes, &frame, decoded) && decoded == same);
+    EXPECT_TRUE(Decode(bytes, &frame, decoded) && decoded == same);
 
     // One changed health costs gap + mask + 4 bytes.
     SViewFrame oneChange = same;
     oneChange.frameId += 1;
     oneChange.entities[oneChange.entities.size() / 2].health += 1.0f;
     const std::vector<std::uint8_t> oneBytes = Encode(oneChange, &frame);
-    CHECK(oneBytes.size() <= bytes.size() + 1u + 3u + 1u + 4u);
-    CHECK(Decode(oneBytes, &frame, decoded) && decoded == oneChange);
+    EXPECT_TRUE(oneBytes.size() <= bytes.size() + 1u + 3u + 1u + 4u);
+    EXPECT_TRUE(Decode(oneBytes, &frame, decoded) && decoded == oneChange);
   }
 
   void TestFrameBaselineChecks()
@@ -1316,21 +1744,21 @@ namespace
     const SViewFrame third = generator.Next();
     const std::vector<std::uint8_t> delta = Encode(third, &second);
     const std::vector<std::uint8_t> full = Encode(third, nullptr);
-    CHECK(PeekFrameBaseline(delta) == second.frameId);
-    CHECK(PeekFrameBaseline(full) == kNoBaseline);
+    EXPECT_EQ(PeekFrameBaseline(delta), second.frameId);
+    EXPECT_EQ(PeekFrameBaseline(full), kNoBaseline);
 
     SViewFrame out{};
-    CHECK(!Decode(delta, nullptr, out));  // needs its baseline
-    CHECK(!Decode(delta, &first, out));   // another baseline
-    CHECK(!Decode(full, &second, out));   // a full frame takes none
-    CHECK(Decode(delta, &second, out) && out == third);
+    EXPECT_FALSE(Decode(delta, nullptr, out)); // needs its baseline
+    EXPECT_FALSE(Decode(delta, &first, out));  // another baseline
+    EXPECT_FALSE(Decode(full, &second, out));  // a full frame takes none
+    EXPECT_TRUE(Decode(delta, &second, out) && out == third);
 
     // A baseline with the right id but other content is caught when the removals or changes
     // name entities it does not have.
     SViewFrame impostor = second;
     impostor.entities.clear();
     const bool mismatch = Decode(delta, &impostor, out);
-    CHECK(!mismatch || out == third);
+    EXPECT_TRUE(!mismatch || out == third);
   }
 
   void TestEncodeRejects()
@@ -1340,19 +1768,19 @@ namespace
     unsorted.entities[0].id = 5;
     unsorted.entities[1].id = 5;
     BitWriter writer;
-    CHECK(!EncodeFrame(unsorted, nullptr, kCodec, writer));
+    EXPECT_FALSE(EncodeFrame(unsorted, nullptr, kCodec, writer));
 
     SViewFrame outOfRange{};
     outOfRange.entities.resize(1);
     outOfRange.entities[0].position[1] = kCodec.position.y.MaxQuantized() + 1u;
-    CHECK(!EncodeFrame(outOfRange, nullptr, kCodec, writer));
+    EXPECT_FALSE(EncodeFrame(outOfRange, nullptr, kCodec, writer));
 
     SViewFrame tooMany{};
     tooMany.entities.resize(kCodec.maxEntities + 1u);
     for (std::uint32_t i = 0; i < tooMany.entities.size(); ++i) {
       tooMany.entities[i].id = i;
     }
-    CHECK(!EncodeFrame(tooMany, nullptr, kCodec, writer));
+    EXPECT_FALSE(EncodeFrame(tooMany, nullptr, kCodec, writer));
   }
 
   void TestDecoderTruncation()
@@ -1369,7 +1797,7 @@ namespace
       SViewFrame out{};
       // Cutting only padding bits of the last byte cannot happen here (whole bytes are cut),
       // so every shorter buffer must be refused.
-      CHECK(!Decode(cut, &previous, out));
+      EXPECT_FALSE(Decode(cut, &previous, out));
     }
   }
 
@@ -1396,7 +1824,7 @@ namespace
         // A flip inside a field value decodes to another valid frame; it must still be well
         // formed and within the codec's limits (the frame hash, WPR.30, catches it later).
         ++accepted;
-        CHECK(out.IsWellFormed() && out.entities.size() <= kCodec.maxEntities);
+        EXPECT_TRUE(out.IsWellFormed() && out.entities.size() <= kCodec.maxEntities);
       }
     }
     std::printf("  corrupted deltas accepted as other valid frames: %d of 4000\n", accepted);
@@ -1408,7 +1836,7 @@ namespace
       }
       SViewFrame out{};
       if (Decode(garbage, nullptr, out)) {
-        CHECK(out.IsWellFormed() && out.entities.size() <= kCodec.maxEntities);
+        EXPECT_TRUE(out.IsWellFormed() && out.entities.size() <= kCodec.maxEntities);
       }
     }
   }
@@ -1423,13 +1851,13 @@ namespace
       writer.WriteBits(1u, 32);
       writer.WriteBits(kNoBaseline, 32);
       writer.WriteBits(0u, 32);
-      writer.WriteVarUint(0u); // sim rate
-      writer.WriteBits(0u, 32); // server clock
+      writer.WriteVarUint(0u);    // sim rate
+      writer.WriteBits(0u, 32);   // server clock
       writer.WriteVarUint(0u);    // removed
       writer.WriteVarUint(count); // created
       const std::vector<std::uint8_t> bytes = Bytes(writer);
       SViewFrame out{};
-      CHECK(!Decode(bytes, nullptr, out));
+      EXPECT_FALSE(Decode(bytes, nullptr, out));
     }
 
     // Removing an id the baseline does not have.
@@ -1442,14 +1870,14 @@ namespace
     writer.WriteBits(10u, 32);
     writer.WriteBits(9u, 32);
     writer.WriteBits(0u, 32);
-    writer.WriteVarUint(0u); // sim rate
+    writer.WriteVarUint(0u);  // sim rate
     writer.WriteBits(0u, 32); // server clock
     writer.WriteVarUint(1u);
     writer.WriteVarUint(11u); // id 11: not in the baseline
     writer.WriteVarUint(0u);
     writer.WriteVarUint(0u);
     SViewFrame out{};
-    CHECK(!Decode(Bytes(writer), &baseline, out));
+    EXPECT_FALSE(Decode(Bytes(writer), &baseline, out));
 
     // Creating an id the baseline already has.
     BitWriter dup;
@@ -1457,7 +1885,7 @@ namespace
     dup.WriteBits(10u, 32);
     dup.WriteBits(9u, 32);
     dup.WriteBits(0u, 32);
-    dup.WriteVarUint(0u); // sim rate
+    dup.WriteVarUint(0u);  // sim rate
     dup.WriteBits(0u, 32); // server clock
     dup.WriteVarUint(0u);
     dup.WriteVarUint(1u);
@@ -1479,12 +1907,12 @@ namespace
     dup.WriteVarUint(COrdinalTable::kNone);
     dup.WriteBits(0xFFu, 8);
     dup.WriteVarUint(0u);
-    CHECK(!Decode(Bytes(dup), &baseline, out));
+    EXPECT_FALSE(Decode(Bytes(dup), &baseline, out));
     // The same bytes against a baseline without id 10 are a valid frame: the refusal above is
     // the duplicate, not the encoding.
     SViewFrame other = baseline;
     other.entities[0].id = 20;
-    CHECK(Decode(Bytes(dup), &other, out) && out.entities.size() == 2u && out.entities[0].id == 10u);
+    EXPECT_TRUE(Decode(Bytes(dup), &other, out) && out.entities.size() == 2u && out.entities[0].id == 10u);
 
     // A change with an empty field mask.
     BitWriter empty;
@@ -1492,14 +1920,14 @@ namespace
     empty.WriteBits(10u, 32);
     empty.WriteBits(9u, 32);
     empty.WriteBits(0u, 32);
-    empty.WriteVarUint(0u); // sim rate
+    empty.WriteVarUint(0u);  // sim rate
     empty.WriteBits(0u, 32); // server clock
     empty.WriteVarUint(0u);
     empty.WriteVarUint(0u);
     empty.WriteVarUint(1u);
     empty.WriteVarUint(10u);
     empty.WriteBits(0u, 8);
-    CHECK(!Decode(Bytes(empty), &baseline, out));
+    EXPECT_FALSE(Decode(Bytes(empty), &baseline, out));
   }
 
   // --- Sound table ------------------------------------------------------------------------
@@ -1512,49 +1940,52 @@ namespace
     CSessionTableReaders client;
     const SSoundEntry loop{"UEL_Unit", "UEL0001_Move_Loop", "UnitMove_LodCutoff", "UEL0001_Move_Loop"};
     const SSoundEntry plain{"Explosions", "Explosion_Small", "", ""};
-    CHECK(server.Sound(loop) == 0u && server.Sound(plain) == 1u && server.Sound(loop) == 0u);
-    CHECK(server.Name("/textures/ui/common/game/strategicicons/icon_land_rest.dds") == 0u);
-    CHECK(server.HasPending());
+    EXPECT_TRUE(server.Sound(loop) == 0u && server.Sound(plain) == 1u && server.Sound(loop) == 0u);
+    EXPECT_EQ(server.Name("/textures/ui/common/game/strategicicons/icon_land_rest.dds"), 0u);
+    EXPECT_TRUE(server.HasPending());
     BitWriter first;
     server.WritePending(first);
-    CHECK(!server.HasPending());
+    EXPECT_FALSE(server.HasPending());
     const std::vector<std::uint8_t> firstBytes = Bytes(first);
     BitReader firstIn(firstBytes);
-    CHECK(client.Read(firstIn));
-    CHECK(client.Sounds().Size() == 2u && client.Sounds().Find(0) != nullptr && *client.Sounds().Find(0) == loop);
-    CHECK(client.Names().Size() == 1u && *client.Names().Find(0) == "/textures/ui/common/game/strategicicons/icon_land_rest.dds");
+    EXPECT_TRUE(client.Read(firstIn));
+    EXPECT_TRUE(client.Sounds().Size() == 2u && client.Sounds().Find(0) != nullptr && *client.Sounds().Find(0) == loop);
+    EXPECT_TRUE(
+      client.Names().Size() == 1u &&
+      *client.Names().Find(0) == "/textures/ui/common/game/strategicicons/icon_land_rest.dds"
+    );
 
     // A second batch adds only what is new; an empty batch is four zero counts.
-    CHECK(server.Name("/textures/ui/common/game/strategicicons/icon_land_rest.dds") == 0u);
-    CHECK(server.Name("/a.dds") == 1u);
+    EXPECT_EQ(server.Name("/textures/ui/common/game/strategicicons/icon_land_rest.dds"), 0u);
+    EXPECT_EQ(server.Name("/a.dds"), 1u);
     BitWriter second;
     server.WritePending(second);
     const std::vector<std::uint8_t> secondBytes = Bytes(second);
     BitReader secondIn(secondBytes);
-    CHECK(client.Read(secondIn) && client.Names().Size() == 2u && client.Sounds().Size() == 2u);
+    EXPECT_TRUE(client.Read(secondIn) && client.Names().Size() == 2u && client.Sounds().Size() == 2u);
     BitWriter empty;
     server.WritePending(empty);
-    CHECK(Bytes(empty).size() == 4u);
+    EXPECT_EQ(Bytes(empty).size(), 4u);
 
     // Resource deposits: each one once, in order, across records; negative cells survive.
     const SDeposit mass{1, 10, 12, 12, 14};
     const SDeposit hydro{2, -3, 500, 1, 504};
-    CHECK(server.Deposit(mass) && server.Deposit(hydro) && server.DepositCount() == 2u && server.HasPending());
+    EXPECT_TRUE(server.Deposit(mass) && server.Deposit(hydro) && server.DepositCount() == 2u && server.HasPending());
     BitWriter third;
     server.WritePending(third);
     const std::vector<std::uint8_t> thirdBytes = Bytes(third);
     BitReader thirdIn(thirdBytes);
-    CHECK(client.Read(thirdIn) && client.Deposits() == (std::vector<SDeposit>{mass, hydro}));
-    CHECK(server.Deposit(mass) && server.DepositCount() == 3u);
+    EXPECT_TRUE(client.Read(thirdIn) && client.Deposits() == (std::vector<SDeposit>{mass, hydro}));
+    EXPECT_TRUE(server.Deposit(mass) && server.DepositCount() == 3u);
     BitWriter fourth;
     server.WritePending(fourth);
     const std::vector<std::uint8_t> fourthBytes = Bytes(fourth);
     BitReader fourthIn(fourthBytes);
-    CHECK(client.Read(fourthIn) && client.Deposits().size() == 3u && client.Deposits()[2] == mass);
+    EXPECT_TRUE(client.Read(fourthIn) && client.Deposits().size() == 3u && client.Deposits()[2] == mass);
     for (std::size_t length = 0; length < thirdBytes.size(); ++length) {
       CSessionTableReaders cut;
       BitReader cutIn(std::span<const std::uint8_t>(thirdBytes.data(), length));
-      CHECK(!cut.Read(cutIn));
+      EXPECT_FALSE(cut.Read(cutIn));
     }
     // More deposits than a session may have are refused before any is read.
     BitWriter flood;
@@ -1564,7 +1995,7 @@ namespace
     const std::vector<std::uint8_t> floodBytes = Bytes(flood);
     CSessionTableReaders flooded;
     BitReader floodIn(floodBytes);
-    CHECK(!flooded.Read(floodIn) && flooded.Deposits().empty());
+    EXPECT_TRUE(!flooded.Read(floodIn) && flooded.Deposits().empty());
 
     // Terrain edits: rectangles and heights come back exactly, once; a flat edit costs about a
     // byte a cell; an edit outside the field carries its rectangle alone.
@@ -1576,23 +2007,23 @@ namespace
     STerrainEdit outside{};
     outside.dirty = {2000, 2000, 2004, 2004};
     outside.cells = {0, 0, -1, -1};
-    CHECK(server.TerrainEdit(flat) && server.TerrainEdit(outside));
+    EXPECT_TRUE(server.TerrainEdit(flat) && server.TerrainEdit(outside));
     STerrainEdit wrong = flat;
     wrong.heights.pop_back();
-    CHECK(!server.TerrainEdit(wrong));
+    EXPECT_FALSE(server.TerrainEdit(wrong));
     BitWriter fifth;
     server.WritePending(fifth);
     const std::vector<std::uint8_t> fifthBytes = Bytes(fifth);
-    CHECK(fifthBytes.size() < 60u);
+    EXPECT_TRUE(fifthBytes.size() < 60u);
     BitReader fifthIn(fifthBytes);
-    CHECK(client.Read(fifthIn));
+    EXPECT_TRUE(client.Read(fifthIn));
     const std::vector<STerrainEdit> taken = client.TakeTerrainEdits();
-    CHECK(taken.size() == 2u && taken[0] == flat && taken[1] == outside);
-    CHECK(client.TakeTerrainEdits().empty());
+    EXPECT_TRUE(taken.size() == 2u && taken[0] == flat && taken[1] == outside);
+    EXPECT_TRUE(client.TakeTerrainEdits().empty());
     for (std::size_t length = 0; length < fifthBytes.size(); ++length) {
       CSessionTableReaders cut;
       BitReader cutIn(std::span<const std::uint8_t>(fifthBytes.data(), length));
-      CHECK(!cut.Read(cutIn));
+      EXPECT_FALSE(cut.Read(cutIn));
     }
     // A height out of range and an edit larger than allowed are refused.
     BitWriter tall;
@@ -1611,7 +2042,7 @@ namespace
     CSessionTableReaders tallReader;
     const std::vector<std::uint8_t> tallBytes = Bytes(tall);
     BitReader tallIn(tallBytes);
-    CHECK(!tallReader.Read(tallIn));
+    EXPECT_FALSE(tallReader.Read(tallIn));
     BitWriter huge;
     huge.WriteVarUint(0u);
     huge.WriteVarUint(0u);
@@ -1628,18 +2059,18 @@ namespace
     CSessionTableReaders hugeReader;
     const std::vector<std::uint8_t> hugeBytes = Bytes(huge);
     BitReader hugeIn(hugeBytes);
-    CHECK(!hugeReader.Read(hugeIn));
+    EXPECT_FALSE(hugeReader.Read(hugeIn));
 
     // The same record twice is refused (ids out of order); truncation everywhere is refused.
     CSessionTableReaders again;
     BitReader againIn(firstBytes);
-    CHECK(again.Read(againIn));
+    EXPECT_TRUE(again.Read(againIn));
     BitReader repeatIn(firstBytes);
-    CHECK(!again.Read(repeatIn));
+    EXPECT_FALSE(again.Read(repeatIn));
     for (std::size_t length = 0; length < firstBytes.size(); ++length) {
       CSessionTableReaders cut;
       BitReader cutIn(std::span<const std::uint8_t>(firstBytes.data(), length));
-      CHECK(!cut.Read(cutIn));
+      EXPECT_FALSE(cut.Read(cutIn));
     }
     // An oversized name.
     BitWriter big;
@@ -1653,7 +2084,7 @@ namespace
     CSessionTableReaders bigReader;
     const std::vector<std::uint8_t> bigBytes = Bytes(big);
     BitReader bigIn(bigBytes);
-    CHECK(!bigReader.Read(bigIn) && bigReader.Names().Size() == 0u);
+    EXPECT_TRUE(!bigReader.Read(bigIn) && bigReader.Names().Size() == 0u);
   }
 
   void TestRoster()
@@ -1682,37 +2113,95 @@ namespace
     const std::vector<std::uint8_t> bytes = Bytes(writer);
     BitReader reader(bytes);
     const std::optional<SRoster> back = SRoster::Decode(reader);
-    CHECK(back && *back == roster);
+    EXPECT_TRUE(back && *back == roster);
     for (std::size_t length = 0; length < bytes.size(); ++length) {
       BitReader cut(std::span<const std::uint8_t>(bytes.data(), length));
-      CHECK(!SRoster::Decode(cut));
+      EXPECT_FALSE(SRoster::Decode(cut));
     }
     BitWriter many;
     many.WriteVarUint(0u);
     many.WriteVarUint(static_cast<std::uint32_t>(SRoster::kMaxEntries + 1u));
     const std::vector<std::uint8_t> manyBytes = Bytes(many);
     BitReader manyIn(manyBytes);
-    CHECK(!SRoster::Decode(manyIn));
+    EXPECT_FALSE(SRoster::Decode(manyIn));
     SRoster other = roster;
     other.entries[0].ping = 42.0f;
-    CHECK(!(other == roster));
+    EXPECT_TRUE(!(other == roster));
+  }
+
+  void TestSeatRosterMessages()
+  {
+    // Plan WP11.4: the roster and chat seat messages, as the server, the driver and the probe read them.
+    SRoster roster{};
+    roster.localIndex = 2;
+    SRosterEntry entry{};
+    entry.index = 2;
+    entry.name = "Player";
+    entry.ownerId = 1001;
+    entry.sources = {1};
+    entry.ping = 35.0f;
+    roster.entries = {entry};
+    const std::vector<std::uint8_t> message = faf::remote::EncodeRosterMessage(roster);
+    EXPECT_TRUE(!message.empty() && message[0] == static_cast<std::uint8_t>(faf::remote::net::ESeatMessage::Roster));
+    const std::optional<SRoster> back = faf::remote::DecodeRosterMessage(message);
+    EXPECT_TRUE(back && *back == roster);
+    EXPECT_FALSE(faf::remote::DecodeRosterMessage(std::span<const std::uint8_t>(message.data(), 1u)));
+
+    SRoster pinged = roster;
+    pinged.entries[0].ping = 80.0f;
+    pinged.entries[0].quiet = 5.0f;
+    EXPECT_TRUE(faf::remote::SameBesidesTimes(roster, pinged) && !(roster == pinged));
+    SRoster dropped = roster;
+    dropped.entries[0].connected = false;
+    EXPECT_FALSE(faf::remote::SameBesidesTimes(roster, dropped));
+
+    const std::string line = "hello";
+    const std::span<const std::uint8_t> text(reinterpret_cast<const std::uint8_t*>(line.data()), line.size());
+    const std::vector<std::uint8_t> chat = faf::remote::EncodeChatMessage(63, text);
+    int index = -1;
+    std::span<const std::uint8_t> payload;
+    EXPECT_TRUE(faf::remote::DecodeChatMessage(chat, index, payload) && index == 63 && payload.size() == line.size());
+    EXPECT_TRUE(std::equal(payload.begin(), payload.end(), text.begin()));
+    EXPECT_FALSE(faf::remote::DecodeChatMessage(std::span<const std::uint8_t>(chat.data(), 1u), index, payload));
+    EXPECT_FALSE(
+      faf::remote::DecodeChatMessage(faf::remote::EncodeChatMessage(64, text), index, payload)
+    ); // past the roster's entries
+    const std::vector<std::uint8_t> big(faf::remote::kMaxChatBytes + 1u, std::uint8_t{'x'});
+    EXPECT_FALSE(faf::remote::DecodeChatMessage(faf::remote::EncodeChatMessage(1, big), index, payload));
+    const std::uint8_t endless[] = {
+      static_cast<std::uint8_t>(faf::remote::net::ESeatMessage::Chat), 0x80u, 0x80u, 0x80u, 0x80u
+    };
+    EXPECT_FALSE(faf::remote::DecodeChatMessage(endless, index, payload));
+    EXPECT_TRUE(
+      faf::remote::DecodeChatMessage(faf::remote::EncodeChatMessage(0, {}), index, payload) && index == 0 &&
+      payload.empty()
+    );
+
+    faf::remote::CChatBudget budget;
+    std::size_t taken = 0;
+    for (int i = 0; i < 200; ++i) {
+      taken += budget.Take(1'000'000u) ? 1u : 0u;
+    }
+    EXPECT_TRUE(taken == static_cast<std::size_t>(faf::remote::CChatBudget::kBurst));
+    EXPECT_FALSE(budget.Take(1'000'000u));
+    EXPECT_TRUE(budget.Take(1'100'000u)); // a tenth of a second later: 4 more
   }
 
   void TestSoundTable()
   {
     CSoundTableWriter writer;
-    const SSoundEntry a{"UEL_Weapon", "UEL0101_MachineGun", ""};
-    const SSoundEntry b{"UEL_Weapon", "UEL0101_MachineGun", "Weapon_LodCutoff"};
-    const SSoundEntry c{"Explosions", "Explosion_Large", ""};
+    const SSoundEntry a{"UEL_Weapon", "UEL0101_MachineGun", "", ""};
+    const SSoundEntry b{"UEL_Weapon", "UEL0101_MachineGun", "Weapon_LodCutoff", ""};
+    const SSoundEntry c{"Explosions", "Explosion_Large", "", ""};
     const auto ia = writer.Intern(a);
     const auto ib = writer.Intern(b);
     const auto ia2 = writer.Intern(a);
     const auto ic = writer.Intern(c);
-    CHECK(ia.isNew && ia.id == 0u);
-    CHECK(ib.isNew && ib.id == 1u); // the LOD cutoff is part of the key
-    CHECK(!ia2.isNew && ia2.id == 0u);
-    CHECK(ic.isNew && ic.id == 2u);
-    CHECK(writer.Size() == 3u);
+    EXPECT_TRUE(ia.isNew && ia.id == 0u);
+    EXPECT_TRUE(ib.isNew && ib.id == 1u); // the LOD cutoff is part of the key
+    EXPECT_TRUE(!ia2.isNew && ia2.id == 0u);
+    EXPECT_TRUE(ic.isNew && ic.id == 2u);
+    EXPECT_EQ(writer.Size(), 3u);
 
     BitWriter stream;
     for (std::uint32_t id = 0; id < writer.Size(); ++id) {
@@ -1721,12 +2210,12 @@ namespace
     const std::vector<std::uint8_t> bytes = Bytes(stream);
     CSoundTableReader reader;
     BitReader in(bytes);
-    CHECK(reader.ReadEntry(in) && reader.ReadEntry(in) && reader.ReadEntry(in));
-    CHECK(reader.Size() == 3u);
-    CHECK(reader.Find(0) != nullptr && *reader.Find(0) == a);
-    CHECK(reader.Find(1) != nullptr && *reader.Find(1) == b);
-    CHECK(reader.Find(2) != nullptr && *reader.Find(2) == c);
-    CHECK(reader.Find(3) == nullptr);
+    EXPECT_TRUE(reader.ReadEntry(in) && reader.ReadEntry(in) && reader.ReadEntry(in));
+    EXPECT_EQ(reader.Size(), 3u);
+    EXPECT_TRUE(reader.Find(0) != nullptr && *reader.Find(0) == a);
+    EXPECT_TRUE(reader.Find(1) != nullptr && *reader.Find(1) == b);
+    EXPECT_TRUE(reader.Find(2) != nullptr && *reader.Find(2) == c);
+    EXPECT_EQ(reader.Find(3), nullptr);
 
     // Out of order: entry 1 before entry 0, and a repeat of entry 0.
     BitWriter skipped;
@@ -1734,14 +2223,14 @@ namespace
     CSoundTableReader fresh;
     const std::vector<std::uint8_t> skippedBytes = Bytes(skipped);
     BitReader skippedIn(skippedBytes);
-    CHECK(!fresh.ReadEntry(skippedIn) && fresh.Size() == 0u);
+    EXPECT_TRUE(!fresh.ReadEntry(skippedIn) && fresh.Size() == 0u);
     BitWriter twice;
     writer.WriteEntry(0, twice);
     writer.WriteEntry(0, twice);
     CSoundTableReader once;
     const std::vector<std::uint8_t> twiceBytes = Bytes(twice);
     BitReader twiceIn(twiceBytes);
-    CHECK(once.ReadEntry(twiceIn) && !once.ReadEntry(twiceIn) && once.Size() == 1u);
+    EXPECT_TRUE(once.ReadEntry(twiceIn) && !once.ReadEntry(twiceIn) && once.Size() == 1u);
 
     // Truncation at every byte of one entry, and an oversized name.
     BitWriter one;
@@ -1750,7 +2239,7 @@ namespace
     for (std::size_t length = 0; length < oneBytes.size(); ++length) {
       CSoundTableReader cut;
       BitReader cutIn(std::span<const std::uint8_t>(oneBytes.data(), length));
-      CHECK(!cut.ReadEntry(cutIn) && cut.Size() == 0u);
+      EXPECT_TRUE(!cut.ReadEntry(cutIn) && cut.Size() == 0u);
     }
     BitWriter big;
     big.WriteVarUint(0u);
@@ -1763,7 +2252,7 @@ namespace
     CSoundTableReader bigReader;
     const std::vector<std::uint8_t> bigBytes = Bytes(big);
     BitReader bigIn(bigBytes);
-    CHECK(!bigReader.ReadEntry(bigIn));
+    EXPECT_FALSE(bigReader.ReadEntry(bigIn));
     // A length the remaining bytes cannot hold is refused before reading.
     BitWriter lie;
     lie.WriteVarUint(0u);
@@ -1771,14 +2260,14 @@ namespace
     CSoundTableReader lieReader;
     const std::vector<std::uint8_t> lieBytes = Bytes(lie);
     BitReader lieIn(lieBytes);
-    CHECK(!lieReader.ReadEntry(lieIn));
+    EXPECT_FALSE(lieReader.ReadEntry(lieIn));
 
     // The table's own limit.
     CSoundTableReader full;
     CSoundTableWriter many;
     BitWriter all;
     for (std::uint32_t i = 0; i <= CSoundTableReader::kMaxEntries; ++i) {
-      const auto interned = many.Intern({"b", std::to_string(i), ""});
+      const auto interned = many.Intern({"b", std::to_string(i), "", ""});
       many.WriteEntry(interned.id, all);
     }
     const std::vector<std::uint8_t> allBytes = Bytes(all);
@@ -1787,12 +2276,17 @@ namespace
     while (full.ReadEntry(allIn)) {
       ++accepted;
     }
-    CHECK(accepted == CSoundTableReader::kMaxEntries && full.Size() == CSoundTableReader::kMaxEntries);
+    EXPECT_TRUE(accepted == CSoundTableReader::kMaxEntries && full.Size() == CSoundTableReader::kMaxEntries);
   }
 
   // --- Intel grid deltas (plan WP5.4) -------------------------------------------------------
 
-  [[nodiscard]] SGridBits RandomGrid(std::mt19937& rng, const std::uint32_t width, const std::uint32_t height, const int percent)
+  [[nodiscard]] SGridBits RandomGrid(
+    std::mt19937& rng,
+    const std::uint32_t width,
+    const std::uint32_t height,
+    const int percent
+  )
   {
     SGridBits grid;
     grid.width = width;
@@ -1822,12 +2316,12 @@ namespace
           next.cells[cell(rng)] ^= 1u;
         }
         BitWriter writer;
-        CHECK(EncodeGridDelta(next, &held, writer));
+        EXPECT_TRUE(EncodeGridDelta(next, &held, writer));
         const std::vector<std::uint8_t> bytes = Bytes(writer);
         BitReader reader(bytes);
         SGridBits decoded;
-        CHECK(DecodeGridDelta(reader, &held, 1u << 20, decoded));
-        CHECK(decoded == next);
+        EXPECT_TRUE(DecodeGridDelta(reader, &held, 1u << 20, decoded));
+        EXPECT_EQ(decoded, next);
         held = next;
       }
       // Against no baseline, and against one of another size.
@@ -1835,21 +2329,24 @@ namespace
       const SGridBits other = RandomGrid(rng, width + 1, height, 50);
       for (const SGridBits* baseline : {static_cast<const SGridBits*>(nullptr), &other}) {
         BitWriter writer;
-        CHECK(EncodeGridDelta(fresh, baseline, writer));
+        EXPECT_TRUE(EncodeGridDelta(fresh, baseline, writer));
         const std::vector<std::uint8_t> bytes = Bytes(writer);
         BitReader reader(bytes);
         SGridBits decoded;
-        CHECK(DecodeGridDelta(reader, baseline, 1u << 20, decoded));
-        CHECK(decoded == fresh);
+        EXPECT_TRUE(DecodeGridDelta(reader, baseline, 1u << 20, decoded));
+        EXPECT_EQ(decoded, fresh);
       }
     }
   }
 
   /** The cell-at-a-time encoder the grid delta was defined with: the word-skipping one must match it. */
-  [[nodiscard]] std::vector<std::uint8_t> ReferenceGridDelta(const SGridBits& current, const SGridBits* baseline)
+  [[nodiscard]] std::vector<std::uint8_t> ReferenceGridDelta(
+    const SGridBits& current,
+    const SGridBits* baseline
+  )
   {
-    const bool sameShape = baseline != nullptr && baseline->width == current.width && baseline->height == current.height
-                        && baseline->cells.size() == current.cells.size();
+    const bool sameShape = baseline != nullptr && baseline->width == current.width &&
+      baseline->height == current.height && baseline->cells.size() == current.cells.size();
     BitWriter writer;
     writer.WriteVarUint(current.width);
     writer.WriteVarUint(current.height);
@@ -1897,13 +2394,13 @@ namespace
         }
         const std::uint32_t* const found = flat.Find(key);
         const auto expected = reference.find(key);
-        CHECK((found != nullptr) == (expected != reference.end()));
+        EXPECT_TRUE((found != nullptr) == (expected != reference.end()));
         if (found != nullptr && expected != reference.end()) {
-          CHECK(*found == expected->second);
+          EXPECT_TRUE(*found == expected->second);
         }
       }
       for (std::uint32_t key = 0; key < keySpace; ++key) {
-        CHECK((flat.Find(key) != nullptr) == reference.contains(key));
+        EXPECT_TRUE((flat.Find(key) != nullptr) == reference.contains(key));
       }
     }
   }
@@ -1931,8 +2428,8 @@ namespace
       }
       for (const SGridBits* baseline : {static_cast<const SGridBits*>(nullptr), static_cast<const SGridBits*>(&held)}) {
         BitWriter writer;
-        CHECK(EncodeGridDelta(next, baseline, writer));
-        CHECK(Bytes(writer) == ReferenceGridDelta(next, baseline));
+        EXPECT_TRUE(EncodeGridDelta(next, baseline, writer));
+        EXPECT_EQ(Bytes(writer), ReferenceGridDelta(next, baseline));
       }
     }
   }
@@ -1942,9 +2439,9 @@ namespace
     std::mt19937 rng(7u);
     const SGridBits grid = RandomGrid(rng, 256, 256, 50);
     BitWriter writer;
-    CHECK(EncodeGridDelta(grid, &grid, writer));
+    EXPECT_TRUE(EncodeGridDelta(grid, &grid, writer));
     // Width and height (2 bytes each) and one run of 65536 unchanged cells (3 bytes).
-    CHECK(Bytes(writer).size() <= 7u);
+    EXPECT_TRUE(Bytes(writer).size() <= 7u);
   }
 
   void TestGridDeltaHostile()
@@ -1957,7 +2454,7 @@ namespace
       const std::vector<std::uint8_t> bytes = Bytes(writer);
       BitReader reader(bytes);
       SGridBits decoded;
-      CHECK(!DecodeGridDelta(reader, nullptr, 1u << 20, decoded));
+      EXPECT_FALSE(DecodeGridDelta(reader, nullptr, 1u << 20, decoded));
     }
     // A run past the end.
     {
@@ -1969,20 +2466,20 @@ namespace
       const std::vector<std::uint8_t> bytes = Bytes(writer);
       BitReader reader(bytes);
       SGridBits decoded;
-      CHECK(!DecodeGridDelta(reader, nullptr, 1u << 20, decoded));
+      EXPECT_FALSE(DecodeGridDelta(reader, nullptr, 1u << 20, decoded));
     }
     // Truncated: every prefix of a valid delta is refused.
     {
       std::mt19937 rng(11u);
       const SGridBits grid = RandomGrid(rng, 20, 20, 50);
       BitWriter writer;
-      CHECK(EncodeGridDelta(grid, nullptr, writer));
+      EXPECT_TRUE(EncodeGridDelta(grid, nullptr, writer));
       const std::vector<std::uint8_t> bytes = Bytes(writer);
       for (std::size_t length = 0; length + 1 < bytes.size(); ++length) {
         const std::vector<std::uint8_t> prefix(bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(length));
         BitReader reader(prefix);
         SGridBits decoded;
-        CHECK(!DecodeGridDelta(reader, nullptr, 1u << 20, decoded));
+        EXPECT_FALSE(DecodeGridDelta(reader, nullptr, 1u << 20, decoded));
       }
     }
     // The encoder refuses a grid whose cells do not match its size.
@@ -1992,7 +2489,7 @@ namespace
       bad.height = 3;
       bad.cells.resize(8);
       BitWriter writer;
-      CHECK(!EncodeGridDelta(bad, nullptr, writer));
+      EXPECT_FALSE(EncodeGridDelta(bad, nullptr, writer));
     }
   }
 
@@ -2000,7 +2497,9 @@ namespace
   void TestViewIdMap()
   {
     using faf::remote::CViewIdMap;
-    const auto ownSource = [](const std::uint32_t commandId) { return (commandId >> 24u) == 2u; };
+    const auto ownSource = [](const std::uint32_t commandId) {
+      return (commandId >> 24u) == 2u;
+    };
     const auto record = [](const std::uint32_t id) {
       SEntityRecord r{};
       r.id = id;
@@ -2032,28 +2531,29 @@ namespace
       ids.push_back(r.id);
     }
     // Family nibble and source byte kept; serials by first appearance; records sorted again.
-    const std::vector<std::uint32_t> expected = {0x00200001u, 0x00200009u, 0x00500003u, 0x10200010u,
-                                                 0x10500001u, 0x2FF00005u, 0x30500001u, 0x30500002u};
-    CHECK(ids == expected);
+    const std::vector<std::uint32_t> expected = {
+      0x00200001u, 0x00200009u, 0x00500003u, 0x10200010u, 0x10500001u, 0x2FF00005u, 0x30500001u, 0x30500002u
+    };
+    EXPECT_EQ(ids, expected);
     const SUnitDetail& mapped = *frame.entities[1].unit.detail;
-    CHECK(mapped.targetBlip == 0x30500001u); // the same view id as the blip's own record
-    CHECK(mapped.creator == 0x00200001u);
-    CHECK(mapped.commands.size() == 3u && mapped.commands[0] == 0x02000005); // own command kept
-    CHECK(static_cast<std::uint32_t>(mapped.commands[1]) == 0x80000001u);  // the sim's own: renumbered
-    CHECK(static_cast<std::uint32_t>(mapped.commands[2]) == 0x80000002u);  // another client's: renumbered
-    CHECK(mapped.buildQueue.size() == 1u && static_cast<std::uint32_t>(mapped.buildQueue[0]) == 0x80000001u);
-    CHECK(map.EntitiesMapped() == 3u && map.CommandsMapped() == 2u && map.Overflows() == 0u);
+    EXPECT_EQ(mapped.targetBlip, 0x30500001u); // the same view id as the blip's own record
+    EXPECT_EQ(mapped.creator, 0x00200001u);
+    EXPECT_TRUE(mapped.commands.size() == 3u && mapped.commands[0] == 0x02000005); // own command kept
+    EXPECT_TRUE(static_cast<std::uint32_t>(mapped.commands[1]) == 0x80000001u);    // the sim's own: renumbered
+    EXPECT_TRUE(static_cast<std::uint32_t>(mapped.commands[2]) == 0x80000002u);    // another client's: renumbered
+    EXPECT_TRUE(mapped.buildQueue.size() == 1u && static_cast<std::uint32_t>(mapped.buildQueue[0]) == 0x80000001u);
+    EXPECT_TRUE(map.EntitiesMapped() == 3u && map.CommandsMapped() == 2u && map.Overflows() == 0u);
 
     // Inbound: view ids map back; own and unmapped ids are the sim's; unknown view ids refuse.
     std::uint32_t sim = 0;
-    CHECK(map.EntityToSim(0x30500001u, sim) && sim == 0x30500007u);
-    CHECK(map.EntityToSim(0x10500001u, sim) && sim == 0x10500044u);
-    CHECK(map.EntityToSim(0x00500003u, sim) && sim == 0x00500003u);
-    CHECK(!map.EntityToSim(0x30500009u, sim));
-    CHECK(map.CommandToSim(0x80000002u, sim) && sim == 0x05000009u);
-    CHECK(map.CommandToSim(0x02000005u, sim) && sim == 0x02000005u);
-    CHECK(!map.CommandToSim(0x80000007u, sim));
-    CHECK(!map.MapsEntity(SAppearance::kNoAttachParent));
+    EXPECT_TRUE(map.EntityToSim(0x30500001u, sim) && sim == 0x30500007u);
+    EXPECT_TRUE(map.EntityToSim(0x10500001u, sim) && sim == 0x10500044u);
+    EXPECT_TRUE(map.EntityToSim(0x00500003u, sim) && sim == 0x00500003u);
+    EXPECT_FALSE(map.EntityToSim(0x30500009u, sim));
+    EXPECT_TRUE(map.CommandToSim(0x80000002u, sim) && sim == 0x05000009u);
+    EXPECT_TRUE(map.CommandToSim(0x02000005u, sim) && sim == 0x02000005u);
+    EXPECT_FALSE(map.CommandToSim(0x80000007u, sim));
+    EXPECT_FALSE(map.MapsEntity(SAppearance::kNoAttachParent));
 
     // Retired ids are never handed out again: the sim reusing a serial gets a fresh view id.
     const std::uint32_t retiredEntities[] = {0x30500007u};
@@ -2061,13 +2561,15 @@ namespace
     map.RetireEntities(retiredEntities);
     map.RetireCommands(retiredCommands);
     // A retired id still translates inbound for the grace beats (a late command), then no more.
-    CHECK(map.EntityToSim(0x30500001u, sim) && sim == 0x30500007u);
-    CHECK(map.CommandToSim(0x80000001u, sim) && sim == 0x80000123u);
-    map.RetireNewCommandsUnless([](const std::uint32_t simId) { return simId != 0x05000009u; });
+    EXPECT_TRUE(map.EntityToSim(0x30500001u, sim) && sim == 0x30500007u);
+    EXPECT_TRUE(map.CommandToSim(0x80000001u, sim) && sim == 0x80000123u);
+    map.RetireNewCommandsUnless([](const std::uint32_t simId) {
+      return simId != 0x05000009u;
+    });
     map.AdvanceTo(CViewIdMap::kInboundGraceBeats);
-    CHECK(!map.EntityToSim(0x30500001u, sim));
-    CHECK(!map.CommandToSim(0x80000001u, sim));
-    CHECK(!map.CommandToSim(0x80000002u, sim));
+    EXPECT_FALSE(map.EntityToSim(0x30500001u, sim));
+    EXPECT_FALSE(map.CommandToSim(0x80000001u, sim));
+    EXPECT_FALSE(map.CommandToSim(0x80000002u, sim));
     SViewFrame again{};
     again.entities.push_back(record(0x30500007u));
     SEntityRecord again2 = unit;
@@ -2076,24 +2578,30 @@ namespace
     again2.unit.detail = TSharedValue<SUnitDetail>(queued);
     again.entities.push_back(again2);
     map.Translate(again, ownSource);
-    CHECK(again.entities[1].id == 0x30500003u);
-    CHECK(static_cast<std::uint32_t>((*again.entities[0].unit.detail).commands[0]) == 0x80000003u);
+    EXPECT_EQ(again.entities[1].id, 0x30500003u);
+    EXPECT_TRUE(static_cast<std::uint32_t>((*again.entities[0].unit.detail).commands[0]) == 0x80000003u);
     // A command found alive once is not asked about again; it retires when the sim releases it.
-    map.RetireNewCommandsUnless([](std::uint32_t) { return true; });
-    map.RetireNewCommandsUnless([](std::uint32_t) { return false; });
-    CHECK(map.LiveCommands() == 1u);
+    map.RetireNewCommandsUnless([](std::uint32_t) {
+      return true;
+    });
+    map.RetireNewCommandsUnless([](std::uint32_t) {
+      return false;
+    });
+    EXPECT_EQ(map.LiveCommands(), 1u);
     const std::uint32_t released[] = {0x80000123u};
     map.RetireCommands(released);
-    CHECK(map.LiveCommands() == 0u);
+    EXPECT_EQ(map.LiveCommands(), 0u);
 
     // Another view numbers on its own: army 5's view keeps its own projectile and blips get serial 1 up.
     CViewIdMap other(5);
     SViewFrame theirs{};
     theirs.entities.push_back(record(0x30500002u));
     theirs.entities.push_back(record(0x10500044u));
-    other.Translate(theirs, [](std::uint32_t) { return false; });
-    CHECK(theirs.entities[0].id == 0x10500044u);
-    CHECK(theirs.entities[1].id == 0x30500001u);
+    other.Translate(theirs, [](std::uint32_t) {
+      return false;
+    });
+    EXPECT_EQ(theirs.entities[0].id, 0x10500044u);
+    EXPECT_EQ(theirs.entities[1].id, 0x30500001u);
   }
 
   /** Records what reaches the sim side of `CInboundIdTranslator`. */
@@ -2108,53 +2616,128 @@ namespace
     std::vector<std::uint32_t> removed; // command, unit
     int issued = 0;
 
-    void SetCommandSource(moho::CommandSourceId) override {}
+    void SetCommandSource(
+      moho::CommandSourceId
+    ) override
+    {}
     void OnCommandSourceTerminated() override {}
-    void VerifyChecksum(const gpg::MD5Digest&, moho::CSeqNo) override {}
+    void VerifyChecksum(
+      const gpg::MD5Digest&,
+      moho::CSeqNo
+    ) override
+    {}
     void RequestPause() override {}
     void Resume() override {}
     void SingleStep() override {}
-    void CreateUnit(uint32_t, const moho::RResId&, const moho::SCoordsVec2&, float) override {}
-    void CreateProp(const char*, const Wm3::Vec3f&) override {}
-    void DestroyEntity(const moho::EntId id) override { destroyed.push_back(static_cast<std::uint32_t>(id)); }
-    void WarpEntity(moho::EntId, const moho::VTransform&) override {}
-    void ProcessInfoPair(moho::EntId, gpg::StrArg, gpg::StrArg) override {}
+    void CreateUnit(
+      uint32_t,
+      const moho::RResId&,
+      const moho::SCoordsVec2&,
+      float
+    ) override
+    {}
+    void CreateProp(
+      const char*,
+      const Wm3::Vec3f&
+    ) override
+    {}
+    void DestroyEntity(
+      const moho::EntId id
+    ) override
+    {
+      destroyed.push_back(static_cast<std::uint32_t>(id));
+    }
+    void WarpEntity(
+      moho::EntId,
+      const moho::VTransform&
+    ) override
+    {}
+    void ProcessInfoPair(
+      moho::EntId,
+      gpg::StrArg,
+      gpg::StrArg
+    ) override
+    {}
     void IssueCommand(
-      const moho::BVSet<moho::EntId, moho::EntIdUniverse>& units, const moho::SSTICommandIssueData& data, bool
+      const moho::BVSet<moho::EntId, moho::EntIdUniverse>& units,
+      const moho::SSTICommandIssueData& data,
+      bool
     ) override
     {
       ++issued;
       issuedUnits.clear();
-      units.ForEachValue([this](const unsigned int id) { issuedUnits.push_back(id); });
+      units.ForEachValue([this](const unsigned int id) {
+        issuedUnits.push_back(id);
+      });
       partner = data.unk04;
       insertBefore = data.mIndex;
       target = data.mTarget.mEntityId;
     }
     void IssueFactoryCommand(
-      const moho::BVSet<moho::EntId, moho::EntIdUniverse>&, const moho::SSTICommandIssueData&, bool
+      const moho::BVSet<moho::EntId, moho::EntIdUniverse>&,
+      const moho::SSTICommandIssueData&,
+      bool
     ) override
     {}
-    void IncreaseCommandCount(moho::CmdId, int) override {}
-    void DecreaseCommandCount(moho::CmdId, int) override {}
-    void SetCommandTarget(moho::CmdId, const moho::SSTITarget&) override {}
-    void SetCommandType(moho::CmdId, moho::EUnitCommandType) override {}
-    void SetCommandCells(moho::CmdId, const gpg::core::FastVector<moho::SOCellPos>&, const Wm3::Vector3<float>&) override {}
-    void RemoveCommandFromUnitQueue(const moho::CmdId command, const moho::EntId unit) override
+    void IncreaseCommandCount(
+      moho::CmdId,
+      int
+    ) override
+    {}
+    void DecreaseCommandCount(
+      moho::CmdId,
+      int
+    ) override
+    {}
+    void SetCommandTarget(
+      moho::CmdId,
+      const moho::SSTITarget&
+    ) override
+    {}
+    void SetCommandType(
+      moho::CmdId,
+      moho::EUnitCommandType
+    ) override
+    {}
+    void SetCommandCells(
+      moho::CmdId,
+      const gpg::core::FastVector<moho::SOCellPos>&,
+      const Wm3::Vector3<float>&
+    ) override
+    {}
+    void RemoveCommandFromUnitQueue(
+      const moho::CmdId command,
+      const moho::EntId unit
+    ) override
     {
       removed = {static_cast<std::uint32_t>(command), static_cast<std::uint32_t>(unit)};
     }
-    void ExecuteLuaInSim(const char*, const LuaPlus::LuaObject&) override {}
+    void ExecuteLuaInSim(
+      const char*,
+      const LuaPlus::LuaObject&
+    ) override
+    {}
     std::string callbackEntity;
-    void LuaSimCallback(const char*, const LuaPlus::LuaObject& args, const moho::BVSet<moho::EntId, moho::EntIdUniverse>&) override
+    void LuaSimCallback(
+      const char*,
+      const LuaPlus::LuaObject& args,
+      const moho::BVSet<moho::EntId, moho::EntIdUniverse>&
+    ) override
     {
       const LuaPlus::LuaObject entity = args["entity"];
       callbackEntity = entity.IsString() ? entity.GetString() : "";
     }
     void ExecuteDebugCommand(
-      const char*, const Wm3::Vector3<float>&, uint32_t, const moho::BVSet<moho::EntId, moho::EntIdUniverse>&
+      const char*,
+      const Wm3::Vector3<float>&,
+      uint32_t,
+      const moho::BVSet<moho::EntId, moho::EntIdUniverse>&
     ) override
     {}
-    void AdvanceBeat(int) override {}
+    void AdvanceBeat(
+      int
+    ) override
+    {}
     void EndGame() override {}
   };
 
@@ -2162,7 +2745,9 @@ namespace
   void TestInboundIds()
   {
     using faf::remote::CViewIdMap;
-    const auto ownSource = [](const std::uint32_t commandId) { return (commandId >> 24u) == 2u; };
+    const auto ownSource = [](const std::uint32_t commandId) {
+      return (commandId >> 24u) == 2u;
+    };
     CViewIdMap map(2);
     SViewFrame frame{};
     SEntityRecord blip{};
@@ -2182,31 +2767,31 @@ namespace
     moho::BVSet<moho::EntId, moho::EntIdUniverse> units{};
     (void)units.Add(static_cast<moho::EntId>(0x00200009u));
     moho::SSTICommandIssueData data(moho::EUnitCommandType::UNITCOMMAND_Attack);
-    data.nextCommandId = 0x02000010;                           // the client's own new id
-    data.unk04 = static_cast<std::int32_t>(0x80000002u);        // partner: another client's command
-    data.mIndex = static_cast<std::int32_t>(0x80000001u);       // insert before the sim's command
+    data.nextCommandId = 0x02000010;                      // the client's own new id
+    data.unk04 = static_cast<std::int32_t>(0x80000002u);  // partner: another client's command
+    data.mIndex = static_cast<std::int32_t>(0x80000001u); // insert before the sim's command
     data.mTarget.mType = moho::EAiTargetType::AITARGET_Entity;
-    data.mTarget.mEntityId = 0x30500001u;                       // the blip, in view ids
+    data.mTarget.mEntityId = 0x30500001u; // the blip, in view ids
     intake.IssueCommand(units, data, false);
-    CHECK(sim.issued == 1);
-    CHECK(sim.issuedUnits == std::vector<std::uint32_t>{0x00200009u});
-    CHECK(static_cast<std::uint32_t>(sim.partner) == 0x05000009u);
-    CHECK(static_cast<std::uint32_t>(sim.insertBefore) == 0x80000123u);
-    CHECK(sim.target == 0x30500007u);
+    EXPECT_EQ(sim.issued, 1);
+    EXPECT_TRUE(sim.issuedUnits == std::vector<std::uint32_t>{0x00200009u});
+    EXPECT_TRUE(static_cast<std::uint32_t>(sim.partner) == 0x05000009u);
+    EXPECT_TRUE(static_cast<std::uint32_t>(sim.insertBefore) == 0x80000123u);
+    EXPECT_EQ(sim.target, 0x30500007u);
 
     intake.RemoveCommandFromUnitQueue(static_cast<moho::CmdId>(0x80000001u), static_cast<moho::EntId>(0x00200009u));
-    CHECK((sim.removed == std::vector<std::uint32_t>{0x80000123u, 0x00200009u}));
+    EXPECT_TRUE((sim.removed == std::vector<std::uint32_t>{0x80000123u, 0x00200009u}));
 
     // A blip id the view was never given drops the command; a foreign unit passes as it is.
     data.mTarget.mEntityId = 0x30500004u;
     intake.IssueCommand(units, data, false);
-    CHECK(sim.issued == 1);
-    CHECK(intake.Dropped() == 1u);
+    EXPECT_EQ(sim.issued, 1);
+    EXPECT_EQ(intake.Dropped(), 1u);
     intake.DestroyEntity(static_cast<moho::EntId>(0x00500003u));
-    CHECK(sim.destroyed == std::vector<std::uint32_t>{0x00500003u});
+    EXPECT_TRUE(sim.destroyed == std::vector<std::uint32_t>{0x00500003u});
     intake.IncreaseCommandCount(static_cast<moho::CmdId>(0x80000009u), 1); // a view command id never given
-    CHECK(intake.Dropped() == 2u);
-    CHECK(intake.BlipTargets(moho::EUnitCommandType::UNITCOMMAND_Attack) == 1u);
+    EXPECT_EQ(intake.Dropped(), 2u);
+    EXPECT_EQ(intake.BlipTargets(moho::EUnitCommandType::UNITCOMMAND_Attack), 1u);
 
     // Plan WP5.6: a selection mask in view ids comes out in sim ids; unknown or unheld ids are left out.
     moho::SSyncFilterMaskBlock mask{};
@@ -2215,9 +2800,11 @@ namespace
     (void)mask.Add(0x30500003u); // a view blip id never given
     (void)mask.Add(0x00500001u); // a unit id the view holds no record of
     moho::SSyncFilterMaskBlock simMask{};
-    const auto held = [](const std::uint32_t simId) { return simId == 0x00200009u || simId == 0x30500007u; };
-    CHECK(faf::remote::TranslateSelectionMask(map, mask, simMask, held) == 2u);
-    CHECK(simMask.Contains(0x00200009u) && simMask.Contains(0x30500007u) && !simMask.Contains(0x30500001u));
+    const auto held = [](const std::uint32_t simId) {
+      return simId == 0x00200009u || simId == 0x30500007u;
+    };
+    EXPECT_EQ(faf::remote::TranslateSelectionMask(map, mask, simMask, held), 2u);
+    EXPECT_TRUE(simMask.Contains(0x00200009u) && simMask.Contains(0x30500007u) && !simMask.Contains(0x30500001u));
 
     // Plan WP5.11: a marked callback field (`Rebuild`'s `entity`, a decimal string) is translated too.
     LuaPlus::LuaState lua(LuaPlus::LuaState::LIB_BASE);
@@ -2226,21 +2813,21 @@ namespace
     args.SetString("entity", "810549249"); // 0x30500001, the blip in view ids
     moho::BVSet<moho::EntId, moho::EntIdUniverse> none{};
     intake.LuaSimCallback("Rebuild", args, none);
-    CHECK(sim.callbackEntity == "810549255"); // 0x30500007, the sim's
-    args.SetString("entity", "810549252");   // 0x30500004, never given
+    EXPECT_EQ(sim.callbackEntity, "810549255"); // 0x30500007, the sim's
+    args.SetString("entity", "810549252");      // 0x30500004, never given
     sim.callbackEntity.clear();
     intake.LuaSimCallback("Rebuild", args, none);
-    CHECK(sim.callbackEntity.empty() && intake.Dropped() == 3u);
-    args.SetString("entity", "810549252");   // an unmarked callback passes as it is
+    EXPECT_TRUE(sim.callbackEntity.empty() && intake.Dropped() == 3u);
+    args.SetString("entity", "810549252"); // an unmarked callback passes as it is
     intake.LuaSimCallback("SomethingElse", args, none);
-    CHECK(sim.callbackEntity == "810549252");
+    EXPECT_EQ(sim.callbackEntity, "810549252");
 
     // An id of this view in a field the policy does not mark passes as it is and is counted.
     args.SetString("entity", "810549249");
     args.SetString("other", "810549249");
     const std::uint64_t unmarkedBefore = intake.UnmarkedIds();
     intake.LuaSimCallback("Rebuild", args, none);
-    CHECK(intake.UnmarkedIds() == unmarkedBefore + 1u);
+    EXPECT_EQ(intake.UnmarkedIds(), unmarkedBefore + 1u);
 
     // A list of ids (`OnControlGroupAssign`): every element is translated.
     LuaPlus::LuaObject group;
@@ -2248,8 +2835,8 @@ namespace
     group.SetString(1, "2097161");   // 0x00200009, own unit: kept
     group.SetString(2, "810549249"); // the blip in view ids
     intake.LuaSimCallback("OnControlGroupAssign", group, none);
-    CHECK(std::string(group.GetByIndex(1).GetString()) == "2097161");
-    CHECK(std::string(group.GetByIndex(2).GetString()) == "810549255");
+    EXPECT_EQ(std::string(group.GetByIndex(1).GetString()), "2097161");
+    EXPECT_EQ(std::string(group.GetByIndex(2).GetString()), "810549255");
 
     // Plan WP5.12: capture and guard on a blip go through like attack.
     data.mTarget.mEntityId = 0x30500001u;
@@ -2257,9 +2844,9 @@ namespace
     intake.IssueCommand(units, data, false);
     data.mCommandType = moho::EUnitCommandType::UNITCOMMAND_Guard;
     intake.IssueCommand(units, data, false);
-    CHECK(sim.target == 0x30500007u);
-    CHECK(intake.BlipTargets(moho::EUnitCommandType::UNITCOMMAND_Capture) == 1u);
-    CHECK(intake.BlipTargets(moho::EUnitCommandType::UNITCOMMAND_Guard) == 1u);
+    EXPECT_EQ(sim.target, 0x30500007u);
+    EXPECT_EQ(intake.BlipTargets(moho::EUnitCommandType::UNITCOMMAND_Capture), 1u);
+    EXPECT_EQ(intake.BlipTargets(moho::EUnitCommandType::UNITCOMMAND_Guard), 1u);
   }
 
   // Plan WP5.3: frames against the newest acknowledged one; losses cost freshness only.
@@ -2293,35 +2880,94 @@ namespace
       return client.Decode(writer.Bytes(), codec, decoded) && decoded == frame;
     };
 
-    CHECK(server.Baseline() == nullptr);
-    CHECK(send(frameAt(1), false));           // full
-    server.Ack(client.Newest());              // 1
-    CHECK(server.Baseline() != nullptr && server.Baseline()->frameId == 1u);
-    CHECK(send(frameAt(2), true));            // lost
-    CHECK(send(frameAt(3), false));           // against 1 still: decodes without 2
-    server.Ack(client.Newest());              // 3
-    CHECK(server.Baseline()->frameId == 3u && server.Kept() == 1u);
-    server.Ack(1u);                           // a late acknowledgement changes nothing
-    CHECK(server.Baseline()->frameId == 3u);
-    CHECK(server.FullFrames() == 0u);
+    EXPECT_EQ(server.Baseline(), nullptr);
+    EXPECT_TRUE(send(frameAt(1), false)); // full
+    server.Ack(client.Newest());          // 1
+    EXPECT_TRUE(server.Baseline() != nullptr && server.Baseline()->frameId == 1u);
+    EXPECT_TRUE(send(frameAt(2), true));  // lost
+    EXPECT_TRUE(send(frameAt(3), false)); // against 1 still: decodes without 2
+    server.Ack(client.Newest());          // 3
+    EXPECT_TRUE(server.Baseline()->frameId == 3u && server.Kept() == 1u);
+    server.Ack(1u); // a late acknowledgement changes nothing
+    EXPECT_TRUE(server.Baseline()->frameId == 3u);
+    EXPECT_EQ(server.FullFrames(), 0u);
 
     // Past the cap without an acknowledgement the baseline is gone: the next frame goes in full.
     for (std::uint32_t id = 4; id < 4u + faf::remote::kMaxFrames; ++id) {
-      CHECK(send(frameAt(id), true));
+      EXPECT_TRUE(send(frameAt(id), true));
     }
-    CHECK(server.Baseline() == nullptr);
-    CHECK(send(frameAt(100), false));
-    CHECK(server.FullFrames() == 1u);
+    EXPECT_EQ(server.Baseline(), nullptr);
+    EXPECT_TRUE(send(frameAt(100), false));
+    EXPECT_EQ(server.FullFrames(), 1u);
     server.Ack(client.Newest());
-    CHECK(send(frameAt(101), false));
+    EXPECT_TRUE(send(frameAt(101), false));
 
     // A frame whose baseline the client does not hold does not decode.
     CClientFrameWindow fresh;
     SViewFrame out{};
     SViewFrame base = frameAt(101);
     BitWriter againstBase;
-    CHECK(EncodeFrame(frameAt(102), &base, codec, againstBase));
-    CHECK(!fresh.Decode(againstBase.Bytes(), codec, out));
+    EXPECT_TRUE(EncodeFrame(frameAt(102), &base, codec, againstBase));
+    EXPECT_FALSE(fresh.Decode(againstBase.Bytes(), codec, out));
+  }
+
+  // Acknowledgements that arrive beats late, as over any real link: until the first one comes back the server sends
+  // whole frames, then encodes against the oldest of them the client acknowledged. The client must still hold it.
+  // A whole frame whose id restarts (plan WP13.6: a player moved to another view) still replaces what was held.
+  void TestFrameWindowLateAcks()
+  {
+    using faf::remote::CClientFrameWindow;
+    using faf::remote::CServerFrameWindow;
+    SFrameCodec codec{};
+    const auto frameAt = [](const std::uint32_t id) {
+      SViewFrame frame{};
+      frame.frameId = id;
+      frame.beat = id;
+      for (std::uint32_t e = 0; e < 3u + id % 4u; ++e) {
+        SEntityRecord record{};
+        record.id = 0x00200000u + e;
+        record.health = static_cast<float>(id * 10u + e);
+        frame.entities.push_back(record);
+      }
+      return frame;
+    };
+    for (const std::uint32_t delay : {1u, 3u, 8u}) {
+      SCOPED_TRACE(testing::Message() << "acknowledgements " << delay << " beats late");
+      CServerFrameWindow server;
+      CClientFrameWindow client;
+      std::deque<std::pair<std::uint32_t, std::uint32_t>> acks; // (beat it arrives, frame id)
+      for (std::uint32_t beat = 1; beat <= 40u; ++beat) {
+        while (!acks.empty() && acks.front().first <= beat) {
+          server.Ack(acks.front().second);
+          acks.pop_front();
+        }
+        const SViewFrame frame = frameAt(beat);
+        BitWriter writer;
+        ASSERT_TRUE(EncodeFrame(frame, server.Baseline(), codec, writer));
+        server.Sent(frame);
+        SViewFrame decoded{};
+        EXPECT_TRUE(client.Decode(writer.Bytes(), codec, decoded) && decoded == frame) << "beat " << beat;
+        acks.emplace_back(beat + delay, client.Newest());
+      }
+    }
+
+    // Ids that restart: the whole frame 1 replaces frames up to 10, so a frame against the old 5 no longer decodes.
+    CClientFrameWindow client;
+    for (std::uint32_t id = 1; id <= 10u; ++id) {
+      BitWriter writer;
+      ASSERT_TRUE(EncodeFrame(frameAt(id), nullptr, codec, writer));
+      SViewFrame decoded{};
+      ASSERT_TRUE(client.Decode(writer.Bytes(), codec, decoded));
+    }
+    BitWriter restart;
+    ASSERT_TRUE(EncodeFrame(frameAt(1), nullptr, codec, restart));
+    SViewFrame decoded{};
+    ASSERT_TRUE(client.Decode(restart.Bytes(), codec, decoded));
+    EXPECT_EQ(client.Newest(), 1u);
+    const SViewFrame oldBase = frameAt(5);
+    BitWriter againstOld;
+    ASSERT_TRUE(EncodeFrame(frameAt(6), &oldBase, codec, againstOld));
+    EXPECT_FALSE(client.Decode(againstOld.Bytes(), codec, decoded));
   }
 
   // Plan WP5.13: the army lane and the grid lane round-trip; unchanged records cost a bit.
@@ -2345,31 +2991,33 @@ namespace
     const std::vector<SArmyRecord> first = {a, b};
 
     BitWriter full;
-    CHECK(EncodeArmyLane(first, nullptr, full));
+    EXPECT_TRUE(EncodeArmyLane(first, nullptr, full));
     BitReader fullReader(full.Bytes());
     std::vector<SArmyRecord> held;
-    CHECK(DecodeArmyLane(fullReader, nullptr, held) && held == first);
+    EXPECT_TRUE(DecodeArmyLane(fullReader, nullptr, held) && held == first);
 
     std::vector<SArmyRecord> second = first;
     second[0].economy[0] = 124.0f;
     BitWriter delta;
-    CHECK(EncodeArmyLane(second, &first, delta));
-    CHECK(delta.Bytes().size() < full.Bytes().size());
+    EXPECT_TRUE(EncodeArmyLane(second, &first, delta));
+    EXPECT_TRUE(delta.Bytes().size() < full.Bytes().size());
     BitReader deltaReader(delta.Bytes());
     std::vector<SArmyRecord> next;
-    CHECK(DecodeArmyLane(deltaReader, &held, next) && next == second);
+    EXPECT_TRUE(DecodeArmyLane(deltaReader, &held, next) && next == second);
 
     BitWriter same;
-    CHECK(EncodeArmyLane(second, &second, same) && same.Bytes().size() <= 2u); // the count, then a bit per army
+    EXPECT_TRUE(EncodeArmyLane(second, &second, same) && same.Bytes().size() <= 2u); // the count, then a bit per army
 
-    std::vector<std::uint8_t> cut(full.Bytes().begin(), full.Bytes().begin() + static_cast<std::ptrdiff_t>(full.Bytes().size() / 2));
+    std::vector<std::uint8_t> cut(
+      full.Bytes().begin(), full.Bytes().begin() + static_cast<std::ptrdiff_t>(full.Bytes().size() / 2)
+    );
     BitReader cutReader(cut);
     std::vector<SArmyRecord> none;
-    CHECK(!DecodeArmyLane(cutReader, nullptr, none));
+    EXPECT_FALSE(DecodeArmyLane(cutReader, nullptr, none));
     BitWriter unchangedOnly;
-    CHECK(EncodeArmyLane(first, &first, unchangedOnly));
+    EXPECT_TRUE(EncodeArmyLane(first, &first, unchangedOnly));
     BitReader orphanReader(unchangedOnly.Bytes());
-    CHECK(!DecodeArmyLane(orphanReader, nullptr, none)); // "unchanged" with nothing held
+    EXPECT_FALSE(DecodeArmyLane(orphanReader, nullptr, none)); // "unchanged" with nothing held
 
     SGridSlot vision{};
     vision.army = 1;
@@ -2386,62 +3034,515 @@ namespace
     std::vector<SGridSlot> clientHeld;
     const std::vector<SGridSlot> beat1 = {vision, water};
     BitWriter grids1;
-    CHECK(EncodeGridLane(beat1, serverHeld, grids1));
+    EXPECT_TRUE(EncodeGridLane(beat1, serverHeld, grids1));
     BitReader gridReader1(grids1.Bytes());
-    CHECK(DecodeGridLane(gridReader1, clientHeld) && clientHeld == beat1);
+    EXPECT_TRUE(DecodeGridLane(gridReader1, clientHeld) && clientHeld == beat1);
     serverHeld = beat1;
     std::vector<SGridSlot> beat2 = beat1;
     beat2[0].bits.cells[18] = 1u;
     BitWriter grids2;
-    CHECK(EncodeGridLane(beat2, serverHeld, grids2));
+    EXPECT_TRUE(EncodeGridLane(beat2, serverHeld, grids2));
     BitReader gridReader2(grids2.Bytes());
-    CHECK(DecodeGridLane(gridReader2, clientHeld) && clientHeld == beat2);
+    EXPECT_TRUE(DecodeGridLane(gridReader2, clientHeld) && clientHeld == beat2);
   }
 
-  const TestCase kTests[] = {
-    {"armies and grids: lanes round trip", &TestArmyAndGridLanes},
-    {"frames: window of acknowledged baselines", &TestFrameWindow},
-    {"view ids: renumbering, inbound and retirement", &TestViewIdMap},
-    {"view ids: inbound translation of commands", &TestInboundIds},
-    {"grids: delta round trip", &TestGridDeltaRoundTrip},
-    {"grids: unchanged is small", &TestGridDeltaUnchangedIsSmall},
-    {"flat map: erase against a reference map", &TestFlatMapEraseMatchesMap},
-    {"grids: same bytes as cell at a time", &TestGridDeltaMatchesCellAtATime},
-    {"grids: hostile input", &TestGridDeltaHostile},
-    {"sounds: session table", &TestSoundTable},
-    {"roster: round trip and refusals", &TestRoster},
-    {"session tables: sounds and names", &TestSessionTables},
-    {"bits: round trip", &TestBitStreamRoundTrip},
-    {"bits: overrun", &TestBitStreamOverrun},
-    {"bits: same bytes as bit at a time", &TestBitStreamMatchesBitAtATime},
-    {"bits: malformed varuint", &TestBitStreamMalformedVarUint},
-    {"quantize: axis", &TestAxisQuantizer},
-    {"quantize: map position bits", &TestPositionQuantizerForMap},
-    {"quantize: quaternion", &TestQuaternionPacking},
-    {"ordinals: table and hash", &TestOrdinalTable},
-    {"hello: versions", &TestHello},
-    {"frame: decode(encode(f, b), b) == f", &TestFrameRoundTripProperty},
-    {"frame: dead reckoning round trip", &TestFrameRoundTripDeadReckoning},
-    {"frame: dead reckoning rules", &TestDeadReckoningRules},
-    {"frame: unchanged costs the header", &TestFrameUnchangedIsSmall},
-    {"frame: baseline checks", &TestFrameBaselineChecks},
-    {"frame: encoder refuses bad frames", &TestEncodeRejects},
-    {"frame: truncation", &TestDecoderTruncation},
-    {"frame: corruption and garbage", &TestDecoderCorruptionAndGarbage},
-    {"frame: hostile counts and ids", &TestDecoderHostileCounts},
-    {"frame: appearance block", &TestFrameAppearance},
-    {"frame: blip update hash", &TestBlipUpdateHash},
-    {"grid lane: slots encoded apart", &TestBitWriterAppend},
-    {"lua lane: round trip and limits", &TestLuaSyncLane},
-    {"grid lane: delta in place", &TestGridDeltaInPlace},
-  };
+  void TestPoseLane()
+  {
+    // Plan WP8.1: whole units and changed bones round-trip; ids out of order, too many bones, a cut lane fail.
+    const float movedPosition[3] = {1.5f, -2.0f, 0.25f};
+    const float movedRotation[4] = {0.0f, 0.70710677f, 0.0f, 0.70710677f};
+    const SPoseBone moved = QuantizeBone(movedPosition, movedRotation, false, true);
+    float backPosition[3];
+    float backRotation[4];
+    DequantizeBone(moved, backPosition, backRotation);
+    for (std::size_t i = 0; i < 3; ++i) {
+      EXPECT_TRUE(std::fabs(backPosition[i] - movedPosition[i]) <= 0.5f / kPosePositionSteps);
+    }
+    for (std::size_t i = 0; i < 4; ++i) {
+      EXPECT_TRUE(std::fabs(backRotation[i] - movedRotation[i]) <= 1.0f / kPoseRotationSteps);
+    }
+    SPoseBone step; // a difference: small, and negative
+    step.position = {-1, 0, 3};
+    step.rotation = {0, -2, 0, 1};
+    std::vector<SUnitPose> lane(3);
+    lane[0].id = 0x00100004u;
+    lane[0].whole = true;
+    lane[0].bones = {SPoseBone{}, moved, SPoseBone{}};
+    lane[1].id = 0x00100009u;
+    lane[1].indices = {2u, 7u};
+    lane[1].bones = {step, moved};
+    lane[2].id = 0x00200001u;
+    lane[2].whole = true; // no bones: the client drops its poses
+    BitWriter writer;
+    EXPECT_TRUE(EncodePoseLane(lane, writer));
+    const std::vector<std::uint8_t> bytes = Bytes(writer);
+    BitReader reader(bytes);
+    std::vector<SUnitPose> decoded;
+    EXPECT_TRUE(DecodePoseLane(reader, decoded) && decoded == lane);
+    for (std::size_t length = 0; length < bytes.size(); ++length) {
+      BitReader cut(std::span<const std::uint8_t>(bytes.data(), length));
+      std::vector<SUnitPose> partial;
+      EXPECT_FALSE(DecodePoseLane(cut, partial)); // the last byte holds a bit of the lane
+    }
+    std::vector<SUnitPose> unordered = {lane[1], lane[0]};
+    BitWriter rejected;
+    EXPECT_FALSE(EncodePoseLane(unordered, rejected));
+    SUnitPose huge;
+    huge.whole = true;
+    huge.bones.resize(SUnitPose::kMaxBones + 1u);
+    BitWriter tooMany;
+    EXPECT_FALSE(EncodePoseLane(std::vector<SUnitPose>{huge}, tooMany));
+  }
+
+  void TestSharedValueShare()
+  {
+    // `Share`: the same pointer compares nothing; an equal value is no change but its pointer is taken; a different
+    // value is a change.
+    const TSharedValue<std::vector<SUnitStat>> a(std::vector<SUnitStat>{SUnitStat{3u, 0u, false, 7u, 0u}});
+    const TSharedValue<std::vector<SUnitStat>> equal(std::vector<SUnitStat>{SUnitStat{3u, 0u, false, 7u, 0u}});
+    const TSharedValue<std::vector<SUnitStat>> other(std::vector<SUnitStat>{SUnitStat{3u, 0u, false, 8u, 0u}});
+    TSharedValue<std::vector<SUnitStat>> held;
+    EXPECT_TRUE(held.Share(a));
+    EXPECT_TRUE(!held.Share(a) && &*held == &*a);
+    EXPECT_TRUE(!held.Share(equal) && &*held == &*equal);
+    EXPECT_TRUE(held.Share(other) && *held == *other);
+    EXPECT_TRUE(held.Share(TSharedValue<std::vector<SUnitStat>>()) && held->empty());
+  }
+
+  void TestSessionTablesFromThreads()
+  {
+    // Plan WP11 step 4: a server's views intern on several threads at once into one session; each name gets one id,
+    // and the record read back holds every name under it.
+    CSessionTableWriters server;
+    constexpr int kThreads = 8;
+    constexpr int kNames = 200;
+    std::vector<std::vector<std::uint32_t>> ids(kThreads, std::vector<std::uint32_t>(kNames));
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kThreads; ++t) {
+      threads.emplace_back([&server, &ids, t] {
+        for (int i = 0; i < kNames; ++i) {
+          const int name = (i * 7 + t * 13) % kNames;
+          ids[static_cast<std::size_t>(t)][static_cast<std::size_t>(name)] =
+            server.Name("/stat/" + std::to_string(name));
+          if (i % 10 == 0) {
+            (void)server.Sound(SSoundEntry{"Bank", "Cue" + std::to_string(name % 5), "", ""});
+          }
+        }
+      });
+    }
+    for (std::thread& thread : threads) {
+      thread.join();
+    }
+    for (int t = 1; t < kThreads; ++t) {
+      EXPECT_TRUE(ids[static_cast<std::size_t>(t)] == ids[0]);
+    }
+    BitWriter record;
+    server.WritePending(record);
+    const std::vector<std::uint8_t> bytes = Bytes(record);
+    BitReader in(bytes);
+    CSessionTableReaders client;
+    EXPECT_TRUE(
+      client.Read(in) && client.Names().Size() == static_cast<std::uint32_t>(kNames) && client.Sounds().Size() <= 5u
+    );
+    for (int name = 0; name < kNames; ++name) {
+      const std::string* const text = client.Names().Find(ids[0][static_cast<std::size_t>(name)]);
+      EXPECT_TRUE(text != nullptr && *text == "/stat/" + std::to_string(name));
+    }
+  }
+
 } // namespace
 
-int main()
+TEST(
+  Existing_Wire,
+  ArmyAndGridLanes
+)
 {
-  for (const TestCase& test : kTests) {
-    RunTest(test);
+  TestArmyAndGridLanes();
+}
+TEST(
+  Existing_Wire,
+  FrameWindow
+)
+{
+  TestFrameWindow();
+}
+TEST(
+  Existing_Wire,
+  FrameWindowLateAcks
+)
+{
+  TestFrameWindowLateAcks();
+}
+TEST(
+  Existing_Wire,
+  ViewIdMap
+)
+{
+  TestViewIdMap();
+}
+TEST(
+  Existing_Wire,
+  InboundIds
+)
+{
+  TestInboundIds();
+}
+TEST(
+  Existing_Wire,
+  GridDeltaRoundTrip
+)
+{
+  TestGridDeltaRoundTrip();
+}
+TEST(
+  Existing_Wire,
+  GridDeltaUnchangedIsSmall
+)
+{
+  TestGridDeltaUnchangedIsSmall();
+}
+TEST(
+  Existing_Wire,
+  FlatMapEraseMatchesMap
+)
+{
+  TestFlatMapEraseMatchesMap();
+}
+TEST(
+  Existing_Wire,
+  GridDeltaMatchesCellAtATime
+)
+{
+  TestGridDeltaMatchesCellAtATime();
+}
+TEST(
+  Existing_Wire,
+  GridDeltaHostile
+)
+{
+  TestGridDeltaHostile();
+}
+TEST(
+  Existing_Wire,
+  SoundTable
+)
+{
+  TestSoundTable();
+}
+TEST(
+  Existing_Wire,
+  Roster
+)
+{
+  TestRoster();
+}
+TEST(
+  Existing_Wire,
+  SeatRosterMessages
+)
+{
+  TestSeatRosterMessages();
+}
+TEST(
+  Existing_Wire,
+  SessionTables
+)
+{
+  TestSessionTables();
+}
+TEST(
+  Existing_Wire,
+  SessionTablesFromThreads
+)
+{
+  TestSessionTablesFromThreads();
+}
+TEST(
+  Existing_Wire,
+  SharedValueShare
+)
+{
+  TestSharedValueShare();
+}
+TEST(
+  Existing_Wire,
+  PoseLane
+)
+{
+  TestPoseLane();
+}
+TEST(
+  Existing_Wire,
+  BitStreamRoundTrip
+)
+{
+  TestBitStreamRoundTrip();
+}
+TEST(
+  Existing_Wire,
+  BitStreamOverrun
+)
+{
+  TestBitStreamOverrun();
+}
+TEST(
+  Existing_Wire,
+  BitStreamMatchesBitAtATime
+)
+{
+  TestBitStreamMatchesBitAtATime();
+}
+TEST(
+  Existing_Wire,
+  BitStreamMalformedVarUint
+)
+{
+  TestBitStreamMalformedVarUint();
+}
+TEST(
+  Existing_Wire,
+  AxisQuantizer
+)
+{
+  TestAxisQuantizer();
+}
+TEST(
+  Existing_Wire,
+  PositionQuantizerForMap
+)
+{
+  TestPositionQuantizerForMap();
+}
+TEST(
+  Existing_Wire,
+  QuaternionPacking
+)
+{
+  TestQuaternionPacking();
+}
+TEST(
+  Existing_Wire,
+  OrdinalTable
+)
+{
+  TestOrdinalTable();
+}
+TEST(
+  Existing_Wire,
+  Hello
+)
+{
+  TestHello();
+}
+TEST(
+  Existing_Wire,
+  FrameRoundTripProperty
+)
+{
+  TestFrameRoundTripProperty();
+}
+TEST(
+  Existing_Wire,
+  FrameRoundTripDeadReckoning
+)
+{
+  TestFrameRoundTripDeadReckoning();
+}
+TEST(
+  Existing_Wire,
+  DeadReckoningRules
+)
+{
+  TestDeadReckoningRules();
+}
+TEST(
+  Existing_Wire,
+  FrameUnchangedIsSmall
+)
+{
+  TestFrameUnchangedIsSmall();
+}
+TEST(
+  Existing_Wire,
+  FrameBaselineChecks
+)
+{
+  TestFrameBaselineChecks();
+}
+TEST(
+  Existing_Wire,
+  EncodeRejects
+)
+{
+  TestEncodeRejects();
+}
+TEST(
+  Existing_Wire,
+  DecoderTruncation
+)
+{
+  TestDecoderTruncation();
+}
+TEST(
+  Existing_Wire,
+  DecoderCorruptionAndGarbage
+)
+{
+  TestDecoderCorruptionAndGarbage();
+}
+TEST(
+  Existing_Wire,
+  DecoderHostileCounts
+)
+{
+  TestDecoderHostileCounts();
+}
+TEST(
+  Existing_Wire,
+  FrameAppearance
+)
+{
+  TestFrameAppearance();
+}
+TEST(
+  Existing_Wire,
+  BlipUpdateHash
+)
+{
+  TestBlipUpdateHash();
+}
+TEST(
+  Existing_Wire,
+  BitWriterAppend
+)
+{
+  TestBitWriterAppend();
+}
+TEST(
+  Existing_Wire,
+  LuaSyncLane
+)
+{
+  TestLuaSyncLane();
+}
+TEST(
+  Existing_Wire,
+  GridDeltaInPlace
+)
+{
+  TestGridDeltaInPlace();
+}
+
+// Plan WP10.10: the network panel's bytes by lane: totals since the game started, the rate over the last whole
+// seconds (the second under way left out, at most five), and a new game from zero.
+TEST(
+  ServerLaneMeter,
+  RatesOverWholeSecondsAndTotals
+)
+{
+  using faf::remote::client::CServerLaneMeter;
+  using faf::remote::client::kServerLaneCount;
+  CServerLaneMeter& meter = CServerLaneMeter::Get();
+  meter.Reset();
+  EXPECT_FALSE(meter.Snapshot().active);
+  const CServerLaneMeter::Clock::time_point start{std::chrono::seconds(1000)};
+  const auto at = [&start](const double seconds) {
+    return start +
+      std::chrono::duration_cast<CServerLaneMeter::Clock::duration>(std::chrono::duration<double>(seconds));
+  };
+  const std::array<std::uint64_t, kServerLaneCount> view{1000u, 100u, 50u, 20u, 0u};
+  for (int beat = 0; beat < 80; ++beat) { // 10 views a second for 8 s
+    meter.Record(view, at(beat / 10.0));
   }
-  std::printf("%d checks, %d failures\n", gChecks, gFailures);
-  return gFailures;
+  const auto snapshot = meter.Snapshot(at(8.5));
+  EXPECT_TRUE(snapshot.active);
+  EXPECT_EQ(snapshot.views, 80u);
+  EXPECT_EQ(snapshot.total[0], 80000u);
+  EXPECT_EQ(snapshot.total[3], 1600u);
+  EXPECT_DOUBLE_EQ(snapshot.seconds, 5.0);
+  EXPECT_DOUBLE_EQ(snapshot.perSecond[0], 10000.0);
+  EXPECT_DOUBLE_EQ(snapshot.perSecond[2], 500.0);
+  // Quiet for 3 s: two of the five seconds still had views.
+  EXPECT_DOUBLE_EQ(meter.Snapshot(at(11.2)).perSecond[0], 4000.0);
+  // Long quiet: nothing a second, the totals stay.
+  const auto quiet = meter.Snapshot(at(30.0));
+  EXPECT_DOUBLE_EQ(quiet.perSecond[0], 0.0);
+  EXPECT_EQ(quiet.total[0], 80000u);
+  // The first second of a game: no whole second yet.
+  meter.Reset();
+  meter.Record(view, at(40.1));
+  EXPECT_DOUBLE_EQ(meter.Snapshot(at(40.6)).seconds, 0.0);
+  EXPECT_DOUBLE_EQ(meter.Snapshot(at(41.6)).perSecond[1], 100.0);
+  meter.Reset();
+}
+
+// Plan WP9.1 step 3: a `View` carries the pose lane and the effects lane after the five first; a client reads the
+// lanes it knows and skips any after them (a newer server's), and still refuses bytes that aren't a whole lane.
+TEST(
+  ViewMessage,
+  ReadsThePoseAndEffectsLanesAndSkipsLaterOnes
+)
+{
+  using faf::remote::client::ReadViewMessage;
+  using faf::remote::client::SViewMessage;
+  const auto make = [](const std::size_t extraLanes, const bool cutLast) {
+    std::vector<std::uint8_t> message;
+    faf::remote::net::ByteWriter writer(message);
+    writer.Byte(static_cast<std::uint8_t>(faf::remote::net::ESeatMessage::View));
+    writer.Varint(1234u); // beat
+    writer.Varint(2u);    // own entities
+    writer.Varint(0u);    // team entities
+    for (std::size_t lane = 0; lane < 5u + extraLanes; ++lane) {
+      const std::uint8_t bytes[3] = {static_cast<std::uint8_t>(lane), 0xAAu, 0x55u};
+      writer.Varint(lane == 1u ? 0u : 3u); // an empty team frame
+      if (lane != 1u) {
+        writer.Bytes(bytes, sizeof(bytes));
+      }
+    }
+    if (cutLast) {
+      message.pop_back();
+    }
+    return message;
+  };
+
+  // The view's lanes are spans into the message, so each message outlives the checks that read them.
+  SViewMessage view;
+  const std::vector<std::uint8_t> five = make(0u, false);
+  ASSERT_TRUE(ReadViewMessage(five, view));
+  EXPECT_EQ(view.beat, 1234u);
+  EXPECT_FALSE(view.hasPoses);
+  EXPECT_TRUE(view.effects.empty());
+
+  const std::vector<std::uint8_t> six = make(1u, false);
+  ASSERT_TRUE(ReadViewMessage(six, view));
+  EXPECT_TRUE(view.hasPoses);
+  ASSERT_EQ(view.poses.size(), 3u);
+  EXPECT_EQ(view.poses[0], 5u);
+  EXPECT_TRUE(view.effects.empty());
+
+  const std::vector<std::uint8_t> seven = make(2u, false);
+  ASSERT_TRUE(ReadViewMessage(seven, view));
+  ASSERT_EQ(view.effects.size(), 3u);
+  EXPECT_EQ(view.effects[0], 6u);
+  EXPECT_FALSE(view.hasCommands);
+  EXPECT_EQ(view.lanesSkipped, 0u);
+
+  // Plan WP5.14: the command-records lane is the eighth.
+  const std::vector<std::uint8_t> eight = make(3u, false);
+  ASSERT_TRUE(ReadViewMessage(eight, view));
+  EXPECT_TRUE(view.hasCommands);
+  ASSERT_EQ(view.commands.size(), 3u);
+  EXPECT_EQ(view.commands[0], 7u);
+  EXPECT_EQ(view.lanesSkipped, 0u);
+
+  const std::vector<std::uint8_t> ten = make(5u, false);
+  ASSERT_TRUE(ReadViewMessage(ten, view));
+  EXPECT_EQ(view.effects[0], 6u);
+  EXPECT_EQ(view.commands[0], 7u);
+  EXPECT_EQ(view.lanesSkipped, 2u);
+  EXPECT_EQ(view.grids[0], 3u);
+
+  EXPECT_FALSE(ReadViewMessage(make(2u, true), view)); // the effects lane cut short
+  EXPECT_FALSE(ReadViewMessage(make(3u, true), view)); // the command-records lane cut short
+  EXPECT_FALSE(ReadViewMessage(make(5u, true), view)); // a later lane cut short
 }

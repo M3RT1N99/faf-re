@@ -56,7 +56,10 @@ namespace
     return &sColorLuaState;
   }
 
-  [[nodiscard]] std::uint32_t ResolvePlayerColorByIndex(LuaPlus::LuaState* const state, const int colorIndex)
+  [[nodiscard]] std::uint32_t ResolvePlayerColorByIndex(
+    LuaPlus::LuaState* const state,
+    const int colorIndex
+  )
   {
     LuaPlus::LuaObject* const gameColorsRoot = moho::GetColors();
 
@@ -66,7 +69,10 @@ namespace
     return moho::SCR_DecodeColor(state, colorObject);
   }
 
-  [[nodiscard]] std::uint32_t ResolveArmyColorByIndex(LuaPlus::LuaState* const state, const int colorIndex)
+  [[nodiscard]] std::uint32_t ResolveArmyColorByIndex(
+    LuaPlus::LuaState* const state,
+    const int colorIndex
+  )
   {
     LuaPlus::LuaObject* const gameColorsRoot = moho::GetColors();
 
@@ -76,7 +82,10 @@ namespace
     return moho::SCR_DecodeColor(state, colorObject);
   }
 
-  [[nodiscard]] std::uint32_t ResolveGameColorField(LuaPlus::LuaState* const state, const char* const fieldName)
+  [[nodiscard]] std::uint32_t ResolveGameColorField(
+    LuaPlus::LuaState* const state,
+    const char* const fieldName
+  )
   {
     LuaPlus::LuaObject* const gameColorsRoot = moho::GetColors();
 
@@ -85,17 +94,9 @@ namespace
     return moho::SCR_DecodeColor(state, colorObject);
   }
 
-  [[nodiscard]] msvc8::string ResolvePlayerColorNameByIndex(LuaPlus::LuaState* const state, const int colorIndex)
-  {
-    LuaPlus::LuaObject* const gameColorsRoot = moho::GetColors();
-
-    const LuaPlus::LuaObject gameColors = (*gameColorsRoot)[kGameColorsTableName];
-    const LuaPlus::LuaObject playerColors = gameColors[kPlayerColorsTableName];
-    const LuaPlus::LuaObject colorObject = playerColors.GetByIndex(colorIndex + 1);
-    return msvc8::string(colorObject.GetString());
-  }
-
-  [[nodiscard]] std::uint32_t ResolvePlayerColorCount(LuaPlus::LuaState* const state)
+  [[nodiscard]] std::uint32_t ResolvePlayerColorCount(
+    LuaPlus::LuaState* const /*state*/
+  )
   {
     LuaPlus::LuaObject* const gameColorsRoot = moho::GetColors();
 
@@ -168,7 +169,9 @@ namespace moho
    * Resolves one configured player color entry by index and decodes it into
    * packed ARGB.
    */
-  std::uint32_t GetPlayerColor(const int idx)
+  std::uint32_t GetPlayerColor(
+    const int idx
+  )
   {
     const auto colorLock = LockColorLuaState();
     LuaPlus::LuaState* const colorState = GetColorLuaState();
@@ -184,26 +187,13 @@ namespace moho
    * Resolves one configured army color entry by index and decodes it into
    * packed ARGB.
    */
-  std::uint32_t GetArmyColor(const int idx)
+  std::uint32_t GetArmyColor(
+    const int idx
+  )
   {
     const auto colorLock = LockColorLuaState();
     LuaPlus::LuaState* const colorState = GetColorLuaState();
     return ResolveArmyColorByIndex(colorState, idx);
-  }
-
-  /**
-   * Address: 0x00506A30 (FUN_00506A30, ?GetPlayerColorName@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@H@Z)
-   *
-   * int idx
-   *
-   * What it does:
-   * Returns one player-color token string from the game color table.
-   */
-  msvc8::string GetPlayerColorName(const int idx)
-  {
-    const auto colorLock = LockColorLuaState();
-    LuaPlus::LuaState* const colorState = GetColorLuaState();
-    return ResolvePlayerColorNameByIndex(colorState, idx);
   }
 
   /**
@@ -254,7 +244,9 @@ namespace moho
    * Scans the configured army-color table and returns the first index whose
    * decoded color matches `packedColor`; defaults to `3` when not found.
    */
-  int func_GetColorIndex(const int packedColor)
+  int func_GetColorIndex(
+    const int packedColor
+  )
   {
     const auto colorLock = LockColorLuaState();
     LuaPlus::LuaState* const colorState = GetColorLuaState();
@@ -362,7 +354,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_CreateInitialArmyUnitL`.
    */
-  int cfunc_CreateInitialArmyUnit(lua_State* const luaContext)
+  int cfunc_CreateInitialArmyUnit(
+    lua_State* const luaContext
+  )
   {
     return cfunc_CreateInitialArmyUnitL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -373,7 +367,9 @@ namespace moho
    * What it does:
    * Unwraps raw Lua callback context and forwards to `cfunc_SetArmyColorIndexL`.
    */
-  int cfunc_SetArmyColorIndex(lua_State* const luaContext)
+  int cfunc_SetArmyColorIndex(
+    lua_State* const luaContext
+  )
   {
     return cfunc_SetArmyColorIndexL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -385,7 +381,9 @@ namespace moho
    * Reads `(army, colorIndex)`, resolves one configured player color by index,
    * and writes both army color lanes.
    */
-  int cfunc_SetArmyColorIndexL(LuaPlus::LuaState* const state)
+  int cfunc_SetArmyColorIndexL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -415,7 +413,9 @@ namespace moho
    * What it does:
    * Unwraps raw Lua callback context and forwards to `cfunc_AddBuildRestrictionL`.
    */
-  int cfunc_AddBuildRestriction(lua_State* const luaContext)
+  int cfunc_AddBuildRestriction(
+    lua_State* const luaContext
+  )
   {
     return cfunc_AddBuildRestrictionL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -427,7 +427,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_RemoveBuildRestrictionL`.
    */
-  int cfunc_RemoveBuildRestriction(lua_State* const luaContext)
+  int cfunc_RemoveBuildRestriction(
+    lua_State* const luaContext
+  )
   {
     return cfunc_RemoveBuildRestrictionL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -439,7 +441,9 @@ namespace moho
    * Reads `(army, initialUnitName)`, resolves one unit blueprint from rules,
    * and creates one initial unit at that army start position.
    */
-  int cfunc_CreateInitialArmyUnitL(LuaPlus::LuaState* const state)
+  int cfunc_CreateInitialArmyUnitL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -463,7 +467,7 @@ namespace moho
     // 0x00709431/0x00709449: the name is copied into a string and canonized
     // through `STR_CopyFilename` (lowercase, `/` -> `\`) into the `RResId`
     // before the rules lookup; the error reports the raw, uncanonized name.
-    const msvc8::string initialUnitBlueprintName(initialUnitName);
+    const fa::string initialUnitBlueprintName(initialUnitName);
     RResId blueprintId{};
     (void)gpg::STR_CopyFilename(&blueprintId.name, &initialUnitBlueprintName);
 
@@ -479,12 +483,7 @@ namespace moho
     army->GetArmyStartPos(startPosition);
 
     SUnitConstructionParams constructionParams{
-      0,
-      Wm3::Vector3f{startPosition.x, 0.0f, startPosition.y},
-      army,
-      blueprint,
-      nullptr,
-      true
+      0, Wm3::Vector3f{startPosition.x, 0.0f, startPosition.y}, army, blueprint, nullptr, true
     };
     constructionParams.mTransform.orient_.w = 1.0f;
     constructionParams.mTransform.orient_.x = 0.0f;
@@ -514,7 +513,6 @@ namespace moho
       LuaPlus::LuaState::Error(state, "SetArmyStart() failed");
     }
 
-
     unit->mLuaObj.PushStack(state);
     return 1;
   }
@@ -525,7 +523,9 @@ namespace moho
    * What it does:
    * Reads `(army, categorySet)` and applies one build restriction to that army.
    */
-  int cfunc_AddBuildRestrictionL(LuaPlus::LuaState* const state)
+  int cfunc_AddBuildRestrictionL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -549,7 +549,9 @@ namespace moho
    * Reads `(army, categorySet)` and removes one build restriction from that
    * army.
    */
-  int cfunc_RemoveBuildRestrictionL(LuaPlus::LuaState* const state)
+  int cfunc_RemoveBuildRestrictionL(
+    LuaPlus::LuaState* const state
+  )
   {
     if (!state || !state->m_state) {
       return 0;
@@ -567,17 +569,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD9D00 (FUN_00BD9D00, j_func_ListArmies_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_ListArmies_LuaFuncDef` to `func_ListArmies_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_ListArmies_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_ListArmies_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9D10 (FUN_00BD9D10, register_GetArmyBrain_LuaFuncDef)
    *
    * What it does:
@@ -586,17 +577,6 @@ namespace moho
   CScrLuaInitForm* register_GetArmyBrain_LuaFuncDef()
   {
     return ForwardArmyLuaRegistrationThunk<&func_GetArmyBrain_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9D20 (FUN_00BD9D20, j_func_SetArmyStart_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_SetArmyStart_LuaFuncDef` to `func_SetArmyStart_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_SetArmyStart_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_SetArmyStart_LuaFuncDef>();
   }
 
   /**
@@ -655,28 +635,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD9D80 (FUN_00BD9D80, j_func_SetArmyEconomy_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_SetArmyEconomy_LuaFuncDef` to `func_SetArmyEconomy_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_SetArmyEconomy_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_SetArmyEconomy_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9D90 (FUN_00BD9D90, j_func_GetArmyUnitCostTotal_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_GetArmyUnitCostTotal_LuaFuncDef` to `func_GetArmyUnitCostTotal_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_GetArmyUnitCostTotal_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_GetArmyUnitCostTotal_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9DA0 (FUN_00BD9DA0, register_GetArmyUnitCap_LuaFuncDef)
    *
    * What it does:
@@ -707,17 +665,6 @@ namespace moho
   CScrLuaInitForm* register_SetIgnoreArmyUnitCap_LuaFuncDef()
   {
     return ForwardArmyLuaRegistrationThunk<&func_SetIgnoreArmyUnitCap_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9DD0 (FUN_00BD9DD0, j_func_SetIgnorePlayableRect_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_SetIgnorePlayableRect_LuaFuncDef` to `func_SetIgnorePlayableRect_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_SetIgnorePlayableRect_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_SetIgnorePlayableRect_LuaFuncDef>();
   }
 
   /**
@@ -754,28 +701,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD9E10 (FUN_00BD9E10, j_func_SetAlliedVictory_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_SetAlliedVictory_LuaFuncDef` to `func_SetAlliedVictory_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_SetAlliedVictory_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_SetAlliedVictory_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9E20 (FUN_00BD9E20, j_func_IsAllySim_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_IsAllySim_LuaFuncDef` to `func_IsAllySim_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_IsAllySim_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_IsAllySim_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9E30 (FUN_00BD9E30, register_IsEnemySim_LuaFuncDef)
    *
    * What it does:
@@ -798,28 +723,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD9E50 (FUN_00BD9E50, j_func_ArmyIsCivilian_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_ArmyIsCivilian_LuaFuncDef` to `func_ArmyIsCivilian_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_ArmyIsCivilian_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_ArmyIsCivilian_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9E60 (FUN_00BD9E60, j_func_SetArmyColorIndex_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_SetArmyColorIndex_LuaFuncDef` to `func_SetArmyColorIndex_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_SetArmyColorIndex_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_SetArmyColorIndex_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9E70 (FUN_00BD9E70, register_SetArmyFactionIndex_LuaFuncDef)
    *
    * What it does:
@@ -828,17 +731,6 @@ namespace moho
   CScrLuaInitForm* register_SetArmyFactionIndex_LuaFuncDef()
   {
     return ForwardArmyLuaRegistrationThunk<&func_SetArmyFactionIndex_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9E80 (FUN_00BD9E80, j_func_SetArmyAIPersonality_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_SetArmyAIPersonality_LuaFuncDef` to `func_SetArmyAIPersonality_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_SetArmyAIPersonality_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_SetArmyAIPersonality_LuaFuncDef>();
   }
 
   /**
@@ -865,17 +757,6 @@ namespace moho
   CSimConFunc gSimConFunc_SetArmyColor(false, "SetArmyColor", &Sim::SetArmyColor);
 
   /**
-   * Address: 0x00BD9F10 (FUN_00BD9F10, j_func_SetArmyShowScore_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_SetArmyShowScore_LuaFuncDef` to `func_SetArmyShowScore_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_SetArmyShowScore_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_SetArmyShowScore_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9F20 (FUN_00BD9F20, register_AddBuildRestriction_LuaFuncDef)
    *
    * What it does:
@@ -895,17 +776,6 @@ namespace moho
   CScrLuaInitForm* register_RemoveBuildRestriction_LuaFuncDef()
   {
     return ForwardArmyLuaRegistrationThunk<&func_RemoveBuildRestriction_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9F40 (FUN_00BD9F40, j_func_OkayToMessWithArmy_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_OkayToMessWithArmy_LuaFuncDef` to `func_OkayToMessWithArmy_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_OkayToMessWithArmy_LuaFuncDef()
-  {
-    return ForwardArmyLuaRegistrationThunk<&func_OkayToMessWithArmy_LuaFuncDef>();
   }
 
   /**

@@ -1,6 +1,6 @@
 #include "headless/ReplayFpuReport.h"
 
-#if defined(_WIN32)
+#if FAFRE_PLATFORM_WINDOWS
 #include <Windows.h>
 #include <TlHelp32.h>
 #else
@@ -34,7 +34,7 @@ extern "C" unsigned int msvc8_x87_control_word();
 // control word and MXCSR the kernel saved in the signal frame (the handler's own registers
 // are reset, the interrupted thread's are in ucontext's fpregs).
 
-#if !defined(_WIN32)
+#if !FAFRE_PLATFORM_WINDOWS
 namespace faf::headless
 {
   namespace
@@ -43,7 +43,11 @@ namespace faf::headless
     unsigned gSampledControlWord = 0;
     unsigned gSampledMxcsr = 0;
 
-    void OnSampleSignal(int, siginfo_t*, void* const rawContext)
+    void OnSampleSignal(
+      int,
+      siginfo_t*,
+      void* const rawContext
+    )
     {
       const auto* const context = static_cast<const ucontext_t*>(rawContext);
 #if defined(__aarch64__)
@@ -101,7 +105,9 @@ namespace faf::headless
       return ids;
     }
 
-    [[nodiscard]] double ThreadUserSeconds(const long id)
+    [[nodiscard]] double ThreadUserSeconds(
+      const long id
+    )
     {
       char path[64];
       std::snprintf(path, sizeof(path), "/proc/self/task/%ld/stat", id);
@@ -122,7 +128,10 @@ namespace faf::headless
     }
   } // namespace
 
-  std::string ReportThreadFloatingPointState(const int samples, const int intervalMs)
+  std::string ReportThreadFloatingPointState(
+    const int samples,
+    const int intervalMs
+  )
   {
     const int signalNumber = SIGRTMIN + 3;
     struct sigaction action{};
@@ -210,7 +219,11 @@ namespace faf::headless
     }
 
     /** Suspends, reads the floating-point context, resumes; nothing allocates in between. */
-    [[nodiscard]] bool SampleThread(const HANDLE thread, unsigned& controlWord, unsigned& mxcsr)
+    [[nodiscard]] bool SampleThread(
+      const HANDLE thread,
+      unsigned& controlWord,
+      unsigned& mxcsr
+    )
     {
       if (::SuspendThread(thread) == static_cast<DWORD>(-1)) {
         return false;
@@ -233,7 +246,10 @@ namespace faf::headless
     }
   } // namespace
 
-  std::string ReportThreadFloatingPointState(const int samples, const int intervalMs)
+  std::string ReportThreadFloatingPointState(
+    const int samples,
+    const int intervalMs
+  )
   {
     std::map<DWORD, SThreadSamples> threads;
     for (int round = 0; round < samples; ++round) {

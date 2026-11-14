@@ -52,21 +52,12 @@ namespace moho
     ~CUIWorldMesh() override;
 
     /**
-     * Address: 0x0086AE00 (FUN_0086AE00)
-     *
-     * What it does:
-     * Builds one stance transform from position/orientation components and
-     * applies it to the owned mesh instance as both start and end stance.
+     * Engine addition: deletes every world mesh whose Lua object lives in `state` (its root), as Lua's
+     * `Destroy` does for one. The engine has no `__gc` for script objects, so a mesh the UI's Lua never
+     * destroys outlives its state, mesh instance included; `~CWldSession` calls this before it deletes the
+     * session's state (FAF's game UI leaves 13 per session). Returns how many it deleted.
      */
-    void SetStanceFromComponents(
-      float positionX,
-      float positionY,
-      float positionZ,
-      float orientationX,
-      float orientationY,
-      float orientationZ,
-      float orientationW
-    );
+    static int DestroyAllOf(LuaPlus::LuaState* state);
 
     /**
      * Address: 0x0086B2C0 (FUN_0086B2C0, Moho::CUIWorldMesh::SetMesh)

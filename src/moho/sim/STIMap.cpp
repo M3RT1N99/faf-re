@@ -42,7 +42,10 @@ namespace
    * What it does:
    * Shrinks terrain-type Lua-object vector tail to `newFinish`.
    */
-  void ShrinkTerrainTypesTail(moho::TerrainTypes& terrainTypes, LuaPlus::LuaObject* newFinish)
+  void ShrinkTerrainTypesTail(
+    moho::TerrainTypes& terrainTypes,
+    LuaPlus::LuaObject* newFinish
+  )
   {
     auto& terrainVec = terrainTypes.ttvec;
     if (terrainVec.begin() == nullptr) {
@@ -59,7 +62,10 @@ namespace
     terrainVec.resize(static_cast<std::size_t>(newFinish - terrainVec.begin()));
   }
 
-  void ReserveTerrainTypes(moho::TerrainTypes& terrainTypes, const std::size_t newCapacity)
+  void ReserveTerrainTypes(
+    moho::TerrainTypes& terrainTypes,
+    const std::size_t newCapacity
+  )
   {
     auto& terrainVec = terrainTypes.ttvec;
     const std::size_t currentSize = terrainVec.Size();
@@ -78,7 +84,9 @@ namespace
    * Resizes terrain-type Lua-object storage and fills newly-created slots from `fillValue`.
    */
   void ConstructTerrainTypes(
-    moho::TerrainTypes& terrainTypes, const std::uint32_t targetSize, const LuaPlus::LuaObject& fillValue
+    moho::TerrainTypes& terrainTypes,
+    const std::uint32_t targetSize,
+    const LuaPlus::LuaObject& fillValue
   )
   {
     auto& terrainVec = terrainTypes.ttvec;
@@ -105,12 +113,16 @@ namespace
    * What it does:
    * Initializes terrain-type storage to inline buffer mode.
    */
-  void InitTerrainTypes(moho::TerrainTypes& terrainTypes)
+  void InitTerrainTypes(
+    moho::TerrainTypes& terrainTypes
+  )
   {
     terrainTypes.ttvec.ResetStorageToInline();
   }
 
-  void DestroyTerrainTypes(moho::TerrainTypes& terrainTypes)
+  void DestroyTerrainTypes(
+    moho::TerrainTypes& terrainTypes
+  )
   {
     terrainTypes.ttvec.resize(0u);
     terrainTypes.ttvec.ResetStorageToInline();
@@ -122,7 +134,10 @@ namespace
    * What it does:
    * Deep-copies raw terrain type byte grid.
    */
-  void CopyTerrainTypeGrid(const moho::TerrainTypeGrid& src, moho::TerrainTypeGrid& dst)
+  void CopyTerrainTypeGrid(
+    const moho::TerrainTypeGrid& src,
+    moho::TerrainTypeGrid& dst
+  )
   {
     dst.width = src.width;
     dst.height = src.height;
@@ -134,53 +149,32 @@ namespace
     }
   }
 
-  /**
-    * Alias of FUN_0042AC30 (non-canonical helper lane).
+  /*
+   * Alias of FUN_0042AC30 (non-canonical helper lane).
    *
    * What it does:
    * No-op helper reached from shared-pointer setup path.
+   *
+   * The empty `sp_enable_shared_from_this` overload; nothing calls it now.
    */
-  void NullSub() {}
 
-  /**
+  /*
    * Address: 0x005790E0 (FUN_005790E0, func_CreateBoostPtrCHeightField)
    *
    * What it does:
    * Creates a shared ownership control block for `CHeightField*`.
+   *
+   * `STIMap` calls `mHeightField.reset(field)`.
    */
-  void CreateBoostPtrCHeightField(boost::shared_ptr<moho::CHeightField>& out, moho::CHeightField* field)
-  {
-    out = boost::shared_ptr<moho::CHeightField>(field);
-  }
 
-  /**
+  /*
    * Address: 0x00578DC0 (FUN_00578DC0, func_CreateCHeightFieldPtr)
    *
    * What it does:
    * Assigns `CHeightField` shared pointer into STIMap with prior-reference release.
-   */
-  void CreateCHeightFieldPtr(moho::CHeightField* field, boost::shared_ptr<moho::CHeightField>& out)
-  {
-    boost::shared_ptr<moho::CHeightField> tmp;
-    CreateBoostPtrCHeightField(tmp, field);
-    NullSub();
-    out = tmp;
-  }
-
-  /**
-   * Address: 0x005419F0 (FUN_005419F0)
    *
-   * What it does:
-   * Reads one position lane `{x,*,z}` and samples elevation from one indirect
-   * `CHeightField*` owner lane.
+   * `STIMap` calls `mHeightField.reset(field)`.
    */
-  float SampleHeightFieldElevationFromPositionXZ(
-    const Wm3::Vec3f* const position,
-    moho::CHeightField* const* const heightField
-  )
-  {
-    return (*heightField)->GetElevation(position->x, position->z);
-  }
 
   /**
    * Address: 0x00478D00 (FUN_00478D00, sub_478D00)
@@ -188,7 +182,9 @@ namespace
    * What it does:
    * Initializes one `SMinMax<uint16_t>` entry to {0,0}.
    */
-  void InitMinMaxEntry(moho::SMinMax<std::uint16_t>& entry)
+  void InitMinMaxEntry(
+    moho::SMinMax<std::uint16_t>& entry
+  )
   {
     entry.min = 0u;
     entry.max = 0u;
@@ -200,7 +196,11 @@ namespace
    * What it does:
    * Allocates min/max tier grid and zero-initializes each pair.
    */
-  void CreateMinMaxGridData(moho::CHeightFieldMinMaxGrid& grid, const std::int32_t width, const std::int32_t height)
+  void CreateMinMaxGridData(
+    moho::CHeightFieldMinMaxGrid& grid,
+    const std::int32_t width,
+    const std::int32_t height
+  )
   {
     grid.width = width;
     grid.height = height;
@@ -212,7 +212,10 @@ namespace
     }
   }
 
-  [[nodiscard]] std::int32_t ClampIndex(const std::int32_t value, const std::int32_t limitInclusive) noexcept
+  [[nodiscard]] std::int32_t ClampIndex(
+    const std::int32_t value,
+    const std::int32_t limitInclusive
+  ) noexcept
   {
     if (limitInclusive <= 0) {
       return 0;
@@ -250,7 +253,9 @@ namespace
    * What it does:
    * Returns min/max grid width lane.
    */
-  [[nodiscard]] std::int32_t MinMaxGridWidth(const moho::CHeightFieldMinMaxGrid& grid) noexcept
+  [[nodiscard]] std::int32_t MinMaxGridWidth(
+    const moho::CHeightFieldMinMaxGrid& grid
+  ) noexcept
   {
     return grid.width;
   }
@@ -261,21 +266,11 @@ namespace
    * What it does:
    * Returns min/max grid height lane.
    */
-  [[nodiscard]] std::int32_t MinMaxGridHeight(const moho::CHeightFieldMinMaxGrid& grid) noexcept
+  [[nodiscard]] std::int32_t MinMaxGridHeight(
+    const moho::CHeightFieldMinMaxGrid& grid
+  ) noexcept
   {
     return grid.height;
-  }
-
-  /**
-   * Address: 0x00478350 (FUN_00478350)
-   *
-   * What it does:
-   * Returns pointer to one min/max entry at `(x,z)` without clamping.
-   */
-  [[nodiscard]] moho::SMinMax<std::uint16_t>*
-  MinMaxGridCellPtr(moho::CHeightFieldMinMaxGrid& grid, const std::int32_t x, const std::int32_t z) noexcept
-  {
-    return &grid.data[x + z * grid.width];
   }
 
   /**
@@ -318,8 +313,11 @@ namespace
    * What it does:
    * Sets 16-bit grid dimensions and allocates `width * height` word storage.
    */
-  [[nodiscard]] std::int16_t*
-  AllocateHeightWordGrid(moho::CHeightFieldI16Grid& grid, const std::int32_t width, const std::int32_t height)
+  [[nodiscard]] std::int16_t* AllocateHeightWordGrid(
+    moho::CHeightFieldI16Grid& grid,
+    const std::int32_t width,
+    const std::int32_t height
+  )
   {
     grid.width = width;
     grid.height = height;
@@ -334,8 +332,11 @@ namespace
    * What it does:
    * Reallocates one 16-bit height-word grid for the requested dimensions.
    */
-  std::int16_t*
-  ResetHeightWordGrid(moho::CHeightFieldI16Grid& grid, const std::int32_t width, const std::int32_t height)
+  std::int16_t* ResetHeightWordGrid(
+    moho::CHeightFieldI16Grid& grid,
+    const std::int32_t width,
+    const std::int32_t height
+  )
   {
     delete[] grid.data;
     grid.data = nullptr;
@@ -348,37 +349,18 @@ namespace
    * What it does:
    * Returns raw 16-bit height-word data pointer lane.
    */
-  [[nodiscard]] std::uint16_t* GetHeightWordDataVariant1(moho::CHeightField& field) noexcept
+  [[nodiscard]] std::uint16_t* GetHeightWordDataVariant1(
+    moho::CHeightField& field
+  ) noexcept
   {
     return field.data;
   }
 
-  /**
-   * Address: 0x004784C0 (FUN_004784C0)
-   *
-   * What it does:
-   * Duplicate lane returning raw 16-bit height-word data pointer.
-   */
-  [[nodiscard]] std::uint16_t* GetHeightWordDataVariant2(moho::CHeightField& field) noexcept
-  {
-    return field.data;
-  }
+  using HeightFieldTierVector = fa::vector<moho::CHeightFieldTier>;
 
-  /**
-   * Address: 0x004784D0 (FUN_004784D0)
-   *
-   * What it does:
-   * Returns backing height-word byte count (`2 * width * height`).
-   */
-  [[nodiscard]] std::int32_t GetHeightWordDataByteCount(const moho::CHeightField& field) noexcept
-  {
-    return 2 * field.width * field.height;
-  }
-
-
-  using HeightFieldTierVector = msvc8::vector<moho::CHeightFieldTier>;
-
-  [[nodiscard]] std::size_t MinMaxGridSampleCount(const moho::CHeightFieldMinMaxGrid& grid) noexcept
+  [[nodiscard]] std::size_t MinMaxGridSampleCount(
+    const moho::CHeightFieldMinMaxGrid& grid
+  ) noexcept
   {
     if (grid.width <= 0 || grid.height <= 0) {
       return 0u;
@@ -386,7 +368,9 @@ namespace
     return static_cast<std::size_t>(grid.width) * static_cast<std::size_t>(grid.height);
   }
 
-  [[nodiscard]] std::size_t HeightWordGridSampleCount(const moho::CHeightFieldI16Grid& grid) noexcept
+  [[nodiscard]] std::size_t HeightWordGridSampleCount(
+    const moho::CHeightFieldI16Grid& grid
+  ) noexcept
   {
     if (grid.width <= 0 || grid.height <= 0) {
       return 0u;
@@ -394,7 +378,10 @@ namespace
     return static_cast<std::size_t>(grid.width) * static_cast<std::size_t>(grid.height);
   }
 
-  void CopyMinMaxGridDeep(const moho::CHeightFieldMinMaxGrid& src, moho::CHeightFieldMinMaxGrid& dst)
+  void CopyMinMaxGridDeep(
+    const moho::CHeightFieldMinMaxGrid& src,
+    moho::CHeightFieldMinMaxGrid& dst
+  )
   {
     dst.width = src.width;
     dst.height = src.height;
@@ -411,7 +398,10 @@ namespace
     }
   }
 
-  void CopyHeightWordGridDeep(const moho::CHeightFieldI16Grid& src, moho::CHeightFieldI16Grid& dst)
+  void CopyHeightWordGridDeep(
+    const moho::CHeightFieldI16Grid& src,
+    moho::CHeightFieldI16Grid& dst
+  )
   {
     dst.width = src.width;
     dst.height = src.height;
@@ -429,160 +419,12 @@ namespace
   }
 
   /**
-   * Address: 0x00478D80 (FUN_00478D80, func_CopyIGrid_data4)
-   *
-   * What it does:
-   * Allocates and copies one min/max tier grid from `src` into `dst`.
-   */
-  moho::CHeightFieldMinMaxGrid*
-  CopyMinMaxGridAllocateAndCopy(moho::CHeightFieldMinMaxGrid& dst, const moho::CHeightFieldMinMaxGrid& src)
-  {
-    CreateMinMaxGridData(dst, src.width, src.height);
-
-    const std::size_t sampleCount = MinMaxGridSampleCount(dst);
-    for (std::size_t i = 0; i < sampleCount; ++i) {
-      dst.data[i] = src.data[i];
-    }
-
-    return &dst;
-  }
-
-  /**
-   * Address: 0x00478DC0 (FUN_00478DC0, func_CopyIGrid_data2)
-   *
-   * What it does:
-   * Allocates and copies one error-word tier grid from `src` into `dst`.
-   */
-  moho::CHeightFieldI16Grid*
-  CopyHeightWordGridAllocateAndCopy(const moho::CHeightFieldI16Grid& src, moho::CHeightFieldI16Grid& dst)
-  {
-    dst.width = src.width;
-    dst.height = src.height;
-
-    const std::size_t sampleCount = HeightWordGridSampleCount(dst);
-    dst.data = new std::int16_t[sampleCount];
-    for (std::size_t i = 0; i < sampleCount; ++i) {
-      dst.data[i] = src.data[i];
-    }
-
-    return &dst;
-  }
-
-  /**
-   * Address: 0x00478D30 (FUN_00478D30, func_CopyIGrid)
-   *
-   * What it does:
-   * Deep-copies one tier aggregate (`data1` + `data2`) into `dst`.
-   */
-  moho::CHeightFieldTier*
-  CopyHeightFieldTier(const moho::CHeightFieldTier& src, moho::CHeightFieldTier& dst)
-  {
-    CopyMinMaxGridAllocateAndCopy(dst.data1, src.data1);
-    try {
-      CopyHeightWordGridAllocateAndCopy(src.data2, dst.data2);
-    } catch (...) {
-      delete[] dst.data1.data;
-      dst.data1.data = nullptr;
-      throw;
-    }
-
-    return &dst;
-  }
-
-  /**
-   * Address: 0x00479470 (FUN_00479470)
-   *
-   * What it does:
-   * Assigns one min/max tier grid, reallocating destination storage as needed.
-   */
-  moho::CHeightFieldMinMaxGrid*
-  AssignMinMaxGrid(moho::CHeightFieldMinMaxGrid& dst, const moho::CHeightFieldMinMaxGrid& src)
-  {
-    if (&dst == &src) {
-      return &dst;
-    }
-
-    delete[] dst.data;
-    dst.data = nullptr;
-    return CopyMinMaxGridAllocateAndCopy(dst, src);
-  }
-
-  /**
-   * Address: 0x004794C0 (FUN_004794C0)
-   *
-   * What it does:
-   * Assigns one error-word tier grid, reallocating destination storage as
-   * needed.
-   */
-  moho::CHeightFieldI16Grid*
-  AssignHeightWordGrid(moho::CHeightFieldI16Grid& dst, const moho::CHeightFieldI16Grid& src)
-  {
-    if (&dst == &src) {
-      return &dst;
-    }
-
-    delete[] dst.data;
-    dst.data = nullptr;
-    return CopyHeightWordGridAllocateAndCopy(src, dst);
-  }
-
-  /**
-   * Address: 0x00479250 (FUN_00479250)
-   *
-   * What it does:
-   * Returns high byte of an integer lane.
-   */
-  std::uint8_t HighByteVariant1(const std::uint32_t value) noexcept
-  {
-    return static_cast<std::uint8_t>((value >> 8u) & 0xFFu);
-  }
-
-  /**
-   * Address: 0x00479340 (FUN_00479340)
-   *
-   * What it does:
-   * Duplicate lane returning high byte of an integer.
-   */
-  std::uint8_t HighByteVariant2(const std::uint32_t value) noexcept
-  {
-    return static_cast<std::uint8_t>((value >> 8u) & 0xFFu);
-  }
-
-  /**
-   * Address: 0x00479530 (FUN_00479530)
-   *
-   * What it does:
-   * Copies one tier from `source` into `dst` when `source` is non-null.
-   */
-  moho::CHeightFieldTier*
-  CopyHeightFieldTierFromPointerVariant1(moho::CHeightFieldTier& dst, const moho::CHeightFieldTier* source)
-  {
-    if (source != nullptr) {
-      return CopyHeightFieldTier(*source, dst);
-    }
-    return nullptr;
-  }
-
-  /**
-   * Address: 0x00479610 (FUN_00479610)
-   *
-   * What it does:
-   * Duplicate lane copying one tier from pointer source.
-   */
-  moho::CHeightFieldTier*
-  CopyHeightFieldTierFromPointerVariant2(moho::CHeightFieldTier& dst, const moho::CHeightFieldTier* source)
-  {
-    return CopyHeightFieldTierFromPointerVariant1(dst, source);
-  }
-
-  /**
    * Address: 0x004785A0 (FUN_004785A0)
    *
    * What it does:
    * Stores `{min,max}` word pair and returns the destination slot.
    */
-  moho::SMinMax<std::uint16_t>*
-  StoreMinMaxWordPair(
+  moho::SMinMax<std::uint16_t>* StoreMinMaxWordPair(
     moho::SMinMax<std::uint16_t>& outValue,
     const std::uint16_t maxValue,
     const std::uint16_t minValue
@@ -599,59 +441,38 @@ namespace
    * What it does:
    * Stores `(x,y)` float pair and returns the destination slot.
    */
-  Wm3::Vec2f* StoreVec2fPair(Wm3::Vec2f& outValue, const float x, const float y) noexcept
+  Wm3::Vec2f* StoreVec2fPair(
+    Wm3::Vec2f& outValue,
+    const float x,
+    const float y
+  ) noexcept
   {
     outValue.x = x;
     outValue.y = y;
     return &outValue;
   }
 
-  [[nodiscard]] Wm3::Vec3f PointOnLine(const moho::GeomLine3& line, const float t) noexcept
+  [[nodiscard]] Wm3::Vec3f PointOnLine(
+    const moho::GeomLine3& line,
+    const float t
+  ) noexcept
   {
     return {line.pos.x + line.dir.x * t, line.pos.y + line.dir.y * t, line.pos.z + line.dir.z * t};
-  }
-
-  /**
-   * Address: 0x00577540 (FUN_00577540, Moho__CColHitResult__PlaneIntersection)
-   *
-   * What it does:
-   * Intersects parametric segment line against plane `{normal,dist}` and
-   * returns NaN vector when outside segment range.
-   */
-  [[nodiscard]] Wm3::Vec3f
-  PlaneIntersection(const moho::GeomLine3& line, const moho::VecDist& plane, moho::CGeomHitResult* outHit)
-  {
-    // 0x00577540-0x0057756C: the denominator sums `(y + z) + x`; the
-    // numerator dot (0x0057757D-0x00577593) sums `(x + y) + z`.
-    const float dotDen = ((line.dir.y * plane.dir.y) + (line.dir.z * plane.dir.z)) + (line.dir.x * plane.dir.x);
-    if (dotDen == 0.0f) {
-      return Wm3::Vec3f::NaN();
-    }
-
-    const float dotPos = line.pos.x * plane.dir.x + line.pos.y * plane.dir.y + line.pos.z * plane.dir.z;
-    const float t = (plane.dist - dotPos) / dotDen;
-    // 0x005775A4 / 0x005775AF: both range tests are `comiss` + `jb`, so an
-    // unordered `t` is rejected.
-    if (!(t >= line.closest) || !(line.farthest >= t)) {
-      return Wm3::Vec3f::NaN();
-    }
-
-    if (outHit) {
-      outHit->distance = t;
-    }
-
-    return PointOnLine(line, t);
   }
 
   constexpr float kHeightWordScale = 0.0078125f;
   constexpr float kNoWaterElevation = -10000.0f;
 
-  [[nodiscard]] constexpr std::uint8_t OccupancyMask(const moho::EOccupancyCaps caps) noexcept
+  [[nodiscard]] constexpr std::uint8_t OccupancyMask(
+    const moho::EOccupancyCaps caps
+  ) noexcept
   {
     return static_cast<std::uint8_t>(caps);
   }
 
-  [[nodiscard]] constexpr moho::EOccupancyCaps ToOccupancyCaps(const std::uint8_t mask) noexcept
+  [[nodiscard]] constexpr moho::EOccupancyCaps ToOccupancyCaps(
+    const std::uint8_t mask
+  ) noexcept
   {
     return static_cast<moho::EOccupancyCaps>(mask);
   }
@@ -663,12 +484,67 @@ namespace
   constexpr std::uint8_t kOccLandSeabed = static_cast<std::uint8_t>(kOccLand | kOccSeabed);
   constexpr std::uint8_t kOccWaterSubSeabed = static_cast<std::uint8_t>(kOccWater | kOccSub | kOccSeabed);
 
-  [[nodiscard]] constexpr std::uint8_t RemoveCaps(const std::uint8_t mask, const std::uint8_t bitsToClear) noexcept
+  [[nodiscard]] constexpr std::uint8_t RemoveCaps(
+    const std::uint8_t mask,
+    const std::uint8_t bitsToClear
+  ) noexcept
   {
     return static_cast<std::uint8_t>(mask & static_cast<std::uint8_t>(~bitsToClear));
   }
 
-  [[nodiscard]] std::uint16_t ClampWordFromFloat(float value) noexcept
+  /// Engine addition (water bodies): the shallowest and deepest water over a block of vertices.
+  struct WaterDepthRange
+  {
+    float minDepth;
+    float maxDepth;
+  };
+
+  /**
+   * Engine addition (water bodies): water level minus terrain over vertices
+   * `[x0, x0 + sizeX] x [z0, z0 + sizeZ]`, each vertex under its own level.
+   * With one level everywhere it gives the single-level checks' `level -
+   * maxHeight` and `level - minHeight`.
+   */
+  [[nodiscard]] WaterDepthRange WaterDepthUnder(
+    const moho::STIMap& map,
+    const std::int32_t x0,
+    const std::int32_t z0,
+    const std::int32_t sizeX,
+    const std::int32_t sizeZ
+  ) noexcept
+  {
+    const moho::CHeightField* const field = map.mHeightField.get();
+    WaterDepthRange range{std::numeric_limits<float>::max(), std::numeric_limits<float>::lowest()};
+    for (std::int32_t z = z0; z <= z0 + sizeZ; ++z) {
+      const std::size_t row = static_cast<std::size_t>(z) * static_cast<std::size_t>(field->width);
+      for (std::int32_t x = x0; x <= x0 + sizeX; ++x) {
+        const float terrain = static_cast<float>(field->data[row + static_cast<std::size_t>(x)]) * kHeightWordScale;
+        const float depth = map.GetWaterElevationAtVertex(x, z) - terrain;
+        range.minDepth = std::min(range.minDepth, depth);
+        range.maxDepth = std::max(range.maxDepth, depth);
+      }
+    }
+    return range;
+  }
+
+  [[nodiscard]] std::uint8_t ApplyWaterDepthRange(
+    std::uint8_t capsMask,
+    const moho::SFootprint& footprint,
+    const WaterDepthRange& depth
+  ) noexcept
+  {
+    if (footprint.mMinWaterDepth > depth.minDepth) {
+      capsMask = RemoveCaps(capsMask, kOccWaterSubSeabed);
+    }
+    if (depth.maxDepth > footprint.mMaxWaterDepth) {
+      capsMask = RemoveCaps(capsMask, kOccLandSeabed);
+    }
+    return capsMask;
+  }
+
+  [[nodiscard]] std::uint16_t ClampWordFromFloat(
+    float value
+  ) noexcept
   {
     if (value >= 65535.0f) {
       value = 65535.0f;
@@ -679,20 +555,15 @@ namespace
     return static_cast<std::uint16_t>(value);
   }
 
-  [[nodiscard]] std::uint16_t SampleHeightWord(const moho::CHeightField& field, const std::int32_t x, const std::int32_t z) noexcept
+  [[nodiscard]] std::uint16_t SampleHeightWord(
+    const moho::CHeightField& field,
+    const std::int32_t x,
+    const std::int32_t z
+  ) noexcept
   {
     const std::int32_t sampleX = ClampIndex(x, field.width - 1);
     const std::int32_t sampleZ = ClampIndex(z, field.height - 1);
     return static_cast<std::uint16_t>(field.data[sampleX + sampleZ * field.width]);
-  }
-
-  [[nodiscard]] Wm3::Vec3f Cross3(const Wm3::Vec3f& a, const Wm3::Vec3f& b) noexcept
-  {
-    return {
-      a.y * b.z - a.z * b.y,
-      a.z * b.x - a.x * b.z,
-      a.x * b.y - a.y * b.x,
-    };
   }
 
   /**
@@ -701,8 +572,11 @@ namespace
    * What it does:
    * Computes normalized cross product `lhs x rhs` into `outNormal`.
    */
-  Wm3::Vector3f*
-  NormalizeCrossProduct(const Wm3::Vector3f& lhs, Wm3::Vector3f& outNormal, const Wm3::Vector3f& rhs) noexcept
+  Wm3::Vector3f* NormalizeCrossProduct(
+    const Wm3::Vector3f& lhs,
+    Wm3::Vector3f& outNormal,
+    const Wm3::Vector3f& rhs
+  ) noexcept
   {
     outNormal.x = lhs.y * rhs.z - lhs.z * rhs.y;
     outNormal.y = lhs.z * rhs.x - lhs.x * rhs.z;
@@ -718,8 +592,7 @@ namespace
    * Builds one normalized plane `{dir,dist}` from anchor point `p0` and
    * triangle edge points `p1`/`p2`.
    */
-  moho::VecDist*
-  BuildNormalizedPlaneFromAnchor(
+  moho::VecDist* BuildNormalizedPlaneFromAnchor(
     const Wm3::Vector3f& p1,
     const Wm3::Vector3f& p2,
     moho::VecDist& outPlane,
@@ -743,20 +616,31 @@ namespace
     float distance;
   };
 
-  [[nodiscard]] PlaneEquation BuildPlane(const Wm3::Vec3f& p0, const Wm3::Vec3f& p1, const Wm3::Vec3f& p2) noexcept
+  [[nodiscard]] PlaneEquation BuildPlane(
+    const Wm3::Vec3f& p0,
+    const Wm3::Vec3f& p1,
+    const Wm3::Vec3f& p2
+  ) noexcept
   {
     moho::VecDist plane{};
     (void)BuildNormalizedPlaneFromAnchor(p1, p2, plane, p0);
     return {plane.dir, plane.dist};
   }
 
-  [[nodiscard]] float PlaneDistanceAbs(const PlaneEquation& plane, const float x, const float y, const float z) noexcept
+  [[nodiscard]] float PlaneDistanceAbs(
+    const PlaneEquation& plane,
+    const float x,
+    const float y,
+    const float z
+  ) noexcept
   {
     const float signedDistance = plane.normal.x * x + plane.normal.y * y + plane.normal.z * z - plane.distance;
     return std::fabs(signedDistance);
   }
 
-  void TickLoadingProgress(moho::CBackgroundTaskControl* const loadControl)
+  void TickLoadingProgress(
+    moho::CBackgroundTaskControl* const loadControl
+  )
   {
     if (loadControl && loadControl->mHandle) {
       loadControl->mHandle->UpdateLoadingProgress();
@@ -828,8 +712,10 @@ namespace
               for (std::int32_t x = clampedX0; x <= split; ++x) {
                 const std::int32_t sampleX = ClampIndex(x, field.width - 1);
                 const std::int32_t sampleZ = ClampIndex(row, field.height - 1);
-                const float sampleH = static_cast<float>(field.data[sampleX + sampleZ * field.width]) * kHeightWordScale;
-                const float distance = PlaneDistanceAbs(lowerPlane, static_cast<float>(x), sampleH, static_cast<float>(row));
+                const float sampleH =
+                  static_cast<float>(field.data[sampleX + sampleZ * field.width]) * kHeightWordScale;
+                const float distance =
+                  PlaneDistanceAbs(lowerPlane, static_cast<float>(x), sampleH, static_cast<float>(row));
                 if (distance > maxDistance) {
                   maxDistance = distance;
                 }
@@ -838,8 +724,10 @@ namespace
               for (std::int32_t x = clampedX0 + split; x <= clampedX1; ++x) {
                 const std::int32_t sampleX = ClampIndex(x, field.width - 1);
                 const std::int32_t sampleZ = ClampIndex(row, field.height - 1);
-                const float sampleH = static_cast<float>(field.data[sampleX + sampleZ * field.width]) * kHeightWordScale;
-                const float distance = PlaneDistanceAbs(upperPlane, static_cast<float>(x), sampleH, static_cast<float>(row));
+                const float sampleH =
+                  static_cast<float>(field.data[sampleX + sampleZ * field.width]) * kHeightWordScale;
+                const float distance =
+                  PlaneDistanceAbs(upperPlane, static_cast<float>(x), sampleH, static_cast<float>(row));
                 if (distance > maxDistance) {
                   maxDistance = distance;
                 }
@@ -883,25 +771,15 @@ namespace
     }
   }
 
-  /**
-   * Address: 0x004762C0 (FUN_004762C0, orphan helper with no incoming xrefs)
-   *
-   * What it does:
-   * Routes one z-row update through the tier-error kernel without progress ticks.
-   */
-  void
-  UpdateErrorSingleRowNoProgress(moho::CHeightField& field, const std::int32_t z, const std::int32_t x0, const std::int32_t x1)
-  {
-    UpdateErrorKernel(field, nullptr, x0, z, x1, z);
-  }
-
   using moho::AdvanceGridTraversalEdge;
   using moho::GetGridTraversalCell;
   using moho::GridTraversalLine;
   using moho::InitGridTraversalLine;
   using moho::IsGridTraversalBeyondEnd;
 
-  [[nodiscard]] std::int32_t HighestBitIndex(std::int32_t value) noexcept
+  [[nodiscard]] std::int32_t HighestBitIndex(
+    std::int32_t value
+  ) noexcept
   {
     if (value <= 0) {
       return -1;
@@ -917,18 +795,28 @@ namespace
 
   // The terrain-triangle tests (0x004778F0 / 0x00477B80) sum every dot with the
   // normal as (z + y) + x -- e.g. 0x00477A64..0x00477AAB.
-  [[nodiscard]] float Dot3(const Wm3::Vec3f& a, const Wm3::Vec3f& b) noexcept
+  [[nodiscard]] float Dot3(
+    const Wm3::Vec3f& a,
+    const Wm3::Vec3f& b
+  ) noexcept
   {
     return ((a.z * b.z) + (a.y * b.y)) + (a.x * b.x);
   }
 
-  [[nodiscard]] float PlaneSide(const Wm3::Vec3f& point, const Wm3::Vec3f& normal, const float planeDistance) noexcept
+  [[nodiscard]] float PlaneSide(
+    const Wm3::Vec3f& point,
+    const Wm3::Vec3f& normal,
+    const float planeDistance
+  ) noexcept
   {
     return Dot3(point, normal) - planeDistance;
   }
 
   // The triangle's plane offset is summed (z + x) + y (0x00477A69..0x00477A8E).
-  [[nodiscard]] float TrianglePlaneDistance(const Wm3::Vec3f& normal, const Wm3::Vec3f& basePoint) noexcept
+  [[nodiscard]] float TrianglePlaneDistance(
+    const Wm3::Vec3f& normal,
+    const Wm3::Vec3f& basePoint
+  ) noexcept
   {
     return ((normal.z * basePoint.z) + (normal.x * basePoint.x)) + (normal.y * basePoint.y);
   }
@@ -939,7 +827,10 @@ namespace
    * What it does:
    * Re-aligns grid-walker state when the traversal step is reduced/increased.
    */
-  void UpdateGridTraversalStep(GridTraversalLine& line, const std::int32_t newStep)
+  void UpdateGridTraversalStep(
+    GridTraversalLine& line,
+    const std::int32_t newStep
+  )
   {
     if (newStep < line.step) {
       if (line.x0 < static_cast<float>(line.xEdge) || line.z0 < static_cast<float>(line.zEdge)) {
@@ -976,8 +867,8 @@ namespace
 
         const std::int32_t alignMask = -newStep;
         // 0x0040D9DA, 0x0040DA0C: the binary's inlined floor.
-        line.xEdge = msvc8::FloorToIntX87(line.x0) & alignMask;
-        line.zEdge = msvc8::FloorToIntX87(line.z0) & alignMask;
+        line.xEdge = fa::FloorToIntX87(line.x0) & alignMask;
+        line.zEdge = fa::FloorToIntX87(line.z0) & alignMask;
       }
       return;
     }
@@ -999,7 +890,9 @@ namespace
    * What it does:
    * Backs up one grid-boundary edge (X or Z) before descending traversal tier.
    */
-  void RetreatGridTraversalEdge(GridTraversalLine& line) noexcept
+  void RetreatGridTraversalEdge(
+    GridTraversalLine& line
+  ) noexcept
   {
     const float xMetric = (static_cast<float>(line.xEdge) - line.x1) * line.dz;
     const float zMetric = (static_cast<float>(line.zEdge) - line.z1) * line.dx;
@@ -1039,8 +932,10 @@ namespace
     }
 
     if (tier != 0 && mask != 0u) {
-      if (tierBox.Min.x < inOutBounds.Min.x || inOutBounds.Max.x < tierBox.Max.x || tierBox.Min.y < inOutBounds.Min.y ||
-          inOutBounds.Max.y < tierBox.Max.y || tierBox.Min.z < inOutBounds.Min.z || inOutBounds.Max.z < tierBox.Max.z) {
+      if (
+        tierBox.Min.x < inOutBounds.Min.x || inOutBounds.Max.x < tierBox.Max.x || tierBox.Min.y < inOutBounds.Min.y ||
+        inOutBounds.Max.y < tierBox.Max.y || tierBox.Min.z < inOutBounds.Min.z || inOutBounds.Max.z < tierBox.Max.z
+      ) {
         const std::int32_t childX = tierX * 2;
         const std::int32_t childZ = tierZ * 2;
         const std::int32_t childTier = tier - 1;
@@ -1085,7 +980,11 @@ namespace moho
    * callers rather than relocated, to avoid disturbing this file's existing
    * internal call sites.
    */
-  Wm3::Vec3f PlaneIntersection(const GeomLine3& line, const VecDist& plane, CGeomHitResult* const outHit)
+  Wm3::Vec3f PlaneIntersection(
+    const GeomLine3& line,
+    const VecDist& plane,
+    CGeomHitResult* const outHit
+  )
   {
     // Same emission as the file-private copy: `(y + z) + x` denominator,
     // unordered `t` rejected (0x0057754A-0x005775B2).
@@ -1133,7 +1032,9 @@ namespace moho
    * copied min/max grid is released before the exception leaves, which is the
    * rollback the binary's copy body performs.
    */
-  CHeightFieldTier::CHeightFieldTier(const CHeightFieldTier& other)
+  CHeightFieldTier::CHeightFieldTier(
+    const CHeightFieldTier& other
+  )
   {
     CopyMinMaxGridDeep(other.data1, data1);
     try {
@@ -1145,7 +1046,9 @@ namespace moho
     }
   }
 
-  CHeightFieldTier& CHeightFieldTier::operator=(const CHeightFieldTier& other)
+  CHeightFieldTier& CHeightFieldTier::operator=(
+    const CHeightFieldTier& other
+  )
   {
     if (this != &other) {
       CHeightFieldTier copy(other);
@@ -1155,7 +1058,10 @@ namespace moho
     return *this;
   }
 
-  CHeightField::CHeightField(const std::int32_t widthArg, const std::int32_t heightArg)
+  CHeightField::CHeightField(
+    const std::int32_t widthArg,
+    const std::int32_t heightArg
+  )
     : data(nullptr)
     , width(0)
     , height(0)
@@ -1205,7 +1111,7 @@ namespace moho
    * second time, fused with a trailing `operator delete(this)`, as
    * `boost::detail::sp_counted_impl_p<Moho::CHeightField>::dispose`'s
    * callee at 0x00579250 (`FUN_00579250`). That control block is the real
-   * vendored one, constructed by `CreateBoostPtrCHeightField` (this file,
+   * vendored one, constructed by `func_CreateBoostPtrCHeightField` (0x005790E0,
    * `out = boost::shared_ptr<moho::CHeightField>(field)`) -- its `dispose()`
    * reaches this destructor via `delete countedImpl->px`.
    */
@@ -1243,7 +1149,10 @@ namespace moho
     return sHeightFieldRevision.load(std::memory_order_relaxed);
   }
 
-  void CHeightField::InitField(const std::int32_t widthArg, const std::int32_t heightArg)
+  void CHeightField::InitField(
+    const std::int32_t widthArg,
+    const std::int32_t heightArg
+  )
   {
     BumpHeightFieldRevision(); // engine addition, see HeightFieldRevision
     width = widthArg;
@@ -1264,7 +1173,10 @@ namespace moho
    * What it does:
    * Returns a clamped sample from the base 16-bit height grid.
    */
-  std::uint16_t CHeightField::GetHeightAt(std::int32_t x, std::int32_t z) const
+  std::uint16_t CHeightField::GetHeightAt(
+    std::int32_t x,
+    std::int32_t z
+  ) const
   {
     if (!data || width <= 0 || height <= 0) {
       return 0u;
@@ -1292,13 +1204,15 @@ namespace moho
    * Returns `{x, clampedSample / 128.0f, z}` -- the world-space corner point
    * the debug overlays build their decal quads from.
    */
-  Wm3::Vec3f CHeightField::GetClampedSamplePoint(const std::int32_t x, const std::int32_t z) const
+  Wm3::Vec3f CHeightField::GetClampedSamplePoint(
+    const std::int32_t x,
+    const std::int32_t z
+  ) const
   {
     const std::int32_t clampedX = std::clamp(x, 0, width - 1);
     const std::int32_t clampedZ = std::clamp(z, 0, height - 1);
     const std::uint16_t sample =
-      data[static_cast<std::size_t>(clampedZ) * static_cast<std::size_t>(width)
-           + static_cast<std::size_t>(clampedX)];
+      data[static_cast<std::size_t>(clampedZ) * static_cast<std::size_t>(width) + static_cast<std::size_t>(clampedX)];
 
     Wm3::Vec3f point{};
     point.x = static_cast<float>(x);
@@ -1313,7 +1227,10 @@ namespace moho
    * What it does:
    * Returns pointer to one base-grid sample at `(x,z)` without clamping.
    */
-  std::uint16_t* CHeightField::GetArrayAt(const std::int32_t x, const std::int32_t z)
+  std::uint16_t* CHeightField::GetArrayAt(
+    const std::int32_t x,
+    const std::int32_t z
+  )
   {
     return &GetHeightWordDataVariant1(*this)[x + z * width];
   }
@@ -1342,13 +1259,17 @@ namespace moho
       float fracZ;
     };
 
-    [[nodiscard]] ElevationSample SampleElevation(const CHeightField& field, const float x, const float z) noexcept
+    [[nodiscard]] ElevationSample SampleElevation(
+      const CHeightField& field,
+      const float x,
+      const float z
+    ) noexcept
     {
       // 0x0044FB9D..0x0044FBD0: frndint, the -1 borrow and fistp. Outside the
       // int range (and for NaN) that is not std::floor, and the fraction below
       // is `x + 2^31`, not 0 (difffuzz, plan WPR.21).
-      const int fx = msvc8::FloorToIntX87(x);
-      const int fz = msvc8::FloorToIntX87(z);
+      const int fx = fa::FloorToIntX87(x);
+      const int fz = fa::FloorToIntX87(z);
 
       const int wMax = field.width - 1;
       const int hMax = field.height - 1;
@@ -1374,13 +1295,16 @@ namespace moho
     }
   } // namespace
 
-  float CHeightField::GetElevation(const float x, const float z) const
+  float CHeightField::GetElevation(
+    const float x,
+    const float z
+  ) const
   {
     // 0x0044FCFB..0x0044FD3D keeps both interpolated rows on the x87 stack.
     // The simulation sets PC24: double intermediates ignore that control and
     // produce different heights. Preserve the original arithmetic explicitly.
     const ElevationSample s = SampleElevation(*this, x, z);
-    return msvc8::BilinearHeight(s.h00, s.h01, s.h10, s.h11, s.fracX, s.fracZ);
+    return fa::BilinearHeight(s.h00, s.h01, s.h10, s.h11, s.fracX, s.fracZ);
   }
 
   /**
@@ -1398,7 +1322,10 @@ namespace moho
    * therefore enters the z difference unrounded: `top - bottom` can be a
    * negative value too small for a float, stored as -0.
    */
-  Wm3::Vec3f CHeightField::GetNormal(const float x, const float z) const
+  Wm3::Vec3f CHeightField::GetNormal(
+    const float x,
+    const float z
+  ) const
   {
     const float top = GetElevation(x, z - 0.5f);
     const float left = GetElevation(x - 0.5f, z);
@@ -1408,9 +1335,7 @@ namespace moho
     Wm3::Vec3f out{};
     out.x = left - right;
     out.y = 1.0f;
-    out.z = msvc8::SubtractBilinearHeight(
-      top, bottom.h00, bottom.h01, bottom.h10, bottom.h11, bottom.fracX, bottom.fracZ
-    );
+    out.z = fa::SubtractBilinearHeight(top, bottom.h00, bottom.h01, bottom.h10, bottom.h11, bottom.fracX, bottom.fracZ);
     (void)out.Normalize();
     return out;
   }
@@ -1427,15 +1352,17 @@ namespace moho
    * What it does:
    * Returns tier-cell min/max heights scaled into world units (`x=min`, `y=max`).
    */
-  Wm3::Vec2f CHeightField::GetTierBounds(const std::int32_t x, const std::int32_t z, const std::int32_t tier) const
+  Wm3::Vec2f CHeightField::GetTierBounds(
+    const std::int32_t x,
+    const std::int32_t z,
+    const std::int32_t tier
+  ) const
   {
     const SMinMax<std::uint16_t> bounds = GetTierBoundsUWord(tier, x, z);
 
     Wm3::Vec2f out{};
     (void)StoreVec2fPair(
-      out,
-      static_cast<float>(bounds.min) * kHeightWordScale,
-      static_cast<float>(bounds.max) * kHeightWordScale
+      out, static_cast<float>(bounds.min) * kHeightWordScale, static_cast<float>(bounds.max) * kHeightWordScale
     );
     return out;
   }
@@ -1452,8 +1379,11 @@ namespace moho
    * What it does:
    * Returns min/max height word pair for one tier cell (or 2x2 base sample block for tier 0).
    */
-  SMinMax<std::uint16_t>
-  CHeightField::GetTierBoundsUWord(const std::int32_t tier, const std::int32_t x, const std::int32_t z) const
+  SMinMax<std::uint16_t> CHeightField::GetTierBoundsUWord(
+    const std::int32_t tier,
+    const std::int32_t x,
+    const std::int32_t z
+  ) const
   {
     SMinMax<std::uint16_t> out{};
     if (!data || width <= 0 || height <= 0) {
@@ -1511,7 +1441,11 @@ namespace moho
    * Reads tier error word from `data2` for one tier-cell and scales it into
    * world-space error units.
    */
-  float CHeightField::GetTierMaxError(const std::int32_t tier, const std::int32_t x, const std::int32_t z) const
+  float CHeightField::GetTierMaxError(
+    const std::int32_t tier,
+    const std::int32_t x,
+    const std::int32_t z
+  ) const
   {
     const CHeightFieldTier& grid = mGrids[static_cast<std::size_t>(tier - 1)];
     const std::int32_t index = x + (z * grid.data2.width);
@@ -1530,8 +1464,11 @@ namespace moho
    * What it does:
    * Builds clamped world-space AABB for one tier cell with min/max sampled heights.
    */
-  Wm3::AxisAlignedBox3f
-  CHeightField::GetTierBox(const std::int32_t x, const std::int32_t z, const std::int32_t tier) const
+  Wm3::AxisAlignedBox3f CHeightField::GetTierBox(
+    const std::int32_t x,
+    const std::int32_t z,
+    const std::int32_t tier
+  ) const
   {
     const SMinMax<std::uint16_t> bounds = GetTierBoundsUWord(tier, x, z);
     const float minY = static_cast<float>(bounds.min) * 0.0078125f;
@@ -1596,9 +1533,7 @@ namespace moho
   Wm3::AxisAlignedBox3f CHeightField::GetBounds3D() const
   {
     const CHeightFieldTier* const firstTier = mGrids.begin();
-    const std::int32_t tierCount = firstTier != nullptr
-                                     ? static_cast<std::int32_t>(mGrids.end() - firstTier)
-                                     : 0;
+    const std::int32_t tierCount = firstTier != nullptr ? static_cast<std::int32_t>(mGrids.end() - firstTier) : 0;
     return GetTierBox(0, 0, tierCount);
   }
 
@@ -1609,7 +1544,9 @@ namespace moho
    * Clamps a base-sample rectangle and recomputes tier error data without
    * background progress callbacks.
    */
-  void CHeightField::UpdateError(gpg::Rect2i rect)
+  void CHeightField::UpdateError(
+    gpg::Rect2i rect
+  )
   {
     BumpHeightFieldRevision(); // engine addition, see HeightFieldRevision
     std::int32_t x0 = rect.x0;
@@ -1642,7 +1579,10 @@ namespace moho
    * Clamps a base-sample rectangle and recomputes tier error data while
    * ticking scenario-load progress.
    */
-  void CHeightField::UpdateError(CBackgroundTaskControl& loadControl, gpg::Rect2i rect)
+  void CHeightField::UpdateError(
+    CBackgroundTaskControl& loadControl,
+    gpg::Rect2i rect
+  )
   {
     BumpHeightFieldRevision(); // engine addition, see HeightFieldRevision
     std::int32_t x0 = rect.x0;
@@ -1692,7 +1632,9 @@ namespace moho
    * What it does:
    * Recomputes tier min/max bounds over the affected base-sample rectangle.
    */
-  void CHeightField::UpdateBounds(gpg::Rect2i rect)
+  void CHeightField::UpdateBounds(
+    gpg::Rect2i rect
+  )
   {
     BumpHeightFieldRevision(); // engine addition, see HeightFieldRevision
     std::int32_t x0 = rect.x0;
@@ -1904,27 +1846,15 @@ namespace moho
   }
 
   /**
-   * Address: 0x00478010 (FUN_00478010, Moho::CHeightField::CopyHeightsRectFrom)
-   *
-   * What it does:
-   * Copies a source-field rectangle using source row stride and forwards to the
-   * raw setter path.
-   */
-  void CHeightField::CopyHeightsRectFrom(const CHeightField* const sourceField, const gpg::Rect2i& rect)
-  {
-    const std::int32_t sourceRowStride = sourceField->width;
-    const std::uint16_t* const sourceData = sourceField->data + (rect.x0 + sourceRowStride * rect.z0);
-    SetElevationRectRaw(rect, sourceData, sourceRowStride);
-  }
-
-  /**
    * Address: 0x00478040 (FUN_00478040, Moho::CHeightField::Rescale)
    *
    * What it does:
    * Scales every raw height sample by `scale` and clamps the stored 16-bit
    * range to `[0, 65535]`.
    */
-  void CHeightField::Rescale(const float scale)
+  void CHeightField::Rescale(
+    const float scale
+  )
   {
     BumpHeightFieldRevision(); // engine addition, see HeightFieldRevision
     if (!data) {
@@ -1951,7 +1881,9 @@ namespace moho
    * Builds the terrain AABB covered by cells intersecting the provided convex
    * clipping solid.
    */
-  Wm3::AxisAlignedBox3f CHeightField::ConvexIntersection(const CGeomSolid3& solid) const
+  Wm3::AxisAlignedBox3f CHeightField::ConvexIntersection(
+    const CGeomSolid3& solid
+  ) const
   {
     Wm3::AxisAlignedBox3f out{};
     out.Min.x = std::numeric_limits<float>::max();
@@ -1984,7 +1916,12 @@ namespace moho
    * 0x004778B1), so a NaN limit replaces max and the final `comiss max, min; jb` (0x004778B9) rejects the segment.
    * A NaN dir.y takes the far-limit side (`comiss 0, dir.y; jbe` at 0x00477890).
    */
-  bool CHeightField::ClipSegmentToWorld(const Wm3::Vec3f& pos, const Wm3::Vec3f& dir, float& min, float& max) const
+  bool CHeightField::ClipSegmentToWorld(
+    const Wm3::Vec3f& pos,
+    const Wm3::Vec3f& dir,
+    float& min,
+    float& max
+  ) const
   {
     float newMin = min;
     float newMax = max;
@@ -2184,7 +2121,11 @@ namespace moho
    * the first terrain-triangle intersection distance.
    */
   bool CHeightField::DoIntersection(
-    const Wm3::Vec3f& pos, const Wm3::Vec3f& dir, float start, float end, CGeomHitResult* const res
+    const Wm3::Vec3f& pos,
+    const Wm3::Vec3f& dir,
+    float start,
+    float end,
+    CGeomHitResult* const res
   ) const
   {
     if (!res) {
@@ -2213,7 +2154,7 @@ namespace moho
 
     std::int32_t tier = tierCount;
     const float scaledSpan = (end - start) * dirMax * 2.0f;
-    const std::int32_t walkSpanCeil = msvc8::CeilToIntX87(scaledSpan); // 0x0047718A..0x0047719D
+    const std::int32_t walkSpanCeil = fa::CeilToIntX87(scaledSpan); // 0x0047718A..0x0047719D
     const std::int32_t spanBit = HighestBitIndex(walkSpanCeil);
     if (spanBit < tier) {
       tier = spanBit;
@@ -2373,7 +2314,10 @@ namespace moho
    * What it does:
    * Intersects segment line with terrain surface and returns hit point or NaN vector.
    */
-  Wm3::Vec3f CHeightField::Intersection(const GeomLine3& line, CGeomHitResult* res) const
+  Wm3::Vec3f CHeightField::Intersection(
+    const GeomLine3& line,
+    CGeomHitResult* res
+  ) const
   {
     CGeomHitResult temp{};
     temp.distance = gpg::NaN;
@@ -2394,8 +2338,11 @@ namespace moho
    * Calls `CHeightField::Intersection` and tags hit-kind `1` when the
    * returned vector is valid.
    */
-  [[nodiscard]] Wm3::Vec3f
-  IntersectHeightFieldAndMarkTerrainHit(const CHeightField& field, const GeomLine3& line, CColHitResult* res)
+  [[nodiscard]] Wm3::Vec3f IntersectHeightFieldAndMarkTerrainHit(
+    const CHeightField& field,
+    const GeomLine3& line,
+    CColHitResult* res
+  )
   {
     const Wm3::Vec3f hitPoint = field.Intersection(line, res);
     if (res != nullptr && IsValidVector3f(hitPoint)) {
@@ -2415,7 +2362,10 @@ namespace moho
    * What it does:
    * Initializes playable rect, terrain type bytes, water defaults, and height-field store.
    */
-  STIMap::STIMap(const std::uint32_t width, const std::uint32_t height)
+  STIMap::STIMap(
+    const std::uint32_t width,
+    const std::uint32_t height
+  )
     : mHeightField()
     , mPlayableRect{}
     , mTerrainTypes{}
@@ -2444,7 +2394,7 @@ namespace moho
     }
 
     CHeightField* const field = new CHeightField(static_cast<std::int32_t>(width), static_cast<std::int32_t>(height));
-    CreateCHeightFieldPtr(field, mHeightField);
+    mHeightField.reset(field);
 
     std::memset(mBlocking, 0, sizeof(mBlocking));
   }
@@ -2460,7 +2410,9 @@ namespace moho
    * What it does:
    * Creates a map clone using source dimensions/height samples and water settings.
    */
-  STIMap::STIMap(STIMap* src)
+  STIMap::STIMap(
+    STIMap* src
+  )
     : mHeightField()
     , mPlayableRect{}
     , mTerrainTypes{}
@@ -2488,10 +2440,14 @@ namespace moho
       mWaterElevation = src->mWaterElevation;
       mWaterElevationDeep = src->mWaterElevationDeep;
       mWaterElevationAbyss = src->mWaterElevationAbyss;
+      // Engine addition: a clone keeps the source's water bodies.
+      if (src->mWaterBodies) {
+        mWaterBodies = std::make_unique<CWaterBodies>(*src->mWaterBodies);
+      }
     }
 
     CHeightField* const copiedField = new CHeightField(sourceWidth - 1, sourceHeight - 1);
-    CreateCHeightFieldPtr(copiedField, mHeightField);
+    mHeightField.reset(copiedField);
 
     if (src && sourceField && copiedField && sourceField->data && copiedField->data) {
       const std::size_t sampleCount =
@@ -2527,7 +2483,9 @@ namespace moho
    * What it does:
    * Clamps playable rect to valid sample bounds and stores it when non-empty.
    */
-  bool STIMap::SetPlayableMapRect(const gpg::Rect2i& rect)
+  bool STIMap::SetPlayableMapRect(
+    const gpg::Rect2i& rect
+  )
   {
     CHeightField* const field = mHeightField.get();
     if (!field || field->width <= 0 || field->height <= 0) {
@@ -2588,7 +2546,11 @@ namespace moho
    * Returns whether a circle at `position` with `border` radius fits either
    * the whole terrain bounds or the playable-rect bounds.
    */
-  bool STIMap::IsWithin(const Wm3::Vec3f& position, const float border, const bool wholeMap) const
+  bool STIMap::IsWithin(
+    const Wm3::Vec3f& position,
+    const float border,
+    const bool wholeMap
+  ) const
   {
     const CHeightField* const field = mHeightField.get();
 
@@ -2613,10 +2575,8 @@ namespace moho
       return !(maxZ >= mapMaxZ);
     }
 
-    return !(static_cast<float>(mPlayableRect.x0) > minX) &&
-           !(static_cast<float>(mPlayableRect.z0) > minZ) &&
-           !(maxX > static_cast<float>(mPlayableRect.x1)) &&
-           !(maxZ > static_cast<float>(mPlayableRect.z1));
+    return !(static_cast<float>(mPlayableRect.x0) > minX) && !(static_cast<float>(mPlayableRect.z0) > minZ) &&
+      !(maxX > static_cast<float>(mPlayableRect.x1)) && !(maxZ > static_cast<float>(mPlayableRect.z1));
   }
 
   /**
@@ -2631,7 +2591,11 @@ namespace moho
    * What it does:
    * Writes terrain type map byte for one in-bounds cell.
    */
-  void STIMap::SetTerrainType(const std::uint32_t x, const std::uint32_t z, const std::uint8_t type)
+  void STIMap::SetTerrainType(
+    const std::uint32_t x,
+    const std::uint32_t z,
+    const std::uint8_t type
+  )
   {
     CHeightField* const field = mHeightField.get();
     if (!field || !mTerrainType.data) {
@@ -2660,17 +2624,21 @@ namespace moho
    * unsigned int z, unsigned int x
    *
    * IDA signature:
-   * bool __usercall Moho::STIMap::IsBlockingTerrain@<al>(Moho::STIMap *this@<ecx>, unsigned int x@<edi>, unsigned int y@<esi>);
+   * bool __usercall Moho::STIMap::IsBlockingTerrain@<al>(Moho::STIMap *this@<ecx>, unsigned int x@<edi>, unsigned int
+   * y@<esi>);
    *
    * What it does:
    * Returns whether terrain cell `(x,z)` is blocked by map terrain-type flags.
    */
-  bool STIMap::IsBlockingTerrain(const std::uint32_t z, const std::uint32_t x) const
+  bool STIMap::IsBlockingTerrain(
+    const std::uint32_t z,
+    const std::uint32_t x
+  ) const
   {
     const CHeightField* const field = mHeightField.get();
-    return x >= static_cast<std::uint32_t>(field->width - 1) ||
-           z >= static_cast<std::uint32_t>(field->height - 1) ||
-           mBlocking[mTerrainType.data[static_cast<std::size_t>(z) * static_cast<std::size_t>(mTerrainType.width) + x]] != 0u;
+    return x >= static_cast<std::uint32_t>(field->width - 1) || z >= static_cast<std::uint32_t>(field->height - 1) ||
+      mBlocking[mTerrainType.data[static_cast<std::size_t>(z) * static_cast<std::size_t>(mTerrainType.width) + x]] !=
+      0u;
   }
 
   /**
@@ -2679,19 +2647,24 @@ namespace moho
    * Moho::SOCellPos const &, Moho::SFootprint const &
    *
    * IDA signature:
-   * Moho::EOccupancyCaps callcnv_F3 Moho::STIMap::OccupancyCapsOfFootprintAt@<al>(Moho::SOCellPos *pos@<eax>, Moho::STIMap *map@<ecx>, const Moho::SFootprint *fp);
+   * Moho::EOccupancyCaps callcnv_F3 Moho::STIMap::OccupancyCapsOfFootprintAt@<al>(Moho::SOCellPos *pos@<eax>,
+   * Moho::STIMap *map@<ecx>, const Moho::SFootprint *fp);
    *
    * What it does:
    * Computes terrain/water/slope occupancy caps for one footprint origin.
    */
-  EOccupancyCaps STIMap::OccupancyCapsOfFootprintAt(const SOCellPos& pos, const SFootprint& footprint) const
+  EOccupancyCaps STIMap::OccupancyCapsOfFootprintAt(
+    const SOCellPos& pos,
+    const SFootprint& footprint
+  ) const
   {
     const CHeightField* const field = mHeightField.get();
     const std::uint32_t x = static_cast<std::uint32_t>(static_cast<std::int32_t>(pos.x));
     const std::uint32_t z = static_cast<std::uint32_t>(static_cast<std::int32_t>(pos.z));
-    if (x >= static_cast<std::uint32_t>(field->width - 1) ||
-        z >= static_cast<std::uint32_t>(field->height - 1) ||
-        IsBlockingTerrain(z, x)) {
+    if (
+      x >= static_cast<std::uint32_t>(field->width - 1) || z >= static_cast<std::uint32_t>(field->height - 1) ||
+      IsBlockingTerrain(z, x)
+    ) {
       return static_cast<EOccupancyCaps>(0u);
     }
 
@@ -2708,11 +2681,18 @@ namespace moho
     const std::uint16_t maxHeight = std::max(std::max(h00, h10), std::max(h01, h11));
 
     std::uint8_t capsMask = OccupancyMask(footprint.mOccupancyCaps);
-    if (footprint.mMinWaterDepth > (waterElevation - static_cast<float>(maxHeight) * kHeightWordScale)) {
-      capsMask = RemoveCaps(capsMask, kOccWaterSubSeabed);
-    }
-    if ((waterElevation - static_cast<float>(minHeight) * kHeightWordScale) > footprint.mMaxWaterDepth) {
-      capsMask = RemoveCaps(capsMask, kOccLandSeabed);
+    if (mWaterBodies) {
+      // Engine addition: each corner under its own water level.
+      const WaterDepthRange depth =
+        WaterDepthUnder(*this, static_cast<std::int32_t>(x), static_cast<std::int32_t>(z), 1, 1);
+      capsMask = ApplyWaterDepthRange(capsMask, footprint, depth);
+    } else {
+      if (footprint.mMinWaterDepth > (waterElevation - static_cast<float>(maxHeight) * kHeightWordScale)) {
+        capsMask = RemoveCaps(capsMask, kOccWaterSubSeabed);
+      }
+      if ((waterElevation - static_cast<float>(minHeight) * kHeightWordScale) > footprint.mMaxWaterDepth) {
+        capsMask = RemoveCaps(capsMask, kOccLandSeabed);
+      }
     }
 
     if ((capsMask & kOccLandSeabed) != 0u && footprint.mMaxSlope != 0.0f) {
@@ -2740,7 +2720,9 @@ namespace moho
    * Loads `/lua/TerrainTypes.lua`, filters valid entries by `TypeCode`, then
    * writes terrain type descriptors + blocking flags.
    */
-  void STIMap::LoadTerrainTypes(LuaPlus::LuaState* state)
+  void STIMap::LoadTerrainTypes(
+    LuaPlus::LuaState* state
+  )
   {
     if (!state) {
       gpg::Warnf("No terrain types found.");
@@ -2764,7 +2746,7 @@ namespace moho
       return;
     }
 
-    msvc8::vector<LuaPlus::LuaObject> parsedEntries{};
+    fa::vector<LuaPlus::LuaObject> parsedEntries{};
     for (LuaPlus::LuaTableIterator iter(&terrainTypesTable, 1); !iter.m_isDone; iter.Next()) {
       LuaPlus::LuaObject entry = iter.GetValue();
       if (!entry || !entry.IsTable()) {
@@ -2808,13 +2790,18 @@ namespace moho
    * What it does:
    * Returns terrain-type Lua descriptor for cell `(x,z)`, defaulting to type `1`.
    */
-  LuaPlus::LuaObject STIMap::GetTerrainType(const std::uint32_t x, const std::uint32_t z) const
+  LuaPlus::LuaObject STIMap::GetTerrainType(
+    const std::uint32_t x,
+    const std::uint32_t z
+  ) const
   {
     std::uint8_t terrainType = 1u;
 
     CHeightField* const field = mHeightField.get();
-    if (field && mTerrainType.data && field->width > 0 && field->height > 0 &&
-        x < static_cast<std::uint32_t>(field->width - 1) && z < static_cast<std::uint32_t>(field->height - 1)) {
+    if (
+      field && mTerrainType.data && field->width > 0 && field->height > 0 &&
+      x < static_cast<std::uint32_t>(field->width - 1) && z < static_cast<std::uint32_t>(field->height - 1)
+    ) {
       const std::size_t index =
         static_cast<std::size_t>(x) + static_cast<std::size_t>(z) * static_cast<std::size_t>(mTerrainType.width);
       terrainType = mTerrainType.data[index];
@@ -2835,7 +2822,9 @@ namespace moho
    * What it does:
    * Returns terrain-type Lua descriptor by direct type index.
    */
-  LuaPlus::LuaObject STIMap::GetTerrainType(const std::uint8_t typeIndex) const
+  LuaPlus::LuaObject STIMap::GetTerrainType(
+    const std::uint8_t typeIndex
+  ) const
   {
     if (mTerrainTypes.ttvec.begin() == nullptr) {
       return {};
@@ -2854,7 +2843,10 @@ namespace moho
    * What it does:
    * Reads optional per-terrain-type `HeightOffset`; defaults to 0.0f.
    */
-  float STIMap::GetTerrainTypeOffset(const float x, const float z) const
+  float STIMap::GetTerrainTypeOffset(
+    const float x,
+    const float z
+  ) const
   {
     float value = 0.0f;
 
@@ -2881,7 +2873,10 @@ namespace moho
    * What it does:
    * Returns terrain normal sampled from the backing height field at `(x, z)`.
    */
-  Wm3::Vec3f STIMap::GetTerrainNormal(const float x, const float z) const
+  Wm3::Vec3f STIMap::GetTerrainNormal(
+    const float x,
+    const float z
+  ) const
   {
     return mHeightField.get()->GetNormal(x, z);
   }
@@ -2911,6 +2906,10 @@ namespace moho
     if (mWaterEnabled != 0u && mWaterElevation > out.Max.y) {
       out.Max.y = mWaterElevation;
     }
+    // Engine addition: water bodies above the terrain's top.
+    if (mWaterBodies && mWaterBodies->HighestLevel() > out.Max.y) {
+      out.Max.y = mWaterBodies->HighestLevel();
+    }
     return out;
   }
 
@@ -2926,19 +2925,25 @@ namespace moho
    * What it does:
    * Intersects line segment against terrain/water and falls back to plane hit when needed.
    */
-  Wm3::Vec3f STIMap::SurfaceIntersection(const GeomLine3& line, CColHitResult* res) const
+  Wm3::Vec3f STIMap::SurfaceIntersection(
+    const GeomLine3& line,
+    CColHitResult* res
+  ) const
   {
     CHeightField* const field = mHeightField.get();
     if (!field) {
       return Wm3::Vec3f::NaN();
     }
 
+    if (mWaterBodies) {
+      return SurfaceIntersectionWithWaterBodies(line, res);
+    }
+
     if (mWaterEnabled == 0u) {
       const std::int32_t tierCount =
         field->mGrids.begin() ? static_cast<std::int32_t>(field->mGrids.end() - field->mGrids.begin()) : 0;
       const Wm3::AxisAlignedBox3f terrainBounds = field->GetTierBox(0, 0, tierCount);
-      const Wm3::Vec3f terrainHit =
-        IntersectHeightFieldAndMarkTerrainHit(*field, line, res);
+      const Wm3::Vec3f terrainHit = IntersectHeightFieldAndMarkTerrainHit(*field, line, res);
 
       if (Wm3::Vec3f::IsntNaN(terrainHit) && terrainHit.y > terrainBounds.Min.y) {
         return terrainHit;
@@ -2952,7 +2957,7 @@ namespace moho
       if (res) {
         res->hitKind = 3;
       }
-      return PlaneIntersection(line, plane, reinterpret_cast<CGeomHitResult*>(res));
+      return PlaneIntersection(line, plane, static_cast<CGeomHitResult*>(res));
     }
 
     if (line.closest > -std::numeric_limits<float>::max()) {
@@ -2965,8 +2970,7 @@ namespace moho
       }
     }
 
-    const Wm3::Vec3f terrainHit =
-      IntersectHeightFieldAndMarkTerrainHit(*field, line, res);
+    const Wm3::Vec3f terrainHit = IntersectHeightFieldAndMarkTerrainHit(*field, line, res);
 
     if (terrainHit.y < mWaterElevation || !Wm3::Vec3f::IsntNaN(terrainHit)) {
       VecDist plane{};
@@ -2977,13 +2981,100 @@ namespace moho
       if (res) {
         res->hitKind = 3;
       }
-      return PlaneIntersection(line, plane, reinterpret_cast<CGeomHitResult*>(res));
+      return PlaneIntersection(line, plane, static_cast<CGeomHitResult*>(res));
     }
 
     if (res) {
       res->hitKind = 1;
     }
     return terrainHit;
+  }
+
+  /**
+   * Engine addition (water bodies): `SurfaceIntersection` when water lies at
+   * more than one level. The line hits the first water surface it enters
+   * before the terrain: the sea's or a body's plane, where that plane is the
+   * water level of the place it crosses. A start already under water, a
+   * terrain hit, and the fallback plane below the terrain work as with one level.
+   */
+  Wm3::Vec3f STIMap::SurfaceIntersectionWithWaterBodies(
+    const GeomLine3& line,
+    CColHitResult* const res
+  ) const
+  {
+    CHeightField& field = *mHeightField;
+    if (line.closest > -std::numeric_limits<float>::max()) {
+      const Wm3::Vec3f closestPoint = PointOnLine(line, line.closest);
+      if (GetWaterElevationAt(closestPoint.x, closestPoint.z) > closestPoint.y) {
+        if (res) {
+          res->distance = line.closest;
+        }
+        return closestPoint;
+      }
+    }
+
+    CColHitResult terrainResult{};
+    const Wm3::Vec3f terrainHit = IntersectHeightFieldAndMarkTerrainHit(field, line, &terrainResult);
+    const bool terrainFound = Wm3::Vec3f::IsntNaN(terrainHit);
+
+    bool waterFound = false;
+    Wm3::Vec3f waterHit{};
+    CGeomHitResult waterResult{};
+    const auto tryLevel = [&](const float level) {
+      if (!(level > kWaterBodyNoWater)) {
+        return;
+      }
+      VecDist plane{};
+      plane.dir.x = 0.0f;
+      plane.dir.y = 1.0f;
+      plane.dir.z = 0.0f;
+      plane.dist = level;
+      CGeomHitResult hit{};
+      const Wm3::Vec3f point = PlaneIntersection(line, plane, &hit);
+      if (!Wm3::Vec3f::IsntNaN(point) || GetWaterElevationAt(point.x, point.z) != level) {
+        return;
+      }
+      if (terrainFound && !(hit.distance < terrainResult.distance)) {
+        return;
+      }
+      if (!waterFound || hit.distance < waterResult.distance) {
+        waterFound = true;
+        waterHit = point;
+        waterResult = hit;
+      }
+    };
+    tryLevel(mWaterEnabled != 0u ? mWaterElevation : kWaterBodyNoWater);
+    for (std::size_t number = 1; number <= mWaterBodies->BodyCount(); ++number) {
+      tryLevel(mWaterBodies->Body(static_cast<std::uint8_t>(number)).elevation);
+    }
+
+    if (waterFound) {
+      if (res) {
+        res->distance = waterResult.distance;
+        res->hitKind = 3;
+      }
+      return waterHit;
+    }
+    if (terrainFound) {
+      if (res) {
+        *res = terrainResult;
+        res->hitKind = 1;
+      }
+      return terrainHit;
+    }
+
+    // Nothing hit: the plane under the lowest terrain, as the single-level code without water.
+    const std::int32_t tierCount =
+      field.mGrids.begin() ? static_cast<std::int32_t>(field.mGrids.end() - field.mGrids.begin()) : 0;
+    VecDist plane{};
+    plane.dir.x = 0.0f;
+    plane.dir.y = 1.0f;
+    plane.dir.z = 0.0f;
+    plane.dist = field.GetTierBox(0, 0, tierCount).Min.y;
+    if (res) {
+      res->hitKind = 3;
+    }
+    return PlaneIntersection(line, plane, static_cast<CGeomHitResult*>(res));
   }
 
   /**
@@ -2998,10 +3089,12 @@ namespace moho
    * Returns whether terrain elevation at `position` is above the active water
    * elevation (or `-10000.0f` when water is disabled).
    */
-  bool STIMap::AboveWater(const Wm3::Vec3f& position) const
+  bool STIMap::AboveWater(
+    const Wm3::Vec3f& position
+  ) const
   {
     const float terrainElevation = mHeightField->GetElevation(position.x, position.z);
-    const float waterElevation = (mWaterEnabled != 0u) ? mWaterElevation : kNoWaterElevation;
+    const float waterElevation = GetWaterElevationAt(position.x, position.z); // engine addition: per position
     return terrainElevation > waterElevation;
   }
 
@@ -3018,53 +3111,13 @@ namespace moho
    * Truncates world-space `x/z` to ints and checks they lie inside
    * `mPlayableRect` using `[min,max)` bounds.
    */
-  bool STIMap::IsPlayable(const Wm3::Vec3f& position) const
+  bool STIMap::IsPlayable(
+    const Wm3::Vec3f& position
+  ) const
   {
     const std::int32_t z = static_cast<std::int32_t>(position.z);
     const std::int32_t x = static_cast<std::int32_t>(position.x);
-    return x >= mPlayableRect.x0 &&
-           x < mPlayableRect.x1 &&
-           z >= mPlayableRect.z0 &&
-           z < mPlayableRect.z1;
-  }
-
-  /**
-   * Address: 0x0086DA90 (FUN_0086DA90)
-   *
-   * IDA signature:
-   * double __usercall sub_86DA90@<st0>(Moho::IWldTerrainRes *terrainRes@<eax>, float x, float z);
-   *
-   * What it does:
-   * Samples the terrain elevation at world `(x,z)` through the terrain
-   * resource's map: `[terrainRes+0x04]` is `IWldTerrainRes::mMap`, whose
-   * first word is `STIMap::mHeightField`'s pointer, handed straight to
-   * `CHeightField::GetElevation` (0x0044FB90). The binary performs no null
-   * checks on either hop.
-   */
-  double QueryTerrainResElevation(const IWldTerrainRes* const terrainRes, const float x, const float z) noexcept
-  {
-    return static_cast<double>(terrainRes->mMap->mHeightField->GetElevation(x, z));
-  }
-
-  /**
-   * Address: 0x0050AC60 (FUN_0050AC60)
-   *
-   * What it does:
-   * Computes one top-left short-coordinate lane from center `(x,z)` and
-   * integral rectangle `{width,height}` by subtracting half-extents.
-   */
-  std::int16_t* BuildTopLeftShortCoordsFromCenter(
-    std::int16_t* const outCoordsXY,
-    const float* const centerXZ,
-    const int width,
-    const int height
-  ) noexcept
-  {
-    const int y = static_cast<int>(std::lrintf(centerXZ[1] - static_cast<float>(height) * 0.5f));
-    const int x = static_cast<int>(std::lrintf(centerXZ[0] - static_cast<float>(width) * 0.5f));
-    outCoordsXY[0] = static_cast<std::int16_t>(x);
-    outCoordsXY[1] = static_cast<std::int16_t>(y);
-    return outCoordsXY;
+    return x >= mPlayableRect.x0 && x < mPlayableRect.x1 && z >= mPlayableRect.z0 && z < mPlayableRect.z1;
   }
 
   /**
@@ -3074,14 +3127,15 @@ namespace moho
    * Samples terrain elevation at world `(x,z)` and applies map water-floor
    * clamping when water is enabled.
    */
-  float STIMap::GetSurface(const float x, const float z) const
+  float STIMap::GetSurface(
+    const float x,
+    const float z
+  ) const
   {
     const float terrainElevation = mHeightField->GetElevation(x, z);
-    if (mWaterEnabled == 0u) {
-      return terrainElevation;
-    }
-
-    return mWaterElevation > terrainElevation ? mWaterElevation : terrainElevation;
+    // Engine addition: the water level at (x, z); -10000 without water, which no terrain is under.
+    const float waterElevation = GetWaterElevationAt(x, z);
+    return waterElevation > terrainElevation ? waterElevation : terrainElevation;
   }
 
   /**
@@ -3095,7 +3149,9 @@ namespace moho
    * What it does:
    * Returns max(terrain elevation, water elevation when water is enabled).
    */
-  float STIMap::GetSurface(const Wm3::Vec3f& position) const
+  float STIMap::GetSurface(
+    const Wm3::Vec3f& position
+  ) const
   {
     return GetSurface(position.x, position.z);
   }
@@ -3108,7 +3164,11 @@ namespace moho
    * direct elevation; for long ranges it samples tier max-bounds and then
    * applies water-floor policy when the mover cannot fly in water.
    */
-  float STIMap::LookAheadForMaxTerrain(const Wm3::Vec3f& position, const bool flyInWater, const float lookahead) const
+  float STIMap::LookAheadForMaxTerrain(
+    const Wm3::Vec3f& position,
+    const bool flyInWater,
+    const float lookahead
+  ) const
   {
     const CHeightField* const field = mHeightField.get();
     if (lookahead < 1.0f) {
@@ -3117,11 +3177,9 @@ namespace moho
         return terrainElevation;
       }
 
-      if (mWaterEnabled == 0u) {
-        return terrainElevation;
-      }
-
-      return (mWaterElevation > terrainElevation) ? mWaterElevation : terrainElevation;
+      // Engine addition: the water level at the position; -10000 without water.
+      const float waterElevation = GetWaterElevationAt(position.x, position.z);
+      return (waterElevation > terrainElevation) ? waterElevation : terrainElevation;
     }
 
     // 0x0062D68D..0x0062D6DB: the smaller extent is picked with an unsigned
@@ -3141,34 +3199,37 @@ namespace moho
 
     const int sampleX = static_cast<int>(std::lrintf(position.x));
     const int sampleZ = static_cast<int>(std::lrintf(position.z));
-    const SMinMax<std::uint16_t> tierBounds = field->GetTierBoundsUWord(
-      sampleTier,
-      sampleX >> sampleTier,
-      sampleZ >> sampleTier
-    );
+    const SMinMax<std::uint16_t> tierBounds =
+      field->GetTierBoundsUWord(sampleTier, sampleX >> sampleTier, sampleZ >> sampleTier);
     const float terrainTierMax = static_cast<float>(tierBounds.max) * kHeightWordScale;
 
     if (flyInWater) {
       return terrainTierMax;
     }
 
-    const float waterElevation = (mWaterEnabled != 0u) ? mWaterElevation : kNoWaterElevation;
+    const float waterElevation = GetWaterElevationAt(position.x, position.z); // engine addition: per position
     return (waterElevation > terrainTierMax) ? waterElevation : terrainTierMax;
   }
 
   /**
-   * Address: 0x00564AB0 (FUN_00564AB0, ?OCCUPY_MobileCheck@Moho@@YA?AW4ELayer@1@ABUSFootprint@1@ABUSOCellPos@1@PBVSTIMap@1@@Z)
+   * Address: 0x00564AB0 (FUN_00564AB0,
+   * ?OCCUPY_MobileCheck@Moho@@YA?AW4ELayer@1@ABUSFootprint@1@ABUSOCellPos@1@PBVSTIMap@1@@Z)
    *
    * Moho::SFootprint const &, Moho::STIMap const &, Moho::SOCellPos const &
    *
    * IDA signature:
-   * Moho::EOccupancyCaps callcnv_F3 Moho::OCCUPY_MobileCheck@<al>(const Moho::SFootprint *a1, Moho::STIMap *map, Moho::SOCellPos *v1@<ecx>);
+   * Moho::EOccupancyCaps callcnv_F3 Moho::OCCUPY_MobileCheck@<al>(const Moho::SFootprint *a1, Moho::STIMap *map,
+   * Moho::SOCellPos *v1@<ecx>);
    *
    * What it does:
    * Computes dynamic occupancy caps for multi-cell footprints using terrain,
    * blocking-map, depth, and slope checks.
    */
-  EOccupancyCaps OCCUPY_MobileCheck(const SFootprint& footprint, const STIMap& map, const SOCellPos& pos)
+  EOccupancyCaps OCCUPY_MobileCheck(
+    const SFootprint& footprint,
+    const STIMap& map,
+    const SOCellPos& pos
+  )
   {
     const int x0 = static_cast<int>(pos.x);
     const int z0 = static_cast<int>(pos.z);
@@ -3179,8 +3240,10 @@ namespace moho
     }
 
     const CHeightField* const field = map.mHeightField.get();
-    if (static_cast<std::uint32_t>(x1) > static_cast<std::uint32_t>(field->width - 1) ||
-        static_cast<std::uint32_t>(z1) > static_cast<std::uint32_t>(field->height - 1)) {
+    if (
+      static_cast<std::uint32_t>(x1) > static_cast<std::uint32_t>(field->width - 1) ||
+      static_cast<std::uint32_t>(z1) > static_cast<std::uint32_t>(field->height - 1)
+    ) {
       return static_cast<EOccupancyCaps>(0u);
     }
 
@@ -3206,11 +3269,17 @@ namespace moho
     }
 
     std::uint8_t capsMask = OccupancyMask(footprint.mOccupancyCaps);
-    if (footprint.mMinWaterDepth > (waterElevation - static_cast<float>(maxHeight) * kHeightWordScale)) {
-      capsMask = RemoveCaps(capsMask, kOccWaterSubSeabed);
-    }
-    if ((waterElevation - static_cast<float>(minHeight) * kHeightWordScale) > footprint.mMaxWaterDepth) {
-      capsMask = RemoveCaps(capsMask, kOccLandSeabed);
+    if (map.mWaterBodies) {
+      // Engine addition: each vertex under its own water level.
+      const WaterDepthRange depth = WaterDepthUnder(map, x0, z0, x1 - x0, z1 - z0);
+      capsMask = ApplyWaterDepthRange(capsMask, footprint, depth);
+    } else {
+      if (footprint.mMinWaterDepth > (waterElevation - static_cast<float>(maxHeight) * kHeightWordScale)) {
+        capsMask = RemoveCaps(capsMask, kOccWaterSubSeabed);
+      }
+      if ((waterElevation - static_cast<float>(minHeight) * kHeightWordScale) > footprint.mMaxWaterDepth) {
+        capsMask = RemoveCaps(capsMask, kOccLandSeabed);
+      }
     }
 
     if ((capsMask & kOccLandSeabed) != 0u && footprint.mMaxSlope != 0.0f) {
@@ -3251,7 +3320,9 @@ namespace moho
    * What it does:
    * Converts world-space center coordinates to footprint-origin grid cell.
    */
-  SOCellPos SFootprint::ToCellPos(const Wm3::Vec3f& worldPos) const
+  SOCellPos SFootprint::ToCellPos(
+    const Wm3::Vec3f& worldPos
+  ) const
   {
     SOCellPos cellPos{};
     const float originX = worldPos.x - (static_cast<float>(mSizeX) * 0.5f);
@@ -3270,7 +3341,10 @@ namespace moho
    * Computes footprint origin cell from world-space center coordinates and
    * forwards to `OCCUPY_FootprintFits(..., OC_ANY)`.
    */
-  EOccupancyCaps SFootprint::FitsAt(const SCoordsVec2& worldPos, const COGrid& grid) const
+  EOccupancyCaps SFootprint::FitsAt(
+    const SCoordsVec2& worldPos,
+    const COGrid& grid
+  ) const
   {
     const SOCellPos cellPos = ToCellPos(Wm3::Vec3f{worldPos.x, 0.0f, worldPos.z});
     return OCCUPY_FootprintFits(grid, cellPos, *this, EOccupancyCaps::OC_ANY);
@@ -3282,13 +3356,17 @@ namespace moho
    * Moho::SFootprint const &, Moho::COGrid const &, Moho::SOCellPos const &, Moho::EOccupancyCaps
    *
    * IDA signature:
-   * Moho::EOccupancyCaps __userpurge Moho::OCCUPY_Filter@<al>(const Moho::SFootprint *fp@<ecx>, Moho::COGrid *a2@<esi>, Moho::SOCellPos *pos, Moho::EOccupancyCaps a4);
+   * Moho::EOccupancyCaps __userpurge Moho::OCCUPY_Filter@<al>(const Moho::SFootprint *fp@<ecx>, Moho::COGrid *a2@<esi>,
+   * Moho::SOCellPos *pos, Moho::EOccupancyCaps a4);
    *
    * What it does:
    * Applies single-cell occupancy filtering against terrain/water occupation bitmaps.
    */
   EOccupancyCaps OCCUPY_Filter(
-    const SFootprint& footprint, const COGrid& grid, const SOCellPos& pos, EOccupancyCaps occupancyCaps
+    const SFootprint& footprint,
+    const COGrid& grid,
+    const SOCellPos& pos,
+    EOccupancyCaps occupancyCaps
   )
   {
     EOccupancyCaps caps = occupancyCaps;
@@ -3300,10 +3378,11 @@ namespace moho
     const int footprintX = static_cast<int>(pos.x);
     const int footprintZ = static_cast<int>(pos.z);
     const std::uint8_t footprintFlags = static_cast<std::uint8_t>(footprint.mFlags);
-    if ((footprintFlags & static_cast<std::uint8_t>(EFootprintFlags::FPFLAG_IgnoreStructures)) == 0u &&
-        (capsMask & kOccLandSeabed) != 0u &&
-        grid.terrainOccupation.IsBitSetOrOutOfBounds(footprintX, footprintZ)) {
-        capsMask = RemoveCaps(capsMask, kOccLandSeabed);
+    if (
+      (footprintFlags & static_cast<std::uint8_t>(EFootprintFlags::FPFLAG_IgnoreStructures)) == 0u &&
+      (capsMask & kOccLandSeabed) != 0u && grid.terrainOccupation.IsBitSetOrOutOfBounds(footprintX, footprintZ)
+    ) {
+      capsMask = RemoveCaps(capsMask, kOccLandSeabed);
     }
 
     if ((capsMask & kOccWater) != 0u && grid.waterOccupation.IsBitSetOrOutOfBounds(footprintX, footprintZ)) {
@@ -3319,14 +3398,18 @@ namespace moho
    * Moho::COGrid const &, Moho::SOCellPos const &, Moho::SFootprint const &, Moho::EOccupancyCaps
    *
    * IDA signature:
-   * Moho::EOccupancyCaps callcnv_E3 Moho::OCCUPY_FootprintFits@<al>(Moho::COGrid *eax0@<eax>, Moho::SOCellPos *a2@<edi>, const Moho::SFootprint *a1, Moho::EOccupancyCaps a4);
+   * Moho::EOccupancyCaps callcnv_E3 Moho::OCCUPY_FootprintFits@<al>(Moho::COGrid *eax0@<eax>, Moho::SOCellPos
+   * *a2@<edi>, const Moho::SFootprint *a1, Moho::EOccupancyCaps a4);
    *
    * What it does:
    * Returns occupancy-fit caps for a footprint at one origin using mobile
    * terrain checks plus terrain/water occupation bit arrays.
    */
   EOccupancyCaps OCCUPY_FootprintFits(
-    const COGrid& grid, const SOCellPos& pos, const SFootprint& footprint, const EOccupancyCaps occupancyCaps
+    const COGrid& grid,
+    const SOCellPos& pos,
+    const SFootprint& footprint,
+    const EOccupancyCaps occupancyCaps
   )
   {
     const std::uint8_t sizeX = footprint.mSizeX;
@@ -3343,9 +3426,10 @@ namespace moho
 
     std::uint8_t capsMask = OccupancyMask(caps);
     const std::uint8_t footprintFlags = static_cast<std::uint8_t>(footprint.mFlags);
-    if ((footprintFlags & static_cast<std::uint8_t>(EFootprintFlags::FPFLAG_IgnoreStructures)) == 0u &&
-        (capsMask & kOccLandSeabed) != 0u &&
-        grid.terrainOccupation.GetRectOr(pos.x, pos.z, sizeX, sizeZ, true)) {
+    if (
+      (footprintFlags & static_cast<std::uint8_t>(EFootprintFlags::FPFLAG_IgnoreStructures)) == 0u &&
+      (capsMask & kOccLandSeabed) != 0u && grid.terrainOccupation.GetRectOr(pos.x, pos.z, sizeX, sizeZ, true)
+    ) {
       capsMask = RemoveCaps(capsMask, kOccLandSeabed);
     }
 
@@ -3370,7 +3454,10 @@ namespace moho
    * then forwards the narrowed caps into `OCCUPY_FootprintFits`.
    */
   EOccupancyCaps OCCUPY_HoverFootprintFits(
-    const SOCellPos& pos, const COGrid& grid, const SFootprint& footprint, EOccupancyCaps occupancyCaps
+    const SOCellPos& pos,
+    const COGrid& grid,
+    const SFootprint& footprint,
+    EOccupancyCaps occupancyCaps
   )
   {
     EOccupancyCaps caps = OCCUPY_MobileCheck(footprint, *grid.sim->mMapData, pos);
@@ -3389,7 +3476,9 @@ namespace moho
    * Copies this map's shared height-field ownership lane into
    * `outHeightField`.
    */
-  void STIMap::GetHeightField(boost::shared_ptr<CHeightField>& outHeightField) const
+  void STIMap::GetHeightField(
+    std::shared_ptr<CHeightField>& outHeightField
+  ) const
   {
     outHeightField = mHeightField;
   }
@@ -3407,19 +3496,23 @@ namespace moho
    * heightfield bounds, scales the raw uint16 height word to world units, and
    * enforces the water-floor when water is active.
    */
-  float STIMap::GetElevation(const std::int32_t x, const std::int32_t z) const
+  float STIMap::GetElevation(
+    const std::int32_t x,
+    const std::int32_t z
+  ) const
   {
     constexpr float kHeightWordScale = 1.0f / 128.0f;
 
     const CHeightField* const field = mHeightField.get();
     const std::int32_t clampedX = std::clamp(x, 0, field->width - 1);
     const std::int32_t clampedZ = std::clamp(z, 0, field->height - 1);
-    const std::size_t sampleIndex =
-      static_cast<std::size_t>(clampedX) + (static_cast<std::size_t>(clampedZ) * static_cast<std::size_t>(field->width));
+    const std::size_t sampleIndex = static_cast<std::size_t>(clampedX) +
+      (static_cast<std::size_t>(clampedZ) * static_cast<std::size_t>(field->width));
 
     float terrainElevation = static_cast<float>(field->data[sampleIndex]) * kHeightWordScale;
-    if (mWaterEnabled != 0u && mWaterElevation > terrainElevation) {
-      terrainElevation = mWaterElevation;
+    const float waterElevation = GetWaterElevationAtVertex(clampedX, clampedZ); // engine addition: per vertex
+    if (waterElevation > terrainElevation) {
+      terrainElevation = waterElevation;
     }
     return terrainElevation;
   }
@@ -3446,7 +3539,11 @@ namespace moho
    * emits this dereference once out of line and calls it, rather than inlining
    * it at each site, so it needs a named source equivalent to survive.
    */
-  float GetHeightFieldElevation(const boost::shared_ptr<CHeightField>& heightField, const float x, const float z)
+  float GetHeightFieldElevation(
+    const std::shared_ptr<CHeightField>& heightField,
+    const float x,
+    const float z
+  )
   {
     return heightField->GetElevation(x, z);
   }
@@ -3457,7 +3554,9 @@ namespace moho
    * What it does:
    * Stores one raw water-enabled byte flag into lane `+0x1534`.
    */
-  STIMap* STIMap::SetWaterEnabledRaw(const std::uint8_t enabled) noexcept
+  STIMap* STIMap::SetWaterEnabledRaw(
+    const std::uint8_t enabled
+  ) noexcept
   {
     mWaterEnabled = enabled;
     return this;
@@ -3469,7 +3568,9 @@ namespace moho
    * What it does:
    * Stores one water-elevation float lane at offset `+0x1538`.
    */
-  STIMap* STIMap::SetWaterElevation(const float elevation) noexcept
+  STIMap* STIMap::SetWaterElevation(
+    const float elevation
+  ) noexcept
   {
     mWaterElevation = elevation;
     return this;
@@ -3481,7 +3582,9 @@ namespace moho
    * What it does:
    * Stores one deep-water elevation float lane at offset `+0x153C`.
    */
-  STIMap* STIMap::SetWaterElevationDeep(const float elevation) noexcept
+  STIMap* STIMap::SetWaterElevationDeep(
+    const float elevation
+  ) noexcept
   {
     mWaterElevationDeep = elevation;
     return this;
@@ -3493,7 +3596,9 @@ namespace moho
    * What it does:
    * Stores one abyss-water elevation float lane at offset `+0x1540`.
    */
-  STIMap* STIMap::SetWaterElevationAbyss(const float elevation) noexcept
+  STIMap* STIMap::SetWaterElevationAbyss(
+    const float elevation
+  ) noexcept
   {
     mWaterElevationAbyss = elevation;
     return this;
@@ -3506,16 +3611,20 @@ namespace moho
     // (0.0078125f) gives the real elevation.
     constexpr float kHeightSampleToWorld = 1.0f / 128.0f;
     // Decompiled value at `func_Rect2fToInt16`: world-to-collision-cell quantization.
-    constexpr int kWorldToCollisionCellShift = 2;
-    constexpr int kCollisionCellMax = 0xFFFF;
+    [[maybe_unused]] constexpr int kWorldToCollisionCellShift = 2;
+    [[maybe_unused]] constexpr int kCollisionCellMax = 0xFFFF;
 
     [[nodiscard]] float SampleClampedElevation(
-      const CHeightField& field, const int cellX, const int cellZ
+      const CHeightField& field,
+      const int cellX,
+      const int cellZ
     ) noexcept
     {
       const int clampedX = std::clamp(cellX, 0, field.width - 1);
       const int clampedZ = std::clamp(cellZ, 0, field.height - 1);
-      const std::uint16_t raw = field.data[static_cast<std::size_t>(clampedX) + static_cast<std::size_t>(clampedZ) * static_cast<std::size_t>(field.width)];
+      const std::uint16_t raw = field.data
+                                  [static_cast<std::size_t>(clampedX) +
+                                   static_cast<std::size_t>(clampedZ) * static_cast<std::size_t>(field.width)];
       return static_cast<float>(raw) * kHeightSampleToWorld;
     }
   } // namespace
@@ -3672,11 +3781,17 @@ namespace moho
   {
     if (blueprint.IsMobile()) {
       const SOCellPos originCell{
-        static_cast<std::int16_t>(static_cast<int>(std::lrintf(worldPos.x - (static_cast<float>(blueprint.mFootprint.mSizeX) * 0.5f)))),
-        static_cast<std::int16_t>(static_cast<int>(std::lrintf(worldPos.z - (static_cast<float>(blueprint.mFootprint.mSizeZ) * 0.5f)))),
+        static_cast<std::int16_t>(
+          static_cast<int>(std::lrintf(worldPos.x - (static_cast<float>(blueprint.mFootprint.mSizeX) * 0.5f)))
+        ),
+        static_cast<std::int16_t>(
+          static_cast<int>(std::lrintf(worldPos.z - (static_cast<float>(blueprint.mFootprint.mSizeZ) * 0.5f)))
+        ),
       };
       const EOccupancyCaps mobileCaps = OCCUPY_MobileCheck(blueprint.mFootprint, map, originCell);
-      dest.pos = COORDS_GridSnap(&map, worldPos, blueprint.mFootprint, static_cast<ELayer>(static_cast<std::uint8_t>(mobileCaps)));
+      dest.pos = COORDS_GridSnap(
+        &map, worldPos, blueprint.mFootprint, static_cast<ELayer>(static_cast<std::uint8_t>(mobileCaps))
+      );
       dest.layers = static_cast<std::int32_t>(mobileCaps);
       return static_cast<std::int32_t>(mobileCaps) != LAYER_None;
     }
@@ -3685,8 +3800,12 @@ namespace moho
     dest.layers = LAYER_None;
 
     const SOCellPos originCell{
-      static_cast<std::int16_t>(static_cast<int>(std::lrintf(worldPos.x - (static_cast<float>(blueprint.mFootprint.mSizeX) * 0.5f)))),
-      static_cast<std::int16_t>(static_cast<int>(std::lrintf(worldPos.z - (static_cast<float>(blueprint.mFootprint.mSizeZ) * 0.5f)))),
+      static_cast<std::int16_t>(
+        static_cast<int>(std::lrintf(worldPos.x - (static_cast<float>(blueprint.mFootprint.mSizeX) * 0.5f)))
+      ),
+      static_cast<std::int16_t>(
+        static_cast<int>(std::lrintf(worldPos.z - (static_cast<float>(blueprint.mFootprint.mSizeZ) * 0.5f)))
+      ),
     };
     dest.pos = COORDS_ToWorldPos(
       &map,
@@ -3700,35 +3819,36 @@ namespace moho
 
     // Integer skirt rect: floor the top-left and ceil the bottom-right for
     // the map-bounds check (0x00565484..0x005654FB).
-    const std::int32_t skirtCellX0 = msvc8::FloorToIntX87(skirtWorldRect.x0);
-    const std::int32_t skirtCellZ0 = msvc8::FloorToIntX87(skirtWorldRect.z0);
-    const std::int32_t skirtCellX1 = msvc8::CeilToIntX87(skirtWorldRect.x1);
-    const std::int32_t skirtCellZ1 = msvc8::CeilToIntX87(skirtWorldRect.z1);
+    const std::int32_t skirtCellX0 = fa::FloorToIntX87(skirtWorldRect.x0);
+    const std::int32_t skirtCellZ0 = fa::FloorToIntX87(skirtWorldRect.z0);
+    const std::int32_t skirtCellX1 = fa::CeilToIntX87(skirtWorldRect.x1);
+    const std::int32_t skirtCellZ1 = fa::CeilToIntX87(skirtWorldRect.z1);
 
     const CHeightField* const field = map.mHeightField.get();
-    if (skirtCellX0 < 0 || skirtCellX1 > (field->width - 1) ||
-        skirtCellZ0 < 0 || skirtCellZ1 > (field->height - 1)) {
+    if (skirtCellX0 < 0 || skirtCellX1 > (field->width - 1) || skirtCellZ0 < 0 || skirtCellZ1 > (field->height - 1)) {
       return false;
     }
 
     float skirtMinHeight = 0.0f;
     float skirtMaxHeight = 0.0f;
-    const bool flatnessOk =
-      blueprint.Physics.FlattenSkirt != 0u
-        ? OCCUPY_CheckEdgeFlatness(skirtWorldRect, blueprint, map, &skirtMinHeight, &skirtMaxHeight)
-        : OCCUPY_CheckAreaFlatness(skirtWorldRect, blueprint, map, &skirtMinHeight, &skirtMaxHeight);
+    const bool flatnessOk = blueprint.Physics.FlattenSkirt != 0u
+      ? OCCUPY_CheckEdgeFlatness(skirtWorldRect, blueprint, map, &skirtMinHeight, &skirtMaxHeight)
+      : OCCUPY_CheckAreaFlatness(skirtWorldRect, blueprint, map, &skirtMinHeight, &skirtMaxHeight);
 
     std::int32_t layerCaps = blueprint.Physics.BuildOnLayerCapsMask;
     if (!flatnessOk) {
       layerCaps &= ~(static_cast<std::int32_t>(LAYER_Land) | static_cast<std::int32_t>(LAYER_Seabed));
     }
 
-    const float effectiveWaterElevation = map.mWaterEnabled != 0u ? map.mWaterElevation : -10000.0f;
+    // Engine addition: the water level at the structure's position.
+    const float effectiveWaterElevation = map.GetWaterElevationAt(worldPos.x, worldPos.z);
     if (effectiveWaterElevation > skirtMinHeight) {
       layerCaps &= ~static_cast<std::int32_t>(LAYER_Land);
     }
     if (skirtMaxHeight > (effectiveWaterElevation - blueprint.mFootprint.mMinWaterDepth)) {
-      layerCaps &= ~(static_cast<std::int32_t>(LAYER_Seabed) | static_cast<std::int32_t>(LAYER_Sub) | static_cast<std::int32_t>(LAYER_Water));
+      layerCaps &=
+        ~(static_cast<std::int32_t>(LAYER_Seabed) | static_cast<std::int32_t>(LAYER_Sub) |
+          static_cast<std::int32_t>(LAYER_Water));
     }
     if (layerCaps == 0) {
       return false;
@@ -3783,10 +3903,13 @@ namespace moho
    * the same way.
    */
   bool func_LocationIsFree(
-    const RUnitBlueprint& blueprint, COGrid& grid, const SCoordsVec2& pos, SOccupationResult& dest
+    const RUnitBlueprint& blueprint,
+    COGrid& grid,
+    const SCoordsVec2& pos,
+    SOccupationResult& dest
   )
   {
-    ISimResources* const resources = static_cast<ISimResources*>(grid.sim->mSimResources.px);
+    ISimResources* const resources = static_cast<ISimResources*>(grid.sim->mSimResources.get());
     STIMap* const map = grid.sim->mMapData;
     if (resources == nullptr || map == nullptr) {
       return false;
@@ -3805,12 +3928,16 @@ namespace moho
     const int footprintHeight = static_cast<int>(blueprint.mFootprint.mSizeZ);
 
     if (blueprint.IsMobile()) {
-      if ((dest.layers & (LAYER_Land | LAYER_Seabed)) != 0 &&
-          grid.terrainOccupation.GetRectOr(footprintX0, footprintZ0, footprintWidth, footprintHeight, true)) {
+      if (
+        (dest.layers & (LAYER_Land | LAYER_Seabed)) != 0 &&
+        grid.terrainOccupation.GetRectOr(footprintX0, footprintZ0, footprintWidth, footprintHeight, true)
+      ) {
         dest.layers &= ~(LAYER_Land | LAYER_Seabed);
       }
-      if ((dest.layers & LAYER_Water) != 0 &&
-          grid.waterOccupation.GetRectOr(footprintX0, footprintZ0, footprintWidth, footprintHeight, true)) {
+      if (
+        (dest.layers & LAYER_Water) != 0 &&
+        grid.waterOccupation.GetRectOr(footprintX0, footprintZ0, footprintWidth, footprintHeight, true)
+      ) {
         dest.layers &= ~LAYER_Water;
       }
       return dest.layers != LAYER_None;

@@ -5,8 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <new>
-
-
+#include "legacy/thread/Mutex.h"
 
 namespace
 {
@@ -17,29 +16,42 @@ namespace
    * at x = 875.4999 lands its 1x1 deposit on cell 875, which truncation put on
    * cell 874 -- and an extractor on cell 875 then failed DepositIsInArea.
    */
-  [[nodiscard]] std::int16_t DepositCornerCell(const float centre, const int extent) noexcept
+  [[nodiscard]] std::int16_t DepositCornerCell(
+    const float centre,
+    const int extent
+  ) noexcept
   {
-    return static_cast<std::int16_t>(msvc8::RoundToInt(centre - static_cast<float>(extent) * 0.5f));
+    return static_cast<std::int16_t>(fa::RoundToInt(centre - static_cast<float>(extent) * 0.5f));
   }
 
-  [[nodiscard]] gpg::Rect2i BuildRectFromPointAndSize(const Wm3::Vec3f& point, const Wm3::Vec2i& size) noexcept
+  [[nodiscard]] gpg::Rect2i BuildRectFromPointAndSize(
+    const Wm3::Vec3f& point,
+    const Wm3::Vec2i& size
+  ) noexcept
   {
     const int x0 = DepositCornerCell(point.x, size.x);
     const int z0 = DepositCornerCell(point.z, size.y);
     return {x0, z0, x0 + size.x, z0 + size.y};
   }
 
-  [[nodiscard]] bool HasPositiveArea(const gpg::Rect2i& rect) noexcept
+  [[nodiscard]] bool HasPositiveArea(
+    const gpg::Rect2i& rect
+  ) noexcept
   {
     return rect.x0 < rect.x1 && rect.z0 < rect.z1;
   }
 
-  [[nodiscard]] bool HasPositiveArea(const gpg::Rect2f& rect) noexcept
+  [[nodiscard]] bool HasPositiveArea(
+    const gpg::Rect2f& rect
+  ) noexcept
   {
     return rect.x0 < rect.x1 && rect.z0 < rect.z1;
   }
 
-  [[nodiscard]] bool RectsOverlapStrict(const gpg::Rect2i& lhs, const gpg::Rect2i& rhs) noexcept
+  [[nodiscard]] bool RectsOverlapStrict(
+    const gpg::Rect2i& lhs,
+    const gpg::Rect2i& rhs
+  ) noexcept
   {
     return lhs.x0 < rhs.x1 && rhs.x0 < lhs.x1 && lhs.z0 < rhs.z1 && rhs.z0 < lhs.z1 && HasPositiveArea(lhs) &&
       HasPositiveArea(rhs);
@@ -95,9 +107,12 @@ namespace moho
    * What it does:
    * Adds one deposit rectangle and type under the resource lock.
    */
-  void CSimResources::AddDeposit(const EDepositType type, gpg::Rect2i* const pos)
+  void CSimResources::AddDeposit(
+    const EDepositType type,
+    gpg::Rect2i* const pos
+  )
   {
-    boost::mutex::scoped_lock lock(lock_);
+    fa::mutex::scoped_lock lock(lock_);
 
     ResourceDeposit deposit{};
     deposit.footprintRect = *pos;
@@ -111,7 +126,11 @@ namespace moho
    * What it does:
    * Converts center+size to grid rect and forwards to AddDeposit.
    */
-  void CSimResources::AddDepositPoint(EDepositType type, Wm3::Vec3f* pos, Wm3::Vec2i* size)
+  void CSimResources::AddDepositPoint(
+    EDepositType type,
+    Wm3::Vec3f* pos,
+    Wm3::Vec2i* size
+  )
   {
     gpg::Rect2i rect = BuildRectFromPointAndSize(*pos, *size);
     AddDeposit(type, &rect);
@@ -120,7 +139,7 @@ namespace moho
   /**
    * Address: 0x00545FC0 (FUN_00545FC0, Moho::CSimResources::GetDeposits1)
    */
-  const msvc8::vector<ResourceDeposit>& CSimResources::GetDeposits() const
+  const fa::vector<ResourceDeposit>& CSimResources::GetDeposits() const
   {
     return deposits_;
   }
@@ -128,7 +147,7 @@ namespace moho
   /**
    * Address: 0x00545FB0 (FUN_00545FB0, Moho::CSimResources::GetDeposits2)
    */
-  msvc8::vector<ResourceDeposit>& CSimResources::GetDeposits()
+  fa::vector<ResourceDeposit>& CSimResources::GetDeposits()
   {
     return deposits_;
   }
@@ -139,9 +158,12 @@ namespace moho
    * What it does:
    * Tests strict rectangle overlap against deposits of the requested type.
    */
-  bool CSimResources::IsDepositAt(gpg::Rect2i* pos, EDepositType type)
+  bool CSimResources::IsDepositAt(
+    gpg::Rect2i* pos,
+    EDepositType type
+  )
   {
-    boost::mutex::scoped_lock lock(lock_);
+    fa::mutex::scoped_lock lock(lock_);
     for (const ResourceDeposit& deposit : deposits_) {
       if (deposit.depositType == type && RectsOverlapStrict(*pos, deposit.footprintRect)) {
         return true;
@@ -156,7 +178,11 @@ namespace moho
    * What it does:
    * Converts center+size to grid rect and reuses IsDepositAt.
    */
-  bool CSimResources::IsDepositAtPoint(Wm3::Vec3f* pos, Wm3::Vec2i* size, EDepositType type)
+  bool CSimResources::IsDepositAtPoint(
+    Wm3::Vec3f* pos,
+    Wm3::Vec2i* size,
+    EDepositType type
+  )
   {
     gpg::Rect2i rect = BuildRectFromPointAndSize(*pos, *size);
     return IsDepositAt(&rect, type);
@@ -170,7 +196,10 @@ namespace moho
    * filtering by deposit type.
    */
   void CSimResources::DepositCollides(
-    CGeomSolid3* solid, CHeightField* field, gpg::fastvector<ResourceDeposit>* outDeposits, EDepositType type
+    CGeomSolid3* solid,
+    CHeightField* field,
+    gpg::fastvector<ResourceDeposit>* outDeposits,
+    EDepositType type
   )
   {
     for (const ResourceDeposit& deposit : deposits_) {
@@ -217,9 +246,12 @@ namespace moho
    * area.z0 == deposit.z0", i.e. a mass extractor could be placed on any cell
    * in the same Z row at or west of any mass point on the map.
    */
-  bool CSimResources::DepositIsInArea(EDepositType type, gpg::Rect2i* area)
+  bool CSimResources::DepositIsInArea(
+    EDepositType type,
+    gpg::Rect2i* area
+  )
   {
-    boost::mutex::scoped_lock lock(lock_);
+    fa::mutex::scoped_lock lock(lock_);
     for (const ResourceDeposit& deposit : deposits_) {
       if (deposit.depositType != type) {
         continue;
@@ -249,7 +281,11 @@ namespace moho
    * What it does:
    * Converts center+size to grid rect and reuses DepositIsInArea.
    */
-  bool CSimResources::DepositIsInAreaPoint(EDepositType type, Wm3::Vec3f* pos, Wm3::Vec2i* size)
+  bool CSimResources::DepositIsInAreaPoint(
+    EDepositType type,
+    Wm3::Vec3f* pos,
+    Wm3::Vec2i* size
+  )
   {
     gpg::Rect2i rect = BuildRectFromPointAndSize(*pos, *size);
     return DepositIsInArea(type, &rect);
@@ -261,7 +297,12 @@ namespace moho
    * What it does:
    * Finds the closest deposit center of matching type within radius.
    */
-  bool CSimResources::FindClosestDeposit(GridPos* from, GridPos* outPos, float radius, EDepositType type)
+  bool CSimResources::FindClosestDeposit(
+    GridPos* from,
+    GridPos* outPos,
+    float radius,
+    EDepositType type
+  )
   {
     float closestDistance = (std::numeric_limits<float>::max)();
     int closestX = 0;
@@ -301,9 +342,12 @@ namespace moho
    * What it does:
    * Checks area/deposit overlap with type-specific footprint expansion.
    */
-  bool CSimResources::AreaHasDeposit(EDepositType type, gpg::Rect2f* area)
+  bool CSimResources::AreaHasDeposit(
+    EDepositType type,
+    gpg::Rect2f* area
+  )
   {
-    boost::mutex::scoped_lock lock(lock_);
+    fa::mutex::scoped_lock lock(lock_);
     for (const ResourceDeposit& deposit : deposits_) {
       if (deposit.depositType != type) {
         continue;

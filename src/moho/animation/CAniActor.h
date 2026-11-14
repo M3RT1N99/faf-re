@@ -3,9 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/reflection/Reflection.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "moho/containers/TDatList.h"
 
 namespace gpg
@@ -50,6 +50,14 @@ namespace moho
   using AniBoneWriteHook = void (*)(const CAniPose* pose, const char* manipulatorClass, int boneIndex);
   extern AniBoneWriteHook gAniBoneWriteHook;
 
+  /**
+   * Engine addition, server mode (plan WP8.1, #118): when set, `UpdateManipulators` calls it once per actor update,
+   * after its manipulators ran, on whichever thread ran the update (a pose job's worker or the sim thread), while the
+   * pose's bones are still in that thread's cache. It may only read the actor and its pose. Null in the game.
+   */
+  using AniPoseUpdatedHook = void (*)(const CAniActor& actor);
+  extern AniPoseUpdatedHook gAniPoseUpdatedHook;
+
   class CAniActor
   {
   public:
@@ -62,7 +70,7 @@ namespace moho
      * Copies both pose handles (current pose first: the binary takes it in ECX
      * and stores it at +0x00) and self-links the manipulator list head.
      */
-    CAniActor(const boost::shared_ptr<CAniPose>& pose, const boost::shared_ptr<CAniPose>& priorPose);
+    CAniActor(const std::shared_ptr<CAniPose>& pose, const std::shared_ptr<CAniPose>& priorPose);
 
     /**
      * Address: 0x0063A930 (FUN_0063A930, ??1CAniActor@Moho@@QAE@XZ)
@@ -80,9 +88,8 @@ namespace moho
      * Allocates one `CAniActor` and publishes it as an unowned serialization
      * construct result.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x0063E200 (FUN_0063E200, sub_63E200)
@@ -101,13 +108,14 @@ namespace moho
     void MemberSerialize(gpg::WriteArchive* archive) const;
 
     /**
-     * Address: 0x005E3CF0 (FUN_005E3CF0, ?GetSkeleton@CAniActor@Moho@@QBE?AV?$shared_ptr@$$CBVCAniSkel@Moho@@@boost@@XZ)
+     * Address: 0x005E3CF0 (FUN_005E3CF0,
+     * ?GetSkeleton@CAniActor@Moho@@QBE?AV?$shared_ptr@$$CBVCAniSkel@Moho@@@boost@@XZ)
      *
      * What it does:
      * Returns the current skeleton handle from the actor-owned pose object.
      */
     [[nodiscard]]
-    boost::shared_ptr<const CAniSkel> GetSkeleton() const;
+    std::shared_ptr<const CAniSkel> GetSkeleton() const;
 
     /**
      * Address: 0x005BDD50 (FUN_005BDD50, ?GetPoseShared@CAniActor@Moho@@QBE?AV?$shared_ptr@VCAniPose@Moho@@@boost@@XZ)
@@ -116,16 +124,17 @@ namespace moho
      * Returns one retained shared-ptr handle to this actor's current pose.
      */
     [[nodiscard]]
-    boost::shared_ptr<CAniPose> GetPoseShared() const;
+    std::shared_ptr<CAniPose> GetPoseShared() const;
 
     /**
-     * Address: 0x005BDD70 (FUN_005BDD70, ?GetPriorPoseShared@CAniActor@Moho@@QBE?AV?$shared_ptr@VCAniPose@Moho@@@boost@@XZ)
+     * Address: 0x005BDD70 (FUN_005BDD70,
+     * ?GetPriorPoseShared@CAniActor@Moho@@QBE?AV?$shared_ptr@VCAniPose@Moho@@@boost@@XZ)
      *
      * What it does:
      * Returns one retained shared-ptr handle to this actor's prior pose.
      */
     [[nodiscard]]
-    boost::shared_ptr<CAniPose> GetPriorPoseShared() const;
+    std::shared_ptr<CAniPose> GetPriorPoseShared() const;
 
     /**
      * Address: 0x0063AA20 (FUN_0063AA20)
@@ -133,7 +142,7 @@ namespace moho
      * What it does:
      * Replaces both pose handles; `Unit::SetPoses` calls it.
      */
-    void AssignPoses(const boost::shared_ptr<CAniPose>& pose, const boost::shared_ptr<CAniPose>& priorPose) noexcept;
+    void AssignPoses(const std::shared_ptr<CAniPose>& pose, const std::shared_ptr<CAniPose>& priorPose) noexcept;
 
     /**
      * Address: 0x0063AA80 (FUN_0063AA80, ?UpdateManipulators@CAniActor@Moho@@QAEXABVVTransform@2@@Z)
@@ -208,8 +217,8 @@ namespace moho
   public:
     static gpg::RType* sType;
 
-    boost::shared_ptr<CAniPose> mPose;                         // +0x00
-    boost::shared_ptr<CAniPose> mPriorPose;                    // +0x08
+    std::shared_ptr<CAniPose> mPose;                           // +0x00
+    std::shared_ptr<CAniPose> mPriorPose;                      // +0x08
     TDatList<IAniManipulator, void> mManipulatorsByPrecedence; // +0x10
   };
 

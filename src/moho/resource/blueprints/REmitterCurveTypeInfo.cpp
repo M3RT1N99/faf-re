@@ -16,7 +16,7 @@ namespace
 {
   using CurveTypeInfo = moho::REmitterBlueprintCurveTypeInfo;
   using CurveKeyTypeInfo = moho::REmitterCurveKeyTypeInfo;
-  using CurveKeyVector = msvc8::vector<moho::REmitterCurveKey>;
+  using CurveKeyVector = fa::vector<moho::REmitterCurveKey>;
 
   class CurveKeyVectorTypeInfo final : public gpg::RType, public gpg::RIndexed
   {
@@ -32,9 +32,9 @@ namespace
      *
      * What it does:
      * Returns base lexical text plus reflected vector size for one
-     * `msvc8::vector<moho::REmitterCurveKey>` instance.
+     * `fa::vector<moho::REmitterCurveKey>` instance.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
     [[nodiscard]] const gpg::RIndexed* IsIndexed() const override;
     /**
      * Address: 0x00515C40 (FUN_00515C40, gpg::RVectorType_REmitterCurveKey::Init)
@@ -43,11 +43,11 @@ namespace
     /**
      * Address: 0x00516100 (FUN_00516100, gpg::RVectorType_REmitterCurveKey::SerLoad)
      */
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
     /**
      * Address: 0x00516230 (FUN_00516230, gpg::RVectorType_REmitterCurveKey::SerSave)
      */
-    static void SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerSave(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
     gpg::RRef SubscriptIndex(void* obj, int ind) const override;
     size_t GetCount(void* obj) const override;
     void SetCount(void* obj, int count) const override;
@@ -64,334 +64,6 @@ namespace
 
   static_assert(sizeof(EmitterCurveValueTriplet) == 0x0C, "EmitterCurveValueTriplet size must be 0x0C");
 
-  [[nodiscard]] EmitterCurveValueTriplet* IndexEmitterCurveValueTripletLane(
-    EmitterCurveValueTriplet* const* const laneBase,
-    const int index
-  ) noexcept
-  {
-    return *laneBase + index;
-  }
-
-  /**
-   * Address: 0x00515910 (FUN_00515910)
-   *
-   * What it does:
-   * Returns the indexed `X/Y/Z` triplet slot from one payload-lane base.
-   */
-  [[nodiscard]] EmitterCurveValueTriplet* IndexEmitterCurveValueTripletLaneAdapterA(
-    const int index,
-    EmitterCurveValueTriplet* const* const laneBase
-  ) noexcept
-  {
-    return IndexEmitterCurveValueTripletLane(laneBase, index);
-  }
-
-  /**
-   * Address: 0x00516590 (FUN_00516590)
-   *
-   * What it does:
-   * Secondary adapter lane for indexed `X/Y/Z` triplet slot selection.
-   */
-  [[nodiscard]] EmitterCurveValueTriplet* IndexEmitterCurveValueTripletLaneAdapterB(
-    const int index,
-    EmitterCurveValueTriplet* const* const laneBase
-  ) noexcept
-  {
-    return IndexEmitterCurveValueTripletLane(laneBase, index);
-  }
-
-  [[nodiscard]] std::uint32_t* StoreEmitterCurveKeyCoordinateBits(
-    std::uint32_t* const destination,
-    const float coordinate
-  ) noexcept
-  {
-    *destination = std::bit_cast<std::uint32_t>(coordinate);
-    return destination;
-  }
-
-  /**
-   * Address: 0x005168B0 (FUN_005168B0)
-   *
-   * What it does:
-   * Writes one curve-key `X` lane bit pattern to caller storage.
-   */
-  [[nodiscard]] std::uint32_t* StoreEmitterCurveKeyXBitsAdapterLaneA(
-    std::uint32_t* const destination,
-    const moho::REmitterCurveKey* const source
-  ) noexcept
-  {
-    return StoreEmitterCurveKeyCoordinateBits(destination, source->X);
-  }
-
-  /**
-   * Address: 0x005168C0 (FUN_005168C0)
-   *
-   * What it does:
-   * Writes one curve-key `Y` lane bit pattern to caller storage.
-   */
-  [[nodiscard]] std::uint32_t* StoreEmitterCurveKeyYBitsAdapterLaneA(
-    std::uint32_t* const destination,
-    const moho::REmitterCurveKey* const source
-  ) noexcept
-  {
-    return StoreEmitterCurveKeyCoordinateBits(destination, source->Y);
-  }
-
-  [[nodiscard]] std::uint32_t* StoreWordLaneValue(
-    std::uint32_t* const destination,
-    const std::uint32_t value
-  ) noexcept
-  {
-    *destination = value;
-    return destination;
-  }
-
-  /**
-   * Address: 0x00516C90 (FUN_00516C90)
-   *
-   * What it does:
-   * Stores one 32-bit lane value from the source register into output storage.
-   */
-  [[nodiscard]] std::uint32_t* StoreWordLaneAdapterA(
-    std::uint32_t* const destination,
-    const std::uint32_t value
-  ) noexcept
-  {
-    return StoreWordLaneValue(destination, value);
-  }
-
-  /**
-   * Address: 0x00516CD0 (FUN_00516CD0)
-   *
-   * What it does:
-   * Secondary adapter lane for writing one 32-bit scalar value.
-   */
-  [[nodiscard]] std::uint32_t* StoreWordLaneAdapterB(
-    std::uint32_t* const destination,
-    const std::uint32_t value
-  ) noexcept
-  {
-    return StoreWordLaneValue(destination, value);
-  }
-
-  /**
-   * Address: 0x00516D10 (FUN_00516D10)
-   *
-   * What it does:
-   * Advances one float-lane pointer by a scalar-lane index.
-   */
-  [[nodiscard]] float* OffsetFloatLanePointerByIndex(
-    float* const laneBase,
-    const int index
-  ) noexcept
-  {
-    return laneBase + index;
-  }
-
-  [[nodiscard]] moho::REmitterCurveKey* SwapEmitterCurveKeyPayloadLanes(
-    moho::REmitterCurveKey* const left,
-    moho::REmitterCurveKey* const right
-  ) noexcept
-  {
-    const float x = right->X;
-    right->X = left->X;
-    left->X = x;
-
-    const float y = right->Y;
-    right->Y = left->Y;
-    left->Y = y;
-
-    const float z = right->Z;
-    right->Z = left->Z;
-    left->Z = z;
-
-    return left;
-  }
-
-  /**
-   * Address: 0x00517130 (FUN_00517130)
-   *
-   * What it does:
-   * Swaps `X/Y/Z` payload lanes between two curve keys and returns left key.
-   */
-  [[nodiscard]] moho::REmitterCurveKey* SwapEmitterCurveKeyPayloadLanesAdapterA(
-    moho::REmitterCurveKey* const left,
-    moho::REmitterCurveKey* const right
-  ) noexcept
-  {
-    return SwapEmitterCurveKeyPayloadLanes(left, right);
-  }
-
-  /**
-   * Address: 0x00517380 (FUN_00517380)
-   *
-   * What it does:
-   * Secondary adapter lane for swapping curve-key payload components.
-   */
-  [[nodiscard]] moho::REmitterCurveKey* SwapEmitterCurveKeyPayloadLanesAdapterB(
-    moho::REmitterCurveKey* const left,
-    moho::REmitterCurveKey* const right
-  ) noexcept
-  {
-    return SwapEmitterCurveKeyPayloadLanes(left, right);
-  }
-
-  /**
-   * Address: 0x005177C0 (FUN_005177C0)
-   *
-   * What it does:
-   * Adapter lane that writes one curve-key `X` bit pattern to output storage.
-   */
-  [[nodiscard]] std::uint32_t* StoreEmitterCurveKeyXBitsAdapterLaneB(
-    std::uint32_t* const destination,
-    const moho::REmitterCurveKey* const source
-  ) noexcept
-  {
-    return StoreEmitterCurveKeyCoordinateBits(destination, source->X);
-  }
-
-  /**
-   * Address: 0x005177D0 (FUN_005177D0)
-   *
-   * What it does:
-   * Adapter lane that writes one curve-key `Y` bit pattern to output storage.
-   */
-  [[nodiscard]] std::uint32_t* StoreEmitterCurveKeyYBitsAdapterLaneB(
-    std::uint32_t* const destination,
-    const moho::REmitterCurveKey* const source
-  ) noexcept
-  {
-    return StoreEmitterCurveKeyCoordinateBits(destination, source->Y);
-  }
-
-  [[nodiscard]] std::uint32_t* SwapWordLaneValue(
-    std::uint32_t* const left,
-    std::uint32_t* const right
-  ) noexcept
-  {
-    const std::uint32_t value = *right;
-    *right = *left;
-    *left = value;
-    return left;
-  }
-
-  /**
-   * Address: 0x00517FE0 (FUN_00517FE0)
-   *
-   * What it does:
-   * Swaps one 32-bit lane value between two scalar slots and returns left slot.
-   */
-  [[nodiscard]] std::uint32_t* SwapWordLaneAdapter(
-    std::uint32_t* const left,
-    std::uint32_t* const right
-  ) noexcept
-  {
-    return SwapWordLaneValue(left, right);
-  }
-
-  /**
-   * Address: 0x00519CB0 (FUN_00519CB0)
-   *
-   * What it does:
-   * Third adapter lane that writes one curve-key `X` bit pattern.
-   */
-  [[nodiscard]] std::uint32_t* StoreEmitterCurveKeyXBitsAdapterLaneC(
-    std::uint32_t* const destination,
-    const moho::REmitterCurveKey* const source
-  ) noexcept
-  {
-    return StoreEmitterCurveKeyCoordinateBits(destination, source->X);
-  }
-
-  /**
-   * Address: 0x00519CC0 (FUN_00519CC0)
-   *
-   * What it does:
-   * Third adapter lane that writes one curve-key `Y` bit pattern.
-   */
-  [[nodiscard]] std::uint32_t* StoreEmitterCurveKeyYBitsAdapterLaneC(
-    std::uint32_t* const destination,
-    const moho::REmitterCurveKey* const source
-  ) noexcept
-  {
-    return StoreEmitterCurveKeyCoordinateBits(destination, source->Y);
-  }
-
-  /**
-   * Address: 0x0051A230 (FUN_0051A230)
-   *
-   * What it does:
-   * Third adapter lane for writing one 32-bit scalar value.
-   */
-  [[nodiscard]] std::uint32_t* StoreWordLaneAdapterC(
-    std::uint32_t* const destination,
-    const std::uint32_t value
-  ) noexcept
-  {
-    return StoreWordLaneValue(destination, value);
-  }
-
-  /**
-   * Address: 0x0051A280 (FUN_0051A280)
-   *
-   * What it does:
-   * Fourth adapter lane for writing one 32-bit scalar value.
-   */
-  [[nodiscard]] std::uint32_t* StoreWordLaneAdapterD(
-    std::uint32_t* const destination,
-    const std::uint32_t value
-  ) noexcept
-  {
-    return StoreWordLaneValue(destination, value);
-  }
-
-  /**
-   * Address: 0x00516E80 (FUN_00516E80)
-   *
-   * What it does:
-   * Compares absolute values of two float lanes and returns whether the
-   * second lane magnitude is greater than the first.
-   */
-  bool IsSecondAbsoluteValueGreater(
-    const float* const first,
-    const float* const second
-  ) noexcept
-  {
-    const float firstAbsolute = std::fabs(first != nullptr ? *first : 0.0f);
-    const float secondAbsolute = std::fabs(second != nullptr ? *second : 0.0f);
-    return secondAbsolute > firstAbsolute;
-  }
-
-  /**
-   * Address: 0x00514BB0 (FUN_00514BB0)
-   *
-   * What it does:
-   * Models the tiny in-place `gpg::RObject` base-lane initializer used by
-   * emitter-curve key construction/unwind codegen lanes.
-   */
-  [[nodiscard]] gpg::RObject* InitializeEmitterCurveRObjectLane(
-    gpg::RObject* const objectStorage
-  ) noexcept
-  {
-    // `gpg::RObject` is abstract; this lane only preserves the in-place
-    // initialization shape before the concrete `REmitterCurveKey` ctor runs.
-    return objectStorage;
-  }
-
-  /**
-   * Address: 0x00516C80 (FUN_00516C80)
-   *
-   * What it does:
-   * Secondary in-place `gpg::RObject` vtable initializer used by emitter-curve
-   * constructor/unwind helper lanes.
-   */
-  [[nodiscard]] gpg::RObject* InitializeEmitterCurveRObjectLaneSecondary(
-    gpg::RObject* const objectStorage
-  ) noexcept
-  {
-    return InitializeEmitterCurveRObjectLane(objectStorage);
-  }
-
   /**
    * Address: 0x00517570 (FUN_00517570, gpg::RVectorType_REmitterCurveKey::dtr)
    */
@@ -402,11 +74,11 @@ namespace
    *
    * What it does:
    * Builds and caches lexical reflection name `vector<element>` for
-   * `msvc8::vector<moho::REmitterCurveKey>`.
+   * `fa::vector<moho::REmitterCurveKey>`.
    */
   const char* CurveKeyVectorTypeInfo::GetName() const
   {
-    static msvc8::string cachedName{};
+    static fa::string cachedName{};
     if (cachedName.empty()) {
       const gpg::RType* const elementType = gpg::RTypeOf<moho::REmitterCurveKey>();
       const char* const elementName = elementType ? elementType->GetName() : "REmitterCurveKey";
@@ -420,11 +92,13 @@ namespace
    *
    * What it does:
    * Returns base lexical text plus reflected vector size for one
-   * `msvc8::vector<moho::REmitterCurveKey>` instance.
+   * `fa::vector<moho::REmitterCurveKey>` instance.
    */
-  msvc8::string CurveKeyVectorTypeInfo::GetLexical(const gpg::RRef& ref) const
+  fa::string CurveKeyVectorTypeInfo::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -438,7 +112,7 @@ namespace
    *
    * What it does:
    * Sets vector type metadata and installs serializer callbacks for
-   * `msvc8::vector<moho::REmitterCurveKey>`.
+   * `fa::vector<moho::REmitterCurveKey>`.
    */
   void CurveKeyVectorTypeInfo::Init()
   {
@@ -456,14 +130,17 @@ namespace
    * and replaces destination storage with the loaded sequence.
    */
   void CurveKeyVectorTypeInfo::SerLoad(
-    gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const
   )
   {
     if (archive == nullptr || objectPtr == 0) {
       return;
     }
 
-    auto* const destination = reinterpret_cast<CurveKeyVector*>(objectPtr);
+    auto* const destination = static_cast<CurveKeyVector*>(objectPtr);
     unsigned int count = 0u;
     archive->ReadUInt(&count);
 
@@ -489,14 +166,17 @@ namespace
    * reflected write callbacks.
    */
   void CurveKeyVectorTypeInfo::SerSave(
-    gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef* const ownerRef
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    const int,
+    gpg::RRef* const ownerRef
   )
   {
     if (archive == nullptr) {
       return;
     }
 
-    const auto* const source = reinterpret_cast<const CurveKeyVector*>(objectPtr);
+    const auto* const source = static_cast<const CurveKeyVector*>(objectPtr);
     const unsigned int count = source != nullptr ? static_cast<unsigned int>(source->size()) : 0u;
     archive->WriteUInt(count);
 
@@ -512,7 +192,10 @@ namespace
     }
   }
 
-  gpg::RRef CurveKeyVectorTypeInfo::SubscriptIndex(void* const obj, const int ind) const
+  gpg::RRef CurveKeyVectorTypeInfo::SubscriptIndex(
+    void* const obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
     out.mType = gpg::RTypeOf<moho::REmitterCurveKey>();
@@ -527,7 +210,9 @@ namespace
     return out;
   }
 
-  size_t CurveKeyVectorTypeInfo::GetCount(void* const obj) const
+  size_t CurveKeyVectorTypeInfo::GetCount(
+    void* const obj
+  ) const
   {
     const auto* const storage = static_cast<const CurveKeyVector*>(obj);
     return storage ? storage->size() : 0u;
@@ -536,7 +221,10 @@ namespace
   /**
    * Address: 0x00515D20 (FUN_00515D20, gpg::RVectorType_REmitterCurveKey::SetCount)
    */
-  void CurveKeyVectorTypeInfo::SetCount(void* const obj, const int count) const
+  void CurveKeyVectorTypeInfo::SetCount(
+    void* const obj,
+    const int count
+  ) const
   {
     if (obj == nullptr || count < 0) {
       return;
@@ -563,7 +251,9 @@ namespace
     return sInstance;
   }
 
-  [[nodiscard]] gpg::RRef MakeEmitterCurveRef(moho::REmitterBlueprintCurve* object)
+  [[nodiscard]] gpg::RRef MakeEmitterCurveRef(
+    moho::REmitterBlueprintCurve* object
+  )
   {
     gpg::RRef out{};
     out.mObj = object;
@@ -583,12 +273,16 @@ namespace
     return MakeEmitterCurveRef(new moho::REmitterBlueprintCurve());
   }
 
-  void DeleteEmitterCurveObject(void* objectMemory)
+  void DeleteEmitterCurveObject(
+    void* objectMemory
+  )
   {
     delete static_cast<moho::REmitterBlueprintCurve*>(objectMemory);
   }
 
-  void DestructEmitterCurveObject(void* objectMemory)
+  void DestructEmitterCurveObject(
+    void* objectMemory
+  )
   {
     if (!objectMemory) {
       return;
@@ -597,7 +291,9 @@ namespace
     static_cast<moho::REmitterBlueprintCurve*>(objectMemory)->~REmitterBlueprintCurve();
   }
 
-  [[nodiscard]] gpg::RRef MakeEmitterCurveKeyRef(moho::REmitterCurveKey* object)
+  [[nodiscard]] gpg::RRef MakeEmitterCurveKeyRef(
+    moho::REmitterCurveKey* object
+  )
   {
     gpg::RRef out{};
     out.mObj = object;
@@ -610,7 +306,9 @@ namespace
     return MakeEmitterCurveKeyRef(new moho::REmitterCurveKey());
   }
 
-  [[nodiscard]] gpg::RRef ConstructEmitterCurveKeyRef(void* objectMemory)
+  [[nodiscard]] gpg::RRef ConstructEmitterCurveKeyRef(
+    void* objectMemory
+  )
   {
     if (!objectMemory) {
       return MakeEmitterCurveKeyRef(nullptr);
@@ -620,12 +318,16 @@ namespace
     return MakeEmitterCurveKeyRef(object);
   }
 
-  void DeleteEmitterCurveKeyObject(void* objectMemory)
+  void DeleteEmitterCurveKeyObject(
+    void* objectMemory
+  )
   {
     delete static_cast<moho::REmitterCurveKey*>(objectMemory);
   }
 
-  void DestructEmitterCurveKeyObject(void* objectMemory)
+  void DestructEmitterCurveKeyObject(
+    void* objectMemory
+  )
   {
     if (!objectMemory) {
       return;
@@ -641,7 +343,9 @@ namespace
    * Installs `REmitterBlueprintCurve` lifecycle callback lanes on one
    * `gpg::RType` descriptor and returns that descriptor.
    */
-  [[nodiscard]] gpg::RType* BindEmitterBlueprintCurveLifecycleCallbacks(gpg::RType* const typeInfo)
+  [[nodiscard]] gpg::RType* BindEmitterBlueprintCurveLifecycleCallbacks(
+    gpg::RType* const typeInfo
+  )
   {
     typeInfo->newRefFunc_ = &NewEmitterCurveRef;
     typeInfo->ctorRefFunc_ = &CurveTypeInfo::CtrRef;
@@ -657,7 +361,9 @@ namespace
    * Installs `REmitterCurveKey` lifecycle callback lanes on one
    * `gpg::RType` descriptor and returns that descriptor.
    */
-  [[nodiscard]] gpg::RType* BindEmitterCurveKeyLifecycleCallbacks(gpg::RType* const typeInfo)
+  [[nodiscard]] gpg::RType* BindEmitterCurveKeyLifecycleCallbacks(
+    gpg::RType* const typeInfo
+  )
   {
     typeInfo->newRefFunc_ = &NewEmitterCurveKeyRef;
     typeInfo->ctorRefFunc_ = &ConstructEmitterCurveKeyRef;
@@ -706,7 +412,9 @@ namespace moho
   /**
    * Address: 0x00516EC0 (FUN_00516EC0)
    */
-  void REmitterBlueprintCurveTypeInfo::AddBaseRObject(gpg::RType* const typeInfo)
+  void REmitterBlueprintCurveTypeInfo::AddBaseRObject(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<gpg::RObject>(typeInfo);
   }
@@ -714,7 +422,9 @@ namespace moho
   /**
    * Address: 0x00516F20 (FUN_00516F20)
    */
-  void REmitterBlueprintCurveTypeInfo::AddFields(gpg::RType* const typeInfo)
+  void REmitterBlueprintCurveTypeInfo::AddFields(
+    gpg::RType* const typeInfo
+  )
   {
     typeInfo->AddField<float>("XRange", offsetof(REmitterBlueprintCurve, XRange), 3, "Range of X for this curve.");
     typeInfo->AddField<CurveKeyVector>("Keys", offsetof(REmitterBlueprintCurve, Keys), 3, "Keys for this curve.");
@@ -744,12 +454,11 @@ namespace moho
    * Constructs one `REmitterBlueprintCurve` in caller-provided storage and
    * returns a typed reflection reference for that object.
    */
-  gpg::RRef REmitterBlueprintCurveTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef REmitterBlueprintCurveTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const curve = static_cast<REmitterBlueprintCurve*>(objectStorage);
-    if (curve != nullptr) {
-      new (curve) REmitterBlueprintCurve();
-    }
+    auto* const curve = gpg::ConstructInStorage<REmitterBlueprintCurve>(objectStorage);
 
     gpg::RRef curveRef{};
     curveRef = gpg::MakeRRef<moho::REmitterBlueprintCurve>(curve);
@@ -781,7 +490,9 @@ namespace moho
   /**
    * Address: 0x00516FA0 (FUN_00516FA0)
    */
-  void REmitterCurveKeyTypeInfo::AddBaseRObject(gpg::RType* const typeInfo)
+  void REmitterCurveKeyTypeInfo::AddBaseRObject(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<gpg::RObject>(typeInfo);
   }
@@ -789,7 +500,9 @@ namespace moho
   /**
    * Address: 0x00515720 (FUN_00515720)
    */
-  void REmitterCurveKeyTypeInfo::AddFields(gpg::RType* const typeInfo)
+  void REmitterCurveKeyTypeInfo::AddFields(
+    gpg::RType* const typeInfo
+  )
   {
     typeInfo->AddField<float>("x", offsetof(REmitterCurveKey, X), 3, "X pos of this curve.");
     typeInfo->AddField<float>("y", offsetof(REmitterCurveKey, Y), 3, "Y pos of this curve.");
@@ -838,7 +551,7 @@ namespace moho
   gpg::RType* preregister_VectorREmitterCurveKeyType()
   {
     auto* const typeInfo = &AcquireREmitterCurveKeyVectorTypeInfo();
-    gpg::PreRegisterRType(typeid(msvc8::vector<REmitterCurveKey>), typeInfo);
+    gpg::PreRegisterRType(typeid(fa::vector<REmitterCurveKey>), typeInfo);
     return typeInfo;
   }
 
@@ -857,8 +570,20 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_REmitterBlueprintCurveTypeInfo_399a30, moho::register_REmitterBlueprintCurveTypeInfo)
-GPG_PREREGISTER_INIT(register_REmitterCurveKeyTypeInfo_399a30, moho::register_REmitterCurveKeyTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_REmitterBlueprintCurveTypeInfo_399a30,
+  moho::register_REmitterBlueprintCurveTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_REmitterCurveKeyTypeInfo_399a30,
+  moho::register_REmitterCurveKeyTypeInfo
+)
 
-GPG_PREREGISTER_INIT(preregister_VectorREmitterCurveKeyType_399a30, moho::preregister_VectorREmitterCurveKeyType)
-GPG_PREREGISTER_INIT(register_VectorREmitterCurveKeyType_399a30, moho::register_VectorREmitterCurveKeyType)
+GPG_PREREGISTER_INIT(
+  preregister_VectorREmitterCurveKeyType_399a30,
+  moho::preregister_VectorREmitterCurveKeyType
+)
+GPG_PREREGISTER_INIT(
+  register_VectorREmitterCurveKeyType_399a30,
+  moho::register_VectorREmitterCurveKeyType
+)

@@ -3,8 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
-#include "../../gpg/core/utils/BoostUtils.h"
+#include <memory>
+#include "gpg/core/utils/NonCopyable.h"
 #include "moho/entity/EntityCategoryReflection.h"
 #include "../misc/StatItem.h"
 #include "../misc/Stats.h"
@@ -31,14 +31,14 @@ namespace moho
    * The per-blueprint stat table is a plain `std::map<const RUnitBlueprint*, float>`
    * in the original: the node is 0x18 with the links at 0/4/8, the key pointer
    * at +0x0C, the float at +0x10 and the colour/nil pair at +0x14/+0x15, which
-   * is exactly what `msvc8::map` lays out for an 8-byte `value_type`. The key
+   * is exactly what `fa::map` lays out for an 8-byte `value_type`. The key
    * comparison in the binary is a raw pointer compare, so the default
    * `std::less` is the right predicate rather than a name-ordering one.
-   * The consumers read the key's `mBlueprintId` (+0x08), `mBlueprintLabel`
-   * (+0x24) and `mCategoryBitIndex` (+0x5C); callers pass unit blueprints.
+   * The consumers read the key's `mBlueprintId` (+0x08), `mDescription`
+   * (+0x24) and `mBlueprintOrdinal` (+0x5C); callers pass unit blueprints.
    */
-  using ArmyBlueprintStatTree = msvc8::map<const RUnitBlueprint*, float>;
-  // The 0x18 node is not nameable from here -- `msvc8::map` keeps `node_type`
+  using ArmyBlueprintStatTree = fa::map<const RUnitBlueprint*, float>;
+  // The 0x18 node is not nameable from here -- `fa::map` keeps `node_type`
   // private -- but it is pinned by construction: links at 0/4/8, an 8-byte
   // `pair<const RUnitBlueprint*, float>` at +0x0C, colour at +0x14 and
   // nil at +0x15, which the RbTree node template lays out exactly.
@@ -49,7 +49,7 @@ namespace moho
     ArmyNameIndexNode* left;   // +0x00
     ArmyNameIndexNode* parent; // +0x04
     ArmyNameIndexNode* right;  // +0x08
-    msvc8::string key;         // +0x0C
+    fa::string key;            // +0x0C
     CArmyStatItem* value;      // +0x28
     std::uint8_t color;        // +0x2C
     std::uint8_t isNil;        // +0x2D
@@ -63,24 +63,24 @@ namespace moho
    * The by-name item index is `std::map<std::string, CArmyStatItem*>`: the
    * node is 0x30 with links at 0/4/8, the 0x1C-byte key string at +0x0C, the
    * item pointer at +0x28 and the colour/nil pair at +0x2C/+0x2D -- what
-   * `msvc8::map` lays out for a 0x20-byte `value_type`.
+   * `fa::map` lays out for a 0x20-byte `value_type`.
    *
    * The header is 0x0C, not the 0x10 this was modelled as. The fourth dword
    * belonged to the trigger list that follows: 0x14 + 0x0C = 0x20, and the
    * trigger list's own 0x0C head then runs 0x20..0x2B, which is
    * `sizeof(CArmyStats) == 0x2C`.
    */
-  using ArmyNameIndexTree = msvc8::map<msvc8::string, CArmyStatItem*>;
+  using ArmyNameIndexTree = fa::map<fa::string, CArmyStatItem*>;
 
   static_assert(sizeof(ArmyNameIndexTree) == 0x0C, "ArmyNameIndexTree size must be 0x0C");
 
   /**
    * The army's triggers. The 0x0C `{proxy, head, size}` head at `+0x20` sits
    * over a 0x10 `{next, prev, shared_ptr<STrigger>}` node, which is exactly
-   * `msvc8::list`'s node for an 8-byte element: the sentinel allocator at
+   * `fa::list`'s node for an 8-byte element: the sentinel allocator at
    * 0x00702090 asks for 16 bytes and self-links `{next, prev}`.
    */
-  using ArmyTriggerList = msvc8::list<boost::shared_ptr<STrigger>>;
+  using ArmyTriggerList = fa::list<std::shared_ptr<STrigger>>;
   static_assert(sizeof(ArmyTriggerList) == 0x0C, "ArmyTriggerList size must be 0x0C");
 
   class CArmyStatItem : public StatItem
@@ -205,9 +205,8 @@ namespace moho
      * its members are loaded over it afterwards.
      * Inlined into `SerConstructHelper<CArmyStats>::Construct` 0x0070E140.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * What it does:
@@ -215,7 +214,10 @@ namespace moho
      * Inlined into `SerSaveConstructHelper<CArmyStats>::SaveConstructArgs` 0x0070DF60.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
 
     /**
@@ -260,13 +262,14 @@ namespace moho
 
     /**
      * Address: 0x0070CC40 (FUN_0070CC40, Moho::CArmyStats::ArmyXmlStatsNode)
-     * Mangled: ?ArmyXmlStatsNode@CArmyStats@Moho@@QAE?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV34@@Z
+     * Mangled:
+     * ?ArmyXmlStatsNode@CArmyStats@Moho@@QAE?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABV34@@Z
      *
      * What it does:
      * Builds one indented `<Army>` XML subtree containing per-blueprint unit,
      * category summary, and economy summary stats for sync submission.
      */
-    [[nodiscard]] msvc8::string ArmyXmlStatsNode(const msvc8::string& indent);
+    [[nodiscard]] fa::string ArmyXmlStatsNode(const fa::string& indent);
 
     /**
      * Address: 0x0070C160 (FUN_0070C160, Moho::CArmyStats::DumpStats)
@@ -294,11 +297,7 @@ namespace moho
      * Resolves one army-stat item by path, resolves one per-blueprint float
      * lane in that item, applies `delta`, and returns the updated lane pointer.
      */
-    [[nodiscard]] float* AddBlueprintStatDelta(
-      const char* statPath,
-      const RUnitBlueprint* blueprint,
-      float delta
-    );
+    [[nodiscard]] float* AddBlueprintStatDelta(const char* statPath, const RUnitBlueprint* blueprint, float delta);
 
     /**
      * Address: 0x00593260 (FUN_00593260, func_UpdateUnitStat)
@@ -308,34 +307,6 @@ namespace moho
      * one atomic add to the integer counter lane.
      */
     [[nodiscard]] std::int32_t UpdateUnitStat(const char* statPath, const std::int32_t* delta);
-
-    /**
-     * Address: 0x00593220 (FUN_00593220, func_SetUnitStat)
-     *
-     * What it does:
-     * Resolves one stat item by path, coerces it to integer type, and
-     * atomically replaces the integer counter lane with `*value`.
-     */
-    [[nodiscard]] std::int32_t SetUnitStat(const char* statPath, const std::int32_t* value);
-
-    /**
-     * Address: 0x005931E0 (FUN_005931E0, Moho::CArmyStats::SetIntStatAtomic)
-     *
-     * What it does:
-     * Resolves one stat item by path, coerces it to integer storage, and
-     * atomically replaces the counter lane with `*value`, returning the
-     * previous value on success.
-     */
-    [[nodiscard]] std::int32_t SetIntStatAtomic(const char* statPath, const std::int32_t* value);
-
-    /**
-     * Address: 0x005932C0 (FUN_005932C0, sub_5932C0)
-     *
-     * What it does:
-     * Sets one integer stat counter to `*candidate` only when the candidate is
-     * greater than the current value, using an atomic compare-exchange loop.
-     */
-    [[nodiscard]] std::int32_t SetUnitStatGreaterOf(const char* statPath, const std::int32_t* candidate);
 
     /**
      * Address: 0x00593310 (FUN_00593310, sub_593310)
@@ -354,7 +325,7 @@ namespace moho
      * Finds one trigger by case-insensitive name from trigger-list lanes and
      * returns one retained shared pointer in `outTrigger`.
      */
-    boost::shared_ptr<STrigger>* GetTrigger(boost::shared_ptr<STrigger>* outTrigger, const char* triggerName);
+    std::shared_ptr<STrigger>* GetTrigger(std::shared_ptr<STrigger>* outTrigger, const char* triggerName);
 
     /**
      * Address: 0x0070BCA0 (FUN_0070BCA0, Moho::CArmyStats::SetArmyStatsTrigger)
@@ -415,20 +386,18 @@ namespace moho
      * Resolves one string-stat path through the cached lookup and writes one
      * string value to that stat item.
      */
-    void SetStringValueByPath(gpg::StrArg statPath, const msvc8::string& value);
+    void SetStringValueByPath(gpg::StrArg statPath, const fa::string& value);
 
   private:
     // No source-level `EraseNameIndexNodeAndAdvance`/`DestroyNameIndexTree`
-    // helpers here: 0x00703700 is `msvc8::map`'s own `erase(iterator)` for
+    // helpers here: 0x00703700 is `fa::map`'s own `erase(iterator)` for
     // this tree shape, already reached by `Delete()`'s `mNameIndex.erase(it)`
     // call below and cited on that container member in RbTree.h; `mNameIndex`
-    // (a real `msvc8::map<msvc8::string, CArmyStatItem*>`) is destroyed
+    // (a real `fa::map<fa::string, CArmyStatItem*>`) is destroyed
     // automatically in `~CArmyStats()`'s compiler-generated epilogue, matching
     // the binary's own inlined `erase_range`-then-delete-then-zero sequence
     // (cited on `~rb_tree()`/`erase_range` in RbTree.h) -- there is no
     // separate "destroy the name index" symbol anywhere in this binary.
-
-
 
   public:
     CAiBrain* mOwnerArmy;         // +0x10
@@ -449,7 +418,7 @@ namespace moho
    */
   [[nodiscard]] CArmyStatItem* ResolveArmyStatItemCachedCreate(CArmyStats* armyStats, const char* statPath);
 
-  /**
+  /*
    * Address: 0x007134C0 (FUN_007134C0, boost::shared_ptr<Moho::STrigger>::shared_ptr(STrigger*))
    *
    * What it does:
@@ -463,8 +432,9 @@ namespace moho
    * caller site to invoke this helper by name so the MSVC8 per-T template
    * emission symbol is preserved even when the modern compiler would inline
    * the natural ctor-arg construction.
+   *
+   * The caller calls `created.reset(new STrigger())`.
    */
-  void ConstructSharedSTriggerFromRaw(boost::shared_ptr<STrigger>& out, STrigger* raw);
 
   /**
    * Engine addition (dedicated-server plan WPL.4): the folder prompt
@@ -474,7 +444,7 @@ namespace moho
    * (moho/app/SnapshotDirectoryDialog.cpp); a headless build leaves it null and
    * keeps the default.
    */
-  using SnapshotDirectoryPrompt = void (*)(msvc8::string& directory);
+  using SnapshotDirectoryPrompt = void (*)(fa::string& directory);
   extern SnapshotDirectoryPrompt sSnapshotDirectoryPrompt;
 } // namespace moho
 

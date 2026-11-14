@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/gal/Device.hpp"
 #include "gpg/gal/DeviceContext.hpp"
 #include "gpg/gal/DrawIndexedContext.hpp"
@@ -39,7 +39,10 @@ namespace
   constexpr int kBoundaryBoxVertexCount = 8;
   constexpr int kBoundaryBoxIndexCount = 36;
 
-  [[nodiscard]] bool BoundaryEdgesDiffer(const float mapEdge, const float playableEdge) noexcept
+  [[nodiscard]] bool BoundaryEdgesDiffer(
+    const float mapEdge,
+    const float playableEdge
+  ) noexcept
   {
     const float delta = mapEdge - playableEdge;
     return (delta * delta) >= kBoundaryEdgeMatchToleranceSq;
@@ -75,7 +78,7 @@ namespace
     const Wm3::AxisAlignedBox3f& volume,
     const unsigned int headIndex,
     const moho::GeomCamera3& camera,
-    const msvc8::string& techniqueName
+    const fa::string& techniqueName
   )
   {
     auto* const device = gpg::gal::Device::GetInstance();
@@ -84,24 +87,19 @@ namespace
     // overwritten by the effect lookup at 0x007D0914 before it is ever read.
     static_cast<void>(device->GetDeviceContext()->GetHead(headIndex));
 
-    const boost::shared_ptr<gpg::gal::Effect> effect = moho::AcquireVisionBaseEffect();
+    const std::shared_ptr<gpg::gal::Effect> effect = moho::AcquireVisionBaseEffect();
 
-    const boost::shared_ptr<gpg::gal::EffectTechnique> technique =
-      effect->GetTechnique(techniqueName.c_str());
-    const boost::shared_ptr<gpg::gal::EffectVariable> viewMatrix = effect->GetVariable("viewMatrix");
-    const boost::shared_ptr<gpg::gal::EffectVariable> projMatrix = effect->GetVariable("projMatrix");
-    const boost::shared_ptr<gpg::gal::EffectVariable> boxCenter = effect->GetVariable("boxCenter");
-    const boost::shared_ptr<gpg::gal::EffectVariable> boxExtent = effect->GetVariable("boxExtent");
+    const std::shared_ptr<gpg::gal::EffectTechnique> technique = effect->GetTechnique(techniqueName.c_str());
+    const std::shared_ptr<gpg::gal::EffectVariable> viewMatrix = effect->GetVariable("viewMatrix");
+    const std::shared_ptr<gpg::gal::EffectVariable> projMatrix = effect->GetVariable("projMatrix");
+    const std::shared_ptr<gpg::gal::EffectVariable> boxCenter = effect->GetVariable("boxCenter");
+    const std::shared_ptr<gpg::gal::EffectVariable> boxExtent = effect->GetVariable("boxExtent");
 
     const float center[3] = {
-      (volume.Min.x + volume.Max.x) * 0.5f,
-      (volume.Min.y + volume.Max.y) * 0.5f,
-      (volume.Min.z + volume.Max.z) * 0.5f
+      (volume.Min.x + volume.Max.x) * 0.5f, (volume.Min.y + volume.Max.y) * 0.5f, (volume.Min.z + volume.Max.z) * 0.5f
     };
     const float halfExtent[3] = {
-      (volume.Max.x - volume.Min.x) * 0.5f,
-      (volume.Max.y - volume.Min.y) * 0.5f,
-      (volume.Max.z - volume.Min.z) * 0.5f
+      (volume.Max.x - volume.Min.x) * 0.5f, (volume.Max.y - volume.Min.y) * 0.5f, (volume.Max.z - volume.Min.z) * 0.5f
     };
 
     viewMatrix->SetMatrix4x4(&camera.view);
@@ -147,7 +145,9 @@ namespace moho
   /**
    * Address: 0x007D05D0 (FUN_007D05D0, Moho::BoundaryRenderer::Init)
    */
-  void BoundaryRenderer::Init(BoxRenderer* const boundaryRendererBody)
+  void BoundaryRenderer::Init(
+    BoxRenderer* const boundaryRendererBody
+  )
   {
     if (!boundaryRendererBody) {
       return;
@@ -202,11 +202,9 @@ namespace moho
     mapVolume.Min.y = kBoundaryVolumeFloor;
     mapVolume.Max.y = kBoundaryVolumeCeiling;
 
-    const bool boundaryIsVisible =
-      BoundaryEdgesDiffer(mapVolume.Min.x, playableMinX)
-      || BoundaryEdgesDiffer(mapVolume.Max.x, playableMaxX)
-      || BoundaryEdgesDiffer(mapVolume.Min.z, playableMinZ)
-      || BoundaryEdgesDiffer(mapVolume.Max.z, playableMaxZ);
+    const bool boundaryIsVisible = BoundaryEdgesDiffer(mapVolume.Min.x, playableMinX) ||
+      BoundaryEdgesDiffer(mapVolume.Max.x, playableMaxX) || BoundaryEdgesDiffer(mapVolume.Min.z, playableMinZ) ||
+      BoundaryEdgesDiffer(mapVolume.Max.z, playableMaxZ);
     if (!boundaryIsVisible) {
       return;
     }
@@ -215,10 +213,10 @@ namespace moho
 
     // Outer shell clockwise, playable shell counter-clockwise: the two casts
     // leave exactly the ring between them marked in the stencil buffer.
-    const msvc8::string outerTechnique{"CastBoundaryCW"};
+    const fa::string outerTechnique{"CastBoundaryCW"};
     CastBoundaryVolume(boundary.mBoundaryRendererBody, mapVolume, headIndex, camera, outerTechnique);
 
-    const msvc8::string innerTechnique{"CastBoundaryCCW"};
+    const fa::string innerTechnique{"CastBoundaryCCW"};
     CastBoundaryVolume(boundary.mBoundaryRendererBody, playableVolume, headIndex, camera, innerTechnique);
 
     const auto headWidth = static_cast<std::int32_t>(head.mWidth);

@@ -48,7 +48,7 @@ namespace moho
     [[nodiscard]] static gpg::RType* StaticGetClass();
 
   public:
-    msvc8::vector<PrefetchHandleBase> mHandles; // +0x00
+    fa::vector<PrefetchHandleBase> mHandles; // +0x00
   };
 
   static_assert(offsetof(CPrefetchSet, mHandles) == 0x00, "CPrefetchSet::mHandles offset must be 0x00");
@@ -70,7 +70,10 @@ namespace moho
     static CScrLuaMetatableFactory sInstance;
   };
 
-  static_assert(sizeof(CScrLuaMetatableFactory<CPrefetchSet>) == 0x08, "CScrLuaMetatableFactory<CPrefetchSet> size must be 0x08");
+  static_assert(
+    sizeof(CScrLuaMetatableFactory<CPrefetchSet>) == 0x08,
+    "CScrLuaMetatableFactory<CPrefetchSet> size must be 0x08"
+  );
 
   /**
    * Address: 0x004A7D20 (FUN_004A7D20, func_CreatePrefetchSet)
@@ -82,7 +85,7 @@ namespace moho
 
   /**
    * Address: 0x004A7DD0 (FUN_004A7DD0, func_GetCObj_CPrefetchSet)
-    * Alias of FUN_004A8660 (non-canonical helper lane).
+   * Alias of FUN_004A8660 (non-canonical helper lane).
    *
    * What it does:
    * Resolves native `CPrefetchSet*` from one Lua object or table `_c_object` lane.

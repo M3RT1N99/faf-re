@@ -3,6 +3,14 @@
 #include "Wm3Vector3.h"
 #include "Wm3Quaternion.h"
 
+// Defined in Wm3FoundationStatics.cpp. Wild Magic's header declares the member but
+// not the specialisation, so a use elsewhere can't see that one exists.
+namespace Wm3
+{
+  template <>
+  const Vector3<float> Vector3<float>::ZERO;
+}
+
 namespace moho
 {
   using Vector3f = Wm3::Vector3f;
@@ -39,10 +47,7 @@ namespace moho
    * Scales one vector in place by `1/divisor`; when `divisor == 0`, writes
    * `FLT_MAX` into all three lanes.
    */
-  [[nodiscard]] Wm3::Vector3f* VecScaleByReciprocalOrSetMax(
-    Wm3::Vector3f* vector,
-    float divisor
-  ) noexcept;
+  [[nodiscard]] Wm3::Vector3f* VecScaleByReciprocalOrSetMax(Wm3::Vector3f* vector, float divisor) noexcept;
 
   /**
    * Address: 0x0069A360 (FUN_0069A360, func_VecSetLengthTo)

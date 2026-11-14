@@ -57,7 +57,9 @@ namespace moho
     /**
      * Copies count as a new live instance; the destructor will take them away.
      */
-    InstanceCounter(const InstanceCounter&) noexcept
+    InstanceCounter(
+      const InstanceCounter&
+    ) noexcept
       : InstanceCounter()
     {}
 
@@ -121,7 +123,7 @@ namespace moho
     {
       static StatItem* sStatItem = nullptr;
       if (sStatItem == nullptr) {
-        msvc8::string statPath("Instance Counts_");
+        fa::string statPath("Instance Counts_");
         for (const char* name = typeid(T).name(); *name != '\0'; ++name) {
           if (*name != '_') {
             (void)statPath.append(1u, *name);

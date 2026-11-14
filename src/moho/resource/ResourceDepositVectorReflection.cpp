@@ -14,49 +14,7 @@
 
 namespace
 {
-  using ResourceDepositVector = msvc8::vector<moho::ResourceDeposit>;
-
-  /**
-   * Address: 0x00549850 (FUN_00549850)
-   *
-   * What it does:
-   * Lazily resolves `vector<ResourceDeposit>` reflection type and dispatches
-   * one archive read for `CSimResources::deposits_` (x86 `+0x0C`, the only
-   * `msvc8::vector<ResourceDeposit>` member at that offset; same body as the
-   * CSimResources serializer's load half).
-   */
-  void ReadResourceDepositVectorFieldArchiveAdapter(void* const object, gpg::ReadArchive* const archive)
-  {
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(object != nullptr);
-    if (!archive || !object) {
-      return;
-    }
-
-    auto* const resources = static_cast<moho::CSimResources*>(object);
-    gpg::RRef owner{};
-    archive->Read(gpg::RTypeOf<ResourceDepositVector>(), &resources->deposits_, owner);
-  }
-
-  /**
-   * Address: 0x005498A0 (FUN_005498A0)
-   *
-   * What it does:
-   * Lazily resolves `vector<ResourceDeposit>` reflection type and dispatches
-   * one archive write for `CSimResources::deposits_` (x86 `+0x0C`).
-   */
-  void WriteResourceDepositVectorFieldArchiveAdapter(void* const object, gpg::WriteArchive* const archive)
-  {
-    GPG_ASSERT(archive != nullptr);
-    GPG_ASSERT(object != nullptr);
-    if (!archive || !object) {
-      return;
-    }
-
-    auto* const resources = static_cast<moho::CSimResources*>(object);
-    gpg::RRef owner{};
-    archive->Write(gpg::RTypeOf<ResourceDepositVector>(), &resources->deposits_, owner);
-  }
+  using ResourceDepositVector = fa::vector<moho::ResourceDeposit>;
 
   [[nodiscard]] gpg::RVectorType_ResourceDeposit& AcquireResourceDepositVectorType()
   {
@@ -83,12 +41,12 @@ gpg::RVectorType_ResourceDeposit::~RVectorType_ResourceDeposit() = default;
  *
  * What it does:
  * Builds and caches lexical reflection name `vector<element>` for
- * `msvc8::vector<moho::ResourceDeposit>`.
+ * `fa::vector<moho::ResourceDeposit>`.
  */
 const char* gpg::RVectorType_ResourceDeposit::GetName() const
 {
-    static const msvc8::string sName = gpg::STR_Printf("vector<%s>", gpg::RTypeOf<moho::ResourceDeposit>()->GetName());
-    return sName.c_str();
+  static const fa::string sName = gpg::STR_Printf("vector<%s>", gpg::RTypeOf<moho::ResourceDeposit>()->GetName());
+  return sName.c_str();
 }
 
 /**
@@ -96,11 +54,13 @@ const char* gpg::RVectorType_ResourceDeposit::GetName() const
  *
  * What it does:
  * Returns base lexical text plus reflected vector size for one
- * `msvc8::vector<moho::ResourceDeposit>` instance.
+ * `fa::vector<moho::ResourceDeposit>` instance.
  */
-msvc8::string gpg::RVectorType_ResourceDeposit::GetLexical(const gpg::RRef& ref) const
+fa::string gpg::RVectorType_ResourceDeposit::GetLexical(
+  const gpg::RRef& ref
+) const
 {
-  const msvc8::string base = gpg::RType::GetLexical(ref);
+  const fa::string base = gpg::RType::GetLexical(ref);
   return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
 }
 
@@ -135,7 +95,7 @@ void gpg::RVectorType_ResourceDeposit::Init()
  */
 void gpg::RVectorType_ResourceDeposit::SerLoad(
   gpg::ReadArchive* const archive,
-  const std::intptr_t objectPtr,
+  void* const objectPtr,
   const int,
   gpg::RRef* const
 )
@@ -144,7 +104,7 @@ void gpg::RVectorType_ResourceDeposit::SerLoad(
     return;
   }
 
-  auto* const storage = reinterpret_cast<ResourceDepositVector*>(objectPtr);
+  auto* const storage = static_cast<ResourceDepositVector*>(objectPtr);
   unsigned int count = 0u;
   archive->ReadUInt(&count);
 
@@ -176,7 +136,7 @@ void gpg::RVectorType_ResourceDeposit::SerLoad(
  */
 void gpg::RVectorType_ResourceDeposit::SerSave(
   gpg::WriteArchive* const archive,
-  const std::intptr_t objectPtr,
+  void* const objectPtr,
   const int,
   gpg::RRef* const ownerRef
 )
@@ -185,7 +145,7 @@ void gpg::RVectorType_ResourceDeposit::SerSave(
     return;
   }
 
-  const auto* const storage = reinterpret_cast<const ResourceDepositVector*>(objectPtr);
+  const auto* const storage = static_cast<const ResourceDepositVector*>(objectPtr);
   const unsigned int count = storage ? static_cast<unsigned int>(storage->size()) : 0u;
   archive->WriteUInt(count);
 
@@ -208,7 +168,10 @@ void gpg::RVectorType_ResourceDeposit::SerSave(
 /**
  * Address: 0x00547690 (FUN_00547690, gpg::RVectorType_ResourceDeposit::SubscriptIndex)
  */
-gpg::RRef gpg::RVectorType_ResourceDeposit::SubscriptIndex(void* const obj, const int ind) const
+gpg::RRef gpg::RVectorType_ResourceDeposit::SubscriptIndex(
+  void* const obj,
+  const int ind
+) const
 {
   gpg::RRef out{};
   out.mType = gpg::RTypeOf<moho::ResourceDeposit>();
@@ -226,7 +189,9 @@ gpg::RRef gpg::RVectorType_ResourceDeposit::SubscriptIndex(void* const obj, cons
 /**
  * Address: 0x00547620 (FUN_00547620, gpg::RVectorType_ResourceDeposit::GetCount)
  */
-size_t gpg::RVectorType_ResourceDeposit::GetCount(void* const obj) const
+size_t gpg::RVectorType_ResourceDeposit::GetCount(
+  void* const obj
+) const
 {
   const auto* const storage = static_cast<const ResourceDepositVector*>(obj);
   return storage ? storage->size() : 0u;
@@ -235,7 +200,10 @@ size_t gpg::RVectorType_ResourceDeposit::GetCount(void* const obj) const
 /**
  * Address: 0x00547650 (FUN_00547650, gpg::RVectorType_ResourceDeposit::SetCount)
  */
-void gpg::RVectorType_ResourceDeposit::SetCount(void* const obj, const int count) const
+void gpg::RVectorType_ResourceDeposit::SetCount(
+  void* const obj,
+  const int count
+) const
 {
   if (!obj || count < 0) {
     return;
@@ -250,7 +218,7 @@ void gpg::RVectorType_ResourceDeposit::SetCount(void* const obj, const int count
  *
  * What it does:
  * Constructs/preregisters RTTI metadata for
- * `msvc8::vector<moho::ResourceDeposit>`.
+ * `fa::vector<moho::ResourceDeposit>`.
  */
 gpg::RType* moho::preregister_VectorResourceDepositType()
 {
@@ -266,5 +234,11 @@ void moho::register_VectorResourceDepositType()
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(preregister_VectorResourceDepositType_c50930, moho::preregister_VectorResourceDepositType)
-GPG_PREREGISTER_INIT(register_VectorResourceDepositType_c50930, moho::register_VectorResourceDepositType)
+GPG_PREREGISTER_INIT(
+  preregister_VectorResourceDepositType_c50930,
+  moho::preregister_VectorResourceDepositType
+)
+GPG_PREREGISTER_INIT(
+  register_VectorResourceDepositType_c50930,
+  moho::register_VectorResourceDepositType
+)

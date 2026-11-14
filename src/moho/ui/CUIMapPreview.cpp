@@ -5,7 +5,7 @@ namespace
   constexpr const char* kCUIMapPreviewSetTextureHelpText = "CUIMapPreview:SetTexture(texture_name)";
   constexpr const char* kCUIMapPreviewSetTextureFromMapHelpText = "CUIMapPreview:SetTextureFromMap(map_name)";
   constexpr const char* kCUIMapPreviewClearTextureHelpText = "CUIMapPreview::ClearTexture()";
-}
+} // namespace
 
 gpg::RType* moho::CUIMapPreview::sType = nullptr;
 
@@ -81,7 +81,7 @@ bool moho::CUIMapPreview::SetTexture(
     }
   }
 
-  mTexture = boost::static_pointer_cast<ID3DTextureSheet>(loadedTexture);
+  mTexture = std::static_pointer_cast<ID3DTextureSheet>(loadedTexture);
   return mTexture.get() != nullptr;
 }
 
@@ -103,7 +103,7 @@ bool moho::CUIMapPreview::SetTextureFromMap(
     return false;
   }
 
-  msvc8::auto_ptr<CWldMap> loadedMap = WLD_LoadMapPreview(mapPath);
+  fa::auto_ptr<CWldMap> loadedMap = WLD_LoadMapPreview(mapPath);
   if (loadedMap.get() != nullptr && loadedMap->mMapPreviewChunk != nullptr) {
     mTexture = loadedMap->mMapPreviewChunk->mPreviewTexture;
   }
@@ -374,8 +374,5 @@ gpg::RType* moho::CUIMapPreview::GetClass() const
  */
 gpg::RRef moho::CUIMapPreview::GetDerivedObjectRef()
 {
-  gpg::RRef ref{};
-  ref.mObj = this;
-  ref.mType = GetClass();
-  return ref;
+  return gpg::MakeSelfRef(this);
 }

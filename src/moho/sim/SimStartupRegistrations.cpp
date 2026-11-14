@@ -23,45 +23,8 @@
 namespace
 {
 
-  moho::CScrLuaInitForm* gSimLuaInitFormPrevStartupLane21 = nullptr;
-  moho::CScrLuaInitForm* gSimLuaInitFormAnchorStartupLane21 = nullptr;
-
   int gRecoveredCScrLuaMetatableFactoryReconBlipIndex = 0;
   int gRecoveredCScrLuaMetatableFactoryEntityIndex = 0;
-
-  /**
-   * Address: 0x00736830 (FUN_00736830)
-   *
-   * What it does:
-   * Returns one raw storage pointer for the per-sim `sim_TestVarUByte`
-   * runtime convar instance.
-   */
-  [[maybe_unused]] [[nodiscard]] void* GetSimTestVarUByteStorage(moho::Sim* const sim)
-  {
-    if (sim == nullptr) {
-      return nullptr;
-    }
-
-    moho::CSimConVarInstanceBase* const instance = sim->GetSimVar(&moho::gSimConVar_sim_TestVarUByte);
-    return instance != nullptr ? instance->GetValueStorage() : nullptr;
-  }
-
-  /**
-   * Address: 0x00736850 (FUN_00736850)
-   *
-   * What it does:
-   * Returns one raw storage pointer for the per-sim `sim_TestVarStr`
-   * runtime convar instance.
-   */
-  [[maybe_unused]] [[nodiscard]] void* GetSimTestVarStrStorage(moho::Sim* const sim)
-  {
-    if (sim == nullptr) {
-      return nullptr;
-    }
-
-    moho::CSimConVarInstanceBase* const instance = sim->GetSimVar(&moho::gSimConVar_sim_TestVarStr);
-    return instance != nullptr ? instance->GetValueStorage() : nullptr;
-  }
 
   template <int* TargetIndex>
   int RegisterRecoveredFactoryIndex() noexcept
@@ -106,7 +69,11 @@ namespace moho
    * Address: 0x00BD59E0 (FUN_00BD59E0, dynamic initializer for `gConAlias_tree_AccelFactor`)
    * Address: 0x00BFCFB0 (FUN_00BFCFB0, dynamic atexit destructor for `gConAlias_tree_AccelFactor`)
    */
-  moho::CConAlias gConAlias_tree_AccelFactor("tree_AccelFactor", "How quickly falling trees accelerate", "DoSimCommand tree_AccelFactor");
+  moho::CConAlias gConAlias_tree_AccelFactor(
+    "tree_AccelFactor",
+    "How quickly falling trees accelerate",
+    "DoSimCommand tree_AccelFactor"
+  );
 
   /**
    * Address: 0x00BD5A10 (FUN_00BD5A10, dynamic initializer for `gSimConVar_tree_AccelFactor`)
@@ -118,7 +85,11 @@ namespace moho
    * Address: 0x00BD5A60 (FUN_00BD5A60, dynamic initializer for `gConAlias_tree_SpringFactor`)
    * Address: 0x00BFD010 (FUN_00BFD010, dynamic atexit destructor for `gConAlias_tree_SpringFactor`)
    */
-  moho::CConAlias gConAlias_tree_SpringFactor("tree_SpringFactor", "How quickly swaying trees spring back", "DoSimCommand tree_SpringFactor");
+  moho::CConAlias gConAlias_tree_SpringFactor(
+    "tree_SpringFactor",
+    "How quickly swaying trees spring back",
+    "DoSimCommand tree_SpringFactor"
+  );
 
   /**
    * Address: 0x00BD5A90 (FUN_00BD5A90, dynamic initializer for `gSimConVar_tree_SpringFactor`)
@@ -130,7 +101,8 @@ namespace moho
    * Address: 0x00BD5AE0 (FUN_00BD5AE0, dynamic initializer for `gConAlias_tree_DampFactor`)
    * Address: 0x00BFD070 (FUN_00BFD070, dynamic atexit destructor for `gConAlias_tree_DampFactor`)
    */
-  moho::CConAlias gConAlias_tree_DampFactor("tree_DampFactor", "Damping on swaying trees (0 to 1)", "DoSimCommand tree_DampFactor");
+  moho::CConAlias
+    gConAlias_tree_DampFactor("tree_DampFactor", "Damping on swaying trees (0 to 1)", "DoSimCommand tree_DampFactor");
 
   /**
    * Address: 0x00BD5B10 (FUN_00BD5B10, dynamic initializer for `gSimConVar_tree_DampFactor`)
@@ -142,7 +114,11 @@ namespace moho
    * Address: 0x00BD5B60 (FUN_00BD5B60, dynamic initializer for `gConAlias_tree_UprootFactor`)
    * Address: 0x00BFD0D0 (FUN_00BFD0D0, dynamic atexit destructor for `gConAlias_tree_UprootFactor`)
    */
-  moho::CConAlias gConAlias_tree_UprootFactor("tree_UprootFactor", "How far to raise falling trees up out of the ground", "DoSimCommand tree_UprootFactor");
+  moho::CConAlias gConAlias_tree_UprootFactor(
+    "tree_UprootFactor",
+    "How far to raise falling trees up out of the ground",
+    "DoSimCommand tree_UprootFactor"
+  );
 
   /**
    * Address: 0x00BD5B90 (FUN_00BD5B90, dynamic initializer for `gSimConVar_tree_UprootFactor`)
@@ -154,7 +130,11 @@ namespace moho
    * Address: 0x00BD69F0 (FUN_00BD69F0, dynamic initializer for `gConAlias_ShowRaisedPlatforms`)
    * Address: 0x00BFD880 (FUN_00BFD880, dynamic atexit destructor for `gConAlias_ShowRaisedPlatforms`)
    */
-  moho::CConAlias gConAlias_ShowRaisedPlatforms("ShowRaisedPlatforms", "Turns on or off rendering of raised platform for tweaking and setting up purposes", "DoSimCommand ShowRaisedPlatforms");
+  moho::CConAlias gConAlias_ShowRaisedPlatforms(
+    "ShowRaisedPlatforms",
+    "Turns on or off rendering of raised platform for tweaking and setting up purposes",
+    "DoSimCommand ShowRaisedPlatforms"
+  );
 
   /**
    * Address: 0x00BD6A20 (FUN_00BD6A20, dynamic initializer for `gSimConVar_ShowRaisedPlatforms`)
@@ -166,7 +146,11 @@ namespace moho
    * Address: 0x00BD6F60 (FUN_00BD6F60, dynamic initializer for `gConAlias_RandomElevationOffset`)
    * Address: 0x00BFDE30 (FUN_00BFDE30, dynamic atexit destructor for `gConAlias_RandomElevationOffset`)
    */
-  moho::CConAlias gConAlias_RandomElevationOffset("RandomElevationOffset", "Alter random non-combat elevation offset so plane don't all stick on the same plane", "DoSimCommand RandomElevationOffset");
+  moho::CConAlias gConAlias_RandomElevationOffset(
+    "RandomElevationOffset",
+    "Alter random non-combat elevation offset so plane don't all stick on the same plane",
+    "DoSimCommand RandomElevationOffset"
+  );
 
   /**
    * Address: 0x00BD6F90 (FUN_00BD6F90, dynamic initializer for `gSimConVar_RandomElevationOffset`)
@@ -178,40 +162,17 @@ namespace moho
    * Address: 0x00BD74B0 (FUN_00BD74B0, dynamic initializer for `gConAlias_AirLookAheadMult`)
    * Address: 0x00BFE0F0 (FUN_00BFE0F0, dynamic atexit destructor for `gConAlias_AirLookAheadMult`)
    */
-  moho::CConAlias gConAlias_AirLookAheadMult("AirLookAheadMult", "Alter the air units look ahead distance", "DoSimCommand AirLookAheadMult");
+  moho::CConAlias gConAlias_AirLookAheadMult(
+    "AirLookAheadMult",
+    "Alter the air units look ahead distance",
+    "DoSimCommand AirLookAheadMult"
+  );
 
   /**
    * Address: 0x00BD74E0 (FUN_00BD74E0, dynamic initializer for `gSimConVar_AirLookAheadMult`)
    * Address: 0x00BFE140 (FUN_00BFE140, dynamic atexit destructor for `gSimConVar_AirLookAheadMult`)
    */
   TSimConVar<float> gSimConVar_AirLookAheadMult(false, "AirLookAheadMult", 1.0f);
-
-  /**
-   * Address: 0x00BD4BE0 (FUN_00BD4BE0, register_sim_SimInits_mForms_prependStartupLane21)
-   *
-   * What it does:
-   * Saves the current `sim` Lua-init form chain head and replaces it with the
-   * recovered startup lane anchor for `startupLane21`.
-   */
-  CScrLuaInitForm* register_sim_SimInits_mForms_prependStartupLane21()
-  {
-    CScrLuaInitFormSet* const simSet = moho::SCR_FindLuaInitFormSet("Sim");
-    if (simSet == nullptr) {
-      gSimLuaInitFormPrevStartupLane21 = nullptr;
-      return nullptr;
-    }
-
-    CScrLuaInitForm* const result = simSet->mForms;
-    gSimLuaInitFormPrevStartupLane21 = result;
-    // Prepend suppressed: the binary's anchor is a statically initialised
-    // form object in .data with no constructor, so it patches the list by
-    // hand. Our equivalent is a real C++ object whose constructor already
-    // calls AddInit, and re-doing it here published the address of a
-    // CScrLuaInitForm* variable as the list head - a null vtable pointer
-    // that crashed RunLuaInitFormSetIfPresent. See CPrefetchSet.cpp.
-    // simSet->mForms = reinterpret_cast<CScrLuaInitForm*>(&gSimLuaInitFormAnchorStartupLane21);
-    return result;
-  }
 
   /**
    * Address: 0x00BD4C00 (FUN_00BD4C00, sub_BD4C00) -- record at 0x00F59F34
@@ -276,7 +237,11 @@ namespace moho
   CScrLuaInitForm* register_sim_SimInits_mForms_prependStartupLane25()
   {
     static CScrLuaClassBinder binder(
-      moho::SCR_SimLuaInitSet(), "moho.projectile_methods", &CScrLuaMetatableFactory<Projectile>::Instance(), "Projectile", ""
+      moho::SCR_SimLuaInitSet(),
+      "moho.projectile_methods",
+      &CScrLuaMetatableFactory<Projectile>::Instance(),
+      "Projectile",
+      ""
     );
     return &binder;
   }
@@ -439,17 +404,6 @@ namespace moho
   }
 
   /**
-   * Address: 0x00BD9A50 (FUN_00BD9A50, j_func_CreatePropHPR_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_CreatePropHPR_LuaFuncDef` to `func_CreatePropHPR_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_CreatePropHPR_LuaFuncDef()
-  {
-    return ForwardSimStartupLuaThunk<&func_CreatePropHPR_LuaFuncDef>();
-  }
-
-  /**
    * Address: 0x00BD9A60 (FUN_00BD9A60, register_CreateProp_LuaFuncDef)
    *
    * What it does:
@@ -458,17 +412,6 @@ namespace moho
   CScrLuaInitForm* register_CreateProp_LuaFuncDef()
   {
     return ForwardSimStartupLuaThunk<&func_CreateProp_LuaFuncDef>();
-  }
-
-  /**
-   * Address: 0x00BD9CF0 (FUN_00BD9CF0, j_func_ShouldCreateInitialArmyUnits_LuaFuncDef)
-   *
-   * What it does:
-   * Forwards `j_func_ShouldCreateInitialArmyUnits_LuaFuncDef` to `func_ShouldCreateInitialArmyUnits_LuaFuncDef`.
-   */
-  CScrLuaInitForm* j_func_ShouldCreateInitialArmyUnits_LuaFuncDef()
-  {
-    return ForwardSimStartupLuaThunk<&func_ShouldCreateInitialArmyUnits_LuaFuncDef>();
   }
 
   /**
@@ -514,7 +457,6 @@ namespace moho
   {
     return ForwardSimStartupLuaThunk<&func_GetUnitByIdSim_LuaFuncDef>();
   }
-
 
   /**
    * Address: 0x00BDBF00 (FUN_00BDBF00, register_SimConExecute_LuaFuncDef)
@@ -773,7 +715,11 @@ namespace moho
    * Address: 0x00BD9B20 (FUN_00BD9B20, dynamic initializer for `gConAlias_path_ArmyBudget`)
    * Address: 0x00BFE530 (FUN_00BFE530, dynamic atexit destructor for `gConAlias_path_ArmyBudget`)
    */
-  moho::CConAlias gConAlias_path_ArmyBudget("path_ArmyBudget", "Budget for each army to do pathfinding each tick", "DoSimCommand path_ArmyBudget");
+  moho::CConAlias gConAlias_path_ArmyBudget(
+    "path_ArmyBudget",
+    "Budget for each army to do pathfinding each tick",
+    "DoSimCommand path_ArmyBudget"
+  );
 
   /**
    * Address: 0x00BD9B50 (FUN_00BD9B50, dynamic initializer for `gSimConVar_path_ArmyBudget`)
@@ -785,7 +731,11 @@ namespace moho
    * Address: 0x00BCCBF0 (FUN_00BCCBF0, dynamic initializer for `gConAlias_path_MaxInstantWorkUnits`)
    * Address: 0x00BF70E0 (FUN_00BF70E0, dynamic atexit destructor for `gConAlias_path_MaxInstantWorkUnits`)
    */
-  moho::CConAlias gConAlias_path_MaxInstantWorkUnits("path_MaxInstantWorkUnits", "Budget for instant pathfinds by the AI", "DoSimCommand path_MaxInstantWorkUnits");
+  moho::CConAlias gConAlias_path_MaxInstantWorkUnits(
+    "path_MaxInstantWorkUnits",
+    "Budget for instant pathfinds by the AI",
+    "DoSimCommand path_MaxInstantWorkUnits"
+  );
 
   /**
    * Address: 0x00BCCC20 (FUN_00BCCC20, dynamic initializer for `gSimConVar_path_MaxInstantWorkUnits`)
@@ -797,7 +747,11 @@ namespace moho
    * Address: 0x00BCCC70 (FUN_00BCCC70, dynamic initializer for `gConAlias_path_UnreachableTimeoutSearchSteps`)
    * Address: 0x00BF7140 (FUN_00BF7140, dynamic atexit destructor for `gConAlias_path_UnreachableTimeoutSearchSteps`)
    */
-  moho::CConAlias gConAlias_path_UnreachableTimeoutSearchSteps("path_UnreachableTimeoutSearchSteps", "Maximum number of ticks to allow a single pathfind to take for an unreachable path", "DoSimCommand path_UnreachableTimeoutSearchSteps");
+  moho::CConAlias gConAlias_path_UnreachableTimeoutSearchSteps(
+    "path_UnreachableTimeoutSearchSteps",
+    "Maximum number of ticks to allow a single pathfind to take for an unreachable path",
+    "DoSimCommand path_UnreachableTimeoutSearchSteps"
+  );
 
   /**
    * Address: 0x00BCCCA0 (FUN_00BCCCA0, dynamic initializer for `gSimConVar_path_UnreachableTimeoutSearchSteps`)
@@ -809,7 +763,11 @@ namespace moho
    * Address: 0x00BD8710 (FUN_00BD8710, dynamic initializer for `gConAlias_AI_RenderBombDropZone`)
    * Address: 0x00BFF2C0 (FUN_00BFF2C0, dynamic atexit destructor for `gConAlias_AI_RenderBombDropZone`)
    */
-  moho::CConAlias gConAlias_AI_RenderBombDropZone("AI_RenderBombDropZone", "Toggle on/off rendering of bomb drop zone", "DoSimCommand AI_RenderBombDropZone");
+  moho::CConAlias gConAlias_AI_RenderBombDropZone(
+    "AI_RenderBombDropZone",
+    "Toggle on/off rendering of bomb drop zone",
+    "DoSimCommand AI_RenderBombDropZone"
+  );
 
   /**
    * Address: 0x00BD8740 (FUN_00BD8740, dynamic initializer for `gSimConVar_AI_RenderBombDropZone`)
@@ -827,7 +785,11 @@ namespace moho
   CScrLuaInitForm* register_moho_weapon_methods()
   {
     static CScrLuaClassBinder binder(
-      moho::SCR_SimLuaInitSet(), "moho.weapon_methods", &CScrLuaMetatableFactory<UnitWeapon>::Instance(), "UnitWeapon", ""
+      moho::SCR_SimLuaInitSet(),
+      "moho.weapon_methods",
+      &CScrLuaMetatableFactory<UnitWeapon>::Instance(),
+      "UnitWeapon",
+      ""
     );
     return &binder;
   }
@@ -992,7 +954,8 @@ namespace moho
    * Address: 0x00BCDE90 (FUN_00BCDE90, dynamic initializer for `gConAlias_ReconFlush`)
    * Address: 0x00BF7AE0 (FUN_00BF7AE0, dynamic atexit destructor for `gConAlias_ReconFlush`)
    */
-  moho::CConAlias gConAlias_ReconFlush("ReconFlush", "Flush all recon databases (destroys all blips)", "DoSimCommand ReconFlush");
+  moho::CConAlias
+    gConAlias_ReconFlush("ReconFlush", "Flush all recon databases (destroys all blips)", "DoSimCommand ReconFlush");
 
   /**
    * Address: 0x00BCDEC0 (FUN_00BCDEC0, dynamic initializer for `gSimConFunc_ReconFlush`)
@@ -1004,7 +967,8 @@ namespace moho
    * Address: 0x00BDBCD0 (FUN_00BDBCD0, dynamic initializer for `gConAlias_ScenarioMethod`)
    * Address: 0x00C00EF0 (FUN_00C00EF0, dynamic atexit destructor for `gConAlias_ScenarioMethod`)
    */
-  moho::CConAlias gConAlias_ScenarioMethod("ScenarioMethod", "Run a scenario-specific command", "DoSimCommand ScenarioMethod");
+  moho::CConAlias
+    gConAlias_ScenarioMethod("ScenarioMethod", "Run a scenario-specific command", "DoSimCommand ScenarioMethod");
 
   /**
    * Address: 0x00BDBD00 (FUN_00BDBD00, dynamic initializer for `gSimConFunc_ScenarioMethod`)

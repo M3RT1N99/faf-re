@@ -45,7 +45,8 @@ namespace moho
     void Frame(float simDeltaSeconds, float frameSeconds);
 
     /**
-     * Address: 0x007AA9C0 (FUN_007AA9C0, ?CreateCamera@RCamManager@Moho@@QAEPAVRCamCamera@2@VStrArg@gpg@@ABVSTIMap@2@PAVLuaState@LuaPlus@@@Z)
+     * Address: 0x007AA9C0 (FUN_007AA9C0,
+     * ?CreateCamera@RCamManager@Moho@@QAEPAVRCamCamera@2@VStrArg@gpg@@ABVSTIMap@2@PAVLuaState@LuaPlus@@@Z)
      *
      * What it does:
      * Allocates one `CameraImpl`, constructs it from map/Lua context, and
@@ -72,15 +73,16 @@ namespace moho
     [[nodiscard]] CameraImpl* GetCamera(gpg::StrArg name);
 
     /**
-     * Address: 0x007AAB60 (FUN_007AAB60, ?GetAllCameras@RCamManager@Moho@@QAE?AV?$vector@PAVCameraImpl@Moho@@V?$allocator@PAVCameraImpl@Moho@@@std@@@std@@XZ)
+     * Address: 0x007AAB60 (FUN_007AAB60,
+     * ?GetAllCameras@RCamManager@Moho@@QAE?AV?$vector@PAVCameraImpl@Moho@@V?$allocator@PAVCameraImpl@Moho@@@std@@@std@@XZ)
      *
      * What it does:
      * Returns a copy of the current camera pointer vector.
      */
-    [[nodiscard]] msvc8::vector<CameraImpl*> GetAllCameras();
+    [[nodiscard]] fa::vector<CameraImpl*> GetAllCameras();
 
   public:
-    msvc8::vector<CameraImpl*> mCams; // +0x00
+    fa::vector<CameraImpl*> mCams; // +0x00
   };
 
   static_assert(sizeof(RCamManager) == 0x10, "RCamManager size must be 0x10");
@@ -95,14 +97,6 @@ namespace moho
   [[nodiscard]] RCamManager* CAM_GetManager();
 
   /**
-   * Address: 0x007AACD0 (FUN_007AACD0, ?CAM_CreateCamera@Moho@@YAPAVRCamCamera@1@VStrArg@gpg@@ABVSTIMap@1@PAVLuaState@LuaPlus@@@Z)
-   *
-   * What it does:
-   * Creates one camera through the global manager from name/map/Lua inputs.
-   */
-  [[nodiscard]] CameraImpl* CAM_CreateCamera(gpg::StrArg name, const STIMap& map, LuaPlus::LuaState* luaState);
-
-  /**
    * Address: 0x007AAD00 (FUN_007AAD00, ?CAM_GetCamera@Moho@@YAPAVRCamCamera@1@VStrArg@gpg@@@Z)
    *
    * What it does:
@@ -111,36 +105,22 @@ namespace moho
   [[nodiscard]] CameraImpl* CAM_GetCamera(gpg::StrArg name);
 
   /**
-   * Address: 0x007AAEC0 (FUN_007AAEC0, ?CAM_ResetAllCameras@Moho@@YAXXZ)
-   *
-   * What it does:
-   * Resets every runtime camera currently owned by the global camera manager.
-   */
-  void CAM_ResetAllCameras();
-
-  /**
-   * Address: 0x007AAF00 (FUN_007AAF00, ?CAM_Frame@Moho@@YAXMM@Z)
-   *
-   * What it does:
-   * Runs one camera-manager frame tick with sim and frame delta seconds.
-   */
-  void CAM_Frame(float simDeltaSeconds, float frameSeconds);
-
-  /**
-   * Address: 0x007AAD20 (FUN_007AAD20, ?CAM_GetAllCameras@Moho@@YA?AV?$vector@VGeomCamera3@Moho@@V?$allocator@VGeomCamera3@Moho@@@std@@@std@@XZ)
+   * Address: 0x007AAD20 (FUN_007AAD20,
+   * ?CAM_GetAllCameras@Moho@@YA?AV?$vector@VGeomCamera3@Moho@@V?$allocator@VGeomCamera3@Moho@@@std@@@std@@XZ)
    *
    * What it does:
    * Copies all non-minimap camera views into one output camera-view vector.
    */
-  [[nodiscard]] msvc8::vector<GeomCamera3> CAM_GetAllCameras();
+  [[nodiscard]] fa::vector<GeomCamera3> CAM_GetAllCameras();
 
   /**
-   * Address: 0x007AADE0 (FUN_007AADE0, ?CAM_GetAllRCamCameras@Moho@@YA?AV?$vector@PAVCameraImpl@Moho@@V?$allocator@PAVCameraImpl@Moho@@@std@@@std@@XZ)
+   * Address: 0x007AADE0 (FUN_007AADE0,
+   * ?CAM_GetAllRCamCameras@Moho@@YA?AV?$vector@PAVCameraImpl@Moho@@V?$allocator@PAVCameraImpl@Moho@@@std@@@std@@XZ)
    *
    * What it does:
    * Returns a copy of all runtime camera implementation pointers.
    */
-  [[nodiscard]] msvc8::vector<CameraImpl*> CAM_GetAllRCamCameras();
+  [[nodiscard]] fa::vector<CameraImpl*> CAM_GetAllRCamCameras();
 
   /**
    * Address: 0x008D3870 (FUN_008D3870, sub_8D3870)
@@ -148,6 +128,6 @@ namespace moho
    * What it does:
    * The `SC_CameraScaleLOD <index>` debug console command. See definition.
    */
-  void SC_CameraScaleLOD(const msvc8::vector<msvc8::string>& args);
+  void SC_CameraScaleLOD(const fa::vector<fa::string>& args);
 
 } // namespace moho

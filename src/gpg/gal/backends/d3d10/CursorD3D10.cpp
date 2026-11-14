@@ -2,10 +2,12 @@
 
 namespace gpg::gal
 {
-namespace
-{
+  namespace
+  {
 
-    std::uint32_t ConvertCursorPixelRgbaToBgra(const std::uint32_t rgba) noexcept
+    std::uint32_t ConvertCursorPixelRgbaToBgra(
+      const std::uint32_t rgba
+    ) noexcept
     {
       return (rgba & 0xFF000000U) | ((rgba & 0x000000FFU) << 16U) | (rgba & 0x0000FF00U) |
         ((rgba & 0x00FF0000U) >> 16U);
@@ -21,7 +23,11 @@ namespace
      * handle arrives by value; its release on the way out is the parameter's
      * destruction.
      */
-    HICON BuildCursorIcon(const int hotspotX, const int hotspotY, const boost::shared_ptr<Texture> texture)
+    HICON BuildCursorIcon(
+      const int hotspotX,
+      const int hotspotY,
+      const std::shared_ptr<Texture> texture
+    )
     {
       BITMAPV5HEADER bitmapInfo{};
       bitmapInfo.bV5Size = sizeof(BITMAPV5HEADER);
@@ -45,7 +51,7 @@ namespace
       const RECT wholeSurface{};
       const TextureLockRect transfer = texture->Lock(0, wholeSurface, 2);
 
-      auto* const destinationPixels = reinterpret_cast<std::uint32_t*>(dibPixels);
+      auto* const destinationPixels = static_cast<std::uint32_t*>(dibPixels);
       const auto* const sourceBytes = static_cast<const std::uint8_t*>(transfer.bits);
       const std::uint32_t rowPitchBytes = static_cast<std::uint32_t>(transfer.pitch);
       const auto* sourceRow = reinterpret_cast<const std::uint32_t*>(sourceBytes + (rowPitchBytes * 31U));
@@ -74,8 +80,7 @@ namespace
       ::DeleteObject(maskBitmap);
       return iconHandle;
     }
-}
-
+  } // namespace
 
   /**
    * Address: 0x008F8100 (FUN_008F8100)
@@ -83,7 +88,9 @@ namespace
    * What it does:
    * Applies the non-deleting destructor body lanes for `CursorD3D10`.
    */
-  void DestroyCursorD3D10Body(CursorD3D10* const cursor) noexcept
+  void DestroyCursorD3D10Body(
+    CursorD3D10* const cursor
+  ) noexcept
   {
     cursor->Destroy();
   }
@@ -98,31 +105,6 @@ namespace
     : previousCursor_(nullptr)
     , cursorIcon_(nullptr)
   {}
-
-  /**
-   * Address: 0x008F80B0 (FUN_008F80B0)
-   *
-   * void *
-   *
-   * What it does:
-   * Rebinds one cursor instance to `CursorD3D10` vtable ownership, clears the
-   * icon lane, and preserves the existing retained cursor-handle lane.
-   */
-  CursorD3D10* InitializeCursorD3D10WithRetainedCursorLane(
-    CursorD3D10* const cursor,
-    void* const reserved
-  ) noexcept
-  {
-    if (cursor == nullptr) {
-      return nullptr;
-    }
-
-    const HCURSOR retainedCursor = cursor->previousCursor_;
-    ::new (static_cast<void*>(cursor)) CursorD3D10();
-    cursor->previousCursor_ = retainedCursor;
-    static_cast<void>(reserved);
-    return cursor;
-  }
 
   /**
    * Address: 0x008F8360 (FUN_008F8360)
@@ -162,7 +144,9 @@ namespace
    * Resets prior cursor/icon state, builds one icon from caller cursor context,
    * applies it as the active native cursor, and stores the returned prior cursor.
    */
-  HCURSOR CursorD3D10::SetCursor(const CursorContext* const context)
+  HCURSOR CursorD3D10::SetCursor(
+    const CursorContext* const context
+  )
   {
     Destroy();
 
@@ -196,7 +180,9 @@ namespace
    * Validates icon initialization state and drives native show/hide cursor
    * count loops until the binary stop conditions are reached.
    */
-  int CursorD3D10::ShowCursor(const bool show)
+  int CursorD3D10::ShowCursor(
+    const bool show
+  )
   {
     if (cursorIcon_ == nullptr) {
       ThrowGalError("CursorD3D10.cpp", 76, "attempt to use uninitialized cursor");
@@ -215,5 +201,4 @@ namespace
 
     return result;
   }
-}
-
+} // namespace gpg::gal

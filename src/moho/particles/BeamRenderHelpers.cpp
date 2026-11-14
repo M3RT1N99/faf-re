@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/utils/Global.h"
 #include "gpg/gal/EffectVariable.hpp"
 #include "moho/console/CConCommand.h"
@@ -49,40 +49,40 @@ namespace
 
   template <typename TType>
   [[nodiscard]] bool IsSharedHandleLessForBucket(
-    const boost::shared_ptr<TType>& lhs, const boost::shared_ptr<TType>& rhs
+    const std::shared_ptr<TType>& lhs,
+    const std::shared_ptr<TType>& rhs
   ) noexcept
   {
-    using SharedHandleRaw = boost::SharedPtrLayout<TType>;
-    const auto* const lhsRaw = reinterpret_cast<const SharedHandleRaw*>(&lhs);
-    const auto* const rhsRaw = reinterpret_cast<const SharedHandleRaw*>(&rhs);
-    if (lhsRaw->px == rhsRaw->px) {
+    if (lhs.get() == rhs.get()) {
       return false;
     }
-    return lhsRaw->pi < rhsRaw->pi;
+    // Retail's `boost::shared_ptr` `operator<` is the owner order (control-block pointers): `owner_before`.
+    return lhs.owner_before(rhs);
   }
 
   template <typename TType>
   [[nodiscard]] bool AreSharedHandlesEquivalentForBucket(
-    const boost::shared_ptr<TType>& lhs, const boost::shared_ptr<TType>& rhs
+    const std::shared_ptr<TType>& lhs,
+    const std::shared_ptr<TType>& rhs
   ) noexcept
   {
     return lhs.get() == rhs.get();
   }
 
-  [[nodiscard]] bool IsMsvc8StringLess(const msvc8::string& lhs, const msvc8::string& rhs) noexcept
+  [[nodiscard]] bool IsMsvc8StringLess(
+    const fa::string& lhs,
+    const fa::string& rhs
+  ) noexcept
   {
     const char* const lhsData = lhs.data();
     const char* const rhsData = rhs.data();
-    return std::lexicographical_compare(
-      lhsData,
-      lhsData + lhs.size(),
-      rhsData,
-      rhsData + rhs.size()
-    );
+    return std::lexicographical_compare(lhsData, lhsData + lhs.size(), rhsData, rhsData + rhs.size());
   }
 
   [[nodiscard]] Wm3::Vector3<float> LerpVector3(
-    const Wm3::Vector3<float>& from, const Wm3::Vector3<float>& to, const float alpha
+    const Wm3::Vector3<float>& from,
+    const Wm3::Vector3<float>& to,
+    const float alpha
   ) noexcept
   {
     return Wm3::Vector3<float>{
@@ -93,7 +93,8 @@ namespace
   }
 
   [[nodiscard]] Wm3::Vector3<float> RotateVectorByOrientation(
-    const Wm3::Vector3<float>& vector, const Wm3::Quaternion<float>& orientation
+    const Wm3::Vector3<float>& vector,
+    const Wm3::Quaternion<float>& orientation
   ) noexcept
   {
     Wm3::Vector3<float> out{};
@@ -193,41 +194,49 @@ namespace
   }
 
   [[nodiscard]] const char* ResolveParticleTechniqueSuffix(
-    const std::int32_t blendMode, const bool allowRefractSuffix, const int unreachableLine
+    const std::int32_t blendMode,
+    const bool allowRefractSuffix,
+    const int unreachableLine
   )
   {
     switch (blendMode) {
-      case 0:
-        return "_ALPHABLEND";
-      case 1:
-        return "_MODULATEINVERSE";
-      case 2:
-        return "_MODULATE2XINVERSE";
-      case 3:
-        return "_ADD";
-      case 4:
-        return "_PREMODALPHA";
-      case 5:
-        if (allowRefractSuffix) {
-          return "_REFRACT";
-        }
-        break;
-      default:
-        break;
+    case 0:
+      return "_ALPHABLEND";
+    case 1:
+      return "_MODULATEINVERSE";
+    case 2:
+      return "_MODULATE2XINVERSE";
+    case 3:
+      return "_ADD";
+    case 4:
+      return "_PREMODALPHA";
+    case 5:
+      if (allowRefractSuffix) {
+        return "_REFRACT";
+      }
+      break;
+    default:
+      break;
     }
 
     gpg::HandleAssertFailure(kUnreachableAssertText, unreachableLine, kParticleRendererSourcePath);
     return "_ALPHABLEND";
   }
 
-  [[nodiscard]] std::string BuildBeamTechniqueName(const std::int32_t blendMode, const bool hasTwoTextures)
+  [[nodiscard]] std::string BuildBeamTechniqueName(
+    const std::int32_t blendMode,
+    const bool hasTwoTextures
+  )
   {
     std::string techniqueName = hasTwoTextures ? "TBeam_TwoTexture" : "TBeam_OneTexture";
     techniqueName += ResolveParticleTechniqueSuffix(blendMode, false, 301);
     return techniqueName;
   }
 
-  void BindBeamTextureShaderVar(moho::ShaderVar& shaderVar, const moho::TextureSheetHandle& textureSheet)
+  void BindBeamTextureShaderVar(
+    moho::ShaderVar& shaderVar,
+    const moho::TextureSheetHandle& textureSheet
+  )
   {
     shaderVar.GetTexture(textureSheet);
   }
@@ -248,7 +257,8 @@ namespace moho
   bool ren_Beams = true;
 
   bool BeamBucketKeyLess::operator()(
-    const SBeamBucketKey& lhs, const SBeamBucketKey& rhs
+    const SBeamBucketKey& lhs,
+    const SBeamBucketKey& rhs
   ) const noexcept
   {
     if (lhs.blendMode != rhs.blendMode) {
@@ -268,7 +278,10 @@ namespace moho
    * Allocates one beam-particle vertex sheet from device resources and swaps it
    * into the caller slot, deleting the old sheet when replaced.
    */
-  void RecreateBeamParticleVertexSheet(CD3DVertexSheet*& vertexSheet, CD3DVertexFormat* const vertexFormat)
+  void RecreateBeamParticleVertexSheet(
+    CD3DVertexSheet*& vertexSheet,
+    CD3DVertexFormat* const vertexFormat
+  )
   {
     CD3DDevice* const device = D3D_GetDevice();
     ID3DDeviceResources* const resources = device->GetResources();
@@ -289,7 +302,10 @@ namespace moho
    * Resolves beam textures into one bucket key and appends the beam payload
    * into the matching texture/blend bucket.
    */
-  void AddBeamToTextureBuckets(BeamBucketMap& buckets, const SWorldBeam& beam)
+  void AddBeamToTextureBuckets(
+    BeamBucketMap& buckets,
+    const SWorldBeam& beam
+  )
   {
     if (!ren_Beams) {
       return;
@@ -301,13 +317,13 @@ namespace moho
     if (beam.mTexture1.tex != nullptr) {
       beam.mTexture1.tex->GetTexture(texture0);
     }
-    boost::AssignSharedPairRetain(&bucketKey.texture0, &texture0);
+    bucketKey.texture0 = texture0;
 
     CParticleTexture::TextureResourceHandle texture1{};
     if (beam.mTexture2.tex != nullptr) {
       beam.mTexture2.tex->GetTexture(texture1);
     }
-    boost::AssignSharedPairRetain(&bucketKey.texture1, &texture1);
+    bucketKey.texture1 = texture1;
     bucketKey.blendMode = static_cast<std::int32_t>(beam.mBlendMode);
 
     buckets[bucketKey].push_back(beam);
@@ -339,16 +355,15 @@ namespace moho
    * Address: 0x00493AE0 (FUN_00493AE0, func_ParticleSelectTechnique2)
    *
    * What it does:
-   * As above for a particle bucket, plus the drag flag -- which the shader
-   * variable takes as a 4-byte payload even though the lane is one byte -- and
-   * the extra `_REFRACT` suffix.
+   * As above for a particle bucket, plus the drag flag as a canonical 4-byte
+   * shader integer (0 or 1), and the extra `_REFRACT` suffix.
    */
   void SParticleRenderBucket::SelectTechnique() const
   {
-    const bool drag = dragEnabled;
+    const std::int32_t drag = dragEnabled ? 1 : 0;
     ShaderVar& dragEnabledShaderVar = GetParticleDragEnabledShaderVar();
     if (dragEnabledShaderVar.Exists()) {
-      dragEnabledShaderVar.mEffectVariable->SetValue(&drag, 4U);
+      dragEnabledShaderVar.mEffectVariable->SetValue(&drag, sizeof(drag));
     }
 
     BindBeamTextureShaderVar(GetParticleTexture0ShaderVar(), texture0);
@@ -371,7 +386,9 @@ namespace moho
    * form one billboarded beam quad.
    */
   void EmitInterpolatedBeamQuadVertices(
-    const SWorldBeam& beam, const float frameAlpha, BeamVertexArray& outVertices
+    const SWorldBeam& beam,
+    const float frameAlpha,
+    BeamVertexArray& outVertices
   )
   {
     const float interpolation = std::min(beam.mLastInterpolation * frameAlpha, 1.0f);
@@ -381,9 +398,8 @@ namespace moho
     Wm3::Quaternion<float> startOrientation{};
     (void)QuatLERP(&beam.mLastStart.orient_, &beam.mCurStart.orient_, &startOrientation, interpolation);
     const Wm3::Vector3<float> startBasePosition = LerpVector3(beam.mCurStart.pos_, beam.mLastStart.pos_, interpolation);
-    const Wm3::Vector3<float> startWorldPosition = Wm3::Vector3<float>::Add(
-      startBasePosition, RotateVectorByOrientation(beam.mStart, startOrientation)
-    );
+    const Wm3::Vector3<float> startWorldPosition =
+      Wm3::Vector3<float>::Add(startBasePosition, RotateVectorByOrientation(beam.mStart, startOrientation));
 
     Wm3::Quaternion<float> endOrientation = startOrientation;
     Wm3::Vector3<float> endBasePosition = startBasePosition;
@@ -403,36 +419,18 @@ namespace moho
     Wm3::Vector3<float>::Normalize(axis);
     const Wm3::Vector3<float> oppositeAxis = Wm3::Vector3<float>::Scale(axis, -1.0f);
 
-    outVertices.push_back(
-      BuildBeamRenderVertex(startWorldPosition, axis, beam.mWidth, beam.mStartColor, 1.0f, 0.0f, beam.mUShift, beam.mVShift)
-    );
-    outVertices.push_back(
-      BuildBeamRenderVertex(endWorldPosition, axis, beam.mWidth, beam.mEndColor, 1.0f, repeatCoord, beam.mUShift, beam.mVShift)
-    );
-    outVertices.push_back(
-      BuildBeamRenderVertex(
-        endWorldPosition,
-        oppositeAxis,
-        beam.mWidth,
-        beam.mEndColor,
-        0.0f,
-        repeatCoord,
-        beam.mUShift,
-        beam.mVShift
-      )
-    );
-    outVertices.push_back(
-      BuildBeamRenderVertex(
-        startWorldPosition,
-        oppositeAxis,
-        beam.mWidth,
-        beam.mStartColor,
-        0.0f,
-        0.0f,
-        beam.mUShift,
-        beam.mVShift
-      )
-    );
+    outVertices.push_back(BuildBeamRenderVertex(
+      startWorldPosition, axis, beam.mWidth, beam.mStartColor, 1.0f, 0.0f, beam.mUShift, beam.mVShift
+    ));
+    outVertices.push_back(BuildBeamRenderVertex(
+      endWorldPosition, axis, beam.mWidth, beam.mEndColor, 1.0f, repeatCoord, beam.mUShift, beam.mVShift
+    ));
+    outVertices.push_back(BuildBeamRenderVertex(
+      endWorldPosition, oppositeAxis, beam.mWidth, beam.mEndColor, 0.0f, repeatCoord, beam.mUShift, beam.mVShift
+    ));
+    outVertices.push_back(BuildBeamRenderVertex(
+      startWorldPosition, oppositeAxis, beam.mWidth, beam.mStartColor, 0.0f, 0.0f, beam.mUShift, beam.mVShift
+    ));
   }
 
   /**
@@ -442,7 +440,11 @@ namespace moho
    * Renders the active beam buckets into the shared vertex/index sheets using
    * beam-technique selection and 1000-vertex batching.
    */
-  [[nodiscard]] bool DrawBeamParticle(SBeamBucketContainer& beams, const float frameAlpha, const bool disable)
+  [[nodiscard]] bool DrawBeamParticle(
+    SBeamBucketContainer& beams,
+    const float frameAlpha,
+    const bool disable
+  )
   {
     if (!ren_Beams || disable) {
       return false;
@@ -490,7 +492,7 @@ namespace moho
 
     for (auto bucketIt = beams.mBuckets.begin(); bucketIt != beams.mBuckets.end(); ++bucketIt) {
       const SBeamBucketKey& bucketKey = bucketIt->first;
-      const msvc8::vector<SWorldBeam>& beamList = bucketIt->second;
+      const fa::vector<SWorldBeam>& beamList = bucketIt->second;
       if (beamList.empty()) {
         continue;
       }
@@ -516,10 +518,8 @@ namespace moho
         continue;
       }
 
-      const std::string techniqueName = BuildBeamTechniqueName(
-        bucketKey.blendMode,
-        bucketKey.texture1.get() != nullptr
-      );
+      const std::string techniqueName =
+        BuildBeamTechniqueName(bucketKey.blendMode, bucketKey.texture1.get() != nullptr);
       device->SelectTechnique(techniqueName.c_str());
 
       const SBeamVertex* const sourceVertices = vertices.empty() ? nullptr : &vertices[0];
@@ -544,7 +544,11 @@ namespace moho
         }
 
         // Raw GPU upload: beam vertex blob into the locked stream.
-        std::copy_n(sourceVertices + vertexOffset, static_cast<std::size_t>(batchVertices), static_cast<SBeamVertex*>(mappedVertices));
+        std::copy_n(
+          sourceVertices + vertexOffset,
+          static_cast<std::size_t>(batchVertices),
+          static_cast<SBeamVertex*>(mappedVertices)
+        );
         vertexStream->Unlock();
 
         SD3DVertexRange vertexSheetView{};
@@ -577,7 +581,8 @@ namespace moho
    * Strict-weak ordering comparator for world-particle bucket keys.
    */
   bool IsParticleBucketKeyRhsLessThanLhs(
-    const SParticleBucketKey& lhs, const SParticleBucketKey& rhs
+    const SParticleBucketKey& lhs,
+    const SParticleBucketKey& rhs
   ) noexcept
   {
     if (lhs.sortScalar != rhs.sortScalar) {
@@ -612,15 +617,14 @@ namespace moho
    * What it does:
    * Equality comparator for world-particle bucket keys.
    */
-  bool AreParticleBucketKeysEquivalent(const SParticleBucketKey& lhs, const SParticleBucketKey& rhs) noexcept
+  bool AreParticleBucketKeysEquivalent(
+    const SParticleBucketKey& lhs,
+    const SParticleBucketKey& rhs
+  ) noexcept
   {
-    return lhs.sortScalar == rhs.sortScalar &&
-           lhs.dragEnabled == rhs.dragEnabled &&
-           lhs.blendMode == rhs.blendMode &&
-           lhs.zMode == rhs.zMode &&
-           AreSharedHandlesEquivalentForBucket(lhs.texture0, rhs.texture0) &&
-           AreSharedHandlesEquivalentForBucket(lhs.texture1, rhs.texture1) &&
-           lhs.tag == rhs.tag;
+    return lhs.sortScalar == rhs.sortScalar && lhs.dragEnabled == rhs.dragEnabled && lhs.blendMode == rhs.blendMode &&
+      lhs.zMode == rhs.zMode && AreSharedHandlesEquivalentForBucket(lhs.texture0, rhs.texture0) &&
+      AreSharedHandlesEquivalentForBucket(lhs.texture1, rhs.texture1) && lhs.tag == rhs.tag;
   }
 
   /**
@@ -642,8 +646,8 @@ namespace moho
     destination->sortScalar = source->sortScalar;
     destination->dragEnabled = source->dragEnabled;
 
-    boost::AssignWeakPairFromShared(&destination->texture0, &source->texture0);
-    boost::AssignWeakPairFromShared(&destination->texture1, &source->texture1);
+    destination->texture0 = source->texture0;
+    destination->texture1 = source->texture1;
 
     destination->tag = source->tag;
     destination->blendMode = source->blendMode;
@@ -657,7 +661,10 @@ namespace moho
    * What it does:
    * Builds one trail bucket key from one `STrail` runtime payload.
    */
-  STrailBucketKey* InitializeTrailBucketKeyFromTrail(STrailBucketKey* const key, const SWorldTrail& trail)
+  STrailBucketKey* InitializeTrailBucketKeyFromTrail(
+    STrailBucketKey* const key,
+    const SWorldTrail& trail
+  )
   {
     if (key == nullptr) {
       return nullptr;
@@ -665,7 +672,7 @@ namespace moho
 
     key->texture0.reset();
     key->texture1.reset();
-    key->tag = msvc8::string{};
+    key->tag = fa::string{};
 
     key->sortScalar = trail.mSortOrder;
 
@@ -673,13 +680,13 @@ namespace moho
     if (trail.mTexture.tex != nullptr) {
       trail.mTexture.tex->GetTexture(texture0);
     }
-    boost::AssignSharedPairRetain(&key->texture0, &texture0);
+    key->texture0 = texture0;
 
     CParticleTexture::TextureResourceHandle texture1{};
     if (trail.mRampTexture.tex != nullptr) {
       trail.mRampTexture.tex->GetTexture(texture1);
     }
-    boost::AssignSharedPairRetain(&key->texture1, &texture1);
+    key->texture1 = texture1;
 
     key->tag.assign_owned(trail.mTypeTag != nullptr ? trail.mTypeTag : "");
     key->blendMode = trail.mBlendMode;
@@ -693,7 +700,8 @@ namespace moho
    * Strict-weak ordering comparator for trail bucket keys.
    */
   bool IsTrailBucketKeyRhsLessThanLhs(
-    const STrailBucketKey& lhs, const STrailBucketKey& rhs
+    const STrailBucketKey& lhs,
+    const STrailBucketKey& rhs
   ) noexcept
   {
     if (lhs.sortScalar != rhs.sortScalar) {
@@ -722,13 +730,14 @@ namespace moho
    * What it does:
    * Equality comparator for trail bucket keys.
    */
-  bool AreTrailBucketKeysEquivalent(const STrailBucketKey& lhs, const STrailBucketKey& rhs) noexcept
+  bool AreTrailBucketKeysEquivalent(
+    const STrailBucketKey& lhs,
+    const STrailBucketKey& rhs
+  ) noexcept
   {
-    return lhs.sortScalar == rhs.sortScalar &&
-           lhs.blendMode == rhs.blendMode &&
-           AreSharedHandlesEquivalentForBucket(lhs.texture0, rhs.texture0) &&
-           AreSharedHandlesEquivalentForBucket(lhs.texture1, rhs.texture1) &&
-           lhs.tag == rhs.tag;
+    return lhs.sortScalar == rhs.sortScalar && lhs.blendMode == rhs.blendMode &&
+      AreSharedHandlesEquivalentForBucket(lhs.texture0, rhs.texture0) &&
+      AreSharedHandlesEquivalentForBucket(lhs.texture1, rhs.texture1) && lhs.tag == rhs.tag;
   }
 
   /**
@@ -748,8 +757,8 @@ namespace moho
     }
 
     destination->sortScalar = source->sortScalar;
-    boost::AssignWeakPairFromShared(&destination->texture0, &source->texture0);
-    boost::AssignWeakPairFromShared(&destination->texture1, &source->texture1);
+    destination->texture0 = source->texture0;
+    destination->texture1 = source->texture1;
     destination->tag = source->tag;
     destination->blendMode = source->blendMode;
     return destination;
@@ -761,7 +770,9 @@ namespace moho
    * What it does:
    * Releases one world-particle bucket key resource lane.
    */
-  void ResetParticleBucketKeyResources(SParticleBucketKey& key)
+  void ResetParticleBucketKeyResources(
+    SParticleBucketKey& key
+  )
   {
     key.tag.tidy(true, 0U);
     key.texture1.reset();
@@ -774,7 +785,9 @@ namespace moho
    * What it does:
    * Releases one world-trail bucket key resource lane.
    */
-  void ResetTrailBucketKeyResources(STrailBucketKey& key)
+  void ResetTrailBucketKeyResources(
+    STrailBucketKey& key
+  )
   {
     key.tag.tidy(true, 0U);
     key.texture1.reset();
@@ -782,38 +795,19 @@ namespace moho
   }
 } // namespace moho
 
-
 namespace moho
 {
   namespace
   {
     /// Fetches the first stream of `sheet` through its typed virtual
     /// `GetVertStream(0)` slot, matching the binary's slot-8 dispatch.
-    [[nodiscard]] ID3DVertexStream* FetchPrimaryVertexStream(CD3DVertexSheet* const sheet)
+    [[nodiscard]] ID3DVertexStream* FetchPrimaryVertexStream(
+      CD3DVertexSheet* const sheet
+    )
     {
       return sheet->GetVertStream(0u);
     }
   } // namespace
-
-  /**
-   * Address: 0x0043C3D0 (FUN_0043C3D0, sub_43C3D0)
-   *
-   * IDA signature:
-   * int __usercall sub_43C3D0@<eax>(_DWORD *a1@<esi>);
-   *
-   * What it does:
-   * Locks the first vertex stream of `sheet` for exclusive
-   * write access over the full requested vertex count, stores the
-   * returned map pointer into the context write cursor, and resets
-   * the running quad count to zero.
-   */
-  void BeamDrawContext::BeginMap()
-  {
-    ID3DVertexStream* const stream = FetchPrimaryVertexStream(sheet);
-    void* const mapped = stream->Lock(0, maxVertexCount, true, true);
-    writeCursor = static_cast<float*>(mapped);
-    quadCount = 0;
-  }
 
   /**
    * Address: 0x0043C400 (FUN_0043C400, sub_43C400)
@@ -855,86 +849,12 @@ namespace moho
     }
   }
 
-  /**
-   * Address: 0x0043C430 (FUN_0043C430, sub_43C430)
-   *
-   * IDA signature:
-   * float *__userpurge sub_43C430@<eax>(
-   *   float *a1@<eax>, int a2@<ecx>, float a3, float a4, float a5);
-   *
-   * What it does:
-   * Builds four translated vertices from one unit-box corner pair
-   * and writes them into the active write cursor in the order the
-   * binary emits:
-   *   v0 = ( boxCorners[0] + dx, boxCorners[4] + dy, boxCorners[2] + dz )
-   *   v1 = ( boxCorners[3] + dx, boxCorners[4] + dy, boxCorners[2] + dz )
-   *   v2 = ( boxCorners[3] + dx, boxCorners[1] + dy, boxCorners[5] + dz )
-   *   v3 = ( boxCorners[0] + dx, boxCorners[1] + dy, boxCorners[5] + dz )
-   * The cursor is then advanced by 48 bytes (four 3-float vertices)
-   * and the running quad count is bumped.
-   */
-  float* BeamDrawContext::WriteTranslatedQuad(
-    const float* const boxCorners,
-    const float dx,
-    const float dy,
-    const float dz)
-  {
-    const float boxX0 = boxCorners[0];
-    const float boxY0 = boxCorners[1];
-    const float boxZ0 = boxCorners[2];
-    const float boxX1 = boxCorners[3];
-    const float boxY1 = boxCorners[4];
-    const float boxZ1 = boxCorners[5];
-
-    float* v0 = writeCursor;
-    v0[0] = boxX0 + dx;
-    v0[1] = boxY1 + dy;
-    v0[2] = boxZ0 + dz;
-
-    float* v1 = writeCursor + 3;
-    v1[0] = boxX1 + dx;
-    v1[1] = boxY1 + dy;
-    v1[2] = boxZ0 + dz;
-
-    float* v2 = writeCursor + 6;
-    v2[0] = boxX1 + dx;
-    v2[1] = boxY0 + dy;
-    v2[2] = boxZ1 + dz;
-
-    float* v3 = writeCursor + 9;
-    v3[0] = boxX0 + dx;
-    v3[1] = boxY0 + dy;
-    v3[2] = boxZ1 + dz;
-
-    writeCursor += 12;
-    ++quadCount;
-    return v3;
-  }
-
-  /**
-   * Address: 0x0043C510 (FUN_0043C510, sub_43C510)
-   *
-   * IDA signature:
-   * float *__usercall sub_43C510@<eax>(float *result@<eax>, int a2@<ecx>);
-   *
-   * What it does:
-   * Copies four packed 3-float vertices (12 floats, 48 bytes) from
-   * `packedQuad` into the active write cursor, advances the cursor
-   * by 48 bytes, and bumps the running quad count.
-   */
-  const float* BeamDrawContext::WritePackedQuad(const float* const packedQuad)
-  {
-    for (std::size_t i = 0; i < 12; ++i) {
-      writeCursor[i] = packedQuad[i];
-    }
-    writeCursor += 12;
-    ++quadCount;
-    return packedQuad;
-  }
-
   namespace
   {
-    [[nodiscard]] bool FlushBeamQuadDrawImpl(moho::BeamDrawContext& context, const int quadCount)
+    [[nodiscard, maybe_unused]] bool FlushBeamQuadDrawImpl(
+      moho::BeamDrawContext& context,
+      const int quadCount
+    )
     {
       if (context.writeCursor != nullptr) {
         ID3DVertexStream* const stream = FetchPrimaryVertexStream(context.sheet);
@@ -960,39 +880,6 @@ namespace moho
       return device->DrawTriangleList(&vertexView, &indexView, &primitiveType);
     }
   } // namespace
-
-  /**
-   * Address: 0x0043C580 (FUN_0043C580, sub_43C580)
-   *
-   * IDA signature:
-   * int __usercall sub_43C580@<eax>(_DWORD *a1@<eax>);
-   *
-   * What it does:
-   * Ends any pending write session on the context (unlocking the
-   * vertex stream when mapped) and submits one indexed triangle-list
-   * draw covering `quadCount` quads through the shared
-   * `sIndexSheet`.
-   */
-  bool BeamDrawContext::FlushQuadDraw()
-  {
-    return FlushBeamQuadDrawImpl(*this, quadCount);
-  }
-
-  /**
-   * Address: 0x0043C610 (FUN_0043C610, sub_43C610)
-   *
-   * IDA signature:
-   * int __usercall sub_43C610@<eax>(int a1@<edi>, _DWORD *a2@<esi>);
-   *
-   * What it does:
-   * Same as `FlushQuadDraw` but uses a caller-supplied
-   * `quadCount` for the view bounds instead of the context's own
-   * running count.
-   */
-  bool BeamDrawContext::FlushQuadDraw(const int quadCountOverride)
-  {
-    return FlushBeamQuadDrawImpl(*this, quadCountOverride);
-  }
 
   /**
    * Address: 0x0043C760 (FUN_0043C760, sub_43C760)
@@ -1022,11 +909,7 @@ namespace moho
     CD3DVertexStream* streamArray[2]{nullptr, sVertexStream.get()};
     CD3DDevice* const device2 = D3D_GetDevice();
     ID3DDeviceResources* const resources2 = device2->GetResources();
-    CD3DVertexSheet* const newSheet = resources2->Func6(
-      1u,
-      maxVertexCount,
-      vertexFormat,
-      streamArray);
+    CD3DVertexSheet* const newSheet = resources2->Func6(1u, maxVertexCount, vertexFormat, streamArray);
 
     CD3DVertexSheet* const oldSheet = sheet;
     if (newSheet != oldSheet && oldSheet != nullptr) {
@@ -1047,7 +930,9 @@ namespace moho
    * the quad-count / vertex-count / cursor lanes, builds the shared
    * vertex sheet, and primes the shared index sheet.
    */
-  void BeamDrawContext::Initialize(const int quadCapacity)
+  void BeamDrawContext::Initialize(
+    const int quadCapacity
+  )
   {
     if (sheet != nullptr) {
       return;

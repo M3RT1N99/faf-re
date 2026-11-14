@@ -4,35 +4,21 @@
 #include <new>
 #include <typeinfo>
 
-#include "moho/sim/CWldSession.h"
+#include "moho/sim/CWldSession.h"
+
 #include "gpg/core/reflection/StaticInitPhase.h"
 
 using namespace moho;
 
 namespace
 {
-  [[nodiscard]] gpg::RRef MakeSSessionSaveDataRef(SSessionSaveData* const object)
+  [[nodiscard]] gpg::RRef MakeSSessionSaveDataRef(
+    SSessionSaveData* const object
+  )
   {
     gpg::RRef out{};
     out = gpg::MakeRRef<moho::SSessionSaveData>(object);
     return out;
-  }
-
-  /**
-   * Address: 0x008991D0 (FUN_008991D0)
-   *
-   * What it does:
-   * Installs one `SSessionSaveDataTypeInfo` lifecycle callback set into one reflected type record.
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::RType* InstallSSessionSaveDataTypeInfoLifecycleCallbacks(
-    gpg::RType* const typeInfo
-  )
-  {
-    typeInfo->newRefFunc_ = &SSessionSaveDataTypeInfo::NewRef;
-    typeInfo->ctorRefFunc_ = &SSessionSaveDataTypeInfo::CtrRef;
-    typeInfo->deleteFunc_ = &SSessionSaveDataTypeInfo::Delete;
-    typeInfo->dtrFunc_ = &SSessionSaveDataTypeInfo::Destruct;
-    return typeInfo;
   }
 
   /**
@@ -46,7 +32,10 @@ namespace
 
   struct SSessionSaveDataTypeInfoBootstrap
   {
-    SSessionSaveDataTypeInfoBootstrap() { moho::register_SSessionSaveDataTypeInfoStartup(); }
+    SSessionSaveDataTypeInfoBootstrap()
+    {
+      moho::register_SSessionSaveDataTypeInfoStartup();
+    }
   };
   SSessionSaveDataTypeInfoBootstrap gSSessionSaveDataTypeInfoBootstrap;
 } // namespace
@@ -103,19 +92,20 @@ gpg::RRef SSessionSaveDataTypeInfo::NewRef()
 /**
  * Address: 0x0089A3C0 (FUN_0089A3C0, Moho::SSessionSaveDataTypeInfo::CtrRef)
  */
-gpg::RRef SSessionSaveDataTypeInfo::CtrRef(void* const objectStorage)
+gpg::RRef SSessionSaveDataTypeInfo::CtrRef(
+  void* const objectStorage
+)
 {
-  auto* const object = static_cast<SSessionSaveData*>(objectStorage);
-  if (object != nullptr) {
-    new (object) SSessionSaveData();
-  }
+  auto* const object = gpg::ConstructInStorage<SSessionSaveData>(objectStorage);
   return MakeSSessionSaveDataRef(object);
 }
 
 /**
  * Address: 0x0089A380 (FUN_0089A380, Moho::SSessionSaveDataTypeInfo::Delete)
  */
-void SSessionSaveDataTypeInfo::Delete(void* const objectStorage)
+void SSessionSaveDataTypeInfo::Delete(
+  void* const objectStorage
+)
 {
   auto* const object = static_cast<SSessionSaveData*>(objectStorage);
   if (object == nullptr) {
@@ -128,7 +118,9 @@ void SSessionSaveDataTypeInfo::Delete(void* const objectStorage)
 /**
  * Address: 0x0089A450 (FUN_0089A450, Moho::SSessionSaveDataTypeInfo::Destruct)
  */
-void SSessionSaveDataTypeInfo::Destruct(void* const objectStorage)
+void SSessionSaveDataTypeInfo::Destruct(
+  void* const objectStorage
+)
 {
   auto* const object = static_cast<SSessionSaveData*>(objectStorage);
   object->~SSessionSaveData();
@@ -142,7 +134,9 @@ void moho::register_SSessionSaveDataTypeInfoStartup()
   (void)AcquireSSessionSaveDataTypeInfo();
 }
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_SSessionSaveDataTypeInfoStartup_c53156, moho::register_SSessionSaveDataTypeInfoStartup)
+GPG_PREREGISTER_INIT(
+  register_SSessionSaveDataTypeInfoStartup_c53156,
+  moho::register_SSessionSaveDataTypeInfoStartup
+)

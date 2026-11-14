@@ -15,50 +15,6 @@ namespace moho
 {
   namespace
   {
-    /**
-     * Address: 0x00778890 (FUN_00778890)
-     *
-     * What it does:
-     * Returns the lazily cached reflection descriptor for `CDecalHandle`.
-     */
-    [[maybe_unused]] [[nodiscard]] gpg::RType* CachedCDecalHandleTypeBridge()
-    {
-      gpg::RType* type = CDecalHandle::sType;
-      if (type == nullptr) {
-        type = gpg::LookupRType(typeid(CDecalHandle));
-        CDecalHandle::sType = type;
-      }
-      return type;
-    }
-
-
-    /**
-     * Address: 0x0077D910 (FUN_0077D910)
-     *
-     * What it does:
-     * Thunk lane that forwards directly to `CDecalHandle::MemberDeserialize`.
-     */
-    [[maybe_unused]] void DeserializeCDecalHandleMemberLaneA(
-      CDecalHandle* const handle,
-      gpg::ReadArchive* const archive
-    )
-    {
-      handle->MemberDeserialize(archive);
-    }
-
-    /**
-     * Address: 0x0077E6C0 (FUN_0077E6C0)
-     *
-     * What it does:
-     * Secondary thunk lane for `CDecalHandle::MemberDeserialize`.
-     */
-    [[maybe_unused]] void DeserializeCDecalHandleMemberLaneB(
-      CDecalHandle* const handle,
-      gpg::ReadArchive* const archive
-    )
-    {
-      handle->MemberDeserialize(archive);
-    }
   } // namespace
 
   gpg::RType* CDecalHandle::sType = nullptr;
@@ -74,7 +30,9 @@ namespace moho
     return sInstance;
   }
 
-  LuaPlus::LuaObject CScrLuaMetatableFactory<CDecalHandle>::Create(LuaPlus::LuaState* const state)
+  LuaPlus::LuaObject CScrLuaMetatableFactory<CDecalHandle>::Create(
+    LuaPlus::LuaState* const state
+  )
   {
     return SCR_CreateSimpleMetatable(state);
   }
@@ -155,62 +113,15 @@ namespace moho
   }
 
   /**
-   * Address: 0x00778AD0 (FUN_00778AD0)
-   *
-   * What it does:
-   * Tests whether one army-index visibility bit is set in
-   * `mArmyVisibilityFlags`.
-   */
-  bool CDecalHandle::IsArmyVisibleForIndex(const std::uint8_t armyIndex) const noexcept
-  {
-    const std::uint32_t mask = (1u << (static_cast<std::uint32_t>(armyIndex) & 31u));
-    return (mArmyVisibilityFlags & mask) != 0u;
-  }
-
-  /**
-   * Address: 0x00778AF0 (FUN_00778AF0)
-   *
-   * What it does:
-   * Sets one army-index visibility bit in `mArmyVisibilityFlags` and returns
-   * this handle.
-   */
-  CDecalHandle* CDecalHandle::SetArmyVisibleForIndex(const std::uint8_t armyIndex) noexcept
-  {
-    const std::uint32_t mask = (1u << (static_cast<std::uint32_t>(armyIndex) & 31u));
-    mArmyVisibilityFlags |= mask;
-    return this;
-  }
-
-  /**
-   * Address: 0x00778B00 (FUN_00778B00)
-   *
-   * What it does:
-   * Returns the handle creation tick lane.
-   */
-  std::uint32_t CDecalHandle::GetCreatedAtTickValue() const noexcept
-  {
-    return mCreatedAtTick;
-  }
-
-  /**
-   * Address: 0x00778B10 (FUN_00778B10)
-   *
-   * What it does:
-   * Returns true when the focus-visibility flag lane is non-zero.
-   */
-  bool CDecalHandle::IsVisibleInFocusFlagSet() const noexcept
-  {
-    return mVisibleInFocus != 0u;
-  }
-
-  /**
    * Address: 0x0077F1E0 (FUN_0077F1E0, Moho::CDecalHandle::MemberDeserialize)
    *
    * What it does:
    * Loads CScriptObject base lanes, then decal payload and decal visibility
    * tick fields from one archive stream.
    */
-  void CDecalHandle::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CDecalHandle::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef baseOwnerRef{};
     archive->Read(gpg::RTypeOf<CScriptObject>(), static_cast<CScriptObject*>(this), baseOwnerRef);
@@ -232,7 +143,9 @@ namespace moho
    * Saves CScriptObject base lanes, then serializes decal payload and decal
    * visibility/tick fields into one archive stream.
    */
-  void CDecalHandle::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CDecalHandle::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     const gpg::RRef baseOwnerRef{};
     archive->Write(gpg::RTypeOf<CScriptObject>(), static_cast<const CScriptObject*>(this), baseOwnerRef);
@@ -245,7 +158,7 @@ namespace moho
   }
 
   /**
-    * Alias of FUN_007788B0 (non-canonical helper lane).
+   * Alias of FUN_007788B0 (non-canonical helper lane).
    */
   gpg::RType* CDecalHandle::GetClass() const
   {
@@ -257,10 +170,7 @@ namespace moho
    */
   gpg::RRef CDecalHandle::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -269,12 +179,16 @@ namespace moho
    */
   CDecalHandle::~CDecalHandle() = default;
 
-  CDecalHandle* CDecalHandle::FromListNode(CDecalHandleListNode* const node) noexcept
+  CDecalHandle* CDecalHandle::FromListNode(
+    CDecalHandleListNode* const node
+  ) noexcept
   {
     return CDecalHandleList::owner_from_member<CDecalHandle, CDecalHandleListNode, &CDecalHandle::mListNode>(node);
   }
 
-  const CDecalHandle* CDecalHandle::FromListNode(const CDecalHandleListNode* const node) noexcept
+  const CDecalHandle* CDecalHandle::FromListNode(
+    const CDecalHandleListNode* const node
+  ) noexcept
   {
     return CDecalHandleList::owner_from_member<CDecalHandle, CDecalHandleListNode, &CDecalHandle::mListNode>(node);
   }

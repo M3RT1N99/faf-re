@@ -11,6 +11,7 @@
 // the variable a scope costs one well-predicted branch.
 
 #include <cstdint>
+#include <vector>
 
 #include "gpg/gal/DrawStatistics.h"
 
@@ -32,7 +33,6 @@ namespace gpg::gal
 
     /** The region index for `name` (a string literal), registered on first use. */
     [[nodiscard]] std::uint32_t Region(const char* name) noexcept;
-    [[nodiscard]] const char* RegionName(std::uint32_t region) const noexcept;
 
     void BeginRegion(std::uint32_t region) noexcept;
     void EndRegion(std::uint32_t region) noexcept;
@@ -43,7 +43,8 @@ namespace gpg::gal
      * Pixel-shader invocations and rasterised primitives of one region call
      * (FAF_GPU_PROFILE_PIXELS=1 and a backend that measures them).
      */
-    void AddGpuPipelineStatistics(std::uint32_t region, std::uint64_t pixelInvocations, std::uint64_t primitives) noexcept;
+    void
+    AddGpuPipelineStatistics(std::uint32_t region, std::uint64_t pixelInvocations, std::uint64_t primitives) noexcept;
     /** FAF_GPU_PROFILE_PIXELS=1: backends also count pixels and primitives per region (read once). */
     [[nodiscard]] static bool PixelStatisticsEnabled() noexcept;
     /** GPU time of one whole frame (first command to Present), possibly frames later. */
@@ -59,14 +60,17 @@ namespace gpg::gal
      */
     struct Summary
     {
-      std::uint64_t frames = 0U;          // frames ended so far
+      std::uint64_t frames = 0U; // frames ended so far
       DrawStatistics lastFrame{};
       double lastFrameWallMilliseconds = 0.0;
-      std::uint32_t intervalFrames = 0U;  // 0: no profiled interval yet
+      std::uint32_t intervalFrames = 0U;    // 0: no profiled interval yet
       double intervalCpuMilliseconds = 0.0; // the outermost pass ("Frame"), per frame
       double intervalGpuMilliseconds = 0.0; // whole frame, per frame
     };
-    [[nodiscard]] const Summary& GetSummary() const noexcept { return mSummary; }
+    [[nodiscard]] const Summary& GetSummary() const noexcept
+    {
+      return mSummary;
+    }
 
   private:
     [[nodiscard]] static int ReadInterval() noexcept;
@@ -100,6 +104,8 @@ namespace gpg::gal
     std::uint64_t mDrawCalls = 0U;
     std::int64_t mIntervalStartTicks = 0;
     std::int64_t mLastFrameEndTicks = 0;
+    std::vector<float> mFrameWalls; // this interval's frame times (wall, ms), for the spike line
+
     Summary mSummary{};
   };
 
@@ -107,7 +113,9 @@ namespace gpg::gal
   class RenderProfileScope
   {
   public:
-    explicit RenderProfileScope(const char* const name) noexcept
+    explicit RenderProfileScope(
+      const char* const name
+    ) noexcept
     {
       if (RenderProfiler::Enabled()) {
         mRegion = RenderProfiler::Get().Region(name);

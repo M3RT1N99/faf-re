@@ -104,7 +104,7 @@ namespace
      * What it does:
      * Loads both `float` lanes of one `SValuePair`.
      */
-    static void Deserialize(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void Deserialize(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x005B6750 (FUN_005B6750, Moho::SValuePairSerializer::Serialize)
@@ -112,7 +112,7 @@ namespace
      * What it does:
      * Saves both `float` lanes of one `SValuePair`.
      */
-    static void Serialize(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void Serialize(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x005B6770 (FUN_005B6770, serializer callback binder lane)
@@ -128,8 +128,14 @@ namespace
     gpg::RType::load_func_t mDeserialize;
     gpg::RType::save_func_t mSerialize;
   };
-  static_assert(offsetof(SValuePairSerializer, mDeserialize) == 0x0C, "SValuePairSerializer::mDeserialize offset must be 0x0C");
-  static_assert(offsetof(SValuePairSerializer, mSerialize) == 0x10, "SValuePairSerializer::mSerialize offset must be 0x10");
+  static_assert(
+    offsetof(SValuePairSerializer, mDeserialize) == 0x0C,
+    "SValuePairSerializer::mDeserialize offset must be 0x0C"
+  );
+  static_assert(
+    offsetof(SValuePairSerializer, mSerialize) == 0x10,
+    "SValuePairSerializer::mSerialize offset must be 0x10"
+  );
   static_assert(sizeof(SValuePairSerializer) == 0x14, "SValuePairSerializer size must be 0x14");
 
   /**
@@ -171,7 +177,7 @@ namespace
  */
 void SValuePairSerializer::Deserialize(
   gpg::ReadArchive* const archive,
-  const std::intptr_t objectPtr,
+  void* const objectPtr,
   const int,
   gpg::RRef* const
 )
@@ -180,7 +186,7 @@ void SValuePairSerializer::Deserialize(
     return;
   }
 
-  auto* const valuePair = reinterpret_cast<SValuePair*>(objectPtr);
+  auto* const valuePair = static_cast<SValuePair*>(objectPtr);
   archive->ReadFloat(&valuePair->mMinValue);
   archive->ReadFloat(&valuePair->mMaxValue);
 }
@@ -190,7 +196,7 @@ void SValuePairSerializer::Deserialize(
  */
 void SValuePairSerializer::Serialize(
   gpg::WriteArchive* const archive,
-  const std::intptr_t objectPtr,
+  void* const objectPtr,
   const int,
   gpg::RRef* const
 )
@@ -199,7 +205,7 @@ void SValuePairSerializer::Serialize(
     return;
   }
 
-  const auto* const valuePair = reinterpret_cast<const SValuePair*>(objectPtr);
+  const auto* const valuePair = static_cast<const SValuePair*>(objectPtr);
   archive->WriteFloat(valuePair->mMinValue);
   archive->WriteFloat(valuePair->mMaxValue);
 }
@@ -241,6 +247,12 @@ void moho::register_SValuePairTypeInfo()
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_SValuePairTypeInfo_95b24f, moho::register_SValuePairTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_SValuePairTypeInfo_95b24f,
+  moho::register_SValuePairTypeInfo
+)
 
-GPG_PREREGISTER_INIT(preregister_SValuePairTypeInfo_95b24f, preregister_SValuePairTypeInfo)
+GPG_PREREGISTER_INIT(
+  preregister_SValuePairTypeInfo_95b24f,
+  preregister_SValuePairTypeInfo
+)

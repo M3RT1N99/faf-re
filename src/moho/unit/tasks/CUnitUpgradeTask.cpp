@@ -19,6 +19,7 @@
 #include "moho/unit/core/Unit.h"
 #include "moho/unit/core/SUnitConstructionParams.h"
 #include "moho/sim/SimDebugCommandRegistrations.h"
+#include "moho/sim/SimConVarAccess.h"
 
 namespace
 {
@@ -26,28 +27,18 @@ namespace
   constexpr std::uint64_t kUpgradeOwnerHighMask = 0x0000020000000000ull;
   constexpr std::uint64_t kUpgradeTargetHighMask = 0x0000002000000000ull;
 
-  [[nodiscard]] moho::ETaskState AdvanceTaskState(const moho::ETaskState current) noexcept
+  [[nodiscard]] moho::ETaskState AdvanceTaskState(
+    const moho::ETaskState current
+  ) noexcept
   {
     return static_cast<moho::ETaskState>(static_cast<int>(current) + 1);
   }
 
-  [[nodiscard]] bool ReadInstaBuildFlag(moho::Sim* const sim)
+  [[nodiscard]] bool ReadInstaBuildFlag(
+    moho::Sim* const sim
+  )
   {
-    moho::CSimConVarInstanceBase* const instance = sim ? sim->GetSimVar(&moho::gSimConVar_ai_InstaBuild) : nullptr;
-    void* const valueStorage = instance ? instance->GetValueStorage() : nullptr;
-    return valueStorage != nullptr && (*reinterpret_cast<const std::uint8_t*>(valueStorage) != 0u);
-  }
-
-  void DeserializeCUnitUpgradeTaskSerializerCallback(gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef*)
-  {
-    auto* const task = reinterpret_cast<moho::CUnitUpgradeTask*>(objectPtr);
-    task->MemberDeserialize(archive);
-  }
-
-  void SerializeCUnitUpgradeTaskSerializerCallback(gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int, gpg::RRef*)
-  {
-    const auto* const task = reinterpret_cast<const moho::CUnitUpgradeTask*>(objectPtr);
-    task->MemberSerialize(archive);
+    return sim != nullptr && moho::ReadSimConVar(sim, moho::gSimConVar_ai_InstaBuild);
   }
 
 } // namespace
@@ -61,7 +52,9 @@ namespace moho
    * Deserializes upgrade-task runtime state (base command-task lane, target
    * blueprint pointer, build-helper lane, and upgraded-unit weak pointer).
    */
-  void CUnitUpgradeTask::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CUnitUpgradeTask::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -95,7 +88,9 @@ namespace moho
    * Serializes upgrade-task runtime state (base command-task lane, target
    * blueprint pointer, build-helper lane, and upgraded-unit weak pointer).
    */
-  void CUnitUpgradeTask::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CUnitUpgradeTask::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -107,7 +102,9 @@ namespace moho
       archive->Write(commandTaskType, this, ownerRef);
     }
 
-    archive->WritePointer<moho::RUnitBlueprint>(const_cast<RUnitBlueprint*>(mToBlueprint), gpg::TrackedPointerState::Unowned, ownerRef);
+    archive->WritePointer<moho::RUnitBlueprint>(
+      const_cast<RUnitBlueprint*>(mToBlueprint), gpg::TrackedPointerState::Unowned, ownerRef
+    );
 
     if (gpg::RType* const buildHelperType = gpg::RTypeOf<CBuildTaskHelper>()) {
       archive->Write(buildHelperType, &mBuildHelper, ownerRef);
@@ -131,7 +128,10 @@ namespace moho
   /**
    * Address: 0x005F8420 (FUN_005F8420, ??0CUnitUpgradeTask@Moho@@QAE@@Z_0)
    */
-  CUnitUpgradeTask::CUnitUpgradeTask(CCommandTask* const dispatchTask, const RUnitBlueprint* const toBlueprint)
+  CUnitUpgradeTask::CUnitUpgradeTask(
+    CCommandTask* const dispatchTask,
+    const RUnitBlueprint* const toBlueprint
+  )
     : CCommandTask(dispatchTask)
     , mToBlueprint(toBlueprint)
     , mBuildHelper("Upgrade", dispatchTask ? dispatchTask->mUnit : nullptr)
@@ -209,7 +209,7 @@ namespace moho
   /**
    * Address: 0x005F8890 (FUN_005F8890, Moho::CUnitUpgradeTask::TaskTick)
    */
-int CUnitUpgradeTask::TaskTick()
+  int CUnitUpgradeTask::TaskTick()
   {
     auto finishOrContinueBuild = [this]() -> int {
       Unit* const focusUnit = mBuildHelper.mFocus.GetObjectPtr();
@@ -236,29 +236,29 @@ int CUnitUpgradeTask::TaskTick()
     };
 
     switch (mTaskState) {
-      case TASKSTATE_Preparing:
-        if (mUnit != nullptr && mUnit->IsMobile() && mUnit->mVarDat.mCurTransform.pos_ != mUnit->mVarDat.mLastTransform.pos_) {
-          if (mUnit->AiNavigator != nullptr) {
-            mUnit->AiNavigator->AbortMove();
-            return 1;
-          }
+    case TASKSTATE_Preparing:
+      if (
+        mUnit != nullptr && mUnit->IsMobile() && mUnit->mVarDat.mCurTransform.pos_ != mUnit->mVarDat.mLastTransform.pos_
+      ) {
+        if (mUnit->AiNavigator != nullptr) {
+          mUnit->AiNavigator->AbortMove();
+          return 1;
         }
-        mTaskState = AdvanceTaskState(mTaskState);
-        break;
+      }
+      mTaskState = AdvanceTaskState(mTaskState);
+      break;
 
-      case TASKSTATE_Waiting:
-        break;
+    case TASKSTATE_Waiting:
+      break;
 
-      case TASKSTATE_Starting:
-        return finishOrContinueBuild();
+    case TASKSTATE_Starting:
+      return finishOrContinueBuild();
 
-      default:
-        gpg::HandleAssertFailure(
-          "Reached the supposably unreachable.",
-          1032,
-          "c:\\work\\rts\\main\\code\\src\\sim\\AiUnitBuild.cpp"
-        );
-        return finishOrContinueBuild();
+    default:
+      gpg::HandleAssertFailure(
+        "Reached the supposably unreachable.", 1032, "c:\\work\\rts\\main\\code\\src\\sim\\AiUnitBuild.cpp"
+      );
+      return finishOrContinueBuild();
     }
 
     if (mUnit == nullptr || mUnit->mUnitVarDat.mIsPaused) {
@@ -330,7 +330,10 @@ int CUnitUpgradeTask::TaskTick()
   /**
    * Address: 0x005F8B80 (FUN_005F8B80, ??2CUnitUpgradeTask@Moho@@QAE@@Z_0)
    */
-  CUnitUpgradeTask* CUnitUpgradeTask::Create(CCommandTask* const dispatchTask, const RUnitBlueprint* const toBlueprint)
+  CUnitUpgradeTask* CUnitUpgradeTask::Create(
+    CCommandTask* const dispatchTask,
+    const RUnitBlueprint* const toBlueprint
+  )
   {
     return new (std::nothrow) CUnitUpgradeTask(dispatchTask, toBlueprint);
   }
@@ -340,33 +343,6 @@ int CUnitUpgradeTask::TaskTick()
     return TaskTick();
   }
 
-  /**
-   * Address: 0x005FD1B0 (FUN_005FD1B0)
-   *
-   * What it does:
-   * Preserves one serializer-save thunk lane for `CUnitUpgradeTask`.
-   */
-  [[maybe_unused]] void CUnitUpgradeTaskMemberSerializeAdapterLaneA(
-    const CUnitUpgradeTask* const task,
-    gpg::WriteArchive* const archive
-  )
-  {
-    task->MemberSerialize(archive);
-  }
-
-  /**
-   * Address: 0x005FDB60 (FUN_005FDB60)
-   *
-   * What it does:
-   * Alternate serializer-save thunk lane for `CUnitUpgradeTask`.
-   */
-  [[maybe_unused]] void CUnitUpgradeTaskMemberSerializeAdapterLaneB(
-    const CUnitUpgradeTask* const task,
-    gpg::WriteArchive* const archive
-  )
-  {
-    task->MemberSerialize(archive);
-  }
 } // namespace moho
 
 namespace moho

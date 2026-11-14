@@ -28,7 +28,9 @@ namespace
   }
 
   void WriteCommandEntryDump(
-    std::ostringstream& stream, const moho::CmdId key, const moho::CUnitCommand* const command
+    std::ostringstream& stream,
+    const moho::CmdId key,
+    const moho::CUnitCommand* const command
   )
   {
     stream << gpg::STR_Printf("  0x%08x =>", static_cast<std::uint32_t>(key)).c_str();
@@ -57,13 +59,15 @@ namespace
   /**
    * Address: 0x006E0A70 (FUN_006E0A70, ??1CommandDatabase@Moho@@QAE@@Z -- the
    * diagnostic-dump half of the destructor, ahead of the member-teardown tail
-   * cited on `msvc8::detail::rb_tree::~rb_tree` in RbTree.h)
+   * cited on `fa::detail::rb_tree::~rb_tree` in RbTree.h)
    *
    * What it does:
    * Dies with a dump of every still-owned command when the command map is
    * destroyed non-empty.
    */
-  void ValidateCommandMapEmptyOrDie(const moho::CCommandDB::CommandMap& commands)
+  void ValidateCommandMapEmptyOrDie(
+    const moho::CCommandDB::CommandMap& commands
+  )
   {
     if (commands.empty()) {
       return;
@@ -96,7 +100,7 @@ namespace moho
    * `_Mysize` - the same split-allocator shape as
    * `AllocateAllUnitsTreeNode`/`InitializeAllUnitsTreeHeadLane` in
    * EntityDb.cpp. Here the split is fused inside `commands`'s own default
-   * construction: `msvc8::map`'s shared `detail::rb_tree` default
+   * construction: `fa::map`'s shared `detail::rb_tree` default
    * constructor (legacy/containers/RbTree.h) calls `rb_tree::buy_head()`,
    * which performs the identical alloc + self-link + isNil=1/color=black
    * sequence, so no separate call is needed in this constructor's body.
@@ -104,17 +108,18 @@ namespace moho
    * `pendingReleasedCmdIds` (binary's `this->vec`):
    * Declared at +0x0CC0, immediately after `pool`'s 0x0CB0-byte `IdPool`
    * span, closing the struct out exactly at the asserted 0xCD0 size.
-   * `msvc8::vector<CmdId>`'s default constructor already zeroes
+   * `fa::vector<CmdId>`'s default constructor already zeroes
    * `_Myfirst`/`_Mylast`/`_Myend`, matching the binary's explicit
    * zero-stores.
    */
-  CCommandDB::CCommandDB(Sim* const sim)
+  CCommandDB::CCommandDB(
+    Sim* const sim
+  )
     : sim(sim)
     , commands()
     , pool()
     , pendingReleasedCmdIds()
-  {
-  }
+  {}
 
   /**
    * Address: 0x006E0A70 (FUN_006E0A70, ??1CommandDatabase@Moho@@QAE@@Z)
@@ -128,7 +133,7 @@ namespace moho
    * its header and zeroed head/size lanes -- is exactly the member
    * destruction the compiler emits automatically for `commands` at the close
    * of this scope (see the FUN_006E0A70 citation on
-   * `msvc8::detail::rb_tree::~rb_tree`, RbTree.h); there is no separate
+   * `fa::detail::rb_tree::~rb_tree`, RbTree.h); there is no separate
    * hand-written call for it in this function's own body.
    */
   CCommandDB::~CCommandDB()
@@ -147,7 +152,9 @@ namespace moho
    * one command from issue-data lanes, inserts it into the command map, and
    * returns the command pointer.
    */
-  CUnitCommand* CCommandDB::AddIssueData(SSTICommandIssueData issueData)
+  CUnitCommand* CCommandDB::AddIssueData(
+    SSTICommandIssueData issueData
+  )
   {
     CmdId commandId = issueData.nextCommandId;
 
@@ -171,7 +178,7 @@ namespace moho
     }
 
     /**
-     * Address: 0x006E15B0 (FUN_006E15B0, `msvc8::map<Moho::CmdId,
+     * Address: 0x006E15B0 (FUN_006E15B0, `fa::map<Moho::CmdId,
      * Moho::CUnitCommand*>::insert_unique` -- `Moho::CCommandDB::commands` in
      * CCommandDb.h. Matches `rb_tree::insert_unique` field for field: descend
      * recording the last branch taken, `where == leftmost()` fast path
@@ -191,7 +198,10 @@ namespace moho
    * swaps pending released command-id vectors with packet storage, and updates
    * id-pool recycle state.
    */
-  void CCommandDB::PublishSyncData(SSyncData* const syncData, const bool forceRefresh)
+  void CCommandDB::PublishSyncData(
+    SSyncData* const syncData,
+    const bool forceRefresh
+  )
   {
     // The iterator is advanced *before* the call, exactly as 0x006E0F67 does:
     // it loads the mapped command into `ecx` first, then runs the successor
@@ -218,13 +228,15 @@ namespace moho
    * Address: 0x006E0EC0 (FUN_006E0EC0, ?RemoveCmd@CCommandDB@Moho@@...)
    *
    * What it does:
-   * See the declaration. `msvc8::map<CmdId, CUnitCommand*>::find`/`erase_node`
+   * See the declaration. `fa::map<CmdId, CUnitCommand*>::find`/`erase_node`
    * for this instantiation are `sub_6E1940`/`sub_6E1670`, address-cited on
    * `rb_tree::find_node`/`erase_node` in `RbTree.h`; the recycle-bucket block
    * at 0x006E0EF6 is `IdPool::QueueReleasedLowId` (0x004039F0) inlined, and the
-   * tail call is the `msvc8::vector<CmdId>::push_back` emission FUN_006E1A10.
+   * tail call is the `fa::vector<CmdId>::push_back` emission FUN_006E1A10.
    */
-  void CCommandDB::RemoveCmd(const CmdId cmdId)
+  void CCommandDB::RemoveCmd(
+    const CmdId cmdId
+  )
   {
     if (const auto it = commands.find(cmdId); it != commands.end()) {
       commands.erase(it);
@@ -238,27 +250,15 @@ namespace moho
   }
 
   /**
-   * Address: 0x006E2E10 (FUN_006E2E10)
-   *
-   * What it does:
-   * Runs one `CCommandDB` destructor lane and then releases the object storage
-   * with scalar `operator delete`, returning the same pointer.
-   */
-  [[maybe_unused]] CCommandDB* ReleaseCommandDbInstance(CCommandDB* const db)
-  {
-    db->~CCommandDB();
-    ::operator delete(db);
-    return db;
-  }
-
-  /**
    * Address: 0x006E13A0 (FUN_006E13A0, Moho::CCommandDB::MemberSerialize)
    *
    * What it does:
    * Serializes each stored command pointer as `OWNED`, then writes the
    * terminating null command-pointer lane.
    */
-  void CCommandDB::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CCommandDB::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -292,7 +292,9 @@ namespace moho
    * never calls) -- deserialization only ever runs against a freshly
    * constructed, still-empty command database.
    */
-  void CCommandDB::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CCommandDB::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -351,55 +353,16 @@ namespace moho
     }
   }
 
-  /**
-   * Address: 0x006E3300 (FUN_006E3300)
-   *
-   * What it does:
-   * Register-shape adapter that forwards one command-db save lane to
-   * `CCommandDB::MemberSerialize`.
-   */
-  [[maybe_unused]] void SerializeCommandDbMemberLanePrimary(
-    gpg::WriteArchive* const archive,
-    CCommandDB* const commandDb
-  )
-  {
-    commandDb->MemberSerialize(archive);
-  }
-
-  /**
-   * Address: 0x006E3CF0 (FUN_006E3CF0)
-   *
-   * What it does:
-   * Register-shape adapter that forwards one command-db load lane to
-   * `CCommandDB::MemberDeserialize`.
-   */
-  [[maybe_unused]] void DeserializeCommandDbMemberLane(
-    CCommandDB* const commandDb,
-    gpg::ReadArchive* const archive
-  )
-  {
-    commandDb->MemberDeserialize(archive);
-  }
-
-  /**
-   * Address: 0x006E3D00 (FUN_006E3D00)
-   *
-   * What it does:
-   * Secondary register-shape adapter that forwards one command-db save lane to
-   * `CCommandDB::MemberSerialize`.
-   */
-  [[maybe_unused]] void SerializeCommandDbMemberLaneSecondary(
-    gpg::WriteArchive* const archive,
-    CCommandDB* const commandDb
-  )
-  {
-    commandDb->MemberSerialize(archive);
-  }
 } // namespace moho
 
 namespace moho
 {
-  void CCommandDB::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CCommandDB::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     Sim* sim = nullptr;
     const gpg::RRef owner{};
@@ -408,7 +371,10 @@ namespace moho
   }
 
   void CCommandDB::MemberSaveConstructArgs(
-    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+    gpg::WriteArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerSaveConstructArgsResult& result
   )
   {
     archive.WritePointer(sim, gpg::TrackedPointerState::Unowned, gpg::RRef{});

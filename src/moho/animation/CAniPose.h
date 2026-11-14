@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/reflection/Reflection.h"
 #include "moho/render/camera/VTransform.h"
 #include "moho/sim/SimBlockLane.h"
@@ -132,16 +132,16 @@ namespace moho
     void MemberDeserialize(gpg::ReadArchive* archive);
 
   public:
-    VTransform mCompositeTransform;        // +0x00
-    std::uint8_t mCompositeDirty;          // +0x1C
-    std::uint8_t mCompositeIsLocal;        // +0x1D
+    VTransform mCompositeTransform; // +0x00
+    std::uint8_t mCompositeDirty;   // +0x1C
+    std::uint8_t mCompositeIsLocal; // +0x1D
     std::uint8_t pad_1E_1F[0x02]{};
-    VTransform mLocalTransform;            // +0x20
-    std::int32_t mIdx;                     // +0x3C
-    CAniPose* mPose;                       // +0x40
-    CAniPoseBone* mParent;                 // +0x44
-    std::uint8_t mVisible;                 // +0x48
-    std::uint8_t mSkipNextInterp;          // +0x49
+    VTransform mLocalTransform;   // +0x20
+    std::int32_t mIdx;            // +0x3C
+    CAniPose* mPose;              // +0x40
+    CAniPoseBone* mParent;        // +0x44
+    std::uint8_t mVisible;        // +0x48
+    std::uint8_t mSkipNextInterp; // +0x49
     std::uint8_t pad_4A_4B[0x02]{};
   };
 
@@ -199,12 +199,16 @@ namespace moho
      *
      * Unchecked indexed access, `mBegin + index`.
      */
-    [[nodiscard]] CAniPoseBone& operator[](const std::size_t index) noexcept
+    [[nodiscard]] CAniPoseBone& operator[](
+      const std::size_t index
+    ) noexcept
     {
       return mBegin[index];
     }
 
-    [[nodiscard]] const CAniPoseBone& operator[](const std::size_t index) const noexcept
+    [[nodiscard]] const CAniPoseBone& operator[](
+      const std::size_t index
+    ) const noexcept
     {
       return mBegin[index];
     }
@@ -227,22 +231,6 @@ namespace moho
      *   `[first, last)` bone range into fresh storage
      */
 
-    /**
-     * Reads back the capacity pointer stashed in the first pointer-sized
-     * slot of `mInlineStorage` the last time this array grew past inline
-     * storage. `mOriginal` always points at `mInlineStorage`, so once the
-     * array is rebound to heap storage (`mBegin != mOriginal`), that inline
-     * slot is dead space the grow path repurposes to remember the capacity
-     * it had before growing -- the same small-buffer-optimization idiom
-     * already named `InlineCapacityFromHeader_`/`SaveInlineCapacity_` on
-     * `gpg::core::FastVectorN<T,N>` (`gpg/core/containers/FastVector.h`),
-     * applied here to this hand-rolled single-inline-element array.
-     */
-    [[nodiscard]] CAniPoseBone* InlineCapacityFromHeader() const noexcept
-    {
-      return *reinterpret_cast<CAniPoseBone* const*>(mOriginal);
-    }
-
   public:
     /**
      * Grows or shrinks the live range to `count` bones, filling any new slots
@@ -258,18 +246,19 @@ namespace moho
      * The inline-storage rule is the one thing that makes this not a plain
      * vector: `mOriginal` always points at `mInlineStorage`, so while
      * `mBegin == mOriginal` the storage is the object's own single-slot window
-     * and must never be freed. On the first grow past it the binary stashes the
-     * outgoing capacity sentinel into that now-dead inline slot instead of
-     * deleting anything (see `InlineCapacityFromHeader_` / `SaveInlineCapacity_`
-     * on the `gpg` fastvectors, and the same branch in
-     * `gpg::core::FastVectorInline<T>::ReallocateInsert_`).
+     * and must never be freed. (The binary also stashes the outgoing capacity
+     * in that dead inline slot on the first grow; only `~CAniPose` read it
+     * back, into an object being destroyed, so it is not kept.)
      */
-    /// 11 bones of 0x4C bytes are 0x344, the one bone count in the binary's 896-byte allocator class (see SimBlockLane).
+    /// 11 bones of 0x4C bytes are 0x344, the one bone count in the binary's 896-byte allocator class (see
+    /// SimBlockLane).
     static constexpr std::size_t kBinaryLaneBones = 11u;
 
-    [[nodiscard]] static CAniPoseBone* AllocateBones(const std::size_t count)
+    [[nodiscard]] static CAniPoseBone* AllocateBones(
+      const std::size_t count
+    )
     {
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
       if (count == kBinaryLaneBones) {
         static_assert(sizeof(CAniPoseBone) * kBinaryLaneBones <= SimBlockLane::kBlockBytes);
         void* const block = SimBlockLane::Allocate();
@@ -286,7 +275,10 @@ namespace moho
       return new CAniPoseBone[count];
     }
 
-    void resize(const std::size_t count, const CAniPoseBone& fillValue)
+    void resize(
+      const std::size_t count,
+      const CAniPoseBone& fillValue
+    )
     {
       const std::size_t currentSize = size();
       if (count == currentSize) {
@@ -304,12 +296,8 @@ namespace moho
           grown[i] = mBegin[i];
         }
 
-        if (mBegin == mOriginal) {
-          // Inline window: never freed. The outgoing capacity goes into the
-          // slot the live range has just vacated.
-          *reinterpret_cast<CAniPoseBone**>(mOriginal) = mCapacity;
-        } else {
-          FreeHeapBones();
+        if (mBegin != mOriginal) {
+          FreeHeapBones(); // the inline window is never freed
         }
 
         mBegin = grown;
@@ -328,7 +316,7 @@ namespace moho
     /// the next formation's allocation, so that formation reuses the block (replay 27064121 at beat 7380).
     void FreeHeapBones() noexcept
     {
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
       if (capacity() == kBinaryLaneBones) {
         ::operator delete(mBegin);
         return;
@@ -337,11 +325,11 @@ namespace moho
       delete[] mBegin;
     }
 
-    CAniPoseBone* mBegin;         // +0x00
-    CAniPoseBone* mEnd;           // +0x04
-    CAniPoseBone* mCapacity;      // +0x08
-    CAniPoseBone* mOriginal;      // +0x0C
-    CAniPoseBone mInlineStorage;  // +0x10
+    CAniPoseBone* mBegin;        // +0x00
+    CAniPoseBone* mEnd;          // +0x04
+    CAniPoseBone* mCapacity;     // +0x08
+    CAniPoseBone* mOriginal;     // +0x0C
+    CAniPoseBone mInlineStorage; // +0x10
   };
 
   class CAniPose
@@ -355,7 +343,7 @@ namespace moho
      * What it does:
      * Initializes animation-pose state from skeleton + scalar pose factor.
      */
-    CAniPose(boost::shared_ptr<const CAniSkel> skeleton, float scale);
+    CAniPose(std::shared_ptr<const CAniSkel> skeleton, float scale);
 
     /**
      * Address: 0x0054B290 (FUN_0054B290, ??0CAniPose@Moho@@QAE@ABV01@@Z)
@@ -432,7 +420,7 @@ namespace moho
      * Returns a retained copy of this pose's skeleton shared handle.
      */
     [[nodiscard]]
-    boost::shared_ptr<const CAniSkel> GetSkeleton() const;
+    std::shared_ptr<const CAniSkel> GetSkeleton() const;
 
     /**
      * Address: 0x0054F380 (FUN_0054F380, Moho::CAniPose::MemberDeserialize)
@@ -466,27 +454,21 @@ namespace moho
      */
     void MarkBoneDirty(int idx);
 
-    /**
-     * Address: 0x0054BD80 (FUN_0054BD80)
-     *
-     * What it does:
-     * Composes one pose-bone local transform with an incoming transform and
-     * marks that bone dirty through its pose/index ownership lanes.
-     */
-    static void ApplyBoneLocalTransform(CAniPoseBone* bone, const VTransform& transform);
-
   public:
-    boost::shared_ptr<const CAniSkel> mSkeleton; // +0x00
+    std::shared_ptr<const CAniSkel> mSkeleton;   // +0x00
     float mScale;                                // +0x08
     VTransform mLocalTransform;                  // +0x0C
     CAniPoseBoneArray mBones;                    // +0x28
     std::uint8_t pad_84_87[0x04]{};
-    float mMaxOffset;                            // +0x88
+    float mMaxOffset; // +0x88
     std::uint8_t pad_8C_8F[0x04]{};
   };
 
   static_assert(offsetof(CAniPoseBone, mCompositeDirty) == 0x1C, "CAniPoseBone::mCompositeDirty offset must be 0x1C");
-  static_assert(offsetof(CAniPoseBone, mCompositeIsLocal) == 0x1D, "CAniPoseBone::mCompositeIsLocal offset must be 0x1D");
+  static_assert(
+    offsetof(CAniPoseBone, mCompositeIsLocal) == 0x1D,
+    "CAniPoseBone::mCompositeIsLocal offset must be 0x1D"
+  );
   static_assert(offsetof(CAniPoseBone, mLocalTransform) == 0x20, "CAniPoseBone::mLocalTransform offset must be 0x20");
   static_assert(offsetof(CAniPoseBone, mIdx) == 0x3C, "CAniPoseBone::mIdx offset must be 0x3C");
   static_assert(offsetof(CAniPoseBone, mPose) == 0x40, "CAniPoseBone::mPose offset must be 0x40");
@@ -495,7 +477,10 @@ namespace moho
   static_assert(offsetof(CAniPoseBone, mSkipNextInterp) == 0x49, "CAniPoseBone::mSkipNextInterp offset must be 0x49");
   static_assert(sizeof(CAniPoseBone) == 0x4C, "CAniPoseBone size must be 0x4C");
   static_assert(offsetof(CAniPoseBoneArray, mBegin) == 0x00, "CAniPoseBoneArray::mBegin offset must be 0x00");
-  static_assert(offsetof(CAniPoseBoneArray, mInlineStorage) == 0x10, "CAniPoseBoneArray::mInlineStorage offset must be 0x10");
+  static_assert(
+    offsetof(CAniPoseBoneArray, mInlineStorage) == 0x10,
+    "CAniPoseBoneArray::mInlineStorage offset must be 0x10"
+  );
   static_assert(sizeof(CAniPoseBoneArray) == 0x5C, "CAniPoseBoneArray size must be 0x5C");
   static_assert(offsetof(CAniPose, mSkeleton) == 0x00, "CAniPose::mSkeleton offset must be 0x00");
   static_assert(offsetof(CAniPose, mScale) == 0x08, "CAniPose::mScale offset must be 0x08");

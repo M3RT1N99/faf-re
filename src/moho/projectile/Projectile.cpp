@@ -64,46 +64,6 @@ namespace
   constexpr float kProjectileUnsetValue = -1.0f;
   constexpr float kProjectileBounceVelocityDampingDefault = 0.5f;
 
-  [[nodiscard]] gpg::RType* CachedEntityType()
-  {
-    static gpg::RType* cached = nullptr;
-    return gpg::CachedLookup<moho::Entity>(cached);
-  }
-
-  [[nodiscard]] gpg::RType* CachedVector3fType()
-  {
-    static gpg::RType* cached = nullptr;
-    return gpg::CachedLookup<Wm3::Vector3f>(cached);
-  }
-
-  [[nodiscard]] gpg::RRef MakeProjectileRef(moho::Projectile* const object)
-  {
-    // Delegates to the recovered gpg::RRef_Projectile (FUN_0069FEA0), which
-    // performs the polymorphic derived-type normalization the earlier inline
-    // stand-in elided.
-    gpg::RRef out{};
-    out = gpg::MakeRRef<moho::Projectile>(object);
-    return out;
-  }
-
-  /**
-   * Address: 0x0069F8B0 (FUN_0069F8B0)
-   *
-   * What it does:
-   * Builds one temporary projectile reference and copies its `(mObj,mType)`
-   * pair into caller-owned output storage.
-   */
-  [[maybe_unused]] gpg::RRef* PackProjectileRef(
-    gpg::RRef* const out,
-    moho::Projectile* const object
-  )
-  {
-    const gpg::RRef ref = MakeProjectileRef(object);
-    out->mObj = ref.mObj;
-    out->mType = ref.mType;
-    return out;
-  }
-
   // Pops the top task off the entity's own CTask-subobject owner thread, deleting
   // it only when the thread owns it. Mirrors the inline teardown the projectile
   // ctor performs after each immediate Entity::Destroy() (asm 0x0069BC0F-0069BC3C
@@ -118,7 +78,9 @@ namespace
   // Destroy() had already queued it, the allocator handed the same block to the
   // next projectile, and the deletion queue then held one address twice -
   // OnDestroy ran twice on it and EntityDB::Purge deleted it twice.
-  void PopOwnedTaskThreadTop(moho::Entity* const entity) noexcept
+  void PopOwnedTaskThreadTop(
+    moho::Entity* const entity
+  ) noexcept
   {
     moho::CTaskThread* const thread = static_cast<moho::CTask*>(entity)->mOwnerThread;
     if (thread == nullptr) {
@@ -154,7 +116,10 @@ namespace
 
   // FUN_005D1E70 (func_VecLimitLengthTo); canonical body in
   // moho/math/Vector3f.cpp. MotionTick's max-speed cap.
-  void ClampVectorToMaxLength(Wm3::Vector3f& vec, const float maxLength) noexcept
+  void ClampVectorToMaxLength(
+    Wm3::Vector3f& vec,
+    const float maxLength
+  ) noexcept
   {
     (void)moho::VecLimitLengthTo(&vec, maxLength);
   }
@@ -175,8 +140,7 @@ namespace
       return {};
     }
     // 0x0069A2E4..0x0069A2FD: dot summed (y + z) + x.
-    const float scale =
-      (((vector.y * axis.y) + (vector.z * axis.z)) + (vector.x * axis.x)) / axisLengthSq;
+    const float scale = (((vector.y * axis.y) + (vector.z * axis.z)) + (vector.x * axis.x)) / axisLengthSq;
     return Wm3::Vector3f{axis.x * scale, axis.y * scale, axis.z * scale};
   }
 
@@ -223,10 +187,8 @@ namespace
     try {
       LuaPlus::LuaFunction<bool> callback(script);
       return callback(collidedEntity->mLuaObj, projectile);
-    } catch (const msvc8::runtime_error& error) {
-      moho::CScriptObject::LogScriptWarning(
-        weakGuard.GetObjectPtr(), "OnCollisionCheck", error.what()
-      );
+    } catch (const fa::runtime_error& error) {
+      moho::CScriptObject::LogScriptWarning(weakGuard.GetObjectPtr(), "OnCollisionCheck", error.what());
     }
     return false;
   }
@@ -242,7 +204,9 @@ namespace moho
    * Constructs one archive-owned projectile shell from simulation owner
    * context and initializes runtime lanes.
    */
-  Projectile::Projectile(Sim* const sim)
+  Projectile::Projectile(
+    Sim* const sim
+  )
     : Entity(sim, kProjectileCollisionBucketFlags)
   {
     mVelocity = Wm3::Vector3f{0.0f, 0.0f, 0.0f};
@@ -294,7 +258,11 @@ namespace moho
     // and then adds the base, at 0x0069B170 / 0x0069B1CF / 0x0069B22E /
     // 0x0069B455 / 0x0069B952 / 0x0069BA1D. The twister word is never rounded
     // to float on its own (the blueprint GetRandom* helpers are not called).
-    [[nodiscard]] float RandomSymmetricAround(CRandomStream* const rng, const float base, const float range) noexcept
+    [[nodiscard]] float RandomSymmetricAround(
+      CRandomStream* const rng,
+      const float base,
+      const float range
+    ) noexcept
     {
       return rng->FRand(-range, range) + base;
     }
@@ -302,7 +270,8 @@ namespace moho
 
   /**
    * Address: 0x0069AFE0 (FUN_0069AFE0, Moho::Projectile::Projectile)
-   * Mangled: ??0Projectile@Moho@@QAE@PBVRProjectileBlueprint@1@PAVSim@1@PAVSimArmy@1@PAVEntity@1@VVTransform@1@MMV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVCAiTarget@1@_N@Z
+   * Mangled:
+   * ??0Projectile@Moho@@QAE@PBVRProjectileBlueprint@1@PAVSim@1@PAVSimArmy@1@PAVEntity@1@VVTransform@1@MMV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@ABVCAiTarget@1@_N@Z
    *
    * IDA signature:
    * Moho::Projectile *__thiscall Moho::Projectile::Projectile(
@@ -333,7 +302,7 @@ namespace moho
     const VTransform& launchTransform,
     const float damage,
     const float damageRadius,
-    const msvc8::string& damageTypeName,
+    const fa::string& damageTypeName,
     const CAiTarget& target,
     const bool isChildProjectile
   )
@@ -343,7 +312,8 @@ namespace moho
         const_cast<RProjectileBlueprint*>(blueprint),
         sim,
         static_cast<EntId>(sim->mEntityDB->DoReserveId(
-          ((static_cast<std::uint32_t>(army == nullptr ? 255 : army->mConstDat.mArmyIndex) | 0x100u) << kEntityIdSourceShift)
+          ((static_cast<std::uint32_t>(army == nullptr ? 255 : army->mConstDat.mArmyIndex) | 0x100u)
+           << kEntityIdSourceShift)
         )),
         kProjectileCollisionBucketFlags
       )
@@ -378,8 +348,7 @@ namespace moho
     {
       const Wm3::Vector3f& gravity = sim->mPhysConstants->mGravity;
       const float useGravity = static_cast<float>(blueprint->Physics.UseGravity);
-      mBallisticAcceleration =
-        Wm3::Vector3f{useGravity * gravity.x, useGravity * gravity.y, useGravity * gravity.z};
+      mBallisticAcceleration = Wm3::Vector3f{useGravity * gravity.x, useGravity * gravity.y, useGravity * gravity.z};
     }
 
     mDamage = damage;
@@ -414,8 +383,7 @@ namespace moho
       const float lifetimeSeconds =
         RandomSymmetricAround(rng, blueprint->Physics.Lifetime, blueprint->Physics.LifetimeRange);
       const std::uint32_t curTick = SimulationRef->mCurTick;
-      mLifetimeEnd =
-        curTick + static_cast<std::uint32_t>(std::lrintf(lifetimeSeconds * 10.0f));
+      mLifetimeEnd = curTick + static_cast<std::uint32_t>(std::lrintf(lifetimeSeconds * 10.0f));
     }
 
     // Resolve the launcher: chase through a projectile source to its own launcher.
@@ -425,8 +393,8 @@ namespace moho
     }
     mLauncherWeak.Set(resolvedLauncher);
 
-    mQueueRelinkBlocked = 1;   // v3a (Entity+0x1B8)
-    mVarDat.mVisibilityHidden = 1;      // mVarDat.mNotVisibility (Entity+0x110)
+    mQueueRelinkBlocked = 1;       // v3a (Entity+0x1B8)
+    mVarDat.mVisibilityHidden = 1; // mVarDat.mNotVisibility (Entity+0x110)
     this->RunScript("OnPreCreate");
 
     // Bounce count uniform pick in [MinBounceCount, MaxBounceCount).
@@ -436,7 +404,8 @@ namespace moho
       const std::uint32_t randomBits = rng->twister.NextUInt32();
       const std::uint32_t scaled = static_cast<std::uint32_t>(
         (static_cast<std::uint64_t>(static_cast<std::uint32_t>(maxBounce - minBounce)) *
-         static_cast<std::uint64_t>(randomBits)) >> 32
+         static_cast<std::uint64_t>(randomBits)) >>
+        32
       );
       mBounceLimit = minBounce + static_cast<std::int32_t>(scaled);
     }
@@ -475,11 +444,8 @@ namespace moho
           0.0f,
           aimPoint.z - launcherEntity->mVarDat.mCurTransform.pos_.z,
         };
-        const float inheritedSpeed = std::sqrt(
-          (mVelocity.x * mVelocity.x) +
-          (mVelocity.y * mVelocity.y) +
-          (mVelocity.z * mVelocity.z)
-        );
+        const float inheritedSpeed =
+          std::sqrt((mVelocity.x * mVelocity.x) + (mVelocity.y * mVelocity.y) + (mVelocity.z * mVelocity.z));
         (void)moho::VecSetLength(&steerHorizontal, inheritedSpeed);
 
         mVelocity.x += (steerHorizontal.x - mVelocity.x);
@@ -549,9 +515,8 @@ namespace moho
 
     // Scale velocity = Display.MeshScaleVelocity + rand(±Display.MeshScaleVelocityRange).
     {
-      const float scaleVelocity = RandomSymmetricAround(
-        rng, blueprint->Display.MeshScaleVelocity, blueprint->Display.MeshScaleVelocityRange
-      );
+      const float scaleVelocity =
+        RandomSymmetricAround(rng, blueprint->Display.MeshScaleVelocity, blueprint->Display.MeshScaleVelocityRange);
       mScaleVelocity = Wm3::Vector3f{scaleVelocity, scaleVelocity, scaleVelocity};
     }
 
@@ -593,7 +558,8 @@ namespace moho
       // Initial layer selection from map water level vs launch height (pos.y).
       const float currentHeight = launchTransform.pos_.y;
       STIMap* const mapData = SimulationRef->mMapData;
-      const float waterElevation = mapData->mWaterEnabled ? mapData->mWaterElevation : -10000.0f;
+      // Engine addition (water bodies): the level at the launch point.
+      const float waterElevation = mapData->GetWaterElevationAt(launchTransform.pos_.x, launchTransform.pos_.z);
       const ELayer previousLayer = mVarDat.mLayerMask;
 
       // 0x0069BC49: `comiss water, posY; jbe` -> Air, so an unordered (NaN)
@@ -657,22 +623,26 @@ namespace moho
       // Previously modeled via the RULE ONE offset-magic helper
       // `AppendProjectileLaneFromOwnerOffsetRuntime` (SimRecoveryRuntime.cpp,
       // reach-in through `ownerBase + 0x9B8`) -- collapsed onto
-      // `msvc8::vector<SCamFollowParams>::push_back` (Vector.h) instead; see
+      // `fa::vector<SCamFollowParams>::push_back` (Vector.h) instead; see
       // that citation for the full fast/slow-path evidence chain.
       if (blueprint->Display.CameraFollowsProjectile != 0) {
-        SimulationRef->mSyncSerializeGroup0.push_back(SCamFollowParams{
-          sourceEntity->id_,                      // mCurrentEntityId
-          id_,                                     // mTargetEntityId
-          blueprint->Display.CameraFollowTimeout,  // mTargetTimeLeft
-        });
+        SimulationRef->mSyncSerializeGroup0.push_back(
+          SCamFollowParams{
+            sourceEntity->id_,                      // mCurrentEntityId
+            id_,                                    // mTargetEntityId
+            blueprint->Display.CameraFollowTimeout, // mTargetTimeLeft
+          }
+        );
       }
     }
   }
 
-#if defined(_M_X64) || defined(__x86_64__)
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
   static_assert(sizeof(Projectile) <= SimBlockLane::kBlockBytes);
 
-  void* Projectile::operator new(const std::size_t size)
+  void* Projectile::operator new(
+    const std::size_t size
+  )
   {
     if (size == sizeof(Projectile)) {
       if (void* const block = SimBlockLane::Allocate()) {
@@ -683,7 +653,10 @@ namespace moho
     return ::operator new(size);
   }
 
-  void Projectile::operator delete(void* const block, const std::size_t size) noexcept
+  void Projectile::operator delete(
+    void* const block,
+    const std::size_t size
+  ) noexcept
   {
     if (block == nullptr) {
       return;
@@ -692,6 +665,21 @@ namespace moho
       SimBlockLane::Free(block);
       return;
     }
+    ::operator delete(block);
+  }
+#else
+  void* Projectile::operator new(
+    const std::size_t size
+  )
+  {
+    return ::operator new(size);
+  }
+
+  void Projectile::operator delete(
+    void* const block,
+    const std::size_t
+  ) noexcept
+  {
     ::operator delete(block);
   }
 #endif
@@ -771,9 +759,11 @@ namespace moho
    * stores the integer indefinite 0x80000000, so the projectile expires about
    * 2^31 ticks later instead of on the next tick.
    */
-  void Projectile::SetLifetime(const float lifetimeSeconds)
+  void Projectile::SetLifetime(
+    const float lifetimeSeconds
+  )
   {
-    const std::uint32_t lifetimeTicks = static_cast<std::uint32_t>(msvc8::RoundToInt(lifetimeSeconds * 10.0f));
+    const std::uint32_t lifetimeTicks = static_cast<std::uint32_t>(fa::RoundToInt(lifetimeSeconds * 10.0f));
     mLifetimeEnd = SimulationRef->mCurTick + lifetimeTicks;
   }
 
@@ -800,8 +790,12 @@ namespace moho
     // FAF FA-Binary-Patches #154 (Fix projectiles falling below zero): a
     // projectile whose current position is below height 0 -- off the map, where
     // there is no terrain to hit -- impacts now. `comiss y, 0.0; jb` at the
-    // 0x0069BDDA hook: a NaN height impacts too.
-    if (FAF_IsSimFixActive(EFafSimFix::ProjectileImpactBelowZero) && !(mVarDat.mCurTransform.pos_.y >= 0.0f)) {
+    // 0x0069BDDA hook: a NaN height impacts too. #180 removes this hook and
+    // replaces it with the map-edge terrain check in CheckCollision.
+    if (
+      FAF_IsSimFixActive(EFafSimFix::ProjectileImpactBelowZero) &&
+      !FAF_IsSimFixActive(EFafSimFix::ProjectileMapEdgeCollision) && !(mVarDat.mCurTransform.pos_.y >= 0.0f)
+    ) {
       this->Impact();
       return 1;
     }
@@ -950,7 +944,7 @@ namespace moho
     // Underwater clamp: keep the projectile just below the surface.
     if (mStayUnderwater && mBelowWater) {
       STIMap* const mapData = SimulationRef->mMapData;
-      const float waterElevation = mapData->mWaterEnabled ? mapData->mWaterElevation : -10000.0f;
+      const float waterElevation = mapData->GetWaterElevationAt(tran.pos_.x, tran.pos_.z); // engine addition
       const float clampY = waterElevation - 0.0099999998f;
       // 0x0069C4E2: `comiss clampY, posY; ja skip` -- an unordered (NaN)
       // compare also clamps.
@@ -993,8 +987,7 @@ namespace moho
         if (canBounce) {
           // Reflect the velocity about the terrain normal and store the bounce
           // direction for next tick's mDirectAwayFromGround install.
-          const Wm3::Vec3f normal =
-            SimulationRef->mMapData->GetTerrainNormal(mImpactPosition.x, mImpactPosition.z);
+          const Wm3::Vec3f normal = SimulationRef->mMapData->GetTerrainNormal(mImpactPosition.x, mImpactPosition.z);
           const float damp = mBounceVelocityDamping;
           const Wm3::Vector3f damped{
             mVelocity.x * damp,
@@ -1002,8 +995,7 @@ namespace moho
             mVelocity.z * damp,
           };
           // 0x0069C692..0x0069C6B5: summed (y + z) + x, then doubled.
-          const float twoDot =
-            (((normal.y * damped.y) + (normal.z * damped.z)) + (normal.x * damped.x)) * 2.0f;
+          const float twoDot = (((normal.y * damped.y) + (normal.z * damped.z)) + (normal.x * damped.x)) * 2.0f;
           mGroundDirection.x = damped.x - (normal.x * twoDot);
           mGroundDirection.y = damped.y - (normal.y * twoDot);
           mGroundDirection.z = damped.z - (normal.z * twoDot);
@@ -1119,7 +1111,7 @@ namespace moho
         CArmyImpl* const launcherArmy = launcherEntity->ArmyRef;
         if (launcherArmy != nullptr) {
           CArmyStats* const stats = launcherArmy->GetArmyStats();
-          msvc8::string statPath = msvc8::string("RealTimeStats_") + launcherEntity->GetUniqueName();
+          fa::string statPath = fa::string("RealTimeStats_") + launcherEntity->GetUniqueName();
           const bool didHit = mTargetPosData.ImpactDidHitEntity(collidedEntity, mImpactType);
           statPath = statPath + (didHit ? "_Shots_Hit" : "_Shots_Missed");
           const std::int32_t delta = 1;
@@ -1132,9 +1124,10 @@ namespace moho
       int eventCode;
       if (didHit) {
         eventCode = 0;
-      } else if (mImpactType == IMPACT_Projectile || mImpactType == IMPACT_ProjectileUnderwater ||
-                 (collidedEntity != nullptr &&
-                  (static_cast<std::uint32_t>(collidedEntity->id_) & 0xF0000000u) == 0x40000000u)) {
+      } else if (
+        mImpactType == IMPACT_Projectile || mImpactType == IMPACT_ProjectileUnderwater ||
+        (collidedEntity != nullptr && (static_cast<std::uint32_t>(collidedEntity->id_) & 0xF0000000u) == 0x40000000u)
+      ) {
         eventCode = 2;
       } else {
         eventCode = 1;
@@ -1170,7 +1163,9 @@ namespace moho
    * projectile attributes, and steers `trn`'s orientation toward the aim direction
    * by at most the projectile turn rate.
    */
-  void Projectile::UpdateTracking(VTransform& trn)
+  void Projectile::UpdateTracking(
+    VTransform& trn
+  )
   {
 
     if (mTargetPosData.HasTarget()) {
@@ -1228,7 +1223,7 @@ namespace moho
 
     // Underwater aim clamp: keep the aim point just below the surface.
     if (mStayUnderwater) {
-      const float waterElevation = mapData->mWaterEnabled ? mapData->mWaterElevation : -10000.0f;
+      const float waterElevation = mapData->GetWaterElevationAt(aim.x, aim.z); // engine addition
       const float clampY = waterElevation - 0.25f;
       // 0x0069CB7B: `comiss clampY, aim.y; ja skip` -- NaN also clamps.
       if (!(clampY > aim.y)) {
@@ -1277,8 +1272,7 @@ namespace moho
           mZigZagRandomOffset.x = rng->FRand(-maxZigZag, maxZigZag);
           mZigZagRandomOffset.y = rng->FRand(-maxZigZag, maxZigZag);
           mZigZagRandomOffset.z = rng->FRand(-maxZigZag, maxZigZag);
-          mZigZagNextTick =
-            static_cast<std::int32_t>(curTick) + FloorSecondsToTicks(zigZagFrequency);
+          mZigZagNextTick = static_cast<std::int32_t>(curTick) + FloorSecondsToTicks(zigZagFrequency);
         }
 
         // Blend factor from the distance still to travel (asm 0x0069CD77-0x0069CDFE).
@@ -1316,7 +1310,7 @@ namespace moho
           jitteredY = groundClampedBase;
         }
         if (!mStayUnderwater) {
-          const float waterLine = mapData->mWaterEnabled ? mapData->mWaterElevation : -10000.0f;
+          const float waterLine = mapData->GetWaterElevationAt(jitteredX, jitteredZ); // engine addition
           const float waterLimit = waterLine + 0.5f;
           const float waterClampedBase = (baseY > waterLimit) ? waterLimit : baseY;
           if (jitteredY < waterClampedBase) {
@@ -1350,14 +1344,13 @@ namespace moho
 
       // Only flatten while pointing upward (asm 0x0069CFFB-0x0069D01D: forward.y > 0).
       if (forwardY > 0.0f) {
-        const float waterLine = mapData->mWaterEnabled ? mapData->mWaterElevation : -10000.0f;
+        const float waterLine = mapData->GetWaterElevationAt(trn.pos_.x, trn.pos_.z); // engine addition
         const float t = (waterLine - trn.pos_.y) / forwardY;
         // Only when the surface is reached within one forward unit (asm 0x0069D047: t < 1.0).
         if (t < 1.0f) {
           Wm3::Vector3f clippedForward{forwardX, forwardY * t, forwardZ};
           // 0x0069D054..0x0069D073: summed (z² + y²) + x².
-          const float lenSq =
-            ((clippedForward.z * clippedForward.z) + (clippedForward.y * clippedForward.y)) +
+          const float lenSq = ((clippedForward.z * clippedForward.z) + (clippedForward.y * clippedForward.y)) +
             (clippedForward.x * clippedForward.x);
           // 0x0069D077..0x0069D082: `comiss 1e-6, lenSq; jbe` (flt_DFFBE8).
           if (!(1.0e-6f > lenSq)) {
@@ -1448,8 +1441,9 @@ namespace moho
       // misses, and is what a terrain hit must beat to cancel the layer change.
       float waterCrossingDistance = 0.0f;
 
-      if (mapData->mWaterEnabled) {
-        waterElevation = mapData->mWaterElevation;
+      // Engine addition (water bodies): the level where the step ends.
+      if (mapData->mWaterEnabled || mapData->HasWaterBodies()) {
+        waterElevation = mapData->GetWaterElevationAt(nextPos.x, nextPos.z);
         if (mBelowWater) {
           if (nextPos.y > waterElevation) {
             crossing = EWaterCrossing::Exit;
@@ -1517,6 +1511,40 @@ namespace moho
           // (`comiss terrain, water; jbe` -- an unordered compare also counts).
           terrainBeforeWater = !(terrainHit.distance > waterCrossingDistance);
         }
+      } else if (FAF_IsSimFixActive(EFafSimFix::ProjectileMapEdgeCollision)) {
+        // FAF FA-Binary-Patches #180 (section/Fixes/ProjectileMapEdgeCollision.cpp,
+        // entered from FixCollisions' terrain miss): Intersection finds no
+        // terrain outside the map, so the terrain counts as extending outwards
+        // from the map edge. GetElevation clamps its samples to the grid, so
+        // outside the map it returns the height of the nearest edge point.
+        // A NaN x or z counts as outside (`comiss; jb`).
+        const float maxX = static_cast<float>(heightField->width - 1);
+        const float maxZ = static_cast<float>(heightField->height - 1);
+        if (!(nextPos.x >= 0.0f) || !(nextPos.z >= 0.0f) || nextPos.x > maxX || nextPos.z > maxZ) {
+          const float edgeElevation = heightField->GetElevation(nextPos.x, nextPos.z);
+          if (edgeElevation > nextPos.y) {
+            // Fraction of the segment where it crosses the edge height; 0 when
+            // it started at or below it.
+            float fraction = 0.0f;
+            if (curPos.y > edgeElevation) {
+              fraction = (curPos.y - edgeElevation) / (curPos.y - nextPos.y);
+            }
+            // Only replaces a queued impact that comes later along the segment
+            // (a NaN interpolation is kept).
+            if (mImpactInterpolation < 0.0f || mImpactInterpolation > fraction) {
+              mImpactInterpolation = fraction;
+              mImpactPosition = Wm3::Vector3f{
+                (nextPos.x - curPos.x) * fraction + curPos.x,
+                edgeElevation,
+                (nextPos.z - curPos.z) * fraction + curPos.z,
+              };
+              // Joins the terrain hit at SPLICE (0x0069DB46): IMPACT_Terrain,
+              // then the hit distance against the water crossing.
+              mImpactType = IMPACT_Terrain;
+              terrainBeforeWater = !((fraction * distMoved) > waterCrossingDistance);
+            }
+          }
+        }
       }
 
       // 0x0069DB59..0x0069DBA2: the layer change runs last, and not at all when
@@ -1540,8 +1568,7 @@ namespace moho
     // (CollisionExtents == null, [esi+0x178] guard at asm 0x0069D660).
     if (mDoCollision) {
       Entity* const target = mTargetPosData.GetEntity();
-      if (target != nullptr && target->IsProjectile() != nullptr &&
-          target->CollisionExtents == nullptr) {
+      if (target != nullptr && target->IsProjectile() != nullptr && target->CollisionExtents == nullptr) {
         // Squared distance from the target's world position to the swept segment:
         // Wild Magic's DistVector3Segment3f on the stack (ctor 0x00A48030 at
         // 0x0069D67F, GetSquared 0x00A484F0 at 0x0069D692).
@@ -1552,8 +1579,7 @@ namespace moho
         // Hit radius squared = |target velocity|^2 + 0.5 (asm 0x0069D69B: target
         // GetVelocity() via vtable slot 15 (+0x3C); 0x0069D6D4: + flt_E4F724 == 0.5).
         const Wm3::Vec3f targetVelocity = target->GetVelocity();
-        const float hitRadiusSq =
-          (targetVelocity.x * targetVelocity.x) + (targetVelocity.y * targetVelocity.y) +
+        const float hitRadiusSq = (targetVelocity.x * targetVelocity.x) + (targetVelocity.y * targetVelocity.y) +
           (targetVelocity.z * targetVelocity.z) + 0.5f;
 
         // asm 0x0069D6DC: proceed only when distSq <= hitRadiusSq (jb skips otherwise).
@@ -1563,14 +1589,11 @@ namespace moho
           // Fraction of the segment consumed at the closest point
           // (asm 0x0069D719-0x0069D7F1): |closest - curPos| / |nextPos - curPos|,
           // clamped to [0, 1].
-          const float toClosestSq =
-            ((closestOnSegment.x - curPos.x) * (closestOnSegment.x - curPos.x)) +
+          const float toClosestSq = ((closestOnSegment.x - curPos.x) * (closestOnSegment.x - curPos.x)) +
             ((closestOnSegment.y - curPos.y) * (closestOnSegment.y - curPos.y)) +
             ((closestOnSegment.z - curPos.z) * (closestOnSegment.z - curPos.z));
-          const float spanSq =
-            ((nextPos.x - curPos.x) * (nextPos.x - curPos.x)) +
-            ((nextPos.y - curPos.y) * (nextPos.y - curPos.y)) +
-            ((nextPos.z - curPos.z) * (nextPos.z - curPos.z));
+          const float spanSq = ((nextPos.x - curPos.x) * (nextPos.x - curPos.x)) +
+            ((nextPos.y - curPos.y) * (nextPos.y - curPos.y)) + ((nextPos.z - curPos.z) * (nextPos.z - curPos.z));
           float fraction = std::sqrt(toClosestSq / spanSq);
           // 0x0069D7CE..0x0069D7DE: `fld1; fcomip; jbe -> 1.0`, so NaN -> 1.0.
           fraction = (1.0f > fraction) ? fraction : 1.0f;
@@ -1658,11 +1681,13 @@ namespace moho
         const Wm3::Vec3f lineStart(
           curPos.x - delta.x * kLineSweepExtension,
           curPos.y - delta.y * kLineSweepExtension,
-          curPos.z - delta.z * kLineSweepExtension);
+          curPos.z - delta.z * kLineSweepExtension
+        );
         const Wm3::Vec3f lineEnd(
           nextPos.x + delta.x * kLineSweepExtension,
           nextPos.y + delta.y * kLineSweepExtension,
-          nextPos.z + delta.z * kLineSweepExtension);
+          nextPos.z + delta.z * kLineSweepExtension
+        );
 
         Entity* const homingTarget = mTargetPosData.GetEntity();
         CArmyImpl* const projectileArmy = ArmyRef;
@@ -1681,8 +1706,7 @@ namespace moho
             // Filter C (asm 0x0069DBB7-0x0069DBED): skip the launcher unit. The
             // binary only runs this test when the launcher weak resolves to a live
             // entity (asm 0x0069DBBD-0x0069DBC4 short-circuits past it otherwise).
-            if (launcherEntity != nullptr && candidate->IsUnit() != nullptr &&
-                candidate == launcherEntity) {
+            if (launcherEntity != nullptr && candidate->IsUnit() != nullptr && candidate == launcherEntity) {
               continue;
             }
             // Filter D (asm 0x0069DBF3): skip self.
@@ -1691,8 +1715,7 @@ namespace moho
             }
             // Filter E (asm 0x0069DBFD-0x0069DC2D): a child projectile only
             // collides with ENEMY air-layer candidates (skips friendly air units).
-            if (mIsChildProjectile && projectileArmy != nullptr &&
-                candidate->mVarDat.mLayerMask == LAYER_Air) {
+            if (mIsChildProjectile && projectileArmy != nullptr && candidate->mVarDat.mLayerMask == LAYER_Air) {
               if (!projectileArmy->IsEnemy(static_cast<std::uint32_t>(candidate->GetArmyIndex()))) {
                 continue;
               }
@@ -1702,16 +1725,13 @@ namespace moho
           // Earliest-hit guard (asm 0x0069DC33-0x0069DC4D): proceed when there is
           // no hit yet, or this candidate is closer along the swept line. Both
           // compares are `ja`-style, so a NaN interpolation skips.
-          if (!(0.0f > mImpactInterpolation) &&
-              !((mImpactInterpolation * distMoved) > result.distanceFromLineStart)) {
+          if (!(0.0f > mImpactInterpolation) && !((mImpactInterpolation * distMoved) > result.distanceFromLineStart)) {
             continue;
           }
 
           if (RunProjectileOnCollisionCheckScript(candidate, this)) {
-            mImpactInterpolation =
-              (distMoved != 0.0f) ? (result.distanceFromLineStart / distMoved) : 0.0f;
-            mImpactPosition =
-              Wm3::Vector3f{result.position.x, result.position.y, result.position.z};
+            mImpactInterpolation = (distMoved != 0.0f) ? (result.distanceFromLineStart / distMoved) : 0.0f;
+            mImpactPosition = Wm3::Vector3f{result.position.x, result.position.y, result.position.z};
             mCollidedEntityWeak.Set(candidate);
             mImpactType = ENT_GetImpactType(SimulationRef, candidate, curPos);
           }
@@ -1791,7 +1811,12 @@ namespace moho
    * object through the archive ctor lane, and publishes it as unowned
    * construct output.
    */
-  void Projectile::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void Projectile::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     Sim* sim = nullptr;
     const gpg::RRef owner{};
@@ -1807,7 +1832,9 @@ namespace moho
    * Restores projectile runtime state from archive payload, including base
    * entity lanes, physics vectors, impact state, weak links, and attributes.
    */
-  void Projectile::MemberDeserialize(gpg::ReadArchive* const archive)
+  void Projectile::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -1816,12 +1843,14 @@ namespace moho
 
     const gpg::RRef ownerRef{};
 
-    archive->Read(CachedEntityType(), this, ownerRef);
-    archive->Read(gpg::RTypeOf<moho::ManyToOneBroadcaster_EProjectileImpactEvent>(), &mImpactEventBroadcaster, ownerRef);
+    archive->Read(gpg::RTypeOf<moho::Entity>(), this, ownerRef);
+    archive->Read(
+      gpg::RTypeOf<moho::ManyToOneBroadcaster_EProjectileImpactEvent>(), &mImpactEventBroadcaster, ownerRef
+    );
     archive->Read(gpg::RTypeOf<moho::WeakPtr<moho::Entity>>(), &mLauncherWeak, ownerRef);
-    archive->Read(CachedVector3fType(), &mVelocity, ownerRef);
-    archive->Read(CachedVector3fType(), &mLocalAngularVelocity, ownerRef);
-    archive->Read(CachedVector3fType(), &mScaleVelocity, ownerRef);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mVelocity, ownerRef);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mLocalAngularVelocity, ownerRef);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mScaleVelocity, ownerRef);
 
     archive->ReadFloat(&mImpactInterpolation);
     archive->ReadBool(&mCollideSurface);
@@ -1836,8 +1865,8 @@ namespace moho
     archive->ReadFloat(&mTurnRateDegrees);
     archive->ReadFloat(&mMaxSpeed);
     archive->ReadFloat(&mAcceleration);
-    archive->Read(CachedVector3fType(), &mBallisticAcceleration, ownerRef);
-    archive->Read(CachedVector3fType(), &mCachedAimPoint, ownerRef);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mBallisticAcceleration, ownerRef);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mCachedAimPoint, ownerRef);
     archive->ReadBool(&mKeepLastAimLatch);
 
     archive->ReadFloat(&mDamage);
@@ -1845,7 +1874,7 @@ namespace moho
     archive->ReadString(&mDamageTypeName);
 
     archive->Read(gpg::RTypeOf<moho::CAiTarget>(), &mTargetPosData, ownerRef);
-    archive->Read(CachedVector3fType(), &mImpactPosition, ownerRef);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mImpactPosition, ownerRef);
     archive->Read(gpg::RTypeOf<moho::WeakPtr<moho::Entity>>(), &mCollidedEntityWeak, ownerRef);
 
     archive->ReadUInt(&mLifetimeEnd);
@@ -1853,10 +1882,10 @@ namespace moho
     archive->ReadInt(&mBounceLimit);
     archive->ReadInt(&mGroundTick);
     archive->ReadBool(&mDirectAwayFromGround);
-    archive->Read(CachedVector3fType(), &mGroundDirection, ownerRef);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mGroundDirection, ownerRef);
     archive->ReadFloat(&mBounceVelocityDamping);
     archive->ReadInt(&mZigZagNextTick);
-    archive->Read(CachedVector3fType(), &mZigZagRandomOffset, ownerRef);
+    archive->Read(gpg::RTypeOf<Wm3::Vector3f>(), &mZigZagRandomOffset, ownerRef);
     archive->Read(gpg::RTypeOf<moho::CProjectileAttributes>(), &mAttributes, ownerRef);
     archive->ReadBool(&mIsChildProjectile);
 
@@ -1881,7 +1910,9 @@ namespace moho
    * Serializes projectile runtime state to archive payload, including base
    * entity lanes, physics vectors, impact state, weak links, and attributes.
    */
-  void Projectile::MemberSerialize(gpg::WriteArchive* const archive) const
+  void Projectile::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -1890,12 +1921,14 @@ namespace moho
 
     const gpg::RRef ownerRef{};
 
-    archive->Write(CachedEntityType(), this, ownerRef);
-    archive->Write(gpg::RTypeOf<moho::ManyToOneBroadcaster_EProjectileImpactEvent>(), &mImpactEventBroadcaster, ownerRef);
+    archive->Write(gpg::RTypeOf<moho::Entity>(), this, ownerRef);
+    archive->Write(
+      gpg::RTypeOf<moho::ManyToOneBroadcaster_EProjectileImpactEvent>(), &mImpactEventBroadcaster, ownerRef
+    );
     archive->Write(gpg::RTypeOf<moho::WeakPtr<moho::Entity>>(), &mLauncherWeak, ownerRef);
-    archive->Write(CachedVector3fType(), &mVelocity, ownerRef);
-    archive->Write(CachedVector3fType(), &mLocalAngularVelocity, ownerRef);
-    archive->Write(CachedVector3fType(), &mScaleVelocity, ownerRef);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mVelocity, ownerRef);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mLocalAngularVelocity, ownerRef);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mScaleVelocity, ownerRef);
 
     archive->WriteFloat(mImpactInterpolation);
     archive->WriteBool(mCollideSurface);
@@ -1910,16 +1943,16 @@ namespace moho
     archive->WriteFloat(mTurnRateDegrees);
     archive->WriteFloat(mMaxSpeed);
     archive->WriteFloat(mAcceleration);
-    archive->Write(CachedVector3fType(), &mBallisticAcceleration, ownerRef);
-    archive->Write(CachedVector3fType(), &mCachedAimPoint, ownerRef);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mBallisticAcceleration, ownerRef);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mCachedAimPoint, ownerRef);
     archive->WriteBool(mKeepLastAimLatch);
 
     archive->WriteFloat(mDamage);
     archive->WriteFloat(mDamageRadius);
-    archive->WriteString(const_cast<msvc8::string*>(&mDamageTypeName));
+    archive->WriteString(const_cast<fa::string*>(&mDamageTypeName));
 
     archive->Write(gpg::RTypeOf<moho::CAiTarget>(), &mTargetPosData, ownerRef);
-    archive->Write(CachedVector3fType(), &mImpactPosition, ownerRef);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mImpactPosition, ownerRef);
     archive->Write(gpg::RTypeOf<moho::WeakPtr<moho::Entity>>(), &mCollidedEntityWeak, ownerRef);
 
     archive->WriteUInt(mLifetimeEnd);
@@ -1927,10 +1960,10 @@ namespace moho
     archive->WriteInt(mBounceLimit);
     archive->WriteInt(mGroundTick);
     archive->WriteBool(mDirectAwayFromGround);
-    archive->Write(CachedVector3fType(), &mGroundDirection, ownerRef);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mGroundDirection, ownerRef);
     archive->WriteFloat(mBounceVelocityDamping);
     archive->WriteInt(mZigZagNextTick);
-    archive->Write(CachedVector3fType(), &mZigZagRandomOffset, ownerRef);
+    archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mZigZagRandomOffset, ownerRef);
     archive->Write(gpg::RTypeOf<moho::CProjectileAttributes>(), &mAttributes, ownerRef);
     archive->WriteBool(mIsChildProjectile);
 
@@ -1946,18 +1979,6 @@ namespace moho
   // for both, and no source-level caller anywhere in src/**.
   // `ProjectileSerializer::Serialize` (ProjectileSerHelpers.cpp, wired via
   // that class's ctor) already calls `Projectile::MemberSerialize` directly.
-
-  /**
-   * Address: 0x006A0050 (FUN_006A0050)
-   *
-   * What it does:
-   * Thin deserialization thunk that forwards to
-   * `Projectile::MemberDeserialize`.
-   */
-  [[maybe_unused]] void ProjectileMemberDeserializeThunk(Projectile* const projectile, gpg::ReadArchive* const archive)
-  {
-    projectile->MemberDeserialize(archive);
-  }
 
 } // namespace moho
 

@@ -13,9 +13,9 @@
 
 #include "gpg/core/containers/String.h"
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/reflection/Reflection.h"
-#include "gpg/core/utils/BoostWrappers.h"
+#include "gpg/core/utils/SharedPtrUtils.h"
 #include "gpg/core/reflection/SerializationError.h"
 #include "moho/ai/CAiAttackerImpl.h"
 #include "moho/ai/CAiPathFinder.h"
@@ -99,17 +99,23 @@ using namespace gpg;
 
 namespace
 {
-  [[noreturn]] void ThrowSerializationError(const char* const message)
+  [[noreturn]] void ThrowSerializationError(
+    const char* const message
+  )
   {
     throw SerializationError(message ? message : "");
   }
 
-  [[noreturn]] void ThrowSerializationError(const msvc8::string& message)
+  [[noreturn]] void ThrowSerializationError(
+    const fa::string& message
+  )
   {
     throw SerializationError(message.c_str());
   }
 
-  const char* SafeTypeName(const RType* const type)
+  const char* SafeTypeName(
+    const RType* const type
+  )
   {
     return type ? type->GetName() : "null";
   }
@@ -155,7 +161,9 @@ namespace
    * Upcasts one reflected reference to `moho::CParticleTexture`, returning null when
    * the reference does not denote that type.
    */
-  [[nodiscard]] moho::CParticleTexture* UpcastToCParticleTexture(const gpg::RRef& source)
+  [[nodiscard]] moho::CParticleTexture* UpcastToCParticleTexture(
+    const gpg::RRef& source
+  )
   {
     const gpg::RRef upcast = gpg::REF_UpcastPtr(source, gpg::RTypeOf<moho::CParticleTexture>());
     return static_cast<moho::CParticleTexture*>(upcast.mObj);
@@ -164,11 +172,12 @@ namespace
   class BinaryReadArchive final : public gpg::ReadArchive
   {
   public:
-    explicit BinaryReadArchive(const boost::shared_ptr<std::FILE>& file)
+    explicit BinaryReadArchive(
+      const std::shared_ptr<std::FILE>& file
+    )
       : mFile(file)
       , mCachedFile(file.get())
-    {
-    }
+    {}
 
     /**
      * Address: 0x00904810 (FUN_00904810)
@@ -186,7 +195,10 @@ namespace
      * Reads one contiguous byte range from the backing FILE and throws
      * serialization failure on EOF/read errors.
      */
-    void ReadBytes(char* const bytes, const size_t byteCount) override
+    void ReadBytes(
+      void* const bytes,
+      const size_t byteCount
+    ) override
     {
       // Ground truth is exactly this shape, and the details matter:
       //
@@ -221,7 +233,9 @@ namespace
      * Reads one length-prefixed string payload by first loading a 32-bit byte
      * count, resizing the destination string, and then reading raw bytes.
      */
-    void ReadString(msvc8::string* const out) override
+    void ReadString(
+      fa::string* const out
+    ) override
     {
       unsigned int byteCount = 0;
       ReadInt2(&byteCount);
@@ -247,7 +261,9 @@ namespace
      * What it does:
      * Reads one 32-bit float lane from the binary archive stream.
      */
-    void ReadFloat(float* const value) override
+    void ReadFloat(
+      float* const value
+    ) override
     {
       ReadFloat2(value);
     }
@@ -258,7 +274,9 @@ namespace
      * What it does:
      * Reads one 64-bit primitive lane used by this archive vtable slot.
      */
-    void ReadUInt64(std::uint64_t* const value) override
+    void ReadUInt64(
+      std::uint64_t* const value
+    ) override
     {
       ReadUInt642(value);
     }
@@ -269,7 +287,9 @@ namespace
      * What it does:
      * Reads one signed 64-bit primitive lane from the stream.
      */
-    void ReadInt64(__int64* const value) override
+    void ReadInt64(
+      __int64* const value
+    ) override
     {
       ReadInt642(value);
     }
@@ -280,7 +300,9 @@ namespace
      * What it does:
      * Reads one unsigned long lane from the stream.
      */
-    void ReadULong(unsigned long* const value) override
+    void ReadULong(
+      unsigned long* const value
+    ) override
     {
       // The archive's long is 32 bits (the 2007 x86 format). Read it as such and widen, so an
       // LP64 `unsigned long` (Linux) gets all of its bytes set (plan WPL.6, C3); on Windows the
@@ -296,7 +318,9 @@ namespace
      * What it does:
      * Reads one signed long lane from the stream.
      */
-    void ReadLong(long* const value) override
+    void ReadLong(
+      long* const value
+    ) override
     {
       // 32 bits in the archive, sign-extended into an LP64 `long` (see ReadULong).
       std::int32_t stored = 0;
@@ -311,7 +335,9 @@ namespace
      * What it does:
      * Thunk lane that forwards 32-bit primitive reads to `ReadInt2`.
      */
-    void ReadUInt(unsigned int* const value) override
+    void ReadUInt(
+      unsigned int* const value
+    ) override
     {
       ReadInt2(value);
     }
@@ -322,7 +348,9 @@ namespace
      * What it does:
      * Thunk lane forwarding signed 32-bit reads to `ReadUInt2`.
      */
-    void ReadInt(int* const value) override
+    void ReadInt(
+      int* const value
+    ) override
     {
       ReadUInt2(value);
     }
@@ -333,7 +361,9 @@ namespace
      * What it does:
      * Reads one unsigned 16-bit primitive lane from the stream.
      */
-    void ReadUShort(unsigned short* const value) override
+    void ReadUShort(
+      unsigned short* const value
+    ) override
     {
       ReadUShort2(value);
     }
@@ -344,7 +374,9 @@ namespace
      * What it does:
      * Reads one signed 16-bit primitive lane from the stream.
      */
-    void ReadShort(short* const value) override
+    void ReadShort(
+      short* const value
+    ) override
     {
       ReadShort2(value);
     }
@@ -355,7 +387,9 @@ namespace
      * What it does:
      * Reads one unsigned byte lane through the shared one-byte read helper.
      */
-    void ReadUByte(unsigned __int8* const value) override
+    void ReadUByte(
+      unsigned __int8* const value
+    ) override
     {
       ReadUByte2(value);
     }
@@ -366,7 +400,9 @@ namespace
      * What it does:
      * Reads one signed byte lane through the shared one-byte read helper.
      */
-    void ReadByte(__int8* const value) override
+    void ReadByte(
+      __int8* const value
+    ) override
     {
       ReadByte2(value);
     }
@@ -377,7 +413,9 @@ namespace
      * What it does:
      * Thunk lane forwarding bool reads to `ReadBool2`.
      */
-    void ReadBool(bool* const value) override
+    void ReadBool(
+      bool* const value
+    ) override
     {
       ReadBool2(value);
     }
@@ -421,7 +459,9 @@ namespace
      * `SerializationError("eof")`/`SerializationError("noread")` on stream
      * failure states.
      */
-    void ReadBool2(void* const outValue)
+    void ReadBool2(
+      void* const outValue
+    )
     {
       std::FILE* const file = mCachedFile;
       if (std::fread(outValue, 1u, 1u, file) != 1) {
@@ -441,7 +481,9 @@ namespace
      * What it does:
      * One-byte signed lane helper used by `ReadByte`.
      */
-    void ReadByte2(void* const outValue)
+    void ReadByte2(
+      void* const outValue
+    )
     {
       ReadBool2(outValue);
     }
@@ -452,7 +494,9 @@ namespace
      * What it does:
      * One-byte unsigned lane helper used by `ReadUByte`.
      */
-    void ReadUByte2(void* const outValue)
+    void ReadUByte2(
+      void* const outValue
+    )
     {
       ReadBool2(outValue);
     }
@@ -463,9 +507,11 @@ namespace
      * What it does:
      * Two-byte signed lane helper used by `ReadShort`.
      */
-    void ReadShort2(void* const outValue)
+    void ReadShort2(
+      void* const outValue
+    )
     {
-      ReadBytes(reinterpret_cast<char*>(outValue), sizeof(short));
+      ReadBytes(static_cast<char*>(outValue), sizeof(short));
     }
 
     /**
@@ -474,9 +520,11 @@ namespace
      * What it does:
      * Two-byte unsigned lane helper used by `ReadUShort`.
      */
-    void ReadUShort2(void* const outValue)
+    void ReadUShort2(
+      void* const outValue
+    )
     {
-      ReadBytes(reinterpret_cast<char*>(outValue), sizeof(unsigned short));
+      ReadBytes(static_cast<char*>(outValue), sizeof(unsigned short));
     }
 
     /**
@@ -487,7 +535,9 @@ namespace
      * `SerializationError("eof")`/`SerializationError("noread")` on stream
      * failure states.
      */
-    void ReadUInt2(void* const outValue)
+    void ReadUInt2(
+      void* const outValue
+    )
     {
       std::FILE* const file = mCachedFile;
       if (std::fread(outValue, 4u, 1u, file) != 1) {
@@ -507,7 +557,9 @@ namespace
      * What it does:
      * Thunk lane forwarding 32-bit primitive reads to `ReadUInt2`.
      */
-    void ReadInt2(void* const outValue)
+    void ReadInt2(
+      void* const outValue
+    )
     {
       ReadUInt2(outValue);
     }
@@ -518,7 +570,9 @@ namespace
      * What it does:
      * Signed long lane helper used by `ReadLong`.
      */
-    void ReadLong2(void* const outValue)
+    void ReadLong2(
+      void* const outValue
+    )
     {
       ReadUInt2(outValue);
     }
@@ -529,7 +583,9 @@ namespace
      * What it does:
      * Unsigned long lane helper used by `ReadULong`.
      */
-    void ReadULong2(void* const outValue)
+    void ReadULong2(
+      void* const outValue
+    )
     {
       ReadUInt2(outValue);
     }
@@ -540,9 +596,11 @@ namespace
      * What it does:
      * Signed 64-bit lane helper used by `ReadInt64`.
      */
-    void ReadInt642(void* const outValue)
+    void ReadInt642(
+      void* const outValue
+    )
     {
-      ReadBytes(reinterpret_cast<char*>(outValue), sizeof(__int64));
+      ReadBytes(static_cast<char*>(outValue), sizeof(__int64));
     }
 
     /**
@@ -551,9 +609,11 @@ namespace
      * What it does:
      * 64-bit lane helper used by the vtable slot recovered as `ReadUInt64`.
      */
-    void ReadUInt642(void* const outValue)
+    void ReadUInt642(
+      void* const outValue
+    )
     {
-      ReadBytes(reinterpret_cast<char*>(outValue), sizeof(unsigned __int64));
+      ReadBytes(static_cast<char*>(outValue), sizeof(unsigned __int64));
     }
 
     /**
@@ -562,9 +622,11 @@ namespace
      * What it does:
      * 32-bit float lane helper used by `ReadFloat`.
      */
-    void ReadFloat2(void* const outValue)
+    void ReadFloat2(
+      void* const outValue
+    )
     {
-      ReadBytes(reinterpret_cast<char*>(outValue), sizeof(float));
+      ReadBytes(static_cast<char*>(outValue), sizeof(float));
     }
 
     // `gpg::CreateBinaryReadArchive` (0x009048B0) allocates 0x44 and sets
@@ -574,30 +636,11 @@ namespace
     // pointer -- `BinaryReadArchive::ReadBytes` (0x00904960) is
     // `fread(..., this->str)`, and its `feof`/`ferror` retries use it too.
     // Keeping it is what makes this class 0x44 rather than 0x40.
-    boost::shared_ptr<std::FILE> mFile;   // +0x38
-    std::FILE* mCachedFile = nullptr;     // +0x40
+    std::shared_ptr<std::FILE> mFile;   // +0x38
+    std::FILE* mCachedFile = nullptr;   // +0x40
   };
 
   static_assert(sizeof(BinaryReadArchive) == 0x44, "BinaryReadArchive size must be 0x44");
-
-  /**
-   * Address: 0x00904890 (FUN_00904890)
-   *
-   * What it does:
-   * Runs one deleting-destructor thunk for `BinaryReadArchive`, forwarding
-   * through non-deleting teardown and optional storage release.
-   */
-  [[nodiscard]] BinaryReadArchive* DestroyBinaryReadArchiveDeleting(
-    BinaryReadArchive* const archive,
-    const unsigned char deleteFlag
-  )
-  {
-    archive->~BinaryReadArchive();
-    if ((deleteFlag & 1u) != 0u) {
-      ::operator delete(static_cast<void*>(archive));
-    }
-    return archive;
-  }
 
   class TextReadArchive : public gpg::ReadArchive
   {
@@ -607,7 +650,8 @@ namespace
      * Mangled: ??0TextReadArchive@@QAE@ABV?$shared_ptr@Vistream@std@@@boost@@@Z
      *
      * IDA signature:
-     * TextReadArchive *__thiscall TextReadArchive::TextReadArchive(TextReadArchive *this, boost::shared_ptr_istream *a2);
+     * TextReadArchive *__thiscall TextReadArchive::TextReadArchive(TextReadArchive *this, boost::shared_ptr_istream
+     * *a2);
      *
      * What it does:
      * Runs `gpg::ReadArchive` base construction, installs the
@@ -618,7 +662,9 @@ namespace
      * Finishes by clearing the stream's error state via
      * `std::ios_base::clear`.
      */
-    explicit TextReadArchive(const boost::shared_ptr<std::istream>& stream)
+    explicit TextReadArchive(
+      const std::shared_ptr<std::istream>& stream
+    )
       : mStream(stream)
       , mCachedStream(stream.get())
     {
@@ -645,7 +691,9 @@ namespace
      * What it does:
      * Extracts one unsigned 64-bit token from the text stream lane.
      */
-    void ReadUInt64(std::uint64_t* const value) override
+    void ReadUInt64(
+      std::uint64_t* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -656,7 +704,9 @@ namespace
      * What it does:
      * Extracts one signed 64-bit token from the text stream lane.
      */
-    void ReadInt64(__int64* const value) override
+    void ReadInt64(
+      __int64* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -667,7 +717,9 @@ namespace
      * What it does:
      * Extracts one unsigned long token from the text stream lane.
      */
-    void ReadULong(unsigned long* const value) override
+    void ReadULong(
+      unsigned long* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -678,7 +730,9 @@ namespace
      * What it does:
      * Extracts one signed long primitive from the text stream lane.
      */
-    void ReadLong(long* const value) override
+    void ReadLong(
+      long* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -689,7 +743,9 @@ namespace
      * What it does:
      * Extracts one unsigned 32-bit primitive from the text stream lane.
      */
-    void ReadUInt(unsigned int* const value) override
+    void ReadUInt(
+      unsigned int* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -700,7 +756,9 @@ namespace
      * What it does:
      * Extracts one signed 32-bit primitive from the text stream lane.
      */
-    void ReadInt(int* const value) override
+    void ReadInt(
+      int* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -711,7 +769,9 @@ namespace
      * What it does:
      * Extracts one unsigned 16-bit primitive from the text stream lane.
      */
-    void ReadUShort(unsigned short* const value) override
+    void ReadUShort(
+      unsigned short* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -722,7 +782,9 @@ namespace
      * What it does:
      * Extracts one signed 16-bit primitive from the text stream lane.
      */
-    void ReadShort(short* const value) override
+    void ReadShort(
+      short* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -734,7 +796,9 @@ namespace
      * Reads one integer token from the text stream and truncates it to the low
      * unsigned-byte lane.
      */
-    void ReadUByte(unsigned __int8* const value) override
+    void ReadUByte(
+      unsigned __int8* const value
+    ) override
     {
       int parsedValue = 0;
       (*mCachedStream) >> parsedValue;
@@ -748,7 +812,9 @@ namespace
      * Reads one integer token from the text stream and truncates it to the low
      * signed-byte lane.
      */
-    void ReadByte(__int8* const value) override
+    void ReadByte(
+      __int8* const value
+    ) override
     {
       int parsedValue = 0;
       (*mCachedStream) >> parsedValue;
@@ -761,7 +827,9 @@ namespace
      * What it does:
      * Extracts one bool token from the text archive stream lane.
      */
-    void ReadBool(bool* const value) override
+    void ReadBool(
+      bool* const value
+    ) override
     {
       (*mCachedStream) >> *value;
     }
@@ -773,8 +841,12 @@ namespace
      * Reads `byteCount` raw bytes from the text stream, one whitespace-separated
      * hexadecimal token per byte.
      */
-    void ReadBytes(char* const bytes, const size_t byteCount) override
+    void ReadBytes(
+      void* const data,
+      const size_t byteCount
+    ) override
     {
+      auto* const bytes = static_cast<char*>(data);
       std::istream& stream = *mCachedStream;
       std::string token;
       for (size_t index = 0; index < byteCount; ++index) {
@@ -790,7 +862,9 @@ namespace
      * Reads one float token; the sentinel text "1.#INF" decodes to +infinity,
      * otherwise the token is parsed as a floating-point value.
      */
-    void ReadFloat(float* const value) override
+    void ReadFloat(
+      float* const value
+    ) override
     {
       std::istream& stream = *mCachedStream;
       std::string token;
@@ -811,7 +885,9 @@ namespace
      * (`\n`, `\t`, `\"`, `\\`, and up to 3-digit octal `\NNN`) into `out`.
      * Throws SerializationError on a malformed or truncated primitive.
      */
-    void ReadString(msvc8::string* const out) override
+    void ReadString(
+      fa::string* const out
+    ) override
     {
       std::istream& stream = *mCachedStream;
       stream >> std::ws;
@@ -829,31 +905,39 @@ namespace
         if (ch == '\\') {
           const int escape = stream.get();
           switch (escape) {
-            case 'n': decoded.push_back('\n'); break;
-            case 't': decoded.push_back('\t'); break;
-            case '"': decoded.push_back('"'); break;
-            case '\\': decoded.push_back('\\'); break;
-            default: {
-              if (escape < '0' || escape > '7') {
-                ThrowSerializationError("Error detected in archive: malformed string primitive.");
-              }
-              int octalValue = escape - '0';
-              int extraDigits = 0;
-              while (true) {
-                const int next = stream.get();
-                if (next < '0' || next > '7') {
-                  stream.putback(static_cast<char>(next));
-                  decoded.push_back(static_cast<char>(octalValue));
-                  break;
-                }
-                octalValue = octalValue * 8 + (next - '0');
-                if (++extraDigits >= 2) {
-                  decoded.push_back(static_cast<char>(octalValue));
-                  break;
-                }
-              }
-              break;
+          case 'n':
+            decoded.push_back('\n');
+            break;
+          case 't':
+            decoded.push_back('\t');
+            break;
+          case '"':
+            decoded.push_back('"');
+            break;
+          case '\\':
+            decoded.push_back('\\');
+            break;
+          default: {
+            if (escape < '0' || escape > '7') {
+              ThrowSerializationError("Error detected in archive: malformed string primitive.");
             }
+            int octalValue = escape - '0';
+            int extraDigits = 0;
+            while (true) {
+              const int next = stream.get();
+              if (next < '0' || next > '7') {
+                stream.putback(static_cast<char>(next));
+                decoded.push_back(static_cast<char>(octalValue));
+                break;
+              }
+              octalValue = octalValue * 8 + (next - '0');
+              if (++extraDigits >= 2) {
+                decoded.push_back(static_cast<char>(octalValue));
+                break;
+              }
+            }
+            break;
+          }
           }
         } else {
           decoded.push_back(static_cast<char>(ch));
@@ -882,14 +966,20 @@ namespace
       char marker = 0;
       stream >> marker;
       switch (marker) {
-        case 'N': return 1;
-        case '0': return 2;
-        case '*': return 3;
-        case '{': return 4;
-        case '}': return 0;
-        default:
-          ThrowSerializationError(
-            gpg::STR_Printf("Error detected in archive: invalid marker token 0x%02x", marker).c_str());
+      case 'N':
+        return 1;
+      case '0':
+        return 2;
+      case '*':
+        return 3;
+      case '{':
+        return 4;
+      case '}':
+        return 0;
+      default:
+        ThrowSerializationError(
+          gpg::STR_Printf("Error detected in archive: invalid marker token 0x%02x", marker).c_str()
+        );
       }
     }
 
@@ -901,30 +991,11 @@ namespace
     // pointer -- exactly as the sibling `BinaryReadArchive` caches its
     // `std::FILE*`. Keeping it is what makes this class 0x44 rather than
     // 0x40, which is the size `CreateTextReadArchive` allocates.
-    boost::shared_ptr<std::istream> mStream; // +0x38
+    std::shared_ptr<std::istream> mStream;   // +0x38
     std::istream* mCachedStream = nullptr;   // +0x40
   };
 
   static_assert(sizeof(TextReadArchive) == 0x44, "TextReadArchive size must be 0x44");
-
-  /**
-   * Address: 0x009397E0 (FUN_009397E0, TextReadArchive::dtr)
-   *
-   * What it does:
-   * Runs one deleting-destructor thunk for `TextReadArchive`, forwarding
-   * through non-deleting teardown and optional storage release.
-   */
-  [[maybe_unused]] [[nodiscard]] TextReadArchive* DestroyTextReadArchiveDeleting(
-    TextReadArchive* const archive,
-    const unsigned char deleteFlag
-  )
-  {
-    archive->~TextReadArchive();
-    if ((deleteFlag & 1u) != 0u) {
-      ::operator delete(static_cast<void*>(archive));
-    }
-    return archive;
-  }
 
   /**
    * Address: 0x00952C90 (FUN_00952C90)
@@ -933,7 +1004,10 @@ namespace
    * Appends one reflected `TypeHandle` lane to the archive-local handle table,
    * preserving the in-capacity fast path and vector-growth fallback behavior.
    */
-  TypeHandle* AppendTypeHandle(msvc8::vector<TypeHandle>& typeHandles, const TypeHandle& handle)
+  TypeHandle* AppendTypeHandle(
+    fa::vector<TypeHandle>& typeHandles,
+    const TypeHandle& handle
+  )
   {
     const std::size_t insertIndex = typeHandles.size();
     typeHandles.push_back(handle);
@@ -942,8 +1016,9 @@ namespace
 } // namespace
 
 /**
- * Address: 0x00939800 (FUN_00939800, ?CreateTextReadArchive@gpg@@YAPAVReadArchive@1@ABV?$shared_ptr@Vistream@std@@@boost@@@Z)
- * Mangled: ?CreateTextReadArchive@gpg@@YAPAVReadArchive@1@ABV?$shared_ptr@Vistream@std@@@boost@@@Z
+ * Address: 0x00939800 (FUN_00939800,
+ * ?CreateTextReadArchive@gpg@@YAPAVReadArchive@1@ABV?$shared_ptr@Vistream@std@@@boost@@@Z) Mangled:
+ * ?CreateTextReadArchive@gpg@@YAPAVReadArchive@1@ABV?$shared_ptr@Vistream@std@@@boost@@@Z
  *
  * IDA signature:
  * gpg::ReadArchive *__cdecl gpg::CreateTextReadArchive(boost::shared_ptr_istream *a1);
@@ -953,7 +1028,9 @@ namespace
  * input stream, returning it through the polymorphic `gpg::ReadArchive*`
  * factory interface. Returns `nullptr` if allocation fails.
  */
-ReadArchive* gpg::CreateTextReadArchive(const boost::shared_ptr<std::istream>& stream)
+ReadArchive* gpg::CreateTextReadArchive(
+  const std::shared_ptr<std::istream>& stream
+)
 {
   // `push 44h` at 0x00939816 is sizeof(TextReadArchive) now that the class
   // declares its own stream lanes, so the size comes from the type instead of
@@ -1002,7 +1079,7 @@ TypeHandle ReadArchive::ReadTypeHandle()
   ReadInt(&index);
 
   if (index == -1) {
-    msvc8::string typeName;
+    fa::string typeName;
     ReadString(&typeName);
 
     RType* type = REF_FindTypeNamed(typeName.c_str());
@@ -1038,7 +1115,11 @@ TypeHandle ReadArchive::ReadTypeHandle()
  * What it does:
  * Reads one typed object payload using reflection serializer callbacks.
  */
-void ReadArchive::Read(const RType* const type, void* const object, const RRef& ownerRef)
+void ReadArchive::Read(
+  const RType* const type,
+  void* const object,
+  const RRef& ownerRef
+)
 {
   if (!type->serLoadFunc_) {
     const RIndexed* pointerType = type->IsPointer();
@@ -1061,7 +1142,7 @@ void ReadArchive::Read(const RType* const type, void* const object, const RRef& 
   if (marker != static_cast<int>(ArchiveToken::ObjectStart)) {
     ArchiveToken tokenCopy = static_cast<ArchiveToken>(marker);
     const RRef tokenRef = RRef_ArchiveToken(&tokenCopy);
-    const msvc8::string tokenLexical = tokenRef.mType ? tokenRef.GetLexical() : STR_Printf("%d", marker);
+    const fa::string tokenLexical = tokenRef.mType ? tokenRef.GetLexical() : STR_Printf("%d", marker);
     ThrowSerializationError(STR_Printf(
       "Error detected in archive: expected an OBJECT_START token marking the beginning of a \"%s\", but got a %s "
       "instead.",
@@ -1079,7 +1160,7 @@ void ReadArchive::Read(const RType* const type, void* const object, const RRef& 
     ));
   }
 
-  type->serLoadFunc_(this, reinterpret_cast<std::intptr_t>(object), handle.version, const_cast<RRef*>(&ownerRef));
+  type->serLoadFunc_(this, object, handle.version, const_cast<RRef*>(&ownerRef));
 
   if (NextMarker() != static_cast<int>(ArchiveToken::ObjectTerminator)) {
     ThrowSerializationError(STR_Printf(
@@ -1096,7 +1177,8 @@ void ReadArchive::Read(const RType* const type, void* const object, const RRef& 
  * transition, and upcasts the pointee to `moho::CParticleTexture`.
  */
 ReadArchive* ReadArchive::ReadPointer_CParticleTexture(
-  moho::CParticleTexture** const outValue, const RRef* const ownerRef
+  moho::CParticleTexture** const outValue,
+  const RRef* const ownerRef
 )
 {
   if (!outValue) {
@@ -1192,17 +1274,16 @@ ReadArchive* ReadArchive::ReadPointer_Listener_NavPath(
  * at offset 0 -- the FUN_007638D0 asm links each node before `listHead`
  * itself.
  */
-moho::Listener<const moho::SNavPath&>* gpg::ReadAndLinkNavPathListeners(
+void gpg::ReadAndLinkNavPathListeners(
   ReadArchive* const archive,
-  moho::Broadcaster<const moho::SNavPath&>* const listHead,
-  const int version,
-  const gpg::RRef* const ownerRef
+  void* const objectPtr,
+  int,
+  gpg::RRef* const ownerRef
 )
 {
-  (void)version;
-
+  auto* const listHead = static_cast<moho::Broadcaster<const moho::SNavPath&>*>(objectPtr);
   if (archive == nullptr || listHead == nullptr) {
-    return nullptr;
+    return;
   }
 
   moho::Listener<const moho::SNavPath&>* listener = nullptr;
@@ -1211,8 +1292,6 @@ moho::Listener<const moho::SNavPath&>* gpg::ReadAndLinkNavPathListeners(
     listHead->AddListener(listener);
     archive->ReadPointer_Listener_NavPath(&listener, ownerRef);
   }
-
-  return listener;
 }
 
 /**
@@ -1223,7 +1302,8 @@ moho::Listener<const moho::SNavPath&>* gpg::ReadAndLinkNavPathListeners(
  * transition, and upcasts the pointee to `moho::IFormationInstance`.
  */
 ReadArchive* ReadArchive::ReadPointerWeak_IFormationInstance(
-  moho::IFormationInstance** const outValue, const RRef* const ownerRef
+  moho::IFormationInstance** const outValue,
+  const RRef* const ownerRef
 )
 {
   if (!outValue) {
@@ -1272,7 +1352,9 @@ ReadArchive* ReadArchive::ReadPointerWeak_IFormationInstance(
  * Appends one tracked-pointer table lane for an object that already exists
  * at the time its serializer starts reading nested payload.
  */
-ReadArchive& ReadArchive::TrackPointer(const RRef& objectRef)
+ReadArchive& ReadArchive::TrackPointer(
+  const RRef& objectRef
+)
 {
   mTrackedPtrs.push_back(TrackedPointerInfo{objectRef.mObj, objectRef.mType, {}, TrackedPointerState::Owned});
   return *this;
@@ -1304,7 +1386,9 @@ ReadArchive& ReadArchive::TrackPointer(const RRef& objectRef)
  * which hands back a permanently cached, shared `CSndParams`, and then marks
  * it `SetOwned`. Deleting on `Owned` freed those out from under the cache.
  */
-void ReadArchive::EndSection(const bool)
+void ReadArchive::EndSection(
+  const bool
+)
 {
   for (TrackedPointerInfo& tracked : mTrackedPtrs) {
     if (tracked.state == TrackedPointerState::Unowned) {
@@ -1327,7 +1411,9 @@ void ReadArchive::EndSection(const bool)
  * null on allocation failure) and constructs unconditionally -- matching the
  * write-side CreateBinaryWriteArchive.
  */
-ReadArchive* gpg::CreateBinaryReadArchive(const boost::shared_ptr<std::FILE>& file)
+ReadArchive* gpg::CreateBinaryReadArchive(
+  const std::shared_ptr<std::FILE>& file
+)
 {
   return new (std::nothrow) BinaryReadArchive(file);
 }

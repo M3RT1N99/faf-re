@@ -1,4 +1,5 @@
 #include "gpg/core/reflection/Reflection.h"
+#include "moho/collision/AxisAlignedProbe.h"
 #include "moho/lua/ScrLuaUserData.h"
 #include "moho/unit/core/UnitWeapon.h"
 #include "platform/Interlocked.h"
@@ -58,6 +59,7 @@
 #include "gpg/core/reflection/StaticInitPhase.h"
 #include "moho/sim/SimStartupRegistrations.h"
 #include "gpg/core/containers/ArchiveSerialization.h"
+#include "moho/sim/SimConVarAccess.h"
 
 namespace
 {
@@ -135,7 +137,9 @@ namespace
    * Returns cached `UnitWeapon` metatable object from Lua object-factory
    * storage.
    */
-  [[nodiscard]] LuaPlus::LuaObject GetUnitWeaponFactory(LuaPlus::LuaState* const state)
+  [[nodiscard]] LuaPlus::LuaObject GetUnitWeaponFactory(
+    LuaPlus::LuaState* const state
+  )
   {
     return moho::CScrLuaMetatableFactory<moho::UnitWeapon>::Instance().Get(state);
   }
@@ -181,7 +185,7 @@ namespace
    * logical vector end back to begin without releasing capacity storage.
    */
   [[nodiscard]] moho::SBlackListInfo* ResetBlacklistRangeToBegin(
-    msvc8::vector<moho::SBlackListInfo>& blacklist
+    fa::vector<moho::SBlackListInfo>& blacklist
   ) noexcept
   {
     if (!blacklist.empty()) {
@@ -198,7 +202,6 @@ namespace
     return blacklist.begin();
   }
 
-
   /**
    * The `Sound{}` userdata holds a `CSndParams*`, so the reflection upcast
    * yields the *slot*, not the object - `func_GetCObj_CSndParams` (0x004E4B40)
@@ -211,35 +214,11 @@ namespace
    * accessor rather than a second copy of it.
    */
 
-  [[nodiscard]] bool IsFiniteVector3(const Wm3::Vec3f& value) noexcept
-  {
-    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-  }
-
-  [[nodiscard]] Wm3::Box3f BuildAxisAlignedCollisionProbe(
-    const Wm3::Vec3f& center,
-    const Wm3::Vec3f& extents
+  [[nodiscard]] bool IsFiniteVector3(
+    const Wm3::Vec3f& value
   ) noexcept
   {
-    Wm3::Box3f probe{};
-    probe.Center[0] = center.x;
-    probe.Center[1] = center.y;
-    probe.Center[2] = center.z;
-
-    probe.Axis[0][0] = 1.0f;
-    probe.Axis[0][1] = 0.0f;
-    probe.Axis[0][2] = 0.0f;
-    probe.Axis[1][0] = 0.0f;
-    probe.Axis[1][1] = 1.0f;
-    probe.Axis[1][2] = 0.0f;
-    probe.Axis[2][0] = 0.0f;
-    probe.Axis[2][1] = 0.0f;
-    probe.Axis[2][2] = 1.0f;
-
-    probe.Extent[0] = extents.x;
-    probe.Extent[1] = extents.y;
-    probe.Extent[2] = extents.z;
-    return probe;
+    return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
   }
 
   /**
@@ -314,7 +293,7 @@ namespace
       const float headingY = ((unitOrientation.z * unitOrientation.x) + (unitOrientation.w * unitOrientation.y)) * 2.0f;
       const float headingX =
         1.0f - (((unitOrientation.y * unitOrientation.y) + (unitOrientation.x * unitOrientation.x)) * 2.0f);
-      const float headingToTarget = msvc8::Atan2Difference(
+      const float headingToTarget = fa::Atan2Difference(
         targetPosition.x - muzzlePosition.x, targetPosition.z - muzzlePosition.z, headingY, headingX
       );
 
@@ -338,11 +317,11 @@ namespace
   constexpr std::uint32_t kBombDropInnerCircleDepth = 0xFFFF7F3Fu;
   constexpr std::uint32_t kBombDropOuterCircleDepth = 0xFF7F3F00u;
 
-  [[nodiscard]] bool ShouldRenderBombDropZone(moho::Sim* const sim)
+  [[nodiscard]] bool ShouldRenderBombDropZone(
+    moho::Sim* const sim
+  )
   {
-    moho::CSimConVarInstanceBase* const instance = sim ? sim->GetSimVar(&moho::gSimConVar_AI_RenderBombDropZone) : nullptr;
-    const void* const valueStorage = instance ? instance->GetValueStorage() : nullptr;
-    return valueStorage != nullptr && *static_cast<const bool*>(valueStorage);
+    return sim != nullptr && moho::ReadSimConVar(sim, moho::gSimConVar_AI_RenderBombDropZone);
   }
 
   /**
@@ -358,31 +337,7 @@ namespace
   ) noexcept
   {
     GPG_ASSERT(blueprint != nullptr);
-    return blueprint != nullptr && categorySet.Bits().Contains(blueprint->mCategoryBitIndex);
-  }
-
-  /**
-   * Address: 0x005562C0 (FUN_005562C0, category end-iterator lane helper)
-   *
-   * What it does:
-   * Builds one legacy `EntityCategoryIterator` end lane from raw category-set
-   * storage (`firstWordIndex + wordCount`, then `* 32`) without extra guards.
-   */
-  [[maybe_unused]] [[nodiscard]] moho::EntityCategoryIterator* BuildCategoryEndIteratorLaneUnchecked(
-    moho::EntityCategoryIterator* const out,
-    moho::EntityCategorySet* const categorySet
-  ) noexcept
-  {
-    moho::BVIntSet* const bits = &categorySet->mBits;
-    const std::uintptr_t wordBegin = reinterpret_cast<std::uintptr_t>(bits->mWords.start_);
-    const std::uintptr_t wordEnd = reinterpret_cast<std::uintptr_t>(bits->mWords.end_);
-    const std::uint32_t wordCount = static_cast<std::uint32_t>((wordEnd - wordBegin) >> 2u);
-    const std::uint32_t endWordIndex = bits->mFirstWordIndex + wordCount;
-
-    out->mRules = categorySet->mUniverse.mRules;
-    out->mSet = bits;
-    out->mCurBit = static_cast<std::int32_t>(endWordIndex << 5u);
-    return out;
+    return blueprint != nullptr && categorySet.Bits().Contains(blueprint->mBlueprintOrdinal);
   }
 
   /**
@@ -392,7 +347,10 @@ namespace
    * Validates one entity target against weapon layer/category constraints and
    * resolves above/below-water aim-point pick requirements.
    */
-  [[nodiscard]] bool CanWeaponAttackEntityTarget(moho::Entity* const targetEntity, moho::UnitWeapon* const weapon)
+  [[nodiscard]] bool CanWeaponAttackEntityTarget(
+    moho::Entity* const targetEntity,
+    moho::UnitWeapon* const weapon
+  )
   {
     if (targetEntity == nullptr) {
       return false;
@@ -473,7 +431,10 @@ namespace
     return true;
   }
 
-  void UpdateProjectileBlueprintFromText(moho::UnitWeapon* const weapon, const char* const blueprintText)
+  void UpdateProjectileBlueprintFromText(
+    moho::UnitWeapon* const weapon,
+    const char* const blueprintText
+  )
   {
     if (weapon == nullptr || blueprintText == nullptr || blueprintText[0] == '\0') {
       return;
@@ -481,9 +442,9 @@ namespace
 
     moho::RResId projectileId{};
     gpg::STR_InitFilename(&projectileId.name, blueprintText);
-    weapon->mProjectileBlueprint =
-      (weapon->mSim != nullptr && weapon->mSim->mRules != nullptr) ? weapon->mSim->mRules->GetProjectileBlueprint(projectileId)
-                                                                    : nullptr;
+    weapon->mProjectileBlueprint = (weapon->mSim != nullptr && weapon->mSim->mRules != nullptr)
+      ? weapon->mSim->mRules->GetProjectileBlueprint(projectileId)
+      : nullptr;
 
     if (weapon->mUnit != nullptr && weapon->mUnit->AiSiloBuild != nullptr) {
       weapon->mUnit->AiSiloBuild->SiloUpdateProjectileBlueprint();
@@ -491,7 +452,10 @@ namespace
   }
 
   template <class T>
-  [[nodiscard]] T* ReadTrackedPointer(gpg::ReadArchive& archive, const gpg::RRef& ownerRef)
+  [[nodiscard]] T* ReadTrackedPointer(
+    gpg::ReadArchive& archive,
+    const gpg::RRef& ownerRef
+  )
   {
     const gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(&archive, ownerRef);
     if (!tracked.object) {
@@ -506,7 +470,7 @@ namespace
 
     const char* const expectedTypeName = gpg::RTypeOf<T>() ? gpg::RTypeOf<T>()->GetName() : "null";
     const char* const actualTypeName = source.GetTypeName();
-    const msvc8::string errorMessage = gpg::STR_Printf(
+    const fa::string errorMessage = gpg::STR_Printf(
       "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
       "instead",
       expectedTypeName ? expectedTypeName : "null",
@@ -516,7 +480,9 @@ namespace
   }
 
   template <class T>
-  [[nodiscard]] gpg::RRef MakeTrackedRef(T* object)
+  [[nodiscard]] gpg::RRef MakeTrackedRef(
+    T* object
+  )
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -547,13 +513,14 @@ namespace
       return out;
     }
 
-    out.mObj =
-      reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(object) - static_cast<std::uintptr_t>(baseOffset));
+    out.mObj = gpg::CompleteObject(object, baseOffset);
     out.mType = runtimeType;
     return out;
   }
 
-  [[nodiscard]] gpg::RRef MakeLayerRef(moho::ELayer* const layerMask)
+  [[nodiscard]] gpg::RRef MakeLayerRef(
+    moho::ELayer* const layerMask
+  )
   {
     gpg::RRef out{};
     out.mObj = layerMask;
@@ -603,7 +570,10 @@ namespace moho
    * (file-static in this TU), so out-of-TU callers can invoke FUN_006D5590 by
    * name.
    */
-  bool WeaponCanAttackEntityTarget(Entity* const targetEntity, UnitWeapon* const weapon)
+  bool WeaponCanAttackEntityTarget(
+    Entity* const targetEntity,
+    UnitWeapon* const weapon
+  )
   {
     return CanWeaponAttackEntityTarget(targetEntity, weapon);
   }
@@ -615,7 +585,9 @@ namespace moho
    * (file-static in this TU), so out-of-TU callers can clear a weapon's target
    * blacklist by name.
    */
-  void WeaponResetBlacklist(UnitWeapon& weapon)
+  void WeaponResetBlacklist(
+    UnitWeapon& weapon
+  )
   {
     (void)ResetBlacklistRangeToBegin(weapon.mBlacklist);
   }
@@ -654,7 +626,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponPlaySoundL`.
    */
-  int cfunc_UnitWeaponPlaySound(lua_State* const luaContext)
+  int cfunc_UnitWeaponPlaySound(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponPlaySoundL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -684,7 +658,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, soundParams)` and queues one weapon-owner sound request.
    */
-  int cfunc_UnitWeaponPlaySoundL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponPlaySoundL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponPlaySoundHelpText);
@@ -712,7 +688,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponSetEnabledL`.
    */
-  int cfunc_UnitWeaponSetEnabled(lua_State* const luaContext)
+  int cfunc_UnitWeaponSetEnabled(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponSetEnabledL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -742,7 +720,9 @@ namespace moho
    * What it does:
    * Updates enabled state and unstages the fire task thread when re-enabled.
    */
-  int cfunc_UnitWeaponSetEnabledL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponSetEnabledL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponSetEnabledHelpText);
@@ -791,7 +771,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponSetTargetEntityL`.
    */
-  int cfunc_UnitWeaponSetTargetEntity(lua_State* const luaContext)
+  int cfunc_UnitWeaponSetTargetEntity(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponSetTargetEntityL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -803,7 +785,9 @@ namespace moho
    * Resolves `(weapon, unitTarget)`, validates entity-targeting gates, and
    * applies one recovered target transition when targeting is allowed.
    */
-  int cfunc_UnitWeaponSetTargetEntityL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponSetTargetEntityL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponSetTargetEntityHelpText);
 
@@ -848,7 +832,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponSetTargetGroundL`.
    */
-  int cfunc_UnitWeaponSetTargetGround(lua_State* const luaContext)
+  int cfunc_UnitWeaponSetTargetGround(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponSetTargetGroundL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -860,7 +846,9 @@ namespace moho
    * Resolves `(weapon, position)`, validates ground-targeting gates, and
    * applies one recovered target transition when targeting is allowed.
    */
-  int cfunc_UnitWeaponSetTargetGroundL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponSetTargetGroundL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponSetTargetGroundHelpText);
 
@@ -910,7 +898,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponResetTargetL`.
    */
-  int cfunc_UnitWeaponResetTarget(lua_State* const luaContext)
+  int cfunc_UnitWeaponResetTarget(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponResetTargetL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -923,7 +913,9 @@ namespace moho
    * target through `UnitWeapon::SetTarget` (0x006D844C), so losing the target
    * runs `OnLostTarget`, the shooter/blip bookkeeping and the aim-spot pick.
    */
-  int cfunc_UnitWeaponResetTargetL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponResetTargetL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponResetTargetHelpText);
 
@@ -947,7 +939,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponCreateProjectileL`.
    */
-  int cfunc_UnitWeaponCreateProjectile(lua_State* const luaContext)
+  int cfunc_UnitWeaponCreateProjectile(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponCreateProjectileL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -978,7 +972,9 @@ namespace moho
    * Resolves `(weapon, muzzlebone)`, spawns one projectile, and pushes the
    * projectile Lua object when creation succeeds.
    */
-  int cfunc_UnitWeaponCreateProjectileL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponCreateProjectileL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponCreateProjectileHelpText);
 
@@ -1024,7 +1020,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponDoInstaHitL`.
    */
-  int cfunc_UnitWeaponDoInstaHit(lua_State* const luaContext)
+  int cfunc_UnitWeaponDoInstaHit(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponDoInstaHitL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1036,7 +1034,9 @@ namespace moho
    * Validates Lua insta-hit argument lanes and resolves typed inputs for the
    * deferred `UnitWeapon::DoInstaHit` recovery path.
    */
-  int cfunc_UnitWeaponDoInstaHitL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponDoInstaHitL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 9, kUnitWeaponDoInstaHitHelpText);
@@ -1117,7 +1117,10 @@ namespace moho
    * positions) via SIM_Damage. Then, for realtime-stats-enabled units with a bound
    * target, bump the army "RealTimeStats_<unit>_Shots_Hit"/"_Shots_Missed" int stat.
    */
-  void ApplyInstaHitDamageAndTrackShot(CollisionBeamHelper& helper, UnitWeapon& weapon)
+  void ApplyInstaHitDamageAndTrackShot(
+    CollisionBeamHelper& helper,
+    UnitWeapon& weapon
+  )
   {
     Unit* const firingUnit = weapon.mUnit;
 
@@ -1125,16 +1128,17 @@ namespace moho
     // folds the null / sentinel(==0x04) test.
     if (helper.mEntity.HasValue()) {
       Entity* const impactEntity = helper.mEntity.GetObjectPtr();
-      if (Projectile* const impactProjectile =
-            (impactEntity != nullptr) ? impactEntity->IsProjectile() : nullptr;
-          impactProjectile != nullptr) {
+      if (
+        Projectile* const impactProjectile = (impactEntity != nullptr) ? impactEntity->IsProjectile() : nullptr;
+        impactProjectile != nullptr
+      ) {
         impactProjectile->Impact();
       } else {
         CDamage damage(firingUnit->SimulationRef);
         damage.mTarget = helper.mEntity;
         damage.mInstigator.Set(static_cast<Entity*>(firingUnit));
         damage.mAmount = weapon.mAttributes.GetDamage();
-        damage.mType.assign(weapon.mAttributes.GetName(), 0, msvc8::string::npos);
+        damage.mType.assign(weapon.mAttributes.GetName(), 0, fa::string::npos);
         const Wm3::Vec3f& firingPosition = firingUnit->GetPosition();
         const Wm3::Vec3f& impactPosition = impactEntity->mVarDat.mCurTransform.pos_;
         damage.mVector.x = firingPosition.x - impactPosition.x;
@@ -1154,8 +1158,8 @@ namespace moho
 
     CArmyStats* const armyStats = firingUnit->ArmyRef->GetArmyStats();
     const bool impactResolved = helper.mEntity.HasValue();
-    const msvc8::string statPath = msvc8::string("RealTimeStats_") + firingUnit->GetUniqueName()
-      + (impactResolved ? "_Shots_Hit" : "_Shots_Missed");
+    const fa::string statPath =
+      fa::string("RealTimeStats_") + firingUnit->GetUniqueName() + (impactResolved ? "_Shots_Hit" : "_Shots_Missed");
     CArmyStatItem* const shotItem = armyStats->GetItem(statPath.c_str());
     shotItem->SynchronizeAsInt();
     (void)shotItem->AddPrimaryBits(1);
@@ -1178,7 +1182,8 @@ namespace moho
     std::int32_t bone,
     float thickness,
     float lifetime,
-    boost::shared_ptr<RD3DTextureResource> textureSheet)
+    std::shared_ptr<RD3DTextureResource> textureSheet
+  )
   {
     (void)textureSheet; // Owned handle intentionally unused (see doc block).
 
@@ -1268,7 +1273,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponFireWeaponL`.
    */
-  int cfunc_UnitWeaponFireWeapon(lua_State* const luaContext)
+  int cfunc_UnitWeaponFireWeapon(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponFireWeaponL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1279,7 +1286,9 @@ namespace moho
    * What it does:
    * Resolves one weapon from Lua and fires it through `UnitWeapon::Fire`.
    */
-  int cfunc_UnitWeaponFireWeaponL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponFireWeaponL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponFireWeaponHelpText);
 
@@ -1317,7 +1326,9 @@ namespace moho
    * Compares one label string against `UnitWeapon::mLabel` (case-insensitive)
    * and pushes one boolean result.
    */
-  int cfunc_UnitWeaponIsFireControlL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponIsFireControlL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponIsFireControlHelpText);
@@ -1345,7 +1356,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponIsFireControlL`.
    */
-  int cfunc_UnitWeaponIsFireControl(lua_State* const luaContext)
+  int cfunc_UnitWeaponIsFireControl(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponIsFireControlL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1527,7 +1540,9 @@ namespace moho
    * What it does:
    * Pushes the current projectile blueprint Lua table for this weapon.
    */
-  int cfunc_UnitWeaponGetProjectileBlueprintL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponGetProjectileBlueprintL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponGetProjectileBlueprintHelpText);
 
@@ -1546,7 +1561,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponGetProjectileBlueprintL`.
    */
-  int cfunc_UnitWeaponGetProjectileBlueprint(lua_State* const luaContext)
+  int cfunc_UnitWeaponGetProjectileBlueprint(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponGetProjectileBlueprintL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1557,7 +1574,9 @@ namespace moho
    * What it does:
    * Pushes whether this weapon currently has any non-none target payload.
    */
-  int cfunc_UnitWeaponHasTargetL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponHasTargetL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponHasTargetHelpText);
@@ -1578,7 +1597,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponHasTargetL`.
    */
-  int cfunc_UnitWeaponHasTarget(lua_State* const luaContext)
+  int cfunc_UnitWeaponHasTarget(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponHasTargetL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1589,7 +1610,9 @@ namespace moho
    * What it does:
    * Pushes the current target entity Lua object, or `nil` when target is empty.
    */
-  int cfunc_UnitWeaponGetCurrentTargetL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponGetCurrentTargetL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponGetCurrentTargetHelpText);
@@ -1613,7 +1636,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponGetCurrentTargetL`.
    */
-  int cfunc_UnitWeaponGetCurrentTarget(lua_State* const luaContext)
+  int cfunc_UnitWeaponGetCurrentTarget(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponGetCurrentTargetL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1624,7 +1649,9 @@ namespace moho
    * What it does:
    * Pushes current weapon target position or `nil` when target position is invalid.
    */
-  int cfunc_UnitWeaponGetCurrentTargetPosL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponGetCurrentTargetPosL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponGetCurrentTargetPosHelpText);
@@ -1650,7 +1677,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponGetCurrentTargetPosL`.
    */
-  int cfunc_UnitWeaponGetCurrentTargetPos(lua_State* const luaContext)
+  int cfunc_UnitWeaponGetCurrentTargetPos(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponGetCurrentTargetPosL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1661,7 +1690,9 @@ namespace moho
    * What it does:
    * Evaluates target/silo/range gates and pushes one fire-availability boolean.
    */
-  int cfunc_UnitWeaponCanFireL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponCanFireL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponCanFireHelpText);
@@ -1670,10 +1701,10 @@ namespace moho
     UnitWeapon* const weapon = SCR_FromLua_UnitWeapon(weaponObject, state);
 
     bool canFire = false;
-    if (weapon != nullptr
-        && weapon->mTarget.HasTarget()
-        && UnitWeapon::CanFire(weapon, &weapon->mTarget)
-        && weapon->CheckSilo()) {
+    if (
+      weapon != nullptr && weapon->mTarget.HasTarget() && UnitWeapon::CanFire(weapon, &weapon->mTarget) &&
+      weapon->CheckSilo()
+    ) {
       const Wm3::Vec3f targetPosition = weapon->mTarget.GetTargetPosGun(true);
       canFire = weapon->TargetSolutionStatusGun(&targetPosition, nullptr) == ESolutionStatus::TRS_Available;
     }
@@ -1689,7 +1720,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponCanFireL`.
    */
-  int cfunc_UnitWeaponCanFire(lua_State* const luaContext)
+  int cfunc_UnitWeaponCanFire(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponCanFireL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1700,7 +1733,9 @@ namespace moho
    * What it does:
    * Rebuilds `mTargetPriorities` from a Lua table of `EntityCategory` values.
    */
-  int cfunc_UnitWeaponSetTargetingPrioritiesL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponSetTargetingPrioritiesL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponSetTargetingPrioritiesHelpText);
 
@@ -1738,7 +1773,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponSetTargetingPrioritiesL`.
    */
-  int cfunc_UnitWeaponSetTargetingPriorities(lua_State* const luaContext)
+  int cfunc_UnitWeaponSetTargetingPriorities(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponSetTargetingPrioritiesL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1749,7 +1786,9 @@ namespace moho
    * What it does:
    * Pushes the current weapon firing-randomness scalar.
    */
-  int cfunc_UnitWeaponGetFiringRandomnessL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponGetFiringRandomnessL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponGetFiringRandomnessHelpText);
@@ -1768,7 +1807,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponGetFiringRandomnessL`.
    */
-  int cfunc_UnitWeaponGetFiringRandomness(lua_State* const luaContext)
+  int cfunc_UnitWeaponGetFiringRandomness(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponGetFiringRandomnessL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1779,7 +1820,9 @@ namespace moho
    * What it does:
    * Pushes normalized fire cooldown progress in `[0, 1]`.
    */
-  int cfunc_UnitWeaponGetFireClockPctL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponGetFireClockPctL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponGetFireClockPctHelpText);
@@ -1804,7 +1847,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponGetFireClockPctL`.
    */
-  int cfunc_UnitWeaponGetFireClockPct(lua_State* const luaContext)
+  int cfunc_UnitWeaponGetFireClockPct(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponGetFireClockPctL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1815,7 +1860,9 @@ namespace moho
    * What it does:
    * Resolves a projectile blueprint id from Lua text and updates this weapon.
    */
-  int cfunc_UnitWeaponChangeProjectileBlueprintL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeProjectileBlueprintL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeProjectileBlueprintHelpText);
@@ -1830,7 +1877,7 @@ namespace moho
       return 0;
     }
 
-    weapon->ChangeProjectileBlueprint(msvc8::string(blueprintText));
+    weapon->ChangeProjectileBlueprint(fa::string(blueprintText));
     return 0;
   }
 
@@ -1841,7 +1888,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponChangeProjectileBlueprintL`.
    */
-  int cfunc_UnitWeaponChangeProjectileBlueprint(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeProjectileBlueprint(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeProjectileBlueprintL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1855,7 +1904,9 @@ namespace moho
    * same-target no-op, blacklist aging / `OnLostTarget` / `OnGotTarget`,
    * shooter-set and target-blip upkeep, aim-spot pick and fire-task restage.
    */
-  int cfunc_UnitWeaponTransferTargetL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponTransferTargetL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponTransferTargetHelpText);
 
@@ -1876,7 +1927,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponTransferTargetL`.
    */
-  int cfunc_UnitWeaponTransferTarget(lua_State* const luaContext)
+  int cfunc_UnitWeaponTransferTarget(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponTransferTargetL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1887,7 +1940,9 @@ namespace moho
    * What it does:
    * Pushes true when the passed weapon handle resolves to no live object.
    */
-  int cfunc_UnitWeaponBeenDestroyedL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponBeenDestroyedL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponBeenDestroyedHelpText);
@@ -1905,7 +1960,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponBeenDestroyedL`.
    */
-  int cfunc_UnitWeaponBeenDestroyed(lua_State* const luaContext)
+  int cfunc_UnitWeaponBeenDestroyed(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponBeenDestroyedL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1917,7 +1974,9 @@ namespace moho
    * Resolves a weapon from arg#1 and pushes the indexed `Weapon[]` blueprint
    * entry for that weapon.
    */
-  int cfunc_UnitWeaponGetBlueprintL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponGetBlueprintL(
+    LuaPlus::LuaState* const state
+  )
   {
     moho::SCR_ExpectExactArgs(state, 1, kUnitWeaponGetBlueprintHelpText);
 
@@ -1939,7 +1998,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponGetBlueprintL`.
    */
-  int cfunc_UnitWeaponGetBlueprint(lua_State* const luaContext)
+  int cfunc_UnitWeaponGetBlueprint(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponGetBlueprintL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -1970,7 +2031,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponSetFireControlL`.
    */
-  int cfunc_UnitWeaponSetFireControl(lua_State* const luaContext)
+  int cfunc_UnitWeaponSetFireControl(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponSetFireControlL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2000,7 +2063,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, label)` and rewrites `UnitWeapon::mLabel`.
    */
-  int cfunc_UnitWeaponSetFireControlL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponSetFireControlL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponSetFireControlHelpText);
@@ -2025,7 +2090,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, value)` and writes `CWeaponAttributes::mFiringTolerance`.
    */
-  int cfunc_UnitWeaponChangeFiringToleranceL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeFiringToleranceL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeFiringToleranceHelpText);
@@ -2049,7 +2116,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponChangeFiringToleranceL`.
    */
-  int cfunc_UnitWeaponChangeFiringTolerance(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeFiringTolerance(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeFiringToleranceL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2079,7 +2148,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, value)` and writes `CWeaponAttributes::mRateOfFire`.
    */
-  int cfunc_UnitWeaponChangeRateOfFireL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeRateOfFireL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeRateOfFireHelpText);
@@ -2103,7 +2174,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponChangeRateOfFireL`.
    */
-  int cfunc_UnitWeaponChangeRateOfFire(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeRateOfFire(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeRateOfFireL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2133,7 +2206,9 @@ namespace moho
    * What it does:
    * Writes min radius and cached squared radius, then marks unit focus dirty.
    */
-  int cfunc_UnitWeaponChangeMinRadiusL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeMinRadiusL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeMinRadiusHelpText);
@@ -2162,7 +2237,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponChangeMinRadiusL`.
    */
-  int cfunc_UnitWeaponChangeMinRadius(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeMinRadius(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeMinRadiusL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2192,7 +2269,9 @@ namespace moho
    * What it does:
    * Writes max radius and cached squared radius, then marks unit focus dirty.
    */
-  int cfunc_UnitWeaponChangeMaxRadiusL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeMaxRadiusL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeMaxRadiusHelpText);
@@ -2221,7 +2300,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponChangeMaxRadiusL`.
    */
-  int cfunc_UnitWeaponChangeMaxRadius(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeMaxRadius(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeMaxRadiusL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2251,7 +2332,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, value)` and writes `CWeaponAttributes::mMaxHeightDiff`.
    */
-  int cfunc_UnitWeaponChangeMaxHeightDiffL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeMaxHeightDiffL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeMaxHeightDiffHelpText);
@@ -2275,7 +2358,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponChangeMaxHeightDiffL`.
    */
-  int cfunc_UnitWeaponChangeMaxHeightDiff(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeMaxHeightDiff(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeMaxHeightDiffL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2305,7 +2390,9 @@ namespace moho
    * What it does:
    * Resolves a weapon from arg#1 and rewrites its damage type string from arg#2.
    */
-  int cfunc_UnitWeaponChangeDamageTypeL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeDamageTypeL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeDamageTypeHelpText);
@@ -2319,7 +2406,7 @@ namespace moho
       damageTypeArg.TypeError("string");
     }
 
-    weapon->mAttributes.SetType(msvc8::string(damageTypeName));
+    weapon->mAttributes.SetType(fa::string(damageTypeName));
     return 0;
   }
 
@@ -2330,7 +2417,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponChangeDamageTypeL`.
    */
-  int cfunc_UnitWeaponChangeDamageType(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeDamageType(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeDamageTypeL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2360,7 +2449,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, value)` and writes `CWeaponAttributes::mDamageRadius`.
    */
-  int cfunc_UnitWeaponChangeDamageRadiusL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeDamageRadiusL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeDamageRadiusHelpText);
@@ -2384,7 +2475,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponChangeDamageRadiusL`.
    */
-  int cfunc_UnitWeaponChangeDamageRadius(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeDamageRadius(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeDamageRadiusL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2414,7 +2507,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, value)` and writes `CWeaponAttributes::mDamage`.
    */
-  int cfunc_UnitWeaponChangeDamageL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponChangeDamageL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponChangeDamageHelpText);
@@ -2437,7 +2532,9 @@ namespace moho
    * What it does:
    * Unwraps raw Lua callback context and forwards to `cfunc_UnitWeaponChangeDamageL`.
    */
-  int cfunc_UnitWeaponChangeDamage(lua_State* const luaContext)
+  int cfunc_UnitWeaponChangeDamage(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponChangeDamageL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2467,7 +2564,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, value)` and writes `UnitWeapon::mFiringRandomness`.
    */
-  int cfunc_UnitWeaponSetFiringRandomnessL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponSetFiringRandomnessL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponSetFiringRandomnessHelpText);
@@ -2491,7 +2590,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponSetFiringRandomnessL`.
    */
-  int cfunc_UnitWeaponSetFiringRandomness(lua_State* const luaContext)
+  int cfunc_UnitWeaponSetFiringRandomness(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponSetFiringRandomnessL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2521,7 +2622,9 @@ namespace moho
    * What it does:
    * Resolves `(weapon, layerName)` and writes one fire-target layer mask lane.
    */
-  int cfunc_UnitWeaponSetFireTargetLayerCapsL(LuaPlus::LuaState* const state)
+  int cfunc_UnitWeaponSetFireTargetLayerCapsL(
+    LuaPlus::LuaState* const state
+  )
   {
     lua_State* const rawState = state->m_state;
     moho::SCR_ExpectExactArgs(state, 2, kUnitWeaponSetFireTargetLayerCapsHelpText);
@@ -2550,7 +2653,9 @@ namespace moho
    * Unwraps raw Lua callback context and forwards to
    * `cfunc_UnitWeaponSetFireTargetLayerCapsL`.
    */
-  int cfunc_UnitWeaponSetFireTargetLayerCaps(lua_State* const luaContext)
+  int cfunc_UnitWeaponSetFireTargetLayerCaps(
+    lua_State* const luaContext
+  )
   {
     return cfunc_UnitWeaponSetFireTargetLayerCapsL(moho::SCR_ResolveBindingState(luaContext));
   }
@@ -2580,7 +2685,9 @@ namespace moho
    * What it does:
    * Copies this weapon label into caller-provided output string storage.
    */
-  msvc8::string* UnitWeapon::GetLabel(msvc8::string* const outLabel) const
+  fa::string* UnitWeapon::GetLabel(
+    fa::string* const outLabel
+  ) const
   {
     *outLabel = mLabel;
     return outLabel;
@@ -2593,7 +2700,9 @@ namespace moho
    * Copies this weapon primary target category set into caller-provided
    * output storage.
    */
-  EntityCategorySet* UnitWeapon::GetCat1(EntityCategorySet* const outCategory) const
+  EntityCategorySet* UnitWeapon::GetCat1(
+    EntityCategorySet* const outCategory
+  ) const
   {
     *outCategory = mCat1;
     return outCategory;
@@ -2606,7 +2715,9 @@ namespace moho
    * Copies this weapon secondary target category set into caller-provided
    * output storage.
    */
-  EntityCategorySet* UnitWeapon::GetCat2(EntityCategorySet* const outCategory) const
+  EntityCategorySet* UnitWeapon::GetCat2(
+    EntityCategorySet* const outCategory
+  ) const
   {
     *outCategory = mCat2;
     return outCategory;
@@ -2630,7 +2741,9 @@ namespace moho
    * Resolves one projectile blueprint id text into a projectile blueprint
    * resource and updates this weapon's silo-dependent projectile lane.
    */
-  void UnitWeapon::ChangeProjectileBlueprint(const msvc8::string& blueprint)
+  void UnitWeapon::ChangeProjectileBlueprint(
+    const fa::string& blueprint
+  )
   {
     if (blueprint.empty()) {
       return;
@@ -2657,7 +2770,9 @@ namespace moho
    * Writes this weapon world position into caller-provided output storage,
    * using muzzle-bone transform when a valid muzzle bone is configured.
    */
-  Wm3::Vector3f* UnitWeapon::GetTransform(Wm3::Vector3f* const outPosition) const
+  Wm3::Vector3f* UnitWeapon::GetTransform(
+    Wm3::Vector3f* const outPosition
+  ) const
   {
     VTransform transform{};
     const VTransform* source = nullptr;
@@ -2809,9 +2924,9 @@ namespace moho
 
     LuaPlus::LuaObject scriptClass = mUnit->GetWeaponClass(weaponBlueprintClass);
     if (!scriptClass) {
-      const msvc8::string classNameText =
-        !mWeaponBlueprint->Label.empty() ? gpg::STR_Printf("\"%s\"", mWeaponBlueprint->Label.c_str())
-                                         : gpg::STR_Printf("%d", mWeaponIndex);
+      const fa::string classNameText = !mWeaponBlueprint->Label.empty()
+        ? gpg::STR_Printf("\"%s\"", mWeaponBlueprint->Label.c_str())
+        : gpg::STR_Printf("%d", mWeaponIndex);
 
       const RUnitBlueprint* const ownerBlueprint = mUnit->GetBlueprint();
       gpg::Logf(
@@ -2870,7 +2985,7 @@ namespace moho
       // range has been erased.
       EntityCategorySet* const newEnd = std::copy(rangeEnd, liveEnd, rangeBegin);
 
-      // Shrink the active size lane to the new end. `msvc8::vector::resize`
+      // Shrink the active size lane to the new end. `fa::vector::resize`
       // runs `~EntityCategorySet` on every slot in `[newEnd, liveEnd)`,
       // mirroring the MSVC8 destructor dispatch that FUN_006DBB50 delegated
       // to `sub_6DEB80`.
@@ -2905,11 +3020,12 @@ namespace moho
     if (!mTargetPriorities.empty()) {
       EntityCategorySet* eraseResult = nullptr;
       (void)EraseTargetPrioritiesRange(
-        *this, &eraseResult, mTargetPriorities.data(), mTargetPriorities.data() + mTargetPriorities.size());
+        *this, &eraseResult, mTargetPriorities.data(), mTargetPriorities.data() + mTargetPriorities.size()
+      );
     }
 
     // Unlink each blacklist entry's mEntity WeakPtr from its owner chain before
-    // the msvc8::vector<SBlackListInfo> member destructor frees the storage
+    // the fa::vector<SBlackListInfo> member destructor frees the storage
     // (binary sub_6DBD70 at 0x006D4AA4). SBlackListInfo has no destructor and
     // WeakPtr<Entity>::~WeakPtr is trivial, so the member vector teardown would
     // leave every blacklisted entity's weak node dangling in its owner chain
@@ -2931,7 +3047,10 @@ namespace moho
    * pre-doubles a lane of each product (`QuatToMatrix`, 0x00452FD0) and so
    * rounds differently whenever a product is denormal.
    */
-  bool UnitWeapon::CanFire(UnitWeapon* const weapon, CAiTarget* const targetData)
+  bool UnitWeapon::CanFire(
+    UnitWeapon* const weapon,
+    CAiTarget* const targetData
+  )
   {
     if (weapon == nullptr || weapon->mUnit == nullptr || weapon->mWeaponBlueprint == nullptr) {
       return false;
@@ -2943,9 +3062,10 @@ namespace moho
       return false;
     }
 
-    if (ownerUnit->VarDat().mStunTicks != 0
-        || ownerUnit->IsUnitState(UNITSTATE_Busy)
-        || (unitBlueprint->Air.CanFly != 0u && ownerUnit->mVarDat.mLayerMask != LAYER_Air)) {
+    if (
+      ownerUnit->VarDat().mStunTicks != 0 || ownerUnit->IsUnitState(UNITSTATE_Busy) ||
+      (unitBlueprint->Air.CanFly != 0u && ownerUnit->mVarDat.mLayerMask != LAYER_Air)
+    ) {
       return false;
     }
 
@@ -2955,11 +3075,13 @@ namespace moho
 
     const RUnitBlueprintWeapon* const weaponBlueprint = weapon->mWeaponBlueprint;
     if (weaponBlueprint->AboveWaterFireOnly != 0u || weaponBlueprint->BelowWaterFireOnly != 0u) {
-      const STIMap* const mapData = (ownerUnit->SimulationRef != nullptr) ? ownerUnit->SimulationRef->mMapData : nullptr;
-      const float waterElevation = (mapData != nullptr && mapData->mWaterEnabled != 0u) ? mapData->mWaterElevation : -10000.0f;
-
+      const STIMap* const mapData =
+        (ownerUnit->SimulationRef != nullptr) ? ownerUnit->SimulationRef->mMapData : nullptr;
       Wm3::Vec3f muzzlePosition{};
       weapon->GetTransform(&muzzlePosition);
+      // Engine addition (water bodies): the level at the muzzle.
+      const float waterElevation =
+        mapData != nullptr ? mapData->GetWaterElevationAt(muzzlePosition.x, muzzlePosition.z) : -10000.0f;
       const bool isAboveWater = muzzlePosition.y > waterElevation;
 
       if (weaponBlueprint->AboveWaterFireOnly != 0u && !isAboveWater) {
@@ -3063,7 +3185,9 @@ namespace moho
    * Computes this weapon forward vector from either owner transform or muzzle
    * bone world transform quaternion lanes.
    */
-  Wm3::Vector3f UnitWeapon::GetForwardVector(const UnitWeapon* const weapon)
+  Wm3::Vector3f UnitWeapon::GetForwardVector(
+    const UnitWeapon* const weapon
+  )
   {
     if (weapon == nullptr || weapon->mUnit == nullptr) {
       return Wm3::Vector3f::Zero();
@@ -3094,7 +3218,10 @@ namespace moho
    * What it does:
    * Returns whether `entity` is present in weapon blacklist rows.
    */
-  bool UnitWeapon::IsEntityBlacklisted(const UnitWeapon* const weapon, const Entity* const entity)
+  bool UnitWeapon::IsEntityBlacklisted(
+    const UnitWeapon* const weapon,
+    const Entity* const entity
+  )
   {
     if (weapon == nullptr || entity == nullptr) {
       return false;
@@ -3136,7 +3263,10 @@ namespace moho
    * Validates whether `weapon` can attack the current `target` payload, with
    * entity-layer/category checks and ground height-vs-water gating.
    */
-  bool UnitWeapon::CanAttackTarget(CAiTarget* const target, UnitWeapon* const weapon)
+  bool UnitWeapon::CanAttackTarget(
+    CAiTarget* const target,
+    UnitWeapon* const weapon
+  )
   {
     const EAiTargetType targetType = target->targetType;
     if (targetType == EAiTargetType::AITARGET_None) {
@@ -3163,14 +3293,13 @@ namespace moho
 
     const Wm3::Vec3f targetPosition = target->GetTargetPosGun(false);
     STIMap* const mapData = (weapon->mUnit != nullptr && weapon->mUnit->SimulationRef != nullptr)
-                              ? weapon->mUnit->SimulationRef->mMapData
-                              : nullptr;
+      ? weapon->mUnit->SimulationRef->mMapData
+      : nullptr;
     if (mapData == nullptr || mapData->mHeightField == nullptr) {
       return false;
     }
-    const float terrainElevation =
-      GetHeightFieldElevation(mapData->mHeightField, targetPosition.x, targetPosition.z);
-    const float waterElevation = (mapData->mWaterEnabled != 0u) ? mapData->mWaterElevation : -10000.0f;
+    const float terrainElevation = GetHeightFieldElevation(mapData->mHeightField, targetPosition.x, targetPosition.z);
+    const float waterElevation = mapData->GetWaterElevationAt(targetPosition.x, targetPosition.z); // engine addition
 
     if (terrainElevation > waterElevation) {
       return (weapon->mFireTargetLayerCaps & LAYER_Land) != 0;
@@ -3189,7 +3318,10 @@ namespace moho
    * Evaluates one gun target-position lane and returns one range/heading
    * solution status.
    */
-  ESolutionStatus UnitWeapon::TargetSolutionStatusGun(const Wm3::Vector3f* const targetPosition, float* const inOutDistanceSq)
+  ESolutionStatus UnitWeapon::TargetSolutionStatusGun(
+    const Wm3::Vector3f* const targetPosition,
+    float* const inOutDistanceSq
+  )
   {
     return EvaluateTargetSolutionStatusGun(this, *targetPosition, inOutDistanceSq);
   }
@@ -3201,7 +3333,9 @@ namespace moho
    * Evaluates melee target reachability using collision-shell probes for large
    * mobile targets and footprint-edge touch checks for unit targets.
    */
-  ESolutionStatus UnitWeapon::TargetIsTooCloseMelee(Entity* const targetEntity)
+  ESolutionStatus UnitWeapon::TargetIsTooCloseMelee(
+    Entity* const targetEntity
+  )
   {
     if (targetEntity->IsMobile()) {
       const SFootprint& targetFootprint = targetEntity->GetFootprint();
@@ -3219,8 +3353,8 @@ namespace moho
         const float ownerHalfSizeZ = static_cast<float>(ownerFootprint.mSizeZ) * 0.5f;
         // 0x006D58B0 / 0x006D58D5: `fld; fistp` (round to nearest), then the
         // low 16 bits (`movsx word`).
-        const std::int16_t ownerGridMinX = static_cast<std::int16_t>(msvc8::RoundToInt(ownerPosition.x - ownerHalfSizeX));
-        const std::int16_t ownerGridMinZ = static_cast<std::int16_t>(msvc8::RoundToInt(ownerPosition.z - ownerHalfSizeZ));
+        const std::int16_t ownerGridMinX = static_cast<std::int16_t>(fa::RoundToInt(ownerPosition.x - ownerHalfSizeX));
+        const std::int16_t ownerGridMinZ = static_cast<std::int16_t>(fa::RoundToInt(ownerPosition.z - ownerHalfSizeZ));
 
         const Wm3::Vec3f probeCenter{
           static_cast<float>(ownerGridMinX) + ownerHalfSizeX,
@@ -3230,12 +3364,10 @@ namespace moho
 
         constexpr float kMeleeProbeHalfHeight = 1000.0f;
         const Wm3::Box3f outerProbe = BuildAxisAlignedCollisionProbe(
-          probeCenter,
-          Wm3::Vec3f{ownerHalfSizeX + 1.0f, kMeleeProbeHalfHeight, ownerHalfSizeZ + 1.0f}
+          probeCenter, Wm3::Vec3f{ownerHalfSizeX + 1.0f, kMeleeProbeHalfHeight, ownerHalfSizeZ + 1.0f}
         );
         const Wm3::Box3f innerProbe = BuildAxisAlignedCollisionProbe(
-          probeCenter,
-          Wm3::Vec3f{ownerHalfSizeX, kMeleeProbeHalfHeight, ownerHalfSizeZ}
+          probeCenter, Wm3::Vec3f{ownerHalfSizeX, kMeleeProbeHalfHeight, ownerHalfSizeZ}
         );
 
         CColPrimitiveBase* const targetCollisionShape = targetEntity->CollisionExtents;
@@ -3276,7 +3408,9 @@ namespace moho
    * Returns one melee/gun target-solution status for a direct target entity
    * lane.
    */
-  ESolutionStatus UnitWeapon::GetSolutionStatus(Entity* const targetEntity)
+  ESolutionStatus UnitWeapon::GetSolutionStatus(
+    Entity* const targetEntity
+  )
   {
     if (targetEntity == nullptr) {
       return ESolutionStatus::TRS_OutsideMaxRange;
@@ -3296,7 +3430,9 @@ namespace moho
    * What it does:
    * Returns one melee/gun solution status for the current `CAiTarget` payload.
    */
-  ESolutionStatus UnitWeapon::TargetIsTooClose(CAiTarget* const targetData)
+  ESolutionStatus UnitWeapon::TargetIsTooClose(
+    CAiTarget* const targetData
+  )
   {
     if (mUnit->mIsMelee) {
       if (Entity* const targetEntity = targetData->GetEntity(); targetEntity != nullptr) {
@@ -3337,8 +3473,7 @@ namespace moho
     , mBeamLength(0.0f)
     , mLine{}
     , mLineScale(0.0f)
-  {
-  }
+  {}
 
   /**
    * Address: 0x006D78F0 (FUN_006D78F0, sub_6D78F0)
@@ -3382,20 +3517,16 @@ namespace moho
      * Resolves one army-stat float lane by path, marks it float-typed, and
      * atomically replaces its stored value with `value`.
      */
-    void SetArmyFloatStat(CArmyStats& armyStats, const char* const statPath, const float value)
+    void SetArmyFloatStat(
+      CArmyStats& armyStats,
+      const char* const statPath,
+      const float value
+    )
     {
       CArmyStatItem* const item = ResolveArmyStatItemCachedCreate(&armyStats, statPath);
       item->SynchronizeAsFloat();
 
-      volatile platform::InterlockedLong* const counter = reinterpret_cast<volatile platform::InterlockedLong*>(&item->mPrimaryValueBits);
-      const std::int32_t desiredBits = std::bit_cast<std::int32_t>(value);
-      for (;;) {
-        const std::int32_t observed = _InterlockedCompareExchange(counter, 0, 0);
-        const std::int32_t result = _InterlockedCompareExchange(counter, desiredBits, observed);
-        if (result == observed) {
-          return;
-        }
-      }
+      (void)platform::AtomicExchange(&item->mPrimaryValueBits, std::bit_cast<std::int32_t>(value));
     }
 
     /**
@@ -3406,7 +3537,10 @@ namespace moho
      * target type, same raw target entity, and (for ground targets only) the same
      * ground position.
      */
-    [[nodiscard]] bool AiTargetsAreSame(const CAiTarget& current, const CAiTarget& candidate) noexcept
+    [[nodiscard]] bool AiTargetsAreSame(
+      const CAiTarget& current,
+      const CAiTarget& candidate
+    ) noexcept
     {
       if (current.targetType != candidate.targetType) {
         return false;
@@ -3431,7 +3565,9 @@ namespace moho
      * blip target, resolves a unit target to its recon blip, or clears it
      * otherwise. Marks the unit's sync-game-data lane dirty afterward.
      */
-    void MaintainTargetBlip(UnitWeapon& weapon)
+    void MaintainTargetBlip(
+      UnitWeapon& weapon
+    )
     {
       Unit* const unit = weapon.mUnit;
       if (unit == nullptr) {
@@ -3445,9 +3581,8 @@ namespace moho
 
       // Only the weapon that "owns" this target drives the unit's target blip.
       UnitWeapon* const targetWeapon = attacker->GetTargetWeapon(&weapon.mTarget);
-      const bool weaponControlsTarget = (targetWeapon != nullptr)
-        ? (&weapon == targetWeapon)
-        : (&weapon == attacker->GetPrimaryWeapon());
+      const bool weaponControlsTarget =
+        (targetWeapon != nullptr) ? (&weapon == targetWeapon) : (&weapon == attacker->GetPrimaryWeapon());
       if (!weaponControlsTarget) {
         return;
       }
@@ -3484,17 +3619,20 @@ namespace moho
      * the actual target range into the total/average lanes. Mirrors the engine's
      * `RealTimeStats_<unitName>_Shots_*` accounting.
      */
-    void AccountFireRangeStats(Unit& unit, UnitWeapon& weapon)
+    void AccountFireRangeStats(
+      Unit& unit,
+      UnitWeapon& weapon
+    )
     {
       CArmyStats* const armyStats = (unit.ArmyRef != nullptr) ? unit.ArmyRef->GetArmyStats() : nullptr;
       if (armyStats == nullptr) {
         return;
       }
 
-      const msvc8::string statPrefix = msvc8::string("RealTimeStats_") + unit.GetUniqueName();
+      const fa::string statPrefix = fa::string("RealTimeStats_") + unit.GetUniqueName();
 
       // _Shots_Fired: integer counter, atomically incremented by one.
-      const msvc8::string shotsFiredPath = statPrefix + "_Shots_Fired";
+      const fa::string shotsFiredPath = statPrefix + "_Shots_Fired";
       {
         CArmyStatItem* const shotsFired = armyStats->GetItem(shotsFiredPath.c_str());
         shotsFired->Synchronize();
@@ -3506,7 +3644,7 @@ namespace moho
 
       // _Shots_MaxFireRange: store the weapon's configured max radius.
       {
-        const msvc8::string statPath = statPrefix + "_Shots_MaxFireRange";
+        const fa::string statPath = statPrefix + "_Shots_MaxFireRange";
         const float maxFireRange = weapon.mWeaponBlueprint->MaxRadius;
         SetArmyFloatStat(*armyStats, statPath.c_str(), maxFireRange);
       }
@@ -3521,7 +3659,7 @@ namespace moho
 
       // _Shots_TotalFireRange: accumulate the actual range, then average it.
       {
-        const msvc8::string totalPath = statPrefix + "_Shots_TotalFireRange";
+        const fa::string totalPath = statPrefix + "_Shots_TotalFireRange";
 
         CArmyStatItem* const totalRange = ResolveArmyStatItemCachedCreate(armyStats, totalPath.c_str());
         totalRange->SynchronizeAsFloat();
@@ -3531,7 +3669,7 @@ namespace moho
         const float accumulatedTotal = armyStats->TraverseTablesCreate(totalPath.c_str())->GetFloat(false);
 
         // _Shots_AvgFireRange: accumulated total divided by the shots-fired count.
-        const msvc8::string avgPath = statPrefix + "_Shots_AvgFireRange";
+        const fa::string avgPath = statPrefix + "_Shots_AvgFireRange";
         const float averageRange = accumulatedTotal / static_cast<float>(shotCount);
         SetArmyFloatStat(*armyStats, avgPath.c_str(), averageRange);
       }
@@ -3552,7 +3690,9 @@ namespace moho
    * weapon, re-aims, fires the `OnGotTarget` script on a fresh acquisition, and
    * restages the fire task.
    */
-  void UnitWeapon::SetTarget(CAiTarget* const target)
+  void UnitWeapon::SetTarget(
+    CAiTarget* const target
+  )
   {
     if (AiTargetsAreSame(mTarget, *target)) {
       return;
@@ -3645,8 +3785,8 @@ namespace moho
    * Scans collision candidates, applies script and ally filters, and returns
    * the nearest surviving collision lane.
    */
-  WeaponCollisionEntry* UnitWeapon::GetClosestCollision(
-    gpg::fastvector_n<WeaponCollisionEntry, 10>* const collisions,
+  EntityLineCollision* UnitWeapon::GetClosestCollision(
+    gpg::fastvector_n<EntityLineCollision, 10>* const collisions,
     UnitWeapon* const weapon,
     Unit* const ownerUnit,
     const bool ignoreAlly
@@ -3670,7 +3810,7 @@ namespace moho
     // rather than reading through a hoisted pointer.
     //
     // That is not incidental. The body runs the `OnCollisionCheck` script, and
-    // this container is a `fastvector_n<WeaponCollisionEntry, 10>` - a script that
+    // this container is a `fastvector_n<EntityLineCollision, 10>` - a script that
     // pushes an eleventh entry spills the run out of the inline window onto the
     // heap, and any pointer captured before that call is left aiming at storage
     // the container no longer uses. Caching begin/end/count across the call
@@ -3686,7 +3826,9 @@ namespace moho
         // not the value loaded ahead of it.
         Entity* const allyCheckEntity = collisions->begin()[index].entity;
         Unit* const candidateUnit = (allyCheckEntity != nullptr) ? allyCheckEntity->IsUnit() : nullptr;
-        if (candidateUnit != nullptr && candidateUnit->mVarDat.mLayerMask == LAYER_Air && ownerUnit->ArmyRef != nullptr) {
+        if (
+          candidateUnit != nullptr && candidateUnit->mVarDat.mLayerMask == LAYER_Air && ownerUnit->ArmyRef != nullptr
+        ) {
           const std::uint32_t candidateArmyIndex = (candidateUnit->ArmyRef != nullptr)
             ? static_cast<std::uint32_t>(candidateUnit->ArmyRef->mConstDat.mArmyIndex)
             : std::numeric_limits<std::uint32_t>::max();
@@ -3696,11 +3838,11 @@ namespace moho
         }
       }
 
-      WeaponCollisionEntry& candidate = collisions->begin()[index];
-      if (closestDistance > candidate.dist) {
+      EntityLineCollision& candidate = collisions->begin()[index];
+      if (closestDistance > candidate.distanceFromLineStart) {
         if (candidate.entity == nullptr || candidate.entity->IsUnit() != ownerUnit) {
           closestIndex = static_cast<std::int32_t>(index);
-          closestDistance = collisions->begin()[index].dist;
+          closestDistance = collisions->begin()[index].distanceFromLineStart;
         }
       }
     }
@@ -3725,7 +3867,7 @@ namespace moho
 
     if (mSim->IsSyncLogOn()) {
       const char* targetEntityText = "NULL";
-      msvc8::string targetEntityIdText{};
+      fa::string targetEntityIdText{};
       if (targetEntity != nullptr) {
         targetEntityIdText = gpg::STR_Printf("0x%08x", static_cast<std::uint32_t>(targetEntity->id_));
         targetEntityText = targetEntityIdText.c_str();
@@ -3787,10 +3929,13 @@ namespace moho
    * right/second -- not the generic `Wm3::Quaternionf::Multiply` (`.w`-scalar
    * on both operands).
    */
-  Projectile* UnitWeapon::CreateProjectile(const std::int32_t muzzleBoneIndex)
+  Projectile* UnitWeapon::CreateProjectile(
+    const std::int32_t muzzleBoneIndex
+  )
   {
     if (mProjectileBlueprint == nullptr) {
-      const char* const weaponName = (mWeaponBlueprint != nullptr) ? mWeaponBlueprint->DisplayName.c_str() : "UnknownWeapon";
+      const char* const weaponName =
+        (mWeaponBlueprint != nullptr) ? mWeaponBlueprint->DisplayName.c_str() : "UnknownWeapon";
       const RUnitBlueprint* const unitBlueprint = (mUnit != nullptr) ? mUnit->GetBlueprint() : nullptr;
       const char* const unitName = (unitBlueprint != nullptr) ? unitBlueprint->mBlueprintId.c_str() : "UnknownUnit";
       gpg::Logf("%s:%s:CreateProjectile: no projectile blueprint, doing instahit instead.", unitName, weaponName);
@@ -3831,13 +3976,13 @@ namespace moho
       launchTransform.orient_ = MultiplyQuat(launchTransform.orient_, jitterOrientation);
     }
 
-    const float damageRadius =
-      (mAttributes.mDamageRadius < 0.0f && mAttributes.mBlueprint != nullptr)
+    const float damageRadius = (mAttributes.mDamageRadius < 0.0f && mAttributes.mBlueprint != nullptr)
       ? mAttributes.mBlueprint->DamageRadius
       : mAttributes.mDamageRadius;
-    const float damage = (mAttributes.mDamage < 0.0f && mAttributes.mBlueprint != nullptr) ? mAttributes.mBlueprint->Damage
-                                                                                            : mAttributes.mDamage;
-    const msvc8::string damageType = mAttributes.GetName();
+    const float damage = (mAttributes.mDamage < 0.0f && mAttributes.mBlueprint != nullptr)
+      ? mAttributes.mBlueprint->Damage
+      : mAttributes.mDamage;
+    const fa::string damageType = mAttributes.GetName();
     const bool ignoreAlly = (mWeaponBlueprint != nullptr) ? (mWeaponBlueprint->IgnoresAlly != 0u) : false;
 
     Projectile* const projectile = PROJ_Create(
@@ -3878,13 +4023,15 @@ namespace moho
 
     // 0x006D6983 gates on the multiplier alone; MuzzleVelocity is divided by unchecked.
     if (mWeaponBlueprint != nullptr && mWeaponBlueprint->ProjectileLifetimeUsesMultiplier > 0.0f) {
-      const float scaledLifetimeSeconds =
-        (mWeaponBlueprint->MaxRadius / mWeaponBlueprint->MuzzleVelocity) * mWeaponBlueprint->ProjectileLifetimeUsesMultiplier;
+      const float scaledLifetimeSeconds = (mWeaponBlueprint->MaxRadius / mWeaponBlueprint->MuzzleVelocity) *
+        mWeaponBlueprint->ProjectileLifetimeUsesMultiplier;
       projectile->SetLifetime(scaledLifetimeSeconds);
     }
 
-    if (mWeaponBlueprint != nullptr && mWeaponBlueprint->ReTargetOnMiss != 0u && mAttacker != nullptr
-        && mTarget.targetEntity.GetObjectPtr() != nullptr) {
+    if (
+      mWeaponBlueprint != nullptr && mWeaponBlueprint->ReTargetOnMiss != 0u && mAttacker != nullptr &&
+      mTarget.targetEntity.GetObjectPtr() != nullptr
+    ) {
       mAttacker->TransmitProjectileImpactEvent(this, projectile);
     }
 
@@ -3905,7 +4052,10 @@ namespace moho
    * `outHelper` with the resolved contact entity, contact point, beam length, and
    * impact type.
    */
-  void UnitWeapon::CreateCollisionBeamHelper(CollisionBeamHelper* const outHelper, const std::int32_t bone)
+  void UnitWeapon::CreateCollisionBeamHelper(
+    CollisionBeamHelper* const outHelper,
+    const std::int32_t bone
+  )
   {
     // Resolve the beam reach: weapon blueprint override, else the (clamped)
     // attribute max radius, else the blueprint max radius.
@@ -3978,19 +4128,17 @@ namespace moho
     outHelper->mLineScale = sweepLength * 0.5f;
 
     // Gather entity collisions along the segment and pick the nearest valid hit.
-    gpg::fastvector_n<WeaponCollisionEntry, 10> collisions;
-    mSim->mOGrid->GetEntityCollisionsInLine(
-      reinterpret_cast<gpg::core::FastVectorN<EntityLineCollision, 10>&>(collisions),
-      beamStart,
-      sweepEnd
-    );
+    gpg::fastvector_n<EntityLineCollision, 10> collisions;
+    mSim->mOGrid->GetEntityCollisionsInLine(collisions, beamStart, sweepEnd);
 
     if (collisions.begin() != collisions.end()) {
       const bool ignoreAlly = (mWeaponBlueprint->IgnoresAlly != 0u);
-      if (WeaponCollisionEntry* const closest = GetClosestCollision(&collisions, this, mUnit, ignoreAlly);
-          closest != nullptr) {
+      if (
+        EntityLineCollision* const closest = GetClosestCollision(&collisions, this, mUnit, ignoreAlly);
+        closest != nullptr
+      ) {
         Entity* const hitEntity = closest->entity;
-        outHelper->mPos = closest->contactPoint;
+        outHelper->mPos = closest->position;
         outHelper->mEntity.Set(hitEntity);
 
         // Distance from the beam start to the contact point (using a per-entity
@@ -3998,7 +4146,7 @@ namespace moho
         Entity* const boundEntity = outHelper->mEntity.GetObjectPtr();
         Wm3::Vec3f referencePoint{};
         if (boundEntity != nullptr && (static_cast<std::uint32_t>(boundEntity->id_) & 0xF0000000u) == 0x40000000u) {
-          referencePoint = closest->contactPoint;
+          referencePoint = closest->position;
         } else if (boundEntity != nullptr && boundEntity->IsUnit() == nullptr) {
           referencePoint = boundEntity->mVarDat.mCurTransform.pos_;
         } else if (boundEntity != nullptr) {
@@ -4122,24 +4270,20 @@ namespace moho
   /**
    * Address: 0x006D3540 (FUN_006D3540)
    */
-  UnitWeapon* UnitWeapon::SetFiringRandomness(const float value)
+  UnitWeapon* UnitWeapon::SetFiringRandomness(
+    const float value
+  )
   {
     mFiringRandomness = value;
     return this;
   }
 
   /**
-   * Address: 0x006D3550 (FUN_006D3550)
-   */
-  float UnitWeapon::GetFiringRandomness() const
-  {
-    return mFiringRandomness;
-  }
-
-  /**
    * Address: 0x006D3560 (FUN_006D3560)
    */
-  UnitWeapon* UnitWeapon::SetFireTargetLayerCaps(const ELayer layerMask)
+  UnitWeapon* UnitWeapon::SetFireTargetLayerCaps(
+    const ELayer layerMask
+  )
   {
     mFireTargetLayerCaps = layerMask;
     if (mUnit != nullptr) {
@@ -4151,7 +4295,9 @@ namespace moho
   /**
    * Address: 0x006DF3A0 (FUN_006DF3A0, Moho::UnitWeapon::MemberDeserialize)
    */
-  void UnitWeapon::MemberDeserialize(gpg::ReadArchive* const archive)
+  void UnitWeapon::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     const gpg::RRef ownerRef{};
 
@@ -4188,8 +4334,8 @@ namespace moho
     archive->Read(gpg::RTypeOf<EntityCategorySet>(), &mCat2, ownerRef);
     archive->Read(gpg::RTypeOf<ELayer>(), &mFireTargetLayerCaps, ownerRef);
     archive->ReadFloat(&mFiringRandomness);
-    archive->Read(gpg::RTypeOf<msvc8::vector<EntityCategorySet>>(), &mTargetPriorities, ownerRef);
-    archive->Read(gpg::RTypeOf<msvc8::vector<SBlackListInfo>>(), &mBlacklist, ownerRef);
+    archive->Read(gpg::RTypeOf<fa::vector<EntityCategorySet>>(), &mTargetPriorities, ownerRef);
+    archive->Read(gpg::RTypeOf<fa::vector<SBlackListInfo>>(), &mBlacklist, ownerRef);
     archive->ReadInt(&mUnknown170);
 
     bool unknown174 = (mUnknown174 != 0u);
@@ -4203,7 +4349,9 @@ namespace moho
   /**
    * Address: 0x006DF6E0 (FUN_006DF6E0, Moho::UnitWeapon::MemberSerialize)
    */
-  void UnitWeapon::MemberSerialize(gpg::WriteArchive* const archive) const
+  void UnitWeapon::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     const gpg::RRef ownerRef{};
 
@@ -4217,7 +4365,7 @@ namespace moho
     archive->WriteInt(mWeaponIndex);
     archive->WriteInt(mBone);
     archive->WriteBool(mEnabled != 0u);
-    archive->WriteString(const_cast<msvc8::string*>(&mLabel));
+    archive->WriteString(const_cast<fa::string*>(&mLabel));
     archive->Write(gpg::RTypeOf<CAiTarget>(), &mTarget, ownerRef);
     WriteTrackedPointer(*archive, mFireWeaponTask, gpg::TrackedPointerState::Owned, ownerRef);
     archive->WriteBool(mCanFire != 0u);
@@ -4225,8 +4373,8 @@ namespace moho
     archive->Write(gpg::RTypeOf<EntityCategorySet>(), &mCat2, ownerRef);
     archive->Write(gpg::RTypeOf<ELayer>(), &mFireTargetLayerCaps, ownerRef);
     archive->WriteFloat(mFiringRandomness);
-    archive->Write(gpg::RTypeOf<msvc8::vector<EntityCategorySet>>(), &mTargetPriorities, ownerRef);
-    archive->Write(gpg::RTypeOf<msvc8::vector<SBlackListInfo>>(), &mBlacklist, ownerRef);
+    archive->Write(gpg::RTypeOf<fa::vector<EntityCategorySet>>(), &mTargetPriorities, ownerRef);
+    archive->Write(gpg::RTypeOf<fa::vector<SBlackListInfo>>(), &mBlacklist, ownerRef);
     archive->WriteInt(mUnknown170);
     archive->WriteBool(mUnknown174 != 0u);
     archive->Write(gpg::RTypeOf<Wm3::Vector3f>(), &mAimingAt, ownerRef);
@@ -4236,7 +4384,10 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(PreregisterUnitWeaponPointerType_2b5e7d, moho::PreregisterUnitWeaponPointerType)
+GPG_PREREGISTER_INIT(
+  PreregisterUnitWeaponPointerType_2b5e7d,
+  moho::PreregisterUnitWeaponPointerType
+)
 
 namespace
 {
@@ -4302,7 +4453,12 @@ namespace moho
   /**
    * Address: 0x006D7A80 (FUN_006D7A80)
    */
-  void UnitWeapon::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void UnitWeapon::MemberConstruct(
+    gpg::ReadArchive&,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     result.SetUnowned(gpg::MakeRRef(new UnitWeapon()), 0u);
   }

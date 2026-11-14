@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/scoped_array.hpp"
+#include <memory>
 #include "gpg/core/containers/Rect2.h"
 #include "gpg/core/reflection/Reflection.h"
 #include "legacy/containers/Vector.h"
@@ -16,19 +16,13 @@ namespace gpg
   class WriteArchive;
 } // namespace gpg
 
-namespace boost
-{
-  template <typename T>
-  class shared_ptr;
-}
-
 namespace gpg
 {
   struct MD5Context;
   class SerConstructResult;
   struct SerHelperBase;
   class SerSaveConstructArgsResult;
-}
+} // namespace gpg
 
 namespace moho
 {
@@ -44,7 +38,7 @@ namespace gpg
    * Builds one typed reflection reference for a `CIntelGrid*` pointer.
    */
   gpg::RRef* RRef_CIntelGrid(gpg::RRef* outRef, moho::CIntelGrid* value);
-}
+} // namespace gpg
 
 namespace moho
 {
@@ -58,14 +52,15 @@ namespace moho
     /**
      * Address: 0x00508840 (FUN_00508840 -- the compiler-generated copy of this
      * 20-byte aggregate (three field copies), emitted out of line for
-     * `msvc8::vector<SDelayedSubVizInfo>`'s element-wise copy and fill steps;
+     * `fa::vector<SDelayedSubVizInfo>`'s element-wise copy and fill steps;
      * no source line, it is the implicit `operator=`. Formerly transcribed as
      * `CopyDelayedSubVizInfoVariant1` in SDelayedSubVizInfoReflection.cpp,
      * removed 2026-09-10.)
      * Address: 0x00508B10 (FUN_00508B10 -- forwarding copy of the same body; formerly `CopyDelayedSubVizInfoVariant2`.)
-     * Address: 0x00509880 (FUN_00509880 -- the same implicit copy, formerly `CopyDelayedSubVizInfoUnchecked`; zero callers, unreachable.)
-     * Address: 0x005098A0 (FUN_005098A0 -- the same implicit copy behind a null guard, formerly `CopyDelayedSubVizInfoIfNotNullVariant1`; zero callers, unreachable.)
-     * Address: 0x00509A40 (FUN_00509A40 -- forwarding copy of 0x005098A0, formerly `CopyDelayedSubVizInfoIfNotNullVariant2`; zero callers, unreachable.)
+     * Address: 0x00509880 (FUN_00509880 -- the same implicit copy, formerly `CopyDelayedSubVizInfoUnchecked`; zero
+     * callers, unreachable.) Address: 0x005098A0 (FUN_005098A0 -- the same implicit copy behind a null guard, formerly
+     * `CopyDelayedSubVizInfoIfNotNullVariant1`; zero callers, unreachable.) Address: 0x00509A40 (FUN_00509A40 --
+     * forwarding copy of 0x005098A0, formerly `CopyDelayedSubVizInfoIfNotNullVariant2`; zero callers, unreachable.)
      */
     Wm3::Vec3f mLastPos;          // +0x00
     float mRadius;                // +0x0C
@@ -89,18 +84,24 @@ namespace moho
   };
 
   static_assert(sizeof(SDelayedSubVizInfo) == 0x14, "SDelayedSubVizInfo size must be 0x14");
-  static_assert(sizeof(msvc8::vector<SDelayedSubVizInfo>) == 0x10, "msvc8::vector<SDelayedSubVizInfo> size must be 0x10");
+  static_assert(sizeof(fa::vector<SDelayedSubVizInfo>) == 0x10, "fa::vector<SDelayedSubVizInfo> size must be 0x10");
 
   class CIntelGrid
   {
   public:
     /**
      * What it does:
-     * Nothing: the construct hook rebuilds the grid from its map and size; the cells are not archived. `gpg::SerSaveLoadHelper<CIntelGrid>::Deserialize`
-     * 0x00507490 and `Serialize` 0x005074A0 are a bare `ret`.
+     * Nothing: the construct hook rebuilds the grid from its map and size; the cells are not archived.
+     * `gpg::SerSaveLoadHelper<CIntelGrid>::Deserialize` 0x00507490 and `Serialize` 0x005074A0 are a bare `ret`.
      */
-    void MemberDeserialize(gpg::ReadArchive*) {}
-    void MemberSerialize(gpg::WriteArchive*) const {}
+    void MemberDeserialize(
+      gpg::ReadArchive*
+    )
+    {}
+    void MemberSerialize(
+      gpg::WriteArchive*
+    ) const
+    {}
 
     inline static gpg::RType* sType = nullptr;
 
@@ -129,15 +130,16 @@ namespace moho
      * Reads the map and the cell size and builds a grid on them for an archive
      * load. Inlined into `SerConstructHelper<CIntelGrid>::Construct` 0x005073C0.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x005BE150 (FUN_005BE150, ?IsVisible@CIntelGrid@Moho@@QBE_NHH@Z)
-     * Address: 0x00506EA0 (FUN_00506EA0 -- `mWidth - 1` through a grid pointer slot, the bounds arithmetic this method inlines; zero callers, unreachable. Formerly `ByteRasterMaxXFromSlot` in SDelayedSubVizInfoReflection.cpp, removed 2026-09-10.)
-     * Address: 0x00506EB0 (FUN_00506EB0 -- `mHeight - 1`, likewise; formerly `ByteRasterMaxYFromSlot`.)
-     * Address: 0x00507900 (FUN_00507900 -- `mGrid + x + z * mWidth`, the cell address this method inlines; formerly `ByteRasterAddressAt`.)
+     * Address: 0x00506EA0 (FUN_00506EA0 -- `mWidth - 1` through a grid pointer slot, the bounds arithmetic this method
+     * inlines; zero callers, unreachable. Formerly `ByteRasterMaxXFromSlot` in SDelayedSubVizInfoReflection.cpp,
+     * removed 2026-09-10.) Address: 0x00506EB0 (FUN_00506EB0 -- `mHeight - 1`, likewise; formerly
+     * `ByteRasterMaxYFromSlot`.) Address: 0x00507900 (FUN_00507900 -- `mGrid + x + z * mWidth`, the cell address this
+     * method inlines; formerly `ByteRasterAddressAt`.)
      *
      * What it does:
      * Returns true when `(x,z)` is inside the intel grid bounds and the cell
@@ -148,7 +150,10 @@ namespace moho
      * test it against up to a dozen grids, do not pay a call per grid. Same
      * body, same result.
      */
-    [[nodiscard]] bool IsVisible(const std::int32_t x, const std::int32_t z) const
+    [[nodiscard]] bool IsVisible(
+      const std::int32_t x,
+      const std::int32_t z
+    ) const
     {
       if (x < 0 || z < 0) {
         return false;
@@ -216,14 +221,6 @@ namespace moho
     void SubtractCircle(const Wm3::Vec3f& position, std::uint32_t radius);
 
     /**
-     * Address: 0x005076B0 (FUN_005076B0, ?DelayedSubtractCircle@CIntelGrid@Moho@@QAEXABV?$Vector3@M@Wm3@@I@Z)
-     *
-     * What it does:
-     * Queues delayed subtraction update (30 ticks) for later processing.
-     */
-    void DelayedSubtractCircle(const Wm3::Vec3f& position, std::uint32_t radius);
-
-    /**
      * Address: 0x005077B0 (FUN_005077B0, ?Tick@CIntelGrid@Moho@@QAEXH@Z)
      *
      * What it does:
@@ -248,8 +245,32 @@ namespace moho
      * payload for serializer construct callback.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
+
+    /**
+     * Engine addition (dedicated server, plan #118): which parts of the grid a raster may have
+     * changed since the reader last cleared them, so a server encoding every army's grid each beat
+     * reads only those. One byte per `kChangeChunkCells` cells in row-major order, kept after the
+     * cells in the grid's own buffer, so the class keeps the binary's layout; the sim only sets them
+     * and never reads them, so they change nothing it computes. They start set.
+     */
+    static constexpr std::uint32_t kChangeChunkCells = 4096u;
+    [[nodiscard]] std::uint32_t ChangeChunkCount() const noexcept
+    {
+      return (mWidth * mHeight + kChangeChunkCells - 1u) / kChangeChunkCells;
+    }
+    [[nodiscard]] std::uint8_t* ChangedChunks() noexcept
+    {
+      return reinterpret_cast<std::uint8_t*>(mGrid.get() + static_cast<std::size_t>(mWidth) * mHeight);
+    }
+    [[nodiscard]] const std::uint8_t* ChangedChunks() const noexcept
+    {
+      return reinterpret_cast<const std::uint8_t*>(mGrid.get() + static_cast<std::size_t>(mWidth) * mHeight);
+    }
 
   private:
     /**
@@ -260,14 +281,13 @@ namespace moho
      */
     void Raster(const Wm3::Vec3f& position, std::uint32_t radiusInCells, bool doAdd);
 
-
   public:
-    STIMap* mMapData;                            // +0x00
-    boost::scoped_array<std::int8_t> mGrid;      // +0x04
-    std::uint32_t mWidth;                        // +0x08
-    std::uint32_t mHeight;                       // +0x0C
-    msvc8::vector<SDelayedSubVizInfo> mUpdateList;   // +0x10
-    std::uint32_t mGridSize;                     // +0x20
+    STIMap* mMapData;                           // +0x00
+    std::unique_ptr<std::int8_t[]> mGrid;       // +0x04
+    std::uint32_t mWidth;                       // +0x08
+    std::uint32_t mHeight;                      // +0x0C
+    fa::vector<SDelayedSubVizInfo> mUpdateList; // +0x10
+    std::uint32_t mGridSize;                    // +0x20
   };
 
   /**

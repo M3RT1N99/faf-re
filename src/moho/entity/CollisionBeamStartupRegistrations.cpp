@@ -14,14 +14,16 @@ namespace gpg
 {
   void LoadAndBroadcastManyToOneListenerECollisionBeamEvent(
     gpg::ReadArchive* archive,
-    moho::ManyToOneBroadcaster<moho::ECollisionBeamEvent>* broadcaster,
+    void* objectPtr,
     int version,
     gpg::RRef* ownerRef
   );
 
   void SaveUnownedRawPointerFromManyToOneListener_ECollisionBeamEventIntrusiveHeadLane1(
     gpg::WriteArchive* archive,
-    std::uint32_t* intrusiveListHeadSlot
+    void* objectPtr,
+    int version,
+    gpg::RRef* ownerRef
   );
 } // namespace gpg
 
@@ -55,7 +57,7 @@ namespace
      */
     [[nodiscard]] const char* GetName() const override
     {
-      static const msvc8::string sName =
+      static const fa::string sName =
         gpg::STR_Printf("ManyToOneBroadcaster<%s>", gpg::RTypeOf<moho::ECollisionBeamEvent>()->GetName());
       return sName.c_str();
     }
@@ -78,12 +80,8 @@ namespace
     {
       size_ = sizeof(moho::ManyToOneBroadcaster_ECollisionBeamEvent);
       version_ = 1;
-      serLoadFunc_ = reinterpret_cast<gpg::RType::load_func_t>(
-        &gpg::LoadAndBroadcastManyToOneListenerECollisionBeamEvent
-      );
-      serSaveFunc_ = reinterpret_cast<gpg::RType::save_func_t>(
-        &gpg::SaveUnownedRawPointerFromManyToOneListener_ECollisionBeamEventIntrusiveHeadLane1
-      );
+      serLoadFunc_ = &gpg::LoadAndBroadcastManyToOneListenerECollisionBeamEvent;
+      serSaveFunc_ = &gpg::SaveUnownedRawPointerFromManyToOneListener_ECollisionBeamEventIntrusiveHeadLane1;
     }
   };
 
@@ -99,7 +97,7 @@ namespace
      */
     [[nodiscard]] const char* GetName() const override
     {
-      static const msvc8::string sName =
+      static const fa::string sName =
         gpg::STR_Printf("ManyToOneListener<%s>", gpg::RTypeOf<moho::ECollisionBeamEvent>()->GetName());
       return sName.c_str();
     }
@@ -124,7 +122,8 @@ namespace
 
   /**
    * Address: 0x00675990 (FUN_00675990, sub_675990)
-   * Address: 0x00BFC5B0 (FUN_00BFC5B0, atexit destructor of the ManyToOneBroadcaster<ECollisionBeamEvent> type-info object)
+   * Address: 0x00BFC5B0 (FUN_00BFC5B0, atexit destructor of the ManyToOneBroadcaster<ECollisionBeamEvent> type-info
+   * object)
    *
    * What it does:
    * Constructs/preregisters startup RTTI for
@@ -140,7 +139,8 @@ namespace
 
   /**
    * Address: 0x006759F0 (FUN_006759F0, sub_6759F0)
-   * Address: 0x00BFC550 (FUN_00BFC550, atexit destructor of the ManyToOneListener<ECollisionBeamEvent> type-info object)
+   * Address: 0x00BFC550 (FUN_00BFC550, atexit destructor of the ManyToOneListener<ECollisionBeamEvent> type-info
+   * object)
    *
    * What it does:
    * Constructs/preregisters startup RTTI for
@@ -161,7 +161,8 @@ namespace
    * The shipped exe's description bytes are blanked; the text is taken from
    * the same command in MohoEngine.dll.
    */
-  moho::TConVar<bool> gTConVar_dbg_CollisionBeam("dbg_CollisionBeam", "Draw collision beam debug stuff.", &moho::dbg_CollisionBeam);
+  moho::TConVar<bool>
+    gTConVar_dbg_CollisionBeam("dbg_CollisionBeam", "Draw collision beam debug stuff.", &moho::dbg_CollisionBeam);
 
 } // namespace
 
@@ -173,8 +174,8 @@ namespace moho
   void initialize_CollisionBeamTrigConstants()
   {
     constexpr float kCollisionBeamConeHalfAngleRadians = 0.39269909f;
-    const float sinValue = msvc8::sinf(kCollisionBeamConeHalfAngleRadians);
-    gCollisionBeamConeCosine = msvc8::cosf(kCollisionBeamConeHalfAngleRadians);
+    const float sinValue = fa::sinf(kCollisionBeamConeHalfAngleRadians);
+    gCollisionBeamConeCosine = fa::cosf(kCollisionBeamConeHalfAngleRadians);
     gCollisionBeamConeSine = sinValue;
 
     // Preserve original lane (`sinValue * 0.0f`) including signed-zero behavior.
@@ -222,7 +223,9 @@ namespace moho
   /**
    * Address: 0x00672D80 (FUN_00672D80, Moho::ECollisionBeamEventTypeInfo::AddEnums)
    */
-  void ECollisionBeamEventTypeInfo::AddEnums(gpg::REnumType* const typeInfo)
+  void ECollisionBeamEventTypeInfo::AddEnums(
+    gpg::REnumType* const typeInfo
+  )
   {
     if (typeInfo == nullptr) {
       return;
@@ -278,11 +281,12 @@ namespace gpg
    */
   void LoadAndBroadcastManyToOneListenerECollisionBeamEvent(
     ReadArchive* const archive,
-    moho::ManyToOneBroadcaster<moho::ECollisionBeamEvent>* const broadcaster,
+    void* objectPtr,
     const int version,
     RRef* const ownerRef
   )
   {
+    auto* const broadcaster = static_cast<moho::ManyToOneBroadcaster<moho::ECollisionBeamEvent>*>(objectPtr);
     (void)version;
 
     moho::ManyToOneListener<moho::ECollisionBeamEvent>* listener = nullptr;
@@ -307,13 +311,30 @@ namespace
   [[maybe_unused]] CollisionBeamStartupRegistrationsBootstrap gCollisionBeamStartupRegistrationsBootstrap;
 } // namespace
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_ECollisionBeamEventTypeInfo_f04c7b, moho::register_ECollisionBeamEventTypeInfo)
-GPG_PREREGISTER_INIT(register_ManyToOneBroadcaster_ECollisionBeamEvent_TypeInfo_f04c7b, moho::register_ManyToOneBroadcaster_ECollisionBeamEvent_TypeInfo)
-GPG_PREREGISTER_INIT(register_ManyToOneListener_ECollisionBeamEvent_TypeInfo_f04c7b, moho::register_ManyToOneListener_ECollisionBeamEvent_TypeInfo)
+GPG_PREREGISTER_INIT(
+  register_ECollisionBeamEventTypeInfo_f04c7b,
+  moho::register_ECollisionBeamEventTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_ManyToOneBroadcaster_ECollisionBeamEvent_TypeInfo_f04c7b,
+  moho::register_ManyToOneBroadcaster_ECollisionBeamEvent_TypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_ManyToOneListener_ECollisionBeamEvent_TypeInfo_f04c7b,
+  moho::register_ManyToOneListener_ECollisionBeamEvent_TypeInfo
+)
 
-GPG_PREREGISTER_INIT(ConstructECollisionBeamEventTypeInfo_f04c7b, ConstructECollisionBeamEventTypeInfo)
-GPG_PREREGISTER_INIT(ConstructManyToOneBroadcasterCollisionBeamEventTypeInfo_f04c7b, ConstructManyToOneBroadcasterCollisionBeamEventTypeInfo)
-GPG_PREREGISTER_INIT(ConstructManyToOneListenerCollisionBeamEventTypeInfo_f04c7b, ConstructManyToOneListenerCollisionBeamEventTypeInfo)
+GPG_PREREGISTER_INIT(
+  ConstructECollisionBeamEventTypeInfo_f04c7b,
+  ConstructECollisionBeamEventTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  ConstructManyToOneBroadcasterCollisionBeamEventTypeInfo_f04c7b,
+  ConstructManyToOneBroadcasterCollisionBeamEventTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  ConstructManyToOneListenerCollisionBeamEventTypeInfo_f04c7b,
+  ConstructManyToOneListenerCollisionBeamEventTypeInfo
+)

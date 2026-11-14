@@ -10,7 +10,7 @@
 #include <d3dx11effect.h>
 #include <wrl/client.h>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/gal/Effect.hpp"
 #include "gpg/gal/EffectContext.hpp"
 #include "gpg/gal/EffectTechnique.hpp"
@@ -27,9 +27,9 @@ namespace gpg::gal
     ~EffectD3D11() override;
 
     EffectContext* GetContext() override;
-    void GetTechniques(msvc8::vector<boost::shared_ptr<EffectTechnique>>& outTechniques) override;
-    boost::shared_ptr<EffectVariable> GetVariable(const char* name) override;
-    boost::shared_ptr<EffectTechnique> GetTechnique(const char* name) override;
+    void GetTechniques(fa::vector<std::shared_ptr<EffectTechnique>>& outTechniques) override;
+    std::shared_ptr<EffectVariable> GetVariable(const char* name) override;
+    std::shared_ptr<EffectTechnique> GetTechnique(const char* name) override;
     /** Nothing to do: Direct3D 11 resources survive a mode change. */
     void OnReset() override;
     void OnLost() override;
@@ -45,20 +45,20 @@ namespace gpg::gal
     EffectTechniqueD3D11(const char* name, ID3DX11Effect* effect, ID3DX11EffectTechnique* technique);
     ~EffectTechniqueD3D11() override;
 
-    msvc8::string* GetName() override;
+    fa::string* GetName() override;
     int BeginTechnique() override;
     void EndTechnique() override;
     void BeginPass(int pass) override;
     void EndPass() override;
-    bool GetAnnotationBool(bool* outValue, const msvc8::string& annotationName) override;
-    bool GetAnnotationInt(int* outValue, const msvc8::string& annotationName) override;
-    bool GetAnnotationFloat(float* outValue, const msvc8::string& annotationName) override;
-    bool GetAnnotationString(msvc8::string* outValue, const msvc8::string& annotationName) override;
+    bool GetAnnotationBool(bool* outValue, const fa::string& annotationName) override;
+    bool GetAnnotationInt(int* outValue, const fa::string& annotationName) override;
+    bool GetAnnotationFloat(float* outValue, const fa::string& annotationName) override;
+    bool GetAnnotationString(fa::string* outValue, const fa::string& annotationName) override;
 
   private:
-    msvc8::string mName;
-    Microsoft::WRL::ComPtr<ID3DX11Effect> mEffect; // keeps the technique alive
-    ID3DX11EffectTechnique* mTechnique = nullptr;  // owned by the effect
+    fa::string mName;
+    Microsoft::WRL::ComPtr<ID3DX11Effect> mEffect;        // keeps the technique alive
+    ID3DX11EffectTechnique* mTechnique = nullptr;         // owned by the effect
     ID3DX11EffectVectorVariable* mViewportSize = nullptr; // faf_ViewportSize, when the effect has it
     bool mBegun = false;
   };
@@ -69,11 +69,11 @@ namespace gpg::gal
     EffectVariableD3D11(const char* name, ID3DX11Effect* effect, ID3DX11EffectVariable* variable);
     ~EffectVariableD3D11() override;
 
-    msvc8::string* GetName() override;
+    fa::string* GetName() override;
     /** No cube targets on this backend yet, as on D3D10. */
-    void SetCubeRenderTarget(boost::shared_ptr<CubeRenderTarget> cubeTarget) override;
-    void SetRenderTarget(boost::shared_ptr<RenderTarget> renderTarget) override;
-    void SetTexture(boost::shared_ptr<Texture> texture) override;
+    void SetCubeRenderTarget(std::shared_ptr<CubeRenderTarget> cubeTarget) override;
+    void SetRenderTarget(std::shared_ptr<RenderTarget> renderTarget) override;
+    void SetTexture(std::shared_ptr<Texture> texture) override;
     void SetMatrix4x4(const Matrix* matrix) override;
     void SetFloatArray(std::uint32_t count, const float* values) override;
     void SetVector(const float* vector4) override;
@@ -83,10 +83,10 @@ namespace gpg::gal
     void SetBool(bool value) override;
     void SetMatrixArray(std::uint32_t count, const Matrix* matrices) override;
     void SetVectorArray(std::uint32_t count, const float* vectors4) override;
-    bool GetAnnotationBool(bool* outValue, const msvc8::string& annotationName) override;
-    bool GetAnnotationInt(int* outValue, const msvc8::string& annotationName) override;
-    bool GetAnnotationFloat(float* outValue, const msvc8::string& annotationName) override;
-    bool GetAnnotationString(msvc8::string* outValue, const msvc8::string& annotationName) override;
+    bool GetAnnotationBool(bool* outValue, const fa::string& annotationName) override;
+    bool GetAnnotationInt(int* outValue, const fa::string& annotationName) override;
+    bool GetAnnotationFloat(float* outValue, const fa::string& annotationName) override;
+    bool GetAnnotationString(fa::string* outValue, const fa::string& annotationName) override;
 
   private:
     /**
@@ -97,7 +97,7 @@ namespace gpg::gal
      */
     void SetPackedFloats(const float* values, std::uint32_t count, int line);
 
-    msvc8::string mName;
+    fa::string mName;
     Microsoft::WRL::ComPtr<ID3DX11Effect> mEffect;
     ID3DX11EffectVariable* mVariable = nullptr; // owned by the effect
     D3DX11_EFFECT_TYPE_DESC mType{};

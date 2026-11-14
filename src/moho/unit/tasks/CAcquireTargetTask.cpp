@@ -33,16 +33,10 @@ using namespace moho;
 namespace
 {
 
-  [[nodiscard]] gpg::RType* CachedCTaskType()
-  {
-    if (!CTask::sType) {
-      CTask::sType = gpg::LookupRType(typeid(CTask));
-    }
-    return CTask::sType;
-  }
-
   template <class T>
-  [[nodiscard]] gpg::RRef MakeTrackedRef(T* object)
+  [[nodiscard]] gpg::RRef MakeTrackedRef(
+    T* object
+  )
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -67,14 +61,16 @@ namespace
       return out;
     }
 
-    out.mObj =
-      reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(object) - static_cast<std::uintptr_t>(baseOffset));
+    out.mObj = gpg::CompleteObject(object, baseOffset);
     out.mType = dynamicType;
     return out;
   }
 
   template <class T>
-  [[nodiscard]] T* ReadTrackedPointer(gpg::ReadArchive* archive, const gpg::RRef& ownerRef)
+  [[nodiscard]] T* ReadTrackedPointer(
+    gpg::ReadArchive* archive,
+    const gpg::RRef& ownerRef
+  )
   {
     const gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(archive, ownerRef);
     if (!tracked.object) {
@@ -93,8 +89,9 @@ namespace
 
     const char* const expectedName = expectedType ? expectedType->GetName() : "null";
     const char* const actualName = source.GetTypeName();
-    const msvc8::string errorMessage = gpg::STR_Printf(
-      "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" instead",
+    const fa::string errorMessage = gpg::STR_Printf(
+      "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
+      "instead",
       expectedName ? expectedName : "null",
       actualName ? actualName : "null"
     );
@@ -113,26 +110,15 @@ namespace
     gpg::WriteRawPointer(archive, pointerRef, state, ownerRef);
   }
 
-  void AddBase(gpg::RType* const ownerType, gpg::RType* const baseType, const std::int32_t offset)
-  {
-    GPG_ASSERT(ownerType != nullptr);
-    GPG_ASSERT(baseType != nullptr);
-
-    gpg::RField field{};
-    field.mName = baseType->GetName();
-    field.mType = baseType;
-    field.mOffset = offset;
-    field.mFlags = 0;
-    field.mDesc = nullptr;
-    ownerType->AddBase(field);
-  }
-
   constexpr std::int32_t kAcquireTargetRetargetCooldownTicks = 30;
   constexpr std::int32_t kAcquireTargetRetargetReprobeThresholdPrimary = 5;
   constexpr std::int32_t kAcquireTargetRetargetReprobeThresholdSecondary = 10;
   constexpr std::int32_t kAcquireTargetBlacklistTicks = 10;
 
-  [[nodiscard]] bool PositionUnchanged(const Wm3::Vector3f& lhs, const Wm3::Vector3f& rhs) noexcept
+  [[nodiscard]] bool PositionUnchanged(
+    const Wm3::Vector3f& lhs,
+    const Wm3::Vector3f& rhs
+  ) noexcept
   {
     return std::memcmp(&lhs, &rhs, sizeof(Wm3::Vector3f)) == 0;
   }
@@ -154,7 +140,11 @@ namespace
    * it stays a parameter here and the caller supplies
    * `kAcquireTargetBlacklistTicks`.
    */
-  void AddWeaponBlacklistEntry(UnitWeapon& weapon, Entity* const entity, const std::int32_t value)
+  void AddWeaponBlacklistEntry(
+    UnitWeapon& weapon,
+    Entity* const entity,
+    const std::int32_t value
+  )
   {
     if (entity == nullptr) {
       return;
@@ -173,7 +163,9 @@ namespace
     weapon.mBlacklist.push_back(entry);
   }
 
-  void ResetWeaponTargetAfterRetargetProbe(UnitWeapon& weapon)
+  void ResetWeaponTargetAfterRetargetProbe(
+    UnitWeapon& weapon
+  )
   {
     CAiTarget clearedTarget{};
     clearedTarget.targetType = EAiTargetType::AITARGET_Entity;
@@ -205,7 +197,10 @@ namespace
    *      the low 5 bits clear).
    * Returns false otherwise. Mirrors FUN_005D8AD0's two-branch structure.
    */
-  [[nodiscard]] bool CheckTargetGuardExempt(const CAiTarget& target, CAcquireTargetTask& task)
+  [[nodiscard]] bool CheckTargetGuardExempt(
+    const CAiTarget& target,
+    CAcquireTargetTask& task
+  )
   {
     Unit* const unit = task.mUnit;
     if (!unit->IsUnitState(EUnitState::UNITSTATE_Attacking)) {
@@ -288,7 +283,10 @@ namespace moho
    * Initializes the task, both listener lanes, and the weapon/attacker state
    * tracked by the acquire-target scheduler.
    */
-  CAcquireTargetTask::CAcquireTargetTask(UnitWeapon* const weapon, CAiAttackerImpl* const attacker)
+  CAcquireTargetTask::CAcquireTargetTask(
+    UnitWeapon* const weapon,
+    CAiAttackerImpl* const attacker
+  )
     : CTask(nullptr, false)
     , mWeapon(weapon)
     , mAttacker(attacker)
@@ -341,7 +339,7 @@ namespace moho
     // Reschedule interval: ceil(TargetCheckInterval * 10) clamped to at least 1,
     // then +1 (the ">= 2 => wait N-1 beats" band). This is the default return.
     const float intervalTicksFloat = weaponBlueprint->TargetCheckInterval * 10.0f;
-    int intervalTicks = msvc8::CeilToIntX87(intervalTicksFloat); // 0x005D8D5B..0x005D8D6E
+    int intervalTicks = fa::CeilToIntX87(intervalTicksFloat); // 0x005D8D5B..0x005D8D6E
     if (intervalTicks < 1) {
       intervalTicks = 1;
     }
@@ -354,9 +352,11 @@ namespace moho
     // Mid-unpack move short-circuit: units that must unpack before firing simply
     // wait while moving / (un)loading transport.
     const bool needsUnpack = mUnit->GetBlueprint()->AI.NeedUnpack != 0u;
-    if (needsUnpack
-        && (mUnit->IsUnitState(UNITSTATE_Moving) || mUnit->IsUnitState(UNITSTATE_TransportLoading)
-            || mUnit->IsUnitState(UNITSTATE_WaitingForTransport))) {
+    if (
+      needsUnpack &&
+      (mUnit->IsUnitState(UNITSTATE_Moving) || mUnit->IsUnitState(UNITSTATE_TransportLoading) ||
+       mUnit->IsUnitState(UNITSTATE_WaitingForTransport))
+    ) {
       return waitStatus;
     }
 
@@ -378,8 +378,10 @@ namespace moho
     // attackable target, drop this weapon's target and wait.
     if (weaponBlueprint->StopOnPrimaryWeaponBusy != 0u) {
       if (UnitWeapon* const primaryWeapon = mAttacker->GetPrimaryWeapon(); primaryWeapon != nullptr) {
-        if (mWeapon != primaryWeapon && primaryWeapon->mTarget.HasTarget()
-            && UnitWeapon::CanAttackTarget(&primaryWeapon->mTarget, primaryWeapon)) {
+        if (
+          mWeapon != primaryWeapon && primaryWeapon->mTarget.HasTarget() &&
+          UnitWeapon::CanAttackTarget(&primaryWeapon->mTarget, primaryWeapon)
+        ) {
           CAiTarget clearedTarget{};
           clearedTarget.targetPoint = -1;
           mWeapon->SetTarget(&clearedTarget);
@@ -392,8 +394,10 @@ namespace moho
     // weapon has a firing solution for it.
     if (weaponBlueprint->PrefersPrimaryWeaponTarget != 0u) {
       if (UnitWeapon* const primaryWeapon = mAttacker->GetPrimaryWeapon(); primaryWeapon != nullptr) {
-        if (mWeapon != primaryWeapon && primaryWeapon->mTarget.HasTarget()
-            && UnitWeapon::CanAttackTarget(&primaryWeapon->mTarget, mWeapon)) {
+        if (
+          mWeapon != primaryWeapon && primaryWeapon->mTarget.HasTarget() &&
+          UnitWeapon::CanAttackTarget(&primaryWeapon->mTarget, mWeapon)
+        ) {
           const Wm3::Vec3f targetPositionGun = primaryWeapon->mTarget.GetTargetPosGun(false);
           float distanceSq = 0.0f;
           if (mWeapon->TargetSolutionStatusGun(&targetPositionGun, &distanceSq) == ESolutionStatus::TRS_Available) {
@@ -423,19 +427,21 @@ namespace moho
     CAiAttackerImpl::State reportedState;
     if (!desiredTarget->HasTarget() || desiredHasNoTarget) {
       reportedState = CAiAttackerImpl::State::AAS_NoTarget;
-    } else if (CheckTargetGuardExempt(*desiredTarget, *this)
-               || mAttacker->IsTargetExempt(desiredTarget->GetEntity())) {
+    } else if (CheckTargetGuardExempt(*desiredTarget, *this) || mAttacker->IsTargetExempt(desiredTarget->GetEntity())) {
       reportedState = CAiAttackerImpl::State::AAS_TargetExempt;
     } else if (mTargetCooldown != 0 || mWeapon->mUnknown174 == 0u) {
       reportedState = CAiAttackerImpl::State::AAS_6;
-    } else if (desiredTooClose != ESolutionStatus::TRS_Available
-               || UnitWeapon::CanAttackTarget(desiredTarget, mWeapon)) {
+    } else if (
+      desiredTooClose != ESolutionStatus::TRS_Available || UnitWeapon::CanAttackTarget(desiredTarget, mWeapon)
+    ) {
       // `a2.mSpot != 0` in the binary == "too-close status is not Available".
       const bool canFly = mUnit->GetBlueprint()->Air.CanFly != 0u;
       if (canFly || desiredTooClose == ESolutionStatus::TRS_Available) {
-        if (desiredTarget->targetType == EAiTargetType::AITARGET_Ground
-            && mWeapon->mShotsAtTarget >= mWeapon->mWeaponBlueprint->AttackGroundTries
-            && mUnit->CommandQueue->GetNextCommand() != nullptr) {
+        if (
+          desiredTarget->targetType == EAiTargetType::AITARGET_Ground &&
+          mWeapon->mShotsAtTarget >= mWeapon->mWeaponBlueprint->AttackGroundTries &&
+          mUnit->CommandQueue->GetNextCommand() != nullptr
+        ) {
           reportedState = CAiAttackerImpl::State::AAS_OverShotCount;
         } else if (UnitWeapon::CanAttackTarget(desiredTarget, mWeapon)) {
           reportedState = CAiAttackerImpl::State::AAS_CanTarget;
@@ -444,9 +450,8 @@ namespace moho
           reportedState = CAiAttackerImpl::State::AAS_CannotTarget;
         }
       } else {
-        reportedState = (desiredTooClose != ESolutionStatus::TRS_InsideMinRange)
-          ? CAiAttackerImpl::State::AAS_2
-          : CAiAttackerImpl::State::AAS_7;
+        reportedState = (desiredTooClose != ESolutionStatus::TRS_InsideMinRange) ? CAiAttackerImpl::State::AAS_2
+                                                                                 : CAiAttackerImpl::State::AAS_7;
       }
     } else {
       reportedState = CAiAttackerImpl::State::AAS_CannotAttack;
@@ -461,16 +466,19 @@ namespace moho
 
     // Auto-initiate / can-target / mid-unpack-attacking short-circuit: wait.
     CAiTarget* const weaponTarget = &mWeapon->mTarget;
-    if (mUnit->IsUnitState(UNITSTATE_Attacking)
-        && ((mWeapon->mWeaponBlueprint->AutoInitiateAttackCommand != 0u && !CheckAutoInitiate())
-            || mUnit->GetBlueprint()->AI.NeedUnpack != 0u
-            || reportedState == CAiAttackerImpl::State::AAS_CanTarget)) {
+    if (
+      mUnit->IsUnitState(UNITSTATE_Attacking) &&
+      ((mWeapon->mWeaponBlueprint->AutoInitiateAttackCommand != 0u && !CheckAutoInitiate()) ||
+       mUnit->GetBlueprint()->AI.NeedUnpack != 0u || reportedState == CAiAttackerImpl::State::AAS_CanTarget)
+    ) {
       return TASKSTATUS_Wait;
     }
 
     // Keep the current weapon target if it is still attackable and in range.
-    if (mWeapon->mWeaponBlueprint->AlwaysRecheckTarget == 0u
-        && mWeapon->TargetIsTooClose(weaponTarget) == ESolutionStatus::TRS_Available) {
+    if (
+      mWeapon->mWeaponBlueprint->AlwaysRecheckTarget == 0u &&
+      mWeapon->TargetIsTooClose(weaponTarget) == ESolutionStatus::TRS_Available
+    ) {
       if (UnitWeapon::CanAttackTarget(weaponTarget, mWeapon) && weaponTarget->HasTarget()) {
         Entity* const weaponTargetEntity = weaponTarget->GetEntity();
         if (!mAttacker->IsTargetExempt(weaponTargetEntity)) {
@@ -534,8 +542,9 @@ namespace moho
     }
     const bool use3DDistance = weaponBlueprint->Turreted != 0u || weaponBlueprint->SlavedToBody != 0u;
 
-    if (Entity* const attachedTarget = ResolveAttachedParentDesiredTarget(mAttacker, mWeapon);
-        attachedTarget != nullptr) {
+    if (
+      Entity* const attachedTarget = ResolveAttachedParentDesiredTarget(mAttacker, mWeapon); attachedTarget != nullptr
+    ) {
       CAiTarget attachedAiTarget{};
       attachedAiTarget.UpdateTarget(attachedTarget);
       mWeapon->SetTarget(&attachedAiTarget);
@@ -672,7 +681,9 @@ namespace moho
   /**
    * Address: 0x005D97F0 (FUN_005D97F0, listener callback lane)
    */
-  int CAcquireTargetTask::OnEvent(const EProjectileImpactEvent event)
+  int CAcquireTargetTask::OnEvent(
+    const EProjectileImpactEvent event
+  )
   {
     if (mWeapon == nullptr || mWeapon->mWeaponBlueprint == nullptr) {
       return event;
@@ -698,7 +709,9 @@ namespace moho
   /**
    * Address: 0x005D9830 (FUN_005D9830, listener callback lane)
    */
-  int CAcquireTargetTask::OnEvent(const ECollisionBeamEvent event)
+  int CAcquireTargetTask::OnEvent(
+    const ECollisionBeamEvent event
+  )
   {
     if (mWeapon == nullptr || mWeapon->mWeaponBlueprint == nullptr) {
       return event;
@@ -744,10 +757,10 @@ namespace moho
     if (mWeapon->mWeaponIndex == 0 && desiredTarget != nullptr) {
       Entity* const desiredEntity = desiredTarget->GetEntity();
       if (
-        desiredEntity != nullptr && mUnit->IsMobile()
-        && PositionUnchanged(mUnit->mVarDat.mCurTransform.pos_, mUnit->mVarDat.mLastTransform.pos_)
-        && desiredEntity->mVarDat.mLayerMask != LAYER_Air
-        && PositionUnchanged(desiredEntity->mVarDat.mCurTransform.pos_, desiredEntity->mVarDat.mLastTransform.pos_)
+        desiredEntity != nullptr && mUnit->IsMobile() &&
+        PositionUnchanged(mUnit->mVarDat.mCurTransform.pos_, mUnit->mVarDat.mLastTransform.pos_) &&
+        desiredEntity->mVarDat.mLayerMask != LAYER_Air &&
+        PositionUnchanged(desiredEntity->mVarDat.mCurTransform.pos_, desiredEntity->mVarDat.mLastTransform.pos_)
       ) {
         ++mWeapon->mUnknown170;
         if (mWeapon->mUnknown170 > kAcquireTargetRetargetReprobeThresholdPrimary) {
@@ -762,10 +775,12 @@ namespace moho
 
     Entity* const currentTargetEntity = currentWeaponTarget->GetEntity();
     if (
-      currentTargetEntity != nullptr
-      && PositionUnchanged(mUnit->mVarDat.mCurTransform.pos_, mUnit->mVarDat.mLastTransform.pos_)
-      && currentTargetEntity->mVarDat.mLayerMask != LAYER_Air
-      && PositionUnchanged(currentTargetEntity->mVarDat.mCurTransform.pos_, currentTargetEntity->mVarDat.mLastTransform.pos_)
+      currentTargetEntity != nullptr &&
+      PositionUnchanged(mUnit->mVarDat.mCurTransform.pos_, mUnit->mVarDat.mLastTransform.pos_) &&
+      currentTargetEntity->mVarDat.mLayerMask != LAYER_Air &&
+      PositionUnchanged(
+        currentTargetEntity->mVarDat.mCurTransform.pos_, currentTargetEntity->mVarDat.mLastTransform.pos_
+      )
     ) {
       ++mWeapon->mUnknown170;
       if (mWeapon->mUnknown170 > kAcquireTargetRetargetReprobeThresholdSecondary) {
@@ -781,15 +796,18 @@ namespace moho
   /**
    * Address: 0x005E16A0 (FUN_005E16A0, Moho::CAcquireTargetTask::MemberDeserialize)
    */
-  void CAcquireTargetTask::MemberDeserialize(gpg::ReadArchive* const archive, const int /*version*/, const gpg::RRef& ownerRef)
+  void CAcquireTargetTask::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    const int /*version*/,
+    const gpg::RRef& ownerRef
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
       return;
     }
 
-
-    gpg::RType* const baseTaskType = CachedCTaskType();
+    gpg::RType* const baseTaskType = gpg::CachedLookup<CTask>(CTask::sType);
     archive->Read(baseTaskType, this, ownerRef);
 
     mWeapon = ReadTrackedPointer<UnitWeapon>(archive, ownerRef);
@@ -805,15 +823,18 @@ namespace moho
   /**
    * Address: 0x005E1750 (FUN_005E1750, Moho::CAcquireTargetTask::MemberSerialize)
    */
-  void CAcquireTargetTask::MemberSerialize(gpg::WriteArchive* const archive, const int /*version*/, const gpg::RRef& ownerRef) const
+  void CAcquireTargetTask::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    const int /*version*/,
+    const gpg::RRef& ownerRef
+  ) const
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
       return;
     }
 
-
-    gpg::RType* const baseTaskType = CachedCTaskType();
+    gpg::RType* const baseTaskType = gpg::CachedLookup<CTask>(CTask::sType);
     archive->Write(baseTaskType, this, ownerRef);
 
     WriteTrackedPointer(archive, mWeapon, gpg::TrackedPointerState::Unowned, ownerRef);
@@ -852,8 +873,9 @@ namespace moho
 
     if (nextCommand == nullptr) {
       const EUnitCommandType commandType = currentCommand->mVarDat.mCmdType;
-      if (commandType == EUnitCommandType::UNITCOMMAND_Attack || commandType == EUnitCommandType::UNITCOMMAND_FormAttack)
-      {
+      if (
+        commandType == EUnitCommandType::UNITCOMMAND_Attack || commandType == EUnitCommandType::UNITCOMMAND_FormAttack
+      ) {
         CAiTarget commandTarget{};
         CopyLinkedTargetFromPointer(&commandTarget, &currentCommand->mTarget);
         // 0x005D8CC6 reads the command target's raw weak slot (FUN_005D5980,
@@ -861,8 +883,8 @@ namespace moho
         // death itself, never resolved to its source unit.
         Entity* const focusEntity = commandTarget.targetEntity.GetObjectPtr();
         if (
-          commandTarget.targetType == EAiTargetType::AITARGET_Entity
-          && (focusEntity == nullptr || focusEntity->mVarDat.mIsDead != 0u || focusEntity->DestroyQueuedFlag != 0u)
+          commandTarget.targetType == EAiTargetType::AITARGET_Entity &&
+          (focusEntity == nullptr || focusEntity->mVarDat.mIsDead != 0u || focusEntity->DestroyQueuedFlag != 0u)
         ) {
           return true;
         }

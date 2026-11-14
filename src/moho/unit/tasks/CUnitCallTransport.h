@@ -91,7 +91,10 @@ namespace moho
     offsetof(CUnitCallTransport, mHasBeamupDestination) == 0x38,
     "CUnitCallTransport::mHasBeamupDestination offset must be 0x38"
   );
-  static_assert(offsetof(CUnitCallTransport, mBeamupTime) == 0x3C, "CUnitCallTransport::mBeamupTime offset must be 0x3C");
+  static_assert(
+    offsetof(CUnitCallTransport, mBeamupTime) == 0x3C,
+    "CUnitCallTransport::mBeamupTime offset must be 0x3C"
+  );
   static_assert(
     offsetof(CUnitCallTransport, mSourceTransform) == 0x40,
     "CUnitCallTransport::mSourceTransform offset must be 0x40"
@@ -118,12 +121,4 @@ namespace moho
 
 namespace gpg
 {
-  /**
-   * Address: 0x006031D0 (FUN_006031D0, gpg::RRef_CUnitCallTransport)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitCallTransport*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitCallTransport(gpg::RRef* outRef, moho::CUnitCallTransport* value);
 } // namespace gpg

@@ -6,7 +6,6 @@
 #include "lua/LuaMemAccounting.h"
 #include "lua/LuaUndump.h"
 
-
 #include <array>
 #include <cctype>
 #include <climits>
@@ -46,10 +45,10 @@ namespace
 
   struct ConsControl
   {
-    expdesc v;             // +0x00
-    expdesc* t = nullptr;  // +0x14
-    std::int32_t nh = 0;   // +0x18
-    std::int32_t na = 0;   // +0x1C
+    expdesc v;                // +0x00
+    expdesc* t = nullptr;     // +0x14
+    std::int32_t nh = 0;      // +0x18
+    std::int32_t na = 0;      // +0x1C
     std::int32_t tostore = 0; // +0x20
   };
   static_assert(offsetof(ConsControl, v) == 0x00, "ConsControl::v offset must be 0x00");
@@ -80,7 +79,6 @@ namespace
   // exactly 25, 26, 27, 28 and 33 - EQ, LT, LE, TEST and TFORLOOP.
   constexpr std::int32_t OP_MOVE = 0x00;
   constexpr std::int32_t OP_LOADK = 0x01;
-  constexpr std::int32_t OP_LOADBOOL = 0x02;
   constexpr std::int32_t OP_LOADNIL = 0x03;
   constexpr std::int32_t OP_GETUPVAL = 0x04;
   constexpr std::int32_t OP_GETGLOBAL = 0x05;
@@ -106,7 +104,6 @@ namespace
   constexpr std::int32_t OP_TFORLOOP = 0x21;
   constexpr std::int32_t OP_TFORPREP = 0x22;
   constexpr std::int32_t OP_SETLIST = 0x23;
-  constexpr std::int32_t OP_SETLISTO = 0x24;
   constexpr std::int32_t OP_CLOSE = 0x25;
   constexpr std::int32_t OP_CLOSURE = 0x26;
   constexpr std::int32_t OP_SUB = 0x0D;
@@ -138,70 +135,84 @@ namespace
   constexpr std::int32_t MAXARG_B = (1 << kSizeB) - 1;
   constexpr std::int32_t MAXARG_C = (1 << kSizeC) - 1;
 
-  [[nodiscard]] constexpr std::int32_t GET_OPCODE(const Instruction i) noexcept
+  [[nodiscard]] constexpr std::int32_t GET_OPCODE(
+    const Instruction i
+  ) noexcept
   {
     return static_cast<std::int32_t>(i & ((1u << kSizeOp) - 1u));
   }
 
-  [[nodiscard]] constexpr std::int32_t GETARG_A(const Instruction i) noexcept
+  [[nodiscard]] constexpr std::int32_t GETARG_A(
+    const Instruction i
+  ) noexcept
   {
     return static_cast<std::int32_t>((i >> kPosA) & MAXARG_A);
   }
 
-  [[nodiscard]] constexpr std::int32_t GETARG_B(const Instruction i) noexcept
+  [[nodiscard]] constexpr std::int32_t GETARG_B(
+    const Instruction i
+  ) noexcept
   {
     return static_cast<std::int32_t>((i >> kPosB) & MAXARG_B);
   }
 
-  [[nodiscard]] constexpr std::int32_t GETARG_C(const Instruction i) noexcept
+  [[nodiscard]] constexpr std::int32_t GETARG_C(
+    const Instruction i
+  ) noexcept
   {
     return static_cast<std::int32_t>((i >> kPosC) & MAXARG_C);
   }
 
-  [[nodiscard]] constexpr std::int32_t GETARG_sBx(const Instruction i) noexcept
+  [[nodiscard]] constexpr std::int32_t GETARG_sBx(
+    const Instruction i
+  ) noexcept
   {
     return static_cast<std::int32_t>((i >> kPosBx) & LUA_MAXARG_Bx) - LUA_MAXARG_sBx;
   }
 
-  constexpr void SETARG_A(Instruction& i, const std::int32_t a) noexcept
+  constexpr void SETARG_A(
+    Instruction& i,
+    const std::int32_t a
+  ) noexcept
   {
-    i = (i & ~(static_cast<Instruction>(MAXARG_A) << kPosA))
-      | (static_cast<Instruction>(a) << kPosA);
+    i = (i & ~(static_cast<Instruction>(MAXARG_A) << kPosA)) | (static_cast<Instruction>(a) << kPosA);
   }
 
-  constexpr void SETARG_B(Instruction& i, const std::int32_t b) noexcept
+  constexpr void SETARG_B(
+    Instruction& i,
+    const std::int32_t b
+  ) noexcept
   {
-    i = (i & ~(static_cast<Instruction>(MAXARG_B) << kPosB))
-      | (static_cast<Instruction>(b) << kPosB);
+    i = (i & ~(static_cast<Instruction>(MAXARG_B) << kPosB)) | (static_cast<Instruction>(b) << kPosB);
   }
 
-  constexpr void SETARG_C(Instruction& i, const std::int32_t c) noexcept
+  constexpr void SETARG_C(
+    Instruction& i,
+    const std::int32_t c
+  ) noexcept
   {
-    i = (i & ~(static_cast<Instruction>(MAXARG_C) << kPosC))
-      | (static_cast<Instruction>(c) << kPosC);
+    i = (i & ~(static_cast<Instruction>(MAXARG_C) << kPosC)) | (static_cast<Instruction>(c) << kPosC);
   }
 
-  constexpr void SETARG_sBx(Instruction& i, const std::int32_t offset) noexcept
+  [[nodiscard]] constexpr Instruction CREATE_ABC(
+    const std::int32_t o,
+    const std::int32_t a,
+    const std::int32_t b,
+    const std::int32_t c
+  ) noexcept
   {
-    i = (i & ~(static_cast<Instruction>(LUA_MAXARG_Bx) << kPosBx))
-      | (static_cast<Instruction>(offset + LUA_MAXARG_sBx) << kPosBx);
+    return static_cast<Instruction>(o) | (static_cast<Instruction>(a) << kPosA) |
+      (static_cast<Instruction>(b) << kPosB) | (static_cast<Instruction>(c) << kPosC);
   }
 
-  [[nodiscard]] constexpr Instruction
-  CREATE_ABC(const std::int32_t o, const std::int32_t a, const std::int32_t b, const std::int32_t c) noexcept
+  [[nodiscard]] constexpr Instruction CREATE_ABx(
+    const std::int32_t o,
+    const std::int32_t a,
+    const std::uint32_t bx
+  ) noexcept
   {
-    return static_cast<Instruction>(o)
-      | (static_cast<Instruction>(a) << kPosA)
-      | (static_cast<Instruction>(b) << kPosB)
-      | (static_cast<Instruction>(c) << kPosC);
-  }
-
-  [[nodiscard]] constexpr Instruction
-  CREATE_ABx(const std::int32_t o, const std::int32_t a, const std::uint32_t bx) noexcept
-  {
-    return static_cast<Instruction>(o)
-      | (static_cast<Instruction>(a) << kPosA)
-      | (static_cast<Instruction>(bx) << kPosBx);
+    return static_cast<Instruction>(o) | (static_cast<Instruction>(a) << kPosA) |
+      (static_cast<Instruction>(bx) << kPosBx);
   }
   constexpr std::int32_t OPR_ADD = 0x00;
   constexpr std::int32_t OPR_SUB = 0x01;
@@ -270,39 +281,48 @@ namespace
   // Printable names, in token order from FIRST_RESERVED. Mirrors the table the
   // binary indexes at 0x00D45C0C[token].
   constexpr std::array<const char*, (TK_EOS - FIRST_RESERVED) + 1> luaX_tokens{
-    "and", "break", "continue", "do", "else", "elseif", "end", "false", "for",
-    "function", "if", "in", "local", "nil", "not", "or", "repeat", "return",
-    "then", "true", "until", "while",
-    "*name", "..", "...", "==", ">=", "<=", "~=", "*number", "*string",
-    "<<", ">>", "<eof>"
+    "and",   "break", "continue", "do", "else",   "elseif",  "end",     "false", "for",   "function", "if",    "in",
+    "local", "nil",   "not",      "or", "repeat", "return",  "then",    "true",  "until", "while",    "*name", "..",
+    "...",   "==",    ">=",       "<=", "~=",     "*number", "*string", "<<",    ">>",    "<eof>"
   };
 
   // LuaPlus's parser records the left and right binding powers as one
   // two-byte pair per BinOpr. std::pair expresses that source-level record
   // without introducing another recovered layout type.
   using BinaryOperatorPriority = std::pair<std::uint8_t, std::uint8_t>;
-  constexpr std::array<BinaryOperatorPriority, OPR_NOBINOPR> kBinaryOperatorPriorities{{
-    {6, 6}, {6, 6}, {7, 7}, {7, 7},
-    {8, 8}, {8, 8}, {8, 8}, {8, 8},
-    {10, 9}, {5, 4},
-    {3, 3}, {3, 3},
-    {3, 3}, {3, 3}, {3, 3}, {3, 3},
-    {2, 2}, {1, 1}
-  }};
+  constexpr std::array<BinaryOperatorPriority, OPR_NOBINOPR> kBinaryOperatorPriorities{
+    {{6, 6},
+     {6, 6},
+     {7, 7},
+     {7, 7},
+     {8, 8},
+     {8, 8},
+     {8, 8},
+     {8, 8},
+     {10, 9},
+     {5, 4},
+     {3, 3},
+     {3, 3},
+     {3, 3},
+     {3, 3},
+     {3, 3},
+     {3, 3},
+     {2, 2},
+     {1, 1}}
+  };
   static_assert(kBinaryOperatorPriorities.size() == OPR_NOBINOPR);
 
-  constexpr unsigned char kLuaOpcodeModes[] = {
-    0x24, 0x61, 0x20, 0x24, 0x20, 0x61, 0x34, 0x41, 0x00, 0x18,
-    0x20, 0x34, 0x38, 0x38, 0x38, 0x38, 0x38, 0x38, 0x38, 0x38,
-    0x38, 0x24, 0x24, 0x34, 0x02, 0x98, 0x98, 0x98, 0xA4, 0x00,
-    0x00, 0x00, 0x02, 0x80, 0x02, 0x01, 0x01, 0x00, 0x21
-  };
+  constexpr unsigned char kLuaOpcodeModes[] = {0x24, 0x61, 0x20, 0x24, 0x20, 0x61, 0x34, 0x41, 0x00, 0x18,
+                                               0x20, 0x34, 0x38, 0x38, 0x38, 0x38, 0x38, 0x38, 0x38, 0x38,
+                                               0x38, 0x24, 0x24, 0x34, 0x02, 0x98, 0x98, 0x98, 0xA4, 0x00,
+                                               0x00, 0x00, 0x02, 0x80, 0x02, 0x01, 0x01, 0x00, 0x21};
 
-  [[nodiscard]] constexpr bool LuaOpcodeNeedsFollowingJump(const Instruction instruction)
+  [[nodiscard]] constexpr bool LuaOpcodeNeedsFollowingJump(
+    const Instruction instruction
+  )
   {
     const std::size_t opcode = static_cast<std::size_t>(instruction & 0x3Fu);
-    return opcode < (sizeof(kLuaOpcodeModes) / sizeof(kLuaOpcodeModes[0]))
-      && ((kLuaOpcodeModes[opcode] & 0x80u) != 0u);
+    return opcode < (sizeof(kLuaOpcodeModes) / sizeof(kLuaOpcodeModes[0])) && ((kLuaOpcodeModes[opcode] & 0x80u) != 0u);
   }
 
   /**
@@ -312,7 +332,10 @@ namespace
    * Returns the instruction lane that controls jump semantics for `pc`,
    * stepping back one slot when the prior opcode is a test-with-following-jump.
    */
-  [[nodiscard]] Instruction* LuaResolveControllingInstruction(FuncState* const fs, const std::int32_t pc) noexcept
+  [[nodiscard]] Instruction* LuaResolveControllingInstruction(
+    FuncState* const fs,
+    const std::int32_t pc
+  ) noexcept
   {
     Instruction* controllingInstruction = &fs->f->code[pc];
     if (pc >= 1 && LuaOpcodeNeedsFollowingJump(*(controllingInstruction - 1))) {
@@ -328,7 +351,10 @@ namespace
    * Patches one Lua test-instruction A-register lane; when `registerIndex`
    * equals `NO_REG` (`0xFF`), keeps the existing encoded register value.
    */
-  void LuaPatchTestRegisterField(std::int32_t registerIndex, Instruction* const instructionSlot) noexcept
+  void LuaPatchTestRegisterField(
+    std::int32_t registerIndex,
+    Instruction* const instructionSlot
+  ) noexcept
   {
     if (registerIndex == NO_REG) {
       registerIndex = GETARG_B(*instructionSlot);
@@ -338,33 +364,16 @@ namespace
   }
 
   /**
-   * Address: 0x00912F00 (FUN_00912F00, isinstack)
-   *
-   * What it does:
-   * Returns `1` when `stackValue` is within one call frame stack window
-   * `[base, top)`; returns `0` otherwise.
-   */
-  [[nodiscard]] std::int32_t isinstack(CallInfo* const callInfo, LuaPlus::TObject* const stackValue)
-  {
-    LuaPlus::StkId cursor = callInfo->base;
-    const LuaPlus::StkId top = callInfo->top;
-    while (cursor < top) {
-      if (cursor == stackValue) {
-        return 1;
-      }
-      ++cursor;
-    }
-    return 0;
-  }
-
-  /**
    * Address: 0x009103C0 (FUN_009103C0, freereg)
    *
    * What it does:
    * Releases one register lane when it is outside the active-local range and
    * below the Lua max stack sentinel.
    */
-  void freereg(FuncState* const fs, const std::int32_t registerIndex)
+  void freereg(
+    FuncState* const fs,
+    const std::int32_t registerIndex
+  )
   {
     if (registerIndex >= fs->nactvar && registerIndex < MAXSTACK) {
       --fs->freereg;
@@ -378,7 +387,10 @@ namespace
    * Releases one expression register lane when expression kind is
    * non-relocatable.
    */
-  void freeexp(expdesc* const expression, FuncState* const fs)
+  void freeexp(
+    expdesc* const expression,
+    FuncState* const fs
+  )
   {
     if (expression->k == VNONRELOC) {
       freereg(fs, expression->info);
@@ -403,98 +415,92 @@ namespace
   void parlist(LexState* ls);
   std::int32_t statement(LexState* ls);
 
-  extern "C"
-  {
-    void next(LexState* ls);
-    void cond(LexState* ls, expdesc* v);
-    void check(LexState* ls, std::int32_t c);
-    void block(LexState* ls);
-    void check_match(LexState* ls, std::int32_t what, std::int32_t who, std::int32_t where);
+  extern "C" {
+  void next(LexState* ls);
+  void cond(LexState* ls, expdesc* v);
+  void check(LexState* ls, std::int32_t c);
+  void block(LexState* ls);
+  void check_match(LexState* ls, std::int32_t what, std::int32_t who, std::int32_t where);
 
-    /**
-     * Address: 0x0091C680 (FUN_0091C680, subexpr)
-     *
-     * What it does:
-     * Parses unary and binary expressions with Lua's precedence and
-     * associativity rules, returning the first operator left for its caller.
-     */
-    std::int32_t subexpr(LexState* ls, expdesc* expression, std::int32_t limit);
+  /**
+   * Address: 0x0091C680 (FUN_0091C680, subexpr)
+   *
+   * What it does:
+   * Parses unary and binary expressions with Lua's precedence and
+   * associativity rules, returning the first operator left for its caller.
+   */
+  std::int32_t subexpr(LexState* ls, expdesc* expression, std::int32_t limit);
 
-    void assignment(LexState* ls, LHS_assign* lhs, std::int32_t nvars);
-    std::int32_t luaK_code(FuncState* fs, Instruction i, int line);
-    std::int32_t luaK_jump(FuncState* fs);
-    void luaK_concat(FuncState* fs, std::int32_t* l1, std::int32_t l2);
-    void luaK_patchtohere(FuncState* fs, std::int32_t list);
-    void luaK_reserveregs(FuncState* fs, int n);
-    std::int32_t luaK_stringK(FuncState* fs, TString* stringToken);
-    void removevars(LexState* ls, int limit);
-    std::int32_t luaK_codeABC(FuncState* fs, int o, int a, int b, int c);
-    std::int32_t luaK_codeABx(FuncState* fs, int o, int a, unsigned int bc);
-    void luaK_dischargevars(FuncState* fs, expdesc* e);
-    void discharge2anyreg(FuncState* fs, expdesc* e);
-    void luaK_setcallreturns(FuncState* fs, expdesc* e, int nresults);
-    void luaK_nil(FuncState* fs, int from, int n);
-    void luaK_exp2nextreg(FuncState* fs, expdesc* e);
-    std::int32_t luaK_numberK(FuncState* fs, float r);
-    std::int32_t jumponcond(FuncState* fs, int cond, expdesc* e);
-    void invertjump(FuncState* fs, expdesc* e);
-    void luaC_collectgarbage(lua_State* L);
-    void luaD_growstack(lua_State* L, int n);
-    Proto* luaF_newproto(lua_State* L);
-    Table* luaH_new(lua_State* L, int narray, int lnhash);
-    LClosure* luaF_newLclosure(lua_State* L, int nelems, LuaPlus::TObject* e);
-    Proto* luaU_undump(lua_State* state, ZIO* stream, Mbuffer* buffer);
-    Proto* luaY_parser(lua_State* L, ZIO* z, Mbuffer* buff);
-    std::int32_t luaX_lex(LexState* ls, SemInfo* seminfo);
-    std::int32_t indexupvalue(FuncState* fs, expdesc* value, TString* name);
-    TString* str_checkname(LexState* ls);
-    void luaX_syntaxerror(LexState* ls, const char* msg);
-    void luaY_field(LexState* ls, expdesc* outExpression);
-    void luaK_storevar(FuncState* fs, expdesc* outVariableExpression, expdesc* valueExpression);
-    void luaK_fixline(FuncState* fs, int line);
-    void codestring(TString* stringToken, LexState* ls, expdesc* outExpression);
-    void constructor(expdesc* outExpression, LexState* ls);
-    void body(LexState* ls, expdesc* outExpression, int needself, int line);
-    void primaryexp(expdesc* outExpression, LexState* ls);
-    std::int32_t luaZ_fill(ZIO* stream);
-    void luaO_chunkid(char* out, const char* source, int bufflen);
-    int luaO_log2(unsigned int x);
-    int luaO_str2d(const char* s, float* result);
-    void inclinenumber(LexState* ls);
-    std::int32_t read_numeral(LexState* ls, int period, SemInfo* seminfo);
-    void read_long_string(LexState* ls, SemInfo* seminfo);
-    void read_string(LexState* ls, int del, SemInfo* seminfo);
-    unsigned int luaO_int2fb(unsigned int x);
-    void funcargs(LexState* ls, expdesc* f);
-    void recfield(LexState* ls, ConsControl* cc);
-    void prefixexp(LexState* ls, expdesc* v);
-    void error_expected(LexState* ls, std::int32_t token);
-    void luaY_index(LexState* ls, expdesc* v);
-    void luaK_self(FuncState* fs, expdesc* e, expdesc* key);
-    void luaK_patchlist(FuncState* fs, std::int32_t list, std::int32_t target);
-    void luaX_setinput(lua_State* L, LexState* ls, ZIO* z, TString* source);
-    void chunk(LexState* ls);
-    void f_parser(SParser* parser, lua_State* state);
-    int luaI_registerlocalvar(LexState* ls, TString* varname);
-    void new_localvarstr(const char* name, LexState* ls, int n);
-    void code_params(LexState* ls, int nparams, int dots);
-    void cond(LexState* ls, expdesc* v);
-    void test_then_block(LexState* ls, expdesc* v);
-    void forbody(LexState* ls, int base, int line, int nvars, int isnum);
-    TString* luaS_newlstr(lua_State* L, const char* str, std::size_t len);
-    TString* PushLuaStringAtStackSlot(lua_State* L, LuaPlus::StkId slot, const char* source);
-    char* luaZ_openspace(lua_State* L, Mbuffer* buff, std::size_t n);
-    void luaG_runerror(lua_State* L, const char* format, ...);
-    int luaK_exp2anyreg(FuncState* fs, expdesc* e);
-    void luaK_indexed(FuncState* fs, expdesc* t, expdesc* k);
-    void luaK_prefix(FuncState* fs, std::int32_t op, expdesc* expression);
-    void luaK_infix(FuncState* fs, std::int32_t op, expdesc* expression);
-    void luaK_posfix(
-      FuncState* fs,
-      std::int32_t op,
-      expdesc* leftExpression,
-      expdesc* rightExpression
-    );
+  void assignment(LexState* ls, LHS_assign* lhs, std::int32_t nvars);
+  std::int32_t luaK_code(FuncState* fs, Instruction i, int line);
+  std::int32_t luaK_jump(FuncState* fs);
+  void luaK_concat(FuncState* fs, std::int32_t* l1, std::int32_t l2);
+  void luaK_patchtohere(FuncState* fs, std::int32_t list);
+  void luaK_reserveregs(FuncState* fs, int n);
+  std::int32_t luaK_stringK(FuncState* fs, TString* stringToken);
+  void removevars(LexState* ls, int limit);
+  std::int32_t luaK_codeABC(FuncState* fs, int o, int a, int b, int c);
+  std::int32_t luaK_codeABx(FuncState* fs, int o, int a, unsigned int bc);
+  void luaK_dischargevars(FuncState* fs, expdesc* e);
+  void discharge2anyreg(FuncState* fs, expdesc* e);
+  void luaK_setcallreturns(FuncState* fs, expdesc* e, int nresults);
+  void luaK_nil(FuncState* fs, int from, int n);
+  void luaK_exp2nextreg(FuncState* fs, expdesc* e);
+  std::int32_t luaK_numberK(FuncState* fs, float r);
+  std::int32_t jumponcond(FuncState* fs, int cond, expdesc* e);
+  void invertjump(FuncState* fs, expdesc* e);
+  void luaC_collectgarbage(lua_State* L);
+  void luaD_growstack(lua_State* L, int n);
+  Proto* luaF_newproto(lua_State* L);
+  Table* luaH_new(lua_State* L, int narray, int lnhash);
+  LClosure* luaF_newLclosure(lua_State* L, int nelems, LuaPlus::TObject* e);
+  Proto* luaU_undump(lua_State* state, ZIO* stream, Mbuffer* buffer);
+  Proto* luaY_parser(lua_State* L, ZIO* z, Mbuffer* buff);
+  std::int32_t luaX_lex(LexState* ls, SemInfo* seminfo);
+  std::int32_t indexupvalue(FuncState* fs, expdesc* value, TString* name);
+  TString* str_checkname(LexState* ls);
+  void luaX_syntaxerror(LexState* ls, const char* msg);
+  void luaY_field(LexState* ls, expdesc* outExpression);
+  void luaK_storevar(FuncState* fs, expdesc* outVariableExpression, expdesc* valueExpression);
+  void luaK_fixline(FuncState* fs, int line);
+  void codestring(TString* stringToken, LexState* ls, expdesc* outExpression);
+  void constructor(expdesc* outExpression, LexState* ls);
+  void body(LexState* ls, expdesc* outExpression, int needself, int line);
+  void primaryexp(expdesc* outExpression, LexState* ls);
+  std::int32_t luaZ_fill(ZIO* stream);
+  void luaO_chunkid(char* out, const char* source, int bufflen);
+  int luaO_log2(unsigned int x);
+  int luaO_str2d(const char* s, float* result);
+  void inclinenumber(LexState* ls);
+  std::int32_t read_numeral(LexState* ls, int period, SemInfo* seminfo);
+  void read_long_string(LexState* ls, SemInfo* seminfo);
+  void read_string(LexState* ls, int del, SemInfo* seminfo);
+  unsigned int luaO_int2fb(unsigned int x);
+  void funcargs(LexState* ls, expdesc* f);
+  void recfield(LexState* ls, ConsControl* cc);
+  void prefixexp(LexState* ls, expdesc* v);
+  void error_expected(LexState* ls, std::int32_t token);
+  void luaY_index(LexState* ls, expdesc* v);
+  void luaK_self(FuncState* fs, expdesc* e, expdesc* key);
+  void luaK_patchlist(FuncState* fs, std::int32_t list, std::int32_t target);
+  void luaX_setinput(lua_State* L, LexState* ls, ZIO* z, TString* source);
+  void chunk(LexState* ls);
+  void f_parser(SParser* parser, lua_State* state);
+  int luaI_registerlocalvar(LexState* ls, TString* varname);
+  void new_localvarstr(const char* name, LexState* ls, int n);
+  void code_params(LexState* ls, int nparams, int dots);
+  void cond(LexState* ls, expdesc* v);
+  void test_then_block(LexState* ls, expdesc* v);
+  void forbody(LexState* ls, int base, int line, int nvars, int isnum);
+  TString* luaS_newlstr(lua_State* L, const char* str, std::size_t len);
+  TString* PushLuaStringAtStackSlot(lua_State* L, LuaPlus::StkId slot, const char* source);
+  char* luaZ_openspace(lua_State* L, Mbuffer* buff, std::size_t n);
+  void luaG_runerror(lua_State* L, const char* format, ...);
+  int luaK_exp2anyreg(FuncState* fs, expdesc* e);
+  void luaK_indexed(FuncState* fs, expdesc* t, expdesc* k);
+  void luaK_prefix(FuncState* fs, std::int32_t op, expdesc* expression);
+  void luaK_infix(FuncState* fs, std::int32_t op, expdesc* expression);
+  void luaK_posfix(FuncState* fs, std::int32_t op, expdesc* leftExpression, expdesc* rightExpression);
   }
 
   // ---------------------------------------------------------------------
@@ -519,7 +525,10 @@ namespace
    * symbols come from the token table, single characters are formatted into a
    * fresh Lua string.
    */
-  extern "C" const char* luaX_token2str(LexState* const ls, const int token)
+  extern "C" const char* luaX_token2str(
+    LexState* const ls,
+    const int token
+  )
   {
     if (token < FIRST_RESERVED) {
       return luaO_pushfstring(ls->L, "%c", token);
@@ -538,8 +547,12 @@ namespace
    * Builds "<chunk>(<line>): <message> near `<token>'", pushes it on the Lua
    * stack and throws it as a syntax error.
    */
-  extern "C" void
-  luaX_errorline(LexState* const ls, const char* const s, const char* const token, const int line)
+  extern "C" void luaX_errorline(
+    LexState* const ls,
+    const char* const s,
+    const char* const token,
+    const int line
+  )
   {
     // llex.c's own cap on how much of a chunk name an error may quote; this is
     // MAXSRC, not the (smaller) LUA_IDSIZE that lua_Debug::short_src uses.
@@ -561,7 +574,10 @@ namespace
    * scratch buffer, since its token value carries no string - everything else
    * is named through the token table.
    */
-  extern "C" void luaX_syntaxerror(LexState* const ls, const char* const msg)
+  extern "C" void luaX_syntaxerror(
+    LexState* const ls,
+    const char* const msg
+  )
   {
     const char* lasttoken = nullptr;
     switch (ls->t.token) {
@@ -589,7 +605,12 @@ namespace
    * Raises "too many <what> (limit=<n>)" when a compile-time count runs past
    * one of the parser's fixed ceilings.
    */
-  extern "C" void luaX_checklimit(LexState* const ls, const int val, const int limit, const char* const msg)
+  extern "C" void luaX_checklimit(
+    LexState* const ls,
+    const int val,
+    const int limit,
+    const char* const msg
+  )
   {
     if (val > limit) {
       luaX_syntaxerror(ls, luaO_pushfstring(ls->L, "too many %s (limit=%d)", msg, limit));
@@ -610,18 +631,20 @@ namespace
    * What it does:
    * True for a lowercased hexadecimal digit.
    */
-  [[nodiscard]] constexpr bool IsHexDigit(const int lowercased) noexcept
+  [[nodiscard]] constexpr bool IsHexDigit(
+    const int lowercased
+  ) noexcept
   {
     return (lowercased >= '0' && lowercased <= '9') || (lowercased >= 'a' && lowercased <= 'f');
   }
 
-  std::int32_t nextchar(LexState* const ls)
+  std::int32_t nextchar(
+    LexState* const ls
+  )
   {
     auto* const z = ls->z;
     const std::size_t remaining = z->remainingBytes--;
-    ls->current = (remaining > 0u)
-      ? static_cast<unsigned char>(*z->cursor++)
-      : luaZ_fill(z);
+    ls->current = (remaining > 0u) ? static_cast<unsigned char>(*z->cursor++) : luaZ_fill(z);
     return ls->current;
   }
 
@@ -638,7 +661,10 @@ namespace
    * Makes room in the token scratch buffer for `length` bytes plus the slack
    * the readers write past the cursor (llex.c's checkbuffer).
    */
-  void checkbuffer(LexState* const ls, const std::int32_t length)
+  void checkbuffer(
+    LexState* const ls,
+    const std::int32_t length
+  )
   {
     auto* const buff = ls->buff;
     if (static_cast<std::size_t>(length + 5) > buff->buffsize) {
@@ -646,7 +672,9 @@ namespace
     }
   }
 
-  [[nodiscard]] char* lexbuffer(LexState* const ls) noexcept
+  [[nodiscard]] char* lexbuffer(
+    LexState* const ls
+  ) noexcept
   {
     return ls->buff->buffer;
   }
@@ -657,7 +685,9 @@ namespace
    * What it does:
    * Steps over a newline and bumps the line counter.
    */
-  extern "C" void inclinenumber(LexState* const ls)
+  extern "C" void inclinenumber(
+    LexState* const ls
+  )
   {
     nextchar(ls); // skip the '\n'
     ++ls->linenumber;
@@ -678,7 +708,11 @@ namespace
    * build accepts hex literals, stock Lua 5.0 does not - and everything else is
    * assembled as text and handed to luaO_str2d.
    */
-  extern "C" std::int32_t read_numeral(LexState* const ls, const int period, SemInfo* const seminfo)
+  extern "C" std::int32_t read_numeral(
+    LexState* const ls,
+    const int period,
+    SemInfo* const seminfo
+  )
   {
     std::int32_t l = 0;
     bool isReal = false;
@@ -731,12 +765,7 @@ namespace
         lexbuffer(ls)[l++] = '.';
         nextchar(ls);
         lexbuffer(ls)[l] = '\0';
-        luaX_errorline(
-          ls,
-          "ambiguous syntax (decimal point x string concatenation)",
-          lexbuffer(ls),
-          ls->linenumber
-        );
+        luaX_errorline(ls, "ambiguous syntax (decimal point x string concatenation)", lexbuffer(ls), ls->linenumber);
       }
     }
 
@@ -779,15 +808,18 @@ namespace
    * is a long comment, in which case the text is discarded and the buffer is
    * reset at every newline so a long comment costs no memory.
    */
-  extern "C" void read_long_string(LexState* const ls, SemInfo* const seminfo)
+  extern "C" void read_long_string(
+    LexState* const ls,
+    SemInfo* const seminfo
+  )
   {
     std::int32_t cont = 0;
     std::int32_t l = 0;
 
     checkbuffer(ls, 0);
-    lexbuffer(ls)[l++] = '['; // save first '['
+    lexbuffer(ls)[l++] = '[';                            // save first '['
     lexbuffer(ls)[l++] = static_cast<char>(ls->current); // save second '['
-    nextchar(ls); // skip the second '['
+    nextchar(ls);                                        // skip the second '['
     if (ls->current == '\n') {
       inclinenumber(ls); // skip a newline right after the opening bracket
     }
@@ -798,10 +830,7 @@ namespace
       case kLuaEndOfStream:
         lexbuffer(ls)[l] = '\0';
         luaX_errorline(
-          ls,
-          (seminfo != nullptr) ? "unfinished long string" : "unfinished long comment",
-          "<eof>",
-          ls->linenumber
+          ls, (seminfo != nullptr) ? "unfinished long string" : "unfinished long comment", "<eof>", ls->linenumber
         );
         break;
 
@@ -861,7 +890,11 @@ namespace
    * Scans a quoted string, resolving escapes. Alongside stock Lua's named and
    * decimal escapes this build accepts `\xNN`.
    */
-  extern "C" void read_string(LexState* const ls, const int del, SemInfo* const seminfo)
+  extern "C" void read_string(
+    LexState* const ls,
+    const int del,
+    SemInfo* const seminfo
+  )
   {
     std::int32_t l = 0;
 
@@ -885,13 +918,34 @@ namespace
       case '\\': {
         nextchar(ls); // do not save the '\'
         switch (ls->current) {
-        case 'a': lexbuffer(ls)[l++] = '\a'; nextchar(ls); break;
-        case 'b': lexbuffer(ls)[l++] = '\b'; nextchar(ls); break;
-        case 'f': lexbuffer(ls)[l++] = '\f'; nextchar(ls); break;
-        case 'n': lexbuffer(ls)[l++] = '\n'; nextchar(ls); break;
-        case 'r': lexbuffer(ls)[l++] = '\r'; nextchar(ls); break;
-        case 't': lexbuffer(ls)[l++] = '\t'; nextchar(ls); break;
-        case 'v': lexbuffer(ls)[l++] = '\v'; nextchar(ls); break;
+        case 'a':
+          lexbuffer(ls)[l++] = '\a';
+          nextchar(ls);
+          break;
+        case 'b':
+          lexbuffer(ls)[l++] = '\b';
+          nextchar(ls);
+          break;
+        case 'f':
+          lexbuffer(ls)[l++] = '\f';
+          nextchar(ls);
+          break;
+        case 'n':
+          lexbuffer(ls)[l++] = '\n';
+          nextchar(ls);
+          break;
+        case 'r':
+          lexbuffer(ls)[l++] = '\r';
+          nextchar(ls);
+          break;
+        case 't':
+          lexbuffer(ls)[l++] = '\t';
+          nextchar(ls);
+          break;
+        case 'v':
+          lexbuffer(ls)[l++] = '\v';
+          nextchar(ls);
+          break;
 
         case '\n':
           lexbuffer(ls)[l++] = '\n';
@@ -980,7 +1034,10 @@ namespace
    * accepted as a spelling of `~=`, and a UTF-8 byte-order mark at the start of
    * a file is skipped rather than rejected as an invalid character.
    */
-  extern "C" std::int32_t luaX_lex(LexState* const ls, SemInfo* const seminfo)
+  extern "C" std::int32_t luaX_lex(
+    LexState* const ls,
+    SemInfo* const seminfo
+  )
   {
     for (;;) {
       switch (ls->current) {
@@ -1114,12 +1171,7 @@ namespace
               }
             }
           }
-          luaX_errorline(
-            ls,
-            "invalid character",
-            luaO_pushfstring(ls->L, "char(%d)", ls->current),
-            ls->linenumber
-          );
+          luaX_errorline(ls, "invalid character", luaO_pushfstring(ls->L, "char(%d)", ls->current), ls->linenumber);
           continue;
         }
 
@@ -1145,12 +1197,7 @@ namespace
         {
           const std::int32_t c = ls->current;
           if (std::iscntrl(c) != 0) {
-            luaX_errorline(
-              ls,
-              "invalid control char",
-              luaO_pushfstring(ls->L, "char(%d)", c),
-              ls->linenumber
-            );
+            luaX_errorline(ls, "invalid control char", luaO_pushfstring(ls->L, "char(%d)", c), ls->linenumber);
           }
           nextchar(ls);
           return c; // single-char tokens (+ - / ...)
@@ -1166,9 +1213,10 @@ namespace
    * Maps one lexer token into the parser binary-operator enum lane consumed by
    * sub-expression precedence parsing.
    */
-  [[maybe_unused]]
-  [[nodiscard]]
-  std::int32_t GetBinaryOperatorFromToken(const std::int32_t token) noexcept
+  [[maybe_unused]] [[nodiscard]]
+  std::int32_t GetBinaryOperatorFromToken(
+    const std::int32_t token
+  ) noexcept
   {
     switch (token) {
     case '&':
@@ -1219,7 +1267,9 @@ namespace
    * Advances the current lexer token, consuming any pending lookahead token
    * before asking the lexer for a fresh token.
    */
-  extern "C" void next(LexState* const ls)
+  extern "C" void next(
+    LexState* const ls
+  )
   {
     ls->lastline = ls->linenumber;
     if (ls->lookahead.token == TK_EOS) {
@@ -1240,7 +1290,10 @@ namespace
    * and shifting lookahead/current token state with the same fast-path shape as
    * the lexer `next` helper.
    */
-  extern "C" int testnext(LexState* const ls, const int expectedToken)
+  extern "C" int testnext(
+    LexState* const ls,
+    const int expectedToken
+  )
   {
     if (ls->t.token != expectedToken) {
       return 0;
@@ -1265,7 +1318,10 @@ namespace
    * Activates `nvars` local-variable lanes in the current function state and
    * stamps each new `LocVar::startpc` with the current program-counter lane.
    */
-  void adjustlocalvars(LexState* const ls, int nvars)
+  void adjustlocalvars(
+    LexState* const ls,
+    int nvars
+  )
   {
     FuncState* const fs = ls->fs;
     fs->nactvar += nvars;
@@ -1285,7 +1341,10 @@ namespace
    * Closes active locals down to `tolevel` by stamping `LocVar::endpc` with the
    * current PC and shrinking `FuncState::nactvar`.
    */
-  extern "C" void removevars(LexState* const ls, const int tolevel)
+  extern "C" void removevars(
+    LexState* const ls,
+    const int tolevel
+  )
   {
     FuncState* const fs = ls->fs;
     while (fs->nactvar > tolevel) {
@@ -1303,7 +1362,10 @@ namespace
    * consuming `[A-Za-z0-9_]` continuation bytes from the input stream and
    * returning token length.
    */
-  std::size_t ReadIdentifierName(const char firstCharacter, LexState* const lexState)
+  std::size_t ReadIdentifierName(
+    const char firstCharacter,
+    LexState* const lexState
+  )
   {
     auto* const buffer = lexState->buff;
     std::size_t length = 0;
@@ -1356,7 +1418,10 @@ namespace
    * Flushes pending list-constructor value lanes, preserving VCALL/multret
    * semantics for the final list field store.
    */
-  void lastlistfield(FuncState* const functionState, ConsControl* const constructorState)
+  void lastlistfield(
+    FuncState* const functionState,
+    ConsControl* const constructorState
+  )
   {
     if (constructorState->tostore == 0) {
       return;
@@ -1384,7 +1449,11 @@ namespace
    * Reads one identifier token and resolves it as local/upvalue/global
    * expression metadata through `singlevaraux`.
    */
-  TString* singlevar(LexState* const lexState, expdesc* const outVariable, const int base)
+  TString* singlevar(
+    LexState* const lexState,
+    expdesc* const outVariable,
+    const int base
+  )
   {
     TString* const name = str_checkname(lexState);
     singlevaraux(lexState->fs, name, outVariable, base);
@@ -1402,7 +1471,9 @@ namespace
    * `TString*`, advances to the next token, and returns the captured
    * identifier.
    */
-  extern "C" TString* str_checkname(LexState* const ls)
+  extern "C" TString* str_checkname(
+    LexState* const ls
+  )
   {
     if (ls->t.token != TK_NAME) {
       luaX_syntaxerror(ls, "<name> expected");
@@ -1424,7 +1495,10 @@ namespace
    * sequence (NO_JUMP `t`/`f`, `VK` kind, `luaK_stringK` index) replaces the
    * original file-local `checkname` helper which is unreachable from the lib.
    */
-  extern "C" void luaY_field(LexState* const ls, expdesc* const v)
+  extern "C" void luaY_field(
+    LexState* const ls,
+    expdesc* const v
+  )
   {
     FuncState* const fs = ls->fs;
     luaK_exp2anyreg(fs, v);
@@ -1448,7 +1522,10 @@ namespace
    * Parses one function-name lane (`name[.name]*[:name]`) and returns whether
    * method-call sugar (`:`) is present.
    */
-  extern "C" std::int32_t funcname(expdesc* const outExpression, LexState* const lexState)
+  extern "C" std::int32_t funcname(
+    expdesc* const outExpression,
+    LexState* const lexState
+  )
   {
     (void)singlevar(lexState, outExpression, 1);
 
@@ -1471,7 +1548,12 @@ namespace
    * Resolves one parser identifier lane by searching local variables first,
    * then recursively promoting to upvalue/global descriptors.
    */
-  void singlevaraux(FuncState* const fs, TString* const name, expdesc* const outVariable, const int base)
+  void singlevaraux(
+    FuncState* const fs,
+    TString* const name,
+    expdesc* const outVariable,
+    const int base
+  )
   {
     if (fs == nullptr) {
       outVariable->t = LUA_MULTRET;
@@ -1528,7 +1610,12 @@ namespace
    * Balances assignment arity between variable and expression lanes, expanding
    * call returns or emitting trailing nil writes for missing values.
    */
-  void adjust_assign(LexState* const ls, const int nvars, expdesc* const expression, const int nexps)
+  void adjust_assign(
+    LexState* const ls,
+    const int nvars,
+    expdesc* const expression,
+    const int nexps
+  )
   {
     FuncState* const fs = ls->fs;
     int extraRegisters = nvars - nexps;
@@ -1562,23 +1649,24 @@ namespace
    * Appends one nested `Proto` to parent `FuncState::f->p`, emits OP_CLOSURE,
    * then emits one OP_MOVE/OP_GETUPVAL lane for each child upvalue.
    */
-  void pushclosure(expdesc* const outExpression, LexState* const ls, FuncState* const childFunction)
+  void pushclosure(
+    expdesc* const outExpression,
+    LexState* const ls,
+    FuncState* const childFunction
+  )
   {
     FuncState* const fs = ls->fs;
     Proto* const parentProto = fs->f;
-    luaM_growvector<Proto*>(ls->L, parentProto->p, fs->np, parentProto->sizep, LUA_MAXARG_Bx, "constant table overflow");
+    luaM_growvector<Proto*>(
+      ls->L, parentProto->p, fs->np, parentProto->sizep, LUA_MAXARG_Bx, "constant table overflow"
+    );
 
     parentProto->p[fs->np++] = childFunction->f;
 
     outExpression->t = -1;
     outExpression->f = -1;
     outExpression->k = VRELOCABLE;
-    outExpression->info = luaK_codeABx(
-      ls->fs,
-      OP_CLOSURE,
-      0,
-      static_cast<unsigned int>(fs->np - 1)
-    );
+    outExpression->info = luaK_codeABx(ls->fs, OP_CLOSURE, 0, static_cast<unsigned int>(fs->np - 1));
 
     const int upvalueCount = static_cast<int>(childFunction->f->nups);
     for (int index = 0; index < upvalueCount; ++index) {
@@ -1595,10 +1683,15 @@ namespace
    * Emits one conditional-test opcode and one following jump lane, then links
    * the fresh jump into the pending-jump chain.
    */
-  extern "C" std::int32_t
-  luaK_condjump(const int a, FuncState* const fs, const int op, const int b, const int c)
+  extern "C" std::int32_t luaK_condjump(
+    const int a,
+    FuncState* const fs,
+    const int op,
+    const int b,
+    const int c
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
     const Instruction instruction = static_cast<Instruction>(op | ((c | ((b | (a << 9)) << 9)) << 6));
     luaK_code(fs, instruction, lexState->lastline);
 
@@ -1617,10 +1710,14 @@ namespace
    * Marks the current bytecode slot as the newest label target and emits one
    * `OP_LOADBOOL` lane with packed `A/B/C` fields.
    */
-  extern "C" std::int32_t
-  code_label(const int a, FuncState* const fs, const int b, const int c)
+  extern "C" std::int32_t code_label(
+    const int a,
+    FuncState* const fs,
+    const int b,
+    const int c
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
     fs->lasttarget = fs->pc;
     const Instruction instruction = static_cast<Instruction>((((c | ((b | (a << 9)) << 9)) << 6) | 2));
     return luaK_code(fs, instruction, lexState->lastline);
@@ -1663,17 +1760,15 @@ namespace
         std::swap(leftOperand, rightOperand);
       }
 
-      const std::int32_t comparisonOpcode =
-        kComparisonOpcodes[static_cast<std::size_t>(binaryOperator - OPR_NE)];
+      const std::int32_t comparisonOpcode = kComparisonOpcodes[static_cast<std::size_t>(binaryOperator - OPR_NE)];
       const int jumpList = luaK_condjump(jumpSense, fs, comparisonOpcode, leftOperand, rightOperand);
       result->k = VJMP;
       result->info = jumpList;
       return;
     }
 
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
-    const Instruction instruction =
-      CREATE_ABC(binaryOperator + OP_ADD, 0, leftOperand, rightOperand);
+    auto* const lexState = fs->ls;
+    const Instruction instruction = CREATE_ABC(binaryOperator + OP_ADD, 0, leftOperand, rightOperand);
     const int opcodeIndex = luaK_code(fs, instruction, lexState->lastline);
     result->k = VRELOCABLE;
     result->info = opcodeIndex;
@@ -1687,7 +1782,10 @@ namespace
    * backing up to the preceding test opcode when the prior instruction carries
    * the Lua "test with following jump" flag.
    */
-  void invertjump(FuncState* const fs, expdesc* const expression)
+  void invertjump(
+    FuncState* const fs,
+    expdesc* const expression
+  )
   {
     Instruction* const instructionSlot = LuaResolveControllingInstruction(fs, expression->info);
     const Instruction instruction = *instructionSlot;
@@ -1702,7 +1800,11 @@ namespace
    * Lowers one expression lane into a conditional jump and reuses OP_NOT test
    * instructions in-place when possible.
    */
-  extern "C" std::int32_t jumponcond(FuncState* const fs, const int cond, expdesc* const expression)
+  extern "C" std::int32_t jumponcond(
+    FuncState* const fs,
+    const int cond,
+    expdesc* const expression
+  )
   {
 
     if (expression->k == VRELOCABLE) {
@@ -1726,7 +1828,11 @@ namespace
    * test node is not an `OP_TESTSET` for `cond`; returns zero when all visited
    * links are matching no-value tests (or list is `NO_JUMP`).
    */
-  extern "C" int need_value(FuncState* const fs, int list, const int cond)
+  extern "C" int need_value(
+    FuncState* const fs,
+    int list,
+    const int cond
+  )
   {
     if (list == NO_JUMP) {
       return 0;
@@ -1762,7 +1868,10 @@ namespace
    * Forces expression discharge and emits/rewrites jump lanes so control falls
    * through only when expression evaluates to true.
    */
-  void luaK_goiftrue(FuncState* const fs, expdesc* const expression)
+  void luaK_goiftrue(
+    FuncState* const fs,
+    expdesc* const expression
+  )
   {
     luaK_dischargevars(fs, expression);
 
@@ -1794,7 +1903,10 @@ namespace
    * Applies logical-negation bytecode lowering for one expression lane,
    * handling constant/jump/register forms and swapping true/false jump lists.
    */
-  void codenot(FuncState* const fs, expdesc* const expression)
+  void codenot(
+    FuncState* const fs,
+    expdesc* const expression
+  )
   {
     luaK_dischargevars(fs, expression);
 
@@ -1840,18 +1952,17 @@ namespace
   // were recovered into LuaObject.cpp and are declared here.
   // ---------------------------------------------------------------------
 
-  extern "C"
-  {
-    int addk(LuaPlus::TObject* value, FuncState* fs, LuaPlus::TObject* key);
-    int nil_constant(FuncState* fs);
-    void discharge2reg(expdesc* e, int reg, FuncState* fs);
-    void luaK_fixjump(int to, int from, FuncState* fs);
+  extern "C" {
+  int addk(LuaPlus::TObject* value, FuncState* fs, LuaPlus::TObject* key);
+  int nil_constant(FuncState* fs);
+  void discharge2reg(expdesc* e, int reg, FuncState* fs);
+  void luaK_fixjump(int to, int from, FuncState* fs);
 
-    std::int32_t luaK_getlabel(FuncState* fs);
-    void luaK_checkstack(FuncState* fs, int n);
-    void luaK_exp2val(FuncState* fs, expdesc* e);
-    std::int32_t luaK_exp2RK(FuncState* fs, expdesc* e);
-    void luaK_goiffalse(FuncState* fs, expdesc* e);
+  std::int32_t luaK_getlabel(FuncState* fs);
+  void luaK_checkstack(FuncState* fs, int n);
+  void luaK_exp2val(FuncState* fs, expdesc* e);
+  std::int32_t luaK_exp2RK(FuncState* fs, expdesc* e);
+  void luaK_goiffalse(FuncState* fs, expdesc* e);
   }
 
   void patchlistaux(
@@ -1877,7 +1988,10 @@ namespace
    * absolute destination. A displacement of NO_JUMP is returned unchanged - a
    * jump that points at itself is how a jump list marks its end.
    */
-  [[nodiscard]] std::int32_t getjump(FuncState* const fs, const std::int32_t pc) noexcept
+  [[nodiscard]] std::int32_t getjump(
+    FuncState* const fs,
+    const std::int32_t pc
+  ) noexcept
   {
     const std::int32_t offset = GETARG_sBx(fs->f->code[pc]);
     if (offset == NO_JUMP) {
@@ -1934,7 +2048,9 @@ namespace
    * Retargets every jump that was left pending on `fs->jpc` to the instruction
    * about to be emitted, then empties the pending list.
    */
-  void luaK_dischargejpc(FuncState* const fs)
+  void luaK_dischargejpc(
+    FuncState* const fs
+  )
   {
     patchlistaux(fs, fs->jpc, fs->pc, NO_REG, fs->pc, NO_REG, fs->pc);
     fs->jpc = NO_JUMP;
@@ -1950,7 +2066,11 @@ namespace
    * Appends one instruction plus its source line to the prototype being built,
    * growing the code and lineinfo arrays on demand, and returns its pc.
    */
-  extern "C" std::int32_t luaK_code(FuncState* const fs, const Instruction i, const int line)
+  extern "C" std::int32_t luaK_code(
+    FuncState* const fs,
+    const Instruction i,
+    const int line
+  )
   {
     Proto* const f = fs->f;
 
@@ -1973,10 +2093,15 @@ namespace
    * Packs `o/a/b/c` into an iABC instruction and emits it at the lexer's
    * current line.
    */
-  extern "C" std::int32_t
-  luaK_codeABC(FuncState* const fs, const int o, const int a, const int b, const int c)
+  extern "C" std::int32_t luaK_codeABC(
+    FuncState* const fs,
+    const int o,
+    const int a,
+    const int b,
+    const int c
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
     return luaK_code(fs, CREATE_ABC(o, a, b, c), lexState->lastline);
   }
 
@@ -1987,10 +2112,14 @@ namespace
    * Packs `o/a/bx` into an iABx instruction and emits it at the lexer's current
    * line.
    */
-  extern "C" std::int32_t
-  luaK_codeABx(FuncState* const fs, const int o, const int a, const unsigned int bc)
+  extern "C" std::int32_t luaK_codeABx(
+    FuncState* const fs,
+    const int o,
+    const int a,
+    const unsigned int bc
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
     return luaK_code(fs, CREATE_ABx(o, a, bc), lexState->lastline);
   }
 
@@ -2000,7 +2129,10 @@ namespace
    * What it does:
    * Rewrites the source line recorded for the instruction emitted last.
    */
-  extern "C" void luaK_fixline(FuncState* const fs, const int line)
+  extern "C" void luaK_fixline(
+    FuncState* const fs,
+    const int line
+  )
   {
     fs->f->lineinfo[fs->pc - 1] = line;
   }
@@ -2012,7 +2144,9 @@ namespace
    * Marks the next instruction slot as a jump target - which blocks the
    * peephole optimisations that assume straight-line flow - and returns it.
    */
-  extern "C" std::int32_t luaK_getlabel(FuncState* const fs)
+  extern "C" std::int32_t luaK_getlabel(
+    FuncState* const fs
+  )
   {
     fs->lasttarget = fs->pc;
     return fs->pc;
@@ -2025,18 +2159,17 @@ namespace
    * Emits an unconditional jump with an as-yet unknown destination and hands
    * back its pc, folding any pending jumps into the same list.
    */
-  extern "C" std::int32_t luaK_jump(FuncState* const fs)
+  extern "C" std::int32_t luaK_jump(
+    FuncState* const fs
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
 
     const std::int32_t jpc = fs->jpc; // save list of jumps to here
     fs->jpc = NO_JUMP;
 
-    std::int32_t j = luaK_code(
-      fs,
-      CREATE_ABx(OP_JMP, 0, static_cast<std::uint32_t>(NO_JUMP + LUA_MAXARG_sBx)),
-      lexState->lastline
-    );
+    std::int32_t j =
+      luaK_code(fs, CREATE_ABx(OP_JMP, 0, static_cast<std::uint32_t>(NO_JUMP + LUA_MAXARG_sBx)), lexState->lastline);
     luaK_concat(fs, &j, jpc); // keep them on hold
     return j;
   }
@@ -2048,7 +2181,10 @@ namespace
    * Defers `list` until the next instruction is emitted, at which point
    * luaK_code's dischargejpc pass will point it here.
    */
-  extern "C" void luaK_patchtohere(FuncState* const fs, const std::int32_t list)
+  extern "C" void luaK_patchtohere(
+    FuncState* const fs,
+    const std::int32_t list
+  )
   {
     luaK_getlabel(fs);
     luaK_concat(fs, &fs->jpc, list);
@@ -2061,7 +2197,11 @@ namespace
    * Points every jump in `list` at `target`, or holds them on the pending list
    * when `target` is the instruction about to be emitted.
    */
-  extern "C" void luaK_patchlist(FuncState* const fs, const std::int32_t list, const std::int32_t target)
+  extern "C" void luaK_patchlist(
+    FuncState* const fs,
+    const std::int32_t list,
+    const std::int32_t target
+  )
   {
     if (target == fs->pc) {
       luaK_patchtohere(fs, list);
@@ -2077,9 +2217,12 @@ namespace
    * Raises the prototype's recorded stack requirement to cover `n` more
    * registers, refusing anything that would exceed the Lua register limit.
    */
-  extern "C" void luaK_checkstack(FuncState* const fs, const int n)
+  extern "C" void luaK_checkstack(
+    FuncState* const fs,
+    const int n
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
 
     const std::int32_t newstack = fs->freereg + n;
     if (newstack > fs->f->maxstacksize) {
@@ -2096,7 +2239,10 @@ namespace
    * What it does:
    * Claims the next `n` registers for the expression being compiled.
    */
-  extern "C" void luaK_reserveregs(FuncState* const fs, const int n)
+  extern "C" void luaK_reserveregs(
+    FuncState* const fs,
+    const int n
+  )
   {
     luaK_checkstack(fs, n);
     fs->freereg += n;
@@ -2109,7 +2255,10 @@ namespace
    * Interns one string into the prototype's constant table and returns its
    * index.
    */
-  extern "C" std::int32_t luaK_stringK(FuncState* const fs, TString* const s)
+  extern "C" std::int32_t luaK_stringK(
+    FuncState* const fs,
+    TString* const s
+  )
   {
     LuaPlus::TObject o;
     o.tt = static_cast<int>(s->tt);
@@ -2124,7 +2273,10 @@ namespace
    * Interns one number into the prototype's constant table and returns its
    * index.
    */
-  extern "C" std::int32_t luaK_numberK(FuncState* const fs, const float r)
+  extern "C" std::int32_t luaK_numberK(
+    FuncState* const fs,
+    const float r
+  )
   {
     LuaPlus::TObject o;
     o.tt = LUA_TNUMBER;
@@ -2139,7 +2291,11 @@ namespace
    * Nils out `n` registers starting at `from`, extending the preceding
    * OP_LOADNIL instead of emitting a second one whenever the two ranges touch.
    */
-  extern "C" void luaK_nil(FuncState* const fs, const int from, const int n)
+  extern "C" void luaK_nil(
+    FuncState* const fs,
+    const int from,
+    const int n
+  )
   {
 
     if (fs->pc > fs->lasttarget) { // no jumps to current position?
@@ -2167,7 +2323,11 @@ namespace
    * one result also settles the expression into the register the call already
    * writes to.
    */
-  extern "C" void luaK_setcallreturns(FuncState* const fs, expdesc* const e, const int nresults)
+  extern "C" void luaK_setcallreturns(
+    FuncState* const fs,
+    expdesc* const e,
+    const int nresults
+  )
   {
     if (e->k != VCALL) {
       return;
@@ -2189,9 +2349,12 @@ namespace
    * upvalues/globals/table fields become the instruction that fetches them, and
    * a pending call is trimmed to a single result.
    */
-  extern "C" void luaK_dischargevars(FuncState* const fs, expdesc* const e)
+  extern "C" void luaK_dischargevars(
+    FuncState* const fs,
+    expdesc* const e
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
 
     switch (e->k) {
     case VLOCAL:
@@ -2235,14 +2398,18 @@ namespace
    * the true and false sides are patched to land on a pair of OP_LOADBOOL
    * labels so that whichever path runs leaves the value in `reg`.
    */
-  void exp2reg(FuncState* const fs, expdesc* const e, const std::int32_t reg)
+  void exp2reg(
+    FuncState* const fs,
+    expdesc* const e,
+    const std::int32_t reg
+  )
   {
     discharge2reg(e, reg, fs);
     if (e->k == VJMP) {
       luaK_concat(fs, &e->t, e->info); // put this jump in `t' list
     }
 
-    if (e->t != e->f) { // expression has jumps
+    if (e->t != e->f) {           // expression has jumps
       std::int32_t p_f = NO_JUMP; // position of an eventual LOAD false
       std::int32_t p_t = NO_JUMP; // position of an eventual LOAD true
 
@@ -2270,7 +2437,10 @@ namespace
    * What it does:
    * Settles an expression into a freshly reserved register.
    */
-  extern "C" void luaK_exp2nextreg(FuncState* const fs, expdesc* const e)
+  extern "C" void luaK_exp2nextreg(
+    FuncState* const fs,
+    expdesc* const e
+  )
   {
     luaK_dischargevars(fs, e);
     freeexp(e, fs);
@@ -2285,7 +2455,10 @@ namespace
    * Settles an expression into whichever register is cheapest - the one it
    * already occupies when that is legal, otherwise a fresh one - and returns it.
    */
-  extern "C" std::int32_t luaK_exp2anyreg(FuncState* const fs, expdesc* const e)
+  extern "C" std::int32_t luaK_exp2anyreg(
+    FuncState* const fs,
+    expdesc* const e
+  )
   {
     luaK_dischargevars(fs, e);
 
@@ -2294,7 +2467,7 @@ namespace
         return e->info;   // result is already in a register
       }
       if (e->info >= fs->nactvar) { // reg. is not a local?
-        exp2reg(fs, e, e->info);        // put value on it
+        exp2reg(fs, e, e->info);    // put value on it
         return e->info;
       }
     }
@@ -2310,7 +2483,10 @@ namespace
    * Reduces an expression to a value, forcing it into a register only when it
    * still carries jump lists.
    */
-  extern "C" void luaK_exp2val(FuncState* const fs, expdesc* const e)
+  extern "C" void luaK_exp2val(
+    FuncState* const fs,
+    expdesc* const e
+  )
   {
     if (e->t != e->f) {
       luaK_exp2anyreg(fs, e);
@@ -2326,7 +2502,10 @@ namespace
    * Produces an RK operand: a constant index biased by MAXSTACK when the value
    * is a constant that still fits the 9-bit field, otherwise a register.
    */
-  extern "C" std::int32_t luaK_exp2RK(FuncState* const fs, expdesc* const e)
+  extern "C" std::int32_t luaK_exp2RK(
+    FuncState* const fs,
+    expdesc* const e
+  )
   {
     luaK_exp2val(fs, e);
 
@@ -2353,9 +2532,13 @@ namespace
    * `var` - a register move for locals, SETUPVAL / SETGLOBAL / SETTABLE
    * otherwise - and releases the value's register afterwards.
    */
-  extern "C" void luaK_storevar(FuncState* const fs, expdesc* const var, expdesc* const ex)
+  extern "C" void luaK_storevar(
+    FuncState* const fs,
+    expdesc* const var,
+    expdesc* const ex
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
 
     switch (var->k) {
     case VLOCAL:
@@ -2395,7 +2578,11 @@ namespace
    * Compiles the `obj:method` form: OP_SELF drops the method and the receiver
    * into two adjacent fresh registers, ready for the call that follows.
    */
-  extern "C" void luaK_self(FuncState* const fs, expdesc* const e, expdesc* const key)
+  extern "C" void luaK_self(
+    FuncState* const fs,
+    expdesc* const e,
+    expdesc* const key
+  )
   {
 
     luaK_exp2anyreg(fs, e);
@@ -2418,7 +2605,10 @@ namespace
    * Emits the jumps that make control fall through only when the expression is
    * false, collecting the true-side exits on `e->t`.
    */
-  extern "C" void luaK_goiffalse(FuncState* const fs, expdesc* const e)
+  extern "C" void luaK_goiffalse(
+    FuncState* const fs,
+    expdesc* const e
+  )
   {
     luaK_dischargevars(fs, e);
 
@@ -2453,7 +2643,11 @@ namespace
    * VINDEXED lane that dischargevars/storevar later turn into GETTABLE or
    * SETTABLE.
    */
-  extern "C" void luaK_indexed(FuncState* const fs, expdesc* const t, expdesc* const k)
+  extern "C" void luaK_indexed(
+    FuncState* const fs,
+    expdesc* const t,
+    expdesc* const k
+  )
   {
     t->aux = luaK_exp2RK(fs, k);
     t->k = VINDEXED;
@@ -2467,14 +2661,18 @@ namespace
    * time into a new constant; everything else becomes OP_UNM, and `not` is
    * handled by codenot.
    */
-  extern "C" void luaK_prefix(FuncState* const fs, const std::int32_t op, expdesc* const e)
+  extern "C" void luaK_prefix(
+    FuncState* const fs,
+    const std::int32_t op,
+    expdesc* const e
+  )
   {
     if (op != OPR_MINUS) {
       codenot(fs, e);
       return;
     }
 
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
 
     luaK_exp2val(fs, e);
     LuaPlus::TObject* const constants = fs->f->k;
@@ -2497,7 +2695,11 @@ namespace
    * emit their short-circuit jumps here, concat needs its operand stacked, and
    * everything else only needs an RK operand.
    */
-  extern "C" void luaK_infix(FuncState* const fs, const std::int32_t op, expdesc* const v)
+  extern "C" void luaK_infix(
+    FuncState* const fs,
+    const std::int32_t op,
+    expdesc* const v
+  )
   {
     switch (op) {
     case OPR_AND:
@@ -2530,10 +2732,14 @@ namespace
    * the two jump lists, adjacent concats fuse into the single OP_CONCAT run the
    * VM expects, and the rest go through codebinop.
    */
-  extern "C" void
-  luaK_posfix(FuncState* const fs, const std::int32_t op, expdesc* const e1, expdesc* const e2)
+  extern "C" void luaK_posfix(
+    FuncState* const fs,
+    const std::int32_t op,
+    expdesc* const e1,
+    expdesc* const e2
+  )
   {
-    auto* const lexState = reinterpret_cast<LexState*>(fs->ls);
+    auto* const lexState = fs->ls;
 
     switch (op) {
     case OPR_AND:
@@ -2608,7 +2814,11 @@ namespace
    * lua_dofile / lua_dobuffer / SCR_LuaDoFile never saw the status their
    * error paths are written for.
    */
-  extern "C" std::int32_t luaD_protectedparser(lua_State* const L, ZIO* const z, const int bin)
+  extern "C" std::int32_t luaD_protectedparser(
+    lua_State* const L,
+    ZIO* const z,
+    const int bin
+  )
   {
     SParser parser;
     parser.z = z;
@@ -2616,9 +2826,9 @@ namespace
     parser.buff.buffer = nullptr;
     parser.buff.buffsize = 0;
 
-    const std::ptrdiff_t oldTopOffset = reinterpret_cast<char*>(L->top) - reinterpret_cast<char*>(L->stack);
+    const std::ptrdiff_t oldTopOffset = L->top - L->stack;
     const auto plantErrorAtOldTop = [L, oldTopOffset](const char* const message) {
-      const auto oldTop = reinterpret_cast<LuaPlus::StkId>(reinterpret_cast<char*>(L->stack) + oldTopOffset);
+      const auto oldTop = L->stack + oldTopOffset;
       (void)PushLuaStringAtStackSlot(L, oldTop, message);
     };
 
@@ -2628,9 +2838,9 @@ namespace
     } catch (const lua::lua_Error& error) {
       plantErrorAtOldTop(error.what());
       status = error.code;
-    } catch (const msvc8::runtime_error& error) {
+    } catch (const fa::runtime_error& error) {
       // MSVC8's `catch (const std::runtime_error&)` is spelled twice: the
-      // msvc8 hierarchy the Lua errors use, and the modern one the rest of
+      // `fa` hierarchy the Lua errors use, and the modern one the rest of
       // the tree still throws. They share no base below std::exception, and
       // a logic_error (LuaAssertion) must still pass through as in retail.
       plantErrorAtOldTop(error.what());
@@ -2651,7 +2861,11 @@ namespace
    * Interns one parser string token into the function constant table and emits
    * a `VK` expression descriptor lane targeting that constant index.
    */
-  extern "C" void codestring(TString* const stringToken, LexState* const ls, expdesc* const outExpression)
+  extern "C" void codestring(
+    TString* const stringToken,
+    LexState* const ls,
+    expdesc* const outExpression
+  )
   {
     outExpression->info = luaK_stringK(ls->fs, stringToken);
     outExpression->t = NO_JUMP;
@@ -2672,7 +2886,10 @@ namespace
    * What it does:
    * Reports "`<token>' expected" against the current lexer position.
    */
-  extern "C" void error_expected(LexState* const ls, const std::int32_t token)
+  extern "C" void error_expected(
+    LexState* const ls,
+    const std::int32_t token
+  )
   {
     luaX_syntaxerror(ls, luaO_pushfstring(ls->L, "`%s' expected", luaX_token2str(ls, token)));
   }
@@ -2681,7 +2898,10 @@ namespace
    * What it does:
    * Consumes the expected token, or reports it as missing.
    */
-  extern "C" void check(LexState* const ls, const std::int32_t c)
+  extern "C" void check(
+    LexState* const ls,
+    const std::int32_t c
+  )
   {
     if (ls->t.token != c) {
       error_expected(ls, c);
@@ -2694,8 +2914,12 @@ namespace
    * Consumes a closing token. When the construct it closes was opened on an
    * earlier line, the message names that line so the reader can find it.
    */
-  extern "C" void
-  check_match(LexState* const ls, const std::int32_t what, const std::int32_t who, const std::int32_t where)
+  extern "C" void check_match(
+    LexState* const ls,
+    const std::int32_t what,
+    const std::int32_t who,
+    const std::int32_t where
+  )
   {
     if (testnext(ls, what) != 0) {
       return;
@@ -2709,11 +2933,7 @@ namespace
     luaX_syntaxerror(
       ls,
       luaO_pushfstring(
-        ls->L,
-        "`%s' expected (to close `%s' at line %d)",
-        luaX_token2str(ls, what),
-        luaX_token2str(ls, who),
-        where
+        ls->L, "`%s' expected (to close `%s' at line %d)", luaX_token2str(ls, what), luaX_token2str(ls, who), where
       )
     );
   }
@@ -2727,7 +2947,10 @@ namespace
    * What it does:
    * Parses the `[ exp ]` of a bracketed table access, leaving the key in `v`.
    */
-  extern "C" void luaY_index(LexState* const ls, expdesc* const v)
+  extern "C" void luaY_index(
+    LexState* const ls,
+    expdesc* const v
+  )
   {
     next(ls); // skip the '['
     subexpr(ls, v, -1);
@@ -2746,7 +2969,10 @@ namespace
    * SETTABLE. Both key and value are evaluated into scratch registers that are
    * released again afterwards, so a long constructor does not grow the frame.
    */
-  extern "C" void recfield(LexState* const ls, ConsControl* const cc)
+  extern "C" void recfield(
+    LexState* const ls,
+    ConsControl* const cc
+  )
   {
     FuncState* const fs = ls->fs;
     const std::int32_t reg = fs->freereg;
@@ -2788,7 +3014,10 @@ namespace
    * opening brace, which forces the hash and array size hints - a FAF
    * extension with no equivalent in stock Lua.
    */
-  extern "C" void constructor(expdesc* const t, LexState* const ls)
+  extern "C" void constructor(
+    expdesc* const t,
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     const int line = ls->linenumber;
@@ -2846,7 +3075,7 @@ namespace
         cc.v.k = VVOID;
         if (cc.tostore == LFIELDS_PER_FLUSH) {
           luaK_codeABx(fs, OP_SETLIST, cc.t->info, static_cast<std::uint32_t>(cc.na - 1));
-          cc.tostore = 0; // no more items pending
+          cc.tostore = 0;               // no more items pending
           fs->freereg = cc.t->info + 1; // free registers
         }
       }
@@ -2902,7 +3131,10 @@ namespace
    * Parses what a suffixed expression starts from - either a parenthesised
    * expression or a single variable name.
    */
-  extern "C" void prefixexp(LexState* const ls, expdesc* const v)
+  extern "C" void prefixexp(
+    LexState* const ls,
+    expdesc* const v
+  )
   {
     if (ls->t.token == '(') {
       const std::int32_t line = ls->linenumber;
@@ -2931,7 +3163,10 @@ namespace
    * whole argument block collapses back to one register, which the call's
    * result then occupies.
    */
-  extern "C" void funcargs(LexState* const ls, expdesc* const f)
+  extern "C" void funcargs(
+    LexState* const ls,
+    expdesc* const f
+  )
   {
     FuncState* const fs = ls->fs;
     const std::int32_t line = ls->linenumber;
@@ -2968,7 +3203,7 @@ namespace
       break;
     }
 
-    const std::int32_t base = f->info; // base register for call
+    const std::int32_t base = f->info;  // base register for call
     std::int32_t nparams = LUA_MULTRET; // open call
     if (args.k != VCALL) {
       if (args.k != VVOID) {
@@ -2996,7 +3231,10 @@ namespace
    * `[key]`, `:method(args)`, and calls. Each suffix consumes the expression
    * built so far and replaces it, so `a.b[c]:d(e)` folds left to right.
    */
-  extern "C" void primaryexp(expdesc* const v, LexState* const ls)
+  extern "C" void primaryexp(
+    expdesc* const v,
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     prefixexp(ls, v);
@@ -3044,7 +3282,10 @@ namespace
    * Parses one simple expression token lane (literals/function/table/primary
    * expression) and materializes resulting `expdesc`.
    */
-  void simpleexp(LexState* const ls, expdesc* const outExpression)
+  void simpleexp(
+    LexState* const ls,
+    expdesc* const outExpression
+  )
   {
     switch (ls->t.token) {
     case '{':
@@ -3132,12 +3373,9 @@ namespace
     }
 
     std::int32_t binaryOperator = GetBinaryOperatorFromToken(ls->t.token);
-    while (
-      binaryOperator != OPR_NOBINOPR
-      && static_cast<std::int32_t>(
-        kBinaryOperatorPriorities[static_cast<std::size_t>(binaryOperator)].first
-      ) > limit
-    ) {
+    while (binaryOperator != OPR_NOBINOPR &&
+           static_cast<std::int32_t>(kBinaryOperatorPriorities[static_cast<std::size_t>(binaryOperator)].first) >
+             limit) {
       next(ls);
       luaK_infix(ls->fs, binaryOperator, expression);
 
@@ -3145,9 +3383,7 @@ namespace
       const std::int32_t nextOperator = subexpr(
         ls,
         &rightExpression,
-        static_cast<std::int32_t>(
-          kBinaryOperatorPriorities[static_cast<std::size_t>(binaryOperator)].second
-        )
+        static_cast<std::int32_t>(kBinaryOperatorPriorities[static_cast<std::size_t>(binaryOperator)].second)
       );
       luaK_posfix(ls->fs, binaryOperator, expression, &rightExpression);
       binaryOperator = nextOperator;
@@ -3158,31 +3394,16 @@ namespace
   }
 
   /**
-   * Address: 0x0091CE70 (FUN_0091CE70)
-   *
-   * What it does:
-   * Parses one expression, emits it into the next free register, and returns
-   * the original expression-kind lane.
-   */
-  [[maybe_unused]] std::int32_t ParseExpressionToNextRegisterAndReturnKind(
-    LexState* const ls
-  )
-  {
-    expdesc expression{};
-    subexpr(ls, &expression, -1);
-    const std::int32_t kind = expression.k;
-    luaK_exp2nextreg(ls->fs, &expression);
-    return kind;
-  }
-
-  /**
    * Address: 0x0091BD30 (FUN_0091BD30, explist1)
    *
    * What it does:
    * Parses one comma-separated expression list, flushing each prior expression
    * to the next register lane before parsing the next element.
    */
-  std::int32_t explist1(LexState* const ls, expdesc* const expression)
+  std::int32_t explist1(
+    LexState* const ls,
+    expdesc* const expression
+  )
   {
     std::int32_t expressionCount = 1;
     subexpr(ls, expression, -1);
@@ -3213,7 +3434,10 @@ namespace
    * one jump list, and validates the closing `END` token against the opening
    * `IF` line.
    */
-  void ifstat(LexState* const ls, const std::int32_t line)
+  void ifstat(
+    LexState* const ls,
+    const std::int32_t line
+  )
   {
     FuncState* const fs = ls->fs;
     expdesc v{};
@@ -3250,7 +3474,10 @@ namespace
    * `Proto`, wraps it into one new Lua closure, and pushes that closure on
    * the VM stack.
    */
-  extern "C" void f_parser(SParser* const parser, lua_State* const state)
+  extern "C" void f_parser(
+    SParser* const parser,
+    lua_State* const state
+  )
   {
     // 0x00913F06..0x00913F12: collect only when the heap has passed the
     // threshold AND no debug traversal holds the GC lock. `jb` makes the
@@ -3261,8 +3488,9 @@ namespace
     }
 
     // Engine addition: compiled chunks can be refused (LuaObject.cpp). While they are
-    // allowed, each one is named in the log so its author can move it to source.
-    if (parser->bin != 0) {
+    // allowed, each one is named in the log so its author can move it to source. The engine's
+    // own script cache (lua_LoadingCachedChunk) holds only what it compiled from source.
+    if (parser->bin != 0 && !moho::lua_LoadingCachedChunk) {
       if (!moho::lua_AllowPrecompiledChunks) {
         luaG_runerror(state, "compiled Lua chunks are not loaded (source only; see lua_AllowPrecompiledChunks)");
       }
@@ -3273,9 +3501,8 @@ namespace
       );
     }
 
-    Proto* const parsedProto = (parser->bin != 0)
-      ? luaU_undump(state, parser->z, &parser->buff)
-      : luaY_parser(state, parser->z, &parser->buff);
+    Proto* const parsedProto =
+      (parser->bin != 0) ? luaU_undump(state, parser->z, &parser->buff) : luaY_parser(state, parser->z, &parser->buff);
 
     LClosure* const closure = luaF_newLclosure(state, 0, &state->_gt);
     const int closureTypeTag = static_cast<int>(reinterpret_cast<const CClosure*>(closure)->tt);
@@ -3285,8 +3512,8 @@ namespace
     top->tt = closureTypeTag;
     top->value.p = closure;
 
-    const auto freeBytes = reinterpret_cast<const std::uint8_t*>(state->stack_last) -
-      reinterpret_cast<const std::uint8_t*>(state->top);
+    const auto freeBytes =
+      reinterpret_cast<const std::uint8_t*>(state->stack_last) - reinterpret_cast<const std::uint8_t*>(state->top);
     if (freeBytes <= static_cast<std::ptrdiff_t>(sizeof(LuaPlus::TObject))) {
       luaD_growstack(state, 1);
     }
@@ -3300,7 +3527,11 @@ namespace
    * Rewrites indexed-assignment lanes that alias the RHS local register and
    * emits one `OP_MOVE` spill when conflicts are found.
    */
-  [[maybe_unused]] void check_conflict(LHS_assign* const lhs, LexState* const ls, expdesc* const value)
+  void check_conflict(
+    LHS_assign* const lhs,
+    LexState* const ls,
+    expdesc* const value
+  )
   {
     constexpr std::int32_t VINDEXED = 0x08;
 
@@ -3339,7 +3570,10 @@ namespace
    * stores parsed closure into the destination variable, and applies source
    * line fixup to generated bytecode.
    */
-  void funcstat(LexState* const ls, const int line)
+  void funcstat(
+    LexState* const ls,
+    const int line
+  )
   {
     expdesc bodyExpression{};
     expdesc variableExpression{};
@@ -3366,7 +3600,9 @@ namespace
    * Parses one statement-headed primary expression and routes it as either a
    * call statement (discarding returns) or an assignment chain root.
    */
-  void exprstat(LexState* const ls)
+  void exprstat(
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     LHS_assign lhs{};
@@ -3388,7 +3624,10 @@ namespace
    * Opens one nested parser function scope by allocating a fresh `Proto`,
    * wiring lexical parent links, and resetting all function-state counters.
    */
-  [[maybe_unused]] void open_func(LexState* const ls, FuncState* const fs)
+  void open_func(
+    LexState* const ls,
+    FuncState* const fs
+  )
   {
     Proto* const functionProto = luaF_newproto(ls->L);
 
@@ -3421,7 +3660,9 @@ namespace
    * shrinking the finished prototype arrays to the recorded counts, and
    * restoring the parent `FuncState` on the lexical state stack.
    */
-  FuncState* close_func(LexState* const ls)
+  FuncState* close_func(
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     Proto* const f = fs->f;
@@ -3429,24 +3670,19 @@ namespace
     removevars(ls, 0);
     luaK_codeABC(fs, OP_RETURN, 0, 1, 0);
 
-    f->code = luaM_reallocvector<Instruction>(
-      ls->L, f->code, static_cast<lu_mem>(f->sizecode), static_cast<lu_mem>(fs->pc)
-    );
+    f->code =
+      luaM_reallocvector<Instruction>(ls->L, f->code, static_cast<lu_mem>(f->sizecode), static_cast<lu_mem>(fs->pc));
     f->sizecode = fs->pc;
 
-    f->lineinfo = luaM_reallocvector<int>(
-      ls->L, f->lineinfo, static_cast<lu_mem>(f->sizelineinfo), static_cast<lu_mem>(fs->pc)
-    );
+    f->lineinfo =
+      luaM_reallocvector<int>(ls->L, f->lineinfo, static_cast<lu_mem>(f->sizelineinfo), static_cast<lu_mem>(fs->pc));
     f->sizelineinfo = fs->pc;
 
-    f->k = luaM_reallocvector<LuaPlus::TObject>(
-      ls->L, f->k, static_cast<lu_mem>(f->sizek), static_cast<lu_mem>(fs->nk)
-    );
+    f->k =
+      luaM_reallocvector<LuaPlus::TObject>(ls->L, f->k, static_cast<lu_mem>(f->sizek), static_cast<lu_mem>(fs->nk));
     f->sizek = fs->nk;
 
-    f->p = luaM_reallocvector<Proto*>(
-      ls->L, f->p, static_cast<lu_mem>(f->sizep), static_cast<lu_mem>(fs->np)
-    );
+    f->p = luaM_reallocvector<Proto*>(ls->L, f->p, static_cast<lu_mem>(f->sizep), static_cast<lu_mem>(fs->np));
     f->sizep = fs->np;
 
     f->locvars = luaM_reallocvector<LocVar>(
@@ -3475,7 +3711,11 @@ namespace
    * Pushes one lexical block onto the FuncState chain, remembering how many
    * locals were active outside it.
    */
-  void enterblock(FuncState* const fs, BlockCnt* const bl, const std::int32_t isbreakable)
+  void enterblock(
+    FuncState* const fs,
+    BlockCnt* const bl,
+    const std::int32_t isbreakable
+  )
   {
     bl->breaklist = NO_JUMP;
     bl->continuelist = NO_JUMP;
@@ -3491,12 +3731,14 @@ namespace
    * Pops the innermost block: its locals go out of scope, any upvalue closed
    * over inside it is closed, and the jumps that left it via `break` land here.
    */
-  void leaveblock(FuncState* const fs)
+  void leaveblock(
+    FuncState* const fs
+  )
   {
     BlockCnt* const bl = fs->bl;
 
     fs->bl = bl->previous;
-    removevars(reinterpret_cast<LexState*>(fs->ls), bl->nactvar);
+    removevars(fs->ls, bl->nactvar);
     if (bl->upval != 0) {
       luaK_codeABC(fs, OP_CLOSE, bl->nactvar, 0, 0);
     }
@@ -3508,7 +3750,9 @@ namespace
    * What it does:
    * True for the tokens that can only appear after a block has ended.
    */
-  [[nodiscard]] constexpr bool block_follow(const std::int32_t token) noexcept
+  [[nodiscard]] constexpr bool block_follow(
+    const std::int32_t token
+  ) noexcept
   {
     switch (token) {
     case TK_ELSE:
@@ -3528,7 +3772,9 @@ namespace
    * What it does:
    * Parses a scoped statement list.
    */
-  extern "C" void block(LexState* const ls)
+  extern "C" void block(
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     BlockCnt bl;
@@ -3547,7 +3793,10 @@ namespace
    * Appends one entry to the prototype's local-variable debug table and returns
    * its index.
    */
-  extern "C" int luaI_registerlocalvar(LexState* const ls, TString* const varname)
+  extern "C" int luaI_registerlocalvar(
+    LexState* const ls,
+    TString* const varname
+  )
   {
     FuncState* const fs = ls->fs;
     Proto* const f = fs->f;
@@ -3562,7 +3811,11 @@ namespace
    * Declares the n'th local of a group that is not active yet - `local a, b, c`
    * registers all three before any of them becomes visible.
    */
-  void new_localvar(LexState* const ls, TString* const name, const int n)
+  void new_localvar(
+    LexState* const ls,
+    TString* const name,
+    const int n
+  )
   {
     FuncState* const fs = ls->fs;
     luaX_checklimit(ls, fs->nactvar + n + 1, MAXVARS, "local variables");
@@ -3579,7 +3832,11 @@ namespace
    * Declares a compiler-generated local - the hidden `arg`, `self`, and the
    * `(for ...)` control variables - from a C string.
    */
-  extern "C" void new_localvarstr(const char* const name, LexState* const ls, const int n)
+  extern "C" void new_localvarstr(
+    const char* const name,
+    LexState* const ls,
+    const int n
+  )
   {
     TString* const ts = luaS_newlstr(ls->L, name, std::strlen(name));
     new_localvar(ls, ts, n);
@@ -3596,7 +3853,11 @@ namespace
    * records how many there are. A vararg function also gets the hidden `arg`
    * table, which occupies one more register.
    */
-  extern "C" void code_params(LexState* const ls, const int nparams, const int dots)
+  extern "C" void code_params(
+    LexState* const ls,
+    const int nparams,
+    const int dots
+  )
   {
     FuncState* const fs = ls->fs;
 
@@ -3617,7 +3878,9 @@ namespace
    * What it does:
    * Parses a parameter list, with an optional trailing `...`.
    */
-  void parlist(LexState* const ls)
+  void parlist(
+    LexState* const ls
+  )
   {
     int nparams = 0;
     int dots = 0;
@@ -3648,7 +3911,12 @@ namespace
    * Parses a function body into a nested prototype and leaves an OP_CLOSURE
    * expression behind. `needself` adds the implicit `self` of `a:b()` form.
    */
-  extern "C" void body(LexState* const ls, expdesc* const e, const int needself, const int line)
+  extern "C" void body(
+    LexState* const ls,
+    expdesc* const e,
+    const int needself,
+    const int line
+  )
   {
     FuncState new_fs;
     open_func(ls, &new_fs);
@@ -3672,7 +3940,10 @@ namespace
    * Parses a loop or branch condition and emits the jumps that skip the body
    * when it is false. `nil` is folded to `false` so the constant path is used.
    */
-  extern "C" void cond(LexState* const ls, expdesc* const v)
+  extern "C" void cond(
+    LexState* const ls,
+    expdesc* const v
+  )
   {
     subexpr(ls, v, -1);
     if (v->k == VNIL) {
@@ -3688,7 +3959,10 @@ namespace
    * What it does:
    * Parses one `<cond> THEN <block>` arm of an if/elseif chain.
    */
-  extern "C" void test_then_block(LexState* const ls, expdesc* const v)
+  extern "C" void test_then_block(
+    LexState* const ls,
+    expdesc* const v
+  )
   {
     next(ls); // skip IF or ELSEIF
     cond(ls, v);
@@ -3706,7 +3980,10 @@ namespace
    * and forth every time round. That rotation is why the condition has a size
    * limit and why the true/false jump lists have to be relocated by hand.
    */
-  extern "C" void whilestat(LexState* const ls, const std::int32_t line)
+  extern "C" void whilestat(
+    LexState* const ls,
+    const std::int32_t line
+  )
   {
     FuncState* const fs = ls->fs;
     Instruction codeexp[MAXEXPWHILE];
@@ -3766,7 +4043,10 @@ namespace
    * Parses `repeat block until cond`. The body runs before the test, so the
    * false branch jumps back to the top.
    */
-  extern "C" void repeatstat(LexState* const ls, const std::int32_t line)
+  extern "C" void repeatstat(
+    LexState* const ls,
+    const std::int32_t line
+  )
   {
     FuncState* const fs = ls->fs;
     const std::int32_t repeat_init = luaK_getlabel(fs);
@@ -3795,8 +4075,13 @@ namespace
    * OP_FORLOOP for the numeric form, OP_TFORLOOP plus a jump for the generic
    * one.
    */
-  extern "C" void
-  forbody(LexState* const ls, const int base, const int line, const int nvars, const int isnum)
+  extern "C" void forbody(
+    LexState* const ls,
+    const int base,
+    const int line,
+    const int nvars,
+    const int isnum
+  )
   {
     FuncState* const fs = ls->fs;
     BlockCnt bl;
@@ -3826,7 +4111,11 @@ namespace
    * in hidden locals; the initial value is pre-decremented by one step so the
    * loop opcode can increment first and test afterwards.
    */
-  extern "C" void fornum(LexState* const ls, TString* const varname, const std::int32_t line)
+  extern "C" void fornum(
+    LexState* const ls,
+    TString* const varname,
+    const std::int32_t line
+  )
   {
     FuncState* const fs = ls->fs;
     const int base = fs->freereg;
@@ -3863,7 +4152,10 @@ namespace
    * Parses `for a, b, ... in explist do`. Two hidden locals hold the iterator
    * function and its state, followed by the visible control variables.
    */
-  extern "C" void forlist(LexState* const ls, TString* const indexname)
+  extern "C" void forlist(
+    LexState* const ls,
+    TString* const indexname
+  )
   {
     FuncState* const fs = ls->fs;
     const int base = fs->freereg;
@@ -3894,13 +4186,16 @@ namespace
    * The whole loop sits in its own block so the control variables disappear
    * with it.
    */
-  extern "C" void forstat(LexState* const ls, const std::int32_t line)
+  extern "C" void forstat(
+    LexState* const ls,
+    const std::int32_t line
+  )
   {
     FuncState* const fs = ls->fs;
     BlockCnt bl;
     enterblock(fs, &bl, 0); // scope for loop and control variables
 
-    next(ls); // skip `for'
+    next(ls);                                   // skip `for'
     TString* const varname = str_checkname(ls); // first variable name
 
     switch (ls->t.token) {
@@ -3929,7 +4224,9 @@ namespace
    * Parses `local function f() ... end`. The local is declared before the body
    * is compiled, so the function can call itself by name.
    */
-  extern "C" void localfunc(LexState* const ls)
+  extern "C" void localfunc(
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     expdesc v;
@@ -3957,7 +4254,9 @@ namespace
    * Parses `local a, b, c [= explist]`. The names are only made visible after
    * the initialisers are compiled, so `local x = x` reads the outer `x`.
    */
-  extern "C" void localstat(LexState* const ls)
+  extern "C" void localstat(
+    LexState* const ls
+  )
   {
     int nvars = 0;
     int nexps = 0;
@@ -3986,7 +4285,9 @@ namespace
    * OP_TAILCALL when tail calls are enabled, so recursion through it does not
    * grow the C stack.
    */
-  extern "C" void retstat(LexState* const ls)
+  extern "C" void retstat(
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     expdesc e;
@@ -4004,12 +4305,12 @@ namespace
           call = (call & ~static_cast<Instruction>(0x3Fu)) | static_cast<Instruction>(OP_TAILCALL);
         }
         first = fs->nactvar;
-        nret = LUA_MULTRET; // return all values
+        nret = LUA_MULTRET;   // return all values
       } else if (nret == 1) { // only one single value?
         first = luaK_exp2anyreg(fs, &e);
       } else {
         luaK_exp2nextreg(fs, &e); // values must go to the `stack'
-        first = fs->nactvar;  // return all `active' values
+        first = fs->nactvar;      // return all `active' values
       }
     }
 
@@ -4024,12 +4325,15 @@ namespace
    */
   struct LoopExitTarget
   {
-    BlockCnt* loop;      // the loop reached, or null
-    BlockCnt* lastLoop;  // the loop reached one level in
-    std::int32_t upvalAtLevel;      // upvalues seen before the final level
+    BlockCnt* loop;            // the loop reached, or null
+    BlockCnt* lastLoop;        // the loop reached one level in
+    std::int32_t upvalAtLevel; // upvalues seen before the final level
   };
 
-  [[nodiscard]] LoopExitTarget FindEnclosingLoop(FuncState* const fs, std::int32_t levels) noexcept
+  [[nodiscard]] LoopExitTarget FindEnclosingLoop(
+    FuncState* const fs,
+    std::int32_t levels
+  ) noexcept
   {
     LoopExitTarget target{nullptr, nullptr, 0};
 
@@ -4068,7 +4372,9 @@ namespace
    * Parses the optional loop count that this build accepts after `break` and
    * `continue`, so `break 2` leaves two loops at once.
    */
-  [[nodiscard]] std::int32_t ReadLoopLevelCount(LexState* const ls)
+  [[nodiscard]] std::int32_t ReadLoopLevelCount(
+    LexState* const ls
+  )
   {
     next(ls);
     if (ls->t.token != TK_NUMBER) {
@@ -4095,7 +4401,9 @@ namespace
    * Parses `break [n]` and adds the jump to the target loop's break list, which
    * leaveblock will later point past the loop.
    */
-  extern "C" void breakstat(LexState* const ls)
+  extern "C" void breakstat(
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     const std::int32_t levels = ReadLoopLevelCount(ls);
@@ -4120,7 +4428,9 @@ namespace
    * step. The OP_CLOSE it emits closes over the loop one level in, not the
    * target - which only matters for `continue n` with n above 1.
    */
-  extern "C" void continuestat(LexState* const ls)
+  extern "C" void continuestat(
+    LexState* const ls
+  )
   {
     FuncState* const fs = ls->fs;
     const std::int32_t levels = ReadLoopLevelCount(ls);
@@ -4144,7 +4454,11 @@ namespace
    * targets so that the stores happen right to left, after every value has been
    * evaluated.
    */
-  extern "C" void assignment(LexState* const ls, LHS_assign* const lh, const std::int32_t nvars)
+  extern "C" void assignment(
+    LexState* const ls,
+    LHS_assign* const lh,
+    const std::int32_t nvars
+  )
   {
     expdesc e;
 
@@ -4191,7 +4505,9 @@ namespace
    * Parses one statement. Returns non-zero for the two that must end a block -
    * `return` and `break`.
    */
-  std::int32_t statement(LexState* const ls)
+  std::int32_t statement(
+    LexState* const ls
+  )
   {
     const std::int32_t line = ls->linenumber; // may be needed for error messages
 
@@ -4223,7 +4539,7 @@ namespace
       return 0;
 
     case TK_LOCAL:
-      next(ls); // skip LOCAL
+      next(ls);                        // skip LOCAL
       if (testnext(ls, TK_FUNCTION)) { // local function?
         localfunc(ls);
       } else {
@@ -4257,7 +4573,9 @@ namespace
    * construct or after a statement that has to come last. The nesting counter
    * bounds recursion so a pathological source cannot run the C stack out.
    */
-  extern "C" void chunk(LexState* const ls)
+  extern "C" void chunk(
+    LexState* const ls
+  )
   {
     if (++ls->nestlevel > LUA_MAXPARSERLEVEL) {
       luaX_syntaxerror(ls, "too many syntax levels");
@@ -4269,8 +4587,7 @@ namespace
 
       // statements only produce values through their side effects, so every
       // register above the active locals is free again
-      ls->fs->freereg =
-        ls->fs->nactvar;
+      ls->fs->freereg = ls->fs->nactvar;
 
       if (islast != 0) {
         break;
@@ -4287,8 +4604,12 @@ namespace
    * Points the lexer at a stream and reads the first character. A leading `#!`
    * line is skipped, so a chunk can be a shell script.
    */
-  extern "C" void
-  luaX_setinput(lua_State* const L, LexState* const ls, ZIO* const z, TString* const source)
+  extern "C" void luaX_setinput(
+    lua_State* const L,
+    LexState* const ls,
+    ZIO* const z,
+    TString* const source
+  )
   {
     ls->L = L;
     ls->linenumber = 1;
@@ -4313,7 +4634,11 @@ namespace
    * Compiles one chunk of Lua source into a prototype - the entry point the
    * loader calls once it has ruled out a precompiled chunk.
    */
-  extern "C" Proto* luaY_parser(lua_State* const L, ZIO* const z, Mbuffer* const buff)
+  extern "C" Proto* luaY_parser(
+    lua_State* const L,
+    ZIO* const z,
+    Mbuffer* const buff
+  )
   {
     LexState lexstate;
     FuncState funcstate;
@@ -4335,36 +4660,39 @@ namespace
 
 } // namespace
 
-extern "C"
+extern "C" {
+/**
+ * Address: 0x009290F0 (FUN_009290F0, luaU_undump)
+ * IDA signature:
+ * Proto *__usercall luaU_undump@<eax>(lua_State *L, ZIO *Z, Mbuffer *buff);
+ *
+ * What it does:
+ * Initializes the binary-chunk load state, normalizes the chunk source label
+ * (`@`/`=` prefix strip, or `"binary string"` for a raw `\x1B` signature),
+ * validates the chunk header, and returns the top-level `Proto`. Delegates to
+ * the recovered header validator and recursive proto reader in LuaObject.cpp.
+ */
+Proto* luaU_undump(
+  lua_State* const state,
+  ZIO* const stream,
+  Mbuffer* const buffer
+)
 {
-  /**
-   * Address: 0x009290F0 (FUN_009290F0, luaU_undump)
-   * IDA signature:
-   * Proto *__usercall luaU_undump@<eax>(lua_State *L, ZIO *Z, Mbuffer *buff);
-   *
-   * What it does:
-   * Initializes the binary-chunk load state, normalizes the chunk source label
-   * (`@`/`=` prefix strip, or `"binary string"` for a raw `\x1B` signature),
-   * validates the chunk header, and returns the top-level `Proto`. Delegates to
-   * the recovered header validator and recursive proto reader in LuaObject.cpp.
-   */
-  Proto* luaU_undump(lua_State* const state, ZIO* const stream, Mbuffer* const buffer)
-  {
-    const char* sourceName = stream->chunkName;
-    const char firstChar = *sourceName;
-    if (firstChar == '@' || firstChar == '=') {
-      ++sourceName;
-    } else if (firstChar == '\x1B') {
-      sourceName = "binary string";
-    }
-
-    LoadState loadState{};
-    loadState.state = state;
-    loadState.stream = stream;
-    loadState.scratchBuffer = buffer;
-    loadState.chunkName = sourceName;
-
-    LuaPlus::LuaLoadChunkHeader(&loadState);
-    return LuaPlus::LuaLoadProtoObject(&loadState, nullptr);
+  const char* sourceName = stream->chunkName;
+  const char firstChar = *sourceName;
+  if (firstChar == '@' || firstChar == '=') {
+    ++sourceName;
+  } else if (firstChar == '\x1B') {
+    sourceName = "binary string";
   }
+
+  LoadState loadState{};
+  loadState.state = state;
+  loadState.stream = stream;
+  loadState.scratchBuffer = buffer;
+  loadState.chunkName = sourceName;
+
+  LuaPlus::LuaLoadChunkHeader(&loadState);
+  return LuaPlus::LuaLoadProtoObject(&loadState, nullptr);
+}
 }

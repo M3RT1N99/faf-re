@@ -1,4 +1,5 @@
 #include "moho/unit/CUnitMotion.h"
+#include "moho/misc/EconomyRequestRelease.h"
 #include "moho/sim/SimArchiveMode.h"
 #include "legacy/math/X87Math.h"
 
@@ -28,7 +29,7 @@
 #include "moho/entity/Entity.h"
 #include "moho/resource/blueprints/RUnitBlueprint.h"
 #include "moho/sim/CArmyImpl.h"
-#include "moho/sim/CSimArmyEconomyInfo.h"
+#include "moho/sim/CEconomy.h"
 #include "moho/sim/COGrid.h"
 #include "moho/sim/SPhysBody.h"
 #include "moho/sim/SimConVarAccess.h"
@@ -58,7 +59,6 @@ namespace moho
     constexpr float kRollHackBlend = 0.25f;
     constexpr float kRollHackAxisScale = 4.0f;
     constexpr float kWaterSnapSurfaceBias = 0.25f;
-    constexpr float kNoWaterElevation = -10000.0f;
     constexpr float kCommonMoveNearStopSpeedScale = 0.080000006f;
     // Loaded from 0x00E4F9D0 (0x3BA3D70B): one ulp above the float nearest
     // 0.005, as kCommonMoveNearStopSpeedScale (0x00E4F91C, 0x3DA3D70B) is for 0.08.
@@ -83,39 +83,42 @@ namespace moho
     constexpr EUnitMotionHorzEvent kUnitMotionHorzEventStopping = static_cast<EUnitMotionHorzEvent>(2);
     constexpr EUnitMotionHorzEvent kUnitMotionHorzEventStopped = static_cast<EUnitMotionHorzEvent>(3);
     // Hover body-tilt low-pass: 80% of the previous lean is kept and 20% of the
-  // new target blended in each tick, with the acceleration lane read ten ticks
-  // ahead.
-  constexpr float kHoverTiltRetain = 0.80000001f;
-  constexpr float kHoverTiltBlend = 0.2f;
-  constexpr float kHoverTiltLeadTicks = 10.0f;
-  // The wobble target is re-rolled once every five ticks.
-  constexpr std::uint32_t kHoverWobbleReRollPeriodTicks = 5u;
-  // Per-tick wobble acceleration is capped at a tenth of the wobble speed.
-  constexpr float kHoverWobbleAccelFraction = 0.1f;
-  // Wobble offset damping per tick.
-  constexpr float kHoverWobbleRetain = 0.98000002f;
+    // new target blended in each tick, with the acceleration lane read ten ticks
+    // ahead.
+    constexpr float kHoverTiltRetain = 0.80000001f;
+    constexpr float kHoverTiltBlend = 0.2f;
+    constexpr float kHoverTiltLeadTicks = 10.0f;
+    // The wobble target is re-rolled once every five ticks.
+    constexpr std::uint32_t kHoverWobbleReRollPeriodTicks = 5u;
+    // Per-tick wobble acceleration is capped at a tenth of the wobble speed.
+    constexpr float kHoverWobbleAccelFraction = 0.1f;
+    // Wobble offset damping per tick.
+    constexpr float kHoverWobbleRetain = 0.98000002f;
 
-  /**
-   * Uniform sample in `[lower, upper)` drawn straight from the simulation's
-   * Mersenne twister, as CalcMoveHover inlines it under 24-bit x87 precision
-   * (0x006C2D02..0x006C2D39): `fild` the word (+2^32 when it loads negative),
-   * `(upper - lower) * word` rounded to single once, times 2^-32, plus
-   * `lower`. Forming it in double with an inexact 2^-32 literal lands one float
-   * away often enough to drift a hovering unit's wobble within a few ticks.
-   */
-  [[nodiscard]] float RandomInRange(moho::CMersenneTwister& twister, const float lower, const float upper) noexcept
-  {
-    constexpr float kInvTwoTo32 = 2.3283064365386963e-10f; // 0x2F800000 at 0x00E4F7B0
-    return lower + msvc8::MulTwisterWord(upper - lower, twister.NextUInt32()) * kInvTwoTo32;
-  }
+    /**
+     * Uniform sample in `[lower, upper)` drawn straight from the simulation's
+     * Mersenne twister, as CalcMoveHover inlines it under 24-bit x87 precision
+     * (0x006C2D02..0x006C2D39): `fild` the word (+2^32 when it loads negative),
+     * `(upper - lower) * word` rounded to single once, times 2^-32, plus
+     * `lower`. Forming it in double with an inexact 2^-32 literal lands one float
+     * away often enough to drift a hovering unit's wobble within a few ticks.
+     */
+    [[nodiscard]] float RandomInRange(
+      moho::CMersenneTwister& twister,
+      const float lower,
+      const float upper
+    ) noexcept
+    {
+      constexpr float kInvTwoTo32 = 2.3283064365386963e-10f; // 0x2F800000 at 0x00E4F7B0
+      return lower + fa::MulTwisterWord(upper - lower, twister.NextUInt32()) * kInvTwoTo32;
+    }
 
-  // Water surface used on maps that have no water at all: far enough below any
-  // real terrain that nothing is ever classified as submerged.
-  constexpr float kNoWaterSurfaceElevation = -10000.0f;
-  // Ticks of current velocity the water-exit transition endpoint is led by.
-  constexpr float kLayerExitLeadTicks = 10.0f;
+    // Water surface used on maps that have no water at all: far enough below any
+    // real terrain that nothing is ever classified as submerged.
+    // Ticks of current velocity the water-exit transition endpoint is led by.
+    constexpr float kLayerExitLeadTicks = 10.0f;
 
-  constexpr EUnitMotionCarrierEvent kUnitMotionCarrierEventRelativeHeight = static_cast<EUnitMotionCarrierEvent>(1);
+    constexpr EUnitMotionCarrierEvent kUnitMotionCarrierEventRelativeHeight = static_cast<EUnitMotionCarrierEvent>(1);
     constexpr const char* kUnitMotionScriptStateNames[] = {
       "None",
       "Attached",
@@ -151,8 +154,7 @@ namespace moho
       sizeof(kUnitMotionScriptHorzEventNames) / sizeof(kUnitMotionScriptHorzEventNames[0]);
     constexpr std::size_t kUnitMotionScriptVertEventNameCount =
       sizeof(kUnitMotionScriptVertEventNames) / sizeof(kUnitMotionScriptVertEventNames[0]);
-    constexpr std::uint64_t kVerticalMotionStateMask =
-      (1ull << static_cast<std::uint32_t>(UNITSTATE_MovingDown)) |
+    constexpr std::uint64_t kVerticalMotionStateMask = (1ull << static_cast<std::uint32_t>(UNITSTATE_MovingDown)) |
       (1ull << static_cast<std::uint32_t>(UNITSTATE_MovingUp));
 
     // The candidate slots hold weak references to the *entities* the collision
@@ -166,7 +168,8 @@ namespace moho
      * Address: 0x00672B50 (FUN_00672B50, sub_672B50)
      *
      * IDA signature:
-     * int __usercall sub_672B50@<eax>(Wm3::Quaternionf *transform@<ecx>, Wm3::Box3f *outBox@<esi>, Vector3f *halfExtents);
+     * int __usercall sub_672B50@<eax>(Wm3::Quaternionf *transform@<ecx>, Wm3::Box3f *outBox@<esi>, Vector3f
+     * *halfExtents);
      *
      * What it does:
      * Builds one oriented bounding box centred on `transform.pos_`, whose axes
@@ -189,54 +192,6 @@ namespace moho
     }
 
     /**
-     * Address: 0x00699600 (FUN_00699600, sub_699600)
-     *
-     * What it does:
-     * Builds one vector opposite to `direction`, scales that length by
-     * normalized distance and forward-projection attenuation, and applies the
-     * result in-place to `outVector`.
-     */
-    [[maybe_unused]] Wm3::Vector3f* ComputeScaledOpposingVectorWithDirectionalAttenuation(
-      Wm3::Vector3f* const outVector,
-      Wm3::Vector3f direction,
-      const float projectionAxisX,
-      const float projectionAxisY,
-      const float projectionAxisZ,
-      const float referenceLength,
-      const float outputLengthScale
-    ) noexcept
-    {
-      outVector->x = -direction.x;
-      outVector->y = -direction.y;
-      outVector->z = -direction.z;
-
-      // 0x0069963D..0x00699657 sums the squared lanes as (z + y) + x.
-      const float directionLength = std::sqrt(
-        ((direction.z * direction.z) + (direction.y * direction.y)) + (direction.x * direction.x)
-      );
-      // 0x00699665..0x006996A1: `fcomip; jbe` caps an (ordered) ratio above 8,
-      // then `comiss; jbe` keeps it only when (ordered) above 1, so NaN ends
-      // up at 1.
-      float normalizedScale = directionLength / referenceLength;
-      if (normalizedScale > 8.0f) {
-        normalizedScale = 8.0f;
-      }
-      normalizedScale = (normalizedScale > 1.0f) ? normalizedScale : 1.0f;
-
-      (void)Wm3::Vector3f::Normalize(&direction);
-      // 0x006996B2..0x006996DA sums the projection as (z + y) + x and keeps it
-      // only when (ordered) positive.
-      const float rawProjection =
-        ((projectionAxisZ * direction.z) + (projectionAxisY * direction.y)) + (projectionAxisX * direction.x);
-      const float directionalProjection = (rawProjection > 0.0f) ? rawProjection : 0.0f;
-
-      const float scaledLength =
-        ((1.0f - directionalProjection) * normalizedScale) * outputLengthScale;
-      (void)VecSetLength(outVector, scaledLength);
-      return outVector;
-    }
-
-    /**
      * Address: 0x0069A2A0 (FUN_0069A2A0, func_VecSetLength)
      *
      * What it does:
@@ -248,17 +203,14 @@ namespace moho
       const Wm3::Vector3f& vector
     ) noexcept
     {
-      const float axisLengthSquared =
-        (axis.x * axis.x) + (axis.y * axis.y) + (axis.z * axis.z);
+      const float axisLengthSquared = (axis.x * axis.x) + (axis.y * axis.y) + (axis.z * axis.z);
       // 0x0069A2CE: `comiss lenSq, 0; jbe -> zero`, so NaN also yields zero.
       if (!(axisLengthSquared > 0.0f)) {
         return {};
       }
 
       // 0x0069A2E4..0x0069A2FD: dot summed (y + z) + x.
-      const float scale =
-        (((vector.y * axis.y) + (vector.z * axis.z)) + (vector.x * axis.x))
-        / axisLengthSquared;
+      const float scale = (((vector.y * axis.y) + (vector.z * axis.z)) + (vector.x * axis.x)) / axisLengthSquared;
       return Wm3::Vector3f{axis.x * scale, axis.y * scale, axis.z * scale};
     }
 
@@ -271,7 +223,10 @@ namespace moho
      * inlined `VecScaleByReciprocalOrSetMax` (0x006B701A) replaces all three
      * lanes with `FLT_MAX`, and those are what get added to the velocity.
      */
-    void ApplyImpulseToBodyVelocity(SPhysBody& body, const Wm3::Vector3f& impulse) noexcept
+    void ApplyImpulseToBodyVelocity(
+      SPhysBody& body,
+      const Wm3::Vector3f& impulse
+    ) noexcept
     {
       Wm3::Vector3f velocityDelta = impulse;
       (void)VecScaleByReciprocalOrSetMax(&velocityDelta, body.mMass);
@@ -281,7 +236,9 @@ namespace moho
       body.mVelocity.z += velocityDelta.z;
     }
 
-    [[nodiscard]] float ClampBallisticAngularRange(const float inverseInertiaAxis) noexcept
+    [[nodiscard]] float ClampBallisticAngularRange(
+      const float inverseInertiaAxis
+    ) noexcept
     {
       constexpr float kBallisticAngularRangeScale = 0.2f;
       constexpr float kBallisticAngularRangeMax = 2.0f;
@@ -325,7 +282,9 @@ namespace moho
       return minValue + static_cast<int>(ScaleRandomUInt32ToRange(static_cast<std::uint32_t>(range), randomStream));
     }
 
-    [[nodiscard]] const char* UnitMotionStateToScriptString(const EUnitMotionState state) noexcept
+    [[nodiscard]] const char* UnitMotionStateToScriptString(
+      const EUnitMotionState state
+    ) noexcept
     {
       const auto stateIndex = static_cast<std::int32_t>(state);
       if (stateIndex < 0) {
@@ -339,7 +298,9 @@ namespace moho
       return kUnitMotionScriptStateNames[stateOffset];
     }
 
-    [[nodiscard]] const char* UnitMotionHorzEventToScriptString(const EUnitMotionHorzEvent event) noexcept
+    [[nodiscard]] const char* UnitMotionHorzEventToScriptString(
+      const EUnitMotionHorzEvent event
+    ) noexcept
     {
       const auto eventIndex = static_cast<std::int32_t>(event);
       if (eventIndex < 0) {
@@ -353,7 +314,9 @@ namespace moho
       return kUnitMotionScriptHorzEventNames[eventOffset];
     }
 
-    [[nodiscard]] const char* UnitMotionVertEventToScriptString(const EUnitMotionVertEvent event) noexcept
+    [[nodiscard]] const char* UnitMotionVertEventToScriptString(
+      const EUnitMotionVertEvent event
+    ) noexcept
     {
       const auto eventIndex = static_cast<std::int32_t>(event);
       if (eventIndex < 0) {
@@ -367,13 +330,17 @@ namespace moho
       return kUnitMotionScriptVertEventNames[eventOffset];
     }
 
-    [[nodiscard]] bool IsVector3fBinaryZero(const Wm3::Vector3f& value) noexcept
+    [[nodiscard]] bool IsVector3fBinaryZero(
+      const Wm3::Vector3f& value
+    ) noexcept
     {
       static constexpr Wm3::Vector3f kZeroVector{};
       return std::memcmp(&value, &kZeroVector, sizeof(Wm3::Vector3f)) == 0;
     }
 
-    [[nodiscard]] bool IsCommonMoveSteeringAligned(const SteeringParams& params) noexcept
+    [[nodiscard]] bool IsCommonMoveSteeringAligned(
+      const SteeringParams& params
+    ) noexcept
     {
       float targetX = std::numeric_limits<float>::max();
       float targetZ = std::numeric_limits<float>::max();
@@ -383,8 +350,7 @@ namespace moho
         targetZ = params.mDeltaZ * invDistance;
       }
 
-      const float alignment =
-        (params.mForwardXZ.y * targetZ) + (params.mForwardXZ.x * targetX);
+      const float alignment = (params.mForwardXZ.y * targetZ) + (params.mForwardXZ.x * targetX);
       // 0x006C2568 `comiss 0.9999, dot / jbe skip`: only a dot strictly below
       // the threshold turns, so an unordered (NaN) dot counts as aligned.
       return !(kCommonMoveHeadingAlignedDot > alignment);
@@ -405,12 +371,7 @@ namespace moho
       Wm3::Vector2f direction{};
       const float turnRate = useFacingTurnRate ? params.mTurnFacingRate : params.mTurnRate;
       (void)RotateDirectionTowardTargetLimited(
-        &direction,
-        turnRate,
-        params.mForwardXZ.x,
-        params.mForwardXZ.y,
-        params.mDeltaX,
-        params.mDeltaZ
+        &direction, turnRate, params.mForwardXZ.x, params.mForwardXZ.y, params.mDeltaX, params.mDeltaZ
       );
       (void)BuildHeadingQuaternionFromDirection2D(&direction, &transform.orient_);
       return true;
@@ -434,10 +395,9 @@ namespace moho
       const Wm3::Vector3f forward = moho::QuatForwardAxis(unit->GetTransform().orient_);
       // 0x006C2421 `comiss cross, 0; jbe`: only an ordered `cross > 0` takes
       // the positive arc, so a NaN cross turns the negative way.
-      const float signedRadians =
-        ((normalizedTarget.z * forward.x) - (forward.z * normalizedTarget.x)) > 0.0f
-          ? attackAngleDegrees * kCommonMoveSlavedArcEnterRadians
-          : attackAngleDegrees * -kCommonMoveSlavedArcEnterRadians;
+      const float signedRadians = ((normalizedTarget.z * forward.x) - (forward.z * normalizedTarget.x)) > 0.0f
+        ? attackAngleDegrees * kCommonMoveSlavedArcEnterRadians
+        : attackAngleDegrees * -kCommonMoveSlavedArcEnterRadians;
 
       const Wm3::Vector3f yawAxis{0.0f, 1.0f, 0.0f};
       Wm3::Quaternionf rotation{};
@@ -457,7 +417,9 @@ namespace moho
       };
     }
 
-    [[nodiscard]] bool HasQueuedHeadCommand(const CUnitCommandQueue* const commandQueue) noexcept
+    [[nodiscard]] bool HasQueuedHeadCommand(
+      const CUnitCommandQueue* const commandQueue
+    ) noexcept
     {
       if (!commandQueue) {
         return false;
@@ -500,8 +462,10 @@ namespace moho
       const CHeightField* const heightField = map.GetHeightField();
       float sampledElevation = heightField ? heightField->GetElevation(samplePoint.x, samplePoint.z) : samplePoint.y;
 
-      if (includeWaterFloor && map.mWaterEnabled != 0u && map.mWaterElevation > sampledElevation) {
-        sampledElevation = map.mWaterElevation;
+      // Engine addition (water bodies): the level at the sample point.
+      const float waterElevation = map.GetWaterElevationAt(samplePoint.x, samplePoint.z);
+      if (includeWaterFloor && waterElevation > sampledElevation) {
+        sampledElevation = waterElevation;
       }
 
       if (unit != nullptr) {
@@ -509,34 +473,6 @@ namespace moho
       }
 
       return sampledElevation;
-    }
-
-    /**
-     * Address: 0x0062B1C0 (FUN_0062B1C0)
-     *
-     * What it does:
-     * Samples terrain elevation from one height-field lane and adds occupied
-     * rectangle distance when an owning unit is provided.
-     */
-    [[maybe_unused]] [[nodiscard]] float SampleElevationWithOccupiedRectOffset(
-      const CHeightField* const heightField,
-      Unit* const unit,
-      const Wm3::Vector3f& samplePoint
-    ) noexcept
-    {
-      const float elevation = heightField ? heightField->GetElevation(samplePoint.x, samplePoint.z) : samplePoint.y;
-      if (unit != nullptr) {
-        return elevation + unit->DistanceToOccupiedRect(&samplePoint);
-      }
-      return elevation;
-    }
-
-    [[nodiscard]] gpg::RRef MakeCUnitMotionRef(CUnitMotion* const value) noexcept
-    {
-      gpg::RRef out{};
-      out.mObj = value;
-      out.mType = CUnitMotion::StaticGetClass();
-      return out;
     }
 
     template <class TObject>
@@ -556,7 +492,10 @@ namespace moho
     }
 
     template <class TObject>
-    [[nodiscard]] TObject* UpcastTrackedPointer(const gpg::TrackedPointerInfo& tracked, const char* const fallbackName)
+    [[nodiscard]] TObject* UpcastTrackedPointer(
+      const gpg::TrackedPointerInfo& tracked,
+      const char* const fallbackName
+    )
     {
       gpg::RRef source{};
       source.mObj = tracked.object;
@@ -570,7 +509,7 @@ namespace moho
       const char* const expectedName =
         ResolveCachedType<TObject>() ? ResolveCachedType<TObject>()->GetName() : fallbackName;
       const char* const actualName = tracked.type ? tracked.type->GetName() : "null";
-      const msvc8::string message = gpg::STR_Printf(
+      const fa::string message = gpg::STR_Printf(
         "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
         "instead",
         expectedName ? expectedName : fallbackName,
@@ -580,8 +519,11 @@ namespace moho
     }
 
     template <class TObject>
-    [[nodiscard]] TObject*
-    ReadPointerUnowned(gpg::ReadArchive& archive, const gpg::RRef& ownerRef, const char* const fallbackName)
+    [[nodiscard]] TObject* ReadPointerUnowned(
+      gpg::ReadArchive& archive,
+      const gpg::RRef& ownerRef,
+      const char* const fallbackName
+    )
     {
       const gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(&archive, ownerRef);
       if (!tracked.object) {
@@ -592,8 +534,11 @@ namespace moho
     }
 
     template <class TObject>
-    [[nodiscard]] TObject*
-    ReadPointerOwned(gpg::ReadArchive& archive, const gpg::RRef& ownerRef, const char* const fallbackName)
+    [[nodiscard]] TObject* ReadPointerOwned(
+      gpg::ReadArchive& archive,
+      const gpg::RRef& ownerRef,
+      const char* const fallbackName
+    )
     {
       gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(&archive, ownerRef);
       if (!tracked.object) {
@@ -610,7 +555,9 @@ namespace moho
     }
 
     template <class TObject>
-    [[nodiscard]] gpg::RRef MakeTrackedRef(TObject* const object)
+    [[nodiscard]] gpg::RRef MakeTrackedRef(
+      TObject* const object
+    )
     {
       gpg::RRef out{};
       if (!object) {
@@ -633,8 +580,7 @@ namespace moho
 
       std::int32_t baseOffset = 0;
       if (dynamicType && staticType && dynamicType->IsDerivedFrom(staticType, &baseOffset)) {
-        out.mObj =
-          reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(object) - static_cast<std::uintptr_t>(baseOffset));
+        out.mObj = gpg::CompleteObject(object, baseOffset);
         out.mType = dynamicType;
         return out;
       }
@@ -645,40 +591,45 @@ namespace moho
     }
 
     template <class TObject>
-    void ReadTypedValue(gpg::ReadArchive& archive, TObject& object, const gpg::RRef& ownerRef)
+    void ReadTypedValue(
+      gpg::ReadArchive& archive,
+      TObject& object,
+      const gpg::RRef& ownerRef
+    )
     {
       archive.Read(ResolveCachedType<TObject>(), &object, ownerRef);
     }
 
     template <class TObject>
-    void WriteTypedValue(gpg::WriteArchive& archive, const TObject& object, const gpg::RRef& ownerRef)
+    void WriteTypedValue(
+      gpg::WriteArchive& archive,
+      const TObject& object,
+      const gpg::RRef& ownerRef
+    )
     {
       archive.Write(ResolveCachedType<TObject>(), &object, ownerRef);
     }
 
-    [[nodiscard]] bool IsRefuelVertEvent(const EUnitMotionVertEvent event) noexcept
+    [[nodiscard]] bool IsRefuelVertEvent(
+      const EUnitMotionVertEvent event
+    ) noexcept
     {
       return event == UMVE_Bottom || event == UMVE_Hover;
     }
 
-    void DestroyEconomyRequestPointer(CEconRequest*& request) noexcept
-    {
-      if (!request) {
-        return;
-      }
-
-      request->mNode.ListUnlink();
-      delete request;
-      request = nullptr;
-    }
-
-    void ReplaceEconomyRequestPointer(CEconRequest*& request, CEconRequest* const replacement) noexcept
+    void ReplaceEconomyRequestPointer(
+      CEconRequest*& request,
+      CEconRequest* const replacement
+    ) noexcept
     {
       DestroyEconomyRequestPointer(request);
       request = replacement;
     }
 
-    [[nodiscard]] CEconRequest* CreateEconomyRequest(const SEconValue& requested, CSimArmyEconomyInfo* const economy)
+    [[nodiscard]] CEconRequest* CreateEconomyRequest(
+      const SEconValue& requested,
+      CEconomy* const economy
+    )
     {
       auto* const request = new CEconRequest{};
       request->mRequested = requested;
@@ -686,22 +637,14 @@ namespace moho
       request->mGranted.mass = 0.0f;
 
       if (economy != nullptr) {
-        request->mNode.ListLinkBefore(&economy->registrationNode);
+        request->mNode.ListLinkBefore(&economy->mConsumptionData);
       }
       return request;
     }
 
-    [[nodiscard]] SEconValue TakeGrantedResourcesAndReset(CEconRequest* const request) noexcept
-    {
-      SEconValue out{};
-      out.energy = request->mGranted.energy;
-      out.mass = request->mGranted.mass;
-      request->mGranted.energy = 0.0f;
-      request->mGranted.mass = 0.0f;
-      return out;
-    }
-
-    void ClearMaintenanceCost(Unit* const unit) noexcept
+    void ClearMaintenanceCost(
+      Unit* const unit
+    ) noexcept
     {
       unit->mUnitVarDat.mMaintainenceCost.ENERGY = 0.0f;
       unit->mUnitVarDat.mMaintainenceCost.MASS = 0.0f;
@@ -805,7 +748,9 @@ namespace moho
    * under the spawn point, and gives aircraft a small random cruise offset so a
    * formation does not fly at one exact altitude.
    */
-  CUnitMotion::CUnitMotion(Unit* const unit)
+  CUnitMotion::CUnitMotion(
+    Unit* const unit
+  )
     : CUnitMotion()
   {
     mUnit = unit;
@@ -859,8 +804,9 @@ namespace moho
 
     const STIMap* const map = mUnit->SimulationRef->mMapData;
     float surfaceElevation = map->mHeightField.get()->GetElevation(mPos.x, mPos.z);
-    if (map->mWaterEnabled != 0 && map->mWaterElevation > surfaceElevation) {
-      surfaceElevation = map->mWaterElevation;
+    const float waterElevation = map->GetWaterElevationAt(mPos.x, mPos.z); // engine addition: per position
+    if (waterElevation > surfaceElevation) {
+      surfaceElevation = waterElevation;
     }
     mTargetElevation = surfaceElevation;
 
@@ -886,7 +832,12 @@ namespace moho
    * Allocates one `CUnitMotion`, default-constructs it, and returns it as an
    * unowned reflected construct result.
    */
-  void CUnitMotion::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CUnitMotion::MemberConstruct(
+    gpg::ReadArchive&,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     result.SetUnowned(gpg::MakeRRef(new CUnitMotion()), 0u);
   }
@@ -912,7 +863,9 @@ namespace moho
   /**
    * Address: 0x006BACE0 (FUN_006BACE0, Moho::CUnitMotion::MemberDeserialize)
    */
-  void CUnitMotion::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CUnitMotion::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (archive == nullptr) {
       return;
@@ -998,22 +951,18 @@ namespace moho
   /**
    * Address: 0x006BB460 (FUN_006BB460, Moho::CUnitMotion::MemberSerialize)
    */
-  void CUnitMotion::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CUnitMotion::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (archive == nullptr) {
       return;
     }
 
     const gpg::RRef ownerRef = NullOwnerRef();
-    gpg::WriteRawPointer(
-      archive, MakeTrackedRef(mUnit), gpg::TrackedPointerState::Unowned, ownerRef
-    );
-    gpg::WriteRawPointer(
-      archive, MakeTrackedRef(mNextWaypoint), gpg::TrackedPointerState::Unowned, ownerRef
-    );
-    gpg::WriteRawPointer(
-      archive, MakeTrackedRef(mFollowingWaypoint), gpg::TrackedPointerState::Unowned, ownerRef
-    );
+    gpg::WriteRawPointer(archive, MakeTrackedRef(mUnit), gpg::TrackedPointerState::Unowned, ownerRef);
+    gpg::WriteRawPointer(archive, MakeTrackedRef(mNextWaypoint), gpg::TrackedPointerState::Unowned, ownerRef);
+    gpg::WriteRawPointer(archive, MakeTrackedRef(mFollowingWaypoint), gpg::TrackedPointerState::Unowned, ownerRef);
 
     archive->WriteFloat(mFuelUseTime);
     archive->WriteBool(mStopRequested);
@@ -1074,9 +1023,7 @@ namespace moho
     WriteTypedValue(*archive, mReservation, ownerRef);
 
     archive->WriteBool(mHasDoneCallback);
-    gpg::WriteRawPointer(
-      archive, MakeTrackedRef(mEconomyRequest), gpg::TrackedPointerState::Owned, ownerRef
-    );
+    gpg::WriteRawPointer(archive, MakeTrackedRef(mEconomyRequest), gpg::TrackedPointerState::Owned, ownerRef);
 
     WriteTypedValue(*archive, mRepairConsumption, ownerRef);
 
@@ -1094,7 +1041,9 @@ namespace moho
    * Samples map elevation at one target point and clamps upward to water level
    * when water is enabled.
    */
-  void CUnitMotion::ReCalcCurTargetElevation(const Wm3::Vector3f& targetPosition)
+  void CUnitMotion::ReCalcCurTargetElevation(
+    const Wm3::Vector3f& targetPosition
+  )
   {
     STIMap* const mapData = mUnit->SimulationRef->mMapData;
     const CHeightField* const heightField = mapData->GetHeightField();
@@ -1104,8 +1053,10 @@ namespace moho
       targetElevation = heightField->GetElevation(targetPosition.x, targetPosition.z);
     }
 
-    if (mapData->mWaterEnabled != 0u && mapData->mWaterElevation > targetElevation) {
-      targetElevation = mapData->mWaterElevation;
+    const float targetWaterElevation =
+      mapData->GetWaterElevationAt(targetPosition.x, targetPosition.z); // engine addition
+    if (targetWaterElevation > targetElevation) {
+      targetElevation = targetWaterElevation;
     }
 
     mTargetElevation = targetElevation;
@@ -1119,13 +1070,17 @@ namespace moho
    * Arms stop mode, optionally retargets to a hold position, and clears active
    * path waypoint pointers/state.
    */
-  void CUnitMotion::Stop(const Wm3::Vector3f* const holdPosition)
+  void CUnitMotion::Stop(
+    const Wm3::Vector3f* const holdPosition
+  )
   {
     Unit* const unit = mUnit;
     mStopRequested = 1;
 
-    if (unit->mIsAir && !unit->IsUnitState(UNITSTATE_TransportUnloading) &&
-        !unit->IsUnitState(UNITSTATE_TransportLoading) && !unit->IsUnitState(UNITSTATE_Ferrying)) {
+    if (
+      unit->mIsAir && !unit->IsUnitState(UNITSTATE_TransportUnloading) &&
+      !unit->IsUnitState(UNITSTATE_TransportLoading) && !unit->IsUnitState(UNITSTATE_Ferrying)
+    ) {
       mLayer = LAYER_Air;
     }
 
@@ -1153,23 +1108,12 @@ namespace moho
    * What it does:
    * Copies and normalizes one requested facing vector into formation-facing.
    */
-  void CUnitMotion::SetFacing(const Wm3::Vector3f& facing)
+  void CUnitMotion::SetFacing(
+    const Wm3::Vector3f& facing
+  )
   {
     mFormationVec = facing;
     Wm3::Vector3f::Normalize(&mFormationVec);
-  }
-
-  /**
-   * Address: 0x006C35B0 (FUN_006C35B0, ?SetSplineData@CUnitMotion@Moho@@QAEXPBVCPathPoint@2@0@Z)
-   * Mangled: ?SetSplineData@CUnitMotion@Moho@@QAEXPBVCPathPoint@2@0@Z
-   *
-   * What it does:
-   * Stores current and look-ahead spline waypoint lanes for movement steering.
-   */
-  void CUnitMotion::SetSplineData(const CPathPoint* const nextWaypoint, const CPathPoint* const followingWaypoint)
-  {
-    mNextWaypoint = const_cast<CPathPoint*>(nextWaypoint);
-    mFollowingWaypoint = const_cast<CPathPoint*>(followingWaypoint);
   }
 
   /**
@@ -1179,7 +1123,9 @@ namespace moho
    * What it does:
    * Sets target position with a zero steering vector and no forced layer.
    */
-  void CUnitMotion::SetTarget(const Wm3::Vector3f& target)
+  void CUnitMotion::SetTarget(
+    const Wm3::Vector3f& target
+  )
   {
     const Wm3::Vector3f zeroSteeringVector{};
     SetTarget(target, zeroSteeringVector, LAYER_None);
@@ -1265,8 +1211,10 @@ namespace moho
       mFormationVec = normalizedSteeringVector;
     }
 
-    if (unit->ReservedOgridRectMinX == mReservationMinX && unit->ReservedOgridRectMinZ == mReservationMinZ &&
-        unit->ReservedOgridRectMaxX == mReservationMaxX && unit->ReservedOgridRectMaxZ == mReservationMaxZ) {
+    if (
+      unit->mReservedOgridRect.x0 == mReservationMinX && unit->mReservedOgridRect.z0 == mReservationMinZ &&
+      unit->mReservedOgridRect.x1 == mReservationMaxX && unit->mReservedOgridRect.z1 == mReservationMaxZ
+    ) {
       unit->FreeOgridRect();
     }
 
@@ -1284,7 +1232,9 @@ namespace moho
    * Applies sub<->water vertical-transition side effects and writes one new
    * target layer lane.
    */
-  void CUnitMotion::SetNewTargetLayer(const ELayer newLayer)
+  void CUnitMotion::SetNewTargetLayer(
+    const ELayer newLayer
+  )
   {
     Unit* const unit = mUnit;
     const ELayer oldLayer = unit->mVarDat.mLayerMask;
@@ -1319,7 +1269,10 @@ namespace moho
    * Normalizes one pending orientation quaternion, warns on invalid move
    * payload lanes, writes pending transform, and emits one sim move log line.
    */
-  void CUnitMotion::MoveTo(VTransform& transform, const float timeStep)
+  void CUnitMotion::MoveTo(
+    VTransform& transform,
+    const float timeStep
+  )
   {
     // 0x006B92E4 calls the engine normalization lane, also used by physics.
     NormalizeQuatInPlace(&transform.orient_);
@@ -1327,20 +1280,12 @@ namespace moho
     const float pendingVelocityScale = 1.0f / timeStep;
     const float orientationNormDelta = std::fabs(Wm3::Quaternionf::LengthSq(transform.orient_) - 1.0f);
     if (!IsValidVector3f(transform.pos_) || orientationNormDelta >= kMoveToQuatUnitTolerance) {
-      gpg::Logf(
-        "Unit %s is attempting to move to an invalid coord",
-        mUnit->GetBlueprint()->mBlueprintId.c_str()
-      );
+      gpg::Logf("Unit %s is attempting to move to an invalid coord", mUnit->GetBlueprint()->mBlueprintId.c_str());
     }
 
     Entity& entity = *static_cast<Entity*>(mUnit);
     entity.SetPendingTransform(transform, pendingVelocityScale);
-    mUnit->SimulationRef->Logf(
-      "  MoveTo(<%7.2f,%7.2f,%7.2f>)\n",
-      transform.pos_.x,
-      transform.pos_.y,
-      transform.pos_.z
-    );
+    mUnit->SimulationRef->Logf("  MoveTo(<%7.2f,%7.2f,%7.2f>)\n", transform.pos_.x, transform.pos_.y, transform.pos_.z);
   }
 
   /**
@@ -1351,7 +1296,9 @@ namespace moho
    * current target/elevation collision paths, and forces land-collision
    * processing when the owner is on land layer.
    */
-  void CUnitMotion::Warp(const VTransform& transform)
+  void CUnitMotion::Warp(
+    const VTransform& transform
+  )
   {
     if (mUnit == nullptr) {
       return;
@@ -1382,7 +1329,10 @@ namespace moho
    * What it does:
    * Resolves owner physics-body state and overwrites velocity/orientation lanes.
    */
-  void CUnitMotion::SetImmediateVelocity(const Wm3::Vector3f& velocity, const Wm3::Quaternionf& orientation)
+  void CUnitMotion::SetImmediateVelocity(
+    const Wm3::Vector3f& velocity,
+    const Wm3::Quaternionf& orientation
+  )
   {
     Entity& entity = *static_cast<Entity*>(mUnit);
     SPhysBody* const body = entity.GetPhysBody(false);
@@ -1401,7 +1351,9 @@ namespace moho
    * Projects requested recoil impulse onto current unit forward lane and adds
    * a damped residual into `mRecoilImpulse`.
    */
-  void CUnitMotion::AddRecoilImpulse(const Wm3::Vector3f& impulse)
+  void CUnitMotion::AddRecoilImpulse(
+    const Wm3::Vector3f& impulse
+  )
   {
     if (mUnit == nullptr) {
       return;
@@ -1432,7 +1384,10 @@ namespace moho
    * velocity directly, while non-air units blend steering state and can force
    * one ballistic transition with randomized angular impulse.
    */
-  void CUnitMotion::AddImpulse(const Wm3::Vector3f& impulse, const bool transitionToBallistic)
+  void CUnitMotion::AddImpulse(
+    const Wm3::Vector3f& impulse,
+    const bool transitionToBallistic
+  )
   {
     Unit* const unit = mUnit;
     if (unit->IsDead() || unit->IsBeingBuilt()) {
@@ -1502,11 +1457,8 @@ namespace moho
     constexpr float kSurfaceImpulseSpeedScale = 0.2f;
     const float maxSurfaceSpeed = unit->mInfoCache.mFormationTopSpeed * kSurfaceImpulseSpeedScale;
 
-    const float speed = std::sqrt(
-      (mVelocity.x * mVelocity.x) +
-      (mVelocity.y * mVelocity.y) +
-      (mVelocity.z * mVelocity.z)
-    );
+    const float speed =
+      std::sqrt((mVelocity.x * mVelocity.x) + (mVelocity.y * mVelocity.y) + (mVelocity.z * mVelocity.z));
     if (speed > maxSurfaceSpeed) {
       (void)VecSetLength(&mVelocity, maxSurfaceSpeed);
       mVector44 = mVelocity;
@@ -1524,7 +1476,9 @@ namespace moho
    * Updates horizontal-motion event lane, emits callback, and refreshes intel
    * when entering the stopped event.
    */
-  void CUnitMotion::SetMotionHorzEvent(const EUnitMotionHorzEvent event)
+  void CUnitMotion::SetMotionHorzEvent(
+    const EUnitMotionHorzEvent event
+  )
   {
     const EUnitMotionHorzEvent previousEvent = mHorzEvent;
     if (previousEvent == event) {
@@ -1549,7 +1503,9 @@ namespace moho
    * What it does:
    * Updates vertical-motion event lane and emits change callback text.
    */
-  void CUnitMotion::SetMotionVertEvent(const EUnitMotionVertEvent event)
+  void CUnitMotion::SetMotionVertEvent(
+    const EUnitMotionVertEvent event
+  )
   {
     const EUnitMotionVertEvent previousEvent = mVertEvent;
     if (previousEvent == event) {
@@ -1589,7 +1545,9 @@ namespace moho
    * a turn event and never calls the script, and this follows the shipped
    * bytes: `mTurnEvent` keeps its constructed value (Straight).
    */
-  void CUnitMotion::SetMotionTurnEvent(const EUnitMotionTurnEvent event)
+  void CUnitMotion::SetMotionTurnEvent(
+    const EUnitMotionTurnEvent event
+  )
   {
     (void)event;
   }
@@ -1601,7 +1559,9 @@ namespace moho
    * What it does:
    * Updates motion-state lane and emits `OnMotionStateChange` callback text.
    */
-  void CUnitMotion::SetMotionState(const EUnitMotionState state)
+  void CUnitMotion::SetMotionState(
+    const EUnitMotionState state
+  )
   {
     const EUnitMotionState previousState = mMotionState;
     if (previousState == state) {
@@ -1622,7 +1582,9 @@ namespace moho
    * Switches motion state to attached and normalizes horizontal/vertical event
    * lanes to stopped/top with callback side effects.
    */
-  void CUnitMotion::NotifyAttached(const SEntAttachInfo& attachInfo)
+  void CUnitMotion::NotifyAttached(
+    const SEntAttachInfo& attachInfo
+  )
   {
     (void)attachInfo;
 
@@ -1643,7 +1605,10 @@ namespace moho
    * motion, updates motion/layer script callbacks, and re-enables surface
    * collision processing.
    */
-  void CUnitMotion::NotifyDetached(Entity* const detachedFromEntity, const bool skipBallistic)
+  void CUnitMotion::NotifyDetached(
+    Entity* const detachedFromEntity,
+    const bool skipBallistic
+  )
   {
     const Wm3::Vector3f detachForward = moho::QuatForwardAxis(detachedFromEntity->mVarDat.mCurTransform.orient_);
 
@@ -1687,10 +1652,9 @@ namespace moho
     unit->mVarDat.mLayerMask = LAYER_Air;
     if (oldLayer != LAYER_Air) {
       const char* newLayerName = Entity::LayerToString(LAYER_Air);
-      const char* oldLayerName =
-        (static_cast<std::uint32_t>(oldLayer) > static_cast<std::uint32_t>(LAYER_Orbit))
-          ? ""
-          : Entity::LayerToString(oldLayer);
+      const char* oldLayerName = (static_cast<std::uint32_t>(oldLayer) > static_cast<std::uint32_t>(LAYER_Orbit))
+        ? ""
+        : Entity::LayerToString(oldLayer);
       unit->CallbackStr("OnLayerChange", &newLayerName, &oldLayerName);
     }
 
@@ -1740,8 +1704,7 @@ namespace moho
     }
 
     if (targetTolerance < planarDistance) {
-      if (mVertEvent != UMVE_Hover &&
-          (mVertEvent != UMVE_Bottom || mHeight == gpg::pInf)) {
+      if (mVertEvent != UMVE_Hover && (mVertEvent != UMVE_Bottom || mHeight == gpg::pInf)) {
         return false;
       }
     }
@@ -1762,8 +1725,7 @@ namespace moho
     if (mUnit->GetBlueprint()->Air.CanFly != 0u) {
       SPhysBody* const body = static_cast<Entity*>(mUnit)->GetPhysBody(false);
       const float speed = std::sqrt(
-        (body->mVelocity.x * body->mVelocity.x) +
-        (body->mVelocity.y * body->mVelocity.y) +
+        (body->mVelocity.x * body->mVelocity.x) + (body->mVelocity.y * body->mVelocity.y) +
         (body->mVelocity.z * body->mVelocity.z)
       );
       return speed > 0.001f;
@@ -1778,7 +1740,9 @@ namespace moho
    * What it does:
    * Copies current velocity into caller-provided output storage.
    */
-  Wm3::Vector3f* CUnitMotion::GetVelocity(Wm3::Vector3f* const outVelocity) const
+  Wm3::Vector3f* CUnitMotion::GetVelocity(
+    Wm3::Vector3f* const outVelocity
+  ) const
   {
     if (outVelocity == nullptr) {
       return nullptr;
@@ -1799,18 +1763,18 @@ namespace moho
   {
     const ERuleBPUnitMovementType motionType = mUnit->GetBlueprint()->Physics.MotionType;
     switch (mUnit->mVarDat.mLayerMask) {
-      case LAYER_Land:
-        return motionType == RULEUMT_Land || motionType == RULEUMT_AmphibiousFloating || motionType == RULEUMT_Amphibious
-               || motionType == RULEUMT_Biped || motionType == RULEUMT_Hover;
-      case LAYER_Seabed:
-        return motionType == RULEUMT_Amphibious;
-      case LAYER_Sub:
-        return motionType == RULEUMT_SurfacingSub;
-      case LAYER_Water:
-        return motionType == RULEUMT_Water || motionType == RULEUMT_AmphibiousFloating
-               || motionType == RULEUMT_SurfacingSub || motionType == RULEUMT_Hover;
-      default:
-        return true;
+    case LAYER_Land:
+      return motionType == RULEUMT_Land || motionType == RULEUMT_AmphibiousFloating ||
+        motionType == RULEUMT_Amphibious || motionType == RULEUMT_Biped || motionType == RULEUMT_Hover;
+    case LAYER_Seabed:
+      return motionType == RULEUMT_Amphibious;
+    case LAYER_Sub:
+      return motionType == RULEUMT_SurfacingSub;
+    case LAYER_Water:
+      return motionType == RULEUMT_Water || motionType == RULEUMT_AmphibiousFloating ||
+        motionType == RULEUMT_SurfacingSub || motionType == RULEUMT_Hover;
+    default:
+      return true;
     }
   }
 
@@ -1851,7 +1815,10 @@ namespace moho
    * Converts wing-factor input into vertical lift with carrier/elevation-aware
    * low-lift bias and max-lift clamp behavior.
    */
-  float CUnitMotion::CalcWingedLift(const float maxLift, const float wingFactor) const
+  float CUnitMotion::CalcWingedLift(
+    const float maxLift,
+    const float wingFactor
+  ) const
   {
     const float targetElevation = GetElevation();
     const float lift = (wingFactor - 0.5f) * mUnit->GetBlueprint()->Air.LiftFactor;
@@ -1902,7 +1869,10 @@ namespace moho
    * What it does:
    * See the header.
    */
-  void CUnitMotion::CalcMoveHover(VTransform& transform, float* const outMoveDistance)
+  void CUnitMotion::CalcMoveHover(
+    VTransform& transform,
+    float* const outMoveDistance
+  )
   {
     const bool moveSucceeded = mUnit->IsDead() ? false : CalcMoveCommon(transform, outMoveDistance);
 
@@ -1940,9 +1910,7 @@ namespace moho
     // Chase the target: accelerate toward it (capped per tick), cap the
     // resulting velocity, then integrate with a little damping.
     Wm3::Vec3f wobbleAccel{
-      mWobbleTarget.x - mWobbleOffset.x,
-      mWobbleTarget.y - mWobbleOffset.y,
-      mWobbleTarget.z - mWobbleOffset.z
+      mWobbleTarget.x - mWobbleOffset.x, mWobbleTarget.y - mWobbleOffset.y, mWobbleTarget.z - mWobbleOffset.z
     };
     (void)VecLimitLengthTo(&wobbleAccel, physics.WobbleSpeed * kHoverWobbleAccelFraction);
 
@@ -2005,7 +1973,10 @@ namespace moho
    * Runs one water move step through `CalcMoveCommon`, applies dive/surface
    * transitions and water snap, and updates common horizontal motion events.
    */
-  void CUnitMotion::CalcMoveWater(VTransform& transform, float* const outMoveDistance)
+  void CUnitMotion::CalcMoveWater(
+    VTransform& transform,
+    float* const outMoveDistance
+  )
   {
     bool moveSucceeded = false;
     if (!mUnit->IsDead()) {
@@ -2027,10 +1998,7 @@ namespace moho
     // 0x006C3527..0x006C3553: the settling test reads the roll-hack vector
     // (+0x68), not the velocity, so a stopped hull keeps snapping while its
     // roll still settles.
-    const float speedSq =
-      (mVector68.x * mVector68.x) +
-      (mVector68.y * mVector68.y) +
-      (mVector68.z * mVector68.z);
+    const float speedSq = (mVector68.x * mVector68.x) + (mVector68.y * mVector68.y) + (mVector68.z * mVector68.z);
     if (moveSucceeded || transitionUpdated || speedSq > 0.000001f) {
       transform = SnapToWater(transform);
     }
@@ -2044,7 +2012,10 @@ namespace moho
    *
    * What it does: see header.
    */
-  void CUnitMotion::CalcMoveBallistic(VTransform& transform, float* const outMoveDistance)
+  void CUnitMotion::CalcMoveBallistic(
+    VTransform& transform,
+    float* const outMoveDistance
+  )
   {
     // 0x006C02F0 loads 0x00E4F950 = 0x3C23D70B, one ulp above the float
     // nearest 0.01.
@@ -2052,7 +2023,6 @@ namespace moho
     constexpr float kSpinIntegrationDt = 0.1f;
     constexpr float kUprightMinCosine = 0.667f;
     constexpr float kFootprintHalfExtentScale = 0.5f;
-    constexpr float kNoWaterElevation = -10000.0f;
     constexpr float kMinMoveDistanceFraction = 0.001f;
 
     Unit* const unit = mUnit;
@@ -2071,9 +2041,7 @@ namespace moho
 
     const Wm3::Vec3f currentPos = transform.pos_;
     const Wm3::Vec3f predictedPos{
-      currentPos.x + newVelocity.x,
-      currentPos.y + newVelocity.y,
-      currentPos.z + newVelocity.z
+      currentPos.x + newVelocity.x, currentPos.y + newVelocity.y, currentPos.z + newVelocity.z
     };
 
     const Wm3::Segment3f moveSegment = Wm3::MakeSegment3fFromEndpoints(currentPos, predictedPos);
@@ -2126,8 +2094,8 @@ namespace moho
       hitResult.v1 = surfaceHit.v1;
     }
 
-    const bool waterEnabled = mapData->mWaterEnabled != 0;
-    const float waterElevation = waterEnabled ? mapData->mWaterElevation : kNoWaterElevation;
+    // Engine addition (water bodies): the level where the unit is; a hit point takes its own below.
+    const float waterElevation = mapData->GetWaterElevationAt(currentPos.x, currentPos.z);
     const float groundElevationAtCurrentPos = mapData->GetHeightField()->GetElevation(currentPos.x, currentPos.z);
 
     const ELayer oldLayer = unit->mVarDat.mLayerMask;
@@ -2151,7 +2119,7 @@ namespace moho
       newPos = hitPoint;
       moveDistanceFraction = hitResult.distance / segmentLength;
 
-      if (waterElevation >= hitPoint.y) {
+      if (mapData->GetWaterElevationAt(hitPoint.x, hitPoint.z) >= hitPoint.y) {
         unit->SetCurrentLayer(isAmphibious ? LAYER_Seabed : LAYER_Water);
       } else {
         // This transition bypasses Entity::SetCurrentLayer() - direct field
@@ -2163,7 +2131,8 @@ namespace moho
         if (previousLayer != LAYER_Land) {
           const char* oldLayerName =
             (static_cast<std::uint32_t>(previousLayer) > static_cast<std::uint32_t>(LAYER_Orbit))
-              ? "" : Entity::LayerToString(previousLayer);
+            ? ""
+            : Entity::LayerToString(previousLayer);
           const char* newLayerName = Entity::LayerToString(LAYER_Land);
           unit->CallbackStr("OnLayerChange", &newLayerName, &oldLayerName);
         }
@@ -2176,8 +2145,10 @@ namespace moho
         const SFootprint& footprint = unit->GetFootprint();
         SOCellPos cellPos{};
         // 0x006C09EB / 0x006C0A11: `fld; fistp` -- rounded, then the low word.
-        cellPos.x = static_cast<std::int16_t>(msvc8::RoundToInt(currentPos.x - (footprint.mSizeX * kFootprintHalfExtentScale)));
-        cellPos.z = static_cast<std::int16_t>(msvc8::RoundToInt(currentPos.z - (footprint.mSizeZ * kFootprintHalfExtentScale)));
+        cellPos.x =
+          static_cast<std::int16_t>(fa::RoundToInt(currentPos.x - (footprint.mSizeX * kFootprintHalfExtentScale)));
+        cellPos.z =
+          static_cast<std::int16_t>(fa::RoundToInt(currentPos.z - (footprint.mSizeZ * kFootprintHalfExtentScale)));
 
         COGrid* const oGrid = unit->SimulationRef->mOGrid;
         EOccupancyCaps mobileCaps = OCCUPY_MobileCheck(footprint, *mapData, cellPos);
@@ -2193,12 +2164,13 @@ namespace moho
           const gpg::Rect2i& playableRect = mapData->mPlayableRect;
           const Wm3::Vec3f& entityPos = unit->mVarDat.mCurTransform.pos_;
           const Wm3::Quaternionf& liveOrient = unit->GetTransform().orient_;
-          const float uprightCosine =
-            1.0f - (2.0f * ((liveOrient.x * liveOrient.x) + (liveOrient.z * liveOrient.z)));
+          const float uprightCosine = 1.0f - (2.0f * ((liveOrient.x * liveOrient.x) + (liveOrient.z * liveOrient.z)));
 
-          if (static_cast<float>(playableRect.x0) > entityPos.x || static_cast<float>(playableRect.z0) > entityPos.z
-              || entityPos.x > static_cast<float>(playableRect.x1) || entityPos.z > static_cast<float>(playableRect.z1)
-              || uprightCosine < kUprightMinCosine) {
+          if (
+            static_cast<float>(playableRect.x0) > entityPos.x || static_cast<float>(playableRect.z0) > entityPos.z ||
+            entityPos.x > static_cast<float>(playableRect.x1) || entityPos.z > static_cast<float>(playableRect.z1) ||
+            uprightCosine < kUprightMinCosine
+          ) {
             shouldKill = true;
           }
         }
@@ -2230,7 +2202,8 @@ namespace moho
     }
 
     transform.pos_ = newPos;
-    *outMoveDistance = (moveDistanceFraction >= kMinMoveDistanceFraction) ? moveDistanceFraction : kMinMoveDistanceFraction;
+    *outMoveDistance =
+      (moveDistanceFraction >= kMinMoveDistanceFraction) ? moveDistanceFraction : kMinMoveDistanceFraction;
   }
 
   /**
@@ -2241,7 +2214,9 @@ namespace moho
    * Updates horizontal movement event state from move-success and speed/target
    * proximity checks.
    */
-  void CUnitMotion::ProcessCommonMotionState(const bool moveSucceeded)
+  void CUnitMotion::ProcessCommonMotionState(
+    const bool moveSucceeded
+  )
   {
     if (!moveSucceeded) {
       if (mHorzEvent != kUnitMotionHorzEventStopped) {
@@ -2252,9 +2227,8 @@ namespace moho
 
     Unit* const unit = mUnit;
     // 0x006C2A98..0x006C2AC3: (z*z + y*y) + x*x.
-    const float speed = std::sqrt(
-      ((mVelocity.z * mVelocity.z) + (mVelocity.y * mVelocity.y)) + (mVelocity.x * mVelocity.x)
-    );
+    const float speed =
+      std::sqrt(((mVelocity.z * mVelocity.z) + (mVelocity.y * mVelocity.y)) + (mVelocity.x * mVelocity.x));
 
     if (speed > unit->mInfoCache.mFormationTopSpeed * kCommonMoveNearStopSpeedScale) {
       SetMotionHorzEvent(kUnitMotionHorzEventTopSpeed);
@@ -2289,8 +2263,10 @@ namespace moho
     mRaisedPlatformUnit.ResetFromObject(nullptr);
 
     auto& candidates = mRaisedPlatformCandidates;
-    if (candidates.start_ == nullptr || candidates.end_ == nullptr || candidates.end_ < candidates.start_
-        || mUnit == nullptr) {
+    if (
+      candidates.start_ == nullptr || candidates.end_ == nullptr || candidates.end_ < candidates.start_ ||
+      mUnit == nullptr
+    ) {
       return;
     }
 
@@ -2352,7 +2328,7 @@ namespace moho
     // Staggered prop-inclusion cadence: larger footprints also collide against
     // props, but only on the beat where the unit id and sim tick agree mod 5
     // (asm 0x6B9177-0x6B91CE). Cheap footprint gate first (0.2 = dword_E4F8A8).
-    constexpr float kHalfExtentScale = 0.5f; // flt_E4F724
+    constexpr float kHalfExtentScale = 0.5f;            // flt_E4F724
     constexpr float kPropScanFootprintThreshold = 0.2f; // dword_E4F8A8
     constexpr std::uint32_t kPropScanTickPeriod = 5u;
 
@@ -2368,8 +2344,10 @@ namespace moho
     // being-built, attached, can-fly, and actively-pushed units
     // (asm 0x6B908D-0x6B90F0).
     const ELayer layer = mUnit->mVarDat.mLayerMask;
-    if (layer == LAYER_Air || layer == LAYER_Sub || mUnit->IsDead() || mUnit->IsBeingBuilt() ||
-        mUnit->IsUnitState(UNITSTATE_Attached) || blueprint->Air.CanFly != 0u || mIsBeingPushed) {
+    if (
+      layer == LAYER_Air || layer == LAYER_Sub || mUnit->IsDead() || mUnit->IsBeingBuilt() ||
+      mUnit->IsUnitState(UNITSTATE_Attached) || blueprint->Air.CanFly != 0u || mIsBeingPushed
+    ) {
       return;
     }
 
@@ -2388,10 +2366,8 @@ namespace moho
     // beat for larger units (asm 0x6B914C-0x6B920C).
     Sim* const sim = mUnit->SimulationRef;
     gpg::core::FastVectorN<CollisionResult, 10> hits{};
-    const bool includeProps =
-      (blueprint->mSizeX * blueprint->mSizeZ) > kPropScanFootprintThreshold &&
-      (static_cast<std::uint32_t>(mUnit->GetEntityId()) % kPropScanTickPeriod) ==
-        (sim->mCurTick % kPropScanTickPeriod);
+    const bool includeProps = (blueprint->mSizeX * blueprint->mSizeZ) > kPropScanFootprintThreshold &&
+      (static_cast<std::uint32_t>(mUnit->GetEntityId()) % kPropScanTickPeriod) == (sim->mCurTick % kPropScanTickPeriod);
     const EEntityType gatherFlags =
       includeProps ? static_cast<EEntityType>(ENTITYTYPE_Unit | ENTITYTYPE_Prop) : ENTITYTYPE_Unit;
     sim->mOGrid->CollectEntitiesInBox(hits, gatherFlags, box);
@@ -2413,96 +2389,6 @@ namespace moho
       // dispatch when the list is consumed.
       candidates.push_back(WeakPtr<Entity>(hit.sourceEntity));
     }
-  }
-
-  /**
-   * Address: 0x006BC460 (FUN_006BC460, Moho::CUnitMotion::HandleGroundCollision)
-   * Mangled: ?HandleGroundCollision@CUnitMotion@Moho@@AAE_NXZ
-   *
-   * What it does: see header.
-   *
-   * Nothing calls this in the shipped engine; FAF patched its one call site
-   * out of `CalcMoveAir` (0x006C018B). See the note at the end of that
-   * function before wiring it back in.
-   */
-  bool CUnitMotion::HandleGroundCollision()
-  {
-    constexpr float kGroundCheckElevationScale = 2.0f;
-    constexpr float kNoWaterElevation = -10000.0f;
-
-    Unit* const unit = mUnit;
-    const RUnitBlueprint* const blueprint = unit->GetBlueprint();
-
-    const float groundCheckLimit = std::max(blueprint->mSizeX, blueprint->mSizeZ) * kGroundCheckElevationScale;
-    if (mCurElevation > groundCheckLimit) {
-      return false;
-    }
-
-    STIMap* const mapData = unit->SimulationRef->mMapData;
-    SPhysBody* const physBody = unit->GetPhysBody();
-
-    const bool waterEnabled = mapData->mWaterEnabled != 0;
-    const float waterFloor = waterEnabled ? mapData->mWaterElevation : kNoWaterElevation;
-
-    gpg::fastvector_n<Wm3::Sphere3f, 8> collisionSpheres;
-    unit->GetTerrainCollisionGeom(collisionSpheres);
-
-    VTransform bodyTransform{};
-    BuildTransformFromSPhysBody(&bodyTransform, physBody);
-
-    VMatrix4 worldMatrix{};
-    worldMatrix.Set(bodyTransform.orient_, bodyTransform.pos_);
-
-    bool anyGroundHit = false;
-    bool anyBelowWater = false;
-    gpg::fastvector_n<GroundPenetrationSample, 8> hitRecords;
-
-    for (const Wm3::Sphere3f& sphere : collisionSpheres) {
-      const Vector4f localPoint{sphere.Center.x, sphere.Center.y, sphere.Center.z, 1.0f};
-      const Vector4f worldPoint = localPoint * worldMatrix;
-
-      const float terrainElevation = mapData->GetHeightField()->GetElevation(worldPoint.x, worldPoint.z);
-      const float groundThreshold = sphere.Radius + terrainElevation;
-
-      if ((groundThreshold - blueprint->Physics.GroundCollisionOffset) >= worldPoint.y) {
-        hitRecords.push_back(GroundPenetrationSample{worldPoint.x, worldPoint.y, worldPoint.z, terrainElevation});
-        anyGroundHit = true;
-      }
-
-      if (!blueprint->Air.FlyInWater) {
-        anyBelowWater |= (waterFloor >= worldPoint.y);
-      }
-    }
-
-    if (anyGroundHit) {
-      static DiagnosticBudget sLeverCount;
-      if (sLeverCount.Take(12)) {
-        const Wm3::Sphere3f& s0 = *collisionSpheres.begin();
-        const GroundPenetrationSample& h0 = *hitRecords.begin();
-        gpg::Warnf(
-          "[GEOMLEVER] unit=%p spheres=%d hits=%d sphere0=(%.2f,%.2f,%.2f r=%.2f) "
-          "world0=(%.2f,%.2f,%.2f) bodyPos=(%.2f,%.2f,%.2f) rel0=(%.2f,%.2f,%.2f) unitPos=(%.2f,%.2f,%.2f) "
-          "bpSize=(%.3f,%.3f,%.3f) bpDensity=%.4f bodyMass=%.3f bpElev=%.2f bpGndOff=%.3f",
-          static_cast<void*>(unit),
-          static_cast<int>(collisionSpheres.end() - collisionSpheres.begin()),
-          static_cast<int>(hitRecords.end() - hitRecords.begin()),
-          s0.Center.x, s0.Center.y, s0.Center.z, s0.Radius,
-          h0.x, h0.y, h0.z,
-          physBody->mPos.x, physBody->mPos.y, physBody->mPos.z,
-          h0.x - physBody->mPos.x, h0.y - physBody->mPos.y, h0.z - physBody->mPos.z,
-          unit->GetPosition().x, unit->GetPosition().y, unit->GetPosition().z,
-          blueprint->mSizeX, blueprint->mSizeY, blueprint->mSizeZ,
-          blueprint->mAverageDensity, physBody->mMass,
-          blueprint->Physics.Elevation, blueprint->Physics.GroundCollisionOffset
-        );
-      }
-    }
-
-    if (anyGroundHit) {
-      physBody->ApplyGroundCollisionResponse(hitRecords);
-    }
-
-    return anyGroundHit || anyBelowWater;
   }
 
   /**
@@ -2543,7 +2429,8 @@ namespace moho
     const Wm3::Vector3f unitPosition = mUnit->GetPosition();
     const float terrainElevation =
       heightField ? heightField->GetElevation(unitPosition.x, unitPosition.z) : unitPosition.y;
-    const float waterElevation = (mapData && mapData->mWaterEnabled != 0u) ? mapData->mWaterElevation : kNoWaterElevation;
+    const float waterElevation =
+      mapData ? mapData->GetWaterElevationAt(unitPosition.x, unitPosition.z) : kNoWaterElevation; // engine addition
 
     float surfaceDepthLimit = (terrainElevation + kSurfaceClearance) - waterElevation;
     if (surfaceDepthLimit > 0.0f) {
@@ -2563,7 +2450,7 @@ namespace moho
     // 0x006C336C..0x006C3380: `fld phase; fmul pi; fsin; fmul base; fst` --
     // neither `phase * pi` nor the sine is stored, so only the product rounds
     // to float (a denormal phase keeps its argument; difffuzz).
-    const float curveDiveSpeed = msvc8::SinOfProductTimes(depthPhase, kPi, baseDiveSpeed);
+    const float curveDiveSpeed = fa::SinOfProductTimes(depthPhase, kPi, baseDiveSpeed);
     // 0x006C3384..0x006C338F: `comiss min, curve; ja` keeps the minimum only
     // when it is strictly greater, so a NaN curve speed is taken.
     mDivingSpeed = (minDiveSpeed > curveDiveSpeed) ? minDiveSpeed : curveDiveSpeed;
@@ -2619,12 +2506,16 @@ namespace moho
 
     // Maps without water are modelled as having their surface infinitely far
     // below, so nothing ever counts as submerged.
-    float waterSurface = mapData->mWaterEnabled ? mapData->mWaterElevation : kNoWaterSurfaceElevation;
+    // Engine addition (water bodies): the level where the unit is (-10000 without water).
+    float waterSurface = mapData->GetWaterElevationAt(currentTransform.pos_.x, currentTransform.pos_.z);
 
     // Land-capable footprints sit on top of shallow water rather than in it,
     // so their effective surface is raised by the blueprint's layer-change
     // offset.
-    if ((static_cast<std::uint8_t>(unit->GetFootprint().mOccupancyCaps) & static_cast<std::uint8_t>(EOccupancyCaps::OC_LAND)) != 0) {
+    if (
+      (static_cast<std::uint8_t>(unit->GetFootprint().mOccupancyCaps) &
+       static_cast<std::uint8_t>(EOccupancyCaps::OC_LAND)) != 0
+    ) {
       waterSurface += physics.LayerChangeOffsetHeight;
     }
 
@@ -2658,8 +2549,7 @@ namespace moho
     }
 
     if (currentLayer == LAYER_Water) {
-      if (motionType == RULEUMT_Hover || motionType == RULEUMT_AmphibiousFloating
-          || motionType == RULEUMT_Water) {
+      if (motionType == RULEUMT_Hover || motionType == RULEUMT_AmphibiousFloating || motionType == RULEUMT_Water) {
         if (physics.LayerTransitionDuration != 0.0f) {
           mLayerTransitionTicks = 1.0f;
           mLastTrans = currentTransform;
@@ -2686,9 +2576,12 @@ namespace moho
    * Linearly blends position and shortest-path-normalized orientation between
    * cached layer-transition endpoints, then advances transition tick progress.
    */
-  void CUnitMotion::TransitionBetweenLayers(VTransform& transform)
+  void CUnitMotion::TransitionBetweenLayers(
+    VTransform& transform
+  )
   {
-    const float transitionDurationTicks = mUnit->GetBlueprint()->Physics.LayerTransitionDuration * kLayerTransitionTickScale;
+    const float transitionDurationTicks =
+      mUnit->GetBlueprint()->Physics.LayerTransitionDuration * kLayerTransitionTickScale;
     const float transitionProgress = mLayerTransitionTicks / transitionDurationTicks;
 
     transform.pos_.x = mLastTrans.pos_.x + ((mCurTrans.pos_.x - mLastTrans.pos_.x) * transitionProgress);
@@ -2713,7 +2606,10 @@ namespace moho
    * Integrates one shared surface-move tick for land/water/hover motion,
    * including slaved-target facing, braking, waypoint snap, and collision rollback.
    */
-  bool CUnitMotion::CalcMoveCommon(VTransform& transform, float* const outMoveDistance)
+  bool CUnitMotion::CalcMoveCommon(
+    VTransform& transform,
+    float* const outMoveDistance
+  )
   {
     (void)outMoveDistance;
 
@@ -2739,8 +2635,7 @@ namespace moho
       if (aiBlueprint.AttackAngle > 0.0f) {
         desiredTarget = slavedTarget->GetTargetPosGun(false);
       } else if (
-        slavedWeapon->mWeaponBlueprint != nullptr &&
-        slavedWeapon->mWeaponBlueprint->SlavedToBodyArcRange < 180.0f
+        slavedWeapon->mWeaponBlueprint != nullptr && slavedWeapon->mWeaponBlueprint->SlavedToBodyArcRange < 180.0f
       ) {
         const Wm3::Vector3f unitPosition = unit->GetPosition();
         const Wm3::Vector3f targetPosition = slavedTarget->GetTargetPosGun(false);
@@ -2750,9 +2645,9 @@ namespace moho
         const Wm3::Quaternionf& orientation = unit->mVarDat.mCurTransform.orient_;
         const float headingY = ((orientation.z * orientation.x) + (orientation.w * orientation.y)) * 2.0f;
         const float headingX = 1.0f - (((orientation.y * orientation.y) + (orientation.x * orientation.x)) * 2.0f);
-        const float headingDelta = NormalizeAngleSignedRadians(msvc8::Atan2Difference(
-          targetPosition.x - unitPosition.x, targetPosition.z - unitPosition.z, headingY, headingX
-        ));
+        const float headingDelta = NormalizeAngleSignedRadians(
+          fa::Atan2Difference(targetPosition.x - unitPosition.x, targetPosition.z - unitPosition.z, headingY, headingX)
+        );
         const Wm3::Vector3f forward = moho::QuatForwardAxis(unit->GetTransform().orient_);
         const float absHeadingDelta = std::fabs(headingDelta);
         const float slavedArcRange = slavedWeapon->mWeaponBlueprint->SlavedToBodyArcRange;
@@ -2800,10 +2695,7 @@ namespace moho
         }
 
         rotated = RotateCommonMoveTransformTowardDestination(
-          unit,
-          transform,
-          steeringTarget,
-          physics.MotionType == RULEUMT_Hover
+          unit, transform, steeringTarget, physics.MotionType == RULEUMT_Hover
         );
       } else {
         IAiNavigator* const navigator = unit->AiNavigator;
@@ -2820,10 +2712,7 @@ namespace moho
               originalPosition.z + formationVector.z,
             };
             rotated = RotateCommonMoveTransformTowardDestination(
-              unit,
-              transform,
-              formationDestination,
-              physics.MotionType == RULEUMT_Hover
+              unit, transform, formationDestination, physics.MotionType == RULEUMT_Hover
             );
           }
         }
@@ -2832,8 +2721,7 @@ namespace moho
       mVector44 = {};
       Wm3::Vector3f currentVelocity = unit->GetVelocity();
       // 0x006C27A8..0x006C27DB: (y*y + z*z) + x*x.
-      const float currentSpeedSq =
-        ((currentVelocity.y * currentVelocity.y) + (currentVelocity.z * currentVelocity.z)) +
+      const float currentSpeedSq = ((currentVelocity.y * currentVelocity.y) + (currentVelocity.z * currentVelocity.z)) +
         (currentVelocity.x * currentVelocity.x);
       if (!rotated && currentSpeedSq < kCommonMoveVelocityStopThresholdSq) {
         mPos = transform.pos_;
@@ -2886,12 +2774,7 @@ namespace moho
         const SteeringParams params = BuildSteeringParamsFromTransform(unit, transform, steeringTarget);
         Wm3::Vector2f direction{};
         (void)RotateDirectionTowardTargetLimited(
-          &direction,
-          params.mTurnFacingRate,
-          params.mForwardXZ.x,
-          params.mForwardXZ.y,
-          params.mDeltaX,
-          params.mDeltaZ
+          &direction, params.mTurnFacingRate, params.mForwardXZ.x, params.mForwardXZ.y, params.mDeltaX, params.mDeltaZ
         );
         (void)BuildHeadingQuaternionFromDirection2D(&direction, &transform.orient_);
       } else {
@@ -2940,7 +2823,9 @@ namespace moho
    * Returns air movement damping from control-vector speed, formation top-speed
    * cache, and air blueprint KMove/KMoveDamping coefficients.
    */
-  float CUnitMotion::CalcAirMovementDampingFactor(const Wm3::Vector3f& movementVector)
+  float CUnitMotion::CalcAirMovementDampingFactor(
+    const Wm3::Vector3f& movementVector
+  )
   {
     if (mUnit->IsInCategory("TARGETCHASER")) {
       return 1.0f;
@@ -2951,8 +2836,7 @@ namespace moho
     const float topSpeed = mUnit->mInfoCache.mFormationTopSpeed;
 
     float clampedSpeed = std::sqrt(
-      (movementVector.x * movementVector.x) +
-      (movementVector.y * movementVector.y) +
+      (movementVector.x * movementVector.x) + (movementVector.y * movementVector.y) +
       (movementVector.z * movementVector.z)
     );
     if (clampedSpeed > topSpeed) {
@@ -2977,14 +2861,18 @@ namespace moho
   }
 
   /**
-   * Address: 0x006BCB90 (FUN_006BCB90, ?CalcDesiredTargetElevation@CUnitMotion@Moho@@ABEMABVCAiTarget@2@ABV?$Vector3@M@Wm3@@@Z)
-   * Mangled: ?CalcDesiredTargetElevation@CUnitMotion@Moho@@ABEMABVCAiTarget@2@ABV?$Vector3@M@Wm3@@@Z
+   * Address: 0x006BCB90 (FUN_006BCB90,
+   * ?CalcDesiredTargetElevation@CUnitMotion@Moho@@ABEMABVCAiTarget@2@ABV?$Vector3@M@Wm3@@@Z) Mangled:
+   * ?CalcDesiredTargetElevation@CUnitMotion@Moho@@ABEMABVCAiTarget@2@ABV?$Vector3@M@Wm3@@@Z
    *
    * What it does:
    * Samples desired target elevation from target entity state and map
    * elevation, then returns relative Y-offset from the owner unit position.
    */
-  float CUnitMotion::CalcDesiredTargetElevation(const CAiTarget& target, const Wm3::Vector3f& offsetFromUnit) const
+  float CUnitMotion::CalcDesiredTargetElevation(
+    const CAiTarget& target,
+    const Wm3::Vector3f& offsetFromUnit
+  ) const
   {
     const Unit* const ownerUnit = mUnit;
     const RUnitBlueprint* const ownerBlueprint = ownerUnit->GetBlueprint();
@@ -3004,11 +2892,13 @@ namespace moho
     const std::int32_t sampleZ = static_cast<std::int32_t>(std::lrintf(samplePosition.z));
 
     const float sampledElevation = (ownerBlueprint->Air.FlyInWater != 0u)
-                                     ? (static_cast<float>(heightField->GetHeightAt(sampleX, sampleZ)) * kHeightWordScale)
-                                     : mapData->GetElevation(sampleX, sampleZ);
+      ? (static_cast<float>(heightField->GetHeightAt(sampleX, sampleZ)) * kHeightWordScale)
+      : mapData->GetElevation(sampleX, sampleZ);
 
-    if (Entity* const targetEntity = target.GetEntity();
-        targetEntity != nullptr && targetEntity->mVarDat.mLayerMask == LAYER_Air) {
+    if (
+      Entity* const targetEntity = target.GetEntity();
+      targetEntity != nullptr && targetEntity->mVarDat.mLayerMask == LAYER_Air
+    ) {
       // 0x006BCC99..0x006BCCAC ask the raw `targetEntity` slot, not the
       // resolved entity, whether it is a unit. A target seen through a recon
       // blip therefore takes the gun-position arm even though `GetEntity`
@@ -3027,8 +2917,10 @@ namespace moho
       return targetElevation - ownerUnit->GetPosition().y;
     }
 
-    if (Entity* const targetEntity = target.GetEntity();
-        targetEntity != nullptr && targetEntity->mVarDat.mLayerMask == LAYER_Air) {
+    if (
+      Entity* const targetEntity = target.GetEntity();
+      targetEntity != nullptr && targetEntity->mVarDat.mLayerMask == LAYER_Air
+    ) {
       return 0.0f;
     }
 
@@ -3090,9 +2982,7 @@ namespace moho
 
       if (combatState <= kAirCombatStateNormalTurn) {
         // 0x006BD998..0x006BD9AC sums the dot as (y + z) + x.
-        const float alignment =
-          ((primaryVector.y * referenceVector.y) +
-           (primaryVector.z * referenceVector.z)) +
+        const float alignment = ((primaryVector.y * referenceVector.y) + (primaryVector.z * referenceVector.z)) +
           (primaryVector.x * referenceVector.x);
 
         float forceScale = 0.5f;
@@ -3129,7 +3019,8 @@ namespace moho
     }
 
     Wm3::Vector3f selectedPlanarVector{};
-    const float selectedPlanarLength = std::sqrt((selectedVector.z * selectedVector.z) + (selectedVector.x * selectedVector.x));
+    const float selectedPlanarLength =
+      std::sqrt((selectedVector.z * selectedVector.z) + (selectedVector.x * selectedVector.x));
     if (selectedPlanarLength > 0.0f) {
       const float inverseLength = 1.0f / selectedPlanarLength;
       selectedPlanarVector.x = selectedVector.x * inverseLength;
@@ -3139,17 +3030,15 @@ namespace moho
     const Wm3::Vector3f referenceVectorQuarterTurn = RotateByQuaternion(referenceVector, kQuatYawPos90);
     // 0x006BDADB `comiss 0, dot` + `jbe`: NaN gives +1.
     const float turnSign =
-      0.0f > ((referenceVectorQuarterTurn.z * selectedVector.z) +
-              (referenceVectorQuarterTurn.y * selectedVector.y) +
+      0.0f > ((referenceVectorQuarterTurn.z * selectedVector.z) + (referenceVectorQuarterTurn.y * selectedVector.y) +
               (referenceVectorQuarterTurn.x * selectedVector.x))
-        ? -1.0f
-        : 1.0f;
+      ? -1.0f
+      : 1.0f;
 
     // 0x006BDB12 spills the first angle; 0x006BDB2A subtracts the second
     // while it still has x87 precision, before the delta is stored as float.
-    float turnDelta = msvc8::Atan2Difference(
-      selectedPlanarVector.x, selectedPlanarVector.z, referenceVector.x, referenceVector.z
-    );
+    float turnDelta =
+      fa::Atan2Difference(selectedPlanarVector.x, selectedPlanarVector.z, referenceVector.x, referenceVector.z);
     if (turnDelta <= 3.1415927f) {
       if (turnDelta < -3.1415927f) {
         turnDelta += 6.2831855f;
@@ -3176,10 +3065,10 @@ namespace moho
     // literals: 0x006BDBE7 forms them as `sin * 0.0f`, so they carry the sign
     // of the sine (-0.0f for a turn to the other side).
     const float halfTurnAngle = (turnDelta * 10.0f) * 0.5f;
-    const float sinHalfTurn = msvc8::sin(halfTurnAngle);
+    const float sinHalfTurn = fa::sin(halfTurnAngle);
     const float signedZeroLane = sinHalfTurn * 0.0f;
     const Wm3::Quaternionf turnQuaternion{
-      msvc8::cos(halfTurnAngle),
+      fa::cos(halfTurnAngle),
       signedZeroLane,
       sinHalfTurn,
       signedZeroLane,
@@ -3215,10 +3104,8 @@ namespace moho
     // direction, not the ten-times-yaw steering vector above. Banking from
     // that steering vector amplifies small approach corrections and also
     // introduces banking when only the requested elevation changes.
-    float forwardAlignment =
-      (selectedPlanarVector.y * referenceVector.y) +
-      (selectedPlanarVector.z * referenceVector.z) +
-      (selectedPlanarVector.x * referenceVector.x);
+    float forwardAlignment = (selectedPlanarVector.y * referenceVector.y) +
+      (selectedPlanarVector.z * referenceVector.z) + (selectedPlanarVector.x * referenceVector.x);
 
     if (combatState == kAirCombatStateNormalTurn) {
       const float alignmentSquared = forwardAlignment * forwardAlignment;
@@ -3233,8 +3120,7 @@ namespace moho
     }
 
     const float wingBlend = 1.0f - forwardAlignment;
-    const float elevationScale =
-      unit->IsUnitState(UNITSTATE_MovingDown) ? (mCurElevation / physics.Elevation) : 1.0f;
+    const float elevationScale = unit->IsUnitState(UNITSTATE_MovingDown) ? (mCurElevation / physics.Elevation) : 1.0f;
     const float wingOrientationBias = ((elevationScale * wingBlend) * bankFactor) * turnScale * turnSign;
     // 0x006BDD34..0x006BDD4E: the vertical component is taken as a dot with
     // world up, folded to `(z + x) * 0 + y` -- not a bare `.y` read.
@@ -3315,11 +3201,12 @@ namespace moho
       // shape), not round-half-away.
       const auto maxChangeTicks =
         static_cast<std::int32_t>(FloorSecondsToTicks(air.CirclingFlightChangeFrequency * 2.0f));
-      const auto minChangeTicks =
-        static_cast<std::int32_t>(FloorSecondsToTicks(air.CirclingFlightChangeFrequency));
-      mCombatStateTimeoutTick = curTick + minChangeTicks
-        + static_cast<std::int32_t>(ScaleRandomUInt32ToRange(
-            static_cast<std::uint32_t>(maxChangeTicks - minChangeTicks), randomStream));
+      const auto minChangeTicks = static_cast<std::int32_t>(FloorSecondsToTicks(air.CirclingFlightChangeFrequency));
+      mCombatStateTimeoutTick =
+        curTick + minChangeTicks +
+        static_cast<std::int32_t>(
+          ScaleRandomUInt32ToRange(static_cast<std::uint32_t>(maxChangeTicks - minChangeTicks), randomStream)
+        );
     }
 
     Entity* const focusEntity = mUnit->GetFocusEntity();
@@ -3327,8 +3214,7 @@ namespace moho
     float targetZ = mTargetPosition.z;
     float steerRadius = air.StartTurnDistance * mUnknownFloat98;
 
-    if (focusEntity != nullptr
-        && (mUnit->IsUnitState(UNITSTATE_Building) || mUnit->IsUnitState(UNITSTATE_Repairing))) {
+    if (focusEntity != nullptr && (mUnit->IsUnitState(UNITSTATE_Building) || mUnit->IsUnitState(UNITSTATE_Repairing))) {
       targetX = focusEntity->mVarDat.mCurTransform.pos_.x;
       targetZ = focusEntity->mVarDat.mCurTransform.pos_.z;
     } else if (target.HasTarget()) {
@@ -3354,8 +3240,9 @@ namespace moho
     }
 
     Wm3::Vector3f toTarget{targetX - position.x, 0.0f, targetZ - position.z};
-    if (((targetZ - position.z) * (targetZ - position.z)) + ((targetX - position.x) * (targetX - position.x))
-        < 0.000001f) {
+    if (
+      ((targetZ - position.z) * (targetZ - position.z)) + ((targetX - position.x) * (targetX - position.x)) < 0.000001f
+    ) {
       toTarget = Wm3::Vector3f{1.0f, 0.0f, 0.0f};
     }
     Wm3::Vector3f::Normalize(&toTarget);
@@ -3376,14 +3263,12 @@ namespace moho
     // 0x006BE340..0x006BE352 rounds the circling point to an integer
     // height sample in both water modes. The dry-flight path calls the
     // map's water-clamped integer sampler (0x006BE3AF -> 0x006BC400).
-    const std::int32_t sampleX = msvc8::RoundToInt(aimX);
-    const std::int32_t sampleZ = msvc8::RoundToInt(aimZ);
+    const std::int32_t sampleX = fa::RoundToInt(aimX);
+    const std::int32_t sampleZ = fa::RoundToInt(aimZ);
     float terrainElevation;
     if (air.FlyInWater) {
       STIMap* const mapData = sim->mMapData;
-      terrainElevation =
-        static_cast<float>(mapData->GetHeightField()->GetHeightAt(sampleX, sampleZ))
-        * 0.0078125f;
+      terrainElevation = static_cast<float>(mapData->GetHeightField()->GetHeightAt(sampleX, sampleZ)) * 0.0078125f;
     } else {
       terrainElevation = sim->mMapData->GetElevation(sampleX, sampleZ);
     }
@@ -3393,8 +3278,9 @@ namespace moho
     outDesiredVelocity.y = (physics.AttackElevation + mUnknownFloat94 + terrainElevation) - position.y;
 
     const float desiredLength = std::sqrt(
-      (outDesiredVelocity.z * outDesiredVelocity.z) + (outDesiredVelocity.y * outDesiredVelocity.y)
-      + (outDesiredVelocity.x * outDesiredVelocity.x));
+      (outDesiredVelocity.z * outDesiredVelocity.z) + (outDesiredVelocity.y * outDesiredVelocity.y) +
+      (outDesiredVelocity.x * outDesiredVelocity.x)
+    );
     // 0x006BE437 `comiss MaxAirspeed, length; jbe`: the length is kept only
     // when it is (ordered) below the cap, so a NaN length clamps to the cap.
     const float desiredSpeed = (air.MaxAirspeed > desiredLength) ? desiredLength : air.MaxAirspeed;
@@ -3405,7 +3291,8 @@ namespace moho
 
   /**
    * Address: 0x006BE6B0 (FUN_006BE6B0, Moho::CUnitMotion::ComputeAirControl)
-   * Mangled: ?ComputeAirControl@CUnitMotion@Moho@@AAEXABUSPhysBody@2@ABV?$Vector3@M@Wm3@@111PAUSControlOutput@2@AAVCAiTarget@2@@Z
+   * Mangled:
+   * ?ComputeAirControl@CUnitMotion@Moho@@AAEXABUSPhysBody@2@ABV?$Vector3@M@Wm3@@111PAUSControlOutput@2@AAVCAiTarget@2@@Z
    *
    * What it does: see header.
    *
@@ -3453,23 +3340,19 @@ namespace moho
     // EUnitMotionCarrierEvent value 2: descending to a carrier's deck.
     constexpr auto kCarrierEventDescendToDeck = static_cast<EUnitMotionCarrierEvent>(2);
 
-    const bool wantsHoverFamily =
-      (!air.Winged || mCarrierEvent == kCarrierEventDescendToDeck)
-      && (!mUnit->IsUnitState(UNITSTATE_Guarding)
-        || mUnit->IsUnitState(UNITSTATE_Moving)
-        || mUnit->IsUnitState(UNITSTATE_Ferrying)
-        || mUnit->IsUnitState(UNITSTATE_Attacking)
-        || mUnit->IsUnitState(UNITSTATE_Building)
-        || mUnit->IsUnitState(UNITSTATE_Repairing));
+    const bool wantsHoverFamily = (!air.Winged || mCarrierEvent == kCarrierEventDescendToDeck) &&
+      (!mUnit->IsUnitState(UNITSTATE_Guarding) || mUnit->IsUnitState(UNITSTATE_Moving) ||
+       mUnit->IsUnitState(UNITSTATE_Ferrying) || mUnit->IsUnitState(UNITSTATE_Attacking) ||
+       mUnit->IsUnitState(UNITSTATE_Building) || mUnit->IsUnitState(UNITSTATE_Repairing));
 
     if (wantsHoverFamily) {
       // 0x006BE83D `cmp byte [edi+79h], 0 / jne` sends HoverOverAttack units
       // straight to the hover branch, ahead of the target test at 0x006BE89D.
-      const bool wantsCircling = !air.HoverOverAttack
-        && ((mUnit->GetFocusEntity() != nullptr
-             && (mUnit->IsUnitState(UNITSTATE_Building) || mUnit->IsUnitState(UNITSTATE_Repairing)
-               || mUnit->IsUnitState(UNITSTATE_Reclaiming) || mUnit->IsUnitState(UNITSTATE_Capturing)))
-            || target.HasTarget());
+      const bool wantsCircling = !air.HoverOverAttack &&
+        ((mUnit->GetFocusEntity() != nullptr &&
+          (mUnit->IsUnitState(UNITSTATE_Building) || mUnit->IsUnitState(UNITSTATE_Repairing) ||
+           mUnit->IsUnitState(UNITSTATE_Reclaiming) || mUnit->IsUnitState(UNITSTATE_Capturing))) ||
+         target.HasTarget());
 
       if (wantsCircling) {
         CalcCirclingOrientation(body, axes, steeringForce, target);
@@ -3479,7 +3362,9 @@ namespace moho
         mCombatStateTimeoutTick = 0;
       }
     } else {
-      CalcWingedOrientation(referenceVector, controlVector, primaryVector, fallbackVector, axes, steeringForce, turnGain);
+      CalcWingedOrientation(
+        referenceVector, controlVector, primaryVector, fallbackVector, axes, steeringForce, turnGain
+      );
     }
 
     axes.OrthoNormalize();
@@ -3495,22 +3380,22 @@ namespace moho
     const Wm3::Quaternionf conjugateOrientation = ConjugateQuat(body.mOrientation);
     Wm3::Quaternionf relativeOrientation{};
     // 0x006BE916..0x006BEA13 uses this grouping for the relative rotation.
-    relativeOrientation.w = ((conjugateOrientation.w * desiredOrientation.w
-                               - conjugateOrientation.x * desiredOrientation.x)
-                              - conjugateOrientation.y * desiredOrientation.y)
-                             - conjugateOrientation.z * desiredOrientation.z;
-    relativeOrientation.x = ((conjugateOrientation.x * desiredOrientation.w
-                               + conjugateOrientation.w * desiredOrientation.x)
-                              + conjugateOrientation.y * desiredOrientation.z)
-                             - conjugateOrientation.z * desiredOrientation.y;
-    relativeOrientation.y = ((conjugateOrientation.y * desiredOrientation.w
-                               + conjugateOrientation.w * desiredOrientation.y)
-                              + conjugateOrientation.z * desiredOrientation.x)
-                             - conjugateOrientation.x * desiredOrientation.z;
-    relativeOrientation.z = ((conjugateOrientation.z * desiredOrientation.w
-                               + conjugateOrientation.w * desiredOrientation.z)
-                              + conjugateOrientation.x * desiredOrientation.y)
-                             - conjugateOrientation.y * desiredOrientation.x;
+    relativeOrientation.w =
+      ((conjugateOrientation.w * desiredOrientation.w - conjugateOrientation.x * desiredOrientation.x) -
+       conjugateOrientation.y * desiredOrientation.y) -
+      conjugateOrientation.z * desiredOrientation.z;
+    relativeOrientation.x =
+      ((conjugateOrientation.x * desiredOrientation.w + conjugateOrientation.w * desiredOrientation.x) +
+       conjugateOrientation.y * desiredOrientation.z) -
+      conjugateOrientation.z * desiredOrientation.y;
+    relativeOrientation.y =
+      ((conjugateOrientation.y * desiredOrientation.w + conjugateOrientation.w * desiredOrientation.y) +
+       conjugateOrientation.z * desiredOrientation.x) -
+      conjugateOrientation.x * desiredOrientation.z;
+    relativeOrientation.z =
+      ((conjugateOrientation.z * desiredOrientation.w + conjugateOrientation.w * desiredOrientation.z) +
+       conjugateOrientation.x * desiredOrientation.y) -
+      conjugateOrientation.y * desiredOrientation.x;
     // Shortest-arc hemisphere flip. 0x006BEA17/0x006BEA1A compare zero against
     // the value about to be stored in lane 0 - the scalar - and negate all
     // four lanes when it is below zero.
@@ -3571,21 +3456,20 @@ namespace moho
     const Wm3::Vec3f& gravity = mUnit->SimulationRef->mPhysConstants->mGravity;
     const float mass = body.mMass;
 
-    const Wm3::Vector3f force{
-      (accelX - gravity.x) * mass, (accelY - gravity.y) * mass, (accelZ - gravity.z) * mass
-    };
+    const Wm3::Vector3f force{(accelX - gravity.x) * mass, (accelY - gravity.y) * mass, (accelZ - gravity.z) * mass};
 
     const float torqueXRaw = (dampingTerm.x * air.KTurnDamping) + (rotationError.x * turnGain);
     const float torqueYRaw = (dampingTerm.y * air.KTurnDamping) + (rotationError.y * turnGain);
     const float torqueZRaw = (dampingTerm.z * air.KRollDamping) + (rotationError.z * rollGain);
 
     const Wm3::Vector3f torqueLocalScaled{
-      torqueXRaw / body.mInvInertiaTensor.x, torqueYRaw / body.mInvInertiaTensor.y, torqueZRaw / body.mInvInertiaTensor.z
+      torqueXRaw / body.mInvInertiaTensor.x,
+      torqueYRaw / body.mInvInertiaTensor.y,
+      torqueZRaw / body.mInvInertiaTensor.z
     };
 
     Wm3::Vector3f torqueWorld{};
     MultQuadVec(&torqueWorld, &torqueLocalScaled, &body.mOrientation);
-
 
     out->force = force;
     out->torque = torqueWorld;
@@ -3642,9 +3526,10 @@ namespace moho
     const auto rollBreakOff = [&]() {
       mCombatState = ACS_BreakOff;
       // 0x006BD235..0x006BD27C: inline ceil, then cvttss2si.
-      const auto minTicks = msvc8::CeilToIntX87((breakOffDist / maxAirSpeed) * 10.0f);
-      const auto maxTicks = msvc8::TruncateToInt(static_cast<float>(minTicks) * air.RandomBreakOffDistanceMult);
-      mCombatStateTimeoutTick = curTick + static_cast<std::uint32_t>(RandomUniformIntRange(minTicks, maxTicks, randomStream));
+      const auto minTicks = fa::CeilToIntX87((breakOffDist / maxAirSpeed) * 10.0f);
+      const auto maxTicks = fa::TruncateToInt(static_cast<float>(minTicks) * air.RandomBreakOffDistanceMult);
+      mCombatStateTimeoutTick =
+        curTick + static_cast<std::uint32_t>(RandomUniformIntRange(minTicks, maxTicks, randomStream));
     };
 
     bool skipDecision = false;
@@ -3661,14 +3546,16 @@ namespace moho
       const Wm3::Vector3f horzTargetDirDenorm{targetDirNorm.x, 0.0f, targetDirNorm.z};
       (void)NormalizeVectorInto(&horzTargetDirNorm, horzTargetDirDenorm);
 
-      const float horzHeadingDot = (horzTargetDirNorm.x * currentHeading.x) + (horzTargetDirNorm.z * currentHeading.z)
-        + (horzTargetDirNorm.y * currentHeading.y);
+      const float horzHeadingDot = (horzTargetDirNorm.x * currentHeading.x) + (horzTargetDirNorm.z * currentHeading.z) +
+        (horzTargetDirNorm.y * currentHeading.y);
 
       const float alignThreshold = (combatState == ACS_CombatTurn) ? 0.0f : kAirCombatTightAlignCosine;
       isHeadingAlignedWithTarget = horzHeadingDot > alignThreshold;
 
-      if (Entity* const resolvedForLayerCheck = const_cast<CAiTarget&>(target).GetEntity();
-          resolvedForLayerCheck != nullptr && resolvedForLayerCheck->mVarDat.mLayerMask == LAYER_Air) {
+      if (
+        Entity* const resolvedForLayerCheck = const_cast<CAiTarget&>(target).GetEntity();
+        resolvedForLayerCheck != nullptr && resolvedForLayerCheck->mVarDat.mLayerMask == LAYER_Air
+      ) {
         if (!sim->mMapData->IsWithin(unit->mVarDat.mCurTransform.pos_, 0.0f, useWholeMap)) {
           mCombatState = ACS_ReturnToMap;
           skipDecision = true;
@@ -3686,7 +3573,8 @@ namespace moho
         }
 
         if (!triggerBreakOff) {
-          const auto sustainedTurnThresholdTicks = msvc8::FloorToIntX87(air.SustainedTurnThreshold * 10.0f); // 0x006BD1A0..0x006BD1C4
+          const auto sustainedTurnThresholdTicks =
+            fa::FloorToIntX87(air.SustainedTurnThreshold * 10.0f); // 0x006BD1A0..0x006BD1C4
           if (mSustainedTurnTicks > sustainedTurnThresholdTicks) {
             triggerBreakOff = true;
           }
@@ -3705,8 +3593,8 @@ namespace moho
         } else if (!isHeadingAlignedWithTarget) {
           bool rollNewTurn = true;
           if (timeoutActive || combatState == ACS_NormalTurn) {
-            const float fullHeadingDot = (targetDirNorm.x * currentHeading.x) + (currentHeading.z * targetDirNorm.z)
-              + (currentHeading.y * targetDirNorm.y);
+            const float fullHeadingDot = (targetDirNorm.x * currentHeading.x) + (currentHeading.z * targetDirNorm.z) +
+              (currentHeading.y * targetDirNorm.y);
             // 0x006BD3F7..0x006BD3FD: `comiss 0, dot; jbe` re-rolls only on an
             // ordered `0 > dot`; a NaN dot skips the two draws at 0x006BD425 /
             // 0x006BD467 rather than falling through to the state-range test.
@@ -3718,10 +3606,12 @@ namespace moho
           }
 
           if (rollNewTurn) {
-            mCombatState = static_cast<EAirCombatState>(RandomUniformIntRange(ACS_CombatTurn, ACS_BreakOff, randomStream));
+            mCombatState =
+              static_cast<EAirCombatState>(RandomUniformIntRange(ACS_CombatTurn, ACS_BreakOff, randomStream));
             const int minTicks = FloorSecondsToTicks(air.RandomMinChangeCombatStateTime);
             const int maxTicks = FloorSecondsToTicks(air.RandomMaxChangeCombatStateTime);
-            mCombatStateTimeoutTick = curTick + static_cast<std::uint32_t>(RandomUniformIntRange(minTicks, maxTicks, randomStream));
+            mCombatStateTimeoutTick =
+              curTick + static_cast<std::uint32_t>(RandomUniformIntRange(minTicks, maxTicks, randomStream));
           }
         } else {
           mCombatState = ACS_Combat;
@@ -3739,8 +3629,8 @@ namespace moho
               // differently once one is denormal.
               const Wm3::Quaternionf& targetOrientation = rawTargetEntity->mVarDat.mCurTransform.orient_;
               const Wm3::Vector3f targetForward = moho::QuatForwardAxis(targetOrientation);
-              const float facingDot = (targetForward.x * currentHeading.x) + (targetForward.z * currentHeading.z)
-                + (targetForward.y * currentHeading.y);
+              const float facingDot = (targetForward.x * currentHeading.x) + (targetForward.z * currentHeading.z) +
+                (targetForward.y * currentHeading.y);
               if (facingDot > 0.0f) {
                 mCombatState = ACS_NormalTurn;
               }
@@ -3751,92 +3641,92 @@ namespace moho
     }
 
     switch (mCombatState) {
-      case ACS_Combat:
-      case ACS_NormalTurn: {
-        unit->mUnitVarDat.mUnitStates |= (1ull << static_cast<std::uint32_t>(UNITSTATE_MakingAttackRun));
+    case ACS_Combat:
+    case ACS_NormalTurn: {
+      unit->mUnitVarDat.mUnitStates |= (1ull << static_cast<std::uint32_t>(UNITSTATE_MakingAttackRun));
 
-        Entity* const rawTargetEntity = target.targetEntity.GetObjectPtr();
-        bool wroteBombDropVelocity = false;
-        if (rawTargetEntity != nullptr && target.targetIsMobile) {
-          if (Entity* const resolvedEntity = const_cast<CAiTarget&>(target).GetEntity(); resolvedEntity != nullptr) {
-            float precision = 1.0f;
-            if (air.PredictAheadForBombDrop > 0.0f && resolvedEntity->mVarDat.mLayerMask != LAYER_Air) {
-              precision = air.PredictAheadForBombDrop;
-            }
-            Unit* const targetAsUnit = resolvedEntity->IsUnit();
-            Wm3::Vector3f predictScratch{};
-            const Wm3::Vector3f* const predicted = targetAsUnit->PredictAheadBomb(&predictScratch, precision);
-            outDesiredVelocity.x = predicted->x - unitPos.x;
-            outDesiredVelocity.y = predicted->y - unitPos.y;
-            outDesiredVelocity.z = predicted->z - unitPos.z;
-            wroteBombDropVelocity = true;
+      Entity* const rawTargetEntity = target.targetEntity.GetObjectPtr();
+      bool wroteBombDropVelocity = false;
+      if (rawTargetEntity != nullptr && target.targetIsMobile) {
+        if (Entity* const resolvedEntity = const_cast<CAiTarget&>(target).GetEntity(); resolvedEntity != nullptr) {
+          float precision = 1.0f;
+          if (air.PredictAheadForBombDrop > 0.0f && resolvedEntity->mVarDat.mLayerMask != LAYER_Air) {
+            precision = air.PredictAheadForBombDrop;
           }
+          Unit* const targetAsUnit = resolvedEntity->IsUnit();
+          Wm3::Vector3f predictScratch{};
+          const Wm3::Vector3f* const predicted = targetAsUnit->PredictAheadBomb(&predictScratch, precision);
+          outDesiredVelocity.x = predicted->x - unitPos.x;
+          outDesiredVelocity.y = predicted->y - unitPos.y;
+          outDesiredVelocity.z = predicted->z - unitPos.z;
+          wroteBombDropVelocity = true;
         }
-        if (!wroteBombDropVelocity) {
-          outDesiredVelocity.x = targetDirNorm.x * targetDist;
-          outDesiredVelocity.y = targetDirNorm.y * targetDist;
-          outDesiredVelocity.z = targetDirNorm.z * targetDist;
-        }
-        outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
-
-        float speedLimit = maxAirSpeed;
-        if (mCombatState == ACS_NormalTurn && CAiTargetEntityIsAirLayer(target)) {
-          Entity* const rawEntity2 = target.targetEntity.GetObjectPtr();
-          // 0x006BD5F2..0x006BD5F9: `Vector3::Compare` answers non-zero when the
-          // positions DIFFER, so a moving air target is chased at up to its range.
-          if (rawEntity2->mVarDat.mCurTransform.pos_ != rawEntity2->mVarDat.mLastTransform.pos_) {
-            speedLimit = (air.MinAirspeed > targetDist) ? air.MinAirspeed : targetDist;
-          }
-        }
-        (void)VecSetLength(&outDesiredVelocity, speedLimit);
-        break;
       }
-
-      case ACS_CombatTurn:
-      case ACS_CombatTurnB: {
-        ++mSustainedTurnTicks;
+      if (!wroteBombDropVelocity) {
         outDesiredVelocity.x = targetDirNorm.x * targetDist;
         outDesiredVelocity.y = targetDirNorm.y * targetDist;
         outDesiredVelocity.z = targetDirNorm.z * targetDist;
-        outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
-        (void)VecSetLength(&outDesiredVelocity, air.MinAirspeed);
-        break;
       }
+      outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
 
-      case ACS_Realign: {
-        ++mSustainedTurnTicks;
-        outDesiredVelocity.x = targetDirNorm.x * targetDist;
-        outDesiredVelocity.y = targetDirNorm.y * targetDist;
-        outDesiredVelocity.z = targetDirNorm.z * targetDist;
-        outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
-        (void)VecSetLength(&outDesiredVelocity, maxAirSpeed);
-        break;
+      float speedLimit = maxAirSpeed;
+      if (mCombatState == ACS_NormalTurn && CAiTargetEntityIsAirLayer(target)) {
+        Entity* const rawEntity2 = target.targetEntity.GetObjectPtr();
+        // 0x006BD5F2..0x006BD5F9: `Vector3::Compare` answers non-zero when the
+        // positions DIFFER, so a moving air target is chased at up to its range.
+        if (rawEntity2->mVarDat.mCurTransform.pos_ != rawEntity2->mVarDat.mLastTransform.pos_) {
+          speedLimit = (air.MinAirspeed > targetDist) ? air.MinAirspeed : targetDist;
+        }
       }
+      (void)VecSetLength(&outDesiredVelocity, speedLimit);
+      break;
+    }
 
-      case ACS_BreakOff: {
-        unit->mUnitVarDat.mUnitStates |= (1ull << static_cast<std::uint32_t>(UNITSTATE_MakingAttackRun));
-        mSustainedTurnTicks = 0;
-        outDesiredVelocity.x = currentHeading.x * maxAirSpeed;
-        outDesiredVelocity.y = currentHeading.y * maxAirSpeed;
-        outDesiredVelocity.z = currentHeading.z * maxAirSpeed;
-        outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
-        return;
-      }
+    case ACS_CombatTurn:
+    case ACS_CombatTurnB: {
+      ++mSustainedTurnTicks;
+      outDesiredVelocity.x = targetDirNorm.x * targetDist;
+      outDesiredVelocity.y = targetDirNorm.y * targetDist;
+      outDesiredVelocity.z = targetDirNorm.z * targetDist;
+      outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
+      (void)VecSetLength(&outDesiredVelocity, air.MinAirspeed);
+      break;
+    }
 
-      case ACS_ReturnToMap: {
-        mSustainedTurnTicks = 0;
-        const Wm3::Vec3f unitPosNow = unit->GetPosition();
-        const Wm3::Vec3f centerOfMap = sim->CenterOfMap();
-        outDesiredVelocity.x = centerOfMap.x - unitPosNow.x;
-        outDesiredVelocity.y = centerOfMap.y - unitPosNow.y;
-        outDesiredVelocity.z = centerOfMap.z - unitPosNow.z;
-        outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
-        (void)VecSetLength(&outDesiredVelocity, maxAirSpeed);
-        break;
-      }
+    case ACS_Realign: {
+      ++mSustainedTurnTicks;
+      outDesiredVelocity.x = targetDirNorm.x * targetDist;
+      outDesiredVelocity.y = targetDirNorm.y * targetDist;
+      outDesiredVelocity.z = targetDirNorm.z * targetDist;
+      outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
+      (void)VecSetLength(&outDesiredVelocity, maxAirSpeed);
+      break;
+    }
 
-      default:
-        return;
+    case ACS_BreakOff: {
+      unit->mUnitVarDat.mUnitStates |= (1ull << static_cast<std::uint32_t>(UNITSTATE_MakingAttackRun));
+      mSustainedTurnTicks = 0;
+      outDesiredVelocity.x = currentHeading.x * maxAirSpeed;
+      outDesiredVelocity.y = currentHeading.y * maxAirSpeed;
+      outDesiredVelocity.z = currentHeading.z * maxAirSpeed;
+      outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
+      return;
+    }
+
+    case ACS_ReturnToMap: {
+      mSustainedTurnTicks = 0;
+      const Wm3::Vec3f unitPosNow = unit->GetPosition();
+      const Wm3::Vec3f centerOfMap = sim->CenterOfMap();
+      outDesiredVelocity.x = centerOfMap.x - unitPosNow.x;
+      outDesiredVelocity.y = centerOfMap.y - unitPosNow.y;
+      outDesiredVelocity.z = centerOfMap.z - unitPosNow.z;
+      outDesiredVelocity.y = CalcDesiredTargetElevation(target, outDesiredVelocity);
+      (void)VecSetLength(&outDesiredVelocity, maxAirSpeed);
+      break;
+    }
+
+    default:
+      return;
     }
   }
 
@@ -3846,7 +3736,10 @@ namespace moho
    *
    * What it does: see header.
    */
-  void CUnitMotion::CalcMoveAir(VTransform& outTransform, float* const /*outMoveDistance*/)
+  void CUnitMotion::CalcMoveAir(
+    VTransform& outTransform,
+    float* const /*outMoveDistance*/
+  )
   {
     // EUnitMotionCarrierEvent value 2: dropped from / descending to a
     // carrier's deck (same local-constant convention as ComputeAirControl).
@@ -3906,16 +3799,19 @@ namespace moho
     // water, so `(mCurElevation - mNewElevation) < 0.1f` never holds and a
     // flier never settles there.
     float sampleElevation = mapData->GetHeightField()->GetElevation(outTransform.pos_.x, outTransform.pos_.z);
-    if (air.FlyInWater == 0u && mapData->mWaterEnabled != 0u && mapData->mWaterElevation > sampleElevation) {
-      sampleElevation = mapData->mWaterElevation;
+    const float sampleWaterElevation =
+      mapData->GetWaterElevationAt(outTransform.pos_.x, outTransform.pos_.z); // engine addition
+    if (air.FlyInWater == 0u && sampleWaterElevation > sampleElevation) {
+      sampleElevation = sampleWaterElevation;
     }
 
     Wm3::Vector3f desiredVelocity{
       mTargetPosition.x - outTransform.pos_.x, 0.0f, mTargetPosition.z - outTransform.pos_.z
     };
-    const float horizontalDistance = std::sqrt((desiredVelocity.x * desiredVelocity.x) + (desiredVelocity.z * desiredVelocity.z));
-    const float topSpeedTarget =
-      mAlwaysUseTopSpeed ? unit->mInfoCache.mFormationTopSpeed : std::min(horizontalDistance, unit->mInfoCache.mFormationTopSpeed);
+    const float horizontalDistance =
+      std::sqrt((desiredVelocity.x * desiredVelocity.x) + (desiredVelocity.z * desiredVelocity.z));
+    const float topSpeedTarget = mAlwaysUseTopSpeed ? unit->mInfoCache.mFormationTopSpeed
+                                                    : std::min(horizontalDistance, unit->mInfoCache.mFormationTopSpeed);
     (void)VecSetLength(&desiredVelocity, topSpeedTarget);
 
     // The fourth vector `ComputeAirControl` takes, and the one this recovery
@@ -3953,8 +3849,10 @@ namespace moho
                 unit->ReserveOgridRect(mReservation);
 
                 enteredLandingPhase = true;
-                const float landElevation = mapData->GetHeightField()->GetElevation(mTargetPosition.x, mTargetPosition.z);
-                const float waterElevation = (mapData->mWaterEnabled != 0u) ? mapData->mWaterElevation : -10000.0f;
+                const float landElevation =
+                  mapData->GetHeightField()->GetElevation(mTargetPosition.x, mTargetPosition.z);
+                const float waterElevation =
+                  mapData->GetWaterElevationAt(mTargetPosition.x, mTargetPosition.z); // engine addition
                 // 0x006BF64A `comiss` + `jbe`: NaN gives water.
                 mLayer = (landElevation > waterElevation) ? LAYER_Land : LAYER_Water;
               } else {
@@ -4095,9 +3993,10 @@ namespace moho
 
       // ---- Combat-state layer/vertical-event resolution --------------------
       if (mCombatState == ACS_None) {
-        if (enteredLandingPhase
-            && (mNewElevation == 0.0f || mHeight != gpg::pInf || ShouldHoverInsteadOfLand())) {
-          if (horizontalDistance < 0.5f && ((mCurElevation - mNewElevation) < 0.1f || unit->mVarDat.mLayerMask == mLayer)) {
+        if (enteredLandingPhase && (mNewElevation == 0.0f || mHeight != gpg::pInf || ShouldHoverInsteadOfLand())) {
+          if (
+            horizontalDistance < 0.5f && ((mCurElevation - mNewElevation) < 0.1f || unit->mVarDat.mLayerMask == mLayer)
+          ) {
             mReservation = gpg::Rect2i{};
             unit->FreeOgridRect();
             unit->SetCurrentLayer(mLayer);
@@ -4194,7 +4093,8 @@ namespace moho
         Wm3::Vector3f flatDesired{desiredVelocity.x, 0.0f, desiredVelocity.z};
         (void)NormalizeVectorInto(&flatDesired, flatDesired);
         if (Wm3::Vector3f::LengthSq(headingVector) > 0.000001f && Wm3::Vector3f::LengthSq(flatDesired) > 0.000001f) {
-          const float turnDot = (headingVector.x * flatDesired.x) + (headingVector.z * flatDesired.z) + (headingVector.y * flatDesired.y);
+          const float turnDot =
+            (headingVector.x * flatDesired.x) + (headingVector.z * flatDesired.z) + (headingVector.y * flatDesired.y);
           if (turnDot < 0.5f) {
             SetMotionTurnEvent(UMTE_SharpTurn);
           } else if (turnDot > 0.95f) {
@@ -4224,11 +4124,14 @@ namespace moho
 
       if (horizontalDistance > air.StartTurnDistance || mAlwaysUseTopSpeed) {
         SetMotionHorzEvent(
-          (groundSpeed > unit->mInfoCache.mFormationTopSpeed * kCommonMoveNearStopSpeedScale) ? kUnitMotionHorzEventTopSpeed : kUnitMotionHorzEventCruising
+          (groundSpeed > unit->mInfoCache.mFormationTopSpeed * kCommonMoveNearStopSpeedScale)
+            ? kUnitMotionHorzEventTopSpeed
+            : kUnitMotionHorzEventCruising
         );
       } else if (mCombatState == ACS_None) {
         SetMotionHorzEvent(
-          (unit->mInfoCache.mFormationTopSpeed * kMotionStoppingSpeedScale > groundSpeed) ? kUnitMotionHorzEventStopped : kUnitMotionHorzEventStopping
+          (unit->mInfoCache.mFormationTopSpeed * kMotionStoppingSpeedScale > groundSpeed) ? kUnitMotionHorzEventStopped
+                                                                                          : kUnitMotionHorzEventStopping
         );
       } else {
         SetMotionHorzEvent(kUnitMotionHorzEventCruising);
@@ -4245,8 +4148,9 @@ namespace moho
       const ELayer previousLayer = unit->mVarDat.mLayerMask;
       unit->mVarDat.mLayerMask = LAYER_Air;
       if (previousLayer != LAYER_Air) {
-        const char* oldLayerName =
-          (static_cast<std::uint32_t>(previousLayer) > static_cast<std::uint32_t>(LAYER_Orbit)) ? "" : Entity::LayerToString(previousLayer);
+        const char* oldLayerName = (static_cast<std::uint32_t>(previousLayer) > static_cast<std::uint32_t>(LAYER_Orbit))
+          ? ""
+          : Entity::LayerToString(previousLayer);
         const char* newLayerName = Entity::LayerToString(LAYER_Air);
         unit->CallbackStr("OnLayerChange", &newLayerName, &oldLayerName);
       }
@@ -4329,7 +4233,9 @@ namespace moho
       unit->mVarDat.mLayerMask = LAYER_Air;
       if (previousLayer2 != LAYER_Air) {
         const char* oldLayerName =
-          (static_cast<std::uint32_t>(previousLayer2) > static_cast<std::uint32_t>(LAYER_Orbit)) ? "" : Entity::LayerToString(previousLayer2);
+          (static_cast<std::uint32_t>(previousLayer2) > static_cast<std::uint32_t>(LAYER_Orbit))
+          ? ""
+          : Entity::LayerToString(previousLayer2);
         const char* newLayerName = Entity::LayerToString(LAYER_Air);
         unit->CallbackStr("OnLayerChange", &newLayerName, &oldLayerName);
       }
@@ -4380,88 +4286,89 @@ namespace moho
     float moveTimeFraction = 1.0f;
 
     switch (mMotionState) {
-      case kUnitMotionStateAttached: {
-        mVelocity = Wm3::Vector3f::ZERO;
-        mVector44 = Wm3::Vector3f::ZERO;
-        mPos = mUnit->GetPosition();
+    case kUnitMotionStateAttached: {
+      mVelocity = Wm3::Vector3f::ZERO;
+      mVector44 = Wm3::Vector3f::ZERO;
+      mPos = mUnit->GetPosition();
 
-        if (mUnit->mAttachInfo.HasAttachTarget()) {
-          Entity* const attachTargetEntity = mUnit->mAttachInfo.GetAttachTargetEntity();
-          Unit* const attachTargetUnit = attachTargetEntity->IsUnit();
-          if (attachTargetUnit == nullptr || attachTargetUnit->GetFocusEntity() != static_cast<Entity*>(mUnit)) {
-            mUnit->SetCurrentLayer(attachTargetEntity->mVarDat.mLayerMask);
-          }
-          return TASKSTATUS_Wait;
+      if (mUnit->mAttachInfo.HasAttachTarget()) {
+        Entity* const attachTargetEntity = mUnit->mAttachInfo.GetAttachTargetEntity();
+        Unit* const attachTargetUnit = attachTargetEntity->IsUnit();
+        if (attachTargetUnit == nullptr || attachTargetUnit->GetFocusEntity() != static_cast<Entity*>(mUnit)) {
+          mUnit->SetCurrentLayer(attachTargetEntity->mVarDat.mLayerMask);
         }
-
-        const RUnitBlueprint* const blueprint = mUnit->GetBlueprint();
-        SetMotionState(blueprint->Air.CanFly ? kUnitMotionStateNone : kUnitMotionStateBallistic);
-        mUnit->SetCurrentLayer(LAYER_Air);
-        mProcessSurfaceCollision = true;
-        MoveTo(transform, 1.0f);
         return TASKSTATUS_Wait;
       }
 
-      case kUnitMotionStateBallistic: {
-        CalcMoveBallistic(transform, &moveTimeFraction);
-        MoveTo(transform, moveTimeFraction);
-        return TASKSTATUS_Wait;
-      }
+      const RUnitBlueprint* const blueprint = mUnit->GetBlueprint();
+      SetMotionState(blueprint->Air.CanFly ? kUnitMotionStateNone : kUnitMotionStateBallistic);
+      mUnit->SetCurrentLayer(LAYER_Air);
+      mProcessSurfaceCollision = true;
+      MoveTo(transform, 1.0f);
+      return TASKSTATUS_Wait;
+    }
 
-      case kUnitMotionStateCrashed:
-        return TASKSTATUS_Wait;
+    case kUnitMotionStateBallistic: {
+      CalcMoveBallistic(transform, &moveTimeFraction);
+      MoveTo(transform, moveTimeFraction);
+      return TASKSTATUS_Wait;
+    }
 
-      default: {
-        const RUnitBlueprint* const blueprint = mUnit->GetBlueprint();
+    case kUnitMotionStateCrashed:
+      return TASKSTATUS_Wait;
 
-        if (blueprint->Air.CanFly) {
-          if (mUnit->IsUnitState(UNITSTATE_Immobile) || mUnit->mUnitVarDat.mStunTicks) {
-            SetMotionHorzEvent(kUnitMotionHorzEventStopped);
-            return TASKSTATUS_Wait;
-          }
+    default: {
+      const RUnitBlueprint* const blueprint = mUnit->GetBlueprint();
 
-          CalcMoveAir(transform, &moveTimeFraction);
-          MoveTo(transform, moveTimeFraction);
-          return TASKSTATUS_Wait;
-        }
-
+      if (blueprint->Air.CanFly) {
         if (mUnit->IsUnitState(UNITSTATE_Immobile) || mUnit->mUnitVarDat.mStunTicks) {
-          mFollowingWaypoint = nullptr;
-          mNextWaypoint = nullptr;
-
-          const bool moveSucceeded = mUnit->IsDead() ? false : CalcMoveCommon(transform, nullptr);
-          ProcessCommonMotionState(moveSucceeded);
-          if (mLayerTransitionTicks != 0.0f) {
-            MoveTo(transform, 1.0f);
-          }
+          SetMotionHorzEvent(kUnitMotionHorzEventStopped);
           return TASKSTATUS_Wait;
         }
 
-        if (Wm3::Vector3f::LengthSq(mVelocity) > 0.000001f) {
-          UpdateCurrentLayer();
-          mUnit->UpdateTerrainType(transform.pos_);
-        }
-
-        if (blueprint->Physics.MotionType == RULEUMT_Hover) {
-          CalcMoveHover(transform, &moveTimeFraction);
-          MoveTo(transform, moveTimeFraction);
-          return TASKSTATUS_Wait;
-        }
-
-        if (mUnit->mVarDat.mLayerMask == LAYER_Land || mUnit->mVarDat.mLayerMask == LAYER_Seabed) {
-          CalcMoveLand(transform, &moveTimeFraction);
-        } else {
-          CalcMoveWater(transform, &moveTimeFraction);
-        }
+        CalcMoveAir(transform, &moveTimeFraction);
         MoveTo(transform, moveTimeFraction);
         return TASKSTATUS_Wait;
       }
+
+      if (mUnit->IsUnitState(UNITSTATE_Immobile) || mUnit->mUnitVarDat.mStunTicks) {
+        mFollowingWaypoint = nullptr;
+        mNextWaypoint = nullptr;
+
+        const bool moveSucceeded = mUnit->IsDead() ? false : CalcMoveCommon(transform, nullptr);
+        ProcessCommonMotionState(moveSucceeded);
+        if (mLayerTransitionTicks != 0.0f) {
+          MoveTo(transform, 1.0f);
+        }
+        return TASKSTATUS_Wait;
+      }
+
+      if (Wm3::Vector3f::LengthSq(mVelocity) > 0.000001f) {
+        UpdateCurrentLayer();
+        mUnit->UpdateTerrainType(transform.pos_);
+      }
+
+      if (blueprint->Physics.MotionType == RULEUMT_Hover) {
+        CalcMoveHover(transform, &moveTimeFraction);
+        MoveTo(transform, moveTimeFraction);
+        return TASKSTATUS_Wait;
+      }
+
+      if (mUnit->mVarDat.mLayerMask == LAYER_Land || mUnit->mVarDat.mLayerMask == LAYER_Seabed) {
+        CalcMoveLand(transform, &moveTimeFraction);
+      } else {
+        CalcMoveWater(transform, &moveTimeFraction);
+      }
+      MoveTo(transform, moveTimeFraction);
+      return TASKSTATUS_Wait;
+    }
     }
   }
 
   /**
-   * Address: 0x006BE480 (FUN_006BE480, ?CalcHoverOrientation@CUnitMotion@Moho@@AAEXABUSPhysBody@2@ABV?$Vector3@M@Wm3@@AAVVAxes3@2@@Z)
-   * Mangled: ?CalcHoverOrientation@CUnitMotion@Moho@@AAEXABUSPhysBody@2@ABV?$Vector3@M@Wm3@@AAVVAxes3@2@@Z
+   * Address: 0x006BE480 (FUN_006BE480,
+   * ?CalcHoverOrientation@CUnitMotion@Moho@@AAEXABUSPhysBody@2@ABV?$Vector3@M@Wm3@@AAVVAxes3@2@@Z) Mangled:
+   * ?CalcHoverOrientation@CUnitMotion@Moho@@AAEXABUSPhysBody@2@ABV?$Vector3@M@Wm3@@AAVVAxes3@2@@Z
    *
    * What it does:
    * Builds hover-control axes from body velocity delta, gravity compensation,
@@ -4485,8 +4392,10 @@ namespace moho
     };
 
     if (air.BankForward == 0u) {
-      const float forwardX = ((body.mOrientation.x * body.mOrientation.z) + (body.mOrientation.w * body.mOrientation.y)) * 2.0f;
-      const float forwardY = ((body.mOrientation.y * body.mOrientation.z) - (body.mOrientation.w * body.mOrientation.x)) * 2.0f;
+      const float forwardX =
+        ((body.mOrientation.x * body.mOrientation.z) + (body.mOrientation.w * body.mOrientation.y)) * 2.0f;
+      const float forwardY =
+        ((body.mOrientation.y * body.mOrientation.z) - (body.mOrientation.w * body.mOrientation.x)) * 2.0f;
       const float forwardZ =
         1.0f - (((body.mOrientation.x * body.mOrientation.x) + (body.mOrientation.y * body.mOrientation.y)) * 2.0f);
 
@@ -4582,7 +4491,9 @@ namespace moho
    * Snaps one transform onto water/terrain elevation while incorporating roll
    * hack tilt and submerged-elevation carry behavior.
    */
-  VTransform CUnitMotion::SnapToWater(const VTransform& sourceTransform)
+  VTransform CUnitMotion::SnapToWater(
+    const VTransform& sourceTransform
+  )
   {
     VTransform snapped = sourceTransform;
 
@@ -4599,7 +4510,8 @@ namespace moho
       footprintElevation += raisedPlatformUnit->DistanceToOccupiedRect(&snapped.pos_);
     }
 
-    float waterElevation = (mapData->mWaterEnabled != 0u) ? mapData->mWaterElevation : kNoWaterElevation;
+    float waterElevation =
+      mapData->GetWaterElevationAt(snapped.pos_.x, snapped.pos_.z); // engine addition: per position
     if (footprintElevation > terrainElevation) {
       waterElevation += footprintElevation - terrainElevation;
     }
@@ -4633,7 +4545,9 @@ namespace moho
    * recenters Y to their average, applies stand/sink correction, then tilts
    * orientation to the recovered ground normal.
    */
-  VTransform CUnitMotion::SnapToGround(const VTransform& sourceTransform)
+  VTransform CUnitMotion::SnapToGround(
+    const VTransform& sourceTransform
+  )
   {
     VTransform snapped = sourceTransform;
 
@@ -4682,8 +4596,7 @@ namespace moho
       const float deltaDiagonalY1 = backLeft.y - frontRight.y;
       surfaceNormal.x =
         (deltaDiagonalY0 * (backLeft.z - frontRight.z)) - ((backRight.z - frontLeft.z) * deltaDiagonalY1);
-      surfaceNormal.y =
-        ((backRight.z - frontLeft.z) * (backLeft.x - frontRight.x)) -
+      surfaceNormal.y = ((backRight.z - frontLeft.z) * (backLeft.x - frontRight.x)) -
         ((backLeft.z - frontRight.z) * (backRight.x - frontLeft.x));
       surfaceNormal.z =
         (deltaDiagonalY1 * (backRight.x - frontLeft.x)) - (deltaDiagonalY0 * (backLeft.x - frontRight.x));
@@ -4762,8 +4675,10 @@ namespace moho
 
         if (needsRepair) {
           if (mEconomyRequest != nullptr) {
-            if (mEconomyRequest->mGranted.energy >= mRepairConsumption.energy &&
-                mEconomyRequest->mGranted.mass >= mRepairConsumption.mass) {
+            if (
+              mEconomyRequest->mGranted.energy >= mRepairConsumption.energy &&
+              mEconomyRequest->mGranted.mass >= mRepairConsumption.mass
+            ) {
               const SEconValue granted = TakeGrantedResourcesAndReset(mEconomyRequest);
               unit->mUnitVarDat.mResourcesSpent.ENERGY += granted.energy;
               unit->mUnitVarDat.mResourcesSpent.MASS += granted.mass;
@@ -4776,7 +4691,7 @@ namespace moho
             mRepairConsumption.energy = stagingBlueprint->AI.RepairConsumeEnergy;
             mRepairConsumption.mass = stagingBlueprint->AI.RepairConsumeMass;
 
-            CSimArmyEconomyInfo* const economy = unit->ArmyRef ? unit->ArmyRef->GetEconomy() : nullptr;
+            CEconomy* const economy = unit->ArmyRef ? unit->ArmyRef->GetEconomy() : nullptr;
             ReplaceEconomyRequestPointer(mEconomyRequest, CreateEconomyRequest(mRepairConsumption, economy));
 
             unit->mUnitVarDat.mMaintainenceCost.ENERGY = mRepairConsumption.energy;

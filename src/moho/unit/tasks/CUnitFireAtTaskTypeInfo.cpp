@@ -24,7 +24,9 @@ namespace
     return sInstance;
   }
 
-  [[nodiscard]] gpg::RRef MakeCUnitFireAtTaskRef(moho::CUnitFireAtTask* const object)
+  [[nodiscard]] gpg::RRef MakeCUnitFireAtTaskRef(
+    moho::CUnitFireAtTask* const object
+  )
   {
     return gpg::RRef{object, gpg::RTypeOf<moho::CUnitFireAtTask>()};
   }
@@ -47,11 +49,14 @@ namespace moho
   CUnitFireAtTaskTypeInfo::~CUnitFireAtTaskTypeInfo() = default;
 
   /**
-   * Address: 0x0060B040 (FUN_0060B040)
+   * Address: 0x0060B040 (FUN_0060B040: `mov eax, ... ; "CUnitFireAtTask"`)
+   *
+   * Retail's name, without a namespace, so its saves load; saves from builds that said `moho::CUnitFireAtTask` are read
+   * through `REF_CurrentTypeName`.
    */
   const char* CUnitFireAtTaskTypeInfo::GetName() const
   {
-    return "moho::CUnitFireAtTask";
+    return "CUnitFireAtTask";
   }
 
   /**
@@ -75,7 +80,9 @@ namespace moho
   /**
    * Address: 0x0060C720 (FUN_0060C720, Moho::CUnitFireAtTaskTypeInfo::AddBase_CCommandTask)
    */
-  void __stdcall CUnitFireAtTaskTypeInfo::AddBase_CCommandTask(gpg::RType* const typeInfo)
+  void __stdcall CUnitFireAtTaskTypeInfo::AddBase_CCommandTask(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<moho::CCommandTask>(typeInfo);
   }
@@ -96,19 +103,20 @@ namespace moho
    * Placement-constructs one fire-at-task runtime lane in caller storage and
    * returns typed reflection reference.
    */
-  gpg::RRef CUnitFireAtTaskTypeInfo::CtrRef(void* const objectStorage)
+  gpg::RRef CUnitFireAtTaskTypeInfo::CtrRef(
+    void* const objectStorage
+  )
   {
-    auto* const object = static_cast<moho::CUnitFireAtTask*>(objectStorage);
-    if (object) {
-      new (object) moho::CUnitFireAtTask();
-    }
+    auto* const object = gpg::ConstructInStorage<moho::CUnitFireAtTask>(objectStorage);
     return MakeCUnitFireAtTaskRef(object);
   }
 
   /**
    * Address: 0x0060C150 (FUN_0060C150, Moho::CUnitFireAtTaskTypeInfo::Delete)
    */
-  void CUnitFireAtTaskTypeInfo::Delete(void* const objectStorage)
+  void CUnitFireAtTaskTypeInfo::Delete(
+    void* const objectStorage
+  )
   {
     delete static_cast<moho::CUnitFireAtTask*>(objectStorage);
   }
@@ -116,7 +124,9 @@ namespace moho
   /**
    * Address: 0x0060C200 (FUN_0060C200, Moho::CUnitFireAtTaskTypeInfo::Destruct)
    */
-  void CUnitFireAtTaskTypeInfo::Destruct(void* const objectStorage)
+  void CUnitFireAtTaskTypeInfo::Destruct(
+    void* const objectStorage
+  )
   {
     auto* const object = static_cast<moho::CUnitFireAtTask*>(objectStorage);
     if (!object) {
@@ -135,8 +145,9 @@ namespace moho
   }
 } // namespace moho
 
-
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CUnitFireAtTaskTypeInfo_3917a7, moho::register_CUnitFireAtTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CUnitFireAtTaskTypeInfo_3917a7,
+  moho::register_CUnitFireAtTaskTypeInfo
+)

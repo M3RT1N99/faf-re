@@ -31,20 +31,27 @@
 namespace
 {
   constexpr std::uintptr_t kInvalidEntitySlot = 0x8u;
-  constexpr std::uint64_t kUnitStateMaskAssistMoving = (1ull << static_cast<std::uint32_t>(moho::UNITSTATE_AssistMoving));
+  constexpr std::uint64_t kUnitStateMaskAssistMoving =
+    (1ull << static_cast<std::uint32_t>(moho::UNITSTATE_AssistMoving));
 
-  [[nodiscard]] bool IsUsableUnitSlot(const moho::Unit* const unit) noexcept
+  [[nodiscard]] bool IsUsableUnitSlot(
+    const moho::Unit* const unit
+  ) noexcept
   {
     const std::uintptr_t raw = reinterpret_cast<std::uintptr_t>(unit);
     return raw != 0u && raw != kInvalidEntitySlot;
   }
 
-  [[nodiscard]] bool IsZeroVector(const Wm3::Vector3f& value) noexcept
+  [[nodiscard]] bool IsZeroVector(
+    const Wm3::Vector3f& value
+  ) noexcept
   {
     return value.x == 0.0f && value.y == 0.0f && value.z == 0.0f;
   }
 
-  [[nodiscard]] moho::CUnitCommand* ResolveCurrentCommand(moho::Unit* const unit) noexcept
+  [[nodiscard]] moho::CUnitCommand* ResolveCurrentCommand(
+    moho::Unit* const unit
+  ) noexcept
   {
     if (unit == nullptr || unit->CommandQueue == nullptr) {
       return nullptr;
@@ -52,13 +59,15 @@ namespace
     return unit->CommandQueue->GetCurrentCommand();
   }
 
-  void ReadBoolIntoByteLane(gpg::ReadArchive* const archive, std::uint8_t& lane) noexcept
+  void ReadBoolIntoByteLane(
+    gpg::ReadArchive* const archive,
+    std::uint8_t& lane
+  ) noexcept
   {
     bool value = false;
     archive->ReadBool(&value);
     lane = value ? 1u : 0u;
   }
-
 
 } // namespace
 
@@ -79,8 +88,7 @@ namespace moho
     , mMoveGoalWorldPosition{0.0f, 0.0f, 0.0f}
     , mHasPathFindingPickupCandidate(0)
     , mPad65_67{0, 0, 0}
-  {
-  }
+  {}
 
   /**
    * Address: 0x005F0BC0 (FUN_005F0BC0, Moho::CUnitAssistMoveTask::CUnitAssistMoveTask)
@@ -89,7 +97,10 @@ namespace moho
    * Initializes one assist-move task from parent command-task context and
    * cached move-goal payload, then enables `UNITSTATE_AssistMoving`.
    */
-  CUnitAssistMoveTask::CUnitAssistMoveTask(CCommandTask* const dispatchTask, const SNavGoal& moveGoal)
+  CUnitAssistMoveTask::CUnitAssistMoveTask(
+    CCommandTask* const dispatchTask,
+    const SNavGoal& moveGoal
+  )
     : CCommandTask(dispatchTask)
     , mDispatchTask(dispatchTask)
     , mMoveGoal(moveGoal)
@@ -164,7 +175,9 @@ namespace moho
    * Builds one candidate set of loadable allied mobile land units near
    * this assist task's context and writes filtered results into `outUnits`.
    */
-  EntitySetTemplate<Unit>* CUnitAssistMoveTask::GetEntitiesAlreadyAtLoc(EntitySetTemplate<Unit>* const outUnits)
+  EntitySetTemplate<Unit>* CUnitAssistMoveTask::GetEntitiesAlreadyAtLoc(
+    EntitySetTemplate<Unit>* const outUnits
+  )
   {
     if (outUnits == nullptr) {
       return nullptr;
@@ -175,13 +188,8 @@ namespace moho
 
     mHasPathFindingPickupCandidate = 0;
     if (
-      mUnit == nullptr
-      || mSim == nullptr
-      || mSim->mRules == nullptr
-      || mUnit->SimulationRef == nullptr
-      || mUnit->SimulationRef->mRules == nullptr
-      || mUnit->ArmyRef == nullptr
-      || mUnit->AiTransport == nullptr
+      mUnit == nullptr || mSim == nullptr || mSim->mRules == nullptr || mUnit->SimulationRef == nullptr ||
+      mUnit->SimulationRef->mRules == nullptr || mUnit->ArmyRef == nullptr || mUnit->AiTransport == nullptr
     ) {
       return outUnits;
     }
@@ -416,27 +424,27 @@ namespace moho
   int CUnitAssistMoveTask::Execute()
   {
     switch (mTaskState) {
-      case TASKSTATE_Preparing:
-        mTaskState = TASKSTATE_Waiting;
-        return 3;
+    case TASKSTATE_Preparing:
+      mTaskState = TASKSTATE_Waiting;
+      return 3;
 
-      case TASKSTATE_Waiting:
-        Wait();
-        return 1;
+    case TASKSTATE_Waiting:
+      Wait();
+      return 1;
 
-      case TASKSTATE_Starting:
-        Start();
-        return 1;
+    case TASKSTATE_Starting:
+      Start();
+      return 1;
 
-      case TASKSTATE_Processing:
-        IssueMoveTaskAndComplete();
-        return 1;
+    case TASKSTATE_Processing:
+      IssueMoveTaskAndComplete();
+      return 1;
 
-      case TASKSTATE_Complete:
-        return -1;
+    case TASKSTATE_Complete:
+      return -1;
 
-      default:
-        return 1;
+    default:
+      return 1;
     }
   }
 
@@ -446,7 +454,10 @@ namespace moho
    * What it does:
    * Allocates one assist-move task and forwards constructor arguments.
    */
-  CUnitAssistMoveTask* CUnitAssistMoveTask::Create(CCommandTask* const dispatchTask, const SNavGoal* const moveGoal)
+  CUnitAssistMoveTask* CUnitAssistMoveTask::Create(
+    CCommandTask* const dispatchTask,
+    const SNavGoal* const moveGoal
+  )
   {
     if (moveGoal == nullptr) {
       return nullptr;
@@ -472,9 +483,13 @@ namespace moho
    * Deserializes base command-task, dispatch pointer, move-goal payload,
    * goal world-position vector, and pathfinding-candidate flag.
    */
-  void CUnitAssistMoveTask::MemberDeserialize(gpg::ReadArchive* const archive, int, const gpg::RRef&)
+  void CUnitAssistMoveTask::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    int,
+    const gpg::RRef&
+  )
   {
-    if (archive == nullptr || this == nullptr) {
+    if (archive == nullptr || static_cast<const void*>(this) == nullptr) {
       return;
     }
 
@@ -496,9 +511,13 @@ namespace moho
    * Serializes base command-task, dispatch pointer, move-goal payload,
    * goal world-position vector, and pathfinding-candidate flag.
    */
-  void CUnitAssistMoveTask::MemberSerialize(gpg::WriteArchive* const archive, int, const gpg::RRef&) const
+  void CUnitAssistMoveTask::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    int,
+    const gpg::RRef&
+  ) const
   {
-    if (archive == nullptr || this == nullptr) {
+    if (archive == nullptr || static_cast<const void*>(this) == nullptr) {
       return;
     }
 
@@ -526,44 +545,7 @@ namespace
 
 namespace gpg
 {
-  /**
-   * Address: 0x005F1D80 (FUN_005F1D80, gpg::RRef_CUnitAssistMoveTask)
-   *
-   * What it does:
-   * Builds one typed reflection reference for `moho::CUnitAssistMoveTask*`,
-   * preserving dynamic-derived ownership and base-offset adjustment.
-   */
-  gpg::RRef* RRef_CUnitAssistMoveTask(gpg::RRef* const outRef, moho::CUnitAssistMoveTask* const value)
-  {
-    if (!outRef) {
-      return nullptr;
-    }
 
-    *outRef = gpg::MakeDerivedRef(value, gpg::RTypeOf<moho::CUnitAssistMoveTask>());
-    return outRef;
-  }
-
-  /**
-   * Address: 0x005F1D30 (FUN_005F1D30)
-   *
-   * What it does:
-   * Builds one temporary `RRef_CUnitAssistMoveTask` and copies its
-   * `(mObj,mType)` pair into caller-owned output storage.
-   */
-  [[maybe_unused]] gpg::RRef* PackRRef_CUnitAssistMoveTask(
-    gpg::RRef* const outPair,
-    moho::CUnitAssistMoveTask* const value
-  )
-  {
-    if (!outPair) {
-      return nullptr;
-    }
-
-    gpg::RRef typedRef{};
-    (void)gpg::RRef_CUnitAssistMoveTask(&typedRef, value);
-    *outPair = typedRef;
-    return outPair;
-  }
 } // namespace gpg
 
 namespace moho

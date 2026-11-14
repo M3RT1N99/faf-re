@@ -38,7 +38,8 @@ namespace
   constexpr const char* kForkThreadHelpText =
     "thread = ForkThread(function, ...)\nSpawns a new thread running the given function with the given args.";
   constexpr const char* kKillThreadHelpText = "KillThread(thread) -- destroy a thread started with ForkThread()";
-  constexpr const char* kKillThreadForkOnlyError = "KillThread: Can't kill a thread that wasn't created with ForkThread.";
+  constexpr const char* kKillThreadForkOnlyError =
+    "KillThread: Can't kill a thread that wasn't created with ForkThread.";
   constexpr const char* kSuspendCurrentThreadHelpText =
     "SuspendCurrentThread() -- suspend this thread indefinitely. Some external event must eventually call "
     "ResumeThread() to resume it.";
@@ -51,7 +52,9 @@ namespace
   constexpr const char* kResumeThreadTypeError = "thread";
   constexpr const char* kResumeThreadForkOnlyError = "Can't resume a thread that wasn't created with ForkThread.";
 
-  [[nodiscard]] LuaPlus::LuaState* ResolveBindingState(lua_State* const luaContext) noexcept
+  [[nodiscard]] LuaPlus::LuaState* ResolveBindingState(
+    lua_State* const luaContext
+  ) noexcept
   {
     return luaContext ? luaContext->stateUserData : nullptr;
   }
@@ -71,33 +74,6 @@ namespace
     return &sInstance;
   }
 
-  /**
-   * Address: 0x004CB710 (FUN_004CB710, CLuaTask reflected ref store helper)
-   *
-   * What it does:
-   * Writes one `gpg::RRef` lane for a CLuaTask pointer into caller-provided
-   * output storage.
-   */
-  [[maybe_unused]] gpg::RRef* StoreCLuaTaskRef(gpg::RRef* const outRef, CLuaTask* const task)
-  {
-    *outRef = gpg::MakeRRef<moho::CLuaTask>(task);
-    return outRef;
-  }
-
-  /**
-   * Address: 0x004CB740 (FUN_004CB740, CLuaTask member-deserialize thunk)
-   *
-   * What it does:
-   * Thin wrapper that forwards archive + object lanes into
-   * `CLuaTask::MemberDeserialize`. Invoked from
-   * `CLuaTaskSerializer::Deserialize` below.
-   */
-  void DeserializeCLuaTaskThunk(gpg::ReadArchive* const archive, CLuaTask* const task)
-  {
-    GPG_ASSERT(task != nullptr);
-    task->MemberDeserialize(archive);
-  }
-
   // Address 0x004CBD10 (the duplicate "ThunkAlias" one-line forward to
   // DeserializeCLuaTaskThunk formerly modeled here) is dead: zero data_refs
   // and zero call_edges in the callgraph index, and no source-level caller
@@ -106,30 +82,15 @@ namespace
   // CLuaTaskSerializer::Deserialize.
 
   /**
-   * Address: 0x004CB750 (FUN_004CB750, CLuaTask member-serialize thunk)
-   * Address: 0x004CBD20 (FUN_004CBD20, duplicate member-serialize thunk emission --
-   *   same one-line forward to `CLuaTask::MemberSerialize`, distinct compiled
-   *   address; not an ICF twin since the encoded jmp displacement differs)
-   *
-   * What it does:
-   * Thin wrapper that forwards archive + object lanes into
-   * `CLuaTask::MemberSerialize`. Invoked from `CLuaTaskSerializer::Serialize`
-   * below.
-   */
-  void SerializeCLuaTaskThunk(gpg::WriteArchive* const archive, CLuaTask* const task)
-  {
-    GPG_ASSERT(task != nullptr);
-    task->MemberSerialize(archive);
-  }
-
-  /**
    * Address: 0x004CC6A0 (FUN_004CC6A0)
    *
    * What it does:
    * Saves one owned `LuaState*` tracked-pointer lane.
    */
   gpg::WriteArchive* WriteOwnedLuaStatePointer(
-    gpg::WriteArchive* const archive, LuaPlus::LuaState* const state, const gpg::RRef& ownerRef
+    gpg::WriteArchive* const archive,
+    LuaPlus::LuaState* const state,
+    const gpg::RRef& ownerRef
   )
   {
     archive->WritePointer<LuaPlus::LuaState>(state, gpg::TrackedPointerState::Owned, ownerRef);
@@ -143,7 +104,10 @@ namespace
    * Pushes one Lua argument object onto a spawned thread-state stack and
    * increments the pending resume-argument counter for that task.
    */
-  void PushForkThreadArgumentAndIncrementResumeCount(CLuaTask* const task, const LuaPlus::LuaObject& argumentObject)
+  void PushForkThreadArgumentAndIncrementResumeCount(
+    CLuaTask* const task,
+    const LuaPlus::LuaObject& argumentObject
+  )
   {
     argumentObject.PushStack(task->mLuaState->m_state);
     ++task->mResumeArgCount;
@@ -156,7 +120,10 @@ namespace
    * before its first resume. Reads the thread's frames only (lua_getstack / lua_getinfo "S").
    */
   void DescribeLuaThreadForProfile(
-    lua_State* const thread, const int resumeArgCount, char* const out, const std::size_t size
+    lua_State* const thread,
+    const int resumeArgCount,
+    char* const out,
+    const std::size_t size
   )
   {
     lua_Debug outermost{};
@@ -196,15 +163,18 @@ namespace
  * What it does:
  * Pushes lua traceback text for the provided message and returns it as string.
  */
-msvc8::string moho::SCR_Traceback(LuaPlus::LuaState* const state, const gpg::StrArg message)
+fa::string moho::SCR_Traceback(
+  LuaPlus::LuaState* const state,
+  const gpg::StrArg message
+)
 {
   if (!state || !state->m_state) {
-    return msvc8::string(message ? message : "");
+    return fa::string(message ? message : "");
   }
 
   (void)lua_traceback(state->m_state, message, 1);
   const char* const traceback = lua_tostring(state->m_state, -1);
-  msvc8::string out(traceback ? traceback : "<non-string traceback>");
+  fa::string out(traceback ? traceback : "<non-string traceback>");
   lua_settop(state->m_state, -2);
   return out;
 }
@@ -227,7 +197,10 @@ CLuaTask::CLuaTask()
  * pointer from `newState`, resets resume-argument state, and binds
  * `state->m_luaTask` back to this task.
  */
-CLuaTask::CLuaTask(CTaskThread* const thread, LuaPlus::LuaState** const newState)
+CLuaTask::CLuaTask(
+  CTaskThread* const thread,
+  LuaPlus::LuaState** const newState
+)
   : CTask(thread, thread != nullptr)
   , mLuaState(newState ? *newState : nullptr)
   , mResumeArgCount(0)
@@ -258,8 +231,13 @@ namespace
   struct SThreadRoutingScope
   {
     moho::ILuaThreadRouting* routing;
-    explicit SThreadRoutingScope(lua_State* const thread)
-      : routing(sThreadRouting != nullptr && moho::IsSimThread() && sThreadRouting->EnterThread(thread) ? sThreadRouting : nullptr)
+    explicit SThreadRoutingScope(
+      lua_State* const thread
+    )
+      : routing(
+          sThreadRouting != nullptr && moho::IsSimThread() && sThreadRouting->EnterThread(thread) ? sThreadRouting
+                                                                                                  : nullptr
+        )
     {}
     ~SThreadRoutingScope()
     {
@@ -270,7 +248,9 @@ namespace
   };
 } // namespace
 
-void moho::LUA_SetThreadRouting(ILuaThreadRouting* const routing) noexcept
+void moho::LUA_SetThreadRouting(
+  ILuaThreadRouting* const routing
+) noexcept
 {
   sThreadRouting = routing;
 }
@@ -288,7 +268,6 @@ CLuaTask::~CLuaTask()
   } else {
     delete mLuaState;
   }
-
 }
 
 /**
@@ -340,9 +319,7 @@ int CLuaTask::Execute()
 
   if (destroyedByDtor) {
     if (resumeResult != 0) {
-      gpg::Warnf(
-        "Error running lua script from destroyed thread: %s", LuaPlus::LuaStackObject(state, -1).GetString()
-      );
+      gpg::Warnf("Error running lua script from destroyed thread: %s", LuaPlus::LuaStackObject(state, -1).GetString());
       if (IsSimThread()) {
         gpg::diag::NoteSimLuaError(LuaPlus::LuaStackObject(state, -1).GetString()); // engine addition (default off)
       }
@@ -374,12 +351,12 @@ int CLuaTask::Execute()
       return ticks;
     }
 
-    const msvc8::string traceback = SCR_Traceback(state, "Invalid args to yield(); tick count must be >=0");
+    const fa::string traceback = SCR_Traceback(state, "Invalid args to yield(); tick count must be >=0");
     gpg::Warnf("%s", traceback.c_str());
     return -1;
   }
 
-  const msvc8::string traceback = SCR_Traceback(state, "Invalid args to yield(); expected tick count");
+  const fa::string traceback = SCR_Traceback(state, "Invalid args to yield(); expected tick count");
   gpg::Warnf("%s", traceback.c_str());
   return -1;
 }
@@ -391,7 +368,9 @@ int CLuaTask::Execute()
  * Validates one event argument, pushes a wait-task shim above the current
  * Lua task in the owner-thread stack, then yields with one numeric return.
  */
-int moho::cfunc_WaitForL(LuaPlus::LuaState* const state)
+int moho::cfunc_WaitForL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kWaitForHelpText);
 
@@ -423,7 +402,9 @@ int moho::cfunc_WaitForL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua binding callback context and forwards to `cfunc_WaitForL`.
  */
-int moho::cfunc_WaitFor(lua_State* const luaContext)
+int moho::cfunc_WaitFor(
+  lua_State* const luaContext
+)
 {
   return cfunc_WaitForL(ResolveBindingState(luaContext));
 }
@@ -436,7 +417,9 @@ int moho::cfunc_WaitFor(lua_State* const luaContext)
  */
 moho::CScrLuaInitForm* moho::func_WaitFor_LuaFuncDef()
 {
-  static CScrLuaBinder binder(moho::SCR_CoreLuaInitSet(), "WaitFor", &moho::cfunc_WaitFor, nullptr, "<global>", kWaitForHelpText);
+  static CScrLuaBinder binder(
+    moho::SCR_CoreLuaInitSet(), "WaitFor", &moho::cfunc_WaitFor, nullptr, "<global>", kWaitForHelpText
+  );
   return &binder;
 }
 
@@ -460,7 +443,9 @@ moho::CScrLuaInitForm* moho::register_WaitFor_LuaFuncDef()
  * coroutine stack, pushes the new thread object to the caller, and mirrors
  * active hook settings.
  */
-int moho::cfunc_ForkThreadL(LuaPlus::LuaState* const curState)
+int moho::cfunc_ForkThreadL(
+  LuaPlus::LuaState* const curState
+)
 {
   if (lua_gettop(curState->m_state) == 0) {
     LuaPlus::LuaState::Error(curState, "ForkThread: missing FUNCTION argument");
@@ -477,13 +462,13 @@ int moho::cfunc_ForkThreadL(LuaPlus::LuaState* const curState)
   CTaskStage* ownerStage = nullptr;
   LuaPlus::LuaState* const rootState = curState->m_rootState;
   if (rootState == curState) {
-    ownerStage = reinterpret_cast<CTaskStage*>(curState->m_luaTask);
+    ownerStage = curState->m_taskStage;
   } else {
     CLuaTask* const currentTask = curState->m_luaTask;
     if (currentTask && currentTask->mOwnerThread) {
       ownerStage = currentTask->mOwnerThread->mStage;
     } else {
-      ownerStage = rootState ? reinterpret_cast<CTaskStage*>(rootState->m_luaTask) : nullptr;
+      ownerStage = rootState ? rootState->m_taskStage : nullptr;
     }
   }
 
@@ -529,7 +514,9 @@ int moho::cfunc_ForkThreadL(LuaPlus::LuaState* const curState)
  * What it does:
  * Unwraps binding context and forwards to `cfunc_ForkThreadL`.
  */
-int moho::cfunc_ForkThread(lua_State* const luaContext)
+int moho::cfunc_ForkThread(
+  lua_State* const luaContext
+)
 {
   return cfunc_ForkThreadL(luaContext->stateUserData);
 }
@@ -543,12 +530,7 @@ int moho::cfunc_ForkThread(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_ForkThread_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_CoreLuaInitSet(),
-    "ForkThread",
-    &moho::cfunc_ForkThread,
-    nullptr,
-    "<global>",
-    kForkThreadHelpText
+    moho::SCR_CoreLuaInitSet(), "ForkThread", &moho::cfunc_ForkThread, nullptr, "<global>", kForkThreadHelpText
   );
   return &binder;
 }
@@ -570,7 +552,9 @@ moho::CScrLuaInitForm* moho::register_ForkThread_LuaFuncDef()
  * What it does:
  * Validates one thread argument and destroys a ForkThread-created task thread.
  */
-int moho::cfunc_KillThreadL(LuaPlus::LuaState* const state)
+int moho::cfunc_KillThreadL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kKillThreadHelpText);
 
@@ -604,7 +588,9 @@ int moho::cfunc_KillThreadL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps Lua binding callback context and forwards to `cfunc_KillThreadL`.
  */
-int moho::cfunc_KillThread(lua_State* const luaContext)
+int moho::cfunc_KillThread(
+  lua_State* const luaContext
+)
 {
   return cfunc_KillThreadL(luaContext->stateUserData);
 }
@@ -618,12 +604,7 @@ int moho::cfunc_KillThread(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_KillThread_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_CoreLuaInitSet(),
-    "KillThread",
-    &moho::cfunc_KillThread,
-    nullptr,
-    "<global>",
-    kKillThreadHelpText
+    moho::SCR_CoreLuaInitSet(), "KillThread", &moho::cfunc_KillThread, nullptr, "<global>", kKillThreadHelpText
   );
   return &binder;
 }
@@ -645,7 +626,9 @@ moho::CScrLuaInitForm* moho::register_KillThread_LuaFuncDef()
  * What it does:
  * Validates zero args and suspends the current ForkThread-created task.
  */
-int moho::cfunc_SuspendCurrentThreadL(LuaPlus::LuaState* const state)
+int moho::cfunc_SuspendCurrentThreadL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 0, kSuspendCurrentThreadHelpText);
 
@@ -669,7 +652,9 @@ int moho::cfunc_SuspendCurrentThreadL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps binding context and forwards to `cfunc_SuspendCurrentThreadL`.
  */
-int moho::cfunc_SuspendCurrentThread(lua_State* const luaContext)
+int moho::cfunc_SuspendCurrentThread(
+  lua_State* const luaContext
+)
 {
   return cfunc_SuspendCurrentThreadL(luaContext->stateUserData);
 }
@@ -714,7 +699,9 @@ moho::CScrLuaInitForm* moho::register_SuspendCurrentThread_LuaFuncDef()
  * handles, and resumes a ForkThread-created task thread by clearing pending
  * frames and unstaging the owner thread.
  */
-int moho::cfunc_ResumeThreadL(LuaPlus::LuaState* const state)
+int moho::cfunc_ResumeThreadL(
+  LuaPlus::LuaState* const state
+)
 {
   moho::SCR_ExpectExactArgs(state, 1, kResumeThreadHelpText);
 
@@ -730,7 +717,7 @@ int moho::cfunc_ResumeThreadL(LuaPlus::LuaState* const state)
   const bool isCoroutine =
     threadState && threadState->m_rootState != threadState && threadState->m_threadObj.m_state == nullptr;
   if (!threadState || isCoroutine) {
-    const msvc8::string traceback = SCR_Traceback(state, kResumeThreadKilledTraceback);
+    const fa::string traceback = SCR_Traceback(state, kResumeThreadKilledTraceback);
     // Logged as data: a traceback quotes script text, '%' included.
     gpg::Warnf("%s", traceback.c_str());
     return 0;
@@ -758,7 +745,9 @@ int moho::cfunc_ResumeThreadL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps binding context and forwards to `cfunc_ResumeThreadL`.
  */
-int moho::cfunc_ResumeThread(lua_State* const luaContext)
+int moho::cfunc_ResumeThread(
+  lua_State* const luaContext
+)
 {
   return cfunc_ResumeThreadL(luaContext->stateUserData);
 }
@@ -772,12 +761,7 @@ int moho::cfunc_ResumeThread(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_ResumeThread_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_CoreLuaInitSet(),
-    "ResumeThread",
-    &moho::cfunc_ResumeThread,
-    nullptr,
-    "<global>",
-    kResumeThreadHelpText
+    moho::SCR_CoreLuaInitSet(), "ResumeThread", &moho::cfunc_ResumeThread, nullptr, "<global>", kResumeThreadHelpText
   );
   return &binder;
 }
@@ -799,7 +783,9 @@ moho::CScrLuaInitForm* moho::register_ResumeThread_LuaFuncDef()
  * What it does:
  * Pushes a Lua thread-handle object for the currently running task thread.
  */
-int moho::cfunc_CurrentThreadL(LuaPlus::LuaState* const state)
+int moho::cfunc_CurrentThreadL(
+  LuaPlus::LuaState* const state
+)
 {
   LuaPlus::LuaObject threadObject;
   threadObject.AssignThread(state);
@@ -813,7 +799,9 @@ int moho::cfunc_CurrentThreadL(LuaPlus::LuaState* const state)
  * What it does:
  * Unwraps binding context and forwards to `cfunc_CurrentThreadL`.
  */
-int moho::cfunc_CurrentThread(lua_State* const luaContext)
+int moho::cfunc_CurrentThread(
+  lua_State* const luaContext
+)
 {
   return cfunc_CurrentThreadL(luaContext->stateUserData);
 }
@@ -827,12 +815,7 @@ int moho::cfunc_CurrentThread(lua_State* const luaContext)
 moho::CScrLuaInitForm* moho::func_CurrentThread_LuaFuncDef()
 {
   static CScrLuaBinder binder(
-    moho::SCR_CoreLuaInitSet(),
-    "CurrentThread",
-    &moho::cfunc_CurrentThread,
-    nullptr,
-    "<global>",
-    kCurrentThreadHelpText
+    moho::SCR_CoreLuaInitSet(), "CurrentThread", &moho::cfunc_CurrentThread, nullptr, "<global>", kCurrentThreadHelpText
   );
   return &binder;
 }
@@ -881,7 +864,9 @@ namespace
 /**
  * Address: 0x004CC2B0 (FUN_004CC2B0, Moho::CLuaTask::MemberDeserialize)
  */
-void CLuaTask::MemberDeserialize(gpg::ReadArchive* const archive)
+void CLuaTask::MemberDeserialize(
+  gpg::ReadArchive* const archive
+)
 {
   gpg::RRef ownerRef{};
   moho::ReadCTaskBase(archive, this, ownerRef);
@@ -896,7 +881,9 @@ void CLuaTask::MemberDeserialize(gpg::ReadArchive* const archive)
 /**
  * Address: 0x004CC320 (FUN_004CC320, Moho::CLuaTask::MemberSerialize)
  */
-void CLuaTask::MemberSerialize(gpg::WriteArchive* const archive)
+void CLuaTask::MemberSerialize(
+  gpg::WriteArchive* const archive
+)
 {
   gpg::RRef ownerRef{};
   moho::WriteCTaskBase(archive, this, ownerRef);
@@ -939,17 +926,13 @@ const char* CLuaTaskTypeInfo::GetName() const
  * Registers `CTask` as this type's reflected base at offset 0 - CLuaTask
  * derives from it singly, so the sub-object starts where the object does.
  */
-void CLuaTaskTypeInfo::AddBase_CTask(gpg::RType* const typeInfo)
+void CLuaTaskTypeInfo::AddBase_CTask(
+  gpg::RType* const typeInfo
+)
 {
   gpg::RType* const taskType = gpg::RTypeOf<CTask>();
 
-  gpg::RField baseField{};
-  baseField.mName = taskType->GetName();
-  baseField.mType = taskType;
-  baseField.mOffset = 0;
-  baseField.mFlags = 0;
-  baseField.mDesc = nullptr;
-  typeInfo->AddBase(baseField);
+  gpg::AddReflectedBaseType(typeInfo, taskType);
 }
 
 /**
@@ -965,16 +948,27 @@ void CLuaTaskTypeInfo::Init()
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CLuaTaskTypeInfo_2cbdf6, moho::register_CLuaTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CLuaTaskTypeInfo_2cbdf6,
+  moho::register_CLuaTaskTypeInfo
+)
 
-GPG_PREREGISTER_INIT(PreRegisterCLuaTaskTypeInfo_2cbdf6, PreRegisterCLuaTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  PreRegisterCLuaTaskTypeInfo_2cbdf6,
+  PreRegisterCLuaTaskTypeInfo
+)
 
 namespace moho
 {
   /**
    * Address: 0x004C9BB0 (FUN_004C9BB0)
    */
-  void CLuaTask::MemberConstruct(gpg::ReadArchive&, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void CLuaTask::MemberConstruct(
+    gpg::ReadArchive&,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     result.SetUnowned(gpg::MakeRRef(new CLuaTask()), 0u);
   }

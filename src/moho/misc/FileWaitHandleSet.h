@@ -6,8 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 
-#include "boost/condition.h"
-#include "boost/mutex.h"
+#include "legacy/thread/Condition.h"
 #include "gpg/core/containers/String.h"
 #include "gpg/core/streams/MemBufferStream.h"
 #include "gpg/core/streams/Stream.h"
@@ -56,7 +55,7 @@ namespace moho
      * four-byte hole after the key. Every one of those numbers follows from
      * `alignof(SDiskFileInfo) == 8` and none of them from 4.
      */
-    alignas(8) FILETIME mLastWriteTime{};      // +0x08
+    alignas(8) FILETIME mLastWriteTime{}; // +0x08
   };
 
   static_assert(sizeof(SDiskFileInfo) == 0x10, "SDiskFileInfo size must be 0x10");
@@ -78,7 +77,7 @@ namespace moho
     ~SFileWaitHandle();
 
     volatile platform::InterlockedLong mLock = 0; // +0x08
-    CZipFile* mZipFile = nullptr;  // +0x0C
+    CZipFile* mZipFile = nullptr;                 // +0x0C
   };
 
   static_assert(sizeof(SFileWaitHandle) == 0x10, "SFileWaitHandle size must be 0x10");
@@ -87,8 +86,8 @@ namespace moho
 
   struct FWHSEntry
   {
-    SFileWaitHandle* mHandle = nullptr;    // +0x00
-    std::uint32_t mZipEntryIndex = 0;      // +0x04
+    SFileWaitHandle* mHandle = nullptr; // +0x00
+    std::uint32_t mZipEntryIndex = 0;   // +0x04
   };
 
   static_assert(sizeof(FWHSEntry) == 0x08, "FWHSEntry size must be 0x08");
@@ -104,7 +103,7 @@ namespace moho
    * `{left, parent, right, std::pair<const std::string, FWHSEntry>, colour, isNil}`
    * with a 0x1C-byte key and an 8-byte value.
    */
-  using FWHSZipEntryMap = msvc8::map<msvc8::string, FWHSEntry>;
+  using FWHSZipEntryMap = fa::map<fa::string, FWHSEntry>;
 
   static_assert(sizeof(FWHSZipEntryMap) == 0x0C, "FWHSZipEntryMap size must be 0x0C");
   static_assert(sizeof(FWHSZipEntryMap::value_type) == 0x24, "FWHSZipEntryMap::value_type size must be 0x24");
@@ -117,7 +116,7 @@ namespace moho
    * and the record at `node+0x30` because `SDiskFileInfo` is 8-aligned (see
    * its declaration above), which also makes the node 0x48 rather than 0x40.
    */
-  using FWHSFileInfoMap = msvc8::map<msvc8::string, SDiskFileInfo>;
+  using FWHSFileInfoMap = fa::map<fa::string, SDiskFileInfo>;
 
   static_assert(sizeof(FWHSFileInfoMap) == 0x0C, "FWHSFileInfoMap size must be 0x0C");
   static_assert(sizeof(FWHSFileInfoMap::value_type) == 0x30, "FWHSFileInfoMap::value_type size must be 0x30");
@@ -183,14 +182,14 @@ namespace moho
      */
     void NotifyAll();
 
-    boost::mutex mLock;                  // +0x00
-    boost::condition mObjectSender;      // +0x08
-    std::int32_t mLockLevel = 0;         // +0x20
-    std::int32_t mWaitingLevel = 0;      // +0x24
-    std::uint8_t mIsLocked = 0;          // +0x28
+    fa::mutex mLock;                // +0x00
+    fa::condition mObjectSender;    // +0x08
+    std::int32_t mLockLevel = 0;    // +0x20
+    std::int32_t mWaitingLevel = 0; // +0x24
+    std::uint8_t mIsLocked = 0;     // +0x28
   };
 
-  static_assert(sizeof(boost::mutex) == 0x08, "boost::mutex size must be 0x08");
+  static_assert(sizeof(fa::mutex) == 0x08, "fa::mutex size must be 0x08");
   static_assert(sizeof(FWHSLock) == 0x2C, "FWHSLock size must be 0x2C");
 
   /**
@@ -245,10 +244,10 @@ namespace moho
      */
     ~FWaitHandleSet();
 
-    TDatList<SFileWaitHandle, void> mZipFiles;       // +0x2C
-    FWHSZipEntryMap mZipEntries{};                    // +0x34
-    FWHSFileInfoMap mFileInfo{};                      // +0x40
-    CVirtualFileSystem* mHandle = nullptr;            // +0x4C
+    TDatList<SFileWaitHandle, void> mZipFiles; // +0x2C
+    FWHSZipEntryMap mZipEntries{};             // +0x34
+    FWHSFileInfoMap mFileInfo{};               // +0x40
+    CVirtualFileSystem* mHandle = nullptr;     // +0x4C
     FWHSThreadState mThreadStateInd{};         // +0x50
 
     /**
@@ -261,7 +260,7 @@ namespace moho
     void RemoveEntry(SFileWaitHandle* handle);
 
     /**
-       * Address: 0x00458D30 (FUN_00458D30)
+     * Address: 0x00458D30 (FUN_00458D30)
      *
      * What it does:
      * Resolves metadata for one canonical path through zip-entry records and the
@@ -294,7 +293,7 @@ namespace moho
      * Returns one thread-local error string storage lane for this wait-handle
      * set owner.
      */
-    [[nodiscard]] msvc8::string* ErrorString();
+    [[nodiscard]] fa::string* ErrorString();
 
     /**
      * Address: 0x00458280 (FUN_00458280, Moho::FWaitHandleSet::GetErrorString)
@@ -302,7 +301,7 @@ namespace moho
      * What it does:
      * Returns the process-global wait-handle thread-local error string storage.
      */
-    [[nodiscard]] static msvc8::string* GetErrorString();
+    [[nodiscard]] static fa::string* GetErrorString();
 
     /**
      * Address: 0x00459070 (FUN_00459070, Moho::FWaitHandleSet::InvalidateFileInfoCache)
@@ -323,7 +322,10 @@ namespace moho
   static_assert(offsetof(FWaitHandleSet, mZipEntries) == 0x34, "FWaitHandleSet::mZipEntries offset must be 0x34");
   static_assert(offsetof(FWaitHandleSet, mFileInfo) == 0x40, "FWaitHandleSet::mFileInfo offset must be 0x40");
   static_assert(offsetof(FWaitHandleSet, mHandle) == 0x4C, "FWaitHandleSet::mHandle offset must be 0x4C");
-  static_assert(offsetof(FWaitHandleSet, mThreadStateInd) == 0x50, "FWaitHandleSet::mThreadStateInd offset must be 0x50");
+  static_assert(
+    offsetof(FWaitHandleSet, mThreadStateInd) == 0x50,
+    "FWaitHandleSet::mThreadStateInd offset must be 0x50"
+  );
   static_assert(sizeof(FWaitHandleSet) == 0x54, "FWaitHandleSet size must be 0x54");
 
   /**
@@ -363,7 +365,7 @@ namespace moho
    * Opens one canonicalized file path for read, preferring mounted zip entries
    * from the wait-handle set before falling back to a regular file stream.
    */
-  [[nodiscard]] msvc8::auto_ptr<gpg::Stream> DISK_OpenFileRead(gpg::StrArg sourcePath);
+  [[nodiscard]] fa::auto_ptr<gpg::Stream> DISK_OpenFileRead(gpg::StrArg sourcePath);
 
   /**
    * Address: 0x00459B90 (FUN_00459B90, ?DISK_OpenFileWrite@Moho@@YA?AV?$auto_ptr@VStream@gpg@@@std@@VStrArg@gpg@@@Z)
@@ -373,7 +375,7 @@ namespace moho
    * What it does:
    * Opens one file path for write using the legacy buffered file-stream mode.
    */
-  [[nodiscard]] msvc8::auto_ptr<gpg::Stream> DISK_OpenFileWrite(gpg::StrArg sourcePath);
+  [[nodiscard]] fa::auto_ptr<gpg::Stream> DISK_OpenFileWrite(gpg::StrArg sourcePath);
 
   /**
    * Address: 0x00459AF0 (FUN_00459AF0, ?DISK_MountZipFile@Moho@@YA?AVCDiskMountedZipHandle@1@VStrArg@gpg@@@Z)
@@ -385,16 +387,6 @@ namespace moho
    * the intrusive mounted-handle reference.
    */
   [[nodiscard]] SFileWaitHandle* DISK_MountZipFile(gpg::StrArg sourcePath);
-
-  /**
-   * Address: 0x00459B30 (FUN_00459B30, ?DISK_GetFileInfo@Moho@@YA_NVStrArg@gpg@@PAUSDiskFileInfo@1@@Z)
-   *
-   * gpg::StrArg,Moho::SDiskFileInfo *,bool
-   *
-   * What it does:
-   * Forwards metadata lookup to the process wait-handle runtime.
-   */
-  bool DISK_GetFileInfo(gpg::StrArg sourcePath, SDiskFileInfo* outInfo, bool realOnly);
 
   /**
    * Address: 0x00459CD0 (FUN_00459CD0, ?DISK_ReadFile@Moho@@YA?AU?$MemBuffer@D@gpg@@VStrArg@3@@Z)
@@ -419,12 +411,13 @@ namespace moho
   [[nodiscard]] gpg::MemBuffer<const char> DISK_MemoryMapFile(gpg::StrArg sourcePath);
 
   /**
-   * Address: 0x00459D50 (FUN_00459D50, ?DISK_GetLastError@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ)
+   * Address: 0x00459D50 (FUN_00459D50,
+   * ?DISK_GetLastError@Moho@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ)
    *
    * What it does:
    * Returns a copy of the current thread-local disk error text.
    */
-  [[nodiscard]] msvc8::string DISK_GetLastError();
+  [[nodiscard]] fa::string DISK_GetLastError();
 
   /**
    * Address: 0x00459DC0 (FUN_00459DC0, ?DISK_GetVFS@Moho@@YAPAVCVirtualFileSystem@1@XZ)
@@ -661,7 +654,7 @@ namespace moho
   [[nodiscard]] CScrLuaInitForm* register_FileCollapsePath_LuaFuncDef();
 
   /**
-    * Alias of FUN_00458D30 (non-canonical helper lane).
+   * Alias of FUN_00458D30 (non-canonical helper lane).
    *
    * What it does:
    * Resolves file metadata through the wait-handle/VFS runtime when available.
@@ -669,5 +662,5 @@ namespace moho
    */
   bool FILE_GetFileInfo(gpg::StrArg sourcePath, SDiskFileInfo* outInfo, bool realOnly);
 
-  msvc8::string* FILE_ToMountedPath(msvc8::string* outPath, gpg::StrArg sourcePath);
+  fa::string* FILE_ToMountedPath(fa::string* outPath, gpg::StrArg sourcePath);
 } // namespace moho

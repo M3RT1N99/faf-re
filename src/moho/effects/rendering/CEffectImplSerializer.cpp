@@ -35,7 +35,9 @@ namespace moho
    * What it does:
    * Reads `CEffectImpl` base lane and member payload lanes into the object.
    */
-  void CEffectImpl::MemberDeserialize(gpg::ReadArchive* const archive)
+  void CEffectImpl::MemberDeserialize(
+    gpg::ReadArchive* const archive
+  )
   {
     if (!archive) {
       return;
@@ -44,10 +46,8 @@ namespace moho
     archive->Read(moho::IEffect::StaticGetClass(), this, gpg::RRef{});
     archive->Read(gpg::RTypeOf<gpg::fastvector<float>>(), &mParams, gpg::RRef{});
     archive->Read(ResolveFastVectorCountedParticleTextureType(), &mParticleTextures, gpg::RRef{});
-    archive->Read(gpg::RTypeOf<gpg::fastvector<msvc8::string>>(), &mStrings, gpg::RRef{});
-    archive->Read(
-      gpg::CachedLookup<moho::SEntAttachInfo>(moho::SEntAttachInfo::sType), &mEntityInfo, gpg::RRef{}
-    );
+    archive->Read(gpg::RTypeOf<gpg::fastvector<fa::string>>(), &mStrings, gpg::RRef{});
+    archive->Read(gpg::CachedLookup<moho::SEntAttachInfo>(moho::SEntAttachInfo::sType), &mEntityInfo, gpg::RRef{});
     bool newAttachment = (mNewAttachment != 0);
     archive->ReadBool(&newAttachment);
     mNewAttachment = newAttachment ? 1u : 0u;
@@ -60,7 +60,9 @@ namespace moho
    * What it does:
    * Writes `CEffectImpl` base lane and member payload lanes from the object.
    */
-  void CEffectImpl::MemberSerialize(gpg::WriteArchive* const archive) const
+  void CEffectImpl::MemberSerialize(
+    gpg::WriteArchive* const archive
+  ) const
   {
     if (!archive) {
       return;
@@ -69,10 +71,8 @@ namespace moho
     archive->Write(moho::IEffect::StaticGetClass(), this, gpg::RRef{});
     archive->Write(gpg::RTypeOf<gpg::fastvector<float>>(), &mParams, gpg::RRef{});
     archive->Write(ResolveFastVectorCountedParticleTextureType(), &mParticleTextures, gpg::RRef{});
-    archive->Write(gpg::RTypeOf<gpg::fastvector<msvc8::string>>(), &mStrings, gpg::RRef{});
-    archive->Write(
-      gpg::CachedLookup<moho::SEntAttachInfo>(moho::SEntAttachInfo::sType), &mEntityInfo, gpg::RRef{}
-    );
+    archive->Write(gpg::RTypeOf<gpg::fastvector<fa::string>>(), &mStrings, gpg::RRef{});
+    archive->Write(gpg::CachedLookup<moho::SEntAttachInfo>(moho::SEntAttachInfo::sType), &mEntityInfo, gpg::RRef{});
     archive->WriteBool(mNewAttachment != 0);
     archive->Write(gpg::CachedLookup<moho::VMatrix4>(moho::VMatrix4::sType), &mMatrix, gpg::RRef{});
   }

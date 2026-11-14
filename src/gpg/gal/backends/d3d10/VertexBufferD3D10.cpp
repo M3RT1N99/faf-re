@@ -88,7 +88,11 @@ namespace gpg::gal
    * Maps the staging buffer with recovered map-flag conversion and returns
    * mapped pointer plus caller byte offset.
    */
-  void* VertexBufferD3D10::Lock(const unsigned int offset, const unsigned int size, const MohoD3DLockFlags lockFlags)
+  void* VertexBufferD3D10::Lock(
+    const unsigned int offset,
+    const unsigned int size,
+    const MohoD3DLockFlags lockFlags
+  )
   {
     static_cast<void>(size);
 
@@ -116,7 +120,7 @@ namespace gpg::gal
     }
 
     locked_ = true;
-    auto* const mappedBytes = reinterpret_cast<std::uint8_t*>(mappedData_);
+    auto* const mappedBytes = static_cast<std::uint8_t*>(mappedData_);
     return mappedBytes + offset;
   }
 
@@ -178,5 +182,4 @@ namespace gpg::gal
 
     return nativeBuffer_;
   }
-}
-
+} // namespace gpg::gal

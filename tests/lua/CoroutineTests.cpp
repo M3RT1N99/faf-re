@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <gtest/gtest.h>
 
 #include "lua/LuaObject.h"
 #include "lua/LuaPrimitives.h"
@@ -16,20 +17,18 @@ namespace moho
 
 namespace
 {
-  void Assert(const bool condition, const char* const message, const std::string& detail = "")
+  void Assert(
+    const bool condition,
+    const char* const message,
+    const std::string& detail = ""
+  )
   {
-    if (!condition) {
-      if (!detail.empty()) {
-        std::fprintf(stderr, "FAIL: %s (detail: %s)\n", message, detail.c_str());
-      } else {
-        std::fprintf(stderr, "FAIL: %s\n", message);
-      }
-      std::exit(1);
-    }
-    std::printf("PASS: %s\n", message);
+    EXPECT_TRUE(condition) << message << (detail.empty() ? "" : " (detail: ") << detail << (detail.empty() ? "" : ")");
   }
 
-  int CountCoroutineThreads(lua_State* const L)
+  int CountCoroutineThreads(
+    lua_State* const L
+  )
   {
     int count = 0;
     if (L != nullptr && L->l_G != nullptr) {
@@ -40,7 +39,10 @@ namespace
     return count;
   }
 
-  std::string RunLua(LuaPlus::LuaState& state, const std::string& source)
+  std::string RunLua(
+    LuaPlus::LuaState& state,
+    const std::string& source
+  )
   {
     lua_State* const L = state.GetCState();
     const int top = lua_gettop(L);
@@ -55,17 +57,29 @@ namespace
     lua_settop(L, top);
     return result;
   }
-} // namespace
 
-int main()
-{
-  // Set up as Sim::Sim does: the Core functions, and a task stage for ForkThread.
-  moho::CTaskStage stage;
-  LuaPlus::LuaState state(LuaPlus::LuaState::LIB_BASE);
-  moho::SCR_FindLuaInitFormSet("Core")->RunInits(&state);
-  state.m_luaTask = reinterpret_cast<moho::CLuaTask*>(&stage);
+  class Existing_Coroutine : public ::testing::Test
+  {
+  protected:
+    moho::CTaskStage stage;
+    LuaPlus::LuaState state{LuaPlus::LuaState::LIB_BASE};
 
-  // 1. coroutine.create argument validation
+    void SetUp() override
+    {
+      moho::SCR_FindLuaInitFormSet("Core")->RunInits(&state);
+      state.m_luaTask = reinterpret_cast<moho::CLuaTask*>(&stage);
+    }
+
+    void TearDown() override
+    {
+      stage.Teardown();
+    }
+  };
+
+  TEST_F(
+    Existing_Coroutine,
+    ArgumentValidation
+  )
   {
     const std::string res = RunLua(state, R"(
       local ok1, err1 = pcall(coroutine.create, 123)
@@ -86,10 +100,15 @@ int main()
       end
       return "ok"
     )");
-    Assert(res == "ok", "coroutine.create argument validation (rejects non-functions and cfunctions, accepts lua functions)");
+    Assert(
+      res == "ok", "coroutine.create argument validation (rejects non-functions and cfunctions, accepts lua functions)"
+    );
   }
 
-  // 2. coroutine.status lifecycle
+  TEST_F(
+    Existing_Coroutine,
+    StatusLifecycle
+  )
   {
     const std::string res = RunLua(state, R"(
       local insideStatus = nil
@@ -122,7 +141,10 @@ int main()
     Assert(res == "ok", "coroutine.status reports suspended -> running -> suspended -> dead");
   }
 
-  // 3. Values passed to resume and yield
+  TEST_F(
+    Existing_Coroutine,
+    ResumeYieldValues
+  )
   {
     const std::string res = RunLua(state, R"(
       local co = coroutine.create(function(a, b)
@@ -150,7 +172,10 @@ int main()
     Assert(res == "ok", "coroutine.resume / coroutine.yield argument and return value passing");
   }
 
-  // 4. Multi-step generator
+  TEST_F(
+    Existing_Coroutine,
+    MultiStepGenerator
+  )
   {
     const std::string res = RunLua(state, R"(
       local function range(n)
@@ -173,7 +198,10 @@ int main()
     Assert(res == "ok", "coroutine.wrap works as an iterator generator");
   }
 
-  // 5. Error handling in coroutine
+  TEST_F(
+    Existing_Coroutine,
+    ErrorHandling
+  )
   {
     const std::string res = RunLua(state, R"(
       local co = coroutine.create(function()
@@ -196,7 +224,10 @@ int main()
     Assert(res == "ok", "coroutine runtime errors propagate through resume as (false, msg) and leave thread dead");
   }
 
-  // 6. Engine functions inside a coroutine: these crash when the coroutine has no LuaState wrapper.
+  TEST_F(
+    Existing_Coroutine,
+    EngineFunctions
+  )
   {
     std::string res = RunLua(state, R"(
       local co
@@ -222,16 +253,19 @@ int main()
       if not ok then return "resume failed: " .. tostring(ret) end
       return ret
     )");
-    Assert(res == "ok", "engine functions work inside a coroutine (CurrentThread, KillThread, ResumeThread, ForkThread)", res);
+    Assert(
+      res == "ok", "engine functions work inside a coroutine (CurrentThread, KillThread, ResumeThread, ForkThread)", res
+    );
 
     stage.UserFrame();
     res = RunLua(state, "return tostring(_G.test_fork_ran)");
     Assert(res == "true", "a thread forked from inside a coroutine runs", res);
   }
 
-  // 6a. lua/platoon.lua kills a platoon's AI thread from that thread (PlatoonDisband), and
-  // OnDestroy kills it again before the thread yields. The binary ignores the second kill
-  // (0x004CA0F7..0x004CA0FC); an error there skips the rest of OnDestroy.
+  TEST_F(
+    Existing_Coroutine,
+    SelfKill
+  )
   {
     RunLua(state, R"(
       _G.test_killed = "thread did not run"
@@ -248,7 +282,10 @@ int main()
     Assert(res == "reached the end", "a thread killing itself twice runs on, as in the binary", res);
   }
 
-  // 6b. A new coroutine takes its creator's globals, as lua_newthread gives it.
+  TEST_F(
+    Existing_Coroutine,
+    InheritGlobals
+  )
   {
     const std::string res = RunLua(state, R"(
       local env = setmetatable({marker = "parent"}, {__index = _G})
@@ -264,7 +301,10 @@ int main()
     Assert(res == "parent", "a coroutine created inside a coroutine inherits its parent's globals", res);
   }
 
-  // 6c. lua_State::MemberConstruct restores a coroutine from a save with no wrapper.
+  TEST_F(
+    Existing_Coroutine,
+    RestoredWithoutWrapper
+  )
   {
     lua_State* const L = state.GetCState();
     const char* const body = "return CurrentThread() == test_restored";
@@ -284,7 +324,10 @@ int main()
     Assert(res == "true true", "a coroutine without a wrapper can call engine functions after a resume", res);
   }
 
-  // 7. Garbage collection of coroutines: weak tables and finalizer tracking
+  TEST_F(
+    Existing_Coroutine,
+    GarbageCollectionWeakTables
+  )
   {
     const std::string res = RunLua(state, R"(
       -- Verify with weak-value and weak-key tables that unreferenced coroutines
@@ -381,7 +424,10 @@ int main()
     Assert(res == "ok", "coroutine collection in weak tables (values and keys) and stack object cleanup", res);
   }
 
-  // 8. C++ level verification of intrusive thread GC list (rootgc1)
+  TEST_F(
+    Existing_Coroutine,
+    ThreadGcList
+  )
   {
     lua_State* const L = state.GetCState();
     const int baselineThreads = CountCoroutineThreads(L);
@@ -411,7 +457,10 @@ int main()
       collectgarbage()
       collectgarbage()
     )");
-    Assert(CountCoroutineThreads(L) == baselineThreads + 3, "rootgc1 frees exactly the 3 unreferenced coroutines and retains the 3 referenced ones");
+    Assert(
+      CountCoroutineThreads(L) == baselineThreads + 3,
+      "rootgc1 frees exactly the 3 unreferenced coroutines and retains the 3 referenced ones"
+    );
 
     // Drop all remaining references and collect garbage
     RunLua(state, R"(
@@ -424,7 +473,10 @@ int main()
     Assert(clearedThreads == baselineThreads, "rootgc1 unlinks and frees all coroutine threads when unreferenced");
   }
 
-  // 9. Stress allocation and collection of coroutines
+  TEST_F(
+    Existing_Coroutine,
+    StressAllocation
+  )
   {
     lua_State* const L = state.GetCState();
     const int baselineThreads = CountCoroutineThreads(L);
@@ -445,8 +497,4 @@ int main()
     Assert(res == "ok", "stress test creating and abandoning 300 coroutines runs cleanly");
     Assert(CountCoroutineThreads(L) == baselineThreads, "all 300 abandoned coroutines swept from rootgc1");
   }
-
-  stage.Teardown();
-  std::printf("ALL COROUTINE TESTS PASSED\n");
-  return 0;
-}
+} // namespace

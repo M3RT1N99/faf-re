@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/containers/Rect2.h"
 #include "legacy/containers/Set.h"
 #include "legacy/containers/Vector.h"
@@ -13,6 +13,13 @@ namespace moho
   class CD3DBatchTexture;
   class CD3DDynamicTextureSheet;
   class ID3DTextureSheet;
+
+  /**
+   * Engine addition: `ren_TextureAtlasCache`. CD3DTextureBatcher::AddTexture runs for each glyph and
+   * strategic icon, and its tree search with a shared handle copy was 2 % of an uncapped frame. With
+   * this on it first looks at a small table of the last entries found, by texture address.
+   */
+  extern bool ren_TextureAtlasCache;
 
   /**
    * VFTABLE: none (plain helper owner)
@@ -26,7 +33,7 @@ namespace moho
   public:
     struct TextureAtlasEntry
     {
-      boost::shared_ptr<CD3DBatchTexture> mTexture; // +0x00
+      std::shared_ptr<CD3DBatchTexture> mTexture;   // +0x00
       gpg::Rect2f mUvRect;                          // +0x08
     };
 
@@ -41,10 +48,10 @@ namespace moho
       [[nodiscard]] bool operator()(const TextureAtlasEntry& lhs, const TextureAtlasEntry& rhs) const noexcept;
     };
 
-    using AvailableRectVector = msvc8::vector<gpg::Rect2i>;
-    using DynamicTextureSheetHandle = boost::shared_ptr<CD3DDynamicTextureSheet>;
-    using TextureAtlasSet = msvc8::set<TextureAtlasEntry, TextureAtlasEntryLess>;
-    using PixelByteVector = msvc8::vector<std::uint8_t>;
+    using AvailableRectVector = fa::vector<gpg::Rect2i>;
+    using DynamicTextureSheetHandle = std::shared_ptr<CD3DDynamicTextureSheet>;
+    using TextureAtlasSet = fa::set<TextureAtlasEntry, TextureAtlasEntryLess>;
+    using PixelByteVector = fa::vector<std::uint8_t>;
 
     /**
      * Address: 0x00448A60 (FUN_00448A60)
@@ -54,6 +61,12 @@ namespace moho
      * backing store, and creates one dynamic texture sheet.
      */
     CD3DTextureBatcher();
+
+    /**
+     * Engine addition: the same atlas at another size (a multiple of 4 in both directions). The
+     * terrain splat atlas uses 2048x2048 (`ren_SplatAtlasFix`, CWldSplat.h).
+     */
+    CD3DTextureBatcher(std::int32_t width, std::int32_t height);
 
     /**
      * Address: 0x00448B60 (FUN_00448B60)
@@ -70,7 +83,7 @@ namespace moho
      * Returns cached UVs for one batch texture or allocates new atlas space,
      * uploads the texture payload, and stores one new UV mapping.
      */
-    [[nodiscard]] const gpg::Rect2f* AddTexture(const boost::shared_ptr<CD3DBatchTexture>& texture);
+    [[nodiscard]] const gpg::Rect2f* AddTexture(const std::shared_ptr<CD3DBatchTexture>& texture);
 
     /**
      * Address: 0x00448E50 (FUN_00448E50)
@@ -88,7 +101,7 @@ namespace moho
      * Uploads dirty atlas bytes to the dynamic texture and returns the retained
      * sheet handle as `ID3DTextureSheet`.
      */
-    [[nodiscard]] boost::shared_ptr<ID3DTextureSheet> GetCompositeTexture();
+    [[nodiscard]] std::shared_ptr<ID3DTextureSheet> GetCompositeTexture();
 
   private:
     /**
@@ -129,11 +142,17 @@ namespace moho
     PixelByteVector mPixels;                // +0x30
   };
 
-  static_assert(sizeof(CD3DTextureBatcher::TextureAtlasEntry) == 0x18, "CD3DTextureBatcher::TextureAtlasEntry size must be 0x18");
+  static_assert(
+    sizeof(CD3DTextureBatcher::TextureAtlasEntry) == 0x18,
+    "CD3DTextureBatcher::TextureAtlasEntry size must be 0x18"
+  );
   static_assert(offsetof(CD3DTextureBatcher, mWidth) == 0x00, "CD3DTextureBatcher::mWidth offset must be 0x00");
   static_assert(offsetof(CD3DTextureBatcher, mHeight) == 0x04, "CD3DTextureBatcher::mHeight offset must be 0x04");
   static_assert(offsetof(CD3DTextureBatcher, mRects) == 0x08, "CD3DTextureBatcher::mRects offset must be 0x08");
-  static_assert(offsetof(CD3DTextureBatcher, mDynTexSheet) == 0x18, "CD3DTextureBatcher::mDynTexSheet offset must be 0x18");
+  static_assert(
+    offsetof(CD3DTextureBatcher, mDynTexSheet) == 0x18,
+    "CD3DTextureBatcher::mDynTexSheet offset must be 0x18"
+  );
   static_assert(offsetof(CD3DTextureBatcher, mMap) == 0x20, "CD3DTextureBatcher::mMap offset must be 0x20");
   static_assert(offsetof(CD3DTextureBatcher, mDirty) == 0x2C, "CD3DTextureBatcher::mDirty offset must be 0x2C");
   static_assert(offsetof(CD3DTextureBatcher, mPixels) == 0x30, "CD3DTextureBatcher::mPixels offset must be 0x30");

@@ -9,6 +9,7 @@
 #include "moho/render/textures/CD3DBatchTexture.h"
 #include "moho/resource/RResId.h"
 #include "moho/resource/blueprints/RBlueprint.h"
+#include "moho/sim/CWldSessionLoaderImpl.h"
 
 namespace moho
 {
@@ -29,12 +30,11 @@ namespace moho
    * Runs base blueprint construction and seeds entity-blueprint physical,
    * footprint, life-bar, selection, and strategic-icon defaults.
    */
-  REntityBlueprint::REntityBlueprint(RRuleGameRules* const owner, const RResId& resId)
-    : mOwner(nullptr)
-    , mBlueprintId()
-    , mBlueprintLabel()
-    , mSource()
-    , mCategoryBitIndex(0)
+  REntityBlueprint::REntityBlueprint(
+    RRuleGameRules* const owner,
+    const RResId& resId
+  )
+    : RBlueprint(owner, resId)
     , mCategories()
     , mScriptModule()
     , mScriptClass()
@@ -77,24 +77,7 @@ namespace moho
     , mStrategicIconSelected()
     , mStrategicIconOver()
     , mStrategicIconSelectedOver()
-  {
-    if (owner) {
-      // The binary runs RBlueprint's constructor on this very object, whose
-      // prefix is the base sub-object. Building a temporary base here and
-      // copying out of it counted an extra instance and, worse, ran the base
-      // destructor on an object whose vtable word was still null.
-      std::int32_t blueprintOrdinal = 0;
-      RBlueprint::InitIdentity(owner, resId, mBlueprintId, blueprintOrdinal);
-      mOwner = owner;
-      mCategoryBitIndex = static_cast<std::uint32_t>(blueprintOrdinal);
-    } else {
-      mOwner = nullptr;
-      mBlueprintId.clear();
-      mBlueprintLabel.clear();
-      mSource.clear();
-      mCategoryBitIndex = 0;
-    }
-  }
+  {}
 
   /**
    * Address: 0x00511E80 (FUN_00511E80)
@@ -110,20 +93,18 @@ namespace moho
    */
   REntityBlueprint::~REntityBlueprint()
   {
-    // 0x0051203A calls Moho::RBlueprint::~RBlueprint() -- the base-destructor
-    // call the compiler emits because REntityBlueprint derives from
-    // RBlueprint in the binary. This class repeats that header rather than
-    // inheriting it; the one thing that destructor does which the members do
-    // not do for themselves is give back the RBlueprint instance count, and
-    // the InstanceCounter<RBlueprint> base does that.
+    // 0x0051203A calls Moho::RBlueprint::~RBlueprint(): the base destructor,
+    // which the compiler emits after this body.
   }
 
   namespace
   {
     // 0x005120A5..0x005120BC: the inlined float ceil; the low byte is stored.
-    [[nodiscard]] std::uint8_t RoundExtentUpToCellCount(const float extent) noexcept
+    [[nodiscard]] std::uint8_t RoundExtentUpToCellCount(
+      const float extent
+    ) noexcept
     {
-      return static_cast<std::uint8_t>(msvc8::CeilToIntX87(extent));
+      return static_cast<std::uint8_t>(fa::CeilToIntX87(extent));
     }
 
     /** Where a non-absolute `StrategicIconName` is resolved from. */
@@ -146,9 +127,9 @@ namespace moho
      * back by value here, which is the same net result now that
      * `CD3DBatchTexture::FromFile` returns one directly.
      */
-    [[nodiscard]] boost::shared_ptr<moho::CD3DBatchTexture> LoadStrategicIconTexture(
-      const msvc8::string& iconPath,
-      const msvc8::string& variantLabel
+    [[nodiscard]] std::shared_ptr<moho::CD3DBatchTexture> LoadStrategicIconTexture(
+      const fa::string& iconPath,
+      const fa::string& variantLabel
     )
     {
       // Engine addition (plan WPL.4): the texture is the client's
@@ -156,7 +137,7 @@ namespace moho
       if (moho::sBatchTextureFromFile == nullptr) {
         return {};
       }
-      boost::shared_ptr<moho::CD3DBatchTexture> icon = moho::sBatchTextureFromFile(iconPath.c_str(), 0u);
+      std::shared_ptr<moho::CD3DBatchTexture> icon = moho::sBatchTextureFromFile(iconPath.c_str(), 0u);
       if (!icon) {
         gpg::Logf("Failed to load %s icon %s", variantLabel.c_str(), iconPath.c_str());
       }
@@ -206,14 +187,17 @@ namespace moho
       return;
     }
 
-    const msvc8::string iconBasePath = msvc8::string(kStrategicIconDirectory) + mStrategicIconName;
+    // Engine addition (wld_EarlyCommandLineSession): an early load's rules can get here while the app is
+    // still creating its graphics device, which the icon textures below need.
+    WLD_WaitForDeviceUse();
 
-    mStrategicIconRest = LoadStrategicIconTexture(iconBasePath + "_rest.dds", msvc8::string("'rest'"));
-    mStrategicIconSelected =
-      LoadStrategicIconTexture(iconBasePath + "_selected.dds", msvc8::string("'selected'"));
-    mStrategicIconOver = LoadStrategicIconTexture(iconBasePath + "_over.dds", msvc8::string("'over'"));
+    const fa::string iconBasePath = fa::string(kStrategicIconDirectory) + mStrategicIconName;
+
+    mStrategicIconRest = LoadStrategicIconTexture(iconBasePath + "_rest.dds", fa::string("'rest'"));
+    mStrategicIconSelected = LoadStrategicIconTexture(iconBasePath + "_selected.dds", fa::string("'selected'"));
+    mStrategicIconOver = LoadStrategicIconTexture(iconBasePath + "_over.dds", fa::string("'over'"));
     mStrategicIconSelectedOver =
-      LoadStrategicIconTexture(iconBasePath + "_selectedover.dds", msvc8::string("'selected over'"));
+      LoadStrategicIconTexture(iconBasePath + "_selectedover.dds", fa::string("'selected over'"));
   }
 
   /**
@@ -237,11 +221,5 @@ namespace moho
   const RUnitBlueprint* REntityBlueprint::IsUnitBlueprint() const
   {
     return nullptr;
-  }
-
-  LuaPlus::LuaObject REntityBlueprint::GetLuaBlueprint(LuaPlus::LuaState* const state) const
-  {
-    const auto* const baseBlueprint = reinterpret_cast<const RBlueprint*>(this);
-    return baseBlueprint->GetLuaBlueprint(state);
   }
 } // namespace moho

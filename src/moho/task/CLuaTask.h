@@ -46,7 +46,7 @@ namespace moho
    * Pushes lua traceback text for the provided message and returns it.
    */
   [[nodiscard]]
-  msvc8::string SCR_Traceback(LuaPlus::LuaState* state, gpg::StrArg message);
+  fa::string SCR_Traceback(LuaPlus::LuaState* state, gpg::StrArg message);
 
   class MOHO_CLANG_EMPTY_BASE_LAYOUT CLuaTask : public CTask, public InstanceCounter<CLuaTask>
   {
@@ -92,9 +92,8 @@ namespace moho
      * Builds a new `CLuaTask` for an archive load and hands it back unowned; its
      * members are loaded over it afterwards.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x004CC2B0 (FUN_004CC2B0, Moho::CLuaTask::MemberDeserialize)
@@ -156,7 +155,8 @@ namespace moho
   static_assert(offsetof(CLuaTask, mLuaState) == 0x1C, "CLuaTask::mLuaState offset must be 0x1C");
   static_assert(offsetof(CLuaTask, mResumeArgCount) == 0x20, "CLuaTask::mResumeArgCount offset must be 0x20");
   static_assert(
-    offsetof(CLuaTask, mExecuteDestroyedFlag) == 0x24, "CLuaTask::mExecuteDestroyedFlag offset must be 0x24"
+    offsetof(CLuaTask, mExecuteDestroyedFlag) == 0x24,
+    "CLuaTask::mExecuteDestroyedFlag offset must be 0x24"
   );
   static_assert(sizeof(CLuaTaskTypeInfo) == 0x64, "CLuaTaskTypeInfo size must be 0x64");
 

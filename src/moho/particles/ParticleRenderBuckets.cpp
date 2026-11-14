@@ -7,6 +7,7 @@
 #include <limits>
 #include <new>
 #include <stdexcept>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -39,29 +40,29 @@ namespace
 
   struct SParticleInstance
   {
-    float posX = 0.0f;                 // +0x00
-    float posY = 0.0f;                 // +0x04
-    float posZ = 0.0f;                 // +0x08
-    float angle = 0.0f;                // +0x0C
-    float beginSize = 0.0f;            // +0x10
-    float sizeDeltaPerFrame = 0.0f;    // +0x14
-    float dirX = 0.0f;                 // +0x18
-    float dirY = 0.0f;                 // +0x1C
-    float dirZ = 0.0f;                 // +0x20
-    float rotationCurve = 0.0f;        // +0x24
-    float accelX = 0.0f;               // +0x28
-    float accelY = 0.0f;               // +0x2C
-    float accelZ = 0.0f;               // +0x30
-    float interop = 0.0f;              // +0x34
-    float lifetime = 0.0f;             // +0x38
-    float framerate = 0.0f;            // +0x3C
-    float value1 = 0.0f;               // +0x40
-    float textureSelection = 0.0f;     // +0x44
-    float rampSelection = 0.0f;        // +0x48
-    float value3 = 0.0f;               // +0x4C
-    float resistance = 0.0f;           // +0x50
-    float inverseResistance = 0.0f;    // +0x54
-    float inverseResistanceSq = 0.0f;  // +0x58
+    float posX = 0.0f;                // +0x00
+    float posY = 0.0f;                // +0x04
+    float posZ = 0.0f;                // +0x08
+    float angle = 0.0f;               // +0x0C
+    float beginSize = 0.0f;           // +0x10
+    float sizeDeltaPerFrame = 0.0f;   // +0x14
+    float dirX = 0.0f;                // +0x18
+    float dirY = 0.0f;                // +0x1C
+    float dirZ = 0.0f;                // +0x20
+    float rotationCurve = 0.0f;       // +0x24
+    float accelX = 0.0f;              // +0x28
+    float accelY = 0.0f;              // +0x2C
+    float accelZ = 0.0f;              // +0x30
+    float interop = 0.0f;             // +0x34
+    float lifetime = 0.0f;            // +0x38
+    float framerate = 0.0f;           // +0x3C
+    float value1 = 0.0f;              // +0x40
+    float textureSelection = 0.0f;    // +0x44
+    float rampSelection = 0.0f;       // +0x48
+    float value3 = 0.0f;              // +0x4C
+    float resistance = 0.0f;          // +0x50
+    float inverseResistance = 0.0f;   // +0x54
+    float inverseResistanceSq = 0.0f; // +0x58
   };
 
   static_assert(sizeof(SParticleInstance) == 0x5C, "SParticleInstance size must be 0x5C");
@@ -78,32 +79,6 @@ namespace
   ) noexcept
   {
     return segmentBuffer.maxSegments;
-  }
-
-  /**
-   * Address: 0x004987C0 (FUN_004987C0, sub_4987C0)
-   *
-   * What it does:
-   * Recreates one vertex-sheet slot from device resources with fixed stream
-   * usage token `1`, releasing the replaced sheet when the pointer changes.
-   */
-  moho::ID3DVertexSheet* RecreateVertexSheetWithUsageTokenOne(
-    moho::ID3DVertexSheet*& vertexSheet,
-    moho::CD3DVertexFormat* const vertexFormat,
-    const std::int32_t streamFrequencyToken
-  )
-  {
-    moho::CD3DDevice* const device = moho::D3D_GetDevice();
-    moho::ID3DDeviceResources* const resources = device->GetResources();
-    moho::ID3DVertexSheet* const newSheet = resources->NewVertexSheet(1U, streamFrequencyToken, vertexFormat);
-
-    moho::ID3DVertexSheet* const oldSheet = vertexSheet;
-    if (newSheet != oldSheet && oldSheet != nullptr) {
-      delete oldSheet;
-    }
-
-    vertexSheet = newSheet;
-    return vertexSheet;
   }
 
   /**
@@ -182,15 +157,13 @@ namespace
     (void)device->DrawTriangleList(&vertexSheetView, &indexSheetView, &primitiveType);
   }
 
-  constexpr std::uint8_t kTrailSegmentPoolColorRed = 0U;
-  constexpr std::uint8_t kTrailSegmentPoolColorBlack = 1U;
-
-
   [[nodiscard]] bool AppendInterval(
-    moho::SParticleRenderWorkItem& workItem, const float beginFrame, const float lifeFrames
+    moho::SParticleRenderWorkItem& workItem,
+    const float beginFrame,
+    const float lifeFrames
   )
   {
-    // `msvc8::vector<SParticleRenderInterval>::push_back` (0x00496950, cited on Vector.h).
+    // `fa::vector<SParticleRenderInterval>::push_back` (0x00496950, cited on Vector.h).
     const moho::SParticleRenderInterval intervalValue{beginFrame, lifeFrames};
     workItem.mIntervals.push_back(intervalValue);
     return true;
@@ -205,15 +178,15 @@ namespace
    */
   struct STrailVertex
   {
-    Wm3::Vector3<float> position;   // +0x00  the ribbon end this vertex sits on
-    Wm3::Vector3<float> tangent;    // +0x0C  that end's tangent, negated on one side
-    float age = 0.0f;               // +0x18  that end's age in frames
-    float lifetime = 0.0f;          // +0x1C  SWorldTrail::mLifetime
-    float texU = 0.0f;              // +0x20  that end's texture coordinate
-    float size = 0.0f;              // +0x24  SWorldTrail::mSize
-    float reserved = 0.0f;          // +0x28  always zero
-    float texV = 0.0f;              // +0x2C  1 on the negated side, 0 on the other
-    float emitterAge = 0.0f;        // +0x30  SWorldTrail::mEmitterAge
+    Wm3::Vector3<float> position; // +0x00  the ribbon end this vertex sits on
+    Wm3::Vector3<float> tangent;  // +0x0C  that end's tangent, negated on one side
+    float age = 0.0f;             // +0x18  that end's age in frames
+    float lifetime = 0.0f;        // +0x1C  SWorldTrail::mLifetime
+    float texU = 0.0f;            // +0x20  that end's texture coordinate
+    float size = 0.0f;            // +0x24  SWorldTrail::mSize
+    float reserved = 0.0f;        // +0x28  always zero
+    float texV = 0.0f;            // +0x2C  1 on the negated side, 0 on the other
+    float emitterAge = 0.0f;      // +0x30  SWorldTrail::mEmitterAge
   };
 
   static_assert(sizeof(STrailVertex) == 0x34, "STrailVertex size must be 0x34");
@@ -235,16 +208,19 @@ namespace
    * so the shader offsets each vertex along `tangent x view` by `size` and
    * interpolates `texU` between the ends.
    */
-  void PackTrailSegmentQuadVertices(STrailVertex* const outVertices, const moho::SWorldTrail& trail)
+  void PackTrailSegmentQuadVertices(
+    STrailVertex* const outVertices,
+    const moho::SWorldTrail& trail
+  )
   {
     const auto emit = [&trail, outVertices](
-      const std::size_t index,
-      const Wm3::Vector3<float>& position,
-      const Wm3::Vector3<float>& tangent,
-      const float age,
-      const float texU,
-      const float texV
-    ) noexcept {
+                        const std::size_t index,
+                        const Wm3::Vector3<float>& position,
+                        const Wm3::Vector3<float>& tangent,
+                        const float age,
+                        const float texU,
+                        const float texV
+                      ) noexcept {
       STrailVertex& vertex = outVertices[index];
       vertex.position = position;
       vertex.tangent = tangent;
@@ -268,23 +244,6 @@ namespace
     emit(3U, trail.mStartPos, startTangent, trail.mStartAge, trail.mTexCoordStart, 0.0f);
   }
 
-
-
-  /**
-   * Address: 0x00497C70 (FUN_00497C70, sub_497C70)
-   *
-   * What it does:
-   * Writes one pointer-sized value to caller output storage.
-   */
-  const void** WritePointerToOutputSlot(
-    const void** const outPointer,
-    const void* const value
-  ) noexcept
-  {
-    *outPointer = value;
-    return outPointer;
-  }
-
 } // namespace
 
 namespace moho
@@ -304,7 +263,7 @@ namespace moho
   {
     bucket.texture0.reset();
     bucket.texture1.reset();
-    bucket.tag = msvc8::string{};
+    bucket.tag = fa::string{};
     bucket.blendMode = 0;
     bucket.zMode = 0;
     bucket.pendingParticles.clear();
@@ -325,7 +284,7 @@ namespace moho
     }
     bucket.texture1 = texture1;
 
-    bucket.tag.assign(particle.mTypeTag, 0U, msvc8::string::npos);
+    bucket.tag.assign(particle.mTypeTag, 0U, fa::string::npos);
     bucket.blendMode = static_cast<std::int32_t>(particle.mBlendMode);
     bucket.zMode = static_cast<std::int32_t>(particle.mZMode);
     return &bucket;
@@ -346,7 +305,7 @@ namespace moho
   {
     bucket.texture0.reset();
     bucket.texture1.reset();
-    bucket.tag = msvc8::string{};
+    bucket.tag = fa::string{};
     bucket.blendMode = 0;
     bucket.renderStartIndex = 0U;
     bucket.pendingTrails.clear();
@@ -374,105 +333,177 @@ namespace moho
   void MirrorUploadedParticles(ParticleBuffer& particleBuffer, std::uint32_t first, std::uint32_t count);
   void ForgetMirroredParticles(const ParticleBuffer& particleBuffer);
 
-  /**
-   * Address: 0x00493210 (FUN_00493210, sub_493210)
-   *
-   * What it does:
-   * Uploads a bounded batch of pending world particles into one particle
-   * work-item instance stream for the current frame.
-   */
+  int ren_ParticleLinearUpload = 0;
 
-  void UploadPendingParticlesIntoWorkItem(
-    SParticleRenderWorkItem& workItem,
-    const float frameDelta,
-    msvc8::vector<SWorldParticle>& pendingParticles
-  )
+  TConVar<int> gTConVar_ren_ParticleLinearUpload(
+    "ren_ParticleLinearUpload",
+    "Consume pending particle uploads without repeatedly moving the remaining vector. "
+    "0 (the default) keeps the original per-batch erase; 1 enables linear consumption. "
+    "Sampled once per upload call. Render-only; does not change particle pool limits.",
+    &ren_ParticleLinearUpload
+  );
+
+  namespace
   {
-    const std::size_t pendingCount = pendingParticles.size();
-    if (pendingCount == 0U) {
-      return;
+    // Engine addition: consume a bucket linearly instead of moving its whole
+    // remaining vector after every 200-particle upload. The public one-batch
+    // entry point uses the same guard and keeps its consumed-prefix contract.
+    struct ParticlePendingCursor
+    {
+      fa::vector<SWorldParticle>& particles;
+      // Capture the switch once: a callback cannot change cursor semantics mid-call.
+      const bool linearUpload;
+      std::size_t consumed = 0U;
+
+      // The legacy Vector3<float> assignment is three float assignments but
+      // lacks noexcept. Audit that body if the vector implementation changes;
+      // the whole-particle noexcept trait cannot express this source fact.
+      // A type requirement, unlike the retail-layout static_assert macro,
+      // also checks the owning members in normal x64 builds.
+      using SafeOwnedMembers = std::enable_if_t<
+        std::is_nothrow_move_assignable_v<decltype(SWorldParticle::mTexture)> &&
+        std::is_nothrow_move_assignable_v<decltype(SWorldParticle::mRampTexture)> &&
+        std::is_nothrow_move_assignable_v<decltype(SWorldParticle::mTypeTag)> &&
+        std::is_nothrow_destructible_v<SWorldParticle> &&
+        std::is_same_v<decltype(SWorldParticle::mPos), Wm3::Vector3<float>> &&
+        std::is_same_v<decltype(SWorldParticle::mDir), Wm3::Vector3<float>> &&
+        std::is_same_v<decltype(SWorldParticle::mAccel), Wm3::Vector3<float>>>;
+
+      ~ParticlePendingCursor() noexcept
+      {
+        if (consumed != 0U) {
+          (void)particles.erase(particles.begin(), particles.begin() + consumed);
+        }
+      }
+
+      void Consume(
+        const std::size_t count
+      ) noexcept
+      {
+        const std::size_t end = consumed + count;
+        // A short remaining tail is no more work to move than this batch was
+        // to upload. Keep the original erase path there. Across the whole
+        // call these moves total at most the number of uploaded particles.
+        if (!linearUpload || particles.size() - end <= count) {
+          (void)particles.erase(particles.begin(), particles.begin() + end);
+          consumed = 0U;
+          return;
+        }
+        // Keep the batch's texture references and tag allocations released
+        // before Unlock/Mirror, as with the old per-batch erase. Only empty
+        // payload storage remains until the guard compacts once on exit.
+        for (std::size_t index = consumed; index < consumed + count; ++index) {
+          auto& particle = particles[index];
+          particle.mTexture.reset();
+          particle.mRampTexture.reset();
+          particle.mTypeTag = fa::string{};
+        }
+        consumed += count;
+      }
+
+      void Discard() noexcept
+      {
+        particles.clear();
+        consumed = 0U;
+      }
+    };
+
+    void UploadPendingParticleRangeIntoWorkItem(
+      SParticleRenderWorkItem& workItem,
+      const float frameDelta,
+      ParticlePendingCursor& pending
+    )
+    {
+      auto& pendingParticles = pending.particles;
+      const std::size_t pendingCount = pendingParticles.size() - pending.consumed;
+      if (pendingCount == 0U) {
+        return;
+      }
+
+      const std::size_t intervalCount = workItem.mIntervals.size();
+
+      std::size_t maxUploadCount = pendingCount;
+      if (workItem.mIntervalCapacityHint > intervalCount) {
+        maxUploadCount =
+          std::min(maxUploadCount, static_cast<std::size_t>(workItem.mIntervalCapacityHint) - intervalCount);
+      } else {
+        maxUploadCount = 0U;
+      }
+
+      if (maxUploadCount == 0U) {
+        return;
+      }
+
+      auto* const particleBuffer = static_cast<ParticleBuffer*>(workItem.mParticleBuffer);
+      if (particleBuffer == nullptr) {
+        pending.Discard();
+        workItem.mIntervalCursor = 0U;
+        workItem.mRenderStartIndex = 0U;
+        workItem.mIntervals.clear();
+        return;
+      }
+
+      ParticleBuffer::Instanced* lockedInstances = nullptr;
+      if (workItem.mRenderStartIndex != 0U) {
+        lockedInstances =
+          particleBuffer->Lock(static_cast<int>(workItem.mRenderStartIndex), static_cast<int>(maxUploadCount));
+      } else {
+        lockedInstances = particleBuffer->Lock(static_cast<int>(maxUploadCount));
+      }
+
+      if (lockedInstances == nullptr) {
+        pending.Discard();
+        workItem.mIntervalCursor = 0U;
+        workItem.mRenderStartIndex = 0U;
+        workItem.mIntervals.clear();
+        return;
+      }
+
+      for (std::size_t index = 0U; index < maxUploadCount; ++index) {
+        SWorldParticle& particle = pendingParticles[pending.consumed + index];
+        particle.mInterop += frameDelta;
+        (void)AppendInterval(workItem, particle.mInterop, particle.mLifetime);
+
+        auto* const instance = reinterpret_cast<SParticleInstance*>(
+          reinterpret_cast<std::uint8_t*>(lockedInstances) + (index * sizeof(ParticleBuffer::Instanced))
+        );
+
+        instance->posX = particle.mPos.x;
+        instance->posY = particle.mPos.y;
+        instance->posZ = particle.mPos.z;
+        instance->angle = particle.mAngle;
+        instance->beginSize = particle.mBeginSize;
+        instance->sizeDeltaPerFrame = (particle.mEndSize - particle.mBeginSize) * (1.0f / particle.mLifetime);
+        instance->dirX = particle.mDir.x;
+        instance->dirY = particle.mDir.y;
+        instance->dirZ = particle.mDir.z;
+        instance->rotationCurve = particle.mRotationCurve;
+        instance->accelX = particle.mAccel.x;
+        instance->accelY = particle.mAccel.y;
+        instance->accelZ = particle.mAccel.z;
+        instance->interop = particle.mInterop;
+        instance->lifetime = particle.mLifetime;
+        instance->framerate = particle.mFramerate;
+        instance->value1 = particle.mValue1;
+        instance->textureSelection = particle.mTextureSelection;
+        instance->rampSelection = particle.mRampSelection;
+        instance->value3 = particle.mValue3;
+        instance->resistance = particle.mResistance;
+        // Engine change: retail divides with no guard (0x004933FE). A drag emitter with resistance 0
+        // (seraphim_airmoveexhaust_01_emit) then hands the shader an infinity, and Direct3D 12 and Vulkan
+        // turn its particles' positions into NaN and draw nothing; with 0 they stay where they were born.
+        instance->inverseResistance = particle.mResistance != 0.0f ? 1.0f / particle.mResistance : 0.0f;
+        instance->inverseResistanceSq = instance->inverseResistance * instance->inverseResistance;
+      }
+
+      const std::uint32_t uploadFirst = workItem.mRenderStartIndex;
+      workItem.mRenderStartIndex += static_cast<std::uint32_t>(maxUploadCount);
+      pending.Consume(maxUploadCount);
+      particleBuffer->UnlockInstanceBuffer();
+      // Engine addition (`ren_ParticleBatch`): keep a GPU-resident copy of what was just uploaded.
+      MirrorUploadedParticles(*particleBuffer, uploadFirst, static_cast<std::uint32_t>(maxUploadCount));
     }
-
-    const std::size_t intervalCount =
-      workItem.mIntervals.size();
-
-    std::size_t maxUploadCount = pendingCount;
-    if (workItem.mIntervalCapacityHint > intervalCount) {
-      maxUploadCount = std::min(maxUploadCount, static_cast<std::size_t>(workItem.mIntervalCapacityHint) - intervalCount);
-    } else {
-      maxUploadCount = 0U;
-    }
-
-    if (maxUploadCount == 0U) {
-      return;
-    }
-
-    auto* const particleBuffer = static_cast<ParticleBuffer*>(workItem.mParticleBuffer);
-    if (particleBuffer == nullptr) {
-      pendingParticles.clear();
-      workItem.mIntervalCursor = 0U;
-      workItem.mRenderStartIndex = 0U;
-      workItem.mIntervals.clear();
-      return;
-    }
-
-    ParticleBuffer::Instanced* lockedInstances = nullptr;
-    if (workItem.mRenderStartIndex != 0U) {
-      lockedInstances = particleBuffer->Lock(static_cast<int>(workItem.mRenderStartIndex), static_cast<int>(maxUploadCount));
-    } else {
-      lockedInstances = particleBuffer->Lock(static_cast<int>(maxUploadCount));
-    }
-
-    if (lockedInstances == nullptr) {
-      pendingParticles.clear();
-      workItem.mIntervalCursor = 0U;
-      workItem.mRenderStartIndex = 0U;
-      workItem.mIntervals.clear();
-      return;
-    }
-
-    for (std::size_t index = 0U; index < maxUploadCount; ++index) {
-      SWorldParticle& particle = pendingParticles[index];
-      particle.mInterop += frameDelta;
-      (void)AppendInterval(workItem, particle.mInterop, particle.mLifetime);
-
-      auto* const instance = reinterpret_cast<SParticleInstance*>(
-        reinterpret_cast<std::uint8_t*>(lockedInstances) + (index * sizeof(ParticleBuffer::Instanced))
-      );
-
-      instance->posX = particle.mPos.x;
-      instance->posY = particle.mPos.y;
-      instance->posZ = particle.mPos.z;
-      instance->angle = particle.mAngle;
-      instance->beginSize = particle.mBeginSize;
-      instance->sizeDeltaPerFrame = (particle.mEndSize - particle.mBeginSize) * (1.0f / particle.mLifetime);
-      instance->dirX = particle.mDir.x;
-      instance->dirY = particle.mDir.y;
-      instance->dirZ = particle.mDir.z;
-      instance->rotationCurve = particle.mRotationCurve;
-      instance->accelX = particle.mAccel.x;
-      instance->accelY = particle.mAccel.y;
-      instance->accelZ = particle.mAccel.z;
-      instance->interop = particle.mInterop;
-      instance->lifetime = particle.mLifetime;
-      instance->framerate = particle.mFramerate;
-      instance->value1 = particle.mValue1;
-      instance->textureSelection = particle.mTextureSelection;
-      instance->rampSelection = particle.mRampSelection;
-      instance->value3 = particle.mValue3;
-      instance->resistance = particle.mResistance;
-      instance->inverseResistance = 1.0f / particle.mResistance;
-      instance->inverseResistanceSq = instance->inverseResistance * instance->inverseResistance;
-    }
-
-    const std::uint32_t uploadFirst = workItem.mRenderStartIndex;
-    workItem.mRenderStartIndex += static_cast<std::uint32_t>(maxUploadCount);
-    // `erase(first, last)` (0x004956B0, cited on Vector.h): the uploaded prefix goes.
-    (void)pendingParticles.erase(pendingParticles.begin(), pendingParticles.begin() + maxUploadCount);
-    particleBuffer->UnlockInstanceBuffer();
-    // Engine addition (`ren_ParticleBatch`): keep a GPU-resident copy of what was just uploaded.
-    MirrorUploadedParticles(*particleBuffer, uploadFirst, static_cast<std::uint32_t>(maxUploadCount));
-  }
+  } // namespace
 
   /**
    * Address: 0x00493720 (FUN_00493720, sub_493720)
@@ -481,7 +512,9 @@ namespace moho
    * Returns active particle work-item buffers to the owner pool and destroys
    * the work-item objects.
    */
-  void RecycleAndDestroyParticleBucketWorkItems(SParticleRenderBucket& bucket)
+  void RecycleAndDestroyParticleBucketWorkItems(
+    SParticleRenderBucket& bucket
+  )
   {
     for (SParticleRenderWorkItem* const workItem : bucket.activeWorkItems) {
       if (workItem == nullptr) {
@@ -501,7 +534,9 @@ namespace moho
    * Releases one particle render bucket runtime lane including key state,
    * pending payload lanes, and active work-item lanes.
    */
-  void DestroyParticleRenderBucket(SParticleRenderBucket& bucket)
+  void DestroyParticleRenderBucket(
+    SParticleRenderBucket& bucket
+  )
   {
     RecycleAndDestroyParticleBucketWorkItems(bucket);
     // The two vectors' `_Tidy` (0x004972E0 for the particles, cited on Vector.h).
@@ -520,7 +555,9 @@ namespace moho
    * Returns active trail work-item segment buffers to the owner pool and
    * destroys the work-item objects.
    */
-  void RecycleAndDestroyTrailBucketWorkItems(STrailRenderBucket& bucket)
+  void RecycleAndDestroyTrailBucketWorkItems(
+    STrailRenderBucket& bucket
+  )
   {
     for (SParticleRenderWorkItem* const workItem : bucket.activeWorkItems) {
       if (workItem == nullptr) {
@@ -544,7 +581,9 @@ namespace moho
    * Releases one trail render bucket runtime lane including key state,
    * pending trail payload lanes, and active work-item lanes.
    */
-  void DestroyTrailRenderBucket(STrailRenderBucket& bucket)
+  void DestroyTrailRenderBucket(
+    STrailRenderBucket& bucket
+  )
   {
     RecycleAndDestroyTrailBucketWorkItems(bucket);
     // The two vectors' `_Tidy` (0x00497490 for the trails: each trail's
@@ -564,13 +603,17 @@ namespace moho
    * Advances active particle work items to the target frame and compacts the
    * active lane while recycling expired entries.
    */
-  void PruneExpiredParticleBucketWorkItems(SParticleRenderBucket& bucket, const float frameValue)
+  void PruneExpiredParticleBucketWorkItems(
+    SParticleRenderBucket& bucket,
+    const float frameValue
+  )
   {
     if (bucket.activeWorkItems.empty()) {
       return;
     }
     SParticleRenderWorkItem** writeIt = bucket.activeWorkItems.begin();
-    for (SParticleRenderWorkItem** readIt = bucket.activeWorkItems.begin(); readIt != bucket.activeWorkItems.end(); ++readIt) {
+    for (SParticleRenderWorkItem** readIt = bucket.activeWorkItems.begin(); readIt != bucket.activeWorkItems.end();
+         ++readIt) {
       SParticleRenderWorkItem* const workItem = *readIt;
       if (workItem == nullptr) {
         continue;
@@ -598,35 +641,37 @@ namespace moho
    * Ensures active work items exist for pending particle payload and uploads
    * data batches until payload is consumed or pool capacity is exhausted.
    */
-  bool EnsureAndFillParticleBucketWorkItems(SParticleRenderBucket& bucket, const float frameDelta)
+  bool EnsureAndFillParticleBucketWorkItems(
+    SParticleRenderBucket& bucket,
+    const float frameDelta
+  )
   {
+    ParticlePendingCursor pending{bucket.pendingParticles, ren_ParticleLinearUpload > 0};
     const std::size_t workItemCount = bucket.activeWorkItems.size();
     if (workItemCount != 0U) {
       SParticleRenderWorkItem* const tailWorkItem = bucket.activeWorkItems.back();
       if (tailWorkItem != nullptr) {
-        UploadPendingParticlesIntoWorkItem(*tailWorkItem, frameDelta, bucket.pendingParticles);
+        UploadPendingParticleRangeIntoWorkItem(*tailWorkItem, frameDelta, pending);
       }
     }
 
-    while (!bucket.pendingParticles.empty()) {
+    while (pending.consumed < bucket.pendingParticles.size()) {
       ParticleBuffer* const pooledBuffer = bucket.owner->AcquireParticleBuffer();
       if (pooledBuffer == nullptr) {
         // FAF hot-patch (FA-Binary-Patches CameraPerf): the "Particle cap exceeded" log call
         // at 0x00493A9B is NOPed out; the excess is still discarded.
-        bucket.pendingParticles.clear();
+        pending.Discard();
         return false;
       }
 
       auto* const newWorkItem = static_cast<SParticleRenderWorkItem*>(::operator new(sizeof(SParticleRenderWorkItem)));
       (void)InitializeParticleRenderWorkItem(
-        *newWorkItem,
-        static_cast<std::uint32_t>(pooledBuffer->mMaxParticles),
-        pooledBuffer
+        *newWorkItem, static_cast<std::uint32_t>(pooledBuffer->mMaxParticles), pooledBuffer
       );
 
       bucket.activeWorkItems.push_back(newWorkItem);
 
-      UploadPendingParticlesIntoWorkItem(*newWorkItem, frameDelta, bucket.pendingParticles);
+      UploadPendingParticleRangeIntoWorkItem(*newWorkItem, frameDelta, pending);
     }
 
     return true;
@@ -638,7 +683,8 @@ namespace moho
     "ren_ParticleBatch",
     "Draw each particle bucket with one instanced draw: the GPU copies every pooled 200-particle buffer's "
     "live range, in the original draw order, into one instance buffer first. Same particles, same order, "
-    "same blending. -1 (auto, the default) turns it on where the backend has verified this path, 1 wherever it can, 0 never.",
+    "same blending. -1 (auto, the default) turns it on where the backend has verified this path, 1 wherever it can, 0 "
+    "never.",
     &ren_ParticleBatch
   );
 
@@ -659,12 +705,14 @@ namespace moho
     struct ParticleGatherBuffer
     {
       gpg::gal::Device* mDevice = nullptr;
-      boost::shared_ptr<gpg::gal::VertexBuffer> mBuffer;
+      std::shared_ptr<gpg::gal::VertexBuffer> mBuffer;
       std::uint32_t mCapacity = 0U;
       std::uint32_t mCursor = 0U;
 
       /** The first instance of a free range of `count` instances, or -1. */
-      [[nodiscard]] int Reserve(const std::uint32_t count)
+      [[nodiscard]] int Reserve(
+        const std::uint32_t count
+      )
       {
         gpg::gal::Device* const device = gpg::gal::Device::GetInstance();
         if (device != mDevice) {
@@ -677,7 +725,8 @@ namespace moho
           context.usage_ = 1U; // default usage: written by GPU copies only
           context.stride_ = sizeof(ParticleBuffer::Instanced);
           context.vertexCount_ = std::max<std::uint32_t>(16384U, count * 2U);
-          mBuffer = device != nullptr ? device->CreateVertexBuffer(&context) : boost::shared_ptr<gpg::gal::VertexBuffer>();
+          mBuffer =
+            device != nullptr ? device->CreateVertexBuffer(&context) : std::shared_ptr<gpg::gal::VertexBuffer>();
           mCapacity = mBuffer != nullptr ? context.vertexCount_ : 0U;
           mCursor = 0U;
           if (count > mCapacity) {
@@ -715,7 +764,7 @@ namespace moho
       static constexpr std::uint32_t kSlotInstances = 256U;
 
       gpg::gal::Device* mDevice = nullptr;
-      boost::shared_ptr<gpg::gal::VertexBuffer> mBuffer;
+      std::shared_ptr<gpg::gal::VertexBuffer> mBuffer;
       std::unordered_map<const ParticleBuffer*, std::uint32_t> mSlotOf;
       std::unordered_map<const ParticleBuffer*, bool> mMirrored;
       std::vector<std::uint32_t> mFreeSlots; // slots given back by buffers returned to the pool
@@ -740,7 +789,9 @@ namespace moho
       }
 
       /** The first store instance of `particleBuffer`'s slot, or -1. */
-      [[nodiscard]] int SlotBase(const ParticleBuffer& particleBuffer)
+      [[nodiscard]] int SlotBase(
+        const ParticleBuffer& particleBuffer
+      )
       {
         if (particleBuffer.mMaxParticles > static_cast<int>(kSlotInstances)) {
           return -1;
@@ -763,7 +814,9 @@ namespace moho
       }
 
       /** `particleBuffer` went back to the pool: its slot is free and its next fill starts unmirrored. */
-      void Release(const ParticleBuffer& particleBuffer)
+      void Release(
+        const ParticleBuffer& particleBuffer
+      )
       {
         const auto found = mSlotOf.find(&particleBuffer);
         if (found != mSlotOf.end()) {
@@ -786,13 +839,18 @@ namespace moho
       static const int sMode = [] {
         char value[8] = {};
         std::size_t length = 0U;
-        return (::getenv_s(&length, value, sizeof(value), "FAF_PARTICLE_BATCH_DIAG") == 0 && length != 0U) ? std::atoi(value) : 0;
+        return (::getenv_s(&length, value, sizeof(value), "FAF_PARTICLE_BATCH_DIAG") == 0 && length != 0U)
+          ? std::atoi(value)
+          : 0;
       }();
       return sMode;
     }
 
     /** `RenderParticleBucket`'s drawn range of one work item, with `ParticleBuffer::Render`'s own clamp. */
-    [[nodiscard]] int DrawnParticleCount(const SParticleRenderWorkItem& workItem, const ParticleBuffer& particleBuffer)
+    [[nodiscard]] int DrawnParticleCount(
+      const SParticleRenderWorkItem& workItem,
+      const ParticleBuffer& particleBuffer
+    )
     {
       const std::uint32_t startIndex = workItem.mIntervalCursor;
       const std::uint32_t renderCount =
@@ -807,7 +865,9 @@ namespace moho
      * the gather buffer, and the bucket is drawn once from it. Returns false,
      * having drawn nothing, when the backend cannot copy buffers.
      */
-    bool RenderParticleBucketBatched(SParticleRenderBucket& bucket)
+    bool RenderParticleBucketBatched(
+      SParticleRenderBucket& bucket
+    )
     {
       gpg::gal::Device* const device = gpg::gal::Device::GetInstance();
       if (device == nullptr) {
@@ -823,7 +883,9 @@ namespace moho
           auto* const particleBuffer = static_cast<ParticleBuffer*>(workItem->mParticleBuffer);
           const int count = DrawnParticleCount(*workItem, *particleBuffer);
           if (count > 0 && particleBuffer->mInstanceVertexBuffer != nullptr) {
-            particleBuffer->RenderInstances(particleBuffer->mInstanceVertexBuffer, count, static_cast<int>(workItem->mIntervalCursor));
+            particleBuffer->RenderInstances(
+              particleBuffer->mInstanceVertexBuffer, count, static_cast<int>(workItem->mIntervalCursor)
+            );
           }
         }
         return true;
@@ -864,17 +926,24 @@ namespace moho
         }
         // From the GPU-resident mirror when it holds this buffer, else from the buffer itself.
         const auto mirrored = sParticleMirror.mMirrored.find(particleBuffer);
-        const int slotBase = (mirrored != sParticleMirror.mMirrored.end() && mirrored->second && sParticleMirror.Ready())
+        const int slotBase =
+          (mirrored != sParticleMirror.mMirrored.end() && mirrored->second && sParticleMirror.Ready())
           ? sParticleMirror.SlotBase(*particleBuffer)
           : -1;
         const bool copied = slotBase >= 0
           ? device->CopyVertexBufferRegion(
-              *sParticleGather.mBuffer, (static_cast<std::uint32_t>(first) + written) * kStride, *sParticleMirror.mBuffer,
-              (static_cast<std::uint32_t>(slotBase) + workItem->mIntervalCursor) * kStride, static_cast<std::uint32_t>(count) * kStride
+              *sParticleGather.mBuffer,
+              (static_cast<std::uint32_t>(first) + written) * kStride,
+              *sParticleMirror.mBuffer,
+              (static_cast<std::uint32_t>(slotBase) + workItem->mIntervalCursor) * kStride,
+              static_cast<std::uint32_t>(count) * kStride
             )
           : device->CopyVertexBufferRegion(
-              *sParticleGather.mBuffer, (static_cast<std::uint32_t>(first) + written) * kStride,
-              *particleBuffer->mInstanceVertexBuffer, workItem->mIntervalCursor * kStride, static_cast<std::uint32_t>(count) * kStride
+              *sParticleGather.mBuffer,
+              (static_cast<std::uint32_t>(first) + written) * kStride,
+              *particleBuffer->mInstanceVertexBuffer,
+              workItem->mIntervalCursor * kStride,
+              static_cast<std::uint32_t>(count) * kStride
             );
         if (!copied) {
           // Nothing drawn yet: the caller draws the buffers one by one.
@@ -897,14 +966,20 @@ namespace moho
    * Engine addition (`ren_ParticleBatch`): `particleBuffer` is about to go back to the pool, so its
    * mirror slot can serve the next buffer in use (see `ParticleMirrorStore`).
    */
-  void ForgetMirroredParticles(const ParticleBuffer& particleBuffer)
+  void ForgetMirroredParticles(
+    const ParticleBuffer& particleBuffer
+  )
   {
     if (!sParticleMirror.mSlotOf.empty() || !sParticleMirror.mMirrored.empty()) {
       sParticleMirror.Release(particleBuffer);
     }
   }
 
-  void MirrorUploadedParticles(ParticleBuffer& particleBuffer, const std::uint32_t first, std::uint32_t count)
+  void MirrorUploadedParticles(
+    ParticleBuffer& particleBuffer,
+    const std::uint32_t first,
+    std::uint32_t count
+  )
   {
     if (!ParticleBatchActive()) {
       // Not mirrored while the path is off: this upload would leave the slot stale.
@@ -935,8 +1010,11 @@ namespace moho
     }
     constexpr std::uint32_t kStride = sizeof(ParticleBuffer::Instanced);
     mirrored = gpg::gal::Device::GetInstance()->CopyVertexBufferRegion(
-      *sParticleMirror.mBuffer, (static_cast<std::uint32_t>(slotBase) + first) * kStride, *particleBuffer.mInstanceVertexBuffer,
-      first * kStride, count * kStride
+      *sParticleMirror.mBuffer,
+      (static_cast<std::uint32_t>(slotBase) + first) * kStride,
+      *particleBuffer.mInstanceVertexBuffer,
+      first * kStride,
+      count * kStride
     );
   }
 
@@ -947,7 +1025,11 @@ namespace moho
    * Selects the particle technique, then renders active particle work items in
    * reverse order when the current bucket is allowed to draw.
    */
-  bool RenderParticleBucket(SParticleRenderBucket& bucket, const float frameValue, const bool onlyTLight)
+  bool RenderParticleBucket(
+    SParticleRenderBucket& bucket,
+    const float frameValue,
+    const bool onlyTLight
+  )
   {
     PruneExpiredParticleBucketWorkItems(bucket, frameValue);
     (void)EnsureAndFillParticleBucketWorkItems(bucket, frameValue);
@@ -995,7 +1077,7 @@ namespace moho
   bool UploadPendingTrailsIntoWorkItem(
     SParticleRenderWorkItem& workItem,
     const float frameDelta,
-    msvc8::vector<SWorldTrail>& pendingTrails
+    fa::vector<SWorldTrail>& pendingTrails
   )
   {
     const std::size_t pendingCount = pendingTrails.size();
@@ -1003,12 +1085,12 @@ namespace moho
       return false;
     }
 
-    const std::size_t intervalCount =
-      workItem.mIntervals.size();
+    const std::size_t intervalCount = workItem.mIntervals.size();
 
     std::size_t maxUploadCount = pendingCount;
     if (workItem.mIntervalCapacityHint > intervalCount) {
-      maxUploadCount = std::min(maxUploadCount, static_cast<std::size_t>(workItem.mIntervalCapacityHint) - intervalCount);
+      maxUploadCount =
+        std::min(maxUploadCount, static_cast<std::size_t>(workItem.mIntervalCapacityHint) - intervalCount);
     } else {
       maxUploadCount = 0U;
     }
@@ -1029,9 +1111,7 @@ namespace moho
     void* lockedVertices = nullptr;
     if (workItem.mRenderStartIndex != 0U) {
       lockedVertices = LockTrailSegmentVertexRangeSubspan(
-        *segmentBuffer,
-        static_cast<int>(workItem.mRenderStartIndex),
-        static_cast<int>(maxUploadCount)
+        *segmentBuffer, static_cast<int>(workItem.mRenderStartIndex), static_cast<int>(maxUploadCount)
       );
     } else {
       lockedVertices = LockTrailSegmentVertexRangeFromStart(*segmentBuffer, static_cast<int>(maxUploadCount));
@@ -1073,7 +1153,10 @@ namespace moho
     (void)pendingTrails.erase(pendingTrails.begin(), pendingTrails.begin() + maxUploadCount);
 
     if (segmentBuffer->mappedVertexData != nullptr) {
-      if (moho::ID3DVertexStream* const vertexStream = segmentBuffer->vertexSheet->GetVertStream(0U); vertexStream != nullptr) {
+      if (
+        moho::ID3DVertexStream* const vertexStream = segmentBuffer->vertexSheet->GetVertStream(0U);
+        vertexStream != nullptr
+      ) {
         vertexStream->Unlock();
       }
       segmentBuffer->mappedVertexData = nullptr;
@@ -1089,13 +1172,17 @@ namespace moho
    * Advances active trail work items to the target frame and compacts the
    * active lane while recycling expired entries.
    */
-  void PruneExpiredTrailBucketWorkItems(STrailRenderBucket& bucket, const float frameValue)
+  void PruneExpiredTrailBucketWorkItems(
+    STrailRenderBucket& bucket,
+    const float frameValue
+  )
   {
     if (bucket.activeWorkItems.empty()) {
       return;
     }
     SParticleRenderWorkItem** writeIt = bucket.activeWorkItems.begin();
-    for (SParticleRenderWorkItem** readIt = bucket.activeWorkItems.begin(); readIt != bucket.activeWorkItems.end(); ++readIt) {
+    for (SParticleRenderWorkItem** readIt = bucket.activeWorkItems.begin(); readIt != bucket.activeWorkItems.end();
+         ++readIt) {
       SParticleRenderWorkItem* const workItem = *readIt;
       if (workItem == nullptr) {
         continue;
@@ -1125,7 +1212,10 @@ namespace moho
    * Ensures active trail work items exist for pending trail payloads and uploads
    * data batches until payload is consumed or pool capacity is exhausted.
    */
-  bool EnsureAndFillTrailBucketWorkItems(STrailRenderBucket& bucket, const float frameDelta)
+  bool EnsureAndFillTrailBucketWorkItems(
+    STrailRenderBucket& bucket,
+    const float frameDelta
+  )
   {
     const std::size_t workItemCount = bucket.activeWorkItems.size();
     if (workItemCount != 0U) {
@@ -1145,9 +1235,7 @@ namespace moho
       }
       auto* const newWorkItem = static_cast<SParticleRenderWorkItem*>(::operator new(sizeof(SParticleRenderWorkItem)));
       (void)InitializeParticleRenderWorkItem(
-        *newWorkItem,
-        GetTrailSegmentBufferMaxSegments(*pooledBuffer),
-        pooledBuffer
+        *newWorkItem, GetTrailSegmentBufferMaxSegments(*pooledBuffer), pooledBuffer
       );
 
       bucket.activeWorkItems.push_back(newWorkItem);
@@ -1165,7 +1253,11 @@ namespace moho
    * Selects the trail technique, then renders active trail work items in order
    * when the current bucket is allowed to draw.
    */
-  bool RenderTrailBucket(STrailRenderBucket& bucket, const float frameValue, const bool onlyTLight)
+  bool RenderTrailBucket(
+    STrailRenderBucket& bucket,
+    const float frameValue,
+    const bool onlyTLight
+  )
   {
     PruneExpiredTrailBucketWorkItems(bucket, frameValue);
     (void)EnsureAndFillTrailBucketWorkItems(bucket, frameValue);

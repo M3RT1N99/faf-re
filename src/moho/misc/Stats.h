@@ -4,10 +4,11 @@
 #include <cstdint>
 #if FAF_SERVER_MODE
 #include <functional>
+#include <vector>
 #endif
 
-#include "boost/mutex.h"
-#include "boost/scoped_ptr.h"
+#include "legacy/thread/Mutex.h"
+#include <memory>
 #include "gpg/core/containers/String.h"
 #include "gpg/core/reflection/Reflection.h"
 #include "legacy/containers/String.h"
@@ -17,7 +18,7 @@ namespace LuaPlus
 {
   class LuaState;
   class LuaObject;
-}
+} // namespace LuaPlus
 
 namespace moho
 {
@@ -41,7 +42,7 @@ namespace moho
   };
 
   template <>
-  class Stats<StatItem> : boost::noncopyable
+  class Stats<StatItem> : gpg::NonCopyable
   {
   public:
     using item_type = StatItem;
@@ -64,36 +65,35 @@ namespace moho
     virtual void Delete(const char* statPath);
 
     /**
-       * Address: 0x0040C200 (FUN_0040C200)
+     * Address: 0x0040C200 (FUN_0040C200)
      */
     [[nodiscard]] StatItem* GetItem(gpg::StrArg statPath, bool allowCreate);
 
     /**
-       * Address: 0x00417B60 (FUN_00417B60)
+     * Address: 0x00417B60 (FUN_00417B60)
      */
     [[nodiscard]] StatItem* GetFloatItem(gpg::StrArg statPath);
 
     /**
-       * Address: 0x00417C50 (FUN_00417C50)
+     * Address: 0x00417C50 (FUN_00417C50)
      */
     [[nodiscard]] StatItem* GetStringItem(gpg::StrArg statPath);
 
     /**
-       * Address: 0x00436290 (FUN_00436290)
+     * Address: 0x00436290 (FUN_00436290)
      */
     [[nodiscard]] StatItem* GetIntItem(gpg::StrArg statPath);
 
     static gpg::RType* sType;
 
-
   public:
     // The root item, owned: the destructor 0x00406600 tears down `mLock` and then
     // deletes it through this member, the reverse of their declaration order;
     // loads swap a new root in before the old one is deleted (0x00419DE0).
-    boost::scoped_ptr<StatItem> mItem; // +0x04
+    std::unique_ptr<StatItem> mItem; // +0x04
     // Built in place by the constructor (boost::mutex::mutex 0x00AC1A60 on
     // `this+8`): the lock handle, then the critical-section flag at +0x0C.
-    boost::mutex mLock; // +0x08
+    fa::mutex mLock; // +0x08
   };
 
   static_assert(offsetof(Stats<StatItem>, mItem) == 0x04, "Stats<StatItem>::mItem offset must be 0x04");
@@ -107,7 +107,13 @@ namespace moho
    * with its path as `GetItem` takes it ("Parent_Child"), holding the tree's lock throughout
    * (the sim adds items under it). A game server reads a unit's stats this way to send them.
    */
-  void STAT_VisitItems(Stats<StatItem>& stats, const std::function<void(const msvc8::string& path, StatItem& item)>& visit);
+  void
+  STAT_VisitItems(Stats<StatItem>& stats, const std::function<void(const fa::string& path, StatItem& item)>& visit);
+  /**
+   * Engine addition, server mode: the items `STAT_VisitItems` visits, in its order, without their paths: a server
+   * that read a tree once checks each beat whether its items are still the same ones before reading only values.
+   */
+  void STAT_CollectItems(Stats<StatItem>& stats, std::vector<StatItem*>& out);
 #endif
 
   /**
@@ -130,17 +136,17 @@ namespace moho
     ~EngineStats();
 
     /**
-      * Alias of FUN_00417B60 (non-canonical helper lane).
+     * Alias of FUN_00417B60 (non-canonical helper lane).
      */
     [[nodiscard]] StatItem* GetItem3(gpg::StrArg statPath);
 
     /**
-      * Alias of FUN_00417C50 (non-canonical helper lane).
+     * Alias of FUN_00417C50 (non-canonical helper lane).
      */
     [[nodiscard]] StatItem* GetItem_0(gpg::StrArg statPath);
 
     /**
-      * Alias of FUN_00436290 (non-canonical helper lane).
+     * Alias of FUN_00436290 (non-canonical helper lane).
      */
     [[nodiscard]] StatItem* GetItem2(gpg::StrArg statPath);
 
@@ -163,11 +169,11 @@ namespace moho
     [[nodiscard]] float EndLogging();
 
   public:
-    msvc8::string mLogFileName;   // +0x10
-    msvc8::string mResolvedLogFilePath; // +0x2C
-    std::int32_t mLogFrameCount;  // +0x48
-    std::uint8_t mIsLogging;      // +0x4C
-    std::uint8_t mPad4D[3];       // +0x4D
+    fa::string mLogFileName;         // +0x10
+    fa::string mResolvedLogFilePath; // +0x2C
+    std::int32_t mLogFrameCount;     // +0x48
+    std::uint8_t mIsLogging;         // +0x4C
+    std::uint8_t mPad4D[3];          // +0x4D
   };
 
   static_assert(offsetof(EngineStats, mLogFileName) == 0x10, "EngineStats::mLogFileName offset must be 0x10");
@@ -803,7 +809,7 @@ namespace moho
    * Address: 0x00BE8CF0 (FUN_00BE8CF0, dynamic initializer of the copy at 0x010C6290)
    * Address: 0x00C08A70 (FUN_00C08A70, that copy's atexit destructor)
    */
-  static boost::scoped_ptr<EngineStats> sEngineStats;
+  static std::unique_ptr<EngineStats> sEngineStats;
 
   /**
    * Address: 0x00408940 (FUN_00408940, Moho::GetEngineStats)
@@ -816,7 +822,7 @@ namespace moho
    * What it does:
    * Builds a local-time filename prefix as `YYYY-MM-DD.HH-MM`.
    */
-  [[nodiscard]] msvc8::string LOG_GenerateFilenamePrefix();
+  [[nodiscard]] fa::string LOG_GenerateFilenamePrefix();
 
   /**
    * Address: 0x00415E60 (FUN_00415E60, Moho::STAT_Frame)
@@ -843,7 +849,7 @@ namespace moho
    * Clears a stats subtree selected from the console argument vector and
    * forwards to the engine stats delete path.
    */
-  void CON_ClearStats(const msvc8::vector<msvc8::string>& args);
+  void CON_ClearStats(const fa::vector<fa::string>& args);
 
   /**
    * Address: 0x004163A0 (FUN_004163A0, Moho::CON_BeginLoggingStats)
@@ -852,7 +858,7 @@ namespace moho
    * Selects a logging file name from console args, resets the logging frame
    * counter, and enables stats logging.
    */
-  void CON_BeginLoggingStats(const msvc8::vector<msvc8::string>& args);
+  void CON_BeginLoggingStats(const fa::vector<fa::string>& args);
 
   /**
    * Address: 0x00415EC0 (FUN_00415EC0, Moho::CON_PrintStats)
@@ -860,7 +866,7 @@ namespace moho
    * What it does:
    * Exercises and prints a debug stats subtree from the console command lane.
    */
-  void CON_PrintStats(const msvc8::vector<msvc8::string>& args);
+  void CON_PrintStats(const fa::vector<fa::string>& args);
 
   /**
    * Address: 0x00834F90 (FUN_00834F90, Moho::ShowStats)
@@ -869,7 +875,7 @@ namespace moho
    * Imports `/lua/debug/EngineStats.lua` and calls its `Toggle` entry with
    * the requested stats mode token (default `"all"`).
    */
-  void ShowStats(const msvc8::vector<msvc8::string>& args);
+  void ShowStats(const fa::vector<fa::string>& args);
 
   /**
    * Address: 0x00835160 (FUN_00835160, Moho::ShowArmyStats)
@@ -878,7 +884,7 @@ namespace moho
    * Imports `/lua/debug/ArmyStats.lua` and calls its `Show` entry with army
    * index + display mode from console args (defaults: focused army + `"all"`).
    */
-  void ShowArmyStats(const msvc8::vector<msvc8::string>& args);
+  void ShowArmyStats(const fa::vector<fa::string>& args);
 
   /**
    * Address: 0x00416480 (FUN_00416480, Moho::CON_EndLoggingStats)
@@ -886,7 +892,7 @@ namespace moho
    * What it does:
    * Console end-logging entry that finalizes the active stats log.
    */
-  void CON_EndLoggingStats(const msvc8::vector<msvc8::string>& args);
+  void CON_EndLoggingStats(const fa::vector<fa::string>& args);
 
   /**
    * Address: 0x00416490 (FUN_00416490, cfunc_BeginLoggingStats)
@@ -940,26 +946,8 @@ namespace moho
    */
   [[nodiscard]] CScrLuaInitForm* func_EndLoggingStats_LuaFuncDef();
 
-  /**
-   * Address: 0x00BC3540 (FUN_00BC3540, register_BeginLoggingStats_LuaFuncDef)
-   *
-   * What it does:
-   * Startup thunk that forwards registration to
-   * `func_BeginLoggingStats_LuaFuncDef`.
-   */
-  void register_BeginLoggingStats_LuaFuncDef();
-
-  /**
-   * Address: 0x00BC3550 (FUN_00BC3550, register_EndLoggingStats_LuaFuncDef)
-   *
-   * What it does:
-   * Startup thunk that forwards registration to
-   * `func_EndLoggingStats_LuaFuncDef`.
-   */
-  [[nodiscard]] CScrLuaInitForm* register_EndLoggingStats_LuaFuncDef();
-
   template <>
-  class Stats<CArmyStatItem> : boost::noncopyable
+  class Stats<CArmyStatItem> : gpg::NonCopyable
   {
   public:
     using item_type = CArmyStatItem;
@@ -1012,17 +1000,16 @@ namespace moho
      * Address: 0x005953A0 (FUN_005953A0, token walk)
      */
     [[nodiscard]] static CArmyStatItem*
-    WalkTokenPath(CArmyStatItem* root, const msvc8::vector<msvc8::string>& tokens, bool allowCreate, bool* didCreate);
-
+    WalkTokenPath(CArmyStatItem* root, const fa::vector<fa::string>& tokens, bool allowCreate, bool* didCreate);
 
   public:
     // The root item, owned: the destructor 0x006FD850 tears down `mLock` and then
     // deletes it through this member, the reverse of their declaration order;
     // loads swap a new root in before the old one is deleted (0x00419DE0).
-    boost::scoped_ptr<CArmyStatItem> mItem; // +0x04
+    std::unique_ptr<CArmyStatItem> mItem; // +0x04
     // Built in place by the constructor (boost::mutex::mutex 0x00AC1A60 on
     // `this+8`): the lock handle, then the critical-section flag at +0x0C.
-    boost::mutex mLock; // +0x08
+    fa::mutex mLock; // +0x08
   };
 
   static_assert(offsetof(Stats<CArmyStatItem>, mItem) == 0x04, "Stats<CArmyStatItem>::mItem offset must be 0x04");

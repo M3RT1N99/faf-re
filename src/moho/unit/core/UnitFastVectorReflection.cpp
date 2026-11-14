@@ -59,31 +59,9 @@ namespace
     return cached;
   }
 
-  [[nodiscard]] gpg::RType* CachedFastVectorWeakPtrEntityType()
-  {
-    static gpg::RType* cached = nullptr;
-    if (!cached) {
-      cached = gpg::LookupRType(typeid(gpg::fastvector<moho::WeakPtr<moho::Entity>>));
-      if (!cached) {
-        cached = moho::register_FastVectorWeakPtrEntityType_00();
-      }
-    }
-    return cached;
-  }
-
-  [[nodiscard]] gpg::RType* CachedFastVectorReconBlipPointerType()
-  {
-    static gpg::RType* cached = nullptr;
-    if (!cached) {
-      cached = gpg::LookupRType(typeid(gpg::fastvector<moho::ReconBlip*>));
-      if (!cached) {
-        cached = moho::register_FastVectorReconBlipPtrType_00();
-      }
-    }
-    return cached;
-  }
-
-  [[nodiscard]] gpg::RRef MakeWeakPtrEntityRef(moho::WeakPtr<moho::Entity>* value)
+  [[nodiscard]] gpg::RRef MakeWeakPtrEntityRef(
+    moho::WeakPtr<moho::Entity>* value
+  )
   {
     gpg::RRef out{};
     out.mObj = value;
@@ -91,7 +69,9 @@ namespace
     return out;
   }
 
-  [[nodiscard]] gpg::RRef MakeReconBlipObjectRef(moho::ReconBlip* blip)
+  [[nodiscard]] gpg::RRef MakeReconBlipObjectRef(
+    moho::ReconBlip* blip
+  )
   {
     gpg::RRef out{};
     out.mObj = nullptr;
@@ -111,14 +91,14 @@ namespace
     const bool isDerived = dynamicType != nullptr && CachedReconBlipType() != nullptr &&
       dynamicType->IsDerivedFrom(CachedReconBlipType(), &baseOffset);
 
-    out.mObj = isDerived
-      ? reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(blip) - static_cast<std::uintptr_t>(baseOffset))
-      : static_cast<void*>(blip);
+    out.mObj = isDerived ? gpg::CompleteObject(blip, baseOffset) : static_cast<void*>(blip);
     out.mType = dynamicType ? dynamicType : CachedReconBlipType();
     return out;
   }
 
-  [[nodiscard]] gpg::RRef MakeReconBlipPointerSlotRef(moho::ReconBlip** slot)
+  [[nodiscard]] gpg::RRef MakeReconBlipPointerSlotRef(
+    moho::ReconBlip** slot
+  )
   {
     if (gpg::RType* const pointerType = CachedReconBlipPointerType(); pointerType != nullptr) {
       gpg::RRef out{};
@@ -130,7 +110,10 @@ namespace
     return MakeReconBlipObjectRef(slot ? *slot : nullptr);
   }
 
-  [[nodiscard]] moho::ReconBlip* ReadPointerReconBlip(gpg::ReadArchive* archive, const gpg::RRef& ownerRef)
+  [[nodiscard]] moho::ReconBlip* ReadPointerReconBlip(
+    gpg::ReadArchive* archive,
+    const gpg::RRef& ownerRef
+  )
   {
     const gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(archive, ownerRef);
     if (!tracked.object) {
@@ -148,8 +131,9 @@ namespace
 
     const char* const expected = CachedReconBlipType() ? CachedReconBlipType()->GetName() : "ReconBlip";
     const char* const actual = source.GetTypeName();
-    const msvc8::string message = gpg::STR_Printf(
-      "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" instead",
+    const fa::string message = gpg::STR_Printf(
+      "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
+      "instead",
       expected ? expected : "ReconBlip",
       actual ? actual : "null"
     );
@@ -162,9 +146,14 @@ namespace
    * What it does:
    * Deserializes `fastvector<WeakPtr<Entity>>` count/lane payloads.
    */
-  void LoadFastVectorWeakPtrEntity(gpg::ReadArchive* const archive, const std::intptr_t objectPtr, int, gpg::RRef* const ownerRef)
+  void LoadFastVectorWeakPtrEntity(
+    gpg::ReadArchive* const archive,
+    void* const objectPtr,
+    int,
+    gpg::RRef* const ownerRef
+  )
   {
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::WeakPtr<moho::Entity>>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::WeakPtr<moho::Entity>>*>(objectPtr);
 
     unsigned int count = 0;
     archive->ReadUInt(&count);
@@ -180,9 +169,14 @@ namespace
    * What it does:
    * Serializes `fastvector<WeakPtr<Entity>>` count/lane payloads.
    */
-  void SaveFastVectorWeakPtrEntity(gpg::WriteArchive* const archive, const std::intptr_t objectPtr, int, gpg::RRef* const ownerRef)
+  void SaveFastVectorWeakPtrEntity(
+    gpg::WriteArchive* const archive,
+    void* const objectPtr,
+    int,
+    gpg::RRef* const ownerRef
+  )
   {
-    const auto& vec = *reinterpret_cast<const gpg::fastvector<moho::WeakPtr<moho::Entity>>*>(objectPtr);
+    const auto& vec = *static_cast<const gpg::fastvector<moho::WeakPtr<moho::Entity>>*>(objectPtr);
 
     const unsigned int count = static_cast<unsigned int>(vec.size());
     archive->WriteUInt(count);
@@ -197,13 +191,18 @@ namespace
    * What it does:
    * Deserializes `fastvector<ReconBlip*>` count and tracked-pointer lanes.
    */
-  void LoadFastVectorReconBlipPointer(gpg::ReadArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void LoadFastVectorReconBlipPointer(
+    gpg::ReadArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
     }
 
-    auto& vec = *reinterpret_cast<gpg::core::FastVectorInline<moho::ReconBlip*>*>(objectPtr);
+    auto& vec = *static_cast<gpg::core::FastVectorInline<moho::ReconBlip*>*>(objectPtr);
 
     unsigned int count = 0;
     archive->ReadUInt(&count);
@@ -223,13 +222,18 @@ namespace
    * What it does:
    * Serializes `fastvector<ReconBlip*>` count and tracked-pointer lanes.
    */
-  void SaveFastVectorReconBlipPointer(gpg::WriteArchive* archive, std::intptr_t objectPtr, int, gpg::RRef* ownerRef)
+  void SaveFastVectorReconBlipPointer(
+    gpg::WriteArchive* archive,
+    void* objectPtr,
+    int,
+    gpg::RRef* ownerRef
+  )
   {
     if (!archive || objectPtr == 0) {
       return;
     }
 
-    const auto& vec = *reinterpret_cast<const gpg::fastvector<moho::ReconBlip*>*>(objectPtr);
+    const auto& vec = *static_cast<const gpg::fastvector<moho::ReconBlip*>*>(objectPtr);
 
     const unsigned int count = static_cast<unsigned int>(vec.size());
     archive->WriteUInt(count);
@@ -263,16 +267,19 @@ namespace gpg
    */
   const char* RFastVectorType<moho::WeakPtr<moho::Entity>>::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::WeakPtr<moho::Entity>>()->GetName());
+    static const fa::string sName =
+      gpg::STR_Printf("fastvector<%s>", gpg::RTypeOf<moho::WeakPtr<moho::Entity>>()->GetName());
     return sName.c_str();
   }
 
   /**
    * Address: 0x006AE4C0 (FUN_006AE4C0, gpg::RFastVectorType_WeakPtr_Entity::GetLexical)
    */
-  msvc8::string RFastVectorType<moho::WeakPtr<moho::Entity>>::GetLexical(const gpg::RRef& ref) const
+  fa::string RFastVectorType<moho::WeakPtr<moho::Entity>>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -289,7 +296,10 @@ namespace gpg
    */
   void RFastVectorType<moho::WeakPtr<moho::Entity>>::Init()
   {
-    static_assert(sizeof(gpg::core::FastVectorInline<moho::WeakPtr<moho::Entity>>) == 0x10, "gpg::core::FastVectorInline<moho::WeakPtr<moho::Entity>> is 0x10 bytes on x86");
+    static_assert(
+      sizeof(gpg::core::FastVectorInline<moho::WeakPtr<moho::Entity>>) == 0x10,
+      "gpg::core::FastVectorInline<moho::WeakPtr<moho::Entity>> is 0x10 bytes on x86"
+    );
     size_ = sizeof(gpg::core::FastVectorInline<moho::WeakPtr<moho::Entity>>);
     version_ = 1;
     serLoadFunc_ = &LoadFastVectorWeakPtrEntity;
@@ -299,7 +309,10 @@ namespace gpg
   /**
    * Address: 0x006AE5F0 (FUN_006AE5F0, gpg::RFastVectorType_WeakPtr_Entity::SubscriptIndex)
    */
-  gpg::RRef RFastVectorType<moho::WeakPtr<moho::Entity>>::SubscriptIndex(void* obj, const int ind) const
+  gpg::RRef RFastVectorType<moho::WeakPtr<moho::Entity>>::SubscriptIndex(
+    void* obj,
+    const int ind
+  ) const
   {
     if (!obj) {
       return MakeWeakPtrEntityRef(nullptr);
@@ -318,7 +331,9 @@ namespace gpg
   /**
    * Address: 0x006AE560 (FUN_006AE560, gpg::RFastVectorType_WeakPtr_Entity::GetCount)
    */
-  size_t RFastVectorType<moho::WeakPtr<moho::Entity>>::GetCount(void* obj) const
+  size_t RFastVectorType<moho::WeakPtr<moho::Entity>>::GetCount(
+    void* obj
+  ) const
   {
     if (!obj) {
       return 0u;
@@ -331,7 +346,10 @@ namespace gpg
   /**
    * Address: 0x006AE570 (FUN_006AE570, gpg::RFastVectorType_WeakPtr_Entity::SetCount)
    */
-  void RFastVectorType<moho::WeakPtr<moho::Entity>>::SetCount(void* const obj, const int count) const
+  void RFastVectorType<moho::WeakPtr<moho::Entity>>::SetCount(
+    void* const obj,
+    const int count
+  ) const
   {
     static_cast<gpg::core::FastVectorInline<moho::WeakPtr<moho::Entity>>*>(obj)->resize(
       static_cast<std::size_t>(count), moho::WeakPtr<moho::Entity>{}
@@ -346,16 +364,18 @@ namespace gpg
    */
   const char* RFastVectorType<moho::ReconBlip*>::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("fastvector<%s>", moho::ReconBlip::GetPointerType()->GetName());
+    static const fa::string sName = gpg::STR_Printf("fastvector<%s>", moho::ReconBlip::GetPointerType()->GetName());
     return sName.c_str();
   }
 
   /**
    * Address: 0x006AE6D0 (FUN_006AE6D0, gpg::RFastVectorType_ReconBlip_P::GetLexical)
    */
-  msvc8::string RFastVectorType<moho::ReconBlip*>::GetLexical(const gpg::RRef& ref) const
+  fa::string RFastVectorType<moho::ReconBlip*>::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -372,7 +392,10 @@ namespace gpg
    */
   void RFastVectorType<moho::ReconBlip*>::Init()
   {
-    static_assert(sizeof(gpg::core::FastVectorInline<moho::ReconBlip*>) == 0x10, "gpg::core::FastVectorInline<moho::ReconBlip*> is 0x10 bytes on x86");
+    static_assert(
+      sizeof(gpg::core::FastVectorInline<moho::ReconBlip*>) == 0x10,
+      "gpg::core::FastVectorInline<moho::ReconBlip*> is 0x10 bytes on x86"
+    );
     size_ = sizeof(gpg::core::FastVectorInline<moho::ReconBlip*>);
     version_ = 1;
     serLoadFunc_ = &LoadFastVectorReconBlipPointer;
@@ -382,7 +405,10 @@ namespace gpg
   /**
    * Address: 0x006AE7A0 (FUN_006AE7A0, gpg::RFastVectorType_ReconBlip_P::SubscriptIndex)
    */
-  gpg::RRef RFastVectorType<moho::ReconBlip*>::SubscriptIndex(void* obj, const int ind) const
+  gpg::RRef RFastVectorType<moho::ReconBlip*>::SubscriptIndex(
+    void* obj,
+    const int ind
+  ) const
   {
     if (!obj) {
       return MakeReconBlipPointerSlotRef(nullptr);
@@ -401,7 +427,9 @@ namespace gpg
   /**
    * Address: 0x006AE770 (FUN_006AE770, gpg::RFastVectorType_ReconBlip_P::GetCount)
    */
-  size_t RFastVectorType<moho::ReconBlip*>::GetCount(void* obj) const
+  size_t RFastVectorType<moho::ReconBlip*>::GetCount(
+    void* obj
+  ) const
   {
     if (!obj) {
       return 0u;
@@ -414,7 +442,10 @@ namespace gpg
   /**
    * Address: 0x006AE780 (FUN_006AE780, gpg::RFastVectorType_ReconBlip_P::SetCount)
    */
-  void RFastVectorType<moho::ReconBlip*>::SetCount(void* obj, const int count) const
+  void RFastVectorType<moho::ReconBlip*>::SetCount(
+    void* obj,
+    const int count
+  ) const
   {
     GPG_ASSERT(obj != nullptr);
     GPG_ASSERT(count >= 0);
@@ -481,5 +512,11 @@ namespace moho
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_FastVectorWeakPtrEntityType_00_2ebb12, moho::register_FastVectorWeakPtrEntityType_00)
-GPG_PREREGISTER_INIT(register_FastVectorReconBlipPtrType_00_2ebb12, moho::register_FastVectorReconBlipPtrType_00)
+GPG_PREREGISTER_INIT(
+  register_FastVectorWeakPtrEntityType_00_2ebb12,
+  moho::register_FastVectorWeakPtrEntityType_00
+)
+GPG_PREREGISTER_INIT(
+  register_FastVectorReconBlipPtrType_00_2ebb12,
+  moho::register_FastVectorReconBlipPtrType_00
+)

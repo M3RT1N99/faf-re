@@ -19,7 +19,7 @@
 // from retail where an intermediate leaves the float range (difffuzz, the
 // collision primitives' rows). Moho::CColPrimitive's tests, projectiles and
 // unit steering run in the simulation, so these are ported from the retail
-// functions with msvc8::X87Float; the vision and pick-ray tests follow the same
+// functions with fa::X87Float; the vision and pick-ray tests follow the same
 // rules. Algorithms and names are Wild Magic's (Geometric Tools, Inc., Wild
 // Magic 3 license, version 1.0c; dependencies/WildMagic3p8/License).
 //
@@ -34,7 +34,8 @@ namespace Wm3
    * Returns the number of intersection points (0, 1 or 2) and writes them to
    * `points`.
    */
-  [[nodiscard]] int FindSegment3Box3(const Segment3f& segment, const Box3f& box, bool solid, Vector3f points[2]) noexcept;
+  [[nodiscard]] int
+  FindSegment3Box3(const Segment3f& segment, const Box3f& box, bool solid, Vector3f points[2]) noexcept;
 
   /**
    * Address: 0x00A471C0 (IntrSegment3Sphere3<float>::Find)
@@ -72,7 +73,8 @@ namespace Wm3
    * Squared distance from `point` to `box`; `closestOnBox` is the query's
    * closest point on the box (m_kClosestPoint1).
    */
-  [[nodiscard]] float SquaredDistanceVector3Box3(const Vector3f& point, const Box3f& box, Vector3f& closestOnBox) noexcept;
+  [[nodiscard]] float
+  SquaredDistanceVector3Box3(const Vector3f& point, const Box3f& box, Vector3f& closestOnBox) noexcept;
 
   /**
    * Address: 0x00A484F0 (DistVector3Segment3<float>::GetSquared)

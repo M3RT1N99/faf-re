@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/Vector.h"
 #include "moho/render/camera/VTransform.h"
 
@@ -24,10 +24,12 @@ namespace moho
   };
 
   static_assert(
-    offsetof(SAniSkelBoneNameIndex, mBoneName) == 0x00, "SAniSkelBoneNameIndex::mBoneName offset must be 0x00"
+    offsetof(SAniSkelBoneNameIndex, mBoneName) == 0x00,
+    "SAniSkelBoneNameIndex::mBoneName offset must be 0x00"
   );
   static_assert(
-    offsetof(SAniSkelBoneNameIndex, mBoneIndex) == 0x04, "SAniSkelBoneNameIndex::mBoneIndex offset must be 0x04"
+    offsetof(SAniSkelBoneNameIndex, mBoneIndex) == 0x04,
+    "SAniSkelBoneNameIndex::mBoneIndex offset must be 0x04"
   );
   static_assert(sizeof(SAniSkelBoneNameIndex) == 0x08, "SAniSkelBoneNameIndex size must be 0x08");
 
@@ -42,14 +44,14 @@ namespace moho
     // Layout is orient_ (w,x,y,z) at +0x08 and pos_ at +0x18, exactly the SCM bone
     // record's rotation lanes (+0x4C..+0x58) followed by its position lanes
     // (+0x40..+0x48), which CAniSkel's loader copies verbatim.
-    VTransform mLocalTransform;    // +0x08
-    VTransform mBoneTransform;     // +0x24
-    float mBoundsMinX;             // +0x40
-    float mBoundsMinY;             // +0x44
-    float mBoundsMinZ;             // +0x48
-    float mBoundsMaxX;             // +0x4C
-    float mBoundsMaxY;             // +0x50
-    float mBoundsMaxZ;             // +0x54
+    VTransform mLocalTransform; // +0x08
+    VTransform mBoneTransform;  // +0x24
+    float mBoundsMinX;          // +0x40
+    float mBoundsMinY;          // +0x44
+    float mBoundsMinZ;          // +0x48
+    float mBoundsMaxX;          // +0x4C
+    float mBoundsMaxY;          // +0x50
+    float mBoundsMaxZ;          // +0x54
   };
 
   static_assert(offsetof(SAniSkelBone, mBoneName) == 0x00, "SAniSkelBone::mBoneName offset must be 0x00");
@@ -83,13 +85,13 @@ namespace moho
      * quaternion transform, sorts the name table (strcmp, index tie-break),
      * and rebuilds per-bone bounds.
      */
-    explicit CAniSkel(const boost::shared_ptr<const SScmFile>& file);
+    explicit CAniSkel(const std::shared_ptr<const SScmFile>& file);
 
     /**
      * Engine addition (`RScmResource::DropGeometry`): the same file's start in another buffer. The
      * bone names point into it. Nothing recomputes the bone bounds afterwards.
      */
-    void RebindFile(const boost::shared_ptr<const SScmFile>& file);
+    void RebindFile(const std::shared_ptr<const SScmFile>& file);
 
     /**
      * Address: 0x0054A370 (FUN_0054A370, scalar deleting destructor thunk)
@@ -132,7 +134,7 @@ namespace moho
      * What it does:
      * Returns a shared pointer to process-global default skeleton storage.
      */
-    [[nodiscard]] static boost::shared_ptr<const CAniSkel> GetDefaultSkeleton();
+    [[nodiscard]] static std::shared_ptr<const CAniSkel> GetDefaultSkeleton();
 
     /**
      * Address: 0x0054A540 (FUN_0054A540)
@@ -148,7 +150,7 @@ namespace moho
      *
      * IDA signature:
      * int* __userpurge sub_54A840@<eax>(
-     *   CAniSkel* skeleton@<ebx>, msvc8::vector<int>* outIndices, int parentBoneIndex);
+     *   CAniSkel* skeleton@<ebx>, fa::vector<int>* outIndices, int parentBoneIndex);
      *
      * What it does:
      * Collects the indices of every bone whose parent is `parentBoneIndex`.
@@ -156,12 +158,12 @@ namespace moho
      * so the children are found by scanning the whole bone array
      * (0x0054A853: stride 88 = `sizeof(SAniSkelBone)`, comparing +0x04).
      */
-    void CollectChildBoneIndices(std::int32_t parentBoneIndex, msvc8::vector<std::int32_t>& outIndices) const;
+    void CollectChildBoneIndices(std::int32_t parentBoneIndex, fa::vector<std::int32_t>& outIndices) const;
 
   public:
-    boost::shared_ptr<const SScmFile> mFile;               // +0x04
-    msvc8::vector<SAniSkelBone> mBones;                    // +0x0C
-    msvc8::vector<SAniSkelBoneNameIndex> mBoneNameToIndex; // +0x1C
+    std::shared_ptr<const SScmFile> mFile;              // +0x04
+    fa::vector<SAniSkelBone> mBones;                    // +0x0C
+    fa::vector<SAniSkelBoneNameIndex> mBoneNameToIndex; // +0x1C
 
   protected:
     CAniSkel() = default;

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "gpg/core/reflection/Reflection.h"
 #include "legacy/containers/String.h"
 #include "moho/audio/CSndVar.h"
@@ -15,7 +15,7 @@ namespace LuaPlus
 {
   class LuaObject;
   class LuaState;
-}
+} // namespace LuaPlus
 
 namespace gpg
 {
@@ -24,7 +24,7 @@ namespace gpg
   class WriteArchive;
   class SerConstructResult;
   class SerSaveConstructArgsResult;
-}
+} // namespace gpg
 
 namespace gpg
 {
@@ -66,7 +66,9 @@ namespace moho
      * builds (0x004DFD54..0x004DFD64) and `UserEntity`'s ambient loop
      * (0x008B85E0) -- so this out-of-line copy has no caller.
      */
-    explicit HSndEntityLoop(CSndParams* const params = nullptr) noexcept
+    explicit HSndEntityLoop(
+      CSndParams* const params = nullptr
+    ) noexcept
       : WeakObject()
       , mLoopIndex(-1)
       , mParams(params)
@@ -96,9 +98,8 @@ namespace moho
      * by the descriptor cache. Inlined into `SerConstructHelper<CSndParams>::Construct`
      * 0x004E0E10.
      */
-    static void MemberConstruct(
-      gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result
-    );
+    static void
+    MemberConstruct(gpg::ReadArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerConstructResult& result);
 
     /**
      * Address: 0x004E0CD0 (FUN_004E0CD0)
@@ -108,7 +109,10 @@ namespace moho
      * descriptor per key.
      */
     void MemberSaveConstructArgs(
-      gpg::WriteArchive& archive, int version, const gpg::RRef& ownerRef, gpg::SerSaveConstructArgsResult& result
+      gpg::WriteArchive& archive,
+      int version,
+      const gpg::RRef& ownerRef,
+      gpg::SerSaveConstructArgsResult& result
     );
 
     inline static gpg::RType* sType = nullptr;
@@ -118,7 +122,7 @@ namespace moho
     /**
      * Address: 0x004E0740 (FUN_004E0740)
      *
-     * msvc8::string const&, msvc8::string const&, Moho::CSndVar*,
+     * fa::string const&, fa::string const&, Moho::CSndVar*,
      * Moho::CSndVar*, boost::weak_ptr<Moho::AudioEngine> const&
      *
      * What it does:
@@ -126,11 +130,11 @@ namespace moho
      * engine ownership for later playback.
      */
     CSndParams(
-      const msvc8::string& bankName,
-      const msvc8::string& cueName,
+      const fa::string& bankName,
+      const fa::string& cueName,
       CSndVar* lodCutoffVar,
       CSndVar* rpcLoopVar,
-      const boost::weak_ptr<AudioEngine>& engine
+      const std::weak_ptr<AudioEngine>& engine
     );
 
     /**
@@ -158,7 +162,7 @@ namespace moho
      * What it does:
      * Copies/returns the retained playback engine handle for this cue set.
      */
-    boost::shared_ptr<AudioEngine>* GetEngine(boost::shared_ptr<AudioEngine>* outEngine) const;
+    std::shared_ptr<AudioEngine>* GetEngine(std::shared_ptr<AudioEngine>* outEngine) const;
 
   private:
     /**
@@ -168,17 +172,17 @@ namespace moho
      * Resolves bank/cue ids and returns a strong `AudioEngine` handle when the
      * current descriptor can be bound to one loaded engine.
      */
-    [[nodiscard]] boost::shared_ptr<AudioEngine> DoResolve() const;
+    [[nodiscard]] std::shared_ptr<AudioEngine> DoResolve() const;
 
   public:
-    msvc8::string mBank;                    // +0x00
-    msvc8::string mCue;                     // +0x1C
-    CSndVar* mLodCutoff;                    // +0x38
-    CSndVar* mRpcLoopVariable;              // +0x3C
-    mutable std::uint32_t mResolvePolicy;   // +0x40
-    mutable std::uint16_t mBankId;          // +0x44
-    mutable std::uint16_t mCueId;           // +0x46
-    mutable boost::weak_ptr<AudioEngine> mEngine; // +0x48
+    fa::string mBank;                             // +0x00
+    fa::string mCue;                              // +0x1C
+    CSndVar* mLodCutoff;                          // +0x38
+    CSndVar* mRpcLoopVariable;                    // +0x3C
+    mutable std::uint32_t mResolvePolicy;         // +0x40
+    mutable std::uint16_t mBankId;                // +0x44
+    mutable std::uint16_t mCueId;                 // +0x46
+    mutable std::weak_ptr<AudioEngine> mEngine;   // +0x48
   };
 
   static_assert(offsetof(CSndParams, mBank) == 0x00, "CSndParams::mBank offset must be 0x00");
@@ -208,8 +212,10 @@ namespace moho
    * remote client resolves the sounds the server names this way. Empty names: no variable.
    */
   [[nodiscard]] CSndParams* SND_FindOrCreateParams(
-    const msvc8::string& bankName, const msvc8::string& cueName, const msvc8::string& lodCutoffName,
-    const msvc8::string& rpcLoopName
+    const fa::string& bankName,
+    const fa::string& cueName,
+    const fa::string& lodCutoffName,
+    const fa::string& rpcLoopName
   );
 #endif
 

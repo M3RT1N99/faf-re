@@ -15,7 +15,7 @@ namespace moho
   extern int ren_ClipDecalLevel;
   extern float ren_ShoreErrorCoeff;
   extern float ren_maxViewError;
-}
+} // namespace moho
 namespace moho
 {
   extern bool ren_ErrorCache;
@@ -32,7 +32,46 @@ namespace moho
     constexpr std::size_t kRectLookupMask = 0x1FFu;
     constexpr std::size_t kRectLimit = 65000u;
 
-    [[nodiscard]] std::size_t LookupIndex(const std::int32_t x, const std::int32_t z) noexcept
+    /// Engine addition (water bodies): the map the last `Rebuild` tessellated, for its bodies.
+    const STIMap* sTesselatorMap = nullptr;
+
+    /**
+     * Engine addition (water bodies): whether a water body's surface crosses the tile
+     * `[x0, x1) x [z0, z1)` with terrain in `[minY, maxY]`, and the highest such level in
+     * `*highest`. The binary tests the sea only; this adds every lake whose cells overlap the tile.
+     */
+    [[nodiscard]] bool WaterBodyCrossesTile(
+      const std::int32_t x0,
+      const std::int32_t z0,
+      const std::int32_t x1,
+      const std::int32_t z1,
+      const float minY,
+      const float maxY,
+      float* const highest
+    ) noexcept
+    {
+      if (sTesselatorMap == nullptr || !sTesselatorMap->HasWaterBodies()) {
+        return false;
+      }
+      const CWaterBodies& bodies = *sTesselatorMap->mWaterBodies;
+      bool crosses = false;
+      for (std::size_t number = 1; number <= bodies.BodyCount(); ++number) {
+        const SWaterBody& body = bodies.Body(static_cast<std::uint8_t>(number));
+        if (body.elevation == kWaterBodyNoWater || body.x1 <= x0 || body.x0 >= x1 || body.z1 <= z0 || body.z0 >= z1) {
+          continue;
+        }
+        if (body.elevation >= minY && maxY >= body.elevation) {
+          crosses = true;
+        }
+        *highest = std::max(*highest, body.elevation);
+      }
+      return crosses;
+    }
+
+    [[nodiscard]] std::size_t LookupIndex(
+      const std::int32_t x,
+      const std::int32_t z
+    ) noexcept
     {
       const std::size_t maskedX = static_cast<std::size_t>(x) & kRectLookupMask;
       const std::size_t maskedZ = static_cast<std::size_t>(z) & kRectLookupMask;
@@ -46,7 +85,10 @@ namespace moho
      * Selects one AABB corner from `{Min, Max}` using a three-bit axis mask.
      */
     [[nodiscard]]
-    Wm3::Vector3f SelectAabbCornerByMask(const Wm3::AxisAlignedBox3f& bounds, const std::uint32_t axisMask)
+    Wm3::Vector3f SelectAabbCornerByMask(
+      const Wm3::AxisAlignedBox3f& bounds,
+      const std::uint32_t axisMask
+    )
     {
       const Wm3::Vector3f* const extrema[2] = {&bounds.Min, &bounds.Max};
 
@@ -57,7 +99,9 @@ namespace moho
       return out;
     }
 
-    [[nodiscard]] int MostSignificantBitIndexOrMinusOne(const std::uint32_t value) noexcept
+    [[nodiscard]] int MostSignificantBitIndexOrMinusOne(
+      const std::uint32_t value
+    ) noexcept
     {
       if (value == 0u) {
         return -1;
@@ -65,12 +109,16 @@ namespace moho
       return static_cast<int>(std::bit_width(value) - 1u);
     }
 
-    [[nodiscard]] int AbsoluteValue(const int value) noexcept
+    [[nodiscard]] int AbsoluteValue(
+      const int value
+    ) noexcept
     {
       return (value < 0) ? -value : value;
     }
 
-    [[nodiscard]] int HeightFieldTierCount(const CHeightField& field) noexcept
+    [[nodiscard]] int HeightFieldTierCount(
+      const CHeightField& field
+    ) noexcept
     {
       if (field.mGrids.begin() == nullptr) {
         return 0;
@@ -113,8 +161,8 @@ namespace moho
 
       if (tileSpan < querySize) {
         if (
-          queryX <= tileOriginX && (queryX + querySize) >= (tileOriginX + tileSpan) && queryZ <= tileOriginZ
-          && (queryZ + querySize) >= (tileOriginZ + tileSpan)
+          queryX <= tileOriginX && (queryX + querySize) >= (tileOriginX + tileSpan) && queryZ <= tileOriginZ &&
+          (queryZ + querySize) >= (tileOriginZ + tileSpan)
         ) {
           *outRangeStart = node.rangeStart;
           *outRangeCount = node.rangeCount;
@@ -134,8 +182,8 @@ namespace moho
       }
 
       if (
-        node.childTopLeftIndex != -1
-        && FindSplitWorkRange(
+        node.childTopLeftIndex != -1 &&
+        FindSplitWorkRange(
           tesselator,
           node.childTopLeftIndex,
           2 * tileX,
@@ -154,8 +202,8 @@ namespace moho
       }
 
       if (
-        node.childTopRightIndex != -1
-        && FindSplitWorkRange(
+        node.childTopRightIndex != -1 &&
+        FindSplitWorkRange(
           tesselator,
           node.childTopRightIndex,
           2 * tileX + 1,
@@ -174,8 +222,8 @@ namespace moho
       }
 
       if (
-        node.childBottomLeftIndex != -1
-        && FindSplitWorkRange(
+        node.childBottomLeftIndex != -1 &&
+        FindSplitWorkRange(
           tesselator,
           node.childBottomLeftIndex,
           2 * tileX,
@@ -194,8 +242,8 @@ namespace moho
       }
 
       return (
-        node.childBottomRightIndex != -1
-        && FindSplitWorkRange(
+        node.childBottomRightIndex != -1 &&
+        FindSplitWorkRange(
           tesselator,
           node.childBottomRightIndex,
           2 * tileX + 1,
@@ -235,7 +283,11 @@ namespace moho
      *   (0x0080DECC, cached in var_1C), and the row advances by `ebx+1`
      *   (0x0080DEE9) then `add ebx, 2` (0x0080DF40).
      */
-    void EmitTileSubdivisionFan(CTesselator& tesselator, const std::int32_t x, const std::int32_t z)
+    void EmitTileSubdivisionFan(
+      CTesselator& tesselator,
+      const std::int32_t x,
+      const std::int32_t z
+    )
     {
       const std::uint16_t p00 = tesselator.GetIndexAt(0, x, z);
       const std::uint16_t p10 = tesselator.GetIndexAt(0, x + 1, z);
@@ -318,7 +370,9 @@ namespace moho
      * already carries it in (see `ClipDecalTrianglesInRect`) - this function
      * does no additional height scaling of its own.
      */
-    [[nodiscard]] CTesselator::Rect16 QuantizeClipCornerToRect(const Wm3::Vector3f& corner) noexcept
+    [[nodiscard]] CTesselator::Rect16 QuantizeClipCornerToRect(
+      const Wm3::Vector3f& corner
+    ) noexcept
     {
       CTesselator::Rect16 rect{};
       rect.xPos = static_cast<std::uint16_t>(static_cast<std::int32_t>(std::ceil(corner.x)));
@@ -395,7 +449,10 @@ namespace moho
      * accumulating into a local scratch, then replaces
      * `mClipPolygonScratch`'s contents with that result.
      */
-    void ClipPolygonAgainstPlane(CTesselator& tesselator, const moho::VecDist& plane)
+    void ClipPolygonAgainstPlane(
+      CTesselator& tesselator,
+      const moho::VecDist& plane
+    )
     {
       const std::size_t pointCount = tesselator.mClipPolygonScratch.Size();
       if (pointCount == 0u) {
@@ -550,7 +607,10 @@ namespace moho
         }
 
         ClipPolygonAgainstRectEdges(
-          tesselator, static_cast<float>(queryZMax), static_cast<float>(queryXMin), static_cast<float>(queryZMin),
+          tesselator,
+          static_cast<float>(queryZMax),
+          static_cast<float>(queryXMin),
+          static_cast<float>(queryZMin),
           static_cast<float>(queryXMax)
         );
 
@@ -647,29 +707,65 @@ namespace moho
       if (level > 1) {
         if (node.childTopLeftIndex != -1) {
           CollectSplitWorkRangeInRect(
-            tesselator, node.childTopLeftIndex, 2 * tileX, 2 * tileZ, level - 1, queryXMin, queryZMin, queryXMax,
-            queryZMax, outMinRectIndex, outMaxRectIndex
+            tesselator,
+            node.childTopLeftIndex,
+            2 * tileX,
+            2 * tileZ,
+            level - 1,
+            queryXMin,
+            queryZMin,
+            queryXMax,
+            queryZMax,
+            outMinRectIndex,
+            outMaxRectIndex
           );
           recursedIntoChild = true;
         }
         if (node.childTopRightIndex != -1) {
           CollectSplitWorkRangeInRect(
-            tesselator, node.childTopRightIndex, (2 * tileX) + 1, 2 * tileZ, level - 1, queryXMin, queryZMin,
-            queryXMax, queryZMax, outMinRectIndex, outMaxRectIndex
+            tesselator,
+            node.childTopRightIndex,
+            (2 * tileX) + 1,
+            2 * tileZ,
+            level - 1,
+            queryXMin,
+            queryZMin,
+            queryXMax,
+            queryZMax,
+            outMinRectIndex,
+            outMaxRectIndex
           );
           recursedIntoChild = true;
         }
         if (node.childBottomLeftIndex != -1) {
           CollectSplitWorkRangeInRect(
-            tesselator, node.childBottomLeftIndex, 2 * tileX, (2 * tileZ) + 1, level - 1, queryXMin, queryZMin,
-            queryXMax, queryZMax, outMinRectIndex, outMaxRectIndex
+            tesselator,
+            node.childBottomLeftIndex,
+            2 * tileX,
+            (2 * tileZ) + 1,
+            level - 1,
+            queryXMin,
+            queryZMin,
+            queryXMax,
+            queryZMax,
+            outMinRectIndex,
+            outMaxRectIndex
           );
           recursedIntoChild = true;
         }
         if (node.childBottomRightIndex != -1) {
           CollectSplitWorkRangeInRect(
-            tesselator, node.childBottomRightIndex, (2 * tileX) + 1, (2 * tileZ) + 1, level - 1, queryXMin, queryZMin,
-            queryXMax, queryZMax, outMinRectIndex, outMaxRectIndex
+            tesselator,
+            node.childBottomRightIndex,
+            (2 * tileX) + 1,
+            (2 * tileZ) + 1,
+            level - 1,
+            queryXMin,
+            queryZMin,
+            queryXMax,
+            queryZMax,
+            outMinRectIndex,
+            outMaxRectIndex
           );
           recursedIntoChild = true;
         }
@@ -705,10 +801,11 @@ namespace moho
    * Binds the source heightfield and initializes all inline fastvector
    * storage lanes used by terrain tessellation.
    */
-  CTesselator::CTesselator(CHeightField* const field)
+  CTesselator::CTesselator(
+    CHeightField* const field
+  )
     : mField(field)
-  {
-  }
+  {}
 
   /**
    * Address: 0x0080D2E0 (FUN_0080D2E0, Moho::CTesselator::GetHeightScale)
@@ -862,8 +959,17 @@ namespace moho
     bounds.Max.y = tierBounds.y;
     bounds.Max.z = static_cast<float>(cellZ + (1 << tier));
 
-    const float waterElevation = mWaterElevation;
-    const bool crossesWaterSurface = (waterElevation >= tierBounds.x) && (tierBounds.y >= waterElevation);
+    float waterElevation = mWaterElevation;
+    bool crossesWaterSurface = (waterElevation >= tierBounds.x) && (tierBounds.y >= waterElevation);
+    // Engine addition (water bodies): a lake's shore is refined as the sea's, and a tile under a
+    // lake is kept by the frustum test up to the lake's surface.
+    if (
+      WaterBodyCrossesTile(
+        cellX, cellZ, cellX + (1 << tier), cellZ + (1 << tier), tierBounds.x, tierBounds.y, &waterElevation
+      )
+    ) {
+      crossesWaterSurface = true;
+    }
 
     if (*activePlaneMask != 0u) {
       float clippedMaxY = tierBounds.y;
@@ -884,8 +990,7 @@ namespace moho
     const float shoreErrorCoeff = crossesWaterSurface ? ren_ShoreErrorCoeff : 1.0f;
 
     const Vector4f& row1 = mCam->viewport.r[1];
-    const float projectedDepth =
-      (row1.z * testCorner.z) + (row1.y * testCorner.y) + (row1.x * testCorner.x) + row1.w;
+    const float projectedDepth = (row1.z * testCorner.z) + (row1.y * testCorner.y) + (row1.x * testCorner.x) + row1.w;
 
     const float maxAllowedError = shoreErrorCoeff * projectedDepth * ren_maxViewError;
     return (tierMaxError < maxAllowedError) ? kAccept : kSplit;
@@ -1017,7 +1122,10 @@ namespace moho
    * Reads one cached index from the 512x512 lookup ring and validates that the
    * pointed rect still matches `(x,z)`.
    */
-  std::int16_t CTesselator::GetData(const std::int32_t z, const std::int32_t x) const
+  std::int16_t CTesselator::GetData(
+    const std::int32_t z,
+    const std::int32_t x
+  ) const
   {
     if (mRectCache.start_ == nullptr) {
       return -1;
@@ -1127,7 +1235,7 @@ namespace moho
     std::int32_t* const outIndexStart,
     std::uint32_t* const outIndexCount,
     std::int32_t* const outRectStart,
-    std::uint32_t* const outLastRectIndex
+    std::int32_t* const outLastRectIndex
   )
   {
     static constexpr float kHeightScale = 128.0f;
@@ -1163,7 +1271,9 @@ namespace moho
    * Appends one quantized height rect to the cache vector (bounded to 65000
    * entries) and updates the lookup map index for its `(x,z)` key.
    */
-  std::uint16_t CTesselator::AddRect(const Rect16& rect)
+  std::uint16_t CTesselator::AddRect(
+    const Rect16& rect
+  )
   {
     const std::size_t count = mRectCache.Size();
     if (count >= kRectLimit) {
@@ -1184,7 +1294,11 @@ namespace moho
    * cache when enabled, and inserts a new rect from clamped heightfield sample
    * when the lookup misses.
    */
-  std::uint16_t CTesselator::GetIndexAt(const std::int32_t size, const std::int32_t x, const std::int32_t z)
+  std::uint16_t CTesselator::GetIndexAt(
+    const std::int32_t size,
+    const std::int32_t x,
+    const std::int32_t z
+  )
   {
     const std::int32_t scale = 1 << size;
     const std::int32_t gx = x * scale;
@@ -1253,17 +1367,7 @@ namespace moho
       const std::int32_t doubledZSize = 2 * zsize;
 
       CollectDataInRect(
-        outIndices,
-        tier - 1,
-        &childPlaneMask,
-        w + (2 * x),
-        h + (2 * z),
-        w,
-        h,
-        doubledXSize,
-        doubledZSize,
-        xoff,
-        zoff
+        outIndices, tier - 1, &childPlaneMask, w + (2 * x), h + (2 * z), w, h, doubledXSize, doubledZSize, xoff, zoff
       );
 
       childPlaneMask = *activePlaneMask;
@@ -1303,7 +1407,11 @@ namespace moho
    * every chain is trivial and the cell closes with one simple two-triangle
    * quad built from north/south alone.
    */
-  void CTesselator::TesselateLeafCell(const std::int32_t x, const std::int32_t z, const std::int32_t tier)
+  void CTesselator::TesselateLeafCell(
+    const std::int32_t x,
+    const std::int32_t z,
+    const std::int32_t tier
+  )
   {
     const std::uint16_t centerIndex = GetIndexAt(tier, x, z);
 
@@ -1497,12 +1605,16 @@ namespace moho
    * `mInitialPlaneMask`); `mSkirtIndexStart`/`mSkirtVertexStart` writes at
    * 0x0080CC93/0x0080CCA0, matching the citation already on those fields.
    */
-  void CTesselator::Rebuild(GeomCamera3* const camera, IWldTerrainRes* const terrainResource)
+  void CTesselator::Rebuild(
+    GeomCamera3* const camera,
+    IWldTerrainRes* const terrainResource
+  )
   {
     std::fill(std::begin(mLookup), std::end(mLookup), std::uint16_t{0});
 
     CHeightField* const field = terrainResource->GetHeightField();
     mWaterElevation = terrainResource->IsWaterEnabled() ? terrainResource->GetWaterElevation() : -10000.0f;
+    sTesselatorMap = terrainResource->mMap;
 
     const std::int32_t tierCount = HeightFieldTierCount(*field);
     const Wm3::AxisAlignedBox3f terrainBounds = field->GetTierBox(0, 0, tierCount);
@@ -1513,9 +1625,10 @@ namespace moho
     const float inverseViewZX = -0.0f - camera->inverseView.r[2].x;
     const float inverseViewZY = -0.0f - camera->inverseView.r[2].y;
     const float inverseViewZZ = -0.0f - camera->inverseView.r[2].z;
-    mCornerSelectionMask = (std::bit_cast<std::uint32_t>(inverseViewZX) >> 31)
-      | (2u * ((std::bit_cast<std::uint32_t>(inverseViewZY) >> 31)
-        | (2u * (std::bit_cast<std::uint32_t>(inverseViewZZ) >> 31))));
+    mCornerSelectionMask = (std::bit_cast<std::uint32_t>(inverseViewZX) >> 31) |
+      (2u *
+       ((std::bit_cast<std::uint32_t>(inverseViewZY) >> 31) |
+        (2u * (std::bit_cast<std::uint32_t>(inverseViewZZ) >> 31))));
 
     mGeomSolid = camera->solid2;
     mActivePlaneMask = (1u << mGeomSolid.planes_.Size()) - 1u;
@@ -1634,8 +1747,17 @@ namespace moho
         const std::int32_t rootNodeIndex = mRectIndices[tileX + tileZ];
         if (rootNodeIndex != -1) {
           CollectSplitWorkRangeInRect(
-            *this, rootNodeIndex, tileX, tileZ, tierCount - tierBias, queryXMin, queryZMin, queryXMax, queryZMax,
-            outMinRectIndex, outMaxRectIndex
+            *this,
+            rootNodeIndex,
+            tileX,
+            tileZ,
+            tierCount - tierBias,
+            queryXMin,
+            queryZMin,
+            queryXMax,
+            queryZMax,
+            outMinRectIndex,
+            outMaxRectIndex
           );
         }
       }

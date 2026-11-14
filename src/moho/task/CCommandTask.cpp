@@ -38,66 +38,9 @@ namespace
     return &sInstance;
   }
 
-  /**
-   * Address: 0x005F22B0 (FUN_005F22B0)
-   *
-   * What it does:
-   * Upcasts one reflected reference lane to `moho::CCommandTask*`.
-   */
-  [[maybe_unused]] [[nodiscard]] void* TryUpcastCCommandTaskRefObject(gpg::RRef* const sourceRef)
-  {
-    if (!sourceRef) {
-      return nullptr;
-    }
-
-    const gpg::RRef upcast = gpg::REF_UpcastPtr(*sourceRef, gpg::RTypeOf<CCommandTask>());
-    return upcast.mObj;
-  }
-
-  /**
-   * Address: 0x0060D1F0 (FUN_0060D1F0)
-   *
-   * What it does:
-   * Reads one archive object lane using cached `CCommandTask` reflection type.
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::ReadArchive* ReadCCommandTaskArchiveObjectLane(
-    gpg::ReadArchive* const archive,
-    void* const objectStorage,
-    gpg::RRef* const ownerRef
+  gpg::RRef MakeEAiResultRef(
+    EAiResult* const value
   )
-  {
-    if (!archive) {
-      return nullptr;
-    }
-
-    const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-    archive->Read(gpg::RTypeOf<CCommandTask>(), objectStorage, owner);
-    return archive;
-  }
-
-  /**
-   * Address: 0x0060D230 (FUN_0060D230)
-   *
-   * What it does:
-   * Writes one archive object lane using cached `CCommandTask` reflection type.
-   */
-  [[maybe_unused]] [[nodiscard]] gpg::WriteArchive* WriteCCommandTaskArchiveObjectLane(
-    gpg::WriteArchive* const archive,
-    void** const objectSlot,
-    const gpg::RRef* const ownerRef
-  )
-  {
-    if (!archive) {
-      return nullptr;
-    }
-
-    const gpg::RRef owner = ownerRef ? *ownerRef : gpg::RRef{};
-    archive->Write(gpg::RTypeOf<CCommandTask>(), objectSlot, owner);
-    return archive;
-  }
-
-
-  gpg::RRef MakeEAiResultRef(EAiResult* const value)
   {
     gpg::RRef out{};
     out.mObj = value;
@@ -107,7 +50,10 @@ namespace
 
   template <class TObject>
   TObject* ReadTypedPointer(
-    gpg::ReadArchive* const archive, const gpg::RRef& ownerRef, gpg::RType* const expectedType, const char* const expectedName
+    gpg::ReadArchive* const archive,
+    const gpg::RRef& ownerRef,
+    gpg::RType* const expectedType,
+    const char* const expectedName
   )
   {
     gpg::TrackedPointerInfo& tracked = gpg::ReadRawPointer(archive, ownerRef);
@@ -132,7 +78,7 @@ namespace
 
     const char* const expectedTypeName = expectedType ? expectedType->GetName() : expectedName;
     const char* const actualTypeName = source.GetTypeName();
-    const msvc8::string msg = gpg::STR_Printf(
+    const fa::string msg = gpg::STR_Printf(
       "Error detected in archive: expected a pointer to an object of type \"%s\" but got an object of type \"%s\" "
       "instead",
       expectedTypeName ? expectedTypeName : expectedName,
@@ -157,78 +103,6 @@ namespace
 gpg::RType* CCommandTask::sType = nullptr;
 
 /**
- * Address: 0x0060C490 (FUN_0060C490)
- *
- * What it does:
- * Reads one `CCommandTask` object through archive RTTI dispatch using a
- * null owner reference lane.
- */
-void ReadCCommandTaskArchiveAdapterVariantA(gpg::ReadArchive* const archive, void* const object)
-{
-  gpg::RType* taskType = CCommandTask::sType;
-  const gpg::RRef owner{};
-  if (!taskType) {
-    taskType = gpg::LookupRType(typeid(CCommandTask));
-    CCommandTask::sType = taskType;
-  }
-  archive->Read(taskType, object, owner);
-}
-
-/**
- * Address: 0x0060C4D0 (FUN_0060C4D0)
- *
- * What it does:
- * Writes one `CCommandTask` object through archive RTTI dispatch using a
- * null owner reference lane.
- */
-void WriteCCommandTaskArchiveAdapterVariantA(gpg::WriteArchive* const archive, const void* const object)
-{
-  gpg::RType* taskType = CCommandTask::sType;
-  const gpg::RRef owner{};
-  if (!taskType) {
-    taskType = gpg::LookupRType(typeid(CCommandTask));
-    CCommandTask::sType = taskType;
-  }
-  archive->Write(taskType, object, owner);
-}
-
-/**
- * Address: 0x0060C910 (FUN_0060C910)
- *
- * What it does:
- * Performs the second `CCommandTask` archive-read adapter thunk variant with
- * identical RTTI resolution and null-owner dispatch semantics.
- */
-void ReadCCommandTaskArchiveAdapterVariantB(gpg::ReadArchive* const archive, void* const object)
-{
-  gpg::RType* taskType = CCommandTask::sType;
-  const gpg::RRef owner{};
-  if (!taskType) {
-    taskType = gpg::LookupRType(typeid(CCommandTask));
-    CCommandTask::sType = taskType;
-  }
-  archive->Read(taskType, object, owner);
-}
-
-/**
- * Address: 0x0060C950 (FUN_0060C950)
- *
- * What it does:
- * Performs the second `CCommandTask` archive-write adapter thunk variant with
- * identical RTTI resolution and null-owner dispatch semantics.
- */
-void WriteCCommandTaskArchiveAdapterVariantB(gpg::WriteArchive* const archive, const void* const object)
-{
-  gpg::RType* taskType = CCommandTask::sType;
-  const gpg::RRef owner{};
-  if (!taskType) {
-    taskType = gpg::LookupRType(typeid(CCommandTask));
-    CCommandTask::sType = taskType;
-  }
-  archive->Write(taskType, object, owner);
-}
-
-/**
  * Address: 0x00608E90 (FUN_00608E90, non-deleting body)
  *
  * IDA signature:
@@ -237,21 +111,7 @@ void WriteCCommandTaskArchiveAdapterVariantB(gpg::WriteArchive* const archive, c
  * What it does:
  * Base teardown only: `InstanceCounter<CCommandTask>`'s -1, then `CTask`.
  */
-CCommandTask::~CCommandTask()
-{
-}
-
-/**
- * Address: 0x0060A590 (FUN_0060A590)
- *
- * What it does:
- * Tail-forwards one wrapper destructor thunk lane into the canonical
- * non-deleting `CCommandTask` destructor body.
- */
-void DestroyCCommandTaskThunkVariantA(CCommandTask* const task)
-{
-  task->~CCommandTask();
-}
+CCommandTask::~CCommandTask() {}
 
 int CCommandTask::Execute()
 {
@@ -281,7 +141,10 @@ int CCommandTask::Execute()
  * What it does:
  * Initializes a detached command task with explicit unit/sim context.
  */
-CCommandTask::CCommandTask(Unit* const unit, Sim* const sim)
+CCommandTask::CCommandTask(
+  Unit* const unit,
+  Sim* const sim
+)
   : CTask(nullptr, false)
   , mReserved18(0)
   , mUnit(unit)
@@ -289,8 +152,7 @@ CCommandTask::CCommandTask(Unit* const unit, Sim* const sim)
   , mTaskState(TASKSTATE_Preparing)
   , mDispatchResult(nullptr)
   , mLinkResult(static_cast<EAiResult>(0))
-{
-}
+{}
 
 /**
  * Address: 0x00598AB0 (FUN_00598AB0, ??0CCommandTask@Moho@@QAE@@Z_1)
@@ -309,8 +171,7 @@ CCommandTask::CCommandTask()
   , mTaskState(TASKSTATE_Preparing)
   , mDispatchResult(nullptr)
   , mLinkResult(static_cast<EAiResult>(0))
-{
-}
+{}
 
 /**
  * Address: 0x005F08D0 (FUN_005F08D0, ??0CCommandTask@Moho@@QAE@@Z)
@@ -321,7 +182,9 @@ CCommandTask::CCommandTask()
  * Initializes one child command task from `parent` task context, inheriting
  * task-thread/unit/sim lanes and chaining dispatch-result storage.
  */
-CCommandTask::CCommandTask(CCommandTask* const parent)
+CCommandTask::CCommandTask(
+  CCommandTask* const parent
+)
   : CTask(parent ? parent->mOwnerThread : nullptr, parent != nullptr && parent->mOwnerThread != nullptr)
   , mReserved18(0)
   , mUnit(parent ? parent->mUnit : nullptr)
@@ -345,58 +208,6 @@ CCommandTask::CCommandTask(CCommandTask* const parent)
 Unit* CCommandTask::GetUnit() const noexcept
 {
   return mUnit;
-}
-
-/**
- * Address: 0x0060C270 (FUN_0060C270, serializer load thunk alias)
- *
- * What it does:
- * Tail-forwards one CCommandTask serializer-load thunk alias into the shared
- * CCommandTask deserialize callback body.
- */
-void DeserializeCCommandTaskThunkVariantA(
-  gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int version, gpg::RRef* const ownerRef
-)
-{
-}
-
-/**
- * Address: 0x0060C830 (FUN_0060C830, serializer load thunk alias)
- *
- * What it does:
- * Tail-forwards a second CCommandTask serializer-load thunk alias into the
- * shared CCommandTask deserialize callback body.
- */
-void DeserializeCCommandTaskThunkVariantB(
-  gpg::ReadArchive* const archive, const std::intptr_t objectPtr, const int version, gpg::RRef* const ownerRef
-)
-{
-}
-
-/**
- * Address: 0x0060C280 (FUN_0060C280, serializer save thunk alias)
- *
- * What it does:
- * Tail-forwards one CCommandTask serializer-save thunk alias into the shared
- * CCommandTask serialize callback body.
- */
-void SerializeCCommandTaskThunkVariantA(
-  gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int version, gpg::RRef* const ownerRef
-)
-{
-}
-
-/**
- * Address: 0x0060C840 (FUN_0060C840, serializer save thunk alias)
- *
- * What it does:
- * Tail-forwards a second CCommandTask serializer-save thunk alias into the
- * shared CCommandTask serialize callback body.
- */
-void SerializeCCommandTaskThunkVariantB(
-  gpg::WriteArchive* const archive, const std::intptr_t objectPtr, const int version, gpg::RRef* const ownerRef
-)
-{
 }
 
 /**
@@ -432,16 +243,11 @@ void CCommandTaskTypeInfo::Init()
  * What it does:
  * Registers `CTask` as the primary base at offset 0.
  */
-void CCommandTaskTypeInfo::AddBase_CTask(gpg::RType* const typeInfo)
+void CCommandTaskTypeInfo::AddBase_CTask(
+  gpg::RType* const typeInfo
+)
 {
-  gpg::RType* const taskType = gpg::RTypeOf<CTask>();
-  gpg::RField baseField{};
-  baseField.mName = taskType->GetName();
-  baseField.mType = taskType;
-  baseField.mOffset = 0;
-  baseField.mFlags = 0;
-  baseField.mDesc = nullptr;
-  typeInfo->AddBase(baseField);
+  gpg::AddReflectedBase<CTask>(typeInfo);
 }
 
 namespace gpg
@@ -453,14 +259,12 @@ namespace gpg
    * Builds one typed reflection reference for `moho::CCommandTask*`,
    * preserving dynamic-derived ownership and base-offset adjustment.
    */
-  gpg::RRef* RRef_CCommandTask(gpg::RRef* const outRef, moho::CCommandTask* const value)
+  gpg::RRef* RRef_CCommandTask(
+    gpg::RRef* const outRef,
+    moho::CCommandTask* const value
+  )
   {
-    if (!outRef) {
-      return nullptr;
-    }
-
-    *outRef = gpg::MakeDerivedRef(value, gpg::RTypeOf<CCommandTask>());
-    return outRef;
+    return gpg::WriteDerivedRef(outRef, value);
   }
 } // namespace gpg
 
@@ -492,12 +296,17 @@ namespace
   CCommandTaskReflectionBootstrap gCCommandTaskReflectionBootstrap;
 } // namespace
 
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_CCommandTaskTypeInfo_7e4818, moho::register_CCommandTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_CCommandTaskTypeInfo_7e4818,
+  moho::register_CCommandTaskTypeInfo
+)
 
-GPG_PREREGISTER_INIT(AcquireCCommandTaskTypeInfo_7e4818, AcquireCCommandTaskTypeInfo)
+GPG_PREREGISTER_INIT(
+  AcquireCCommandTaskTypeInfo_7e4818,
+  AcquireCCommandTaskTypeInfo
+)
 
 namespace moho
 {
@@ -505,7 +314,11 @@ namespace moho
    * Address: 0x00608DE0 (FUN_00608DE0, Moho::CCommandTaskSerializer::Deserialize)
    * Address: 0x0060CFC0 (FUN_0060CFC0, shared callback body)
    */
-  void CCommandTask::MemberDeserialize(gpg::ReadArchive* const archive, const int, const gpg::RRef&)
+  void CCommandTask::MemberDeserialize(
+    gpg::ReadArchive* const archive,
+    const int,
+    const gpg::RRef&
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -538,7 +351,11 @@ namespace moho
    * Address: 0x00608DF0 (FUN_00608DF0, Moho::CCommandTaskSerializer::Serialize)
    * Address: 0x0060D0C0 (FUN_0060D0C0, shared callback body)
    */
-  void CCommandTask::MemberSerialize(gpg::WriteArchive* const archive, const int, const gpg::RRef&)
+  void CCommandTask::MemberSerialize(
+    gpg::WriteArchive* const archive,
+    const int,
+    const gpg::RRef&
+  )
   {
     GPG_ASSERT(archive != nullptr);
     if (!archive) {
@@ -555,15 +372,17 @@ namespace moho
     }
     archive->Write(taskType, static_cast<const CTask*>(this), owner);
 
-    gpg::WriteRawPointer(archive, gpg::MakeDerivedRef(mUnit, gpg::RTypeOf<Unit>()), gpg::TrackedPointerState::Unowned, owner);
-    gpg::WriteRawPointer(archive, gpg::MakeDerivedRef(mSim, gpg::RTypeOf<Sim>()), gpg::TrackedPointerState::Unowned, owner);
+    gpg::WriteRawPointer(
+      archive, gpg::MakeDerivedRef(mUnit, gpg::RTypeOf<Unit>()), gpg::TrackedPointerState::Unowned, owner
+    );
+    gpg::WriteRawPointer(
+      archive, gpg::MakeDerivedRef(mSim, gpg::RTypeOf<Sim>()), gpg::TrackedPointerState::Unowned, owner
+    );
     archive->WriteInt(static_cast<int>(mTaskState));
 
     gpg::RType* const aiResultType = gpg::RTypeOf<EAiResult>();
     archive->Write(aiResultType, &mLinkResult, owner);
-    gpg::WriteRawPointer(
-      archive, MakeEAiResultRef(mDispatchResult), gpg::TrackedPointerState::Unowned, owner
-    );
+    gpg::WriteRawPointer(archive, MakeEAiResultRef(mDispatchResult), gpg::TrackedPointerState::Unowned, owner);
   }
 } // namespace moho
 

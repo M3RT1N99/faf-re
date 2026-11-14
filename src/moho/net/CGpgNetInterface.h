@@ -1,10 +1,9 @@
 #pragma once
-#include "boost/enable_shared_from_this.h"
-#include "boost/mutex.h"
-#include "boost/recursive_mutex.h"
-#include "boost/shared_ptr.h"
-#include "boost/thread.h"
-#include "boost/weak_ptr.h"
+#include <memory>
+#include "legacy/thread/Mutex.h"
+#include "legacy/thread/Thread.h"
+#include <memory>
+#include <memory>
 #include "gpg/core/utils/Sync.h"
 #include "INetNATTraversalProvider.h"
 #include "legacy/containers/Deque.h"
@@ -33,7 +32,7 @@ namespace moho
 
     EType mType{NETARG_Num};
     int32_t mNum{0};
-    msvc8::string mStr{};
+    fa::string mStr{};
 
     explicit SNetCommandArg(
       const int32_t num
@@ -57,7 +56,7 @@ namespace moho
      * text into the arg payload.
      */
     explicit SNetCommandArg(
-      const msvc8::string& str
+      const fa::string& str
     )
       : mType{NETARG_String}
       , mNum{0}
@@ -72,7 +71,7 @@ namespace moho
      * `mType = NETARG_Data`, zeroes `mNum`, default-inits `mStr` into SSO
      * state, then copies `length` bytes starting at `data` into the arg
      * payload. Mirrors the `NETARG_String` constructor above for the raw
-     * byte-range case instead of a `msvc8::string` source.
+     * byte-range case instead of a `fa::string` source.
      */
     SNetCommandArg(
       const char* const data,
@@ -103,8 +102,8 @@ namespace moho
     /**
      * Not an out-of-line binary emission on its own: MSVC8's per-instance
      * `~SNetCommandArg()` is folded directly into whichever range-destroy
-     * loop calls it (`msvc8::vector<SNetCommandArg>::destroy_range`,
-     * FUN_007BD8F0, see `legacy/containers/Vector.h`). `msvc8::string` has no
+     * loop calls it (`fa::vector<SNetCommandArg>::destroy_range`,
+     * FUN_007BD8F0, see `legacy/containers/Vector.h`). `fa::string` has no
      * destructor of its own by design (see its class comment), so this
      * explicit destructor is what makes `SNetCommandArg` correctly
      * non-trivially-destructible -- without it, the generic `destroy_range<T>`
@@ -122,10 +121,12 @@ namespace moho
      * What it does:
      * Copy-assigns scalar `mType`/`mNum` fields and rebuilds the string
      * payload from source text via `reset_and_assign` (tidy-then-copy,
-     * rather than `msvc8::string::operator=`'s self-assignment-safe
+     * rather than `fa::string::operator=`'s self-assignment-safe
      * copy/swap path).
      */
-    SNetCommandArg& operator=(const SNetCommandArg& source)
+    SNetCommandArg& operator=(
+      const SNetCommandArg& source
+    )
     {
       mType = source.mType;
       mNum = source.mNum;
@@ -137,8 +138,8 @@ namespace moho
 
   struct SNetCommand
   {
-    msvc8::string mName;
-    msvc8::vector<SNetCommandArg> mArgs;
+    fa::string mName;
+    fa::vector<SNetCommandArg> mArgs;
     int mVal{0};
 
     /**
@@ -148,7 +149,7 @@ namespace moho
      * Initializes one queued command entry with copied name, argument vector,
      * and value lanes.
      */
-    SNetCommand(const char* name, const msvc8::vector<SNetCommandArg>& args, int val);
+    SNetCommand(const char* name, const fa::vector<SNetCommandArg>& args, int val);
 
     /**
      * Address: 0x007BCE70 (FUN_007BCE70)
@@ -173,7 +174,7 @@ namespace moho
   class CGpgNetInterface :
     public CPullTask<CGpgNetInterface>,
     public INetNATTraversalProvider,
-    public boost::enable_shared_from_this<CGpgNetInterface>
+    public std::enable_shared_from_this<CGpgNetInterface>
   {
   public:
     /**
@@ -188,7 +189,7 @@ namespace moho
      * Creates one owning `boost::shared_ptr<CGpgNetInterface>` from a raw
      * instance pointer and binds `enable_shared_from_this` ownership lanes.
      */
-    [[nodiscard]] static boost::shared_ptr<CGpgNetInterface> CreatePtr(CGpgNetInterface* inter);
+    [[nodiscard]] static std::shared_ptr<CGpgNetInterface> CreatePtr(CGpgNetInterface* inter);
 
     /**
      * Address: 0x007B68C0 (FUN_007B68C0 deleting wrapper)
@@ -211,7 +212,7 @@ namespace moho
      * What it does:
      * Stores NAT traversal handler weak-pointer for SendNatPacket command path.
      */
-    void SetTraversalHandler(int port, boost::shared_ptr<INetNATTraversalHandler>* handler) override;
+    void SetTraversalHandler(int port, std::shared_ptr<INetNATTraversalHandler>* handler) override;
 
     /**
      * Address: 0x007B9160 (FUN_007B9160)
@@ -237,7 +238,7 @@ namespace moho
      * What it does:
      * Returns string payload reference or throws type-error if arg is not string.
      */
-    const msvc8::string& ExpectedString(const SNetCommandArg* arg) noexcept(false);
+    const fa::string& ExpectedString(const SNetCommandArg* arg) noexcept(false);
 
     /**
      * Address: 0x007B66B0 (FUN_007B66B0)
@@ -262,7 +263,7 @@ namespace moho
      * Starts async GPGNet-launch connect worker from one command-line template
      * (for example containing `%s` endpoint substitution).
      */
-    void Connect(const msvc8::string& launchCommandTemplate);
+    void Connect(const fa::string& launchCommandTemplate);
 
     /**
      * Address: 0x007B6A30
@@ -278,7 +279,7 @@ namespace moho
      * @param name
      * @param args
      */
-    void WriteCommand(const char* name, const msvc8::vector<SNetCommandArg>& args);
+    void WriteCommand(const char* name, const fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B6F00
@@ -346,7 +347,7 @@ namespace moho
      *
      * @param str
      */
-    void WriteString(const msvc8::string& str);
+    void WriteString(const fa::string& str);
 
     /**
      * Address: 0x007B7520 (FUN_007B7520)
@@ -354,15 +355,6 @@ namespace moho
      * @param arg
      */
     void WriteArg(const SNetCommandArg* arg);
-
-    /**
-     * Address: 0x007B75D0 (FUN_007B75D0)
-     *
-     * What it does:
-     * Validates connected state under `mLock` and closes the active TCP
-     * socket lane with `ModeBoth`.
-     */
-    void EnsureConnectedAndCloseSocket();
 
     /**
      * Address: 0x007B7710 (FUN_007B7710, func_GPGNETProcess)
@@ -374,67 +366,75 @@ namespace moho
     void PullTask();
 
     /**
+     * Engine addition (plan WP12.2), not in the binary: the launcher's `CreateLobby` has made a lobby here.
+     */
+    [[nodiscard]] bool HasLobby() const noexcept
+    {
+      return mLobbyObject.m_state != nullptr;
+    }
+
+    /**
      * Address: 0x007B7A30
      *
      * @param args
      */
-    void Test(msvc8::vector<SNetCommandArg>& args);
+    void Test(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B7C50
      *
      * @param args
      */
-    void Connected(msvc8::vector<SNetCommandArg>& args);
+    void Connected(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B7DE0
      *
      * @param args
      */
-    void CreateLobby(msvc8::vector<SNetCommandArg>& args);
+    void CreateLobby(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B81D0
      *
      * @param args
      */
-    void HostGame(msvc8::vector<SNetCommandArg>& args);
+    void HostGame(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B83C0
      *
      * @param args
      */
-    void JoinGame(msvc8::vector<SNetCommandArg>& args);
+    void JoinGame(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B85A0
      *
      * @param args
      */
-    void ConnectToPeer(msvc8::vector<SNetCommandArg>& args);
+    void ConnectToPeer(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B8780
      *
      * @param args
      */
-    void DisconnectFromPeer(msvc8::vector<SNetCommandArg>& args);
+    void DisconnectFromPeer(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B8920
      *
      * @param args
      */
-    void HasSupCom(msvc8::vector<SNetCommandArg>& args);
+    void HasSupCom(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B8A70
      *
      * @param args
      */
-    void HasForgedAlliance(msvc8::vector<SNetCommandArg>& args);
+    void HasForgedAlliance(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B8BC0 (FUN_007B8BC0)
@@ -445,7 +445,7 @@ namespace moho
      *
      * @param args
      */
-    void SendNatPacket(msvc8::vector<SNetCommandArg>& args);
+    void SendNatPacket(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007B8E20 (FUN_007B8E20)
@@ -456,7 +456,7 @@ namespace moho
      *
      * @param args
      */
-    void EjectPlayer(msvc8::vector<SNetCommandArg>& args);
+    void EjectPlayer(fa::vector<SNetCommandArg>& args);
 
     /**
      * Address: 0x007BA640 (FUN_007BA640, func_NET_ConnectThread)
@@ -466,7 +466,7 @@ namespace moho
      * using one command-line template, accepts the incoming socket, and starts
      * command read loop.
      */
-    void ConnectThread(const msvc8::string& launchCommandTemplate);
+    void ConnectThread(const fa::string& launchCommandTemplate);
 
     /**
      * Address: 0x007BA5E0
@@ -491,30 +491,28 @@ namespace moho
      * @param args
      * @param val
      */
-    void EnqueueCommand(const char* name, msvc8::vector<SNetCommandArg>& args, int val);
+    void EnqueueCommand(const char* name, fa::vector<SNetCommandArg>& args, int val);
 
   private:
     // boost::shared_ptr<CGpgNetInterface> mSelf;
-    boost::mutex mLock;
+    fa::mutex mLock;
     DWORD mConnectionState{0};
     INetTCPServer* mTcpServer{nullptr};
     INetTCPSocket* mTcpSocket{nullptr};
-    msvc8::deque<SNetCommand> mCommands;
+    fa::deque<SNetCommand> mCommands;
     HANDLE mQueueEvent{nullptr};
-    boost::thread* mConnectThreadWorker{nullptr};
+    fa::thread* mConnectThreadWorker{nullptr};
     LuaPlus::LuaObject mLobbyObject;
-    boost::weak_ptr<INetNATTraversalHandler> mNATHandler;
+    std::weak_ptr<INetNATTraversalHandler> mNATHandler;
   };
   static_assert(sizeof(CGpgNetInterface) == 0x70, "CGpgNetInterface size must be 0x70");
-  static_assert(
-    sizeof(CPullTask<CGpgNetInterface>) == 0x18, "CPullTask<CGpgNetInterface> size must be 0x18"
-  );
+  static_assert(sizeof(CPullTask<CGpgNetInterface>) == 0x18, "CPullTask<CGpgNetInterface> size must be 0x18");
 
   // FUN_007BB4E0 (boost::weak_ptr<INetNATTraversalHandler>(const shared_ptr&))
   // and FUN_007BC5C0 (the CGpgNetInterface->INetNATTraversalProvider aliasing
-  // form) are both instantiations of the generic `boost::AssignWeakFromShared`
-  // template -- see BoostWrappers.h for the shared per-T binding and both
-  // addresses' citations.
+  // form) are both instantiations of weak_ptr's converting constructor from
+  // shared_ptr, written here as a plain weak_ptr assignment; both addresses
+  // are cited in gpg/core/utils/SharedPtrUtils.h.
 
   /**
    * Address: 0x007BC5F0 (FUN_007BC5F0, Moho::NET_MakeNATTraversal)
@@ -534,7 +532,8 @@ namespace moho
   LuaPlus::LuaObject* NET_MakeNATTraversal(
     LuaPlus::LuaState* state,
     LuaPlus::LuaObject* out,
-    boost::weak_ptr<INetNATTraversalProvider>* provider);
+    std::weak_ptr<INetNATTraversalProvider>* provider
+  );
 
   /**
    * Address: 0x007B9470 (FUN_007B9470, Moho::GPGNET_SetPtr)
@@ -542,13 +541,13 @@ namespace moho
    * What it does:
    * Replaces the process-global GPGNet shared-pointer lane (`sGPGNet`).
    */
-  void GPGNET_SetPtr(const boost::shared_ptr<CGpgNetInterface>& ptr);
+  void GPGNET_SetPtr(const std::shared_ptr<CGpgNetInterface>& ptr);
 
   /**
    * What it does:
    * Returns the active process-global GPGNet interface pointer.
    */
-  [[nodiscard]] boost::shared_ptr<CGpgNetInterface> GPGNET_GetPtr();
+  [[nodiscard]] std::shared_ptr<CGpgNetInterface> GPGNET_GetPtr();
 
   /**
    * Address: 0x007B94C0 (FUN_007B94C0, ?GPGNET_ReportBottleneck@Moho@@YAXABUSClientBottleneckInfo@1@@Z)
@@ -575,7 +574,7 @@ namespace moho
    * Sends one `"Desync"` command with `(beat, army, hash1, hash2)` payload over
    * the active process-global GPGNet interface (when available).
    */
-  void GPGNET_ReportDesync(int beat, int army, const msvc8::string& hash1, const msvc8::string& hash2);
+  void GPGNET_ReportDesync(int beat, int army, const fa::string& hash1, const fa::string& hash2);
 
   /**
    * Address: 0x007B9CD0 (FUN_007B9CD0, Moho::GPGNET_SubmitArmyStats)
@@ -584,7 +583,14 @@ namespace moho
    * Sends one `"Stats"` command with the provided army-stats payload through
    * the active process-global GPGNet interface (when available).
    */
-  void GPGNET_SubmitArmyStats(const msvc8::string& statsPayload);
+  void GPGNET_SubmitArmyStats(const fa::string& statsPayload);
+
+  /**
+   * Engine addition (issue #275), not in the binary: tells a launcher that passed `/rejoinoffer`
+   * that this client could come back to this game, with what it needs to start it so: this
+   * client's source, and `playerId=source,...` for every player.
+   */
+  void GPGNET_ReportRejoinOffer(const fa::string& localSource, const fa::string& seats);
 
   /**
    * Address: 0x007B9360 (FUN_007B9360, ?GPGNET_Attach@Moho@@YAXIG@Z)

@@ -46,25 +46,6 @@ namespace gpg
   ArchiveTokenTypeInfo::~ArchiveTokenTypeInfo() = default;
 
   /**
-   * Address: 0x00952B40 (FUN_00952B40)
-   *
-   * What it does:
-   * Runs one deleting-destructor thunk for `ArchiveTokenTypeInfo`, forwarding
-   * through non-deleting `REnumType` teardown and optional storage release.
-   */
-  [[nodiscard]] gpg::REnumType* DestroyArchiveTokenTypeInfoDeleting(
-    ArchiveTokenTypeInfo* const typeInfo,
-    const unsigned char deleteFlag
-  )
-  {
-    typeInfo->gpg::REnumType::~REnumType();
-    if ((deleteFlag & 1u) != 0u) {
-      ::operator delete(static_cast<void*>(typeInfo));
-    }
-    return typeInfo;
-  }
-
-  /**
    * Address: 0x00952B10 (FUN_00952B10, ArchiveTokenTypeInfo::GetName)
    */
   const char* ArchiveTokenTypeInfo::GetName() const
@@ -106,4 +87,7 @@ namespace gpg
 
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_ArchiveTokenTypeInfoStartup_20b238, gpg::register_ArchiveTokenTypeInfoStartup)
+GPG_PREREGISTER_INIT(
+  register_ArchiveTokenTypeInfoStartup_20b238,
+  gpg::register_ArchiveTokenTypeInfoStartup
+)

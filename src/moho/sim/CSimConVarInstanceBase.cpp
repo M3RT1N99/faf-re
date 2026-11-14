@@ -10,8 +10,10 @@ using namespace moho;
 
 namespace
 {
-  [[nodiscard]] const std::string*
-  GetArgToken(const moho::CSimConCommand::ParsedCommandArgs& args, const std::size_t index) noexcept
+  [[nodiscard]] const std::string* GetArgToken(
+    const moho::CSimConCommand::ParsedCommandArgs& args,
+    const std::size_t index
+  ) noexcept
   {
     if (index >= args.size()) {
       return nullptr;
@@ -19,7 +21,9 @@ namespace
     return &args[index];
   }
 
-  [[nodiscard]] float ParseFloatArg(const std::string* const token) noexcept
+  [[nodiscard]] float ParseFloatArg(
+    const std::string* const token
+  ) noexcept
   {
     if (token == nullptr) {
       return 0.0f;
@@ -27,23 +31,34 @@ namespace
     return static_cast<float>(std::atof(token->c_str()));
   }
 
-  [[nodiscard]] bool TokenEq(const std::string* const token, const char* const text) noexcept
+  [[nodiscard]] bool TokenEq(
+    const std::string* const token,
+    const char* const text
+  ) noexcept
   {
     return token != nullptr && text != nullptr && *token == text;
   }
 
-  [[nodiscard]] bool TokenEqNoCase(const std::string* const token, const char* const text) noexcept
+  [[nodiscard]] bool TokenEqNoCase(
+    const std::string* const token,
+    const char* const text
+  ) noexcept
   {
     return token != nullptr && text != nullptr && gpg::STR_EqualsNoCase(token->c_str(), text);
   }
 
-  [[nodiscard]] int ParseIntArg(const std::string* const token) noexcept
+  [[nodiscard]] int ParseIntArg(
+    const std::string* const token
+  ) noexcept
   {
     return std::atoi(token != nullptr ? token->c_str() : "");
   }
 
   template <typename TValue>
-  void ApplyIntegralSimConVarArgs(const moho::CSimConCommand::ParsedCommandArgs& args, TValue* const value) noexcept
+  void ApplyIntegralSimConVarArgs(
+    const moho::CSimConCommand::ParsedCommandArgs& args,
+    TValue* const value
+  ) noexcept
   {
     if (value == nullptr) {
       return;
@@ -107,12 +122,18 @@ namespace
     }
   }
 
-  void ApplyIntSimConVarArgs(const moho::CSimConCommand::ParsedCommandArgs& args, int* const value) noexcept
+  void ApplyIntSimConVarArgs(
+    const moho::CSimConCommand::ParsedCommandArgs& args,
+    int* const value
+  ) noexcept
   {
     ApplyIntegralSimConVarArgs<int>(args, value);
   }
 
-  void ApplyUInt8SimConVarArgs(const moho::CSimConCommand::ParsedCommandArgs& args, std::uint8_t* const value) noexcept
+  void ApplyUInt8SimConVarArgs(
+    const moho::CSimConCommand::ParsedCommandArgs& args,
+    std::uint8_t* const value
+  ) noexcept
   {
     ApplyIntegralSimConVarArgs<std::uint8_t>(args, value);
   }
@@ -166,7 +187,7 @@ namespace
   [[nodiscard]] int HandleStringSimConVarArgs(
     const moho::CSimConCommand::ParsedCommandArgs& args,
     const char* const name,
-    msvc8::string* const value
+    fa::string* const value
   )
   {
     if (value == nullptr) {
@@ -189,7 +210,10 @@ namespace
     return 0;
   }
 
-  void ApplyFloatSimConVarArgs(const moho::CSimConCommand::ParsedCommandArgs& args, float* const value) noexcept
+  void ApplyFloatSimConVarArgs(
+    const moho::CSimConCommand::ParsedCommandArgs& args,
+    float* const value
+  ) noexcept
   {
     if (value == nullptr) {
       return;
@@ -234,10 +258,11 @@ namespace
  * Base constructor lane that installs the abstract convar-instance vtable and
  * binds the command-name lane.
  */
-CSimConVarInstanceBase::CSimConVarInstanceBase(const char* const name)
+CSimConVarInstanceBase::CSimConVarInstanceBase(
+  const char* const name
+)
   : mName(name)
-{
-}
+{}
 
 /**
  * Address: 0x00579730 (FUN_00579730, sub_579730)
@@ -262,29 +287,29 @@ CSimConVarInstanceBase::~CSimConVarInstanceBase() = default;
  * Address: 0x00735A30 (FUN_00735A30, Moho::TSimConVarInstance_string::TSimConVarInstance_string)
  *
  * What it does:
- * Constructs one `TSimConVarInstance<msvc8::string>` in-place from
+ * Constructs one `TSimConVarInstance<fa::string>` in-place from
  * `(name, value)`, consuming the by-value default-value string (its heap
  * buffer, if any, is released once its content has been moved into
  * `mValue`). Unlike its `Bool`/`Int`/`UInt8` siblings above, this one is
- * wired from a real caller (`TSimConVar<msvc8::string>::CreateInstance()`,
+ * wired from a real caller (`TSimConVar<fa::string>::CreateInstance()`,
  * CSimConVarBase.cpp) rather than left orphaned, since the binary splits
- * `TSimConVar<msvc8::string>::CreateInstance` (0x007354E0) into an outer
+ * `TSimConVar<fa::string>::CreateInstance` (0x007354E0) into an outer
  * allocate-and-copy-default-value wrapper plus this inner placement
  * constructor -- the same two-symbol shape `TSimConVarInstance_uint8`
  * shows between 0x00735400 (its `CreateInstance`) and 0x00735980 (its own
  * constructor).
  */
-moho::TSimConVarInstance<msvc8::string>* moho::ConstructTSimConVarInstanceString(
-  moho::TSimConVarInstance<msvc8::string>* const instance,
+moho::TSimConVarInstance<fa::string>* moho::ConstructTSimConVarInstanceString(
+  moho::TSimConVarInstance<fa::string>* const instance,
   const char* const name,
-  msvc8::string value
+  fa::string value
 ) noexcept
 {
   if (instance == nullptr) {
     return nullptr;
   }
 
-  ::new (static_cast<void*>(instance)) moho::TSimConVarInstance<msvc8::string>();
+  ::new (static_cast<void*>(instance)) moho::TSimConVarInstance<fa::string>();
   instance->mName = name;
   instance->mValue = std::move(value);
   return instance;
@@ -298,7 +323,9 @@ moho::TSimConVarInstance<msvc8::string>* moho::ConstructTSimConVarInstanceString
  * RHS token is provided.
  */
 template <>
-int moho::TSimConVarInstance<int>::HandleConsoleCommand(void* commandArgs)
+int moho::TSimConVarInstance<int>::HandleConsoleCommand(
+  void* commandArgs
+)
 {
   auto* const args = static_cast<CSimConCommand::ParsedCommandArgs*>(commandArgs);
   if (args != nullptr && args->size() >= 2u) {
@@ -318,7 +345,9 @@ int moho::TSimConVarInstance<int>::HandleConsoleCommand(void* commandArgs)
  * semantics (`=`, on/off/true/false/show/tog, numeric fallback).
  */
 template <>
-int moho::TSimConVarInstance<bool>::HandleConsoleCommand(void* commandArgs)
+int moho::TSimConVarInstance<bool>::HandleConsoleCommand(
+  void* commandArgs
+)
 {
   auto* const args = static_cast<CSimConCommand::ParsedCommandArgs*>(commandArgs);
   return args != nullptr ? HandleBoolSimConVarArgs(*args, mName, &mValue) : HandleBoolSimConVarArgs({}, mName, &mValue);
@@ -332,7 +361,9 @@ int moho::TSimConVarInstance<bool>::HandleConsoleCommand(void* commandArgs)
  * RHS token is provided.
  */
 template <>
-int moho::TSimConVarInstance<std::uint8_t>::HandleConsoleCommand(void* commandArgs)
+int moho::TSimConVarInstance<std::uint8_t>::HandleConsoleCommand(
+  void* commandArgs
+)
 {
   auto* const args = static_cast<CSimConCommand::ParsedCommandArgs*>(commandArgs);
   if (args != nullptr && args->size() >= 2u) {
@@ -388,7 +419,9 @@ void* moho::TSimConVarInstance<int>::GetValueStorage()
  * `outRef`.
  */
 template <>
-gpg::RRef* moho::TSimConVarInstance<int>::GetValueRef(gpg::RRef* const outRef)
+gpg::RRef* moho::TSimConVarInstance<int>::GetValueRef(
+  gpg::RRef* const outRef
+)
 {
   if (outRef == nullptr) {
     return nullptr;
@@ -409,7 +442,9 @@ gpg::RRef* moho::TSimConVarInstance<int>::GetValueRef(gpg::RRef* const outRef)
  * into `outRef`.
  */
 template <>
-gpg::RRef* moho::TSimConVarInstance<bool>::GetValueRef(gpg::RRef* const outRef)
+gpg::RRef* moho::TSimConVarInstance<bool>::GetValueRef(
+  gpg::RRef* const outRef
+)
 {
   if (outRef == nullptr) {
     return nullptr;
@@ -430,7 +465,9 @@ gpg::RRef* moho::TSimConVarInstance<bool>::GetValueRef(gpg::RRef* const outRef)
  * into `outRef`.
  */
 template <>
-gpg::RRef* moho::TSimConVarInstance<std::uint8_t>::GetValueRef(gpg::RRef* const outRef)
+gpg::RRef* moho::TSimConVarInstance<std::uint8_t>::GetValueRef(
+  gpg::RRef* const outRef
+)
 {
   if (outRef == nullptr) {
     return nullptr;
@@ -451,14 +488,16 @@ gpg::RRef* moho::TSimConVarInstance<std::uint8_t>::GetValueRef(gpg::RRef* const 
  * into `outRef`.
  */
 template <>
-gpg::RRef* moho::TSimConVarInstance<msvc8::string>::GetValueRef(gpg::RRef* const outRef)
+gpg::RRef* moho::TSimConVarInstance<fa::string>::GetValueRef(
+  gpg::RRef* const outRef
+)
 {
   if (outRef == nullptr) {
     return nullptr;
   }
 
   gpg::RRef stringValueRef{};
-  stringValueRef = gpg::MakeRRef<msvc8::string>(&mValue);
+  stringValueRef = gpg::MakeRRef<fa::string>(&mValue);
   outRef->mObj = stringValueRef.mObj;
   outRef->mType = stringValueRef.mType;
   return outRef;
@@ -472,10 +511,13 @@ gpg::RRef* moho::TSimConVarInstance<msvc8::string>::GetValueRef(gpg::RRef* const
  * assignment); prints current value when no RHS argument is provided.
  */
 template <>
-int moho::TSimConVarInstance<msvc8::string>::HandleConsoleCommand(void* commandArgs)
+int moho::TSimConVarInstance<fa::string>::HandleConsoleCommand(
+  void* commandArgs
+)
 {
   auto* const args = static_cast<CSimConCommand::ParsedCommandArgs*>(commandArgs);
-  return args != nullptr ? HandleStringSimConVarArgs(*args, mName, &mValue) : HandleStringSimConVarArgs({}, mName, &mValue);
+  return args != nullptr ? HandleStringSimConVarArgs(*args, mName, &mValue)
+                         : HandleStringSimConVarArgs({}, mName, &mValue);
 }
 
 /**
@@ -486,7 +528,9 @@ int moho::TSimConVarInstance<msvc8::string>::HandleConsoleCommand(void* commandA
  * into `outRef`.
  */
 template <>
-gpg::RRef* moho::TSimConVarInstance<float>::GetValueRef(gpg::RRef* const outRef)
+gpg::RRef* moho::TSimConVarInstance<float>::GetValueRef(
+  gpg::RRef* const outRef
+)
 {
   if (outRef == nullptr) {
     return nullptr;
@@ -507,7 +551,9 @@ gpg::RRef* moho::TSimConVarInstance<float>::GetValueRef(gpg::RRef* const outRef)
  * RHS token is provided.
  */
 template <>
-int moho::TSimConVarInstance<float>::HandleConsoleCommand(void* commandArgs)
+int moho::TSimConVarInstance<float>::HandleConsoleCommand(
+  void* commandArgs
+)
 {
   auto* const args = static_cast<CSimConCommand::ParsedCommandArgs*>(commandArgs);
   if (args != nullptr && args->size() >= 2u) {

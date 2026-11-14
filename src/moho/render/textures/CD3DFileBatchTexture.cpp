@@ -5,8 +5,7 @@
 #include <map>
 #include <utility>
 
-#include "boost/mutex.h"
-#include "boost/weak_ptr.h"
+#include <memory>
 #include "gpg/core/reflection/Reflection.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/resource/ResourceManager.h"
@@ -19,33 +18,43 @@ namespace moho
   {
     struct TextureLookup
     {
-      msvc8::string mFileName;
+      fa::string mFileName;
       std::uint32_t mBorder = 0;
 
       TextureLookup() = default;
 
-      TextureLookup(const msvc8::string& fileName, const std::uint32_t border)
+      TextureLookup(
+        const fa::string& fileName,
+        const std::uint32_t border
+      )
         : mFileName()
         , mBorder(border)
       {
         mFileName.assign_owned(fileName.view());
       }
 
-      TextureLookup(const char* const fileName, const std::uint32_t border)
+      TextureLookup(
+        const char* const fileName,
+        const std::uint32_t border
+      )
         : mFileName()
         , mBorder(border)
       {
         mFileName.assign_owned(fileName != nullptr ? fileName : "");
       }
 
-      TextureLookup(const TextureLookup& other)
+      TextureLookup(
+        const TextureLookup& other
+      )
         : mFileName()
         , mBorder(other.mBorder)
       {
         mFileName.assign_owned(other.mFileName.view());
       }
 
-      TextureLookup& operator=(const TextureLookup& other)
+      TextureLookup& operator=(
+        const TextureLookup& other
+      )
       {
         if (this == &other) {
           return *this;
@@ -57,7 +66,9 @@ namespace moho
         return *this;
       }
 
-      TextureLookup(TextureLookup&& other) noexcept
+      TextureLookup(
+        TextureLookup&& other
+      ) noexcept
         : mFileName(other.mFileName)
         , mBorder(other.mBorder)
       {
@@ -67,7 +78,9 @@ namespace moho
         other.mBorder = 0U;
       }
 
-      TextureLookup& operator=(TextureLookup&& other) noexcept
+      TextureLookup& operator=(
+        TextureLookup&& other
+      ) noexcept
       {
         if (this == &other) {
           return *this;
@@ -97,7 +110,10 @@ namespace moho
      * What it does:
      * Compares two file-texture lookup keys by border and then filename text.
      */
-    [[nodiscard]] bool IsTextureLookupLess(const TextureLookup& lhs, const TextureLookup& rhs)
+    [[nodiscard]] bool IsTextureLookupLess(
+      const TextureLookup& lhs,
+      const TextureLookup& rhs
+    )
     {
       if (lhs.mBorder != rhs.mBorder) {
         return lhs.mBorder < rhs.mBorder;
@@ -107,21 +123,23 @@ namespace moho
 
     struct TextureLookupLess
     {
-      [[nodiscard]] bool operator()(const TextureLookup& lhs, const TextureLookup& rhs) const
+      [[nodiscard]] bool operator()(
+        const TextureLookup& lhs,
+        const TextureLookup& rhs
+      ) const
       {
         return IsTextureLookupLess(lhs, rhs);
       }
     };
 
-    using FileTextureHandle = boost::shared_ptr<CD3DFileBatchTexture>;
-    using FileTextureWeakHandle = boost::weak_ptr<CD3DFileBatchTexture>;
+    using FileTextureHandle = std::shared_ptr<CD3DFileBatchTexture>;
+    using FileTextureWeakHandle = std::weak_ptr<CD3DFileBatchTexture>;
     using TextureLookupMap = std::map<TextureLookup, FileTextureWeakHandle, TextureLookupLess>;
-    using FileTextureRetainQueue = msvc8::vector<FileTextureHandle>;
+    using FileTextureRetainQueue = fa::vector<FileTextureHandle>;
     constexpr std::size_t kRetainQueueLimit = 30u;
 
     TextureLookupMap sTextureMap;
     FileTextureRetainQueue sFileTextures;
-
 
     /**
      * Address: 0x0044A710 (FUN_0044A710)
@@ -130,13 +148,17 @@ namespace moho
      * Locks one weak file-texture cache handle into a shared handle if the
      * pointed object is still alive.
      */
-    [[nodiscard]] FileTextureHandle LockFileTextureWeakHandle(const FileTextureWeakHandle& weakTexture)
+    [[nodiscard]] FileTextureHandle LockFileTextureWeakHandle(
+      const FileTextureWeakHandle& weakTexture
+    )
     {
       const FileTextureHandle outTexture = weakTexture.lock();
       return outTexture;
     }
 
-    [[nodiscard]] TextureLookupMap::iterator FindTextureLookupEntry(const TextureLookup& lookup)
+    [[nodiscard]] TextureLookupMap::iterator FindTextureLookupEntry(
+      const TextureLookup& lookup
+    )
     {
       const TextureLookupMap::iterator it = sTextureMap.lower_bound(lookup);
       if (it == sTextureMap.end()) {
@@ -157,7 +179,9 @@ namespace moho
      * Moves one file texture to the front of the deferred-delete keepalive queue,
      * deduplicating existing entries and trimming to the fixed retain limit.
      */
-    void AddFileBatchTexture(const FileTextureHandle& fileTexture)
+    void AddFileBatchTexture(
+      const FileTextureHandle& fileTexture
+    )
     {
       if (!fileTexture) {
         return;
@@ -188,7 +212,9 @@ namespace moho
      * What it does:
      * Removes one matching file texture pointer from the deferred keepalive queue.
      */
-    void RemoveFileBatchTexture(const FileTextureHandle& fileTexture)
+    void RemoveFileBatchTexture(
+      const FileTextureHandle& fileTexture
+    )
     {
       for (FileTextureHandle* it = sFileTextures.begin(); it != sFileTextures.end(); ++it) {
         if (it->get() == fileTexture.get()) {
@@ -204,7 +230,9 @@ namespace moho
      * What it does:
      * Loads one decoded `SBatchTextureData` payload through the texture-data factory.
      */
-    [[nodiscard]] boost::shared_ptr<SBatchTextureData> GetD3DTextureData(const char* const filename)
+    [[nodiscard]] std::shared_ptr<SBatchTextureData> GetD3DTextureData(
+      const char* const filename
+    )
     {
       // Go through the resource manager, not straight at the factory. Calling
       // SBatchTextureDataFactory::Load here skips two things the manager does
@@ -224,7 +252,7 @@ namespace moho
         SBatchTextureData::sType = resourceType;
       }
 
-      return boost::static_pointer_cast<SBatchTextureData>(
+      return std::static_pointer_cast<SBatchTextureData>(
         RES_GetResource(filename != nullptr ? filename : "", nullptr, resourceType)
       );
     }
@@ -260,7 +288,7 @@ namespace moho
   CD3DFileBatchTexture::CD3DFileBatchTexture(
     const DataHandle& data,
     const std::uint32_t border,
-    const msvc8::string& filename
+    const fa::string& filename
   )
     : CD3DRawBatchTexture(data, border)
     , mFilename()
@@ -305,7 +333,7 @@ namespace moho
   /**
    * Address: 0x00448480 (FUN_00448480)
    */
-  const msvc8::string& CD3DFileBatchTexture::GetFilename() const
+  const fa::string& CD3DFileBatchTexture::GetFilename() const
   {
     return mFilename;
   }
@@ -313,13 +341,15 @@ namespace moho
   /**
    * Address: 0x00448500 (FUN_00448500, Moho::CD3DFileBatchTexture::OnClose)
    */
-  void CD3DFileBatchTexture::OnClose(CD3DFileBatchTexture* const texture)
+  void CD3DFileBatchTexture::OnClose(
+    CD3DFileBatchTexture* const texture
+  )
   {
     if (texture == nullptr) {
       return;
     }
 
-    boost::mutex::scoped_lock scopedLock(sResourceLock);
+    std::lock_guard<std::recursive_mutex> scopedLock(sResourceLock);
 
     const TextureLookup lookup(texture->GetFilename(), texture->GetBorder());
     TextureLookupMap::iterator mapIt = FindTextureLookupEntry(lookup);
@@ -342,8 +372,7 @@ namespace moho
     }
 
     (void)sTextureMap.insert(
-      sTextureMap.lower_bound(lookup),
-      TextureLookupMap::value_type(lookup, FileTextureWeakHandle(retainedTexture))
+      sTextureMap.lower_bound(lookup), TextureLookupMap::value_type(lookup, FileTextureWeakHandle(retainedTexture))
     );
   }
 
@@ -353,12 +382,15 @@ namespace moho
    * Address: 0x0044E050 (FUN_0044E050, shared_ptr raw-assign helper lane)
    * Address: 0x0044EC00 (FUN_0044EC00, shared_count with OnClose deleter lane)
    */
-  boost::shared_ptr<CD3DBatchTexture> CD3DBatchTexture::FromFile(const gpg::StrArg filename, const std::uint32_t border)
+  std::shared_ptr<CD3DBatchTexture> CD3DBatchTexture::FromFile(
+    const gpg::StrArg filename,
+    const std::uint32_t border
+  )
   {
-    boost::shared_ptr<CD3DBatchTexture> outTexture;
+    std::shared_ptr<CD3DBatchTexture> outTexture;
     const char* const normalizedPath = filename != nullptr ? filename : "";
 
-    boost::mutex::scoped_lock scopedLock(sResourceLock);
+    std::lock_guard<std::recursive_mutex> scopedLock(sResourceLock);
 
     const TextureLookup lookup(normalizedPath, border);
     const TextureLookupMap::iterator cachedIt = FindTextureLookupEntry(lookup);
@@ -375,22 +407,20 @@ namespace moho
       }
     }
 
-    boost::shared_ptr<SBatchTextureData> textureData = GetD3DTextureData(normalizedPath);
+    std::shared_ptr<SBatchTextureData> textureData = GetD3DTextureData(normalizedPath);
     if (!textureData) {
       gpg::Logf("Unable to load texture from file: %s", normalizedPath);
       return outTexture;
     }
 
     FileTextureHandle fileTexture(
-      new CD3DFileBatchTexture(textureData, border, lookup.mFileName),
-      &CD3DFileBatchTexture::OnClose
+      new CD3DFileBatchTexture(textureData, border, lookup.mFileName), &CD3DFileBatchTexture::OnClose
     );
     if (cachedIt != sTextureMap.end()) {
       cachedIt->second = fileTexture;
     } else {
       (void)sTextureMap.insert(
-        sTextureMap.lower_bound(lookup),
-        TextureLookupMap::value_type(lookup, FileTextureWeakHandle(fileTexture))
+        sTextureMap.lower_bound(lookup), TextureLookupMap::value_type(lookup, FileTextureWeakHandle(fileTexture))
       );
     }
 

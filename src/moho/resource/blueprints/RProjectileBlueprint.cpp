@@ -24,7 +24,9 @@ namespace moho
    * (`DirectionX/Y/Z`) plus symmetric per-axis ranges.
    */
   [[nodiscard]] Wm3::Vector3f* BuildRandomDirectionVector(
-    CRandomStream* const randomStream, Wm3::Vector3f* const destination, const RProjectileBlueprint* const blueprint
+    CRandomStream* const randomStream,
+    Wm3::Vector3f* const destination,
+    const RProjectileBlueprint* const blueprint
   )
   {
     const auto sampleSymmetricOffset = [randomStream](const float range) {
@@ -39,7 +41,10 @@ namespace moho
 
   namespace
   {
-    [[nodiscard]] float SampleSymmetricRange(CRandomStream* const randomStream, const float range)
+    [[nodiscard]] float SampleSymmetricRange(
+      CRandomStream* const randomStream,
+      const float range
+    )
     {
       return randomStream->FRand(-range, range);
     }
@@ -55,7 +60,10 @@ namespace moho
    * Constructs projectile-blueprint lanes on top of `REntityBlueprint` and
    * restores projectile collision-shape defaults.
    */
-  RProjectileBlueprint::RProjectileBlueprint(RRuleGameRules* const owner, const RResId& resId)
+  RProjectileBlueprint::RProjectileBlueprint(
+    RRuleGameRules* const owner,
+    const RResId& resId
+  )
     : REntityBlueprint(owner, resId)
     , DevStatus()
     , Display()
@@ -152,10 +160,7 @@ namespace moho
    */
   gpg::RRef RProjectileBlueprint::GetDerivedObjectRef()
   {
-    gpg::RRef out{};
-    out.mObj = this;
-    out.mType = GetClass();
-    return out;
+    return gpg::MakeSelfRef(this);
   }
 
   /**
@@ -170,7 +175,7 @@ namespace moho
   {
     REntityBlueprint::OnInitBlueprint();
 
-    msvc8::string completedMeshPath = RES_CompletePath(Display.MeshBlueprint.name.c_str(), mSource.c_str());
+    fa::string completedMeshPath = RES_CompletePath(Display.MeshBlueprint.name.c_str(), mSource.c_str());
     gpg::STR_NormalizeFilenameLowerSlash(completedMeshPath);
     Display.MeshBlueprint.name.assign_owned(completedMeshPath.view());
   }
@@ -183,7 +188,9 @@ namespace moho
    * Samples one random unit axis and scales it by blueprint rotational speed
    * plus symmetric random spread, then converts degrees/sec to radians/sec.
    */
-  Wm3::Vector3f RProjectileBlueprint::GetAngularVelocity(CRandomStream* const randomStream) const
+  Wm3::Vector3f RProjectileBlueprint::GetAngularVelocity(
+    CRandomStream* const randomStream
+  ) const
   {
     Wm3::Vector3f randomAxis{};
     randomAxis.x = randomStream->FRandGaussian();
@@ -213,92 +220,28 @@ namespace moho
    * Samples a symmetric launch-speed offset around `Physics.InitialSpeed`
    * using `Physics.InitialSpeedRange`.
    */
-  float RProjectileBlueprint::GetRandomInitialSpeed(CRandomStream* const randomStream) const
+  float RProjectileBlueprint::GetRandomInitialSpeed(
+    CRandomStream* const randomStream
+  ) const
   {
     return SampleSymmetricRange(randomStream, Physics.InitialSpeedRange) + Physics.InitialSpeed;
   }
 
-  /**
-   * Address: 0x0051C620 (FUN_0051C620)
-   *
-   * What it does:
-   * Samples a symmetric lifetime offset around `Physics.Lifetime` using
-   * `Physics.LifetimeRange`.
-   */
-  float RProjectileBlueprint::GetRandomLifetime(CRandomStream* const randomStream) const
-  {
-    return SampleSymmetricRange(randomStream, Physics.LifetimeRange) + Physics.Lifetime;
-  }
-
-  /**
-   * Address: 0x0051C6E0 (FUN_0051C6E0)
-   *
-   * What it does:
-   * Samples a symmetric max-speed offset around `Physics.MaxSpeed` using
-   * `Physics.MaxSpeedRange`.
-   */
-  float RProjectileBlueprint::GetRandomMaxSpeed(CRandomStream* const randomStream) const
-  {
-    return SampleSymmetricRange(randomStream, Physics.MaxSpeedRange) + Physics.MaxSpeed;
-  }
-
-  /**
-   * Address: 0x0051C740 (FUN_0051C740)
-   *
-   * What it does:
-   * Samples a symmetric acceleration offset around `Physics.Acceleration`
-   * using `Physics.AccelerationRange`.
-   */
-  float RProjectileBlueprint::GetRandomAcceleration(CRandomStream* const randomStream) const
-  {
-    return SampleSymmetricRange(randomStream, Physics.AccelerationRange) + Physics.Acceleration;
-  }
-
-  /**
-   * Address: 0x0051C7A0 (FUN_0051C7A0)
-   *
-   * What it does:
-   * Samples a symmetric turn-rate offset around `Physics.TurnRate` using
-   * `Physics.TurnRateRange`.
-   */
-  float RProjectileBlueprint::GetRandomTurnRate(CRandomStream* const randomStream) const
-  {
-    return SampleSymmetricRange(randomStream, Physics.TurnRateRange) + Physics.TurnRate;
-  }
-
-  /**
-   * Address: 0x0051C800 (FUN_0051C800)
-   *
-   * What it does:
-   * Samples a symmetric mesh-scale offset around `Display.UniformScale`
-   * using `Display.MeshScaleRange`.
-   */
-  float RProjectileBlueprint::GetRandomMeshScale(CRandomStream* const randomStream) const
-  {
-    return SampleSymmetricRange(randomStream, Display.MeshScaleRange) + Display.UniformScale;
-  }
-
-  /**
-   * Address: 0x0051C860 (FUN_0051C860)
-   *
-   * What it does:
-   * Samples a symmetric mesh-scale-velocity offset around
-   * `Display.MeshScaleVelocity` using `Display.MeshScaleVelocityRange`.
-   */
-  float RProjectileBlueprint::GetRandomMeshScaleVelocity(CRandomStream* const randomStream) const
-  {
-    return SampleSymmetricRange(randomStream, Display.MeshScaleVelocityRange) + Display.MeshScaleVelocity;
-  }
 } // namespace moho
 
 namespace moho
 {
-  void RProjectileBlueprint::MemberConstruct(gpg::ReadArchive& archive, const int, const gpg::RRef&, gpg::SerConstructResult& result)
+  void RProjectileBlueprint::MemberConstruct(
+    gpg::ReadArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerConstructResult& result
+  )
   {
     RRuleGameRules* rules = nullptr;
     const gpg::RRef owner{};
     archive.ReadPointer(&rules, &owner);
-    msvc8::string id;
+    fa::string id;
     archive.ReadString(&id);
     RResId resId{};
     gpg::STR_CopyFilename(&resId.name, &id);
@@ -309,7 +252,10 @@ namespace moho
    * Address: 0x0051CA40 (FUN_0051CA40)
    */
   void RProjectileBlueprint::MemberSaveConstructArgs(
-    gpg::WriteArchive& archive, const int, const gpg::RRef&, gpg::SerSaveConstructArgsResult& result
+    gpg::WriteArchive& archive,
+    const int,
+    const gpg::RRef&,
+    gpg::SerSaveConstructArgsResult& result
   )
   {
     archive.WritePointer(mOwner, gpg::TrackedPointerState::Unowned, gpg::RRef{});

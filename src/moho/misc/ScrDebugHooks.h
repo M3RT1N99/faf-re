@@ -100,7 +100,7 @@ namespace moho
    * What it does:
    * Enumerates breakpoints matching one mounted source path into output storage.
    */
-  void SCR_EnumerateBreakpoints(const msvc8::string& sourcePath, msvc8::vector<ScrBreakpoint>& outBreakpoints);
+  void SCR_EnumerateBreakpoints(const fa::string& sourcePath, fa::vector<ScrBreakpoint>& outBreakpoints);
 
   /**
    * Address: 0x004B4DF0 (FUN_004B4DF0, Moho::SCR_EnumerateCallStack)
@@ -110,7 +110,7 @@ namespace moho
    * What it does:
    * Enumerates call-stack activation frames for the currently paused script state.
    */
-  void SCR_EnumerateCallStack(msvc8::vector<ScrActivation>& outActivations);
+  void SCR_EnumerateCallStack(fa::vector<ScrActivation>& outActivations);
 
   /**
    * Address: 0x004B5140 (FUN_004B5140, Moho::SCR_EnumerateLocals)
@@ -120,7 +120,7 @@ namespace moho
    * What it does:
    * Enumerates locals and closure upvalues from one Lua stack level.
    */
-  void SCR_EnumerateLocals(int level, msvc8::vector<ScrWatch>& outWatches);
+  void SCR_EnumerateLocals(int level, fa::vector<ScrWatch>& outWatches);
 
   /**
    * Address: 0x004B5470 (FUN_004B5470, Moho::SCR_EnumerateGlobals)
@@ -130,7 +130,7 @@ namespace moho
    * What it does:
    * Enumerates global Lua table entries for the currently paused script state.
    */
-  void SCR_EnumerateGlobals(msvc8::vector<ScrWatch>& outWatches);
+  void SCR_EnumerateGlobals(fa::vector<ScrWatch>& outWatches);
 
   /**
    * Address: 0x004B5690 (FUN_004B5690, Moho::SCR_DebugStep)
@@ -157,15 +157,6 @@ namespace moho
    * in-memory sorted breakpoint list.
    */
   void SCR_LoadBreakpoints();
-
-  /**
-   * Address: 0x004B59B0 (FUN_004B59B0, Moho::SCR_SaveBreakpoints)
-   *
-   * What it does:
-   * Serializes the in-memory breakpoint list and stores it to user
-   * preferences.
-   */
-  void SCR_SaveBreakpoints();
 
   /**
    * Address: 0x004B5C70 (FUN_004B5C70, Moho::DebugLuaHook)
@@ -214,20 +205,22 @@ namespace moho
   class ScrDebugWindow;
 
   /**
-   * Engine addition (dedicated-server plan WPL.4): the debugger's wx window, which
+   * Engine addition (dedicated-server plan WPL.4): the debugger's window, which
    * is client code. moho/misc/ScrDebugWindow.cpp sets these during static
    * initialisation; without a client they are null and no window opens, so no
    * breakpoint pauses a thread.
    *
    * - sScrDebugWindowOpen: SCR_CreateDebugWindow's `window = new ScrDebugWindow();
    *   runtimeWindow = window; window->Show(true);`, publishing before showing.
-   * - sScrDebugWindowDestroy: SCR_DestroyDebugWindow's `window.Destroy()`.
-   * - sScrDebugWindowPostPause: posts one ScrPauseEvent for `source`:`line` to the
-   *   window (`AddPendingEvent`), under the paused-queue lock.
+   * - sScrDebugWindowDestroy: SCR_DestroyDebugWindow's `window.Destroy()`, which
+   *   takes the window down on its next frame.
+   * - sScrDebugWindowPostPause: hands `source`:`line` to the window, under the
+   *   paused-queue lock; the window shows it on the main thread (the binary posted
+   *   a ScrPauseEvent with AddPendingEvent, 0x004B5B10).
    */
   using ScrDebugWindowOpenHook = void (*)(ScrDebugWindow*& runtimeWindow);
   using ScrDebugWindowDestroyHook = void (*)(ScrDebugWindow& window);
-  using ScrDebugWindowPostPauseHook = void (*)(ScrDebugWindow& window, const msvc8::string& source, int line);
+  using ScrDebugWindowPostPauseHook = void (*)(ScrDebugWindow& window, const fa::string& source, int line);
   extern ScrDebugWindowOpenHook sScrDebugWindowOpen;
   extern ScrDebugWindowDestroyHook sScrDebugWindowDestroy;
   extern ScrDebugWindowPostPauseHook sScrDebugWindowPostPause;

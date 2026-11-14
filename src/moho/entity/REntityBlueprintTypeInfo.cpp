@@ -28,7 +28,11 @@ namespace
     return sInstance;
   }
 
-  void AddEnumEntry(gpg::REnumType* const typeInfo, const char* const token, const int value)
+  void AddEnumEntry(
+    gpg::REnumType* const typeInfo,
+    const char* const token,
+    const int value
+  )
   {
     typeInfo->AddEnum(typeInfo->StripPrefix(token), value);
   }
@@ -110,7 +114,7 @@ namespace
      * Appends `size=` metadata to inherited lexical text for one reflected
      * `vector<string>` value.
      */
-    [[nodiscard]] msvc8::string GetLexical(const gpg::RRef& ref) const override;
+    [[nodiscard]] fa::string GetLexical(const gpg::RRef& ref) const override;
 
     [[nodiscard]] const gpg::RIndexed* IsIndexed() const override;
 
@@ -130,7 +134,7 @@ namespace
      * Reads one serialized string-vector lane (count + string elements) and
      * replaces destination storage.
      */
-    static void SerLoad(gpg::ReadArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerLoad(gpg::ReadArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     /**
      * Address: 0x00512F60 (FUN_00512F60, gpg::RVectorType_string::SerSave)
@@ -138,7 +142,7 @@ namespace
      * What it does:
      * Writes one reflected string-vector lane as count + element payloads.
      */
-    static void SerSave(gpg::WriteArchive* archive, std::intptr_t objectPtr, int version, gpg::RRef* ownerRef);
+    static void SerSave(gpg::WriteArchive* archive, void* objectPtr, int version, gpg::RRef* ownerRef);
 
     [[nodiscard]] gpg::RRef SubscriptIndex(void* obj, int ind) const override;
     [[nodiscard]] size_t GetCount(void* obj) const override;
@@ -154,7 +158,7 @@ namespace
 
   static_assert(sizeof(RStringVectorTypeInfo) == 0x68, "RStringVectorTypeInfo size must be 0x68");
 
-  using StringVector = msvc8::vector<msvc8::string>;
+  using StringVector = fa::vector<fa::string>;
   constexpr std::size_t kStringVectorMaxElements = 0x9249249u;
 
   /**
@@ -172,13 +176,15 @@ namespace
    */
   const char* RStringVectorTypeInfo::GetName() const
   {
-    static const msvc8::string sName = gpg::STR_Printf("vector<%s>", gpg::RTypeOf<msvc8::string>()->GetName());
+    static const fa::string sName = gpg::STR_Printf("vector<%s>", gpg::RTypeOf<fa::string>()->GetName());
     return sName.c_str();
   }
 
-  msvc8::string RStringVectorTypeInfo::GetLexical(const gpg::RRef& ref) const
+  fa::string RStringVectorTypeInfo::GetLexical(
+    const gpg::RRef& ref
+  ) const
   {
-    const msvc8::string base = gpg::RType::GetLexical(ref);
+    const fa::string base = gpg::RType::GetLexical(ref);
     return gpg::STR_Printf("%s, size=%d", base.c_str(), static_cast<int>(GetCount(ref.mObj)));
   }
 
@@ -189,12 +195,11 @@ namespace
 
   void RStringVectorTypeInfo::Init()
   {
-    size_ = sizeof(msvc8::vector<msvc8::string>);
+    size_ = sizeof(fa::vector<fa::string>);
     version_ = 1;
     serLoadFunc_ = &RStringVectorTypeInfo::SerLoad;
     serSaveFunc_ = &RStringVectorTypeInfo::SerSave;
   }
-
 
   /**
    * Address: 0x00512FC0 (FUN_00512FC0, gpg::RVectorType_string::Reserve)
@@ -202,11 +207,14 @@ namespace
    * What it does:
    * Ensures a reflected string vector has enough capacity for a pending load
    * or append sequence and preserves any pre-existing elements. The binary
-   * body's move-relocate loop is `msvc8::vector<msvc8::string>::reserve`'s
+   * body's move-relocate loop is `fa::vector<fa::string>::reserve`'s
    * own growth step (FUN_00513980, cited on `reserve` in
    * legacy/containers/Vector.h), so the canonical template call covers it.
    */
-  [[nodiscard]] std::size_t EnsureStringVectorCapacity(StringVector& value, const std::size_t requestedCount)
+  [[nodiscard]] std::size_t EnsureStringVectorCapacity(
+    StringVector& value,
+    const std::size_t requestedCount
+  )
   {
     if (requestedCount > kStringVectorMaxElements) {
       throw std::length_error("vector<T> too long");
@@ -229,7 +237,7 @@ namespace
    */
   void RStringVectorTypeInfo::SerLoad(
     gpg::ReadArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const
   )
@@ -238,7 +246,7 @@ namespace
       return;
     }
 
-    auto* const storage = reinterpret_cast<StringVector*>(objectPtr);
+    auto* const storage = static_cast<StringVector*>(objectPtr);
     unsigned int count = 0u;
     archive->ReadUInt(&count);
 
@@ -246,7 +254,7 @@ namespace
     (void)EnsureStringVectorCapacity(loaded, static_cast<std::size_t>(count));
 
     for (unsigned int index = 0; index < count; ++index) {
-      msvc8::string value{};
+      fa::string value{};
       archive->ReadString(&value);
       loaded.push_back(value);
     }
@@ -256,7 +264,7 @@ namespace
 
   void RStringVectorTypeInfo::SerSave(
     gpg::WriteArchive* const archive,
-    const std::intptr_t objectPtr,
+    void* const objectPtr,
     const int,
     gpg::RRef* const
   )
@@ -265,7 +273,7 @@ namespace
       return;
     }
 
-    auto* const storage = reinterpret_cast<StringVector*>(objectPtr);
+    auto* const storage = static_cast<StringVector*>(objectPtr);
     const unsigned int count = storage != nullptr ? static_cast<unsigned int>(storage->size()) : 0u;
     archive->WriteUInt(count);
 
@@ -273,15 +281,18 @@ namespace
       return;
     }
 
-    for (msvc8::string& value : *storage) {
+    for (fa::string& value : *storage) {
       archive->WriteString(&value);
     }
   }
 
-  gpg::RRef RStringVectorTypeInfo::SubscriptIndex(void* const obj, const int ind) const
+  gpg::RRef RStringVectorTypeInfo::SubscriptIndex(
+    void* const obj,
+    const int ind
+  ) const
   {
     gpg::RRef out{};
-    out.mType = gpg::RTypeOf<msvc8::string>();
+    out.mType = gpg::RTypeOf<fa::string>();
 
     auto* const storage = static_cast<StringVector*>(obj);
     if (!storage || ind < 0 || static_cast<std::size_t>(ind) >= storage->size()) {
@@ -292,7 +303,9 @@ namespace
     return out;
   }
 
-  size_t RStringVectorTypeInfo::GetCount(void* const obj) const
+  size_t RStringVectorTypeInfo::GetCount(
+    void* const obj
+  ) const
   {
     const auto* const storage = static_cast<const StringVector*>(obj);
     return storage ? storage->size() : 0u;
@@ -301,20 +314,23 @@ namespace
   /**
    * Address: 0x00512DC0 (FUN_00512DC0, gpg::RVectorType_string::SetCount)
    * Address: 0x005130E0 (FUN_005130E0, the `resize(n, value)` emission this
-   * call produces for `msvc8::vector<msvc8::string>`)
+   * call produces for `fa::vector<fa::string>`)
    *
    * What it does:
    * Resizes one reflected string-vector lane to a requested count using a
    * default-constructed fill string.
    */
-  void RStringVectorTypeInfo::SetCount(void* const obj, const int count) const
+  void RStringVectorTypeInfo::SetCount(
+    void* const obj,
+    const int count
+  ) const
   {
     auto* const storage = static_cast<StringVector*>(obj);
     if (!storage || count < 0) {
       return;
     }
 
-    msvc8::string fill{};
+    fa::string fill{};
     storage->resize(static_cast<std::size_t>(count), fill);
   }
 
@@ -339,12 +355,12 @@ namespace
    *
    * What it does:
    * Materializes the reflected `vector<string>` descriptor and preregisters
-   * it against `typeid(msvc8::vector<msvc8::string>)`.
+   * it against `typeid(fa::vector<fa::string>)`.
    */
   [[nodiscard]] RStringVectorTypeInfo* AcquireRStringVectorTypeInfo()
   {
     static RStringVectorTypeInfo sInstance;
-    gpg::PreRegisterRType(typeid(msvc8::vector<msvc8::string>), &sInstance);
+    gpg::PreRegisterRType(typeid(fa::vector<fa::string>), &sInstance);
     return &sInstance;
   }
 
@@ -359,8 +375,6 @@ namespace
     bool initialized;
     TypeInfoRTypePair entries[3];
   };
-
-  thread_local TypeInfoCache3 gREntityBlueprintRRefCache{false, {}};
 
   template <typename TObject>
   [[nodiscard]] gpg::RRef* BuildTypedRefWithCache(
@@ -435,7 +449,7 @@ namespace
       return outRef;
     }
 
-    outRef->mObj = reinterpret_cast<char*>(value) - static_cast<std::ptrdiff_t>(baseOffset);
+    outRef->mObj = gpg::CompleteObject(value, baseOffset);
     outRef->mType = runtimeType;
     return outRef;
   }
@@ -505,7 +519,9 @@ namespace moho
    * What it does:
    * Adds `RBlueprint` as the reflected base lane at offset 0.
    */
-  void REntityBlueprintTypeInfo::AddBaseRBlueprint(gpg::RType* const typeInfo)
+  void REntityBlueprintTypeInfo::AddBaseRBlueprint(
+    gpg::RType* const typeInfo
+  )
   {
     gpg::AddReflectedBase<moho::RBlueprint>(typeInfo);
   }
@@ -517,52 +533,163 @@ namespace moho
    * Registers entity-blueprint reflection fields, version tags, and editor
    * help text in the same order as the binary.
    */
-  void REntityBlueprintTypeInfo::AddFields(gpg::RType* const typeInfo)
+  void REntityBlueprintTypeInfo::AddFields(
+    gpg::RType* const typeInfo
+  )
   {
-    gpg::RField* const categoriesField = typeInfo->AddField<msvc8::vector<msvc8::string>>("Categories", offsetof(REntityBlueprint, mCategories));
+    gpg::RField* const categoriesField =
+      typeInfo->AddField<fa::vector<fa::string>>("Categories", offsetof(REntityBlueprint, mCategories));
     categoriesField->mFlags = 3;
     categoriesField->mDesc = "Named categories that this entity belongs to";
-    typeInfo->AddField<msvc8::string>("ScriptModule", offsetof(REntityBlueprint, mScriptModule), 3, "Module defining entity's class.");
-    typeInfo->AddField<msvc8::string>("ScriptClass", offsetof(REntityBlueprint, mScriptClass), 3, "Name of entity's class.");
-    gpg::RField* const collisionShapeField = typeInfo->AddField<moho::ECollisionShape>("CollisionShape", offsetof(REntityBlueprint, mCollisionShape));
+    typeInfo->AddField<fa::string>(
+      "ScriptModule", offsetof(REntityBlueprint, mScriptModule), 3, "Module defining entity's class."
+    );
+    typeInfo->AddField<fa::string>(
+      "ScriptClass", offsetof(REntityBlueprint, mScriptClass), 3, "Name of entity's class."
+    );
+    gpg::RField* const collisionShapeField =
+      typeInfo->AddField<moho::ECollisionShape>("CollisionShape", offsetof(REntityBlueprint, mCollisionShape));
     collisionShapeField->mFlags = 3;
     collisionShapeField->mDesc = "Shape to use for collision db, 'None' for no collision.";
     typeInfo->AddField<float>("SizeX", offsetof(REntityBlueprint, mSizeX), 3, "Unit size X");
     typeInfo->AddField<float>("SizeY", offsetof(REntityBlueprint, mSizeY), 3, "Unit size Y");
     typeInfo->AddField<float>("SizeZ", offsetof(REntityBlueprint, mSizeZ), 3, "Unit size Z");
-    typeInfo->AddField<float>("AverageDensity", offsetof(REntityBlueprint, mAverageDensity), 3, "Unit average density in tons / m^3. (Default is 0.49)");
-    typeInfo->AddField<float>("InertiaTensorX", offsetof(REntityBlueprint, mInertiaTensorX), 3, "Component X,X of inertia tensor");
-    typeInfo->AddField<float>("InertiaTensorY", offsetof(REntityBlueprint, mInertiaTensorY), 3, "Component Y,Y of inertia tensor");
-    typeInfo->AddField<float>("InertiaTensorZ", offsetof(REntityBlueprint, mInertiaTensorZ), 3, "Component Z,Z of inertia tensor");
-    typeInfo->AddField<float>("CollisionOffsetX", offsetof(REntityBlueprint, mCollisionOffsetX), 3, "Offset collision by this much on the X Axis");
-    typeInfo->AddField<float>("CollisionOffsetY", offsetof(REntityBlueprint, mCollisionOffsetY), 3, "Offset collision by this much on the Y Axis");
-    typeInfo->AddField<float>("CollisionOffsetZ", offsetof(REntityBlueprint, mCollisionOffsetZ), 3, "Offset collision by this much on the Z Axis");
-    gpg::RField* const footprintField = typeInfo->AddField<moho::SFootprint>("Footprint", offsetof(REntityBlueprint, mFootprint));
+    typeInfo->AddField<float>(
+      "AverageDensity",
+      offsetof(REntityBlueprint, mAverageDensity),
+      3,
+      "Unit average density in tons / m^3. (Default is 0.49)"
+    );
+    typeInfo->AddField<float>(
+      "InertiaTensorX", offsetof(REntityBlueprint, mInertiaTensorX), 3, "Component X,X of inertia tensor"
+    );
+    typeInfo->AddField<float>(
+      "InertiaTensorY", offsetof(REntityBlueprint, mInertiaTensorY), 3, "Component Y,Y of inertia tensor"
+    );
+    typeInfo->AddField<float>(
+      "InertiaTensorZ", offsetof(REntityBlueprint, mInertiaTensorZ), 3, "Component Z,Z of inertia tensor"
+    );
+    typeInfo->AddField<float>(
+      "CollisionOffsetX",
+      offsetof(REntityBlueprint, mCollisionOffsetX),
+      3,
+      "Offset collision by this much on the X Axis"
+    );
+    typeInfo->AddField<float>(
+      "CollisionOffsetY",
+      offsetof(REntityBlueprint, mCollisionOffsetY),
+      3,
+      "Offset collision by this much on the Y Axis"
+    );
+    typeInfo->AddField<float>(
+      "CollisionOffsetZ",
+      offsetof(REntityBlueprint, mCollisionOffsetZ),
+      3,
+      "Offset collision by this much on the Z Axis"
+    );
+    gpg::RField* const footprintField =
+      typeInfo->AddField<moho::SFootprint>("Footprint", offsetof(REntityBlueprint, mFootprint));
     footprintField->mFlags = 3;
     footprintField->mDesc = "Unit footprint";
-    gpg::RField* const altFootprintField = typeInfo->AddField<moho::SFootprint>("AltFootprint", offsetof(REntityBlueprint, mAltFootprint));
+    gpg::RField* const altFootprintField =
+      typeInfo->AddField<moho::SFootprint>("AltFootprint", offsetof(REntityBlueprint, mAltFootprint));
     altFootprintField->mFlags = 3;
     altFootprintField->mDesc = "Alternate Unit footprint";
-    typeInfo->AddField<int>("DesiredShooterCap", offsetof(REntityBlueprint, mDesiredShooterCap), 3, "Set the desired maximum number of shooters taking shots at me");
-    typeInfo->AddField<moho::RResId>("StrategicIconName", offsetof(REntityBlueprint, mStrategicIconName), 3, "Name of strategic icon to use for this unit");
-    typeInfo->AddField<bool>("LifeBarRender", offsetof(REntityBlueprint, mLifeBarRender), 3, "Should render life bar or not.");
-    typeInfo->AddField<float>("LifeBarOffset", offsetof(REntityBlueprint, mLifeBarOffset), 3, "Vertical offset from unit for lifebar.");
+    typeInfo->AddField<int>(
+      "DesiredShooterCap",
+      offsetof(REntityBlueprint, mDesiredShooterCap),
+      3,
+      "Set the desired maximum number of shooters taking shots at me"
+    );
+    typeInfo->AddField<moho::RResId>(
+      "StrategicIconName",
+      offsetof(REntityBlueprint, mStrategicIconName),
+      3,
+      "Name of strategic icon to use for this unit"
+    );
+    typeInfo->AddField<bool>(
+      "LifeBarRender", offsetof(REntityBlueprint, mLifeBarRender), 3, "Should render life bar or not."
+    );
+    typeInfo->AddField<float>(
+      "LifeBarOffset", offsetof(REntityBlueprint, mLifeBarOffset), 3, "Vertical offset from unit for lifebar."
+    );
     typeInfo->AddField<float>("LifeBarSize", offsetof(REntityBlueprint, mLifeBarSize), 3, "size of lifebar in OGrids.");
-    typeInfo->AddField<float>("LifeBarHeight", offsetof(REntityBlueprint, mLifeBarHeight), 3, "height of lifebar in OGrids.");
-    typeInfo->AddField<float>("SelectionSizeX", offsetof(REntityBlueprint, mSelectionSizeX), 3, "X Size of selection box");
-    typeInfo->AddField<float>("SelectionSizeY", offsetof(REntityBlueprint, mSelectionSizeY), 3, "Y Size of selection box");
-    typeInfo->AddField<float>("SelectionSizeZ", offsetof(REntityBlueprint, mSelectionSizeZ), 3, "Z Size of selection box");
-    typeInfo->AddField<float>("SelectionCenterOffsetX", offsetof(REntityBlueprint, mSelectionCenterOffsetX), 3, "X center offset of selection box");
-    typeInfo->AddField<float>("SelectionCenterOffsetY", offsetof(REntityBlueprint, mSelectionCenterOffsetY), 3, "Y center offset of selection box");
-    typeInfo->AddField<float>("SelectionCenterOffsetZ", offsetof(REntityBlueprint, mSelectionCenterOffsetZ), 3, "Z center offset of selection box");
-    typeInfo->AddField<float>("SelectionYOffset", offsetof(REntityBlueprint, mSelectionYOffset), 3, "How far to reduce top of collision box for selection (default 0.5 (half))");
-    typeInfo->AddField<float>("SelectionMeshScaleX", offsetof(REntityBlueprint, mSelectionMeshScaleX), 3, "Scale the mesh on the X axis by this much when we perform our mouse over entity test");
-    typeInfo->AddField<float>("SelectionMeshScaleY", offsetof(REntityBlueprint, mSelectionMeshScaleY), 3, "Scale the mesh on the Y axis by this much when we perform our mouse over entity test");
-    typeInfo->AddField<float>("SelectionMeshScaleZ", offsetof(REntityBlueprint, mSelectionMeshScaleZ), 3, "Scale the mesh on the Z axis by this much when we perform our mouse over entity test");
-    typeInfo->AddField<float>("SelectionMeshUseTopAmount", offsetof(REntityBlueprint, mSelectionMeshUseTopAmount), 3, "Use this much of the top portion of our mesh for intersection test. Useful for naval stuctures that go deep into water");
-    typeInfo->AddField<float>("SelectionThickness", offsetof(REntityBlueprint, mSelectionThickness), 3, "Use this to modify the thickness of the rendered selection indicator for the unit");
-    typeInfo->AddField<float>("UseOOBTestZoom", offsetof(REntityBlueprint, mUseOOBTestZoom), 3, "Use OOB hit test for this unit when camera is below this zoom level");
-    gpg::RField* const strategicIconSortPriorityField = typeInfo->AddField<unsigned char>("StrategicIconSortPriority", offsetof(REntityBlueprint, mStrategicIconSortPriority));
+    typeInfo->AddField<float>(
+      "LifeBarHeight", offsetof(REntityBlueprint, mLifeBarHeight), 3, "height of lifebar in OGrids."
+    );
+    typeInfo->AddField<float>(
+      "SelectionSizeX", offsetof(REntityBlueprint, mSelectionSizeX), 3, "X Size of selection box"
+    );
+    typeInfo->AddField<float>(
+      "SelectionSizeY", offsetof(REntityBlueprint, mSelectionSizeY), 3, "Y Size of selection box"
+    );
+    typeInfo->AddField<float>(
+      "SelectionSizeZ", offsetof(REntityBlueprint, mSelectionSizeZ), 3, "Z Size of selection box"
+    );
+    typeInfo->AddField<float>(
+      "SelectionCenterOffsetX",
+      offsetof(REntityBlueprint, mSelectionCenterOffsetX),
+      3,
+      "X center offset of selection box"
+    );
+    typeInfo->AddField<float>(
+      "SelectionCenterOffsetY",
+      offsetof(REntityBlueprint, mSelectionCenterOffsetY),
+      3,
+      "Y center offset of selection box"
+    );
+    typeInfo->AddField<float>(
+      "SelectionCenterOffsetZ",
+      offsetof(REntityBlueprint, mSelectionCenterOffsetZ),
+      3,
+      "Z center offset of selection box"
+    );
+    typeInfo->AddField<float>(
+      "SelectionYOffset",
+      offsetof(REntityBlueprint, mSelectionYOffset),
+      3,
+      "How far to reduce top of collision box for selection (default 0.5 (half))"
+    );
+    typeInfo->AddField<float>(
+      "SelectionMeshScaleX",
+      offsetof(REntityBlueprint, mSelectionMeshScaleX),
+      3,
+      "Scale the mesh on the X axis by this much when we perform our mouse over entity test"
+    );
+    typeInfo->AddField<float>(
+      "SelectionMeshScaleY",
+      offsetof(REntityBlueprint, mSelectionMeshScaleY),
+      3,
+      "Scale the mesh on the Y axis by this much when we perform our mouse over entity test"
+    );
+    typeInfo->AddField<float>(
+      "SelectionMeshScaleZ",
+      offsetof(REntityBlueprint, mSelectionMeshScaleZ),
+      3,
+      "Scale the mesh on the Z axis by this much when we perform our mouse over entity test"
+    );
+    typeInfo->AddField<float>(
+      "SelectionMeshUseTopAmount",
+      offsetof(REntityBlueprint, mSelectionMeshUseTopAmount),
+      3,
+      "Use this much of the top portion of our mesh for intersection test. Useful for naval stuctures that go deep "
+      "into water"
+    );
+    typeInfo->AddField<float>(
+      "SelectionThickness",
+      offsetof(REntityBlueprint, mSelectionThickness),
+      3,
+      "Use this to modify the thickness of the rendered selection indicator for the unit"
+    );
+    typeInfo->AddField<float>(
+      "UseOOBTestZoom",
+      offsetof(REntityBlueprint, mUseOOBTestZoom),
+      3,
+      "Use OOB hit test for this unit when camera is below this zoom level"
+    );
+    gpg::RField* const strategicIconSortPriorityField = typeInfo->AddField<unsigned char>(
+      "StrategicIconSortPriority", offsetof(REntityBlueprint, mStrategicIconSortPriority)
+    );
     strategicIconSortPriorityField->mFlags = 3;
     strategicIconSortPriorityField->mDesc = "0 renders on top, 255 on bottom";
   }
@@ -592,27 +719,26 @@ namespace moho
   }
 } // namespace moho
 
-/**
- * Address: 0x0060C290 (FUN_0060C290, func_RRRefREntityBlueprint)
- *
- * What it does:
- * Builds one temporary `RRef_REntityBlueprint` and copies `(mObj,mType)` into
- * caller-owned output storage.
- */
-gpg::RRef* gpg::PackRRef_REntityBlueprint(gpg::RRef* const outRef, moho::REntityBlueprint* const value)
-{
-  gpg::RRef temp{};
-  temp = gpg::MakeRRef<moho::REntityBlueprint>(value);
-  outRef->mObj = temp.mObj;
-  outRef->mType = temp.mType;
-  return outRef;
-}
-
 // Phase-1 pre-registration: run these descriptor registrations ahead of
 // every consumer that calls gpg::LookupRType. See StaticInitPhase.h.
-GPG_PREREGISTER_INIT(register_EFootprintFlagsTypeInfo_4663ab, moho::register_EFootprintFlagsTypeInfo)
-GPG_PREREGISTER_INIT(register_RStringVectorTypeInfo_4663ab, moho::register_RStringVectorTypeInfo)
-GPG_PREREGISTER_INIT(register_REntityBlueprintTypeInfo_4663ab, moho::register_REntityBlueprintTypeInfo)
+GPG_PREREGISTER_INIT(
+  register_EFootprintFlagsTypeInfo_4663ab,
+  moho::register_EFootprintFlagsTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_RStringVectorTypeInfo_4663ab,
+  moho::register_RStringVectorTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  register_REntityBlueprintTypeInfo_4663ab,
+  moho::register_REntityBlueprintTypeInfo
+)
 
-GPG_PREREGISTER_INIT(AcquireEFootprintFlagsTypeInfo_4663ab, AcquireEFootprintFlagsTypeInfo)
-GPG_PREREGISTER_INIT(AcquireRStringVectorTypeInfo_4663ab, AcquireRStringVectorTypeInfo)
+GPG_PREREGISTER_INIT(
+  AcquireEFootprintFlagsTypeInfo_4663ab,
+  AcquireEFootprintFlagsTypeInfo
+)
+GPG_PREREGISTER_INIT(
+  AcquireRStringVectorTypeInfo_4663ab,
+  AcquireRStringVectorTypeInfo
+)

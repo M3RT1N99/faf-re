@@ -1,13 +1,13 @@
 ﻿#pragma once
 #include <cstddef>
 
-#include "boost/weak_ptr.h"
+#include <memory>
 #include "gpg/core/algorithms/MD5.h"
 #include "gpg/core/containers/DList.h"
 #include "gpg/core/streams/PipeStream.h"
 #include "gpg/core/streams/ZLibOutputFilterStream.h"
 #include "gpg/core/time/Timer.h"
-#include "gpg/core/utils/BoostUtils.h"
+#include "gpg/core/utils/NonCopyable.h"
 #include "INetConnection.h"
 #include "INetConnector.h"
 #include "legacy/containers/String.h"
@@ -76,7 +76,7 @@ namespace moho
      * Slot: 6
      * Demangled: moho::CNetUDPConnection::ToString
      */
-    msvc8::string ToString() override;
+    fa::string ToString() override;
 
     /**
      * Address: 0x00489660
@@ -84,6 +84,16 @@ namespace moho
      * Demangled: moho::CNetUDPConnection::ScheduleDestroy
      */
     void ScheduleDestroy() override;
+
+    /**
+     * Engine addition (issue #275), not in the binary.
+     *
+     * What it does:
+     * Sets how many packets this link may have on the way, in both directions. The binary's
+     * is 32 on every link, and a client that keeps to it drops what comes from further ahead,
+     * so this is only for a link whose far end runs this build.
+     */
+    void SetWindow(uint16_t window);
 
     /**
      * Address: 0x00485D30
@@ -158,7 +168,7 @@ namespace moho
     void FastRetransmitFromMask(uint16_t expected, uint32_t earlyMask);
 
     /**
-       * Address: 0x00486DB0 (FUN_00486DB0)
+     * Address: 0x00486DB0 (FUN_00486DB0)
      */
     void ProcessData(SNetPacket* packet);
 
@@ -214,7 +224,10 @@ namespace moho
      * Address: 0x00488145
      */
     template <class T>
-    constexpr T ChooseTimeout(T cur, T candidate)
+    constexpr T ChooseTimeout(
+      T cur,
+      T candidate
+    )
     {
       const T inf = static_cast<T>(-1);
       if (cur == inf) {
@@ -262,7 +275,7 @@ namespace moho
     SNetPacket* NewPacket(bool inherit, int size, EPacketType state) const;
 
     /**
-       * Address: 0x00488D80 (FUN_00488D80)
+     * Address: 0x00488D80 (FUN_00488D80)
      */
     void SendPacket(SNetPacket* packet);
 
@@ -311,7 +324,10 @@ namespace moho
     static bool ReceiverNonceDiffers32(const char (&expected)[32], const char (&received)[32]) noexcept;
 
     template <std::size_t N>
-    static bool ByteArrayDiffers(const char (&lhs)[N], const char (&rhs)[N]) noexcept
+    static bool ByteArrayDiffers(
+      const char (&lhs)[N],
+      const char (&rhs)[N]
+    ) noexcept
     {
       for (std::size_t i = 0; i < N; ++i) {
         if (lhs[i] != rhs[i]) {
@@ -339,27 +355,27 @@ namespace moho
     void AbortInput();
 
     /**
-      * Alias of FUN_00486DB0 (non-canonical helper lane).
+     * Alias of FUN_00486DB0 (non-canonical helper lane).
      */
     MOHO_FORCEINLINE bool InsertEarlySorted(SNetPacket* packet);
 
     /**
-      * Alias of FUN_00486DB0 (non-canonical helper lane).
+     * Alias of FUN_00486DB0 (non-canonical helper lane).
      */
     MOHO_FORCEINLINE SNetPacket* EarlyPopFront();
 
     /**
-      * Alias of FUN_00486DB0 (non-canonical helper lane).
+     * Alias of FUN_00486DB0 (non-canonical helper lane).
      */
     MOHO_FORCEINLINE void EarlyRebuildAckMask(uint16_t expected, uint32_t& mask);
 
     /**
-      * Alias of FUN_00486DB0 (non-canonical helper lane).
+     * Alias of FUN_00486DB0 (non-canonical helper lane).
      */
     MOHO_FORCEINLINE void ConsumePacketHeaderData(SNetPacket* packet);
 
     /**
-      * Alias of FUN_00488D80 (non-canonical helper lane).
+     * Alias of FUN_00488D80 (non-canonical helper lane).
      */
     MOHO_FORCEINLINE void InsertUnAckedSorted(SNetPacket* packet);
 
@@ -391,7 +407,8 @@ namespace moho
     uint16_t mNextSequenceNumber{0};
     uint16_t mRemoteExpectedSequenceNumber{0};
     uint16_t mExpectedSequenceNumber{0};
-    uint16_t mReserved4B6{0};
+    // Unused in the binary, which has 32 in its place wherever this is read.
+    uint16_t mWindow{32};
     gpg::PipeStream mPendingOutputData;
     gpg::ZLibOutputFilterStream* mOutputFilterStream{nullptr};
     bool mOutputFlushPending{false};

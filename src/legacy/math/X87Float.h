@@ -1,10 +1,11 @@
 #pragma once
 
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 
-namespace msvc8
+namespace fa
 {
   /**
    * A value on the x87 register stack under the simulation's 24-bit precision
@@ -36,44 +37,149 @@ namespace msvc8
     constexpr X87Float() noexcept = default;
 
     /// `fld dword`: exact.
-    constexpr X87Float(const float value) noexcept // NOLINT(google-explicit-constructor)
+    constexpr X87Float(
+      const float value
+    ) noexcept // NOLINT(google-explicit-constructor)
       : mValue(value)
     {}
 
     /// `fstp dword`: rounds into the float range (overflow to inf, denormals).
-    [[nodiscard]] explicit operator float() const noexcept { return static_cast<float>(mValue); }
+    [[nodiscard]] explicit operator float() const noexcept
+    {
+      return static_cast<float>(mValue);
+    }
 
-    friend X87Float operator+(const X87Float lhs, const X87Float rhs) noexcept { return Round(lhs.mValue + rhs.mValue); }
-    friend X87Float operator-(const X87Float lhs, const X87Float rhs) noexcept { return Round(lhs.mValue - rhs.mValue); }
-    friend X87Float operator*(const X87Float lhs, const X87Float rhs) noexcept { return Round(lhs.mValue * rhs.mValue); }
-    friend X87Float operator/(const X87Float lhs, const X87Float rhs) noexcept { return Round(lhs.mValue / rhs.mValue); }
+    friend X87Float operator+(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return Result(lhs.mValue + rhs.mValue, lhs, rhs);
+    }
+    friend X87Float operator-(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return Result(lhs.mValue - rhs.mValue, lhs, rhs);
+    }
+    friend X87Float operator*(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return Result(lhs.mValue * rhs.mValue, lhs, rhs);
+    }
+    friend X87Float operator/(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return Result(lhs.mValue / rhs.mValue, lhs, rhs);
+    }
     /// `fchs`: exact.
-    friend X87Float operator-(const X87Float value) noexcept { return Raw(-value.mValue); }
+    friend X87Float operator-(
+      const X87Float value
+    ) noexcept
+    {
+      return Raw(-value.mValue);
+    }
 
-    friend bool operator<(const X87Float lhs, const X87Float rhs) noexcept { return lhs.mValue < rhs.mValue; }
-    friend bool operator>(const X87Float lhs, const X87Float rhs) noexcept { return lhs.mValue > rhs.mValue; }
-    friend bool operator<=(const X87Float lhs, const X87Float rhs) noexcept { return lhs.mValue <= rhs.mValue; }
-    friend bool operator>=(const X87Float lhs, const X87Float rhs) noexcept { return lhs.mValue >= rhs.mValue; }
-    friend bool operator==(const X87Float lhs, const X87Float rhs) noexcept { return lhs.mValue == rhs.mValue; }
-    friend bool operator!=(const X87Float lhs, const X87Float rhs) noexcept { return lhs.mValue != rhs.mValue; }
+    friend bool operator<(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return lhs.mValue < rhs.mValue;
+    }
+    friend bool operator>(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return lhs.mValue > rhs.mValue;
+    }
+    friend bool operator<=(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return lhs.mValue <= rhs.mValue;
+    }
+    friend bool operator>=(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return lhs.mValue >= rhs.mValue;
+    }
+    friend bool operator==(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return lhs.mValue == rhs.mValue;
+    }
+    friend bool operator!=(
+      const X87Float lhs,
+      const X87Float rhs
+    ) noexcept
+    {
+      return lhs.mValue != rhs.mValue;
+    }
 
     /// `fabs`: exact, and clears the sign of a NaN too.
-    [[nodiscard]] friend X87Float Abs(const X87Float value) noexcept { return Raw(std::fabs(value.mValue)); }
+    [[nodiscard]] friend X87Float Abs(
+      const X87Float value
+    ) noexcept
+    {
+      return Raw(std::fabs(value.mValue));
+    }
 
     /// `fild dword`: exact (an int has at most 31 significant bits, and the
     /// load does not round).
-    [[nodiscard]] static X87Float FromInt(const std::int32_t value) noexcept { return Raw(static_cast<double>(value)); }
+    [[nodiscard]] static X87Float FromInt(
+      const std::int32_t value
+    ) noexcept
+    {
+      return Raw(static_cast<double>(value));
+    }
 
   private:
-    [[nodiscard]] static X87Float Raw(const double value) noexcept
+    [[nodiscard]] static X87Float Raw(
+      const double value
+    ) noexcept
     {
       X87Float result;
       result.mValue = value;
       return result;
     }
 
+    /**
+     * The result of `lhs op rhs`, formed in double: rounded to 24 bits. An invalid operation
+     * (inf - inf, 0 * inf, 0 / 0, inf / inf) gives the x87 indefinite, the negative quiet NaN; a
+     * NaN operand passes through.
+     */
+    [[nodiscard]] static X87Float Result(
+      const double value,
+      [[maybe_unused]] const X87Float lhs,
+      [[maybe_unused]] const X87Float rhs
+    ) noexcept
+    {
+#if defined(__aarch64__)
+      // Engine addition (Android port): x86 and x64 give the indefinite for an invalid
+      // operation (their default NaN); AArch64's default NaN is positive.
+      if (std::isnan(value) && !std::isnan(lhs.mValue) && !std::isnan(rhs.mValue)) {
+        return Raw(std::bit_cast<double>(0xFFF8000000000000ull));
+      }
+#endif
+      return Round(value);
+    }
+
     /// Round to a 24-bit significand, ties to even, keeping the exponent.
-    [[nodiscard]] static X87Float Round(double value) noexcept
+    [[nodiscard]] static X87Float Round(
+      double value
+    ) noexcept
     {
       std::uint64_t bits;
       std::memcpy(&bits, &value, sizeof(bits));
@@ -106,8 +212,10 @@ namespace msvc8
 
   /// `Math<float>::FAbs` as the binary inlines it: the argument is stored to a
   /// float, `fabs`, and the result stored again.
-  [[nodiscard]] inline float FAbsX87(const X87Float value) noexcept
+  [[nodiscard]] inline float FAbsX87(
+    const X87Float value
+  ) noexcept
   {
     return static_cast<float>(Abs(X87Float(static_cast<float>(value))));
   }
-} // namespace msvc8
+} // namespace fa

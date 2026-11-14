@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "boost/shared_ptr.h"
+#include <memory>
 #include "legacy/containers/String.h"
 #include "legacy/containers/Vector.h"
 #include "moho/resource/CResourceWatcher.h"
@@ -13,7 +13,7 @@ namespace gpg
 {
   class BinaryReader;
   class BinaryWriter;
-}
+} // namespace gpg
 
 namespace gpg::gal
 {
@@ -23,7 +23,7 @@ namespace gpg::gal
   class Texture;
   class IndexBuffer;
   class VertexBuffer;
-}
+} // namespace gpg::gal
 
 namespace moho
 {
@@ -48,7 +48,7 @@ namespace moho
    * append checks is 107374182 -- `0xFFFFFFFF / 0x28`, this list's own
    * `max_size`.
    */
-  using SkyDomeDecalUploadList = msvc8::list<SkyDomeDecalVertices>;
+  using SkyDomeDecalUploadList = fa::list<SkyDomeDecalVertices>;
 
   static_assert(sizeof(SkyDomeDecalVertices) == 0x28, "SkyDomeDecalVertices size must be 0x28");
   static_assert(sizeof(SkyDomeDecalUploadList) == 0x0C, "SkyDomeDecalUploadList size must be 0x0C");
@@ -139,13 +139,14 @@ namespace moho
     void Reset();
 
     /**
-     * Address: 0x008158D0 (FUN_008158D0, ?SetCirrusContext@SkyDome@Moho@@QAEXMABV?$Vector3@M@Wm3@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
+     * Address: 0x008158D0 (FUN_008158D0,
+     * ?SetCirrusContext@SkyDome@Moho@@QAEXMABV?$Vector3@M@Wm3@@ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z)
      *
      * What it does:
      * Restores cirrus scalar/vector context lanes, releases the previous
      * cirrus texture handle, and stores the new texture path.
      */
-    void SetCirrusContext(float speed, const Wm3::Vector3f& direction, const msvc8::string& texturePath);
+    void SetCirrusContext(float speed, const Wm3::Vector3f& direction, const fa::string& texturePath);
 
     /**
      * Address: 0x00815230 (FUN_00815230, ?SetupHorizonAndCirrus@SkyDome@Moho@@...)
@@ -173,7 +174,7 @@ namespace moho
      * What it does:
      * Looks up the sky dome shader effect from the active D3D device.
      */
-    boost::shared_ptr<gpg::gal::Effect> GetEffect();
+    std::shared_ptr<gpg::gal::Effect> GetEffect();
 
     /**
      * Address: 0x00817850 (FUN_00817850, ?CreateTextures@SkyDome@Moho@@AAEXXZ)
@@ -300,7 +301,7 @@ namespace moho
       const Wm3::Vector3f& skyColor,
       float horizonSize,
       const Wm3::Vector3f& horizonColor,
-      const msvc8::string& horizonLookupPath
+      const fa::string& horizonLookupPath
     ) noexcept;
 
     /**
@@ -320,7 +321,8 @@ namespace moho
 
     /**
      * Address: 0x00818FB0 (FUN_00818FB0)
-     * Mangled: ?RenderCumulus@SkyDome@Moho@@AAEXHMABVGeomCamera3@2@ABV?$vector@UCumulusVertex@SkyDome@Moho@@V?$allocator@UCumulusVertex@SkyDome@Moho@@@std@@@std@@@Z
+     * Mangled:
+     * ?RenderCumulus@SkyDome@Moho@@AAEXHMABVGeomCamera3@2@ABV?$vector@UCumulusVertex@SkyDome@Moho@@V?$allocator@UCumulusVertex@SkyDome@Moho@@@std@@@std@@@Z
      *
      * IDA signature:
      * void __thiscall Moho::SkyDome::RenderCumulus(int head, float deltaFrame,
@@ -331,12 +333,8 @@ namespace moho
      * technique, binds the instanced quad/index streams plus cumulus textures,
      * then issues one indexed draw per technique pass.
      */
-    void RenderCumulus(
-      int head,
-      float deltaFrame,
-      const GeomCamera3& cam,
-      const msvc8::vector<CumulusVertex>& cumulusVertices
-    );
+    void
+    RenderCumulus(int head, float deltaFrame, const GeomCamera3& cam, const fa::vector<CumulusVertex>& cumulusVertices);
 
     /**
      * Address: 0x00819C90 (FUN_00819C90)
@@ -367,59 +365,59 @@ namespace moho
      * typed as the concrete `EffectTechniqueD3D9` (the base `gpg::gal::EffectTechnique`
      * is the pure-virtual skeleton and its inheritance is not yet recovered).
      */
-    void RenderDomeUsing(boost::shared_ptr<gpg::gal::EffectTechnique> technique);
+    void RenderDomeUsing(std::shared_ptr<gpg::gal::EffectTechnique> technique);
 
   public:
     // --- Layout from constructor ASM evidence ---
     // +0x00..+0x20 is the `CResourceWatcher` base.
-    Wm3::Vector3f mDomeOrigin{0.0f, 0.0f, 0.0f};                 // +0x20
-    Wm3::Vector3f mDomeShapeParams{0.0f, 512.0f, 1.2566371f};    // +0x2C (height/radius/start-angle)
-    std::int32_t mWidth = 16;                                     // +0x38
-    std::int32_t mHeight = 6;                                     // +0x3C
-    float mHorizonSize = 44.0f;                                   // +0x40
-    Wm3::Vector3f mHorizonColor{0.5608f, 0.6706f, 0.8857f};     // +0x44
-    Wm3::Vector3f mSkyColor{0.1804f, 0.4039f, 0.7245f};         // +0x50
-    msvc8::string mHorizonLookupPath;                              // +0x5C
-    float mHorizonBlend = 0.1f;                                   // +0x78
-    msvc8::string mAtmosphereTexPath;                              // +0x7C
-    msvc8::string mAtmosphereTexPath2;                             // +0x98
-    SkyDomeDecalUploadList mDecalUploads;                          // +0xB4
-    msvc8::string mDecalTexPath1;                                  // +0xC0
-    msvc8::string mDecalTexPath2;                                  // +0xDC
-    msvc8::string mDecalTexPath3;                                  // +0xF8
-    float mCirrusMultiplier = 1.8f;                                // +0x114
-    float mCirrusColor_R = 1.0f;                                  // +0x118
-    float mCirrusColor_G = 1.0f;                                  // +0x11C
-    float mCirrusColor_B = 1.0f;                                  // +0x120
-    msvc8::string mCirrusTexPath;                                  // +0x124
-    std::uint8_t mCirrusData[0x50];                                // +0x140 (copied from static)
-    std::int32_t mDomeVertexCount = 0;                             // +0x190
-    std::int32_t mDomeIndexCount = 0;                              // +0x194
-    boost::shared_ptr<CD3DVertexFormat> mDomeFormat;               // +0x198
-    boost::shared_ptr<gpg::gal::VertexBuffer> mDomeVertBuf;    // +0x1A0
-    boost::shared_ptr<gpg::gal::IndexBuffer> mDomeIndexBuf;    // +0x1A8
+    Wm3::Vector3f mDomeOrigin{0.0f, 0.0f, 0.0f};              // +0x20
+    Wm3::Vector3f mDomeShapeParams{0.0f, 512.0f, 1.2566371f}; // +0x2C (height/radius/start-angle)
+    std::int32_t mWidth = 16;                                 // +0x38
+    std::int32_t mHeight = 6;                                 // +0x3C
+    float mHorizonSize = 44.0f;                               // +0x40
+    Wm3::Vector3f mHorizonColor{0.5608f, 0.6706f, 0.8857f};   // +0x44
+    Wm3::Vector3f mSkyColor{0.1804f, 0.4039f, 0.7245f};       // +0x50
+    fa::string mHorizonLookupPath;                            // +0x5C
+    float mHorizonBlend = 0.1f;                               // +0x78
+    fa::string mAtmosphereTexPath;                            // +0x7C
+    fa::string mAtmosphereTexPath2;                           // +0x98
+    SkyDomeDecalUploadList mDecalUploads;                     // +0xB4
+    fa::string mDecalTexPath1;                                // +0xC0
+    fa::string mDecalTexPath2;                                // +0xDC
+    fa::string mDecalTexPath3;                                // +0xF8
+    float mCirrusMultiplier = 1.8f;                           // +0x114
+    float mCirrusColor_R = 1.0f;                              // +0x118
+    float mCirrusColor_G = 1.0f;                              // +0x11C
+    float mCirrusColor_B = 1.0f;                              // +0x120
+    fa::string mCirrusTexPath;                                // +0x124
+    std::uint8_t mCirrusData[0x50];                           // +0x140 (copied from static)
+    std::int32_t mDomeVertexCount = 0;                        // +0x190
+    std::int32_t mDomeIndexCount = 0;                         // +0x194
+    std::shared_ptr<CD3DVertexFormat> mDomeFormat;            // +0x198
+    std::shared_ptr<gpg::gal::VertexBuffer> mDomeVertBuf;     // +0x1A0
+    std::shared_ptr<gpg::gal::IndexBuffer> mDomeIndexBuf;     // +0x1A8
     // Texture lanes hold the GAL base texture extracted from each source
     // RD3DTextureResource (CreateTextures @0x00817850 stores
     // `resource->GetBaseTexture()` into these fields, and the render passes
     // bind them directly to EffectVariableD3D9::SetTexture, which takes a
     // shared_ptr<TextureD3D9>). They are GAL texture handles, not the owning
     // resource wrappers.
-    boost::shared_ptr<gpg::gal::Texture> mHorizonLookupTex;    // +0x1B0
-    boost::shared_ptr<gpg::gal::VertexBuffer> mDecalVertBuf1;  // +0x1B8
-    boost::shared_ptr<gpg::gal::IndexBuffer> mDecalIndexBuf;   // +0x1C0
-    bool mNeedsRebuild = true;                                     // +0x1C8
-    std::uint8_t mPad1C9[0x03];                                    // +0x1C9
-    boost::shared_ptr<gpg::gal::Texture> mAtmosphereTex;       // +0x1CC (decal albedo lane)
-    boost::shared_ptr<gpg::gal::Texture> mAtmosphereTex2;      // +0x1D4 (decal glow lane)
-    boost::shared_ptr<CD3DVertexFormat> mDecalFormat1;             // +0x1DC
-    boost::shared_ptr<gpg::gal::VertexBuffer> mDecalVertBuf2;  // +0x1E4
-    boost::shared_ptr<gpg::gal::Texture> mDecalTex1;           // +0x1EC (cumulus light ramp)
-    boost::shared_ptr<gpg::gal::Texture> mDecalTex2;           // +0x1F4 (cumulus dispersion ramp)
-    boost::shared_ptr<gpg::gal::Texture> mDecalTex3;           // +0x1FC (cumulus texture)
-    boost::shared_ptr<CD3DVertexFormat> mDecalFormat2;             // +0x204
-    boost::shared_ptr<gpg::gal::VertexBuffer> mDecalVertBuf3;  // +0x20C
-    boost::shared_ptr<gpg::gal::Texture> mCirrusTex;           // +0x214
-    boost::shared_ptr<gpg::gal::Texture> mCloudsTexture;       // +0x21C
+    std::shared_ptr<gpg::gal::Texture> mHorizonLookupTex;     // +0x1B0
+    std::shared_ptr<gpg::gal::VertexBuffer> mDecalVertBuf1;   // +0x1B8
+    std::shared_ptr<gpg::gal::IndexBuffer> mDecalIndexBuf;    // +0x1C0
+    bool mNeedsRebuild = true;                                // +0x1C8
+    std::uint8_t mPad1C9[0x03];                               // +0x1C9
+    std::shared_ptr<gpg::gal::Texture> mAtmosphereTex;        // +0x1CC (decal albedo lane)
+    std::shared_ptr<gpg::gal::Texture> mAtmosphereTex2;       // +0x1D4 (decal glow lane)
+    std::shared_ptr<CD3DVertexFormat> mDecalFormat1;          // +0x1DC
+    std::shared_ptr<gpg::gal::VertexBuffer> mDecalVertBuf2;   // +0x1E4
+    std::shared_ptr<gpg::gal::Texture> mDecalTex1;            // +0x1EC (cumulus light ramp)
+    std::shared_ptr<gpg::gal::Texture> mDecalTex2;            // +0x1F4 (cumulus dispersion ramp)
+    std::shared_ptr<gpg::gal::Texture> mDecalTex3;            // +0x1FC (cumulus texture)
+    std::shared_ptr<CD3DVertexFormat> mDecalFormat2;          // +0x204
+    std::shared_ptr<gpg::gal::VertexBuffer> mDecalVertBuf3;   // +0x20C
+    std::shared_ptr<gpg::gal::Texture> mCirrusTex;            // +0x214
+    std::shared_ptr<gpg::gal::Texture> mCloudsTexture;        // +0x21C
   };
 
   static_assert(offsetof(SkyDome, mDomeOrigin) == 0x20, "SkyDome::mDomeOrigin offset must be 0x20");
