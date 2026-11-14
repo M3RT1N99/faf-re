@@ -11,8 +11,8 @@ do
             local placed = import('/lua/user/prefs.lua').GetFromCurrentProfile('mini_ui_minimap')
             Create(parent)
             Scale.Try('the place of the minimap', function()
-                local window = controls.displayGroup
-                Scale.GiveWindowHome(window, window.resetBtn, not placed, 576, 166, 744, 328)
+                local window = Scale.Needed(controls.displayGroup, 'controls.displayGroup')
+                Scale.GiveWindowHome(window, Scale.Needed(window.resetBtn, 'the minimap\'s resetBtn'), not placed, 576, 166, 744, 328)
             end)
         end
     end)

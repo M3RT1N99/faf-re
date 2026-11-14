@@ -147,8 +147,9 @@ final class NewestGameFiles {
                 line.append("\nDownloading ").append(newest).append(" (").append(size(bytes)).append("): see Progress");
                 break;
             case FAILED:
+                // Too little room ends the job here before any download, as a download that failed does: the line holds for both.
                 line.append(newest < 0 ? "\nNo check of FAF's newest version: " + note
-                    : "\nGetting " + newest + " failed: " + note + "; the button tries again, from where it stopped");
+                    : "\nGetting " + newest + " failed: " + note + "; the button tries again, keeping anything downloaded so far");
                 break;
             case CANCELLED:
                 line.append(newest < 0 ? "\nThe check was cancelled"

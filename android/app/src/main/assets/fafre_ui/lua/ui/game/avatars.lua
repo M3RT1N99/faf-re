@@ -7,8 +7,14 @@
 -- went to give the order.
 do
     local ok, problem = pcall(function()
+        local Scale = import('/fafre_ui/lua/fafre/scale.lua')
         local Click = ClickFunc
         ClickFunc = function(self, event)
+            -- FAF's place in the round, which each avatar that takes this handler starts at 1.
+            if type(self.curIndex) ~= 'number' then
+                Scale.Warn('the round of an avatar', 'this FAF\'s avatar has no curIndex')
+                return Click(self, event)
+            end
             local press = event.Type == 'ButtonPress' or event.Type == 'ButtonDClick'
             if press and self.fafreKept then
                 self.fafreKept = nil

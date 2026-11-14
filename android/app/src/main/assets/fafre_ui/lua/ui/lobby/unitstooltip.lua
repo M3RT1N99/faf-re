@@ -4,6 +4,10 @@
 do
     local ok, problem = pcall(function()
         local Scale = import('/fafre_ui/lua/fafre/scale.lua')
+        -- FAF's local, which a later FAF may have dropped: setting it then would make a global nothing reads.
+        if type(PixelScaleFactor) ~= 'number' then
+            error('this FAF\'s PixelScaleFactor is no number')
+        end
         local CreateTooltip = Create
         Create = function(...)
             Scale.Try('the factor of a tooltip', function()

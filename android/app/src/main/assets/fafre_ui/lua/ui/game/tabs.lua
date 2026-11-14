@@ -9,7 +9,7 @@ do
             FafreKeyboard()
         end
         local most = 0
-        for _, list in menus.main do
+        for _, list in Scale.Needed(menus.main, 'menus.main') do
             -- After Key Bindings, or where a list has none, before its last, Close Menu.
             local at = table.getn(list)
             for index, button in list do
@@ -56,10 +56,14 @@ do
                 BuildMenu(contentID)
             end
             -- What a tab shows, the Menu's list or the diplomacy, is what the player opened, which nothing of Griff's may cover
-            -- (fafre/opened.lua). Where another was open, FAF first folds that one away and builds this one after.
-            if controls.contentGroup then
-                Opened.Add(controls.contentGroup)
-            end
+            -- (fafre/opened.lua). Where another was open, FAF first folds that one away and builds this one after: either way FAF
+            -- holds a content now.
+            Scale.Try('what a tab shows', function()
+                local content = Scale.Needed(controls.contentGroup, 'controls.contentGroup')
+                if content then
+                    Opened.Add(content)
+                end
+            end)
         end
     end)
     if not ok then

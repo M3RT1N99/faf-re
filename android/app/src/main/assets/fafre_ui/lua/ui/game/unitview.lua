@@ -10,6 +10,10 @@ do
             Scale.Try('the unit view at the HUD factor', function()
                 controls.bg.OnFrame = Scale.AtHud(controls.bg.OnFrame)
             end)
+            -- FAF makes the abilities' panel with the view; UpdateWindow below hides it.
+            Scale.Try('the unit view\'s abilities', function()
+                Scale.Needed(controls.abilities, 'controls.abilities')
+            end)
         end
         local Update = UpdateWindow
         UpdateWindow = function(info)

@@ -59,12 +59,20 @@ public class NewestGameFilesTest {
     @Test
     public void aDownloadThatStoppedGoesOnFromWhereItStopped() {
         assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nGetting 3840 failed: HTTP 500 for units.3840.nx2; the button tries "
-            + "again, from where it stopped", line(NewestGameFiles.Phase.FAILED, 3840, BYTES, "HTTP 500 for units.3840.nx2", 3835));
+            + "again, keeping anything downloaded so far", line(NewestGameFiles.Phase.FAILED, 3840, BYTES, "HTTP 500 for units.3840.nx2", 3835));
         assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nGetting 3840 was cancelled; the button goes on from where it stopped",
             line(NewestGameFiles.Phase.CANCELLED, 3840, BYTES, "", 3835));
         assertEquals("FAF game files: 3835\nThe check was cancelled", line(NewestGameFiles.Phase.CANCELLED, -1, -1, "", 3835));
         assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nGetting 3840 stopped, as the network became metered; the button goes "
             + "on from where it stopped, after a question on a metered network", line(NewestGameFiles.Phase.METERED, 3840, BYTES, "", 3835));
+    }
+
+    /** Too little room stops the job before a download begins, on the same line as a download that failed: it promises none. */
+    @Test
+    public void tooLittleRoomPromisesNoDownloadThatBegan() {
+        assertEquals("FAF game files: 3835 (newest at FAF: 3840)\nGetting 3840 failed: the phone has 286 MB free, and it needs 782 MB; "
+            + "the button tries again, keeping anything downloaded so far",
+            line(NewestGameFiles.Phase.FAILED, 3840, BYTES, NewestGameFiles.noRoom(BYTES, 300_000_000L), 3835));
     }
 
     @Test

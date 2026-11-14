@@ -4,7 +4,7 @@
 do
     local ok, problem = pcall(function()
         local Opened = import('/fafre_ui/lua/fafre/opened.lua')
-        local InitWindow = Window.__init
+        local InitWindow = import('/fafre_ui/lua/fafre/scale.lua').Needed(Window.__init, 'Window.__init')
         Window.__init = function(self, ...)
             InitWindow(self, unpack(arg))
             Opened.Add(self)

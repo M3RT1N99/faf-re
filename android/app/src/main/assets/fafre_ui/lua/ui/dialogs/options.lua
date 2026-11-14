@@ -49,7 +49,28 @@ do
             return row
         end
 
+        -- The UI scale is the HUD's here, which a session reads as it starts: no restart.
+        Scale.Try('the option of the UI scale', function()
+            local found = false
+            for _, section in import('/lua/options/options.lua').options do
+                for _, item in section.items do
+                    if item.key == 'ui_scale' then
+                        item.restart = false
+                        found = true
+                    end
+                end
+            end
+            if not found then
+                error('this FAF has no option ui_scale')
+            end
+            Scale.Needed(import('/lua/ui/help/tooltips.lua').Tooltips.options_ui_scale, 'tooltip options_ui_scale').description =
+                "Changes the size of the game's HUD, from the next game on."
+        end)
+
         local Create = CreateDialog
+        -- FAF's local Grid, maui's grid class, makes the rows' grid, and the dialog below swaps it as it opens: a FAF without it
+        -- fails here, and its Options open as FAF's, where the swap would have kept them from opening.
+        Scale.Needed(Grid, 'Grid')
         CreateDialog = Scale.DialogAt(Factor, function(over, exitBehavior)
             -- FAF's local of the function.
             local RealGrid = Grid
@@ -67,16 +88,6 @@ do
                 Reflow(grid)
             end)
         end)
-
-        -- The UI scale is the HUD's here, which a session reads as it starts: no restart.
-        for _, section in import('/lua/options/options.lua').options do
-            for _, item in section.items do
-                if item.key == 'ui_scale' then
-                    item.restart = false
-                end
-            end
-        end
-        import('/lua/ui/help/tooltips.lua').Tooltips.options_ui_scale.description = "Changes the size of the game's HUD, from the next game on."
     end)
     if not ok then
         WARN('fafre_ui: ui/dialogs/options.lua: ' .. tostring(problem))

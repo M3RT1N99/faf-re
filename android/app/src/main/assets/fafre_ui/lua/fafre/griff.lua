@@ -416,9 +416,16 @@ end
 --- A button of FAF's construction panel was clicked (its hook, after FAF's own handler): a build icon that started FAF's build
 --- mode puts its building in the app's draft instead (FafreGriffDraft), and FAF's ghost goes. Only a build item's click with
 --- the left button: FAF's build mode keys and hotbuild arm the mode themselves, and a template's key (no button) and click (no
---- build item) come here too; all keep FAF's ghost.
+--- build item) come here too; all keep FAF's ghost. `item` is the button's Data, which FAF's own handler reads too: without it a
+--- later FAF has renamed it, and the draft would never open without a word.
 function BuildIconClicked(item, modifiers)
-    if not FafreGriffWanted() or not item or item.type ~= 'item' or not modifiers or not modifiers.Left then
+    if not FafreGriffWanted() then
+        return
+    end
+    if not item then
+        error('this FAF\'s build icon has no Data')
+    end
+    if item.type ~= 'item' or not modifiers or not modifiers.Left then
         return
     end
     local mode = CommandMode.GetCommandMode()
@@ -461,8 +468,12 @@ end
 --- the panel's top and the leftmost of the avatars and their idle lists, in the picture's pixels; -1 where not shown.
 function DraftAnchors()
     local top = -1
+    -- FAF makes the panel with the game's UI: a later FAF that renamed it would leave the tick and the cross without their anchor.
     local construction = import('/lua/ui/game/construction.lua').controls.constructionGroup
-    if construction and not construction:IsHidden() then
+    if not construction then
+        error('this FAF has no controls.constructionGroup in construction.lua')
+    end
+    if not construction:IsHidden() then
         top = construction.Top()
     end
     local left = -1
@@ -650,17 +661,27 @@ function Start(parent)
     end
     reporter:SetNeedsFrameUpdate(true)
     CommandMode.AddStartBehavior(OrderWhileDrafting, 'fafre_griff')
-    local FafCommandIssued = CommandMode.OnCommandIssued
-    local watching = true
-    CommandMode.OnCommandIssued = function(command)
-        if watching and FafreGriffWanted() then
-            local ok, problem = pcall(Ordered, command)
-            if not ok then
-                WARN('fafre_ui: griff: orders: ' .. tostring(problem))
-                watching = false
-            end
+    -- The orders FAF's UI gives, which the program hears of for the gestures' pins and their undo (Ordered). A FAF without
+    -- OnCommandIssued costs those, and nothing else of Griff's.
+    local watched, unwatched = pcall(function()
+        local FafCommandIssued = CommandMode.OnCommandIssued
+        if type(FafCommandIssued) ~= 'function' then
+            error('no OnCommandIssued')
         end
-        return FafCommandIssued(command)
+        local watching = true
+        CommandMode.OnCommandIssued = function(command)
+            if watching and FafreGriffWanted() then
+                local ok, problem = pcall(Ordered, command)
+                if not ok then
+                    WARN('fafre_ui: griff: orders: ' .. tostring(problem))
+                    watching = false
+                end
+            end
+            return FafCommandIssued(command)
+        end
+    end)
+    if not watched then
+        WARN('fafre_ui: griff: orders: ' .. tostring(unwatched))
     end
     -- FAF's capping answers a Guard of engineers on an extractor, a radar or an artillery structure (OnGuardIssued calls
     -- AssistToCap) with rings of buildings about it, by its options, the Shift held and its memory of the player's taps: to

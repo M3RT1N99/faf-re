@@ -236,7 +236,10 @@ the game data they imported. Everything lives in the app's external files folder
   downloads nothing, and the card says the game starts the phone's. The card's line shows both versions, `FAF game files: 3835 (newest at FAF: 3840)`; if GitHub is unreachable or at its
   limit, the line says so and nothing is downloaded. Older versions stay for the replay test. The UI package's hooks are
   appended to FAF's files of whatever version, each in a pcall, so a change in FAF's files shows as a `fafre_ui:`
-  warning in `engine.sclog` rather than a broken game. The check against the real servers is a JVM test outside the
+  warning in `engine.sclog` rather than a broken game: a hook says once what it misses of FAF's, and as each UI state is set
+  up each hook whose FAF file is gone is named. FAF 3841 moved its chat to `ui/game/chat/` and its patch notes to
+  `ui/lobby/changelog/`, which have hooks of their own; the hooks of the old files stay for older versions ([TOUCH_UI.md](TOUCH_UI.md),
+  How it is built). The check against the real servers is a JVM test outside the
   normal run: `FAFRE_ONLINE=1 ./gradlew :app:testReleaseUnitTest --tests '*FafReleaseOnlineTest' --rerun`.
 - **Network games**: *Multiplayer LAN* in the game's menu is the game's own lobby, with nothing from FAF's servers
   (`native/README.md`, The network). It plays against FAF's game on a PC in lockstep, and both sides need the same

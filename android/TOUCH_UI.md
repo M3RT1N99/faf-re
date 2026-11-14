@@ -79,6 +79,20 @@ Traps:
 - An error in a hook ends the import of the whole file and with it the game's UI ("unable to start main UI
   script"), so each hook keeps its work in a `pcall` and logs what failed with `WARN`: FAF's Lua changes under it.
   A syntax error is beyond that: the joined chunk does not load.
+- No hook may stop doing its work without a word on a later FAF (`fafre/scale.lua`). What a hook wraps or reads of FAF's goes
+  through `Scale.Needed` before the hook changes anything: a field of a class or of a control, or a table's entry, is nil where it
+  is gone, which is an error then, and the hook's `pcall` says it (`fafre_ui: <file>: this FAF has no <name>`); the hook leaves
+  FAF's file as it is, where wrapping nil would have broken FAF's own code. A name that is gone, a global, a local of FAF's file
+  or a module's, is an error by itself where it is read (FAF's `lua/system/config.lua` and `import.lua`; a hook is the file's chunk,
+  below), and `Needed` only reads it early. A local that is no value until FAF sets it, as the score dialog's `dialog`, is read
+  plainly. What a hook's wrappers read later goes through `Try`, and each failure is said once a state (`Scale.Warn`), however
+  often FAF builds. A file FAF no longer has runs no hook at all: as each UI state is set up (`SetupUI`, which the engine runs for
+  the front end, a lobby from the command line or from the FAF client, and a session alike), `CheckHookedFiles` lists the
+  package's hooks (`DiskFindFiles` of `/fafre_ui/lua`) and says once for each whose FAF file is gone (`fafre_ui: lua/<file>: this
+  FAF has no such file, so its hook does nothing`), but where FAF replaced it by another file that has a hook of its own
+  (`replaced`: FAF 3841's chat in `ui/game/chat/`, its patch notes in `ui/lobby/changelog/`). A file FAF keeps without what a
+  hook wants of it is beyond that check: its hook says what it misses where it runs, unless it steps aside for the newer file's
+  hook (`Scale.Replaced`), as the hook of 3841's `ui/game/chat.lua`, a shim the engine imports at Enter, does.
 - A hook is the same chunk as the file: it sees the file's locals and can set them, it adds to the file's 200 locals
   if it declares any outside a function, and it starts with an empty line, as a file can end in a comment.
 - `/lua/ui/uimain.lua` is imported in a session's state too, before that state can run threads
@@ -144,7 +158,7 @@ is after they are set, so a factor has to be there for as long as what it laid o
 - `AtFrontEnd`: the same for a screen of the front end that goes on under a dialog with a factor of its own, the lobby under the Unit Manager, at the
   front end's factor of 1. The dialog's factor is back when it returns, so what is due under the screen's root is evaluated there, but for what the dialogs made.
 - `Try`: what a wrapper does beyond calling FAF runs later than the hook's own `pcall`, so it goes through this, which
-  logs a failure with `WARN`.
+  logs a failure with `WARN`, once for each name in a state (`Warn`).
 
 What could not be ruled out: while a dialog is open, HUD code reached in other ways gets the dialog's smaller factor,
 such as a thread's or a panel's own `OnFrame` that builds a control, and a layout function of the HUD that some change
@@ -175,7 +189,8 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 | `lua/ui/game/multifunction.lua` | Its dropouts (the overlay filters' list right of the panel, the map's options, the team colours) are told to `fafre/opened.lua` as their backgrounds are made: nothing of Griff's covers them |
 | `lua/ui/game/controlgroups.lua` | FAF's place, 368 lines down, is under the construction panel: below the avatars, which grow. With Griff, groups 1, 2 and 3 are slots that always show (see "Griff") |
 | `lua/ui/game/avatars.lua` | A finger's pointer leaves after each tap (below), which FAF's avatar took for the mouse going and started its round of the idle units over, so that each tap took the first: the round goes on while the unit it took last still stands just before it in the avatar's list, which FAF makes anew each beat without the units ordered since, and starts over at the best idle unit where it does not, as a mouse's click after the order does |
-| `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the multifunction panel, Griff's rail and the unit view: a new window goes where it covers no panel and none of Griff's pieces, the minimap right of the screen's middle and the chat window above it ("The rail, the control groups and the keyboard"), and the reset button brings it back there (the chat's lines made again for its size); a place the user chose stays |
+| `lua/ui/game/minimap.lua`, `lua/ui/game/chat.lua` | Their default places lie under the multifunction panel, Griff's rail and the unit view: a new window goes where it covers no panel and none of Griff's pieces, the minimap right of the screen's middle and the chat window above it ("The rail, the control groups and the keyboard"), and the reset button brings it back there (the chat's lines made again for its size); a place the user chose stays. From FAF 3841 on `chat.lua` only forwards to the new chat (the engine imports it at Enter): its hook does nothing there |
+| `lua/ui/game/chat/chatinterface.lua` | FAF 3841's chat window: its `DefaultRect`, the new window's place and its reset button's, lies at the HUD's factor below the picture; it is the chat's home, 8 of FAF's pixels wider for the title this window has |
 | `lua/ui/dialogs/options.lua` | `DialogAt`: shown larger, with fewer rows (see "The menus"); the UI scale needs no restart |
 | `lua/maui/bitmap.lua` | A bitmap keeps the size it was made at (above) |
 | `lua/maui/window.lua` | Each window (the chat's, its options', the minimap's) is told to `fafre/opened.lua` as it is made: nothing of Griff's covers it |
@@ -188,11 +203,11 @@ finger leaves after the dialog is there, and which FAF then sizes anew with its 
 | `lua/ui/lobby/modsmanager.lua` | `Dialog`: FAF lays it out by the screen's height at any factor |
 | `lua/ui/lobby/unitsmanager.lua` | `DialogAt` and `Page` of the whole picture; a resting finger reads a unit's tooltip and changes nothing |
 | `lua/ui/lobby/unitstooltip.lua` | Its local factor as each tooltip is made (above) |
-| `lua/ui/dialogs/mapselect.lua`, `lua/ui/lobby/changelog.lua` | The rows of the maps and of the patches; the patch notes show from their top |
+| `lua/ui/dialogs/mapselect.lua`, `lua/ui/lobby/changelog.lua`, `lua/ui/lobby/changelog/changelogdialog.lua` | The rows of the maps and of the patches; the patch notes show from their top. FAF 3841 has its patch notes in `changelog/ChangelogDialog.lua` and `changelog.lua` no more |
 | `lua/ui/lobby/gamecreate.lua` | `Dialog` |
 | `lua/ui/campaign/selectcampaign.lua` | Skipping the timeline's film (a tap, or Back) went to a call of FAF's with arguments it no longer takes, which left a black screen: it goes where the film's end goes |
 | `lua/ui/campaign/operationbriefing.lua` | The rows of the choice of difficulty and faction, `BuiltAt` a factor that makes them 5 mm |
-| `lua/ui/uimain.lua` | A new front end takes the fingers and the view back from what the last state declared |
+| `lua/ui/uimain.lua` | A new front end takes the fingers and the view back from what the last state declared; each state, as it is set up (`SetupUI`), says which hooks this FAF runs no more, as their files are gone (`CheckHookedFiles`, above) |
 | `lua/maui/layouthelpers.lua` | The front end's factor is 1, whatever the UI scale says |
 | `lua/maui/slider.lua` | A press on a slider's bar also takes the thumb, for the drag that may follow |
 | `lua/ui/controls/combo.lua` | A dropdown's rows are 5 mm on the glass, it stays on what the screen shows, and it opens with its choice in view |
@@ -594,12 +609,26 @@ below the score panel of a game of up to seven armies and of a replay of up to f
 72 to 186 down (755 to 1059 and 115 to 297), above the handle's reach between the pill at its widest and the score panel, under FAF's
 tabs; open, its bottom lies over the minimap's top. FAF's drag handles at the windows' corners reach a little past them: the
 minimap's lower right one under the draft's cross, the chat's lower left one under the pill's end and its upper left one 2 of the
-picture's lines into the bottom of FAF's tabs. Where the phone's keyboard is up for the chat, it covers all of the screen but its top,
+picture's lines into the bottom of FAF's tabs. The chat's lower left one's box, drawn clear but for its corner, reaches 7 of the
+picture's lines into the handle's reach (713 to 837 and 159 to 309), which the free map counts: with the chat open and no place beside
+the group free, the handle stands 8 lines below the middle (2026-11-14, on 3835 and 3841 alike). Where the phone's keyboard is up for the chat, it covers all of the screen but its top,
 wherever the window stands. The homes are the phone's picture's: on a screen of another shape or at another factor one can meet a
 panel or the handle's reach about the middle (at 1.67, the factor of a screen under 70 mm, the open chat window reaches into it, 8
 of the picture's lines on the emulator's screen; on a 21:9 picture the minimap's home does at either factor), and a window the player
 moves stays where they put it. The handle then goes to the free place nearest the middle (above): with the chat open at 1.67 on the
 emulator's screen, 10 lines below the middle. A piece of Griff's that such a window lies over steps aside (above).
+
+FAF 3841 made its chat anew (`ui/game/chat/`; the hook of `chat/chatinterface.lua`, as `chat.lua` only forwards to it). FAF's place for
+its window, `DefaultRect` (8 to 430 across and 460 to 720 down), from which its reset button sets the window too, lay at 1.6 below the
+picture, 736 of its 768 lines down. Its window has a title, *Chat dialog*, which at the old home its title buttons cut: its home is the
+old one 6 of FAF's pixels further left and 2 further right, 466 to 664 across and 72 to 186 down (745 to 1062 and 115 to 297 of the
+picture's), 5.6 lines right of the pill at its widest. Measured as above on 3841 at the phone's size (the covers of 32 walks in a
+skirmish, with nothing and with the commander selected, under the Menu and the overlay filters' list): FAF's panels stand where they
+stood on 3835, and the window covers none of them, none of Griff's pieces and not the handle's reach. Drawn with its drag handles it
+takes 703 to 1097 and 102 to 309: its upper left handle 6 lines into the bottom of FAF's tabs, its lower left one under the pill's end
+and 7 lines into the handle's reach as above, its right ones 4 lines short of the score panel. Its reset button brings it back there
+(dragged down to 201, then back at 115) and FAF's reset makes its lines anew. Open with the minimap, the minimap's top lies over the
+chat's lower right corner, its camera button: 3841 makes the chat before the minimap, where 3835's chat stood over the minimap.
 
 The control groups (T3.3; the hook of `ui/game/controlgroups.lua`, under Griff only): Griff has no Ctrl to make a group with, so groups 1,
 2 and 3 are slots that always show, in FAF's place for its groups under the avatars, an empty one as a dim control of the same size.
@@ -625,7 +654,11 @@ panel and its right press, as a PC's; the scheme is the game's, read when its ac
 
 The keyboard (T3.4): the hook of `ui/game/tabs.lua` adds *Keyboard* to the Menu tab's list, after Key Bindings, in both schemes. A tap
 closes the menu as its other buttons do and calls `FafreKeyboard()` (`MenuFingers.cpp`), which the activity takes as a tap on *Keys* when
-it next reads what is new: the phone's keyboard comes, or goes where it is up. The menu is as large as the list FAF shows fits (the
+it next reads what is new: the phone's keyboard comes. It would go the same way, but at the phone's size the keyboard, once up, covers
+all of the screen but its top, and with it the Menu's list: the Menu tab still opens, and a tap where *Keyboard* stands types a letter
+into the game instead (a T, FAF's key to track the selected unit, on the emulator). So the keyboard goes by its own key or by Back, which
+the keyboard takes for itself: the game gets no Esc of it (2026-11-14, on 3841); Enter puts it away too, after it has gone to the game,
+and with the keyboard down Back is Esc again, which closes FAF's chat. The menu is as large as the list FAF shows fits (the
 hook's `Built`, with 137 of FAF's lines for the tabs and their gap and 70 a button of the list as `BuildContent` picks it: the FAF
 client's, a network game's, a replay's, else a single-player game's, less the buttons a ranked game hides; where FAF's Lua has changed
 under the hook, those of its longest list): on 768 lines a single-player game's eleven buttons at 0.85, a replay's ten at 0.92, a

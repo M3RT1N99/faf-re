@@ -4,7 +4,7 @@
 do
     local ok, problem = pcall(function()
         local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
-        local ResetLayout = Bitmap.ResetLayout
+        local ResetLayout = import('/fafre_ui/lua/fafre/scale.lua').Needed(Bitmap.ResetLayout, 'Bitmap.ResetLayout')
         Bitmap.ResetLayout = function(self)
             ResetLayout(self)
             local factor = LayoutHelpers.GetPixelScaleFactor()

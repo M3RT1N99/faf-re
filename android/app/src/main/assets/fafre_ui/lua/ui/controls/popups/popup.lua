@@ -9,7 +9,7 @@ do
             local frame = GetFrame(0)
             return frame.Left(), frame.Top(), frame.Right(), frame.Bottom()
         end
-        local InitPopup = Popup.__init
+        local InitPopup = Scale.Needed(Popup.__init, 'Popup.__init')
         Popup.__init = function(self, GUI, content)
             InitPopup(self, GUI, content)
             Scale.Try('a popup', function()

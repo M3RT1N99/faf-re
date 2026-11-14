@@ -3,6 +3,9 @@
 do
     local ok, problem = pcall(function()
         local Scale = import('/fafre_ui/lua/fafre/scale.lua')
+        -- The dialog's root, FAF's `dialog`, is read as the dialog opens, and is no dialog until then: a FAF without it fails
+        -- here, as reading a name that is gone is an error (lua/system/config.lua), and its dialog stays FAF's.
+        local _ = dialog
         local Create = Scale.Dialog(646, CreateSkirmishScreen, function() return dialog end)
         CreateSkirmishScreen = function(victory, showCampaign, operationVictoryTable)
             Scale.Try('the factor of the statistics', function()

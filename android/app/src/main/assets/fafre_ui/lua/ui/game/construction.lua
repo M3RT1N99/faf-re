@@ -5,15 +5,13 @@
 -- without a mouse button (BuildTemplate) and a template's click is no build item's, so both stay FAF's.
 do
     local ok, problem = pcall(function()
+        local Scale = import('/fafre_ui/lua/fafre/scale.lua')
         local FafClick = OnClickHandler
         OnClickHandler = function(button, modifiers)
             FafClick(button, modifiers)
-            local done, failed = pcall(function()
+            Scale.Try('ui/game/construction.lua: griff', function()
                 import('/fafre_ui/lua/fafre/griff.lua').BuildIconClicked(button.Data, modifiers)
             end)
-            if not done then
-                WARN('fafre_ui: ui/game/construction.lua: griff: ' .. tostring(failed))
-            end
         end
     end)
     if not ok then

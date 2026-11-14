@@ -150,7 +150,7 @@ do
         SetLayout = function()
             Layout()
             Scale.Try('the place of the control groups', function()
-                local avatars = import('/lua/ui/game/avatars.lua').controls.avatarGroup
+                local avatars = Scale.Needed(import('/lua/ui/game/avatars.lua').controls.avatarGroup, 'avatars.lua controls.avatarGroup')
                 controls.container.Top:Set(function()
                     return avatars.Bottom() + LayoutHelpers.ScaleNumber(24)
                 end)
@@ -166,6 +166,11 @@ do
             Scale.Try('Griff\'s control groups', function()
                 if not FafreGriffWanted() then
                     return
+                end
+                -- What a slot asks of FAF's selection.lua: without all of it FAF's own groups stay.
+                Scale.Needed(Selection.selectionSets, 'selection.lua selectionSets')
+                for _, name in {'AppendSelectionToSet', 'FactorySelection', 'AppendSetToSelection', 'ApplySelectionSet'} do
+                    Scale.Needed(Selection[name], 'selection.lua ' .. name)
                 end
                 slots = {}
                 for _, name in SLOTS do
@@ -203,8 +208,10 @@ do
         Expand = function()
             Shown()
             if slots then
-                controls.container:Show()
-                controls.collapseArrow:Show()
+                Scale.Try('Griff\'s control groups', function()
+                    controls.container:Show()
+                    controls.collapseArrow:Show()
+                end)
             end
         end
     end)

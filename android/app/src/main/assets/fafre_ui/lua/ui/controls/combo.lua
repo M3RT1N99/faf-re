@@ -71,7 +71,7 @@ do
             Scale.ShowLines(dropdown.Top(), dropdown.Bottom())
         end
 
-        local InitCombo = Combo.__init
+        local InitCombo = Scale.Needed(Combo.__init, 'Combo.__init')
         Combo.__init = function(self, ...)
             InitCombo(self, unpack(arg))
             Scale.Try('a dropdown', function()
@@ -153,7 +153,7 @@ do
             Scale.ShowLines(self.ddm.Top(), self.ddm.Bottom() + LayoutHelpers.ScaleNumber(6))
         end
 
-        local InitBitmapCombo = BitmapCombo.__init
+        local InitBitmapCombo = Scale.Needed(BitmapCombo.__init, 'BitmapCombo.__init')
         BitmapCombo.__init = function(self, ...)
             InitBitmapCombo(self, unpack(arg))
             Scale.Try('a dropdown of pictures', function()

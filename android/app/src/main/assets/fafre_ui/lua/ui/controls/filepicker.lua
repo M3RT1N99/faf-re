@@ -25,25 +25,28 @@ do
             end
         end
 
-        local InitPicker = FilePicker.__init
+        local InitPicker = Scale.Needed(FilePicker.__init, 'FilePicker.__init')
         FilePicker.__init = function(self, ...)
             InitPicker(self, unpack(arg))
             newest = self
         end
 
-        -- FAF sets up the list's rows in a thread of the picker, and asks for the tabs just before.
-        local SetTabs = FilePicker.SetTabConfiguration
+        -- FAF sets up the list's rows in a thread of the picker, and asks for the tabs just before: the first time, the rows' maker is
+        -- there.
+        local SetTabs = Scale.Needed(FilePicker.SetTabConfiguration, 'FilePicker.SetTabConfiguration')
         FilePicker.SetTabConfiguration = function(self, configID)
             SetTabs(self, configID)
-            local list = self._filelist
-            if list.CreateOptionElements and not list.rowsFit then
-                list.rowsFit = true
-                local CreateRows = list.CreateOptionElements
-                list.CreateOptionElements = function()
-                    CreateRows()
-                    Scale.Try('the rows of a file picker', function() FitFileRows(self) end)
+            Scale.Try('the list of a file picker', function()
+                local list = Scale.Needed(self._filelist, 'a file picker\'s _filelist')
+                if not list.rowsFit then
+                    local CreateRows = Scale.Needed(list.CreateOptionElements, 'a file picker\'s CreateOptionElements')
+                    list.rowsFit = true
+                    list.CreateOptionElements = function()
+                        CreateRows()
+                        Scale.Try('the rows of a file picker', function() FitFileRows(self) end)
+                    end
                 end
-            end
+            end)
         end
 
         --- `build` makes a dialog around a picker, in FAF's frame of Replay.

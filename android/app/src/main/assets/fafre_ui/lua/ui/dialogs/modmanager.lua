@@ -3,10 +3,13 @@
 -- mods, which calls it as it loads them: the menu comes back under the dialog, and at the dialog's factor. Here the function comes when the dialog has closed.
 do
     local ok, problem = pcall(function()
+        local Scale = import('/fafre_ui/lua/fafre/scale.lua')
+        -- FAF's, which this one takes the place of: where a later FAF has renamed it, the main menu would no longer come here.
+        Scale.Needed(CreateDialog, 'CreateDialog')
         CreateDialog = function(over, inLobby, exitBehavior)
             local popup = import('/lua/ui/lobby/modsmanager.lua').CreateDialog(over, true, {})
-            import('/fafre_ui/lua/fafre/scale.lua').Try('the way back from the Mods Manager', function()
-                local Close = popup.Close
+            Scale.Try('the way back from the Mods Manager', function()
+                local Close = Scale.Needed(popup.Close, 'the Mods Manager\'s Close')
                 popup.Close = function(self)
                     Close(self)
                     exitBehavior()

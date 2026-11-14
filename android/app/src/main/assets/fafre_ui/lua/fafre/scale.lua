@@ -11,6 +11,9 @@
 --
 -- A page is a screen that a finger reads larger than the screen and scrolls through (Page). Whose the fingers are follows: the
 -- front end's are the menus', a session's are the game's, and the menus' again while a dialog with a factor of its own or a page is open.
+--
+-- FAF's Lua changes under the hooks: what a hook takes of it is checked (Needed), what fails says so once (Warn, Try), and so does a
+-- hook whose FAF file is gone (CheckHookedFiles), so that no hook stops doing its work without a word.
 
 local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
 
@@ -83,11 +86,75 @@ local function Evaluate(control)
     return control.Left(), control.Top(), control.Right(), control.Bottom(), control.Width(), control.Height()
 end
 
+-- What a warning was said for (Warn), in this state.
+local warned = {}
+
+--- A hook's warning of what failed, `name` saying what: once, however often it fails, as a hook may run each time FAF builds.
+function Warn(name, problem)
+    if not warned[name] then
+        warned[name] = true
+        WARN('fafre_ui: ' .. name .. ': ' .. tostring(problem))
+    end
+end
+
 --- A hook's work that runs after the hook has loaded: FAF's Lua changes under it, and that may cost a feature, not the game.
 function Try(name, work)
     local ok, problem = pcall(work)
     if not ok then
-        WARN('fafre_ui: ' .. name .. ': ' .. tostring(problem))
+        Warn(name, problem)
+    end
+end
+
+--- What a hook wraps or reads of FAF's, read before the hook changes anything: `value`, by its `name`, or an error, which the
+--- hook's warning says, where this FAF has none. A hook that wrapped nothing would do nothing without a word, and one that called
+--- it would break FAF's own code. A field of a class or of a control, or a table's entry, is nil where it is gone; a name that is
+--- gone, a global, a local of FAF's file or a module's, is an error by itself where it is read (lua/system/config.lua and
+--- import.lua), and Needed only reads it early.
+function Needed(value, name)
+    if value == nil then
+        error('this FAF has no ' .. name, 0)
+    end
+    return value
+end
+
+--- FAF files that a later FAF replaced by others, the newer second, with a hook of the UI package each: where FAF has the newer,
+--- its hook does the work, and the older's where FAF has only that. FAF 3841 put its chat in ui/game/chat/, keeping chat.lua as a
+--- shim that forwards to it, and its patch notes in ui/lobby/changelog/.
+local replaced = {
+    {'/lua/ui/game/chat.lua', '/lua/ui/game/chat/chatinterface.lua'},
+    {'/lua/ui/lobby/changelog.lua', '/lua/ui/lobby/changelog/changelogdialog.lua'},
+}
+
+--- Whether this FAF has the file that replaced the one at `path`, whose own hook then does the work of the hook of `path`.
+function Replaced(path)
+    for _, pair in replaced do
+        if pair[1] == path then
+            return DiskGetFileInfo(pair[2]) and true or false
+        end
+    end
+    return false
+end
+
+--- Each hook of a file this FAF does not have, nor the file that replaced it or that it replaced, is never run: a warning says so,
+--- once for each, as each UI state is set up (ui/uimain.lua). A file FAF keeps without what a hook wants of it is beyond this
+--- check: its hook says what it misses where it runs, unless it steps aside for the newer file's hook (Replaced), as the old
+--- chat's does on 3841.
+function CheckHookedFiles()
+    local counterparts = {}
+    for _, pair in replaced do
+        counterparts[pair[1]], counterparts[pair[2]] = pair[2], pair[1]
+    end
+    for _, hook in DiskFindFiles('/fafre_ui/lua', '*.lua') do
+        local listed = string.lower(hook)
+        local _, rootEnd = string.find(listed, '/fafre_ui/lua/', 1, true)
+        if not rootEnd then
+            error('the hooks\' listing has ' .. hook)
+        end
+        local path = '/lua/' .. string.sub(listed, rootEnd + 1)
+        local other = counterparts[path]
+        if string.sub(path, 1, 11) ~= '/lua/fafre/' and not DiskGetFileInfo(path) and not (other and DiskGetFileInfo(other)) then
+            Warn(string.sub(path, 2), 'this FAF has no such file, so its hook does nothing')
+        end
     end
 end
 
@@ -300,7 +367,7 @@ function GiveWindowHome(window, resetButton, goNow, left, top, right, bottom)
     if goNow then
         GoHome()
     end
-    local Reset = resetButton.OnClick
+    local Reset = Needed(resetButton.OnClick, 'the OnClick of a window\'s reset button')
     resetButton.OnClick = function(self, modifiers)
         Reset(self, modifiers)
         GoHome()
