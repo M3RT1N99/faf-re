@@ -648,7 +648,8 @@ control group's frame `avatar/avatar-control-group_bmp.dds` of the faction's ski
 picture's pixels at 1.6), an empty one the same frame with its number alone, dimmed (0.45). FAF's other groups (4 to 0, which a
 keyboard's Ctrl makes) stand below them as FAF lays them out (`controlgroups_mini.lua` LayoutGroups: 10 into the panel and 15 from its
 right, each 8 over the one before), and the bracket closes under the last. FAF does not tell its panel when a group's units die, and its
-own check each second takes its control away: the slots look each second too.
+own check each second takes its control away: the slots look each second too, and the column is laid out anew where a slot's control
+changed, never each second, which would open a panel the player folded away (its arrow).
 
 | On a slot | FAF's input |
 |---|---|

@@ -113,11 +113,17 @@ do
             end
         end
 
+        -- What stood in the column for each slot at its last layout.
+        local laidOut = {}
+
         --- The column as FAF lays it out (controlgroups_mini.lua LayoutGroups), with the slots always in it, and the panel shown as
         --- FAF shows it for its groups.
         local function LayoutSlots()
             local container = controls.container
             local above = false
+            for _, name in SLOTS do
+                laidOut[name] = InColumn(name)
+            end
             for _, name in groupOrder do
                 local control = InColumn(name)
                 if control then
@@ -167,13 +173,19 @@ do
                 ShowSlots()
                 LayoutSlots()
                 -- A group's units die without a word to the panel, and FAF's own check each second takes its control away: so the
-                -- slots look each second too.
+                -- slots look each second too, and the column is laid out anew where a slot's control changed, not each second, which
+                -- would open a panel the player folded away.
                 ForkThread(function()
                     while not IsDestroyed(controls.container) do
                         WaitSeconds(1)
                         local shown, failure = pcall(function()
                             ShowSlots()
-                            LayoutSlots()
+                            for _, name in SLOTS do
+                                if InColumn(name) ~= laidOut[name] then
+                                    LayoutSlots()
+                                    return
+                                end
+                            end
                         end)
                         if not shown then
                             WARN('fafre_ui: Griff\'s control groups: ' .. tostring(failure))
