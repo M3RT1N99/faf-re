@@ -166,33 +166,61 @@ namespace faf::editor
     [[nodiscard]] bool IsTestRunCommandLine()
     {
       static const char* const kOptions[] = {
-        "/command",         "/palette",        "/theme",           "/keysfile",
-        "/focuspanel",      "/uiclicks",       "/tipcheck",        "/fieldstest",
-        "/popouttest",      "/hidegameunits",  "/movelayer",       "/pickfilter",
-        "/mapwide",         "/tool",           "/proptool",        "/play",
-        "/debugarm",        "/breakpoint",     "/check",           "/decaltool",
-        "/markertool",      "/unittool",       "/hoverprop",       "/selectprops",
-        "/selectunit",      "/propswap",       "/saveas",          "/settingsfile",
-        "/autosavefolder",  "/askunsaved",     "/particlebrowser", "/particlenew",
-        "/particleopen",    "/materialeditor", "/uiscale",         "/testrun",
-        "/openall",         "/roundtrip",      "/vault",           "/vaultsearch",
-        "/vaultmap",        "/newmap",         "/stamp",           "/brush",
-        "/layer",           "/waterbody",      "/ruler",           "/adaptivewindow",
-        "/maskrule",        "/maskgen",        "/symhover",        "/stbfont",
-        "/recipe",          "/texset",         "/layerop",         "/slopeview",
-        "/typesfromlayers", "/uncapped",       "/nominimap",       "/followtest",
-        "/arrangetest",     "/findtest",       "/findopen",        "/filltest",
-        "/modaltest",       "/looktest",       "/looksfolder",     "/envtest",
-        "/watermasktest",   "/nowaterhires",   "/camat",           "/erosiontest",
-        "/sctest",          "/symmenu",        "/panelbottom",     "/shader",
-        "/brushtest",       "/brushshape",     "/stampsource",     "/stampstroke",
-        "/symoptions",      "/maskoptions",    "/masktest",        "/shaderbrowser",
-        "/convertlayers",   "/interoptest",    "/gentest",         "/layouttest",
-        "/playcopytest",    "/missiontest",    "/modtest",         "/unitlabtest",
-        "/effectmodtest",   "/assettest",      "/thumbcache",      "/assetmarks",
-        "/editormods",      "/editormodtest",  "/unitviewtest",    "/runmarker",
-        "/pausetest",       "/viewmenu",       "/mapinfotest",     "/dropdefaultcube",
-        "/exportpreview",   "/resizetest",     "/console",         "/pathtest",
+        "/command",         "/palette",
+        "/theme",           "/keysfile",
+        "/focuspanel",      "/uiclicks",
+        "/tipcheck",        "/fieldstest",
+        "/popouttest",      "/hidegameunits",
+        "/movelayer",       "/pickfilter",
+        "/mapwide",         "/tool",
+        "/proptool",        "/play",
+        "/debugarm",        "/breakpoint",
+        "/check",           "/decaltool",
+        "/markertool",      "/unittool",
+        "/hoverprop",       "/selectprops",
+        "/selectunit",      "/propswap",
+        "/saveas",          "/settingsfile",
+        "/autosavefolder",  "/askunsaved",
+        "/particlebrowser", "/particlenew",
+        "/particleopen",    "/materialeditor",
+        "/uiscale",         "/testrun",
+        "/openall",         "/roundtrip",
+        "/vault",           "/vaultsearch",
+        "/vaultmap",        "/newmap",
+        "/stamp",           "/brush",
+        "/layer",           "/waterbody",
+        "/ruler",           "/adaptivewindow",
+        "/maskrule",        "/maskgen",
+        "/symhover",        "/stbfont",
+        "/recipe",          "/texset",
+        "/layerop",         "/slopeview",
+        "/typesfromlayers", "/uncapped",
+        "/nominimap",       "/followtest",
+        "/arrangetest",     "/findtest",
+        "/findopen",        "/filltest",
+        "/modaltest",       "/looktest",
+        "/looksfolder",     "/envtest",
+        "/watermasktest",   "/nowaterhires",
+        "/camat",           "/erosiontest",
+        "/sctest",          "/symmenu",
+        "/panelbottom",     "/shader",
+        "/brushtest",       "/brushshape",
+        "/stampsource",     "/stampstroke",
+        "/symoptions",      "/maskoptions",
+        "/masktest",        "/shaderbrowser",
+        "/maskstamptest",   "/flattentest",
+        "/convertlayers",   "/interoptest",
+        "/gentest",         "/layouttest",
+        "/playcopytest",    "/missiontest",
+        "/modtest",         "/unitlabtest",
+        "/effectmodtest",   "/assettest",
+        "/thumbcache",      "/assetmarks",
+        "/editormods",      "/editormodtest",
+        "/unitviewtest",    "/runmarker",
+        "/pausetest",       "/viewmenu",
+        "/mapinfotest",     "/dropdefaultcube",
+        "/exportpreview",   "/resizetest",
+        "/console",         "/pathtest",
       };
       for (const char* const option : kOptions) {
         if (moho::CFG_GetArgOption(option, 0, nullptr)) {
@@ -1766,13 +1794,7 @@ namespace faf::editor
             );
             SettingLabel("CPU threads", nullptr);
             ImGui::TextDisabled("%u", std::thread::hardware_concurrency());
-            ImGui::Spacing();
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextDisabled(
-              "GPU compute and thread counts are set here once the tools that use them (generators, erosion, bakes) "
-              "have them."
-            );
-            ImGui::PopTextWrapPos();
+            DrawGraphicsSettings();
             break;
           }
           }
@@ -2984,11 +3006,68 @@ namespace faf::editor
         ) {
           return;
         }
-        mEditorModTestDone = true;
+        EdModHost& host = mShell->ModHost();
+        const std::string uid = "11111111-2222-4333-a444-555555555555";
+        const auto hello = EditorModCommandId("EditorModApiTest", "hello");
+        const auto broken = EditorModCommandId("EditorModApiTest", "broken");
+        if (mEditorModTestFrames > 150) {
+          // The second stage, 60 frames on: what the panels did, the menu entries, then the failing command
+          // (`/editormodtest panels` stops before it, the panels left drawing for a capture).
+          fa::vector<fa::string> what;
+          const bool panelsOnly =
+            moho::CFG_GetArgOption("/editormodtest", 1, &what) && !what.empty() && what[0] == "panels";
+          if (mEditorModTestFrames < 210) {
+            return;
+          }
+          mEditorModTestDone = true;
+          mEditorModTestDone = true;
+          for (const EdModHost::ModPanel& panel : host.Panels()) {
+            gpg::Logf(
+              "editor: editor mod test: panel %s (%s): %s, %s",
+              panel.id.c_str(),
+              panel.title.c_str(),
+              panel.shown ? "shown" : "hidden",
+              panel.error.empty() ? "drawing" : ("stopped: " + panel.error).c_str()
+            );
+          }
+          for (const EdModHost::ModMenu& entry : host.MenuEntries()) {
+            gpg::Logf(
+              "editor: editor mod test: menu entry %s (%s), command %s",
+              entry.label.c_str(),
+              entry.command.c_str(),
+              mCommands.Find(entry.command) != nullptr ? "found" : "missing"
+            );
+          }
+          if (panelsOnly) {
+            // The Camera Info marker the mod added, selected: its view frame shows in the capture.
+            for (const SaveEntry& marker : mDocument.SaveData().Markers()) {
+              if (MarkerTypeOf(marker) == "Camera Info") {
+                mScene.SelectMarkers({marker.name}, false);
+                gpg::Logf("editor: editor mod test: selected %s", marker.name.c_str());
+                break;
+              }
+            }
+            return;
+          }
+          gpg::Logf(
+            "editor: editor mod test: run broken: %s", mCommands.Run(broken) ? "ran" : mCommands.WhyNot(broken).c_str()
+          );
+          gpg::Logf(
+            "editor: editor mod test: hello now: %s",
+            mCommands.WhyNot(hello).empty() ? "can run" : mCommands.WhyNot(hello).c_str()
+          );
+          const bool undone = mCommands.Run("edit.undo");
+          gpg::Logf(
+            "editor: editor mod test: undo the mod's marker: %s, markers %zu",
+            undone ? "ran" : mCommands.WhyNot("edit.undo").c_str(),
+            mDocument.SaveData().Markers().size()
+          );
+          (void)host.SetEnabled(uid, false);
+          return;
+        }
         mShell->SwitchWorkspace(7);
         mShell->HideHome();
         mShell->ShowEditorMods();
-        EdModHost& host = mShell->ModHost();
         for (const auto& mod : host.Mods()) {
           gpg::Logf(
             "editor: editor mod test: found %s (%s), api %d, %s",
@@ -2998,26 +3077,48 @@ namespace faf::editor
             mod->running ? "running" : ("not running: " + mod->error).c_str()
           );
         }
-        const std::string uid = "11111111-2222-4333-a444-555555555555";
         (void)host.SetEnabled(uid, true);
-        const auto hello = EditorModCommandId("EditorModApiTest", "hello");
-        const auto broken = EditorModCommandId("EditorModApiTest", "broken");
         gpg::Logf(
           "editor: editor mod test: %s in the registry: %s",
           hello.c_str(),
           mCommands.Find(hello) != nullptr ? "yes" : "no"
         );
+        gpg::Logf("editor: editor mod test: markers before %zu", mDocument.SaveData().Markers().size());
         gpg::Logf(
           "editor: editor mod test: run hello: %s", mCommands.Run(hello) ? "ran" : mCommands.WhyNot(hello).c_str()
         );
+        // The mod's tool: turned on by its command, then a click on the view at the map's middle (the view's own path
+        // after the Win32 message), then off again with its command.
+        const std::string bump = EditorModCommandId("EditorModApiTest", "tool.bump");
+        gpg::Logf("editor: editor mod test: tool on: %s", mCommands.Run(bump) ? "ran" : mCommands.WhyNot(bump).c_str());
+        const float middle = static_cast<float>(mDocument.Facts().fieldWidth - 1) * 0.5f;
+        const auto heightThere = [this, middle] {
+          const LayoutGround ground = LayoutGroundNow();
+          return ground.height ? ground.height(middle, middle) : -1.0f;
+        };
+        const float before = heightThere();
+        const bool taken = mScene.viewClickHook && mScene.viewClickHook(middle, middle, true, false);
+        const float bumped = heightThere();
+        const bool undone = mCommands.Run("edit.undo");
         gpg::Logf(
-          "editor: editor mod test: run broken: %s", mCommands.Run(broken) ? "ran" : mCommands.WhyNot(broken).c_str()
+          "editor: editor mod test: tool click %s; height there %.2f -> %.2f, undo %s -> %.2f",
+          taken ? "taken" : "not taken",
+          before,
+          bumped,
+          undone ? "ran" : "refused",
+          heightThere()
         );
-        gpg::Logf(
-          "editor: editor mod test: hello now: %s",
-          mCommands.WhyNot(hello).empty() ? "can run" : mCommands.WhyNot(hello).c_str()
-        );
-        (void)host.SetEnabled(uid, false);
+        (void)mCommands.Run(bump);
+        gpg::Logf("editor: editor mod test: tool off: %s", mShell->ModHost().ActiveTool() == nullptr ? "yes" : "no");
+        // Both panels shown through their commands; they draw over the next 60 frames.
+        for (const char* const id : {"panel.probe", "panel.bad"}) {
+          const std::string full = EditorModCommandId("EditorModApiTest", id);
+          gpg::Logf(
+            "editor: editor mod test: show %s: %s",
+            full.c_str(),
+            mCommands.Run(full) ? "ran" : mCommands.WhyNot(full).c_str()
+          );
+        }
       }
       /**
        * `/unitviewtest` (test runs): a project EditorViewTest with xel0301 derived from uel0201; the unit viewer shows
@@ -4427,6 +4528,195 @@ namespace faf::editor
         }
       }
 
+      /** The graphics settings (Settings > Performance): each a choice of the engine's switch or its default. */
+      void DrawGraphicsSettings()
+      {
+        SettingLabel(
+          "Graphics",
+          "How the view draws (the game's own switches). Auto keeps the engine's default; a change applies at once and "
+          "is kept in settings.ini."
+        );
+        struct Row
+        {
+          const char* key;
+          const char* label;
+          const char* about;
+        };
+        static constexpr Row kRows[] = {
+          {EdSettings::kGfxShadows, "Shadows", "Units, props and terrain cast shadows"},
+          {EdSettings::kGfxShadowSize, "Shadow detail", "The shadow map's size: sharper shadows cost more"},
+          {EdSettings::kGfxBloom, "Bloom", "Glow around bright parts"},
+          {EdSettings::kGfxFxaa, "Antialiasing (FXAA)", "Smooths jagged edges"},
+          {EdSettings::kGfxAo, "Ambient occlusion", "Soft shade where things meet the ground"},
+          {EdSettings::kGfxTextureDetail, "Texture detail", "Lower skips the largest texture levels (less memory)"},
+          {EdSettings::kGfxAnisotropy,
+           "Texture filtering",
+           "Anisotropic filtering: ground seen at a slant stays sharp"},
+        };
+        for (const Row& row : kRows) {
+          const std::vector<std::string> choices = EdSettings::Allowed(row.key);
+          const std::string now = mSettings.Get(row.key);
+          ImGui::AlignTextToFramePadding();
+          ImGui::TextUnformatted(row.label);
+          ImGui::SameLine(Em(180.0f));
+          ImGui::SetNextItemWidth(Em(140.0f));
+          if (EdBeginCombo((std::string("##gfx") + row.key).c_str(), now.c_str())) {
+            for (const std::string& choice : choices) {
+              if (ImGui::Selectable(choice.c_str(), choice == now) && choice != now) {
+                (void)mSettings.Set(row.key, choice);
+                SaveSettings();
+                ApplyGraphicsSettings();
+              }
+            }
+            ImGui::EndCombo();
+          }
+          EdSetItemTooltip("%s", row.about);
+        }
+      }
+
+      /** The graphics settings that aren't "auto" put into the engine's switches (start, and each change). */
+      void ApplyGraphicsSettings()
+      {
+        for (const std::string& command : mSettings.GraphicsCommands()) {
+          moho::CON_Execute(command.c_str());
+          gpg::Logf("editor: graphics: %s", command.c_str());
+        }
+      }
+
+      /**
+       * Help > Save diagnostics for a bug report (FAF Studio's): one text file in the settings folder's `diagnostics`
+       * with the build, the renderer, the monitors, the open map, the editor mods, the settings file, the last 400
+       * lines of the log and the newest crash report beside the exe; its path goes to the clipboard.
+       */
+      void SaveDiagnostics()
+      {
+        std::ostringstream out;
+        const std::time_t now = std::time(nullptr);
+        char stamp[32] = {};
+        std::tm local{};
+        (void)localtime_s(&local, &now);
+        (void)std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &local);
+        out << "== FAF map editor diagnostics, " << stamp << "\n";
+        out << "build: " << __DATE__ << " " << __TIME__ << "\n";
+        const std::filesystem::path settingsFolder =
+          mSettingsFile.empty() ? EditorSettingsFolder() : mSettingsFile.parent_path();
+        out << "settings folder: " << settingsFolder.string() << "\n";
+        gpg::gal::DeviceRuntimeInfo device;
+        if (gpg::gal::Device::IsReady() && gpg::gal::Device::GetInstance()->GetRuntimeInfo(device)) {
+          out << "renderer: " << device.api.c_str() << " on " << device.adapter.c_str() << "\n";
+        }
+        out << "UI scale: " << static_cast<int>(std::lround(Em(100.0f))) << "%\n";
+        out << "monitors: " << ::GetSystemMetrics(SM_CMONITORS) << ", primary " << ::GetSystemMetrics(SM_CXSCREEN)
+            << "x" << ::GetSystemMetrics(SM_CYSCREEN) << "\n";
+        if (mDocument.GetState() == EdDocument::State::Open) {
+          const MapFacts& facts = mDocument.Facts();
+          out << "map: " << facts.name << " (" << mDocument.Path() << "), " << facts.fieldWidth - 1 << " x "
+              << facts.fieldHeight - 1 << ", " << mDocument.SaveData().Markers().size() << " markers, " << facts.props
+              << " props, unsaved changes: " << (mDocument.Modified() ? "yes" : "no") << "\n";
+        } else {
+          out << "map: none open\n";
+        }
+        std::string mods;
+        for (const auto& mod : mShell->ModHost().Mods()) {
+          if (mod->running || mod->error.rfind("failed", 0) == 0) {
+            mods += (mods.empty() ? "" : ", ") + mod->info.name + (mod->running ? "" : " (" + mod->error + ")");
+          }
+        }
+        out << "editor mods: " << (mods.empty() ? "none on" : mods) << "\n";
+        const auto readFile = [](const std::filesystem::path& path, const std::size_t limit) {
+          std::ifstream in(path, std::ios::binary);
+          std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+          if (text.size() > limit) {
+            text = "(the last " + std::to_string(limit) + " bytes)\n" + text.substr(text.size() - limit);
+          }
+          return text;
+        };
+        out << "\n== settings.ini\n"
+            << readFile(mSettingsFile.empty() ? settingsFolder / "settings.ini" : mSettingsFile, 32768) << "\n";
+        out << "\n== the log (the last 400 lines)\n";
+        for (const std::string& line : mLog.Tail(400)) {
+          out << line << "\n";
+        }
+        // The newest crash report the engine wrote beside the exe (faf_crash_<date>_<time>.txt).
+        std::filesystem::path newest;
+        std::filesystem::file_time_type newestTime{};
+        std::error_code ignored;
+        wchar_t exe[MAX_PATH] = {};
+        (void)::GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        for (const auto& item :
+             std::filesystem::directory_iterator(std::filesystem::path(exe).parent_path(), ignored)) {
+          const std::string name = item.path().filename().string();
+          if (name.rfind("faf_crash_", 0) == 0 && item.path().extension() == ".txt") {
+            const auto written = item.last_write_time(ignored);
+            if (newest.empty() || written > newestTime) {
+              newest = item.path();
+              newestTime = written;
+            }
+          }
+        }
+        out << "\n== the newest crash report: " << (newest.empty() ? "none" : newest.string()) << "\n";
+        if (!newest.empty()) {
+          out << readFile(newest, 65536) << "\n";
+        }
+        const std::filesystem::path folder = settingsFolder / "diagnostics";
+        std::filesystem::create_directories(folder, ignored);
+        const std::filesystem::path file = folder / (std::string("diagnostics_") + stamp + ".txt");
+        const std::string text = out.str();
+        std::ofstream(file, std::ios::binary) << text;
+        ImGui::SetClipboardText(file.string().c_str());
+        gpg::Logf("editor: diagnostics saved as %s (%zu bytes)", file.string().c_str(), text.size());
+        PostStatusMessage("Diagnostics saved as " + file.string() + " (the path is on the clipboard)");
+      }
+
+      /** Terrain > Flatten map: the whole map to one height (FAF Studio's), with the map's range beside it. */
+      void DrawFlatten()
+      {
+        constexpr const char* kTitle = "Flatten map";
+        if (std::exchange(mFlattenAsk, false) && mDocument.GetState() == EdDocument::State::Open) {
+          if (!mScene.HeightRange(mFlattenLow, mFlattenHigh, mFlattenMean)) {
+            return;
+          }
+          mFlattenHeight = mFlattenMean;
+          ImGui::OpenPopup(kTitle);
+        }
+        ImGui::SetNextWindowSize(ImVec2(Em(420.0f), 0.0f), ImGuiCond_Appearing);
+        if (!ImGui::BeginPopupModal(kTitle, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+          return;
+        }
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled(
+          "Every height sample of the map to one height (one undo step). The map now: %.1f to %.1f, mean %.1f.",
+          mFlattenLow,
+          mFlattenHigh,
+          mFlattenMean
+        );
+        ImGui::PopTextWrapPos();
+        ImGui::SetNextItemWidth(-1.0f);
+        (void)FillSliderFloat("##flatten", &mFlattenHeight, 0.0f, 511.0f, "Height %.1f");
+        const WaterState water = mDocument.WaterNow();
+        if (water.enabled) {
+          if (ImGui::Button("Water level + 2")) {
+            mFlattenHeight = water.elevation + 2.0f;
+          }
+          ImGui::SameLine();
+        }
+        if (ImGui::Button("Mean")) {
+          mFlattenHeight = mFlattenMean;
+        }
+        ImGui::Separator();
+        if (ImGui::Button("Flatten")) {
+          std::string message;
+          (void)mScene.FlattenWhole(mFlattenHeight, message);
+          PostStatusMessage(message);
+          ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+          ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+      }
+
       /**
        * Find and replace objects (Edit, Ctrl+F; the mockup's dialog): a type found on the map, where (the whole map,
        * the selection, the symmetry's first part), and Select matches or Replace all, with another type or deleting.
@@ -4712,6 +5002,11 @@ namespace faf::editor
       int mLookTestFrames = 0;
       // Find and replace objects: asked (Ctrl+F), the objects and types when it opened, the choices.
       bool mFindAsk = false;
+      bool mFlattenAsk = false;
+      float mFlattenHeight = 0.0f;
+      float mFlattenLow = 0.0f;
+      float mFlattenHigh = 0.0f;
+      float mFlattenMean = 0.0f;
       std::vector<FindObject> mFindObjects;
       std::vector<FindTypeCount> mFindTypes;
       int mFindChoice = 0;
@@ -4790,6 +5085,10 @@ namespace faf::editor
       int mConvertLayersFrames = 0;
       std::string mMaskTestArg;
       int mMaskTestFrames = 0;
+      std::string mMaskStampArg; // `/maskstamptest <layer>,<x0>,<z0>,<x1>,<z1>,<spacing>`
+      bool mFlattenTestDone = false;
+      int mFlattenTestFrames = 0;
+      int mMaskStampFrames = 0;
       // `/masklayer <1-8>` and `/maskrule <layer>,<low>,<high>` (test runs): the Texture tool on that layer;
       // a height rule applied to the whole map once the map has been shown for 120 frames.
       int mMaskLayerArg = -1;
@@ -5346,6 +5645,19 @@ namespace faf::editor
         }
       }
       mShell->SetCommands(&mCommands, &mMenus);
+      // What editor mods change on the map goes through the view (its undo); a mod's tool takes view clicks first.
+      mShell->ModHost().writeHeights =
+        [this](
+          const int x0, const int z0, const int w, const int h, const std::vector<float>& heights, std::string& why
+        ) {
+        return mScene.WriteHeightRect(x0, z0, w, h, heights, why);
+      };
+      mShell->ModHost().layerAt = [this](const int layer, const float x, const float z) {
+        return mScene.LayerWeightAt(layer, x, z);
+      };
+      mScene.viewClickHook = [this](const float x, const float z, const bool shift, const bool ctrl) {
+        return mShell->ModHost().ClickTool(x, z, shift, ctrl);
+      };
       // Editor mods: the turned-on ones (settings folder; a test run only with `/editormods <file>`) run now.
       if (fa::vector<fa::string> file; moho::CFG_GetArgOption("/editormods", 1, &file) && !file.empty()) {
         mShell->ModHost().SetEnabledFile(file[0].c_str());
@@ -5356,6 +5668,7 @@ namespace faf::editor
         mShell->ModHost().Scan(mDocument.VaultFolder() / "mods");
       }
       SetUpWindowChrome(frame);
+      ApplyGraphicsSettings();
       // The game view's ambient occlusion makes its GPU programs on first use, which the editor's own view never
       // is: made now, so the first Play's first frame doesn't wait for them (WPE.15).
       const auto warmStart = std::chrono::steady_clock::now();
@@ -5679,6 +5992,9 @@ namespace faf::editor
       add("terrain.sctools", "SC tools...", "Terrain", "", [this] {
         mShell->Tools().OpenScTools();
       }, mapOpen, {}, "Base pads under the markers, the pathable slope limit, the grade along a route");
+      add("terrain.flatten", "Flatten map...", "Terrain", "", [this] {
+        mFlattenAsk = true;
+      }, canEdit, {}, "The whole map to one height, as one undo step");
       add("terrain.erosion", "Erosion...", "Terrain", "", [this] {
         mShell->Tools().OpenErosion();
       }, mapOpen, {}, "A solver run over the whole map: presets, a preview on the map, Apply as one undo step");
@@ -5778,6 +6094,19 @@ namespace faf::editor
       add("help.tour", "Tour", "Help", "", [this] {
         mShell->StartTour();
       }, {}, {}, "A few steps around the window");
+      add(
+        "help.diagnostics",
+        "Save diagnostics for a bug report",
+        "Help",
+        "",
+        [this] {
+        SaveDiagnostics();
+      },
+        {},
+        {},
+        "The build, the renderer, the open map, the settings, the end of the log and the newest crash report "
+        "in one text file to attach to a bug report"
+      );
       add("help.settingsfolder", "Open the settings folder", "Help", "", [] {
         const std::filesystem::path folder = EditorSettingsFolder();
         (void)::ShellExecuteW(nullptr, L"open", folder.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -5923,6 +6252,28 @@ namespace faf::editor
         gpg::Logf("editor: snap resources: %zu markers moved to their cells' middles", snaps.size());
         PostStatusMessage(std::to_string(snaps.size()) + " resource markers snapped to the grid");
       }, mapOpen, {}, "Every mass and hydrocarbon marker moved to the middle of its extractor's cell (x.5)");
+      add("map.pullmarkers", "Move stray markers onto the map", "Map", "", [this] {
+        // Off the playable area (the whole map without one): to the nearest point 2 units inside, on the ground.
+        float x0 = 0.0f, z0 = 0.0f, x1 = 0.0f, z1 = 0.0f;
+        mDocument.LayoutArea(x0, z0, x1, z1);
+        const LayoutGround ground = LayoutGroundNow();
+        EdDocument::SaveSnapshot before = mDocument.SaveDataNow();
+        const std::vector<std::string> moved =
+          PullMarkersInside(mDocument.SaveData().Markers(), x0, z0, x1, z1, 2.0f, ground.height);
+        if (!moved.empty()) {
+          mDocument.SaveDataEdited(std::move(before));
+        }
+        gpg::Logf(
+          "editor: stray markers: %zu moved onto the map%s%s",
+          moved.size(),
+          moved.empty() ? "" : ", the first ",
+          moved.empty() ? "" : moved.front().c_str()
+        );
+        PostStatusMessage(
+          moved.empty() ? std::string("No marker is off the map")
+                        : std::to_string(moved.size()) + " markers moved onto the map (one undo step)"
+        );
+      }, canEdit, {}, "Markers outside the playable area (or the map) moved just inside its edge, on the ground");
       add("view.focus", "Focus selection", "View", "F", [this] {
         if (!mScene.FrameSelection()) {
           PostStatusMessage("Nothing selected to focus on");
@@ -6153,6 +6504,25 @@ namespace faf::editor
         }
         return items;
       };
+      // Window > From editor mods: the entries and panels the running editor mods added.
+      EdMenuItem modEntries;
+      modEntries.label = "From editor &mods";
+      modEntries.provider = [this] {
+        std::vector<EdMenuItem> items;
+        for (const EdModHost::ModMenu& entry : mShell->ModHost().MenuEntries()) {
+          EdMenuItem item;
+          item.command = entry.command;
+          item.label = entry.label;
+          items.push_back(std::move(item));
+        }
+        if (items.empty()) {
+          EdMenuItem none;
+          none.command = "window.editormods";
+          none.label = "No editor mod added one (Editor mods...)";
+          items.push_back(std::move(none));
+        }
+        return items;
+      };
       EdMenuItem playMaps;
       playMaps.label = "&Map";
       playMaps.provider = [this] {
@@ -6209,6 +6579,7 @@ namespace faf::editor
            cmd("terrain.layout"),
            cmd("terrain.interop"),
            cmd("terrain.erosion"),
+           cmd("terrain.flatten"),
            cmd("terrain.sctools"),
            cmd("window.fields"),
            cmd("window.mesh")}
@@ -6260,6 +6631,7 @@ namespace faf::editor
            cmd("map.preview"),
            cmd("map.resize"),
            cmd("map.snapresources"),
+           cmd("map.pullmarkers"),
            sep(),
            cmd("texture.masks.export"),
            cmd("texture.masks.import")}
@@ -6301,6 +6673,7 @@ namespace faf::editor
               cmd("window.modproject"),
               cmd("window.editormods")}
            },
+           modEntries,
            cmd("window.assets"),
            cmd("view.script")}
         },
@@ -6313,6 +6686,7 @@ namespace faf::editor
            cmd("view.palette"),
            cmd("settings.keys"),
            sep(),
+           cmd("help.diagnostics"),
            cmd("help.settingsfolder"),
            cmd("help.resetsettings")}
         },
@@ -7122,6 +7496,7 @@ namespace faf::editor
         DrawRecover();
         DrawUnsavedQuestion();
         DrawFind();
+        DrawFlatten();
         DriveAutosave();
         // `/focuspanel <window>` (test runs): that panel in front, a while after the map opened (opening fronts Info).
         if (mFocusPanelFrames < 90 && mDocument.GetState() == EdDocument::State::Open) {
@@ -7405,6 +7780,9 @@ namespace faf::editor
       }
       if (fa::vector<fa::string> mask; moho::CFG_GetArgOption("/masktest", 1, &mask) && !mask.empty()) {
         mMaskTestArg = mask[0].c_str();
+      }
+      if (fa::vector<fa::string> stamp; moho::CFG_GetArgOption("/maskstamptest", 1, &stamp) && !stamp.empty()) {
+        mMaskStampArg = stamp[0].c_str();
       }
       if (fa::vector<fa::string> test; moho::CFG_GetArgOption("/brushtest", 1, &test) && !test.empty()) {
         mBrushTestArg = test[0].c_str();
@@ -10097,6 +10475,35 @@ namespace faf::editor
         (void)std::sscanf(mMaskTestArg.c_str(), "%d,%f,%f,%f", &layer, &x, &z, &seconds);
         mScene.TestMaskStroke(layer - 1, x, z, seconds);
         mMaskTestArg.clear();
+      }
+      // `/flattentest <height>` (test runs): Flatten map to that height, its range logged, then undone.
+      if (!mFlattenTestDone && mScene.Attached() && ++mFlattenTestFrames == 120) {
+        mFlattenTestDone = true;
+        if (fa::vector<fa::string> value; moho::CFG_GetArgOption("/flattentest", 1, &value) && !value.empty()) {
+          float low = 0.0f, high = 0.0f, mean = 0.0f;
+          (void)mScene.HeightRange(low, high, mean);
+          gpg::Logf("editor: flatten test: before %.2f .. %.2f, mean %.2f", low, high, mean);
+          std::string message;
+          const bool flattened = mScene.FlattenWhole(static_cast<float>(std::atof(value[0].c_str())), message);
+          (void)mScene.HeightRange(low, high, mean);
+          gpg::Logf("editor: flatten test: %s; now %.2f .. %.2f", flattened ? message.c_str() : "refused", low, high);
+          const bool undone = mCommands.Run("edit.undo");
+          (void)mScene.HeightRange(low, high, mean);
+          gpg::Logf(
+            "editor: flatten test: undo %s; now %.2f .. %.2f, mean %.2f", undone ? "ran" : "refused", low, high, mean
+          );
+        }
+      }
+      // `/maskstamptest <layer>,<x0>,<z0>,<x1>,<z1>,<spacing>` (test runs): a texture stamp stroke along a line, the
+      // brush's shape as it is (a library image with /brushshape).
+      if (!mMaskStampArg.empty() && mScene.Attached() && ++mMaskStampFrames == 140) {
+        int layer = 1;
+        float x0 = 0.0f, z0 = 0.0f, x1 = 0.0f, z1 = 0.0f, spacing = 0.6f;
+        (void)std::sscanf(mMaskStampArg.c_str(), "%d,%f,%f,%f,%f,%f", &layer, &x0, &z0, &x1, &z1, &spacing);
+        tools.SetMaskStamp(true, spacing);
+        mScene.TestMaskStamp(layer - 1, x0, z0, x1, z1);
+        tools.SetMaskStamp(false, 0.6f);
+        mMaskStampArg.clear();
       }
       // `/shaderbrowser <name>` (test runs): the shader browser open on that shader.
       if (!mShaderBrowserDone && mScene.Attached()) {
