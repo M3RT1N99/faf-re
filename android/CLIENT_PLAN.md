@@ -6,6 +6,12 @@ what the playable game still needs, measured on upstream fa160592.
 
 *Inventory of 2026-10-31.*
 
+*Since 2026-11-14 the client is the engine's own POSIX client on SDL3 (upstream removed wx, and
+`cmake/FafLinuxClient.cmake` builds that client for Linux), built for Android by
+[native/README.md](native/README.md): wx-lite, the Win32 message layer, the GDI fonts, the XACT
+stand-in and the renderer test below are history, in git before that date. What the plan says of
+the renderer, the shaders, the textures, sound and the network still describes the problems.*
+
 ## What the client is
 
 The client is every translation unit of `FAF_ENGINE_SOURCES` (src/sources.cmake) that
