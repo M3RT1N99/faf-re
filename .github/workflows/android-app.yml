@@ -1,12 +1,11 @@
 name: Android app
 
-# Builds the Android test app (android/README.md): the engine's arm64 programs, the renderer test
-# and the game's library with the Android native build (android/native, its android-arm64 preset)
+# Builds the Android test app (android/README.md): the engine's arm64 programs and the game's library
+# (the engine's SDL3 client) with the Android native build (android/native, its android-arm64 preset)
 # and the pinned NDK, then the APK with Gradle. The APK is signed with the runner's own debug key,
 # so it installs on a phone without an earlier release, not as an update of one; testers' releases
-# are built where their key is. The same build's wx-lite tests and network tests (android/native/tests/wx
-# and tests/net, linked statically) run on an arm64 runner: the event system, the message layer and the
-# game's UDP transport on a real ARM core.
+# are built where their key is. The same build's tests of the touch scheme Griff (android/native/tests/griff,
+# linked statically) run on an arm64 runner.
 on:
   push:
     branches: [android-app, android-client]
@@ -44,7 +43,8 @@ jobs:
         with:
           path: dependencies/.downloads
           key: deps-${{ hashFiles('cmake/FafDependencies.cmake') }}
-      - run: cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;boost_1_34_1" -P cmake/FafDependencies.cmake
+      # The client's own downloads come with the native build's configure.
+      - run: cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;vulkan" -P cmake/FafDependencies.cmake
       # FFmpeg's sources, for the game's movies (android/native/ffmpeg).
       - run: git submodule update --init --depth 1 dependencies/ffmpeg
       - working-directory: android/native
@@ -69,22 +69,19 @@ jobs:
           retention-days: 14
       - uses: actions/upload-artifact@v7
         with:
-          name: faf-wx-lite-tests-arm64
-          path: |
-            build/android-arm64/bin/faf_wx_lite_tests
-            build/android-arm64/bin/faf_net_tests
+          name: faf-griff-tests-arm64
+          path: build/android-arm64/bin/faf_griff_tests
           retention-days: 7
 
-  wx-lite-tests-arm64:
+  griff-tests-arm64:
     needs: apk
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 5
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: faf-wx-lite-tests-arm64
+          name: faf-griff-tests-arm64
           path: bin
       - run: |
-          chmod +x bin/faf_wx_lite_tests bin/faf_net_tests
-          bin/faf_wx_lite_tests
-          bin/faf_net_tests
+          chmod +x bin/faf_griff_tests
+          bin/faf_griff_tests
