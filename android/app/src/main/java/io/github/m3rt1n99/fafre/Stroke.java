@@ -27,9 +27,13 @@ final class Stroke {
     static final int END_PANEL = 8;
     static final int END_MINIMAP = 9;
     private static final int END_PLACE = 15;
-    /** With it: engineers are selected; FAF offers its patrol for the selection (not for factories alone). */
+    /**
+     * With it: engineers are selected; FAF offers its patrol for the selection (not for factories alone); FAF's attack-move is
+     * armed (its orders panel's button), whose waypoints the route gives.
+     */
     static final int END_ENGINEERS = 16;
     static final int END_PATROL_OFFERED = 32;
+    static final int END_ATTACK_MOVE = 64;
 
     /** What the screen says lifting gives, the mockup's labels (strokeMeaning) and FAF's own for what it decides otherwise. */
     static final int SAYS_ROUTE = 0;
@@ -68,12 +72,12 @@ final class Stroke {
     }
 
     /**
-     * What lifting gives, in the mockup's order, by what the end is on (END_ and its flags, 0 unknown), the stroke's mode and
-     * whether Attack counts: a panel gives nothing, the minimap its place; then a loop; then FAF's order there: an attack, and
-     * with Attack an attack-move, assist with engineers or guard, reclaim; a plain move is the route. A loop is a patrol
-     * where FAF offers one; for factories alone it is their rally route, as any stroke.
+     * What lifting gives, in the mockup's order, by what the end is on (END_ and its flags, 0 unknown) and the stroke's mode: a
+     * panel gives nothing, the minimap its place; then a loop; then FAF's order there: an attack, and with FAF's attack-move
+     * armed an attack-move, assist with engineers or guard, reclaim; a plain move is the route. A loop is a patrol where FAF
+     * offers one; for factories alone it is their rally route, as any stroke.
      */
-    static int meaning(int end, int mode, boolean attack) {
+    static int meaning(int end, int mode) {
         int place = end & END_PLACE;
         if (place == END_PANEL) {
             return SAYS_CANCEL;
@@ -90,7 +94,7 @@ final class Stroke {
         if (place == END_ATTACK) {
             return SAYS_ATTACK;
         }
-        if (attack) {
+        if ((end & END_ATTACK_MOVE) != 0) {
             return SAYS_ATTACK_MOVE;
         }
         switch (place) {

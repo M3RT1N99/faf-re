@@ -16,7 +16,6 @@ namespace
 
   constexpr int kBox = grifftap::kRailBox;
   constexpr int kPlus = grifftap::kRailQueue;
-  constexpr int kAttack = grifftap::kRailAttack;
 
   /// As FAF's console reads a float (ParseFloatToken).
   float Read(const std::string& text)
@@ -28,7 +27,6 @@ namespace
 WXT_TEST(GriffTapBoxTakingAUnitUsesAllThatCounted)
 {
   WXT_CHECK_EQ(Used(kBox | kPlus, Outcome::kBoxToggled), kBox | kPlus);
-  WXT_CHECK_EQ(Used(kBox | kAttack, Outcome::kBoxToggled), kBox | kAttack);
   WXT_CHECK_EQ(Used(kBox, Outcome::kBoxToggled), kBox);
 }
 
@@ -36,21 +34,19 @@ WXT_TEST(GriffTapBoxsTapOnNothingUsesNone)
 {
   // The mockup's (T1.11): nothing was clicked, and Box stays lit for the next try, with what else counted.
   WXT_CHECK_EQ(Used(kBox | kPlus, Outcome::kBoxFoundNothing), 0);
-  WXT_CHECK_EQ(Used(kBox | kPlus | kAttack, Outcome::kBoxFoundNothing), 0);
+  WXT_CHECK_EQ(Used(kBox, Outcome::kBoxFoundNothing), 0);
 }
 
-WXT_TEST(GriffTapWithBoxOnTheUiPutsPlusAndAttackOutAndLeavesBoxLit)
+WXT_TEST(GriffTapWithBoxOnTheUiPutsPlusOutAndLeavesBoxLit)
 {
-  // As without Box: a tap on FAF's UI, a command mode's or a rest's on a panel is the next action for Plus and Attack.
-  WXT_CHECK_EQ(Used(kBox | kAttack, Outcome::kOther), kAttack);
-  WXT_CHECK_EQ(Used(kBox | kPlus | kAttack, Outcome::kOther), kPlus | kAttack);
+  // As without Box: a tap on FAF's UI, a command mode's or a rest's on a panel is the next action for Plus.
+  WXT_CHECK_EQ(Used(kBox | kPlus, Outcome::kOther), kPlus);
   WXT_CHECK_EQ(Used(kBox, Outcome::kOther), 0);
 }
 
 WXT_TEST(GriffTapWithoutBoxUsesAllThatCounted)
 {
   // The activity's own rule for a tap without Box, which the program's agrees with.
-  WXT_CHECK_EQ(Used(kPlus | kAttack, Outcome::kOther), kPlus | kAttack);
   WXT_CHECK_EQ(Used(kPlus, Outcome::kOther), kPlus);
   WXT_CHECK_EQ(Used(0, Outcome::kOther), 0);
 }

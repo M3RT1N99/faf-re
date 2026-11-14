@@ -10,10 +10,9 @@
 
 namespace grifftap
 {
-  // TouchInput's RAIL_ bits.
+  // TouchInput's RAIL_ bits: Griff v4's rail has Box and Plus (FAF's orders panel has the attack-move).
   constexpr int kRailBox = 1;
   constexpr int kRailQueue = 2;
-  constexpr int kRailAttack = 4;
 
   /// What a tap or a rest's lift turned out to be, for the rail's buttons it used.
   enum class Outcome

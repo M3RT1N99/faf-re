@@ -47,11 +47,13 @@ package io.github.m3rt1n99.fafre;
  *
  * <ul>
  *   <li>a finger that moves pans the camera from where it passed the slop, and glides on when it lifted moving
- *       ({@link Mouse#griffDragEnd}); one that rests {@link #REST_MILLISECONDS} (a ring shows it, {@link Mouse#ring}) and
- *       then moves draws a selection box, with the rail's Box without the rest; on a panel or the minimap it drags as a
- *       mouse ({@link Mouse#griffDrag});
- *   <li>a finger that rests and lifts is FAF's right click on a panel, and nothing on the map, but with Box, which has no
- *       rest, Box's tap there ({@link Mouse#restTap});
+ *       ({@link Mouse#griffDragEnd}); with the rail's Box it draws a selection box at once; on a panel or the minimap it drags
+ *       as a mouse ({@link Mouse#griffDrag});
+ *   <li>a finger that rests {@link #REST_MILLISECONDS} (a ring shows it, {@link Mouse#ring}) tells the program
+ *       ({@link Mouse#griffRest}), which marks a waypoint of the selection's orders under it, or on the ground with a selection
+ *       makes the rest the right button's: then moving turns FAF's formation to face the drag and lifting orders it; on a
+ *       waypoint moving gives the mark up and lifting deletes that order; elsewhere moving draws a selection box. A rest that
+ *       lifts is FAF's right click on a panel; with Box, which has no rest, Box's tap on the map ({@link Mouse#restTap});
  *   <li>a tap is FAF's click by what it lands on ({@link Mouse#smartTap}): one's own unit is selected, else the selection
  *       gets FAF's right click there; taps soon after each other and near climb a ladder ({@link TapLadder}): all of a
  *       unit's type on the screen, then on the map, an attack-move in place of a move, all one's own on the screen;
@@ -147,7 +149,7 @@ final class TouchInput implements Fingers {
          * Griff: a tap that the program decides by what is under it, where the finger was and the cursor has rested, or by the
          * ladder's `step` (STEP_): STEP_TAP is decided by its place, as {@link #tap} on the game's UI; one's own unit is
          * selected (with RAIL_BOX added to the selection or taken out); else the selection gets FAF's right click there
-         * (RAIL_QUEUE with Shift, RAIL_ATTACK as an attack-move). The other steps act at the ladder's first tap (`baseX`,
+         * (RAIL_QUEUE with Shift). The other steps act at the ladder's first tap (`baseX`,
          * `baseY`). The program answers a STEP_TAP with what it was ({@link #tapAnswered}, by `tap`), and with Box counting,
          * with the rail's buttons it used.
          */
@@ -167,8 +169,8 @@ final class TouchInput implements Fingers {
 
         /**
          * Griff: a route from the handle, `count` waypoints, each FAF's right click there, the last on what is there; all but the
-         * first with Shift, the first too with RAIL_QUEUE; with RAIL_ATTACK attack-moves ({@link Game#route}). `patrol`: a loop,
-         * the waypoints FAF's patrol where it offers one.
+         * first with Shift, the first too with RAIL_QUEUE; with FAF's attack-move armed attack-moves ({@link Game#route}).
+         * `patrol`: a loop, the waypoints FAF's patrol where it offers one.
          */
         void route(float[] xs, float[] ys, int count, int rail, boolean patrol);
 
@@ -192,9 +194,10 @@ final class TouchInput implements Fingers {
 
         /**
          * Griff: a drag begins where the finger came down (`rested`: after a rest), which the program makes what the place
-         * wants: on the map a pan of the camera, from where the finger is now (`nowX`, `nowY`), or a selection box after a rest
-         * or with RAIL_BOX, with RAIL_QUEUE adding to the selection; on a panel or the minimap the left button's drag, as a
-         * mouse's. The pointer's moves follow, and {@link #griffDragEnd} ends it. The program says by its number `drag` when it
+         * wants: on the map a pan of the camera, from where the finger is now (`nowX`, `nowY`); with RAIL_BOX, or after a rest
+         * that found neither a waypoint nor the ground for a formation, a selection box, with RAIL_QUEUE adding to the
+         * selection; after a rest on the ground FAF's formation, the right button's drag; after one on a waypoint nothing; on
+         * a panel or the minimap the left button's drag, as a mouse's. The pointer's moves follow, and {@link #griffDragEnd} ends it. The program says by its number `drag` when it
          * made a pan of it ({@link TouchInput#panned}).
          */
         void griffDrag(float x, float y, float nowX, float nowY, boolean rested, int rail, int drag);
@@ -203,10 +206,21 @@ final class TouchInput implements Fingers {
         void griffDragEnd(float x, float y, float velocityX, float velocityY);
 
         /**
-         * Griff: a rest without a drag: on a panel FAF's right click there (RAIL_QUEUE with Shift), on the map nothing. With
-         * RAIL_BOX it was no rest, and on the map it is Box's tap; with Box the program says which of the rail's buttons it used.
+         * Griff: a rest without a drag: on a panel FAF's right click there (RAIL_QUEUE with Shift); on the map what the rest
+         * found ({@link #griffRest}): its waypoint deleted, or the ground's right click, else nothing. With RAIL_BOX it was no
+         * rest, and on the map it is Box's tap; with Box the program says which of the rail's buttons it used.
          */
         void restTap(float x, float y, int rail);
+
+        /**
+         * Griff: a finger rests here, without Box: the program marks a waypoint of the selection's orders under it for deletion,
+         * or on the ground with a selection makes the rest the right button's, for a formation's drag or the lift's click. The
+         * rest's gesture goes on as {@link #griffDrag}, {@link #restTap} or {@link #griffRestGone}.
+         */
+        void griffRest(float x, float y);
+
+        /** Griff: the resting finger's gesture went without its lift or a drag: a second finger, the system, the clicks. */
+        void griffRestGone();
 
         /**
          * Griff: the camera follows fingers: `start` takes what lies at this place as what stays under it; then the camera
@@ -268,10 +282,9 @@ final class TouchInput implements Fingers {
         int clickRuns();
     }
 
-    /** Griff: the rail's buttons, as Mouse#rail has them. */
+    /** Griff: the rail's buttons, as Mouse#rail has them. FAF's orders panel has the attack-move. */
     static final int RAIL_BOX = 1;
     static final int RAIL_QUEUE = 2;
-    static final int RAIL_ATTACK = 4;
     /** Griff: a tap's step on the ladder (Mouse#smartTap). */
     static final int STEP_TAP = 0;
     /** The ladder's first click on the game's UI again, which the game makes its double click there. */
@@ -297,7 +310,10 @@ final class TouchInput implements Fingers {
     static final int TAP_GROUND = 3;
     static final int TAP_EMPTY = 4;
     static final int TAP_OTHER = 5;
-    /** Griff: how long a finger rests before its drag draws a box instead of panning. */
+    /**
+     * Griff: how long a finger rests before its ring shows and the program hears of the rest: its drag is no pan then, but a
+     * formation, a box, or the mark of a waypoint given up.
+     */
     static final long REST_MILLISECONDS = 300;
     /** Griff: how long a finger rests in the draft before the plan it would place shows under it, with the loupe. */
     static final long DRAFT_REST_MILLISECONDS = 400;
@@ -434,7 +450,7 @@ final class TouchInput implements Fingers {
      * selected one's own unit, all of its type on the screen, then on the map; after a plain move, an attack-move there; after
      * a tap on nothing with nothing selected, all one's own mobile units on the screen. The last two end the ladder. A tap on
      * the game's UI is clicked again where the first went, as the game's double click wants it, within its own reach and time.
-     * Plus, Attack and Box keep a tap off the ladder, as do a drag, a rest, a stroke and two fingers.
+     * Plus and Box keep a tap off the ladder, as do a drag, a rest, a stroke and two fingers.
      */
     static final class TapLadder {
         /** Whether there is a last tap to climb from. */
@@ -506,17 +522,17 @@ final class TouchInput implements Fingers {
         /**
          * Whether a finger down here at `time`, with these of the rail's buttons counting, may become the ladder's next tap,
          * which the handle then leaves to it: so a double tap on a unit does not land on the handle its first tap raised. Also
-         * while the program has not said what the last tap was. After the third rung there is nothing to climb, and Box, Plus
-         * and Attack keep a tap off the ladder, as {@link #next} has it.
+         * while the program has not said what the last tap was. After the third rung there is nothing to climb, and Box and
+         * Plus keep a tap off the ladder, as {@link #next} has it.
          */
         boolean climbing(float x, float y, long time, int rail, float reach) {
             return mLast && !offLadder(rail) && mRung < 3 && mKind != TAP_UI && mKind != TAP_OTHER
                 && time - mLift <= LADDER_MILLISECONDS && Math.hypot(x - mX, y - mY) <= reach;
         }
 
-        /** Box, Plus and Attack make a tap theirs: it climbs no ladder. */
+        /** Box and Plus make a tap theirs: it climbs no ladder. */
         private static boolean offLadder(int rail) {
-            return (rail & (RAIL_BOX | RAIL_QUEUE | RAIL_ATTACK)) != 0;
+            return (rail & (RAIL_BOX | RAIL_QUEUE)) != 0;
         }
 
         /** Another gesture came between: the next tap starts a ladder. */
@@ -618,8 +634,9 @@ final class TouchInput implements Fingers {
     /** Griff: the last drag's number (Mouse#griffDrag), and whether the program has said that it made a pan of it (#panned). */
     private int mDrag;
     private boolean mPanned;
-    /** Griff: a rest's ring is shown. */
+    /** Griff: a rest's ring is shown; the program heard of the rest, and not yet how its gesture went on (Mouse#griffRest). */
     private boolean mRing;
+    private boolean mRestSaid;
     /** Griff: the last rest that lifted rang, and so buzzed, for the group its right press may store (#storeBuzzes). */
     private boolean mRestRang;
     /** Griff: the first finger's last places with their times, the oldest overwritten: its down first. */
@@ -687,7 +704,7 @@ final class TouchInput implements Fingers {
         mLadder.answered(tap, kind);
     }
 
-    /** Griff: what the last taps ordered was taken back (the undo's pill): the next tap climbs no ladder from it. */
+    /** Griff: what the last taps ordered was taken back (the undo's button): the next tap climbs no ladder from it. */
     void clearLadder() {
         mLadder.clear();
     }
@@ -703,7 +720,7 @@ final class TouchInput implements Fingers {
     }
 
     /**
-     * Griff: FAF stored a control group (Game.TOAST_GROUP_STORED, a right press on its slot): whether the phone buzzes for it now,
+     * Griff: FAF stored a control group (Game.SAID_GROUP_STORED, a right press on its slot): whether the phone buzzes for it now,
      * so that each stored group is felt once, as the mockup's. It is the last rest's, which buzzed as it rang, unless Box counted:
      * that gives a rest no ring, but on a panel leaves its lift FAF's right press. A rest's ring counts for one store, so one that
      * no rest made after it, a mouse's right click, buzzes.
@@ -766,6 +783,7 @@ final class TouchInput implements Fingers {
             mGhostToRestore = mState != State.PENDING && mState != State.RESTED && mGhostPlaced;
             mMouse.stopTimer();
             hideRing();
+            restGone();
             startTwo(id, x, y, time);
         } else if (mState == State.PRESSED && mPressedGriff && mPanned) {
             // Griff: a second finger turns a pan into two fingers, which move the camera themselves. Only a drag that the program
@@ -830,7 +848,7 @@ final class TouchInput implements Fingers {
                 mOnHandle = true;
                 startPending(id, x, y, time);
             } else {
-                // After the third rung, or with Plus or Attack counting, the handle takes a drag at once.
+                // After the third rung, or with Plus counting, the handle takes a drag at once.
                 startStroke(id, x, y, time);
             }
         } else {
@@ -1194,6 +1212,7 @@ final class TouchInput implements Fingers {
                 break;
         }
         hideRing();
+        restGone();
         mPressedGriff = false;
         mGhostToRestore = false;
         mClickButton = NO_CLICK;
@@ -1220,6 +1239,7 @@ final class TouchInput implements Fingers {
             endPinch(false, 0);
         }
         hideRing();
+        restGone();
         finishClick();
         bringCursorBackToGhost();
         mState = State.SPENT;
@@ -1235,11 +1255,14 @@ final class TouchInput implements Fingers {
             if (mGriff) {
                 mState = State.RESTED;
                 mLadder.clear();
-                // With Box a rest is none (the mockup's): no ring, nothing to feel, and its lift is Box's tap on the map.
+                // With Box a rest is none (the mockup's): no ring, nothing to feel, and its lift is Box's tap on the map. Else the
+                // program hears of it: a waypoint under it is marked, or the ground gives the right button.
                 if (mFingerBox == 0) {
                     mRing = true;
                     mMouse.ring(true, mFirst.x, mFirst.y);
                     mMouse.held();
+                    mRestSaid = true;
+                    mMouse.griffRest(mStartX, mStartY);
                 }
             } else {
                 press(holdButton(), mStartX, mStartY);
@@ -1348,6 +1371,8 @@ final class TouchInput implements Fingers {
 
     /** With these of the rail's buttons counting for it. */
     private void startGriffDrag(boolean rested, long time, int rail) {
+        // The program takes what the rest found with the drag.
+        mRestSaid = false;
         mPressedGriff = true;
         // A pan glides on (releasePressed); only the program can tell it from a panel's or the minimap's drag (#panned).
         mMayPan = !rested && (rail & RAIL_BOX) == 0;
@@ -1371,6 +1396,8 @@ final class TouchInput implements Fingers {
      */
     private void restTap() {
         hideRing();
+        // The program takes what the rest found with its lift.
+        mRestSaid = false;
         // It rang and buzzed unless Box counted at the finger's down (#timer), which on a panel is a rest all the same.
         mRestRang = mFingerBox == 0;
         int rail = fingerRail();
@@ -1400,6 +1427,14 @@ final class TouchInput implements Fingers {
         if (mRing) {
             mRing = false;
             mMouse.ring(false, 0, 0);
+        }
+    }
+
+    /** Griff: a rest the program heard of goes without its lift or a drag: what it found is over (a waypoint's mark). */
+    private void restGone() {
+        if (mRestSaid) {
+            mRestSaid = false;
+            mMouse.griffRestGone();
         }
     }
 
@@ -1636,8 +1671,8 @@ final class TouchInput implements Fingers {
         }
         int rail = mMouse.rail();
         mMouse.route(mWaypointX, mWaypointY, strokeWaypoints(), rail, mode == Stroke.PATROL);
-        if ((rail & (RAIL_QUEUE | RAIL_ATTACK)) != 0) {
-            mMouse.railUsed(rail & (RAIL_QUEUE | RAIL_ATTACK));
+        if ((rail & RAIL_QUEUE) != 0) {
+            mMouse.railUsed(RAIL_QUEUE);
         }
     }
 

@@ -9,7 +9,6 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.os.Build;
-import android.os.SystemClock;
 import android.view.View;
 
 /**
@@ -17,9 +16,9 @@ import android.view.View;
  * handle beside the selection, with the selection's count and a line to the group's middle, or where the group is out of view
  * or under a panel, an arrow at it; the stroke a finger draws from it, with the waypoints its lift gives and a label of what it
  * gives; the ring of a finger that rests; the draft's plans, the line and the plan a finger would add, Box's box over deposits
- * and the loupe of what a resting finger covers; the pins at the places orders went to, in the colour of each kind, which fade
- * (include/GriffPins.h); and a toast, a short word for the user ({@link #toast}). In the screen's pixels, in the mockup's
- * sizes and colours. It takes no fingers: they go through to the layer under it.
+ * and the loupe of what a resting finger covers. In the screen's pixels, in the mockup's sizes and colours. It takes no
+ * fingers: they go through to the layer under it. The rail, the undo's button and the hints are FAF's UI's (griffhud.lua), and
+ * FAF's own feedback blip marks where an order went.
  */
 final class GriffLayer extends View {
     private static final int OWN = 0xFF2DD4BF;
@@ -31,9 +30,6 @@ final class GriffLayer extends View {
     private static final int ALARM = 0xFFF87171;
     private static final int BACKGROUND = 0xFF0A1118;
     private static final int MUTED = 0xFFA8BAC5;
-    private static final int TEXT = 0xFFE8EEF2;
-    private static final int PANEL_SOLID = 0xFF0E1922;
-    private static final int LINE = 0xFF3F5868;
     /** With Box the handle steps aside for a box that starts under it, and shows it. */
     private static final int FAINT_ALPHA = 90;
     /** The mockup's CSS pixel on the phone it was made for, in mm (its mm is 5.64 of them). */
@@ -49,11 +45,6 @@ final class GriffLayer extends View {
     /** The ring about a finger that rests. */
     private static final float RING_MM = 7;
     private static final float RING_LINE_MM = 2 * CSS_PIXEL_MM;
-    /** A toast: a pill this high, as wide as its text and this, this far under the free map's top, for this long. */
-    private static final float TOAST_MM = 7;
-    private static final float TOAST_PAD_MM = 3;
-    private static final float TOAST_BELOW_TOP_MM = 2;
-    private static final long TOAST_MILLISECONDS = 1800;
     /** A plan: a box of its ground (at least Draft.LEAST_MM wide), the newest fuller than the others, a line's and the aim's between. */
     private static final float PLAN_EDGE_MM = 1.5f * CSS_PIXEL_MM;
     private static final int NEWEST_ALPHA = 140;
@@ -67,11 +58,6 @@ final class GriffLayer extends View {
     private static final float LOUPE_ROOM_MM = 1;
     private static final float LOUPE_CROSS_MM = 1.2f;
     private static final float LOUPE_MAGNIFIED = 2;
-    /** A pin: a drop of this size, its tip at the order's place, its edge the background colour (the mockup's drawPins). */
-    private static final float PIN_MM = 1.5f;
-    /** The pins' kinds as the program gives them (include/GriffPins.h Kind): move, attack, patrol, build. */
-    private static final int[] PIN_COLOURS = {OWN, OWN, ATTACK, PATROL, BUILD};
-    private static final int MOST_PINS = 64;
 
     private final Paint mFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mRing = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -81,8 +67,6 @@ final class GriffLayer extends View {
     private final Paint mDots = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mWords = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mRest = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint mToastFill = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint mToastEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mPlanFill = new Paint();
     private final Paint mPlanEdge = new Paint();
     private final Paint mBoxFill = new Paint();
@@ -90,14 +74,9 @@ final class GriffLayer extends View {
     private final Paint mLoupeEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint mLoupeBackground = new Paint();
     private final Paint mLoupePicture = new Paint(Paint.FILTER_BITMAP_FLAG);
-    private final Paint mPinFill = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint mPinEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Path mPin = new Path();
-    private final RectF mPinHead = new RectF();
     private final Path mArrow = new Path();
     private final Path mStrokePath = new Path();
     private final Path mLoupeCircle = new Path();
-    private final RectF mPill = new RectF();
     private final RectF mPlace = new RectF();
     private final Rect mLoupeSource = new Rect();
     private float mMillimetre = 10;
@@ -112,7 +91,7 @@ final class GriffLayer extends View {
     private int mCount;
     private boolean mOff;
     private int mRail;
-    /** The free map, the screen less FAF's panels at its middle's cross, which the label and the toast keep within. */
+    /** The free map, the screen less FAF's panels at its middle's cross, which the stroke's label keeps within. */
     private float mFreeLeft;
     private float mFreeTop;
     private float mFreeRight = Float.MAX_VALUE;
@@ -127,8 +106,6 @@ final class GriffLayer extends View {
     private boolean mRinged;
     private float mRingX;
     private float mRingY;
-    private String mToast;
-    private long mToastUntil;
     /**
      * The draft as the program shows it, or none; Box's box over deposits; the loupe's picture, the screen's place it was copied
      * about and the finger it is for.
@@ -141,12 +118,6 @@ final class GriffLayer extends View {
     private float mLoupeCopyY;
     private float mLoupeX;
     private float mLoupeY;
-    /** The pins that show: their tips, kinds and how much of each shows. */
-    private final float[] mPinX = new float[MOST_PINS];
-    private final float[] mPinY = new float[MOST_PINS];
-    private final int[] mPinKind = new int[MOST_PINS];
-    private final float[] mPinAlpha = new float[MOST_PINS];
-    private int mPins;
 
     GriffLayer(Context context) {
         super(context);
@@ -164,9 +135,6 @@ final class GriffLayer extends View {
         mWords.setTypeface(semiBold);
         mRest.setStyle(Paint.Style.STROKE);
         mRest.setColor(RING);
-        mToastFill.setColor(PANEL_SOLID);
-        mToastEdge.setStyle(Paint.Style.STROKE);
-        mToastEdge.setColor(LINE);
         mPlanEdge.setStyle(Paint.Style.STROKE);
         mBoxFill.setColor(OWN);
         mBoxFill.setAlpha(BOX_ALPHA);
@@ -175,8 +143,6 @@ final class GriffLayer extends View {
         mLoupeEdge.setStyle(Paint.Style.STROKE);
         mLoupeEdge.setColor(RING);
         mLoupeBackground.setColor(BACKGROUND);
-        mPinEdge.setStyle(Paint.Style.STROKE);
-        mPinEdge.setColor(BACKGROUND);
     }
 
     /** The screen's pixels in a mm on the glass, the handle's radius in mm and how far beyond its edge its arrow reaches. */
@@ -190,11 +156,9 @@ final class GriffLayer extends View {
         mStroke.setStrokeWidth(STROKE_LINE_MM * millimetre);
         mWords.setTextSize(FONT_MM * millimetre);
         mRest.setStrokeWidth(RING_LINE_MM * millimetre);
-        mToastEdge.setStrokeWidth(Math.max(1, CSS_PIXEL_MM * millimetre));
         mPlanEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
         mBoxEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
         mLoupeEdge.setStrokeWidth(PLAN_EDGE_MM * millimetre);
-        mPinEdge.setStrokeWidth(Math.max(1, CSS_PIXEL_MM * millimetre));
         invalidate();
     }
 
@@ -304,42 +268,8 @@ final class GriffLayer extends View {
         invalidate();
     }
 
-    /**
-     * The pins as the program showed them (Game.griffOrders, from `from` on, `count` of them), with the picture's pixels mapped to
-     * the screen's: each one's tip, kind and how much of it shows.
-     */
-    void setPins(float[] values, int from, int count, Draft.Screen screen) {
-        int pins = Math.min(count, MOST_PINS);
-        boolean changed = pins != mPins;
-        for (int pin = 0; pin < pins; ++pin) {
-            int at = from + pin * Game.ORDERS_PIN;
-            float x = screen.x(values[at]);
-            float y = screen.y(values[at + 1]);
-            int kind = (int) values[at + 2];
-            float alpha = values[at + 3];
-            changed |= x != mPinX[pin] || y != mPinY[pin] || kind != mPinKind[pin] || alpha != mPinAlpha[pin];
-            mPinX[pin] = x;
-            mPinY[pin] = y;
-            mPinKind[pin] = kind;
-            mPinAlpha[pin] = alpha;
-        }
-        mPins = pins;
-        if (changed) {
-            invalidate();
-        }
-    }
-
-    /** Says `text` for a moment, under the top of the free map, in place of what it said before. */
-    void toast(String text) {
-        mToast = text;
-        mToastUntil = SystemClock.uptimeMillis() + TOAST_MILLISECONDS;
-        invalidate();
-        postInvalidateDelayed(TOAST_MILLISECONDS);
-    }
-
     @Override
     protected void onDraw(Canvas canvas) {
-        drawPins(canvas);
         if (mDraft != null && mDraft.open()) {
             drawDraft(canvas);
         }
@@ -351,9 +281,6 @@ final class GriffLayer extends View {
         }
         if (mRinged) {
             canvas.drawCircle(mRingX, mRingY, RING_MM * mMillimetre, mRest);
-        }
-        if (mToast != null && SystemClock.uptimeMillis() < mToastUntil) {
-            drawToast(canvas);
         }
     }
 
@@ -386,43 +313,17 @@ final class GriffLayer extends View {
         mFill.setColor(OWN_DEEP);
         mFill.setAlpha(alpha * 225 / 255);
         canvas.drawCircle(mX, mY, mRadius, mFill);
-        mRing.setColor((mRail & TouchInput.RAIL_ATTACK) != 0 ? ATTACK : RING);
+        mRing.setColor(RING);
         mRing.setAlpha(alpha);
         canvas.drawCircle(mX, mY, mRadius, mRing);
         mText.setAlpha(alpha);
         canvas.drawText(Integer.toString(mCount), mX, mY - (mText.ascent() + mText.descent()) / 2, mText);
     }
 
-    /**
-     * The mockup's drawPins: a drop with its tip at the order's place, its sides out to 1.1 mm and up 2.4 mm into a circle of
-     * 1.5 mm whose middle is 3 mm above the tip, in its kind's colour, edged in the background colour, as much of it as shows.
-     */
-    private void drawPins(Canvas canvas) {
-        float size = PIN_MM * mMillimetre;
-        for (int pin = 0; pin < mPins; ++pin) {
-            float x = mPinX[pin];
-            float y = mPinY[pin];
-            int kind = mPinKind[pin];
-            int alpha = Math.round(255 * Math.max(0, Math.min(1, mPinAlpha[pin])));
-            mPin.rewind();
-            mPin.moveTo(x, y);
-            mPin.lineTo(x - size * 0.75f, y - size * 1.6f);
-            mPinHead.set(x - size, y - 3 * size, x + size, y - size);
-            mPin.arcTo(mPinHead, 144, 252, false);
-            mPin.close();
-            mPinFill.setColor(PIN_COLOURS[kind > 0 && kind < PIN_COLOURS.length ? kind : 0]);
-            mPinFill.setAlpha(alpha);
-            canvas.drawPath(mPin, mPinFill);
-            mPinEdge.setAlpha(alpha);
-            canvas.drawPath(mPin, mPinEdge);
-        }
-    }
-
     /** The mockup's drawStroke: line, dots and label in the colour of what lifting gives. */
     private void drawStroke(Canvas canvas) {
-        boolean attack = (mRail & TouchInput.RAIL_ATTACK) != 0;
-        int says = Stroke.meaning(mEnd, mMode, attack);
-        int colour = colour(says, attack);
+        int says = Stroke.meaning(mEnd, mMode);
+        int colour = colour(says, (mEnd & Stroke.END_ATTACK_MOVE) != 0);
         mStroke.setColor(colour);
         canvas.drawPath(mStrokePath, mStroke);
         mDots.setColor(colour);
@@ -518,18 +419,6 @@ final class GriffLayer extends View {
         canvas.drawLine(x, y - cross, x, y + cross, mLoupeEdge);
     }
 
-    private void drawToast(Canvas canvas) {
-        float width = mWords.measureText(mToast) + TOAST_PAD_MM * mMillimetre;
-        float height = TOAST_MM * mMillimetre;
-        float middle = getWidth() / 2f;
-        float top = mFreeTop + TOAST_BELOW_TOP_MM * mMillimetre;
-        mPill.set(middle - width / 2, top, middle + width / 2, top + height);
-        canvas.drawRoundRect(mPill, height / 2, height / 2, mToastFill);
-        canvas.drawRoundRect(mPill, height / 2, height / 2, mToastEdge);
-        mWords.setColor(TEXT);
-        canvas.drawText(mToast, middle, top + height / 2 - (mWords.ascent() + mWords.descent()) / 2, mWords);
-    }
-
     /** The mockup's labels in the app's English, and FAF's own name where FAF orders what the mockup has not. */
     private static String words(int says) {
         switch (says) {
@@ -558,7 +447,8 @@ final class GriffLayer extends View {
         }
     }
 
-    private static int colour(int says, boolean attack) {
+    /** The colour of what lifting gives; `attackMove`: FAF's attack-move is armed, which gives the minimap's place too. */
+    private static int colour(int says, boolean attackMove) {
         switch (says) {
             case Stroke.SAYS_ATTACK_MOVE:
             case Stroke.SAYS_ATTACK:
@@ -567,7 +457,7 @@ final class GriffLayer extends View {
             case Stroke.SAYS_CANCEL:
                 return MUTED;
             case Stroke.SAYS_MINIMAP:
-                return attack ? ATTACK : OWN;
+                return attackMove ? ATTACK : OWN;
             case Stroke.SAYS_PATROL:
                 return PATROL;
             case Stroke.SAYS_ASSIST:

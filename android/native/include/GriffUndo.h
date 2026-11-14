@@ -160,7 +160,7 @@ namespace griffundo
 
   /// Whether an order FAF's UI gave is a gesture's to take back: not FAF's by-product (None), nor the construction panel's own
   /// queue (a factory's units, an upgrade, an enhancement: a script other than the attack-move's), which the panel itself
-  /// takes back. Any other order ends the pill's record: only the last order counts.
+  /// takes back. Any other order ends the undo's record: only the last order counts.
   [[nodiscard]] inline bool Takeable(const std::string& type, const bool attackMove)
   {
     return type != "None" && type != "BuildFactory" && type != "Upgrade" && (type != "Script" || attackMove);
@@ -307,6 +307,24 @@ namespace griffundo
       return Way::kBuild;
     }
     return Way::kNone;
+  }
+
+  /// Whether taking a gesture back saves more than the player's own next order (Griff v4, the user's rule of 2026-11-14): the
+  /// gesture replaced a queue (`before`, as it began) that held a building to give back, or two orders or more that come back
+  /// (a route, a patrol, a line of reclaims). For idle units, or units with one plain move or one assist, a Stop or the next
+  /// order does as much, and no undo is offered. A factory's own builds and what the orders panel has no mode for cannot come
+  /// back by a click and count for nothing; an attack-move's script and its AggressiveMove are one order.
+  [[nodiscard]] inline bool SavesWork(const std::vector<Entry>& before)
+  {
+    std::size_t back = 0;
+    for (const Entry& entry : before) {
+      const Way way = WayOf(entry);
+      if (way == Way::kBuild) {
+        return true;
+      }
+      back += way != Way::kNone ? 1 : 0;
+    }
+    return back >= 2;
   }
 
   /// Whether an order is the script FAF's attack-move button gives (commandmode.lua's OnScriptIssued then asks the sim's

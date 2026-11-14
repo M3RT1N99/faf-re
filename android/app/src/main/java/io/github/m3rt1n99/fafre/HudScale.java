@@ -29,14 +29,9 @@ final class HudScale {
     private static final double BAR_ROOM_TOP = 138;
     /**
      * FAF's pixels from the picture's bottom to its unit view's top, where the room at the left edge ends: while a selection
-     * shows the construction panel, 120 under the view and the view's 114 (unitview_mini.lua PositionWindow); and where FAF made
-     * no orders panel, in a replay, 140 under it, the highest the view stands.
+     * shows the construction panel, 120 under the view and the view's 114 (unitview_mini.lua PositionWindow).
      */
     private static final double UNIT_VIEW_TOP = 234;
-    private static final double UNIT_VIEW_HIGHEST = 254;
-    /** The mockup's H: a mm on screens whose short side is this or more, less on smaller ones, down to this much of one. */
-    private static final double H_SCREEN_MM = 73;
-    private static final double H_LEAST = 0.7;
 
     private HudScale() {
     }
@@ -95,23 +90,6 @@ final class HudScale {
     /** How high the room is on a picture of this many lines: up to the unit view, where it stands in a game with a selection. */
     static double barRoomPixels(double factor, int lines) {
         return lines - (BAR_ROOM_TOP + UNIT_VIEW_TOP) * factor;
-    }
-
-    /**
-     * The band Griff's rail stands in, in mm on the glass of this short side: the room at the left edge where FAF's unit view
-     * stands highest, less the mockup's H (millimetresH) at its top and bottom. The smallest of every HUD state, so a rail
-     * that fits it fits them all and keeps its size as the HUD changes under a finger.
-     */
-    static double railBandMm(double factor, int lines, double shortSideMm) {
-        return (lines - (BAR_ROOM_TOP + UNIT_VIEW_HIGHEST) * factor) * shortSideMm / lines - 2 * millimetresH(shortSideMm);
-    }
-
-    /**
-     * The mockup's H in mm (buildstage/griff-v3-spec.md, section 0), its unit of FAF's panels, by which the app's own pieces
-     * keep their room from them: a mm on a screen whose short side is 73 mm or more, less on a smaller one, 0.7 mm at least.
-     */
-    static double millimetresH(double shortSideMm) {
-        return Math.max(H_LEAST, Math.min(1, shortSideMm / H_SCREEN_MM));
     }
 
     /** The factor as the switch gives it. */

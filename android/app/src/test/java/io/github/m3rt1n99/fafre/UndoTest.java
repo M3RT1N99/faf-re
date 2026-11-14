@@ -102,13 +102,6 @@ public class UndoTest {
         assertEquals(2, undo.tap(300));
     }
 
-    @Test
-    public void theToastSaysWhetherTheUndoTookBackPartOfTheOrdersOrNone() {
-        assertNull("all of them: no word", Undo.word(Game.UNDONE_WHOLE));
-        assertEquals("Undone in part", Undo.word(Game.UNDONE_IN_PART));
-        assertEquals("Not undone", Undo.word(Game.NOT_UNDONE));
-    }
-
     // The next two characterize how the pill takes what the program tells after an undo that clicked nothing. They cannot pin
     // the rule that such a record holds and is offered again: the program decides it (GriffAndroid.cpp FinishUndo and
     // OfferAgain, which tell SAID_UNDONE and then SAID_ORDERED anew), and Undo has always taken a record told after its undo

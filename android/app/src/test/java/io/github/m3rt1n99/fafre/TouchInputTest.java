@@ -207,6 +207,16 @@ public class TouchInputTest {
         }
 
         @Override
+        public void griffRest(float x, float y) {
+            events.add("griff rest " + (int) x + " " + (int) y);
+        }
+
+        @Override
+        public void griffRestGone() {
+            events.add("rest gone");
+        }
+
+        @Override
         public void pinch(boolean start, float x, float y, float distance) {
             events.add((start ? "pinch start " : "pinch ") + (int) x + " " + (int) y + " " + Math.round(distance));
         }
@@ -522,7 +532,8 @@ public class TouchInputTest {
         moveFirst(200, 100, 1400);
         assertFalse("the box goes on without it", mouse.ringShown);
         up(0, 1410);
-        expect("move 100 50", "held", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100", "griff drag end 200 100");
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100",
+               "griff drag end 200 100");
     }
 
     @Test
@@ -536,7 +547,51 @@ public class TouchInputTest {
         assertEquals("the ring follows the finger", 103, mouse.ringX, 0);
         up(0, 1600);
         assertFalse(mouse.ringShown);
-        expect("move 100 50", "held", "rest tap 100 50 rail 2", "rail used 2");
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 2", "rail used 2");
+    }
+
+    @Test
+    public void griffARestTellsTheProgramWhereTheFingerCameDownAsItsRingShows() {
+        // The program marks a waypoint there or makes the rest the right button's, for the drag or the lift that follows.
+        griff();
+        down(0, 100, 50, 1000);
+        moveFirst(104, 52);
+        expect("move 100 50");
+        timerRuns();
+        assertTrue(mouse.ringShown);
+        expect("move 100 50", "held", "griff rest 100 50");
+    }
+
+    @Test
+    public void griffARestTheSystemTookIsGoneForTheProgram() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        touch.cancel();
+        assertFalse(mouse.ringShown);
+        expect("move 100 50", "held", "griff rest 100 50", "rest gone");
+        // Once: the finger that the system took lifts with nothing more, and the next gesture's tap has no rest of its own.
+        up(0, 1500);
+        mouse.events.clear();
+        down(0, 300, 50, 3000);
+        up(0, 3000 + TouchInput.SETTLE_MILLISECONDS);
+        expect("move 300 50", "smart tap 300 50 rail 0");
+    }
+
+    @Test
+    public void griffARestsDragOrLiftTakesItsRestWithIt() {
+        // The program reads what the rest found with the drag or the lift: no word that it went.
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        up(0, 1500);
+        down(0, 300, 50, 3000);
+        timerRuns();
+        up(0, 3600);
+        for (String event : mouse.events) {
+            assertFalse(event, event.equals("rest gone"));
+        }
     }
 
     @Test
@@ -573,7 +628,7 @@ public class TouchInputTest {
         down(0, 100, 50, 1000);
         timerRuns();
         up(0, 1600);
-        expect("move 100 50", "held", "rest tap 100 50 rail 0");
+        expect("move 100 50", "held", "griff rest 100 50", "rest tap 100 50 rail 0");
         assertFalse("its ring buzzed", touch.storeBuzzes());
         assertTrue("for one store: a mouse's after it buzzes", touch.storeBuzzes());
     }
@@ -588,7 +643,7 @@ public class TouchInputTest {
         assertFalse(mouse.ringShown);
         up(1, 1450);
         up(0, 1460);
-        expect("move 100 50", "held", "move 200 50");
+        expect("move 100 50", "held", "griff rest 100 50", "rest gone", "move 200 50");
     }
 
     @Test
@@ -609,17 +664,17 @@ public class TouchInputTest {
         timerRuns();
         moveFirst(200, 100);
         up(0, 1600);
-        expect("move 100 50", "held", "griff drag 100 50 now 200 100 rested rail 2", "move 200 100", "rail used 2",
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 2", "move 200 100", "rail used 2",
                "griff drag end 200 100");
     }
 
     @Test
     public void griffATapIsFafsClickByWhatItLandsOnAndUsesTheRail() {
         griff();
-        mouse.rail = TouchInput.RAIL_QUEUE | TouchInput.RAIL_ATTACK;
+        mouse.rail = TouchInput.RAIL_QUEUE;
         down(0, 100, 50, 1000);
         up(0, 1000 + TouchInput.SETTLE_MILLISECONDS);
-        expect("move 100 50", "smart tap 100 50 rail 6", "rail used 6");
+        expect("move 100 50", "smart tap 100 50 rail 2", "rail used 2");
         assertEquals(List.of("100 50"), mouse.downs);
     }
 
@@ -1001,7 +1056,7 @@ public class TouchInputTest {
         timerRuns();
         assertTrue("a ring: Box came after the down", mouse.ringShown);
         up(0, 4600);
-        expect("move 300 50", "rest tap 300 50 rail 1", "move 400 50", "held", "rest tap 400 50 rail 0");
+        expect("move 300 50", "rest tap 300 50 rail 1", "move 400 50", "held", "griff rest 400 50", "rest tap 400 50 rail 0");
     }
 
     @Test
@@ -1042,7 +1097,7 @@ public class TouchInputTest {
         griff();
         mouse.griffX = 100;
         mouse.griffY = 50;
-        mouse.rail = TouchInput.RAIL_ATTACK;
+        mouse.rail = TouchInput.RAIL_QUEUE;
         down(0, 100, 50, 1000);
         strokeFirst(100, 50, 160, 50);
         strokeFirst(160, 50, 160, 300);
@@ -1050,8 +1105,8 @@ public class TouchInputTest {
         // Its points are a mm apart: the corner stays within one.
         List<float[]> route = places(mouse.events.get(0));
         assertTrue(mouse.events.get(0), Math.hypot(route.get(0)[0] - 160, route.get(0)[1] - 50) <= 10);
-        assertTrue(mouse.events.get(0), mouse.events.get(0).endsWith("160 300 rail 4"));
-        assertEquals("rail used 4", mouse.events.get(1));
+        assertTrue(mouse.events.get(0), mouse.events.get(0).endsWith("160 300 rail 2"));
+        assertEquals("rail used 2", mouse.events.get(1));
     }
 
     @Test
@@ -2123,7 +2178,7 @@ public class TouchInputTest {
         moveFirst(460, 300);
         assertFalse(mouse.ringShown);
         up(0, 2600);
-        expect("move 400 300", "held");
+        expect("move 400 300", "held", "griff rest 400 300", "rest gone");
         // A rest that clicks began before: no ring, nothing to feel.
         mouse.events.clear();
         down(0, 400, 300, 2800);

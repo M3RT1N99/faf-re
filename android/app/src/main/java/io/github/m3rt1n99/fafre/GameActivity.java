@@ -92,8 +92,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double GRIFF_NEAR_TROOPS_MM = 2;
     /** Griff: the camera's glide stops under this speed a second (the mockup's 4 pixels of its 5.64 a mm). */
     private static final double GRIFF_GLIDE_STOP_MM = 0.7;
-    /** Griff's word for a gesture given up before it gave anything. */
-    private static final String CANCELLED = "Cancelled";
     /**
      * Griff's draft (the mockup's): a finger is on a plan within this of the box its ground takes (Draft.LEAST_MM wide at
      * least); an extractor takes the free deposit within this of the finger.
@@ -108,12 +106,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double LOUPE_SOURCE_MM = 6;
     private static final long LOUPE_MILLISECONDS = 33;
     /**
-     * How long the pill's place stays covered after the pill went (Covers.Lingering), up to the program's check of a tap there:
-     * a finger meant for the pill that comes down up to 400 ms late, and the tap's click a settle after its down
+     * How long the undo's button's place stays covered after it went (Covers.Lingering), up to the program's check of a tap
+     * there: a finger meant for the button that comes down up to 400 ms late, and the tap's click a settle after its down
      * (TouchInput.SETTLE_MILLISECONDS; on the emulator the program checked 88 to 188 ms after the down, 118 the median, and a
-     * tap 398 ms late was checked 542 ms after the pill went).
+     * tap 398 ms late was checked 542 ms after the button went).
      */
-    private static final long PILL_COVER_AFTER_MS = 600;
+    private static final long UNDO_COVER_AFTER_MS = 600;
     private static final float BAR_TEXT_PER_BUTTON = 0.27f;
 
     /** MotionEvent's buttons and the host's. */
@@ -175,13 +173,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** Whose the fingers now on the glass are: Lua can change it, not under them. */
     private Fingers mFingers;
     private final Runnable mTouchTimer = () -> mTouch.timer();
-    /** The touch scheme Griff (TouchScheme) for this game, its rail, and what it draws over the game. */
+    /**
+     * The touch scheme Griff (TouchScheme) for this game, its rail, and what it draws over the game. FAF's UI draws the rail's
+     * Box and Plus and the undo's button (griffhud.lua); the views here take their fingers, where it reports them
+     * (Game.griffHudPlaces): Box's and Plus's, then the undo's.
+     */
     private boolean mGriff;
     private final Rail mRail = new Rail();
-    private final List<RailButton> mRailButtons = new ArrayList<>();
-    /** The rail's buttons' side and the room between two in the screen's pixels, as placeRail set them: the pill's row. */
-    private int mRailSide;
-    private int mRailGap;
+    private final List<View> mRailTargets = new ArrayList<>();
+    private View mUndoTarget;
+    private final float[] mHudValues = new float[Game.HUD_VALUES];
     private GriffLayer mGriffLayer;
     /**
      * The handle as Game.griff gives it, and as the screen shows it, while a game's frames are read: it stays where a stroke
@@ -208,14 +209,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     };
     private DraftButton mTick;
     private DraftButton mCross;
-    /** What Griff's gestures ordered as the program shows it (Game.griffOrders): the pill's place, the pins. */
-    private final float[] mOrderValues = new float[Game.ORDERS_VALUES];
     private final Undo mUndo = new Undo();
-    private UndoPill mPill;
     /** The app's pieces over the picture, which the program hears of when they change (Game.setGriffCovers). */
     private final Covers mCovers = new Covers();
-    /** The undo's pill's cover, which stays a short while after the pill went: a late tap meant for it lands on nothing. */
-    private final Covers.Lingering mPillCover = new Covers.Lingering(PILL_COVER_AFTER_MS);
+    /** The undo's button's cover, which stays a short while after the button went: a late tap meant for it lands on nothing. */
+    private final Covers.Lingering mUndoCover = new Covers.Lingering(UNDO_COVER_AFTER_MS);
     /** What the player opened of FAF's that shows (Game.griffOpened), which Griff's pieces over the picture step aside from. */
     private final Opened mOpened = new Opened();
     private final float[] mOpenedValues = new float[Opened.VALUES];
@@ -388,7 +386,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void strokeGivenUp() {
-            mGriffLayer.toast(CANCELLED);
+            Game.griffHint(Game.HINT_CANCELLED, 0);
         }
 
         @Override
@@ -416,6 +414,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         @Override
         public void restTap(float x, float y, int rail) {
             Game.restTap(fingerX(x), fingerY(y), rail);
+        }
+
+        @Override
+        public void griffRest(float x, float y) {
+            Game.griffRest(fingerX(x), fingerY(y));
+        }
+
+        @Override
+        public void griffRestGone() {
+            Game.griffRestGone();
         }
 
         @Override
@@ -636,16 +644,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mGriffLayer = new GriffLayer(this);
             mGriffLayer.setSizes(viewPixelsPerMm(), GRIFF_RADIUS_MM, GRIFF_ARROW_MM);
             root.addView(mGriffLayer);
-            // Over the layer that takes the fingers: a finger on the tick, the cross or the pill is theirs. The pill is the bar's
-            // last, in the rail's row.
+            // Over the layer that takes the fingers: a finger on Box, Plus, the undo's button, the tick or the cross is theirs.
+            railTarget(root, TouchInput.RAIL_BOX, "Box");
+            railTarget(root, TouchInput.RAIL_QUEUE, "Plus");
+            mUndoTarget = new View(this);
+            mUndoTarget.setVisibility(View.GONE);
+            mUndoTarget.setContentDescription("Undo");
+            mUndoTarget.setOnClickListener(view -> undo());
+            root.addView(mUndoTarget, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
             mTick = draftButton(true);
             mCross = draftButton(false);
             root.addView(mTick, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
             root.addView(mCross, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
-            mPill = new UndoPill(this);
-            mPill.setMillimetre(viewPixelsPerMm());
-            mPill.setVisibility(View.GONE);
-            mPill.setOnClickListener(view -> undo());
         }
         mKeyboardTarget = new KeyboardTarget(this);
         root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
@@ -903,14 +913,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private LinearLayout bar() {
         LinearLayout bar = new LinearLayout(this);
         if (mGriff) {
-            // The keyboard's button for the menus, and Griff's rail: a row of Box, Plus and Attack (Rail), and the undo's pill.
+            // The keyboard's button for the menus: Griff's rail is FAF's UI's in a game (griffhud.lua).
             bar.setOrientation(LinearLayout.HORIZONTAL);
             mKeysButton = barButton(bar, "Keys");
             mKeysButton.setOnClickListener(view -> toggleKeyboard());
-            railButton(bar, "Box", TouchInput.RAIL_BOX);
-            railButton(bar, "Plus", TouchInput.RAIL_QUEUE);
-            railButton(bar, "Attack", TouchInput.RAIL_ATTACK);
-            bar.addView(mPill, new LinearLayout.LayoutParams(0, 0));
             return bar;
         }
         bar.setOrientation(LinearLayout.VERTICAL);
@@ -937,14 +943,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     /**
      * In a game the bar sits where the HUD leaves room (HudScale), in the menus only the keyboard's button stays, in a corner.
-     * Griff's rail is the game's alone, and its Keys the menus': in a game the keyboard is a button of FAF's Menu tab.
+     * Griff's rail is the game's alone, in FAF's UI, and its Keys the menus': in a game the keyboard is a button of FAF's Menu
+     * tab.
      */
     private void placeBar(boolean inGame) {
         mBarInGame = inGame;
         FrameLayout.LayoutParams place = (FrameLayout.LayoutParams) mBar.getLayoutParams();
-        if (mGriff && inGame) {
-            placeRail(place);
-        } else {
+        if (!mGriff || !inGame) {
             int size = viewMm(inGame ? gameButtonMm() : BAR_MENU_BUTTON_MM);
             int gap = viewMm(BAR_GAP_MM / 2);
             for (TextView button : mGameButtons) {
@@ -961,12 +966,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         mBar.setLayoutParams(place);
         if (mGriff) {
-            showRailButtons();
             mKeysButton.setVisibility(inGame ? View.GONE : View.VISIBLE);
             if (!inGame) {
                 releaseRail();
             }
             pollGriff(inGame);
+            placeHud();
             placeDraftButtons();
         }
     }
@@ -974,47 +979,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** In a game the mouse's bar's two rows fill the room the HUD leaves, up to a finger's size. */
     private double gameButtonMm() {
         return Math.min(BAR_BUTTON_MM, barRoomMm() / 2 - BAR_GAP_MM);
-    }
-
-    /**
-     * Griff's rail in a game (the user's decision of 2026-11-13): Box, Plus and Attack side by side, Rail.GAP_MM apart, from
-     * Rail.LEFT_MM past the screen's left and a camera cutout's inset (the bar's padding), at the top of the band at the left
-     * edge, an H (HudScale.millimetresH) under FAF's top panels there; as large as that band holds them where FAF's unit view
-     * stands highest (HudScale.railBandMm), so they fit every state of the HUD and keep their size, within Rail's limits. The
-     * undo's pill follows them in the row (placePill).
-     */
-    private void placeRail(FrameLayout.LayoutParams place) {
-        float millimetre = viewPixelsPerMm();
-        double factor = hudFactor();
-        int side = Math.round(Rail.side((float) HudScale.railBandMm(factor, pictureLines(), mScreenMm) * millimetre, millimetre));
-        int gap = Math.round(Rail.GAP_MM * millimetre);
-        for (RailButton button : mRailButtons) {
-            LinearLayout.LayoutParams size = (LinearLayout.LayoutParams) button.getLayoutParams();
-            size.width = side;
-            size.height = side;
-            size.setMargins(0, 0, gap, 0);
-            button.setLayoutParams(size);
-        }
-        mRailSide = side;
-        mRailGap = gap;
-        place.leftMargin = Math.round(Rail.LEFT_MM * millimetre);
-        place.topMargin = (int) Math.round(
-            HudScale.barTopPixels(factor) * viewPixelsPerPicturePixel() + HudScale.millimetresH(mScreenMm) * millimetre);
-    }
-
-    /**
-     * The rail's buttons in a game, where placeRail put them, each stepping aside while something the player opened of FAF's
-     * lies under it (Opened): FAF's overlay filters' list opens right of its multifunction panel, across the row. None in the
-     * menus.
-     */
-    private void showRailButtons() {
-        FrameLayout.LayoutParams row = (FrameLayout.LayoutParams) mBar.getLayoutParams();
-        int left = row.leftMargin + mBar.getPaddingLeft();
-        for (int at = 0; at < mRailButtons.size(); ++at) {
-            int buttonLeft = left + at * (mRailSide + mRailGap);
-            boolean aside = mBarInGame && openedUnder(buttonLeft, row.topMargin, mRailSide, mRailSide);
-            mRailButtons.get(at).setVisibility(Opened.visibility(mBarInGame, aside));
-        }
     }
 
     /** Whether something the player opened of FAF's lies under a piece at this place of the screen, of this size (Opened). */
@@ -1078,15 +1042,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         });
     }
 
-    /** One of Griff's rail buttons (Rail): a tap lights it for the next action, a hold counts while held; Plus held is Shift held. */
-    private void railButton(LinearLayout bar, String label, int bit) {
-        RailButton button = new RailButton(this, bit, label);
-        button.setMillimetre(viewPixelsPerMm());
-        button.setVisibility(View.GONE);
-        bar.addView(button, new LinearLayout.LayoutParams(0, 0));
-        mRailButtons.add(button);
+    /**
+     * Where a finger takes one of Griff's rail buttons (Rail), which FAF's UI draws (griffhud.lua) where placeHud puts this view:
+     * a tap lights it for the next action, a hold counts while held; Plus held is Shift held.
+     */
+    private void railTarget(FrameLayout root, int bit, String label) {
+        View target = new View(this);
+        target.setVisibility(View.GONE);
+        target.setContentDescription(label);
         // Griff's slop, as for its gestures on the map: a thumb that wobbles on the rail still taps.
-        button.setOnTouchListener(new RailTouch(bit, TouchInput.GRIFF_SLOP_MM * viewPixelsPerMm()));
+        target.setOnTouchListener(new RailTouch(bit, TouchInput.GRIFF_SLOP_MM * viewPixelsPerMm()));
+        root.addView(target, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
+        mRailTargets.add(target);
     }
 
     /** A finger on a rail button. It is the button's own: a finger on the map is another view's, and both go on at once. */
@@ -1149,13 +1116,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
     }
 
-    /** The rail as it is: how each of its buttons looks (Rail#look), and the handle's look by those held or lit. */
+    /**
+     * The rail as it is: the handle's look by the buttons held or lit, and how each button looks (Rail#look) for FAF's UI, which
+     * draws them (placeHud).
+     */
     private void showRail() {
-        for (RailButton button : mRailButtons) {
-            button.setLook(mRail.look(button.bit()));
-        }
         if (mGriffLayer != null) {
             mGriffLayer.setRail(mRail.shown());
+            placeHud();
         }
     }
 
@@ -1177,7 +1145,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         boolean shown = mGriffPolling && Game.griff(mGriffHandle);
         readOpened();
         readDraft();
-        readOrders();
+        placeHud();
         setGriffCovers();
         // While the draft is open there is no handle: no stroke starts (the mockup's).
         shown = shown && !mDraft.open();
@@ -1194,12 +1162,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * What the player opened of FAF's that shows now (Opened): where it changed, the rail's buttons and the draft's tick and cross
-     * step aside from it or come back. The pill follows each frame (placePill).
+     * What the player opened of FAF's that shows now (Opened): where it changed, the draft's tick and cross step aside from it or
+     * come back. Box, Plus and the undo's button do in FAF's UI, which says so with their places (placeHud).
      */
     private void readOpened() {
         if (mOpened.update(mOpenedValues, mGriffPolling ? Game.griffOpened(mOpenedValues) : 0)) {
-            showRailButtons();
             placeDraftButtons();
         }
     }
@@ -1278,47 +1245,43 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         view.setLayoutParams(place);
     }
 
-    /** What Griff's gestures ordered as the program's last frame showed it (Game.griffOrders): the pins; and the pill. */
-    private void readOrders() {
-        int count = mGriffPolling ? Game.griffOrders(mOrderValues) : 0;
-        int pins = count < Game.ORDERS_HEAD
-            ? 0 : Math.min((int) mOrderValues[Game.ORDERS_PINS], (count - Game.ORDERS_HEAD) / Game.ORDERS_PIN);
-        mGriffLayer.setPins(mOrderValues, Game.ORDERS_HEAD, pins, mDraftScreen);
-        placePill();
-    }
-
     /**
-     * The undo's pill while it shows in a game (the mockup's look): the bar's last, in the rail's row a gap right of Attack, as
-     * high as the rail's buttons, Rail.PILL_WIDEST_MM wide but ending the handle's reach before the screen's middle, where a
-     * handle with no place beside its group goes (Rail.pillWidth), with the time it has left. It steps aside while something the
-     * player opened of FAF's lies under it (Opened): the Menu's list, the map's options and a question box's shadow lie there,
-     * and its time runs on.
+     * Where FAF's UI drew Box, Plus and the undo's button (griffhud.lua, Game.griffHudPlaces): the views that take their fingers
+     * lie there, each while it is wanted in a game and nothing the player opened of FAF's lies over it, which FAF's UI says with
+     * the place; the undo's while its time runs or its undo waits (Undo). And how they look, for FAF's UI to draw them
+     * (Game.setGriffHud).
      */
-    private void placePill() {
-        long now = SystemClock.uptimeMillis();
-        boolean wanted = mBarInGame && mUndo.showing(now);
-        boolean aside = false;
-        if (wanted) {
-            FrameLayout.LayoutParams row = (FrameLayout.LayoutParams) mBar.getLayoutParams();
-            int left = Rail.pillLeft(row.leftMargin + mBar.getPaddingLeft(), mRailSide, mRailGap);
-            float millimetre = viewPixelsPerMm();
-            int width = Rail.pillWidth(left, mRailSide, mFingerLayer.getWidth() / 2,
-                (int) Math.ceil((GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * millimetre), millimetre);
-            LinearLayout.LayoutParams size = (LinearLayout.LayoutParams) mPill.getLayoutParams();
-            if (size.width != width || size.height != mRailSide) {
-                size.width = width;
-                size.height = mRailSide;
-                mPill.setLayoutParams(size);
-            }
-            aside = openedUnder(left, row.topMargin, width, mRailSide);
-            mPill.show(mUndo.waiting(), mUndo.left(now));
+    private void placeHud() {
+        if (mUndoTarget == null) {
+            return;
         }
-        mPill.setVisibility(Opened.visibility(wanted, aside));
+        long now = SystemClock.uptimeMillis();
+        int count = mGriffPolling ? Game.griffHudPlaces(mHudValues) : 0;
+        for (int at = 0; at < mRailTargets.size(); ++at) {
+            placeTarget(mRailTargets.get(at), at, count, mBarInGame);
+        }
+        boolean undoWanted = mBarInGame && mUndo.showing(now);
+        placeTarget(mUndoTarget, mRailTargets.size(), count, undoWanted);
+        int undo = !undoWanted ? Game.HUD_UNDO_NONE : mUndo.waiting() ? Game.HUD_UNDO_WAITING : Game.HUD_UNDO_OFFERED;
+        Game.setGriffHud(mRail.look(TouchInput.RAIL_BOX) | mRail.look(TouchInput.RAIL_QUEUE) << 2, undo, mUndo.left(now));
+    }
+
+    /** The view of FAF's UI's piece number `piece` (Game.HUD_PIECE numbers each, of `count`): at its place, seen where wanted. */
+    private void placeTarget(View target, int piece, int count, boolean wanted) {
+        int at = piece * Game.HUD_PIECE;
+        boolean known = count >= at + Game.HUD_PIECE && mHudValues[at + 2] > mHudValues[at] && mHudValues[at + 3] > mHudValues[at + 1];
+        if (known) {
+            float left = mPageView.screenX(mHudValues[at]);
+            float top = mPageView.screenY(mHudValues[at + 1]);
+            placeView(target, left, top, Math.round(mPageView.screenX(mHudValues[at + 2]) - left),
+                Math.round(mPageView.screenY(mHudValues[at + 3]) - top));
+        }
+        target.setVisibility(Opened.visibility(wanted && known, mHudValues[at + 4] != 0));
     }
 
     /**
-     * The pill was tapped: the program takes its record back, and the next tap climbs no ladder from an order undone. Not while
-     * the program's clicks run: the finger rests, as on the map.
+     * The undo's button was tapped: the program takes its record back, and the next tap climbs no ladder from an order undone.
+     * Not while the program's clicks run: the finger rests, as on the map.
      */
     private void undo() {
         if (Game.griffClicking()) {
@@ -1332,24 +1295,22 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * The app's pieces over the picture for the program (Covers): the rail's buttons, the draft's tick and cross and the undo's
-     * pill, each while it shows, in the picture's pixels; the program hears them when they changed. The Keys shows in the menus
-     * only, where no finger is Griff's. The pill's cover that stays after it went goes at once where something the player opened
-     * of FAF's lies, as the pieces step aside from it.
+     * The app's pieces over the picture for the program (Covers): the draft's tick and cross, each while it shows, and the undo's
+     * button while it shows and a moment after, in the picture's pixels; the program hears them when they changed. FAF's UI holds
+     * the rail and the undo's button themselves, which the program finds there. The Keys shows in the menus only, where no
+     * finger is Griff's. The undo's cover that stays after it went goes at once where something the player opened of FAF's lies,
+     * as the pieces step aside from it.
      */
     private void setGriffCovers() {
         mFingerLayer.getLocationInWindow(mLayerOnWindow);
         mCovers.begin();
-        for (RailButton button : mRailButtons) {
-            cover(button, null);
-        }
         cover(mTick, null);
         cover(mCross, null);
-        int[] pillWas = mPillCover.box();
-        if (mOpened.under(pillWas[0], pillWas[1], pillWas[2], pillWas[3])) {
-            mPillCover.forget();
+        int[] undoWas = mUndoCover.box();
+        if (mOpened.under(undoWas[0], undoWas[1], undoWas[2], undoWas[3])) {
+            mUndoCover.forget();
         }
-        cover(mPill, mPillCover);
+        cover(mUndoTarget, mUndoCover);
         if (mCovers.end()) {
             Game.setGriffCovers(mCovers.boxes(), mCovers.count());
         }
@@ -1368,38 +1329,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             mCovers.piece(lingering, view.isShown(), pictureLeft, pictureTop, pictureRight, pictureBottom, SystemClock.uptimeMillis());
         } else {
             mCovers.piece(view.isShown(), pictureLeft, pictureTop, pictureRight, pictureBottom);
-        }
-    }
-
-    /** What the draft and the control groups say: the mockup's words in the app's English. */
-    private static String toastWords(int toast, int number) {
-        switch (toast) {
-            case Game.TOAST_NO_FREE_RESOURCE:
-                return "No free resource here";
-            case Game.TOAST_TAKEN:
-                return "Taken";
-            case Game.TOAST_FULL:
-                return "Draft is full";
-            case Game.TOAST_NO_PLAN:
-                return "No plan yet";
-            case Game.TOAST_NO_ENGINEER:
-                return "No engineer";
-            case Game.TOAST_ALL_ON_BUILDINGS:
-                return "All plans are on buildings";
-            case Game.TOAST_SOME_ON_BUILDINGS:
-                return number == 1 ? "1 plan was on a building" : number + " plans were on buildings";
-            case Game.TOAST_FIRST_TICK_OR_CROSS:
-                return "First \u2713 or \u2715";
-            case Game.TOAST_NOT_ORDERED:
-                return number == 1 ? "1 plan was not ordered" : number + " plans were not ordered";
-            case Game.TOAST_EMPTY_GROUP:
-                return "Empty group: rest to store";
-            case Game.TOAST_NOTHING_SELECTED:
-                return "Nothing selected";
-            case Game.TOAST_GROUP_STORED:
-                return "Group " + number + " stored";
-            default:
-                return "";
         }
     }
 
@@ -1498,8 +1427,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * What the program said of Griff's taps, drags, routes and draft: the rail's buttons a Box tap or a tick used, the tap ladder's
-     * answers, a drag it made a pan of, a toast.
+     * What the program said of Griff's taps, drags, orders and draft: the rail's buttons a Box tap or a tick used, the tap ladder's
+     * answers, a drag it made a pan of, a group stored, an undo's record and its end. Its words FAF's UI shows itself.
      */
     private void readGriffSaid() {
         int count;
@@ -1514,14 +1443,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     }
                 } else if (mGriffSaid[at] == Game.SAID_PAN) {
                     mTouch.panned(mGriffSaid[at + 1]);
-                } else if (mGriffSaid[at] == Game.SAID_ROUTE_GIVEN_UP) {
-                    mGriffLayer.toast(CANCELLED);
-                } else if (mGriffSaid[at] == Game.SAID_TOAST) {
+                } else if (mGriffSaid[at] == Game.SAID_GROUP_STORED) {
                     // A group stored buzzes once, as the mockup's: as the ring of the rest that stored it came, or now (TouchInput).
-                    if (mGriffSaid[at + 1] == Game.TOAST_GROUP_STORED && mTouch.storeBuzzes()) {
+                    if (mTouch.storeBuzzes()) {
                         buzz();
                     }
-                    mGriffLayer.toast(toastWords(mGriffSaid[at + 1], mGriffSaid[at + 2]));
                 } else if (mGriffSaid[at] == Game.SAID_COMMITTED) {
                     // The tick's last click left the pointer on the map, which a finger's lift would have taken away.
                     mTouchMouse.leaveSoon();
@@ -1533,13 +1459,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     mUndo.ordered(mGriffSaid[at + 1], SystemClock.uptimeMillis());
                 } else if (mGriffSaid[at] == Game.SAID_UNDONE) {
                     // The undo's last click left the pointer on the map, as the tick's; a word that changed after an undo
-                    // over earlier comes without a click.
+                    // over earlier comes without a click. What it did FAF's UI says (Game.HINT_).
                     if (mUndo.undone(mGriffSaid[at + 1])) {
                         mTouchMouse.leaveSoon();
-                    }
-                    String word = Undo.word(mGriffSaid[at + 2]);
-                    if (word != null) {
-                        mGriffLayer.toast(word);
                     }
                 }
             }
@@ -1550,8 +1472,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * While a game is on and the activity in front, the handle follows the selection each frame of the screen's, as do the pins
-     * and the undo's pill. Without the frames the pill goes with its record: a dialog over the game, or the game's end.
+     * While a game is on and the activity in front, the handle follows the selection each frame of the screen's, as do the views
+     * that take the fingers of Box, Plus and the undo's button. Without the frames the undo goes with its record: a dialog over
+     * the game, or the game's end.
      */
     private void pollGriff(boolean on) {
         if (on == mGriffPolling) {

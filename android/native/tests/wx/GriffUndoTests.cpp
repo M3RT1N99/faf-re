@@ -1299,3 +1299,21 @@ WXT_TEST(GriffUndoAnAimedClickGoesWhereItsLandingWasChecked)
   WXT_CHECK_EQ(AimedClick(Landing::kHover, 640, 300, 652, 303), Aim::kAtAim);
   WXT_CHECK_EQ(AimedClick(Landing::kHover, 640, 300, 640, 300), Aim::kAtAim);
 }
+
+// Griff v4 offers the undo only where it saves the player work: a replaced queue that held a building to give back, or two
+// orders or more that come back. Idle units, one move, one assist, an attack-move (its script and its AggressiveMove are one
+// order) and a factory's own builds, which no click brings back, offer none.
+WXT_TEST(GriffUndoSavesWorkOnlyForABuildingOrTwoOrdersThatComeBack)
+{
+  using griffundo::SavesWork;
+  WXT_CHECK(!SavesWork({}));
+  WXT_CHECK(!SavesWork({Order(3, "Move", 10, 10)}));
+  WXT_CHECK(!SavesWork({On(Order(3, "Guard", 10, 10), 40)}));
+  WXT_CHECK(!SavesWork({AttackMoveScript(3, 30, 30), Order(kSimId, "AggressiveMove", 30, 30)}));
+  WXT_CHECK(!SavesWork({Named(Order(3, "BuildFactory", 0, 0), "uel0105"), Named(Order(4, "BuildFactory", 0, 0), "uel0105")}));
+  WXT_CHECK(!SavesWork({Order(3, "Move", 10, 10), Order(4, "Stop", 0, 0)}));
+  WXT_CHECK(SavesWork({Named(Order(3, "BuildMobile", 10, 10), "ueb1101")}));
+  WXT_CHECK(SavesWork({Order(3, "Move", 10, 10), Order(4, "Move", 20, 20)}));
+  WXT_CHECK(SavesWork({Order(3, "Patrol", 10, 10), Order(4, "Patrol", 20, 20)}));
+  WXT_CHECK(SavesWork({On(Order(3, "Reclaim", 10, 10), 51), On(Order(4, "Reclaim", 12, 10), 52)}));
+}

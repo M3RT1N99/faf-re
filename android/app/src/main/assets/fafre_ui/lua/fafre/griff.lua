@@ -2,16 +2,18 @@
 -- that the app shows beside it; the camera's moves that its gestures make, as the UI moves the camera (a glide after a pan, a
 -- flight to the group, a pinch), not the simulation; the few things its gestures ask of FAF's UI; the draft's part that only
 -- FAF's UI knows: the build icon that opens it, its builders, the tick's build mode and selection; and what a gesture orders,
--- for the pins at its places and the undo that takes it back with FAF's own inputs; and what the player opened of FAF's, which
--- the app's pieces step aside from. The app places the handle, holds the draft and the pins, decides what a gesture clicks and
--- how an undo goes (android/native/src/host/GriffAndroid.cpp); with the mouse scheme nothing is reported or watched and FAF's
--- build icons are FAF's.
+-- for the undo that takes it back with FAF's own inputs; and what the player opened of FAF's, which Griff's pieces step aside
+-- from. What Griff shows in FAF's UI, its rail, its undo's button, its hints and a waypoint marked for deletion, is
+-- griffhud.lua's. The app places the handle, holds the draft, decides what a gesture clicks and how an undo goes
+-- (android/native/src/host/GriffAndroid.cpp); with the mouse scheme nothing is reported or watched and FAF's build icons are
+-- FAF's.
 
 local Group = import('/lua/maui/group.lua').Group
 local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
 local WorldView = import('/lua/ui/game/worldview.lua')
 local CommandMode = import('/lua/ui/game/commandmode.lua')
 local Opened = import('/fafre_ui/lua/fafre/opened.lua')
+local Hud = import('/fafre_ui/lua/fafre/griffhud.lua')
 
 --- A large selection's box comes from this many of its units, spread over all of them: near enough for a handle.
 local SampledUnits = 64
@@ -39,7 +41,7 @@ local StrokeEnds = {
     RULEUCC_Reclaim = 5,
     RULEUCC_Capture = 6,
 }
-local OtherEnd, EngineersSelected, PatrolOffered = 7, 16, 32
+local OtherEnd, EngineersSelected, PatrolOffered, AttackMoveArmedEnd = 7, 16, 32, 64
 
 --- What the handle stands for: the mobile units, which a route moves; a selection without any, such as factories,
 --- whose route is their rally point, all of it.
@@ -67,8 +69,8 @@ local function PixelsPerLength(view, place)
     return math.max(Away(1, 0), Away(0, 1))
 end
 
---- The map's view on the screen, in the picture's pixels, as if nothing were selected: the app's free map, which its clicks,
---- its plans and its pins are on; Report then adds the selection, where it can. Nothing without a view.
+--- The map's view on the screen, in the picture's pixels, as if nothing were selected: the app's free map, which its clicks
+--- and its plans are on; Report then adds the selection, where it can. Nothing without a view.
 local function ReportView()
     local view = WorldView.viewLeft
     if not view then
@@ -299,7 +301,7 @@ function ToGroup(fly)
     camera:RestoreSettings(settings)
 end
 
--- --- What a gesture orders: its pins and its undo -------------------------------------------------------------------------
+-- --- What a gesture orders: its undo -----------------------------------------------------------------------------------
 
 --- The yes and no of an order's flags to the program.
 local function Flag(value)
@@ -314,9 +316,9 @@ local cappingHeld = false
 
 --- FAF's UI gave an order (commandmode.lua OnCommandIssued, before FAF's own handler; the engine has put it in its units'
 --- queues already): the program hears of it, with its units by their ids (strings, which the game's Lua numbers would
---- round), whether it replaced what they did (FAF's Clear), its place and the entity it targets. The program reads their
---- queues itself and decides whether a watched gesture gave it, for its pins and its undo; it counts it for the clicks that
---- run. FAF's by-product, None, is none of them.
+--- round), whether it replaced what they did (FAF's Clear) and the entity it targets. The program reads their queues itself
+--- and decides whether a watched gesture gave it, for its undo; it counts it for the clicks that run. FAF's by-product, None,
+--- is none of them. FAF's own feedback blip marks its place (AddCommandFeedbackByType).
 local function Ordered(command)
     local units = command.Units
     if command.CommandType == 'None' or not units or table.empty(units) then
@@ -329,10 +331,13 @@ local function Ordered(command)
         table.insert(ids, unit:GetEntityId())
     end
     local target = command.Target or {}
-    local place = target.Type ~= 'None' and target.Position
-    FafreGriffOrdered(command.CommandType, Flag(attackMove), Flag(command.Clear), table.concat(ids, ','), Flag(place),
-        place and place[1] or 0, place and place[2] or 0, place and place[3] or 0,
+    FafreGriffOrdered(command.CommandType, Flag(attackMove), Flag(command.Clear), table.concat(ids, ','),
         target.Type == 'Entity' and tostring(target.EntityId or '') or '')
+end
+
+--- A hint of Griff's (Game's HINT_, with its number where it counts), where FAF prints its own messages (griffhud.lua).
+function Hint(kind, number)
+    Hud.Hint(kind, number)
 end
 
 --- The modes FAF's orders panel arms for an order the undo gives again, by the number of its way (include/GriffUndo.h Way).
@@ -570,7 +575,8 @@ end
 --- What the player opened of FAF's that shows (opened.lua), as the program last heard it.
 local openedSaid = {}
 
---- The program hears what the player opened of FAF's that shows, where it changed: the app's pieces step aside from it.
+--- The program hears what the player opened of FAF's that shows, where it changed: the app's pieces step aside from it, as
+--- do Griff's in FAF's UI (griffhud.lua).
 local function ReportOpened()
     local boxes = Opened.Boxes()
     local same = table.getn(boxes) == table.getn(openedSaid)
@@ -586,10 +592,11 @@ end
 --- Each frame of the session's UI under `parent`, while the app wants it: first the frame itself, counted for the program,
 --- whose clicks wait for frames by it, then the rest. An error stops what failed, with one warning, never the count: the
 --- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on; the selection's report stops
---- apart from the map's view, which goes on each frame (an error there says itself once), so that the clicks, the plans and
---- the pins keep their map when the handle goes; the report of what the player opened stops with none, so that no piece of
---- the app's stays away for it. FAF's UI tells each order it gives (OnCommandIssued, which the engine looks up at each
---- order): the program hears of it first. FAF's capping is held off while the undo's clicks run.
+--- apart from the map's view, which goes on each frame (an error there says itself once), so that the clicks and the plans
+--- keep their map when the handle goes; the report of what the player opened stops with none, so that no piece of the app's
+--- stays away for it; Griff's pieces in FAF's UI (griffhud.lua) stop apart. FAF's UI tells each order it gives
+--- (OnCommandIssued, which the engine looks up at each order): the program hears of it first. FAF's capping is held off while
+--- the undo's clicks run.
 function Start(parent)
     if not FafreGriffBox then
         return
@@ -600,8 +607,16 @@ function Start(parent)
     reporter.Width:Set(0)
     reporter.Height:Set(0)
     local reporting, seeing, driving = true, true, true
-    local anchoring, opening = true, true
+    local anchoring, opening, showing = true, true, true
     local viewSaid = false
+    -- Griff's pieces in FAF's UI, on the map's group as FAF's own panels: in the game Griff plays only.
+    if FafreGriffWanted() then
+        local made, failure = pcall(Hud.Create, import('/lua/ui/game/borders.lua').GetMapGroup())
+        if not made then
+            WARN('fafre_ui: griff: hud: ' .. tostring(failure))
+            showing = false
+        end
+    end
     reporter.OnFrame = function(self, delta)
         if not FafreGriffWanted() then
             return
@@ -634,7 +649,15 @@ function Start(parent)
             if not ok then
                 WARN('fafre_ui: griff: opened: ' .. tostring(problem))
                 FafreGriffOpened()
+                openedSaid = {}
                 opening = false
+            end
+        end
+        if showing then
+            local ok, problem = pcall(Hud.Frame, openedSaid)
+            if not ok then
+                WARN('fafre_ui: griff: hud: ' .. tostring(problem))
+                showing = false
             end
         end
         -- First what the frame drew, before a step moves the camera for the next.
@@ -661,7 +684,7 @@ function Start(parent)
     end
     reporter:SetNeedsFrameUpdate(true)
     CommandMode.AddStartBehavior(OrderWhileDrafting, 'fafre_griff')
-    -- The orders FAF's UI gives, which the program hears of for the gestures' pins and their undo (Ordered). A FAF without
+    -- The orders FAF's UI gives, which the program hears of for the gestures' undo (Ordered). A FAF without
     -- OnCommandIssued costs those, and nothing else of Griff's.
     local watched, unwatched = pcall(function()
         local FafCommandIssued = CommandMode.OnCommandIssued
@@ -787,8 +810,19 @@ function Troops()
     FafreGriffAnswer(units and HasTroops(units) and Yes or No)
 end
 
+--- Whether the command mode armed is FAF's attack-move, as its orders panel's button arms it.
+local function IsAttackMoveArmed()
+    local mode = CommandMode.GetCommandMode()
+    return mode[1] == 'order' and mode[2] and mode[2].TaskName == 'AttackMove' or false
+end
+
+--- For a route from the handle: whether FAF's attack-move is armed, whose waypoints it gives then.
+function AttackMoveArmed()
+    FafreGriffAnswer(IsAttackMoveArmed() and Yes or No)
+end
+
 --- For a stroke's label, where the cursor hovers at its end: what FAF's right click there orders (Stroke.END_), and whether
---- engineers are selected and FAF offers its patrol.
+--- engineers are selected, FAF offers its patrol and its attack-move is armed.
 function StrokeKind()
     local units = GetSelectedUnits()
     local view = WorldView.viewLeft
@@ -800,6 +834,9 @@ function StrokeKind()
     if units and OffersPatrolFor(units) then
         kind = kind + PatrolOffered
     end
+    if IsAttackMoveArmed() then
+        kind = kind + AttackMoveArmedEnd
+    end
     FafreGriffAnswer(kind)
 end
 
@@ -808,8 +845,8 @@ function OffersPatrol()
     FafreGriffAnswer(units and OffersPatrolFor(units) and Yes or No)
 end
 
---- The rail's Attack: the next click on the map is FAF's attack-move there, as its orders panel's button makes it, where
---- that button is offered for the selection.
+--- The next click on the map is FAF's attack-move there, as its orders panel's button makes it, where that button is offered
+--- for the selection: the tap ladder's attack-move in place of a move, and a route's next waypoint where FAF ended the mode.
 function StartAttackMove()
     local units = GetSelectedUnits()
     if units and OffersAttackMove(units) then

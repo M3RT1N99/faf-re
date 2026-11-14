@@ -5,10 +5,9 @@ import android.view.View;
 /**
  * What the player opened of FAF's, which nothing of the touch scheme Griff's may cover (android/TOUCH_UI.md "Griff"): FAF's
  * windows, its popups, the dropouts of its multifunction panel and the content of its tabs, as griff.lua reports those that show
- * (fafre/opened.lua, Game.griffOpened), in the picture's pixels. Each of Griff's pieces over the picture, the rail's buttons, the
- * undo's pill and the draft's tick and cross, steps aside while one of them lies under it: it takes no finger and covers nothing
- * (Covers), and comes back where it was once that has gone. The overlay filters' list, which FAF opens right of its multifunction
- * panel, lies across the rail's row; the Menu's list, the map's options and each question box's shadow lie under the pill.
+ * (fafre/opened.lua, Game.griffOpened), in the picture's pixels. The draft's tick and cross step aside while one of them lies
+ * under them: each takes no finger and covers nothing (Covers), and comes back where it was once that has gone. Box, Plus and
+ * the undo's button, which FAF's UI draws (griffhud.lua), step aside there as FAF's UI says, and their views here with them.
  */
 final class Opened {
     /** More of FAF's controls open at once than a player opens, and their numbers. */
