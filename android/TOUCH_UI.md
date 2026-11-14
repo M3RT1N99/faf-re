@@ -382,8 +382,11 @@ unit view, the map's sibling at its depth, and the multifunction panel do), and 
 the rail's buttons, the draft's tick and cross and the undo's pill, each while it shows). Only layouts that FAF has worked out count: the walk reads what a layout holds and evaluates none, as an
 evaluation before FAF lays a control out fails and leaves 0 in the layout's cache, where nothing clears it. So the walk runs after the
 frame is drawn, which works out what FAF's Lua changed in the frame (the unit view places its panel anew in each). A group out of view or under a panel gets the handle on the free map towards the view's middle, far enough from the edges that its
-arrow at the group stays on the screen; where no place is free, as for a group under FAF's announcement in the screen's middle, which
-stays up while a game is paused at its start, there is no handle. The activity reads the handle each frame of the screen's (`Game.griff`)
+arrow at the group stays on the screen. Where that way is covered up to the middle, as by FAF's announcement in the screen's middle,
+which stays up while a game is paused at its start, or by a window there, the handle goes to the free place nearest the view's middle
+that is as far from the edges, of two as near the one below (`FreeMap::NearestDiscFree`: rows 2 pixels apart outward from the middle,
+exactly on each row, so that it finds a place however little room the map leaves for it across); only where the free map has no room
+for the handle at all is there none. The activity reads the handle each frame of the screen's (`Game.griff`)
 and draws it (`GriffHandle`): where a stroke began while the stroke is drawn, and none once the frames are not read, at the game's end or
 under a dialog that takes the fingers, also while a stroke is still drawn. On the emulator a frame's placement took 0.2 to 1.1 ms (the
 worst frame of each 10 s, one unit selected).
@@ -571,7 +574,10 @@ tabs; open, its bottom lies over the minimap's top. FAF's drag handles at the wi
 minimap's lower right one under the draft's cross, the chat's lower left one under the pill's end and its upper left one 2 of the
 picture's lines into the bottom of FAF's tabs. Where the phone's keyboard is up for the chat, it covers all of the screen but its top,
 wherever the window stands. The homes are the phone's picture's: on a screen of another shape or at another factor one can meet a
-panel, and a window the player moves stays where they put it.
+panel or the handle's reach about the middle (at 1.67, the factor of a screen under 70 mm, the open chat window reaches into it, 8
+of the picture's lines on the emulator's screen; on a 21:9 picture the minimap's home does at either factor), and a window the player
+moves stays where they put it. The handle then goes to the free place nearest the middle (above): with the chat open at 1.67 on the
+emulator's screen, 10 lines below the middle.
 
 The control groups (T3.3; the hook of `ui/game/controlgroups.lua`, under Griff only): Griff has no Ctrl to make a group with, so groups 1,
 2 and 3 are slots that always show, in FAF's place for its groups under the avatars, an empty one as a dim control of the same size.

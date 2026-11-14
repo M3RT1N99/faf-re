@@ -2,8 +2,9 @@
 
 // Where the touch scheme Griff's handle goes (android/TOUCH_UI.md, "Griff"): beside the selection so that it covers none of
 // its units, or, where the group is out of view or under a panel, on the free map towards the view's middle with room for
-// its arrow at the group. The free map is what the caller makes of the UI (src/host/GriffAndroid.cpp); the choice alone,
-// for its tests (tests/wx/GriffPlaceTests.cpp). In the picture's pixels.
+// its arrow at the group, and where that way is covered up to the middle, at the free place nearest the middle. The free map
+// is what the caller makes of the UI (src/host/GriffAndroid.cpp); the choice alone, for its tests (tests/wx/GriffPlaceTests.cpp).
+// In the picture's pixels.
 
 #include <algorithm>
 #include <cmath>
@@ -62,6 +63,85 @@ namespace griffplace
         const float dy = y - std::clamp(y, cover.top, cover.bottom);
         return dx * dx + dy * dy <= radius * radius;
       });
+    }
+
+    /// The middle nearest (`x`, `y`) of a disc of `radius` that DiscFree takes, with its middle within `bounds`, in `foundX` and
+    /// `foundY`; false where there is none, or where (`x`, `y`) lies outside the bounds. Row by row outward from `y`, and on each
+    /// row exactly where a middle keeps the disc off every cover, a pixel clear of what it would touch: a place is found however
+    /// little room the map has for it across. Of places as near, the one below comes first, and on a row the one to the left.
+    [[nodiscard]] bool NearestDiscFree(
+      const float x, const float y, const float radius, const Box& bounds, float& foundX, float& foundY
+    ) const
+    {
+      // Pixels from row to row, as the cross's steps.
+      constexpr float kRow = 2;
+      const float left = (std::max)(bounds.left, mView.left + radius);
+      const float right = (std::min)(bounds.right, mView.right - radius);
+      const float top = (std::max)(bounds.top, mView.top + radius);
+      const float bottom = (std::min)(bounds.bottom, mView.bottom - radius);
+      // As comparisons that hold, so that a start that is no number has no place either; nor have bounds without end, whose
+      // rows would never run out.
+      if (!(x >= left && x <= right && y >= top && y <= bottom && std::isfinite(bottom - top))) {
+        return false;
+      }
+      // Where on a row a middle is too near a cover: a stretch of it a pixel longer at each end than where the disc touches the
+      // cover, open, so that its ends are free of that cover.
+      std::vector<std::pair<float, float>> tooNear;
+      bool found = false;
+      float nearest = 0;
+      const auto onRow = [&](const float rowY) {
+        tooNear.clear();
+        for (const Box& cover : mCovers) {
+          if (!(cover.left < cover.right && cover.top < cover.bottom)) {
+            continue;
+          }
+          const float dy = rowY - std::clamp(rowY, cover.top, cover.bottom);
+          if (dy * dy <= radius * radius) {
+            const float half = std::sqrt(radius * radius - dy * dy) + 1;
+            tooNear.emplace_back(cover.left - half, cover.right + half);
+          }
+        }
+        // From x each way past every stretch that holds the place: in the order of their starts going right, and of the starts
+        // backwards going left, a stretch passed never holds the place again.
+        std::sort(tooNear.begin(), tooNear.end());
+        float rightX = x;
+        for (const auto& [from, to] : tooNear) {
+          if (from < rightX && rightX < to) {
+            rightX = to;
+          }
+        }
+        float leftX = x;
+        for (auto stretch = tooNear.rbegin(); stretch != tooNear.rend(); ++stretch) {
+          if (stretch->first < leftX && leftX < stretch->second) {
+            leftX = stretch->first;
+          }
+        }
+        for (const float rowX : {leftX, rightX}) {
+          const float distance = (rowX - x) * (rowX - x) + (rowY - y) * (rowY - y);
+          if (rowX >= left && rowX <= right && (!found || distance < nearest)) {
+            found = true;
+            nearest = distance;
+            foundX = rowX;
+            foundY = rowY;
+          }
+        }
+      };
+      for (int step = 0;; ++step) {
+        const float dy = kRow * static_cast<float>(step);
+        // No row further out has a place nearer than the one found.
+        if (found && dy * dy >= nearest) {
+          return true;
+        }
+        if (y + dy > bottom && y - dy < top) {
+          return found;
+        }
+        if (y + dy <= bottom) {
+          onRow(y + dy);
+        }
+        if (step > 0 && y - dy >= top) {
+          onRow(y - dy);
+        }
+      }
     }
 
   private:
@@ -123,7 +203,8 @@ namespace griffplace
   /// For a group in view, above its units (`units`, their middle at `middleX`, `middleY`), and where the map has no room
   /// there below, right, left. For one out of view, or where none of these is free, as for a group under a panel: from the
   /// group's place on the screen towards the view's middle, a finger's reach at a time, as far from the view's edges as the
-  /// arrow reaches, which then stays on the screen whichever way it points. None where the map has no room at all.
+  /// arrow reaches, which then stays on the screen whichever way it points; where all of that way is covered, the free place
+  /// nearest the middle, as far from the edges. None where the map has no room at all.
   [[nodiscard]] inline Spot Place(
     const FreeMap& free, const Sizes& sizes, const float middleX, const float middleY, const Box& units, const Box& view
   )
@@ -156,11 +237,13 @@ namespace griffplace
       }
     }
     const float margin = (std::max)(reach, sizes.arrowReach);
-    if (view.left + margin > view.right - margin || view.top + margin > view.bottom - margin) {
+    // Where the handle's middle may stand away from its group.
+    const Box middles{view.left + margin, view.top + margin, view.right - margin, view.bottom - margin};
+    if (middles.left > middles.right || middles.top > middles.bottom) {
       return spot;
     }
-    const float startX = std::clamp(middleX, view.left + margin, view.right - margin);
-    const float startY = std::clamp(middleY, view.top + margin, view.bottom - margin);
+    const float startX = std::clamp(middleX, middles.left, middles.right);
+    const float startY = std::clamp(middleY, middles.top, middles.bottom);
     const float centreX = (view.left + view.right) / 2;
     const float centreY = (view.top + view.bottom) / 2;
     const int steps = static_cast<int>(std::hypot(centreX - startX, centreY - startY) / reach) + 1;
@@ -171,6 +254,13 @@ namespace griffplace
       if (free.DiscFree(x, y, reach)) {
         return Spot{true, true, x, y};
       }
+    }
+    // The line is covered up to the view's middle, as by a window over it: the free place nearest the middle, so that no cover
+    // there takes the handle away while the map has room for it.
+    float x = 0;
+    float y = 0;
+    if (free.NearestDiscFree(centreX, centreY, reach, middles, x, y)) {
+      return Spot{true, true, x, y};
     }
     return spot;
   }
