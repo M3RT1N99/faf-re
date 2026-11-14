@@ -3,11 +3,10 @@
 An Android app that runs the engine's simulation on a phone, without graphics: the sim-math tests
 and FAF vault replays played to the end on the headless simulation (`src/headless`), with every
 checksum the players' games recorded compared against the phone's. It is how a phone's CPU is
-checked before the game itself runs there. A renderer test brings up the engine's Vulkan device on
-the screen, and the game card starts the whole engine, the game client's first steps
-([CLIENT_PLAN.md](CLIENT_PLAN.md)). The engine's
-programs and libraries come from the Android native build ([native/README.md](native/README.md)),
-which builds the engine for Android without changing its files and the client on top.
+checked before the game itself runs there. The game card starts the whole engine: the engine's own
+POSIX client on SDL3, in SDL's activity. The engine's programs and libraries come from the Android
+native build ([native/README.md](native/README.md)), which builds the engine for Android without
+changing its files and the client on top.
 
 ## Building
 
@@ -17,7 +16,7 @@ and Python 3. `ANDROID_HOME` names the SDK.
 
 ```sh
 # The engine (dependencies once, then the native build's preset):
-cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;boost_1_34_1" -P cmake/FafDependencies.cmake
+cmake -DFAF_DEPENDENCIES_ONLY="WildMagic3p8;zlib-1.2.3;vulkan;ffmpeg" -P cmake/FafDependencies.cmake
 cd android/native
 cmake --preset android-arm64 && cmake --build --preset android-arm64   # build/android-arm64/bin
 
@@ -32,9 +31,11 @@ under its ARM translation (an arm64-only APK).
 
 - `stageFafNative` packages `headless` and `faf_sim_math_tests` as `libfafheadless.so` and
   `libfafsimmath.so`: Android extracts only `lib*.so` files into the app's native library folder, the
-  one place an app may start a program from. It adds the renderer test's `libfafgalsmoke.so` and
-  the game's `libfafgame.so`.
-  `gradle.properties` names the build folders.
+  one place an app may start a program from. It adds the game's `libfafgame.so` and DXC's
+  `libdxcompiler.so`. `gradle.properties` names the build folders.
+- SDL's Java side (`org.libsdl.app`, the game's activity's base) comes from the SDL release the native
+  build links, `dependencies/SDL3/android-project` (the native configure downloads it), so that both
+  halves are the same release.
 - `stageFafAssets` puts `tests/sim_math/golden.txt` into the assets.
 - `versionCode` is `git rev-list --count HEAD`, so a newer commit installs over an older one;
   `versionName` is in `gradle.properties`.
@@ -84,7 +85,9 @@ the game data they imported. Everything lives in the app's external files folder
   long run needs no network once the games start; downloads are retried for about ten minutes
   when the network drops; a failure on the phone's side, such as a full disk, ends a download at
   once.
-- **Renderer test** (card 4, `GalSmokeActivity`): `libfafgalsmoke.so`
+- **Renderer test** (card 4, `GalSmokeActivity`): not in this build. Its library stood on the earlier
+  host's window layer, which the move to SDL3 retired; the card says that `libfafgalsmoke.so` did not
+  load, and the game card shows the renderer on the phone. As it was: `libfafgalsmoke.so`
   (`native/src/smoke/GalSmoke.cpp`) lists the phone's Vulkan devices, creates the engine's gal
   device (the Vulkan backend, which needs Vulkan 1.3) on a full-screen surface, then clears it in
   changing colours and presents for ten seconds. It needs no game data and draws without shaders or
@@ -101,14 +104,20 @@ the game data they imported. Everything lives in the app's external files folder
   the zip as `renderer-tombstone.pb`. The emulator's SwiftShader offers only Vulkan 1.2, so the test
   fails there. Started with `-gpu host` on a PC whose GPU has Vulkan 1.3, the emulator gives the
   guest Vulkan 1.3, and the test runs.
-- **Game** (card 5, `GameActivity`): `libfafgame.so`, the whole engine with its host
-  (`native/src/host`), starts as the PC starts it, with the SCFA import and FAF's game files of the
-  newest version on the phone (the highest whole one): `ForgedAlliance.exe /init <its init file> /log
-  game/engine.sclog`, the program's path in the game files' `bin` folder. It runs in a process of
-  its own (`:game`) on a full-screen surface, which ends with the program, as a Windows program's
-  does. It draws the menus and plays a skirmish, with the game's sound (FACT on AAudio) and its
-  movies (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film). A
-  mouse is the mouse, keys are the keyboard and Back is Esc. Fingers act as a mouse (`TouchInput`):
+- **Game** (card 5, `GameActivity`): `libfafgame.so`, the engine's own POSIX client on SDL3, starts as
+  the PC starts it, with the SCFA import and FAF's game files of the newest version on the phone (the
+  highest whole one): `ForgedAlliance.exe /init <its init file> /log game/engine.sclog /notelemetry
+  /fullscreen <the surface's size>`, the program's path in the game files' `bin` folder. `GameActivity`
+  is SDL's activity (`SDLActivity`), which loads the library and starts the program on a thread of its
+  own; it runs in a process of its own (`:game`), which ends with the program, as a Windows program's
+  does, and goes on while the activity is in the back. SDL gives the program the surface (Vulkan), the
+  fingers as the mouse (a tap is a click), the keys and the sound; Back is Esc. The game's movies play
+  (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film).
+
+  What follows is the game card of release 0.14, on the earlier host (`LegacyGameActivity`, the
+  Win32 message layer and wx-lite): the bar, the touch controls, the UI package for fingers, the HUD's
+  scale and the picture's size come back on SDL's activity in the next stage. There a mouse was the
+  mouse, keys were the keyboard and Back was Esc. Fingers acted as a mouse (`TouchInput`):
   in a game a tap is a click, a finger that moves drags, a finger that stays holds the right button until it
   lifts (an order), a quick tap of two fingers is a right click where the second came down, two
   fingers that move together pan the camera and two that move apart or closer zoom it. While a
