@@ -25,7 +25,7 @@ local function AttackMoveMode()
     }
 end
 
---- The answers of Troops and OffersPatrol to the app, whose 0 is no answer.
+--- The answers of Troops, OffersPatrol, CommitBegin and UndoBegin to the app, whose 0 is no answer.
 local Yes, No = 2, 1
 
 --- What a right click at a stroke's end orders, for its label (Stroke.END_): FAF's own orders by their names.
@@ -307,6 +307,9 @@ end
 --- An undo whose clicks run: the selection it puts back.
 local undo = false
 
+--- Whether FAF's capping is held off while the undo's clicks run (Start).
+local cappingHeld = false
+
 --- FAF's UI gave an order (commandmode.lua OnCommandIssued, before FAF's own handler; the engine has put it in its units'
 --- queues already): the program hears of it, with its units by their ids (strings, which the game's Lua numbers would
 --- round), whether it replaced what they did (FAF's Clear), its place and the entity it targets. The program reads their
@@ -362,10 +365,12 @@ local function UnitsOf(ids)
 end
 
 --- The undo's clicks begin (the program's TryUndo): no command mode, which would take the release on a waypoint for its own
---- and keep FAF's cursor from the waypoints, and the selection kept for UndoEnd.
+--- and keep FAF's cursor from the waypoints, and the selection kept for UndoEnd. It answers whether FAF's capping is held
+--- off meanwhile (Start).
 function UndoBegin()
     CommandMode.EndCommandMode(true)
     undo = {selection = GetSelectedUnits()}
+    FafreGriffAnswer(cappingHeld and Yes or No)
 end
 
 --- Units whose orders the undo takes out or gives again, selected for its clicks.
@@ -554,7 +559,7 @@ end
 --- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on; the selection's report stops
 --- apart from the map's view, which goes on each frame (an error there says itself once), so that the clicks, the plans and
 --- the pins keep their map when the handle goes. FAF's UI tells each order it gives (OnCommandIssued, which the engine looks
---- up at each order): the program hears of it first.
+--- up at each order): the program hears of it first. FAF's capping is held off while the undo's clicks run.
 function Start(parent)
     if not FafreGriffBox then
         return
@@ -629,6 +634,29 @@ function Start(parent)
             end
         end
         return FafCommandIssued(command)
+    end
+    -- FAF's capping answers a Guard of engineers on an extractor, a radar or an artillery structure (OnGuardIssued calls
+    -- AssistToCap) with rings of buildings about it, by its options, the Shift held and its memory of the player's taps: to
+    -- it a Guard the undo gives back with Shift is the player's next tap there, which may ring the structure with buildings
+    -- the engineers never had, or ring nothing of what they had. The undo gives a Guard back as a PC player who wants only
+    -- the Guard does, with FAF's capping options off; what the engineers held of FAF's rings it gives back by their own
+    -- clicks. The rest of FAF's answer to the Guard (its assist-to-upgrade, its unpause) stays.
+    local held, failure = pcall(function()
+        local Capping = import('/lua/ui/game/hotkeys/capping.lua')
+        local FafAssistToCap = Capping.AssistToCap
+        if type(FafAssistToCap) ~= 'function' then
+            error('no AssistToCap')
+        end
+        Capping.AssistToCap = function(structure, units)
+            if undo then
+                return
+            end
+            return FafAssistToCap(structure, units)
+        end
+    end)
+    cappingHeld = held
+    if not held then
+        WARN('fafre_ui: griff: capping: ' .. tostring(failure))
     end
 end
 

@@ -191,7 +191,10 @@ the game data they imported. Everything lives in the app's external files folder
     that replaces). An order given just before, which the game had not taken yet as the gesture began (a paused game, a
     network game's delay), counts as the unit's own, and so does what the game makes of it (the attack-move of FAF's
     attack-move button, the rebuild of a Repair on a wreck, the storages FAF rings an extractor with for an engineer's
-    assist): it stays where the gesture was queued behind it and comes back where the gesture replaced it. A route, a tick of the draft and a
+    assist): it stays where the gesture was queued behind it and comes back where the gesture replaced it. What the game
+    made of it in the very moment the gesture replaced it, which nothing showed, comes back only where FAF makes it again
+    (the rebuild); else the undo counts it. An assist the undo gives back brings no storages of FAF's: its assist-to-cap is
+    held off while the undo's clicks run, as for a player who wants only the assist. A route, a tick of the draft and a
     ground double tap are one undo each. Only the last order counts: one of FAF's build keys, a template, the keyboard's keys
     or the construction panel (an enhancement, an upgrade, a factory's queue) takes the pill away; FAF's own upgrade for an
     assist (its assist-to-upgrade option) does not. While it waits for the game (the fingers free meanwhile) or a finger's
@@ -199,8 +202,9 @@ the game data they imported. Everything lives in the app's external files folder
     (one at that very spot waits until the double-click time has passed, as a player's would). What cannot come back (an
     enhancement the order took, a factory's builds a Stop took, an order on a unit that is gone) or go (the attack-move's
     script left behind an order the unit kept), and what the undo cannot tell (an order the game took in a moment it read
-    nothing of, also where a slow frame of the screen brought several of the game's moments at once, an attack-move of the
-    gesture's at the very spot of one of the unit's own), makes the screen say *Undone in part*, also later where FAF's
+    nothing of, also where a slow frame of the screen brought several of the game's moments at once, what the game made of
+    an order in the moment the gesture replaced it, an attack-move of the gesture's at the very spot of one of the unit's
+    own), makes the screen say *Undone in part*, also later where FAF's
     upgrade for an assist comes only after the undo (a paused extractor's, in a paused game, also after more undos);
     an undo whose clicks ended before they made anything, or that an order or the game's end came before, says *Not
     undone*, and in the first case the pill offers it again. A tap that comes just after the pill went (up to 0.4 s late)

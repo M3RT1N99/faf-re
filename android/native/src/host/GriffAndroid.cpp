@@ -644,6 +644,11 @@ namespace
   /// of a target of one of their Guards only after they said what they did (griffundo::Undones).
   griffundo::Undones gUndone;
 
+  /// The commands of the Guards FAF's UI gave while Ctrl was down, in this game: FAF copies the queue of an engineer such a
+  /// Guard targets into the guarding units' (commandmode.lua OnGuardCopy, by its option assist_to_copy_command_queue), which
+  /// no finger and no click of the program's holds, a keyboard's may (griffundo::Entry::answered).
+  std::unordered_set<int> gGuardsWithCtrl;
+
   [[nodiscard]] std::int64_t Now()
   {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -1066,6 +1071,7 @@ namespace
     gWatch = Watch{};
     DropRecord();
     gUndone.Clear();
+    gGuardsWithCtrl.clear();
     gPins.Clear();
     {
       const std::lock_guard<std::mutex> lock(gOrdersShownMutex);
@@ -1582,6 +1588,23 @@ namespace
     }
   }
 
+  /// Whether FAF's capping may ring this unit for a Guard of engineers on it (capping.lua AssistToCap, 3835): a structure that
+  /// extracts mass, a radar, an omni sensor or an artillery structure, by its options, the Shift held and its memory of the
+  /// player's taps. Where the game's categories are not known, it may.
+  [[nodiscard]] bool CappingRings(const moho::UserEntity& unit)
+  {
+    const moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    const moho::REntityBlueprint* const blueprint = unit.mParams.mBlueprint;
+    if (session == nullptr || session->mRules == nullptr || blueprint == nullptr) {
+      return true;
+    }
+    const auto in = [&](const char* const category) {
+      const moho::EntityCategorySet* const set = session->mRules->GetEntityCategory(category);
+      return set == nullptr || set->ContainsBit(blueprint->mCategoryBitIndex);
+    };
+    return in("STRUCTURE") && (in("MASSEXTRACTION") || in("RADAR") || in("OMNI") || in("ARTILLERY"));
+  }
+
   /// FAF's assist-to-upgrade (its options assist_to_upgrade and assist_to_upgrade_radar): its UI orders an extractor's or a
   /// radar's upgrade a frame or more after a Guard on it (commandmode.lua OnGuardIssued forks UpgradeUnit, which may wait for
   /// an unpause first), with Clear, which no upgrade of the player's has (griffundo::AssistUpgrade). Such an Upgrade of the
@@ -1617,8 +1640,9 @@ namespace
     return undone;
   }
 
-  /// Of every order FAF's UI gives: its count for the clicks that run, with the entity it targets. A watched gesture's that
-  /// is one to take back (griffundo::Takeable) is pinned at its place and noted in the queues of its units that it went into;
+  /// Of every order FAF's UI gives: a Guard given with Ctrl noted (gGuardsWithCtrl), its count for the clicks that run, with
+  /// the entity it targets. A watched gesture's that is one to take back (griffundo::Takeable) is pinned at its place and
+  /// noted in the queues of its units that it went into;
   /// any other but the undo's own and FAF's upgrade for an assist ends the pill's record: FAF's ghost from a build key or a
   /// template, the Keys keyboard's hotkeys, the construction panel's own queue.
   int Ordered(lua_State* const lua)
@@ -1628,6 +1652,18 @@ namespace
     const bool clear = Whole(lua, 3) != 0;
     const std::vector<int> units = EntityIdsOf(Text(lua, 4));
     const int target = EntityIdOf(Text(lua, 9));
+    // FAF's copy of an engineer's queue goes with a Guard given with Ctrl (OnGuardCopy, which reads the key as this does,
+    // after it): the Guard's command, each unit's newest edit now, is noted for the undo's plan.
+    if (type == "Guard" && target != griffundo::kNoTarget && moho::MAUI_KeyIsDown(moho::MKEY_CONTROL)) {
+      for (const int id : units) {
+        moho::UserUnit* const unit = UnitOf(id);
+        moho::UserCommandQueue* const commands = unit != nullptr ? unit->GetCommandQueue() : nullptr;
+        const griffundo::Edit edit = commands != nullptr ? EditOf(*commands) : griffundo::Edit{};
+        if (edit.kind == griffundo::EditKind::kAdd) {
+          gGuardsWithCtrl.insert(edit.command);
+        }
+      }
+    }
     if (AssistsUpgrade(type, clear, units)) {
       return 0;
     }
@@ -3387,6 +3423,12 @@ namespace
         planned.before = queue.before;
         for (griffundo::Entry& entry : planned.before) {
           entry.pending = griffundo::PendingOf(queue.unsynced, entry.id, queue.snapshot, static_cast<int>(queue.beat));
+          // A Guard FAF's UI may have answered with commands of the sim's own: on a unit its capping may ring, or given with
+          // Ctrl; one on a unit gone may have been either.
+          if (entry.type == "Guard" && entry.target != griffundo::kNoTarget) {
+            const moho::UserEntity* const guarded = living(entry.target);
+            entry.answered = guarded == nullptr || CappingRings(*guarded) || gGuardsWithCtrl.count(entry.id) != 0;
+          }
         }
         // Where no view of the sim's was read (the replacing order put no Reset at the queue's front, which ISSUE_Command
         // and ISSUE_FactoryCommand always do), what the queue held as the gesture began stands for what the sim held.
@@ -3459,11 +3501,11 @@ namespace
   /// (a paused game's after it resumed, a lagging one's its lag later), no clicks run and no finger's drag holds FAF's
   /// dragger, which would take the clicks' cursor and come between them (a pan's camera drag, a box's, a panel's): until then
   /// the fingers are free and the pill says it waits, and the next order ends the record as ever. Then the record is taken
-  /// (one level), griff.lua keeps the selection and ends a command mode (UndoBegin), and the clicks run. Without the map's
-  /// view, which their places are found on, or where the plan threw, nothing is clicked and the pill offers the record again.
-  /// All of the undo's inputs go to the sim after the gesture's, which it takes in order. Clicks that ran past their patience
-  /// are over first: the tick's orders they end are a record of their own, which an undo asked for the one before does not
-  /// take back.
+  /// (one level), griff.lua keeps the selection, ends a command mode and holds FAF's capping off (UndoBegin), and the clicks
+  /// run. Without the map's view, which their places are found on, or where the plan threw, nothing is clicked and the pill
+  /// offers the record again. All of the undo's inputs go to the sim after the gesture's, which it takes in order. Clicks
+  /// that ran past their patience are over first: the tick's orders they end are a record of their own, which an undo asked
+  /// for the one before does not take back.
   void TryUndo()
   {
     if (ClicksRun() || !gRecord.asked || gRecord.number == 0 || !moho::UI_GamePlaying() || gDrag != Drag::kNone) {
@@ -3496,7 +3538,15 @@ namespace
     gUndoing.unsure = unsure;
     gUndoing.again = std::move(again);
     gRecord = Record{};
-    moho::CON_Execute(kUndoBegin);
+    // FAF's capping answers a Guard of engineers on a structure with rings of its own, by its memory of the player's taps
+    // and the Shift held: griff.lua holds it off while the undo's clicks run, and says so. Where it could not, a Guard given
+    // back on a structure it may ring may bring rings nobody ordered, and counts.
+    if (Ask(kUndoBegin) != kYes) {
+      gUndoing.unsure += static_cast<int>(std::count_if(gUndoing.again.begin(), gUndoing.again.end(), [](const int target) {
+        const moho::UserUnit* const unit = UnitOf(target);
+        return unit != nullptr && CappingRings(*unit);
+      }));
+    }
     clicks.finish = &FinishUndo;
     clicks.appendAll = true;
     StartClicks(std::move(clicks));

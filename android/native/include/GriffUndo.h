@@ -55,7 +55,9 @@ namespace griffundo
   /// those of the second army on to an even number only), its type (FAF's name: Move, AggressiveMove, ...), its place (where
   /// it goes, or where the entity it targets is), the entity it targets (kNoTarget: the ground, or none), the building it
   /// builds, its script's task (FAF's attack-move button gives a script, AttackMove, beside the sim's AggressiveMove), and,
-  /// in the queue as the gesture began, whether the sim held it then.
+  /// in the queue as the gesture began, whether the sim held it then and, for a Guard on a unit, whether FAF's UI may have
+  /// answered it with commands of the sim's own (`answered`, AnswerOf: the program tells it from the unit's kind and the
+  /// Ctrl held as FAF's UI gave the Guard, and leaves it where it cannot tell).
   struct Entry
   {
     int id = 0;
@@ -65,6 +67,7 @@ namespace griffundo
     std::string blueprint;
     std::string task;
     Pending pending = Pending::kNo;
+    bool answered = true;
   };
 
   /// A queue of a unit's that an order of the gesture went into, its own or a factory's rally route (a factory is two Units
@@ -144,10 +147,11 @@ namespace griffundo
     /// Orders that cannot come back, and orders of the gesture's that cannot go.
     int dropped = 0;
     /// Orders the plan gives back, or leaves, as the unit's own without knowing it: one the sim took in a beat no read came
-    /// after, one a read that may be ticks old showed, an AggressiveMove at a place where both the unit's own pending
-    /// attack-move and one of the gesture's went, what stands ahead of the gesture's commands where its first is gone and one
-    /// of the unit's pending orders may have made it, and what the sim made of a pending order that comes back with it, which
-    /// FAF may make again of it.
+    /// after, one a read that may be ticks old showed, one the sim took in the replacement's own beat that FAF answered with
+    /// what no read showed and no click of the undo's makes again, an AggressiveMove at a place where both the unit's own
+    /// pending attack-move and one of the gesture's went where the gesture's first command is gone, what stands ahead of the
+    /// gesture's commands there that one of the unit's pending orders may have made, and what the sim made of a pending
+    /// order that comes back with it, which FAF makes again of it.
     int unsure = 0;
   };
 
@@ -322,6 +326,33 @@ namespace griffundo
     return entry.type == "Stop" || AttackMoveScript(entry);
   }
 
+  /// What FAF's UI sends the sim beside an order that makes commands of the sim's own in the queues of its units, in the beat
+  /// the sim takes the order (commandmode.lua's answers to OnCommandIssued, 3835): nothing; what FAF makes again of the
+  /// order where a click of the undo's gives it again (kAgain: the Rebuild of the wreck a Repair targets); or what only the
+  /// player's input made (kOnce), which no click of the undo's brings again: the rings of FAF's capping about a structure a
+  /// Guard of engineers targets (capping.lua AssistToCap, by its options, the Shift held and its memory of the player's
+  /// taps), which griff.lua holds off while the undo's clicks run; the copy of an engineer's queue for a Guard on it with
+  /// Ctrl (OnGuardCopy), which the undo's clicks never hold; and the area attack about the place of an Attack on the ground
+  /// whose press dragged in FAF's attack mode (area-attack-order.lua, ExtendAttackOrder at the lift), as Griff's rested or
+  /// Box drag on the map does with that mode armed, where the undo's press lifts where it went down. A Guard the program
+  /// knows FAF's UI answered with nothing (Entry::answered) is none. An attack-move's script makes its AggressiveMove, which
+  /// MadeOf pairs by its place: none here.
+  enum class Answer
+  {
+    kNone,
+    kAgain,
+    kOnce,
+  };
+
+  [[nodiscard]] inline Answer AnswerOf(const Entry& entry)
+  {
+    if (entry.type == "Repair" && entry.target != kNoTarget) {
+      return Answer::kAgain;
+    }
+    const bool guard = entry.type == "Guard" && entry.target != kNoTarget && entry.answered;
+    return guard || (entry.type == "Attack" && entry.target == kNoTarget) ? Answer::kOnce : Answer::kNone;
+  }
+
   /// Whether FAF draws a waypoint for an order, which its Shift+Ctrl right release can take out: not for the kinds its command
   /// graph leaves out (UICommandGraph's AddCommandQueueToCommandGraph, mask 0x2D80000EA).
   [[nodiscard]] inline bool Removable(const Entry& entry)
@@ -466,19 +497,21 @@ namespace griffundo
       return (static_cast<std::uint32_t>(id) & 0xFF000000u) == 0x80000000u;
     }
 
-    /// Whether one of the unit's orders the sim had not taken as the gesture began may have made commands of the sim's since
-    /// (FAF's callbacks for it): any but an Inert one (a Stop makes none; an attack-move's AggressiveMove is MadeOf's).
+    /// Whether one of the unit's orders the sim had not taken as the gesture began may have made commands of the sim's since:
+    /// one FAF's UI answers with commands of the sim's own (AnswerOf). FAF makes none of a Move, a Patrol, a Reclaim, a
+    /// Capture, a building or a Stop; an attack-move's AggressiveMove is MadeOf's.
     [[nodiscard]] inline bool PendingMakers(const std::vector<Entry>& before)
     {
-      return std::any_of(before.begin(), before.end(), [](const Entry& entry) { return entry.pending != Pending::kNo && !Inert(entry); });
+      return std::any_of(before.begin(), before.end(),
+                         [](const Entry& entry) { return entry.pending != Pending::kNo && AnswerOf(entry) != Answer::kNone; });
     }
 
     /// Where the gesture's commands begin in a queue it appended to: the sim takes the unit's own orders, those it had not
     /// taken as the gesture began too, and what FAF makes of them in the same beat before the gesture's later orders, and
-    /// appends each, so whatever stands ahead of the gesture's first command is the unit's own. The index of the first of
-    /// the gesture's commands still in the queue (its size where none is), and whether that is the gesture's very first
-    /// (`exact`): where that one is gone (done at the queue's head, or its target gone), what stands ahead of the next may
-    /// be what it made.
+    /// appends each, so whatever stands ahead of the gesture's first command is the unit's own, and all from it on the
+    /// gesture's. The index of the first of the gesture's commands still in the queue (its size where none is), and whether
+    /// that is the gesture's very first (`exact`): where that one is gone (done at the queue's head, or its target gone),
+    /// what stands ahead of the next may be what it made.
     struct Anchor
     {
       std::size_t at = 0;
@@ -510,12 +543,14 @@ namespace griffundo
     /// later shows it (`queue`): the sim's own commands that `before` does not hold and that are no pending attack-move's
     /// AggressiveMove (`made`, which stands for its script), ahead of the gesture's first command there (from it on, what
     /// the gesture's orders that landed earlier made). None unless that read came after the sim took one of those orders
-    /// (Pending::kRead): until then the sim's own commands in it are its own doing, as a rally point it refills.
+    /// that FAF's UI answers with commands of the sim's own (Pending::kRead, AnswerOf): else the sim's own commands in it are
+    /// its own doing, as a rally point it refills.
     [[nodiscard]] inline std::vector<Product> ByProducts(const std::vector<Entry>& before, const std::vector<Entry>& queue,
                                                          const std::vector<const Entry*>& made, const std::vector<Entry>& given)
     {
       std::vector<Product> products;
-      if (std::none_of(before.begin(), before.end(), [](const Entry& entry) { return entry.pending == Pending::kRead && !Inert(entry); })) {
+      if (std::none_of(before.begin(), before.end(),
+                       [](const Entry& entry) { return entry.pending == Pending::kRead && AnswerOf(entry) != Answer::kNone; })) {
         return products;
       }
       int after = -1;
@@ -651,20 +686,22 @@ namespace griffundo
   /// click that replaces the gesture's there instead, as an emptied rally route would come back as the sim's own.
   ///
   /// An order of the queue as the gesture began that the sim had not taken then (Pending) is the unit's as well, and so is
-  /// what the sim made of it after the gesture began, in the beat it took it (FAF's callbacks: an attack-move script's
-  /// AggressiveMove at its place, MadeOf; a wreck's rebuild of a Repair on it; an extractor's rings of a Guard on it). In a
-  /// queue the gesture appended to, the sim took all of that before the gesture's orders and appended each: what stands
-  /// ahead of the gesture's first command stays (GesturesFirst). Where that command is gone, what stands ahead of the next
-  /// may be what it made: where one of the unit's pending orders may have made it as well, whose it is cannot be told, and it
-  /// stays, counted (`unsure`); so does the AggressiveMove at a place where both the unit's pending attack-move and the
-  /// gesture's went. In a queue the gesture replaced such an order was lost with it as far as the program read what the sim
-  /// held (`taken`, where the script's AggressiveMove stands for the script), else by the beat it went to the sim at: in the
-  /// replacement's own beat it was there; in an earlier one no read came after, it was unless the unit did it in between,
-  /// which counts. Such an attack-move comes back as one, at its place. What `taken` shows the sim made of such orders
+  /// what the sim made of it after the gesture began, in the beat it took it (FAF's answers to it, AnswerOf: a wreck's
+  /// rebuild of a Repair on it, an extractor's rings of a Guard on it; an attack-move script's AggressiveMove at its place,
+  /// MadeOf). In a queue the gesture appended to, the sim took all of that before the gesture's orders and appended each:
+  /// what stands ahead of the gesture's first command stays, and from that command on all is the gesture's (GesturesFirst).
+  /// Where that command is gone, what stands ahead of the next may be what it made: where one of the unit's pending orders
+  /// may have made it as well (PendingMakers), whose it is cannot be told, and it stays, counted (`unsure`); so does the
+  /// AggressiveMove at a place where both the unit's pending attack-move and the gesture's went. In a queue the gesture
+  /// replaced such an order was lost with it as far as the program read what the sim held (`taken`, where the script's
+  /// AggressiveMove stands for the script), else by the beat it went to the sim at: in the replacement's own beat it was
+  /// there, but what FAF answered it with then no read showed, and where no click of the undo's makes that again
+  /// (Answer::kOnce) it counts; in an earlier one no read came after, it was unless the unit did it in between, which
+  /// counts. Such an attack-move comes back as one, at its place. What `taken` shows the sim made of such orders
   /// (ByProducts) comes back by its own way, in its place (a building by FAF's build mode at its own), never lost; where its
-  /// maker may be an order that comes back too, it counts, as FAF may make it again of that one by its own rules (an
-  /// extractor's rings come again five game ticks after the last at the soonest). Where the read `taken` is may be ticks
-  /// old (`stale`), what comes back of it counts.
+  /// maker is an order that comes back too and FAF makes it again of that one (Answer::kAgain: a second rebuild of the
+  /// wreck, which finds the building there), it counts. Where the read `taken` is may be ticks old (`stale`), what comes
+  /// back of it counts.
   [[nodiscard]] inline Plan PlanUndo(const std::vector<Unit>& units, const Targets& targets)
   {
     Plan plan;
@@ -675,7 +712,7 @@ namespace griffundo
         const std::vector<detail::Product> products = detail::ByProducts(unit.before, unit.taken, made, unit.given);
         std::vector<Entry> lost;
         // What the sim made that stands after the order `after` of `before` in `taken`, lost with the replacement: it comes
-        // back, counted where its maker may be that order, which comes back too (`makerBack`).
+        // back, counted where its maker is that order, which comes back too and which FAF answers alike again (`makerBack`).
         const auto lostProducts = [&](const int after, const bool makerBack) {
           for (const detail::Product& product : products) {
             if (product.after != after || detail::Holds(unit.now, product.entry->id)) {
@@ -698,24 +735,30 @@ namespace griffundo
             continue;
           }
           const Entry back = attackMove ? detail::AsAttackMove(entry) : entry;
-          // Exact where the sim took it in the replacement's own beat, or where `taken` is the sim's queue just before that
-          // beat; else the unit may have done it in between.
-          const bool exact = entry.pending == Pending::kWithReplacement || (entry.pending != Pending::kUnread && !unit.stale);
+          // Exact where `taken` is the sim's queue just before the replacement's beat, or where the sim took it in that very
+          // beat, just before the replacement emptied the queue with it, unless FAF answered it then with what no read showed
+          // and no click of the undo's makes again; else the unit may have done it in between.
+          const bool exact = entry.pending == Pending::kWithReplacement ? AnswerOf(entry) != Answer::kOnce
+                                                                        : entry.pending != Pending::kUnread && !unit.stale;
           if (!exact && !Inert(back)) {
             ++plan.unsure;
           }
           lost.push_back(back);
-          lostProducts(static_cast<int>(at), entry.pending != Pending::kNo && !Inert(entry));
+          lostProducts(static_cast<int>(at), entry.pending != Pending::kNo && AnswerOf(entry) == Answer::kAgain);
         }
         clicks = detail::Again(unit, lost, targets, plan.dropped);
       }
       if (unit.refilled && !clicks.empty()) {
         clicks.front().shift = false;
       } else {
-        // What the sim made of the unit's own pending attack-moves is the unit's in a queue the gesture appended to; one the
-        // gesture replaced lost it with the replacement, and an AggressiveMove there now is the gesture's.
-        const std::vector<const Entry*> own = unit.replaced ? std::vector<const Entry*>{} : detail::MadeOf(unit.before, unit.now);
+        // Where the gesture appended, the queue's order tells whose a command is while the gesture's first stands: ahead of it
+        // all is the unit's, from it on all the gesture's, an AggressiveMove of its at the very place of a pending attack-move
+        // of the unit's too. Where that command is gone, what the sim made of the unit's own pending attack-moves is the
+        // unit's (MadeOf). A queue the gesture replaced lost it with the replacement, and an AggressiveMove there now is the
+        // gesture's.
         const detail::Anchor first = unit.replaced ? detail::Anchor{} : detail::GesturesFirst(unit.now, unit.given);
+        const std::vector<const Entry*> own =
+          unit.replaced || first.exact ? std::vector<const Entry*>{} : detail::MadeOf(unit.before, unit.now);
         const bool makers = detail::PendingMakers(unit.before);
         bool kept = false;
         for (std::size_t at = 0; at < unit.now.size(); ++at) {
