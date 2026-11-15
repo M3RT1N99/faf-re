@@ -1,0 +1,15 @@
+diff --git a/dependencies/SDL3/src/core/android/SDL_android.c b/dependencies/SDL3/src/core/android/SDL_android.c
+index c4f517da8..09a22a127 100644
+--- a/dependencies/SDL3/src/core/android/SDL_android.c
++++ b/dependencies/SDL3/src/core/android/SDL_android.c
+@@ -1401,6 +1401,10 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeKeyboardFocusLost)(
+ {
+     // Calling SDL_StopTextInput will take care of hiding the keyboard and cleaning up the DummyText widget
+     SDL_StopTextInput(Android_Window);
++    /* faf-re's Android build (android/native/patches/README.md): also where text input does not show and hide the
++     * keyboard (SDL_HINT_ENABLE_SCREEN_KEYBOARD "0"). Back took the keyboard away: the edit gives the focus back to the
++     * surface, and SDL hears that the keyboard is gone, on every Android version (the insets say so only from 11 on). */
++    Android_JNI_HideScreenKeyboard();
+ }
+ 
+ // Touch

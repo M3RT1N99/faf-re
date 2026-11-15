@@ -118,7 +118,8 @@ namespace
       }
       break;
     case SDL_EVENT_SCREEN_KEYBOARD_HIDDEN:
-      // Back took it away, and SDL stopped text input with it (SDLDummyEdit.onKeyPreIme): typed text goes on coming.
+      // Back took it away, and SDL stopped text input with it (SDLDummyEdit.onKeyPreIme; the patched
+      // onNativeKeyboardFocusLost says so on every Android version): typed text goes on coming.
       if (SDL_Window* const window = GameWindow()) {
         (void)SDL_StartTextInput(window);
       }
