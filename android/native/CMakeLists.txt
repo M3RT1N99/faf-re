@@ -317,6 +317,7 @@ target_link_libraries(faf_movie_player PRIVATE FFmpeg::FFmpeg)
 
 add_library(faf_client OBJECT ${_faf_client_files}
   src/app/GameMainAndroid.cpp
+  src/app/ScreenKeyboardAndroid.cpp
   src/gal/BlockCompressionAndroid.cpp
   src/gal/VulkanSurfaceAndroid.cpp
   src/net/NetlinkPeersAndroid.cpp)

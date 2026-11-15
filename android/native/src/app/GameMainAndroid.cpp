@@ -6,7 +6,8 @@
 //
 // - SDL's hints for a game on a phone: the program goes on in the back, as an online game's simulation
 //   keeps the others' pace (the surface goes, the loop does not stop); landscape only; no screen
-//   keyboard that comes by itself, as the engine asks for typed text in every window.
+//   keyboard that comes by itself, as the engine asks for typed text in every window: it comes for a
+//   text field (ScreenKeyboardAndroid.cpp).
 // - argv[0] is the program's path, from which the engine takes its install's folder (DISK_GetLaunchDir):
 //   SDL's own is "app_process".
 // - The display mode of `/fullscreen <width> <height>`, which the activity gives with its surface's size,
@@ -34,6 +35,7 @@
 
 #include <SDL3/SDL_hints.h>
 
+#include "ScreenKeyboardAndroid.h"
 #include "moho/misc/StartupHelpers.h"
 
 // The engine's entry, as SDL_main.h declares it on Android (ClientMainPosix.cpp includes that header).
@@ -100,6 +102,7 @@ namespace
     (void)SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
     (void)SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     (void)SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
+    screenkeyboard::Install();
     program.exitCode = SDL_main(program.argc, program.argv);
     return nullptr;
   }
