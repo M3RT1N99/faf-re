@@ -1,5 +1,5 @@
 diff --git a/src/moho/net/CNetUDPConnector.cpp b/src/moho/net/CNetUDPConnector.cpp
-index 60023f237..20f49fe7d 100644
+index 60023f237..d4cfdbae3 100644
 --- a/src/moho/net/CNetUDPConnector.cpp
 +++ b/src/moho/net/CNetUDPConnector.cpp
 @@ -3,10 +3,12 @@
@@ -15,16 +15,43 @@ index 60023f237..20f49fe7d 100644
  #include <new>
  
  #include "legacy/thread/Mutex.h"
-@@ -95,6 +97,8 @@ CNetUDPConnector::~CNetUDPConnector()
+@@ -32,8 +34,24 @@ namespace
+    * boost's `weak_ptr` copy, which takes `px` through `lock()` so a dead pointee isn't copied. Callers lock
+    * `mNatTraversalProvider` directly, which gives the same empty result once the provider is gone.
+    */
++
++  // Android client build: the connectors whose socket is open (NET_OpenUDPConnectors).
++  std::atomic<int> sOpenConnectors{0};
+ } // namespace
+ 
++namespace moho
++{
++  /**
++   * Android client build: how many UDP connectors have their socket open, from the start of the connector's thread
++   * in its constructor to its destructor, which the thread's end runs once the connections have said goodbye. The
++   * app keeps a network lobby or game going in the back while there is one (NetworkGameService).
++   */
++  int NET_OpenUDPConnectors() noexcept
++  {
++    return sOpenConnectors.load();
++  }
++} // namespace moho
++
+ /**
+  * Address: 0x00485CA0 (FUN_00485CA0)
+  * Address: 0x1007F750 (sub_1007F750)
+@@ -95,6 +113,10 @@ CNetUDPConnector::~CNetUDPConnector()
  
    if (socket_ != platform::net::kInvalidSocket)
      platform::net::CloseSocket(socket_);
-+  // Android client build: the event goes with the connector, which is deleted now (the constructor).
++  // Android client build: the event goes with the connector, which is deleted now (the constructor), and so does
++  // its count among the open ones.
 +  platform::net::CloseSocketEvent(event_);
++  sOpenConnectors.fetch_sub(1);
  
    if (mPacketLogFile) {
      fclose(mPacketLogFile);
-@@ -152,8 +156,15 @@ CNetUDPConnector::CNetUDPConnector(
+@@ -152,8 +174,15 @@ CNetUDPConnector::CNetUDPConnector(
    mTimeBaseUs = static_cast<int64_t>(ticks.QuadPart / 10ULL);
  
    // Keep one aliasing shared_ptr alive in worker thread so provider weak_ptr
@@ -42,15 +69,16 @@ index 60023f237..20f49fe7d 100644
    {
      fa::recursive_mutex::scoped_lock lock{lock_};
  
-@@ -164,6 +175,7 @@ CNetUDPConnector::CNetUDPConnector(
+@@ -164,6 +193,8 @@ CNetUDPConnector::CNetUDPConnector(
      fa::thread([selfOwner]() {
        selfOwner->Entry();
      });
 +    started->store(true);
++    sOpenConnectors.fetch_add(1);
    }
  
    const auto natProviderWeak = mNatTraversalProvider;
-@@ -198,6 +210,9 @@ void CNetUDPConnector::Destroy()
+@@ -198,6 +229,9 @@ void CNetUDPConnector::Destroy()
    }
  
    mClosed = true;
@@ -60,7 +88,7 @@ index 60023f237..20f49fe7d 100644
    SignalSocketEvent();
  }
  
-@@ -381,6 +396,9 @@ void CNetUDPConnector::Pull()
+@@ -381,6 +415,9 @@ void CNetUDPConnector::Pull()
      conn->DispatchFromInput();
    }
  

@@ -78,6 +78,14 @@ public final class GameActivity extends SDLActivity {
     private AudioFocusRequest mAudioFocus;
     /** Gone for good: nothing gives it back, as the end of a call does. */
     private boolean mAudioFocusLost;
+    /** While the activity is there: a network lobby or game that has begun since the last look has its service too. */
+    private final Runnable mPoll = new Runnable() {
+        @Override
+        public void run() {
+            NetworkGameService.startIfNeeded(GameActivity.this);
+            mHandler.postDelayed(this, 500);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle state) {
@@ -124,6 +132,7 @@ public final class GameActivity extends SDLActivity {
             .setOnAudioFocusChangeListener(this::onAudioFocusChange, mHandler)
             .build();
         mShowsProgram = true;
+        mHandler.post(mPoll);
     }
 
     /** The program's command line and its environment, or why the game cannot start. */
@@ -298,6 +307,7 @@ public final class GameActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        mHandler.removeCallbacks(mPoll);
         super.onDestroy();
         // A game that could not start leaves no process behind: SDL's activity takes the next start in this
         // process for one made anew around a program, and would end it.
@@ -309,6 +319,7 @@ public final class GameActivity extends SDLActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        NetworkGameService.front(true);
         hideSystemBars();
         if (mDiscoveryLock != null) {
             mDiscoveryLock.acquire();
@@ -322,6 +333,12 @@ public final class GameActivity extends SDLActivity {
 
     @Override
     protected void onPause() {
+        if (mShowsProgram) {
+            // Still allowed now, which it is not from the back: a network game that began since the last poll has its
+            // service too.
+            NetworkGameService.startIfNeeded(this);
+        }
+        NetworkGameService.front(false);
         if (mShowsProgram) {
             Game.foreground(false);
             getSystemService(AudioManager.class).abandonAudioFocusRequest(mAudioFocus);
