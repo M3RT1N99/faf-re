@@ -11,7 +11,7 @@
 #   src/          what Android needs beyond the engine's POSIX client: the app's entry (src/app),
 #                 the Vulkan surface's coming and going and BC textures on the CPU for GPUs without
 #                 them (src/gal), the in-engine peer links off (src/net)
-#   patches/      the engine files compiled changed (cmake/FafAndroidOverlay.cmake)
+#   patches/      the engine's files compiled changed, and SDL's (cmake/FafAndroidOverlay.cmake)
 #   cmake/        DXC built from source (FafAndroidDxc.cmake); ffmpeg/: FFmpeg built with the NDK.
 #                 The Linux client takes Microsoft's Linux DXC and runs FFmpeg's configure and make,
 #                 neither of which an Android cross build can use.
@@ -60,11 +60,6 @@ foreach(_property COMPILE_DEFINITIONS COMPILE_OPTIONS)
 endforeach()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# The files compiled changed (patches/), and those that include a patched header by its bare name
-# from the header's folder.
-set(FAF_ANDROID_OVERLAY_SIBLINGS src/gpg/gal/backends/vulkan/RayTracingVulkan.cpp)
-include("${FAF_ANDROID_DIR}/cmake/FafAndroidOverlay.cmake")
-
 # DXC, the effects' shader compiler (cmake/FafAndroidDxc.cmake): libdxcompiler.so for the ABI in
 # ${CMAKE_BINARY_DIR}/bin, its licences in ${CMAKE_BINARY_DIR}/licenses, both for the app.
 include("${FAF_ANDROID_DIR}/cmake/FafAndroidDxc.cmake")
@@ -80,6 +75,11 @@ add_subdirectory(ffmpeg "${CMAKE_BINARY_DIR}/ffmpeg" EXCLUDE_FROM_ALL SYSTEM)
 set(FAF_DEPENDENCIES_ONLY DirectX-Headers SDL3 FAudio DirectXTex DirectXMath stb freetype msdfgen imgui)
 include("${FAF_REPO}/cmake/FafDependencies.cmake")
 
+# The files compiled changed (patches/), the engine's and its dependencies', which are here now, and
+# those that include a patched header by its bare name from the header's folder.
+set(FAF_ANDROID_OVERLAY_SIBLINGS src/gpg/gal/backends/vulkan/RayTracingVulkan.cpp)
+include("${FAF_ANDROID_DIR}/cmake/FafAndroidOverlay.cmake")
+
 # SDL3, static, as the Linux client builds it. On Android it is the window (the activity's surface),
 # the input, the audio output and the program's start: its activity (org.libsdl.app.SDLActivity, whose
 # Java sources the app takes from the same release) calls the library's entry on a thread of its own.
@@ -90,6 +90,8 @@ set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
 add_subdirectory("${FAF_DEPENDENCIES_DIR}/SDL3" "${CMAKE_BINARY_DIR}/deps/SDL3" EXCLUDE_FROM_ALL SYSTEM)
+# Its patched files (patches/dependencies/SDL3, patches/README.md).
+faf_android_overlay_target(SDL3-static)
 
 # Dear ImGui with its SDL3 backends, for the developer windows (src/platform/sdl/ToolWindow.cpp).
 add_subdirectory("${FAF_REPO}/cmake/deps/imgui" "${CMAKE_BINARY_DIR}/deps/imgui")

@@ -1,0 +1,22 @@
+diff --git a/dependencies/SDL3/src/video/android/SDL_androidevents.c b/dependencies/SDL3/src/video/android/SDL_androidevents.c
+index 4bdd717e1..3014fed1a 100644
+--- a/dependencies/SDL3/src/video/android/SDL_androidevents.c
++++ b/dependencies/SDL3/src/video/android/SDL_androidevents.c
+@@ -201,12 +201,11 @@ static void Android_HandleLifecycleEvent(SDL_AndroidLifecycleEvent event)
+ 
+ static Sint64 GetLifecycleEventTimeout(bool paused, Sint64 timeoutNS)
+ {
+-    if (Android_Paused) {
+-        if (Android_BlockOnPause) {
+-            timeoutNS = -1;
+-        } else if (timeoutNS == 0) {
+-            timeoutNS = SDL_MS_TO_NS(100);
+-        }
++    /* faf-re's Android build (android/native/patches/README.md): a pump that is not to wait does not wait while
++     * paused either. The game paces its loop itself, also in the back (its wait for the next beat), and 100 ms in
++     * each of its pumps held its simulation to half its speed there. */
++    if (Android_Paused && Android_BlockOnPause) {
++        timeoutNS = -1;
+     }
+     return timeoutNS;
+ }

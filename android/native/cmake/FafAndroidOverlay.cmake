@@ -1,15 +1,17 @@
 # The engine files the Android build compiles changed, without changing them in the repository.
 #
-# patches/<path>.patch is a git diff of the engine file <path> (relative to the repository root).
+# patches/<path>.patch is a git diff of the engine file <path> (relative to the repository root;
+# dependencies/<name>/... for a dependency's file, which is there once the configure has fetched it).
 # At configure time the file is copied to ${FAF_ANDROID_OVERLAY}/<path>, with LF line endings as
 # the repository keeps it, and the patch is applied to the copy. A patch that no longer applies
 # (the engine changed those lines) stops the configure with the file's name; the patch is then
 # made again against the new file (README.md, "Patches").
 #
-# A patched source replaces the original in the targets (faf_android_overlay_sources); a patched
-# header is found first because ${FAF_ANDROID_OVERLAY}/src comes ahead of src/ on the include
-# path. A file that includes a patched header by its bare name, from the header's own folder, is
-# compiled from the overlay too (FAF_ANDROID_OVERLAY_SIBLINGS), so it sees the patched header.
+# A patched source replaces the original in the targets (faf_android_overlay_sources, and
+# faf_android_overlay_target for a dependency's target); a patched header is found first because
+# ${FAF_ANDROID_OVERLAY}/src comes ahead of src/ on the include path. A file that includes a
+# patched header by its bare name, from the header's own folder, is compiled from the overlay too
+# (FAF_ANDROID_OVERLAY_SIBLINGS), so it sees the patched header.
 
 set(FAF_ANDROID_OVERLAY "${CMAKE_BINARY_DIR}/overlay")
 set(_faf_overlay_work "${CMAKE_BINARY_DIR}/overlay-work")
@@ -61,7 +63,7 @@ foreach(_path IN LISTS FAF_ANDROID_OVERLAY_SIBLINGS)
 endforeach()
 file(REMOVE_RECURSE "${_faf_overlay_work}")
 list(LENGTH _faf_android_patches _faf_patch_count)
-message(STATUS "android/native: ${_faf_patch_count} engine files patched")
+message(STATUS "android/native: ${_faf_patch_count} files patched")
 
 # `out`: the files of `sources` (absolute paths), with each overlaid one replaced by its copy. A
 # copy finds the original's neighbours (its own headers) through its folder in the repository.
@@ -88,4 +90,21 @@ function(faf_android_overlay_sources out)
     endif()
   endforeach()
   set(${out} "${_result}" PARENT_SCOPE)
+endfunction()
+
+# The sources of `target`, a dependency's target made in another folder, with each overlaid one
+# replaced by its copy, which finds the original's neighbours for its quoted includes.
+function(faf_android_overlay_target target)
+  get_target_property(_sources ${target} SOURCES)
+  set(_result "")
+  foreach(_file IN LISTS _sources)
+    file(RELATIVE_PATH _relative "${FAF_REPO}" "${_file}")
+    if(_relative IN_LIST _faf_android_overlay_paths)
+      get_filename_component(_folder "${_file}" DIRECTORY)
+      set(_file "${FAF_ANDROID_OVERLAY}/${_relative}")
+      set_property(SOURCE "${_file}" TARGET_DIRECTORY ${target} APPEND PROPERTY COMPILE_OPTIONS "-iquote${_folder}")
+    endif()
+    list(APPEND _result "${_file}")
+  endforeach()
+  set_property(TARGET ${target} PROPERTY SOURCES ${_result})
 endfunction()

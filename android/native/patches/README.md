@@ -1,7 +1,8 @@
 # The engine files the Android build compiles changed
 
-Each `<path>.patch` is a `git diff` of the engine file `<path>`, applied to a copy at configure time
-(`../cmake/FafAndroidOverlay.cmake`, `../README.md`). The repository's files stay as they are.
+Each `<path>.patch` is a `git diff` of the engine file `<path>`, or of a dependency's file under `dependencies/`,
+applied to a copy at configure time (`../cmake/FafAndroidOverlay.cmake`, `../README.md`). The repository's files
+stay as they are.
 
 | File | Change | Why there is no other way |
 |---|---|---|
@@ -27,6 +28,7 @@ Each `<path>.patch` is a `git diff` of the engine file `<path>`, applied to a co
 | `src/moho/net/CGpgNetInterface.cpp` | The GPGNet launch fails at once on Android | The game launches its GPGNet side with `/bin/sh` and `posix_spawn`, which an app neither has nor may: the app that started the game is that side. A candidate for the engine |
 | `src/moho/net/CHostManager.cpp` | Host names are the numbers | The game thread asks for them (a discovery request's sender, a peer's name in the log): a phone's reverse DNS has no answer for a LAN address, and waits for it on that thread |
 | `src/platform/shell/Shell.cpp` | A key-down a handler took (did not skip) has no char: neither the window library's char for a key Windows gives none for (Enter) nor SDL's text that follows the key-down before its key-up | The 2.4.2 window library drops the WM_CHAR of a key-down a handler took (`m_lastKeydownProcessed`). Without that the console that ` opens closed again on its char (FAF's `console.lua` closes on char 96), on every SDL platform; the chat opens on Enter's key-down too. Not Android's own, a candidate for the engine |
+| `dependencies/SDL3/src/video/android/SDL_androidevents.c` (SDL 3.4.18) | A pump that is not to wait does not wait while the activity is paused | With `SDL_HINT_ANDROID_BLOCK_ON_PAUSE` off, SDL waited 100 ms for the activity's events in each pump while paused, and the engine pumps at each pass of its loop and every 4 ms of its waits: in the back a skirmish's simulation ran at half speed (30 s of game time lost in 61 s), and a network game's would hold up the others. The engine paces its loop itself (it waits for the next beat), as on the PC. No hint changes the 100 ms |
 
 `src/gpg/gal/backends/vulkan/RayTracingVulkan.cpp` is compiled from the overlay as well, unchanged: it
 includes its patched header, `DeviceVulkan.h`, by its bare name, which would find the unpatched one
