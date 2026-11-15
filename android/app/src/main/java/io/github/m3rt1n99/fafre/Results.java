@@ -57,7 +57,6 @@ final class Results {
     }
 
     static File write(android.content.Context context, Storage storage) throws IOException {
-        RendererReport.refresh(context);
         GameReport.refresh(context);
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date());
         File zip = new File(storage.results(), "faf-re-results-" + stamp + ".zip");
@@ -68,7 +67,6 @@ final class Results {
             summary.put("cores", SpeedSampler.cores().describe());
             summary.put("game", game(context));
             summary.put("math", TestState.mathVerdict());
-            summary.put("renderer", TestState.rendererVerdict());
             summary.put("client", TestState.gameVerdict());
             JSONArray replays = new JSONArray();
             for (TestState.Replay replay : TestState.replaySnapshot()) {
@@ -129,13 +127,6 @@ final class Results {
                 addFile(out, MathCheck.KNOWN_FILE, known);
             }
             add(out, "log.txt", String.join("\n", TestState.log()).getBytes(StandardCharsets.UTF_8));
-            if (!TestState.rendererReport().isEmpty()) {
-                add(out, "renderer.txt", TestState.rendererReport().getBytes(StandardCharsets.UTF_8));
-            }
-            File tombstone = RendererReport.tombstone(context);
-            if (tombstone.isFile()) {
-                addFile(out, RendererReport.TOMBSTONE, tombstone);
-            }
             if (!TestState.gameReport().isEmpty()) {
                 add(out, "game.txt", TestState.gameReport().getBytes(StandardCharsets.UTF_8));
             }

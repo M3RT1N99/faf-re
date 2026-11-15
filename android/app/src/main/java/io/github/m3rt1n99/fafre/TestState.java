@@ -79,7 +79,6 @@ final class TestState {
     private static String sMathVerdict = "";
     private static long sRevision;
     private static boolean sVisible;
-    private static String sRendererReport = "";
     private static String sGameReport = "";
 
     private TestState() {
@@ -162,26 +161,6 @@ final class TestState {
 
     static synchronized List<Replay> replaySnapshot() {
         return new ArrayList<>(sReplays);
-    }
-
-    /** The renderer test's report, from its process (RendererReport). */
-    static synchronized void renderer(String report) {
-        sRendererReport = report;
-        ++sRevision;
-    }
-
-    static synchronized String rendererReport() {
-        return sRendererReport;
-    }
-
-    /** "Renderer: PASS: 600 frames ..." from the report, or that it has not run. */
-    static synchronized String rendererVerdict() {
-        for (String line : sRendererReport.split("\n")) {
-            if (RendererReport.isVerdict(line)) {
-                return "Renderer: " + line;
-            }
-        }
-        return sRendererReport.isEmpty() ? "" : "Renderer: running, no verdict yet";
     }
 
     /** The game's report, from its process (GameReport). */

@@ -13,7 +13,7 @@ import java.io.OutputStream;
 import java.util.List;
 
 /**
- * The app's processes of their own, the renderer test's and the game's: whether one runs, and
+ * The app's process of its own, the game's: whether it runs, and
  * how it ended, as Android tells it (ApplicationExitInfo, Android 11 and later).
  */
 final class ProcessExit {

@@ -61,7 +61,6 @@ public final class MainActivity extends Activity {
     private boolean mScreenKeptOn;
 
     private TextView mMathResult;
-    private TextView mRendererResult;
     private TextView mGameResult;
     private TextView mNewest;
     private TextView mDataStatus;
@@ -93,7 +92,7 @@ public final class MainActivity extends Activity {
         TextView title = text(getString(R.string.app_name) + " " + BuildConfig.VERSION_NAME, 22, ACCENT);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         column.addView(title);
-        column.addView(text("Engine test build " + BuildConfig.GIT_COMMIT + " · headless simulation, renderer test, game start", 13, MUTED));
+        column.addView(text("Engine test build " + BuildConfig.GIT_COMMIT + " · headless simulation, game start", 13, MUTED));
         column.addView(text(Results.device(), 13, MUTED));
 
         // 1. Arithmetic.
@@ -149,16 +148,7 @@ public final class MainActivity extends Activity {
         mReplayResults.setTypeface(Typeface.MONOSPACE);
         replays.addView(mReplayResults);
 
-        // 4. Renderer.
-        LinearLayout renderer = card(column, "4 · Renderer (Vulkan)",
-            "The engine's own renderer on this phone: the Vulkan backend the PC version uses brings up its device on "
-                + "the screen and clears it in changing colours for " + GalSmokeActivity.SECONDS + " seconds. No game data, "
-                + "no shaders yet. Back ends it early.");
-        mStartButtons.add(button(renderer, "Run renderer test", v -> startActivity(new Intent(this, GalSmokeActivity.class))));
-        mRendererResult = text("", 14, TEXT);
-        renderer.addView(mRendererResult);
-
-        // 5. The game.
+        // 5. The game; card 4, the renderer test, has gone: the game's report names the GPU, the swap chain and the BC path.
         LinearLayout game = card(column, "5 · Game",
             "The whole game on this phone, as the PC starts it: with your SCFA and FAF's game files of the newest version "
                 + "on the phone. The replay test brings each replay's own version (cards 2 and 3); \"Get FAF's newest "
@@ -251,7 +241,6 @@ public final class MainActivity extends Activity {
     }
 
     private void refresh() {
-        RendererReport.refresh(this);
         GameReport.refresh(this);
         long revision = TestState.revision();
         boolean running = TestState.running();
@@ -278,10 +267,6 @@ public final class MainActivity extends Activity {
         }
         String math = TestState.mathVerdict();
         mMathResult.setText(math);
-        String rendererVerdict = TestState.rendererVerdict();
-        mRendererResult.setText(rendererVerdict);
-        mRendererResult.setTextColor(rendererVerdict.startsWith("Renderer: PASS") ? PASS
-            : rendererVerdict.isEmpty() || rendererVerdict.startsWith("Renderer: running") ? TEXT : FAIL);
         mMathResult.setTextColor(math.startsWith("PASS") ? PASS : math.startsWith("FAIL") ? FAIL : TEXT);
         String gameVerdict = TestState.gameVerdict();
         mGameResult.setText(gameVerdict);
