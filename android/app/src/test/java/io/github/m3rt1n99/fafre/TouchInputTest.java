@@ -202,6 +202,11 @@ public class TouchInputTest {
         }
 
         @Override
+        public void griffDragGiveUp(float x, float y) {
+            events.add("griff drag given up " + (int) x + " " + (int) y);
+        }
+
+        @Override
         public void restTap(float x, float y, int railNow) {
             events.add("rest tap " + (int) x + " " + (int) y + " rail " + railNow);
         }
@@ -536,6 +541,93 @@ public class TouchInputTest {
         up(0, 1410);
         expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100",
                "griff drag end 200 100");
+    }
+
+    @Test
+    public void griffARestedDragTheSystemTakesIsGivenUpNotEnded() {
+        // FAF's formation is ordered as its right button goes up: a drag no finger lifted gives it up, as a route is given up.
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        touch.formation(mouse.lastDrag);
+        touch.cancel();
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100",
+               "griff drag given up 200 100");
+        // What is left of the finger gives nothing.
+        moveFirst(260, 100, 1500);
+        up(0, 1600);
+        expect("move 100 50", "held", "griff rest 100 50", "griff drag 100 50 now 200 100 rested rail 0", "move 200 100",
+               "griff drag given up 200 100");
+    }
+
+    @Test
+    public void griffANewFirstFingerGivesARestedDragUp() {
+        // A first finger while a gesture is live: the one before never lifted, and orders nothing.
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        touch.formation(mouse.lastDrag);
+        mouse.events.clear();
+        touch.down(5, 400, 300, 1500, true);
+        assertEquals("griff drag given up 200 100", mouse.events.get(0));
+        for (String event : mouse.events) {
+            assertFalse(mouse.events.toString(), event.startsWith("griff drag end"));
+        }
+    }
+
+    @Test
+    public void griffASecondFingerGivesFafsFormationUp() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        // The program says that it made FAF's formation of the drag (Game.SAID_FORMATION).
+        touch.formation(mouse.lastDrag);
+        mouse.events.clear();
+        down(1, 400, 100, 1500);
+        expect("griff drag given up 200 100", "given up");
+        // Both fingers rest until they lift: no pinch, no order.
+        moveBoth(260, 100, 450, 100);
+        up(1, 1600);
+        up(0, 1700);
+        expect("griff drag given up 200 100", "given up");
+    }
+
+    @Test
+    public void griffASecondFingerLeavesABoxAlone() {
+        // A rested drag the program made a box of, or one it has not said is a formation yet: the box goes on, and its lift ends it.
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        mouse.events.clear();
+        down(1, 400, 100, 1500);
+        moveBoth(220, 100, 420, 100);
+        up(1, 1600);
+        up(0, 1700);
+        for (String event : mouse.events) {
+            assertFalse(mouse.events.toString(), event.startsWith("griff drag given up") || event.startsWith("pinch"));
+        }
+        assertTrue(mouse.events.toString(), mouse.events.contains("griff drag end 220 100"));
+    }
+
+    @Test
+    public void griffTheFormationsWordIsForOneDragAlone() {
+        griff();
+        down(0, 100, 50, 1000);
+        timerRuns();
+        moveFirst(200, 100, 1400);
+        int earlier = mouse.lastDrag;
+        up(0, 1500);
+        down(0, 300, 50, 2000);
+        timerRuns();
+        moveFirst(400, 100, 2400);
+        touch.formation(earlier);
+        mouse.events.clear();
+        down(1, 600, 100, 2500);
+        assertTrue(mouse.events.toString(), mouse.events.isEmpty());
     }
 
     @Test

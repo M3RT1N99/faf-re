@@ -1,11 +1,13 @@
--- What the touch scheme Griff shows (android/TOUCH_UI.md "Griff"), in FAF's own UI and look, at the HUD's factor: the rail's
--- Box, Plus and Groups and the undo's button in a row at the top left, made as FAF's orders panel makes its buttons (the
--- empty slot's frame, an icon of FAF's own in it, FAF's glow under a finger and its selected order's edge while lit); the
--- hints where FAF prints its own messages (textdisplay.lua, as its PrintText); and the waypoint a resting finger marked for
--- deletion, under FAF's own Cancel icon (mousetooltips.lua). The activity keeps the fingers: one on Box, Plus or the undo's
--- button is its own, as a thumb may hold Plus while another finger taps (it lays a view of its own where this reports each,
+-- What the touch scheme Griff shows of its own buttons and words (android/TOUCH_UI.md "Griff"), in FAF's own UI and look, at
+-- the HUD's factor: the rail's Box, Plus and Groups and the undo's button in a row at the top left, and the draft's tick and
+-- cross above the construction panel, each made as FAF's orders panel makes its buttons (the empty slot's frame, an icon of
+-- FAF's own in it, FAF's glow pulsing under a finger and a selected order's edge while lit); the hints where FAF prints its
+-- own messages (textdisplay.lua, as its PrintText); and the waypoint a resting finger marked for deletion, under FAF's own
+-- Cancel icon (mousetooltips.lua). The activity keeps the fingers: one on Box, Plus, the undo's button, the tick or the
+-- cross is its own, as a thumb may hold Plus while another finger taps (it lays a view of its own where this reports each,
 -- FafreGriffHudPlaces), and it says how they look (FafreGriffHud). Groups is FAF's click's: a tap toggles it. Each piece
--- steps aside while something the player opened of FAF's lies over it (opened.lua). griff.lua makes the pieces with the
+-- steps aside while something the player opened of FAF's lies over it (opened.lua), and all of them while the player hides
+-- FAF's UI (gamemain.lua HideGameUI). What Griff shows on the map is griffmap.lua's. griff.lua makes the pieces with the
 -- game's UI and runs Frame each frame.
 
 local Bitmap = import('/lua/maui/bitmap.lua').Bitmap
@@ -18,22 +20,39 @@ local WorldView = import('/lua/ui/game/worldview.lua')
 --- The row's place in FAF's pixels at the HUD's factor: the top an H under FAF's panels at the left edge (138 of its lines,
 --- the multifunction panel's bottom), the left as far in as the multifunction panel's buttons; its buttons as far apart as
 --- FAF's orders grid has them (cells of 50 for a bitmap of 48), the undo's button a gap of a quarter button after the rail.
+--- The draft's tick and cross that gap above the construction panel and left of the column at the right (FAF's avatars),
+--- and as far apart.
 local TOP, LEFT, GAP, UNDO_GAP = 145, 10, 2, 12
---- The selected order's edge (the orders' *_btn_up_sel): a line this thick, this far in from the button's edge.
-local EDGE, EDGE_IN = 1, 5
---- FAF's glow over an order button under the mouse (orders.lua CreateOrderGlow, at its brightest).
-local GLOW = 0.4
+--- A selected order's edge, cut from FAF's art of one (orders/move_btn_up_sel: its frame and its edge, this far in from
+--- each side of its 48), laid over the button while it is lit.
+local SELECTED = '/textures/ui/common/game/orders/move_btn_up_sel.dds'
+local EDGE, SIDE = 7, 48
+--- FAF's glow over an order button under the mouse (orders.lua CreateOrderGlow): it pulses up to its brightest and back at
+--- this rate a second.
+local GLOW, GLOW_RATE = 0.4, 1.2
 --- An icon in a button as wide as FAF's order icons are in theirs, in FAF's pixels of its 48.
 local ICON_WIDTH = 38
---- The construction panel's icons of the selection and of attached units (its tabs' 56 x 32), and the part of each that is
---- the glyph: left, top, right and bottom in their pixels.
+--- The construction panel's icon of the selection (its tabs' 56 x 32), and the part of it that is the glyph: left, top,
+--- right and bottom in its pixels.
 local SELECT_ICON = '/game/construction-tab_btn/units-select_icon_bmp.dds'
-local ATTACHED_ICON = '/game/construction-tab_btn/units-attached_icon_bmp.dds'
-local SELECT_GLYPH, ATTACHED_GLYPH = {11, 8, 46, 24}, {11, 10, 46, 25}
+local SELECT_GLYPH = {11, 8, 46, 24}
 local ICON_SIZE = {56, 32}
+--- Groups shows the icons it shows and hides: the group icon's art (griffgroups.lua), FAF's strategic icon in one's own
+--- colour, three of them together at the size the game draws a selected unit's (one alone in red would read as a stop sign).
+local GROUP_ICON = '/textures/ui/common/game/strategicicons/icon_experimental_generic_selected.dds'
+local GROUP_ICON_SIDE = 16
+--- Where each of the three stands from the button's middle, in FAF's pixels.
+local GROUP_ICONS = {{-8, 6}, {8, 6}, {0, -7}}
+--- The draft's tick, FAF's tick of the faction's skin (multifunction.lua's map options), and its cross, FAF's Cancel
+--- (mousetooltips.lua), each as large as FAF's order icons; the tick's art is a small one.
+local TICK_ICON = '/game/temp_textures/checkmark.dds'
+local CROSS_ICON = '/game/orders-panel/no-parking_bmp.dds'
+local TICK_SIDE, CROSS_SIDE = 30, 38
 
---- How the activity has Box and Plus (Rail.look): idle, held while a finger is on it, lit for the next action.
+--- How the activity has Box and Plus (Rail.look, two bits each): idle, held while a finger is on it, lit for the next
+--- action; and its bits for a finger on the tick, the cross and the undo's button.
 local IDLE, HELD, LIT = 0, 1, 2
+local TICK_HELD, CROSS_HELD, UNDO_HELD = 16, 32, 64
 --- The undo's button as the activity has it (Game.HUD_UNDO_): none, offered, waiting for its undo.
 local UNDO_NONE, UNDO_WAITING = 0, 2
 
@@ -60,8 +79,8 @@ local Words = {
 --- How FAF prints its own messages (userInit.lua PrintText): this size, white, in the screen's middle; a hint goes sooner.
 local HINT_SIZE, HINT_SECONDS = 14, 2
 
---- The pieces, once Create made them: the row, its buttons by name, the undo's, the mark; and whether Groups shows the group
---- icons (griffgroups.lua).
+--- The pieces, once Create made them: the row, its buttons by name, the undo's, the tick and the cross, the mark; and
+--- whether Groups shows the group icons (griffgroups.lua).
 local pieces = false
 local groupsShown = true
 
@@ -89,9 +108,9 @@ function GroupsShown()
     return groupsShown
 end
 
---- A button of FAF's orders panel without an order of its own: the empty slot's frame, the hover glow FAF lays over an
---- order button under the mouse, and the edge of a selected order (its _btn_up_sel), in the faction's colour, while lit.
---- Under a finger it takes the press for itself, so that nothing reaches the map beneath.
+--- A button of FAF's orders panel without an order of its own: the empty slot's frame, the glow FAF lays over an order button
+--- under the mouse, and a selected order's edge while lit (cut from its art: the four sides of FAF's _btn_up_sel, its middle
+--- left for the icon). Under a finger it takes the press for itself, so that nothing reaches the map beneath.
 local function OrderButton(parent, name)
     local button = Bitmap(parent, UIUtil.SkinnableFile('/game/orders/basic-empty_bmp.dds'))
     button.name = name
@@ -99,39 +118,53 @@ local function OrderButton(parent, name)
     LayoutHelpers.AtCenterIn(button.glow, button)
     button.glow:DisableHitTest()
     button.glow:SetAlpha(0)
+    button.pulse = false
     button.edges = {}
-    for side = 1, 4 do
-        local edge = Bitmap(button)
-        edge:SetSolidColor(UIUtil.factionTextColor)
+    local cut = EDGE / SIDE
+    -- Top, bottom, left and right: the part of the selected art (u0, v0, u1, v1) and where it lies in the button.
+    for _, part in {{0, 0, 1, cut}, {0, 1 - cut, 1, 1}, {0, cut, cut, 1 - cut}, {1 - cut, cut, 1, 1 - cut}} do
+        -- A local of each side's own for the layout's functions.
+        local side = part
+        local edge = Bitmap(button, SELECTED)
+        edge:SetUV(side[1], side[2], side[3], side[4])
+        edge.Left:Set(function() return button.Left() + side[1] * button.Width() end)
+        edge.Top:Set(function() return button.Top() + side[2] * button.Height() end)
+        edge.Width:Set(function() return (side[3] - side[1]) * button.Width() end)
+        edge.Height:Set(function() return (side[4] - side[2]) * button.Height() end)
         edge:DisableHitTest()
+        -- By its alpha, as the glow: showing the button shows what it holds.
         edge:SetAlpha(0)
-        button.edges[side] = edge
+        table.insert(button.edges, edge)
     end
-    local top, bottom, left, right = unpack(button.edges)
-    LayoutHelpers.AtLeftTopIn(top, button, EDGE_IN, EDGE_IN)
-    LayoutHelpers.AtRightIn(top, button, EDGE_IN)
-    LayoutHelpers.SetHeight(top, EDGE)
-    LayoutHelpers.AtLeftIn(bottom, button, EDGE_IN)
-    LayoutHelpers.AtRightBottomIn(bottom, button, EDGE_IN, EDGE_IN)
-    LayoutHelpers.SetHeight(bottom, EDGE)
-    LayoutHelpers.AtLeftTopIn(left, button, EDGE_IN, EDGE_IN)
-    LayoutHelpers.AtBottomIn(left, button, EDGE_IN)
-    LayoutHelpers.SetWidth(left, EDGE)
-    LayoutHelpers.AtRightIn(right, button, EDGE_IN)
-    LayoutHelpers.AtTopIn(right, button, EDGE_IN)
-    LayoutHelpers.AtBottomIn(right, button, EDGE_IN)
-    LayoutHelpers.SetWidth(right, EDGE)
     button.HandleEvent = function(self, event)
         return true
     end
     return button
 end
 
---- How a button looks: FAF's glow while a finger holds it, the selected order's edge while it is lit.
-local function Look(button, held, lit)
-    button.glow:SetAlpha(held and GLOW or 0)
-    for _, edge in button.edges do
-        edge:SetAlpha(lit and 1 or 0)
+--- How a button looks this frame: while a finger holds it FAF's glow pulsing, from nothing up to its brightest and back, as
+--- FAF's over an order button under the mouse; while it is lit the selected order's edge.
+local function Look(button, held, lit, delta)
+    if held then
+        local pulse = button.pulse or {alpha = 0, rising = true}
+        local alpha = pulse.alpha + (pulse.rising and 1 or -1) * delta * GLOW_RATE
+        if alpha > GLOW then
+            alpha, pulse.rising = GLOW, false
+        elseif alpha < 0 then
+            alpha, pulse.rising = 0, true
+        end
+        pulse.alpha = alpha
+        button.pulse = pulse
+        button.glow:SetAlpha(alpha)
+    elseif button.pulse then
+        button.pulse = false
+        button.glow:SetAlpha(0)
+    end
+    if button.lit ~= lit then
+        button.lit = lit
+        for _, edge in button.edges do
+            edge:SetAlpha(lit and 1 or 0)
+        end
     end
 end
 
@@ -150,8 +183,8 @@ end
 
 --- An icon of FAF's own in a button: the glyph of a texture (`glyph`, in its pixels of `size`), as wide as FAF's order icons
 --- are in theirs.
-local function Icon(button, spec, glyph, size)
-    local icon = Bitmap(button, SkinOrUef(spec))
+local function Icon(button, texture, glyph, size)
+    local icon = Bitmap(button, texture)
     local left, top, right, bottom = unpack(glyph)
     icon:SetUV(left / size[1], top / size[2], right / size[1], bottom / size[2])
     LayoutHelpers.SetDimensions(icon, ICON_WIDTH, ICON_WIDTH * (bottom - top) / (right - left))
@@ -160,11 +193,19 @@ local function Icon(button, spec, glyph, size)
     return icon
 end
 
---- A label in FAF's font in a button, as FAF writes on its order buttons (orders.lua ButtonTextFunc): white with a shadow, or
---- in `color`.
-local function Label(button, text, size, color)
+--- A whole texture of FAF's in a button, `side` of FAF's pixels each way.
+local function WholeIcon(button, texture, side)
+    local icon = Bitmap(button, texture)
+    LayoutHelpers.SetDimensions(icon, side, side)
+    LayoutHelpers.AtCenterIn(icon, button)
+    icon:DisableHitTest()
+    return icon
+end
+
+--- A label in FAF's font in a button, as FAF writes on its order buttons (orders.lua ButtonTextFunc): white with a shadow.
+local function Label(button, text, size)
     local label = UIUtil.CreateText(button, text, size, UIUtil.bodyFont)
-    label:SetColor(color or 'ffffffff')
+    label:SetColor('ffffffff')
     label:SetDropShadow(true)
     LayoutHelpers.AtCenterIn(label, button)
     label:DisableHitTest()
@@ -173,8 +214,8 @@ end
 
 --- The row (the user's decision of 2026-11-13: at the top left, where FAF's panels leave the map's edge free): Box, with FAF's
 --- own icon for selecting (the construction panel's selection tab, FAF's Select of its mouse tooltips); Plus, Shift's +;
---- Groups, with the construction panel's icon of units together; and after a gap the undo's button, with FAF's avatar bar
---- of the time it has left at its bottom, as the commander's avatar has its health.
+--- Groups, with the group icon it shows; and after a gap the undo's button, with FAF's avatar bar of the time it has left at
+--- its bottom, as the commander's avatar has its health. The draft's tick and cross, placed each frame by the panels.
 function Create(parent)
     local row = Group(parent)
     row:DisableHitTest()
@@ -183,16 +224,23 @@ function Create(parent)
 
     local box = OrderButton(row, 'box')
     LayoutHelpers.AtLeftTopIn(box, row)
-    box.icon = Icon(box, SELECT_ICON, SELECT_GLYPH, ICON_SIZE)
+    box.icon = Icon(box, SkinOrUef(SELECT_ICON), SELECT_GLYPH, ICON_SIZE)
 
-    -- Plus is Shift, which FAF's icons have no picture of: its +, in the skin's colour of the icons beside it.
+    -- Plus is Shift, which FAF's icons have no picture of: its +, as FAF writes on its order buttons.
     local plus = OrderButton(row, 'plus')
     LayoutHelpers.RightOf(plus, box, GAP)
-    plus.label = Label(plus, '+', 34, UIUtil.fontColor)
+    plus.label = Label(plus, '+', 34)
 
     local groups = OrderButton(row, 'groups')
     LayoutHelpers.RightOf(groups, plus, GAP)
-    groups.icon = Icon(groups, ATTACHED_ICON, ATTACHED_GLYPH, ICON_SIZE)
+    groups.icons = {}
+    for _, offset in GROUP_ICONS do
+        local icon = Bitmap(groups, GROUP_ICON)
+        LayoutHelpers.SetDimensions(icon, GROUP_ICON_SIDE, GROUP_ICON_SIDE)
+        LayoutHelpers.AtCenterIn(icon, groups, offset[2], offset[1])
+        icon:DisableHitTest()
+        table.insert(groups.icons, icon)
+    end
     groups.HandleEvent = function(self, event)
         if event.Type == 'ButtonPress' or event.Type == 'ButtonDClick' then
             groupsShown = not groupsShown
@@ -218,6 +266,18 @@ function Create(parent)
     row.Width:Set(function() return undo.Right() - row.Left() end)
     row.Height:Set(box.Height)
 
+    -- The draft's tick and cross, placed by the panels each frame the draft is open (PlaceDraftButtons).
+    local tick = OrderButton(parent, 'tick')
+    tick.Depth:Set(100)
+    LayoutHelpers.AtLeftTopIn(tick, parent)
+    tick.icon = WholeIcon(tick, UIUtil.SkinnableFile(TICK_ICON), TICK_SIDE)
+    tick:Hide()
+    local cross = OrderButton(parent, 'cross')
+    cross.Depth:Set(100)
+    LayoutHelpers.AtLeftTopIn(cross, parent)
+    cross.icon = WholeIcon(cross, UIUtil.SkinnableFile(CROSS_ICON), CROSS_SIDE)
+    cross:Hide()
+
     local mark = Bitmap(parent, UIUtil.SkinnableFile('/game/orders-panel/no-parking_bmp.dds'))
     mark:DisableHitTest()
     mark.Depth:Set(99)
@@ -225,8 +285,8 @@ function Create(parent)
     mark.Top:Set(0)
     mark:Hide()
 
-    pieces = {row = row, box = box, plus = plus, groups = groups, undo = undo, mark = mark, said = {}, looks = 0}
-    Look(groups, false, groupsShown)
+    pieces = {row = row, box = box, plus = plus, groups = groups, undo = undo, tick = tick, cross = cross, mark = mark,
+        said = {}, looks = 0, colour = false}
 end
 
 --- Whether a piece's box and one of the boxes the player opened (left, top, right and bottom of each) share more than an edge.
@@ -252,11 +312,11 @@ local function Show(piece, wanted, opened)
 end
 
 --- The marked waypoint, under FAF's Cancel icon, while FAF's cursor hovers its very command: lifting the finger takes it out.
-local function Mark()
+local function Mark(hidden)
     local mark = pieces.mark
     local x, y, z, hovered = FafreGriffMarked()
     local view = WorldView.viewLeft
-    if not x or not hovered or not view then
+    if hidden or not x or not hovered or not view then
         mark:Hide()
         return
     end
@@ -266,38 +326,75 @@ local function Mark()
     mark:Show()
 end
 
+--- The draft's tick and cross while the draft is open: the tick a gap above the construction panel's top (`anchors.top`,
+--- the map's bottom where it does not show) and left of the column at the right (`anchors.left`, the map's right), the
+--- cross a gap left of it.
+local function PlaceDraftButtons(anchors)
+    local view = WorldView.viewLeft
+    local tick, cross = pieces.tick, pieces.cross
+    local gap = LayoutHelpers.ScaleNumber(UNDO_GAP)
+    local bottom = anchors.top >= 0 and anchors.top or (view and view.Bottom() or 0)
+    local right = anchors.left >= 0 and anchors.left or (view and view.Right() or 0)
+    tick.Left:Set(right - gap - tick.Width())
+    tick.Top:Set(bottom - gap - tick.Height())
+    cross.Left:Set(tick.Left() - gap - cross.Width())
+    cross.Top:Set(tick.Top())
+end
+
 --- Each frame of the session's UI: Box and Plus as the activity has them, Groups as it is, the undo's button with its time,
---- each stepping aside from what the player opened (`opened`, opened.lua's boxes); where Box, Plus and the undo's button are,
---- for the activity's fingers, where that changed; the marked waypoint.
-function Frame(opened)
+--- the draft's tick and cross while the draft is open (`anchors`: where the construction panel and the column at the right
+--- begin, griff.lua DraftAnchors), each stepping aside from what the player opened (`opened`, opened.lua's boxes) and all of
+--- them while FAF's UI is hidden (`hidden`); Groups' icon in one's own icons' colour (`colour`, griffgroups.lua's); where
+--- Box, Plus, the undo's button, the tick and the cross are, for the activity's fingers, where that changed; the marked
+--- waypoint. `delta`: the frame's seconds, for the glow's pulse.
+function Frame(opened, delta, anchors, hidden, colour)
     if not pieces then
         return
     end
     local looks, undoShown, undoLeft = FafreGriffHud()
     local boxLook, plusLook = math.mod(looks, 4), math.mod(math.floor(looks / 4), 4)
+    local function Bit(value)
+        return math.mod(math.floor(looks / value), 2) == 1
+    end
     -- A finger came onto Box or Plus: FAF's sound of an order button's press.
     local wasBox, wasPlus = math.mod(pieces.looks, 4), math.mod(math.floor(pieces.looks / 4), 4)
     if (boxLook == HELD and wasBox ~= HELD) or (plusLook == HELD and wasPlus ~= HELD) then
         PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Action_MouseDown'}))
     end
     pieces.looks = looks
-    Look(pieces.box, boxLook == HELD, boxLook == LIT)
-    Look(pieces.plus, plusLook == HELD, plusLook == LIT)
-    Look(pieces.groups, false, groupsShown)
+    Look(pieces.box, boxLook == HELD, boxLook == LIT, delta)
+    Look(pieces.plus, plusLook == HELD, plusLook == LIT, delta)
+    Look(pieces.groups, false, groupsShown, delta)
+    Look(pieces.undo, Bit(UNDO_HELD), false, delta)
+    Look(pieces.tick, Bit(TICK_HELD), false, delta)
+    Look(pieces.cross, Bit(CROSS_HELD), false, delta)
+    if colour and colour ~= '' and pieces.colour ~= colour then
+        for _, icon in pieces.groups.icons do
+            icon:SetColorMask(colour)
+        end
+        pieces.colour = colour
+    end
     local undo = pieces.undo
     undo.label:SetText(undoShown == UNDO_WAITING and 'Undo...' or 'Undo')
     undo.bar:SetValue(undoShown == UNDO_WAITING and 0 or undoLeft)
+    local drafting = FafreGriffDraftPlans() >= 0
+    if drafting then
+        PlaceDraftButtons(anchors)
+    end
+    local shown = not hidden
     local places = {}
-    for _, name in {'box', 'plus', 'undo'} do
-        local piece = pieces[name]
-        local aside = Show(piece, name ~= 'undo' or undoShown ~= UNDO_NONE, opened)
+    for _, item in {{'box', true}, {'plus', true}, {'undo', undoShown ~= UNDO_NONE}, {'tick', drafting}, {'cross', drafting}} do
+        local piece = pieces[item[1]]
+        local wanted = shown and item[2]
+        local aside = Show(piece, wanted, opened)
         table.insert(places, piece.Left())
         table.insert(places, piece.Top())
         table.insert(places, piece.Right())
         table.insert(places, piece.Bottom())
-        table.insert(places, aside and 1 or 0)
+        -- Hidden with FAF's UI, a piece the activity knows is aside: its view takes no finger.
+        table.insert(places, (aside or (hidden and item[2])) and 1 or 0)
     end
-    Show(pieces.groups, true, opened)
+    Show(pieces.groups, shown, opened)
     local same = table.getn(places) == table.getn(pieces.said)
     for at, value in places do
         same = same and value == pieces.said[at]
@@ -306,5 +403,5 @@ function Frame(opened)
         pieces.said = places
         FafreGriffHudPlaces(unpack(places))
     end
-    Mark()
+    Mark(hidden)
 end

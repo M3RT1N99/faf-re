@@ -162,10 +162,9 @@ do
                 if not FafreGriffWanted() then
                     return
                 end
-                -- What a slot asks of FAF's selection.lua: without all of it FAF's own groups stay.
-                for _, name in {'AppendSelectionToSet', 'FactorySelection', 'AppendSetToSelection', 'ApplySelectionSet'} do
-                    Scale.Needed(Selection[name], 'selection.lua ' .. name)
-                end
+                -- What a slot asks of FAF's selection.lua itself, a rest with Plus (Store): without it FAF's own groups stay.
+                -- A slot's other presses are FAF's own control's, which go by FAF's selection.lua as FAF's do.
+                Scale.Needed(Selection.AppendSelectionToSet, 'selection.lua AppendSelectionToSet')
                 empties = {}
                 for _, name in SLOTS do
                     empties[name] = MakeEmpty(name)

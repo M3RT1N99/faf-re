@@ -197,6 +197,7 @@ final class Game {
     static final int SAID_PAN = 5;
     static final int SAID_ORDERED = 6;
     static final int SAID_UNDONE = 7;
+    static final int SAID_FORMATION = 8;
 
     /**
      * {@link #griffHint}: a hint of the activity's, which FAF's UI says where FAF prints its own messages (griffhud.lua Words,
@@ -205,15 +206,34 @@ final class Game {
     static final int HINT_CANCELLED = 13;
 
     /**
-     * {@link #griffHudPlaces}: where FAF's UI drew Box, Plus and the undo's button, five numbers each: left, top, right, bottom in
-     * the picture's pixels, and 1 where something the player opened of FAF's lies over it.
+     * {@link #griffHudPlaces}: where FAF's UI drew Box, Plus, the undo's button, the draft's tick and its cross, five numbers each:
+     * left, top, right, bottom in the picture's pixels, and 1 where something the player opened of FAF's lies over it or FAF's UI
+     * is hidden.
      */
     static final int HUD_PIECE = 5;
-    static final int HUD_VALUES = 3 * HUD_PIECE;
+    static final int HUD_VALUES = 5 * HUD_PIECE;
     /** {@link #setGriffHud}: the undo's button not shown, offered for its time, or waiting for its undo. */
     static final int HUD_UNDO_NONE = 0;
     static final int HUD_UNDO_OFFERED = 1;
     static final int HUD_UNDO_WAITING = 2;
+    /** {@link #setGriffHud}: a finger holds the draft's tick, its cross, the undo's button, FAF's glow pulses on it. */
+    static final int HUD_HELD_TICK = 16;
+    static final int HUD_HELD_CROSS = 32;
+    static final int HUD_HELD_UNDO = 64;
+
+    /**
+     * {@link #setGriffShown}: what the activity shows in FAF's UI (griffmap.lua), in the picture's pixels. The handle as the screen
+     * keeps it: its middle, its group's middle, the selection's count, 1 where it points at its group from elsewhere, 1 with Box
+     * lit, which it steps aside for. A resting finger's ring: its middle. A stroke: what lifting it gives (Stroke.SAYS_), 1 with
+     * FAF's attack-move armed, its label's middle, how many points its route has, then their x and y: where the stroke began,
+     * then each waypoint. Box's box over deposits: two corners. The loupe's circle: its middle and radius.
+     */
+    static final int SHOWN_HANDLE = 0;
+    static final int SHOWN_RING = 1;
+    static final int SHOWN_STROKE = 2;
+    static final int SHOWN_BOX = 3;
+    static final int SHOWN_LOUPE = 4;
+    static final int SHOWN_STROKE_HEAD = 5;
 
     /**
      * Griff on or off, and in the picture's pixels: the handle's radius, how far from its middle a finger is on it, its room
@@ -252,7 +272,8 @@ final class Game {
      * ticked, with the rail's bits it used; SAID_PAN: a drag's number ({@link #griffDrag}) that the program made a pan of;
      * SAID_ORDERED: a gesture ordered where its undo saves work, the number of its record, which the undo's button takes back
      * from now on (a record told anew after its undo was not done is offered again), or 0: an order no gesture's, or one whose
-     * undo would save nothing, ended the record; SAID_UNDONE: the undo of the record of this number is over, and what it did.
+     * undo would save nothing, ended the record; SAID_UNDONE: the undo of the record of this number is over, and what it did;
+     * SAID_FORMATION: a drag's number that the program made FAF's formation of, which a drag without its lift gives up.
      */
     static native int griffSaid(int[] said);
 
@@ -301,6 +322,13 @@ final class Game {
     static native void griffDragEnd(int x, int y, float velocityX, float velocityY);
 
     /**
+     * The drag goes without its lift, here (a second finger on FAF's formation, the system taking the fingers, a new first
+     * finger): FAF's formation is given up, nothing ordered ({@link #SAID_FORMATION} said the drag was one); any other drag ends
+     * as at a lift, without a pan's glide.
+     */
+    static native void griffDragGiveUp(int x, int y);
+
+    /**
      * A finger rested here and lifted: on a panel FAF's right click, with the tap help, and with Shift for RAIL_QUEUE; on the map
      * where its rest marked a waypoint, FAF's removal of that order; where it was the ground's, FAF's right click there (Shift
      * for RAIL_QUEUE); else nothing. With RAIL_BOX there was no rest, and on the map it is Box's tap, which says the rail's bits
@@ -323,13 +351,20 @@ final class Game {
     static native void griffHint(int kind, int number);
 
     /**
-     * How FAF's UI draws Griff's rail and undo's button (griffhud.lua): Box's and Plus's looks (Rail.look, two bits each, Box's
-     * first), the undo's button (HUD_UNDO_) and how much of its time it has left, 1 to 0.
+     * How FAF's UI draws Griff's rail, undo's button and the draft's tick and cross (griffhud.lua): Box's and Plus's looks
+     * (Rail.look, two bits each, Box's first) and the HUD_HELD_ bits, the undo's button (HUD_UNDO_) and how much of its time it has
+     * left, 1 to 0.
      */
-    static native void setGriffHud(int railLooks, int undo, float undoLeft);
+    static native void setGriffHud(int looks, int undo, float undoLeft);
 
-    /** Where FAF's UI drew Box, Plus and the undo's button, into `values` (HUD_VALUES); how many numbers, 0 until it said. */
+    /**
+     * Where FAF's UI drew Box, Plus, the undo's button, the draft's tick and its cross, into `values` (HUD_VALUES); how many
+     * numbers, 0 until it said.
+     */
     static native int griffHudPlaces(float[] values);
+
+    /** One of the activity's pieces that FAF's UI draws (SHOWN_), `count` of `values`; none (0): it does not show. */
+    static native void setGriffShown(int piece, float[] values, int count);
 
     /**
      * The camera follows fingers (TouchInput.Mouse#pinch): `start` keeps what lies here under them; then two fingers

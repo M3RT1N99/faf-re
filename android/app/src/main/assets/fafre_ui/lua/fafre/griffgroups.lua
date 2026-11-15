@@ -16,8 +16,10 @@ local Hud = import('/fafre_ui/lua/fafre/griffhud.lua')
 
 local ICON = '/textures/ui/common/game/strategicicons/icon_experimental_generic_rest.dds'
 local SELECTED = '/textures/ui/common/game/strategicicons/icon_experimental_generic_selected.dds'
---- The count's height as a part of the icon's side.
+--- The count's height as a part of the icon's side, and how wide it may be at most: a count of three digits or more is
+--- written smaller, so that it stays on the disc.
 local COUNT = 0.6
+local COUNT_WIDE = 0.8
 
 --- The icons made, on the map's view they were made on, and the places the program writes each frame: an icon's middle on
 --- the picture, its group's count and whether all of the group is selected (1), four numbers each.
@@ -49,18 +51,22 @@ local function Place(icon, x, y, count, selected, side, colour)
         icon.Height:Set(size)
         shown.selected = selected
     end
-    if shown.side ~= side then
+    if shown.side ~= side or shown.count ~= count then
         -- FAF's text scales its size by the HUD's factor; the icon's is the strategic icons'.
-        icon.count:SetFont(UIUtil.bodyFont, COUNT * side / LayoutHelpers.GetPixelScaleFactor())
+        local text = tostring(count)
+        local size = COUNT * side / LayoutHelpers.GetPixelScaleFactor()
+        icon.count:SetFont(UIUtil.bodyFont, size)
+        local wide = icon.count:GetStringAdvance(text)
+        if wide > COUNT_WIDE * side then
+            icon.count:SetFont(UIUtil.bodyFont, size * COUNT_WIDE * side / wide)
+        end
+        icon.count:SetText(text)
         shown.side = side
+        shown.count = count
     end
     if shown.colour ~= colour then
         icon:SetColorMask(colour)
         shown.colour = colour
-    end
-    if shown.count ~= count then
-        icon.count:SetText(tostring(count))
-        shown.count = count
     end
     icon.Left:SetValue(x - icon.Width() / 2)
     icon.Top:SetValue(y - icon.Height() / 2)
@@ -69,10 +75,11 @@ local function Place(icon, x, y, count, selected, side, colour)
     end
 end
 
---- Each frame of the session's UI: the icons where the program places them, while Groups shows them; the program keeps the
---- groups each frame either way, and without the places there is no icon for a tap either.
-function Frame()
-    local wanted = Hud.GroupsShown() and WorldView.viewLeft or false
+--- Each frame of the session's UI: the icons where the program places them, while Groups shows them and FAF's UI is not
+--- hidden (`hidden`); the program keeps the groups each frame either way, and without the places there is no icon for a tap
+--- either. Answers the colour of one's own strategic icons, which Groups' icon takes.
+function Frame(hidden)
+    local wanted = not hidden and Hud.GroupsShown() and WorldView.viewLeft or false
     -- FAF makes the map's view anew where it splits and joins it: the icons go with the old one.
     if wanted and wanted ~= view then
         for _, icon in icons do
@@ -99,4 +106,5 @@ function Frame()
             icon:Hide()
         end
     end
+    return colour
 end

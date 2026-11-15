@@ -183,7 +183,7 @@ final class TouchInput implements Fingers {
         /** Griff: the cursor hovers here for the stroke, so that the game shows and says what its end is on. */
         void strokeHover(float x, float y);
 
-        /** Griff: the stroke was given up before it gave anything, which the user should see. */
+        /** Griff: a stroke or FAF's formation was given up before it gave anything, which the user should see. */
         void strokeGivenUp();
 
         /** Griff: the rail's buttons that count now, RAIL_ bits. */
@@ -204,6 +204,12 @@ final class TouchInput implements Fingers {
 
         /** Griff: what {@link #griffDrag} pressed goes up here; a pan's camera glides on at this velocity (pixels a second). */
         void griffDragEnd(float x, float y, float velocityX, float velocityY);
+
+        /**
+         * Griff: what {@link #griffDrag} pressed goes without a finger's lift, here: FAF's formation is given up, not ordered,
+         * as a route is that no finger lifted; any other drag ends as at a lift, without a pan's glide.
+         */
+        void griffDragGiveUp(float x, float y);
 
         /**
          * Griff: a rest without a drag: on a panel FAF's right click there (RAIL_QUEUE with Shift); on the map what the rest
@@ -642,9 +648,13 @@ final class TouchInput implements Fingers {
     /** Griff: what the finger holds is a drag the program pressed (Mouse#griffDrag), not `mPressed`; it may be a pan. */
     private boolean mPressedGriff;
     private boolean mMayPan;
-    /** Griff: the last drag's number (Mouse#griffDrag), and whether the program has said that it made a pan of it (#panned). */
+    /**
+     * Griff: the last drag's number (Mouse#griffDrag), and whether the program has said that it made a pan of it (#panned) or
+     * FAF's formation (#formation).
+     */
     private int mDrag;
     private boolean mPanned;
+    private boolean mFormation;
     /** Griff: a rest's ring is shown; the program heard of the rest, and not yet how its gesture went on (Mouse#griffRest). */
     private boolean mRing;
     private boolean mRestSaid;
@@ -731,6 +741,16 @@ final class TouchInput implements Fingers {
     }
 
     /**
+     * Griff: the program made FAF's formation of drag number `drag` (Game.SAID_FORMATION), after a rest on the ground: a second
+     * finger gives it up, nothing ordered. A word for an earlier drag counts for nothing.
+     */
+    void formation(int drag) {
+        if (drag == mDrag) {
+            mFormation = true;
+        }
+    }
+
+    /**
      * Griff: FAF stored a control group (Game.SAID_GROUP_STORED, a right press on its slot): whether the phone buzzes for it now,
      * so that each stored group is felt once, as the mockup's. It is the last rest's, which buzzed as it rang, unless Box counted:
      * that gives a rest no ring, but on a panel leaves its lift FAF's right press. A rest's ring counts for one store, so one that
@@ -802,6 +822,12 @@ final class TouchInput implements Fingers {
             mMouse.griffDragEnd(mFirst.x, mFirst.y, 0, 0);
             mPressedGriff = false;
             startTwo(id, x, y, time);
+        } else if (mState == State.PRESSED && mPressedGriff && mFormation) {
+            // Griff: a second finger gives FAF's formation up, nothing ordered, as it gives a route up; both rest until they lift.
+            mMouse.griffDragGiveUp(mFirst.x, mFirst.y);
+            mPressedGriff = false;
+            mMouse.strokeGivenUp();
+            mState = State.SPENT;
         } else if (mState == State.PINCH_PAN) {
             // Griff: a finger again beside the one left of a pinch pinches anew, from where the two are.
             endPinch(false, time);
@@ -1169,7 +1195,7 @@ final class TouchInput implements Fingers {
     /**
      * The system took the fingers. What is held goes up, as a mouse's would, so a right button that a
      * finger held gives its order; no gesture comes of what is left of them. A line builds nothing that
-     * the finger did not finish.
+     * the finger did not finish. Griff orders only where a finger lifted: its formation goes, as its route.
      */
     @Override
     public void cancel() {
@@ -1235,7 +1261,11 @@ final class TouchInput implements Fingers {
 
     private void endGesture() {
         mMouse.stopTimer();
-        if (mState == State.PRESSED) {
+        if (mState == State.PRESSED && mPressedGriff) {
+            // Griff's drag goes without a lift: FAF's formation is given up, as a route is; any other ends as at a lift.
+            mMouse.griffDragGiveUp(mFirst.x, mFirst.y);
+            mPressedGriff = false;
+        } else if (mState == State.PRESSED) {
             releasePressed(false, 0);
         } else if (mState == State.PANNING) {
             mMouse.button(Game.BUTTON_MIDDLE, false, middleX(), middleY());
@@ -1385,9 +1415,11 @@ final class TouchInput implements Fingers {
         // The program takes what the rest found with the drag.
         mRestSaid = false;
         mPressedGriff = true;
-        // A pan glides on (releasePressed); only the program can tell it from a panel's or the minimap's drag (#panned).
+        // A pan glides on (releasePressed); only the program can tell it from a panel's or the minimap's drag (#panned), and a
+        // rested drag on the ground from a box (#formation).
         mMayPan = !rested && (rail & RAIL_BOX) == 0;
         mPanned = false;
+        mFormation = false;
         ++mDrag;
         mLadder.clear();
         mMouse.griffDrag(mStartX, mStartY, mFirst.x, mFirst.y, rested, rail, mDrag);

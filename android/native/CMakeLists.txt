@@ -317,7 +317,8 @@ target_link_libraries(faf_movie_player PRIVATE FFmpeg::FFmpeg)
 
 # The host (WX_LITE.md): the program's start, and the activity's surface, input and lifecycle as
 # Win32 messages.
-add_library(faf_host OBJECT src/host/GameHost.cpp src/host/GriffAndroid.cpp src/host/KeysAndroid.cpp src/host/MenuFingers.cpp)
+add_library(faf_host OBJECT src/host/GameHost.cpp src/host/GriffAndroid.cpp src/host/GriffShown.cpp src/host/KeysAndroid.cpp
+                            src/host/MenuFingers.cpp)
 target_link_libraries(faf_host PUBLIC faf_android_settings faf_wx_lite)
 # They take the engine's UI by its private header, whose helpers they mostly do not use.
 set_source_files_properties(src/host/GriffAndroid.cpp src/host/MenuFingers.cpp PROPERTIES COMPILE_OPTIONS -Wno-unused-function)

@@ -37,22 +37,19 @@ public class DraftTest {
     private static final int FREE = Draft.FREE;
 
     /**
-     * The program's numbers: open, its building on a deposit or not, the anchors, the counts, the resting finger on the map,
-     * then the places of plans, line and aim.
+     * The program's numbers: open, its building on a deposit or not, the counts, the resting finger on the map, then the places
+     * of plans, line and aim.
      */
-    private static float[] shown(boolean picksDeposit, float constructionTop, float columnLeft, float[][] plans, float[][] line,
-                                 float[] aim) {
-        int count = 8 + 8 * (plans.length + line.length + (aim != null ? 1 : 0));
+    private static float[] shown(boolean picksDeposit, float[][] plans, float[][] line, float[] aim) {
+        int count = 6 + 8 * (plans.length + line.length + (aim != null ? 1 : 0));
         float[] values = new float[Draft.VALUES];
         values[0] = 1;
         values[1] = picksDeposit ? 1 : 0;
-        values[2] = constructionTop;
-        values[3] = columnLeft;
-        values[4] = plans.length;
-        values[5] = line.length;
-        values[6] = aim != null ? 1 : 0;
-        values[7] = aim != null ? 1 : 0;
-        int at = 8;
+        values[2] = plans.length;
+        values[3] = line.length;
+        values[4] = aim != null ? 1 : 0;
+        values[5] = aim != null ? 1 : 0;
+        int at = 6;
         for (float[] place : plans) {
             System.arraycopy(place, 0, values, at, 8);
             at += 8;
@@ -74,7 +71,7 @@ public class DraftTest {
     }
 
     private static int count(float[] values) {
-        return 8 + 8 * ((int) values[4] + (int) values[5] + (int) values[6]);
+        return 6 + 8 * ((int) values[2] + (int) values[3] + (int) values[4]);
     }
 
     private static Draft draft(float[] values) {
@@ -97,14 +94,12 @@ public class DraftTest {
 
     @Test
     public void theProgramsPlacesComeOnTheScreen() {
-        float[] values = shown(true, 500, 1400, new float[][] {place(4, 100, 200, 10, FREE), place(9, 300, 200, 10, Draft.NEWEST | FREE)},
+        float[] values = shown(true, new float[][] {place(4, 100, 200, 10, FREE), place(9, 300, 200, 10, Draft.NEWEST | FREE)},
                                new float[][] {place(0, 320, 200, 10, Draft.TAKEN)}, place(0, 600, 100, 6, 0));
         Draft draft = new Draft();
         assertTrue(draft.update(values, count(values), HALF));
         assertTrue(draft.open());
         assertTrue(draft.picksDeposit());
-        assertEquals(270, draft.constructionTop(), 0);
-        assertEquals(710, draft.columnLeft(), 0);
         assertEquals(2, draft.plans());
         assertEquals(1, draft.lineCount());
         assertTrue(draft.aimShown());
@@ -125,12 +120,12 @@ public class DraftTest {
     }
 
     @Test
-    public void anchorsFafDoesNotShowStayUnknown() {
+    public void anEmptyDraftPicksNoDepositAndNoFingerRests() {
         Draft draft = new Draft();
-        float[] values = shown(false, -1, -1, new float[0][], new float[0][], null);
+        float[] values = shown(false, new float[0][], new float[0][], null);
         draft.update(values, count(values), HALF);
-        assertEquals(-1, draft.constructionTop(), 0);
-        assertEquals(-1, draft.columnLeft(), 0);
+        assertTrue(draft.open());
+        assertEquals(0, draft.plans());
         assertFalse(draft.picksDeposit());
         assertFalse("no finger rests", draft.restsOnMap());
     }
@@ -138,29 +133,30 @@ public class DraftTest {
     @Test
     public void onlyWholePlacesAreRead() {
         // The program says three plans, but the numbers hold two.
-        float[] values = shown(false, -1, -1, new float[][] {place(1, 100, 100, 10, FREE), place(2, 200, 100, 10, FREE)}, new float[0][],
+        float[] values = shown(false, new float[][] {place(1, 100, 100, 10, FREE), place(2, 200, 100, 10, FREE)}, new float[0][],
                                null);
-        values[4] = 3;
+        values[2] = 3;
         Draft draft = new Draft();
-        draft.update(values, 8 + 2 * 8 + 5, SAME);
+        draft.update(values, 6 + 2 * 8 + 5, SAME);
         assertEquals(2, draft.plans());
         assertEquals(0, draft.lineCount());
     }
 
     @Test
     public void anUpdateSaysWhetherAnythingChanged() {
-        float[] values = shown(false, 500, 1400, new float[][] {place(1, 100, 100, 10, FREE)}, new float[0][], null);
+        float[] values = shown(false, new float[][] {place(1, 100, 100, 10, FREE)}, new float[0][], null);
         Draft draft = new Draft();
         assertTrue(draft.update(values, count(values), SAME));
         assertFalse(draft.update(values.clone(), count(values), SAME));
-        values[9] = 101;
+        // The first plan's x: after the head's 6 numbers, its id.
+        values[7] = 101;
         assertTrue(draft.update(values, count(values), SAME));
         assertEquals(101, draft.x(0), 0);
     }
 
     @Test
     public void aFingerIsOnAPlanWithinItsBoxAndTheReach() {
-        Draft draft = draft(shown(false, -1, -1, new float[][] {place(5, 100, 100, 10, FREE)}, new float[0][], null));
+        Draft draft = draft(shown(false, new float[][] {place(5, 100, 100, 10, FREE)}, new float[0][], null));
         assertEquals(5, draft.planAt(100, 100, 15, 0));
         assertEquals(5, draft.planAt(125, 100, 15, 0));
         assertEquals(5, draft.planAt(75, 75, 15, 0));
@@ -170,7 +166,7 @@ public class DraftTest {
 
     @Test
     public void theNewestPlanIsFoundFirst() {
-        Draft draft = draft(shown(false, -1, -1, new float[][] {place(1, 100, 100, 10, FREE), place(2, 110, 100, 10, Draft.NEWEST | FREE)},
+        Draft draft = draft(shown(false, new float[][] {place(1, 100, 100, 10, FREE), place(2, 110, 100, 10, Draft.NEWEST | FREE)},
                                   new float[0][], null));
         assertEquals(2, draft.planAt(104, 100, 15, 0));
         assertEquals(1, draft.planAt(80, 100, 15, 0));
@@ -179,7 +175,7 @@ public class DraftTest {
     @Test
     public void aSmallPlanIsAtLeastItsLeastAboutItsMiddle() {
         // Far away its ground is a pixel on the screen: a finger finds it within the least half side and the reach.
-        Draft draft = draft(shown(false, -1, -1, new float[][] {place(3, 100, 100, 0.5f, FREE)}, new float[0][], null));
+        Draft draft = draft(shown(false, new float[][] {place(3, 100, 100, 0.5f, FREE)}, new float[0][], null));
         assertEquals(3, draft.planAt(126, 100, 15, 12));
         assertEquals(0, draft.planAt(128, 100, 15, 12));
         assertEquals(0, draft.planAt(117, 100, 15, 0));
@@ -188,14 +184,14 @@ public class DraftTest {
     @Test
     public void aPlanUnderAPanelIsNotUnderTheFinger() {
         // A finger there is on the panel, which takes it.
-        Draft draft = draft(shown(false, -1, -1, new float[][] {place(1, 100, 100, 10, FREE), place(2, 100, 100, 10, Draft.NEWEST)},
+        Draft draft = draft(shown(false, new float[][] {place(1, 100, 100, 10, FREE), place(2, 100, 100, 10, Draft.NEWEST)},
                                   new float[0][], null));
         assertEquals(1, draft.planAt(100, 100, 15, 0));
     }
 
     @Test
     public void aPlansNumberTellsWhetherItIsTheNewestOrOnADeposit() {
-        Draft draft = draft(shown(true, -1, -1, new float[][] {place(1, 100, 100, 10, Draft.ON_DEPOSIT | FREE),
+        Draft draft = draft(shown(true, new float[][] {place(1, 100, 100, 10, Draft.ON_DEPOSIT | FREE),
             place(2, 200, 100, 10, Draft.NEWEST | FREE)}, new float[0][], null));
         assertTrue(draft.onDeposit(1));
         assertFalse(draft.onDeposit(2));

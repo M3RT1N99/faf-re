@@ -76,14 +76,22 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double BAR_MENU_BUTTON_MM = 6.5;
     private static final double BAR_GAP_MM = 0.5;
     /**
-     * Griff's handle (the preview's sizes): its radius; how much further from it a finger is still on it; its room from the
-     * selection's units' blueprint box, which is wider than their icons.
+     * Griff's handle, which FAF's UI draws (griffmap.lua): as large as FAF's order buttons, 48 of FAF's pixels at the HUD's
+     * factor (its HANDLE_SIDE), its arrow at a group elsewhere FAF's ping arrow, its middle on the handle's edge (ARROW_SIDE);
+     * how much further from its edge a finger is still on it, and its room from the selection's units' blueprint box, which is
+     * wider than their icons.
      */
-    private static final double GRIFF_RADIUS_MM = 5.5;
+    private static final double GRIFF_HANDLE_SIDE = 48;
+    private static final double GRIFF_ARROW_SIDE = 52;
     private static final double GRIFF_TOUCH_MM = 1.5;
     private static final double GRIFF_GAP_MM = 2;
-    /** How far beyond the handle's edge its arrow at a group elsewhere reaches. */
-    private static final double GRIFF_ARROW_MM = 2;
+    /**
+     * The label of what a stroke's lift gives (FAF's tooltip, griffmap.lua): this far above the finger, kept this far into the
+     * free map and below its top.
+     */
+    private static final float LABEL_ABOVE_MM = 14;
+    private static final float LABEL_IN_MM = 7;
+    private static final float LABEL_BELOW_TOP_MM = 2.5f;
     /**
      * Griff's near misses (the mockup's pick): a tap picks one's own unit this far beside it, less with troops selected, so that
      * a tap for a move beside one's own units does not take the selection from them.
@@ -98,10 +106,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      */
     private static final double GRIFF_PLAN_REACH_MM = 1.5;
     private static final double GRIFF_DEPOSIT_MM = 5;
-    /** The draft's tick and cross: their sides, and their room from FAF's construction panel, the column at the right and each other. */
-    private static final double GRIFF_TICK_MM = 13;
-    private static final double GRIFF_CROSS_MM = 11;
-    private static final double GRIFF_TICK_ROOM_MM = 2;
     /** The loupe: the 6 mm about a resting finger, a copy of the game's picture at most this often. */
     private static final double LOUPE_SOURCE_MM = 6;
     private static final long LOUPE_MILLISECONDS = 33;
@@ -174,16 +178,39 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private Fingers mFingers;
     private final Runnable mTouchTimer = () -> mTouch.timer();
     /**
-     * The touch scheme Griff (TouchScheme) for this game, its rail, and what it draws over the game. FAF's UI draws the rail's
-     * Box and Plus and the undo's button (griffhud.lua); the views here take their fingers, where it reports them
-     * (Game.griffHudPlaces): Box's and Plus's, then the undo's.
+     * The touch scheme Griff (TouchScheme) for this game, and its rail. FAF's UI draws all Griff shows (griffhud.lua,
+     * griffmap.lua): the rail's Box and Plus, the undo's button, the draft's tick and cross, whose fingers the views here take
+     * where it reports them (Game.griffHudPlaces: Box's and Plus's, the undo's, the tick's, the cross's); and the handle, a
+     * resting finger's ring, a stroke, Box's box and the loupe's frame where the activity says (Game.setGriffShown). Only the
+     * loupe's copy of the game's picture is the activity's own (LoupeView).
      */
     private boolean mGriff;
     private final Rail mRail = new Rail();
     private final List<View> mRailTargets = new ArrayList<>();
-    private View mUndoTarget;
+    private HudTarget mUndoTarget;
+    private HudTarget mTickTarget;
+    private HudTarget mCrossTarget;
     private final float[] mHudValues = new float[Game.HUD_VALUES];
-    private GriffLayer mGriffLayer;
+    private LoupeView mLoupeView;
+    /** The handle as FAF's UI last heard it (Game.SHOWN_HANDLE), none at first. */
+    private final float[] mHandleShown = new float[7];
+    private final float[] mHandleSaid = new float[7];
+    private int mHandleSaidCount = -1;
+    /**
+     * The stroke a finger draws, as FAF's UI hears it (Game.SHOWN_STROKE, in the picture's pixels; 0 numbers: none), what its
+     * end is on (Stroke.END_, the program's answer, 0 not yet) and how it goes (Stroke.ROUTE, PATROL, CANCEL); its end and the
+     * free map's left, top and right at its middle on the screen, for its label.
+     */
+    private float[] mStrokeShown = new float[Game.SHOWN_STROKE_HEAD];
+    private int mStrokeShownCount;
+    private int mStrokeEnd;
+    private int mStrokeMode;
+    private float mStrokeEndX;
+    private float mStrokeEndY;
+    private float mFreeLeft;
+    private float mFreeTop;
+    private float mFreeRight = Float.MAX_VALUE;
+    private final float[] mPieceShown = new float[4];
     /**
      * The handle as Game.griff gives it, and as the screen shows it, while a game's frames are read: it stays where a stroke
      * began, and the program's answers for the stroke are its own.
@@ -207,8 +234,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             return mPageView.screenY(pictureY);
         }
     };
-    private DraftButton mTick;
-    private DraftButton mCross;
     private final Undo mUndo = new Undo();
     /** The app's pieces over the picture, which the program hears of when they change (Game.setGriffCovers). */
     private final Covers mCovers = new Covers();
@@ -338,7 +363,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void ring(boolean shown, float x, float y) {
-            mGriffLayer.showRing(shown, x, y);
+            showPiece(Game.SHOWN_RING, shown, x, y);
         }
 
         @Override
@@ -351,7 +376,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // As the last frame placed it. With Box the handle steps aside, for a box that starts under it.
             readGriff();
             return mHandle.shown() && (rail() & TouchInput.RAIL_BOX) == 0
-                && Math.hypot(x - mHandle.x(), y - mHandle.y()) <= (GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * viewPixelsPerMm();
+                && Math.hypot(x - mHandle.x(), y - mHandle.y()) <= handleRadius() + GRIFF_TOUCH_MM * viewPixelsPerMm();
         }
 
         @Override
@@ -374,9 +399,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         public void strokeShown(float[] xs, float[] ys, int count, int mode, float[] waypointXs, float[] waypointYs, int waypoints) {
             if (mHandle.stroke(count > 0)) {
                 // A new stroke: the handle stays where it began, and only the program's answers for this one count.
-                mGriffLayer.setStrokeEnd(0);
+                mStrokeEnd = 0;
             }
-            mGriffLayer.showStroke(xs, ys, count, mode, waypointXs, waypointYs, waypoints);
+            showStroke(xs, ys, count, mode, waypointXs, waypointYs, waypoints);
         }
 
         @Override
@@ -409,6 +434,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         public void griffDragEnd(float x, float y, float velocityX, float velocityY) {
             float scale = mPageView.scale();
             Game.griffDragEnd(fingerX(x), fingerY(y), velocityX / scale, velocityY / scale);
+        }
+
+        @Override
+        public void griffDragGiveUp(float x, float y) {
+            Game.griffDragGiveUp(fingerX(x), fingerY(y));
         }
 
         @Override
@@ -491,7 +521,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public void draftBox(int phase, float x0, float y0, float x1, float y1) {
-            mGriffLayer.showDraftBox(phase == TouchInput.DRAFT_SHOW, x0, y0, x1, y1);
+            if (phase == TouchInput.DRAFT_SHOW) {
+                mPieceShown[0] = pictureX(x0);
+                mPieceShown[1] = pictureY(y0);
+                mPieceShown[2] = pictureX(x1);
+                mPieceShown[3] = pictureY(y1);
+                Game.setGriffShown(Game.SHOWN_BOX, mPieceShown, 4);
+            } else {
+                Game.setGriffShown(Game.SHOWN_BOX, mPieceShown, 0);
+            }
             if (phase == TouchInput.DRAFT_END) {
                 Game.draftBox(fingerX(x0), fingerY(y0), fingerX(x1), fingerY(y1));
             }
@@ -641,21 +679,22 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         });
         root.addView(mFingerLayer);
         if (mGriff) {
-            mGriffLayer = new GriffLayer(this);
-            mGriffLayer.setSizes(viewPixelsPerMm(), GRIFF_RADIUS_MM, GRIFF_ARROW_MM);
-            root.addView(mGriffLayer);
+            mLoupeView = new LoupeView(this, (shown, x, y, radius) -> {
+                mPieceShown[0] = pictureX(x);
+                mPieceShown[1] = pictureY(y);
+                mPieceShown[2] = radius / mPageView.scale();
+                Game.setGriffShown(Game.SHOWN_LOUPE, mPieceShown, shown ? 3 : 0);
+            });
+            mLoupeView.setMillimetre(viewPixelsPerMm());
+            root.addView(mLoupeView);
             // Over the layer that takes the fingers: a finger on Box, Plus, the undo's button, the tick or the cross is theirs.
             railTarget(root, TouchInput.RAIL_BOX, "Box");
             railTarget(root, TouchInput.RAIL_QUEUE, "Plus");
-            mUndoTarget = new View(this);
-            mUndoTarget.setVisibility(View.GONE);
-            mUndoTarget.setContentDescription("Undo");
-            mUndoTarget.setOnClickListener(view -> undo());
-            root.addView(mUndoTarget, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
-            mTick = draftButton(true);
-            mCross = draftButton(false);
-            root.addView(mTick, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
-            root.addView(mCross, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
+            mUndoTarget = hudTarget(root, "Undo", view -> undo());
+            // With Plus counting, held or lit, every plan is appended to what the builders do; the program says what it used.
+            mTickTarget = hudTarget(root, "Order the draft",
+                view -> Game.draftCommit((mRail.counting(SystemClock.uptimeMillis()) & TouchInput.RAIL_QUEUE) != 0));
+            mCrossTarget = hudTarget(root, "Drop the draft", view -> Game.draftDrop());
         }
         mKeyboardTarget = new KeyboardTarget(this);
         root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
@@ -972,18 +1011,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             }
             pollGriff(inGame);
             placeHud();
-            placeDraftButtons();
         }
     }
 
     /** In a game the mouse's bar's two rows fill the room the HUD leaves, up to a finger's size. */
     private double gameButtonMm() {
         return Math.min(BAR_BUTTON_MM, barRoomMm() / 2 - BAR_GAP_MM);
-    }
-
-    /** Whether something the player opened of FAF's lies under a piece at this place of the screen, of this size (Opened). */
-    private boolean openedUnder(float left, float top, float width, float height) {
-        return mOpened.under(pictureX(left), pictureY(top), pictureX(left + width), pictureY(top + height));
     }
 
     /** The HUD's factor: the user's UI scale can have changed what the app worked out. */
@@ -1117,14 +1150,112 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * The rail as it is: the handle's look by the buttons held or lit, and how each button looks (Rail#look) for FAF's UI, which
-     * draws them (placeHud).
+     * The rail as it is: the handle's look by the buttons held or lit (with Box faint), and how each button looks (Rail#look)
+     * for FAF's UI, which draws them (placeHud).
      */
     private void showRail() {
-        if (mGriffLayer != null) {
-            mGriffLayer.setRail(mRail.shown());
+        if (mGriff) {
+            showHandle();
             placeHud();
         }
+    }
+
+    /** A view of the activity's over one of Griff's buttons that FAF's UI draws (griffhud.lua), which takes its fingers. */
+    private HudTarget hudTarget(FrameLayout root, String label, View.OnClickListener tapped) {
+        HudTarget target = new HudTarget(this, label, this::placeHud);
+        target.setOnClickListener(tapped);
+        root.addView(target, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
+        return target;
+    }
+
+    /** The handle's radius on the screen: half an order button of FAF's at the HUD's factor. */
+    private float handleRadius() {
+        return (float) (GRIFF_HANDLE_SIDE / 2 * hudFactor() * viewPixelsPerPicturePixel());
+    }
+
+    /**
+     * The handle as the screen keeps it (GriffHandle), for FAF's UI to draw it (Game.SHOWN_HANDLE), where that changed: its
+     * middle, its group's middle and count, whether it points at its group from elsewhere, and whether Box is lit, for which it
+     * steps aside.
+     */
+    private void showHandle() {
+        int count = 0;
+        if (mHandle.shown()) {
+            mHandleShown[0] = pictureX(mHandle.x());
+            mHandleShown[1] = pictureY(mHandle.y());
+            mHandleShown[2] = mGriffHandle[2];
+            mHandleShown[3] = mGriffHandle[3];
+            mHandleShown[4] = mGriffHandle[4];
+            mHandleShown[5] = mGriffHandle[5] != 0 ? 1 : 0;
+            mHandleShown[6] = (mRail.shown() & TouchInput.RAIL_BOX) != 0 ? 1 : 0;
+            count = mHandleShown.length;
+        }
+        boolean same = count == mHandleSaidCount;
+        for (int at = 0; same && at < count; ++at) {
+            same = mHandleShown[at] == mHandleSaid[at];
+        }
+        if (!same) {
+            System.arraycopy(mHandleShown, 0, mHandleSaid, 0, count);
+            mHandleSaidCount = count;
+            Game.setGriffShown(Game.SHOWN_HANDLE, mHandleShown, count);
+        }
+    }
+
+    /** A piece of one place for FAF's UI (Game.SHOWN_): there, or none. */
+    private void showPiece(int piece, boolean shown, float x, float y) {
+        mPieceShown[0] = pictureX(x);
+        mPieceShown[1] = pictureY(y);
+        Game.setGriffShown(piece, mPieceShown, shown ? 2 : 0);
+    }
+
+    /**
+     * The stroke a finger draws (count 0: none), what lifting it now gives (Stroke.ROUTE, PATROL, CANCEL) and the waypoints that
+     * would be ordered, for FAF's UI to draw as FAF's command graph will draw the route (Game.SHOWN_STROKE): where the stroke
+     * began, then each waypoint, in the picture's pixels.
+     */
+    private void showStroke(float[] xs, float[] ys, int count, int mode, float[] waypointXs, float[] waypointYs, int waypoints) {
+        if (count < 2 || waypoints < 1) {
+            mStrokeShownCount = 0;
+            Game.setGriffShown(Game.SHOWN_STROKE, mStrokeShown, 0);
+            return;
+        }
+        int needed = Game.SHOWN_STROKE_HEAD + 2 * (1 + waypoints);
+        if (mStrokeShown.length < needed) {
+            mStrokeShown = new float[needed];
+        }
+        mStrokeMode = mode;
+        mStrokeEndX = xs[count - 1];
+        mStrokeEndY = ys[count - 1];
+        mStrokeShown[4] = 1 + waypoints;
+        int at = Game.SHOWN_STROKE_HEAD;
+        mStrokeShown[at++] = pictureX(xs[0]);
+        mStrokeShown[at++] = pictureY(ys[0]);
+        for (int point = 0; point < waypoints; ++point) {
+            mStrokeShown[at++] = pictureX(waypointXs[point]);
+            mStrokeShown[at++] = pictureY(waypointYs[point]);
+        }
+        mStrokeShownCount = at;
+        sayStroke();
+    }
+
+    /**
+     * The stroke as it is, with what lifting it gives by what its end is on, and its label's place: above the finger, which covers
+     * what is under it, kept on the free map where it is known and wide enough.
+     */
+    private void sayStroke() {
+        if (mStrokeShownCount == 0) {
+            return;
+        }
+        float pixels = viewPixelsPerMm();
+        float left = mFreeLeft + LABEL_IN_MM * pixels;
+        float right = mFreeRight - LABEL_IN_MM * pixels;
+        float x = left <= right ? Math.max(left, Math.min(right, mStrokeEndX)) : mStrokeEndX;
+        float y = Math.max(mStrokeEndY - LABEL_ABOVE_MM * pixels, mFreeTop + LABEL_BELOW_TOP_MM * pixels);
+        mStrokeShown[0] = Stroke.meaning(mStrokeEnd, mStrokeMode);
+        mStrokeShown[1] = (mStrokeEnd & Stroke.END_ATTACK_MOVE) != 0 ? 1 : 0;
+        mStrokeShown[2] = pictureX(x);
+        mStrokeShown[3] = pictureY(y);
+        Game.setGriffShown(Game.SHOWN_STROKE, mStrokeShown, mStrokeShownCount);
     }
 
     /** The rail put away, and with Plus the Shift it holds: nothing is held where no finger can let go of it. */
@@ -1150,85 +1281,35 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         // While the draft is open there is no handle: no stroke starts (the mockup's).
         shown = shown && !mDraft.open();
         if (!mHandle.place(mGriffPolling, shown, mPageView.screenX(mGriffHandle[0]), mPageView.screenY(mGriffHandle[1]))) {
-            if (mGriffHandle[Game.GRIFF_STROKE] == mHandle.strokeNumber()) {
-                mGriffLayer.setStrokeEnd((int) mGriffHandle[Game.GRIFF_STROKE_END]);
+            int end = (int) mGriffHandle[Game.GRIFF_STROKE_END];
+            if (mGriffHandle[Game.GRIFF_STROKE] == mHandle.strokeNumber() && end != mStrokeEnd) {
+                mStrokeEnd = end;
+                sayStroke();
             }
             return;
         }
-        mGriffLayer.setHandle(mHandle.shown(), mHandle.x(), mHandle.y(), mPageView.screenX(mGriffHandle[2]),
-            mPageView.screenY(mGriffHandle[3]), (int) mGriffHandle[4], mGriffHandle[5] != 0);
-        mGriffLayer.setFreeMap(mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_LEFT]), mPageView.screenY(mGriffHandle[Game.GRIFF_FREE_TOP]),
-            mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_RIGHT]));
+        mFreeLeft = mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_LEFT]);
+        mFreeTop = mPageView.screenY(mGriffHandle[Game.GRIFF_FREE_TOP]);
+        mFreeRight = mPageView.screenX(mGriffHandle[Game.GRIFF_FREE_RIGHT]);
+        showHandle();
     }
 
-    /**
-     * What the player opened of FAF's that shows now (Opened): where it changed, the draft's tick and cross step aside from it or
-     * come back. Box, Plus and the undo's button do in FAF's UI, which says so with their places (placeHud).
-     */
+    /** What the player opened of FAF's that shows now (Opened), which the undo's button's lingering cover goes for. */
     private void readOpened() {
-        if (mOpened.update(mOpenedValues, mGriffPolling ? Game.griffOpened(mOpenedValues) : 0)) {
-            placeDraftButtons();
-        }
+        mOpened.update(mOpenedValues, mGriffPolling ? Game.griffOpened(mOpenedValues) : 0);
     }
 
-    /** The draft as the program shows it now; the layer, the tick and the cross follow where it changed. */
+    /** The draft as the program shows it now, which a finger's place is told by; without it no loupe. */
     private void readDraft() {
         int count = mGriffPolling ? Game.griffDraft(mDraftValues) : 0;
         if (!mDraft.update(mDraftValues, count, mDraftScreen)) {
             return;
         }
-        mGriffLayer.setDraft(mDraft);
-        placeDraftButtons();
         if (!mDraft.open()) {
             hideLoupe();
-        }
-    }
-
-    private DraftButton draftButton(boolean tick) {
-        DraftButton button = new DraftButton(this, tick);
-        button.setMillimetre(viewPixelsPerMm());
-        button.setVisibility(View.GONE);
-        if (tick) {
-            // With Plus counting, held or lit, every plan is appended to what the builders do; the program says what it used.
-            button.setOnClickListener(view -> Game.draftCommit((mRail.counting(SystemClock.uptimeMillis()) & TouchInput.RAIL_QUEUE) != 0));
         } else {
-            button.setOnClickListener(view -> Game.draftDrop());
+            showLoupeCopy();
         }
-        return button;
-    }
-
-    /**
-     * The tick and the cross while the draft is open in a game (the mockup's): on the map, their bottoms 2 mm above FAF's
-     * construction panel, the tick's right 2 mm left of the column at the right (FAF's avatars), the cross 2 mm left of it;
-     * against the screen's edges where FAF shows neither. Each steps aside while something the player opened of FAF's lies
-     * under it (Opened), such as a window the player moved there.
-     */
-    private void placeDraftButtons() {
-        if (mTick == null) {
-            return;
-        }
-        if (!mDraft.open() || !mBarInGame) {
-            mTick.setVisibility(View.GONE);
-            mCross.setVisibility(View.GONE);
-            return;
-        }
-        float pixels = viewPixelsPerMm();
-        float room = (float) (GRIFF_TICK_ROOM_MM * pixels);
-        float width = mFingerLayer.getWidth();
-        float height = mFingerLayer.getHeight();
-        float bottom = (mDraft.constructionTop() >= 0 ? Math.min(mDraft.constructionTop(), height) : height) - room;
-        float right = (mDraft.columnLeft() >= 0 ? Math.min(mDraft.columnLeft(), width) : width) - room;
-        int tick = viewMm(GRIFF_TICK_MM);
-        int cross = viewMm(GRIFF_CROSS_MM);
-        float crossLeft = right - tick - room - cross;
-        placeView(mTick, right - tick, bottom - tick, tick);
-        placeView(mCross, crossLeft, bottom - cross, cross);
-        mTick.setVisibility(Opened.visibility(true, openedUnder(right - tick, bottom - tick, tick, tick)));
-        mCross.setVisibility(Opened.visibility(true, openedUnder(crossLeft, bottom - cross, cross, cross)));
-    }
-
-    private static void placeView(View view, float left, float top, int side) {
-        placeView(view, left, top, side, side);
     }
 
     private static void placeView(View view, float left, float top, int width, int height) {
@@ -1246,9 +1327,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * Where FAF's UI drew Box, Plus and the undo's button (griffhud.lua, Game.griffHudPlaces): the views that take their fingers
-     * lie there, each while it is wanted in a game and nothing the player opened of FAF's lies over it, which FAF's UI says with
-     * the place; the undo's while its time runs or its undo waits (Undo). And how they look, for FAF's UI to draw them
+     * Where FAF's UI drew Box, Plus, the undo's button, the draft's tick and its cross (griffhud.lua, Game.griffHudPlaces): the
+     * views that take their fingers lie there, each while it is wanted in a game and nothing the player opened of FAF's lies
+     * over it nor is FAF's UI hidden, which FAF's UI says with the place; the undo's while its time runs or its undo waits
+     * (Undo), the tick's and the cross's while the draft is open. And how they look, held or lit, for FAF's UI to draw them
      * (Game.setGriffHud).
      */
     private void placeHud() {
@@ -1262,8 +1344,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         boolean undoWanted = mBarInGame && mUndo.showing(now);
         placeTarget(mUndoTarget, mRailTargets.size(), count, undoWanted);
+        boolean drafting = mBarInGame && mDraft.open();
+        placeTarget(mTickTarget, mRailTargets.size() + 1, count, drafting);
+        placeTarget(mCrossTarget, mRailTargets.size() + 2, count, drafting);
         int undo = !undoWanted ? Game.HUD_UNDO_NONE : mUndo.waiting() ? Game.HUD_UNDO_WAITING : Game.HUD_UNDO_OFFERED;
-        Game.setGriffHud(mRail.look(TouchInput.RAIL_BOX) | mRail.look(TouchInput.RAIL_QUEUE) << 2, undo, mUndo.left(now));
+        int held = (mTickTarget.isPressed() ? Game.HUD_HELD_TICK : 0) | (mCrossTarget.isPressed() ? Game.HUD_HELD_CROSS : 0)
+            | (mUndoTarget.isPressed() ? Game.HUD_HELD_UNDO : 0);
+        Game.setGriffHud(mRail.look(TouchInput.RAIL_BOX) | mRail.look(TouchInput.RAIL_QUEUE) << 2 | held, undo, mUndo.left(now));
     }
 
     /** The view of FAF's UI's piece number `piece` (Game.HUD_PIECE numbers each, of `count`): at its place, seen where wanted. */
@@ -1295,17 +1382,15 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * The app's pieces over the picture for the program (Covers): the draft's tick and cross, each while it shows, and the undo's
-     * button while it shows and a moment after, in the picture's pixels; the program hears them when they changed. FAF's UI holds
-     * the rail and the undo's button themselves, which the program finds there. The Keys shows in the menus only, where no
-     * finger is Griff's. The undo's cover that stays after it went goes at once where something the player opened of FAF's lies,
-     * as the pieces step aside from it.
+     * The app's pieces over the picture for the program (Covers): the undo's button a moment after it went, in the picture's
+     * pixels; the program hears them when they changed. FAF's UI holds the rail, the undo's button and the draft's tick and
+     * cross themselves, which the program finds there. The Keys shows in the menus only, where no finger is Griff's. The undo's
+     * cover that stays after it went goes at once where something the player opened of FAF's lies, as the pieces step aside
+     * from it.
      */
     private void setGriffCovers() {
         mFingerLayer.getLocationInWindow(mLayerOnWindow);
         mCovers.begin();
-        cover(mTick, null);
-        cover(mCross, null);
         int[] undoWas = mUndoCover.box();
         if (mOpened.under(undoWas[0], undoWas[1], undoWas[2], undoWas[3])) {
             mUndoCover.forget();
@@ -1333,18 +1418,24 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     }
 
     /**
-     * The loupe follows a resting finger in the draft: copies of the game's picture about it, which the layer magnifies, each
+     * The loupe follows a resting finger in the draft: copies of the game's picture about it, which LoupeView magnifies, each
      * where it was copied about.
      */
     private void showLoupe(float x, float y) {
         mLoupeX = x;
         mLoupeY = y;
-        if (mLoupeShown != null) {
-            mGriffLayer.showLoupe(mLoupeShown, mLoupeShownX, mLoupeShownY, x, y);
-        }
+        showLoupeCopy();
         if (!mLoupeOn) {
             mLoupeOn = true;
             copyLoupe();
+        }
+    }
+
+    /** The last copy, while a finger rests on the map: on a panel the rest is the panel's, and there is no loupe. */
+    private void showLoupeCopy() {
+        if (mLoupeView != null) {
+            boolean shown = mLoupeOn && mLoupeShown != null && mDraft.restsOnMap();
+            mLoupeView.show(shown ? mLoupeShown : null, mLoupeShownX, mLoupeShownY, mLoupeX, mLoupeY);
         }
     }
 
@@ -1352,9 +1443,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mLoupeOn = false;
         mLoupeShown = null;
         mHandler.removeCallbacks(mLoupeCopy);
-        if (mGriffLayer != null) {
-            mGriffLayer.showLoupe(null, 0, 0, 0, 0);
-        }
+        showLoupeCopy();
     }
 
     /**
@@ -1397,7 +1486,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     mLoupeShown = null;
                     loupeFailed(result == PixelCopy.SUCCESS ? "came back blank" : "failed, " + result);
                 }
-                mGriffLayer.showLoupe(mLoupeShown, mLoupeShownX, mLoupeShownY, mLoupeX, mLoupeY);
+                showLoupeCopy();
                 mHandler.postDelayed(mLoupeCopy, LOUPE_MILLISECONDS);
             }, mHandler);
         } catch (IllegalArgumentException e) {
@@ -1443,6 +1532,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     }
                 } else if (mGriffSaid[at] == Game.SAID_PAN) {
                     mTouch.panned(mGriffSaid[at + 1]);
+                } else if (mGriffSaid[at] == Game.SAID_FORMATION) {
+                    mTouch.formation(mGriffSaid[at + 1]);
                 } else if (mGriffSaid[at] == Game.SAID_GROUP_STORED) {
                     // A group stored buzzes once, as the mockup's: as the ring of the rest that stored it came, or now (TouchInput).
                     if (mTouch.storeBuzzes()) {
@@ -1482,6 +1573,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         }
         mGriffPolling = on;
         if (on) {
+            // The HUD's factor as the game has it now, which the user's UI scale may have changed: the handle's size follows it.
+            setGriff();
             Choreographer.getInstance().postFrameCallback(mGriffFrame);
         } else {
             Choreographer.getInstance().removeFrameCallback(mGriffFrame);
@@ -1492,14 +1585,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     /**
      * Griff's sizes in the picture's pixels (a game's page has no zoom), by which the program places the handle, helps taps,
-     * picks units beside them, stops the camera's glide and finds a deposit for the draft's extractor.
+     * picks units beside them, stops the camera's glide and finds a deposit for the draft's extractor. The handle's are FAF's
+     * at the HUD's factor, as FAF's UI draws it.
      */
     private void setGriff() {
         double pixels = mPictureHeight / mScreenMm;
-        Game.setGriff(mGriff, (float) (GRIFF_RADIUS_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_TOUCH_MM) * pixels),
-            (float) (GRIFF_GAP_MM * pixels), (float) ((GRIFF_RADIUS_MM + GRIFF_ARROW_MM) * pixels), (float) (TAP_REACH_MM * pixels),
-            (float) (TAP_SMALL_MM * pixels), (float) (GRIFF_NEAR_MM * pixels), (float) (GRIFF_NEAR_TROOPS_MM * pixels),
-            (float) (GRIFF_GLIDE_STOP_MM * pixels), (float) (GRIFF_DEPOSIT_MM * pixels));
+        double factor = hudFactor();
+        double radius = GRIFF_HANDLE_SIDE / 2 * factor;
+        Game.setGriff(mGriff, (float) radius, (float) (radius + GRIFF_TOUCH_MM * pixels), (float) (GRIFF_GAP_MM * pixels),
+            (float) (radius + GRIFF_ARROW_SIDE / 2 * factor), (float) (TAP_REACH_MM * pixels), (float) (TAP_SMALL_MM * pixels),
+            (float) (GRIFF_NEAR_MM * pixels), (float) (GRIFF_NEAR_TROOPS_MM * pixels), (float) (GRIFF_GLIDE_STOP_MM * pixels),
+            (float) (GRIFF_DEPOSIT_MM * pixels));
     }
 
     private TextView barButton(LinearLayout row, String label) {
