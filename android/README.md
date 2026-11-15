@@ -105,8 +105,9 @@ the game data they imported. Everything lives in the app's external files folder
   - The UI package for fingers (`app/src/main/assets/fafre_ui`, [TOUCH_UI.md](TOUCH_UI.md)) is mounted and
     hooked as FAF's init file allows, with the HUD's factor from the screen (`HudScale`), so FAF's dialogs,
     choices and HUD come out at the sizes TOUCH_UI.md gives. The pages (the lobby and the LAN screen shown
-    larger, scrolled by a finger) and the touch schemes come back with SDL's input in the next stage;
-    until then the touch controls' button stays at *a finger is the mouse*, and Griff's Lua does nothing.
+    larger, scrolled by a finger) and the touch schemes come back with SDL's input in the next stage: until
+    then those screens keep FAF's size, with choices of about 3 mm, as the package sizes them for the page's
+    zoom; the touch controls' button stays at *a finger is the mouse*, and Griff's Lua does nothing.
   - A tap on a text field (the lobby's chat, a profile's name, the console's line) brings the phone's
     keyboard, and so does *Keyboard* in the game's Menu tab; typed text goes to the field, Back hides the
     keyboard before it is Esc again, Enter goes to the game and then hides it.
