@@ -112,7 +112,7 @@ the game data they imported. Everything lives in the app's external files folder
     keyboard, and so does *Keyboard* in the game's Menu tab; typed text goes to the field, Back hides the
     keyboard before it is Esc again, Enter goes to the game and then hides it.
   - The report (`game.txt`) names the GPU, each swap chain, whether BC textures are the GPU's or decoded
-    on the CPU, and the sound's output. Tests' extras of the activity (`am start ... --ef hudScale 1.6
+    on the CPU, and the sound's output or why the sound did not start. Tests' extras of the activity (`am start ... --ef hudScale 1.6
     --es arguments /spewsound --ez bcOnCpu true`): the phone's HUD factor on the emulator, more engine
     arguments, and the phones' way with BC textures on a GPU that has BC.
 

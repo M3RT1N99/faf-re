@@ -21,7 +21,7 @@
 // The report (FAF_GAME_REPORT, which the activity sets: GameReport.java) gets the lines the app reads:
 // when the first frame went to the screen, and the program's exit code; and of the engine's log what a
 // tester's report needs from this phone: the GPU the renderer took, each swap chain, whether BC textures
-// are the GPU's or decoded on the CPU, and the output the sound plays through.
+// are the GPU's or decoded on the CPU, and the output the sound plays through, or why it has none.
 
 #include <android/log.h>
 #include <pthread.h>
@@ -84,6 +84,8 @@ namespace
   /// The sound engine is up (moho/audio/AudioEngine.cpp, after XACT's Initialize and 3D audio's): FACT's mastering voice,
   /// FAudio's, plays through SDL's audio output by then.
   constexpr std::string_view kSoundUp = "MEM: 0 bytes SND";
+  /// Or it is not: XACT's Initialize or 3D audio's failed, and the game plays without sound (the same file).
+  constexpr std::string_view kSoundFailed = "SND: Error initializing ";
 
   /// Copies those lines into the report as the engine logs them, on whichever thread logs. It logs nothing itself: the
   /// engine's log holds its lock while it calls its targets.
@@ -106,6 +108,11 @@ namespace
       if (text == kSoundUp && !mSoundReported.exchange(true)) {
         const char* const driver = SDL_GetCurrentAudioDriver();
         Report(std::string("sound: XACT on FAudio, through SDL's ") + (driver != nullptr ? driver : "(no)") + " output");
+      } else if (text.substr(0, kSoundFailed.size()) == kSoundFailed) {
+        // On one line: the engine's message has XACT's word on a second.
+        std::string line(text);
+        std::replace(line.begin(), line.end(), '\n', ' ');
+        Report("sound: " + line);
       }
     }
 
