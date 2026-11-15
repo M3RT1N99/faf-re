@@ -1,0 +1,80 @@
+diff --git a/src/platform/shell/Shell.cpp b/src/platform/shell/Shell.cpp
+index 72f69325d..32bec10a6 100644
+--- a/src/platform/shell/Shell.cpp
++++ b/src/platform/shell/Shell.cpp
+@@ -674,15 +674,17 @@ namespace
+     return InputTarget(top);
+   }
+ 
+-  void Deliver(
++  // Whether a handler took the event (did not skip it).
++  bool Deliver(
+     ShellWindow* const window,
+     ShellEvent& event
+   )
+   {
+     event.SetEventObject(window);
+     if (ShellEvtHandler* const handler = window->GetEventHandler(); handler != nullptr) {
+-      (void)handler->ProcessEvent(event);
++      return handler->ProcessEvent(event);
+     }
++    return false;
+   }
+ 
+   // Native children follow their parent's moves (their screen origin) and, as Frame::OnSize did
+@@ -739,7 +741,7 @@ namespace
+     Deliver(target, event);
+   }
+ 
+-  void DeliverKey(
++  bool DeliverKey(
+     ShellWindow* const top,
+     const ShellEventType type,
+     const long keyCode,
+@@ -755,9 +757,15 @@ namespace
+     // WM_KEYDOWN's wParam and lParam: the virtual key, and bit 30 when the key was already down.
+     event.m_rawCode = static_cast<ShellUint32>(source.virtualKey);
+     event.m_rawFlags = source.repeat ? (1u << 30) : 0u;
+-    Deliver(target, event);
++    return Deliver(target, event);
+   }
+ 
++  // The 2.4.2 window library (src/msw/window.cpp, m_lastKeydownProcessed) sends no char event for a key-down a handler
++  // took: its WM_CHAR is dropped. The console opens on the key-down of ` (CUIKeyHandler::OnKeyDown, which does not skip
++  // it) and closes on its char (FAF's console.lua); the chat opens on Enter's key-down, which its char would send at once.
++  // SDL gives a key's text as an event of its own, after the key-down and before the key-up.
++  bool sKeyDownTaken = false;
++
+   // The 2.4.2 window library (src/msw/window.cpp) sends a char event for a key Windows gives no WM_CHAR for, with
+   // its window-library code, besides the key-down; and turns WM_CHAR 1..26 (Ctrl+letter) into the code with
+   // ControlDown. SDL reports typed text apart (EventType::Text); these are the keys it doesn't.
+@@ -960,17 +968,25 @@ namespace
+     case EventType::KeyDown: {
+       // The 2.4.2 window library HandleKeyDown: the window-library code of a special key, else the virtual key itself.
+       const int code = ShellKeyFromVirtualKey(source.virtualKey);
+-      DeliverKey(top, SHELL_EVT_KEY_DOWN, code != 0 ? code : source.virtualKey, source, false);
+-      DeliverCharForKey(top, source);
++      sKeyDownTaken = DeliverKey(top, SHELL_EVT_KEY_DOWN, code != 0 ? code : source.virtualKey, source, false);
++      if (!sKeyDownTaken) {
++        DeliverCharForKey(top, source);
++      }
+       return;
+     }
+     case EventType::KeyUp: {
++      // A key-down's text has come by its key-up, if it has any: later text is the input method's own.
++      sKeyDownTaken = false;
+       const int code = ShellKeyFromVirtualKey(source.virtualKey);
+-      DeliverKey(top, SHELL_EVT_KEY_UP, code != 0 ? code : source.virtualKey, source, false);
++      (void)DeliverKey(top, SHELL_EVT_KEY_UP, code != 0 ? code : source.virtualKey, source, false);
+       return;
+     }
+     case EventType::Text:
+-      DeliverKey(top, SHELL_EVT_CHAR, static_cast<long>(source.codepoint), source, false);
++      if (sKeyDownTaken) {
++        sKeyDownTaken = false;
++        return;
++      }
++      (void)DeliverKey(top, SHELL_EVT_CHAR, static_cast<long>(source.codepoint), source, false);
+       return;
+     default:
+       return;

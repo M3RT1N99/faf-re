@@ -72,7 +72,9 @@ function(faf_android_overlay_sources out)
     if(_relative IN_LIST _faf_android_overlay_paths)
       set(_copy "${FAF_ANDROID_OVERLAY}/${_relative}")
       get_filename_component(_folder "${_file}" DIRECTORY)
-      set_source_files_properties("${_copy}" PROPERTIES INCLUDE_DIRECTORIES "${_folder}")
+      # For quoted includes only: a neighbour may have a system header's name (src/platform/shell has a string.h), which
+      # the folder on the include path would put in that header's place.
+      set_property(SOURCE "${_copy}" APPEND PROPERTY COMPILE_OPTIONS "-iquote${_folder}")
       # Whatever single-file settings the original has here, the copy takes along.
       foreach(_property COMPILE_DEFINITIONS COMPILE_OPTIONS)
         get_source_file_property(_value "${_file}" ${_property})
