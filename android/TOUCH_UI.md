@@ -358,8 +358,9 @@ the draft is open there is no handle, and a finger makes plans (`TouchInput`'s `
 | Two fingers' tap | The draft goes |
 
 Plans are the ghosts of FAF's build preview (`CBuildDragPreview`: the building's mesh through the UnitPlace shader, `FafreGriffGhost`), in
-its green, red where the ground is taken (another plan's, or FAF's check), the newest and the one a resting finger aims at as full as FAF's
-ghost under the cursor, the line's fainter; side by side they look as the ghosts of the builds the tick queues. The tick and the cross are
+its green, red where the ground is taken (another plan's, or FAF's check). The shader draws every ghost at a fifth of its colour, whatever
+alpha the colour has (`mesh.fx` UnitPlacePS), so plans differ by the colour alone: the newest, which a drag draws a line from, and the one
+a resting finger aims at in FAF's own colours, as its ghost under the cursor; the other plans and a line's places at half of them. The tick and the cross are
 FAF's order buttons (`griffhud.lua`: the orders panel's empty slot at the HUD's factor, as large as its order buttons, with FAF's tick of the
 skin's map options, `temp_textures/checkmark.dds`, and its Cancel, `orders-panel/no-parking_bmp.dds`, both of the faction's skin; FAF's
 glow while a finger holds one), 12 of FAF's pixels above the construction panel, the tick 12 left of the column at the right (FAF's

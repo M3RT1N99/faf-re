@@ -77,11 +77,13 @@ local Says = {
 }
 
 --- The draft's plans: the ghosts of FAF's build preview (CBuildDragPreview: the building's mesh through the UnitPlace shader)
---- in its colours for a place it takes and one it refuses (CWldSessionTypes.cpp), the newest and the aim's as full as FAF's
---- ghost under the cursor, a line's places fainter. The program's plan flags (FafreGriffPlans).
-local PLAN_NEWEST, PLAN_TAKEN, PLAN_LINE, PLAN_AIM = 1, 2, 4, 8
-local FREE, TAKEN = '00d800', 'd80000'
-local FULL, PLANNED, FAINTER = 'ff', 'd8', '80'
+--- in its colours for a place it takes and one it refuses (CWldSessionTypes.cpp). The shader draws every ghost at a fifth of
+--- its colour, whatever alpha the colour has (mesh.fx UnitPlacePS), so plans differ by the colour alone, as FAF's own ghost
+--- does beside a building it gains adjacency from: the newest plan, which a drag draws a line from, and the aim in FAF's
+--- colours, as its ghost under the cursor; the other plans and a line's places, which have neither flag, at half of them.
+--- The program's plan flags (FafreGriffPlans).
+local PLAN_NEWEST, PLAN_TAKEN, PLAN_AIM = 1, 2, 8
+local FREE, TAKEN, FREE_BEHIND, TAKEN_BEHIND = 'd800d800', 'd8d80000', 'd8006c00', 'd86c0000'
 --- Far out the game draws a building's mesh still: its plans stay as long.
 local GHOST_CUTOFF = 100000
 
@@ -477,9 +479,13 @@ local function Plans(made)
     for at = 1, count do
         local from = 4 * at - 4
         local flags = plans[from + 4]
-        local alpha = math.mod(math.floor(flags / PLAN_LINE), 2) == 1 and FAINTER
-            or (math.mod(flags, 2) == 1 or math.mod(math.floor(flags / PLAN_AIM), 2) == 1) and FULL or PLANNED
-        local colour = alpha .. (math.mod(math.floor(flags / PLAN_TAKEN), 2) == 1 and TAKEN or FREE)
+        local taken = math.mod(math.floor(flags / PLAN_TAKEN), 2) == 1
+        local colour
+        if math.mod(flags, 2) == 1 or math.mod(math.floor(flags / PLAN_AIM), 2) == 1 then
+            colour = taken and TAKEN or FREE
+        else
+            colour = taken and TAKEN_BEHIND or FREE_BEHIND
+        end
         Ghost(made, at, ids[at], plans[from + 1], plans[from + 2], plans[from + 3], colour)
     end
     HideGhosts(made, count + 1)
