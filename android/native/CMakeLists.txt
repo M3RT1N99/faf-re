@@ -25,6 +25,7 @@
 #   faf_movie_tests                the engine's movie player on real movies (tests/movie)
 #   faf_griff_tests                the touch scheme Griff's rules (tests/griff)
 #   faf_net_tests                  the engine's network transport on platform::net (tests/net)
+#   faf_shell_tests                the patched shell's rule for a key-down a handler took (tests/shell)
 
 cmake_minimum_required(VERSION 3.25)
 # ASM: the engine's x86_64 build assembles the x87 helpers (cmake/FafLinux.cmake), and CMake wants
@@ -390,3 +391,11 @@ target_link_options(faf_griff_tests PRIVATE -static -Wl,--gc-sections)
 add_executable(faf_net_tests tests/net/NetTests.cpp ${FAF_ANDROID_SIM_OBJECTS})
 target_link_libraries(faf_net_tests PRIVATE faf_android_settings ${_faf_sim_libraries})
 target_link_options(faf_net_tests PRIVATE -static -Wl,--gc-sections)
+
+# faf_shell_tests (tests/shell): the patched shell's rule for a key-down a handler took (patches/README.md, Shell.cpp),
+# through ShellApp::Dispatch, with a window layer of the test's own in place of SDL's. The shell is the patched copy; the
+# Win32 calls it makes are the simulation's POSIX layer. Linked statically, as faf_griff_tests is.
+faf_android_overlay_sources(_faf_shell_tests_files "${FAF_REPO}/src/platform/shell/Shell.cpp")
+add_executable(faf_shell_tests tests/shell/ShellKeyTests.cpp ${_faf_shell_tests_files})
+target_link_libraries(faf_shell_tests PRIVATE faf_android_settings faf_sim_archive ${_faf_sim_libraries})
+target_link_options(faf_shell_tests PRIVATE -static -Wl,--gc-sections)

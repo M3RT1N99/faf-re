@@ -13,7 +13,7 @@ the Linux client does not.
 ```sh
 cd android/native
 cmake --preset android-arm64          # or android-x64 for the emulator
-cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgame, faf_dxc, faf_movie_tests, faf_griff_tests, faf_net_tests
+cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgame, faf_dxc and the tests (Tests)
 ```
 
 The outputs land in `build/android-<abi>/bin`, where the app (`android/app`) takes them from.
@@ -42,6 +42,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
 | `faf_griff_tests` | The touch scheme Griff's rules (`tests/griff`), linked statically |
 | `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
+| `faf_shell_tests` | The patched shell's rule for a key-down a handler took (`tests/shell`), linked statically |
 
 The client's objects are compiled with the simulation's settings (`faf_sim_settings`) and the engine's
 directory-wide definitions (`FAF_RETAIL_LAYOUT`, which decides the legacy containers' layout), as they
@@ -165,6 +166,11 @@ it, a few milliseconds after `CloseSocket` (on the emulator at most 24 ms in thr
 adb push build/android-x64/bin/faf_net_tests /data/local/tmp/
 adb shell "chmod 755 /data/local/tmp/faf_net_tests && /data/local/tmp/faf_net_tests"
 ```
+
+`faf_shell_tests` (`tests/shell`) pins the patched shell's rule for a key-down a handler took (`patches/README.md`,
+`Shell.cpp`): it gets no char, neither the shell's own for Enter nor the window system's text that comes before the key's
+key-up; a skipped key-down gets both; a key-up ends the rule. It runs `ShellApp::Dispatch` on the patched copy with a
+window layer of the test's own (`platform/Window.h`) in place of SDL's, and is linked statically.
 
 ## Patches
 

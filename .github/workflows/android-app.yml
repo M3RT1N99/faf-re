@@ -5,7 +5,8 @@ name: Android app
 # and the pinned NDK, then the APK with Gradle. The APK is signed with the runner's own debug key,
 # so it installs on a phone without an earlier release, not as an update of one; testers' releases
 # are built where their key is. The same build's tests of the touch scheme Griff (android/native/tests/griff)
-# and of the engine's network transport (android/native/tests/net), linked statically, run on an arm64 runner.
+# and of the engine's network transport and shell (android/native/tests/net, tests/shell), linked statically, run on
+# an arm64 runner.
 on:
   push:
     branches: [android-app, android-client]
@@ -73,6 +74,7 @@ jobs:
           path: |
             build/android-arm64/bin/faf_griff_tests
             build/android-arm64/bin/faf_net_tests
+            build/android-arm64/bin/faf_shell_tests
           retention-days: 7
 
   native-tests-arm64:
@@ -85,6 +87,7 @@ jobs:
           name: faf-native-tests-arm64
           path: bin
       - run: |
-          chmod +x bin/faf_griff_tests bin/faf_net_tests
+          chmod +x bin/faf_griff_tests bin/faf_net_tests bin/faf_shell_tests
           bin/faf_griff_tests
           bin/faf_net_tests
+          bin/faf_shell_tests
