@@ -13,7 +13,7 @@ the Linux client does not.
 ```sh
 cd android/native
 cmake --preset android-arm64          # or android-x64 for the emulator
-cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgame, faf_dxc, faf_movie_tests, faf_griff_tests
+cmake --build --preset android-arm64  # headless, faf_sim_math_tests, fafgame, faf_dxc, faf_movie_tests, faf_griff_tests, faf_net_tests
 ```
 
 The outputs land in `build/android-<abi>/bin`, where the app (`android/app`) takes them from.
@@ -41,6 +41,7 @@ the repository's own `android-*-release` presets do. On top of it come the clien
 | `fafgame` | `libfafgame.so`: all of the above, which the app's game activity loads (card 5 of the app) |
 | `faf_movie_tests` | The movie player and decoder on the game's movies (`tests/movie`) |
 | `faf_griff_tests` | The touch scheme Griff's rules (`tests/griff`), linked statically |
+| `faf_net_tests` | The engine's network transport on `platform::net` (`tests/net`), with the simulation's objects, linked statically |
 
 The client's objects are compiled with the simulation's settings (`faf_sim_settings`) and the engine's
 directory-wide definitions (`FAF_RETAIL_LAYOUT`, which decides the legacy containers' layout), as they
@@ -151,9 +152,19 @@ differ by the rounding of NEON's and C's IDCT (at most 3 levels, about 45 dB). W
 runs the engine's player by the clock with a reader that stalls now and then: it fails when the
 player gives up, and prints how long the reader had to wait.
 
-`tests/net/NetTests.cpp` checked the engine's datagram socket and UDP connector on the earlier host's
-Winsock layer, and what the patched transport puts on the wire and leaves at a game's end. It is not
-built: it comes back on `platform::net`.
+`faf_net_tests` (`tests/net`) runs the engine's socket events (`platform::net`, `src/platform/posix/NetPosix.cpp`) on
+real sockets over the loopback, with bionic, and the engine's datagram socket and UDP connector on them: the patched
+transport's end, its count of open connectors (what the app's `NetworkGameService` goes by), a network that goes and
+comes back, what the protocol puts on the wire and what ending a game or a replay leaves. It links the simulation's
+objects as the game does, statically, and the app's workflow runs the arm64 build on an arm64 runner. Where
+`platform::net` keeps Winsock's behaviour less strictly than the earlier host's layer did, the test says so: it does not
+refuse to select a descriptor that is no socket, and a closed socket's port is free once the poll thread has let go of
+it, a few milliseconds after `CloseSocket` (on the emulator at most 24 ms in three runs), not at once.
+
+```sh
+adb push build/android-x64/bin/faf_net_tests /data/local/tmp/
+adb shell "chmod 755 /data/local/tmp/faf_net_tests && /data/local/tmp/faf_net_tests"
+```
 
 ## Patches
 

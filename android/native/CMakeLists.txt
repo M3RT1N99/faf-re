@@ -24,6 +24,7 @@
 #                                  which the app's activity (an SDLActivity) loads and starts
 #   faf_movie_tests                the engine's movie player on real movies (tests/movie)
 #   faf_griff_tests                the touch scheme Griff's rules (tests/griff)
+#   faf_net_tests                  the engine's network transport on platform::net (tests/net)
 
 cmake_minimum_required(VERSION 3.25)
 # ASM: the engine's x86_64 build assembles the x87 helpers (cmake/FafLinux.cmake), and CMake wants
@@ -380,3 +381,12 @@ add_executable(faf_griff_tests
 target_include_directories(faf_griff_tests PRIVATE "${FAF_ANDROID_DIR}/include")
 target_compile_features(faf_griff_tests PRIVATE cxx_std_20)
 target_link_options(faf_griff_tests PRIVATE -static -Wl,--gc-sections)
+
+# faf_net_tests (tests/net): the engine's socket events (platform::net) on real sockets over the loopback, its datagram
+# socket and UDP connector on them, the patched transport's end and its count of open connectors, and what the protocol
+# puts on the wire. The transport is the simulation's, so the test takes the simulation's objects as the game links them,
+# the patched ones in place of theirs: all of them, as their reflection looks types up across the simulation as it starts.
+# Linked statically, as faf_griff_tests is.
+add_executable(faf_net_tests tests/net/NetTests.cpp ${FAF_ANDROID_SIM_OBJECTS})
+target_link_libraries(faf_net_tests PRIVATE faf_android_settings ${_faf_sim_libraries})
+target_link_options(faf_net_tests PRIVATE -static -Wl,--gc-sections)

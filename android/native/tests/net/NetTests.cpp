@@ -1,8 +1,9 @@
-// faf_net_tests (android/native/README.md, Tests): the Winsock events of src/win32/WinsockAndroid.cpp on
-// real sockets over the loopback, and the engine's own datagram socket and UDP connector on them: the
-// patched files as the game runs them, failure paths included. What the protocol puts on the wire, whose
-// sizes the x86 game fixes. Linked statically like faf_wx_lite_tests, so it runs on the emulator and on
-// Linux hosts (CI's arm64 runner). Exit code 0 when every check passes.
+// faf_net_tests (android/native/README.md, Tests): the engine's socket events (platform::net, src/platform/Net.h, on
+// POSIX src/platform/posix/NetPosix.cpp) on real sockets over the loopback, with bionic, and the engine's own datagram
+// socket and UDP connector on them: the patched files as the game runs them, failure paths included; the count of open
+// connectors the app's NetworkGameService goes by. What the protocol puts on the wire, whose sizes the x86 game fixes.
+// Linked statically like faf_griff_tests, so it runs on the emulator and on Linux hosts (CI's arm64 runner). Exit code 0
+// when every check passes.
 
 #include <fcntl.h>
 #include <poll.h>
@@ -10,7 +11,8 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
-#include <winsock2.h>
+
+#include <Windows.h>
 
 #include <algorithm>
 #include <atomic>
@@ -20,15 +22,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <new>
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
-#include "boost/thread/exceptions.hpp"
-#include "boost/weak_ptr.h"
 #include "gpg/core/algorithms/MD5.h"
 #include "gpg/core/streams/PipeStream.h"
 #include "moho/containers/SCoordsVec2.h"
@@ -49,11 +51,20 @@
 #include "moho/net/SPeer.h"
 #include "moho/render/camera/VTransform.h"
 #include "moho/sim/SOCellPos.h"
+#include "platform/Net.h"
 #include "Wm3Quaternion.h"
 #include "Wm3Vector3.h"
 
+namespace moho
+{
+  // The patched CNetUDPConnector.cpp's (android/native/patches/README.md): how many UDP connectors have their socket open.
+  [[nodiscard]] int NET_OpenUDPConnectors() noexcept;
+} // namespace moho
+
 namespace
 {
+  namespace net = platform::net;
+
   constexpr u_long kLoopback = 0x7F000001; // host order, as the engine passes addresses
   constexpr DWORD kArrivalMs = 2000;       // a datagram over the loopback is there long before
   constexpr DWORD kSilenceMs = 150;        // what has to stay silent is watched this long
@@ -68,137 +79,130 @@ namespace
     }                                                               \
   } while (false)
 
-  bool Signalled(const WSAEVENT event, const DWORD milliseconds)
+  bool Signalled(const HANDLE event, const DWORD milliseconds)
   {
-    return WSAWaitForMultipleEvents(1, &event, FALSE, milliseconds, FALSE) == WAIT_OBJECT_0;
+    return ::WaitForSingleObject(event, milliseconds) == WAIT_OBJECT_0;
   }
 
   /// A UDP socket on the loopback, on `port` or one the system picks.
-  SOCKET OpenUdp(const u_short port = 0)
+  sockaddr_in Loopback(const u_short port)
   {
-    const SOCKET socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     sockaddr_in name{};
     name.sin_family = AF_INET;
     name.sin_port = htons(port);
     name.sin_addr.s_addr = htonl(kLoopback);
-    CHECK(socket != INVALID_SOCKET);
-    CHECK(::bind(socket, reinterpret_cast<const sockaddr*>(&name), sizeof(name)) == 0);
+    return name;
+  }
+
+  net::Socket OpenUdp(const u_short port = 0)
+  {
+    const net::Socket socket = net::OpenSocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    CHECK(socket != net::kInvalidSocket);
+    CHECK(net::Bind(socket, Loopback(port)) == 0);
     return socket;
   }
 
-  u_short PortOf(const SOCKET socket)
+  u_short PortOf(const net::Socket socket)
   {
     sockaddr_in name{};
-    int length = sizeof(name);
-    CHECK(getsockname(socket, reinterpret_cast<sockaddr*>(&name), &length) == 0);
-    CHECK(length == sizeof(name));
+    CHECK(net::GetLocalAddress(socket, &name) == 0);
     return ntohs(name.sin_port);
   }
 
-  void SendTo(const SOCKET from, const u_short port, const std::string& text)
+  void SendTo(const net::Socket from, const u_short port, const std::string& text)
   {
-    sockaddr_in to{};
-    to.sin_family = AF_INET;
-    to.sin_port = htons(port);
-    to.sin_addr.s_addr = htonl(kLoopback);
-    const ssize_t sent = ::sendto(from, text.data(), text.size(), 0, reinterpret_cast<const sockaddr*>(&to), sizeof(to));
-    CHECK(sent == static_cast<ssize_t>(text.size()));
+    const int sent = net::SendTo(from, text.data(), static_cast<int>(text.size()), Loopback(port));
+    CHECK(sent == static_cast<int>(text.size()));
   }
 
-  int ReadOne(const SOCKET socket)
+  int ReadOne(const net::Socket socket)
   {
     char buffer[1500];
     sockaddr_in from{};
-    int fromLength = sizeof(from);
-    return recvfrom(socket, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&from), &fromLength);
+    return net::RecvFrom(socket, buffer, sizeof(buffer), &from);
   }
 
   // --- The events ------------------------------------------------------------------------------
 
   void EventsAreManualReset()
   {
-    WSAEVENT events[2] = {WSACreateEvent(), WSACreateEvent()};
-    CHECK(events[0] != WSA_INVALID_EVENT);
+    HANDLE events[2] = {net::CreateSocketEvent(), net::CreateSocketEvent()};
+    CHECK(events[0] != nullptr);
     CHECK(!Signalled(events[0], 0));
-    CHECK(WSASetEvent(events[0]) != FALSE);
+    CHECK(net::SignalSocketEvent(events[0]));
     CHECK(Signalled(events[0], 0));
     CHECK(Signalled(events[0], 0)); // it stays set
-    CHECK(WSAResetEvent(events[0]) != FALSE);
+    CHECK(net::ResetSocketEvent(events[0]));
     CHECK(!Signalled(events[0], 0));
 
     const auto start = std::chrono::steady_clock::now();
-    CHECK(WSAWaitForMultipleEvents(1, &events[0], FALSE, 60, TRUE) == WAIT_TIMEOUT);
+    CHECK(::WaitForSingleObject(events[0], 60) == WAIT_TIMEOUT);
     CHECK(std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(50));
 
-    CHECK(WSAWaitForMultipleEvents(2, events, FALSE, 0, FALSE) == WAIT_TIMEOUT);
-    CHECK(WSASetEvent(events[1]) != FALSE);
-    CHECK(WSAWaitForMultipleEvents(2, events, FALSE, 0, FALSE) == WAIT_OBJECT_0 + 1);
-    CHECK(WSAWaitForMultipleEvents(2, events, TRUE, 0, FALSE) == WAIT_TIMEOUT);
-    CHECK(WSASetEvent(events[0]) != FALSE);
-    CHECK(WSAWaitForMultipleEvents(2, events, TRUE, 0, FALSE) == WAIT_OBJECT_0);
+    CHECK(::WaitForMultipleObjects(2, events, FALSE, 0) == WAIT_TIMEOUT);
+    CHECK(net::SignalSocketEvent(events[1]));
+    CHECK(::WaitForMultipleObjects(2, events, FALSE, 0) == WAIT_OBJECT_0 + 1);
+    CHECK(::WaitForMultipleObjects(2, events, TRUE, 0) == WAIT_TIMEOUT);
+    CHECK(net::SignalSocketEvent(events[0]));
+    CHECK(::WaitForMultipleObjects(2, events, TRUE, 0) == WAIT_OBJECT_0);
 
-    // The connector's thread waits without an end, -1 cast to a DWORD, and another thread wakes it.
-    CHECK(WSAResetEvent(events[0]) != FALSE);
+    // The connector's thread waits without an end (net::WaitSocketEvent with 0xFFFFFFFF), and another thread wakes it.
+    CHECK(net::ResetSocketEvent(events[0]));
     std::thread waker([&events] {
       std::this_thread::sleep_for(std::chrono::milliseconds(30));
-      (void)WSASetEvent(events[0]);
+      (void)net::SignalSocketEvent(events[0]);
     });
-    CHECK(WSAWaitForMultipleEvents(1, &events[0], FALSE, static_cast<DWORD>(-1), TRUE) == WAIT_OBJECT_0);
+    CHECK(::WaitForSingleObject(events[0], INFINITE) == WAIT_OBJECT_0);
     waker.join();
 
-    CHECK(WSACloseEvent(events[0]) != FALSE);
-    CHECK(WSACloseEvent(events[1]) != FALSE);
+    CHECK(net::CloseSocketEvent(events[0]));
+    CHECK(net::CloseSocketEvent(events[1]));
   }
 
   void SelectRefusesWhatIsNoSelection()
   {
-    const WSAEVENT event = WSACreateEvent();
+    const HANDLE event = net::CreateSocketEvent();
 
-    CHECK(WSAEventSelect(987654, event, FD_READ) == SOCKET_ERROR);
-    CHECK(WSAGetLastError() == WSAEBADF);
+    CHECK(net::SelectSocketEvents(987654, event, net::kEventRead) == net::kSocketError);
+    CHECK(net::LastError() == net::error::kBadFile);
+    // A descriptor that is no socket is not refused (Winsock's WSAENOTSOCK): the engine selects only its sockets.
 
-    const int file = ::open("/proc/self/exe", O_RDONLY | O_CLOEXEC);
-    CHECK(file >= 0);
-    CHECK(WSAEventSelect(file, event, FD_READ) == SOCKET_ERROR);
-    CHECK(WSAGetLastError() == WSAENOTSOCK);
-    CHECK(::close(file) == 0);
+    const net::Socket socket = OpenUdp();
+    CHECK(net::SelectSocketEvents(socket, nullptr, net::kEventRead) == net::kSocketError);
+    CHECK(net::LastError() == net::error::kInvalid);
+    CHECK(net::CloseSocket(socket) == 0);
 
-    const SOCKET socket = OpenUdp();
-    CHECK(WSAEventSelect(socket, WSA_INVALID_EVENT, FD_READ) == SOCKET_ERROR);
-    CHECK(WSAGetLastError() == WSAEINVAL);
-    CHECK(closesocket(socket) == 0);
-
-    CHECK(closesocket(987654) == SOCKET_ERROR);
-    CHECK(WSAGetLastError() == WSAEBADF);
-    CHECK(WSACloseEvent(event) != FALSE);
+    CHECK(net::CloseSocket(987654) == net::kSocketError);
+    CHECK(net::LastError() == net::error::kBadFile);
+    CHECK(net::CloseSocketEvent(event));
   }
 
   void SelectMakesTheSocketNonBlocking()
   {
-    const WSAEVENT event = WSACreateEvent();
-    const SOCKET socket = OpenUdp();
+    const HANDLE event = net::CreateSocketEvent();
+    const net::Socket socket = OpenUdp();
     CHECK((::fcntl(socket, F_GETFL) & O_NONBLOCK) == 0);
-    CHECK(WSAEventSelect(socket, event, FD_READ) == 0);
+    CHECK(net::SelectSocketEvents(socket, event, net::kEventRead) == 0);
     CHECK((::fcntl(socket, F_GETFL) & O_NONBLOCK) != 0);
-    CHECK(ReadOne(socket) == SOCKET_ERROR);
-    CHECK(WSAGetLastError() == WSAEWOULDBLOCK); // what comes after recvfrom's read keeps its errno
-    CHECK(closesocket(socket) == 0);
-    CHECK(WSACloseEvent(event) != FALSE);
+    CHECK(ReadOne(socket) == net::kSocketError);
+    CHECK(net::LastError() == net::error::kWouldBlock); // what comes after recvfrom's read keeps its errno
+    CHECK(net::CloseSocket(socket) == 0);
+    CHECK(net::CloseSocketEvent(event));
   }
 
   void ReadIsSignalledAgainOnlyAfterRecvfrom()
   {
-    const WSAEVENT event = WSACreateEvent();
-    const SOCKET socket = OpenUdp();
-    const SOCKET sender = OpenUdp();
-    CHECK(WSAEventSelect(socket, event, FD_READ) == 0);
+    const HANDLE event = net::CreateSocketEvent();
+    const net::Socket socket = OpenUdp();
+    const net::Socket sender = OpenUdp();
+    CHECK(net::SelectSocketEvents(socket, event, net::kEventRead) == 0);
     CHECK(!Signalled(event, kSilenceMs)); // nothing to read
 
     SendTo(sender, PortOf(socket), "one");
     CHECK(Signalled(event, kArrivalMs));
 
     // Winsock: once until a recvfrom, whatever arrives and whoever resets the event.
-    CHECK(WSAResetEvent(event) != FALSE);
+    CHECK(net::ResetSocketEvent(event));
     SendTo(sender, PortOf(socket), "two");
     CHECK(!Signalled(event, kSilenceMs));
 
@@ -208,12 +212,12 @@ namespace
     CHECK(Signalled(event, kArrivalMs));
 
     // One that takes the last one leaves it alone.
-    CHECK(WSAResetEvent(event) != FALSE);
+    CHECK(net::ResetSocketEvent(event));
     CHECK(ReadOne(socket) == 3);
-    CHECK(ReadOne(socket) == SOCKET_ERROR);
-    CHECK(WSAGetLastError() == WSAEWOULDBLOCK);
+    CHECK(ReadOne(socket) == net::kSocketError);
+    CHECK(net::LastError() == net::error::kWouldBlock);
     std::this_thread::sleep_for(std::chrono::milliseconds(kSilenceMs)); // a signal that was on its way
-    CHECK(WSAResetEvent(event) != FALSE);
+    CHECK(net::ResetSocketEvent(event));
     CHECK(!Signalled(event, kSilenceMs));
 
     // And the next datagram is signalled as the first was.
@@ -221,98 +225,113 @@ namespace
     CHECK(Signalled(event, kArrivalMs));
     CHECK(ReadOne(socket) == 5);
 
-    CHECK(closesocket(sender) == 0);
-    CHECK(closesocket(socket) == 0);
-    CHECK(WSACloseEvent(event) != FALSE);
+    CHECK(net::CloseSocket(sender) == 0);
+    CHECK(net::CloseSocket(socket) == 0);
+    CHECK(net::CloseSocketEvent(event));
   }
 
   void RecvfromFillsInTheSender()
   {
-    const SOCKET socket = OpenUdp();
-    const SOCKET sender = OpenUdp();
+    const net::Socket socket = OpenUdp();
+    const net::Socket sender = OpenUdp();
     SendTo(sender, PortOf(socket), "hello");
     char buffer[16] = {};
     sockaddr_in from{};
-    int fromLength = sizeof(from);
-    CHECK(recvfrom(socket, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&from), &fromLength) == 5);
+    CHECK(net::RecvFrom(socket, buffer, sizeof(buffer), &from) == 5);
     CHECK(std::memcmp(buffer, "hello", 5) == 0);
-    CHECK(fromLength == sizeof(from));
     CHECK(ntohl(from.sin_addr.s_addr) == kLoopback);
     CHECK(ntohs(from.sin_port) == PortOf(sender));
-    CHECK(closesocket(sender) == 0);
-    CHECK(closesocket(socket) == 0);
+    CHECK(net::CloseSocket(sender) == 0);
+    CHECK(net::CloseSocket(socket) == 0);
   }
 
   void WriteIsSignalledOnce()
   {
-    const WSAEVENT event = WSACreateEvent();
-    const SOCKET socket = OpenUdp();
-    CHECK(WSAEventSelect(socket, event, FD_READ | FD_WRITE) == 0);
+    const HANDLE event = net::CreateSocketEvent();
+    const net::Socket socket = OpenUdp();
+    CHECK(net::SelectSocketEvents(socket, event, net::kEventRead | net::kEventWrite) == 0);
     CHECK(Signalled(event, kArrivalMs)); // it can be written
-    CHECK(WSAResetEvent(event) != FALSE);
+    CHECK(net::ResetSocketEvent(event));
     CHECK(!Signalled(event, kSilenceMs));
-    CHECK(closesocket(socket) == 0);
-    CHECK(WSACloseEvent(event) != FALSE);
+    CHECK(net::CloseSocket(socket) == 0);
+    CHECK(net::CloseSocketEvent(event));
   }
 
   void ANewSelectionReplacesTheOld()
   {
-    const WSAEVENT first = WSACreateEvent();
-    const WSAEVENT second = WSACreateEvent();
-    const SOCKET socket = OpenUdp();
-    const SOCKET sender = OpenUdp();
-    CHECK(WSAEventSelect(socket, first, FD_READ) == 0);
-    CHECK(WSAEventSelect(socket, second, FD_READ) == 0);
+    const HANDLE first = net::CreateSocketEvent();
+    const HANDLE second = net::CreateSocketEvent();
+    const net::Socket socket = OpenUdp();
+    const net::Socket sender = OpenUdp();
+    CHECK(net::SelectSocketEvents(socket, first, net::kEventRead) == 0);
+    CHECK(net::SelectSocketEvents(socket, second, net::kEventRead) == 0);
     SendTo(sender, PortOf(socket), "x");
     CHECK(Signalled(second, kArrivalMs));
     CHECK(!Signalled(first, 0));
 
     // None at all: the socket stays non-blocking, nothing is signalled.
     CHECK(ReadOne(socket) == 1);
-    CHECK(WSAResetEvent(second) != FALSE);
-    CHECK(WSAEventSelect(socket, WSA_INVALID_EVENT, 0) == 0);
+    CHECK(net::ResetSocketEvent(second));
+    CHECK(net::SelectSocketEvents(socket, nullptr, 0) == 0);
     SendTo(sender, PortOf(socket), "y");
     CHECK(!Signalled(second, kSilenceMs));
     CHECK(ReadOne(socket) == 1);
-    CHECK(ReadOne(socket) == SOCKET_ERROR);
+    CHECK(ReadOne(socket) == net::kSocketError);
 
-    CHECK(closesocket(sender) == 0);
-    CHECK(closesocket(socket) == 0);
-    CHECK(WSACloseEvent(first) != FALSE);
-    CHECK(WSACloseEvent(second) != FALSE);
+    CHECK(net::CloseSocket(sender) == 0);
+    CHECK(net::CloseSocket(socket) == 0);
+    CHECK(net::CloseSocketEvent(first));
+    CHECK(net::CloseSocketEvent(second));
   }
 
   void CloseEndsTheSelectionAndFreesThePort()
   {
-    const SOCKET sender = OpenUdp();
-    const WSAEVENT oldEvent = WSACreateEvent();
-    SOCKET socket = OpenUdp();
+    const net::Socket sender = OpenUdp();
+    const HANDLE oldEvent = net::CreateSocketEvent();
+    net::Socket socket = OpenUdp();
     const u_short port = PortOf(socket);
-    // The thread is in its poll of the old socket each time: the port is free when closesocket returns.
+    // The thread is in its poll of the old socket each time, which holds the socket until CloseSocket's wake-up has
+    // reached the thread: the port is free a moment after CloseSocket returns (Winsock's closesocket frees it at once).
+    auto longest = std::chrono::steady_clock::duration::zero();
     for (int round = 0; round < 100; ++round) {
-      CHECK(WSAEventSelect(socket, oldEvent, FD_READ) == 0);
+      CHECK(net::SelectSocketEvents(socket, oldEvent, net::kEventRead) == 0);
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
-      CHECK(closesocket(socket) == 0);
-      socket = OpenUdp(port);
+      CHECK(net::CloseSocket(socket) == 0);
+      const auto closed = std::chrono::steady_clock::now();
+      socket = net::kInvalidSocket;
+      while (socket == net::kInvalidSocket && std::chrono::steady_clock::now() - closed < std::chrono::seconds(1)) {
+        socket = net::OpenSocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (net::Bind(socket, Loopback(port)) != 0) {
+          CHECK(net::LastError() == net::error::kAddressInUse);
+          CHECK(net::CloseSocket(socket) == 0);
+          socket = net::kInvalidSocket;
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+      }
+      CHECK(socket != net::kInvalidSocket);
+      longest = std::max(longest, std::chrono::steady_clock::now() - closed);
     }
+    std::printf("  the port was free at the latest %lld ms after CloseSocket\n",
+      static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(longest).count()));
+    CHECK(longest < std::chrono::milliseconds(100));
     // The new socket has the old one's number, and its traffic is nothing to the old selection's event.
-    CHECK(WSAResetEvent(oldEvent) != FALSE);
+    CHECK(net::ResetSocketEvent(oldEvent));
     SendTo(sender, port, "z");
     CHECK(!Signalled(oldEvent, kSilenceMs));
-    CHECK(closesocket(socket) == 0);
-    CHECK(closesocket(sender) == 0);
-    CHECK(WSACloseEvent(oldEvent) != FALSE);
+    CHECK(net::CloseSocket(socket) == 0);
+    CHECK(net::CloseSocket(sender) == 0);
+    CHECK(net::CloseSocketEvent(oldEvent));
   }
 
   void WhatWaitsCostsNoCpu()
   {
-    const WSAEVENT unread = WSACreateEvent();
-    const WSAEVENT idle = WSACreateEvent();
-    const SOCKET withData = OpenUdp();
-    const SOCKET withoutData = OpenUdp();
-    const SOCKET sender = OpenUdp();
-    CHECK(WSAEventSelect(withData, unread, FD_READ) == 0);
-    CHECK(WSAEventSelect(withoutData, idle, FD_READ) == 0);
+    const HANDLE unread = net::CreateSocketEvent();
+    const HANDLE idle = net::CreateSocketEvent();
+    const net::Socket withData = OpenUdp();
+    const net::Socket withoutData = OpenUdp();
+    const net::Socket sender = OpenUdp();
+    CHECK(net::SelectSocketEvents(withData, unread, net::kEventRead) == 0);
+    CHECK(net::SelectSocketEvents(withoutData, idle, net::kEventRead) == 0);
     SendTo(sender, PortOf(withData), "left unread");
     CHECK(Signalled(unread, kArrivalMs));
 
@@ -325,11 +344,11 @@ namespace
     std::printf("  %lld ms of CPU in 500 ms with data unread and a socket idle\n", cpuMs);
     CHECK(cpuMs < 50);
 
-    CHECK(closesocket(sender) == 0);
-    CHECK(closesocket(withoutData) == 0);
-    CHECK(closesocket(withData) == 0);
-    CHECK(WSACloseEvent(idle) != FALSE);
-    CHECK(WSACloseEvent(unread) != FALSE);
+    CHECK(net::CloseSocket(sender) == 0);
+    CHECK(net::CloseSocket(withoutData) == 0);
+    CHECK(net::CloseSocket(withData) == 0);
+    CHECK(net::CloseSocketEvent(idle));
+    CHECK(net::CloseSocketEvent(unread));
   }
 
   // --- The engine's datagram socket --------------------------------------------------------------
@@ -364,9 +383,9 @@ namespace
 
   u_short FreePort()
   {
-    const SOCKET probe = OpenUdp();
+    const net::Socket probe = OpenUdp();
     const u_short port = PortOf(probe);
-    CHECK(closesocket(probe) == 0);
+    CHECK(net::CloseSocket(probe) == 0);
     return port;
   }
 
@@ -400,7 +419,7 @@ namespace
     CHECK(std::string(moho::NET_GetWinsockErrorString()) == "WSAEADDRINUSE");
 
     // What is not a whole message goes unread by the handler; a handler's exception stays in Pull.
-    const SOCKET sender = OpenUdp();
+    const net::Socket sender = OpenUdp();
     SendTo(sender, port, "xy");
     moho::CMessage liar = Request("short");
     liar.SetSize(200);
@@ -428,12 +447,20 @@ namespace
     CHECK(Signalled(event, kArrivalMs));
     socket->Pull();
     CHECK(handler.payloads.size() == 70);
-    CHECK(closesocket(sender) == 0);
+    CHECK(net::CloseSocket(sender) == 0);
 
-    // Gone with its object, event and all: the port is free at once.
+    // Gone with its object, event and all: the port is free a moment later, once the poll thread has let go of the
+    // socket (CloseEndsTheSelectionAndFreesThePort).
     delete socket;
     Datagrams again;
-    moho::INetDatagramSocket* const reopened = moho::NET_OpenDatagramSocket(port, &again);
+    moho::INetDatagramSocket* reopened = nullptr;
+    const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    while (reopened == nullptr && std::chrono::steady_clock::now() < end) {
+      reopened = moho::NET_OpenDatagramSocket(port, &again);
+      if (reopened == nullptr) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+    }
     CHECK(reopened != nullptr);
     delete reopened;
   }
@@ -443,7 +470,7 @@ namespace
   /// has a say in whether the engine's path below is checked.
   bool BroadcastsComeBack()
   {
-    const SOCKET probe = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    const int probe = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     const int on = 1;
     CHECK(::setsockopt(probe, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on)) == 0);
     sockaddr_in name{};
@@ -455,7 +482,7 @@ namespace
     const bool sent = ::sendto(probe, "x", 1, 0, reinterpret_cast<const sockaddr*>(&name), sizeof(name)) == 1;
     pollfd readable{probe, POLLIN, 0};
     const bool back = sent && ::poll(&readable, 1, kArrivalMs) == 1;
-    CHECK(closesocket(probe) == 0);
+    CHECK(::close(probe) == 0);
     return back;
   }
 
@@ -514,7 +541,7 @@ namespace
 
   moho::INetConnector* MakeConnector(const u_short port = 0)
   {
-    return moho::NET_MakeConnector(port, moho::ENetProtocolType::kUdp, boost::weak_ptr<moho::INetNATTraversalProvider>{});
+    return moho::NET_MakeUDPConnector(port, std::weak_ptr<moho::INetNATTraversalProvider>{});
   }
 
   /// Until `done` says so, or `seconds` passed, as the lobby's frame pulls and pushes.
@@ -617,7 +644,7 @@ namespace
     CHECK(fullFromGuest >= 7);
 
     // Garbage on the port is dropped and the connection goes on.
-    const SOCKET stranger = OpenUdp();
+    const net::Socket stranger = OpenUdp();
     SendTo(stranger, hostPort, "too short");
     SendTo(stranger, hostPort, std::string(600, '\x03'));
     toHost->Write(Request("after the garbage"));
@@ -650,14 +677,14 @@ namespace
     host->Push();
     host->Destroy();
     CHECK(::CloseHandle(selected) != FALSE);
-    CHECK(closesocket(stranger) == 0);
+    CHECK(net::CloseSocket(stranger) == 0);
   }
 
   /// Whether the connectors that were destroyed have closed their sockets in time: their threads say goodbye first.
   bool NoConnectorSocketIsLeft()
   {
     const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-    while (Win32Android_ConnectorSocketOpen()) {
+    while ((moho::NET_OpenUDPConnectors() > 0)) {
       if (std::chrono::steady_clock::now() > end) {
         return false;
       }
@@ -667,7 +694,7 @@ namespace
   }
 
   /// What the app's NetworkGameService goes by: the connector of a network lobby or game, from its making until its
-  /// socket has closed, and not the LAN screen's search for games. The two differ only by what they select.
+  /// socket has closed, and not the LAN screen's search for games, a datagram socket.
   void OnlyAConnectorCountsAsTheNetworkInUse()
   {
     CHECK(NoConnectorSocketIsLeft());
@@ -679,12 +706,12 @@ namespace
       return;
     }
     CHECK(discovery->CreateEvent() != nullptr);
-    CHECK(!Win32Android_ConnectorSocketOpen());
+    CHECK(!(moho::NET_OpenUDPConnectors() > 0));
 
     moho::INetConnector* const connector = MakeConnector();
     CHECK(connector != nullptr);
     if (connector != nullptr) {
-      CHECK(Win32Android_ConnectorSocketOpen());
+      CHECK((moho::NET_OpenUDPConnectors() > 0));
       connector->Destroy();
       CHECK(NoConnectorSocketIsLeft());
     }
@@ -692,20 +719,18 @@ namespace
   }
 
   /// Passes datagrams between two UDP sockets until `running` goes false: a network that can go.
-  void RelayDatagrams(const SOCKET towardsGuest, const SOCKET towardsHost, const u_short hostPort, const std::atomic<bool>& running)
+  void RelayDatagrams(const net::Socket towardsGuest, const net::Socket towardsHost, const u_short hostPort, const std::atomic<bool>& running)
   {
     u_short guestPort = 0;
     char buffer[1500];
     while (running) {
       sockaddr_in from{};
-      int fromLength = sizeof(from);
-      int received = recvfrom(towardsGuest, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&from), &fromLength);
+      int received = net::RecvFrom(towardsGuest, buffer, sizeof(buffer), &from);
       if (received > 0) {
         guestPort = ntohs(from.sin_port);
         SendTo(towardsHost, hostPort, std::string(buffer, static_cast<std::size_t>(received)));
       }
-      fromLength = sizeof(from);
-      received = recvfrom(towardsHost, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&from), &fromLength);
+      received = net::RecvFrom(towardsHost, buffer, sizeof(buffer), &from);
       if (received > 0 && guestPort != 0) {
         SendTo(towardsGuest, guestPort, std::string(buffer, static_cast<std::size_t>(received)));
       }
@@ -723,11 +748,11 @@ namespace
     if (host == nullptr || guest == nullptr) {
       return;
     }
-    const SOCKET towardsGuest = OpenUdp();
-    const SOCKET towardsHost = OpenUdp();
-    const WSAEVENT unused = WSACreateEvent();
-    CHECK(WSAEventSelect(towardsGuest, unused, FD_READ) == 0); // makes them non-blocking
-    CHECK(WSAEventSelect(towardsHost, unused, FD_READ) == 0);
+    const net::Socket towardsGuest = OpenUdp();
+    const net::Socket towardsHost = OpenUdp();
+    const HANDLE unused = net::CreateSocketEvent();
+    CHECK(net::SelectSocketEvents(towardsGuest, unused, net::kEventRead) == 0); // makes them non-blocking
+    CHECK(net::SelectSocketEvents(towardsHost, unused, net::kEventRead) == 0);
     std::atomic<bool> running{true};
     std::thread relay(&RelayDatagrams, towardsGuest, towardsHost, host->GetLocalPort(), std::cref(running));
 
@@ -759,21 +784,20 @@ namespace
     accepted->ScheduleDestroy();
     guest->Destroy();
     host->Destroy();
-    CHECK(closesocket(towardsHost) == 0);
-    CHECK(closesocket(towardsGuest) == 0);
-    CHECK(WSACloseEvent(unused) != FALSE);
+    CHECK(net::CloseSocket(towardsHost) == 0);
+    CHECK(net::CloseSocket(towardsGuest) == 0);
+    CHECK(net::CloseSocketEvent(unused));
   }
 
   /// The next DATA packet with something in it past sequence number `after` that waits at `socket`, as a relay
   /// that stands still leaves them; what comes before it is lost, as a network may lose it. Empty if none comes.
-  std::string TakeData(const SOCKET socket, const int after, int& sequence)
+  std::string TakeData(const net::Socket socket, const int after, int& sequence)
   {
     const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     char buffer[1500];
     while (std::chrono::steady_clock::now() < end) {
       sockaddr_in from{};
-      int fromLength = sizeof(from);
-      const int received = recvfrom(socket, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&from), &fromLength);
+      const int received = net::RecvFrom(socket, buffer, sizeof(buffer), &from);
       if (received >= static_cast<int>(moho::kNetPacketHeaderSize)) {
         moho::SNetPacketHeader header;
         std::memcpy(&header, buffer, sizeof(header));
@@ -799,11 +823,11 @@ namespace
     if (host == nullptr || guest == nullptr) {
       return;
     }
-    const SOCKET towardsGuest = OpenUdp();
-    const SOCKET towardsHost = OpenUdp();
-    const WSAEVENT unused = WSACreateEvent();
-    CHECK(WSAEventSelect(towardsGuest, unused, FD_READ) == 0); // makes them non-blocking
-    CHECK(WSAEventSelect(towardsHost, unused, FD_READ) == 0);
+    const net::Socket towardsGuest = OpenUdp();
+    const net::Socket towardsHost = OpenUdp();
+    const HANDLE unused = net::CreateSocketEvent();
+    CHECK(net::SelectSocketEvents(towardsGuest, unused, net::kEventRead) == 0); // makes them non-blocking
+    CHECK(net::SelectSocketEvents(towardsHost, unused, net::kEventRead) == 0);
     const u_short hostPort = host->GetLocalPort();
     std::atomic<bool> running{true};
     std::thread relay(&RelayDatagrams, towardsGuest, towardsHost, hostPort, std::cref(running));
@@ -846,9 +870,9 @@ namespace
 
     connection->ScheduleDestroy();
     guest->Destroy();
-    CHECK(closesocket(towardsHost) == 0);
-    CHECK(closesocket(towardsGuest) == 0);
-    CHECK(WSACloseEvent(unused) != FALSE);
+    CHECK(net::CloseSocket(towardsHost) == 0);
+    CHECK(net::CloseSocket(towardsGuest) == 0);
+    CHECK(net::CloseSocketEvent(unused));
   }
 
   /// As FAF's lobby is destroyed from a script callback: the connector's Destroy, inside its Pull's dispatch.
@@ -935,7 +959,7 @@ namespace
     bool thrown = false;
     try {
       (void)MakeConnector();
-    } catch (const boost::thread_resource_error&) {
+    } catch (const std::system_error&) {
       thrown = true;
     } catch (const std::bad_alloc&) {
       std::printf("  the heap wanted more room before the thread: not checked\n");
@@ -964,7 +988,7 @@ namespace
     float GetTime() override { return 0.0f; }
     void Write(moho::NetDataSpan* const data) override { written.append(reinterpret_cast<const char*>(data->start), data->size()); }
     void Close() override {}
-    msvc8::string ToString() override { return "recorder"; }
+    fa::string ToString() override { return "recorder"; }
     void ScheduleDestroy() override {}
   };
 
@@ -973,7 +997,7 @@ namespace
     // The host passes each player on to the others, on Windows as 4 + 2 + 4 bytes behind the name, and the
     // Windows game reads them so. u_long is 8 bytes on Android's 64-bit systems.
     Recorder connection;
-    const moho::SPeer peer(msvc8::string("Third"), 0x01020304, 0x0A0B0C0D, 0x1E1F, &connection, moho::ENetworkPlayerState::kEstablished);
+    const moho::SPeer peer(fa::string("Third"), 0x01020304, 0x0A0B0C0D, 0x1E1F, &connection, moho::ENetworkPlayerState::kEstablished);
     peer.SendInfoTo(&connection);
 
     const std::string name("Third\0", 6);
@@ -1050,7 +1074,7 @@ namespace
     CHECK(manager->GetSimRate() == 0);
 
     // It has gone, and this client, the one still in, has ejected it: what keeps FAF's disconnect panel away.
-    msvc8::vector<const moho::CClientBase*> ejecters;
+    fa::vector<const moho::CClientBase*> ejecters;
     other->CollectEjecters(ejecters);
     CHECK(!other->NoEjectionPending());
     CHECK(ejecters.size() == 1 && ejecters[0] == local);
@@ -1135,7 +1159,7 @@ namespace
     // End Replay: the end reaches the sim with the next beat, no army is abandoned, nothing more of the file comes,
     // whose checksums a sim that is over would fail one by one, and FAF's disconnect panel stays away.
     manager->Disconnect();
-    msvc8::vector<const moho::CClientBase*> ejecters;
+    fa::vector<const moho::CClientBase*> ejecters;
     replay->CollectEjecters(ejecters);
     CHECK(!replay->NoEjectionPending());
     CHECK(ejecters.size() == 1 && ejecters[0] == viewer);
