@@ -300,6 +300,11 @@ final class TouchInput implements Fingers {
      * click on it: the first tap's selection brings FAF's panels up, which can cover where it was.
      */
     static final int STEP_TYPE_IN_VIEW = 5;
+    /**
+     * The group the first tap's icon selected, again, and the camera to it, as a control group's double click (the program
+     * knows the group by the first tap).
+     */
+    static final int STEP_GROUP_AGAIN = 6;
     /** Griff: a draft gesture's phase (Mouse#draftLine and the others). */
     static final int DRAFT_SHOW = 0;
     static final int DRAFT_END = 1;
@@ -310,6 +315,8 @@ final class TouchInput implements Fingers {
     static final int TAP_GROUND = 3;
     static final int TAP_EMPTY = 4;
     static final int TAP_OTHER = 5;
+    /** A group's icon, which selected the group. */
+    static final int TAP_GROUP = 6;
     /**
      * Griff: how long a finger rests before its ring shows and the program hears of the rest: its drag is no pan then, but a
      * formation, a box, or the mark of a waypoint given up.
@@ -448,7 +455,8 @@ final class TouchInput implements Fingers {
      * Griff's tap ladder (the mockup's tapA, nextTapCount): a tap within LADDER_MILLISECONDS of the last tap's lift and
      * LADDER_MM of it climbs a rung, by what the ladder's first tap was, whatever lies under this one: after a tap that
      * selected one's own unit, all of its type on the screen, then on the map; after a plain move, an attack-move there; after
-     * a tap on nothing with nothing selected, all one's own mobile units on the screen. The last two end the ladder. A tap on
+     * a tap on nothing with nothing selected, all one's own mobile units on the screen; after a tap on a group's icon, the
+     * group again with the camera to it, as a control group's double click. The last three end the ladder. A tap on
      * the game's UI is clicked again where the first went, as the game's double click wants it, within its own reach and time.
      * Plus and Box keep a tap off the ladder, as do a drag, a rest, a stroke and two fingers.
      */
@@ -490,6 +498,9 @@ final class TouchInput implements Fingers {
                     case TAP_EMPTY:
                         step = climbs ? STEP_ALL_MOBILE : STEP_TAP;
                         break;
+                    case TAP_GROUP:
+                        step = climbs ? STEP_GROUP_AGAIN : STEP_TAP;
+                        break;
                     default:
                         // Unknown yet, or nothing to climb from.
                         break;
@@ -504,8 +515,8 @@ final class TouchInput implements Fingers {
             } else {
                 mRung = Math.min(mRung + 1, 3);
             }
-            // An attack-move and the grab of the army are the top of their ladders.
-            mLast = step != STEP_ATTACK_MOVE && step != STEP_ALL_MOBILE;
+            // An attack-move, the grab of the army and a group's camera are the top of their ladders.
+            mLast = step != STEP_ATTACK_MOVE && step != STEP_ALL_MOBILE && step != STEP_GROUP_AGAIN;
             mLift = lift;
             mX = x;
             mY = y;

@@ -347,6 +347,8 @@ public class TouchInputTest {
                     return "all mobile";
                 case TouchInput.STEP_TYPE_IN_VIEW:
                     return "type in view";
+                case TouchInput.STEP_GROUP_AGAIN:
+                    return "group again";
                 default:
                     return "step " + step;
             }
@@ -720,6 +722,18 @@ public class TouchInputTest {
         tap(130, 60, 1600, 0);
         expect("move 100 50", "smart tap 100 50 rail 0", "move 130 60", "smart tap 130 60 rail 0 attack move at 100 50",
                "move 130 60", "smart tap 130 60 rail 0");
+    }
+
+    @Test
+    public void griffTheLadderOnAGroupsIconSelectsItAgainWithTheCamera() {
+        // As a control group's double click: the second tap near the first, wherever it lands, takes the first tap's group.
+        griff();
+        tap(100, 50, 1000, TouchInput.TAP_GROUP);
+        tap(120, 55, 1300, 0);
+        // The camera to the group is the ladder's top: the next tap is a tap again.
+        tap(120, 55, 1600, 0);
+        expect("move 100 50", "smart tap 100 50 rail 0", "move 120 55", "smart tap 120 55 rail 0 group again at 100 50",
+               "move 120 55", "smart tap 120 55 rail 0");
     }
 
     @Test

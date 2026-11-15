@@ -360,9 +360,11 @@ target_link_options(fafgalsmoke PRIVATE ${_faf_android_library_options})
 add_library(faf_game_sim_archive STATIC EXCLUDE_FROM_ALL $<TARGET_OBJECTS:faf_game_sim>)
 add_executable(faf_wx_lite_tests
   tests/wx/Main.cpp
+  tests/wx/CameraClearTests.cpp
   tests/wx/EventTests.cpp
   tests/wx/GdiTests.cpp
   tests/wx/GriffDraftTests.cpp
+  tests/wx/GriffGroupsTests.cpp
   tests/wx/GriffPlaceTests.cpp
   tests/wx/GriffTapTests.cpp
   tests/wx/GriffUndoTests.cpp

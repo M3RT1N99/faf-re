@@ -34,7 +34,9 @@
 #include <Windows.h>
 #include <Win32AndroidHost.h>
 
+#include <CameraClear.h>
 #include <GriffDraft.h>
+#include <GriffGroups.h>
 #include <GriffPlace.h>
 #include <GriffTap.h>
 #include <GriffUndo.h>
@@ -47,6 +49,11 @@
 #include "moho/command/UserCommandQueue.h"
 #include "moho/console/CConCommand.h"
 #include "moho/lua/CScrLuaBinder.h"
+#include "moho/render/camera/CameraImpl.h"
+#include "moho/resource/blueprints/RMeshBlueprint.h"
+#include "moho/resource/blueprints/RUnitBlueprint.h"
+#include "moho/sim/CWldSession.h"
+#include "moho/sim/UserArmy.h"
 #include "moho/ui/UiPrivate.h"
 #include "moho/unit/core/UserUnit.h"
 
@@ -56,6 +63,8 @@ namespace moho
   [[nodiscard]] bool UI_GamePlaying() noexcept;
   [[nodiscard]] bool UI_TapTarget(float x, float y, float reach, float smallSide, float* targetX, float* targetY);
   void UI_CancelBuildDrag();
+  // src/moho/sim/CWldSessionRender.cpp's: the size of the strategic icons (FAF's option strat_icon_scale).
+  extern float ui_StrategicIconScale;
 } // namespace moho
 
 namespace
@@ -74,6 +83,7 @@ namespace
   constexpr int kStepAttackMove = 3;
   constexpr int kStepAllMobile = 4;
   constexpr int kStepTypeInView = 5;
+  constexpr int kStepGroupAgain = 6;
 
   // TouchInput's TAP_: what a tap was, for its ladder.
   constexpr int kTapUi = 1;
@@ -81,6 +91,7 @@ namespace
   constexpr int kTapGround = 3;
   constexpr int kTapEmpty = 4;
   constexpr int kTapOther = 5;
+  constexpr int kTapGroup = 6;
 
   // Stroke's END_ that the program decides, and its flag for FAF's attack-move armed; griff.lua's StrokeKind answers the others.
   constexpr int kEndPanel = 8;
@@ -324,8 +335,10 @@ namespace
   /// The HUD is drawn after the map's picture (WRenViewport::Render), so what covers the map is told apart by depth: the
   /// controls at the map's depth or above, such as the unit view, a sibling of the map at its depth, wherever the walk meets
   /// them (FAF makes the map anew when it splits and joins the view, which puts it after the unit view); not what holds the
-  /// map or tints the whole screen at a depth below it, as the paused game's glow does. With it, the main map in `mainMap`.
-  [[nodiscard]] griffplace::FreeMap FreeMapOver(const Box& view, moho::CUIWorldView** const mainMap = nullptr)
+  /// map or tints the whole screen at a depth below it, as the paused game's glow does. With it, the main map in `mainMap`,
+  /// and what of FAF's UI covers it in `fafs`, without the app's pieces.
+  [[nodiscard]] griffplace::FreeMap
+  FreeMapOver(const Box& view, moho::CUIWorldView** const mainMap = nullptr, std::vector<Box>* const fafs = nullptr)
   {
     if (mainMap != nullptr) {
       *mainMap = nullptr;
@@ -382,6 +395,9 @@ namespace
       if (over.depth >= mapDepth) {
         covers.push_back(over.box);
       }
+    }
+    if (fafs != nullptr) {
+      *fafs = covers;
     }
     {
       const std::lock_guard<std::mutex> lock(gCoversMutex);
@@ -894,6 +910,7 @@ namespace
   void TryUndo();
   void DraftCommitTask(WPARAM plus);
   void ForgetRest();
+  void ForgetGroups();
   [[nodiscard]] bool ClicksRun();
   void ReadTaken(std::unordered_map<int, Stored>& stored);
   void DropRecord();
@@ -902,14 +919,62 @@ namespace
   /// for it, plus one; 0: none.
   WPARAM gCommitAsked = 0;
 
+  /// How FAF's panels along the view's edges are told (cameraclear::Rules), the pixels as parts of the view's height: the
+  /// pieces of a panel overlap by more than 0.4 % (3 of the phone's 768 lines, where FAF's unit view lies 2 of them on its
+  /// orders panel); a panel stands at an edge within 1 %, its brackets reach 2 % past it, and a panel covers at most half of
+  /// the view.
+  constexpr float kPanelOverlap = 0.004f;
+  constexpr float kPanelTouch = 0.01f;
+  constexpr float kPanelPast = 0.02f;
+  constexpr float kPanelMost = 0.5f;
+  /// Frames between the measures of the panels' margins, each a walk over the UI of its own: they change only as panels come.
+  constexpr std::uint32_t kMarginFrames = 30;
+  std::uint32_t gMarginsFrame = 0;
+
+  /// What the game's panels along the main map's view's edges cover of it, for the world camera's clamp, which lets each edge
+  /// of the map come out from under them (include/CameraClear.h, the camera's patch): the panels that FAF's controls over the
+  /// map (FreeMapOver's) make up and that stand at an edge of the view, not what the player opened (fafre/opened.lua: windows,
+  /// dialogs, the multifunction panel's dropouts, the tabs' content), and of all that showed in this game the larger margin
+  /// at each edge. The panels come and go with the selection, and a margin that shrank would pull the camera back from an
+  /// edge it went to.
+  void MeasureMargins(const Box& view, const std::vector<Box>& fafs)
+  {
+    std::vector<float> opened;
+    {
+      const std::lock_guard<std::mutex> lock(gOpenedMutex);
+      opened = gOpened;
+    }
+    const auto inOpened = [&opened](const Box& box) {
+      for (std::size_t at = 0; at + 3 < opened.size(); at += 4) {
+        if (box.left >= opened[at] && box.top >= opened[at + 1] && box.right <= opened[at + 2] && box.bottom <= opened[at + 3]) {
+          return true;
+        }
+      }
+      return false;
+    };
+    std::vector<cameraclear::Rect> pieces;
+    for (const Box& box : fafs) {
+      if (!inOpened(box)) {
+        pieces.push_back(cameraclear::Rect{box.left, box.top, box.right, box.bottom});
+      }
+    }
+    const float height = view.bottom - view.top;
+    const cameraclear::Rules rules{kPanelOverlap * height, kPanelTouch * height, kPanelPast * height, kPanelMost};
+    const cameraclear::Margins now =
+      cameraclear::Measure(pieces, cameraclear::Rect{view.left, view.top, view.right, view.bottom}, rules);
+    cameraclear::gWorldCamera = cameraclear::Larger(cameraclear::gWorldCamera, now);
+    gMarginsFrame = gFrame;
+  }
+
   /// The handle for the reported selection, and the free map's cross, after the frame's drawing: FAF's Lua changes layouts
   /// in its frame, after which they are not known until the drawing works them out (unitview.lua places its panel anew each
   /// frame), and the free map reads only what is worked out (LaidOutBox). Without a selection there is no handle and no walk,
-  /// which costs a frame up to a ms. While a draft is open there is no handle (the mockup's: no stroke starts), and the draft
-  /// is shown each frame, as the camera moves its plans; without the map's view its plans have no place on the picture, and
-  /// none shows rather than where an earlier frame drew them. What the sim holds of the queues a gesture's orders replaced is
-  /// read until their replacement landed. An undo the button asked for and a tick that wait for the sim, clicks or a finger's
-  /// drag come now, the undo first, which was asked for the gesture before the tick.
+  /// which costs a frame up to a ms, but each kMarginFrames frames one for the panels' margins (MeasureMargins). While a draft
+  /// is open there is no handle (the mockup's: no stroke starts), and the draft is shown each frame, as the camera moves its
+  /// plans; without the map's view its plans have no place on the picture, and none shows rather than where an earlier frame
+  /// drew them. What the sim holds of the queues a gesture's orders replaced is read until their replacement landed. An undo
+  /// the button asked for and a tick that wait for the sim, clicks or a finger's drag come now, the undo first, which was asked
+  /// for the gesture before the tick.
   void PlaceTask(const WPARAM)
   {
     // The clicks' next step once a frame after the one it waits after is drawn: this task comes after each frame's paint, and
@@ -930,6 +995,11 @@ namespace
         DraftCommitTask(gCommitAsked - 1);
       }
       const bool drafting = gDraft.Open();
+      if (selection.viewKnown && gFrame - gMarginsFrame >= kMarginFrames) {
+        std::vector<Box> panels;
+        (void)FreeMapOver(selection.view, nullptr, &panels);
+        MeasureMargins(selection.view, panels);
+      }
       if (!selection.viewKnown || (!drafting && selection.count <= 0)) {
         if (selection.count <= 0 || drafting) {
           const std::lock_guard<std::mutex> lock(gHandleMutex);
@@ -1063,6 +1133,9 @@ namespace
     DropRecord();
     gUndone.Clear();
     gGuardsWithCtrl.clear();
+    // Its groups, and the camera's room past the map's edges, which the next game measures anew.
+    ForgetGroups();
+    cameraclear::gWorldCamera = cameraclear::Margins{};
     // Clicks that wait for a frame get none any more: their next step ends them, Shift too.
     if (gClicking) {
       gClicksWait = false;
@@ -1568,6 +1641,206 @@ namespace
     return list + "}";
   }
 
+  // --- The groups: Supreme Commander 2's, of the units a gesture ordered or a factory order made ----------------------------
+
+  /// Each of one's own mobile units' group (include/GriffGroups.h): the gesture that ordered it last, or the run of the factory
+  /// that made it where no gesture has ordered it since.
+  griffgroups::Book gGroups;
+
+  /// A factory one's own orders gave builds to (FAF's BuildFactory), with its run: the units it makes one after another of
+  /// one kind while its queue does not run empty are one order's, as FAF's construction panel shows them as one entry with its
+  /// count, also where the player added to it, and one group.
+  struct Factory
+  {
+    std::uint32_t run = 0;
+    const moho::RUnitBlueprint* kind = nullptr;
+  };
+
+  std::unordered_map<int, Factory> gFactories;
+  std::uint32_t gFactoryRuns = 0;
+  /// The units the factories build, by their ids, with the factory that builds each.
+  std::unordered_map<int, int> gBuilding;
+
+  /// The group icons the last frame placed (FafreGriffGroups), each with its group's origin: a tap goes by them.
+  std::vector<griffgroups::Icon> gIcons;
+  std::vector<griffgroups::Origin> gIconOrigins;
+
+  /// The group the ladder's first tap selected by its icon, by that tap's number: its next rung selects it again and brings the
+  /// camera, wherever the icon has gone meanwhile.
+  int gGroupTap = 0;
+  griffgroups::Origin gGroupTapped;
+
+  /// The game is over: its groups go.
+  void ForgetGroups()
+  {
+    gGroups.Clear();
+    gFactories.clear();
+    gBuilding.clear();
+    gIcons.clear();
+    gIconOrigins.clear();
+    gGroupTap = 0;
+  }
+
+  /// The side of a group's icon, in the strategic icons' pixels, which FAF's option strat_icon_scale scales: FAF's largest unit
+  /// icon's, a selected land unit's (its 16 at rest).
+  constexpr float kIconSide = 20;
+
+  /// One of the focus army's mobile units that lives: what a group holds.
+  [[nodiscard]] bool Groupable(const moho::UserUnit& unit)
+  {
+    const moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    const moho::RUnitBlueprint* const blueprint = unit.GetBlueprint();
+    return session != nullptr && unit.mArmy != nullptr && unit.mArmy == session->GetFocusArmy() && !unit.IsDead()
+        && blueprint != nullptr && blueprint->IsMobile();
+  }
+
+  /// A watched gesture's order went to these units: those of them that a group holds are the gesture's group.
+  void GroupOrdered(const int gesture, const std::vector<int>& units)
+  {
+    std::vector<int> grouped;
+    for (const int id : units) {
+      if (const moho::UserUnit* const unit = UnitOf(id); unit != nullptr && Groupable(*unit)) {
+        grouped.push_back(id);
+      }
+    }
+    gGroups.Ordered(static_cast<std::uint32_t>(gesture), grouped);
+  }
+
+  /// Each frame: the units the factories finished go to their runs' groups, before a factory whose queue ran empty ends its
+  /// run (its last unit finishes as its last order goes); what the factories build now is noted; and the units that died or
+  /// are no longer one's own leave their groups.
+  void KeepGroups()
+  {
+    for (auto building = gBuilding.begin(); building != gBuilding.end();) {
+      moho::UserUnit* const unit = UnitOf(building->first);
+      if (unit != nullptr && !unit->IsDead() && unit->IsBeingBuilt()) {
+        ++building;
+        continue;
+      }
+      const auto factory = gFactories.find(building->second);
+      if (unit != nullptr && factory != gFactories.end() && Groupable(*unit)) {
+        Factory& made = factory->second;
+        if (made.kind != unit->GetBlueprint()) {
+          made.kind = unit->GetBlueprint();
+          made.run = ++gFactoryRuns;
+        }
+        gGroups.Made(building->first, made.run);
+      }
+      building = gBuilding.erase(building);
+    }
+    for (auto factory = gFactories.begin(); factory != gFactories.end();) {
+      moho::UserUnit* const unit = UnitOf(factory->first);
+      if (unit == nullptr || unit->IsDead()) {
+        factory = gFactories.erase(factory);
+        continue;
+      }
+      if (unit->mUnitVarDat.mCommands.empty()) {
+        factory->second.kind = nullptr;
+      }
+      if (moho::UserUnit* const built = UnitOf(static_cast<int>(unit->mUnitVarDat.mFocusUnit));
+          built != nullptr && built->IsBeingBuilt()) {
+        gBuilding.try_emplace(IdOf(*built), factory->first);
+      }
+      ++factory;
+    }
+    std::vector<int> gone;
+    for (const auto& [origin, units] : gGroups.UnitsByOrigin()) {
+      for (const int id : units) {
+        if (const moho::UserUnit* const unit = UnitOf(id); unit == nullptr || !Groupable(*unit)) {
+          gone.push_back(id);
+        }
+      }
+    }
+    for (const int id : gone) {
+      gGroups.Gone(id);
+    }
+  }
+
+  /// The colour the game draws one's own strategic icons in (CWldSession::RenderStrategicIcons): the army's, or FAF's team
+  /// colour where those are on; as a colour of FAF's UI, its hex digits.
+  [[nodiscard]] std::string IconColour(const moho::CWldSession& session, const moho::UserArmy& army)
+  {
+    const std::size_t index = static_cast<std::size_t>(army.mArmyIndex);
+    const bool team = session.mTeamColorMode && army.mArmyIndex >= 0 && index < moho::kTeamColorPaletteSize;
+    const std::uint32_t colour = team ? moho::teamcolors[index] : army.mVarDat.mPlayerColorBgra;
+    char text[16];
+    std::snprintf(text, sizeof text, "%08x", static_cast<unsigned>(colour));
+    return text;
+  }
+
+  constexpr char kGroupsHelp[] =
+    "FafreGriffGroups(places) - each frame: Griff's groups kept, and with `places` their icons, four numbers each into it (x, y, "
+    "count, all selected); answers how many, their side in the picture's pixels and the colour of one's own strategic icons";
+
+  /// Each frame of the session's UI (fafre/griffgroups.lua): the groups kept; then, with a table for them, the icons of the
+  /// groups the game draws strategic icons for, at their units' middle on the main map's view. The game draws them where it
+  /// draws any (CUIWorldView::Render: not while the camera turns or is free, nor with FAF's icons off) and for a unit from its
+  /// mesh's IconFadeInZoom on (griffgroups::DrawsIcon): a group's icon shows once one of its units shows as an icon, and goes
+  /// as the camera comes close. Without the table, as while Griff's Groups button hides them, there are none, for a tap either.
+  int Groups(lua_State* const lua)
+  {
+    KeepGroups();
+    gIcons.clear();
+    gIconOrigins.clear();
+    const auto answer = [lua](const std::size_t count, const float side, const std::string& colour) {
+      lua_pushnumber(lua, static_cast<lua_Number>(count));
+      lua_pushnumber(lua, side);
+      lua_pushstring(lua, colour.c_str());
+      return 3;
+    };
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    moho::UserArmy* const army = session != nullptr ? session->GetFocusArmy() : nullptr;
+    MapView map;
+    if (!lua_istable(lua, 1) || army == nullptr || !MainMap(map) || !map.view->mIconsVisible || !moho::ui_RenderIcons
+        || !moho::ui_NisRenderIcons) {
+      return answer(0, 0, "");
+    }
+    moho::CameraImpl* const camera = map.view->GetCamera();
+    const moho::VMatrix4& viewport = camera->CameraGetView().viewport;
+    const Wm3::Vector3f focus = camera->GetTargetPosition();
+    // The renderer's zoom: the view's width at the focus, with the camera's LOD scale (its viewport's row 1).
+    const float zoom = viewport.r[1].x * focus.x + viewport.r[1].y * focus.y + viewport.r[1].z * focus.z + viewport.r[1].w;
+    const float maxZoom = camera->GetMaxZoom();
+    const float side = kIconSide * moho::ui_StrategicIconScale;
+    int at = 1;
+    for (const auto& [origin, units] : gGroups.UnitsByOrigin()) {
+      if (units.size() < griffgroups::kGroupUnits) {
+        continue;
+      }
+      bool drawn = moho::ui_AlwaysRenderStrategicIcons;
+      bool selected = true;
+      float sumX = 0;
+      float sumY = 0;
+      float sumZ = 0;
+      // KeepGroups left the book only units that live.
+      for (const int id : units) {
+        moho::UserUnit* const unit = UnitOf(id);
+        const moho::RMeshBlueprint* const mesh = unit->mVariableData.mMeshBlueprint;
+        drawn = drawn || mesh == nullptr || griffgroups::DrawsIcon(zoom, mesh->mIconFadeInZoom, maxZoom);
+        selected = selected && session->mSelection.Find(unit) != session->mSelection.end();
+        const Wm3::Vec3f place = unit->GetInterpolatedPosition(session->mTimeSinceLastTick);
+        sumX += place.x;
+        sumY += place.y;
+        sumZ += place.z;
+      }
+      const float count = static_cast<float>(units.size());
+      float x = 0;
+      float y = 0;
+      if (!drawn || !Project(map, sumX / count, sumY / count, sumZ / count, x, y) || !map.box.Contains(x, y)) {
+        continue;
+      }
+      for (const float value : {x, y, count, selected ? 1.0f : 0.0f}) {
+        lua_pushnumber(lua, value);
+        lua_rawseti(lua, 1, at++);
+      }
+      gIcons.push_back(griffgroups::Icon{x, y, side / 2});
+      gIconOrigins.push_back(origin);
+    }
+    return answer(gIcons.size(), side, IconColour(*session, *army));
+  }
+
+  moho::CScrLuaBinder gGroupsBinder(moho::SCR_UserLuaInitSet(), "FafreGriffGroups", &Groups, nullptr, "<global>", kGroupsHelp);
+
   // --- The orders' binders: what griff.lua tells of the orders FAF's UI gives ---------------------------------------------
 
   constexpr char kOrderedHelp[] = "FafreGriffOrdered(commandType, attackMove, clear, unitIds, targetId) - "
@@ -1725,7 +1998,14 @@ namespace
       ++gClicks.orders;
       gClicks.orderedTarget = target;
     }
+    // The factories given builds, whose units are their runs' groups (KeepGroups).
+    if (type == "BuildFactory") {
+      for (const int factory : units) {
+        gFactories.try_emplace(factory);
+      }
+    }
     if (gWatch.number != 0 && griffundo::Takeable(type, attackMove)) {
+      GroupOrdered(gWatch.number, units);
       std::unordered_map<int, Stored>& stored = gWatch.joins ? gRecord.stored : gWatch.stored;
       for (const int unit : units) {
         if (const auto kept = stored.find(unit); kept != stored.end()) {
@@ -1983,11 +2263,32 @@ namespace
     Say(kSaidTap, tap.number, kind | used << 8);
   }
 
+  /// A group's units as the book holds them now, by its origin; none where it is no group any more.
+  [[nodiscard]] std::vector<int> GroupUnits(const griffgroups::Origin& origin)
+  {
+    const auto& groups = gGroups.UnitsByOrigin();
+    const auto group = groups.find(origin);
+    return group != groups.end() && group->second.size() >= griffgroups::kGroupUnits ? group->second : std::vector<int>{};
+  }
+
+  /// A group by its icon (griff.lua SelectGroup): its units are the selection, or join it (`add`), and with `camera` the camera
+  /// goes to them as to a control group selected twice. Nothing where it is no group any more.
+  void SelectGroup(const griffgroups::Origin& origin, const bool add, const bool camera)
+  {
+    const std::vector<int> units = GroupUnits(origin);
+    if (!units.empty()) {
+      CallGriffLine(
+        "SelectGroup(" + UnitList(units) + ", " + (add ? "true" : "false") + ", " + (camera ? "true" : "false") + ")"
+      );
+    }
+  }
+
   /// A tap where the finger was and the cursor has rested (TouchInput): FAF's click by what it lands on. The UI's controls take
-  /// it, with the tap help; a command mode that FAF's orders panel armed takes it (its attack-move too); Box adds one's own
-  /// unit to the selection or takes it out, and on anything else does nothing; one's own unit is selected, Plus adds it
-  /// (Shift's click); else the selection gets FAF's right click there, also on one's own unit with Plus and troops selected:
-  /// the order there, as the mockup has it. Near misses are FAF's own pick, within the reach DownTask set.
+  /// it, with the tap help; a command mode that FAF's orders panel armed takes it (its attack-move too); a group's icon selects
+  /// the group, which joins the selection with Plus or Box; Box adds one's own unit to the selection or takes it out, and on
+  /// anything else does nothing; one's own unit is selected, Plus adds it (Shift's click); else the selection gets FAF's right
+  /// click there, also on one's own unit with Plus and troops selected: the order there, as the mockup has it. Near misses are
+  /// FAF's own pick, within the reach DownTask set, and a group's icon takes a tap within the tap help's reach of it.
   void TapByPlace(const Tap& tap)
   {
     const int x = tap.x;
@@ -2002,6 +2303,14 @@ namespace
     if (CommandModeArmed()) {
       ClickWith(queue, WIN32ANDROID_BUTTON_LEFT, x, y);
       AnswerTap(tap, kTapOther);
+      return;
+    }
+    if (const int icon = griffgroups::IconAt(gIcons, static_cast<float>(x), static_cast<float>(y), gTapReach.load()); icon >= 0) {
+      const bool box = (tap.rail & kRailBox) != 0;
+      gGroupTap = tap.number;
+      gGroupTapped = gIconOrigins[static_cast<std::size_t>(icon)];
+      SelectGroup(gGroupTapped, queue || box, false);
+      AnswerTap(tap, kTapGroup, box ? grifftap::Outcome::kBoxToggled : grifftap::Outcome::kOther);
       return;
     }
     // What the cursor is over, where it rested: the finger's place.
@@ -2034,7 +2343,8 @@ namespace
   /// where the first went, which the message layer makes the game's double click; all of the selected unit's type in view (as
   /// the game's double click on the unit, which could not reach it where the panels its selection brought up cover it), then on
   /// the map; an attack-move at the first tap's place in place of its move (where FAF offers none, as for factories alone, a
-  /// right click again: the rally point); all one's own mobile units in view.
+  /// right click again: the rally point); all one's own mobile units in view; the group the first tap's icon selected, again,
+  /// with the camera, as a control group's double click.
   void TapByStep(const Tap& tap)
   {
     switch (tap.step) {
@@ -2060,6 +2370,11 @@ namespace
         break;
       case kStepAllMobile:
         moho::CON_Execute(kAllMobile);
+        break;
+      case kStepGroupAgain:
+        if (tap.number == gGroupTap) {
+          SelectGroup(gGroupTapped, false, true);
+        }
         break;
       default:
         break;

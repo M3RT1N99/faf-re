@@ -4,16 +4,18 @@
 -- FAF's UI knows: the build icon that opens it, its builders, the tick's build mode and selection; and what a gesture orders,
 -- for the undo that takes it back with FAF's own inputs; and what the player opened of FAF's, which Griff's pieces step aside
 -- from. What Griff shows in FAF's UI, its rail, its undo's button, its hints and a waypoint marked for deletion, is
--- griffhud.lua's. The app places the handle, holds the draft, decides what a gesture clicks and how an undo goes
--- (android/native/src/host/GriffAndroid.cpp); with the mouse scheme nothing is reported or watched and FAF's build icons are
--- FAF's.
+-- griffhud.lua's, its groups' icons griffgroups.lua's. The app places the handle, holds the draft and the groups, decides
+-- what a gesture clicks and how an undo goes (android/native/src/host/GriffAndroid.cpp); with the mouse scheme nothing is
+-- reported or watched and FAF's build icons are FAF's.
 
 local Group = import('/lua/maui/group.lua').Group
 local LayoutHelpers = import('/lua/maui/layouthelpers.lua')
+local Prefs = import('/lua/user/prefs.lua')
 local WorldView = import('/lua/ui/game/worldview.lua')
 local CommandMode = import('/lua/ui/game/commandmode.lua')
 local Opened = import('/fafre_ui/lua/fafre/opened.lua')
 local Hud = import('/fafre_ui/lua/fafre/griffhud.lua')
+local Groups = import('/fafre_ui/lua/fafre/griffgroups.lua')
 
 --- A large selection's box comes from this many of its units, spread over all of them: near enough for a handle.
 local SampledUnits = 64
@@ -395,6 +397,40 @@ function UndoEnd()
     end
 end
 
+-- --- The groups ----------------------------------------------------------------------------------------------------------
+
+--- A group by a tap on its icon (griffgroups.lua; the program's SelectGroup): its units are the selection, or join it
+--- (`add`, as Shift does with FAF's control groups); with `camera`, the ladder's second tap, the camera goes to them as to a
+--- control group selected twice, as the player's option selection_sets_double_tap_behavior has it (selection.lua
+--- DoubleTapBehavior, which is FAF's own and local to its file).
+function SelectGroup(ids, add, camera)
+    local units = UnitsOf(ids)
+    if table.empty(units) then
+        return
+    end
+    if add then
+        AddSelectUnits(units)
+    else
+        SelectUnits(units)
+    end
+    local behavior = Prefs.GetFromCurrentProfile('options.selection_sets_double_tap_behavior')
+    if not camera or behavior == 'none' then
+        return
+    end
+    StopCamera()
+    local cam = Camera()
+    local settings = cam:SaveSettings()
+    UIZoomTo(units)
+    if behavior == 'translate-zoom-out-only' then
+        if cam:GetZoom() < settings.Zoom then
+            cam:SetZoom(settings.Zoom, 0)
+        end
+    elseif behavior == 'translate' then
+        cam:SetZoom(settings.Zoom, 0)
+    end
+    cam:RevertRotation()
+end
+
 -- --- The draft ------------------------------------------------------------------------------------------------------------
 
 --- The draft's builders: the engineers selected when a building was picked, who build it if none is selected at the tick;
@@ -594,7 +630,8 @@ end
 --- camera's glide and flight stop apart from what the pinch sees of the camera, which goes on; the selection's report stops
 --- apart from the map's view, which goes on each frame (an error there says itself once), so that the clicks and the plans
 --- keep their map when the handle goes; the report of what the player opened stops with none, so that no piece of the app's
---- stays away for it; Griff's pieces in FAF's UI (griffhud.lua) stop apart. FAF's UI tells each order it gives
+--- stays away for it; Griff's pieces in FAF's UI (griffhud.lua) stop apart, and so do its groups' icons (griffgroups.lua),
+--- which leave none for a tap. FAF's UI tells each order it gives
 --- (OnCommandIssued, which the engine looks up at each order): the program hears of it first. FAF's capping is held off while
 --- the undo's clicks run.
 function Start(parent)
@@ -607,7 +644,7 @@ function Start(parent)
     reporter.Width:Set(0)
     reporter.Height:Set(0)
     local reporting, seeing, driving = true, true, true
-    local anchoring, opening, showing = true, true, true
+    local anchoring, opening, showing, grouping = true, true, true, true
     local viewSaid = false
     -- Griff's pieces in FAF's UI, on the map's group as FAF's own panels: in the game Griff plays only.
     if FafreGriffWanted() then
@@ -658,6 +695,15 @@ function Start(parent)
             if not ok then
                 WARN('fafre_ui: griff: hud: ' .. tostring(problem))
                 showing = false
+            end
+        end
+        if grouping then
+            local ok, problem = pcall(Groups.Frame)
+            if not ok then
+                WARN('fafre_ui: griff: groups: ' .. tostring(problem))
+                -- No icon is left for a tap.
+                pcall(FafreGriffGroups)
+                grouping = false
             end
         end
         -- First what the frame drew, before a step moves the camera for the next.

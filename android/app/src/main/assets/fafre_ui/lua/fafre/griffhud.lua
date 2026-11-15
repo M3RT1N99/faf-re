@@ -60,11 +60,10 @@ local Words = {
 --- How FAF prints its own messages (userInit.lua PrintText): this size, white, in the screen's middle; a hint goes sooner.
 local HINT_SIZE, HINT_SECONDS = 14, 2
 
---- The pieces, once Create made them: the row, its buttons by name, the undo's, the mark; whether Groups shows the group
---- icons, and who hears when it changes.
+--- The pieces, once Create made them: the row, its buttons by name, the undo's, the mark; and whether Groups shows the group
+--- icons (griffgroups.lua).
 local pieces = false
 local groupsShown = true
-local groupsHeard = {}
 
 --- A hint where FAF prints its own messages (textdisplay.lua PrintToScreen, which userInit.lua's PrintText calls), as a PC
 --- player sees the game's own words: in the screen's middle, fading out as they do.
@@ -85,13 +84,9 @@ function Hint(kind, number)
     })
 end
 
---- Whether the group icons show (Groups), and a function to hear it when it changes (Griff's group icons).
+--- Whether the group icons show (Groups), which griffgroups.lua asks each frame.
 function GroupsShown()
     return groupsShown
-end
-
-function OnGroupsChanged(heard)
-    table.insert(groupsHeard, heard)
 end
 
 --- A button of FAF's orders panel without an order of its own: the empty slot's frame, the hover glow FAF lays over an
@@ -202,9 +197,6 @@ function Create(parent)
         if event.Type == 'ButtonPress' or event.Type == 'ButtonDClick' then
             groupsShown = not groupsShown
             PlaySound(Sound({Bank = 'Interface', Cue = 'UI_Action_MouseDown'}))
-            for _, heard in groupsHeard do
-                heard(groupsShown)
-            end
         end
         return true
     end
