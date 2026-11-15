@@ -112,6 +112,11 @@ public final class GameActivity extends SDLActivity {
             mCursors = cursors;
             mLastCursorID = lastCursor;
             Game.report("game: a new activity shows the running program");
+            if (state == null && getIntent().getExtras() != null) {
+                // Not Android's re-creation of the activity, which keeps the first start's intent: a start of its own,
+                // with extras (the README's tests) that only a program's start reads (prepare).
+                Game.report("game: the start's extras do not reach the running program; am start -S starts it anew");
+            }
         }
         if (mProblem != null) {
             GameReport.append(this, GameReport.END + mProblem);

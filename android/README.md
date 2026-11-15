@@ -118,9 +118,10 @@ the game data they imported. Everything lives in the app's external files folder
     keyboard, and so does *Keyboard* in the game's Menu tab; typed text goes to the field, Back hides the
     keyboard before it is Esc again, Enter goes to the game and then hides it.
   - The report (`game.txt`) names the GPU, each swap chain, whether BC textures are the GPU's or decoded
-    on the CPU, and the sound's output or why the sound did not start. Tests' extras of the activity (`am start ... --ef hudScale 1.6
+    on the CPU, and the sound's output or why the sound did not start. Tests' extras of the activity (`am start -S ... --ef hudScale 1.6
     --es arguments /spewsound --ez bcOnCpu true`): the phone's HUD factor on the emulator, more engine
-    arguments, and the phones' way with BC textures on a GPU that has BC.
+    arguments, and the phones' way with BC textures on a GPU that has BC. Only the program's start reads them:
+    without `-S` a running program goes on as it was, and the report says so.
 
   What follows is the game card of release 0.14, on the earlier host (`LegacyGameActivity`, the
   Win32 message layer and wx-lite): the bar, the touch controls and the pages come back on SDL's activity
