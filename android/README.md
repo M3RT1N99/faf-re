@@ -95,9 +95,14 @@ the game data they imported. Everything lives in the app's external files folder
   in the game files' `bin` folder. `GameActivity` is SDL's activity (`SDLActivity`), which loads the library
   and starts the program on a thread of its own; it runs in a process of its own (`:game`), which ends with
   the program, as a Windows program's does, and goes on while the activity is in the back, its simulation
-  at full speed (a skirmish for a minute after Home on the emulator, with the game the last app in front; no foreground
-  service runs on SDL's activity yet, and Android's rules for a process in the back without one were not tried). SDL gives the program the surface (Vulkan), the fingers as the mouse (a tap is a click, a
-  finger that moves drags with the left button), the keys and the sound; Back is Esc. The game's movies
+  at full speed (on the emulator a skirmish for a minute after Home, with the game the last app in front, and a LAN
+  game between two emulators, which `NetworkGameService` keeps going there: Network games, below). When Android
+  destroys the stopped activity, as it does when it wants the memory and at once under the developer option *Don't
+  keep activities*, the program goes on and the next activity shows it. Android freezes a process in the back that has
+  become a cached one, as it did with the activity destroyed outside a network game: the game waits there until it is
+  back in front. SDL gives the program the surface (Vulkan), the fingers as the mouse (a tap is a click, a
+  finger that moves drags with the left button), the keys and the sound; Back is Esc. The sound pauses in the back
+  and while another app has the audio focus (a call), and plays again in front with the focus. The game's movies
   play (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film).
   - The game draws at a size of its own (`PictureSize`, the card's *UI size*): the surface's buffers have
     the picture's size (`SurfaceHolder.setFixedSize`), the compositor scales them to the screen, and
@@ -274,7 +279,8 @@ the game data they imported. Everything lives in the app's external files folder
     connection dialog opens, and from 170 s each side ejects the others by FAF's rules. Its notification says *A network
     game is running*, and a tap on it brings the game back. In the back the game's window is minimized: it draws nothing,
     and its simulation and network go on, also while a game that the host launched loads.
-    - The source is the transport (`Game.networkInUse`): a UDP connector's socket. A skirmish has none (`LOBBY: Game
+    - The source is the transport (`Game.networkInUse`): a UDP connector's socket, on SDL's activity the engine's count
+      of UDP connectors with their socket open (`NET_OpenUDPConnectors`, `native/README.md`). A skirmish has none (`LOBBY: Game
       port 0[None]`) and starts no service, nor does the LAN screen's search for games, whose list has no use for the
       network in the back. The service goes within a second of the socket's end (leaving a lobby, the program's end), about
       3 s after a game has ended, as the game over panel and the score screen hold the socket with nothing left to play,
@@ -286,6 +292,11 @@ the game data they imported. Everything lives in the app's external files folder
     - Android allows the start only from the front. A refusal leaves `network game: no foreground service: <why>` in
       `game.txt`, the game goes on, and the app asks again the next time the activity comes to the front; until then Home
       stops the game for everybody, as above.
+    - On SDL's activity (stage 2b of [CLIENT_PLAN.md](CLIENT_PLAN.md)) the service is the same; checked there in a LAN game
+      of two emulators with an easy AI, with no desync: Home on one side for a minute, the other side's activity
+      destroyed for a minute, the service from the lobby on, its end a few seconds after *End Game* and within a second
+      of leaving a lobby. The checks above against a PC's game (the screen off, Doze, five minutes in the back) ran on the
+      earlier host only.
     - What remains is what only a phone shows, as all of this ran on the emulator's Android 16: Samsung's and others' own
       limits on a background app (*Put unused apps to sleep*, deep sleep), a CPU that really sleeps and Wi-Fi's power
       saving with the screen off, and whether a phone keeps the game's speed in the back, where all players wait for the

@@ -58,6 +58,8 @@ registers SDL's native methods, SDL's `Java_*` methods, the engine's `SDL_main` 
 |---|---|
 | `src/app/GameMainAndroid.cpp` | The app's entry, `FafGameMain`, which the game's activity names to SDL: SDL's hints for a game on a phone (the program goes on in the back; landscape; no screen keyboard by itself), the program's path as `argv[0]`, the least display mode for a screen below 1024 x 768, the engine's main thread with the Windows program's 4 MB stack, and the process's end with the program; the report's lines (`FAF_GAME_REPORT`), with the engine's lines a tester needs: the GPU, each swap chain, how BC textures are sampled, the sound's output or its failure to start |
 | `src/app/ScreenKeyboardAndroid.cpp` | The phone's keyboard for FAF's text fields: SDL's, shown when a finger's press lands on a text field (the lobby's chat, a profile's name, the console's line) or FAF's Menu tab asks for it; it asks for plain keys (`TYPE_NULL`), which a keyboard that sends keys for them types as a keyboard does (one that commits text instead, as AOSP's does for most characters, still closes the console that its grave accent opens: `patches/README.md`, Shell.cpp), Back hides it before Back is Esc again, Enter goes to the game and then hides it. It watches SDL's events through the window layer's hook for the developer windows, which Android, with its one window, never makes |
+| `src/app/SoundAndroid.cpp` | The game's sound follows the activity and Android's audio focus, which the activity asks for: SDL's own pause of its output (`AAUDIO_PauseDevices`, `OPENSLES_PauseDevices`: the stream under the game's sound and a movie's) in the back and while another app has the focus, on SDL's main thread; the report says when it pauses and when it plays again |
+| `src/app/GameJniAndroid.cpp` | The natives of the app's `Game` class on SDL's activity: the activity's front and its audio focus; for `NetworkGameService` whether a UDP connector has its socket open (`NET_OpenUDPConnectors`, the patched `CNetUDPConnector.cpp`) and whether a game is playing (`UI_GamePlaying`); the app's lines in the report |
 | `src/app/UiPackageAndroid.cpp` | The UI package's globals (`../TOUCH_UI.md`) on SDL's activity until the touch schemes come back: the page, the fingers' owner and the HUD's factor go nowhere yet, the Menu tab's Keyboard brings the keyboard, and Griff is off (`FafreGriffWanted`), so its Lua leaves FAF's UI as it is; `src/host` registers these on the earlier host |
 | `src/gal/VulkanSurfaceAndroid.cpp` | The Vulkan backend's platform unit (`VulkanSurface.h`) on SDL, in place of `VulkanSurface.cpp`: the surface from `SDL_Vulkan_CreateSurface`, and for the patched `DeviceVulkan.cpp` the surface's coming and going (see The surface) |
 | `src/gal/BlockCompressionAndroid.cpp` | BC1-3 on the CPU, with WARP's decode, for GPUs without BC (`patches/README.md`), and an encoder after D3DX's |
@@ -80,6 +82,14 @@ The command line is the activity's: the program's path in the game files' `bin` 
 its install's folder from it), the game's options, and `/fullscreen <width> <height>` with the size of the
 surface's buffers, the picture's. HOME and TMPDIR are the activity's too: the engine's folders
 (`SHGetFolderPath`) are under HOME.
+
+Android destroys a stopped activity when it wants the memory, and at once under the developer option *Don't keep
+activities*. The program goes on then, as a Windows program does without its window, and the next activity shows it:
+`GameActivity.onDestroy` skips SDL's quit while the program runs, its `onCreate` gives SDL back the program's thread and
+the cursors the program made, which SDL forgets for each new activity, the program sets
+`SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY`, without which SDL's activity ends the process, and the patched
+`SDL_android.c` keeps the lifecycle's mutex and semaphore that the program's thread waits on (`patches/README.md`).
+Without a network game's service Android freezes the process, now a cached one, until the next activity comes.
 
 ### The surface
 
@@ -120,7 +130,9 @@ libraries and its licences in the assets (`licenses/`).
 
 The XACT engine is the POSIX client's: FACT, FAudio's reimplementation of XACT 3, behind the engine's
 interfaces (`platform/posix/XactOverFact.cpp`), FAudio 26.10 with the engine's patch over SDL3's audio,
-which is AAudio on Android. Movie sound is an SDL3 audio stream (`platform/posix/SdlMovieSink.cpp`).
+which is AAudio on Android. Movie sound is an SDL3 audio stream (`platform/posix/SdlMovieSink.cpp`). Both
+pause in the back and while another app has the audio focus (`src/app/SoundAndroid.cpp`): SDL pauses its output
+on Android only where it holds the program in the back, which this build turns off.
 
 FFmpeg is the engine's submodule, unchanged, built by `ffmpeg/CMakeLists.txt` with the NDK's clang
 from what its configure writes for each ABI, checked in under `ffmpeg/<abi>/`. `ffmpeg/generate.sh`
@@ -136,7 +148,10 @@ The game's own lobby, its games and the discovery of LAN games run on the engine
 `platform::net` (`src/platform/posix/NetPosix.cpp`), as on Linux; `patches/README.md` has the lines of the
 transport that change. The app holds a `MulticastLock` while the activity is in front, without which
 Wi-Fi hands a phone no broadcasts. The in-engine peer links are off (`src/net`), and an app starts no
-programs: the GPGNet launch fails at once (`patches/`).
+programs: the GPGNet launch fails at once (`patches/`). While a UDP connector has its socket open, a network lobby's
+or game's, the app's `NetworkGameService` keeps the process's network in the back (`../README.md`, Network games):
+the patched `CNetUDPConnector.cpp` counts those connectors from its thread's start to its deletion
+(`NET_OpenUDPConnectors`), which the service asks through `Game.networkInUse`.
 
 ## Tests
 

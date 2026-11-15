@@ -293,3 +293,53 @@ builds; both native presets build.
   game between two emulators. Not on a phone yet: the CPU's BC decode, AAudio, a phone's keyboard and the pace in the
   back under SDL. The engine makes its hidden log window at each start (`WINX_PrecreateLogWindow`), which SDL refuses on
   Android: its warning is the last one the report names after a clean end.
+
+*2026-11-15, stage 2b's network half on the SDL3 client:* network games go on with the app in the back, on the
+engine's own networking. All on two read-only instances of the emulator (fafre_api36, x86_64, `-gpu host`), FAF 3841,
+from the head's builds; both native presets build.
+- **The sound follows the activity and the audio focus**, as on android-client (`GameActivity`,
+  `src/app/SoundAndroid.cpp`): the activity asks for the focus in front (`USAGE_GAME`, delayed gain during a call), and
+  SDL's own pause of its output stops the game's sound and a movie's in the back and while another app has the focus.
+  The game's AAudio track paused at Home (`sound: paused in the back`) and played again in front; a call (`emu gsm
+  call`) took the focus (telecom `GAIN_TRANSIENT`, the game `LOSS_TRANSIENT`, its track paused: `sound: paused, another
+  app has the audio focus`), and the call's end gave it back. Nobody heard it (`-no-audio`).
+- **`NetworkGameService` and `NetworkGameRule`**, android-client's unchanged, run on SDL's activity, told by the engine's
+  state: a UDP connector with its socket open, which the patched `CNetUDPConnector.cpp` counts
+  (`NET_OpenUDPConnectors`), and `UI_GamePlaying`. A lobby started it on both sides (`isForeground`, type `specialUse`);
+  it ran through the game and stopped a few seconds after *End Game* (the rule waits 3 s), and within a second of
+  leaving a lobby.
+- **The program outlives an activity Android destroys**, with small changes to SDL's way: `GameActivity` keeps the
+  program in `onDestroy` and gives SDL its thread back in the next `onCreate`, the program allows SDL's activity to be
+  made anew, and a build-time patch of `SDL_android.c` keeps the lifecycle's queue. With *Don't keep activities*, at
+  Home in the menu and in a LAN game: `the activity is destroyed, the program goes on`, then `a new activity shows the
+  running program`, its sound back and taps reaching the game. Outside a network game Android froze the process, a
+  cached one now (`isFrozen`, nothing of a core), until the new activity came; with the service it went on (10 % of a
+  core).
+- **A LAN game between two emulators** with an easy AI on Desert Arena: the host by `/hostgame UDP 16010`, the guest by
+  *Connect* to 10.0.2.2 through the emulators' redirection (`emu redir add udp:16010:16010`), both with Wi-Fi off, as
+  the netsim network's Wi-Fi takes the replies past the redirection. 7:20 of game time, both commanders given orders by
+  taps, no desync in either log and no connection dialog. Home on the guest for a minute: the host's game went on (2:59
+  to 3:50), the guest's process at 16 % of a core in the back, both in step after. The host's activity destroyed for a
+  minute: the guest's game went on (4:25 to 5:31), and the new activity showed the host's game, which a tap's order
+  reached. The game ran at about 0.8 of real time on both.
+- **Tests**: `faf_net_tests` runs on `platform::net` again (21 tests), `faf_shell_tests` pins the shell's rule for a
+  key-down a handler took (5); with `faf_griff_tests` (140) they pass on the x86_64 emulator, and the app's workflow runs
+  the arm64 builds on its arm64 runner (under WSL's qemu one network test fails: its address-space limit meets qemu's
+  own mappings). The app's unit tests (358, 2 skipped) pass; the math card PASS (22188 cases); the replay card's two
+  default replays PASS.
+- **Stage 2a's review**: Back hides SDL's keyboard edit too (a patch of `SDL_android.c`), so that below Android 11 a tap
+  brings the keyboard after Back, and on every version typed text keeps coming; a patch of a dependency that replaces
+  none of its target's sources stops the configure; the report says why the sound did not start; `GameSurface` scales a
+  pointer's events only; Griff's Lua no longer starts on SDL's activity; the renderer card's files go; stage 2a's engine
+  lines keep 120 columns. The shell drops the char of a taken key-down where the key's text comes before its key-up: a
+  keyboard that commits text (AOSP's, for most characters) still closes the console its grave accent opened, as the docs
+  now say; SDL's order of those keys is unchanged.
+- **Not shown**: anything on a phone; Android 8 to 10 (the keyboard after Back); a keyboard that commits text; on SDL's
+  activity the earlier host's checks against a PC's game (the screen off, Doze, five minutes in the back, a game the
+  host launched from the back), the 30-minute limit, a refused service, a swipe in Recents, Android ending the process.
+  Found on the way: each activity made anew leaves the destroyed one referenced (`dumpsys meminfo`: two activities after
+  one re-creation, also after a GC), most likely by what SDL's Java side registers on its context; the LAN screen's
+  *Create* dialog took no typed name in this check, as no field had the keyboard focus (the keys ran FAF's hotkeys,
+  *S* the orders' Stop).
+- **Next**: the touch half of stage 2b (the touch schemes, Griff v4 and the pages on SDL's input) once Griff v4 is merged
+  in from android-client.
