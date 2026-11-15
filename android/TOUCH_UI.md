@@ -290,7 +290,8 @@ rail; `Stroke` for what a stroke gives; `Draft` for the draft's plans as the scr
 handle, the stroke, a resting finger's ring, the draft's plans and its loupe (`GriffLayer`; the draft's tick and cross are `DraftButton`s).
 What else Griff shows is FAF's UI's, in FAF's own look at the HUD's factor (Griff v4, the user's verdict on 0.14.0: every element as an
 original one of FA's; `fafre/griffhud.lua`): the rail's *Box*, *Plus* and *Groups* and the undo's button as FAF's order buttons, the hints
-where FAF prints its own messages, and a waypoint marked for deletion under FAF's Cancel icon; the activity lays a view of its own over
+where FAF prints its own messages, a waypoint marked for deletion under FAF's Cancel icon, and the groups' icons in FAF's strategic icon
+art (`fafre/griffgroups.lua`, "The groups"); the activity lays a view of its own over
 *Box*, *Plus* and the undo's button where FAF's UI reports them (`Game.griffHudPlaces`), which takes their fingers.
 What a gesture clicks is decided on the program's thread, which knows what lies under the finger (`native/src/host/GriffAndroid.cpp`),
 with `fafre/griff.lua` for what only FAF's Lua knows. A finger stays within 2.5 mm, the mockup's slop:
@@ -583,7 +584,7 @@ pixels, the views laid over *Box* and *Plus* as large).
 FAF's orders panel has Stop and the attack-move (`orders.lua`: `AttackMove` in slot 1, `AttackMoveBehavior`), so the rail has neither:
 0.14.0's *Attack* went (the user's rule: no copy of what the game has, checked in 3835's lua.nx2 before anything was added). *Box* (FAF
 selects by the mouse's drag), *Plus* (Shift is a key) and the undo have no counterpart in FAF's UI, nor has *Groups*, which shows and hides
-Griff's group icons (`griffhud.lua` `GroupsShown`, `OnGroupsChanged`). The activity lays a view of its own over *Box* and *Plus* where FAF's
+Griff's group icons (`griffhud.lua` `GroupsShown`, which `griffgroups.lua` asks each frame: "The groups"). The activity lays a view of its own over *Box* and *Plus* where FAF's
 UI reports them (`Game.griffHudPlaces`; FAF's UI draws them as the activity says each looks, `Game.setGriffHud`, `Rail.look`, tested), as a
 thumb may hold *Plus* while another finger taps; *Groups* is FAF's click's, a tap toggles it. What keeps clear of the rail is FAF's UI's
 walk: the handle's free map finds its buttons as FAF's controls.
@@ -686,6 +687,69 @@ ordered that unit, which a mouse's click after it went to give the order does to
 FAF's order, and a rest after an order goes to the best idle unit left. Where the list has not changed, a mouse that leaves goes on with
 the round too, where FAF starts it over, and after a double tap the round goes on from the unit after it, as FAF's index does for a
 mouse that stays.
+
+#### The groups
+
+Supreme Commander 2's groups on a console (Griff v4, the user's wish on 0.14.0): the units one gesture ordered together, and the units
+one factory order made, are a group, which one round icon shows in the world at their middle. Only one's own units are in groups (the
+focus army's mobile units that live), and nothing of a group orders. The program keeps them (`native/src/host/GriffAndroid.cpp`;
+`include/GriffGroups.h` `Book`, tested in `tests/wx/GriffGroupsTests.cpp`): what a watched gesture orders (its taps, strokes and rests,
+a tap on FAF's orders panel included; the orders `griffundo::Takeable` counts) takes its units out of their groups into the gesture's;
+the units a factory makes of one kind while its queue does not run empty, as FAF's construction panel shows one entry with its count,
+are the group of that run until a gesture orders them. A unit leaves its group when another gesture orders it, when it dies or is no
+longer one's own, and a group of fewer than two units is none. The draft's tick, the undo and the keyboard's keys make no group: they
+are no gesture's.
+
+The icon is FAF's strategic icon art (`fafre/griffgroups.lua`): the experimentals' round icon
+(`strategicicons/icon_experimental_generic_rest.dds`, its `_selected` while all of the group is selected, as the game draws a selected
+unit's icon) in the colour the game gives one's own icons (the army's, or FAF's team colour), with the group's count in FAF's font,
+white with a shadow. Its disc is 20 of the picture's pixels at FAF's `strat_icon_scale` 1, as large as FAF's largest unit icon (a
+selected land unit's; 16 at rest). It shows where the game draws strategic icons (not with FAF's icons off) and from the zoom on at
+which the game draws one of the group's units as its icon (`CWldSession::RenderStrategicIcons`: the mesh's `IconFadeInZoom`, at the
+latest 0.89 of the farthest zoom; `griffgroups::DrawsIcon`, tested): zoomed in, where the units are meshes, it has gone. It is a picture
+on the map's view that takes no event, as FAF's reclaim labels are, so a pan, rest or stroke over it is the map's. *Groups* on the rail
+shows and hides the icons (shown as a game begins, not kept in the prefs); hidden, there is no icon to tap.
+
+| On a group's icon | FAF's input |
+|---|---|
+| Tap | The group is the selection (`griff.lua` `SelectGroup`: `SelectUnits`); with *Plus* or *Box* it joins the selection (`AddSelectUnits`). The program finds the icon within the tap help's reach of its disc (`griffgroups::IconAt`, tested) before it asks what FAF's cursor is over; FAF's UI and an armed command mode come first |
+| Two taps | The tap ladder's second rung (`TouchInput.STEP_GROUP_AGAIN`, tested): the group again, and the camera goes to it as for FAF's control group selected twice, by the player's option `selection_sets_double_tap_behavior` (`selection.lua` `DoubleTapBehavior`'s steps, which `SelectGroup` takes since that function is local to its file) |
+
+Checked in FAF 3835's `lua.nx2` before it was added: FAF shows its control groups and selection sets only in its panel
+(`controlgroups.lua`, `selection.lua`), and nothing it draws in the world (`reclaim.lua`'s labels, `unittext.lua`, `notifyoverlay.lua`,
+`OffScreenIndicator.lua`, the casting mouse) stands for a group. On the emulator at the phone's size and HUD 1.6 (2026-11-15, a skirmish
+whose units cheats made): two moves gave two icons of 10; a tap on one selected its 10 units, two taps on the other selected them and
+brought the camera down to them, where the icons had gone; *Groups* hid and showed them; a factory's four tanks of one order showed an
+icon of 4. The groups' work in each frame, Lua and program, timed over 200 calls with 10 icons over 180 grouped units (255 in the
+game): 0.23 ms with the icons shown, 0.15 ms hidden (the program's part 0.03 ms); the emulator's frames, about 70 ms with those units,
+took as long with the icons as without within the measure's spread (medians 67.6 and 67.1 ms over 20 s each).
+
+#### Past the map's edges
+
+At the phone's HUD factor FAF's panels cover much of the view along its edges, and the engine held the camera so that the map's edges
+stayed under them: scrolled to its bottom, the map's last third lay under the construction panel (the user's verdict on 0.14.0). The
+camera's clamp (`CameraImpl::ClampTargetPos`, the engine's, past which FAF's Lua cannot move the camera) now lets the main map's camera
+come so near each edge that the edge comes out from under the panels into the view clear of them, at any zoom: the build-time patch
+`native/patches/src/moho/render/camera/CameraImpl.cpp.patch`, its rules `include/CameraClear.h`, tested in
+`tests/wx/CameraClearTests.cpp`. The program measures what the panels cover (`GriffAndroid.cpp` `MeasureMargins`, one walk over FAF's
+controls each 30 frames): the controls over the map that overlap by more than 0.4 % of the view's height each way are one panel; a panel
+standing at an edge (within 1 %) counts for the edge it reaches in from least, so a panel in a corner, as the construction panel, counts
+for the edge it lies along; one covering more than half of the view from each edge it stands at counts for none (a dialog's shadow), nor
+does one sliding in from more than 2 % past an edge, nor what the player opened (`fafre/opened.lua`: windows, dialogs, dropouts, the
+tabs' content). Of all that showed in a game the larger margin at each edge stays: the panels come and go with the selection, and a
+margin that shrank would pull the camera back from an edge it went to. The clamp takes the ground under the corners of the view clear of
+the margins, as the camera's last frame showed it, on the plane of its focus, and lets each edge come in as far as the nearest of those
+corners towards it; never less far than the engine's own clamp lets it, and the minimap's camera keeps the engine's. Zooming and panning
+are the engine's as before.
+
+Measured on the emulator at the phone's size and HUD 1.6 (2026-11-15, Seton's Clutch, hover tanks along the four edges as markers): the
+margins came to 33.7 % of the width on the left (the unit view), 19.4 % of the height at the top (the score panel), 7.4 % on the right
+(the avatars) and 29.6 % at the bottom (the construction panel with the orders panel). Scrolled as far as it goes, the bottom edge lay
+just above the construction panel, at the play's zoom and zoomed out; the top edge below the top panels; the left edge right of the unit
+view. On the right the engine's own clamp already lets the view go past the edge (its span is the zoom's, narrower than the phone's
+wide picture), so the right edge comes in further than the avatars need, as FA does on a wide screen. Only Griff measures the margins:
+the mouse scheme keeps the engine's clamp. The ground is taken on the plane of the focus, so where an edge's land lies much higher or
+lower than the focus it comes out from under a panel a little short of or past the panel's line.
 
 ### The game's panels now
 
