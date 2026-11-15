@@ -6,9 +6,9 @@
 //   FafreShowLines, FafreSetHud) go nowhere yet: fingers are SDL's mouse, and FAF's screens keep their size in the picture.
 //   The factors the package gives FAF's dialogs and HUD are its own Lua's, and hold.
 // - FAF's Menu tab's Keyboard (FafreKeyboard, the hook of ui/game/tabs.lua) brings the screen keyboard, or takes it away.
-// - Griff is off (FafreGriffWanted): fafre/griff.lua and the control groups' hook leave FAF's UI as it is, as with the mouse
-//   scheme on the earlier host. griff.lua's start looks for FafreGriffBox, and its reporter's end calls FafreGriffEnded; with
-//   Griff off nothing else of Griff's is called.
+// - Griff is off (FafreGriffWanted, which FAF's construction panel's and control groups' hooks ask): fafre/griff.lua's Start
+//   finds no FafreGriffBox and leaves FAF's UI as it is, as with the mouse scheme on the earlier host. Griff's other globals
+//   come with GriffAndroid.cpp on SDL's input.
 
 #include "ScreenKeyboardAndroid.h"
 #include "lua/LuaPrimitives.h"
@@ -39,8 +39,6 @@ namespace
   constexpr char kSetHudHelp[] = "FafreSetHud(factor) - the UI factor of the session's HUD, by which the app places its buttons";
   constexpr char kKeyboardHelp[] = "FafreKeyboard() - the phone's keyboard comes, or goes where it is up";
   constexpr char kGriffWantedHelp[] = "FafreGriffWanted() - whether the app's touch scheme Griff wants FafreGriffBox: not on SDL's activity yet";
-  constexpr char kGriffBoxHelp[] = "FafreGriffBox(...) - the selection's box for Griff's handle: nobody takes it while Griff is off";
-  constexpr char kGriffEndedHelp[] = "FafreGriffEnded() - Griff's game is over: nothing of FAF's was set while Griff is off";
 
   moho::CScrLuaBinder gSetPageBinder(moho::SCR_UserLuaInitSet(), "FafreSetPage", &TakesNothing, nullptr, "<global>", kSetPageHelp);
   moho::CScrLuaBinder gSetFingersBinder(moho::SCR_UserLuaInitSet(), "FafreSetFingers", &TakesNothing, nullptr, "<global>", kSetFingersHelp);
@@ -49,7 +47,4 @@ namespace
   moho::CScrLuaBinder gKeyboardBinder(moho::SCR_UserLuaInitSet(), "FafreKeyboard", &Keyboard, nullptr, "<global>", kKeyboardHelp);
   moho::CScrLuaBinder
     gGriffWantedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffWanted", &GriffWanted, nullptr, "<global>", kGriffWantedHelp);
-  moho::CScrLuaBinder gGriffBoxBinder(moho::SCR_UserLuaInitSet(), "FafreGriffBox", &TakesNothing, nullptr, "<global>", kGriffBoxHelp);
-  moho::CScrLuaBinder
-    gGriffEndedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffEnded", &TakesNothing, nullptr, "<global>", kGriffEndedHelp);
 } // namespace
