@@ -706,12 +706,12 @@ namespace
       return;
     }
     CHECK(discovery->CreateEvent() != nullptr);
-    CHECK(!(moho::NET_OpenUDPConnectors() > 0));
+    CHECK(moho::NET_OpenUDPConnectors() == 0);
 
     moho::INetConnector* const connector = MakeConnector();
     CHECK(connector != nullptr);
     if (connector != nullptr) {
-      CHECK((moho::NET_OpenUDPConnectors() > 0));
+      CHECK(moho::NET_OpenUDPConnectors() == 1);
       connector->Destroy();
       CHECK(NoConnectorSocketIsLeft());
     }
@@ -941,9 +941,11 @@ namespace
   void AThreadThatDoesNotStartEndsTheConstructor()
   {
     // The connector's last owner deletes it, but not what is still being constructed: the exception unwinds the
-    // constructor as any other, and the new-expression frees the memory. Half of what this process has mapped is
+    // constructor as any other, and the new-expression frees the memory. Nor does it count among the open connectors,
+    // by which NetworkGameService keeps a network game's service. Half of what this process has mapped is
     // all it may have for a moment, so a new thread's stack does not fit, also when the thread of an earlier
     // connector ends meanwhile and gives its own stack back; the heap's regions are mapped already.
+    CHECK(NoConnectorSocketIsLeft());
     rlimit before{};
     CHECK(::getrlimit(RLIMIT_AS, &before) == 0);
     FILE* const statm = std::fopen("/proc/self/statm", "r");
@@ -967,6 +969,7 @@ namespace
     }
     CHECK(::setrlimit(RLIMIT_AS, &before) == 0);
     CHECK(thrown);
+    CHECK(moho::NET_OpenUDPConnectors() == 0);
 
     moho::INetConnector* const next = MakeConnector();
     CHECK(next != nullptr);
