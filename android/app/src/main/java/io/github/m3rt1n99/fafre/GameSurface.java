@@ -2,6 +2,7 @@ package io.github.m3rt1n99.fafre;
 
 import android.content.Context;
 import android.graphics.Matrix;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -31,12 +32,17 @@ final class GameSurface extends SDLSurface {
         return inPicture(event, picture -> super.onTouch(view, picture));
     }
 
-    /** What `handler` makes of `event` in the picture's pixels: of a copy, where the picture's size is not the view's. */
+    /**
+     * What `handler` makes of `event` in the picture's pixels: of a copy, where the picture's size is not the view's. Only a
+     * pointer's places are on the screen (a finger's, a mouse's, a pen's): a joystick's axes and a touchpad's places are not,
+     * and older Androids' transform scales those too.
+     */
     private boolean inPicture(MotionEvent event, Predicate<MotionEvent> handler) {
         int viewWidth = getWidth();
         int viewHeight = getHeight();
         // mWidth and mHeight are the buffers' size from SDL's surfaceChanged on, 1 before it.
-        if (viewWidth <= 0 || viewHeight <= 0 || mWidth <= 1 || mHeight <= 1 || (mWidth == viewWidth && mHeight == viewHeight)) {
+        if (!event.isFromSource(InputDevice.SOURCE_CLASS_POINTER) || viewWidth <= 0 || viewHeight <= 0 || mWidth <= 1
+            || mHeight <= 1 || (mWidth == viewWidth && mHeight == viewHeight)) {
             return handler.test(event);
         }
         MotionEvent picture = MotionEvent.obtain(event);
