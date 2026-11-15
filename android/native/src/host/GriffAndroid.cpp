@@ -1387,14 +1387,15 @@ namespace
 
   constexpr char kGroupStoredHelp[] =
     "FafreGriffGroupStored() - a group of Griff's control groups was stored: the phone buzzes for it once";
-  constexpr char kHudHelp[] = "FafreGriffHud() - how the activity has Griff's rail and undo button: railLooks, undo, undoLeft";
+  constexpr char kHudHelp[] =
+    "FafreGriffHud() - how the activity has Griff's rail, undo button and draft's tick and cross: looks, undo, undoLeft";
   constexpr char kHudPlacesHelp[] = "FafreGriffHudPlaces(left, top, right, bottom, aside, ...) - where griffhud.lua drew Box, "
                                    "Plus, the undo's button and the draft's tick and cross";
 
   /// How the activity has the rail's Box and Plus (Rail.look, two bits each, Box's first: idle, held, lit), a finger on the
   /// draft's tick, its cross and the undo's button (Game.HUD_HELD_), and the undo's button (Game's HUD_UNDO_: none, offered
   /// with the part of its time left, waiting for its undo), for griffhud.lua, which draws them (Game.setGriffHud).
-  std::atomic<int> gRailLooks{0};
+  std::atomic<int> gHudLooks{0};
   std::atomic<int> gUndoShown{0};
   std::atomic<float> gUndoLeft{0};
 
@@ -1414,7 +1415,7 @@ namespace
 
   int Hud(lua_State* const lua)
   {
-    lua_pushnumber(lua, static_cast<lua_Number>(gRailLooks.load()));
+    lua_pushnumber(lua, static_cast<lua_Number>(gHudLooks.load()));
     lua_pushnumber(lua, static_cast<lua_Number>(gUndoShown.load()));
     lua_pushnumber(lua, static_cast<lua_Number>(gUndoLeft.load()));
     return 3;
@@ -2634,7 +2635,6 @@ namespace
     gDrag = Drag::kNone;
   }
 
-  /// The finger's drag goes without its lift (Game.griffDragGiveUp: a second finger on FAF's formation, the system taking the
   /// GiveUpDrag's formation, at its place and 1 where it was queued: the world views forget the order a release would give
   /// (their command data, which only the one that took the right button's press holds: by now a panel or one of the app's
   /// pieces may lie over where it took it) and the formation FAF shows, then the button goes up.
@@ -2662,6 +2662,7 @@ namespace
     }
   }
 
+  /// The finger's drag goes without its lift (Game.griffDragGiveUp: a second finger on FAF's formation, the system taking the
   /// fingers, a new first finger): FAF's formation is given up, not ordered, as a PC player's right button let go over a
   /// panel orders nothing (GiveUpFormationTask). That runs as a task of its own: this one may have been queued before
   /// DragTask ran, and so come ahead of the right button's press DragTask queued, which would give the view its command data
@@ -4693,18 +4694,20 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffHint(J
   Win32Android_RunOnWindowThread(&HintTask, Places(kind, number));
 }
 
-/// How the rail's Box and Plus look (Rail.look, two bits each, Box's first) and the undo's button (Game.HUD_UNDO_, the part of
-/// its time left), which griffhud.lua draws in FAF's UI (FafreGriffHud).
+/// How the rail's Box and Plus look (Rail.look, two bits each, Box's first) with a finger on the draft's tick, its cross and the
+/// undo's button (Game.HUD_HELD_), and the undo's button (Game.HUD_UNDO_, the part of its time left), which griffhud.lua draws in
+/// FAF's UI (FafreGriffHud).
 extern "C" JNIEXPORT void JNICALL
-Java_io_github_m3rt1n99_fafre_Game_setGriffHud(JNIEnv*, jclass, const jint railLooks, const jint undo, const jfloat undoLeft)
+Java_io_github_m3rt1n99_fafre_Game_setGriffHud(JNIEnv*, jclass, const jint looks, const jint undo, const jfloat undoLeft)
 {
-  gRailLooks.store(railLooks);
+  gHudLooks.store(looks);
   gUndoShown.store(undo);
   gUndoLeft.store(undoLeft);
 }
 
-/// Where griffhud.lua drew Box, Plus and the undo's button (FafreGriffHudPlaces), into `values`: left, top, right, bottom in the
-/// picture's pixels and 1 where something the player opened of FAF's lies over it, for each; how many numbers.
+/// Where griffhud.lua drew Box, Plus, the undo's button, the draft's tick and its cross (FafreGriffHudPlaces), into `values`:
+/// left, top, right, bottom in the picture's pixels and 1 where something the player opened of FAF's lies over it or FAF's UI
+/// is hidden, for each; how many numbers.
 extern "C" JNIEXPORT jint JNICALL Java_io_github_m3rt1n99_fafre_Game_griffHudPlaces(JNIEnv* const env, jclass, const jfloatArray values)
 {
   std::array<float, kHudPlaces> places{};
