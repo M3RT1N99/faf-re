@@ -95,12 +95,13 @@ the game data they imported. Everything lives in the app's external files folder
   in the game files' `bin` folder. `GameActivity` is SDL's activity (`SDLActivity`), which loads the library
   and starts the program on a thread of its own; it runs in a process of its own (`:game`), which ends with
   the program, as a Windows program's does, and goes on while the activity is in the back, its simulation
-  at full speed (on the emulator a skirmish for a minute after Home, with the game the last app in front, and a LAN
-  game between two emulators, which `NetworkGameService` keeps going there: Network games, below). When Android
-  destroys the stopped activity, as it does when it wants the memory and at once under the developer option *Don't
-  keep activities*, the program goes on and the next activity shows it. Android freezes a process in the back that has
-  become a cached one, as it did with the activity destroyed outside a network game: the game waits there until it is
-  back in front. SDL gives the program the surface (Vulkan), the fingers as the mouse (a tap is a click, a
+  at the pace it has in front (on the emulator a skirmish for a minute after Home kept real time, with the game the
+  last app in front, and a LAN game between two emulators its 0.8 of real time, which `NetworkGameService` keeps going
+  there: Network games, below). When Android destroys the stopped activity, as it does when it wants the memory and at
+  once under the developer option *Don't keep activities*, the program goes on and the next activity shows it. The
+  emulator's Android 16 froze the process once it had become a cached one, with the activity destroyed outside a
+  network game: the game waited there until it was back in front. Whether a system freezes cached processes depends on
+  its version and the device; where it does not, the program goes on in a cached process until Android ends it. SDL gives the program the surface (Vulkan), the fingers as the mouse (a tap is a click, a
   finger that moves drags with the left button), the keys and the sound; Back is Esc. The sound pauses in the back
   and while another app has the audio focus (a call), and plays again in front with the focus. The game's movies
   play (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film).

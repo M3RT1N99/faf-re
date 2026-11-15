@@ -112,9 +112,10 @@ as long as it is asked to; the loop paces itself in the back as on the PC, waiti
 simulation keeps real time there (on the emulator nothing lost in 61 s, the process at 8 to 12 % of a core).
 Outside a game nothing paces the loop in the back but its waits, which look at the window system every 4 ms: about
 470 wake-ups a second of the main thread, and some 300 more of FACT's threads, which a paused output does not stop.
-That costs little, so the pump takes no wait of its own while paused: on the emulator 2.8 % of a core in the main
-menu (the previous app, which Android had not frozen) and 1.4 % in a LAN lobby (with the network service), against 9
-to 19 % in a LAN game.
+On the emulator that cost 2.8 % of a core in the main menu (the previous app, which Android had not frozen) and
+1.4 % in a LAN lobby (with the network service), against 9 to 19 % in a LAN game, so the pump takes no wait of its
+own while paused. What the wake-ups cost a phone's battery, in a lobby under the service's wake lock for up to 30
+minutes, is still to be measured on a phone (`dumpsys batterystats`).
 
 ### The shader compiler
 

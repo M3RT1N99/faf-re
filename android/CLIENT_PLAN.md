@@ -323,10 +323,10 @@ from the head's builds; both native presets build.
   minute: the guest's game went on (4:25 to 5:31), and the new activity showed the host's game, which a tap's order
   reached. The game ran at about 0.8 of real time on both.
 - **Tests**: `faf_net_tests` runs on `platform::net` again (21 tests), `faf_shell_tests` pins the shell's rule for a
-  key-down a handler took (5); with `faf_griff_tests` (140) they pass on the x86_64 emulator, and the app's workflow runs
-  the arm64 builds on its arm64 runner (under WSL's qemu one network test fails: its address-space limit meets qemu's
-  own mappings). The app's unit tests (358, 2 skipped) pass; the math card PASS (22188 cases); the replay card's two
-  default replays PASS.
+  key-down a handler took (5); with `faf_griff_tests` (140) they pass on the x86_64 emulator. The app's workflow runs
+  the arm64 builds on its arm64 runner, but only for android-app, android-client and pull requests: no run has had this
+  branch's yet. Under WSL's qemu one network test fails (its address-space limit meets qemu's own mappings). The app's
+  unit tests (358, 2 skipped) pass; the math card PASS (22188 cases); the replay card's two default replays PASS.
 - **Stage 2a's review**: Back hides SDL's keyboard edit too (a patch of `SDL_android.c`), so that below Android 11 a tap
   brings the keyboard after Back, and on every version typed text keeps coming; a patch of a dependency that replaces
   none of its target's sources stops the configure; the report says why the sound did not start; `GameSurface` scales a
@@ -334,11 +334,25 @@ from the head's builds; both native presets build.
   lines keep 120 columns. The shell drops the char of a taken key-down where the key's text comes before its key-up: a
   keyboard that commits text (AOSP's, for most characters) still closes the console its grave accent opened, as the docs
   now say; SDL's order of those keys is unchanged.
+- **Stage 2b's review**: SDL's AAudio driver builds a stream anew when Android disconnects one, a paused one too, and
+  started each it built, so that a new output device during the pause (headphones, Bluetooth, a call's routing) brought
+  the game's sound back. Patches of `SDL_aaudio.c` and `SDL_openslES.c` make the pause a state, which a stream or a
+  player built meanwhile keeps; AAudio's device threads hold their streams to it. On the emulator a call's pause held while the media moved
+  to another output (the remote submix, attached through `IAudioService`); at the call's end the track's restart met
+  Android's disconnect, and SDL's device thread built it anew on the new output, playing. Home paused it, the front
+  played it again. The keep path removes SDL's clipboard listener, by which the system held each destroyed activity:
+  after three re-creations with *Don't keep activities* and a GC in the process and in `system_server` it had four
+  activities, now two. A start with extras while the program runs says in the report that they do not reach it (the
+  README's `am start -S`). `faf_net_tests` checks the count of open connectors exactly, also after a thread that did not
+  start (21 tests pass on the x86_64 emulator). The READMEs claim of the back what was measured.
 - **Not shown**: anything on a phone; Android 8 to 10 (the keyboard after Back); a keyboard that commits text; on SDL's
   activity the earlier host's checks against a PC's game (the screen off, Doze, five minutes in the back, a game the
   host launched from the back), the 30-minute limit, a refused service, a swipe in Recents, Android ending the process.
-  Found on the way: each activity made anew leaves the destroyed one referenced (`dumpsys meminfo`: two activities after
-  one re-creation, also after a GC), most likely by what SDL's Java side registers on its context; the LAN screen's
+  A paused stream disconnected in the pause, which takes a second device on its own output (the emulator's speaker
+  output has none): the patch's way there is read from SDL's and AOSP's code. Found on the way: the program's first
+  activity stays referenced after it is destroyed (SDL's Java: `SDLMain` runs in the activity's instance method `main()`,
+  and `HIDDeviceManager` and the audio device callback keep the context they were made with); a start of the activity
+  with extras while the program runs leaves the earlier activity under the new one; the LAN screen's
   *Create* dialog took no typed name in this check, as no field had the keyboard focus (the keys ran FAF's hotkeys,
   *S* the orders' Stop).
 - **Next**: the touch half of stage 2b (the touch schemes, Griff v4 and the pages on SDL's input) once Griff v4 is merged
