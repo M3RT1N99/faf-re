@@ -149,9 +149,12 @@ namespace
   /// is FAF's right click there either way.
   constexpr bool kRestDragGivesFormation = true;
 
-  // Game.REST_: how a resting finger's ring looks (griffmap.lua), by what its drag gives.
+  // Game.REST_: how a resting finger's ring looks (griffmap.lua), by what a drag from the rest gives (DragTask): FAF's
+  // formation, the right button's drag; the left button's drag from there, as a mouse's, which is FAF's box on the map, the
+  // armed mode's own drag where a command mode is armed (its formation, an area command), the minimap's camera and a panel's
+  // drag; or, on a waypoint marked for deletion, which its lift deletes, nothing.
   constexpr float kRestFormation = 1;
-  constexpr float kRestBox = 2;
+  constexpr float kRestLeftDrag = 2;
   constexpr float kRestWaypoint = 3;
 
   // griff.lua's yes and no for Ask, whose 0 is no answer.
@@ -2585,10 +2588,8 @@ namespace
   };
 
   Drag gDrag = Drag::kNone;
-  /// The watch over a formation's order, which its lift gives, and where the right button went down for it.
+  /// The watch over a formation's order, which its lift gives.
   int gFormationWatch = 0;
-  int gFormationX = 0;
-  int gFormationY = 0;
 
   /// The camera glides on at this velocity, in the picture's pixels a second (griff.lua Glide), or stays where it is.
   void Glide(const int velocityX, const int velocityY)
@@ -2634,28 +2635,45 @@ namespace
   }
 
   /// The finger's drag goes without its lift (Game.griffDragGiveUp: a second finger on FAF's formation, the system taking the
+  /// GiveUpDrag's formation, at its place and 1 where it was queued: the world views forget the order a release would give
+  /// (their command data, which only the one that took the right button's press holds: by now a panel or one of the app's
+  /// pieces may lie over where it took it) and the formation FAF shows, then the button goes up.
+  void GiveUpFormationTask(const WPARAM places)
+  {
+    try {
+      if (moho::CMauiControl* const root = UiRoot(); root != nullptr) {
+        for (moho::CMauiControl* control = root; control != nullptr; control = control->DepthFirstSuccessor(root)) {
+          if (auto* const view = dynamic_cast<moho::CUIWorldView*>(control)) {
+            view->mCommandData.mMode = moho::COMMOD_None;
+          }
+        }
+      }
+      if (moho::CWldSession* const session = moho::WLD_GetActiveSession();
+          session != nullptr && session->mCurFormation != nullptr) {
+        session->mCurFormation->mReady = false;
+        session->mCurFormation->Reset();
+      }
+      Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, Coordinate(places, 0), Coordinate(places, 1));
+      if (Coordinate(places, 2) != 0) {
+        ReleaseShift();
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
   /// fingers, a new first finger): FAF's formation is given up, not ordered, as a PC player's right button let go over a
-  /// panel orders nothing; the world view that took the right button's press forgets the order it would give at the release
-  /// (its command data) and the formation it shows, then the button goes up. Any other drag ends here as at a lift, without
-  /// a pan's glide.
+  /// panel orders nothing (GiveUpFormationTask). That runs as a task of its own: this one may have been queued before
+  /// DragTask ran, and so come ahead of the right button's press DragTask queued, which would give the view its command data
+  /// back; a task queued from here comes after that press (Win32Android_RunOnWindowThread). Any other drag ends here as at a
+  /// lift, without a pan's glide.
   void GiveUpDrag(const int x, const int y)
   {
     if (gDrag != Drag::kFormation && gDrag != Drag::kQueuedFormation) {
       EndDrag(x, y, 0, 0);
       return;
     }
-    if (moho::CUIWorldView* const view = WorldViewAt(static_cast<float>(gFormationX), static_cast<float>(gFormationY));
-        view != nullptr) {
-      view->mCommandData.mMode = moho::COMMOD_None;
-    }
-    if (moho::CWldSession* const session = moho::WLD_GetActiveSession(); session != nullptr && session->mCurFormation != nullptr) {
-      session->mCurFormation->mReady = false;
-      session->mCurFormation->Reset();
-    }
-    Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, FALSE, x, y);
-    if (gDrag == Drag::kQueuedFormation) {
-      ReleaseShift();
-    }
+    Win32Android_RunOnWindowThread(&GiveUpFormationTask, Places(x, y, gDrag == Drag::kQueuedFormation ? 1 : 0));
     // Nothing was ordered: the watch ends with no record.
     EndWatchAfterInput(gFormationWatch);
     gFormationWatch = 0;
@@ -2768,7 +2786,7 @@ namespace
   void ShowRest()
   {
     griffshown::Set(
-      griffshown::kRest, {gRest.kind == Rest::kWaypoint ? kRestWaypoint : gRest.formation ? kRestFormation : kRestBox}
+      griffshown::kRest, {gRest.kind == Rest::kWaypoint ? kRestWaypoint : gRest.formation ? kRestFormation : kRestLeftDrag}
     );
   }
 
@@ -2777,7 +2795,8 @@ namespace
   /// with mobile units selected the drag after it FAF's formation (kRestDragGivesFormation); else nothing, and a drag after it
   /// is FAF's box as before. Not with a command mode armed, whose drag is its own (FAF's area attack), nor on FAF's UI or the
   /// minimap, nor between the program's clicks. Whatever it found, the ring about the finger shows what its drag gives
-  /// (ShowRest): FAF's formation, the deletion of the marked waypoint, or a box, also where it found nothing.
+  /// (ShowRest, Game.REST_), also where it looked for nothing: there the left button's drag, the armed mode's, the minimap's or
+  /// the panel's.
   void RestTask(const WPARAM places)
   {
     const int x = Coordinate(places, 0);
@@ -2898,8 +2917,6 @@ namespace
       }
       gFormationWatch = WatchOrders(false);
       gDrag = queued ? Drag::kQueuedFormation : Drag::kFormation;
-      gFormationX = drag.x;
-      gFormationY = drag.y;
       Win32Android_TouchButton(WIN32ANDROID_BUTTON_RIGHT, TRUE, drag.x, drag.y);
       // The activity gives a formation up where its fingers go without a lift (Game.griffDragGiveUp).
       Say(kSaidFormation, drag.number, 0);
