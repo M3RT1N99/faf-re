@@ -39,6 +39,7 @@
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_hints.h>
 
+#include "GameAndroid.h"
 #include "ScreenKeyboardAndroid.h"
 #include "gpg/core/utils/Logging.h"
 #include "moho/misc/StartupHelpers.h"
@@ -48,6 +49,8 @@ extern "C" int SDL_main(int argc, char* argv[]);
 
 namespace
 {
+  using platform::android::Report;
+
   constexpr char kLogTag[] = "faf";
   /// The x64 Windows program's stack (/STACK:4000000, src/CMakeLists.txt).
   constexpr std::size_t kMainThreadStackSize = 4000000;
@@ -60,20 +63,6 @@ namespace
     timespec now{};
     clock_gettime(CLOCK_MONOTONIC, &now);
     return static_cast<std::int64_t>(now.tv_sec) * 1000 + now.tv_nsec / 1000000;
-  }
-
-  /// A line of the report, as the app reads it: "<ms since the start> ms: <text>". Also to the system log.
-  void Report(const std::string& line)
-  {
-    __android_log_print(ANDROID_LOG_INFO, kLogTag, "game: %s", line.c_str());
-    const char* const path = std::getenv("FAF_GAME_REPORT");
-    if (path == nullptr || path[0] == '\0') {
-      return;
-    }
-    if (std::FILE* const file = std::fopen(path, "a")) {
-      std::fprintf(file, "%lld ms: %s\n", static_cast<long long>(NowMilliseconds() - gStartMilliseconds), line.c_str());
-      std::fclose(file);
-    }
   }
 
   /// The engine's log lines that go into the report, by how they begin (src/gpg/gal/backends/vulkan/DeviceVulkan.cpp and
@@ -108,6 +97,7 @@ namespace
       if (text == kSoundUp && !mSoundReported.exchange(true)) {
         const char* const driver = SDL_GetCurrentAudioDriver();
         Report(std::string("sound: XACT on FAudio, through SDL's ") + (driver != nullptr ? driver : "(no)") + " output");
+        platform::android::SoundStarted();
       } else if (text.substr(0, kSoundFailed.size()) == kSoundFailed) {
         // On one line: the engine's message has XACT's word on a second.
         std::string line(text);
@@ -161,6 +151,20 @@ namespace
 
 namespace platform::android
 {
+  /// A line of the report, as the app reads it: "<ms since the start> ms: <text>". Also to the system log.
+  void Report(const std::string& line)
+  {
+    __android_log_print(ANDROID_LOG_INFO, kLogTag, "game: %s", line.c_str());
+    const char* const path = std::getenv("FAF_GAME_REPORT");
+    if (path == nullptr || path[0] == '\0') {
+      return;
+    }
+    if (std::FILE* const file = std::fopen(path, "a")) {
+      std::fprintf(file, "%lld ms: %s\n", static_cast<long long>(NowMilliseconds() - gStartMilliseconds), line.c_str());
+      std::fclose(file);
+    }
+  }
+
   // The renderer's first frame went to the screen (src/gal/VulkanSurfaceAndroid.cpp): the activity takes
   // its start's text away (GameReport.firstFrame).
   void FirstFramePresented()

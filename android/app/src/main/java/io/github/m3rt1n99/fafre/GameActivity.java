@@ -2,15 +2,21 @@ package io.github.m3rt1n99.fafre;
 
 import android.content.Context;
 import android.graphics.Rect;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -37,9 +43,10 @@ import java.util.Locale;
  * the keys and the sound. The app gives the command line (getArguments, the program's path first, as FAF's
  * client starts the game), the program's folders (HOME, TMPDIR) and what a game on a phone needs around it:
  * the whole screen, the picture's own size (PictureSize), the UI package for fingers and the HUD's factor
- * (android/TOUCH_UI.md), Back as Esc, the multicast lock that finds LAN games. The program keeps running while the
- * activity is in the back (android/native/src/app/GameMainAndroid.cpp). The touch scheme Griff and the bar are not on
- * this activity yet; {@link LegacyGameActivity} has them on the earlier host.
+ * (android/TOUCH_UI.md), Back as Esc, the multicast lock that finds LAN games, the audio focus that the game's sound
+ * follows. The program keeps running while the activity is in the back (android/native/src/app/GameMainAndroid.cpp),
+ * without its sound. The touch scheme Griff and the bar are not on this activity yet; {@link LegacyGameActivity} has
+ * them on the earlier host.
  */
 public final class GameActivity extends SDLActivity {
     /** The program's path in its install, as FAF's client starts it: the engine takes its folder from it. */
@@ -58,8 +65,19 @@ public final class GameActivity extends SDLActivity {
     private String mProblem;
     /** The lines the user chose (PictureSize), which the picture has on any screen. */
     private int mLines;
+    /** The program can run, or runs, in this activity: no problem stopped it, and SDL's library loaded. */
+    private boolean mShowsProgram;
     /** Held while the activity is in front: Wi-Fi drops the broadcasts that find LAN games on a phone without it. */
     private WifiManager.MulticastLock mDiscoveryLock;
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    /**
+     * Asked for while the activity is in front, where the game's sound plays while the focus is the activity's
+     * (android/native/src/app/SoundAndroid.cpp). It stops for another app's sound, even for a short one: the system lowers
+     * no AAudio stream.
+     */
+    private AudioFocusRequest mAudioFocus;
+    /** Gone for good: nothing gives it back, as the end of a call does. */
+    private boolean mAudioFocusLost;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -98,6 +116,14 @@ public final class GameActivity extends SDLActivity {
             mDiscoveryLock = wifi.createMulticastLock("faf-game-discovery");
             mDiscoveryLock.setReferenceCounted(false);
         }
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+        mAudioFocus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).build())
+            .setAcceptsDelayedFocusGain(true)
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener(this::onAudioFocusChange, mHandler)
+            .build();
+        mShowsProgram = true;
     }
 
     /** The program's command line and its environment, or why the game cannot start. */
@@ -287,10 +313,19 @@ public final class GameActivity extends SDLActivity {
         if (mDiscoveryLock != null) {
             mDiscoveryLock.acquire();
         }
+        if (mShowsProgram) {
+            // First: the sound plays at the word that both are so, and it must not during a call.
+            requestAudioFocus();
+            Game.foreground(true);
+        }
     }
 
     @Override
     protected void onPause() {
+        if (mShowsProgram) {
+            Game.foreground(false);
+            getSystemService(AudioManager.class).abandonAudioFocusRequest(mAudioFocus);
+        }
         if (mDiscoveryLock != null) {
             mDiscoveryLock.release();
         }
@@ -302,6 +337,43 @@ public final class GameActivity extends SDLActivity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             hideSystemBars();
+            takeAudioFocusBack();
+        }
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            takeAudioFocusBack();
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    // --- The sound --------------------------------------------------------------------------------
+
+    /** While a call has the focus this is delayed, and onAudioFocusChange hears when it comes. */
+    private void requestAudioFocus() {
+        int focus = getSystemService(AudioManager.class).requestAudioFocus(mAudioFocus);
+        mAudioFocusLost = focus == AudioManager.AUDIOFOCUS_REQUEST_FAILED;
+        Game.audioFocus(focus == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
+    }
+
+    private void onAudioFocusChange(int change) {
+        if (change == AudioManager.AUDIOFOCUS_GAIN) {
+            mAudioFocusLost = false;
+            Game.audioFocus(true);
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS) {
+            mAudioFocusLost = true;
+            Game.audioFocus(false);
+        } else if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+            Game.audioFocus(false);
+        }
+    }
+
+    /** The player is back at the game: its sound returns if the app that took the focus for good has stopped. */
+    private void takeAudioFocusBack() {
+        if (mShowsProgram && mAudioFocusLost && !getSystemService(AudioManager.class).isMusicActive()) {
+            requestAudioFocus();
         }
     }
 

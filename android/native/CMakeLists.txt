@@ -318,8 +318,10 @@ target_link_libraries(faf_movie_player PUBLIC faf_android_settings)
 target_link_libraries(faf_movie_player PRIVATE FFmpeg::FFmpeg)
 
 add_library(faf_client OBJECT ${_faf_client_files}
+  src/app/GameJniAndroid.cpp
   src/app/GameMainAndroid.cpp
   src/app/ScreenKeyboardAndroid.cpp
+  src/app/SoundAndroid.cpp
   src/app/UiPackageAndroid.cpp
   src/gal/BlockCompressionAndroid.cpp
   src/gal/VulkanSurfaceAndroid.cpp
