@@ -5,9 +5,11 @@
 // of the audio focus, which the activity asks for (GameActivity.java).
 //
 // The pause is SDL's own for its blocking case (Android_PauseAudio in SDL_androidevents.c): AAUDIO_PauseDevices and
-// OPENSLES_PauseDevices pause the output stream under all of the program's audio devices, the game's sound (FAudio) and
-// a movie's (SdlMovieSink) alike, and the devices the program opens meanwhile join the paused stream. They run on SDL's
-// main thread, the program's, where SDL makes those calls and where the program opens and closes its devices.
+// OPENSLES_PauseDevices pause the output under all of the program's audio devices, the game's sound (FAudio) and a
+// movie's (SdlMovieSink) alike. Patched (patches/README.md), it holds for the streams SDL builds meanwhile as well: for
+// a device the program opens, and the one AAudio's driver builds anew when Android disconnects a stream, a paused one
+// too, as it does when the output device changes. They run on SDL's main thread, the program's, where SDL makes those
+// calls and where the program opens and closes its devices.
 
 #include <atomic>
 
@@ -34,12 +36,6 @@ namespace
   // SDL's main thread's: whether the output is paused.
   bool gPaused = false;
 
-  void PauseOutput()
-  {
-    AAUDIO_PauseDevices();
-    OPENSLES_PauseDevices();
-  }
-
   void Apply(void*)
   {
     // Before SDL's audio is up there is no output to pause; the sound's start applies what holds then.
@@ -53,22 +49,14 @@ namespace
     }
     gPaused = pause;
     if (pause) {
-      PauseOutput();
+      AAUDIO_PauseDevices();
+      OPENSLES_PauseDevices();
       platform::android::Report(front ? "sound: paused, another app has the audio focus" : "sound: paused in the back");
     } else {
       AAUDIO_ResumeDevices();
       OPENSLES_ResumeDevices();
       platform::android::Report("sound: plays again");
     }
-  }
-
-  void Started(void*)
-  {
-    // The sound engine's output came after the last pause: a stream it opened plays.
-    if (gPaused) {
-      PauseOutput();
-    }
-    Apply(nullptr);
   }
 } // namespace
 
@@ -86,5 +74,5 @@ void platform::android::SetAudioFocus(const bool held)
 
 void platform::android::SoundStarted()
 {
-  (void)SDL_RunOnMainThread(&Started, nullptr, false);
+  (void)SDL_RunOnMainThread(&Apply, nullptr, false);
 }

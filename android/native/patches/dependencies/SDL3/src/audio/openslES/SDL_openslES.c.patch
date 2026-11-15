@@ -1,0 +1,41 @@
+diff --git a/dependencies/SDL3/src/audio/openslES/SDL_openslES.c b/dependencies/SDL3/src/audio/openslES/SDL_openslES.c
+index 0f49585..71baa51 100644
+--- a/dependencies/SDL3/src/audio/openslES/SDL_openslES.c
++++ b/dependencies/SDL3/src/audio/openslES/SDL_openslES.c
+@@ -92,6 +92,9 @@ static SLObjectItf outputMixObject = NULL;
+ static SLObjectItf bqPlayerObject = NULL;
+ static SLPlayItf bqPlayerPlay = NULL;
+ static SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue = NULL;
++/* faf-re's Android build (android/native/patches/README.md): whether the program has paused its output
++ * (OPENSLES_PauseDevices), in which a player made meanwhile starts. */
++static SDL_AtomicInt devices_paused;
+ #if 0
+ static SLVolumeItf bqPlayerVolume;
+ #endif
+@@ -603,8 +606,8 @@ static bool OPENSLES_CreatePCMPlayer(SDL_AudioDevice *device)
+         audiodata->pmixbuff[i] = audiodata->mixbuff + i * device->buffer_size;
+     }
+ 
+-    // set the player's state to playing
+-    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
++    // set the player's state to playing, or to paused while the output is (faf-re's Android build)
++    result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SDL_GetAtomicInt(&devices_paused) ? SL_PLAYSTATE_PAUSED : SL_PLAYSTATE_PLAYING);
+     if (SL_RESULT_SUCCESS != result) {
+         LOGE("Play set state failed: %d", result);
+         goto failed;
+@@ -785,6 +788,7 @@ AudioBootStrap OPENSLES_bootstrap = {
+ 
+ void OPENSLES_ResumeDevices(void)
+ {
++    SDL_SetAtomicInt(&devices_paused, 0);
+     if (bqPlayerPlay != NULL) {
+         // set the player's state to 'playing'
+         SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+@@ -796,6 +800,7 @@ void OPENSLES_ResumeDevices(void)
+ 
+ void OPENSLES_PauseDevices(void)
+ {
++    SDL_SetAtomicInt(&devices_paused, 1);
+     if (bqPlayerPlay != NULL) {
+         // set the player's state to 'paused'
+         SLresult result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PAUSED);

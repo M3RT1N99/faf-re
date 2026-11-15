@@ -1,0 +1,128 @@
+diff --git a/dependencies/SDL3/src/audio/aaudio/SDL_aaudio.c b/dependencies/SDL3/src/audio/aaudio/SDL_aaudio.c
+index 3d5283c..e02bc32 100644
+--- a/dependencies/SDL3/src/audio/aaudio/SDL_aaudio.c
++++ b/dependencies/SDL3/src/audio/aaudio/SDL_aaudio.c
+@@ -68,6 +68,13 @@ typedef struct AAUDIO_Data
+ } AAUDIO_Data;
+ static AAUDIO_Data ctx;
+ 
++/* faf-re's Android build (android/native/patches/README.md): the program's pause of its output (AAUDIO_PauseDevices)
++ * is a state, which each device's thread holds its stream to (FollowPause), a stream built meanwhile as well: for a
++ * device opened then, and the one SDL builds anew when Android disconnects a stream, a paused one too
++ * (RecoverAAudioDevice). That thread is the one that builds a stream anew, so no word of the program's goes to a stream
++ * on its way out, or past one on its way in. */
++static SDL_AtomicInt devices_paused;
++
+ static bool AAUDIO_LoadFunctions(AAUDIO_Data *data)
+ {
+ #define SDL_PROC(ret, func, params)                                                             \
+@@ -173,9 +180,35 @@ static Uint8 *AAUDIO_GetDeviceBuf(SDL_AudioDevice *device, int *bufsize)
+     return &hidden->mixbuf[offset];
+ }
+ 
++// faf-re's Android build: on the device's thread, before each of its waits, so at least every 100 ms.
++static void FollowPause(SDL_AudioDevice *device)
++{
++    AAudioStream *stream = device->hidden->stream;
++    if (!stream) {
++        return;
++    }
++    const aaudio_stream_state_t state = ctx.AAudioStream_getState(stream);
++    aaudio_result_t res = AAUDIO_OK;
++    if (SDL_GetAtomicInt(&devices_paused)) {
++        if (state == AAUDIO_STREAM_STATE_STARTING || state == AAUDIO_STREAM_STATE_STARTED) {
++            // Pause() isn't implemented for recording, use Stop()
++            res = device->recording ? ctx.AAudioStream_requestStop(stream) : ctx.AAudioStream_requestPause(stream);
++        }
++    } else if (state == AAUDIO_STREAM_STATE_OPEN || state == AAUDIO_STREAM_STATE_PAUSING ||
++               state == AAUDIO_STREAM_STATE_PAUSED || state == AAUDIO_STREAM_STATE_STOPPING ||
++               state == AAUDIO_STREAM_STATE_STOPPED) {
++        res = ctx.AAudioStream_requestStart(stream);
++    }
++    if (res != AAUDIO_OK) {
++        LOGI("SDL Failed to follow the pause %d", res);
++        SDL_SetError("%s : %s", SDL_FUNCTION, ctx.AAudio_convertResultToText(res));
++    }
++}
++
+ static bool AAUDIO_WaitDevice(SDL_AudioDevice *device)
+ {
+     while (!SDL_GetAtomicInt(&device->shutdown)) {
++        FollowPause(device);
+         // this semaphore won't fire when the app is in the background (AAUDIO_PauseDevices was called).
+         if (SDL_WaitSemaphoreTimeout(device->hidden->semaphore, 100)) {
+             return true;  // semaphore was signaled, let's go!
+@@ -432,6 +465,11 @@ static bool BuildAAudioStream(SDL_AudioDevice *device)
+          device->spec.freq, SDL_GetAudioFormatName(device->spec.format),
+          device->spec.channels, device->sample_frames, hidden->num_buffers);
+ 
++    // faf-re's Android build: while the output is paused the stream waits for its thread to start it (FollowPause).
++    if (SDL_GetAtomicInt(&devices_paused)) {
++        return true;
++    }
++
+     res = ctx.AAudioStream_requestStart(hidden->stream);
+     if (res != AAUDIO_OK) {
+         LOGI("SDL Failed AAudioStream_requestStart %d recording:%d", res, recording);
+@@ -483,58 +521,15 @@ static bool AAUDIO_OpenDevice(SDL_AudioDevice *device)
+     return BuildAAudioStream(device);
+ }
+ 
+-static bool PauseOneDevice(SDL_AudioDevice *device, void *userdata)
+-{
+-    struct SDL_PrivateAudioData *hidden = (struct SDL_PrivateAudioData *)device->hidden;
+-    if (hidden) {
+-        if (hidden->stream) {
+-            aaudio_result_t res;
+-
+-            if (device->recording) {
+-                // Pause() isn't implemented for recording, use Stop()
+-                res = ctx.AAudioStream_requestStop(hidden->stream);
+-            } else {
+-                res = ctx.AAudioStream_requestPause(hidden->stream);
+-            }
+-
+-            if (res != AAUDIO_OK) {
+-                LOGI("SDL Failed AAudioStream_requestPause %d", res);
+-                SDL_SetError("%s : %s", SDL_FUNCTION, ctx.AAudio_convertResultToText(res));
+-            }
+-        }
+-    }
+-    return false;  // keep enumerating.
+-}
+-
+-// Pause (block) all non already paused audio devices by taking their mixer lock
++// faf-re's Android build: the devices' threads pause and start their streams (FollowPause).
+ void AAUDIO_PauseDevices(void)
+ {
+-    if (ctx.handle) {  // AAUDIO driver is used?
+-        (void) SDL_FindPhysicalAudioDeviceByCallback(PauseOneDevice, NULL);
+-    }
+-}
+-
+-// Resume (unblock) all non already paused audio devices by releasing their mixer lock
+-static bool ResumeOneDevice(SDL_AudioDevice *device, void *userdata)
+-{
+-    struct SDL_PrivateAudioData *hidden = device->hidden;
+-    if (hidden) {
+-        if (hidden->stream) {
+-            aaudio_result_t res = ctx.AAudioStream_requestStart(hidden->stream);
+-            if (res != AAUDIO_OK) {
+-                LOGI("SDL Failed AAudioStream_requestStart %d", res);
+-                SDL_SetError("%s : %s", SDL_FUNCTION, ctx.AAudio_convertResultToText(res));
+-            }
+-        }
+-    }
+-    return false;  // keep enumerating.
++    SDL_SetAtomicInt(&devices_paused, 1);
+ }
+ 
+ void AAUDIO_ResumeDevices(void)
+ {
+-    if (ctx.handle) {  // AAUDIO driver is used?
+-        (void) SDL_FindPhysicalAudioDeviceByCallback(ResumeOneDevice, NULL);
+-    }
++    SDL_SetAtomicInt(&devices_paused, 0);
+ }
+ 
+ static void AAUDIO_Deinitialize(void)
