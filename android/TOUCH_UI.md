@@ -289,7 +289,8 @@ keeps the fingers (`TouchInput` with `setGriff`: slop, timing, the tap ladder, t
 rail; `Stroke` for what a stroke gives; `Draft` for the draft's plans as the screen shows them; `Undo` for the undo's button). All Griff
 shows is FAF's UI's, in FAF's own look at the HUD's factor (Griff v4, the user's verdict on 0.14.0: every element as an original one of
 FA's), each piece checked side by side with the element of FAF's it follows (2026-11-15, on the emulator at the phone's size and HUD 1.6,
-in the four factions' skins where the skin changes it). `fafre/griffhud.lua` has the rail's *Box*, *Plus* and *Groups*, the undo's button
+in the four factions' skins where the skin changes it, but for the stroke's label, FAF's tooltip, whose colours follow the skin and which
+was seen in UEF's only). `fafre/griffhud.lua` has the rail's *Box*, *Plus* and *Groups*, the undo's button
 and the draft's tick and cross as FAF's order buttons, the hints where FAF prints its own messages and a waypoint marked for deletion
 under FAF's Cancel icon. `fafre/griffmap.lua`, on the map's view as FAF's reclaim labels are, has the handle as the brackets FAF draws
 about a selected unit, a resting finger's ring as a ring of FAF's pings, a stroke as FAF's command graph draws the route once it is
@@ -720,8 +721,7 @@ the units a factory makes of one kind while its queue does not run empty, as FAF
 are the group of that run until a gesture orders them (`griffgroups::Runs`, tested: a unit counts for the run when it is finished, a
 kind of its own begins a run, a repeating queue never runs empty, and a queue the sync shows empty a frame before its last unit is
 finished still gives that unit to the run). A unit leaves its group when another gesture orders it, when it dies or is no longer one's
-own, and a group of fewer than two units is none. The draft's tick, the undo and the keyboard's keys make no group: they are no gesture's
-(on the emulator two engineers of a group of four ticked a plan, and the group stayed one of four). An undo that takes a gesture back whole
+own, and a group of fewer than two units is none. The draft's tick, the undo and the keyboard's keys make no group: they are no gesture's. An undo that takes a gesture back whole
 puts its units back in the groups they were in before it (`Book::Undone`, tested), where no other gesture has taken them since.
 
 The icon is FAF's strategic icon art (`fafre/griffgroups.lua`): the experimentals' round icon

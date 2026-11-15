@@ -146,26 +146,31 @@ the game data they imported. Everything lives in the app's external files folder
   - Taps in a row climb a ladder: two quick taps on a unit take all of its type on the screen, three all of it on the map;
     two on the ground turn the move of the first into an attack-move; two on nothing with nothing selected take all your
     mobile units on the screen.
-  - One finger that moves pans the camera, and the map glides on when it lifts moving; one that rests a moment (a ring
-    shows it) and then moves draws a selection box. Two fingers zoom where they are and move the map with them at once, and
-    a quick tap of two fingers lets the selection go (or ends an order picked in the orders panel). A finger that rests on a
-    unit shows what it is, and lifts with nothing done.
-  - A round handle with the selection's count stands beside it, clear of its units, or at the screen's edge with an arrow
-    when the group is out of view or under a panel. A tap on it flies the camera to the group. A stroke from it lays a
-    route: moves queued along the way, and at its end FAF's order for what it ends on (an enemy: attack, a factory: assist,
-    the minimap: that place), which a label above the finger names while it draws, with a dot at each waypoint. A long loop
-    back to the handle is a patrol; for factories alone the route is their rally point. A second finger, a short loop or an
+  - One finger that moves pans the camera, and the map glides on when it lifts moving; the map pans past its edges, so
+    that FAF's panels never cover a part of it. A finger that rests a moment shows a ring of FAF's pings, whose colour
+    says what a drag from there gives: blue, with units selected that move, FAF's formation, which turns to face the way
+    the finger goes and is ordered as it lifts, as FA's right-button drag (a second finger gives it up, and the screen says
+    Cancelled); yellow, the left button's drag, as a mouse's there: a selection box on the map. A rest on a waypoint of
+    the selection's orders marks it with FAF's Cancel icon, the ring red, and the lift deletes that order. A finger that
+    rests on a unit shows what it is, and lifts with nothing done. Two fingers zoom where they are and move the map with
+    them at once, and a quick tap of two fingers lets the selection go (or ends an order picked in the orders panel).
+  - The handle is SCFA's selection brackets with the selection's count in FAF's font, beside the selection and clear of
+    its units, or FAF's off-screen arrow at the screen's edge when the group is out of view or under a panel. A tap on it
+    flies the camera to the group. A stroke from it lays a route, drawn as FAF's order line in the order's colour with
+    FAF's waypoint icons: moves queued along the way, and at its end FAF's order for what it ends on (an enemy: attack, a
+    factory: assist, the minimap: that place), which FAF's tooltip above the finger names while it draws. A long loop back
+    to the handle is a patrol; for factories alone the route is their rally point. A second finger, a short loop or an
     end on a panel gives the route up, and the screen says Cancelled.
-  - The rail is a row at the top left, just under FAF's top panels, of *Box* (a drag is a box at once, a tap on a unit adds
-    it or takes it out, a tap on nothing leaves *Box* lit), *Plus* (orders are queued, as with Shift) and *Attack* (taps and
-    routes are FAF's attack-move, where FAF's orders panel offers it), side by side, each as large as the room above FAF's
-    unit view where it stands highest (a replay) allows, 11 mm on the S22 Ultra and 9 mm at least. A tap lights one for
-    the next action (a yellow edge and "1×"); held, it counts until it is let go (a white edge). An order picked in the
-    orders panel ends after the one that a lit *Plus* queues; a held *Plus* keeps it until it is let go, as Shift does. With
-    *Plus* or *Attack* and troops selected, a tap on one of your units is the order there too. In a game the keyboard is
-    *Keyboard* in FAF's Menu tab; *Keys* is the menus' only. Each of Griff's buttons (the rail's, the pill, the tick and the
-    cross) steps aside while something you opened of FAF's lies under it, such as the overlay filters' list beside the
-    multifunction panel, the Menu, a window or a question box, and comes back when that closes.
+  - The rail is a row at the top left, just under FAF's top panels, of FAF order buttons as large as FAF's own (7 mm on
+    the S22 Ultra): *Box* (a drag is a box at once, a tap on a unit adds it or takes it out, a tap on nothing leaves *Box*
+    lit), *Plus* (orders are queued, as with Shift) and *Groups* (Griff's group icons shown or hidden). A tap lights *Box*
+    or *Plus* for the next action, with the edge of FAF's selected order; held, it counts until it is let go, with FAF's
+    pulsing glow. Stop and the attack-move are FAF's orders panel's. An order picked in the orders panel ends after the one
+    that a lit *Plus* queues; a held *Plus* keeps it until it is let go, as Shift does. With *Plus* and troops selected, a
+    tap on one of your units is the order there too. In a game the keyboard is *Keyboard* in FAF's Menu tab; *Keys* is the
+    menus' only. Each of Griff's buttons (the rail's, the undo's, the tick and the cross) steps aside while something you
+    opened of FAF's lies under it, such as the overlay filters' list beside the multifunction panel, the Menu, a window or
+    a question box, and comes back when that closes. All of Griff hides with FAF's UI.
   - On FAF's panels a tap is a click and a rest a right click (on an avatar: go to it), with the same help beside small
     controls as with the mouse. Taps on an idle avatar take its idle units in turn, as a mouse's clicks do; once you have
     given the one it took an order, the next tap takes the best idle unit left. A double tap takes them all.
@@ -173,18 +178,23 @@ the game data they imported. Everything lives in the app's external files folder
     building, on FAF's grid (an extractor on the free mass spot within 5 mm, else "No free resource here"), a tap on a plan
     takes it away, a drag from the newest plan draws a line of them side by side, a drag from another plan moves them all
     (extractors stay on their spots), and a drag elsewhere pans. A finger that rests shows the plan its lift places, with a
-    loupe above it of what the finger covers. With an extractor picked, *Box* and a drag give every free mass spot in the
-    box a plan. Another icon picks another building for the next plans; plans on taken ground are red. The tick orders them
+    loupe above it of what the finger covers, in FAF's marker ring. With an extractor picked, *Box* and a drag give every
+    free mass spot in the box a plan. Another icon picks another building for the next plans. Plans are FAF's build ghosts,
+    red on taken ground; the newest, which a drag draws a line from, and the one a resting finger aims at are as bright as
+    FAF's ghost under the cursor, the others dimmer. The tick and the cross are FAF order buttons, with the skin's tick and
+    FAF's Cancel icon. The tick orders them
     all with FAF's build mode, as many clicks (the first replaces what the engineers do, the rest are queued; with *Plus* all
     are queued), each in its plan's cell also zoomed far out, moving the camera to a plan the screen does not show, or closer
     where a pixel spans more than a cell, and back; the cross, or a tap of two fingers, drops the draft. The selected
     engineers build it, or else the engineers selected when a building was last picked. Up to 30 plans, and a line of up to
-    30; while plans wait, an order of the orders panel says "First ✓ or ✕". FAF's build keys and templates keep FAF's ghost,
+    30; while plans wait, an order of the orders panel says "Tick or cross the draft first".
+    FAF's build keys and templates keep FAF's ghost,
     which is placed as with the mouse; a template put away does not take the tick's place. The tick (and the undo) waits
     for a finger that pans or draws a box to lift; while their clicks run the camera holds still and a finger does nothing,
     and a gesture they came into gives nothing more, also after them (a line on FAF's ghost is given up).
-  - After an order of Griff's gestures a pill *Undo* stands for 3 s in the rail's row, right of *Attack* and as high, with
-    a bar of the time it has left; a tap on it takes the gesture's orders back with a PC player's inputs, once the game
+  - After an order of Griff's gestures the undo's button, a FAF order button with *Undo* on it and FAF's avatar bar of the
+    time it has left, stands for 3 s right of the rail; a tap on it takes the gesture's orders back with a PC player's
+    inputs, once the game
     has taken them: each order of the gesture's goes by FAF's Shift+Ctrl right click on its waypoint, which takes it from
     all of its units, so a queue it was appended to stays as it was (a building begun goes on) and a unit that was idle is
     idle again; what an order replaced and the game still held when the order arrived (a network game's delay later)
@@ -198,9 +208,9 @@ the game data they imported. Everything lives in the app's external files folder
     (the rebuild); else the undo counts it. An assist the undo gives back brings no storages of FAF's: its assist-to-cap is
     held off while the undo's clicks run, as for a player who wants only the assist. A route, a tick of the draft and a
     ground double tap are one undo each. Only the last order counts: one of FAF's build keys, a template, the keyboard's keys
-    or the construction panel (an enhancement, an upgrade, a factory's queue) takes the pill away; FAF's own upgrade for an
-    assist (its assist-to-upgrade option) does not. While it waits for the game (the fingers free meanwhile) or a finger's
-    pan or box and its clicks run the pill says *Undo…*; its clicks never make a double click with the press before them
+    or the construction panel (an enhancement, an upgrade, a factory's queue) takes the button away; FAF's own upgrade for
+    an assist (its assist-to-upgrade option) does not. While it waits for the game (the fingers free meanwhile) or a finger's
+    pan or box and its clicks run the button says *Undo…*; its clicks never make a double click with the press before them
     (one at that very spot waits until the double-click time has passed, as a player's would). What cannot come back (an
     enhancement the order took, a factory's builds a Stop took, an order on a unit that is gone) or go (the attack-move's
     script left behind an order the unit kept), and what the undo cannot tell (an order the game took in a moment it read
@@ -209,16 +219,21 @@ the game data they imported. Everything lives in the app's external files folder
     own), makes the screen say *Undone in part*, also later where FAF's
     upgrade for an assist comes only after the undo (a paused extractor's, in a paused game, also after more undos);
     an undo whose clicks ended before they made anything, or that an order or the game's end came before, says *Not
-    undone*, and in the first case the pill offers it again. A tap that comes just after the pill went (up to 0.4 s late)
-    lands on nothing. Each order of Griff's gestures leaves pins at its places for 1.5 s,
-    in the colour of its kind (move, attack, patrol, build), beside FAF's own blips; FAF's ghost and keys leave none.
+    undone*, and in the first case the button offers it again. A tap that comes just after the button went (up to 0.6 s
+    late) lands on nothing. An undo puts its units back in the groups they were in (below).
+  - Griff's groups, as Supreme Commander 2's on a console: the units one gesture ordered together, and the units one
+    factory order made, are a group, which one round icon in FAF's strategic icon art shows at their middle with their
+    count, where the game draws its units as icons, and not where zoomed in it draws them whole.
+    A tap on it selects the group (with
+    *Plus*: adds it; with *Box*: adds it or takes it out), two taps also move the camera to it. *Groups* on the rail shows
+    and hides the icons. A group orders nothing.
   - Control groups 1, 2 and 3 always show under the avatars, an empty one dim, with the group's count: a tap selects the
     group (with *Plus*: adds it to the selection), two taps also move the camera to it as FAF's double click does (its option
     for control groups), and a tap on an empty one says "Empty group: rest to store". A rest stores the selection there,
     replacing the group as Ctrl and the number do, and with *Plus* adds it to the group; the screen says "Group N stored"
     and the phone buzzes once (as the rest began, or with *Box*, whose rest gives no ring, as the group is stored), or
     "Nothing selected". FAF's other groups (4 to 0, which a keyboard's Ctrl makes) stand below them.
-    A group is no order: it leaves the undo's pill as it is.
+    A control group is no order: it leaves the undo's button as it is.
 - **FAF's newest version** (card 5, *Get FAF's newest version*; `FafRelease`, `NewestGameFiles`, TestService's
   `ACTION_GAME_FILES`): so that the phone can play a PC on FAF's current version. The number is GitHub's latest release
   of FAForever/fa (`api.github.com/repos/FAForever/fa/releases/latest`, no key: 60 requests an hour from one address,
