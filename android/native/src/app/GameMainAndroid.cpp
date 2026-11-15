@@ -5,9 +5,10 @@
 // patches/src/platform/posix/ClientMainPosix.cpp.patch), what it cannot know on Android, and runs it:
 //
 // - SDL's hints for a game on a phone: the program goes on in the back, as an online game's simulation
-//   keeps the others' pace (the surface goes, the loop does not stop); landscape only; no screen
-//   keyboard that comes by itself, as the engine asks for typed text in every window: it comes for a
-//   text field (ScreenKeyboardAndroid.cpp).
+//   keeps the others' pace (the surface goes, the loop does not stop), and outlives an activity Android
+//   destroys, which a new one shows (GameActivity.java); landscape only; no screen keyboard that comes
+//   by itself, as the engine asks for typed text in every window: it comes for a text field
+//   (ScreenKeyboardAndroid.cpp).
 // - argv[0] is the program's path, from which the engine takes its install's folder (DISK_GetLaunchDir):
 //   SDL's own is "app_process".
 // - The display mode of `/fullscreen <width> <height>`, which the activity gives with its surface's size,
@@ -139,6 +140,8 @@ namespace
     Program& program = *static_cast<Program*>(data);
     // On the program's thread: the first of SDL's calls makes it SDL's main thread.
     (void)SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
+    // SDL's activity ends the process when it is made anew, unless this says that it may be.
+    (void)SDL_SetHint(SDL_HINT_ANDROID_ALLOW_RECREATE_ACTIVITY, "1");
     (void)SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     (void)SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
     screenkeyboard::Install();

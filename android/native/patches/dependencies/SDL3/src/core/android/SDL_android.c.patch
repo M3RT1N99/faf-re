@@ -1,8 +1,29 @@
 diff --git a/dependencies/SDL3/src/core/android/SDL_android.c b/dependencies/SDL3/src/core/android/SDL_android.c
-index c4f517da8..09a22a127 100644
+index c4f517da8..81b0a7c5d 100644
 --- a/dependencies/SDL3/src/core/android/SDL_android.c
 +++ b/dependencies/SDL3/src/core/android/SDL_android.c
-@@ -1401,6 +1401,10 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeKeyboardFocusLost)(
+@@ -647,12 +647,18 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(nativeSetupJNI)(JNIEnv *env, jclass cl
+         __android_log_print(ANDROID_LOG_ERROR, "SDL", "failed to create Android_ActivityMutex mutex");
+     }
+ 
+-    Android_LifecycleMutex = SDL_CreateMutex();
++    /* faf-re's Android build (android/native/patches/README.md): a new activity around the running program (the app's
++     * GameActivity) keeps the lifecycle's queue, which the program's thread waits on and takes from. */
++    if (!Android_LifecycleMutex) {
++        Android_LifecycleMutex = SDL_CreateMutex();
++    }
+     if (!Android_LifecycleMutex) {
+         __android_log_print(ANDROID_LOG_ERROR, "SDL", "failed to create Android_LifecycleMutex mutex");
+     }
+ 
+-    Android_LifecycleEventSem = SDL_CreateSemaphore(0);
++    if (!Android_LifecycleEventSem) {
++        Android_LifecycleEventSem = SDL_CreateSemaphore(0);
++    }
+     if (!Android_LifecycleEventSem) {
+         __android_log_print(ANDROID_LOG_ERROR, "SDL", "failed to create Android_LifecycleEventSem semaphore");
+     }
+@@ -1401,6 +1407,10 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeKeyboardFocusLost)(
  {
      // Calling SDL_StopTextInput will take care of hiding the keyboard and cleaning up the DummyText widget
      SDL_StopTextInput(Android_Window);

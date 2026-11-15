@@ -17,6 +17,7 @@ import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.PointerIcon;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -30,6 +31,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
 
@@ -89,11 +91,27 @@ public final class GameActivity extends SDLActivity {
 
     @Override
     protected void onCreate(Bundle state) {
-        // Before SDL's activity loads the library: the program reads its environment when it starts.
-        GameReport.begin(this);
+        // Android made the activity anew around the running program (onDestroy kept it): the same game goes on, shown by
+        // this one.
+        Thread program = runningProgram();
         mLines = PictureSize.lines(this);
-        mProblem = prepare();
+        if (program == null) {
+            // Before SDL's activity loads the library: the program reads its environment when it starts.
+            GameReport.begin(this);
+            mProblem = prepare();
+        }
+        Hashtable<Integer, PointerIcon> cursors = mCursors;
+        int lastCursor = mLastCursorID;
         super.onCreate(state);
+        if (program != null) {
+            // SDL's onCreate takes each activity for the program's first: it forgot the program's thread, which it would
+            // start anew, and the cursors the program made. With its lifecycle's queue kept (patches/README.md,
+            // SDL_android.c), the next resume is the program's resume.
+            mSDLThread = program;
+            mCursors = cursors;
+            mLastCursorID = lastCursor;
+            Game.report("game: a new activity shows the running program");
+        }
         if (mProblem != null) {
             GameReport.append(this, GameReport.END + mProblem);
             Toast.makeText(this, mProblem, Toast.LENGTH_LONG).show();
@@ -308,12 +326,32 @@ public final class GameActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         mHandler.removeCallbacks(mPoll);
+        if (runningProgram() != null && !isFinishing()) {
+            // Android destroys a stopped activity when it wants the memory, and at once under the developer option "Don't
+            // keep activities": the program goes on, as a Windows program does without its window, and the next activity
+            // shows it (onCreate). SDL's onDestroy would end it (nativeSendQuit) and take down the lifecycle's mutexes
+            // under it (nativeQuit); for an activity whose libraries did not load it does only the rest.
+            Game.report("game: the activity is destroyed, the program goes on");
+            mBrokenLibraries = true;
+            try {
+                super.onDestroy();
+            } finally {
+                mBrokenLibraries = false;
+            }
+            return;
+        }
         super.onDestroy();
         // A game that could not start leaves no process behind: SDL's activity takes the next start in this
         // process for one made anew around a program, and would end it.
         if (mProblem != null) {
             System.exit(0);
         }
+    }
+
+    /** SDL's thread with the program on it, which this process has until the program ends; null before it starts. */
+    private static Thread runningProgram() {
+        Thread program = mSDLThread;
+        return program != null && program.isAlive() ? program : null;
     }
 
     @Override
