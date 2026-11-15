@@ -1,5 +1,5 @@
 diff --git a/src/platform/shell/Shell.cpp b/src/platform/shell/Shell.cpp
-index 72f69325d..32bec10a6 100644
+index 72f69325d..7a288ba85 100644
 --- a/src/platform/shell/Shell.cpp
 +++ b/src/platform/shell/Shell.cpp
 @@ -674,15 +674,17 @@ namespace
@@ -41,8 +41,8 @@ index 72f69325d..32bec10a6 100644
  
 +  // The 2.4.2 window library (src/msw/window.cpp, m_lastKeydownProcessed) sends no char event for a key-down a handler
 +  // took: its WM_CHAR is dropped. The console opens on the key-down of ` (CUIKeyHandler::OnKeyDown, which does not skip
-+  // it) and closes on its char (FAF's console.lua); the chat opens on Enter's key-down, which its char would send at once.
-+  // SDL gives a key's text as an event of its own, after the key-down and before the key-up.
++  // it) and closes on its char (FAF's console.lua); the chat opens on Enter's key-down, which its char would send at
++  // once. SDL gives a key's text as an event of its own, after the key-down and before the key-up.
 +  bool sKeyDownTaken = false;
 +
    // The 2.4.2 window library (src/msw/window.cpp) sends a char event for a key Windows gives no WM_CHAR for, with
