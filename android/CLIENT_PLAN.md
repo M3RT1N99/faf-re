@@ -251,3 +251,36 @@ most of C1, as 56 files stop at wx.
     internet beside mobile data); the service on a phone (its own battery rules, the game's speed in the back, Wi-Fi with
     the screen off); the TCP half of the transport, for GPGNet (C5).
 - **Next:** the phone's word on sound, movies and the LAN game, then the speed (C4) and the rest of online (C5).
+
+*2026-11-15, stage 2a on the SDL3 client:* what android-client's game had, but Griff and network games in the back. All
+on the emulator (fafre_api36, x86_64, `-gpu host`, 2400x1080 on 65.3 mm), FAF 3841, the app's own Gradle and native
+builds; both native presets build.
+- **A skirmish** against an easy AI on Desert Arena (5 x 5 km): 7 1/2 minutes of game time with terrain, units, wrecks,
+  smoke, hit flares and FAF's HUD at 1.67; a tap selects the commander, the orders panel's Move and a tap send it to the
+  tapped place (SDL's own touch as the mouse); Menu, End Game, the score, Continue, Exit: `exit 0` after 626 s.
+- **Sound** is set up: FAudio's FACT over SDL's AAudio output (the report's line), every bank loaded and no error after
+  the engine's XACT initialisation, 292 cues started over the game (`/spewsound`), and AudioFlinger has the game's
+  process's track active (float, stereo, 44.1 kHz, no underrun). Still with `-no-audio`: nobody heard it.
+- **BC textures**: the report says which way they go; the emulator's GPU samples them, and with the activity's
+  `bcOnCpu` the phones' CPU decode draws the menus and dialogs the same.
+- **The UI package** is mounted and hooked again, the HUD's factor and the picture's size take effect (1707x768,
+  2000x900 and the screen's own 2400x1080 tried), and taps land where the finger is at each size (`GameSurface`):
+  FAF's dialogs and choices come out at TOUCH_UI.md's sizes. Its pages (the lobby and the LAN screen larger, scrolled
+  by a finger) come with the touch schemes; Griff's Lua does nothing (`FafreGriffWanted` says no).
+- **The phone's keyboard** comes for a tap on a text field (the lobby's chat, a profile's name, the console's line)
+  and for the Menu tab's Keyboard; typed text arrives, Back hides it before it is Esc again. The console that ` opened
+  closed again on that key's char on every SDL platform: the shell now drops the char of a key-down a handler took,
+  as wxWindows 2.4.2 did (`patches/src/platform/shell/Shell.cpp.patch`, a candidate for the engine).
+- **In the back** the skirmish's simulation ran at half speed (30 s of game time lost in 61 s with Home): SDL's pump
+  waited 100 ms each time while paused. A build-time patch of SDL (`patches/dependencies/SDL3`) lets the engine pace
+  itself: nothing lost in 61 s, the process at about 8 % of a core in the back.
+- **The renderer card (4) is retired**: the game's report names the GPU, each swap chain, the BC way and the sound's
+  output, which is what a tester needed of it.
+- Checks: `faf_griff_tests` 140 tests, 0 failed; `faf_movie_tests` six movies OK; the math card PASS (22188 cases);
+  the replay card's two default replays PASS.
+- **Open, for stage 2b** besides Griff and network games in the back: the touch schemes on SDL's input (a tap in FAF's
+  build mode lets the selection go instead of placing, as nothing hovered first; the pointer stays where the last finger
+  was, so rollovers stay), the menus' pages, what the keyboard typed shown over the picture; audio focus,
+  `NetworkGameService` and `NetTests` on `platform::net`, the program kept when Android destroys a stopped activity, a LAN
+  game between two emulators. Not on a phone yet: the CPU's BC decode, AAudio, a phone's keyboard and the pace in the
+  back under SDL.

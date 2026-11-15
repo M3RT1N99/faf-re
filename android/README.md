@@ -85,38 +85,39 @@ the game data they imported. Everything lives in the app's external files folder
   long run needs no network once the games start; downloads are retried for about ten minutes
   when the network drops; a failure on the phone's side, such as a full disk, ends a download at
   once.
-- **Renderer test** (card 4, `GalSmokeActivity`): not in this build. Its library stood on the earlier
-  host's window layer, which the move to SDL3 retired; the card says that `libfafgalsmoke.so` did not
-  load, and the game card shows the renderer on the phone. As it was: `libfafgalsmoke.so`
-  (`native/src/smoke/GalSmoke.cpp`) lists the phone's Vulkan devices, creates the engine's gal
-  device (the Vulkan backend, which needs Vulkan 1.3) on a full-screen surface, then clears it in
-  changing colours and presents for ten seconds. It needs no game data and draws without shaders or
-  textures, which come with C2. The report gives:
-  - the screen: the display mode and the app's size, which shows a scaled-down app;
-  - each Vulkan device with the features the backend needs;
-  - the engine's log lines;
-  - the frame rate, or the line that failed.
-
-  The test runs in a process of its own (`:renderer`), and the native
-  side writes each report line to `renderer.txt` in the app's files as it comes. If the driver takes
-  that process down, the app keeps the lines up to the crash and the reason Android gives for the
-  end (`ApplicationExitInfo`). On Android 12 and later it also keeps the tombstone, which goes into
-  the zip as `renderer-tombstone.pb`. The emulator's SwiftShader offers only Vulkan 1.2, so the test
-  fails there. Started with `-gpu host` on a PC whose GPU has Vulkan 1.3, the emulator gives the
-  guest Vulkan 1.3, and the test runs.
+- **Renderer test** (card 4) is retired: it brought up the engine's Vulkan device on a surface of its own
+  before the game could draw, on the earlier host's window layer, which the move to SDL3 retired. The
+  game card's report names what it showed (below).
 - **Game** (card 5, `GameActivity`): `libfafgame.so`, the engine's own POSIX client on SDL3, starts as
   the PC starts it, with the SCFA import and FAF's game files of the newest version on the phone (the
   highest whole one): `ForgedAlliance.exe /init <its init file> /log game/engine.sclog /notelemetry
-  /fullscreen <the surface's size>`, the program's path in the game files' `bin` folder. `GameActivity`
-  is SDL's activity (`SDLActivity`), which loads the library and starts the program on a thread of its
-  own; it runs in a process of its own (`:game`), which ends with the program, as a Windows program's
-  does, and goes on while the activity is in the back. SDL gives the program the surface (Vulkan), the
-  fingers as the mouse (a tap is a click), the keys and the sound; Back is Esc. The game's movies play
-  (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film).
+  /fafre_hud_scale <factor> /fafre_hud_most <factor> /fullscreen <the picture's size>`, the program's path
+  in the game files' `bin` folder. `GameActivity` is SDL's activity (`SDLActivity`), which loads the library
+  and starts the program on a thread of its own; it runs in a process of its own (`:game`), which ends with
+  the program, as a Windows program's does, and goes on while the activity is in the back, its simulation
+  at full speed. SDL gives the program the surface (Vulkan), the fingers as the mouse (a tap is a click, a
+  finger that moves drags with the left button), the keys and the sound; Back is Esc. The game's movies
+  play (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film).
+  - The game draws at a size of its own (`PictureSize`, the card's *UI size*): the surface's buffers have
+    the picture's size (`SurfaceHolder.setFixedSize`), the compositor scales them to the screen, and
+    `GameSurface` hands SDL the fingers and the mouse in the picture's pixels, so a tap lands where the
+    finger is at every size. FAF's UI has a fixed size in pixels: 768 lines on a phone make it larger.
+  - The UI package for fingers (`app/src/main/assets/fafre_ui`, [TOUCH_UI.md](TOUCH_UI.md)) is mounted and
+    hooked as FAF's init file allows, with the HUD's factor from the screen (`HudScale`), so FAF's dialogs,
+    choices and HUD come out at the sizes TOUCH_UI.md gives. The pages (the lobby and the LAN screen shown
+    larger, scrolled by a finger) and the touch schemes come back with SDL's input in the next stage;
+    until then the touch controls' button stays at *a finger is the mouse*, and Griff's Lua does nothing.
+  - A tap on a text field (the lobby's chat, a profile's name, the console's line) brings the phone's
+    keyboard, and so does *Keyboard* in the game's Menu tab; typed text goes to the field, Back hides the
+    keyboard before it is Esc again, Enter goes to the game and then hides it.
+  - The report (`game.txt`) names the GPU, each swap chain, whether BC textures are the GPU's or decoded
+    on the CPU, and the sound's output. Tests' extras of the activity (`am start ... --ef hudScale 1.6
+    --es arguments /spewsound --ez bcOnCpu true`): the phone's HUD factor on the emulator, more engine
+    arguments, and the phones' way with BC textures on a GPU that has BC.
 
   What follows is the game card of release 0.14, on the earlier host (`LegacyGameActivity`, the
-  Win32 message layer and wx-lite): the bar, the touch controls, the UI package for fingers, the HUD's
-  scale and the picture's size come back on SDL's activity in the next stage. There a mouse was the
+  Win32 message layer and wx-lite): the bar, the touch controls and the pages come back on SDL's activity
+  in the next stage. There a mouse was the
   mouse, keys were the keyboard and Back was Esc. Fingers acted as a mouse (`TouchInput`):
   in a game a tap is a click, a finger that moves drags, a finger that stays holds the right button until it
   lifts (an order), a quick tap of two fingers is a right click where the second came down, two
@@ -260,7 +261,7 @@ the game data they imported. Everything lives in the app's external files folder
   - On the PC: `<FAF>\replaydata\bin\ForgedAlliance.exe /init <FAF>\replaydata\bin\init.lua /windowed 1280 800
     /hostgame UDP 16010 PC LAN SCMP_009`, with the program allowed through Windows' firewall on the private network
     (it asks the first time).
-  - On the phone: *Multiplayer LAN*, the PC's address and 16010 in the IP and port fields (*Keys* opens the keyboard),
+  - On the phone: *Multiplayer LAN*, the PC's address and 16010 in the IP and port fields (a tap on a field opens the keyboard),
     *Connect*, then the *Ready* box. On the same Wi-Fi the PC's game should also be in the list above them, with a
     *Join* button.
   - On the PC: *AI: Easy* in an open slot, *Ready*, *Launch Game*.
@@ -300,8 +301,7 @@ the game data they imported. Everything lives in the app's external files folder
     from `10.0.2.2`, its own from the LAN address, and each side rejects the other (*Connecting to ...* stays).
   - The app starts the game with `/notelemetry`: the engine's records of desyncs and of a game's end, with the players'
     names, stay on the phone instead of going to the engine author's server.
-- **Share results** zips `summary.json`, the math output, the log, the renderer report
-  (`renderer.txt`, `renderer-tombstone.pb`), the game's report, tombstone, log and crash report
+- **Share results** zips `summary.json`, the math output, the log, the game's report, tombstone, log and crash report
   (`game.txt`, `game-tombstone.pb`, `game/engine.sclog`, `game/faf_crash_latest.txt`), the last
   game's (`game-previous.txt`, `game-previous-tombstone.pb`) and each replay's `headless.out`,
   `engine.log` and `speed.csv`. `tools/tombstone.py` reads a tombstone, with its stacks symbolized.

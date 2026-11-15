@@ -54,14 +54,17 @@ registers SDL's native methods, SDL's `Java_*` methods, the engine's `SDL_main` 
 
 | File | What |
 |---|---|
-| `src/app/GameMainAndroid.cpp` | The app's entry, `FafGameMain`, which the game's activity names to SDL: SDL's hints for a game on a phone (the program goes on in the back; landscape; no screen keyboard by itself), the program's path as `argv[0]`, the least display mode for a screen below 1024 x 768, the engine's main thread with the Windows program's 4 MB stack, and the process's end with the program; the report's lines (`FAF_GAME_REPORT`) |
+| `src/app/GameMainAndroid.cpp` | The app's entry, `FafGameMain`, which the game's activity names to SDL: SDL's hints for a game on a phone (the program goes on in the back; landscape; no screen keyboard by itself), the program's path as `argv[0]`, the least display mode for a screen below 1024 x 768, the engine's main thread with the Windows program's 4 MB stack, and the process's end with the program; the report's lines (`FAF_GAME_REPORT`), with the engine's lines a tester needs: the GPU, each swap chain, how BC textures are sampled, the sound's output |
+| `src/app/ScreenKeyboardAndroid.cpp` | The phone's keyboard for FAF's text fields: SDL's, shown when a finger's press lands on a text field (the lobby's chat, a profile's name, the console's line) or FAF's Menu tab asks for it; it sends plain keys (`TYPE_NULL`), Back hides it before Back is Esc again, Enter goes to the game and then hides it. It watches SDL's events through the window layer's hook for the developer windows, which Android, with its one window, never makes |
+| `src/app/UiPackageAndroid.cpp` | The UI package's globals (`../TOUCH_UI.md`) on SDL's activity until the touch schemes come back: the page, the fingers' owner and the HUD's factor go nowhere yet, the Menu tab's Keyboard brings the keyboard, and Griff is off (`FafreGriffWanted`), so its Lua leaves FAF's UI as it is; `src/host` registers these on the earlier host |
 | `src/gal/VulkanSurfaceAndroid.cpp` | The Vulkan backend's platform unit (`VulkanSurface.h`) on SDL, in place of `VulkanSurface.cpp`: the surface from `SDL_Vulkan_CreateSurface`, and for the patched `DeviceVulkan.cpp` the surface's coming and going (see The surface) |
 | `src/gal/BlockCompressionAndroid.cpp` | BC1-3 on the CPU, with WARP's decode, for GPUs without BC (`patches/README.md`), and an encoder after D3DX's |
 | `src/net/NetlinkPeersAndroid.cpp` | The in-engine peer links and native networking, off: netlink's libraries (libjuice, libdatachannel and theirs) are not built here yet |
 | `include/DirectXTexAndroid.h` | `aligned_alloc` for DirectXTex below Android 9: this build is for API 26 (`cmake/toolchains/android-pins.cmake`) |
 
 `src/host` (`GriffAndroid.cpp`, `MenuFingers.cpp`) is the touch scheme Griff's half in the engine on the
-earlier host (the Win32 message layer of release 0.14). It is not built: it comes back on SDL's input.
+earlier host (the Win32 message layer of release 0.14). It is not built: it comes back on SDL's input, and
+`src/app/UiPackageAndroid.cpp` goes then.
 
 ### The program's start
 
@@ -72,8 +75,9 @@ its own, with the activity's arguments. That runs the engine's entry, `SDL_main`
 returns, the process ends, as a Windows program's does.
 
 The command line is the activity's: the program's path in the game files' `bin` folder (the engine takes
-its install's folder from it), the game's options, and `/fullscreen <width> <height>` with the surface's
-size. HOME and TMPDIR are the activity's too: the engine's folders (`SHGetFolderPath`) are under HOME.
+its install's folder from it), the game's options, and `/fullscreen <width> <height>` with the size of the
+surface's buffers, the picture's. HOME and TMPDIR are the activity's too: the engine's folders
+(`SHGetFolderPath`) are under HOME.
 
 ### The surface
 
@@ -85,8 +89,15 @@ lets go of a Vulkan surface that is no longer current (another `ANativeWindow`, 
 size) and takes the next once there is one. Between the two, Android's own swap chain (libvulkan's, the
 same on every device) answers `VK_ERROR_SURFACE_LOST_KHR` for a surface whose window has gone.
 
-While the activity is in the back, SDL's event pump waits up to 100 ms for the activity's events each time
-it is asked (`Android_PumpEvents`), so the engine's main loop runs a few times a second there.
+The surface's buffers have the picture's size, which the app chooses (`PictureSize`, `GameSurface`) and the
+compositor scales to the screen: SDL's window and the engine's display mode have that size, and the activity
+hands SDL the fingers and the mouse in the picture's pixels.
+
+While the activity is in the back, SDL's event pump waited up to 100 ms for the activity's events each time
+it was asked (`Android_PumpEvents`), and the engine's loop asks at each pass and every 4 ms of its waits: the
+skirmish's simulation ran at half speed there (30 s of 61 lost). The patched `SDL_androidevents.c` waits only
+as long as it is asked to; the loop paces itself in the back as on the PC, waiting for the next beat, and the
+simulation keeps real time there (on the emulator nothing lost in 61 s, the process at about 8 % of a core).
 
 ### The shader compiler
 
@@ -146,10 +157,12 @@ built: it comes back on `platform::net`.
 
 ## Patches
 
-`patches/<path>.patch` is a `git diff` of the engine file `<path>`. At configure time
+`patches/<path>.patch` is a `git diff` of the engine file `<path>`, or of a dependency's file under
+`dependencies/` (SDL's, which the configure has fetched by then). At configure time
 `cmake/FafAndroidOverlay.cmake` copies the file to `build/android-<abi>/overlay/<path>` and
-applies the patch to the copy. A patched source replaces the original in the targets; a patched
-header is found first through the overlay folder. The repository's file is never touched.
+applies the patch to the copy. A patched source replaces the original in the targets, the
+dependency's in its own target; a patched header is found first through the overlay folder. A copy
+finds the original's neighbours for its quoted includes. The repository's file is never touched.
 
 Each patch is in `patches/README.md` with the reason. When the engine changes a patched file so
 that its patch no longer applies, the configure stops and names the file. To make the patch again,
