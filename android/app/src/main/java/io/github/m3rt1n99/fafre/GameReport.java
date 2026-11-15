@@ -86,6 +86,9 @@ final class GameReport {
      * previous one's. A game whose process died in the back has nobody's word on how it ended yet.
      */
     static void begin(Context context) {
+        // The retired renderer test's report and tombstone (card 4, whose RendererReport.clear was all that deleted them).
+        new File(context.getFilesDir(), "renderer.txt").delete();
+        new File(context.getFilesDir(), "renderer-tombstone.pb").delete();
         File file = file(context);
         if (!file.isFile()) {
             return;

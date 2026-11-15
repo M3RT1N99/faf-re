@@ -54,7 +54,7 @@ final class ProcessExit {
     private ProcessExit() {
     }
 
-    /** The full name of the app's process `suffix` (":renderer"). */
+    /** The full name of the app's process `suffix` (":game"). */
     static String name(String suffix) {
         return BuildConfig.APPLICATION_ID + suffix;
     }
