@@ -44,16 +44,20 @@ local Rings = {
 --- The stroke: the route lifting gives, as FAF's command graph draws it once it is ordered (UICommandGraph): its order line
 --- from where the stroke began through each waypoint, as wide as FAF's for the selection's count (FafreGriffWaypoint) in the
 --- order's colour (commandgraphparams.lua) as its texture shows it (orderline/orderline_generic.dds: its middle half at the
---- texture's alpha, a brighter edge along it); FAF's waypoint icon at each waypoint, in its selected colour and as large as
---- FAF draws one there for so many units, on the ground; in FAF's tooltip what lifting gives (tooltip.lua CreateToolTip).
+--- texture's alpha, a brighter edge along either side of it); FAF's waypoint icon at each waypoint, in its selected colour
+--- and as large as FAF draws one there for so many units, on the ground; in FAF's tooltip what lifting gives (tooltip.lua
+--- CreateToolTip). FAF's Lua draws plain lines on the map (UI_DrawLine): the line runs straight from waypoint to waypoint,
+--- where the command graph rounds its corners and ends it in its arrowhead, and a patrol's and an attack-move's are the same
+--- band, where FAF's run as chevrons (orderline_arrow02.dds).
 --- By Stroke.SAYS_, in the app's English as the mockup has it; the waypoints before the last are the route's (a patrol's,
 --- an attack-move's, else moves).
 local MOVE, ATTACK, ENGINEERING, NOTHING = '00ffff', 'ff0000', 'ffff00', 'ffffff'
 --- The order line's selected alpha (dd) times its texture's, the band's 122 of 255 and the edge's 202; a stroke that lifting
 --- gives up, half as strong.
 local BAND, EDGE, BAND_GIVEN_UP, EDGE_GIVEN_UP = '6a', 'af', '35', '58'
---- Across the line's width: the band its middle half, its edge 0.19 of the width from the middle, 0.05 of it thick.
-local BAND_PART, EDGE_FROM, EDGE_PART = 0.5, 0.19, 0.05
+--- Across the line's width: the band its middle half, its edges 0.18 of the width either side of the middle (the texture's
+--- lie 0.19 and 0.17 from it), 0.05 of it thick.
+local BAND_PART, EDGE_FROM, EDGE_PART = 0.5, 0.18, 0.05
 --- FAF's waypoints in their selected colour (waypoint_selected_color 88ffffff).
 local WAYPOINT_ALPHA = 0x88 / 255
 local WAYPOINTS = '/textures/ui/common/game/waypoints/'
@@ -127,13 +131,15 @@ local function StrokeLine(view)
                 local from, to = route[at - 1], route[at]
                 local width = math.max(widths[at - 1], widths[at])
                 UI_DrawLine(from, to, self.band, BAND_PART * width)
-                -- The texture's brighter edge, beside its middle on the left of the way the route goes.
+                -- The texture's brighter edges, one on either side of its middle.
                 local dx, dz = to[1] - from[1], to[3] - from[3]
                 local length = math.sqrt(dx * dx + dz * dz)
                 if length > 0 then
                     local x, z = -dz / length * EDGE_FROM * width, dx / length * EDGE_FROM * width
-                    UI_DrawLine(Vector(from[1] + x, from[2], from[3] + z), Vector(to[1] + x, to[2], to[3] + z), self.edge,
-                        EDGE_PART * width)
+                    for side = -1, 1, 2 do
+                        UI_DrawLine(Vector(from[1] + side * x, from[2], from[3] + side * z),
+                            Vector(to[1] + side * x, to[2], to[3] + side * z), self.edge, EDGE_PART * width)
+                    end
                 end
             end
         end,
