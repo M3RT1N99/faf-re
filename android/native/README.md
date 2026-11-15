@@ -158,10 +158,12 @@ built: it comes back on `platform::net`.
 ## Patches
 
 `patches/<path>.patch` is a `git diff` of the engine file `<path>`, or of a dependency's file under
-`dependencies/` (SDL's, which the configure has fetched by then). At configure time
+`dependencies/` (SDL's, which the configure has fetched by then into `FAF_DEPENDENCIES_DIR`, `dependencies/`
+unless a cache variable says otherwise). At configure time
 `cmake/FafAndroidOverlay.cmake` copies the file to `build/android-<abi>/overlay/<path>` and
 applies the patch to the copy. A patched source replaces the original in the targets, the
-dependency's in its own target; a patched header is found first through the overlay folder. A copy
+dependency's in its own target, and a patch of a dependency's that replaces none of that target's sources stops
+the configure; a patched header is found first through the overlay folder. A copy
 finds the original's neighbours for its quoted includes. The repository's file is never touched.
 
 Each patch is in `patches/README.md` with the reason. When the engine changes a patched file so

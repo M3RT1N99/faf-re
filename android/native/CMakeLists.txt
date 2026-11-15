@@ -91,7 +91,7 @@ set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
 add_subdirectory("${FAF_DEPENDENCIES_DIR}/SDL3" "${CMAKE_BINARY_DIR}/deps/SDL3" EXCLUDE_FROM_ALL SYSTEM)
 # Its patched files (patches/dependencies/SDL3, patches/README.md).
-faf_android_overlay_target(SDL3-static)
+faf_android_overlay_target(SDL3-static SDL3)
 
 # Dear ImGui with its SDL3 backends, for the developer windows (src/platform/sdl/ToolWindow.cpp).
 add_subdirectory("${FAF_REPO}/cmake/deps/imgui" "${CMAKE_BINARY_DIR}/deps/imgui")
