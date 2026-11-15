@@ -45,11 +45,13 @@ public final class GameActivity extends SDLActivity {
     /** The program's path in its install, as FAF's client starts it: the engine takes its folder from it. */
     private static final String PROGRAM = "bin/ForgedAlliance.exe";
     /**
-     * Tests' extras (am start --ef, --es): the HUD's factor in place of the screen's, as the emulator keeps its own
-     * millimetres at another size; more of the engine's arguments, as one string.
+     * Tests' extras (am start --ef, --es, --ez): the HUD's factor in place of the screen's, as the emulator keeps its own
+     * millimetres at another size; more of the engine's arguments, as one string; BC textures decoded on the CPU, as on
+     * a phone's GPU without them, also on one with them (android/native/patches/README.md, DeviceVulkan.cpp).
      */
     private static final String EXTRA_HUD_SCALE = "hudScale";
     private static final String EXTRA_ARGUMENTS = "arguments";
+    private static final String EXTRA_BC_ON_CPU = "bcOnCpu";
 
     /** The program's command line without its display mode, or null with mProblem saying why there is none. */
     private List<String> mArguments;
@@ -135,6 +137,9 @@ public final class GameActivity extends SDLActivity {
             Os.setenv("HOME", home.getPath(), true);
             Os.setenv("TMPDIR", getCacheDir().getPath(), true);
             Os.setenv("FAF_GAME_REPORT", GameReport.file(this).getPath(), true);
+            if (getIntent().getBooleanExtra(EXTRA_BC_ON_CPU, false)) {
+                Os.setenv("FAF_VULKAN_BC_ON_CPU", "1", true);
+            }
         } catch (ErrnoException e) {
             return "FAIL: the program's environment: " + e.getMessage();
         }

@@ -1,5 +1,5 @@
 diff --git a/src/gpg/gal/backends/vulkan/DeviceVulkan.h b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
-index 39ce88622..9ad2df8dc 100644
+index 39ce88622..808cf1aca 100644
 --- a/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 +++ b/src/gpg/gal/backends/vulkan/DeviceVulkan.h
 @@ -210,6 +210,7 @@ namespace gpg::gal
@@ -46,11 +46,12 @@ index 39ce88622..9ad2df8dc 100644
  
      [[nodiscard]] ProgramState& StateFor(effects::EffectProgram& program);
      [[nodiscard]] VkDescriptorSet AllocateSet(VkDescriptorSetLayout layout);
-@@ -420,6 +434,8 @@ namespace gpg::gal
+@@ -420,6 +434,9 @@ namespace gpg::gal
      bool mAnisotropy = false;
      bool mWireframeSupported = false;
      bool mTessellationSupported = false; // engine addition: tessellated passes draw only with it
 +    bool mDepthBiasClamp = false;        // Android client build: the feature, which phones may lack
++    bool mBcTextures = false;            // Android client build: BC textures are the GPU's, else BC1-3 decode on the CPU
 +    DWORD mSurfaceFailingSince = 0U;     // Android client build: since when AttachSurface fails on a surface that is there
      bool mMemoryBudget = false;          // VK_EXT_memory_budget enabled
      std::string mDriverName;             // VkPhysicalDeviceDriverProperties driverName + driverInfo

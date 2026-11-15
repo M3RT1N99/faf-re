@@ -19,7 +19,9 @@
 //   process, and SDL's activity would outlive it.
 //
 // The report (FAF_GAME_REPORT, which the activity sets: GameReport.java) gets the lines the app reads:
-// when the first frame went to the screen, and the program's exit code.
+// when the first frame went to the screen, and the program's exit code; and of the engine's log what a
+// tester's report needs from this phone: the GPU the renderer took, each swap chain, whether BC textures
+// are the GPU's or decoded on the CPU, and the output the sound plays through.
 
 #include <android/log.h>
 #include <pthread.h>
@@ -32,10 +34,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <string_view>
 
+#include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_hints.h>
 
 #include "ScreenKeyboardAndroid.h"
+#include "gpg/core/utils/Logging.h"
 #include "moho/misc/StartupHelpers.h"
 
 // The engine's entry, as SDL_main.h declares it on Android (ClientMainPosix.cpp includes that header).
@@ -71,6 +76,43 @@ namespace
     }
   }
 
+  /// The engine's log lines that go into the report, by how they begin (src/gpg/gal/backends/vulkan/DeviceVulkan.cpp and
+  /// its patch): the device, each swap chain, the BC textures' way.
+  constexpr std::string_view kRendererLines[] = {
+    "Vulkan: device created on ", "Vulkan: swap chain ", "Vulkan: the device has no BC texture compression",
+    "Vulkan: BC1 to BC3 textures are decoded on the CPU", "Vulkan: BC textures are the GPU's"};
+  /// The sound engine is up (moho/audio/AudioEngine.cpp, after XACT's Initialize and 3D audio's): FACT's mastering voice,
+  /// FAudio's, plays through SDL's audio output by then.
+  constexpr std::string_view kSoundUp = "MEM: 0 bytes SND";
+
+  /// Copies those lines into the report as the engine logs them, on whichever thread logs. It logs nothing itself: the
+  /// engine's log holds its lock while it calls its targets.
+  class ReportLines final : public gpg::LogTarget
+  {
+  public:
+    ReportLines()
+      : gpg::LogTarget(true)
+    {}
+
+    void OnMessage(gpg::LogSeverity, const fa::string& message, const fa::vector<fa::string>&, int) override
+    {
+      const std::string_view text(message.c_str(), message.size());
+      for (const std::string_view start : kRendererLines) {
+        if (text.substr(0, start.size()) == start) {
+          Report("renderer: " + std::string(text));
+          return;
+        }
+      }
+      if (text == kSoundUp && !mSoundReported.exchange(true)) {
+        const char* const driver = SDL_GetCurrentAudioDriver();
+        Report(std::string("sound: XACT on FAudio, through SDL's ") + (driver != nullptr ? driver : "(no)") + " output");
+      }
+    }
+
+  private:
+    std::atomic<bool> mSoundReported{false};
+  };
+
   /// `/fullscreen <width> <height>`'s size makes the engine's least display mode no larger than it.
   void FitLeastMode(const int argc, char** const argv)
   {
@@ -103,6 +145,8 @@ namespace
     (void)SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     (void)SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
     screenkeyboard::Install();
+    // Logged to until the process ends, which runs no destructors.
+    static ReportLines reportLines;
     program.exitCode = SDL_main(program.argc, program.argv);
     return nullptr;
   }
