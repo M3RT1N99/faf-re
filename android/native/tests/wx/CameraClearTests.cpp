@@ -174,15 +174,77 @@ WXT_TEST(CameraClearTheFocusNeverGoesFartherInThanTheEnginesClamp)
   WXT_CHECK_EQ(spans.maxZ, 50.0f);
 }
 
-WXT_TEST(CameraClearACornerWithoutGroundKeepsTheEnginesClamp)
+WXT_TEST(CameraClearACornerWithoutGroundBoundsNoEdge)
 {
-  // Above the horizon, as a camera turned up far could show it.
+  // Above the horizon, as a camera turned up far could show it: the ground it looks at lies ever farther its way, and each
+  // edge goes by the other corners towards it, so that no edge jumps back to the engine's clamp.
   const std::vector<Ground> corners{{false, 0, 0}, {true, 280, -120}, {true, -200, 90}, {true, 210, 90}};
   const Spans spans = Allowed(300, 300, corners);
-  WXT_CHECK_EQ(spans.minX, 300.0f);
-  WXT_CHECK_EQ(spans.maxX, 300.0f);
-  WXT_CHECK_EQ(spans.minZ, 300.0f);
-  WXT_CHECK_EQ(spans.maxZ, 300.0f);
+  WXT_CHECK_EQ(spans.minX, 200.0f);
+  WXT_CHECK_EQ(spans.maxX, 210.0f);
+  WXT_CHECK_EQ(spans.minZ, 120.0f);
+  WXT_CHECK_EQ(spans.maxZ, 90.0f);
+  // Both far corners above the horizon: the far edge keeps the engine's span, the others come out.
+  const Spans far = Allowed(300, 300, {{false, 0, 0}, {false, 0, 0}, {true, -200, 90}, {true, 210, 90}});
+  WXT_CHECK_EQ(far.minX, 200.0f);
+  WXT_CHECK_EQ(far.maxX, 210.0f);
+  WXT_CHECK_EQ(far.minZ, 300.0f);
+  WXT_CHECK_EQ(far.maxZ, 90.0f);
+}
+
+namespace
+{
+  /// A camera at (0, 100, 100) looking north (the world's -z) and down at 45 degrees onto the ground's origin, the view twice
+  /// as wide as it is high (half its width 0.5, half its height 0.25 at a distance of 1): the ray through a point of the view,
+  /// as parts of its width and height from its top left.
+  [[nodiscard]] cameraclear::Ray Tilted(const float partX, const float partY)
+  {
+    const float root = 0.70710678f;
+    const float right = (partX - 0.5f) * 2 * 0.5f;
+    const float up = (0.5f - partY) * 2 * 0.25f;
+    // Forward (0, -1, -1) and up (0, 1, -1), each over the root of 2; right (1, 0, 0).
+    return cameraclear::Ray{0, 100, 100, right, (-1 + up) * root, (-1 - up) * root};
+  }
+
+  [[nodiscard]] bool Close(const float actual, const float expected)
+  {
+    return actual > expected - 0.01f && actual < expected + 0.01f;
+  }
+} // namespace
+
+WXT_TEST(CameraClearTheClearViewsCornersComeFromTheCamerasLastFrame)
+{
+  // The construction panel covers the bottom 30 % of the view. Its clear view's corners: the far ones at 188.56 along their
+  // rays, (-+94.28, -66.67) on the ground; the near ones at 128.56, (-+64.28, 18.18); the middle at (0, 0).
+  const Margins bottom{0, 0, 0, 0.3f};
+  const Spans spans = cameraclear::ClearSpans(bottom, 50, 50, 0, 0, 300, 300, &Tilted);
+  WXT_CHECK(Close(spans.minX, 64.28f));
+  WXT_CHECK(Close(spans.maxX, 64.28f));
+  WXT_CHECK(Close(spans.minZ, 66.67f));
+  WXT_CHECK(Close(spans.maxZ, 18.18f));
+  // At half the zoom the frame drew, half of all of it: the clamp asks for the zoom it goes to.
+  const Spans closer = cameraclear::ClearSpans(bottom, 25, 50, 0, 0, 300, 300, &Tilted);
+  WXT_CHECK(Close(closer.minX, 32.14f));
+  WXT_CHECK(Close(closer.maxZ, 9.09f));
+  // The target held at the ground's height, the focus on a plane 10 lower (the sea below a target the land left higher): the
+  // near corners meet that plane at 141.42 along their rays, z 10, measured from where the middle meets the target's height.
+  const Spans lower = cameraclear::ClearSpans(bottom, 50, 50, 0, -10, 300, 300, &Tilted);
+  WXT_CHECK(Close(lower.maxZ, 10.0f));
+}
+
+WXT_TEST(CameraClearWithoutMarginsOrGroundTheEnginesSpansStay)
+{
+  const Spans none = cameraclear::ClearSpans(Margins{}, 50, 50, 0, 0, 300, 200, &Tilted);
+  WXT_CHECK_EQ(none.minX, 300.0f);
+  WXT_CHECK_EQ(none.maxZ, 200.0f);
+  // A camera that looks up from its middle shows no ground to measure from.
+  const auto up = [](const float, const float) { return cameraclear::Ray{0, 100, 100, 0, 1, -1}; };
+  const Spans sky = cameraclear::ClearSpans(Margins{0, 0, 0, 0.3f}, 50, 50, 0, 0, 300, 200, up);
+  WXT_CHECK_EQ(sky.minX, 300.0f);
+  WXT_CHECK_EQ(sky.minZ, 200.0f);
+  // A frame that drew no zoom yet.
+  const Spans unknown = cameraclear::ClearSpans(Margins{0, 0, 0, 0.3f}, 50, 0, 0, 0, 300, 200, &Tilted);
+  WXT_CHECK_EQ(unknown.maxZ, 200.0f);
 }
 
 WXT_TEST(CameraClearAnEdgeNoCornerLiesTowardsKeepsTheEnginesSpan)

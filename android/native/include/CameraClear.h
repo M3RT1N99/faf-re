@@ -173,7 +173,7 @@ namespace cameraclear
   }
 
   /// Where on the ground a point of the view shows, from the camera's focus, in the world's x and z; `shown` false where the
-  /// view shows no ground there.
+  /// view shows no ground there: above the horizon, where the ground it looks at lies ever farther that way.
   struct Ground
   {
     bool shown = false;
@@ -192,29 +192,76 @@ namespace cameraclear
 
   /// How near the focus may come to each edge of the map: the engine's own spans (`spanX`, `spanZ`: half of the view that its
   /// clamp keeps over the map at the zoom), or less where that keeps the edge under a panel. `corners` is the ground under the
-  /// clear view's corners (ClearCorners), from the focus: the edge comes as far in as the nearest of the corners that lie
+  /// clear view's corners (ClearCorners), from the focus: each edge comes as far in as the nearest of the corners that lie
   /// towards it, so that all of the edge the clear view spans lies in it, also where the view shows less ground (the near
-  /// rows of a tilted camera). Never more than the engine's spans, and the engine's where a corner shows no ground.
+  /// rows of a tilted camera). A corner that shows no ground looks at ground ever farther its way, which bounds no edge: each
+  /// edge goes by the corners towards it alone, and keeps the engine's span where none of them shows ground. Never more than
+  /// the engine's spans.
   [[nodiscard]] inline Spans Allowed(const float spanX, const float spanZ, const std::vector<Ground>& corners)
   {
-    Spans spans{spanX, spanX, spanZ, spanZ};
-    if (std::any_of(corners.begin(), corners.end(), [](const Ground& corner) { return !corner.shown; })) {
-      return spans;
-    }
     const auto reach = [&corners](const float towardX, const float towardZ) {
       float nearest = std::numeric_limits<float>::infinity();
       for (const Ground& corner : corners) {
         const float toward = corner.x * towardX + corner.z * towardZ;
-        if (toward > 0) {
+        if (corner.shown && toward > 0) {
           nearest = (std::min)(nearest, toward);
         }
       }
       return nearest;
     };
-    spans.minX = (std::min)(spanX, reach(-1, 0));
-    spans.maxX = (std::min)(spanX, reach(1, 0));
-    spans.minZ = (std::min)(spanZ, reach(0, -1));
-    spans.maxZ = (std::min)(spanZ, reach(0, 1));
-    return spans;
+    return Spans{(std::min)(spanX, reach(-1, 0)), (std::min)(spanX, reach(1, 0)), (std::min)(spanZ, reach(0, -1)),
+                 (std::min)(spanZ, reach(0, 1))};
+  }
+
+  /// A line through the view from the camera, in the world: from (`x`, `y`, `z`) along (`dx`, `dy`, `dz`).
+  struct Ray
+  {
+    float x = 0;
+    float y = 0;
+    float z = 0;
+    float dx = 0;
+    float dy = 0;
+    float dz = 0;
+  };
+
+  /// Where a ray comes down to the plane at `height`, in the world's x and z: false where it never does, above the horizon.
+  [[nodiscard]] inline bool OnPlane(const Ray& ray, const float height, float& x, float& z)
+  {
+    const float along = ray.dy < 0 ? (height - ray.y) / ray.dy : -1.0f;
+    x = ray.x + ray.dx * along;
+    z = ray.z + ray.dz * along;
+    return along > 0;
+  }
+
+  /// How near the world camera's focus may come to the map's edges at `zoom` (Allowed), by what the camera's last frame
+  /// showed: the ground under the corners of the view clear of `margins` (ClearCorners), on the plane of the focus (`focusY`),
+  /// from where the view's middle meets the height of the target the clamp holds (`targetY`), scaled from the zoom that frame
+  /// drew (`drawnZoom`: the view's width at the focus) to `zoom`. `through(partX, partY)` is the frame's Ray through a point of
+  /// the view, as parts of its width and height from its top left. The engine's spans (`spanX`, `spanZ`) without margins, or
+  /// where the view's middle shows no ground.
+  template <class Through>
+  [[nodiscard]] Spans ClearSpans(
+    const Margins& margins, const float zoom, const float drawnZoom, const float targetY, const float focusY, const float spanX,
+    const float spanZ, const Through& through
+  )
+  {
+    const Spans own{spanX, spanX, spanZ, spanZ};
+    float targetX = 0;
+    float targetZ = 0;
+    if (margins.None() || !(drawnZoom > 0) || !OnPlane(through(0.5f, 0.5f), targetY, targetX, targetZ)) {
+      return own;
+    }
+    const float scale = zoom / drawnZoom;
+    std::vector<Ground> corners;
+    for (const Corner& corner : ClearCorners(margins)) {
+      Ground ground;
+      float x = 0;
+      float z = 0;
+      if (OnPlane(through(corner.x, corner.y), focusY, x, z)) {
+        ground = Ground{true, (x - targetX) * scale, (z - targetZ) * scale};
+      }
+      corners.push_back(ground);
+    }
+    return Allowed(spanX, spanZ, corners);
   }
 } // namespace cameraclear
