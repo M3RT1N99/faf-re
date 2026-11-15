@@ -655,10 +655,11 @@ end
 --- apart from the map's view, which goes on each frame (an error there says itself once), so that the clicks and the plans
 --- keep their map when the handle goes; the report of what the player opened stops with none, so that no piece of the app's
 --- stays away for it; Griff's pieces in FAF's UI (griffhud.lua) stop apart, and so do its groups' icons (griffgroups.lua),
---- which leave none for a tap, and what it shows on the map (griffmap.lua). While the player hides FAF's UI (gamemain.lua
---- HideGameUI) Griff's buttons and icons hide with it, and the selection is not reported: the program places no handle. FAF's
---- UI tells each order it gives (OnCommandIssued, which the engine looks up at each order): the program hears of it first.
---- FAF's capping is held off while the undo's clicks run.
+--- which leave none for a tap, and what it shows on the map (griffmap.lua, each piece apart), where a handle that cannot be
+--- drawn stops the selection's report too, which leaves the program no handle to place. While the player hides FAF's UI
+--- (gamemain.lua HideGameUI) Griff's buttons and icons hide with it, and the selection is not reported: the program places no
+--- handle. FAF's UI tells each order it gives (OnCommandIssued, which the engine looks up at each order): the program hears of
+--- it first. FAF's capping is held off while the undo's clicks run.
 function Start(parent)
     if not FafreGriffBox then
         return
@@ -739,10 +740,14 @@ function Start(parent)
             end
         end
         if mapping then
-            local ok, problem = pcall(Map.Frame, hidden)
+            local ok, handled = pcall(Map.Frame, hidden)
             if not ok then
-                WARN('fafre_ui: griff: map: ' .. tostring(problem))
+                WARN('fafre_ui: griff: map: ' .. tostring(handled))
                 mapping = false
+            end
+            -- A handle that FAF's UI cannot draw takes no finger: the selection goes unreported, so the program places none.
+            if not (ok and handled) then
+                reporting = false
             end
         end
         -- First what the frame drew, before a step moves the camera for the next.

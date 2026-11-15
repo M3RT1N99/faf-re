@@ -195,11 +195,15 @@ local function Make(view)
 end
 
 local function Forget(made)
-    if made.line then
+    -- The view destroyed its line with itself (its Trash, WorldViewShapeComponent AddShape): the line's Destroy after it would
+    -- ask the view that is gone to stop rendering shapes.
+    if made.line and not IsDestroyed(made.view) then
         made.line:Destroy()
     end
     for _, ghost in made.ghosts do
-        ghost.mesh:Destroy()
+        if ghost then
+            ghost.mesh:Destroy()
+        end
     end
     local controls = {made.handle, made.arrow, made.ring, made.box, made.loupe, made.label}
     for _, edge in made.box.edges do
@@ -215,13 +219,17 @@ local function Forget(made)
     end
 end
 
+local function HideHandle(made)
+    Hide(made.handle)
+    Hide(made.arrow)
+end
+
 --- The handle as the activity keeps it: its middle, its group's middle, the count, 1 where it points at its group from
 --- elsewhere, 1 with Box lit (SHOWN_HANDLE); none where it has none.
 local function Handle(made, hidden)
     local count = FafreGriffShown(SHOWN_HANDLE, values)
     if hidden or count < 7 then
-        Hide(made.handle)
-        Hide(made.arrow)
+        HideHandle(made)
         return 0
     end
     local x, y, groupX, groupY, units, off, faint = values[1], values[2], values[3], values[4], values[5], values[6], values[7]
@@ -372,15 +380,19 @@ local function Stroke(made, units)
     Label(made, says.words, values[3], values[4])
 end
 
+local function HideBox(made)
+    Hide(made.box)
+    for _, edge in made.box.edges do
+        Hide(edge)
+    end
+end
+
 --- Box's box over deposits (SHOWN_BOX, its corners), as FAF's selection box: its fill, and its edge on the border.
 local function Box(made)
     local count = FafreGriffShown(SHOWN_BOX, values)
     local box = made.box
     if count < 4 then
-        Hide(box)
-        for _, edge in box.edges do
-            Hide(edge)
-        end
+        HideBox(made)
         return
     end
     local left, top = math.min(values[1], values[3]), math.min(values[2], values[4])
@@ -424,6 +436,7 @@ local function Ghost(made, at, id, x, y, z, colour)
     if ghost and ghost.id ~= id then
         ghost.mesh:Destroy()
         ghost = false
+        made.ghosts[at] = false
     end
     if not ghost then
         local mesh, scale = FafreGriffGhost(id)
@@ -446,6 +459,17 @@ local function Ghost(made, at, id, x, y, z, colour)
     end
 end
 
+--- The ghosts from the one at `from` on go out of sight.
+local function HideGhosts(made, from)
+    for at = from, table.getn(made.ghosts) do
+        local ghost = made.ghosts[at]
+        if ghost and not ghost.hidden then
+            ghost.mesh:SetHidden(true)
+            ghost.hidden = true
+        end
+    end
+end
+
 --- The draft's plans, a line's places and the aim, as the program has them (FafreGriffPlans: x, y, z and flags each, their
 --- buildings' ids apart).
 local function Plans(made)
@@ -458,33 +482,55 @@ local function Plans(made)
         local colour = alpha .. (math.mod(math.floor(flags / PLAN_TAKEN), 2) == 1 and TAKEN or FREE)
         Ghost(made, at, ids[at], plans[from + 1], plans[from + 2], plans[from + 3], colour)
     end
-    for at = count + 1, table.getn(made.ghosts) do
-        local ghost = made.ghosts[at]
-        if ghost and not ghost.hidden then
-            ghost.mesh:SetHidden(true)
-            ghost.hidden = true
-        end
-    end
+    HideGhosts(made, count + 1)
 end
 
---- Each frame of the session's UI: the pieces on the map's view, where the activity and the program have them; the handle
---- not while FAF's UI is hidden, as the program places none then (griff.lua Report).
+--- The pieces that an error of their own stopped for the game, and how each goes out of sight then.
+local stopped = {}
+local Hiders = {
+    handle = HideHandle,
+    ring = function(made) Hide(made.ring) end,
+    stroke = HideStroke,
+    box = HideBox,
+    loupe = function(made) Hide(made.loupe) end,
+    plans = function(made) HideGhosts(made, 1) end,
+}
+
+--- One piece's frame, `draw` with the pieces and `with`, apart from the others: its first error stops it alone, says itself
+--- once and hides it. What `draw` gives, false once it stopped.
+local function Run(name, draw, made, with)
+    if stopped[name] then
+        return false
+    end
+    local ok, result = pcall(draw, made, with)
+    if ok then
+        return result
+    end
+    stopped[name] = true
+    WARN('fafre_ui: griff: map: ' .. name .. ': ' .. tostring(result))
+    pcall(Hiders[name], made)
+    return false
+end
+
+--- Each frame of the session's UI: the pieces on the map's view, where the activity and the program have them, each apart
+--- (Run); the handle not while FAF's UI is hidden, as the program places none then (griff.lua Report). False once the
+--- handle cannot be drawn: griff.lua then reports no selection, so that the program places no handle for a finger either.
 function Frame(hidden)
     local view = WorldView.viewLeft
     if pieces and pieces.view ~= view then
         Forget(pieces)
         pieces = false
     end
-    if not view then
-        return
+    if view then
+        if not pieces then
+            pieces = Make(view)
+        end
+        local units = Run('handle', Handle, pieces, hidden) or 0
+        Run('ring', Ring, pieces)
+        Run('stroke', Stroke, pieces, units)
+        Run('box', Box, pieces)
+        Run('loupe', Loupe, pieces)
+        Run('plans', Plans, pieces)
     end
-    if not pieces then
-        pieces = Make(view)
-    end
-    local units = Handle(pieces, hidden)
-    Ring(pieces)
-    Stroke(pieces, units)
-    Box(pieces)
-    Loupe(pieces)
-    Plans(pieces)
+    return not stopped.handle
 end
