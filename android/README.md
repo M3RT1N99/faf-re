@@ -95,7 +95,8 @@ the game data they imported. Everything lives in the app's external files folder
   in the game files' `bin` folder. `GameActivity` is SDL's activity (`SDLActivity`), which loads the library
   and starts the program on a thread of its own; it runs in a process of its own (`:game`), which ends with
   the program, as a Windows program's does, and goes on while the activity is in the back, its simulation
-  at full speed. SDL gives the program the surface (Vulkan), the fingers as the mouse (a tap is a click, a
+  at full speed (a skirmish for a minute after Home on the emulator, with the game the last app in front; no foreground
+  service runs on SDL's activity yet, and Android's rules for a process in the back without one were not tried). SDL gives the program the surface (Vulkan), the fingers as the mouse (a tap is a click, a
   finger that moves drags with the left button), the keys and the sound; Back is Esc. The game's movies
   play (FFmpeg; `/nomovie` only when the import has none; a tap skips the logos, another the film).
   - The game draws at a size of its own (`PictureSize`, the card's *UI size*): the surface's buffers have

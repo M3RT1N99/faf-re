@@ -1,4 +1,4 @@
-# The engine files the Android build compiles changed
+# The engine's and SDL's files the Android build compiles changed
 
 Each `<path>.patch` is a `git diff` of the engine file `<path>`, or of a dependency's file under `dependencies/`,
 applied to a copy at configure time (`../cmake/FafAndroidOverlay.cmake`, `../README.md`). The repository's files

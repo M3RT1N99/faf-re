@@ -97,7 +97,7 @@ While the activity is in the back, SDL's event pump waited up to 100 ms for the 
 it was asked (`Android_PumpEvents`), and the engine's loop asks at each pass and every 4 ms of its waits: the
 skirmish's simulation ran at half speed there (30 s of 61 lost). The patched `SDL_androidevents.c` waits only
 as long as it is asked to; the loop paces itself in the back as on the PC, waiting for the next beat, and the
-simulation keeps real time there (on the emulator nothing lost in 61 s, the process at about 8 % of a core).
+simulation keeps real time there (on the emulator nothing lost in 61 s, the process at 8 to 12 % of a core).
 
 ### The shader compiler
 
