@@ -1,5 +1,6 @@
 package io.github.m3rt1n99.fafre;
 
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Rect;
 import android.media.AudioAttributes;
@@ -332,6 +333,9 @@ public final class GameActivity extends SDLActivity {
             // shows it (onCreate). SDL's onDestroy would end it (nativeSendQuit) and take down the lifecycle's mutexes
             // under it (nativeQuit); for an activity whose libraries did not load it does only the rest.
             Game.report("game: the activity is destroyed, the program goes on");
+            // SDL's clipboard handler listens on this activity's clipboard, which the system then holds the activity by;
+            // the next activity makes a handler of its own.
+            getSystemService(ClipboardManager.class).removePrimaryClipChangedListener(mClipboardHandler);
             mBrokenLibraries = true;
             try {
                 super.onDestroy();
