@@ -176,8 +176,9 @@ the game data they imported. Everything lives in the app's external files folder
     given the one it took an order, the next tap takes the best idle unit left. A double tap takes them all.
   - A build icon of the construction panel opens a draft instead of FAF's ghost: a tap on the map places a plan of that
     building, on FAF's grid (an extractor on the free mass spot within 5 mm, else "No free resource here"), a tap on a plan
-    takes it away, a drag from the newest plan draws a line of them side by side, a drag from another plan moves them all
-    (extractors stay on their spots), and a drag elsewhere pans. A finger that rests shows the plan its lift places, red where its ground is taken, with a loupe
+    (within the ground it takes) takes it away, a tap just past that ground places a plan against it, a drag from the newest
+    plan draws a line of them side by side, a drag from another plan moves them all (extractors stay on their spots), and a
+    drag elsewhere pans. A finger that rests shows the plan its lift places, red where its ground is taken, with a loupe
     above it of what the finger covers, in FAF's marker ring. With an extractor picked, *Box* and a drag give every
     free mass spot in the box a plan. Another icon picks another building for the next plans. Plans are FAF's build ghosts,
     red on taken ground; the newest, which a drag draws a line from, and the one a resting finger aims at are as bright as

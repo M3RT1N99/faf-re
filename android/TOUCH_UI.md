@@ -349,7 +349,7 @@ the draft is open there is no handle, and a finger makes plans (`TouchInput`'s `
 | Gesture | What it does |
 |---|---|
 | Tap on the map | A plan of the picked building where the finger came down, on FAF's grid: the footprint's first cell the nearest whole one, as FAF places it. An extractor or hydrocarbon plant goes on the free deposit of its kind nearest to the finger within 5 mm, as FAF's build check knows the deposits (`ISimResources`), else "No free resource here". Ground that a plan or FAF's own build check refuses (`USERUNIT_CanBeBuiltAt`, by which FAF's ghost turns red: the structures and queued buildings it sees, the ground) says "Taken"; a 31st plan "Draft is full" |
-| Tap on a plan | It goes: the newest under the finger, within its box and 1.5 mm, the box at least 2.3 mm wide; a plan under a panel is the panel's |
+| Tap on a plan | It goes: the newest under the finger, within the box of the ground it takes, whose edge the map shows (below), the box at least 2.3 mm wide; nothing beyond, where a tap places a plan against it; a plan under a panel is the panel's |
 | Tap on FAF's UI | The UI's click, with the tap help; a lit *Plus* stays for the tick (a held *Plus* is Shift as ever) |
 | Drag from the newest plan | A line of its building from it towards the finger: in 8 directions (an axis counts with at least tan 22.5 degrees of the other, in the building's steps), whole steps of its skirt, so that the buildings stand side by side as FAF's own drag line puts them for adjacency, none before half a step and no more than 30 places, which FAF's own check is asked of at each move of the finger; shown as the finger moves, added where it was 50 ms before the lift, past taken places, up to the limit: the lift adds only places the line showed. A second finger gives it up and the two pinch |
 | Drag from another plan | The whole draft follows by whole world units, plans on deposits stay; kept where the finger was 50 ms before the lift; a second finger puts it back and the two pinch |
@@ -372,7 +372,15 @@ building the orders will build in FAF's blue unless Shift is held (`DrawAllUnitS
 far out as the picked building's mesh is drawn, bright green where a plan, a line's place or the aim in the colour of a free place gains
 adjacency from it (FAF's `gamemain.lua` `OnDetectAdjacencyBonus`); and of each plan, a line's place and the aim in its colour, green,
 red, or that bright green. FAF's own ghost brightens with its skirt there; a plan's ghost keeps its colour. Where FAF's build mode is
-armed (its keys, hotbuild, the tick's clicks), its own overlay draws instead. The tick and the cross are
+armed (its keys, hotbuild, the tick's clicks), its own overlay draws instead. The skirt's edge is what a tap on a plan is within: just
+past it a tap or a rest places a building against the plan. In 0.15.0 a finger was on a plan within the box of its ground and 1.5 mm
+past it, and the screen showed neither, while the ground reaches past the ghost's mesh (a factory's 1.5 world units each way): a tap or
+a rest meant to place a building against a plan took the plan away (on the emulator a rest beside a factory's plan with power
+generators picked: the factory's plan went), and a rest there showed no aim. On the emulator (2026-11-16, at the phone's size and HUD 1.6, real fingers) the draft opened with a factory's and two
+power generators' skirts in green; a factory's plan below the factory lit both skirts bright; with power generators picked a rest just
+past the plan's edge showed the aim red over its ground, and the lift said "Taken" and left the plan; a rest below the power
+generators showed the aim green and lit the lower one bright, and its lift placed the plan; after the tick the next draft showed both
+ordered buildings' skirts in blue. The tick and the cross are
 FAF's order buttons (`griffhud.lua`: the orders panel's empty slot at the HUD's factor, as large as its order buttons, with FAF's tick of the
 skin's map options, `temp_textures/checkmark.dds`, and its Cancel, `orders-panel/no-parking_bmp.dds`, both of the faction's skin; FAF's
 glow while a finger holds one), 12 of FAF's pixels above the construction panel, the tick 12 left of the column at the right (FAF's

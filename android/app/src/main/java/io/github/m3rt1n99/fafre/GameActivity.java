@@ -100,11 +100,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private static final double GRIFF_NEAR_TROOPS_MM = 2;
     /** Griff: the camera's glide stops under this speed a second (the mockup's 4 pixels of its 5.64 a mm). */
     private static final double GRIFF_GLIDE_STOP_MM = 0.7;
-    /**
-     * Griff's draft (the mockup's): a finger is on a plan within this of the box its ground takes (Draft.LEAST_MM wide at
-     * least); an extractor takes the free deposit within this of the finger.
-     */
-    private static final double GRIFF_PLAN_REACH_MM = 1.5;
+    /** Griff's draft (the mockup's): an extractor takes the free deposit within this of the finger. */
     private static final double GRIFF_DEPOSIT_MM = 5;
     /** The loupe: the 6 mm about a resting finger, a copy of the game's picture at most this often. */
     private static final double LOUPE_SOURCE_MM = 6;
@@ -475,8 +471,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
         @Override
         public int draftPlan(float x, float y) {
-            float pixels = viewPixelsPerMm();
-            return mDraft.planAt(x, y, (float) (GRIFF_PLAN_REACH_MM * pixels), Draft.LEAST_MM / 2 * pixels);
+            return mDraft.planAt(x, y, Draft.LEAST_MM / 2 * viewPixelsPerMm());
         }
 
         @Override

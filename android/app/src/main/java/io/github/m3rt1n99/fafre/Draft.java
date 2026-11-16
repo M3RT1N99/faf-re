@@ -176,21 +176,22 @@ final class Draft {
     }
 
     /**
-     * The plan a finger here is on, the newest first (the mockup's planAt): within its box, at least `least` each way from its
-     * middle, and `reach` beyond; only one whose middle is on the free map, as a finger on a panel over a plan is on the panel.
-     * Its number, or 0.
+     * The plan a finger here is on, the newest first (the mockup's planAt): within its box, the ground it takes, whose edge the
+     * map shows as FAF's build mode does, at least `least` each way from its middle; nothing beyond, where a tap or a rest
+     * places a building against it. Only one whose middle is on the free map, as a finger on a panel over a plan is on the
+     * panel. Its number, or 0.
      */
-    int planAt(float fingerX, float fingerY, float reach, float least) {
+    int planAt(float fingerX, float fingerY, float least) {
         for (int plan = mPlans - 1; plan >= 0; --plan) {
             if (!has(plan, FREE)) {
                 continue;
             }
             float middleX = x(plan);
             float middleY = y(plan);
-            float left = Math.min(left(plan), middleX - least) - reach;
-            float right = Math.max(right(plan), middleX + least) + reach;
-            float top = Math.min(top(plan), middleY - least) - reach;
-            float bottom = Math.max(bottom(plan), middleY + least) + reach;
+            float left = Math.min(left(plan), middleX - least);
+            float right = Math.max(right(plan), middleX + least);
+            float top = Math.min(top(plan), middleY - least);
+            float bottom = Math.max(bottom(plan), middleY + least);
             if (fingerX >= left && fingerX <= right && fingerY >= top && fingerY <= bottom) {
                 return id(plan);
             }

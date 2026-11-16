@@ -155,30 +155,31 @@ public class DraftTest {
     }
 
     @Test
-    public void aFingerIsOnAPlanWithinItsBoxAndTheReach() {
+    public void aFingerIsOnAPlanWithinItsBoxAlone() {
         Draft draft = draft(shown(false, new float[][] {place(5, 100, 100, 10, FREE)}, new float[0][], null));
-        assertEquals(5, draft.planAt(100, 100, 15, 0));
-        assertEquals(5, draft.planAt(125, 100, 15, 0));
-        assertEquals(5, draft.planAt(75, 75, 15, 0));
-        assertEquals(0, draft.planAt(126, 100, 15, 0));
-        assertEquals(0, draft.planAt(100, 74, 15, 0));
+        assertEquals(5, draft.planAt(100, 100, 0));
+        assertEquals(5, draft.planAt(110, 100, 0));
+        assertEquals(5, draft.planAt(90, 90, 0));
+        // Just past its ground, where a building goes against it, the finger is on no plan.
+        assertEquals(0, draft.planAt(111, 100, 0));
+        assertEquals(0, draft.planAt(100, 89, 0));
     }
 
     @Test
     public void theNewestPlanIsFoundFirst() {
         Draft draft = draft(shown(false, new float[][] {place(1, 100, 100, 10, FREE), place(2, 110, 100, 10, Draft.NEWEST | FREE)},
                                   new float[0][], null));
-        assertEquals(2, draft.planAt(104, 100, 15, 0));
-        assertEquals(1, draft.planAt(80, 100, 15, 0));
+        assertEquals(2, draft.planAt(104, 100, 0));
+        assertEquals(1, draft.planAt(95, 100, 0));
     }
 
     @Test
     public void aSmallPlanIsAtLeastItsLeastAboutItsMiddle() {
-        // Far away its ground is a pixel on the screen: a finger finds it within the least half side and the reach.
+        // Far away its ground is a pixel on the screen: a finger finds it within the least half side.
         Draft draft = draft(shown(false, new float[][] {place(3, 100, 100, 0.5f, FREE)}, new float[0][], null));
-        assertEquals(3, draft.planAt(126, 100, 15, 12));
-        assertEquals(0, draft.planAt(128, 100, 15, 12));
-        assertEquals(0, draft.planAt(117, 100, 15, 0));
+        assertEquals(3, draft.planAt(112, 100, 12));
+        assertEquals(0, draft.planAt(113, 100, 12));
+        assertEquals(0, draft.planAt(101, 100, 0));
     }
 
     @Test
@@ -186,7 +187,7 @@ public class DraftTest {
         // A finger there is on the panel, which takes it.
         Draft draft = draft(shown(false, new float[][] {place(1, 100, 100, 10, FREE), place(2, 100, 100, 10, Draft.NEWEST)},
                                   new float[0][], null));
-        assertEquals(1, draft.planAt(100, 100, 15, 0));
+        assertEquals(1, draft.planAt(100, 100, 0));
     }
 
     @Test
