@@ -355,13 +355,24 @@ the draft is open there is no handle, and a finger makes plans (`TouchInput`'s `
 | Drag from another plan | The whole draft follows by whole world units, plans on deposits stay; kept where the finger was 50 ms before the lift; a second finger puts it back and the two pinch |
 | Drag with *Box* and a deposit's building picked | From anywhere: a box, FAF's selection box as its world view draws a box drag (`SelectionDragger2D`: a dark fill, a light edge 2 pixels wide), and at the lift every free deposit in it gets a plan; *Box* is used |
 | Drag elsewhere | A pan, whatever the rail says |
-| Rest 400 ms on no plan, without *Box* | The plan its lift places shows under the finger, with a loupe 14 mm above it (below where the top has no room): a circle of 12 mm, the 6 mm about the finger at twice their size, copied from the game's surface (`PixelCopy`, at most 30 times a second; on the emulator 0.6 to 15 ms, median 1.4 ms, for its 71 pixels), with the plan in it, framed by FAF's marker ring (`marker/ring_yellow02.dds`, which FAF's UI lays about the circle where the activity says it is). The copy is kept on the picture (`Draft.loupeFrom`, tested), and the loupe shows it where it was taken: within 3 mm of the picture's edge, or where the finger has moved on since the copy, beside the finger over the game's black, so the finger's spot is always the circle's middle. A copy that fails or comes back blank (the emulator's at the main menu did) shows no loupe, and the game's report says so once. On a panel no loupe, and the lift is the rest's right click there |
+| Rest 400 ms on no plan, without *Box* | The plan its lift places shows under the finger, also where its ground is taken, then red, as FAF's ghost over ground its check refuses, and the lift says "Taken" (a deposit's building shows none where no free deposit is within reach), with a loupe 14 mm above it (below where the top has no room): a circle of 12 mm, the 6 mm about the finger at twice their size, copied from the game's surface (`PixelCopy`, at most 30 times a second; on the emulator 0.6 to 15 ms, median 1.4 ms, for its 71 pixels), with the plan in it, framed by FAF's marker ring (`marker/ring_yellow02.dds`, which FAF's UI lays about the circle where the activity says it is). The copy is kept on the picture (`Draft.loupeFrom`, tested), and the loupe shows it where it was taken: within 3 mm of the picture's edge, or where the finger has moved on since the copy, beside the finger over the game's black, so the finger's spot is always the circle's middle. A copy that fails or comes back blank (the emulator's at the main menu did) shows no loupe, and the game's report says so once. On a panel no loupe, and the lift is the rest's right click there |
 | Two fingers' tap | The draft goes |
 
 Plans are the ghosts of FAF's build preview (`CBuildDragPreview`: the building's mesh through the UnitPlace shader, `FafreGriffGhost`), in
 its green, red where the ground is taken (another plan's, or FAF's check). The shader draws every ghost at a fifth of its colour, whatever
 alpha the colour has (`mesh.fx` UnitPlacePS), so plans differ by the colour alone: the newest, which a drag draws a line from, and the one
-a resting finger aims at in FAF's own colours, as its ghost under the cursor; the other plans and a line's places at half of them. The tick and the cross are
+a resting finger aims at in FAF's own colours, as its ghost under the cursor; the other plans and a line's places at half of them.
+
+While the draft is open the map shows the ground each building takes, as FAF's build mode shows it while it is armed (the user's verdict
+on 0.15.0, 2026-11-16: while placing, the other buildings were not to be seen, and their skirts should show). The draft ends FAF's build
+mode, so the world view's own overlay draws nothing; by a build-time patch (`patches/src/moho/ui/CUIWorldView.cpp`, the draft given by
+`include/GriffSkirts.h` `gDraft`, `GriffAndroid.cpp` `DraftSkirts`) the map's view draws the same for the draft, with the engine's own
+`DrawUnitSkirt` (at least `ui_FootprintMinThickness` wide) and the rules of its `DrawBuildDragAdjacencyHighlights`: the skirt of each
+building the orders will build in FAF's blue unless Shift is held (`DrawAllUnitSkirts`); of each structure in view in FAF's green, as
+far out as the picked building's mesh is drawn, bright green where a plan, a line's place or the aim in the colour of a free place gains
+adjacency from it (FAF's `gamemain.lua` `OnDetectAdjacencyBonus`); and of each plan, a line's place and the aim in its colour, green,
+red, or that bright green. FAF's own ghost brightens with its skirt there; a plan's ghost keeps its colour. Where FAF's build mode is
+armed (its keys, hotbuild, the tick's clicks), its own overlay draws instead. The tick and the cross are
 FAF's order buttons (`griffhud.lua`: the orders panel's empty slot at the HUD's factor, as large as its order buttons, with FAF's tick of the
 skin's map options, `temp_textures/checkmark.dds`, and its Cancel, `orders-panel/no-parking_bmp.dds`, both of the faction's skin; FAF's
 glow while a finger holds one), 12 of FAF's pixels above the construction panel, the tick 12 left of the column at the right (FAF's

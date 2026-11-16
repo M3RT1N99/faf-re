@@ -11,7 +11,9 @@
 // the rail's buttons, the undo's and the draft's tick and cross as FAF's order buttons, the hints where FAF prints its
 // messages, the waypoint a resting finger marked (fafre/griffhud.lua); the handle, a resting finger's ring, a stroke, the
 // draft's plans as FAF's build preview ghosts, Box's box and the loupe's frame (fafre/griffmap.lua, GriffShown.cpp); the
-// groups' icons (fafre/griffgroups.lua). The activity keeps the fingers and says how the buttons look (FafreGriffHud).
+// groups' icons (fafre/griffgroups.lua). While the draft is open the map's view draws the ground each building takes as FAF's
+// build mode does (include/GriffSkirts.h, DraftSkirts). The activity keeps the fingers and says how the buttons look
+// (FafreGriffHud).
 
 #include <jni.h>
 
@@ -40,6 +42,7 @@
 #include <GriffDraft.h>
 #include <GriffGroups.h>
 #include <GriffPlace.h>
+#include <GriffSkirts.h>
 #include <GriffTap.h>
 #include <GriffUndo.h>
 
@@ -496,10 +499,12 @@ namespace
   /// The blueprints of the draft's buildings by their ids, for FAF's own check of a place.
   std::unordered_map<std::string, moho::RUnitBlueprint*> gDraftBlueprints;
   /// What a finger shows of what it would add: the line from the newest plan, each place with whether it is free; and the plan
-  /// a finger that rests would place, of the picked building.
+  /// a finger that rests would place, of the picked building, and whether its ground is taken there, where it shows as FAF's
+  /// ghost does over ground its check refuses.
   std::vector<std::pair<griffdraft::Place, bool>> gDraftLine;
   bool gAimShown = false;
   griffdraft::Place gAim;
+  bool gAimTaken = false;
   /// The finger that rests is on the map, not on FAF's UI: the loupe is for the map.
   bool gAimOnMap = false;
   /// The world place under the finger where the draft's move began.
@@ -918,7 +923,7 @@ namespace
       shown[3] = static_cast<float>((shown.size() - lineFrom) / kDraftItem);
       if (gAimShown) {
         const std::size_t aimFrom = shown.size();
-        Show(shown, map, gDraft.Picked(), gAim, 0, 0);
+        Show(shown, map, gDraft.Picked(), gAim, 0, gAimTaken ? kPlanTaken : 0);
         shown[4] = shown.size() > aimFrom ? 1.0f : 0.0f;
       }
     }
@@ -927,70 +932,110 @@ namespace
   }
 
   // Game.PLAN_ flags of a place FafreGriffPlans gives griffmap.lua, which draws it as the ghost of FAF's build preview.
-  constexpr float kGhostNewest = 1;
-  constexpr float kGhostTaken = 2;
-  constexpr float kGhostLine = 4;
-  constexpr float kGhostAim = 8;
+  constexpr int kGhostNewest = 1;
+  constexpr int kGhostTaken = 2;
+  constexpr int kGhostLine = 4;
+  constexpr int kGhostAim = 8;
+
+  /// What the draft shows, while it is open: each plan, the line a finger draws from the newest and the plan a resting finger
+  /// would place, each `visit`ed with its building, its world place and its flags: the newest, on ground that is taken (another
+  /// plan's, or FAF's check), a line's, the aim.
+  template <typename Visit>
+  void EachShown(Visit&& visit)
+  {
+    const std::vector<griffdraft::Plan>& plans = gDraft.Plans();
+    for (std::size_t at = 0; at < plans.size(); ++at) {
+      const griffdraft::Plan& plan = plans[at];
+      const int flags = (at + 1 == plans.size() ? kGhostNewest : 0) + (gDraft.Taken(plan, GroundFree) ? kGhostTaken : 0);
+      visit(gDraft.BuildingOf(plan), griffdraft::Place{plan.x, plan.z}, flags);
+    }
+    if (const griffdraft::Plan* const start = gDraft.LineStart(); start != nullptr) {
+      for (const auto& [place, groundFree] : gDraftLine) {
+        visit(gDraft.BuildingOf(*start), place, kGhostLine + (groundFree ? 0 : kGhostTaken));
+      }
+    }
+    if (gAimShown) {
+      visit(gDraft.Picked(), gAim, kGhostAim + (gAimTaken ? kGhostTaken : 0));
+    }
+  }
 
   constexpr char kPlansHelp[] = "FafreGriffPlans(places, ids) - Griff's draft for its ghosts: x, y, z and flags of each plan, line "
                                 "place and aim into places, their buildings' ids into ids; how many";
   constexpr char kGhostHelp[] = "FafreGriffGhost(blueprintId) - the mesh of a building of Griff's draft and its scale, for its ghost";
 
-  /// The draft as griffmap.lua draws it, each frame of the session's UI: each plan, the line a finger shows from the newest and
-  /// the plan a resting finger would place, at its place in the world (on the ground or the water over it), its building's id
-  /// apart, and its flags: the newest, on ground that is taken (another plan's, or FAF's check), a line's, the aim. Nothing
-  /// without a draft.
+  /// The draft as griffmap.lua draws it, each frame of the session's UI: what it shows (EachShown), at its place in the world
+  /// (on the ground or the water over it), its building's id apart, and its flags. Nothing without a draft.
   int Plans(lua_State* const lua)
   {
     int count = 0;
     if (gDraft.Open() && lua_istable(lua, 1) && lua_istable(lua, 2)) {
-      const auto add = [lua, &count](const griffdraft::Building& building, const griffdraft::Place& at, const float flags) {
+      EachShown([lua, &count](const griffdraft::Building& building, const griffdraft::Place& at, const int flags) {
         ++count;
-        const float values[] = {at.x, SurfaceAt(at.x, at.z), at.z, flags};
+        const float values[] = {at.x, SurfaceAt(at.x, at.z), at.z, static_cast<float>(flags)};
         for (int value = 0; value < 4; ++value) {
           lua_pushnumber(lua, values[value]);
           lua_rawseti(lua, 1, 4 * (count - 1) + value + 1);
         }
         lua_pushstring(lua, building.id.c_str());
         lua_rawseti(lua, 2, count);
-      };
-      const std::vector<griffdraft::Plan>& plans = gDraft.Plans();
-      for (std::size_t at = 0; at < plans.size(); ++at) {
-        const griffdraft::Plan& plan = plans[at];
-        const float flags = (at + 1 == plans.size() ? kGhostNewest : 0) + (gDraft.Taken(plan, GroundFree) ? kGhostTaken : 0);
-        add(gDraft.BuildingOf(plan), griffdraft::Place{plan.x, plan.z}, flags);
-      }
-      if (const griffdraft::Plan* const start = gDraft.LineStart(); start != nullptr) {
-        for (const auto& [place, groundFree] : gDraftLine) {
-          add(gDraft.BuildingOf(*start), place, kGhostLine + (groundFree ? 0 : kGhostTaken));
-        }
-      }
-      if (gAimShown) {
-        add(gDraft.Picked(), gAim, kGhostAim);
-      }
+      });
     }
     lua_pushnumber(lua, static_cast<lua_Number>(count));
     return 1;
   }
 
+  /// A blueprint of the draft's by its building's id; none for a building the draft does not hold.
+  [[nodiscard]] moho::RUnitBlueprint* DraftBlueprint(const std::string& id)
+  {
+    const auto blueprint = gDraftBlueprints.find(id);
+    return blueprint != gDraftBlueprints.end() ? blueprint->second : nullptr;
+  }
+
+  /// A building's mesh, as FAF's build preview takes it (CBuildDragPreview): none where it has no level of detail.
+  [[nodiscard]] moho::RMeshBlueprint* MeshOf(const moho::RUnitBlueprint* const blueprint)
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (session == nullptr || session->mRules == nullptr || blueprint == nullptr) {
+      return nullptr;
+    }
+    moho::RMeshBlueprint* const mesh = session->mRules->GetMeshBlueprint(blueprint->Display.MeshBlueprint);
+    return mesh != nullptr && mesh->mLods.begin() != mesh->mLods.end() ? mesh : nullptr;
+  }
+
   /// A building of the draft's for its ghost: the mesh of its top level of detail and the building's scale, as FAF's build
-  /// preview takes them (CBuildDragPreview); nothing for a building the draft does not hold.
+  /// preview takes them; nothing for a building the draft does not hold.
   int Ghost(lua_State* const lua)
   {
     const char* const id = lua_tostring(lua, 1);
-    moho::CWldSession* const session = moho::WLD_GetActiveSession();
-    const auto blueprint = id != nullptr ? gDraftBlueprints.find(id) : gDraftBlueprints.end();
-    if (session == nullptr || session->mRules == nullptr || blueprint == gDraftBlueprints.end() || blueprint->second == nullptr) {
-      return 0;
-    }
-    moho::RMeshBlueprint* const mesh = session->mRules->GetMeshBlueprint(blueprint->second->Display.MeshBlueprint);
-    if (mesh == nullptr || mesh->mLods.begin() == mesh->mLods.end()) {
+    moho::RUnitBlueprint* const blueprint = id != nullptr ? DraftBlueprint(id) : nullptr;
+    moho::RMeshBlueprint* const mesh = MeshOf(blueprint);
+    if (mesh == nullptr) {
       return 0;
     }
     lua_pushstring(lua, mesh->mLods.begin()->mMeshName.c_str());
-    lua_pushnumber(lua, blueprint->second->Display.UniformScale);
+    lua_pushnumber(lua, blueprint->Display.UniformScale);
     return 2;
   }
+
+  /// The draft for the build mode's skirts as the map's view draws (griffskirts::gDraft): the picked building's mesh and what
+  /// the draft shows (EachShown), each in FAF's build preview's colour for the ground it takes or for ground that is taken.
+  bool DraftSkirts(griffskirts::Draft& skirts)
+  {
+    if (!gDraft.Open()) {
+      return false;
+    }
+    skirts.mesh = MeshOf(DraftBlueprint(gDraft.Picked().id));
+    EachShown([&skirts](const griffdraft::Building& building, const griffdraft::Place& at, const int flags) {
+      if (const moho::RUnitBlueprint* const blueprint = DraftBlueprint(building.id); blueprint != nullptr) {
+        const std::uint32_t color = (flags & kGhostTaken) != 0 ? griffskirts::kRefused : griffskirts::kFree;
+        skirts.buildings.push_back(griffskirts::Building{blueprint, at.x, SurfaceAt(at.x, at.z), at.z, color});
+      }
+    });
+    return true;
+  }
+
+  /// The map's view asks for the draft's skirts from the program's start; without a draft it gets none.
+  [[maybe_unused]] const bool gSkirtsAsked = (griffskirts::gDraft = &DraftSkirts, true);
 
   constexpr char kWaypointHelp[] = "FafreGriffWaypoint(x, y, z, units) - as FAF's command graph draws an order of so many "
                                    "units at this world place on the main map: its waypoint's half side and its order line's "
@@ -3251,10 +3296,14 @@ namespace
     }
   }
 
-  /// Where PlaceAt would put a plan for a finger there, without putting it: false where it would not.
-  [[nodiscard]] bool WouldPlace(const MapView& map, const int x, const int y, griffdraft::Place& place)
+  /// Where PlaceAt would put a plan for a finger there, without putting it: false where it would put none. A building that
+  /// stands on no deposit has its place under the finger also where its ground is taken (`taken`), as FAF's ghost shows
+  /// itself over ground its check refuses, in the colour of a refused place: so a finger that slides along the draft's plans
+  /// and the buildings sees where the ground of one ends.
+  [[nodiscard]] bool WouldPlace(const MapView& map, const int x, const int y, griffdraft::Place& place, bool& taken)
   {
     const griffdraft::Building& building = gDraft.Picked();
+    taken = false;
     if (gDraft.Full()) {
       return false;
     }
@@ -3272,7 +3321,8 @@ namespace
       return false;
     }
     place = gDraft.Snapped(at.x, at.z);
-    return !gDraft.OnPlan(building, place.x, place.z) && GroundFree(building, place.x, place.z);
+    taken = gDraft.OnPlan(building, place.x, place.z) || !GroundFree(building, place.x, place.z);
+    return true;
   }
 
   /// A tap in the draft (TouchInput's DRAFT_PENDING): on the UI the UI's click, with the tap help; a lit Plus stays for the tick
@@ -3381,7 +3431,8 @@ namespace
   }
 
   /// A finger that rests in the draft on no plan: the plan its lift would place shown under it, as it moves (the moves
-  /// coalesce); at the lift that plan, or on the UI the rest's right click there, as Griff's rest on a panel gives.
+  /// coalesce), also where its ground is taken (WouldPlace); at the lift that plan, or on the UI the rest's right click there,
+  /// as Griff's rest on a panel gives.
   void DraftAimTask(const WPARAM places)
   {
     try {
@@ -3389,7 +3440,9 @@ namespace
       const int x = Coordinate(places, 0);
       const int y = Coordinate(places, 1);
       gAimOnMap = !ClicksRun() && gDraft.Open() && MapAt(x, y, map);
-      gAimShown = gAimOnMap && WouldPlace(map, x, y, gAim);
+      bool taken = false;
+      gAimShown = gAimOnMap && WouldPlace(map, x, y, gAim, taken);
+      gAimTaken = taken;
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
       gAimShown = false;
