@@ -7,8 +7,8 @@ index 17f2ea2e..b5a4d8c4 100644
      CMessageStream stream(msg, CMessageStream::Access::kReadWrite);
      stream.Write(playerName);
 -    stream.Write(address);
-+    // Four bytes on the wire, the Windows game's u_long. An LP64 system's is eight, whose top half the
-+    // receiver would read as the port.
++    // Four bytes on the wire, the Windows game's u_long. An LP64 system's is eight: a Windows receiver takes two
++    // of its zero upper bytes as the port and the other two, with the port, as the uid.
 +    stream.Write(static_cast<std::uint32_t>(address));
      stream.Write(port);
      stream.Write(uid);
