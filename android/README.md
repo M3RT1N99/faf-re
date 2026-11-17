@@ -183,8 +183,9 @@ the game data they imported. Everything lives in the app's external files folder
     free mass spot in the box a plan. Another icon picks another building for the next plans. Plans are FAF's build ghosts,
     red on taken ground; the newest, which a drag draws a line from, and the one a resting finger aims at are as bright as
     FAF's ghost under the cursor, the others dimmer. While the draft is open the map shows the ground each building takes
-    as FAF's build mode does: each structure's in green, bright where a plan gains adjacency from it, each plan's in its
-    colour, and the buildings already ordered in blue. The tick and the cross are FAF order buttons, with the skin's tick and
+    as FAF's build mode does: each structure's in green, bright where a plan gains adjacency from it, as is that plan's,
+    each plan's else in its colour, and the buildings already ordered in blue; the ghosts keep their colours there, as FAF's
+    own ghost does. The tick and the cross are FAF order buttons, with the skin's tick and
     FAF's Cancel icon. The tick orders them
     all with FAF's build mode, as many clicks (the first replaces what the engineers do, the rest are queued; with *Plus* all
     are queued), each in its plan's cell also zoomed far out, moving the camera to a plan the screen does not show, or closer

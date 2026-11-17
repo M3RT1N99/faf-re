@@ -78,9 +78,10 @@ local Says = {
 
 --- The draft's plans: the ghosts of FAF's build preview (CBuildDragPreview: the building's mesh through the UnitPlace shader)
 --- in its colours for a place it takes and one it refuses (CWldSessionTypes.cpp). The shader draws every ghost at a fifth of
---- its colour, whatever alpha the colour has (mesh.fx UnitPlacePS), so plans differ by the colour alone, as FAF's own ghost
---- does beside a building it gains adjacency from: the newest plan, which a drag draws a line from, and the aim in FAF's
---- colours, as its ghost under the cursor; the other plans and a line's places, which have neither flag, at half of them.
+--- its colour, whatever alpha the colour has (mesh.fx UnitPlacePS), so plans differ by the colour alone: the newest plan,
+--- which a drag draws a line from, and the aim in FAF's colours, as its ghost under the cursor; the other plans and a line's
+--- places, which have neither flag, at half of them. Beside a building it gains adjacency from, FAF's ghost keeps its colour
+--- and only the skirts show it, as the map's view draws them for the draft too (android/TOUCH_UI.md, "The draft").
 --- The program's plan flags (FafreGriffPlans).
 local PLAN_NEWEST, PLAN_TAKEN, PLAN_AIM = 1, 2, 8
 local FREE, TAKEN, FREE_BEHIND, TAKEN_BEHIND = 'd800d800', 'd8d80000', 'd8006c00', 'd86c0000'

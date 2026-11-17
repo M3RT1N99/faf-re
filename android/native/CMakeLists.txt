@@ -367,6 +367,7 @@ add_executable(faf_wx_lite_tests
   tests/wx/GriffDraftTests.cpp
   tests/wx/GriffGroupsTests.cpp
   tests/wx/GriffPlaceTests.cpp
+  tests/wx/GriffSkirtsTests.cpp
   tests/wx/GriffTapTests.cpp
   tests/wx/GriffUndoTests.cpp
   tests/wx/ListDragTests.cpp

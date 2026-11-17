@@ -370,9 +370,16 @@ mode, so the world view's own overlay draws nothing; by a build-time patch (`pat
 `DrawUnitSkirt` (at least `ui_FootprintMinThickness` wide) and the rules of its `DrawBuildDragAdjacencyHighlights`: the skirt of each
 building the orders will build in FAF's blue unless Shift is held (`DrawAllUnitSkirts`); of each structure in view in FAF's green, as
 far out as the picked building's mesh is drawn, bright green where a plan, a line's place or the aim in the colour of a free place gains
-adjacency from it (FAF's `gamemain.lua` `OnDetectAdjacencyBonus`); and of each plan, a line's place and the aim in its colour, green,
-red, or that bright green. FAF's own ghost brightens with its skirt there; a plan's ghost keeps its colour. Where FAF's build mode is
-armed (its keys, hotbuild, the tick's clicks), its own overlay draws instead. The skirt's edge is what a tap on a plan is within: just
+adjacency from it (FAF's `gamemain.lua` `OnDetectAdjacencyBonus`), the first of them that no structure before it in the camera's list
+lit, and only that one (`include/GriffSkirts.h` `Light`, tested in `tests/wx/GriffSkirtsTests.cpp`); and of each plan, a line's place
+and the aim in its colour, green, red, or that bright green. The ghosts keep their colours there, FAF's own as a plan's: FAF's overlay
+gives a build drag's mesh the bright green after the frame's meshes are drawn (`WRenViewport::Render`: the mesh passes, then the view's
+overlay at 0x007F95EA), and the next frame's preview update, at the frame's head, gives the mesh its place's colour again
+(`CUIWorldView::Func1`, `UpdateDragPreview`'s store at 0x008533DB), so only the skirt shows the bright green. On the emulator
+(2026-11-17, a land factory beside a power generator, real fingers) FAF's ghost from its build mode and the newest plan in its place showed
+the same pixels about the factory, and within its skirt the ghost's and a plan's, the newest's or an older one's, stayed the same when the
+generator went, while the skirts' edges went from bright green to green. Where FAF's build mode is armed (its keys, hotbuild, the
+tick's clicks), its own overlay draws instead. The skirt's edge is what a tap on a plan is within: just
 past it a tap or a rest places a building against the plan. In 0.15.0 a finger was on a plan within the box of its ground and 1.5 mm
 past it, and the screen showed neither, while the ground reaches past the ghost's mesh (a factory's 1.5 world units each way): a tap or
 a rest meant to place a building against a plan took the plan away (on the emulator a rest beside a factory's plan with power

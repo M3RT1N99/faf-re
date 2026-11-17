@@ -1,5 +1,5 @@
 diff --git a/src/moho/ui/CUIWorldView.cpp b/src/moho/ui/CUIWorldView.cpp
-index 5e8a4af..8a3869b 100644
+index 5e8a4af..ff92a30 100644
 --- a/src/moho/ui/CUIWorldView.cpp
 +++ b/src/moho/ui/CUIWorldView.cpp
 @@ -4,6 +4,8 @@
@@ -11,7 +11,7 @@ index 5e8a4af..8a3869b 100644
  #include "gpg/core/containers/Rect2.h"
  #include "gpg/core/reflection/Reflection.h"
  #include "moho/containers/SCoordsVec2.h"
-@@ -463,6 +465,74 @@ namespace moho
+@@ -463,6 +465,66 @@ namespace moho
      batcher->Flush();
    }
  
@@ -20,7 +20,8 @@ index 5e8a4af..8a3869b 100644
 +   * draft (griffskirts::gDraft), which ends that mode, as a finger's tap makes a plan there, not an order. As DrawCommandGraph
 +   * and DrawBuildDragAdjacencyHighlights draw it for the build drag's meshes: the skirts of the buildings ordered unless
 +   * Shift is held, of each structure in view as far out as the picked building's mesh is drawn, brighter where a building of
-+   * the draft's in the colour of a place it takes gains adjacency from it, and the draft's buildings', in their colours.
++   * the draft's in the colour of a place it takes gains adjacency from it (griffskirts::Light), and the draft's buildings', in
++   * their colours.
 +   */
 +  void DrawDraftSkirts(CameraImpl* const camera, CWldSession* const session, CD3DPrimBatcher* const batcher)
 +  {
@@ -56,21 +57,12 @@ index 5e8a4af..8a3869b 100644
 +        continue;
 +      }
 +
-+      std::uint32_t color = griffskirts::kFree;
 +      gpg::Rect2f unitSkirt{};
 +      (void)unit->GetSkirt(&unitSkirt);
-+      for (griffskirts::Building& building : draft.buildings) {
-+        if (building.color != griffskirts::kFree) {
-+          continue;
-+        }
-+
-+        const gpg::Rect2f skirt = building.blueprint->GetSkirtRect(SCoordsVec2{building.x, building.z});
-+        if (AreSkirtsAdjacent(skirt, unitSkirt) && unit->DoOnDetectAdjacencyBonusFor(building.blueprint)) {
-+          color = griffskirts::kAdjacent;
-+          building.color = griffskirts::kAdjacent;
-+          break;
-+        }
-+      }
++      const std::uint32_t color = griffskirts::Light(draft.buildings, [unit, &unitSkirt](const griffskirts::Building& building) {
++        return AreSkirtsAdjacent(building.blueprint->GetSkirtRect(SCoordsVec2{building.x, building.z}), unitSkirt)
++            && unit->DoOnDetectAdjacencyBonusFor(building.blueprint);
++      });
 +
 +      DrawUnitSkirt(heightField, iunit->GetBlueprint(), view, unitPosition, session, batcher, color);
 +    }
@@ -86,7 +78,7 @@ index 5e8a4af..8a3869b 100644
    /**
     * Address: 0x00853DC0 (FUN_00853DC0, Moho::DrawCommandGraph)
     *
-@@ -538,6 +608,9 @@ namespace moho
+@@ -538,6 +600,9 @@ namespace moho
        // `mode` going out of scope here runs CommandModeData::~CommandModeData(),
        // which unlinks mMouseDragStart/mMouseDragEnd - the binary inlines that
        // unlink by hand at this exact point (0x00853E8B..0x00853EE8).
