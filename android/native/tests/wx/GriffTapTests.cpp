@@ -51,6 +51,20 @@ WXT_TEST(GriffTapWithoutBoxUsesAllThatCounted)
   WXT_CHECK_EQ(Used(0, Outcome::kOther), 0);
 }
 
+WXT_TEST(GriffEscapePutsAwayTheDraftThenTheModeThenTheSelection)
+{
+  // FAF's HandleEsc in its order, the draft first: one tap of the cross puts away one of them.
+  using grifftap::Escape;
+  using grifftap::EscapeFor;
+  WXT_CHECK_EQ(EscapeFor(true, true, true), Escape::kDropDraft);
+  WXT_CHECK_EQ(EscapeFor(true, false, false), Escape::kDropDraft);
+  WXT_CHECK_EQ(EscapeFor(false, true, true), Escape::kEndCommandMode);
+  WXT_CHECK_EQ(EscapeFor(false, true, false), Escape::kEndCommandMode);
+  WXT_CHECK_EQ(EscapeFor(false, false, true), Escape::kDeselect);
+  // With none of them the cross does not show.
+  WXT_CHECK_EQ(EscapeFor(false, false, false), Escape::kNothing);
+}
+
 WXT_TEST(GriffTapReachIsReadBackAsTheSameFloat)
 {
   // FAF's reach for a unit beside a tap, 3.5 mm and 2 mm at 5 to 30 of the picture's pixels a mm, as the activity works them

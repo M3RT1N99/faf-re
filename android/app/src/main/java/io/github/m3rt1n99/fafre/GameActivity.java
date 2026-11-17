@@ -689,7 +689,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // With Plus counting, held or lit, every plan is appended to what the builders do; the program says what it used.
             mTickTarget = hudTarget(root, "Order the draft",
                 view -> Game.draftCommit((mRail.counting(SystemClock.uptimeMillis()) & TouchInput.RAIL_QUEUE) != 0));
-            mCrossTarget = hudTarget(root, "Drop the draft", view -> Game.draftDrop());
+            // Griff's Esc: the draft, else the armed command mode, else the selection goes.
+            mCrossTarget = hudTarget(root, "Cancel", view -> Game.griffEscape());
         }
         mKeyboardTarget = new KeyboardTarget(this);
         root.addView(mKeyboardTarget, new FrameLayout.LayoutParams(1, 1));
@@ -1325,8 +1326,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      * Where FAF's UI drew Box, Plus, the undo's button, the draft's tick and its cross (griffhud.lua, Game.griffHudPlaces): the
      * views that take their fingers lie there, each while it is wanted in a game and nothing the player opened of FAF's lies
      * over it nor is FAF's UI hidden, which FAF's UI says with the place; the undo's while its time runs or its undo waits
-     * (Undo), the tick's and the cross's while the draft is open. And how they look, held or lit, for FAF's UI to draw them
-     * (Game.setGriffHud).
+     * (Undo), the tick's while the draft is open, the cross's while Griff's Esc has something to put away (Game.griffEscapes).
+     * And how they look, held or lit, for FAF's UI to draw them (Game.setGriffHud).
      */
     private void placeHud() {
         if (mUndoTarget == null) {
@@ -1341,7 +1342,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         placeTarget(mUndoTarget, mRailTargets.size(), count, undoWanted);
         boolean drafting = mBarInGame && mDraft.open();
         placeTarget(mTickTarget, mRailTargets.size() + 1, count, drafting);
-        placeTarget(mCrossTarget, mRailTargets.size() + 2, count, drafting);
+        placeTarget(mCrossTarget, mRailTargets.size() + 2, count, drafting || mBarInGame && Game.griffEscapes());
         int undo = !undoWanted ? Game.HUD_UNDO_NONE : mUndo.waiting() ? Game.HUD_UNDO_WAITING : Game.HUD_UNDO_OFFERED;
         int held = (mTickTarget.isPressed() ? Game.HUD_HELD_TICK : 0) | (mCrossTarget.isPressed() ? Game.HUD_HELD_CROSS : 0)
             | (mUndoTarget.isPressed() ? Game.HUD_HELD_UNDO : 0);

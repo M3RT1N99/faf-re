@@ -1132,6 +1132,30 @@ namespace
     gMarginsFrame = gFrame;
   }
 
+  // --- Griff's Esc: the cross -------------------------------------------------------------------------
+
+  /// Whether units are selected, as FAF's GetSelectedUnits has them.
+  [[nodiscard]] bool Selected()
+  {
+    moho::CWldSession* const session = moho::WLD_GetActiveSession();
+    if (session == nullptr) {
+      return false;
+    }
+    msvc8::vector<moho::UserUnit*> units;
+    session->GetSelectionUnits(units);
+    return !units.empty();
+  }
+
+  /// What Griff's Esc, the cross, puts away now (grifftap::EscapeFor): the draft, an armed command mode, the selection.
+  [[nodiscard]] grifftap::Escape EscapeNow()
+  {
+    return grifftap::EscapeFor(gDraft.Open(), CommandModeArmed(), Selected());
+  }
+
+  /// Whether the cross shows, as each frame's work after its paint finds Esc (EscapeNow): griffhud.lua draws it by this
+  /// (FafreGriffEscapes) and the activity lays the view that takes its finger (Game.griffEscapes).
+  std::atomic<bool> gEscapes{false};
+
   /// The handle for the reported selection, and the free map's cross, after the frame's drawing: FAF's Lua changes layouts
   /// in its frame, after which they are not known until the drawing works them out (unitview.lua places its panel anew each
   /// frame), and the free map reads only what is worked out (LaidOutBox). Without a selection there is no handle and no walk,
@@ -1160,6 +1184,7 @@ namespace
       if (gCommitAsked != 0) {
         DraftCommitTask(gCommitAsked - 1);
       }
+      gEscapes = moho::UI_GamePlaying() && EscapeNow() != grifftap::Escape::kNothing;
       const bool drafting = gDraft.Open();
       if (selection.viewKnown && gFrame - gMarginsFrame >= kMarginFrames) {
         std::vector<Box> panels;
@@ -1190,6 +1215,7 @@ namespace
       gFree = cross;
     } catch (const std::exception& exception) {
       gpg::Warnf("Griff: %s", exception.what());
+      gEscapes = false;
       const std::lock_guard<std::mutex> lock(gHandleMutex);
       gHandle = Handle{};
     }
@@ -1286,6 +1312,7 @@ namespace
     }
     gToleranceSet = false;
     ForgetDraft();
+    gEscapes = false;
     {
       const std::lock_guard<std::mutex> lock(gOpenedMutex);
       gOpened.clear();
@@ -1416,6 +1443,15 @@ namespace
     return 0;
   }
 
+  constexpr char kEscapesHelp[] = "FafreGriffEscapes() - whether Griff's Esc, the cross, shows: the draft, an armed command mode "
+                                  "or the selection to put away";
+
+  int Escapes(lua_State* const lua)
+  {
+    lua_pushboolean(lua, gEscapes.load() ? 1 : 0);
+    return 1;
+  }
+
   moho::CScrLuaBinder gWantedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffWanted", &Wanted, nullptr, "<global>", kWantedHelp);
   moho::CScrLuaBinder gBoxBinder(moho::SCR_UserLuaInitSet(), "FafreGriffBox", &ReportBox, nullptr, "<global>", kBoxHelp);
   moho::CScrLuaBinder gFrameBinder(moho::SCR_UserLuaInitSet(), "FafreGriffFrame", &Frame, nullptr, "<global>", kFrameHelp);
@@ -1427,6 +1463,7 @@ namespace
   moho::CScrLuaBinder
     gDraftRefusedBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftRefused", &DraftRefused, nullptr, "<global>", kDraftRefusedHelp);
   moho::CScrLuaBinder gDraftEndBinder(moho::SCR_UserLuaInitSet(), "FafreGriffDraftEnd", &DraftEnd, nullptr, "<global>", kDraftEndHelp);
+  moho::CScrLuaBinder gEscapesBinder(moho::SCR_UserLuaInitSet(), "FafreGriffEscapes", &Escapes, nullptr, "<global>", kEscapesHelp);
 
   // --- Griff's pieces in FAF's UI (fafre/griffhud.lua) and the control groups' hook -------------------------------------------
 
@@ -4436,6 +4473,23 @@ namespace
     }
   }
 
+  /// A tap on the cross, Griff's Esc (EscapeNow): the draft goes as the cross dropped it, else FAF's armed command mode ends,
+  /// else the selection goes, as FAF's HandleEsc puts them away. The mode and the selection not between the program's clicks,
+  /// whose they are, as for two fingers' tap.
+  void EscapeTask(const WPARAM)
+  {
+    try {
+      const grifftap::Escape escape = EscapeNow();
+      if (escape == grifftap::Escape::kDropDraft) {
+        DraftDropTask(0);
+      } else if (escape != grifftap::Escape::kNothing && moho::UI_GamePlaying() && !ClicksRun()) {
+        moho::CON_Execute(escape == grifftap::Escape::kEndCommandMode ? kEndCommandMode : kDeselect);
+      }
+    } catch (const std::exception& exception) {
+      gpg::Warnf("Griff: %s", exception.what());
+    }
+  }
+
   /// A draft gesture's task by its phase (Game.DRAFT_): shown as the finger moves, which coalesces, its end, or given up.
   void RunDraft(const int phase, void (*show)(WPARAM), void (*end)(WPARAM), void (*abort)(WPARAM), const WPARAM places)
   {
@@ -4721,10 +4775,22 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftCommit
   Win32Android_RunOnWindowThread(&DraftCommitTask, plus != JNI_FALSE ? 1 : 0);
 }
 
-/// The cross, or two fingers' tap in the draft (DraftDropTask).
+/// Two fingers' tap in the draft (DraftDropTask).
 extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_draftDrop(JNIEnv*, jclass)
 {
   Win32Android_RunOnWindowThread(&DraftDropTask, 0);
+}
+
+/// A tap on the cross, Griff's Esc (EscapeTask).
+extern "C" JNIEXPORT void JNICALL Java_io_github_m3rt1n99_fafre_Game_griffEscape(JNIEnv*, jclass)
+{
+  Win32Android_RunOnWindowThread(&EscapeTask, 0);
+}
+
+/// Whether the cross shows, as the last frame found Esc.
+extern "C" JNIEXPORT jboolean JNICALL Java_io_github_m3rt1n99_fafre_Game_griffEscapes(JNIEnv*, jclass)
+{
+  return gEscapes.load() ? JNI_TRUE : JNI_FALSE;
 }
 
 /// What the player opened of FAF's that shows (FafreGriffOpened), into `values` as many whole boxes as fit, left, top, right and

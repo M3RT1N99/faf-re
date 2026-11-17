@@ -1,8 +1,9 @@
 #pragma once
 
 // What a tap of the touch scheme Griff (android/TOUCH_UI.md, "Griff") uses: of the rail's buttons those its outcome used (the
-// rule of the app's Rail.java), and FAF's reach for a unit beside it as the console's text. The program decides a tap
-// (src/host/GriffAndroid.cpp); here the rules alone, for their tests (tests/wx/GriffTapTests.cpp).
+// rule of the app's Rail.java), and FAF's reach for a unit beside it as the console's text; and what the tap on Griff's Esc,
+// the cross, does. The program decides a tap (src/host/GriffAndroid.cpp); here the rules alone, for their tests
+// (tests/wx/GriffTapTests.cpp).
 
 #include <cstdio>
 #include <limits>
@@ -38,6 +39,28 @@ namespace grifftap
         break;
     }
     return rail & ~kRailBox;
+  }
+
+  /// What Griff's Esc, the cross, puts away: what a PC player's Esc does in a game (FAF's eschandler.lua HandleEsc: the armed
+  /// command mode, else the selection), with Griff's draft first, which stands for FAF's build mode; nothing where none is,
+  /// and the cross does not show then.
+  enum class Escape
+  {
+    kNothing,
+    kDropDraft,
+    kEndCommandMode,
+    kDeselect,
+  };
+
+  [[nodiscard]] constexpr Escape EscapeFor(const bool drafting, const bool commandModeArmed, const bool selected)
+  {
+    if (drafting) {
+      return Escape::kDropDraft;
+    }
+    if (commandModeArmed) {
+      return Escape::kEndCommandMode;
+    }
+    return selected ? Escape::kDeselect : Escape::kNothing;
   }
 
   /// A float as the console's text, which the console reads back as the same float (std::atof, then a float: its

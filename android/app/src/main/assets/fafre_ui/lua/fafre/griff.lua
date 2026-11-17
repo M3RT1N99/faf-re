@@ -528,7 +528,7 @@ function OrderWhileDrafting(mode, data)
     end
 end
 
---- Where the draft's tick and cross stand (the mockup's: above FAF's construction panel, left of the column at the right):
+--- Where the draft's tick and the cross stand (the mockup's: above FAF's construction panel, left of the column at the right):
 --- the panel's top and the leftmost of the avatars and their idle lists, in the picture's pixels; -1 where not shown, for
 --- griffhud.lua, which places them.
 local function DraftAnchors()
@@ -703,7 +703,8 @@ function Start(parent)
                 reporting = false
             end
         end
-        if anchoring and FafreGriffDraftPlans() >= 0 then
+        -- Where the tick and the cross stand, while either shows: the draft's tick, and the cross, Griff's Esc.
+        if anchoring and (FafreGriffDraftPlans() >= 0 or FafreGriffEscapes()) then
             local ok, found = pcall(DraftAnchors)
             if ok then
                 anchors = found

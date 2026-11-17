@@ -407,8 +407,17 @@ final class Game {
     /** The tick: FAF's build mode and a click per plan, all appended with `plus` ({@link #SAID_COMMITTED} when done). */
     static native void draftCommit(boolean plus);
 
-    /** The cross, or two fingers' tap in the draft: the draft goes, with nothing ordered. */
+    /** Two fingers' tap in the draft: the draft goes, with nothing ordered. */
     static native void draftDrop();
+
+    /**
+     * A tap on the cross, Griff's Esc: as FAF's HandleEsc for a PC player's Esc, the draft goes (with nothing ordered), else the
+     * armed command mode, else the selection.
+     */
+    static native void griffEscape();
+
+    /** Whether the cross shows: there is a draft, an armed command mode or a selection to put away (as the last frame found). */
+    static native boolean griffEscapes();
 
     // --- What Griff's gestures order: the undo (buildstage/griff-v3-spec.md, T3.1; Griff v4) -----------------------------
 

@@ -291,7 +291,7 @@ shows is FAF's UI's, in FAF's own look at the HUD's factor (Griff v4, the user's
 FA's), each piece checked side by side with the element of FAF's it follows (2026-11-15, on the emulator at the phone's size and HUD 1.6,
 in the four factions' skins where the skin changes it, but for the stroke's label, FAF's tooltip, whose colours follow the skin and which
 was seen in UEF's only). `fafre/griffhud.lua` has the rail's *Box*, *Plus* and *Groups*, the undo's button
-and the draft's tick and cross as FAF's order buttons, the hints where FAF prints its own messages and a waypoint marked for deletion
+and the draft's tick and the cross, Griff's Esc, as FAF's order buttons, the hints where FAF prints its own messages and a waypoint marked for deletion
 under FAF's Cancel icon. `fafre/griffmap.lua`, on the map's view as FAF's reclaim labels are, has the handle as the brackets FAF draws
 about a selected unit, a resting finger's ring as a ring of FAF's pings, a stroke as FAF's command graph draws the route once it is
 ordered, the draft's plans as the ghosts of FAF's build preview, *Box*'s box over deposits as FAF's selection box and the loupe's frame
@@ -384,7 +384,27 @@ ordered buildings' skirts in blue. The tick and the cross are
 FAF's order buttons (`griffhud.lua`: the orders panel's empty slot at the HUD's factor, as large as its order buttons, with FAF's tick of the
 skin's map options, `temp_textures/checkmark.dds`, and its Cancel, `orders-panel/no-parking_bmp.dds`, both of the faction's skin; FAF's
 glow while a finger holds one), 12 of FAF's pixels above the construction panel, the tick 12 left of the column at the right (FAF's
-avatars), where `griff.lua` reads them each frame, and against the map's edges where FAF shows neither. The cross drops the draft. The tick (`DraftCommitTask`): "No plan yet" without plans; "N plans were not ordered" at once, the
+avatars), where `griff.lua` reads them each frame, and against the map's edges where FAF shows neither.
+
+The cross is Griff's Esc (the decision of 2026-11-17 on the user's verdict on 0.15.0, that a button was missing to put away what was
+chosen, the building being placed and the selection, as Esc and the right button do on the PC). It shows while the draft is open and
+wherever a PC player's Esc would act in a game (FAF's `eschandler.lua` `HandleEsc`: an armed command mode, else the selection), in its
+place beside the tick's, also where the tick does not show, and a tap puts away one of them, in this order (`include/GriffTap.h`
+`EscapeFor`, tested): the draft goes, with nothing ordered; else the armed command mode ends (`EndCommandMode`, FAF's build mode of its
+keys or hotbuild too); else the selection goes (`SelectUnits(nil)`). With none of them it does not show. The program finds each frame
+after its paint whether there is any (`EscapeNow`: the draft, `UI_GetCommandMode`, the session's selection), by which FAF's UI draws
+the cross (`FafreGriffEscapes`) and the activity lays the view that takes its finger (`Game.griffEscapes`); the tap goes by what there
+is when it comes (`EscapeTask`). The mode and the selection are not put away while the program's clicks run, as for two fingers' tap,
+which stays as it was. FAF's own UI has nothing for this (lua.nx2, FAF 3835): Esc is a key only (`defaultKeyMap.lua` `Esc` = `escape`,
+`keyactions.lua` to `uimain.lua` `EscapeHandler` and `HandleEsc`; FAF's alternative key map makes it Stop); its top bar has the menu,
+diplomacy and pause (`tabs.lua`); its orders panel's buttons end only their own order's mode when tapped again (`orders.lua`
+`StandardOrderBehavior`), and Stop is an order to the units; nothing else calls `HandleEsc` or `SelectUnits(nil)` from a control
+(`borders.lua` splits the map, `gamemain.lua` begins a film). On the emulator (2026-11-17, real fingers, the phone's size, HUD 1.6)
+with nothing selected no cross showed; with four engineers selected it showed where it stands in the draft, and its tap let them go
+and it went; with the orders panel's Move armed its tap ended the mode and kept the four; in a draft with a plan its tap dropped the
+draft and kept them.
+
+The tick (`DraftCommitTask`): "No plan yet" without plans; "N plans were not ordered" at once, the
 draft kept, where the program knows no map's view to click on (`griff.lua`'s report of it failed); the builders are the selected engineers,
 else the draft's that still live ("No engineer" without), selected for the clicks (`griff.lua` `CommitBegin`) and the selection put back
 after (`CommitEnd`); plans FAF's check refuses now are left out ("N plans were on buildings", "All plans are on buildings" when none is

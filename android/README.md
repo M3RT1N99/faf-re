@@ -188,7 +188,9 @@ the game data they imported. Everything lives in the app's external files folder
     FAF's Cancel icon. The tick orders them
     all with FAF's build mode, as many clicks (the first replaces what the engineers do, the rest are queued; with *Plus* all
     are queued), each in its plan's cell also zoomed far out, moving the camera to a plan the screen does not show, or closer
-    where a pixel spans more than a cell, and back; the cross, or a tap of two fingers, drops the draft. The selected
+    where a pixel spans more than a cell, and back; the cross, or a tap of two fingers, drops the draft. The cross is Esc
+    outside the draft too: it shows while an order of the orders panel or FAF's build mode is armed or units are selected,
+    and a tap ends the order, else lets the selection go; with nothing to put away it does not show. The selected
     engineers build it, or else the engineers selected when a building was last picked. Up to 30 plans, and a line of up to
     30; while plans wait, an order of the orders panel says "Tick or cross the draft first".
     FAF's build keys and templates keep FAF's ghost,

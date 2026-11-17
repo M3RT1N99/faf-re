@@ -1,6 +1,6 @@
 -- What the touch scheme Griff shows of its own buttons and words (android/TOUCH_UI.md "Griff"), in FAF's own UI and look, at
 -- the HUD's factor: the rail's Box, Plus and Groups and the undo's button in a row at the top left, and the draft's tick and
--- cross above the construction panel, each made as FAF's orders panel makes its buttons (the empty slot's frame, an icon of
+-- the cross, Griff's Esc, above the construction panel, each made as FAF's orders panel makes its buttons (the empty slot's frame, an icon of
 -- FAF's own in it, FAF's glow pulsing under a finger and a selected order's edge while lit); the hints where FAF prints its
 -- own messages (textdisplay.lua, as its PrintText); and the waypoint a resting finger marked for deletion, under FAF's own
 -- Cancel icon (mousetooltips.lua). The activity keeps the fingers: one on Box, Plus, the undo's button, the tick or the
@@ -266,7 +266,7 @@ function Create(parent)
     row.Width:Set(function() return undo.Right() - row.Left() end)
     row.Height:Set(box.Height)
 
-    -- The draft's tick and cross, placed by the panels each frame the draft is open (PlaceDraftButtons).
+    -- The draft's tick and the cross, placed by the panels each frame either shows (PlaceTickAndCross).
     local tick = OrderButton(parent, 'tick')
     tick.Depth:Set(100)
     LayoutHelpers.AtLeftTopIn(tick, parent)
@@ -326,10 +326,10 @@ local function Mark(hidden)
     mark:Show()
 end
 
---- The draft's tick and cross while the draft is open: the tick a gap above the construction panel's top (`anchors.top`,
+--- The draft's tick and the cross while either shows: the tick a gap above the construction panel's top (`anchors.top`,
 --- the map's bottom where it does not show) and left of the column at the right (`anchors.left`, the map's right), the
---- cross a gap left of it.
-local function PlaceDraftButtons(anchors)
+--- cross a gap left of it, where it stands also while the tick does not show.
+local function PlaceTickAndCross(anchors)
     local view = WorldView.viewLeft
     local tick, cross = pieces.tick, pieces.cross
     local gap = LayoutHelpers.ScaleNumber(UNDO_GAP)
@@ -342,8 +342,9 @@ local function PlaceDraftButtons(anchors)
 end
 
 --- Each frame of the session's UI: Box and Plus as the activity has them, Groups as it is, the undo's button with its time,
---- the draft's tick and cross while the draft is open (`anchors`: where the construction panel and the column at the right
---- begin, griff.lua DraftAnchors), each stepping aside from what the player opened (`opened`, opened.lua's boxes) and all of
+--- the draft's tick while the draft is open and the cross while Griff's Esc has something to put away (`anchors`: where the
+--- construction panel and the column at the right begin, griff.lua DraftAnchors), each stepping aside from what the player
+--- opened (`opened`, opened.lua's boxes) and all of
 --- them while FAF's UI is hidden (`hidden`); Groups' icon in one's own icons' colour (`colour`, griffgroups.lua's); where
 --- Box, Plus, the undo's button, the tick and the cross are, for the activity's fingers, where that changed; the marked
 --- waypoint. `delta`: the frame's seconds, for the glow's pulse.
@@ -378,12 +379,14 @@ function Frame(opened, delta, anchors, hidden, colour)
     undo.label:SetText(undoShown == UNDO_WAITING and 'Undo...' or 'Undo')
     undo.bar:SetValue(undoShown == UNDO_WAITING and 0 or undoLeft)
     local drafting = FafreGriffDraftPlans() >= 0
-    if drafting then
-        PlaceDraftButtons(anchors)
+    -- The cross is Griff's Esc: it shows while the draft, an armed command mode or the selection is there to put away.
+    local escapes = drafting or FafreGriffEscapes()
+    if escapes then
+        PlaceTickAndCross(anchors)
     end
     local shown = not hidden
     local places = {}
-    for _, item in {{'box', true}, {'plus', true}, {'undo', undoShown ~= UNDO_NONE}, {'tick', drafting}, {'cross', drafting}} do
+    for _, item in {{'box', true}, {'plus', true}, {'undo', undoShown ~= UNDO_NONE}, {'tick', drafting}, {'cross', escapes}} do
         local piece = pieces[item[1]]
         local wanted = shown and item[2]
         local aside = Show(piece, wanted, opened)
