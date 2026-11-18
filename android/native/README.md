@@ -187,8 +187,10 @@ player gives up, and prints how long the reader had to wait.
 `faf_net_tests` (`tests/net`) runs the engine's socket events (`platform::net`, `src/platform/posix/NetPosix.cpp`) on
 real sockets over the loopback, with bionic, and the engine's datagram socket and UDP connector on them: the patched
 transport's end, its count of open connectors (what the app's `NetworkGameService` goes by), a network that goes and
-comes back, what the protocol puts on the wire and what ending a game or a replay leaves. It links the simulation's
-objects as the game does, statically, and the app's workflow runs the arm64 build on an arm64 runner. Where
+comes back, what the protocol puts on the wire and what ending a game or a replay leaves. GPGNet's TCP socket too: the
+game's connect to its launcher's listener, what goes either way, the launcher's close, a connect with no listener, and
+the read that upstream's stream counts short (The network). It links the simulation's objects as the game does,
+statically, and the app's workflow runs the arm64 build on an arm64 runner. Where
 `platform::net` keeps Winsock's behaviour less strictly than the earlier host's layer did, the test says so: it does not
 refuse to select a descriptor that is no socket, and a closed socket's port is free once the poll thread has let go of
 it, a few milliseconds after `CloseSocket` (on the emulator at most 24 ms in three runs), not at once.
@@ -196,6 +198,18 @@ it, a few milliseconds after `CloseSocket` (on the emulator at most 24 ms in thr
 ```sh
 adb push build/android-x64/bin/faf_net_tests /data/local/tmp/
 adb shell "chmod 755 /data/local/tmp/faf_net_tests && /data/local/tmp/faf_net_tests"
+```
+
+`../tools/gpgnet_host.py` is a launcher's GPGNet side on the PC, for the game's connect (The network): it listens on
+127.0.0.1, prints what the game sends, answers its `GameState Idle` with `CreateLobby`, and its exit code says whether
+the game reached its lobby. `adb reverse` takes the game's loopback port to it. With the port reversed and the script
+not running, adb takes the game's connection and closes it, the case of a launcher that goes before its lobby; without
+the reverse nobody listens, and the connect is refused.
+
+```sh
+adb reverse tcp:7237 tcp:7237
+python -I android/tools/gpgnet_host.py --port 7237
+adb shell am start -S -n io.github.m3rt1n99.fafre/.GameActivity --esa io.github.m3rt1n99.fafre.extra.LAUNCHER_ARGUMENTS /gpgnet,127.0.0.1:7237
 ```
 
 `faf_shell_tests` (`tests/shell`) pins the patched shell's rule for a key-down a handler took (`patches/README.md`,

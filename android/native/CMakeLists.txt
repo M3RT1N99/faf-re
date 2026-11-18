@@ -384,10 +384,10 @@ target_compile_features(faf_griff_tests PRIVATE cxx_std_20)
 target_link_options(faf_griff_tests PRIVATE -static -Wl,--gc-sections)
 
 # faf_net_tests (tests/net): the engine's socket events (platform::net) on real sockets over the loopback, its datagram
-# socket and UDP connector on them, the patched transport's end and its count of open connectors, and what the protocol
-# puts on the wire. The transport is the simulation's, so the test takes the simulation's objects as the game links them,
-# the patched ones in place of theirs: all of them, as their reflection looks types up across the simulation as it starts.
-# Linked statically, as faf_griff_tests is.
+# socket and UDP connector on them, the patched transport's end and its count of open connectors, what the protocol
+# puts on the wire, and GPGNet's TCP socket. The transport is the simulation's, so the test takes the simulation's
+# objects as the game links them, the patched ones in place of theirs: all of them, as their reflection looks types up
+# across the simulation as it starts. Linked statically, as faf_griff_tests is.
 add_executable(faf_net_tests tests/net/NetTests.cpp ${FAF_ANDROID_SIM_OBJECTS})
 target_link_libraries(faf_net_tests PRIVATE faf_android_settings ${_faf_sim_libraries})
 target_link_options(faf_net_tests PRIVATE -static -Wl,--gc-sections)
