@@ -2287,8 +2287,9 @@ namespace
                                       "was stored, by Plus's append or not: the ids of the units it held before and of those now";
 
   /// A group stored by a rest on its slot (the hook of FAF's controlgroups.lua, after its hint): the activity buzzes once.
-  /// Stored over other units it held (griffundo::StoreSavesWork), it is a record of Griff's own, whose undo gives the group
-  /// those units back (GroupBack); any other store on the group of such a record ends it, as its units would undo that store.
+  /// Where the store took out units it held that lived (griffundo::StoreSavesWork), it is a record of Griff's own, whose undo
+  /// gives the group those units back (GroupBack); any other store on the group of such a record ends it, as its units would
+  /// undo that store.
   int GroupStored(lua_State* const lua)
   {
     Say(kSaidGroupStored, 0, 0);

@@ -549,13 +549,14 @@ as no click brings them back; an attack-move's script and its AggressiveMove are
 Two records are Griff's own, of what a stray gesture throws away that a PC player only throws away by deliberate keys (Esc, Ctrl
 and a number), and order nothing (the user's choice of 2026-11-18): a draft of two plans or more that the cross or two fingers' tap
 dropped (`include/GriffUndo.h` `DropSavesWork`, tested; a second thumb that brushes the glass in quick taps is two fingers' tap), and a
-control group a rest stored over other units it held, where those that live are not the very units stored (`StoreSavesWork`,
-tested: not a store on an empty slot, nor *Plus*'s append, which takes none out). Their undo comes at the tap, with nothing clicked
-and nothing for the sim: the draft is open again as it was, its plans where they stood and its builders with it (`DraftBack`); the
-group holds again those of its units that live, by FAF's `AddSelectionSet`, as Ctrl and the number store a selection, whose callbacks
-show its control (`griff.lua` `GroupBack`; with none alive *Not undone*, and the group stays as the store left it). They are records
-as a gesture's are: one level, the next replaces one, any order ends it, the button offers it for its 3 s; and so that the undo
-never undoes what came after, a draft that opens ends a dropped draft's record, and the next store on a slot that group's.
+control group a rest stored over other units it held, where the store took out a unit that lived (`StoreSavesWork`, tested: not a
+store on an empty slot, nor one of the group's units and more, nor *Plus*'s append, which takes none out). Their undo comes at the
+tap, with nothing clicked and nothing for the sim: the draft is open again as it was, its plans where they stood and its builders
+with it (`DraftBack`); the group holds again those of its units that live, by FAF's `AddSelectionSet`, as Ctrl and the number
+store a selection, whose callbacks show its control (`griff.lua` `GroupBack`; with none alive *Not undone*, and the group stays as
+the store left it). They are records as a gesture's are: one level, the next replaces one, any order ends it, the button offers it
+for its 3 s; and so that the undo never undoes what came after, a draft that opens ends a dropped draft's record, and the next
+store on a slot that group's.
 
 The undo's button (Griff v4) is FAF's UI's (`griffhud.lua`): a button of FAF's orders panel (its empty slot's frame,
 `orders/basic-empty_bmp.dds`, at the HUD's factor as its order buttons) with *Undo* in FAF's font, white with a shadow, as FAF writes

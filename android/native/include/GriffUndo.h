@@ -335,17 +335,17 @@ namespace griffundo
   }
 
   /// Whether the undo's button offers to give a control group back the units a rest stored over, a record of Griff's own that
-  /// orders nothing (the user's choice of 2026-11-18): where the slot held units, those of them that live `before`, and the
-  /// store put another set there (`after`, the group's units now); not on an empty slot, not where the group holds the very
-  /// units it held, and never for Plus's append (`appended`), which takes none of them out.
+  /// orders nothing (the user's choice of 2026-11-18): where the store took out a unit that lived, one of `before`, the
+  /// group's units that lived as it came, that `after`, those it holds now, lacks. Not for a store on an empty slot, nor for
+  /// one that kept every unit and added others, and never for Plus's append (`appended`), which takes none of them out.
   [[nodiscard]] inline bool StoreSavesWork(const bool appended, std::vector<int> before, std::vector<int> after)
   {
-    if (appended || before.empty()) {
+    if (appended) {
       return false;
     }
     std::sort(before.begin(), before.end());
     std::sort(after.begin(), after.end());
-    return before != after;
+    return !std::includes(after.begin(), after.end(), before.begin(), before.end());
   }
 
   /// Whether an order is the script FAF's attack-move button gives (commandmode.lua's OnScriptIssued then asks the sim's
