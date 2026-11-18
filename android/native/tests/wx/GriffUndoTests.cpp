@@ -1329,6 +1329,18 @@ WXT_TEST(GriffUndoADroppedDraftComesBackFromTwoPlansOn)
   WXT_CHECK(DropSavesWork(30));
 }
 
+// A building picked where no draft is open opens one, which ends a dropped draft's record, whose undo would take the new one's
+// place; a building picked into the open draft, and any other record, leave the record as it is.
+WXT_TEST(GriffUndoADraftThatOpensEndsADroppedDraftsRecord)
+{
+  using griffundo::Kept;
+  using griffundo::OpeningEndsRecord;
+  WXT_CHECK(OpeningEndsRecord(false, Kept::kDraft));
+  WXT_CHECK(!OpeningEndsRecord(true, Kept::kDraft));
+  WXT_CHECK(!OpeningEndsRecord(false, Kept::kOrders));
+  WXT_CHECK(!OpeningEndsRecord(false, Kept::kGroup));
+}
+
 // A rest that stored a control group over other units is a record of Griff's own, which orders nothing: offered where the store
 // took out a unit that lived, not for a store on an empty slot, of the very units or of them and more, nor for Plus's append.
 WXT_TEST(GriffUndoAGroupARestStoredOverComesBack)

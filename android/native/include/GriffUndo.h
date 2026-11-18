@@ -344,6 +344,13 @@ namespace griffundo
     return plans >= 2;
   }
 
+  /// Whether a building picked for the draft (the program's PickForDraft) ends the undo's record, which holds `kept`: where it
+  /// opens the draft, none being `open`, a dropped draft's record ends, as its undo would put that draft in the new one's place.
+  [[nodiscard]] constexpr bool OpeningEndsRecord(const bool open, const Kept kept)
+  {
+    return !open && kept == Kept::kDraft;
+  }
+
   /// Whether the undo's button offers to give a control group back the units a rest stored over, a record of Griff's own that
   /// orders nothing (the user's choice of 2026-11-18): where the store took out a unit that lived, one of `before`, the
   /// group's units that lived as it came, that `after`, those it holds now, lacks. Not for a store on an empty slot, nor for

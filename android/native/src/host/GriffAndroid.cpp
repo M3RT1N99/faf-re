@@ -1467,7 +1467,8 @@ namespace
   }
 
   /// A building of FAF's construction panel goes into the draft (griff.lua BuildIconClicked), not while the program's clicks
-  /// run, whose draft it is. A draft that opens ends the record of one dropped, whose undo would take its place.
+  /// run, whose draft it is. A draft that opens ends the record of one dropped, whose undo would take its place
+  /// (griffundo::OpeningEndsRecord).
   int PickForDraft(lua_State* const lua)
   {
     const char* const id = lua_tostring(lua, 1);
@@ -1481,7 +1482,7 @@ namespace
       gpg::Warnf("Griff: no blueprint %s for the draft", id);
       return 0;
     }
-    if (!gDraft.Open() && gRecord.kept == Kept::kDraft) {
+    if (griffundo::OpeningEndsRecord(gDraft.Open(), gRecord.kept)) {
       EndRecord();
     }
     gDraftBlueprints[building.id] = blueprint;
