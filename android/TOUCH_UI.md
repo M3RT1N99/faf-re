@@ -115,7 +115,12 @@ real density that may stay the panel's (about 501, which with that mode would sa
 250); which of them this phone does is not known. So the size is worked out from the active mode and from the largest
 supported one, at the density reported, and the one nearer what the logical size says is taken: logical pixels over the
 logical density, 61 mm there in every resolution, and a panel is about 15 % larger than that. Where the result is more
-than a factor of two from the logical size, the density is wrong and the logical size is all there is. At 460 lines the
+than a factor of two from the logical size, the density is wrong and the logical size is all there is. The activity keeps
+itself where the screen's pixels or panel change (its `configChanges`: a resolution switched in a game, a foldable unfolded,
+`wm size`), so the short side is worked out anew whenever the layer that takes the fingers changes its size, and with it
+Griff's millimetre: its slops and reaches, the loupe's, the sizes the program measures by (`Game.setGriff`), and the rail's
+slop at each move. The mouse scheme's slop (the system's) and the factor as the game started (used only until the game says
+its own) stay as they were then. At 460 lines the
 panels (372 lines from the multifunction panel down to the unit view) still leave the mouse's buttons about 6 mm each; Griff's rail, which FAF's UI draws (see "Griff"), grows with FAF's
 panels.
 The value goes to the game as `/fafre_hud_scale`, which `fafre/scale.lua` reads, and the report has a line with it, what

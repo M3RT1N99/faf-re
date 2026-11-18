@@ -134,7 +134,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private final List<TextView> mGameButtons = new ArrayList<>();
     private TextView mKeysButton;
     private boolean mBarInGame;
-    /** The HUD's factor and the screen's short side, which the picture's lines are spread over. */
+    /**
+     * The HUD's factor and the screen's short side, which the picture's lines are spread over; the side anew when the finger
+     * layer's size changes.
+     */
     private double mHudScale;
     private double mScreenMm;
     private View mKeyboardTarget;
@@ -667,6 +670,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         mFingerLayer.setWillNotDraw(true);
         mFingerLayer.setOnTouchListener((view, event) -> onSurfaceTouch(event));
         mFingerLayer.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            // The activity keeps itself when the screen's pixels or panel change (configChanges: a resolution switched, a
+            // foldable unfolded, wm size): Griff's millimetre anew, its slops and the program's sizes with it.
+            mScreenMm = screenShortSideMm();
+            mTouch.setMillimetre(viewPixelsPerMm());
+            if (mLoupeView != null) {
+                mLoupeView.setMillimetre(viewPixelsPerMm());
+            }
+            if (mStarted && mPictureHeight > 0) {
+                setGriff();
+            }
             mTouch.setScreen(right - left, bottom - top);
             mPageView.setScreen(right - left, bottom - top);
             fitPicture(right - left, bottom - top);
@@ -1079,8 +1092,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         View target = new View(this);
         target.setVisibility(View.GONE);
         target.setContentDescription(label);
-        // Griff's slop, as for its gestures on the map: a thumb that wobbles on the rail still taps.
-        target.setOnTouchListener(new RailTouch(bit, TouchInput.GRIFF_SLOP_MM * viewPixelsPerMm()));
+        target.setOnTouchListener(new RailTouch(bit));
         root.addView(target, new FrameLayout.LayoutParams(0, 0, Gravity.TOP | Gravity.START));
         mRailTargets.add(target);
     }
@@ -1088,14 +1100,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** A finger on a rail button. It is the button's own: a finger on the map is another view's, and both go on at once. */
     private final class RailTouch implements View.OnTouchListener {
         private final int mBit;
-        private final float mSlop;
         private float mDownX;
         private float mDownY;
         private boolean mMoved;
 
-        RailTouch(int bit, float slop) {
+        RailTouch(int bit) {
             mBit = bit;
-            mSlop = slop;
         }
 
         @Override
@@ -1114,7 +1124,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     }
                     break;
                 case MotionEvent.ACTION_MOVE:
-                    mMoved |= Math.hypot(event.getX() - mDownX, event.getY() - mDownY) > mSlop;
+                    // Griff's slop, as for its gestures on the map, in the screen's millimetre as it is now: a thumb that
+                    // wobbles on the rail still taps.
+                    float slop = TouchInput.GRIFF_SLOP_MM * viewPixelsPerMm();
+                    mMoved |= Math.hypot(event.getX() - mDownX, event.getY() - mDownY) > slop;
                     break;
                 case MotionEvent.ACTION_UP:
                     letGo(event.getEventTime(), !mMoved && event.getX() >= 0 && event.getY() >= 0
