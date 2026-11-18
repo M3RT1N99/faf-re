@@ -24,6 +24,18 @@ do
             import('/fafre_ui/lua/fafre/griff.lua').Hint(kind, number)
         end
 
+        --- The units of a group's selection set that live (selection.lua selectionSets, the units its keys), which FAF's number
+        --- key selects: also where FAF's own control is gone, as FAF's check each second takes it away once the units it was
+        --- handed are, while the set may hold others, such as an upgraded factory (AddUnitToSelectionSet lets structures in, so
+        --- that upgrades keep their groups, and tells no callback).
+        local function Living(name)
+            local units = {}
+            for unit, _ in Selection.selectionSets[name] or {} do
+                table.insert(units, unit)
+            end
+            return ValidateUnitsList(units)
+        end
+
         --- A rest on a slot, FAF's right press: the selection is the group from now on (Ctrl and its number's key action), or with
         --- Plus (Shift) it joins the group, as FAF's own right press does. With nothing selected the group stays as it was. The
         --- phone buzzes once for a group stored.
@@ -41,8 +53,10 @@ do
             FafreGriffGroupStored()
         end
 
-        --- The right press on a slot is Store's; FAF's own control's other presses are FAF's (`faf`, its handler), an empty
-        --- slot's say how a group is stored.
+        --- The right press on a slot is Store's; FAF's own control's other presses are FAF's (`faf`, its handler). An empty
+        --- slot's is FAF's number key where the set still holds a unit that lives (ApplySelectionSet, whose callback makes FAF's
+        --- control anew; with Plus, Shift's, AppendSetToSelection, as FAF's control takes Shift), else it says how a group is
+        --- stored.
         local function Pressed(self, event, faf)
             if event.Type ~= 'ButtonPress' and event.Type ~= 'ButtonDClick' then
                 return faf and faf(self, event) or false
@@ -51,8 +65,12 @@ do
                 Store(self.name, event.Modifiers.Shift)
             elseif faf then
                 faf(self, event)
-            else
+            elseif table.empty(Living(self.name)) then
                 Hint(EMPTY_GROUP)
+            elseif event.Modifiers.Shift then
+                Selection.AppendSetToSelection(self.name)
+            else
+                Selection.ApplySelectionSet(self.name)
             end
             return true
         end
